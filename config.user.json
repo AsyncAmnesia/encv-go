@@ -1,0 +1,6 @@
+{
+  "password": "my-super-secret-password",
+  "outputPath": "./output",
+  "port": 1999,
+  "trackExtensions": [".ass", ".srt", ".dm.ass", ".vtt"]
+}
