@@ -50,7 +50,7 @@ gomobile bind -target=android -o encv.aar ./pkg/encv
 ./encv encrypt ./_videos
 ```
 
-需要手动指定字幕让MPV识别，例如 `mpv http://localhost:1999/video/321 --sub-files=http://localhost:1999/subtitle/321.dm.ass`
+需要手动指定字幕让MPV识别，例如 `mpv http://localhost:1999/video/321.4pm --sub-files=http://localhost:1999/subtitle/321.dm.ass`
 
 ```cmd
 ./encv serve ./output

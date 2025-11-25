@@ -36,7 +36,7 @@ type ProcessedMetadata struct {
 }
 
 // ProcessVideo 处理单个视频文件
-func ProcessVideo(inputPath, outputEncPath, outputIndexPath, password string, salt []byte, trackExtensions []string) error {
+func ProcessVideo(inputPath, outputEncPath, outputIndexPath, password string, salt []byte, trackExtensions []string, originalFilename string) error {
 	fmt.Printf("-> Processing %s...\n", filepath.Base(inputPath))
 
 	// --- Step 1: Pre-processing with FFmpeg ---
@@ -146,7 +146,7 @@ func ProcessVideo(inputPath, outputEncPath, outputIndexPath, password string, sa
 		SeekTable:        []interface{}{},
 		DurationSeconds:  metadata.Duration,
 		Resolution:       metadata.Resolution,
-		OriginalFilename: filepath.Base(inputPath),
+		OriginalFilename: originalFilename,
 		Subtitles:        subtitleTracks,
 	}
 

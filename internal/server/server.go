@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -36,10 +37,10 @@ func (p *Player) Start(port int) (string, error) {
 	// 在一个新的 goroutine 中启动服务器，这样它就不会阻塞当前函数
 	go func() {
 		// 这个日志现在会在服务器真正开始监听时打印
-		fmt.Printf("-> Server is now listening on %s\n", addr)
+		log.Printf("-> Server is now listening on %s\n", addr)
 		if err := p.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			// 如果服务器出错，我们在这里打印错误
-			fmt.Printf("-> Server error: %v\n", err)
+			log.Printf("-> Server error: %v\n", err)
 		}
 	}()
 
@@ -78,7 +79,7 @@ func (p *Player) serveTrack(w http.ResponseWriter, r *http.Request, filename str
 		http.NotFound(w, r)
 		return
 	}
-	fmt.Printf("-> [Track] Serving track: %s\n", filename)
+	log.Printf("-> [Track] Serving track: %s\n", filename)
 	contentType := "text/plain"
 	if strings.HasSuffix(filename, ".vtt") {
 		contentType = "text/vtt"
@@ -88,14 +89,25 @@ func (p *Player) serveTrack(w http.ResponseWriter, r *http.Request, filename str
 }
 
 func (p *Player) serveVideo(w http.ResponseWriter, r *http.Request, reqPath string) {
-	// Check if it's a playlist request for a logical name (directory-like)
+	// --- 关键新增：规范化请求名称 ---
+	// 用户可能请求 "sample.vkm" 或 "sample.vkm.enc"，我们将其统一处理
+	baseName := reqPath
+	if strings.HasSuffix(baseName, ".enc") {
+		baseName = baseName[:len(baseName)-4]
+		log.Printf("-> [Request] User requested .enc file, normalizing to base name: %s", baseName)
+	}
+
+	// 检查是否是播放列表请求（以 / 结尾）
+	// 这个检查基于原始的 reqPath，以区分 /video/sample/ 和 /video/sample
 	if strings.HasSuffix(reqPath, "/") {
-		p.servePlaylist(w, r, reqPath[:len(reqPath)-1])
+		// 从 baseName 中移除尾部斜杠，得到逻辑名称
+		logicalName := strings.TrimSuffix(baseName, "/")
+		p.servePlaylist(w, r, logicalName)
 		return
 	}
 
-	// Otherwise, it's a direct request for a single video file
-	p.serveSegment(w, r, reqPath)
+	// 否则，它是对单个视频文件的直接请求
+	p.serveSegment(w, r, baseName)
 }
 
 func (p *Player) serveSegment(w http.ResponseWriter, r *http.Request, name string) {
@@ -122,7 +134,9 @@ func (p *Player) serveSegment(w http.ResponseWriter, r *http.Request, name strin
 		return
 	}
 
-	w.Header().Set("Content-Type", "video/mp4")
+	// --- 改进：从索引文件中设置正确的 Content-Type ---
+	w.Header().Set("Content-Type", "video/"+index.Format)
+
 	// 注意：这是一个简化的实现，它会读取整个文件到内存中解密。
 	// 对于大文件，这非常消耗内存。生产环境应使用流式解密。
 	encFile, err := os.Open(encPath)
@@ -134,7 +148,7 @@ func (p *Player) serveSegment(w http.ResponseWriter, r *http.Request, name strin
 
 	if err := crypto.DecryptStream(encFile, w, key, iv); err != nil {
 		// 如果写入已经开始，此时返回错误可能为时已晚，但这是最好的做法
-		fmt.Printf("Error decrypting stream: %v\n", err)
+		log.Printf("Error decrypting stream: %v\n", err)
 	}
 }
 
