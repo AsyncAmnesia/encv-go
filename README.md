@@ -8,6 +8,7 @@
 
 ## 项目结构
 
+```md
 encv-go/
 ├── cmd/
 │   └── encv/
@@ -24,11 +25,12 @@ encv-go/
 │   └── types/
 │       └── types.go         # 公共数据结构
 ├── pkg/
-│   └── mobile/
-│       └── lib.go           # gomobile 绑定接口
+│   └── encv/
+│       └── api.go           # 接口
 ├── config.user.json         # 示例配置文件
 ├── go.mod
 └── go.sum
+```
 
 ## 构建
 
