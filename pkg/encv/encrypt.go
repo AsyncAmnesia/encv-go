@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Soltus/encv-go/internal/config"
+	"github.com/Soltus/encv-go/internal/container"
 	"github.com/Soltus/encv-go/internal/crypto"
 	"github.com/Soltus/encv-go/internal/processor"
 )
@@ -41,13 +42,6 @@ func detectContainerFormat(filePath string) (string, error) {
 		parts := strings.Split(formatName, ",")
 		return strings.ToLower(parts[0]), nil
 	}
-}
-
-func getNewExtension(originalFormat string) string {
-	if ext, ok := config.ContainerExtensionMap[originalFormat]; ok {
-		return ext
-	}
-	return originalFormat
 }
 
 // --- 2. 核心加密逻辑 ---
@@ -84,27 +78,40 @@ func Encrypt(inputPath string, opts EncryptOptions) error {
 // encryptFile 加密单个文件 (已修改以支持带优先级的多字幕)
 func encryptFile(inputPath string, opts EncryptOptions, salt []byte) error {
 	originalFilename := filepath.Base(inputPath)
+	baseName := strings.TrimSuffix(originalFilename, filepath.Ext(originalFilename))
+
+	// 1. 检测真实格式
 	detectedFormat, err := detectContainerFormat(inputPath)
 	if err != nil {
 		return fmt.Errorf("failed to detect format for %s: %w", inputPath, err)
 	}
-	newExt := getNewExtension(detectedFormat)
-	baseName := strings.TrimSuffix(originalFilename, filepath.Ext(originalFilename))
 
-	// 定义加密后的基础名
-	encBaseName := fmt.Sprintf("%s.%s", baseName, newExt)
+	// 2. 【关键修改】生成临时文件名，不带任何加密后缀
+	// processor.ProcessVideo 会在文件内部写入魔法数字，所以文件名后缀不重要
+	tempEncPath := filepath.Join(opts.OutputDir, baseName+".encv_tmp_enc")   // 临时加密文件
+	tempIndexPath := filepath.Join(opts.OutputDir, baseName+".encv_tmp_kvi") // 临时 KVI 文件
 
-	outputEncPath := filepath.Join(opts.OutputDir, fmt.Sprintf("%s.enc", encBaseName))
-	outputIndexPath := filepath.Join(opts.OutputDir, fmt.Sprintf("%s.kvi", encBaseName))
+	fmt.Printf("-> Detected format: %s\n", detectedFormat)
 
-	fmt.Printf("-> Detected format: %s, New extension: .%s\n", detectedFormat, newExt)
-
-	// 调用 processor 处理视频，现在它会处理所有事情
-	if err := processor.ProcessVideo(inputPath, outputEncPath, outputIndexPath, opts.Password, salt, opts.TrackExtensions, originalFilename, encBaseName); err != nil {
+	// 3. 调用 processor 处理视频
+	if err := processor.ProcessVideo(inputPath, tempEncPath, tempIndexPath, opts.Password, salt, opts.TrackExtensions, originalFilename, baseName); err != nil {
 		return fmt.Errorf("failed to process video: %w", err)
 	}
+	fmt.Printf("-> Successfully processed video and tracks to temporary files.\n")
 
-	fmt.Printf("-> Successfully processed video and tracks: %s\n", outputEncPath)
+	containerPath := filepath.Join(opts.OutputDir, baseName+config.GetVideoEncExtension())
+
+	// 5. 打包
+	if err := container.Pack(tempEncPath, tempIndexPath, containerPath); err != nil {
+		return fmt.Errorf("failed to pack into container: %w", err)
+	}
+
+	// 6. 清理临时文件
+	fmt.Println("-> Cleaning up temporary files...")
+	os.Remove(tempEncPath)
+	os.Remove(tempIndexPath)
+
+	fmt.Printf("✅ Encryption and packing complete. Final file: %s\n", containerPath)
 	return nil
 }
 

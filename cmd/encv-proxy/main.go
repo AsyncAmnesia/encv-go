@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/proxy"
 )
 
@@ -95,6 +96,10 @@ func authenticate(cfg *Config) error {
 }
 
 func main() {
+	// 程序启动时初始化全局配置
+	if _, err := config.LoadUserConfig(); err != nil {
+		log.Fatalf("Failed to load global configuration for proxy: %v", err)
+	}
 	cfg, err := loadConfig()
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Soltus/encv-go/internal/config"
+	"github.com/Soltus/encv-go/internal/container"
 	"github.com/Soltus/encv-go/internal/crypto"
 	"github.com/Soltus/encv-go/internal/types"
 )
@@ -53,107 +54,6 @@ func getContentTypeFromExtension(fileURL string) string {
 	}
 	// 如果找不到，返回默认的二进制流类型
 	return "application/octet-stream"
-}
-
-// isEncryptedFile 通过检查文件头判断 URL 指向的文件是否是 encv 加密文件
-func isEncryptedFile(fileURL string, headers map[string]string) bool {
-	req, err := http.NewRequest("GET", fileURL, nil)
-	if err != nil {
-		log.Printf("-> [Proxy] Failed to create request for file header check: %v", err)
-		return false
-	}
-
-	// 设置 Range 头，只请求文件的前 N 个字节
-	req.Header.Set("Range", fmt.Sprintf("bytes=0-%d", crypto.MagicNumberLength-1))
-	for key, value := range headers {
-		req.Header.Set(key, value)
-	}
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Printf("-> [Proxy] Failed to get file header: %v", err)
-		return false
-	}
-	defer resp.Body.Close()
-
-	// 检查服务器是否支持 Range 请求
-	if resp.StatusCode != http.StatusPartialContent {
-		log.Printf("-> [Proxy] Server does not support range requests for header check (status: %s), assuming not encrypted.", resp.Status)
-		return false
-	}
-
-	magicBytes := make([]byte, crypto.MagicNumberLength)
-	_, err = io.ReadFull(resp.Body, magicBytes)
-	if err != nil {
-		log.Printf("-> [Proxy] Failed to read file header: %v", err)
-		return false
-	}
-
-	return string(magicBytes) == crypto.MagicNumber
-}
-
-// tryGetKVI 尝试获取并解析与给定路径对应的 KVI 文件
-func tryGetKVI(path string, cfg *Config) (*types.VideoIndex, error) {
-	// 生成一个候选 KVI 路径的列表，按优先级排序
-	candidates := []string{}
-	baseFilename := filepath.Base(path)
-	dir := filepath.Dir(path)
-
-	// --- 策略 1: 最高优先级 - 如果以 .enc 结尾，直接构造 ---
-	// 这是最标准、最可靠的情况
-	if strings.HasSuffix(path, ".enc") {
-		kviPath := strings.TrimSuffix(path, ".enc") + ".kvi"
-		candidates = append(candidates, kviPath)
-	}
-
-	// --- 策略 2: 中等优先级 - 假设用户只修改了最后的后缀 ---
-	// 例如：movie.4pm.enc -> movie.4pm.en
-	// 我们取文件名，去掉最后一个后缀，然后加上 .kvi
-	baseName := strings.TrimSuffix(baseFilename, filepath.Ext(baseFilename))
-	candidates = append(candidates, filepath.Join(dir, baseName+".kvi"))
-
-	// --- 策略 3: 最低优先级 - 假设用户恢复了原始后缀 ---
-	// 例如：movie.4pm.enc -> movie.mp4
-	// 我们需要反向查找映射表
-	originalExt := strings.TrimPrefix(filepath.Ext(baseFilename), ".")
-	if encExt, ok := config.ContainerExtensionMap[originalExt]; ok {
-		// movie.mp4 -> movie.4pm.kvi
-		baseName := strings.TrimSuffix(baseFilename, filepath.Ext(baseFilename))
-		candidates = append(candidates, filepath.Join(dir, baseName+encExt+".kvi"))
-	}
-
-	log.Printf("-> [Proxy] Trying KVI candidates for %s: %v", path, candidates)
-
-	// 遍历所有候选路径，尝试下载和解析
-	for _, kviPath := range candidates {
-		// 【关键修复】将 Windows 路径分隔符替换为 URL 路径分隔符
-		kviPathForAPI := strings.ReplaceAll(kviPath, "\\", "/")
-		log.Printf("-> [Proxy] Attempting API call for KVI: %s", kviPathForAPI)
-
-		kviFileInfo, err := GetFileURL(kviPathForAPI, cfg.OpenListHost, cfg.Token)
-		if err != nil {
-			if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
-				log.Printf("-> [Proxy] Candidate not found: %s", kviPathForAPI)
-				continue
-			}
-			return nil, err
-		}
-
-		index, parseErr := downloadAndParseIndex(kviFileInfo.Data.URL, kviFileInfo.Data.Header)
-		if parseErr != nil {
-			if strings.Contains(parseErr.Error(), "status: 404") || strings.Contains(parseErr.Error(), "status: 500") {
-				log.Printf("-> [Proxy] Candidate failed to parse: %s", kviPathForAPI)
-				continue
-			}
-			return nil, fmt.Errorf("failed to parse KVI candidate %s: %w", kviPathForAPI, parseErr)
-		}
-
-		log.Printf("-> [Proxy] Successfully found and parsed KVI: %s", kviPathForAPI)
-		return index, nil
-	}
-
-	return nil, fmt.Errorf("kvi not found for any candidate path")
 }
 
 // handleRequest 创建并返回 HTTP 处理函数
@@ -216,40 +116,21 @@ func handleRequest(cfg *Config) http.HandlerFunc {
 		log.Printf("Received valid request for: %s", path)
 		log.Printf("-> [Proxy] Incoming request: %s from %s", path, r.RemoteAddr)
 
-		// --- 步骤 1: 获取文件的真实下载链接 (对任何文件都一样) ---
-		// fileInfo, err := GetFileURL(path, cfg.OpenListHost, cfg.Token)
-		// if err != nil {
-		// 	log.Printf("Error getting file URL for %s: %v", path, err)
-		// 	http.Error(w, "Failed to locate file", http.StatusInternalServerError)
-		// 	return
-		// }
-
-		// --- 核心逻辑变更：先找 KVI，再验证文件头 ---
-		index, err := tryGetKVI(path, cfg)
-		if err == nil {
-			// --- 找到了 KVI，现在验证请求的文件本身是否是加密视频 ---
-			log.Printf("-> [Proxy] Found KVI candidate for %s, verifying file header...", path)
-
+		// --- 核心逻辑：判断是否是容器文件 ---
+		if config.IsContainerFile(path) {
+			log.Printf("-> [Proxy] Detected container file: %s", path)
 			fileInfo, err := GetFileURL(path, cfg.OpenListHost, cfg.Token)
 			if err != nil {
-				log.Printf("Error getting file URL for verification %s: %v", path, err)
 				http.Error(w, "Failed to locate file", http.StatusInternalServerError)
 				return
 			}
-
-			if isEncryptedFile(fileInfo.Data.URL, fileInfo.Data.Header) {
-				// --- 验证通过：确实是加密文件，进行解密 ---
-				log.Printf("-> [Proxy] File header verified. Handling as encrypted file: %s", path)
-				serveDecryptedStream(w, fileInfo.Data.URL, fileInfo.Data.Header, index, cfg.VideoPassword)
-				return
-			}
-
-			// --- 验证失败：不是加密文件（例如是字幕），按普通文件处理 ---
-			log.Printf("-> [Proxy] File header verification failed. Handling %s as a standard file.", path)
-		} else {
-			// --- 没找到 KVI，直接按普通文件处理 ---
-			log.Printf("-> [Proxy] No KVI found for %s, handling as standard file.", path)
+			// 解包并提供服务
+			serveContainerStream(w, fileInfo.Data.URL, fileInfo.Data.Header, cfg.VideoPassword)
+			return
 		}
+
+		// --- 如果不是容器文件，则按普通文件处理 ---
+		log.Printf("-> [Proxy] Not a container file, handling as standard file: %s", path)
 
 		// --- 统一的普通文件处理逻辑 ---
 		if strings.HasPrefix(path, "/p/") {
@@ -269,6 +150,68 @@ func handleRequest(cfg *Config) http.HandlerFunc {
 			serveDirectStreamWithFix(w, fileInfo.Data.URL, fileInfo.Data.Header)
 		}
 	}
+}
+
+func serveContainerStream(w http.ResponseWriter, containerURL string, headers map[string]string, password string) {
+	// 1. 从 OpenList 获取容器文件的流
+	containerStream, err := getRemoteStream(containerURL, headers)
+	if err != nil {
+		log.Printf("-> [Proxy] Failed to get container stream: %v", err)
+		http.Error(w, "Failed to get container stream", http.StatusInternalServerError)
+		return
+	}
+	defer containerStream.Close()
+
+	// 2. 解包
+	packedData, err := container.Unpack(containerStream)
+	if err != nil {
+		log.Printf("-> [Proxy] Failed to unpack container: %v", err)
+		http.Error(w, "Invalid container file", http.StatusBadRequest)
+		return
+	}
+	defer packedData.VideoStream.Close()
+
+	// 3. 解析 KVI
+	var index types.VideoIndex
+	if err := json.Unmarshal(packedData.KVIData, &index); err != nil {
+		log.Printf("-> [Proxy] Failed to parse KVI from container: %v", err)
+		http.Error(w, "Failed to parse KVI", http.StatusInternalServerError)
+		return
+	}
+
+	// 4. 解密视频流并服务给客户端
+	if err := serveDecryptedStreamFromReader(w, packedData.VideoStream, &index, password); err != nil {
+		// 错误已在 serveDecryptedStreamFromReader 内部处理，这里只记录
+		log.Printf("-> [Proxy] Failed to serve decrypted stream: %v", err)
+	}
+}
+
+// serveDecryptedStreamFromReader 从一个 io.Reader 解密并服务流
+// 它现在直接将解密后的流写入 http.ResponseWriter
+func serveDecryptedStreamFromReader(w http.ResponseWriter, encryptedReader io.Reader, index *types.VideoIndex, password string) error {
+	// --- 准备解密密钥 ---
+	salt, err := crypto.Base64Decode(index.Encryption.SaltBase64)
+	if err != nil {
+		log.Printf("Error decoding salt: %v", err)
+		http.Error(w, "Invalid salt in index file", http.StatusInternalServerError)
+		return err
+	}
+	key := crypto.GenerateKey(password, salt)
+
+	// --- 设置响应头 ---
+	w.Header().Set("Content-Type", "video/"+index.Format)
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// --- 调用 crypto.DecryptStream 直接解密到 w ---
+	if err := crypto.DecryptStream(encryptedReader, w, key); err != nil {
+		log.Printf("Error decrypting stream: %v", err)
+		// 注意：由于已经开始写入响应头，这里不能再调用 http.Error
+		// 客户端可能会收到一个不完整的响应
+		return err
+	}
+
+	return nil
 }
 
 // serveDirectStreamWithFix 是 serveDirectStream 的增强版，可以修复响应头和 CORS，直接从 URL 下载文件并流式传输给客户端
@@ -314,6 +257,31 @@ func serveDirectStreamWithFix(w http.ResponseWriter, fileURL string, headers map
 	if err != nil {
 		log.Printf("Error streaming file to client: %v", err)
 	}
+}
+
+// getRemoteStream 创建一个 HTTP GET 请求并返回响应体的 ReadCloser
+func getRemoteStream(fileURL string, headers map[string]string) (io.ReadCloser, error) {
+	req, err := http.NewRequest("GET", fileURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request for %s: %w", fileURL, err)
+	}
+
+	for key, value := range headers {
+		req.Header.Add(key, value)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request for %s: %w", fileURL, err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close() // 确保在错误情况下关闭 Body
+		return nil, fmt.Errorf("remote server returned status %s for %s", resp.Status, fileURL)
+	}
+
+	return resp.Body, nil
 }
 
 // verifySign 验证 OpenList 的签名
@@ -363,81 +331,4 @@ func verifySign(path, sign string, cfg *Config) bool {
 
 	log.Printf("-> [Signature Debug] Signature did not match for any path variant. Original path: '%s'", path)
 	return false
-}
-
-// downloadAndParseIndex 下载并解析 .kvi 文件
-func downloadAndParseIndex(url string, headers map[string]string) (*types.VideoIndex, error) {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	for key, value := range headers {
-		req.Header.Set(key, value)
-	}
-
-	// 【关键修复】使用一个新的 client 实例，而不是 http.DefaultClient
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to download index file, status: %s", resp.Status)
-	}
-
-	var index types.VideoIndex
-	if err := json.NewDecoder(resp.Body).Decode(&index); err != nil {
-		return nil, err
-	}
-	return &index, nil
-}
-
-// serveDecryptedStream 下载 .enc 文件，解密后流式传输给客户端
-func serveDecryptedStream(w http.ResponseWriter, encURL string, headers map[string]string, index *types.VideoIndex, password string) {
-	req, err := http.NewRequest("GET", encURL, nil)
-	if err != nil {
-		http.Error(w, "Failed to create request for encrypted file", http.StatusInternalServerError)
-		return
-	}
-	for key, value := range headers {
-		req.Header.Set(key, value)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		http.Error(w, "Failed to download encrypted file", http.StatusInternalServerError)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		http.Error(w, fmt.Sprintf("Failed to download encrypted file, status: %s", resp.Status), http.StatusInternalServerError)
-		return
-	}
-
-	// --- 准备解密 ---
-	salt, err := crypto.Base64Decode(index.Encryption.SaltBase64)
-	if err != nil {
-		http.Error(w, "Invalid salt in index file", http.StatusInternalServerError)
-		return
-	}
-	key := crypto.GenerateKey(password, salt)
-
-	// iv, err := crypto.Base64Decode(index.Encryption.IVBase64)
-	// if err != nil {
-	// 	http.Error(w, "Invalid IV in index file", http.StatusInternalServerError)
-	// 	return
-	// }
-
-	// --- 设置响应头并开始流式传输 ---
-	w.Header().Set("Content-Type", "video/"+index.Format)
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-
-	// 使用 crypto.DecryptStream 进行流式解密
-	if err := crypto.DecryptStream(resp.Body, w, key); err != nil {
-		log.Printf("Error decrypting stream: %v", err)
-	}
 }

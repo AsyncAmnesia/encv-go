@@ -3,211 +3,297 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
+	"github.com/Soltus/encv-go/internal/config"
+	"github.com/Soltus/encv-go/internal/container"
 	"github.com/Soltus/encv-go/internal/crypto"
 	"github.com/Soltus/encv-go/internal/types"
 )
 
-// Player 封装了流媒体服务器
+// Player ... (保持不变) ...
 type Player struct {
 	dir      string
 	password string
 	server   *http.Server
 }
 
-// NewPlayer 创建一个新的 Player 实例
+// NewPlayer ... (保持不变) ...
 func NewPlayer(dir, password string) *Player {
 	return &Player{dir: dir, password: password}
 }
 
-// Start 启动服务器，返回监听的地址
-// 这个方法现在是非阻塞的。
+// Start ... (保持不变) ...
 func (p *Player) Start(port int) (string, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", p.handleRequest)
 
 	addr := fmt.Sprintf(":%d", port)
-	p.server = &http.Server{Addr: addr, Handler: mux}
+	p.server = &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 
-	// 在一个新的 goroutine 中启动服务器，这样它就不会阻塞当前函数
 	go func() {
-		// 这个日志现在会在服务器真正开始监听时打印
 		log.Printf("-> Server is now listening on %s\n", addr)
 		if err := p.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			// 如果服务器出错，我们在这里打印错误
 			log.Printf("-> Server error: %v\n", err)
 		}
 	}()
 
-	// 立即返回地址，不等待
 	return addr, nil
 }
 
-// Stop 停止服务器
+// Stop ... (保持不变) ...
 func (p *Player) Stop() {
 	if p.server != nil {
 		p.server.Close()
 	}
 }
 
+// 【关键修复 1】重写主路由处理器
 func (p *Player) handleRequest(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Path
+	// 从 URL 路径中提取相对于服务器根目录的路径
+	// 例如："/output/321.sccgv" -> "output/321.sccgv"
+	// 例如："/" -> ""
+	relativePath := strings.TrimPrefix(r.URL.Path, "/")
 
-	// Serve subtitle/danmaku tracks
-	if strings.HasPrefix(path, "/subtitle/") {
-		p.serveTrack(w, r, path[len("/subtitle/"):])
+	// 如果请求的是根目录，则列出服务器根目录的文件
+	if relativePath == "" {
+		p.listFilesInDir(w, r, p.dir, "/")
 		return
 	}
 
-	// Serve video playlist or segments
-	if strings.HasPrefix(path, "/video/") {
-		p.serveVideo(w, r, path[len("/video/"):])
-		return
-	}
-
-	http.NotFound(w, r)
+	// 否则，作为文件或目录请求处理
+	p.servePath(w, r, relativePath)
 }
 
-func (p *Player) serveTrack(w http.ResponseWriter, r *http.Request, filename string) {
-	trackPath := filepath.Join(p.dir, filename)
-	if _, err := os.Stat(trackPath); os.IsNotExist(err) {
-		http.NotFound(w, r)
-		return
-	}
-	log.Printf("-> [Track] Serving track: %s\n", filename)
-	contentType := "text/plain"
-	if strings.HasSuffix(filename, ".vtt") {
-		contentType = "text/vtt"
-	}
-	w.Header().Set("Content-Type", contentType)
-	http.ServeFile(w, r, trackPath)
-}
+// 【关键修复 2】新的服务函数，能处理文件和目录
+func (p *Player) servePath(w http.ResponseWriter, r *http.Request, relativePath string) {
+	// 构建完整的文件系统路径
+	fullPath := filepath.Join(p.dir, relativePath)
 
-func (p *Player) serveVideo(w http.ResponseWriter, r *http.Request, reqPath string) {
-	// --- 关键新增：规范化请求名称 ---
-	// 用户可能请求 "sample.vkm" 或 "sample.vkm.enc"，我们将其统一处理
-	baseName := reqPath
-	if strings.HasSuffix(baseName, ".enc") {
-		baseName = baseName[:len(baseName)-4]
-		log.Printf("-> [Request] User requested .enc file, normalizing to base name: %s", baseName)
-	}
-
-	// 检查是否是播放列表请求（以 / 结尾）
-	// 这个检查基于原始的 reqPath，以区分 /video/sample/ 和 /video/sample
-	if strings.HasSuffix(reqPath, "/") {
-		// 从 baseName 中移除尾部斜杠，得到逻辑名称
-		logicalName := strings.TrimSuffix(baseName, "/")
-		p.servePlaylist(w, r, logicalName)
+	// 安全检查：确保请求的路径在服务目录内
+	if !strings.HasPrefix(filepath.Clean(fullPath)+string(os.PathSeparator), filepath.Clean(p.dir)+string(os.PathSeparator)) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
-	// 否则，它是对单个视频文件的直接请求
-	p.serveSegment(w, r, baseName)
-}
-
-func (p *Player) serveSegment(w http.ResponseWriter, r *http.Request, name string) {
-	encPath := filepath.Join(p.dir, name+".enc")
-	kviPath := filepath.Join(p.dir, name+".kvi")
-
-	index, err := p.loadIndex(kviPath)
+	// 检查路径信息
+	info, err := os.Stat(fullPath)
 	if err != nil {
-		http.Error(w, "Index file not found", http.StatusNotFound)
+		if os.IsNotExist(err) {
+			http.NotFound(w, r)
+		} else {
+			http.Error(w, "Could not access path", http.StatusInternalServerError)
+		}
 		return
 	}
 
-	// --- 关键修正：解码 Base64 盐值 ---
+	// 如果是目录，则列出该目录的内容
+	if info.IsDir() {
+		// 为目录 URL 添加末尾斜杠，以便正确生成相对链接
+		urlPath := "/" + strings.TrimSuffix(relativePath, "/") + "/"
+		p.listFilesInDir(w, r, fullPath, urlPath)
+		return
+	}
+
+	// 如果是文件，则继续处理
+	p.serveFile(w, r, fullPath)
+}
+
+// serveFile 处理对单个文件的请求
+func (p *Player) serveFile(w http.ResponseWriter, r *http.Request, fullPath string) {
+	fileName := filepath.Base(fullPath)
+
+	// 判断是否是 ENCV 容器文件
+	if config.IsContainerFile(fileName) {
+		log.Printf("-> [File] Serving ENCV container: %s", fileName)
+		p.serveEncryptedContainer(w, r, fullPath)
+		return
+	}
+
+	// 如果不是容器文件，作为普通文件（如字幕）提供服务
+	log.Printf("-> [File] Serving standard file: %s", fileName)
+	http.ServeFile(w, r, fullPath)
+}
+
+// listFilesInDir 在指定目录生成一个文件列表页面
+// urlPath 是当前目录对应的 URL 路径，用于生成正确的导航链接
+func (p *Player) listFilesInDir(w http.ResponseWriter, r *http.Request, dirPath, urlPath string) {
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		http.Error(w, "Could not read directory", http.StatusInternalServerError)
+		return
+	}
+
+	type FileInfo struct {
+		Name        string
+		Path        string
+		IsDir       bool
+		IsContainer bool
+		Size        int64
+		ModTime     time.Time
+	}
+
+	var files []FileInfo
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		files = append(files, FileInfo{
+			Name:        entry.Name(),
+			Path:        urlPath + entry.Name(),
+			IsDir:       entry.IsDir(),
+			IsContainer: !entry.IsDir() && config.IsContainerFile(entry.Name()),
+			Size:        info.Size(),
+			ModTime:     info.ModTime(),
+		})
+	}
+
+	sort.Slice(files, func(i, j int) bool {
+		// 目录排在文件前面
+		if files[i].IsDir != files[j].IsDir {
+			return files[i].IsDir
+		}
+		return strings.ToLower(files[i].Name) < strings.ToLower(files[j].Name)
+	})
+
+	// 计算父目录链接
+	parentPath := filepath.Dir(urlPath)
+	if parentPath == "." {
+		parentPath = "/"
+	}
+
+	tmpl := `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ENCV File Server - {{.CurrentPath}}</title>
+    <style>
+        body { font-family: sans-serif; background-color: #f4f4f9; color: #333; margin: 2em; }
+        h1 { color: #444; }
+        .breadcrumb { margin-bottom: 1em; }
+        .breadcrumb a { color: #007BFF; text-decoration: none; }
+        .breadcrumb a:hover { text-decoration: underline; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+        th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
+        th { background-color: #4CAF50; color: white; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+        a { text-decoration: none; color: #007BFF; }
+        a:hover { text-decoration: underline; }
+        .dir-tag { color: #007BFF; font-weight: bold; }
+        .container-tag { color: #d9534f; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>ENCV File Server</h1>
+    <div class="breadcrumb">
+        <a href="/">Root</a> / {{range .Ancestors}}<a href="{{.Path}}">{{.Name}}</a> / {{end}}
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Size</th>
+                <th>Modified</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{if .NotRoot}}<tr><td><a href="{{.ParentPath}}">..</a></td><td>Directory</td><td>-</td><td>-</td></tr>{{end}}
+            {{range .Files}}
+            <tr>
+                <td><a href="{{.Path}}">{{.Name}}</a></td>
+                <td>
+                    {{if .IsDir}}<span class="dir-tag">Directory</span>
+                    {{else if .IsContainer}}<span class="container-tag">ENCV Container</span>
+                    {{else}}File
+                    {{end}}
+                </td>
+                <td>{{if .IsDir}}-{{else}}{{.Size}}{{end}}</td>
+                <td>{{.ModTime.Format "2006-01-02 15:04:05"}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</body>
+</html>`
+
+	// 为模板准备数据
+	data := struct {
+		CurrentPath string
+		ParentPath  string
+		NotRoot     bool
+		Ancestors   []struct{ Name, Path string }
+		Files       []FileInfo
+	}{
+		CurrentPath: urlPath,
+		ParentPath:  parentPath,
+		NotRoot:     urlPath != "/",
+		Files:       files,
+	}
+	// 生成面包屑导航
+	parts := strings.Split(strings.Trim(urlPath, "/"), "/")
+	for i := 0; i < len(parts)-1; i++ {
+		data.Ancestors = append(data.Ancestors, struct{ Name, Path string }{
+			Name: parts[i],
+			Path: "/" + strings.Join(parts[:i+1], "/") + "/",
+		})
+	}
+
+	t, _ := template.New("list").Parse(tmpl)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := t.Execute(w, data); err != nil {
+		log.Printf("Error executing template: %v", err)
+	}
+}
+
+// serveEncryptedContainer ... (保持不变) ...
+func (p *Player) serveEncryptedContainer(w http.ResponseWriter, r *http.Request, containerPath string) {
+	containerFile, err := os.Open(containerPath)
+	if err != nil {
+		http.Error(w, "Failed to open container file", http.StatusNotFound)
+		return
+	}
+	defer containerFile.Close()
+
+	packedData, err := container.Unpack(containerFile)
+	if err != nil {
+		log.Printf("-> [File] Failed to unpack container: %v", err)
+		http.Error(w, "Invalid container file", http.StatusBadRequest)
+		return
+	}
+	defer packedData.VideoStream.Close()
+
+	var index types.VideoIndex
+	if err := json.Unmarshal(packedData.KVIData, &index); err != nil {
+		log.Printf("-> [File] Failed to parse KVI from container: %v", err)
+		http.Error(w, "Failed to parse KVI", http.StatusInternalServerError)
+		return
+	}
+
 	salt, err := crypto.Base64Decode(index.Encryption.SaltBase64)
 	if err != nil {
-		http.Error(w, "Invalid salt in index file", http.StatusInternalServerError)
+		http.Error(w, "Invalid salt in KVI", http.StatusInternalServerError)
 		return
 	}
 	key := crypto.GenerateKey(p.password, salt)
 
-	// iv, err := crypto.Base64Decode(index.Encryption.IVBase64)
-	// if err != nil {
-	// 	http.Error(w, "Invalid IV in index file", http.StatusInternalServerError)
-	// 	return
-	// }
-
-	// --- 改进：从索引文件中设置正确的 Content-Type ---
 	w.Header().Set("Content-Type", "video/"+index.Format)
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Accept-Ranges", "bytes")
 
-	// 注意：这是一个简化的实现，它会读取整个文件到内存中解密。
-	// 对于大文件，这非常消耗内存。生产环境应使用流式解密。
-	encFile, err := os.Open(encPath)
-	if err != nil {
-		http.Error(w, "Encrypted file not found", http.StatusNotFound)
-		return
+	if err := crypto.DecryptStream(packedData.VideoStream, w, key); err != nil {
+		log.Printf("-> [File] Error decrypting stream: %v", err)
 	}
-	defer encFile.Close()
-
-	if err := crypto.DecryptStream(encFile, w, key); err != nil {
-		// 如果写入已经开始，此时返回错误可能为时已晚，但这是最好的做法
-		log.Printf("Error decrypting stream: %v\n", err)
-	}
-}
-
-func (p *Player) servePlaylist(w http.ResponseWriter, r *http.Request, logicalName string) {
-	parts, err := p.findParts(logicalName)
-	if err != nil || len(parts) == 0 {
-		http.NotFound(w, r)
-		return
-	}
-
-	// Load index from the first part to get subtitle info
-	firstPartBase := strings.TrimSuffix(parts[0], ".enc")
-	index, _ := p.loadIndex(filepath.Join(p.dir, firstPartBase+".kvi"))
-
-	var subtitleTags strings.Builder
-	if index != nil {
-		for _, sub := range index.Subtitles {
-			subtitleTags.WriteString(fmt.Sprintf(`#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="%s",LANGUAGE="%s",URI="/subtitle/%s"`+"\n", sub.Title, sub.Language, sub.Filename))
-		}
-	}
-
-	var playlist strings.Builder
-	playlist.WriteString("#EXTM3U\n#EXT-X-VERSION:3\n")
-	playlist.WriteString(subtitleTags.String())
-	playlist.WriteString("#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-ALLOW-CACHE:YES\n")
-
-	for _, part := range parts {
-		baseName := strings.TrimSuffix(part, ".enc")
-		playlist.WriteString(fmt.Sprintf("#EXTINF:-1,%s\n/video/%s\n", baseName, baseName))
-	}
-	playlist.WriteString("#EXT-X-ENDLIST\n")
-
-	w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-	w.Write([]byte(playlist.String()))
-}
-
-func (p *Player) loadIndex(indexPath string) (*types.VideoIndex, error) {
-	data, err := os.ReadFile(indexPath)
-	if err != nil {
-		return nil, err
-	}
-	var index types.VideoIndex
-	return &index, json.Unmarshal(data, &index)
-}
-
-func (p *Player) findParts(logicalName string) ([]string, error) {
-	entries, err := os.ReadDir(p.dir)
-	if err != nil {
-		return nil, err
-	}
-
-	var parts []string
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".enc") {
-			continue
-		}
-		if strings.HasPrefix(e.Name(), logicalName) {
-			parts = append(parts, e.Name())
-		}
-	}
-	return parts, nil
 }

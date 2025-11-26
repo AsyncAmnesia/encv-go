@@ -4,5 +4,11 @@
   "port": 1999,
   "proxy_port": 1998,
   "openlist_host": "http://localhost:5244",
-  "trackExtensions": [".ass", ".srt", ".dm.ass", ".vtt"]
+  "trackExtensions": [".ass", ".srt", ".dm.ass", ".vtt"],
+  "bin_ext_group": {
+    "text": "sccgt",
+    "image": "sccgi",
+    "audio": "sccga",
+    "video": "sccgv"
+  }
 }

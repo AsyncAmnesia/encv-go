@@ -29,10 +29,18 @@ type EncryptionInfo struct {
 	SaltBase64 string `json:"salt_base64"`
 }
 
+type BinExtGroup struct {
+	Text  string `json:"text"`
+	Image string `json:"image"`
+	Audio string `json:"audio"`
+	Video string `json:"video"`
+}
+
 // UserConfig 用户配置文件结构
 type UserConfig struct {
-	Password        string   `json:"password"`
-	OutputPath      string   `json:"outputPath"`
-	Port            int      `json:"port"`
-	TrackExtensions []string `json:"trackExtensions"`
+	Password        string      `json:"password"`
+	OutputPath      string      `json:"outputPath"`
+	Port            int         `json:"port"`
+	TrackExtensions []string    `json:"trackExtensions"`
+	BinExtGroup     BinExtGroup `json:"bin_ext_group"`
 }

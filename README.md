@@ -1,9 +1,8 @@
-
 # encv-go
 
 一个强大的命令行工具集/库，用于视频文件的加密、解密、流媒体传输，并提供与 OpenList 的无缝代理集成。
 
-> [!WARNING]  
+> [!WARNING]
 > 请确保 `ffmpeg` 和 `mpv` 已安装并添加到系统的环境变量中。
 
 ---
@@ -36,20 +35,27 @@ go build -o encv-proxy ./cmd/encv-proxy
   "port": 1999,
   "proxy_port": 1998,
   "openlist_host": "http://localhost:5244",
-  "trackExtensions": [".ass", ".srt", ".dm.ass", ".vtt"]
+  "trackExtensions": [".ass", ".srt", ".dm.ass", ".vtt"],
+  "bin_ext_group": {
+    "text": "sccgt",
+    "image": "sccgi",
+    "audio": "sccga",
+    "video": "sccgv"
+  }
 }
 ```
 
 **配置项说明:**
 
-| 键 | 描述 |
-|---|---|
-| `password` | 用于加密和解密视频的密码。 |
-| `outputPath` | 加密后文件的默认输出目录。 |
-| `port` | `encv serve` 流媒体服务的默认监听端口。 |
-| `proxy_port` | `encv-proxy` 代理服务的默认监听端口。 |
-| `openlist_host` | OpenList 服务的地址。 |
-| `trackExtensions` | 需要处理的字幕/轨道文件扩展名列表。 |
+| 键                | 描述                                     |
+| ----------------- | ---------------------------------------- |
+| `password`        | 用于加密和解密视频的密码。                 |
+| `outputPath`      | 加密后文件的默认输出目录。                 |
+| `port`            | `encv serve` 流媒体服务的默认监听端口。    |
+| `proxy_port`      | `encv-proxy` 代理服务的默认监听端口。      |
+| `openlist_host`   | OpenList 服务的地址。                      |
+| `bin_ext_group`   | 定义加密类型的容器后缀名，不建议自定义     |
+| `trackExtensions` | 需要处理的字幕/轨道文件扩展名列表。        |
 
 ### 💻 核心用法
 
@@ -68,13 +74,13 @@ go build -o encv-proxy ./cmd/encv-proxy
 
 ```bash
 # 在 1999 端口启动服务，提供 ./output 目录下的文件
-./encv serve -p 1999 ./output
+./encv serve -port 1999 ./output
 ```
 
 使用 `mpv` 播放器观看时，需要手动指定字幕文件：
 
 ```bash
-mpv http://localhost:1999/video/321.4pm --sub-files=http://localhost:1999/subtitle/321.dm.ass
+mpv http://localhost:1999/321.sccgv --sub-files=http://localhost:1999/321.ass
 ```
 
 #### 3. 解密视频
@@ -86,8 +92,8 @@ mpv http://localhost:1999/video/321.4pm --sub-files=http://localhost:1999/subtit
 
 ```bash
 # 解密单个文件
-./encv decrypt -o ./_decrypt/ "./output/sample.4pm.enc"
-# 解密整个目录下的所有 .enc 文件
+./encv decrypt -o ./_decrypt/ "./output/sample.sccgv"
+# 解密整个目录下的所有 .sccgv 文件
 ./encv decrypt -o ./_decrypt/ ./output
 ```
 
@@ -99,28 +105,30 @@ mpv http://localhost:1999/video/321.4pm --sub-files=http://localhost:1999/subtit
 
 1. **构建 `encv-proxy`** (见上文安装部分)。
 2. **在 OpenList 中配置 WebDAV**:
-    * 进入管理页面，找到存储设置。
-    * 在【WebDAV 策略】中，选择 **使用代理地址**。
-    * URL 地址填入 `http://localhost:1998` (根据你的 `proxy_port` 修改)。
+
+   * 进入管理页面，找到存储设置。
+   * 在【WebDAV 策略】中，选择 **使用代理地址**。
+   * URL 地址填入 `http://localhost:1998` (根据你的 `proxy_port` 修改)。
 3. **获取 OpenList 令牌**:
-    * 在 OpenList 管理页面的【设置】->【其他】中，滚动到最底部，复制管理员令牌。
+
+   * 在 OpenList 管理页面的【设置】->【其他】中，滚动到最底部，复制管理员令牌。
 4. **启动 `encv-proxy`**:
-    * **推荐方式 (命令行指定令牌)**:
 
-        ```bash
-        ./encv-proxy -token "openlist-***********************************"
-        ```
+   * **推荐方式 (命令行指定令牌)**:
 
-    * **完整命令行参数**:
+     ```bash
+     ./encv-proxy -token "openlist-***********************************"
+     ```
+   * **完整命令行参数**:
 
-        ```bash
-        ./encv-proxy -proxy-port 1998 -openlist-host "http://localhost:5244" -token "openlist-***********************************"
-        ```
-
+     ```bash
+     ./encv-proxy -proxy-port 1998 -openlist-host "http://localhost:5244" -token "openlist-***********************************"
+     ```
 5. **为加密视频添加预览**:
-    * 在 OpenList 管理页面的【设置】->【预览】中。
-    * 在“视频类型”输入框中，添加 `enc` (注意用英文逗号分隔，且不包含句点)。
-    * 保存后即可在 OpenList 中预览加密视频。
+
+   * 在 OpenList 管理页面的【设置】->【预览】中。
+   * 在“视频类型”输入框中，添加 `enc` (注意用英文逗号分隔，且不包含句点)。
+   * 保存后即可在 OpenList 中预览加密视频。
 
 ---
 
@@ -175,7 +183,7 @@ gomobile bind -target=android -o encv.aar ./pkg/encv
 ./encv encrypt -o ./_test_output ./_videos
 ```
 
-然后检查 `_test_output` 目录下的 `.enc`, `.kvi` 和字幕文件是否符合预期。
+然后检查 `_test_output` 目录下的 `.sccgv`, `.kvi` 和字幕文件是否符合预期。
 
 ### 🐛 调试与技巧
 
