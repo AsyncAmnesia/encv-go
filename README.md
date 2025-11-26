@@ -1,4 +1,4 @@
-# encv-go
+# encv-go 怡念汐拂
 
 一个强大的命令行工具集/库，用于视频文件的加密、解密、流媒体传输，并提供与 OpenList 的无缝代理集成。
 
@@ -30,7 +30,7 @@ go build -o encv-proxy ./cmd/encv-proxy
 
 ```json
 {
-  "password": "my-super-secret-password",
+  "password": "my-encv_key，可以使用中文和标点符号✔",
   "outputPath": "./output",
   "port": 1999,
   "proxy_port": 1998,
@@ -41,21 +41,22 @@ go build -o encv-proxy ./cmd/encv-proxy
     "image": "sccgi",
     "audio": "sccga",
     "video": "sccgv"
-  }
+  },
+  "sccgv_settings": { "chunk_size": 100 }
 }
 ```
 
 **配置项说明:**
 
-| 键                | 描述                                     |
-| ----------------- | ---------------------------------------- |
-| `password`        | 用于加密和解密视频的密码。                 |
-| `outputPath`      | 加密后文件的默认输出目录。                 |
-| `port`            | `encv serve` 流媒体服务的默认监听端口。    |
-| `proxy_port`      | `encv-proxy` 代理服务的默认监听端口。      |
-| `openlist_host`   | OpenList 服务的地址。                      |
-| `bin_ext_group`   | 定义加密类型的容器后缀名，不建议自定义     |
-| `trackExtensions` | 需要处理的字幕/轨道文件扩展名列表。        |
+| 键                  | 描述                                      |
+| ------------------- | ----------------------------------------- |
+| `password`        | 用于加密和解密视频的密码。                |
+| `outputPath`      | 加密后文件的默认输出目录。                |
+| `port`            | `encv serve` 流媒体服务的默认监听端口。 |
+| `proxy_port`      | `encv-proxy` 代理服务的默认监听端口。   |
+| `openlist_host`   | OpenList 服务的地址。                     |
+| `bin_ext_group`   | 定义加密类型的容器后缀名，不建议自定义    |
+| `trackExtensions` | 需要处理的字幕/轨道文件扩展名列表。       |
 
 ### 💻 核心用法
 
@@ -119,16 +120,28 @@ mpv http://localhost:1999/321.sccgv --sub-files=http://localhost:1999/321.ass
      ```bash
      ./encv-proxy -token "openlist-***********************************"
      ```
+
    * **完整命令行参数**:
 
      ```bash
      ./encv-proxy -proxy-port 1998 -openlist-host "http://localhost:5244" -token "openlist-***********************************"
      ```
-5. **为加密视频添加预览**:
+
+5. **为加密文件添加预览**:
 
    * 在 OpenList 管理页面的【设置】->【预览】中。
-   * 在“视频类型”输入框中，添加 `enc` (注意用英文逗号分隔，且不包含句点)。
-   * 保存后即可在 OpenList 中预览加密视频。
+   * 根据配置项中的 `bin_ext_group` 按类别添加后缀名：
+
+    ```json
+    "bin_ext_group": {
+        "text": "sccgt",
+        "image": "sccgi",
+        "audio": "sccga",
+        "video": "sccgv"
+      }
+    ```
+
+* 保存后即可在 OpenList 中预览加密文件。
 
 ---
 
@@ -140,20 +153,27 @@ mpv http://localhost:1999/321.sccgv --sub-files=http://localhost:1999/321.ass
 
 ```md
 encv-go/
-├── cmd/                 # 主程序入口
+├── cmd/                 # 程序入口
 │   ├── encv/           # encv 程序
-│   └── encv-proxy/     # encv-proxy 代理程序
+│   └── encv-proxy/     # encv-proxy 代理程序（只代理 OpenList）
 ├── internal/            # 内部包，不对外暴露
-│   ├── crypto/         # 加解密核心逻辑
 │   ├── config/
-│   ├── processor/      # 视频预处理和元数据处理
-│   ├── proxy/          # 代理服务核心逻辑
-│   ├── server/          # 流媒体服务核心逻辑
+│   ├── container/
+│   ├── crypto/         # 加解密核心逻辑
+│   ├── processor/      # 预处理和元数据处理
+│   ├── proxy/          # OpenList 代理服务核心逻辑
+│   ├── server/          # HTTP服务（包括通用 webdav）核心逻辑
 │   └── types/          # 共享的数据结构定义
+│   └── utils/          # 通用工具
 ├── pkg/                # 对外暴露的公共包，作为库调用
 │   └── encv/
+│      └── api.go
+│      └── decrypt.go
+│      └── encrypt.go
+│      └── kvi.go
 ├── go.mod
 └── README.md
+└── config.user.json
 ```
 
 ### 🔨 构建

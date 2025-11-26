@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/Soltus/encv-go/internal/config"
@@ -32,21 +33,21 @@ func copyFile(src, dst string) error {
 	return err
 }
 
-// decryptSingleFile 解密单个容器文件并还原其关联的字幕
-func decryptSingleFile(containerPath, password, outputDir string) error {
-	fmt.Printf("-> Processing container file: %s\n", containerPath)
+// decryptSingleFile 解密单个容器文件（或分片文件集）并还原其关联的字幕
+func decryptSingleFile(anyChunkPath, password, outputDir string) error {
+	fmt.Printf("-> Processing file: %s\n", anyChunkPath)
 
-	// 1. 打开容器文件
-	containerFile, err := os.Open(containerPath)
+	// 1. 【关键修改】根据任意一个分片，找到主分片
+	mainChunkPath, err := container.FindMainChunk(anyChunkPath)
 	if err != nil {
-		return fmt.Errorf("failed to open container file: %w", err)
+		return fmt.Errorf("failed to find main chunk for '%s': %w", anyChunkPath, err)
 	}
-	defer containerFile.Close()
+	fmt.Printf("-> Found main chunk: %s\n", filepath.Base(mainChunkPath))
 
-	// 2. 解包，从中提取 KVI 数据和加密视频流
-	packedData, err := container.Unpack(containerFile)
+	// 2. 【关键修改】使用新的分片解包函数
+	packedData, err := container.UnpackChunked(mainChunkPath)
 	if err != nil {
-		return fmt.Errorf("failed to unpack container: %w", err)
+		return fmt.Errorf("failed to unpack main chunk: %w", err)
 	}
 	defer packedData.VideoStream.Close()
 
@@ -60,8 +61,8 @@ func decryptSingleFile(containerPath, password, outputDir string) error {
 	originalFilename := filepath.Base(index.OriginalFilename)
 	if originalFilename == "" || originalFilename == "unknown" {
 		fmt.Println("-> [Warning] 'original_filename' in KVI is missing. Inferring a default name.")
-		baseName := filepath.Base(containerPath)
-		baseName = strings.TrimSuffix(baseName, "."+config.GetVideoEncExtension())
+		// 从主分片路径推断基础名
+		baseName := strings.TrimSuffix(filepath.Base(mainChunkPath), config.GetVideoEncExtension())
 		originalFilename = baseName + "." + index.Format
 	}
 	outputVideoPath := filepath.Join(outputDir, originalFilename)
@@ -89,13 +90,13 @@ func decryptSingleFile(containerPath, password, outputDir string) error {
 
 	fmt.Printf("-> Successfully decrypted video: %s\n", originalFilename)
 
-	// --- 【新增】8. 还原字幕文件 ---
+	// --- 8. 还原字幕文件 ---
 	if len(index.Subtitles) > 0 {
 		fmt.Println("-> Restoring associated subtitle files...")
-		sourceDir := filepath.Dir(containerPath) // 字幕文件与容器文件在同一目录
+		// 字幕文件与主分片在同一目录
+		sourceDir := filepath.Dir(mainChunkPath)
 
 		for _, track := range index.Subtitles {
-			// track.Title 是加密后的文件名, track.Filename 是原始文件名
 			sourceTrackName := track.Title
 			destTrackName := track.Filename
 
@@ -107,13 +108,11 @@ func decryptSingleFile(containerPath, password, outputDir string) error {
 			sourceTrackPath := filepath.Join(sourceDir, sourceTrackName)
 			destTrackPath := filepath.Join(outputDir, destTrackName)
 
-			// 检查源字幕文件是否存在
 			if _, err := os.Stat(sourceTrackPath); os.IsNotExist(err) {
 				fmt.Printf("-> [Warning] Track file not found at source: %s. Skipping.\n", sourceTrackPath)
 				continue
 			}
 
-			// 复制文件
 			if err := copyFile(sourceTrackPath, destTrackPath); err != nil {
 				fmt.Printf("-> [Error] Failed to restore subtitle '%s': %v\n", destTrackName, err)
 			} else {
@@ -127,7 +126,7 @@ func decryptSingleFile(containerPath, password, outputDir string) error {
 	return nil
 }
 
-// Decrypt ... (保持不变) ...
+// Decrypt ... (修改以支持分片) ...
 func Decrypt(inputPath string, opts DecryptOptions) error {
 	if opts.Password == "" || opts.OutputDir == "" {
 		return ErrMissingOptions
@@ -157,26 +156,56 @@ func Decrypt(inputPath string, opts DecryptOptions) error {
 		return fmt.Errorf("failed to read directory: %w", err)
 	}
 
-	containerFiles := []os.DirEntry{}
+	// 【关键修改】收集所有容器文件并排序，确保处理顺序一致
+	var containerFiles []os.DirEntry
 	for _, entry := range entries {
 		if !entry.IsDir() && config.IsContainerFile(entry.Name()) {
 			containerFiles = append(containerFiles, entry)
 		}
 	}
+	sort.Slice(containerFiles, func(i, j int) bool {
+		return containerFiles[i].Name() < containerFiles[j].Name()
+	})
 
 	if len(containerFiles) == 0 {
 		fmt.Println("-> No ENCV container files found in the directory.")
 		return nil
 	}
 
+	// 【关键修改】使用 map 来跟踪已处理的文件集，避免重复解密
+	processedPrefixes := make(map[string]bool)
+
 	for _, entry := range containerFiles {
-		containerPath := filepath.Join(inputPath, entry.Name())
-		fmt.Printf("\n--- Attempting to decrypt %s ---\n", entry.Name())
-		if err := decryptSingleFile(containerPath, opts.Password, opts.OutputDir); err != nil {
-			fmt.Printf("-> [Error] Failed to decrypt %s: %v\n", entry.Name(), err)
-		} else {
-			fmt.Printf("-> Successfully decrypted %s\n", entry.Name())
+		// 从文件名中提取基础前缀（例如 "movie.sccgv"）
+		basePrefix := getBasePrefix(entry.Name())
+		if processedPrefixes[basePrefix] {
+			continue // 这个文件集已经处理过了
 		}
+
+		containerPath := filepath.Join(inputPath, entry.Name())
+		fmt.Printf("\n--- Attempting to decrypt file set: %s ---\n", basePrefix)
+		if err := decryptSingleFile(containerPath, opts.Password, opts.OutputDir); err != nil {
+			fmt.Printf("-> [Error] Failed to decrypt %s: %v\n", basePrefix, err)
+		} else {
+			fmt.Printf("-> Successfully decrypted %s\n", basePrefix)
+		}
+
+		// 标记这个文件集为已处理
+		processedPrefixes[basePrefix] = true
 	}
+
 	return nil
+}
+
+// getBasePrefix 从容器文件名中提取基础前缀
+// 例如: "movie.sccgv.enc2" -> "movie.sccgv"
+//
+//	"movie.sccgv"      -> "movie.sccgv"
+func getBasePrefix(fileName string) string {
+	// 检查是否是子分片
+	if idx := strings.LastIndex(fileName, ".encv"); idx > 0 {
+		return fileName[:idx]
+	}
+	// 如果不是子分片，说明它就是主分片或单文件，直接返回其名称
+	return fileName
 }

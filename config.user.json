@@ -1,5 +1,5 @@
 {
-  "password": "my-super-secret-password",
+  "password": "my-encv_key，可以使用中文和标点符号✔",
   "outputPath": "./output",
   "port": 1999,
   "proxy_port": 1998,
@@ -10,5 +10,6 @@
     "image": "sccgi",
     "audio": "sccga",
     "video": "sccgv"
-  }
+  },
+  "sccgv_settings": { "chunk_size": 100 }
 }

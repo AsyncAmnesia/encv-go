@@ -36,11 +36,17 @@ type BinExtGroup struct {
 	Video string `json:"video"`
 }
 
+// SccgvSettings 包含 SCCGV 容器的特定设置
+type SccgvSettings struct {
+	ChunkSizeMB int `json:"chunk_size"`
+}
+
 // UserConfig 用户配置文件结构
 type UserConfig struct {
-	Password        string      `json:"password"`
-	OutputPath      string      `json:"outputPath"`
-	Port            int         `json:"port"`
-	TrackExtensions []string    `json:"trackExtensions"`
-	BinExtGroup     BinExtGroup `json:"bin_ext_group"`
+	Password        string        `json:"password"`
+	OutputPath      string        `json:"outputPath"`
+	Port            int           `json:"port"`
+	TrackExtensions []string      `json:"trackExtensions"`
+	BinExtGroup     BinExtGroup   `json:"bin_ext_group"`
+	SccgvSettings   SccgvSettings `json:"sccgv_settings"`
 }

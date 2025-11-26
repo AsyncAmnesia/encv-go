@@ -147,7 +147,7 @@ func main() {
 		log.Printf("   Serving files from: %s\n", finalDir)
 		log.Printf("   Access it at: http://localhost%s\n", addr)
 		log.Println("\n--- How to Play ---")
-		log.Printf("   mpv --no-config http://localhost%s/video/<video_name_without_extension>\n", addr)
+		log.Printf("   mpv --no-config http://localhost%s/<video_name_without_extension>\n", addr)
 		log.Println("\n(Press Ctrl+C in this terminal to stop the server)")
 
 		select {} // Keep server running

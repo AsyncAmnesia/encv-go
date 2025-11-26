@@ -6,64 +6,53 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/Soltus/encv-go/internal/crypto"
 )
 
-const (
-	// ContainerMagicNumber 是 .encv 文件的魔法数字
-	ContainerMagicNumber = "encv-container-v1"
-)
-
-// Pack 将加密视频文件和 KVI 文件打包成一个 .encv 容器文件
-func Pack(videoFilePath, kviFilePath, outputContainerPath string) error {
-	// 1. 打开输入文件
-	videoFile, err := os.Open(videoFilePath)
+// Pack 将加密视频流和 KVI 打包成一个 ENCV 容器文件
+func Pack(videoPath, kviPath, outputPath string) error {
+	// ... (文件打开和读取逻辑保持不变) ...
+	videoFile, err := os.Open(videoPath)
 	if err != nil {
-		return fmt.Errorf("failed to open video file %s: %w", videoFilePath, err)
+		return err
 	}
 	defer videoFile.Close()
 
-	kviFile, err := os.Open(kviFilePath)
+	kviData, err := os.ReadFile(kviPath)
 	if err != nil {
-		return fmt.Errorf("failed to open KVI file %s: %w", kviFilePath, err)
-	}
-	defer kviFile.Close()
-
-	// 2. 读取 KVI 数据到内存
-	kviData, err := io.ReadAll(kviFile)
-	if err != nil {
-		return fmt.Errorf("failed to read KVI data: %w", err)
+		return err
 	}
 
-	// 3. 创建输出容器文件
-	outFile, err := os.Create(outputContainerPath)
+	// ... (创建输出文件逻辑保持不变) ...
+	outFile, err := os.Create(outputPath)
 	if err != nil {
-		return fmt.Errorf("failed to create container file %s: %w", outputContainerPath, err)
+		return err
 	}
 	defer outFile.Close()
 
-	// 4. 写入文件头
-	// 4.1 写入魔法数字
-	if _, err := outFile.Write([]byte(ContainerMagicNumber)); err != nil {
-		return fmt.Errorf("failed to write magic number: %w", err)
+	// 【修改】使用 crypto 包中定义的魔法数字
+	// 写入魔法数字
+	if _, err := outFile.Write([]byte(crypto.ContainerMagicNumber)); err != nil {
+		return fmt.Errorf("failed to write container magic number: %w", err)
 	}
 
-	// 4.2 写入 KVI 数据长度
+	// 写入 KVI 长度
 	kviLen := uint64(len(kviData))
 	if err := binary.Write(outFile, binary.LittleEndian, kviLen); err != nil {
 		return fmt.Errorf("failed to write KVI length: %w", err)
 	}
 
-	// 4.3 写入 KVI 数据
+	// 写入 KVI
 	if _, err := outFile.Write(kviData); err != nil {
 		return fmt.Errorf("failed to write KVI data: %w", err)
 	}
 
-	// 5. 复制加密视频数据
+	// 写入加密视频流
 	if _, err := io.Copy(outFile, videoFile); err != nil {
-		return fmt.Errorf("failed to copy video data: %w", err)
+		return fmt.Errorf("failed to write video stream: %w", err)
 	}
 
-	fmt.Printf("-> Successfully packed %s and %s into %s\n", videoFilePath, kviFilePath, outputContainerPath)
 	return nil
 }
 
@@ -73,32 +62,30 @@ type PackedData struct {
 	VideoStream io.ReadCloser // 视频流使用 io.ReadCloser，避免将大文件读入内存
 }
 
-// Unpack 从一个 io.Reader 中解包出 KVI 数据和视频流
-func Unpack(reader io.Reader) (*PackedData, error) {
-	// 1. 验证魔法数字
-	magicBuf := make([]byte, len(ContainerMagicNumber))
-	if _, err := io.ReadFull(reader, magicBuf); err != nil {
-		return nil, fmt.Errorf("failed to read magic number: %w", err)
+// Unpack 从 ENCV 容器文件中解包出 KVI 和加密视频流
+func Unpack(file io.Reader) (*PackedData, error) {
+	// 【修改】使用 crypto 包中定义的魔法数字
+	// 读取并验证魔法数字
+	magic := make([]byte, len(crypto.ContainerMagicNumber))
+	if _, err := io.ReadFull(file, magic); err != nil {
+		return nil, fmt.Errorf("failed to read container magic number: %w", err)
 	}
-	if string(magicBuf) != ContainerMagicNumber {
+	if string(magic) != crypto.ContainerMagicNumber {
 		return nil, errors.New("invalid container file: magic number mismatch")
 	}
 
-	// 2. 读取 KVI 数据长度
+	// ... (后续逻辑保持不变) ...
 	var kviLen uint64
-	if err := binary.Read(reader, binary.LittleEndian, &kviLen); err != nil {
+	if err := binary.Read(file, binary.LittleEndian, &kviLen); err != nil {
 		return nil, fmt.Errorf("failed to read KVI length: %w", err)
 	}
 
-	// 3. 读取 KVI 数据
 	kviData := make([]byte, kviLen)
-	if _, err := io.ReadFull(reader, kviData); err != nil {
+	if _, err := io.ReadFull(file, kviData); err != nil {
 		return nil, fmt.Errorf("failed to read KVI data: %w", err)
 	}
 
-	// 4. 视频流就是 reader 中剩余的所有数据
-	// 使用 io.NopCloser 包装 reader，使其成为一个 ReadCloser
-	videoStream := io.NopCloser(reader)
+	videoStream := io.NopCloser(file)
 
 	return &PackedData{
 		KVIData:     kviData,

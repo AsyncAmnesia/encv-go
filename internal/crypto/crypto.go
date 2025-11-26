@@ -3,6 +3,7 @@ package crypto
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
@@ -24,10 +25,21 @@ const (
 	// Iterations PBKDF2 迭代次数
 	Iterations = 100000
 
-	// MagicNumber 是用于标识 encv 加密文件的魔法数字
-	MagicNumber = "encv-magic-v1"
-	// MagicNumberLength 是魔法数字的字节长度
-	MagicNumberLength = len(MagicNumber)
+	// MagicNumber 是流加密层，它告诉程序：“我包裹着的数据是加密的，请用正确的密钥和 IV 来解密我。”
+	// 其他则是容器封装层，它告诉程序：“我是一个 encv 容器，请用解析 encv 的方法来处理我。”
+	MagicNumber = "encv-MagicNumber-v1"
+	// encv 容器
+	ContainerMagicNumber = "encv-ContainerMagicNumber-v1"
+	// encv 视频容器
+	SccgvContainerMagicNumber = "encv-SccgvContainerMagicNumber-v1"
+	SccgvMainChunkMagic       = "encv-sccgv-chunk-main-v1"
+	SccgvSubChunkMagic        = "encv-sccgv-chunk-sub-v1"
+	// encv 文本容器
+	SccgtContainerMagicNumber = "encv-SccgtContainerMagicNumber-v1"
+	// encv 音频容器
+	SccgaContainerMagicNumber = "encv-SccgaContainerMagicNumber-v1"
+	// encv 图像容器
+	SccgiContainerMagicNumber = "encv-SccgiContainerMagicNumber-v1"
 	// IVLength 是 AES CTR 模式 IV 的标准长度
 	IVLength = aes.BlockSize
 )
@@ -70,10 +82,40 @@ func EncryptStream(r io.Reader, w io.Writer, key []byte, iv []byte) error {
 	return nil
 }
 
+// 【新增】GetDecryptReader 创建一个 io.Reader，它会透明地解密来自底层加密流的数据。
+// 它会处理从流中读取和验证魔法数字和 IV 的逻辑。
+func GetDecryptReader(r io.Reader, key []byte) (io.Reader, error) {
+	// 1. 读取并验证魔法标识
+	magic := make([]byte, len(MagicNumber))
+	if _, err := io.ReadFull(r, magic); err != nil {
+		return nil, fmt.Errorf("failed to read magic number: %w", err)
+	}
+	if string(magic) != MagicNumber {
+		return nil, fmt.Errorf("invalid file format: not an encv encrypted file")
+	}
+
+	// 2. 读取 IV
+	iv := make([]byte, IVLength)
+	if _, err := io.ReadFull(r, iv); err != nil {
+		return nil, fmt.Errorf("failed to read IV: %w", err)
+	}
+
+	// 3. 创建解密器
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cipher block: %w", err)
+	}
+
+	stream := cipher.NewCTR(block, iv)
+
+	// 4. 返回一个封装了解密逻辑的 reader
+	return &streamReader{stream: stream, reader: r}, nil
+}
+
 // DecryptStream 从加密流中读取魔法标识和IV，验证后解密数据
 func DecryptStream(r io.Reader, w io.Writer, key []byte) error {
 	// 1. 读取并验证魔法标识
-	magic := make([]byte, MagicNumberLength)
+	magic := make([]byte, len(MagicNumber))
 	if _, err := io.ReadFull(r, magic); err != nil {
 		return fmt.Errorf("failed to read magic number: %w", err)
 	}
@@ -127,6 +169,21 @@ func (sr streamReader) Read(p []byte) (n int, err error) {
 	}
 	sr.stream.XORKeyStream(p, p[:n])
 	return
+}
+
+// 【新增】Close 方法使 streamWriter 实现 io.WriteCloser
+func (sw streamWriter) Close() error {
+	// 对于 CTR 模式，不需要特殊的清理操作
+	return nil
+}
+
+// GenerateIV 生成一个随机的初始化向量 (IV)
+func GenerateIV() ([]byte, error) {
+	iv := make([]byte, IVLength)
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		return nil, fmt.Errorf("failed to generate IV: %w", err)
+	}
+	return iv, nil
 }
 
 // Base64Encode 编码为 Base64 字符串

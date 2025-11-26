@@ -5,7 +5,7 @@
 *.so
 *.dylib
 /encv
-/encv.7z
+/*.7z
 /encv-proxy
 
 # dict

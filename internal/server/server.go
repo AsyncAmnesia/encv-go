@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/Soltus/encv-go/internal/container"
 	"github.com/Soltus/encv-go/internal/crypto"
 	"github.com/Soltus/encv-go/internal/types"
+	"github.com/Soltus/encv-go/internal/utils"
 )
 
 // Player ... (保持不变) ...
@@ -55,7 +57,7 @@ func (p *Player) Stop() {
 	}
 }
 
-// 【关键修复 1】重写主路由处理器
+// 主路由处理器
 func (p *Player) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// 从 URL 路径中提取相对于服务器根目录的路径
 	// 例如："/output/321.sccgv" -> "output/321.sccgv"
@@ -72,7 +74,7 @@ func (p *Player) handleRequest(w http.ResponseWriter, r *http.Request) {
 	p.servePath(w, r, relativePath)
 }
 
-// 【关键修复 2】新的服务函数，能处理文件和目录
+// 新的服务函数，能处理文件和目录
 func (p *Player) servePath(w http.ResponseWriter, r *http.Request, relativePath string) {
 	// 构建完整的文件系统路径
 	fullPath := filepath.Join(p.dir, relativePath)
@@ -113,7 +115,9 @@ func (p *Player) serveFile(w http.ResponseWriter, r *http.Request, fullPath stri
 	// 判断是否是 ENCV 容器文件
 	if config.IsContainerFile(fileName) {
 		log.Printf("-> [File] Serving ENCV container: %s", fileName)
-		p.serveEncryptedContainer(w, r, fullPath)
+		// p.serveEncryptedContainer(w, r, fullPath)
+		// 【关键修改】调用封装后的函数，不再关心内部是分片还是单文件
+		p.serveEncryptedContent(w, r, fullPath)
 		return
 	}
 
@@ -258,42 +262,73 @@ func (p *Player) listFilesInDir(w http.ResponseWriter, r *http.Request, dirPath,
 	}
 }
 
-// serveEncryptedContainer ... (保持不变) ...
-func (p *Player) serveEncryptedContainer(w http.ResponseWriter, r *http.Request, containerPath string) {
-	containerFile, err := os.Open(containerPath)
+// 统一处理所有加密内容的请求（无论是分片还是单文件）
+func (p *Player) serveEncryptedContent(w http.ResponseWriter, r *http.Request, anyChunkPath string) {
+	// 1. 【核心修复】根据任意一个分片，找到主分片
+	mainChunkPath, err := container.FindMainChunk(anyChunkPath)
 	if err != nil {
-		http.Error(w, "Failed to open container file", http.StatusNotFound)
+		log.Printf("-> [File] Failed to find main chunk for '%s': %v", anyChunkPath, err)
+		http.Error(w, "Invalid or incomplete chunk set", http.StatusBadRequest)
 		return
 	}
-	defer containerFile.Close()
+	log.Printf("-> [File] Found main chunk: %s", filepath.Base(mainChunkPath))
 
-	packedData, err := container.Unpack(containerFile)
+	// 2. 【核心修复】使用新的分片解包函数
+	packedData, err := container.UnpackChunked(mainChunkPath)
 	if err != nil {
-		log.Printf("-> [File] Failed to unpack container: %v", err)
+		log.Printf("-> [File] Failed to unpack main chunk: %v", err)
 		http.Error(w, "Invalid container file", http.StatusBadRequest)
+		return
+	}
+
+	// 【防御性修复】检查 packedData 是否为 nil，以防止 panic
+	if packedData == nil {
+		// 这种情况理论上不应该发生，但为了健壮性，我们处理它
+		log.Printf("-> [File] CRITICAL: UnpackChunked returned nil data without error. This is a bug.")
+		http.Error(w, "Internal server error during unpacking", http.StatusInternalServerError)
 		return
 	}
 	defer packedData.VideoStream.Close()
 
+	// 3. 解析 KVI 数据
 	var index types.VideoIndex
 	if err := json.Unmarshal(packedData.KVIData, &index); err != nil {
-		log.Printf("-> [File] Failed to parse KVI from container: %v", err)
-		http.Error(w, "Failed to parse KVI", http.StatusInternalServerError)
+		log.Printf("-> [File] Failed to parse KVI: %v", err)
+		http.Error(w, "Failed to parse container metadata", http.StatusInternalServerError)
 		return
 	}
 
+	// 4. 准备解密密钥
 	salt, err := crypto.Base64Decode(index.Encryption.SaltBase64)
 	if err != nil {
-		http.Error(w, "Invalid salt in KVI", http.StatusInternalServerError)
+		log.Printf("-> [File] Failed to decode salt: %v", err)
+		http.Error(w, "Failed to decode container metadata", http.StatusInternalServerError)
 		return
 	}
 	key := crypto.GenerateKey(p.password, salt)
 
-	w.Header().Set("Content-Type", "video/"+index.Format)
-	w.Header().Set("Cache-Control", "no-cache")
+	// 5. 设置响应头
+	w.Header().Set("Content-Type", utils.GetContentType(index.Format))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", index.OriginalFilename))
 	w.Header().Set("Accept-Ranges", "bytes")
 
-	if err := crypto.DecryptStream(packedData.VideoStream, w, key); err != nil {
-		log.Printf("-> [File] Error decrypting stream: %v", err)
+	// 6. 流式解密并写入响应体
+	decryptedReader, err := crypto.GetDecryptReader(packedData.VideoStream, key)
+	if err != nil {
+		log.Printf("-> [File] Failed to create decrypt reader: %v", err)
+		http.Error(w, "Failed to initialize decryption", http.StatusInternalServerError)
+		return
 	}
+
+	if _, err := io.Copy(w, decryptedReader); err != nil {
+		if !isConnectionClosedError(err) {
+			log.Printf("-> [File] Error streaming decrypted content: %v", err)
+		}
+	}
+}
+
+// isConnectionClosedError 判断错误是否由客户端断开连接引起
+func isConnectionClosedError(err error) bool {
+	errStr := err.Error()
+	return strings.Contains(errStr, "connection reset by peer") || strings.Contains(errStr, "broken pipe")
 }

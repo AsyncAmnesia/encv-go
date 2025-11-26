@@ -3,26 +3,22 @@
 package encv
 
 import (
-	"os"
-
 	"github.com/Soltus/encv-go/internal/container"
 )
 
-// ExtractKVI 从给定的 ENCV 容器文件中提取原始的 KVI 数据。
-func ExtractKVI(containerPath string) ([]byte, error) {
-	// 1. 打开容器文件
-	containerFile, err := os.Open(containerPath)
+// ExtractKVI 从给定的 ENCV 容器文件（或其任意分片）中提取原始的 KVI 数据。
+func ExtractKVI(anyChunkPath string) ([]byte, error) {
+	// 1. 【关键修改】根据任意一个分片，找到主分片
+	mainChunkPath, err := container.FindMainChunk(anyChunkPath)
 	if err != nil {
 		return nil, err
 	}
-	defer containerFile.Close()
 
-	// 2. 解包
-	packedData, err := container.Unpack(containerFile)
+	// 2. 【关键修改】使用新的分片解包函数
+	packedData, err := container.UnpackChunked(mainChunkPath)
 	if err != nil {
 		return nil, err
 	}
-	// 我们只需要 KVI 数据，所以关闭视频流以释放资源
 	defer packedData.VideoStream.Close()
 
 	// 3. 返回 KVI 数据

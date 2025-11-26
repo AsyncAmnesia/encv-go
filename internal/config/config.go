@@ -25,6 +25,9 @@ var defaultConfig = types.UserConfig{
 		// video 的默认值是 "enc"
 		Video: "enc",
 	},
+	SccgvSettings: types.SccgvSettings{
+		ChunkSizeMB: 0,
+	},
 }
 
 // LoadUserConfig 加载配置文件，如果文件不存在或部分配置缺失，则使用默认值
@@ -74,9 +77,24 @@ func LoadUserConfig() (*types.UserConfig, error) {
 	if userConfig.BinExtGroup.Video != "" {
 		GlobalConfig.BinExtGroup.Video = userConfig.BinExtGroup.Video
 	}
+	// 检查用户是否在配置文件中设置了 chunk_size，这表明他们想启用分片
+	if userConfig.SccgvSettings.ChunkSizeMB != 0 {
+		GlobalConfig.SccgvSettings = userConfig.SccgvSettings
+		fmt.Printf("-> [Config] SCCGV chunking is enabled with size: %d MB\n", GlobalConfig.SccgvSettings.ChunkSizeMB)
+	}
 
 	fmt.Printf("-> [Config] Loaded user config. Video extension set to '.%s'\n", GlobalConfig.BinExtGroup.Video)
 	return GlobalConfig, nil
+}
+
+// GetAllContainerExtensions 返回所有已知的容器扩展名（带点号）
+func GetAllContainerExtensions() []string {
+	return []string{
+		"." + GlobalConfig.BinExtGroup.Video, // .sccgv
+		"." + GlobalConfig.BinExtGroup.Text,  // .sccgt
+		"." + GlobalConfig.BinExtGroup.Audio, // .sccga
+		"." + GlobalConfig.BinExtGroup.Image, // .sccgi
+	}
 }
 
 // GetVideoEncExtension 获取当前配置的视频加密后缀（带点号）
@@ -84,13 +102,52 @@ func GetVideoEncExtension() string {
 	return "." + GlobalConfig.BinExtGroup.Video
 }
 
-// 【重构函数】IsContainerFile 检查路径是否是已知的容器文件
-// 这个函数现在与 tryGetKVI 的逻辑类似，但更简单，因为它只需要判断，不需要生成
-func IsContainerFile(path string) bool {
-	return strings.HasSuffix(path, GetVideoEncExtension())
+// IsContainerPath 检查路径是否是已知的容器文件（基于扩展名）
+// 这是一个快速的、非 I/O 的检查，适用于初步筛选。
+func IsContainerPath(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	for _, containerExt := range GetAllContainerExtensions() {
+		if ext == containerExt {
+			return true
+		}
+	}
+	return false
 }
 
-// --- 全局 MIME 类型映射表 ---
+// IsContainerFile 为了向后兼容保留，建议直接使用 IsContainerPath
+func IsContainerFile(path string) bool {
+	return IsContainerPath(path)
+}
+
+// IsSccgvChunkingEnabled 检查用户是否在配置中启用了分片
+// 只有当 "sccgv_settings" -> "chunk_size" 被明确设置为一个正数时，才返回 true
+func IsSccgvChunkingEnabled() bool {
+	cfg, err := LoadUserConfig()
+	if err != nil {
+		// 如果配置加载失败，为安全起见默认禁用分片
+		return false
+	}
+	return cfg.SccgvSettings.ChunkSizeMB > 0
+}
+
+// GetSccgvChunkSize 获取 SCCGV 分片大小（单位：字节）
+// 它会处理校验逻辑：最小 100MB，向下取整
+// 注意：此函数仅在 IsSccgvChunkingEnabled() 返回 true 时才应被调用
+func GetSccgvChunkSize() int {
+	cfg, err := LoadUserConfig()
+	if err != nil {
+		// 理论上不应到达这里，但提供一个安全的默认值
+		return 100 * 1024 * 1024
+	}
+
+	sizeMB := cfg.SccgvSettings.ChunkSizeMB
+	if sizeMB < 100 {
+		sizeMB = 100
+	}
+	return sizeMB * 1024 * 1024
+}
+
+// --- 全局 MIME 类型映射表，以 OpenList 为准 ---
 var ContentTypes = map[string]string{
 	// Text
 	"txt":        "text/plain; charset=utf-8",

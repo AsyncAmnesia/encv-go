@@ -3,6 +3,7 @@ package encv
 import (
 	"crypto/rand"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/Soltus/encv-go/internal/container"
 	"github.com/Soltus/encv-go/internal/crypto"
 	"github.com/Soltus/encv-go/internal/processor"
+	"github.com/Soltus/encv-go/internal/utils"
 )
 
 // detectContainerFormat 使用 ffprobe 检测视频文件的真实容器格式
@@ -90,6 +92,13 @@ func encryptFile(inputPath string, opts EncryptOptions, salt []byte) error {
 	// processor.ProcessVideo 会在文件内部写入魔法数字，所以文件名后缀不重要
 	tempEncPath := filepath.Join(opts.OutputDir, baseName+".encv_tmp_enc")   // 临时加密文件
 	tempIndexPath := filepath.Join(opts.OutputDir, baseName+".encv_tmp_kvi") // 临时 KVI 文件
+	// 【关键修复】使用 defer 确保无论如何都会清理临时文件
+	defer func() {
+		fmt.Println("-> Cleaning up temporary files...")
+		// 忽略 os.Remove 的错误，因为清理失败不应该覆盖原始错误
+		_ = os.Remove(tempEncPath)
+		_ = os.Remove(tempIndexPath)
+	}()
 
 	fmt.Printf("-> Detected format: %s\n", detectedFormat)
 
@@ -99,19 +108,88 @@ func encryptFile(inputPath string, opts EncryptOptions, salt []byte) error {
 	}
 	fmt.Printf("-> Successfully processed video and tracks to temporary files.\n")
 
-	containerPath := filepath.Join(opts.OutputDir, baseName+config.GetVideoEncExtension())
-
-	// 5. 打包
-	if err := container.Pack(tempEncPath, tempIndexPath, containerPath); err != nil {
-		return fmt.Errorf("failed to pack into container: %w", err)
+	// 4. 打包前的准备：读取 KVI 和加密视频流
+	kviData, err := os.ReadFile(tempIndexPath)
+	if err != nil {
+		return fmt.Errorf("failed to read KVI data: %w", err)
 	}
 
-	// 6. 清理临时文件
-	fmt.Println("-> Cleaning up temporary files...")
-	os.Remove(tempEncPath)
-	os.Remove(tempIndexPath)
+	encFile, err := os.Open(tempEncPath)
+	if err != nil {
+		return fmt.Errorf("failed to open temp encrypted file: %w", err)
+	}
+	defer encFile.Close()
 
-	fmt.Printf("✅ Encryption and packing complete. Final file: %s\n", containerPath)
+	// 【修正】使用正确的API构建最终文件名
+	finalContainerPath := filepath.Join(opts.OutputDir, baseName+config.GetVideoEncExtension())
+
+	if config.IsSccgvChunkingEnabled() {
+		// --- 分片逻辑 ---
+		fmt.Println("-> Chunking is enabled. Preparing to create chunked container...")
+
+		// 4.1. 【关键修复】获取加密后文件的大小，用于判断是否需要分片
+		encryptedFileInfo, err := os.Stat(tempEncPath)
+		if err != nil {
+			return fmt.Errorf("failed to stat encrypted temp file: %w", err)
+		}
+		totalEncryptedSize := encryptedFileInfo.Size()
+
+		// 4.2. 计算原始文件的 MD5
+		originalMD5, err := utils.CalculateOriginalMD5(inputPath)
+		if err != nil {
+			return fmt.Errorf("failed to calculate original file MD5: %w", err)
+		}
+
+		// 4.3. 主分片路径就是最终的容器路径
+		mainChunkPath := finalContainerPath
+
+		// 4.4. 获取分片大小
+		chunkSize := config.GetSccgvChunkSize()
+
+		// 4.5. 写入主分片
+		fmt.Printf("-> Writing main chunk: %s\n", filepath.Base(mainChunkPath))
+		if err := container.WriteMainChunk(mainChunkPath, kviData, io.LimitReader(encFile, int64(chunkSize)), originalMD5); err != nil {
+			return fmt.Errorf("failed to write main chunk: %w", err)
+		}
+
+		// 4.6. 【关键修复】判断是否需要创建子分片
+		// 如果总大小小于等于分片大小，主分片已经包含了所有数据，无需再分片
+		if totalEncryptedSize > int64(chunkSize) {
+			fmt.Println("-> File is larger than chunk size, creating sub-chunks...")
+			chunkIndex := 2
+			for {
+				subChunkPath := fmt.Sprintf("%s%s%d", mainChunkPath, container.SubChunkSuffix, chunkIndex)
+				fmt.Printf("-> Writing sub-chunk: %s\n", filepath.Base(subChunkPath))
+				written, err := container.WriteSubChunk(mainChunkPath, chunkIndex, io.LimitReader(encFile, int64(chunkSize)), originalMD5)
+				if err != nil {
+					return fmt.Errorf("failed to write sub chunk %d: %w", chunkIndex, err)
+				}
+				if written == 0 { // EOF
+					break
+				}
+				chunkIndex++
+			}
+		} else {
+			fmt.Printf("-> Encrypted file size (%d) is not larger than chunk size (%d), no sub-chunks needed.\n", totalEncryptedSize, chunkSize)
+		}
+
+		fmt.Printf("✅ Encryption and chunking complete. Main chunk: %s\n", mainChunkPath)
+
+	} else {
+		// --- 单文件逻辑 ---
+		fmt.Println("-> Chunking is disabled. Creating single-file container...")
+
+		// 4.1. 关闭临时文件，因为 Pack 函数需要文件路径
+		encFile.Close()
+		// 重新打开，因为 defer 已经安排了关闭
+		// 更好的方法是重写 Pack 函数以接受 io.Reader，但为了最小化改动，我们先用路径
+		if err := container.Pack(tempEncPath, tempIndexPath, finalContainerPath); err != nil {
+			return fmt.Errorf("failed to pack into container: %w", err)
+		}
+
+		fmt.Printf("✅ Encryption and packing complete. Final file: %s\n", finalContainerPath)
+	}
+
 	return nil
 }
 
