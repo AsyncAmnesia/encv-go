@@ -89,7 +89,7 @@ func Encrypt(inputPath string, opts EncryptOptions) error {
 	return encryptFile(inputPath, opts, salt)
 }
 
-// encryptFile 加密单个文件
+// encryptFile 加密单个文件 (已修改以支持带优先级的多字幕)
 func encryptFile(inputPath string, opts EncryptOptions, salt []byte) error {
 	originalFilename := filepath.Base(inputPath)
 	detectedFormat, err := detectContainerFormat(inputPath)
@@ -99,13 +99,21 @@ func encryptFile(inputPath string, opts EncryptOptions, salt []byte) error {
 	newExt := getNewExtension(detectedFormat)
 	baseName := strings.TrimSuffix(originalFilename, filepath.Ext(originalFilename))
 
-	outputEncPath := filepath.Join(opts.OutputDir, fmt.Sprintf("%s.%s.enc", baseName, newExt))
-	outputIndexPath := filepath.Join(opts.OutputDir, fmt.Sprintf("%s.%s.kvi", baseName, newExt))
+	// 定义加密后的基础名
+	encBaseName := fmt.Sprintf("%s.%s", baseName, newExt)
+
+	outputEncPath := filepath.Join(opts.OutputDir, fmt.Sprintf("%s.enc", encBaseName))
+	outputIndexPath := filepath.Join(opts.OutputDir, fmt.Sprintf("%s.kvi", encBaseName))
 
 	fmt.Printf("-> Detected format: %s, New extension: .%s\n", detectedFormat, newExt)
 
-	// 确保 processor.ProcessVideo 接受 originalFilename 参数
-	return processor.ProcessVideo(inputPath, outputEncPath, outputIndexPath, opts.Password, salt, opts.TrackExtensions, originalFilename)
+	// 调用 processor 处理视频，现在它会处理所有事情
+	if err := processor.ProcessVideo(inputPath, outputEncPath, outputIndexPath, opts.Password, salt, opts.TrackExtensions, originalFilename, encBaseName); err != nil {
+		return fmt.Errorf("failed to process video: %w", err)
+	}
+
+	fmt.Printf("-> Successfully processed video and tracks: %s\n", outputEncPath)
+	return nil
 }
 
 // encryptDir 加密目录中的所有视频文件

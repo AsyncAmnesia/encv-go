@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"os"
 
@@ -44,7 +43,7 @@ func main() {
 		if err := encv.Encrypt(inputPath, opts); err != nil {
 			log.Fatalf("Encryption failed: %v", err)
 		}
-		fmt.Printf("✅ Encryption complete. Output in: %s\n", opts.OutputDir)
+		log.Printf("✅ Encryption complete. Output in: %s\n", opts.OutputDir)
 
 	case "decrypt":
 		decryptCmd := flag.NewFlagSet("decrypt", flag.ExitOnError)
@@ -67,7 +66,7 @@ func main() {
 		if err := encv.Decrypt(inputPath, opts); err != nil {
 			log.Fatalf("Decryption failed: %v", err)
 		}
-		fmt.Printf("✅ Decryption complete. Output in: %s\n", opts.OutputDir)
+		log.Printf("✅ Decryption complete. Output in: %s\n", opts.OutputDir)
 
 	case "serve":
 		serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
@@ -99,12 +98,12 @@ func main() {
 			log.Fatalf("Failed to start server: %v", err)
 		}
 
-		fmt.Printf("\n✅ Server started successfully!\n")
-		fmt.Printf("   Serving files from: %s\n", finalDir)
-		fmt.Printf("   Access it at: http://localhost%s\n", addr)
-		fmt.Println("\n--- How to Play ---")
-		fmt.Printf("   mpv --no-config http://localhost%s/video/<video_name_without_extension>\n", addr)
-		fmt.Println("\n(Press Ctrl+C in this terminal to stop the server)")
+		log.Printf("\n✅ Server started successfully!\n")
+		log.Printf("   Serving files from: %s\n", finalDir)
+		log.Printf("   Access it at: http://localhost%s\n", addr)
+		log.Println("\n--- How to Play ---")
+		log.Printf("   mpv --no-config http://localhost%s/video/<video_name_without_extension>\n", addr)
+		log.Println("\n(Press Ctrl+C in this terminal to stop the server)")
 
 		select {} // Keep server running
 
@@ -114,7 +113,7 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println(`
+	log.Println(`
 Usage: ./encv <command> [flags] [path]
 
 IMPORTANT: Flags (like -o, -p) must be specified BEFORE the path argument.

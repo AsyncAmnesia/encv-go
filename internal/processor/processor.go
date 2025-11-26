@@ -35,8 +35,8 @@ type ProcessedMetadata struct {
 	Format     string
 }
 
-// ProcessVideo 处理单个视频文件
-func ProcessVideo(inputPath, outputEncPath, outputIndexPath, password string, salt []byte, trackExtensions []string, originalFilename string) error {
+// ProcessVideo 处理单个视频文件 (职责已修改：仅发现和记录字幕)
+func ProcessVideo(inputPath, outputEncPath, outputIndexPath, password string, salt []byte, trackExtensions []string, originalFilename string, encBaseName string) error {
 	fmt.Printf("-> Processing %s...\n", filepath.Base(inputPath))
 
 	// --- Step 1: Pre-processing with FFmpeg ---
@@ -47,52 +47,54 @@ func ProcessVideo(inputPath, outputEncPath, outputIndexPath, password string, sa
 	}
 	defer os.Remove(tempFile.Name())
 	tempPath := tempFile.Name()
-	// 关闭文件句柄，让 FFmpeg 可以自由写入
 	tempFile.Close()
 
 	isMkv := strings.ToLower(filepath.Ext(inputPath)) == ".mkv"
 	var ffmpegCmd *exec.Cmd
-	// --- 关键修正 1: 添加 "-y" 参数强制覆盖 ---
 	if isMkv {
 		ffmpegCmd = exec.Command("ffmpeg", "-y", "-i", inputPath, "-c", "copy", tempPath)
 	} else {
 		ffmpegCmd = exec.Command("ffmpeg", "-y", "-i", inputPath, "-c", "copy", "-movflags", "+faststart", tempPath)
 	}
 
-	ffmpegCmd.Stderr = os.Stderr // 显示 FFmpeg 错误
-	// --- 关键修正 2: 检查 FFmpeg 的执行错误 ---
+	ffmpegCmd.Stderr = os.Stderr
 	if err := ffmpegCmd.Run(); err != nil {
 		return fmt.Errorf("ffmpeg failed: %w", err)
 	}
 	fmt.Println("-> Pre-processing complete.")
 
-	// --- Step 2: Find and copy track files ---
-	fmt.Println("-> Step 2: Searching for and copying track files...")
+	// --- Step 2: Find, sort, copy and record track files (新核心逻辑) ---
+	fmt.Println("-> Step 2: Processing subtitle tracks...")
 	videoDir := filepath.Dir(inputPath)
 	videoBaseName := strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))
-	outputDir := filepath.Dir(outputEncPath)
+	outputDir := filepath.Dir(outputEncPath) // 加密文件和字幕的输出目录
 
 	var subtitleTracks []types.SubtitleTrack
 	sortedExts := sortExtensionsByLength(trackExtensions)
 
+	// a. 发现所有匹配的字幕
 	files, _ := os.ReadDir(videoDir)
 	for _, f := range files {
 		if f.IsDir() {
 			continue
 		}
 		fileName := f.Name()
-		fileNameWithoutExt := stripKnownExtensions(fileName, sortedExts)
 
-		if fileNameWithoutExt == videoBaseName {
-			srcTrackPath := filepath.Join(videoDir, fileName)
-			destTrackPath := filepath.Join(outputDir, fileName)
-			fmt.Printf("-> Found and copying track: %s\n", fileName)
-			if err := copyFile(srcTrackPath, destTrackPath); err != nil {
-				return fmt.Errorf("failed to copy track file %s: %w", fileName, err)
+		isSubtitle := false
+		for _, ext := range sortedExts {
+			if strings.HasSuffix(fileName, ext) {
+				isSubtitle = true
+				break
 			}
+		}
+		if !isSubtitle {
+			continue
+		}
 
+		subBaseName := StripKnownExtensions(fileName, sortedExts)
+		if (strings.HasPrefix(subBaseName, videoBaseName) || subBaseName == videoBaseName) && subBaseName != "" {
+			fmt.Printf("-> Found track: %s\n", fileName)
 			lang := "und"
-			title := fileName
 			if strings.Contains(fileName, "chi") || strings.Contains(fileName, "zh") {
 				lang = "chi"
 			} else if strings.Contains(fileName, "eng") {
@@ -100,9 +102,85 @@ func ProcessVideo(inputPath, outputEncPath, outputIndexPath, password string, sa
 			}
 			subtitleTracks = append(subtitleTracks, types.SubtitleTrack{
 				Language: lang,
-				Title:    title,
-				Filename: fileName,
+				Title:    "",       // 稍后填充
+				Filename: fileName, // 记录原始文件名
 			})
+		}
+	}
+
+	// b. 如果有字幕，则进行排序、复制和重命名
+	if len(subtitleTracks) > 0 {
+		// 定义一个本地 map 用于排序，避免循环依赖
+		containerExtensionMap := map[string]string{
+			"mp4": "4pm",
+			"mkv": "vkm",
+			"flv": "vfl",
+		}
+		pureVideoBaseName := videoBaseName
+		for suffix, _ := range containerExtensionMap {
+			if strings.HasSuffix(videoBaseName, "."+suffix) {
+				pureVideoBaseName = strings.TrimSuffix(videoBaseName, "."+suffix)
+				break
+			}
+		}
+
+		// 排序
+		sort.Slice(subtitleTracks, func(i, j int) bool {
+			subI := &subtitleTracks[i]
+			subJ := &subtitleTracks[j]
+			pureBaseNameI := StripKnownExtensions(subI.Filename, sortedExts)
+			pureBaseNameJ := StripKnownExtensions(subJ.Filename, sortedExts)
+			isIPureMatch := pureBaseNameI == pureVideoBaseName
+			isJPureMatch := pureBaseNameJ == pureVideoBaseName
+			if isIPureMatch && !isJPureMatch {
+				return true
+			}
+			if !isIPureMatch && isJPureMatch {
+				return false
+			}
+			if len(pureBaseNameI) != len(pureBaseNameJ) {
+				return len(pureBaseNameI) < len(pureBaseNameJ)
+			}
+			isIDm := strings.HasPrefix(subI.Filename[len(pureBaseNameI):], ".dm.")
+			isJDm := strings.HasPrefix(subJ.Filename[len(pureBaseNameJ):], ".dm.")
+			if isIDm && !isJDm {
+				return true
+			}
+			if !isIDm && isJDm {
+				return false
+			}
+			return subI.Filename < subJ.Filename
+		})
+
+		// 复制、重命名并更新 title
+		for i := range subtitleTracks { // 使用 range 获取指针以修改原切片
+			sub := &subtitleTracks[i]
+			originalSubFilename := sub.Filename
+			originalSubPath := filepath.Join(videoDir, originalSubFilename)
+
+			if _, err := os.Stat(originalSubPath); os.IsNotExist(err) {
+				fmt.Printf("-> Warning: Original subtitle file not found at %s, skipping.\n", originalSubPath)
+				continue
+			}
+
+			// 构造新的字幕文件名
+			ext := filepath.Ext(originalSubFilename)
+			var newSubFilename string
+			if i == 0 {
+				newSubFilename = fmt.Sprintf("%s%s", encBaseName, ext)
+			} else {
+				newSubFilename = fmt.Sprintf("%s.%d%s", encBaseName, i+1, ext)
+			}
+			newSubPath := filepath.Join(outputDir, newSubFilename)
+
+			// 复制文件
+			fmt.Printf("-> Copying subtitle '%s' to '%s'.\n", originalSubFilename, newSubFilename)
+			if err := copyFile(originalSubPath, newSubPath); err != nil {
+				return fmt.Errorf("failed to copy subtitle from %s to %s: %w", originalSubPath, newSubPath, err)
+			}
+
+			// 【关键】将重命名后的文件名写入 title 字段
+			sub.Title = newSubFilename
 		}
 	}
 
@@ -147,7 +225,7 @@ func ProcessVideo(inputPath, outputEncPath, outputIndexPath, password string, sa
 		DurationSeconds:  metadata.Duration,
 		Resolution:       metadata.Resolution,
 		OriginalFilename: originalFilename,
-		Subtitles:        subtitleTracks,
+		Subtitles:        subtitleTracks, // 现在包含了更新后的 title
 	}
 
 	indexData, _ := json.MarshalIndent(index, "", "  ")
@@ -164,8 +242,8 @@ func sortExtensionsByLength(exts []string) []string {
 	return sorted
 }
 
-// stripKnownExtensions 剥离已知的扩展名
-func stripKnownExtensions(filename string, exts []string) string {
+// stripKnownExtensions 剥离已知的扩展名 (注意 S 大写，变为公开函数)
+func StripKnownExtensions(filename string, exts []string) string {
 	name := filename
 	for _, ext := range exts {
 		if strings.HasSuffix(name, ext) {
@@ -176,7 +254,7 @@ func stripKnownExtensions(filename string, exts []string) string {
 	return name
 }
 
-// copyFile 复制文件
+// copyFile 复制文件 (此函数现在在 processor 中不再被调用，但可以保留以备他用)
 func copyFile(src, dst string) error {
 	source, err := os.Open(src)
 	if err != nil {

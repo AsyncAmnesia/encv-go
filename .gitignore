@@ -6,6 +6,7 @@
 *.dylib
 /encv
 /encv.7z
+/encv-proxy
 
 # dict
 _decrypt

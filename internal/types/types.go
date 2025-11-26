@@ -5,6 +5,7 @@ type SubtitleTrack struct {
 	Language string `json:"language"`
 	Title    string `json:"title"`
 	Filename string `json:"filename"`
+	Note     string `json:"note,omitempty"`
 }
 
 // VideoIndex 是加密视频的元数据索引文件

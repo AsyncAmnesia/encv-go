@@ -13,12 +13,11 @@ import (
 )
 
 // --- 1. 解密单个文件的辅助函数 ---
-
 func decryptSingleFile(encPath, password, outputDir string) error {
 	fmt.Printf("-> Processing file: %s\n", encPath)
 
 	// --- 根据新映射逻辑寻找 kvi 文件 ---
-	baseFilename := strings.TrimSuffix(filepath.Base(encPath), ".enc") // e.g., "sample.4pm"
+	baseFilename := strings.TrimSuffix(filepath.Base(encPath), ".enc")
 	indexPath := filepath.Join(filepath.Dir(encPath), baseFilename+".kvi")
 
 	indexData, err := os.ReadFile(indexPath)
@@ -31,7 +30,7 @@ func decryptSingleFile(encPath, password, outputDir string) error {
 		return fmt.Errorf("failed to unmarshal index: %w", err)
 	}
 
-	// --- Step 2: 解密视频文件 ---
+	// --- Step 2: 解密视频文件 (保持不变) ---
 	salt, err := crypto.Base64Decode(index.Encryption.SaltBase64)
 	if err != nil {
 		return fmt.Errorf("failed to decode salt: %w", err)
@@ -43,11 +42,10 @@ func decryptSingleFile(encPath, password, outputDir string) error {
 		return fmt.Errorf("failed to decode IV: %w", err)
 	}
 
-	// 从索引文件中获取真实的原始文件名
 	originalFilename := filepath.Base(index.OriginalFilename)
 	if originalFilename == "" || originalFilename == "unknown" {
 		fmt.Println("-> [Warning] 'original_filename' in index is missing. Inferring a default name.")
-		originalFilename = baseFilename + ".mkv" // 回退
+		originalFilename = baseFilename + ".mkv"
 	}
 	outputVideoPath := filepath.Join(outputDir, originalFilename)
 	fmt.Printf("-> Decrypting to: %s\n", outputVideoPath)
@@ -68,19 +66,31 @@ func decryptSingleFile(encPath, password, outputDir string) error {
 		return fmt.Errorf("failed to decrypt video stream: %w", err)
 	}
 
-	// --- Step 3: 复制轨道文件 ---
+	// --- Step 3: 从 KVI 恢复原始轨道文件 (核心修改) ---
 	sourceDir := filepath.Dir(encPath)
+	fmt.Println("-> Restoring original subtitle files...")
 	for _, track := range index.Subtitles {
-		sourceTrackPath := filepath.Join(sourceDir, track.Filename)
-		destTrackPath := filepath.Join(outputDir, track.Filename)
+		// 【关键修改】使用 title 字段作为源文件名（重命名后的），filename 字段作为目标文件名（原始的）
+		sourceTrackName := track.Title
+		destTrackName := track.Filename
+
+		if sourceTrackName == "" {
+			fmt.Printf("Warning: 'title' is empty for subtitle '%s', skipping.\n", destTrackName)
+			continue
+		}
+
+		sourceTrackPath := filepath.Join(sourceDir, sourceTrackName)
+		destTrackPath := filepath.Join(outputDir, destTrackName)
 
 		if _, err := os.Stat(sourceTrackPath); os.IsNotExist(err) {
-			fmt.Printf("Warning: Track file not found at source: %s\n", sourceTrackPath)
+			fmt.Printf("Warning: Track file not found at source: %s. Skipping.\n", sourceTrackPath)
 			continue
 		}
 
 		if err := copyFile(sourceTrackPath, destTrackPath); err != nil {
-			fmt.Printf("Warning: Failed to copy track %s: %v\n", track.Filename, err)
+			fmt.Printf("Warning: Failed to copy track %s: %v\n", destTrackName, err)
+		} else {
+			fmt.Printf("-> Restored subtitle '%s'\n", destTrackName)
 		}
 	}
 

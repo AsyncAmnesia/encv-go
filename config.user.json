@@ -2,5 +2,7 @@
   "password": "my-super-secret-password",
   "outputPath": "./output",
   "port": 1999,
+  "proxy_port": 1998,
+  "openlist_host": "http://localhost:5244",
   "trackExtensions": [".ass", ".srt", ".dm.ass", ".vtt"]
 }
