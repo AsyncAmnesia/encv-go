@@ -5,7 +5,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -208,14 +207,14 @@ func serveEncryptedContainer(w http.ResponseWriter, containerURL string, headers
 	defer packedData.VideoStream.Close()
 
 	// 6. 解析 KVI 并解密流 (后续逻辑保持不变)
-	var index types.VideoIndex
-	if err := json.Unmarshal(packedData.KVIData, &index); err != nil {
-		log.Printf("-> [Proxy] Failed to parse KVI from container: %v", err)
-		http.Error(w, "Failed to parse KVI", http.StatusInternalServerError)
+	index, err := crypto.UnmarshalKVI(packedData.KVIData)
+	if err != nil {
+		log.Printf("-> [File] Failed to parse KVI: %v", err)
+		http.Error(w, "Failed to parse container metadata", http.StatusInternalServerError)
 		return
 	}
 
-	if err := serveDecryptedStreamFromReader(w, packedData.VideoStream, &index, password); err != nil {
+	if err := serveDecryptedStreamFromReader(w, packedData.VideoStream, index, password); err != nil {
 		log.Printf("-> [Proxy] Failed to serve decrypted stream: %v", err)
 	}
 }

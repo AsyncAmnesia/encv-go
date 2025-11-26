@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -16,7 +15,6 @@ import (
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/container"
 	"github.com/Soltus/encv-go/internal/crypto"
-	"github.com/Soltus/encv-go/internal/types"
 	"github.com/Soltus/encv-go/internal/utils"
 )
 
@@ -291,8 +289,8 @@ func (p *Player) serveEncryptedContent(w http.ResponseWriter, r *http.Request, a
 	defer packedData.VideoStream.Close()
 
 	// 3. 解析 KVI 数据
-	var index types.VideoIndex
-	if err := json.Unmarshal(packedData.KVIData, &index); err != nil {
+	index, err := crypto.UnmarshalKVI(packedData.KVIData)
+	if err != nil {
 		log.Printf("-> [File] Failed to parse KVI: %v", err)
 		http.Error(w, "Failed to parse container metadata", http.StatusInternalServerError)
 		return

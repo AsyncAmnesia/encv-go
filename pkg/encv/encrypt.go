@@ -135,7 +135,7 @@ func encryptFile(inputPath string, opts EncryptOptions, salt []byte) error {
 		totalEncryptedSize := encryptedFileInfo.Size()
 
 		// 4.2. 计算原始文件的 MD5
-		originalMD5, err := utils.CalculateOriginalMD5(inputPath)
+		originalMD5, err := utils.FileMD5(inputPath)
 		if err != nil {
 			return fmt.Errorf("failed to calculate original file MD5: %w", err)
 		}

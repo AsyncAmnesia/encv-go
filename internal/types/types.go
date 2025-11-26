@@ -10,6 +10,7 @@ type SubtitleTrack struct {
 
 // VideoIndex 是加密视频的元数据索引文件
 type VideoIndex struct {
+	Version          int16           `json:"version"`
 	VideoID          string          `json:"video_id"`
 	OriginalFileSize int64           `json:"original_file_size"`
 	Format           string          `json:"format"`

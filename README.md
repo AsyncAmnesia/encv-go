@@ -98,6 +98,18 @@ mpv http://localhost:1999/321.sccgv --sub-files=http://localhost:1999/321.ass
 ./encv decrypt -o ./_decrypt/ ./output
 ```
 
+#### 4. 查看 kvi 信息
+
+> [!NOTE]
+> Go 标准库 `flag` 包的行为：所有 `-` 开头的标志参数（如 `-s`）必须放在位置参数（如文件路径）**之前**。
+
+```bash
+# 基础用法
+./encv kvi ./output/movie.sccgv
+# 保存到文件
+./encv kvi -s kvi.json ./output/movie.sccgv
+```
+
 ### 🔗 OpenList 集成
 
 `encv-proxy` 是一个专为 OpenList 设计的代理服务，它能透明地解密视频，让 OpenList 可以直接播放加密内容。

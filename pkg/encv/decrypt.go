@@ -1,9 +1,7 @@
 package encv
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -12,26 +10,8 @@ import (
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/container"
 	"github.com/Soltus/encv-go/internal/crypto"
-	"github.com/Soltus/encv-go/internal/types"
+	"github.com/Soltus/encv-go/internal/utils"
 )
-
-// copyFile 复制文件 (恢复此辅助函数，用于还原字幕)
-func copyFile(src, dst string) error {
-	source, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer source.Close()
-
-	destination, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer destination.Close()
-
-	_, err = io.Copy(destination, source)
-	return err
-}
 
 // decryptSingleFile 解密单个容器文件（或分片文件集）并还原其关联的字幕
 func decryptSingleFile(anyChunkPath, password, outputDir string) error {
@@ -52,8 +32,8 @@ func decryptSingleFile(anyChunkPath, password, outputDir string) error {
 	defer packedData.VideoStream.Close()
 
 	// 3. 解析 KVI 数据
-	var index types.VideoIndex
-	if err := json.Unmarshal(packedData.KVIData, &index); err != nil {
+	index, err := crypto.UnmarshalKVI(packedData.KVIData)
+	if err != nil {
 		return fmt.Errorf("failed to parse KVI from container: %w", err)
 	}
 
@@ -113,7 +93,7 @@ func decryptSingleFile(anyChunkPath, password, outputDir string) error {
 				continue
 			}
 
-			if err := copyFile(sourceTrackPath, destTrackPath); err != nil {
+			if err := utils.CopyFile(sourceTrackPath, destTrackPath); err != nil {
 				fmt.Printf("-> [Error] Failed to restore subtitle '%s': %v\n", destTrackName, err)
 			} else {
 				fmt.Printf("-> Successfully restored subtitle '%s'\n", destTrackName)

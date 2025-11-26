@@ -14,6 +14,8 @@ import (
 )
 
 const (
+	// kvi version
+	KviVersion int16 = 1
 	// Algorithm 加密算法
 	Algorithm = "aes-256-ctr"
 	// KeySize 密钥长度
