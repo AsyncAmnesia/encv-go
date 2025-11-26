@@ -128,11 +128,11 @@ func (p *Player) serveSegment(w http.ResponseWriter, r *http.Request, name strin
 	}
 	key := crypto.GenerateKey(p.password, salt)
 
-	iv, err := crypto.Base64Decode(index.Encryption.IVBase64)
-	if err != nil {
-		http.Error(w, "Invalid IV in index file", http.StatusInternalServerError)
-		return
-	}
+	// iv, err := crypto.Base64Decode(index.Encryption.IVBase64)
+	// if err != nil {
+	// 	http.Error(w, "Invalid IV in index file", http.StatusInternalServerError)
+	// 	return
+	// }
 
 	// --- 改进：从索引文件中设置正确的 Content-Type ---
 	w.Header().Set("Content-Type", "video/"+index.Format)
@@ -146,7 +146,7 @@ func (p *Player) serveSegment(w http.ResponseWriter, r *http.Request, name strin
 	}
 	defer encFile.Close()
 
-	if err := crypto.DecryptStream(encFile, w, key, iv); err != nil {
+	if err := crypto.DecryptStream(encFile, w, key); err != nil {
 		// 如果写入已经开始，此时返回错误可能为时已晚，但这是最好的做法
 		log.Printf("Error decrypting stream: %v\n", err)
 	}

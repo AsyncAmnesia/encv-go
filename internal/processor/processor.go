@@ -2,6 +2,9 @@ package processor
 
 import (
 	"bytes"
+	"crypto/md5"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -188,6 +191,12 @@ func ProcessVideo(inputPath, outputEncPath, outputIndexPath, password string, sa
 	fmt.Println("-> Step 3: Encrypting processed video file...")
 	key := crypto.GenerateKey(password, salt)
 
+	// 这里生成 IV
+	iv := make([]byte, crypto.IVLength)
+	if _, err := rand.Read(iv); err != nil {
+		return fmt.Errorf("failed to generate IV: %w", err)
+	}
+
 	inputFile, err := os.Open(tempPath)
 	if err != nil {
 		return fmt.Errorf("failed to open temp file for encryption: %w", err)
@@ -200,10 +209,23 @@ func ProcessVideo(inputPath, outputEncPath, outputIndexPath, password string, sa
 	}
 	defer outputFile.Close()
 
-	iv, err := crypto.EncryptStream(inputFile, outputFile, key)
-	if err != nil {
+	if err := crypto.EncryptStream(inputFile, outputFile, key, iv); err != nil {
 		return fmt.Errorf("encryption stream failed: %w", err)
 	}
+
+	// --- Step 3.5: Calculate MD5 of the encrypted file ---
+	fmt.Println("-> Calculating MD5 of encrypted file...")
+	encFileForHash, err := os.Open(outputEncPath)
+	if err != nil {
+		return fmt.Errorf("failed to open encrypted file for MD5 calculation: %w", err)
+	}
+	defer encFileForHash.Close()
+
+	hasher := md5.New()
+	if _, err := io.Copy(hasher, encFileForHash); err != nil {
+		return fmt.Errorf("failed to calculate MD5 hash: %w", err)
+	}
+	md5Sum := hex.EncodeToString(hasher.Sum(nil))
 
 	// --- Step 4: Get metadata and write index file ---
 	fmt.Println("-> Step 4: Writing index file...")
@@ -212,6 +234,8 @@ func ProcessVideo(inputPath, outputEncPath, outputIndexPath, password string, sa
 		return fmt.Errorf("failed to get metadata: %w", err)
 	}
 
+	// KVI 文件仍然需要记录 IV，以备不时之需（例如，解密器需要单独验证）
+	// 但主要的解密流程将不再依赖它
 	index := types.VideoIndex{
 		VideoID:          fmt.Sprintf("vid-%d", os.Getuid()),
 		OriginalFileSize: metadata.FileSize,
@@ -225,7 +249,8 @@ func ProcessVideo(inputPath, outputEncPath, outputIndexPath, password string, sa
 		DurationSeconds:  metadata.Duration,
 		Resolution:       metadata.Resolution,
 		OriginalFilename: originalFilename,
-		Subtitles:        subtitleTracks, // 现在包含了更新后的 title
+		EncryptedFileMD5: md5Sum,
+		Subtitles:        subtitleTracks,
 	}
 
 	indexData, _ := json.MarshalIndent(index, "", "  ")

@@ -18,6 +18,7 @@ type VideoIndex struct {
 	DurationSeconds  float64         `json:"duration_seconds"`
 	Resolution       string          `json:"resolution"`
 	OriginalFilename string          `json:"original_filename"`
+	EncryptedFileMD5 string          `json:"encrypted_file_md5"`
 	Subtitles        []SubtitleTrack `json:"subtitles"`
 }
 

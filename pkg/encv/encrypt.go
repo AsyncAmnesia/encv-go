@@ -8,18 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/crypto"
 	"github.com/Soltus/encv-go/internal/processor"
 )
-
-// --- 1. 新增：格式检测和映射 ---
-
-var containerExtensionMap = map[string]string{
-	"mp4":  "4pm",
-	"mov":  "4pm",
-	"mkv":  "vkm",
-	"webm": "vkm",
-}
 
 // detectContainerFormat 使用 ffprobe 检测视频文件的真实容器格式
 func detectContainerFormat(filePath string) (string, error) {
@@ -52,7 +44,7 @@ func detectContainerFormat(filePath string) (string, error) {
 }
 
 func getNewExtension(originalFormat string) string {
-	if ext, ok := containerExtensionMap[originalFormat]; ok {
+	if ext, ok := config.ContainerExtensionMap[originalFormat]; ok {
 		return ext
 	}
 	return originalFormat
