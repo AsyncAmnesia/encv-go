@@ -82,7 +82,7 @@ func GetDecryptReader(r io.Reader, key []byte) (io.Reader, error) {
 		return nil, fmt.Errorf("failed to read magic number: %w", err)
 	}
 	if string(magic) != MagicNumber {
-		return nil, fmt.Errorf("invalid file format: not an encv encrypted file")
+		return nil, fmt.Errorf("invalid file format: not an encv encrypted container")
 	}
 
 	// 2. 读取 IV

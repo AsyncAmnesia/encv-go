@@ -19,9 +19,9 @@ func GetContainerMagicMap() map[string]string {
 	// 魔法数字本身是格式规范的一部分，不应由用户配置
 	return map[string]string{
 		config.GlobalConfig.BinExtGroup.Video: "encv-sccgv-chunk-main-v1", // SCCGV 主分片
-		config.GlobalConfig.BinExtGroup.Text:  "encv-SccgtContainerMagicNumber-v1",
-		config.GlobalConfig.BinExtGroup.Audio: "encv-SccgaContainerMagicNumber-v1",
-		config.GlobalConfig.BinExtGroup.Image: "encv-SccgiContainerMagicNumber-v1",
+		config.GlobalConfig.BinExtGroup.Text:  "encv-sccgt-container-v1",
+		config.GlobalConfig.BinExtGroup.Audio: "encv-sccga-container-v1",
+		config.GlobalConfig.BinExtGroup.Image: "encv-sccgi-container-v1",
 	}
 }
 
@@ -35,7 +35,6 @@ func GetSubChunkMagicMap() map[string]string {
 
 // DetectContainerType 从文件头字节切片中检测容器类型
 func DetectContainerType(header []byte) (string, error) {
-	// 【修改】使用公共函数
 	magicMap := GetContainerMagicMap()
 	for ext, magic := range magicMap {
 		if bytes.HasPrefix(header, []byte(magic)) {

@@ -1,12 +1,10 @@
 package server
 
 import (
-	"errors"
 	"fmt"
 	"html/template"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -274,7 +272,7 @@ func (p *Player) serveEncryptedContent(w http.ResponseWriter, r *http.Request, a
 	}
 	defer file.Close()
 
-	// 2. 【修改】动态确定最大魔法数字长度
+	// 2. 动态确定最大魔法数字长度
 	magicMap := container.GetContainerMagicMap()
 	maxMagicLen := 0
 	for _, magic := range magicMap {
@@ -324,8 +322,8 @@ func (p *Player) serveEncryptedContent(w http.ResponseWriter, r *http.Request, a
 			DataStream: chunkedReader,
 		}
 
-	case config.GlobalConfig.BinExtGroup.Image:
-		// 图像是单文件容器，可以直接解包
+	case config.GlobalConfig.BinExtGroup.Image, config.GlobalConfig.BinExtGroup.Audio, config.GlobalConfig.BinExtGroup.Text:
+		// 单文件容器，可以直接解包
 		// 将文件指针重置到开头，因为 DetectContainerType 已经读取了一部分
 		if _, err := file.Seek(0, io.SeekStart); err != nil {
 			log.Printf("-> [File] Failed to seek file to start: %v", err)
@@ -334,11 +332,6 @@ func (p *Player) serveEncryptedContent(w http.ResponseWriter, r *http.Request, a
 		}
 		magicMap := container.GetContainerMagicMap()
 		packedData, err = container.Unpack(file, magicMap[detectedExt])
-
-	// case config.GlobalConfig.BinExtGroup.Text:
-	//     packedData, err = container.Unpack(file) // 未来实现
-	// case config.GlobalConfig.BinExtGroup.Audio:
-	//     packedData, err = container.Unpack(file) // 未来实现
 
 	default:
 		log.Printf("-> [File] Unsupported container type: %s", detectedExt)
@@ -377,12 +370,14 @@ func (p *Player) serveEncryptedContent(w http.ResponseWriter, r *http.Request, a
 		contentType = utils.GetContentType(idx.Format)
 	case *types.ImageIndex:
 		contentType = idx.MimeType
+	case *types.TextIndex:
+		contentType = idx.MimeType
 	default:
 		contentType = "application/octet-stream" // 默认类型
 	}
 
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", index.GetOriginalFilename())) // 【修改】使用接口方法
+	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", index.GetOriginalFilename())) // inline 告诉浏览器“尝试显示”而不是“必须下载”
 	w.Header().Set("Accept-Ranges", "bytes")
 
 	// 8. 流式解密并写入响应体
@@ -395,19 +390,8 @@ func (p *Player) serveEncryptedContent(w http.ResponseWriter, r *http.Request, a
 	}
 
 	if _, err := io.Copy(w, decryptedReader); err != nil {
-		if !isConnectionClosedError(err) {
+		if !utils.IsConnectionClosedError(err) {
 			log.Printf("-> [File] Error streaming decrypted content: %v", err)
 		}
 	}
-}
-
-// isConnectionClosedError 判断错误是否由客户端断开连接引起
-func isConnectionClosedError(err error) bool {
-	// 处理 Go 1.16+ 的特定错误
-	if errors.Is(err, net.ErrClosed) {
-		return true
-	}
-	// 处理旧版本或更通用的错误
-	errStr := err.Error()
-	return strings.Contains(errStr, "connection reset by peer") || strings.Contains(errStr, "broken pipe")
 }

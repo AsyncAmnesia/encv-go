@@ -11,9 +11,22 @@ type IndexKind string
 const (
 	IndexKindVideo IndexKind = "video"
 	IndexKindImage IndexKind = "image"
+	IndexKindText  IndexKind = "text" // 【新增】文本索引类型
 	// kvi version
 	KviVersion int16 = 1
 )
+
+// FFProbeRawMetadata 用于直接解析 ffprobe 的 JSON 输出
+type FFProbeRawMetadata struct {
+	Format struct {
+		Duration string `json:"duration"`
+	} `json:"format"`
+	Streams []struct {
+		CodecType string `json:"codec_type"`
+		Width     int    `json:"width"`
+		Height    int    `json:"height"`
+	} `json:"streams"`
+}
 
 // Index 是所有 KVI 结构体的通用接口
 type Index interface {
@@ -24,6 +37,34 @@ type Index interface {
 	GetOriginalFileSize() int64
 	GetMimeType() string
 }
+
+// TextMetadata 包含文本文件的元数据，不包含加密信息
+type TextMetadata struct {
+	MimeType         string
+	Format           string
+	OriginalFileSize int64
+}
+
+// TextIndex 是解密文本所需的所有元数据的容器
+type TextIndex struct {
+	Kind             IndexKind      `json:"kind"`
+	Version          int16          `json:"version"`
+	TextID           string         `json:"text_id"`
+	OriginalFileSize int64          `json:"original_file_size"`
+	MimeType         string         `json:"mime_type"`
+	Format           string         `json:"format"` // e.g., "plain", "markdown"
+	Encryption       EncryptionInfo `json:"encryption"`
+	OriginalFilename string         `json:"original_filename"`
+	EncryptedFileMD5 string         `json:"encrypted_file_md5"`
+}
+
+// 【新增】实现 Index 接口
+func (t *TextIndex) GetKind() IndexKind                { return IndexKindText }
+func (t *TextIndex) GetVersion() int16                 { return t.Version }
+func (t *TextIndex) GetEncryptionInfo() EncryptionInfo { return t.Encryption }
+func (t *TextIndex) GetOriginalFilename() string       { return t.OriginalFilename }
+func (t *TextIndex) GetOriginalFileSize() int64        { return t.OriginalFileSize }
+func (t *TextIndex) GetMimeType() string               { return t.MimeType }
 
 // SubtitleTrack 表示一个字幕或弹幕轨道
 type SubtitleTrack struct {
@@ -131,6 +172,12 @@ func unmarshalIndexByKind(data []byte, kind IndexKind) (Index, error) {
 		var index ImageIndex
 		if err := json.Unmarshal(data, &index); err != nil {
 			return nil, fmt.Errorf("failed to parse ImageIndex: %w", err)
+		}
+		return &index, nil
+	case IndexKindText: // 【新增】处理 TextIndex
+		var index TextIndex
+		if err := json.Unmarshal(data, &index); err != nil {
+			return nil, fmt.Errorf("failed to parse TextIndex: %w", err)
 		}
 		return &index, nil
 	default:

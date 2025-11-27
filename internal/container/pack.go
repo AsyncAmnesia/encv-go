@@ -34,6 +34,8 @@ func PackWithIndex(dataPath, finalPath string, index types.Index) error {
 		ext = config.GlobalConfig.BinExtGroup.Video
 	case *types.ImageIndex:
 		ext = config.GlobalConfig.BinExtGroup.Image
+	case *types.TextIndex:
+		ext = config.GlobalConfig.BinExtGroup.Text
 	default:
 		// 如果还有其他类型，可以在这里添加
 		return fmt.Errorf("unsupported index type for packing: %T", i)

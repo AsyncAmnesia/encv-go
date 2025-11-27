@@ -2,9 +2,11 @@ package utils
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 )
@@ -122,4 +124,15 @@ func MakeAuthenticatedRequest(method, url, body, token string) (*http.Response, 
 
 	client := &http.Client{}
 	return client.Do(req)
+}
+
+// isConnectionClosedError 判断错误是否由客户端断开连接引起
+func IsConnectionClosedError(err error) bool {
+	// 处理 Go 1.16+ 的特定错误
+	if errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	// 处理旧版本或更通用的错误
+	errStr := err.Error()
+	return strings.Contains(errStr, "connection reset by peer") || strings.Contains(errStr, "broken pipe")
 }

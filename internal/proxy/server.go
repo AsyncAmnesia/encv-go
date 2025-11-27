@@ -43,7 +43,7 @@ func handleRequest(cfg *Config) http.HandlerFunc {
 			w.Header().Set("Access-Control-Allow-Methods", "*")
 			w.Header().Set("Access-Control-Allow-Headers", "*")
 			w.Header().Set("Cache-Control", "no-cache")
-			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Origin", "*") // 这里设置跨域是不起作用的哦
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -152,6 +152,8 @@ func serveEncryptedContainer(w http.ResponseWriter, containerURL string, headers
 		handleImageContainer(w, containerURL, headers, cfg)
 	case config.GlobalConfig.BinExtGroup.Video:
 		handleVideoContainer(w, containerURL, headers, cfg, originalPath)
+	case config.GlobalConfig.BinExtGroup.Text: // 【新增】处理文本容器
+		handleTextContainer(w, containerURL, headers, cfg)
 	default:
 		log.Printf("-> [Proxy] Unsupported container type: %s", detectedExt)
 		http.Error(w, "Unsupported container type", http.StatusNotImplemented)

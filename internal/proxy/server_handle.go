@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/Soltus/encv-go/internal/config"
@@ -32,44 +31,74 @@ func serveDecryptedStreamFromReader(w http.ResponseWriter, encryptedReader io.Re
 	}
 	key := crypto.GenerateKey(password, salt)
 
-	// 2. 从 KVI 获取原始文件信息
+	// 2. 【关键】创建一个透明的解密流
+	// 它会从 encryptedReader 读取加密数据，并吐出解密后的原始数据
+	decryptedReader, err := crypto.GetDecryptReader(encryptedReader, key)
+	if err != nil {
+		log.Printf("Error creating decrypt reader: %v", err)
+		http.Error(w, "Failed to initialize decryption", http.StatusInternalServerError)
+		return err
+	}
+
+	// 3. 【关键】设置响应头，不设置 Content-Length
+	// 这会让 Go 自动使用分块传输，最稳健的流式方案
 	originalFilename := index.GetOriginalFilename()
-	originalFileSize := index.GetOriginalFileSize()
 	contentType := index.GetMimeType()
 
-	log.Printf("-> [Proxy] Decrypting content: %s (%s, %d bytes, chunked: %t)", originalFilename, contentType, originalFileSize, useChunked)
+	log.Printf("-> [Proxy] Streaming content: %s (%s) using chunked encoding.", originalFilename, contentType)
 
-	// 3. 先解密到一个内存缓冲区
-	var buffer bytes.Buffer
-	written, err := crypto.DecryptStream(encryptedReader, &buffer, key)
-	if err != nil {
-		log.Printf("Error decrypting to buffer: %v", err)
-		http.Error(w, "Failed to decrypt content", http.StatusInternalServerError)
-		return err
-	}
-
-	if written != originalFileSize {
-		log.Printf("!!! [CRITICAL WARNING] Decrypted size (%d) does NOT match KVI size (%d).", written, originalFileSize)
-	}
-
-	// 4. 【关键】根据模式设置不同的响应头
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", originalFilename))
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	// 不再设置 Content-Length 和 Accept-Ranges
 
-	if useChunked {
-		// 动图模式：不设置 Content-Length，让 Go 自动使用分块传输
-		log.Printf("-> [Proxy] Streaming %d bytes to client using chunked encoding.", buffer.Len())
-	} else {
-		// 视频/静图模式：设置 Content-Length
-		log.Printf("-> [Proxy] Streaming %d bytes to client with fixed length.", buffer.Len())
-		w.Header().Set("Content-Length", strconv.FormatInt(originalFileSize, 10))
-	}
-
-	// 5. 将缓冲区内容写入 HTTP 响应
-	if _, err := io.Copy(w, &buffer); err != nil {
-		log.Printf("Error streaming buffer to client: %v", err)
+	// 4. 【关键】将解密流直接泵送到 HTTP 响应体
+	if _, err := io.Copy(w, decryptedReader); err != nil {
+		// 客户端断开连接是正常行为，不应记录为错误
+		if !utils.IsConnectionClosedError(err) {
+			log.Printf("Error streaming decrypted content to client: %v", err)
+		}
 		return err
 	}
+
+	// // 2. 从 KVI 获取原始文件信息
+	// originalFilename := index.GetOriginalFilename()
+	// originalFileSize := index.GetOriginalFileSize()
+	// contentType := index.GetMimeType()
+
+	// log.Printf("-> [Proxy] Decrypting content: %s (%s, %d bytes, chunked: %t)", originalFilename, contentType, originalFileSize, useChunked)
+
+	// // 3. 先解密到一个内存缓冲区
+	// var buffer bytes.Buffer
+	// written, err := crypto.DecryptStream(encryptedReader, &buffer, key)
+	// if err != nil {
+	// 	log.Printf("Error decrypting to buffer: %v", err)
+	// 	http.Error(w, "Failed to decrypt content", http.StatusInternalServerError)
+	// 	return err
+	// }
+
+	// if written != originalFileSize {
+	// 	log.Printf("!!! [CRITICAL WARNING] Decrypted size (%d) does NOT match KVI size (%d).", written, originalFileSize)
+	// }
+
+	// // 4. 【关键】根据模式设置不同的响应头
+	// w.Header().Set("Content-Type", contentType)
+	// w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", originalFilename))
+
+	// if useChunked {
+	// 	// 动图模式：不设置 Content-Length，让 Go 自动使用分块传输
+	// 	log.Printf("-> [Proxy] Streaming %d bytes to client using chunked encoding.", buffer.Len())
+	// } else {
+	// 	// 视频/静图模式：设置 Content-Length
+	// 	log.Printf("-> [Proxy] Streaming %d bytes to client with fixed length.", buffer.Len())
+	// 	w.Header().Set("Content-Length", strconv.FormatInt(originalFileSize, 10))
+	// }
+
+	// // 5. 将缓冲区内容写入 HTTP 响应
+	// if _, err := io.Copy(w, &buffer); err != nil {
+	// 	log.Printf("Error streaming buffer to client: %v", err)
+	// 	return err
+	// }
 
 	return nil
 }
@@ -209,5 +238,50 @@ func handleVideoContainer(w http.ResponseWriter, containerURL string, headers ma
 	// 7. 【关键】调用通用的解密服务函数，视频使用定长传输
 	if err := serveDecryptedStreamFromReader(w, streamingReader, index, cfg.ContentPassword, false); err != nil {
 		log.Printf("-> [Proxy] Failed to serve decrypted video stream: %v", err)
+	}
+}
+
+// handleTextContainer 专门处理文本容器
+func handleTextContainer(w http.ResponseWriter, containerURL string, headers map[string]string, cfg *Config) {
+	// 1. 下载整个容器到内存
+	log.Printf("-> [Proxy] Reading full text container into memory for reliable processing.")
+	containerData, err := utils.ReadAllFromURL(containerURL, headers)
+	if err != nil {
+		log.Printf("-> [Proxy] Failed to read full text container: %v", err)
+		http.Error(w, "Failed to read container", http.StatusInternalServerError)
+		return
+	}
+
+	// 2. 从内存中检测类型和解包
+	detectedExt, err := container.DetectContainerType(containerData)
+	if err != nil {
+		log.Printf("-> [Proxy] Failed to detect container type from memory: %v", err)
+		http.Error(w, "Unknown container format", http.StatusBadRequest)
+		return
+	}
+	log.Printf("-> [Proxy] Detected container extension: %s", detectedExt)
+
+	reader := bytes.NewReader(containerData)
+	magicMap := container.GetContainerMagicMap()
+	packedData, err := container.Unpack(reader, magicMap[detectedExt])
+	if err != nil {
+		log.Printf("-> [Proxy] Failed to unpack text container from memory: %v", err)
+		http.Error(w, "Invalid container file", http.StatusBadRequest)
+		return
+	}
+	defer packedData.DataStream.Close()
+
+	// 3. 解析 KVI
+	index, err := types.UnmarshalKVI(packedData.KVIData)
+	if err != nil {
+		log.Printf("-> [Proxy] Failed to parse KVI: %v", err)
+		http.Error(w, "Failed to parse container metadata", http.StatusInternalServerError)
+		return
+	}
+
+	// 4. 【关键修改】调用通用的解密服务函数
+	// 文本不需要像GIF/WebP那样的特殊分块传输，所以 useChunked 为 false
+	if err := serveDecryptedStreamFromReader(w, packedData.DataStream, index, cfg.ContentPassword, true); err != nil {
+		log.Printf("-> [Proxy] Failed to serve decrypted text stream: %v", err)
 	}
 }

@@ -13,18 +13,6 @@ import (
 	"github.com/Soltus/encv-go/internal/utils"
 )
 
-// FFProbeRawMetadata 用于直接解析 ffprobe 的 JSON 输出
-type FFProbeRawMetadata struct {
-	Format struct {
-		Duration string `json:"duration"`
-	} `json:"format"`
-	Streams []struct {
-		CodecType string `json:"codec_type"`
-		Width     int    `json:"width"`
-		Height    int    `json:"height"`
-	} `json:"streams"`
-}
-
 // ProcessVideo 分析视频文件，返回其元数据
 func ProcessVideo(inputPath string) (*types.VideoIndex, error) {
 	fmt.Printf("-> Analyzing video: %s\n", filepath.Base(inputPath))
@@ -111,7 +99,7 @@ func getProcessedMetadata(path string) (*types.VideoIndex, error) {
 		return nil, err
 	}
 
-	var rawMeta FFProbeRawMetadata
+	var rawMeta types.FFProbeRawMetadata
 	if err := json.Unmarshal(out.Bytes(), &rawMeta); err != nil {
 		return nil, err
 	}

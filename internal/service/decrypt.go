@@ -64,8 +64,7 @@ func DecryptContainer(containerPath, password string) (*DecryptedContent, error)
 			DataStream: reader, // reader 本身就是 io.ReadCloser
 		}
 
-	case config.GlobalConfig.BinExtGroup.Image:
-		// 对于图像，使用流式处理
+	case config.GlobalConfig.BinExtGroup.Image, config.GlobalConfig.BinExtGroup.Text:
 		file, err := os.Open(containerPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open image container: %w", err)
@@ -83,6 +82,14 @@ func DecryptContainer(containerPath, password string) (*DecryptedContent, error)
 
 	default:
 		return nil, fmt.Errorf("unsupported container type: %s", detectedExt)
+	}
+
+	// 【新增防御性检查】
+	if packedData == nil {
+		return nil, fmt.Errorf("internal error: unpacking resulted in a nil packedData for container %s", containerPath)
+	}
+	if packedData.DataStream == nil {
+		return nil, fmt.Errorf("internal error: unpacking resulted in a nil DataStream for container %s", containerPath)
 	}
 
 	// 3. 解析 KVI
@@ -114,7 +121,7 @@ func DecryptContainer(containerPath, password string) (*DecryptedContent, error)
 }
 
 // ExtractKVI 从容器文件中提取原始的 KVI 数据，无需密码。
-// 【简化重构】与 DecryptContainer 逻辑保持一致
+// 与 DecryptContainer 逻辑保持一致
 func ExtractKVI(containerPath string) ([]byte, error) {
 	// 1. 检测容器类型
 	detectedExt, err := container.DetectContainerTypeFromFile(containerPath)
@@ -140,8 +147,7 @@ func ExtractKVI(containerPath string) ([]byte, error) {
 		defer reader.Close()
 		return reader.KVIData, nil
 
-	case config.GlobalConfig.BinExtGroup.Image:
-		// 对于图像，使用流式处理
+	case config.GlobalConfig.BinExtGroup.Image, config.GlobalConfig.BinExtGroup.Text:
 		file, err := os.Open(containerPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open image container: %w", err)

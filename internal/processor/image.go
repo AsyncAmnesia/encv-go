@@ -49,8 +49,7 @@ func ProcessImage(inputPath string) (*types.ImageIndex, error) {
 		if len(ext) == 0 {
 			return nil, fmt.Errorf("cannot determine image format from filename: %s", inputPath)
 		}
-		ext = ext[1:] // 去掉 '.'
-		finalFormat = utils.GenerateReversedExt(ext)
+		finalFormat = ext[1:] // 去掉 '.'
 
 		fmt.Printf("-> [Fallback] Detected format '%s' from extension. Dimensions will be 0.\n", finalFormat)
 	}

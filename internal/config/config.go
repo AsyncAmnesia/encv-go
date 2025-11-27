@@ -18,12 +18,10 @@ var defaultConfig = types.UserConfig{
 	OutputPath:      "./encrypted",
 	TrackExtensions: []string{".ass", ".srt", ".dm.ass"},
 	BinExtGroup: types.BinExtGroup{
-		// 其他类型暂时保留原有逻辑的映射，但暂时不用
 		Text:  "sccgt",
 		Image: "sccgi",
 		Audio: "sccga",
-		// video 的默认值是 "enc"
-		Video: "enc",
+		Video: "sccgv",
 	},
 	SccgvSettings: types.SccgvSettings{
 		ChunkSizeMB: 0,
@@ -93,6 +91,11 @@ func GetVideoEncExtension() string {
 // 获取当前配置的图像加密后缀（带点号）
 func GetImageEncExtension() string {
 	return "." + GlobalConfig.BinExtGroup.Image
+}
+
+// 获取当前配置的文本加密后缀（带点号）
+func GetTextEncExtension() string {
+	return "." + GlobalConfig.BinExtGroup.Text
 }
 
 // IsContainerPath 检查路径是否是已知的容器文件（基于扩展名）

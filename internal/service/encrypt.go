@@ -34,15 +34,94 @@ func EncryptFile(inputPath, outputDir, password string, salt []byte, trackExtens
 		return fmt.Errorf("failed to detect MIME type: %w", err)
 	}
 
-	// 2. 根据类型分发处理
+	// 2. 根据类型分发处理加密
 	switch {
 	case utils.IsVideoType(mimeType):
 		return encryptVideo(inputPath, baseName, originalExt, outputDir, password, salt, trackExtensions)
 	case utils.IsImageType(mimeType):
 		return encryptImage(inputPath, baseName, originalExt, outputDir, password, salt)
+	case utils.IsTextType(mimeType):
+		return encryptText(inputPath, baseName, originalExt, outputDir, password, salt)
 	default:
 		return fmt.Errorf("unsupported file type: %s", mimeType)
 	}
+}
+
+// encryptText 处理文本加密和打包
+func encryptText(inputPath, baseName, originalExt, outputDir, password string, salt []byte) error {
+
+	// 1. 调用 processor 获取文本信息
+	info, err := processor.ProcessText(inputPath)
+	if err != nil {
+		return fmt.Errorf("processor failed: %w", err)
+	}
+
+	// 2. 加密
+	tempEncPath := filepath.Join(outputDir, baseName+".tmp_enc")
+	iv, err := crypto.EncryptFile(inputPath, tempEncPath, password, salt)
+	if err != nil {
+		return fmt.Errorf("encryption failed: %w", err)
+	}
+	defer os.Remove(tempEncPath)
+
+	// 3. 构建 Index
+	index := &types.TextIndex{
+		Kind:             types.IndexKindText,
+		Version:          types.KviVersion,
+		OriginalFilename: filepath.Base(inputPath),
+		Encryption: types.EncryptionInfo{
+			Algorithm:  crypto.Algorithm,
+			IVBase64:   crypto.Base64Encode(iv),
+			SaltBase64: crypto.Base64Encode(salt),
+		},
+		MimeType:         info.MimeType,
+		Format:           info.Format,
+		OriginalFileSize: info.OriginalFileSize,
+	}
+
+	// 4. 为图像容器生成带倒序后缀的最终路径
+	reversedExt := utils.GenerateReversedExt(originalExt)
+	finalPath := filepath.Join(outputDir, baseName+"."+reversedExt+config.GetTextEncExtension())
+	return container.PackWithIndex(tempEncPath, finalPath, index)
+}
+
+// encryptImage 处理图像加密和打包
+func encryptImage(inputPath, baseName, originalExt, outputDir, password string, salt []byte) error {
+	// 1. 调用 processor 获取图像信息
+	info, err := processor.ProcessImage(inputPath)
+	if err != nil {
+		return fmt.Errorf("processor failed: %w", err)
+	}
+
+	// 2. 加密
+	tempEncPath := filepath.Join(outputDir, baseName+".tmp_enc")
+	iv, err := crypto.EncryptFile(inputPath, tempEncPath, password, salt)
+	if err != nil {
+		return fmt.Errorf("encryption failed: %w", err)
+	}
+	defer os.Remove(tempEncPath)
+
+	// 3. 构建 Index
+	index := &types.ImageIndex{
+		Kind:             types.IndexKindImage,
+		Version:          types.KviVersion,
+		OriginalFilename: filepath.Base(inputPath),
+		Encryption: types.EncryptionInfo{
+			Algorithm:  crypto.Algorithm,
+			IVBase64:   crypto.Base64Encode(iv),
+			SaltBase64: crypto.Base64Encode(salt),
+		},
+		Width:            info.Width,
+		Height:           info.Height,
+		Format:           info.Format,
+		MimeType:         info.MimeType,
+		OriginalFileSize: info.OriginalFileSize,
+	}
+
+	// 4. 为图像容器生成带倒序后缀的最终路径
+	reversedExt := utils.GenerateReversedExt(originalExt)
+	finalPath := filepath.Join(outputDir, baseName+"."+reversedExt+config.GetImageEncExtension())
+	return container.PackWithIndex(tempEncPath, finalPath, index)
 }
 
 // encryptVideo 处理视频加密和打包
@@ -114,45 +193,6 @@ func encryptVideo(inputPath, baseName, originalExt, outputDir, password string, 
 	return container.PackWithIndex(tempEncPath, finalPath, index)
 }
 
-// encryptImage 处理图像加密和打包
-func encryptImage(inputPath, baseName, originalExt, outputDir, password string, salt []byte) error {
-	// 1. 调用 processor 获取图像信息
-	info, err := processor.ProcessImage(inputPath)
-	if err != nil {
-		return fmt.Errorf("processor failed: %w", err)
-	}
-
-	// 2. 加密原始图像流
-	tempEncPath := filepath.Join(outputDir, baseName+".tmp_enc")
-	iv, err := crypto.EncryptFile(inputPath, tempEncPath, password, salt)
-	if err != nil {
-		return fmt.Errorf("encryption failed: %w", err)
-	}
-	defer os.Remove(tempEncPath)
-
-	// 3. 构建 ImageIndex
-	index := &types.ImageIndex{
-		Kind:             types.IndexKindImage,
-		Version:          types.KviVersion,
-		OriginalFilename: filepath.Base(inputPath),
-		Encryption: types.EncryptionInfo{
-			Algorithm:  crypto.Algorithm,
-			IVBase64:   crypto.Base64Encode(iv),
-			SaltBase64: crypto.Base64Encode(salt),
-		},
-		Width:            info.Width,
-		Height:           info.Height,
-		Format:           info.Format,
-		MimeType:         info.MimeType,
-		OriginalFileSize: info.OriginalFileSize,
-	}
-
-	// 4. 【修改 4】为图像容器生成带倒序后缀的最终路径
-	reversedExt := utils.GenerateReversedExt(originalExt)
-	finalPath := filepath.Join(outputDir, baseName+"."+reversedExt+config.GetImageEncExtension())
-	return container.PackWithIndex(tempEncPath, finalPath, index)
-}
-
 // copyAndRenameSubtitles 复制并重命名字幕文件，并更新 subtitleTracks 中的 Title
 func copyAndRenameSubtitles(subtitleTracks []types.SubtitleTrack, videoPath, outputDir, encBaseName string) ([]types.SubtitleTrack, error) {
 	if len(subtitleTracks) == 0 {
@@ -210,7 +250,7 @@ func createChunkedContainer(encryptedPath, finalPath string, index *types.VideoI
 	chunkSize := config.GetSccgvChunkSize()
 	magicMap := container.GetContainerMagicMap()
 	subMagicMap := container.GetSubChunkMagicMap()
-	mainMagic := magicMap[config.GlobalConfig.BinExtGroup.Video]
+	mainMagic := magicMap[config.GlobalConfig.BinExtGroup.Video] // 后续其他分片容器这里需要修改
 	subMagic := subMagicMap[config.GlobalConfig.BinExtGroup.Video]
 
 	// 计算原始文件的 MD5 (用于所有分片头)

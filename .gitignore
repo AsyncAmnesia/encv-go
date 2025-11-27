@@ -9,10 +9,12 @@
 /encv-proxy
 
 # dict
-_decrypt
-_videos
-_images
-output
+/_decrypt
+/_videos
+/_images
+/_texts
+/_frame
+/output
 
 # Test binary, built with `go test -c`
 *.test
