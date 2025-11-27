@@ -9,7 +9,8 @@
     "text": "sccgt",
     "image": "sccgi",
     "audio": "sccga",
-    "video": "sccgv"
+    "video": "sccgv",
+    "iframe": "sccgf"
   },
   "sccgv_settings": { "chunk_size": 100 }
 }

@@ -51,7 +51,7 @@ type StreamingChunkedReader struct {
 // 为路由路径设计的
 func StreamingReader(mainDataReader io.Reader, kviData []byte, provider SubChunkStreamProvider) (*StreamingChunkedReader, error) {
 	// 解析 KVI 以获取子分片信息
-	index, err := types.UnmarshalKVI(kviData)
+	index, err := utils.UnmarshalKVI(kviData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal KVI: %w", err)
 	}
@@ -100,7 +100,7 @@ func LocalReader(mainChunkPath, mainMagic, subMagic string) (*ChunkedReader, err
 	}
 
 	// 2. 【关键】解析 KVI 以获取子分片信息
-	index, err := types.UnmarshalKVI(kviData)
+	index, err := utils.UnmarshalKVI(kviData)
 	if err != nil {
 		mainFile.Close()
 		return nil, fmt.Errorf("failed to unmarshal KVI: %w", err)

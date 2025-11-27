@@ -15,15 +15,9 @@ import (
 	"github.com/Soltus/encv-go/internal/utils"
 )
 
-// DecryptedContent 包含解密后的所有内容
-type DecryptedContent struct {
-	Index      types.Index
-	DataStream io.ReadCloser
-}
-
 // DecryptContainer 从一个加密容器文件路径中解密内容
 // 直接处理文件路径，不创建临时文件
-func DecryptContainer(containerPath, password string) (*DecryptedContent, error) {
+func DecryptContainer(containerPath, password string) (*types.DecryptedContent, error) {
 	// 1. 检测容器类型
 	detectedExt, err := container.DetectContainerTypeFromFile(containerPath)
 	if err != nil {
@@ -34,34 +28,14 @@ func DecryptContainer(containerPath, password string) (*DecryptedContent, error)
 
 	// 获取 magic map，避免在 case 内重复调用
 	magicMap := container.GetContainerMagicMap()
-	subMagicMap := container.GetSubChunkMagicMap()
+	// subMagicMap := container.GetSubChunkMagicMap()
 
 	// 2. 根据类型选择不同的处理方式
 	switch detectedExt {
 	case config.GlobalConfig.BinExtGroup.Video:
-		// 对于视频，直接使用文件路径创建 LocalReader
-		mainMagic, ok := magicMap[detectedExt]
-		if !ok {
-			return nil, fmt.Errorf("internal error: detected video extension '%s' not in magic map", detectedExt)
-		}
-		subMagic, ok := subMagicMap[detectedExt]
-		if !ok {
-			return nil, fmt.Errorf("internal error: detected video extension '%s' not in sub-magic map", detectedExt)
-		}
-
-		reader, err := chunked.LocalReader(containerPath, mainMagic, subMagic)
+		packedData, err = decryptVideo(containerPath, detectedExt)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create chunked reader for %s: %w", containerPath, err)
-		}
-
-		// 【关键修复】增加防御性检查，防止 LocalReader 返回 (nil, nil)
-		if reader == nil {
-			return nil, fmt.Errorf("internal error: chunked.LocalReader returned a nil reader without an error for file %s", containerPath)
-		}
-
-		packedData = &container.PackedData{
-			KVIData:    reader.KVIData,
-			DataStream: reader, // reader 本身就是 io.ReadCloser
+			return nil, fmt.Errorf("failed to decryptVideo for %s: %w", containerPath, err)
 		}
 
 	case config.GlobalConfig.BinExtGroup.Image, config.GlobalConfig.BinExtGroup.Text:
@@ -93,7 +67,7 @@ func DecryptContainer(containerPath, password string) (*DecryptedContent, error)
 	}
 
 	// 3. 解析 KVI
-	index, err := types.UnmarshalKVI(packedData.KVIData)
+	index, err := utils.UnmarshalKVI(packedData.KVIData)
 	if err != nil {
 		packedData.DataStream.Close()
 		return nil, fmt.Errorf("failed to parse KVI: %w", err)
@@ -114,7 +88,7 @@ func DecryptContainer(containerPath, password string) (*DecryptedContent, error)
 	}
 
 	// 5. 返回结果，确保关闭 packedData.DataStream
-	return &DecryptedContent{
+	return &types.DecryptedContent{
 		Index:      index,
 		DataStream: newReadCloser(decryptedStream, packedData.DataStream.Close),
 	}, nil

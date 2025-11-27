@@ -18,10 +18,11 @@ func GetContainerMagicMap() map[string]string {
 	// 从 GlobalConfig 读取用户定义的后缀，并映射到固定的魔法数字
 	// 魔法数字本身是格式规范的一部分，不应由用户配置
 	return map[string]string{
-		config.GlobalConfig.BinExtGroup.Video: "encv-sccgv-chunk-main-v1", // SCCGV 主分片
-		config.GlobalConfig.BinExtGroup.Text:  "encv-sccgt-container-v1",
-		config.GlobalConfig.BinExtGroup.Audio: "encv-sccga-container-v1",
-		config.GlobalConfig.BinExtGroup.Image: "encv-sccgi-container-v1",
+		config.GlobalConfig.BinExtGroup.Video:  "encv-sccgv-chunk-main-v1", // SCCGV 主分片
+		config.GlobalConfig.BinExtGroup.Text:   "encv-sccgt-container-v1",
+		config.GlobalConfig.BinExtGroup.Audio:  "encv-sccga-container-v1",
+		config.GlobalConfig.BinExtGroup.Image:  "encv-sccgi-container-v1",
+		config.GlobalConfig.BinExtGroup.Iframe: "encv-sccgf-container-v1",
 	}
 }
 
