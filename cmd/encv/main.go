@@ -52,6 +52,7 @@ func main() {
 		decryptCmd := flag.NewFlagSet("decrypt", flag.ExitOnError)
 		passwordPtr := decryptCmd.String("p", cfg.Password, "Password for decryption")
 		outputPtr := decryptCmd.String("o", "./decrypted", "Output directory for decrypted files")
+		force := decryptCmd.Bool("f", false, "Force overwrite existing output files")
 		err := decryptCmd.Parse(os.Args[2:])
 		if err != nil {
 			log.Fatalf("Error parsing flags: %v", err)
@@ -66,6 +67,7 @@ func main() {
 		opts := encv.DecryptOptions{
 			Password:  *passwordPtr,
 			OutputDir: *outputPtr,
+			Force:     *force,
 		}
 		if err := encv.Decrypt(inputPath, opts); err != nil {
 			log.Fatalf("Decryption failed: %v", err)

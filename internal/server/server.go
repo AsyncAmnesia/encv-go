@@ -1,10 +1,12 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,20 +16,21 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/container"
+	"github.com/Soltus/encv-go/internal/container/chunked"
 	"github.com/Soltus/encv-go/internal/crypto"
+	"github.com/Soltus/encv-go/internal/types"
 	"github.com/Soltus/encv-go/internal/utils"
 )
 
 // Player ... (保持不变) ...
 type Player struct {
-	dir      string
-	password string
-	server   *http.Server
+	dir             string
+	contentPassword string // 【修改】从 password 改为 contentPassword
+	server          *http.Server
 }
 
-// NewPlayer ... (保持不变) ...
 func NewPlayer(dir, password string) *Player {
-	return &Player{dir: dir, password: password}
+	return &Player{dir: dir, contentPassword: password} // 【修改】使用新字段名
 }
 
 // Start ... (保持不变) ...
@@ -262,56 +265,129 @@ func (p *Player) listFilesInDir(w http.ResponseWriter, r *http.Request, dirPath,
 
 // 统一处理所有加密内容的请求（无论是分片还是单文件）
 func (p *Player) serveEncryptedContent(w http.ResponseWriter, r *http.Request, anyChunkPath string) {
-	// 1. 【核心修复】根据任意一个分片，找到主分片
-	mainChunkPath, err := container.FindMainChunk(anyChunkPath)
+	// 1. 打开文件并读取头部用于类型检测
+	file, err := os.Open(anyChunkPath)
 	if err != nil {
-		log.Printf("-> [File] Failed to find main chunk for '%s': %v", anyChunkPath, err)
-		http.Error(w, "Invalid or incomplete chunk set", http.StatusBadRequest)
+		log.Printf("-> [File] Failed to open file: %v", err)
+		http.Error(w, "Failed to open file", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("-> [File] Found main chunk: %s", filepath.Base(mainChunkPath))
+	defer file.Close()
 
-	// 2. 【核心修复】使用新的分片解包函数
-	packedData, err := container.UnpackChunked(mainChunkPath)
-	if err != nil {
-		log.Printf("-> [File] Failed to unpack main chunk: %v", err)
+	// 2. 【修改】动态确定最大魔法数字长度
+	magicMap := container.GetContainerMagicMap()
+	maxMagicLen := 0
+	for _, magic := range magicMap {
+		if len(magic) > maxMagicLen {
+			maxMagicLen = len(magic)
+		}
+	}
+
+	magicHeader := make([]byte, maxMagicLen)
+	bytesRead, err := io.ReadFull(file, magicHeader)
+	if err != nil && err != io.ErrUnexpectedEOF {
+		log.Printf("-> [File] Failed to read container magic header: %v", err)
 		http.Error(w, "Invalid container file", http.StatusBadRequest)
 		return
 	}
+	magicHeader = magicHeader[:bytesRead]
 
-	// 【防御性修复】检查 packedData 是否为 nil，以防止 panic
-	if packedData == nil {
-		// 这种情况理论上不应该发生，但为了健壮性，我们处理它
-		log.Printf("-> [File] CRITICAL: UnpackChunked returned nil data without error. This is a bug.")
-		http.Error(w, "Internal server error during unpacking", http.StatusInternalServerError)
+	// 3. 检测容器类型
+	detectedExt, err := container.DetectContainerType(magicHeader)
+	if err != nil {
+		log.Printf("-> [File] Failed to detect container type: %v", err)
+		http.Error(w, "Unknown container format", http.StatusBadRequest)
 		return
 	}
-	defer packedData.VideoStream.Close()
+	log.Printf("-> [File] Detected container extension: %s", detectedExt)
 
-	// 3. 解析 KVI 数据
-	index, err := crypto.UnmarshalKVI(packedData.KVIData)
+	// 4. 【关键修复】根据类型选择解包方式
+	var packedData *container.PackedData
+	switch detectedExt {
+	case config.GlobalConfig.BinExtGroup.Video:
+		// 视频是分片容器，需要特殊处理
+		// 【修改】从 container 包获取魔法数字
+		mainMagic := magicMap[detectedExt]
+		subMagicMap := container.GetSubChunkMagicMap()
+		subMagic := subMagicMap[detectedExt]
+
+		// 【关键修复】使用新的 chunked.NewReader，它会自动查找主分片
+		chunkedReader, err := chunked.LocalReader(anyChunkPath, mainMagic, subMagic)
+		if err != nil {
+			log.Printf("-> [File] Failed to create chunked reader from '%s': %v", anyChunkPath, err)
+			http.Error(w, "Invalid or incomplete chunk set", http.StatusBadRequest)
+			return
+		}
+		// 将 chunkedReader 包装成 PackedData
+		packedData = &container.PackedData{
+			KVIData:    chunkedReader.KVIData,
+			DataStream: chunkedReader,
+		}
+
+	case config.GlobalConfig.BinExtGroup.Image:
+		// 图像是单文件容器，可以直接解包
+		// 将文件指针重置到开头，因为 DetectContainerType 已经读取了一部分
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			log.Printf("-> [File] Failed to seek file to start: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		magicMap := container.GetContainerMagicMap()
+		packedData, err = container.Unpack(file, magicMap[detectedExt])
+
+	// case config.GlobalConfig.BinExtGroup.Text:
+	//     packedData, err = container.Unpack(file) // 未来实现
+	// case config.GlobalConfig.BinExtGroup.Audio:
+	//     packedData, err = container.Unpack(file) // 未来实现
+
+	default:
+		log.Printf("-> [File] Unsupported container type: %s", detectedExt)
+		http.Error(w, "Unsupported container type", http.StatusNotImplemented)
+		return
+	}
+
+	if err != nil {
+		log.Printf("-> [File] Failed to unpack container: %v", err)
+		http.Error(w, "Invalid container file", http.StatusBadRequest)
+		return
+	}
+	defer packedData.DataStream.Close() // 【修改】使用 DataStream
+
+	// 5. 【关键修改】使用新的统一解析函数
+	index, err := types.UnmarshalKVI(packedData.KVIData)
 	if err != nil {
 		log.Printf("-> [File] Failed to parse KVI: %v", err)
 		http.Error(w, "Failed to parse container metadata", http.StatusInternalServerError)
 		return
 	}
 
-	// 4. 准备解密密钥
-	salt, err := crypto.Base64Decode(index.Encryption.SaltBase64)
+	// 6. 准备解密密钥
+	salt, err := crypto.Base64Decode(index.GetEncryptionInfo().SaltBase64) // 【修改】使用接口方法
 	if err != nil {
 		log.Printf("-> [File] Failed to decode salt: %v", err)
-		http.Error(w, "Failed to decode container metadata", http.StatusInternalServerError)
+		http.Error(w, "Invalid salt in index file", http.StatusInternalServerError)
 		return
 	}
-	key := crypto.GenerateKey(p.password, salt)
+	key := crypto.GenerateKey(p.contentPassword, salt) // 【修改】使用新字段名
 
-	// 5. 设置响应头
-	w.Header().Set("Content-Type", utils.GetContentType(index.Format))
-	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", index.OriginalFilename))
+	// 7. 【关键修改】根据类型设置响应头
+	var contentType string
+	switch idx := index.(type) {
+	case *types.VideoIndex:
+		contentType = utils.GetContentType(idx.Format)
+	case *types.ImageIndex:
+		contentType = idx.MimeType
+	default:
+		contentType = "application/octet-stream" // 默认类型
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", index.GetOriginalFilename())) // 【修改】使用接口方法
 	w.Header().Set("Accept-Ranges", "bytes")
 
-	// 6. 流式解密并写入响应体
-	decryptedReader, err := crypto.GetDecryptReader(packedData.VideoStream, key)
+	// 8. 流式解密并写入响应体
+	// 【修改】使用 DataStream
+	decryptedReader, err := crypto.GetDecryptReader(packedData.DataStream, key)
 	if err != nil {
 		log.Printf("-> [File] Failed to create decrypt reader: %v", err)
 		http.Error(w, "Failed to initialize decryption", http.StatusInternalServerError)
@@ -327,6 +403,11 @@ func (p *Player) serveEncryptedContent(w http.ResponseWriter, r *http.Request, a
 
 // isConnectionClosedError 判断错误是否由客户端断开连接引起
 func isConnectionClosedError(err error) bool {
+	// 处理 Go 1.16+ 的特定错误
+	if errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	// 处理旧版本或更通用的错误
 	errStr := err.Error()
 	return strings.Contains(errStr, "connection reset by peer") || strings.Contains(errStr, "broken pipe")
 }

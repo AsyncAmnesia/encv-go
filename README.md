@@ -105,9 +105,9 @@ mpv http://localhost:1999/321.sccgv --sub-files=http://localhost:1999/321.ass
 
 ```bash
 # 基础用法
-./encv kvi ./output/movie.sccgv
+./encv kvi "./output/movie.sccgv"
 # 保存到文件
-./encv kvi -s kvi.json ./output/movie.sccgv
+./encv kvi -s kvi.json "./output/movie.sccgv"
 ```
 
 ### 🔗 OpenList 集成
@@ -154,6 +154,41 @@ mpv http://localhost:1999/321.sccgv --sub-files=http://localhost:1999/321.ass
     ```
 
 * 保存后即可在 OpenList 中预览加密文件。
+
+### Linux 上使用
+
+#### 安装 ffmpeg
+
+如果还没安装 ffmpeg
+
+1. 下载FFmpeg压缩包
+
+```bash
+wget https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
+```
+
+2. 解压文件
+
+```bash
+tar -xf ffmpeg-master-latest-linux64-gpl.tar.xz
+```
+
+3. 移动到系统目录
+
+```bash
+sudo mv ffmpeg-master-latest-linux64-gpl /opt/ffmpeg
+```
+
+4. 添加到PATH环境变量
+
+```bash
+echo 'export PATH="/opt/ffmpeg/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc  # 立即生效
+```
+
+WSL2 已经打通了 localhost
+
+如果 localhost 不行，尝试在 WSL 终端中运行命令 `hostname -I`，获取 WSL 虚拟机的 IP 地址
 
 ---
 

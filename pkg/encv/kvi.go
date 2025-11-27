@@ -1,33 +1,11 @@
-// pkg/encv/kvi.go
-
 package encv
 
 import (
-	"github.com/Soltus/encv-go/internal/container"
-	"github.com/Soltus/encv-go/internal/crypto"
-	"github.com/Soltus/encv-go/internal/types"
+	"github.com/Soltus/encv-go/internal/service"
 )
 
-// ExtractKVI 从给定的 ENCV 容器文件（或其任意分片）中提取原始的 KVI 数据。
-func ExtractKVI(anyChunkPath string) ([]byte, error) {
-	// 1. 【关键修改】根据任意一个分片，找到主分片
-	mainChunkPath, err := container.FindMainChunk(anyChunkPath)
-	if err != nil {
-		return nil, err
-	}
-
-	// 2. 【关键修改】使用新的分片解包函数
-	packedData, err := container.UnpackChunked(mainChunkPath)
-	if err != nil {
-		return nil, err
-	}
-	defer packedData.VideoStream.Close()
-
-	// 3. 返回 KVI 数据
-	return packedData.KVIData, nil
-}
-
-// UnmarshalKVI 根据版本号智能地解析 KVI 数据。
-func UnmarshalKVI(data []byte) (*types.VideoIndex, error) {
-	return crypto.UnmarshalKVI(data)
+// ExtractKVI 从给定的 ENCV 容器文件中提取 KVI 数据，并以原始 JSON 字节切片的形式返回。
+func ExtractKVI(containerPath string) ([]byte, error) {
+	// 直接调用服务层函数
+	return service.ExtractKVI(containerPath)
 }

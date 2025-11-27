@@ -28,9 +28,10 @@ var defaultConfig = types.UserConfig{
 	SccgvSettings: types.SccgvSettings{
 		ChunkSizeMB: 0,
 	},
+	Recover: false,
 }
 
-// LoadUserConfig 加载配置文件，如果文件不存在或部分配置缺失，则使用默认值
+// 加载配置文件，如果文件不存在或部分配置缺失，则使用默认值
 func LoadUserConfig() (*types.UserConfig, error) {
 	// 1. 初始化为默认配置
 	// 使用值拷贝，避免后续修改影响 defaultConfig
@@ -55,28 +56,15 @@ func LoadUserConfig() (*types.UserConfig, error) {
 		return GlobalConfig, fmt.Errorf("failed to parse config.user.json: %w", err)
 	}
 
-	// 【关键修复】合并所有需要的配置项（用户配置覆盖默认配置）
-	if userConfig.Password != "" {
-		GlobalConfig.Password = userConfig.Password
-	}
-	if userConfig.OutputPath != "" {
-		GlobalConfig.OutputPath = userConfig.OutputPath
-	}
-	if len(userConfig.TrackExtensions) > 0 {
-		GlobalConfig.TrackExtensions = userConfig.TrackExtensions
-	}
-	if userConfig.BinExtGroup.Text != "" {
-		GlobalConfig.BinExtGroup.Text = userConfig.BinExtGroup.Text
-	}
-	if userConfig.BinExtGroup.Image != "" {
-		GlobalConfig.BinExtGroup.Image = userConfig.BinExtGroup.Image
-	}
-	if userConfig.BinExtGroup.Audio != "" {
-		GlobalConfig.BinExtGroup.Audio = userConfig.BinExtGroup.Audio
-	}
-	if userConfig.BinExtGroup.Video != "" {
-		GlobalConfig.BinExtGroup.Video = userConfig.BinExtGroup.Video
-	}
+	// 合并所有需要的配置项（用户配置覆盖默认配置）
+	GlobalConfig.Recover = userConfig.Recover
+	GlobalConfig.Password = userConfig.Password
+	GlobalConfig.OutputPath = userConfig.OutputPath
+	GlobalConfig.TrackExtensions = userConfig.TrackExtensions
+	GlobalConfig.BinExtGroup.Text = userConfig.BinExtGroup.Text
+	GlobalConfig.BinExtGroup.Image = userConfig.BinExtGroup.Image
+	GlobalConfig.BinExtGroup.Audio = userConfig.BinExtGroup.Audio
+	GlobalConfig.BinExtGroup.Video = userConfig.BinExtGroup.Video
 	// 检查用户是否在配置文件中设置了 chunk_size，这表明他们想启用分片
 	if userConfig.SccgvSettings.ChunkSizeMB != 0 {
 		GlobalConfig.SccgvSettings = userConfig.SccgvSettings
@@ -87,7 +75,7 @@ func LoadUserConfig() (*types.UserConfig, error) {
 	return GlobalConfig, nil
 }
 
-// GetAllContainerExtensions 返回所有已知的容器扩展名（带点号）
+// 返回所有已知的容器扩展名（带点号）
 func GetAllContainerExtensions() []string {
 	return []string{
 		"." + GlobalConfig.BinExtGroup.Video, // .sccgv
@@ -97,9 +85,14 @@ func GetAllContainerExtensions() []string {
 	}
 }
 
-// GetVideoEncExtension 获取当前配置的视频加密后缀（带点号）
+// 获取当前配置的视频加密后缀（带点号）
 func GetVideoEncExtension() string {
 	return "." + GlobalConfig.BinExtGroup.Video
+}
+
+// 获取当前配置的图像加密后缀（带点号）
+func GetImageEncExtension() string {
+	return "." + GlobalConfig.BinExtGroup.Image
 }
 
 // IsContainerPath 检查路径是否是已知的容器文件（基于扩展名）

@@ -23,6 +23,8 @@ type DecryptOptions struct {
 	Password string
 	// OutputDir 解密后文件的输出目录
 	OutputDir string
+	// 【新增】命令行指定的强制覆盖标志
+	Force bool
 }
 
 // Player 封装了流媒体服务器，提供对外接口

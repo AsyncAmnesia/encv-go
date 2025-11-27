@@ -2,16 +2,13 @@ package processor
 
 import (
 	"bytes"
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 
-	"github.com/Soltus/encv-go/internal/crypto"
 	"github.com/Soltus/encv-go/internal/types"
 	"github.com/Soltus/encv-go/internal/utils"
 )
@@ -28,16 +25,59 @@ type FFProbeRawMetadata struct {
 	} `json:"streams"`
 }
 
-// ProcessedMetadata 存储我们处理过的、格式化后的元数据
-type ProcessedMetadata struct {
-	FileSize   int64
-	Duration   float64
-	Resolution string
-	Format     string
+// ProcessVideo 分析视频文件，返回其元数据
+func ProcessVideo(inputPath string) (*types.VideoIndex, error) {
+	fmt.Printf("-> Analyzing video: %s\n", filepath.Base(inputPath))
+
+	// 1. 预处理视频以获取稳定的元数据
+	tempPath, err := PreprocessVideoWithFFmpeg(inputPath)
+	if err != nil {
+		return nil, fmt.Errorf("pre-processing failed: %w", err)
+	}
+	defer os.Remove(tempPath)
+
+	// 2. 获取元数据
+	metadata, err := getProcessedMetadata(tempPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get metadata: %w", err)
+	}
+
+	fmt.Println("-> Analysis complete.")
+	return metadata, nil
+}
+
+// 使用 ffprobe 检测视频文件的真实格式
+func DetectVideoFormat(filePath string) (string, error) {
+	cmd := exec.Command("ffprobe", "-v", "error", "-show_entries", "format=format_name", "-of", "default=noprint_wrappers=1:nokey=1", filePath)
+	output, err := cmd.Output()
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			return "", fmt.Errorf("ffprobe failed: %s", string(ee.Stderr))
+		}
+		if strings.Contains(err.Error(), "executable file not found") {
+			return "", fmt.Errorf("ffprobe not found. Please install FFmpeg and ensure it's in your PATH")
+		}
+		return "", fmt.Errorf("failed to run ffprobe: %w", err)
+	}
+
+	formatName := strings.TrimSpace(string(output))
+	if formatName == "" {
+		return "", fmt.Errorf("could not determine container format")
+	}
+
+	switch {
+	case strings.Contains(formatName, "matroska"):
+		return "mkv", nil
+	case strings.Contains(formatName, "mp4"):
+		return "mp4", nil
+	default:
+		parts := strings.Split(formatName, ",")
+		return strings.ToLower(parts[0]), nil
+	}
 }
 
 // preprocessVideoWithFFmpeg 使用 FFmpeg 预处理视频，返回临时文件路径
-func preprocessVideoWithFFmpeg(inputPath string) (string, error) {
+func PreprocessVideoWithFFmpeg(inputPath string) (string, error) {
 	fmt.Println("-> Step 1: Pre-processing video for streaming...")
 	tempFile, err := os.CreateTemp("", "encv-pre-*.mp4")
 	if err != nil {
@@ -62,161 +102,8 @@ func preprocessVideoWithFFmpeg(inputPath string) (string, error) {
 	return tempPath, nil
 }
 
-// discoverAndProcessSubtitles 发现、处理并复制字幕文件
-func discoverAndProcessSubtitles(inputPath string, trackExtensions []string, encBaseName string) ([]types.SubtitleTrack, error) {
-	fmt.Println("-> Step 2: Processing subtitle tracks...")
-	videoDir := filepath.Dir(inputPath)
-	videoBaseName := strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))
-	outputDir := filepath.Dir(filepath.Dir(inputPath)) // 假设输出目录是输入目录的父目录，或者从外部传入更健壮
-
-	// a. 发现所有匹配的字幕
-	files, _ := os.ReadDir(videoDir)
-	sortedExts := utils.SortExtensionsByLength(trackExtensions)
-	var subtitleTracks []types.SubtitleTrack
-
-	for _, f := range files {
-		if f.IsDir() {
-			continue
-		}
-		fileName := f.Name()
-
-		isSubtitle := false
-		for _, ext := range sortedExts {
-			if strings.HasSuffix(fileName, ext) {
-				isSubtitle = true
-				break
-			}
-		}
-		if !isSubtitle {
-			continue
-		}
-
-		subBaseName := utils.StripKnownExtensions(fileName, sortedExts)
-		if (strings.HasPrefix(subBaseName, videoBaseName) || subBaseName == videoBaseName) && subBaseName != "" {
-			fmt.Printf("-> Found track: %s\n", fileName)
-			lang := "und"
-			if strings.Contains(fileName, "chi") || strings.Contains(fileName, "zh") {
-				lang = "chi"
-			} else if strings.Contains(fileName, "eng") {
-				lang = "eng"
-			}
-			subtitleTracks = append(subtitleTracks, types.SubtitleTrack{
-				Language: lang,
-				Title:    "",       // 稍后填充
-				Filename: fileName, // 记录原始文件名
-			})
-		}
-	}
-
-	// b. 如果有字幕，则进行排序、复制和重命名
-	if len(subtitleTracks) > 0 {
-		if err := sortAndCopySubtitles(&subtitleTracks, videoBaseName, videoDir, outputDir, encBaseName, sortedExts); err != nil {
-			return nil, err
-		}
-	}
-
-	return subtitleTracks, nil
-}
-
-// sortAndCopySubtitles 排序、复制并更新字幕切片信息
-func sortAndCopySubtitles(subtitleTracks *[]types.SubtitleTrack, videoBaseName, videoDir, outputDir, encBaseName string, sortedExts []string) error {
-	// 排序
-	sort.Slice(*subtitleTracks, func(i, j int) bool {
-		subI := &(*subtitleTracks)[i]
-		subJ := &(*subtitleTracks)[j]
-		pureBaseNameI := utils.StripKnownExtensions(subI.Filename, sortedExts)
-		pureBaseNameJ := utils.StripKnownExtensions(subJ.Filename, sortedExts)
-		isIPureMatch := pureBaseNameI == videoBaseName
-		isJPureMatch := pureBaseNameJ == videoBaseName
-		if isIPureMatch && !isJPureMatch {
-			return true
-		}
-		if !isIPureMatch && isJPureMatch {
-			return false
-		}
-		if len(pureBaseNameI) != len(pureBaseNameJ) {
-			return len(pureBaseNameI) < len(pureBaseNameJ)
-		}
-		isIDm := strings.HasPrefix(subI.Filename[len(pureBaseNameI):], ".dm.")
-		isJDm := strings.HasPrefix(subJ.Filename[len(pureBaseNameJ):], ".dm.")
-		if isIDm && !isJDm {
-			return true
-		}
-		if !isIDm && isJDm {
-			return false
-		}
-		return subI.Filename < subJ.Filename
-	})
-
-	// 复制、重命名并更新 title
-	for i := range *subtitleTracks {
-		sub := &(*subtitleTracks)[i]
-		originalSubFilename := sub.Filename
-		originalSubPath := filepath.Join(videoDir, originalSubFilename)
-
-		if _, err := os.Stat(originalSubPath); os.IsNotExist(err) {
-			fmt.Printf("-> Warning: Original subtitle file not found at %s, skipping.\n", originalSubPath)
-			continue
-		}
-
-		ext := filepath.Ext(originalSubFilename)
-		var newSubFilename string
-		if i == 0 {
-			newSubFilename = fmt.Sprintf("%s%s", encBaseName, ext)
-		} else {
-			newSubFilename = fmt.Sprintf("%s.%d%s", encBaseName, i+1, ext)
-		}
-		newSubPath := filepath.Join(outputDir, newSubFilename)
-
-		fmt.Printf("-> Copying subtitle '%s' to '%s'.\n", originalSubFilename, newSubFilename)
-		if err := utils.CopyFile(originalSubPath, newSubPath); err != nil {
-			return fmt.Errorf("failed to copy subtitle from %s to %s: %w", originalSubPath, newSubPath, err)
-		}
-
-		sub.Title = newSubFilename
-	}
-	return nil
-}
-
-// encryptVideoFile 加密视频文件并返回 IV
-func encryptVideoFile(inputPath, outputEncPath, password string, salt []byte) ([]byte, error) {
-	fmt.Println("-> Step 3: Encrypting processed video file...")
-	key := crypto.GenerateKey(password, salt)
-	iv := make([]byte, crypto.IVLength)
-	if _, err := rand.Read(iv); err != nil {
-		return nil, fmt.Errorf("failed to generate IV: %w", err)
-	}
-
-	inputFile, err := os.Open(inputPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open input file for encryption: %w", err)
-	}
-	defer inputFile.Close()
-
-	outputFile, err := os.Create(outputEncPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create encrypted output file: %w", err)
-	}
-	defer outputFile.Close()
-
-	if err := crypto.EncryptStream(inputFile, outputFile, key, iv); err != nil {
-		return nil, fmt.Errorf("encryption stream failed: %w", err)
-	}
-	return iv, nil
-}
-
-// createKVIFile 将 VideoIndex 结构体写入 KVI 文件
-func createKVIFile(indexPath string, index *types.VideoIndex) error {
-	fmt.Println("-> Step 4: Writing index file...")
-	indexData, err := json.MarshalIndent(index, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal index: %w", err)
-	}
-	return os.WriteFile(indexPath, indexData, 0644)
-}
-
 // 获取并处理视频元数据
-func getProcessedMetadata(path string) (*ProcessedMetadata, error) {
+func getProcessedMetadata(path string) (*types.VideoIndex, error) {
 	cmd := exec.Command("ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path)
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -239,12 +126,17 @@ func getProcessedMetadata(path string) (*ProcessedMetadata, error) {
 	}
 
 	fileInfo, _ := os.Stat(path)
+	mimeType, err := utils.DetectFileMIMEType(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to DetectFileMIMEType: %w", err)
+	}
 
-	return &ProcessedMetadata{
-		FileSize:   fileInfo.Size(),
-		Duration:   parseDuration(rawMeta.Format.Duration),
-		Resolution: fmt.Sprintf("%dx%d", width, height),
-		Format:     strings.TrimPrefix(filepath.Ext(path), "."),
+	return &types.VideoIndex{
+		OriginalFileSize: fileInfo.Size(),
+		DurationSeconds:  parseDuration(rawMeta.Format.Duration),
+		Resolution:       fmt.Sprintf("%dx%d", width, height),
+		Format:           strings.TrimPrefix(filepath.Ext(path), "."),
+		MimeType:         mimeType,
 	}, nil
 }
 

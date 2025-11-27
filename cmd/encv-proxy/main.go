@@ -125,7 +125,7 @@ func main() {
 		Port:                         cfg.ProxyPort, // 使用新的字段名
 		OpenListHost:                 cfg.OpenListHost,
 		Token:                        cfg.Token,
-		VideoPassword:                cfg.Password, // 映射到 proxy 包的 VideoPassword
+		ContentPassword:              cfg.Password, // 映射到 proxy 包的 VideoPassword
 		DisableSignatureVerification: cfg.DisableSignatureVerification,
 	}
 

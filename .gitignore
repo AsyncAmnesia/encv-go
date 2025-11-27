@@ -11,6 +11,7 @@
 # dict
 _decrypt
 _videos
+_images
 output
 
 # Test binary, built with `go test -c`

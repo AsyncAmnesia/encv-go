@@ -1,13 +1,19 @@
 package proxy
 
 import (
-	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/Soltus/encv-go/internal/utils"
 )
 
 // FileInfoResponse 是 /api/fs/link 的响应结构
@@ -24,37 +30,8 @@ type FileInfoResponse struct {
 	} `json:"data"`
 }
 
-// makeAuthenticatedRequest 创建一个带有正确认证头的 HTTP 请求
-func makeAuthenticatedRequest(method, url, body, token string) (*http.Response, error) {
-	var reqBody io.Reader
-	if body != "" {
-		reqBody = bytes.NewBuffer([]byte(body))
-	}
-
-	req, err := http.NewRequest(method, url, reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Add("Content-Type", "application/json")
-
-	// --- 关键修正：根据 Token 格式决定是否添加 Bearer 前缀 ---
-	if strings.Contains(token, ".") {
-		// JWT 格式，使用 Bearer 前缀
-		req.Header.Add("Authorization", "Bearer "+token)
-		log.Printf("-> [Auth Debug] Using Bearer token for request to %s", url)
-	} else {
-		// 永久 Token 格式，直接使用
-		req.Header.Add("Authorization", token)
-		log.Printf("-> [Auth Debug] Using permanent token for request to %s", url)
-	}
-
-	client := &http.Client{}
-	return client.Do(req)
-}
-
-// GetFileURL 获取文件的真实下载链接和请求头
-func GetFileURL(path, host, token string) (*FileInfoResponse, error) {
+// 获取 OpenList 文件的真实下载链接和请求头
+func OpenListGetFileURL(path, host, token string) (*FileInfoResponse, error) {
 	apiURL := fmt.Sprintf("%s/api/fs/link", host)
 
 	reqBody, err := json.Marshal(map[string]string{"path": path})
@@ -62,7 +39,7 @@ func GetFileURL(path, host, token string) (*FileInfoResponse, error) {
 		return nil, fmt.Errorf("failed to create request body: %w", err)
 	}
 
-	resp, err := makeAuthenticatedRequest("POST", apiURL, string(reqBody), token)
+	resp, err := utils.MakeAuthenticatedRequest("POST", apiURL, string(reqBody), token)
 	if err != nil {
 		return nil, fmt.Errorf("failed to call OpenList API: %w", err)
 	}
@@ -92,61 +69,47 @@ func GetFileURL(path, host, token string) (*FileInfoResponse, error) {
 	return &fileInfo, nil
 }
 
-// LoginRequest 是登录请求的结构
-type LoginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
+// 验证 OpenList 的签名
+func OpenListVerifySign(path, sign string, cfg *Config) bool {
+	parts := strings.SplitN(sign, ":", 2)
+	if len(parts) != 2 {
+		return false
+	}
 
-// LoginResponse 是登录响应的结构
-type LoginResponse struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Data    struct {
-		Token string `json:"token"`
-	} `json:"data"`
-}
-
-// LoginAndGetToken 通过用户名和密码登录并获取 Token，这个方法获取的 Token 没用，已弃用
-func loginAndGetToken(host, username, password string) (string, error) {
-	loginURL := fmt.Sprintf("%s/api/auth/login", host)
-
-	loginData := LoginRequest{Username: username, Password: password}
-	reqBody, err := json.Marshal(loginData)
+	signature, expireTimestampStr := parts[0], parts[1]
+	expireTS, err := strconv.ParseInt(expireTimestampStr, 10, 64)
 	if err != nil {
-		return "", fmt.Errorf("failed to create login request body: %w", err)
+		return false
 	}
 
-	resp, err := http.Post(loginURL, "application/json", bytes.NewBuffer(reqBody))
-	if err != nil {
-		return "", fmt.Errorf("failed to call OpenList login API: %w", err)
-	}
-	defer resp.Body.Close()
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response body: %w", err)
-	}
-	bodyString := string(bodyBytes)
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("OpenList login failed: status %d, body: %s", resp.StatusCode, bodyString)
+	if expireTS != 0 && time.Now().Unix() > expireTS {
+		return false
 	}
 
-	var loginResp LoginResponse
-	if err := json.Unmarshal(bodyBytes, &loginResp); err != nil {
-		return "", fmt.Errorf("failed to parse OpenList login response: %w, body: %s", err, bodyString)
+	var pathsToTest []string
+	pathsToTest = append(pathsToTest, path)
+	if strings.HasPrefix(path, "/") {
+		pathsToTest = append(pathsToTest, path[1:])
 	}
 
-	// 检查 API 业务逻辑是否成功
-	if loginResp.Code != 200 {
-		return "", fmt.Errorf("OpenList API returned an error: code %d, message: %s", loginResp.Code, loginResp.Message)
+	for _, p := range pathsToTest {
+		toSign := fmt.Sprintf("%s:%d", p, expireTS)
+		h := hmac.New(sha256.New, []byte(cfg.Token))
+		h.Write([]byte(toSign))
+
+		signatureWithPadding := base64.URLEncoding.EncodeToString(h.Sum(nil))
+		signatureWithoutPadding := strings.TrimRight(signatureWithPadding, "=")
+
+		if hmac.Equal([]byte(signature), []byte(signatureWithPadding)) {
+			log.Printf("-> [Signature Debug] Signature matched for path: '%s' (with padding)", p)
+			return true
+		}
+		if hmac.Equal([]byte(signature), []byte(signatureWithoutPadding)) {
+			log.Printf("-> [Signature Debug] Signature matched for path: '%s' (without padding)", p)
+			return true
+		}
 	}
 
-	// 检查 Token 是否为空
-	if loginResp.Data.Token == "" {
-		return "", fmt.Errorf("received empty token from OpenList, raw response: %s", bodyString)
-	}
-
-	return loginResp.Data.Token, nil
+	log.Printf("-> [Signature Debug] Signature did not match for any path variant. Original path: '%s'", path)
+	return false
 }

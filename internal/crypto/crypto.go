@@ -9,13 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	"golang.org/x/crypto/pbkdf2"
 )
 
 const (
-	// kvi version
-	KviVersion int16 = 1
 	// Algorithm 加密算法
 	Algorithm = "aes-256-ctr"
 	// KeySize 密钥长度
@@ -32,16 +31,6 @@ const (
 	MagicNumber = "encv-MagicNumber-v1"
 	// encv 容器
 	ContainerMagicNumber = "encv-ContainerMagicNumber-v1"
-	// encv 视频容器
-	SccgvContainerMagicNumber = "encv-SccgvContainerMagicNumber-v1"
-	SccgvMainChunkMagic       = "encv-sccgv-chunk-main-v1"
-	SccgvSubChunkMagic        = "encv-sccgv-chunk-sub-v1"
-	// encv 文本容器
-	SccgtContainerMagicNumber = "encv-SccgtContainerMagicNumber-v1"
-	// encv 音频容器
-	SccgaContainerMagicNumber = "encv-SccgaContainerMagicNumber-v1"
-	// encv 图像容器
-	SccgiContainerMagicNumber = "encv-SccgiContainerMagicNumber-v1"
 	// IVLength 是 AES CTR 模式 IV 的标准长度
 	IVLength = aes.BlockSize
 )
@@ -115,36 +104,52 @@ func GetDecryptReader(r io.Reader, key []byte) (io.Reader, error) {
 }
 
 // DecryptStream 从加密流中读取魔法标识和IV，验证后解密数据
-func DecryptStream(r io.Reader, w io.Writer, key []byte) error {
-	// 1. 读取并验证魔法标识
-	magic := make([]byte, len(MagicNumber))
-	if _, err := io.ReadFull(r, magic); err != nil {
-		return fmt.Errorf("failed to read magic number: %w", err)
-	}
-	if string(magic) != MagicNumber {
-		return fmt.Errorf("invalid file format: not an encv encrypted file")
-	}
-
-	// 2. 读取 IV
-	iv := make([]byte, IVLength)
-	if _, err := io.ReadFull(r, iv); err != nil {
-		return fmt.Errorf("failed to read IV: %w", err)
-	}
-
-	// 3. 创建解密器并解密
-	block, err := aes.NewCipher(key)
+// 【重构】现在它是对 GetDecryptReader 和 io.Copy 的一个便利封装，并返回写入的字节数。
+func DecryptStream(r io.Reader, w io.Writer, key []byte) (int64, error) {
+	// 1. 使用 GetDecryptReader 来处理所有设置逻辑（读取魔法数字和IV）
+	decryptReader, err := GetDecryptReader(r, key)
 	if err != nil {
-		return fmt.Errorf("failed to create cipher block: %w", err)
+		// GetDecryptReader 已经返回了包装好的错误信息
+		return 0, err
 	}
 
-	stream := cipher.NewCTR(block, iv)
-
-	// 使用 io.Copy 从输入流读取，解密后写入输出流
-	if _, err := io.CopyBuffer(w, streamReader{stream: stream, reader: r}, nil); err != nil {
-		return fmt.Errorf("failed to decrypt stream: %w", err)
+	// 2. 将解密后的数据从 decryptReader 复制到 w
+	// io.Copy 会返回实际写入的字节数
+	written, err := io.Copy(w, decryptReader)
+	if err != nil {
+		// 如果复制失败，返回错误和已写入的字节数
+		return written, fmt.Errorf("failed to copy decrypted data: %w", err)
 	}
 
-	return nil
+	// 3. 返回成功写入的总字节数
+	return written, nil
+}
+
+// 加密文件的通用函数，返回 IV
+func EncryptFile(inputPath, outputPath string, password string, salt []byte) ([]byte, error) {
+	key := GenerateKey(password, salt)
+	iv := make([]byte, IVLength)
+	if _, err := rand.Read(iv); err != nil {
+		return nil, fmt.Errorf("failed to generate IV: %w", err)
+	}
+
+	inputFile, err := os.Open(inputPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open input file: %w", err)
+	}
+	defer inputFile.Close()
+
+	outputFile, err := os.Create(outputPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer outputFile.Close()
+
+	if err := EncryptStream(inputFile, outputFile, key, iv); err != nil {
+		return nil, fmt.Errorf("encryption failed: %w", err)
+	}
+
+	return iv, nil
 }
 
 // --- 辅助类型，用于实现 io.Writer/io.Reader 接口 ---
