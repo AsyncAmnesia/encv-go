@@ -65,10 +65,17 @@ type UserConfig struct {
 	BinExtGroup     BinExtGroup   `json:"bin_ext_group"`
 	SccgvSettings   SccgvSettings `json:"sccgv_settings"`
 	Recover         bool          `json:"recover" yaml:"recover"` // 是否在解密时强制覆盖已存在的文件
+	Webdav          WebdavServer  `json:"webdav"`
 }
 
 // DecryptedContent 包含解密后的所有内容
 type DecryptedContent struct {
 	Index      Index
 	DataStream io.ReadCloser
+}
+
+type WebdavServer struct {
+	Port int    `json:"port"`
+	Root string `json:"root"` // 路由（例如 /webdav/）
+	Dir  string `json:"dir"`  // 件系统的根目录（例如 /path/to/your/files），而不是 WebDAV 的路由前缀（例如 /webdav/）
 }

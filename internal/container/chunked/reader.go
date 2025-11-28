@@ -5,7 +5,6 @@ package chunked
 import (
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -127,7 +126,7 @@ func LocalReader(mainChunkPath, mainMagic, subMagic string) (*ChunkedReader, err
 			cr.Close()
 			return nil, fmt.Errorf("MD5 mismatch for sub-chunk %s: expected %s, got %s", subChunkPath, subChunkInfo.MD5, actualMD5)
 		}
-		log.Printf("-> [ChunkedReader] MD5 verified for sub-chunk: %s", subChunkPath)
+		// log.Printf("-> [ChunkedReader] MD5 verified for sub-chunk: %s", subChunkPath)
 
 		file, err := os.Open(subChunkPath)
 		if err != nil {

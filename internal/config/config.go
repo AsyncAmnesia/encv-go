@@ -28,6 +28,10 @@ var defaultConfig = types.UserConfig{
 		ChunkSizeMB: 0,
 	},
 	Recover: false,
+	Webdav: types.WebdavServer{
+		Port: 2299,
+		Root: "/webdav/",
+	},
 }
 
 // 加载配置文件，如果文件不存在或部分配置缺失，则使用默认值
@@ -58,7 +62,18 @@ func LoadUserConfig() (*types.UserConfig, error) {
 	// 合并所有需要的配置项（用户配置覆盖默认配置）
 	GlobalConfig.Recover = userConfig.Recover
 	GlobalConfig.Password = userConfig.Password
-	GlobalConfig.OutputPath = userConfig.OutputPath
+	if userConfig.OutputPath != "" {
+		GlobalConfig.OutputPath = userConfig.OutputPath
+	}
+	if userConfig.Webdav.Port != 0 {
+		GlobalConfig.Webdav.Port = userConfig.Webdav.Port
+	}
+	if userConfig.Webdav.Dir != "" {
+		GlobalConfig.Webdav.Dir = userConfig.Webdav.Dir
+	}
+	if userConfig.Webdav.Root != "" {
+		GlobalConfig.Webdav.Root = userConfig.Webdav.Root
+	}
 	GlobalConfig.TrackExtensions = userConfig.TrackExtensions
 	GlobalConfig.BinExtGroup.Text = userConfig.BinExtGroup.Text
 	GlobalConfig.BinExtGroup.Image = userConfig.BinExtGroup.Image

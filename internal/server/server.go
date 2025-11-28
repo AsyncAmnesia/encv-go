@@ -23,15 +23,14 @@ import (
 // Player ... (保持不变) ...
 type Player struct {
 	dir             string
-	contentPassword string // 【修改】从 password 改为 contentPassword
+	contentPassword string
 	server          *http.Server
 }
 
 func NewPlayer(dir, password string) *Player {
-	return &Player{dir: dir, contentPassword: password} // 【修改】使用新字段名
+	return &Player{dir: dir, contentPassword: password}
 }
 
-// Start ... (保持不变) ...
 func (p *Player) Start(port int) (string, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", p.handleRequest)
@@ -49,7 +48,6 @@ func (p *Player) Start(port int) (string, error) {
 	return addr, nil
 }
 
-// Stop ... (保持不变) ...
 func (p *Player) Stop() {
 	if p.server != nil {
 		p.server.Close()

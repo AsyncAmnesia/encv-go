@@ -12,5 +12,10 @@
     "video": "sccgv",
     "iframe": "sccgf"
   },
-  "sccgv_settings": { "chunk_size": 100 }
+  "sccgv_settings": { "chunk_size": 100 },
+  "webdav": {
+    "port": 1234,
+    "root": "webdav",
+    "dir": "A:\\Local\\Col-Study\\go\\encv"
+  }
 }

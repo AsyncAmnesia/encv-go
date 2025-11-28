@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/pkg/encv"
@@ -150,6 +151,22 @@ func main() {
 		log.Printf("   Access it at: http://localhost%s\n", addr)
 		log.Println("\n--- How to Play ---")
 		log.Printf("   mpv --no-config http://localhost%s/<video_name_without_extension>\n", addr)
+		log.Println("\n(Press Ctrl+C in this terminal to stop the server)")
+
+		select {} // Keep server running
+
+	case "webdav":
+		addr, webdavPath, err := encv.StartWebdav(cfg)
+		if err != nil {
+			log.Fatalf("Failed to start WebDAV server: %v", err)
+		}
+
+		log.Printf("\n✅ WebDAV server started successfully!\n")
+		log.Printf("   Serving files from: %s\n", cfg.Webdav.Dir)
+		log.Printf("   Access it at: http://localhost%s%s\n", addr, webdavPath)
+		log.Println("\n--- How to Connect ---")
+		log.Printf("   Windows: \\\\localhost@%s%s\n", strings.TrimPrefix(addr, ":"), webdavPath)
+		log.Printf("   macOS:   http://localhost%s%s\n", addr, webdavPath)
 		log.Println("\n(Press Ctrl+C in this terminal to stop the server)")
 
 		select {} // Keep server running

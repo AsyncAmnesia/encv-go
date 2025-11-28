@@ -15,6 +15,7 @@
 /_texts
 /_frame
 /output
+/test_container_effect
 
 # Test binary, built with `go test -c`
 *.test
