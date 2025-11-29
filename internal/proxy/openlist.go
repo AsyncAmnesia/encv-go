@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/utils"
 )
 
@@ -70,7 +71,7 @@ func OpenListGetFileURL(path, host, token string) (*FileInfoResponse, error) {
 }
 
 // 验证 OpenList 的签名
-func OpenListVerifySign(path, sign string, cfg *Config) bool {
+func OpenListVerifySign(path, sign string, cfg *config.Config) bool {
 	parts := strings.SplitN(sign, ":", 2)
 	if len(parts) != 2 {
 		return false
@@ -94,7 +95,7 @@ func OpenListVerifySign(path, sign string, cfg *Config) bool {
 
 	for _, p := range pathsToTest {
 		toSign := fmt.Sprintf("%s:%d", p, expireTS)
-		h := hmac.New(sha256.New, []byte(cfg.Token))
+		h := hmac.New(sha256.New, []byte(cfg.Proxy.Token))
 		h.Write([]byte(toSign))
 
 		signatureWithPadding := base64.URLEncoding.EncodeToString(h.Sum(nil))

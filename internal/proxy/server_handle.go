@@ -1,11 +1,13 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 
+	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/crypto"
 	"github.com/Soltus/encv-go/internal/types"
 	"github.com/Soltus/encv-go/internal/utils"
@@ -13,9 +15,9 @@ import (
 
 // serveDecryptedStreamFromReader 从一个 io.ReadCloser 解密并服务流
 // useChunked 为 true 时，使用分块传输；为 false 时，使用定长传输
-func serveDecryptedStreamFromReader(w http.ResponseWriter, encryptedReader io.ReadCloser, index types.Index, password string, useChunked bool) error {
+func serveDecryptedStreamFromReader(ctx context.Context, w http.ResponseWriter, encryptedReader io.ReadCloser, index types.Index, useChunked bool) error {
 	defer encryptedReader.Close()
-
+	cfg := config.FromContext(ctx)
 	// 1. 从 KVI 获取解密所需信息
 	salt, err := crypto.Base64Decode(index.GetEncryptionInfo().SaltBase64)
 	if err != nil {
@@ -23,7 +25,7 @@ func serveDecryptedStreamFromReader(w http.ResponseWriter, encryptedReader io.Re
 		http.Error(w, "Invalid salt in index file", http.StatusInternalServerError)
 		return err
 	}
-	key := crypto.GenerateKey(password, salt)
+	key := crypto.GenerateKey(cfg.Password, salt)
 
 	// 2. 【关键】创建一个透明的解密流
 	// 它会从 encryptedReader 读取加密数据，并吐出解密后的原始数据

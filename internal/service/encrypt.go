@@ -3,6 +3,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,7 +20,7 @@ import (
 )
 
 // EncryptFile 加密单个文件，并根据类型和配置进行打包
-func EncryptFile(inputPath, outputDir, password string, salt []byte, trackExtensions []string) error {
+func EncryptFile(ctx context.Context, inputPath string, outputDir string, salt []byte) error {
 	// 【修改 1】提取文件名、基础名和原始后缀
 	filename := filepath.Base(inputPath)
 	baseName := strings.TrimSuffix(filename, filepath.Ext(filename))
@@ -34,18 +35,19 @@ func EncryptFile(inputPath, outputDir, password string, salt []byte, trackExtens
 	// 2. 根据类型分发处理加密
 	switch {
 	case utils.IsVideoType(mimeType):
-		return encryptVideo(inputPath, baseName, originalExt, outputDir, password, salt, trackExtensions)
+		return encryptVideo(ctx, inputPath, baseName, originalExt, outputDir, salt)
 	case utils.IsImageType(mimeType):
-		return encryptImage(inputPath, baseName, originalExt, outputDir, password, salt)
+		return encryptImage(ctx, inputPath, baseName, originalExt, outputDir, salt)
 	case utils.IsTextType(mimeType):
-		return encryptText(inputPath, baseName, originalExt, outputDir, password, salt)
+		return encryptText(ctx, inputPath, baseName, originalExt, outputDir, salt)
 	default:
 		return fmt.Errorf("unsupported file type: %s", mimeType)
 	}
 }
 
 // createChunkedContainer 创建分片容器
-func createChunkedContainer(encryptedPath, finalPath string, index *types.VideoIndex, originalVideoPath string) error {
+func createChunkedContainer(ctx context.Context, encryptedPath, finalPath string, index *types.VideoIndex, originalVideoPath string) error {
+	cfg := config.FromContext(ctx)
 	// 1. 打开加密文件，并确保它支持 Seek
 	encFile, err := os.Open(encryptedPath)
 	if err != nil {
@@ -54,11 +56,11 @@ func createChunkedContainer(encryptedPath, finalPath string, index *types.VideoI
 	defer encFile.Close()
 
 	// 2. 获取配置和魔法数字
-	chunkSize := config.GetSccgvChunkSize()
-	magicMap := container.GetContainerMagicMap()
-	subMagicMap := container.GetSubChunkMagicMap()
-	mainMagic := magicMap[config.GlobalConfig.BinExtGroup.Video] // 后续其他分片容器这里需要修改
-	subMagic := subMagicMap[config.GlobalConfig.BinExtGroup.Video]
+	chunkSize := cfg.GetSccgvChunkSizeBytes()
+	magicMap, err := container.GetContainerMagicMap(ctx)
+	subMagicMap, err := container.GetSubChunkMagicMap(ctx)
+	mainMagic := magicMap[cfg.BinExtGroup.Video] // 后续其他分片容器这里需要修改
+	subMagic := subMagicMap[cfg.BinExtGroup.Video]
 
 	// 计算原始文件的 MD5 (用于所有分片头)
 	originalMD5, err := utils.FileMD5(originalVideoPath)
@@ -116,7 +118,7 @@ func createChunkedContainer(encryptedPath, finalPath string, index *types.VideoI
 			break
 		}
 
-		log.Printf("-> [Chunking Debug] Successfully created sub-chunk %d: %s (size: %d, md5: %s)", chunkIndex, filename, written, md5)
+		// log.Printf("-> [Chunking Debug] Successfully created sub-chunk %d: %s (size: %d, md5: %s)", chunkIndex, filename, written, md5)
 
 		// 收集子分片信息
 		subChunks = append(subChunks, types.SubChunkInfo{

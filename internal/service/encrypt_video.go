@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,9 +16,9 @@ import (
 )
 
 // encryptVideo 处理视频加密和打包
-func encryptVideo(inputPath, baseName, originalExt, outputDir, password string, salt []byte, trackExtensions []string) error {
+func encryptVideo(ctx context.Context, inputPath, baseName, originalExt, outputDir string, salt []byte) error {
 	fmt.Printf("--> Starting encryption for video: %s\n", baseName)
-
+	cfg := config.FromContext(ctx)
 	// 1. 【分析阶段】获取视频元数据
 	metadata, err := processor.ProcessVideo(inputPath)
 	if err != nil {
@@ -25,7 +26,7 @@ func encryptVideo(inputPath, baseName, originalExt, outputDir, password string, 
 	}
 
 	// 2. 【分析阶段】发现字幕轨道
-	subtitleInfos, err := utils.DiscoverSubtitleTracks(inputPath, trackExtensions)
+	subtitleInfos, err := utils.DiscoverSubtitleTracks(inputPath, cfg.TrackExtensions)
 	if err != nil {
 		return fmt.Errorf("subtitle discovery failed: %w", err)
 	}
@@ -38,7 +39,7 @@ func encryptVideo(inputPath, baseName, originalExt, outputDir, password string, 
 	defer os.Remove(tempPreprocessedPath)
 
 	tempEncPath := filepath.Join(outputDir, baseName+".tmp_enc")
-	iv, err := crypto.EncryptFile(tempPreprocessedPath, tempEncPath, password, salt)
+	iv, err := crypto.EncryptFile(tempPreprocessedPath, tempEncPath, cfg.Password, salt)
 	if err != nil {
 		return fmt.Errorf("encryption failed: %w", err)
 	}
@@ -75,12 +76,12 @@ func encryptVideo(inputPath, baseName, originalExt, outputDir, password string, 
 	}
 
 	// 6. 【打包阶段】根据配置选择打包方式
-	finalPath := filepath.Join(outputDir, encBaseName+config.GetVideoEncExtension())
+	finalPath := filepath.Join(outputDir, encBaseName+cfg.GetVideoEncExtension())
 
-	if config.IsSccgvChunkingEnabled() {
-		return createChunkedContainer(tempEncPath, finalPath, index, inputPath)
+	if cfg.IsSccgvChunkingEnabled() {
+		return createChunkedContainer(ctx, tempEncPath, finalPath, index, inputPath)
 	}
-	return container.PackWithIndex(tempEncPath, finalPath, index)
+	return container.PackWithIndex(ctx, tempEncPath, finalPath, index)
 }
 
 // copyAndRenameSubtitles 复制并重命名字幕文件，并更新 subtitleTracks 中的 Title

@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"log"
 	"net/http"
 
@@ -10,7 +11,7 @@ import (
 )
 
 // 专门处理文本容器
-func handleTextContainer(w http.ResponseWriter, containerURL string, headers map[string]string, cfg *Config) {
+func handleTextContainer(ctx context.Context, w http.ResponseWriter, containerURL string, headers map[string]string) {
 	// 1. 下载整个容器到内存
 	log.Printf("-> [Proxy] Reading full text container into memory for reliable processing.")
 	containerData, err := utils.ReadAllFromURL(containerURL, headers)
@@ -21,7 +22,7 @@ func handleTextContainer(w http.ResponseWriter, containerURL string, headers map
 	}
 
 	// 2. 从内存中检测类型和解包
-	detectedExt, err := container.DetectContainerType(containerData)
+	detectedExt, err := container.DetectContainerType(ctx, containerData)
 	if err != nil {
 		log.Printf("-> [Proxy] Failed to detect container type from memory: %v", err)
 		http.Error(w, "Unknown container format", http.StatusBadRequest)
@@ -30,7 +31,7 @@ func handleTextContainer(w http.ResponseWriter, containerURL string, headers map
 	log.Printf("-> [Proxy] Detected container extension: %s", detectedExt)
 
 	reader := bytes.NewReader(containerData)
-	magicMap := container.GetContainerMagicMap()
+	magicMap, err := container.GetContainerMagicMap(ctx)
 	packedData, err := container.Unpack(reader, magicMap[detectedExt])
 	if err != nil {
 		log.Printf("-> [Proxy] Failed to unpack text container from memory: %v", err)
@@ -49,7 +50,7 @@ func handleTextContainer(w http.ResponseWriter, containerURL string, headers map
 
 	// 4. 【关键修改】调用通用的解密服务函数
 	// 文本不需要像GIF/WebP那样的特殊分块传输，所以 useChunked 为 false
-	if err := serveDecryptedStreamFromReader(w, packedData.DataStream, index, cfg.ContentPassword, true); err != nil {
+	if err := serveDecryptedStreamFromReader(ctx, w, packedData.DataStream, index, true); err != nil {
 		log.Printf("-> [Proxy] Failed to serve decrypted text stream: %v", err)
 	}
 }

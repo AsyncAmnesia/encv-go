@@ -1,6 +1,7 @@
 package container
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -12,7 +13,8 @@ import (
 )
 
 // PackWithIndex 将加密文件和任意类型的索引打包成容器
-func PackWithIndex(dataPath, finalPath string, index types.Index) error {
+func PackWithIndex(ctx context.Context, dataPath, finalPath string, index types.Index) error {
+	cfg := config.FromContext(ctx)
 	// 1. 打开加密数据文件
 	dataFile, err := os.Open(dataPath)
 	if err != nil {
@@ -31,17 +33,17 @@ func PackWithIndex(dataPath, finalPath string, index types.Index) error {
 	var ext string
 	switch i := index.(type) {
 	case *types.VideoIndex:
-		ext = config.GlobalConfig.BinExtGroup.Video
+		ext = cfg.BinExtGroup.Video
 	case *types.ImageIndex:
-		ext = config.GlobalConfig.BinExtGroup.Image
+		ext = cfg.BinExtGroup.Image
 	case *types.TextIndex:
-		ext = config.GlobalConfig.BinExtGroup.Text
+		ext = cfg.BinExtGroup.Text
 	default:
 		// 如果还有其他类型，可以在这里添加
 		return fmt.Errorf("unsupported index type for packing: %T", i)
 	}
 
-	magicMap := GetContainerMagicMap()
+	magicMap, err := GetContainerMagicMap(ctx)
 	magic, ok := magicMap[ext]
 	if !ok {
 		return fmt.Errorf("no magic number found for extension: %s", ext)

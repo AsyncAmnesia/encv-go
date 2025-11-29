@@ -3,22 +3,22 @@
 package encv
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/crypto"
 	"github.com/Soltus/encv-go/internal/service"
 	"github.com/Soltus/encv-go/internal/utils"
 )
 
 // Encrypt 加密单个视频文件或整个目录。
-func Encrypt(inputPath string, opts EncryptOptions) error {
-	if err := validateEncryptOpts(opts); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(opts.OutputDir, 0755); err != nil {
+func Encrypt(ctx context.Context, inputPath string) error {
+	cfg := config.FromContext(ctx)
+	if err := os.MkdirAll(cfg.OutputPath, 0755); err != nil {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
@@ -33,16 +33,16 @@ func Encrypt(inputPath string, opts EncryptOptions) error {
 	}
 
 	if info.IsDir() {
-		return encryptDir(inputPath, opts, salt)
+		return encryptDir(ctx, inputPath, salt)
 	}
-	return encryptSingleFile(inputPath, opts, salt)
+	return encryptSingleFile(ctx, inputPath, salt)
 }
 
 // encryptSingleFile 调用服务层加密单个文件
-func encryptSingleFile(inputPath string, opts EncryptOptions, salt []byte) error {
+func encryptSingleFile(ctx context.Context, inputPath string, salt []byte) error {
 	fmt.Printf("-> Encrypting: %s\n", inputPath)
-	// 【关键修复】传入 TrackExtensions
-	if err := service.EncryptFile(inputPath, opts.OutputDir, opts.Password, salt, opts.TrackExtensions); err != nil {
+	cfg := config.FromContext(ctx)
+	if err := service.EncryptFile(ctx, inputPath, cfg.OutputPath, salt); err != nil {
 		return fmt.Errorf("encryption failed for %s: %w", inputPath, err)
 	}
 	fmt.Printf("✅ Success: %s\n", inputPath)
@@ -50,7 +50,7 @@ func encryptSingleFile(inputPath string, opts EncryptOptions, salt []byte) error
 }
 
 // encryptDir 遍历目录加密所有支持的文件
-func encryptDir(inputDir string, opts EncryptOptions, salt []byte) error {
+func encryptDir(ctx context.Context, inputDir string, salt []byte) error {
 	entries, err := os.ReadDir(inputDir)
 	if err != nil {
 		return fmt.Errorf("failed to read input directory: %w", err)
@@ -73,7 +73,7 @@ func encryptDir(inputDir string, opts EncryptOptions, salt []byte) error {
 		}
 
 		supportedCount++
-		if err := encryptSingleFile(fullPath, opts, salt); err != nil {
+		if err := encryptSingleFile(ctx, fullPath, salt); err != nil {
 			fmt.Printf("Error: %v\n", err) // 打印错误但继续处理其他文件
 		}
 	}
@@ -84,12 +84,5 @@ func encryptDir(inputDir string, opts EncryptOptions, salt []byte) error {
 		fmt.Printf("-> Found and processed %d supported file(s).\n", supportedCount)
 	}
 
-	return nil
-}
-
-func validateEncryptOpts(opts EncryptOptions) error {
-	if opts.Password == "" || opts.OutputDir == "" {
-		return ErrMissingOptions
-	}
 	return nil
 }

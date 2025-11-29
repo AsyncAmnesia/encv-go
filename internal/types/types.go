@@ -36,36 +36,53 @@ type Index interface {
 	GetMimeType() string
 }
 
-// EncryptionInfo 包含加密所需的信息
-type EncryptionInfo struct {
-	Algorithm  string `json:"algorithm"`
-	IVBase64   string `json:"iv_base64"`
-	SaltBase64 string `json:"salt_base64"`
-}
-
 type BinExtGroup struct {
-	Text   string `json:"text"`
-	Image  string `json:"image"`
-	Audio  string `json:"audio"`
-	Video  string `json:"video"`
+	// 文本类加密容器的扩展名。
+	Text string `json:"text"`
+	// 图像类加密容器的扩展名。
+	Image string `json:"image"`
+	// 音频类加密容器的扩展名。
+	Audio string `json:"audio"`
+	// 视频类加密容器的扩展名。
+	Video string `json:"video"`
+	// OpenList iframe 类加密容器的扩展名。
 	Iframe string `json:"iframe"`
 }
 
 // SccgvSettings 包含 SCCGV 容器的特定设置
 type SccgvSettings struct {
+	// 分片大小（单位 MB），为 0 或为空禁用分片
 	ChunkSizeMB int `json:"chunk_size"`
 }
 
-// UserConfig 用户配置文件结构
-type UserConfig struct {
-	Password        string        `json:"password"`
-	OutputPath      string        `json:"outputPath"`
-	Port            int           `json:"port"`
-	TrackExtensions []string      `json:"trackExtensions"`
-	BinExtGroup     BinExtGroup   `json:"bin_ext_group"`
-	SccgvSettings   SccgvSettings `json:"sccgv_settings"`
-	Recover         bool          `json:"recover" yaml:"recover"` // 是否在解密时强制覆盖已存在的文件
-	Webdav          WebdavServer  `json:"webdav"`
+// --- WebDAV 服务器设置 ---
+type WebdavServer struct {
+	// encv Webdav 服务器的端口，请不要填写 encv HTTP Server、 OpenList 或其他已使用的端口
+	Port int `json:"port"`
+	// 路由（例如 /webdav/）
+	Root string `json:"root"`
+	// 文件系统的根目录（例如 /path/to/your/files），而不是 WebDAV 的路由前缀（例如 /webdav/）
+	Dir string `json:"dir"`
+}
+
+// --- 内置HTTP服务器 设置 ---
+type HttpServer struct {
+	// encv HTTP 服务器的端口，请不要填写 encv Webdav Server、 OpenList 或其他已使用的端口
+	Port int `json:"port"`
+	// 文件系统的根目录（例如 /path/to/your/files），支持相对路径
+	Dir string `json:"dir"`
+}
+
+// --- Openlist 代理服务器设置 ---
+type OpenlistProxyServer struct {
+	// Openlist Webdav 代理的端口，请不要填写 encv Webdav Server、 OpenList 或其他已使用的端口
+	Port int `json:"port"`
+	// OpenList 的主机名，一般是 IP 或者域名，比如 localhost
+	OpenListHost string `json:"openlist_host"`
+	// 不建议在 json 文件中存储 Token
+	Token string `json:"token"`
+	// 禁用签名，目前没发现这个值有什么影响
+	DisableSignatureVerification bool `json:"disable_signature_verification"`
 }
 
 // DecryptedContent 包含解密后的所有内容
@@ -74,8 +91,9 @@ type DecryptedContent struct {
 	DataStream io.ReadCloser
 }
 
-type WebdavServer struct {
-	Port int    `json:"port"`
-	Root string `json:"root"` // 路由（例如 /webdav/）
-	Dir  string `json:"dir"`  // 件系统的根目录（例如 /path/to/your/files），而不是 WebDAV 的路由前缀（例如 /webdav/）
+// EncryptionInfo 包含加密所需的信息
+type EncryptionInfo struct {
+	Algorithm  string `json:"algorithm"`
+	IVBase64   string `json:"iv_base64"`
+	SaltBase64 string `json:"salt_base64"`
 }

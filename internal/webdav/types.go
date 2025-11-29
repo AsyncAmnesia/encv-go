@@ -10,12 +10,9 @@ import (
 // encvWebDAVFS 是一个自定义的 webdav.FileSystem
 // 它拦截文件请求，如果文件是 ENCV 容器，则提供解密后的流
 type encvWebDAVFS struct {
-	// dir 是 WebDAV 服务的根目录
-	dir string
-	// password 用于解密内容
-	password string
+	dir string // WebDAV 服务的本地文件系统目录（绝对路径）
 	// 【新增】WebDAV 的 URL 前缀 (例如 "/webdav/")
-	webdavPrefix string
+	webdavPrefix string // WebDAV 的 URL 前缀，例如 "/webdav"
 	// 【新增】内存缓存，用于存储已解密的小文件内容
 	// key: 文件绝对路径, value: 解密后的字节数据
 	decryptionCache map[string][]byte

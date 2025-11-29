@@ -1,133 +1,75 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/proxy"
 )
 
-// Config 定义了代理服务器所需的所有配置
-type Config struct {
-	ProxyPort    int
-	OpenListHost string
-	// OpenList 认证，需要有权限
-	Token string
-	// 与 OpenList 挂载的配置是否启用签名一致，不过好像开关都一样
-	DisableSignatureVerification bool
-	// 视频解密密码 (与 encv-cli 共用)
-	Password string
-}
+func main() {
+	// 1. 加载基础配置（默认值 + 配置文件），后期修改为可自定义配置文件路径
+	cfg, err := config.Load("config.user.json")
+	if err != nil {
+		log.Fatalf("Failed to load base config: %v", err)
+	}
 
-// loadConfig 从命令行和配置文件加载配置
-func loadConfig() (*Config, error) {
-	cfg := &Config{}
+	// 2. 定义 Proxy 特有的命令行参数，默认值来自已加载的配置
+	flag.IntVar(&cfg.Proxy.Port, "proxy-port", cfg.Proxy.Port, "Port for the proxy server.")
+	flag.StringVar(&cfg.Proxy.OpenListHost, "openlist-host", cfg.Proxy.OpenListHost, "URL of the OpenList server.")
+	flag.StringVar(&cfg.Proxy.Token, "token", cfg.Proxy.Token, "Admin token from OpenList.")
+	flag.BoolVar(&cfg.Proxy.DisableSignatureVerification, "disable-signature-verification", cfg.Proxy.DisableSignatureVerification, "Disable signature verification.")
+	flag.StringVar(&cfg.Password, "password", cfg.Password, "Password for decrypting video files.")
 
-	// 1. 定义命令行参数
-	var configFile string
-	flag.IntVar(&cfg.ProxyPort, "proxy-port", 0, "Port for the proxy server to listen on.")
-	flag.StringVar(&cfg.OpenListHost, "openlist-host", "", "URL of the OpenList server.")
-	flag.StringVar(&cfg.Token, "token", "", "Admin token from OpenList (overrides config file).")
-	flag.BoolVar(&cfg.DisableSignatureVerification, "disable-signature-verification", false, "Disable OpenList signature verification for testing purposes.")
-	flag.StringVar(&cfg.Password, "password", "", "Password for decrypting video files.")
-	flag.StringVar(&configFile, "config", "config.user.json", "Path to the user configuration file.")
+	// 解析所有命令行参数
 	flag.Parse()
+	rootCtx := config.NewContext(context.Background(), cfg)
 
-	// 2. 尝试从配置文件加载（如果存在）
-	if _, err := os.Stat(configFile); err == nil {
-		fileData, err := os.ReadFile(configFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read config file %s: %w", configFile, err)
-		}
+	// 确保主机地址总是包含协议方案
+	if !strings.HasPrefix(cfg.Proxy.OpenListHost, "http://") && !strings.HasPrefix(cfg.Proxy.OpenListHost, "https://") {
+		log.Printf("Warning: openlist-host '%s' is missing a scheme, defaulting to http://", cfg.Proxy.OpenListHost)
+		cfg.Proxy.OpenListHost = "http://" + cfg.Proxy.OpenListHost
+	}
 
-		// 创建一个临时结构体来映射 JSON，字段名与配置文件保持一致
-		var fileConfig struct {
-			ProxyPort                    int    `json:"proxy_port"`
-			OpenListHost                 string `json:"openlist_host"`
-			Token                        string `json:"token"`
-			DisableSignatureVerification bool   `json:"disable_signature_verification"`
-			Password                     string `json:"password"`
-		}
-		if err := json.Unmarshal(fileData, &fileConfig); err != nil {
-			return nil, fmt.Errorf("failed to parse config file %s: %w", configFile, err)
-		}
+	if err := authenticate(rootCtx); err != nil {
+		log.Fatalf("Authentication failed: %v", err)
+	}
 
-		// 如果命令行参数未设置（即仍为默认值），则使用配置文件中的值
-		if cfg.ProxyPort == 0 {
-			cfg.ProxyPort = fileConfig.ProxyPort
-		}
-		if cfg.OpenListHost == "" {
-			cfg.OpenListHost = fileConfig.OpenListHost
-		}
-		if cfg.Token == "" {
-			cfg.Token = fileConfig.Token
-		}
-		if !cfg.DisableSignatureVerification {
-			cfg.DisableSignatureVerification = fileConfig.DisableSignatureVerification
-		}
-		if cfg.Password == "" {
-			cfg.Password = fileConfig.Password
-		}
+	// 3. 验证必要的配置
+	if cfg.Password == "" {
+		log.Fatalf("Password is required. Please provide it via -password flag or in config.user.json")
 	}
-	// 3. 设置最终的默认值（如果命令行和配置文件都未指定）
-	if cfg.ProxyPort == 0 {
-		cfg.ProxyPort = 2025 // 默认端口
+	if cfg.Proxy.Token == "" {
+		log.Fatalf("OpenList token is required. Please provide it via -token flag or in config.user.json")
 	}
-	if cfg.OpenListHost == "" {
-		cfg.OpenListHost = "http://localhost:5244" // 默认主机
+
+	// 确保主机地址包含协议
+	if !strings.HasPrefix(cfg.Proxy.OpenListHost, "http://") && !strings.HasPrefix(cfg.Proxy.OpenListHost, "https://") {
+		log.Printf("Warning: openlist-host '%s' is missing a scheme, defaulting to http://", cfg.Proxy.OpenListHost)
+		cfg.Proxy.OpenListHost = "http://" + cfg.Proxy.OpenListHost
 	}
-	return cfg, nil
+
+	if err := authenticate(rootCtx); err != nil {
+		log.Fatalf("Authentication failed: %v", err)
+	}
+
+	// 【修改】创建 Proxy 实例并启动它
+	proxyServer := proxy.NewProxy(rootCtx)
+	proxyServer.StartServer()
 }
 
 // authenticate 获取有效的 Token
-func authenticate(cfg *Config) error {
-	if cfg.Token != "" {
+func authenticate(ctx context.Context) error {
+	cfg := config.FromContext(ctx)
+	if cfg.Proxy.Token != "" {
 		log.Println("Using provided token for OpenList authentication.")
 		return nil
 	}
 
 	// 如果两种方式都没有提供
 	return fmt.Errorf("authentication failed: please provide either a -token or -openlist-username and -openlist-password")
-}
-
-func main() {
-	// 程序启动时初始化全局配置
-	if _, err := config.LoadUserConfig(); err != nil {
-		log.Fatalf("Failed to load global configuration for proxy: %v", err)
-	}
-	cfg, err := loadConfig()
-	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
-	}
-
-	// 确保主机地址总是包含协议方案
-	if !strings.HasPrefix(cfg.OpenListHost, "http://") && !strings.HasPrefix(cfg.OpenListHost, "https://") {
-		log.Printf("Warning: openlist-host '%s' is missing a scheme, defaulting to http://", cfg.OpenListHost)
-		cfg.OpenListHost = "http://" + cfg.OpenListHost
-	}
-
-	if err := authenticate(cfg); err != nil {
-		log.Fatalf("Authentication failed: %v", err)
-	}
-
-	// 检查视频解密密码是否已提供
-	if cfg.Password == "" {
-		log.Fatalf("Password is required. Please provide it via -password flag or in config.user.json")
-	}
-
-	// 至此，cfg.Token 和 cfg.Password 必定不为空
-	proxyCfg := &proxy.Config{
-		Port:                         cfg.ProxyPort, // 使用新的字段名
-		OpenListHost:                 cfg.OpenListHost,
-		Token:                        cfg.Token,
-		ContentPassword:              cfg.Password, // 映射到 proxy 包的 VideoPassword
-		DisableSignatureVerification: cfg.DisableSignatureVerification,
-	}
-
-	proxy.StartServer(proxyCfg)
 }

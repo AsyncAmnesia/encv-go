@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -18,42 +19,43 @@ func main() {
 		return
 	}
 
-	cfg, err := config.LoadUserConfig()
+	// 1. 加载基础配置（默认值 + 配置文件），后期修改为可自定义配置文件路径
+	cfg, err := config.Load("config.user.json")
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		log.Fatalf("Failed to load base config: %v", err)
 	}
+	rootCtx := config.NewContext(context.Background(), cfg)
 
 	switch os.Args[1] {
 	case "encrypt":
-		// ... (encrypt 逻辑保持不变) ...
 		encryptCmd := flag.NewFlagSet("encrypt", flag.ExitOnError)
-		passwordPtr := encryptCmd.String("p", cfg.Password, "Password for encryption")
-		outputPtr := encryptCmd.String("o", cfg.OutputPath, "Output directory")
+		// 直接传入 cfg 字段的地址，flag.Parse() 后会自动更新
+		encryptCmd.StringVar(&cfg.Password, "p", cfg.Password, "Password for encryption, overrides config file")
+		encryptCmd.StringVar(&cfg.OutputPath, "o", cfg.OutputPath, "Output directory, overrides config file")
+
 		err := encryptCmd.Parse(os.Args[2:])
 		if err != nil {
-			log.Fatalf("Error parsing flags: %v", err)
+			log.Fatalf("Error parsing 'encrypt' flags: %v", err)
 		}
 
 		inputPath := encryptCmd.Arg(0)
 		if inputPath == "" {
-			log.Fatal("Error: Please provide the path to the video file or directory to encrypt.")
+			log.Fatal("Error: Please provide the path to the file or directory to encrypt.")
 		}
 
-		opts := encv.EncryptOptions{
-			Password:        *passwordPtr,
-			OutputDir:       *outputPtr,
-			TrackExtensions: cfg.TrackExtensions,
-		}
-		if err := encv.Encrypt(inputPath, opts); err != nil {
+		finalCtx := config.NewContext(context.Background(), cfg)
+
+		if err := encv.Encrypt(finalCtx, inputPath); err != nil {
 			log.Fatalf("Encryption failed: %v", err)
 		}
-		log.Printf("✅ Encryption complete. Output in: %s\n", opts.OutputDir)
+		log.Printf("✅ Encryption complete. Output in: %s\n", cfg.OutputPath)
 
 	case "decrypt":
 		decryptCmd := flag.NewFlagSet("decrypt", flag.ExitOnError)
-		passwordPtr := decryptCmd.String("p", cfg.Password, "Password for decryption")
+		// 直接传入 cfg 字段的地址，flag.Parse() 后会自动更新
+		decryptCmd.StringVar(&cfg.Password, "p", cfg.Password, "Password for decryption, overrides config file")
+		decryptCmd.BoolVar(&cfg.Recover, "r", cfg.Recover, "Force overwrite existing output files, overrides config file")
 		outputPtr := decryptCmd.String("o", "./decrypted", "Output directory for decrypted files")
-		force := decryptCmd.Bool("f", false, "Force overwrite existing output files")
 		err := decryptCmd.Parse(os.Args[2:])
 		if err != nil {
 			log.Fatalf("Error parsing flags: %v", err)
@@ -65,17 +67,15 @@ func main() {
 			log.Fatal("Error: Please provide the path to the ENCV container file to decrypt.")
 		}
 
+		finalCtx := config.NewContext(context.Background(), cfg)
 		opts := encv.DecryptOptions{
-			Password:  *passwordPtr,
 			OutputDir: *outputPtr,
-			Force:     *force,
 		}
-		if err := encv.Decrypt(inputPath, opts); err != nil {
+		if err := encv.Decrypt(finalCtx, inputPath, opts); err != nil {
 			log.Fatalf("Decryption failed: %v", err)
 		}
 		log.Printf("✅ Decryption complete. Output in: %s\n", opts.OutputDir)
 
-	// 【新增】kvi 命令
 	case "kvi":
 		kviCmd := flag.NewFlagSet("kvi", flag.ExitOnError)
 		savePathPtr := kviCmd.String("s", "", "Save KVI content to a specified JSON file.")
@@ -90,7 +90,7 @@ func main() {
 		}
 
 		// 调用新函数获取 KVI 数据
-		kviData, err := encv.ExtractKVI(containerPath)
+		kviData, err := encv.ExtractKVI(rootCtx, containerPath)
 		if err != nil {
 			log.Fatalf("Failed to extract KVI from '%s': %v", containerPath, err)
 		}
@@ -116,38 +116,28 @@ func main() {
 			log.Printf("✅ KVI content successfully saved to: %s\n", *savePathPtr)
 		}
 
-	case "serve":
-		// ... (serve 逻辑保持不变) ...
-		serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
-		passwordPtr := serveCmd.String("p", cfg.Password, "Password for server")
-		outputPtr := serveCmd.String("o", cfg.OutputPath, "Directory to serve from")
-		portPtr := serveCmd.Int("port", cfg.Port, "Port to run the server on")
-		err := serveCmd.Parse(os.Args[2:])
+	case "server":
+		serverCmd := flag.NewFlagSet("server", flag.ExitOnError)
+		// 直接传入 cfg 字段的地址，flag.Parse() 后会自动更新
+		serverCmd.StringVar(&cfg.Password, "p", cfg.Password, "Password for server to decrypt, overrides config file")
+		serverCmd.StringVar(&cfg.Server.Dir, "d", cfg.Server.Dir, "Directory to serve from, overrides config file")
+		serverCmd.IntVar(&cfg.Server.Port, "port", cfg.Server.Port, "Port to run the server on, overrides config file")
+
+		err := serverCmd.Parse(os.Args[2:])
 		if err != nil {
 			log.Fatalf("Error parsing flags: %v", err)
 		}
 
-		dirFromFlag := *outputPtr
-		dirFromArg := serveCmd.Arg(0)
-		finalDir := dirFromFlag
-		if finalDir == "" {
-			finalDir = dirFromArg
-		}
-		if finalDir == "" {
-			finalDir = cfg.OutputPath
-		}
-		if finalDir == "" {
-			finalDir = "./output"
-		}
+		finalCtx := config.NewContext(context.Background(), cfg)
+		player := encv.NewPlayer(finalCtx)
 
-		player := encv.NewPlayer(finalDir, *passwordPtr)
-		addr, err := player.Start(*portPtr)
+		addr, err := player.Start(cfg.Server.Port)
 		if err != nil {
 			log.Fatalf("Failed to start server: %v", err)
 		}
 
 		log.Printf("\n✅ Server started successfully!\n")
-		log.Printf("   Serving files from: %s\n", finalDir)
+		log.Printf("   Serving files from: %s\n", cfg.Server.Dir)
 		log.Printf("   Access it at: http://localhost%s\n", addr)
 		log.Println("\n--- How to Play ---")
 		log.Printf("   mpv --no-config http://localhost%s/<video_name_without_extension>\n", addr)
@@ -156,7 +146,18 @@ func main() {
 		select {} // Keep server running
 
 	case "webdav":
-		addr, webdavPath, err := encv.StartWebdav(cfg)
+		webdavCmd := flag.NewFlagSet("webdav", flag.ExitOnError)
+		// 直接传入 cfg 字段的地址，flag.Parse() 后会自动更新
+		webdavCmd.StringVar(&cfg.Password, "p", cfg.Password, "Password for server to decrypt, overrides config file")
+		webdavCmd.StringVar(&cfg.Webdav.Dir, "d", cfg.Webdav.Dir, "Directory to serve, overrides config file")
+		webdavCmd.IntVar(&cfg.Webdav.Port, "port", cfg.Webdav.Port, "Port for WebDAV server, overrides config file")
+		webdavCmd.Parse(os.Args[2:])
+
+		if cfg.Password == "" {
+			log.Fatalf("WebDAV requires a password. Please set it in config.user.json.")
+		}
+		finalCtx := config.NewContext(context.Background(), cfg)
+		addr, webdavPath, err := encv.StartWebdav(finalCtx)
 		if err != nil {
 			log.Fatalf("Failed to start WebDAV server: %v", err)
 		}

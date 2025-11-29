@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"io"
@@ -16,32 +17,60 @@ import (
 	"github.com/Soltus/encv-go/internal/container"
 	"github.com/Soltus/encv-go/internal/container/chunked"
 	"github.com/Soltus/encv-go/internal/crypto"
+	"github.com/Soltus/encv-go/internal/middleware"
 	"github.com/Soltus/encv-go/internal/types"
 	"github.com/Soltus/encv-go/internal/utils"
 )
 
-// Player ... (保持不变) ...
 type Player struct {
-	dir             string
-	contentPassword string
-	server          *http.Server
+	server *http.Server
+	cfg    *config.Config
+	// 新增：用于存储处理后的绝对路径
+	servingDir string
 }
 
-func NewPlayer(dir, password string) *Player {
-	return &Player{dir: dir, contentPassword: password}
+func NewPlayer(ctx context.Context) *Player {
+	cfg := config.FromContext(ctx)
+	return &Player{
+		cfg: cfg,
+	}
 }
 
 func (p *Player) Start(port int) (string, error) {
+	dir := p.cfg.Server.Dir
+	var err error
+
+	// 如果用户输入的是 "/"，将其转换为当前工作目录
+	if dir == "/" {
+		dir, err = os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("failed to get current working directory: %w", err)
+		}
+	}
+
+	// 将任何相对路径（如 "./output"）都转换为绝对路径
+	// filepath.Abs 会自动处理 "." 和 "./"
+	p.servingDir, err = filepath.Abs(dir)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve absolute path for directory '%s': %w", dir, err)
+	}
+	log.Printf("Player will serve from resolved directory: %s", p.servingDir)
+
+	// 创建一个基础的 ServeMux
 	mux := http.NewServeMux()
+	// 注册我们真正的处理函数
 	mux.HandleFunc("/", p.handleRequest)
 
-	addr := fmt.Sprintf(":%d", port)
-	p.server = &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	// 使用我们的中间件来包装 mux
+	// 中间件负责将 p.cfg 注入到所有请求的 context 中
+	configAwareHandler := middleware.WithConfig(p.cfg, mux)
 
+	// 启动服务器时，使用被中间件包装过的 handler
+	addr := fmt.Sprintf(":%d", port)
+	log.Printf("Starting player server on %s", addr)
 	go func() {
-		log.Printf("-> Server is now listening on %s\n", addr)
-		if err := p.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("-> Server error: %v\n", err)
+		if err := http.ListenAndServe(addr, configAwareHandler); err != nil {
+			log.Fatalf("Player server failed: %v", err)
 		}
 	}()
 
@@ -56,28 +85,31 @@ func (p *Player) Stop() {
 
 // 主路由处理器
 func (p *Player) handleRequest(w http.ResponseWriter, r *http.Request) {
-	// 从 URL 路径中提取相对于服务器根目录的路径
-	// 例如："/output/321.sccgv" -> "output/321.sccgv"
-	// 例如："/" -> ""
+	// 1. 从 URL 路径中移除开头的斜杠，得到相对路径
 	relativePath := strings.TrimPrefix(r.URL.Path, "/")
 
-	// 如果请求的是根目录，则列出服务器根目录的文件
-	if relativePath == "" {
-		p.listFilesInDir(w, r, p.dir, "/")
+	// 2. (可选但推荐) 进一步清理路径，防止 `..` 等路径遍历攻击
+	//    filepath.Clean 会处理 `..` 和多余的 `.`
+	cleanRelativePath := filepath.Clean(relativePath)
+
+	// 3. (重要) 如果 Clean 后的结果是 ".."，说明是恶意请求
+	if cleanRelativePath == ".." {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
-	// 否则，作为文件或目录请求处理
-	p.servePath(w, r, relativePath)
+	// 4. 将清理后的相对路径传递给 servePath
+	p.servePath(w, r, cleanRelativePath)
 }
 
-// 新的服务函数，能处理文件和目录
+// 能处理文件和目录
 func (p *Player) servePath(w http.ResponseWriter, r *http.Request, relativePath string) {
 	// 构建完整的文件系统路径
-	fullPath := filepath.Join(p.dir, relativePath)
+	fullPath := filepath.Join(p.servingDir, relativePath)
 
-	// 安全检查：确保请求的路径在服务目录内
-	if !strings.HasPrefix(filepath.Clean(fullPath)+string(os.PathSeparator), filepath.Clean(p.dir)+string(os.PathSeparator)) {
+	// 使用 filepath.Rel 进行健壮的安全检查
+	relPath, err := filepath.Rel(p.servingDir, fullPath)
+	if err != nil || strings.HasPrefix(relPath, "..") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -108,9 +140,11 @@ func (p *Player) servePath(w http.ResponseWriter, r *http.Request, relativePath 
 // serveFile 处理对单个文件的请求
 func (p *Player) serveFile(w http.ResponseWriter, r *http.Request, fullPath string) {
 	fileName := filepath.Base(fullPath)
-
+	// 这个 context 应该已经被中间件注入了配置
+	ctx := r.Context()
+	cfg := config.FromContext(ctx)
 	// 判断是否是 ENCV 容器文件
-	if config.IsContainerFile(fileName) {
+	if cfg.IsContainerFile(fileName) {
 		log.Printf("-> [File] Serving ENCV container: %s", fileName)
 		// p.serveEncryptedContainer(w, r, fullPath)
 		// 【关键修改】调用封装后的函数，不再关心内部是分片还是单文件
@@ -126,6 +160,9 @@ func (p *Player) serveFile(w http.ResponseWriter, r *http.Request, fullPath stri
 // listFilesInDir 在指定目录生成一个文件列表页面
 // urlPath 是当前目录对应的 URL 路径，用于生成正确的导航链接
 func (p *Player) listFilesInDir(w http.ResponseWriter, r *http.Request, dirPath, urlPath string) {
+	// 这个 context 应该已经被中间件注入了配置
+	ctx := r.Context()
+	cfg := config.FromContext(ctx)
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		http.Error(w, "Could not read directory", http.StatusInternalServerError)
@@ -155,7 +192,7 @@ func (p *Player) listFilesInDir(w http.ResponseWriter, r *http.Request, dirPath,
 			Name:        entry.Name(),
 			Path:        urlPath + entry.Name(),
 			IsDir:       entry.IsDir(),
-			IsContainer: !entry.IsDir() && config.IsContainerFile(entry.Name()),
+			IsContainer: !entry.IsDir() && cfg.IsContainerFile(entry.Name()),
 			Size:        info.Size(),
 			ModTime:     info.ModTime(),
 		})
@@ -206,6 +243,9 @@ func (p *Player) listFilesInDir(w http.ResponseWriter, r *http.Request, dirPath,
 
 // 统一处理所有加密内容的请求（无论是分片还是单文件）
 func (p *Player) serveEncryptedContent(w http.ResponseWriter, r *http.Request, anyChunkPath string) {
+	// 这个 context 应该已经被中间件注入了配置
+	ctx := r.Context()
+	cfg := config.FromContext(ctx)
 	// 1. 打开文件并读取头部用于类型检测
 	file, err := os.Open(anyChunkPath)
 	if err != nil {
@@ -216,7 +256,7 @@ func (p *Player) serveEncryptedContent(w http.ResponseWriter, r *http.Request, a
 	defer file.Close()
 
 	// 2. 动态确定最大魔法数字长度
-	magicMap := container.GetContainerMagicMap()
+	magicMap, err := container.GetContainerMagicMap(ctx)
 	maxMagicLen := 0
 	for _, magic := range magicMap {
 		if len(magic) > maxMagicLen {
@@ -234,7 +274,7 @@ func (p *Player) serveEncryptedContent(w http.ResponseWriter, r *http.Request, a
 	magicHeader = magicHeader[:bytesRead]
 
 	// 3. 检测容器类型
-	detectedExt, err := container.DetectContainerType(magicHeader)
+	detectedExt, err := container.DetectContainerType(ctx, magicHeader)
 	if err != nil {
 		log.Printf("-> [File] Failed to detect container type: %v", err)
 		http.Error(w, "Unknown container format", http.StatusBadRequest)
@@ -245,11 +285,11 @@ func (p *Player) serveEncryptedContent(w http.ResponseWriter, r *http.Request, a
 	// 4. 【关键修复】根据类型选择解包方式
 	var packedData *container.PackedData
 	switch detectedExt {
-	case config.GlobalConfig.BinExtGroup.Video:
+	case cfg.BinExtGroup.Video:
 		// 视频是分片容器，需要特殊处理
 		// 【修改】从 container 包获取魔法数字
 		mainMagic := magicMap[detectedExt]
-		subMagicMap := container.GetSubChunkMagicMap()
+		subMagicMap, err := container.GetSubChunkMagicMap(ctx)
 		subMagic := subMagicMap[detectedExt]
 
 		// 【关键修复】使用新的 chunked.NewReader，它会自动查找主分片
@@ -265,7 +305,7 @@ func (p *Player) serveEncryptedContent(w http.ResponseWriter, r *http.Request, a
 			DataStream: chunkedReader,
 		}
 
-	case config.GlobalConfig.BinExtGroup.Image, config.GlobalConfig.BinExtGroup.Audio, config.GlobalConfig.BinExtGroup.Text:
+	case cfg.BinExtGroup.Image, cfg.BinExtGroup.Audio, cfg.BinExtGroup.Text:
 		// 单文件容器，可以直接解包
 		// 将文件指针重置到开头，因为 DetectContainerType 已经读取了一部分
 		if _, err := file.Seek(0, io.SeekStart); err != nil {
@@ -273,8 +313,13 @@ func (p *Player) serveEncryptedContent(w http.ResponseWriter, r *http.Request, a
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
-		magicMap := container.GetContainerMagicMap()
+		magicMap, err := container.GetContainerMagicMap(ctx)
 		packedData, err = container.Unpack(file, magicMap[detectedExt])
+		if err != nil {
+			log.Printf("-> [File] Failed '%s'", err)
+			http.Error(w, "Invalid or incomplete", http.StatusBadRequest)
+			return
+		}
 
 	default:
 		log.Printf("-> [File] Unsupported container type: %s", detectedExt)
@@ -304,7 +349,7 @@ func (p *Player) serveEncryptedContent(w http.ResponseWriter, r *http.Request, a
 		http.Error(w, "Invalid salt in index file", http.StatusInternalServerError)
 		return
 	}
-	key := crypto.GenerateKey(p.contentPassword, salt) // 【修改】使用新字段名
+	key := crypto.GenerateKey(p.cfg.Password, salt) // 【修改】使用新字段名
 
 	// 7. 【关键修改】根据类型设置响应头
 	var contentType string

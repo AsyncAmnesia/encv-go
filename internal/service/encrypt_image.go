@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,7 +15,8 @@ import (
 )
 
 // encryptImage 处理图像加密和打包
-func encryptImage(inputPath, baseName, originalExt, outputDir, password string, salt []byte) error {
+func encryptImage(ctx context.Context, inputPath, baseName, originalExt, outputDir string, salt []byte) error {
+	cfg := config.FromContext(ctx)
 	// 1. 调用 processor 获取图像信息
 	info, err := processor.ProcessImage(inputPath)
 	if err != nil {
@@ -23,7 +25,7 @@ func encryptImage(inputPath, baseName, originalExt, outputDir, password string, 
 
 	// 2. 加密
 	tempEncPath := filepath.Join(outputDir, baseName+".tmp_enc")
-	iv, err := crypto.EncryptFile(inputPath, tempEncPath, password, salt)
+	iv, err := crypto.EncryptFile(inputPath, tempEncPath, cfg.Password, salt)
 	if err != nil {
 		return fmt.Errorf("encryption failed: %w", err)
 	}
@@ -48,6 +50,6 @@ func encryptImage(inputPath, baseName, originalExt, outputDir, password string, 
 
 	// 4. 为图像容器生成带倒序后缀的最终路径
 	reversedExt := utils.GenerateReversedExt(originalExt)
-	finalPath := filepath.Join(outputDir, baseName+"."+reversedExt+config.GetImageEncExtension())
-	return container.PackWithIndex(tempEncPath, finalPath, index)
+	finalPath := filepath.Join(outputDir, baseName+"."+reversedExt+cfg.GetImageEncExtension())
+	return container.PackWithIndex(ctx, tempEncPath, finalPath, index)
 }

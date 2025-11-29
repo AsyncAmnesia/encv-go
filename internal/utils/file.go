@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -74,7 +75,7 @@ func GenerateReversedExt(ext string) string {
 }
 
 // IsEncryptedContainer 通过读取文件头来检测是否为有效的 ENCV 容器
-func IsEncryptedContainer(filePath string) (bool, error) {
+func IsEncryptedContainer(ctx context.Context, filePath string) (bool, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		// 如果文件无法打开，我们不认为它是容器，但返回错误以便上层记录
@@ -83,7 +84,7 @@ func IsEncryptedContainer(filePath string) (bool, error) {
 	defer file.Close()
 
 	// 读取头部用于类型检测
-	magicMap := container.GetContainerMagicMap()
+	magicMap, err := container.GetContainerMagicMap(ctx)
 	maxMagicLen := 0
 	for _, magic := range magicMap {
 		if len(magic) > maxMagicLen {
@@ -99,7 +100,7 @@ func IsEncryptedContainer(filePath string) (bool, error) {
 	}
 
 	// DetectContainerType 在成功时返回扩展名，失败时返回错误
-	_, err = container.DetectContainerType(magicHeader[:bytesRead])
+	_, err = container.DetectContainerType(ctx, magicHeader[:bytesRead])
 	if err != nil {
 		// 魔法数字不匹配，不是我们的容器
 		return false, nil // 返回 false，但 error 为 nil，表示“检测完毕，不是容器”

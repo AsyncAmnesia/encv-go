@@ -3,6 +3,7 @@
 package encv
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -15,7 +16,7 @@ import (
 )
 
 // Decrypt ... (保持不变) ...
-func Decrypt(inputPath string, opts DecryptOptions) error {
+func Decrypt(ctx context.Context, inputPath string, opts DecryptOptions) error {
 	if err := validateDecryptOpts(opts); err != nil {
 		return err
 	}
@@ -29,17 +30,17 @@ func Decrypt(inputPath string, opts DecryptOptions) error {
 	}
 
 	if !info.IsDir() {
-		return decryptSingleFile(inputPath, opts)
+		return decryptSingleFile(ctx, inputPath, opts)
 	}
-	return decryptDir(inputPath, opts)
+	return decryptDir(ctx, inputPath, opts)
 }
 
 // decryptSingleFile 调用服务层解密单个文件集
-func decryptSingleFile(anyChunkPath string, opts DecryptOptions) error {
+func decryptSingleFile(ctx context.Context, anyChunkPath string, opts DecryptOptions) error {
 	fmt.Printf("-> Decrypting: %s\n", anyChunkPath)
-
+	cfg := config.FromContext(ctx)
 	// 1. 调用服务层解密
-	content, err := service.DecryptContainer(anyChunkPath, opts.Password)
+	content, err := service.DecryptContainer(ctx, anyChunkPath)
 	if err != nil {
 		return fmt.Errorf("decryption failed for %s: %w", anyChunkPath, err)
 	}
@@ -49,13 +50,9 @@ func decryptSingleFile(anyChunkPath string, opts DecryptOptions) error {
 	originalFilename := content.Index.GetOriginalFilename()
 	outputPath := filepath.Join(opts.OutputDir, originalFilename)
 
-	// 3. 【关键修复】决定是否强制覆盖
-	// 优先级：命令行参数 > 配置文件
-	shouldForce := opts.Force || config.GlobalConfig.Recover
-
 	// 4. 【关键修复】使用新的工具函数安全地创建文件
 	// 它会返回实际创建的文件路径（可能已重命名）
-	outputFile, actualOutputPath, err := utils.CreateFileForOutput(outputPath, shouldForce)
+	outputFile, actualOutputPath, err := utils.CreateFileForOutput(outputPath, cfg.Recover)
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}
@@ -82,7 +79,7 @@ func decryptSingleFile(anyChunkPath string, opts DecryptOptions) error {
 }
 
 // decryptDir 遍历目录解密所有容器文件
-func decryptDir(inputDir string, opts DecryptOptions) error {
+func decryptDir(ctx context.Context, inputDir string, opts DecryptOptions) error {
 	entries, err := os.ReadDir(inputDir)
 	if err != nil {
 		return fmt.Errorf("failed to read input directory: %w", err)
@@ -98,7 +95,7 @@ func decryptDir(inputDir string, opts DecryptOptions) error {
 		fullPath := filepath.Join(inputDir, entry.Name())
 
 		// 【关键修复】使用魔法数字进行可靠检测
-		isContainer, err := utils.IsEncryptedContainer(fullPath)
+		isContainer, err := utils.IsEncryptedContainer(ctx, fullPath)
 		if err != nil {
 			// 如果是读取错误，打印警告并跳过
 			fmt.Printf("-> Warning: Could not check file '%s': %v. Skipping.\n", entry.Name(), err)
@@ -112,7 +109,7 @@ func decryptDir(inputDir string, opts DecryptOptions) error {
 
 		// 是容器，开始解密
 		processedCount++
-		if err := decryptSingleFile(fullPath, opts); err != nil {
+		if err := decryptSingleFile(ctx, fullPath, opts); err != nil {
 			fmt.Printf("Error decrypting '%s': %v\n", entry.Name(), err) // 打印错误但继续处理其他文件
 		}
 	}
@@ -126,7 +123,7 @@ func decryptDir(inputDir string, opts DecryptOptions) error {
 	return nil
 }
 func validateDecryptOpts(opts DecryptOptions) error {
-	if opts.Password == "" || opts.OutputDir == "" {
+	if opts.OutputDir == "" {
 		return ErrMissingOptions
 	}
 	return nil

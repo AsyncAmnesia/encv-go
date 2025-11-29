@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Soltus/encv-go/internal/config/config",
+  "$ref": "#/$defs/Config",
+  "$defs": {
+    "BinExtGroup": {
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "文本类加密容器的扩展名。"
+        },
+        "image": {
+          "type": "string",
+          "description": "图像类加密容器的扩展名。"
+        },
+        "audio": {
+          "type": "string",
+          "description": "音频类加密容器的扩展名。"
+        },
+        "video": {
+          "type": "string",
+          "description": "视频类加密容器的扩展名。"
+        },
+        "iframe": {
+          "type": "string",
+          "description": "OpenList iframe 类加密容器的扩展名。"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "iframe"
+      ]
+    },
+    "Config": {
+      "properties": {
+        "password": {
+          "type": "string",
+          "description": "--- 全局设置 ---\nPassword 用于加密和解密视频文件，请务必设置一个强密码。"
+        },
+        "recover": {
+          "type": "boolean",
+          "description": "Recover 在解密时是否尝试覆盖已有文件。"
+        },
+        "output_path": {
+          "type": "string",
+          "description": "--- 加密/解密设置 ---\nOutputPath 加密后的文件输出目录。"
+        },
+        "track_extensions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "description": "TrackExtensions 视频容器的字幕/轨道文件扩展名列表，它们并不会打包到容器里。"
+        },
+        "bin_ext_group": {
+          "$ref": "#/$defs/BinExtGroup",
+          "description": "BinExtGroup 可以自定义加密容器文件的扩展名。"
+        },
+        "sccgv_settings": {
+          "$ref": "#/$defs/SccgvSettings",
+          "description": "SccgvSettings SCCGV (视频分片) 相关的设置。"
+        },
+        "server": {
+          "$ref": "#/$defs/HttpServer"
+        },
+        "webdav": {
+          "$ref": "#/$defs/WebdavServer"
+        },
+        "proxy": {
+          "$ref": "#/$defs/OpenlistProxyServer"
+        },
+        "$schema": {
+          "type": "string",
+          "format": "uri",
+          "description": "The JSON Schema file for validation, used by editors."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "password",
+        "recover",
+        "output_path",
+        "track_extensions",
+        "bin_ext_group",
+        "sccgv_settings",
+        "server",
+        "webdav",
+        "proxy"
+      ],
+      "description": "Config 是应用程序的顶层配置结构，包含所有子模块的配置。"
+    },
+    "HttpServer": {
+      "properties": {
+        "port": {
+          "type": "integer",
+          "description": "encv HTTP 服务器的端口，请不要填写 encv Webdav Server、 OpenList 或其他已使用的端口"
+        },
+        "dir": {
+          "type": "string",
+          "description": "文件系统的根目录（例如 /path/to/your/files），而不是 HttpServer 的路由前缀 /"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "port",
+        "dir"
+      ],
+      "description": "--- 内置HTTP服务器 设置 ---"
+    },
+    "OpenlistProxyServer": {
+      "properties": {
+        "port": {
+          "type": "integer",
+          "description": "Openlist Webdav 代理的端口，请不要填写 encv Webdav Server、 OpenList 或其他已使用的端口"
+        },
+        "openlist_host": {
+          "type": "string",
+          "description": "OpenList 的主机名，一般是 IP 或者域名，比如 localhost"
+        },
+        "token": {
+          "type": "string",
+          "description": "不建议在 json 文件中存储 Token"
+        },
+        "disable_signature_verification": {
+          "type": "boolean",
+          "description": "禁用签名，目前没发现这个值有什么影响"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "port",
+        "openlist_host",
+        "token",
+        "disable_signature_verification"
+      ],
+      "description": "--- Openlist 代理服务器设置 ---"
+    },
+    "SccgvSettings": {
+      "properties": {
+        "chunk_size": {
+          "type": "integer",
+          "description": "分片大小（单位 MB），为 0 或为空禁用分片"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "chunk_size"
+      ],
+      "description": "SccgvSettings 包含 SCCGV 容器的特定设置"
+    },
+    "WebdavServer": {
+      "properties": {
+        "port": {
+          "type": "integer",
+          "description": "encv Webdav 服务器的端口，请不要填写 encv HTTP Server、 OpenList 或其他已使用的端口"
+        },
+        "root": {
+          "type": "string",
+          "description": "路由（例如 /webdav/）"
+        },
+        "dir": {
+          "type": "string",
+          "description": "文件系统的根目录（例如 /path/to/your/files），而不是 WebDAV 的路由前缀（例如 /webdav/）"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "port",
+        "root",
+        "dir"
+      ],
+      "description": "--- WebDAV 服务器设置 ---"
+    }
+  }
+}

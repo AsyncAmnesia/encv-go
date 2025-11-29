@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"log"
 	"net/http"
 
@@ -10,7 +11,7 @@ import (
 )
 
 // 专门处理图片容器
-func handleImageContainer(w http.ResponseWriter, containerURL string, headers map[string]string, cfg *Config) {
+func handleImageContainer(ctx context.Context, w http.ResponseWriter, containerURL string, headers map[string]string) {
 	// 1. 下载整个容器到内存
 	log.Printf("-> [Proxy] Reading full image container into memory for reliable processing.")
 	containerData, err := utils.ReadAllFromURL(containerURL, headers)
@@ -21,7 +22,7 @@ func handleImageContainer(w http.ResponseWriter, containerURL string, headers ma
 	}
 
 	// 2. 从内存中检测类型和解包
-	detectedExt, err := container.DetectContainerType(containerData)
+	detectedExt, err := container.DetectContainerType(ctx, containerData)
 	if err != nil {
 		log.Printf("-> [Proxy] Failed to detect container type from memory: %v", err)
 		http.Error(w, "Unknown container format", http.StatusBadRequest)
@@ -30,7 +31,7 @@ func handleImageContainer(w http.ResponseWriter, containerURL string, headers ma
 	log.Printf("-> [Proxy] Detected container extension: %s", detectedExt)
 
 	reader := bytes.NewReader(containerData)
-	magicMap := container.GetContainerMagicMap()
+	magicMap, err := container.GetContainerMagicMap(ctx)
 	packedData, err := container.Unpack(reader, magicMap[detectedExt])
 	if err != nil {
 		log.Printf("-> [Proxy] Failed to unpack image container from memory: %v", err)
@@ -52,7 +53,7 @@ func handleImageContainer(w http.ResponseWriter, containerURL string, headers ma
 	useChunked := mimeType == "image/gif" || mimeType == "image/webp" // WebP 动图也用 chunked
 
 	// 4. 调用通用的解密服务函数
-	if err := serveDecryptedStreamFromReader(w, packedData.DataStream, index, cfg.ContentPassword, useChunked); err != nil {
+	if err := serveDecryptedStreamFromReader(ctx, w, packedData.DataStream, index, useChunked); err != nil {
 		log.Printf("-> [Proxy] Failed to serve decrypted image stream: %v", err)
 	}
 }

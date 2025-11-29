@@ -14,105 +14,164 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/service"
 	"github.com/Soltus/encv-go/internal/utils"
 	goWebdav "golang.org/x/net/webdav"
 )
 
 // NewENCVFS 创建一个新的 encvWebDAVFS 实例
-func NewENCVFS(dir, password, webdavPrefix string) goWebdav.FileSystem {
-	fs := &encvWebDAVFS{
-		dir:             dir,
-		password:        password,
-		webdavPrefix:    webdavPrefix,
-		decryptionCache: make(map[string][]byte),
-		pathIndex:       make(map[string]string),
+func NewENCVFS(ctx context.Context) goWebdav.FileSystem {
+	cfg := config.FromContext(ctx)
+	// 【关键】规范化服务目录路径，防止路径问题
+	dir := cfg.Webdav.Dir
+	var err error
+	if dir == "/" {
+		dir, err = os.Getwd()
+		if err != nil {
+			log.Fatalf("Failed to get current working directory for WebDAV: %v", err)
+		}
+	}
+	dir, err = filepath.Abs(dir)
+	if err != nil {
+		log.Fatalf("Failed to resolve absolute path for WebDAV directory '%s': %v", dir, err)
+	}
+	// 规范化 WebDAV 前缀，确保它是一个以 '/' 开头且不以 '/' 结尾的路径
+	webdavPrefix := strings.TrimSuffix(cfg.Webdav.Root, "/")
+	if !strings.HasPrefix(webdavPrefix, "/") {
+		webdavPrefix = "/" + webdavPrefix
 	}
 
+	fs := &encvWebDAVFS{
+		decryptionCache: make(map[string][]byte),
+		pathIndex:       make(map[string]string),
+		// 【关键】现在正确地初始化这些字段
+		dir:          dir, // 使用处理过的绝对路径
+		webdavPrefix: webdavPrefix,
+	}
+
+	log.Printf("[WebDAV] Initializing FS for directory: %s, with prefix: %s", fs.dir, fs.webdavPrefix)
+
 	// 启动时构建索引
-	if err := fs.buildPathIndex(dir); err != nil {
+	if err := fs.buildPathIndex(ctx); err != nil {
 		log.Printf("[FATAL] Failed to build initial path index: %v", err)
-		// 可以选择 panic 或者以降级模式运行
 	}
 
 	return fs
 }
 
-// resolvePath 将 WebDAV 路径解析为本地文件系统绝对路径
+// resolvePath 将 WebDAV 路径安全地解析为本地文件系统绝对路径
 func (fs *encvWebDAVFS) resolvePath(name string) (string, error) {
-	// 【关键修改】如果路径以 webdavPrefix 开头，则移除它
-	if strings.HasPrefix(name, fs.webdavPrefix) {
-		name = strings.TrimPrefix(name, fs.webdavPrefix)
-	}
-	// 如果移除前缀后路径为空，说明请求的是 WebDAV 根目录本身，应映射到文件系统的根目录
-	if name == "" {
-		name = "/"
+	// 1. 检查路径是否以 WebDAV 前缀开头
+	if !strings.HasPrefix(name, fs.webdavPrefix) {
+		return "", fmt.Errorf("path '%s' is not under webdav root '%s'", name, fs.webdavPrefix)
 	}
 
-	// 防止路径遍历攻击
-	if filepath.Separator != '/' && strings.IndexRune(name, filepath.Separator) >= 0 ||
-		strings.Contains(name, "\x00") {
-		return "", fmt.Errorf("invalid character in path")
+	// 2. 移除 WebDAV 前缀，得到相对路径
+	// 例如: /webdav/output/video.mp4 - /webdav -> /output/video.mp4
+	relativePath := strings.TrimPrefix(name, fs.webdavPrefix)
+
+	// 3. 处理根目录请求
+	// 如果相对路径为空或为 "/"，说明请求的是 WebDAV 根目录，映射到文件系统的 "."
+	if relativePath == "" || relativePath == "/" {
+		relativePath = "."
+	} else {
+		// 移除可能存在的开头的斜杠，因为 filepath.Join 会处理
+		relativePath = strings.TrimPrefix(relativePath, "/")
 	}
-	return filepath.Join(fs.dir, filepath.FromSlash(name)), nil
+
+	// 4. 安全检查：防止路径遍历攻击
+	if strings.Contains(relativePath, "..") {
+		return "", fmt.Errorf("invalid path traversal attempt in '%s'", relativePath)
+	}
+
+	// 5. 拼接成最终的绝对路径
+	fullPath := filepath.Join(fs.dir, relativePath)
+
+	// 6. 最终安全检查：确保最终路径在服务目录内
+	// 这是最重要的一道防线
+	if !strings.HasPrefix(filepath.Clean(fullPath)+string(os.PathSeparator), filepath.Clean(fs.dir)+string(os.PathSeparator)) {
+		// 特殊处理根目录本身
+		if filepath.Clean(fullPath) != filepath.Clean(fs.dir) {
+			return "", fmt.Errorf("resolved path '%s' is outside of serving directory '%s'", fullPath, fs.dir)
+		}
+	}
+
+	return fullPath, nil
 }
 
 // statFile 获取文件信息，如果是 ENCV 容器，则返回原始文件信息
-func (fs *encvWebDAVFS) statFile(fullPath string) (os.FileInfo, error) {
-	// log.Printf("[WebDAV-statFile] Called for: %s", fullPath)
-	// 尝试提取 KVI，以判断是否为 ENCV 容器并获取原始信息
-	kviData, err := service.ExtractKVI(fullPath)
+// 【关键】这个函数现在被设计为可以安全地处理文件和目录。
+func (fs *encvWebDAVFS) statFile(ctx context.Context, fullPath string) (os.FileInfo, error) {
+	// 步骤 1: 首先调用 os.Stat 获取路径的基本信息。
+	// 这是判断一个路径是文件还是目录的最可靠方法。
+	// 如果路径本身不存在或无法访问，os.Stat 会返回错误，我们直接将错误向上传递。
+	baseInfo, err := os.Stat(fullPath)
 	if err != nil {
-		log.Printf("[WebDAV-statFile] '%s' is NOT a container or KVI extraction failed (%v), using original file info.", fullPath, err)
-		// 如果不是容器或提取失败，返回原始文件信息
-		return os.Stat(fullPath)
+		// 日志可以帮助我们确认是哪个路径出了问题
+		log.Printf("[WebDAV-statFile] os.Stat failed for '%s': %v", fullPath, err)
+		return nil, err
 	}
 
-	// 解析 KVI 获取原始文件信息
+	// 步骤 2: 检查它是否是一个目录。
+	// 如果是目录，我们**直接返回**其信息，并且**绝不**进行任何容器检测。
+	// 这是防止将目录误判为容器、从而避免 panic 的核心防线。
+	if baseInfo.IsDir() {
+		log.Printf("[WebDAV-statFile] Path '%s' is a directory, returning its info directly.", fullPath)
+		return baseInfo, nil
+	}
+
+	// 步骤 3: 从这里开始，我们 100% 确定它是一个文件。
+	// 现在可以安全地尝试将其作为 ENCV 容器来处理。
+	log.Printf("[WebDAV-statFile] Path '%s' is a file, checking if it's a container.", fullPath)
+	kviData, err := service.ExtractKVI(ctx, fullPath)
+	if err != nil {
+		// 如果不是容器或 KVI 提取失败，我们返回从 os.Stat 获取的原始文件信息。
+		// 这避免了重复调用 os.Stat，更高效。
+		log.Printf("[WebDAV-statFile] '%s' is not a container or KVI extraction failed, returning original file info. %s", fullPath, err)
+		return baseInfo, nil
+	}
+
+	// 步骤 4: 如果是容器，解析 KVI 获取原始文件信息。
 	index, err := utils.UnmarshalKVI(kviData)
 	if err != nil {
-		log.Printf("[WebDAV-statFile] KVI unmarshalling for '%s' failed (%v), falling back to original file info.", fullPath, err)
-		// KVI 解析失败，返回原始文件信息
-		return os.Stat(fullPath)
+		log.Printf("[WebDAV-statFile] KVI unmarshalling for '%s' failed, returning original file info. %s", fullPath, err)
+		return baseInfo, nil
 	}
 
-	// 获取原始文件大小和修改时间
+	// 步骤 5: 创建并返回代表解密后文件的虚拟 FileInfo。
 	origSize := index.GetOriginalFileSize()
-	containerInfo, _ := os.Stat(fullPath)
-
-	// 创建一个自定义的 FileInfo
 	decryptedInfo := &decryptedFileInfo{
 		name:         index.GetOriginalFilename(),
 		originalName: filepath.Base(fullPath),
 		size:         origSize,
 		mode:         0444,
-		modTime:      containerInfo.ModTime(),
+		modTime:      baseInfo.ModTime(), // 使用 baseInfo 的时间戳
 		isDir:        false,
-		// 【新增】计算并赋值
-		mimeType: mime.TypeByExtension(filepath.Ext(index.GetOriginalFilename())),
-		etag:     `"` + containerInfo.ModTime().Format(time.RFC3339Nano) + "-" + fmt.Sprintf("%d", origSize) + `"`,
+		mimeType:     mime.TypeByExtension(filepath.Ext(index.GetOriginalFilename())),
+		etag:         `"` + baseInfo.ModTime().Format(time.RFC3339Nano) + "-" + fmt.Sprintf("%d", origSize) + `"`,
 	}
 	// log.Printf("[WebDAV-statFile] Successfully created info for container '%s' (original name: %s)", fullPath, decryptedInfo.Name())
 	return decryptedInfo, nil
 }
 
 // statAsContainer 尝试将路径作为容器获取信息
-func (fs *encvWebDAVFS) statAsContainer(fullPath string) (os.FileInfo, error) {
-	if _, err := service.ExtractKVI(fullPath); err != nil {
+func (fs *encvWebDAVFS) statAsContainer(ctx context.Context, fullPath string) (os.FileInfo, error) {
+	if _, err := service.ExtractKVI(ctx, fullPath); err != nil {
 		return nil, os.ErrNotExist
 	}
-	return fs.statFile(fullPath)
+	return fs.statFile(ctx, fullPath)
 }
 
 // statAsVirtualFile 尝试将路径作为虚拟文件获取信息
-func (fs *encvWebDAVFS) statAsVirtualFile(fullPath string) (os.FileInfo, error) {
+func (fs *encvWebDAVFS) statAsVirtualFile(ctx context.Context, fullPath string) (os.FileInfo, error) {
 	log.Printf("[WebDAV-Stat] File not found at '%s', attempting reverse lookup.", fullPath)
 	containerPath, err := fs.findContainerForDecryptedName(fullPath)
 	if err != nil {
 		return nil, os.ErrNotExist
 	}
 	log.Printf("[WebDAV-Stat] Found container '%s' for virtual path, delegating to statAsContainer.", containerPath)
-	return fs.statAsContainer(containerPath)
+	return fs.statAsContainer(ctx, containerPath)
 }
 
 // 关键实现 webdav.FileSystem 接口
@@ -122,27 +181,23 @@ func (fs *encvWebDAVFS) Stat(ctx context.Context, name string) (os.FileInfo, err
 		return nil, err
 	}
 
-	// 优先级 1: 目录
-	if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
+	// 优先级 1: 尝试在文件系统上找到它（无论是文件还是目录）
+	// statFile 现在能安全地处理这两种情况。
+	if info, err := fs.statFile(ctx, fullPath); err == nil {
 		return info, nil
 	}
 
-	// 优先级 2: 文件 (包括普通文件和容器文件)
-	// 使用 statFile 来统一处理，它内部会判断文件类型
-	if info, err := fs.statFile(fullPath); err == nil {
-		return info, nil
-	}
-
-	// 优先级 3: 虚拟文件 (当磁盘上没有这个文件时，才进行反向查找)
+	// 优先级 2: 如果在磁盘上没找到，则尝试反向查找虚拟文件
 	log.Printf("[WebDAV-Stat] File not found at '%s', attempting reverse lookup.", fullPath)
 	containerPath, err := fs.findContainerForDecryptedName(fullPath)
 	if err != nil {
+		// 确实找不到，返回标准错误
 		return nil, os.ErrNotExist
 	}
 
 	// 找到了容器，调用 statFile 获取其解密后的信息
 	log.Printf("[WebDAV-Stat] Found container '%s' for virtual path, getting its info.", containerPath)
-	return fs.statFile(containerPath)
+	return fs.statFile(ctx, containerPath)
 }
 
 // openAsDirectory 尝试将路径作为目录打开
@@ -160,9 +215,9 @@ func (fs *encvWebDAVFS) openAsDirectory(fullPath string, name string) (goWebdav.
 }
 
 // openAsContainer 尝试将路径作为 ENCV 容器打开并解密
-func (fs *encvWebDAVFS) openAsContainer(fullPath string) (goWebdav.File, error) {
+func (fs *encvWebDAVFS) openAsContainer(ctx context.Context, fullPath string) (goWebdav.File, error) {
 	// 检查是否是容器
-	if _, err := service.ExtractKVI(fullPath); err != nil {
+	if _, err := service.ExtractKVI(ctx, fullPath); err != nil {
 		return nil, os.ErrNotExist
 	}
 
@@ -171,7 +226,7 @@ func (fs *encvWebDAVFS) openAsContainer(fullPath string) (goWebdav.File, error) 
 	// 检查缓存
 	if decryptedData, found := fs.decryptionCache[fullPath]; found {
 		// log.Printf("[WebDAV-OpenFile] '%s' found in cache, serving from memory.", fullPath)
-		fileInfo, _ := fs.statFile(fullPath)
+		fileInfo, _ := fs.statFile(ctx, fullPath)
 		return &decryptedFile{
 			Reader: bytes.NewReader(decryptedData),
 			info:   fileInfo.(*decryptedFileInfo),
@@ -179,7 +234,7 @@ func (fs *encvWebDAVFS) openAsContainer(fullPath string) (goWebdav.File, error) 
 	}
 
 	// 缓存未命中，执行解密
-	content, err := service.DecryptContainer(fullPath, fs.password)
+	content, err := service.DecryptContainer(ctx, fullPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decrypt container %s: %w", fullPath, err)
 	}
@@ -195,7 +250,7 @@ func (fs *encvWebDAVFS) openAsContainer(fullPath string) (goWebdav.File, error) 
 	fs.decryptionCache[fullPath] = decryptedBytes
 
 	// 获取原始文件信息
-	fileInfo, err := fs.statFile(fullPath)
+	fileInfo, err := fs.statFile(ctx, fullPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stat info for decrypted file %s: %w", fullPath, err)
 	}
@@ -207,7 +262,7 @@ func (fs *encvWebDAVFS) openAsContainer(fullPath string) (goWebdav.File, error) 
 }
 
 // openAsVirtualFile 尝试将路径作为解密后的虚拟文件打开
-func (fs *encvWebDAVFS) openAsVirtualFile(fullPath string) (goWebdav.File, error) {
+func (fs *encvWebDAVFS) openAsVirtualFile(ctx context.Context, fullPath string) (goWebdav.File, error) {
 	log.Printf("[WebDAV-OpenFile] File not found at '%s', attempting reverse lookup.", fullPath)
 	containerPath, err := fs.findContainerForDecryptedName(fullPath)
 	if err != nil {
@@ -215,7 +270,7 @@ func (fs *encvWebDAVFS) openAsVirtualFile(fullPath string) (goWebdav.File, error
 	}
 	// 找到了容器，调用 openAsContainer 来处理它
 	log.Printf("[WebDAV-OpenFile] Found container '%s' for virtual path, delegating to openAsContainer.", containerPath)
-	return fs.openAsContainer(containerPath)
+	return fs.openAsContainer(ctx, containerPath)
 }
 
 // 关键实现  webdav.FileSystem 接口
@@ -239,11 +294,11 @@ func (fs *encvWebDAVFS) OpenFile(ctx context.Context, name string, flag int, per
 	// 4. 尝试直接打开文件 (这会处理普通文件和容器文件)
 	if f, err := os.Open(fullPath); err == nil {
 		// 如果打开成功，需要判断是不是容器
-		if _, kviErr := service.ExtractKVI(fullPath); kviErr == nil {
+		if _, kviErr := service.ExtractKVI(ctx, fullPath); kviErr == nil {
 			// 是容器，关闭它，然后走解密流程
 			f.Close()
 			log.Printf("[WebDAV-OpenFile] Opened container '%s', now delegating to openAsContainer.", fullPath)
-			return fs.openAsContainer(fullPath)
+			return fs.openAsContainer(ctx, fullPath)
 		}
 		// 是普通文件，直接返回
 		// log.Printf("[WebDAV-OpenFile] Opening standard file: %s", fullPath)
@@ -252,15 +307,15 @@ func (fs *encvWebDAVFS) OpenFile(ctx context.Context, name string, flag int, per
 
 	// 5. 直接打开失败，尝试反向查找虚拟文件
 	log.Printf("[WebDAV-OpenFile] Direct open failed for '%s', attempting reverse lookup.", fullPath)
-	return fs.openAsVirtualFile(fullPath)
+	return fs.openAsVirtualFile(ctx, fullPath)
 }
 
 // getCachedFileInfo 是一个辅助函数，用于从缓存中获取或创建FileInfo
 // 这是一个简化的实现，实际项目中可能需要更复杂的缓存结构
-func (fs *encvWebDAVFS) getCachedFileInfo(fullPath string, decryptedData []byte) *decryptedFileInfo {
+func (fs *encvWebDAVFS) getCachedFileInfo(ctx context.Context, fullPath string, decryptedData []byte) *decryptedFileInfo {
 	// 在真实场景中，你应该把FileInfo对象也存入缓存
 	// 这里为了简化，我们重新解析一次
-	kviData, _ := service.ExtractKVI(fullPath)
+	kviData, _ := service.ExtractKVI(ctx, fullPath)
 	index, _ := utils.UnmarshalKVI(kviData)
 	containerInfo, _ := os.Stat(fullPath)
 
@@ -315,7 +370,7 @@ func (fs *encvWebDAVFS) ReadDir(ctx context.Context, name string) ([]os.FileInfo
 		}
 
 		// 是当前目录下的文件，调用 statFile 获取信息
-		info, err := fs.statFile(realPath)
+		info, err := fs.statFile(ctx, realPath)
 		if err != nil {
 			log.Printf("[WebDAV-ReadDir] Skipping FILE '%s' because statFile failed: %v", realPath, err)
 			continue
@@ -452,15 +507,17 @@ func (d *decryptedDir) Seek(offset int64, whence int) (int64, error) { return 0,
 func (d *decryptedDir) Write(p []byte) (n int, err error)            { return 0, os.ErrPermission }
 
 // buildPathIndex 递归构建路径索引
-func (fs *encvWebDAVFS) buildPathIndex(rootDir string) error {
-	log.Printf("[Index] Building path index for root: %s", rootDir)
+func (fs *encvWebDAVFS) buildPathIndex(ctx context.Context) error {
+	// 使用已经解析好的绝对路径
+	log.Printf("[Index] Building path index for root: %s", fs.dir)
 	fs.pathIndexMutex.Lock()
 	defer fs.pathIndexMutex.Unlock()
 
 	// 清空旧索引
 	fs.pathIndex = make(map[string]string)
 
-	return filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+	// 使用已经解析好的绝对路径
+	return filepath.Walk(fs.dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -469,7 +526,7 @@ func (fs *encvWebDAVFS) buildPathIndex(rootDir string) error {
 		}
 
 		// 检查是否是容器
-		kviData, err := service.ExtractKVI(path)
+		kviData, err := service.ExtractKVI(ctx, path)
 		if err != nil {
 			return nil // 不是容器，跳过
 		}

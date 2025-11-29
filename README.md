@@ -30,20 +30,33 @@ go build -o encv-proxy ./cmd/encv-proxy
 
 ```json
 {
+  "$schema": "https://raw.githubusercontent.com/Soltus/encv-go/refs/heads/main/config.schema.json",
   "password": "my-encv_key，可以使用中文和标点符号✔",
-  "outputPath": "./output",
-  "port": 1999,
-  "proxy_port": 1998,
-  "openlist_host": "http://localhost:5244",
-  "trackExtensions": [".ass", ".srt", ".dm.ass", ".vtt"],
+  "output_path": "./output",
+  "server": {
+    "port": 1999,
+    "dir": "/"
+  },
+  "proxy": {
+    "port": 1998,
+    "openlist_host": "http://localhost:5244"
+  },
+  "webdav": {
+    "port": 1234,
+    "root": "webdav",
+    "dir": "./"
+  },
+  "track_extensions": [".ass", ".srt", ".dm.ass", ".vtt"],
   "bin_ext_group": {
     "text": "sccgt",
     "image": "sccgi",
     "audio": "sccga",
-    "video": "sccgv"
+    "video": "sccgv",
+    "iframe": "sccgf"
   },
   "sccgv_settings": { "chunk_size": 100 }
 }
+
 ```
 
 **配置项说明:**
@@ -75,7 +88,7 @@ go build -o encv-proxy ./cmd/encv-proxy
 
 ```bash
 # 在 1999 端口启动服务，提供 ./output 目录下的文件
-./encv serve -port 1999 ./output
+./encv server -port 1999 ./output
 ```
 
 使用 `mpv` 播放器观看时，需要手动指定字幕文件：
@@ -132,28 +145,30 @@ mpv http://localhost:1999/321.sccgv --sub-files=http://localhost:1999/321.ass
      ```bash
      ./encv-proxy -token "openlist-***********************************"
      ```
-
    * **完整命令行参数**:
 
      ```bash
      ./encv-proxy -proxy-port 1998 -openlist-host "http://localhost:5244" -token "openlist-***********************************"
      ```
-
 5. **为加密文件添加预览**:
 
    * 在 OpenList 管理页面的【设置】->【预览】中。
    * 根据配置项中的 `bin_ext_group` 按类别添加后缀名：
 
-    ```json
-    "bin_ext_group": {
-        "text": "sccgt",
-        "image": "sccgi",
-        "audio": "sccga",
-        "video": "sccgv"
-      }
-    ```
+   ```json
+   "bin_ext_group": {
+       "text": "sccgt",
+       "image": "sccgi",
+       "audio": "sccga",
+       "video": "sccgv"
+     }
+   ```
 
 * 保存后即可在 OpenList 中预览加密文件。
+
+### 通用 Webdav 服务
+
+OpenList Webdav 代理是很好的方式，只需要定义预览后缀名，不影响其他操作。但假如希望在其他平台通过 Webdav 预览加密容器，encv-go 也提供了支持，缺点是仅支持只读模式，而且性能可能远不如 OpenList 。通用 Webdav 服务将显示解密后的原始文件名作为“不存在”的文件，当请求打开时反查真实的加密容器并进行解密。
 
 ### Linux 上使用
 
@@ -203,24 +218,30 @@ encv-go/
 ├── cmd/                 # 程序入口
 │   ├── encv/           # encv 程序
 │   └── encv-proxy/     # encv-proxy 代理程序（只代理 OpenList）
+│   └── encv-schema/     # 仅用于生成 `config.schema.json`
 ├── internal/            # 内部包，不对外暴露
-│   ├── config/
-│   ├── container/
+│   ├── config/          # 配置
+│   ├── container/       # 加密容器相关
 │   ├── crypto/         # 加解密核心逻辑
+│   ├── middleware/      # 中间件
 │   ├── processor/      # 预处理和元数据处理
 │   ├── proxy/          # OpenList 代理服务核心逻辑
-│   ├── server/          # HTTP服务（包括通用 webdav）核心逻辑
+│   ├── server/          # HTTP服务核心逻辑
+│   ├── service/        # 加解密服务
 │   └── types/          # 共享的数据结构定义
 │   └── utils/          # 通用工具
+│   └── webdav/          # Webdav服务核心逻辑
 ├── pkg/                # 对外暴露的公共包，作为库调用
 │   └── encv/
 │      └── api.go
 │      └── decrypt.go
 │      └── encrypt.go
 │      └── kvi.go
+│      └── server.go
 ├── go.mod
 └── README.md
 └── config.user.json
+└── config.schema.json
 ```
 
 ### 🔨 构建
@@ -251,6 +272,18 @@ gomobile bind -target=android -o encv.aar ./pkg/encv
 ```
 
 然后检查 `_test_output` 目录下的 `.sccgv`, `.kvi` 和字幕文件是否符合预期。
+
+生成 `config.schema.json` ：
+
+```cmd
+go run ./cmd/encv-schema > config.schema.json
+```
+
+在 `config.user.json` 中测试：
+
+```json
+"$schema": "./config.schema.json"
+```
 
 ### 🐛 调试与技巧
 

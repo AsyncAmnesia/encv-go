@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -9,111 +10,123 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/container"
+	"github.com/Soltus/encv-go/internal/middleware"
 	"github.com/Soltus/encv-go/internal/utils"
 )
 
-// Config 包含代理服务器所需的配置
-type Config struct {
-	Port                         int
-	OpenListHost                 string
-	Token                        string
-	ContentPassword              string // 【修改】从 VideoPassword 改为 ContentPassword
-	DisableSignatureVerification bool
+// 【新增】Proxy 结构体
+type Proxy struct {
+	cfg *config.Config
+}
+
+// 【新增】NewProxy 构造函数
+func NewProxy(ctx context.Context) *Proxy {
+	cfg := config.FromContext(ctx)
+	return &Proxy{
+		cfg: cfg,
+	}
 }
 
 // StartServer 启动代理服务器
-func StartServer(cfg *Config) {
-	http.HandleFunc("/", handleRequest(cfg))
-	log.Printf("Starting ENCV proxy server on port %d", cfg.Port)
-	log.Printf("Proxying for OpenList at: %s", cfg.OpenListHost)
-	if cfg.DisableSignatureVerification {
-		log.Println("!!! WARNING: Signature verification is DISABLED. This is insecure and should only be used for testing. !!!")
-	}
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", cfg.Port), nil); err != nil {
+func (p *Proxy) StartServer() {
+	// 【关键修改】使用中间件包装我们的核心处理器
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", p.handleRequest) // handleRequest 不再需要参数
+
+	// 使用我们创建的中间件
+	configAwareHandler := middleware.WithConfig(p.cfg, mux)
+
+	log.Printf("Starting ENCV proxy server on port %d", p.cfg.Proxy.Port)
+	// ... (日志保持不变) ...
+
+	// 【修改】使用被包装的 handler
+	if err := http.ListenAndServe(fmt.Sprintf(":%d", p.cfg.Proxy.Port), configAwareHandler); err != nil {
 		log.Fatalf("Failed to start proxy server: %v", err)
 	}
 }
 
 // handleRequest 创建并返回 HTTP 处理函数
-func handleRequest(cfg *Config) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodOptions {
-			log.Printf("-> [Proxy] Handling CORS preflight request for: %s", r.URL.Path)
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-			w.Header().Set("Access-Control-Allow-Methods", "*")
-			w.Header().Set("Access-Control-Allow-Headers", "*")
-			w.Header().Set("Cache-Control", "no-cache")
-			w.Header().Set("Access-Control-Allow-Origin", "*") // 这里设置跨域是不起作用的哦
-			w.WriteHeader(http.StatusNoContent)
+// 【关键修改】handleRequest 现在是一个方法，并且不再接收 ctx
+func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
+	// 【关键】从请求的 context 中获取配置，因为中间件已经注入了
+	cfg := config.FromContext(r.Context())
+	if r.Method == http.MethodOptions {
+		log.Printf("-> [Proxy] Handling CORS preflight request for: %s", r.URL.Path)
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Access-Control-Allow-Origin", "*") // 这里设置跨域是不起作用的哦
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	path := r.URL.Path
+	sign := r.URL.Query().Get("sign")
+	isInternalRequest := r.URL.Query().Get("internal_request") == "true"
+
+	if path == "" {
+		http.Error(w, "Missing 'path' parameter", http.StatusBadRequest)
+		return
+	}
+
+	if !isInternalRequest && !cfg.Proxy.DisableSignatureVerification {
+		if sign == "" {
+			http.Error(w, "Missing 'sign' parameter", http.StatusBadRequest)
 			return
 		}
-
-		path := r.URL.Path
-		sign := r.URL.Query().Get("sign")
-		isInternalRequest := r.URL.Query().Get("internal_request") == "true"
-
-		if path == "" {
-			http.Error(w, "Missing 'path' parameter", http.StatusBadRequest)
+		if !OpenListVerifySign(path, sign, cfg) {
+			log.Printf("Invalid signature for path: %s", path)
+			http.Error(w, "Forbidden: Invalid signature", http.StatusForbidden)
 			return
 		}
+	} else if cfg.Proxy.DisableSignatureVerification {
+		log.Printf("-> [Security] Signature verification is disabled, allowing request for: %s", path)
+	} else {
+		log.Printf("-> [Proxy] Handling internal request, skipping signature check for: %s", path)
+	}
 
-		if !isInternalRequest && !cfg.DisableSignatureVerification {
-			if sign == "" {
-				http.Error(w, "Missing 'sign' parameter", http.StatusBadRequest)
-				return
-			}
-			if !OpenListVerifySign(path, sign, cfg) {
-				log.Printf("Invalid signature for path: %s", path)
-				http.Error(w, "Forbidden: Invalid signature", http.StatusForbidden)
-				return
-			}
-		} else if cfg.DisableSignatureVerification {
-			log.Printf("-> [Security] Signature verification is disabled, allowing request for: %s", path)
-		} else {
-			log.Printf("-> [Proxy] Handling internal request, skipping signature check for: %s", path)
-		}
+	log.Printf("Received valid request for: %s", path)
 
-		log.Printf("Received valid request for: %s", path)
-
-		// --- 核心逻辑：判断是否是 ENCV 容器文件 ---
-		// 【关键修改】使用新的通用检查函数
-		if config.IsContainerPath(path) {
-			log.Printf("-> [Proxy] Detected ENCV container file: %s", path)
-			fileInfo, err := OpenListGetFileURL(path, cfg.OpenListHost, cfg.Token)
-			if err != nil {
-				log.Printf("Error getting file URL for %s: %v", path, err)
-				http.Error(w, "Failed to locate file", http.StatusInternalServerError)
-				return
-			}
-			// 【修改】使用通用的密码字段
-			// 在 handleRequest 函数中
-			serveEncryptedContainer(w, fileInfo.Data.URL, fileInfo.Data.Header, cfg, path)
+	// --- 核心逻辑：判断是否是 ENCV 容器文件 ---
+	// 【关键修改】使用新的通用检查函数
+	if cfg.IsContainerPath(path) {
+		log.Printf("-> [Proxy] Detected ENCV container file: %s", path)
+		fileInfo, err := OpenListGetFileURL(path, cfg.Proxy.OpenListHost, cfg.Proxy.Token)
+		if err != nil {
+			log.Printf("Error getting file URL for %s: %v", path, err)
+			http.Error(w, "Failed to locate file", http.StatusInternalServerError)
 			return
 		}
+		// 【修改】使用通用的密码字段
+		// 在 handleRequest 函数中
+		p.serveEncryptedContainer(w, r, fileInfo.Data.URL, fileInfo.Data.Header, path)
+		return
+	}
 
-		// --- 如果不是容器文件，则按普通文件处理 ---
-		log.Printf("-> [Proxy] Not a container file, handling as standard file: %s", path)
-		if strings.HasPrefix(path, "/p/") {
-			log.Printf("-> [Proxy] Intercepted internal link: %s", path)
-			fileURL := cfg.OpenListHost + path + "?" + r.URL.RawQuery
-			serveDirectStreamWithFix(w, fileURL, nil)
+	// --- 如果不是容器文件，则按普通文件处理 ---
+	log.Printf("-> [Proxy] Not a container file, handling as standard file: %s", path)
+	if strings.HasPrefix(path, "/p/") {
+		log.Printf("-> [Proxy] Intercepted internal link: %s", path)
+		fileURL := cfg.Proxy.OpenListHost + path + "?" + r.URL.RawQuery
+		serveDirectStreamWithFix(w, fileURL, nil)
+		return
+	} else {
+		fileInfo, err := OpenListGetFileURL(path, cfg.Proxy.OpenListHost, cfg.Proxy.Token)
+		if err != nil {
+			log.Printf("Error getting file URL for %s: %v", path, err)
+			http.Error(w, "Failed to locate file", http.StatusInternalServerError)
 			return
-		} else {
-			fileInfo, err := OpenListGetFileURL(path, cfg.OpenListHost, cfg.Token)
-			if err != nil {
-				log.Printf("Error getting file URL for %s: %v", path, err)
-				http.Error(w, "Failed to locate file", http.StatusInternalServerError)
-				return
-			}
-			serveDirectStreamWithFix(w, fileInfo.Data.URL, fileInfo.Data.Header)
 		}
+		serveDirectStreamWithFix(w, fileInfo.Data.URL, fileInfo.Data.Header)
 	}
 }
 
 // serveEncryptedContainer 通用地处理所有 ENCV 容器
-func serveEncryptedContainer(w http.ResponseWriter, containerURL string, headers map[string]string, cfg *Config, originalPath string) {
+func (p *Proxy) serveEncryptedContainer(w http.ResponseWriter, r *http.Request, containerURL string, headers map[string]string, originalPath string) {
+	cfg := config.FromContext(r.Context())
 	// 1. 检测容器类型
-	magicMap := container.GetContainerMagicMap()
+	magicMap, err := container.GetContainerMagicMap(r.Context())
 	maxMagicLen := 0
 	for _, magic := range magicMap {
 		if len(magic) > maxMagicLen {
@@ -138,7 +151,7 @@ func serveEncryptedContainer(w http.ResponseWriter, containerURL string, headers
 	}
 	magicHeader = magicHeader[:bytesRead]
 
-	detectedExt, err := container.DetectContainerType(magicHeader)
+	detectedExt, err := container.DetectContainerType(r.Context(), magicHeader)
 	if err != nil {
 		log.Printf("-> [Proxy] Failed to detect container type: %v", err)
 		http.Error(w, "Unknown container format", http.StatusBadRequest)
@@ -148,12 +161,12 @@ func serveEncryptedContainer(w http.ResponseWriter, containerURL string, headers
 
 	// 2. 【关键】根据类型调用专门的处理器
 	switch detectedExt {
-	case config.GlobalConfig.BinExtGroup.Image:
-		handleImageContainer(w, containerURL, headers, cfg)
-	case config.GlobalConfig.BinExtGroup.Video:
-		handleVideoContainer(w, containerURL, headers, cfg, originalPath)
-	case config.GlobalConfig.BinExtGroup.Text: // 【新增】处理文本容器
-		handleTextContainer(w, containerURL, headers, cfg)
+	case cfg.BinExtGroup.Image:
+		handleImageContainer(r.Context(), w, containerURL, headers)
+	case cfg.BinExtGroup.Video:
+		handleVideoContainer(r.Context(), w, containerURL, headers, originalPath)
+	case cfg.BinExtGroup.Text: // 【新增】处理文本容器
+		handleTextContainer(r.Context(), w, containerURL, headers)
 	default:
 		log.Printf("-> [Proxy] Unsupported container type: %s", detectedExt)
 		http.Error(w, "Unsupported container type", http.StatusNotImplemented)

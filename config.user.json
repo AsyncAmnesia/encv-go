@@ -1,10 +1,21 @@
 {
+  "$schema": "https://raw.githubusercontent.com/Soltus/encv-go/refs/heads/main/config.schema.json",
   "password": "my-encv_key，可以使用中文和标点符号✔",
-  "outputPath": "./output",
-  "port": 1999,
-  "proxy_port": 1998,
-  "openlist_host": "http://localhost:5244",
-  "trackExtensions": [".ass", ".srt", ".dm.ass", ".vtt"],
+  "output_path": "./output",
+  "server": {
+    "port": 1999,
+    "dir": "/"
+  },
+  "proxy": {
+    "port": 1998,
+    "openlist_host": "http://localhost:5244"
+  },
+  "webdav": {
+    "port": 1234,
+    "root": "webdav",
+    "dir": "./"
+  },
+  "track_extensions": [".ass", ".srt", ".dm.ass", ".vtt"],
   "bin_ext_group": {
     "text": "sccgt",
     "image": "sccgi",
@@ -12,10 +23,5 @@
     "video": "sccgv",
     "iframe": "sccgf"
   },
-  "sccgv_settings": { "chunk_size": 100 },
-  "webdav": {
-    "port": 1234,
-    "root": "webdav",
-    "dir": "A:\\Local\\Col-Study\\go\\encv"
-  }
+  "sccgv_settings": { "chunk_size": 100 }
 }

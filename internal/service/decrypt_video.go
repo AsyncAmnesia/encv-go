@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/Soltus/encv-go/internal/container"
@@ -8,11 +9,11 @@ import (
 )
 
 // 对于视频，直接使用文件路径创建 LocalReader
-func decryptVideo(containerPath string, detectedExt string) (*container.PackedData, error) {
+func decryptVideo(ctx context.Context, containerPath string, detectedExt string) (*container.PackedData, error) {
 
 	// 获取 magic map
-	magicMap := container.GetContainerMagicMap()
-	subMagicMap := container.GetSubChunkMagicMap()
+	magicMap, err := container.GetContainerMagicMap(ctx)
+	subMagicMap, err := container.GetSubChunkMagicMap(ctx)
 	mainMagic, ok := magicMap[detectedExt]
 	if !ok {
 		return nil, fmt.Errorf("internal error: detected video extension '%s' not in magic map", detectedExt)

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,8 +15,8 @@ import (
 )
 
 // encryptText 处理文本加密和打包
-func encryptText(inputPath, baseName, originalExt, outputDir, password string, salt []byte) error {
-
+func encryptText(ctx context.Context, inputPath, baseName, originalExt, outputDir string, salt []byte) error {
+	cfg := config.FromContext(ctx)
 	// 1. 调用 processor 获取文本信息
 	info, err := processor.ProcessText(inputPath)
 	if err != nil {
@@ -24,7 +25,7 @@ func encryptText(inputPath, baseName, originalExt, outputDir, password string, s
 
 	// 2. 加密
 	tempEncPath := filepath.Join(outputDir, baseName+".tmp_enc")
-	iv, err := crypto.EncryptFile(inputPath, tempEncPath, password, salt)
+	iv, err := crypto.EncryptFile(inputPath, tempEncPath, cfg.Password, salt)
 	if err != nil {
 		return fmt.Errorf("encryption failed: %w", err)
 	}
@@ -47,6 +48,6 @@ func encryptText(inputPath, baseName, originalExt, outputDir, password string, s
 
 	// 4. 为图像容器生成带倒序后缀的最终路径
 	reversedExt := utils.GenerateReversedExt(originalExt)
-	finalPath := filepath.Join(outputDir, baseName+"."+reversedExt+config.GetTextEncExtension())
-	return container.PackWithIndex(tempEncPath, finalPath, index)
+	finalPath := filepath.Join(outputDir, baseName+"."+reversedExt+cfg.GetTextEncExtension())
+	return container.PackWithIndex(ctx, tempEncPath, finalPath, index)
 }

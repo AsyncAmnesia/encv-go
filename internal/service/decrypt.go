@@ -3,6 +3,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -17,9 +18,10 @@ import (
 
 // DecryptContainer 从一个加密容器文件路径中解密内容
 // 直接处理文件路径，不创建临时文件
-func DecryptContainer(containerPath, password string) (*types.DecryptedContent, error) {
+func DecryptContainer(ctx context.Context, containerPath string) (*types.DecryptedContent, error) {
+	cfg := config.FromContext(ctx)
 	// 1. 检测容器类型
-	detectedExt, err := container.DetectContainerTypeFromFile(containerPath)
+	detectedExt, err := container.DetectContainerTypeFromFile(ctx, containerPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect container type for %s: %w", containerPath, err)
 	}
@@ -27,18 +29,18 @@ func DecryptContainer(containerPath, password string) (*types.DecryptedContent, 
 	var packedData *container.PackedData
 
 	// 获取 magic map，避免在 case 内重复调用
-	magicMap := container.GetContainerMagicMap()
+	magicMap, err := container.GetContainerMagicMap(ctx)
 	// subMagicMap := container.GetSubChunkMagicMap()
 
 	// 2. 根据类型选择不同的处理方式
 	switch detectedExt {
-	case config.GlobalConfig.BinExtGroup.Video:
-		packedData, err = decryptVideo(containerPath, detectedExt)
+	case cfg.BinExtGroup.Video:
+		packedData, err = decryptVideo(ctx, containerPath, detectedExt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decryptVideo for %s: %w", containerPath, err)
 		}
 
-	case config.GlobalConfig.BinExtGroup.Image, config.GlobalConfig.BinExtGroup.Text:
+	case cfg.BinExtGroup.Image, cfg.BinExtGroup.Text:
 		file, err := os.Open(containerPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open image container: %w", err)
@@ -79,7 +81,7 @@ func DecryptContainer(containerPath, password string) (*types.DecryptedContent, 
 		packedData.DataStream.Close()
 		return nil, fmt.Errorf("failed to decode salt: %w", err)
 	}
-	key := crypto.GenerateKey(password, salt)
+	key := crypto.GenerateKey(cfg.Password, salt)
 
 	decryptedStream, err := crypto.GetDecryptReader(packedData.DataStream, key)
 	if err != nil {
@@ -96,20 +98,21 @@ func DecryptContainer(containerPath, password string) (*types.DecryptedContent, 
 
 // ExtractKVI 从容器文件中提取原始的 KVI 数据，无需密码。
 // 与 DecryptContainer 逻辑保持一致
-func ExtractKVI(containerPath string) ([]byte, error) {
+func ExtractKVI(ctx context.Context, containerPath string) ([]byte, error) {
+	cfg := config.FromContext(ctx)
 	// 1. 检测容器类型
-	detectedExt, err := container.DetectContainerTypeFromFile(containerPath)
+	detectedExt, err := container.DetectContainerTypeFromFile(ctx, containerPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect container type for %s: %w", containerPath, err)
 	}
 
 	// 获取 magic map，避免在 case 内重复调用
-	magicMap := container.GetContainerMagicMap()
-	subMagicMap := container.GetSubChunkMagicMap()
+	magicMap, err := container.GetContainerMagicMap(ctx)
+	subMagicMap, err := container.GetSubChunkMagicMap(ctx)
 
 	// 2. 根据类型选择不同的处理方式
 	switch detectedExt {
-	case config.GlobalConfig.BinExtGroup.Video:
+	case cfg.BinExtGroup.Video:
 		// 【关键修复】对于视频，直接使用文件路径创建 LocalReader
 		mainMagic := magicMap[detectedExt]
 		subMagic := subMagicMap[detectedExt]
@@ -121,7 +124,7 @@ func ExtractKVI(containerPath string) ([]byte, error) {
 		defer reader.Close()
 		return reader.KVIData, nil
 
-	case config.GlobalConfig.BinExtGroup.Image, config.GlobalConfig.BinExtGroup.Text:
+	case cfg.BinExtGroup.Image, cfg.BinExtGroup.Text:
 		file, err := os.Open(containerPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to open image container: %w", err)
