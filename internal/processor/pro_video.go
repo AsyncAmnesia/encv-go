@@ -2,8 +2,10 @@ package processor
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,13 +35,38 @@ func (p *VideoProcessor) ShouldProcess(inputPath string) bool {
 func (p *VideoProcessor) Process(inputPath string) (types.Index, error) {
 	fmt.Printf("-> Analyzing video: %s\n", filepath.Base(inputPath))
 
-	// 复用原来的预处理和元数据获取逻辑
-	tempPath, err := PreprocessVideoWithFFmpeg(inputPath)
-	if err != nil {
-		return nil, fmt.Errorf("pre-processing failed: %w", err)
-	}
-	defer os.Remove(tempPath)
+	var tempPath string
+	var err error
 
+	// 1. 检查是否可以跳过预处理
+	ext := strings.ToLower(filepath.Ext(inputPath))
+	isMP4 := ext == ".mp4" || ext == ".mov" || ext == ".m4v"
+
+	if isMP4 {
+		fmt.Println("-> Detected MP4 container, checking for fast-start...")
+		if fast, err := isMP4FastStart(inputPath); err == nil && fast {
+			fmt.Println("-> Input is already a fast-start MP4, skipping pre-processing.")
+			tempPath = inputPath // 直接使用原始文件路径
+		} else {
+			if err != nil {
+				fmt.Printf("-> Warning: Could not verify fast-start status (%v), proceeding with pre-processing.\n", err)
+			} else {
+				fmt.Println("-> Input is not a fast-start MP4, pre-processing is required.")
+			}
+		}
+	}
+
+	// 2. 如果 tempPath 仍为空，说明需要执行预处理
+	if tempPath == "" {
+		tempPath, err = PreprocessVideoWithFFmpeg(inputPath)
+		if err != nil {
+			return nil, fmt.Errorf("pre-processing failed: %w", err)
+		}
+		// 【关键】只有在我们创建了临时文件时，才 defer 删除
+		defer os.Remove(tempPath)
+	}
+
+	// 3. 获取元数据
 	metadata, err := getProcessedMetadata(tempPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get metadata: %w", err)
@@ -159,4 +186,65 @@ func parseDuration(d string) float64 {
 	var h, m, s float64
 	fmt.Sscanf(d, "%f:%f:%f", &h, &m, &s)
 	return h*3600 + m*60 + s
+}
+
+// isMP4FastStart 检查 MP4 文件是否是流式友好的（即 moov atom 在 mdat atom 之前）。
+func isMP4FastStart(filePath string) (bool, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return false, err
+	}
+	defer file.Close()
+
+	// 我们只需要读取文件开头的一部分来找到 moov 和 mdat
+	// 1MB 应该足够覆盖大多数情况下的元数据区域
+	bufferSize := int64(1024 * 1024)
+	reader := io.LimitReader(file, bufferSize)
+	header := make([]byte, bufferSize)
+	n, err := io.ReadFull(reader, header)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return false, err
+	}
+	// 如果文件小于 1MB，只处理实际读取的部分
+	header = header[:n]
+
+	offset := int64(0)
+	for offset < int64(len(header)) {
+		// 每个 atom 至少有 8 字节的头
+		if offset+8 > int64(len(header)) {
+			break
+		}
+
+		atomSize := int64(binary.BigEndian.Uint32(header[offset : offset+4]))
+		atomType := string(header[offset+4 : offset+8])
+
+		if atomSize == 1 { // 64-bit size
+			if offset+16 > int64(len(header)) {
+				break
+			}
+			atomSize = int64(binary.BigEndian.Uint64(header[offset+8 : offset+16]))
+			offset += 16
+		} else {
+			offset += 8
+		}
+
+		if atomSize < 8 { // 无效的 atom size
+			break
+		}
+
+		switch atomType {
+		case "moov":
+			// 找到了 moov atom，并且它在我们扫描的范围内，说明它在文件开头
+			return true, nil
+		case "mdat":
+			// 在找到 moov 之前先找到了 mdat，说明不是 fast-start
+			return false, nil
+		}
+
+		// 移动到下一个 atom
+		offset += atomSize - 8 // 减去已经读取的 8 字节头
+	}
+
+	// 如果在扫描范围内没有找到 mdat 或 moov，我们保守地认为它不是 fast-start
+	return false, nil
 }
