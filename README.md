@@ -1,9 +1,9 @@
 # encv-go 怡念汐拂
 
-一个强大的命令行工具集/库，用于视频文件的加密、解密、流媒体传输，并提供与 OpenList 的无缝代理集成。
+一个基于 `AES-256-CTR` 的强大命令行工具集/库，用于多种类型文件的加密、解密、流传输，并提供与 OpenList 的无缝代理集成与通用 HTTP / Webdav 服务。90%代码由AI提供。
 
 > [!WARNING]
-> 请确保 `ffmpeg` 和 `mpv` 已安装并添加到系统的环境变量中。
+> 请确保 `ffmpeg` 已安装并添加到系统的环境变量中。
 
 ---
 
@@ -13,7 +13,7 @@
 
 ### 🚀 安装
 
-如果没有资产，您需要从源代码构建 `encv` 和 `encv-proxy` ，通常这不需要。
+如果没有可执行程序资产，您需要从源代码构建 `encv` 和 `encv-proxy` ，通常这不需要。
 
 ```bash
 # 构建 encv 主程序
@@ -30,7 +30,7 @@ go build -o encv-proxy ./cmd/encv-proxy
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/Soltus/encv-go/refs/heads/main/config.schema.json",
+  "$schema": "https://raw.githubusercontent.com/Soltus/encv-go/main/config.schema.json",
   "password": "my-encv_key，可以使用中文和标点符号✔",
   "output_path": "./output",
   "server": {
@@ -61,15 +61,27 @@ go build -o encv-proxy ./cmd/encv-proxy
 
 **配置项说明:**
 
-| 键                  | 描述                                      |
-| ------------------- | ----------------------------------------- |
-| `password`        | 用于加密和解密视频的密码。                |
-| `outputPath`      | 加密后文件的默认输出目录。                |
-| `port`            | `encv serve` 流媒体服务的默认监听端口。 |
-| `proxy_port`      | `encv-proxy` 代理服务的默认监听端口。   |
-| `openlist_host`   | OpenList 服务的地址。                     |
-| `bin_ext_group`   | 定义加密类型的容器后缀名，不建议自定义    |
-| `trackExtensions` | 需要处理的字幕/轨道文件扩展名列表。       |
+| 配置键 | 类型 | 描述 | 示例值 |
+|--------|------|------|--------|
+| **password** | string | 用于加密和解密视频文件的密码，支持中文和特殊字符 | `"my-encv_key，可以使用中文和标点符号✔"` |
+| **output_path** | string | 加密后文件的输出目录，支持相对路径或绝对路径 | `"./output"` |
+| **recover** | boolean | 解密时是否覆盖已存在的文件（可选） | `false` |
+| **track_extensions** | array | 需要处理的字幕/轨道文件扩展名列表 | `[".ass", ".srt", ".dm.ass", ".vtt"]` |
+| **bin_ext_group.text** | string | 文本类加密容器的扩展名 | `"sccgt"` |
+| **bin_ext_group.image** | string | 图像类加密容器的扩展名 | `"sccgi"` |
+| **bin_ext_group.audio** | string | 音频类加密容器的扩展名 | `"sccga"` |
+| **bin_ext_group.video** | string | 视频类加密容器的扩展名 | `"sccgv"` |
+| **bin_ext_group.iframe** | string | OpenList iframe 类加密容器的扩展名 | `"sccgf"` |
+| **sccgv_settings.chunk_size** | integer | 视频分片大小（MB），0 表示禁用分片 | `100` |
+| **server.port** | integer | encv HTTP 流媒体服务器的监听端口 | `1999` |
+| **server.dir** | string | HTTP 服务器的根目录路径 | `"/"` |
+| **proxy.port** | integer | OpenList 代理服务的监听端口 | `1998` |
+| **proxy.openlist_host** | string | OpenList 服务地址，支持协议和端口 | `"http://localhost:5244"` |
+| **proxy.token** | string | OpenList 认证令牌（可选，不建议明文存储） | `""` |
+| **proxy.disable_signature_verification** | boolean | 是否禁用签名验证（可选） | `false` |
+| **webdav.port** | integer | WebDAV 服务器的监听端口 | `1234` |
+| **webdav.root** | string | WebDAV 服务的根路径 | `"webdav"` |
+| **webdav.dir** | string | WebDAV 服务器的根目录路径 | `"./"` |
 
 ### 💻 核心用法
 

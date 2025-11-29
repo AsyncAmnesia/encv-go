@@ -10,7 +10,7 @@ import (
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 )
 
-// https://raw.githubusercontent.com/Soltus/encv-go/refs/heads/main/config.schema.json
+// https://raw.githubusercontent.com/Soltus/encv-go/main/config.schema.json
 func main() {
 	r := &jsonschema.Reflector{}
 	err := r.AddGoComments("github.com/Soltus/encv-go", "./internal/config")

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/Soltus/encv-go/refs/heads/main/config.schema.json",
+  "$schema": "https://raw.githubusercontent.com/Soltus/encv-go/main/config.schema.json",
   "password": "my-encv_key，可以使用中文和标点符号✔",
   "output_path": "./output",
   "server": {
