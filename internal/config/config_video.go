@@ -10,14 +10,14 @@ func (c *Config) IsSccgvChunkingEnabled() bool {
 	return c.SccgvSettings.ChunkSizeMB > 0
 }
 
-func (c *Config) GetSccgvChunkSizeBytes() int {
+func (c *Config) GetSccgvChunkSizeBytes() int64 {
 	return c.GetSccgvChunkSizeMB() * 1024 * 1024
 }
 
 // GetSccgvChunkSizeBytes 获取 SCCGV 分片大小（单位：字节）
 // 它会处理校验逻辑：最小 100MB，向下取整
 // 如果未启用分片，则返回 0
-func (c *Config) GetSccgvChunkSizeMB() int {
+func (c *Config) GetSccgvChunkSizeMB() int64 {
 	if !c.IsSccgvChunkingEnabled() {
 		return 0
 	}

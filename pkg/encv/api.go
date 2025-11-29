@@ -3,15 +3,24 @@ package encv
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/Soltus/encv-go/internal/packer"
+	"github.com/Soltus/encv-go/internal/postdecrypt"
+	"github.com/Soltus/encv-go/internal/processor"
 	"github.com/Soltus/encv-go/internal/server"
+	"github.com/Soltus/encv-go/internal/unpacker"
 )
 
-// DecryptOptions 定义解密所需的参数
-type DecryptOptions struct {
-	// OutputDir 解密后文件的输出目录
-	OutputDir string
+// Init 初始化 ENCV 库所需的所有内部组件。
+// 它必须在调用任何其他 ENCV 功能之前被调用。
+// 它接受一个 context.Context，以便在初始化期间传递必要的配置。
+func Init(ctx context.Context) {
+	// 按顺序初始化所有组件
+	// 如果未来组件间有依赖关系，顺序将变得重要
+	processor.InitProcessors(ctx)    // 预处理器
+	packer.InitPackers()             // 打包器
+	unpacker.InitUnpackers(ctx)      // 解包器
+	postdecrypt.InitPostDecrypters() // 后处理器
 }
 
 // Player 封装了流媒体服务器，提供对外接口
@@ -33,8 +42,3 @@ func (p *Player) Start(port int) (string, error) {
 func (p *Player) Stop() {
 	p.p.Stop()
 }
-
-// 自定义错误类型
-var (
-	ErrMissingOptions = fmt.Errorf("password and output directory are required")
-)

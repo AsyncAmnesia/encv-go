@@ -33,7 +33,9 @@ type Index interface {
 	GetEncryptionInfo() EncryptionInfo
 	GetOriginalFilename() string
 	GetOriginalFileSize() int64
-	GetMimeType() string
+	GetMimeType() string // 重要方法，实现错误会影响前端预览
+	// 一个统一的接口，用于更新加密后产生的通用元数据
+	UpdateCommonInfo(encInfo EncryptionInfo, originalFilename, encryptedFileMD5 string)
 }
 
 type BinExtGroup struct {
@@ -52,7 +54,7 @@ type BinExtGroup struct {
 // SccgvSettings 包含 SCCGV 容器的特定设置
 type SccgvSettings struct {
 	// 分片大小（单位 MB），为 0 或为空禁用分片
-	ChunkSizeMB int `json:"chunk_size"`
+	ChunkSizeMB int64 `json:"chunk_size"`
 }
 
 // --- WebDAV 服务器设置 ---

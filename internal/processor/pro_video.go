@@ -13,22 +13,38 @@ import (
 	"github.com/Soltus/encv-go/internal/utils"
 )
 
-// ProcessVideo 分析视频文件，返回其元数据
-func ProcessVideo(inputPath string) (*types.VideoIndex, error) {
+type VideoProcessor struct{}
+
+// 实现 Processor 接口
+func (p *VideoProcessor) SupportedMimePrefixes() []string {
+	return []string{
+		"video/",                           // 匹配 video/mp4, video/webm 等
+		"application/vnd.rn-realmedia-vbr", // 精确匹配 RealMedia
+		"application/vnd.apple.mpegurl",    // 精确匹配 HLS
+	}
+}
+
+// 实现 Processor 接口
+func (p *VideoProcessor) ShouldProcess(inputPath string) bool {
+	return true
+}
+
+// 实现 Processor 接口
+func (p *VideoProcessor) Process(inputPath string) (types.Index, error) {
 	fmt.Printf("-> Analyzing video: %s\n", filepath.Base(inputPath))
 
-	// 1. 预处理视频以获取稳定的元数据
+	// 复用原来的预处理和元数据获取逻辑
 	tempPath, err := PreprocessVideoWithFFmpeg(inputPath)
 	if err != nil {
 		return nil, fmt.Errorf("pre-processing failed: %w", err)
 	}
 	defer os.Remove(tempPath)
 
-	// 2. 获取元数据
 	metadata, err := getProcessedMetadata(tempPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get metadata: %w", err)
 	}
+	metadata.OriginalInputPath = inputPath
 
 	fmt.Println("-> Analysis complete.")
 	return metadata, nil
@@ -119,8 +135,18 @@ func getProcessedMetadata(path string) (*types.VideoIndex, error) {
 		return nil, fmt.Errorf("failed to DetectFileMIMEType: %w", err)
 	}
 
+	originalMD5, err := utils.FileMD5(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate MD5 for original video %s: %w", path, err)
+	}
+
 	return &types.VideoIndex{
+		Kind:             types.IndexKindVideo,
+		Version:          types.KviVersion,
+		Width:            width,
+		Height:           height,
 		OriginalFileSize: fileInfo.Size(),
+		OriginalFileMD5:  originalMD5,
 		DurationSeconds:  parseDuration(rawMeta.Format.Duration),
 		Resolution:       fmt.Sprintf("%dx%d", width, height),
 		Format:           strings.TrimPrefix(filepath.Ext(path), "."),

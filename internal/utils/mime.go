@@ -12,80 +12,6 @@ import (
 	"github.com/Soltus/encv-go/internal/config"
 )
 
-// --- MIME 类型分类集合 ---
-// 使用 map[string]struct{} 来表示集合，这是 Go 的惯用法，内存效率高
-
-var textMimeTypes = map[string]struct{}{
-	"text/plain; charset=utf-8":             {},
-	"application/x-sh; charset=utf-8":       {},
-	"application/x-yaml; charset=utf-8":     {},
-	"text/x-python; charset=utf-8":          {},
-	"application/json; charset=utf-8":       {},
-	"application/javascript; charset=utf-8": {},
-	"text/x-java-source; charset=utf-8":     {},
-	"text/xml; charset=utf-8":               {},
-	"text/html; charset=utf-8":              {},
-}
-
-var imageMimeTypes = map[string]struct{}{
-	"image/jpeg":    {},
-	"image/tiff":    {},
-	"image/png":     {},
-	"image/gif":     {},
-	"image/bmp":     {},
-	"image/svg+xml": {},
-	"image/x-icon":  {},
-	"image/webp":    {},
-	"image/avif":    {},
-}
-
-var videoMimeTypes = map[string]struct{}{
-	"video/mp4":                        {},
-	"video/x-matroska":                 {},
-	"video/x-msvideo":                  {},
-	"video/quicktime":                  {},
-	"application/vnd.rn-realmedia-vbr": {},
-	"video/webm":                       {},
-	"video/x-flv":                      {},
-	"application/vnd.apple.mpegurl":    {},
-}
-
-var audioMimeTypes = map[string]struct{}{
-	"audio/mpeg":     {},
-	"audio/flac":     {},
-	"audio/ogg":      {},
-	"audio/mp4":      {}, // m4a
-	"audio/wav":      {},
-	"audio/opus":     {},
-	"audio/x-ms-wma": {},
-}
-
-// --- 类别判断函数 ---
-
-// 检查给定的 MIME 类型是否为图像类型
-func IsTextType(mimeType string) bool {
-	_, ok := textMimeTypes[mimeType]
-	return ok
-}
-
-// 检查给定的 MIME 类型是否为图像类型
-func IsImageType(mimeType string) bool {
-	_, ok := imageMimeTypes[mimeType]
-	return ok
-}
-
-// 检查给定的 MIME 类型是否为视频类型
-func IsVideoType(mimeType string) bool {
-	_, ok := videoMimeTypes[mimeType]
-	return ok
-}
-
-// 检查给定的 MIME 类型是否为音频类型
-func IsAudioType(mimeType string) bool {
-	_, ok := audioMimeTypes[mimeType]
-	return ok
-}
-
 // 根据 URL 文件扩展名获取 Content-Type
 func GetContentTypeFromExtension(fileURL string) string {
 	ext := strings.ToLower(filepath.Ext(fileURL))
@@ -132,28 +58,4 @@ func DetectFileMIMEType(filePath string) (string, error) {
 	}
 
 	return mimeType, nil
-}
-
-// 检查MIME类型是否在支持列表中
-func IsSupportedType(mimeType string) bool {
-	for _, ct := range config.ContentTypes {
-		if ct == mimeType {
-			return true
-		}
-	}
-	return false
-}
-
-func IsSupportedFile(filePath string) bool {
-	mimeType, err := DetectFileMIMEType(filePath)
-	// 【关键修改】打印错误，以便调试
-	if err != nil {
-		fmt.Printf("-> [DEBUG] Error detecting MIME for '%s': %v\n", filePath, err)
-		return false
-	}
-
-	// 【修改】提供更详细的调试信息
-	fmt.Printf("-> [DEBUG] Detected MIME for '%s': %s\n", filePath, mimeType)
-
-	return IsSupportedType(mimeType)
 }

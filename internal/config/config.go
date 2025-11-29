@@ -113,10 +113,11 @@ func Load(configPath string) (*Config, error) {
 // 返回所有已知的容器扩展名（带点号）
 func (c *Config) GetAllContainerExtensions() []string {
 	return []string{
-		"." + c.BinExtGroup.Video, // .sccgv
-		"." + c.BinExtGroup.Text,  // .sccgt
-		"." + c.BinExtGroup.Audio, // .sccga
-		"." + c.BinExtGroup.Image, // .sccgi
+		"." + c.BinExtGroup.Video,  // .sccgv
+		"." + c.BinExtGroup.Text,   // .sccgt
+		"." + c.BinExtGroup.Audio,  // .sccga
+		"." + c.BinExtGroup.Image,  // .sccgi
+		"." + c.BinExtGroup.Iframe, // .sccgf
 	}
 }
 

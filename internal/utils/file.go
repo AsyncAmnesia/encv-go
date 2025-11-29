@@ -74,40 +74,21 @@ func GenerateReversedExt(ext string) string {
 	return string(runes)
 }
 
-// IsEncryptedContainer 通过读取文件头来检测是否为有效的 ENCV 容器
+// IsEncryptedContainer 检查文件是否为有效的 ENCV 主容器文件。
+// 它会正确地忽略子分片。
 func IsEncryptedContainer(ctx context.Context, filePath string) (bool, error) {
-	file, err := os.Open(filePath)
+	detectedType, err := container.DetectMainOrSubContainerType(ctx, filePath)
 	if err != nil {
-		// 如果文件无法打开，我们不认为它是容器，但返回错误以便上层记录
-		return false, fmt.Errorf("failed to open file '%s' for container detection: %w", filePath, err)
-	}
-	defer file.Close()
-
-	// 读取头部用于类型检测
-	magicMap, err := container.GetContainerMagicMap(ctx)
-	maxMagicLen := 0
-	for _, magic := range magicMap {
-		if len(magic) > maxMagicLen {
-			maxMagicLen = len(magic)
+		// 如果不是我们的文件，返回 false 和 nil，而不是错误，以便调用者可以静默跳过
+		if strings.Contains(err.Error(), "not a recognized") {
+			return false, nil
 		}
+		// 其他读取错误则返回
+		return false, err
 	}
 
-	magicHeader := make([]byte, maxMagicLen)
-	bytesRead, err := io.ReadFull(file, magicHeader)
-	if err != nil && err != io.ErrUnexpectedEOF {
-		// 读取失败，不是有效容器
-		return false, fmt.Errorf("failed to read header of '%s': %w", filePath, err)
-	}
-
-	// DetectContainerType 在成功时返回扩展名，失败时返回错误
-	_, err = container.DetectContainerType(ctx, magicHeader[:bytesRead])
-	if err != nil {
-		// 魔法数字不匹配，不是我们的容器
-		return false, nil // 返回 false，但 error 为 nil，表示“检测完毕，不是容器”
-	}
-
-	// 没有错误，说明是有效的容器
-	return true, nil
+	// 只有当检测到的是主容器类型（而不是 "sub_chunk"）时，才返回 true
+	return detectedType != container.SubChunkType, nil
 }
 
 // CreateFileForOutput 安全地创建一个用于输出的文件。

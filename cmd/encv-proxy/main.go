@@ -9,6 +9,7 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/proxy"
+	"github.com/Soltus/encv-go/pkg/encv"
 )
 
 func main() {
@@ -27,7 +28,8 @@ func main() {
 
 	// 解析所有命令行参数
 	flag.Parse()
-	rootCtx := config.NewContext(context.Background(), cfg)
+	finalCtx := config.NewContext(context.Background(), cfg)
+	encv.Init(finalCtx)
 
 	// 确保主机地址总是包含协议方案
 	if !strings.HasPrefix(cfg.Proxy.OpenListHost, "http://") && !strings.HasPrefix(cfg.Proxy.OpenListHost, "https://") {
@@ -35,7 +37,7 @@ func main() {
 		cfg.Proxy.OpenListHost = "http://" + cfg.Proxy.OpenListHost
 	}
 
-	if err := authenticate(rootCtx); err != nil {
+	if err := authenticate(finalCtx); err != nil {
 		log.Fatalf("Authentication failed: %v", err)
 	}
 
@@ -53,12 +55,12 @@ func main() {
 		cfg.Proxy.OpenListHost = "http://" + cfg.Proxy.OpenListHost
 	}
 
-	if err := authenticate(rootCtx); err != nil {
+	if err := authenticate(finalCtx); err != nil {
 		log.Fatalf("Authentication failed: %v", err)
 	}
 
 	// 【修改】创建 Proxy 实例并启动它
-	proxyServer := proxy.NewProxy(rootCtx)
+	proxyServer := proxy.NewProxy(finalCtx)
 	proxyServer.StartServer()
 }
 

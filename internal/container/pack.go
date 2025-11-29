@@ -1,78 +1,35 @@
 package container
 
 import (
-	"context"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"io"
-	"os"
-
-	"github.com/Soltus/encv-go/internal/config"
-	"github.com/Soltus/encv-go/internal/types"
 )
 
-// PackWithIndex 将加密文件和任意类型的索引打包成容器
-func PackWithIndex(ctx context.Context, dataPath, finalPath string, index types.Index) error {
-	cfg := config.FromContext(ctx)
-	// 1. 打开加密数据文件
-	dataFile, err := os.Open(dataPath)
-	if err != nil {
-		return fmt.Errorf("failed to open data file: %w", err)
-	}
-	defer dataFile.Close()
-
-	// 2. 创建最终容器文件
-	outFile, err := os.Create(finalPath)
-	if err != nil {
-		return fmt.Errorf("failed to create container file: %w", err)
-	}
-	defer outFile.Close()
-
-	// 【关键修复】根据 Index 类型选择正确的魔法数字
-	var ext string
-	switch i := index.(type) {
-	case *types.VideoIndex:
-		ext = cfg.BinExtGroup.Video
-	case *types.ImageIndex:
-		ext = cfg.BinExtGroup.Image
-	case *types.TextIndex:
-		ext = cfg.BinExtGroup.Text
-	default:
-		// 如果还有其他类型，可以在这里添加
-		return fmt.Errorf("unsupported index type for packing: %T", i)
-	}
-
-	magicMap, err := GetContainerMagicMap(ctx)
-	magic, ok := magicMap[ext]
-	if !ok {
-		return fmt.Errorf("no magic number found for extension: %s", ext)
-	}
-
-	// 3. 写入魔法数字
-	if _, err := outFile.Write([]byte(magic)); err != nil {
+// Pack 是一个通用的打包函数，将 KVI 数据和加密数据流打包到容器格式中。
+// 它不关心文件路径或具体类型，只负责按格式写入数据。
+func Pack(writer io.Writer, magic []byte, kviData []byte, dataReader io.Reader) error {
+	// 1. 写入魔法数字
+	if _, err := writer.Write(magic); err != nil {
 		return fmt.Errorf("failed to write magic number: %w", err)
 	}
 
-	// 4. 序列化并写入 KVI
-	kviData, err := json.Marshal(index)
-	if err != nil {
-		return fmt.Errorf("failed to marshal KVI: %w", err)
-	}
+	// 2. 写入 KVI 长度
 	kviLen := uint64(len(kviData))
-	if err := binary.Write(outFile, binary.LittleEndian, &kviLen); err != nil {
+	if err := binary.Write(writer, binary.LittleEndian, &kviLen); err != nil {
 		return fmt.Errorf("failed to write KVI length: %w", err)
 	}
-	if _, err := outFile.Write(kviData); err != nil {
+
+	// 3. 写入 KVI 数据
+	if _, err := writer.Write(kviData); err != nil {
 		return fmt.Errorf("failed to write KVI data: %w", err)
 	}
 
-	// 5. 复制加密数据流
-	if _, err := io.Copy(outFile, dataFile); err != nil {
+	// 4. 复制加密数据流
+	if _, err := io.Copy(writer, dataReader); err != nil {
 		return fmt.Errorf("failed to write encrypted data: %w", err)
 	}
 
-	fmt.Printf("-> Successfully packed container: %s\n", finalPath)
 	return nil
 }
 

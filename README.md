@@ -227,23 +227,26 @@ WSL2 已经打通了 localhost
 
 ```md
 encv-go/
-├── cmd/                 # 程序入口
-│   ├── encv/           # encv 程序
-│   └── encv-proxy/     # encv-proxy 代理程序（只代理 OpenList）
-│   └── encv-schema/     # 仅用于生成 `config.schema.json`
-├── internal/            # 内部包，不对外暴露
-│   ├── config/          # 配置
-│   ├── container/       # 加密容器相关
-│   ├── crypto/         # 加解密核心逻辑
-│   ├── middleware/      # 中间件
-│   ├── processor/      # 预处理和元数据处理
-│   ├── proxy/          # OpenList 代理服务核心逻辑
-│   ├── server/          # HTTP服务核心逻辑
-│   ├── service/        # 加解密服务
-│   └── types/          # 共享的数据结构定义
-│   └── utils/          # 通用工具
-│   └── webdav/          # Webdav服务核心逻辑
-├── pkg/                # 对外暴露的公共包，作为库调用
+├── cmd/                  # 程序入口
+│   ├── encv/             # encv 程序
+│   └── encv-proxy/       # encv-proxy 代理程序（只代理 OpenList）
+│   └── encv-schema/      # 仅用于生成 `config.schema.json`
+├── internal/             # 内部包，不对外暴露
+│   ├── config/           # 配置
+│   ├── container/        # 加密容器相关
+│   ├── crypto/           # 加解密核心逻辑
+│   ├── middleware/       # 中间件
+│   ├── packer/           # 加密打包
+│   ├── postdecrypt/      # 解密后处理
+│   ├── processor/        # 加密前分析，预处理和元数据处理
+│   ├── proxy/            # OpenList 代理服务核心逻辑
+│   ├── server/           # HTTP服务核心逻辑
+│   ├── service/          # 加解密服务编排
+│   └── types/            # 共享的数据结构定义
+│   ├── unpacker/         # 解密解包
+│   └── utils/            # 通用工具
+│   └── webdav/           # Webdav服务核心逻辑
+├── pkg/                  # 对外暴露的公共包，作为库调用
 │   └── encv/
 │      └── api.go
 │      └── decrypt.go

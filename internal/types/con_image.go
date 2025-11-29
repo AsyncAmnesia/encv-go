@@ -22,3 +22,8 @@ func (i *ImageIndex) GetEncryptionInfo() EncryptionInfo { return i.Encryption }
 func (i *ImageIndex) GetOriginalFilename() string       { return i.OriginalFilename }
 func (v *ImageIndex) GetOriginalFileSize() int64        { return v.OriginalFileSize }
 func (v *ImageIndex) GetMimeType() string               { return v.MimeType }
+func (i *ImageIndex) UpdateCommonInfo(encInfo EncryptionInfo, originalFilename, encryptedFileMD5 string) {
+	i.Encryption = encInfo
+	i.OriginalFilename = originalFilename
+	i.EncryptedFileMD5 = encryptedFileMD5
+}

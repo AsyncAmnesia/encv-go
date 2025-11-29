@@ -20,3 +20,8 @@ func (t *TextIndex) GetEncryptionInfo() EncryptionInfo { return t.Encryption }
 func (t *TextIndex) GetOriginalFilename() string       { return t.OriginalFilename }
 func (t *TextIndex) GetOriginalFileSize() int64        { return t.OriginalFileSize }
 func (t *TextIndex) GetMimeType() string               { return t.MimeType }
+func (i *TextIndex) UpdateCommonInfo(encInfo EncryptionInfo, originalFilename, encryptedFileMD5 string) {
+	i.Encryption = encInfo
+	i.OriginalFilename = originalFilename
+	i.EncryptedFileMD5 = encryptedFileMD5
+}

@@ -94,11 +94,11 @@ func CopyAndRenameSubtitles(tracks []types.SubtitleTrack, videoPath, outputDir, 
 
 // RestoreSubtitlesFromKVI 根据 KVI 中的信息，将字幕从容器目录恢复到输出目录
 func RestoreSubtitlesFromKVI(index *types.VideoIndex, containerDir, outputDir string) error {
-	if len(index.Subtitles) == 0 {
+	if len(index.SubtitleTrack) == 0 {
 		return nil
 	}
 	fmt.Println("-> Restoring subtitles...")
-	for _, sub := range index.Subtitles {
+	for _, sub := range index.SubtitleTrack {
 		// sub.Title 是加密后存储在容器目录中的字幕文件名 (e.g., "myvideo.sccgv.srt")
 		// sub.Filename 是需要恢复成的原始文件名 (e.g., "myvideo.zh.srt")
 		srcPath := filepath.Join(containerDir, sub.Title)

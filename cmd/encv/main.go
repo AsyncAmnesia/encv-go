@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Soltus/encv-go/internal/config"
+	"github.com/Soltus/encv-go/internal/service"
 	"github.com/Soltus/encv-go/pkg/encv"
 )
 
@@ -44,8 +45,9 @@ func main() {
 		}
 
 		finalCtx := config.NewContext(context.Background(), cfg)
-
-		if err := encv.Encrypt(finalCtx, inputPath); err != nil {
+		encv.Init(finalCtx)
+		encrypter := encv.NewEncrypter()
+		if err := encrypter.Encrypt(finalCtx, inputPath); err != nil {
 			log.Fatalf("Encryption failed: %v", err)
 		}
 		log.Printf("✅ Encryption complete. Output in: %s\n", cfg.OutputPath)
@@ -68,10 +70,12 @@ func main() {
 		}
 
 		finalCtx := config.NewContext(context.Background(), cfg)
-		opts := encv.DecryptOptions{
+		encv.Init(finalCtx)
+		opts := service.DecryptOptions{
 			OutputDir: *outputPtr,
 		}
-		if err := encv.Decrypt(finalCtx, inputPath, opts); err != nil {
+		decrypter := encv.NewDecrypter()
+		if err := decrypter.Decrypt(finalCtx, inputPath, opts); err != nil {
 			log.Fatalf("Decryption failed: %v", err)
 		}
 		log.Printf("✅ Decryption complete. Output in: %s\n", opts.OutputDir)
@@ -88,6 +92,8 @@ func main() {
 		if containerPath == "" {
 			log.Fatal("Error: Please provide the path to the ENCV container file.")
 		}
+		finalCtx := config.NewContext(context.Background(), cfg)
+		encv.Init(finalCtx)
 
 		// 调用新函数获取 KVI 数据
 		kviData, err := encv.ExtractKVI(rootCtx, containerPath)
@@ -129,6 +135,7 @@ func main() {
 		}
 
 		finalCtx := config.NewContext(context.Background(), cfg)
+		encv.Init(finalCtx)
 		player := encv.NewPlayer(finalCtx)
 
 		addr, err := player.Start(cfg.Server.Port)
@@ -157,6 +164,7 @@ func main() {
 			log.Fatalf("WebDAV requires a password. Please set it in config.user.json.")
 		}
 		finalCtx := config.NewContext(context.Background(), cfg)
+		encv.Init(finalCtx)
 		addr, webdavPath, err := encv.StartWebdav(finalCtx)
 		if err != nil {
 			log.Fatalf("Failed to start WebDAV server: %v", err)

@@ -13,7 +13,7 @@ import (
 )
 
 // WriteMainChunk 写入主分片文件
-func WriteMainChunk(mainMagic, filename string, kviData []byte, videoStream io.Reader, originalFileMD5 string) error {
+func WriteMainChunk(mainMagic []byte, filename string, kviData []byte, videoStream io.Reader, originalFileMD5 string) error {
 	file, err := os.Create(filename)
 	if err != nil {
 		return fmt.Errorf("failed to create main chunk file: %w", err)
@@ -56,7 +56,7 @@ func WriteMainChunk(mainMagic, filename string, kviData []byte, videoStream io.R
 
 // WriteSubChunk 写入子分片文件
 // 【修改】返回文件名、MD5、大小和错误
-func WriteSubChunk(subMagic, mainChunkPath string, chunkIndex int, videoStream io.Reader, originalFileMD5 string) (string, string, int64, error) {
+func WriteSubChunk(subMagic []byte, mainChunkPath string, chunkIndex int, videoStream io.Reader, originalFileMD5 string) (string, string, int64, error) {
 	// 1. 构建子分片文件名
 	subChunkPath := fmt.Sprintf("%s.encv%d", mainChunkPath, chunkIndex)
 	file, err := os.Create(subChunkPath)

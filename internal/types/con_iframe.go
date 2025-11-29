@@ -19,3 +19,8 @@ func (t *IframeIndex) GetEncryptionInfo() EncryptionInfo { return t.Encryption }
 func (t *IframeIndex) GetOriginalFilename() string       { return t.OriginalFilename }
 func (t *IframeIndex) GetOriginalFileSize() int64        { return t.OriginalFileSize }
 func (t *IframeIndex) GetMimeType() string               { return t.MimeType }
+func (i *IframeIndex) UpdateCommonInfo(encInfo EncryptionInfo, originalFilename, encryptedFileMD5 string) {
+	i.Encryption = encInfo
+	i.OriginalFilename = originalFilename
+	i.EncryptedFileMD5 = encryptedFileMD5
+}

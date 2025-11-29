@@ -13,7 +13,7 @@ import (
 	"github.com/Soltus/encv-go/internal/config"
 )
 
-var (
+const (
 	// 魔法数字本身是格式规范的一部分，不应由用户配置
 	MagicVideo         = "encv-sccgv-chunk-main-v1" // SCCGV 主分片
 	MagicVideoSubChunk = "encv-sccgv-chunk-sub-v1"  // SCCGV 子分片
@@ -22,6 +22,52 @@ var (
 	MagicImage         = "encv-sccgi-container-v1"
 	MagicIFrame        = "encv-sccgf-container-v1"
 )
+
+// 定义一个特殊的类型，用于表示子分片
+const SubChunkType = "sub_chunk"
+
+// DetectMainOrSubContainerType 检测文件是主容器、子分片，还是未知文件。
+// 它返回一个字符串类型，用于后续的 switch 判断。
+func DetectMainOrSubContainerType(ctx context.Context, filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file for detection: %w", err)
+	}
+	defer file.Close()
+
+	// 读取文件头
+	header := make([]byte, 64) // 足够容纳所有魔法数字
+	bytesRead, err := file.Read(header)
+	if err != nil && err != io.EOF {
+		return "", fmt.Errorf("failed to read file header: %w", err)
+	}
+	headerStr := string(header[:bytesRead])
+
+	// 1. 优先检查是否是子分片
+	subMagicMap, err := GetSubChunkMagicMap(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get sub-chunk magic map: %w", err)
+	}
+	for _, magic := range subMagicMap {
+		if len(headerStr) >= len(magic) && headerStr[:len(magic)] == magic {
+			return SubChunkType, nil // 明确返回子分片类型
+		}
+	}
+
+	// 2. 如果不是子分片，再检查是否是主容器
+	magicMap, err := GetContainerMagicMap(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get main container magic map: %w", err)
+	}
+	for ext, magic := range magicMap {
+		if len(headerStr) >= len(magic) && headerStr[:len(magic)] == magic {
+			return ext, nil // 返回主容器类型，如 "video", "image"
+		}
+	}
+
+	// 3. 都不是，返回错误
+	return "", fmt.Errorf("file '%s' is not a recognized ENCV container or sub-chunk", filePath)
+}
 
 // getContainerMagicMap 动态构建容器扩展名到魔法数字的映射
 // 这是获取所有容器魔法数字的公共入口
