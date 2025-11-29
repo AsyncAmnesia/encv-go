@@ -122,46 +122,77 @@ func EncryptFile(ctx context.Context, inputPath string, outputDir string, salt [
 		return nil
 	}
 
-	// 3. 使用处理器获取文件元数据
-	index, err := p.Process(inputPath)
+	// 3. 【关键】从处理器获取元数据和数据流
+	index, sourceReader, err := p.Process(inputPath)
 	if err != nil {
 		return fmt.Errorf("failed to process file '%s': %w", inputPath, err)
+	}
+	// 【关键】确保流被关闭，以释放文件句柄或等待进程结束
+	defer sourceReader.Close()
+
+	if err := types.ValidateIndex(index, "After Processor"); err != nil {
+		return err
 	}
 
 	// 4. 调用重构后的通用加密逻辑
 	baseName := strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))
-	return doEncrypt(ctx, inputPath, baseName, outputDir, salt, index)
+	return doEncrypt(ctx, sourceReader, baseName, outputDir, salt, index)
 }
 
 // doEncrypt 是核心的加密函数，它处理所有实现了 types.Index 的对象
 // 【关键重构在这里】
-func doEncrypt(ctx context.Context, inputPath, baseName, outputDir string, salt []byte, index types.Index) error {
+func doEncrypt(ctx context.Context, sourceReader io.Reader, baseName, outputDir string, salt []byte, index types.Index) error {
 	cfg := config.FromContext(ctx)
 
-	// --- 2. 通用加密 ---
+	// --- 2. 通用加密 (流式) ---
+	// 加密仍然需要写入临时文件，因为打包器需要多次 Seek 和读取
 	tempEncPath := filepath.Join(outputDir, baseName+".tmp_enc")
-	iv, err := crypto.EncryptFile(inputPath, tempEncPath, cfg.Password, salt)
+	tempEncFile, err := os.Create(tempEncPath)
+	if err != nil {
+		return fmt.Errorf("failed to create temp encrypted file: %w", err)
+	}
+	defer os.Remove(tempEncPath) // 确保函数退出时删除临时文件
+	defer tempEncFile.Close()
+
+	// 【关键修改】调用新的 EncryptStream，并获取返回的 IV
+	iv, err := crypto.EncryptStream(sourceReader, tempEncFile, []byte(cfg.Password), salt)
 	if err != nil {
 		return fmt.Errorf("encryption failed: %w", err)
 	}
-	defer os.Remove(tempEncPath)
 
-	// --- 3. 【关键修改】填充所有 Index 共有的加密后信息，消灭 switch ---
+	// --- 3. 填充所有 Index 共有的加密后信息 ---
 	encMD5, _ := utils.FileMD5(tempEncPath)
 	encInfo := types.EncryptionInfo{
 		Algorithm:  crypto.Algorithm,
 		IVBase64:   crypto.Base64Encode(iv),
 		SaltBase64: crypto.Base64Encode(salt),
 	}
-	// 使用我们商定的统一接口，一行搞定
-	index.UpdateCommonInfo(encInfo, filepath.Base(inputPath), encMD5)
+	index.UpdateCommonInfo(encInfo, index.GetOriginalFilename(), encMD5)
 
-	// --- 4. 【关键修改】使用 Packer 接口进行打包 ---
+	if err := types.ValidateIndex(index, "After Encrypt"); err != nil {
+		return err
+	}
+
+	// 从 index 中获取原始文件名
+	originalFilename := index.GetOriginalFilename()
+
+	// 使用工具函数获取干净的基础名和反转扩展名
+	cleanBaseName := utils.GetBaseNameWithoutExt(originalFilename)
+	originalExt := filepath.Ext(originalFilename)
+	reversedExt := ""
+	if originalExt != "" {
+		reversedExt = utils.GenerateReversedExt(originalExt)
+	}
+
+	// 构建最终的 BaseName，它将被传递给 Packer
+	finalBaseName := fmt.Sprintf("%s.%s", cleanBaseName, reversedExt)
+
+	// --- 4. 使用 Packer 接口进行打包 ---
 	packer, err := packer.GetPacker(index)
 	if err != nil {
 		return fmt.Errorf("failed to get packer for type '%s': %w", index.GetKind(), err)
 	}
-
+	// 重新打开临时加密文件以供打包器读取
 	encFile, err := os.Open(tempEncPath)
 	if err != nil {
 		return fmt.Errorf("failed to open encrypted temp file for packing: %w", err)
@@ -169,10 +200,13 @@ func doEncrypt(ctx context.Context, inputPath, baseName, outputDir string, salt 
 	defer encFile.Close()
 
 	// 调用 Packer，所有路径生成和打包细节都由它处理
-	if err := packer.Pack(ctx, baseName, outputDir, encFile, index); err != nil {
+	if err := packer.Pack(ctx, finalBaseName, outputDir, encFile, index); err != nil {
 		return fmt.Errorf("failed to pack container: %w", err)
 	}
 
+	if err := types.ValidateIndex(index, "After Pack"); err != nil {
+		return err
+	}
 	return nil
 }
 

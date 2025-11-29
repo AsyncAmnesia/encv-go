@@ -32,10 +32,7 @@ func (p *VideoPacker) Pack(ctx context.Context, baseName, outputDir string, encr
 		return err // 字幕处理失败是致命错误
 	}
 
-	// 2. 决策：生成最终路径
-	reversedExt := utils.GenerateReversedExt(vIndex.OriginalFilename)
-	encBaseName := baseName + "." + reversedExt
-	finalPath := filepath.Join(outputDir, encBaseName+cfg.GetVideoEncExtension())
+	finalPath := filepath.Join(outputDir, baseName+cfg.GetVideoEncExtension())
 
 	// 3. 决策：获取魔法数字
 	magicMap, _ := container.GetContainerMagicMap(ctx)
@@ -65,8 +62,7 @@ func (p *VideoPacker) handleSubtitles(ctx context.Context, vIndex *types.VideoIn
 	}
 	vIndex.SubtitleTrack = subtitleTracks
 
-	encBaseName := baseName + "." + utils.GenerateReversedExt(vIndex.OriginalFilename)
-	return p.copyAndRenameSubtitles(vIndex, outputDir, encBaseName)
+	return p.copyAndRenameSubtitles(vIndex, outputDir, baseName)
 }
 
 func (p *VideoPacker) copyAndRenameSubtitles(index *types.VideoIndex, outputDir, encBaseName string) error {

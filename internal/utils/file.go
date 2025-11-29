@@ -49,7 +49,7 @@ func SortExtensionsByLength(exts []string) []string {
 	return sorted
 }
 
-// 剥离已知的扩展名
+// 剥离给定的扩展名，用于视频字幕等场景
 func StripKnownExtensions(filename string, exts []string) string {
 	name := filename
 	for _, ext := range exts {
@@ -61,7 +61,23 @@ func StripKnownExtensions(filename string, exts []string) string {
 	return name
 }
 
+// GetBaseNameWithoutExt 获取文件名，并移除所有已知的扩展名。
+// 例如: "video.mp4" -> "video", "archive.tar.gz" -> "archive"
+func GetBaseNameWithoutExt(path string) string {
+	filename := filepath.Base(path)
+	// 循环移除所有扩展名，直到没有为止
+	for {
+		ext := filepath.Ext(filename)
+		if ext == "" {
+			break
+		}
+		filename = strings.TrimSuffix(filename, ext)
+	}
+	return filename
+}
+
 // GenerateReversedExt 将文件扩展名倒序，例如 "jpg" -> "gpj"
+// 用于避免不同扩展名的文件重名
 func GenerateReversedExt(ext string) string {
 	// 移除可能存在的前导点，例如 ".jpg" -> "jpg"
 	if len(ext) > 0 && ext[0] == '.' {

@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -19,8 +18,8 @@ const (
 	Algorithm = "aes-256-ctr"
 	// KeySize 密钥长度
 	KeySize = 32
-	// IVSize 初始化向量长度
-	IVSize = 16
+	// IVLength 是 AES CTR 模式 IV 的标准长度
+	IVLength = aes.BlockSize
 	// SaltSize 盐值长度
 	SaltSize = 32
 	// Iterations PBKDF2 迭代次数
@@ -31,47 +30,133 @@ const (
 	MagicNumber = "encv-MagicNumber-v1"
 	// encv 容器
 	ContainerMagicNumber = "encv-ContainerMagicNumber-v1"
-	// IVLength 是 AES CTR 模式 IV 的标准长度
-	IVLength = aes.BlockSize
 )
 
 // GenerateKey 使用 PBKDF2 从密码和盐值生成密钥
-func GenerateKey(password string, salt []byte) []byte {
-	return pbkdf2.Key([]byte(password), salt, Iterations, KeySize, sha256.New)
+func GenerateKey(password, salt []byte, keyLen int) ([]byte, error) {
+	if len(password) == 0 {
+		return nil, fmt.Errorf("password cannot be empty")
+	}
+	if len(salt) == 0 {
+		return nil, fmt.Errorf("salt cannot be empty")
+	}
+	if keyLen <= 0 {
+		return nil, fmt.Errorf("key length must be positive")
+	}
+	return pbkdf2.Key(password, salt, Iterations, keyLen, sha256.New), nil
 }
 
-// EncryptStream 加密数据流，并将魔法标识和IV写入文件头
-// iv 由调用者生成，以便同时写入 KVI 文件
-func EncryptStream(r io.Reader, w io.Writer, key []byte, iv []byte) error {
-	if len(iv) != IVLength {
-		return errors.New("invalid IV length")
-	}
-
-	// 1. 写入魔法标识
-	if _, err := w.Write([]byte(MagicNumber)); err != nil {
-		return fmt.Errorf("failed to write magic number: %w", err)
-	}
-
-	// 2. 写入 IV
-	if _, err := w.Write(iv); err != nil {
-		return fmt.Errorf("failed to write IV: %w", err)
-	}
-
-	// 3. 创建加密器并进行加密
-	block, err := aes.NewCipher(key)
+// EncryptFile 加密文件，并将魔法标识和IV写入文件头。
+// 它内部调用 EncryptStream 来完成实际工作。
+func EncryptFile(inputPath, outputPath string, password, salt []byte) (iv []byte, err error) {
+	// 1. 打开输入文件
+	inFile, err := os.Open(inputPath)
 	if err != nil {
-		return fmt.Errorf("failed to create cipher block: %w", err)
+		return nil, fmt.Errorf("failed to open input file '%s': %w", inputPath, err)
+	}
+	defer inFile.Close()
+
+	// 2. 创建输出文件
+	outFile, err := os.Create(outputPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create output file '%s': %w", outputPath, err)
+	}
+	// 确保在出错时关闭并删除文件
+	defer func() {
+		if err != nil {
+			outFile.Close()
+			os.Remove(outputPath)
+		}
+	}()
+
+	// 3. 调用核心的流式加密函数
+	iv, err = EncryptStream(inFile, outFile, password, salt)
+	if err != nil {
+		return nil, err
+	}
+
+	// 4. 成功后，关闭输出文件
+	if err := outFile.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close output file: %w", err)
+	}
+
+	return iv, nil
+}
+
+// EncryptStream 加密数据流，并将魔法标识和IV写入文件头。
+// 它内部使用 Argon2 从 key 和 salt 派生出加密密钥和 IV。
+// 返回的 IV 应由调用者存入 KVI。
+func EncryptStream(r io.Reader, w io.Writer, password, salt []byte) (iv []byte, err error) {
+	// 1. 派生密钥和 IV
+	// 我们派生一个足够长的密钥，然后将其切分为加密密钥和 IV。
+	// 总长度 = AES密钥长度 + IV长度
+	totalKeyLen := KeySize + IVLength
+	derivedKey, err := GenerateKey(password, salt, totalKeyLen) // 【关键修复】传入总长度
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive key: %w", err)
+	}
+
+	encKey := derivedKey[:KeySize]
+	iv = derivedKey[KeySize:] // 现在 iv 可以正确获取到 16 字节
+
+	// 2. 写入魔法标识
+	if _, err := w.Write([]byte(MagicNumber)); err != nil {
+		return nil, fmt.Errorf("failed to write magic number: %w", err)
+	}
+
+	// 3. 写入 IV
+	if _, err := w.Write(iv); err != nil {
+		return nil, fmt.Errorf("failed to write IV: %w", err)
+	}
+
+	// 4. 创建加密器并进行加密
+	block, err := aes.NewCipher(encKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cipher block: %w", err)
 	}
 
 	stream := cipher.NewCTR(block, iv)
 
 	// 使用 io.Copy 从输入流读取，加密后写入输出流
 	if _, err := io.CopyBuffer(streamWriter{stream: stream, writer: w}, r, nil); err != nil {
-		return fmt.Errorf("failed to encrypt stream: %w", err)
+		return nil, fmt.Errorf("failed to encrypt stream: %w", err)
 	}
 
-	return nil
+	return iv, nil
 }
+
+// EncryptStream 加密数据流，并将魔法标识和IV写入文件头
+// iv 由调用者生成，以便同时写入 KVI 文件
+// func EncryptStream(r io.Reader, w io.Writer, key []byte, iv []byte) error {
+// 	if len(iv) != IVLength {
+// 		return errors.New("invalid IV length")
+// 	}
+
+// 	// 1. 写入魔法标识
+// 	if _, err := w.Write([]byte(MagicNumber)); err != nil {
+// 		return fmt.Errorf("failed to write magic number: %w", err)
+// 	}
+
+// 	// 2. 写入 IV
+// 	if _, err := w.Write(iv); err != nil {
+// 		return fmt.Errorf("failed to write IV: %w", err)
+// 	}
+
+// 	// 3. 创建加密器并进行加密
+// 	block, err := aes.NewCipher(key)
+// 	if err != nil {
+// 		return fmt.Errorf("failed to create cipher block: %w", err)
+// 	}
+
+// 	stream := cipher.NewCTR(block, iv)
+
+// 	// 使用 io.Copy 从输入流读取，加密后写入输出流
+// 	if _, err := io.CopyBuffer(streamWriter{stream: stream, writer: w}, r, nil); err != nil {
+// 		return fmt.Errorf("failed to encrypt stream: %w", err)
+// 	}
+
+// 	return nil
+// }
 
 // 【新增】GetDecryptReader 创建一个 io.Reader，它会透明地解密来自底层加密流的数据。
 // 它会处理从流中读取和验证魔法数字和 IV 的逻辑。
@@ -123,33 +208,6 @@ func DecryptStream(r io.Reader, w io.Writer, key []byte) (int64, error) {
 
 	// 3. 返回成功写入的总字节数
 	return written, nil
-}
-
-// 加密文件的通用函数，返回 IV
-func EncryptFile(inputPath, outputPath string, password string, salt []byte) ([]byte, error) {
-	key := GenerateKey(password, salt)
-	iv := make([]byte, IVLength)
-	if _, err := rand.Read(iv); err != nil {
-		return nil, fmt.Errorf("failed to generate IV: %w", err)
-	}
-
-	inputFile, err := os.Open(inputPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open input file: %w", err)
-	}
-	defer inputFile.Close()
-
-	outputFile, err := os.Create(outputPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create output file: %w", err)
-	}
-	defer outputFile.Close()
-
-	if err := EncryptStream(inputFile, outputFile, key, iv); err != nil {
-		return nil, fmt.Errorf("encryption failed: %w", err)
-	}
-
-	return iv, nil
 }
 
 // --- 辅助类型，用于实现 io.Writer/io.Reader 接口 ---

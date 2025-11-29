@@ -3,6 +3,7 @@ package processor
 import (
 	"context"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"sync"
@@ -14,7 +15,10 @@ import (
 // Processor 定义了文件处理器的通用接口。
 type Processor interface {
 	// Process 接收一个输入文件路径，返回分析后的元数据。
-	Process(inputPath string) (types.Index, error)
+	// Process(inputPath string) (types.Index, error)
+	// Process 处理文件，返回元数据和一个用于读取处理后数据的流。
+	// 调用者负责关闭返回的 io.ReadCloser。
+	Process(inputPath string) (types.Index, io.ReadCloser, error)
 
 	// SupportedMimePrefixes 返回该处理器支持的 MIME 类型前缀。
 	// 例如，图像处理器返回 []string{"image/"}。

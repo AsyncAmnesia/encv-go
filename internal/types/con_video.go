@@ -28,6 +28,8 @@ func (v *VideoIndex) GetVersion() int16                 { return v.Version }
 func (v *VideoIndex) GetEncryptionInfo() EncryptionInfo { return v.Encryption }
 func (v *VideoIndex) GetOriginalFilename() string       { return v.OriginalFilename }
 func (v *VideoIndex) GetOriginalFileSize() int64        { return v.OriginalFileSize }
+func (v *VideoIndex) GetOriginalFileMD5() string        { return v.OriginalFileMD5 }
+func (v *VideoIndex) GetEncryptedFileMD5() string       { return v.EncryptedFileMD5 }
 func (v *VideoIndex) GetMimeType() string               { return v.MimeType }
 func (i *VideoIndex) UpdateCommonInfo(encInfo EncryptionInfo, originalFilename, encryptedFileMD5 string) {
 	i.Encryption = encInfo

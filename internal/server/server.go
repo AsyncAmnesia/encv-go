@@ -349,7 +349,12 @@ func (p *Player) serveEncryptedContent(w http.ResponseWriter, r *http.Request, a
 		http.Error(w, "Invalid salt in index file", http.StatusInternalServerError)
 		return
 	}
-	key := crypto.GenerateKey(p.cfg.Password, salt) // 【修改】使用新字段名
+	key, err := crypto.GenerateKey([]byte(p.cfg.Password), salt, crypto.KeySize) // 只传入 KeySize
+	if err != nil {
+		log.Printf("-> [File] Failed to GenerateKey: %v", err)
+		http.Error(w, "Invalid GenerateKey in index file", http.StatusInternalServerError)
+		return
+	}
 
 	// 7. 【关键修改】根据类型设置响应头
 	var contentType string

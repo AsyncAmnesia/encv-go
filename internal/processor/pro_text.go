@@ -2,6 +2,8 @@ package processor
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -44,26 +46,36 @@ func (p *TextProcessor) ShouldProcess(inputPath string) bool {
 }
 
 // 实现 Processor 接口
-func (p *TextProcessor) Process(inputPath string) (types.Index, error) {
+func (p *TextProcessor) Process(inputPath string) (types.Index, io.ReadCloser, error) {
 	fmt.Printf("-> Analyzing text: %s\n", filepath.Base(inputPath))
 
 	fileSize := utils.GetFileSize(inputPath)
 	mimeType, err := utils.DetectFileMIMEType(inputPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to DetectFileMIMEType: %w", err)
+		return nil, nil, fmt.Errorf("failed to DetectFileMIMEType: %w", err)
 	}
 
 	ext := filepath.Ext(inputPath)
 	if len(ext) == 0 {
-		return nil, fmt.Errorf("cannot determine text format from filename: %s", inputPath)
+		return nil, nil, fmt.Errorf("cannot determine text format from filename: %s", inputPath)
 	}
 	format := ext[1:] // 去掉 '.'
 
 	fmt.Printf("-> [Info] Detected MIME type '%s' with format '%s'.\n", mimeType, format)
 
+	file, err := os.Open(inputPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	originalMD5, err := utils.FileMD5(inputPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to calculate MD5 for original video %s: %w", inputPath, err)
+	}
 	return &types.TextIndex{
 		MimeType:         mimeType,
 		Format:           format,
 		OriginalFileSize: fileSize,
-	}, nil
+		OriginalFilename: filepath.Base(inputPath),
+		OriginalFileMD5:  originalMD5,
+	}, file, nil
 }

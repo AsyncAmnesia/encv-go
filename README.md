@@ -331,3 +331,14 @@ go run ./cmd/encv-schema > config.schema.json
 
 * **容器魔法数字**：由 `container.Unpack` 读取，用于识别这是一个 ENCV 容器。
 * **流魔法数字**：由 `crypto.GetDecryptReader` 读取，用于识别数据流是加密的，需要解密。
+
+加密时 (EncryptStream)：
+
+* 派生一个 48字节 的长密钥 (KeySize + IVSize)。
+* 从中切分出 32字节 的 encKey 和 16字节 的 iv。
+* 使用 encKey 加密，并将 iv 写入文件头。
+
+解密时 (GetDecryptReader)：
+
+* 从文件头读取 16字节 的 iv。
+* 错误点：它期望接收一个 32字节 的 AES 密钥 (key)

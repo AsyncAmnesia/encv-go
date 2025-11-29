@@ -22,7 +22,6 @@ func (p *GenericPacker) Pack(ctx context.Context, baseName, outputDir string, en
 
 	// 1. 决策：通过 switch 将 IndexKind 映射到二进制扩展名
 	var binExt string
-	// 【关键修改】使用 GetKind() 而不是 GetMimeType()
 	switch index.GetKind() {
 	case types.IndexKindImage:
 		binExt = cfg.BinExtGroup.Image

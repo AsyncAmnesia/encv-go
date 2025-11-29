@@ -10,6 +10,7 @@ type ImageIndex struct {
 	Format           string         `json:"format"`
 	Encryption       EncryptionInfo `json:"encryption"`
 	OriginalFilename string         `json:"original_filename"`
+	OriginalFileMD5  string         `json:"original_file_md5"`
 	EncryptedFileMD5 string         `json:"encrypted_file_md5"`
 	Width            int            `json:"width"`
 	Height           int            `json:"height"`
@@ -21,6 +22,8 @@ func (i *ImageIndex) GetVersion() int16                 { return i.Version }
 func (i *ImageIndex) GetEncryptionInfo() EncryptionInfo { return i.Encryption }
 func (i *ImageIndex) GetOriginalFilename() string       { return i.OriginalFilename }
 func (v *ImageIndex) GetOriginalFileSize() int64        { return v.OriginalFileSize }
+func (v *ImageIndex) GetOriginalFileMD5() string        { return v.OriginalFileMD5 }
+func (v *ImageIndex) GetEncryptedFileMD5() string       { return v.EncryptedFileMD5 }
 func (v *ImageIndex) GetMimeType() string               { return v.MimeType }
 func (i *ImageIndex) UpdateCommonInfo(encInfo EncryptionInfo, originalFilename, encryptedFileMD5 string) {
 	i.Encryption = encInfo

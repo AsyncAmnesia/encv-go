@@ -48,6 +48,7 @@ func DecryptFileOrDir(ctx context.Context, inputPath string, opts DecryptOptions
 func decryptSingleFile(ctx context.Context, anyChunkPath string, opts DecryptOptions) error {
 	fmt.Printf("-> Decrypting: %s\n", anyChunkPath)
 	cfg := config.FromContext(ctx)
+
 	// 1. 调用服务层解密
 	content, err := DecryptContainer(ctx, anyChunkPath)
 	if err != nil {
@@ -55,37 +56,45 @@ func decryptSingleFile(ctx context.Context, anyChunkPath string, opts DecryptOpt
 	}
 	defer content.DataStream.Close()
 
-	// 2. 构建期望的输出文件路径
+	// 2. 获取原始文件名，并进行健壮性检查
 	originalFilename := content.Index.GetOriginalFilename()
-	outputPath := filepath.Join(opts.OutputDir, originalFilename)
 
-	// 3. 安全地创建输出文件
+	// 【关键修复】如果原始文件名为空，则从容器文件名派生一个
+	finalFilename := originalFilename
+	if finalFilename == "" {
+		fmt.Printf("-> Warning: Original filename not found in container, deriving from container name.\n")
+		// 从容器文件名派生一个基础名，例如 "321..sccgv" -> "321"
+		finalFilename = utils.GetBaseNameWithoutExt(anyChunkPath)
+	}
+
+	// 3. 构建期望的输出文件路径
+	outputPath := filepath.Join(opts.OutputDir, finalFilename)
+
+	// 4. 安全地创建输出文件
 	outputFile, actualOutputPath, err := utils.CreateFileForOutput(outputPath, cfg.Recover)
 	if err != nil {
 		return fmt.Errorf("failed to create output file: %w", err)
 	}
 	defer outputFile.Close()
 
-	// 4. 写入解密流
+	// 5. 写入解密流
 	if _, err := io.Copy(outputFile, content.DataStream); err != nil {
 		os.Remove(actualOutputPath) // 失败时清理
 		return fmt.Errorf("failed to write decrypted data: %w", err)
 	}
 
-	fmt.Printf("✅ Success: %s\n", outputPath)
+	fmt.Printf("✅ Success: %s\n", actualOutputPath)
 
-	// 5. 【关键修改】使用 PostDecrypter 接口进行后处理
+	// 6. 【关键修改】使用 PostDecrypter 接口进行后处理
 	postProcessor, err := postdecrypt.GetPostDecrypter(content.Index)
 	if err != nil {
 		// 如果没有找到后处理器，说明它可能不需要后处理，这不是一个错误
-		// 但为了调试，我们可以打印一个日志
-		// log.Printf("-> No post-decrypter for type %T, skipping.", content.Index)
 		return nil
 	}
 
 	if err := postProcessor.PostDecrypt(ctx, content, anyChunkPath, opts.OutputDir); err != nil {
 		// 后处理失败通常不应中断主流程，打印警告即可
-		fmt.Printf("-> %v\n", err)
+		fmt.Printf("-> Post-deprocessing warning: %v\n", err)
 	}
 
 	return nil
@@ -176,8 +185,11 @@ func DecryptContainer(ctx context.Context, containerPath string) (*types.Decrypt
 		packedData.DataStream.Close()
 		return nil, fmt.Errorf("failed to decode salt: %w", err)
 	}
-	key := crypto.GenerateKey(cfg.Password, salt)
-
+	key, err := crypto.GenerateKey([]byte(cfg.Password), salt, crypto.KeySize) // 只传入 KeySize
+	if err != nil {
+		packedData.DataStream.Close()
+		return nil, fmt.Errorf("failed to GenerateKey: %w", err)
+	}
 	decryptedStream, err := crypto.GetDecryptReader(packedData.DataStream, key)
 	if err != nil {
 		packedData.DataStream.Close()

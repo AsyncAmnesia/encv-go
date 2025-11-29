@@ -25,7 +25,12 @@ func serveDecryptedStreamFromReader(ctx context.Context, w http.ResponseWriter, 
 		http.Error(w, "Invalid salt in index file", http.StatusInternalServerError)
 		return err
 	}
-	key := crypto.GenerateKey(cfg.Password, salt)
+	key, err := crypto.GenerateKey([]byte(cfg.Password), salt, crypto.KeySize) // 只传入 KeySize
+	if err != nil {
+		log.Printf("Error GenerateKey: %v", err)
+		http.Error(w, "Invalid GenerateKey in index file", http.StatusInternalServerError)
+		return err
+	}
 
 	// 2. 【关键】创建一个透明的解密流
 	// 它会从 encryptedReader 读取加密数据，并吐出解密后的原始数据
