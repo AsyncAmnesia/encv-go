@@ -126,8 +126,6 @@ func ValidateIndex(index Index, context string) error {
 		allErrors = append(allErrors, validateAfterEncrypt(index)...)
 	case "AfterPack":
 		allErrors = append(allErrors, validateAfterPack(index)...)
-	default:
-		allErrors = append(allErrors, fmt.Sprintf("unknown validation context: %s", context))
 	}
 
 	// 2. 如果收集到了任何错误，则生成报告

@@ -7,7 +7,6 @@ package service
 import (
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -16,8 +15,6 @@ import (
 	"strings"
 
 	"github.com/Soltus/encv-go/internal/config"
-	"github.com/Soltus/encv-go/internal/container"
-	"github.com/Soltus/encv-go/internal/container/chunked"
 	"github.com/Soltus/encv-go/internal/crypto"
 	"github.com/Soltus/encv-go/internal/packer"
 	"github.com/Soltus/encv-go/internal/processor"
@@ -101,7 +98,6 @@ func encryptSingleFile(ctx context.Context, inputPath string, salt []byte) error
 }
 
 // EncryptFile 是加密单个文件的统一入口。
-// 【保留您的逻辑，但调用重构后的 doEncrypt】
 func EncryptFile(ctx context.Context, inputPath string, outputDir string, salt []byte) error {
 	// 1. 检测文件的真实 MIME 类型
 	mimeType, err := utils.DetectFileMIMEType(inputPath)
@@ -218,115 +214,4 @@ func generateSalt() []byte {
 		panic(fmt.Sprintf("failed to generate salt: %v", err))
 	}
 	return salt
-}
-
-// createChunkedContainer 创建分片容器
-func createChunkedContainer(ctx context.Context, encryptedPath, finalPath string, index *types.VideoIndex, originalVideoPath string) error {
-	cfg := config.FromContext(ctx)
-	// 1. 打开加密文件，并确保它支持 Seek
-	encFile, err := os.Open(encryptedPath)
-	if err != nil {
-		return fmt.Errorf("failed to open encrypted file for chunking: %w", err)
-	}
-	defer encFile.Close()
-
-	// 2. 获取配置和魔法数字
-	chunkSize := cfg.GetSccgvChunkSizeBytes()
-	magicMap, err := container.GetContainerMagicMap(ctx)
-	subMagicMap, err := container.GetSubChunkMagicMap(ctx)
-	mainMagic := magicMap[cfg.BinExtGroup.Video] // 后续其他分片容器这里需要修改
-	subMagic := subMagicMap[cfg.BinExtGroup.Video]
-
-	// 计算原始文件的 MD5 (用于所有分片头)
-	originalMD5, err := utils.FileMD5(originalVideoPath)
-	if err != nil {
-		return fmt.Errorf("failed to calculate original file MD5: %w", err)
-	}
-	// 【调试】获取加密文件大小，用于边界检查
-	encFileInfo, err := encFile.Stat()
-	if err != nil {
-		return fmt.Errorf("failed to stat encrypted file: %w", err)
-	}
-	encFileSize := encFileInfo.Size()
-	log.Printf("-> [Chunking Debug] Encrypted file size: %d bytes", encFileSize)
-	log.Printf("-> [Chunking Debug] Original file size: %d bytes", index.OriginalFileSize)
-
-	// 3. 【关键改动】先创建所有子分片，并收集元数据
-	var subChunks []types.SubChunkInfo
-	chunkIndex := 2
-
-	for {
-		// 计算当前子分片在加密文件中的偏移量
-		offset := int64(chunkIndex-1) * int64(chunkSize)
-
-		// 【关键修复】检查偏移量是否已超出文件范围
-		if offset >= encFileSize {
-			log.Printf("-> [Chunking Debug] Offset %d is beyond file size %d. Chunking finished.", offset, encFileSize)
-			break
-		}
-
-		// Seek 到指定位置
-		_, err := encFile.Seek(offset, io.SeekStart)
-		if err != nil {
-			return fmt.Errorf("failed to seek in encrypted file to offset %d: %w", offset, err)
-		}
-
-		// 限制读取器为当前分片的大小
-		dataReader := io.LimitReader(encFile, int64(chunkSize))
-
-		// 调用修改后的 WriteSubChunk，获取元数据
-		filename, md5, written, err := chunked.WriteSubChunk([]byte(subMagic), finalPath, chunkIndex, dataReader, originalMD5)
-		if err != nil {
-			log.Printf("!!! [Chunking Warning] Failed to write sub-chunk %d (size: %d): %v. Skipping this chunk.", chunkIndex, written, err)
-			// 如果是写入 0 字节，说明真的到文件末尾了，可以退出
-			if written == 0 {
-				break
-			}
-			// 否则，继续尝试下一个分片
-			chunkIndex++
-			continue
-		}
-
-		// 如果写入大小为0，说明已经到达文件末尾，退出循环
-		if written == 0 {
-			log.Printf("-> [Chunking Debug] Wrote 0 bytes for chunk %d, assuming end of file.", chunkIndex)
-			break
-		}
-
-		// log.Printf("-> [Chunking Debug] Successfully created sub-chunk %d: %s (size: %d, md5: %s)", chunkIndex, filename, written, md5)
-
-		// 收集子分片信息
-		subChunks = append(subChunks, types.SubChunkInfo{
-			Index:    chunkIndex,
-			Filename: filename,
-			MD5:      md5,
-		})
-
-		chunkIndex++
-	}
-
-	// 4. 【关键改动】将收集到的子分片信息存入 KVI
-	index.SubChunks = subChunks
-
-	// 5. 【关键改动】现在 KVI 完整了，序列化它
-	kviData, err := json.Marshal(index)
-	if err != nil {
-		return fmt.Errorf("failed to marshal VideoIndex to JSON: %w", err)
-	}
-
-	// 6. 【关键改动】最后，写入主分片
-	// 将文件指针重置到文件开头
-	_, err = encFile.Seek(0, io.SeekStart)
-	if err != nil {
-		return fmt.Errorf("failed to seek to start of encrypted file: %w", err)
-	}
-
-	// 主分片的数据是加密文件的第一个 chunk
-	mainDataReader := io.LimitReader(encFile, int64(chunkSize))
-
-	if err := chunked.WriteMainChunk([]byte(mainMagic), finalPath, kviData, mainDataReader, originalMD5); err != nil {
-		return fmt.Errorf("failed to write main chunk: %w", err)
-	}
-
-	return nil
 }

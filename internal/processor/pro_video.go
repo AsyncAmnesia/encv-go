@@ -31,29 +31,9 @@ func (p *VideoProcessor) ShouldProcess(inputPath string) bool {
 	return true
 }
 
-// cmdReaderCloser 包装了 exec.Cmd 的 stdout pipe，确保在 Close 时正确等待进程结束。
-type cmdReaderCloser struct {
-	pipe io.ReadCloser
-	cmd  *exec.Cmd
-}
-
-func (r *cmdReaderCloser) Read(p []byte) (n int, err error) {
-	return r.pipe.Read(p)
-}
-
-func (r *cmdReaderCloser) Close() error {
-	pipeErr := r.pipe.Close()
-	// Wait 会清理进程资源，并捕获可能的错误
-	cmdErr := r.cmd.Wait()
-	if cmdErr != nil {
-		return cmdErr
-	}
-	return pipeErr
-}
-
 // 实现 Processor 接口
 func (p *VideoProcessor) Process(inputPath string) (types.Index, io.ReadCloser, error) {
-	fmt.Printf("-> Analyzing video: %s\n", filepath.Base(inputPath))
+	fmt.Printf("-> [PROCESSOR] Analyzing video: %s\n", filepath.Base(inputPath))
 
 	// 1. 获取元数据（直接从原始文件获取，无需预处理）
 	metadata, err := getProcessedMetadata(inputPath)
@@ -67,9 +47,9 @@ func (p *VideoProcessor) Process(inputPath string) (types.Index, io.ReadCloser, 
 	isMP4 := ext == ".mp4" || ext == ".mov" || ext == ".m4v"
 
 	if isMP4 {
-		fmt.Println("-> Detected MP4 container, checking for fast-start...")
+		fmt.Println("-> [PROCESSOR] Detected MP4 container, checking for fast-start...")
 		if fast, err := isMP4FastStart(inputPath); err == nil && fast {
-			fmt.Println("-> Input is already a fast-start MP4, using file directly.")
+			fmt.Println("-> [PROCESSOR] Input is already a fast-start MP4, using file directly.")
 			// 返回文件的 reader
 			file, err := os.Open(inputPath)
 			if err != nil {
@@ -78,28 +58,86 @@ func (p *VideoProcessor) Process(inputPath string) (types.Index, io.ReadCloser, 
 			return metadata, file, nil
 		} else {
 			if err != nil {
-				fmt.Printf("-> Warning: Could not verify fast-start status (%v), proceeding with pre-processing.\n", err)
+				fmt.Printf("-> [PROCESSOR] Warning: Could not verify fast-start status (%v), proceeding with pre-processing.\n", err)
 			} else {
-				fmt.Println("-> Input is not a fast-start MP4, pre-processing is required.")
+				fmt.Println("-> [PROCESSOR] Input is not a fast-start MP4, pre-processing is required.")
 			}
 		}
 	}
 
-	// 3. 如果需要预处理，启动 ffmpeg 并返回其 stdout pipe
-	fmt.Println("-> Starting FFmpeg for pre-processing...")
-	cmd := exec.Command("ffmpeg", "-i", inputPath, "-c", "copy", "-f", "mp4", "-movflags", "+faststart", "-")
-
-	pipe, err := cmd.StdoutPipe()
+	// 3. 【核心修复】如果需要预处理，创建一个临时文件，而不是使用管道流
+	fmt.Println("-> [PROCESSOR] Starting FFmpeg for pre-processing to a temp file...")
+	tempFilePath, err := PreprocessVideoWithFFmpeg(inputPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get ffmpeg stdout pipe: %w", err)
+		return nil, nil, fmt.Errorf("pre-processing to temp file failed: %w", err)
 	}
 
-	if err := cmd.Start(); err != nil {
-		return nil, nil, fmt.Errorf("failed to start ffmpeg process: %w", err)
+	// 【日志】检查临时文件
+	if info, err := os.Stat(tempFilePath); err == nil {
+		fmt.Printf("-> [PROCESSOR] SUCCESS: Temp file created at %s (Size: %d bytes)\n", tempFilePath, info.Size())
+	} else {
+		fmt.Printf("-> [PROCESSOR] ERROR: Failed to stat temp file %s: %v\n", tempFilePath, err)
 	}
 
-	// 返回一个特殊的 reader，它会在关闭时等待 ffmpeg 进程结束
-	return metadata, &cmdReaderCloser{pipe: pipe, cmd: cmd}, nil
+	// 4. 打开临时文件，并将其作为 io.ReadCloser 返回
+	file, err := os.Open(tempFilePath)
+	if err != nil {
+		os.Remove(tempFilePath) // 清理失败的临时文件
+		return nil, nil, fmt.Errorf("failed to open temp file: %w", err)
+	}
+
+	// 5. 返回一个特殊的 ReadCloser，它在关闭时会自动删除临时文件
+	fmt.Printf("-> [PROCESSOR] SUCCESS: Returning a temp file reader for %s\n", tempFilePath)
+	return metadata, &tempFileReadCloser{file: file, path: tempFilePath}, nil
+}
+
+// 【新增辅助函数】在文件末尾添加这两个
+// createFastStartTempFile 使用 FFmpeg 创建一个临时的 fast-start MP4 文件
+// func (p *VideoProcessor) createFastStartTempFile(inputPath string) (string, error) {
+// 	fmt.Println("-> Step 1: Pre-processing video for streaming (fast-start)...")
+
+// 	tempFile, err := os.CreateTemp("", "encv-pre-*.mp4")
+// 	if err != nil {
+// 		return "", fmt.Errorf("failed to create temp file: %w", err)
+// 	}
+// 	tempPath := tempFile.Name()
+// 	tempFile.Close()
+
+// 	// 根据输入格式决定是否需要 fast-start
+// 	isMkv := filepath.Ext(inputPath) == ".mkv"
+// 	var ffmpegCmd *exec.Cmd
+// 	if isMkv {
+// 		ffmpegCmd = exec.Command("ffmpeg", "-y", "-i", inputPath, "-c", "copy", tempPath)
+// 	} else {
+// 		ffmpegCmd = exec.Command("ffmpeg", "-y", "-i", inputPath, "-c", "copy", "-movflags", "+faststart", tempPath)
+// 	}
+
+// 	ffmpegCmd.Stderr = os.Stderr
+// 	if err := ffmpegCmd.Run(); err != nil {
+// 		os.Remove(tempPath)
+// 		return "", fmt.Errorf("ffmpeg failed: %w", err)
+// 	}
+
+// 	fmt.Println("-> Pre-processing complete.")
+// 	return tempPath, nil
+// }
+
+// tempFileReadCloser 包装了 *os.File，在 Close 时删除底层文件
+type tempFileReadCloser struct {
+	file *os.File
+	path string
+}
+
+func (t *tempFileReadCloser) Read(p []byte) (n int, err error) {
+	return t.file.Read(p)
+}
+
+func (t *tempFileReadCloser) Close() error {
+	err := t.file.Close()
+	if rmErr := os.Remove(t.path); rmErr != nil {
+		fmt.Printf("Warning: failed to remove temp file '%s': %v\n", t.path, rmErr)
+	}
+	return err
 }
 
 // 使用 ffprobe 检测视频文件的真实格式

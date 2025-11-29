@@ -51,4 +51,6 @@ type SubChunkInfo struct {
 	Filename string `json:"filename"` // 子分片的文件名
 	Size     int64  `json:"size"`     // 子分片大小
 	MD5      string `json:"md5"`      // 子分片内容的 MD5 哈希
+	// 【新增字段】记录该子分片在完整加密文件中的起始字节偏移量
+	Offset int64 `json:"offset"`
 }

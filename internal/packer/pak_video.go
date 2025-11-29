@@ -2,7 +2,6 @@ package packer
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -40,14 +39,10 @@ func (p *VideoPacker) Pack(ctx context.Context, baseName, outputDir string, encr
 	mainMagic := magicMap[cfg.BinExtGroup.Video]
 	subMagic := subMagicMap[cfg.BinExtGroup.Video]
 
-	// 4. 准备：序列化 KVI
-	kviData, err := json.Marshal(vIndex)
-	if err != nil {
-		return fmt.Errorf("failed to marshal VideoIndex: %w", err)
-	}
-
-	// 5. 委托：调用基类的工具方法完成打包
-	return p.WriteAllChunks(ctx, finalPath, []byte(mainMagic), []byte(subMagic), kviData, encryptedDataReader, vIndex.OriginalFileMD5)
+	// 委托：调用基类的工具方法完成打包
+	// 【修复 1】不再在这里序列化 KVI，而是将 vIndex 传递给 WriteAllChunks
+	// WriteAllChunks 内部会负责创建子分片、更新 vIndex、序列化 KVI 并写入主分片
+	return p.WriteAllChunks(ctx, finalPath, []byte(mainMagic), []byte(subMagic), vIndex, encryptedDataReader, vIndex.OriginalFileMD5)
 }
 
 // handleSubtitles 封装了字幕处理逻辑

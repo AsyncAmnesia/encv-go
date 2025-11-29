@@ -2,6 +2,7 @@ package packer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -79,7 +80,7 @@ type BaseChunkedPacker struct {
 }
 
 // WriteAllChunks 将 KVI 和数据流打包成一个分块容器。
-func (b *BaseChunkedPacker) WriteAllChunks(ctx context.Context, finalPath string, mainMagic, subMagic []byte, kviData []byte, dataReader io.Reader, originalMD5 string) error {
+func (b *BaseChunkedPacker) WriteAllChunks(ctx context.Context, finalPath string, mainMagic, subMagic []byte, index *types.VideoIndex, encryptedDataReader io.Reader, originalMD5 string) error {
 	cfg := config.FromContext(ctx)
 	chunkSize := cfg.GetSccgvChunkSizeBytes()
 
@@ -91,7 +92,7 @@ func (b *BaseChunkedPacker) WriteAllChunks(ctx context.Context, finalPath string
 	tmpPath := tmpFile.Name()
 	defer os.Remove(tmpPath)
 
-	size, err := io.Copy(tmpFile, dataReader)
+	size, err := io.Copy(tmpFile, encryptedDataReader)
 	if err != nil {
 		tmpFile.Close()
 		return fmt.Errorf("failed to write data to temp file: %w", err)
@@ -106,8 +107,10 @@ func (b *BaseChunkedPacker) WriteAllChunks(ctx context.Context, finalPath string
 	}
 	defer encFile.Close()
 
-	// 2. 创建所有子分片
+	// 【修复 3】先创建所有子分片，并收集元数据
+	var subChunks []types.SubChunkInfo
 	chunkIndex := 2
+
 	for {
 		offset := int64(chunkIndex-1) * int64(chunkSize)
 		if offset >= size {
@@ -119,7 +122,8 @@ func (b *BaseChunkedPacker) WriteAllChunks(ctx context.Context, finalPath string
 		}
 
 		dataReader := io.LimitReader(encFile, int64(chunkSize))
-		_, _, written, err := chunked.WriteSubChunk(subMagic, finalPath, chunkIndex, dataReader, originalMD5)
+		// 【关键】获取 WriteSubChunk 的返回值
+		filename, md5, written, err := chunked.WriteSubChunk(subMagic, finalPath, chunkIndex, dataReader, originalMD5)
 		if err != nil {
 			log.Printf("Warning: Failed to write sub-chunk %d: %v. Skipping.", chunkIndex, err)
 			if written == 0 {
@@ -131,10 +135,27 @@ func (b *BaseChunkedPacker) WriteAllChunks(ctx context.Context, finalPath string
 		if written == 0 {
 			break
 		}
+
+		// 【关键】收集子分片信息
+		subChunks = append(subChunks, types.SubChunkInfo{
+			Index:    chunkIndex,
+			Filename: filename,
+			MD5:      md5,
+		})
+
 		chunkIndex++
 	}
 
-	// 3. 写入主分片
+	// 【修复 4】将收集到的子分片信息存入 KVI
+	index.SubChunks = subChunks
+
+	// 【修复 5】现在 KVI 完整了，序列化它
+	kviData, err := json.Marshal(index)
+	if err != nil {
+		return fmt.Errorf("failed to marshal VideoIndex to JSON: %w", err)
+	}
+
+	// 【修复 6】最后，写入主分片
 	_, err = encFile.Seek(0, io.SeekStart)
 	if err != nil {
 		return fmt.Errorf("failed to seek to start of temp file: %w", err)
