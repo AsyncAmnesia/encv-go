@@ -193,14 +193,11 @@ const (
 
 // Index 是所有 KVI 结构体的通用接口
 type Index interface {
-	GetEncryptionInfo() EncryptionInfo
 	GetOriginalFilename() string
 	GetOriginalFileSize() int64
 	GetOriginalFileMD5() string
 	GetEncryptedFileMD5() string
 	GetMimeType() string // 重要方法，实现错误会影响前端预览
-	// 一个统一的接口，用于更新加密后产生的通用元数据
-	UpdateCommonInfo(encInfo EncryptionInfo, originalFilename, encryptedFileMD5 string)
 }
 
 // NoOpIndex 是一个安全的、无操作的 Index 实现，用于在发生严重内部错误时防止 panic。
@@ -211,8 +208,3 @@ func (i *NoOpIndex) GetOriginalFilename() string { return "corrupted" }
 func (i *NoOpIndex) GetOriginalFileSize() int64  { return 0 }
 func (i *NoOpIndex) GetOriginalFileMD5() string  { return "" }
 func (i *NoOpIndex) GetEncryptedFileMD5() string { return "" }
-func (i *NoOpIndex) GetEncryptionInfo() EncryptionInfo {
-	return EncryptionInfo{Algorithm: "none", IVBase64: "", SaltBase64: ""}
-}
-func (i *NoOpIndex) UpdateCommonInfo(encInfo EncryptionInfo, originalFilename, encryptedFileMD5 string) {
-}

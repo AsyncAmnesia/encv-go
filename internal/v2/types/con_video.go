@@ -2,15 +2,14 @@ package types
 
 // VideoIndex 是加密视频的元数据索引文件
 type VideoIndex struct {
-	VideoID          string         `json:"video_id"`
-	Format           string         `json:"format"`
-	MimeType         string         `json:"mime_type"`
-	Encryption       EncryptionInfo `json:"encryption"`
-	DurationSeconds  float64        `json:"duration_seconds"`
-	Resolution       string         `json:"resolution"`
-	Width            int            `json:"width"`
-	Height           int            `json:"height"`
-	OriginalFileSize int64          `json:"original_file_size"`
+	VideoID          string  `json:"video_id"`
+	Format           string  `json:"format"`
+	MimeType         string  `json:"mime_type"`
+	DurationSeconds  float64 `json:"duration_seconds"`
+	Resolution       string  `json:"resolution"`
+	Width            int     `json:"width"`
+	Height           int     `json:"height"`
+	OriginalFileSize int64   `json:"original_file_size"`
 	// 原始视频文件的完整路径，用于 Packer 查找关联文件（如字幕）
 	OriginalInputPath string           `json:"originalInputPath"`
 	OriginalFilename  string           `json:"original_filename"`
@@ -19,17 +18,11 @@ type VideoIndex struct {
 	SubtitleTracks    []SubtitleTracks `json:"subtitle_tracks,omitempty"`
 }
 
-func (v *VideoIndex) GetEncryptionInfo() EncryptionInfo { return v.Encryption }
-func (v *VideoIndex) GetOriginalFilename() string       { return v.OriginalFilename }
-func (v *VideoIndex) GetOriginalFileSize() int64        { return v.OriginalFileSize }
-func (v *VideoIndex) GetOriginalFileMD5() string        { return v.OriginalFileMD5 }
-func (v *VideoIndex) GetEncryptedFileMD5() string       { return v.EncryptedFileMD5 }
-func (v *VideoIndex) GetMimeType() string               { return v.MimeType }
-func (i *VideoIndex) UpdateCommonInfo(encInfo EncryptionInfo, originalFilename, encryptedFileMD5 string) {
-	i.Encryption = encInfo
-	i.OriginalFilename = originalFilename
-	i.EncryptedFileMD5 = encryptedFileMD5
-}
+func (v *VideoIndex) GetOriginalFilename() string { return v.OriginalFilename }
+func (v *VideoIndex) GetOriginalFileSize() int64  { return v.OriginalFileSize }
+func (v *VideoIndex) GetOriginalFileMD5() string  { return v.OriginalFileMD5 }
+func (v *VideoIndex) GetEncryptedFileMD5() string { return v.EncryptedFileMD5 }
+func (v *VideoIndex) GetMimeType() string         { return v.MimeType }
 
 // SubtitleTrack 表示一个字幕或弹幕轨道
 type SubtitleTracks struct {
