@@ -1,4 +1,10 @@
-package types
+package video
+
+import (
+	"github.com/Soltus/encv-go/internal/v2/types"
+)
+
+const IndexKindVideo types.IndexKind = "video"
 
 // VideoIndex 是加密视频的元数据索引文件
 type VideoIndex struct {
@@ -37,19 +43,19 @@ type SubtitleTracks struct {
 
 // 视频容器专用的 KVI
 type VideoKVI_v2 struct {
-	KVI_v2
+	types.KVI_v2
 	VideoIndex *VideoIndex `json:"video_index"`
 }
 
-func (v VideoKVI_v2) GetKind() IndexKind {
+func (v VideoKVI_v2) GetKind() types.IndexKind {
 	return IndexKindVideo
 }
 
 // 【关键新增】实现 KVIProvider 接口
-func (v VideoKVI_v2) GetEncryptionInfo() KVI_v2 {
+func (v VideoKVI_v2) GetEncryptionInfo() types.KVI_v2 {
 	return v.KVI_v2
 }
 
-func (v VideoKVI_v2) GetIndex() Index {
+func (v VideoKVI_v2) GetIndex() types.Index {
 	return v.VideoIndex
 }

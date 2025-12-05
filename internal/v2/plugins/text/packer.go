@@ -1,4 +1,4 @@
-package image
+package text
 
 import (
 	"fmt"
@@ -10,34 +10,34 @@ import (
 )
 
 // 实现了 Packer 接口
-type ImagePacker struct {
+type TextPacker struct {
 	physicalPacker physical.PhysicalPacker
 }
 
-// NewImagePacker 创建一个新的 ImagePacker，并注入物理分片策略
-func NewImagePacker(pp physical.PhysicalPacker) *ImagePacker {
-	return &ImagePacker{
+// NewTextPacker 创建一个新的 TextPacker，并注入物理分片策略
+func NewTextPacker(pp physical.PhysicalPacker) *TextPacker {
+	return &TextPacker{
 		physicalPacker: pp,
 	}
 }
 
 // Pack 实现 Packer 接口
-func (p *ImagePacker) Pack(cfg *config.Config, req *physical.PackRequest) error {
-	iIndex, ok := req.Index.(*ImageIndex)
+func (p *TextPacker) Pack(cfg *config.Config, req *physical.PackRequest) error {
+	iIndex, ok := req.Index.(*TextIndex)
 	if !ok {
-		return fmt.Errorf("ImagePacker received a non-image index")
+		return fmt.Errorf("TextPacker received a non-Text index")
 	}
 
 	// 1. 创建 Manifest
-	imageKVI := ImageKVI_v2{
+	TextKVI := TextKVI_v2{
 		KVI_v2: types.KVI_v2{
 			SaltBase64: crypto.Base64Encode_v2(req.Salt),
 			IVBase64:   crypto.Base64Encode_v2(req.IV),
 		},
-		ImageIndex: iIndex,
+		TextIndex: iIndex,
 	}
 	// 2. 直接使用请求中预先计算好的逻辑分片
-	manifest, err := types.NewManifest_v2(imageKVI, req.LogicalFragments)
+	manifest, err := types.NewManifest_v2(TextKVI, req.LogicalFragments)
 	if err != nil {
 		return fmt.Errorf("failed to create manifest: %w", err)
 	}

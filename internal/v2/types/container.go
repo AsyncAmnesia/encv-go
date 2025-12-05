@@ -133,25 +133,58 @@ func (m *Manifest_v2) GetFragmentByID(id string) (*Fragment_v2, error) {
 	return nil, fmt.Errorf("fragment with ID '%s' not found in manifest", id)
 }
 
-// NewKVIProviderFromManifest 是一个便利函数，用于从 Manifest 实例中直接解析 KVIProvider
-func NewKVIProviderFromManifest(manifest *Manifest_v2) (KVIProvider, error) {
-	switch manifest.Kind {
-	case IndexKindVideo:
-		var videoKVI VideoKVI_v2
-		if err := json.Unmarshal(manifest.KVI, &videoKVI); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal KVI as VideoKVI_v2: %w", err)
-		}
-		return videoKVI, nil
-	case IndexKindImage:
-		var imageKVI ImageKVI_v2
-		if err := json.Unmarshal(manifest.KVI, &imageKVI); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal KVI as VideoKVI_v2: %w", err)
-		}
-		return imageKVI, nil
-	default:
-		return nil, fmt.Errorf("unsupported or unknown index kind: %s", manifest.Kind)
+// KVIProviderFactory 是一个工厂函数，它知道如何从原始 JSON 数据创建一个特定的 KVIProvider
+type KVIProviderFactory func(rawKVI json.RawMessage) (KVIProvider, error)
+
+// kviProviderRegistry 是一个私有的中央注册表，用于存储所有已注册的 KVI 提供者工厂
+var kviProviderRegistry = make(map[IndexKind]KVIProviderFactory)
+
+// RegisterKVIProvider 允许外部插件注册自己。
+// 通常在插件的 init() 函数中调用。
+// 如果重复注册同一个 Kind，将会 panic，以帮助开发者及早发现配置错误。
+func RegisterKVIProvider(kind IndexKind, factory KVIProviderFactory) {
+	if _, exists := kviProviderRegistry[kind]; exists {
+		panic(fmt.Sprintf("attempted to register duplicate KVI provider for kind: %s", kind))
 	}
+	kviProviderRegistry[kind] = factory
 }
+
+// NewKVIProviderFromManifest 【重构】使用注册表动态创建 KVIProvider
+// 现在这个函数是通用的，不再需要为每个新插件修改它。
+func NewKVIProviderFromManifest(manifest *Manifest_v2) (KVIProvider, error) {
+	factory, exists := kviProviderRegistry[manifest.Kind]
+	if !exists {
+		// 提供一个友好的错误信息，列出所有已注册的 Kind
+		registeredKinds := make([]string, 0, len(kviProviderRegistry))
+		for k := range kviProviderRegistry {
+			registeredKinds = append(registeredKinds, string(k))
+		}
+		return nil, fmt.Errorf("unsupported or unknown index kind: '%s'. Registered kinds are: %v", manifest.Kind, registeredKinds)
+	}
+
+	// 调用对应插件注册的工厂函数来创建实例
+	return factory(manifest.KVI)
+}
+
+// NewKVIProviderFromManifest 是一个便利函数，用于从 Manifest 实例中直接解析 KVIProvider
+// func NewKVIProviderFromManifest(manifest *Manifest_v2) (KVIProvider, error) {
+// 	switch manifest.Kind {
+// 	case IndexKindVideo:
+// 		var videoKVI VideoKVI_v2
+// 		if err := json.Unmarshal(manifest.KVI, &videoKVI); err != nil {
+// 			return nil, fmt.Errorf("failed to unmarshal KVI as VideoKVI_v2: %w", err)
+// 		}
+// 		return videoKVI, nil
+// 	case IndexKindImage:
+// 		var imageKVI ImageKVI_v2
+// 		if err := json.Unmarshal(manifest.KVI, &imageKVI); err != nil {
+// 			return nil, fmt.Errorf("failed to unmarshal KVI as VideoKVI_v2: %w", err)
+// 		}
+// 		return imageKVI, nil
+// 	default:
+// 		return nil, fmt.Errorf("unsupported or unknown index kind: %s", manifest.Kind)
+// 	}
+// }
 
 // NewManifest_v2 是一个工厂函数，用于创建 Manifest_v2 实例
 // 它接收一个 KVIProvider 接口，并将其序列化为 json.RawMessage
@@ -183,10 +216,6 @@ func NewManifest_v2(kviProvider KVIProvider, fragments []Fragment_v2) (*Manifest
 type IndexKind string
 
 const (
-	IndexKindGeneric IndexKind = "unknown"
-	IndexKindVideo   IndexKind = "video"
-	IndexKindImage   IndexKind = "image"
-	IndexKindText    IndexKind = "text"
 	IndexKindIframe  IndexKind = "iframe"
 	ContainerVersion int64     = 2
 )

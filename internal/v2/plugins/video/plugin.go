@@ -4,6 +4,7 @@ package video
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -25,7 +26,7 @@ import (
 
 type VideoPlugin struct {
 	cfg              *config.Config
-	index            types.VideoIndex
+	index            VideoIndex
 	outputDir        string
 	inputPath        string
 	inputRootDir     string
@@ -36,6 +37,17 @@ type VideoPlugin struct {
 	chunkNamer       namer.ChunkNamer          // 注入分片命名器
 	containerManager *service.ContainerManager // 注入 ContainerManager
 	physicalPacker   physical.PhysicalPacker
+}
+
+// init 在包被导入时自动执行，完成自注册
+func init() {
+	types.RegisterKVIProvider(IndexKindVideo, func(rawKVI json.RawMessage) (types.KVIProvider, error) {
+		var videoKVI VideoKVI_v2
+		if err := json.Unmarshal(rawKVI, &videoKVI); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal KVI as VideoKVI_v2: %w", err)
+		}
+		return videoKVI, nil // VideoKVI_v2 实现了 KVIProvider 接口
+	})
 }
 
 // Plugin 接口实现
@@ -88,7 +100,7 @@ func (p *VideoPlugin) CanDecrypt(containerPath string) bool {
 		// fmt.Printf("DEBUG: [VideoPlugin.CanDecrypt] Failed to detect kind for '%s': %v\n", containerPath, err)
 		return false
 	}
-	return kind == types.IndexKindVideo
+	return kind == IndexKindVideo
 }
 
 // Plugin 接口实现
@@ -111,7 +123,7 @@ func (p *VideoPlugin) GetContentPreprocessor() pluginInterfaces.ContentPreproces
 // Plugin 接口实现
 // 在加密前处理字幕，并更新 Index
 func (p *VideoPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRootDir, outputDir string) error {
-	vIndex, ok := index.(*types.VideoIndex)
+	vIndex, ok := index.(*VideoIndex)
 	if !ok {
 		return fmt.Errorf("video plugin received a non-video index")
 	}
@@ -245,7 +257,7 @@ func (p *VideoPlugin) Decrypt(containerPath, outputDir string) error {
 
 	// 从 KVI 获取原始文件名
 	index := factory.GetIndex()
-	vIndex, ok := index.(*types.VideoIndex)
+	vIndex, ok := index.(*VideoIndex)
 	if !ok {
 		return fmt.Errorf("container is not a video container")
 	}

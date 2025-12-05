@@ -1,10 +1,13 @@
-package types
+package image
 
 import (
 	"time"
 
+	"github.com/Soltus/encv-go/internal/v2/types"
 	"github.com/dsoprea/go-exif/v3"
 )
+
+const IndexKindImage types.IndexKind = "image"
 
 // ImageIndex 是解密图像所需的所有元数据的容器
 type ImageIndex struct {
@@ -44,19 +47,19 @@ func (v *ImageIndex) GetMimeType() string         { return v.MimeType }
 
 // 视频容器专用的 KVI
 type ImageKVI_v2 struct {
-	KVI_v2
+	types.KVI_v2
 	ImageIndex *ImageIndex `json:"image_index"`
 }
 
-func (v ImageKVI_v2) GetKind() IndexKind {
+func (v ImageKVI_v2) GetKind() types.IndexKind {
 	return IndexKindImage
 }
 
 // 【关键新增】实现 KVIProvider 接口
-func (v ImageKVI_v2) GetEncryptionInfo() KVI_v2 {
+func (v ImageKVI_v2) GetEncryptionInfo() types.KVI_v2 {
 	return v.KVI_v2
 }
 
-func (v ImageKVI_v2) GetIndex() Index {
+func (v ImageKVI_v2) GetIndex() types.Index {
 	return v.ImageIndex
 }

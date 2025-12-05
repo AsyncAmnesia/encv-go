@@ -1,6 +1,4 @@
-// internal/v2/plugins/image/plugin.go
-
-package image
+package text
 
 import (
 	"context"
@@ -24,9 +22,9 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
-type ImagePlugin struct {
+type TextPlugin struct {
 	cfg              *config.Config
-	index            ImageIndex
+	index            TextIndex
 	outputDir        string
 	inputPath        string
 	inputRootDir     string
@@ -40,17 +38,17 @@ type ImagePlugin struct {
 
 // init 在包被导入时自动执行，完成自注册
 func init() {
-	types.RegisterKVIProvider(IndexKindImage, func(rawKVI json.RawMessage) (types.KVIProvider, error) {
-		var imageKVI ImageKVI_v2
-		if err := json.Unmarshal(rawKVI, &imageKVI); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal KVI as ImageKVI_v2: %w", err)
+	types.RegisterKVIProvider(IndexKindText, func(rawKVI json.RawMessage) (types.KVIProvider, error) {
+		var textKVI TextKVI_v2
+		if err := json.Unmarshal(rawKVI, &textKVI); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal KVI as TextKVI_v2: %w", err)
 		}
-		return imageKVI, nil // ImageKVI_v2 实现了 KVIProvider 接口
+		return textKVI, nil // TextKVI_v2 实现了 KVIProvider 接口
 	})
 }
 
 // Plugin 接口实现
-func (p *ImagePlugin) Intialize(ctx context.Context) error {
+func (p *TextPlugin) Intialize(ctx context.Context) error {
 	p.cfg = config.FromContext(ctx)
 	p.containerManager = service.NewContainerManager()
 	p.baseNamer = namer.NewDefaultBaseNamer()
@@ -61,17 +59,40 @@ func (p *ImagePlugin) Intialize(ctx context.Context) error {
 // Plugin 接口实现
 //
 //	返回在 Initialize 阶段已经配置好的 chunkNamer
-func (p *ImagePlugin) GetChunkNamer() namer.ChunkNamer {
+func (p *TextPlugin) GetChunkNamer() namer.ChunkNamer {
 	return nil
 }
 
 // Plugin 接口实现
-func (p *ImagePlugin) SupportedMimePrefixes() []string {
-	return []string{"image/"}
+func (p *TextPlugin) SupportedMimePrefixes() []string {
+	return []string{
+		"text/",                  // 匹配 text/plain, text/html 等
+		"application/json",       // 精确匹配 JSON
+		"application/javascript", // 精确匹配 JS
+		"application/x-sh",       // 精确匹配 Shell
+		"application/x-yaml",     // 精确匹配 YAML
+	}
 }
 
 // Plugin 接口实现
-func (p *ImagePlugin) ShouldProcess(inputPath string) bool {
+func (p *TextPlugin) ShouldProcess(inputPath string) bool {
+	// 获取文件扩展名（小写，不带点）
+	ext := strings.ToLower(filepath.Ext(inputPath))
+	if len(ext) > 0 {
+		ext = ext[1:]
+	}
+
+	// 这些文件在业务上被视为视频的一部分，而非独立的文本文件
+	excludedSubtitles := map[string]struct{}{
+		"ass": {},
+		"srt": {},
+		"vtt": {},
+	}
+
+	if _, shouldExclude := excludedSubtitles[ext]; shouldExclude {
+		return false
+	}
+
 	return true
 }
 
@@ -79,40 +100,40 @@ func (p *ImagePlugin) ShouldProcess(inputPath string) bool {
 //
 // 判断此插件是否能解密给定的容器文件。
 // 【关键修复】不再依赖不可靠的文件扩展名，而是通过读取容器元数据来判断其内容类型。
-func (p *ImagePlugin) CanDecrypt(containerPath string) bool {
+func (p *TextPlugin) CanDecrypt(containerPath string) bool {
 	kind, err := detector.DetectIndexKind(containerPath)
 	if err != nil {
 		// 如果无法判断类型（例如，文件损坏或不是 ENCV 容器），则认为不能解密
 		// 这里的日志可以帮助调试
-		// fmt.Printf("DEBUG: [ImagePlugin.CanDecrypt] Failed to detect kind for '%s': %v\n", containerPath, err)
+		// fmt.Printf("DEBUG: [TextPlugin.CanDecrypt] Failed to detect kind for '%s': %v\n", containerPath, err)
 		return false
 	}
-	return kind == IndexKindImage
+	return kind == IndexKindText
 }
 
 // Plugin 接口实现
-func (p *ImagePlugin) GetContainerExtension() string {
-	return p.cfg.GetImageEncExtension()
+func (p *TextPlugin) GetContainerExtension() string {
+	return p.cfg.GetTextEncExtension()
 }
 
 // 【新增方法】实现 plugins.Plugin 接口
-func (p *ImagePlugin) GetMetadataExtractor() pluginInterfaces.MetadataExtractor {
-	return &ImageMetadataExtractor{}
+func (p *TextPlugin) GetMetadataExtractor() pluginInterfaces.MetadataExtractor {
+	return &TextMetadataExtractor{}
 }
 
 // 【新增方法】实现 plugins.Plugin 接口
-func (p *ImagePlugin) GetContentPreprocessor() pluginInterfaces.ContentPreprocessor {
-	return &ImageContentPreprocessor{}
+func (p *TextPlugin) GetContentPreprocessor() pluginInterfaces.ContentPreprocessor {
+	return &TextContentPreprocessor{}
 }
 
 // --- 加密逻辑 ---
 
 // Plugin 接口实现
 // 在加密前处理字幕，并更新 Index
-func (p *ImagePlugin) PreEncryptProcessor(index types.Index, inputPath, inputRootDir, outputDir string) error {
-	vIndex, ok := index.(*ImageIndex)
+func (p *TextPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRootDir, outputDir string) error {
+	vIndex, ok := index.(*TextIndex)
 	if !ok {
-		return fmt.Errorf("image plugin received a non-image index")
+		return fmt.Errorf("Text plugin received a non-Text index")
 	}
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return err
@@ -126,7 +147,7 @@ func (p *ImagePlugin) PreEncryptProcessor(index types.Index, inputPath, inputRoo
 
 // Plugin 接口实现
 // 执行核心的加密工作，并调用 Packer
-func (p *ImagePlugin) Encrypt(dataReader io.Reader) error {
+func (p *TextPlugin) Encrypt(dataReader io.Reader) error {
 	guardKey := fmt.Sprintf("%s|%s", p.inputPath, p.outputDir)
 
 	return utils.Do(guardKey, func() error {
@@ -149,7 +170,7 @@ func (p *ImagePlugin) Encrypt(dataReader io.Reader) error {
 
 // Plugin 接口实现
 // 视频插件在加密后处理器
-func (p *ImagePlugin) PostEncryptProcessor() error {
+func (p *TextPlugin) PostEncryptProcessor() error {
 	// --- 【关键修复】在这里，根据原始文件大小计算逻辑分片 ---
 	logicalFragmentSize := fragment.CalculateFragmentSize(p.index.OriginalFileSize, 0)
 	logicalFragments, err := fragment.CreateLogicalFragmentsFromSize(p.index.OriginalFileSize, logicalFragmentSize, types.FragmentType_AtomicFile)
@@ -168,8 +189,8 @@ func (p *ImagePlugin) PostEncryptProcessor() error {
 
 	// --- 5. 创建 Packer 并执行打包 ---
 	encryptedBaseName := p.baseNamer.GenerateEncryptedBaseName(p.index.OriginalFilename)
-	finalBaseName := strings.TrimSuffix(encryptedBaseName, p.cfg.GetImageEncExtension())
-	packer := NewImagePacker(p.physicalPacker)
+	finalBaseName := strings.TrimSuffix(encryptedBaseName, p.cfg.GetTextEncExtension())
+	packer := NewTextPacker(p.physicalPacker)
 	packReq := &physical.PackRequest{
 		BaseName:            finalBaseName,
 		OutputDir:           p.outputDir,
@@ -178,7 +199,7 @@ func (p *ImagePlugin) PostEncryptProcessor() error {
 		Salt:                p.salt,
 		IV:                  p.iv,
 		LogicalFragments:    logicalFragments, // 预先计算好
-		FinalFileName:       encryptedBaseName + p.cfg.GetImageEncExtension(),
+		FinalFileName:       encryptedBaseName + p.cfg.GetTextEncExtension(),
 	}
 
 	if err := packer.Pack(p.cfg, packReq); err != nil {
@@ -195,14 +216,14 @@ func (p *ImagePlugin) PostEncryptProcessor() error {
 
 // Plugin 接口实现
 // 视频插件在解密前无需额外操作
-func (p *ImagePlugin) PreDecryptProcessor(containerPath, outputDir string) error {
+func (p *TextPlugin) PreDecryptProcessor(containerPath, outputDir string) error {
 	// 视频插件在此阶段无需操作
 	return nil
 }
 
 // Plugin 接口实现
-func (p *ImagePlugin) Decrypt(containerPath, outputDir string) error {
-	fmt.Printf("DEBUG: [ImagePlugin.Decrypt] Starting decryption for: %s\n", containerPath)
+func (p *TextPlugin) Decrypt(containerPath, outputDir string) error {
+	fmt.Printf("DEBUG: [TextPlugin.Decrypt] Starting decryption for: %s\n", containerPath)
 	p.outputDir = outputDir
 
 	// --- 1. 【关键】通过 ContainerManager 获取一个可读的容器路径 ---
@@ -211,7 +232,7 @@ func (p *ImagePlugin) Decrypt(containerPath, outputDir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get readable path from container manager: %w", err)
 	}
-	fmt.Printf("DEBUG: [ImagePlugin.Decrypt] Using readable path: %s\n", readablePath)
+	fmt.Printf("DEBUG: [TextPlugin.Decrypt] Using readable path: %s\n", readablePath)
 
 	// --- 2. 使用统一路径创建 reader 工厂 ---
 	factory, err := reader.NewDecryptReaderFactory(readablePath, p.cfg.Password)
@@ -219,24 +240,24 @@ func (p *ImagePlugin) Decrypt(containerPath, outputDir string) error {
 		return fmt.Errorf("failed to create reader factory for '%s': %w", readablePath, err)
 	}
 	defer factory.Close() // 【关键】这个 Close 会同时清理物理临时文件（如果存在）
-	fmt.Printf("DEBUG: [ImagePlugin.Decrypt] Reader factory created successfully.\n")
+	fmt.Printf("DEBUG: [TextPlugin.Decrypt] Reader factory created successfully.\n")
 
 	// --- 3. 使用工厂创建解密流并写入文件 ---
 	decryptedReader, err := factory.NewDecryptReader(*p.cfg)
 	if err != nil {
-		return fmt.Errorf("[ImagePlugin] failed to create decrypt reader: %w", err)
+		return fmt.Errorf("[TextPlugin] failed to create decrypt reader: %w", err)
 	}
 	defer decryptedReader.Close()
 	_, isSeekable := decryptedReader.(io.Seeker)
 	if isSeekable {
-		fmt.Printf("INFO: [ImagePlugin.Decrypt] Container is SEEKABLE. Decrypting full content.\n")
+		fmt.Printf("INFO: [TextPlugin.Decrypt] Container is SEEKABLE. Decrypting full content.\n")
 	} else {
-		fmt.Printf("INFO: [ImagePlugin.Decrypt] Container is ATOMIC. Decrypting full content.\n")
+		fmt.Printf("INFO: [TextPlugin.Decrypt] Container is ATOMIC. Decrypting full content.\n")
 	}
 
 	// 从 KVI 获取原始文件名
 	index := factory.GetIndex()
-	vIndex, ok := index.(*ImageIndex)
+	vIndex, ok := index.(*TextIndex)
 	if !ok {
 		return fmt.Errorf("container is not a imgae container")
 	}
@@ -260,7 +281,7 @@ func (p *ImagePlugin) Decrypt(containerPath, outputDir string) error {
 
 // Plugin 接口实现
 // 在解密后处理字幕还原
-func (p *ImagePlugin) PostDecryptProcessor(containerPath string) error {
+func (p *TextPlugin) PostDecryptProcessor(containerPath string) error {
 
 	return nil
 }

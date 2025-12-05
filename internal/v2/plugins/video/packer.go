@@ -24,13 +24,13 @@ func NewVideoPacker(pp physical.PhysicalPacker, namer namer.ChunkNamer) *VideoPa
 
 // Pack 实现 Packer 接口
 func (p *VideoPacker) Pack(cfg *config.Config, req *physical.PackRequest) error {
-	vIndex, ok := req.Index.(*types.VideoIndex)
+	vIndex, ok := req.Index.(*VideoIndex)
 	if !ok {
 		return fmt.Errorf("VideoPacker received a non-video index")
 	}
 
 	// 1. 创建 Manifest
-	videoKVI := types.VideoKVI_v2{
+	videoKVI := VideoKVI_v2{
 		KVI_v2: types.KVI_v2{
 			SaltBase64: crypto.Base64Encode_v2(req.Salt),
 			IVBase64:   crypto.Base64Encode_v2(req.IV),

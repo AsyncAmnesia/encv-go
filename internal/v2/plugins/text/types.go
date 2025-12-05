@@ -1,4 +1,10 @@
-package types
+package text
+
+import (
+	"github.com/Soltus/encv-go/internal/v2/types"
+)
+
+const IndexKindText types.IndexKind = "text"
 
 // TextIndex 是解密文本所需的所有元数据的容器
 type TextIndex struct {
@@ -18,3 +24,22 @@ func (t *TextIndex) GetOriginalFileSize() int64  { return t.OriginalFileSize }
 func (v *TextIndex) GetOriginalFileMD5() string  { return v.OriginalFileMD5 }
 func (v *TextIndex) GetEncryptedFileMD5() string { return v.EncryptedFileMD5 }
 func (t *TextIndex) GetMimeType() string         { return t.MimeType }
+
+// 视频容器专用的 KVI
+type TextKVI_v2 struct {
+	types.KVI_v2
+	TextIndex *TextIndex `json:"Text_index"`
+}
+
+func (v TextKVI_v2) GetKind() types.IndexKind {
+	return IndexKindText
+}
+
+// 【关键新增】实现 KVIProvider 接口
+func (v TextKVI_v2) GetEncryptionInfo() types.KVI_v2 {
+	return v.KVI_v2
+}
+
+func (v TextKVI_v2) GetIndex() types.Index {
+	return v.TextIndex
+}

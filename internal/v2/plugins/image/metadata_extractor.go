@@ -23,7 +23,7 @@ func (e *ImageMetadataExtractor) ExtractMetadata(inputPath string) (types.Index,
 		return nil, fmt.Errorf("failed to stat file: %w", err)
 	}
 
-	index := &types.ImageIndex{
+	index := &ImageIndex{
 		OriginalFilename: fileInfo.Name(),
 		OriginalFileSize: fileInfo.Size(),
 		ExifTags:         make(map[string]interface{}),

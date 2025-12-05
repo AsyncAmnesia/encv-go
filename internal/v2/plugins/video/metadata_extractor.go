@@ -34,7 +34,7 @@ func (e *VideoMetadataExtractor) ExtractMetadata(inputPath string) (types.Index,
 }
 
 // 获取并处理视频元数据
-func getProcessedMetadata(path string) (*types.VideoIndex, error) {
+func getProcessedMetadata(path string) (*VideoIndex, error) {
 	cmd := exec.Command("ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path)
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -72,7 +72,7 @@ func getProcessedMetadata(path string) (*types.VideoIndex, error) {
 		return nil, fmt.Errorf("failed to calculate MD5 for original video %s: %w", path, err)
 	}
 
-	return &types.VideoIndex{
+	return &VideoIndex{
 		Width:            width,
 		Height:           height,
 		OriginalFileSize: fileInfo.Size(),
