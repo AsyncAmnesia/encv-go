@@ -236,7 +236,7 @@ func (fs *encvWebDAVFS) openAsContainer(ctx context.Context, fullPath string) (g
 	// 缓存未命中，执行解密
 	content, err := service.DecryptContainer(ctx, fullPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt container %s: %w", fullPath, err)
+		return nil, fmt.Errorf("[encvWebDAVFS] failed to decrypt container %s: %w", fullPath, err)
 	}
 	defer content.DataStream.Close()
 

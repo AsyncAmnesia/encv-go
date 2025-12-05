@@ -31,7 +31,7 @@ func (p *GenericPacker) Pack(ctx context.Context, baseName, outputDir string, en
 		return fmt.Errorf("GenericPacker received an unsupported IndexKind: %s", index.GetKind())
 	}
 
-	finalPath := filepath.Join(outputDir, baseName+binExt)
+	finalPath := filepath.Join(outputDir, baseName+"."+binExt)
 
 	// 2. 决策：获取魔法数字
 	magicMap, err := container.GetContainerMagicMap(ctx)

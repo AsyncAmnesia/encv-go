@@ -173,8 +173,8 @@ func doEncrypt(ctx context.Context, sourceReader io.Reader, baseName, outputDir 
 	originalFilename := index.GetOriginalFilename()
 
 	// 使用工具函数获取干净的基础名和反转扩展名
-	cleanBaseName := utils.GetBaseNameWithoutExt(originalFilename)
 	originalExt := filepath.Ext(originalFilename)
+	cleanBaseName := utils.GetBaseNameWithoutExt(originalFilename)
 	reversedExt := ""
 	if originalExt != "" {
 		reversedExt = utils.GenerateReversedExt(originalExt)

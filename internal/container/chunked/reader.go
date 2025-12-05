@@ -3,8 +3,10 @@
 package chunked
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -47,7 +49,7 @@ type StreamingChunkedReader struct {
 	closer io.Closer
 }
 
-// 为路由路径设计的
+// 为路由路径设计的，用于不需要 Seek （寻址）的场景的流式传输
 func StreamingReader(mainDataReader io.Reader, kviData []byte, provider SubChunkStreamProvider) (*StreamingChunkedReader, error) {
 	// 解析 KVI 以获取子分片信息
 	index, err := utils.UnmarshalKVI(kviData)
@@ -70,8 +72,9 @@ func StreamingReader(mainDataReader io.Reader, kviData []byte, provider SubChunk
 	}, nil
 }
 
-// 为本地路径设计的
+// 将多个分片文件抽象成一个连续的、可关闭的数据流，用于不需要 Seek （寻址）的场景，内存占用低
 func LocalReader(mainChunkPath, mainMagic, subMagic string) (*ChunkedReader, error) {
+	log.Printf("LocalReader -> mainChunkPath=%s ", mainChunkPath)
 	// 1. 打开主分片并读取头
 	mainFile, err := os.Open(mainChunkPath)
 	if err != nil {
@@ -84,49 +87,55 @@ func LocalReader(mainChunkPath, mainMagic, subMagic string) (*ChunkedReader, err
 		return nil, err
 	}
 
-	// 2. 读取 KVI 数据
-	kviData := make([]byte, header.KVILength)
-	if _, err := io.ReadFull(mainFile, kviData); err != nil {
+	// 2. 读取 KVI 数据 (包含前缀)
+	kviDataWithPrefix := make([]byte, header.KVILength)
+	if _, err := io.ReadFull(mainFile, kviDataWithPrefix); err != nil {
 		mainFile.Close()
 		return nil, fmt.Errorf("failed to read KVI data: %w", err)
 	}
 
-	// 3. 准备 readers 和 closers
+	// 3. 智能判断并处理 KVI 前缀
+	var finalKviData []byte
+	const kviPrefixSize = 1 + 4 + 4
+	if len(kviDataWithPrefix) >= kviPrefixSize && kviDataWithPrefix[0] == '(' {
+		finalKviData = kviDataWithPrefix[kviPrefixSize:]
+	} else {
+		finalKviData = kviDataWithPrefix
+	}
+
+	// 4. 准备 readers 和 closers (流式)
 	cr := &ChunkedReader{
-		KVIData:     kviData,
+		KVIData:     finalKviData,
 		dataReaders: []io.Reader{mainFile}, // 主分片的剩余部分是第一个数据源
 		closers:     []io.Closer{mainFile},
 	}
 
-	// 2. 【关键】解析 KVI 以获取子分片信息
-	index, err := utils.UnmarshalKVI(kviData)
+	// 5. 解析 KVI 以获取子分片信息
+	index, err := utils.UnmarshalKVI(finalKviData)
 	if err != nil {
-		mainFile.Close()
+		cr.Close()
 		return nil, fmt.Errorf("failed to unmarshal KVI: %w", err)
 	}
 
 	videoIndex, ok := index.(*types.VideoIndex)
 	if !ok {
-		mainFile.Close()
+		cr.Close()
 		return nil, fmt.Errorf("KVI is not a VideoIndex, cannot process sub-chunks")
 	}
 
-	// 4. 【关键更改】使用 KVI 中的子分片信息来加载和验证
+	// 6. 依次打开子分片，将其 reader 加入列表
 	dir := filepath.Dir(mainChunkPath)
 	for _, subChunkInfo := range videoIndex.SubChunks {
 		subChunkPath := filepath.Join(dir, subChunkInfo.Filename)
 
-		// 【验证】计算并比较 MD5
+		// 验证 MD5
 		actualMD5, err := utils.FileMD5(subChunkPath)
 		if err != nil {
-			cr.Close()
 			return nil, fmt.Errorf("failed to calculate MD5 for sub-chunk %s: %w", subChunkPath, err)
 		}
 		if actualMD5 != subChunkInfo.MD5 {
-			cr.Close()
 			return nil, fmt.Errorf("MD5 mismatch for sub-chunk %s: expected %s, got %s", subChunkPath, subChunkInfo.MD5, actualMD5)
 		}
-		// log.Printf("-> [ChunkedReader] MD5 verified for sub-chunk: %s", subChunkPath)
 
 		file, err := os.Open(subChunkPath)
 		if err != nil {
@@ -134,16 +143,14 @@ func LocalReader(mainChunkPath, mainMagic, subMagic string) (*ChunkedReader, err
 			return nil, fmt.Errorf("failed to open sub-chunk %s: %w", subChunkPath, err)
 		}
 
-		// 验证子分片头
-		_, err = ReadSubHeader(file, subMagic)
+		subHeader, err := ReadSubHeader(file, subMagic)
 		if err != nil {
 			file.Close()
 			cr.Close()
 			return nil, fmt.Errorf("invalid sub-chunk header in %s: %w", subChunkPath, err)
 		}
 
-		// Seek 到数据部分
-		if _, err := file.Seek(ChunkHeaderSize, io.SeekStart); err != nil {
+		if _, err := file.Seek(int64(binary.Size(subHeader)), io.SeekStart); err != nil {
 			file.Close()
 			cr.Close()
 			return nil, fmt.Errorf("failed to seek in sub-chunk %s: %w", subChunkPath, err)
@@ -153,7 +160,7 @@ func LocalReader(mainChunkPath, mainMagic, subMagic string) (*ChunkedReader, err
 		cr.closers = append(cr.closers, file)
 	}
 
-	// 6. 初始化第一个 reader
+	// 7. 初始化
 	cr.currentReaderIndex = 0
 	cr.currentReader = cr.dataReaders[0]
 

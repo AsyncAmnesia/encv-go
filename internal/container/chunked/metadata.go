@@ -31,30 +31,36 @@ type MainChunkHeader struct {
 }
 
 // ReadMainHeader 从主分片文件中读取并验证头部
+// 【修复版】兼容新旧两种魔法数字格式
 func ReadMainHeader(file io.ReadSeeker, expectedMagic string) (*MainChunkHeader, error) {
 	var header MainChunkHeader
 	if err := binary.Read(file, binary.LittleEndian, &header); err != nil {
 		return nil, fmt.Errorf("failed to read main chunk header: %w", err)
 	}
 
-	// 验证魔法数字
-	if len(header.Magic) < len(expectedMagic) || string(header.Magic[:len(expectedMagic)]) != expectedMagic {
-		return nil, fmt.Errorf("invalid main chunk magic number")
+	// 【关键修复】更健壮的魔法数字验证
+	// 【最终修复】只取与期望魔法数字等长的部分进行比较，完全忽略填充
+	actualMagic := string(header.Magic[:len(expectedMagic)])
+	if actualMagic != expectedMagic {
+		return nil, fmt.Errorf("invalid main chunk magic number: expected '%s', got '%s'", expectedMagic, actualMagic)
 	}
 
 	return &header, nil
 }
 
 // ReadSubHeader 从子分片文件中读取并验证头部
+// 【修复版】兼容新旧两种魔法数字格式
 func ReadSubHeader(file io.ReadSeeker, expectedMagic string) (*ChunkedFileHeader, error) {
 	var header ChunkedFileHeader
 	if err := binary.Read(file, binary.LittleEndian, &header); err != nil {
 		return nil, fmt.Errorf("failed to read sub chunk header: %w", err)
 	}
 
-	// 验证魔法数字
-	if len(header.Magic) < len(expectedMagic) || string(header.Magic[:len(expectedMagic)]) != expectedMagic {
-		return nil, fmt.Errorf("invalid sub chunk magic number")
+	// 【关键修复】更健壮的魔法数字验证
+	// 【最终修复】只取与期望魔法数字等长的部分进行比较，完全忽略填充
+	actualMagic := string(header.Magic[:len(expectedMagic)])
+	if actualMagic != expectedMagic {
+		return nil, fmt.Errorf("invalid sub chunk magic number: expected '%s', got '%s'", expectedMagic, actualMagic)
 	}
 
 	return &header, nil

@@ -133,7 +133,7 @@ func (c *Config) IsContainerPath(path string) bool {
 	return false
 }
 
-// IsContainerFile 为了向后兼容保留，建议直接使用 IsContainerPath
+// 已弃用，换成 v2 的 DetectContainerType
 func (c *Config) IsContainerFile(path string) bool {
 	return c.IsContainerPath(path)
 }

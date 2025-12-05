@@ -14,6 +14,7 @@ type ImageIndex struct {
 	EncryptedFileMD5 string         `json:"encrypted_file_md5"`
 	Width            int            `json:"width"`
 	Height           int            `json:"height"`
+	SubChunks        []SubChunkInfo `json:"sub_chunks"`
 }
 
 // 【新增】实现 Index 接口
@@ -25,6 +26,8 @@ func (v *ImageIndex) GetOriginalFileSize() int64        { return v.OriginalFileS
 func (v *ImageIndex) GetOriginalFileMD5() string        { return v.OriginalFileMD5 }
 func (v *ImageIndex) GetEncryptedFileMD5() string       { return v.EncryptedFileMD5 }
 func (v *ImageIndex) GetMimeType() string               { return v.MimeType }
+func (v *ImageIndex) GetSubChunks() []SubChunkInfo      { return v.SubChunks }
+func (v *ImageIndex) HasSubChunks() bool                { return len(v.SubChunks) > 0 }
 func (i *ImageIndex) UpdateCommonInfo(encInfo EncryptionInfo, originalFilename, encryptedFileMD5 string) {
 	i.Encryption = encInfo
 	i.OriginalFilename = originalFilename

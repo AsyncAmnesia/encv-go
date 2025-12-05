@@ -15,12 +15,12 @@ type VideoIndex struct {
 	Height           int            `json:"height"`
 	OriginalFileSize int64          `json:"original_file_size"`
 	// 原始视频文件的完整路径，用于 Packer 查找关联文件（如字幕）
-	OriginalInputPath string          `json:"originalInputPath"`
-	OriginalFilename  string          `json:"original_filename"`
-	OriginalFileMD5   string          `json:"original_file_md5"`
-	EncryptedFileMD5  string          `json:"encrypted_file_md5"`
-	SubChunks         []SubChunkInfo  `json:"sub_chunks"`
-	SubtitleTrack     []SubtitleTrack `json:"subtitle_track"`
+	OriginalInputPath string           `json:"originalInputPath"`
+	OriginalFilename  string           `json:"original_filename"`
+	OriginalFileMD5   string           `json:"original_file_md5"`
+	EncryptedFileMD5  string           `json:"encrypted_file_md5"`
+	SubChunks         []SubChunkInfo   `json:"sub_chunks"`
+	SubtitleTracks    []SubtitleTracks `json:"subtitle_tracks,omitempty"`
 }
 
 func (v *VideoIndex) GetKind() IndexKind                { return IndexKindVideo }
@@ -31,6 +31,10 @@ func (v *VideoIndex) GetOriginalFileSize() int64        { return v.OriginalFileS
 func (v *VideoIndex) GetOriginalFileMD5() string        { return v.OriginalFileMD5 }
 func (v *VideoIndex) GetEncryptedFileMD5() string       { return v.EncryptedFileMD5 }
 func (v *VideoIndex) GetMimeType() string               { return v.MimeType }
+func (v *VideoIndex) GetSubChunks() []SubChunkInfo      { return v.SubChunks }
+func (v *VideoIndex) HasSubChunks() bool {
+	return len(v.SubChunks) > 0
+}
 func (i *VideoIndex) UpdateCommonInfo(encInfo EncryptionInfo, originalFilename, encryptedFileMD5 string) {
 	i.Encryption = encInfo
 	i.OriginalFilename = originalFilename
@@ -38,19 +42,9 @@ func (i *VideoIndex) UpdateCommonInfo(encInfo EncryptionInfo, originalFilename, 
 }
 
 // SubtitleTrack 表示一个字幕或弹幕轨道
-type SubtitleTrack struct {
+type SubtitleTracks struct {
 	Language string `json:"language"`
 	Title    string `json:"title"`
 	Filename string `json:"filename"`
 	Note     string `json:"note,omitempty"`
-}
-
-// SubChunkInfo 存储子分片的元数据
-type SubChunkInfo struct {
-	Index    int    `json:"index"`    // 子分片的序号 (2, 3, 4...)
-	Filename string `json:"filename"` // 子分片的文件名
-	Size     int64  `json:"size"`     // 子分片大小
-	MD5      string `json:"md5"`      // 子分片内容的 MD5 哈希
-	// 【新增字段】记录该子分片在完整加密文件中的起始字节偏移量
-	Offset int64 `json:"offset"`
 }

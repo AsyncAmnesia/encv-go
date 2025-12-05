@@ -11,6 +11,7 @@ type IframeIndex struct {
 	OriginalFilename string         `json:"original_filename"`
 	OriginalFileMD5  string         `json:"original_file_md5"`
 	EncryptedFileMD5 string         `json:"encrypted_file_md5"`
+	SubChunks        []SubChunkInfo `json:"sub_chunks"`
 }
 
 // 实现 Index 接口
@@ -22,6 +23,8 @@ func (t *IframeIndex) GetOriginalFileSize() int64        { return t.OriginalFile
 func (v *IframeIndex) GetOriginalFileMD5() string        { return v.OriginalFileMD5 }
 func (v *IframeIndex) GetEncryptedFileMD5() string       { return v.EncryptedFileMD5 }
 func (t *IframeIndex) GetMimeType() string               { return t.MimeType }
+func (v *IframeIndex) GetSubChunks() []SubChunkInfo      { return v.SubChunks }
+func (v *IframeIndex) HasSubChunks() bool                { return len(v.SubChunks) > 0 }
 func (i *IframeIndex) UpdateCommonInfo(encInfo EncryptionInfo, originalFilename, encryptedFileMD5 string) {
 	i.Encryption = encInfo
 	i.OriginalFilename = originalFilename

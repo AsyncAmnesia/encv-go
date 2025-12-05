@@ -15,6 +15,7 @@ import (
 
 const (
 	// 魔法数字本身是格式规范的一部分，不应由用户配置
+	// 注意不要超过 32 字节 ！！！
 	MagicVideo         = "encv-sccgv-chunk-main-v1" // SCCGV 主分片
 	MagicVideoSubChunk = "encv-sccgv-chunk-sub-v1"  // SCCGV 子分片
 	MagicText          = "encv-sccgt-container-v1"

@@ -90,6 +90,27 @@ func GenerateReversedExt(ext string) string {
 	return string(runes)
 }
 
+// GenerateEncryptedFilename 根据原始文件名和容器扩展名，生成加密后的文件名
+// 例如: originalFilename="321.mp4", containerExt=".sccgv" -> "321.4pm.sccgv"
+// 例如: originalFilename="my_archive", containerExt=".sccgv" -> "my_archive.sccgv"
+func GenerateEncryptedFilename(originalFilename, containerExt string) string {
+	// 1. 获取基础名和原始扩展名
+	base := filepath.Base(originalFilename)
+	ext := filepath.Ext(base)
+	cleanBaseName := strings.TrimSuffix(base, ext)
+
+	// 2. 如果没有原始扩展名，直接附加容器扩展名
+	if ext == "" {
+		return cleanBaseName + containerExt
+	}
+
+	// 3. 倒转原始扩展名
+	reversedExt := GenerateReversedExt(ext)
+
+	// 4. 构建最终的文件名: 基础名.倒转原始扩展名.容器扩展名
+	return fmt.Sprintf("%s.%s%s", cleanBaseName, reversedExt, containerExt)
+}
+
 // IsEncryptedContainer 检查文件是否为有效的 ENCV 主容器文件。
 // 它会正确地忽略子分片。
 func IsEncryptedContainer(ctx context.Context, filePath string) (bool, error) {

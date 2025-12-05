@@ -12,6 +12,7 @@ type TextIndex struct {
 	OriginalFilename string         `json:"original_filename"`
 	OriginalFileMD5  string         `json:"original_file_md5"`
 	EncryptedFileMD5 string         `json:"encrypted_file_md5"`
+	SubChunks        []SubChunkInfo `json:"sub_chunks"`
 }
 
 // 【新增】实现 Index 接口
@@ -23,6 +24,8 @@ func (t *TextIndex) GetOriginalFileSize() int64        { return t.OriginalFileSi
 func (v *TextIndex) GetOriginalFileMD5() string        { return v.OriginalFileMD5 }
 func (v *TextIndex) GetEncryptedFileMD5() string       { return v.EncryptedFileMD5 }
 func (t *TextIndex) GetMimeType() string               { return t.MimeType }
+func (v *TextIndex) GetSubChunks() []SubChunkInfo      { return v.SubChunks }
+func (v *TextIndex) HasSubChunks() bool                { return len(v.SubChunks) > 0 }
 func (i *TextIndex) UpdateCommonInfo(encInfo EncryptionInfo, originalFilename, encryptedFileMD5 string) {
 	i.Encryption = encInfo
 	i.OriginalFilename = originalFilename

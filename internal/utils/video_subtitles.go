@@ -7,18 +7,18 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Soltus/encv-go/internal/types"
+	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
 // DiscoverSubtitleTracks 发现视频关联的字幕轨道，只返回信息
-func DiscoverSubtitleTracks(inputPath string, trackExtensions []string) ([]types.SubtitleTrack, error) {
+func DiscoverSubtitleTracks(inputPath string, trackExtensions []string) ([]types.SubtitleTracks, error) {
 	fmt.Println("-> Discovering subtitle tracks...")
 	videoDir := filepath.Dir(inputPath)
 	videoBaseName := strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))
 
 	files, _ := os.ReadDir(videoDir)
 	sortedExts := SortExtensionsByLength(trackExtensions)
-	var tracks []types.SubtitleTrack
+	var tracks []types.SubtitleTracks
 
 	for _, f := range files {
 		if f.IsDir() {
@@ -46,7 +46,7 @@ func DiscoverSubtitleTracks(inputPath string, trackExtensions []string) ([]types
 			} else if strings.Contains(fileName, "eng") {
 				lang = "eng"
 			}
-			tracks = append(tracks, types.SubtitleTrack{
+			tracks = append(tracks, types.SubtitleTracks{
 				Language: lang,
 				Filename: fileName,
 			})
@@ -56,7 +56,7 @@ func DiscoverSubtitleTracks(inputPath string, trackExtensions []string) ([]types
 }
 
 // CopyAndRenameSubtitles 将发现的字幕复制到输出目录并重命名
-func CopyAndRenameSubtitles(tracks []types.SubtitleTrack, videoPath, outputDir, encBaseName string) ([]types.SubtitleTrack, error) {
+func CopyAndRenameSubtitles(tracks []types.SubtitleTracks, videoPath, outputDir, encBaseName string) ([]types.SubtitleTracks, error) {
 	if len(tracks) == 0 {
 		return nil, nil
 	}
@@ -67,7 +67,7 @@ func CopyAndRenameSubtitles(tracks []types.SubtitleTrack, videoPath, outputDir, 
 		return tracks[i].Filename < tracks[j].Filename
 	})
 
-	var kviTracks []types.SubtitleTrack
+	var kviTracks []types.SubtitleTracks
 	for i, track := range tracks {
 		originalPath := filepath.Join(videoDir, track.Filename)
 
@@ -83,9 +83,9 @@ func CopyAndRenameSubtitles(tracks []types.SubtitleTrack, videoPath, outputDir, 
 		}
 		fmt.Printf("-> Copied subtitle to '%s'\n", newFilename)
 
-		kviTracks = append(kviTracks, types.SubtitleTrack{
+		kviTracks = append(kviTracks, types.SubtitleTracks{
 			Language: track.Language,
-			Title:    newFilename,    // 加密后的文件名
+			Title:    newFilename,    // 加密后关联的文件名（字幕本身不加密）
 			Filename: track.Filename, // 原始文件名
 		})
 	}
@@ -94,11 +94,11 @@ func CopyAndRenameSubtitles(tracks []types.SubtitleTrack, videoPath, outputDir, 
 
 // RestoreSubtitlesFromKVI 根据 KVI 中的信息，将字幕从容器目录恢复到输出目录
 func RestoreSubtitlesFromKVI(index *types.VideoIndex, containerDir, outputDir string) error {
-	if len(index.SubtitleTrack) == 0 {
+	if len(index.SubtitleTracks) == 0 {
 		return nil
 	}
 	fmt.Println("-> Restoring subtitles...")
-	for _, sub := range index.SubtitleTrack {
+	for _, sub := range index.SubtitleTracks {
 		// sub.Title 是加密后存储在容器目录中的字幕文件名 (e.g., "myvideo.sccgv.srt")
 		// sub.Filename 是需要恢复成的原始文件名 (e.g., "myvideo.zh.srt")
 		srcPath := filepath.Join(containerDir, sub.Title)

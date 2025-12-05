@@ -125,39 +125,6 @@ func EncryptStream(r io.Reader, w io.Writer, password, salt []byte) (iv []byte, 
 	return iv, nil
 }
 
-// EncryptStream 加密数据流，并将魔法标识和IV写入文件头
-// iv 由调用者生成，以便同时写入 KVI 文件
-// func EncryptStream(r io.Reader, w io.Writer, key []byte, iv []byte) error {
-// 	if len(iv) != IVLength {
-// 		return errors.New("invalid IV length")
-// 	}
-
-// 	// 1. 写入魔法标识
-// 	if _, err := w.Write([]byte(MagicNumber)); err != nil {
-// 		return fmt.Errorf("failed to write magic number: %w", err)
-// 	}
-
-// 	// 2. 写入 IV
-// 	if _, err := w.Write(iv); err != nil {
-// 		return fmt.Errorf("failed to write IV: %w", err)
-// 	}
-
-// 	// 3. 创建加密器并进行加密
-// 	block, err := aes.NewCipher(key)
-// 	if err != nil {
-// 		return fmt.Errorf("failed to create cipher block: %w", err)
-// 	}
-
-// 	stream := cipher.NewCTR(block, iv)
-
-// 	// 使用 io.Copy 从输入流读取，加密后写入输出流
-// 	if _, err := io.CopyBuffer(streamWriter{stream: stream, writer: w}, r, nil); err != nil {
-// 		return fmt.Errorf("failed to encrypt stream: %w", err)
-// 	}
-
-// 	return nil
-// }
-
 // 【新增】GetDecryptReader 创建一个 io.Reader，它会透明地解密来自底层加密流的数据。
 // 它会处理从流中读取和验证魔法数字和 IV 的逻辑。
 func GetDecryptReader(r io.Reader, key []byte) (io.Reader, error) {

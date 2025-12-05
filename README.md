@@ -1,5 +1,7 @@
 # encv-go 怡念汐拂
 
+[![zread](https://img.shields.io/badge/Ask_Zread-_.svg?style=flat&color=00b0aa&labelColor=000000&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTQuOTYxNTYgMS42MDAxSDIuMjQxNTZDMS44ODgxIDEuNjAwMSAxLjYwMTU2IDEuODg2NjQgMS42MDE1NiAyLjI0MDFWNC45NjAxQzEuNjAxNTYgNS4zMTM1NiAxLjg4ODEgNS42MDAxIDIuMjQxNTYgNS42MDAxSDQuOTYxNTZDNS4zMTUwMiA1LjYwMDEgNS42MDE1NiA1LjMxMzU2IDUuNjAxNTYgNC45NjAxVjIuMjQwMUM1LjYwMTU2IDEuODg2NjQgNS4zMTUwMiAxLjYwMDEgNC45NjE1NiAxLjYwMDFaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik00Ljk2MTU2IDEwLjM5OTlIMi4yNDE1NkMxLjg4ODEgMTAuMzk5OSAxLjYwMTU2IDEwLjY4NjQgMS42MDE1NiAxMS4wMzk5VjEzLjc1OTlDMS42MDE1NiAxNC4xMTM0IDEuODg4MSAxNC4zOTk5IDIuMjQxNTYgMTQuMzk5OUg0Ljk2MTU2QzUuMzE1MDIgMTQuMzk5OSA1LjYwMTU2IDE0LjExMzQgNS42MDE1NiAxMy43NTk5VjExLjAzOTlDNS42MDE1NiAxMC42ODY0IDUuMzE1MDIgMTAuMzk5OSA0Ljk2MTU2IDEwLjM5OTlaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik0xMy43NTg0IDEuNjAwMUgxMS4wMzg0QzEwLjY4NSAxLjYwMDEgMTAuMzk4NCAxLjg4NjY0IDEwLjM5ODQgMi4yNDAxVjQuOTYwMUMxMC4zOTg0IDUuMzEzNTYgMTAuNjg1IDUuNjAwMSAxMS4wMzg0IDUuNjAwMUgxMy43NTg0QzE0LjExMTkgNS42MDAxIDE0LjM5ODQgNS4zMTM1NiAxNC4zOTg0IDQuOTYwMVYyLjI0MDFDMTQuMzk4NCAxLjg4NjY0IDE0LjExMTkgMS42MDAxIDEzLjc1ODQgMS42MDAxWiIgZmlsbD0iI2ZmZiIvPgo8cGF0aCBkPSJNNCAxMkwxMiA0TDQgMTJaIiBmaWxsPSIjZmZmIi8%2BCjxwYXRoIGQ9Ik00IDEyTDEyIDQiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgo8L3N2Zz4K&logoColor=ffffff)](https://zread.ai/Soltus/encv-go)
+
 一个基于 `AES-256-CTR` 的强大命令行工具集/库，用于多种类型文件的加密、解密、流传输，并提供与 OpenList 的无缝代理集成与通用 HTTP / Webdav 服务。90%代码由AI提供。
 
 > [!WARNING]
@@ -9,7 +11,7 @@
 
 ## 📖 用户使用指南
 
-本部分将指导您如何安装、配置和使用 `encv` 的各项功能。
+本部分将指导您如何安装、配置和使用 **怡念汐拂** 的各项功能。
 
 ### 🚀 安装
 
@@ -85,7 +87,7 @@ go build -o encv-proxy ./cmd/encv-proxy
 
 ### 💻 核心用法
 
-#### 1. 加密视频
+#### 加密视频
 
 将指定目录下的所有视频文件加密，并处理相关字幕文件。
 
@@ -94,22 +96,7 @@ go build -o encv-proxy ./cmd/encv-proxy
 ./encv encrypt -o ./output ./_videos
 ```
 
-#### 2. 流媒体服务
-
-启动一个 HTTP 服务器，用于在线流式播放加密后的视频。
-
-```bash
-# 在 1999 端口启动服务，提供 ./output 目录下的文件
-./encv server -port 1999 ./output
-```
-
-使用 `mpv` 播放器观看时，需要手动指定字幕文件：
-
-```bash
-mpv http://localhost:1999/321.sccgv --sub-files=http://localhost:1999/321.ass
-```
-
-#### 3. 解密视频
+#### 解密视频
 
 将加密后的文件恢复为原始格式。
 
@@ -123,7 +110,7 @@ mpv http://localhost:1999/321.sccgv --sub-files=http://localhost:1999/321.ass
 ./encv decrypt -o ./_decrypt/ ./output
 ```
 
-#### 4. 查看 kvi 信息
+#### 查看 kvi 信息
 
 > [!NOTE]
 > Go 标准库 `flag` 包的行为：所有 `-` 开头的标志参数（如 `-s`）必须放在位置参数（如文件路径）**之前**。
@@ -135,9 +122,36 @@ mpv http://localhost:1999/321.sccgv --sub-files=http://localhost:1999/321.ass
 ./encv kvi -s kvi.json "./output/movie.sccgv"
 ```
 
+#### HTTP服务
+
+启动一个 HTTP 服务器，支持集成 Webdav 服务。
+
+```bash
+# 在 1999 端口启动服务，提供 ./output 目录下的文件
+./encv start -port 1999 ./output
+```
+
+启用 HTTP 服务后，可以通过 URL 播放服务的路径和磁盘任意位置的加密视频。
+
+HTTP 服务（`./encv server`）和 Webdav 服务（`./encv webdav`）也可以单独启动，但是不支持多实例。
+
+> [!WARNING]
+> 使用 `mpv` 播放器观看时，需要手动指定字幕文件
+
+```bash
+mpv http://localhost:1999/321.sccgv --sub-files=http://localhost:1999/321.ass
+```
+
+播放任意位置的视频：
+
+```bash
+mpv http://127.0.0.1:1999/stream?file=A%3A%5CLocal%5CCol-Study%5Cgo%5Cencv%5Coutput%5C321.4pm.sccgv
+```
+
+
 ### 🔗 OpenList 集成
 
-`encv-proxy` 是一个专为 OpenList 设计的代理服务，它能透明地解密视频，让 OpenList 可以直接播放加密内容。
+`encv-proxy` 是一个专为 OpenList 设计的代理服务，它能透明地解密 encv 加密容器，让 OpenList 可以直接播放加密内容。
 
 **配置步骤:**
 
@@ -178,9 +192,17 @@ mpv http://localhost:1999/321.sccgv --sub-files=http://localhost:1999/321.ass
 
 * 保存后即可在 OpenList 中预览加密文件。
 
-### 通用 Webdav 服务
-
 OpenList Webdav 代理是很好的方式，只需要定义预览后缀名，不影响其他操作。但假如希望在其他平台通过 Webdav 预览加密容器，encv-go 也提供了支持，缺点是仅支持只读模式，而且性能可能远不如 OpenList 。通用 Webdav 服务将显示解密后的原始文件名作为“不存在”的文件，当请求打开时反查真实的加密容器并进行解密。
+
+调试
+
+```bash
+curl -v -X PROPFIND http://localhost:1234/webdav/ -H "Depth: 1" -H "Content-Type: application/xml" -d '<?xml version="1.0" encoding="utf-8"?><D:propfind xmlns:D="DAV:"><D:prop><D:displayname/></D:prop></D:propfind>'
+```
+
+### Windows 上使用
+
+`register` 命令可以注册加密容器后缀名的右键菜单，`unregister` 反注册。`openas` 命令注册容器后缀名打开方式（双击打开）
 
 ### Linux 上使用
 
@@ -278,6 +300,16 @@ gomobile bind -target=android -o encv.aar ./pkg/encv
 ```
 
 ### 🧪 测试
+
+单元测试
+
+```cmd
+# 运行 service 包下的所有测试
+go test ./internal/service -v
+
+# 只运行特定测试
+go test ./internal/service -run="TestContinuousRead|TestRandomSeek" -v
+```
 
 一个简单的测试流程是加密一个示例视频目录：
 

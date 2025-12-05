@@ -91,37 +91,6 @@ func (p *VideoProcessor) Process(inputPath string) (types.Index, io.ReadCloser, 
 	return metadata, &tempFileReadCloser{file: file, path: tempFilePath}, nil
 }
 
-// 【新增辅助函数】在文件末尾添加这两个
-// createFastStartTempFile 使用 FFmpeg 创建一个临时的 fast-start MP4 文件
-// func (p *VideoProcessor) createFastStartTempFile(inputPath string) (string, error) {
-// 	fmt.Println("-> Step 1: Pre-processing video for streaming (fast-start)...")
-
-// 	tempFile, err := os.CreateTemp("", "encv-pre-*.mp4")
-// 	if err != nil {
-// 		return "", fmt.Errorf("failed to create temp file: %w", err)
-// 	}
-// 	tempPath := tempFile.Name()
-// 	tempFile.Close()
-
-// 	// 根据输入格式决定是否需要 fast-start
-// 	isMkv := filepath.Ext(inputPath) == ".mkv"
-// 	var ffmpegCmd *exec.Cmd
-// 	if isMkv {
-// 		ffmpegCmd = exec.Command("ffmpeg", "-y", "-i", inputPath, "-c", "copy", tempPath)
-// 	} else {
-// 		ffmpegCmd = exec.Command("ffmpeg", "-y", "-i", inputPath, "-c", "copy", "-movflags", "+faststart", tempPath)
-// 	}
-
-// 	ffmpegCmd.Stderr = os.Stderr
-// 	if err := ffmpegCmd.Run(); err != nil {
-// 		os.Remove(tempPath)
-// 		return "", fmt.Errorf("ffmpeg failed: %w", err)
-// 	}
-
-// 	fmt.Println("-> Pre-processing complete.")
-// 	return tempPath, nil
-// }
-
 // tempFileReadCloser 包装了 *os.File，在 Close 时删除底层文件
 type tempFileReadCloser struct {
 	file *os.File

@@ -93,7 +93,7 @@ func handleVideoContainer(ctx context.Context, w http.ResponseWriter, containerU
 		return
 	}
 
-	// 6. 创建新的 StreamingChunkedReader
+	// TODO : 使用新的可寻址 reader
 	streamingReader, err := chunked.StreamingReader(mainDataResp.Body, kviData, provider)
 	if err != nil {
 		mainDataResp.Body.Close()

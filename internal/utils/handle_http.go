@@ -9,7 +9,25 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"syscall"
 )
+
+// isAddrInUseErr 检查错误是否为“地址已在使用”
+func IsAddrInUseErr(err error) bool {
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		// syscall.EADDRINUSE 是标准的“地址已在使用”错误码
+		if errors.Is(opErr.Err, syscall.EADDRINUSE) {
+			return true
+		}
+		// 在某些系统（如 Windows）上，错误消息可能不同，进行字符串匹配作为后备
+		if strings.Contains(opErr.Error(), "address already in use") ||
+			strings.Contains(opErr.Error(), "An address incompatible with the requested protocol was used") {
+			return true
+		}
+	}
+	return false
+}
 
 // downloadRange 下载 URL 的指定字节范围
 func DownloadRange(url string, headers map[string]string, start, end int64) ([]byte, error) {

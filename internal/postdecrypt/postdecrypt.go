@@ -49,7 +49,7 @@ func GetPostDecrypter(index types.Index) (PostDecrypter, error) {
 // InitPostDecrypters 初始化并注册所有后处理器
 func InitPostDecrypters() {
 	// 为了让 Register 能获取到正确的类型，我们需要传入实例的指针
-	Register(&types.VideoIndex{}, &VideoPostDecrypter{})
+	// Register(&types.VideoIndex{}, &VideoPostDecrypter{})
 	Register(&types.ImageIndex{}, &ImagePostDecrypter{})
 	Register(&types.TextIndex{}, &TextPostDecrypter{})
 	// 未来添加新容器时，只需在这里添加一行

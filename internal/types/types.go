@@ -19,6 +19,26 @@ const (
 	KviVersion int16 = 1
 )
 
+// ServiceStatus 定义服务状态的类型
+type ServiceStatus string
+
+var ServiceStatuses = struct {
+	OK    ServiceStatus
+	Error ServiceStatus
+}{
+	OK:    "ok",
+	Error: "error",
+}
+
+// PingResponse 是 /ping 端点返回的 JSON 结构
+type PingResponse struct {
+	Status        ServiceStatus `json:"status"`
+	Version       string        `json:"version"`     // 应用版本号
+	InstanceID    string        `json:"instance_id"` // 本次启动的唯一实例ID
+	ServerDirPath string        `json:"server_dir"`  // 主服务映射的本地绝对路径
+	WebdavDirPath string        `json:"webdav_dir"`  // WebDAV 服务映射的本地绝对路径 (如果启用)
+}
+
 // FFProbeRawMetadata 用于直接解析 ffprobe 的 JSON 输出
 type FFProbeRawMetadata struct {
 	Format struct {
@@ -31,6 +51,16 @@ type FFProbeRawMetadata struct {
 	} `json:"streams"`
 }
 
+// SubChunkInfo 存储子分片的元数据
+type SubChunkInfo struct {
+	Index    int    `json:"index"`    // 子分片的序号 (2, 3, 4...)
+	Filename string `json:"filename"` // 子分片的文件名
+	Size     int64  `json:"size"`     // 子分片大小
+	MD5      string `json:"md5"`      // 子分片内容的 MD5 哈希
+	// 【新增字段】记录该子分片在完整加密文件中的起始字节偏移量
+	Offset int64 `json:"offset"`
+}
+
 // Index 是所有 KVI 结构体的通用接口
 type Index interface {
 	GetKind() IndexKind
@@ -41,10 +71,13 @@ type Index interface {
 	GetOriginalFileMD5() string
 	GetEncryptedFileMD5() string
 	GetMimeType() string // 重要方法，实现错误会影响前端预览
+	GetSubChunks() []SubChunkInfo
+	HasSubChunks() bool
 	// 一个统一的接口，用于更新加密后产生的通用元数据
 	UpdateCommonInfo(encInfo EncryptionInfo, originalFilename, encryptedFileMD5 string)
 }
 
+// 所有扩展名都不带 .
 type BinExtGroup struct {
 	// 文本类加密容器的扩展名。
 	Text string `json:"text"`
@@ -62,6 +95,9 @@ type BinExtGroup struct {
 type SccgvSettings struct {
 	// 分片大小（单位 MB），为 0 或为空禁用分片
 	ChunkSizeMB int64 `json:"chunk_size"`
+	// 【新增】轻量化主分片模式
+	// 启用后，主分片（.sccgv）将只包含 Manifest，不包含加密数据
+	LightweightMainChunk bool `json:"lightweight_main_chunk"`
 }
 
 // --- WebDAV 服务器设置 ---

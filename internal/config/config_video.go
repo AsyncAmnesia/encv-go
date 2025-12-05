@@ -10,6 +10,11 @@ func (c *Config) IsSccgvChunkingEnabled() bool {
 	return c.SccgvSettings.ChunkSizeMB > 0
 }
 
+// IsSccgvChunkingEnabled 返回是否启用了 SCCGV 分片
+func (c *Config) IsLightweightMainChunkEnabled() bool {
+	return c.SccgvSettings.LightweightMainChunk
+}
+
 func (c *Config) GetSccgvChunkSizeBytes() int64 {
 	return c.GetSccgvChunkSizeMB() * 1024 * 1024
 }
