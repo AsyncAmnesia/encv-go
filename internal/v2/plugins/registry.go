@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/Soltus/encv-go/internal/v2/namer"
+	"github.com/Soltus/encv-go/internal/v2/plugins/iframe"
 	"github.com/Soltus/encv-go/internal/v2/plugins/image"
 	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	"github.com/Soltus/encv-go/internal/v2/plugins/text"
@@ -25,6 +26,7 @@ var Plugins = []Plugin{
 	&video.VideoPlugin{},
 	&image.ImagePlugin{},
 	&text.TextPlugin{},
+	&iframe.IframePlugin{},
 }
 
 // Plugin 定义了加解密插件的完整接口
