@@ -30,9 +30,11 @@ func NewReaderService(manager *ContainerManager) *ReaderService {
 }
 
 // GetSeekableDecryptReader 是核心方法。
-// 它返回一个可寻址的解密流、文件索引和原始大小。
-// 调用者只需关心返回的 reader，并在使用完毕后调用其 Close() 方法。
-func (s *ReaderService) GetSeekableDecryptReader(cfg config.Config, originalPath, password string, chunkNamer namer.ChunkNamer) (reader.DecryptReader, types.Index, int64, error) {
+// 它返回一个通用的解密流、文件索引和原始大小。
+// 解密器可能是可寻址的（实现了 io.Seeker），也可能是顺序的。
+// 调用者有责任检查解密器的能力并采取相应的策略。
+// 注意：调用者负责关闭解密器。
+func (s *ReaderService) GetDecryptReader(cfg config.Config, originalPath, password string, chunkNamer namer.ChunkNamer) (reader.DecryptReader, types.Index, int64, error) {
 	// 1. 获取可读路径（现在这个调用非常快）
 	readablePath, err := s.manager.GetReadablePath(originalPath, chunkNamer)
 	if err != nil {

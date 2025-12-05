@@ -42,7 +42,7 @@ type SubtitleTracks struct {
 	Note  string `json:"note,omitempty"`
 }
 
-// VideoKVI_v2 是视频容器专用的 KVI
+// 视频容器专用的 KVI
 type VideoKVI_v2 struct {
 	KVI_v2
 	VideoIndex *VideoIndex `json:"video_index"`

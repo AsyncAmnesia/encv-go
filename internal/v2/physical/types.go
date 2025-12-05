@@ -13,7 +13,7 @@ import (
 type PhysicalPacker interface {
 	// Pack 执行完整的物理打包，包括数据分片和 Manifest 写入
 	// 【关键修改】接收 manifest 作为参数，并负责完成所有写入
-	Pack(data io.Reader, manifest *types.Manifest_v2, outputDir, baseName string, namer namer.ChunkNamer, startIdx int) (mainChunkPath string, err error)
+	Pack(data io.Reader, manifest *types.Manifest_v2, req *PackRequest) (mainChunkPath string, err error)
 }
 
 // PhysicalUnpacker 定义了物理分片的解包接口
@@ -40,7 +40,7 @@ type Packer interface {
 
 // PackRequest 是打包请求的参数集合
 type PackRequest struct {
-	// BaseName 是不带容器扩展名的基础文件名，例如 "321.4pm.sccgv"
+	// BaseName 是不带容器扩展名的基础文件名，例如 "321.4pm"
 	BaseName string
 	// OutputDir 是输出目录
 	OutputDir string
@@ -52,4 +52,10 @@ type PackRequest struct {
 	Salt, IV []byte
 	// LogicalFragments 是预先计算好的逻辑分片元数据
 	LogicalFragments []types.Fragment_v2
+	Namer            namer.ChunkNamer
+	StartIdx         int
+
+	// 一个可选的、最终的主文件名，设计为单文件打包使用。
+	// 如果设置了此字段，Packer 将直接使用它，忽略 Namer。
+	FinalFileName string
 }

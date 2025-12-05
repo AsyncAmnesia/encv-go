@@ -23,5 +23,5 @@
     "video": "sccgv",
     "iframe": "sccgf"
   },
-  "sccgv_settings": { "chunk_size": 0 }
+  "sccgv_settings": { "chunk_size": 100 }
 }

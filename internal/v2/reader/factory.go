@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/Soltus/encv-go/internal/config"
-	"github.com/Soltus/encv-go/internal/v2/chunker"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -93,7 +92,13 @@ func (f *decryptReaderFactory) parseAndCacheMetadata() error {
 	f.physicalOffsets = fcr.physicalOffsets
 
 	// 判断是否可寻址
-	f.isSeekable = chunker.IsSingleFileContainer(f.cachedManifest) || !chunker.IsSingleFileContainer(f.cachedManifest)
+	f.isSeekable = false
+	for _, frag := range f.cachedManifest.Fragments {
+		if frag.Type == types.FragmentType_SeekableStream {
+			f.isSeekable = true
+			break // 只要找到一个可寻址的 Fragment，就足以确定整个容器是可寻址的
+		}
+	}
 
 	return nil
 }

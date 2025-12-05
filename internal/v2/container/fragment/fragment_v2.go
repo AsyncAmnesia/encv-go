@@ -75,7 +75,7 @@ func CalculateFragmentSize(totalFileSize int64, userConfiguredPhysicalSize int64
 
 // CreateLogicalFragmentsFromSize 仅根据总大小和分片大小，创建逻辑分片元数据。
 // 这是最高效的方式，因为它不需要任何 I/O 操作。
-func CreateLogicalFragmentsFromSize(totalSize int64, fragmentSize int64) ([]types.Fragment_v2, error) {
+func CreateLogicalFragmentsFromSize(totalSize int64, fragmentSize int64, frag_type types.FragmentType_v2) ([]types.Fragment_v2, error) {
 	if fragmentSize <= 0 {
 		return nil, fmt.Errorf("fragment size must be positive")
 	}
@@ -97,7 +97,7 @@ func CreateLogicalFragmentsFromSize(totalSize int64, fragmentSize int64) ([]type
 		fragID := fmt.Sprintf("video_chunk_%d", chunkIndex) // ID 生成策略可能需要泛化
 		frag := types.Fragment_v2{
 			ID:                fragID,
-			Type:              types.FragmentType_SeekableStream,
+			Type:              frag_type,
 			Length:            uint64(currentChunkSize),
 			GlobalStartOffset: globalOffset,
 		}

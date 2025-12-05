@@ -31,9 +31,12 @@ func NewFileChunkerPhysicalPacker(chunkSize int64, namer namer.ChunkNamer) *File
 }
 
 // Pack 实现 PhysicalPacker 接口
-func (p *FileChunkerPhysicalPacker) Pack(data io.Reader, manifest *types.Manifest_v2, outputDir, baseName string, namer namer.ChunkNamer, startIdx int) (string, error) {
+func (p *FileChunkerPhysicalPacker) Pack(data io.Reader, manifest *types.Manifest_v2, req *PackRequest) (string, error) {
+	if req.Namer == nil {
+		return "", fmt.Errorf("FileChunkerPhysicalPacker requires a namer")
+	}
 	// 1. 准备主文件路径
-	mainChunkPath := filepath.Join(outputDir, namer.GenerateMainChunkName(baseName))
+	mainChunkPath := filepath.Join(req.OutputDir, req.Namer.GenerateMainChunkName(req.BaseName))
 	tempMainChunkPath := mainChunkPath + ".tmp"
 
 	// 2. 创建主文件句柄
@@ -55,7 +58,7 @@ func (p *FileChunkerPhysicalPacker) Pack(data io.Reader, manifest *types.Manifes
 
 	// 4. 循环处理所有数据分片
 	buf := make([]byte, p.chunkSize)
-	chunkIndex := startIdx
+	chunkIndex := req.StartIdx
 	var currentDataStreamOffset uint64 = 0
 
 	for {
@@ -73,7 +76,7 @@ func (p *FileChunkerPhysicalPacker) Pack(data io.Reader, manifest *types.Manifes
 			manifest.Fragments[chunkIndex].GlobalStartOffset = currentDataStreamOffset
 		}
 
-		if chunkIndex == startIdx {
+		if chunkIndex == req.StartIdx {
 			// 第一个数据块：写入主文件
 			dataCRC32, err := chunkedWriter.WriteDataChunk(mainFile, chunkData)
 			if err != nil {
@@ -84,8 +87,8 @@ func (p *FileChunkerPhysicalPacker) Pack(data io.Reader, manifest *types.Manifes
 			}
 		} else {
 			// 后续数据块：写入 .part 文件
-			dataChunkFilename := namer.GenerateDataChunkName(baseName, chunkIndex)
-			chunkPath := filepath.Join(outputDir, dataChunkFilename)
+			dataChunkFilename := req.Namer.GenerateDataChunkName(req.BaseName, chunkIndex)
+			chunkPath := filepath.Join(req.OutputDir, dataChunkFilename)
 
 			if chunkIndex < len(manifest.Fragments) {
 				manifest.Fragments[chunkIndex].PhysicalPath = dataChunkFilename
@@ -228,56 +231,87 @@ func (u *FileChunkerPhysicalUnpacker) rebuildToSingleFile(sourcePath string, ori
 
 	// 2. 遍历原始 Manifest 的 fragments
 	for _, frag := range originalManifest.Fragments {
-		if frag.Type != types.FragmentType_SeekableStream {
-			continue
+		switch frag.Type {
+		case types.FragmentType_SeekableStream:
+			// --- 处理 SeekableStream Fragment (原有逻辑) ---
+			var physicalPath string
+			if frag.PhysicalPath == "" {
+				physicalPath = sourcePath // 在主文件中
+			} else {
+				physicalPath = filepath.Join(containerDir, frag.PhysicalPath) // 在 .part 文件中
+			}
+
+			physicalFile, err := os.Open(physicalPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to open physical file '%s' for fragment '%s': %w", physicalPath, frag.ID, err)
+			}
+			defer physicalFile.Close()
+
+			var header block.BlockHeader_v2
+			if err := binary.Read(physicalFile, binary.LittleEndian, &header); err != nil {
+				return nil, fmt.Errorf("failed to read block header for fragment '%s': %w", frag.ID, err)
+			}
+
+			chunkData := make([]byte, header.Length)
+			if _, err := io.ReadFull(physicalFile, chunkData); err != nil {
+				return nil, fmt.Errorf("failed to read data for fragment '%s': %w", frag.ID, err)
+			}
+
+			if err := block.WriteBlock_v2(destFile, types.BlockTypeData_v2, chunkData); err != nil {
+				return nil, fmt.Errorf("failed to write data block for fragment '%s': %w", frag.ID, err)
+			}
+
+			newFrag := types.Fragment_v2{
+				ID:                frag.ID,
+				Type:              frag.Type,
+				Length:            header.Length,
+				GlobalStartOffset: dataStreamOffset,
+				DataCRC32:         header.CRC32,
+			}
+			newManifest.Fragments = append(newManifest.Fragments, newFrag)
+			dataStreamOffset += header.Length
+
+		case types.FragmentType_AtomicFile:
+			// --- 【新增】处理 AtomicFile Fragment ---
+			// AtomicFile 的数据是连续存储的，没有额外的块头结构。
+			// 我们直接根据 manifest 中的 GlobalStartOffset 和 Length 读取数据。
+			sourceFile, err := os.Open(sourcePath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to open source file for atomic fragment '%s': %w", frag.ID, err)
+			}
+			defer sourceFile.Close()
+
+			// 使用 SectionReader 精确读取 Fragment 数据
+			sectionReader := io.NewSectionReader(sourceFile, int64(frag.GlobalStartOffset), int64(frag.Length))
+			chunkData := make([]byte, frag.Length)
+			if _, err := io.ReadFull(sectionReader, chunkData); err != nil {
+				return nil, fmt.Errorf("failed to read data for atomic fragment '%s': %w", frag.ID, err)
+			}
+
+			// 将数据写入目标文件
+			if err := block.WriteBlock_v2(destFile, types.BlockTypeData_v2, chunkData); err != nil {
+				return nil, fmt.Errorf("failed to write data block for atomic fragment '%s': %w", frag.ID, err)
+			}
+
+			// 为新 Manifest 创建 Fragment，并重新计算 CRC
+			newFrag := types.Fragment_v2{
+				ID:                frag.ID,
+				Type:              frag.Type,
+				Length:            frag.Length,
+				GlobalStartOffset: dataStreamOffset,
+				DataCRC32:         crc32.ChecksumIEEE(chunkData), // 重新计算
+			}
+			newManifest.Fragments = append(newManifest.Fragments, newFrag)
+			dataStreamOffset += frag.Length
+		case types.FragmentType_Metadata:
+			// KVI 等元数据已经作为 newManifest.KVI 被包含在新的 Manifest 中了
+			// 它们会在最后被统一写入，不需要作为数据流的一部分重建
+			continue // 跳过此 fragment，处理下一个
+		default:
+			// --- 未知或不支持的 Fragment 类型 ---
+			return nil, fmt.Errorf("encountered unsupported or unknown fragment type: %v for fragment ID: %s", frag.Type, frag.ID)
 		}
 
-		// a. 确定 fragment 的物理文件路径
-		var physicalPath string
-		if frag.PhysicalPath == "" {
-			physicalPath = sourcePath // 在主文件中
-		} else {
-			physicalPath = filepath.Join(containerDir, frag.PhysicalPath) // 在 .part 文件中
-		}
-
-		// b. 打开物理文件并读取数据块
-		physicalFile, err := os.Open(physicalPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open physical file '%s' for fragment '%s': %w", physicalPath, frag.ID, err)
-		}
-
-		// c. 读取并验证块头
-		var header block.BlockHeader_v2
-		if err := binary.Read(physicalFile, binary.LittleEndian, &header); err != nil {
-			physicalFile.Close()
-			return nil, fmt.Errorf("failed to read block header for fragment '%s': %w", frag.ID, err)
-		}
-
-		// d. 读取块数据
-		chunkData := make([]byte, header.Length)
-		if _, err := io.ReadFull(physicalFile, chunkData); err != nil {
-			physicalFile.Close()
-			return nil, fmt.Errorf("failed to read data for fragment '%s': %w", frag.ID, err)
-		}
-		physicalFile.Close()
-
-		// e. 【关键】将裸数据作为一个完整的 Data Block 写入到目标文件
-		if err := block.WriteBlock_v2(destFile, types.BlockTypeData_v2, chunkData); err != nil {
-			return nil, fmt.Errorf("failed to write data block for fragment '%s': %w", frag.ID, err)
-		}
-
-		// f. 为新的 Manifest 创建一个描述连续布局的 fragment
-		newFrag := types.Fragment_v2{
-			ID:                frag.ID,
-			Type:              frag.Type,
-			Length:            header.Length, // 使用从块头读取的实际长度
-			GlobalStartOffset: dataStreamOffset,
-			DataCRC32:         header.CRC32, // 使用从块头读取的实际 CRC
-		}
-		newManifest.Fragments = append(newManifest.Fragments, newFrag)
-
-		// g. 更新数据流偏移量
-		dataStreamOffset += header.Length
 	}
 
 	// 3. 将新创建的 Manifest 序列化为 JSON

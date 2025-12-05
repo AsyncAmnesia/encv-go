@@ -294,32 +294,39 @@ func performCrossValidation(footer *types.EnvelopeFooter_v2, scannedBlocks []sca
 		fmt.Println("  [INFO] Footer is invalid, skipping Footer-related validation.")
 	}
 
-	// 2. 数据块数量验证
-	dataBlocks := findAllBlocksByType(scannedBlocks, uint32(types.BlockTypeData_v2))
-	manifestDataFrags := countFragmentsByType(manifestObj.Fragments, string(types.FragmentType_SeekableStream))
-	if len(dataBlocks) == manifestDataFrags {
-		fmt.Printf("  [OK] Scanned Data Blocks (%d) count matches Manifest SeekableStream Fragments (%d).\n", len(dataBlocks), manifestDataFrags)
-	} else {
-		fmt.Printf("  [ERROR] Mismatch! Found %d Data Blocks in file, but Manifest lists %d SeekableStream Fragments.\n", len(dataBlocks), manifestDataFrags)
+	// 2. 【修复】数据块数量验证：只计算需要数据块的 Fragment
+	var dataBlockFrags int
+	for _, frag := range manifestObj.Fragments {
+		if frag.Type == types.FragmentType_SeekableStream || frag.Type == types.FragmentType_AtomicFile {
+			dataBlockFrags++
+		}
 	}
 
-	// 3. 偏移量映射验证
+	dataBlocks := findAllBlocksByType(scannedBlocks, uint32(types.BlockTypeData_v2))
+	if len(dataBlocks) == dataBlockFrags {
+		fmt.Printf("  [OK] Scanned Data Blocks (%d) count matches Manifest Data Fragments (%d).\n", len(dataBlocks), dataBlockFrags)
+	} else {
+		fmt.Printf("  [ERROR] Mismatch! Found %d Data Blocks in file, but Manifest lists %d Data Fragments (SeekableStream + AtomicFile).\n", len(dataBlocks), dataBlockFrags)
+	}
+
+	// 3. 【修复】偏移量映射验证：只显示需要数据块的 Fragment
 	fmt.Println("\n  --- Fragment Offset Mapping ---")
-	fmt.Fprintln(w, "    Fragment ID\t\tGlobal Start Offset\tPhysical Block Offset")
-	fmt.Fprintln(w, "    -----------\t\t------------------\t-------------------")
+	fmt.Fprintln(w, "    Fragment ID\t\tType\t\tGlobal Start Offset\tPhysical Block Offset")
+	fmt.Fprintln(w, "    -----------\t\t----\t\t------------------\t-------------------")
 
 	fragIndex := 0
 	for _, frag := range manifestObj.Fragments {
-		if frag.Type == types.FragmentType_SeekableStream {
+		if frag.Type == types.FragmentType_SeekableStream || frag.Type == types.FragmentType_AtomicFile {
 			physicalOffset := "<not found>"
 			if fragIndex < len(dataBlocks) {
 				physicalOffset = fmt.Sprintf("%d", dataBlocks[fragIndex].offset)
 			}
-			fmt.Fprintf(w, "    %s\t\t%d\t\t%s\n", frag.ID, frag.GlobalStartOffset, physicalOffset)
+			fmt.Fprintf(w, "    %s\t\t%s\t\t%d\t\t%s\n", frag.ID, frag.Type, frag.GlobalStartOffset, physicalOffset)
 			fragIndex++
 		}
 	}
 	w.Flush()
+
 }
 
 // scanForManifestWithOffset 扫描文件，返回 Manifest 的偏移量和数据

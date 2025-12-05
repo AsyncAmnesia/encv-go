@@ -15,6 +15,7 @@ import (
 	"github.com/Soltus/encv-go/internal/types"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
+	"github.com/Soltus/encv-go/internal/v2/reader"
 )
 
 // handleStreamRequest 处理 /stream?file=... 格式的请求
@@ -66,6 +67,7 @@ func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
 
 // serveEncryptedFile 是一个全新的、统一的处理函数，用于处理所有加密容器
 // 它会自动判断容器类型（可寻址/不可寻址）并采取最优策略
+
 func (s *Server) serveEncryptedFile(w http.ResponseWriter, r *http.Request, fullPath string, isStreamEndpoint bool) {
 	log.Printf("INFO: Serving encrypted file: %s (isStreamEndpoint: %v)", fullPath, isStreamEndpoint)
 
@@ -81,7 +83,7 @@ func (s *Server) serveEncryptedFile(w http.ResponseWriter, r *http.Request, full
 	}
 	p.Intialize(ctx)
 	namer := p.GetChunkNamer()
-	decryptReader, index, originalSize, err := s.readerService.GetSeekableDecryptReader(*cfg, fullPath, cfg.Password, namer)
+	decryptReader, index, originalSize, err := s.readerService.GetDecryptReader(*cfg, fullPath, cfg.Password, namer)
 	if err != nil {
 		log.Printf("ERROR: Failed to create decrypt reader for %s: %v", fullPath, err)
 		http.Error(w, "Could not initialize decryption: "+err.Error(), http.StatusInternalServerError)
@@ -89,18 +91,19 @@ func (s *Server) serveEncryptedFile(w http.ResponseWriter, r *http.Request, full
 	}
 	defer decryptReader.Close()
 
-	// 2. 【智能判断】检查解密器是否支持 Seek
-	_, isSeekable := decryptReader.(io.Seeker)
+	// 【关键修复】使用新的扩展接口进行类型断言
+	// 现在，只有真正可寻址的 reader 才能被断言为 SeekableDecryptReader
+	seeker, isSeekable := decryptReader.(reader.SeekableDecryptReader)
 
 	originalFilename := index.GetOriginalFilename()
 	w.Header().Set("Content-Type", utils.GetContentType(filepath.Ext(originalFilename)))
-
 	// 【关键修复】统一使用 inline，让浏览器决定行为
 	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", originalFilename))
 
 	// 3. 【分支处理】根据是否可寻址采取不同策略
 	if isSeekable {
-		s.handleSeekableContent(w, r, decryptReader, originalSize, originalFilename)
+		// seeker 已经是 SeekableDecryptReader 类型，可以直接使用
+		s.handleSeekableContent(w, r, seeker, originalSize, originalFilename)
 	} else {
 		s.handleSequentialContent(w, decryptReader, originalSize)
 	}
@@ -139,7 +142,7 @@ func (s *Server) handleSeekableContent(w http.ResponseWriter, r *http.Request, s
 
 	_, err := seeker.Seek(start, io.SeekStart)
 	if err != nil {
-		log.Printf("ERROR: Failed to seek to position %d: %v", start, err)
+		log.Printf("ERROR: [handleSeekableContent] Failed to seek to position %d: %v", start, err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}

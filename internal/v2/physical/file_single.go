@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/types"
 	"github.com/Soltus/encv-go/internal/v2/writer"
 )
@@ -20,10 +19,10 @@ func NewSinglePhysicalPacker() *SinglePhysicalPacker {
 }
 
 // Pack 实现 PhysicalPacker 接口
-func (p *SinglePhysicalPacker) Pack(data io.Reader, manifest *types.Manifest_v2, outputDir, baseName string, namer namer.ChunkNamer, startIdx int) (string, error) {
-	// 1. 【路径修复】正确构造最终文件路径
-	finalChunkPath := filepath.Join(outputDir, namer.GenerateMainChunkName(baseName))
-	tempPath := finalChunkPath + ".tmp"
+// SinglePhysicalPacker namer 和 startIdx 参数暂时无用，保留接口兼容性
+func (p *SinglePhysicalPacker) Pack(data io.Reader, manifest *types.Manifest_v2, req *PackRequest) (string, error) {
+	outputPath := filepath.Join(req.OutputDir, req.FinalFileName)
+	tempPath := outputPath + ".tmp"
 
 	// 1. 创建全能的 writer
 	tempWriter, err := writer.NewSingleFileContainerWriter(tempPath)
@@ -37,35 +36,35 @@ func (p *SinglePhysicalPacker) Pack(data io.Reader, manifest *types.Manifest_v2,
 
 	// 2. 遍历并写入 fragments
 	for i, frag := range manifest.Fragments {
-		if frag.Type != types.FragmentType_SeekableStream {
+		if frag.Type != types.FragmentType_AtomicFile {
 			continue
 		}
 		chunkData := make([]byte, frag.Length)
 		if _, err := io.ReadFull(data, chunkData); err != nil {
-			return "", fmt.Errorf("failed to read data for fragment %d: %w", i, err)
+			return tempPath, fmt.Errorf("failed to read data for fragment %d: %w", i, err)
 		}
 		if err := tempWriter.WriteFragment(&frag, chunkData); err != nil {
-			return "", fmt.Errorf("failed to write fragment %d: %w", i, err)
+			return tempPath, fmt.Errorf("failed to write fragment %d: %w", i, err)
 		}
 	}
 
 	// 3. 写入 Manifest
 	if err := tempWriter.WriteManifest(manifest); err != nil {
-		return "", fmt.Errorf("failed to write manifest: %w", err)
+		return tempPath, fmt.Errorf("failed to write manifest: %w", err)
 	}
 
 	// 4. 关闭 writer (它会自动写入 Footer)
 	if err := tempWriter.Close(); err != nil {
-		return "", fmt.Errorf("failed to close writer (write footer): %w", err)
+		return tempPath, fmt.Errorf("failed to close writer (write footer): %w", err)
 	}
 
 	// 5. 原子重命名
-	if err := os.Rename(tempPath, finalChunkPath); err != nil {
-		return "", fmt.Errorf("failed to atomically rename temp file to final file: %w", err)
+	if err := os.Rename(tempPath, outputPath); err != nil {
+		return tempPath, fmt.Errorf("failed to atomically rename temp file to final file: %w", err)
 	}
 
-	fmt.Printf("✅ [SinglePhysicalPacker] Packed to: %s\n", finalChunkPath)
-	return finalChunkPath, nil
+	fmt.Printf("✅ [SinglePhysicalPacker] Packed to: %s\n", outputPath)
+	return outputPath, nil
 }
 
 // 单一文件物理解包器

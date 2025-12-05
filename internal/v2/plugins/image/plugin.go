@@ -1,6 +1,6 @@
-// internal/v2/plugins/video/plugin.go
+// internal/v2/plugins/image/plugin.go
 
-package video
+package image
 
 import (
 	"context"
@@ -23,9 +23,9 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
-type VideoPlugin struct {
+type ImagePlugin struct {
 	cfg              *config.Config
-	index            types.VideoIndex
+	index            types.ImageIndex
 	outputDir        string
 	inputPath        string
 	inputRootDir     string
@@ -33,46 +33,33 @@ type VideoPlugin struct {
 	salt             []byte
 	iv               []byte
 	baseNamer        namer.BaseNamer           // 注入容器命名器
-	chunkNamer       namer.ChunkNamer          // 注入分片命名器
 	containerManager *service.ContainerManager // 注入 ContainerManager
 	physicalPacker   physical.PhysicalPacker
 }
 
 // Plugin 接口实现
-func (p *VideoPlugin) Intialize(ctx context.Context) error {
+func (p *ImagePlugin) Intialize(ctx context.Context) error {
 	p.cfg = config.FromContext(ctx)
 	p.containerManager = service.NewContainerManager()
 	p.baseNamer = namer.NewDefaultBaseNamer()
-	mainChunkExt := p.cfg.GetVideoEncExtension()
-	p.chunkNamer = namer.NewPaddedNamer(mainChunkExt, p.baseNamer, 4) // 补零到4位
-	if p.cfg.IsSccgvChunkingEnabled() {
-		fmt.Printf("INFO: [PLUGIN] Physical chunking enabled. Size: %d MB\n", p.cfg.GetSccgvChunkSizeMB())
-		p.physicalPacker = physical.NewFileChunkerPhysicalPacker(p.cfg.GetSccgvChunkSizeBytes(), p.chunkNamer)
-	} else {
-		fmt.Printf("INFO: [PLUGIN] Physical chunking disabled.\n")
-		p.physicalPacker = physical.NewSinglePhysicalPacker() // NoOpPacker 不需要 namer
-	}
+	p.physicalPacker = physical.NewSinglePhysicalPacker() // NoOpPacker 不需要 namer
 	return nil
 }
 
 // Plugin 接口实现
 //
 //	返回在 Initialize 阶段已经配置好的 chunkNamer
-func (p *VideoPlugin) GetChunkNamer() namer.ChunkNamer {
-	return p.chunkNamer
+func (p *ImagePlugin) GetChunkNamer() namer.ChunkNamer {
+	return nil
 }
 
 // Plugin 接口实现
-func (p *VideoPlugin) SupportedMimePrefixes() []string {
-	return []string{"video/", "application/vnd.rn-realmedia-vbr", "application/vnd.apple.mpegurl"}
+func (p *ImagePlugin) SupportedMimePrefixes() []string {
+	return []string{"image/"}
 }
 
 // Plugin 接口实现
-func (p *VideoPlugin) ShouldProcess(inputPath string) bool {
-	ext := strings.ToLower(filepath.Ext(inputPath))
-	if ext == ".srt" || ext == ".ass" || ext == ".vtt" {
-		return false
-	}
+func (p *ImagePlugin) ShouldProcess(inputPath string) bool {
 	return true
 }
 
@@ -80,40 +67,40 @@ func (p *VideoPlugin) ShouldProcess(inputPath string) bool {
 //
 // 判断此插件是否能解密给定的容器文件。
 // 【关键修复】不再依赖不可靠的文件扩展名，而是通过读取容器元数据来判断其内容类型。
-func (p *VideoPlugin) CanDecrypt(containerPath string) bool {
+func (p *ImagePlugin) CanDecrypt(containerPath string) bool {
 	kind, err := detector.DetectIndexKind(containerPath)
 	if err != nil {
 		// 如果无法判断类型（例如，文件损坏或不是 ENCV 容器），则认为不能解密
 		// 这里的日志可以帮助调试
-		// fmt.Printf("DEBUG: [VideoPlugin.CanDecrypt] Failed to detect kind for '%s': %v\n", containerPath, err)
+		// fmt.Printf("DEBUG: [ImagePlugin.CanDecrypt] Failed to detect kind for '%s': %v\n", containerPath, err)
 		return false
 	}
-	return kind == types.IndexKindVideo
+	return kind == types.IndexKindImage
 }
 
 // Plugin 接口实现
-func (p *VideoPlugin) GetContainerExtension() string {
-	return p.cfg.GetVideoEncExtension()
+func (p *ImagePlugin) GetContainerExtension() string {
+	return p.cfg.GetImageEncExtension()
 }
 
 // 【新增方法】实现 plugins.Plugin 接口
-func (p *VideoPlugin) GetMetadataExtractor() pluginInterfaces.MetadataExtractor {
-	return &VideoMetadataExtractor{}
+func (p *ImagePlugin) GetMetadataExtractor() pluginInterfaces.MetadataExtractor {
+	return &ImageMetadataExtractor{}
 }
 
 // 【新增方法】实现 plugins.Plugin 接口
-func (p *VideoPlugin) GetContentPreprocessor() pluginInterfaces.ContentPreprocessor {
-	return &VideoContentPreprocessor{}
+func (p *ImagePlugin) GetContentPreprocessor() pluginInterfaces.ContentPreprocessor {
+	return &ImageContentPreprocessor{}
 }
 
 // --- 加密逻辑 ---
 
 // Plugin 接口实现
 // 在加密前处理字幕，并更新 Index
-func (p *VideoPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRootDir, outputDir string) error {
-	vIndex, ok := index.(*types.VideoIndex)
+func (p *ImagePlugin) PreEncryptProcessor(index types.Index, inputPath, inputRootDir, outputDir string) error {
+	vIndex, ok := index.(*types.ImageIndex)
 	if !ok {
-		return fmt.Errorf("video plugin received a non-video index")
+		return fmt.Errorf("image plugin received a non-image index")
 	}
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return err
@@ -122,16 +109,12 @@ func (p *VideoPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRoo
 	p.inputPath = inputPath
 	p.inputRootDir = inputRootDir
 	p.outputDir = outputDir
-
-	encryptedBaseName := p.baseNamer.GenerateEncryptedBaseName(p.index.OriginalFilename)
-
-	// 调用字幕处理逻辑，它会修改 p.index.SubtitleTrack
-	return HandleSubtitlesForEncryption(p.cfg, &p.index, outputDir, encryptedBaseName)
+	return nil
 }
 
 // Plugin 接口实现
 // 执行核心的加密工作，并调用 Packer
-func (p *VideoPlugin) Encrypt(dataReader io.Reader) error {
+func (p *ImagePlugin) Encrypt(dataReader io.Reader) error {
 	guardKey := fmt.Sprintf("%s|%s", p.inputPath, p.outputDir)
 
 	return utils.Do(guardKey, func() error {
@@ -147,17 +130,17 @@ func (p *VideoPlugin) Encrypt(dataReader io.Reader) error {
 
 		fmt.Printf("INFO: [PLUGIN] Encrypted to temporary file: %s\n", tempEncPath)
 
-		fmt.Printf("✅ [VIDEO] Encrypted successfully.\n")
+		fmt.Printf("✅ [imgae] Encrypted successfully.\n")
 		return nil
 	})
 }
 
 // Plugin 接口实现
 // 视频插件在加密后处理器
-func (p *VideoPlugin) PostEncryptProcessor() error {
+func (p *ImagePlugin) PostEncryptProcessor() error {
 	// --- 【关键修复】在这里，根据原始文件大小计算逻辑分片 ---
-	logicalFragmentSize := fragment.CalculateFragmentSize(p.index.OriginalFileSize, p.cfg.GetSccgvChunkSizeBytes())
-	logicalFragments, err := fragment.CreateLogicalFragmentsFromSize(p.index.OriginalFileSize, logicalFragmentSize, types.FragmentType_SeekableStream)
+	logicalFragmentSize := fragment.CalculateFragmentSize(p.index.OriginalFileSize, 0)
+	logicalFragments, err := fragment.CreateLogicalFragmentsFromSize(p.index.OriginalFileSize, logicalFragmentSize, types.FragmentType_AtomicFile)
 	if err != nil {
 		return fmt.Errorf("failed to create logical fragments from size: %w", err)
 	}
@@ -173,17 +156,8 @@ func (p *VideoPlugin) PostEncryptProcessor() error {
 
 	// --- 5. 创建 Packer 并执行打包 ---
 	encryptedBaseName := p.baseNamer.GenerateEncryptedBaseName(p.index.OriginalFilename)
-	finalFilename := p.chunkNamer.GenerateMainChunkName(encryptedBaseName)
-	finalBaseName := strings.TrimSuffix(finalFilename, p.cfg.GetVideoEncExtension())
-	// 决定打包策略和起始索引
-	isLightweight := p.cfg.IsLightweightMainChunkEnabled()
-	var startIdx int
-	if isLightweight {
-		startIdx = 1
-	} else {
-		startIdx = 0
-	}
-	packer := NewVideoPacker(p.physicalPacker, p.chunkNamer)
+	finalBaseName := strings.TrimSuffix(encryptedBaseName, p.cfg.GetImageEncExtension())
+	packer := NewImagePacker(p.physicalPacker)
 	packReq := &physical.PackRequest{
 		BaseName:            finalBaseName,
 		OutputDir:           p.outputDir,
@@ -192,8 +166,7 @@ func (p *VideoPlugin) PostEncryptProcessor() error {
 		Salt:                p.salt,
 		IV:                  p.iv,
 		LogicalFragments:    logicalFragments, // 预先计算好
-		Namer:               p.chunkNamer,
-		StartIdx:            startIdx,
+		FinalFileName:       encryptedBaseName + p.cfg.GetImageEncExtension(),
 	}
 
 	if err := packer.Pack(p.cfg, packReq); err != nil {
@@ -202,7 +175,7 @@ func (p *VideoPlugin) PostEncryptProcessor() error {
 	}
 
 	encryptedDataReader.Close() // Packer 使用完毕后关闭
-	fmt.Printf("✅ [VIDEO] packed successfully.\n")
+	fmt.Printf("✅ [imgae] packed successfully.\n")
 	return nil
 }
 
@@ -210,23 +183,23 @@ func (p *VideoPlugin) PostEncryptProcessor() error {
 
 // Plugin 接口实现
 // 视频插件在解密前无需额外操作
-func (p *VideoPlugin) PreDecryptProcessor(containerPath, outputDir string) error {
+func (p *ImagePlugin) PreDecryptProcessor(containerPath, outputDir string) error {
 	// 视频插件在此阶段无需操作
 	return nil
 }
 
 // Plugin 接口实现
-func (p *VideoPlugin) Decrypt(containerPath, outputDir string) error {
-	fmt.Printf("DEBUG: [VideoPlugin.Decrypt] Starting decryption for: %s\n", containerPath)
+func (p *ImagePlugin) Decrypt(containerPath, outputDir string) error {
+	fmt.Printf("DEBUG: [ImagePlugin.Decrypt] Starting decryption for: %s\n", containerPath)
 	p.outputDir = outputDir
 
 	// --- 1. 【关键】通过 ContainerManager 获取一个可读的容器路径 ---
 	// ContainerManager 会智能地决定是使用原始文件还是重建文件
-	readablePath, err := p.containerManager.GetReadablePath(containerPath, p.chunkNamer)
+	readablePath, err := p.containerManager.GetReadablePath(containerPath, nil)
 	if err != nil {
 		return fmt.Errorf("failed to get readable path from container manager: %w", err)
 	}
-	fmt.Printf("DEBUG: [VideoPlugin.Decrypt] Using readable path: %s\n", readablePath)
+	fmt.Printf("DEBUG: [ImagePlugin.Decrypt] Using readable path: %s\n", readablePath)
 
 	// --- 2. 使用统一路径创建 reader 工厂 ---
 	factory, err := reader.NewDecryptReaderFactory(readablePath, p.cfg.Password)
@@ -234,20 +207,26 @@ func (p *VideoPlugin) Decrypt(containerPath, outputDir string) error {
 		return fmt.Errorf("failed to create reader factory for '%s': %w", readablePath, err)
 	}
 	defer factory.Close() // 【关键】这个 Close 会同时清理物理临时文件（如果存在）
-	fmt.Printf("DEBUG: [VideoPlugin.Decrypt] Reader factory created successfully.\n")
+	fmt.Printf("DEBUG: [ImagePlugin.Decrypt] Reader factory created successfully.\n")
 
 	// --- 3. 使用工厂创建解密流并写入文件 ---
 	decryptedReader, err := factory.NewDecryptReader(*p.cfg)
 	if err != nil {
-		return fmt.Errorf("[VideoPlugin] failed to create decrypt reader: %w", err)
+		return fmt.Errorf("[ImagePlugin] failed to create decrypt reader: %w", err)
 	}
 	defer decryptedReader.Close()
+	_, isSeekable := decryptedReader.(io.Seeker)
+	if isSeekable {
+		fmt.Printf("INFO: [ImagePlugin.Decrypt] Container is SEEKABLE. Decrypting full content.\n")
+	} else {
+		fmt.Printf("INFO: [ImagePlugin.Decrypt] Container is ATOMIC. Decrypting full content.\n")
+	}
 
 	// 从 KVI 获取原始文件名
 	index := factory.GetIndex()
-	vIndex, ok := index.(*types.VideoIndex)
+	vIndex, ok := index.(*types.ImageIndex)
 	if !ok {
-		return fmt.Errorf("container is not a video container")
+		return fmt.Errorf("container is not a imgae container")
 	}
 
 	outputPath := filepath.Join(outputDir, vIndex.GetOriginalFilename())
@@ -258,24 +237,18 @@ func (p *VideoPlugin) Decrypt(containerPath, outputDir string) error {
 	defer outputFile.Close()
 
 	if _, err := io.Copy(outputFile, decryptedReader); err != nil {
-		return fmt.Errorf("failed to write decrypted video stream: %w", err)
+		return fmt.Errorf("failed to write decrypted imgae stream: %w", err)
 	}
 
 	p.index = *vIndex
 
-	fmt.Printf("✅ [VIDEO] Decrypted to: %s\n", outputPath)
+	fmt.Printf("✅ [imgae] Decrypted to: %s\n", outputPath)
 	return nil
 }
 
 // Plugin 接口实现
 // 在解密后处理字幕还原
-func (p *VideoPlugin) PostDecryptProcessor(containerPath string) error {
-
-	containerDir := filepath.Dir(containerPath)
-	// 注意：这里的 vIndex.SubtitleTrack 应该在 Decrypt 方法中被正确设置
-	if err := RestoreSubtitlesForDecryption(&p.index, containerDir, p.outputDir); err != nil {
-		return fmt.Errorf("failed to restore subtitles: %w", err)
-	}
+func (p *ImagePlugin) PostDecryptProcessor(containerPath string) error {
 
 	return nil
 }

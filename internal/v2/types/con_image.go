@@ -1,17 +1,39 @@
 package types
 
+import (
+	"time"
+
+	"github.com/dsoprea/go-exif/v3"
+)
+
 // ImageIndex 是解密图像所需的所有元数据的容器
 type ImageIndex struct {
-	ImageID          string         `json:"image_id"`
-	OriginalFileSize int64          `json:"original_file_size"`
-	MimeType         string         `json:"mime_type"`
-	Format           string         `json:"format"`
-	Encryption       EncryptionInfo `json:"encryption"`
-	OriginalFilename string         `json:"original_filename"`
-	OriginalFileMD5  string         `json:"original_file_md5"`
-	EncryptedFileMD5 string         `json:"encrypted_file_md5"`
-	Width            int            `json:"width"`
-	Height           int            `json:"height"`
+	ImageID           string         `json:"image_id"`
+	OriginalFileSize  int64          `json:"original_file_size"`
+	MimeType          string         `json:"mime_type"`
+	Format            string         `json:"format"`
+	Encryption        EncryptionInfo `json:"encryption"`
+	OriginalFilename  string         `json:"original_filename"`
+	OriginalInputPath string         `json:"originalInputPath"`
+	OriginalFileMD5   string         `json:"original_file_md5"`
+	EncryptedFileMD5  string         `json:"encrypted_file_md5"`
+
+	// --- 图片特有字段 ---
+	Make             string     // 相机制造商
+	Model            string     // 相机型号
+	DateTimeOriginal *time.Time // 拍摄时间，使用指针以表示可能不存在
+	Software         string     // 处理软件
+	Width            int        // 图片宽度
+	Height           int        // 图片高度
+	Orientation      int        // 旋转方向
+
+	// --- GPS 信息 ---
+	GPSLatitude  *exif.GpsDegrees // 纬度
+	GPSLongitude *exif.GpsDegrees // 经度
+
+	// --- 其他 EXIF 标签 ---
+	// 使用 map 存储未能明确结构化的其他所有 EXIF 标签，提供最大灵活性
+	ExifTags map[string]interface{}
 }
 
 // 【新增】实现 Index 接口
@@ -25,4 +47,23 @@ func (i *ImageIndex) UpdateCommonInfo(encInfo EncryptionInfo, originalFilename, 
 	i.Encryption = encInfo
 	i.OriginalFilename = originalFilename
 	i.EncryptedFileMD5 = encryptedFileMD5
+}
+
+// 视频容器专用的 KVI
+type ImageKVI_v2 struct {
+	KVI_v2
+	ImageIndex *ImageIndex `json:"image_index"`
+}
+
+func (v ImageKVI_v2) GetKind() IndexKind {
+	return IndexKindImage
+}
+
+// 【关键新增】实现 KVIProvider 接口
+func (v ImageKVI_v2) GetEncryptionInfo() KVI_v2 {
+	return v.KVI_v2
+}
+
+func (v ImageKVI_v2) GetIndex() Index {
+	return v.ImageIndex
 }

@@ -63,13 +63,14 @@ func DetectContainer(filePath string) (*types.ContainerDescriptor, error) {
 	}
 	fmt.Printf("DEBUG: [Detector] Manifest read successfully. Contains %d fragments.\n", len(manifest.Fragments))
 
+	// 遍历所有 fragments，只要有一个 SeekableStream，就认为容器是可寻址的
 	for _, frag := range manifest.Fragments {
 		if frag.Type == types.FragmentType_SeekableStream {
 			fmt.Printf("DEBUG: [Detector] Detection successful. Container is SEEKABLE.\n")
 			return &types.ContainerDescriptor{FilePath: filePath, IsSeekable: true}, nil
 		}
 	}
-
+	// 如果没有 SeekableStream，那么它就是原子的（或者为空，这也是原子的）
 	fmt.Printf("DEBUG: [Detector] Detection successful. Container is NOT SEEKABLE (atomic).\n")
 	return &types.ContainerDescriptor{FilePath: filePath, IsSeekable: false}, nil
 }

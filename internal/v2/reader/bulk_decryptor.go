@@ -58,7 +58,7 @@ func (bd *BulkDecryptor) DecryptToFile(ctx context.Context, outputPath string) e
 
 	// 4. 按顺序处理所有 Fragment，无抽象开销
 	for _, frag := range manifest.Fragments {
-		if frag.Type != types.FragmentType_SeekableStream {
+		if frag.Type == types.FragmentType_Metadata {
 			continue
 		}
 

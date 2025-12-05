@@ -7,13 +7,18 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
-// DecryptReader 是所有解密流的统一接口。
-// 它组合了基本的读取、寻址和关闭能力。
-// 对于不支持寻址的容器，其 Seek 方法应返回 ErrNotSupported。
+// DecryptReader 是所有解密器的基础接口
+// 它只包含所有解密器都必须具备的能力：读取和关闭
 type DecryptReader interface {
 	io.Reader
-	io.Seeker
 	io.Closer
+}
+
+// SeekableDecryptReader 是一个扩展接口，用于可寻址的解密器
+// 它在基础接口之上增加了寻址能力
+type SeekableDecryptReader interface {
+	DecryptReader
+	io.Seeker
 }
 
 // ErrOperationNotSupported 表示当前操作（如 Seek）不被该类型的读取器支持。

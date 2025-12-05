@@ -142,10 +142,12 @@ func NewKVIProviderFromManifest(manifest *Manifest_v2) (KVIProvider, error) {
 			return nil, fmt.Errorf("failed to unmarshal KVI as VideoKVI_v2: %w", err)
 		}
 		return videoKVI, nil
-	// case IndexKindImage:
-	//     var imageKVI ImageKVI_v2
-	//     if err := json.Unmarshal(manifest.KVI, &imageKVI); err != nil { ... }
-	//     return imageKVI, nil
+	case IndexKindImage:
+		var imageKVI ImageKVI_v2
+		if err := json.Unmarshal(manifest.KVI, &imageKVI); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal KVI as VideoKVI_v2: %w", err)
+		}
+		return imageKVI, nil
 	default:
 		return nil, fmt.Errorf("unsupported or unknown index kind: %s", manifest.Kind)
 	}

@@ -88,8 +88,3 @@ func (r *SequentialDecryptReader) Close() error {
 	r.currentFragReader = nil
 	return nil
 }
-
-// 【直接复用】源自旧代码的友好错误信息
-func (r *SequentialDecryptReader) Seek(offset int64, whence int) (int64, error) {
-	return 0, fmt.Errorf("seek operation is not supported on atomic (non-seekable) containers")
-}
