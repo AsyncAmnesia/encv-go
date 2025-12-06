@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Soltus/encv-go/internal/types"
+	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
 // Config 是应用程序的顶层配置结构，包含所有子模块的配置。
@@ -27,7 +27,7 @@ type Config struct {
 	// BinExtGroup 可以自定义加密容器文件的扩展名。
 	BinExtGroup types.BinExtGroup `json:"bin_ext_group"`
 	// SccgvSettings SCCGV (视频分片) 相关的设置。
-	SccgvSettings types.SccgvSettings       `json:"sccgv_settings"`
+	SccgvSettings SccgvSettings             `json:"sccgv_settings"`
 	Server        types.HttpServer          `json:"server"`
 	Webdav        types.WebdavServer        `json:"webdav"`
 	Proxy         types.OpenlistProxyServer `json:"proxy"`
@@ -62,13 +62,14 @@ func DefaultConfig() *Config {
 		OutputPath:      "./encrypted",
 		TrackExtensions: []string{".ass", ".srt", ".dm.ass"},
 		BinExtGroup: types.BinExtGroup{
-			Text:   "sccgt",
-			Image:  "sccgi",
-			Audio:  "sccga",
-			Video:  "sccgv",
-			Iframe: "sccgf",
+			Text:  "sccgt",
+			Image: "sccgi",
+			Audio: "sccga",
+			Video: "sccgv",
+			WPS:   "sccgwps",
+			PDF:   "sccgpdf",
 		},
-		SccgvSettings: types.SccgvSettings{
+		SccgvSettings: SccgvSettings{
 			ChunkSizeMB: 0, // 0 表示不启用分片
 		},
 		Server: types.HttpServer{Port: 1999, Dir: "./"},
@@ -113,11 +114,12 @@ func Load(configPath string) (*Config, error) {
 // 返回所有已知的容器扩展名（带点号）
 func (c *Config) GetAllContainerExtensions() []string {
 	return []string{
-		"." + c.BinExtGroup.Video,  // .sccgv
-		"." + c.BinExtGroup.Text,   // .sccgt
-		"." + c.BinExtGroup.Audio,  // .sccga
-		"." + c.BinExtGroup.Image,  // .sccgi
-		"." + c.BinExtGroup.Iframe, // .sccgf
+		"." + c.BinExtGroup.Video, // .sccgv
+		"." + c.BinExtGroup.Text,  // .sccgt
+		"." + c.BinExtGroup.Audio, // .sccga
+		"." + c.BinExtGroup.Image, // .sccgi
+		"." + c.BinExtGroup.WPS,   // .sccgwps
+		"." + c.BinExtGroup.PDF,   // .sccgpdf
 	}
 }
 

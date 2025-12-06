@@ -38,19 +38,9 @@ func getExtensionsFromConfig() ([]string, error) {
 		return nil, fmt.Errorf("无法加载配置文件 '%s': %w", configPath, err)
 	}
 
-	// 从 BinExtGroup 结构体中提取扩展名，并加上 '.'
-	group := cfg.BinExtGroup
-	extensions := []string{
-		"." + group.Text,
-		"." + group.Image,
-		"." + group.Audio,
-		"." + group.Video,
-		"." + group.Iframe,
-	}
-
 	// 过滤掉可能的空值
 	var finalExtensions []string
-	for _, ext := range extensions {
+	for _, ext := range cfg.GetAllContainerExtensions() {
 		if ext != "." {
 			finalExtensions = append(finalExtensions, ext)
 		}

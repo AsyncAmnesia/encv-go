@@ -18,7 +18,6 @@ import (
 	"syscall"
 
 	"github.com/Soltus/encv-go/internal/config"
-	"github.com/Soltus/encv-go/internal/container"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/pkg/encv"
 )
@@ -619,19 +618,6 @@ func main() {
 		}
 		if err := UnregisterFileAssociations(); err != nil {
 			log.Fatalf("Failed to unregister file associations: %v", err)
-		}
-
-	case "debug":
-		if len(os.Args) < 2 {
-			fmt.Println("Usage: encv.exe debug <path_to_sub_chunk_file>")
-			os.Exit(1)
-		}
-		subChunkPath := os.Args[2]
-		// 我们需要子分片的魔法数字
-		subMagic := container.MagicVideoSubChunk
-		err := debugSubChunkHeader(subChunkPath, subMagic)
-		if err != nil {
-			log.Fatalf("Failed to debug sub-chunk header: %v", err)
 		}
 
 	default:

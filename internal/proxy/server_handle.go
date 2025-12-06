@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -126,4 +127,32 @@ func (p *Proxy) handleSequentialContent(w http.ResponseWriter, sequentialReader 
 	if _, err := io.Copy(w, sequentialReader); err != nil {
 		log.Printf("WARN: [Proxy] Stream to client was interrupted or failed: %v", err)
 	}
+}
+
+// serveEncryptedContainerFromStream 通过一个临时服务器将流适配给 RemoteDecryptReaderFactory
+func (p *Proxy) serveEncryptedContainerFromStream(w http.ResponseWriter, r *http.Request, encryptedStream io.ReadCloser, identifier string) {
+	log.Printf("INFO: [Proxy] Serving container from stream for: %s", identifier)
+
+	// 1. 【核心技巧】创建一个临时的、内存中的 HTTP 服务器
+	// 这个服务器只有一个作用：将 encryptedStream 流式传输出去
+	tempServer := httptest.NewServer(http.HandlerFunc(func(tempW http.ResponseWriter, tempR *http.Request) {
+		// 将上游的流直接写入到临时服务器的响应中
+		// 注意：这里我们不需要处理 Range 请求，因为 RemoteEncryptedContainerReader 会自己处理
+		_, err := io.Copy(tempW, encryptedStream)
+		if err != nil {
+			log.Printf("WARN: [Proxy] Temporary server stream copy failed: %v", err)
+		}
+	}))
+	defer tempServer.Close()
+	defer encryptedStream.Close() // 确保原始流最终被关闭
+
+	// 2. 获取临时服务器的 URL，这就是我们需要的 "containerURL"
+	containerURL := tempServer.URL
+
+	log.Printf("DEBUG: [Proxy] Created temporary server for stream at: %s", containerURL)
+
+	// 3. 【关键】复用您现有的、完善的 serveEncryptedContainer 函数
+	// 我们传递临时服务器的 URL、空 headers 和原始的 durl 作为路径标识符
+	// serveEncryptedContainer 内部会调用 NewRemoteDecryptReaderFactory，一切都按部就班
+	p.serveEncryptedContainer(w, r, containerURL, nil, identifier)
 }

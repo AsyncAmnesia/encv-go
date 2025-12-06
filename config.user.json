@@ -21,7 +21,8 @@
     "image": "sccgi",
     "audio": "sccga",
     "video": "sccgv",
-    "iframe": "sccgf"
+    "wps": "sccgwps",
+    "pdf": "sccgpdf"
   },
   "sccgv_settings": { "chunk_size": 100 }
 }

@@ -1,15 +1,12 @@
 package utils
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/Soltus/encv-go/internal/container"
 )
 
 // 获取文件大小
@@ -113,20 +110,20 @@ func GenerateEncryptedFilename(originalFilename, containerExt string) string {
 
 // IsEncryptedContainer 检查文件是否为有效的 ENCV 主容器文件。
 // 它会正确地忽略子分片。
-func IsEncryptedContainer(ctx context.Context, filePath string) (bool, error) {
-	detectedType, err := container.DetectMainOrSubContainerType(ctx, filePath)
-	if err != nil {
-		// 如果不是我们的文件，返回 false 和 nil，而不是错误，以便调用者可以静默跳过
-		if strings.Contains(err.Error(), "not a recognized") {
-			return false, nil
-		}
-		// 其他读取错误则返回
-		return false, err
-	}
+// func IsEncryptedContainer(ctx context.Context, filePath string) (bool, error) {
+// 	detectedType, err := container.DetectMainOrSubContainerType(ctx, filePath)
+// 	if err != nil {
+// 		// 如果不是我们的文件，返回 false 和 nil，而不是错误，以便调用者可以静默跳过
+// 		if strings.Contains(err.Error(), "not a recognized") {
+// 			return false, nil
+// 		}
+// 		// 其他读取错误则返回
+// 		return false, err
+// 	}
 
-	// 只有当检测到的是主容器类型（而不是 "sub_chunk"）时，才返回 true
-	return detectedType != container.SubChunkType, nil
-}
+// 	// 只有当检测到的是主容器类型（而不是 "sub_chunk"）时，才返回 true
+// 	return detectedType != container.SubChunkType, nil
+// }
 
 // CreateFileForOutput 安全地创建一个用于输出的文件。
 // 如果 force 为 true，它将覆盖已存在的文件。

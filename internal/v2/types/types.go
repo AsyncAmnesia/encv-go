@@ -56,8 +56,10 @@ type BinExtGroup struct {
 	Audio string `json:"audio"`
 	// 视频类加密容器的扩展名。
 	Video string `json:"video"`
-	// OpenList iframe 类加密容器的扩展名。
-	Iframe string `json:"iframe"`
+	//word ppt excel 类加密容器的扩展名。
+	WPS string `json:"wps"`
+	// pdf 类加密容器的扩展名。
+	PDF string `json:"pdf"`
 }
 
 // --- WebDAV 服务器设置 ---

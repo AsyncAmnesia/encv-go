@@ -6,13 +6,17 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/middleware"
+	"github.com/Soltus/encv-go/internal/utils"
+	"github.com/Soltus/encv-go/internal/v2/container/manifest"
 	"github.com/Soltus/encv-go/internal/v2/openlist"
 	"github.com/Soltus/encv-go/internal/v2/reader"
+	"github.com/Soltus/encv-go/internal/web"
 )
 
 // 【新增】Proxy 结构体
@@ -36,6 +40,7 @@ func NewProxy(ctx context.Context) *Proxy {
 func (p *Proxy) StartServer() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", p.handleRequest)
+	mux.Handle("/_preview/", http.StripPrefix("/_preview/", web.PreviewHandler()))
 
 	// 【关键】使用中间件链，CORS 在最外层
 	// 1. WithConfig 注入配置到 context
@@ -49,8 +54,19 @@ func (p *Proxy) StartServer() {
 	}
 }
 
+// isEncvContainerFromBytes 从字节数组中判断是否为 ENCV 容器
+func isEncvContainerFromBytes(data []byte) (bool, error) {
+	if len(data) < 32 {
+		return false, nil // 文件太小，不可能是 ENCV 容器
+	}
+	// 读取文件末尾的 32 字节
+	footerData := data[len(data)-32:]
+	// 尝试解析 Footer，如果能成功，就是 ENCV 容器
+	_, err := manifest.ParseFooterFromBytes(footerData)
+	return err == nil, nil
+}
+
 // handleRequest 创建并返回 HTTP 处理函数
-// 【关键修改】handleRequest 现在是一个方法，并且不再接收 ctx
 func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// 【关键】从请求的 context 中获取配置，因为中间件已经注入了
 	cfg := config.FromContext(r.Context())
@@ -63,6 +79,72 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Missing 'path' parameter", http.StatusBadRequest)
 		return
 	}
+	// --- 情况 1: 请求解密 ---
+	if path == "/decrypt" {
+		durl := r.URL.Query().Get("file")
+		if durl == "" {
+			http.Error(w, "Bad Request: 'file' query parameter is missing", http.StatusBadRequest)
+			return
+		}
+		log.Printf("-> [Proxy] Received decrypt request for durl: %s", durl)
+
+		u, err := url.Parse(durl)
+		if err != nil {
+			http.Error(w, "Bad Request: invalid durl format", http.StatusBadRequest)
+			return
+		}
+		filePath := u.Path
+		if after, ok := strings.CutPrefix(filePath, "/d/"); ok {
+			filePath = after
+		}
+		log.Printf("-> [Proxy] Parsed logical file path from durl: %s", filePath)
+
+		fileInfo, err := openlist.OpenListGetFileURL(filePath, p.cfg.Proxy.OpenListHost, p.cfg.Proxy.Token)
+		if err != nil {
+			log.Printf("Error getting stream URL for path %s: %v", filePath, err)
+			http.Error(w, "Failed to locate file", http.StatusInternalServerError)
+			return
+		}
+		streamURL := fileInfo.Data.URL
+		log.Printf("-> [Proxy] Successfully translated durl to stream URL: %s", streamURL)
+
+		// 【关键新增】在解密前，先验证 streamURL 指向的是否为有效的 ENCV 文件
+		log.Printf("-> [Proxy] Validating stream URL before decryption...")
+		// 只下载文件的最后 32 字节用于验证
+		resp, err := utils.GetRemoteStreamWithRange(streamURL, nil, -32, -1)
+		if err != nil {
+			log.Printf("ERROR: [Proxy] Failed to validate stream URL %s: %v", streamURL, err)
+			http.Error(w, "Upstream server is unreachable or invalid", http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+
+		footerBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			log.Printf("ERROR: [Proxy] Failed to read validation data from %s: %v", streamURL, err)
+			http.Error(w, "Failed to validate upstream file", http.StatusInternalServerError)
+			return
+		}
+
+		isValid, err := isEncvContainerFromBytes(footerBytes)
+		if err != nil {
+			log.Printf("ERROR: [Proxy] Validation check failed for %s: %v", streamURL, err)
+			http.Error(w, "Failed to validate upstream file", http.StatusInternalServerError)
+			return
+		}
+
+		if !isValid {
+			log.Printf("WARN: [Proxy] Validation failed! Stream URL %s did not return an ENCV container. It might be an HTML error page.", streamURL)
+			http.Error(w, "Upstream server returned an invalid file for decryption. The link might be expired or the file not found.", http.StatusBadGateway)
+			return
+		}
+
+		log.Printf("-> [Proxy] Validation successful. Proceeding with decryption.")
+		// 3. 验证通过，复用现有的、成功的解密服务逻辑
+		p.serveEncryptedContainer(w, r, streamURL, nil, filePath)
+		return
+	}
+
 	// 签名验证
 	if !isInternalRequest && !cfg.Proxy.DisableSignatureVerification {
 		if sign == "" {
@@ -115,123 +197,6 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		serveDirectStreamWithFix(w, fileInfo.Data.URL, fileInfo.Data.Header)
 	}
 }
-
-// 通用地处理所有 ENCV 容器
-// func (p *Proxy) serveEncryptedContainer(w http.ResponseWriter, r *http.Request, containerURL string, headers map[string]string, originalPath string) {
-// 	p.cacheMutex.RLock()
-// 	factory, exists := p.factoryCache[containerURL]
-// 	p.cacheMutex.RUnlock()
-
-// 	if !exists {
-// 		p.cacheMutex.Lock()
-
-// 		// 【关键】使用原始逻辑路径和配置来创建 URLResolver
-// 		urlResolver := openlist.NewOpenListURLResolver(p.cfg, originalPath)
-// 		if factory, exists = p.factoryCache[containerURL]; !exists {
-// 			log.Printf("INFO: [Proxy] Cache miss for %s, creating new factory.", containerURL)
-// 			// 【关键】将 resolver 注入到工厂构造函数中
-// 			newFactory, err := reader.NewRemoteDecryptReaderFactory(containerURL, p.cfg.Password, headers, urlResolver)
-// 			if err != nil {
-// 				p.cacheMutex.Unlock()
-// 				log.Printf("ERROR: [Proxy] Failed to create remote decrypt reader factory: %v", err)
-// 				http.Error(w, "Could not initialize decryption: "+err.Error(), http.StatusInternalServerError)
-// 				return
-// 			}
-// 			p.factoryCache[containerURL] = newFactory
-// 			factory = newFactory
-// 		}
-// 		p.cacheMutex.Unlock()
-// 	} else {
-// 		log.Printf("INFO: [Proxy] Cache hit for %s.", containerURL)
-// 	}
-
-// 	// 1. 创建一个从头开始的 DecryptReader
-// 	decryptReader, err := factory.NewDecryptReader(*p.cfg)
-// 	if err != nil {
-// 		log.Printf("ERROR: [Proxy] Failed to create decrypt reader: %v", err)
-// 		http.Error(w, "Could not initialize decryption: "+err.Error(), http.StatusInternalServerError)
-// 		return
-// 	}
-// 	defer decryptReader.Close()
-
-// 	// 2. 解析 HTTP Range 请求头
-// 	totalSize := factory.GetOriginalSize()
-// 	rangeHeader := r.Header.Get("Range")
-// 	rangeStart, rangeEnd, contentLength := parseRangeHeader(rangeHeader, totalSize)
-
-// 	// 【关键修复】尝试进行快速跳转
-// 	if rangeStart > 0 {
-// 		// 定义一个本地接口来检测 SeekTo 方法
-// 		type seeker interface {
-// 			SeekTo(offset int64) error
-// 		}
-// 		if s, ok := decryptReader.(seeker); ok {
-// 			log.Printf("INFO: [Proxy] Fast-seeking to %d", rangeStart)
-// 			// 【关键修复】必须检查 SeekTo 的返回值
-// 			if err := s.SeekTo(rangeStart); err != nil {
-// 				if err == io.EOF {
-// 					// 如果 SeekTo 返回 EOF，说明请求的起始位置超出了所有数据片段的范围
-// 					log.Printf("WARN: [Proxy] Client requested range starting at %d, which is beyond all data fragments.", rangeStart)
-// 					w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", totalSize))
-// 					http.Error(w, "Requested Range Not Satisfiable", http.StatusRequestedRangeNotSatisfiable)
-// 					return
-// 				}
-// 				log.Printf("ERROR: [Proxy] Fast seek failed: %v", err)
-// 				http.Error(w, "Failed to seek to requested position", http.StatusInternalServerError)
-// 				return
-// 			}
-// 		} else {
-// 			log.Printf("WARN: [Proxy] DecryptReader does not support fast seeking. This will be slow and may fail.")
-// 			// 这里保留旧的逻辑作为最后的回退，尽管它有缺陷
-// 			_, err := io.CopyN(io.Discard, decryptReader, rangeStart)
-// 			if err != nil {
-// 				log.Printf("ERROR: [Proxy] Failed to seek within decrypt stream: %v", err)
-// 				http.Error(w, "Failed to seek to requested position", http.StatusRequestedRangeNotSatisfiable)
-// 				return
-// 			}
-// 		}
-// 	} else {
-// 		log.Printf("INFO: [Proxy] No Range header, serving from beginning.")
-// 	}
-
-// 	// 3. 设置正确的 HTTP 响应头
-// 	w.Header().Set("Content-Type", factory.GetIndex().GetMimeType())
-// 	w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s\"", factory.GetIndex().GetOriginalFilename()))
-// 	w.Header().Set("Accept-Ranges", "bytes")
-
-// 	if rangeHeader != "" {
-// 		// 如果有 Range 请求，返回 206 Partial Content
-// 		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", rangeStart, rangeEnd, totalSize))
-// 		w.WriteHeader(http.StatusPartialContent)
-// 	} else {
-// 		// 否则返回 200 OK
-// 		w.WriteHeader(http.StatusOK)
-// 	}
-
-// 	// 4. 流式传输剩余部分给客户端
-// 	// 如果是 Range 请求，只传输请求的长度；否则传输全部
-// 	if rangeHeader != "" {
-// 		var written int64
-// 		written, err = io.CopyN(w, decryptReader, contentLength)
-// 		// 【关键修复】处理因空洞导致的提前 EOF
-// 		if err == io.EOF && written == 0 {
-// 			log.Printf("WARN: [Proxy] Range request %d-%d/%d, but no data available (EOF).", rangeStart, rangeEnd, totalSize)
-// 			// 由于响应头已发送，无法返回 416，只能记录日志。
-// 			// 播放器会因为收到 0 字节而关闭连接。
-// 		}
-// 	} else {
-// 		_, err = io.Copy(w, decryptReader)
-// 	}
-
-// 	if err != nil {
-// 		if !utils.IsConnectionClosedError(err) && err != io.EOF {
-// 			log.Printf("Error streaming decrypted content to client: %v", err)
-// 		}
-// 		return
-// 	}
-
-// 	log.Printf("INFO: [Proxy] Successfully served remote container: %s", containerURL)
-// }
 
 // 可以修复 CORS，直接从 URL 下载文件并流式传输给客户端
 func serveDirectStreamWithFix(w http.ResponseWriter, fileURL string, headers map[string]string) {

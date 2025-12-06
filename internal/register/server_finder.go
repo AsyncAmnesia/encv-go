@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Soltus/encv-go/internal/types"
+	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
 // findServer 尝试在指定端口范围内发现正在运行的 encv 服务器

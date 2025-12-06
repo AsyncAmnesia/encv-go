@@ -16,10 +16,11 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/middleware"
-	"github.com/Soltus/encv-go/internal/types"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/service"
+	"github.com/Soltus/encv-go/internal/v2/types"
+	"github.com/Soltus/encv-go/internal/web"
 	"github.com/Soltus/encv-go/internal/webdav"
 	goWebdav "golang.org/x/net/webdav"
 )
@@ -93,6 +94,7 @@ func (s *Server) Start(port int, version string) (string, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", s.handlePing)
 	mux.HandleFunc("/stream", s.handleStreamRequest)
+	mux.Handle("/_preview/", web.PreviewHandler())
 	mux.HandleFunc("/", s.handleRequest)
 	// 如果启用了 WebDAV，则注册其处理器
 	if s.webdavDir != "" {

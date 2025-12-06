@@ -48,7 +48,7 @@ func GetPacker(index types.Index) (Packer, error) {
 // InitUnpackers 初始化并注册所有解包器
 func InitPackers() {
 	// 为了让 Register 能获取到正确的类型，我们需要传入实例的指针
-	// Register(&types.VideoIndex{}, &VideoPacker{})
+	Register(&types.VideoIndex{}, &VideoPacker{})
 	Register(&types.ImageIndex{}, &GenericPacker{})
 	Register(&types.TextIndex{}, &GenericPacker{}) // 复用 GenericUnpacker
 }

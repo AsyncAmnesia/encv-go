@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ENCV PDF Viewer</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-family: sans-serif; color: #555; }
+        iframe { width: 100%; height: 100%; border: none; display: none; }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading PDF...</div>
+    <iframe id="pdfFrame" title="PDF Viewer"></iframe>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        console.log(urlParams);
+        const url = urlParams.get('file');
+
+        if (url) {
+            // 【关键】请求我们自己 proxy 的解密端点，并把 url 传过去
+            const decryptUrl = `/decrypt?file=${encodeURIComponent(url)}`;
+            const loading = document.getElementById('loading');
+            const pdfFrame = document.getElementById('pdfFrame');
+
+            fetch(decryptUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                    }
+                    return response.blob();
+                })
+                .then(blob => {
+                    const blobUrl = URL.createObjectURL(blob);
+                    pdfFrame.src = blobUrl;
+                    loading.style.display = 'none';
+                    pdfFrame.style.display = 'block';
+                })
+                .catch(error => {
+                    console.error('Error fetching PDF:', error);
+                    loading.innerText = `Failed to load PDF: ${error.message}`;
+                });
+
+        } else {
+            document.body.innerText = 'Error: URL not provided.';
+        }
+    </script>
+</body>
+</html>

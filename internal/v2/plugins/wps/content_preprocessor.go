@@ -1,4 +1,4 @@
-package iframe
+package wps
 
 import (
 	"io"
@@ -6,11 +6,11 @@ import (
 )
 
 // 实现 plugins.ContentPreprocessor 接口
-type TextContentPreprocessor struct {
+type WPSContentPreprocessor struct {
 	// 可以在这里注入依赖
 }
 
 // Preprocess 预处理图片内容
-func (p *TextContentPreprocessor) Preprocess(inputPath string) (io.ReadCloser, error) {
+func (p *WPSContentPreprocessor) Preprocess(inputPath string) (io.ReadCloser, error) {
 	return os.Open(inputPath)
 }

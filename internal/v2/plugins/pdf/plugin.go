@@ -1,4 +1,4 @@
-package iframe
+package pdf
 
 import (
 	"context"
@@ -22,9 +22,9 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
-type IframePlugin struct {
+type PDFPlugin struct {
 	cfg              *config.Config
-	index            IframeIndex
+	index            PDFIndex
 	outputDir        string
 	inputPath        string
 	inputRootDir     string
@@ -38,17 +38,17 @@ type IframePlugin struct {
 
 // init 在包被导入时自动执行，完成自注册
 func init() {
-	types.RegisterKVIProvider(IndexKindIframe, func(rawKVI json.RawMessage) (types.KVIProvider, error) {
-		var textKVI IframeKVI_v2
-		if err := json.Unmarshal(rawKVI, &textKVI); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal KVI as TextKVI_v2: %w", err)
+	types.RegisterKVIProvider(IndexKindPDF, func(rawKVI json.RawMessage) (types.KVIProvider, error) {
+		var kvi PDFKVI_v2
+		if err := json.Unmarshal(rawKVI, &kvi); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal KVI as PDFKVI_v2: %w", err)
 		}
-		return textKVI, nil // TextKVI_v2 实现了 KVIProvider 接口
+		return kvi, nil
 	})
 }
 
 // Plugin 接口实现
-func (p *IframePlugin) Intialize(ctx context.Context) error {
+func (p *PDFPlugin) Intialize(ctx context.Context) error {
 	p.cfg = config.FromContext(ctx)
 	p.containerManager = service.NewContainerManager()
 	p.baseNamer = namer.NewDefaultBaseNamer()
@@ -59,43 +59,19 @@ func (p *IframePlugin) Intialize(ctx context.Context) error {
 // Plugin 接口实现
 //
 //	返回在 Initialize 阶段已经配置好的 chunkNamer
-func (p *IframePlugin) GetChunkNamer() namer.ChunkNamer {
+func (p *PDFPlugin) GetChunkNamer() namer.ChunkNamer {
 	return nil
 }
 
 // Plugin 接口实现
-func (p *IframePlugin) SupportedMimePrefixes() []string {
+func (p *PDFPlugin) SupportedMimePrefixes() []string {
 	return []string{
-		"application/msword", // doc
-		"application/vnd.openxmlformats-officedocument.wordprocessingml.document", // docx
-		"application/vnd.ms-excel", // xls
-		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",         // xlsx
-		"application/vnd.ms-powerpoint",                                             // ppt
-		"application/vnd.openxmlformats-officedocument.presentationml.presentation", // pptx
-		"application/pdf",      // pdf
-		"application/epub+zip", // epub
+		"application/pdf", // pdf
 	}
 }
 
 // Plugin 接口实现
-func (p *IframePlugin) ShouldProcess(inputPath string) bool {
-	// 获取文件扩展名（小写，不带点）
-	ext := strings.ToLower(filepath.Ext(inputPath))
-	if len(ext) > 0 {
-		ext = ext[1:]
-	}
-
-	// 这些文件在业务上被视为视频的一部分，而非独立的文本文件
-	excludedSubtitles := map[string]struct{}{
-		"ass": {},
-		"srt": {},
-		"vtt": {},
-	}
-
-	if _, shouldExclude := excludedSubtitles[ext]; shouldExclude {
-		return false
-	}
-
+func (p *PDFPlugin) ShouldProcess(inputPath string) bool {
 	return true
 }
 
@@ -103,7 +79,7 @@ func (p *IframePlugin) ShouldProcess(inputPath string) bool {
 //
 // 判断此插件是否能解密给定的容器文件。
 // 【关键修复】不再依赖不可靠的文件扩展名，而是通过读取容器元数据来判断其内容类型。
-func (p *IframePlugin) CanDecrypt(containerPath string) bool {
+func (p *PDFPlugin) CanDecrypt(containerPath string) bool {
 	kind, err := detector.DetectIndexKind(containerPath)
 	if err != nil {
 		// 如果无法判断类型（例如，文件损坏或不是 ENCV 容器），则认为不能解密
@@ -111,32 +87,32 @@ func (p *IframePlugin) CanDecrypt(containerPath string) bool {
 		// fmt.Printf("DEBUG: [IframePlugin.CanDecrypt] Failed to detect kind for '%s': %v\n", containerPath, err)
 		return false
 	}
-	return kind == IndexKindIframe
+	return kind == IndexKindPDF
 }
 
 // Plugin 接口实现
-func (p *IframePlugin) GetContainerExtension() string {
-	return p.cfg.GetTextEncExtension()
+func (p *PDFPlugin) GetContainerExtension() string {
+	return p.cfg.GetWPSEncExtension()
 }
 
 // 【新增方法】实现 plugins.Plugin 接口
-func (p *IframePlugin) GetMetadataExtractor() pluginInterfaces.MetadataExtractor {
-	return &TextMetadataExtractor{}
+func (p *PDFPlugin) GetMetadataExtractor() pluginInterfaces.MetadataExtractor {
+	return &PDFMetadataExtractor{}
 }
 
 // 【新增方法】实现 plugins.Plugin 接口
-func (p *IframePlugin) GetContentPreprocessor() pluginInterfaces.ContentPreprocessor {
-	return &TextContentPreprocessor{}
+func (p *PDFPlugin) GetContentPreprocessor() pluginInterfaces.ContentPreprocessor {
+	return &PDFContentPreprocessor{}
 }
 
 // --- 加密逻辑 ---
 
 // Plugin 接口实现
 // 在加密前处理字幕，并更新 Index
-func (p *IframePlugin) PreEncryptProcessor(index types.Index, inputPath, inputRootDir, outputDir string) error {
-	vIndex, ok := index.(*IframeIndex)
+func (p *PDFPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRootDir, outputDir string) error {
+	vIndex, ok := index.(*PDFIndex)
 	if !ok {
-		return fmt.Errorf("Text plugin received a non-Text index")
+		return fmt.Errorf("WPS plugin received a non-WPS index")
 	}
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return err
@@ -150,7 +126,7 @@ func (p *IframePlugin) PreEncryptProcessor(index types.Index, inputPath, inputRo
 
 // Plugin 接口实现
 // 执行核心的加密工作，并调用 Packer
-func (p *IframePlugin) Encrypt(dataReader io.Reader) error {
+func (p *PDFPlugin) Encrypt(dataReader io.Reader) error {
 	guardKey := fmt.Sprintf("%s|%s", p.inputPath, p.outputDir)
 
 	return utils.Do(guardKey, func() error {
@@ -173,7 +149,7 @@ func (p *IframePlugin) Encrypt(dataReader io.Reader) error {
 
 // Plugin 接口实现
 // 视频插件在加密后处理器
-func (p *IframePlugin) PostEncryptProcessor() error {
+func (p *PDFPlugin) PostEncryptProcessor() error {
 	// --- 【关键修复】在这里，根据原始文件大小计算逻辑分片 ---
 	logicalFragmentSize := fragment.CalculateFragmentSize(p.index.OriginalFileSize, 0)
 	logicalFragments, err := fragment.CreateLogicalFragmentsFromSize(p.index.OriginalFileSize, logicalFragmentSize, types.FragmentType_AtomicFile)
@@ -192,8 +168,8 @@ func (p *IframePlugin) PostEncryptProcessor() error {
 
 	// --- 5. 创建 Packer 并执行打包 ---
 	encryptedBaseName := p.baseNamer.GenerateEncryptedBaseName(p.index.OriginalFilename)
-	finalBaseName := strings.TrimSuffix(encryptedBaseName, p.cfg.GetTextEncExtension())
-	packer := NewTextPacker(p.physicalPacker)
+	finalBaseName := strings.TrimSuffix(encryptedBaseName, p.cfg.GetWPSEncExtension())
+	packer := NewPDFPacker(p.physicalPacker)
 	packReq := &physical.PackRequest{
 		BaseName:            finalBaseName,
 		OutputDir:           p.outputDir,
@@ -202,7 +178,7 @@ func (p *IframePlugin) PostEncryptProcessor() error {
 		Salt:                p.salt,
 		IV:                  p.iv,
 		LogicalFragments:    logicalFragments, // 预先计算好
-		FinalFileName:       encryptedBaseName + p.cfg.GetTextEncExtension(),
+		FinalFileName:       encryptedBaseName + p.cfg.GetPDFEncExtension(),
 	}
 
 	if err := packer.Pack(p.cfg, packReq); err != nil {
@@ -219,13 +195,13 @@ func (p *IframePlugin) PostEncryptProcessor() error {
 
 // Plugin 接口实现
 // 视频插件在解密前无需额外操作
-func (p *IframePlugin) PreDecryptProcessor(containerPath, outputDir string) error {
+func (p *PDFPlugin) PreDecryptProcessor(containerPath, outputDir string) error {
 	// 视频插件在此阶段无需操作
 	return nil
 }
 
 // Plugin 接口实现
-func (p *IframePlugin) Decrypt(containerPath, outputDir string) error {
+func (p *PDFPlugin) Decrypt(containerPath, outputDir string) error {
 	fmt.Printf("DEBUG: [IframePlugin.Decrypt] Starting decryption for: %s\n", containerPath)
 	p.outputDir = outputDir
 
@@ -260,7 +236,7 @@ func (p *IframePlugin) Decrypt(containerPath, outputDir string) error {
 
 	// 从 KVI 获取原始文件名
 	index := factory.GetIndex()
-	vIndex, ok := index.(*IframeIndex)
+	vIndex, ok := index.(*PDFIndex)
 	if !ok {
 		return fmt.Errorf("container is not a imgae container")
 	}
@@ -284,7 +260,7 @@ func (p *IframePlugin) Decrypt(containerPath, outputDir string) error {
 
 // Plugin 接口实现
 // 在解密后处理字幕还原
-func (p *IframePlugin) PostDecryptProcessor(containerPath string) error {
+func (p *PDFPlugin) PostDecryptProcessor(containerPath string) error {
 
 	return nil
 }

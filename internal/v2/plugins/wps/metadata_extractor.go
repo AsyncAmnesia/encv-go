@@ -1,4 +1,4 @@
-package iframe
+package wps
 
 import (
 	"fmt"
@@ -8,19 +8,19 @@ import (
 )
 
 // 实现 plugins.MetadataExtractor 接口
-type TextMetadataExtractor struct {
+type WPSMetadataExtractor struct {
 	// 可以在这里注入依赖，例如配置
 }
 
 // 提取元数据
-func (e *TextMetadataExtractor) ExtractMetadata(inputPath string) (types.Index, error) {
+func (e *WPSMetadataExtractor) ExtractMetadata(inputPath string) (types.Index, error) {
 	// 1. 获取基础文件信息
 	fileInfo, err := os.Stat(inputPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file: %w", err)
 	}
 
-	index := &IframeIndex{
+	index := &WPSIndex{
 		OriginalFilename: fileInfo.Name(),
 		OriginalFileSize: fileInfo.Size(),
 	}

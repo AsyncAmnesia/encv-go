@@ -12,10 +12,10 @@ import (
 	"strings"
 
 	"github.com/Soltus/encv-go/internal/config"
-	"github.com/Soltus/encv-go/internal/types"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/Soltus/encv-go/internal/v2/reader"
+	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
 // handleStreamRequest 处理 /stream?file=... 格式的请求

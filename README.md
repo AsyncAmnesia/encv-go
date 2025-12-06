@@ -173,11 +173,13 @@ mpv http://127.0.0.1:1999/stream?file=A%3A%5CLocal%5CCol-Study%5Cgo%5Cencv%5Cout
      ```bash
      ./encv-proxy -token "openlist-***********************************"
      ```
+
    * **完整命令行参数**:
 
      ```bash
      ./encv-proxy -proxy-port 1998 -openlist-host "http://localhost:5244" -token "openlist-***********************************"
      ```
+
 5. **为加密文件添加预览**:
 
    * 在 OpenList 管理页面的【设置】->【预览】中。
@@ -192,11 +194,23 @@ mpv http://127.0.0.1:1999/stream?file=A%3A%5CLocal%5CCol-Study%5Cgo%5Cencv%5Cout
      }
    ```
 
-* 保存后即可在 OpenList 中预览加密文件。
+6. **预览PDF文件**：
 
-OpenList Webdav 代理是很好的方式，只需要定义预览后缀名，不影响其他操作。但假如希望在其他平台通过 Webdav 预览加密容器，encv-go 也提供了支持，缺点是仅支持只读模式，而且性能可能远不如 OpenList 。通用 Webdav 服务将显示解密后的原始文件名作为“不存在”的文件，当请求打开时反查真实的加密容器并进行解密。
+   * 在 Openlist 管理页面的【设置】->【预览】中，iframe 预览追加以下配置：
 
-调试 webdav
+     ```json
+       "sccgpdf": {
+       "ENCV PDF": "http://localhost:1998/_preview/pdf.html?file=$e_url",
+     }
+     ```
+
+   * 保存后即可在 OpenList 中预览加密后的 PDF 文件。
+
+   * 保存后即可在 OpenList 中预览加密文件。
+
+OpenList Webdav 代理是很好的方式，只需要定义预览后缀名，不影响其他操作。但假如希望在其他平台通过 Webdav 预览加密容器，encv-go 也提供了支持，缺点是仅支持只读模式，而且性能可能远不如 OpenList 。通用 Webdav 服务将显示解密后的原始文件名作为“不存在”的文件，当请求打开时反查真实的加密容器并进行解密。**通用 Webdav 集成在 `encv` 主程序，`encv-proxy` 程序不提供**。
+
+调试通用 webdav
 
 ```bash
 curl -v -X PROPFIND http://localhost:2025/webdav/ -H "Depth: 1" -H "Content-Type: application/xml" -d '<?xml version="1.0" encoding="utf-8"?><D:propfind xmlns:D="DAV:"><D:prop><D:displayname/></D:prop></D:propfind>'

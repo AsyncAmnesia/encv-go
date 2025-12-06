@@ -32,3 +32,12 @@ func (c *Config) GetSccgvChunkSizeMB() int64 {
 	}
 	return sizeMB
 }
+
+// SccgvSettings 包含 SCCGV 容器的特定设置
+type SccgvSettings struct {
+	// 分片大小（单位 MB），为 0 或为空禁用分片
+	ChunkSizeMB int64 `json:"chunk_size"`
+	// 【新增】轻量化主分片模式
+	// 启用后，主分片（.sccgv）将只包含 Manifest，不包含加密数据
+	LightweightMainChunk bool `json:"lightweight_main_chunk"`
+}

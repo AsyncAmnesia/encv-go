@@ -12,7 +12,7 @@ import (
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/register"
 	"github.com/Soltus/encv-go/internal/server"
-	"github.com/Soltus/encv-go/internal/types"
+	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
 // 暂时注释，需要修改，勿删

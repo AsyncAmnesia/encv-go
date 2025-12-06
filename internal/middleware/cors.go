@@ -10,6 +10,7 @@ func CorsMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")               // 【关键】设置允许的请求方法
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With") // 【关键】设置允许的请求头
 		w.Header().Set("Cache-Control", "no-cache")                                                     // 禁用缓存方便调试
+		w.Header().Set("Content-Encoding", "identity")                                                  // 明确声明内容编码，防止中间件（如Gzip）干扰，这对 PDF 预览等很重要
 
 		// 【关键】处理预检请求
 		// 如果是 OPTIONS 请求，直接返回 200 OK，不需要调用下一个处理器
