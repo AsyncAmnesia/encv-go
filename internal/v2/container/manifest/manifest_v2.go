@@ -87,7 +87,7 @@ func ScanManifestFromFile(filePath string) (*types.Manifest_v2, error) {
 
 		// 2. 检查是否是 Manifest 块
 		if header.Type == types.BlockTypeManifest_v2 {
-			log.Printf("DEBUG: Found Manifest block at offset %d", block.GetBlockHeader_v2_Size())
+			// log.Printf("DEBUG: Found Manifest block at offset %d", block.GetBlockHeader_v2_Size())
 			// 3. 读取块数据
 			data := make([]byte, header.Length)
 			if _, err := io.ReadFull(file, data); err != nil {
@@ -119,7 +119,7 @@ func ExtractKVI_v2(containerPath string) ([]byte, error) {
 	}
 	defer file.Close()
 
-	log.Printf("INFO: Scanning '%s' for KVI block...", containerPath)
+	// log.Printf("INFO: Scanning '%s' for KVI block...", containerPath)
 
 	// 从头开始扫描，直到找到 KVI 块
 	for {
@@ -165,7 +165,7 @@ func ExtractManifest_v2(containerPath string) ([]byte, error) {
 	}
 	defer file.Close()
 
-	log.Printf("INFO: Scanning '%s' for Manifest block...", containerPath)
+	// log.Printf("INFO: Scanning '%s' for Manifest block...", containerPath)
 
 	for {
 		header, err := block.ReadBlockHeader_v2(file)
@@ -177,7 +177,7 @@ func ExtractManifest_v2(containerPath string) ([]byte, error) {
 		}
 
 		if header.Type == types.BlockTypeManifest_v2 {
-			log.Printf("DEBUG: Found Manifest block.")
+			// log.Printf("DEBUG: Found Manifest block.")
 			manifestData, err := block.ReadBlockData_v2(file, header)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read Manifest block data: %w", err)
@@ -215,4 +215,9 @@ func ReadManifestAt(filePath string, offset int64, length int64) ([]byte, error)
 	}
 
 	return block.ReadBlockData_v2(file, header)
+}
+
+// ParseManifestFromBytes 从 JSON 字节切片中解析 Manifest
+func ParseManifestFromBytes(data []byte) (*types.Manifest_v2, error) {
+	return DeserializeFromJSON_v2(data)
 }

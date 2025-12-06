@@ -166,26 +166,6 @@ func NewKVIProviderFromManifest(manifest *Manifest_v2) (KVIProvider, error) {
 	return factory(manifest.KVI)
 }
 
-// NewKVIProviderFromManifest 是一个便利函数，用于从 Manifest 实例中直接解析 KVIProvider
-// func NewKVIProviderFromManifest(manifest *Manifest_v2) (KVIProvider, error) {
-// 	switch manifest.Kind {
-// 	case IndexKindVideo:
-// 		var videoKVI VideoKVI_v2
-// 		if err := json.Unmarshal(manifest.KVI, &videoKVI); err != nil {
-// 			return nil, fmt.Errorf("failed to unmarshal KVI as VideoKVI_v2: %w", err)
-// 		}
-// 		return videoKVI, nil
-// 	case IndexKindImage:
-// 		var imageKVI ImageKVI_v2
-// 		if err := json.Unmarshal(manifest.KVI, &imageKVI); err != nil {
-// 			return nil, fmt.Errorf("failed to unmarshal KVI as VideoKVI_v2: %w", err)
-// 		}
-// 		return imageKVI, nil
-// 	default:
-// 		return nil, fmt.Errorf("unsupported or unknown index kind: %s", manifest.Kind)
-// 	}
-// }
-
 // NewManifest_v2 是一个工厂函数，用于创建 Manifest_v2 实例
 // 它接收一个 KVIProvider 接口，并将其序列化为 json.RawMessage
 func NewManifest_v2(kviProvider KVIProvider, fragments []Fragment_v2) (*Manifest_v2, error) {
@@ -216,8 +196,7 @@ func NewManifest_v2(kviProvider KVIProvider, fragments []Fragment_v2) (*Manifest
 type IndexKind string
 
 const (
-	IndexKindIframe  IndexKind = "iframe"
-	ContainerVersion int64     = 2
+	ContainerVersion int64 = 2
 )
 
 // Index 是所有 KVI 结构体的通用接口

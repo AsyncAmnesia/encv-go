@@ -63,27 +63,27 @@ go build -o encv-proxy ./cmd/encv-proxy
 
 **配置项说明:**
 
-| 配置键 | 类型 | 描述 | 示例值 |
-|--------|------|------|--------|
-| **password** | string | 用于加密和解密视频文件的密码，支持中文和特殊字符 | `"my-encv_key，可以使用中文和标点符号✔"` |
-| **output_path** | string | 加密后文件的输出目录，支持相对路径或绝对路径 | `"./output"` |
-| **recover** | boolean | 解密时是否覆盖已存在的文件（可选） | `false` |
-| **track_extensions** | array | 需要处理的字幕/轨道文件扩展名列表 | `[".ass", ".srt", ".dm.ass", ".vtt"]` |
-| **bin_ext_group.text** | string | 文本类加密容器的扩展名 | `"sccgt"` |
-| **bin_ext_group.image** | string | 图像类加密容器的扩展名 | `"sccgi"` |
-| **bin_ext_group.audio** | string | 音频类加密容器的扩展名 | `"sccga"` |
-| **bin_ext_group.video** | string | 视频类加密容器的扩展名 | `"sccgv"` |
-| **bin_ext_group.iframe** | string | OpenList iframe 类加密容器的扩展名 | `"sccgf"` |
-| **sccgv_settings.chunk_size** | integer | 视频分片大小（MB），0 表示禁用分片 | `100` |
-| **server.port** | integer | encv HTTP 流媒体服务器的监听端口 | `1999` |
-| **server.dir** | string | HTTP 服务器的根目录路径 | `"/"` |
-| **proxy.port** | integer | OpenList 代理服务的监听端口 | `1998` |
-| **proxy.openlist_host** | string | OpenList 服务地址，支持协议和端口 | `"http://localhost:5244"` |
-| **proxy.token** | string | OpenList 认证令牌（可选，不建议明文存储） | `""` |
-| **proxy.disable_signature_verification** | boolean | 是否禁用签名验证（可选） | `false` |
-| **webdav.port** | integer | WebDAV 服务器的监听端口 | `1234` |
-| **webdav.root** | string | WebDAV 服务的根路径 | `"webdav"` |
-| **webdav.dir** | string | WebDAV 服务器的根目录路径 | `"./"` |
+| 配置键                                         | 类型    | 描述                                             | 示例值                                      |
+| ---------------------------------------------- | ------- | ------------------------------------------------ | ------------------------------------------- |
+| **password**                             | string  | 用于加密和解密视频文件的密码，支持中文和特殊字符 | `"my-encv_key，可以使用中文和标点符号✔"` |
+| **output_path**                          | string  | 加密后文件的输出目录，支持相对路径或绝对路径     | `"./output"`                              |
+| **recover**                              | boolean | 解密时是否覆盖已存在的文件（可选）               | `false`                                   |
+| **track_extensions**                     | array   | 需要处理的字幕/轨道文件扩展名列表                | `[".ass", ".srt", ".dm.ass", ".vtt"]`     |
+| **bin_ext_group.text**                   | string  | 文本类加密容器的扩展名                           | `"sccgt"`                                 |
+| **bin_ext_group.image**                  | string  | 图像类加密容器的扩展名                           | `"sccgi"`                                 |
+| **bin_ext_group.audio**                  | string  | 音频类加密容器的扩展名                           | `"sccga"`                                 |
+| **bin_ext_group.video**                  | string  | 视频类加密容器的扩展名                           | `"sccgv"`                                 |
+| **bin_ext_group.iframe**                 | string  | OpenList iframe 类加密容器的扩展名               | `"sccgf"`                                 |
+| **sccgv_settings.chunk_size**            | integer | 视频分片大小（MB），0 表示禁用分片               | `100`                                     |
+| **server.port**                          | integer | encv HTTP 流媒体服务器的监听端口                 | `1999`                                    |
+| **server.dir**                           | string  | HTTP 服务器的根目录路径                          | `"/"`                                     |
+| **proxy.port**                           | integer | OpenList 代理服务的监听端口                      | `1998`                                    |
+| **proxy.openlist_host**                  | string  | OpenList 服务地址，支持协议和端口                | `"http://localhost:5244"`                 |
+| **proxy.token**                          | string  | OpenList 认证令牌（可选，不建议明文存储）        | `""`                                      |
+| **proxy.disable_signature_verification** | boolean | 是否禁用签名验证（可选）                         | `false`                                   |
+| **webdav.port**                          | integer | WebDAV 服务器的监听端口                          | `1234`                                    |
+| **webdav.root**                          | string  | WebDAV 服务的根路径                              | `"webdav"`                                |
+| **webdav.dir**                           | string  | WebDAV 服务器的根目录路径                        | `"./"`                                    |
 
 ### 💻 核心用法
 
@@ -148,10 +148,12 @@ mpv http://localhost:1999/321.sccgv --sub-files=http://localhost:1999/321.ass
 mpv http://127.0.0.1:1999/stream?file=A%3A%5CLocal%5CCol-Study%5Cgo%5Cencv%5Coutput%5C321.4pm.sccgv
 ```
 
-
 ### 🔗 OpenList 集成
 
 `encv-proxy` 是一个专为 OpenList 设计的代理服务，它能透明地解密 encv 加密容器，让 OpenList 可以直接播放加密内容。
+
+> [!WARNING]
+> 由于远程服务的特性，OpenList 集成不支持真正的视频寻址，只能发起 Range 请求，但是文件由 OpenList 提供，因此需要先加载对应的物理分片。
 
 **配置步骤:**
 
@@ -194,10 +196,10 @@ mpv http://127.0.0.1:1999/stream?file=A%3A%5CLocal%5CCol-Study%5Cgo%5Cencv%5Cout
 
 OpenList Webdav 代理是很好的方式，只需要定义预览后缀名，不影响其他操作。但假如希望在其他平台通过 Webdav 预览加密容器，encv-go 也提供了支持，缺点是仅支持只读模式，而且性能可能远不如 OpenList 。通用 Webdav 服务将显示解密后的原始文件名作为“不存在”的文件，当请求打开时反查真实的加密容器并进行解密。
 
-调试
+调试 webdav
 
 ```bash
-curl -v -X PROPFIND http://localhost:1234/webdav/ -H "Depth: 1" -H "Content-Type: application/xml" -d '<?xml version="1.0" encoding="utf-8"?><D:propfind xmlns:D="DAV:"><D:prop><D:displayname/></D:prop></D:propfind>'
+curl -v -X PROPFIND http://localhost:2025/webdav/ -H "Depth: 1" -H "Content-Type: application/xml" -d '<?xml version="1.0" encoding="utf-8"?><D:propfind xmlns:D="DAV:"><D:prop><D:displayname/></D:prop></D:propfind>'
 ```
 
 ### Windows 上使用

@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/url"
 	"os"
@@ -20,7 +19,7 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/container"
-	"github.com/Soltus/encv-go/internal/service"
+	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/pkg/encv"
 )
 
@@ -28,29 +27,9 @@ import (
 // 注入方式：go build -ldflags="-X main.Version=v1.2.3" ./cmd/encv
 var Version = "dev"
 
-// setupLogging 设置日志记录，同时输出到控制台和文件，并返回日志文件路径
-func setupLogging() string {
-	logFilePath := filepath.Join(os.TempDir(), "encv.log")
-	logFile, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		// 如果无法创建日志文件，我们只能回退到控制台
-		log.Printf("Warning: could not open log file %s: %v", logFilePath, err)
-		return logFilePath
-	}
-
-	// 创建一个 MultiWriter，同时写入标准错误和日志文件
-	multiWriter := io.MultiWriter(os.Stderr, logFile)
-	log.SetOutput(multiWriter)
-
-	// 打印一条分隔线，以便区分不同的运行
-	log.Println("--- ENCV Run Started ---")
-
-	return logFilePath
-}
-
 func main() {
 	// 【新增】在程序最开始就设置日志
-	logFilePath := setupLogging()
+	logFilePath := utils.SetupLogging("encv.log")
 
 	// %TEMP%/encv.log
 	log.Printf("Received Args: %v\n", os.Args)
@@ -274,29 +253,29 @@ func main() {
 		if err := encv.PlayV2(finalCtx, inputPath, *playerPtr); err != nil {
 			log.Fatalf("Playback failed: %v", err)
 		}
-	case "encrypt":
-		encryptCmd := flag.NewFlagSet("encrypt", flag.ExitOnError)
-		// 直接传入 cfg 字段的地址，flag.Parse() 后会自动更新
-		encryptCmd.StringVar(&cfg.Password, "p", cfg.Password, "Password for encryption, overrides config file")
-		encryptCmd.StringVar(&cfg.OutputPath, "o", cfg.OutputPath, "Output directory, overrides config file")
+	// case "encrypt":
+	// 	encryptCmd := flag.NewFlagSet("encrypt", flag.ExitOnError)
+	// 	// 直接传入 cfg 字段的地址，flag.Parse() 后会自动更新
+	// 	encryptCmd.StringVar(&cfg.Password, "p", cfg.Password, "Password for encryption, overrides config file")
+	// 	encryptCmd.StringVar(&cfg.OutputPath, "o", cfg.OutputPath, "Output directory, overrides config file")
 
-		err := encryptCmd.Parse(os.Args[2:])
-		if err != nil {
-			log.Fatalf("Error parsing 'encrypt' flags: %v", err)
-		}
+	// 	err := encryptCmd.Parse(os.Args[2:])
+	// 	if err != nil {
+	// 		log.Fatalf("Error parsing 'encrypt' flags: %v", err)
+	// 	}
 
-		inputPath := encryptCmd.Arg(0)
-		if inputPath == "" {
-			log.Fatal("Error: Please provide the path to the file or directory to encrypt.")
-		}
+	// 	inputPath := encryptCmd.Arg(0)
+	// 	if inputPath == "" {
+	// 		log.Fatal("Error: Please provide the path to the file or directory to encrypt.")
+	// 	}
 
-		finalCtx := config.NewContext(context.Background(), cfg)
-		encv.Init(finalCtx)
-		encrypter := encv.NewEncrypter()
-		if err := encrypter.Encrypt(finalCtx, inputPath); err != nil {
-			log.Fatalf("Encryption failed: %v", err)
-		}
-		log.Printf("✅ Encryption complete. Output in: %s\n", cfg.OutputPath)
+	// 	finalCtx := config.NewContext(context.Background(), cfg)
+	// 	encv.Init(finalCtx)
+	// 	encrypter := encv.NewEncrypter()
+	// 	if err := encrypter.Encrypt(finalCtx, inputPath); err != nil {
+	// 		log.Fatalf("Encryption failed: %v", err)
+	// 	}
+	// 	log.Printf("✅ Encryption complete. Output in: %s\n", cfg.OutputPath)
 
 	case "decrypt":
 		decryptCmd := flag.NewFlagSet("decrypt", flag.ExitOnError)
@@ -370,74 +349,32 @@ func main() {
 		encv.Init(finalCtx)
 
 		// 注意：这里我们还是需要把字符串转换回 service.DecryptMode 类型，因为解密服务需要它
-		mode := service.DecryptMode(parsedModeString)
-		opts := service.DecryptOptions{
-			Mode:      mode,
-			OutputDir: finalOutputDir,
-		}
-		decrypter := encv.NewDecrypter()
-		fmt.Printf("--- DEBUG ---\n")
-		fmt.Printf("Parsed Mode: '%s'\n", opts.Mode)
-		fmt.Printf("Input Path: '%s'\n", inputPath)
-		fmt.Printf("-------------\n")
+		// mode := service.DecryptMode(parsedModeString)
+		// opts := service.DecryptOptions{
+		// 	Mode:      mode,
+		// 	OutputDir: finalOutputDir,
+		// }
+		// decrypter := encv.NewDecrypter()                     // 暂时注释，需要修改，勿删
+		// fmt.Printf("--- DEBUG ---\n")
+		// fmt.Printf("Parsed Mode: '%s'\n", opts.Mode)
+		// fmt.Printf("Input Path: '%s'\n", inputPath)
+		// fmt.Printf("-------------\n")
 
-		if opts.Mode == service.ModePreview {
-			// 【新增】调试信息：确认进入了 Preview 分支
-			fmt.Println("--- DEBUG: Entering PREVIEW mode ---")
-			if err := decrypter.Preview(finalCtx, inputPath); err != nil {
-				log.Fatalf("Preview failed: %v", err)
-			}
-			fmt.Println("--- DEBUG: Preview function finished successfully ---")
-		} else {
-			// 【新增】调试信息：确认进入了 Decrypt 分支
-			fmt.Println("--- DEBUG: Entering STANDARD DECRYPT mode ---")
-			if err := decrypter.Decrypt(finalCtx, inputPath, opts); err != nil {
-				log.Fatalf("Decryption failed: %v", err)
-			}
-			log.Printf("✅ Decryption complete. Output in: %s\n", opts.OutputDir)
-		}
-
-	case "kvi":
-		kviCmd := flag.NewFlagSet("kvi", flag.ExitOnError)
-		savePathPtr := kviCmd.String("s", "", "Save KVI content to a specified JSON file.")
-		err := kviCmd.Parse(os.Args[2:])
-		if err != nil {
-			log.Fatalf("Error parsing flags: %v", err)
-		}
-
-		containerPath := kviCmd.Arg(0)
-		if containerPath == "" {
-			log.Fatal("Error: Please provide the path to the ENCV container file.")
-		}
-		finalCtx := config.NewContext(context.Background(), cfg)
-		encv.Init(finalCtx)
-
-		// 调用新函数获取 KVI 数据
-		kviData, err := encv.ExtractKVI(rootCtx, containerPath)
-		if err != nil {
-			log.Fatalf("Failed to extract KVI from '%s': %v", containerPath, err)
-		}
-
-		// 根据 -s 标志决定输出方式
-		if *savePathPtr == "" {
-			// 打印到控制台，并进行格式化
-			fmt.Println("--- KVI Content ---")
-			var prettyJSON interface{}
-			if err := json.Unmarshal(kviData, &prettyJSON); err != nil {
-				// 如果无法解析为 JSON，就打印原始字符串
-				fmt.Printf("%s\n", string(kviData))
-			} else {
-				// 格式化打印
-				indentedJSON, _ := json.MarshalIndent(prettyJSON, "", "  ")
-				fmt.Printf("%s\n", string(indentedJSON))
-			}
-		} else {
-			// 保存到文件
-			if err := os.WriteFile(*savePathPtr, kviData, 0644); err != nil {
-				log.Fatalf("Failed to save KVI to '%s': %v", *savePathPtr, err)
-			}
-			log.Printf("✅ KVI content successfully saved to: %s\n", *savePathPtr)
-		}
+		// if opts.Mode == service.ModePreview {
+		// 	// 【新增】调试信息：确认进入了 Preview 分支
+		// 	fmt.Println("--- DEBUG: Entering PREVIEW mode ---")
+		// 	if err := decrypter.Preview(finalCtx, inputPath); err != nil {
+		// 		log.Fatalf("Preview failed: %v", err)
+		// 	}
+		// 	fmt.Println("--- DEBUG: Preview function finished successfully ---")
+		// } else {
+		// 	// 【新增】调试信息：确认进入了 Decrypt 分支
+		// 	fmt.Println("--- DEBUG: Entering STANDARD DECRYPT mode ---")
+		// 	if err := decrypter.Decrypt(finalCtx, inputPath, opts); err != nil {
+		// 		log.Fatalf("Decryption failed: %v", err)
+		// 	}
+		// 	log.Printf("✅ Decryption complete. Output in: %s\n", opts.OutputDir)
+		// }
 
 	case "start":
 		serverCmd := flag.NewFlagSet("start", flag.ExitOnError)
@@ -460,36 +397,39 @@ func main() {
 		select {} // Keep server running
 
 	case "webdav":
-		webdavCmd := flag.NewFlagSet("webdav", flag.ExitOnError)
-		// 单实例检查，如需多实例请使用 "start"
-		if err := encv.CheckForExistingService(cfg.Webdav.Port); err != nil {
-			os.Exit(1)
-		}
-		// 直接传入 cfg 字段的地址，flag.Parse() 后会自动更新
-		webdavCmd.StringVar(&cfg.Password, "p", cfg.Password, "Password for server to decrypt, overrides config file")
-		webdavCmd.StringVar(&cfg.Webdav.Dir, "d", cfg.Webdav.Dir, "Directory to serve, overrides config file")
-		webdavCmd.IntVar(&cfg.Webdav.Port, "port", cfg.Webdav.Port, "Port for WebDAV server, overrides config file")
-		webdavCmd.Parse(os.Args[2:])
+		// 暂时注释，需要修改，勿删
+		//
+		//
+		// webdavCmd := flag.NewFlagSet("webdav", flag.ExitOnError)
+		// // 单实例检查，如需多实例请使用 "start"
+		// if err := encv.CheckForExistingService(cfg.Webdav.Port); err != nil {
+		// 	os.Exit(1)
+		// }
+		// // 直接传入 cfg 字段的地址，flag.Parse() 后会自动更新
+		// webdavCmd.StringVar(&cfg.Password, "p", cfg.Password, "Password for server to decrypt, overrides config file")
+		// webdavCmd.StringVar(&cfg.Webdav.Dir, "d", cfg.Webdav.Dir, "Directory to serve, overrides config file")
+		// webdavCmd.IntVar(&cfg.Webdav.Port, "port", cfg.Webdav.Port, "Port for WebDAV server, overrides config file")
+		// webdavCmd.Parse(os.Args[2:])
 
-		if cfg.Password == "" {
-			log.Fatalf("WebDAV requires a password. Please set it in config.user.json.")
-		}
-		finalCtx := config.NewContext(context.Background(), cfg)
-		encv.Init(finalCtx)
-		addr, webdavPath, err := encv.StartWebdav(finalCtx)
-		if err != nil {
-			log.Fatalf("Failed to start WebDAV server: %v", err)
-		}
+		// if cfg.Password == "" {
+		// 	log.Fatalf("WebDAV requires a password. Please set it in config.user.json.")
+		// }
+		// finalCtx := config.NewContext(context.Background(), cfg)
+		// encv.Init(finalCtx)
+		// addr, webdavPath, err := encv.StartWebdav(finalCtx)
+		// if err != nil {
+		// 	log.Fatalf("Failed to start WebDAV server: %v", err)
+		// }
 
-		log.Printf("\n✅ WebDAV server started successfully!\n")
-		log.Printf("   Serving files from: %s\n", cfg.Webdav.Dir)
-		log.Printf("   Access it at: http://%s%s\n", addr, webdavPath)
-		log.Println("\n--- How to Connect ---")
-		log.Printf("   Windows: \\\\localhost@%s%s\n", strings.TrimPrefix(addr, ":"), webdavPath)
-		log.Printf("   macOS:   http://%s%s\n", addr, webdavPath)
-		log.Println("\n(Press Ctrl+C in this terminal to stop the server)")
+		// log.Printf("\n✅ WebDAV server started successfully!\n")
+		// log.Printf("   Serving files from: %s\n", cfg.Webdav.Dir)
+		// log.Printf("   Access it at: http://%s%s\n", addr, webdavPath)
+		// log.Println("\n--- How to Connect ---")
+		// log.Printf("   Windows: \\\\localhost@%s%s\n", strings.TrimPrefix(addr, ":"), webdavPath)
+		// log.Printf("   macOS:   http://%s%s\n", addr, webdavPath)
+		// log.Println("\n(Press Ctrl+C in this terminal to stop the server)")
 
-		select {} // Keep server running
+		// select {} // Keep server running
 
 	case "server":
 		serverCmd := flag.NewFlagSet("server", flag.ExitOnError)

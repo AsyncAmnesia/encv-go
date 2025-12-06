@@ -94,7 +94,7 @@ func CreateLogicalFragmentsFromSize(totalSize int64, fragmentSize int64, frag_ty
 			currentChunkSize = remaining
 		}
 
-		fragID := fmt.Sprintf("video_chunk_%d", chunkIndex) // ID 生成策略可能需要泛化
+		fragID := fmt.Sprintf("logical_fragment_%d", chunkIndex) // ID 生成策略可能需要泛化
 		frag := types.Fragment_v2{
 			ID:                fragID,
 			Type:              frag_type,

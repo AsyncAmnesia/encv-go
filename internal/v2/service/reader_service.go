@@ -29,7 +29,6 @@ func NewReaderService(manager *ContainerManager) *ReaderService {
 	}
 }
 
-// GetSeekableDecryptReader 是核心方法。
 // 它返回一个通用的解密流、文件索引和原始大小。
 // 解密器可能是可寻址的（实现了 io.Seeker），也可能是顺序的。
 // 调用者有责任检查解密器的能力并采取相应的策略。

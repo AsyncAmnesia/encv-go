@@ -3,6 +3,7 @@
 package manifest
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -43,6 +44,26 @@ func ReadFooterFromFile(filePath string) (*types.EnvelopeFooter_v2, error) {
 	var footer types.EnvelopeFooter_v2
 	if err := binary.Read(file, types.ByteOrder_v2, &footer); err != nil {
 		return nil, fmt.Errorf("failed to read footer: %w", err)
+	}
+
+	// 验证 Magic Number
+	if footer.Magic != types.MagicFooter_v2 {
+		return nil, fmt.Errorf("invalid magic number in footer: got '%s', want 'ENVC'", string(footer.Magic[:]))
+	}
+
+	return &footer, nil
+}
+
+// ParseFooterFromBytes 从字节切片中解析并返回 Footer
+func ParseFooterFromBytes(data []byte) (*types.EnvelopeFooter_v2, error) {
+	if len(data) < binary.Size(types.EnvelopeFooter_v2{}) {
+		return nil, fmt.Errorf("data is too small to contain a footer")
+	}
+
+	reader := bytes.NewReader(data)
+	var footer types.EnvelopeFooter_v2
+	if err := binary.Read(reader, types.ByteOrder_v2, &footer); err != nil {
+		return nil, fmt.Errorf("failed to read footer from bytes: %w", err)
 	}
 
 	// 验证 Magic Number

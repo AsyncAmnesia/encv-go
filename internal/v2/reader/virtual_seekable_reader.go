@@ -94,28 +94,6 @@ func (r *VirtualSeekableDecryptReader) buildFragmentIndex() {
 }
 
 // 【直接复用】源自旧代码的健壮实现
-// deriveCTRIVForOffset: 基于全局 base IV 与字节偏移，计算 CTR 模式实际使用的 IV
-func deriveCTRIVForOffset(baseIV []byte, byteOffset uint64) ([]byte, error) {
-	if len(baseIV) != aes.BlockSize {
-		return nil, fmt.Errorf("baseIV length must be %d", aes.BlockSize)
-	}
-	iv := make([]byte, aes.BlockSize)
-	copy(iv, baseIV)
-
-	blockIndex := byteOffset / uint64(aes.BlockSize)
-	var carry uint64 = blockIndex
-	for i := aes.BlockSize - 1; i >= aes.BlockSize-8; i-- {
-		sum := uint64(iv[i]) + (carry & 0xff)
-		iv[i] = byte(sum & 0xff)
-		carry = (carry >> 8) + (sum >> 8)
-		if i == aes.BlockSize-8 {
-			break
-		}
-	}
-	return iv, nil
-}
-
-// 【直接复用】源自旧代码的健壮实现
 // setupCurrentFragmentReader 准备当前分片的读取器，采用多路径自适应策略
 func (r *VirtualSeekableDecryptReader) setupCurrentFragmentReader() error {
 	if r.currentRawReader != nil {
@@ -154,7 +132,7 @@ func (r *VirtualSeekableDecryptReader) setupCurrentFragmentReader() error {
 	if ra, ok := rawReader.(io.ReaderAt); ok {
 		section := io.NewSectionReader(ra, int64(localOffset), int64(frag.Length-localOffset))
 		totalOffset := frag.GlobalStartOffset + localOffset
-		iv, derr := deriveCTRIVForOffset(r.iv, totalOffset)
+		iv, derr := crypto.DeriveCTRIVForOffset_v2(r.iv, totalOffset)
 		if derr != nil {
 			_ = rawReader.Close()
 			return derr
@@ -183,7 +161,7 @@ func (r *VirtualSeekableDecryptReader) setupCurrentFragmentReader() error {
 			return fmt.Errorf("failed to seek underlying fragment reader for %s: %w", frag.ID, err)
 		}
 		totalOffset := frag.GlobalStartOffset + localOffset
-		iv, derr := deriveCTRIVForOffset(r.iv, totalOffset)
+		iv, derr := crypto.DeriveCTRIVForOffset_v2(r.iv, totalOffset)
 		if derr != nil {
 			_ = rawReader.Close()
 			return derr
@@ -212,7 +190,7 @@ func (r *VirtualSeekableDecryptReader) setupCurrentFragmentReader() error {
 		return fmt.Errorf("container is corrupt: failed to read data for fragment '%s': %w", frag.ID, err)
 	}
 	totalOffset := frag.GlobalStartOffset
-	ivForFrag, derr := deriveCTRIVForOffset(r.iv, totalOffset)
+	ivForFrag, derr := crypto.DeriveCTRIVForOffset_v2(r.iv, totalOffset)
 	if derr != nil {
 		return derr
 	}
@@ -226,29 +204,9 @@ func (r *VirtualSeekableDecryptReader) setupCurrentFragmentReader() error {
 	return nil
 }
 
-// 【直接复用】源自旧代码的高效实现
-func (r *VirtualSeekableDecryptReader) findFragmentIndexContaining(off int64) int {
-	idx := sort.Search(len(r.streamFragments), func(i int) bool {
-		return int64(r.streamFragments[i].GlobalStartOffset+r.streamFragments[i].Length) > off
-	})
-	if idx == len(r.streamFragments) {
-		return -1
-	}
-	if int64(r.streamFragments[idx].GlobalStartOffset) <= off {
-		return idx
-	}
-	if idx == 0 {
-		return -1
-	}
-	prev := idx - 1
-	if int64(r.streamFragments[prev].GlobalStartOffset) <= off && off < int64(r.streamFragments[prev].GlobalStartOffset+r.streamFragments[prev].Length) {
-		return prev
-	}
-	return -1
-}
-
 // Read 实现 io.Reader 接口，使用健壮的循环逻辑
 func (r *VirtualSeekableDecryptReader) Read(p []byte) (n int, err error) {
+
 	totalRead := 0
 	for totalRead < len(p) {
 		if r.currentFragmentIndex >= len(r.streamFragments) {
@@ -308,6 +266,11 @@ func (r *VirtualSeekableDecryptReader) Seek(offset int64, whence int) (int64, er
 	// 允许在文件末尾 Seek
 	if newGlobalOffset > totalSize {
 		return r.globalOffset, fmt.Errorf("seek offset %d out of bounds [0, %d]", newGlobalOffset, totalSize)
+	}
+
+	// 【关键修复】如果目标位置与当前位置相同，则无需任何操作
+	if newGlobalOffset == r.globalOffset {
+		return r.globalOffset, nil
 	}
 
 	fragIdx := sort.Search(len(r.streamFragments), func(i int) bool {

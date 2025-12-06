@@ -15,9 +15,11 @@ import (
 	"github.com/Soltus/encv-go/internal/types"
 )
 
-func StartWebdav(ctx context.Context) (string, string, error) {
-	return server.StartWebdav(ctx)
-}
+// 暂时注释，需要修改，勿删
+
+// func StartWebdav(ctx context.Context) (string, string, error) {
+// 	return server.StartWebdav(ctx)
+// }
 
 func FindServer(startPort int, maxTries int) (string, error) {
 	return register.FindServer(startPort, maxTries)

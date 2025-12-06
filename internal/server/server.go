@@ -96,14 +96,15 @@ func (s *Server) Start(port int, version string) (string, error) {
 	mux.HandleFunc("/", s.handleRequest)
 	// 如果启用了 WebDAV，则注册其处理器
 	if s.webdavDir != "" {
-		fs := webdav.NewENCVFS(config.NewContext(context.Background(), s.cfg))
+		fs := webdav.NewENCVFS(config.NewContext(context.Background(), s.cfg), s.readerService)
 		webdavHandler := &goWebdav.Handler{
 			FileSystem: fs,
 			LockSystem: goWebdav.NewMemLS(),
 		}
 		// WebDAV 也需要通过配置中间件来处理密码等
 		configAwareWebdavHandler := middleware.WithConfig(s.cfg, webdavHandler)
-		mux.Handle(s.webdavPath, http.StripPrefix(s.webdavPath, configAwareWebdavHandler))
+		mux.Handle(s.webdavPath, configAwareWebdavHandler)
+
 	}
 
 	// CorsMiddleware 应该在最外层，最先处理请求

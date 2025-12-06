@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -153,4 +154,79 @@ func IsConnectionClosedError(err error) bool {
 	// 处理旧版本或更通用的错误
 	errStr := err.Error()
 	return strings.Contains(errStr, "connection reset by peer") || strings.Contains(errStr, "broken pipe")
+}
+
+// GetRemoteStreamWithRange 发起一个 HTTP Range 请求并返回响应体。
+// start 和 end 定义了字节范围。负数表示从文件末尾开始计算（例如 start=-32 表示最后32字节）。
+// 调用者负责关闭返回的 resp.Body。
+func GetRemoteStreamWithRange(url string, headers map[string]string, start, end int64) (*http.Response, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// 构造 Range 请求头
+	var rangeStr string
+	if start >= 0 && end >= 0 {
+		rangeStr = fmt.Sprintf("bytes=%d-%d", start, end)
+	} else if start < 0 {
+		rangeStr = fmt.Sprintf("bytes=%d", start)
+	} else if end < 0 {
+		rangeStr = fmt.Sprintf("bytes=%d-", start)
+	} else {
+		return nil, fmt.Errorf("invalid range specified: start=%d, end=%d", start, end)
+	}
+	req.Header.Set("Range", rangeStr)
+
+	// 复制其他请求头
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute request: %w", err)
+	}
+
+	// 【关键修复】处理 416 错误
+	if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+		log.Printf("WARN: [GetRemoteStreamWithRange] Range %d-%d not satisfiable for %s. Trying to correct.", start, end, url)
+		// 尝试从 Content-Range 响应头获取文件总大小
+		contentRange := resp.Header.Get("Content-Range")
+		if contentRange != "" {
+			// 格式通常是 "bytes */<total_length>"
+			parts := strings.Split(contentRange, "/")
+			if len(parts) == 2 {
+				totalSize, parseErr := strconv.ParseInt(parts[1], 10, 64)
+				if parseErr == nil {
+					// 关闭原始响应
+					resp.Body.Close()
+
+					// 如果请求的起始位置已经超出文件末尾，则无法修正
+					if start >= totalSize {
+						return nil, fmt.Errorf("invalid range: start (%d) is beyond file size (%d)", start, totalSize)
+					}
+
+					// 修正结束位置
+					correctedEnd := totalSize - 1
+					log.Printf("DEBUG: [GetRemoteStreamWithRange] Retrying with corrected range: %d-%d", start, correctedEnd)
+
+					// 递归调用，使用修正后的范围
+					return GetRemoteStreamWithRange(url, headers, start, correctedEnd)
+				}
+			}
+		}
+		// 如果无法解析 Content-Range，则返回原始错误
+		resp.Body.Close()
+		return nil, fmt.Errorf("unexpected status code: %d (416 Range Not Satisfiable)", resp.StatusCode)
+	}
+
+	// 检查状态码，206是成功的范围请求，200也接受（某些服务器对整个文件请求也返回200）
+	if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	return resp, nil
 }

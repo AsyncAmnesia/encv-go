@@ -2,6 +2,8 @@
 
 package webdav
 
+// 暂时注释，需要修改，勿删
+
 import (
 	"bytes"
 	"context"
@@ -17,6 +19,7 @@ import (
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/service"
 	"github.com/Soltus/encv-go/internal/utils"
+	"github.com/Soltus/encv-go/internal/v2/container/manifest"
 	goWebdav "golang.org/x/net/webdav"
 )
 
@@ -124,7 +127,7 @@ func (fs *encvWebDAVFS) statFile(ctx context.Context, fullPath string) (os.FileI
 	// 步骤 3: 从这里开始，我们 100% 确定它是一个文件。
 	// 现在可以安全地尝试将其作为 ENCV 容器来处理。
 	log.Printf("[WebDAV-statFile] Path '%s' is a file, checking if it's a container.", fullPath)
-	kviData, err := service.ExtractKVI(ctx, fullPath)
+	kviData, err := manifest.ExtractKVI_v2(fullPath)
 	if err != nil {
 		// 如果不是容器或 KVI 提取失败，我们返回从 os.Stat 获取的原始文件信息。
 		// 这避免了重复调用 os.Stat，更高效。
@@ -157,7 +160,7 @@ func (fs *encvWebDAVFS) statFile(ctx context.Context, fullPath string) (os.FileI
 
 // statAsContainer 尝试将路径作为容器获取信息
 func (fs *encvWebDAVFS) statAsContainer(ctx context.Context, fullPath string) (os.FileInfo, error) {
-	if _, err := service.ExtractKVI(ctx, fullPath); err != nil {
+	if _, err := manifest.ExtractKVI_v2(fullPath); err != nil {
 		return nil, os.ErrNotExist
 	}
 	return fs.statFile(ctx, fullPath)
@@ -217,7 +220,7 @@ func (fs *encvWebDAVFS) openAsDirectory(fullPath string, name string) (goWebdav.
 // openAsContainer 尝试将路径作为 ENCV 容器打开并解密
 func (fs *encvWebDAVFS) openAsContainer(ctx context.Context, fullPath string) (goWebdav.File, error) {
 	// 检查是否是容器
-	if _, err := service.ExtractKVI(ctx, fullPath); err != nil {
+	if _, err := manifest.ExtractKVI_v2(fullPath); err != nil {
 		return nil, os.ErrNotExist
 	}
 
@@ -294,7 +297,7 @@ func (fs *encvWebDAVFS) OpenFile(ctx context.Context, name string, flag int, per
 	// 4. 尝试直接打开文件 (这会处理普通文件和容器文件)
 	if f, err := os.Open(fullPath); err == nil {
 		// 如果打开成功，需要判断是不是容器
-		if _, kviErr := service.ExtractKVI(ctx, fullPath); kviErr == nil {
+		if _, kviErr := manifest.ExtractKVI_v2(fullPath); kviErr == nil {
 			// 是容器，关闭它，然后走解密流程
 			f.Close()
 			log.Printf("[WebDAV-OpenFile] Opened container '%s', now delegating to openAsContainer.", fullPath)
@@ -315,7 +318,7 @@ func (fs *encvWebDAVFS) OpenFile(ctx context.Context, name string, flag int, per
 func (fs *encvWebDAVFS) getCachedFileInfo(ctx context.Context, fullPath string, decryptedData []byte) *decryptedFileInfo {
 	// 在真实场景中，你应该把FileInfo对象也存入缓存
 	// 这里为了简化，我们重新解析一次
-	kviData, _ := service.ExtractKVI(ctx, fullPath)
+	kviData, _ := manifest.ExtractKVI_v2(fullPath)
 	index, _ := utils.UnmarshalKVI(kviData)
 	containerInfo, _ := os.Stat(fullPath)
 
@@ -526,7 +529,7 @@ func (fs *encvWebDAVFS) buildPathIndex(ctx context.Context) error {
 		}
 
 		// 检查是否是容器
-		kviData, err := service.ExtractKVI(ctx, path)
+		kviData, err := manifest.ExtractKVI_v2(path)
 		if err != nil {
 			return nil // 不是容器，跳过
 		}

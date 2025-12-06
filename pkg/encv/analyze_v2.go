@@ -94,7 +94,7 @@ func AnalyzeContainerV2(ctx context.Context, containerPath string) error {
 
 	// 如果通过 Footer 读取失败，或者 Footer 本身无效，则降级到扫描
 	if manifestBytes == nil {
-		fmt.Printf("  INFO: Scanning for manifest block from file start...\n")
+		// log.Printf("  INFO: Scanning for manifest block from file start...\n")
 		manifestBytes, readErr = manifest.ExtractManifest_v2(absPath)
 		if readErr != nil {
 			// 连扫描都失败了，这是一个致命错误，无法继续
@@ -170,14 +170,14 @@ func performPhysicalLayoutScan(file *os.File, manifestObj types.Manifest_v2, fil
 		var firstChunkLength uint64
 		var firstChunkManifestCRC uint32
 		for _, frag := range manifestObj.Fragments {
-			if frag.ID == "video_chunk_0" {
+			if frag.ID == "logical_fragment_0" {
 				firstChunkLength = frag.Length
 				firstChunkManifestCRC = frag.DataCRC32
 				break
 			}
 		}
 		if firstChunkLength == 0 {
-			return nil, fmt.Errorf("could not find length for video_chunk_0 in manifest")
+			return nil, fmt.Errorf("could not find length for logical_fragment_0 in manifest")
 		}
 
 		crc, err := streamCRC32(file, firstChunkLength)
@@ -185,7 +185,7 @@ func performPhysicalLayoutScan(file *os.File, manifestObj types.Manifest_v2, fil
 			return nil, fmt.Errorf("failed to stream CRC for first chunk: %w", err)
 		}
 		if crc != firstChunkManifestCRC {
-			fmt.Printf("  [WARN] CRC mismatch for video_chunk_0! Calculated: %08x, Manifest: %08x\n", crc, firstChunkManifestCRC)
+			fmt.Printf("  [WARN] CRC mismatch for logical_fragment_0! Calculated: %08x, Manifest: %08x\n", crc, firstChunkManifestCRC)
 		}
 
 		scannedBlocks = append(scannedBlocks, scannedBlock{

@@ -5,14 +5,23 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/proxy"
+	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/pkg/encv"
 )
 
 func main() {
+	// 【新增】在程序最开始就设置日志
+	logFilePath := utils.SetupLogging("encv-proxy.log")
+
+	// %TEMP%/encv.log
+	log.Printf("Received Args: %v\n", os.Args)
+	// 也打印到控制台，方便在 PowerShell 中查看
+	fmt.Printf("-> Log file is at: %s\n", logFilePath)
 	// 1. 加载基础配置（默认值 + 配置文件），后期修改为可自定义配置文件路径
 	cfg, err := config.Load("config.user.json")
 	if err != nil {

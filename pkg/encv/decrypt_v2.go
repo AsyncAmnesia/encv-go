@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Soltus/encv-go/internal/service"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 )
 
@@ -35,4 +36,9 @@ func DecryptPathV2(ctx context.Context, inputDir, outputDir string) error {
 		}
 		return nil
 	})
+}
+
+func Preview(ctx context.Context, inputPath string) error {
+	// 将实际工作委托给 internal/service
+	return service.Preview(ctx, inputPath)
 }

@@ -14,8 +14,29 @@ import (
 	"time"
 )
 
+// DecryptMode 定义解压的模式
+type DecryptMode string
+
+const (
+	// ModePreview 预览模式：解压到临时目录并用默认程序打开
+	ModePreview DecryptMode = "preview"
+	// ModeToFolder 解压到指定文件夹
+	ModeToFolder DecryptMode = "to-folder"
+	// ModeHere 解压到当前文件夹
+	ModeHere DecryptMode = "here"
+	// ModeToSubfolder 解压到同名文件夹
+	ModeToSubfolder DecryptMode = "to-subfolder"
+)
+
+// DecryptOptions 包含解密操作所需的选项。
+type DecryptOptions struct {
+	// OutputDir 指定解密后文件的输出目录。
+	OutputDir string
+	Mode      DecryptMode // 解压模式
+}
+
 // Preview 通过HTTP流和mpv播放器来预览加密文件。
-func (d *Decrypter) Preview(ctx context.Context, inputPath string) error {
+func Preview(ctx context.Context, inputPath string) error {
 	// 1. 构造视频和字幕的HTTP URL
 	videoURL, subtitleURL, err := constructURLs(inputPath)
 	if err != nil {
