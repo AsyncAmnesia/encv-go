@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"log"
 	"net/url"
@@ -20,85 +19,127 @@ import (
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/pkg/encv"
+	"github.com/spf13/cobra"
 )
 
 // Version 会在编译时通过 -ldflags 注入，如果不是，则默认为 "dev"
 // 注入方式：go build -ldflags="-X main.Version=v1.2.3" ./cmd/encv
 var Version = "dev"
 
+// 全局变量，由 PersistentPreRun 初始化，供所有子命令使用
+var (
+	cfg     *config.Config
+	rootCtx context.Context
+)
+
+// --- init 函数：添加所有命令到根命令，并定义标志 ---
+func init() {
+	// 添加子命令
+	rootCmd.AddCommand(analyzeV2Cmd)
+	rootCmd.AddCommand(manifestV2Cmd)
+	rootCmd.AddCommand(kviV2Cmd)
+	rootCmd.AddCommand(decryptV2Cmd)
+	rootCmd.AddCommand(encryptV2Cmd)
+	rootCmd.AddCommand(registerProtocolCmd)
+	rootCmd.AddCommand(unregisterProtocolCmd)
+	rootCmd.AddCommand(playV2Cmd)
+	rootCmd.AddCommand(startCmd)
+	// rootCmd.AddCommand(webdavCmd)
+	rootCmd.AddCommand(serverCmd)
+	rootCmd.AddCommand(openasCmd)
+	rootCmd.AddCommand(openStreamCmd)
+	rootCmd.AddCommand(registerCmd)
+	rootCmd.AddCommand(unregisterCmd)
+
+	// 为命令添加标志
+	manifestV2Cmd.Flags().StringP("save", "s", "", "Save Manifest content to a specified JSON file.")
+	kviV2Cmd.Flags().StringP("save", "s", "", "Save KVI content to a specified JSON file.")
+	decryptV2Cmd.Flags().StringP("password", "p", "", "Password for decryption (overrides config)")
+	decryptV2Cmd.Flags().StringP("output", "o", "", "Output directory for decrypted files")
+	encryptV2Cmd.Flags().StringP("password", "p", "", "Password for encryption (overrides config)")
+	encryptV2Cmd.Flags().StringP("output", "o", "", "Output directory for encrypted files (overrides config)")
+	// play-v2 的标志，包含 OS 相关的默认值
+	defaultPlayer := "mpv"
+	if runtime.GOOS == "windows" {
+		defaultPlayer = "mpv.exe"
+	}
+	playV2Cmd.Flags().StringP("player", "r", defaultPlayer, "Media player to use (e.g., mpv, vlc)")
+
+	// webdav 的标志
+	// webdavCmd.Flags().StringP("password", "p", "", "Password for server to decrypt (overrides config)")
+	// webdavCmd.Flags().StringP("dir", "d", "", "Directory to serve (overrides config)")
+	// webdavCmd.Flags().IntP("port", "P", 0, "Port for WebDAV server (overrides config)")
+}
+
+// --- main 函数：入口点，变得非常简洁 ---
 func main() {
-	// 【新增】在程序最开始就设置日志
-	logFilePath := utils.SetupLogging("encv.log")
-
-	// %TEMP%/encv.log
-	log.Printf("Received Args: %v\n", os.Args)
-	// 也打印到控制台，方便在 PowerShell 中查看
-	fmt.Printf("-> Log file is at: %s\n", logFilePath)
-
-	if len(os.Args) < 2 {
-		printUsage()
-		return
+	if err := rootCmd.Execute(); err != nil {
+		log.Fatalf("Command execution failed: %v", err)
 	}
-	// 1. 获取可执行文件自身的路径
-	exePath, err := os.Executable()
-	if err != nil {
-		log.Fatalf("Error: Could not determine executable path: %v", err)
-	}
-	// 2. 获取可执行文件所在的目录
-	exeDir := filepath.Dir(exePath)
-	// 3. 构建配置文件的完整路径
-	configPath := filepath.Join(exeDir, "config.user.json")
+}
 
-	log.Printf("-> Loading config from: %s\n", configPath)
-	// 1. 加载基础配置（默认值 + 配置文件），后期修改为可自定义配置文件路径
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		log.Fatalf("Failed to load base config: %v", err)
-	}
-	rootCtx := config.NewContext(context.Background(), cfg)
+// --- 根命令 ---
+var rootCmd = &cobra.Command{
+	Use:   "encv",
+	Short: "ENCV is a tool for encrypting and decrypting files.",
+	Long:  `ENCV is a powerful command-line tool for encrypting and decrypting files and directories using a custom container format.`,
+	// PersistentPreRun 会在每个子命令运行前执行，非常适合用来做通用的初始化工作
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// 【新增】在程序最开始就设置日志
+		logFilePath := utils.SetupLogging("encv.log")
+		log.Printf("Received Args: %v\n", os.Args)
+		fmt.Printf("-> Log file is at: %s\n", logFilePath)
 
-	switch os.Args[1] {
-	case "analyze-v2":
-		analyzeV2Cmd := flag.NewFlagSet("analyze-v2", flag.ExitOnError)
-		err := analyzeV2Cmd.Parse(os.Args[2:])
+		// 1. 获取可执行文件自身的路径
+		exePath, err := os.Executable()
 		if err != nil {
-			log.Fatalf("Error parsing 'analyze-v2' flags: %v", err)
+			log.Fatalf("Error: Could not determine executable path: %v", err)
 		}
+		// 2. 获取可执行文件所在的目录
+		exeDir := filepath.Dir(exePath)
+		// 3. 构建配置文件的完整路径
+		configPath := filepath.Join(exeDir, "config.user.json")
 
-		containerPath := analyzeV2Cmd.Arg(0)
-		if containerPath == "" {
-			log.Fatal("Error: Please provide the path to the v2 ENCV container file.")
+		log.Printf("-> Loading config from: %s\n", configPath)
+		// 加载基础配置（默认值 + 配置文件）
+		cfg, err = config.Load(configPath)
+		if err != nil {
+			log.Fatalf("Failed to load base config: %v", err)
 		}
+		rootCtx = config.NewContext(context.Background(), cfg)
+	},
+}
 
+// --- analyze-v2 命令 ---
+var analyzeV2Cmd = &cobra.Command{
+	Use:   "analyze-v2 [path to container]",
+	Short: "Analyzes a v2 ENCV container file",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
 		encv.Init(rootCtx)
-
-		// 调用分析函数
+		containerPath := args[0]
 		if err := encv.AnalyzeContainerV2(rootCtx, containerPath); err != nil {
 			log.Fatalf("Analysis failed for '%s': %v", containerPath, err)
 		}
-	case "manifest-v2":
-		manifestV2Cmd := flag.NewFlagSet("manifest-v2", flag.ExitOnError)
-		savePathPtr := manifestV2Cmd.String("s", "", "Save Manifest content to a specified JSON file.")
-		err := manifestV2Cmd.Parse(os.Args[2:])
-		if err != nil {
-			log.Fatalf("Error parsing 'manifest-v2' flags: %v", err)
-		}
+	},
+}
 
-		containerPath := manifestV2Cmd.Arg(0)
-		if containerPath == "" {
-			log.Fatal("Error: Please provide the path to the v2 ENCV container file.")
-		}
-
+// --- manifest-v2 命令 ---
+var manifestV2Cmd = &cobra.Command{
+	Use:   "manifest-v2 [path to container]",
+	Short: "Extracts and prints the manifest from a v2 container",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
 		encv.Init(rootCtx)
+		containerPath := args[0]
+		savePath, _ := cmd.Flags().GetString("save")
 
-		// 调用新函数获取 Manifest 数据
 		manifestData, err := encv.ExtractManifest_v2(containerPath)
 		if err != nil {
 			log.Fatalf("Failed to extract Manifest from '%s': %v", containerPath, err)
 		}
 
-		// 根据 -s 标志决定输出方式
-		if *savePathPtr == "" {
+		if savePath == "" {
 			fmt.Println("--- Manifest Content (v2) ---")
 			var prettyJSON interface{}
 			if err := json.Unmarshal(manifestData, &prettyJSON); err != nil {
@@ -108,129 +149,150 @@ func main() {
 				fmt.Printf("%s\n", string(indentedJSON))
 			}
 		} else {
-			if err := os.WriteFile(*savePathPtr, manifestData, 0644); err != nil {
-				log.Fatalf("Failed to save Manifest to '%s': %v", *savePathPtr, err)
+			if err := os.WriteFile(savePath, manifestData, 0644); err != nil {
+				log.Fatalf("Failed to save Manifest to '%s': %v", savePath, err)
 			}
-			log.Printf("✅ Manifest content successfully saved to: %s\n", *savePathPtr)
+			log.Printf("✅ Manifest content successfully saved to: %s\n", savePath)
 		}
-	case "kvi-v2":
-		kviV2Cmd := flag.NewFlagSet("kvi-v2", flag.ExitOnError)
-		savePathPtr := kviV2Cmd.String("s", "", "Save KVI content to a specified JSON file.")
-		err := kviV2Cmd.Parse(os.Args[2:])
-		if err != nil {
-			log.Fatalf("Error parsing 'kvi-v2' flags: %v", err)
-		}
+	},
+}
 
-		containerPath := kviV2Cmd.Arg(0)
-		if containerPath == "" {
-			log.Fatal("Error: Please provide the path to the v2 ENCV container file.")
-		}
+// --- kvi-v2 命令 ---
+var kviV2Cmd = &cobra.Command{
+	Use:   "kvi-v2 [path to container]",
+	Short: "Extracts and prints the KVI from a v2 container",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
 		encv.Init(rootCtx)
+		containerPath := args[0]
+		savePath, _ := cmd.Flags().GetString("save")
 
-		// 调用新的 v2 函数获取 KVI 数据
 		kviData, err := encv.ExtractKVI_v2(containerPath)
 		if err != nil {
 			log.Fatalf("Failed to extract KVI from '%s': %v", containerPath, err)
 		}
 
-		// 根据 -s 标志决定输出方式
-		if *savePathPtr == "" {
-			// 打印到控制台，并进行格式化
+		if savePath == "" {
 			fmt.Println("--- KVI Content (v2) ---")
 			var prettyJSON interface{}
 			if err := json.Unmarshal(kviData, &prettyJSON); err != nil {
-				// 如果无法解析为 JSON，就打印原始字符串
 				fmt.Printf("%s\n", string(kviData))
 			} else {
-				// 格式化打印
 				indentedJSON, _ := json.MarshalIndent(prettyJSON, "", "  ")
 				fmt.Printf("%s\n", string(indentedJSON))
 			}
 		} else {
-			// 保存到文件
-			if err := os.WriteFile(*savePathPtr, kviData, 0644); err != nil {
-				log.Fatalf("Failed to save KVI to '%s': %v", *savePathPtr, err)
+			if err := os.WriteFile(savePath, kviData, 0644); err != nil {
+				log.Fatalf("Failed to save KVI to '%s': %v", savePath, err)
 			}
-			log.Printf("✅ KVI content successfully saved to: %s\n", *savePathPtr)
+			log.Printf("✅ KVI content successfully saved to: %s\n", savePath)
 		}
-	case "decrypt-v2":
-		decryptV2Cmd := flag.NewFlagSet("decrypt-v2", flag.ExitOnError)
-		var passwordFlag, outputDirFlag string
-		decryptV2Cmd.StringVar(&passwordFlag, "p", cfg.Password, "Password for decryption, overrides config file")
-		decryptV2Cmd.StringVar(&outputDirFlag, "o", "", "Output directory for decrypted files.")
+	},
+}
 
-		if err := decryptV2Cmd.Parse(os.Args[2:]); err != nil {
-			log.Fatalf("Error parsing 'decrypt-v2' flags: %v", err)
-		}
+// --- decrypt-v2 命令 ---
+var decryptV2Cmd = &cobra.Command{
+	Use:   "decrypt-v2 [path to file/dir]",
+	Short: "Decrypts a v2 ENCV container or a directory of them",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		inputPath := args[0]
 
-		inputPath := decryptV2Cmd.Arg(0)
-		if inputPath == "" {
-			log.Fatal("Error: Please provide the path to the ENCV container file or directory to decrypt.")
-		}
-
+		// 【关键修正】从标志获取值，并直接覆盖 cfg 中的值
+		passwordFlag, _ := cmd.Flags().GetString("password")
 		if passwordFlag != "" {
 			cfg.Password = passwordFlag
 		}
-		// ... (密码提示逻辑) ...
 
+		outputDirFlag, _ := cmd.Flags().GetString("output")
 		finalOutputDir := outputDirFlag
 		if finalOutputDir == "" {
-			finalOutputDir = "./_decrypted_v2" // 默认输出目录
+			finalOutputDir = "./_decrypted_v2"
+		}
+
+		// 如果此时 cfg.Password 仍然为空，则提示用户输入
+		if cfg.Password == "" {
+			fmt.Print("Enter password: ")
+			// 注意：这里需要您自行处理密码输入，例如使用 term.ReadPassword
+			// bytePassword, _ := term.ReadPassword(int(syscall.Stdin))
+			// cfg.Password = string(bytePassword)
+			// fmt.Println()
+			// 为了简化示例，这里暂时省略
+			log.Fatal("Password is required.")
 		}
 
 		if err := os.MkdirAll(finalOutputDir, 0755); err != nil {
 			log.Fatalf("Failed to create output directory: %v", err)
 		}
-		// 【关键改动】调用新的、支持文件夹的高级 API
+
+		// 【关键修正】调用函数时不再传递密码，让它从 cfg 中读取
 		if err := encv.DecryptPathV2(rootCtx, inputPath, finalOutputDir); err != nil {
 			log.Fatalf("Decryption process failed: %v", err)
 		}
 		log.Printf("✅ All decryption tasks complete. Output in: %s\n", finalOutputDir)
+	},
+}
 
-	case "encrypt-v2":
-		encryptV2Cmd := flag.NewFlagSet("encrypt-v2", flag.ExitOnError)
-		encryptV2Cmd.StringVar(&cfg.Password, "p", cfg.Password, "Password for encryption, overrides config file")
-		encryptV2Cmd.StringVar(&cfg.OutputPath, "o", cfg.OutputPath, "Output directory for encrypted files.")
-		// 解析子命令后的参数
-		if err := encryptV2Cmd.Parse(os.Args[2:]); err != nil {
-			log.Fatalf("Error parsing 'encrypt-v2' flags: %v", err)
+// --- encrypt-v2 命令 ---
+var encryptV2Cmd = &cobra.Command{
+	Use:   "encrypt-v2 [path to file/dir]",
+	Short: "Encrypts a file or directory into a v2 ENCV container",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		inputPath := args[0]
+		// 这些标志会覆盖配置文件中的值
+		passwordFlag, _ := cmd.Flags().GetString("password")
+		outputPathFlag, _ := cmd.Flags().GetString("output")
+
+		if passwordFlag != "" {
+			cfg.Password = passwordFlag
 		}
-		inputPath := encryptV2Cmd.Arg(0)
-		if inputPath == "" {
-			log.Fatal("Error: Please provide the path to the file or directory to encrypt.")
+		if outputPathFlag != "" {
+			cfg.OutputPath = outputPathFlag
 		}
-		rootCtx := config.NewContext(context.Background(), cfg)
-		encv.InitV2(rootCtx) // 此时 Init 得到的是包含命令行参数的最终配置
+
+		encv.InitV2(rootCtx)
 		if err := os.MkdirAll(cfg.OutputPath, 0755); err != nil {
 			log.Fatalf("Failed to create output directory: %v", err)
 		}
 		if err := encv.EncryptPathV2(rootCtx, inputPath, cfg.OutputPath); err != nil {
 			log.Fatalf("Encryption process failed: %v", err)
 		}
-	case "play-v2":
-		playV2Cmd := flag.NewFlagSet("play-v2", flag.ExitOnError)
-		playV2Cmd.StringVar(&cfg.Password, "p", cfg.Password, "Password for decryption, overrides config file")
+	},
+}
 
-		// 添加一个新参数来指定播放器
-		defaultPlayer := "mpv"
-		if runtime.GOOS == "windows" {
-			// Windows 下可能需要指定完整路径或使用其他播放器
-			// 这里我们先假设 mpv.exe 在 PATH 中
-			defaultPlayer = "mpv.exe"
+// --- 协议相关命令 ---
+var registerProtocolCmd = &cobra.Command{
+	Use:   "register-protocol",
+	Short: "在Windows中注册 encv:// 自定义协议",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := RegisterProtocol(cfg); err != nil {
+			log.Fatalf("注册协议失败: %v", err)
 		}
-		playerPtr := playV2Cmd.String("player", defaultPlayer, "Media player to use (e.g., mpv, vlc)")
+	},
+}
 
-		err := playV2Cmd.Parse(os.Args[2:])
-		if err != nil {
-			log.Fatalf("Error parsing 'play-v2' flags: %v", err)
+var unregisterProtocolCmd = &cobra.Command{
+	Use:   "unregister-protocol",
+	Short: "在Windows中取消注册 encv:// 自定义协议",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := UnregisterProtocol(); err != nil {
+			log.Fatalf("取消注册协议失败: %v", err)
 		}
+	},
+}
 
-		inputPath := playV2Cmd.Arg(0)
-		if inputPath == "" {
-			log.Fatal("Error: Please provide the path to the ENCV container file to play.")
-		}
+// --- play-v2 命令 ---
+var playV2Cmd = &cobra.Command{
+	Use:   "play-v2 [path to container]",
+	Short: "Decrypts and plays a media file from a v2 container",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		inputPath := args[0]
+		player, _ := cmd.Flags().GetString("player")
 
-		// 【新增】如果密码为空，则提示用户输入 (复用 decrypt 的逻辑)
+		encv.Init(rootCtx)
+
 		if cfg.Password == "" {
 			fmt.Print("-> Please enter the password for decryption: ")
 			scanner := bufio.NewScanner(os.Stdin)
@@ -245,142 +307,20 @@ func main() {
 			}
 		}
 
-		finalCtx := config.NewContext(context.Background(), cfg)
-		encv.Init(finalCtx)
-
-		log.Printf("-> Starting playback for '%s' with player '%s'\n", inputPath, *playerPtr)
-		if err := encv.PlayV2(finalCtx, inputPath, *playerPtr); err != nil {
+		log.Printf("-> Starting playback for '%s' with player '%s'\n", inputPath, player)
+		if err := encv.PlayV2(rootCtx, inputPath, player); err != nil {
 			log.Fatalf("Playback failed: %v", err)
 		}
-	// case "encrypt":
-	// 	encryptCmd := flag.NewFlagSet("encrypt", flag.ExitOnError)
-	// 	// 直接传入 cfg 字段的地址，flag.Parse() 后会自动更新
-	// 	encryptCmd.StringVar(&cfg.Password, "p", cfg.Password, "Password for encryption, overrides config file")
-	// 	encryptCmd.StringVar(&cfg.OutputPath, "o", cfg.OutputPath, "Output directory, overrides config file")
+	},
+}
 
-	// 	err := encryptCmd.Parse(os.Args[2:])
-	// 	if err != nil {
-	// 		log.Fatalf("Error parsing 'encrypt' flags: %v", err)
-	// 	}
-
-	// 	inputPath := encryptCmd.Arg(0)
-	// 	if inputPath == "" {
-	// 		log.Fatal("Error: Please provide the path to the file or directory to encrypt.")
-	// 	}
-
-	// 	finalCtx := config.NewContext(context.Background(), cfg)
-	// 	encv.Init(finalCtx)
-	// 	encrypter := encv.NewEncrypter()
-	// 	if err := encrypter.Encrypt(finalCtx, inputPath); err != nil {
-	// 		log.Fatalf("Encryption failed: %v", err)
-	// 	}
-	// 	log.Printf("✅ Encryption complete. Output in: %s\n", cfg.OutputPath)
-
-	case "decrypt":
-		decryptCmd := flag.NewFlagSet("decrypt", flag.ExitOnError)
-		// 直接传入 cfg 字段的地址，flag.Parse() 后会自动更新
-		decryptCmd.StringVar(&cfg.Password, "p", cfg.Password, "Password for decryption, overrides config file")
-		decryptCmd.BoolVar(&cfg.Recover, "r", cfg.Recover, "Force overwrite existing output files, overrides config file")
-		// outputPtr := decryptCmd.String("o", "./decrypted", "Output directory for decrypted files")
-		// modePtr := decryptCmd.String("mode", "to-folder", "Decryption mode: preview, to-folder, here, to-subfolder")
-		// --- 【关键修改】从这里开始 ---
-		// 1. 定义一个相对于可执行文件目录的默认输出路径
-		defaultOutputDir := filepath.Join(exeDir, "decrypted")
-		// 2. 将这个绝对路径作为 flag 的默认值
-		outputPtr := decryptCmd.String("o", defaultOutputDir, "Output directory for decrypted files")
-		// --- 【关键修改】结束 ---
-
-		modePtr := decryptCmd.String("mode", "to-folder", "Decryption mode: preview, to-folder, here, to-subfolder")
-
-		err := decryptCmd.Parse(os.Args[2:])
-		if err != nil {
-			log.Fatalf("Error parsing flags: %v", err)
-		}
-
-		// 【新增】如果密码为空，则提示用户输入
-		if cfg.Password == "" {
-			fmt.Print("-> Please enter the password for decryption: ")
-			// 使用 bufio.Scanner 来安全地读取一行输入（可以包含空格）
-			scanner := bufio.NewScanner(os.Stdin)
-			if scanner.Scan() {
-				cfg.Password = scanner.Text()
-			}
-			if err := scanner.Err(); err != nil {
-				log.Fatalf("Failed to read password from input: %v", err)
-			}
-			if cfg.Password == "" {
-				log.Fatal("Error: Password cannot be empty.")
-			}
-		}
-
-		inputPath := decryptCmd.Arg(0)
-		if inputPath == "" {
-			// 【修正】更新提示信息
-			log.Fatal("Error: Please provide the path to the ENCV container file to decrypt.")
-		}
-		// --- 【关键修改】添加详细调试日志 ---
-		parsedModeString := *modePtr
-		log.Printf("-> [Debug] Parsed mode string from flag: '%s'", parsedModeString)
-
-		var finalOutputDir string
-		// 为了排除类型问题，我们直接比较字符串
-		switch parsedModeString {
-		case "to-subfolder":
-			log.Println("-> [Debug] Entering 'to-subfolder' logic.")
-			inputDir := filepath.Dir(inputPath)
-			fileNameWithoutExt := strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(filepath.Base(inputPath)))
-			finalOutputDir = filepath.Join(inputDir, fileNameWithoutExt)
-		case "here":
-			log.Println("-> [Debug] Entering 'here' logic.")
-			finalOutputDir = filepath.Dir(inputPath)
-		case "to-folder":
-			log.Println("-> [Debug] Entering 'to-folder' logic.")
-			finalOutputDir = *outputPtr
-		default: // preview 模式或其他未知模式
-			log.Printf("-> [Debug] Entering 'default' logic for mode: '%s'", parsedModeString)
-			finalOutputDir = *outputPtr
-		}
-		// --- 修改结束 ---
-
-		log.Printf("-> [Debug] Final output directory calculated as: %s\n", finalOutputDir)
-
-		finalCtx := config.NewContext(context.Background(), cfg)
-		encv.Init(finalCtx)
-
-		// 注意：这里我们还是需要把字符串转换回 service.DecryptMode 类型，因为解密服务需要它
-		// mode := service.DecryptMode(parsedModeString)
-		// opts := service.DecryptOptions{
-		// 	Mode:      mode,
-		// 	OutputDir: finalOutputDir,
-		// }
-		// decrypter := encv.NewDecrypter()                     // 暂时注释，需要修改，勿删
-		// fmt.Printf("--- DEBUG ---\n")
-		// fmt.Printf("Parsed Mode: '%s'\n", opts.Mode)
-		// fmt.Printf("Input Path: '%s'\n", inputPath)
-		// fmt.Printf("-------------\n")
-
-		// if opts.Mode == service.ModePreview {
-		// 	// 【新增】调试信息：确认进入了 Preview 分支
-		// 	fmt.Println("--- DEBUG: Entering PREVIEW mode ---")
-		// 	if err := decrypter.Preview(finalCtx, inputPath); err != nil {
-		// 		log.Fatalf("Preview failed: %v", err)
-		// 	}
-		// 	fmt.Println("--- DEBUG: Preview function finished successfully ---")
-		// } else {
-		// 	// 【新增】调试信息：确认进入了 Decrypt 分支
-		// 	fmt.Println("--- DEBUG: Entering STANDARD DECRYPT mode ---")
-		// 	if err := decrypter.Decrypt(finalCtx, inputPath, opts); err != nil {
-		// 		log.Fatalf("Decryption failed: %v", err)
-		// 	}
-		// 	log.Printf("✅ Decryption complete. Output in: %s\n", opts.OutputDir)
-		// }
-
-	case "start":
-		serverCmd := flag.NewFlagSet("start", flag.ExitOnError)
-		encv.ParseServerFlags(serverCmd, cfg, os.Args[2:])
-		finalCtx := config.NewContext(context.Background(), cfg)
-		encv.Init(finalCtx)
-		s := encv.NewServer(finalCtx)
+// --- start 命令 ---
+var startCmd = &cobra.Command{
+	Use:   "start",
+	Short: "Starts the ENCV server and keeps it running in the foreground",
+	Run: func(cmd *cobra.Command, args []string) {
+		encv.Init(rootCtx)
+		s := encv.NewServer(rootCtx)
 		addr, err := s.Start(cfg.Server.Port, Version)
 		if err != nil {
 			log.Fatalf("Failed to start server: %v", err)
@@ -394,53 +334,63 @@ func main() {
 		log.Println("\n(Press Ctrl+C in this terminal to stop the server)")
 
 		select {} // Keep server running
+	},
+}
 
-	case "webdav":
-		// 暂时注释，需要修改，勿删
-		//
-		//
-		// webdavCmd := flag.NewFlagSet("webdav", flag.ExitOnError)
-		// // 单实例检查，如需多实例请使用 "start"
-		// if err := encv.CheckForExistingService(cfg.Webdav.Port); err != nil {
-		// 	os.Exit(1)
-		// }
-		// // 直接传入 cfg 字段的地址，flag.Parse() 后会自动更新
-		// webdavCmd.StringVar(&cfg.Password, "p", cfg.Password, "Password for server to decrypt, overrides config file")
-		// webdavCmd.StringVar(&cfg.Webdav.Dir, "d", cfg.Webdav.Dir, "Directory to serve, overrides config file")
-		// webdavCmd.IntVar(&cfg.Webdav.Port, "port", cfg.Webdav.Port, "Port for WebDAV server, overrides config file")
-		// webdavCmd.Parse(os.Args[2:])
+// --- webdav 命令 ---
+// var webdavCmd = &cobra.Command{
+// 	Use:   "webdav",
+// 	Short: "Starts the ENCV WebDAV server",
+// 	Run: func(cmd *cobra.Command, args []string) {
+// 		if err := encv.CheckForExistingService(cfg.Webdav.Port); err != nil {
+// 			os.Exit(1)
+// 		}
 
-		// if cfg.Password == "" {
-		// 	log.Fatalf("WebDAV requires a password. Please set it in config.user.json.")
-		// }
-		// finalCtx := config.NewContext(context.Background(), cfg)
-		// encv.Init(finalCtx)
-		// addr, webdavPath, err := encv.StartWebdav(finalCtx)
-		// if err != nil {
-		// 	log.Fatalf("Failed to start WebDAV server: %v", err)
-		// }
+// 		// Flags override config
+// 		if pwd, _ := cmd.Flags().GetString("password"); pwd != "" {
+// 			cfg.Password = pwd
+// 		}
+// 		if dir, _ := cmd.Flags().GetString("dir"); dir != "" {
+// 			cfg.Webdav.Dir = dir
+// 		}
+// 		if port, _ := cmd.Flags().GetInt("port"); port != 0 {
+// 			cfg.Webdav.Port = port
+// 		}
 
-		// log.Printf("\n✅ WebDAV server started successfully!\n")
-		// log.Printf("   Serving files from: %s\n", cfg.Webdav.Dir)
-		// log.Printf("   Access it at: http://%s%s\n", addr, webdavPath)
-		// log.Println("\n--- How to Connect ---")
-		// log.Printf("   Windows: \\\\localhost@%s%s\n", strings.TrimPrefix(addr, ":"), webdavPath)
-		// log.Printf("   macOS:   http://%s%s\n", addr, webdavPath)
-		// log.Println("\n(Press Ctrl+C in this terminal to stop the server)")
+// 		if cfg.Password == "" {
+// 			log.Fatalf("WebDAV requires a password. Please set it in config.user.json or with the -p flag.")
+// 		}
+// 		encv.Init(rootCtx)
+// 		addr, webdavPath, err := encv.StartWebdav(rootCtx)
+// 		if err != nil {
+// 			log.Fatalf("Failed to start WebDAV server: %v", err)
+// 		}
 
-		// select {} // Keep server running
+// 		log.Printf("\n✅ WebDAV server started successfully!\n")
+// 		log.Printf("   Serving files from: %s\n", cfg.Webdav.Dir)
+// 		log.Printf("   Access it at: http://%s%s\n" , addr, webdavPath)
+// 		log.Println("\n--- How to Connect ---")
+// 		log.Printf("   Windows: \\\\localhost@%s%s\n", strings.TrimPrefix(addr, ":"), webdavPath)
+// 		log.Printf("   macOS:   http://%s%s\n" , addr, webdavPath)
+// 		log.Println("\n(Press Ctrl+C in this terminal to stop the server)")
 
-	case "server":
-		serverCmd := flag.NewFlagSet("server", flag.ExitOnError)
-		// 单实例检查，如需多实例请使用 "start"
+// 		select {} // Keep server running
+// 	},
+// }
+
+// --- server 命令 ---
+var serverCmd = &cobra.Command{
+	Use:   "server",
+	Short: "Starts the ENCV server as a background service",
+	Run: func(cmd *cobra.Command, args []string) {
 		if err := encv.CheckForExistingService(cfg.Server.Port); err != nil {
 			os.Exit(1)
 		}
-		encv.ParseServerFlags(serverCmd, cfg, os.Args[2:])
-		ctx := config.NewContext(context.Background(), cfg)
-		encv.Init(ctx)
-		s := encv.NewServer(ctx)
-		_, err = s.Start(cfg.Server.Port, Version)
+		// Note: The original ParseServerFlags was here. If it needs to be re-implemented,
+		// it should be done by adding flags to this command and overriding cfg values.
+		encv.Init(rootCtx)
+		s := encv.NewServer(rootCtx)
+		_, err := s.Start(cfg.Server.Port, Version)
 		if err != nil {
 			log.Fatalf("Failed to start server: %v", err)
 		}
@@ -449,50 +399,47 @@ func main() {
 		log.Printf("-> To stop the server, run: encv.exe stop-server")
 		log.Println("-> Press Ctrl+C to stop the server manually.")
 
-		// 等待中断信号以优雅地关闭服务器
 		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 		<-quit
 		log.Println("-> Shutting down server...")
 		s.Stop()
+	},
+}
 
-	case "openas":
-		// 这个命令只在 Windows 上有意义
+// --- openas 命令 ---
+var openasCmd = &cobra.Command{
+	Use:   "openas",
+	Short: "Registers 'Open' action for ENCV files (Windows only)",
+	RunE: func(cmd *cobra.Command, args []string) error { // Use RunE to return errors
 		if runtime.GOOS != "windows" {
-			log.Fatal("Error: The 'openas' command is only available on Windows.")
+			return fmt.Errorf("the 'openas' command is only available on Windows")
 		}
-
-		// 调用我们之前定义的、专门处理“打开方式”的函数
 		if err := handleOpenAsCommand(cfg); err != nil {
-			log.Fatalf("Failed to register file associations: %v", err)
+			return fmt.Errorf("failed to register file associations: %w", err)
 		}
-
 		log.Println("✅ File associations for 'Open' action registered successfully!")
 		log.Println("You can now double-click on an ENCV file to decrypt it.")
+		return nil
+	},
+}
 
-	// case "unopenas":
-	// 	if runtime.GOOS != "windows" {
-	// 		log.Fatal("Error: The 'unopenas' command is only available on Windows.")
-	// 	}
-	// 	if err := handleUnopenAsCommand(); err != nil {
-	// 		log.Fatalf("Failed to unregister file associations: %v", err)
-	// 	}
-	// 	log.Println("✅ File associations for 'Open' action unregistered successfully!")
-
-	case "open-stream":
-
-		// 1. 【关键修改】从配置中确定发现起始端口
+// --- open-stream 命令 ---
+var openStreamCmd = &cobra.Command{
+	Use:   "open-stream [path to container]",
+	Short: "Streams a media file from a running ENCV server to mpv",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		inputPath := args[0]
 		discoveryStartPort := cfg.Server.Port
 		if discoveryStartPort == 0 {
-			// 如果配置文件中端口为0（表示任意端口），我们使用一个合理的默认值作为扫描起点
 			discoveryStartPort = 1999
 			log.Printf("INFO: Server port in config is 0 (any port). Starting discovery from default port %d.", discoveryStartPort)
 		} else {
 			log.Printf("INFO: Starting discovery from configured port %d.", discoveryStartPort)
 		}
 
-		const maxDiscoveryTries = 20 // 扫描 20 个端口
-		serverAddr, err := encv.FindServer(discoveryStartPort, maxDiscoveryTries)
+		serverAddr, err := encv.FindServer(discoveryStartPort, 20)
 		if err != nil {
 			log.Println("--------------------------------------------------")
 			log.Println("🔴 ENCV Server is not running.")
@@ -502,42 +449,29 @@ func main() {
 			os.Exit(1)
 		}
 
-		// 3. 获取输入文件
-		inputPath := os.Args[2]
-		if inputPath == "" {
-			log.Fatal("Error: No input file specified for open-stream.")
-		}
-		// 4. 【新增】准备字幕文件
+		// Assume prepareSubtitles exists and is defined elsewhere
 		subtitles, err := prepareSubtitles(inputPath, cfg)
 		if err != nil {
 			log.Printf("Warning: An error occurred while preparing subtitles: %v. Playing without subtitles.", err)
 		}
-		// 4. 使用动态发现的 serverAddr 构造流 URL
+
 		encodedPath := url.QueryEscape(inputPath)
 		streamURL := fmt.Sprintf("http://%s/stream?file=%s", serverAddr, encodedPath)
 
-		// 构建 mpv 参数
 		mpvArgs := []string{streamURL}
 		for _, sub := range subtitles {
-			// 【修复】使用 = 连接选项和参数，符合 mpv 的要求
 			mpvArgs = append(mpvArgs, fmt.Sprintf("--sub-files=%s", sub.Path))
 		}
 
 		log.Printf("-> Starting mpv with arguments: %v", mpvArgs)
-		// cmd := exec.Command("mpv", mpvArgs...)
-
-		// 【修改】让 mpv 写入日志文件
 		logFile := filepath.Join(os.TempDir(), "encv_mpv.log")
-		cmd := exec.Command("mpv", append(mpvArgs, "--log-file="+logFile, "--msg-level=all=v")...)
+		cmd2 := exec.Command("mpv", append(mpvArgs, "--log-file="+logFile, "--msg-level=all=v")...)
 
-		// 保留输出捕获，以防有其他问题
-		var out bytes.Buffer
-		var stderr bytes.Buffer
-		cmd.Stdout = &out
-		cmd.Stderr = &stderr
+		var out, stderr bytes.Buffer
+		cmd2.Stdout = &out
+		cmd2.Stderr = &stderr
 
-		err = cmd.Run()
-		if err != nil {
+		if err := cmd2.Run(); err != nil {
 			log.Println("--------------------------------------------------")
 			log.Println("🔴 Failed to run mpv.")
 			log.Printf("Error: %v", err)
@@ -549,122 +483,36 @@ func main() {
 			log.Fatalf("Please check the MPV output above for details.")
 		}
 		log.Println("-> mpv closed.")
-
-	// case "open-temp":
-
-	// 	// 2. 获取输入文件
-	// 	inputPath := os.Args[2]
-	// 	if inputPath == "" {
-	// 		log.Fatal("Error: No input file specified for open-temp.")
-	// 	}
-
-	// 	// 3. 【关键】从容器中获取原始文件名和索引信息
-	// 	index, packedData, err := getContainerInfo(inputPath, cfg)
-	// 	if err != nil {
-	// 		log.Fatalf("Failed to get container info: %v", err)
-	// 	}
-	// 	defer packedData.DataStream.Close()
-
-	// 	originalFilename := index.GetOriginalFilename()
-	// 	log.Printf("-> Original filename in container: %s", originalFilename)
-
-	// 	// 4. 创建临时文件
-	// 	tmpFile, err := os.CreateTemp("", "*"+filepath.Ext(originalFilename))
-	// 	if err != nil {
-	// 		log.Fatalf("Failed to create temp file: %v", err)
-	// 	}
-	// 	tmpPath := tmpFile.Name()
-	// 	defer os.Remove(tmpPath) // 确保程序退出时删除
-	// 	log.Printf("-> Decrypting to temporary file: %s", tmpPath)
-
-	// 	// 5. 解密并写入临时文件
-	// 	if err := decryptToFile(packedData, index, cfg, tmpFile); err != nil {
-	// 		log.Fatalf("Failed to decrypt to temp file: %v", err)
-	// 	}
-	// 	tmpFile.Close() // 关闭文件，让其他程序可以访问
-
-	// 	// 6. 使用默认程序打开
-	// 	log.Printf("-> Opening with default application...")
-	// 	var cmd *exec.Cmd
-	// 	switch runtime.GOOS {
-	// 	case "windows":
-	// 		cmd = exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", tmpPath)
-	// 	case "darwin":
-	// 		cmd = exec.Command("open", tmpPath)
-	// 	default:
-	// 		cmd = exec.Command("xdg-open", tmpPath)
-	// 	}
-
-	// 	if err := cmd.Start(); err != nil {
-	// 		log.Fatalf("Failed to open file with default app: %v", err)
-	// 	}
-	// 	log.Printf("-> Temporary file opened. It will be deleted when this program exits.")
-
-	// ... (其他 case) ...
-
-	case "register":
-		// 这个命令只在 Windows 上有意义
-		if runtime.GOOS != "windows" {
-			log.Fatal("Error: The 'register' command is only available on Windows.")
-		}
-		if err := RegisterFileAssociations(); err != nil {
-			log.Fatalf("Failed to register file associations: %v", err)
-		}
-
-	case "unregister":
-		// 这个命令只在 Windows 上有意义
-		if runtime.GOOS != "windows" {
-			log.Fatal("Error: The 'unregister' command is only available on Windows.")
-		}
-		if err := UnregisterFileAssociations(); err != nil {
-			log.Fatalf("Failed to unregister file associations: %v", err)
-		}
-
-	default:
-		printUsage()
-	}
+	},
 }
 
-func printUsage() {
-	log.Println(`
-Usage: ./encv <command> [flags] [path]
+// --- register / unregister 命令 ---
+var registerCmd = &cobra.Command{
+	Use:   "register",
+	Short: "Registers file associations and context menu (Windows only)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if runtime.GOOS != "windows" {
+			return fmt.Errorf("the 'register' command is only available on Windows")
+		}
+		if err := RegisterFileAssociations(); err != nil {
+			return fmt.Errorf("failed to register file associations: %w", err)
+		}
+		return nil
+	},
+}
 
-IMPORTANT: Flags (like -o, -p) must be specified BEFORE the path argument.
-
-Commands:
-  encrypt <input_path>  Encrypt a video file or all videos in a directory.
-  decrypt <input_path>  Decrypt a single ENCV container file and its associated tracks.
-  kvi     <container_path> Extract and print or save the KVI from a container file.
-  server  <directory>   Start a server to stream encrypted videos from a directory.
-  openas                 (Windows only) Register ENCV as the default application for its file types.
-	register              (Windows only) Register file associations and right-click menu.
-  unregister            (Windows only) Unregister file associations.
-
-
-Flags:
-  -p, --password <pwd>  Password for encryption/decryption.
-  -o, --output <path>   Output directory.
-  -s <file.json>        (for 'kvi' command) Save KVI to a file.
-  --port <number>       Port to run the server on (for 'serve' command).
-  --mode <mode>         (for 'decrypt' command) Decryption mode: preview, to-folder, here, to-subfolder.
-
-
-Examples:
-  ./encv encrypt -o ./my_encrypted_videos ./my_videos
-  ./encv decrypt -p mypassword -o ./my_decrypted_movie/ ./output/movie.4pm.sccgv
-  ./encv kvi ./output/movie.4pm.sccgv
-  ./encv kvi -s kvi.json ./output/movie.4pm.sccgv
-  ./encv serve -p mypassword -o ./my_videos --port 8080
-  ./encv openas
-`)
-	fmt.Println("  play-v2 <path>    Stream and play a video container using the new v2 architecture.")
-	fmt.Println("                    -p <password>     Password for decryption.")
-	fmt.Println("                    -player <path>    Media player to use (default: mpv).")
-	fmt.Println()
-	fmt.Println("  encrypt-v2 <path>  Encrypt a file or a directory (non-recursive) using the new v2 architecture.")
-	fmt.Println("                     -p <password>     Password for encryption.")
-	fmt.Println("                     -o <output_path>  Output container file path.")
-	fmt.Println()
+var unregisterCmd = &cobra.Command{
+	Use:   "unregister",
+	Short: "Unregisters file associations and context menu (Windows only)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if runtime.GOOS != "windows" {
+			return fmt.Errorf("the 'unregister' command is only available on Windows")
+		}
+		if err := UnregisterFileAssociations(); err != nil {
+			return fmt.Errorf("failed to unregister file associations: %w", err)
+		}
+		return nil
+	},
 }
 
 // prepareSubtitles 查找与视频同名的字幕文件，并解密加密的字幕
