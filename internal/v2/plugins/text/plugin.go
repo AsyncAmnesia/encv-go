@@ -108,6 +108,45 @@ func (p *TextPlugin) SupportedMimePrefixes() []string {
 }
 
 // Plugin 接口实现
+func (p *TextPlugin) SupportedExtensions() []string {
+	// 当 MIME 类型无法识别时，通过这些扩展名进行兜底匹配
+	return []string{
+		"txt",
+		"htm",
+		"html",
+		"xml",
+		"java",
+		"properties",
+		"sql",
+		"js",
+		"md",
+		"json",
+		"conf",
+		"ini",
+		"vue",
+		"php",
+		"py",
+		"bat",
+		"gitignore",
+		"yml",
+		"yaml",
+		"go",
+		"sh",
+		"c",
+		"cpp",
+		"h",
+		"hpp",
+		"tsx",
+		"vtt",
+		"srt",
+		"ass",
+		"rs",
+		"lrc",
+		"strm",
+	}
+}
+
+// Plugin 接口实现
 func (p *TextPlugin) ShouldProcess(inputPath string) bool {
 	// 获取文件扩展名（小写，不带点）
 	ext := strings.ToLower(filepath.Ext(inputPath))

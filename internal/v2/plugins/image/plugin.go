@@ -104,6 +104,24 @@ func (p *ImagePlugin) SupportedMimePrefixes() []string {
 }
 
 // Plugin 接口实现
+func (p *ImagePlugin) SupportedExtensions() []string {
+	// 当 MIME 类型无法识别时，通过这些扩展名进行兜底匹配
+	return []string{
+		"jpg",
+		"jpeg",
+		"tiff",
+		"png",
+		"gif",
+		"bmp",
+		"svg",
+		"ico",
+		"swf",
+		"webp",
+		"avif",
+	}
+}
+
+// Plugin 接口实现
 func (p *ImagePlugin) ShouldProcess(inputPath string) bool {
 	return true
 }

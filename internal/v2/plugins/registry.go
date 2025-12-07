@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"mime"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
+	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/plugins/audio"
 	"github.com/Soltus/encv-go/internal/v2/plugins/image"
@@ -57,9 +57,11 @@ type Plugin interface {
 	// GetChunkNamer 返回插件用于其容器的 ChunkNamer。
 	GetChunkNamer() namer.ChunkNamer
 
-	//  返回此插件支持的 MIME 类型前缀列表，用于匹配
+	//  返回此插件支持的 MIME 类型前缀列表，用于匹配，优先级最高
 	SupportedMimePrefixes() []string
-	// 用于排除
+	//  返回此插件支持的文件扩展名列表（不含前缀点），用于匹配，优先级次之
+	SupportedExtensions() []string
+	// 用于排除不想处理的文件，返回 false 表示不处理
 	ShouldProcess(inputPath string) bool
 
 	// --- 加密逻辑 ---
@@ -202,36 +204,72 @@ func InitializePlugins(ctx context.Context) error {
 }
 
 // FindEncryptingPlugin 为给定的输入文件查找合适的加密插件
+// 优先级：
+// 1. 通过 MIME 类型前缀匹配
+// 2. 如果没有匹配到，则通过文件扩展名匹配
+// 3. 最后通过 ShouldProcess 进行最终确认
 func FindEncryptingPlugin(inputPath string) (Plugin, error) {
-	// 1. 获取文件的 MIME 类型
 	ext := strings.ToLower(filepath.Ext(inputPath))
-	mimeType := mime.TypeByExtension(ext)
-
-	// 如果无法确定 MIME 类型，则无法找到合适的插件
-	if mimeType == "" {
-		return nil, fmt.Errorf("could not determine MIME type for file: %s", inputPath)
+	mimeType, err := utils.DetectFileMIMEType(inputPath)
+	if err != nil {
+		log.Printf("DEBUG: [FindEncryptingPlugin] Could not determine MIME type for '%s'. Skipping MIME-based match.", inputPath)
 	}
 
-	// 2. 筛选出所有支持此 MIME 类型的候选插件
 	var candidates []Plugin
-	for _, p := range Plugins {
-		for _, prefix := range p.SupportedMimePrefixes() {
-			if strings.HasPrefix(mimeType, prefix) {
-				candidates = append(candidates, p)
-				break // 找到一个匹配的前缀就足够了，进入下一个插件
+
+	// --- 阶段 1: MIME 类型匹配 (优先) ---
+	if mimeType != "" {
+		log.Printf("DEBUG: [FindEncryptingPlugin] Found MIME type '%s' for '%s'. Trying MIME-based match.", mimeType, inputPath)
+		for _, p := range Plugins {
+			for _, prefix := range p.SupportedMimePrefixes() {
+				if strings.HasPrefix(mimeType, prefix) {
+					log.Printf("DEBUG: [FindEncryptingPlugin] Plugin '%T' is a MIME candidate for prefix '%s'.", p, prefix)
+					candidates = append(candidates, p)
+					break // 找到一个匹配的前缀就足够了，进入下一个插件
+				}
+			}
+		}
+	} else {
+		log.Printf("DEBUG: [FindEncryptingPlugin] Could not determine MIME type for '%s'. Skipping MIME-based match.", inputPath)
+	}
+
+	// --- 阶段 2: 文件扩展名匹配 (兜底) ---
+	// 如果没有从 MIME 匹配中找到候选插件，则尝试扩展名匹配
+	if len(candidates) == 0 {
+		log.Printf("DEBUG: [FindEncryptingPlugin] No MIME-based candidates found for '%s'. Trying extension-based match.", inputPath)
+		// 获取不带点的扩展名，用于比较
+		extWithoutDot := ext
+		if len(extWithoutDot) > 0 {
+			extWithoutDot = extWithoutDot[1:]
+		}
+
+		for _, p := range Plugins {
+			for _, supportedExt := range p.SupportedExtensions() {
+				// 比较时不区分大小写
+				if strings.ToLower(supportedExt) == extWithoutDot {
+					log.Printf("DEBUG: [FindEncryptingPlugin] Plugin '%T' is an extension candidate for extension '%s'.", p, supportedExt)
+					candidates = append(candidates, p)
+					break // 找到一个匹配的扩展名就足够了，进入下一个插件
+				}
 			}
 		}
 	}
 
-	// 3. 在候选插件中，按注册顺序使用 ShouldProcess 进行最终确认
+	// --- 阶段 3: 最终确认 ---
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("no suitable plugin found to encrypt file: %s (MIME: '%s', Ext: '%s')", inputPath, mimeType, ext)
+	}
+
+	log.Printf("DEBUG: [FindEncryptingPlugin] Found %d candidates for '%s'. Running ShouldProcess.", len(candidates), inputPath)
 	for _, p := range candidates {
 		if p.ShouldProcess(inputPath) {
+			log.Printf("INFO: [FindEncryptingPlugin] Successfully selected plugin '%T' for file '%s'.", p, inputPath)
 			return p, nil
 		}
 	}
 
-	// 如果没有插件通过所有检查，返回错误
-	return nil, fmt.Errorf("no suitable plugin found to encrypt file: %s (MIME type: %s)", inputPath, mimeType)
+	// --- 阶段 4: 失败 ---
+	return nil, fmt.Errorf("all candidate plugins for file '%s' were rejected by ShouldProcess", inputPath)
 }
 
 // FindDecryptingPlugin 为给定的容器文件查找合适的解密插件
@@ -329,7 +367,7 @@ func WalkAndEncrypt(ctx context.Context, walkPath string, inputRootDir, outputDi
 
 		plugin, err := FindEncryptingPlugin(path)
 		if err != nil {
-			fmt.Printf("INFO: Skipping file, no handler found: %s\n", path)
+			fmt.Printf("INFO: Skipping file, no handler found: %s\n%v\n", path, err)
 			return nil
 		}
 

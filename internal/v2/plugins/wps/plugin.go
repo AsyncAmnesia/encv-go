@@ -109,6 +109,19 @@ func (p *WPSPlugin) SupportedMimePrefixes() []string {
 }
 
 // Plugin 接口实现
+func (p *WPSPlugin) SupportedExtensions() []string {
+	// 当 MIME 类型无法识别时，通过这些扩展名进行兜底匹配
+	return []string{
+		"doc",
+		"docx",
+		"xls",
+		"xlsx",
+		"ppt",
+		"pptx",
+	}
+}
+
+// Plugin 接口实现
 func (p *WPSPlugin) ShouldProcess(inputPath string) bool {
 	return true
 }

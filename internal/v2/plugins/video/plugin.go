@@ -128,6 +128,21 @@ func (p *VideoPlugin) SupportedMimePrefixes() []string {
 }
 
 // Plugin 接口实现
+func (p *VideoPlugin) SupportedExtensions() []string {
+	// 当 MIME 类型无法识别时，通过这些扩展名进行兜底匹配
+	return []string{
+		"mp4",
+		"mkv",
+		"avi",
+		"mov",
+		"rmvb",
+		"webm",
+		"flv",
+		"m3u8",
+	}
+}
+
+// Plugin 接口实现
 func (p *VideoPlugin) ShouldProcess(inputPath string) bool {
 	ext := strings.ToLower(filepath.Ext(inputPath))
 	if ext == ".srt" || ext == ".ass" || ext == ".vtt" {

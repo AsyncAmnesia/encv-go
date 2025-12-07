@@ -104,6 +104,14 @@ func (p *PDFPlugin) SupportedMimePrefixes() []string {
 }
 
 // Plugin 接口实现
+func (p *PDFPlugin) SupportedExtensions() []string {
+	// 当 MIME 类型无法识别时，通过这些扩展名进行兜底匹配
+	return []string{
+		"pdf",
+	}
+}
+
+// Plugin 接口实现
 func (p *PDFPlugin) ShouldProcess(inputPath string) bool {
 	return true
 }

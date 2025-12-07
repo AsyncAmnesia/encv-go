@@ -110,6 +110,20 @@ func (p *AudioPlugin) SupportedMimePrefixes() []string {
 }
 
 // Plugin 接口实现
+func (p *AudioPlugin) SupportedExtensions() []string {
+	// 当 MIME 类型无法识别时，通过这些扩展名进行兜底匹配
+	return []string{
+		"mp3",
+		"flac",
+		"ogg",
+		"m4a",
+		"wav",
+		"opus",
+		"wma",
+	}
+}
+
+// Plugin 接口实现
 func (p *AudioPlugin) ShouldProcess(inputPath string) bool {
 	// 获取文件扩展名（小写，不带点）
 	ext := strings.ToLower(filepath.Ext(inputPath))

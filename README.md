@@ -36,7 +36,7 @@ go build -o encv-proxy ./cmd/encv-proxy
   "password": "my-encv_key，可以使用中文和标点符号✔",
   "output_path": "./output",
   "server": {
-    "port": 1999,
+    "port": 2025,
     "dir": "/"
   },
   "proxy": {
@@ -48,42 +48,71 @@ go build -o encv-proxy ./cmd/encv-proxy
     "root": "webdav",
     "dir": "./"
   },
-  "track_extensions": [".ass", ".srt", ".dm.ass", ".vtt"],
-  "bin_ext_group": {
-    "text": "sccgt",
-    "image": "sccgi",
-    "audio": "sccga",
-    "video": "sccgv",
-    "iframe": "sccgf"
-  },
-  "sccgv_settings": { "chunk_size": 100 }
+  "plugin_settings": {
+    "video": {
+      "ext": ".sccgv",
+      "chunk_size_mb": 100,
+      "track_extensions": [".ass", ".srt", ".dm.ass", ".vtt"]
+    },
+    "image": {"ext": ".sccgi"},
+    "audio": {"ext": ".sccga"},
+    "text": {"ext": ".sccgt"},
+    "wps": {"ext": ".sccgwps"},
+    "pdf": {"ext": ".sccgpdf"}
+  }
 }
 
 ```
 
 **配置项说明:**
 
-| 配置键                                         | 类型    | 描述                                             | 示例值                                      |
-| ---------------------------------------------- | ------- | ------------------------------------------------ | ------------------------------------------- |
-| **password**                             | string  | 用于加密和解密视频文件的密码，支持中文和特殊字符 | `"my-encv_key，可以使用中文和标点符号✔"` |
-| **output_path**                          | string  | 加密后文件的输出目录，支持相对路径或绝对路径     | `"./output"`                              |
-| **recover**                              | boolean | 解密时是否覆盖已存在的文件（可选）               | `false`                                   |
-| **track_extensions**                     | array   | 需要处理的字幕/轨道文件扩展名列表                | `[".ass", ".srt", ".dm.ass", ".vtt"]`     |
-| **bin_ext_group.text**                   | string  | 文本类加密容器的扩展名                           | `"sccgt"`                                 |
-| **bin_ext_group.image**                  | string  | 图像类加密容器的扩展名                           | `"sccgi"`                                 |
-| **bin_ext_group.audio**                  | string  | 音频类加密容器的扩展名                           | `"sccga"`                                 |
-| **bin_ext_group.video**                  | string  | 视频类加密容器的扩展名                           | `"sccgv"`                                 |
-| **bin_ext_group.iframe**                 | string  | OpenList iframe 类加密容器的扩展名               | `"sccgf"`                                 |
-| **sccgv_settings.chunk_size**            | integer | 视频分片大小（MB），0 表示禁用分片               | `100`                                     |
-| **server.port**                          | integer | encv HTTP 流媒体服务器的监听端口                 | `1999`                                    |
-| **server.dir**                           | string  | HTTP 服务器的根目录路径                          | `"/"`                                     |
-| **proxy.port**                           | integer | OpenList 代理服务的监听端口                      | `1998`                                    |
-| **proxy.openlist_host**                  | string  | OpenList 服务地址，支持协议和端口                | `"http://localhost:5244"`                 |
-| **proxy.token**                          | string  | OpenList 认证令牌（可选，不建议明文存储）        | `""`                                      |
-| **proxy.disable_signature_verification** | boolean | 是否禁用签名验证（可选）                         | `false`                                   |
-| **webdav.port**                          | integer | WebDAV 服务器的监听端口                          | `1234`                                    |
-| **webdav.root**                          | string  | WebDAV 服务的根路径                              | `"webdav"`                                |
-| **webdav.dir**                           | string  | WebDAV 服务器的根目录路径                        | `"./"`                                    |
+根据 `config.schema.json` 生成。
+
+#### 全局设置
+
+| 配置键 | 类型 | 描述 | 示例值 |
+|---|---|---|---|
+| **password** | `string` | 用于加密和解密文件的主密码，请务必设置一个强密码。支持中文和特殊字符。 | `"my-encv_key，可以使用中文和标点符号✔"` |
+| **output_path** | `string` | 加密后文件的输出目录，支持相对路径或绝对路径。 | `"./output"` |
+| **recover** | `boolean` | 解密时是否覆盖已存在的文件。 | `false` |
+
+#### 插件专属设置
+
+| 配置键 | 类型 | 描述 | 示例值 |
+|---|---|---|---|
+| **plugin_settings.video.ext** | `string` | 视频类加密容器的扩展名。 | `".sccgv"` |
+| **plugin_settings.video.chunk_size_mb** | `integer` | 视频分片大小（MB），0 表示禁用分片。 | `100` |
+| **plugin_settings.video.light_main_chunk_enabled** | `boolean` | 是否启用轻量主分片模式。 | `true` |
+| **plugin_settings.video.track_extensions** | `array` | 需要关联处理的字幕/轨道文件扩展名列表。 | `[".ass", ".srt", ".dm.ass", ".vtt"]` |
+| **plugin_settings.image.ext** | `string` | 图像类加密容器的扩展名。 | `".sccgi"` |
+| **plugin_settings.audio.ext** | `string` | 音频类加密容器的扩展名。 | `".sccga"` |
+| **plugin_settings.text.ext** | `string` | 文本类加密容器的扩展名。 | `".sccgt"` |
+| **plugin_settings.pdf.ext** | `string` | PDF类加密容器的扩展名。 | `".sccgpdf"` |
+| **plugin_settings.wps.ext** | `string` | WPS类加密容器的扩展名。 | `".sccgwps"` |
+
+#### 内置 HTTP 服务器设置
+
+| 配置键 | 类型 | 描述 | 示例值 |
+|---|---|---|---|
+| **server.port** | `integer` | encv HTTP 流媒体服务器的监听端口，请勿与其他服务冲突。 | `2025` |
+| **server.dir** | `string` | HTTP 服务器提供的文件系统根目录，支持相对路径。 | `"/"` |
+
+#### OpenList 代理服务器设置
+
+| 配置键 | 类型 | 描述 | 示例值 |
+|---|---|---|---|
+| **proxy.port** | `integer` | OpenList 代理服务的监听端口，请勿与其他服务冲突。 | `1998` |
+| **proxy.openlist_host** | `string` | OpenList 服务的主机地址，支持协议和端口。 | `"http://localhost:5244"` |
+| **proxy.token** | `string` | OpenList 的认证令牌（可选，不建议明文存储）。 | `""` |
+| **proxy.disable_signature_verification** | `boolean` | 是否禁用 OpenList URL 签名验证。 | `false` |
+
+#### WebDAV 服务器设置
+
+| 配置键 | 类型 | 描述 | 示例值 |
+|---|---|---|---|
+| **webdav.port** | `integer` | encv WebDAV 服务器的监听端口，请勿与其他服务冲突。 | `1234` |
+| **webdav.root** | `string` | WebDAV 服务的访问路径前缀（路由）。 | `"webdav"` |
+| **webdav.dir** | `string` | WebDAV 服务映射的文件系统根目录，支持相对路径。 | `"./"` |
 
 ### 💻 核心用法
 
