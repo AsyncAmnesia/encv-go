@@ -15,14 +15,16 @@
     "root": "webdav",
     "dir": "./"
   },
-  "track_extensions": [".ass", ".srt", ".dm.ass", ".vtt"],
-  "bin_ext_group": {
-    "text": "sccgt",
-    "image": "sccgi",
-    "audio": "sccga",
-    "video": "sccgv",
-    "wps": "sccgwps",
-    "pdf": "sccgpdf"
-  },
-  "sccgv_settings": { "chunk_size": 100 }
+  "plugin_settings": {
+    "video": {
+      "ext": "sccgv",
+      "chunk_size_mb": 100,
+      "track_extensions": [".ass", ".srt", ".dm.ass", ".vtt"]
+    },
+    "image": {"ext": "sccgi"},
+    "audio": {"ext": "sccga"},
+    "text": {"ext": "sccgt"},
+    "wps": {"ext": "sccgwps"},
+    "pdf": {"ext": "sccgpdf"}
+  }
 }

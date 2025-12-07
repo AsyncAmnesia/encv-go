@@ -21,7 +21,7 @@ type Config struct {
 	// OutputPath 加密后的文件输出目录。
 	OutputPath string `json:"output_path"`
 	// TrackExtensions 视频容器的字幕/轨道文件扩展名列表，它们并不会打包到容器里。
-	TrackExtensions []string `json:"track_extensions"`
+	// TrackExtensions []string `json:"track_extensions"`
 	// BinExtGroup 可以自定义加密容器文件的扩展名。已弃用，使用 PluginSettings. 替代。
 	// BinExtGroup types.BinExtGroup `json:"bin_ext_group"`
 	//  map 键是插件名，值是该插件的原始JSON配置
@@ -59,8 +59,8 @@ func FromContext(ctx context.Context) *Config {
 // DefaultConfig 返回一个包含所有默认值的配置实例。
 func DefaultConfig() *Config {
 	return &Config{
-		OutputPath:      "./encrypted",
-		TrackExtensions: []string{".ass", ".srt", ".dm.ass"},
+		OutputPath: "./encrypted",
+		// TrackExtensions: []string{".ass", ".srt", ".dm.ass"},
 		// BinExtGroup: types.BinExtGroup{
 		// 	Text:  "sccgt",
 		// 	Image: "sccgi",

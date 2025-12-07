@@ -17,117 +17,32 @@
           "type": "string",
           "description": "--- 加密/解密设置 ---\nOutputPath 加密后的文件输出目录。"
         },
-        "track_extensions": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array",
-          "description": "TrackExtensions 视频容器的字幕/轨道文件扩展名列表，它们并不会打包到容器里。"
-        },
         "plugin_settings": {
           "properties": {
             "video": {
               "$schema": "https://json-schema.org/draft/2020-12/schema",
               "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/video/video-plugin-config",
-              "$ref": "#/$defs/VideoPluginConfig",
-              "$defs": {
-                "VideoPluginConfig": {
-                  "properties": {
-                    "ext": {
-                      "type": "string"
-                    },
-                    "chunk_size_mb": {
-                      "type": "integer"
-                    },
-                    "light_main_chunk_enabled": {
-                      "type": "boolean"
-                    }
-                  },
-                  "additionalProperties": false,
-                  "type": "object",
-                  "required": [
-                    "ext",
-                    "chunk_size_mb",
-                    "light_main_chunk_enabled"
-                  ]
-                }
-              }
+              "$ref": "#/$defs/VideoPluginConfig"
             },
             "image": {
               "$schema": "https://json-schema.org/draft/2020-12/schema",
               "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/image/image-plugin-config",
-              "$ref": "#/$defs/ImagePluginConfig",
-              "$defs": {
-                "ImagePluginConfig": {
-                  "properties": {
-                    "ext": {
-                      "type": "string"
-                    }
-                  },
-                  "additionalProperties": false,
-                  "type": "object",
-                  "required": [
-                    "ext"
-                  ]
-                }
-              }
+              "$ref": "#/$defs/ImagePluginConfig"
             },
             "wps": {
               "$schema": "https://json-schema.org/draft/2020-12/schema",
               "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/wps/wps-plugin-config",
-              "$ref": "#/$defs/WPSPluginConfig",
-              "$defs": {
-                "WPSPluginConfig": {
-                  "properties": {
-                    "ext": {
-                      "type": "string"
-                    }
-                  },
-                  "additionalProperties": false,
-                  "type": "object",
-                  "required": [
-                    "ext"
-                  ]
-                }
-              }
+              "$ref": "#/$defs/WPSPluginConfig"
             },
             "pdf": {
               "$schema": "https://json-schema.org/draft/2020-12/schema",
               "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/pdf/pdf-plugin-config",
-              "$ref": "#/$defs/PDFPluginConfig",
-              "$defs": {
-                "PDFPluginConfig": {
-                  "properties": {
-                    "ext": {
-                      "type": "string"
-                    }
-                  },
-                  "additionalProperties": false,
-                  "type": "object",
-                  "required": [
-                    "ext"
-                  ]
-                }
-              }
+              "$ref": "#/$defs/PDFPluginConfig"
             },
             "text": {
               "$schema": "https://json-schema.org/draft/2020-12/schema",
               "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/text/text-plugin-config",
-              "$ref": "#/$defs/TextPluginConfig",
-              "$defs": {
-                "TextPluginConfig": {
-                  "properties": {
-                    "ext": {
-                      "type": "string"
-                    }
-                  },
-                  "additionalProperties": false,
-                  "type": "object",
-                  "required": [
-                    "ext"
-                  ]
-                }
-              }
+              "$ref": "#/$defs/TextPluginConfig"
             }
           },
           "additionalProperties": false,
@@ -156,7 +71,6 @@
         "password",
         "recover",
         "output_path",
-        "track_extensions",
         "plugin_settings",
         "server",
         "webdav",
@@ -182,6 +96,18 @@
         "dir"
       ],
       "description": "--- 内置HTTP服务器 设置 ---"
+    },
+    "ImagePluginConfig": {
+      "properties": {
+        "ext": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ext"
+      ]
     },
     "OpenlistProxyServer": {
       "properties": {
@@ -211,6 +137,69 @@
         "disable_signature_verification"
       ],
       "description": "--- Openlist 代理服务器设置 ---"
+    },
+    "PDFPluginConfig": {
+      "properties": {
+        "ext": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ext"
+      ]
+    },
+    "TextPluginConfig": {
+      "properties": {
+        "ext": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ext"
+      ]
+    },
+    "VideoPluginConfig": {
+      "properties": {
+        "ext": {
+          "type": "string"
+        },
+        "chunk_size_mb": {
+          "type": "integer"
+        },
+        "light_main_chunk_enabled": {
+          "type": "boolean"
+        },
+        "track_extensions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ext",
+        "chunk_size_mb",
+        "light_main_chunk_enabled",
+        "track_extensions"
+      ]
+    },
+    "WPSPluginConfig": {
+      "properties": {
+        "ext": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ext"
+      ]
     },
     "WebdavServer": {
       "properties": {

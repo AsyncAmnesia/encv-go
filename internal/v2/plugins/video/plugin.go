@@ -59,6 +59,8 @@ type VideoPluginConfig struct {
 
 	// 是否启用轻量级主分片，启用后主分片只包含清单，不包含源数据
 	LightMainChunkEnabled bool `json:"light_main_chunk_enabled"`
+	// TrackExtensions 视频容器的字幕/轨道文件扩展名列表，它们并不会打包到容器里。
+	TrackExtensions []string `json:"track_extensions"`
 }
 
 func (p *VideoPlugin) GetSettingsSchemaType() interface{} {
@@ -71,6 +73,7 @@ func (p *VideoPlugin) GetDefaultSettings() json.RawMessage {
 		Ext:         "sccgv",
 		ChunkSizeMB: 0,
 		// ChunkMax:    0,
+		TrackExtensions: []string{".ass", ".srt", ".dm.ass"},
 	}
 	data, _ := json.Marshal(defaultCfg) // 忽略错误，因为默认值是硬编码的，不会出错
 	return data
@@ -178,7 +181,7 @@ func (p *VideoPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRoo
 	encryptedBaseName := p.baseNamer.GenerateEncryptedBaseName(p.index.OriginalFilename)
 
 	// 调用字幕处理逻辑，它会修改 p.index.SubtitleTrack
-	return HandleSubtitlesForEncryption(p.cfg, &p.index, outputDir, encryptedBaseName)
+	return p.HandleSubtitlesForEncryption(p.cfg, &p.index, outputDir, encryptedBaseName)
 }
 
 // Plugin 接口实现

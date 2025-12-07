@@ -81,7 +81,7 @@ func main() {
 }
 
 // injectPluginSchemas 遍历所有已注册的插件，将它们的配置 Schema 动态注入到
-// 主 schema 的 `plugin_settings` 部分。
+// 主 schema 的 `plugin_settings` 部分，并处理嵌套的 $defs 问题。
 func injectPluginSchemas(r *jsonschema.Reflector, schema *jsonschema.Schema) error {
 	// 1. 健壮性检查：确保 Definitions 和 Config 定义存在
 	if schema.Definitions == nil {
@@ -91,6 +91,9 @@ func injectPluginSchemas(r *jsonschema.Reflector, schema *jsonschema.Schema) err
 	if !ok {
 		return fmt.Errorf("could not find 'Config' definition in generated schema")
 	}
+
+	// 获取根级别的 $defs，它是一个标准的 map[string]*Schema
+	rootDefs := schema.Definitions
 
 	// 2. 获取 `plugin_settings` 属性的 Schema 对象
 	pluginSettingsProp, ok := configDef.Properties.Get("plugin_settings")
@@ -110,10 +113,24 @@ func injectPluginSchemas(r *jsonschema.Reflector, schema *jsonschema.Schema) err
 		pluginName := p.Name()
 		settingsType := p.GetSettingsSchemaType()
 
-		// 为插件的配置结构体生成 Schema
+		// 为插件的配置结构体生成一个独立的、完整的 Schema
 		pluginConfigSchema := r.Reflect(settingsType)
 
-		// 将生成的 Schema 添加到 `plugin_settings` 的 `properties` 中
+		// --- 【关键修复】处理嵌套的 $defs ---
+		// jsonschema.Reflect 会为结构体生成一个 $ref 和一个独立的 $defs。
+		// 我们需要将这个内部的 $defs 提升到根级别。
+		if pluginConfigSchema.Definitions != nil {
+			// 遍历插件 schema 内部的所有定义 (使用标准 map 的 for...range)
+			for defName, defSchema := range pluginConfigSchema.Definitions {
+				// 将定义复制到根 $defs 中 (使用标准 map 的赋值)
+				rootDefs[defName] = defSchema
+			}
+			// 清空插件 schema 的 $defs，因为定义已经被提升
+			pluginConfigSchema.Definitions = nil
+		}
+
+		// 此时，pluginConfigSchema 通常是一个干净的 $ref，例如 {"$ref": "#/$defs/TextPluginConfig"}
+		// 将其添加到 `plugin_settings` 的 `properties` 中
 		pluginSettingsSchema.Properties.Set(pluginName, pluginConfigSchema)
 	}
 

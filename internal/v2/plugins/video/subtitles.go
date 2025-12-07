@@ -15,8 +15,8 @@ import (
 )
 
 // HandleSubtitlesForEncryption 处理加密时的字幕逻辑
-func HandleSubtitlesForEncryption(cfg *config.Config, vIndex *VideoIndex, outputDir, encryptedBaseName string) error {
-	subtitleTracks, err := DiscoverSubtitleTracks(vIndex.OriginalInputPath, cfg.TrackExtensions)
+func (p *VideoPlugin) HandleSubtitlesForEncryption(cfg *config.Config, vIndex *VideoIndex, outputDir, encryptedBaseName string) error {
+	subtitleTracks, err := DiscoverSubtitleTracks(vIndex.OriginalInputPath, p.settings.TrackExtensions)
 	if err != nil {
 		log.Printf("Warning: subtitle discovery failed for %s: %v", vIndex.OriginalInputPath, err)
 		// 不返回错误，继续无字幕打包
