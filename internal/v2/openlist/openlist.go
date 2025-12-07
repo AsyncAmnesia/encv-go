@@ -23,12 +23,12 @@ type FileInfoResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    struct {
-		URL           string            `json:"url"`
-		Header        map[string]string `json:"header"`
-		Expiration    interface{}       `json:"Expiration"` // 可能是 null 或 string
-		Concurrency   int               `json:"concurrency"`
-		PartSize      int               `json:"part_size"`
-		ContentLength int64             `json:"content_length"`
+		URL           string              `json:"url"`
+		Header        map[string][]string `json:"header"`
+		Expiration    interface{}         `json:"Expiration"` // 可能是 null 或 string
+		Concurrency   int                 `json:"concurrency"`
+		PartSize      int                 `json:"part_size"`
+		ContentLength int64               `json:"content_length"`
 	} `json:"data"`
 }
 

@@ -14,7 +14,7 @@ type RemoteDecryptReaderFactory struct {
 	// 【关键修复】不再持有共享的 containerReader，而是持有创建它所需的参数
 	containerURL string
 	password     string
-	headers      map[string]string
+	headers      map[string][]string
 	urlResolver  URLResolver
 
 	// 缓存解析结果，避免重复请求
@@ -24,7 +24,7 @@ type RemoteDecryptReaderFactory struct {
 }
 
 // NewRemoteDecryptReaderFactory 创建一个新的远程工厂
-func NewRemoteDecryptReaderFactory(containerURL string, password string, headers map[string]string, urlResolver URLResolver) (DecryptReaderFactory, error) {
+func NewRemoteDecryptReaderFactory(containerURL string, password string, headers map[string][]string, urlResolver URLResolver) (DecryptReaderFactory, error) {
 	f := &RemoteDecryptReaderFactory{
 		containerURL: containerURL,
 		password:     password,

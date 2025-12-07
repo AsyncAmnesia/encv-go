@@ -17,7 +17,7 @@ import (
 
 // serveEncryptedContainer 是一个全新的、统一的处理函数，用于处理所有远程加密容器
 // 【核心】此函数的逻辑完全移植自本地 server.go，只修改了工厂创建部分
-func (p *Proxy) serveEncryptedContainer(w http.ResponseWriter, r *http.Request, containerURL string, headers map[string]string, originalPath string) {
+func (p *Proxy) serveEncryptedContainer(w http.ResponseWriter, r *http.Request, containerURL string, headers map[string][]string, originalPath string) {
 	log.Printf("INFO: [Proxy] Serving remote container: %s", containerURL)
 
 	// 1. 【关键修改】直接创建远程工厂

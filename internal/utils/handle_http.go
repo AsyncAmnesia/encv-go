@@ -159,7 +159,7 @@ func IsConnectionClosedError(err error) bool {
 // GetRemoteStreamWithRange 发起一个 HTTP Range 请求并返回响应体。
 // start 和 end 定义了字节范围。负数表示从文件末尾开始计算（例如 start=-32 表示最后32字节）。
 // 调用者负责关闭返回的 resp.Body。
-func GetRemoteStreamWithRange(url string, headers map[string]string, start, end int64) (*http.Response, error) {
+func GetRemoteStreamWithRange(url string, headers map[string][]string, start, end int64) (*http.Response, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -179,8 +179,10 @@ func GetRemoteStreamWithRange(url string, headers map[string]string, start, end 
 	req.Header.Set("Range", rangeStr)
 
 	// 复制其他请求头
-	for k, v := range headers {
-		req.Header.Set(k, v)
+	for key, values := range headers {
+		for _, v := range values {
+			req.Header.Set(key, v)
+		}
 	}
 
 	client := &http.Client{}

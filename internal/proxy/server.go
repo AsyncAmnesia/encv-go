@@ -200,7 +200,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 // 可以修复 CORS，直接从 URL 下载文件并流式传输给客户端
-func serveDirectStreamWithFix(w http.ResponseWriter, fileURL string, headers map[string]string) {
+func serveDirectStreamWithFix(w http.ResponseWriter, fileURL string, headers map[string][]string) {
 	req, err := http.NewRequest("GET", fileURL, nil)
 	if err != nil {
 		log.Printf("Error creating request to download file: %v", err)
@@ -208,8 +208,10 @@ func serveDirectStreamWithFix(w http.ResponseWriter, fileURL string, headers map
 		return
 	}
 
-	for key, value := range headers {
-		req.Header.Add(key, value)
+	for key, values := range headers {
+		for _, v := range values {
+			req.Header.Add(key, v)
+		}
 	}
 
 	client := &http.Client{}

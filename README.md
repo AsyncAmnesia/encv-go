@@ -192,7 +192,7 @@ mpv http://127.0.0.1:1999/stream?file=A%3A%5CLocal%5CCol-Study%5Cgo%5Cencv%5Cout
 2. **在 OpenList 中配置 WebDAV**:
 
    * 进入管理页面，找到存储设置。
-   * 在【WebDAV 策略】中，选择 **使用代理地址**。
+   * 在【WebDAV 策略】中，选择 **使用代理地址**。如果是第三方网盘还需要勾选上方的 **Web代理**
    * URL 地址填入 `http://localhost:1998` (根据你的 `proxy_port` 修改)。
 3. **获取 OpenList 令牌**:
 

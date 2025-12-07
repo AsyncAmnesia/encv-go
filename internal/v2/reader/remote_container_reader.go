@@ -24,14 +24,14 @@ type URLResolver interface {
 // 它通过 HTTP Range 请求与远程服务器交互，实现按需读取
 type remoteEncryptedContainerReader struct {
 	containerURL string
-	headers      map[string]string
+	headers      map[string][]string
 	urlResolver  URLResolver
 	// 缓存，避免重复请求
 	manifest *types.Manifest_v2
 }
 
 // NewRemoteEncryptedContainerReader 创建一个新的远程容器读取器
-func NewRemoteEncryptedContainerReader(containerURL string, headers map[string]string, urlResolver URLResolver) (EncryptedContainerReader, error) {
+func NewRemoteEncryptedContainerReader(containerURL string, headers map[string][]string, urlResolver URLResolver) (EncryptedContainerReader, error) {
 	return &remoteEncryptedContainerReader{
 		containerURL: containerURL,
 		headers:      headers,
@@ -100,8 +100,10 @@ func (r *remoteEncryptedContainerReader) GetFragmentReader(fragID string) (io.Re
 		if err != nil {
 			return nil, fmt.Errorf("failed to create GET request for '%s': %w", fragID, err)
 		}
-		for k, v := range r.headers {
-			req.Header.Set(k, v)
+		for key, values := range r.headers {
+			for _, v := range values {
+				req.Header.Set(key, v)
+			}
 		}
 
 		client := &http.Client{}
