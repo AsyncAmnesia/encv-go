@@ -17,14 +17,14 @@
   },
   "plugin_settings": {
     "video": {
-      "ext": "sccgv",
+      "ext": ".sccgv",
       "chunk_size_mb": 100,
       "track_extensions": [".ass", ".srt", ".dm.ass", ".vtt"]
     },
-    "image": {"ext": "sccgi"},
-    "audio": {"ext": "sccga"},
-    "text": {"ext": "sccgt"},
-    "wps": {"ext": "sccgwps"},
-    "pdf": {"ext": "sccgpdf"}
+    "image": {"ext": ".sccgi"},
+    "audio": {"ext": ".sccga"},
+    "text": {"ext": ".sccgt"},
+    "wps": {"ext": ".sccgwps"},
+    "pdf": {"ext": ".sccgpdf"}
   }
 }

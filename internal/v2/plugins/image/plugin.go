@@ -49,7 +49,7 @@ func (p *ImagePlugin) GetContainerExtension() string {
 }
 
 type ImagePluginConfig struct {
-	// 容器扩展名
+	// 容器扩展名，包含点前缀，默认值为 ".sccgi"
 	Ext string `json:"ext"`
 }
 
@@ -60,7 +60,7 @@ func (p *ImagePlugin) GetSettingsSchemaType() interface{} {
 // 2. 实现接口方法，返回默认配置的 JSON
 func (p *ImagePlugin) GetDefaultSettings() json.RawMessage {
 	defaultCfg := ImagePluginConfig{
-		Ext: "sccgpdf",
+		Ext: ".sccgi",
 	}
 	data, _ := json.Marshal(defaultCfg) // 忽略错误，因为默认值是硬编码的，不会出错
 	return data

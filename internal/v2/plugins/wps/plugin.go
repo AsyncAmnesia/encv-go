@@ -47,7 +47,7 @@ func (p *WPSPlugin) GetContainerExtension() string {
 }
 
 type WPSPluginConfig struct {
-	// 容器扩展名
+	// 容器扩展名，包含点前缀，默认值为 ".sccgwps"
 	Ext string `json:"ext"`
 }
 
@@ -58,7 +58,7 @@ func (p *WPSPlugin) GetSettingsSchemaType() interface{} {
 // 2. 实现接口方法，返回默认配置的 JSON
 func (p *WPSPlugin) GetDefaultSettings() json.RawMessage {
 	defaultCfg := WPSPluginConfig{
-		Ext: "sccgwps",
+		Ext: ".sccgwps",
 	}
 	data, _ := json.Marshal(defaultCfg) // 忽略错误，因为默认值是硬编码的，不会出错
 	return data

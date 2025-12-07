@@ -12,8 +12,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/Soltus/encv-go/internal/v2/namer"
+	"github.com/Soltus/encv-go/internal/v2/plugins/audio"
 	"github.com/Soltus/encv-go/internal/v2/plugins/image"
 	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	"github.com/Soltus/encv-go/internal/v2/plugins/pdf"
@@ -26,6 +28,7 @@ import (
 // Plugins 是所有已注册插件的列表，顺序代表优先级
 var Plugins = []Plugin{
 	&video.VideoPlugin{},
+	&audio.AudioPlugin{},
 	&image.ImagePlugin{},
 	&wps.WPSPlugin{},
 	&pdf.PDFPlugin{},
@@ -42,7 +45,7 @@ type Plugin interface {
 	// 【新增】返回插件配置结构体的零值实例，用于生成 JSON Schema
 	GetSettingsSchemaType() interface{}
 
-	// GetContainerExtension 返回此插件创建的容器文件扩展名（不含点）
+	//  返回此插件创建的容器文件扩展名，包含点前缀
 	GetContainerExtension() string
 
 	Intialize(ctx context.Context) error
@@ -82,37 +85,57 @@ type Plugin interface {
 	PostDecryptProcessor(containerPath string) error
 }
 
-// GetAllRegisteredContainerExtensions 返回所有已注册插件的容器扩展名（带点号）
-// 这个函数是动态的，会自动包含所有已加载的插件，无需硬编码。
-func GetAllRegisteredContainerExtensions() []string {
-	// 使用 map 来自动去重，防止不同插件意外使用了相同的扩展名
-	extensionMap := make(map[string]bool)
+// normalizeExtension 确保扩展名带有前导点，使其符合标准格式
+func normalizeExtension(ext string) string {
+	if !strings.HasPrefix(ext, ".") {
+		return "." + ext
+	}
+	return ext
+}
+
+// --- 延迟初始化相关变量 ---
+var (
+	once              sync.Once
+	registeredExtsMap map[string]bool // 存储带点扩展名，用于 O(1) 查找
+	registeredExts    []string        // 存储带点扩展名，用于列表返回
+)
+
+// 在 InitializePlugins 之后调用
+func initializeExtensions() {
+	registeredExtsMap = make(map[string]bool)
+	tempMap := make(map[string]bool)
+
+	// 此时，我们假设所有插件都已经被 Initialize 过了
 	for _, p := range Plugins {
 		ext := p.GetContainerExtension()
-		if ext != "" { // 忽略空字符串
-			extensionMap["."+ext] = true // 在这里统一加上点
+		if ext != "" {
+			// 规范化为带点的格式
+			normalizedExt := normalizeExtension(ext)
+			tempMap[normalizedExt] = true
 		}
 	}
 
-	// 将 map 的键转换为切片返回
-	extensions := make([]string, 0, len(extensionMap))
-	for ext := range extensionMap {
-		extensions = append(extensions, ext)
+	// 将最终结果存入缓存
+	registeredExts = make([]string, 0, len(tempMap))
+	for ext := range tempMap {
+		registeredExtsMap[ext] = true
+		registeredExts = append(registeredExts, ext)
 	}
+}
 
-	return extensions
+// GetAllRegisteredContainerExtensions 返回所有已注册插件的容器扩展名（带点号）
+// 此函数是线程安全的，并且会在第一次被调用时自动完成初始化。
+func GetAllRegisteredContainerExtensions() []string {
+	once.Do(initializeExtensions)
+	return registeredExts
 }
 
 // IsContainerPath 检查路径是否是已知的容器文件（基于扩展名）
-// 这是一个快速的、非 I/O 的检查，适用于初步筛选。准确判断使用 detector.DetectContainer
+// 此函数是线程安全的，并且会在第一次被调用时自动完成初始化。
 func IsContainer(path string) bool {
+	once.Do(initializeExtensions)
 	ext := strings.ToLower(filepath.Ext(path))
-	for _, containerExt := range GetAllRegisteredContainerExtensions() {
-		if ext == containerExt {
-			return true
-		}
-	}
-	return false
+	return registeredExtsMap[ext]
 }
 
 // BuildFullPluginSettings 构建一个完整的插件配置映射

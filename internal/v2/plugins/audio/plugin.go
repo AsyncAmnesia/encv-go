@@ -1,6 +1,4 @@
-// internal/v2/plugins/video/plugin.go
-
-package video
+package audio
 
 import (
 	"context"
@@ -24,10 +22,10 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
-type VideoPlugin struct {
+type AudioPlugin struct {
 	cfg              *config.Config
-	settings         VideoPluginConfig
-	index            VideoIndex
+	settings         AudioPluginConfig
+	index            AudioIndex
 	outputDir        string
 	inputPath        string
 	inputRootDir     string
@@ -35,45 +33,32 @@ type VideoPlugin struct {
 	salt             []byte
 	iv               []byte
 	baseNamer        namer.BaseNamer           // 注入容器命名器
-	chunkNamer       namer.ChunkNamer          // 注入分片命名器
 	containerManager *service.ContainerManager // 注入 ContainerManager
 	physicalPacker   physical.PhysicalPacker
 }
 
-func (p *VideoPlugin) Name() string {
-	return "video" // 这个字符串必须与配置文件中的键对应
+func (p *AudioPlugin) Name() string {
+	return "audio" // 这个字符串必须与配置文件中的键对应
 }
 
 // Plugin 接口实现
-func (p *VideoPlugin) GetContainerExtension() string {
+func (p *AudioPlugin) GetContainerExtension() string {
 	return p.settings.Ext
 }
 
-type VideoPluginConfig struct {
-	// 容器扩展名，包含点前缀，默认值为 ".sccgv"
+type AudioPluginConfig struct {
+	// 容器扩展名，包含点前缀，默认值为 ".sccga"
 	Ext string `json:"ext"`
-	// 分片大小，0 表示不启用，允许的最小值为 30
-	ChunkSizeMB int `json:"chunk_size_mb"`
-	// 分片最大数量，0 表示不限制，优先级高于 ChunkSizeMB TODO: 待实现
-	// ChunkMax              int    `json:"chunck_max"`
-
-	// 是否启用轻量级主分片，启用后主分片只包含清单，不包含源数据
-	LightMainChunkEnabled bool `json:"light_main_chunk_enabled"`
-	// TrackExtensions 视频容器的字幕/轨道文件扩展名列表，它们并不会打包到容器里。
-	TrackExtensions []string `json:"track_extensions"`
 }
 
-func (p *VideoPlugin) GetSettingsSchemaType() interface{} {
-	return VideoPluginConfig{}
+func (p *AudioPlugin) GetSettingsSchemaType() interface{} {
+	return AudioPluginConfig{}
 }
 
 // 2. 实现接口方法，返回默认配置的 JSON
-func (p *VideoPlugin) GetDefaultSettings() json.RawMessage {
-	defaultCfg := VideoPluginConfig{
-		Ext:         ".sccgv",
-		ChunkSizeMB: 0,
-		// ChunkMax:    0,
-		TrackExtensions: []string{".ass", ".srt", ".dm.ass"},
+func (p *AudioPlugin) GetDefaultSettings() json.RawMessage {
+	defaultCfg := AudioPluginConfig{
+		Ext: ".sccga",
 	}
 	data, _ := json.Marshal(defaultCfg) // 忽略错误，因为默认值是硬编码的，不会出错
 	return data
@@ -81,58 +66,68 @@ func (p *VideoPlugin) GetDefaultSettings() json.RawMessage {
 
 // init 在包被导入时自动执行，完成自注册
 func init() {
-	types.RegisterKVIProvider(IndexKindVideo, func(rawKVI json.RawMessage) (types.KVIProvider, error) {
-		var videoKVI VideoKVI_v2
-		if err := json.Unmarshal(rawKVI, &videoKVI); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal KVI as VideoKVI_v2: %w", err)
+	types.RegisterKVIProvider(IndexKindAudio, func(rawKVI json.RawMessage) (types.KVIProvider, error) {
+		var textKVI AudioKVI_v2
+		if err := json.Unmarshal(rawKVI, &textKVI); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal KVI as TextKVI_v2: %w", err)
 		}
-		return videoKVI, nil // VideoKVI_v2 实现了 KVIProvider 接口
+		return textKVI, nil // TextKVI_v2 实现了 KVIProvider 接口
 	})
 }
 
 // Plugin 接口实现
-func (p *VideoPlugin) Intialize(ctx context.Context) error {
+func (p *AudioPlugin) Intialize(ctx context.Context) error {
 	p.cfg = config.FromContext(ctx)
-	// 2. 【关键】使用泛型辅助函数，安全地获取并解析本插件的配置
-	settings, err := config.GetPluginSettingsFor[VideoPluginConfig](p.cfg, p.Name())
+	settings, err := config.GetPluginSettingsFor[AudioPluginConfig](p.cfg, p.Name())
 	if err != nil {
 		return fmt.Errorf("could not get settings for plugin %s: %w", p.Name(), err)
 	}
 	p.settings = *settings // 将指针解引用，存入
-	if p.settings.ChunkSizeMB > 0 && p.settings.ChunkSizeMB < 30 {
-		p.settings.ChunkSizeMB = 30 // 强制修改为 30
-	}
 	p.containerManager = service.NewContainerManager()
 	p.baseNamer = namer.NewDefaultBaseNamer()
-	p.chunkNamer = namer.NewPaddedNamer(p.settings.Ext, p.baseNamer, 4) // 补零到4位
-	if p.settings.ChunkSizeMB > 0 {
-		fmt.Printf("INFO: [PLUGIN] Physical chunking enabled. Size: %d MB\n", p.settings.ChunkSizeMB)
-		p.physicalPacker = physical.NewFileChunkerPhysicalPacker(int64(p.settings.ChunkSizeMB)*1024*1024, p.chunkNamer)
-	} else {
-		fmt.Printf("INFO: [PLUGIN] Physical chunking disabled.\n")
-		p.physicalPacker = physical.NewSinglePhysicalPacker()
-	}
+	p.physicalPacker = physical.NewSinglePhysicalPacker()
 	return nil
 }
 
 // Plugin 接口实现
 //
 //	返回在 Initialize 阶段已经配置好的 chunkNamer
-func (p *VideoPlugin) GetChunkNamer() namer.ChunkNamer {
-	return p.chunkNamer
+func (p *AudioPlugin) GetChunkNamer() namer.ChunkNamer {
+	return nil
 }
 
 // Plugin 接口实现
-func (p *VideoPlugin) SupportedMimePrefixes() []string {
-	return []string{"video/", "application/vnd.rn-realmedia-vbr", "application/vnd.apple.mpegurl"}
+func (p *AudioPlugin) SupportedMimePrefixes() []string {
+	return []string{
+		"audio/mpeg",     // mp3
+		"audio/flac",     // flac
+		"audio/ogg",      // ogg
+		"audio/mp4",      // m4a
+		"audio/wav",      // wav
+		"audio/opus",     // opus
+		"audio/x-ms-wma", // wma
+	}
 }
 
 // Plugin 接口实现
-func (p *VideoPlugin) ShouldProcess(inputPath string) bool {
+func (p *AudioPlugin) ShouldProcess(inputPath string) bool {
+	// 获取文件扩展名（小写，不带点）
 	ext := strings.ToLower(filepath.Ext(inputPath))
-	if ext == ".srt" || ext == ".ass" || ext == ".vtt" {
+	if len(ext) > 0 {
+		ext = ext[1:]
+	}
+
+	// 这些文件在业务上被视为视频的一部分，而非独立的文本文件
+	excludedSubtitles := map[string]struct{}{
+		"ass": {},
+		"srt": {},
+		"vtt": {},
+	}
+
+	if _, shouldExclude := excludedSubtitles[ext]; shouldExclude {
 		return false
 	}
+
 	return true
 }
 
@@ -140,35 +135,35 @@ func (p *VideoPlugin) ShouldProcess(inputPath string) bool {
 //
 // 判断此插件是否能解密给定的容器文件。
 // 【关键修复】不再依赖不可靠的文件扩展名，而是通过读取容器元数据来判断其内容类型。
-func (p *VideoPlugin) CanDecrypt(containerPath string) bool {
+func (p *AudioPlugin) CanDecrypt(containerPath string) bool {
 	kind, err := detector.DetectIndexKind(containerPath)
 	if err != nil {
 		// 如果无法判断类型（例如，文件损坏或不是 ENCV 容器），则认为不能解密
 		// 这里的日志可以帮助调试
-		// fmt.Printf("DEBUG: [VideoPlugin.CanDecrypt] Failed to detect kind for '%s': %v\n", containerPath, err)
+		// fmt.Printf("DEBUG: [TextPlugin.CanDecrypt] Failed to detect kind for '%s': %v\n", containerPath, err)
 		return false
 	}
-	return kind == IndexKindVideo
+	return kind == IndexKindAudio
 }
 
 // 【新增方法】实现 plugins.Plugin 接口
-func (p *VideoPlugin) GetMetadataExtractor() pluginInterfaces.MetadataExtractor {
-	return &VideoMetadataExtractor{}
+func (p *AudioPlugin) GetMetadataExtractor() pluginInterfaces.MetadataExtractor {
+	return &AudioMetadataExtractor{}
 }
 
 // 【新增方法】实现 plugins.Plugin 接口
-func (p *VideoPlugin) GetContentPreprocessor() pluginInterfaces.ContentPreprocessor {
-	return &VideoContentPreprocessor{}
+func (p *AudioPlugin) GetContentPreprocessor() pluginInterfaces.ContentPreprocessor {
+	return &AudioContentPreprocessor{}
 }
 
 // --- 加密逻辑 ---
 
 // Plugin 接口实现
 // 在加密前处理字幕，并更新 Index
-func (p *VideoPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRootDir, outputDir string) error {
-	vIndex, ok := index.(*VideoIndex)
+func (p *AudioPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRootDir, outputDir string) error {
+	vIndex, ok := index.(*AudioIndex)
 	if !ok {
-		return fmt.Errorf("video plugin received a non-video index")
+		return fmt.Errorf("Text plugin received a non-Text index")
 	}
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return err
@@ -177,16 +172,12 @@ func (p *VideoPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRoo
 	p.inputPath = inputPath
 	p.inputRootDir = inputRootDir
 	p.outputDir = outputDir
-
-	encryptedBaseName := p.baseNamer.GenerateEncryptedBaseName(p.index.OriginalFilename)
-
-	// 调用字幕处理逻辑，它会修改 p.index.SubtitleTrack
-	return p.HandleSubtitlesForEncryption(p.cfg, &p.index, outputDir, encryptedBaseName)
+	return nil
 }
 
 // Plugin 接口实现
 // 执行核心的加密工作，并调用 Packer
-func (p *VideoPlugin) Encrypt(dataReader io.Reader) error {
+func (p *AudioPlugin) Encrypt(dataReader io.Reader) error {
 	guardKey := fmt.Sprintf("%s|%s", p.inputPath, p.outputDir)
 
 	return utils.Do(guardKey, func() error {
@@ -202,17 +193,17 @@ func (p *VideoPlugin) Encrypt(dataReader io.Reader) error {
 
 		fmt.Printf("INFO: [PLUGIN] Encrypted to temporary file: %s\n", tempEncPath)
 
-		fmt.Printf("✅ [VIDEO] Encrypted successfully.\n")
+		fmt.Printf("✅ [imgae] Encrypted successfully.\n")
 		return nil
 	})
 }
 
 // Plugin 接口实现
 // 视频插件在加密后处理器
-func (p *VideoPlugin) PostEncryptProcessor() error {
+func (p *AudioPlugin) PostEncryptProcessor() error {
 	// --- 【关键修复】在这里，根据原始文件大小计算逻辑分片 ---
-	logicalFragmentSize := fragment.CalculateFragmentSize(p.index.OriginalFileSize, int64(p.settings.ChunkSizeMB)*1024*1024)
-	logicalFragments, err := fragment.CreateLogicalFragmentsFromSize(p.index.OriginalFileSize, logicalFragmentSize, types.FragmentType_SeekableStream)
+	logicalFragmentSize := fragment.CalculateFragmentSize(p.index.OriginalFileSize, 0)
+	logicalFragments, err := fragment.CreateLogicalFragmentsFromSize(p.index.OriginalFileSize, logicalFragmentSize, types.FragmentType_AtomicFile)
 	if err != nil {
 		return fmt.Errorf("failed to create logical fragments from size: %w", err)
 	}
@@ -228,16 +219,8 @@ func (p *VideoPlugin) PostEncryptProcessor() error {
 
 	// --- 5. 创建 Packer 并执行打包 ---
 	encryptedBaseName := p.baseNamer.GenerateEncryptedBaseName(p.index.OriginalFilename)
-	finalFilename := p.chunkNamer.GenerateMainChunkName(encryptedBaseName)
-	finalBaseName := strings.TrimSuffix(finalFilename, p.settings.Ext)
-	// 决定打包策略和起始索引
-	var startIdx int
-	if p.settings.LightMainChunkEnabled {
-		startIdx = 1
-	} else {
-		startIdx = 0
-	}
-	packer := NewVideoPacker(p.physicalPacker, p.chunkNamer)
+	finalBaseName := strings.TrimSuffix(encryptedBaseName, p.settings.Ext)
+	packer := NewAudioPacker(p.physicalPacker)
 	packReq := &physical.PackRequest{
 		BaseName:            finalBaseName,
 		OutputDir:           p.outputDir,
@@ -246,8 +229,7 @@ func (p *VideoPlugin) PostEncryptProcessor() error {
 		Salt:                p.salt,
 		IV:                  p.iv,
 		LogicalFragments:    logicalFragments, // 预先计算好
-		Namer:               p.chunkNamer,
-		StartIdx:            startIdx,
+		FinalFileName:       encryptedBaseName + p.settings.Ext,
 	}
 
 	if err := packer.Pack(p.cfg, packReq); err != nil {
@@ -256,7 +238,7 @@ func (p *VideoPlugin) PostEncryptProcessor() error {
 	}
 
 	encryptedDataReader.Close() // Packer 使用完毕后关闭
-	fmt.Printf("✅ [VIDEO] packed successfully.\n")
+	fmt.Printf("✅ [imgae] packed successfully.\n")
 	return nil
 }
 
@@ -264,23 +246,23 @@ func (p *VideoPlugin) PostEncryptProcessor() error {
 
 // Plugin 接口实现
 // 视频插件在解密前无需额外操作
-func (p *VideoPlugin) PreDecryptProcessor(containerPath, outputDir string) error {
+func (p *AudioPlugin) PreDecryptProcessor(containerPath, outputDir string) error {
 	// 视频插件在此阶段无需操作
 	return nil
 }
 
 // Plugin 接口实现
-func (p *VideoPlugin) Decrypt(containerPath, outputDir string) error {
-	fmt.Printf("DEBUG: [VideoPlugin.Decrypt] Starting decryption for: %s\n", containerPath)
+func (p *AudioPlugin) Decrypt(containerPath, outputDir string) error {
+	fmt.Printf("DEBUG: [TextPlugin.Decrypt] Starting decryption for: %s\n", containerPath)
 	p.outputDir = outputDir
 
 	// --- 1. 【关键】通过 ContainerManager 获取一个可读的容器路径 ---
 	// ContainerManager 会智能地决定是使用原始文件还是重建文件
-	readablePath, err := p.containerManager.GetReadablePath(containerPath, p.chunkNamer)
+	readablePath, err := p.containerManager.GetReadablePath(containerPath, nil)
 	if err != nil {
 		return fmt.Errorf("failed to get readable path from container manager: %w", err)
 	}
-	fmt.Printf("DEBUG: [VideoPlugin.Decrypt] Using readable path: %s\n", readablePath)
+	fmt.Printf("DEBUG: [TextPlugin.Decrypt] Using readable path: %s\n", readablePath)
 
 	// --- 2. 使用统一路径创建 reader 工厂 ---
 	factory, err := reader.NewDecryptReaderFactory(readablePath, p.cfg.Password)
@@ -288,20 +270,26 @@ func (p *VideoPlugin) Decrypt(containerPath, outputDir string) error {
 		return fmt.Errorf("failed to create reader factory for '%s': %w", readablePath, err)
 	}
 	defer factory.Close() // 【关键】这个 Close 会同时清理物理临时文件（如果存在）
-	fmt.Printf("DEBUG: [VideoPlugin.Decrypt] Reader factory created successfully.\n")
+	fmt.Printf("DEBUG: [TextPlugin.Decrypt] Reader factory created successfully.\n")
 
 	// --- 3. 使用工厂创建解密流并写入文件 ---
 	decryptedReader, err := factory.NewDecryptReader(*p.cfg)
 	if err != nil {
-		return fmt.Errorf("[VideoPlugin] failed to create decrypt reader: %w", err)
+		return fmt.Errorf("[TextPlugin] failed to create decrypt reader: %w", err)
 	}
 	defer decryptedReader.Close()
+	_, isSeekable := decryptedReader.(io.Seeker)
+	if isSeekable {
+		fmt.Printf("INFO: [TextPlugin.Decrypt] Container is SEEKABLE. Decrypting full content.\n")
+	} else {
+		fmt.Printf("INFO: [TextPlugin.Decrypt] Container is ATOMIC. Decrypting full content.\n")
+	}
 
 	// 从 KVI 获取原始文件名
 	index := factory.GetIndex()
-	vIndex, ok := index.(*VideoIndex)
+	vIndex, ok := index.(*AudioIndex)
 	if !ok {
-		return fmt.Errorf("container is not a video container")
+		return fmt.Errorf("container is not a imgae container")
 	}
 
 	outputPath := filepath.Join(outputDir, vIndex.GetOriginalFilename())
@@ -312,24 +300,18 @@ func (p *VideoPlugin) Decrypt(containerPath, outputDir string) error {
 	defer outputFile.Close()
 
 	if _, err := io.Copy(outputFile, decryptedReader); err != nil {
-		return fmt.Errorf("failed to write decrypted video stream: %w", err)
+		return fmt.Errorf("failed to write decrypted imgae stream: %w", err)
 	}
 
 	p.index = *vIndex
 
-	fmt.Printf("✅ [VIDEO] Decrypted to: %s\n", outputPath)
+	fmt.Printf("✅ [imgae] Decrypted to: %s\n", outputPath)
 	return nil
 }
 
 // Plugin 接口实现
 // 在解密后处理字幕还原
-func (p *VideoPlugin) PostDecryptProcessor(containerPath string) error {
-
-	containerDir := filepath.Dir(containerPath)
-	// 注意：这里的 vIndex.SubtitleTrack 应该在 Decrypt 方法中被正确设置
-	if err := RestoreSubtitlesForDecryption(&p.index, containerDir, p.outputDir); err != nil {
-		return fmt.Errorf("failed to restore subtitles: %w", err)
-	}
+func (p *AudioPlugin) PostDecryptProcessor(containerPath string) error {
 
 	return nil
 }
