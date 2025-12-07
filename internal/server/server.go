@@ -18,6 +18,7 @@ import (
 	"github.com/Soltus/encv-go/internal/middleware"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
+	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/Soltus/encv-go/internal/v2/service"
 	"github.com/Soltus/encv-go/internal/v2/types"
 	"github.com/Soltus/encv-go/internal/web"
@@ -294,9 +295,6 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, fullPath stri
 // listFilesInDir 在指定目录生成一个文件列表页面
 // urlPath 是当前目录对应的 URL 路径，用于生成正确的导航链接
 func (s *Server) listFilesInDir(w http.ResponseWriter, r *http.Request, dirPath, urlPath string) {
-	// 这个 context 应该已经被中间件注入了配置
-	ctx := r.Context()
-	cfg := config.FromContext(ctx)
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		http.Error(w, "Could not read directory", http.StatusInternalServerError)
@@ -326,7 +324,7 @@ func (s *Server) listFilesInDir(w http.ResponseWriter, r *http.Request, dirPath,
 			Name:        entry.Name(),
 			Path:        urlPath + entry.Name(),
 			IsDir:       entry.IsDir(),
-			IsContainer: !entry.IsDir() && cfg.IsContainerFile(entry.Name()),
+			IsContainer: !entry.IsDir() && plugins.IsContainer(entry.Name()),
 			Size:        info.Size(),
 			ModTime:     info.ModTime(),
 		})

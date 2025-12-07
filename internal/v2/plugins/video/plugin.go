@@ -26,6 +26,7 @@ import (
 
 type VideoPlugin struct {
 	cfg              *config.Config
+	settings         VideoPluginConfig
 	index            VideoIndex
 	outputDir        string
 	inputPath        string
@@ -37,6 +38,42 @@ type VideoPlugin struct {
 	chunkNamer       namer.ChunkNamer          // 注入分片命名器
 	containerManager *service.ContainerManager // 注入 ContainerManager
 	physicalPacker   physical.PhysicalPacker
+}
+
+func (p *VideoPlugin) Name() string {
+	return "video" // 这个字符串必须与配置文件中的键对应
+}
+
+// Plugin 接口实现
+func (p *VideoPlugin) GetContainerExtension() string {
+	return p.settings.Ext
+}
+
+type VideoPluginConfig struct {
+	// 容器扩展名
+	Ext string `json:"ext"`
+	// 分片大小，0 表示不启用，允许的最小值为 30
+	ChunkSizeMB int `json:"chunk_size_mb"`
+	// 分片最大数量，0 表示不限制，优先级高于 ChunkSizeMB TODO: 待实现
+	// ChunkMax              int    `json:"chunck_max"`
+
+	// 是否启用轻量级主分片，启用后主分片只包含清单，不包含源数据
+	LightMainChunkEnabled bool `json:"light_main_chunk_enabled"`
+}
+
+func (p *VideoPlugin) GetSettingsSchemaType() interface{} {
+	return VideoPluginConfig{}
+}
+
+// 2. 实现接口方法，返回默认配置的 JSON
+func (p *VideoPlugin) GetDefaultSettings() json.RawMessage {
+	defaultCfg := VideoPluginConfig{
+		Ext:         "sccgv",
+		ChunkSizeMB: 0,
+		// ChunkMax:    0,
+	}
+	data, _ := json.Marshal(defaultCfg) // 忽略错误，因为默认值是硬编码的，不会出错
+	return data
 }
 
 // init 在包被导入时自动执行，完成自注册
@@ -53,16 +90,24 @@ func init() {
 // Plugin 接口实现
 func (p *VideoPlugin) Intialize(ctx context.Context) error {
 	p.cfg = config.FromContext(ctx)
+	// 2. 【关键】使用泛型辅助函数，安全地获取并解析本插件的配置
+	settings, err := config.GetPluginSettingsFor[VideoPluginConfig](p.cfg, p.Name())
+	if err != nil {
+		return fmt.Errorf("could not get settings for plugin %s: %w", p.Name(), err)
+	}
+	p.settings = *settings // 将指针解引用，存入
+	if p.settings.ChunkSizeMB > 0 && p.settings.ChunkSizeMB < 30 {
+		p.settings.ChunkSizeMB = 30 // 强制修改为 30
+	}
 	p.containerManager = service.NewContainerManager()
 	p.baseNamer = namer.NewDefaultBaseNamer()
-	mainChunkExt := p.cfg.GetVideoEncExtension()
-	p.chunkNamer = namer.NewPaddedNamer(mainChunkExt, p.baseNamer, 4) // 补零到4位
-	if p.cfg.IsSccgvChunkingEnabled() {
-		fmt.Printf("INFO: [PLUGIN] Physical chunking enabled. Size: %d MB\n", p.cfg.GetSccgvChunkSizeMB())
-		p.physicalPacker = physical.NewFileChunkerPhysicalPacker(p.cfg.GetSccgvChunkSizeBytes(), p.chunkNamer)
+	p.chunkNamer = namer.NewPaddedNamer(p.settings.Ext, p.baseNamer, 4) // 补零到4位
+	if p.settings.ChunkSizeMB > 0 {
+		fmt.Printf("INFO: [PLUGIN] Physical chunking enabled. Size: %d MB\n", p.settings.ChunkSizeMB)
+		p.physicalPacker = physical.NewFileChunkerPhysicalPacker(int64(p.settings.ChunkSizeMB)*1024*1024, p.chunkNamer)
 	} else {
 		fmt.Printf("INFO: [PLUGIN] Physical chunking disabled.\n")
-		p.physicalPacker = physical.NewSinglePhysicalPacker() // NoOpPacker 不需要 namer
+		p.physicalPacker = physical.NewSinglePhysicalPacker()
 	}
 	return nil
 }
@@ -101,11 +146,6 @@ func (p *VideoPlugin) CanDecrypt(containerPath string) bool {
 		return false
 	}
 	return kind == IndexKindVideo
-}
-
-// Plugin 接口实现
-func (p *VideoPlugin) GetContainerExtension() string {
-	return p.cfg.GetVideoEncExtension()
 }
 
 // 【新增方法】实现 plugins.Plugin 接口
@@ -168,7 +208,7 @@ func (p *VideoPlugin) Encrypt(dataReader io.Reader) error {
 // 视频插件在加密后处理器
 func (p *VideoPlugin) PostEncryptProcessor() error {
 	// --- 【关键修复】在这里，根据原始文件大小计算逻辑分片 ---
-	logicalFragmentSize := fragment.CalculateFragmentSize(p.index.OriginalFileSize, p.cfg.GetSccgvChunkSizeBytes())
+	logicalFragmentSize := fragment.CalculateFragmentSize(p.index.OriginalFileSize, int64(p.settings.ChunkSizeMB)*1024*1024)
 	logicalFragments, err := fragment.CreateLogicalFragmentsFromSize(p.index.OriginalFileSize, logicalFragmentSize, types.FragmentType_SeekableStream)
 	if err != nil {
 		return fmt.Errorf("failed to create logical fragments from size: %w", err)
@@ -186,11 +226,10 @@ func (p *VideoPlugin) PostEncryptProcessor() error {
 	// --- 5. 创建 Packer 并执行打包 ---
 	encryptedBaseName := p.baseNamer.GenerateEncryptedBaseName(p.index.OriginalFilename)
 	finalFilename := p.chunkNamer.GenerateMainChunkName(encryptedBaseName)
-	finalBaseName := strings.TrimSuffix(finalFilename, p.cfg.GetVideoEncExtension())
+	finalBaseName := strings.TrimSuffix(finalFilename, p.settings.Ext)
 	// 决定打包策略和起始索引
-	isLightweight := p.cfg.IsLightweightMainChunkEnabled()
 	var startIdx int
-	if isLightweight {
+	if p.settings.LightMainChunkEnabled {
 		startIdx = 1
 	} else {
 		startIdx = 0

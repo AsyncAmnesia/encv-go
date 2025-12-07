@@ -5,49 +5,48 @@ package main
 
 import (
 	"fmt"
-	"log"
-	"os"
 
 	"github.com/Soltus/encv-go/internal/config"
 	"golang.org/x/sys/windows/registry"
 )
 
 // handleOpenAsCommand 在 Windows 注册表中注册文件关联（双击行为）
+// 用处不大，有空再优化。
 func handleOpenAsCommand(cfg *config.Config) error {
-	exePath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("failed to get executable path: %w", err)
-	}
-	exePathQuoted := fmt.Sprintf(`"%s"`, exePath)
+	// exePath, err := os.Executable()
+	// if err != nil {
+	// 	return fmt.Errorf("failed to get executable path: %w", err)
+	// }
+	// exePathQuoted := fmt.Sprintf(`"%s"`, exePath)
 
-	// 定义不同类型的命令模板
-	// 视频和音频使用流式播放
-	streamCommand := fmt.Sprintf(`%s open-stream "%%1"`, exePathQuoted)
-	// 图片和文本使用临时文件
-	tempFileCommand := fmt.Sprintf(`%s open-temp "%%1"`, exePathQuoted)
+	// // 定义不同类型的命令模板
+	// // 视频和音频使用流式播放
+	// streamCommand := fmt.Sprintf(`%s open-stream "%%1"`, exePathQuoted)
+	// // 图片和文本使用临时文件
+	// tempFileCommand := fmt.Sprintf(`%s open-temp "%%1"`, exePathQuoted)
 
-	// 定义要注册的扩展名、类型和对应的命令
-	extensionsToRegister := map[string]struct {
-		ext     string
-		command string
-	}{
-		"video": {cfg.BinExtGroup.Video, streamCommand},
-		"audio": {cfg.BinExtGroup.Audio, streamCommand},
-		"image": {cfg.BinExtGroup.Image, tempFileCommand},
-		"text":  {cfg.BinExtGroup.Text, tempFileCommand},
-	}
+	// // 定义要注册的扩展名、类型和对应的命令
+	// extensionsToRegister := map[string]struct {
+	// 	ext     string
+	// 	command string
+	// }{
+	// 	"video": {cfg.BinExtGroup.Video, streamCommand},            // cfg.BinExtGroup 已弃用
+	// 	"audio": {cfg.BinExtGroup.Audio, streamCommand},
+	// 	"image": {cfg.BinExtGroup.Image, tempFileCommand},
+	// 	"text":  {cfg.BinExtGroup.Text, tempFileCommand},
+	// }
 
-	for kind, item := range extensionsToRegister {
-		if item.ext == "" {
-			log.Printf("Warning: Extension for kind '%s' is not configured, skipping.", kind)
-			continue
-		}
+	// for kind, item := range extensionsToRegister {
+	// 	if item.ext == "" {
+	// 		log.Printf("Warning: Extension for kind '%s' is not configured, skipping.", kind)
+	// 		continue
+	// 	}
 
-		log.Printf("-> Registering .%s extension with command: %s", item.ext, item.command)
-		if err := registerSingleExtension(item.ext, item.command); err != nil {
-			return fmt.Errorf("failed to register .%s: %w", item.ext, err)
-		}
-	}
+	// 	log.Printf("-> Registering .%s extension with command: %s", item.ext, item.command)
+	// 	if err := registerSingleExtension(item.ext, item.command); err != nil {
+	// 		return fmt.Errorf("failed to register .%s: %w", item.ext, err)
+	// 	}
+	// }
 
 	return nil
 }

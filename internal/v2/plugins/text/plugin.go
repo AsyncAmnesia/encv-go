@@ -24,6 +24,7 @@ import (
 
 type TextPlugin struct {
 	cfg              *config.Config
+	settings         TextPluginConfig
 	index            TextIndex
 	outputDir        string
 	inputPath        string
@@ -34,6 +35,33 @@ type TextPlugin struct {
 	baseNamer        namer.BaseNamer           // 注入容器命名器
 	containerManager *service.ContainerManager // 注入 ContainerManager
 	physicalPacker   physical.PhysicalPacker
+}
+
+func (p *TextPlugin) Name() string {
+	return "text" // 这个字符串必须与配置文件中的键对应
+}
+
+// Plugin 接口实现
+func (p *TextPlugin) GetContainerExtension() string {
+	return p.settings.Ext
+}
+
+type TextPluginConfig struct {
+	// 容器扩展名
+	Ext string `json:"ext"`
+}
+
+func (p *TextPlugin) GetSettingsSchemaType() interface{} {
+	return TextPluginConfig{}
+}
+
+// 2. 实现接口方法，返回默认配置的 JSON
+func (p *TextPlugin) GetDefaultSettings() json.RawMessage {
+	defaultCfg := TextPluginConfig{
+		Ext: "sccgt",
+	}
+	data, _ := json.Marshal(defaultCfg) // 忽略错误，因为默认值是硬编码的，不会出错
+	return data
 }
 
 // init 在包被导入时自动执行，完成自注册
@@ -50,9 +78,14 @@ func init() {
 // Plugin 接口实现
 func (p *TextPlugin) Intialize(ctx context.Context) error {
 	p.cfg = config.FromContext(ctx)
+	settings, err := config.GetPluginSettingsFor[TextPluginConfig](p.cfg, p.Name())
+	if err != nil {
+		return fmt.Errorf("could not get settings for plugin %s: %w", p.Name(), err)
+	}
+	p.settings = *settings // 将指针解引用，存入
 	p.containerManager = service.NewContainerManager()
 	p.baseNamer = namer.NewDefaultBaseNamer()
-	p.physicalPacker = physical.NewSinglePhysicalPacker() // NoOpPacker 不需要 namer
+	p.physicalPacker = physical.NewSinglePhysicalPacker()
 	return nil
 }
 
@@ -109,11 +142,6 @@ func (p *TextPlugin) CanDecrypt(containerPath string) bool {
 		return false
 	}
 	return kind == IndexKindText
-}
-
-// Plugin 接口实现
-func (p *TextPlugin) GetContainerExtension() string {
-	return p.cfg.GetTextEncExtension()
 }
 
 // 【新增方法】实现 plugins.Plugin 接口
@@ -189,7 +217,7 @@ func (p *TextPlugin) PostEncryptProcessor() error {
 
 	// --- 5. 创建 Packer 并执行打包 ---
 	encryptedBaseName := p.baseNamer.GenerateEncryptedBaseName(p.index.OriginalFilename)
-	finalBaseName := strings.TrimSuffix(encryptedBaseName, p.cfg.GetTextEncExtension())
+	finalBaseName := strings.TrimSuffix(encryptedBaseName, p.settings.Ext)
 	packer := NewTextPacker(p.physicalPacker)
 	packReq := &physical.PackRequest{
 		BaseName:            finalBaseName,
@@ -199,7 +227,7 @@ func (p *TextPlugin) PostEncryptProcessor() error {
 		Salt:                p.salt,
 		IV:                  p.iv,
 		LogicalFragments:    logicalFragments, // 预先计算好
-		FinalFileName:       encryptedBaseName + p.cfg.GetTextEncExtension(),
+		FinalFileName:       encryptedBaseName + p.settings.Ext,
 	}
 
 	if err := packer.Pack(p.cfg, packReq); err != nil {

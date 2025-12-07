@@ -1,6 +1,8 @@
 // pkg/plugin/interface_v2.go
 package plugin
 
+// 已弃用，尽快删除
+
 import (
 	"io"
 )

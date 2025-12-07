@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
@@ -24,13 +22,15 @@ type Config struct {
 	OutputPath string `json:"output_path"`
 	// TrackExtensions 视频容器的字幕/轨道文件扩展名列表，它们并不会打包到容器里。
 	TrackExtensions []string `json:"track_extensions"`
-	// BinExtGroup 可以自定义加密容器文件的扩展名。
-	BinExtGroup types.BinExtGroup `json:"bin_ext_group"`
+	// BinExtGroup 可以自定义加密容器文件的扩展名。已弃用，使用 PluginSettings. 替代。
+	// BinExtGroup types.BinExtGroup `json:"bin_ext_group"`
+	//  map 键是插件名，值是该插件的原始JSON配置
+	PluginSettings map[string]json.RawMessage `json:"plugin_settings"`
 	// SccgvSettings SCCGV (视频分片) 相关的设置。
-	SccgvSettings SccgvSettings             `json:"sccgv_settings"`
-	Server        types.HttpServer          `json:"server"`
-	Webdav        types.WebdavServer        `json:"webdav"`
-	Proxy         types.OpenlistProxyServer `json:"proxy"`
+	// SccgvSettings SccgvSettings             `json:"sccgv_settings"`
+	Server types.HttpServer          `json:"server"`
+	Webdav types.WebdavServer        `json:"webdav"`
+	Proxy  types.OpenlistProxyServer `json:"proxy"`
 }
 
 // contextKey 是一个不导出的类型，用于防止 context 中的 key 冲突。
@@ -61,17 +61,17 @@ func DefaultConfig() *Config {
 	return &Config{
 		OutputPath:      "./encrypted",
 		TrackExtensions: []string{".ass", ".srt", ".dm.ass"},
-		BinExtGroup: types.BinExtGroup{
-			Text:  "sccgt",
-			Image: "sccgi",
-			Audio: "sccga",
-			Video: "sccgv",
-			WPS:   "sccgwps",
-			PDF:   "sccgpdf",
-		},
-		SccgvSettings: SccgvSettings{
-			ChunkSizeMB: 0, // 0 表示不启用分片
-		},
+		// BinExtGroup: types.BinExtGroup{
+		// 	Text:  "sccgt",
+		// 	Image: "sccgi",
+		// 	Audio: "sccga",
+		// 	Video: "sccgv",
+		// 	WPS:   "sccgwps",
+		// 	PDF:   "sccgpdf",
+		// },
+		// SccgvSettings: SccgvSettings{
+		// 	ChunkSizeMB: 0, // 0 表示不启用分片
+		// },
 		Server: types.HttpServer{Port: 1999, Dir: "./"},
 		Webdav: types.WebdavServer{
 			Port: 2299,
@@ -111,34 +111,56 @@ func Load(configPath string) (*Config, error) {
 	return cfg, nil
 }
 
-// 返回所有已知的容器扩展名（带点号）
-func (c *Config) GetAllContainerExtensions() []string {
-	return []string{
-		"." + c.BinExtGroup.Video, // .sccgv
-		"." + c.BinExtGroup.Text,  // .sccgt
-		"." + c.BinExtGroup.Audio, // .sccga
-		"." + c.BinExtGroup.Image, // .sccgi
-		"." + c.BinExtGroup.WPS,   // .sccgwps
-		"." + c.BinExtGroup.PDF,   // .sccgpdf
+// GetPluginSettingsFor 是一个泛型辅助函数，用于安全地获取并解析特定插件的配置。
+// T 是插件配置结构体的类型，例如 VideoPluginConfig。
+// 它会从 map 中查找插件配置，并将其反序列化为 T 类型的指针。
+func GetPluginSettingsFor[T any](cfg *Config, pluginName string) (*T, error) {
+	// 1. 从 map 中获取原始的 JSON 数据
+	rawSettings, ok := cfg.PluginSettings[pluginName]
+	if !ok {
+		return nil, fmt.Errorf("no settings found for plugin '%s'", pluginName)
 	}
+
+	// 2. 定义一个 T 类型的变量，用于接收反序列化的结果
+	var settings T
+
+	// 3. 将原始 JSON 解析到 T 类型的变量中
+	if err := json.Unmarshal(rawSettings, &settings); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal settings for plugin '%s': %w", pluginName, err)
+	}
+
+	// 4. 返回解析后配置的指针
+	return &settings, nil
 }
+
+// 返回所有已知的容器扩展名（带点号），已弃用
+// func (c *Config) GetAllContainerExtensions() []string {
+// 	return []string{
+// 		"." + c.BinExtGroup.Video, // .sccgv
+// 		"." + c.BinExtGroup.Text,  // .sccgt
+// 		"." + c.BinExtGroup.Audio, // .sccga
+// 		"." + c.BinExtGroup.Image, // .sccgi
+// 		"." + c.BinExtGroup.WPS,   // .sccgwps
+// 		"." + c.BinExtGroup.PDF,   // .sccgpdf
+// 	}
+// }
 
 // IsContainerPath 检查路径是否是已知的容器文件（基于扩展名）
 // 这是一个快速的、非 I/O 的检查，适用于初步筛选。
-func (c *Config) IsContainerPath(path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	for _, containerExt := range c.GetAllContainerExtensions() {
-		if ext == containerExt {
-			return true
-		}
-	}
-	return false
-}
+// func (c *Config) IsContainerPath(path string) bool {
+// 	ext := strings.ToLower(filepath.Ext(path))
+// 	for _, containerExt := range c.GetAllContainerExtensions() {
+// 		if ext == containerExt {
+// 			return true
+// 		}
+// 	}
+// 	return false
+// }
 
 // 已弃用，换成 v2 的 DetectContainerType
-func (c *Config) IsContainerFile(path string) bool {
-	return c.IsContainerPath(path)
-}
+// func (c *Config) IsContainerFile(path string) bool {
+// 	return c.IsContainerPath(path)
+// }
 
 // --- 全局 MIME 类型映射表，以 OpenList 为准 ---
 var ContentTypes = map[string]string{

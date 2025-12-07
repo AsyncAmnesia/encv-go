@@ -15,6 +15,7 @@ import (
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/manifest"
 	"github.com/Soltus/encv-go/internal/v2/openlist"
+	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/Soltus/encv-go/internal/v2/reader"
 	"github.com/Soltus/encv-go/internal/web"
 )
@@ -166,7 +167,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// --- 核心逻辑：判断是否是 ENCV 容器文件 ---
 	// openlist 依赖扩展名预览，因此直接使用扩展名判断的函数，不必检测 magic header
-	if cfg.IsContainerPath(path) {
+	if plugins.IsContainer(path) {
 		log.Printf("-> [Proxy] Detected ENCV container file: %s", path)
 		fileInfo, err := openlist.OpenListGetFileURL(path, cfg.Proxy.OpenListHost, cfg.Proxy.Token)
 		if err != nil {

@@ -3,39 +3,6 @@
   "$id": "https://github.com/Soltus/encv-go/internal/config/config",
   "$ref": "#/$defs/Config",
   "$defs": {
-    "BinExtGroup": {
-      "properties": {
-        "text": {
-          "type": "string",
-          "description": "文本类加密容器的扩展名。"
-        },
-        "image": {
-          "type": "string",
-          "description": "图像类加密容器的扩展名。"
-        },
-        "audio": {
-          "type": "string",
-          "description": "音频类加密容器的扩展名。"
-        },
-        "video": {
-          "type": "string",
-          "description": "视频类加密容器的扩展名。"
-        },
-        "iframe": {
-          "type": "string",
-          "description": "OpenList iframe 类加密容器的扩展名。"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "text",
-        "image",
-        "audio",
-        "video",
-        "iframe"
-      ]
-    },
     "Config": {
       "properties": {
         "password": {
@@ -57,16 +24,119 @@
           "type": "array",
           "description": "TrackExtensions 视频容器的字幕/轨道文件扩展名列表，它们并不会打包到容器里。"
         },
-        "bin_ext_group": {
-          "$ref": "#/$defs/BinExtGroup",
-          "description": "BinExtGroup 可以自定义加密容器文件的扩展名。"
-        },
-        "sccgv_settings": {
-          "$ref": "#/$defs/SccgvSettings",
-          "description": "SccgvSettings SCCGV (视频分片) 相关的设置。"
+        "plugin_settings": {
+          "properties": {
+            "video": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/video/video-plugin-config",
+              "$ref": "#/$defs/VideoPluginConfig",
+              "$defs": {
+                "VideoPluginConfig": {
+                  "properties": {
+                    "ext": {
+                      "type": "string"
+                    },
+                    "chunk_size_mb": {
+                      "type": "integer"
+                    },
+                    "light_main_chunk_enabled": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "ext",
+                    "chunk_size_mb",
+                    "light_main_chunk_enabled"
+                  ]
+                }
+              }
+            },
+            "image": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/image/image-plugin-config",
+              "$ref": "#/$defs/ImagePluginConfig",
+              "$defs": {
+                "ImagePluginConfig": {
+                  "properties": {
+                    "ext": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "ext"
+                  ]
+                }
+              }
+            },
+            "wps": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/wps/wps-plugin-config",
+              "$ref": "#/$defs/WPSPluginConfig",
+              "$defs": {
+                "WPSPluginConfig": {
+                  "properties": {
+                    "ext": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "ext"
+                  ]
+                }
+              }
+            },
+            "pdf": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/pdf/pdf-plugin-config",
+              "$ref": "#/$defs/PDFPluginConfig",
+              "$defs": {
+                "PDFPluginConfig": {
+                  "properties": {
+                    "ext": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "ext"
+                  ]
+                }
+              }
+            },
+            "text": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/text/text-plugin-config",
+              "$ref": "#/$defs/TextPluginConfig",
+              "$defs": {
+                "TextPluginConfig": {
+                  "properties": {
+                    "ext": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "ext"
+                  ]
+                }
+              }
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "description": "插件专属配置。键是插件名，值是该插件的配置对象。"
         },
         "server": {
-          "$ref": "#/$defs/HttpServer"
+          "$ref": "#/$defs/HttpServer",
+          "description": "SccgvSettings SCCGV (视频分片) 相关的设置。\nSccgvSettings SccgvSettings             `json:\"sccgv_settings\"`"
         },
         "webdav": {
           "$ref": "#/$defs/WebdavServer"
@@ -87,8 +157,7 @@
         "recover",
         "output_path",
         "track_extensions",
-        "bin_ext_group",
-        "sccgv_settings",
+        "plugin_settings",
         "server",
         "webdav",
         "proxy"
@@ -103,7 +172,7 @@
         },
         "dir": {
           "type": "string",
-          "description": "文件系统的根目录（例如 /path/to/your/files），而不是 HttpServer 的路由前缀 /"
+          "description": "文件系统的根目录（例如 /path/to/your/files），支持相对路径"
         }
       },
       "additionalProperties": false,
@@ -142,20 +211,6 @@
         "disable_signature_verification"
       ],
       "description": "--- Openlist 代理服务器设置 ---"
-    },
-    "SccgvSettings": {
-      "properties": {
-        "chunk_size": {
-          "type": "integer",
-          "description": "分片大小（单位 MB），为 0 或为空禁用分片"
-        }
-      },
-      "additionalProperties": false,
-      "type": "object",
-      "required": [
-        "chunk_size"
-      ],
-      "description": "SccgvSettings 包含 SCCGV 容器的特定设置"
     },
     "WebdavServer": {
       "properties": {

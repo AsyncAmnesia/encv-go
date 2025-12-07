@@ -24,6 +24,7 @@ import (
 
 type PDFPlugin struct {
 	cfg              *config.Config
+	settings         PDFPluginConfig
 	index            PDFIndex
 	outputDir        string
 	inputPath        string
@@ -34,6 +35,33 @@ type PDFPlugin struct {
 	baseNamer        namer.BaseNamer           // 注入容器命名器
 	containerManager *service.ContainerManager // 注入 ContainerManager
 	physicalPacker   physical.PhysicalPacker
+}
+
+func (p *PDFPlugin) Name() string {
+	return "pdf" // 这个字符串必须与配置文件中的键对应
+}
+
+// Plugin 接口实现
+func (p *PDFPlugin) GetContainerExtension() string {
+	return p.settings.Ext
+}
+
+type PDFPluginConfig struct {
+	// 容器扩展名
+	Ext string `json:"ext"`
+}
+
+func (p *PDFPlugin) GetSettingsSchemaType() interface{} {
+	return PDFPluginConfig{}
+}
+
+// 2. 实现接口方法，返回默认配置的 JSON
+func (p *PDFPlugin) GetDefaultSettings() json.RawMessage {
+	defaultCfg := PDFPluginConfig{
+		Ext: "sccgpdf",
+	}
+	data, _ := json.Marshal(defaultCfg) // 忽略错误，因为默认值是硬编码的，不会出错
+	return data
 }
 
 // init 在包被导入时自动执行，完成自注册
@@ -50,6 +78,11 @@ func init() {
 // Plugin 接口实现
 func (p *PDFPlugin) Intialize(ctx context.Context) error {
 	p.cfg = config.FromContext(ctx)
+	settings, err := config.GetPluginSettingsFor[PDFPluginConfig](p.cfg, p.Name())
+	if err != nil {
+		return fmt.Errorf("could not get settings for plugin %s: %w", p.Name(), err)
+	}
+	p.settings = *settings // 将指针解引用，存入
 	p.containerManager = service.NewContainerManager()
 	p.baseNamer = namer.NewDefaultBaseNamer()
 	p.physicalPacker = physical.NewSinglePhysicalPacker() // NoOpPacker 不需要 namer
@@ -88,11 +121,6 @@ func (p *PDFPlugin) CanDecrypt(containerPath string) bool {
 		return false
 	}
 	return kind == IndexKindPDF
-}
-
-// Plugin 接口实现
-func (p *PDFPlugin) GetContainerExtension() string {
-	return p.cfg.GetWPSEncExtension()
 }
 
 // 【新增方法】实现 plugins.Plugin 接口
@@ -168,7 +196,7 @@ func (p *PDFPlugin) PostEncryptProcessor() error {
 
 	// --- 5. 创建 Packer 并执行打包 ---
 	encryptedBaseName := p.baseNamer.GenerateEncryptedBaseName(p.index.OriginalFilename)
-	finalBaseName := strings.TrimSuffix(encryptedBaseName, p.cfg.GetWPSEncExtension())
+	finalBaseName := strings.TrimSuffix(encryptedBaseName, p.settings.Ext)
 	packer := NewPDFPacker(p.physicalPacker)
 	packReq := &physical.PackRequest{
 		BaseName:            finalBaseName,
@@ -178,7 +206,7 @@ func (p *PDFPlugin) PostEncryptProcessor() error {
 		Salt:                p.salt,
 		IV:                  p.iv,
 		LogicalFragments:    logicalFragments, // 预先计算好
-		FinalFileName:       encryptedBaseName + p.cfg.GetPDFEncExtension(),
+		FinalFileName:       encryptedBaseName + p.settings.Ext,
 	}
 
 	if err := packer.Pack(p.cfg, packReq); err != nil {

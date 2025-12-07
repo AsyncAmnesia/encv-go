@@ -6,9 +6,8 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
-	"github.com/Soltus/encv-go/internal/config"
+	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -26,21 +25,21 @@ func UnregisterFileAssociations() error {
 
 // getExtensionsFromConfig 从配置中提取所有需要注册的文件后缀名
 func getExtensionsFromConfig() ([]string, error) {
-	exePath, err := os.Executable()
-	if err != nil {
-		return nil, fmt.Errorf("无法获取可执行文件路径: %w", err)
-	}
-	exeDir := filepath.Dir(exePath)
-	configPath := filepath.Join(exeDir, "config.user.json")
+	// exePath, err := os.Executable()
+	// if err != nil {
+	// 	return nil, fmt.Errorf("无法获取可执行文件路径: %w", err)
+	// }
+	// exeDir := filepath.Dir(exePath)
+	// configPath := filepath.Join(exeDir, "config.user.json")
 
-	cfg, err := config.Load(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("无法加载配置文件 '%s': %w", configPath, err)
-	}
+	// cfg, err := config.Load(configPath)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("无法加载配置文件 '%s': %w", configPath, err)
+	// }
 
 	// 过滤掉可能的空值
 	var finalExtensions []string
-	for _, ext := range cfg.GetAllContainerExtensions() {
+	for _, ext := range plugins.GetAllRegisteredContainerExtensions() {
 		if ext != "." {
 			finalExtensions = append(finalExtensions, ext)
 		}

@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/Soltus/encv-go/internal/config"
+	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/invopop/jsonschema"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 )
@@ -14,12 +15,12 @@ import (
 func main() {
 	r := &jsonschema.Reflector{}
 	err := r.AddGoComments("github.com/Soltus/encv-go", "./internal/config")
-	err = r.AddGoComments("github.com/Soltus/encv-go", "./internal/types")
+	err = r.AddGoComments("github.com/Soltus/encv-go", "./internal/v2/types")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error adding Go comments: %v\n", err)
 		os.Exit(1)
 	}
-
+	// 1. 生成基础 Schema
 	schema := r.Reflect(&config.Config{})
 
 	// --- 【关键】正确地添加 $schema 属性 ---
@@ -49,6 +50,12 @@ func main() {
 		Format:      "uri",
 	})
 
+	// 调用辅助函数，动态注入插件 Schema
+	if err := injectPluginSchemas(r, schema); err != nil {
+		fmt.Fprintf(os.Stderr, "Error injecting plugin schemas: %v\n", err)
+		os.Exit(2)
+	}
+
 	// --- 文件写入逻辑保持不变 ---
 	schemaBytes, err := json.MarshalIndent(schema, "", "  ")
 	if err != nil {
@@ -71,4 +78,44 @@ func main() {
 	}
 
 	fmt.Printf("✅ Successfully generated %s\n", targetFile)
+}
+
+// injectPluginSchemas 遍历所有已注册的插件，将它们的配置 Schema 动态注入到
+// 主 schema 的 `plugin_settings` 部分。
+func injectPluginSchemas(r *jsonschema.Reflector, schema *jsonschema.Schema) error {
+	// 1. 健壮性检查：确保 Definitions 和 Config 定义存在
+	if schema.Definitions == nil {
+		return fmt.Errorf("generated schema has no definitions")
+	}
+	configDef, ok := schema.Definitions["Config"]
+	if !ok {
+		return fmt.Errorf("could not find 'Config' definition in generated schema")
+	}
+
+	// 2. 获取 `plugin_settings` 属性的 Schema 对象
+	pluginSettingsProp, ok := configDef.Properties.Get("plugin_settings")
+	if !ok {
+		return fmt.Errorf("'plugin_settings' property not found in Config definition")
+	}
+
+	// 3. 准备 `plugin_settings` 的 Schema 结构
+	pluginSettingsSchema := pluginSettingsProp
+	pluginSettingsSchema.Type = "object"
+	pluginSettingsSchema.Description = "插件专属配置。键是插件名，值是该插件的配置对象。"
+	pluginSettingsSchema.Properties = orderedmap.New[string, *jsonschema.Schema]()
+	pluginSettingsSchema.AdditionalProperties = jsonschema.FalseSchema // 禁止未定义的插件
+
+	// 4. 遍历所有插件，为每个插件生成并注入其配置 Schema
+	for _, p := range plugins.Plugins {
+		pluginName := p.Name()
+		settingsType := p.GetSettingsSchemaType()
+
+		// 为插件的配置结构体生成 Schema
+		pluginConfigSchema := r.Reflect(settingsType)
+
+		// 将生成的 Schema 添加到 `plugin_settings` 的 `properties` 中
+		pluginSettingsSchema.Properties.Set(pluginName, pluginConfigSchema)
+	}
+
+	return nil
 }

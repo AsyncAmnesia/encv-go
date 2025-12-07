@@ -4,6 +4,7 @@ package plugins
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -33,6 +34,17 @@ var Plugins = []Plugin{
 
 // Plugin 定义了加解密插件的完整接口
 type Plugin interface {
+	// 【新增】插件必须实现此方法，返回其唯一的名称标识符
+	// 这个名称将作为在配置文件中查找其配置的键。
+	Name() string
+	// 【新增】插件必须实现此方法，返回其默认配置的 JSON 字节流
+	GetDefaultSettings() json.RawMessage
+	// 【新增】返回插件配置结构体的零值实例，用于生成 JSON Schema
+	GetSettingsSchemaType() interface{}
+
+	// GetContainerExtension 返回此插件创建的容器文件扩展名（不含点）
+	GetContainerExtension() string
+
 	Intialize(ctx context.Context) error
 	// --- 提供处理策略 ---
 	GetMetadataExtractor() pluginInterfaces.MetadataExtractor
@@ -49,8 +61,6 @@ type Plugin interface {
 
 	// --- 加密逻辑 ---
 
-	// GetContainerExtension 返回此插件创建的容器文件扩展名
-	GetContainerExtension() string
 	// 加密预处理器
 	PreEncryptProcessor(index types.Index, inputPath, inputRootDir, outputDir string) error
 	// 将处理后的文件加密到指定容器
@@ -70,6 +80,102 @@ type Plugin interface {
 	Decrypt(containerPath, outputDir string) error
 	// 解密后处理器
 	PostDecryptProcessor(containerPath string) error
+}
+
+// GetAllRegisteredContainerExtensions 返回所有已注册插件的容器扩展名（带点号）
+// 这个函数是动态的，会自动包含所有已加载的插件，无需硬编码。
+func GetAllRegisteredContainerExtensions() []string {
+	// 使用 map 来自动去重，防止不同插件意外使用了相同的扩展名
+	extensionMap := make(map[string]bool)
+	for _, p := range Plugins {
+		ext := p.GetContainerExtension()
+		if ext != "" { // 忽略空字符串
+			extensionMap["."+ext] = true // 在这里统一加上点
+		}
+	}
+
+	// 将 map 的键转换为切片返回
+	extensions := make([]string, 0, len(extensionMap))
+	for ext := range extensionMap {
+		extensions = append(extensions, ext)
+	}
+
+	return extensions
+}
+
+// IsContainerPath 检查路径是否是已知的容器文件（基于扩展名）
+// 这是一个快速的、非 I/O 的检查，适用于初步筛选。准确判断使用 detector.DetectContainer
+func IsContainer(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	for _, containerExt := range GetAllRegisteredContainerExtensions() {
+		if ext == containerExt {
+			return true
+		}
+	}
+	return false
+}
+
+// BuildFullPluginSettings 构建一个完整的插件配置映射
+// userSettings: 从用户配置文件中读取的原始 map
+// 返回一个包含所有插件配置（用户+默认）的完整 map
+func BuildFullPluginSettings(userSettings map[string]json.RawMessage) (map[string]json.RawMessage, error) {
+	fullSettings := make(map[string]json.RawMessage)
+
+	for _, p := range Plugins {
+		name := p.Name()
+
+		// 1. 获取插件的默认配置
+		defaults := p.GetDefaultSettings()
+
+		// 2. 检查用户是否为该插件提供了配置
+		userProvided, exists := userSettings[name]
+
+		if !exists || len(userProvided) == 0 {
+			// 如果用户没有提供配置，则完全使用默认值
+			fullSettings[name] = defaults
+		} else {
+			// 如果用户提供了配置，则将其与默认值合并
+			merged, err := mergeJSONObjects(defaults, userProvided)
+			if err != nil {
+				return nil, fmt.Errorf("failed to merge settings for plugin '%s': %w", name, err)
+			}
+			fullSettings[name] = merged
+		}
+	}
+	return fullSettings, nil
+}
+
+// 辅助函数。 合并两个 JSON 对象，userConfig 中的键会覆盖 defaults 中的键
+func mergeJSONObjects(defaults, userConfig json.RawMessage) (json.RawMessage, error) {
+	defaultsMap := make(map[string]interface{})
+	userMap := make(map[string]interface{})
+
+	if err := json.Unmarshal(defaults, &defaultsMap); err != nil {
+		return nil, fmt.Errorf("invalid default settings JSON: %w", err)
+	}
+	if err := json.Unmarshal(userConfig, &userMap); err != nil {
+		return nil, fmt.Errorf("invalid user settings JSON: %w", err)
+	}
+
+	// 合并：用户配置覆盖默认配置
+	for key, userValue := range userMap {
+		defaultsMap[key] = userValue
+	}
+
+	return json.Marshal(defaultsMap)
+}
+
+func InitializePlugins(ctx context.Context) error {
+	for _, p := range Plugins {
+		pluginName := p.Name()
+		fmt.Printf("Initializing plugin: %s\n", pluginName)
+
+		// 3. 调用插件的初始化方法
+		if err := p.Intialize(ctx); err != nil {
+			return fmt.Errorf("failed to initialize plugin %s: %w", pluginName, err)
+		}
+	}
+	return nil
 }
 
 // FindEncryptingPlugin 为给定的输入文件查找合适的加密插件

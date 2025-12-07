@@ -251,7 +251,7 @@ var encryptV2Cmd = &cobra.Command{
 			cfg.OutputPath = outputPathFlag
 		}
 
-		encv.InitV2(rootCtx)
+		encv.Init(rootCtx)
 		if err := os.MkdirAll(cfg.OutputPath, 0755); err != nil {
 			log.Fatalf("Failed to create output directory: %v", err)
 		}
@@ -523,8 +523,8 @@ func prepareSubtitles(videoPath string, cfg *config.Config) ([]SubtitleInfo, err
 	videoDir := filepath.Dir(videoPath)
 	videoBaseName := strings.TrimSuffix(filepath.Base(videoPath), filepath.Ext(videoPath))
 
-	// 2. 定义要查找的字幕扩展名（包括加密和未加密的）
-	subExts := []string{".srt", ".ass", ".vtt", cfg.BinExtGroup.Text}
+	// 2. 定义要查找的字幕扩展名
+	subExts := []string{".srt", ".ass", ".vtt"}
 
 	// 3. 查找文件
 	for _, ext := range subExts {
