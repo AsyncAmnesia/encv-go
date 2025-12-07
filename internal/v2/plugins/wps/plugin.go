@@ -145,7 +145,7 @@ func (p *WPSPlugin) GetContentPreprocessor() pluginInterfaces.ContentPreprocesso
 func (p *WPSPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRootDir, outputDir string) error {
 	vIndex, ok := index.(*WPSIndex)
 	if !ok {
-		return fmt.Errorf("WPS plugin received a non-WPS index")
+		return fmt.Errorf("[%s] plugin received a non-%s index", p.Name(), p.Name())
 	}
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return err
@@ -173,9 +173,9 @@ func (p *WPSPlugin) Encrypt(dataReader io.Reader) error {
 		p.salt = salt
 		p.iv = iv
 
-		fmt.Printf("INFO: [PLUGIN] Encrypted to temporary file: %s\n", tempEncPath)
+		fmt.Printf("INFO: [%s] Encrypted to temporary file: %s\n", p.Name(), tempEncPath)
 
-		fmt.Printf("✅ [imgae] Encrypted successfully.\n")
+		fmt.Printf("✅ [%s] Encrypted successfully.\n", p.Name())
 		return nil
 	})
 }
@@ -190,7 +190,7 @@ func (p *WPSPlugin) PostEncryptProcessor() error {
 		return fmt.Errorf("failed to create logical fragments from size: %w", err)
 	}
 	// 打印出生成的片段数量，用于调试
-	fmt.Printf("-> [PLUGIN] Generated %d logical fragments.\n", len(logicalFragments))
+	fmt.Printf("-> [%s] Generated %d logical fragments.\n", p.Name(), len(logicalFragments))
 
 	// 重新打开临时文件，作为加密数据源传递给 Packer
 	encryptedDataReader, err := os.Open(p.tempEncPath)
@@ -220,7 +220,7 @@ func (p *WPSPlugin) PostEncryptProcessor() error {
 	}
 
 	encryptedDataReader.Close() // Packer 使用完毕后关闭
-	fmt.Printf("✅ [imgae] packed successfully.\n")
+	fmt.Printf("✅ [%s] packed successfully.\n", p.Name())
 	return nil
 }
 
@@ -235,7 +235,7 @@ func (p *WPSPlugin) PreDecryptProcessor(containerPath, outputDir string) error {
 
 // Plugin 接口实现
 func (p *WPSPlugin) Decrypt(containerPath, outputDir string) error {
-	fmt.Printf("DEBUG: [IframePlugin.Decrypt] Starting decryption for: %s\n", containerPath)
+	fmt.Printf("DEBUG: [%s] Starting decryption for: %s\n", p.Name(), containerPath)
 	p.outputDir = outputDir
 
 	// --- 1. 【关键】通过 ContainerManager 获取一个可读的容器路径 ---
@@ -244,7 +244,7 @@ func (p *WPSPlugin) Decrypt(containerPath, outputDir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get readable path from container manager: %w", err)
 	}
-	fmt.Printf("DEBUG: [IframePlugin.Decrypt] Using readable path: %s\n", readablePath)
+	fmt.Printf("DEBUG: [%s] Using readable path: %s\n", p.Name(), readablePath)
 
 	// --- 2. 使用统一路径创建 reader 工厂 ---
 	factory, err := reader.NewDecryptReaderFactory(readablePath, p.cfg.Password)
@@ -252,19 +252,19 @@ func (p *WPSPlugin) Decrypt(containerPath, outputDir string) error {
 		return fmt.Errorf("failed to create reader factory for '%s': %w", readablePath, err)
 	}
 	defer factory.Close() // 【关键】这个 Close 会同时清理物理临时文件（如果存在）
-	fmt.Printf("DEBUG: [IframePlugin.Decrypt] Reader factory created successfully.\n")
+	fmt.Printf("DEBUG: [%s] Reader factory created successfully.\n", p.Name())
 
 	// --- 3. 使用工厂创建解密流并写入文件 ---
 	decryptedReader, err := factory.NewDecryptReader(*p.cfg)
 	if err != nil {
-		return fmt.Errorf("[IframePlugin] failed to create decrypt reader: %w", err)
+		return fmt.Errorf("[%s] failed to create decrypt reader: %w", p.Name(), err)
 	}
 	defer decryptedReader.Close()
 	_, isSeekable := decryptedReader.(io.Seeker)
 	if isSeekable {
-		fmt.Printf("INFO: [IframePlugin.Decrypt] Container is SEEKABLE. Decrypting full content.\n")
+		fmt.Printf("INFO: [%s] Container is SEEKABLE. Decrypting full content.\n", p.Name())
 	} else {
-		fmt.Printf("INFO: [IframePlugin.Decrypt] Container is ATOMIC. Decrypting full content.\n")
+		fmt.Printf("INFO: [%s] Container is ATOMIC. Decrypting full content.\n", p.Name())
 	}
 
 	// 从 KVI 获取原始文件名
@@ -287,7 +287,7 @@ func (p *WPSPlugin) Decrypt(containerPath, outputDir string) error {
 
 	p.index = *vIndex
 
-	fmt.Printf("✅ [imgae] Decrypted to: %s\n", outputPath)
+	fmt.Printf("✅ [%s] Decrypted to: %s\n", p.Name(), outputPath)
 	return nil
 }
 

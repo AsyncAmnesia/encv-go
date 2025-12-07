@@ -106,10 +106,10 @@ func (p *VideoPlugin) Intialize(ctx context.Context) error {
 	p.baseNamer = namer.NewDefaultBaseNamer()
 	p.chunkNamer = namer.NewPaddedNamer(p.settings.Ext, p.baseNamer, 4) // 补零到4位
 	if p.settings.ChunkSizeMB > 0 {
-		fmt.Printf("INFO: [PLUGIN] Physical chunking enabled. Size: %d MB\n", p.settings.ChunkSizeMB)
+		fmt.Printf("INFO: [%s] Physical chunking enabled. Size: %d MB\n", p.Name(), p.settings.ChunkSizeMB)
 		p.physicalPacker = physical.NewFileChunkerPhysicalPacker(int64(p.settings.ChunkSizeMB)*1024*1024, p.chunkNamer)
 	} else {
-		fmt.Printf("INFO: [PLUGIN] Physical chunking disabled.\n")
+		fmt.Printf("INFO: [%s] Physical chunking disabled.\n", p.Name())
 		p.physicalPacker = physical.NewSinglePhysicalPacker()
 	}
 	return nil
@@ -168,7 +168,7 @@ func (p *VideoPlugin) GetContentPreprocessor() pluginInterfaces.ContentPreproces
 func (p *VideoPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRootDir, outputDir string) error {
 	vIndex, ok := index.(*VideoIndex)
 	if !ok {
-		return fmt.Errorf("video plugin received a non-video index")
+		return fmt.Errorf("%s plugin received a non-%s index", p.Name(), p.Name())
 	}
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return err
@@ -200,9 +200,9 @@ func (p *VideoPlugin) Encrypt(dataReader io.Reader) error {
 		p.salt = salt
 		p.iv = iv
 
-		fmt.Printf("INFO: [PLUGIN] Encrypted to temporary file: %s\n", tempEncPath)
+		fmt.Printf("INFO: [%s] Encrypted to temporary file: %s\n", p.Name(), tempEncPath)
 
-		fmt.Printf("✅ [VIDEO] Encrypted successfully.\n")
+		fmt.Printf("✅ [%s] Encrypted successfully.\n", p.Name())
 		return nil
 	})
 }
@@ -256,7 +256,7 @@ func (p *VideoPlugin) PostEncryptProcessor() error {
 	}
 
 	encryptedDataReader.Close() // Packer 使用完毕后关闭
-	fmt.Printf("✅ [VIDEO] packed successfully.\n")
+	fmt.Printf("✅ [%s] packed successfully.\n", p.Name())
 	return nil
 }
 
@@ -271,7 +271,7 @@ func (p *VideoPlugin) PreDecryptProcessor(containerPath, outputDir string) error
 
 // Plugin 接口实现
 func (p *VideoPlugin) Decrypt(containerPath, outputDir string) error {
-	fmt.Printf("DEBUG: [VideoPlugin.Decrypt] Starting decryption for: %s\n", containerPath)
+	fmt.Printf("DEBUG: [%s] Starting decryption for: %s\n", p.Name(), containerPath)
 	p.outputDir = outputDir
 
 	// --- 1. 【关键】通过 ContainerManager 获取一个可读的容器路径 ---
@@ -280,7 +280,7 @@ func (p *VideoPlugin) Decrypt(containerPath, outputDir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get readable path from container manager: %w", err)
 	}
-	fmt.Printf("DEBUG: [VideoPlugin.Decrypt] Using readable path: %s\n", readablePath)
+	fmt.Printf("DEBUG: [%s] Using readable path: %s\n", p.Name(), readablePath)
 
 	// --- 2. 使用统一路径创建 reader 工厂 ---
 	factory, err := reader.NewDecryptReaderFactory(readablePath, p.cfg.Password)
@@ -288,12 +288,12 @@ func (p *VideoPlugin) Decrypt(containerPath, outputDir string) error {
 		return fmt.Errorf("failed to create reader factory for '%s': %w", readablePath, err)
 	}
 	defer factory.Close() // 【关键】这个 Close 会同时清理物理临时文件（如果存在）
-	fmt.Printf("DEBUG: [VideoPlugin.Decrypt] Reader factory created successfully.\n")
+	fmt.Printf("DEBUG: [%s] Reader factory created successfully.\n", p.Name())
 
 	// --- 3. 使用工厂创建解密流并写入文件 ---
 	decryptedReader, err := factory.NewDecryptReader(*p.cfg)
 	if err != nil {
-		return fmt.Errorf("[VideoPlugin] failed to create decrypt reader: %w", err)
+		return fmt.Errorf("[%s] failed to create decrypt reader: %w", p.Name(), err)
 	}
 	defer decryptedReader.Close()
 
@@ -317,7 +317,7 @@ func (p *VideoPlugin) Decrypt(containerPath, outputDir string) error {
 
 	p.index = *vIndex
 
-	fmt.Printf("✅ [VIDEO] Decrypted to: %s\n", outputPath)
+	fmt.Printf("✅ [%s] Decrypted to: %s\n", p.Name(), outputPath)
 	return nil
 }
 
