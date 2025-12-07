@@ -9,8 +9,36 @@ import (
 	"os"
 
 	"github.com/Soltus/encv-go/internal/config"
+	"github.com/spf13/cobra"
 	"golang.org/x/sys/windows/registry"
 )
+
+// addPlatformSpecificCommands 在 Windows 平台下添加特定命令
+func addPlatformSpecificCommands_encv_protocol(rootCmd *cobra.Command) {
+	rootCmd.AddCommand(registerProtocolCmd)
+	rootCmd.AddCommand(unregisterProtocolCmd)
+}
+
+// --- 协议相关命令 ---
+var registerProtocolCmd = &cobra.Command{
+	Use:   "register-protocol",
+	Short: "在Windows中注册 encv:// 自定义协议",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := RegisterProtocol(cfg); err != nil {
+			log.Fatalf("注册协议失败: %v", err)
+		}
+	},
+}
+
+var unregisterProtocolCmd = &cobra.Command{
+	Use:   "unregister-protocol",
+	Short: "在Windows中取消注册 encv:// 自定义协议",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := UnregisterProtocol(); err != nil {
+			log.Fatalf("取消注册协议失败: %v", err)
+		}
+	},
+}
 
 // RegisterProtocol 注册 encv:// 自定义协议
 // 这个函数将由 main.go 中的命令行入口调用

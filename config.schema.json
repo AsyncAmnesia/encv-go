@@ -3,6 +3,18 @@
   "$id": "https://github.com/Soltus/encv-go/internal/config/config",
   "$ref": "#/$defs/Config",
   "$defs": {
+    "AudioPluginConfig": {
+      "properties": {
+        "ext": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ext"
+      ]
+    },
     "Config": {
       "properties": {
         "password": {
@@ -23,6 +35,11 @@
               "$schema": "https://json-schema.org/draft/2020-12/schema",
               "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/video/video-plugin-config",
               "$ref": "#/$defs/VideoPluginConfig"
+            },
+            "audio": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/audio/audio-plugin-config",
+              "$ref": "#/$defs/AudioPluginConfig"
             },
             "image": {
               "$schema": "https://json-schema.org/draft/2020-12/schema",

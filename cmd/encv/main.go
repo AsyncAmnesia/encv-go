@@ -2,14 +2,11 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
@@ -40,16 +37,14 @@ func init() {
 	rootCmd.AddCommand(kviV2Cmd)
 	rootCmd.AddCommand(decryptV2Cmd)
 	rootCmd.AddCommand(encryptV2Cmd)
-	rootCmd.AddCommand(registerProtocolCmd)
-	rootCmd.AddCommand(unregisterProtocolCmd)
 	rootCmd.AddCommand(playV2Cmd)
 	rootCmd.AddCommand(startCmd)
 	// rootCmd.AddCommand(webdavCmd)
 	rootCmd.AddCommand(serverCmd)
-	rootCmd.AddCommand(openasCmd)
-	rootCmd.AddCommand(openStreamCmd)
-	rootCmd.AddCommand(registerCmd)
-	rootCmd.AddCommand(unregisterCmd)
+
+	addPlatformSpecificCommands_register(rootCmd)
+	addPlatformSpecificCommands_encv_protocol(rootCmd)
+	addPlatformSpecificCommands_openas(rootCmd)
 
 	// 为命令添加标志
 	manifestV2Cmd.Flags().StringP("save", "s", "", "Save Manifest content to a specified JSON file.")
@@ -261,27 +256,6 @@ var encryptV2Cmd = &cobra.Command{
 	},
 }
 
-// --- 协议相关命令 ---
-var registerProtocolCmd = &cobra.Command{
-	Use:   "register-protocol",
-	Short: "在Windows中注册 encv:// 自定义协议",
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := RegisterProtocol(cfg); err != nil {
-			log.Fatalf("注册协议失败: %v", err)
-		}
-	},
-}
-
-var unregisterProtocolCmd = &cobra.Command{
-	Use:   "unregister-protocol",
-	Short: "在Windows中取消注册 encv:// 自定义协议",
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := UnregisterProtocol(); err != nil {
-			log.Fatalf("取消注册协议失败: %v", err)
-		}
-	},
-}
-
 // --- play-v2 命令 ---
 var playV2Cmd = &cobra.Command{
 	Use:   "play-v2 [path to container]",
@@ -404,114 +378,6 @@ var serverCmd = &cobra.Command{
 		<-quit
 		log.Println("-> Shutting down server...")
 		s.Stop()
-	},
-}
-
-// --- openas 命令 ---
-var openasCmd = &cobra.Command{
-	Use:   "openas",
-	Short: "Registers 'Open' action for ENCV files (Windows only)",
-	RunE: func(cmd *cobra.Command, args []string) error { // Use RunE to return errors
-		if runtime.GOOS != "windows" {
-			return fmt.Errorf("the 'openas' command is only available on Windows")
-		}
-		if err := handleOpenAsCommand(cfg); err != nil {
-			return fmt.Errorf("failed to register file associations: %w", err)
-		}
-		log.Println("✅ File associations for 'Open' action registered successfully!")
-		log.Println("You can now double-click on an ENCV file to decrypt it.")
-		return nil
-	},
-}
-
-// --- open-stream 命令 ---
-var openStreamCmd = &cobra.Command{
-	Use:   "open-stream [path to container]",
-	Short: "Streams a media file from a running ENCV server to mpv",
-	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		inputPath := args[0]
-		discoveryStartPort := cfg.Server.Port
-		if discoveryStartPort == 0 {
-			discoveryStartPort = 1999
-			log.Printf("INFO: Server port in config is 0 (any port). Starting discovery from default port %d.", discoveryStartPort)
-		} else {
-			log.Printf("INFO: Starting discovery from configured port %d.", discoveryStartPort)
-		}
-
-		serverAddr, err := encv.FindServer(discoveryStartPort, 20)
-		if err != nil {
-			log.Println("--------------------------------------------------")
-			log.Println("🔴 ENCV Server is not running.")
-			log.Printf("-> Please start it first by running: encv.exe start-server")
-			log.Printf("-> Or check if it's running near the configured port: %d", discoveryStartPort)
-			log.Println("--------------------------------------------------")
-			os.Exit(1)
-		}
-
-		// Assume prepareSubtitles exists and is defined elsewhere
-		subtitles, err := prepareSubtitles(inputPath, cfg)
-		if err != nil {
-			log.Printf("Warning: An error occurred while preparing subtitles: %v. Playing without subtitles.", err)
-		}
-
-		encodedPath := url.QueryEscape(inputPath)
-		streamURL := fmt.Sprintf("http://%s/stream?file=%s", serverAddr, encodedPath)
-
-		mpvArgs := []string{streamURL}
-		for _, sub := range subtitles {
-			mpvArgs = append(mpvArgs, fmt.Sprintf("--sub-files=%s", sub.Path))
-		}
-
-		log.Printf("-> Starting mpv with arguments: %v", mpvArgs)
-		logFile := filepath.Join(os.TempDir(), "encv_mpv.log")
-		cmd2 := exec.Command("mpv", append(mpvArgs, "--log-file="+logFile, "--msg-level=all=v")...)
-
-		var out, stderr bytes.Buffer
-		cmd2.Stdout = &out
-		cmd2.Stderr = &stderr
-
-		if err := cmd2.Run(); err != nil {
-			log.Println("--------------------------------------------------")
-			log.Println("🔴 Failed to run mpv.")
-			log.Printf("Error: %v", err)
-			log.Println("--- MPV Stdout ---")
-			log.Println(out.String())
-			log.Println("--- MPV Stderr ---")
-			log.Println(stderr.String())
-			log.Println("--------------------------------------------------")
-			log.Fatalf("Please check the MPV output above for details.")
-		}
-		log.Println("-> mpv closed.")
-	},
-}
-
-// --- register / unregister 命令 ---
-var registerCmd = &cobra.Command{
-	Use:   "register",
-	Short: "Registers file associations and context menu (Windows only)",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if runtime.GOOS != "windows" {
-			return fmt.Errorf("the 'register' command is only available on Windows")
-		}
-		if err := RegisterFileAssociations(); err != nil {
-			return fmt.Errorf("failed to register file associations: %w", err)
-		}
-		return nil
-	},
-}
-
-var unregisterCmd = &cobra.Command{
-	Use:   "unregister",
-	Short: "Unregisters file associations and context menu (Windows only)",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if runtime.GOOS != "windows" {
-			return fmt.Errorf("the 'unregister' command is only available on Windows")
-		}
-		if err := UnregisterFileAssociations(); err != nil {
-			return fmt.Errorf("failed to unregister file associations: %w", err)
-		}
-		return nil
 	},
 }
 

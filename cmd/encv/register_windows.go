@@ -6,10 +6,47 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/Soltus/encv-go/internal/v2/plugins"
+	"github.com/spf13/cobra"
 	"golang.org/x/sys/windows/registry"
 )
+
+// addPlatformSpecificCommands 在 Windows 平台下添加特定命令
+func addPlatformSpecificCommands_register(rootCmd *cobra.Command) {
+	rootCmd.AddCommand(registerCmd)
+	rootCmd.AddCommand(unregisterCmd)
+}
+
+// --- register / unregister 命令 ---
+var registerCmd = &cobra.Command{
+	Use:   "register",
+	Short: "Registers file associations and context menu (Windows only)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if runtime.GOOS != "windows" {
+			return fmt.Errorf("the 'register' command is only available on Windows")
+		}
+		if err := RegisterFileAssociations(); err != nil {
+			return fmt.Errorf("failed to register file associations: %w", err)
+		}
+		return nil
+	},
+}
+
+var unregisterCmd = &cobra.Command{
+	Use:   "unregister",
+	Short: "Unregisters file associations and context menu (Windows only)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if runtime.GOOS != "windows" {
+			return fmt.Errorf("the 'unregister' command is only available on Windows")
+		}
+		if err := UnregisterFileAssociations(); err != nil {
+			return fmt.Errorf("failed to unregister file associations: %w", err)
+		}
+		return nil
+	},
+}
 
 // RegisterFileAssociations 注册文件关联和右键菜单
 func RegisterFileAssociations() error {
