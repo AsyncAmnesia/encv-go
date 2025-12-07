@@ -224,8 +224,14 @@ func GetRemoteStreamWithRange(url string, headers map[string]string, start, end 
 
 	// 检查状态码，206是成功的范围请求，200也接受（某些服务器对整个文件请求也返回200）
 	if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
+		// 【关键修复】记录下被拒绝的请求的真实状态码和URL
+		log.Printf("ERROR: [GetRemoteStreamWithRange] FAILED for URL '%s' with range '%s'. Server responded with status: %d", url, rangeStr, resp.StatusCode)
 		resp.Body.Close()
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+	// 【关键验证】在返回响应前，记录服务器承诺发送的长度
+	if resp.StatusCode == http.StatusPartialContent || resp.StatusCode == http.StatusOK {
+		log.Printf("DEBUG: [GetRemoteStreamWithRange] Range '%s' -> Status: %s, Server-Returned Content-Length: %s", rangeStr, resp.Status, resp.Header.Get("Content-Length"))
 	}
 
 	return resp, nil

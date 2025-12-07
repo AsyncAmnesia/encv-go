@@ -2,8 +2,10 @@ package text
 
 import (
 	"fmt"
+	"log"
 	"os"
 
+	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -19,10 +21,14 @@ func (e *TextMetadataExtractor) ExtractMetadata(inputPath string) (types.Index, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file: %w", err)
 	}
-
+	mimeType, err := utils.DetectFileMIMEType(inputPath)
+	if err != nil {
+		log.Printf("failed to detect MIME type: %v", err)
+	}
 	index := &TextIndex{
 		OriginalFilename: fileInfo.Name(),
 		OriginalFileSize: fileInfo.Size(),
+		MimeType:         mimeType,
 	}
 
 	return index, nil

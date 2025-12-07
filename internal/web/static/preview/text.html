@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ENCV Text Viewer</title>
+    <style>
+        body, html { margin: 0; padding: 0; font-family: monospace; background-color: #f4f4f4; }
+        #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-family: sans-serif; color: #555; }
+        pre { white-space: pre-wrap; word-wrap: break-word; padding: 1em; background-color: #fff; border: 1px solid #ccc; margin: 0; height: 100vh; overflow-y: scroll; box-sizing: border-box; }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading text file...</div>
+    <pre id="textContent" style="display: none;"></pre>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        // 从 URL 参数中获取原始文件的路径
+        const url = urlParams.get('file');
+
+        if (url) {
+            // 【关键】请求我们自己 proxy 的解密端点
+            const decryptUrl = `/decrypt?file=${encodeURIComponent(url)}`;
+            const loading = document.getElementById('loading');
+            const textContent = document.getElementById('textContent');
+
+            fetch(decryptUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+                    }
+                    // 期望服务器返回正确的 Content-Type
+                    if (!response.headers.get('Content-Type').startsWith('text/')) {
+                        console.warn("Warning: Server did not return a text Content-Type. Trying to display as text anyway.");
+                    }
+                    return response.blob();
+                })
+                .then(blob => {
+                    // 使用 FileReader 将 blob 读取为文本
+                    const reader = new FileReader();
+                    reader.onload = function() {
+                        textContent.textContent = this.result;
+                        loading.style.display = 'none';
+                        textContent.style.display = 'block';
+                    };
+                    reader.onerror = function() {
+                        throw new Error("Failed to read blob as text.");
+                    };
+                    reader.readAsText(blob, 'UTF-8');
+                })
+                .catch(error => {
+                    console.error('Error fetching text file:', error);
+                    loading.innerText = `Failed to load text file: ${error.message}`;
+                });
+
+        } else {
+            document.body.innerText = 'Error: URL not provided.';
+        }
+    </script>
+</body>
+</html>

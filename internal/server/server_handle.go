@@ -104,11 +104,12 @@ func (s *Server) serveEncryptedFile(w http.ResponseWriter, r *http.Request, full
 	if isSeekable {
 		// seeker 已经是 SeekableDecryptReader 类型，可以直接使用
 		s.handleSeekableContent(w, r, seeker, originalSize, originalFilename)
+		log.Printf("INFO: Successfully handleSeekableContent encrypted file: %s", fullPath)
 	} else {
 		s.handleSequentialContent(w, decryptReader, originalSize)
+		log.Printf("INFO: Successfully handleSequentialContent encrypted file: %s", fullPath)
 	}
 
-	log.Printf("INFO: Successfully served encrypted file: %s", fullPath)
 }
 
 // handleSeekableContent 处理支持 Range 请求的可寻址内容

@@ -105,6 +105,7 @@ func (r *fileContainerReader) GetFragments() []types.Fragment_v2 {
 // 此方法是线程安全的，并集成了数据校验和错误恢复机制。
 
 func (r *fileContainerReader) GetFragmentReader(fragID string) (io.ReadCloser, error) {
+	log.Printf("DEBUG: [fileContainerReader] Getting fragment reader for ID: %s", fragID)
 	frag, err := r.findFragmentByID(fragID)
 	if err != nil {
 		return nil, err
@@ -119,7 +120,6 @@ func (r *fileContainerReader) GetFragmentReader(fragID string) (io.ReadCloser, e
 		if !ok {
 			return nil, fmt.Errorf("physical data offset for fragment '%s' not found in main file map. Is this a physical chunked container?", fragID)
 		}
-		// ... (后续逻辑不变，从主文件读取)
 		mainFile, err := globalFileHandlePool.Get(r.mainFilePath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get main file handle from pool: %w", err)

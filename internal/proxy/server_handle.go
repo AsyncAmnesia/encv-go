@@ -39,22 +39,23 @@ func (p *Proxy) serveEncryptedContainer(w http.ResponseWriter, r *http.Request, 
 	}
 	defer decryptReader.Close()
 
+	index := factory.GetIndex()
+	originalSize := factory.GetOriginalSize()
+	originalFilename := index.GetOriginalFilename()
 	// 3. 【关键】使用与本地服务器完全相同的类型断言
 	// 先尝试断言为支持快速跳转的 SeekTo 接口 (用于远程视频)
 	type seeker interface{ SeekTo(offset int64) error }
 	if s, ok := decryptReader.(seeker); ok {
 		// 这是视频等可寻址流
-		index := factory.GetIndex()
-		originalSize := factory.GetOriginalSize()
-		originalFilename := index.GetOriginalFilename()
 		p.handleSeekableContent(w, r, s, originalSize, originalFilename)
+		log.Printf("INFO: [Proxy] Successfully handleSeekableContent remote container: %s", containerURL)
 	} else {
 		// 这是图片等顺序流
 		originalSize := factory.GetOriginalSize()
-		p.handleSequentialContent(w, decryptReader, originalSize)
+		p.handleSequentialContent(w, decryptReader, originalSize, originalFilename)
+		log.Printf("INFO: [Proxy] Successfully handleSequentialContent remote container: %s", containerURL)
 	}
 
-	log.Printf("INFO: [Proxy] Successfully served remote container: %s", containerURL)
 }
 
 // 【新增】从 server.go 复制过来的辅助函数
@@ -119,14 +120,57 @@ func (p *Proxy) handleSeekableContent(w http.ResponseWriter, r *http.Request, se
 
 // 【新增】从 server.go 复制过来的辅助函数
 // handleSequentialContent 处理不支持 Range 请求的顺序内容
-func (p *Proxy) handleSequentialContent(w http.ResponseWriter, sequentialReader io.Reader, originalSize int64) {
+func (p *Proxy) handleSequentialContent(w http.ResponseWriter, sequentialReader io.Reader, originalSize int64, originalFilename string) {
 	// 【关键】这部分逻辑与 server.go 中的完全一致，确保图片能正常显示
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", originalSize))
+	w.Header().Set("Content-Type", utils.GetContentType(filepath.Ext(originalFilename)))
 	w.WriteHeader(http.StatusOK)
 
-	if _, err := io.Copy(w, sequentialReader); err != nil {
-		log.Printf("WARN: [Proxy] Stream to client was interrupted or failed: %v", err)
+	// if _, err := io.Copy(w, sequentialReader); err != nil {
+	// 	log.Printf("WARN: [Proxy] Stream to client was interrupted or failed: %v", err)
+	// }
+
+	// 【关键诊断】手动进行数据传输，并校验完整性
+	buf := make([]byte, 32*1024) // 32KB 缓冲区
+	var totalWritten int64
+
+	for {
+		// 从解密后的流中读取数据
+		n, readErr := sequentialReader.Read(buf)
+		if n > 0 {
+			written, writeErr := w.Write(buf[:n])
+			totalWritten += int64(written)
+			if writeErr != nil {
+				log.Printf("ERROR: [Proxy] Failed to write to client response: %v", writeErr)
+				return
+			}
+		}
+
+		if readErr != nil {
+			if readErr == io.EOF {
+				// 正常到达流末尾
+				break
+			}
+			// 【关键诊断】捕获连接被意外关闭的错误
+			if readErr == io.ErrUnexpectedEOF {
+				log.Printf("CRITICAL: [Proxy] UPSTREAM CONNECTION CLOSED PREMATURELY for %s. This is likely a server-side read timeout on large Range requests.", originalFilename)
+				break // 退出循环，让完整性检查报告最终结果
+			}
+			// 读取时发生其他错误
+			log.Printf("ERROR: [Proxy] Failed to read from decrypted stream: %v", readErr)
+			return
+		}
 	}
+
+	// 【核心诊断】检查数据完整性
+	if totalWritten != originalSize {
+		// 如果这个日志出现：上游数据被截断
+		log.Printf("CRITICAL: [Proxy] DATA INTEGRITY CHECK FAILED for %s. Expected: %d bytes, Actually received: %d bytes.", originalFilename, originalSize, totalWritten)
+		// 此时，浏览器已经收到了不完整的数据。这个日志是给开发者看的最终证据。
+	} else {
+		log.Printf("INFO: [Proxy] Data integrity check passed for %s. Transferred %d bytes.", originalFilename, totalWritten)
+	}
+
 }
 
 // serveEncryptedContainerFromStream 通过一个临时服务器将流适配给 RemoteDecryptReaderFactory

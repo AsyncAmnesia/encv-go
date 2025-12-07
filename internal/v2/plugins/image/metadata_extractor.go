@@ -2,9 +2,11 @@ package image
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"time"
 
+	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/types"
 	exif "github.com/dsoprea/go-exif/v3"
 	exifcommon "github.com/dsoprea/go-exif/v3/common"
@@ -22,10 +24,14 @@ func (e *ImageMetadataExtractor) ExtractMetadata(inputPath string) (types.Index,
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file: %w", err)
 	}
-
+	mimeType, err := utils.DetectFileMIMEType(inputPath)
+	if err != nil {
+		log.Printf("failed to detect MIME type: %v", err)
+	}
 	index := &ImageIndex{
 		OriginalFilename: fileInfo.Name(),
 		OriginalFileSize: fileInfo.Size(),
+		MimeType:         mimeType,
 		ExifTags:         make(map[string]interface{}),
 	}
 
