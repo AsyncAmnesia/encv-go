@@ -19,12 +19,6 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-// addPlatformSpecificCommands 在 Windows 平台下添加特定命令
-func addPlatformSpecificCommands_openas(rootCmd *cobra.Command) {
-	rootCmd.AddCommand(openasCmd)
-	rootCmd.AddCommand(openStreamCmd)
-}
-
 // --- openas 命令 ---
 var openasCmd = &cobra.Command{
 	Use:   "openas",
@@ -57,7 +51,7 @@ var openStreamCmd = &cobra.Command{
 			log.Printf("INFO: Starting discovery from configured port %d.", discoveryStartPort)
 		}
 
-		serverAddr, err := encv.FindServer(discoveryStartPort, 20)
+		serverAddr, _, err := encv.FindServer(discoveryStartPort, 20)
 		if err != nil {
 			log.Println("--------------------------------------------------")
 			log.Println("🔴 ENCV Server is not running.")

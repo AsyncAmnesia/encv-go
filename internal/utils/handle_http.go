@@ -238,3 +238,80 @@ func GetRemoteStreamWithRange(url string, headers map[string][]string, start, en
 
 	return resp, nil
 }
+
+// 使用端口递增和自检逻辑启动后端服务，使用前需要实现 /ping 路由返回  types.PingResponse （防止共享端口劫持）
+// 返回成功监听的地址
+// func StartBackendServerWithRetry(handler http.Handler, initialPort int, instanceID string) (string, error) {
+// 	maxTries := 100
+// 	for i := 0; i < maxTries; i++ {
+// 		currentPort := initialPort + i
+// 		addr := fmt.Sprintf(":%d", currentPort)
+
+// 		listener, err := net.Listen("tcp", addr)
+// 		if err != nil {
+// 			if IsAddrInUseErr(err) {
+// 				log.Printf("Backend: Port %d is in use, trying next port...", currentPort)
+// 			} else {
+// 				log.Printf("Backend: Failed to listen on port %d: %v. Trying next port...", currentPort, err)
+// 			}
+// 			continue
+// 		}
+
+// 		backendServer := &http.Server{Handler: handler}
+// 		serveErrChan := make(chan error, 1)
+// 		go func() {
+// 			log.Printf("Backend: Attempting to start on %s...", addr)
+// 			serveErrChan <- backendServer.Serve(listener)
+// 		}()
+
+// 		time.Sleep(150 * time.Millisecond) // 给服务器一点启动时间
+
+// 		// 【关键】执行后端服务的自检
+// 		pingURL := fmt.Sprintf("http://127.0.0.1:%d/ping", currentPort)
+// 		client := &http.Client{Timeout: 500 * time.Millisecond}
+// 		resp, err := client.Get(pingURL)
+
+// 		if err != nil || resp == nil || resp.StatusCode != http.StatusOK {
+// 			log.Printf("Backend: Self-check failed on port %d (err: %v). Trying next port...", currentPort, err)
+// 			if resp != nil {
+// 				resp.Body.Close()
+// 			}
+// 			backendServer.Close()
+// 			<-serveErrChan
+// 			continue
+// 		}
+
+// 		var pingResp types.PingResponse
+// 		if err := json.NewDecoder(resp.Body).Decode(&pingResp); err != nil {
+// 			log.Printf("Backend: Self-check failed on port %d: could not decode ping response. Trying next port...", currentPort)
+// 			resp.Body.Close()
+// 			backendServer.Close()
+// 			<-serveErrChan
+// 			continue
+// 		}
+// 		resp.Body.Close()
+
+// 		if pingResp.InstanceID != instanceID {
+// 			log.Printf("Backend: Port %d is hijacked. Expected: %s, Got: %s. Trying next port...",
+// 				currentPort, instanceID, pingResp.InstanceID)
+// 			backendServer.Close()
+// 			<-serveErrChan
+// 			continue
+// 		}
+
+// 		// 【关键】后端服务自检成功！
+// 		actualAddr := listener.Addr().String()
+// 		log.Printf("✅ Backend server successfully started and listening on %s (self-check passed)", actualAddr)
+
+// 		// 在后台 goroutine 中处理服务器错误
+// 		go func() {
+// 			if err := <-serveErrChan; err != nil && err != http.ErrServerClosed {
+// 				log.Printf("Backend server on %s encountered an error: %v", actualAddr, err)
+// 			}
+// 		}()
+
+// 		return actualAddr, nil
+// 	}
+
+// 	return "", fmt.Errorf("failed to start backend server after %d tries", maxTries)
+// }

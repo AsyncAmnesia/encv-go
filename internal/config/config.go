@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
@@ -29,6 +31,7 @@ type Config struct {
 	// SccgvSettings SCCGV (视频分片) 相关的设置。
 	// SccgvSettings SccgvSettings             `json:"sccgv_settings"`
 	Server types.HttpServer          `json:"server"`
+	Admin  types.AdminServer         `json:"admin"`
 	Webdav types.WebdavServer        `json:"webdav"`
 	Proxy  types.OpenlistProxyServer `json:"proxy"`
 }
@@ -106,6 +109,12 @@ func Load(configPath string) (*Config, error) {
 	if err := json.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file '%s': %w", configPath, err)
 	}
+	if cfg.Server.Dir == "/" {
+		cfg.Server.Dir, err = os.Getwd()
+		if err != nil {
+			return cfg, fmt.Errorf("failed to get current working directory: %w", err)
+		}
+	}
 
 	fmt.Printf("-> [Config] Successfully loaded configuration from '%s'.\n", configPath)
 	return cfg, nil
@@ -133,34 +142,51 @@ func GetPluginSettingsFor[T any](cfg *Config, pluginName string) (*T, error) {
 	return &settings, nil
 }
 
-// 返回所有已知的容器扩展名（带点号），已弃用
-// func (c *Config) GetAllContainerExtensions() []string {
-// 	return []string{
-// 		"." + c.BinExtGroup.Video, // .sccgv
-// 		"." + c.BinExtGroup.Text,  // .sccgt
-// 		"." + c.BinExtGroup.Audio, // .sccga
-// 		"." + c.BinExtGroup.Image, // .sccgi
-// 		"." + c.BinExtGroup.WPS,   // .sccgwps
-// 		"." + c.BinExtGroup.PDF,   // .sccgpdf
-// 	}
-// }
+// 智能地查找 config.user.json 文件
+func FindConfigPath(flagPath string) (string, error) {
+	// 1. 最高优先级：命令行标志指定的路径
+	if flagPath != "" {
+		if _, err := os.Stat(flagPath); err == nil {
+			log.Printf("-> Using config from command-line flag: %s", flagPath)
+			return flagPath, nil
+		}
+		return "", fmt.Errorf("config file specified by flag not found: %s", flagPath)
+	}
 
-// IsContainerPath 检查路径是否是已知的容器文件（基于扩展名）
-// 这是一个快速的、非 I/O 的检查，适用于初步筛选。
-// func (c *Config) IsContainerPath(path string) bool {
-// 	ext := strings.ToLower(filepath.Ext(path))
-// 	for _, containerExt := range c.GetAllContainerExtensions() {
-// 		if ext == containerExt {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
+	// 2. 次高优先级：环境变量
+	if envPath := os.Getenv("ENVC_CONFIG_PATH"); envPath != "" {
+		if _, err := os.Stat(envPath); err == nil {
+			log.Printf("-> Using config from environment variable ENVC_CONFIG_PATH: %s", envPath)
+			return envPath, nil
+		}
+		return "", fmt.Errorf("config file from environment variable not found: %s", envPath)
+	}
 
-// 已弃用，换成 v2 的 DetectContainerType
-// func (c *Config) IsContainerFile(path string) bool {
-// 	return c.IsContainerPath(path)
-// }
+	// 3. 再次优先级：当前工作目录
+	// 这完美适配了 `go run ./cmd/encv start` 的场景
+	wd, err := os.Getwd()
+	if err == nil {
+		wdConfigPath := filepath.Join(wd, "config.user.json")
+		if _, err := os.Stat(wdConfigPath); err == nil {
+			log.Printf("-> Using config from current working directory: %s", wdConfigPath)
+			return wdConfigPath, nil
+		}
+	}
+
+	// 4. 最低优先级：可执行文件所在目录
+	// 这适配了生产环境，将配置文件和二进制文件放在一起
+	exePath, err := os.Executable()
+	if err == nil {
+		exeDir := filepath.Dir(exePath)
+		exeConfigPath := filepath.Join(exeDir, "config.user.json")
+		if _, err := os.Stat(exeConfigPath); err == nil {
+			log.Printf("-> Using config from executable directory: %s", exeConfigPath)
+			return exeConfigPath, nil
+		}
+	}
+
+	return "", fmt.Errorf("config.user.json not found in any of the standard locations (cwd, exe dir, env var, or flag)")
+}
 
 // --- 全局 MIME 类型映射表，以 OpenList 为准 ---
 var ContentTypes = map[string]string{

@@ -7,6 +7,7 @@ import (
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/register"
 	"github.com/Soltus/encv-go/internal/server"
+	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
 // 暂时注释，需要修改，勿删
@@ -15,18 +16,13 @@ import (
 // 	return server.StartWebdav(ctx)
 // }
 
-func FindServer(startPort int, maxTries int) (string, error) {
+func FindServer(startPort int, maxTries int) (string, *types.PingResponse, error) {
 	return register.FindServer(startPort, maxTries)
 }
 
 // NewPlayer 创建一个新的播放器实例
 func NewServer(ctx context.Context) *server.Server {
 	return server.NewServer(ctx)
-}
-
-// 检查是否已有服务在运行，如果是则返回错误
-func CheckForExistingService(startPort int) error {
-	return register.CheckForExistingService(startPort)
 }
 
 // 解析服务标志的辅助函数

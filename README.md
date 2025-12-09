@@ -19,12 +19,7 @@
 
 如果没有可执行程序资产，您需要从源代码构建 `encv` 和 `encv-proxy` ，通常这不需要。
 
-```bash
-# 构建 encv 主程序
-go build -o encv ./cmd/encv
-# 构建 encv-proxy 代理程序
-go build -o encv-proxy ./cmd/encv-proxy
-```
+windows 使用 `./build.ps1` 构建，linux 使用 `make build-all` 构建。
 
 ### ⚙️ 配置
 
@@ -330,9 +325,9 @@ encv-go/
 
 ```bash
 # 构建 encv 主程序
-go build -o encv ./cmd/encv
+go build ./cmd/encv
 # 构建 encv-proxy 代理程序
-go build -o encv-proxy ./cmd/encv-proxy
+go build ./cmd/encv-proxy
 ```
 
 #### 构建 Android AAR (占位)
@@ -345,6 +340,10 @@ gomobile bind -target=android -o encv.aar ./pkg/encv
 ```
 
 ### 🧪 测试
+
+```cmd
+go run ./cmd/encv start 
+```
 
 单元测试
 

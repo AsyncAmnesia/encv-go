@@ -3,6 +3,25 @@
   "$id": "https://github.com/Soltus/encv-go/internal/config/config",
   "$ref": "#/$defs/Config",
   "$defs": {
+    "AdminServer": {
+      "properties": {
+        "port": {
+          "type": "integer",
+          "description": "encv 管理后台服务器的端口，请不要填写 encv Webdav Server、 OpenList 或其他已使用的端口"
+        },
+        "password": {
+          "type": "string",
+          "description": "管理员密码，留空则禁用登录"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "port",
+        "password"
+      ],
+      "description": "--- 管理后台服务器 设置 ---"
+    },
     "AudioPluginConfig": {
       "properties": {
         "ext": {
@@ -70,6 +89,9 @@
           "$ref": "#/$defs/HttpServer",
           "description": "SccgvSettings SCCGV (视频分片) 相关的设置。\nSccgvSettings SccgvSettings             `json:\"sccgv_settings\"`"
         },
+        "admin": {
+          "$ref": "#/$defs/AdminServer"
+        },
         "webdav": {
           "$ref": "#/$defs/WebdavServer"
         },
@@ -90,6 +112,7 @@
         "output_path",
         "plugin_settings",
         "server",
+        "admin",
         "webdav",
         "proxy"
       ],

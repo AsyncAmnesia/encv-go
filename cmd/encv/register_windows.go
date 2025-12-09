@@ -13,12 +13,6 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-// addPlatformSpecificCommands 在 Windows 平台下添加特定命令
-func addPlatformSpecificCommands_register(rootCmd *cobra.Command) {
-	rootCmd.AddCommand(registerCmd)
-	rootCmd.AddCommand(unregisterCmd)
-}
-
 // --- register / unregister 命令 ---
 var registerCmd = &cobra.Command{
 	Use:   "register",

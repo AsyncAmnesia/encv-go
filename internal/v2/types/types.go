@@ -80,6 +80,14 @@ type HttpServer struct {
 	Dir string `json:"dir"`
 }
 
+// --- 管理后台服务器 设置 ---
+type AdminServer struct {
+	// encv 管理后台服务器的端口，请不要填写 encv Webdav Server、 OpenList 或其他已使用的端口
+	Port int `json:"port"`
+	// 管理员密码，留空则禁用登录
+	Password string `json:"password"`
+}
+
 // --- Openlist 代理服务器设置 ---
 type OpenlistProxyServer struct {
 	// Openlist Webdav 代理的端口，请不要填写 encv Webdav Server、 OpenList 或其他已使用的端口

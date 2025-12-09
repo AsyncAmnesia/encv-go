@@ -13,12 +13,6 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-// addPlatformSpecificCommands 在 Windows 平台下添加特定命令
-func addPlatformSpecificCommands_encv_protocol(rootCmd *cobra.Command) {
-	rootCmd.AddCommand(registerProtocolCmd)
-	rootCmd.AddCommand(unregisterProtocolCmd)
-}
-
 // --- 协议相关命令 ---
 var registerProtocolCmd = &cobra.Command{
 	Use:   "register-protocol",

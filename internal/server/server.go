@@ -1,14 +1,14 @@
+// internal/server/server.go
 package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
-	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -16,13 +16,13 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/middleware"
-	"github.com/Soltus/encv-go/internal/utils"
+	"github.com/Soltus/encv-go/internal/register"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/Soltus/encv-go/internal/v2/service"
-	"github.com/Soltus/encv-go/internal/v2/types"
 	"github.com/Soltus/encv-go/internal/web"
 	"github.com/Soltus/encv-go/internal/webdav"
+	"github.com/dustin/go-humanize"
 	goWebdav "golang.org/x/net/webdav"
 )
 
@@ -44,25 +44,22 @@ func NewServer(ctx context.Context) *Server {
 	return &Server{
 		cfg:           cfg,
 		readerService: service.NewReaderService(containerManager),
+		instanceID:    fmt.Sprintf("%x", time.Now().UnixNano()),
 	}
 }
 
+func (s *Server) GetInstanceID() string {
+	return s.instanceID
+}
+
 // Start 启动播放器服务器，如果端口被占用或被其他服务劫持，会自动递增尝试
-func (s *Server) Start(port int, version string) (string, error) {
+func (s *Server) Start(version string) (string, error) {
 	// 【关键修改】在启动时初始化版本和实例ID
 	s.version = version // 从 main 包获取编译时注入的版本
-	s.instanceID = fmt.Sprintf("%x", time.Now().UnixNano())
 
 	// 1. 解析并存储主服务目录
 	dir := s.cfg.Server.Dir
 	var err error
-
-	if dir == "/" {
-		dir, err = os.Getwd()
-		if err != nil {
-			return "", fmt.Errorf("failed to get current working directory: %w", err)
-		}
-	}
 
 	s.servingDir, err = filepath.Abs(dir)
 	if err != nil {
@@ -96,7 +93,9 @@ func (s *Server) Start(port int, version string) (string, error) {
 	mux.HandleFunc("/ping", s.handlePing)
 	mux.HandleFunc("/stream", s.handleStreamRequest)
 	mux.Handle("/_preview/", web.PreviewHandler())
+
 	mux.HandleFunc("/", s.handleRequest)
+
 	// 如果启用了 WebDAV，则注册其处理器
 	if s.webdavDir != "" {
 		fs := webdav.NewENCVFS(config.NewContext(context.Background(), s.cfg), s.readerService)
@@ -112,84 +111,7 @@ func (s *Server) Start(port int, version string) (string, error) {
 
 	// CorsMiddleware 应该在最外层，最先处理请求
 	finalHandler := middleware.CorsMiddleware(middleware.WithConfig(s.cfg, mux))
-
-	maxTries := 100
-	for i := 0; i < maxTries; i++ {
-		currentPort := port + i
-		addr := fmt.Sprintf(":%d", currentPort)
-
-		listener, err := net.Listen("tcp", addr)
-		if err != nil {
-			if utils.IsAddrInUseErr(err) {
-				log.Printf("Port %d is in use, trying next port...", currentPort)
-				continue
-			}
-			log.Printf(string(err.Error()))
-			log.Printf("failed to listen on port %d , trying next port...", currentPort)
-			continue
-			// return "", fmt.Errorf("failed to listen on port %d: %w", currentPort, err)
-		}
-
-		s.server = &http.Server{
-			Handler: finalHandler,
-		}
-
-		serveErrChan := make(chan error, 1)
-		go func() {
-			log.Printf("Attempting to start server on %s...", addr)
-			serveErrChan <- s.server.Serve(listener)
-		}()
-
-		time.Sleep(100 * time.Millisecond) // 给服务器一点启动时间
-
-		// 【关键修改】执行增强的自检
-		pingURL := fmt.Sprintf("http://127.0.0.1:%d/ping", currentPort)
-		client := &http.Client{Timeout: 500 * time.Millisecond}
-		resp, err := client.Get(pingURL)
-
-		if err != nil || resp == nil || resp.StatusCode != http.StatusOK {
-			log.Printf("Port %d self-check failed (err: %v). Trying next port...", currentPort, err)
-			if resp != nil {
-				resp.Body.Close()
-			}
-			s.server.Close()
-			<-serveErrChan
-			continue
-		}
-
-		// 【核心增强】验证响应是否来自我们自己的实例
-		var pingResp types.PingResponse
-		if err := json.NewDecoder(resp.Body).Decode(&pingResp); err != nil {
-			log.Printf("Port %d self-check failed: could not decode ping response. Trying next port...", currentPort)
-			resp.Body.Close()
-			s.server.Close()
-			<-serveErrChan
-			continue
-		}
-		resp.Body.Close()
-
-		if pingResp.InstanceID != s.instanceID {
-			log.Printf("Port %d is hijacked by another service (instance ID mismatch). Expected: %s, Got: %s. Trying next port...",
-				currentPort, s.instanceID, pingResp.InstanceID)
-			s.server.Close()
-			<-serveErrChan
-			continue
-		}
-
-		// 【关键修改】自检完全成功！
-		actualAddr := listener.Addr().String()
-		log.Printf("Player server successfully started and listening on %s (self-check passed)", actualAddr)
-
-		go func() {
-			if err := <-serveErrChan; err != nil && err != http.ErrServerClosed {
-				log.Printf("Player server on %s encountered an error: %v", actualAddr, err)
-			}
-		}()
-
-		return actualAddr, nil
-	}
-
-	return "", fmt.Errorf("failed to start player server after %d tries", maxTries)
+	return register.StartHttpHandlerWithRetry(finalHandler, s.cfg.Server.Port, s.instanceID, s.version)
 }
 
 func (s *Server) Stop() error {
@@ -295,6 +217,12 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, fullPath stri
 // listFilesInDir 在指定目录生成一个文件列表页面
 // urlPath 是当前目录对应的 URL 路径，用于生成正确的导航链接
 func (s *Server) listFilesInDir(w http.ResponseWriter, r *http.Request, dirPath, urlPath string) {
+	// 【核心】从 Header 中获取代理前缀
+	forwardedPrefix := r.Header.Get("X-Forwarded-Prefix")
+	if forwardedPrefix == "" {
+		forwardedPrefix = "" // 如果没有代理，前缀为空
+	}
+
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		http.Error(w, "Could not read directory", http.StatusInternalServerError)
@@ -306,7 +234,7 @@ func (s *Server) listFilesInDir(w http.ResponseWriter, r *http.Request, dirPath,
 		Path        string
 		IsDir       bool
 		IsContainer bool
-		Size        int64
+		HumanSize   string // 【修改】使用 humanize 格式化后的大小
 		ModTime     time.Time
 	}
 
@@ -320,12 +248,13 @@ func (s *Server) listFilesInDir(w http.ResponseWriter, r *http.Request, dirPath,
 			continue
 		}
 
+		// 【关键修改】在生成文件路径时，加上代理前缀
 		files = append(files, FileInfo{
 			Name:        entry.Name(),
-			Path:        urlPath + entry.Name(),
+			Path:        forwardedPrefix + urlPath + entry.Name(),
 			IsDir:       entry.IsDir(),
 			IsContainer: !entry.IsDir() && plugins.IsContainer(entry.Name()),
-			Size:        info.Size(),
+			HumanSize:   humanize.Bytes(uint64(info.Size())),
 			ModTime:     info.ModTime(),
 		})
 	}
@@ -338,10 +267,12 @@ func (s *Server) listFilesInDir(w http.ResponseWriter, r *http.Request, dirPath,
 		return strings.ToLower(files[i].Name) < strings.ToLower(files[j].Name)
 	})
 
-	// 计算父目录链接
-	parentPath := filepath.Dir(urlPath)
-	if parentPath == "." {
-		parentPath = "/"
+	// 【关键修改】在计算父目录链接时，加上代理前缀
+	// 【关键修改】使用 path.Dir 处理 URL 路径，确保使用 '/'
+	cleanedUrlPath := path.Clean(urlPath)
+	parentPath := forwardedPrefix + path.Dir(cleanedUrlPath)
+	if parentPath == forwardedPrefix+"." {
+		parentPath = forwardedPrefix + "/"
 	}
 
 	// 为模板准备数据
@@ -349,20 +280,29 @@ func (s *Server) listFilesInDir(w http.ResponseWriter, r *http.Request, dirPath,
 		CurrentPath string
 		ParentPath  string
 		NotRoot     bool
+		RootPath    string // 【新增】用于面包屑的根路径
 		Ancestors   []struct{ Name, Path string }
 		Files       []FileInfo
 	}{
-		CurrentPath: urlPath,
+		CurrentPath: urlPath, // CurrentPath 用于显示，不需要前缀
 		ParentPath:  parentPath,
 		NotRoot:     urlPath != "/",
+		RootPath:    forwardedPrefix + "/", // 【新增】设置根路径
 		Files:       files,
 	}
-	// 生成面包屑导航
+
+	// 【关键修改】在生成面包屑导航的路径时，加上代理前缀
 	parts := strings.Split(strings.Trim(urlPath, "/"), "/")
-	for i := 0; i < len(parts)-1; i++ {
+	for i := 0; i < len(parts); i++ {
+		// 跳过空的部分，比如当 urlPath 是 "/" 时
+		if parts[i] == "" {
+			continue
+		}
+		// 【正确】使用 strings.Join 来构建路径片段
+		ancestorPath := "/" + strings.Join(parts[:i+1], "/") + "/"
 		data.Ancestors = append(data.Ancestors, struct{ Name, Path string }{
 			Name: parts[i],
-			Path: "/" + strings.Join(parts[:i+1], "/") + "/",
+			Path: forwardedPrefix + ancestorPath, // 加上前缀
 		})
 	}
 

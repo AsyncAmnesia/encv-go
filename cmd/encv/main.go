@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/utils"
@@ -38,13 +36,8 @@ func init() {
 	rootCmd.AddCommand(decryptV2Cmd)
 	rootCmd.AddCommand(encryptV2Cmd)
 	rootCmd.AddCommand(playV2Cmd)
-	rootCmd.AddCommand(startCmd)
-	// rootCmd.AddCommand(webdavCmd)
-	rootCmd.AddCommand(serverCmd)
-
-	addPlatformSpecificCommands_register(rootCmd)
-	addPlatformSpecificCommands_encv_protocol(rootCmd)
-	addPlatformSpecificCommands_openas(rootCmd)
+	addServersCommands(rootCmd)
+	addPlatformSpecificCommands(rootCmd)
 
 	// 为命令添加标志
 	manifestV2Cmd.Flags().StringP("save", "s", "", "Save Manifest content to a specified JSON file.")
@@ -84,16 +77,9 @@ var rootCmd = &cobra.Command{
 		logFilePath := utils.SetupLogging("encv.log")
 		log.Printf("Received Args: %v\n", os.Args)
 		fmt.Printf("-> Log file is at: %s\n", logFilePath)
-
-		// 1. 获取可执行文件自身的路径
-		exePath, err := os.Executable()
-		if err != nil {
-			log.Fatalf("Error: Could not determine executable path: %v", err)
-		}
-		// 2. 获取可执行文件所在的目录
-		exeDir := filepath.Dir(exePath)
-		// 3. 构建配置文件的完整路径
-		configPath := filepath.Join(exeDir, "config.user.json")
+		// 从 flag 获取可能的配置路径
+		configFlag, _ := cmd.Flags().GetString("config")
+		configPath, err := config.FindConfigPath(configFlag)
 
 		log.Printf("-> Loading config from: %s\n", configPath)
 		// 加载基础配置（默认值 + 配置文件）
@@ -113,7 +99,7 @@ var analyzeV2Cmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		encv.Init(rootCtx)
 		containerPath := args[0]
-		if err := encv.AnalyzeContainerV2(rootCtx, containerPath); err != nil {
+		if _, err := encv.AnalyzeContainerV2(rootCtx, containerPath, true); err != nil {
 			log.Fatalf("Analysis failed for '%s': %v", containerPath, err)
 		}
 	},
@@ -285,99 +271,6 @@ var playV2Cmd = &cobra.Command{
 		if err := encv.PlayV2(rootCtx, inputPath, player); err != nil {
 			log.Fatalf("Playback failed: %v", err)
 		}
-	},
-}
-
-// --- start 命令 ---
-var startCmd = &cobra.Command{
-	Use:   "start",
-	Short: "Starts the ENCV server and keeps it running in the foreground",
-	Run: func(cmd *cobra.Command, args []string) {
-		encv.Init(rootCtx)
-		s := encv.NewServer(rootCtx)
-		addr, err := s.Start(cfg.Server.Port, Version)
-		if err != nil {
-			log.Fatalf("Failed to start server: %v", err)
-		}
-
-		log.Printf("\n✅ Server started successfully!\n")
-		log.Printf("   Serving files from: %s\n", cfg.Server.Dir)
-		log.Printf("   Access it at: http://localhost%s\n", addr)
-		log.Println("\n--- How to Play ---")
-		log.Printf("   mpv --no-config http://localhost%s/<video_name_without_extension>\n", addr)
-		log.Println("\n(Press Ctrl+C in this terminal to stop the server)")
-
-		select {} // Keep server running
-	},
-}
-
-// --- webdav 命令 ---
-// var webdavCmd = &cobra.Command{
-// 	Use:   "webdav",
-// 	Short: "Starts the ENCV WebDAV server",
-// 	Run: func(cmd *cobra.Command, args []string) {
-// 		if err := encv.CheckForExistingService(cfg.Webdav.Port); err != nil {
-// 			os.Exit(1)
-// 		}
-
-// 		// Flags override config
-// 		if pwd, _ := cmd.Flags().GetString("password"); pwd != "" {
-// 			cfg.Password = pwd
-// 		}
-// 		if dir, _ := cmd.Flags().GetString("dir"); dir != "" {
-// 			cfg.Webdav.Dir = dir
-// 		}
-// 		if port, _ := cmd.Flags().GetInt("port"); port != 0 {
-// 			cfg.Webdav.Port = port
-// 		}
-
-// 		if cfg.Password == "" {
-// 			log.Fatalf("WebDAV requires a password. Please set it in config.user.json or with the -p flag.")
-// 		}
-// 		encv.Init(rootCtx)
-// 		addr, webdavPath, err := encv.StartWebdav(rootCtx)
-// 		if err != nil {
-// 			log.Fatalf("Failed to start WebDAV server: %v", err)
-// 		}
-
-// 		log.Printf("\n✅ WebDAV server started successfully!\n")
-// 		log.Printf("   Serving files from: %s\n", cfg.Webdav.Dir)
-// 		log.Printf("   Access it at: http://%s%s\n" , addr, webdavPath)
-// 		log.Println("\n--- How to Connect ---")
-// 		log.Printf("   Windows: \\\\localhost@%s%s\n", strings.TrimPrefix(addr, ":"), webdavPath)
-// 		log.Printf("   macOS:   http://%s%s\n" , addr, webdavPath)
-// 		log.Println("\n(Press Ctrl+C in this terminal to stop the server)")
-
-// 		select {} // Keep server running
-// 	},
-// }
-
-// --- server 命令 ---
-var serverCmd = &cobra.Command{
-	Use:   "server",
-	Short: "Starts the ENCV server as a background service",
-	Run: func(cmd *cobra.Command, args []string) {
-		if err := encv.CheckForExistingService(cfg.Server.Port); err != nil {
-			os.Exit(1)
-		}
-		// Note: The original ParseServerFlags was here. If it needs to be re-implemented,
-		// it should be done by adding flags to this command and overriding cfg values.
-		encv.Init(rootCtx)
-		s := encv.NewServer(rootCtx)
-		_, err := s.Start(cfg.Server.Port, Version)
-		if err != nil {
-			log.Fatalf("Failed to start server: %v", err)
-		}
-		log.Println("✅ ENCV Server is running.")
-		log.Printf("-> You can now double-click files to open them.")
-		log.Printf("-> To stop the server, run: encv.exe stop-server")
-		log.Println("-> Press Ctrl+C to stop the server manually.")
-
-		quit := make(chan os.Signal, 1)
-		signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
-		<-quit
-		log.Println("-> Shutting down server...")
-		s.Stop()
 	},
 }
 
