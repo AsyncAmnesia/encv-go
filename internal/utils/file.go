@@ -7,7 +7,13 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
+
+// 统一ETag生成格式
+func GenETag(modTime time.Time, size int64) string {
+	return `"` + modTime.Format(time.RFC3339Nano) + "-" + fmt.Sprintf("%d", size) + `"`
+}
 
 // 获取文件大小
 func GetFileSize(path string) int64 {
