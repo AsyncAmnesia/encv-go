@@ -112,9 +112,19 @@ func (s *Server) Start(version string) (string, error) {
 			FileSystem: fs,
 			LockSystem: goWebdav.NewMemLS(),
 		}
-		// WebDAV 也需要通过配置中间件来处理密码等
+		// WebDAV 也需要通过配置中间件来处理解密等
 		configAwareWebdavHandler := middleware.WithConfig(s.cfg, webdavHandler)
-		mux.Handle(s.webdavPath, configAwareWebdavHandler)
+
+		webdavUser := s.cfg.Webdav.Username
+		webdavPass := s.cfg.Webdav.Password
+
+		// 【新增】应用基础认证中间件
+		// 如果 webdavUser 或 webdavPass 为空，BasicAuth 中间件将不执行任何操作
+		authMiddleware := middleware.BasicAuth(webdavUser, webdavPass)
+		protectedWebdavHandler := authMiddleware(configAwareWebdavHandler)
+
+		// 【修改】使用受保护的处理器
+		mux.Handle(s.webdavPath, protectedWebdavHandler)
 
 	}
 

@@ -17,7 +17,9 @@
   "webdav": {
     "port": 1234,
     "root": "webdav",
-    "dir": "./"
+    "dir": "./",
+    "username": "admin",
+    "password": "123456"
   },
   "plugin_settings": {
     "video": {

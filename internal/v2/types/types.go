@@ -70,6 +70,10 @@ type WebdavServer struct {
 	Root string `json:"root"`
 	// 文件系统的根目录（例如 /path/to/your/files），而不是 WebDAV 的路由前缀（例如 /webdav/）
 	Dir string `json:"dir"`
+	// WebDAV 基础认证的用户名
+	Username string `json:"username"`
+	// WebDAV 基础认证的密码
+	Password string `json:"password"`
 }
 
 // --- 内置HTTP服务器 设置 ---
