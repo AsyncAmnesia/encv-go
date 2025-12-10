@@ -36,6 +36,10 @@ windows 使用 `./build.ps1` 构建，linux 使用 `make build-all` 构建。
     "port": 2025,
     "dir": "/"
   },
+    "admin": {
+    "port": 1808,
+    "password": "123456"
+  },
   "proxy": {
     "port": 1998,
     "openlist_host": "http://localhost:5244"
@@ -43,7 +47,9 @@ windows 使用 `./build.ps1` 构建，linux 使用 `make build-all` 构建。
   "webdav": {
     "port": 1234,
     "root": "webdav",
-    "dir": "./"
+    "dir": "./",
+    "username": "admin",
+    "password": "123456"
   },
   "plugin_settings": {
     "video": {
@@ -65,51 +71,71 @@ windows 使用 `./build.ps1` 构建，linux 使用 `make build-all` 构建。
 
 根据 `config.schema.json` 生成。
 
-#### 全局设置
+#### 🔐 全局设置
 
-| 配置键                | 类型        | 描述                                                                   | 示例值                                      |
-| --------------------- | ----------- | ---------------------------------------------------------------------- | ------------------------------------------- |
-| **password**    | `string`  | 用于加密和解密文件的主密码，请务必设置一个强密码。支持中文和特殊字符。 | `"my-encv_key，可以使用中文和标点符号✔"` |
-| **output_path** | `string`  | 加密后文件的输出目录，支持相对路径或绝对路径。                         | `"./output"`                              |
-| **recover**     | `boolean` | 解密时是否覆盖已存在的文件。                                           | `false`                                   |
+| 配置键               | 类型      | 描述                                                                 | 示例值                                      |
+|----------------------|-----------|----------------------------------------------------------------------|---------------------------------------------|
+| `password`           | `string`  | 加密/解密主密码，支持中文和特殊字符                                 | `"my-encv_key，可以使用中文和标点符号✔"`     |
+| `output_path`        | `string`  | 加密后文件的输出目录（相对/绝对路径）                                | `"./output"`                                |
+| `recover`            | `boolean` | 解密时是否覆盖已存在文件                                             | `false`                                     |
 
-#### 插件专属设置
+#### 🧩 插件专属设置
 
-| 配置键                                                   | 类型        | 描述                                    | 示例值                                  |
-| -------------------------------------------------------- | ----------- | --------------------------------------- | --------------------------------------- |
-| **plugin_settings.video.ext**                      | `string`  | 视频类加密容器的扩展名。                | `".sccgv"`                            |
-| **plugin_settings.video.chunk_size_mb**            | `integer` | 视频分片大小（MB），0 表示禁用分片。    | `100`                                 |
-| **plugin_settings.video.light_main_chunk_enabled** | `boolean` | 是否启用轻量主分片模式。                | `true`                                |
-| **plugin_settings.video.track_extensions**         | `array`   | 需要关联处理的字幕/轨道文件扩展名列表。 | `[".ass", ".srt", ".dm.ass", ".vtt"]` |
-| **plugin_settings.image.ext**                      | `string`  | 图像类加密容器的扩展名。                | `".sccgi"`                            |
-| **plugin_settings.audio.ext**                      | `string`  | 音频类加密容器的扩展名。                | `".sccga"`                            |
-| **plugin_settings.text.ext**                       | `string`  | 文本类加密容器的扩展名。                | `".sccgt"`                            |
-| **plugin_settings.pdf.ext**                        | `string`  | PDF类加密容器的扩展名。                 | `".sccgpdf"`                          |
-| **plugin_settings.wps.ext**                        | `string`  | WPS类加密容器的扩展名。                 | `".sccgwps"`                          |
+| 配置键                                      | 类型       | 描述                           | 示例值                                  |
+|---------------------------------------------|------------|--------------------------------|-----------------------------------------|
+| `plugin_settings.video.ext`                 | `string`   | 视频加密容器扩展名             | `".sccgv"`                              |
+| `plugin_settings.video.chunk_size_mb`       | `integer`  | 视频分片大小（MB，0=禁用）     | `100`                                   |
+| `plugin_settings.video.light_main_chunk_enabled` | `boolean` | 启用轻量主分片模式             | `true`                                  |
+| `plugin_settings.video.track_extensions`    | `array`    | 需关联的字幕/轨道文件扩展名    | `[".ass", ".srt", ".dm.ass", ".vtt"]`   |
+| `plugin_settings.image.ext`                 | `string`   | 图像加密容器扩展名             | `".sccgi"`                              |
+| `plugin_settings.audio.ext`                 | `string`   | 音频加密容器扩展名             | `".sccga"`                              |
+| `plugin_settings.text.ext`                  | `string`   | 文本加密容器扩展名             | `".sccgt"`                              |
+| `plugin_settings.pdf.ext`                   | `string`   | PDF加密容器扩展名              | `".sccgpdf"`                            |
+| `plugin_settings.wps.ext`                   | `string`   | WPS加密容器扩展名              | `".sccgwps"`                            |
 
-#### 内置 HTTP 服务器设置
+#### 🌐 内置 HTTP 服务器设置
 
-| 配置键                | 类型        | 描述                                                   | 示例值   |
-| --------------------- | ----------- | ------------------------------------------------------ | -------- |
-| **server.port** | `integer` | encv HTTP 流媒体服务器的监听端口，请勿与其他服务冲突。 | `2025` |
-| **server.dir**  | `string`  | HTTP 服务器提供的文件系统根目录，支持相对路径。        | `"/"`  |
+| 配置键               | 类型      | 描述                           | 示例值  |
+|----------------------|-----------|--------------------------------|---------|
+| `server.port`        | `integer` | HTTP流媒体服务器监听端口       | `2025`  |
+| `server.dir`         | `string`  | 文件系统根目录（相对路径）     | `"/"`   |
 
-#### OpenList 代理服务器设置
+#### 🛠️ 管理后台服务器设置
 
-| 配置键                                         | 类型        | 描述                                              | 示例值                      |
-| ---------------------------------------------- | ----------- | ------------------------------------------------- | --------------------------- |
-| **proxy.port**                           | `integer` | OpenList 代理服务的监听端口，请勿与其他服务冲突。 | `1998`                    |
-| **proxy.openlist_host**                  | `string`  | OpenList 服务的主机地址，支持协议和端口。         | `"http://localhost:5244"` |
-| **proxy.token**                          | `string`  | OpenList 的认证令牌（可选，不建议明文存储）。     | `""`                      |
-| **proxy.disable_signature_verification** | `boolean` | 是否禁用 OpenList URL 签名验证。                  | `false`                   |
+| 配置键               | 类型      | 描述                           | 示例值    |
+|----------------------|-----------|--------------------------------|-----------|
+| `admin.port`         | `integer` | 管理后台服务监听端口           | `1808`    |
+| `admin.password`     | `string`  | 管理员登录密码（留空=禁用）    | `"123456"`|
 
-#### WebDAV 服务器设置
+#### 🔄 OpenList 代理服务器设置
 
-| 配置键                | 类型        | 描述                                               | 示例值       |
-| --------------------- | ----------- | -------------------------------------------------- | ------------ |
-| **webdav.port** | `integer` | encv WebDAV 服务器的监听端口，请勿与其他服务冲突。 | `1234`     |
-| **webdav.root** | `string`  | WebDAV 服务的访问路径前缀（路由）。                | `"webdav"` |
-| **webdav.dir**  | `string`  | WebDAV 服务映射的文件系统根目录，支持相对路径。    | `"./"`     |
+| 配置键                                    | 类型      | 描述                                     | 示例值                      |
+|-------------------------------------------|-----------|------------------------------------------|-----------------------------|
+| `proxy.port`                              | `integer` | 代理服务监听端口                         | `1998`                      |
+| `proxy.openlist_host`                     | `string`  | OpenList服务地址（含协议和端口）         | `"http://localhost:5244"`   |
+| `proxy.token`                             | `string`  | OpenList认证令牌（**不建议明文存储**）  | `""`                        |
+| `proxy.disable_signature_verification`    | `boolean` | 是否禁用URL签名验证                      | `false`                     |
+
+#### 📁 WebDAV 服务器设置
+
+| 配置键               | 类型      | 描述                           | 示例值       |
+|----------------------|-----------|--------------------------------|--------------|
+| `webdav.port`        | `integer` | WebDAV服务监听端口             | `1234`       |
+| `webdav.root`        | `string`  | WebDAV访问路径前缀（路由）     | `"webdav"`   |
+| `webdav.dir`         | `string`  | 映射的文件系统根目录           | `"./"`       |
+| `webdav.username`    | `string`  | 基础认证用户名                 | `"admin"`    |
+| `webdav.password`    | `string`  | 基础认证密码                   | `"123456"`   |
+
+### 关键说明
+
+1. **端口冲突**：所有服务端口（`server.port`/`admin.port`/`proxy.port`/`webdav.port`）必须唯一且未被占用
+2. **安全建议**：
+   - `proxy.token` 建议通过命令行参数传递而非明文存储
+   - `admin.password` 留空时将完全禁用管理后台登录
+3. **路径规范**：
+   - `server.dir`/`webdav.dir` 支持相对路径（相对于可执行文件）
+   - `output_path` 支持绝对路径（如 `C:\encrypted`）或相对路径
+4. **插件扩展名**：所有 `plugin_settings.*.ext` 必须以点开头（如 `.sccgv`）
 
 ### 💻 核心用法
 
@@ -287,35 +313,59 @@ WSL2 已经打通了 localhost
 
 ```md
 encv-go/
-├── cmd/                  # 程序入口
-│   ├── encv/             # encv 程序
-│   └── encv-schema/      # 仅用于生成 `config.schema.json`
-├── internal/             # 内部包，不对外暴露
-│   ├── config/           # 配置
-│   ├── container/        # 加密容器相关
-│   ├── crypto/           # 加解密核心逻辑
-│   ├── middleware/       # 中间件
-│   ├── packer/           # 加密打包
-│   ├── postdecrypt/      # 解密后处理
-│   ├── processor/        # 加密前分析，预处理和元数据处理
-│   ├── proxy/            # OpenList 代理服务核心逻辑
-│   ├── server/           # HTTP服务核心逻辑
-│   ├── service/          # 加解密服务编排
-│   └── types/            # 共享的数据结构定义
-│   ├── unpacker/         # 解密解包
-│   └── utils/            # 通用工具
-│   └── webdav/           # Webdav服务核心逻辑
-├── pkg/                  # 对外暴露的公共包，作为库调用
-│   └── encv/
-│      └── api.go
-│      └── decrypt.go
-│      └── encrypt.go
-│      └── kvi.go
-│      └── server.go
-├── go.mod
-└── README.md
-└── config.user.json
-└── config.schema.json
+├── cmd/                              # 程序入口
+│   ├── encv/                         # encv 主程序
+│   └── encv-schema/                  # 仅用于生成 config.schema.json
+├── internal/                         # 内部实现
+│   ├── admin/                        # 管理后台
+│   ├── config/                       # 配置管理
+│   ├── container/                    # 加密容器相关
+│   ├── middleware/                   # 中间件
+│   ├── proxy/                        # OpenList 代理服务核心逻辑
+│   ├── register/                     # 服务注册
+│   ├── server/                       # 服务器实现
+│   ├── service/                      # 业务服务
+│   ├── utils/                        # 通用工具
+│   ├── v2/                           # v2 版本实现
+│   │   ├── chunker/                  # 分块处理
+│   │   ├── container/                # 容器实现
+│   │   │   ├── block/                # 块处理
+│   │   │   ├── detector/             # 检测器
+│   │   │   ├── envelope/             # 信封
+│   │   │   ├── fragment/             # 片段
+│   │   │   └── manifest/             # 清单
+│   │   ├── crypto/                   # 加密解密
+│   │   ├── handler/                  # 处理器
+│   │   ├── namer/                    # 命名管理
+│   │   ├── openlist/                 # OpenList 适配
+│   │   ├── physical/                 # 物理存储
+│   │   ├── plugins/                  # 插件系统
+│   │   │   ├── audio/                # 音频插件
+│   │   │   ├── image/                # 图片插件
+│   │   │   ├── interfaces/           # 插件接口
+│   │   │   ├── pdf/                  # PDF 插件
+│   │   │   ├── text/                 # 文本插件
+│   │   │   ├── video/                # 视频插件
+│   │   │   ├── wps/                  # WPS 插件
+│   │   │   └── registry.go           # 插件注册
+│   │   ├── provider/                 # 提供者
+│   │   ├── reader/                   # 读取器
+│   │   ├── service/                  # 服务层
+│   │   ├── types/                    # 共享数据结构
+│   │   └── writer/                   # 写入器
+│   ├── web/                          # Web 服务
+│   │   ├── static/                   # 静态资源
+│   │   │   └── preview/              # iframe 预览页面
+│   │   │       ├── pdf.html          # PDF 预览
+│   │   │       └── text.html         # 文本预览
+│   │   └── preview.go                # iframe 预览服务
+│   └── webdav/                       # WebDAV 服务核心逻辑
+├── pkg/                              # 对外暴露的公共包
+│   └── encv/                         # 作为库调用
+├── go.mod                            # Go 模块定义
+├── README.md                         # 项目说明
+├── config.user.json                  # 用户配置文件
+└── config.schema.json                # 配置文件模式定义
 ```
 
 ### 🔨 构建
