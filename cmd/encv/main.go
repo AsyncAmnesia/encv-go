@@ -52,11 +52,6 @@ func init() {
 		defaultPlayer = "mpv.exe"
 	}
 	playV2Cmd.Flags().StringP("player", "r", defaultPlayer, "Media player to use (e.g., mpv, vlc)")
-
-	// webdav 的标志
-	// webdavCmd.Flags().StringP("password", "p", "", "Password for server to decrypt (overrides config)")
-	// webdavCmd.Flags().StringP("dir", "d", "", "Directory to serve (overrides config)")
-	// webdavCmd.Flags().IntP("port", "P", 0, "Port for WebDAV server (overrides config)")
 }
 
 // --- main 函数：入口点，变得非常简洁 ---

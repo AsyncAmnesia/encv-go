@@ -1,22 +1,28 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/Soltus/encv-go/internal/admin"
+	"github.com/Soltus/encv-go/internal/config"
+	"github.com/Soltus/encv-go/internal/proxy"
 	"github.com/Soltus/encv-go/internal/register"
+	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/pkg/encv"
 	"github.com/spf13/cobra"
 )
 
 func addServersCommands(rootCmd *cobra.Command) {
 	rootCmd.AddCommand(startCmd)
-	// rootCmd.AddCommand(webdavCmd)
 	rootCmd.AddCommand(serverCmd)
 	rootCmd.AddCommand(adminCmd)
+	rootCmd.AddCommand(proxyCmd)
 }
 
 // --- start 命令 ---
@@ -117,4 +123,85 @@ is already running. This is useful for managing an existing server instance.`,
 
 		select {}
 	},
+}
+
+// 在 servers.go 中添加 proxy 命令
+var proxyCmd = &cobra.Command{
+	Use:   "proxy",
+	Short: "Starts the ENCV proxy server",
+	Run: func(cmd *cobra.Command, args []string) {
+		// 设置日志
+		logFilePath := utils.SetupLogging("encv-proxy.log")
+		log.Printf("Received Args: %v\n", os.Args)
+		fmt.Printf("-> Log file is at: %s\n", logFilePath)
+
+		// 加载配置
+		cfg, err := config.Load("config.user.json")
+		if err != nil {
+			log.Fatalf("Failed to load base config: %v", err)
+		}
+
+		// 从命令行参数获取配置
+		if port, err := cmd.Flags().GetInt("proxy-port"); err == nil && cmd.Flags().Changed("proxy-port") {
+			cfg.Proxy.Port = port
+		}
+		if host, err := cmd.Flags().GetString("openlist-host"); err == nil && cmd.Flags().Changed("openlist-host") {
+			cfg.Proxy.OpenListHost = host
+		}
+		if token, err := cmd.Flags().GetString("token"); err == nil && cmd.Flags().Changed("token") {
+			cfg.Proxy.Token = token
+		}
+		if disable, err := cmd.Flags().GetBool("disable-signature-verification"); err == nil && cmd.Flags().Changed("disable-signature-verification") {
+			cfg.Proxy.DisableSignatureVerification = disable
+		}
+		if password, err := cmd.Flags().GetString("password"); err == nil && cmd.Flags().Changed("password") {
+			cfg.Password = password
+		}
+
+		// 验证必要配置
+		if cfg.Password == "" {
+			log.Fatalf("Password is required. Please provide it via --password flag or in config.user.json")
+		}
+		if cfg.Proxy.Token == "" {
+			log.Fatalf("OpenList token is required. Please provide it via --token flag or in config.user.json")
+		}
+
+		// 确保主机地址包含协议
+		if !strings.HasPrefix(cfg.Proxy.OpenListHost, "http://") && !strings.HasPrefix(cfg.Proxy.OpenListHost, "https://") {
+			log.Printf("Warning: openlist-host '%s' is missing a scheme, defaulting to http://", cfg.Proxy.OpenListHost)
+			cfg.Proxy.OpenListHost = "http://" + cfg.Proxy.OpenListHost
+		}
+
+		// 创建上下文并初始化
+		finalCtx := config.NewContext(context.Background(), cfg)
+		encv.Init(finalCtx)
+
+		// 认证
+		if err := authenticate(finalCtx); err != nil {
+			log.Fatalf("Authentication failed: %v", err)
+		}
+
+		// 启动代理服务器
+		proxyServer := proxy.NewProxy(finalCtx)
+		proxyServer.StartServer()
+	},
+}
+
+// 初始化函数中添加 flags
+func init() {
+	proxyCmd.Flags().Int("proxy-port", 0, "Port for the proxy server")
+	proxyCmd.Flags().String("openlist-host", "", "URL of the OpenList server")
+	proxyCmd.Flags().String("token", "", "Admin token from OpenList")
+	proxyCmd.Flags().Bool("disable-signature-verification", false, "Disable signature verification")
+	proxyCmd.Flags().String("password", "", "Password for decrypting video files")
+}
+
+// 将 authenticate 函数从 main.go 移动到 servers.go
+func authenticate(ctx context.Context) error {
+	cfg := config.FromContext(ctx)
+	if cfg.Proxy.Token != "" {
+		log.Println("Using provided token for OpenList authentication.")
+		return nil
+	}
+	return fmt.Errorf("authentication failed: please provide either a --token or --openlist-username and --openlist-password")
 }

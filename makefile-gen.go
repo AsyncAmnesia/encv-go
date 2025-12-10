@@ -29,7 +29,6 @@ func main() {
 	// 在这里定义所有需要构建的目标
 	buildTargets := []BuildTarget{
 		{Name: "encv", SourcePath: "./cmd/encv"},
-		{Name: "encv-proxy", SourcePath: "./cmd/encv-proxy"},
 	}
 
 	// 在这里定义所有需要复制的文件

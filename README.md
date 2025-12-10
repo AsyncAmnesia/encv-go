@@ -17,13 +17,13 @@
 
 ### 🚀 安装
 
-如果没有可执行程序资产，您需要从源代码构建 `encv` 和 `encv-proxy` ，通常这不需要。
+如果没有可执行程序资产，您需要从源代码构建 `encv`  ，通常这不需要。
 
 windows 使用 `./build.ps1` 构建，linux 使用 `make build-all` 构建。
 
 ### ⚙️ 配置
 
-`encv` 和 `encv-proxy` 共享一个配置文件 `config.user.json`。将其放置在可执行文件同级目录下，可以避免每次手动输入参数。
+`encv` 自动读取同目录下的配置文件 `config.user.json`。将其放置在可执行文件同级目录下，可以避免每次手动输入参数。
 
 **`config.user.json` 示例:**
 
@@ -174,14 +174,14 @@ mpv http://127.0.0.1:1999/stream?file=A%3A%5CLocal%5CCol-Study%5Cgo%5Cencv%5Cout
 
 ### 🔗 OpenList 集成
 
-`encv-proxy` 是一个专为 OpenList 设计的代理服务，它能透明地解密 encv 加密容器，让 OpenList 可以直接播放加密内容。
+`encv proxy` 命令启动一个为 OpenList 设计的代理服务，它能透明地解密 encv 加密容器，让 OpenList 可以直接播放加密内容。
 
 > [!WARNING]
 > 由于远程服务的特性，OpenList 集成不支持真正的视频寻址，只能发起 Range 请求，但是文件由 OpenList 提供，因此需要先加载对应的物理分片。
 
 **配置步骤:**
 
-1. **构建 `encv-proxy`** (见上文安装部分)。
+1. **构建 `encv`** (见上文安装部分)。
 2. **在 OpenList 中配置 WebDAV**:
 
    * 进入管理页面，找到存储设置。
@@ -190,17 +190,17 @@ mpv http://127.0.0.1:1999/stream?file=A%3A%5CLocal%5CCol-Study%5Cgo%5Cencv%5Cout
 3. **获取 OpenList 令牌**:
 
    * 在 OpenList 管理页面的【设置】->【其他】中，滚动到最底部，复制管理员令牌。
-4. **启动 `encv-proxy`**:
+4. **运行 `encv proxy` 命令**:
 
    * **推荐方式 (命令行指定令牌)**:
 
      ```bash
-     ./encv-proxy -token "openlist-***********************************"
+     ./encv proxy --token "openlist-***********************************"
      ```
    * **完整命令行参数**:
 
      ```bash
-     ./encv-proxy -proxy-port 1998 -openlist-host "http://localhost:5244" -token "openlist-***********************************"
+     ./encv proxy --proxy-port 1998 --openlist-host "http://localhost:5244" --token "openlist-***********************************"
      ```
 5. **为加密文件添加预览**:
 
@@ -289,7 +289,6 @@ WSL2 已经打通了 localhost
 encv-go/
 ├── cmd/                  # 程序入口
 │   ├── encv/             # encv 程序
-│   └── encv-proxy/       # encv-proxy 代理程序（只代理 OpenList）
 │   └── encv-schema/      # 仅用于生成 `config.schema.json`
 ├── internal/             # 内部包，不对外暴露
 │   ├── config/           # 配置
@@ -322,10 +321,13 @@ encv-go/
 ### 🔨 构建
 
 ```bash
-# 构建 encv 主程序
-go build ./cmd/encv
-# 构建 encv-proxy 代理程序
-go build ./cmd/encv-proxy
+# windows
+./build.bat
+# 等效
+./build.ps1
+
+# linux
+make build-all
 ```
 
 #### 构建 Android AAR (占位)

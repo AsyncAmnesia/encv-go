@@ -20,14 +20,6 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# 编译 encv-proxy
-Write-Host "Building encv-proxy.exe..."
-go build -o "$OutputDir\encv-proxy.exe" ./cmd/encv-proxy
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Failed to build encv-proxy.exe" -ForegroundColor Red
-    exit 1
-}
-
 # 复制配置和文档文件
 Write-Host "Copying necessary files..."
 Copy-Item -Path "config.user.json" -Destination "$OutputDir\config.user.json"
