@@ -21,6 +21,8 @@ import (
 	"github.com/gogf/gf/v2/net/ghttp"
 )
 
+const AdminProxyPath = "/p"
+
 // SetupAdminServer 配置并返回一个准备好启动的 GoFrame 管理服务器实例。
 // 它不负责启动，只负责配置。
 func SetupAdminServer(backendAddr string, cfg *config.Config) (*ghttp.Server, string) {
@@ -49,7 +51,7 @@ func SetupAdminServer(backendAddr string, cfg *config.Config) (*ghttp.Server, st
 	adminGroup.Bind(file.NewV1(cfg.Server.Dir))
 
 	// 3. 注册代理和认证路由
-	proxyServer.Group("/p", func(group *ghttp.RouterGroup) {
+	proxyServer.Group(AdminProxyPath, func(group *ghttp.RouterGroup) {
 		if loginRequired {
 			group.Middleware(authMiddleware(authManager))
 		}
@@ -63,7 +65,7 @@ func SetupAdminServer(backendAddr string, cfg *config.Config) (*ghttp.Server, st
 				authManager.DestroySession(sessionID.String())
 			}
 			auth.ClearSessionCookie(r.Response.Writer)
-			r.Response.RedirectTo("/p/login")
+			r.Response.RedirectTo(AdminProxyPath + "/login")
 		})
 
 		// 【关键】文件代理路由，现在包含响应修改逻辑
@@ -74,11 +76,11 @@ func SetupAdminServer(backendAddr string, cfg *config.Config) (*ghttp.Server, st
 		proxy := httputil.NewSingleHostReverseProxy(u)
 		proxy.Director = func(req *http.Request) {
 			originalPath := req.URL.Path
-			req.URL.Path = strings.TrimPrefix(originalPath, "/p")
-			req.URL.RawPath = strings.TrimPrefix(req.URL.RawPath, "/p")
+			req.URL.Path = strings.TrimPrefix(originalPath, AdminProxyPath)
+			req.URL.RawPath = strings.TrimPrefix(req.URL.RawPath, AdminProxyPath)
 			req.URL.Scheme = u.Scheme
 			req.URL.Host = u.Host
-			req.Header.Set("X-Forwarded-Prefix", "/p")
+			req.Header.Set("X-Forwarded-Prefix", AdminProxyPath)
 			req.Header.Set("X-Forwarded-Host", req.Host)
 			req.Header.Set("X-Forwarded-Proto", "http")
 		}
@@ -86,7 +88,7 @@ func SetupAdminServer(backendAddr string, cfg *config.Config) (*ghttp.Server, st
 		// 【核心】注册 ModifyResponse 函数来注入内容
 		proxy.ModifyResponse = createResponseModifier()
 
-		proxyServer.Group("/p-api", func(group *ghttp.RouterGroup) {
+		proxyServer.Group(AdminProxyPath+"-api", func(group *ghttp.RouterGroup) {
 			// 【重要】API 路由也需要认证保护
 			if loginRequired {
 				group.Middleware(authMiddleware(authManager))
@@ -102,8 +104,8 @@ func SetupAdminServer(backendAddr string, cfg *config.Config) (*ghttp.Server, st
 			// 【关键】重写路径：将 /p-api/... 替换为 /api/...
 			apiProxy.Director = func(req *http.Request) {
 				originalPath := req.URL.Path
-				req.URL.Path = strings.TrimPrefix(originalPath, "/p-api")
-				req.URL.RawPath = strings.TrimPrefix(req.URL.RawPath, "/p-api")
+				req.URL.Path = strings.TrimPrefix(originalPath, AdminProxyPath+"-api")
+				req.URL.RawPath = strings.TrimPrefix(req.URL.RawPath, AdminProxyPath+"-api")
 
 				req.URL.Scheme = u.Scheme
 				req.URL.Host = u.Host
@@ -139,7 +141,7 @@ func authMiddleware(manager *auth.Manager) func(r *ghttp.Request) {
 		sessionID := r.Cookie.Get("encv_session_id")
 		if !manager.ValidateSession(sessionID.String()) {
 			// 未登录，重定向到登录页面
-			r.Response.RedirectTo("/p/login")
+			r.Response.RedirectTo(AdminProxyPath + "/login")
 			return
 		}
 		// 在请求头中添加标记，供下游使用
@@ -164,7 +166,7 @@ func handleLogin(r *ghttp.Request, manager *auth.Manager, correctPassword string
 	if password == correctPassword {
 		sessionID := manager.CreateSession()
 		auth.SetSessionCookie(r.Response.Writer, sessionID)
-		r.Response.RedirectTo("/p/")
+		r.Response.RedirectTo(AdminProxyPath + "/")
 	} else {
 		tmpl, _ := template.New("login").Parse(auth.LoginPageTmpl)
 		r.Response.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -189,7 +191,7 @@ func createResponseModifier() func(*http.Response) error {
 		}
 		resp.Body.Close()
 		// 【关键】从请求中获取当前路径，并去掉代理前缀 /p
-		currentPath := strings.TrimPrefix(resp.Request.URL.Path, "/p")
+		currentPath := strings.TrimPrefix(resp.Request.URL.Path, AdminProxyPath)
 		// 处理根路径的特殊情况
 		if currentPath == "/" {
 			currentPath = ""

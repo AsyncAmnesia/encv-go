@@ -1,6 +1,10 @@
 package namer
 
-import "fmt"
+import (
+	"fmt"
+	"path/filepath"
+	"strconv"
+)
 
 const (
 	ChunkNameRulePadded = ".padded" // 这是一个新的规则标识符
@@ -35,4 +39,20 @@ func (n *PaddedNamer) GenerateDataChunkName(baseName string, index int) string {
 
 func (n *PaddedNamer) GetFirstDataChunkIndex() int {
 	return 1
+}
+
+// IsDataChunk 检查文件名是否是 .0001, .0002 格式的碎片
+func (n *PaddedNamer) IsDataChunk(filename string) bool {
+	base := filepath.Base(filename)
+	ext := filepath.Ext(base) // 获取 .0001 这样的后缀
+
+	// 检查后缀长度是否足够（例如 padding=3, 后缀至少是 .000）
+	if len(ext) < n.padding+1 {
+		return false
+	}
+
+	// 去掉点，尝试转换为数字
+	numStr := ext[1:]
+	_, err := strconv.Atoi(numStr)
+	return err == nil
 }

@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/middleware"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/manifest"
+	"github.com/Soltus/encv-go/internal/v2/handler"
 	"github.com/Soltus/encv-go/internal/v2/openlist"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/Soltus/encv-go/internal/v2/reader"
@@ -25,15 +25,18 @@ type Proxy struct {
 	cfg *config.Config
 	// 【新增】工厂缓存
 	factoryCache map[string]reader.DecryptReaderFactory
-	cacheMutex   sync.RWMutex
+	// cacheMutex     sync.RWMutex
+	contentHandler *handler.ContentHandler
 }
 
 // 【新增】NewProxy 构造函数
 func NewProxy(ctx context.Context) *Proxy {
 	cfg := config.FromContext(ctx)
+	contentHandler := handler.NewContentHandler()
 	return &Proxy{
-		cfg:          cfg,
-		factoryCache: make(map[string]reader.DecryptReaderFactory),
+		cfg:            cfg,
+		factoryCache:   make(map[string]reader.DecryptReaderFactory),
+		contentHandler: contentHandler,
 	}
 }
 

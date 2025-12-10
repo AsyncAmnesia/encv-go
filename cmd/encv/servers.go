@@ -49,7 +49,7 @@ var startCmd = &cobra.Command{
 		log.Printf("   Serving files from: %s\n", cfg.Server.Dir)
 		log.Printf("   Backend is at: http://%s\n", backendAddr)
 		log.Printf("   Admin panel is at: http://%s/admin/\n", adminAddr)
-		log.Printf("   Proxy service is at: http://%s/p/\n", adminAddr)
+		log.Printf("   Proxy service is at: http://%s%s/\n", adminAddr, admin.AdminProxyPath)
 		log.Println("\n--- How to Play ---")
 		log.Printf("   mpv --no-config http://%s/p/<video_name_without_extension>\n", adminAddr)
 		log.Println("\n(Press Ctrl+C in this terminal to stop the server)")
@@ -57,69 +57,6 @@ var startCmd = &cobra.Command{
 		select {} // Keep the main goroutine alive
 	},
 }
-
-// var startCmd = &cobra.Command{
-// 	Use:   "start",
-// 	Short: "Starts the ENCV server and keeps it running in the foreground",
-// 	Run: func(cmd *cobra.Command, args []string) {
-// 		encv.Init(rootCtx)
-// 		s := encv.NewServer(rootCtx)
-// 		addr, err := s.Start(Version)
-// 		if err != nil {
-// 			log.Fatalf("Failed to start server: %v", err)
-// 		}
-
-// 		log.Printf("\n✅ Server started successfully!\n")
-// 		log.Printf("   Serving files from: %s\n", cfg.Server.Dir)
-// 		log.Printf("   Access it at: http://localhost%s\n", addr)
-// 		log.Println("\n--- How to Start ---")
-// 		log.Printf("   mpv --no-config http://localhost%s/<video_name_without_extension>\n", addr)
-// 		log.Println("\n(Press Ctrl+C in this terminal to stop the server)")
-
-// 		select {} // Keep server running
-// 	},
-// }
-
-// --- webdav 命令 ---
-// var webdavCmd = &cobra.Command{
-// 	Use:   "webdav",
-// 	Short: "Starts the ENCV WebDAV server",
-// 	Run: func(cmd *cobra.Command, args []string) {
-// 		if err := encv.CheckForExistingService(cfg.Webdav.Port); err != nil {
-// 			os.Exit(1)
-// 		}
-
-// 		// Flags override config
-// 		if pwd, _ := cmd.Flags().GetString("password"); pwd != "" {
-// 			cfg.Password = pwd
-// 		}
-// 		if dir, _ := cmd.Flags().GetString("dir"); dir != "" {
-// 			cfg.Webdav.Dir = dir
-// 		}
-// 		if port, _ := cmd.Flags().GetInt("port"); port != 0 {
-// 			cfg.Webdav.Port = port
-// 		}
-
-// 		if cfg.Password == "" {
-// 			log.Fatalf("WebDAV requires a password. Please set it in config.user.json or with the -p flag.")
-// 		}
-// 		encv.Init(rootCtx)
-// 		addr, webdavPath, err := encv.StartWebdav(rootCtx)
-// 		if err != nil {
-// 			log.Fatalf("Failed to start WebDAV server: %v", err)
-// 		}
-
-// 		log.Printf("\n✅ WebDAV server started successfully!\n")
-// 		log.Printf("   Serving files from: %s\n", cfg.Webdav.Dir)
-// 		log.Printf("   Access it at: http://%s%s\n" , addr, webdavPath)
-// 		log.Println("\n--- How to Connect ---")
-// 		log.Printf("   Windows: \\\\localhost@%s%s\n", strings.TrimPrefix(addr, ":"), webdavPath)
-// 		log.Printf("   macOS:   http://%s%s\n" , addr, webdavPath)
-// 		log.Println("\n(Press Ctrl+C in this terminal to stop the server)")
-
-// 		select {} // Keep server running
-// 	},
-// }
 
 // --- server 命令 ---
 var serverCmd = &cobra.Command{

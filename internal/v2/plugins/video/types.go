@@ -8,7 +8,7 @@ const IndexKindVideo types.IndexKind = "video"
 
 // VideoIndex 是加密视频的元数据索引文件
 type VideoIndex struct {
-	VideoID          string  `json:"video_id"`
+	ID               string  `json:"id"`
 	Format           string  `json:"format"`
 	MimeType         string  `json:"mime_type"`
 	DurationSeconds  float64 `json:"duration_seconds"`

@@ -11,7 +11,7 @@ const IndexKindImage types.IndexKind = "image"
 
 // ImageIndex 是解密图像所需的所有元数据的容器
 type ImageIndex struct {
-	ImageID           string `json:"image_id"`
+	ID                string `json:"id"`
 	OriginalFileSize  int64  `json:"original_file_size"`
 	MimeType          string `json:"mime_type"`
 	Format            string `json:"format"`

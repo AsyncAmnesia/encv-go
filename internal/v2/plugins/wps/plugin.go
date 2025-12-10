@@ -23,6 +23,7 @@ import (
 )
 
 type WPSPlugin struct {
+	ctx              context.Context
 	cfg              *config.Config
 	settings         WPSPluginConfig
 	index            WPSIndex
@@ -69,14 +70,18 @@ func init() {
 	types.RegisterKVIProvider(IndexKindWPS, func(rawKVI json.RawMessage) (types.KVIProvider, error) {
 		var kvi WPSKVI_v2
 		if err := json.Unmarshal(rawKVI, &kvi); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal KVI as TextKVI_v2: %w", err)
+			return nil, fmt.Errorf("failed to unmarshal KVI: %w", err)
 		}
 		return kvi, nil
 	})
 }
 
 // Plugin 接口实现
-func (p *WPSPlugin) Intialize(ctx context.Context) error {
+func (p *WPSPlugin) Initialize(ctx context.Context) error {
+	if ctx == p.ctx {
+		return nil // 避免重复初始化
+	}
+	p.ctx = ctx
 	p.cfg = config.FromContext(ctx)
 	settings, err := config.GetPluginSettingsFor[WPSPluginConfig](p.cfg, p.Name())
 	if err != nil {

@@ -7,7 +7,7 @@ import (
 const IndexKindAudio types.IndexKind = "audio"
 
 type AudioIndex struct {
-	TextID            string `json:"text_id"`
+	ID                string `json:"id"`
 	OriginalFileSize  int64  `json:"original_file_size"`
 	MimeType          string `json:"mime_type"`
 	Format            string `json:"format"` // e.g., "plain", "markdown"
@@ -27,7 +27,7 @@ func (t *AudioIndex) GetMimeType() string         { return t.MimeType }
 // 视频容器专用的 KVI
 type AudioKVI_v2 struct {
 	types.KVI_v2
-	AudioIndex *AudioIndex `json:"Text_index"`
+	AudioIndex *AudioIndex `json:"audio_index"`
 }
 
 func (v AudioKVI_v2) GetKind() types.IndexKind {

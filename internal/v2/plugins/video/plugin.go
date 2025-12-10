@@ -25,6 +25,7 @@ import (
 )
 
 type VideoPlugin struct {
+	ctx              context.Context
 	cfg              *config.Config
 	settings         VideoPluginConfig
 	index            VideoIndex
@@ -82,16 +83,20 @@ func (p *VideoPlugin) GetDefaultSettings() json.RawMessage {
 // init 在包被导入时自动执行，完成自注册
 func init() {
 	types.RegisterKVIProvider(IndexKindVideo, func(rawKVI json.RawMessage) (types.KVIProvider, error) {
-		var videoKVI VideoKVI_v2
-		if err := json.Unmarshal(rawKVI, &videoKVI); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal KVI as VideoKVI_v2: %w", err)
+		var kvi VideoKVI_v2
+		if err := json.Unmarshal(rawKVI, &kvi); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal KVI: %w", err)
 		}
-		return videoKVI, nil // VideoKVI_v2 实现了 KVIProvider 接口
+		return kvi, nil
 	})
 }
 
 // Plugin 接口实现
-func (p *VideoPlugin) Intialize(ctx context.Context) error {
+func (p *VideoPlugin) Initialize(ctx context.Context) error {
+	if ctx == p.ctx {
+		return nil // 避免重复初始化
+	}
+	p.ctx = ctx
 	p.cfg = config.FromContext(ctx)
 	// 2. 【关键】使用泛型辅助函数，安全地获取并解析本插件的配置
 	settings, err := config.GetPluginSettingsFor[VideoPluginConfig](p.cfg, p.Name())
@@ -252,7 +257,7 @@ func (p *VideoPlugin) PostEncryptProcessor() error {
 	} else {
 		startIdx = 0
 	}
-	packer := NewVideoPacker(p.physicalPacker, p.chunkNamer)
+	packer := NewVideoPacker(p.physicalPacker)
 	packReq := &physical.PackRequest{
 		BaseName:            finalBaseName,
 		OutputDir:           p.outputDir,
@@ -261,7 +266,7 @@ func (p *VideoPlugin) PostEncryptProcessor() error {
 		Salt:                p.salt,
 		IV:                  p.iv,
 		LogicalFragments:    logicalFragments, // 预先计算好
-		Namer:               p.chunkNamer,
+		Namer:               p.chunkNamer,     // 注入分片命名器
 		StartIdx:            startIdx,
 	}
 

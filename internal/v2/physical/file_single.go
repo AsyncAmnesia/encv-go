@@ -36,9 +36,6 @@ func (p *SinglePhysicalPacker) Pack(data io.Reader, manifest *types.Manifest_v2,
 
 	// 2. 遍历并写入 fragments
 	for i, frag := range manifest.Fragments {
-		if frag.Type != types.FragmentType_AtomicFile {
-			continue
-		}
 		chunkData := make([]byte, frag.Length)
 		if _, err := io.ReadFull(data, chunkData); err != nil {
 			return tempPath, fmt.Errorf("failed to read data for fragment %d: %w", i, err)

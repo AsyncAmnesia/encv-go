@@ -23,6 +23,7 @@ import (
 )
 
 type TextPlugin struct {
+	ctx              context.Context
 	cfg              *config.Config
 	settings         TextPluginConfig
 	index            TextIndex
@@ -67,16 +68,20 @@ func (p *TextPlugin) GetDefaultSettings() json.RawMessage {
 // init 在包被导入时自动执行，完成自注册
 func init() {
 	types.RegisterKVIProvider(IndexKindText, func(rawKVI json.RawMessage) (types.KVIProvider, error) {
-		var textKVI TextKVI_v2
-		if err := json.Unmarshal(rawKVI, &textKVI); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal KVI as TextKVI_v2: %w", err)
+		var kvi TextKVI_v2
+		if err := json.Unmarshal(rawKVI, &kvi); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal KVI: %w", err)
 		}
-		return textKVI, nil // TextKVI_v2 实现了 KVIProvider 接口
+		return kvi, nil
 	})
 }
 
 // Plugin 接口实现
-func (p *TextPlugin) Intialize(ctx context.Context) error {
+func (p *TextPlugin) Initialize(ctx context.Context) error {
+	if ctx == p.ctx {
+		return nil // 避免重复初始化
+	}
+	p.ctx = ctx
 	p.cfg = config.FromContext(ctx)
 	settings, err := config.GetPluginSettingsFor[TextPluginConfig](p.cfg, p.Name())
 	if err != nil {

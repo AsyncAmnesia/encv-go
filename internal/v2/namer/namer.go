@@ -23,6 +23,8 @@ type ChunkNamer interface {
 	GenerateDataChunkName(baseName string, index int) string
 	//  返回第一个数据分片的索引
 	GetFirstDataChunkIndex() int
+	// 【新增】判断一个文件名是否是由此规则生成的数据碎片
+	IsDataChunk(filename string) bool
 }
 
 func generateReversedExt(ext string) string {

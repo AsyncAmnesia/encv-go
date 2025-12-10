@@ -2,6 +2,9 @@ package namer
 
 import (
 	"fmt"
+	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 const (
@@ -39,4 +42,19 @@ func (n *SequentialNamer) GenerateDataChunkName(baseName string, index int) stri
 }
 func (n *SequentialNamer) GetFirstDataChunkIndex() int {
 	return 1
+}
+
+// IsDataChunk 检查文件名是否是 .part1, .part2 格式的碎片
+func (n *SequentialNamer) IsDataChunk(filename string) bool {
+	base := filepath.Base(filename)
+
+	// 检查是否以 .part 开头
+	if !strings.HasPrefix(base, n.suffix) {
+		return false
+	}
+
+	// 获取 .part 后面的数字部分
+	numStr := base[len(n.suffix):]
+	_, err := strconv.Atoi(numStr)
+	return err == nil
 }

@@ -5,7 +5,6 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/v2/crypto"
-	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/physical"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
@@ -16,7 +15,7 @@ type VideoPacker struct {
 }
 
 // NewVideoPacker 创建一个新的 VideoPacker，并注入物理分片策略
-func NewVideoPacker(pp physical.PhysicalPacker, namer namer.ChunkNamer) *VideoPacker {
+func NewVideoPacker(pp physical.PhysicalPacker) *VideoPacker {
 	return &VideoPacker{
 		physicalPacker: pp,
 	}
@@ -30,7 +29,7 @@ func (p *VideoPacker) Pack(cfg *config.Config, req *physical.PackRequest) error 
 	}
 
 	// 1. 创建 Manifest
-	videoKVI := VideoKVI_v2{
+	kvi := VideoKVI_v2{
 		KVI_v2: types.KVI_v2{
 			SaltBase64: crypto.Base64Encode_v2(req.Salt),
 			IVBase64:   crypto.Base64Encode_v2(req.IV),
@@ -38,7 +37,7 @@ func (p *VideoPacker) Pack(cfg *config.Config, req *physical.PackRequest) error 
 		VideoIndex: vIndex,
 	}
 	// 2. 直接使用请求中预先计算好的逻辑分片
-	manifest, err := types.NewManifest_v2(videoKVI, req.LogicalFragments)
+	manifest, err := types.NewManifest_v2(kvi, req.LogicalFragments)
 	if err != nil {
 		return fmt.Errorf("failed to create manifest: %w", err)
 	}

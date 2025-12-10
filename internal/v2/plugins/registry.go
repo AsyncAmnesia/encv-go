@@ -48,7 +48,7 @@ type Plugin interface {
 	//  返回此插件创建的容器文件扩展名，包含点前缀
 	GetContainerExtension() string
 
-	Intialize(ctx context.Context) error
+	Initialize(ctx context.Context) error
 	// --- 提供处理策略 ---
 	GetMetadataExtractor() pluginInterfaces.MetadataExtractor
 	GetContentPreprocessor() pluginInterfaces.ContentPreprocessor
@@ -100,6 +100,8 @@ var (
 	once              sync.Once
 	registeredExtsMap map[string]bool // 存储带点扩展名，用于 O(1) 查找
 	registeredExts    []string        // 存储带点扩展名，用于列表返回
+	chunkNamersOnce   sync.Once
+	allChunkNamers    []namer.ChunkNamer
 )
 
 // 在 InitializePlugins 之后调用
@@ -138,6 +140,27 @@ func IsContainer(path string) bool {
 	once.Do(initializeExtensions)
 	ext := strings.ToLower(filepath.Ext(path))
 	return registeredExtsMap[ext]
+}
+
+// 这个函数将由 chunkNamersOnce.Do 保证只执行一次。
+func initializeChunkNamers() {
+	// 此时，我们假设所有插件都已经被 Initialize 过了。
+	var tempNamers []namer.ChunkNamer
+	for _, p := range Plugins {
+		namer := p.GetChunkNamer()
+		// 并非所有插件都必须有分片（例如纯文本插件），所以需要检查 nil
+		if namer != nil {
+			tempNamers = append(tempNamers, namer)
+		}
+	}
+	allChunkNamers = tempNamers
+}
+
+// 【新增】GetAllRegisteredChunkNamers 返回所有已注册插件的 ChunkNamer 列表。
+// 此函数是线程安全的，并且会在第一次被调用时自动完成初始化。
+func GetAllRegisteredChunkNamers() []namer.ChunkNamer {
+	chunkNamersOnce.Do(initializeChunkNamers)
+	return allChunkNamers
 }
 
 // BuildFullPluginSettings 构建一个完整的插件配置映射
@@ -196,7 +219,7 @@ func InitializePlugins(ctx context.Context) error {
 		fmt.Printf("Initializing plugin: %s\n", pluginName)
 
 		// 3. 调用插件的初始化方法
-		if err := p.Intialize(ctx); err != nil {
+		if err := p.Initialize(ctx); err != nil {
 			return fmt.Errorf("failed to initialize plugin %s: %w", pluginName, err)
 		}
 	}
@@ -305,7 +328,7 @@ func ProcessFileWithPlugin(p Plugin, inputPath string) (types.Index, io.ReadClos
 
 // EncryptFileWithPlugin 是一个新的辅助函数，封装了完整的加密流程
 func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputRootDir, outputDir string) error {
-	plugin.Intialize(ctx)
+	plugin.Initialize(ctx)
 
 	index, dataReader, err := ProcessFileWithPlugin(plugin, inputPath)
 	if err != nil {
@@ -336,7 +359,7 @@ func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputR
 
 // DecryptContainerWithPlugin 是一个新的辅助函数，封装了完整的解密流程
 func DecryptContainerWithPlugin(ctx context.Context, plugin Plugin, containerPath, outputDir string) error {
-	plugin.Intialize(ctx)
+	plugin.Initialize(ctx)
 	// 1. 执行预处理器
 	if err := plugin.PreDecryptProcessor(containerPath, outputDir); err != nil {
 		return fmt.Errorf("pre-decryption failed for '%s': %w", containerPath, err)

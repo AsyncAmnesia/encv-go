@@ -8,7 +8,7 @@ const IndexKindText types.IndexKind = "text"
 
 // TextIndex 是解密文本所需的所有元数据的容器
 type TextIndex struct {
-	TextID            string `json:"text_id"`
+	ID                string `json:"id"`
 	OriginalFileSize  int64  `json:"original_file_size"`
 	MimeType          string `json:"mime_type"`
 	Format            string `json:"format"` // e.g., "plain", "markdown"
@@ -28,7 +28,7 @@ func (t *TextIndex) GetMimeType() string         { return t.MimeType }
 // 视频容器专用的 KVI
 type TextKVI_v2 struct {
 	types.KVI_v2
-	TextIndex *TextIndex `json:"Text_index"`
+	TextIndex *TextIndex `json:"text_index"`
 }
 
 func (v TextKVI_v2) GetKind() types.IndexKind {

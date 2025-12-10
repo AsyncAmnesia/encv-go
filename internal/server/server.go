@@ -17,7 +17,9 @@ import (
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/middleware"
 	"github.com/Soltus/encv-go/internal/register"
+	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
+	"github.com/Soltus/encv-go/internal/v2/handler"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/Soltus/encv-go/internal/v2/service"
 	"github.com/Soltus/encv-go/internal/web"
@@ -35,16 +37,20 @@ type Server struct {
 	webdavDir  string // WebDAV 目录的绝对路径
 	webdavPath string // WebDAV 的路由前缀
 	// 【关键替换】用新的 ReaderService 替代旧的 ContainerManager
-	readerService *service.ReaderService
+	readerService  *service.ReaderService
+	contentHandler *handler.ContentHandler
 }
 
 func NewServer(ctx context.Context) *Server {
 	cfg := config.FromContext(ctx)
 	containerManager := service.NewContainerManager()
+	readerService := service.NewReaderService(containerManager)
+	contentHandler := handler.NewContentHandler()
 	return &Server{
-		cfg:           cfg,
-		readerService: service.NewReaderService(containerManager),
-		instanceID:    fmt.Sprintf("%x", time.Now().UnixNano()),
+		cfg:            cfg,
+		readerService:  readerService,
+		contentHandler: contentHandler,
+		instanceID:     fmt.Sprintf("%x", time.Now().UnixNano()),
 	}
 }
 
@@ -98,7 +104,10 @@ func (s *Server) Start(version string) (string, error) {
 
 	// 如果启用了 WebDAV，则注册其处理器
 	if s.webdavDir != "" {
-		fs := webdav.NewENCVFS(config.NewContext(context.Background(), s.cfg), s.readerService)
+		// 【关键修复】从插件系统获取所有已注册的 ChunkNamers
+		// 这是一种解耦且可扩展的方式，服务器无需知道具体的命名规则。
+		chunkNamers := plugins.GetAllRegisteredChunkNamers()
+		fs := webdav.NewENCVFS(config.NewContext(context.Background(), s.cfg), s.readerService, chunkNamers)
 		webdavHandler := &goWebdav.Handler{
 			FileSystem: fs,
 			LockSystem: goWebdav.NewMemLS(),
@@ -127,47 +136,22 @@ func (s *Server) Stop() error {
 
 // handleRequest 是主路由 / 处理器
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[DEBUG] handleRequest -> (r.URL.Path: %s", r.URL.Path)
-	// 1. 从 URL 路径中移除开头的斜杠，得到相对于 servingDir 的路径
-	// 例如，如果 URL 是 "/video.sccgv"，relativePath 就是 "video.sccgv"
-	relativePath := strings.TrimPrefix(r.URL.Path, "/")
+	log.Printf("[DEBUG] handleRequest -> r.URL.Path: %s", r.URL.Path)
 
-	// 2. 【安全】清理路径，防止 `..` 等路径遍历攻击
-	//    filepath.Clean 会处理 `..` 和多余的 `.`
-	cleanRelativePath := filepath.Clean(relativePath)
-
-	// 3. 【安全】检查路径是否在尝试跳出目录
-	//    如果 Clean 后的结果以 ".." 开头，说明是恶意请求
-	if strings.HasPrefix(cleanRelativePath, "..") {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-
-	// 4. 【核心】构建服务器上的完整文件路径
-	//    将清理后的相对路径与 servingDir 拼接
-	// absPath := filepath.Join(s.servingDir, cleanRelativePath)
-	// log.Printf("[DEBUG] handleRequest -> containerPath: %s", absPath)
-
-	// // 5. 【可选但推荐】检查文件是否存在，如果不存在则返回 404
-	// //    这可以避免后续的解密逻辑处理不存在的文件
-	// if _, err := os.Stat(absPath); os.IsNotExist(err) {
-	// 	http.NotFound(w, r)
-	// 	return
-	// }
-
-	// 4. 将清理后的相对路径传递给 servePath
-	s.servePath(w, r, cleanRelativePath)
+	// 2. 传递给servePath处理
+	s.servePath(w, r, r.URL.Path)
 }
 
 // 能处理文件和目录
 func (s *Server) servePath(w http.ResponseWriter, r *http.Request, relativePath string) {
-	// 构建完整的文件系统路径
-	fullPath := filepath.Join(s.servingDir, relativePath)
-
-	// 使用 filepath.Rel 进行健壮的安全检查
-	relPath, err := filepath.Rel(s.servingDir, fullPath)
-	if err != nil || strings.HasPrefix(relPath, "..") {
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	// 使用通用工具函数进行安全解析
+	fullPath, err := utils.SafeURLToAbsPath(s.servingDir, relativePath)
+	if err != nil {
+		if strings.Contains(err.Error(), "forbidden") {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+		} else {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -204,8 +188,7 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, fullPath stri
 		// 如果 err 为 nil，说明文件是有效的 ENCV 容器
 		log.Printf("-> [File] Serving ENCV container: %s", fileName)
 		// 【关键修改】调用我们新的、统一的处理函数
-		// false 表示这不是一个 /stream 端点，而是浏览器直接访问
-		s.serveEncryptedFile(w, r, fullPath, false)
+		s.serveEncryptedFile(w, r, fullPath)
 		return
 	}
 
@@ -251,7 +234,7 @@ func (s *Server) listFilesInDir(w http.ResponseWriter, r *http.Request, dirPath,
 		// 【关键修改】在生成文件路径时，加上代理前缀
 		files = append(files, FileInfo{
 			Name:        entry.Name(),
-			Path:        forwardedPrefix + urlPath + entry.Name(),
+			Path:        utils.BuildURLPath(forwardedPrefix, urlPath, entry.Name(), entry.IsDir()),
 			IsDir:       entry.IsDir(),
 			IsContainer: !entry.IsDir() && plugins.IsContainer(entry.Name()),
 			HumanSize:   humanize.Bytes(uint64(info.Size())),

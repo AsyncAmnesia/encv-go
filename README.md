@@ -159,8 +159,6 @@ windows 使用 `./build.ps1` 构建，linux 使用 `make build-all` 构建。
 
 启用 HTTP 服务后，可以通过 URL 播放服务的路径和磁盘任意位置的加密视频。
 
-HTTP 服务（`./encv server`）和 Webdav 服务（`./encv webdav`）也可以单独启动，但是不支持多实例。
-
 > [!WARNING]
 > 使用 `mpv` 播放器观看时，需要手动指定字幕文件
 

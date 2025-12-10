@@ -23,6 +23,7 @@ import (
 )
 
 type AudioPlugin struct {
+	ctx              context.Context
 	cfg              *config.Config
 	settings         AudioPluginConfig
 	index            AudioIndex
@@ -67,16 +68,20 @@ func (p *AudioPlugin) GetDefaultSettings() json.RawMessage {
 // init 在包被导入时自动执行，完成自注册
 func init() {
 	types.RegisterKVIProvider(IndexKindAudio, func(rawKVI json.RawMessage) (types.KVIProvider, error) {
-		var textKVI AudioKVI_v2
-		if err := json.Unmarshal(rawKVI, &textKVI); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal KVI as TextKVI_v2: %w", err)
+		var kvi AudioKVI_v2
+		if err := json.Unmarshal(rawKVI, &kvi); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal KVI: %w", err)
 		}
-		return textKVI, nil // TextKVI_v2 实现了 KVIProvider 接口
+		return kvi, nil
 	})
 }
 
 // Plugin 接口实现
-func (p *AudioPlugin) Intialize(ctx context.Context) error {
+func (p *AudioPlugin) Initialize(ctx context.Context) error {
+	if ctx == p.ctx {
+		return nil // 避免重复初始化
+	}
+	p.ctx = ctx
 	p.cfg = config.FromContext(ctx)
 	settings, err := config.GetPluginSettingsFor[AudioPluginConfig](p.cfg, p.Name())
 	if err != nil {
@@ -99,13 +104,7 @@ func (p *AudioPlugin) GetChunkNamer() namer.ChunkNamer {
 // Plugin 接口实现
 func (p *AudioPlugin) SupportedMimePrefixes() []string {
 	return []string{
-		"audio/mpeg",     // mp3
-		"audio/flac",     // flac
-		"audio/ogg",      // ogg
-		"audio/mp4",      // m4a
-		"audio/wav",      // wav
-		"audio/opus",     // opus
-		"audio/x-ms-wma", // wma
+		"audio/",
 	}
 }
 
@@ -125,23 +124,6 @@ func (p *AudioPlugin) SupportedExtensions() []string {
 
 // Plugin 接口实现
 func (p *AudioPlugin) ShouldProcess(inputPath string) bool {
-	// 获取文件扩展名（小写，不带点）
-	ext := strings.ToLower(filepath.Ext(inputPath))
-	if len(ext) > 0 {
-		ext = ext[1:]
-	}
-
-	// 这些文件在业务上被视为视频的一部分，而非独立的文本文件
-	excludedSubtitles := map[string]struct{}{
-		"ass": {},
-		"srt": {},
-		"vtt": {},
-	}
-
-	if _, shouldExclude := excludedSubtitles[ext]; shouldExclude {
-		return false
-	}
-
 	return true
 }
 
@@ -153,8 +135,6 @@ func (p *AudioPlugin) CanDecrypt(containerPath string) bool {
 	kind, err := detector.DetectIndexKind(containerPath)
 	if err != nil {
 		// 如果无法判断类型（例如，文件损坏或不是 ENCV 容器），则认为不能解密
-		// 这里的日志可以帮助调试
-		// fmt.Printf("DEBUG: [TextPlugin.CanDecrypt] Failed to detect kind for '%s': %v\n", containerPath, err)
 		return false
 	}
 	return kind == IndexKindAudio
@@ -217,7 +197,7 @@ func (p *AudioPlugin) Encrypt(dataReader io.Reader) error {
 func (p *AudioPlugin) PostEncryptProcessor() error {
 	// --- 【关键修复】在这里，根据原始文件大小计算逻辑分片 ---
 	logicalFragmentSize := fragment.CalculateFragmentSize(p.index.OriginalFileSize, 0)
-	logicalFragments, err := fragment.CreateLogicalFragmentsFromSize(p.index.OriginalFileSize, logicalFragmentSize, types.FragmentType_AtomicFile)
+	logicalFragments, err := fragment.CreateLogicalFragmentsFromSize(p.index.OriginalFileSize, logicalFragmentSize, types.FragmentType_SeekableStream) // 音频一般是 seekable 的
 	if err != nil {
 		return fmt.Errorf("failed to create logical fragments from size: %w", err)
 	}
