@@ -237,29 +237,3 @@ func serveDirectStreamWithFix(w http.ResponseWriter, fileURL string, headers map
 		log.Printf("Error streaming file to client: %v", err)
 	}
 }
-
-// parseRangeHeader 是一个辅助函数，用于解析 Range 请求头
-func parseRangeHeader(rangeHeader string, totalSize int64) (start, end, length int64) {
-	if rangeHeader == "" {
-		return 0, totalSize - 1, totalSize
-	}
-	// 简单解析 "bytes=start-end"
-	// 注意：end 可能是 '*'，表示到文件末尾
-	if _, err := fmt.Sscanf(rangeHeader, "bytes=%d-%d", &start, &end); err != nil {
-		// 如果解析失败，比如 "bytes=500-"，则 end 默认为文件末尾
-		if _, err := fmt.Sscanf(rangeHeader, "bytes=%d-", &start); err == nil {
-			end = totalSize - 1
-		} else {
-			// 完全无效，从头开始
-			return 0, totalSize - 1, totalSize
-		}
-	}
-
-	// 校验范围
-	if start < 0 || end >= totalSize || start > end {
-		return 0, totalSize - 1, totalSize
-	}
-
-	length = end - start + 1
-	return start, end, length
-}
