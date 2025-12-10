@@ -254,6 +254,14 @@
         "dir": {
           "type": "string",
           "description": "文件系统的根目录（例如 /path/to/your/files），而不是 WebDAV 的路由前缀（例如 /webdav/）"
+        },
+        "username": {
+          "type": "string",
+          "description": "WebDAV 基础认证的用户名"
+        },
+        "password": {
+          "type": "string",
+          "description": "WebDAV 基础认证的密码"
         }
       },
       "additionalProperties": false,
@@ -261,7 +269,9 @@
       "required": [
         "port",
         "root",
-        "dir"
+        "dir",
+        "username",
+        "password"
       ],
       "description": "--- WebDAV 服务器设置 ---"
     }

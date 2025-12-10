@@ -1,4 +1,4 @@
-.PHONY: encv encv-proxy copy-files build-all run clean
+.PHONY: encv encv-proxy copy-files build-all build-artifacts run clean
 
 OUTPUT_DIR ?= dist
 
@@ -6,21 +6,14 @@ OUTPUT_DIR ?= dist
 clean:
 	@echo "Cleaning up..."
 	rm -rf $(OUTPUT_DIR)/
-
-# 运行主程序 (开发模式，使用 go run)
-run:
-	go run ./cmd/encv start
-
 # 编译 encv
 encv:
 	@echo "Building encv..."
-	@mkdir -p $(OUTPUT_DIR)
 	go build -o $(OUTPUT_DIR)/encv ./cmd/encv
 
 # 编译 encv-proxy
 encv-proxy:
 	@echo "Building encv-proxy..."
-	@mkdir -p $(OUTPUT_DIR)
 	go build -o $(OUTPUT_DIR)/encv-proxy ./cmd/encv-proxy
 
 # 复制配置和文档文件
@@ -32,4 +25,4 @@ copy-files:
 
 # 编译所有程序并复制文件
 build-all: encv encv-proxy copy-files
-	@echo "All binaries and files built successfully in ./$(OUTPUT_DIR)/"
+	@echo "All targets and files built successfully in ./$(OUTPUT_DIR)/"
