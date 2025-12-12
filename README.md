@@ -41,8 +41,16 @@ windows 使用 `./build.ps1` 构建，linux 使用 `make build-all` 构建。
     "password": "123456"
   },
   "proxy": {
-    "port": 1998,
-    "openlist_host": "http://localhost:5244"
+     "sites": {
+      "pc": {
+        "host": "http://localhost:5244" ,
+        "description": "电脑上的openlist"
+      },
+      "vivo": {
+        "host": "http://192.168.31.19:5244" , 
+        "description": "手机上的openlist"
+      }
+    }
   },
   "webdav": {
     "port": 1234,
@@ -64,7 +72,6 @@ windows 使用 `./build.ps1` 构建，linux 使用 `make build-all` 构建。
     "pdf": {"ext": ".sccgpdf"}
   }
 }
-
 ```
 
 **配置项说明:**
@@ -73,58 +80,56 @@ windows 使用 `./build.ps1` 构建，linux 使用 `make build-all` 构建。
 
 #### 🔐 全局设置
 
-| 配置键               | 类型      | 描述                                                                 | 示例值                                      |
-|----------------------|-----------|----------------------------------------------------------------------|---------------------------------------------|
-| `password`           | `string`  | 加密/解密主密码，支持中文和特殊字符                                 | `"my-encv_key，可以使用中文和标点符号✔"`     |
-| `output_path`        | `string`  | 加密后文件的输出目录（相对/绝对路径）                                | `"./output"`                                |
-| `recover`            | `boolean` | 解密时是否覆盖已存在文件                                             | `false`                                     |
+| 配置键          | 类型        | 描述                                  | 示例值                                      |
+| --------------- | ----------- | ------------------------------------- | ------------------------------------------- |
+| `password`    | `string`  | 加密/解密主密码，支持中文和特殊字符   | `"my-encv_key，可以使用中文和标点符号✔"` |
+| `output_path` | `string`  | 加密后文件的输出目录（相对/绝对路径） | `"./output"`                              |
+| `recover`     | `boolean` | 解密时是否覆盖已存在文件              | `false`                                   |
 
 #### 🧩 插件专属设置
 
-| 配置键                                      | 类型       | 描述                           | 示例值                                  |
-|---------------------------------------------|------------|--------------------------------|-----------------------------------------|
-| `plugin_settings.video.ext`                 | `string`   | 视频加密容器扩展名             | `".sccgv"`                              |
-| `plugin_settings.video.chunk_size_mb`       | `integer`  | 视频分片大小（MB，0=禁用）     | `100`                                   |
-| `plugin_settings.video.light_main_chunk_enabled` | `boolean` | 启用轻量主分片模式             | `true`                                  |
-| `plugin_settings.video.track_extensions`    | `array`    | 需关联的字幕/轨道文件扩展名    | `[".ass", ".srt", ".dm.ass", ".vtt"]`   |
-| `plugin_settings.image.ext`                 | `string`   | 图像加密容器扩展名             | `".sccgi"`                              |
-| `plugin_settings.audio.ext`                 | `string`   | 音频加密容器扩展名             | `".sccga"`                              |
-| `plugin_settings.text.ext`                  | `string`   | 文本加密容器扩展名             | `".sccgt"`                              |
-| `plugin_settings.pdf.ext`                   | `string`   | PDF加密容器扩展名              | `".sccgpdf"`                            |
-| `plugin_settings.wps.ext`                   | `string`   | WPS加密容器扩展名              | `".sccgwps"`                            |
+| 配置键                                             | 类型        | 描述                        | 示例值                                  |
+| -------------------------------------------------- | ----------- | --------------------------- | --------------------------------------- |
+| `plugin_settings.video.ext`                      | `string`  | 视频加密容器扩展名          | `".sccgv"`                            |
+| `plugin_settings.video.chunk_size_mb`            | `integer` | 视频分片大小（MB，0=禁用）  | `100`                                 |
+| `plugin_settings.video.light_main_chunk_enabled` | `boolean` | 启用轻量主分片模式          | `true`                                |
+| `plugin_settings.video.track_extensions`         | `array`   | 需关联的字幕/轨道文件扩展名 | `[".ass", ".srt", ".dm.ass", ".vtt"]` |
+| `plugin_settings.image.ext`                      | `string`  | 图像加密容器扩展名          | `".sccgi"`                            |
+| `plugin_settings.audio.ext`                      | `string`  | 音频加密容器扩展名          | `".sccga"`                            |
+| `plugin_settings.text.ext`                       | `string`  | 文本加密容器扩展名          | `".sccgt"`                            |
+| `plugin_settings.pdf.ext`                        | `string`  | PDF加密容器扩展名           | `".sccgpdf"`                          |
+| `plugin_settings.wps.ext`                        | `string`  | WPS加密容器扩展名           | `".sccgwps"`                          |
 
 #### 🌐 内置 HTTP 服务器设置
 
-| 配置键               | 类型      | 描述                           | 示例值  |
-|----------------------|-----------|--------------------------------|---------|
-| `server.port`        | `integer` | HTTP流媒体服务器监听端口       | `2025`  |
-| `server.dir`         | `string`  | 文件系统根目录（相对路径）     | `"/"`   |
+| 配置键          | 类型        | 描述                       | 示例值   |
+| --------------- | ----------- | -------------------------- | -------- |
+| `server.port` | `integer` | HTTP流媒体服务器监听端口   | `2025` |
+| `server.dir`  | `string`  | 文件系统根目录（相对路径） | `"/"`  |
 
 #### 🛠️ 管理后台服务器设置
 
-| 配置键               | 类型      | 描述                           | 示例值    |
-|----------------------|-----------|--------------------------------|-----------|
-| `admin.port`         | `integer` | 管理后台服务监听端口           | `1808`    |
-| `admin.password`     | `string`  | 管理员登录密码（留空=禁用）    | `"123456"`|
+| 配置键             | 类型        | 描述                        | 示例值       |
+| ------------------ | ----------- | --------------------------- | ------------ |
+| `admin.port`     | `integer` | 管理后台服务监听端口        | `1808`     |
+| `admin.password` | `string`  | 管理员登录密码（留空=禁用） | `"123456"` |
 
 #### 🔄 OpenList 代理服务器设置
 
-| 配置键                                    | 类型      | 描述                                     | 示例值                      |
-|-------------------------------------------|-----------|------------------------------------------|-----------------------------|
-| `proxy.port`                              | `integer` | 代理服务监听端口                         | `1998`                      |
-| `proxy.openlist_host`                     | `string`  | OpenList服务地址（含协议和端口）         | `"http://localhost:5244"`   |
-| `proxy.token`                             | `string`  | OpenList认证令牌（**不建议明文存储**）  | `""`                        |
-| `proxy.disable_signature_verification`    | `boolean` | 是否禁用URL签名验证                      | `false`                     |
+| 配置键                                   | 类型        | 描述                                         | 示例值                      |
+| ---------------------------------------- | ----------- | -------------------------------------------- | --------------------------- |
+| `proxy.sites`                          | `ProxySiteConfig`  | 需要代理的OpenList站点（**Token需要访问管理后台设置**） | `""`                      |
+| `proxy.disable_signature_verification` | `boolean` | 是否禁用URL签名验证                          | `false`                   |
 
 #### 📁 WebDAV 服务器设置
 
-| 配置键               | 类型      | 描述                           | 示例值       |
-|----------------------|-----------|--------------------------------|--------------|
-| `webdav.port`        | `integer` | WebDAV服务监听端口             | `1234`       |
-| `webdav.root`        | `string`  | WebDAV访问路径前缀（路由）     | `"webdav"`   |
-| `webdav.dir`         | `string`  | 映射的文件系统根目录           | `"./"`       |
-| `webdav.username`    | `string`  | 基础认证用户名                 | `"admin"`    |
-| `webdav.password`    | `string`  | 基础认证密码                   | `"123456"`   |
+| 配置键              | 类型        | 描述                       | 示例值       |
+| ------------------- | ----------- | -------------------------- | ------------ |
+| `webdav.port`     | `integer` | WebDAV服务监听端口         | `1234`     |
+| `webdav.root`     | `string`  | WebDAV访问路径前缀（路由） | `"webdav"` |
+| `webdav.dir`      | `string`  | 映射的文件系统根目录       | `"./"`     |
+| `webdav.username` | `string`  | 基础认证用户名             | `"admin"`  |
+| `webdav.password` | `string`  | 基础认证密码               | `"123456"` |
 
 ### 关键说明
 
@@ -212,51 +217,33 @@ mpv http://127.0.0.1:1999/stream?file=A%3A%5CLocal%5CCol-Study%5Cgo%5Cencv%5Cout
 
    * 进入管理页面，找到存储设置。
    * 在【WebDAV 策略】中，选择 **使用代理地址**。如果是第三方网盘还需要勾选上方的 **Web代理**
-   * URL 地址填入 `http://localhost:1998` (根据你的 `proxy_port` 修改)。
+   * URL 地址填入 `http://localhost:${port}/openlist/sites/${siteid}` (根据你的实际配置修改)。
 3. **获取 OpenList 令牌**:
 
-   * 在 OpenList 管理页面的【设置】->【其他】中，滚动到最底部，复制管理员令牌。
-4. **运行 `encv proxy` 命令**:
+   * 在 OpenList 管理页面的【设置】->【其他】中，滚动到最底部，复制管理员令牌。在 `/openlist/sites` 提交令牌（**令牌会以加密二进制文件的形式存储在 `config.user.json` 文件所在路径**）。
 
-   * **推荐方式 (命令行指定令牌)**:
-
-     ```bash
-     ./encv proxy --token "openlist-***********************************"
-     ```
-   * **完整命令行参数**:
-
-     ```bash
-     ./encv proxy --proxy-port 1998 --openlist-host "http://localhost:5244" --token "openlist-***********************************"
-     ```
-5. **为加密文件添加预览**:
+4. **为加密文件添加预览**:
 
    * 在 OpenList 管理页面的【设置】->【预览】中。
-   * 根据配置项中的 `bin_ext_group` 按类别添加后缀名：
+   * 根据配置按类别添加后缀名。
 
-   ```json
-   "bin_ext_group": {
-       "text": "sccgt",
-       "image": "sccgi",
-       "audio": "sccga",
-       "video": "sccgv"
-     }
-   ```
-6. **通过 iframe 预览文件**：
+5. **通过 iframe 预览文件**：
 
    * 在 Openlist 管理页面的【设置】->【预览】中，iframe 预览追加以下配置：
 
      ```json
      "sccgpdf": {
-       "ENCV PDF": "http://localhost:1998/_preview/pdf.html?file=$e_url",
+       "ENCV PDF": "http://localhost:${port}/openlist/sites/${siteid}/_preview/pdf.html?file=$e_url",
      },
      "sccgt": {
-        "ENCV Text": "http://localhost:1998/_preview/text.html?file=$e_url"
+        "ENCV Text": "http://localhost:${port}/openlist/sites/${siteid}/_preview/text.html?file=$e_url"
       }
      ```
+
    * 保存后即可在 OpenList 中预览加密后的 PDF 和文本文件。
    * 文本文件为什么需要 iframe 预览？因为测试过程中发现 OpenList 无法预览 50MB 的大型文本文件，而通过 encv 的 iframe 预览则没有问题。
 
-OpenList Webdav 代理是很好的方式，只需要定义预览后缀名，不影响其他操作。但假如希望在其他平台通过 Webdav 预览加密容器，encv-go 也提供了支持，缺点是仅支持只读模式，而且性能可能远不如 OpenList 。通用 Webdav 服务将显示解密后的原始文件名作为“不存在”的文件，当请求打开时反查真实的加密容器并进行解密。**通用 Webdav 集成在 `encv` 主程序，`encv-proxy` 程序不提供**。
+OpenList Webdav 代理是很好的方式，只需要定义预览后缀名，不影响其他操作。但假如希望在其他平台通过 Webdav 预览加密容器，encv-go 也提供了支持，缺点是仅支持只读模式，而且性能可能远不如 OpenList 。通用 Webdav 服务将显示解密后的原始文件名作为“不存在”的文件，当请求打开时反查真实的加密容器并进行解密。
 
 调试通用 webdav
 
@@ -302,6 +289,10 @@ source ~/.bashrc  # 立即生效
 WSL2 已经打通了 localhost
 
 如果 localhost 不行，尝试在 WSL 终端中运行命令 `hostname -I`，获取 WSL 虚拟机的 IP 地址
+
+### 🐛 已知问题
+
+- 非 Openlist Webdav 客户端无法播放加密音频
 
 ---
 

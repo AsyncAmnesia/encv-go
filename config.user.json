@@ -11,8 +11,6 @@
     "password": "123456"
   },
   "proxy": {
-    "port": 1998,
-    "openlist_host": "http://localhost:5244",
      "sites": {
       "pc": {
         "host": "http://localhost:5244" ,

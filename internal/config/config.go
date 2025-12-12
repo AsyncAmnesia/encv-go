@@ -70,8 +70,6 @@ func DefaultConfig() *Config {
 			Dir:  "./output",
 		},
 		Proxy: types.OpenlistProxyServer{
-			Port:                         2025,
-			OpenListHost:                 "http://localhost:5244",
 			DisableSignatureVerification: false,
 		},
 	}

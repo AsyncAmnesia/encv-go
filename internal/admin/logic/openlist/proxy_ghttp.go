@@ -191,7 +191,9 @@ func (p *ProxyGhttp) handleDecrypt(r *ghttp.Request, siteHost, siteToken string)
 
 // 处理目录请求
 func (p *ProxyGhttp) handleDirectoryRequest(r *ghttp.Request, path, siteHost, siteToken string) {
-	// 尝试查找索引文件
+	if siteHost == "" || siteToken == "" {
+		g.Log().Errorf(r.Context(), "Site host or token is missing for path %s", path)
+	}
 	indexFiles := []string{"index.html", "README.md"}
 
 	for _, indexFile := range indexFiles {
@@ -203,16 +205,8 @@ func (p *ProxyGhttp) handleDirectoryRequest(r *ghttp.Request, path, siteHost, si
 		}
 
 		// 检查普通文件
-		host := siteHost
-		if host == "" {
-			host = p.cfg.Proxy.OpenListHost
-		}
-		token := siteToken
-		if token == "" {
-			token = p.cfg.Proxy.Token
-		}
 
-		fileInfo, err := OpenListGetFileURL(indexPath, host, token)
+		fileInfo, err := OpenListGetFileURL(indexPath, siteHost, siteToken)
 		if err == nil && fileInfo.Data.URL != "" {
 			g.Log().Infof(r.Context(), "[Proxy] Found index file: %s", indexPath)
 			p.serveDirectStream(r, fileInfo.Data.URL, fileInfo.Data.Header)
@@ -289,25 +283,18 @@ func (p *ProxyGhttp) handleDirectoryRequest(r *ghttp.Request, path, siteHost, si
 
 // serveEncryptedContainer 服务加密容器
 func (p *ProxyGhttp) serveEncryptedContainer(r *ghttp.Request, path string, siteHost, siteToken string) {
-	// 使用传入的 siteHost 和 siteToken，而不是默认配置
-	host := siteHost
-	if host == "" {
-		host = p.cfg.Proxy.OpenListHost
+	if siteHost == "" || siteToken == "" {
+		g.Log().Errorf(r.Context(), "Site host or token is missing for path %s", path)
 	}
 
-	token := siteToken
-	if token == "" {
-		token = p.cfg.Proxy.Token
-	}
-
-	fileInfo, err := OpenListGetFileURL(path, host, token)
+	fileInfo, err := OpenListGetFileURL(path, siteHost, siteToken)
 	if err != nil {
 		g.Log().Errorf(r.Context(), "Error getting file URL for %s: %v", path, err)
 		r.Response.WriteStatus(http.StatusInternalServerError)
 		r.Response.Write("Failed to locate file")
 		return
 	}
-	p.serveEncryptedContainerWithURL(r, fileInfo.Data.URL, fileInfo.Data.Header, host, token, path)
+	p.serveEncryptedContainerWithURL(r, fileInfo.Data.URL, fileInfo.Data.Header, siteHost, siteToken, path)
 }
 
 // serveEncryptedContainerWithURL 使用 URL 服务加密容器
@@ -350,15 +337,8 @@ func (p *ProxyGhttp) serveEncryptedContainerWithURL(r *ghttp.Request, containerU
 
 // serveStandardFile 服务普通文件
 func (p *ProxyGhttp) serveStandardFile(r *ghttp.Request, path string, siteHost, siteToken string) {
-	// 使用传入的 siteHost 和 siteToken，而不是默认配置
-	host := siteHost
-	if host == "" {
-		host = p.cfg.Proxy.OpenListHost
-	}
-
-	token := siteToken
-	if token == "" {
-		token = p.cfg.Proxy.Token
+	if siteHost == "" || siteToken == "" {
+		g.Log().Errorf(r.Context(), "Site host or token is missing for path %s", path)
 	}
 
 	var fileURL string
@@ -366,9 +346,9 @@ func (p *ProxyGhttp) serveStandardFile(r *ghttp.Request, path string, siteHost, 
 
 	if strings.HasPrefix(path, "/p/") {
 		g.Log().Infof(r.Context(), "[Proxy] Intercepted internal link: %s", path)
-		fileURL = host + path + "?" + r.URL.RawQuery
+		fileURL = siteHost + path + "?" + r.URL.RawQuery
 	} else {
-		fileInfo, err := OpenListGetFileURL(path, host, token)
+		fileInfo, err := OpenListGetFileURL(path, siteHost, siteToken)
 		if err != nil {
 			g.Log().Errorf(r.Context(), "Error getting file URL for %s: %v", path, err)
 			r.Response.WriteStatus(http.StatusInternalServerError)

@@ -642,7 +642,7 @@ func (fs *encvWebDAVFS) OpenFile(ctx context.Context, name string, flag int, per
 
 	// 【使用辅助函数】将 WebDAV 路径转换为标准索引键
 	indexKey := fs.webdavPathToIndexKey(name)
-	log.Printf("[OpenFile-DEBUG] Called with name='%s', converted indexKey='%s'", name, indexKey)
+	// log.Printf("[OpenFile-DEBUG] Called with name='%s', converted indexKey='%s'", name, indexKey)
 
 	// 注意：resolvePath 仍然需要原始的 name 来获取物理路径
 	fullPath, err := fs.resolvePath(name)
@@ -844,45 +844,37 @@ func (fs *encvWebDAVFS) Rename(ctx context.Context, oldName, newName string) err
 }
 
 func (dfi *decryptedFileInfo) Name() string {
-	log.Printf("[FileInfo-DEBUG] decryptedFileInfo.Name() called for '%s'. Returning: '%s'", dfi.originalName, dfi.name)
+	// log.Printf("[FileInfo-DEBUG] decryptedFileInfo.Name() called for '%s'. Returning: '%s'", dfi.originalName, dfi.name)
 	return dfi.name
 }
 
 func (dfi *decryptedFileInfo) Size() int64 {
-	log.Printf("[FileInfo-DEBUG] decryptedFileInfo.Size() called for '%s'. Returning: %d", dfi.name, dfi.size)
+	// log.Printf("[FileInfo-DEBUG] decryptedFileInfo.Size() called for '%s'. Returning: %d", dfi.name, dfi.size)
 	return dfi.size
 }
 
 func (dfi *decryptedFileInfo) Mode() os.FileMode {
-	log.Printf("[FileInfo-DEBUG] decryptedFileInfo.Mode() called for '%s'. Returning: %v", dfi.name, dfi.mode)
+	// log.Printf("[FileInfo-DEBUG] decryptedFileInfo.Mode() called for '%s'. Returning: %v", dfi.name, dfi.mode)
 	return dfi.mode
 }
 
 func (dfi *decryptedFileInfo) ModTime() time.Time {
-	log.Printf("[FileInfo-DEBUG] decryptedFileInfo.ModTime() called for '%s'. Returning: %v", dfi.name, dfi.modTime)
+	// log.Printf("[FileInfo-DEBUG] decryptedFileInfo.ModTime() called for '%s'. Returning: %v", dfi.name, dfi.modTime)
 	return dfi.modTime
 }
 
 func (dfi *decryptedFileInfo) IsDir() bool {
-	log.Printf("[FileInfo-DEBUG] decryptedFileInfo.IsDir() called for '%s'. Returning: %v", dfi.name, dfi.isDir)
+	// log.Printf("[FileInfo-DEBUG] decryptedFileInfo.IsDir() called for '%s'. Returning: %v", dfi.name, dfi.isDir)
 	return dfi.isDir
 }
 func (dfi *decryptedFileInfo) Sys() interface{} {
-	log.Printf("[FileInfo-DEBUG] decryptedFileInfo.Sys() called for '%s'. Returning: %v", dfi.name, dfi.underlyingFileInfo.Sys())
+	// log.Printf("[FileInfo-DEBUG] decryptedFileInfo.Sys() called for '%s'. Returning: %v", dfi.name, dfi.underlyingFileInfo.Sys())
 	return dfi.underlyingFileInfo.Sys()
 }
 
-// func (dfi *decryptedFileInfo) Name() string        { return dfi.name }
-// func (dfi *decryptedFileInfo) Size() int64         { return dfi.size }
-// func (dfi *decryptedFileInfo) Mode() os.FileMode   { return dfi.mode }
-// func (dfi *decryptedFileInfo) ModTime() time.Time  { return dfi.modTime }
-// func (dfi *decryptedFileInfo) IsDir() bool         { return dfi.isDir }
-// func (dfi *decryptedFileInfo) Sys() interface{}    { return nil }
 func (dfi *decryptedFileInfo) ContentType() string { return dfi.mimeType }
 func (dfi *decryptedFileInfo) ETag() string        { return dfi.etag }
 
-// func (d *decryptedDir) Stat() (os.FileInfo, error) { return d.File.Stat() }
-// func (d *decryptedDir) Close() error               { return d.File.Close() }
 func (d *decryptedDir) Stat() (os.FileInfo, error) {
 	var err error
 	d.infoOnce.Do(func() {

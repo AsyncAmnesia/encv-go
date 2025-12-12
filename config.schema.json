@@ -151,17 +151,11 @@
     },
     "OpenlistProxyServer": {
       "properties": {
-        "port": {
-          "type": "integer",
-          "description": "Openlist Webdav 代理的端口，请不要填写 encv Webdav Server、 OpenList 或其他已使用的端口"
-        },
-        "openlist_host": {
-          "type": "string",
-          "description": "OpenList 的主机名，一般是 IP 或者域名，比如 localhost"
-        },
-        "token": {
-          "type": "string",
-          "description": "不建议在 json 文件中存储 Token"
+        "sites": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ProxySiteConfig"
+          },
+          "type": "object"
         },
         "disable_signature_verification": {
           "type": "boolean",
@@ -171,9 +165,7 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "port",
-        "openlist_host",
-        "token",
+        "sites",
         "disable_signature_verification"
       ],
       "description": "--- Openlist 代理服务器设置 ---"
@@ -188,6 +180,23 @@
       "type": "object",
       "required": [
         "ext"
+      ]
+    },
+    "ProxySiteConfig": {
+      "properties": {
+        "host": {
+          "type": "string",
+          "description": "OpenList 的主机，一般是 IP 或者域名，加上端口号，比如 localhost:5244"
+        },
+        "description": {
+          "type": "string",
+          "description": "站点描述，可选，用于用户自己标识区分"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "host"
       ]
     },
     "TextPluginConfig": {
