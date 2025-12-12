@@ -63,19 +63,7 @@ func FromContext(ctx context.Context) *Config {
 func DefaultConfig() *Config {
 	return &Config{
 		OutputPath: "./encrypted",
-		// TrackExtensions: []string{".ass", ".srt", ".dm.ass"},
-		// BinExtGroup: types.BinExtGroup{
-		// 	Text:  "sccgt",
-		// 	Image: "sccgi",
-		// 	Audio: "sccga",
-		// 	Video: "sccgv",
-		// 	WPS:   "sccgwps",
-		// 	PDF:   "sccgpdf",
-		// },
-		// SccgvSettings: SccgvSettings{
-		// 	ChunkSizeMB: 0, // 0 表示不启用分片
-		// },
-		Server: types.HttpServer{Port: 1999, Dir: "./"},
+		Server:     types.HttpServer{Port: 1999, Dir: "./"},
 		Webdav: types.WebdavServer{
 			Port: 2299,
 			Root: "/webdav/",

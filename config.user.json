@@ -12,7 +12,17 @@
   },
   "proxy": {
     "port": 1998,
-    "openlist_host": "http://localhost:5244"
+    "openlist_host": "http://localhost:5244",
+     "sites": {
+      "pc": {
+        "host": "http://localhost:5244" ,
+        "description": "电脑上的openlist"
+      },
+      "vivo": {
+        "host": "http://192.168.31.19:5244" , 
+        "description": "手机上的openlist"
+      }
+    }
   },
   "webdav": {
     "port": 1234,

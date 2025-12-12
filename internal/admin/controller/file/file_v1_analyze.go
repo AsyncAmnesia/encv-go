@@ -37,7 +37,7 @@ func (c *ControllerV1) Analyze(ctx context.Context, req *v1.AnalyzeReq) (res *v1
 	stat, err := os.Stat(absPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, gerror.NewCode(gcode.CodeNotFound, "Not found: the file does not exist")
+			return nil, gerror.NewCode(gcode.CodeNotFound, "Not found: the file "+absPath+" does not exist. | req.Path:"+req.Path+" | err: "+err.Error())
 		}
 		return nil, gerror.NewCode(gcode.CodeInternalError, "Internal server error: could not stat file")
 	}
@@ -64,7 +64,6 @@ func (c *ControllerV1) Analyze(ctx context.Context, req *v1.AnalyzeReq) (res *v1
 			return nil, gerror.NewCode(gcode.CodeInternalError, "Analysis failed: "+err.Error())
 		}
 	} else {
-		// 普通文件分析 (这里需要导入 html/template 包)
 		htmlContent = fmt.Sprintf(`
 			<h3>Basic File Information</h3>
 			<table>

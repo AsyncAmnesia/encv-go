@@ -4,18 +4,15 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/v2/openlist"
 	"github.com/Soltus/encv-go/internal/v2/provider"
 	"github.com/Soltus/encv-go/internal/v2/reader"
 )
 
 func (p *Proxy) serveEncryptedContainer(w http.ResponseWriter, r *http.Request, containerURL string, headers map[string][]string, originalPath string) {
-	ctx := r.Context()
-	cfg := config.FromContext(ctx)
 
 	// 1. 【责任转移】proxy 负责创建 URLResolver
-	urlResolver := openlist.NewOpenListURLResolver(cfg, originalPath)
+	urlResolver := openlist.NewOpenListURLResolver(p.cfg, originalPath)
 
 	// 2. 【责任转移】proxy 负责创建远程工厂
 	factory, err := reader.NewRemoteDecryptReaderFactory(containerURL, p.cfg.Password, headers, urlResolver)
@@ -25,7 +22,7 @@ func (p *Proxy) serveEncryptedContainer(w http.ResponseWriter, r *http.Request, 
 	}
 
 	// 3. 【责任转移】proxy 负责创建解密器
-	decryptReader, err := factory.NewDecryptReader(*cfg)
+	decryptReader, err := factory.NewDecryptReader(*p.cfg)
 	if err != nil {
 		factory.Close() // 创建 reader 失败，需要关闭 factory
 		http.Error(w, fmt.Sprintf("failed to create remote decrypt reader: %v", err), http.StatusInternalServerError)

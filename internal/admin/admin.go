@@ -2,6 +2,7 @@
 package admin
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -14,60 +15,72 @@ import (
 
 	"github.com/Soltus/encv-go/internal/admin/controller/file"
 	"github.com/Soltus/encv-go/internal/admin/controller/hello" // 导入主服务的配置
+	"github.com/Soltus/encv-go/internal/admin/injector"
 	"github.com/Soltus/encv-go/internal/admin/logic/auth"
+	"github.com/Soltus/encv-go/internal/admin/logic/openlist"
 	"github.com/Soltus/encv-go/internal/admin/middleware"
+	"github.com/Soltus/encv-go/internal/admin/routes"
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
 )
 
-const AdminProxyPath = "/p"
-
 // SetupAdminServer 配置并返回一个准备好启动的 GoFrame 管理服务器实例。
 // 它不负责启动，只负责配置。
-func SetupAdminServer(backendAddr string, cfg *config.Config) (*ghttp.Server, string) {
+func SetupAdminServer(backendAddr string, ctx context.Context) (*ghttp.Server, string) {
+	cfg := config.FromContext(ctx)
 	// 这会告诉 GoFrame 在初始化 "admin" 服务器时，从我们指定的位置加载配置
 	g.Cfg("internal/admin/manifest/config")
-	proxyServer := g.Server("admin")
+	proxyServer := g.Server("Admin Server")
 	proxyInstanceID := fmt.Sprintf("admin-%x", time.Now().UnixNano())
 
-	// 1. 初始化认证管理器
-	var authManager *auth.Manager
+	// 创建用户注入器
+	userInjector := injector.NewUserInjector(routes.Logout)
+
+	// 1. 初始化JWT认证管理器
+	var jwtManager *auth.JWTManager
 	loginRequired := cfg.Admin.Password != ""
 	if loginRequired {
-		authManager = auth.NewManager(24 * time.Hour) // 24小时会话
+		// 创建JWT管理器，7天有效期
+		jwtManager = auth.NewJWTManager(cfg.Admin.Password, 7*24*time.Hour)
 		log.Println("-> Admin service requires login.")
 	} else {
 		log.Println("-> Admin service is running without authentication (password is empty).")
 	}
+	proxyServer.Group("", func(group *ghttp.RouterGroup) {
+		// 登录/登出路由
+		group.GET(routes.Login, func(r *ghttp.Request) { handleLogin(r, jwtManager, cfg.Admin.Password, "GET") })
+		group.POST(routes.Login, func(r *ghttp.Request) { handleLogin(r, jwtManager, cfg.Admin.Password, "POST") })
+		group.ALL(routes.Logout, func(r *ghttp.Request) {
+			auth.ClearAuthCookie(r.Response.Writer)
+			r.Response.RedirectTo(routes.Login)
+		})
+
+	})
+	// 全局 CORS
+	proxyServer.BindMiddleware("/*", middleware.CORS)
 
 	// 2. 注册 Admin 路由 (这些路由通常也需要保护)
-	adminGroup := proxyServer.Group("/admin")
+	adminGroup := proxyServer.Group(routes.Admin)
 	if loginRequired {
-		adminGroup.Middleware(authMiddleware(authManager))
+		adminGroup.Middleware(middleware.AuthMiddleware(jwtManager))
 	}
 	adminGroup.Middleware(middleware.Response)
 	adminGroup.Bind(hello.NewV1())
 	adminGroup.Bind(file.NewV1(cfg.Server.Dir))
 
-	// 3. 注册代理和认证路由
-	proxyServer.Group(AdminProxyPath, func(group *ghttp.RouterGroup) {
+	// 3. 创建并设置 OpenList 多站点代理路由
+	if len(cfg.Proxy.Sites) > 0 {
+		multiSiteServer := openlist.NewMultiSiteServer(ctx)
+		multiSiteServer.SetupRoutes(proxyServer, jwtManager)
+		log.Printf("-> OpenList multi-site proxy is available at: http://localhost:%d%s", cfg.Admin.Port, routes.OpenListProxy)
+	}
+
+	// 4. 注册代理和认证路由
+	proxyServer.Group(routes.FSProxy, func(group *ghttp.RouterGroup) {
 		if loginRequired {
-			group.Middleware(authMiddleware(authManager))
+			group.Middleware(middleware.AuthMiddleware(jwtManager))
 		}
-
-		// 登录/登出路由 (保持不变)
-		group.GET("/login", func(r *ghttp.Request) { handleLogin(r, authManager, cfg.Admin.Password, "GET") })
-		group.POST("/login", func(r *ghttp.Request) { handleLogin(r, authManager, cfg.Admin.Password, "POST") })
-		group.GET("/logout", func(r *ghttp.Request) {
-			sessionID := r.Cookie.Get("encv_session_id")
-			if sessionID != nil {
-				authManager.DestroySession(sessionID.String())
-			}
-			auth.ClearSessionCookie(r.Response.Writer)
-			r.Response.RedirectTo(AdminProxyPath + "/login")
-		})
-
 		// 【关键】文件代理路由，现在包含响应修改逻辑
 		u, err := url.Parse("http://" + backendAddr)
 		if err != nil {
@@ -76,107 +89,270 @@ func SetupAdminServer(backendAddr string, cfg *config.Config) (*ghttp.Server, st
 		proxy := httputil.NewSingleHostReverseProxy(u)
 		proxy.Director = func(req *http.Request) {
 			originalPath := req.URL.Path
-			req.URL.Path = strings.TrimPrefix(originalPath, AdminProxyPath)
-			req.URL.RawPath = strings.TrimPrefix(req.URL.RawPath, AdminProxyPath)
+			req.URL.Path = strings.TrimPrefix(originalPath, routes.FSProxy)
+			req.URL.RawPath = strings.TrimPrefix(req.URL.RawPath, routes.FSProxy)
 			req.URL.Scheme = u.Scheme
 			req.URL.Host = u.Host
-			req.Header.Set("X-Forwarded-Prefix", AdminProxyPath)
+			req.Header.Set("X-Forwarded-Prefix", routes.FSProxy)
 			req.Header.Set("X-Forwarded-Host", req.Host)
 			req.Header.Set("X-Forwarded-Proto", "http")
+			g.Log().Infof(req.Context(), "proxyServer called for path: %s", req.URL.Path)
 		}
 
 		// 【核心】注册 ModifyResponse 函数来注入内容
-		proxy.ModifyResponse = createResponseModifier()
-
-		proxyServer.Group(AdminProxyPath+"-api", func(group *ghttp.RouterGroup) {
-			// 【重要】API 路由也需要认证保护
-			if loginRequired {
-				group.Middleware(authMiddleware(authManager))
-			}
-
-			u, err := url.Parse("http://" + backendAddr)
-			if err != nil {
-				log.Panicf("Failed to parse backend URL for API %s: %v", backendAddr, err)
-			}
-
-			// 为API创建一个独立的代理实例
-			apiProxy := httputil.NewSingleHostReverseProxy(u)
-			// 【关键】重写路径：将 /p-api/... 替换为 /api/...
-			apiProxy.Director = func(req *http.Request) {
-				originalPath := req.URL.Path
-				req.URL.Path = strings.TrimPrefix(originalPath, AdminProxyPath+"-api")
-				req.URL.RawPath = strings.TrimPrefix(req.URL.RawPath, AdminProxyPath+"-api")
-
-				req.URL.Scheme = u.Scheme
-				req.URL.Host = u.Host
-				req.Header.Set("X-Forwarded-Host", req.Host)
-				req.Header.Set("X-Forwarded-Proto", "http")
-			}
-
-			// 捕获所有 /p-api/... 的请求并转发
-			group.ALL("/*", func(r *ghttp.Request) {
-				r.MakeBodyRepeatableRead(false)
-				apiProxy.ServeHTTP(r.Response.Writer, r.Request)
-			})
-		})
+		proxy.ModifyResponse = createResponseModifier(userInjector, jwtManager)
 
 		group.ALL("/*", func(r *ghttp.Request) {
+			g.Log().Infof(r.Context(), "proxyServer called for path: %s", r.URL.Path)
+
 			r.MakeBodyRepeatableRead(false)
 			proxy.ServeHTTP(r.Response.Writer, r.Request)
 		})
 	})
 
+	proxyServer.Group(routes.FSProxyAPI, func(group *ghttp.RouterGroup) {
+
+		u, err := url.Parse("http://" + backendAddr)
+		if err != nil {
+			log.Panicf("Failed to parse backend URL for API %s: %v", backendAddr, err)
+		}
+
+		// 为API创建一个独立的代理实例
+		apiProxy := httputil.NewSingleHostReverseProxy(u)
+		// 【关键】重写路径：将 /p-api/... 替换为 /api/...
+		apiProxy.Director = func(req *http.Request) {
+			originalPath := req.URL.Path
+			req.URL.Path = strings.TrimPrefix(originalPath, routes.FSProxyAPI)
+			req.URL.RawPath = strings.TrimPrefix(req.URL.RawPath, routes.FSProxyAPI)
+
+			req.URL.Scheme = u.Scheme
+			req.URL.Host = u.Host
+			req.Header.Set("X-Forwarded-Prefix", routes.FSProxyAPI)
+			req.Header.Set("X-Forwarded-Host", req.Host)
+			req.Header.Set("X-Forwarded-Proto", "http")
+		}
+
+		// 捕获所有 /p-api/... 的请求并转发
+		group.ALL("/*", func(r *ghttp.Request) {
+			r.MakeBodyRepeatableRead(false)
+			apiProxy.ServeHTTP(r.Response.Writer, r.Request)
+		})
+	})
+
+	// 使用 Hook 来注入内容
+	proxyServer.BindHookHandler("/*", ghttp.HookAfterServe, func(r *ghttp.Request) {
+		isLoggedIn := jwtManager.IsLoggedIn(r.Request.Header.Get("Authorization"))
+		// 检查响应类型
+		contentType := r.Response.Header().Get("Content-Type")
+		// 只对HTML响应进行注入
+		if contentType != "" && !strings.Contains(contentType, "text/html") {
+			return
+		}
+
+		// 检查响应内容
+		buffer := r.Response.Buffer()
+		if buffer != nil {
+			// log.Printf("[Hook] Response buffer length: %d", len(buffer))
+		} else {
+			// log.Printf("[Hook] Response buffer is nil")
+			return
+		}
+
+		// 只对HTML响应进行注入
+		if contentType != "" && !strings.Contains(contentType, "text/html") {
+			return
+		}
+
+		content := string(buffer)
+
+		// 检查是否已经包含我们的内容，避免重复注入
+		if strings.Contains(content, `id="`+injector.InjectorID+`">`) &&
+			!strings.Contains(content, `id="`+injector.InjectorID+`"></div>`) {
+			return
+		}
+
+		// 生成工具栏HTML
+		toolbarHTML := userInjector.GenerateFloatingToolbar(isLoggedIn)
+
+		if toolbarHTML != "" {
+			// 查找完整的自闭合div
+			emptyDiv := `<div id="` + injector.InjectorID + `"></div>`
+			if idx := strings.Index(content, emptyDiv); idx != -1 {
+				// 直接替换整个自闭合div
+				content = content[:idx] + `<div id="` + injector.InjectorID + `">` + toolbarHTML + `</div>` + content[idx+len(emptyDiv):]
+			} else {
+				// 如果没有找到注入点，尝试在</body>前插入
+				bodyIndex := strings.LastIndex(strings.ToLower(content), "</body>")
+				if bodyIndex != -1 {
+					content = content[:bodyIndex] + toolbarHTML + "\n" + content[bodyIndex:]
+				}
+			}
+		}
+
+		// 【关键】使用 SetBuffer 更新响应内容
+		r.Response.SetBuffer([]byte(content))
+	})
+
 	return proxyServer, proxyInstanceID
 }
 
-// authMiddleware 创建一个认证中间件
-func authMiddleware(manager *auth.Manager) func(r *ghttp.Request) {
-	return func(r *ghttp.Request) {
-		// 如果是访问登录页面，则直接放行
-		if strings.HasSuffix(r.URL.Path, "/login") {
-			r.Middleware.Next()
-			return
-		}
-
-		sessionID := r.Cookie.Get("encv_session_id")
-		if !manager.ValidateSession(sessionID.String()) {
-			// 未登录，重定向到登录页面
-			r.Response.RedirectTo(AdminProxyPath + "/login")
-			return
-		}
-		// 在请求头中添加标记，供下游使用
-		// 这个标记会随着请求一起被代理到后端，并在 ModifyResponse 中可见
-		r.Header.Set("X-ENCV-User-Authenticated", "true")
-
-		// 已登录，继续处理请求
-		r.Middleware.Next()
-	}
-}
-
 // handleLogin 处理登录逻辑
-func handleLogin(r *ghttp.Request, manager *auth.Manager, correctPassword string, method string) {
+func handleLogin(r *ghttp.Request, jwtManager *auth.JWTManager, password, method string) {
+	if r.URL.Path != routes.Login {
+		r.Response.WriteStatus(http.StatusNotFound)
+		return
+	}
 	if method == "GET" {
+		// 检查是否已经登录
+		token := auth.GetTokenFromCookie(r.Request)
+		if token != "" {
+			if claims, err := jwtManager.ValidateToken(token); err == nil {
+				// 已登录，显示提示而不是重定向
+				log.Printf("[handleLogin] User already logged in, session: %s", claims.SessionID)
+				tmpl := template.Must(template.New("already_logged").Parse(`<!DOCTYPE html>
+<html>
+<head>
+    <title>Already Logged In</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 2em; }
+        .message { margin: 2em; padding: 1em; background: #f0f8ff; border-radius: 4px; }
+        a { color: #007bff; margin: 0 1em; }
+    </style>
+</head>
+<body>
+<div id="` + injector.InjectorID + `"></div>
+    <div class="message">
+        <h2>You are already logged in</h2>
+        <p>
+            <a href="` + routes.FSProxy + `/">Go to Files</a>
+            <a href="` + routes.OpenListProxy + `/sites">OpenList</a>
+            <a href="` + routes.Logout + `">Logout</a>
+        </p>
+    </div>
+</body>
+</html>`))
+				r.Response.Header().Set("Content-Type", "text/html; charset=utf-8")
+				tmpl.Execute(r.Response.Writer, nil)
+				return
+			} else {
+				log.Printf("[handleLogin] Invalid token: %v", err)
+				// 清除无效token
+				auth.ClearAuthCookie(r.Response.Writer)
+			}
+		}
+
+		// 保存原始请求URL
+		redirectURL := r.Get("redirect_url").String()
+		if redirectURL == "" {
+			redirectURL = r.Referer()
+		}
+
+		// 验证并保存重定向URL
+		var savedRedirectURL string
+		if redirectURL != "" && !isLoginRelatedURL(redirectURL) {
+			auth.SetRedirectCookie(r.Response.Writer, redirectURL)
+			savedRedirectURL = redirectURL // 只保存有效的URL
+		}
+
+		// 显示登录页面
 		tmpl, _ := template.New("login").Parse(auth.LoginPageTmpl)
+		data := map[string]interface{}{
+			"RedirectURL": savedRedirectURL, // 只传递有效的URL
+		}
 		r.Response.Header().Set("Content-Type", "text/html; charset=utf-8")
-		tmpl.Execute(r.Response.Writer, nil)
+		tmpl.Execute(r.Response.Writer, data)
 		return
 	}
 
-	password := r.Get("password").String()
-	if password == correctPassword {
-		sessionID := manager.CreateSession()
-		auth.SetSessionCookie(r.Response.Writer, sessionID)
-		r.Response.RedirectTo(AdminProxyPath + "/")
-	} else {
-		tmpl, _ := template.New("login").Parse(auth.LoginPageTmpl)
-		r.Response.Header().Set("Content-Type", "text/html; charset=utf-8")
-		tmpl.Execute(r.Response.Writer, map[string]string{"Error": "Invalid password"})
+	// POST 处理登录
+	var req struct {
+		Password    string `json:"password" form:"password"`
+		RedirectURL string `json:"redirect_url" form:"redirect_url"`
 	}
+
+	if err := r.Parse(&req); err != nil {
+		tmpl, _ := template.New("login").Parse(auth.LoginPageTmpl)
+		data := map[string]interface{}{
+			"Error":       "Invalid request",
+			"RedirectURL": "", // 错误时不显示重定向信息
+		}
+		r.Response.Header().Set("Content-Type", "text/html; charset=utf-8")
+		tmpl.Execute(r.Response.Writer, data)
+		return
+	}
+
+	// 验证密码
+	if req.Password != password {
+		tmpl, _ := template.New("login").Parse(auth.LoginPageTmpl)
+		data := map[string]interface{}{
+			"Error":       "Invalid password",
+			"RedirectURL": "", // 错误时不显示重定向信息
+		}
+		r.Response.Header().Set("Content-Type", "text/html; charset=utf-8")
+		tmpl.Execute(r.Response.Writer, data)
+		return
+	}
+
+	// 创建JWT token
+	token, err := jwtManager.CreateToken()
+	if err != nil {
+		tmpl, _ := template.New("login").Parse(auth.LoginPageTmpl)
+		data := map[string]interface{}{
+			"Error":       "Failed to create token",
+			"RedirectURL": "", // 错误时不显示重定向信息
+		}
+		r.Response.Header().Set("Content-Type", "text/html; charset=utf-8")
+		tmpl.Execute(r.Response.Writer, data)
+		return
+	}
+
+	// 设置Cookie
+	auth.SetAuthCookie(r.Response.Writer, token, 7*24*time.Hour)
+
+	// 1. 优先使用表单中的重定向URL
+	if req.RedirectURL != "" && !isLoginRelatedURL(req.RedirectURL) {
+		auth.ClearRedirectCookie(r.Response.Writer)
+		r.Response.RedirectTo(req.RedirectURL)
+		return
+	}
+
+	// 2. 其次使用Cookie中的重定向URL
+	if redirectURL := auth.GetRedirectCookie(r.Request); redirectURL != "" {
+		auth.ClearRedirectCookie(r.Response.Writer)
+		if !isLoginRelatedURL(redirectURL) {
+			r.Response.RedirectTo(redirectURL)
+			return
+		}
+	}
+
+	// 3. 最后重定向
+	r.Response.RedirectTo(routes.FSProxy + "/")
 }
 
-// createResponseModifier 创建一个响应修改器
-func createResponseModifier() func(*http.Response) error {
-	const contentInjectionPoint = `<div id="encv-content-injection-point"></div>`
+// isLoginRelatedURL 检查URL是否与登录相关
+func isLoginRelatedURL(url string) bool {
+	if url == "" {
+		return false
+	}
+
+	// 检查是否包含登录相关的路径
+	loginPaths := []string{
+		routes.Login,
+		routes.Logout,
+	}
+
+	for _, path := range loginPaths {
+		if strings.Contains(url, path) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// createResponseModifier 创建一个响应修改器，代理绕过了普通生命周期的注入器，需要传入普通路由的注入器合并注入
+func createResponseModifier(injec *injector.UserInjector, jwtManager *auth.JWTManager) func(*http.Response) error {
+	const contentInjectionPoint = `<div id="` + injector.InjectorID + `"></div>`
 	const headEndTag = "</head>"
 
 	return func(resp *http.Response) error {
@@ -191,16 +367,18 @@ func createResponseModifier() func(*http.Response) error {
 		}
 		resp.Body.Close()
 		// 【关键】从请求中获取当前路径，并去掉代理前缀 /p
-		currentPath := strings.TrimPrefix(resp.Request.URL.Path, AdminProxyPath)
+		currentPath := strings.TrimPrefix(resp.Request.URL.Path, routes.FSProxy)
 		// 处理根路径的特殊情况
 		if currentPath == "/" {
 			currentPath = ""
 		}
-		isLoggedIn := resp.Request.Header.Get("X-ENCV-User-Authenticated") == "true"
 
-		styleHTML, contentHTML := generateUserAssets(isLoggedIn, currentPath)
+		isLoggedIn := jwtManager.IsLoggedIn(resp.Request.Header.Get("Authorization"))
 
-		if styleHTML == "" && contentHTML == "" {
+		toolbarHTML := injec.GenerateFloatingToolbar(isLoggedIn)
+		styleHTML := generateUserAssets(isLoggedIn, currentPath)
+
+		if styleHTML == "" && toolbarHTML == "" {
 			resp.Body = io.NopCloser(strings.NewReader(string(originalBody)))
 			resp.Header.Set("Content-Length", fmt.Sprintf("%d", len(originalBody)))
 			return nil
@@ -208,14 +386,17 @@ func createResponseModifier() func(*http.Response) error {
 
 		newBody := string(originalBody)
 
-		// 注入样式
-		if styleHTML != "" {
-			newBody = strings.ReplaceAll(newBody, headEndTag, styleHTML+headEndTag)
+		// 【合并注入】注入工具栏
+		if toolbarHTML != "" {
+			emptyDiv := `<div id="` + injector.InjectorID + `"></div>`
+			if idx := strings.Index(newBody, emptyDiv); idx != -1 {
+				newBody = newBody[:idx] + `<div id="` + injector.InjectorID + `">` + toolbarHTML + `</div>` + newBody[idx+len(emptyDiv):]
+			}
 		}
 
-		// 【核心】替换注入点
-		if contentHTML != "" {
-			newBody = strings.ReplaceAll(newBody, contentInjectionPoint, contentHTML)
+		// 注入样式+JS
+		if styleHTML != "" {
+			newBody = strings.ReplaceAll(newBody, headEndTag, styleHTML+headEndTag)
 		}
 
 		resp.Body = io.NopCloser(strings.NewReader(newBody))
@@ -225,9 +406,8 @@ func createResponseModifier() func(*http.Response) error {
 	}
 }
 
-// generateUserAssets 生成样式和内容
-func generateUserAssets(isLoggedIn bool, currentPath string) (styleHTML string, contentHTML string) {
-
+// generateUserAssets 生成需要注入的表格内容
+func generateUserAssets(isLoggedIn bool, currentPath string) (styleHTML string) {
 	if isLoggedIn {
 		styleHTML = `
 	<style>
@@ -252,32 +432,6 @@ func generateUserAssets(isLoggedIn bool, currentPath string) (styleHTML string, 
 		.action-btn:hover {
 			background-color: var(--link-color);
 			color: white;
-		}
-
-		/* --- 用户状态样式 --- */
-		.user-status {
-			display: inline-flex;
-			align-items: center;
-			margin-left: 0.5em;
-			padding: 0.3em 0.8em;
-			background-color: var(--toolbar-btn-bg);
-			border-radius: 12px;
-			border: 1px solid var(--border-color);
-			box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-			font-size: 0.9em;
-			white-space: nowrap;
-		}
-		.user-status .status-text {
-			color: var(--muted-text-color);
-			margin-right: 0.5em;
-		}
-		.user-status .logout-btn {
-			color: var(--link-color);
-			text-decoration: none;
-			font-weight: bold;
-		}
-		.user-status .logout-btn:hover {
-			text-decoration: underline;
 		}
 
 		/* --- 对话框样式 --- */
@@ -359,6 +513,7 @@ func generateUserAssets(isLoggedIn bool, currentPath string) (styleHTML string, 
 		jsScript := `
 	<script>
 		(function() {
+		const currentPath = "` + template.JSEscapeString(currentPath) + `";
 			// ================== DOM 操作与事件绑定 ==================
 			document.addEventListener('DOMContentLoaded', function() {
 				const table = document.querySelector('table');
@@ -406,8 +561,7 @@ func generateUserAssets(isLoggedIn bool, currentPath string) (styleHTML string, 
 
 			// ================== 功能函数 ==================
 			function showAnalyzeDialog(baseName, fullOldPath) {
-				const currentPathElement = document.getElementById('encv-current-path');
-				let currentDirPath = currentPathElement ? currentPathElement.getAttribute('data-path') : '';
+		  	let currentDirPath = currentPath;
 				if (currentDirPath && !currentDirPath.endsWith('/')) {
 					currentDirPath += '/';
 				}
@@ -457,8 +611,7 @@ func generateUserAssets(isLoggedIn bool, currentPath string) (styleHTML string, 
 			}
 
 			function showRenameDialog(fileName) {
-				const currentPathElement = document.getElementById('encv-current-path');
-				let currentDirPath = currentPathElement ? currentPathElement.getAttribute('data-path') : '';
+				let currentDirPath = currentPath;
 				if (currentDirPath && !currentDirPath.endsWith('/')) {
 					currentDirPath += '/';
 				}
@@ -500,15 +653,8 @@ func generateUserAssets(isLoggedIn bool, currentPath string) (styleHTML string, 
 		// 将JS追加到样式HTML中，一起注入
 		styleHTML += jsScript
 
-		// 注入一个 span，因为它在 flex 容器中与按钮表现一致
-		// 在 contentHTML 中增加一个隐藏元素来存储路径
-		contentHTML = `
-		<span class="user-status"><span class="status-text">Logged In</span><a href="/p/logout" class="logout-btn">Logout</a></span>
-		<div id="encv-current-path" data-path="` + currentPath + `"></div>
-	`
-
-		return styleHTML, contentHTML
+		return styleHTML
 	}
 
-	return "", ""
+	return ""
 }

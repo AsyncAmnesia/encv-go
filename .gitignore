@@ -8,6 +8,7 @@
 /*.7z
 /encv-proxy
 /dist
+/*.token
 
 # dict
 /_decrypt

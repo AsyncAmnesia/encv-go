@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/Soltus/encv-go/internal/admin"
+	"github.com/Soltus/encv-go/internal/admin/routes"
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/proxy"
 	"github.com/Soltus/encv-go/internal/register"
@@ -44,7 +45,7 @@ var startCmd = &cobra.Command{
 		}
 
 		// 3. 启动新的管理服务
-		adminServer, proxyInstanceID := admin.SetupAdminServer(backendAddr, cfg)
+		adminServer, proxyInstanceID := admin.SetupAdminServer(backendAddr, rootCtx)
 		adminAddr, err := register.StartGfServerWithRetry(adminServer, cfg.Admin.Port, proxyInstanceID, Version)
 		if err != nil {
 			log.Fatalf("[%s] Failed to start admin service: %v", proxyInstanceID, err)
@@ -53,9 +54,13 @@ var startCmd = &cobra.Command{
 		// 5. 打印信息
 		log.Printf("\n✅ Server started successfully!\n")
 		log.Printf("   Serving files from: %s\n", cfg.Server.Dir)
-		log.Printf("   Backend is at: http://%s\n", backendAddr)
-		log.Printf("   Admin panel is at: http://%s/admin/\n", adminAddr)
-		log.Printf("   Proxy service is at: http://%s%s/\n", adminAddr, admin.AdminProxyPath)
+		log.Printf("   FS is at: http://%s\n", backendAddr)
+		log.Printf("   Webdav is at: http://%s/%s\n", backendAddr, cfg.Webdav.Root)
+		log.Printf("   FS Proxy is at: http://%s%s/\n", adminAddr, routes.FSProxy)
+		// 【修改】多站点代理信息（现在集成在管理服务中）
+		if len(cfg.Proxy.Sites) > 0 {
+			log.Printf("   OpenList Sites Management: http://%s%s/sites\n", adminAddr, routes.OpenListProxy)
+		}
 		log.Println("\n--- How to Play ---")
 		log.Printf("   mpv --no-config http://%s/p/<video_name_without_extension>\n", adminAddr)
 		log.Println("\n(Press Ctrl+C in this terminal to stop the server)")
@@ -108,7 +113,7 @@ is already running. This is useful for managing an existing server instance.`,
 		}
 
 		// 3. 启动新的管理服务
-		adminServer, proxyInstanceID := admin.SetupAdminServer(backendAddr, cfg)
+		adminServer, proxyInstanceID := admin.SetupAdminServer(backendAddr, rootCtx)
 		adminAddr, err := register.StartGfServerWithRetry(adminServer, cfg.Admin.Port, proxyInstanceID, Version)
 		if err != nil {
 			log.Fatalf("Failed to start admin service: %v", err)
@@ -172,8 +177,8 @@ var proxyCmd = &cobra.Command{
 			cfg.Proxy.OpenListHost = "http://" + cfg.Proxy.OpenListHost
 		}
 
-		// 创建上下文并初始化
-		finalCtx := config.NewContext(context.Background(), cfg)
+		// 上下文并初始化
+		finalCtx := config.NewContext(rootCtx, cfg)
 		encv.Init(finalCtx)
 
 		// 认证

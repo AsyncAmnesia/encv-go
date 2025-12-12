@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// BasicAuth 创建一个用于 HTTP 基础认证的中间件
+// BasicAuth 创建一个用于 HTTP 基础认证的中间件，用于 Webdav
 // 如果 username 或 password 为空，则直接通过，不进行认证
 func BasicAuth(username, password string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {

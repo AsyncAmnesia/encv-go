@@ -1,7 +1,5 @@
 package openlist
 
-// 即将弃用
-
 import (
 	"crypto/hmac"
 	"crypto/sha256"
@@ -16,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/utils"
 )
 
@@ -74,7 +71,7 @@ func OpenListGetFileURL(path, host, token string) (*FileInfoResponse, error) {
 }
 
 // 验证 OpenList 的签名
-func OpenListVerifySign(path, sign string, cfg *config.Config) bool {
+func OpenListVerifySign(path, sign, token string) bool {
 	parts := strings.SplitN(sign, ":", 2)
 	if len(parts) != 2 {
 		return false
@@ -98,7 +95,7 @@ func OpenListVerifySign(path, sign string, cfg *config.Config) bool {
 
 	for _, p := range pathsToTest {
 		toSign := fmt.Sprintf("%s:%d", p, expireTS)
-		h := hmac.New(sha256.New, []byte(cfg.Proxy.Token))
+		h := hmac.New(sha256.New, []byte(token))
 		h.Write([]byte(toSign))
 
 		signatureWithPadding := base64.URLEncoding.EncodeToString(h.Sum(nil))
@@ -120,18 +117,20 @@ func OpenListVerifySign(path, sign string, cfg *config.Config) bool {
 
 // OpenListURLResolver 现在通过复用签名来工作
 type OpenListURLResolver struct {
-	cfg      *config.Config
+	host     string // OpenList 主机地址
+	token    string // 站点 token
 	basePath string // 主容器文件所在的逻辑目录，例如 "/encv/go/output"
 }
 
 // NewOpenListURLResolver 创建一个新的解析器实例，它将复用主容器文件的签名。
-func NewOpenListURLResolver(cfg *config.Config, originalContainerPath string) *OpenListURLResolver {
+func NewOpenListURLResolver(host, token, originalContainerPath string) *OpenListURLResolver {
 	// 从原始路径中提取目录部分
 	// originalContainerPath 示例: "/encv/go/output/321.4pm.sccgv"
 	basePath := filepath.Dir(originalContainerPath) // 结果: "/encv/go/output"
 
 	return &OpenListURLResolver{
-		cfg:      cfg,
+		host:     host,
+		token:    token,
 		basePath: basePath,
 	}
 }
@@ -148,7 +147,7 @@ func (r *OpenListURLResolver) ResolveURL(physicalPath string) (string, error) {
 	log.Printf("DEBUG: [OpenListURLResolver] Resolved path for '%s' to '%s'", physicalPath, chunkLogicalPath)
 
 	// 2. 调用 OpenListGetFileURL 函数为这个分片获取一个新的签名 URL
-	fileInfo, err := OpenListGetFileURL(chunkLogicalPath, r.cfg.Proxy.OpenListHost, r.cfg.Proxy.Token)
+	fileInfo, err := OpenListGetFileURL(chunkLogicalPath, r.host, r.token)
 	if err != nil {
 		return "", fmt.Errorf("failed to get signed URL for path '%s': %w", chunkLogicalPath, err)
 	}

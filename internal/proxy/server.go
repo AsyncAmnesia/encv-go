@@ -1,5 +1,7 @@
 package proxy
 
+// 即将弃用
+
 import (
 	"context"
 	"fmt"
@@ -18,6 +20,8 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/Soltus/encv-go/internal/v2/reader"
 	"github.com/Soltus/encv-go/internal/web"
+	"github.com/gogf/gf/v2/frame/g"
+	"github.com/gogf/gf/v2/net/ghttp"
 )
 
 // 【新增】Proxy 结构体
@@ -72,8 +76,9 @@ func isEncvContainerFromBytes(data []byte) (bool, error) {
 
 // handleRequest 创建并返回 HTTP 处理函数
 func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
-	// 【关键】从请求的 context 中获取配置，因为中间件已经注入了
-	cfg := config.FromContext(r.Context())
+	// 调试
+	// finalJSON, _ := json.MarshalIndent(p.cfg, "", "  ")
+	// fmt.Printf("%s\n", string(finalJSON))
 
 	path := r.URL.Path
 	sign := r.URL.Query().Get("sign")
@@ -150,17 +155,17 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 签名验证
-	if !isInternalRequest && !cfg.Proxy.DisableSignatureVerification {
+	if !isInternalRequest && !p.cfg.Proxy.DisableSignatureVerification {
 		if sign == "" {
 			http.Error(w, "Missing 'sign' parameter", http.StatusBadRequest)
 			return
 		}
-		if !openlist.OpenListVerifySign(path, sign, cfg) {
+		if !openlist.OpenListVerifySign(path, sign, p.cfg) {
 			log.Printf("Invalid signature for path: %s", path)
 			http.Error(w, "Forbidden: Invalid signature", http.StatusForbidden)
 			return
 		}
-	} else if cfg.Proxy.DisableSignatureVerification {
+	} else if p.cfg.Proxy.DisableSignatureVerification {
 		log.Printf("-> [Security] Signature verification is disabled, allowing request for: %s", path)
 	} else {
 		log.Printf("-> [Proxy] Handling internal request, skipping signature check for: %s", path)
@@ -172,7 +177,7 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// openlist 依赖扩展名预览，因此直接使用扩展名判断的函数，不必检测 magic header
 	if plugins.IsContainer(path) {
 		log.Printf("-> [Proxy] Detected ENCV container file: %s", path)
-		fileInfo, err := openlist.OpenListGetFileURL(path, cfg.Proxy.OpenListHost, cfg.Proxy.Token)
+		fileInfo, err := openlist.OpenListGetFileURL(path, p.cfg.Proxy.OpenListHost, p.cfg.Proxy.Token)
 		if err != nil {
 			log.Printf("Error getting file URL for %s: %v", path, err)
 			http.Error(w, "Failed to locate file", http.StatusInternalServerError)
@@ -188,11 +193,11 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	log.Printf("-> [Proxy] Not a container file, handling as standard file: %s", path)
 	if strings.HasPrefix(path, "/p/") {
 		log.Printf("-> [Proxy] Intercepted internal link: %s", path)
-		fileURL := cfg.Proxy.OpenListHost + path + "?" + r.URL.RawQuery
+		fileURL := p.cfg.Proxy.OpenListHost + path + "?" + r.URL.RawQuery
 		serveDirectStreamWithFix(w, fileURL, nil)
 		return
 	} else {
-		fileInfo, err := openlist.OpenListGetFileURL(path, cfg.Proxy.OpenListHost, cfg.Proxy.Token)
+		fileInfo, err := openlist.OpenListGetFileURL(path, p.cfg.Proxy.OpenListHost, p.cfg.Proxy.Token)
 		if err != nil {
 			log.Printf("Error getting file URL for %s: %v", path, err)
 			http.Error(w, "Failed to locate file", http.StatusInternalServerError)
@@ -236,4 +241,49 @@ func serveDirectStreamWithFix(w http.ResponseWriter, fileURL string, headers map
 	if err != nil {
 		log.Printf("Error streaming file to client: %v", err)
 	}
+}
+
+// HandleGhttpRequest 处理 GoFrame 请求（新增方法）
+func (p *Proxy) HandleGhttpRequest(r *ghttp.Request) {
+	// 转换为标准 http.ResponseWriter
+	w := &ghttpResponseWriter{
+		Response: r.Response,
+	}
+
+	// 调用现有的处理逻辑
+	p.handleRequest(w, r.Request)
+}
+
+// ghttpResponseWriter 适配器，将 ghttp.Response 转换为 http.ResponseWriter
+type ghttpResponseWriter struct {
+	Response *ghttp.Response
+	context  context.Context
+}
+
+func NewGhttpResponseWriter(response *ghttp.Response, ctx context.Context) *ghttpResponseWriter {
+	return &ghttpResponseWriter{
+		Response: response,
+		context:  ctx,
+	}
+}
+
+func (w *ghttpResponseWriter) Header() http.Header {
+	return w.Response.Header()
+}
+
+func (w *ghttpResponseWriter) Write(data []byte) (int, error) {
+	// 【修正】ghttp.Response.Write() 没有返回值
+	// 但它可能会 panic，所以我们用 defer recover 捕获
+	defer func() {
+		if r := recover(); r != nil {
+			g.Log().Errorf(w.context, "ghttpResponseWriter.Write panic: %v", r)
+		}
+	}()
+
+	w.Response.Write(data)
+	return len(data), nil
+}
+
+func (w *ghttpResponseWriter) WriteHeader(statusCode int) {
+	w.Response.WriteStatus(statusCode)
 }

@@ -97,11 +97,18 @@ type OpenlistProxyServer struct {
 	// Openlist Webdav 代理的端口，请不要填写 encv Webdav Server、 OpenList 或其他已使用的端口
 	Port int `json:"port"`
 	// OpenList 的主机名，一般是 IP 或者域名，比如 localhost
-	OpenListHost string `json:"openlist_host"`
-	// 不建议在 json 文件中存储 Token
+	OpenListHost string                     `json:"openlist_host"`
+	Sites        map[string]ProxySiteConfig `json:"sites"`
+	// 不要在 json 文件中存储 Token，该值应该在运行时由程序写入
 	Token string `json:"token"`
 	// 禁用签名，目前没发现这个值有什么影响
 	DisableSignatureVerification bool `json:"disable_signature_verification"`
+}
+
+type ProxySiteConfig struct {
+	Host        string `json:"host"`
+	Description string `json:"description,omitempty"`
+	// Token前端输入
 }
 
 // DecryptedContent 包含解密后的所有内容

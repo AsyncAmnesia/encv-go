@@ -211,7 +211,7 @@ func (fs *encvWebDAVFS) runIndexer(ctx context.Context) {
 			if event.Op&(fsnotify.Remove|fsnotify.Rename|fsnotify.Write) != 0 {
 				fs.indexCache.Delete(event.Name)
 			}
-			log.Printf("[Index-Lifecycle] Received FS event: Op=%v, Path=%s", event.Op, event.Name)
+			// log.Printf("[Index-Lifecycle] Received FS event: Op=%v, Path=%s", event.Op, event.Name)
 
 			// 防抖
 			if rebuildTimer != nil {
@@ -262,7 +262,7 @@ func (fs *encvWebDAVFS) buildInitialIndex(ctx context.Context) error {
 		}
 
 		// 在 buildInitialIndex 的末尾
-		log.Printf("[Index-DEBUG] Final dirMap state: %+v", fs.indexes.dirMap)
+		// log.Printf("[Index-DEBUG] Final dirMap state: %+v", fs.indexes.dirMap)
 		return nil
 	})
 }
@@ -398,7 +398,7 @@ func (fs *encvWebDAVFS) addOrUpdateEntry(p string) error {
 	fs.indexes.fileInfoMap[fullVirtualPath] = decryptedInfo
 
 	// 在 addOrUpdateEntry 的末尾，解锁前
-	log.Printf("[Index-DEBUG] After adding '%s', dirMap for parent '%s' is now: %v", fullVirtualPath, parentDir, fs.indexes.dirMap[parentDir])
+	// log.Printf("[Index-DEBUG] After adding '%s', dirMap for parent '%s' is now: %v", fullVirtualPath, parentDir, fs.indexes.dirMap[parentDir])
 
 	return nil
 }

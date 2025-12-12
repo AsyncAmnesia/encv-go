@@ -1,5 +1,10 @@
 package auth
 
+import (
+	"github.com/Soltus/encv-go/internal/admin/injector"
+	"github.com/Soltus/encv-go/internal/admin/routes"
+)
+
 const LoginPageTmpl = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -17,18 +22,22 @@ const LoginPageTmpl = `<!DOCTYPE html>
         button { width: 100%; padding: 0.8em; border: none; border-radius: 4px; background-color: var(--btn-bg); color: white; font-size: 1em; cursor: pointer; transition: background-color 0.2s; }
         button:hover { background-color: var(--btn-hover-bg); }
         .error { color: #d9534f; text-align: center; margin-top: 1em; }
+        .info { color: #6c757d; text-align: center; margin-top: 0.5em; font-size: 0.9em; }
     </style>
 </head>
 <body>
+<div id="` + injector.InjectorID + `"></div>
     <div class="login-container">
         <h1>ENCV Login</h1>
-        <form method="post" action="/p/login">
+        <form method="post" action="` + routes.Login + `">
             <div class="form-group">
                 <label for="password">Password:</label>
-                <input type="password" id="password" name="password" required>
+                <input type="password" id="password" name="password" required autofocus>
             </div>
             <button type="submit">Login</button>
             {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+            {{if .RedirectURL}}<div class="info">You will be redirected to: {{.RedirectURL}}</div>{{end}}
+            {{if .RedirectURL}}<input type="hidden" name="redirect_url" value="{{.RedirectURL}}">{{end}}
         </form>
     </div>
 </body>

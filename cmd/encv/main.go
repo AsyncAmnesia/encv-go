@@ -75,6 +75,9 @@ var rootCmd = &cobra.Command{
 		// 从 flag 获取可能的配置路径
 		configFlag, _ := cmd.Flags().GetString("config")
 		configPath, err := config.FindConfigPath(configFlag)
+		if err != nil {
+			log.Printf("Failed to find config path: %v", err)
+		}
 
 		log.Printf("-> Loading config from: %s\n", configPath)
 		// 加载基础配置（默认值 + 配置文件）
