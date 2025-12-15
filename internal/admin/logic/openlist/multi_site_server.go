@@ -10,11 +10,11 @@ import (
 
 	"github.com/Soltus/encv-go/internal/admin/injector"
 	"github.com/Soltus/encv-go/internal/admin/logic/auth"
+	"github.com/Soltus/encv-go/internal/admin/logic/openlist/web"
 	"github.com/Soltus/encv-go/internal/admin/middleware"
 	"github.com/Soltus/encv-go/internal/admin/routes"
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/v2/types"
-	"github.com/Soltus/encv-go/internal/web"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
 )
@@ -56,7 +56,7 @@ func (m *MultiSiteServer) SetupRoutes(server *ghttp.Server, jwtManager *auth.JWT
 				// 验证站点是否存在
 				siteConfig, exists := m.cfg.Proxy.Sites[siteId]
 				if !exists {
-					r.Response.WriteStatusExit(http.StatusNotFound, "Site not found")
+					r.Response.WriteStatusExit(http.StatusNotFound, "siteConfig not found")
 					return
 				}
 
@@ -88,11 +88,9 @@ func (m *MultiSiteServer) SetupRoutes(server *ghttp.Server, jwtManager *auth.JWT
 								if cleanPath == "" {
 									cleanPath = "/"
 								}
-								// 重新构建文件URL
-								parsedURL.Path = cleanPath
-								query := r.URL.Query()
-								query.Set("file", parsedURL.String())
-								r.URL.RawQuery = query.Encode()
+								// 将路由路径存入上下文，而不是修改URL
+								r.SetCtxVar("routePath", cleanPath)
+								g.Log().Infof(r.Context(), "[MultiSite Middleware] Extracted routePath: %s", cleanPath)
 							}
 						}
 					}

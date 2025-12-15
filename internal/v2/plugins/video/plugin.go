@@ -25,20 +25,21 @@ import (
 )
 
 type VideoPlugin struct {
-	ctx              context.Context
-	cfg              *config.Config
-	settings         VideoPluginConfig
-	index            VideoIndex
-	outputDir        string
-	inputPath        string
-	inputRootDir     string
-	tempEncPath      string
-	salt             []byte
-	iv               []byte
-	baseNamer        namer.BaseNamer           // 注入容器命名器
-	chunkNamer       namer.ChunkNamer          // 注入分片命名器
-	containerManager *service.ContainerManager // 注入 ContainerManager
-	physicalPacker   physical.PhysicalPacker
+	ctx                 context.Context
+	cfg                 *config.Config
+	settings            VideoPluginConfig
+	index               VideoIndex
+	outputDir           string
+	inputPath           string
+	inputRootDir        string
+	tempEncPath         string
+	salt                []byte
+	iv                  []byte
+	baseNamer           namer.BaseNamer           // 注入容器命名器
+	chunkNamer          namer.ChunkNamer          // 注入分片命名器
+	containerManager    *service.ContainerManager // 注入 ContainerManager
+	physicalPacker      physical.PhysicalPacker
+	trackExtensionsList []string
 }
 
 func (p *VideoPlugin) Name() string {
@@ -61,7 +62,7 @@ type VideoPluginConfig struct {
 	// 是否启用轻量级主分片，启用后主分片只包含清单，不包含源数据
 	LightMainChunkEnabled bool `json:"light_main_chunk_enabled"`
 	// TrackExtensions 视频容器的字幕/轨道文件扩展名列表，它们并不会打包到容器里。
-	TrackExtensions []string `json:"track_extensions"`
+	TrackExtensions string `json:"track_extensions"`
 }
 
 func (p *VideoPlugin) GetSettingsSchemaType() interface{} {
@@ -74,10 +75,39 @@ func (p *VideoPlugin) GetDefaultSettings() json.RawMessage {
 		Ext:         ".sccgv",
 		ChunkSizeMB: 0,
 		// ChunkMax:    0,
-		TrackExtensions: []string{".ass", ".srt", ".dm.ass"},
+		TrackExtensions: ".ass,.srt,.dm.ass",
 	}
 	data, _ := json.Marshal(defaultCfg) // 忽略错误，因为默认值是硬编码的，不会出错
 	return data
+}
+
+func (p *VideoPlugin) GetSettingFields() []pluginInterfaces.SettingField {
+	return []pluginInterfaces.SettingField{
+		{
+			Key:          "ext",
+			Type:         "string",
+			DefaultValue: ".sccgv",
+			Help:         "The container file extension for encrypted video files (e.g., '.sccgv').",
+		},
+		{
+			Key:          "chunk_size_mb",
+			Type:         "number",
+			DefaultValue: 0,
+			Help:         "The chunk size in MB. Set to 0 to disable physical chunking. Minimum value is 30 if enabled.",
+		},
+		{
+			Key:          "light_main_chunk_enabled",
+			Type:         "bool",
+			DefaultValue: false,
+			Help:         "If enabled, the main chunk will only contain the manifest, not the source data.",
+		},
+		{
+			Key:          "track_extensions",
+			Type:         "text", // 使用 text 类型，让用户输入逗号分隔的字符串
+			DefaultValue: ".ass,.srt,.dm.ass",
+			Help:         "Subtitle/track file extensions, separated by commas (e.g., .ass,.srt,.dm.ass). These files are not packed into the container.",
+		},
+	}
 }
 
 // init 在包被导入时自动执行，完成自注册
@@ -107,6 +137,16 @@ func (p *VideoPlugin) Initialize(ctx context.Context) error {
 	if p.settings.ChunkSizeMB > 0 && p.settings.ChunkSizeMB < 30 {
 		p.settings.ChunkSizeMB = 30 // 强制修改为 30
 	}
+	// 处理逗号分隔的字符串，并存储到 trackExtensionsList
+	if p.settings.TrackExtensions != "" {
+		parts := strings.Split(p.settings.TrackExtensions, ",")
+		for _, part := range parts {
+			trimmed := strings.TrimSpace(part)
+			if trimmed != "" {
+				p.trackExtensionsList = append(p.trackExtensionsList, trimmed)
+			}
+		}
+	}
 	p.containerManager = service.NewContainerManager()
 	p.baseNamer = namer.NewDefaultBaseNamer()
 	p.chunkNamer = namer.NewPaddedNamer(p.settings.Ext, p.baseNamer, 4) // 补零到4位
@@ -119,6 +159,41 @@ func (p *VideoPlugin) Initialize(ctx context.Context) error {
 	}
 	return nil
 }
+
+// func (p *VideoPlugin) Initialize(provider pluginInterfaces.ConfigProvider) error {
+// 	// 1. 使用 provider 获取原始配置
+// 	rawSettings, err := provider.GetPluginSettings(p.Name())
+// 	if err != nil {
+// 		return fmt.Errorf("could not get settings for plugin %s: %w", p.Name(), err)
+// 	}
+
+// 	// 2. 使用新的通用辅助函数解析配置
+// 	settings, err := pluginInterfaces.UnmarshalPluginSettings[VideoPluginConfig](rawSettings, p.Name())
+// 	if err != nil {
+// 		return fmt.Errorf("could not unmarshal settings for plugin %s: %w", p.Name(), err)
+// 	}
+// 	p.settings = *settings
+
+// 	// 3. 其他初始化逻辑保持不变，但不再需要从 context 获取 cfg
+// 	// p.cfg = config.FromContext(ctx) // 【删除】
+// 	// password, salt 等可能需要从其他地方获取，或者也通过 provider 传递
+// 	// 为了简化，我们暂时假设这些在解密时由 reader 工厂处理
+
+// 	if p.settings.ChunkSizeMB > 0 && p.settings.ChunkSizeMB < 30 {
+// 		p.settings.ChunkSizeMB = 30 // 强制修改为 30
+// 	}
+// 	p.containerManager = service.NewContainerManager()
+// 	p.baseNamer = namer.NewDefaultBaseNamer()
+// 	p.chunkNamer = namer.NewPaddedNamer(p.settings.Ext, p.baseNamer, 4) // 补零到4位
+// 	if p.settings.ChunkSizeMB > 0 {
+// 		fmt.Printf("INFO: [%s] Physical chunking enabled. Size: %d MB\n", p.Name(), p.settings.ChunkSizeMB)
+// 		p.physicalPacker = physical.NewFileChunkerPhysicalPacker(int64(p.settings.ChunkSizeMB)*1024*1024, p.chunkNamer)
+// 	} else {
+// 		fmt.Printf("INFO: [%s] Physical chunking disabled.\n", p.Name())
+// 		p.physicalPacker = physical.NewSinglePhysicalPacker()
+// 	}
+// 	return nil
+// }
 
 // Plugin 接口实现
 //
@@ -311,7 +386,7 @@ func (p *VideoPlugin) Decrypt(containerPath, outputDir string) error {
 	fmt.Printf("DEBUG: [%s] Reader factory created successfully.\n", p.Name())
 
 	// --- 3. 使用工厂创建解密流并写入文件 ---
-	decryptedReader, err := factory.NewDecryptReader(*p.cfg)
+	decryptedReader, err := factory.NewDecryptReader()
 	if err != nil {
 		return fmt.Errorf("[%s] failed to create decrypt reader: %w", p.Name(), err)
 	}

@@ -59,7 +59,7 @@ func (s *ReaderService) GetDecryptReader(cfg config.Config, originalPath, passwo
 	}
 
 	// 3. 使用工厂创建解密器（非常快）
-	decryptReader, err := factory.NewDecryptReader(cfg)
+	decryptReader, err := factory.NewDecryptReader()
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("failed to create decrypt reader: %w", err)
 	}

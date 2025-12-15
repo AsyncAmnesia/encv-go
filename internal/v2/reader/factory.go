@@ -5,7 +5,6 @@ import (
 	"log"
 	"sync"
 
-	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -14,7 +13,7 @@ import (
 type DecryptReaderFactory interface {
 	// NewDecryptReader 创建一个全新的、状态独立的解密流。
 	// 每次调用返回的实例都可以安全地并发使用。
-	NewDecryptReader(cfg config.Config) (DecryptReader, error)
+	NewDecryptReader() (DecryptReader, error)
 	// 【关键新增】创建一个专用于全量解密的工具
 	// 返回的实例已预先配置好所有必要信息
 	NewBulkDecryptor() (*BulkDecryptor, error)
@@ -104,7 +103,7 @@ func (f *decryptReaderFactory) parseAndCacheMetadata() error {
 }
 
 // NewDecryptReader 使用缓存的数据高效地创建解密器
-func (f *decryptReaderFactory) NewDecryptReader(cfg config.Config) (DecryptReader, error) {
+func (f *decryptReaderFactory) NewDecryptReader() (DecryptReader, error) {
 	// 【关键】使用新的轻量级构造函数，直接使用缓存好的数据，避免重复扫描
 	containerReader, err := NewFileContainerReaderFromMetadata(f.containerPath, f.cachedManifest, f.physicalOffsets)
 	if err != nil {

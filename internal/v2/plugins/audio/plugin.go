@@ -65,6 +65,17 @@ func (p *AudioPlugin) GetDefaultSettings() json.RawMessage {
 	return data
 }
 
+func (p *AudioPlugin) GetSettingFields() []pluginInterfaces.SettingField {
+	return []pluginInterfaces.SettingField{
+		{
+			Key:          "ext",
+			Type:         "string",
+			DefaultValue: ".sccga",
+			Help:         "The container file extension for encrypted text files (e.g., '.sccga').",
+		},
+	}
+}
+
 // init 在包被导入时自动执行，完成自注册
 func init() {
 	types.RegisterKVIProvider(IndexKindAudio, func(rawKVI json.RawMessage) (types.KVIProvider, error) {
@@ -93,6 +104,31 @@ func (p *AudioPlugin) Initialize(ctx context.Context) error {
 	p.physicalPacker = physical.NewSinglePhysicalPacker()
 	return nil
 }
+
+// func (p *AudioPlugin) Initialize(provider pluginInterfaces.ConfigProvider) error {
+// 	// 1. 使用 provider 获取原始配置
+// 	rawSettings, err := provider.GetPluginSettings(p.Name())
+// 	if err != nil {
+// 		return fmt.Errorf("could not get settings for plugin %s: %w", p.Name(), err)
+// 	}
+
+// 	// 2. 使用新的通用辅助函数解析配置
+// 	settings, err := pluginInterfaces.UnmarshalPluginSettings[AudioPluginConfig](rawSettings, p.Name())
+// 	if err != nil {
+// 		return fmt.Errorf("could not unmarshal settings for plugin %s: %w", p.Name(), err)
+// 	}
+// 	p.settings = *settings
+
+// 	// 3. 其他初始化逻辑保持不变，但不再需要从 context 获取 cfg
+// 	// p.cfg = config.FromContext(ctx) // 【删除】
+// 	// password, salt 等可能需要从其他地方获取，或者也通过 provider 传递
+// 	// 为了简化，我们暂时假设这些在解密时由 reader 工厂处理
+
+// 	p.containerManager = service.NewContainerManager()
+// 	p.baseNamer = namer.NewDefaultBaseNamer()
+// 	p.physicalPacker = physical.NewSinglePhysicalPacker()
+// 	return nil
+// }
 
 // Plugin 接口实现
 //
@@ -267,7 +303,7 @@ func (p *AudioPlugin) Decrypt(containerPath, outputDir string) error {
 	fmt.Printf("DEBUG: [%s] Reader factory created successfully.\n", p.Name())
 
 	// --- 3. 使用工厂创建解密流并写入文件 ---
-	decryptedReader, err := factory.NewDecryptReader(*p.cfg)
+	decryptedReader, err := factory.NewDecryptReader()
 	if err != nil {
 		return fmt.Errorf("[%s] failed to create decrypt reader: %w", p.Name(), err)
 	}

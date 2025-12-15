@@ -32,10 +32,11 @@ type FileInfoResponse struct {
 }
 
 // 获取 OpenList 文件的真实下载链接和请求头
-func OpenListGetFileURL(path, host, token string) (*FileInfoResponse, error) {
+// 考虑到加密容器可能是分片的，因此需要 token
+func OpenListGetFileURL(routePath, host, token string) (*FileInfoResponse, error) {
 	apiURL := fmt.Sprintf("%s/api/fs/link", host)
 
-	reqBody, err := json.Marshal(map[string]string{"path": path})
+	reqBody, err := json.Marshal(map[string]string{"path": routePath})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request body: %w", err)
 	}
@@ -51,7 +52,7 @@ func OpenListGetFileURL(path, host, token string) (*FileInfoResponse, error) {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 	bodyString := string(bodyBytes)
-	log.Printf("-> [OpenList Debug] Raw response from /api/fs/link for path '%s': %s", path, bodyString)
+	log.Printf("-> [OpenList Debug] Raw response from /api/fs/link for routePath '%s': %s", routePath, bodyString)
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("OpenList API returned non-200 status: %d, body: %s", resp.StatusCode, bodyString)
@@ -149,7 +150,7 @@ func (r *OpenListURLResolver) ResolveURL(physicalPath string) (string, error) {
 	// 2. 调用 OpenListGetFileURL 函数为这个分片获取一个新的签名 URL
 	fileInfo, err := OpenListGetFileURL(chunkLogicalPath, r.host, r.token)
 	if err != nil {
-		return "", fmt.Errorf("failed to get signed URL for path '%s': %w", chunkLogicalPath, err)
+		return "", fmt.Errorf("failed to get signed URL for chunkLogicalPath '%s': %w", chunkLogicalPath, err)
 	}
 
 	// 3. 返回获取到的 URL

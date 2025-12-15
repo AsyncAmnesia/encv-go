@@ -22,7 +22,6 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/handler"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/Soltus/encv-go/internal/v2/service"
-	"github.com/Soltus/encv-go/internal/web"
 	"github.com/Soltus/encv-go/internal/webdav"
 	"github.com/dustin/go-humanize"
 	goWebdav "golang.org/x/net/webdav"
@@ -98,7 +97,6 @@ func (s *Server) Start(version string) (string, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", s.handlePing)
 	mux.HandleFunc("/stream", s.handleStreamRequest)
-	mux.Handle("/_preview/", web.PreviewHandler())
 
 	mux.HandleFunc("/", s.handleRequest)
 

@@ -62,7 +62,7 @@ func (s *Server) serveEncryptedFile(w http.ResponseWriter, r *http.Request, full
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	decryptReader, err := factory.NewDecryptReader(*s.cfg)
+	decryptReader, err := factory.NewDecryptReader()
 	if err != nil {
 		factory.Close()
 		http.Error(w, err.Error(), http.StatusInternalServerError)

@@ -55,7 +55,7 @@ func (p *ProxyGhttp) HandleRequest(r *ghttp.Request) {
 	}
 
 	// 调试日志
-	g.Log().Infof(r.Context(), "[Proxy] %s -> %s", originalPath, path)
+	g.Log().Infof(r.Context(), "[Proxy] siteHost: %s | %s -> %s", siteHost, originalPath, path)
 
 	sign := r.URL.Query().Get("sign")
 	isInternalRequest := r.GetCtxVar("internal_request").String() == "true"
@@ -118,42 +118,58 @@ func (p *ProxyGhttp) HandleRequest(r *ghttp.Request) {
 
 // handleDecrypt 处理解密请求
 func (p *ProxyGhttp) handleDecrypt(r *ghttp.Request, siteHost, siteToken string) {
-	durl := r.URL.Query().Get("file")
-	if durl == "" {
-		r.Response.WriteStatus(http.StatusBadRequest)
-		r.Response.Write("Bad Request: 'file' query parameter is missing")
-		return
-	}
-	g.Log().Infof(r.Context(), "[Proxy] Received decrypt request for durl: %s", durl)
+	routePath := r.GetCtxVar("routePath").String()
 
-	// 解析 URL 获取文件路径
-	u, err := url.Parse(durl)
-	if err != nil {
-		r.Response.WriteStatus(http.StatusBadRequest)
-		r.Response.Write("Bad Request: invalid durl format")
-		return
-	}
+	// 如果上下文中没有，则回退到从查询参数获取（单站点或直接调用模式）
+	if routePath == "" {
+		durl := r.URL.Query().Get("file")
+		if durl == "" {
+			r.Response.WriteStatus(http.StatusBadRequest)
+			r.Response.Write("Bad Request: 'file' query parameter is missing")
+			return
+		}
+		g.Log().Infof(r.Context(), "[Proxy] No clean path in context, parsing from 'file' query: %s", durl)
 
-	filePath := u.Path
-	if after, ok := strings.CutPrefix(filePath, "/d/"); ok {
-		filePath = after
+		u, err := url.Parse(durl)
+		if err != nil {
+			r.Response.WriteStatus(http.StatusBadRequest)
+			r.Response.Write("Bad Request: invalid durl format")
+			return
+		}
+
+		routePath = u.Path
+		if after, ok := strings.CutPrefix(routePath, "/d/"); ok {
+			routePath = after
+		}
 	}
-	g.Log().Infof(r.Context(), "[Proxy] Parsed logical file path from durl: %s", filePath)
+	g.Log().Infof(r.Context(), "[Proxy] routePath: %s", routePath)
 
 	// 获取文件信息
-	fileInfo, err := OpenListGetFileURL(filePath, siteHost, siteToken)
+	fileInfo, err := OpenListGetFileURL(routePath, siteHost, siteToken)
 	if err != nil {
-		g.Log().Errorf(r.Context(), "Error getting stream URL for path %s: %v", filePath, err)
+		g.Log().Errorf(r.Context(), "Error getting stream URL for routePath %s: %v", routePath, err)
 		r.Response.WriteStatus(http.StatusInternalServerError)
 		r.Response.Write("Failed to locate file")
 		return
 	}
 	streamURL := fileInfo.Data.URL
 	g.Log().Infof(r.Context(), "[Proxy] Successfully translated durl to stream URL: %s", streamURL)
+	g.Log().Infof(r.Context(), "[Proxy] Probing upstream content type with HEAD request...")
+	headResp, err := utils.GetRemoteStreamWithRange(streamURL, fileInfo.Data.Header, 0, 0) // 使用 utils 的函数发起 HEAD 请求
+	if err != nil {
+		g.Log().Errorf(r.Context(), "ERROR: [Proxy] Failed to probe upstream %s: %v", streamURL, err)
+		r.Response.WriteStatus(http.StatusBadGateway)
+		r.Response.Write("Upstream server is unreachable or invalid")
+		return
+	}
+	defer headResp.Body.Close()
+
+	contentType := headResp.Header.Get("Content-Type")
+	g.Log().Infof(r.Context(), "[Proxy] Upstream responded with Content-Type: %s", contentType)
 
 	// 验证文件是否为有效的 ENCV 容器
 	g.Log().Infof(r.Context(), "[Proxy] Validating stream URL before decryption...")
-	resp, err := utils.GetRemoteStreamWithRange(streamURL, nil, -32, -1)
+	resp, err := utils.GetRemoteStreamWithRange(streamURL, fileInfo.Data.Header, -32, -1)
 	if err != nil {
 		g.Log().Errorf(r.Context(), "ERROR: [Proxy] Failed to validate stream URL %s: %v", streamURL, err)
 		r.Response.WriteStatus(http.StatusBadGateway)
@@ -161,6 +177,13 @@ func (p *ProxyGhttp) handleDecrypt(r *ghttp.Request, siteHost, siteToken string)
 		return
 	}
 	defer resp.Body.Close()
+	// 检查上游是否正确处理了 Range 请求
+	if resp.StatusCode != http.StatusPartialContent {
+		g.Log().Warningf(r.Context(), "[Proxy] Upstream server does not support Range requests (status: %s). Assuming plaintext.", resp.Status)
+		// 如果不支持 Range，我们无法判断，只能当作普通文件代理
+		p.serveDirectStream(r, streamURL, fileInfo.Data.Header)
+		return
+	}
 
 	footerBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -170,6 +193,7 @@ func (p *ProxyGhttp) handleDecrypt(r *ghttp.Request, siteHost, siteToken string)
 		return
 	}
 
+	// 检查是否是有效的 ENCV 容器
 	isValid, err := isEncvContainerFromBytes(footerBytes)
 	if err != nil {
 		g.Log().Errorf(r.Context(), "ERROR: [Proxy] Validation check failed for %s: %v", streamURL, err)
@@ -178,15 +202,16 @@ func (p *ProxyGhttp) handleDecrypt(r *ghttp.Request, siteHost, siteToken string)
 		return
 	}
 
-	if !isValid {
-		g.Log().Warningf(r.Context(), "WARN: [Proxy] Validation failed! Stream URL %s did not return an ENCV container.", streamURL)
-		r.Response.WriteStatus(http.StatusBadGateway)
-		r.Response.Write("Upstream server returned an invalid file for decryption.")
-		return
+	if isValid {
+		// 情况1：是加密容器，执行解密
+		g.Log().Infof(r.Context(), "[Proxy] File is a valid ENCV container. Proceeding with decryption.")
+		// 调用原有的解密逻辑，需要确保它能复用已经获取的 fileInfo
+		p.serveEncryptedContainerWithURL(r, streamURL, fileInfo.Data.Header, siteHost, siteToken, routePath)
+	} else {
+		// 情况2：不是加密容器，直接代理
+		p.serveDirectStream(r, streamURL, fileInfo.Data.Header)
 	}
 
-	g.Log().Infof(r.Context(), "[Proxy] Validation successful. Proceeding with decryption.")
-	p.serveEncryptedContainerWithURL(r, streamURL, fileInfo.Data.Header, siteHost, siteToken, filePath)
 }
 
 // 处理目录请求
@@ -298,9 +323,9 @@ func (p *ProxyGhttp) serveEncryptedContainer(r *ghttp.Request, path string, site
 }
 
 // serveEncryptedContainerWithURL 使用 URL 服务加密容器
-func (p *ProxyGhttp) serveEncryptedContainerWithURL(r *ghttp.Request, containerURL string, headers map[string][]string, siteHost, siteToken, originalPath string) {
+func (p *ProxyGhttp) serveEncryptedContainerWithURL(r *ghttp.Request, containerURL string, headers map[string][]string, siteHost, siteToken, routePath string) {
 	// 创建 URLResolver
-	urlResolver := NewOpenListURLResolver(siteHost, siteToken, originalPath)
+	urlResolver := NewOpenListURLResolver(siteHost, siteToken, routePath)
 
 	// 创建远程工厂
 	factory, err := reader.NewRemoteDecryptReaderFactory(containerURL, p.cfg.Password, headers, urlResolver)
@@ -311,7 +336,7 @@ func (p *ProxyGhttp) serveEncryptedContainerWithURL(r *ghttp.Request, containerU
 	}
 
 	// 创建解密器
-	decryptReader, err := factory.NewDecryptReader(*p.cfg)
+	decryptReader, err := factory.NewDecryptReader()
 	if err != nil {
 		factory.Close()
 		r.Response.WriteStatus(http.StatusInternalServerError)

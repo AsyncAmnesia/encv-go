@@ -1024,7 +1024,7 @@ func (l *lazyWebDAVFileAdapter) initialize() error {
 		l.isInitialized = true // 标记为已尝试，避免重复
 		return err
 	}
-	decryptReader, err := factory.NewDecryptReader(config.Config{})
+	decryptReader, err := factory.NewDecryptReader()
 	if err != nil {
 		factory.Close()
 		l.initError = err

@@ -47,8 +47,11 @@ type Plugin interface {
 
 	//  返回此插件创建的容器文件扩展名，包含点前缀
 	GetContainerExtension() string
+	// 这将用于在 OpenList 等外部系统中动态生成配置界面
+	GetSettingFields() []pluginInterfaces.SettingField
 
 	Initialize(ctx context.Context) error
+
 	// --- 提供处理策略 ---
 	GetMetadataExtractor() pluginInterfaces.MetadataExtractor
 	GetContentPreprocessor() pluginInterfaces.ContentPreprocessor
@@ -127,6 +130,19 @@ func initializeExtensions() {
 	}
 }
 
+// GetPluginMetas 返回所有已注册插件的配置元信息列表
+// 这个函数是 OpenList 动态生成配置界面的入口
+func GetPluginMetas() []pluginInterfaces.PluginMeta {
+	var metas []pluginInterfaces.PluginMeta
+	for _, p := range Plugins {
+		metas = append(metas, pluginInterfaces.PluginMeta{
+			Name:          p.Name(),
+			SettingFields: p.GetSettingFields(), // 调用插件的新方法
+		})
+	}
+	return metas
+}
+
 // GetAllRegisteredContainerExtensions 返回所有已注册插件的容器扩展名（带点号）
 // 此函数是线程安全的，并且会在第一次被调用时自动完成初始化。
 func GetAllRegisteredContainerExtensions() []string {
@@ -183,7 +199,7 @@ func BuildFullPluginSettings(userSettings map[string]json.RawMessage) (map[strin
 			fullSettings[name] = defaults
 		} else {
 			// 如果用户提供了配置，则将其与默认值合并
-			merged, err := mergeJSONObjects(defaults, userProvided)
+			merged, err := utils.MergeJSONObjects(defaults, userProvided)
 			if err != nil {
 				return nil, fmt.Errorf("failed to merge settings for plugin '%s': %w", name, err)
 			}
@@ -191,26 +207,6 @@ func BuildFullPluginSettings(userSettings map[string]json.RawMessage) (map[strin
 		}
 	}
 	return fullSettings, nil
-}
-
-// 辅助函数。 合并两个 JSON 对象，userConfig 中的键会覆盖 defaults 中的键
-func mergeJSONObjects(defaults, userConfig json.RawMessage) (json.RawMessage, error) {
-	defaultsMap := make(map[string]interface{})
-	userMap := make(map[string]interface{})
-
-	if err := json.Unmarshal(defaults, &defaultsMap); err != nil {
-		return nil, fmt.Errorf("invalid default settings JSON: %w", err)
-	}
-	if err := json.Unmarshal(userConfig, &userMap); err != nil {
-		return nil, fmt.Errorf("invalid user settings JSON: %w", err)
-	}
-
-	// 合并：用户配置覆盖默认配置
-	for key, userValue := range userMap {
-		defaultsMap[key] = userValue
-	}
-
-	return json.Marshal(defaultsMap)
 }
 
 func InitializePlugins(ctx context.Context) error {
@@ -225,6 +221,19 @@ func InitializePlugins(ctx context.Context) error {
 	}
 	return nil
 }
+
+// func InitializePlugins(provider pluginInterfaces.ConfigProvider) error {
+// 	for _, p := range Plugins {
+// 		pluginName := p.Name()
+// 		fmt.Printf("Initializing plugin: %s\n", pluginName)
+
+// 		// 调用插件的初始化方法，并传入 provider
+// 		if err := p.Initialize(provider); err != nil {
+// 			return fmt.Errorf("failed to initialize plugin %s: %w", pluginName, err)
+// 		}
+// 	}
+// 	return nil
+// }
 
 // FindEncryptingPlugin 为给定的输入文件查找合适的加密插件
 // 优先级：
@@ -328,7 +337,7 @@ func ProcessFileWithPlugin(p Plugin, inputPath string) (types.Index, io.ReadClos
 
 // EncryptFileWithPlugin 是一个新的辅助函数，封装了完整的加密流程
 func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputRootDir, outputDir string) error {
-	plugin.Initialize(ctx)
+	// plugin.Initialize(ctx)
 
 	index, dataReader, err := ProcessFileWithPlugin(plugin, inputPath)
 	if err != nil {
@@ -359,7 +368,7 @@ func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputR
 
 // DecryptContainerWithPlugin 是一个新的辅助函数，封装了完整的解密流程
 func DecryptContainerWithPlugin(ctx context.Context, plugin Plugin, containerPath, outputDir string) error {
-	plugin.Initialize(ctx)
+	// plugin.Initialize(ctx)
 	// 1. 执行预处理器
 	if err := plugin.PreDecryptProcessor(containerPath, outputDir); err != nil {
 		return fmt.Errorf("pre-decryption failed for '%s': %w", containerPath, err)

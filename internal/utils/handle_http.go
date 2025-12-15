@@ -233,7 +233,7 @@ func GetRemoteStreamWithRange(url string, headers map[string][]string, start, en
 	}
 	// 【关键验证】在返回响应前，记录服务器承诺发送的长度
 	if resp.StatusCode == http.StatusPartialContent || resp.StatusCode == http.StatusOK {
-		log.Printf("DEBUG: [GetRemoteStreamWithRange] Range '%s' -> Status: %s, Server-Returned Content-Length: %s", rangeStr, resp.Status, resp.Header.Get("Content-Length"))
+		log.Printf("DEBUG: [GetRemoteStreamWithRange] Range '%s' -> Status: %s, Server-Returned Content-Length: %s, Content-Type: %s", rangeStr, resp.Status, resp.Header.Get("Content-Length"), resp.Header.Get("Content-Type"))
 	}
 
 	return resp, nil

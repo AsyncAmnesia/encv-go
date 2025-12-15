@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -68,7 +67,7 @@ func (f *RemoteDecryptReaderFactory) parseAndCacheMetadata() error {
 }
 
 // NewDecryptReader 使用缓存的数据高效地创建解密器
-func (f *RemoteDecryptReaderFactory) NewDecryptReader(cfg config.Config) (DecryptReader, error) {
+func (f *RemoteDecryptReaderFactory) NewDecryptReader() (DecryptReader, error) {
 	// 【关键修复】每次调用都创建一个全新的、独立的 containerReader
 	containerReader, err := NewRemoteEncryptedContainerReader(f.containerURL, f.headers, f.urlResolver)
 	if err != nil {

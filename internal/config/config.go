@@ -28,12 +28,20 @@ type Config struct {
 	// BinExtGroup types.BinExtGroup `json:"bin_ext_group"`
 	//  map 键是插件名，值是该插件的原始JSON配置
 	PluginSettings map[string]json.RawMessage `json:"plugin_settings"`
-	// SccgvSettings SCCGV (视频分片) 相关的设置。
-	// SccgvSettings SccgvSettings             `json:"sccgv_settings"`
-	Server types.HttpServer          `json:"server"`
-	Admin  types.AdminServer         `json:"admin"`
-	Webdav types.WebdavServer        `json:"webdav"`
-	Proxy  types.OpenlistProxyServer `json:"proxy"`
+	// 【关键新增】Provider 是一个可选的动态配置提供者
+	// 如果 Provider 不为 nil，它将优先于 PluginSettings 被使用
+	Provider ConfigProvider            `json:"-"` // 使用 `json:"-"` 确保它不会被序列化到文件
+	Server   types.HttpServer          `json:"server"`
+	Admin    types.AdminServer         `json:"admin"`
+	Webdav   types.WebdavServer        `json:"webdav"`
+	Proxy    types.OpenlistProxyServer `json:"proxy"`
+}
+
+// ConfigProvider 定义了获取插件配置的抽象接口
+// 任何实现了此接口的结构体都可以为 ENCV 插件提供配置
+type ConfigProvider interface {
+	// GetPluginSettings 根据插件名称获取其原始的 JSON 配置
+	GetPluginSettings(pluginName string) (json.RawMessage, error)
 }
 
 // contextKey 是一个不导出的类型，用于防止 context 中的 key 冲突。
@@ -109,22 +117,60 @@ func Load(configPath string) (*Config, error) {
 // GetPluginSettingsFor 是一个泛型辅助函数，用于安全地获取并解析特定插件的配置。
 // T 是插件配置结构体的类型，例如 VideoPluginConfig。
 // 它会从 map 中查找插件配置，并将其反序列化为 T 类型的指针。
+// func GetPluginSettingsFor[T any](cfg *Config, pluginName string) (*T, error) {
+// 	// 1. 从 map 中获取原始的 JSON 数据
+// 	rawSettings, ok := cfg.PluginSettings[pluginName]
+// 	if !ok {
+// 		return nil, fmt.Errorf("no settings found for plugin '%s'", pluginName)
+// 	}
+
+// 	// 2. 定义一个 T 类型的变量，用于接收反序列化的结果
+// 	var settings T
+
+// 	// 3. 将原始 JSON 解析到 T 类型的变量中
+// 	if err := json.Unmarshal(rawSettings, &settings); err != nil {
+// 		return nil, fmt.Errorf("failed to unmarshal settings for plugin '%s': %w", pluginName, err)
+// 	}
+
+// 	// 4. 返回解析后配置的指针
+// 	return &settings, nil
+// }
+
 func GetPluginSettingsFor[T any](cfg *Config, pluginName string) (*T, error) {
-	// 1. 从 map 中获取原始的 JSON 数据
-	rawSettings, ok := cfg.PluginSettings[pluginName]
-	if !ok {
-		return nil, fmt.Errorf("no settings found for plugin '%s'", pluginName)
+	var rawSettings json.RawMessage
+	var err error
+
+	// 1. 优先检查是否有动态 Provider
+	if cfg.Provider != nil {
+		rawSettings, err = cfg.Provider.GetPluginSettings(pluginName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get settings for plugin '%s' from provider: %w", pluginName, err)
+		}
+	} else {
+		// 2. 如果没有 Provider，则使用传统的 PluginSettings map
+		resault, ok := cfg.PluginSettings[pluginName]
+		if !ok {
+			// 在没有 Provider 的情况下，如果 map 中没有，说明用户确实没配置
+			return nil, fmt.Errorf("no settings found for plugin '%s'", pluginName)
+		}
+		rawSettings = resault
 	}
 
-	// 2. 定义一个 T 类型的变量，用于接收反序列化的结果
+	// 3. 使用统一的辅助函数解析配置
+	return UnmarshalPluginSettings[T](rawSettings, pluginName)
+}
+
+// UnmarshalPluginSettings 是一个通用的辅助函数，用于将原始 JSON 解析为具体的插件配置结构体
+// 它不依赖于任何全局的 config 对象
+func UnmarshalPluginSettings[T any](rawSettings json.RawMessage, pluginName string) (*T, error) {
 	var settings T
-
-	// 3. 将原始 JSON 解析到 T 类型的变量中
-	if err := json.Unmarshal(rawSettings, &settings); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal settings for plugin '%s': %w", pluginName, err)
+	if len(rawSettings) == 0 {
+		// 如果没有提供配置，返回零值
+		return &settings, nil
 	}
-
-	// 4. 返回解析后配置的指针
+	if err := json.Unmarshal(rawSettings, &settings); err != nil {
+		return nil, err
+	}
 	return &settings, nil
 }
 
