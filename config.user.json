@@ -36,8 +36,8 @@
   "plugin_settings": {
     "video": {
       "ext": ".sccgv",
-      "chunk_size_mb": 100,
-      "track_extensions": [".ass", ".srt", ".dm.ass", ".vtt"]
+      "chunk_size_mb": 0,
+      "track_extensions": ".ass,.srt,.dm.ass,.vtt"
     },
     "image": {"ext": ".sccgi"},
     "audio": {"ext": ".sccga"},

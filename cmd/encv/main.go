@@ -204,7 +204,7 @@ var decryptV2Cmd = &cobra.Command{
 			log.Fatalf("Failed to create output directory: %v", err)
 		}
 
-		// 【关键修正】调用函数时不再传递密码，让它从 cfg 中读取
+		encv.Init(rootCtx)
 		if err := encv.DecryptPathV2(rootCtx, inputPath, finalOutputDir); err != nil {
 			log.Fatalf("Decryption process failed: %v", err)
 		}

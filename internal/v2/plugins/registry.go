@@ -222,19 +222,6 @@ func InitializePlugins(ctx context.Context) error {
 	return nil
 }
 
-// func InitializePlugins(provider pluginInterfaces.ConfigProvider) error {
-// 	for _, p := range Plugins {
-// 		pluginName := p.Name()
-// 		fmt.Printf("Initializing plugin: %s\n", pluginName)
-
-// 		// 调用插件的初始化方法，并传入 provider
-// 		if err := p.Initialize(provider); err != nil {
-// 			return fmt.Errorf("failed to initialize plugin %s: %w", pluginName, err)
-// 		}
-// 	}
-// 	return nil
-// }
-
 // FindEncryptingPlugin 为给定的输入文件查找合适的加密插件
 // 优先级：
 // 1. 通过 MIME 类型前缀匹配

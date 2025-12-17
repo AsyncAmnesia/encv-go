@@ -160,41 +160,6 @@ func (p *VideoPlugin) Initialize(ctx context.Context) error {
 	return nil
 }
 
-// func (p *VideoPlugin) Initialize(provider pluginInterfaces.ConfigProvider) error {
-// 	// 1. 使用 provider 获取原始配置
-// 	rawSettings, err := provider.GetPluginSettings(p.Name())
-// 	if err != nil {
-// 		return fmt.Errorf("could not get settings for plugin %s: %w", p.Name(), err)
-// 	}
-
-// 	// 2. 使用新的通用辅助函数解析配置
-// 	settings, err := pluginInterfaces.UnmarshalPluginSettings[VideoPluginConfig](rawSettings, p.Name())
-// 	if err != nil {
-// 		return fmt.Errorf("could not unmarshal settings for plugin %s: %w", p.Name(), err)
-// 	}
-// 	p.settings = *settings
-
-// 	// 3. 其他初始化逻辑保持不变，但不再需要从 context 获取 cfg
-// 	// p.cfg = config.FromContext(ctx) // 【删除】
-// 	// password, salt 等可能需要从其他地方获取，或者也通过 provider 传递
-// 	// 为了简化，我们暂时假设这些在解密时由 reader 工厂处理
-
-// 	if p.settings.ChunkSizeMB > 0 && p.settings.ChunkSizeMB < 30 {
-// 		p.settings.ChunkSizeMB = 30 // 强制修改为 30
-// 	}
-// 	p.containerManager = service.NewContainerManager()
-// 	p.baseNamer = namer.NewDefaultBaseNamer()
-// 	p.chunkNamer = namer.NewPaddedNamer(p.settings.Ext, p.baseNamer, 4) // 补零到4位
-// 	if p.settings.ChunkSizeMB > 0 {
-// 		fmt.Printf("INFO: [%s] Physical chunking enabled. Size: %d MB\n", p.Name(), p.settings.ChunkSizeMB)
-// 		p.physicalPacker = physical.NewFileChunkerPhysicalPacker(int64(p.settings.ChunkSizeMB)*1024*1024, p.chunkNamer)
-// 	} else {
-// 		fmt.Printf("INFO: [%s] Physical chunking disabled.\n", p.Name())
-// 		p.physicalPacker = physical.NewSinglePhysicalPacker()
-// 	}
-// 	return nil
-// }
-
 // Plugin 接口实现
 //
 //	返回在 Initialize 阶段已经配置好的 chunkNamer
@@ -344,10 +309,15 @@ func (p *VideoPlugin) PostEncryptProcessor() error {
 		Namer:               p.chunkNamer,     // 注入分片命名器
 		StartIdx:            startIdx,
 	}
+	// 【关键修复】在单文件模式下，必须显式设置 FinalFileName
+	if p.settings.ChunkSizeMB == 0 {
+		packReq.FinalFileName = finalFilename
+		fmt.Printf("DEBUG [PostEncryptProcessor]: Set packReq.FinalFileName for single-file mode: '%s'\n", packReq.FinalFileName)
+	}
 
 	if err := packer.Pack(p.cfg, packReq); err != nil {
 		encryptedDataReader.Close()
-		return fmt.Errorf("packing failed: %w", err)
+		return fmt.Errorf("%s packing failed: %w", finalFilename, err)
 	}
 
 	encryptedDataReader.Close() // Packer 使用完毕后关闭
