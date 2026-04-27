@@ -7,18 +7,22 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"text/tabwriter"
 	"text/template"
 
+	"github.com/Soltus/encv-go/internal/logger"
 	"github.com/Soltus/encv-go/internal/v2/chunker"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
 	"github.com/Soltus/encv-go/internal/v2/container/envelope"
 	"github.com/Soltus/encv-go/internal/v2/types"
 	"github.com/fxamacker/cbor/v2"
 )
+
+// detectorLogger 是 detector 包的日志记录器
+var detectorLogger = logger.WithComponent("detector")
 
 // AnalyzeContainerV2 可视化分析 v2 容器文件的结构
 // printToStdout: 是否同时打印到标准输出（为了兼容CLI调用）
@@ -130,7 +134,9 @@ func AnalyzeContainerV2(ctx context.Context, containerPath string, printToStdout
 		validationHTML, validationErr := performCrossValidation(footer, scannedBlocks, manifestObj)
 		if validationErr != nil {
 			// 交叉验证失败通常不是致命错误，可以记录但继续
-			log.Printf("WARN: Cross-validation failed: %v", validationErr)
+			detectorLogger.Warn("cross-validation failed",
+				slog.Any("error", validationErr),
+			)
 			buf.WriteString(">>> 4. Cross-Validation Report\n  [ERROR] Cross-validation encountered an error. See server logs for details.\n")
 		} else {
 			// 【新增】将验证结果写入主 buffer

@@ -35,6 +35,7 @@ type Config struct {
 	Admin    types.AdminServer         `json:"admin"`
 	Webdav   types.WebdavServer        `json:"webdav"`
 	Proxy    types.OpenlistProxyServer `json:"proxy"`
+	Log      types.LogConfig           `json:"log"`
 }
 
 // ConfigProvider 定义了获取插件配置的抽象接口
@@ -80,6 +81,11 @@ func DefaultConfig() *Config {
 		Proxy: types.OpenlistProxyServer{
 			DisableSignatureVerification: false,
 		},
+		Log: types.LogConfig{
+			Level:   "info",
+			File:    "",
+			Console: true,
+		},
 	}
 }
 
@@ -110,7 +116,7 @@ func Load(configPath string) (*Config, error) {
 		}
 	}
 
-	log.Printf("-> [Config] Successfully loaded configuration from '%s'.\n", configPath)
+	log.Printf("-> [Config] Successfully loaded configuration from '%s' (log_level: %s).\n", configPath, cfg.Log.Level)
 	return cfg, nil
 }
 

@@ -3,15 +3,19 @@ package reader
 import (
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 
+	"github.com/Soltus/encv-go/internal/logger"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
 	"github.com/Soltus/encv-go/internal/v2/container/envelope"
 	"github.com/Soltus/encv-go/internal/v2/container/manifest"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
+
+// readerLogger 是 reader 包的日志记录器
+var readerLogger = logger.WithComponent("reader.remote")
 
 // URLResolver 是一个用于将物理路径解析为完整、可访问的 URL 的接口。
 // 这使得 remoteEncryptedContainerReader 不再与特定的 URL 生成逻辑（如 OpenList）耦合。
@@ -69,7 +73,10 @@ func (r *remoteEncryptedContainerReader) initHeaderSize() error {
 		return fmt.Errorf("unknown header version detected: %d", version)
 	}
 
-	log.Printf("INFO: [RemoteContainerReader] Detected Version %d, Header Size: %d", version, r.headerSize)
+	readerLogger.Info("detected container version",
+		slog.Int("version", version),
+		slog.Int64("header_size", r.headerSize),
+	)
 	return nil
 }
 
@@ -122,14 +129,20 @@ func (r *remoteEncryptedContainerReader) GetFragmentReader(fragID string) (io.Re
 	// 情况 1: 处理物理分片 (外部 .part 文件)
 	// 【关键修复】正确处理物理分片，确保只读取当前 Fragment 的数据
 	if frag.PhysicalPath != "" {
-		log.Printf("DEBUG: [RemoteContainerReader] Fragment '%s' is a physical chunk at '%s'", fragID, frag.PhysicalPath)
+		readerLogger.Debug("processing physical chunk",
+			slog.String("fragment_id", fragID),
+			slog.String("physical_path", frag.PhysicalPath),
+		)
 
 		chunkURL, err := r.urlResolver.ResolveURL(frag.PhysicalPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve URL for physical chunk '%s': %w", fragID, err)
 		}
 
-		log.Printf("DEBUG: [RemoteContainerReader] Requesting physical chunk from resolved URL: %s", chunkURL)
+		readerLogger.Debug("requesting physical chunk",
+			slog.String("fragment_id", fragID),
+			slog.String("url", chunkURL),
+		)
 
 		// 请求整个分片文件
 		resp, err := utils.GetRemoteStreamWithRange(chunkURL, r.headers, 0, -1)
@@ -153,7 +166,12 @@ func (r *remoteEncryptedContainerReader) GetFragmentReader(fragID string) (io.Re
 		// 物理分片文件可能包含多个 Fragment，我们必须只读取当前 Fragment 的长度
 		// 否则读取器会读到下一个 Fragment 的数据
 		limitedBody := io.LimitReader(resp.Body, int64(frag.Length))
-		log.Printf("DEBUG: [GetFragmentReader] ID=%s Source=RemoteChunk Offset=%d Len=%d", fragID, r.headerSize+blockHeaderSize, frag.Length)
+		readerLogger.Debug("fragment reader created",
+			slog.String("fragment_id", fragID),
+			slog.String("source", "remote_chunk"),
+			slog.Int64("offset", r.headerSize+blockHeaderSize),
+			slog.Int64("length", int64(frag.Length)),
+		)
 
 		return struct {
 			io.Reader
@@ -174,13 +192,22 @@ func (r *remoteEncryptedContainerReader) GetFragmentReader(fragID string) (io.Re
 		}
 
 		dataEndOffset := diskStartOffset + int64(frag.Length) - 1
-		log.Printf("DEBUG: [RemoteContainerReader] Requesting seekable fragment '%s' with range: %d-%d", fragID, diskStartOffset, dataEndOffset)
+		readerLogger.Debug("requesting seekable fragment",
+			slog.String("fragment_id", fragID),
+			slog.Int64("range_start", diskStartOffset),
+			slog.Int64("range_end", dataEndOffset),
+		)
 
 		resp, err := utils.GetRemoteStreamWithRange(r.containerURL, r.headers, diskStartOffset, dataEndOffset)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch seekable fragment '%s': %w", fragID, err)
 		}
-		log.Printf("DEBUG: [GetFragmentReader] ID=%s Source=RemoteSeekable Offset=%d Len=%d", fragID, diskStartOffset, frag.Length)
+		readerLogger.Debug("fragment reader created",
+			slog.String("fragment_id", fragID),
+			slog.String("source", "remote_seekable"),
+			slog.Int64("offset", diskStartOffset),
+			slog.Int64("length", int64(frag.Length)),
+		)
 
 		// 直接返回 resp.Body，它是一个 io.ReadCloser
 		return resp.Body, nil
@@ -188,7 +215,9 @@ func (r *remoteEncryptedContainerReader) GetFragmentReader(fragID string) (io.Re
 	case types.FragmentType_AtomicFile:
 		// 【核心修复】上游服务器对 Range 请求有 Bug。
 		// 我们发起一个完整的 GET 请求，然后从流中手动提取我们需要的片段数据。
-		log.Printf("DEBUG: [RemoteContainerReader] Upstream Range requests are broken for '%s'. Using full GET and manual stream extraction.", fragID)
+		readerLogger.Debug("upstream range requests broken, using full GET",
+			slog.String("fragment_id", fragID),
+		)
 
 		req, err := http.NewRequest("GET", r.containerURL, nil)
 		if err != nil {
@@ -229,7 +258,12 @@ func (r *remoteEncryptedContainerReader) GetFragmentReader(fragID string) (io.Re
 
 		// 2. 创建一个 reader，它只读取我们需要的片段长度
 		limitedDataReader := io.LimitReader(resp.Body, int64(frag.Length))
-		log.Printf("DEBUG: [GetFragmentReader] ID=%s Source=RemoteAtomic Offset=%d Len=%d", fragID, diskStartOffset, frag.Length)
+		readerLogger.Debug("fragment reader created",
+			slog.String("fragment_id", fragID),
+			slog.String("source", "remote_atomic"),
+			slog.Int64("offset", diskStartOffset),
+			slog.Int64("length", int64(frag.Length)),
+		)
 
 		// 3. 将它包装成一个 io.ReadCloser，确保 Close 方法能关闭底层的 HTTP 连接
 		return struct {
@@ -270,21 +304,21 @@ func (r *remoteEncryptedContainerReader) GetManifest() *types.Manifest_v2 {
 	// 使用 GetRemoteStreamWithRange(offset, -1) -> offset 到结束
 	footerResp, err := utils.GetRemoteStreamWithRange(r.containerURL, r.headers, -32, -1)
 	if err != nil {
-		log.Printf("ERROR: [RemoteContainerReader] failed to fetch footer: %v", err)
+		readerLogger.Error("failed to fetch footer", slog.Any("error", err))
 		return nil
 	}
 	defer footerResp.Body.Close()
 
 	footerData, err := io.ReadAll(footerResp.Body)
 	if err != nil {
-		log.Printf("ERROR: [RemoteContainerReader] failed to read footer data: %v", err)
+		readerLogger.Error("failed to read footer data", slog.Any("error", err))
 		return nil
 	}
 
 	// 2. 【关键】使用 envelope 包的 Bytes 解析函数
 	footer, err := envelope.ParseEnvelopeFooterFromBytes(footerData)
 	if err != nil {
-		log.Printf("ERROR: [RemoteContainerReader] failed to parse footer: %v", err)
+		readerLogger.Error("failed to parse footer", slog.Any("error", err))
 		return nil
 	}
 
@@ -294,29 +328,37 @@ func (r *remoteEncryptedContainerReader) GetManifest() *types.Manifest_v2 {
 	manifestStart := int64(footer.ManifestOffset)
 	manifestEnd := manifestStart + int64(footer.ManifestLength) - 1
 
-	log.Printf("DEBUG: [RemoteContainerReader] Fetching manifest block from %d to %d", manifestStart, manifestEnd)
+	readerLogger.Debug("fetching manifest block",
+		slog.Int64("start", manifestStart),
+		slog.Int64("end", manifestEnd),
+	)
 
 	manifestResp, err := utils.GetRemoteStreamWithRange(r.containerURL, r.headers, manifestStart, manifestEnd)
 	if err != nil {
-		log.Printf("ERROR: [RemoteContainerReader] failed to fetch manifest block: %v", err)
+		readerLogger.Error("failed to fetch manifest block", slog.Any("error", err))
 		return nil
 	}
 	defer manifestResp.Body.Close()
 
 	manifestBlockData, err := io.ReadAll(manifestResp.Body)
 	if err != nil {
-		log.Printf("ERROR: [RemoteContainerReader] failed to read manifest block data: %v", err)
+		readerLogger.Error("failed to read manifest block data", slog.Any("error", err))
 		return nil
 	}
 
 	// 4. 【关键】使用 manifest 包的辅助函数解密并解析
 	// ReadEncryptedManifestBlock 处理了：读取 Header -> 读取 Data -> 解密 -> 解析
-	// 这实现了与 ReadManifestFromFile 相同的“逻辑”，统一了处理流程
+	// 这实现了与 ReadManifestFromFile 相同的"逻辑"，统一了处理流程
 	r.manifest, err = manifest.ReadEncryptedManifestBlock(manifestBlockData)
 	if err != nil {
-		log.Printf("ERROR: [RemoteContainerReader] failed to decrypt/parse manifest: %v", err)
+		readerLogger.Error("failed to decrypt/parse manifest", slog.Any("error", err))
 		return nil
 	}
+
+	readerLogger.Info("manifest loaded successfully",
+		slog.Int("fragment_count", len(r.manifest.Fragments)),
+		slog.String("kind", string(r.manifest.Kind)),
+	)
 
 	return r.manifest
 }

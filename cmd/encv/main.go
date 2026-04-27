@@ -6,12 +6,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/Soltus/encv-go/internal/config"
+	"github.com/Soltus/encv-go/internal/logger"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/pkg/encv"
 	"github.com/spf13/cobra"
@@ -68,10 +70,6 @@ var rootCmd = &cobra.Command{
 	Long:  `ENCV is a powerful command-line tool for encrypting and decrypting files and directories using a custom container format.`,
 	// PersistentPreRun 会在每个子命令运行前执行，非常适合用来做通用的初始化工作
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		// 【新增】在程序最开始就设置日志
-		logFilePath := utils.SetupLogging("encv.log")
-		log.Printf("Received Args: %v\n", os.Args)
-		fmt.Printf("-> Log file is at: %s\n", logFilePath)
 		// 从 flag 获取可能的配置路径
 		configFlag, _ := cmd.Flags().GetString("config")
 		configPath, err := config.FindConfigPath(configFlag)
@@ -79,12 +77,49 @@ var rootCmd = &cobra.Command{
 			log.Printf("Failed to find config path: %v", err)
 		}
 
-		log.Printf("-> Loading config from: %s\n", configPath)
 		// 加载基础配置（默认值 + 配置文件）
 		cfg, err = config.Load(configPath)
 		if err != nil {
 			log.Fatalf("Failed to load base config: %v", err)
 		}
+
+		// 【新增】初始化结构化日志
+		logLevel := logger.LevelInfo
+		switch cfg.Log.Level {
+		case "debug":
+			logLevel = logger.LevelDebug
+		case "info":
+			logLevel = logger.LevelInfo
+		case "warn":
+			logLevel = logger.LevelWarn
+		case "error":
+			logLevel = logger.LevelError
+		}
+
+		var logFile string
+		if cfg.Log.File != "" {
+			logFile = cfg.Log.File
+		}
+
+		if err := logger.Init(logLevel, logFile); err != nil {
+			log.Printf("Warning: failed to initialize structured logging: %v", err)
+			// 回退到旧版日志
+			logFilePath := utils.SetupLogging("encv.log")
+			log.Printf("-> Fallback to legacy logging. Log file is at: %s\n", logFilePath)
+		} else {
+			slog.Info("structured logging initialized",
+				slog.String("level", cfg.Log.Level),
+				slog.String("file", logFile),
+			)
+		}
+
+		// 记录启动信息
+		slog.Info("encv started",
+			slog.String("version", Version),
+			slog.String("config_path", configPath),
+			slog.Any("args", os.Args),
+		)
+
 		rootCtx = config.NewContext(context.Background(), cfg)
 	},
 }

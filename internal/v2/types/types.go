@@ -191,6 +191,16 @@ type ProxySiteConfig struct {
 	// Token前端输入
 }
 
+// --- 日志配置 ---
+type LogConfig struct {
+	// 日志级别: debug, info, warn, error
+	Level string `json:"level"`
+	// 日志文件路径，为空则只输出到控制台
+	File string `json:"file"`
+	// 是否输出到控制台
+	Console bool `json:"console"`
+}
+
 // DecryptedContent 包含解密后的所有内容
 type DecryptedContent struct {
 	Index      Index

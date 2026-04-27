@@ -6,14 +6,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 
+	"github.com/Soltus/encv-go/internal/logger"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
 	"github.com/Soltus/encv-go/internal/v2/container/envelope"
 	"github.com/Soltus/encv-go/internal/v2/crypto"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
+
+// manifestLogger 是 manifest 包的日志记录器
+var manifestLogger = logger.WithComponent("manifest")
 
 // EncryptManifest 加密原始 Manifest 字节
 func EncryptManifest(plainData []byte) ([]byte, error) {
@@ -73,7 +77,10 @@ func ExtractKVI_v2(containerPath string) ([]byte, error) {
 
 		// 如果是 KVI 块，就读取它的数据
 		if header.Type == types.BlockTypeKVI_v2 {
-			log.Printf("DEBUG: Found KVI block at offset %d (length %d)", blockStartOffset, header.Length)
+			manifestLogger.Debug("found KVI block",
+				slog.Int64("offset", blockStartOffset),
+				slog.Uint64("length", header.Length),
+			)
 			// 使用 ReadBlockData_v2 来读取并验证 CRC
 			kviData, err := block.ReadBlockData_v2(file, header)
 			if err != nil {
@@ -174,7 +181,11 @@ func ReadManifestFromFile(filePath string) (*types.Manifest_v2, *types.EnvelopeF
 
 	// 1. 探测 Header
 	headerVersion, headerSize, err := types.DetectHeaderInfoFromReaderAt(file)
-	log.Printf("DEBUG: [manifest.ReadManifestFromFile] File: %s, Detected Header Version: %d, Header Size: %d", filePath, headerVersion, headerSize)
+	manifestLogger.Debug("reading manifest from file",
+		slog.String("file", filePath),
+		slog.Int("header_version", headerVersion),
+		slog.Int64("header_size", headerSize),
+	)
 	if err != nil {
 		return nil, nil, 0, 0, fmt.Errorf("failed to detect header info: %w", err)
 	}

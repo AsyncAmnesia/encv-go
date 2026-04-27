@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,9 +14,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Soltus/encv-go/internal/logger"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
+
+// logger 是视频插件的日志记录器
+var videoLogger = logger.WithComponent("video.metadata_extractor")
 
 // VideoMetadataExtractor 实现 plugins.MetadataExtractor 接口
 type VideoMetadataExtractor struct {
@@ -27,11 +31,26 @@ type VideoMetadataExtractor struct {
 
 // ExtractMetadata 提取视频元数据
 func (e *VideoMetadataExtractor) ExtractMetadata(inputPath string) (types.Index, error) {
-	log.Printf("-> [METADATA_EXTRACTOR] Analyzing video: %s\n", filepath.Base(inputPath))
+	videoLogger.Info("analyzing video",
+		slog.String("file", filepath.Base(inputPath)),
+		slog.String("path", inputPath),
+	)
 
 	metadata, err := extractMetadataFromOriginalFile(inputPath)
 	if err != nil {
+		videoLogger.Error("failed to extract metadata",
+			slog.String("file", filepath.Base(inputPath)),
+			slog.Any("error", err),
+		)
 		return nil, fmt.Errorf("failed to get metadata from original file: %w", err)
+	}
+
+	// 安全检查：确保 metadata 不为 nil
+	if metadata == nil {
+		videoLogger.Error("metadata extraction returned nil",
+			slog.String("file", inputPath),
+		)
+		return nil, fmt.Errorf("metadata extraction returned nil for file: %s", inputPath)
 	}
 
 	// 将提取出的所有信息复制到共享的 index 中
@@ -41,12 +60,21 @@ func (e *VideoMetadataExtractor) ExtractMetadata(inputPath string) (types.Index,
 	*e.index = *metadata
 	e.index.OriginalInputPath = inputPath
 
+	videoLogger.Info("metadata extraction completed",
+		slog.String("file", filepath.Base(inputPath)),
+		slog.Int("width", metadata.Width),
+		slog.Int("height", metadata.Height),
+		slog.Float64("duration", metadata.DurationSeconds),
+	)
+
 	// 【关键】返回共享 index 的地址
 	return e.index, nil
 }
 
 func extractMetadataFromOriginalFile(path string) (*VideoIndex, error) {
-	log.Printf("-> [METADATA_EXTRACTOR] Using ffprobe/mkvtoolnix for metadata extraction from original file.\n")
+	videoLogger.Debug("using ffprobe/mkvtoolnix for metadata extraction",
+		slog.String("file", filepath.Base(path)),
+	)
 
 	// 1. 使用 ffprobe 获取基础元数据
 	cmd := exec.Command("ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path)
@@ -70,7 +98,11 @@ func extractMetadataFromOriginalFile(path string) (*VideoIndex, error) {
 		}
 	}
 
-	fileInfo, _ := os.Stat(path)
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat file %s: %w", path, err)
+	}
+
 	originalMD5, err := utils.FileMD5(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate MD5 for original file %s: %w", path, err)
@@ -78,12 +110,23 @@ func extractMetadataFromOriginalFile(path string) (*VideoIndex, error) {
 
 	chapters, err := extractChaptersWithFFprobe(path)
 	if err != nil {
-		log.Printf("-> [METADATA_EXTRACTOR] Warning: Could not extract chapters from original file with ffprobe (%v). Trying mkvextract.\n", err)
+		videoLogger.Warn("could not extract chapters with ffprobe",
+			slog.String("file", filepath.Base(path)),
+			slog.Any("error", err),
+		)
+
 		// 如果 ffprobe 失败，并且文件是 MKV，再尝试 mkvextract
-		if format, _ := utils.DetectVideoFormat(path); strings.ToLower(format) == "mkv" {
+		format, _ := utils.DetectVideoFormat(path)
+		if strings.ToLower(format) == "mkv" {
+			videoLogger.Debug("attempting mkvextract for chapters",
+				slog.String("file", filepath.Base(path)),
+			)
 			mkvChapters, err := ExtractChaptersWithMKVExtract(path)
 			if err != nil {
-				log.Printf("-> [METADATA_EXTRACTOR] Warning: mkvextract also failed. Proceeding without chapters.\n %v\n", err)
+				videoLogger.Warn("mkvextract also failed, proceeding without chapters",
+					slog.String("file", filepath.Base(path)),
+					slog.Any("error", err),
+				)
 				chapters = nil
 			} else {
 				chapters = mkvChapters
@@ -167,6 +210,9 @@ func extractChaptersWithFFprobe(path string) ([]MKVChapterInfo, error) {
 		})
 	}
 
-	log.Printf("-> [METADATA_EXTRACTOR] Found %d chapters.\n", len(chapters))
+	videoLogger.Debug("chapters extracted",
+		slog.String("file", filepath.Base(path)),
+		slog.Int("count", len(chapters)),
+	)
 	return chapters, nil
 }

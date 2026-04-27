@@ -2,11 +2,15 @@ package fragment // 逻辑分片
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 
+	"github.com/Soltus/encv-go/internal/logger"
 	"github.com/Soltus/encv-go/internal/v2/types"
 	"github.com/dustin/go-humanize"
 )
+
+// fragmentLogger 是 fragment 包的日志记录器
+var fragmentLogger = logger.WithComponent("fragment")
 
 // CreateLogicalFragmentsFromSizeAligned 创建一个与物理分片边界对齐的逻辑分片列表。
 // 这确保了没有任何一个逻辑分片会跨越物理分片的边界，对于兼容底层物理打包器至关重要。
@@ -95,7 +99,10 @@ func CalculateFragmentSize(totalFileSize int64, userConfiguredPhysicalSize int64
 	// 当物理块很大（或不分片）且文件本身也很大时，启用更大的逻辑分片
 	if (userConfiguredPhysicalSize == 0 || userConfiguredPhysicalSize > 1*1024*1024*1024) && totalFileSize > 30*1024*1024*1024 {
 		maxLogicalSize = largeMaxLogicalSize
-		log.Printf("-> [VIDEO] Large file and high-performance storage detected, using max logical chunk size of %s.\n", humanize.Bytes(uint64(maxLogicalSize)))
+		fragmentLogger.Info("large file detected, using increased logical chunk size",
+			slog.String("max_logical_size", humanize.Bytes(uint64(maxLogicalSize))),
+			slog.String("file_size", humanize.Bytes(uint64(totalFileSize))),
+		)
 	}
 
 	// 3. 【关键约束】逻辑分片的最大值不能超过物理分片的大小
@@ -183,6 +190,9 @@ func ValidateGlobalStartOffsets(manifest *types.Manifest_v2) error {
 		}
 		lastEnd += uint64(frag.Length)
 	}
-	log.Printf("INFO: All SeekableStream fragments have continuous GlobalStartOffset, total logical size: %d", lastEnd)
+	fragmentLogger.Info("validated fragment offsets",
+		slog.Uint64("total_logical_size", lastEnd),
+		slog.Int("fragment_count", len(manifest.Fragments)),
+	)
 	return nil
 }

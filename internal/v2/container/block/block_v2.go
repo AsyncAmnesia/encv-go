@@ -7,10 +7,14 @@ import (
 	"hash"
 	"hash/crc32"
 	"io"
-	"log"
+	"log/slog"
 
+	"github.com/Soltus/encv-go/internal/logger"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
+
+// blockLogger 是 block 包的日志记录器
+var blockLogger = logger.WithComponent("block")
 
 type BlockHeader_v2 struct {
 	Type   uint16
@@ -21,7 +25,11 @@ type BlockHeader_v2 struct {
 func GetBlockHeader_v2_Size() int64 {
 	size := int64(binary.Size(BlockHeader_v2{}))
 	if size == 0 {
-		log.Fatalf("FATAL: [block_v2] GetBlockHeader_v2_Size() returned 0. This indicates a critical structural definition error or logic failure. BlockHeader_v2 struct might be malformed or zero-sized.")
+		blockLogger.Error("critical structural definition error",
+			slog.String("error", "GetBlockHeader_v2_Size() returned 0"),
+			slog.String("detail", "BlockHeader_v2 struct might be malformed or zero-sized"),
+		)
+		panic("FATAL: GetBlockHeader_v2_Size() returned 0")
 	}
 	return size
 }

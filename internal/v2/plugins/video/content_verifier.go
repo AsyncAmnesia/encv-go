@@ -135,7 +135,7 @@ func (p *VideoContentVerifier) Verify(originalPath, decryptedPath string) error 
 
 		if !bytes.Equal(hasher1.Sum(nil), hasher2.Sum(nil)) {
 			duration := time.Since(startTime)
-			log.Printf("❌ [L3 FAIL] Hash mismatch at chunk %d/%d (elapsed: %v). Aborting.\n",
+			log.Printf("❌ [L3 FAIL] Hash mismatch at chunk %d (elapsed: %v). Aborting.\n",
 				offset/chunkSize, duration.Round(time.Millisecond))
 			return fmt.Errorf("hash mismatch at chunk %d (diff detected quickly)", offset/chunkSize)
 		}
