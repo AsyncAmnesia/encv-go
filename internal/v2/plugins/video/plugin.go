@@ -197,6 +197,9 @@ func (p *VideoPlugin) Initialize(ctx context.Context) error {
 	p.containerManager = service.NewContainerManager()
 	p.baseNamer = namer.NewDefaultBaseNamer()
 	p.chunkNamer = namer.NewPaddedNamer(p.settings.Ext, p.baseNamer, 4) // 补零到4位
+	// 初始化新增字段
+	p.splitSets = make([][]string, 0)
+	p.splitPartPaths = make(map[string]bool)
 	if p.settings.ChunkSizeMB > 0 {
 		log.Printf("INFO: [%s] Physical chunking enabled. Size: %d MB\n", p.Name(), p.settings.ChunkSizeMB)
 		p.physicalPacker = physical.NewFileChunkerPhysicalPacker(int64(p.settings.ChunkSizeMB)*1024*1024, p.chunkNamer)
