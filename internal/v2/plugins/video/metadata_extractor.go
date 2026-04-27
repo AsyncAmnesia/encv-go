@@ -36,10 +36,9 @@ func (e *VideoMetadataExtractor) ExtractMetadata(inputPath string) (types.Index,
 
 	// 将提取出的所有信息复制到共享的 index 中
 	if e.index == nil {
-		e.index = metadata
-	} else {
-		*e.index = *metadata
+		e.index = &VideoIndex{}
 	}
+	*e.index = *metadata
 	e.index.OriginalInputPath = inputPath
 
 	// 【关键】返回共享 index 的地址
