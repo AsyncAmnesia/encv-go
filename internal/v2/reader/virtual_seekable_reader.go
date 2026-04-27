@@ -1,7 +1,6 @@
 package reader
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"errors"
@@ -33,7 +32,7 @@ type VirtualSeekableDecryptReader struct {
 
 	// currentRawReader 是指向当前 fragment 的底层加密数据读取器
 	currentRawReader io.ReadCloser
-	// currentDataReader 提供解密后的连续读取
+	// 直接保存解密后的数据读取器，避免多层包装导致的状态混乱
 	currentDataReader io.Reader
 
 	globalOffset int64
@@ -81,19 +80,6 @@ func NewVirtualSeekableDecryptReader(cr EncryptedContainerReader, password strin
 	return r, nil
 }
 
-func (r *VirtualSeekableDecryptReader) buildFragmentIndex() {
-	var currentOffset uint64 = 0
-	for _, frag := range r.streamFragments {
-		r.fragmentIndex = append(r.fragmentIndex, fragmentIndex{
-			frag:  &frag,
-			start: currentOffset,
-			end:   currentOffset + frag.Length - 1,
-		})
-		currentOffset += frag.Length
-	}
-}
-
-// 【直接复用】源自旧代码的健壮实现
 // setupCurrentFragmentReader 准备当前分片的读取器，采用多路径自适应策略
 func (r *VirtualSeekableDecryptReader) setupCurrentFragmentReader() error {
 	if r.currentRawReader != nil {
@@ -116,7 +102,7 @@ func (r *VirtualSeekableDecryptReader) setupCurrentFragmentReader() error {
 		return fmt.Errorf("seek offset (%d) beyond fragment %s length (%d)", localOffset, frag.ID, frag.Length)
 	}
 
-	// 【接口修正】使用统一的 GetFragmentReader
+	// 获取 Fragment 的 Reader (此时返回的是完整的 Fragment Payload)
 	rawReader, err := r.containerReader.GetFragmentReader(frag.ID)
 	if err != nil {
 		return fmt.Errorf("container is corrupt: failed to get reader for fragment '%s': %w", frag.ID, err)
@@ -128,85 +114,57 @@ func (r *VirtualSeekableDecryptReader) setupCurrentFragmentReader() error {
 		return fmt.Errorf("failed to create aes cipher for fragment %s: %w", frag.ID, err)
 	}
 
-	// Try path using ReaderAt (SectionReader) - 最优路径
-	if ra, ok := rawReader.(io.ReaderAt); ok {
-		section := io.NewSectionReader(ra, int64(localOffset), int64(frag.Length-localOffset))
-		totalOffset := frag.GlobalStartOffset + localOffset
-		iv, derr := crypto.DeriveCTRIVForOffset_v2(r.iv, totalOffset)
-		if derr != nil {
-			_ = rawReader.Close()
-			return derr
-		}
-		stream := cipher.NewCTR(block, iv)
-		streamReader := &cipher.StreamReader{S: stream, R: section}
+	// 1. 计算当前读取位置的绝对逻辑偏移
+	// 这决定了 IV
+	absGlobalOffset := frag.GlobalStartOffset + localOffset
 
-		offsetInBlock := int(totalOffset % uint64(aes.BlockSize))
-		if offsetInBlock != 0 {
-			tmp := make([]byte, offsetInBlock)
-			if _, err := io.ReadFull(streamReader, tmp); err != nil {
-				_ = rawReader.Close()
-				return fmt.Errorf("failed to align stream for fragment %s: %w", frag.ID, err)
-			}
-		}
-
-		r.currentRawReader = rawReader
-		r.currentDataReader = streamReader
-		return nil
-	}
-
-	// Try path using ReadSeeker - 次优路径
-	if rs, ok := rawReader.(io.ReadSeeker); ok {
-		if _, err := rs.Seek(int64(localOffset), io.SeekStart); err != nil {
-			_ = rawReader.Close()
-			return fmt.Errorf("failed to seek underlying fragment reader for %s: %w", frag.ID, err)
-		}
-		totalOffset := frag.GlobalStartOffset + localOffset
-		iv, derr := crypto.DeriveCTRIVForOffset_v2(r.iv, totalOffset)
-		if derr != nil {
-			_ = rawReader.Close()
-			return derr
-		}
-		stream := cipher.NewCTR(block, iv)
-		streamReader := &cipher.StreamReader{S: stream, R: rs}
-
-		offsetInBlock := int(totalOffset % uint64(aes.BlockSize))
-		if offsetInBlock != 0 {
-			tmp := make([]byte, offsetInBlock)
-			if _, err := io.ReadFull(streamReader, tmp); err != nil {
-				_ = rawReader.Close()
-				return fmt.Errorf("failed to align stream for fragment %s: %w", frag.ID, err)
-			}
-		}
-
-		r.currentRawReader = rawReader
-		r.currentDataReader = streamReader
-		return nil
-	}
-
-	// Fallback: 读取全部数据到内存 - 兜底路径
-	encryptedData, err := io.ReadAll(rawReader)
-	_ = rawReader.Close()
-	if err != nil {
-		return fmt.Errorf("container is corrupt: failed to read data for fragment '%s': %w", frag.ID, err)
-	}
-	totalOffset := frag.GlobalStartOffset
-	ivForFrag, derr := crypto.DeriveCTRIVForOffset_v2(r.iv, totalOffset)
+	// 2. 推导 IV
+	iv, derr := crypto.DeriveCTRIVForOffset_v2(r.iv, absGlobalOffset)
 	if derr != nil {
+		_ = rawReader.Close()
 		return derr
 	}
-	stream := cipher.NewCTR(block, ivForFrag)
-	decryptedData := make([]byte, len(encryptedData))
-	stream.XORKeyStream(decryptedData, encryptedData)
-	decryptedSlice := decryptedData[localOffset:]
-	r.currentDataReader = bytes.NewReader(decryptedSlice)
-	r.currentRawReader = nil
 
+	stream := cipher.NewCTR(block, iv)
+	streamReader := &cipher.StreamReader{S: stream, R: rawReader}
+
+	// 3. 【关键修复】显式跳过 localOffset 字节
+	// 如果 localOffset > 0，我们必须消耗掉前面的字节以同步 CTR 的计数器
+	if localOffset > 0 {
+		// 为了性能，我们不分配 huge buffer，而是循环读取
+		// 但既然是内存中的 SectionReader，读取和丢弃相对较快
+		// 使用一个小的 buffer 复用池
+		buf := r.bufPool.Get().([]byte)
+		defer r.bufPool.Put(buf)
+
+		var discarded uint64
+		for discarded < localOffset {
+			// 计算这次读取的大小
+			toRead := localOffset - discarded
+			// cap buf to toRead (but preserve underlying array if possible)
+			if cap(buf) < int(toRead) {
+				buf = make([]byte, toRead)
+			} else {
+				buf = buf[:toRead]
+			}
+
+			n, err := io.ReadFull(streamReader, buf)
+			if err != nil {
+				_ = rawReader.Close()
+				return fmt.Errorf("failed to discard %d bytes for alignment: %w", toRead, err)
+			}
+			discarded += uint64(n)
+		}
+	}
+
+	// 此时 streamReader 已经同步到了 absGlobalOffset
+	r.currentRawReader = rawReader
+	r.currentDataReader = streamReader
 	return nil
 }
 
 // Read 实现 io.Reader 接口，使用健壮的循环逻辑
 func (r *VirtualSeekableDecryptReader) Read(p []byte) (n int, err error) {
-
 	totalRead := 0
 	for totalRead < len(p) {
 		if r.currentFragmentIndex >= len(r.streamFragments) {
@@ -226,14 +184,12 @@ func (r *VirtualSeekableDecryptReader) Read(p []byte) (n int, err error) {
 		r.globalOffset += int64(bytesRead)
 
 		if readErr == io.EOF {
-			// 当前 fragment 读完，关闭并前进到下一个
 			if r.currentRawReader != nil {
 				_ = r.currentRawReader.Close()
 				r.currentRawReader = nil
 			}
 			r.currentDataReader = nil
 			r.currentFragmentIndex++
-			// 继续循环以填充剩余 p
 			continue
 		}
 		if readErr != nil {
@@ -268,7 +224,7 @@ func (r *VirtualSeekableDecryptReader) Seek(offset int64, whence int) (int64, er
 		return r.globalOffset, fmt.Errorf("seek offset %d out of bounds [0, %d]", newGlobalOffset, totalSize)
 	}
 
-	// 【关键修复】如果目标位置与当前位置相同，则无需任何操作
+	// 如果目标位置与当前位置相同，则无需任何操作
 	if newGlobalOffset == r.globalOffset {
 		return r.globalOffset, nil
 	}
@@ -287,7 +243,7 @@ func (r *VirtualSeekableDecryptReader) Seek(offset int64, whence int) (int64, er
 		return r.globalOffset, fmt.Errorf("seek position %d not inside any fragment", newGlobalOffset)
 	}
 
-	// 【关键修正】先更新 index，再调用 setup
+	// 先更新 index，再调用 setup
 	r.currentFragmentIndex = fragIdx
 	r.globalOffset = newGlobalOffset
 

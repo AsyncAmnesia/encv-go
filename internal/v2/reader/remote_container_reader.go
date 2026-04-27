@@ -1,8 +1,6 @@
 package reader
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
@@ -10,6 +8,7 @@ import (
 
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
+	"github.com/Soltus/encv-go/internal/v2/container/envelope"
 	"github.com/Soltus/encv-go/internal/v2/container/manifest"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
@@ -26,33 +25,102 @@ type remoteEncryptedContainerReader struct {
 	containerURL string
 	headers      map[string][]string
 	urlResolver  URLResolver
+	// 【V3 适配】缓存 Header 大小 (16 for V2, 2048 for V3)
+	headerSize int64
 	// 缓存，避免重复请求
 	manifest *types.Manifest_v2
 }
 
 // NewRemoteEncryptedContainerReader 创建一个新的远程容器读取器
 func NewRemoteEncryptedContainerReader(containerURL string, headers map[string][]string, urlResolver URLResolver) (EncryptedContainerReader, error) {
-	return &remoteEncryptedContainerReader{
+	r := &remoteEncryptedContainerReader{
 		containerURL: containerURL,
 		headers:      headers,
-		urlResolver:  urlResolver, // 【关键】存储接口
-	}, nil
+		urlResolver:  urlResolver,
+	}
+	// 【V3 适配】初始化时探测 Header 版本并缓存大小
+	if err := r.initHeaderSize(); err != nil {
+		return nil, fmt.Errorf("failed to detect header size: %w", err)
+	}
+	return r, nil
+}
+
+// initHeaderSize 读取文件头部的前 6 字节，探测版本并缓存 Header 大小
+func (r *remoteEncryptedContainerReader) initHeaderSize() error {
+	// 读取前 6 字节 (4B Magic + 2B Version)
+	resp, err := utils.GetRemoteStreamWithRange(r.containerURL, r.headers, 0, 5)
+	if err != nil {
+		return fmt.Errorf("failed to read header for version detection: %w", err)
+	}
+	defer resp.Body.Close()
+
+	headerBytes := make([]byte, 6)
+	if _, err := io.ReadFull(resp.Body, headerBytes); err != nil {
+		return fmt.Errorf("failed to read header bytes: %w", err)
+	}
+
+	version, headerSize, err := types.DetectHeaderInfoFromBytes(headerBytes)
+	if err != nil {
+		return fmt.Errorf("failed to parse header: %w", err)
+	}
+
+	r.headerSize = headerSize
+	if r.headerSize == 0 {
+		return fmt.Errorf("unknown header version detected: %d", version)
+	}
+
+	log.Printf("INFO: [RemoteContainerReader] Detected Version %d, Header Size: %d", version, r.headerSize)
+	return nil
+}
+
+// calculateDiskOffset 计算特定 Fragment 在文件中的物理磁盘偏移量
+// 公式：HeaderSize + (FragIndex * BlockHeaderSize) + GlobalStartOffset
+// 因为 GlobalStartOffset 是数据流的偏移量，但每个数据块前都有一个 BlockHeader
+// 注意：此函数仅用于主文件中的逻辑分片
+func (r *remoteEncryptedContainerReader) calculateDiskOffset(frag *types.Fragment_v2) (int64, error) {
+	if r.manifest == nil {
+		return 0, fmt.Errorf("manifest not loaded, cannot calculate offset")
+	}
+
+	// 查找当前 Fragment 的索引
+	fragIndex := -1
+	for i, f := range r.manifest.Fragments {
+		if f.ID == frag.ID {
+			fragIndex = i
+			break
+		}
+	}
+	if fragIndex == -1 {
+		return 0, fmt.Errorf("fragment %s not found in manifest", frag.ID)
+	}
+
+	blockHeaderSize := block.GetBlockHeader_v2_Size()
+
+	// 计算公式：Envelope Header + (该 Fragment 之前的所有 Block Headers) + 该 Fragment 的数据起始偏移
+	diskOffset := r.headerSize + (int64(fragIndex) * blockHeaderSize) + int64(frag.GlobalStartOffset)
+	return diskOffset, nil
 }
 
 // GetFragmentReader 按需获取指定 Fragment 的加密数据流
 func (r *remoteEncryptedContainerReader) GetFragmentReader(fragID string) (io.ReadCloser, error) {
-	log.Printf("DEBUG: [remoteEncryptedContainerReader] Getting fragment reader for ID: %s", fragID)
-	manifest := r.GetManifest()
 
-	frag, err := manifest.GetFragmentByID(fragID)
+	// 确保 Manifest 已加载
+	if r.manifest == nil {
+		r.GetManifest()
+		if r.manifest == nil {
+			return nil, fmt.Errorf("manifest is not available")
+		}
+	}
+
+	frag, err := r.manifest.GetFragmentByID(fragID)
 	if err != nil {
 		return nil, fmt.Errorf("fragment '%s' not found: %w", fragID, err)
 	}
-	// 【关键修复】计算纯粹数据的起始位置和长度
-	// frag.GlobalStartOffset 是整个块的起始位置
-	// frag.Length 是纯数据的长度
-	blockHeaderSize := int64(binary.Size(block.BlockHeader_v2{}))
-	// 情况 1: 处理物理分片
+
+	blockHeaderSize := block.GetBlockHeader_v2_Size()
+
+	// 情况 1: 处理物理分片 (外部 .part 文件)
+	// 【关键修复】正确处理物理分片，确保只读取当前 Fragment 的数据
 	if frag.PhysicalPath != "" {
 		log.Printf("DEBUG: [RemoteContainerReader] Fragment '%s' is a physical chunk at '%s'", fragID, frag.PhysicalPath)
 
@@ -63,31 +131,57 @@ func (r *remoteEncryptedContainerReader) GetFragmentReader(fragID string) (io.Re
 
 		log.Printf("DEBUG: [RemoteContainerReader] Requesting physical chunk from resolved URL: %s", chunkURL)
 
+		// 请求整个分片文件
 		resp, err := utils.GetRemoteStreamWithRange(chunkURL, r.headers, 0, -1)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch physical chunk '%s': %w", fragID, err)
 		}
 
-		_, err = io.CopyN(io.Discard, resp.Body, blockHeaderSize)
-		if err != nil {
+		// 1. 跳过分片文件的 V3 Header
+		if _, err := io.CopyN(io.Discard, resp.Body, r.headerSize); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to skip v3 header for physical chunk '%s': %w", fragID, err)
+		}
+
+		// 2. 跳过该 Fragment 的 Block Header
+		if _, err := io.CopyN(io.Discard, resp.Body, blockHeaderSize); err != nil {
 			resp.Body.Close()
 			return nil, fmt.Errorf("failed to skip block header for physical chunk '%s': %w", fragID, err)
 		}
 
-		return resp.Body, nil
+		// 3. 【关键修复】使用 LimitReader 限制读取范围
+		// 物理分片文件可能包含多个 Fragment，我们必须只读取当前 Fragment 的长度
+		// 否则读取器会读到下一个 Fragment 的数据
+		limitedBody := io.LimitReader(resp.Body, int64(frag.Length))
+		log.Printf("DEBUG: [GetFragmentReader] ID=%s Source=RemoteChunk Offset=%d Len=%d", fragID, r.headerSize+blockHeaderSize, frag.Length)
+
+		return struct {
+			io.Reader
+			io.Closer
+		}{
+			Reader: limitedBody,
+			Closer: resp.Body,
+		}, nil
 	}
 
 	// 情况 2: 处理主文件中的逻辑分片
 	switch frag.Type {
 	case types.FragmentType_SeekableStream:
-		// 【修复】正确处理 *http.Response，返回 resp.Body
-		dataStartOffset := int64(frag.GlobalStartOffset) + blockHeaderSize
-		dataEnd := dataStartOffset + int64(frag.Length) - 1
-		log.Printf("DEBUG: [RemoteContainerReader] Requesting seekable fragment '%s' with range: %d-%d", fragID, dataStartOffset, dataEnd)
-		resp, err := utils.GetRemoteStreamWithRange(r.containerURL, r.headers, dataStartOffset, dataEnd)
+		// 【修复】使用 calculateDiskOffset 计算正确的物理位置
+		diskStartOffset, err := r.calculateDiskOffset(frag)
+		if err != nil {
+			return nil, fmt.Errorf("failed to calculate disk offset for fragment '%s': %w", fragID, err)
+		}
+
+		dataEndOffset := diskStartOffset + int64(frag.Length) - 1
+		log.Printf("DEBUG: [RemoteContainerReader] Requesting seekable fragment '%s' with range: %d-%d", fragID, diskStartOffset, dataEndOffset)
+
+		resp, err := utils.GetRemoteStreamWithRange(r.containerURL, r.headers, diskStartOffset, dataEndOffset)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch seekable fragment '%s': %w", fragID, err)
 		}
+		log.Printf("DEBUG: [GetFragmentReader] ID=%s Source=RemoteSeekable Offset=%d Len=%d", fragID, diskStartOffset, frag.Length)
+
 		// 直接返回 resp.Body，它是一个 io.ReadCloser
 		return resp.Body, nil
 
@@ -118,18 +212,24 @@ func (r *remoteEncryptedContainerReader) GetFragmentReader(fragID string) (io.Re
 		}
 
 		// 现在，resp.Body 是整个文件的流。我们需要从中找到我们的数据。
-		blockHeaderSize := int64(binary.Size(block.BlockHeader_v2{}))
-		dataStartOffset := int64(frag.GlobalStartOffset) + blockHeaderSize
 
-		// 1. 跳过我们不需要的数据（从文件开始到我们数据块开始的位置）
-		_, err = io.CopyN(io.Discard, resp.Body, dataStartOffset)
+		// 【修复】使用 calculateDiskOffset
+		diskStartOffset, err := r.calculateDiskOffset(frag)
 		if err != nil {
 			resp.Body.Close()
-			return nil, fmt.Errorf("failed to skip %d bytes for fragment '%s': %w", dataStartOffset, fragID, err)
+			return nil, fmt.Errorf("failed to calculate disk offset for fragment '%s': %w", fragID, err)
+		}
+
+		// 1. 跳过我们不需要的数据（从文件开始到我们数据块开始的位置）
+		_, err = io.CopyN(io.Discard, resp.Body, diskStartOffset)
+		if err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to skip %d bytes for fragment '%s': %w", diskStartOffset, fragID, err)
 		}
 
 		// 2. 创建一个 reader，它只读取我们需要的片段长度
 		limitedDataReader := io.LimitReader(resp.Body, int64(frag.Length))
+		log.Printf("DEBUG: [GetFragmentReader] ID=%s Source=RemoteAtomic Offset=%d Len=%d", fragID, diskStartOffset, frag.Length)
 
 		// 3. 将它包装成一个 io.ReadCloser，确保 Close 方法能关闭底层的 HTTP 连接
 		return struct {
@@ -166,75 +266,59 @@ func (r *remoteEncryptedContainerReader) GetManifest() *types.Manifest_v2 {
 		return r.manifest
 	}
 
-	// 1. 下载 Footer (最后 32 字节)
+	// 1. 【关键】下载 Footer (最后 32 字节)
+	// 使用 GetRemoteStreamWithRange(offset, -1) -> offset 到结束
 	footerResp, err := utils.GetRemoteStreamWithRange(r.containerURL, r.headers, -32, -1)
 	if err != nil {
 		log.Printf("ERROR: [RemoteContainerReader] failed to fetch footer: %v", err)
 		return nil
 	}
 	defer footerResp.Body.Close()
+
 	footerData, err := io.ReadAll(footerResp.Body)
 	if err != nil {
 		log.Printf("ERROR: [RemoteContainerReader] failed to read footer data: %v", err)
 		return nil
 	}
 
-	footer, err := manifest.ParseFooterFromBytes(footerData)
+	// 2. 【关键】使用 envelope 包的 Bytes 解析函数
+	footer, err := envelope.ParseEnvelopeFooterFromBytes(footerData)
 	if err != nil {
 		log.Printf("ERROR: [RemoteContainerReader] failed to parse footer: %v", err)
 		return nil
 	}
 
-	// 2. 【关键修正】下载整个 Manifest 块（头+数据）
-	// Footer.ManifestLength 是 Manifest 块数据（JSON部分）的长度
-	// 我们需要加上块头的长度来获取整个块
-	blockHeaderSize := int64(binary.Size(block.BlockHeader_v2{}))
-	manifestBlockSize := blockHeaderSize + int64(footer.ManifestLength)
-
+	// 3. 【关键】下载整个 Manifest 块 (Header + EncryptedData)
+	// Footer.ManifestOffset 是 Header 开始的绝对偏移量
+	// Footer.ManifestLength 是 Header + EncryptedData 的总长度
 	manifestStart := int64(footer.ManifestOffset)
-	manifestEnd := manifestStart + manifestBlockSize - 1
+	manifestEnd := manifestStart + int64(footer.ManifestLength) - 1
 
-	log.Printf("DEBUG: [RemoteContainerReader] Requesting manifest block from %d to %d", manifestStart, manifestEnd)
+	log.Printf("DEBUG: [RemoteContainerReader] Fetching manifest block from %d to %d", manifestStart, manifestEnd)
+
 	manifestResp, err := utils.GetRemoteStreamWithRange(r.containerURL, r.headers, manifestStart, manifestEnd)
 	if err != nil {
 		log.Printf("ERROR: [RemoteContainerReader] failed to fetch manifest block: %v", err)
 		return nil
 	}
 	defer manifestResp.Body.Close()
+
 	manifestBlockData, err := io.ReadAll(manifestResp.Body)
 	if err != nil {
 		log.Printf("ERROR: [RemoteContainerReader] failed to read manifest block data: %v", err)
 		return nil
 	}
 
-	// 3. 【关键修正】从块数据中解析出 JSON
-	// 使用与 ReadManifestFromFile 完全相同的逻辑
-	blockReader := bytes.NewReader(manifestBlockData)
-	manifestHeader, err := block.ReadBlockHeader_v2(blockReader)
+	// 4. 【关键】使用 manifest 包的辅助函数解密并解析
+	// ReadEncryptedManifestBlock 处理了：读取 Header -> 读取 Data -> 解密 -> 解析
+	// 这实现了与 ReadManifestFromFile 相同的“逻辑”，统一了处理流程
+	r.manifest, err = manifest.ReadEncryptedManifestBlock(manifestBlockData)
 	if err != nil {
-		log.Printf("ERROR: [RemoteContainerReader] failed to read manifest block header: %v", err)
-		return nil
-	}
-	if manifestHeader.Type != types.BlockTypeManifest_v2 {
-		log.Printf("ERROR: [RemoteContainerReader] expected manifest block type, got %d", manifestHeader.Type)
+		log.Printf("ERROR: [RemoteContainerReader] failed to decrypt/parse manifest: %v", err)
 		return nil
 	}
 
-	manifestData, err := block.ReadBlockData_v2(blockReader, manifestHeader)
-	if err != nil {
-		log.Printf("ERROR: [RemoteContainerReader] failed to read manifest block data: %v", err)
-		return nil
-	}
-
-	// 4. 反序列化 JSON
-	manifest, err := manifest.ParseManifestFromBytes(manifestData)
-	if err != nil {
-		log.Printf("ERROR: [RemoteContainerReader] failed to parse manifest from JSON: %v", err)
-		return nil
-	}
-
-	r.manifest = manifest
-	return manifest
+	return r.manifest
 }
 
 // GetKVIProvider 从缓存的 Manifest 中获取 KVI

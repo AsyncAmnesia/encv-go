@@ -1,9 +1,12 @@
 package webdav
 
 import (
+	"fmt"
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/Soltus/encv-go/internal/utils"
 )
 
 // webdavPathToIndexKey 将 WebDAV Handler 传入的绝对路径，转换为用于索引查找的标准键。
@@ -42,4 +45,22 @@ func (fs *encvWebDAVFS) physicalPathToIndexKey(physicalPath, virtualFilename str
 	// 3. 使用 path.Join 组合成最终的索引键
 	// path.Join 会处理斜杠，确保格式正确
 	return path.Join(virtualDir, virtualFilename), nil
+}
+
+// resolvePath 将 WebDAV 路径安全地解析为本地文件系统绝对路径
+func (fs *encvWebDAVFS) resolvePath(name string) (string, error) {
+	// 1. 检查并剥离 webdavPrefix
+	if !strings.HasPrefix(name, fs.webdavPrefix) {
+		return "", fmt.Errorf("path '%s' is not under webdav root '%s'", name, fs.webdavPrefix)
+	}
+
+	// 剥离前缀，得到相对于 WebDAV 根的用户路径
+	userPath := strings.TrimPrefix(name, fs.webdavPrefix)
+	if userPath == "" {
+		userPath = "." // 表示请求的是 WebDAV 根目录
+	}
+
+	// 2. 【核心】调用通用工具函数进行安全解析
+	// fs.dir 是我们的基础目录，userPath 是用户提供的相对路径
+	return utils.SafeResolveToAbsPath(fs.dir, userPath)
 }

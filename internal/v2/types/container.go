@@ -25,6 +25,21 @@ const (
 	IVSize_v2   = 16
 )
 
+func GetBlockTypeName(blockType uint32) string {
+	switch blockType {
+	case uint32(BlockTypeData_v2):
+		return "Data"
+	case uint32(BlockTypeManifest_v2):
+		return "Manifest"
+	case uint32(BlockTypeKVI_v2):
+		return "KVI"
+	case uint32(BlockTypeRecovery_v2):
+		return "Recovery"
+	default:
+		return fmt.Sprintf("Unknown(%d)", blockType)
+	}
+}
+
 var (
 	ByteOrder_v2       = binary.LittleEndian
 	ErrInvalidMagic_v2 = errors.New("invalid magic number")
@@ -57,7 +72,12 @@ type Fragment_v2 struct {
 	// GlobalStartOffset 仅在 Type 为 FragmentType_SeekableStream 时有效。
 	// 它表示该分片在整个虚拟数据流中的起始字节位置，用于 O(1) 寻址。
 	GlobalStartOffset uint64 `json:"global_start_offset,omitempty"`
-	PhysicalPath      string `json:"physical_path,omitempty"` // 作为提示，但不是唯一依据
+	PhysicalPath      string `json:"physical_path,omitempty"` // 作为提示，TODO: 后续改为使用 header 关联物理分片
+	// 【新增】PhysicalOffset 记录该 Fragment 对应的 Block Header 在物理文件中的绝对位置。
+	// 注意：这是 Block Header 的起始位置，而非 Payload 的位置。
+	// 这样设计是为了让解密器能够直接定位到数据，无需复杂的扫描逻辑。
+	// 如果 Fragment 在外部文件中，此字段记录的是在该外部文件中的偏移。
+	PhysicalOffset uint64 `json:"physical_offset,omitempty"`
 
 	// 【关键新增】该片段对应加密数据块的 CRC32 校验和
 	// 这是验证物理文件是否正确的“指纹”，与文件名无关

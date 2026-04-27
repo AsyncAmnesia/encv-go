@@ -90,7 +90,7 @@ func Load(configPath string) (*Config, error) {
 	cfg := DefaultConfig()
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		fmt.Printf("-> [Config] Config file '%s' not found, using default settings.\n", configPath)
+		log.Printf("-> [Config] Config file '%s' not found, using default settings.\n", configPath)
 		return cfg, nil
 	}
 
@@ -110,32 +110,13 @@ func Load(configPath string) (*Config, error) {
 		}
 	}
 
-	fmt.Printf("-> [Config] Successfully loaded configuration from '%s'.\n", configPath)
+	log.Printf("-> [Config] Successfully loaded configuration from '%s'.\n", configPath)
 	return cfg, nil
 }
 
 // GetPluginSettingsFor 是一个泛型辅助函数，用于安全地获取并解析特定插件的配置。
 // T 是插件配置结构体的类型，例如 VideoPluginConfig。
 // 它会从 map 中查找插件配置，并将其反序列化为 T 类型的指针。
-// func GetPluginSettingsFor[T any](cfg *Config, pluginName string) (*T, error) {
-// 	// 1. 从 map 中获取原始的 JSON 数据
-// 	rawSettings, ok := cfg.PluginSettings[pluginName]
-// 	if !ok {
-// 		return nil, fmt.Errorf("no settings found for plugin '%s'", pluginName)
-// 	}
-
-// 	// 2. 定义一个 T 类型的变量，用于接收反序列化的结果
-// 	var settings T
-
-// 	// 3. 将原始 JSON 解析到 T 类型的变量中
-// 	if err := json.Unmarshal(rawSettings, &settings); err != nil {
-// 		return nil, fmt.Errorf("failed to unmarshal settings for plugin '%s': %w", pluginName, err)
-// 	}
-
-// 	// 4. 返回解析后配置的指针
-// 	return &settings, nil
-// }
-
 func GetPluginSettingsFor[T any](cfg *Config, pluginName string) (*T, error) {
 	var rawSettings json.RawMessage
 	var err error

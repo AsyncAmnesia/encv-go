@@ -3,6 +3,7 @@ package reader
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 )
 
@@ -34,8 +35,8 @@ func (t *TempFileReadCloser) Close() error {
 	err := t.file.Close()
 	// 尝试删除临时文件，即使失败也不应中断主流程
 	if rmErr := os.Remove(t.path); rmErr != nil {
-		// 使用 fmt.Printf 以避免在库代码中强制引入日志格式
-		fmt.Printf("Warning: failed to remove temp file '%s': %v\n", t.path, rmErr)
+		// 使用 log.Printf 以避免在库代码中强制引入日志格式
+		log.Printf("Warning: failed to remove temp file '%s': %v\n", t.path, rmErr)
 	}
 	return err
 }

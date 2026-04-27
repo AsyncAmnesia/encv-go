@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -19,7 +20,7 @@ import (
 
 // FileChunkerPhysicalPacker 使用文件分片器进行物理打包
 type FileChunkerPhysicalPacker struct {
-	chunkSize int64
+	chunkSize int64            // 标定的物理分片大小（软限制）
 	namer     namer.ChunkNamer // 【关键修改】注入命名器
 }
 
@@ -31,106 +32,211 @@ func NewFileChunkerPhysicalPacker(chunkSize int64, namer namer.ChunkNamer) *File
 }
 
 // Pack 实现 PhysicalPacker 接口
-func (p *FileChunkerPhysicalPacker) Pack(data io.Reader, manifest *types.Manifest_v2, req *PackRequest) (string, error) {
-	if req.Namer == nil {
-		return "", fmt.Errorf("FileChunkerPhysicalPacker requires a namer")
-	}
-	// 1. 准备主文件路径
-	mainChunkPath := filepath.Join(req.OutputDir, req.Namer.GenerateMainChunkName(req.BaseName))
-	tempMainChunkPath := mainChunkPath + ".tmp"
-
-	// 2. 创建主文件句柄
-	mainFile, err := os.Create(tempMainChunkPath)
+func (p *FileChunkerPhysicalPacker) Pack(manifest *types.Manifest_v2, req *PackRequest) (string, error) {
+	// 1. 准备 Header
+	mainHeader, chunkHeader, err := p.prepareHeaders(req.HeaderVersion, req.SpecialIDType, req.SpecialID)
 	if err != nil {
-		return "", fmt.Errorf("failed to create main container file: %w", err)
+		return "", fmt.Errorf("failed to prepare headers: %w", err)
 	}
-	defer func() {
-		mainFile.Close()
-		// 如果函数返回错误，确保删除临时文件
-		if err != nil {
-			os.Remove(tempMainChunkPath)
-		}
-	}()
 
-	// 3. 【关键】创建全局哈希器和专用的分片写入工具
+	// 2. 准备主文件
+	mainFile, err := p.prepareMainFile(req, mainHeader)
+	if err != nil {
+		return "", fmt.Errorf("failed to prepare main file: %w", err)
+	}
+	defer p.cleanup(mainFile, err)
+
+	// 3. 【关键】将 Header 写入 Global Hasher
 	globalHasher := crc32.NewIEEE()
+	if mainHeader != nil {
+		headerSize := types.EnvelopeHeaderSize_v3
+		headerBytes := make([]byte, headerSize)
+		if _, err := mainFile.Seek(0, io.SeekStart); err == nil {
+			if _, err := io.ReadFull(mainFile, headerBytes); err == nil {
+				globalHasher.Write(headerBytes)
+			}
+		}
+		mainFile.Seek(int64(headerSize), io.SeekStart)
+	}
+
 	chunkedWriter := writer.NewChunkedContainerWriter(globalHasher)
+	chunkContext := &chunkContext{
+		chunkHeader:      chunkHeader,
+		chunkedWriter:    chunkedWriter,
+		currentPartIndex: 0,
+		currentPartSize:  0,
+	}
 
-	// 4. 循环处理所有数据分片
-	buf := make([]byte, p.chunkSize)
-	chunkIndex := req.StartIdx
-	var currentDataStreamOffset uint64 = 0
-
-	for {
-		n, err := io.ReadFull(data, buf)
-		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-			return "", fmt.Errorf("error reading data stream: %w", err)
+	// 4. 遍历写入
+	for i := range manifest.Fragments {
+		frag := &manifest.Fragments[i]
+		chunkData := make([]byte, frag.Length)
+		if _, err := io.ReadFull(req.EncryptedDataReader, chunkData); err != nil {
+			return "", fmt.Errorf("failed to read data for fragment '%s': %w", frag.ID, err)
 		}
-		if n == 0 {
-			break
+		if err := p.processFragment(mainFile, req, frag, chunkData, chunkContext); err != nil {
+			return "", fmt.Errorf("failed to process fragment '%s': %w", frag.ID, err)
 		}
-		chunkData := buf[:n]
+	}
 
-		// 更新 manifest 中对应 fragment 的元数据
-		if chunkIndex < len(manifest.Fragments) {
-			manifest.Fragments[chunkIndex].GlobalStartOffset = currentDataStreamOffset
+	return p.finalize(mainFile, manifest, chunkContext, req)
+}
+
+type chunkContext struct {
+	currentPartFile  *os.File
+	currentPartIndex int
+	currentPartSize  int64
+	chunkHeader      *types.EnvelopeHeaderV3
+	chunkedWriter    *writer.ChunkedContainerWriter
+}
+
+func (p *FileChunkerPhysicalPacker) prepareHeaders(v int, t types.IDType, d []byte) (*types.EnvelopeHeaderV3, *types.EnvelopeHeaderV3, error) {
+	if v != 3 {
+		return nil, nil, nil
+	}
+	h, err := types.CreateHeaderV3(true, t, d)
+	if err != nil {
+		return nil, nil, err
+	}
+	c, err := types.CreateHeaderV3(false, t, h.SpecialID[:h.IDLength])
+	return h, c, err
+}
+
+func (p *FileChunkerPhysicalPacker) prepareMainFile(req *PackRequest, header *types.EnvelopeHeaderV3) (*os.File, error) {
+	path := filepath.Join(req.OutputDir, req.Namer.GenerateMainChunkName(req.BaseName)) + ".tmp"
+	f, err := os.Create(path)
+	if err != nil {
+		return nil, err
+	}
+	if header != nil {
+		if err := types.WriteHeaderV3(f, header); err != nil {
+			f.Close()
+			return nil, err
+		}
+	}
+	return f, nil
+}
+
+func (p *FileChunkerPhysicalPacker) cleanup(f *os.File, err error) {
+	f.Close()
+	if err != nil {
+		os.Remove(f.Name())
+	}
+}
+
+// processFragment 处理单个分片
+func (p *FileChunkerPhysicalPacker) processFragment(mainFile *os.File, req *PackRequest, frag *types.Fragment_v2, data []byte, ctx *chunkContext) error {
+	// 【关键修复】跳过 Metadata Fragments (如 KVI)
+	// Unpacker 在重建时也会跳过这些 Fragments，为了保持哈希一致性，Packer 也不应写入数据流
+	if frag.Type == types.FragmentType_Metadata {
+		log.Printf("DEBUG: Skipping metadata fragment '%s' (not part of data stream)", frag.ID)
+		return nil
+	}
+
+	// 1. 获取 Writer (处理文件切换、Path 更新、Offset 记录)
+	activeWriter, err := p.getActiveWriter(mainFile, req, frag, ctx)
+	if err != nil {
+		return err
+	}
+
+	// 2. 写入数据
+	crc, err := ctx.chunkedWriter.WriteDataChunk(activeWriter, data)
+	if err != nil {
+		return fmt.Errorf("failed to write chunk: %w", err)
+	}
+
+	// 3. 更新状态
+	ctx.currentPartSize += block.GetBlockHeader_v2_Size() + int64(frag.Length)
+	frag.DataCRC32 = crc
+	return nil
+}
+
+// getActiveWriter 获取目标 Writer 并更新元数据
+func (p *FileChunkerPhysicalPacker) getActiveWriter(mainFile *os.File, req *PackRequest, frag *types.Fragment_v2, ctx *chunkContext) (io.Writer, error) {
+	// 【修正】将 activeFile 重命名为 activeWriter，避免与 return 语句不匹配
+	activeWriter := mainFile
+	needsSwitch := false
+
+	// 轻量主分片模式
+	if ctx.currentPartIndex == 0 && req.LightMainChunkEnabled {
+		needsSwitch = true
+	} else {
+		needsSwitch = ctx.currentPartSize > 0 && (ctx.currentPartSize+int64(frag.Length) > p.chunkSize)
+	}
+
+	if needsSwitch {
+		// 关闭旧文件
+		if ctx.currentPartFile != nil {
+			ctx.currentPartFile.Close()
 		}
 
-		if chunkIndex == req.StartIdx {
-			// 第一个数据块：写入主文件
-			dataCRC32, err := chunkedWriter.WriteDataChunk(mainFile, chunkData)
-			if err != nil {
-				return "", fmt.Errorf("failed to write first fragment to main file: %w", err)
+		// 打开新文件
+		ctx.currentPartIndex++
+		ctx.currentPartSize = 0
+
+		chunkName := req.Namer.GenerateDataChunkName(req.BaseName, ctx.currentPartIndex)
+		chunkPath := filepath.Join(req.OutputDir, chunkName)
+		f, err := os.Create(chunkPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create part file: %w", err)
+		}
+
+		// 写入分片 Header
+		if ctx.chunkHeader != nil {
+			if err := types.WriteHeaderV3(f, ctx.chunkHeader); err != nil {
+				f.Close()
+				return nil, err
 			}
-			if chunkIndex < len(manifest.Fragments) {
-				manifest.Fragments[chunkIndex].DataCRC32 = dataCRC32
-			}
+		}
+
+		ctx.currentPartFile = f
+		ctx.currentPartSize = int64(binary.Size(types.EnvelopeHeaderV3{}))
+		activeWriter = f
+
+		// 更新 Manifest
+		frag.PhysicalPath = chunkName
+	} else {
+		if ctx.currentPartFile != nil {
+			activeWriter = ctx.currentPartFile
+			// 如果在分片中，更新 Path
+			frag.PhysicalPath = req.Namer.GenerateDataChunkName(req.BaseName, ctx.currentPartIndex)
 		} else {
-			// 后续数据块：写入 .part 文件
-			dataChunkFilename := req.Namer.GenerateDataChunkName(req.BaseName, chunkIndex)
-			chunkPath := filepath.Join(req.OutputDir, dataChunkFilename)
-
-			if chunkIndex < len(manifest.Fragments) {
-				manifest.Fragments[chunkIndex].PhysicalPath = dataChunkFilename
-			}
-
-			// 为 .part 文件创建一个临时的 writer
-			partFile, err := os.Create(chunkPath)
-			if err != nil {
-				return "", fmt.Errorf("failed to create part file %s: %w", chunkPath, err)
-			}
-
-			dataCRC32, err := chunkedWriter.WriteDataChunk(partFile, chunkData)
-			partFile.Close() // 立即关闭
-			if err != nil {
-				return "", fmt.Errorf("failed to write data chunk to part file %s: %w", chunkPath, err)
-			}
-			if chunkIndex < len(manifest.Fragments) {
-				manifest.Fragments[chunkIndex].DataCRC32 = dataCRC32
-			}
+			activeWriter = mainFile
+			// 主文件，清空 Path
+			frag.PhysicalPath = ""
 		}
-
-		chunkIndex++
-		currentDataStreamOffset += uint64(n)
 	}
 
-	// 5. 【关键】使用工具 writer 完成主文件的 Manifest 和 Footer 写入
-	if err := chunkedWriter.WriteManifestAndFooter(mainFile, manifest); err != nil {
-		return "", fmt.Errorf("failed to write manifest and footer: %w", err)
+	// 【关键】记录 PhysicalOffset (在 WriteDataChunk 之前)
+	// activeWriter 是 *os.File，可以直接 Seek
+	if pos, err := activeWriter.Seek(0, io.SeekCurrent); err == nil {
+		frag.PhysicalOffset = uint64(pos)
 	}
 
-	// 6. 显式关闭主文件，确保所有数据刷盘
+	return activeWriter, nil
+}
+
+func (p *FileChunkerPhysicalPacker) finalize(mainFile *os.File, manifest *types.Manifest_v2, ctx *chunkContext, req *PackRequest) (string, error) {
+	if ctx.currentPartFile != nil {
+		ctx.currentPartFile.Close()
+	}
+
+	if err := ctx.chunkedWriter.WriteManifestAndFooter(mainFile, manifest); err != nil {
+		return "", err
+	}
+
 	if err := mainFile.Close(); err != nil {
-		return "", fmt.Errorf("failed to close main file: %w", err)
+		return "", err
 	}
 
-	// 7. 【原子操作】重命名临时主文件为最终文件名
-	if err := os.Rename(tempMainChunkPath, mainChunkPath); err != nil {
-		return "", fmt.Errorf("failed to atomically rename temp file to final file: %w", err)
+	basePath := req.Namer.GenerateMainChunkName(req.BaseName)
+	finalPath := filepath.Join(req.OutputDir, basePath)
+	if err := os.Rename(finalPath+".tmp", finalPath); err != nil {
+		return "", err
 	}
 
-	fmt.Printf("✅ [FileChunkerPhysicalPacker] Packed to: %s\n", mainChunkPath)
-	return mainChunkPath, nil
+	log.Printf("✅ [FileChunker] Packed to: %s (Parts: %d)\n", finalPath, ctx.currentPartIndex)
+	return finalPath, nil
 }
 
 // FileChunkerPhysicalUnpacker 使用文件分片器进行物理解包
@@ -159,7 +265,7 @@ func (u *FileChunkerPhysicalUnpacker) Unpack(mainContainerPath string) (string, 
 	unifiedPath := tempFile.Name()
 
 	cleanup := func() {
-		fmt.Printf("DEBUG: [Unpack] Cleaning up temp file: %s\n", unifiedPath)
+		log.Printf("DEBUG: [Unpack] Cleaning up temp file: %s\n", unifiedPath)
 		tempFile.Close()
 		os.Remove(unifiedPath)
 	}
@@ -186,7 +292,7 @@ func (u *FileChunkerPhysicalUnpacker) Unpack(mainContainerPath string) (string, 
 
 	// 成功，关闭文件并返回清理函数
 	tempFile.Close()
-	fmt.Printf("DEBUG: [Unpacker] Successfully unified container to: %s\n", unifiedPath)
+	log.Printf("DEBUG: [Unpacker] Successfully unified container to: %s\n", unifiedPath)
 	return unifiedPath, cleanup, nil
 }
 
@@ -219,6 +325,32 @@ func (u *FileChunkerPhysicalUnpacker) findAndParseManifest(mainContainerPath str
 // 连续地写入到目标文件，并生成一个描述新布局的、正确的 Manifest。
 func (u *FileChunkerPhysicalUnpacker) rebuildToSingleFile(sourcePath string, originalManifest *types.Manifest_v2, destFile *os.File) ([]byte, error) {
 	containerDir := filepath.Dir(sourcePath)
+
+	// --- 1. 将源文件的 Header 复制到重建文件中 ---
+	// 重建的容器必须包含 Header 才能被正确识别和解析
+	sourceFile, err := os.Open(sourcePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open source file to read header: %w", err)
+	}
+	defer sourceFile.Close()
+
+	version, headerSize, err := types.DetectHeaderInfoFromReaderAt(sourceFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect header info from source: %w", err)
+	}
+
+	// 如果源文件有 Header (V3 通常有 2048 字节)，则写入重建文件
+	if headerSize > 0 {
+		log.Printf("DEBUG: [Unpacker] Source file has V%d Header (%d bytes). Copying to unified file.", version, headerSize)
+		headerBytes := make([]byte, headerSize)
+		if _, err := io.ReadFull(sourceFile, headerBytes); err != nil {
+			return nil, fmt.Errorf("failed to read header bytes from source: %w", err)
+		}
+		if _, err := destFile.Write(headerBytes); err != nil {
+			return nil, fmt.Errorf("failed to write header to dest file: %w", err)
+		}
+	}
+	// -------------------------------------------------------
 
 	// 1. 创建一个新的 Manifest，复制 KVI 等元数据
 	newManifest := &types.Manifest_v2{
@@ -257,7 +389,9 @@ func (u *FileChunkerPhysicalUnpacker) rebuildToSingleFile(sourcePath string, ori
 				return nil, fmt.Errorf("failed to read data for fragment '%s': %w", frag.ID, err)
 			}
 
-			if err := block.WriteBlock_v2(destFile, types.BlockTypeData_v2, chunkData); err != nil {
+			// 获取写入时计算的 CRC，确保 Manifest CRC 与磁盘 Header 一致
+			crcVal, err := block.WriteBlock_v2(destFile, types.BlockTypeData_v2, chunkData)
+			if err != nil {
 				return nil, fmt.Errorf("failed to write data block for fragment '%s': %w", frag.ID, err)
 			}
 
@@ -266,13 +400,13 @@ func (u *FileChunkerPhysicalUnpacker) rebuildToSingleFile(sourcePath string, ori
 				Type:              frag.Type,
 				Length:            header.Length,
 				GlobalStartOffset: dataStreamOffset,
-				DataCRC32:         header.CRC32,
+				DataCRC32:         crcVal, // 使用实际写入计算出的 CRC
 			}
 			newManifest.Fragments = append(newManifest.Fragments, newFrag)
 			dataStreamOffset += header.Length
 
 		case types.FragmentType_AtomicFile:
-			// --- 【新增】处理 AtomicFile Fragment ---
+			// --- 处理 AtomicFile Fragment ---
 			// AtomicFile 的数据是连续存储的，没有额外的块头结构。
 			// 我们直接根据 manifest 中的 GlobalStartOffset 和 Length 读取数据。
 			sourceFile, err := os.Open(sourcePath)
@@ -289,17 +423,17 @@ func (u *FileChunkerPhysicalUnpacker) rebuildToSingleFile(sourcePath string, ori
 			}
 
 			// 将数据写入目标文件
-			if err := block.WriteBlock_v2(destFile, types.BlockTypeData_v2, chunkData); err != nil {
-				return nil, fmt.Errorf("failed to write data block for atomic fragment '%s': %w", frag.ID, err)
+			crcVal, err := block.WriteBlock_v2(destFile, types.BlockTypeData_v2, chunkData)
+			if err != nil {
+				return nil, fmt.Errorf("failed to write data block for fragment '%s': %w", frag.ID, err)
 			}
 
-			// 为新 Manifest 创建 Fragment，并重新计算 CRC
 			newFrag := types.Fragment_v2{
 				ID:                frag.ID,
 				Type:              frag.Type,
 				Length:            frag.Length,
 				GlobalStartOffset: dataStreamOffset,
-				DataCRC32:         crc32.ChecksumIEEE(chunkData), // 重新计算
+				DataCRC32:         crcVal, // 复用计算结果，移除 crc32.ChecksumIEEE 调用
 			}
 			newManifest.Fragments = append(newManifest.Fragments, newFrag)
 			dataStreamOffset += frag.Length
@@ -320,8 +454,14 @@ func (u *FileChunkerPhysicalUnpacker) rebuildToSingleFile(sourcePath string, ori
 		return nil, fmt.Errorf("failed to marshal new manifest: %w", err)
 	}
 
-	// 4. 将新的 Manifest 块写入到临时文件末尾
-	if err := block.WriteBlock_v2(destFile, types.BlockTypeManifest_v2, newManifestBytes); err != nil {
+	// 4. 加密 Manifest (使用 manifest.EncryptManifest)
+	encryptedManifestBytes, err := manifest.EncryptManifest(newManifestBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt manifest: %w", err)
+	}
+
+	// 5. 将新的 Manifest 块写入到临时文件末尾
+	if _, err := block.WriteBlock_v2(destFile, types.BlockTypeManifest_v2, encryptedManifestBytes); err != nil {
 		return nil, fmt.Errorf("failed to write new manifest block to unified file: %w", err)
 	}
 
@@ -335,7 +475,7 @@ func (u *FileChunkerPhysicalUnpacker) writeFinalFooter(file *os.File, manifestBy
 		return fmt.Errorf("failed to get current file size: %w", err)
 	}
 
-	manifestBlockSize := int64(binary.Size(block.BlockHeader_v2{})) + int64(len(manifestBytes))
+	manifestBlockSize := block.GetBlockHeader_v2_Size() + int64(len(manifestBytes))
 	newManifestOffset := currentEOF - manifestBlockSize
 
 	footer := &types.EnvelopeFooter_v2{
@@ -386,9 +526,26 @@ func extractManifestWithScan(filePath string) ([]byte, int64, error) {
 	}
 	defer file.Close()
 
-	fmt.Printf("INFO: [Unpacker] Scanning '%s' for Manifest block...\n", filePath)
+	version, startOffset, err := types.DetectHeaderInfoFromReaderAt(file)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to read header for version detection: %w", err)
+	}
 
-	currentOffset := int64(0)
+	switch version {
+	case 3:
+		startOffset = types.EnvelopeHeaderSize_v3
+	case 2:
+		startOffset = types.EnvelopeHeaderSize_v2
+	default:
+		return nil, 0, fmt.Errorf("unsupported container version detected")
+	}
+
+	// 2. Seek 到数据流起始位置
+	if _, err := file.Seek(startOffset, io.SeekStart); err != nil {
+		return nil, 0, fmt.Errorf("failed to seek to start of data stream (offset %d): %w", startOffset, err)
+	}
+
+	currentOffset := startOffset
 	for {
 		header, err := block.ReadBlockHeader_v2(file)
 		if err != nil {
@@ -399,7 +556,6 @@ func extractManifestWithScan(filePath string) ([]byte, int64, error) {
 		}
 
 		if header.Type == types.BlockTypeManifest_v2 {
-			fmt.Printf("DEBUG: [Unpacker] Found Manifest block at offset %d.\n", currentOffset)
 			manifestData, err := block.ReadBlockData_v2(file, header)
 			if err != nil {
 				return nil, 0, fmt.Errorf("failed to read Manifest block data: %w", err)
@@ -407,6 +563,7 @@ func extractManifestWithScan(filePath string) ([]byte, int64, error) {
 			return manifestData, currentOffset, nil
 		}
 
+		// 跳过当前数据块
 		_, err = file.Seek(int64(header.Length), io.SeekCurrent)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to seek past block data: %w", err)

@@ -1,6 +1,8 @@
 package video
 
 import (
+	"time"
+
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -22,6 +24,8 @@ type VideoIndex struct {
 	OriginalFileMD5   string           `json:"original_file_md5"`
 	EncryptedFileMD5  string           `json:"encrypted_file_md5"`
 	SubtitleTracks    []SubtitleTracks `json:"subtitle_tracks,omitempty"`
+	Chapters          []MKVChapterInfo `json:"chapters,omitempty"`
+	KeyFrameOffsets   []uint64         `json:"key_frame_offsets,omitempty"` // 存储所有关键帧的字节偏移量
 }
 
 func (v *VideoIndex) GetOriginalFilename() string { return v.OriginalFilename }
@@ -39,6 +43,14 @@ type SubtitleTracks struct {
 	// Title 是加密后处理的字幕文件名，字幕本身不加密 (e.g., "myvideo.4pm.ass")
 	Title string `json:"title"`
 	Note  string `json:"note,omitempty"`
+}
+
+// MKVChapterInfo 是专门为 MKV 视频定义的章节信息结构
+type MKVChapterInfo struct {
+	ID        int           `json:"id"`
+	Title     string        `json:"title"`
+	StartTime time.Duration `json:"start_time"`
+	EndTime   time.Duration `json:"end_time"`
 }
 
 // 视频容器专用的 KVI

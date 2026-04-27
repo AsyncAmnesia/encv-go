@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/Soltus/encv-go/internal/utils"
+	"github.com/Soltus/encv-go/internal/v2/crypto"
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/plugins/audio"
 	"github.com/Soltus/encv-go/internal/v2/plugins/image"
@@ -55,6 +56,8 @@ type Plugin interface {
 	// --- 提供处理策略 ---
 	GetMetadataExtractor() pluginInterfaces.MetadataExtractor
 	GetContentPreprocessor() pluginInterfaces.ContentPreprocessor
+	// 保留接口，校验暂时由插件内部编排
+	GetContentVirifier() pluginInterfaces.ContentVerifier
 
 	// --- 文件识别与处理 ---
 	// GetChunkNamer 返回插件用于其容器的 ChunkNamer。
@@ -67,15 +70,23 @@ type Plugin interface {
 	// 用于排除不想处理的文件，返回 false 表示不处理
 	ShouldProcess(inputPath string) bool
 
+	// GroupFiles 允许插件在处理前对输入文件列表进行分组或转换。
+	// 它返回一个新的文件路径列表，系统将对此列表进行后续处理。
+	// 如果插件不需要分组，可以返回原始列表和 nil 错误。
+	GroupFiles(inputPaths []string, inputRootDir, outputDir string) ([]string, error)
+
 	// --- 加密逻辑 ---
 
 	// 加密预处理器
 	PreEncryptProcessor(index types.Index, inputPath, inputRootDir, outputDir string) error
 	// 将处理后的文件加密到指定容器
-	Encrypt(dataReader io.Reader) error
+	// Encrypt(dataReader io.Reader) error
+	Encrypt(dataReader io.Reader) (*crypto.EncryptionResult, error)
 	// 加密后处理器
-	PostEncryptProcessor() error
-	// Packer 打包器 TODO
+	// PostEncryptProcessor() error
+	PostEncryptProcessor(result *crypto.EncryptionResult) error
+	//  打包器
+	// GetPhysicalPacker() physical.PhysicalPacker
 
 	// --- 解密逻辑 ---
 
@@ -212,7 +223,7 @@ func BuildFullPluginSettings(userSettings map[string]json.RawMessage) (map[strin
 func InitializePlugins(ctx context.Context) error {
 	for _, p := range Plugins {
 		pluginName := p.Name()
-		fmt.Printf("Initializing plugin: %s\n", pluginName)
+		log.Printf("Initializing plugin: %s\n", pluginName)
 
 		// 3. 调用插件的初始化方法
 		if err := p.Initialize(ctx); err != nil {
@@ -332,20 +343,23 @@ func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputR
 	}
 	defer dataReader.Close()
 
-	// 2. 执行预处理器
+	//2. 执行预处理器
 	if err := plugin.PreEncryptProcessor(index, inputPath, inputRootDir, outputDir); err != nil {
 		return fmt.Errorf("pre-encryption failed for '%s': %w", inputPath, err)
 	}
 	log.Printf("✅ [EncryptFileWithPlugin] PreEncryptProcessor successfully.\n")
 
-	// 3. 执行核心加密
-	if err := plugin.Encrypt(dataReader); err != nil {
+	//3. 执行核心加密
+	// 修改为接收 EncryptionResult
+	result, err := plugin.Encrypt(dataReader)
+	if err != nil {
 		return fmt.Errorf("encryption failed for '%s': %w", inputPath, err)
 	}
 	log.Printf("✅ [EncryptFileWithPlugin] Encrypt successfully.\n")
 
-	// 4. 执行后处理器
-	if err := plugin.PostEncryptProcessor(); err != nil {
+	//4. 执行后处理器
+	// 传入 EncryptionResult
+	if err := plugin.PostEncryptProcessor(result); err != nil {
 		return fmt.Errorf("post-encryption failed for '%s': %w", inputPath, err)
 	}
 	log.Printf("✅ [EncryptFileWithPlugin] PostEncryptProcessor successfully.\n")
@@ -379,21 +393,42 @@ func DecryptContainerWithPlugin(ctx context.Context, plugin Plugin, containerPat
 
 // 遍历文件夹自动选择插件加密，这是使用 EncryptFileWithPlugin 而不是 Plugin.EncryptFile 的原因。
 func WalkAndEncrypt(ctx context.Context, walkPath string, inputRootDir, outputDir string) error {
-	return filepath.WalkDir(walkPath, func(path string, d os.DirEntry, err error) error {
+	// 1. 遍历目录，收集所有文件并按插件分组
+	filesByPlugin := make(map[Plugin][]string)
+
+	err := filepath.WalkDir(walkPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
-
 		plugin, err := FindEncryptingPlugin(path)
 		if err != nil {
-			fmt.Printf("INFO: Skipping file, no handler found: %s\n%v\n", path, err)
+			log.Printf("INFO: Skipping file, no handler found: %s\n%v\n", path, err)
 			return nil
 		}
-
-		fmt.Printf("INFO: Found plugin '%T' for file: %s\n", plugin, path)
-		if err := EncryptFileWithPlugin(ctx, plugin, path, inputRootDir, outputDir); err != nil {
-			fmt.Printf("WARN: Failed to encrypt '%s' with plugin '%T': %v. Continuing...\n", path, plugin, err)
-		}
+		filesByPlugin[plugin] = append(filesByPlugin[plugin], path)
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	// 2. 对每个插件的文件进行批处理
+	for plugin, paths := range filesByPlugin {
+		log.Printf("INFO: Found %d files for plugin '%T'.\n", len(paths), plugin)
+
+		// 3. 调用插件的 GroupFiles 方法进行预处理
+		processedPaths, err := plugin.GroupFiles(paths, inputRootDir, outputDir)
+		if err != nil {
+			return fmt.Errorf("plugin '%T' failed to group files: %w", plugin, err)
+		}
+
+		// 4. 对处理后的文件列表进行逐个加密
+		for _, path := range processedPaths {
+			log.Printf("INFO: Processing file '%s' with plugin '%T'.\n", path, plugin)
+			if err := EncryptFileWithPlugin(ctx, plugin, path, inputRootDir, outputDir); err != nil {
+				log.Printf("WARN: Failed to encrypt '%s' with plugin '%T': %v. Continuing...\n", path, plugin, err)
+			}
+		}
+	}
+	return nil
 }

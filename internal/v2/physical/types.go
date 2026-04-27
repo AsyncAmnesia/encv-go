@@ -13,7 +13,7 @@ import (
 type PhysicalPacker interface {
 	// Pack 执行完整的物理打包，包括数据分片和 Manifest 写入
 	// 【关键修改】接收 manifest 作为参数，并负责完成所有写入
-	Pack(data io.Reader, manifest *types.Manifest_v2, req *PackRequest) (mainChunkPath string, err error)
+	Pack(manifest *types.Manifest_v2, req *PackRequest) (mainChunkPath string, err error)
 }
 
 // PhysicalUnpacker 定义了物理分片的解包接口
@@ -40,22 +40,26 @@ type Packer interface {
 
 // PackRequest 是打包请求的参数集合
 type PackRequest struct {
-	// BaseName 是不带容器扩展名的基础文件名，例如 "321.4pm"
-	BaseName string
-	// OutputDir 是输出目录
-	OutputDir string
-	// EncryptedDataReader 是加密后数据的来源，一个纯粹的流
+	// 数据源
 	EncryptedDataReader io.Reader
-	// Index 是文件的完整索引信息
-	Index types.Index
-	// Salt 和 IV 是加密参数
-	Salt, IV []byte
-	// LogicalFragments 是预先计算好的逻辑分片元数据
-	LogicalFragments []types.Fragment_v2
-	Namer            namer.ChunkNamer
-	StartIdx         int
 
-	// 一个可选的、最终的主文件名，设计为单文件打包使用。
-	// 如果设置了此字段，Packer 将直接使用它，忽略 Namer。
-	FinalFileName string
+	// 索引与加密参数
+	Index types.Index
+	Salt  []byte
+	IV    []byte
+
+	// 命名与输出配置
+	BaseName      string // 不带容器扩展名的基础文件名，例如 "321.4pm"
+	OutputDir     string
+	Namer         namer.ChunkNamer
+	FinalFileName string // 可选，用于单文件模式。如果设置了此字段，Packer 将直接使用它，忽略 Namer。
+
+	// 物理分片配置
+	StartIdx              int
+	LightMainChunkEnabled bool // 是否启用轻量级主分片，启用后主分片只包含清单，不包含源数据
+
+	// V3 头部配置
+	HeaderVersion int
+	SpecialID     []byte // 可选，如果不提供且 HeaderVersion=3，将自动生成占位符
+	SpecialIDType types.IDType
 }

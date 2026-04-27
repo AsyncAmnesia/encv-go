@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/physical"
 	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
+	"github.com/Soltus/encv-go/internal/v2/plugins/interfaces/packer"
 	"github.com/Soltus/encv-go/internal/v2/reader"
 	"github.com/Soltus/encv-go/internal/v2/service"
 	"github.com/Soltus/encv-go/internal/v2/types"
@@ -30,9 +32,6 @@ type AudioPlugin struct {
 	outputDir        string
 	inputPath        string
 	inputRootDir     string
-	tempEncPath      string
-	salt             []byte
-	iv               []byte
 	baseNamer        namer.BaseNamer           // 注入容器命名器
 	containerManager *service.ContainerManager // 注入 ContainerManager
 	physicalPacker   physical.PhysicalPacker
@@ -151,20 +150,29 @@ func (p *AudioPlugin) CanDecrypt(containerPath string) bool {
 	return kind == IndexKindAudio
 }
 
-// 【新增方法】实现 plugins.Plugin 接口
+// 实现 plugins.Plugin 接口
 func (p *AudioPlugin) GetMetadataExtractor() pluginInterfaces.MetadataExtractor {
 	return &AudioMetadataExtractor{}
 }
 
-// 【新增方法】实现 plugins.Plugin 接口
+// 实现 plugins.Plugin 接口
 func (p *AudioPlugin) GetContentPreprocessor() pluginInterfaces.ContentPreprocessor {
 	return &AudioContentPreprocessor{}
+}
+
+// 实现 plugins.Plugin 接口
+func (p *AudioPlugin) GetContentVirifier() pluginInterfaces.ContentVerifier {
+	return nil
+}
+
+func (p *AudioPlugin) GroupFiles(inputPaths []string, inputRootDir, outputDir string) ([]string, error) {
+	return inputPaths, nil
 }
 
 // --- 加密逻辑 ---
 
 // Plugin 接口实现
-// 在加密前处理字幕，并更新 Index
+// 在加密前处理，并更新 Index
 func (p *AudioPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRootDir, outputDir string) error {
 	vIndex, ok := index.(*AudioIndex)
 	if !ok {
@@ -181,76 +189,89 @@ func (p *AudioPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRoo
 }
 
 // Plugin 接口实现
-// 执行核心的加密工作，并调用 Packer
-func (p *AudioPlugin) Encrypt(dataReader io.Reader) error {
+// 执行核心的加密工作
+func (p *AudioPlugin) Encrypt(dataReader io.Reader) (*crypto.EncryptionResult, error) {
 	guardKey := fmt.Sprintf("%s|%s", p.inputPath, p.outputDir)
 
-	return utils.Do(guardKey, func() error {
-
-		// --- 1. 【抽离】将加密逻辑委托给 crypto 包 ---
-		tempEncPath, salt, iv, err := crypto.EncryptToTempFile(dataReader, p.cfg.Password, p.outputDir)
+	var result *crypto.EncryptionResult
+	err := utils.Do(guardKey, func() error {
+		var err error
+		result, err = crypto.EncryptToTempFile_v2(dataReader, p.cfg.Password, p.outputDir)
 		if err != nil {
 			return fmt.Errorf("failed to encrypt to temp file: %w", err)
 		}
-		p.tempEncPath = tempEncPath
-		p.salt = salt
-		p.iv = iv
 
-		fmt.Printf("INFO: [%s] Encrypted to temporary file: %s\n", p.Name(), tempEncPath)
-
-		fmt.Printf("✅ [%s] Encrypted successfully.\n", p.Name())
+		log.Printf("INFO: [%s] Encrypted to temporary file: %s (Payload: %d bytes)\n", p.Name(), result.TempPath, result.EncryptedPayloadSize)
+		log.Printf("✅ [%s] Encrypted successfully.\n", p.Name())
 		return nil
 	})
+
+	return result, err
 }
 
 // Plugin 接口实现
-// 视频插件在加密后处理器
-func (p *AudioPlugin) PostEncryptProcessor() error {
-	// --- 【关键修复】在这里，根据原始文件大小计算逻辑分片 ---
-	logicalFragmentSize := fragment.CalculateFragmentSize(p.index.OriginalFileSize, 0)
-	logicalFragments, err := fragment.CreateLogicalFragmentsFromSize(p.index.OriginalFileSize, logicalFragmentSize, types.FragmentType_SeekableStream) // 音频一般是 seekable 的
+// 加密后处理器
+func (p *AudioPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) error {
+	// 1. 使用 result.EncryptedPayloadSize
+	logicalDataSize := result.EncryptedPayloadSize
+
+	// 2. 生成逻辑分片 (音频通常作为原子文件)
+	// 如果音频很大且需要流式支持，可以改为 SeekableStream，但通常加密为一个整体
+	logicalFragments, err := fragment.CreateLogicalFragmentsFromSize(logicalDataSize, logicalDataSize, types.FragmentType_AtomicFile)
 	if err != nil {
 		return fmt.Errorf("failed to create logical fragments from size: %w", err)
 	}
-	// 打印出生成的片段数量，用于调试
-	fmt.Printf("-> [%s] Generated %d logical fragments.\n", p.Name(), len(logicalFragments))
 
-	// 重新打开临时文件，作为加密数据源传递给 Packer
-	encryptedDataReader, err := os.Open(p.tempEncPath)
+	// 3. 构造 Manifest
+	kvi := AudioKVI_v2{
+		KVI_v2: types.KVI_v2{
+			SaltBase64: crypto.Base64Encode_v2(result.Salt),
+			IVBase64:   crypto.Base64Encode_v2(result.IV),
+		},
+		AudioIndex: &p.index,
+	}
+	manifest, err := types.NewManifest_v2(kvi, logicalFragments)
 	if err != nil {
-		return fmt.Errorf("failed to open temp file for packing: %w", err)
+		return fmt.Errorf("failed to create manifest: %w", err)
 	}
-	defer os.Remove(p.tempEncPath) // 确保在使用完毕后删除临时文件
 
-	// --- 5. 创建 Packer 并执行打包 ---
+	// 4. 准备通用 PackParams
 	encryptedBaseName := p.baseNamer.GenerateEncryptedBaseName(p.index.OriginalFilename)
-	finalBaseName := strings.TrimSuffix(encryptedBaseName, p.settings.Ext)
-	packer := NewAudioPacker(p.physicalPacker)
-	packReq := &physical.PackRequest{
-		BaseName:            finalBaseName,
-		OutputDir:           p.outputDir,
-		EncryptedDataReader: encryptedDataReader,
-		Index:               &p.index, // Packer 将从 vIndex 获取所需信息
-		Salt:                p.salt,
-		IV:                  p.iv,
-		LogicalFragments:    logicalFragments, // 预先计算好
-		FinalFileName:       encryptedBaseName + p.settings.Ext,
+	finalFilename := encryptedBaseName + p.settings.Ext
+	finalBaseName := strings.TrimSuffix(finalFilename, p.settings.Ext)
+
+	packParams := &packer.PackParams{
+		Manifest:             manifest,
+		PhysicalPacker:       p.physicalPacker,
+		TempEncPath:          result.TempPath,
+		Salt:                 result.Salt,
+		IV:                   result.IV,
+		SaltIVHeaderSize:     result.SaltIVHeaderSize,
+		EncryptedPayloadSize: result.EncryptedPayloadSize,
+		BaseName:             finalBaseName,
+		OutputDir:            p.outputDir,
+		Index:                &p.index,
+		HeaderVersion:        3,
+		SpecialIDType:        types.IDType_Raw,
+		SpecialID:            nil,
+		FinalFileName:        finalFilename,
 	}
 
-	if err := packer.Pack(p.cfg, packReq); err != nil {
-		encryptedDataReader.Close()
+	// 5. 调用 Helper
+	if err := packer.StandardPostEncrypt(packParams); err != nil {
+		os.Remove(result.TempPath)
 		return fmt.Errorf("packing failed: %w", err)
 	}
 
-	encryptedDataReader.Close() // Packer 使用完毕后关闭
-	fmt.Printf("✅ [%s] packed successfully.\n", p.Name())
+	os.Remove(result.TempPath)
+	log.Printf("✅ [%s] packed successfully.\n", p.Name())
 	return nil
 }
 
 // --- 解密逻辑 ---
 
 // Plugin 接口实现
-// 视频插件在解密前无需额外操作
+// 解密前无需额外操作
 func (p *AudioPlugin) PreDecryptProcessor(containerPath, outputDir string) error {
 	// 视频插件在此阶段无需操作
 	return nil
@@ -258,7 +279,7 @@ func (p *AudioPlugin) PreDecryptProcessor(containerPath, outputDir string) error
 
 // Plugin 接口实现
 func (p *AudioPlugin) Decrypt(containerPath, outputDir string) error {
-	fmt.Printf("DEBUG: [%s] Starting decryption for: %s\n", p.Name(), containerPath)
+	log.Printf("DEBUG: [%s] Starting decryption for: %s\n", p.Name(), containerPath)
 	p.outputDir = outputDir
 
 	// --- 1. 【关键】通过 ContainerManager 获取一个可读的容器路径 ---
@@ -267,7 +288,7 @@ func (p *AudioPlugin) Decrypt(containerPath, outputDir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get readable path from container manager: %w", err)
 	}
-	fmt.Printf("DEBUG: [%s] Using readable path: %s\n", p.Name(), readablePath)
+	log.Printf("DEBUG: [%s] Using readable path: %s\n", p.Name(), readablePath)
 
 	// --- 2. 使用统一路径创建 reader 工厂 ---
 	factory, err := reader.NewDecryptReaderFactory(readablePath, p.cfg.Password)
@@ -275,7 +296,7 @@ func (p *AudioPlugin) Decrypt(containerPath, outputDir string) error {
 		return fmt.Errorf("failed to create reader factory for '%s': %w", readablePath, err)
 	}
 	defer factory.Close() // 【关键】这个 Close 会同时清理物理临时文件（如果存在）
-	fmt.Printf("DEBUG: [%s] Reader factory created successfully.\n", p.Name())
+	log.Printf("DEBUG: [%s] Reader factory created successfully.\n", p.Name())
 
 	// --- 3. 使用工厂创建解密流并写入文件 ---
 	decryptedReader, err := factory.NewDecryptReader()
@@ -285,9 +306,9 @@ func (p *AudioPlugin) Decrypt(containerPath, outputDir string) error {
 	defer decryptedReader.Close()
 	_, isSeekable := decryptedReader.(io.Seeker)
 	if isSeekable {
-		fmt.Printf("INFO: [%s] Container is SEEKABLE. Decrypting full content.\n", p.Name())
+		log.Printf("INFO: [%s] Container is SEEKABLE. Decrypting full content.\n", p.Name())
 	} else {
-		fmt.Printf("INFO: [%s] Container is ATOMIC. Decrypting full content.\n", p.Name())
+		log.Printf("INFO: [%s] Container is ATOMIC. Decrypting full content.\n", p.Name())
 	}
 
 	// 从 KVI 获取原始文件名
@@ -310,12 +331,12 @@ func (p *AudioPlugin) Decrypt(containerPath, outputDir string) error {
 
 	p.index = *vIndex
 
-	fmt.Printf("✅ [%s] Decrypted to: %s\n", p.Name(), outputPath)
+	log.Printf("✅ [%s] Decrypted to: %s\n", p.Name(), outputPath)
 	return nil
 }
 
 // Plugin 接口实现
-// 在解密后处理字幕还原
+// 在解密后处理
 func (p *AudioPlugin) PostDecryptProcessor(containerPath string) error {
 
 	return nil

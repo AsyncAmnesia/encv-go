@@ -23,10 +23,13 @@ func (p *VideoPlugin) HandleSubtitlesForEncryption(cfg *config.Config, vIndex *V
 		vIndex.SubtitleTracks = nil
 		return nil
 	}
-	vIndex.SubtitleTracks = subtitleTracks
-	_, err = CopyAndRenameSubtitles(subtitleTracks, vIndex.OriginalInputPath, outputDir, encryptedBaseName)
-
-	return err
+	// 【关键修复】使用 CopyAndRenameSubtitles 返回的 kviTracks，它们包含 Title 字段（加密后的文件名）
+	kviTracks, err := CopyAndRenameSubtitles(subtitleTracks, vIndex.OriginalInputPath, outputDir, encryptedBaseName)
+	if err != nil {
+		return err
+	}
+	vIndex.SubtitleTracks = kviTracks
+	return nil
 }
 
 // RestoreSubtitlesForDecryption 处理解密时的字幕还原
@@ -70,7 +73,7 @@ func DiscoverSubtitleTracks(inputPath string, trackExtensions []string) ([]Subti
 
 		subBaseName := utils.StripKnownExtensions(fileName, sortedExts)
 		if (strings.HasPrefix(subBaseName, videoBaseName) || subBaseName == videoBaseName) && subBaseName != "" {
-			fmt.Printf("-> Found track: %s\n", fileName)
+			log.Printf("-> Found track: %s\n", fileName)
 			lang := "und"
 			if strings.Contains(fileName, "chi") || strings.Contains(fileName, "zh") {
 				lang = "chi"
@@ -112,7 +115,7 @@ func CopyAndRenameSubtitles(tracks []SubtitleTracks, videoPath, outputDir, encBa
 		if err := utils.CopyFile(originalPath, newPath); err != nil {
 			return nil, fmt.Errorf("failed to copy subtitle from %s to %s: %w", originalPath, newPath, err)
 		}
-		fmt.Printf("-> Copied subtitle to '%s'\n", newFilename)
+		log.Printf("-> Copied subtitle to '%s'\n", newFilename)
 
 		kviTracks = append(kviTracks, SubtitleTracks{
 			Language: track.Language,
@@ -136,13 +139,13 @@ func RestoreSubtitlesFromKVI(index *VideoIndex, containerDir, outputDir string) 
 		dstPath := filepath.Join(outputDir, sub.Filename)
 
 		if _, err := os.Stat(srcPath); os.IsNotExist(err) {
-			fmt.Printf("-> Warning: Subtitle file '%s' not found in container directory, skipping.\n", sub.Title)
+			log.Printf("-> Warning: Subtitle file '%s' not found in container directory, skipping.\n", sub.Title)
 			continue
 		}
 
-		fmt.Printf("-> Restoring subtitle: %s\n", sub.Filename)
+		log.Printf("-> Restoring subtitle: %s\n", sub.Filename)
 		if err := utils.CopyFile(srcPath, dstPath); err != nil {
-			fmt.Printf("-> Warning: Failed to restore subtitle '%s': %v\n", sub.Filename, err)
+			log.Printf("-> Warning: Failed to restore subtitle '%s': %v\n", sub.Filename, err)
 		}
 	}
 	return nil

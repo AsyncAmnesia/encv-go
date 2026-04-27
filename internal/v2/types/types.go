@@ -25,16 +25,100 @@ type PingResponse struct {
 }
 
 // FFProbeRawMetadata 用于直接解析 ffprobe 的 JSON 输出
+// 它可以完整解析 `ffprobe -show_format -show_streams -show_chapters` 命令的输出
 type FFProbeRawMetadata struct {
-	Format struct {
-		Duration string `json:"duration"`
-	} `json:"format"`
 	Streams []struct {
-		CodecType string `json:"codec_type"`
-		Width     int    `json:"width"`
-		Height    int    `json:"height"`
+		// --- 通用流信息 ---
+		Index          int    `json:"index"`
+		CodecName      string `json:"codec_name"`      // 如 "h264", "aac"
+		CodecLongName  string `json:"codec_long_name"` // 如 "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10"
+		CodecType      string `json:"codec_type"`      // "video", "audio", "subtitle"
+		CodecTimeBase  string `json:"codec_time_base"`
+		CodecTagString string `json:"codec_tag_string"`
+		CodecTag       string `json:"codec_tag"`
+		RFrameRate     string `json:"r_frame_rate"`   // 实际帧率, 如 "25/1"
+		AvgFrameRate   string `json:"avg_frame_rate"` // 平均帧率, 如 "25/1"
+		TimeBase       string `json:"time_base"`
+		StartPts       int64  `json:"start_pts"`
+		StartTime      string `json:"start_time"`
+		DurationTs     int64  `json:"duration_ts"`
+		Duration       string `json:"duration"`
+		BitRate        string `json:"bit_rate"`  // 比特率
+		NbFrames       string `json:"nb_frames"` // 帧数
+		Disposition    struct {
+			Default         int `json:"default"`
+			Dub             int `json:"dub"`
+			Original        int `json:"original"`
+			Comment         int `json:"comment"`
+			Lyrics          int `json:"lyrics"`
+			Karaoke         int `json:"karaoke"`
+			Forced          int `json:"forced"`
+			HearingImpaired int `json:"hearing_impaired"`
+			VisualImpaired  int `json:"visual_impaired"`
+			CleanEffects    int `json:"clean_effects"`
+			AttachedPic     int `json:"attached_pic"`
+			TimedThumbnails int `json:"timed_thumbnails"`
+		} `json:"disposition"`
+		Tags map[string]string `json:"tags"` // 流级别的标签，如 'language', 'title'
+
+		// --- 视频流特有信息 ---
+		Width              int    `json:"width"`
+		Height             int    `json:"height"`
+		CodedWidth         int    `json:"coded_width"`
+		CodedHeight        int    `json:"coded_height"`
+		HasBFrames         int    `json:"has_b_frames"`
+		SampleAspectRatio  string `json:"sample_aspect_ratio"`  // 如 "1:1"
+		DisplayAspectRatio string `json:"display_aspect_ratio"` // 如 "16:9"
+		PixFmt             string `json:"pix_fmt"`              // 像素格式, 如 "yuv420p"
+		Level              int    `json:"level"`
+		ColorRange         string `json:"color_range"`     // 如 "tv", "pc"
+		ColorSpace         string `json:"color_space"`     // 如 "bt709"
+		ColorTransfer      string `json:"color_transfer"`  // 如 "bt709"
+		ColorPrimaries     string `json:"color_primaries"` // 如 "bt709"
+		ChromaLocation     string `json:"chroma_location"` // 如 "left"
+		FieldOrder         string `json:"field_order"`     // 如 "progressive"
+
+		// --- 音频流特有信息 ---
+		SampleFmt     string `json:"sample_fmt"`     // 采样格式, 如 "fltp", "s16"
+		SampleRate    string `json:"sample_rate"`    // 采样率, 如 "48000"
+		Channels      int    `json:"channels"`       // 声道数
+		ChannelLayout string `json:"channel_layout"` // 声道布局, 如 "stereo"
+		BitsPerSample int    `json:"bits_per_sample"`
 	} `json:"streams"`
+	Format struct {
+		NBStreams      int               `json:"nb_streams"`
+		NBPrograms     int               `json:"nb_programs"`
+		FormatName     string            `json:"format_name"`      // 容器格式, 如 "mov,mp4,m4a,3gp,3g2,mj2"
+		FormatLongName string            `json:"format_long_name"` // 如 "QuickTime / MOV"
+		StartTime      string            `json:"start_time"`
+		Duration       string            `json:"duration"` // 总时长
+		Size           string            `json:"size"`     // 文件大小（字节）
+		BitRate        string            `json:"bit_rate"` // 总比特率
+		ProbeScore     int               `json:"probe_score"`
+		Tags           map[string]string `json:"tags"` // 全局标签, 如 'title', 'encoder'
+	} `json:"format"`
+	// 注意：Chapters 部分在单独使用 -show_chapters 时结构不同，这里是为组合命令准备的
+	Chapters []struct {
+		ID       int64  `json:"id"`
+		TimeBase string `json:"time_base"`
+		Start    int64  `json:"start"`
+		End      int64  `json:"end"`
+		Tags     struct {
+			Title string `json:"title"`
+		} `json:"tags"`
+	} `json:"chapters"`
 }
+
+// type FFProbeRawMetadata struct {
+// 	Format struct {
+// 		Duration string `json:"duration"`
+// 	} `json:"format"`
+// 	Streams []struct {
+// 		CodecType string `json:"codec_type"`
+// 		Width     int    `json:"width"`
+// 		Height    int    `json:"height"`
+// 	} `json:"streams"`
+// }
 
 // SubChunkInfo 存储子分片的元数据
 type SubChunkInfo struct {

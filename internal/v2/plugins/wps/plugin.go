@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/physical"
 	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
+	"github.com/Soltus/encv-go/internal/v2/plugins/interfaces/packer"
 	"github.com/Soltus/encv-go/internal/v2/reader"
 	"github.com/Soltus/encv-go/internal/v2/service"
 	"github.com/Soltus/encv-go/internal/v2/types"
@@ -30,9 +32,6 @@ type WPSPlugin struct {
 	outputDir        string
 	inputPath        string
 	inputRootDir     string
-	tempEncPath      string
-	salt             []byte
-	iv               []byte
 	baseNamer        namer.BaseNamer           // 注入容器命名器
 	containerManager *service.ContainerManager // 注入 ContainerManager
 	physicalPacker   physical.PhysicalPacker
@@ -101,7 +100,7 @@ func (p *WPSPlugin) Initialize(ctx context.Context) error {
 	p.settings = *settings // 将指针解引用，存入
 	p.containerManager = service.NewContainerManager()
 	p.baseNamer = namer.NewDefaultBaseNamer()
-	p.physicalPacker = physical.NewSinglePhysicalPacker() // NoOpPacker 不需要 namer
+	p.physicalPacker = physical.NewSinglePhysicalPacker()
 	return nil
 }
 
@@ -151,26 +150,35 @@ func (p *WPSPlugin) CanDecrypt(containerPath string) bool {
 	if err != nil {
 		// 如果无法判断类型（例如，文件损坏或不是 ENCV 容器），则认为不能解密
 		// 这里的日志可以帮助调试
-		// fmt.Printf("DEBUG: [IframePlugin.CanDecrypt] Failed to detect kind for '%s': %v\n", containerPath, err)
+		// log.Printf("DEBUG: [IframePlugin.CanDecrypt] Failed to detect kind for '%s': %v\n", containerPath, err)
 		return false
 	}
 	return kind == IndexKindWPS
 }
 
-// 【新增方法】实现 plugins.Plugin 接口
+// 实现 plugins.Plugin 接口
 func (p *WPSPlugin) GetMetadataExtractor() pluginInterfaces.MetadataExtractor {
 	return &WPSMetadataExtractor{}
 }
 
-// 【新增方法】实现 plugins.Plugin 接口
+// 实现 plugins.Plugin 接口
 func (p *WPSPlugin) GetContentPreprocessor() pluginInterfaces.ContentPreprocessor {
 	return &WPSContentPreprocessor{}
+}
+
+// 实现 plugins.Plugin 接口
+func (p *WPSPlugin) GetContentVirifier() pluginInterfaces.ContentVerifier {
+	return nil
+}
+
+func (p *WPSPlugin) GroupFiles(inputPaths []string, inputRootDir, outputDir string) ([]string, error) {
+	return inputPaths, nil
 }
 
 // --- 加密逻辑 ---
 
 // Plugin 接口实现
-// 在加密前处理字幕，并更新 Index
+// 在加密前处理，并更新 Index
 func (p *WPSPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRootDir, outputDir string) error {
 	vIndex, ok := index.(*WPSIndex)
 	if !ok {
@@ -187,84 +195,109 @@ func (p *WPSPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRootD
 }
 
 // Plugin 接口实现
-// 执行核心的加密工作，并调用 Packer
-func (p *WPSPlugin) Encrypt(dataReader io.Reader) error {
+// 执行核心的加密工作
+func (p *WPSPlugin) Encrypt(dataReader io.Reader) (*crypto.EncryptionResult, error) {
 	guardKey := fmt.Sprintf("%s|%s", p.inputPath, p.outputDir)
+	var result *crypto.EncryptionResult
 
-	return utils.Do(guardKey, func() error {
-
-		// --- 1. 【抽离】将加密逻辑委托给 crypto 包 ---
-		tempEncPath, salt, iv, err := crypto.EncryptToTempFile(dataReader, p.cfg.Password, p.outputDir)
+	err := utils.Do(guardKey, func() error {
+		// 1. 执行加密
+		// crypto.EncryptToTempFile 会读取 dataReader 并生成带有 Salt/IV 头的临时文件
+		var err error
+		result, err = crypto.EncryptToTempFile_v2(dataReader, p.cfg.Password, p.outputDir)
 		if err != nil {
 			return fmt.Errorf("failed to encrypt to temp file: %w", err)
 		}
-		p.tempEncPath = tempEncPath
-		p.salt = salt
-		p.iv = iv
 
-		fmt.Printf("INFO: [%s] Encrypted to temporary file: %s\n", p.Name(), tempEncPath)
-
-		fmt.Printf("✅ [%s] Encrypted successfully.\n", p.Name())
+		log.Printf("INFO: [%s] Encrypted to temporary file: %s (Payload: %d bytes)\n", p.Name(), result.TempPath, result.EncryptedPayloadSize)
+		log.Printf("✅ [%s] Encrypted successfully.\n", p.Name())
 		return nil
 	})
+
+	return result, err
 }
 
 // Plugin 接口实现
-// 视频插件在加密后处理器
-func (p *WPSPlugin) PostEncryptProcessor() error {
-	// --- 【关键修复】在这里，根据原始文件大小计算逻辑分片 ---
-	logicalFragmentSize := fragment.CalculateFragmentSize(p.index.OriginalFileSize, 0)
-	logicalFragments, err := fragment.CreateLogicalFragmentsFromSize(p.index.OriginalFileSize, logicalFragmentSize, types.FragmentType_AtomicFile)
+// 加密后处理器
+func (p *WPSPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) error {
+	// 1. 【性能优化】使用传入的 result 中的精确大小
+	logicalDataSize := result.EncryptedPayloadSize
+
+	// 2. 生成逻辑分片
+	logicalFragments, err := fragment.CreateLogicalFragmentsFromSize(logicalDataSize, logicalDataSize, types.FragmentType_AtomicFile)
 	if err != nil {
 		return fmt.Errorf("failed to create logical fragments from size: %w", err)
 	}
-	// 打印出生成的片段数量，用于调试
-	fmt.Printf("-> [%s] Generated %d logical fragments.\n", p.Name(), len(logicalFragments))
+	log.Printf("-> [%s] Generated %d logical fragments.\n", p.Name(), len(logicalFragments))
 
-	// 重新打开临时文件，作为加密数据源传递给 Packer
-	encryptedDataReader, err := os.Open(p.tempEncPath)
+	// 3. 构造 Manifest (使用 result 中的 Salt 和 IV)
+	kvi := WPSKVI_v2{
+		KVI_v2: types.KVI_v2{
+			SaltBase64: crypto.Base64Encode_v2(result.Salt),
+			IVBase64:   crypto.Base64Encode_v2(result.IV),
+		},
+		WPSIndex: &p.index,
+	}
+	manifest, err := types.NewManifest_v2(kvi, logicalFragments)
 	if err != nil {
-		return fmt.Errorf("failed to open temp file for packing: %w", err)
+		return fmt.Errorf("failed to create manifest: %w", err)
 	}
-	defer os.Remove(p.tempEncPath) // 确保在使用完毕后删除临时文件
 
-	// --- 5. 创建 Packer 并执行打包 ---
+	// 4. 准备通用 PackParams
 	encryptedBaseName := p.baseNamer.GenerateEncryptedBaseName(p.index.OriginalFilename)
-	finalBaseName := strings.TrimSuffix(encryptedBaseName, p.settings.Ext)
-	packer := NewWPSPacker(p.physicalPacker)
-	packReq := &physical.PackRequest{
-		BaseName:            finalBaseName,
-		OutputDir:           p.outputDir,
-		EncryptedDataReader: encryptedDataReader,
-		Index:               &p.index, // Packer 将从 vIndex 获取所需信息
-		Salt:                p.salt,
-		IV:                  p.iv,
-		LogicalFragments:    logicalFragments, // 预先计算好
-		FinalFileName:       encryptedBaseName + p.settings.Ext,
+	finalFilename := encryptedBaseName + p.settings.Ext
+	finalBaseName := strings.TrimSuffix(finalFilename, p.settings.Ext)
+
+	// 5. 【重构】直接构造 PackParams
+	packParams := &packer.PackParams{
+		// --- 核心数据 ---
+		Manifest:       manifest,
+		PhysicalPacker: p.physicalPacker,
+		TempEncPath:    result.TempPath,
+
+		// --- 加密参数 ---
+		Salt:                 result.Salt,
+		IV:                   result.IV,
+		SaltIVHeaderSize:     result.SaltIVHeaderSize,
+		EncryptedPayloadSize: result.EncryptedPayloadSize,
+
+		// --- Packer 配置字段 ---
+		BaseName:      finalBaseName,
+		OutputDir:     p.outputDir,
+		Index:         &p.index,
+		HeaderVersion: 3,
+		SpecialIDType: types.IDType_Raw,
+		SpecialID:     nil,
+		FinalFileName: finalFilename,
+		// Namer, StartIdx, LightMainChunkEnabled 等在 Single 模式下不需要，
+		// Helper 会处理零值，Packer 也会处理零值
 	}
 
-	if err := packer.Pack(p.cfg, packReq); err != nil {
-		encryptedDataReader.Close()
+	// 6. 调用 Helper
+	if err := packer.StandardPostEncrypt(packParams); err != nil {
+		// 清理临时文件
+		os.Remove(result.TempPath)
 		return fmt.Errorf("packing failed: %w", err)
 	}
 
-	encryptedDataReader.Close() // Packer 使用完毕后关闭
-	fmt.Printf("✅ [%s] packed successfully.\n", p.Name())
+	// 7. 清理临时文件
+	os.Remove(result.TempPath)
+
+	log.Printf("✅ [%s] packed successfully.\n", p.Name())
 	return nil
 }
 
 // --- 解密逻辑 ---
 
 // Plugin 接口实现
-// 视频插件在解密前无需额外操作
+// 解密前无需额外操作
 func (p *WPSPlugin) PreDecryptProcessor(containerPath, outputDir string) error {
-	// 视频插件在此阶段无需操作
 	return nil
 }
 
 // Plugin 接口实现
 func (p *WPSPlugin) Decrypt(containerPath, outputDir string) error {
-	fmt.Printf("DEBUG: [%s] Starting decryption for: %s\n", p.Name(), containerPath)
+	log.Printf("DEBUG: [%s] Starting decryption for: %s\n", p.Name(), containerPath)
 	p.outputDir = outputDir
 
 	// --- 1. 【关键】通过 ContainerManager 获取一个可读的容器路径 ---
@@ -273,7 +306,7 @@ func (p *WPSPlugin) Decrypt(containerPath, outputDir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get readable path from container manager: %w", err)
 	}
-	fmt.Printf("DEBUG: [%s] Using readable path: %s\n", p.Name(), readablePath)
+	log.Printf("DEBUG: [%s] Using readable path: %s\n", p.Name(), readablePath)
 
 	// --- 2. 使用统一路径创建 reader 工厂 ---
 	factory, err := reader.NewDecryptReaderFactory(readablePath, p.cfg.Password)
@@ -281,7 +314,7 @@ func (p *WPSPlugin) Decrypt(containerPath, outputDir string) error {
 		return fmt.Errorf("failed to create reader factory for '%s': %w", readablePath, err)
 	}
 	defer factory.Close() // 【关键】这个 Close 会同时清理物理临时文件（如果存在）
-	fmt.Printf("DEBUG: [%s] Reader factory created successfully.\n", p.Name())
+	log.Printf("DEBUG: [%s] Reader factory created successfully.\n", p.Name())
 
 	// --- 3. 使用工厂创建解密流并写入文件 ---
 	decryptedReader, err := factory.NewDecryptReader()
@@ -291,9 +324,9 @@ func (p *WPSPlugin) Decrypt(containerPath, outputDir string) error {
 	defer decryptedReader.Close()
 	_, isSeekable := decryptedReader.(io.Seeker)
 	if isSeekable {
-		fmt.Printf("INFO: [%s] Container is SEEKABLE. Decrypting full content.\n", p.Name())
+		log.Printf("INFO: [%s] Container is SEEKABLE. Decrypting full content.\n", p.Name())
 	} else {
-		fmt.Printf("INFO: [%s] Container is ATOMIC. Decrypting full content.\n", p.Name())
+		log.Printf("INFO: [%s] Container is ATOMIC. Decrypting full content.\n", p.Name())
 	}
 
 	// 从 KVI 获取原始文件名
@@ -316,12 +349,12 @@ func (p *WPSPlugin) Decrypt(containerPath, outputDir string) error {
 
 	p.index = *vIndex
 
-	fmt.Printf("✅ [%s] Decrypted to: %s\n", p.Name(), outputPath)
+	log.Printf("✅ [%s] Decrypted to: %s\n", p.Name(), outputPath)
 	return nil
 }
 
 // Plugin 接口实现
-// 在解密后处理字幕还原
+// 在解密后处理
 func (p *WPSPlugin) PostDecryptProcessor(containerPath string) error {
 
 	return nil

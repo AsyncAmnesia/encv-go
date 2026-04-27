@@ -10,7 +10,6 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/reader"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
@@ -22,7 +21,7 @@ type LocalFileProvider struct {
 	index         types.Index
 	originalSize  int64
 	originalName  string
-	// 【关键新增】持有 factory 的引用，用于查询元信息
+	// 持有 factory 的引用，用于查询元信息
 	factory reader.DecryptReaderFactory
 	// 按需加载的字节切片
 	cachedData []byte
@@ -56,7 +55,7 @@ func NewLocalFileProvider(ctx context.Context, factory reader.DecryptReaderFacto
 		index:         index,
 		originalSize:  factory.GetOriginalSize(),
 		originalName:  index.GetOriginalFilename(),
-		factory:       factory, // 持有 factory
+		factory:       factory,
 	}
 
 	// 【关键重构】使用新的、基于 IsSeekable 的判断逻辑
@@ -107,7 +106,6 @@ func (p *LocalFileProvider) GetReader() io.ReadCloser {
 	return p.decryptReader
 }
 
-// GetSeeker 和 GetSeekerTo 的逻辑也需要相应调整
 func (p *LocalFileProvider) GetSeeker() (io.Seeker, bool) {
 	// 如果已经加载到内存
 	if p.cachedData != nil {
@@ -128,7 +126,7 @@ func (p *LocalFileProvider) GetSeeker() (io.Seeker, bool) {
 		return bytes.NewReader(p.cachedData), true
 	}
 
-	// 对于大文件，检查原始解密器
+	// 对于可寻址文件，检查原始解密器
 	if seeker, ok := p.decryptReader.(io.Seeker); ok {
 		return seeker, true
 	}
@@ -146,8 +144,7 @@ func (p *LocalFileProvider) GetSeekerTo() (SeekerTo, bool) {
 		p.loadIntoMemory()
 		return nil, false
 	}
-
-	// 对于大文件，检查原始解密器
+	// 对于可寻址文件，检查原始解密器
 	if seekerTo, ok := p.decryptReader.(SeekerTo); ok {
 		return seekerTo, true
 	}
@@ -185,35 +182,36 @@ func (p *LocalFileProvider) shouldCacheInMemory() bool {
 		return false
 	}
 
-	// 1. 获取系统可用内存并计算动态阈值
-	availableMem := utils.GetCachedAvailableMemory()
-	const minAbsoluteThreshold = 20 * 1024 * 1024 // 20MB
-	const maxMemoryUsageRatio = 0.2               // 20%
-	var dynamicThreshold int64
-	if availableMem > 0 {
-		dynamicThreshold = int64(float64(availableMem) * maxMemoryUsageRatio)
-		log.Printf("DEBUG: [LocalFileProvider] Available memory: %d MB, dynamic cache threshold: %d MB", availableMem/1024/1024, dynamicThreshold/1024/1024)
-	} else {
-		dynamicThreshold = minAbsoluteThreshold
-		log.Printf("DEBUG: [LocalFileProvider] Could not determine available memory, using fixed cache threshold: %d MB", dynamicThreshold/1024/1024)
-	}
-	finalThreshold := dynamicThreshold
-	if finalThreshold < minAbsoluteThreshold {
-		finalThreshold = minAbsoluteThreshold
+	// 1. 检查容器是否原生支持 Seek (例如 VirtualSeekableDecryptReader)
+	if p.factory.IsSeekable() {
+		// 【策略 A】如果容器可寻址：
+		// 通常情况下，我们希望直接流式传输，而不是将整个文件读入内存。
+		// 例外：对于极小的文件（例如 < 1MB），缓存到内存可能比文件 IO 更快。
+		const smallFileThreshold = 3 * 1024 * 1024 // MB
+		if p.originalSize <= smallFileThreshold {
+			log.Printf("DEBUG: [LocalFileProvider] Seekable but tiny (%d bytes), caching for speed.", p.originalSize)
+			return true
+		}
+
+		// 对于大的可寻址文件（如视频），直接 Streaming。
+		// VirtualSeekableDecryptReader 已经优化了 Fragment 的读取。
+		log.Printf("DEBUG: [LocalFileProvider] Seekable container detected (%d bytes). Streaming to save RAM.", p.originalSize)
+		return false
 	}
 
-	// 2. 【核心修正】基于容器的寻址能力来决定
-	if !p.factory.IsSeekable() {
-		// 如果容器不可寻址，并且文件大小在合理范围内，则强烈建议缓存
-		// 这能将一个不可寻址的流转变为一个可寻址的内存流，对 WebDAV 等场景至关重要
-		log.Printf("DEBUG: [LocalFileProvider] Container is not seekable, favoring in-memory caching for size %d.", p.originalSize)
-		// 对于不可寻址的容器，我们可以设置一个更高的缓存上限，比如 150MB
-		const unseekableCacheLimit = 150 * 1024 * 1024
-		return p.originalSize <= unseekableCacheLimit
+	// 2. 检查容器是否不可寻址
+	// 【策略 B】如果容器不可寻址（纯流式）：
+	// 为了支持 HTTP Range 请求 或 WebDAV 随机读，我们必须将其缓存到内存。
+	// 但我们设置一个上限，防止 OOM。
+	const unseekableCacheLimit = 150 * 1024 * 1024 // MB
+	if p.originalSize <= unseekableCacheLimit {
+		log.Printf("DEBUG: [LocalFileProvider] Non-seekable container (%d bytes). Caching in memory to enable Seek support.", p.originalSize)
+		return true
 	}
 
-	// 3. 对于可寻址的容器，使用标准的动态阈值
-	return p.originalSize <= finalThreshold
+	// 文件太大且不可寻址，无法安全地支持 Seek。
+	log.Printf("WARN: [LocalFileProvider] Non-seekable file is too large (%d bytes). Range requests may fail.", p.originalSize)
+	return false
 }
 
 // 【关键新增】loadIntoMemory 按需将文件读入内存
@@ -231,8 +229,6 @@ func (p *LocalFileProvider) loadIntoMemory() {
 		// 注意：factory 的关闭需要谨慎，如果它被 ReaderService 缓存，则不能在这里关闭
 		// 假设 NewLocalFileProvider 每次都创建新工厂，那么可以关闭
 		// 如果 factory 是被注入的，则由注入方负责关闭
-		// 在我们当前的设计中，factory 是局部变量，无法在这里访问到
-		// 这是一个设计上的小瑕疵，但为了防止泄露，我们至少要关闭 reader
 
 		p.cachedData = allData
 		log.Printf("DEBUG: [LocalFileProvider] File successfully loaded into memory (%d bytes).", len(p.cachedData))

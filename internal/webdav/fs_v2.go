@@ -332,6 +332,10 @@ func (fs *encvWebDAVFS) addOrUpdateEntry(p string) error {
 		log.Printf("[Index-Lifecycle] File '%s' is not a container, skipping.", p)
 		return nil
 	}
+	if !fs.validateContainerHeader(p) {
+		log.Printf("[DEBUG] File '%s' ignored: invalid ENCV header (not a valid container).", p)
+		return nil
+	}
 
 	// 2. 解析容器
 	index, err := fs.getIndexFromContainerPathWithCache(p)
@@ -481,22 +485,21 @@ func (fs *encvWebDAVFS) getIndexes() *pathIndexes {
 	return snapshot
 }
 
-// resolvePath 将 WebDAV 路径安全地解析为本地文件系统绝对路径
-func (fs *encvWebDAVFS) resolvePath(name string) (string, error) {
-	// 1. 检查并剥离 webdavPrefix
-	if !strings.HasPrefix(name, fs.webdavPrefix) {
-		return "", fmt.Errorf("path '%s' is not under webdav root '%s'", name, fs.webdavPrefix)
+// validateContainerHeader 检查文件是否具有有效的 ENCV 头部（V2 或 V3）
+// 它利用 types 包中的通用检测器来统一处理版本识别和 Header 大小获取。
+func (fs *encvWebDAVFS) validateContainerHeader(filePath string) bool {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return false
 	}
+	defer file.Close()
+	version, headerSize, err := types.DetectHeaderInfoFromReaderAt(file)
 
-	// 剥离前缀，得到相对于 WebDAV 根的用户路径
-	userPath := strings.TrimPrefix(name, fs.webdavPrefix)
-	if userPath == "" {
-		userPath = "." // 表示请求的是 WebDAV 根目录
-	}
-
-	// 2. 【核心】调用通用工具函数进行安全解析
-	// fs.dir 是我们的基础目录，userPath 是用户提供的相对路径
-	return utils.SafeResolveToAbsPath(fs.dir, userPath)
+	// 判断逻辑：
+	// 1. err 必须为 nil（读取成功）
+	// 2. version 必须不为 0（是已知的 V2/V3 容器）
+	// 3. headerSize 必须大于 0（Header 长度合法）
+	return err == nil && version != 0 && headerSize > 0
 }
 
 // 带缓存的 Index 获取

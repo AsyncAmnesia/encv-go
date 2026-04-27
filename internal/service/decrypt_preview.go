@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,18 +51,18 @@ func Preview(ctx context.Context, inputPath string) error {
 	}
 
 	// 3. 启动 mpv 播放器
-	fmt.Printf("-> Starting mpv to stream: %s\n", videoURL)
+	log.Printf("-> Starting mpv to stream: %s\n", videoURL)
 	args := []string{videoURL}
 	if subtitleURL != "" {
 		args = append(args, "--sub-files="+subtitleURL)
-		fmt.Printf("-> With subtitles: %s\n", subtitleURL)
+		log.Printf("-> With subtitles: %s\n", subtitleURL)
 	}
 	// 添加 --keep-open 参数，使mpv播放完后不自动退出
 	args = append(args, "--keep-open")
 	// 添加 --log-file 参数来捕获详细日志
 	logFilePath := filepath.Join(os.TempDir(), "mpv_preview.log")
 	args = append(args, "--log-file="+logFilePath)
-	fmt.Printf("-> mpv detailed logs will be saved to: %s\n", logFilePath)
+	log.Printf("-> mpv detailed logs will be saved to: %s\n", logFilePath)
 
 	cmd := exec.Command(mpvPath, args...)
 	// 将 mpv 的标准错误输出重定向到我们程序的标准错误输出
@@ -93,11 +94,11 @@ func Preview(ctx context.Context, inputPath string) error {
 		return waitCtx.Err()
 	case err := <-done:
 		if err != nil {
-			fmt.Printf("-> mpv exited with an error: %v\n", err)
+			log.Printf("-> mpv exited with an error: %v\n", err)
 			// 尝试获取并打印退出码
 			var exitError *exec.ExitError
 			if errors.As(err, &exitError) {
-				fmt.Printf("-> mpv Exit Code: %d\n", exitError.ExitCode())
+				log.Printf("-> mpv Exit Code: %d\n", exitError.ExitCode())
 			}
 		} else {
 			fmt.Println("-> mpv closed normally (exit code 0).")

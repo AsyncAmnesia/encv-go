@@ -61,3 +61,26 @@ func (p *fileHandlePool) Put(file *os.File) error {
 	}
 	return nil
 }
+
+// Close 关闭并移除指定路径的文件句柄，忽略当前的引用计数。
+// 此方法用于在文件被外部替换（如原子重命名）后，强制刷新池中的句柄，
+// 以确保后续的 Get 操作读取到最新的文件。
+func (p *fileHandlePool) Close(path string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	hold, exists := p.holds[path]
+	if !exists {
+		// 文件不在池中，无需操作
+		return nil
+	}
+
+	// 直接关闭文件句柄，不检查引用计数
+	if hold.file != nil {
+		// 忽略 Close 返回的错误（例如如果是双重关闭），因为我们强制驱逐
+		_ = hold.file.Close()
+	}
+
+	delete(p.holds, path)
+	return nil
+}

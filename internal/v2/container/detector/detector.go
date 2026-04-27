@@ -8,9 +8,23 @@ import (
 	"io"
 	"os"
 
+	"github.com/Soltus/encv-go/internal/v2/container/envelope"
 	"github.com/Soltus/encv-go/internal/v2/container/manifest"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
+
+// 从字节数组判断是否为 ENCV 容器，适用于网络内容
+func IsEncvContainerFromBytes(data []byte) (bool, error) {
+	size := types.EnvelopeFooterSize_v2
+	if len(data) < size {
+		return false, nil
+	}
+	footerData := data[len(data)-size:]
+
+	// 使用 envelope 包的新权威解析函数
+	_, err := envelope.ParseEnvelopeFooterFromBytes(footerData)
+	return err == nil, nil
+}
 
 // DetectContainer 分析给定的容器文件，返回其描述符
 // 这是判断一个文件是否为有效 ENCV 容器的权威函数。
@@ -54,9 +68,17 @@ func DetectContainer(filePath string) (*types.ContainerDescriptor, error) {
 	}
 	fmt.Printf("DEBUG: [Detector] Footer magic number is valid. ManifestOffset: %d\n", footer.ManifestOffset)
 
-	// 2. 后续逻辑保持不变
-	fmt.Printf("DEBUG: [Detector] Reading manifest using manifest.ReadManifestFromFile...\n")
-	manifest, _, err := manifest.ReadManifestFromFile(filePath)
+	// 2. 【新增】探测 Header 版本，用于日志记录
+	_, _, err = types.DetectHeaderInfoFromReaderAt(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect header: %w", err)
+	}
+
+	// 3. 根据 Footer 中的绝对偏移量读取 Manifest
+	// 注意：无论是 V2 还是 V3，Footer 中的 ManifestOffset 都是绝对偏移量。
+	// manifest.ReadManifestAt 会 Seek 到该偏移量并读取 Block，因此兼容 V3。
+	fmt.Printf("DEBUG: [Detector] Reading manifest at absolute offset %d...\n", footer.ManifestOffset)
+	manifest, _, _, _, err := manifest.ReadManifestFromFile(filePath)
 	if err != nil {
 		fmt.Printf("DEBUG: [Detector] FAILED: manifest.ReadManifestFromFile returned an error: %v\n", err)
 		return nil, fmt.Errorf("failed to read manifest for detection: %w", err)
@@ -78,7 +100,12 @@ func DetectContainer(filePath string) (*types.ContainerDescriptor, error) {
 // DetectIndexKind 读取容器文件并返回其内部索引的类型（例如 "video", "archive"）。
 // 此函数现在完全依赖接口，实现了类型安全、高效且可扩展的检测。
 func DetectIndexKind(filePath string) (types.IndexKind, error) {
-	footer, err := manifest.ReadFooterFromFile(filePath)
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("invalid container (cannot open file): %w", err)
+	}
+	defer file.Close()
+	footer, err := envelope.ReadEnvelopeFooter_v2(file)
 	if err != nil {
 		return "", fmt.Errorf("invalid container (cannot read footer): %w", err)
 	}

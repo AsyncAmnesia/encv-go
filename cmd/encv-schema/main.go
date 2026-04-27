@@ -56,7 +56,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	// --- 文件写入逻辑保持不变 ---
+	// --- 文件写入：直接清空后写入 ---
 	schemaBytes, err := json.MarshalIndent(schema, "", "  ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error marshaling schema to JSON: %v\n", err)
@@ -64,16 +64,17 @@ func main() {
 	}
 
 	targetFile := "config.schema.json"
-	tempFile := targetFile + ".tmp"
-	err = os.WriteFile(tempFile, schemaBytes, 0644)
+	// 直接打开文件，O_TRUNC 清空现有内容，O_CREATE 如果不存在则创建
+	file, err := os.OpenFile(targetFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing temporary schema file: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error opening schema file: %v\n", err)
 		os.Exit(5)
 	}
+	defer file.Close()
 
-	err = os.Rename(tempFile, targetFile)
+	_, err = file.Write(schemaBytes)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error renaming temporary file to target file: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error writing schema file: %v\n", err)
 		os.Exit(6)
 	}
 

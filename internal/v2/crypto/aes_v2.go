@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/Soltus/encv-go/internal/v2/crypto/keys"
 	"golang.org/x/crypto/pbkdf2"
 )
 
@@ -187,4 +188,68 @@ func EncryptWriter_v2(dst io.Writer, key, iv []byte) (io.Writer, error) {
 
 	// 返回一个 StreamWriter，它会在写入时自动加密
 	return &cipher.StreamWriter{S: stream, W: dst}, nil
+}
+
+// =========== 以下为系统内置密钥加密解密相关函数 ===========
+
+// EncryptSystemPayload 使用系统内置密钥加密数据块（如 Manifest）。
+// 算法：AES-256-CTR
+// 返回：IV (16 bytes) + Ciphertext
+// IV 拼接在密文头部，方便解密时提取。
+func EncryptSystemPayload(plainData []byte) ([]byte, error) {
+	key := keys.GetSystemKey()
+
+	// 1. 生成随机 IV (16 bytes)
+	iv := make([]byte, aes.BlockSize)
+	if _, err := rand.Read(iv); err != nil {
+		return nil, fmt.Errorf("failed to generate IV for system payload encryption: %w", err)
+	}
+
+	// 2. 创建 AES Block Cipher
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
+	}
+
+	// 3. 创建 CTR 流
+	stream := cipher.NewCTR(block, iv)
+
+	// 4. 执行加密 (CTR 模式支持并行，这里使用 XORKeyStream 标准接口)
+	cipherText := make([]byte, len(plainData))
+	stream.XORKeyStream(cipherText, plainData)
+
+	// 5. 格式化：IV (16 bytes) + CipherText
+	encrypted := make([]byte, aes.BlockSize+len(cipherText))
+	copy(encrypted[:aes.BlockSize], iv)
+	copy(encrypted[aes.BlockSize:], cipherText)
+
+	return encrypted, nil
+}
+
+// DecryptSystemPayload 使用系统内置密钥解密数据块。
+// 输入：IV (16 bytes) + Ciphertext
+func DecryptSystemPayload(encryptedData []byte) ([]byte, error) {
+	key := keys.GetSystemKey()
+
+	// 1. 提取 IV
+	if len(encryptedData) < aes.BlockSize {
+		return nil, fmt.Errorf("encrypted payload too short to contain IV")
+	}
+	iv := encryptedData[:aes.BlockSize]
+	cipherText := encryptedData[aes.BlockSize:]
+
+	// 2. 创建 AES Block Cipher
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
+	}
+
+	// 3. 创建 CTR 流
+	stream := cipher.NewCTR(block, iv)
+
+	// 4. 执行解密
+	plainData := make([]byte, len(cipherText))
+	stream.XORKeyStream(plainData, cipherText)
+
+	return plainData, nil
 }

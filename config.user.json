@@ -37,7 +37,11 @@
     "video": {
       "ext": ".sccgv",
       "chunk_size_mb": 0,
-      "track_extensions": ".ass,.srt,.dm.ass,.vtt"
+      "light_main_chunk_enabled": true,
+      "verify_after_pack": true,
+      "track_extensions": ".ass,.srt,.dm.ass,.vtt",
+      "plugin_cache_dir": "D:/TEMP/encv-cache",
+      "skip_merge_for_split_mkv": false
     },
     "image": {"ext": ".sccgi"},
     "audio": {"ext": ".sccga"},

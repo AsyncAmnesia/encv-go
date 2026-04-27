@@ -11,7 +11,7 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/utils"
-	"github.com/Soltus/encv-go/internal/v2/container/manifest"
+	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/handler"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/Soltus/encv-go/internal/v2/provider"
@@ -194,7 +194,7 @@ func (p *ProxyGhttp) handleDecrypt(r *ghttp.Request, siteHost, siteToken string)
 	}
 
 	// 检查是否是有效的 ENCV 容器
-	isValid, err := isEncvContainerFromBytes(footerBytes)
+	isValid, err := detector.IsEncvContainerFromBytes(footerBytes)
 	if err != nil {
 		g.Log().Errorf(r.Context(), "ERROR: [Proxy] Validation check failed for %s: %v", streamURL, err)
 		r.Response.WriteStatus(http.StatusInternalServerError)
@@ -430,14 +430,4 @@ func (p *ProxyGhttp) serveDirectStream(r *ghttp.Request, fileURL string, headers
 	if err != nil {
 		g.Log().Errorf(r.Context(), "Error streaming file to client: %v", err)
 	}
-}
-
-// isEncvContainerFromBytes 从字节数组判断是否为 ENCV 容器
-func isEncvContainerFromBytes(data []byte) (bool, error) {
-	if len(data) < 32 {
-		return false, nil
-	}
-	footerData := data[len(data)-32:]
-	_, err := manifest.ParseFooterFromBytes(footerData)
-	return err == nil, nil
 }

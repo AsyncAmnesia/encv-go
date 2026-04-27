@@ -86,8 +86,7 @@
           "description": "插件专属配置。键是插件名，值是该插件的配置对象。"
         },
         "server": {
-          "$ref": "#/$defs/HttpServer",
-          "description": "SccgvSettings SCCGV (视频分片) 相关的设置。\nSccgvSettings SccgvSettings             `json:\"sccgv_settings\"`"
+          "$ref": "#/$defs/HttpServer"
         },
         "admin": {
           "$ref": "#/$defs/AdminServer"
@@ -223,10 +222,19 @@
           "type": "boolean"
         },
         "track_extensions": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
+          "type": "string"
+        },
+        "keep_mkv_for_mkv_source": {
+          "type": "boolean"
+        },
+        "verify_after_pack": {
+          "type": "boolean"
+        },
+        "plugin_cache_dir": {
+          "type": "string"
+        },
+        "skip_merge_for_split_mkv": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false,
@@ -235,7 +243,11 @@
         "ext",
         "chunk_size_mb",
         "light_main_chunk_enabled",
-        "track_extensions"
+        "track_extensions",
+        "keep_mkv_for_mkv_source",
+        "verify_after_pack",
+        "plugin_cache_dir",
+        "skip_merge_for_split_mkv"
       ]
     },
     "WPSPluginConfig": {

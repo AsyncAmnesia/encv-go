@@ -2,7 +2,7 @@
 package manifest
 
 import (
-	"encoding/binary"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,8 +11,19 @@ import (
 
 	"github.com/Soltus/encv-go/internal/v2/container/block"
 	"github.com/Soltus/encv-go/internal/v2/container/envelope"
+	"github.com/Soltus/encv-go/internal/v2/crypto"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
+
+// EncryptManifest 加密原始 Manifest 字节
+func EncryptManifest(plainData []byte) ([]byte, error) {
+	return crypto.EncryptSystemPayload(plainData)
+}
+
+// DecryptManifest 解密加密的 Manifest 字节
+func DecryptManifest(encryptedData []byte) ([]byte, error) {
+	return crypto.DecryptSystemPayload(encryptedData)
+}
 
 // DeserializeFromJSON_v2 从 JSON 字节反序列化清单
 func DeserializeFromJSON_v2(data []byte) (*types.Manifest_v2, error) {
@@ -24,93 +35,6 @@ func DeserializeFromJSON_v2(data []byte) (*types.Manifest_v2, error) {
 	return &manifest, nil
 }
 
-// ReadManifestFromFile 直接从文件路径读取并解析 Manifest 和 Footer
-// 这是一个低级函数，用于避免包之间的循环依赖
-func ReadManifestFromFile(filePath string) (*types.Manifest_v2, *types.EnvelopeFooter_v2, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
-	// 1. 读取 Footer
-	footer, err := envelope.ReadEnvelopeFooter_v2(file)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read envelope footer: %w", err)
-	}
-
-	// 2. 定位到 Manifest
-	if _, err := file.Seek(int64(footer.ManifestOffset), io.SeekStart); err != nil {
-		return nil, nil, fmt.Errorf("failed to seek to manifest: %w", err)
-	}
-
-	// 3. 读取 Manifest 块头和数据
-	manifestHeader, err := block.ReadBlockHeader_v2(file)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read manifest block header: %w", err)
-	}
-	if manifestHeader.Type != types.BlockTypeManifest_v2 {
-		return nil, nil, fmt.Errorf("expected manifest block type, got %d", manifestHeader.Type)
-	}
-
-	manifestData, err := block.ReadBlockData_v2(file, manifestHeader)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read manifest data: %w", err)
-	}
-
-	// 4. 反序列化
-	manifest, err := DeserializeFromJSON_v2(manifestData)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to deserialize manifest: %w", err)
-	}
-
-	return manifest, footer, nil
-}
-
-// ScanManifestFromFile 从头扫描文件，寻找 Manifest 块
-func ScanManifestFromFile(filePath string) (*types.Manifest_v2, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	for {
-		// 1. 读取块头
-		var header block.BlockHeader_v2
-		if err := binary.Read(file, binary.LittleEndian, &header); err != nil {
-			if err == io.EOF {
-				break // 文件结束
-			}
-			return nil, fmt.Errorf("failed to read block header during scan: %w", err)
-		}
-
-		// 2. 检查是否是 Manifest 块
-		if header.Type == types.BlockTypeManifest_v2 {
-			// log.Printf("DEBUG: Found Manifest block at offset %d", block.GetBlockHeader_v2_Size())
-			// 3. 读取块数据
-			data := make([]byte, header.Length)
-			if _, err := io.ReadFull(file, data); err != nil {
-				return nil, fmt.Errorf("failed to read manifest data: %w", err)
-			}
-
-			// 4. 反序列化
-			var manifest types.Manifest_v2
-			if err := json.Unmarshal(data, &manifest); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal scanned manifest: %w", err)
-			}
-			return &manifest, nil
-		}
-
-		// 3. 如果不是，跳过这个块的数据
-		if _, err := file.Seek(int64(header.Length), io.SeekCurrent); err != nil {
-			return nil, fmt.Errorf("failed to skip block data during scan: %w", err)
-		}
-	}
-
-	return nil, fmt.Errorf("manifest block not found in file")
-}
-
 // ExtractKVI_v2 从 v2 容器文件中直接扫描并提取 KVI 块的数据，不依赖清单。
 func ExtractKVI_v2(containerPath string) ([]byte, error) {
 	file, err := os.Open(containerPath)
@@ -120,6 +44,15 @@ func ExtractKVI_v2(containerPath string) ([]byte, error) {
 	defer file.Close()
 
 	// log.Printf("INFO: Scanning '%s' for KVI block...", containerPath)
+
+	// 1. 【关键修复】探测 Header 并跳过
+	_, headerSize, err := types.DetectHeaderInfoFromReaderAt(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect header size: %w", err)
+	}
+	if _, err := file.Seek(headerSize, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("failed to seek to data stream start: %w", err)
+	}
 
 	// 从头开始扫描，直到找到 KVI 块
 	for {
@@ -167,6 +100,15 @@ func ExtractManifest_v2(containerPath string) ([]byte, error) {
 
 	// log.Printf("INFO: Scanning '%s' for Manifest block...", containerPath)
 
+	// 1. 【关键修复】探测 Header 并跳过
+	_, headerSize, err := types.DetectHeaderInfoFromReaderAt(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect header size: %w", err)
+	}
+	if _, err := file.Seek(headerSize, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("failed to seek to data stream start: %w", err)
+	}
+
 	for {
 		header, err := block.ReadBlockHeader_v2(file)
 		if err != nil {
@@ -205,19 +147,179 @@ func ReadManifestAt(filePath string, offset int64, length int64) ([]byte, error)
 		return nil, err
 	}
 
-	header, err := block.ReadBlockHeader_v2(file)
+	// 【关键修复】使用 readAndDecryptManifest 读取并解密 Manifest
+	manifest, err := readAndDecryptManifest(file)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read and decrypt manifest: %w", err)
 	}
 
-	if header.Type != types.BlockTypeManifest_v2 {
-		return nil, fmt.Errorf("block at offset %d is not a manifest", offset)
-	}
-
-	return block.ReadBlockData_v2(file, header)
+	// 重新序列化为 JSON 字节返回（保持接口兼容）
+	return manifest.SerializeToJSON_v2()
 }
 
 // ParseManifestFromBytes 从 JSON 字节切片中解析 Manifest
 func ParseManifestFromBytes(data []byte) (*types.Manifest_v2, error) {
 	return DeserializeFromJSON_v2(data)
+}
+
+// ReadManifestFromFile 直接从文件路径读取并解析 Manifest
+// 这是一个低级函数，用于避免包之间的循环依赖
+// 返回：Manifest, Footer, HeaderVersion, HeaderSize, Error
+func ReadManifestFromFile(filePath string) (*types.Manifest_v2, *types.EnvelopeFooter_v2, int, int64, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, nil, 0, 0, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	// 1. 探测 Header
+	headerVersion, headerSize, err := types.DetectHeaderInfoFromReaderAt(file)
+	log.Printf("DEBUG: [manifest.ReadManifestFromFile] File: %s, Detected Header Version: %d, Header Size: %d", filePath, headerVersion, headerSize)
+	if err != nil {
+		return nil, nil, 0, 0, fmt.Errorf("failed to detect header info: %w", err)
+	}
+
+	// 2. 【关键修复】使用 envelope 包读取 Footer
+	// 直接传入已经打开的 file 句柄，无需再次打开文件
+	footer, err := envelope.ReadEnvelopeFooter_v2(file)
+	if err != nil {
+		return nil, nil, headerVersion, headerSize, fmt.Errorf("failed to read envelope footer: %w", err)
+	}
+
+	// 3. 定位到 Manifest
+	// 注意：Footer.ManifestOffset 是相对于文件开头的绝对偏移量
+	if _, err := file.Seek(int64(footer.ManifestOffset), io.SeekStart); err != nil {
+		return nil, nil, headerVersion, headerSize, fmt.Errorf("failed to seek to manifest: %w", err)
+	}
+
+	// 4. 读取并解密 Manifest
+	manifest, err := readAndDecryptManifest(file)
+	if err != nil {
+		return nil, nil, headerVersion, headerSize, fmt.Errorf("failed to read/decrypt manifest: %w", err)
+	}
+
+	return manifest, footer, headerVersion, headerSize, nil
+}
+
+// ScanManifestFromFile 从头扫描文件，寻找 Manifest 块
+func ScanManifestFromFile(filePath string) (*types.Manifest_v2, int, int64, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	defer file.Close()
+
+	version, headerSize, err := types.DetectHeaderInfoFromReaderAt(file)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	if _, err := file.Seek(headerSize, io.SeekStart); err != nil {
+		return nil, 0, 0, err
+	}
+
+	for {
+		header, err := block.ReadBlockHeader_v2(file)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, 0, 0, err
+		}
+
+		if header.Type == types.BlockTypeManifest_v2 {
+			// 调用解密辅助函数
+			data, err := readBlockDataAndDecrypt(file, header)
+			if err != nil {
+				return nil, 0, 0, err
+			}
+
+			var manifest types.Manifest_v2
+			if err := json.Unmarshal(data, &manifest); err != nil {
+				return nil, 0, 0, err
+			}
+			return &manifest, version, headerSize, nil
+		}
+
+		if _, err := file.Seek(int64(header.Length), io.SeekCurrent); err != nil {
+			return nil, 0, 0, err
+		}
+	}
+
+	return nil, 0, 0, fmt.Errorf("manifest block not found")
+}
+
+// readAndDecryptManifest 从当前位置读取并解密 Manifest
+// 这是一个通用的内部函数，可以被 Scan 和 Footer 路径复用
+func readAndDecryptManifest(r io.Reader) (*types.Manifest_v2, error) {
+	// 1. 读取 Block Header
+	header, err := block.ReadBlockHeader_v2(r)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read block header: %w", err)
+	}
+
+	// 2. 读取并解密数据
+	plainData, err := readBlockDataAndDecrypt(r, header)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. 反序列化
+	var manifest types.Manifest_v2
+	if err := json.Unmarshal(plainData, &manifest); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
+	}
+
+	return &manifest, nil
+}
+
+// readBlockDataAndDecrypt 读取加密块数据并尝试解密
+func readBlockDataAndDecrypt(r io.Reader, header *block.BlockHeader_v2) ([]byte, error) {
+	// 1. 读取原始数据 (包含 IV + CipherText)
+	rawData := make([]byte, header.Length)
+	if _, err := io.ReadFull(r, rawData); err != nil {
+		return nil, fmt.Errorf("failed to read block data: %w", err)
+	}
+
+	// 2. 尝试解密 (AES-256-CTR)
+	// CTR 模式不需要 Padding，长度必须一致
+	plainData, err := DecryptManifest(rawData)
+	if err != nil {
+		// 如果解密失败，可能是旧版本未加密的 Manifest，或者是损坏数据
+		// 尝试直接解析 JSON
+		if err := json.Unmarshal(rawData, &types.Manifest_v2{}); err == nil {
+			return rawData, nil // 是未加密的旧版本
+		}
+		return nil, fmt.Errorf("failed to decrypt manifest block (and raw parse failed): %w", err)
+	}
+
+	// 3. 校验 (可选，如果需要对 PlainData 做二次校验，但 BlockHeader 的 CRC 是针对密文的)
+	return plainData, nil
+}
+
+// ReadEncryptedManifestBlock 直接从加密的字节数组（Header + Data）中读取并解密 Manifest
+// 这是一个辅助函数，用于 remote reader 或其他内存操作场景。
+// 它封装了读取 Header、读取/解密 Data 以及反序列化的完整流程。
+func ReadEncryptedManifestBlock(encryptedData []byte) (*types.Manifest_v2, error) {
+	reader := bytes.NewReader(encryptedData)
+
+	// 1. 读取 Block Header
+	header, err := block.ReadBlockHeader_v2(reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read block header: %w", err)
+	}
+
+	// 2. 读取并解密数据 (复用已有的通用逻辑)
+	plainData, err := readBlockDataAndDecrypt(reader, header)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read/decrypt manifest: %w", err)
+	}
+
+	// 3. 反序列化 JSON
+	var manifest types.Manifest_v2
+	if err := json.Unmarshal(plainData, &manifest); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
+	}
+
+	return &manifest, nil
 }

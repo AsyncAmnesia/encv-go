@@ -19,7 +19,16 @@
 
 如果没有可执行程序资产，您需要从源代码构建 `encv`  ，通常这不需要。
 
-windows 使用 `./build.ps1` 构建，linux 使用 `make build-all` 构建。
+首先生成构建脚本：
+
+```bash
+go run ./cmd/encv-makefile
+```
+
+然后执行构建：
+
+- Windows: `./build.bat` 或 `./build.ps1`
+- Linux: `make build-all`
 
 ### ⚙️ 配置
 
@@ -116,10 +125,10 @@ windows 使用 `./build.ps1` 构建，linux 使用 `make build-all` 构建。
 
 #### 🔄 OpenList 代理服务器设置
 
-| 配置键                                   | 类型        | 描述                                         | 示例值                      |
-| ---------------------------------------- | ----------- | -------------------------------------------- | --------------------------- |
-| `proxy.sites`                          | `ProxySiteConfig`  | 需要代理的OpenList站点（**Token需要访问管理后台设置**） | `""`                      |
-| `proxy.disable_signature_verification` | `boolean` | 是否禁用URL签名验证                          | `false`                   |
+| 配置键                                   | 类型                | 描述                                                          | 示例值    |
+| ---------------------------------------- | ------------------- | ------------------------------------------------------------- | --------- |
+| `proxy.sites`                          | `ProxySiteConfig` | 需要代理的OpenList站点（**Token需要访问管理后台设置**） | `""`    |
+| `proxy.disable_signature_verification` | `boolean`         | 是否禁用URL签名验证                                           | `false` |
 
 #### 📁 WebDAV 服务器设置
 
@@ -221,12 +230,10 @@ mpv http://127.0.0.1:1999/stream?file=A%3A%5CLocal%5CCol-Study%5Cgo%5Cencv%5Cout
 3. **获取 OpenList 令牌**:
 
    * 在 OpenList 管理页面的【设置】->【其他】中，滚动到最底部，复制管理员令牌。在 `/openlist/sites` 提交令牌（**令牌会以加密二进制文件的形式存储在 `config.user.json` 文件所在路径**）。
-
 4. **为加密文件添加预览**:
 
    * 在 OpenList 管理页面的【设置】->【预览】中。
    * 根据配置按类别添加后缀名。
-
 5. **通过 iframe 预览文件**：
 
    * 在 Openlist 管理页面的【设置】->【预览】中，iframe 预览追加以下配置：
@@ -239,7 +246,6 @@ mpv http://127.0.0.1:1999/stream?file=A%3A%5CLocal%5CCol-Study%5Cgo%5Cencv%5Cout
         "ENCV Text": "http://localhost:${port}/openlist/sites/${siteid}/_preview/text.html?file=$e_url"
       }
      ```
-
    * 保存后即可在 OpenList 中预览加密后的 PDF 和文本文件。
    * 文本文件为什么需要 iframe 预览？因为测试过程中发现 OpenList 无法预览 50MB 的大型文本文件，而通过 encv 的 iframe 预览则没有问题。
 
@@ -361,13 +367,21 @@ encv-go/
 
 ### 🔨 构建
 
+首先生成构建脚本（只需执行一次，或当构建配置更改时）：
+
 ```bash
-# windows
+go run ./cmd/encv-makefile
+```
+
+然后执行构建：
+
+```bash
+# Windows
 ./build.bat
-# 等效
+# 或
 ./build.ps1
 
-# linux
+# Linux
 make build-all
 ```
 
@@ -408,7 +422,7 @@ go test ./internal/service -run="TestContinuousRead|TestRandomSeek" -v
 生成 `config.schema.json` ：
 
 ```cmd
-go run ./cmd/encv-schema > config.schema.json
+go run ./cmd/encv-schema
 ```
 
 在 `config.user.json` 中测试：

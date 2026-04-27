@@ -33,44 +33,44 @@ func NewReaderService(manager *ContainerManager) *ReaderService {
 // 解密器可能是可寻址的（实现了 io.Seeker），也可能是顺序的。
 // 调用者有责任检查解密器的能力并采取相应的策略。
 // 注意：调用者负责关闭解密器。
-func (s *ReaderService) GetDecryptReader(cfg config.Config, originalPath, password string, chunkNamer namer.ChunkNamer) (reader.DecryptReader, types.Index, int64, error) {
+func (s *ReaderService) GetDecryptReader(cfg config.Config, originalPath, password string, chunkNamer namer.ChunkNamer) (reader.DecryptReaderFactory, reader.DecryptReader, types.Index, int64, error) {
 	// 1. 获取可读路径（现在这个调用非常快）
 	readablePath, err := s.manager.GetReadablePath(originalPath, chunkNamer)
 	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to get a readable container path for '%s': %w", originalPath, err)
+		return nil, nil, nil, 0, fmt.Errorf("failed to get a readable container path for '%s': %w", originalPath, err)
 	}
 
 	// 2. 检查工厂缓存
 	s.mu.Lock()
 	factory, exists := s.factories[readablePath]
 	if !exists {
-		// 在锁的保护下创建工厂（这是唯一一次慢速扫描）
+		// 创建工厂
 		factory, err = reader.NewDecryptReaderFactory(readablePath, password)
 		if err != nil {
 			s.mu.Unlock()
-			return nil, nil, 0, fmt.Errorf("failed to create decrypt reader factory for '%s': %w", readablePath, err)
+			return nil, nil, nil, 0, fmt.Errorf("failed to create decrypt reader factory for '%s': %w", readablePath, err)
 		}
 		s.factories[readablePath] = factory
 	}
 	s.mu.Unlock()
 
 	if factory == nil {
-		return nil, nil, 0, fmt.Errorf("internal error: factory for path '%s' is nil in cache", readablePath)
+		return nil, nil, nil, 0, fmt.Errorf("internal error: factory for path '%s' is nil in cache", readablePath)
 	}
 
-	// 3. 使用工厂创建解密器（非常快）
+	// 3. 创建解密器
 	decryptReader, err := factory.NewDecryptReader()
 	if err != nil {
-		return nil, nil, 0, fmt.Errorf("failed to create decrypt reader: %w", err)
+		return nil, nil, nil, 0, fmt.Errorf("failed to create decrypt reader: %w", err)
 	}
 
 	index := factory.GetIndex()
 	if index == nil {
 		decryptReader.Close()
-		return nil, nil, 0, fmt.Errorf("internal error: factory returned a nil index for path '%s'", readablePath)
+		return nil, nil, nil, 0, fmt.Errorf("internal error: factory returned a nil index for path '%s'", readablePath)
 	}
 
-	return decryptReader, index, factory.GetOriginalSize(), nil
+	return factory, decryptReader, index, factory.GetOriginalSize(), nil
 }
 
 // GetBulkDecryptor 创建一个专用于全量解密的工具。
@@ -114,7 +114,7 @@ func (s *ReaderService) Cleanup() {
 
 	for path, factory := range s.factories {
 		if err := factory.Close(); err != nil {
-			fmt.Printf("ERROR: failed to close factory for path '%s': %v\n", path, err)
+			log.Printf("ERROR: failed to close factory for path '%s': %v\n", path, err)
 		}
 		delete(s.factories, path)
 	}

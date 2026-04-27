@@ -5,6 +5,7 @@ import (
 	"log"
 	"sync"
 
+	"github.com/Soltus/encv-go/internal/v2/container/fragment"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -35,12 +36,13 @@ type decryptReaderFactory struct {
 	password      string
 
 	// 缓存解析结果，避免重复读取文件
-	mu              sync.RWMutex
-	cachedManifest  *types.Manifest_v2
-	cachedIndex     types.Index
-	kviProvider     types.KVIProvider
-	physicalOffsets map[string]uint64
-	isSeekable      bool
+	mu                  sync.RWMutex
+	cachedManifest      *types.Manifest_v2
+	cachedHeaderVersion int
+	cachedIndex         types.Index
+	kviProvider         types.KVIProvider
+	physicalOffsets     map[string]uint64
+	isSeekable          bool
 }
 
 // decryptReaderFactory 实现新方法
@@ -81,6 +83,10 @@ func (f *decryptReaderFactory) parseAndCacheMetadata() error {
 	if err != nil {
 		return err
 	}
+	err = fragment.ValidateGlobalStartOffsets(f.cachedManifest)
+	if err != nil {
+		return err
+	}
 
 	// 为了获取扫描结果，我们需要访问内部字段。
 	// 因为 decryptReaderFactory 和 fileContainerReader 在同一个包内，所以这是合法的。
@@ -89,6 +95,8 @@ func (f *decryptReaderFactory) parseAndCacheMetadata() error {
 		return fmt.Errorf("internal error: expected *fileContainerReader, got %T", tempReader)
 	}
 	f.physicalOffsets = fcr.physicalOffsets
+	// 【关键新增】同样缓存 Header Version，无需再次探测
+	f.cachedHeaderVersion = fcr.headerVersion
 
 	// 判断是否可寻址
 	f.isSeekable = false
@@ -105,14 +113,16 @@ func (f *decryptReaderFactory) parseAndCacheMetadata() error {
 // NewDecryptReader 使用缓存的数据高效地创建解密器
 func (f *decryptReaderFactory) NewDecryptReader() (DecryptReader, error) {
 	// 【关键】使用新的轻量级构造函数，直接使用缓存好的数据，避免重复扫描
-	containerReader, err := NewFileContainerReaderFromMetadata(f.containerPath, f.cachedManifest, f.physicalOffsets)
+	containerReader, err := NewFileContainerReaderFromMetadata(f.containerPath, f.cachedManifest, f.cachedHeaderVersion, f.physicalOffsets)
 	if err != nil {
 		return nil, err
 	}
 
 	var decryptReader DecryptReader
+	// 【关键修复】对于解密操作（顺序读取），使用更简单的 SequentialSeekableDecryptReader
+	// 避免 VirtualSeekableDecryptReader 中复杂的 seek 逻辑导致的错误
 	if f.isSeekable {
-		decryptReader, err = NewVirtualSeekableDecryptReader(containerReader, f.password)
+		decryptReader, err = NewSequentialSeekableDecryptReader(containerReader, f.password)
 	} else {
 		decryptReader, err = NewSequentialDecryptReader(containerReader, f.password)
 	}

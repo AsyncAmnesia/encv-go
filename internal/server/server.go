@@ -20,6 +20,7 @@ import (
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/handler"
+	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/Soltus/encv-go/internal/v2/service"
 	"github.com/Soltus/encv-go/internal/webdav"
@@ -38,6 +39,7 @@ type Server struct {
 	// 【关键替换】用新的 ReaderService 替代旧的 ContainerManager
 	readerService  *service.ReaderService
 	contentHandler *handler.ContentHandler
+	chunkNamers    []namer.ChunkNamer
 }
 
 func NewServer(ctx context.Context) *Server {
@@ -70,6 +72,8 @@ func (s *Server) Start(version string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve absolute path for directory '%s': %w", dir, err)
 	}
+	chunkNamers := plugins.GetAllRegisteredChunkNamers()
+	s.chunkNamers = chunkNamers
 
 	// 2. 解析并存储 WebDAV 目录和路径
 	if s.cfg.Webdav.Dir != "" {
