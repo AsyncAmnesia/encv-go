@@ -3,7 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -117,7 +117,7 @@ func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		log.Printf("Error encoding ping response: %v", err)
+		slog.Error("Error encoding ping response", "error", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
 }
@@ -137,7 +137,7 @@ func (s *Server) serveEncryptedFile(w http.ResponseWriter, r *http.Request, full
 		adapterNamer,
 	)
 	if err != nil {
-		log.Printf("ERROR: [serveEncryptedFile] GetDecryptReader failed for '%s': %v", fullPath, err)
+		slog.Error("GetDecryptReader failed", "path", fullPath, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -148,7 +148,7 @@ func (s *Server) serveEncryptedFile(w http.ResponseWriter, r *http.Request, full
 	// NewLocalFileProvider 需要 factory 来判断 IsSeekable，从而决定缓存策略
 	prov, err := provider.NewLocalFileProvider(ctx, factory, decryptReader)
 	if err != nil {
-		log.Printf("ERROR: [serveEncryptedFile] NewLocalFileProvider failed: %v", err)
+		slog.Error("NewLocalFileProvider failed", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

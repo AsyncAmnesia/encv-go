@@ -38,53 +38,52 @@ const (
 
 var (
 	defaultLogger *slog.Logger
-	loggerOnce    sync.Once
+	mu            sync.Mutex
 )
 
 // Init 初始化结构化日志
 // level: 日志级别
 // logFile: 日志文件路径，为空则只输出到控制台
+// 可以多次调用以更新日志配置（例如启动时先初始化基础日志，再根据配置更新）
 func Init(level LogLevel, logFile string) error {
-	var initErr error
-	loggerOnce.Do(func() {
-		slogLevel := mapLogLevel(level)
+	mu.Lock()
+	defer mu.Unlock()
 
-		// 创建处理器
-		var handler slog.Handler
+	slogLevel := mapLogLevel(level)
 
-		// 如果指定了日志文件，同时输出到控制台和文件
-		if logFile != "" {
-			// 确保目录存在
-			dir := filepath.Dir(logFile)
-			if dir != "" && dir != "." {
-				if err := os.MkdirAll(dir, 0755); err != nil {
-					initErr = fmt.Errorf("failed to create log directory: %w", err)
-					return
-				}
+	// 创建处理器
+	var handler slog.Handler
+
+	// 如果指定了日志文件，同时输出到控制台和文件
+	if logFile != "" {
+		// 确保目录存在
+		dir := filepath.Dir(logFile)
+		if dir != "" && dir != "." {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return fmt.Errorf("failed to create log directory: %w", err)
 			}
-
-			file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-			if err != nil {
-				initErr = fmt.Errorf("failed to open log file: %w", err)
-				return
-			}
-
-			// 控制台使用带颜色的文本格式，文件使用 JSON 格式
-			handler = &multiFormatHandler{
-				consoleHandler: newTextHandler(os.Stderr, slogLevel, true),
-				fileHandler:    newJSONHandler(file, slogLevel),
-				level:          slogLevel,
-			}
-		} else {
-			// 只输出到控制台，带颜色
-			handler = newTextHandler(os.Stderr, slogLevel, true)
 		}
 
-		defaultLogger = slog.New(handler)
-		slog.SetDefault(defaultLogger)
-	})
+		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to open log file: %w", err)
+		}
 
-	return initErr
+		// 控制台使用带颜色的文本格式，文件使用 JSON 格式
+		handler = &multiFormatHandler{
+			consoleHandler: newTextHandler(os.Stderr, slogLevel, true),
+			fileHandler:    newJSONHandler(file, slogLevel),
+			level:          slogLevel,
+		}
+	} else {
+		// 只输出到控制台，带颜色
+		handler = newTextHandler(os.Stderr, slogLevel, true)
+	}
+
+	defaultLogger = slog.New(handler)
+	slog.SetDefault(defaultLogger)
+
+	return nil
 }
 
 // mapLogLevel 将 LogLevel 映射到 slog.Level
@@ -370,13 +369,12 @@ func (h *multiFormatHandler) WithGroup(name string) slog.Handler {
 
 // Default 返回默认的 logger
 func Default() *slog.Logger {
+	mu.Lock()
+	defer mu.Unlock()
 	if defaultLogger == nil {
-		// 如果未初始化，使用默认配置
-		loggerOnce.Do(func() {
-			handler := newTextHandler(os.Stderr, slog.LevelInfo, true)
-			defaultLogger = slog.New(handler)
-			slog.SetDefault(defaultLogger)
-		})
+		handler := newTextHandler(os.Stderr, slog.LevelInfo, true)
+		defaultLogger = slog.New(handler)
+		slog.SetDefault(defaultLogger)
 	}
 	return defaultLogger
 }

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/Soltus/encv-go/internal/admin"
 	"github.com/Soltus/encv-go/internal/admin/routes"
 	"github.com/Soltus/encv-go/internal/register"
+	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/pkg/encv"
 	"github.com/spf13/cobra"
 )
@@ -42,19 +44,19 @@ var startCmd = &cobra.Command{
 			log.Fatalf("[%s] Failed to start admin service: %v", proxyInstanceID, err)
 		}
 
-		// 5. 打印信息
-		log.Printf("\n✅ Server started successfully!\n")
-		log.Printf("   Serving files from: %s\n", cfg.Server.Dir)
-		log.Printf("   FS is at: http://%s\n", backendAddr)
-		log.Printf("   Webdav is at: http://%s/%s\n", backendAddr, cfg.Webdav.Root)
-		log.Printf("   FS Proxy is at: http://%s%s/\n", adminAddr, routes.FSProxy)
+		// 5. 打印启动信息（使用 pterm 美化输出）
+		utils.PrintSection("Server Started")
+		utils.PrintKV("Serving files", cfg.Server.Dir)
+		utils.PrintKV("FS endpoint", fmt.Sprintf("http://%s", backendAddr))
+		utils.PrintKV("WebDAV endpoint", fmt.Sprintf("http://%s/%s", backendAddr, cfg.Webdav.Root))
+		utils.PrintKV("FS Proxy endpoint", fmt.Sprintf("http://%s%s/", adminAddr, routes.FSProxy))
 		// 【修改】多站点代理信息（现在集成在管理服务中）
 		if len(cfg.Proxy.Sites) > 0 {
-			log.Printf("   OpenList Sites Management: http://%s%s/sites\n", adminAddr, routes.OpenListProxy)
+			utils.PrintKV("OpenList Sites", fmt.Sprintf("http://%s%s/sites", adminAddr, routes.OpenListProxy))
 		}
-		log.Println("\n--- How to Play ---")
-		log.Printf("   mpv --no-config http://%s/p/<video_name_without_extension>\n", adminAddr)
-		log.Println("\n(Press Ctrl+C in this terminal to stop the server)")
+		utils.PrintSection("How to Play")
+		utils.PrintInfo("mpv --no-config http://%s/p/<video_name_without_extension>", adminAddr)
+		utils.PrintInfo("Press Ctrl+C to stop the server")
 
 		select {} // Keep the main goroutine alive
 	},

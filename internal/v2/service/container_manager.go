@@ -2,7 +2,7 @@ package service
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
@@ -39,7 +39,7 @@ func (cm *ContainerManager) GetReadablePath(originalPath string, chunkNamer name
 	_, err := detector.DetectContainer(originalPath)
 	if err == nil {
 		// 如果 err 为 nil，说明文件是有效的 ENCV 容器
-		log.Printf("INFO: [ContainerManager] Container '%s' is valid (detector passed), using original path.", originalPath)
+		slog.Debug("Container is valid, using original path", "path", originalPath)
 		return originalPath, nil
 	}
 
@@ -47,7 +47,7 @@ func (cm *ContainerManager) GetReadablePath(originalPath string, chunkNamer name
 	cm.mu.RLock()
 	if cached, found := cm.cache[originalPath]; found {
 		cm.mu.RUnlock()
-		log.Printf("INFO: [ContainerManager] Using cached rebuilt file for '%s'.", originalPath)
+		slog.Info("Using cached rebuilt file", "path", originalPath)
 		return cached.UnifiedPath, nil
 	}
 	cm.mu.RUnlock()
@@ -58,11 +58,11 @@ func (cm *ContainerManager) GetReadablePath(originalPath string, chunkNamer name
 
 	// 双重检查锁定，防止并发竞争
 	if cached, found := cm.cache[originalPath]; found {
-		log.Printf("INFO: [ContainerManager] Using cached rebuilt file for '%s' (after double-check).", originalPath)
+		slog.Info("Using cached rebuilt file (after double-check)", "path", originalPath)
 		return cached.UnifiedPath, nil
 	}
 
-	log.Printf("WARN: [ContainerManager] Container '%s' is invalid and not cached. Rebuilding as last resort.", originalPath)
+	slog.Warn("Container is invalid and not cached, rebuilding as last resort", "path", originalPath)
 
 	unpacker := physical.NewFileChunkerPhysicalUnpacker(chunkNamer)
 	unifiedPath, cleanup, err := unpacker.Unpack(originalPath)
@@ -75,7 +75,7 @@ func (cm *ContainerManager) GetReadablePath(originalPath string, chunkNamer name
 		UnifiedPath: unifiedPath,
 		CleanupFunc: cleanup,
 	}
-	log.Printf("INFO: [ContainerManager] Rebuild successful for '%s'. Cached at: %s", originalPath, unifiedPath)
+	slog.Info("Container rebuild successful", "path", originalPath, "cached_at", unifiedPath)
 
 	return unifiedPath, nil
 }
@@ -85,12 +85,12 @@ func (cm *ContainerManager) Cleanup() {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	log.Printf("INFO: [ContainerManager] Cleaning up %d cached temporary files...", len(cm.cache))
+	slog.Info("ContainerManager cleaning up cached temporary files", "count", len(cm.cache))
 	for path, cached := range cm.cache {
 		if cached.CleanupFunc != nil {
 			cached.CleanupFunc()
 		}
 		delete(cm.cache, path)
 	}
-	log.Println("INFO: [ContainerManager] Cleanup complete.")
+	slog.Info("ContainerManager cleanup complete")
 }

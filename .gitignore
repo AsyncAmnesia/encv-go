@@ -4,6 +4,7 @@
 *.dll
 *.so
 *.dylib
+*.log
 /encv
 /*.7z
 /encv-proxy

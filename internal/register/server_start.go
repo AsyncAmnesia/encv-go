@@ -3,7 +3,7 @@ package register
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"time"
@@ -28,10 +28,10 @@ func StartHttpHandlerWithRetry(handler http.Handler, initialPort int, instanceID
 		}
 
 		go func() {
-			log.Printf("Backend: Attempting to start on %s...", addr)
+			slog.Info("Backend attempting to start", "addr", addr)
 			backendServer := &http.Server{Handler: handler}
 			if serveErr := backendServer.Serve(listener); serveErr != nil && serveErr != http.ErrServerClosed {
-				log.Printf("Backend server on %s encountered an error: %v", listener.Addr().String(), serveErr)
+				slog.Error("Backend server encountered an error", "addr", listener.Addr().String(), "error", serveErr)
 			}
 		}()
 
@@ -40,14 +40,14 @@ func StartHttpHandlerWithRetry(handler http.Handler, initialPort int, instanceID
 
 		// 执行带身份验证的自检
 		if err := performPingCheck(currentPort, instanceID, version); err != nil {
-			log.Printf("Backend self-check on port %d failed: %v. Trying next port...", currentPort, err)
+			slog.Warn("Backend self-check failed, trying next port", "port", currentPort, "error", err)
 			listener.Close()
 			continue
 		}
 
 		// 自检成功！
 		actualAddr := listener.Addr().String()
-		log.Printf("✅ Backend server successfully started and listening on %s", actualAddr)
+		slog.Info("Backend server successfully started", "addr", actualAddr)
 		return actualAddr, nil
 	}
 
@@ -88,7 +88,7 @@ func StartGfServerWithRetry(server *ghttp.Server, initialPort int, instanceID, v
 
 		// 【关键修复】使用实际的端口号进行自检
 		if err := performPingCheck(actualPort, instanceID, version); err != nil {
-			log.Printf("Proxy self-check on port %d failed: %v. Trying next port...", actualPort, err)
+			slog.Warn("Proxy self-check failed, trying next port", "port", actualPort, "error", err)
 			server.Shutdown()
 			continue
 		}
@@ -96,7 +96,7 @@ func StartGfServerWithRetry(server *ghttp.Server, initialPort int, instanceID, v
 		// 自检成功！
 		// 使用 GetListenedAddress() 获取完整地址用于日志和返回
 		actualAddr := server.GetListenedAddress()
-		log.Printf("✅ Proxy server successfully started and listening on %s", actualAddr)
+		slog.Info("Proxy server successfully started", "addr", actualAddr)
 		return actualAddr, nil
 	}
 
@@ -123,8 +123,7 @@ func performPingCheck(port int, expectedInstanceID, expectedVersion string) erro
 	}
 
 	if pingResp.Version != expectedVersion {
-		// 版本不匹配通常不是劫持，但可以作为警告
-		log.Printf("Warning: version mismatch on port %d: expected %s, got %s", port, expectedVersion, pingResp.Version)
+		slog.Warn("Version mismatch on port", "port", port, "expected", expectedVersion, "got", pingResp.Version)
 	}
 
 	return nil
@@ -133,8 +132,8 @@ func performPingCheck(port int, expectedInstanceID, expectedVersion string) erro
 // logAndContinue 是一个辅助函数，用于记录端口占用错误
 func logAndContinue(err error, port int) {
 	if utils.IsAddrInUseErr(err) {
-		log.Printf("Port %d is in use, trying next port...", port)
+		slog.Warn("Port in use, trying next", "port", port)
 	} else {
-		log.Printf("Failed to start on port %d: %v. Trying next port...", port, err)
+		slog.Warn("Failed to start on port, trying next", "port", port, "error", err)
 	}
 }

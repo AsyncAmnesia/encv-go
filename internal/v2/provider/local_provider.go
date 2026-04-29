@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"runtime"
 	"sync"
 
@@ -61,7 +61,7 @@ func NewLocalFileProvider(ctx context.Context, factory reader.DecryptReaderFacto
 	// 【关键重构】使用新的、基于 IsSeekable 的判断逻辑
 	shouldCache := provider.shouldCacheInMemory()
 	if !shouldCache {
-		log.Printf("DEBUG: [LocalFileProvider] File is large or container is seekable (%d bytes), will be streamed.", provider.originalSize)
+		slog.Debug("File is large or container is seekable, will be streamed", "size", provider.originalSize)
 		runtime.SetFinalizer(provider, func(p *LocalFileProvider) {
 			p.decryptReader.Close()
 		})
@@ -189,13 +189,13 @@ func (p *LocalFileProvider) shouldCacheInMemory() bool {
 		// 例外：对于极小的文件（例如 < 1MB），缓存到内存可能比文件 IO 更快。
 		const smallFileThreshold = 3 * 1024 * 1024 // MB
 		if p.originalSize <= smallFileThreshold {
-			log.Printf("DEBUG: [LocalFileProvider] Seekable but tiny (%d bytes), caching for speed.", p.originalSize)
+			slog.Debug("Seekable but tiny, caching for speed", "size", p.originalSize)
 			return true
 		}
 
 		// 对于大的可寻址文件（如视频），直接 Streaming。
 		// VirtualSeekableDecryptReader 已经优化了 Fragment 的读取。
-		log.Printf("DEBUG: [LocalFileProvider] Seekable container detected (%d bytes). Streaming to save RAM.", p.originalSize)
+		slog.Debug("Seekable container detected, streaming to save RAM", "size", p.originalSize)
 		return false
 	}
 
@@ -205,19 +205,19 @@ func (p *LocalFileProvider) shouldCacheInMemory() bool {
 	// 但我们设置一个上限，防止 OOM。
 	const unseekableCacheLimit = 150 * 1024 * 1024 // MB
 	if p.originalSize <= unseekableCacheLimit {
-		log.Printf("DEBUG: [LocalFileProvider] Non-seekable container (%d bytes). Caching in memory to enable Seek support.", p.originalSize)
+		slog.Debug("Non-seekable container, caching in memory to enable Seek", "size", p.originalSize)
 		return true
 	}
 
 	// 文件太大且不可寻址，无法安全地支持 Seek。
-	log.Printf("WARN: [LocalFileProvider] Non-seekable file is too large (%d bytes). Range requests may fail.", p.originalSize)
+	slog.Warn("Non-seekable file is too large, Range requests may fail", "size", p.originalSize)
 	return false
 }
 
 // 【关键新增】loadIntoMemory 按需将文件读入内存
 func (p *LocalFileProvider) loadIntoMemory() {
 	p.once.Do(func() {
-		log.Printf("DEBUG: [LocalFileProvider] Loading file into memory on first access...")
+		slog.Debug("Loading file into memory on first access")
 		allData, err := io.ReadAll(p.decryptReader)
 		if err != nil {
 			p.loadErr = fmt.Errorf("failed to read file into memory: %w", err)
@@ -226,11 +226,8 @@ func (p *LocalFileProvider) loadIntoMemory() {
 
 		// 数据读取成功，关闭原始流和工厂
 		p.decryptReader.Close()
-		// 注意：factory 的关闭需要谨慎，如果它被 ReaderService 缓存，则不能在这里关闭
-		// 假设 NewLocalFileProvider 每次都创建新工厂，那么可以关闭
-		// 如果 factory 是被注入的，则由注入方负责关闭
 
 		p.cachedData = allData
-		log.Printf("DEBUG: [LocalFileProvider] File successfully loaded into memory (%d bytes).", len(p.cachedData))
+		slog.Debug("File loaded into memory", "size", len(p.cachedData))
 	})
 }

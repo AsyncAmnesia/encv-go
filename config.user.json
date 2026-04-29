@@ -26,6 +26,10 @@
       }
     }
   },
+  "log": {
+    "level": "info",
+    "file": "encv.log"
+  },
   "webdav": {
     "port": 1234,
     "root": "webdav",

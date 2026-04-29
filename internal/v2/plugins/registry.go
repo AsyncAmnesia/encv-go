@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -223,7 +223,7 @@ func BuildFullPluginSettings(userSettings map[string]json.RawMessage) (map[strin
 func InitializePlugins(ctx context.Context) error {
 	for _, p := range Plugins {
 		pluginName := p.Name()
-		log.Printf("Initializing plugin: %s\n", pluginName)
+		slog.Info("Initializing plugin", "name", pluginName)
 
 		// 3. 调用插件的初始化方法
 		if err := p.Initialize(ctx); err != nil {
@@ -242,31 +242,31 @@ func FindEncryptingPlugin(inputPath string) (Plugin, error) {
 	ext := strings.ToLower(filepath.Ext(inputPath))
 	mimeType, err := utils.DetectFileMIMEType(inputPath)
 	if err != nil {
-		log.Printf("DEBUG: [FindEncryptingPlugin] Could not determine MIME type for '%s'. Skipping MIME-based match.", inputPath)
+		slog.Debug("Could not determine MIME type, skipping MIME-based match", "path", inputPath)
 	}
 
 	var candidates []Plugin
 
 	// --- 阶段 1: MIME 类型匹配 (优先) ---
 	if mimeType != "" {
-		log.Printf("DEBUG: [FindEncryptingPlugin] Found MIME type '%s' for '%s'. Trying MIME-based match.", mimeType, inputPath)
+		slog.Debug("Trying MIME-based match", "path", inputPath, "mime", mimeType)
 		for _, p := range Plugins {
 			for _, prefix := range p.SupportedMimePrefixes() {
 				if strings.HasPrefix(mimeType, prefix) {
-					log.Printf("DEBUG: [FindEncryptingPlugin] Plugin '%T' is a MIME candidate for prefix '%s'.", p, prefix)
+					slog.Debug("Plugin is a MIME candidate", "path", inputPath, "plugin", fmt.Sprintf("%T", p), "prefix", prefix)
 					candidates = append(candidates, p)
 					break // 找到一个匹配的前缀就足够了，进入下一个插件
 				}
 			}
 		}
 	} else {
-		log.Printf("DEBUG: [FindEncryptingPlugin] Could not determine MIME type for '%s'. Skipping MIME-based match.", inputPath)
+		slog.Debug("Could not determine MIME type, skipping MIME-based match", "path", inputPath)
 	}
 
 	// --- 阶段 2: 文件扩展名匹配 (兜底) ---
 	// 如果没有从 MIME 匹配中找到候选插件，则尝试扩展名匹配
 	if len(candidates) == 0 {
-		log.Printf("DEBUG: [FindEncryptingPlugin] No MIME-based candidates found for '%s'. Trying extension-based match.", inputPath)
+		slog.Debug("No MIME-based candidates found, trying extension-based match", "path", inputPath)
 		// 获取不带点的扩展名，用于比较
 		extWithoutDot := ext
 		if len(extWithoutDot) > 0 {
@@ -277,7 +277,7 @@ func FindEncryptingPlugin(inputPath string) (Plugin, error) {
 			for _, supportedExt := range p.SupportedExtensions() {
 				// 比较时不区分大小写
 				if strings.ToLower(supportedExt) == extWithoutDot {
-					log.Printf("DEBUG: [FindEncryptingPlugin] Plugin '%T' is an extension candidate for extension '%s'.", p, supportedExt)
+					slog.Debug("Plugin is an extension candidate", "path", inputPath, "plugin", fmt.Sprintf("%T", p), "extension", supportedExt)
 					candidates = append(candidates, p)
 					break // 找到一个匹配的扩展名就足够了，进入下一个插件
 				}
@@ -290,10 +290,10 @@ func FindEncryptingPlugin(inputPath string) (Plugin, error) {
 		return nil, fmt.Errorf("no suitable plugin found to encrypt file: %s (MIME: '%s', Ext: '%s')", inputPath, mimeType, ext)
 	}
 
-	log.Printf("DEBUG: [FindEncryptingPlugin] Found %d candidates for '%s'. Running ShouldProcess.", len(candidates), inputPath)
+	slog.Debug("Found candidates, running ShouldProcess", "path", inputPath, "count", len(candidates))
 	for _, p := range candidates {
 		if p.ShouldProcess(inputPath) {
-			log.Printf("INFO: [FindEncryptingPlugin] Successfully selected plugin '%T' for file '%s'.", p, inputPath)
+			slog.Info("Successfully selected plugin", "path", inputPath, "plugin", fmt.Sprintf("%T", p))
 			return p, nil
 		}
 	}
@@ -347,7 +347,7 @@ func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputR
 	if err := plugin.PreEncryptProcessor(index, inputPath, inputRootDir, outputDir); err != nil {
 		return fmt.Errorf("pre-encryption failed for '%s': %w", inputPath, err)
 	}
-	log.Printf("✅ [EncryptFileWithPlugin] PreEncryptProcessor successfully.\n")
+	slog.Debug("PreEncryptProcessor completed", "path", inputPath)
 
 	//3. 执行核心加密
 	// 修改为接收 EncryptionResult
@@ -355,14 +355,14 @@ func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputR
 	if err != nil {
 		return fmt.Errorf("encryption failed for '%s': %w", inputPath, err)
 	}
-	log.Printf("✅ [EncryptFileWithPlugin] Encrypt successfully.\n")
+	slog.Debug("Encrypt completed", "path", inputPath)
 
 	//4. 执行后处理器
 	// 传入 EncryptionResult
 	if err := plugin.PostEncryptProcessor(result); err != nil {
 		return fmt.Errorf("post-encryption failed for '%s': %w", inputPath, err)
 	}
-	log.Printf("✅ [EncryptFileWithPlugin] PostEncryptProcessor successfully.\n")
+	slog.Debug("PostEncryptProcessor completed", "path", inputPath)
 
 	return nil
 }
@@ -374,19 +374,19 @@ func DecryptContainerWithPlugin(ctx context.Context, plugin Plugin, containerPat
 	if err := plugin.PreDecryptProcessor(containerPath, outputDir); err != nil {
 		return fmt.Errorf("pre-decryption failed for '%s': %w", containerPath, err)
 	}
-	log.Printf("✅ [DecryptContainerWithPlugin] PreDecryptProcessor successfully.\n")
+	slog.Debug("PreDecryptProcessor completed", "path", containerPath)
 
 	// 2. 执行核心解密
 	if err := plugin.Decrypt(containerPath, outputDir); err != nil {
 		return fmt.Errorf("decryption failed for '%s': %w", containerPath, err)
 	}
-	log.Printf("✅ [DecryptContainerWithPlugin] Decrypt successfully.\n")
+	slog.Debug("Decrypt completed", "path", containerPath)
 
 	// 4. 执行后处理器
 	if err := plugin.PostDecryptProcessor(containerPath); err != nil {
 		return fmt.Errorf("post-encryption failed for '%s': %w", containerPath, err)
 	}
-	log.Printf("✅ [DecryptContainerWithPlugin] PostDecryptProcessor successfully.\n")
+	slog.Debug("PostDecryptProcessor completed", "path", containerPath)
 
 	return nil
 }
@@ -402,7 +402,7 @@ func WalkAndEncrypt(ctx context.Context, walkPath string, inputRootDir, outputDi
 		}
 		plugin, err := FindEncryptingPlugin(path)
 		if err != nil {
-			log.Printf("INFO: Skipping file, no handler found: %s\n%v\n", path, err)
+			slog.Debug("Skipping file, no handler found", "path", path, "error", err)
 			return nil
 		}
 		filesByPlugin[plugin] = append(filesByPlugin[plugin], path)
@@ -414,7 +414,7 @@ func WalkAndEncrypt(ctx context.Context, walkPath string, inputRootDir, outputDi
 
 	// 2. 对每个插件的文件进行批处理
 	for plugin, paths := range filesByPlugin {
-		log.Printf("INFO: Found %d files for plugin '%T'.\n", len(paths), plugin)
+		slog.Info("Processing files with plugin", "plugin", fmt.Sprintf("%T", plugin), "count", len(paths))
 
 		// 3. 调用插件的 GroupFiles 方法进行预处理
 		processedPaths, err := plugin.GroupFiles(paths, inputRootDir, outputDir)
@@ -424,9 +424,9 @@ func WalkAndEncrypt(ctx context.Context, walkPath string, inputRootDir, outputDi
 
 		// 4. 对处理后的文件列表进行逐个加密
 		for _, path := range processedPaths {
-			log.Printf("INFO: Processing file '%s' with plugin '%T'.\n", path, plugin)
+			slog.Debug("Processing file with plugin", "path", path, "plugin", fmt.Sprintf("%T", plugin))
 			if err := EncryptFileWithPlugin(ctx, plugin, path, inputRootDir, outputDir); err != nil {
-				log.Printf("WARN: Failed to encrypt '%s' with plugin '%T': %v. Continuing...\n", path, plugin, err)
+				slog.Warn("Failed to encrypt file, continuing", "path", path, "plugin", fmt.Sprintf("%T", plugin), "error", err)
 			}
 		}
 	}

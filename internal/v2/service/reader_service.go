@@ -2,7 +2,7 @@ package service
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 
 	"github.com/Soltus/encv-go/internal/config"
@@ -108,17 +108,17 @@ func (m *managedDecryptReader) Close() error {
 
 // Cleanup 清理所有由服务管理的资源
 func (s *ReaderService) Cleanup() {
-	log.Println("INFO: [ReaderService] Starting cleanup...")
+	slog.Info("ReaderService starting cleanup")
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for path, factory := range s.factories {
 		if err := factory.Close(); err != nil {
-			log.Printf("ERROR: failed to close factory for path '%s': %v\n", path, err)
+			slog.Error("Failed to close factory", "path", path, "error", err)
 		}
 		delete(s.factories, path)
 	}
-	log.Println("INFO: [ReaderService] Factories cache cleared.")
+	slog.Info("ReaderService factories cache cleared")
 	s.manager.Cleanup()
-	log.Println("INFO: [ReaderService] Cleanup complete.")
+	slog.Info("ReaderService cleanup complete")
 }

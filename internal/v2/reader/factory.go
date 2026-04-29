@@ -2,7 +2,7 @@ package reader
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 
 	"github.com/Soltus/encv-go/internal/v2/container/fragment"
@@ -137,7 +137,7 @@ func (f *decryptReaderFactory) NewDecryptReader() (DecryptReader, error) {
 func (f *decryptReaderFactory) GetIndex() types.Index {
 	if f.kviProvider == nil {
 		// 记录严重错误，但返回一个安全的、无操作的实现，避免上层 panic
-		log.Printf("SEVERE BUG: kviProvider is nil in GetIndex for path '%s'. This should not happen.", f.containerPath)
+		slog.Error("kviProvider is nil in GetIndex", "container", f.containerPath)
 		return &types.NoOpIndex{} // 假设你有一个 NoOpIndex 实现
 	}
 	return f.kviProvider.GetIndex()
@@ -146,7 +146,7 @@ func (f *decryptReaderFactory) GetIndex() types.Index {
 // GetOriginalSize 返回原始文件大小
 func (f *decryptReaderFactory) GetOriginalSize() int64 {
 	if f.kviProvider == nil {
-		log.Printf("SEVERE BUG: kviProvider is nil in GetOriginalSize for path '%s'. This should not happen.", f.containerPath)
+		slog.Error("kviProvider is nil in GetOriginalSize", "container", f.containerPath)
 		return 0 // 返回 0 是一个安全的默认值
 	}
 	return f.kviProvider.GetIndex().GetOriginalFileSize()

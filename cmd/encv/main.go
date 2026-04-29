@@ -70,20 +70,23 @@ var rootCmd = &cobra.Command{
 	Long:  `ENCV is a powerful command-line tool for encrypting and decrypting files and directories using a custom container format.`,
 	// PersistentPreRun 会在每个子命令运行前执行，非常适合用来做通用的初始化工作
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		// 从 flag 获取可能的配置路径
+		// 1. 初始化基础 slog（控制台输出），确保在配置加载前 slog 全局可用
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
+
+		// 2. 从 flag 获取可能的配置路径
 		configFlag, _ := cmd.Flags().GetString("config")
 		configPath, err := config.FindConfigPath(configFlag)
 		if err != nil {
-			log.Printf("Failed to find config path: %v", err)
+			slog.Warn("Config file not found, using defaults", "error", err)
 		}
 
-		// 加载基础配置（默认值 + 配置文件）
+		// 3. 加载基础配置（默认值 + 配置文件）
 		cfg, err = config.Load(configPath)
 		if err != nil {
 			log.Fatalf("Failed to load base config: %v", err)
 		}
 
-		// 【新增】初始化结构化日志
+		// 4. 根据配置重新初始化结构化日志（支持文件输出和级别控制）
 		logLevel := logger.LevelInfo
 		switch cfg.Log.Level {
 		case "debug":
@@ -102,18 +105,15 @@ var rootCmd = &cobra.Command{
 		}
 
 		if err := logger.Init(logLevel, logFile); err != nil {
-			log.Printf("Warning: failed to initialize structured logging: %v", err)
-			// 回退到旧版日志
-			logFilePath := utils.SetupLogging("encv.log")
-			log.Printf("-> Fallback to legacy logging. Log file is at: %s\n", logFilePath)
+			slog.Warn("Failed to initialize structured logging, using console defaults", "error", err)
 		} else {
-			slog.Info("structured logging initialized",
+			slog.Info("Structured logging initialized",
 				slog.String("level", cfg.Log.Level),
 				slog.String("file", logFile),
 			)
 		}
 
-		// 记录启动信息
+		// 5. 记录启动信息
 		slog.Info("encv started",
 			slog.String("version", Version),
 			slog.String("config_path", configPath),
@@ -166,7 +166,7 @@ var manifestV2Cmd = &cobra.Command{
 			if err := os.WriteFile(savePath, manifestData, 0644); err != nil {
 				log.Fatalf("Failed to save Manifest to '%s': %v", savePath, err)
 			}
-			log.Printf("✅ Manifest content successfully saved to: %s\n", savePath)
+			utils.PrintSuccess("Manifest content saved to: %s", savePath)
 		}
 	},
 }
@@ -199,7 +199,7 @@ var kviV2Cmd = &cobra.Command{
 			if err := os.WriteFile(savePath, kviData, 0644); err != nil {
 				log.Fatalf("Failed to save KVI to '%s': %v", savePath, err)
 			}
-			log.Printf("✅ KVI content successfully saved to: %s\n", savePath)
+			utils.PrintSuccess("KVI content saved to: %s", savePath)
 		}
 	},
 }
@@ -243,7 +243,7 @@ var decryptV2Cmd = &cobra.Command{
 		if err := encv.DecryptPathV2(rootCtx, inputPath, finalOutputDir); err != nil {
 			log.Fatalf("Decryption process failed: %v", err)
 		}
-		log.Printf("✅ All decryption tasks complete. Output in: %s\n", finalOutputDir)
+		utils.PrintSuccess("Decryption complete. Output: %s", finalOutputDir)
 	},
 }
 
@@ -272,6 +272,7 @@ var encryptV2Cmd = &cobra.Command{
 		if err := encv.EncryptPathV2(rootCtx, inputPath, cfg.OutputPath); err != nil {
 			log.Fatalf("Encryption process failed: %v", err)
 		}
+		utils.PrintSuccess("Encryption complete. Output: %s", cfg.OutputPath)
 	},
 }
 
@@ -300,7 +301,7 @@ var playV2Cmd = &cobra.Command{
 			}
 		}
 
-		log.Printf("-> Starting playback for '%s' with player '%s'\n", inputPath, player)
+		utils.PrintInfo("Starting playback: %s (player: %s)", inputPath, player)
 		if err := encv.PlayV2(rootCtx, inputPath, player); err != nil {
 			log.Fatalf("Playback failed: %v", err)
 		}
@@ -324,7 +325,7 @@ func prepareSubtitles(videoPath string, cfg *config.Config) ([]SubtitleInfo, err
 
 		if _, err := os.Stat(potentialSubPath); err == nil {
 			// 是普通字幕，直接使用
-			log.Printf("-> Found standard subtitle: %s", potentialSubPath)
+			slog.Debug("Found standard subtitle", "path", potentialSubPath)
 			subtitles = append(subtitles, SubtitleInfo{Path: potentialSubPath, IsTemp: false})
 		}
 	}

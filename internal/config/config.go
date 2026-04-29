@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -35,7 +35,9 @@ type Config struct {
 	Admin    types.AdminServer         `json:"admin"`
 	Webdav   types.WebdavServer        `json:"webdav"`
 	Proxy    types.OpenlistProxyServer `json:"proxy"`
-	Log      types.LogConfig           `json:"log"`
+	// --- 日志设置 ---
+	// Log 配置结构化日志的输出级别和文件路径。
+	Log types.LogConfig `json:"log"`
 }
 
 // ConfigProvider 定义了获取插件配置的抽象接口
@@ -96,7 +98,7 @@ func Load(configPath string) (*Config, error) {
 	cfg := DefaultConfig()
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		log.Printf("-> [Config] Config file '%s' not found, using default settings.\n", configPath)
+		slog.Info("Config file not found, using default settings", "path", configPath)
 		return cfg, nil
 	}
 
@@ -116,7 +118,7 @@ func Load(configPath string) (*Config, error) {
 		}
 	}
 
-	log.Printf("-> [Config] Successfully loaded configuration from '%s' (log_level: %s).\n", configPath, cfg.Log.Level)
+	slog.Info("Configuration loaded successfully", "path", configPath, "log_level", cfg.Log.Level)
 	return cfg, nil
 }
 
@@ -135,12 +137,12 @@ func GetPluginSettingsFor[T any](cfg *Config, pluginName string) (*T, error) {
 		}
 	} else {
 		// 2. 如果没有 Provider，则使用传统的 PluginSettings map
-		resault, ok := cfg.PluginSettings[pluginName]
+		result, ok := cfg.PluginSettings[pluginName]
 		if !ok {
 			// 在没有 Provider 的情况下，如果 map 中没有，说明用户确实没配置
 			return nil, fmt.Errorf("no settings found for plugin '%s'", pluginName)
 		}
-		rawSettings = resault
+		rawSettings = result
 	}
 
 	// 3. 使用统一的辅助函数解析配置
@@ -166,7 +168,7 @@ func FindConfigPath(flagPath string) (string, error) {
 	// 1. 最高优先级：命令行标志指定的路径
 	if flagPath != "" {
 		if _, err := os.Stat(flagPath); err == nil {
-			log.Printf("-> Using config from command-line flag: %s", flagPath)
+			slog.Info("Using config from command-line flag", "path", flagPath)
 			return flagPath, nil
 		}
 		return "", fmt.Errorf("config file specified by flag not found: %s", flagPath)
@@ -175,7 +177,7 @@ func FindConfigPath(flagPath string) (string, error) {
 	// 2. 次高优先级：环境变量
 	if envPath := os.Getenv("ENVC_CONFIG_PATH"); envPath != "" {
 		if _, err := os.Stat(envPath); err == nil {
-			log.Printf("-> Using config from environment variable ENVC_CONFIG_PATH: %s", envPath)
+			slog.Info("Using config from environment variable ENVC_CONFIG_PATH", "path", envPath)
 			return envPath, nil
 		}
 		return "", fmt.Errorf("config file from environment variable not found: %s", envPath)
@@ -187,7 +189,7 @@ func FindConfigPath(flagPath string) (string, error) {
 	if err == nil {
 		wdConfigPath := filepath.Join(wd, "config.user.json")
 		if _, err := os.Stat(wdConfigPath); err == nil {
-			log.Printf("-> Using config from current working directory: %s", wdConfigPath)
+			slog.Info("Using config from current working directory", "path", wdConfigPath)
 			return wdConfigPath, nil
 		}
 	}
@@ -199,7 +201,7 @@ func FindConfigPath(flagPath string) (string, error) {
 		exeDir := filepath.Dir(exePath)
 		exeConfigPath := filepath.Join(exeDir, "config.user.json")
 		if _, err := os.Stat(exeConfigPath); err == nil {
-			log.Printf("-> Using config from executable directory: %s", exeConfigPath)
+			slog.Info("Using config from executable directory", "path", exeConfigPath)
 			return exeConfigPath, nil
 		}
 	}

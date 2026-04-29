@@ -3,7 +3,7 @@ package register
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -13,7 +13,7 @@ import (
 // 尝试在指定端口范围内发现正在运行的 encv-admin 服务
 func FindAdminServer(startPort int, maxTries int) (string, error) {
 	client := &http.Client{Timeout: 200 * time.Millisecond}
-	log.Printf("-> Discovering Admin server, scanning ports from %d to %d...", startPort, startPort+maxTries-1)
+	slog.Info("Discovering Admin server", "port_start", startPort, "port_end", startPort+maxTries-1)
 
 	for i := 0; i < maxTries; i++ {
 		currentPort := startPort + i
@@ -28,7 +28,7 @@ func FindAdminServer(startPort int, maxTries int) (string, error) {
 
 		if resp.StatusCode == http.StatusOK {
 			serverAddr := fmt.Sprintf("127.0.0.1:%d", currentPort)
-			log.Printf("✅ Found Admin server at %s", serverAddr)
+			slog.Info("Found Admin server", "addr", serverAddr)
 			return serverAddr, nil
 		}
 	}
@@ -39,7 +39,7 @@ func FindAdminServer(startPort int, maxTries int) (string, error) {
 // 尝试在指定端口范围内发现正在运行的 encv 服务器
 func FindServer(startPort int, maxTries int) (string, *types.PingResponse, error) {
 	client := &http.Client{Timeout: 500 * time.Millisecond}
-	log.Printf("-> Discovering ENCV server, scanning ports from %d to %d...", startPort, startPort+maxTries-1)
+	slog.Info("Discovering ENCV server", "port_start", startPort, "port_end", startPort+maxTries-1)
 
 	for i := 0; i < maxTries; i++ {
 		currentPort := startPort + i
@@ -58,7 +58,7 @@ func FindServer(startPort int, maxTries int) (string, *types.PingResponse, error
 			}
 			if pingResp.Status == types.ServiceStatuses.OK {
 				serverAddr := fmt.Sprintf("127.0.0.1:%d", currentPort)
-				log.Printf("✅ Found ENCV server at %s (Instance: %s, Version: %s)", serverAddr, pingResp.InstanceID, pingResp.Version)
+				slog.Info("Found ENCV server", "addr", serverAddr, "instance", pingResp.InstanceID, "version", pingResp.Version)
 				return serverAddr, &pingResp, nil
 			}
 		}

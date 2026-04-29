@@ -3,7 +3,7 @@ package webdav
 import (
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 
 	"github.com/Soltus/encv-go/internal/v2/provider"
@@ -27,7 +27,7 @@ func newWebDAVFileAdapter(prov provider.FileContentProvider, fileInfo os.FileInf
 	// 【关键集成】检查 reader 是否支持 Seek
 	if _, ok := reader.(io.Seeker); !ok {
 		// 如果不支持，就用 seekableWrapper 包装它
-		log.Printf("DEBUG: [webdavFileAdapter] Reader is not seekable, wrapping with seekableWrapper.")
+		slog.Debug("Reader is not seekable, wrapping with seekableWrapper")
 		reader = newSeekableWrapper(reader)
 	}
 

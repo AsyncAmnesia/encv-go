@@ -4,12 +4,11 @@ import (
 	"context"
 	"fmt"
 	iofs "io/fs"
-	"log"
+	"log/slog"
 	"mime"
 	"os"
 	"path"
 	"path/filepath"
-	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
@@ -116,12 +115,14 @@ func NewENCVFS(ctx context.Context, readerService *service.ReaderService, chunkN
 	if dir == "/" {
 		dir, err = os.Getwd()
 		if err != nil {
-			log.Fatalf("Failed to get current working directory for WebDAV: %v", err)
+			slog.Error("Failed to get current working directory for WebDAV", "error", err)
+			os.Exit(1)
 		}
 	}
 	dir, err = filepath.Abs(dir)
 	if err != nil {
-		log.Fatalf("Failed to resolve absolute path for WebDAV directory '%s': %v", dir, err)
+		slog.Error("Failed to resolve absolute path for WebDAV directory", "dir", dir, "error", err)
+		os.Exit(1)
 	}
 	// 规范化 WebDAV 前缀，确保它是一个以 '/' 开头且不以 '/' 结尾的路径
 	webdavPrefix := strings.TrimSuffix(cfg.Webdav.Root, "/")
@@ -165,27 +166,27 @@ func NewENCVFS(ctx context.Context, readerService *service.ReaderService, chunkN
 	// 启动后台索引构建和监视
 	go fs.runIndexer(ctx)
 
-	log.Printf("[WebDAV] FS initialized. Index building in the background.")
-	log.Printf("[WebDAV] Registered container extensions for filtering: %v", registeredExtsSlice)
+	slog.Info("WebDAV FS initialized, index building in background", "dir", fs.dir)
+	slog.Info("WebDAV registered container extensions", "extensions", registeredExtsSlice)
 
 	return fs
 }
 
 // runIndexer 现在负责初始构建和增量更新
 func (fs *encvWebDAVFS) runIndexer(ctx context.Context) {
-	log.Printf("[Index-Lifecycle] runIndexer started.")
+	slog.Debug("Indexer started")
 	// 1. 首次构建
 	if err := fs.buildInitialIndex(ctx); err != nil {
-		log.Printf("[ERROR] Initial index build failed: %v", err)
+		slog.Error("Initial index build failed", "error", err)
 	} else {
 		close(fs.indexReady) // 通知首次构建完成
-		log.Printf("[Index] Initial index build complete.")
+		slog.Info("Initial index build complete")
 	}
 
 	// 2. 设置文件系统监视并处理增量事件
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		log.Printf("[ERROR] Failed to create fsnotify watcher: %v", err)
+		slog.Error("Failed to create fsnotify watcher", "error", err)
 		return
 	}
 	defer watcher.Close()
@@ -197,28 +198,27 @@ func (fs *encvWebDAVFS) runIndexer(ctx context.Context) {
 		}
 		return nil
 	})
-	log.Printf("[Index] File system watcher active for: %s", fs.dir)
+	slog.Debug("File system watcher active", "dir", fs.dir)
 
 	var rebuildTimer *time.Timer
 	for {
 		select {
 		case event, ok := <-watcher.Events:
 			if !ok {
-				log.Printf("[Index-Lifecycle] Watcher events channel closed. Exiting.")
+				slog.Debug("Watcher events channel closed, exiting")
 				return
 			}
 			// 清理缓存
 			if event.Op&(fsnotify.Remove|fsnotify.Rename|fsnotify.Write) != 0 {
 				fs.indexCache.Delete(event.Name)
 			}
-			// log.Printf("[Index-Lifecycle] Received FS event: Op=%v, Path=%s", event.Op, event.Name)
 
 			// 防抖
 			if rebuildTimer != nil {
 				rebuildTimer.Stop()
 			}
 			rebuildTimer = time.AfterFunc(2*time.Second, func() {
-				log.Printf("[Index-Lifecycle] Debounced timer fired. Triggering incremental update for event: %s", event.Name)
+				slog.Debug("Debounced timer fired, triggering incremental update", "event", event.Name)
 				fs.processIncrementalEvent(ctx, event)
 			})
 
@@ -226,9 +226,9 @@ func (fs *encvWebDAVFS) runIndexer(ctx context.Context) {
 			if !ok {
 				return
 			}
-			log.Printf("[ERROR] File system watcher error: %v", err)
+			slog.Error("File system watcher error", "error", err)
 		case <-ctx.Done():
-			log.Printf("[Index] Indexer shutting down.")
+			slog.Debug("Indexer shutting down")
 			return
 		}
 	}
@@ -258,7 +258,7 @@ func (fs *encvWebDAVFS) buildInitialIndex(ctx context.Context) error {
 
 		// 【关键】调用 addOrUpdateEntry，而不是直接修改 map
 		if err := fs.addOrUpdateEntry(p); err != nil {
-			log.Printf("[WARN] Failed to add entry for '%s' during initial build: %v", p, err)
+			slog.Warn("Failed to add entry during initial build", "path", p, "error", err)
 		}
 
 		// 在 buildInitialIndex 的末尾
@@ -270,7 +270,7 @@ func (fs *encvWebDAVFS) buildInitialIndex(ctx context.Context) error {
 // processIncrementalEvent 处理单个文件系统事件
 func (fs *encvWebDAVFS) processIncrementalEvent(ctx context.Context, event fsnotify.Event) {
 	// 我们不再关心具体的事件类型和文件路径，任何变化都意味着我们需要重新同步
-	log.Printf("[Index-Lifecycle] Received relevant FS event: Op=%v, Path=%s. Triggering a full sync.", event.Op, event.Name)
+	slog.Debug("Received relevant FS event, triggering full sync", "op", event.Op, "path", event.Name)
 
 	// 【关键】调用 syncWithFilesystem 来与磁盘状态进行比对和同步
 	fs.syncWithFilesystem()
@@ -278,7 +278,7 @@ func (fs *encvWebDAVFS) processIncrementalEvent(ctx context.Context, event fsnot
 
 // syncWithFilesystem 是新的核心方法，它将索引与磁盘同步
 func (fs *encvWebDAVFS) syncWithFilesystem() {
-	log.Printf("[Index-Lifecycle] syncWithFilesystem started.")
+	slog.Debug("syncWithFilesystem started")
 
 	// 获取当前索引的快照
 	indexes := fs.getIndexes()
@@ -289,7 +289,7 @@ func (fs *encvWebDAVFS) syncWithFilesystem() {
 	fullPath := fs.dir
 	entries, err := os.ReadDir(fullPath)
 	if err != nil {
-		log.Printf("[ERROR] syncWithFilesystem: Failed to read dir %s: %v", fullPath, err)
+		slog.Error("syncWithFilesystem: Failed to read directory", "dir", fullPath, "error", err)
 		return
 	}
 	for _, entry := range entries {
@@ -306,7 +306,7 @@ func (fs *encvWebDAVFS) syncWithFilesystem() {
 	for _, physicalPath := range indexes.pathMap {
 		physicalFileName := filepath.Base(physicalPath)
 		if _, exists := onDiskFiles[physicalFileName]; !exists {
-			log.Printf("[Index-Lifecycle] File '%s' no longer exists on disk, removing from index.", physicalPath)
+			slog.Debug("File no longer exists on disk, removing from index", "path", physicalPath)
 			fs.removeEntry(physicalPath)
 		}
 	}
@@ -315,32 +315,32 @@ func (fs *encvWebDAVFS) syncWithFilesystem() {
 	for diskFileName := range onDiskFiles {
 		diskFilePath := filepath.Join(fs.dir, diskFileName)
 		// 检查是否需要更新（可以通过比较 modTime，但为简单起见，我们直接尝试添加）
-		log.Printf("[Index-Lifecycle] File '%s' exists on disk, attempting to add/update.", diskFilePath)
+		slog.Debug("File exists on disk, attempting to add/update", "path", diskFilePath)
 		if err := fs.addOrUpdateEntry(diskFilePath); err != nil {
-			log.Printf("[WARN] syncWithFilesystem: Failed to add/update entry for '%s': %v", diskFilePath, err)
+			slog.Warn("syncWithFilesystem: Failed to add/update entry", "path", diskFilePath, "error", err)
 		}
 	}
-	log.Printf("[Index-Lifecycle] syncWithFilesystem finished.")
+	slog.Debug("syncWithFilesystem finished")
 }
 
 // addOrUpdateEntry 是一个核心的、线程安全的索引修改方法
 func (fs *encvWebDAVFS) addOrUpdateEntry(p string) error {
-	log.Printf("[Index-Lifecycle] addOrUpdateEntry called for: %s", p)
+	slog.Debug("addOrUpdateEntry called", "path", p)
 	// 1. 检查是否是容器
 	ext := strings.ToLower(filepath.Ext(p))
 	if !fs.containerExtensions[ext] {
-		log.Printf("[Index-Lifecycle] File '%s' is not a container, skipping.", p)
+		slog.Debug("File is not a container, skipping", "path", p)
 		return nil
 	}
 	if !fs.validateContainerHeader(p) {
-		log.Printf("[DEBUG] File '%s' ignored: invalid ENCV header (not a valid container).", p)
+		slog.Debug("File ignored: invalid ENCV header", "path", p)
 		return nil
 	}
 
 	// 2. 解析容器
 	index, err := fs.getIndexFromContainerPathWithCache(p)
 	if err != nil {
-		log.Printf("[Index-Lifecycle] Failed to parse container '%s': %v. Entry will not be added.", p, err)
+		slog.Warn("Failed to parse container, entry will not be added", "path", p, "error", err)
 		return fmt.Errorf("could not parse container '%s': %w", p, err)
 	}
 
@@ -443,7 +443,7 @@ func (fs *encvWebDAVFS) removeEntryUnsafe(virtualPath, physicalPath string) {
 		}
 		fs.indexes.dirMap[parentDir] = newEntries
 	}
-	log.Printf("[Index] Removed entry for: '%s'", virtualPath)
+		slog.Debug("Removed entry from index", "path", virtualPath)
 }
 
 // getIndexes 现在安全地返回当前索引的深拷贝快照
@@ -453,7 +453,7 @@ func (fs *encvWebDAVFS) getIndexes() *pathIndexes {
 		// 索引已就绪
 	default:
 		// 索引未就绪，返回空索引
-		log.Printf("[Index-Lifecycle] getIndexes() called before index is ready. Returning empty index.")
+		slog.Debug("getIndexes called before index is ready, returning empty index")
 		return &pathIndexes{pathMap: make(map[string]string), dirMap: make(map[string][]string), fileInfoMap: make(map[string]os.FileInfo), reversePathMap: make(map[string]string)}
 	}
 
@@ -553,14 +553,14 @@ func (fs *encvWebDAVFS) statFile(ctx context.Context, fullPath string) (os.FileI
 	// 如果路径本身不存在或无法访问，os.Stat 会返回错误，我们直接将错误向上传递。
 	info, err := os.Stat(fullPath)
 	if err != nil {
-		log.Printf("[WebDAV-statFile] os.Stat failed for '%s': %v", fullPath, err)
+		slog.Debug("os.Stat failed", "path", fullPath, "error", err)
 		return nil, err
 	}
 	// 步骤 2: 检查它是否是一个目录。
 	// 如果是目录，我们**直接返回**其信息，并且**绝不**进行任何容器检测。
 	// 这是防止将目录误判为容器、从而避免 panic 的核心防线。
 	if info.IsDir() {
-		log.Printf("[WebDAV-statFile] Path '%s' is a directory, returning its info directly.", fullPath)
+		slog.Debug("Path is a directory, returning info directly", "path", fullPath)
 		return info, nil
 	}
 
@@ -572,7 +572,7 @@ func (fs *encvWebDAVFS) statFile(ctx context.Context, fullPath string) (os.FileI
 		defer func() {
 			if r := recover(); r != nil {
 				// 日志可以简化，因为这不影响用户列表
-				log.Printf("[WARN] [WebDAV-statFile] Panic caught while processing file '%s' during background scan: %v. Skipping.", fullPath, r)
+				slog.Warn("Panic caught while processing file during background scan", "path", fullPath, "panic", r)
 			}
 		}()
 
@@ -580,7 +580,7 @@ func (fs *encvWebDAVFS) statFile(ctx context.Context, fullPath string) (os.FileI
 		if err != nil {
 			// 不是容器或 KVI 损坏，返回原始文件信息。
 			// 我们将日志级别从 WARN 降为 DEBUG，因为这对于非容器文件是正常行为。
-			log.Printf("[DEBUG] [WebDAV-statFile] File '%s' is not a valid container (reason: %v). Returning original file info.", fullPath, err)
+			slog.Debug("File is not a valid container, returning original file info", "path", fullPath, "error", err)
 			// 不做任何事，让函数最后返回原始的 'info'
 			return
 		}
@@ -616,7 +616,7 @@ func (fs *encvWebDAVFS) Stat(ctx context.Context, name string) (os.FileInfo, err
 
 	// 1. 【核心】首先在索引中查找虚拟文件（内存操作，极快）
 	if fileInfo, ok := indexes.fileInfoMap[indexKey]; ok {
-		log.Printf("[WebDAV-Stat] Found virtual file '%s' in index, returning CACHED info.", name)
+		slog.Debug("Found virtual file in index, returning cached info", "name", name)
 		return fileInfo, nil
 	}
 
@@ -629,8 +629,7 @@ func (fs *encvWebDAVFS) Stat(ctx context.Context, name string) (os.FileInfo, err
 	// 3. 调用 statFile 处理物理文件
 	info, err := fs.statFile(ctx, fullPath)
 	if err != nil {
-		// 如果物理文件也不存在，那么就是真的不存在
-		log.Printf("[WebDAV-Stat] Physical file for '%s' not found or error: %v", name, err)
+		slog.Debug("Physical file not found or error", "name", name, "error", err)
 		return nil, err
 	}
 
@@ -662,10 +661,10 @@ func (fs *encvWebDAVFS) OpenFile(ctx context.Context, name string, flag int, per
 
 	// 情况A：请求的是虚拟文件
 	if realPath, isVirtual := indexes.pathMap[indexKey]; isVirtual {
-		log.Printf("[WebDAV-OpenFile] Request '%s' is a virtual file, creating LAZY adapter for container '%s'.", name, realPath)
+		slog.Debug("Request is a virtual file, creating lazy adapter", "name", name, "container", realPath)
 
 		// 【最终修复】不再在这里初始化任何东西！
-		// 我们只创建一个“懒加载”的适配器，它把所有初始化都推迟到 Read() 调用时。
+		// 我们只创建一个"懒加载"的适配器，它把所有初始化都推迟到 Read() 调用时。
 		fileInfo := indexes.fileInfoMap[indexKey]
 		if fileInfo == nil {
 			return nil, fmt.Errorf("internal error: fileInfo not found in index for virtual file '%s'", indexKey)
@@ -682,7 +681,7 @@ func (fs *encvWebDAVFS) OpenFile(ctx context.Context, name string, flag int, per
 	}
 	// 检查这个物理文件是否是容器（通过反向映射）
 	if _, isContainer := indexes.reversePathMap[fullPath]; isContainer {
-		log.Printf("[WebDAV-OpenFile] Request '%s' is a physical container, creating LAZY adapter for container '%s'.", name, fullPath)
+		slog.Debug("Request is a physical container, creating lazy adapter", "name", name, "container", fullPath)
 		fileInfo := indexes.fileInfoMap[indexKey]
 		if fileInfo == nil {
 			return nil, fmt.Errorf("internal error: fileInfo not found in index for physical container '%s'", indexKey)
@@ -696,11 +695,11 @@ func (fs *encvWebDAVFS) OpenFile(ctx context.Context, name string, flag int, per
 	}
 
 	// 情况C：请求的是真正的普通文件
-	log.Printf("[WebDAV-OpenFile] Request '%s' is a standard file.", name)
+	slog.Debug("Request is a standard file", "name", name)
 	// 【最终修复】使用 recover 保护整个文件打开过程
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("[CRITICAL] [WebDAV-OpenFile] Panic caught while opening standard file '%s': %v. Stack trace:\n%s", name, r, debug.Stack())
+			slog.Error("Panic caught while opening standard file", "name", name, "panic", r)
 		}
 	}()
 	prov, err := provider.NewStandardFileProvider(fullPath)
@@ -725,7 +724,7 @@ func (fs *encvWebDAVFS) OpenFile(ctx context.Context, name string, flag int, per
 // openAsDirectory 尝试将路径作为目录打开，如果成功，则返回一个虚拟目录对象，避免真实打开目录
 func (fs *encvWebDAVFS) openAsDirectory(fullPath string, name string) (goWebdav.File, error) {
 	if info, err := os.Stat(fullPath); err == nil && info.IsDir() {
-		log.Printf("[WebDAV-OpenFile] Opening directory: %s", fullPath)
+		slog.Debug("Opening directory", "path", fullPath)
 		// osFile, err := os.Open(fullPath)
 		// 【关键修改】不再打开 os.File，只传递路径
 		return &decryptedDir{
@@ -741,7 +740,7 @@ func (fs *encvWebDAVFS) openAsDirectory(fullPath string, name string) (goWebdav.
 func (fs *encvWebDAVFS) ReadDir(ctx context.Context, name string) ([]os.FileInfo, error) {
 	// 【使用辅助函数】将 WebDAV 路径转换为标准索引键
 	indexKey := fs.webdavPathToIndexKey(name)
-	log.Printf("[ReadDir-DEBUG] Called with name='%s', converted indexKey='%s'", name, indexKey)
+	slog.Debug("ReadDir called", "name", name, "indexKey", indexKey)
 
 	// 1. 获取当前索引（这是一个内存快照，非常快）
 	indexes := fs.getIndexes()
@@ -753,7 +752,7 @@ func (fs *encvWebDAVFS) ReadDir(ctx context.Context, name string) ([]os.FileInfo
 
 	// 【关键修复】如果请求的是根目录 ('.')，但 dirMap 中没有，我们需要扫描整个 pathMap
 	if indexKey == "." && !found {
-		log.Printf("[ReadDir-DEBUG] Requesting root dir ('.') but no entry in dirMap. Scanning all pathMap for root-level items.")
+		slog.Debug("Requesting root dir but no entry in dirMap, scanning all pathMap", "name", name)
 		for virtualPath := range indexes.pathMap {
 			if path.Dir(virtualPath) == "." { // 检查这个虚拟文件是否在根目录
 				fileName := path.Base(virtualPath)
@@ -763,8 +762,7 @@ func (fs *encvWebDAVFS) ReadDir(ctx context.Context, name string) ([]os.FileInfo
 			}
 		}
 	} else if found {
-		// 【添加日志】打印 dirMap 的查找结果
-		log.Printf("[ReadDir-DEBUG] Lookup in dirMap for key '%s': found=%v, names=%v", indexKey, found, virtualNames)
+		slog.Debug("Lookup in dirMap", "key", indexKey, "names", virtualNames)
 		for _, virtualName := range virtualNames {
 			virtualPath := path.Join(indexKey, virtualName)
 			if info, ok := indexes.fileInfoMap[virtualPath]; ok {
@@ -811,11 +809,11 @@ func (fs *encvWebDAVFS) ReadDir(ctx context.Context, name string) ([]os.FileInfo
 		info, err = entry.Info()
 		if err != nil {
 			// 【关键修改】entry.Info() 失败，尝试用 os.Stat 降级处理
-			log.Printf("[WARN] [WebDAV-ReadDir] entry.Info() failed for '%s': %v. Retrying with os.Stat.", entryPath, err)
+			slog.Warn("entry.Info() failed, retrying with os.Stat", "path", entryPath, "error", err)
 			info, err = os.Stat(entryPath)
 			if err != nil {
 				// os.Stat 也失败了，才真正跳过这个文件
-				log.Printf("[ERROR] [WebDAV-ReadDir] os.Stat also failed for '%s': %v. Skipping.", entryPath, err)
+				slog.Error("os.Stat also failed, skipping", "path", entryPath, "error", err)
 				continue
 			}
 		}
@@ -898,7 +896,7 @@ func (d *decryptedDir) Readdir(count int) ([]os.FileInfo, error) {
 
 	// 2. 将 WebDAV 路径转换为索引键
 	indexKey := d.fs.webdavPathToIndexKey(d.name)
-	log.Printf("[decryptedDir-Readdir-DEBUG] Called for path: %s (indexKey: %s)", d.name, indexKey)
+	slog.Debug("decryptedDir Readdir called", "path", d.name, "indexKey", indexKey)
 
 	// 3. 使用 map 来自动去重和合并，键为文件名
 	mergedFiles := make(map[string]os.FileInfo)
@@ -974,7 +972,7 @@ func (d *decryptedDir) Readdir(count int) ([]os.FileInfo, error) {
 		result = result[:count]
 	}
 
-	log.Printf("[decryptedDir-Readdir-DEBUG] Returning %d file(s).", len(result))
+	slog.Debug("decryptedDir Readdir returning files", "count", len(result))
 	return result, nil
 }
 
@@ -1019,7 +1017,7 @@ func (l *lazyWebDAVFileAdapter) initialize() error {
 	if l.isInitialized {
 		return l.initError
 	}
-	log.Printf("[lazyWebDAVFileAdapter] Performing lazy initialization for '%s'.", l.containerPath)
+	slog.Debug("lazyWebDAVFileAdapter performing lazy initialization", "path", l.containerPath)
 
 	factory, err := reader.NewDecryptReaderFactory(l.containerPath, l.fs.cfg.Password)
 	if err != nil {
@@ -1053,7 +1051,7 @@ func (l *lazyWebDAVFileAdapter) initialize() error {
 	l.underlyingFile = underlyingAdapter
 	l.initError = nil
 	l.isInitialized = true
-	log.Printf("[lazyWebDAVFileAdapter] Lazy initialization successful for '%s'.", l.containerPath)
+	slog.Debug("lazyWebDAVFileAdapter lazy initialization successful", "path", l.containerPath)
 	return nil
 }
 

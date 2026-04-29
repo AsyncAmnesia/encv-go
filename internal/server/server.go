@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 	"html/template"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path"
@@ -91,11 +91,11 @@ func (s *Server) Start(version string) (string, error) {
 		if !strings.HasSuffix(s.webdavPath, "/") {
 			s.webdavPath += "/"
 		}
-		log.Printf("WebDAV enabled. Serving '%s' at path '%s'", s.webdavDir, s.webdavPath)
+		slog.Info("WebDAV enabled", "dir", s.webdavDir, "path", s.webdavPath)
 	}
 
-	log.Printf("Server starting instance %s with version %s", s.instanceID, s.version)
-	log.Printf("Main service serving from: %s", s.servingDir)
+	slog.Info("Server starting", "instance", s.instanceID, "version", s.version)
+	slog.Info("Main service serving from", "dir", s.servingDir)
 
 	// 3. 创建统一的 ServeMux 并注册路由
 	mux := http.NewServeMux()
@@ -138,7 +138,7 @@ func (s *Server) Start(version string) (string, error) {
 func (s *Server) Stop() error {
 	s.readerService.Cleanup()
 	if s.server != nil {
-		log.Println("-> Shutting down server...")
+		slog.Info("Shutting down server")
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		return s.server.Shutdown(ctx)
@@ -148,7 +148,7 @@ func (s *Server) Stop() error {
 
 // handleRequest 是主路由 / 处理器
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[DEBUG] handleRequest -> r.URL.Path: %s", r.URL.Path)
+	slog.Debug("handleRequest", "path", r.URL.Path)
 
 	// 2. 传递给servePath处理
 	s.servePath(w, r, r.URL.Path)
@@ -198,14 +198,14 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, fullPath stri
 	_, err := detector.DetectContainer(fullPath)
 	if err == nil {
 		// 如果 err 为 nil，说明文件是有效的 ENCV 容器
-		log.Printf("-> [File] Serving ENCV container: %s", fileName)
+		slog.Debug("Serving ENCV container", "file", fileName)
 		// 【关键修改】调用我们新的、统一的处理函数
 		s.serveEncryptedFile(w, r, fullPath)
 		return
 	}
 
 	// 如果不是容器文件，作为普通文件（如字幕）提供服务
-	log.Printf("-> [File] Serving standard file: %s", fileName)
+	slog.Debug("Serving standard file", "file", fileName)
 	http.ServeFile(w, r, fullPath)
 }
 
@@ -304,6 +304,6 @@ func (s *Server) listFilesInDir(w http.ResponseWriter, r *http.Request, dirPath,
 	t, _ := template.New("list").Parse(tmpl_dynamic_files)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := t.Execute(w, data); err != nil {
-		log.Printf("Error executing template: %v", err)
+		slog.Error("Error executing template", "error", err)
 	}
 }

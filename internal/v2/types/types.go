@@ -194,10 +194,17 @@ type ProxySiteConfig struct {
 // --- 日志配置 ---
 type LogConfig struct {
 	// 日志级别: debug, info, warn, error
+	// 设置为 debug 可以看到详细的插件匹配、文件处理等调试信息。
+	// info 级别会输出关键操作信息和服务状态。
+	// warn 输出潜在问题但不影响运行的警告。
+	// error 只输出错误信息。
 	Level string `json:"level"`
 	// 日志文件路径，为空则只输出到控制台
+	// 如果指定了文件路径，控制台输出带颜色的文本格式，文件输出 JSON 格式。
+	// 支持相对路径（相对于可执行文件）和绝对路径。
+	// 示例: "encv.log" 或 "D:/logs/encv.log"
 	File string `json:"file"`
-	// 是否输出到控制台
+	// 是否输出到控制台。当前仅做标记，控制台输出始终开启。
 	Console bool `json:"console"`
 }
 

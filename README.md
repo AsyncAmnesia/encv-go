@@ -61,6 +61,10 @@ go run ./cmd/encv-makefile
       }
     }
   },
+  "log": {
+    "level": "info",
+    "file": ""
+  },
   "webdav": {
     "port": 1234,
     "root": "webdav",
@@ -139,6 +143,16 @@ go run ./cmd/encv-makefile
 | `webdav.dir`      | `string`  | 映射的文件系统根目录       | `"./"`     |
 | `webdav.username` | `string`  | 基础认证用户名             | `"admin"`  |
 | `webdav.password` | `string`  | 基础认证密码               | `"123456"` |
+
+#### 📝 日志设置
+
+| 配置键        | 类型     | 描述                                                              | 示例值                |
+| ------------- | -------- | ----------------------------------------------------------------- | --------------------- |
+| `log.level` | `string` | 日志级别: `debug`, `info`, `warn`, `error`                      | `"info"`            |
+| `log.file`  | `string` | 日志文件路径，为空只输出到控制台；指定后文件输出 JSON 格式        | `"encv.log"`        |
+| `log.console` | `boolean` | 是否输出到控制台（当前仅做标记，控制台输出始终开启）         | `true`              |
+
+**日志文件说明**：当指定 `log.file` 时，控制台保持带颜色的文本格式输出，日志文件输出结构化的 JSON 格式，便于使用工具（如 `jq`、`logstash`）进行后续分析。
 
 ### 关键说明
 
