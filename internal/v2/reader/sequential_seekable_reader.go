@@ -1,10 +1,10 @@
 package reader
 
 import (
-	"crypto/aes"
 	"crypto/cipher"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
@@ -15,14 +15,20 @@ type SequentialSeekableDecryptReader struct {
 	containerReader  EncryptedContainerReader
 	key, iv          []byte
 	fragments        []types.Fragment_v2
+	seekIndex        *fragmentRangeIndex
 	currentIndex     int
 	currentReader    io.ReadCloser
 	currentDecryptor io.Reader
 	currentOffset    int64 // 当前在全局数据流中的位置
 	totalSize        int64 // 总数据大小
+	discardBufPool   sync.Pool
 }
 
 func NewSequentialSeekableDecryptReader(cr EncryptedContainerReader, password string) (DecryptReader, error) {
+	return newSequentialSeekableDecryptReader(cr, password, nil)
+}
+
+func newSequentialSeekableDecryptReader(cr EncryptedContainerReader, password string, prebuiltIndex *fragmentRangeIndex) (DecryptReader, error) {
 	manifest := cr.GetManifest()
 	kviProvider, err := cr.GetKVIProvider()
 	if err != nil {
@@ -34,22 +40,30 @@ func NewSequentialSeekableDecryptReader(cr EncryptedContainerReader, password st
 		return nil, err
 	}
 
-	fragments := filterFragmentsByType(manifest.Fragments, string(types.FragmentType_SeekableStream))
+	seekableFragments := filterFragmentsByType(manifest.Fragments, string(types.FragmentType_SeekableStream))
+	if len(seekableFragments) == 0 {
+		return nil, fmt.Errorf("no seekable stream fragments found in manifest")
+	}
 
-	// 计算总大小
-	var totalSize int64
-	for _, frag := range fragments {
-		totalSize += int64(frag.Length)
+	index := prebuiltIndex
+	if index == nil {
+		index = newFragmentRangeIndex(seekableFragments)
 	}
 
 	r := &SequentialSeekableDecryptReader{
 		containerReader: cr,
 		key:             key,
 		iv:              iv,
-		fragments:       fragments,
-		totalSize:       totalSize,
+		fragments:       index.fragments,
+		seekIndex:       index,
+		totalSize:       index.total(),
 		currentIndex:    0,
 		currentOffset:   0,
+		discardBufPool: sync.Pool{
+			New: func() interface{} {
+				return make([]byte, 32*1024)
+			},
+		},
 	}
 	return r, nil
 }
@@ -81,37 +95,61 @@ func (r *SequentialSeekableDecryptReader) Read(p []byte) (n int, err error) {
 	return n, err
 }
 
-func (r *SequentialSeekableDecryptReader) setupFragmentAtIndex(index int) error {
+func (r *SequentialSeekableDecryptReader) setupFragmentAt(index int, localOffset uint64) error {
 	if index >= len(r.fragments) {
 		return io.EOF
 	}
-	frag := &r.fragments[index]
+	frag := r.fragments[index]
+	if localOffset > frag.Length {
+		return fmt.Errorf("invalid local offset %d for fragment %s", localOffset, frag.ID)
+	}
+
+	if r.currentReader != nil {
+		_ = r.currentReader.Close()
+		r.currentReader = nil
+		r.currentDecryptor = nil
+	}
 
 	// 获取 Fragment 的 Reader
 	rawReader, err := r.containerReader.GetFragmentReader(frag.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get reader for fragment %s: %w", frag.ID, err)
 	}
-	r.currentReader = rawReader
 
-	// 创建 AES cipher
-	block, err := aes.NewCipher(r.key)
+	absoluteOffset := frag.GlobalStartOffset
+	needDiscard := localOffset > 0
+
+	if localOffset > 0 {
+		if seeker, ok := rawReader.(io.Seeker); ok {
+			if _, seekErr := seeker.Seek(int64(localOffset), io.SeekStart); seekErr == nil {
+				absoluteOffset += localOffset
+				needDiscard = false
+			}
+		}
+	}
+
+	stream, err := buildCTRStreamAtOffset(r.key, r.iv, absoluteOffset)
 	if err != nil {
-		return fmt.Errorf("failed to create aes cipher: %w", err)
+		_ = rawReader.Close()
+		return err
+	}
+	streamReader := &cipher.StreamReader{S: stream, R: rawReader}
+
+	if needDiscard {
+		if err := discardReaderBytes(streamReader, localOffset, &r.discardBufPool); err != nil {
+			_ = rawReader.Close()
+			return err
+		}
 	}
 
-	// 【关键修复】使用基础 IV 创建 CTR 流，然后跳过前面的字节来同步计数器
-	// 这与加密时的行为一致：加密整个文件，然后分片打包
-	stream := cipher.NewCTR(block, r.iv)
-
-	// 跳过 frag.GlobalStartOffset 字节来同步计数器
-	if frag.GlobalStartOffset > 0 {
-		skipBuf := make([]byte, frag.GlobalStartOffset)
-		stream.XORKeyStream(skipBuf, skipBuf)
-	}
-
-	r.currentDecryptor = &cipher.StreamReader{S: stream, R: rawReader}
+	r.currentReader = rawReader
+	r.currentDecryptor = streamReader
+	r.currentIndex = index
 	return nil
+}
+
+func (r *SequentialSeekableDecryptReader) setupFragmentAtIndex(index int) error {
+	return r.setupFragmentAt(index, 0)
 }
 
 func (r *SequentialSeekableDecryptReader) Close() error {
@@ -142,59 +180,23 @@ func (r *SequentialSeekableDecryptReader) Seek(offset int64, whence int) (int64,
 		return 0, fmt.Errorf("cannot seek beyond end of file: %d > %d", newOffset, r.totalSize)
 	}
 
-	// 找到包含 newOffset 的 fragment
-	var fragStart int64
-	targetIndex := -1
-	for i, frag := range r.fragments {
-		fragLen := int64(frag.Length)
-		if newOffset >= fragStart && newOffset < fragStart+fragLen {
-			targetIndex = i
-			break
-		}
-		fragStart += fragLen
-	}
-
-	if targetIndex == -1 {
-		// 如果 newOffset 正好等于总大小，返回 EOF
-		if newOffset == r.totalSize {
-			r.currentIndex = len(r.fragments)
-			r.currentOffset = newOffset
-			if r.currentReader != nil {
-				r.currentReader.Close()
-				r.currentReader = nil
-				r.currentDecryptor = nil
-			}
-			return newOffset, nil
-		}
+	targetIndex, localOffset, ok := r.seekIndex.find(newOffset)
+	if !ok {
 		return 0, fmt.Errorf("could not find fragment for offset %d", newOffset)
 	}
-
-	// 如果目标 fragment 与当前不同，或者当前没有 reader，重新设置
-	if targetIndex != r.currentIndex || r.currentDecryptor == nil {
+	if targetIndex == len(r.fragments) {
+		r.currentIndex = targetIndex
+		r.currentOffset = newOffset
 		if r.currentReader != nil {
-			r.currentReader.Close()
+			_ = r.currentReader.Close()
 			r.currentReader = nil
 			r.currentDecryptor = nil
 		}
-		r.currentIndex = targetIndex
-		if err := r.setupFragmentAtIndex(targetIndex); err != nil {
-			return 0, err
-		}
+		return newOffset, nil
 	}
 
-	// 计算在 fragment 内的偏移
-	localOffset := newOffset - fragStart
-	if localOffset < 0 {
-		return 0, fmt.Errorf("invalid local offset: %d", localOffset)
-	}
-
-	// 跳过 fragment 内的字节
-	if localOffset > 0 {
-		// 使用 io.CopyN 跳过字节
-		_, err := io.CopyN(io.Discard, r.currentDecryptor, localOffset)
-		if err != nil {
-			return 0, fmt.Errorf("failed to skip %d bytes in fragment: %w", localOffset, err)
-		}
+	if err := r.setupFragmentAt(targetIndex, localOffset); err != nil {
+		return 0, err
 	}
 
 	r.currentOffset = newOffset

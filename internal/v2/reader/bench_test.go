@@ -47,11 +47,11 @@ type containerFixture struct {
 
 // createContainerFixture 生成一个完整的加密容器文件
 // 整个过程使用项目自身的代码，零外部依赖
-func createContainerFixture(b *testing.B, dataSize int64, fragCount int) *containerFixture {
-	b.Helper()
+func createContainerFixture(tb testing.TB, dataSize int64, fragCount int) *containerFixture {
+	tb.Helper()
 
 	password := "bench-test-password"
-	tempDir := b.TempDir()
+	tempDir := tb.TempDir()
 
 	originalData := make([]byte, dataSize)
 	rand.Read(originalData)
@@ -98,12 +98,12 @@ func createContainerFixture(b *testing.B, dataSize int64, fragCount int) *contai
 
 	w, err := writer.NewSingleFileContainerWriter(containerPath, header)
 	if err != nil {
-		b.Fatalf("failed to create writer: %v", err)
+		tb.Fatalf("failed to create writer: %v", err)
 	}
 
 	kviBytes, _ := json.Marshal(kvi)
 	if err := w.WriteKVI(kviBytes); err != nil {
-		b.Fatalf("failed to write KVI: %v", err)
+		tb.Fatalf("failed to write KVI: %v", err)
 	}
 
 	encPayload := encryptedBuf.Bytes()
@@ -118,16 +118,16 @@ func createContainerFixture(b *testing.B, dataSize int64, fragCount int) *contai
 		}
 		chunk := payloadData[written:end]
 		if err := w.WriteFragment(&frag, chunk); err != nil {
-			b.Fatalf("failed to write fragment %s: %v", frag.ID, err)
+			tb.Fatalf("failed to write fragment %s: %v", frag.ID, err)
 		}
 		written = end
 	}
 
 	if err := w.WriteManifest(manifest); err != nil {
-		b.Fatalf("failed to write manifest: %v", err)
+		tb.Fatalf("failed to write manifest: %v", err)
 	}
 	if err := w.Close(); err != nil {
-		b.Fatalf("failed to close writer: %v", err)
+		tb.Fatalf("failed to close writer: %v", err)
 	}
 
 	return &containerFixture{

@@ -76,12 +76,14 @@ func (w *pooledFileHandleWrapper) Close() error {
 	return w.closer.Close()
 }
 
-// readOnlyNopCloser 是一个简单的包装器，用于只读场景，防止外部调用者 Close 我们复用的句柄
-type readOnlyNopCloser struct {
+// readOnlySectionCloser 保留 SectionReader 的 ReaderAt/Seeker 能力，同时避免关闭共享句柄
+type readOnlySectionCloser struct {
 	io.Reader
+	io.ReaderAt
+	io.Seeker
 }
 
-func (r *readOnlyNopCloser) Close() error {
+func (r *readOnlySectionCloser) Close() error {
 	return nil
 }
 
@@ -194,7 +196,11 @@ func (r *fileContainerReader) GetFragmentReader(fragID string) (io.ReadCloser, e
 
 		section := io.NewSectionReader(mainFile, int64(payloadOffset), int64(frag.Length))
 		if useInit {
-			return &readOnlyNopCloser{section}, nil
+			return &readOnlySectionCloser{
+				Reader:   section,
+				ReaderAt: section,
+				Seeker:   section,
+			}, nil
 		}
 		return newPooledFileHandleWrapper(section, mainFile), nil
 	}

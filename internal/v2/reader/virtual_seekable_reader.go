@@ -1,23 +1,15 @@
 package reader
 
 import (
-	"crypto/aes"
 	"crypto/cipher"
 	"errors"
 	"fmt"
 	"io"
-	"sort"
 	"sync"
 
 	"github.com/Soltus/encv-go/internal/v2/crypto"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
-
-// fragmentIndex 用于快速定位 Fragment
-type fragmentIndex struct {
-	frag       *types.Fragment_v2
-	start, end uint64 // 全局偏移的起始和结束
-}
 
 // VirtualSeekableDecryptReader 实现了高性能的可寻址解密流。
 type VirtualSeekableDecryptReader struct {
@@ -25,9 +17,8 @@ type VirtualSeekableDecryptReader struct {
 	key             []byte
 	iv              []byte
 
-	streamFragments []types.Fragment_v2
-	// 【性能优化】用于二分查找的索引，将 Seek 复杂度从 O(N) 降至 O(log N)
-	fragmentIndex        []fragmentIndex
+	streamFragments      []types.Fragment_v2
+	seekIndex            *fragmentRangeIndex
 	currentFragmentIndex int
 
 	// currentRawReader 是指向当前 fragment 的底层加密数据读取器
@@ -42,6 +33,10 @@ type VirtualSeekableDecryptReader struct {
 }
 
 func NewVirtualSeekableDecryptReader(cr EncryptedContainerReader, password string) (DecryptReader, error) {
+	return newVirtualSeekableDecryptReader(cr, password, nil)
+}
+
+func newVirtualSeekableDecryptReader(cr EncryptedContainerReader, password string, prebuiltIndex *fragmentRangeIndex) (DecryptReader, error) {
 	manifest := cr.GetManifest()
 	kviProvider, err := cr.GetKVIProvider()
 	if err != nil {
@@ -53,23 +48,27 @@ func NewVirtualSeekableDecryptReader(cr EncryptedContainerReader, password strin
 		return nil, err
 	}
 
+	seekableFragments := filterFragmentsByType(manifest.Fragments, string(types.FragmentType_SeekableStream))
+	if len(seekableFragments) == 0 {
+		return nil, fmt.Errorf("no seekable stream fragments found in manifest")
+	}
+	index := prebuiltIndex
+	if index == nil {
+		index = newFragmentRangeIndex(seekableFragments)
+	}
+
 	r := &VirtualSeekableDecryptReader{
 		containerReader: cr,
 		key:             key,
 		iv:              iv,
-		streamFragments: filterFragmentsByType(manifest.Fragments, string(types.FragmentType_SeekableStream)),
+		streamFragments: index.fragments,
+		seekIndex:       index,
 		bufPool: sync.Pool{
 			New: func() interface{} {
-				return make([]byte, 0, 64*1024) // 初始容量 64KB
+				return make([]byte, 32*1024)
 			},
 		},
 	}
-	if len(r.streamFragments) == 0 {
-		return nil, fmt.Errorf("no seekable stream fragments found in manifest")
-	}
-	sort.Slice(r.streamFragments, func(i, j int) bool {
-		return r.streamFragments[i].GlobalStartOffset < r.streamFragments[j].GlobalStartOffset
-	})
 
 	// 初始化到第一个 fragment
 	r.currentFragmentIndex = 0
@@ -108,52 +107,27 @@ func (r *VirtualSeekableDecryptReader) setupCurrentFragmentReader() error {
 		return fmt.Errorf("container is corrupt: failed to get reader for fragment '%s': %w", frag.ID, err)
 	}
 
-	block, err := aes.NewCipher(r.key)
+	streamOffset := frag.GlobalStartOffset
+	needDiscard := localOffset > 0
+	if localOffset > 0 {
+		if seeker, ok := rawReader.(io.Seeker); ok {
+			if _, seekErr := seeker.Seek(int64(localOffset), io.SeekStart); seekErr == nil {
+				streamOffset += localOffset
+				needDiscard = false
+			}
+		}
+	}
+
+	stream, err := buildCTRStreamAtOffset(r.key, r.iv, streamOffset)
 	if err != nil {
 		_ = rawReader.Close()
-		return fmt.Errorf("failed to create aes cipher for fragment %s: %w", frag.ID, err)
+		return err
 	}
-
-	// 1. 计算当前读取位置的绝对逻辑偏移
-	// 这决定了 IV
-	absGlobalOffset := frag.GlobalStartOffset + localOffset
-
-	// 2. 推导 IV
-	iv, derr := crypto.DeriveCTRIVForOffset_v2(r.iv, absGlobalOffset)
-	if derr != nil {
-		_ = rawReader.Close()
-		return derr
-	}
-
-	stream := cipher.NewCTR(block, iv)
 	streamReader := &cipher.StreamReader{S: stream, R: rawReader}
-
-	// 3. 【关键修复】显式跳过 localOffset 字节
-	// 如果 localOffset > 0，我们必须消耗掉前面的字节以同步 CTR 的计数器
-	if localOffset > 0 {
-		// 为了性能，我们不分配 huge buffer，而是循环读取
-		// 但既然是内存中的 SectionReader，读取和丢弃相对较快
-		// 使用一个小的 buffer 复用池
-		buf := r.bufPool.Get().([]byte)
-		defer r.bufPool.Put(buf)
-
-		var discarded uint64
-		for discarded < localOffset {
-			// 计算这次读取的大小
-			toRead := localOffset - discarded
-			// cap buf to toRead (but preserve underlying array if possible)
-			if cap(buf) < int(toRead) {
-				buf = make([]byte, toRead)
-			} else {
-				buf = buf[:toRead]
-			}
-
-			n, err := io.ReadFull(streamReader, buf)
-			if err != nil {
-				_ = rawReader.Close()
-				return fmt.Errorf("failed to discard %d bytes for alignment: %w", toRead, err)
-			}
-			discarded += uint64(n)
+	if needDiscard {
+		if err := discardReaderBytes(streamReader, localOffset, &r.bufPool); err != nil {
+			_ = rawReader.Close()
+			return err
 		}
 	}
 
@@ -201,7 +175,7 @@ func (r *VirtualSeekableDecryptReader) Read(p []byte) (n int, err error) {
 
 // Seek 实现 io.Seeker 接口，修正了多余逻辑
 func (r *VirtualSeekableDecryptReader) Seek(offset int64, whence int) (int64, error) {
-	totalSize := int64(r.streamFragments[len(r.streamFragments)-1].GlobalStartOffset + r.streamFragments[len(r.streamFragments)-1].Length)
+	totalSize := r.seekIndex.total()
 
 	var newGlobalOffset int64
 	switch whence {
@@ -229,18 +203,15 @@ func (r *VirtualSeekableDecryptReader) Seek(offset int64, whence int) (int64, er
 		return r.globalOffset, nil
 	}
 
-	fragIdx := sort.Search(len(r.streamFragments), func(i int) bool {
-		return int64(r.streamFragments[i].GlobalStartOffset+r.streamFragments[i].Length) > newGlobalOffset
-	})
-	if fragIdx == len(r.streamFragments) || int64(r.streamFragments[fragIdx].GlobalStartOffset) > newGlobalOffset {
-		// 处理 Seek 到文件末尾的情况
-		if newGlobalOffset == totalSize {
-			r.currentFragmentIndex = len(r.streamFragments)
-			r.currentDataReader = nil
-			r.globalOffset = newGlobalOffset
-			return r.globalOffset, nil
-		}
+	fragIdx, _, ok := r.seekIndex.find(newGlobalOffset)
+	if !ok {
 		return r.globalOffset, fmt.Errorf("seek position %d not inside any fragment", newGlobalOffset)
+	}
+	if fragIdx == len(r.streamFragments) {
+		r.currentFragmentIndex = len(r.streamFragments)
+		r.currentDataReader = nil
+		r.globalOffset = newGlobalOffset
+		return r.globalOffset, nil
 	}
 
 	// 先更新 index，再调用 setup

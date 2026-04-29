@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"sync"
 
 	"github.com/Soltus/encv-go/internal/logger"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
@@ -18,6 +19,12 @@ import (
 
 // manifestLogger 是 manifest 包的日志记录器
 var manifestLogger = logger.WithComponent("manifest")
+
+var manifestBlockBufPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 32*1024)
+	},
+}
 
 // EncryptManifest 加密原始 Manifest 字节
 func EncryptManifest(plainData []byte) ([]byte, error) {
@@ -287,7 +294,13 @@ func readAndDecryptManifest(r io.Reader) (*types.Manifest_v2, error) {
 // readBlockDataAndDecrypt 读取加密块数据并尝试解密
 func readBlockDataAndDecrypt(r io.Reader, header *block.BlockHeader_v2) ([]byte, error) {
 	// 1. 读取原始数据 (包含 IV + CipherText)
-	rawData := make([]byte, header.Length)
+	rawData := manifestBlockBufPool.Get().([]byte)
+	if cap(rawData) < int(header.Length) {
+		rawData = make([]byte, header.Length)
+	}
+	rawData = rawData[:header.Length]
+	defer manifestBlockBufPool.Put(rawData[:cap(rawData)])
+
 	if _, err := io.ReadFull(r, rawData); err != nil {
 		return nil, fmt.Errorf("failed to read block data: %w", err)
 	}
@@ -299,7 +312,8 @@ func readBlockDataAndDecrypt(r io.Reader, header *block.BlockHeader_v2) ([]byte,
 		// 如果解密失败，可能是旧版本未加密的 Manifest，或者是损坏数据
 		// 尝试直接解析 JSON
 		if err := json.Unmarshal(rawData, &types.Manifest_v2{}); err == nil {
-			return rawData, nil // 是未加密的旧版本
+			out := append([]byte(nil), rawData...)
+			return out, nil // 是未加密的旧版本
 		}
 		return nil, fmt.Errorf("failed to decrypt manifest block (and raw parse failed): %w", err)
 	}

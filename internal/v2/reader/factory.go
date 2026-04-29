@@ -42,6 +42,7 @@ type decryptReaderFactory struct {
 	cachedIndex         types.Index
 	kviProvider         types.KVIProvider
 	physicalOffsets     map[string]uint64
+	seekableIndex       *fragmentRangeIndex
 	isSeekable          bool
 }
 
@@ -98,13 +99,10 @@ func (f *decryptReaderFactory) parseAndCacheMetadata() error {
 	// 【关键新增】同样缓存 Header Version，无需再次探测
 	f.cachedHeaderVersion = fcr.headerVersion
 
-	// 判断是否可寻址
-	f.isSeekable = false
-	for _, frag := range f.cachedManifest.Fragments {
-		if frag.Type == types.FragmentType_SeekableStream {
-			f.isSeekable = true
-			break // 只要找到一个可寻址的 Fragment，就足以确定整个容器是可寻址的
-		}
+	seekableFragments := filterFragmentsByType(f.cachedManifest.Fragments, string(types.FragmentType_SeekableStream))
+	if len(seekableFragments) > 0 {
+		f.seekableIndex = newFragmentRangeIndex(seekableFragments)
+		f.isSeekable = true
 	}
 
 	return nil
@@ -122,7 +120,7 @@ func (f *decryptReaderFactory) NewDecryptReader() (DecryptReader, error) {
 	// 【关键修复】对于解密操作（顺序读取），使用更简单的 SequentialSeekableDecryptReader
 	// 避免 VirtualSeekableDecryptReader 中复杂的 seek 逻辑导致的错误
 	if f.isSeekable {
-		decryptReader, err = NewSequentialSeekableDecryptReader(containerReader, f.password)
+		decryptReader, err = newSequentialSeekableDecryptReader(containerReader, f.password, f.seekableIndex)
 	} else {
 		decryptReader, err = NewSequentialDecryptReader(containerReader, f.password)
 	}
@@ -155,14 +153,10 @@ func (f *decryptReaderFactory) GetOriginalSize() int64 {
 }
 
 func (f *decryptReaderFactory) GetContainerPath() string {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
 	return f.containerPath
 }
 
 func (f *decryptReaderFactory) IsSeekable() bool {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
 	return f.isSeekable
 }
 

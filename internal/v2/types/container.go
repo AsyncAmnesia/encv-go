@@ -1,10 +1,12 @@
 package types
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 )
 
 const (
@@ -46,6 +48,12 @@ var (
 	// 将数组转换为切片用法 types.MagicFooter_v2[:]
 	MagicHeader_v2 = [4]byte{'E', 'N', 'V', 'C'}
 	MagicFooter_v2 = [4]byte{'E', 'N', 'V', 'C'}
+
+	manifestJSONBufferPool_v2 = sync.Pool{
+		New: func() interface{} {
+			return bytes.NewBuffer(make([]byte, 0, 4096))
+		},
+	}
 )
 
 // FragmentType_v2 定义分片的用途类型，使其意图更加明确
@@ -139,7 +147,24 @@ type Manifest_v2 struct {
 
 // SerializeToJSON_v2 将清单序列化为 JSON 字节
 func (m *Manifest_v2) SerializeToJSON_v2() ([]byte, error) {
-	return json.MarshalIndent(m, "", "  ")
+	buf := manifestJSONBufferPool_v2.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer manifestJSONBufferPool_v2.Put(buf)
+
+	enc := json.NewEncoder(buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(m); err != nil {
+		return nil, err
+	}
+
+	// json.Encoder 会追加 '\n'
+	size := buf.Len()
+	if size == 0 {
+		return nil, nil
+	}
+	out := make([]byte, size-1)
+	copy(out, buf.Bytes()[:size-1])
+	return out, nil
 }
 
 // GetFragmentByID 根据 ID 查找并返回一个 Fragment 的副本
