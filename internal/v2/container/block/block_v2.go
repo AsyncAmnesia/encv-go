@@ -85,6 +85,54 @@ func WriteBlock_v2(w io.Writer, blockType uint16, data []byte) (uint32, error) {
 	return crc, err
 }
 
+// WriteBlockFromReader_v2 writes a block without materializing the whole payload
+// in memory. The writer must be seekable so the CRC can be patched into the
+// block header after streaming the payload.
+func WriteBlockFromReader_v2(w io.WriteSeeker, blockType uint16, r io.Reader, length uint64) (uint32, error) {
+	start, err := w.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get block start offset: %w", err)
+	}
+
+	header := &BlockHeader_v2{
+		Type:   blockType,
+		Length: length,
+		CRC32:  0,
+	}
+	if err := binary.Write(w, types.ByteOrder_v2, header); err != nil {
+		return 0, err
+	}
+
+	hasher := crc32.NewIEEE()
+	limited := &io.LimitedReader{R: r, N: int64(length)}
+	n, err := io.CopyBuffer(io.MultiWriter(w, hasher), limited, make([]byte, 256*1024))
+	if err != nil {
+		return 0, err
+	}
+	if n != int64(length) || limited.N != 0 {
+		return 0, fmt.Errorf("short read: expected %d bytes for data, got %d", length, n)
+	}
+
+	end, err := w.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get block end offset: %w", err)
+	}
+
+	crc := hasher.Sum32()
+	header.CRC32 = crc
+	if _, err := w.Seek(start, io.SeekStart); err != nil {
+		return 0, fmt.Errorf("failed to seek to block header: %w", err)
+	}
+	if err := binary.Write(w, types.ByteOrder_v2, header); err != nil {
+		return 0, err
+	}
+	if _, err := w.Seek(end, io.SeekStart); err != nil {
+		return 0, fmt.Errorf("failed to restore block end offset: %w", err)
+	}
+
+	return crc, nil
+}
+
 // WriteBlockToHasher 将 Header 和数据写入哈希器
 func WriteBlockToHasherFromHeader(hasher hash.Hash32, header *BlockHeader_v2, data []byte) error {
 	// 将头部字节写入哈希器

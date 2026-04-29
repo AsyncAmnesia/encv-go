@@ -70,11 +70,7 @@ func (p *FileChunkerPhysicalPacker) Pack(manifest *types.Manifest_v2, req *PackR
 	// 4. 遍历写入
 	for i := range manifest.Fragments {
 		frag := &manifest.Fragments[i]
-		chunkData := make([]byte, frag.Length)
-		if _, err := io.ReadFull(req.EncryptedDataReader, chunkData); err != nil {
-			return "", fmt.Errorf("failed to read data for fragment '%s': %w", frag.ID, err)
-		}
-		if err := p.processFragment(mainFile, req, frag, chunkData, chunkContext); err != nil {
+		if err := p.processFragment(mainFile, req, frag, chunkContext); err != nil {
 			return "", fmt.Errorf("failed to process fragment '%s': %w", frag.ID, err)
 		}
 	}
@@ -125,7 +121,7 @@ func (p *FileChunkerPhysicalPacker) cleanup(f *os.File, err error) {
 }
 
 // processFragment 处理单个分片
-func (p *FileChunkerPhysicalPacker) processFragment(mainFile *os.File, req *PackRequest, frag *types.Fragment_v2, data []byte, ctx *chunkContext) error {
+func (p *FileChunkerPhysicalPacker) processFragment(mainFile *os.File, req *PackRequest, frag *types.Fragment_v2, ctx *chunkContext) error {
 	// 【关键修复】跳过 Metadata Fragments (如 KVI)
 	// Unpacker 在重建时也会跳过这些 Fragments，为了保持哈希一致性，Packer 也不应写入数据流
 	if frag.Type == types.FragmentType_Metadata {
@@ -140,7 +136,7 @@ func (p *FileChunkerPhysicalPacker) processFragment(mainFile *os.File, req *Pack
 	}
 
 	// 2. 写入数据
-	crc, err := ctx.chunkedWriter.WriteDataChunk(activeWriter, data)
+	crc, err := ctx.chunkedWriter.WriteDataChunkFromReader(activeWriter, req.EncryptedDataReader, frag.Length)
 	if err != nil {
 		return fmt.Errorf("failed to write chunk: %w", err)
 	}
@@ -152,7 +148,7 @@ func (p *FileChunkerPhysicalPacker) processFragment(mainFile *os.File, req *Pack
 }
 
 // getActiveWriter 获取目标 Writer 并更新元数据
-func (p *FileChunkerPhysicalPacker) getActiveWriter(mainFile *os.File, req *PackRequest, frag *types.Fragment_v2, ctx *chunkContext) (io.Writer, error) {
+func (p *FileChunkerPhysicalPacker) getActiveWriter(mainFile *os.File, req *PackRequest, frag *types.Fragment_v2, ctx *chunkContext) (*os.File, error) {
 	// 【修正】将 activeFile 重命名为 activeWriter，避免与 return 语句不匹配
 	activeWriter := mainFile
 	needsSwitch := false
@@ -379,9 +375,19 @@ func (u *FileChunkerPhysicalUnpacker) rebuildToSingleFile(sourcePath string, ori
 			}
 			defer physicalFile.Close()
 
+			if _, err := physicalFile.Seek(int64(frag.PhysicalOffset), io.SeekStart); err != nil {
+				return nil, fmt.Errorf("failed to seek to physical offset for fragment '%s': %w", frag.ID, err)
+			}
+
 			var header block.BlockHeader_v2
 			if err := binary.Read(physicalFile, binary.LittleEndian, &header); err != nil {
 				return nil, fmt.Errorf("failed to read block header for fragment '%s': %w", frag.ID, err)
+			}
+			if header.Type != types.BlockTypeData_v2 {
+				return nil, fmt.Errorf("unexpected block type %d for fragment '%s'", header.Type, frag.ID)
+			}
+			if header.Length != frag.Length {
+				return nil, fmt.Errorf("unexpected block length for fragment '%s': manifest=%d block=%d", frag.ID, frag.Length, header.Length)
 			}
 
 			chunkData := make([]byte, header.Length)

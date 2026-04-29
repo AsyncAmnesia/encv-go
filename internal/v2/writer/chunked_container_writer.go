@@ -46,6 +46,46 @@ func (w *ChunkedContainerWriter) WriteDataChunk(targetWriter io.Writer, data []b
 	return crcVal, nil
 }
 
+// WriteDataChunkFromReader streams a data block to disk and mirrors the same
+// serialized block into the global CRC without keeping the fragment in heap.
+func (w *ChunkedContainerWriter) WriteDataChunkFromReader(targetFile *os.File, r io.Reader, length uint64) (uint32, error) {
+	blockStart, err := targetFile.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return 0, err
+	}
+
+	crcVal, err := block.WriteBlockFromReader_v2(targetFile, types.BlockTypeData_v2, r, length)
+	if err != nil {
+		return 0, err
+	}
+
+	header := &block.BlockHeader_v2{
+		Type:   types.BlockTypeData_v2,
+		Length: length,
+		CRC32:  crcVal,
+	}
+	if err := binary.Write(w.globalHasher, types.ByteOrder_v2, header); err != nil {
+		return 0, err
+	}
+
+	end, err := targetFile.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return 0, err
+	}
+	dataStart := blockStart + block.GetBlockHeader_v2_Size()
+	if _, err := targetFile.Seek(dataStart, io.SeekStart); err != nil {
+		return 0, err
+	}
+	if _, err := io.CopyBuffer(w.globalHasher, io.LimitReader(targetFile, int64(length)), make([]byte, 256*1024)); err != nil {
+		return 0, err
+	}
+	if _, err := targetFile.Seek(end, io.SeekStart); err != nil {
+		return 0, err
+	}
+
+	return crcVal, nil
+}
+
 // WriteManifestAndFooter 将 Manifest 和 Footer 写入主容器文件的末尾
 func (w *ChunkedContainerWriter) WriteManifestAndFooter(mainFile *os.File, manifestObj *types.Manifest_v2) error {
 	manifestBytes, err := manifestObj.SerializeToJSON_v2()

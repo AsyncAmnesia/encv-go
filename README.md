@@ -312,7 +312,9 @@ WSL2 已经打通了 localhost
 encv-go/
 ├── cmd/                              # 程序入口
 │   ├── encv/                         # encv 主程序
-│   └── encv-schema/                  # 仅用于生成 config.schema.json
+│   ├── encv-makefile/                # 构建脚本生成器
+│   ├── encv-schema/                  # 仅用于生成 config.schema.json
+│   └── bench-report/                 # 基准测试报告生成器
 ├── internal/                         # 内部实现
 │   ├── admin/                        # 管理后台
 │   ├── config/                       # 配置管理
@@ -357,6 +359,8 @@ encv-go/
 │   │   │       └── text.html         # 文本预览
 │   │   └── preview.go                # iframe 预览服务
 │   └── webdav/                       # WebDAV 服务核心逻辑
+├── tests/                            # 测试产物（gitignore）
+│   └── bench/                        # 基准测试报告与历史缓存
 ├── pkg/                              # 对外暴露的公共包
 │   └── encv/                         # 作为库调用
 ├── go.mod                            # Go 模块定义
@@ -396,6 +400,8 @@ gomobile bind -target=android -o encv.aar ./pkg/encv
 
 ### 🧪 测试
 
+#### 功能测试
+
 ```cmd
 go run ./cmd/encv start 
 ```
@@ -418,6 +424,58 @@ go test ./internal/service -run="TestContinuousRead|TestRandomSeek" -v
 ```
 
 然后检查 `_test_output` 目录下的 `.sccgv`, `.kvi` 和字幕文件是否符合预期。
+
+#### 基准测试与性能报告
+
+`bench-report` 工具自动运行基准测试并生成可视化 HTML 报告，包含评分仪表盘、雷达图、功能分类卡片和历史对比。
+
+```bash
+# 编译
+go build -o bench-report.exe ./cmd/bench-report/
+
+# 运行（跳过集成测试，约 1-2 分钟）
+./bench-report.exe --skip-integration
+
+# 运行（包含集成测试，需要 FFmpeg 和 _videos 目录）
+./bench-report.exe
+
+# 自定义输出路径
+./bench-report.exe -o ./my-report.html
+
+# 自定义测试时长
+./bench-report.exe --benchtime 5s --skip-integration
+
+# 不保存历史缓存
+./bench-report.exe --no-save --skip-integration
+```
+
+**命令行参数：**
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `-o` | `tests/bench/bench-report.html` | 输出 HTML 文件路径 |
+| `--benchtime` | `2s` | 每项基准测试运行时长 |
+| `--skip-integration` | `false` | 跳过 L4/L5 集成测试 |
+| `--no-save` | `false` | 不保存本次结果到历史缓存 |
+| `--open` | `true` | 生成后自动在浏览器中打开 |
+
+**测试分层：**
+
+| 层级 | 范围 | 说明 |
+|------|------|------|
+| L1 | 密码学原语 | AES-256-CTR 加解密、PBKDF2 密钥派生、CTR IV 推导 |
+| L2 | 容器 I/O | Block 读写、分片管理、临时文件加密 |
+| L3 | 解密读取器 | 顺序读取、Seek 跳转、批量解密 |
+| L4/L5 | 端到端集成 | 完整加密→解密→播放流程（需 FFmpeg） |
+
+**报告功能：**
+
+- 综合评分（0-100）与 SVG 环形仪表盘
+- 5 大功能分类雷达图（密钥派生 / AES-CTR / 容器 I/O / 分片管理 / 解密读取器）
+- 自动生成关键发现（最强项、偏慢项、历史提升）
+- 评级参考标准（优秀 / 及格 / 偏慢）
+- 历史数据缓存与可视化对比
+- 产物自动输出到 `tests/bench/` 目录
 
 生成 `config.schema.json` ：
 
