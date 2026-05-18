@@ -51,6 +51,15 @@ jobs:
       - name: Add Capacitor Android platform
         run: cd app/encv-mobile && npx cap add android
 
+      - name: Configure Kotlin 2.1 in Android project
+        run: |
+          cd app/encv-mobile/android
+          sed -i 's/kotlin_version = .*/kotlin_version = "2.1.0"/' build.gradle
+          sed -i 's/kotlin_version = .*/kotlin_version = "2.1.0"/' app/build.gradle || true
+          grep -q 'kotlin_version' build.gradle || sed -i '/buildscript/a\        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0"' build.gradle
+          grep -q 'kotlin-android' app/build.gradle || sed -i 's/com.android.application/com.android.application\n    kotlin-android/' app/build.gradle
+          grep -q 'kotlin-stdlib' app/build.gradle || sed -i '/dependencies {/a\    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.0"' app/build.gradle
+
       - name: Apply Android overlay (MainActivity + permissions)
         run: |
           cp -r app/encv-mobile/android-overlay/app/src/main/java/* app/encv-mobile/android/app/src/main/java/
