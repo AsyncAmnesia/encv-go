@@ -54,11 +54,37 @@ jobs:
       - name: Configure Kotlin 2.1 in Android project
         run: |
           cd app/encv-mobile/android
-          sed -i 's/kotlin_version = .*/kotlin_version = "2.1.0"/' build.gradle
-          sed -i 's/kotlin_version = .*/kotlin_version = "2.1.0"/' app/build.gradle || true
-          grep -q 'kotlin_version' build.gradle || sed -i '/buildscript/a\        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0"' build.gradle
-          grep -q 'kotlin-android' app/build.gradle || sed -i 's/com.android.application/com.android.application\n    kotlin-android/' app/build.gradle
-          grep -q 'kotlin-stdlib' app/build.gradle || sed -i '/dependencies {/a\    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.0"' app/build.gradle
+          python3 -c "
+          import re
+          # Root build.gradle: add kotlin plugin to buildscript.dependencies
+          with open('build.gradle', 'r') as f:
+              content = f.read()
+          if 'kotlin-gradle-plugin' not in content:
+              content = content.replace(
+                  'dependencies {',
+                  'dependencies {\n        classpath \"org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0\"',
+                  1
+              )
+          with open('build.gradle', 'w') as f:
+              f.write(content)
+          # App build.gradle: add kotlin-android plugin and kotlin-stdlib
+          with open('app/build.gradle', 'r') as f:
+              content = f.read()
+          if 'kotlin-android' not in content:
+              content = content.replace(
+                  \"'com.android.application'\",
+                  \"'com.android.application'\\n    'kotlin-android'\",
+                  1
+              )
+          if 'kotlin-stdlib' not in content:
+              content = content.replace(
+                  'dependencies {',
+                  'dependencies {\n    implementation \"org.jetbrains.kotlin:kotlin-stdlib:2.1.0\"',
+                  1
+              )
+          with open('app/build.gradle', 'w') as f:
+              f.write(content)
+          "
 
       - name: Apply Android overlay (MainActivity + permissions)
         run: |
