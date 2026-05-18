@@ -30,19 +30,58 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform & build tools
+        run: |
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
+
       - name: Install frontend dependencies
         run: cd app/encv-mobile && npm install
 
       - name: Build frontend
         run: cd app/encv-mobile && npm run build
 
-      - name: Build Go binary for Android
+      - name: Build Go binary for Android arm64
         run: |
-          GOOS=android GOARCH=arm64 go build -o encv-go-android-arm64 ./cmd/encv
+          CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -o app/encv-mobile/encv-go-arm64 ./cmd/encv
 
-      - name: Upload artifacts
+      - name: Add Capacitor Android platform
+        run: cd app/encv-mobile && npx cap add android
+
+      - name: Apply Android overlay (MainActivity + permissions)
+        run: |
+          cp -r app/encv-mobile/android-overlay/app/src/main/java/* app/encv-mobile/android/app/src/main/java/
+          cp app/encv-mobile/android-overlay/app/src/main/AndroidManifest-overlay.xml /tmp/manifest-overlay.xml
+          python3 -c "
+          import xml.etree.ElementTree as ET
+          base = ET.parse('app/encv-mobile/android/app/src/main/AndroidManifest.xml')
+          overlay = ET.parse('/tmp/manifest-overlay.xml')
+          base_root = base.getroot()
+          overlay_root = overlay.getroot()
+          for perm in overlay_root.findall('uses-permission'):
+              base_root.append(perm)
+          base.write('app/encv-mobile/android/app/src/main/AndroidManifest.xml', xml_declaration=True, encoding='utf-8')
+          "
+
+      - name: Copy Go binary to Android assets
+        run: |
+          mkdir -p app/encv-mobile/android/app/src/main/assets
+          cp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/assets/encv-go
+
+      - name: Sync Capacitor
+        run: cd app/encv-mobile && npx cap sync android
+
+      - name: Build APK (debug)
+        run: |
+          cd app/encv-mobile/android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: encv-go-binaries
-          path: |
-            encv-go-android-arm64
+          name: encv-go-android-apk
+          path: app/encv-mobile/android/app/build/outputs/apk/debug/app-debug.apk
