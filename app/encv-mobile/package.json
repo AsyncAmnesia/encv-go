@@ -4,7 +4,7 @@
   "description": "ENCV-go Mobile Frontend (Capacitor + Ionic Vue)",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -19,6 +19,8 @@
   "devDependencies": {
     "@capacitor/cli": "^8.3.4",
     "@vitejs/plugin-vue": "^6.0.7",
-    "vite": "^8.0.13"
+    "typescript": "^5.8.3",
+    "vite": "^8.0.13",
+    "vue-tsc": "^2.2.10"
   }
 }

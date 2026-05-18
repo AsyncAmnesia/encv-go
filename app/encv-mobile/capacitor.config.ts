@@ -1,4 +1,6 @@
-module.exports = {
+import type { CapacitorConfig } from '@capacitor/cli'
+
+const config: CapacitorConfig = {
   appId: 'com.encvgo.app',
   appName: 'ENCV-go',
   webDir: 'dist',
@@ -6,3 +8,5 @@ module.exports = {
     androidScheme: 'https',
   },
 }
+
+export default config
