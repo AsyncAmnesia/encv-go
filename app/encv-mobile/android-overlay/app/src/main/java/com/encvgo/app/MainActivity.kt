@@ -20,6 +20,8 @@ class MainActivity : BridgeActivity() {
 
     private fun startGoDaemon() {
         try {
+            ensureConfigExists()
+
             val binary = File(filesDir, BINARY_NAME)
             if (!binary.exists()) {
                 copyBinaryFromAssets(binary)
@@ -28,13 +30,30 @@ class MainActivity : BridgeActivity() {
 
             val configPath = File(filesDir, "config.user.json").absolutePath
             val pb = ProcessBuilder(binary.absolutePath, "start")
-            pb.environment()["ENCV_CONFIG"] = configPath
+            pb.environment()["ENCV_CONFIG_PATH"] = configPath
+            pb.environment()["ENCV_MOBILE"] = "1"
             pb.redirectErrorStream(true)
             goProcess = pb.start()
 
             Log.i(TAG, "ENCV-go daemon started")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start ENCV-go daemon", e)
+        }
+    }
+
+    private fun ensureConfigExists() {
+        val dest = File(filesDir, "config.user.json")
+        if (!dest.exists()) {
+            try {
+                assets.open("config.mobile.json").use { input ->
+                    FileOutputStream(dest).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                Log.i(TAG, "Copied default mobile config to ${dest.absolutePath}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to copy default config", e)
+            }
         }
     }
 

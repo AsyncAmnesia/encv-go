@@ -96,15 +96,19 @@ jobs:
               f.write(content)
           "
 
-      - name: Apply Android overlay (MainActivity + permissions)
+      - name: Apply Android overlay (MainActivity + permissions + network config)
         run: |
           cp -r app/encv-mobile/android-overlay/app/src/main/java/* app/encv-mobile/android/app/src/main/java/
+          cp -r app/encv-mobile/android-overlay/app/src/main/res/* app/encv-mobile/android/app/src/main/res/
           python3 -c "
           import xml.etree.ElementTree as ET
           ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
           base = ET.parse('app/encv-mobile/android/app/src/main/AndroidManifest.xml')
           base_root = base.getroot()
           ns = '{http://schemas.android.com/apk/res/android}'
+          # Add networkSecurityConfig attribute to <application>
+          for app_tag in base_root.findall('application'):
+              app_tag.set(ns + 'networkSecurityConfig', '@xml/network_security_config')
           permissions = [
               'android.permission.INTERNET',
               'android.permission.FOREGROUND_SERVICE',
@@ -121,10 +125,11 @@ jobs:
           base.write('app/encv-mobile/android/app/src/main/AndroidManifest.xml', xml_declaration=True, encoding='utf-8')
           "
 
-      - name: Copy Go binary to Android assets
+      - name: Copy Go binary and mobile config to Android assets
         run: |
           mkdir -p app/encv-mobile/android/app/src/main/assets
           cp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/assets/encv-go
+          cp app/encv-mobile/assets/config.mobile.json app/encv-mobile/android/app/src/main/assets/config.mobile.json
 
       - name: Sync Capacitor
         run: cd app/encv-mobile && npx cap sync android

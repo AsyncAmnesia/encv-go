@@ -1,113 +1,111 @@
-# 后端未连接排查 & Dev 预览集成后端测试方案
+# 安卓 APP 实测"后端未连接" — 根因排查与修复方案
 
-## 一、根因分析：为什么显示"后端未连接"
+## 一、完整调用链路追踪
 
-### 结论：不是代码 bug，而是 **dev 预览环境中没有运行后端进程**
-
-完整调用链路追踪：
+### Android 端启动流程（APK 运行时）
 
 ```
-前端 App.vue.onMounted()
-  → useTheme().initTheme()           ✅ 纯客户端，无问题
-  → useWebSocket().connect()         → ws://127.0.0.1:2025/ws  ❌ 无进程监听
-     ↓ 连接失败
-Files/Tabs 页面使用 useServerStatus()
-  → checkServerStatus()              → GET http://127.0.0.1:2025/health  ❌ 无进程监听
-     ↓ fetch 抛异常
-  → isOnline = false                 → 显示"后端未连接"
+MainActivity.onCreate()
+  ├─ copyBinaryFromAssets()  → 从 APK assets 提取 encv-go 二进制到 /data/data/com.encvgo.app/files/
+  ├─ 设置 ENVC_CONFIG=/data/data/com.encvgo.app/files/config.user.json  ← ⚠️ Bug #1
+  └─ ProcessBuilder("encv-go", "start").start()   ← 启动 Go 进程
+        │
+        ▼ Go 进程 (cmd/encv start)
+  PersistentPreRun():
+  ├─ FindConfigPath("")  ← 查找配置文件
+  │   ├─ 检查 os.Getenv("ENVC_CONFIG_PATH")  ← ❌ 读的是这个，不是 ENVC_CONFIG！
+  │   ├─ 检查 cwd/config.user.json           ← ❌ filesDir 不是 cwd
+  │   ├─ 检查 exeDir/config.user.json        ← ❌ 二进制目录无此文件
+  │   └─ 返回错误 → 使用 DefaultConfig()
+  │       └─ Server.Port = 1999  ← ⚠️ Bug #2: 前端连接的是 2025！
+  │
+  ├─ encv.Init(rootCtx)      ← 初始化插件系统
+  ├─ s.Start(Version)         ← 启动 Backend Server 于端口 1999 ✅ 能启动
+  ├─ SetupAdminServer(...)    ← 启动 GoFrame Admin Server ← ⚠️ Bug #3: 可能崩溃
+  └─ select {}                ← 阻塞主线程
+
+
+前端 (WebView):
+  App.vue.onMounted()
+  ├─ initTheme()              ✅ 纯客户端
+  └─ connect()  → WebSocket ws://127.0.0.1:2025/ws  ← ❌ 后端在 1999！
+
+Files 页面:
+  useServerStatus()
+  └─ checkServerStatus() → fetch('http://127.0.0.1:2025/health')  ← ❌ Connection Refused
+      └─ isOnline = false  → 显示"后端未连接"
 ```
 
-### 排除的伪因
+---
 
-| 假设 | 排除理由 |
+## 二、已确认的根因（按严重程度排序）
+
+### 🔴 Bug #1 [关键]: 环境变量名不匹配
+
+| | 实际值 |
+|---|---|
+| **Android MainActivity.kt 设置** | `ENVC_CONFIG` ([MainActivity.kt:31](file:///workspace/app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/MainActivity.kt#L31)) |
+| **Go config.go 读取** | `ENVC_CONFIG_PATH` ([config.go:178](file:///workspace/internal/config/config.go#L178)) |
+
+**结果**: 配置路径完全无法传递给 Go 进程。
+
+### 🔴 Bug #2 [关键]: APK 中没有打包 config.user.json
+
+查看 [.github/workflows/android.yml](file:///workspace/.github/workflows/android.yml)：
+- 第 58-59 行：编译 Go 二进制 ✅
+- 第 124-127 行：将二进制复制到 assets ✅
+- **没有任何步骤复制 config.user.json 到 APK 中**
+
+即使修复了 Bug #1，Go 进程也找不到配置文件，只能用默认值。
+
+### 🟡 Bug #3 [重要]: 默认端口不一致 + start 命令过重
+
+| 组件 | 默认端口 |
 |------|---------|
-| 端口不匹配？ | 前端默认 `2025`，用户 `config.user.json` 中 `server.port=2025`，一致 |
-| 路由没注册？ | 上轮已实现，`go build` 编译通过，路由正确注册在 `Start()` 中 |
-| CORS 问题？ | 所有路由被 `CorsMiddleware` 包裹，已覆盖新路由 |
-| WS 路径错误？ | 前端 `getWebSocketUrl()` 拼接为 `ws://127.0.0.1:2025/ws`，后端注册了 `/ws` |
+| Go `DefaultConfig()` | **1999** ([config.go:77](file:///workspace/internal/config/config.go#L77)) |
+| 前端 `DEFAULT_API_BASE_URL` | **2025** ([encv.ts:2](file:///workspace/app/encv-mobile/src/api/encv.ts#L2)) |
+| 用户 config.user.json | **2025** ✅ 但未打包进 APK |
 
-### 核心原因
+同时 `encv start` 命令会拉起 **Admin Server (GoFrame)**：
+- 引用了含 MySQL link 的 [config.yaml](file:///workspace/internal/admin/manifest/config/config.yaml)（`mysql:root:12345678@tcp(127.0.0.1:3306)/test`）
+- 在 Android 上 MySQL 不存在 → **可能导致 panic/log.Fatal 导致整个进程退出**
 
-> **Dev Preview 只启动了 Vite（端口 5173），没有任何进程监听 2025 端口。**
-> 前端所有 `fetch('http://127.0.0.1:2025/...')` 和 `new WebSocket('ws://127.0.0.1:2025/ws')` 全部 Connection Refused。
+### 🟢 Issue #4 [潜在]: Android 明文流量策略
 
----
-
-## 二、Dev 预览能否拉起后端？
-
-### 能力评估
-
-| 能力 | 是否支持 | 说明 |
-|------|---------|------|
-| 编译 Go 二进制 | ✅ | `go build ./cmd/encv/` 已验证可用 |
-| 运行后台进程 | ✅ | `RunCommand` 支持 `blocking: false` + long_running_process |
-| 创建测试配置 | ✅ | 可写入沙箱文件系统 |
-| 同时运行前后端 | ✅ | 后台跑 Go 服务 + 启动 Vite dev server |
-| OpenPreview 激活 | ✅ | 对 Vite 端口生效 |
-
-### 但有一个关键障碍
-
-`encv start` 命令会同时拉起 **两个服务**：
-1. **Backend Server**（我们的 HTTP API）— 端口 2025 — 这个我们需要的
-2. **Admin Server**（GoFrame ghttp）— 端口 1808 — **依赖 SQLite 数据库**、GoFrame 框架
-
-查看 [servers.go](file:///workspace/cmd/encv/servers.go) 的 start 命令：
-```go
-s.Start(Version)                              // ← Backend（我们需要这个）
-adminServer, _ := admin.SetupAdminServer(...) // ← Admin（依赖重）
-register.StartGfServerWithRetry(...)          // ← GoFrame 服务（可能缺 DB）
-```
-
-如果直接运行 `encv start`，Admin 服务初始化可能因为缺少数据库而失败，连带整个进程退出。
-
-### 解决方案：创建轻量级 Dev-Only 后端
-
-新建一个最小化的 `cmd/encv-dev/main.go`，**只启动 Backend Server**，跳过 Admin/GoFrame/WebDAV/插件等重量级组件：
-
-```
-cmd/encv-dev/
-  main.go          — 入口：加载配置 → NewServer → 注册移动端路由 → ListenAndServe
-```
-
-这个 dev-server 只做一件事：**在指定端口上提供 REST API + WebSocket**，用于前端开发调试。
+[capacitor.config.ts](file:///workspace/app/encv-mobile/capacitor.config.ts#L8) 设置了 `androidScheme: 'https'`：
+- Capacitor WebView 以 `https://localhost` 加载应用
+- 前端 fetch 到 `http://127.0.0.1:2025` 属于 **Mixed Content**
+- Android 9+ 默认阻止明文 HTTP 流量
+- 当前 AndroidManifest.xml 中没有 `network_security_config.xml`
 
 ---
 
-## 三、实施步骤
+## 三、修复方案
 
-### Step 1: 创建 Dev-Only 后端入口
+### 修复原则
 
-**新建文件**: `cmd/encv-dev/main.go`
+> **不创建轻量级 dev-server**。直接修复 Android 集成链路中的 bug，让正式的 `encv start`（或其移动适配版本）能在 Android 上正确运行。
 
-功能清单：
-- 从 `config.user.json` 加载配置（或使用默认值）
-- 创建 `server.NewServer(ctx, configPath)`
-- 手动创建 `ServeMux`，只注册移动端需要的路由：
-  - `GET  /health`
-  - `GET  /api/files?path=`
-  - `DELETE /api/files?path=`
-  - `GET  /stream?path=`
-  - `GET  /api/tasks` / `POST /api/tasks` / ...
-  - `POST /api/webdav/test`
-  - `GET  /ws`（WebSocket）
-  - `GET  /api/config` / `PUT  /api/config`
-  - `GET  /api/config/schema`
-  - `GET  /ping`（保留兼容）
-- 使用 `http.ListenAndServe` 直接启动
-- 不启动 Admin、不初始化插件、不加载 WebDAV
-- 支持通过 `-port` flag 指定端口（默认 2025）
+### Step 1: 修复环境变量名（Bug #1）
 
-### Step 2: 创建 Dev 最小化配置
+**修改文件**: `app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/MainActivity.kt`
 
-**新建文件**: `config.dev.json`
+```kotlin
+// 第 31 行: ENVC_CONFIG → ENVC_CONFIG_PATH
+pb.environment()["ENCV_CONFIG_PATH"] = configPath
+```
+
+### Step 2: 创建移动端专用配置并打包进 APK（Bug #2）
+
+**新建文件**: `app/encv-mobile/assets/config.mobile.json`
 
 ```json
 {
   "password": "",
   "recover": false,
-  "output_path": "./output",
+  "output_path": "/storage/emulated/0/encv-output",
   "plugin_settings": {},
-  "server": { "port": 2025, "dir": "/" },
+  "server": { "port": 2025, "dir": "/storage/emulated/0" },
   "admin": { "port": 18080, "password": "" },
   "webdav": { "port": 12340, "root": "/webdav/", "dir": "", "username": "", "password": "" },
   "proxy": { "sites": {}, "disable_signature_verification": true },
@@ -115,46 +113,112 @@ cmd/encv-dev/
 }
 ```
 
-关键点：
-- `server.dir: "/"` — 在沙箱中映射到 filesystem root
-- `log.level: "debug"` — 方便调试
-- 其他字段填最小值避免 nil panic
+**修改文件**: `MainActivity.kt` — 启动前将配置从 assets 复制到 filesDir
 
-### Step 3: 配置 Vite 开发代理（可选增强）
-
-**修改文件**: `app/encv-mobile/vite.config.ts`
-
-添加 `server.proxy`，让开发时 API 请求走代理而非跨域直连：
-
-```ts
-server: {
-  port: 5173,
-  host: '0.0.0.0',
-  proxy: {
-    '/api': { target: 'http://127.0.0.1:2025', changeOrigin: true },
-    '/health': { target: 'http://127.0.0.1:2025', changeOrigin: true },
-    '/stream': { target: 'http://127.0.0.1:2025', changeOrigin: true },
-    '/ws': { target: 'ws://127.0.0.1:2025', ws: true },
-    '/ping': { target: 'http://127.0.0.1:2025', changeOrigin: true },
-  }
+```kotlin
+private fun ensureConfigExists() {
+    val dest = File(filesDir, "config.user.json")
+    if (!dest.exists()) {
+        assets.open("config.mobile.json").use { input ->
+            FileOutputStream(dest).use { output ->
+                input.copyTo(output)
+            }
+        }
+    }
 }
 ```
 
-这样前端的 `getApiBaseUrl()` 在开发时可返回空字符串（走相对路径代理），生产环境仍用绝对 URL。
+在 `startGoDaemon()` 开头调用 `ensureConfigExists()`。
 
-### Step 4: 创建一键启动脚本（可选）
+### Step 3: 让 start 命令在移动端跳过 Admin Server（Bug #3）
 
-创建一个组合命令，按顺序启动：
-1. `go run ./cmd/encv-dev/` （后台）
-2. 等 1 秒让后端就绪
-3. `cd app/encv-mobile && npm run dev` （前台/OpenPreview）
+**方案 A（推荐）**: 在 `servers.go` 的 `startCmd.Run` 中检测移动端环境，跳过 Admin：
 
-### Step 5: 验证
+```go
+// cmd/encv/servers.go startCmd.Run
+// 在启动 admin 前检查:
+if os.Getenv("ENCV_MOBILE") == "1" || cfg.Admin.Port == 0 {
+    log.Println("Mobile mode: skipping admin server")
+} else {
+    // ... existing admin setup ...
+}
+```
 
-1. 构建并后台启动 dev-server
-2. `curl http://127.0.0.1:2025/health` → `{"status":"ok"}`
-3. `curl http://127.0.0.1:2025/api/files?path=/` → JSON 文件列表
-4. 启动 Vite dev server + OpenPreview
-5. 浏览器确认前端显示"在线"状态
-6. 测试 Files 页面浏览文件
-7. 测试 Settings 页面配置编辑
+**同步修改** `MainActivity.kt` 设置环境变量:
+
+```kotlin
+pb.environment()["ENCV_MOBILE"] = "1"
+```
+
+**方案 B（备选）**: 新增 `encv start-mobile` 子命令，只启动 Backend Server。但用户明确反对新增入口，故优先用方案 A。
+
+### Step 4: 添加 Android 网络安全配置（Issue #4）
+
+**新建文件**: `app/encv-mobile/android-overlay/app/src/main/res/xml/network_security_config.xml`
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>
+```
+
+> 注: `10.0.2.2` 是 Android 模拟器访问主机 localhost 的特殊 IP。
+
+**修改**: GitHub Actions workflow 中在 AndroidManifest.xml 添加引用:
+
+```xml
+<application android:networkSecurityConfig="@xml/network_security_config"
+            ... >
+```
+
+### Step 5: 更新 CI 构建流程
+
+**修改文件**: `.github/workflows/android.yml`
+
+```yaml
+# 在 "Copy Go binary to Android assets" 步骤之后添加:
+- name: Copy mobile config to Android assets
+  run: |
+    mkdir -p app/encv-mobile/android/app/src/main/assets
+    cp app/encv-mobile/assets/config.mobile.json app/encv-mobile/android/app/src/main/assets/config.mobile.json
+```
+
+---
+
+## 四、验证方法
+
+修复后重新构建 APK 并安装到真机：
+
+1. **日志验证**: 通过 `logcat` 查看 `ENCV-go` tag 的日志
+   - 应看到 `ENCV-go daemon started`（进程成功启动）
+   - 应看到 `Backend server successfully started`（后端监听成功）
+   - 应看到 `Mobile mode: skipping admin server`（如果采用方案 A）
+
+2. **网络验证**: 在手机浏览器访问 `http://127.0.0.1:2025/health`
+   - 应返回 `{"status":"ok"}`
+
+3. **APP 验证**: 打开 ENCV-go APP
+   - Settings 页面应显示"在线"状态（绿色）
+   - Files 页面应能列出文件列表
+   - WebSocket 连接应建立成功
+
+---
+
+## 五、关于 Dev 预览支持后端测试
+
+Dev Preview 环境可以运行后台进程，可以直接使用正式的 `encv start` 命令（或编译后的二进制）配合已有的 `config.user.json` 启动后端：
+
+```bash
+# Terminal 1: 启动后端（需要 config.user.json）
+go run ./cmd/encv/ start &
+
+# Terminal 2: 启动 Vite 前端 + OpenPreview
+cd app/encv-mobile && npm run dev
+```
+
+但需注意 `start` 会尝试启动 Admin Server（依赖 GoFrame），在沙箱环境中可能因为缺 SQLite/MySQL 而失败。如果遇到此问题，可在沙箱中设置 `ENVC_MOBILE=1` 环境变量来跳过 Admin。
