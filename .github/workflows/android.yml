@@ -197,11 +197,31 @@ jobs:
                   count=1
               )
 
-          # Release optimizations: minify + shrink resources (significant size reduction)
+          # Release optimizations: minify + shrink resources + native signing config
           if ver and 'minifyEnabled' not in content:
               release_block = r'(buildTypes\s*\{[^}]*?release\s*\{)'
-              release_opt = r'\1\n        minifyEnabled true\n        shrinkResources true'
+              release_opt = (
+                  r'\1'
+                  '\n        minifyEnabled true'
+                  '\n        shrinkResources true'
+                  "\n        signingConfig signingConfigs.release"
+              )
               content = re.sub(release_block, release_opt, content, count=1, flags=re.DOTALL)
+
+          # Inject signingConfigs block for native Gradle signing (replaces fragile jarsigner)
+          if ver and 'signingConfigs' not in content:
+              signing_block = (
+                  "android {\n"
+                  "    signingConfigs {"
+                  "\n        release {"
+                  "\n            storeFile file('/tmp/debug.keystore')"
+                  "\n            storePassword 'android'"
+                  "\n            keyAlias 'androiddebugkey'"
+                  "\n            keyPassword 'android'"
+                  "\n        }"
+                  "\n    }\n"
+              )
+              content = content.replace('android {', signing_block, 1)
 
           with open('app/build.gradle', 'w') as f:
               f.write(content)
@@ -209,7 +229,7 @@ jobs:
           print("build.gradle optimized")
           print("Content preview:")
           for i, line in enumerate(content.split('\n')):
-              if any(kw in line for kw in ['abiFilters', 'versionName', 'versionCode', 'minifyEnabled', 'shrinkResources']):
+              if any(kw in line for kw in ['abiFilters', 'versionName', 'versionCode', 'minifyEnabled', 'shrinkResources', 'signingConfig', 'signingConfigs', 'storeFile']):
                   print(f"  L{i+1}: {line}")
           PYEOF
 
@@ -221,43 +241,21 @@ jobs:
           if [ -n "${{ inputs.version }}" ]; then
             echo "=== Building RELEASE APK (version ${{ inputs.version }}) ==="
 
-            # Generate debug keystore for CI signing
+            # Generate debug keystore for Gradle-native signing
             keytool -genkeypair -v -keystore /tmp/debug.keystore \
               -storepass android -alias androiddebugkey \
               -keypass android -dname "CN=Debug,O=Debug,C=US" 2>/dev/null || true
 
+            echo "Keystore ready:"
+            ls -lh /tmp/debug.keystore
+
+            # Gradle handles signing + zipalign natively via build.gradle config
             ./gradlew assembleRelease
 
-            # Find the actual built APK (filename varies by AGP version)
+            # Verify signed APK exists
             APK_DIR="app/build/outputs/apk/release"
-            APK_PATH=$(find "$APK_DIR" -name "*.apk" -type f | head -1)
-
-            if [ -z "$APK_PATH" ]; then
-              echo "::error::No release APK found in $APK_DIR"
-              ls -laR "$APK_DIR" 2>/dev/null || true
-              exit 1
-            fi
-
-            echo "Found APK: $APK_PATH ($(ls -lh "$APK_PATH" | awk '{print $5}'))"
-
-            # Sign with debug key
-            jarsigner -sigalg SHA256withRSA -digestalg SHA256 \
-              -keystore /tmp/debug.keystore -storepass android -keypass android \
-              "$APK_PATH" androiddebugkey 2>&1 || {
-              echo "::warning::jarsigner failed, attempting unsigned APK"
-            }
-
-            # zipalign for optimal runtime memory usage
-            SIGNED_APK="${APK_PATH%.apk}-aligned.apk"
-            zipalign -f 4 "$APK_PATH" "$SIGNED_APK" 2>/dev/null && {
-              rm -f "$APK_PATH"
-              mv "$SIGNED_APK" "$APK_PATH"
-              echo "APK signed and aligned successfully"
-            } || {
-              echo "::warning::zipalign skipped, using as-is APK"
-            }
-
-            ls -lh app/build/outputs/apk/release/
+            echo "=== Release output ==="
+            find "$APK_DIR" -name "*.apk" -type f -exec ls -lh {} \;
           else
             echo "=== Building DEBUG APK ==="
             ./gradlew assembleDebug
