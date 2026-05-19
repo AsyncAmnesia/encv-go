@@ -102,9 +102,15 @@ func (s *Server) Start(version string) (string, error) {
 	// 3. 创建统一的 ServeMux 并注册路由
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", s.handlePing)
+	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/stream", s.handleStreamRequest)
 	mux.HandleFunc("/api/config", s.handleConfigAPI)
 	mux.HandleFunc("/api/config/schema", s.handleConfigSchemaAPI)
+	mux.HandleFunc("/api/files", s.handleMobileFiles)
+	mux.HandleFunc("/api/tasks", s.handleMobileTasks)
+	mux.HandleFunc("/api/tasks/", s.handleMobileTasks)
+	mux.HandleFunc("/api/webdav/test", s.handleTestWebDAV)
+	mux.HandleFunc("/ws", s.handleWebSocket)
 
 	mux.HandleFunc("/", s.handleRequest)
 
