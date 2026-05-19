@@ -105,14 +105,18 @@ jobs:
           echo "Android project ready:"
           ls -la android/*.gradle android/app/*.gradle
 
-      # === Non-Gradle customizations ===
-      - name: Copy Go binary and mobile config to assets
+      # === Non-Gradle customizations (after cap sync, which regenerates android/) ===
+      - name: Copy assets, overlay files, and release gradle config
         run: |
           mkdir -p app/encv-mobile/android/app/src/main/assets
           cp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/assets/encv-go
           cp app/encv-mobile/assets/config.mobile.json app/encv-mobile/android/app/src/main/assets/config.mobile.json
+          # encv-release.gradle: signing + minify + shrink (referenced by apply from in build.gradle)
+          cp app/encv-mobile/android/encv-release.gradle app/encv-mobile/android/encv-release.gradle
           echo "Assets:"
           ls -lhR app/encv-mobile/android/app/src/main/assets/
+          echo "Release config:"
+          ls -lh app/encv-mobile/android/encv-release.gradle
 
       - name: Apply Android overlay (MainActivity + permissions + network config)
         run: |

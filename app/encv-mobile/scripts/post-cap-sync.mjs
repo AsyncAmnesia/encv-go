@@ -1,18 +1,10 @@
-import { readFileSync, writeFileSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ANDROID_DIR = join(__dirname, '..', 'android')
-
-function patchFile(filePath, transformer) {
-  const content = readFileSync(filePath, 'utf-8')
-  const modified = transformer(content)
-  if (modified !== content) {
-    writeFileSync(filePath, modified, 'utf-8')
-    console.log(`  patched ${filePath}`)
-  }
-}
+const APP_GRADLE = join(ANDROID_DIR, 'app', 'build.gradle')
 
 console.log('encv-post-cap-sync: applying Android customizations...')
 
@@ -26,10 +18,11 @@ patchFile(join(ANDROID_DIR, 'build.gradle'), (c) => {
   )
 })
 
-// --- app/build.gradle: all modifications ---
+// --- app/build.gradle: MINIMAL changes only ---
 const version = process.env.ENCV_VERSION || ''
 
-patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
+patchFile(APP_GRADLE, (c) => {
+  // Add kotlin-android plugin
   if (!c.includes("'kotlin-android'")) {
     c = c.replace(
       "'com.android.application'",
@@ -38,6 +31,7 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
   }
 
+  // Add kotlin-stdlib dependency
   if (!c.includes('kotlin-stdlib')) {
     c = c.replace(
       'dependencies {',
@@ -46,58 +40,44 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
   }
 
-  if (!c.includes('abiFilters') || !c.includes('arm64-v8a')) {
-    c = c.replace(
-      /(defaultConfig\s*\{)/,
-      "$1\n    ndk {\n        abiFilters 'arm64-v8a'\n    }",
-    )
+  // Apply our release config file (idempotent - checks for existing apply)
+  const applyLine = "apply from: '../encv-release.gradle'"
+  if (!c.includes('encv-release.gradle')) {
+    // Insert after the plugins block (first closing })
+    c = c.replace(/(plugins\s*\{[^}]*\})/, '$1\n\n' + applyLine)
   }
 
+  // Set version in defaultConfig (only when ENCV_VERSION is set)
   if (version) {
     const vcode = parseInt(version.replace(/\./g, '')) || 1
-    c = c.replace(
-      /(defaultConfig\s*\{[^}]*?)\}/,
-      `$1\n        versionName "${version}"\n        versionCode ${vcode}\n    }`,
-    )
-  }
-
-  // CRITICAL ORDER: replace buildTypes.release FIRST, then inject signingConfigs
-  // Otherwise the regex would match signingConfigs.release instead of buildTypes.release
-  if (version) {
-    // Replace ONLY the buildTypes.release block (inside buildTypes { })
-    // Use negative lookahead to avoid matching signingConfigs.release
-    c = c.replace(
-      /buildTypes\s*\{[^}]*release\s*\{[^}]*(?:\{[^}]*\}[^}]*)*\}/,
-      `buildTypes {
-                        release {
-                            minifyEnabled true
-                            shrinkResources true
-                            signingConfig signingConfigs.release
-                        }
-                    }`,
-    )
-
-    // Now inject signingConfigs (safe - no more release blocks to conflict)
-    const scBlock =
-      'android {\n' +
-      '    signingConfigs {\n' +
-      '        release {\n' +
-      "            storeFile file('../keystore/release.jks')\n" +
-      "            storePassword 'encv2025'\n" +
-      "            keyAlias 'encvrelease'\n" +
-      "            keyPassword 'encv2025'\n" +
-      '        }\n' +
-      '    }\n'
-    c = c.replace(/android\s*\{/, scBlock)
+    // Replace existing versionCode/Name or inject into defaultConfig
+    if (c.includes('versionCode') && !c.includes(`versionCode ${vcode}`)) {
+      c = c.replace(/versionCode\s+\d+/, `versionCode ${vcode}`)
+      c = c.replace(/versionName\s+"[^"]*"/, `versionName "${version}"`)
+    } else if (c.includes('defaultConfig')) {
+      c = c.replace(
+        /(defaultConfig\s*\{[^}]*?)\}/,
+        `$1\n        versionName "${version}"\n        versionCode ${vcode}\n    }`,
+      )
+    }
   }
 
   return c
 })
 
 if (version) {
-  console.log(`  release mode v${version}: signing + minify + shrink enabled`)
+  console.log(`  release mode v${version}: encv-release.gradle applied`)
 } else {
-  console.log(`  debug mode: no signing optimization`)
+  console.log(`  debug mode: no release optimization`)
 }
 
 console.log('encv-post-cap-sync: done')
+
+function patchFile(filePath, transformer) {
+  const content = readFileSync(filePath, 'utf-8')
+  const modified = transformer(content)
+  if (modified !== content) {
+    writeFileSync(filePath, modified, 'utf-8')
+    console.log(`  patched ${filePath}`)
+  }
+}
