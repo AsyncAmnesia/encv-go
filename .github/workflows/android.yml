@@ -67,14 +67,39 @@ jobs:
           echo "Go binary size:"
           ls -lh app/encv-mobile/encv-go-arm64
 
-      - name: Add Capacitor Android platform
+      - name: Ensure Android platform & Sync Capacitor
         run: |
           cd app/encv-mobile
-          if [ -d "./android" ]; then
-            echo "Android platform already exists, skipping add"
-          else
-            npx cap add android
+          ANDROID_DIR="./android"
+          KEYSTORE_BAK="/tmp/encv-release-keystore.bak"
+
+          # Backup keystore if exists (git checkout puts it in android/keystore/)
+          if [ -f "$ANDROID_DIR/keystore/release.jks" ]; then
+            cp "$ANDROID_DIR/keystore/release.jks" "$KEYSTORE_BAK"
+            echo "Keystore backed up from git"
           fi
+
+          # Check if valid Capacitor Android project (not just empty/partial dir from git)
+          if [ -f "$ANDROID_DIR/build.gradle" ] && [ -f "$ANDROID_DIR/variables.gradle" ]; then
+            echo "Valid Android project found, syncing..."
+            npx cap sync android
+          else
+            echo "No valid Android project found, recreating..."
+            rm -rf "$ANDROID_DIR"
+            npx cap add android
+            npx cap sync android
+          fi
+
+          # Restore keystore after cap sync (cap sync regenerates the whole dir)
+          if [ -f "$KEYSTORE_BAK" ]; then
+            mkdir -p "$ANDROID_DIR/keystore"
+            cp "$KEYSTORE_BAK" "$ANDROID_DIR/keystore/release.jks"
+            echo "Keystore restored:"
+            ls -lh "$ANDROID_DIR/keystore/release.jks"
+          fi
+
+          echo "Android project ready:"
+          ls -la "$ANDROID_DIR/"*.gradle "$ANDROID_DIR/app/"*.gradle 2>/dev/null
 
       - name: Configure Kotlin in Android project
         run: |
@@ -108,10 +133,6 @@ jobs:
           with open('app/build.gradle', 'w') as f:
               f.write(content)
           "
-
-      # === CRITICAL: Sync Capacitor BEFORE overlays ===
-      - name: Sync Capacitor (base project generation)
-        run: cd app/encv-mobile && npx cap sync android
 
       # === Apply ALL customizations AFTER cap sync ===
       - name: Copy Go binary and mobile config to Android assets
