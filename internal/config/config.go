@@ -175,9 +175,9 @@ func FindConfigPath(flagPath string) (string, error) {
 	}
 
 	// 2. 次高优先级：环境变量
-	if envPath := os.Getenv("ENVC_CONFIG_PATH"); envPath != "" {
+	if envPath := os.Getenv("ENCV_CONFIG_PATH"); envPath != "" {
 		if _, err := os.Stat(envPath); err == nil {
-			slog.Info("Using config from environment variable ENVC_CONFIG_PATH", "path", envPath)
+			slog.Info("Using config from environment variable ENCV_CONFIG_PATH", "path", envPath)
 			return envPath, nil
 		}
 		return "", fmt.Errorf("config file from environment variable not found: %s", envPath)

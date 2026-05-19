@@ -496,8 +496,10 @@ async function handleResetSettings() {
 }
 
 onMounted(async () => {
-  checkStatus()
-  await loadConfig()
+  await checkStatus()
+  if (serverOnline.value) {
+    await loadConfig()
+  }
   configLoaded.value = true
 })
 </script>
