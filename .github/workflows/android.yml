@@ -177,7 +177,7 @@ jobs:
             [ -z "$APK_PATH" ] && { echo "::error::No APK found"; exit 1; }
 
             echo "Verifying signature..."
-            apksigner verify --print-certs "$APK_PATH"
+            $ANDROID_HOME/build-tools/35.0.0/apksigner verify --print-certs "$APK_PATH"
             echo "✅ Signed OK: $(ls -lh "$APK_PATH" | awk '{print $5}')"
           else
             echo "=== Building DEBUG APK ==="
