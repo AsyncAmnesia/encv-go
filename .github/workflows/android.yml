@@ -222,12 +222,10 @@ jobs:
             echo "=== Building RELEASE APK (version ${{ inputs.version }}) ==="
 
             # Ensure release signing config exists (use debug key for CI)
-            cat > app/release-signing.properties << 'EOF'
-            storeFile=/tmp/debug.keystore
-            storePassword=android
-            keyPassword=android
-            keyAlias=androiddebugkey
-            EOF
+            echo "storeFile=/tmp/debug.keystore" > app/release-signing.properties
+            echo "storePassword=android" >> app/release-signing.properties
+            echo "keyPassword=android" >> app/release-signing.properties
+            echo "keyAlias=androiddebugkey" >> app/release-signing.properties
             keytool -genkeypair -v -keystore /tmp/debug.keystore \
               -storepass android -alias androiddebugkey \
               -keypass android -dname "CN=Debug,O=Debug,C=US" 2>/dev/null || true
