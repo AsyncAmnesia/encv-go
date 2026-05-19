@@ -120,7 +120,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import {
   IonPage,
   IonHeader,
@@ -164,6 +164,7 @@ import {
   retryTask,
 } from '@/api/encv'
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
+import { eventBus } from '@/composables/useEventBus'
 
 const tasks = ref<EncvTask[]>([])
 const loading = ref(false)
@@ -291,8 +292,50 @@ function handleRemoveTask(id: string) {
   tasks.value = tasks.value.filter(t => t.id !== id)
 }
 
+function onTaskUpdate(data: { id: string; type: string; status: string; progress: number }) {
+  const idx = tasks.value.findIndex(t => t.id === data.id)
+  if (idx !== -1) {
+    tasks.value[idx] = { ...tasks.value[idx], status: data.status as TaskStatus, progress: data.progress }
+  }
+}
+
+function onTaskCreated(data: { id: string; type: string; sourcePath: string }) {
+  const exists = tasks.value.some(t => t.id === data.id)
+  if (!exists) {
+    tasks.value.unshift({
+      id: data.id,
+      type: data.type as TaskType,
+      sourcePath: data.sourcePath,
+      status: 'queued',
+      progress: 0,
+      createdAt: new Date().toISOString(),
+    })
+  }
+}
+
+function onTaskCompleted(data: { id: string; error?: string }) {
+  const idx = tasks.value.findIndex(t => t.id === data.id)
+  if (idx !== -1) {
+    tasks.value[idx] = {
+      ...tasks.value[idx],
+      status: data.error ? 'failed' : 'completed',
+      progress: data.error ? tasks.value[idx].progress : 100,
+      error: data.error,
+    }
+  }
+}
+
 onMounted(() => {
   loadTasks()
+  eventBus.on('task:update', onTaskUpdate)
+  eventBus.on('task:created', onTaskCreated)
+  eventBus.on('task:completed', onTaskCompleted)
+})
+
+onUnmounted(() => {
+  eventBus.off('task:update', onTaskUpdate)
+  eventBus.off('task:created', onTaskCreated)
+  eventBus.off('task:completed', onTaskCompleted)
 })
 </script>
 

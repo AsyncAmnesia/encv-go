@@ -17,6 +17,14 @@ export function resetServerUrl() {
   localStorage.removeItem(SERVER_URL_KEY)
 }
 
+export function getWebSocketUrl(): string {
+  const baseUrl = getApiBaseUrl()
+  const wsUrl = baseUrl
+    .replace(/^https:\/\//, 'wss://')
+    .replace(/^http:\/\//, 'ws://')
+  return `${wsUrl}/ws`
+}
+
 export interface FileItem {
   name: string
   path: string

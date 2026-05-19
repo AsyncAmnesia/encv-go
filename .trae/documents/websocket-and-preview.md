@@ -1,100 +1,132 @@
-# WebSocket 替代轮询 & 本地预览方案
+# WebSocket 实时通讯 & 本地预览方案
 
 ## 问题分析
 
-### 问题 1：轮询替代方案
+### 问题 1：替代轮询 — WebSocket vs SSE
 
-当前 `useServerStatus.ts` 使用 `setInterval` 每 10 秒轮询 `/health` 端点，存在以下问题：
-- **资源浪费**：无论服务器状态是否变化，都持续发请求
-- **延迟高**：最长 10 秒才能感知状态变化
-- **对 Tasks 页面尤其不友好**：任务进度需要实时更新，轮询体验差
+当前 `useServerStatus.ts` 使用 `setInterval` 每 10 秒轮询 `/health`，资源浪费且延迟高。
 
 **方案对比：**
 
-| 方案 | 实时性 | 复杂度 | 兼容性 | 适合场景 |
-|------|--------|--------|--------|---------|
-| 轮询（当前） | 低（10s延迟） | 最低 | 最好 | 仅状态检测 |
-| WebSocket | 高（即时） | 中 | 好（需服务端支持） | 双向实时通信 |
-| SSE（Server-Sent Events） | 高（服务端→客户端） | 低 | 好 | 服务端推送场景 |
-| 混合方案：SSE + 按需轮询 | 高 | 中 | 最好 | 最佳实践 |
+| 方案 | 实时性 | 双向 | 复杂度 | Go 后端 | 前端 |
+|------|--------|------|--------|---------|------|
+| 轮询（当前） | 低 | ❌ | 最低 | 无需改动 | 无依赖 |
+| SSE | 高（单向） | ❌ | 低 | 简单 | EventSource 原生 |
+| WebSocket | 高 | ✅ | 中 | gorilla/websocket | 原生 API |
 
-**推荐方案：混合策略**
-- **服务器状态**：保留轻量轮询，但改为"指数退避"策略（在线时 30s 一次，离线时逐步退避到 60s），因为服务器上下线是低频事件
-- **任务进度**：改用 SSE（`EventSource`），Go 后端推送任务进度变更，前端实时接收
-- **WebSocket 作为未来升级路径**：当需要双向通信（如远程控制）时再引入
+**用户需求：后续迟早需要双向实时通讯**
 
-**为什么 SSE 而非 WebSocket？**
-1. ENCV 场景主要是服务端→客户端推送（任务进度、文件变更通知），不需要双向通信
-2. SSE 基于 HTTP，无需升级协议，Go 后端实现简单（`text/event-stream`）
-3. SSE 自动重连，浏览器原生支持
-4. 前端 `EventSource` API 极简，无需额外依赖
+这意味着：
+- 远程控制（手机→Go daemon 发指令）
+- 实时日志推送（Go daemon→手机）
+- 任务交互（暂停/恢复/优先级调整）
+- 文件操作通知（上传/下载进度）
+
+**结论：直接上 WebSocket，一步到位**
+
+理由：
+1. 既然双向通讯是确定需求，先用 SSE 再迁移 WS 是重复工作
+2. Go 后端用 `gorilla/websocket` 或 `nhooyr.io/websocket` 实现极简
+3. 前端原生 `WebSocket` API 零依赖，Capacitor WebView 完全支持
+4. WebSocket 连接建立后，SSE 能做的 WS 都能做，且额外支持客户端→服务端推送
+
+### Capacitor 的 WebSocket 支持
+
+Capacitor 本身**不提供**内置 WebSocket 插件，但有两个层面：
+
+1. **WebView 层（推荐）**：直接使用浏览器原生 `WebSocket` API
+   - Capacitor WebView 完全支持 WSS/WS 协议
+   - 零额外依赖，性能最优
+   - 本项目 Go daemon 运行在 localhost，`ws://127.0.0.1:2025/ws` 完全可用
+
+2. **Native 层插件**（仅特殊场景需要）：
+   - `@miaz/capacitor-websocket` — 跨平台原生 WS 实现（3 年未更新，不推荐）
+   - `capacitor-foreground-websocket` — 前台服务 WS，适合后台保活场景
+   - `capacitor-signalr` — SignalR 原生客户端（.NET 后端专用）
+
+**本项目推荐 WebView 层原生 WebSocket**，原因：
+- Go daemon 在 localhost，不存在跨域/证书问题
+- 不需要后台保活（App 在前台时才需要实时通讯）
+- 零依赖、零维护负担
 
 ### 问题 2：本地预览
 
-当前环境是远程沙箱，可以通过 `vite dev` 启动开发服务器，配合 `OpenPreview` 工具暴露端口给外部访问。
-
-**可行性**：✅ 完全可行
-- Vite dev server 监听 `0.0.0.0:5173`
-- 通过 `OpenPreview` 激活预览
-- 可实时查看所有页面效果（暗黑模式、文件浏览、播放器等）
-- 无需 Go 后端也能预览 UI（API 调用会失败但 UI 正常渲染）
+当前沙箱环境完全支持：
+- `vite dev` 监听 `0.0.0.0:5173`
+- `OpenPreview` 工具激活端口
+- 无需 Go 后端也能预览 UI（API 调用失败但页面正常渲染）
 
 ## 实现计划
 
-### 第一步：重构 useServerStatus — 指数退避轮询
+### 第一步：新建 WebSocket 连接管理器
 
-**修改文件：** `src/composables/useServerStatus.ts`
-
-**实现细节：**
-1. 移除固定间隔轮询
-2. 实现"指数退避"策略：
-   - 在线时：30 秒检查一次
-   - 离线时：首次 5s → 10s → 20s → 30s → 最大 60s
-   - 在线恢复后重置为 30s
-3. 使用 `setTimeout` 递归替代 `setInterval`，每次检查完再安排下一次
-4. 保持 `isOnline` ref 和 `checkStatus()` 接口不变
-
-### 第二步：新增 SSE 实时事件系统
-
-**新建文件：** `src/composables/useEventSource.ts`
+**新建文件：** `src/composables/useWebSocket.ts`
 
 **实现细节：**
-1. 封装 `EventSource` 连接管理：
-   - `connect()` — 建立 SSE 连接到 `{baseUrl}/api/events`
+1. WebSocket 连接生命周期管理：
+   - `connect()` — 建立 WS 连接到 `ws://{baseUrl}/ws`
    - `disconnect()` — 关闭连接
-   - 自动重连（利用 EventSource 内置重连 + 自定义退避）
-   - 连接状态 `connectionState` ref：`connecting` | `connected` | `disconnected`
-2. 事件分发：
-   - 监听 SSE 事件类型：`task:update`、`file:change`、`server:status`
-   - 使用 Vue 的 `provide/inject` 或自定义事件总线分发到各组件
-3. 类型安全的事件接口
+   - 自动重连：指数退避（1s → 2s → 4s → 8s → 最大 30s）
+   - 连接状态 ref：`connecting` | `connected` | `disconnected`
+2. 消息收发：
+   - `send(type, data)` — 发送类型化消息
+   - `onMessage(type, handler)` — 注册消息处理器
+   - 消息格式：`{ type: string, data: any }`
+3. 心跳机制：
+   - 每 30s 发送 ping，超时 10s 无 pong 则重连
+4. URL 自动从 API base URL 推导（`http://` → `ws://`，`https://` → `wss://`）
 
-### 第三步：新增事件总线
+### 第二步：新建类型安全事件总线
 
 **新建文件：** `src/composables/useEventBus.ts`
 
 **实现细节：**
-1. 轻量级 TypeScript 事件总线（基于 Vue 的 `mitt` 模式或手写）
+1. 轻量级泛型事件总线（无第三方依赖）
 2. 类型定义：
    ```typescript
    interface EncvEvents {
-     'task:update': EncvTask
-     'file:change': { path: string; action: string }
+     'task:update': { id: string; type: string; status: string; progress: number }
+     'task:created': { id: string; type: string; sourcePath: string }
+     'task:completed': { id: string; error?: string }
+     'file:change': { path: string; action: 'create' | 'delete' | 'modify' }
      'server:status': { online: boolean }
+     'log:message': { level: string; message: string }
    }
    ```
-3. `on(event, handler)` / `off(event, handler)` / `emit(event, data)`
+3. `on<K>(event: K, handler)` / `off<K>(event: K, handler)` / `emit<K>(event: K, data)`
 
-### 第四步：Tasks 页面接入实时更新
+### 第三步：重构 useServerStatus
+
+**修改文件：** `src/composables/useServerStatus.ts`
+
+**实现细节：**
+1. 移除 `setInterval` 轮询
+2. WS 连接成功时 → `isOnline = true`
+3. WS 断开时 → `isOnline = false`
+4. 监听 `server:status` 事件更新状态
+5. 保留 `checkStatus()` 作为手动检查的兜底（首次启动 WS 未连接时使用）
+6. 首次加载时用 HTTP `/health` 检查，WS 连接后切换到 WS 驱动
+
+### 第四步：App.vue 初始化 WebSocket
+
+**修改文件：** `src/App.vue`
+
+**实现细节：**
+1. 在 `onMounted` 中初始化 WebSocket 连接
+2. 将 WS 消息分发到事件总线
+3. `onUnmounted` 中断开连接
+
+### 第五步：Tasks 页面接入实时更新
 
 **修改文件：** `src/views/Tasks.vue`
 
 **实现细节：**
-1. 监听 `task:update` 事件，实时更新任务列表中对应任务的状态和进度
-2. 保留下拉刷新作为兜底
-3. 运行中的任务不再需要手动刷新
+1. 监听 `task:update` 事件，实时更新对应任务的状态和进度
+2. 监听 `task:created` 事件，新任务自动出现在列表
+3. 监听 `task:completed` 事件，更新完成状态
+4. 保留下拉刷新作为兜底
 
-### 第五步：Files 页面接入文件变更通知
+### 第六步：Files 页面接入文件变更通知
 
 **修改文件：** `src/views/Files.vue`
 
@@ -102,30 +134,22 @@
 1. 监听 `file:change` 事件，当当前目录下文件变化时自动刷新列表
 2. 保留下拉刷新作为兜底
 
-### 第六步：useServerStatus 接入 SSE 状态推送
-
-**修改文件：** `src/composables/useServerStatus.ts`
-
-**实现细节：**
-1. 当 SSE 连接成功时，`isOnline` 自动设为 true
-2. 监听 `server:status` 事件更新在线状态
-3. SSE 连接失败时回退到退避轮询
-
-### 第七步：API 层增加 SSE 端点配置
+### 第七步：API 层增加 WebSocket URL 工具
 
 **修改文件：** `src/api/encv.ts`
 
 **实现细节：**
-1. 新增 `getEventSourceUrl()` 函数，返回 SSE 端点 URL
-2. SSE URL 使用与 API 相同的 base URL
+1. 新增 `getWebSocketUrl()` 函数
+2. 将 `http://` 替换为 `ws://`，`https://` 替换为 `wss://`
+3. 路径为 `/ws`
 
-### 第八步：启动本地预览
+### 第八步：本地预览
 
 **操作步骤：**
-1. 修改 `vite.config.ts`，添加 `host: '0.0.0.0'` 使 dev server 监听所有接口
+1. 修改 `vite.config.ts`，添加 `host: '0.0.0.0'`
 2. 运行 `npm run dev` 启动 Vite 开发服务器
-3. 使用 `OpenPreview` 工具激活预览
-4. 在浏览器中查看所有页面效果
+3. 使用 `OpenPreview` 激活预览
+4. 浏览器中查看所有页面效果
 
 ### 第九步：构建验证
 
@@ -136,24 +160,32 @@
 
 | 操作 | 文件路径 | 说明 |
 |------|---------|------|
-| 修改 | `src/composables/useServerStatus.ts` | 指数退避轮询 + SSE 状态 |
-| 新建 | `src/composables/useEventSource.ts` | SSE 连接管理 |
+| 新建 | `src/composables/useWebSocket.ts` | WebSocket 连接管理器 |
 | 新建 | `src/composables/useEventBus.ts` | 类型安全事件总线 |
-| 修改 | `src/views/Tasks.vue` | 接入 task:update 实时更新 |
-| 修改 | `src/views/Files.vue` | 接入 file:change 实时刷新 |
-| 修改 | `src/api/encv.ts` | 新增 SSE URL 函数 |
+| 修改 | `src/composables/useServerStatus.ts` | WS 驱动状态 + HTTP 兜底 |
+| 修改 | `src/App.vue` | 初始化 WS + 事件分发 |
+| 修改 | `src/views/Tasks.vue` | 接入 task 实时更新 |
+| 修改 | `src/views/Files.vue` | 接入 file 变更通知 |
+| 修改 | `src/api/encv.ts` | 新增 WS URL 工具函数 |
 | 修改 | `vite.config.ts` | 添加 host: '0.0.0.0' |
-| 修改 | `src/App.vue` | 初始化 SSE 连接 |
 
 ## 执行顺序
 
 1. 新建事件总线 `useEventBus.ts`
-2. 新建 SSE 管理 `useEventSource.ts`
-3. 扩展 API 层 `encv.ts`
-4. 重构 `useServerStatus.ts`（退避轮询 + SSE）
-5. 修改 `App.vue` 初始化 SSE
-6. 修改 `Tasks.vue` 接入实时更新
-7. 修改 `Files.vue` 接入文件变更通知
-8. 修改 `vite.config.ts` 添加 host
+2. 新建 WebSocket 管理器 `useWebSocket.ts`
+3. 扩展 API 层 `encv.ts`（WS URL 函数）
+4. 重构 `useServerStatus.ts`
+5. 修改 `App.vue`（初始化 WS + 事件分发）
+6. 修改 `Tasks.vue`（接入实时更新）
+7. 修改 `Files.vue`（接入文件变更通知）
+8. 修改 `vite.config.ts`（添加 host）
 9. 启动 dev server + OpenPreview 预览
 10. 构建验证
+
+## 未来扩展
+
+WebSocket 双向通讯为以下场景预留了通道：
+- **远程控制**：前端发送 `{ type: "command", data: { action: "encrypt", path: "..." } }`
+- **实时日志**：Go daemon 推送 `{ type: "log:message", data: { level: "info", message: "..." } }`
+- **进度推送**：Go daemon 推送 `{ type: "task:update", data: { id: "...", progress: 45 } }`
+- **文件监控**：Go daemon 推送 `{ type: "file:change", data: { path: "...", action: "modify" } }`

@@ -75,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   IonPage,
@@ -116,6 +116,7 @@ import {
   getFileCategory,
 } from '@/api/encv'
 import type { FileItem } from '@/api/encv'
+import { eventBus } from '@/composables/useEventBus'
 
 const router = useRouter()
 const serverOnline = ref(false)
@@ -243,8 +244,20 @@ async function handleFileClick(file: FileItem) {
   }
 }
 
+function onFileChange(data: { path: string; action: string }) {
+  const dir = data.path.substring(0, data.path.lastIndexOf('/')) || '/'
+  if (dir === currentPath.value) {
+    loadFiles()
+  }
+}
+
 onMounted(() => {
   loadFiles()
+  eventBus.on('file:change', onFileChange)
+})
+
+onUnmounted(() => {
+  eventBus.off('file:change', onFileChange)
 })
 </script>
 

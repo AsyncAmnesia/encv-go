@@ -1,45 +1,38 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { checkServerStatus } from '@/api/encv'
+import { eventBus } from './useEventBus'
+import { useWebSocket } from './useWebSocket'
 
 const isOnline = ref(false)
-let pollingTimer: ReturnType<typeof setInterval> | null = null
-let activeCount = 0
+let initialized = false
+
+function onServerStatus(data: { online: boolean }) {
+  isOnline.value = data.online
+}
 
 async function checkStatus() {
   isOnline.value = await checkServerStatus()
 }
 
-function startPolling(intervalMs = 10000) {
-  if (pollingTimer) return
-  checkStatus()
-  pollingTimer = setInterval(checkStatus, intervalMs)
-}
-
-function stopPolling() {
-  if (pollingTimer) {
-    clearInterval(pollingTimer)
-    pollingTimer = null
-  }
-}
-
 export function useServerStatus() {
-  onMounted(() => {
-    activeCount++
-    if (activeCount === 1) {
-      startPolling()
+  const { connect, connectionState } = useWebSocket()
+
+  onMounted(async () => {
+    if (!initialized) {
+      initialized = true
+      await checkStatus()
+      connect()
+      eventBus.on('server:status', onServerStatus)
     }
   })
 
   onUnmounted(() => {
-    activeCount--
-    if (activeCount <= 0) {
-      activeCount = 0
-      stopPolling()
-    }
+    // keep connection alive across page navigations
   })
 
   return {
     isOnline,
     checkStatus,
+    connectionState,
   }
 }
