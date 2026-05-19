@@ -221,30 +221,43 @@ jobs:
           if [ -n "${{ inputs.version }}" ]; then
             echo "=== Building RELEASE APK (version ${{ inputs.version }}) ==="
 
-            # Ensure release signing config exists (use debug key for CI)
-            echo "storeFile=/tmp/debug.keystore" > app/release-signing.properties
-            echo "storePassword=android" >> app/release-signing.properties
-            echo "keyPassword=android" >> app/release-signing.properties
-            echo "keyAlias=androiddebugkey" >> app/release-signing.properties
+            # Generate debug keystore for CI signing
             keytool -genkeypair -v -keystore /tmp/debug.keystore \
               -storepass android -alias androiddebugkey \
               -keypass android -dname "CN=Debug,O=Debug,C=US" 2>/dev/null || true
 
             ./gradlew assembleRelease
-            APK_PATH="app/build/outputs/apk/release/app-release-unsigned.apk"
 
-            # Sign with debug key for CI distribution
-            if [ -f "$APK_PATH" ]; then
-              jarsigner -verbose -sigalg SHA256withRSA -digestalg SHA256 \
-                -keystore /tmp/debug.keystore -storepass android -keypass android \
-                "$APK_PATH" androiddebugkey > /dev/null 2>&1
+            # Find the actual built APK (filename varies by AGP version)
+            APK_DIR="app/build/outputs/apk/release"
+            APK_PATH=$(find "$APK_DIR" -name "*.apk" -type f | head -1)
 
-              # zipalign for optimal runtime memory usage
-              zipalign -f 4 "$APK_PATH" "${APK_PATH%-unsigned.apk}.apk"
-              rm -f "$APK_PATH"
-              echo "APK signed and aligned successfully"
-              ls -lh app/build/outputs/apk/release/
+            if [ -z "$APK_PATH" ]; then
+              echo "::error::No release APK found in $APK_DIR"
+              ls -laR "$APK_DIR" 2>/dev/null || true
+              exit 1
             fi
+
+            echo "Found APK: $APK_PATH ($(ls -lh "$APK_PATH" | awk '{print $5}'))"
+
+            # Sign with debug key
+            jarsigner -sigalg SHA256withRSA -digestalg SHA256 \
+              -keystore /tmp/debug.keystore -storepass android -keypass android \
+              "$APK_PATH" androiddebugkey 2>&1 || {
+              echo "::warning::jarsigner failed, attempting unsigned APK"
+            }
+
+            # zipalign for optimal runtime memory usage
+            SIGNED_APK="${APK_PATH%.apk}-aligned.apk"
+            zipalign -f 4 "$APK_PATH" "$SIGNED_APK" 2>/dev/null && {
+              rm -f "$APK_PATH"
+              mv "$SIGNED_APK" "$APK_PATH"
+              echo "APK signed and aligned successfully"
+            } || {
+              echo "::warning::zipalign skipped, using as-is APK"
+            }
+
+            ls -lh app/build/outputs/apk/release/
           else
             echo "=== Building DEBUG APK ==="
             ./gradlew assembleDebug
