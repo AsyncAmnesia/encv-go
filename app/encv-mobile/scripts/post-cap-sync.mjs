@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -16,7 +16,7 @@ function patchFile(filePath, transformer) {
 
 console.log('encv-post-cap-sync: applying Android customizations...')
 
-// --- Root build.gradle: kotlin plugin ---
+// --- Root build.gradle: kotlin plugin + JitPack repository ---
 patchFile(join(ANDROID_DIR, 'build.gradle'), (c) => {
   if (!c.includes('kotlin-gradle-plugin')) {
     c = c.replace(
@@ -24,12 +24,16 @@ patchFile(join(ANDROID_DIR, 'build.gradle'), (c) => {
       "dependencies {\n        classpath \"org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0\"",
     )
   }
+  if (!c.includes('jitpack.io')) {
+    c = c.replace(
+      /allprojects\s*\{\s*repositories\s*\{/,
+      "allprojects {\n    repositories {\n        maven { url 'https://jitpack.io' }",
+    )
+  }
   return c
 })
 
 // --- app/build.gradle ---
-// IMPORTANT: Capacitor cap sync does NOT overwrite this file (confirmed from source)
-// So our modifications persist across builds — all changes are idempotent
 const version = process.env.ENCV_VERSION || ''
 
 patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
@@ -41,11 +45,25 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
   }
 
-  // 2. kotlin-stdlib dependency
+  // 2. kotlin-stdlib dependency + Logcat debug library
   if (!c.includes('kotlin-stdlib')) {
     c = c.replace(
       'dependencies {',
       "dependencies {\n    implementation \"org.jetbrains.kotlin:kotlin-stdlib:2.1.0\"",
+    )
+  }
+  if (!c.includes('Logcat')) {
+    c = c.replace(
+      'dependencies {',
+      "dependencies {\n    debugImplementation 'com.github.getActivity:Logcat:13.0'",
+    )
+  }
+
+  // 2b. compileOptions (required by Logcat)
+  if (!c.includes('compileOptions')) {
+    c = c.replace(
+      /defaultConfig\s*\{/,
+      "compileOptions {\n        targetCompatibility JavaVersion.VERSION_1_8\n        sourceCompatibility JavaVersion.VERSION_1_8\n    }\n\n    defaultConfig {",
     )
   }
 
@@ -65,8 +83,6 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
   }
 
   // 5. Signing config (only when building release)
-  // Uses EXACT string anchor "minifyEnabled false" from Capacitor template
-  // This is safe because cap sync never regenerates this file
   if (version && c.includes('minifyEnabled false')) {
     const scBlock =
       "\n" +
@@ -91,6 +107,37 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
 
   return c
 })
+
+// --- Debug-only AndroidManifest.xml for Logcat dark theme ---
+const debugManifestDir = join(ANDROID_DIR, 'app', 'src', 'debug')
+const debugManifestPath = join(debugManifestDir, 'AndroidManifest.xml')
+if (!existsSync(debugManifestPath)) {
+  mkdirSync(debugManifestDir, { recursive: true })
+  const debugManifest = `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <activity
+            android:name="com.hjq.logcat.LogcatActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:launchMode="singleInstance"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.AppCompat.NoActionBar"
+            tools:node="replace" />
+
+        <meta-data
+            android:name="LogcatWindowEntrance"
+            android:value="false" />
+        <meta-data
+            android:name="LogcatNotifyEntrance"
+            android:value="true" />
+    </application>
+
+</manifest>`
+  writeFileSync(debugManifestPath, debugManifest, 'utf-8')
+  console.log(`  created ${debugManifestPath}`)
+}
 
 if (version) {
   console.log(`  release mode v${version}`)

@@ -16,25 +16,57 @@ class MainActivity : BridgeActivity() {
         private const val TAG = "ENCV-go"
         private const val BINARY_NAME = "encv-go"
         private const val DEFAULT_PORT = 2025
+        private const val MAX_PORT_SCAN = 10
     }
 
     private var goProcess: Process? = null
-    private var backendReady = false
     private var backendPort = DEFAULT_PORT
+    private var configPort = DEFAULT_PORT
+    private var backendReady = false
+    private var intentionallyStopped = false
+    private var readyCallback: ((Int) -> Unit)? = null
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        registerPlugin(GoProcessPlugin::class.java)
         super.onCreate(savedInstanceState)
+        startGoDaemon()
+    }
+
+    fun isBackendRunning(): Boolean = backendReady && goProcess?.isAlive == true
+
+    fun getBackendPort(): Int = if (backendReady) backendPort else 0
+
+    fun stopGoDaemon() {
+        intentionallyStopped = true
+        backendReady = false
+        goProcess?.let {
+            if (it.isAlive) {
+                it.destroyForcibly()
+                Log.i(TAG, "Go daemon stopped by user")
+            }
+        }
+        goProcess = null
+        notifyFrontend(0, "stopped")
+    }
+
+    fun restartGoDaemon(callback: (Int) -> Unit) {
+        stopGoDaemon()
+        intentionallyStopped = false
+        readyCallback = callback
         startGoDaemon()
     }
 
     private fun startGoDaemon() {
         try {
             ensureConfigExists()
-            backendPort = readConfigPort()
+            configPort = readConfigPort()
 
             val binary = findExecutableBinary()
                 ?: run {
                     Log.e(TAG, "Failed to extract Go binary to any executable location")
+                    notifyFrontend(0, "no_binary")
+                    readyCallback?.invoke(-1)
+                    readyCallback = null
                     return
                 }
 
@@ -69,42 +101,64 @@ class MainActivity : BridgeActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start ENCV-go daemon", e)
             e.message?.split("\n")?.forEach { Log.e(TAG, it) }
+            notifyFrontend(0, "start_failed")
+            readyCallback?.invoke(-1)
+            readyCallback = null
         }
     }
 
     private fun waitForBackendAndNotify() {
         for (attempt in 1..60) {
-            try {
-                val url = URL("http://127.0.0.1:$backendPort/health")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.connectTimeout = 500
-                conn.readTimeout = 500
-                if (conn.responseCode == 200) {
+            if (intentionallyStopped) return
+            for (offset in 0..MAX_PORT_SCAN) {
+                val port = configPort + offset
+                if (checkHealth(port)) {
+                    backendPort = port
                     backendReady = true
-                    Log.i(TAG, "Backend is ready on port $backendPort (attempt $attempt)")
-                    notifyBackendReady(backendPort)
-                    conn.disconnect()
+                    Log.i(TAG, "Backend is ready on port $port (attempt $attempt, offset $offset)")
+                    notifyFrontend(port, null)
+                    readyCallback?.invoke(port)
+                    readyCallback = null
                     return
                 }
-                conn.disconnect()
-            } catch (e: Exception) {
-                // Backend not ready yet
             }
-            Thread.sleep(500)
+            try {
+                Thread.sleep(500)
+            } catch (e: InterruptedException) {
+                return
+            }
         }
         Log.w(TAG, "Backend failed to start within 30 seconds")
-        notifyBackendReady(-1)
+        notifyFrontend(0, "timeout")
+        readyCallback?.invoke(-1)
+        readyCallback = null
     }
 
-    private fun notifyBackendReady(port: Int) {
+    private fun checkHealth(port: Int): Boolean {
+        return try {
+            val url = URL("http://127.0.0.1:$port/health")
+            val conn = url.openConnection() as HttpURLConnection
+            conn.connectTimeout = 300
+            conn.readTimeout = 300
+            val code = conn.responseCode
+            conn.disconnect()
+            code == 200
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun notifyFrontend(port: Int, error: String?) {
         runOnUiThread {
             try {
-                val detail = if (port > 0) "{\"port\":$port}" else "{\"port\":0,\"error\":\"timeout\"}"
-                val js = "window.dispatchEvent(new CustomEvent('encv:backend-ready',{detail:$detail}))"
+                val detail = JSONObject()
+                detail.put("port", port)
+                if (error != null) detail.put("error", error)
+                val js = "window.dispatchEvent(new CustomEvent('encv:backend-ready',{detail:${detail.toString()}}))"
                 bridge.webView.evaluateJavascript(js, null)
-                Log.i(TAG, "Notified frontend via native bridge: port=$port")
+                Log.i(TAG, "Notified frontend: port=$port, error=$error")
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to notify frontend via bridge", e)
+                Log.w(TAG, "Failed to notify frontend", e)
             }
         }
     }

@@ -52,15 +52,23 @@
               <ion-badge :color="serverOnline ? 'success' : 'danger'">
                 {{ serverOnline ? t('settings.online') : t('settings.offline') }}
               </ion-badge>
+              <span v-if="serverOnline && backendPort" class="port-info">:{{ backendPort }}</span>
             </p>
             <p v-if="!serverOnline && connectionError" class="connection-error">
               {{ connectionError }}
             </p>
           </ion-label>
-          <ion-button fill="outline" slot="end" @click="checkServer">
-            <ion-icon :icon="refreshIcon" slot="start"></ion-icon>
-            {{ t('settings.check') }}
-          </ion-button>
+          <div slot="end" class="server-controls">
+            <ion-button fill="outline" size="small" @click="checkServer">
+              <ion-icon :icon="refreshIcon" slot="icon-only"></ion-icon>
+            </ion-button>
+            <ion-button v-if="serverOnline" fill="outline" size="small" color="danger" @click="handleStop">
+              <ion-icon :icon="stopIcon" slot="icon-only"></ion-icon>
+            </ion-button>
+            <ion-button v-if="!serverOnline" fill="outline" size="small" color="warning" @click="handleRestart">
+              <ion-icon :icon="playIcon" slot="icon-only"></ion-icon>
+            </ion-button>
+          </div>
         </ion-item>
       </ion-list>
 
@@ -297,6 +305,8 @@ import {
   textOutline,
   personOutline,
   folderOpen,
+  stop as stopIcon,
+  play as playIcon,
 } from 'ionicons/icons'
 import { useTheme } from '@/composables/useTheme'
 import { useServerStatus } from '@/composables/useServerStatus'
@@ -306,7 +316,7 @@ import { setApiBaseUrl, getServerUrl } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
 
 const { isDark, toggleDark } = useTheme()
-const { isOnline: serverOnline, lastError: connectionError, checkStatus } = useServerStatus()
+const { isOnline: serverOnline, lastError: connectionError, checkStatus, restartBackend, stopBackend, backendPort } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
 const { t, tField, tSectionTitle, setLocale, locale } = useI18n()
 
@@ -409,6 +419,45 @@ async function checkServer() {
     color: serverOnline.value ? 'success' : 'danger',
   })
   await toast.present()
+}
+
+async function handleRestart() {
+  const toast = await toastController.create({
+    message: t('settings.restarting'),
+    duration: 30000,
+  })
+  await toast.present()
+  const success = await restartBackend()
+  await toast.dismiss()
+  const result = await toastController.create({
+    message: success ? t('settings.restartSuccess') : t('settings.restartFailed'),
+    duration: 2000,
+    color: success ? 'success' : 'danger',
+  })
+  await result.present()
+}
+
+async function handleStop() {
+  const alert = await alertController.create({
+    header: t('settings.stopConfirm'),
+    buttons: [
+      { text: t('settings.cancel'), role: 'cancel' },
+      {
+        text: t('settings.stop'),
+        role: 'destructive',
+        handler: async () => {
+          const success = await stopBackend()
+          const toast = await toastController.create({
+            message: success ? t('settings.stopped') : t('settings.stopFailed'),
+            duration: 2000,
+            color: success ? 'success' : 'danger',
+          })
+          await toast.present()
+        },
+      },
+    ],
+  })
+  await alert.present()
 }
 
 function openGitHub() {
@@ -530,5 +579,17 @@ watch(serverOnline, async (online) => {
   color: var(--ion-color-danger);
   font-size: 12px;
   margin-top: 4px;
+}
+
+.port-info {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-left: 4px;
+}
+
+.server-controls {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
 }
 </style>
