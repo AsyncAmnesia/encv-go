@@ -237,12 +237,10 @@ async function handleFileClick(file: FileItem) {
       query: { path: file.path, name: file.name },
     })
   } else {
-    const toast = await toastController.create({
-      message: t('files.previewNotSupported', { name: file.name }),
-      duration: 2000,
-      color: 'medium',
+    router.push({
+      path: '/tabs/preview',
+      query: { path: file.path, name: file.name },
     })
-    await toast.present()
   }
 }
 

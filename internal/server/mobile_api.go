@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -249,6 +250,129 @@ func (s *Server) handleTestWebDAV(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
 	}
+}
+
+func (s *Server) handleReadFileContent(w http.ResponseWriter, r *http.Request) {
+	queryPath := r.URL.Query().Get("path")
+	if queryPath == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "'path' query parameter is required"})
+		return
+	}
+
+	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to stat file"})
+		return
+	}
+
+	if info.IsDir() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "path is a directory"})
+		return
+	}
+
+	maxSize := int64(2 << 20)
+	if info.Size() > maxSize {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "file too large", "maxSize": maxSize, "actualSize": info.Size()})
+		return
+	}
+
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		slog.Error("ReadFile failed", "path", absPath, "error", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to read file"})
+		return
+	}
+
+	content := string(data)
+	encoding := "utf-8"
+	if !isValidUTF8(data) {
+		content = string(data)
+		encoding = "binary"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"name":     filepath.Base(absPath),
+		"path":     queryPath,
+		"size":     info.Size(),
+		"content":  content,
+		"encoding": encoding,
+	})
+}
+
+func isValidUTF8(data []byte) bool {
+	for i := 0; i < len(data); {
+		if data[i] < 0x80 {
+			i++
+			continue
+		}
+		_, size := decodeUTF8Rune(data[i:])
+		if size == 0 {
+			return false
+		}
+		i += size
+	}
+	return true
+}
+
+func decodeUTF8Rune(data []byte) (rune, int) {
+	if len(data) == 0 {
+		return 0, 0
+	}
+	b := data[0]
+	if b < 0x80 {
+		return rune(b), 1
+	}
+	var n uint32
+	var size int
+	switch {
+	case b&0xe0 == 0xc0:
+		n = uint32(b & 0x1f)
+		size = 2
+	case b&0xf0 == 0xe0:
+		n = uint32(b & 0x0f)
+		size = 3
+	case b&0xf8 == 0xf0:
+		n = uint32(b & 0x07)
+		size = 4
+	default:
+		return 0, 0
+	}
+	if len(data) < size {
+		return 0, 0
+	}
+	for i := 1; i < size; i++ {
+		if data[i]&0xc0 != 0x80 {
+			return 0, 0
+		}
+		n = n<<6 | uint32(data[i]&0x3f)
+	}
+	return rune(n), size
 }
 
 func (s *Server) handleTestWebDAVPost(w http.ResponseWriter, r *http.Request) {

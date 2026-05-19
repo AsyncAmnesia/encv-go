@@ -162,6 +162,12 @@ const messages: Record<Locale, Record<string, string>> = {
     'devlogs.disconnected': '未连接',
     'devlogs.noLogs': '暂无日志',
     'devlogs.noLogsDesc': '日志输出将显示在这里。',
+
+    'filePreview.loading': '正在加载文件...',
+    'filePreview.loadError': '加载失败',
+    'filePreview.retry': '重试',
+    'filePreview.noPath': '未指定文件路径',
+    'filePreview.copied': '已复制到剪贴板',
   },
   'en': {
     'tabs.files': 'Files',
@@ -322,6 +328,12 @@ const messages: Record<Locale, Record<string, string>> = {
     'devlogs.disconnected': 'Disconnected',
     'devlogs.noLogs': 'No Logs',
     'devlogs.noLogsDesc': 'Log output will appear here.',
+
+    'filePreview.loading': 'Loading file...',
+    'filePreview.loadError': 'Load Error',
+    'filePreview.retry': 'Retry',
+    'filePreview.noPath': 'No file path specified',
+    'filePreview.copied': 'Copied to clipboard',
   },
 }
 

@@ -80,6 +80,23 @@ export async function deleteFile(path: string): Promise<void> {
   }
 }
 
+export interface FileContentResponse {
+  name: string
+  path: string
+  size: number
+  content: string
+  encoding: string
+}
+
+export async function readFileContent(path: string): Promise<FileContentResponse> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/file?path=${encodeURIComponent(path)}`)
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return await response.json()
+}
+
 export type TaskType = 'encrypt' | 'decrypt'
 export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed'
 

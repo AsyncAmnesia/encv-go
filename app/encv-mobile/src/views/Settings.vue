@@ -155,6 +155,7 @@
                   :label="tField('level')"
                   label-placement="stacked"
                   interface="action-sheet"
+                  mode="ios"
                   @ionChange="setValue(['log', 'level'], $event.detail.value)"
                 >
                   <ion-select-option value="debug">DEBUG</ion-select-option>

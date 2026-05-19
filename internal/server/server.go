@@ -107,6 +107,7 @@ func (s *Server) Start(version string) (string, error) {
 	mux.HandleFunc("/api/config", s.handleConfigAPI)
 	mux.HandleFunc("/api/config/schema", s.handleConfigSchemaAPI)
 	mux.HandleFunc("/api/files", s.handleMobileFiles)
+	mux.HandleFunc("/api/file", s.handleReadFileContent)
 	mux.HandleFunc("/api/tasks", s.handleMobileTasks)
 	mux.HandleFunc("/api/tasks/", s.handleMobileTasks)
 	mux.HandleFunc("/api/webdav/test", s.handleTestWebDAV)

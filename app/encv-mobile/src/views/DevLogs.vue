@@ -100,11 +100,10 @@ import {
   IonIcon, IonBadge, IonToggle, IonFooter, alertController,
 } from '@ionic/vue'
 import { trashOutline } from 'ionicons/icons'
-import { useEventBus } from '@/composables/useEventBus'
+import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
 
 const { t } = useI18n()
-const eventBus = useEventBus()
 
 const activeTab = ref<'frontend' | 'backend'>('frontend')
 const searchText = ref('')
