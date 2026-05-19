@@ -1,14 +1,15 @@
-// encv-release.gradle — Release build overrides
-// Applied via 'apply from' in post-cap-sync hook
-// This file is NEVER touched by cap sync, so it stays stable
+// encv-release.gradle — Release build configuration
+// Applied via 'apply from: "../encv-release.gradle"' in app/build.gradle
+// This file is NEVER touched by Capacitor cap sync
+// Signing credentials come from android/gradle.properties (also not touched by cap sync)
 
 android {
     signingConfigs {
         release {
-            storeFile file('../keystore/release.jks')
-            storePassword 'encv2025'
-            keyAlias 'encvrelease'
-            keyPassword 'encv2025'
+            storeFile file(project.property('ENCV_STORE_FILE').toString())
+            storePassword project.property('ENCV_STORE_PASSWORD').toString()
+            keyAlias project.property('ENCV_KEY_ALIAS').toString()
+            keyPassword project.property('ENCV_KEY_PASSWORD').toString()
         }
     }
 
@@ -17,14 +18,11 @@ android {
     }
 }
 
-android.defaultConfig {
-    // These will be overwritten by ENCV_VERSION env at sync time
-}
-
 android.buildTypes {
     release {
         minifyEnabled true
         shrinkResources true
+        proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         signingConfig signingConfigs.release
     }
 }

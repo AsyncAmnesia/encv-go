@@ -105,18 +105,19 @@ jobs:
           echo "Android project ready:"
           ls -la android/*.gradle android/app/*.gradle
 
-      # === Non-Gradle customizations (after cap sync, which regenerates android/) ===
-      - name: Copy assets, overlay files, and release gradle config
+      # === Non-Gradle customizations (after cap sync) ===
+      - name: Copy assets, overlay files, and release config
         run: |
           mkdir -p app/encv-mobile/android/app/src/main/assets
           cp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/assets/encv-go
           cp app/encv-mobile/assets/config.mobile.json app/encv-mobile/android/app/src/main/assets/config.mobile.json
-          # encv-release.gradle: signing + minify + shrink (stable in android-overlay/)
+          # Release config files (NEVER touched by cap sync — confirmed from source)
           cp app/encv-mobile/android-overlay/encv-release.gradle app/encv-mobile/android/encv-release.gradle
+          cp app/encv-mobile/android-overlay/gradle.properties app/encv-mobile/android/gradle.properties
           echo "Assets:"
           ls -lhR app/encv-mobile/android/app/src/main/assets/
           echo "Release config:"
-          ls -lh app/encv-mobile/android/encv-release.gradle
+          ls -lh app/encv-mobile/android/encv-release.gradle app/encv-mobile/android/gradle.properties
 
       - name: Apply Android overlay (MainActivity + permissions + network config)
         run: |

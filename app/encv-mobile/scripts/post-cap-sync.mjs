@@ -25,7 +25,7 @@ patchFile(join(ANDROID_DIR, 'build.gradle'), (c) => {
   )
 })
 
-// --- app/build.gradle ---
+// --- app/build.gradle: MINIMAL changes ---
 const version = process.env.ENCV_VERSION || ''
 
 patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
@@ -45,43 +45,17 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
   }
 
-  // 3. ndk abiFilters
-  if (!c.includes('arm64-v8a')) {
-    c = c.replace(
-      /defaultConfig\s*\{/,
-      "defaultConfig {\n        ndk {\n            abiFilters 'arm64-v8a'\n        }",
-    )
+  // 3. Apply our release config (idempotent — cap sync does NOT overwrite this file)
+  const applyLine = "apply from: '../encv-release.gradle'"
+  if (!c.includes('encv-release.gradle')) {
+    c = c.replace(/(plugins\s*\{[^}]*\})/, '$1\n\n' + applyLine)
   }
 
-  // 4. version injection
+  // 4. Version injection
   if (version) {
     const vcode = parseInt(version.replace(/\./g, '')) || 1
     c = c.replace(/versionCode\s+\d+/, `versionCode ${vcode}`)
     c = c.replace(/versionName\s+"[^"]*"/, `versionName "${version}"`)
-  }
-
-  // 5. Release signing + optimization (ONLY when version set)
-  if (version && !c.includes('ENCV_RELEASE_PATCHED')) {
-    // 5a. Inject signingConfigs block after "android {" — using exact anchor
-    const scBlock =
-      "\n" +
-      "    signingConfigs {\n" +
-      "        release {\n" +
-      "            storeFile file('../keystore/release.jks')\n" +
-      "            storePassword 'encv2025'\n" +
-      "            keyAlias 'encvrelease'\n" +
-      "            keyPassword 'encv2025'\n" +
-      "        }\n" +
-      "    }\n"
-    c = c.replace("android {", "android {" + scBlock)
-
-    // 5b. Replace release block content — use exact Capacitor-known anchors
-    c = c.replace(
-      "minifyEnabled false",
-      "minifyEnabled true\n        shrinkResources true\n        signingConfig signingConfigs.release\n        ENCV_RELEASE_PATCHED = true",
-    )
-
-    console.log('  release: signing + minify + shrink applied')
   }
 
   return c
