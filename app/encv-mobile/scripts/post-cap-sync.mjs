@@ -63,7 +63,15 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
   if (!c.includes('compileOptions')) {
     c = c.replace(
       /defaultConfig\s*\{/,
-      "compileOptions {\n        targetCompatibility JavaVersion.VERSION_1_8\n        sourceCompatibility JavaVersion.VERSION_1_8\n    }\n\n    defaultConfig {",
+      "compileOptions {\n        targetCompatibility JavaVersion.VERSION_17\n        sourceCompatibility JavaVersion.VERSION_17\n    }\n\n    defaultConfig {",
+    )
+  }
+
+  // 2c. kotlinOptions (required for Kotlin compilation)
+  if (!c.includes('kotlinOptions')) {
+    c = c.replace(
+      /compileOptions\s*\{[^}]*\}/,
+      "compileOptions {\n        targetCompatibility JavaVersion.VERSION_17\n        sourceCompatibility JavaVersion.VERSION_17\n    }\n\n    kotlinOptions {\n        jvmTarget = '17'\n    }",
     )
   }
 
@@ -107,6 +115,32 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
 
   return c
 })
+
+// --- capacitor.plugins.json: register local GoProcessPlugin ---
+const assetsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'assets')
+const pluginsJsonPath = join(assetsDir, 'capacitor.plugins.json')
+const goProcessEntry = JSON.stringify({
+  pkg: 'encv-mobile',
+  classpath: 'com.encvgo.app.GoProcessPlugin'
+})
+
+if (existsSync(pluginsJsonPath)) {
+  let pluginsJson = readFileSync(pluginsJsonPath, 'utf-8')
+  if (!pluginsJson.includes('GoProcessPlugin')) {
+    try {
+      const arr = JSON.parse(pluginsJson)
+      arr.push(JSON.parse(goProcessEntry))
+      writeFileSync(pluginsJsonPath, JSON.stringify(arr, null, 2), 'utf-8')
+      console.log(`  added GoProcessPlugin to capacitor.plugins.json`)
+    } catch (e) {
+      console.warn(`  failed to patch capacitor.plugins.json: ${e.message}`)
+    }
+  }
+} else {
+  mkdirSync(assetsDir, { recursive: true })
+  writeFileSync(pluginsJsonPath, `[${goProcessEntry}]`, 'utf-8')
+  console.log(`  created capacitor.plugins.json with GoProcessPlugin`)
+}
 
 // --- Debug-only AndroidManifest.xml for Logcat dark theme ---
 const debugManifestDir = join(ANDROID_DIR, 'app', 'src', 'debug')

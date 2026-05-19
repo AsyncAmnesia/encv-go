@@ -204,6 +204,10 @@ jobs:
             unzip -l "$APK_PATH" | grep "encv-go" || echo "WARNING: encv-go binary NOT found in APK!"
             echo "=== config.mobile.json in APK ==="
             unzip -l "$APK_PATH" | grep "config.mobile" || echo "WARNING: config.mobile.json NOT found in APK!"
+            echo "=== capacitor.plugins.json in APK ==="
+            unzip -p "$APK_PATH" assets/capacitor.plugins.json || echo "WARNING: capacitor.plugins.json NOT found in APK!"
+            echo "=== GoProcessPlugin class in APK ==="
+            unzip -l "$APK_PATH" | grep "GoProcessPlugin" || echo "WARNING: GoProcessPlugin class NOT found in APK!"
           else
             echo "No APK found to verify"
           fi

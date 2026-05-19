@@ -8,8 +8,6 @@ import android.os.Build
 import android.os.Environment
 import android.provider.Settings
 import android.util.Log
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
@@ -28,12 +26,12 @@ class GoProcessPlugin : Plugin() {
     @PluginMethod
     fun restart(call: PluginCall) {
         Log.d(TAG, "GoProcess.restart() called")
-        val activity = activity as? MainActivity
-        if (activity == null) {
+        val mainActivity = activity as? MainActivity
+        if (mainActivity == null) {
             call.reject("Activity is not MainActivity")
             return
         }
-        activity.restartGoDaemon { port ->
+        mainActivity.restartGoDaemon { port ->
             if (port > 0) {
                 val result = JSObject()
                 result.put("success", true)
@@ -48,12 +46,12 @@ class GoProcessPlugin : Plugin() {
     @PluginMethod
     fun stop(call: PluginCall) {
         Log.d(TAG, "GoProcess.stop() called")
-        val activity = activity as? MainActivity
-        if (activity == null) {
+        val mainActivity = activity as? MainActivity
+        if (mainActivity == null) {
             call.reject("Activity is not MainActivity")
             return
         }
-        activity.stopGoDaemon()
+        mainActivity.stopGoDaemon()
         val result = JSObject()
         result.put("success", true)
         call.resolve(result)
@@ -62,36 +60,32 @@ class GoProcessPlugin : Plugin() {
     @PluginMethod
     fun getStatus(call: PluginCall) {
         Log.d(TAG, "GoProcess.getStatus() called")
-        val activity = activity as? MainActivity
-        if (activity == null) {
+        val mainActivity = activity as? MainActivity
+        if (mainActivity == null) {
             call.reject("Activity is not MainActivity")
             return
         }
         val result = JSObject()
-        result.put("running", activity.isBackendRunning())
-        result.put("port", activity.getBackendPort())
+        result.put("running", mainActivity.isBackendRunning())
+        result.put("port", mainActivity.getBackendPort())
         call.resolve(result)
     }
 
     @PluginMethod
     fun requestNotificationPermission(call: PluginCall) {
         Log.d(TAG, "GoProcess.requestNotificationPermission() called")
-        if (Build.VERSION.SDK_INT < 33) {
-            val result = JSObject()
-            result.put("granted", true)
-            call.resolve(result)
-            return
-        }
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
-            == PackageManager.PERMISSION_GRANTED
-        ) {
-            val result = JSObject()
-            result.put("granted", true)
-            call.resolve(result)
-            return
-        }
-        ActivityCompat.requestPermissions(activity, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
         val result = JSObject()
+        if (Build.VERSION.SDK_INT < 33) {
+            result.put("granted", true)
+            call.resolve(result)
+            return
+        }
+        if (activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            result.put("granted", true)
+            call.resolve(result)
+            return
+        }
+        activity.requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
         result.put("granted", false)
         call.resolve(result)
     }
@@ -99,10 +93,9 @@ class GoProcessPlugin : Plugin() {
     @PluginMethod
     fun requestStoragePermission(call: PluginCall) {
         Log.d(TAG, "GoProcess.requestStoragePermission() called")
+        val result = JSObject()
         if (Build.VERSION.SDK_INT >= 30) {
-            val alreadyGranted = Environment.isExternalStorageManager()
-            if (alreadyGranted) {
-                val result = JSObject()
+            if (Environment.isExternalStorageManager()) {
                 result.put("granted", true)
                 call.resolve(result)
                 return
@@ -115,21 +108,18 @@ class GoProcessPlugin : Plugin() {
                 val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
                 activity.startActivity(intent)
             }
-            val result = JSObject()
             result.put("granted", false)
             result.put("requiresSettings", true)
             call.resolve(result)
         } else {
-            val readGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
-            val writeGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+            val readGranted = activity.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+            val writeGranted = activity.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
             if (readGranted && writeGranted) {
-                val result = JSObject()
                 result.put("granted", true)
                 call.resolve(result)
                 return
             }
-            ActivityCompat.requestPermissions(activity, arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE), 1002)
-            val result = JSObject()
+            activity.requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE), 1002)
             result.put("granted", false)
             call.resolve(result)
         }
@@ -141,7 +131,7 @@ class GoProcessPlugin : Plugin() {
         val result = JSObject()
 
         val notificationGranted = if (Build.VERSION.SDK_INT >= 33) {
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         } else {
             true
         }
@@ -150,7 +140,7 @@ class GoProcessPlugin : Plugin() {
         val storageGranted = if (Build.VERSION.SDK_INT >= 30) {
             Environment.isExternalStorageManager()
         } else {
-            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+            activity.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
         }
         result.put("storage", storageGranted)
 
