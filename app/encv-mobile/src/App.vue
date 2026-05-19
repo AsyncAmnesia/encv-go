@@ -4,6 +4,14 @@
   </ion-app>
 </template>
 
-<script setup>
+<script setup lang="ts">
+import { onMounted } from 'vue'
 import { IonApp, IonRouterOutlet } from '@ionic/vue'
+import { useTheme } from '@/composables/useTheme'
+
+const { initTheme } = useTheme()
+
+onMounted(() => {
+  initTheme()
+})
 </script>

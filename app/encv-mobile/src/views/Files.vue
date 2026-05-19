@@ -2,75 +2,308 @@
   <ion-page>
     <ion-header>
       <ion-toolbar>
+        <ion-buttons slot="start">
+          <ion-button v-if="currentPath !== '/'" @click="goUp">
+            <ion-icon :icon="arrowBack" slot="icon-only"></ion-icon>
+          </ion-button>
+        </ion-buttons>
         <ion-title>Files</ion-title>
       </ion-toolbar>
+      <ion-toolbar v-if="currentPath !== '/'">
+        <div class="breadcrumb-scroll">
+          <div class="breadcrumb">
+            <span class="breadcrumb-item" @click="navigateTo('/')">Root</span>
+            <span v-for="(segment, index) in pathSegments" :key="index" class="breadcrumb-segment">
+              <ion-icon :icon="chevronForward" class="breadcrumb-sep"></ion-icon>
+              <span class="breadcrumb-item" @click="navigateTo(segment.path)">{{ segment.name }}</span>
+            </span>
+          </div>
+        </div>
+      </ion-toolbar>
     </ion-header>
-    <ion-content class="ion-padding">
-      <ion-card v-if="!serverOnline">
-        <ion-card-header>
-          <ion-card-title>Server Offline</ion-card-title>
-        </ion-card-header>
-        <ion-card-content>
-          ENCV server is not running. Please start the server first.
-        </ion-card-content>
-      </ion-card>
 
-      <ion-card v-else>
-        <ion-card-header>
-          <ion-card-title>Encrypted Files</ion-card-title>
-        </ion-card-header>
-        <ion-card-content>
-          <ion-list>
-            <ion-item v-for="file in files" :key="file.path" @click="playFile(file)">
-              <ion-icon :icon="file.isDirectory ? folder : play" slot="start"></ion-icon>
-              <ion-label>{{ file.name }}</ion-label>
-            </ion-item>
-          </ion-list>
-        </ion-card-content>
-      </ion-card>
+    <ion-content>
+      <ion-refresher slot="fixed" @ionRefresh="handleRefresh">
+        <ion-refresher-content></ion-refresher-content>
+      </ion-refresher>
+
+      <div v-if="loading" class="loading-container">
+        <ion-spinner name="crescent"></ion-spinner>
+        <p>Loading files...</p>
+      </div>
+
+      <div v-else-if="!serverOnline" class="empty-state">
+        <ion-icon :icon="cloudOffline" class="empty-icon"></ion-icon>
+        <h3>Server Offline</h3>
+        <p>ENCV server is not running. Please start the server first.</p>
+        <ion-button @click="retryConnection">
+          <ion-icon :icon="refresh" slot="start"></ion-icon>
+          Retry
+        </ion-button>
+      </div>
+
+      <div v-else-if="files.length === 0" class="empty-state">
+        <ion-icon :icon="folderOpen" class="empty-icon"></ion-icon>
+        <h3>Empty Directory</h3>
+        <p>No files found in this directory.</p>
+      </div>
+
+      <ion-list v-else>
+        <ion-item
+          v-for="file in sortedFiles"
+          :key="file.path"
+          @click="handleFileClick(file)"
+          detail
+        >
+          <ion-icon
+            :icon="getFileIcon(file)"
+            :color="getFileIconColor(file)"
+            slot="start"
+          ></ion-icon>
+          <ion-label>
+            <h2>{{ file.name }}</h2>
+            <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified"> · {{ file.modified }}</span></p>
+            <p v-else-if="file.isDirectory">Directory</p>
+          </ion-label>
+          <ion-badge v-if="getFileCategory(file.name) === 'encrypted'" color="warning" slot="end">
+            ENCV
+          </ion-badge>
+        </ion-item>
+      </ion-list>
     </ion-content>
   </ion-page>
 </template>
 
-<script setup>
-import { ref, onMounted } from 'vue'
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import {
-  IonContent,
-  IonHeader,
   IonPage,
-  IonTitle,
+  IonHeader,
   IonToolbar,
-  IonCard,
-  IonCardHeader,
-  IonCardTitle,
-  IonCardContent,
+  IonTitle,
+  IonButtons,
+  IonButton,
+  IonContent,
+  IonRefresher,
+  IonRefresherContent,
   IonList,
   IonItem,
   IonIcon,
   IonLabel,
+  IonBadge,
+  IonSpinner,
+  toastController,
 } from '@ionic/vue'
-import { folder, play } from 'ionicons/icons'
-import { listFiles, checkServerStatus } from '../api/encv'
+import {
+  arrowBack,
+  chevronForward,
+  folder,
+  folderOpen,
+  videocam,
+  musicalNotes,
+  image,
+  document,
+  documentText,
+  lockClosed,
+  cloudOffline,
+  refresh,
+} from 'ionicons/icons'
+import {
+  listFiles,
+  checkServerStatus,
+  formatFileSize,
+  getFileCategory,
+} from '@/api/encv'
+import type { FileItem } from '@/api/encv'
 
+const router = useRouter()
 const serverOnline = ref(false)
-const files = ref([])
+const files = ref<FileItem[]>([])
+const currentPath = ref('/')
+const loading = ref(false)
 
-onMounted(async () => {
-  await loadFiles()
+const pathSegments = computed(() => {
+  if (currentPath.value === '/') return []
+  const parts = currentPath.value.split('/').filter(Boolean)
+  return parts.map((name, index) => ({
+    name,
+    path: '/' + parts.slice(0, index + 1).join('/'),
+  }))
 })
 
-async function loadFiles() {
-  serverOnline.value = await checkServerStatus()
-  if (serverOnline.value) {
-    try {
-      files.value = await listFiles()
-    } catch (error) {
-      console.error('Failed to load files:', error)
-    }
+const sortedFiles = computed(() => {
+  return [...files.value].sort((a, b) => {
+    if (a.isDirectory && !b.isDirectory) return -1
+    if (!a.isDirectory && b.isDirectory) return 1
+    return a.name.localeCompare(b.name)
+  })
+})
+
+function getFileIcon(file: FileItem) {
+  if (file.isDirectory) return folder
+  const category = getFileCategory(file.name)
+  switch (category) {
+    case 'video': return videocam
+    case 'audio': return musicalNotes
+    case 'image': return image
+    case 'document': return document
+    case 'encrypted': return lockClosed
+    default: return documentText
   }
 }
 
-function playFile(file) {
-  console.log('Playing file:', file)
+function getFileIconColor(file: FileItem) {
+  if (file.isDirectory) return 'primary'
+  const category = getFileCategory(file.name)
+  switch (category) {
+    case 'video': return 'danger'
+    case 'audio': return 'tertiary'
+    case 'image': return 'success'
+    case 'encrypted': return 'warning'
+    default: return 'medium'
+  }
 }
+
+async function loadFiles() {
+  loading.value = true
+  serverOnline.value = await checkServerStatus()
+  if (serverOnline.value) {
+    try {
+      files.value = await listFiles(currentPath.value)
+    } catch (error) {
+      console.error('Failed to load files:', error)
+      const toast = await toastController.create({
+        message: 'Failed to load files',
+        duration: 2000,
+        color: 'danger',
+      })
+      await toast.present()
+    }
+  }
+  loading.value = false
+}
+
+async function handleRefresh(event: CustomEvent) {
+  serverOnline.value = await checkServerStatus()
+  if (serverOnline.value) {
+    try {
+      files.value = await listFiles(currentPath.value)
+    } catch {
+      // silent
+    }
+  }
+  ;(event.target as any)?.complete?.()
+}
+
+async function retryConnection() {
+  await loadFiles()
+}
+
+function navigateTo(path: string) {
+  currentPath.value = path
+  loadFiles()
+}
+
+function goUp() {
+  if (currentPath.value === '/') return
+  const parts = currentPath.value.split('/').filter(Boolean)
+  parts.pop()
+  currentPath.value = parts.length === 0 ? '/' : '/' + parts.join('/')
+  loadFiles()
+}
+
+async function handleFileClick(file: FileItem) {
+  if (file.isDirectory) {
+    const newPath = currentPath.value === '/'
+      ? '/' + file.name
+      : currentPath.value + '/' + file.name
+    navigateTo(newPath)
+    return
+  }
+
+  const category = getFileCategory(file.name)
+  if (category === 'video' || category === 'audio') {
+    router.push({
+      path: '/tabs/player',
+      query: { path: file.path, name: file.name },
+    })
+  } else if (category === 'encrypted') {
+    router.push({
+      path: '/tabs/player',
+      query: { path: file.path, name: file.name },
+    })
+  } else {
+    const toast = await toastController.create({
+      message: `Preview for "${file.name}" is not supported yet`,
+      duration: 2000,
+      color: 'medium',
+    })
+    await toast.present()
+  }
+}
+
+onMounted(() => {
+  loadFiles()
+})
 </script>
+
+<style scoped>
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 50%;
+  color: var(--encv-text-secondary);
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 50%;
+  padding: 24px;
+  text-align: center;
+  color: var(--encv-text-secondary);
+}
+
+.empty-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.breadcrumb-scroll {
+  --background: transparent;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  white-space: nowrap;
+}
+
+.breadcrumb-item {
+  cursor: pointer;
+  color: var(--ion-color-primary);
+  font-size: 14px;
+}
+
+.breadcrumb-item:hover {
+  text-decoration: underline;
+}
+
+.breadcrumb-sep {
+  font-size: 14px;
+  margin: 0 4px;
+  color: var(--encv-text-secondary);
+}
+
+.breadcrumb-segment {
+  display: flex;
+  align-items: center;
+}
+</style>
