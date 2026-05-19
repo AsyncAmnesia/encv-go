@@ -93,7 +93,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
   IonSegment, IonSegmentButton, IonSearchbar, IonButton,
@@ -102,8 +102,11 @@ import {
 import { trashOutline } from 'ionicons/icons'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
+import { useWebSocket } from '@/composables/useWebSocket'
+import { checkServerStatus } from '@/api/encv'
 
 const { t } = useI18n()
+const ws = useWebSocket()
 
 const activeTab = ref<'frontend' | 'backend'>('frontend')
 const searchText = ref('')
@@ -138,7 +141,7 @@ const frontendLogs = ref<LogEntry[]>([])
 const backendLogs = ref<LogEntry[]>([])
 const serverOnline = ref(false)
 
-const origConsole = { debug: console.debug, info: console.info, warn: console.warn, error: console.error, log: console.log }
+let origConsole: typeof console | null = null
 
 function addLog(level: string, args: any[]) {
   frontendLogs.value.push({
@@ -226,25 +229,49 @@ function onServerStatus(data: any) {
   serverOnline.value = data?.online ?? false
 }
 
-console.debug = (...args: any[]) => { origConsole.debug(...args); addLog('debug', args) }
-console.info = (...args: any[]) => { origConsole.info(...args); addLog('info', args) }
-console.warn = (...args: any[]) => { origConsole.warn(...args); addLog('warn', args) }
-console.error = (...args: any[]) => { origConsole.error(...args); addLog('error', args) }
-console.log = (...args: any[]) => { origConsole.log(...args); addLog('info', args) }
+function hijackConsole() {
+  origConsole = { debug: console.debug, info: console.info, warn: console.warn, error: console.error, log: console.log }
+  console.debug = (...args: any[]) => { origConsole.debug(...args); addLog('debug', args) }
+  console.info = (...args: any[]) => { origConsole.info(...args); addLog('info', args) }
+  console.warn = (...args: any[]) => { origConsole.warn(...args); addLog('warn', args) }
+  console.error = (...args: any[]) => { origConsole.error(...args); addLog('error', args) }
+  console.log = (...args: any[]) => { origConsole.log(...args); addLog('info', args) }
+}
 
-onMounted(() => {
-  eventBus.on('ws:message', onWsMessage)
-  eventBus.on('server:status', onServerStatus)
-})
-
-onUnmounted(() => {
-  eventBus.off('ws:message', onWsMessage)
-  eventBus.off('server:status', onServerStatus)
+function restoreConsole() {
+  if (!origConsole) return
   console.debug = origConsole.debug
   console.info = origConsole.info
   console.warn = origConsole.warn
   console.error = origConsole.error
   console.log = origConsole.log
+  origConsole = null
+}
+
+onMounted(async () => {
+  await nextTick()
+
+  hijackConsole()
+  eventBus.on('ws:message', onWsMessage)
+  eventBus.on('server:status', onServerStatus)
+
+  serverOnline.value = ws.connectionState.value === 'connected'
+  if (!serverOnline.value) {
+    serverOnline.value = await checkServerStatus()
+  }
+
+  backendLogs.value.push({
+    id: ++nextId,
+    timestamp: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+    level: serverOnline.value ? 'info' : 'warn',
+    message: `DevLogs ready, server ${serverOnline.value ? 'online' : 'offline'} (ws=${ws.connectionState.value})`,
+  })
+})
+
+onUnmounted(() => {
+  eventBus.off('ws:message', onWsMessage)
+  eventBus.off('server:status', onServerStatus)
+  restoreConsole()
 })
 </script>
 
