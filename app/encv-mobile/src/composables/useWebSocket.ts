@@ -71,6 +71,7 @@ function handleMessage(event: MessageEvent) {
     }
 
     eventBus.emit(msg.type as any, msg.data)
+    eventBus.emit('ws:message', { type: msg.type, data: msg.data })
   } catch (e) {
     console.error('[ENCV-WS] Failed to parse message:', e)
   }

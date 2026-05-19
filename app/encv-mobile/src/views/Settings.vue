@@ -149,6 +149,20 @@
                   @ionChange="setValue([section.key, child.key], !getValue([section.key, child.key]))"
                 >{{ tField(child.key) }}</ion-toggle>
               </ion-item>
+              <ion-item v-else-if="section.key === 'log' && child.key === 'level'">
+                <ion-select
+                  :value="String(getValue(['log', 'level']) ?? 'info')"
+                  :label="tField('level')"
+                  label-placement="stacked"
+                  interface="action-sheet"
+                  @ionChange="setValue(['log', 'level'], $event.detail.value)"
+                >
+                  <ion-select-option value="debug">DEBUG</ion-select-option>
+                  <ion-select-option value="info">INFO</ion-select-option>
+                  <ion-select-option value="warn">WARN</ion-select-option>
+                  <ion-select-option value="error">ERROR</ion-select-option>
+                </ion-select>
+              </ion-item>
               <ion-item v-else>
                 <ion-input
                   :value="String(getValue([section.key, child.key]) ?? '')"
