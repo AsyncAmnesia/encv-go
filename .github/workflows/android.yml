@@ -214,10 +214,10 @@ jobs:
                   "android {\n"
                   "    signingConfigs {"
                   "\n        release {"
-                  "\n            storeFile file('/tmp/debug.keystore')"
-                  "\n            storePassword 'android'"
-                  "\n            keyAlias 'androiddebugkey'"
-                  "\n            keyPassword 'android'"
+                  "\n            storeFile file('../keystore/release.jks')"
+                  "\n            storePassword 'encv2025'"
+                  "\n            keyAlias 'encvrelease'"
+                  "\n            keyPassword 'encv2025'"
                   "\n        }"
                   "\n    }\n"
               )
@@ -233,6 +233,24 @@ jobs:
                   print(f"  L{i+1}: {line}")
           PYEOF
 
+      - name: Restore or create release keystore
+        run: |
+          KEYSTORE="app/encv-mobile/android/keystore/release.jks"
+          if [ -f "$KEYSTORE" ]; then
+            echo "Using existing keystore:"
+            ls -lh "$KEYSTORE"
+          else
+            echo "Creating new release keystore..."
+            mkdir -p app/encv-mobile/android/keystore
+            keytool -genkeypair -v -keystore "$KEYSTORE" \
+              -storepass encv2025 -alias encvrelease \
+              -keypass encv2025 \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=ENCV-go, OU=Personal, O=ENCV, L=Unknown, ST=Unknown, C=CN"
+            echo "Keystore created:"
+            ls -lh "$KEYSTORE"
+          fi
+
       - name: Build ${{ inputs.version && 'Release' || 'Debug' }} APK
         run: |
           cd app/encv-mobile/android
@@ -240,14 +258,6 @@ jobs:
 
           if [ -n "${{ inputs.version }}" ]; then
             echo "=== Building RELEASE APK (version ${{ inputs.version }}) ==="
-
-            # Generate debug keystore for Gradle-native signing
-            keytool -genkeypair -v -keystore /tmp/debug.keystore \
-              -storepass android -alias androiddebugkey \
-              -keypass android -dname "CN=Debug,O=Debug,C=US" 2>/dev/null || true
-
-            echo "Keystore ready:"
-            ls -lh /tmp/debug.keystore
 
             # Gradle handles signing + zipalign natively via build.gradle config
             ./gradlew assembleRelease
