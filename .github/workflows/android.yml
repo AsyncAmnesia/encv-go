@@ -126,6 +126,8 @@ jobs:
           mkdir -p app/encv-mobile/android/app/src/main/java/com/encvgo/app
           cp app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/MainActivity.kt \
              app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt
+          cp app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt \
+             app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt
 
           mkdir -p app/encv-mobile/android/app/src/main/res/xml
           cp app/encv-mobile/android-overlay/app/src/main/res/xml/network_security_config.xml \
@@ -145,6 +147,7 @@ jobs:
           perms = [
               ('android.permission.INTERNET', None),
               ('android.permission.FOREGROUND_SERVICE', None),
+              ('android.permission.POST_NOTIFICATIONS', None),
               ('android.permission.READ_MEDIA_VIDEO', None),
               ('android.permission.READ_MEDIA_AUDIO', None),
               ('android.permission.READ_MEDIA_IMAGES', None),
