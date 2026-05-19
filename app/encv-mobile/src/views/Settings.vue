@@ -72,6 +72,32 @@
         </ion-item>
       </ion-list>
 
+      <ion-list v-if="isNativePlatform">
+        <ion-list-header>
+          <ion-label>{{ t('settings.permissions') }}</ion-label>
+        </ion-list-header>
+        <ion-item>
+          <ion-icon :icon="notificationsIcon" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.notificationPermission') }}</h3>
+            <p>{{ permNotifications ? t('settings.granted') : t('settings.denied') }}</p>
+          </ion-label>
+          <ion-button v-if="!permNotifications" fill="outline" size="small" @click="handleRequestNotification">
+            {{ t('settings.request') }}
+          </ion-button>
+        </ion-item>
+        <ion-item>
+          <ion-icon :icon="folderOpen" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.storagePermission') }}</h3>
+            <p>{{ permStorage ? t('settings.granted') : t('settings.denied') }}</p>
+          </ion-label>
+          <ion-button v-if="!permStorage" fill="outline" size="small" @click="handleRequestStorage">
+            {{ t('settings.request') }}
+          </ion-button>
+        </ion-item>
+      </ion-list>
+
       <div v-if="configLoading && !configLoaded" class="loading-container">
         <ion-spinner name="crescent"></ion-spinner>
         <p>{{ t('settings.loadingConfig') }}</p>
@@ -307,12 +333,14 @@ import {
   folderOpen,
   stop as stopIcon,
   play as playIcon,
+  notifications as notificationsIcon,
 } from 'ionicons/icons'
 import { useTheme } from '@/composables/useTheme'
 import { useServerStatus } from '@/composables/useServerStatus'
 import { useConfig } from '@/composables/useConfig'
 import { useI18n } from '@/composables/useI18n'
 import { setApiBaseUrl, getServerUrl } from '@/api/encv'
+import { isNative, requestNotificationPermission, requestStoragePermission, checkPermissions } from '@/plugins/GoProcess'
 import type { FieldDef } from '@/config/schemaParser'
 
 const { isDark, toggleDark } = useTheme()
@@ -322,6 +350,23 @@ const { t, tField, tSectionTitle, setLocale, locale } = useI18n()
 
 const serverUrl = ref(getServerUrl())
 const configLoaded = ref(false)
+const isNativePlatform = ref(isNative())
+const permNotifications = ref(false)
+const permStorage = ref(false)
+
+async function refreshPermissions() {
+  const perms = await checkPermissions()
+  permNotifications.value = perms.notifications
+  permStorage.value = perms.storage
+}
+
+function handleRequestNotification() {
+  requestNotificationPermission().then(() => refreshPermissions())
+}
+
+function handleRequestStorage() {
+  requestStoragePermission().then(() => refreshPermissions())
+}
 
 function getValue(path: string[]): unknown {
   return getFieldValue(path)
@@ -549,6 +594,9 @@ onMounted(async () => {
   if (serverOnline.value) {
     await loadConfig()
     configLoaded.value = true
+  }
+  if (isNativePlatform.value) {
+    await refreshPermissions()
   }
 })
 

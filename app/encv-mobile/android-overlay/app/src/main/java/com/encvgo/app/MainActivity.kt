@@ -1,15 +1,7 @@
 package com.encvgo.app
 
-import android.Manifest
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
-import android.os.Environment
-import android.provider.Settings
 import android.util.Log
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import com.getcapacitor.BridgeActivity
 import java.io.BufferedReader
 import java.io.File
@@ -25,8 +17,6 @@ class MainActivity : BridgeActivity() {
         private const val BINARY_NAME = "encv-go"
         private const val DEFAULT_PORT = 2025
         private const val MAX_PORT_SCAN = 10
-        private const val REQ_NOTIFICATIONS = 1001
-        private const val REQ_MANAGE_STORAGE = 1002
     }
 
     private var goProcess: Process? = null
@@ -39,50 +29,7 @@ class MainActivity : BridgeActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         registerPlugin(GoProcessPlugin::class.java)
         super.onCreate(savedInstanceState)
-        requestRequiredPermissions()
         startGoDaemon()
-    }
-
-    private fun requestRequiredPermissions() {
-        if (Build.VERSION.SDK_INT >= 33) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                    REQ_NOTIFICATIONS,
-                )
-            }
-        }
-
-        if (Build.VERSION.SDK_INT >= 30) {
-            if (!Environment.isExternalStorageManager()) {
-                try {
-                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-                    intent.data = Uri.parse("package:$packageName")
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                    startActivity(intent)
-                }
-            }
-        } else {
-            val perms = mutableListOf<String>()
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                perms.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-            }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                perms.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            }
-            if (perms.isNotEmpty()) {
-                ActivityCompat.requestPermissions(this, perms.toTypedArray(), REQ_MANAGE_STORAGE)
-            }
-        }
     }
 
     fun isBackendRunning(): Boolean = backendReady && goProcess?.isAlive == true
