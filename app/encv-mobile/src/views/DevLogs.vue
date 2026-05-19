@@ -27,6 +27,16 @@
             @click="toggleLevel(lvl.value)"
           >{{ lvl.label }}</button>
         </div>
+        <div class="toolbar-actions">
+          <ion-button fill="clear" size="small" @click="handleCopy">
+            <ion-icon :icon="copyOutline" slot="icon-only"></ion-icon>
+          </ion-button>
+          <ion-button fill="clear" size="small" color="danger" @click="handleClear">
+            <ion-icon :icon="trashOutline" slot="icon-only"></ion-icon>
+          </ion-button>
+        </div>
+      </div>
+      <div class="search-row">
         <ion-searchbar
           v-model="searchText"
           :placeholder="t('devlogs.searchPlaceholder')"
@@ -34,9 +44,6 @@
           mode="ios"
           :debounce="150"
         ></ion-searchbar>
-        <ion-button fill="clear" size="small" color="danger" @click="handleClear">
-          <ion-icon :icon="trashOutline" slot="icon-only"></ion-icon>
-        </ion-button>
       </div>
 
       <div v-if="activeTab === 'frontend'" ref="logListRef" class="log-list">
@@ -97,9 +104,9 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
   IonSegment, IonSegmentButton, IonSearchbar, IonButton,
-  IonIcon, IonBadge, IonToggle, IonFooter, alertController,
+  IonIcon, IonBadge, IonToggle, IonFooter, alertController, toastController,
 } from '@ionic/vue'
-import { trashOutline } from 'ionicons/icons'
+import { trashOutline, copyOutline } from 'ionicons/icons'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
 import { useWebSocket } from '@/composables/useWebSocket'
@@ -212,6 +219,27 @@ function scrollToBottom() {
 
 watch([filteredFrontend, filteredBackend], () => scrollToBottom(), { deep: true })
 
+async function handleCopy() {
+  const logs = activeTab.value === 'frontend' ? filteredFrontend.value : filteredBackend.value
+  const text = logs.map((l) => `[${l.timestamp}] ${l.level.toUpperCase()} ${l.message}`).join('\n')
+  try {
+    await navigator.clipboard.writeText(text)
+    const toast = await toastController.create({
+      message: t('devlogs.copied', { count: String(logs.length) }),
+      duration: 1500,
+      color: 'success',
+    })
+    await toast.present()
+  } catch {
+    const toast = await toastController.create({
+      message: t('devlogs.copyFailed'),
+      duration: 1500,
+      color: 'danger',
+    })
+    await toast.present()
+  }
+}
+
 async function handleClear() {
   const alert = await alertController.create({
     header: t('devlogs.clearConfirm'),
@@ -270,7 +298,8 @@ onMounted(async () => {
 
   serverOnline.value = ws.connectionState.value === 'connected'
   if (!serverOnline.value) {
-    serverOnline.value = await checkServerStatus()
+    const result = await checkServerStatus()
+    serverOnline.value = result.online
   }
 
   backendLogs.value.push({
@@ -301,12 +330,23 @@ onUnmounted(() => {
 .toolbar-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
   padding: 6px 10px;
   border-bottom: 1px solid var(--ion-border-color, rgba(255, 255, 255, 0.08));
   background: var(--ion-background-color);
-  flex-wrap: nowrap;
-  overflow-x: auto;
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.search-row {
+  padding: 0 10px 4px;
+  border-bottom: 1px solid var(--ion-border-color, rgba(255, 255, 255, 0.08));
+  background: var(--ion-background-color);
 }
 
 .level-filters {
@@ -337,8 +377,6 @@ onUnmounted(() => {
 .level-btn.active.error { background: rgba(231, 76, 60, 0.15); color: #e74c3c; border-color: #e74c3c; }
 
 .log-searchbar {
-  flex: 1;
-  min-width: 100px;
   --border-radius: 12px;
   --background: rgba(255, 255, 255, 0.06);
   --placeholder-color: var(--ion-text-color-step-350, #aaa);

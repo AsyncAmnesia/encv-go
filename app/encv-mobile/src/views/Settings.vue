@@ -76,12 +76,14 @@
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
             </ion-list-header>
             <ion-item v-if="section.type === 'boolean'">
+              <ion-icon :icon="getFieldIcon(section.key, section.type)" slot="start"></ion-icon>
               <ion-toggle
                 :checked="!!getValue([section.key])"
                 @ionChange="setValue([section.key], !getValue([section.key]))"
               >{{ tField(section.key) }}</ion-toggle>
             </ion-item>
             <ion-item v-else>
+              <ion-icon :icon="getFieldIcon(section.key, section.type)" slot="start"></ion-icon>
               <ion-input
                 :value="String(getValue([section.key]) ?? '')"
                 :type="section.isPassword ? 'password' : section.type === 'integer' ? 'number' : 'text'"
@@ -105,12 +107,14 @@
                 </ion-item-divider>
                 <template v-for="grandchild in child.properties" :key="grandchild.key">
                   <ion-item v-if="grandchild.type === 'boolean'">
+                    <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
                     <ion-toggle
                       :checked="!!getValue([section.key, child.key, grandchild.key])"
                       @ionChange="setValue([section.key, child.key, grandchild.key], !getValue([section.key, child.key, grandchild.key]))"
                     >{{ tField(grandchild.key) }}</ion-toggle>
                   </ion-item>
                   <ion-item v-else>
+                    <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
                     <ion-input
                       :value="String(getValue([section.key, child.key, grandchild.key]) ?? '')"
                       :type="grandchild.isPassword ? 'password' : grandchild.type === 'integer' ? 'number' : 'text'"
@@ -147,12 +151,14 @@
               </template>
 
               <ion-item v-else-if="child.type === 'boolean'">
+                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
                 <ion-toggle
                   :checked="!!getValue([section.key, child.key])"
                   @ionChange="setValue([section.key, child.key], !getValue([section.key, child.key]))"
                 >{{ tField(child.key) }}</ion-toggle>
               </ion-item>
               <ion-item v-else-if="section.key === 'log' && child.key === 'level'">
+                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
                 <ion-select
                   :value="String(getValue(['log', 'level']) ?? 'info')"
                   :label="tField('level')"
@@ -168,6 +174,7 @@
                 </ion-select>
               </ion-item>
               <ion-item v-else>
+                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
                 <ion-input
                   :value="String(getValue([section.key, child.key]) ?? '')"
                   :type="child.isPassword ? 'password' : child.type === 'integer' ? 'number' : 'text'"
@@ -270,6 +277,26 @@ import {
   openOutline,
   trash,
   refreshCircle,
+  key,
+  lockClosed,
+  documentText,
+  terminal,
+  settingsOutline,
+  cloudOutline,
+  shieldCheckmark,
+  eyeOutline,
+  speedometerOutline,
+  filmOutline,
+  musicalNotesOutline,
+  imagesOutline,
+  readerOutline,
+  newspaperOutline,
+  colorWandOutline,
+  gitNetworkOutline,
+  toggleOutline,
+  textOutline,
+  personOutline,
+  folderOpen,
 } from 'ionicons/icons'
 import { useTheme } from '@/composables/useTheme'
 import { useServerStatus } from '@/composables/useServerStatus'
@@ -311,6 +338,51 @@ function handleInput(path: string[], field: FieldDef, event: CustomEvent) {
 
 function fieldLabel(key: string, required?: boolean): string {
   return tField(key) + (required ? ' *' : '')
+}
+
+const fieldIconMap: Record<string, string> = {
+  password: key,
+  recover: refreshCircle,
+  output_path: folderOpen,
+  plugin_settings: settingsOutline,
+  server: cloudOutline,
+  admin: shieldCheckmark,
+  webdav: globeOutline,
+  proxy: gitNetworkOutline,
+  log: terminal,
+  port: speedometerOutline,
+  dir: folderOpen,
+  username: personOutline,
+  root: documentText,
+  level: speedometerOutline,
+  file: documentText,
+  console: terminal,
+  host: serverIcon,
+  description: textOutline,
+  sites: globeOutline,
+  disable_signature_verification: shieldCheckmark,
+  ext: documentText,
+  chunk_size_mb: speedometerOutline,
+  light_main_chunk_enabled: colorWandOutline,
+  track_extensions: eyeOutline,
+  keep_mkv_for_mkvSource: filmOutline,
+  verify_after_pack: shieldCheckmark,
+  plugin_cache_dir: folderOpen,
+  skip_merge_for_split_mkv: filmOutline,
+  video: filmOutline,
+  audio: musicalNotesOutline,
+  image: imagesOutline,
+  wps: readerOutline,
+  pdf: newspaperOutline,
+  text: textOutline,
+}
+
+function getFieldIcon(fieldKey: string, fieldType: string): string {
+  if (fieldIconMap[fieldKey]) return fieldIconMap[fieldKey]
+  if (fieldType === 'boolean') return toggleOutline
+  if (fieldType === 'integer') return speedometerOutline
+  if (fieldKey.includes('password')) return lockClosed
+  return settingsOutline
 }
 
 function handleDarkToggle() {

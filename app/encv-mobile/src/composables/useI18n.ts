@@ -162,6 +162,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'devlogs.disconnected': '未连接',
     'devlogs.noLogs': '暂无日志',
     'devlogs.noLogsDesc': '日志输出将显示在这里。',
+    'devlogs.copied': '已复制 {count} 条日志',
+    'devlogs.copyFailed': '复制失败',
 
     'filePreview.loading': '正在加载文件...',
     'filePreview.loadError': '加载失败',
@@ -328,6 +330,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'devlogs.disconnected': 'Disconnected',
     'devlogs.noLogs': 'No Logs',
     'devlogs.noLogsDesc': 'Log output will appear here.',
+    'devlogs.copied': 'Copied {count} logs',
+    'devlogs.copyFailed': 'Copy failed',
 
     'filePreview.loading': 'Loading file...',
     'filePreview.loadError': 'Load Error',
