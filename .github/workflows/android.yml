@@ -193,73 +193,6 @@ jobs:
           print('AndroidManifest patched successfully')
           "
 
-      - name: Optimize build.gradle for release (size reduction)
-        run: |
-          cd app/encv-mobile/android
-          python3 << 'PYEOF'
-          import re
-
-          with open('app/build.gradle', 'r') as f:
-              content = f.read()
-
-          # Only build arm64-v8a (no armeabi-v7a, x86, x86_64) — saves ~30% APK size
-          if 'abiFilters' not in content or 'arm64-v8a' not in content:
-              ndk_block = "\n    ndk {\n        abiFilters 'arm64-v8a'\n    }"
-              content = re.sub(
-                  r'(defaultConfig\s*\{)',
-                  r'\1' + ndk_block,
-                  content,
-                  count=1
-              )
-
-          # Inject version when provided
-          ver = "${{ inputs.version }}".strip()
-          if ver:
-              vcode = int(ver.replace('.', '')) or 1
-              # Replace versionName/versionCode in defaultConfig
-              content = re.sub(
-                  r'(defaultConfig\s*\{[^}]*?)\}',
-                  r'\1\n        versionName "' + ver + '"\n        versionCode ' + str(vcode) + '\n    }',
-                  content,
-                  count=1
-              )
-
-          # Release optimizations: minify + shrink resources + native signing config
-          if ver and 'minifyEnabled' not in content:
-              release_block = r'(buildTypes\s*\{[^}]*?release\s*\{)'
-              release_opt = (
-                  r'\1'
-                  '\n        minifyEnabled true'
-                  '\n        shrinkResources true'
-                  "\n        signingConfig signingConfigs.release"
-              )
-              content = re.sub(release_block, release_opt, content, count=1, flags=re.DOTALL)
-
-          # Inject signingConfigs block for native Gradle signing (replaces fragile jarsigner)
-          if ver and 'signingConfigs' not in content:
-              signing_block = (
-                  "android {\n"
-                  "    signingConfigs {"
-                  "\n        release {"
-                  "\n            storeFile file('../keystore/release.jks')"
-                  "\n            storePassword 'encv2025'"
-                  "\n            keyAlias 'encvrelease'"
-                  "\n            keyPassword 'encv2025'"
-                  "\n        }"
-                  "\n    }\n"
-              )
-              content = content.replace('android {', signing_block, 1)
-
-          with open('app/build.gradle', 'w') as f:
-              f.write(content)
-
-          print("build.gradle optimized")
-          print("Content preview:")
-          for i, line in enumerate(content.split('\n')):
-              if any(kw in line for kw in ['abiFilters', 'versionName', 'versionCode', 'minifyEnabled', 'shrinkResources', 'signingConfig', 'signingConfigs', 'storeFile']):
-                  print(f"  L{i+1}: {line}")
-          PYEOF
-
       - name: Restore release keystore from cache
         uses: actions/cache@v4
         id: keystore-cache
@@ -267,11 +200,11 @@ jobs:
           path: app/encv-mobile/android/keystore
           key: encv-release-keystore
 
-      - name: Restore or create release keystore
+      - name: Ensure release keystore exists
         run: |
           KEYSTORE="app/encv-mobile/android/keystore/release.jks"
           if [ -f "$KEYSTORE" ]; then
-            echo "Restored keystore from cache:"
+            echo "Keystore ready:"
             ls -lh "$KEYSTORE"
             keytool -list -keystore "$KEYSTORE" -storepass encv2025 2>&1 | head -5
           else
@@ -286,6 +219,67 @@ jobs:
             ls -lh "$KEYSTORE"
           fi
 
+      - name: Optimize build.gradle for release (size reduction + signing)
+        run: |
+          cd app/encv-mobile/android
+          python3 << 'PYEOF'
+          import re
+
+          with open('app/build.gradle', 'r') as f:
+              content = f.read()
+
+          ver = "${{ inputs.version }}".strip()
+
+          # Only build arm64-v8a (no armeabi-v7a, x86, x86_64) — saves ~30% APK size
+          if 'abiFilters' not in content or 'arm64-v8a' not in content:
+              ndk_block = "\n    ndk {\n        abiFilters 'arm64-v8a'\n    }"
+              content = re.sub(r'(defaultConfig\s*\{)', r'\1' + ndk_block, content, count=1)
+
+          # Inject version when provided
+          if ver:
+              vcode = int(ver.replace('.', '')) or 1
+              content = re.sub(
+                  r'(defaultConfig\s*\{[^}]*?)\}',
+                  r'\1\n        versionName "' + ver + '"\n        versionCode ' + str(vcode) + '\n    }',
+                  content, count=1
+              )
+
+          # Release-only: minify + shrink + signing (UNCONDITIONAL when version set)
+          if ver:
+              # Ensure signingConfigs block exists (force-replace to avoid stale configs)
+              old_sc = r'android\s*\{'
+              new_sc = (
+                  'android {'
+                  '\n    signingConfigs {'
+                  '\n        release {'
+                  "\n            storeFile file('../keystore/release.jks')"
+                  "\n            storePassword 'encv2025'"
+                  "\n            keyAlias 'encvrelease'"
+                  "\n            keyPassword 'encv2025'"
+                  '\n        }'
+                  '\n    }'
+              )
+              content = re.sub(old_sc, new_sc, content, count=1)
+
+              # Ensure release block has all required settings
+              release_re = r'(buildTypes\s*\{[^}]*?release\s*\{)'
+              release_addons = (
+                  r'\1'
+                  '\n        minifyEnabled true'
+                  '\n        shrinkResources true'
+                  "\n        signingConfig signingConfigs.release"
+              )
+              content = re.sub(release_re, release_addons, content, count=1, flags=re.DOTALL)
+
+          with open('app/build.gradle', 'w') as f:
+              f.write(content)
+
+          print("=== Final build.gradle signing-related lines ===")
+          for i, line in enumerate(content.split('\n')):
+              if any(kw in line for kw in ['signingConfig', 'signingConfigs', 'storeFile', 'storePassword', 'minifyEnabled']):
+                  print(f"  L{i+1}: {line}")
+          PYEOF
+
       - name: Build ${{ inputs.version && 'Release' || 'Debug' }} APK
         run: |
           cd app/encv-mobile/android
@@ -293,35 +287,37 @@ jobs:
 
           if [ -n "${{ inputs.version }}" ]; then
             echo "=== Building RELEASE APK (version ${{ inputs.version }}) ==="
-
-            # Gradle handles signing + zipalign natively via build.gradle config
             ./gradlew assembleRelease
 
-            # Verify signed APK exists
-            APK_DIR="app/build/outputs/apk/release"
-            echo "=== Release output ==="
-            find "$APK_DIR" -name "*.apk" -type f -exec ls -lh {} \;
+            # MANDATORY: verify APK is properly signed
+            APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+            if [ -z "$APK_PATH" ]; then
+              echo "::error::No APK found in release output"
+              exit 1
+            fi
+
+            echo "Verifying APK signature..."
+            apksigner verify --print-certs "$APK_PATH"
+            SIG_RESULT=$?
+            if [ $SIG_RESULT -ne 0 ]; then
+              echo "::error::APK is NOT SIGNED! Verification failed with code $SIG_RESULT"
+              echo "::error::This means Gradle signing was not applied correctly"
+              exit 1
+            fi
+
+            echo "✅ APK signed and verified successfully"
+            ls -lh "$APK_PATH"
           else
             echo "=== Building DEBUG APK ==="
             ./gradlew assembleDebug
           fi
 
-      - name: Find and upload APK
-        id: upload_apk
-        run: |
-          echo "Searching for built APK..."
-          find app/encv-mobile/android/app/build/outputs/apk -name "*.apk" -type f | while read apk; do
-            echo "Found: $apk ($(ls -lh "$apk" | awk '{print $5}'))"
-          done
-          echo "APK_DIR=app/encv-mobile/android/app/build/outputs/apk" >> "$GITHUB_OUTPUT"
-
-      - name: Upload APK + keystore artifacts
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: encv-go-android${{ inputs.version && format('-v{0}', inputs.version) || '-debug' }}
           path: |
             app/encv-mobile/android/app/build/outputs/apk/**/*.apk
-            app/encv-mobile/android/keystore/release.jks
           retention-days: 30
 
       - name: Build summary
