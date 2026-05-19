@@ -34,67 +34,19 @@
         <ion-list-header>
           <ion-label>{{ t('settings.connection') }}</ion-label>
         </ion-list-header>
-        <ion-item>
-          <ion-icon :icon="serverIcon" slot="start"></ion-icon>
-          <ion-input
-            v-model="serverUrl"
-            :label="t('settings.serverUrl')"
-            label-placement="stacked"
-            placeholder="http://127.0.0.1:2025"
-            @ionBlur="saveServerUrl"
-          ></ion-input>
-        </ion-item>
-        <ion-item>
+        <ion-item button @click="goServer">
           <ion-icon :icon="serverIcon" slot="start"></ion-icon>
           <ion-label>
-            <h3>{{ t('settings.status') }}</h3>
+            <h3>{{ t('settings.serverTitle') }}</h3>
             <p>
               <ion-badge :color="serverOnline ? 'success' : 'danger'">
                 {{ serverOnline ? t('settings.online') : t('settings.offline') }}
               </ion-badge>
               <span v-if="serverOnline && backendPort" class="port-info">:{{ backendPort }}</span>
-            </p>
-            <p v-if="!serverOnline && connectionError" class="connection-error">
-              {{ connectionError }}
+              <span v-if="!serverOnline && connectionError" class="connection-error-inline"> - {{ connectionError }}</span>
             </p>
           </ion-label>
-          <div slot="end" class="server-controls">
-            <ion-button fill="outline" size="small" @click="checkServer">
-              <ion-icon :icon="refreshIcon" slot="icon-only"></ion-icon>
-            </ion-button>
-            <ion-button v-if="serverOnline" fill="outline" size="small" color="danger" @click="handleStop">
-              <ion-icon :icon="stopIcon" slot="icon-only"></ion-icon>
-            </ion-button>
-            <ion-button v-if="!serverOnline" fill="outline" size="small" color="warning" @click="handleRestart">
-              <ion-icon :icon="playIcon" slot="icon-only"></ion-icon>
-            </ion-button>
-          </div>
-        </ion-item>
-      </ion-list>
-
-      <ion-list v-if="isNativePlatform">
-        <ion-list-header>
-          <ion-label>{{ t('settings.permissions') }}</ion-label>
-        </ion-list-header>
-        <ion-item>
-          <ion-icon :icon="notificationsIcon" slot="start"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.notificationPermission') }}</h3>
-            <p>{{ permNotifications ? t('settings.granted') : t('settings.denied') }}</p>
-          </ion-label>
-          <ion-button v-if="!permNotifications" fill="outline" size="small" @click="handleRequestNotification">
-            {{ t('settings.request') }}
-          </ion-button>
-        </ion-item>
-        <ion-item>
-          <ion-icon :icon="folderOpen" slot="start"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.storagePermission') }}</h3>
-            <p>{{ permStorage ? t('settings.granted') : t('settings.denied') }}</p>
-          </ion-label>
-          <ion-button v-if="!permStorage" fill="outline" size="small" @click="handleRequestStorage">
-            {{ t('settings.request') }}
-          </ion-button>
+          <ion-icon :icon="chevronForward" slot="end"></ion-icon>
         </ion-item>
       </ion-list>
 
@@ -230,44 +182,13 @@
       </template>
 
       <ion-list>
-        <ion-list-header>
-          <ion-label>{{ t('settings.about') }}</ion-label>
-        </ion-list-header>
-        <ion-item>
+        <ion-item button @click="goAbout">
           <ion-icon :icon="informationCircle" slot="start"></ion-icon>
           <ion-label>
-            <h3>ENCV-go</h3>
-            <p>Version 1.0.0</p>
+            <h3>{{ t('settings.about') }}</h3>
+            <p>ENCV-go v1.0.0</p>
           </ion-label>
-        </ion-item>
-        <ion-item>
-          <ion-icon :icon="codeSlash" slot="start"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.engine') }}</h3>
-            <p>ENCV-go Daemon</p>
-          </ion-label>
-        </ion-item>
-        <ion-item button @click="openGitHub">
-          <ion-icon :icon="logoGithub" slot="start"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.github') }}</h3>
-            <p>{{ t('settings.sourceCode') }}</p>
-          </ion-label>
-          <ion-icon :icon="openOutline" slot="end"></ion-icon>
-        </ion-item>
-      </ion-list>
-
-      <ion-list>
-        <ion-list-header>
-          <ion-label color="danger">{{ t('settings.dangerZone') }}</ion-label>
-        </ion-list-header>
-        <ion-item button @click="handleClearCache">
-          <ion-icon :icon="trash" color="danger" slot="start"></ion-icon>
-          <ion-label color="danger">{{ t('settings.clearCache') }}</ion-label>
-        </ion-item>
-        <ion-item button @click="handleResetSettings">
-          <ion-icon :icon="refreshCircle" color="danger" slot="start"></ion-icon>
-          <ion-label color="danger">{{ t('settings.resetSettings') }}</ion-label>
+          <ion-icon :icon="chevronForward" slot="end"></ion-icon>
         </ion-item>
       </ion-list>
     </ion-content>
@@ -276,96 +197,42 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import {
-  IonPage,
-  IonHeader,
-  IonToolbar,
-  IonTitle,
-  IonButtons,
-  IonButton,
-  IonContent,
-  IonList,
-  IonListHeader,
-  IonItem,
-  IonItemDivider,
-  IonIcon,
-  IonLabel,
-  IonToggle,
-  IonInput,
-  IonBadge,
-  IonSpinner,
-  IonSelect,
-  IonSelectOption,
-  alertController,
-  toastController,
+  IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
+  IonContent, IonList, IonListHeader, IonItem, IonItemDivider,
+  IonIcon, IonLabel, IonToggle, IonInput, IonBadge, IonSpinner,
+  IonSelect, IonSelectOption, toastController,
 } from '@ionic/vue'
 import {
-  moon,
-  globeOutline,
-  server as serverIcon,
-  refresh as refreshIcon,
-  save as saveIcon,
-  informationCircle,
-  codeSlash,
-  logoGithub,
-  openOutline,
-  trash,
-  refreshCircle,
-  key,
-  lockClosed,
-  documentText,
-  terminal,
-  settingsOutline,
-  cloudOutline,
-  shieldCheckmark,
-  eyeOutline,
-  speedometerOutline,
-  filmOutline,
-  musicalNotesOutline,
-  imagesOutline,
-  readerOutline,
-  newspaperOutline,
-  colorWandOutline,
-  gitNetworkOutline,
-  toggleOutline,
-  textOutline,
-  personOutline,
-  folderOpen,
-  stop as stopIcon,
-  play as playIcon,
-  notifications as notificationsIcon,
+  moon, globeOutline, server as serverIcon, save as saveIcon,
+  informationCircle, chevronForward,
+  key, lockClosed, documentText, terminal, settingsOutline,
+  cloudOutline, shieldCheckmark, eyeOutline, speedometerOutline,
+  filmOutline, musicalNotesOutline, imagesOutline, readerOutline,
+  newspaperOutline, colorWandOutline, gitNetworkOutline, toggleOutline,
+  textOutline, personOutline, folderOpen, refreshCircle,
 } from 'ionicons/icons'
 import { useTheme } from '@/composables/useTheme'
 import { useServerStatus } from '@/composables/useServerStatus'
 import { useConfig } from '@/composables/useConfig'
 import { useI18n } from '@/composables/useI18n'
-import { setApiBaseUrl, getServerUrl } from '@/api/encv'
-import { isNative, requestNotificationPermission, requestStoragePermission, checkPermissions } from '@/plugins/GoProcess'
 import type { FieldDef } from '@/config/schemaParser'
 
+const router = useRouter()
 const { isDark, toggleDark } = useTheme()
-const { isOnline: serverOnline, lastError: connectionError, checkStatus, restartBackend, stopBackend, backendPort } = useServerStatus()
+const { isOnline: serverOnline, lastError: connectionError, checkStatus, backendPort } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
 const { t, tField, tSectionTitle, setLocale, locale } = useI18n()
 
-const serverUrl = ref(getServerUrl())
 const configLoaded = ref(false)
-const isNativePlatform = ref(isNative())
-const permNotifications = ref(false)
-const permStorage = ref(false)
 
-async function refreshPermissions() {
-  const perms = await checkPermissions()
-  permNotifications.value = perms.notifications
-  permStorage.value = perms.storage
+function goServer() {
+  router.push('/tabs/settings/server')
 }
 
-function handleRequestNotification() {
-  requestNotificationPermission().then(() => refreshPermissions())
-}
-
-function handleRequestStorage() {
-  requestStoragePermission().then(() => refreshPermissions())
+function goAbout() {
+  router.push('/tabs/settings/about')
 }
 
 function getValue(path: string[]): unknown {
@@ -448,67 +315,6 @@ function handleLocaleChange(event: CustomEvent) {
   setLocale(event.detail.value as 'zh-CN' | 'en')
 }
 
-function saveServerUrl() {
-  const url = serverUrl.value.trim()
-  if (url) {
-    setApiBaseUrl(url)
-    checkStatus()
-  }
-}
-
-async function checkServer() {
-  await checkStatus()
-  const toast = await toastController.create({
-    message: serverOnline.value ? t('settings.serverOnline') : t('settings.serverOffline'),
-    duration: 1500,
-    color: serverOnline.value ? 'success' : 'danger',
-  })
-  await toast.present()
-}
-
-async function handleRestart() {
-  const toast = await toastController.create({
-    message: t('settings.restarting'),
-    duration: 30000,
-  })
-  await toast.present()
-  const success = await restartBackend()
-  await toast.dismiss()
-  const result = await toastController.create({
-    message: success ? t('settings.restartSuccess') : t('settings.restartFailed'),
-    duration: 2000,
-    color: success ? 'success' : 'danger',
-  })
-  await result.present()
-}
-
-async function handleStop() {
-  const alert = await alertController.create({
-    header: t('settings.stopConfirm'),
-    buttons: [
-      { text: t('settings.cancel'), role: 'cancel' },
-      {
-        text: t('settings.stop'),
-        role: 'destructive',
-        handler: async () => {
-          const success = await stopBackend()
-          const toast = await toastController.create({
-            message: success ? t('settings.stopped') : t('settings.stopFailed'),
-            duration: 2000,
-            color: success ? 'success' : 'danger',
-          })
-          await toast.present()
-        },
-      },
-    ],
-  })
-  await alert.present()
-}
-
-function openGitHub() {
-  window.open('https://github.com/Soltus/encv-go', '_blank')
-}
-
 async function handleSaveConfig() {
   try {
     await saveConfig()
@@ -533,70 +339,11 @@ function handleResetConfig() {
   resetConfig()
 }
 
-async function handleClearCache() {
-  const alert = await alertController.create({
-    header: t('settings.clearCache'),
-    message: t('settings.clearCacheConfirm'),
-    buttons: [
-      { text: t('settings.cancel'), role: 'cancel' },
-      {
-        text: t('settings.clear'),
-        role: 'destructive',
-        handler: () => {
-          const themePref = localStorage.getItem('encv-theme-preference')
-          const serverPref = localStorage.getItem('encv-server-url')
-          const webdavPref = localStorage.getItem('encv-webdav-configs')
-          const localePref = localStorage.getItem('encv-locale')
-          localStorage.clear()
-          if (themePref) localStorage.setItem('encv-theme-preference', themePref)
-          if (serverPref) localStorage.setItem('encv-server-url', serverPref)
-          if (webdavPref) localStorage.setItem('encv-webdav-configs', webdavPref)
-          if (localePref) localStorage.setItem('encv-locale', localePref)
-          toastController.create({
-            message: t('settings.cacheCleared'),
-            duration: 1500,
-            color: 'success',
-          }).then(t => t.present())
-        },
-      },
-    ],
-  })
-  await alert.present()
-}
-
-async function handleResetSettings() {
-  const alert = await alertController.create({
-    header: t('settings.resetSettings'),
-    message: t('settings.resetConfirm'),
-    buttons: [
-      { text: t('settings.cancel'), role: 'cancel' },
-      {
-        text: t('settings.reset'),
-        role: 'destructive',
-        handler: () => {
-          localStorage.clear()
-          serverUrl.value = 'http://127.0.0.1:2025'
-          if (isDark.value) toggleDark()
-          toastController.create({
-            message: t('settings.settingsReset'),
-            duration: 1500,
-            color: 'success',
-          }).then(t => t.present())
-        },
-      },
-    ],
-  })
-  await alert.present()
-}
-
 onMounted(async () => {
   await checkStatus()
   if (serverOnline.value) {
     await loadConfig()
     configLoaded.value = true
-  }
-  if (isNativePlatform.value) {
-    await refreshPermissions()
   }
 })
 
@@ -617,27 +364,17 @@ watch(serverOnline, async (online) => {
   padding: 24px;
   color: var(--encv-text-secondary);
 }
-
 .placeholder-text {
   opacity: 0.5;
   font-style: italic;
 }
-
-.connection-error {
-  color: var(--ion-color-danger);
-  font-size: 12px;
-  margin-top: 4px;
-}
-
 .port-info {
   font-size: 12px;
   opacity: 0.7;
   margin-left: 4px;
 }
-
-.server-controls {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
+.connection-error-inline {
+  color: var(--ion-color-danger);
+  font-size: 12px;
 }
 </style>
