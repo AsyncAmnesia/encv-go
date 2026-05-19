@@ -25,7 +25,9 @@ patchFile(join(ANDROID_DIR, 'build.gradle'), (c) => {
   )
 })
 
-// --- app/build.gradle: MINIMAL changes ---
+// --- app/build.gradle ---
+// IMPORTANT: Capacitor cap sync does NOT overwrite this file (confirmed from source)
+// So our modifications persist across builds — all changes are idempotent
 const version = process.env.ENCV_VERSION || ''
 
 patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
@@ -45,10 +47,12 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
   }
 
-  // 3. Apply our release config (idempotent — cap sync does NOT overwrite this file)
-  const applyLine = "apply from: '../encv-release.gradle'"
-  if (!c.includes('encv-release.gradle')) {
-    c = c.replace(/(plugins\s*\{[^}]*\})/, '$1\n\n' + applyLine)
+  // 3. ndk abiFilters (arm64 only)
+  if (!c.includes('abiFilters') || !c.includes('arm64-v8a')) {
+    c = c.replace(
+      /defaultConfig\s*\{/,
+      "defaultConfig {\n        ndk {\n            abiFilters 'arm64-v8a'\n        }",
+    )
   }
 
   // 4. Version injection
@@ -56,6 +60,31 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     const vcode = parseInt(version.replace(/\./g, '')) || 1
     c = c.replace(/versionCode\s+\d+/, `versionCode ${vcode}`)
     c = c.replace(/versionName\s+"[^"]*"/, `versionName "${version}"`)
+  }
+
+  // 5. Signing config (only when building release)
+  // Uses EXACT string anchor "minifyEnabled false" from Capacitor template
+  // This is safe because cap sync never regenerates this file
+  if (version && c.includes('minifyEnabled false')) {
+    const scBlock =
+      "\n" +
+      "    signingConfigs {\n" +
+      "        release {\n" +
+      "            storeFile file('../keystore/release.jks')\n" +
+      "            storePassword 'encv2025'\n" +
+      "            keyAlias 'encvrelease'\n" +
+      "            keyPassword 'encv2025'\n" +
+      "        }\n" +
+      "    }\n"
+
+    c = c.replace("android {", "android {" + scBlock)
+
+    c = c.replace(
+      "minifyEnabled false",
+      "minifyEnabled true\n        shrinkResources true\n        signingConfig signingConfigs.release",
+    )
+
+    console.log('  release: signing + minify + shrink applied')
   }
 
   return c
