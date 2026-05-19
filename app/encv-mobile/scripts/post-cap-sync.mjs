@@ -61,7 +61,23 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
   }
 
+  // CRITICAL ORDER: replace buildTypes.release FIRST, then inject signingConfigs
+  // Otherwise the regex would match signingConfigs.release instead of buildTypes.release
   if (version) {
+    // Replace ONLY the buildTypes.release block (inside buildTypes { })
+    // Use negative lookahead to avoid matching signingConfigs.release
+    c = c.replace(
+      /buildTypes\s*\{[^}]*release\s*\{[^}]*(?:\{[^}]*\}[^}]*)*\}/,
+      `buildTypes {
+                        release {
+                            minifyEnabled true
+                            shrinkResources true
+                            signingConfig signingConfigs.release
+                        }
+                    }`,
+    )
+
+    // Now inject signingConfigs (safe - no more release blocks to conflict)
     const scBlock =
       'android {\n' +
       '    signingConfigs {\n' +
@@ -73,15 +89,6 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
       '        }\n' +
       '    }\n'
     c = c.replace(/android\s*\{/, scBlock)
-
-    c = c.replace(
-      /release\s*\{[^}]*(?:\{[^}]*\}[^}]*)*\}/,
-      `release {
-                        minifyEnabled true
-                        shrinkResources true
-                        signingConfig signingConfigs.release
-                    }`,
-    )
   }
 
   return c
