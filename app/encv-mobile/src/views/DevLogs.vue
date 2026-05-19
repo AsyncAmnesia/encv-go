@@ -5,7 +5,7 @@
         <ion-title>{{ t('devlogs.title') }}</ion-title>
       </ion-toolbar>
       <ion-toolbar class="tab-toolbar">
-        <ion-segment :value="activeTab" @ionChange="activeTab = $event.detail.value">
+        <ion-segment :value="activeTab" @ionChange="activeTab = ($event.detail.value || 'frontend') as 'frontend' | 'backend'">
           <ion-segment-button value="frontend">
             {{ t('devlogs.frontend') }}
           </ion-segment-button>
@@ -80,7 +80,7 @@
     <ion-footer class="status-bar">
       <ion-toolbar>
         <div class="status-inner">
-          <span class="status-text">{{ t('devlogs.total', { total: totalCurrent, filtered: filteredCurrent }) }}</span>
+          <span class="status-text">{{ t('devlogs.total', { total: String(totalCurrent), filtered: String(filteredCurrent) }) }}</span>
           <div class="status-right">
             <ion-toggle v-model="autoScroll" :label-placement="'start'">{{ t('devlogs.autoScroll') }}</ion-toggle>
           </div>
@@ -141,7 +141,13 @@ const frontendLogs = ref<LogEntry[]>([])
 const backendLogs = ref<LogEntry[]>([])
 const serverOnline = ref(false)
 
-let origConsole: typeof console | null = null
+let origConsole: {
+  debug: Console['debug']
+  info: Console['info']
+  warn: Console['warn']
+  error: Console['error']
+  log: Console['log']
+} | null = null
 
 function addLog(level: string, args: any[]) {
   frontendLogs.value.push({
@@ -230,12 +236,19 @@ function onServerStatus(data: any) {
 }
 
 function hijackConsole() {
-  origConsole = { debug: console.debug, info: console.info, warn: console.warn, error: console.error, log: console.log }
-  console.debug = (...args: any[]) => { origConsole.debug(...args); addLog('debug', args) }
-  console.info = (...args: any[]) => { origConsole.info(...args); addLog('info', args) }
-  console.warn = (...args: any[]) => { origConsole.warn(...args); addLog('warn', args) }
-  console.error = (...args: any[]) => { origConsole.error(...args); addLog('error', args) }
-  console.log = (...args: any[]) => { origConsole.log(...args); addLog('info', args) }
+  const saved = {
+    debug: console.debug,
+    info: console.info,
+    warn: console.warn,
+    error: console.error,
+    log: console.log,
+  }
+  origConsole = saved
+  console.debug = (...args: any[]) => { saved.debug(...args); addLog('debug', args) }
+  console.info = (...args: any[]) => { saved.info(...args); addLog('info', args) }
+  console.warn = (...args: any[]) => { saved.warn(...args); addLog('warn', args) }
+  console.error = (...args: any[]) => { saved.error(...args); addLog('error', args) }
+  console.log = (...args: any[]) => { saved.log(...args); addLog('info', args) }
 }
 
 function restoreConsole() {
