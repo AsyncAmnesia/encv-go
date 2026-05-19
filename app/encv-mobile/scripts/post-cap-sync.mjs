@@ -84,6 +84,13 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
       "minifyEnabled true\n        shrinkResources true\n        signingConfig signingConfigs.release",
     )
 
+    if (!c.includes('noCompress')) {
+      c = c.replace(
+        "android {",
+        "android {\n    aaptOptions {\n        noCompress 'encv-go'\n    }\n",
+      )
+    }
+
     console.log('  release: signing + minify + shrink applied')
   }
 
