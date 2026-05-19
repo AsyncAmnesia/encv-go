@@ -189,6 +189,22 @@ jobs:
             ./gradlew assembleDebug
           fi
 
+      - name: Verify APK contents
+        run: |
+          APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk -name "*.apk" -type f | head -1)
+          if [ -n "$APK_PATH" ]; then
+            echo "=== APK size ==="
+            ls -lh "$APK_PATH"
+            echo "=== Assets in APK ==="
+            unzip -l "$APK_PATH" | grep "assets/" || echo "WARNING: No assets found!"
+            echo "=== encv-go in APK ==="
+            unzip -l "$APK_PATH" | grep "encv-go" || echo "WARNING: encv-go binary NOT found in APK!"
+            echo "=== config.mobile.json in APK ==="
+            unzip -l "$APK_PATH" | grep "config.mobile" || echo "WARNING: config.mobile.json NOT found in APK!"
+          else
+            echo "No APK found to verify"
+          fi
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:

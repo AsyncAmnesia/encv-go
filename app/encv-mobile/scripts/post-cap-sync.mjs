@@ -87,7 +87,7 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     if (!c.includes('noCompress')) {
       c = c.replace(
         "android {",
-        "android {\n    aaptOptions {\n        noCompress 'encv-go'\n    }\n",
+        "android {\n    androidResources {\n        noCompress 'encv-go'\n    }\n",
       )
     }
 
