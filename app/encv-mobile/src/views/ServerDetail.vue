@@ -82,7 +82,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonIcon, IonLabel,
@@ -105,6 +105,7 @@ const serverUrl = ref(getServerUrl())
 const isNativePlatform = ref(isNative())
 const permNotifications = ref(false)
 const permStorage = ref(false)
+let permissionCheckTimer: number | null = null
 
 async function refreshPermissions() {
   const perms = await checkPermissions()
@@ -112,12 +113,22 @@ async function refreshPermissions() {
   permStorage.value = perms.storage
 }
 
-function handleRequestNotification() {
-  requestNotificationPermission().then(() => refreshPermissions())
+async function handleRequestNotification() {
+  await requestNotificationPermission()
+  // 请求后设置定时器，稍后自动刷新权限状态
+  if (permissionCheckTimer) clearTimeout(permissionCheckTimer)
+  permissionCheckTimer = window.setTimeout(() => refreshPermissions(), 1000)
+  setTimeout(() => refreshPermissions(), 3000)
+  setTimeout(() => refreshPermissions(), 5000)
 }
 
-function handleRequestStorage() {
-  requestStoragePermission().then(() => refreshPermissions())
+async function handleRequestStorage() {
+  await requestStoragePermission()
+  // 请求后设置定时器，稍后自动刷新权限状态
+  if (permissionCheckTimer) clearTimeout(permissionCheckTimer)
+  permissionCheckTimer = window.setTimeout(() => refreshPermissions(), 1000)
+  setTimeout(() => refreshPermissions(), 3000)
+  setTimeout(() => refreshPermissions(), 5000)
 }
 
 function saveServerUrl() {
@@ -181,6 +192,10 @@ onMounted(async () => {
   if (isNativePlatform.value) {
     await refreshPermissions()
   }
+})
+
+onUnmounted(() => {
+  if (permissionCheckTimer) clearTimeout(permissionCheckTimer)
 })
 </script>
 

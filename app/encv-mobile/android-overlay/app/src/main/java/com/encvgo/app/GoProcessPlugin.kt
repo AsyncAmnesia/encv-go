@@ -15,34 +15,19 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
-import com.getcapacitor.annotation.Permission
-import com.getcapacitor.annotation.PermissionCallback
 
 @CapacitorPlugin(
-    name = "GoProcess",
-    permissions = [
-        Permission(
-            alias = "notifications",
-            strings = ["android.permission.POST_NOTIFICATIONS"]
-        ),
-        Permission(
-            alias = "storage",
-            strings = [
-                "android.permission.READ_EXTERNAL_STORAGE",
-                "android.permission.WRITE_EXTERNAL_STORAGE"
-            ]
-        )
-    ]
+    name = "GoProcess"
 )
 class GoProcessPlugin : Plugin() {
 
     companion object {
         private const val TAG = "ENCV-go"
-        private const val REQ_MANAGE_STORAGE = 2001
     }
 
     @PluginMethod
     fun restart(call: PluginCall) {
+        Log.d(TAG, "GoProcess.restart() called")
         val activity = activity as? MainActivity
         if (activity == null) {
             call.reject("Activity is not MainActivity")
@@ -62,6 +47,7 @@ class GoProcessPlugin : Plugin() {
 
     @PluginMethod
     fun stop(call: PluginCall) {
+        Log.d(TAG, "GoProcess.stop() called")
         val activity = activity as? MainActivity
         if (activity == null) {
             call.reject("Activity is not MainActivity")
@@ -75,6 +61,7 @@ class GoProcessPlugin : Plugin() {
 
     @PluginMethod
     fun getStatus(call: PluginCall) {
+        Log.d(TAG, "GoProcess.getStatus() called")
         val activity = activity as? MainActivity
         if (activity == null) {
             call.reject("Activity is not MainActivity")
@@ -88,6 +75,7 @@ class GoProcessPlugin : Plugin() {
 
     @PluginMethod
     fun requestNotificationPermission(call: PluginCall) {
+        Log.d(TAG, "GoProcess.requestNotificationPermission() called")
         if (Build.VERSION.SDK_INT < 33) {
             val result = JSObject()
             result.put("granted", true)
@@ -102,19 +90,15 @@ class GoProcessPlugin : Plugin() {
             call.resolve(result)
             return
         }
-        requestPermissionForAlias("notifications", call, "notificationPermissionCallback")
-    }
-
-    @PermissionCallback
-    private fun notificationPermissionCallback(call: PluginCall) {
-        val granted = getPermissionState("notifications") == com.getcapacitor.PermissionState.GRANTED
+        ActivityCompat.requestPermissions(activity, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1001)
         val result = JSObject()
-        result.put("granted", granted)
+        result.put("granted", false)
         call.resolve(result)
     }
 
     @PluginMethod
     fun requestStoragePermission(call: PluginCall) {
+        Log.d(TAG, "GoProcess.requestStoragePermission() called")
         if (Build.VERSION.SDK_INT >= 30) {
             val alreadyGranted = Environment.isExternalStorageManager()
             if (alreadyGranted) {
@@ -144,21 +128,16 @@ class GoProcessPlugin : Plugin() {
                 call.resolve(result)
                 return
             }
-            requestPermissionForAlias("storage", call, "storagePermissionCallback")
+            ActivityCompat.requestPermissions(activity, arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE), 1002)
+            val result = JSObject()
+            result.put("granted", false)
+            call.resolve(result)
         }
-    }
-
-    @PermissionCallback
-    private fun storagePermissionCallback(call: PluginCall) {
-        val readState = getPermissionState("storage")
-        val granted = readState == com.getcapacitor.PermissionState.GRANTED
-        val result = JSObject()
-        result.put("granted", granted)
-        call.resolve(result)
     }
 
     @PluginMethod
     fun checkPermissions(call: PluginCall) {
+        Log.d(TAG, "GoProcess.checkPermissions() called")
         val result = JSObject()
 
         val notificationGranted = if (Build.VERSION.SDK_INT >= 33) {
