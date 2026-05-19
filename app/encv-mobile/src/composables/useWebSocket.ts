@@ -108,12 +108,14 @@ function connect() {
     stopHeartbeat()
     eventBus.emit('server:status', { online: false })
     if (!event.wasClean) {
+      eventBus.emit('server:connection-error', { error: `Connection closed (code: ${event.code})` })
       scheduleReconnect()
     }
   }
 
   ws.onerror = () => {
     connectionState.value = 'disconnected'
+    eventBus.emit('server:connection-error', { error: 'Failed to connect to server' })
   }
 }
 

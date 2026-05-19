@@ -6,6 +6,7 @@ export interface EncvEvents {
   'task:completed': { id: string; error?: string }
   'file:change': { path: string; action: 'create' | 'delete' | 'modify' }
   'server:status': { online: boolean }
+  'server:connection-error': { error: string }
   'log:message': { level: string; message: string }
   'ws:message': { type: string; data: any }
 }

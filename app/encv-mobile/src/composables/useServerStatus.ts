@@ -4,14 +4,24 @@ import { eventBus } from './useEventBus'
 import { useWebSocket } from './useWebSocket'
 
 const isOnline = ref(false)
+const lastError = ref('')
 let initialized = false
 
 function onServerStatus(data: { online: boolean }) {
   isOnline.value = data.online
+  if (data.online) {
+    lastError.value = ''
+  }
+}
+
+function onConnectionError(data: { error: string }) {
+  lastError.value = data.error
 }
 
 async function checkStatus() {
-  isOnline.value = await checkServerStatus()
+  const result = await checkServerStatus()
+  isOnline.value = result.online
+  lastError.value = result.error || ''
 }
 
 export function useServerStatus() {
@@ -23,6 +33,7 @@ export function useServerStatus() {
       await checkStatus()
       connect()
       eventBus.on('server:status', onServerStatus)
+      eventBus.on('server:connection-error', onConnectionError)
     }
   })
 
@@ -32,6 +43,7 @@ export function useServerStatus() {
 
   return {
     isOnline,
+    lastError,
     checkStatus,
     connectionState,
   }

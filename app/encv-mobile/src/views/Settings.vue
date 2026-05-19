@@ -23,7 +23,7 @@
         </ion-item>
         <ion-item>
           <ion-icon :icon="globeOutline" slot="start"></ion-icon>
-          <ion-select :value="locale" @ionChange="handleLocaleChange" interface="action-sheet">
+          <ion-select :value="locale" @ionChange="handleLocaleChange" interface="action-sheet" mode="ios">
             <ion-select-option value="zh-CN">简体中文</ion-select-option>
             <ion-select-option value="en">English</ion-select-option>
           </ion-select>
@@ -52,6 +52,9 @@
               <ion-badge :color="serverOnline ? 'success' : 'danger'">
                 {{ serverOnline ? t('settings.online') : t('settings.offline') }}
               </ion-badge>
+            </p>
+            <p v-if="!serverOnline && connectionError" class="connection-error">
+              {{ connectionError }}
             </p>
           </ion-label>
           <ion-button fill="outline" slot="end" @click="checkServer">
@@ -82,7 +85,7 @@
               <ion-input
                 :value="String(getValue([section.key]) ?? '')"
                 :type="section.isPassword ? 'password' : section.type === 'integer' ? 'number' : 'text'"
-                :label="tField(section.key)"
+                :label="fieldLabel(section.key, section.required)"
                 label-placement="stacked"
                 :placeholder="section.description || tField(section.key)"
                 @ionInput="handleInput([section.key], section, $event)"
@@ -111,7 +114,7 @@
                     <ion-input
                       :value="String(getValue([section.key, child.key, grandchild.key]) ?? '')"
                       :type="grandchild.isPassword ? 'password' : grandchild.type === 'integer' ? 'number' : 'text'"
-                      :label="tField(grandchild.key)"
+                      :label="fieldLabel(grandchild.key, grandchild.required)"
                       label-placement="stacked"
                       :placeholder="grandchild.description || tField(grandchild.key)"
                       @ionInput="handleInput([section.key, child.key, grandchild.key], grandchild, $event)"
@@ -168,7 +171,7 @@
                 <ion-input
                   :value="String(getValue([section.key, child.key]) ?? '')"
                   :type="child.isPassword ? 'password' : child.type === 'integer' ? 'number' : 'text'"
-                  :label="tField(child.key)"
+                  :label="fieldLabel(child.key, child.required)"
                   label-placement="stacked"
                   :placeholder="child.description || tField(child.key)"
                   @ionInput="handleInput([section.key, child.key], child, $event)"
@@ -276,7 +279,7 @@ import { setApiBaseUrl, getServerUrl } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
 
 const { isDark, toggleDark } = useTheme()
-const { isOnline: serverOnline, checkStatus } = useServerStatus()
+const { isOnline: serverOnline, lastError: connectionError, checkStatus } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
 const { t, tField, tSectionTitle, setLocale, locale } = useI18n()
 
@@ -306,6 +309,10 @@ function handleInput(path: string[], field: FieldDef, event: CustomEvent) {
   }
 }
 
+function fieldLabel(key: string, required?: boolean): string {
+  return tField(key) + (required ? ' *' : '')
+}
+
 function handleDarkToggle() {
   toggleDark()
 }
@@ -333,7 +340,7 @@ async function checkServer() {
 }
 
 function openGitHub() {
-  window.open('https://github.com/encv-go', '_blank')
+  window.open('https://github.com/Soltus/encv-go', '_blank')
 }
 
 async function handleSaveConfig() {
@@ -345,10 +352,11 @@ async function handleSaveConfig() {
       color: 'success',
     })
     await toast.present()
-  } catch {
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
     const toast = await toastController.create({
-      message: t('settings.configSaveFailed'),
-      duration: 2000,
+      message: t('settings.configSaveFailed') + ': ' + detail,
+      duration: 3000,
       color: 'danger',
     })
     await toast.present()
@@ -435,5 +443,11 @@ onMounted(async () => {
 .placeholder-text {
   opacity: 0.5;
   font-style: italic;
+}
+
+.connection-error {
+  color: var(--ion-color-danger);
+  font-size: 12px;
+  margin-top: 4px;
 }
 </style>

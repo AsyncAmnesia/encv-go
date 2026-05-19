@@ -60,13 +60,17 @@ export function getFileStreamUrl(path: string): string {
   return `${baseUrl}/stream?path=${encodeURIComponent(path)}`
 }
 
-export async function checkServerStatus(): Promise<boolean> {
+export async function checkServerStatus(): Promise<{ online: boolean; error?: string }> {
   try {
     const baseUrl = getApiBaseUrl()
     const response = await fetch(`${baseUrl}/health`)
-    return response.ok
-  } catch {
-    return false
+    if (response.ok) {
+      return { online: true }
+    }
+    return { online: false, error: `HTTP ${response.status}` }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { online: false, error: msg }
   }
 }
 
@@ -173,17 +177,20 @@ export function saveWebDAVConfigs(configs: WebDAVConfig[]) {
   localStorage.setItem(WEBDAV_CONFIGS_KEY, JSON.stringify(configs))
 }
 
-export async function testWebDAVConnection(config: Omit<WebDAVConfig, 'id'>): Promise<boolean> {
+export async function testWebDAVConnection(config: Omit<WebDAVConfig, 'id'>): Promise<void> {
   const baseUrl = getApiBaseUrl()
-  try {
-    const response = await fetch(`${baseUrl}/api/webdav/test`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config),
-    })
-    return response.ok
-  } catch {
-    return false
+  const response = await fetch(`${baseUrl}/api/webdav/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  })
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`
+    try {
+      const body = await response.text()
+      if (body) detail += `: ${body}`
+    } catch {}
+    throw new Error(detail)
   }
 }
 
@@ -223,7 +230,12 @@ export async function fetchConfig(): Promise<Record<string, unknown>> {
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/config`)
   if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`)
+    let detail = `HTTP ${response.status}`
+    try {
+      const body = await response.text()
+      if (body) detail += `: ${body}`
+    } catch {}
+    throw new Error(detail)
   }
   return await response.json()
 }
@@ -236,7 +248,12 @@ export async function updateConfig(config: Record<string, unknown>): Promise<voi
     body: JSON.stringify(config),
   })
   if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`)
+    let detail = `HTTP ${response.status}`
+    try {
+      const body = await response.text()
+      if (body) detail += `: ${body}`
+    } catch {}
+    throw new Error(detail)
   }
 }
 
