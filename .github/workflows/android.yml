@@ -48,11 +48,8 @@ jobs:
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
-      - name: Install frontend dependencies
-        run: cd app/encv-mobile && npm install
-
-      - name: Build frontend
-        run: cd app/encv-mobile && npm run build
+      - name: Install frontend dependencies & Build
+        run: cd app/encv-mobile && npm install && npm run build
 
       - name: Build Go binary for Android arm64 (optimized)
         env:
@@ -67,95 +64,66 @@ jobs:
           echo "Go binary size:"
           ls -lh app/encv-mobile/encv-go-arm64
 
-      - name: Ensure Android platform & Sync Capacitor
+      # Keystore MUST be ready before cap sync (hook needs it for release builds)
+      - name: Restore release keystore from cache
+        uses: actions/cache@v4
+        id: keystore-cache
+        with:
+          path: app/encv-mobile/android/keystore
+          key: encv-release-keystore
+
+      - name: Ensure release keystore exists
+        run: |
+          KEYSTORE="app/encv-mobile/android/keystore/release.jks"
+          if [ -f "$KEYSTORE" ]; then
+            echo "Keystore ready:"
+            ls -lh "$KEYSTORE"
+          else
+            echo "Creating new release keystore..."
+            mkdir -p app/encv-mobile/android/keystore
+            keytool -genkeypair -v -keystore "$KEYSTORE" \
+              -storepass encv2025 -alias encvrelease \
+              -keypass encv2025 \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=ENCV-go, OU=Personal, O=ENCV, L=Unknown, ST=Unknown, C=CN"
+            echo "Keystore created:"
+            ls -lh "$KEYSTORE"
+          fi
+
+      # cap sync triggers afterSync hook (capacitor.config.ts → post-cap-sync.mjs)
+      # which handles: kotlin plugin, abiFilters, version, signingConfigs, minify, shrink
+      - name: Sync Capacitor Android project
+        env:
+          ENCV_VERSION: ${{ inputs.version }}
         run: |
           cd app/encv-mobile
-          ANDROID_DIR="./android"
-          KEYSTORE_BAK="/tmp/encv-release-keystore.bak"
-
-          # Backup keystore if exists (git checkout puts it in android/keystore/)
-          if [ -f "$ANDROID_DIR/keystore/release.jks" ]; then
-            cp "$ANDROID_DIR/keystore/release.jks" "$KEYSTORE_BAK"
-            echo "Keystore backed up from git"
-          fi
-
-          # Check if valid Capacitor Android project (not just empty/partial dir from git)
-          if [ -f "$ANDROID_DIR/build.gradle" ] && [ -f "$ANDROID_DIR/variables.gradle" ]; then
-            echo "Valid Android project found, syncing..."
+          if [ -d "./android" ] && [ -f "./android/build.gradle" ]; then
             npx cap sync android
           else
-            echo "No valid Android project found, recreating..."
-            rm -rf "$ANDROID_DIR"
-            npx cap add android
-            npx cap sync android
+            rm -rf ./android && npx cap add android && npx cap sync android
           fi
-
-          # Restore keystore after cap sync (cap sync regenerates the whole dir)
-          if [ -f "$KEYSTORE_BAK" ]; then
-            mkdir -p "$ANDROID_DIR/keystore"
-            cp "$KEYSTORE_BAK" "$ANDROID_DIR/keystore/release.jks"
-            echo "Keystore restored:"
-            ls -lh "$ANDROID_DIR/keystore/release.jks"
-          fi
-
           echo "Android project ready:"
-          ls -la "$ANDROID_DIR/"*.gradle "$ANDROID_DIR/app/"*.gradle 2>/dev/null
+          ls -la android/*.gradle android/app/*.gradle
 
-      - name: Configure Kotlin in Android project
-        run: |
-          cd app/encv-mobile/android
-          python3 -c "
-          import re
-          with open('build.gradle', 'r') as f:
-              content = f.read()
-          if 'kotlin-gradle-plugin' not in content:
-              content = content.replace(
-                  'dependencies {',
-                  'dependencies {\n        classpath \"org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0\"',
-                  1
-              )
-          with open('build.gradle', 'w') as f:
-              f.write(content)
-          with open('app/build.gradle', 'r') as f:
-              content = f.read()
-          if 'kotlin-android' not in content:
-              content = content.replace(
-                  \"'com.android.application'\",
-                  \"'com.android.application'\n    'kotlin-android'\",
-                  1
-              )
-          if 'kotlin-stdlib' not in content:
-              content = content.replace(
-                  'dependencies {',
-                  'dependencies {\n    implementation \"org.jetbrains.kotlin:kotlin-stdlib:2.1.0\"',
-                  1
-              )
-          with open('app/build.gradle', 'w') as f:
-              f.write(content)
-          "
-
-      # === Apply ALL customizations AFTER cap sync ===
-      - name: Copy Go binary and mobile config to Android assets
+      # === Non-Gradle customizations ===
+      - name: Copy Go binary and mobile config to assets
         run: |
           mkdir -p app/encv-mobile/android/app/src/main/assets
           cp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/assets/encv-go
           cp app/encv-mobile/assets/config.mobile.json app/encv-mobile/android/app/src/main/assets/config.mobile.json
-          echo "Assets contents:"
+          echo "Assets:"
           ls -lhR app/encv-mobile/android/app/src/main/assets/
 
       - name: Apply Android overlay (MainActivity + permissions + network config)
         run: |
-          # Copy Kotlin source
           mkdir -p app/encv-mobile/android/app/src/main/java/com/encvgo/app
           cp app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/MainActivity.kt \
              app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt
 
-          # Copy network security config
           mkdir -p app/encv-mobile/android/app/src/main/res/xml
           cp app/encv-mobile/android-overlay/app/src/main/res/xml/network_security_config.xml \
              app/encv-mobile/android/app/src/main/res/xml/network_security_config.xml
 
-          # Patch AndroidManifest.xml (cap sync just regenerated this file)
           python3 -c "
           import xml.etree.ElementTree as ET
           ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
@@ -163,12 +131,10 @@ jobs:
           root = base.getroot()
           ns = '{http://schemas.android.com/apk/res/android}'
 
-          # networkSecurityConfig + usesCleartextTraffic on <application>
           for app_tag in root.findall('application'):
               app_tag.set(ns + 'networkSecurityConfig', '@xml/network_security_config')
               app_tag.set(ns + 'usesCleartextTraffic', 'true')
 
-          # Permissions
           perms = [
               ('android.permission.INTERNET', None),
               ('android.permission.FOREGROUND_SERVICE', None),
@@ -190,127 +156,25 @@ jobs:
                           perm.set(ns + k, v)
 
           base.write('app/encv-mobile/android/app/src/main/AndroidManifest.xml', xml_declaration=True, encoding='utf-8')
-          print('AndroidManifest patched successfully')
+          print('AndroidManifest patched')
           "
 
-      - name: Restore release keystore from cache
-        uses: actions/cache@v4
-        id: keystore-cache
-        with:
-          path: app/encv-mobile/android/keystore
-          key: encv-release-keystore
-
-      - name: Ensure release keystore exists
-        run: |
-          KEYSTORE="app/encv-mobile/android/keystore/release.jks"
-          if [ -f "$KEYSTORE" ]; then
-            echo "Keystore ready:"
-            ls -lh "$KEYSTORE"
-            keytool -list -keystore "$KEYSTORE" -storepass encv2025 2>&1 | head -5
-          else
-            echo "Creating new release keystore..."
-            mkdir -p app/encv-mobile/android/keystore
-            keytool -genkeypair -v -keystore "$KEYSTORE" \
-              -storepass encv2025 -alias encvrelease \
-              -keypass encv2025 \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=ENCV-go, OU=Personal, O=ENCV, L=Unknown, ST=Unknown, C=CN"
-            echo "Keystore created:"
-            ls -lh "$KEYSTORE"
-          fi
-
-      - name: Optimize build.gradle for release (size reduction + signing)
-        run: |
-          cd app/encv-mobile/android
-          python3 << 'PYEOF'
-          import re
-
-          with open('app/build.gradle', 'r') as f:
-              content = f.read()
-
-          ver = "${{ inputs.version }}".strip()
-
-          # Only build arm64-v8a (no armeabi-v7a, x86, x86_64) — saves ~30% APK size
-          if 'abiFilters' not in content or 'arm64-v8a' not in content:
-              ndk_block = "\n    ndk {\n        abiFilters 'arm64-v8a'\n    }"
-              content = re.sub(r'(defaultConfig\s*\{)', r'\1' + ndk_block, content, count=1)
-
-          # Inject version when provided
-          if ver:
-              vcode = int(ver.replace('.', '')) or 1
-              content = re.sub(
-                  r'(defaultConfig\s*\{[^}]*?)\}',
-                  r'\1\n        versionName "' + ver + '"\n        versionCode ' + str(vcode) + '\n    }',
-                  content, count=1
-              )
-
-          # Release-only: signingConfigs + full release block replacement (UNCONDITIONAL when version set)
-          if ver:
-              # Inject signingConfigs into android { }
-              old_sc = r'android\s*\{'
-              new_sc = (
-                  'android {'
-                  '\n    signingConfigs {'
-                  '\n        release {'
-                  "\n            storeFile file('../keystore/release.jks')"
-                  "\n            storePassword 'encv2025'"
-                  "\n            keyAlias 'encvrelease'"
-                  "\n            keyPassword 'encv2025'"
-                  '\n        }'
-                  '\n    }'
-              )
-              content = re.sub(old_sc, new_sc, content, count=1)
-
-              # Replace ENTIRE release block (robust: no fragile inner-content matching)
-              # Matches: release { ...any existing config... }  and replaces with our complete config
-              content = re.sub(
-                  r'release\s*\{[^}]*(?:\{[^}]*\}[^}]*)*\}',
-                  '''release {
-                        minifyEnabled true
-                        shrinkResources true
-                        signingConfig signingConfigs.release
-                    }''',
-                  content,
-                  count=1
-              )
-
-          with open('app/build.gradle', 'w') as f:
-              f.write(content)
-
-          print("=== Final build.gradle release section ===")
-          in_release = False
-          for i, line in enumerate(content.split('\n')):
-              if 'release' in line.lower() and ('{' in line or 'minify' in line or 'shrink' in line or 'signingConfig' in line):
-                  print(f"  L{i+1}: {line}")
-          PYEOF
-
+      # === Build ===
       - name: Build ${{ inputs.version && 'Release' || 'Debug' }} APK
         run: |
           cd app/encv-mobile/android
           chmod +x gradlew
 
           if [ -n "${{ inputs.version }}" ]; then
-            echo "=== Building RELEASE APK (version ${{ inputs.version }}) ==="
+            echo "=== Building RELEASE APK v${{ inputs.version }} ==="
             ./gradlew assembleRelease
 
-            # MANDATORY: verify APK is properly signed
             APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
-            if [ -z "$APK_PATH" ]; then
-              echo "::error::No APK found in release output"
-              exit 1
-            fi
+            [ -z "$APK_PATH" ] && { echo "::error::No APK found"; exit 1; }
 
-            echo "Verifying APK signature..."
+            echo "Verifying signature..."
             apksigner verify --print-certs "$APK_PATH"
-            SIG_RESULT=$?
-            if [ $SIG_RESULT -ne 0 ]; then
-              echo "::error::APK is NOT SIGNED! Verification failed with code $SIG_RESULT"
-              echo "::error::This means Gradle signing was not applied correctly"
-              exit 1
-            fi
-
-            echo "✅ APK signed and verified successfully"
-            ls -lh "$APK_PATH"
+            echo "✅ Signed OK: $(ls -lh "$APK_PATH" | awk '{print $5}')"
           else
             echo "=== Building DEBUG APK ==="
             ./gradlew assembleDebug
@@ -320,8 +184,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: encv-go-android${{ inputs.version && format('-v{0}', inputs.version) || '-debug' }}
-          path: |
-            app/encv-mobile/android/app/build/outputs/apk/**/*.apk
+          path: app/encv-mobile/android/app/build/outputs/apk/**/*.apk
           retention-days: 30
 
       - name: Build summary
@@ -332,8 +195,7 @@ jobs:
           echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Version | \`${{ inputs.version || 'debug (development)' }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Go Binary | $(ls -lh app/encv-mobile/encv-go-arm64 2>/dev/null | awk '{print $5}' || echo 'N/A') |" >> $GITHUB_STEP_SUMMARY
-          echo "| Frontend | $(ls -lh app/encv-mobile/dist/index.html 2>/dev/null | awk '{print $5}' || echo 'N/A') |" >> $GITHUB_STEP_SUMMARY
+          echo "| Go Binary | $(ls -lh app/encv-mobile/encv-go-arm64 2>/dev/null | awk '{print $5}' || echo N/A) |" >> $GITHUB_STEP_SUMMARY
           find app/encv-mobile/android/app/build/outputs/apk -name "*.apk" -type f 2>/dev/null | while read apk; do
             echo "| APK | $(basename "$apk") ($(\ls -lh "$apk" | awk '{print $5}')) |" >> $GITHUB_STEP_SUMMARY
           done
