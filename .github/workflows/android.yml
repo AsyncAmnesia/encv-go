@@ -244,9 +244,9 @@ jobs:
                   content, count=1
               )
 
-          # Release-only: minify + shrink + signing (UNCONDITIONAL when version set)
+          # Release-only: signingConfigs + full release block replacement (UNCONDITIONAL when version set)
           if ver:
-              # Ensure signingConfigs block exists (force-replace to avoid stale configs)
+              # Inject signingConfigs into android { }
               old_sc = r'android\s*\{'
               new_sc = (
                   'android {'
@@ -261,22 +261,26 @@ jobs:
               )
               content = re.sub(old_sc, new_sc, content, count=1)
 
-              # Ensure release block has all required settings
-              release_re = r'(buildTypes\s*\{[^}]*?release\s*\{)'
-              release_addons = (
-                  r'\1'
-                  '\n        minifyEnabled true'
-                  '\n        shrinkResources true'
-                  "\n        signingConfig signingConfigs.release"
+              # Replace ENTIRE release block (robust: no fragile inner-content matching)
+              # Matches: release { ...any existing config... }  and replaces with our complete config
+              content = re.sub(
+                  r'release\s*\{[^}]*(?:\{[^}]*\}[^}]*)*\}',
+                  '''release {
+                        minifyEnabled true
+                        shrinkResources true
+                        signingConfig signingConfigs.release
+                    }''',
+                  content,
+                  count=1
               )
-              content = re.sub(release_re, release_addons, content, count=1, flags=re.DOTALL)
 
           with open('app/build.gradle', 'w') as f:
               f.write(content)
 
-          print("=== Final build.gradle signing-related lines ===")
+          print("=== Final build.gradle release section ===")
+          in_release = False
           for i, line in enumerate(content.split('\n')):
-              if any(kw in line for kw in ['signingConfig', 'signingConfigs', 'storeFile', 'storePassword', 'minifyEnabled']):
+              if 'release' in line.lower() and ('{' in line or 'minify' in line or 'shrink' in line or 'signingConfig' in line):
                   print(f"  L{i+1}: {line}")
           PYEOF
 
