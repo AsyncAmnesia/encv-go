@@ -1,0 +1,329 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Soltus/encv-go/internal/config/config",
+  "$ref": "#/$defs/Config",
+  "$defs": {
+    "AdminServer": {
+      "properties": {
+        "port": {
+          "type": "integer",
+          "description": "encv 管理后台服务器的端口，请不要填写 encv Webdav Server、 OpenList 或其他已使用的端口"
+        },
+        "password": {
+          "type": "string",
+          "description": "管理员密码，留空则禁用登录"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "port",
+        "password"
+      ],
+      "description": "--- 管理后台服务器 设置 ---"
+    },
+    "AudioPluginConfig": {
+      "properties": {
+        "ext": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ext"
+      ]
+    },
+    "Config": {
+      "properties": {
+        "password": {
+          "type": "string",
+          "description": "--- 全局设置 ---\nPassword 用于加密和解密视频文件，请务必设置一个强密码。"
+        },
+        "recover": {
+          "type": "boolean",
+          "description": "Recover 在解密时是否尝试覆盖已有文件。"
+        },
+        "output_path": {
+          "type": "string",
+          "description": "--- 加密/解密设置 ---\nOutputPath 加密后的文件输出目录。"
+        },
+        "plugin_settings": {
+          "properties": {
+            "video": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/video/video-plugin-config",
+              "$ref": "#/$defs/VideoPluginConfig"
+            },
+            "audio": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/audio/audio-plugin-config",
+              "$ref": "#/$defs/AudioPluginConfig"
+            },
+            "image": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/image/image-plugin-config",
+              "$ref": "#/$defs/ImagePluginConfig"
+            },
+            "wps": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/wps/wps-plugin-config",
+              "$ref": "#/$defs/WPSPluginConfig"
+            },
+            "pdf": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/pdf/pdf-plugin-config",
+              "$ref": "#/$defs/PDFPluginConfig"
+            },
+            "text": {
+              "$schema": "https://json-schema.org/draft/2020-12/schema",
+              "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/text/text-plugin-config",
+              "$ref": "#/$defs/TextPluginConfig"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "description": "插件专属配置。键是插件名，值是该插件的配置对象。"
+        },
+        "server": {
+          "$ref": "#/$defs/HttpServer"
+        },
+        "admin": {
+          "$ref": "#/$defs/AdminServer"
+        },
+        "webdav": {
+          "$ref": "#/$defs/WebdavServer"
+        },
+        "proxy": {
+          "$ref": "#/$defs/OpenlistProxyServer"
+        },
+        "log": {
+          "$ref": "#/$defs/LogConfig",
+          "description": "--- 日志设置 ---\nLog 配置结构化日志的输出级别和文件路径。"
+        },
+        "$schema": {
+          "type": "string",
+          "format": "uri",
+          "description": "The JSON Schema file for validation, used by editors."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "password",
+        "recover",
+        "output_path",
+        "plugin_settings",
+        "server",
+        "admin",
+        "webdav",
+        "proxy",
+        "log"
+      ],
+      "description": "Config 是应用程序的顶层配置结构，包含所有子模块的配置。"
+    },
+    "HttpServer": {
+      "properties": {
+        "port": {
+          "type": "integer",
+          "description": "encv HTTP 服务器的端口，请不要填写 encv Webdav Server、 OpenList 或其他已使用的端口"
+        },
+        "dir": {
+          "type": "string",
+          "description": "文件系统的根目录（例如 /path/to/your/files），支持相对路径"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "port",
+        "dir"
+      ],
+      "description": "--- 内置HTTP服务器 设置 ---"
+    },
+    "ImagePluginConfig": {
+      "properties": {
+        "ext": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ext"
+      ]
+    },
+    "LogConfig": {
+      "properties": {
+        "level": {
+          "type": "string",
+          "description": "日志级别: debug, info, warn, error\n设置为 debug 可以看到详细的插件匹配、文件处理等调试信息。\ninfo 级别会输出关键操作信息和服务状态。\nwarn 输出潜在问题但不影响运行的警告。\nerror 只输出错误信息。"
+        },
+        "file": {
+          "type": "string",
+          "description": "日志文件路径，为空则只输出到控制台\n如果指定了文件路径，控制台输出带颜色的文本格式，文件输出 JSON 格式。\n支持相对路径（相对于可执行文件）和绝对路径。\n示例: \"encv.log\" 或 \"D:/logs/encv.log\""
+        },
+        "console": {
+          "type": "boolean",
+          "description": "是否输出到控制台。当前仅做标记，控制台输出始终开启。"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "level",
+        "file",
+        "console"
+      ],
+      "description": "--- 日志配置 ---"
+    },
+    "OpenlistProxyServer": {
+      "properties": {
+        "sites": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ProxySiteConfig"
+          },
+          "type": "object"
+        },
+        "disable_signature_verification": {
+          "type": "boolean",
+          "description": "禁用签名，目前没发现这个值有什么影响"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "sites",
+        "disable_signature_verification"
+      ],
+      "description": "--- Openlist 代理服务器设置 ---"
+    },
+    "PDFPluginConfig": {
+      "properties": {
+        "ext": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ext"
+      ]
+    },
+    "ProxySiteConfig": {
+      "properties": {
+        "host": {
+          "type": "string",
+          "description": "OpenList 的主机，一般是 IP 或者域名，加上端口号，比如 localhost:5244"
+        },
+        "description": {
+          "type": "string",
+          "description": "站点描述，可选，用于用户自己标识区分"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "host"
+      ]
+    },
+    "TextPluginConfig": {
+      "properties": {
+        "ext": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ext"
+      ]
+    },
+    "VideoPluginConfig": {
+      "properties": {
+        "ext": {
+          "type": "string"
+        },
+        "chunk_size_mb": {
+          "type": "integer"
+        },
+        "light_main_chunk_enabled": {
+          "type": "boolean"
+        },
+        "track_extensions": {
+          "type": "string"
+        },
+        "keep_mkv_for_mkv_source": {
+          "type": "boolean"
+        },
+        "verify_after_pack": {
+          "type": "boolean"
+        },
+        "plugin_cache_dir": {
+          "type": "string"
+        },
+        "skip_merge_for_split_mkv": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ext",
+        "chunk_size_mb",
+        "light_main_chunk_enabled",
+        "track_extensions",
+        "keep_mkv_for_mkv_source",
+        "verify_after_pack",
+        "plugin_cache_dir",
+        "skip_merge_for_split_mkv"
+      ]
+    },
+    "WPSPluginConfig": {
+      "properties": {
+        "ext": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "ext"
+      ]
+    },
+    "WebdavServer": {
+      "properties": {
+        "port": {
+          "type": "integer",
+          "description": "encv Webdav 服务器的端口，请不要填写 encv HTTP Server、 OpenList 或其他已使用的端口"
+        },
+        "root": {
+          "type": "string",
+          "description": "路由（例如 /webdav/）"
+        },
+        "dir": {
+          "type": "string",
+          "description": "文件系统的根目录（例如 /path/to/your/files），而不是 WebDAV 的路由前缀（例如 /webdav/）"
+        },
+        "username": {
+          "type": "string",
+          "description": "WebDAV 基础认证的用户名"
+        },
+        "password": {
+          "type": "string",
+          "description": "WebDAV 基础认证的密码"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "port",
+        "root",
+        "dir",
+        "username",
+        "password"
+      ],
+      "description": "--- WebDAV 服务器设置 ---"
+    }
+  }
+}

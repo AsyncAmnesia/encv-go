@@ -26,7 +26,7 @@ var startCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		// 1. 初始化并启动后端服务
 		encv.Init(rootCtx)
-		s := encv.NewServer(rootCtx)
+		s := encv.NewServer(rootCtx, configPath)
 		backendAddr, err := s.Start(Version)
 		if err != nil {
 			log.Fatalf("Failed to start backend server: %v", err)

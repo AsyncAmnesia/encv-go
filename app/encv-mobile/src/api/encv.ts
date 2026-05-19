@@ -193,3 +193,33 @@ export function getFileCategory(name: string): FileCategory {
   if (docExts.includes(ext)) return 'document'
   return 'other'
 }
+
+export async function fetchConfig(): Promise<Record<string, unknown>> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/config`)
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return await response.json()
+}
+
+export async function updateConfig(config: Record<string, unknown>): Promise<void> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  })
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+}
+
+export async function fetchConfigSchema(): Promise<Record<string, unknown>> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/config/schema`)
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return await response.json()
+}
