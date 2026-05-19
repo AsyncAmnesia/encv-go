@@ -2,15 +2,15 @@
   <ion-page>
     <ion-header>
       <ion-toolbar>
-        <ion-title>WebDAV</ion-title>
+        <ion-title>{{ t('webdav.title') }}</ion-title>
       </ion-toolbar>
     </ion-header>
 
     <ion-content>
       <div v-if="configs.length === 0" class="empty-state">
         <ion-icon :icon="cloud" class="empty-icon"></ion-icon>
-        <h3>No WebDAV Servers</h3>
-        <p>Add a WebDAV server to sync your encrypted files.</p>
+        <h3>{{ t('webdav.noServers') }}</h3>
+        <p>{{ t('webdav.noServersDesc') }}</p>
       </div>
 
       <ion-list v-else>
@@ -20,18 +20,18 @@
             <ion-label>
               <h2>{{ config.name }}</h2>
               <p>{{ config.url }}</p>
-              <p v-if="config.mountPath">Mount: {{ config.mountPath }}</p>
+              <p v-if="config.mountPath">{{ t('webdav.mount') }}: {{ config.mountPath }}</p>
             </ion-label>
             <ion-badge :color="config.id === testingId ? 'warning' : 'medium'" slot="end">
-              {{ config.id === testingId ? 'Testing...' : 'Saved' }}
+              {{ config.id === testingId ? t('webdav.testing') : t('webdav.saved') }}
             </ion-badge>
           </ion-item>
           <ion-item-options side="end">
             <ion-item-option color="primary" @click="testConfig(config)">
-              Test
+              {{ t('webdav.test') }}
             </ion-item-option>
             <ion-item-option color="danger" @click="deleteConfig(config.id)">
-              Delete
+              {{ t('webdav.delete') }}
             </ion-item-option>
           </ion-item-options>
         </ion-item-sliding>
@@ -46,9 +46,9 @@
       <ion-modal :is-open="showModal" @didDismiss="showModal = false">
         <ion-header>
           <ion-toolbar>
-            <ion-title>{{ editingId ? 'Edit' : 'Add' }} WebDAV</ion-title>
+            <ion-title>{{ editingId ? t('webdav.edit') : t('webdav.add') }} {{ t('webdav.title') }}</ion-title>
             <ion-buttons slot="end">
-              <ion-button @click="showModal = false">Cancel</ion-button>
+              <ion-button @click="showModal = false">{{ t('settings.cancel') }}</ion-button>
             </ion-buttons>
           </ion-toolbar>
         </ion-header>
@@ -57,7 +57,7 @@
             <ion-item>
               <ion-input
                 v-model="formName"
-                label="Name"
+                :label="t('webdav.name')"
                 label-placement="stacked"
                 placeholder="My WebDAV Server"
               ></ion-input>
@@ -65,7 +65,7 @@
             <ion-item>
               <ion-input
                 v-model="formUrl"
-                label="Server URL"
+                :label="t('webdav.serverUrl')"
                 label-placement="stacked"
                 placeholder="https://dav.example.com"
               ></ion-input>
@@ -73,7 +73,7 @@
             <ion-item>
               <ion-input
                 v-model="formUsername"
-                label="Username"
+                :label="t('webdav.username')"
                 label-placement="stacked"
                 placeholder="user"
               ></ion-input>
@@ -82,7 +82,7 @@
               <ion-input
                 v-model="formPassword"
                 :type="showPassword ? 'text' : 'password'"
-                label="Password"
+                :label="t('webdav.password')"
                 label-placement="stacked"
                 placeholder="password"
               ></ion-input>
@@ -93,7 +93,7 @@
             <ion-item>
               <ion-input
                 v-model="formMountPath"
-                label="Mount Path"
+                :label="t('webdav.mountPath')"
                 label-placement="stacked"
                 placeholder="/webdav"
               ></ion-input>
@@ -102,12 +102,12 @@
 
           <ion-button expand="block" @click="testConnection" :disabled="testing || !formUrl">
             <ion-icon :icon="flash" slot="start"></ion-icon>
-            {{ testing ? 'Testing...' : 'Test Connection' }}
+            {{ testing ? t('webdav.testing') : t('webdav.testConnection') }}
           </ion-button>
 
           <ion-button expand="block" class="ion-margin-top" @click="saveConfig" :disabled="!formName || !formUrl">
             <ion-icon :icon="save" slot="start"></ion-icon>
-            Save
+            {{ t('webdav.save') }}
           </ion-button>
         </ion-content>
       </ion-modal>
@@ -153,6 +153,9 @@ import {
   testWebDAVConnection,
 } from '@/api/encv'
 import type { WebDAVConfig } from '@/api/encv'
+import { useI18n } from '@/composables/useI18n'
+
+const { t } = useI18n()
 
 const configs = ref<WebDAVConfig[]>([])
 const showModal = ref(false)
@@ -218,7 +221,7 @@ function saveConfig() {
   showModal.value = false
 
   toastController.create({
-    message: 'Configuration saved',
+    message: t('webdav.configSaved'),
     duration: 1500,
     color: 'success',
   }).then(t => t.present())
@@ -236,7 +239,7 @@ async function testConfig(config: WebDAVConfig) {
   testingId.value = ''
 
   const toast = await toastController.create({
-    message: success ? 'Connection successful!' : 'Connection failed',
+    message: success ? t('webdav.connectionSuccess') : t('webdav.connectionFailed'),
     duration: 2000,
     color: success ? 'success' : 'danger',
   })
@@ -256,7 +259,7 @@ async function testConnection() {
   testing.value = false
 
   const toast = await toastController.create({
-    message: success ? 'Connection successful!' : 'Connection failed',
+    message: success ? t('webdav.connectionSuccess') : t('webdav.connectionFailed'),
     duration: 2000,
     color: success ? 'success' : 'danger',
   })

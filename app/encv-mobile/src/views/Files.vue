@@ -7,12 +7,12 @@
             <ion-icon :icon="arrowBack" slot="icon-only"></ion-icon>
           </ion-button>
         </ion-buttons>
-        <ion-title>Files</ion-title>
+        <ion-title>{{ t('files.title') }}</ion-title>
       </ion-toolbar>
       <ion-toolbar v-if="currentPath !== '/'">
         <div class="breadcrumb-scroll">
           <div class="breadcrumb">
-            <span class="breadcrumb-item" @click="navigateTo('/')">Root</span>
+            <span class="breadcrumb-item" @click="navigateTo('/')">{{ t('files.root') }}</span>
             <span v-for="(segment, index) in pathSegments" :key="index" class="breadcrumb-segment">
               <ion-icon :icon="chevronForward" class="breadcrumb-sep"></ion-icon>
               <span class="breadcrumb-item" @click="navigateTo(segment.path)">{{ segment.name }}</span>
@@ -29,23 +29,23 @@
 
       <div v-if="loading" class="loading-container">
         <ion-spinner name="crescent"></ion-spinner>
-        <p>Loading files...</p>
+        <p>{{ t('files.loading') }}</p>
       </div>
 
       <div v-else-if="!serverOnline" class="empty-state">
         <ion-icon :icon="cloudOffline" class="empty-icon"></ion-icon>
-        <h3>Server Offline</h3>
-        <p>ENCV server is not running. Please start the server first.</p>
+        <h3>{{ t('files.serverOffline') }}</h3>
+        <p>{{ t('files.serverOfflineDesc') }}</p>
         <ion-button @click="retryConnection">
           <ion-icon :icon="refresh" slot="start"></ion-icon>
-          Retry
+          {{ t('files.retry') }}
         </ion-button>
       </div>
 
       <div v-else-if="files.length === 0" class="empty-state">
         <ion-icon :icon="folderOpen" class="empty-icon"></ion-icon>
-        <h3>Empty Directory</h3>
-        <p>No files found in this directory.</p>
+        <h3>{{ t('files.emptyDir') }}</h3>
+        <p>{{ t('files.emptyDirDesc') }}</p>
       </div>
 
       <ion-list v-else>
@@ -63,7 +63,7 @@
           <ion-label>
             <h2>{{ file.name }}</h2>
             <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified"> · {{ file.modified }}</span></p>
-            <p v-else-if="file.isDirectory">Directory</p>
+            <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
           </ion-label>
           <ion-badge v-if="getFileCategory(file.name) === 'encrypted'" color="warning" slot="end">
             ENCV
@@ -117,7 +117,9 @@ import {
 } from '@/api/encv'
 import type { FileItem } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
+import { useI18n } from '@/composables/useI18n'
 
+const { t } = useI18n()
 const router = useRouter()
 const serverOnline = ref(false)
 const files = ref<FileItem[]>([])
@@ -175,7 +177,7 @@ async function loadFiles() {
     } catch (error) {
       console.error('Failed to load files:', error)
       const toast = await toastController.create({
-        message: 'Failed to load files',
+        message: t('files.loadFailed'),
         duration: 2000,
         color: 'danger',
       })
@@ -236,7 +238,7 @@ async function handleFileClick(file: FileItem) {
     })
   } else {
     const toast = await toastController.create({
-      message: `Preview for "${file.name}" is not supported yet`,
+      message: t('files.previewNotSupported', { name: file.name }),
       duration: 2000,
       color: 'medium',
     })

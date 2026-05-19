@@ -2,7 +2,7 @@
   <ion-page>
     <ion-header>
       <ion-toolbar>
-        <ion-title>Tasks</ion-title>
+        <ion-title>{{ t('tasks.title') }}</ion-title>
       </ion-toolbar>
     </ion-header>
 
@@ -13,13 +13,13 @@
 
       <div v-if="loading" class="loading-container">
         <ion-spinner name="crescent"></ion-spinner>
-        <p>Loading tasks...</p>
+        <p>{{ t('tasks.loading') }}</p>
       </div>
 
       <div v-else-if="tasks.length === 0" class="empty-state">
         <ion-icon :icon="checkmarkCircle" class="empty-icon"></ion-icon>
-        <h3>No Tasks</h3>
-        <p>Encryption and decryption tasks will appear here.</p>
+        <h3>{{ t('tasks.noTasks') }}</h3>
+        <p>{{ t('tasks.noTasksDesc') }}</p>
       </div>
 
       <ion-list v-else>
@@ -36,7 +36,7 @@
                 <ion-badge :color="getStatusColor(task.status)" class="status-badge">
                   {{ getStatusLabel(task.status) }}
                 </ion-badge>
-                <span class="task-type">{{ task.type === 'encrypt' ? 'Encrypt' : 'Decrypt' }}</span>
+                <span class="task-type">{{ task.type === 'encrypt' ? t('tasks.encrypt') : t('tasks.decrypt') }}</span>
               </p>
               <ion-progress-bar
                 v-if="task.status === 'running'"
@@ -52,21 +52,21 @@
               color="warning"
               @click="handleCancelTask(task.id)"
             >
-              Cancel
+              {{ t('tasks.cancel') }}
             </ion-item-option>
             <ion-item-option
               v-if="task.status === 'failed'"
               color="primary"
               @click="handleRetryTask(task.id)"
             >
-              Retry
+              {{ t('tasks.retry') }}
             </ion-item-option>
             <ion-item-option
               v-if="task.status === 'completed' || task.status === 'failed'"
               color="danger"
               @click="handleRemoveTask(task.id)"
             >
-              Remove
+              {{ t('tasks.remove') }}
             </ion-item-option>
           </ion-item-options>
         </ion-item-sliding>
@@ -81,9 +81,9 @@
       <ion-modal :is-open="showNewTaskModal" @didDismiss="showNewTaskModal = false">
         <ion-header>
           <ion-toolbar>
-            <ion-title>New Task</ion-title>
+            <ion-title>{{ t('tasks.newTask') }}</ion-title>
             <ion-buttons slot="end">
-              <ion-button @click="showNewTaskModal = false">Close</ion-button>
+              <ion-button @click="showNewTaskModal = false">{{ t('tasks.close') }}</ion-button>
             </ion-buttons>
           </ion-toolbar>
         </ion-header>
@@ -93,17 +93,17 @@
               <ion-select
                 v-model="newTaskType"
                 interface="action-sheet"
-                label="Task Type"
+                :label="t('tasks.taskType')"
                 label-placement="stacked"
               >
-                <ion-select-option value="encrypt">Encrypt</ion-select-option>
-                <ion-select-option value="decrypt">Decrypt</ion-select-option>
+                <ion-select-option value="encrypt">{{ t('tasks.encrypt') }}</ion-select-option>
+                <ion-select-option value="decrypt">{{ t('tasks.decrypt') }}</ion-select-option>
               </ion-select>
             </ion-item>
             <ion-item>
               <ion-input
                 v-model="newTaskPath"
-                label="Source Path"
+                :label="t('tasks.sourcePath')"
                 label-placement="stacked"
                 placeholder="/path/to/file"
               ></ion-input>
@@ -111,7 +111,7 @@
           </ion-list>
           <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath">
             <ion-icon :icon="lockClosed" slot="start"></ion-icon>
-            Create Task
+            {{ t('tasks.createTask') }}
           </ion-button>
         </ion-content>
       </ion-modal>
@@ -165,6 +165,9 @@ import {
 } from '@/api/encv'
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
+import { useI18n } from '@/composables/useI18n'
+
+const { t } = useI18n()
 
 const tasks = ref<EncvTask[]>([])
 const loading = ref(false)
@@ -201,10 +204,10 @@ function getStatusColor(status: TaskStatus) {
 
 function getStatusLabel(status: TaskStatus) {
   switch (status) {
-    case 'queued': return 'Queued'
-    case 'running': return 'Running'
-    case 'completed': return 'Done'
-    case 'failed': return 'Failed'
+    case 'queued': return t('tasks.queued')
+    case 'running': return t('tasks.running')
+    case 'completed': return t('tasks.completed')
+    case 'failed': return t('tasks.failed')
   }
 }
 
@@ -244,7 +247,7 @@ async function handleCreateTask() {
     await createTask(newTaskType.value, newTaskPath.value)
     showNewTaskModal.value = false
     const toast = await toastController.create({
-      message: 'Task created successfully',
+      message: t('tasks.taskCreated'),
       duration: 1500,
       color: 'success',
     })
@@ -252,7 +255,7 @@ async function handleCreateTask() {
     await loadTasks()
   } catch {
     const toast = await toastController.create({
-      message: 'Failed to create task',
+      message: t('tasks.taskCreateFailed'),
       duration: 2000,
       color: 'danger',
     })
@@ -266,7 +269,7 @@ async function handleCancelTask(id: string) {
     await loadTasks()
   } catch {
     const toast = await toastController.create({
-      message: 'Failed to cancel task',
+      message: t('tasks.taskCancelFailed'),
       duration: 2000,
       color: 'danger',
     })
@@ -280,7 +283,7 @@ async function handleRetryTask(id: string) {
     await loadTasks()
   } catch {
     const toast = await toastController.create({
-      message: 'Failed to retry task',
+      message: t('tasks.taskRetryFailed'),
       duration: 2000,
       color: 'danger',
     })

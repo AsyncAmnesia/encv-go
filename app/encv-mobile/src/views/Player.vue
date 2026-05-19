@@ -2,18 +2,18 @@
   <ion-page>
     <ion-header>
       <ion-toolbar>
-        <ion-title>{{ fileName || 'Player' }}</ion-title>
+        <ion-title>{{ fileName || t('player.title') }}</ion-title>
       </ion-toolbar>
     </ion-header>
 
     <ion-content>
       <div v-if="!filePath" class="empty-state">
         <ion-icon :icon="playCircle" class="empty-icon"></ion-icon>
-        <h3>No Media Selected</h3>
-        <p>Select a video or audio file from the Files tab to play.</p>
+        <h3>{{ t('player.noMedia') }}</h3>
+        <p>{{ t('player.noMediaDesc') }}</p>
         <ion-button router-link="/tabs/files">
           <ion-icon :icon="folder" slot="start"></ion-icon>
-          Browse Files
+          {{ t('player.browseFiles') }}
         </ion-button>
       </div>
 
@@ -63,8 +63,10 @@ import {
 } from '@ionic/vue'
 import { playCircle, folder, musicalNotes } from 'ionicons/icons'
 import { getFileStreamUrl, getFileCategory } from '@/api/encv'
+import { useI18n } from '@/composables/useI18n'
 
 const route = useRoute()
+const { t } = useI18n()
 
 const filePath = computed(() => (route.query.path as string) || '')
 const fileName = computed(() => (route.query.name as string) || '')
@@ -87,7 +89,7 @@ const audioRef = ref<HTMLAudioElement | null>(null)
 
 async function handlePlayerError() {
   const toast = await toastController.create({
-    message: `Failed to play "${fileName.value}". The file may be corrupted or the server is unavailable.`,
+    message: t('player.playFailed', { name: fileName.value }),
     duration: 3000,
     color: 'danger',
   })
