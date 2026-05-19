@@ -21,8 +21,8 @@ func FindServer(startPort int, maxTries int) (string, *types.PingResponse, error
 }
 
 // NewPlayer 创建一个新的播放器实例
-func NewServer(ctx context.Context) *server.Server {
-	return server.NewServer(ctx)
+func NewServer(ctx context.Context, configPath string) *server.Server {
+	return server.NewServer(ctx, configPath)
 }
 
 // 解析服务标志的辅助函数

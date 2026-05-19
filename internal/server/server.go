@@ -31,6 +31,7 @@ import (
 type Server struct {
 	server     *http.Server
 	cfg        *config.Config
+	configPath string // 配置文件路径，用于 API 读写
 	servingDir string // 主服务目录的绝对路径
 	version    string // 存储应用版本
 	instanceID string // 存储本次启动的唯一实例ID
@@ -42,13 +43,14 @@ type Server struct {
 	chunkNamers    []namer.ChunkNamer
 }
 
-func NewServer(ctx context.Context) *Server {
+func NewServer(ctx context.Context, configPath string) *Server {
 	cfg := config.FromContext(ctx)
 	containerManager := service.NewContainerManager()
 	readerService := service.NewReaderService(containerManager)
 	contentHandler := handler.NewContentHandler()
 	return &Server{
 		cfg:            cfg,
+		configPath:     configPath,
 		readerService:  readerService,
 		contentHandler: contentHandler,
 		instanceID:     fmt.Sprintf("%x", time.Now().UnixNano()),
@@ -101,6 +103,8 @@ func (s *Server) Start(version string) (string, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", s.handlePing)
 	mux.HandleFunc("/stream", s.handleStreamRequest)
+	mux.HandleFunc("/api/config", s.handleConfigAPI)
+	mux.HandleFunc("/api/config/schema", s.handleConfigSchemaAPI)
 
 	mux.HandleFunc("/", s.handleRequest)
 

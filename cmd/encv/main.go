@@ -25,8 +25,9 @@ var Version = "dev"
 
 // 全局变量，由 PersistentPreRun 初始化，供所有子命令使用
 var (
-	cfg     *config.Config
-	rootCtx context.Context
+	cfg        *config.Config
+	rootCtx    context.Context
+	configPath string
 )
 
 // --- init 函数：添加所有命令到根命令，并定义标志 ---
@@ -75,7 +76,8 @@ var rootCmd = &cobra.Command{
 
 		// 2. 从 flag 获取可能的配置路径
 		configFlag, _ := cmd.Flags().GetString("config")
-		configPath, err := config.FindConfigPath(configFlag)
+		var err error
+		configPath, err = config.FindConfigPath(configFlag)
 		if err != nil {
 			slog.Warn("Config file not found, using defaults", "error", err)
 		}
