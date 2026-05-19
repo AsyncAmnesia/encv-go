@@ -68,7 +68,13 @@ jobs:
           ls -lh app/encv-mobile/encv-go-arm64
 
       - name: Add Capacitor Android platform
-        run: cd app/encv-mobile && npx cap add android
+        run: |
+          cd app/encv-mobile
+          if [ -d "./android" ]; then
+            echo "Android platform already exists, skipping add"
+          else
+            npx cap add android
+          fi
 
       - name: Configure Kotlin in Android project
         run: |
