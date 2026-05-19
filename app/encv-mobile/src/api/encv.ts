@@ -2,6 +2,7 @@ const SERVER_URL_KEY = 'encv-server-url'
 const DEFAULT_API_BASE_URL = 'http://127.0.0.1:2025'
 
 function getApiBaseUrl(): string {
+  if (import.meta.env.DEV) return ''
   return localStorage.getItem(SERVER_URL_KEY) || DEFAULT_API_BASE_URL
 }
 
@@ -18,6 +19,10 @@ export function resetServerUrl() {
 }
 
 export function getWebSocketUrl(): string {
+  if (import.meta.env.DEV) {
+    const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${wsProtocol}//${location.host}/ws`
+  }
   const baseUrl = getApiBaseUrl()
   const wsUrl = baseUrl
     .replace(/^https:\/\//, 'wss://')
@@ -48,6 +53,9 @@ export async function listFiles(path = '/'): Promise<FileItem[]> {
 }
 
 export function getFileStreamUrl(path: string): string {
+  if (import.meta.env.DEV) {
+    return `/stream?path=${encodeURIComponent(path)}`
+  }
   const baseUrl = getApiBaseUrl()
   return `${baseUrl}/stream?path=${encodeURIComponent(path)}`
 }
