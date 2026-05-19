@@ -111,8 +111,8 @@ jobs:
           mkdir -p app/encv-mobile/android/app/src/main/assets
           cp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/assets/encv-go
           cp app/encv-mobile/assets/config.mobile.json app/encv-mobile/android/app/src/main/assets/config.mobile.json
-          # encv-release.gradle: signing + minify + shrink (referenced by apply from in build.gradle)
-          cp app/encv-mobile/android/encv-release.gradle app/encv-mobile/android/encv-release.gradle
+          # encv-release.gradle: signing + minify + shrink (stable in android-overlay/)
+          cp app/encv-mobile/android-overlay/encv-release.gradle app/encv-mobile/android/encv-release.gradle
           echo "Assets:"
           ls -lhR app/encv-mobile/android/app/src/main/assets/
           echo "Release config:"

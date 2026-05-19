@@ -1,0 +1,30 @@
+// encv-release.gradle — Release build overrides
+// Applied via 'apply from' in post-cap-sync hook
+// This file is NEVER touched by cap sync, so it stays stable
+
+android {
+    signingConfigs {
+        release {
+            storeFile file('../keystore/release.jks')
+            storePassword 'encv2025'
+            keyAlias 'encvrelease'
+            keyPassword 'encv2025'
+        }
+    }
+
+    ndk {
+        abiFilters 'arm64-v8a'
+    }
+}
+
+android.defaultConfig {
+    // These will be overwritten by ENCV_VERSION env at sync time
+}
+
+android.buildTypes {
+    release {
+        minifyEnabled true
+        shrinkResources true
+        signingConfig signingConfigs.release
+    }
+}
