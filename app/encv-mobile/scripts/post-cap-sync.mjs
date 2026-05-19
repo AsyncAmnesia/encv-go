@@ -70,7 +70,7 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
       "\n" +
       "    signingConfigs {\n" +
       "        release {\n" +
-      "            storeFile file('../keystore/release.jks')\n" +
+      "            storeFile file('../../keystore/release.jks')\n" +
       "            storePassword 'encv2025'\n" +
       "            keyAlias 'encvrelease'\n" +
       "            keyPassword 'encv2025'\n" +

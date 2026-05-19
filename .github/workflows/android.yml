@@ -64,23 +64,23 @@ jobs:
           echo "Go binary size:"
           ls -lh app/encv-mobile/encv-go-arm64
 
-      # Keystore MUST be ready before cap sync (hook needs it for release builds)
+      # Keystore 放在 android/ 外面，避免被 cap add/cap sync 重建时覆盖
       - name: Restore release keystore from cache
         uses: actions/cache@v4
         id: keystore-cache
         with:
-          path: app/encv-mobile/android/keystore
+          path: app/encv-mobile/keystore
           key: encv-release-keystore
 
       - name: Ensure release keystore exists
         run: |
-          KEYSTORE="app/encv-mobile/android/keystore/release.jks"
+          KEYSTORE="app/encv-mobile/keystore/release.jks"
           if [ -f "$KEYSTORE" ]; then
             echo "Keystore ready:"
             ls -lh "$KEYSTORE"
           else
             echo "Creating new release keystore..."
-            mkdir -p app/encv-mobile/android/keystore
+            mkdir -p app/encv-mobile/keystore
             keytool -genkeypair -v -keystore "$KEYSTORE" \
               -storepass encv2025 -alias encvrelease \
               -keypass encv2025 \

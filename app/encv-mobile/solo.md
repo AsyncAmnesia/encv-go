@@ -30,7 +30,8 @@ Error: Process completed with exit code 1.
 | 第2次 | 正则注入 signingConfigs | ❌ 正则破坏 build.gradle 结构 |
 | 第3次 | `apply from` 外部 gradle 文件 | ❌ Gradle 8 属性加载时序，**同样 BUILD SUCCESSFUL 但未签名** |
 | 第4次 | `apply from` + gradle.properties | ❌ 同上 + AndroidX 缺失 |
-| 第5次（当前） | **精确字符串锚点直接注入 build.gradle** | 🔄 **待 CI 验证** |
+| 第5次 | 精确字符串锚点直接注入 build.gradle | ✅ 注入成功，但 **keystore 路径在 android/ 内被 cap add 覆盖** |
+| 第6次（当前） | keystore 移到 android/ 外 + 直接注入 | 🔄 **待 CI 验证** |
 
 ### Capacitor cap sync 到底改了哪些文件？
 
@@ -67,7 +68,7 @@ post-cap-sync.mjs（Capacitor hook 触发）
 - 所有修改都是幂等的（`c.includes()` 先检查）
 - 使用精确字符串锚点（`"minifyEnabled false"`、`"android {"`），不用模糊正则
 - 签名配置仅在 `ENCV_VERSION` 非空时注入（区分 debug/release）
-- keystore 路径写死为 `file('../keystore/release.jks')`
+- keystore 路径写死为 `file('../../keystore/release.jks')`（**必须在 android/ 目录外**）
 
 ---
 
@@ -122,6 +123,41 @@ keystore 通过 `actions/cache@v4` 跨 run 复用，artifact 不上传 keystore�
 
 ---
 
+## 4.5 ⚠️ keystore 不能放在 android/ 目录内
+
+### 错误现象
+```
+Execution failed for task ':app:validateSigningRelease'.
+Keystore file '.../android/keystore/release.jks' not found for signing config 'release'.
+```
+
+### 根因
+
+CI 执行时序：
+```
+1. 创建 keystore → app/encv-mobile/android/keystore/release.jks   ✅
+2. cap add android → 重建整个 android/ 目录                        💥 keystore 被覆盖!
+3. post-cap-sync.mjs 注入 signingConfigs (引用 ../keystore/)       → 文件已不存在
+```
+
+**`cap add android` 会从模板解压出全新的 `android/` 目录，之前放在 `android/keystore/` 的文件全部丢失。**
+
+即使 cache 命中恢复了 `android/keystore/`，如果 CI 判定需要走 `rm -rf ./android && npx cap add android` 分支（比如 checkout 后无 android/），同样会丢失。
+
+### 修复
+
+keystore 放在 **android/ 外面**：`app/encv-mobile/keystore/release.jks`
+
+| 项目 | 旧路径（❌） | 新路径（✅） |
+|------|------------|------------|
+| CI cache | `app/encv-mobile/android/keystore` | `app/encv-mobile/keystore` |
+| CI 创建 | 同上 | 同上 |
+| build.gradle 引用 | `file('../keystore/release.jks')` | `file('../../keystore/release.jks')` |
+
+从 `android/app/build.gradle` 视角：`../` = `android/`，`../../` = `encv-mobile/`。
+
+---
+
 ## 5. cap add android 重复添加错误
 
 checkout 后 `./android` 存在但非完整项目。检查 `build.gradle + variables.gradle` 双文件判断有效性。
@@ -170,7 +206,7 @@ if (version && c.includes('minifyEnabled false')) {
   const scBlock = `
     signingConfigs {
         release {
-            storeFile file('../keystore/release.jks')
+            storeFile file('../../keystore/release.jks')
             storePassword 'encv2025'
             keyAlias 'encvrelease'
             keyPassword 'encv2025'
@@ -262,7 +298,7 @@ Checkout → Setup tools (Node/Go/JDK/Android SDK)
 npm install && npm run build                    # 前端构建
 go build (CGO_ENABLED=0, arm64)               # Go 后端二进制
     ↓
-Restore/Create keystore (cache 或新建)         # 签名文件就位 (android/keystore/release.jks)
+Restore/Create keystore (cache 或新建)         # 签名文件就位 (keystore/release.jks，在 android/ 外)
     ↓
 npx cap sync android                           # 触发 afterSync hook
   → post-cap-sync.mjs (直接修改 build.gradle):
@@ -294,7 +330,7 @@ upload artifact (仅 APK，不含 keystore)
    - 确认 `signingConfigs.release` 块存在且路径正确
 
 3. **确认 keystore 文件存在**
-   - `ls -lh android/keystore/release.jks`
+   - `ls -lh keystore/release.jks`（注意：在 android/ **外面**）
    - cache 命中时应显示 "Keystore ready"
 
 4. **检查 Gradle 是否真的执行了签名**
@@ -305,3 +341,4 @@ upload artifact (仅 APK，不含 keystore)
    - Capacitor 升级后模板的 `"minifyEnabled false"` 锚点文字变了
    - `post-cap-sync.mjs` 的 `c.includes('minifyEnabled false')` 检查失败导致跳过
    - keystore cache 被清除后重新生成，但新 keystore 密码不匹配
+   - **keystore 放回了 android/ 目录内，被 cap add 覆盖**（必须放外面！）
