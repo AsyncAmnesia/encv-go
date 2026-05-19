@@ -241,7 +241,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import {
   IonPage,
   IonHeader,
@@ -499,8 +499,15 @@ onMounted(async () => {
   await checkStatus()
   if (serverOnline.value) {
     await loadConfig()
+    configLoaded.value = true
   }
-  configLoaded.value = true
+})
+
+watch(serverOnline, async (online) => {
+  if (online && !configLoaded.value) {
+    await loadConfig()
+    configLoaded.value = true
+  }
 })
 </script>
 

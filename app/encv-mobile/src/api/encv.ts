@@ -1,5 +1,5 @@
 const SERVER_URL_KEY = 'encv-server-url'
-const DEFAULT_API_BASE_URL = 'http://127.0.0.1:2025'
+export const DEFAULT_API_BASE_URL = 'http://127.0.0.1:2025'
 
 function getApiBaseUrl(): string {
   if (import.meta.env.DEV) return ''

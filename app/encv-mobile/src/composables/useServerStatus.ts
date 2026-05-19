@@ -1,21 +1,17 @@
 import { ref, onMounted, onUnmounted } from 'vue'
-import { checkServerStatus } from '@/api/encv'
+import { checkServerStatus, setApiBaseUrl, DEFAULT_API_BASE_URL } from '@/api/encv'
 import { eventBus } from './useEventBus'
 import { useWebSocket } from './useWebSocket'
 
 const isOnline = ref(false)
 const lastError = ref('')
 let initialized = false
-let retryTimer: ReturnType<typeof setTimeout> | null = null
+let nativeBridgeListenerAdded = false
 
 function onServerStatus(data: { online: boolean }) {
   isOnline.value = data.online
   if (data.online) {
     lastError.value = ''
-    if (retryTimer) {
-      clearTimeout(retryTimer)
-      retryTimer = null
-    }
   }
 }
 
@@ -30,38 +26,46 @@ async function checkStatus() {
   return result
 }
 
-async function waitForServer(maxRetries = 15, intervalMs = 1000): Promise<boolean> {
-  for (let i = 0; i < maxRetries; i++) {
-    const result = await checkStatus()
-    if (result.online) return true
-    await new Promise(r => setTimeout(r, intervalMs))
-  }
-  return false
-}
+function addNativeBridgeListener() {
+  if (nativeBridgeListenerAdded) return
+  nativeBridgeListenerAdded = true
 
-function scheduleRetry() {
-  if (retryTimer) return
-  retryTimer = setTimeout(async () => {
-    retryTimer = null
-    const result = await checkStatus()
-    if (result.online) {
+  if (typeof window !== 'undefined') {
+    window.addEventListener('encv:backend-ready', ((event: CustomEvent) => {
+      const detail = event.detail || {}
+      console.log('[ENCV] Backend ready from native bridge:', detail)
+      if (detail.port && detail.port > 0) {
+        const newUrl = `http://127.0.0.1:${detail.port}`
+        if (DEFAULT_API_BASE_URL !== newUrl) {
+          setApiBaseUrl(newUrl)
+        }
+      }
+      if (detail.error) {
+        lastError.value = detail.error
+        return
+      }
+      isOnline.value = true
+      lastError.value = ''
       useWebSocket().connect()
-    } else {
-      scheduleRetry()
-    }
-  }, 3000)
+    }) as EventListener)
+  }
 }
 
 export function useServerStatus() {
   const { connect, connectionState } = useWebSocket()
 
+  addNativeBridgeListener()
+
   onMounted(async () => {
     if (!initialized) {
       initialized = true
-      const online = await waitForServer()
-      connect()
-      if (!online) {
-        scheduleRetry()
+      if (isOnline.value) {
+        connect()
+      } else {
+        const result = await checkStatus()
+        if (result.online) {
+          connect()
+        }
       }
       eventBus.on('server:status', onServerStatus)
       eventBus.on('server:connection-error', onConnectionError)

@@ -16,18 +16,12 @@ function patchFile(filePath, transformer) {
 
 console.log('encv-post-cap-sync: applying Android customizations...')
 
-// --- Root build.gradle: kotlin plugin + JitPack repository ---
+// --- Root build.gradle: kotlin plugin ---
 patchFile(join(ANDROID_DIR, 'build.gradle'), (c) => {
   if (!c.includes('kotlin-gradle-plugin')) {
     c = c.replace(
       'dependencies {',
       "dependencies {\n        classpath \"org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0\"",
-    )
-  }
-  if (!c.includes('jitpack.io')) {
-    c = c.replace(
-      /allprojects\s*\{\s*repositories\s*\{/,
-      "allprojects {\n    repositories {\n        maven { url 'https://jitpack.io' }",
     )
   }
   return c
@@ -47,25 +41,11 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
   }
 
-  // 2. kotlin-stdlib dependency + Logcat debug library
+  // 2. kotlin-stdlib dependency
   if (!c.includes('kotlin-stdlib')) {
     c = c.replace(
       'dependencies {',
       "dependencies {\n    implementation \"org.jetbrains.kotlin:kotlin-stdlib:2.1.0\"",
-    )
-  }
-  if (!c.includes('Logcat')) {
-    c = c.replace(
-      'dependencies {',
-      "dependencies {\n    debugImplementation 'com.github.getActivity:Logcat:13.0'",
-    )
-  }
-
-  // 2b. compileOptions (required by Logcat)
-  if (!c.includes('compileOptions')) {
-    c = c.replace(
-      /defaultConfig\s*\{/,
-      "compileOptions {\n        targetCompatibility JavaVersion.VERSION_1_8\n        sourceCompatibility JavaVersion.VERSION_1_8\n    }\n\n    defaultConfig {",
     )
   }
 

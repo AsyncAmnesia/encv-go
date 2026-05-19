@@ -7,14 +7,20 @@ import java.io.BufferedReader
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
+import org.json.JSONObject
 
 class MainActivity : BridgeActivity() {
     companion object {
         private const val TAG = "ENCV-go"
         private const val BINARY_NAME = "encv-go"
+        private const val DEFAULT_PORT = 2025
     }
 
     private var goProcess: Process? = null
+    private var backendReady = false
+    private var backendPort = DEFAULT_PORT
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,6 +30,7 @@ class MainActivity : BridgeActivity() {
     private fun startGoDaemon() {
         try {
             ensureConfigExists()
+            backendPort = readConfigPort()
 
             val binary = findExecutableBinary()
                 ?: run {
@@ -54,11 +61,67 @@ class MainActivity : BridgeActivity() {
                 }
             }.start()
 
+            Thread {
+                waitForBackendAndNotify()
+            }.start()
+
             Log.i(TAG, "ENCV-go daemon started (pid: unknown, async)")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start ENCV-go daemon", e)
             e.message?.split("\n")?.forEach { Log.e(TAG, it) }
         }
+    }
+
+    private fun waitForBackendAndNotify() {
+        for (attempt in 1..60) {
+            try {
+                val url = URL("http://127.0.0.1:$backendPort/health")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.connectTimeout = 500
+                conn.readTimeout = 500
+                if (conn.responseCode == 200) {
+                    backendReady = true
+                    Log.i(TAG, "Backend is ready on port $backendPort (attempt $attempt)")
+                    notifyBackendReady(backendPort)
+                    conn.disconnect()
+                    return
+                }
+                conn.disconnect()
+            } catch (e: Exception) {
+                // Backend not ready yet
+            }
+            Thread.sleep(500)
+        }
+        Log.w(TAG, "Backend failed to start within 30 seconds")
+        notifyBackendReady(-1)
+    }
+
+    private fun notifyBackendReady(port: Int) {
+        runOnUiThread {
+            try {
+                val detail = if (port > 0) "{\"port\":$port}" else "{\"port\":0,\"error\":\"timeout\"}"
+                val js = "window.dispatchEvent(new CustomEvent('encv:backend-ready',{detail:$detail}))"
+                bridge.webView.evaluateJavascript(js, null)
+                Log.i(TAG, "Notified frontend via native bridge: port=$port")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to notify frontend via bridge", e)
+            }
+        }
+    }
+
+    private fun readConfigPort(): Int {
+        try {
+            val configFile = File(filesDir, "config.user.json")
+            if (configFile.exists()) {
+                val json = configFile.readText()
+                val jsonObj = JSONObject(json)
+                val serverObj = jsonObj.optJSONObject("server")
+                return serverObj?.optInt("port", DEFAULT_PORT) ?: DEFAULT_PORT
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to read config port, using default $DEFAULT_PORT", e)
+        }
+        return DEFAULT_PORT
     }
 
     private fun findExecutableBinary(): File? {
