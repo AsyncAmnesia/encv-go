@@ -156,12 +156,11 @@ if (existsSync(pluginsJsonPath)) {
   console.log(`  created capacitor.plugins.json with GoProcessPlugin`)
 }
 
-// --- Debug-only AndroidManifest.xml for Logcat dark theme ---
+// --- Debug-only AndroidManifest.xml for Logcat dark theme + floating entry ---
 const debugManifestDir = join(ANDROID_DIR, 'app', 'src', 'debug')
 const debugManifestPath = join(debugManifestDir, 'AndroidManifest.xml')
-if (!existsSync(debugManifestPath)) {
-  mkdirSync(debugManifestDir, { recursive: true })
-  const debugManifest = `<?xml version="1.0" encoding="utf-8"?>
+mkdirSync(debugManifestDir, { recursive: true })
+const debugManifest = `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
@@ -176,16 +175,15 @@ if (!existsSync(debugManifestPath)) {
 
         <meta-data
             android:name="LogcatWindowEntrance"
-            android:value="false" />
+            android:value="true" />
         <meta-data
             android:name="LogcatNotifyEntrance"
             android:value="true" />
     </application>
 
 </manifest>`
-  writeFileSync(debugManifestPath, debugManifest, 'utf-8')
-  console.log(`  created ${debugManifestPath}`)
-}
+writeFileSync(debugManifestPath, debugManifest, 'utf-8')
+console.log(`  created ${debugManifestPath}`)
 
 if (version) {
   console.log(`  release mode v${version}`)
