@@ -255,6 +255,15 @@ async function handleClear() {
 }
 
 function onWsMessage(data: any) {
+  if (data && typeof data === 'object' && data.type === 'log') {
+    backendLogs.value.push({
+      id: ++nextId,
+      timestamp: data.timestamp || new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+      level: ['debug', 'info', 'warn', 'error'].includes(data.level) ? data.level : 'info',
+      message: data.message || '',
+    })
+    return
+  }
   const msg = typeof data === 'string' ? data : JSON.stringify(data)
   backendLogs.value.push({ id: ++nextId, timestamp: new Date().toLocaleTimeString('zh-CN', { hour12: false }), level: 'info', message: msg })
 }

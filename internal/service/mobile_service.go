@@ -116,7 +116,7 @@ func (s *MobileService) ListFiles(queryPath string) ([]FileInfo, error) {
 		})
 	}
 
-	slog.Debug("ListFiles result", "path", queryPath, "count", len(files))
+	slog.Info("ListFiles result", "path", queryPath, "count", len(files))
 	return files, nil
 }
 
@@ -131,6 +131,7 @@ func (s *MobileService) DeleteFile(queryPath string) error {
 		return &ForbiddenError{Err: err}
 	}
 
+	slog.Warn("DeleteFile", "path", queryPath)
 	err = os.Remove(absPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -160,6 +161,8 @@ func (s *MobileService) ReadFileContent(queryPath string) (*FileContentResult, e
 		}
 		return nil, err
 	}
+
+	slog.Info("ReadFileContent", "path", queryPath, "size", info.Size())
 
 	if info.IsDir() {
 		return nil, &BadRequestError{Err: errors.New("path is a directory")}
@@ -229,13 +232,16 @@ func (s *MobileService) GetServingDir() string {
 
 func (s *MobileService) CheckStoragePermission() bool {
 	if s.servingDir == "" {
+		slog.Warn("CheckStoragePermission: servingDir is empty")
 		return false
 	}
 	f, err := os.Open(s.servingDir)
 	if err != nil {
+		slog.Warn("CheckStoragePermission: cannot open servingDir", "dir", s.servingDir, "error", err)
 		return false
 	}
 	f.Close()
+	slog.Info("CheckStoragePermission: OK", "dir", s.servingDir)
 	return true
 }
 

@@ -1,173 +1,131 @@
-# 实现文件预览 + 增加前后端日志
+# 实现文件预览 + ArtPlayer 播放器 + 增加前后端日志
 
 ## 问题 1：预览文件没有实现
 
-### 现状分析
+### 现状
 
-当前 `FilePreview.vue` 只实现了**文本文件预览**（通过 `/api/file` 读取文件内容，显示在 `<pre>` 标签中）。
+`FilePreview.vue` 只支持文本预览（`<pre>` 标签 + `/api/file`），缺少图片、PDF 等类型。
 
-缺失的预览类型：
-1. **图片预览**（jpg/png/gif/webp/svg）— 后端已有 `/stream?path=...` 端点，可直接用作 `<img src>`
-2. **PDF 预览** — 可用 `<iframe>` 或 `<object>` 加载 `/stream?path=...`
-3. **大文件/二进制文件提示** — 当前 `ReadFileContent` 限制 2MB，超过限制时显示"文件过大"提示，提供流式查看选项
-4. **路由问题** — `Files.vue` 中 `handleFileClick` 只把 `image` 和 `document` 类型路由到 `/tabs/preview`，但 `FilePreview.vue` 没有根据文件类型做区分展示
+### 方案
 
-### 修复方案
+`FilePreview.vue` 根据文件类型分模式预览：
 
-**A. `FilePreview.vue` 改为根据文件类型分模式预览**
+| 文件类型 | 预览方式 | 数据源 |
+|---------|---------|--------|
+| image (jpg/png/gif/webp/svg) | `<img :src="streamUrl">` 全屏展示 | `/stream?path=...` |
+| pdf | `<iframe :src="streamUrl">` 嵌入展示 | `/stream?path=...` |
+| text (txt/log/json/xml/csv 等) | 现有 `<pre>` 文本预览 | `/api/file?path=...` |
+| 二进制/过大 | 文件元信息 + "不支持预览"提示 | `/api/file?path=...` |
 
-```
-文件类型 → 预览方式:
-  image/*  → <img :src="streamUrl"> 全屏展示
-  pdf      → <iframe :src="streamUrl"> 嵌入展示
-  text/*   → 现有文本预览（<pre> 标签）
-  其他     → 显示文件信息 + "不支持预览"提示
-  二进制/过大 → 显示文件信息 + "文件过大无法预览"提示
-```
-
-**B. `Files.vue` 的 `handleFileClick` 路由调整**
-
-当前逻辑：
-- video/audio/encrypted → Player
-- 其他 → Preview
-
-修改为：
+`Files.vue` 的 `handleFileClick` 路由调整：
 - video/audio/encrypted → Player
 - image/pdf/document/other → Preview
 
-这样所有非媒体文件都走 Preview 页面，由 Preview 页面内部根据类型决定展示方式。
+## 问题 2：基于 ArtPlayer.js 二次开发播放器
+
+### 现状
+
+当前 `Player.vue` 使用原生 `<video>` 和 `<audio>` 标签，功能简陋：
+- 没有自定义控制栏
+- 没有手势操作（移动端必需）
+- 没有倍速播放
+- 没有画中画
+- 没有字幕支持
+- 加密视频播放体验差
+
+### 方案
+
+**安装 artplayer**：`npm install artplayer`
+
+**Player.vue 重写为 ArtPlayer**：
+- 视频播放：使用 ArtPlayer 替代原生 `<video>`
+- 音频播放：保留原生 `<audio>`（ArtPlayer 不支持纯音频）
+- 加密视频：后端 `/stream?path=...` 已支持解密流式传输，ArtPlayer 直接使用该 URL
+- ArtPlayer 配置：
+  - `container`: ref 绑定 DOM
+  - `url`: `getFileStreamUrl(filePath)`
+  - `autoplay: true`
+  - `autoSize: true`
+  - `autoMini: true`（滚动自动迷你化）
+  - `mutex: true`（互斥播放）
+  - `playsInline: true`
+  - `theme: '#ffad00'`
+  - `volume: 0.7`
+  - 移动端手势自动启用（ArtPlayer 内置）
+
+**生命周期管理**：
+- `onMounted` → `new Artplayer(options)`
+- `onBeforeUnmount` → `art.destroy()`
+- 路由参数变化时 → `art.switchUrl(newUrl)`
 
 ### 实施步骤
 
-1. **修改 `FilePreview.vue`**：
-   - 从 `route.query` 获取 `path` 和 `name`
-   - 用 `getFileCategory()` 判断文件类型
-   - 图片：直接用 `getFileStreamUrl(path)` 作为 `<img src>`
-   - PDF：用 `<iframe :src="streamUrl">`
-   - 文本：保持现有 `readFileContent` 逻辑
-   - 其他/二进制/过大：显示文件元信息 + 提示
+1. `npm install artplayer`
+2. 重写 `Player.vue`：
+   - 视频用 ArtPlayer
+   - 音频保留原生 `<audio>`
+   - 加密视频走 `/stream` 端点（后端已支持解密）
+   - 添加加载/错误状态处理
 
-2. **修改 `Files.vue` 的 `handleFileClick`**：
-   - image 类型也路由到 Preview（而非当前被忽略）
-   - 简化逻辑：非 video/audio/encrypted 都走 Preview
+## 问题 3：前后端日志过少
 
-## 问题 2：前后端日志过少
+### 现状
 
-### 现状分析
+**后端**：
+- `mobile_api.go`：handler 几乎没有日志
+- `mobile_service.go`：只有 Error 级别，缺少 Info/Warn
+- 没有 HTTP 请求日志中间件
+- slog 日志没有桥接到 WebSocket（前端 DevLogs 看不到后端日志）
 
-**后端日志问题：**
-- `mobile_api.go`：所有 handler 几乎没有日志（没有请求开始/完成日志）
-- `mobile_service.go`：只有 Error 级别日志，缺少 Info/Warn
-- `server.go`：只有启动时两条 Info 日志
-- 没有 HTTP 请求日志中间件（请求方法、路径、耗时、状态码）
-- `ws_hub.go`：只有连接/断开日志
+**前端**：
+- `api/encv.ts`：所有 API 调用没有 console 日志
+- 各组件没有操作日志
+- `DevLogs.vue`：后端日志标签页只能收到 WebSocket 消息，且所有消息都标记为 info 级别
 
-**前端日志问题：**
-- `api/encv.ts`：所有 API 调用没有 `console.info/warn/error`
-- `Files.vue`：没有操作日志
-- `FilePreview.vue`：没有加载日志
-- `App.vue`：权限申请没有日志
-- `useWebSocket.ts`：有少量 `console.warn/error`，但缺少 `console.info`
-- `DevLogs.vue`：后端日志只通过 WebSocket 接收，但后端并没有通过 WebSocket 推送 slog 日志
+### 方案
 
-**关键缺失：后端 slog 日志没有桥接到 WebSocket**
+**A. 后端：HTTP 请求日志中间件**
 
-后端使用 `slog` 输出日志到 stderr（被 Android logcat 捕获），但前端 DevLogs 页面的"后端日志"标签页只能收到 WebSocket 消息。需要将 slog 输出同时推送到 WebSocket，前端才能看到后端日志。
+创建 `internal/middleware/logging.go`，记录每个请求的方法、路径、状态码、耗时。
 
-### 修复方案
+**B. 后端：slog → WebSocket 桥接**
 
-**A. 后端：添加 HTTP 请求日志中间件**
-
-创建 `internal/middleware/logging.go`，记录每个请求的方法、路径、状态码、耗时：
-
-```go
-func LoggingMiddleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        start := time.Now()
-        wrapped := &responseWriter{ResponseWriter: w, statusCode: 200}
-        next.ServeHTTP(wrapped, r)
-        slog.Info("HTTP request",
-            "method", r.Method,
-            "path", r.URL.Path,
-            "status", wrapped.statusCode,
-            "duration", time.Since(start).String(),
-        )
-    })
-}
+创建自定义 `slog.Handler`，在输出到 stderr 的同时，将日志推送到 WSHub。日志消息格式：
+```json
+{"type": "log", "level": "info", "message": "...", "timestamp": "14:30:00"}
 ```
 
-**B. 后端：添加 slog → WebSocket 桥接**
+**C. 后端：给各函数添加日志**
 
-创建自定义 `slog.Handler`，在输出日志到 stderr 的同时，将日志推送到 WSHub：
+- `mobile_api.go`：Info 记录请求参数和结果
+- `mobile_service.go`：Info 记录操作，Warn 记录异常
+- `server.go`：Info 记录启动和关键状态
 
-```go
-type WSLogHandler struct {
-    inner  slog.Handler
-    hub    *service.WSHub
-    level  slog.Level
-}
-```
+**D. 前端：给 API 调用添加日志**
 
-这样所有 `slog.Info/Warn/Error` 调用都会自动推送到前端 DevLogs 页面。
+`api/encv.ts` 各函数添加 `console.info/warn/error`。
 
-**C. 后端：给 mobile_api.go 各 handler 添加日志**
+**E. 前端：给组件添加操作日志**
 
-- `handleListFilesAPI`：Info 级别记录请求路径和返回文件数
-- `handleDeleteFileAPI`：Warn 级别记录删除操作
-- `handleReadFileContent`：Info 级别记录读取的文件路径
-- `handleCreateTask`：Info 级别记录任务创建
-- `handlePermissions`：Info 级别记录权限检查结果
+Files.vue、Player.vue、FilePreview.vue、App.vue 添加关键操作日志。
 
-**D. 后端：给 mobile_service.go 添加更多日志**
+**F. 前端：DevLogs 解析后端日志 level**
 
-- `ListFiles`：Info 级别记录查询路径和结果数量（当前是 Debug）
-- `ReadFileContent`：Info 级别记录文件路径和大小
-- `DeleteFile`：Warn 级别记录删除路径
-- `CheckStoragePermission`：Info 级别记录检查结果
-
-**E. 前端：给 API 调用添加日志**
-
-在 `api/encv.ts` 中，给关键 API 函数添加 `console.info/warn/error`：
-- `listFiles`：info 记录请求路径和返回数量，error 记录失败
-- `readFileContent`：info 记录请求路径
-- `deleteFile`：warn 记录删除操作
-- `checkServerStatus`：info 记录结果
-
-**F. 前端：给组件添加操作日志**
-
-- `Files.vue`：info 记录加载文件、导航、权限状态变化
-- `FilePreview.vue`：info 记录文件加载、类型判断
-- `App.vue`：info 记录权限申请结果
-
-**G. 前端：DevLogs 后端标签页解析 slog 格式**
-
-当前 `onWsMessage` 把所有 WebSocket 消息都标记为 `info` 级别。需要解析后端推送的日志消息，正确设置 level：
-
-```typescript
-function onWsMessage(data: any) {
-  if (data.type === 'log') {
-    backendLogs.value.push({
-      id: ++nextId,
-      timestamp: data.timestamp || new Date().toLocaleTimeString(...),
-      level: data.level || 'info',
-      message: data.message || JSON.stringify(data),
-    })
-  }
-}
-```
+修改 `onWsMessage` 解析 `{type: "log", level: "warn", message: "..."}` 格式。
 
 ### 实施步骤
 
-1. **创建 `internal/middleware/logging.go`**：HTTP 请求日志中间件
-2. **创建 `internal/server/ws_log_handler.go`**：slog → WebSocket 桥接 handler
-3. **修改 `server.go`**：注册日志中间件 + 初始化 WSLogHandler
-4. **修改 `mobile_api.go`**：各 handler 添加 Info/Warn/Error 日志
-5. **修改 `mobile_service.go`**：各方法添加 Info/Warn 日志
-6. **修改 `api/encv.ts`**：各 API 函数添加 console.info/warn/error
-7. **修改 `Files.vue`**：添加操作日志
-8. **修改 `FilePreview.vue`**：添加操作日志 + 实现多类型预览
-9. **修改 `App.vue`**：添加权限申请日志
-10. **修改 `DevLogs.vue`**：解析后端日志消息的 level
+1. 创建 `internal/middleware/logging.go`：HTTP 请求日志中间件
+2. 创建 `internal/server/ws_log_handler.go`：slog → WebSocket 桥接
+3. 修改 `server.go`：注册日志中间件 + 初始化 WSLogHandler
+4. 修改 `mobile_api.go`：各 handler 添加日志
+5. 修改 `mobile_service.go`：各方法添加日志
+6. 修改 `api/encv.ts`：API 调用添加 console 日志
+7. 修改 `Files.vue`：添加操作日志 + handleFileClick 路由调整
+8. 重写 `FilePreview.vue`：多类型预览 + 日志
+9. 重写 `Player.vue`：ArtPlayer + 日志
+10. 修改 `App.vue`：权限申请日志
+11. 修改 `DevLogs.vue`：解析后端日志 level
 
 ## 文件变更清单
 
@@ -178,8 +136,10 @@ function onWsMessage(data: any) {
 | `internal/server/server.go` | 注册日志中间件 + 初始化 WSLogHandler |
 | `internal/server/mobile_api.go` | 各 handler 添加日志 |
 | `internal/service/mobile_service.go` | 各方法添加日志 |
+| `app/encv-mobile/package.json` | 添加 artplayer 依赖 |
 | `app/encv-mobile/src/api/encv.ts` | API 调用添加 console 日志 |
-| `app/encv-mobile/src/views/Files.vue` | 添加操作日志 + handleFileClick 路由调整 |
-| `app/encv-mobile/src/views/FilePreview.vue` | 实现图片/PDF/文本/其他多类型预览 + 日志 |
+| `app/encv-mobile/src/views/Files.vue` | 操作日志 + handleFileClick 路由调整 |
+| `app/encv-mobile/src/views/FilePreview.vue` | 多类型预览 + 日志 |
+| `app/encv-mobile/src/views/Player.vue` | ArtPlayer 重写 + 日志 |
 | `app/encv-mobile/src/views/App.vue` | 权限申请日志 |
 | `app/encv-mobile/src/views/DevLogs.vue` | 解析后端日志 level |

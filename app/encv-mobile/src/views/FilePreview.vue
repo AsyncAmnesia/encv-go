@@ -9,7 +9,7 @@
         </ion-buttons>
         <ion-title>{{ fileName }}</ion-title>
         <ion-buttons slot="end">
-          <ion-button @click="copyContent" fill="clear" size="small">
+          <ion-button v-if="previewType === 'text'" @click="copyContent" fill="clear" size="small">
             <ion-icon :icon="copyOutline" slot="icon-only"></ion-icon>
           </ion-button>
         </ion-buttons>
@@ -29,16 +29,36 @@
         <ion-button @click="loadFile">{{ t('filePreview.retry') }}</ion-button>
       </div>
 
-      <div v-else class="preview-wrapper">
-        <div class="file-meta">
-          <span class="meta-item"><ion-icon :icon="documentTextOutline"></ion-icon> {{ filePath }}</span>
-          <span class="meta-item"><ion-icon :icon="informationCircle"></ion-icon> {{ formatFileSize(fileSize) }}</span>
-          <span v-if="encoding !== 'utf-8'" class="meta-item warn">
-            <ion-icon :icon="warning"></ion-icon> {{ encoding }}
-          </span>
+      <template v-else>
+        <div v-if="previewType === 'image'" class="preview-wrapper image-preview">
+          <img :src="streamUrl" class="preview-image" />
         </div>
-        <pre class="file-content"><code>{{ content }}</code></pre>
-      </div>
+
+        <div v-else-if="previewType === 'pdf'" class="preview-wrapper pdf-preview">
+          <iframe :src="streamUrl" class="preview-iframe"></iframe>
+        </div>
+
+        <div v-else-if="previewType === 'text'" class="preview-wrapper">
+          <div class="file-meta">
+            <span class="meta-item"><ion-icon :icon="documentTextOutline"></ion-icon> {{ filePath }}</span>
+            <span class="meta-item"><ion-icon :icon="informationCircle"></ion-icon> {{ formatFileSize(fileSize) }}</span>
+            <span v-if="encoding !== 'utf-8'" class="meta-item warn">
+              <ion-icon :icon="warning"></ion-icon> {{ encoding }}
+            </span>
+          </div>
+          <pre class="file-content"><code>{{ content }}</code></pre>
+        </div>
+
+        <div v-else class="preview-wrapper unsupported-preview">
+          <ion-icon :icon="helpCircleOutline" class="unsupported-icon"></ion-icon>
+          <h3>{{ fileName }}</h3>
+          <div class="unsupported-meta">
+            <span class="meta-item"><ion-icon :icon="documentTextOutline"></ion-icon> {{ filePath }}</span>
+            <span class="meta-item"><ion-icon :icon="informationCircle"></ion-icon> {{ formatFileSize(fileSize) }}</span>
+          </div>
+          <p class="unsupported-msg">{{ t('filePreview.unsupported') }}</p>
+        </div>
+      </template>
     </ion-content>
   </ion-page>
 </template>
@@ -52,11 +72,13 @@ import {
 } from '@ionic/vue'
 import {
   arrowBack, copyOutline, documentTextOutline,
-  alertCircle, informationCircle, warning,
+  alertCircle, informationCircle, warning, helpCircleOutline,
 } from 'ionicons/icons'
-import { readFileContent, formatFileSize } from '@/api/encv'
+import { readFileContent, getFileStreamUrl, getFileCategory, getFileExtension, formatFileSize } from '@/api/encv'
 import type { FileContentResponse } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
+
+type PreviewType = 'image' | 'pdf' | 'text' | 'unsupported'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -69,24 +91,50 @@ const fileSize = ref(0)
 const encoding = ref('utf-8')
 const loading = ref(true)
 const error = ref('')
+const previewType = ref<PreviewType>('unsupported')
+const streamUrl = ref('')
+
+function determinePreviewType(name: string): PreviewType {
+  const category = getFileCategory(name)
+  const ext = getFileExtension(name)
+
+  if (category === 'image') return 'image'
+  if (ext === 'pdf') return 'pdf'
+  if (category === 'other') return 'text'
+  return 'unsupported'
+}
 
 async function loadFile() {
   const path = (route.query.path as string) || ''
+  const name = (route.query.name as string) || ''
   if (!path) {
     error.value = t('filePreview.noPath')
     loading.value = false
     return
   }
   filePath.value = path
-  fileName.value = path.split('/').pop() || path
+  fileName.value = name || path.split('/').pop() || path
   loading.value = true
   error.value = ''
+
+  previewType.value = determinePreviewType(fileName.value)
+
   try {
-    const data: FileContentResponse = await readFileContent(path)
-    content.value = data.content
-    fileSize.value = data.size
-    encoding.value = data.encoding
+    if (previewType.value === 'image' || previewType.value === 'pdf') {
+      console.info('Loading stream preview:', fileName.value)
+      streamUrl.value = getFileStreamUrl(path)
+    } else if (previewType.value === 'text') {
+      console.info('Loading text preview:', fileName.value)
+      const data: FileContentResponse = await readFileContent(path)
+      content.value = data.content
+      fileSize.value = data.size
+      encoding.value = data.encoding
+    } else {
+      console.info('Unsupported file type:', fileName.value)
+      fileSize.value = 0
+    }
   } catch (e: any) {
+    console.error('Failed to load file:', e)
     error.value = e?.message || String(e)
   } finally {
     loading.value = false
@@ -134,6 +182,30 @@ onMounted(() => loadFile())
   flex-direction: column;
 }
 
+.image-preview {
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+
+.preview-image {
+  width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.pdf-preview {
+  flex: 1;
+}
+
+.preview-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  flex: 1;
+}
+
 .file-meta {
   display: flex;
   gap: 12px;
@@ -170,6 +242,43 @@ onMounted(() => loadFile())
   font-family: inherit;
   background: none;
   padding: 0;
+}
+
+.unsupported-preview {
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #888;
+  text-align: center;
+  padding: 24px;
+}
+
+.unsupported-icon {
+  font-size: 64px;
+  opacity: 0.4;
+  color: #888;
+}
+
+.unsupported-preview h3 {
+  margin: 0;
+  color: #cdd6f4;
+  font-size: 16px;
+  word-break: break-all;
+}
+
+.unsupported-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: #888;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.unsupported-msg {
+  color: #666;
+  font-size: 13px;
+  margin: 8px 0 0;
 }
 
 .loading-container, .error-state {

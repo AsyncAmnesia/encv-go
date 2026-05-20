@@ -22,8 +22,11 @@ async function requestEssentialPermissions() {
   const done = localStorage.getItem(FIRST_LAUNCH_KEY)
   if (done) return
 
-  await requestNotificationPermission()
-  await requestStoragePermission()
+  console.info('[App] First launch, requesting essential permissions')
+  const notifResult = await requestNotificationPermission()
+  console.info('[App] Notification permission:', notifResult.granted ? 'granted' : 'denied')
+  const storageResult = await requestStoragePermission()
+  console.info('[App] Storage permission:', storageResult.granted ? 'granted' : 'denied')
   localStorage.setItem(FIRST_LAUNCH_KEY, '1')
 }
 

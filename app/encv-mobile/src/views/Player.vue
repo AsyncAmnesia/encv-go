@@ -18,16 +18,7 @@
       </div>
 
       <div v-else class="player-container">
-        <video
-          v-if="isVideo"
-          ref="videoRef"
-          :src="streamUrl"
-          controls
-          autoplay
-          playsinline
-          class="video-player"
-          @error="handlePlayerError"
-        ></video>
+        <div v-if="isVideo" ref="artContainer" class="video-player"></div>
 
         <div v-if="isAudio" class="audio-player-wrapper">
           <div class="audio-visual">
@@ -49,8 +40,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import Artplayer from 'artplayer'
 import {
   IonPage,
   IonHeader,
@@ -84,8 +76,9 @@ const streamUrl = computed(() => {
   return getFileStreamUrl(filePath.value)
 })
 
-const videoRef = ref<HTMLVideoElement | null>(null)
+const artContainer = ref<HTMLDivElement | null>(null)
 const audioRef = ref<HTMLAudioElement | null>(null)
+let art: Artplayer | null = null
 
 async function handlePlayerError() {
   const toast = await toastController.create({
@@ -95,6 +88,54 @@ async function handlePlayerError() {
   })
   await toast.present()
 }
+
+function initArtPlayer() {
+  if (!artContainer.value || !streamUrl.value) return
+
+  art = new Artplayer({
+    container: artContainer.value,
+    url: streamUrl.value,
+    autoplay: true,
+    autoSize: true,
+    autoMini: true,
+    mutex: true,
+    playsInline: true,
+    theme: '#ffad00',
+    volume: 0.7,
+  })
+
+  art.on('error', () => {
+    console.error('[Player] ArtPlayer playback error')
+    handlePlayerError()
+  })
+
+  console.info('[Player] ArtPlayer initialized')
+}
+
+function destroyArtPlayer() {
+  if (art) {
+    art.destroy()
+    art = null
+    console.info('[Player] ArtPlayer destroyed')
+  }
+}
+
+onMounted(() => {
+  if (isVideo.value) {
+    initArtPlayer()
+  }
+})
+
+onBeforeUnmount(() => {
+  destroyArtPlayer()
+})
+
+watch(streamUrl, (newUrl) => {
+  if (isVideo.value && art && newUrl) {
+    art.switchUrl(newUrl)
+    console.info('[Player] ArtPlayer switched URL:', newUrl)
+  }
+})
 </script>
 
 <style scoped>

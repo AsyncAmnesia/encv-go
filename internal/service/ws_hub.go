@@ -107,6 +107,18 @@ func (h *WSHub) Broadcast(msgType string, data interface{}) {
 	}
 }
 
+func (h *WSHub) BroadcastRaw(msg []byte) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for client := range h.clients {
+		select {
+		case client.send <- msg:
+		default:
+		}
+	}
+}
+
 func (h *WSHub) StartWritePump(client *wsClient) {
 	go func() {
 		defer client.conn.Close()

@@ -187,6 +187,7 @@ function getFileIconColor(file: FileItem) {
 let loadGeneration = 0
 
 async function loadFiles() {
+  console.info('[Files] Loading files, path:', currentPath.value)
   const gen = ++loadGeneration
   loading.value = true
   connecting.value = false
@@ -201,6 +202,7 @@ async function loadFiles() {
       noPermission.value = false
       loading.value = false
       connecting.value = false
+      console.info('[Files] Loaded', files.value.length, 'files')
       return
     } catch (error) {
       if (error instanceof PermissionDeniedError) {
@@ -243,6 +245,7 @@ async function retryConnection() {
 }
 
 async function handleRequestStorage() {
+  console.info('[Files] Requesting storage permission')
   await requestStoragePermission()
   setTimeout(() => loadFiles(), 1500)
 }
@@ -270,12 +273,8 @@ async function handleFileClick(file: FileItem) {
   }
 
   const category = getFileCategory(file.name)
-  if (category === 'video' || category === 'audio') {
-    router.push({
-      path: '/tabs/player',
-      query: { path: file.path, name: file.name },
-    })
-  } else if (category === 'encrypted') {
+  console.info('[Files] Click:', file.name, 'category:', category)
+  if (category === 'video' || category === 'audio' || category === 'encrypted') {
     router.push({
       path: '/tabs/player',
       query: { path: file.path, name: file.name },

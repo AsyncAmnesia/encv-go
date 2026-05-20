@@ -63,6 +63,7 @@ func (s *Server) handleServerShutdown(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListFilesAPI(w http.ResponseWriter, r *http.Request) {
 	queryPath := r.URL.Query().Get("path")
+	slog.Info("API: list files", "path", queryPath)
 
 	files, err := s.mobileSvc.ListFiles(queryPath)
 	if err != nil {
@@ -70,6 +71,7 @@ func (s *Server) handleListFilesAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Info("API: list files result", "path", queryPath, "count", len(files))
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{"files": files})
@@ -77,6 +79,7 @@ func (s *Server) handleListFilesAPI(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteFileAPI(w http.ResponseWriter, r *http.Request) {
 	queryPath := r.URL.Query().Get("path")
+	slog.Warn("API: delete file", "path", queryPath)
 
 	err := s.mobileSvc.DeleteFile(queryPath)
 	if err != nil {
@@ -91,6 +94,7 @@ func (s *Server) handleDeleteFileAPI(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleReadFileContent(w http.ResponseWriter, r *http.Request) {
 	queryPath := r.URL.Query().Get("path")
+	slog.Info("API: read file content", "path", queryPath)
 
 	result, err := s.mobileSvc.ReadFileContent(queryPath)
 	if err != nil {
@@ -132,6 +136,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slog.Info("API: create task", "type", req.Type, "source", req.SourcePath)
 	task := s.mobileSvc.GetTaskManager().Create(req.Type, req.SourcePath)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -223,9 +228,11 @@ func (s *Server) handlePermissions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	storage := s.mobileSvc.CheckStoragePermission()
+	slog.Info("API: check permissions", "storage", storage)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{
-		"storage": s.mobileSvc.CheckStoragePermission(),
+		"storage": storage,
 	})
 }
 

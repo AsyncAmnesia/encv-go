@@ -104,6 +104,10 @@ func (s *Server) Start(version string) (string, error) {
 	slog.Info("Server starting", "instance", s.instanceID, "version", s.version)
 	slog.Info("Main service serving from", "dir", s.servingDir)
 
+	wsLogHandler := NewWSLogHandler(slog.Default().Handler(), s.mobileSvc.GetWSHub())
+	slog.SetDefault(slog.New(wsLogHandler))
+	slog.Info("WSLogHandler initialized, logs will be bridged to WebSocket")
+
 	// 3. 创建统一的 ServeMux 并注册路由
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", s.handlePing)
@@ -147,7 +151,8 @@ func (s *Server) Start(version string) (string, error) {
 
 	// CorsMiddleware 应该在最外层，最先处理请求
 	finalHandler := middleware.CorsMiddleware(middleware.WithConfig(s.cfg, mux))
-	return register.StartHttpHandlerWithRetry(finalHandler, s.cfg.Server.Port, s.instanceID, s.version)
+	loggedHandler := middleware.LoggingMiddleware(finalHandler)
+	return register.StartHttpHandlerWithRetry(loggedHandler, s.cfg.Server.Port, s.instanceID, s.version)
 }
 
 func (s *Server) Stop() error {

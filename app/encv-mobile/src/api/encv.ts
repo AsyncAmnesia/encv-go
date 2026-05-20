@@ -58,12 +58,15 @@ export async function listFiles(path = '/'): Promise<FileItem[]> {
     if (response.status === 403) {
       const data: FileListResponse = await response.json().catch(() => ({}))
       if (data.code === 'PERMISSION_DENIED') {
+        console.warn('[API] listFiles permission denied:', path)
         throw new PermissionDeniedError(data.error || 'Permission denied')
       }
     }
+    console.error('[API] listFiles failed:', response.status)
     throw new Error(`HTTP error! status: ${response.status}`)
   }
   const data: FileListResponse = await response.json()
+  console.info('[API] listFiles:', path, '→', data.files?.length || 0, 'files')
   return data.files || []
 }
 
@@ -75,9 +78,12 @@ export async function checkBackendPermissions(): Promise<BackendPermissions> {
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/permissions`)
   if (!response.ok) {
+    console.warn('[API] checkPermissions failed:', response.status)
     return { storage: false }
   }
-  return await response.json()
+  const result = await response.json()
+  console.info('[API] permissions:', JSON.stringify(result))
+  return result
 }
 
 export function getFileStreamUrl(path: string): string {
@@ -93,21 +99,25 @@ export async function checkServerStatus(): Promise<{ online: boolean; error?: st
     const baseUrl = getApiBaseUrl()
     const response = await fetch(`${baseUrl}/health`)
     if (response.ok) {
+      console.info('[API] server online')
       return { online: true }
     }
     return { online: false, error: `HTTP ${response.status}` }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
+    console.warn('[API] server offline:', msg)
     return { online: false, error: msg }
   }
 }
 
 export async function deleteFile(path: string): Promise<void> {
+  console.warn('[API] deleteFile:', path)
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/files?path=${encodeURIComponent(path)}`, {
     method: 'DELETE',
   })
   if (!response.ok) {
+    console.error('[API] deleteFile failed:', response.status)
     throw new Error(`HTTP error! status: ${response.status}`)
   }
 }
@@ -124,9 +134,12 @@ export async function readFileContent(path: string): Promise<FileContentResponse
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/file?path=${encodeURIComponent(path)}`)
   if (!response.ok) {
+    console.error('[API] readFileContent failed:', response.status)
     throw new Error(`HTTP error! status: ${response.status}`)
   }
-  return await response.json()
+  const data = await response.json()
+  console.info('[API] readFileContent:', path, 'size:', data.size)
+  return data
 }
 
 export type TaskType = 'encrypt' | 'decrypt'
@@ -153,6 +166,7 @@ export async function getTasks(): Promise<EncvTask[]> {
 }
 
 export async function createTask(type: TaskType, sourcePath: string): Promise<EncvTask> {
+  console.info('[API] createTask:', type, sourcePath)
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/tasks`, {
     method: 'POST',
@@ -206,6 +220,7 @@ export function saveWebDAVConfigs(configs: WebDAVConfig[]) {
 }
 
 export async function testWebDAVConnection(config: Omit<WebDAVConfig, 'id'>): Promise<void> {
+  console.info('[API] testWebDAV')
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/webdav/test`, {
     method: 'POST',
