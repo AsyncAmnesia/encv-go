@@ -114,12 +114,13 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     console.log('  release: signing + minify + shrink applied')
   }
 
-  // 7. Kotlin JVM target (顶层 kotlin {} 块，替代已废弃的 android.kotlinOptions)
-  // Kotlin 1.9+ / AGP 8.x 推荐方式，不依赖 kotlin-android 插件在 android {} 内注册 kotlinOptions
-  if (!c.includes('compilerOptions') && !c.includes('jvmTarget') && c.includes('kotlin-android')) {
-    c = c.trimEnd() + '\n'
-    c += `kotlin {
-    compilerOptions {
+  // 7. Kotlin JVM target (Groovy DSL 兼容写法)
+  // 使用 tasks.withType(KotlinCompile) 设置 jvmTarget
+  // 这是 Groovy DSL 中设置 Kotlin 编译参数的标准方式
+  if (!c.includes('jvmTarget') && c.includes('kotlin-android')) {
+    c += `
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    kotlinOptions {
         jvmTarget = "17"
     }
 }
