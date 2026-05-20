@@ -7,7 +7,10 @@
             <ion-icon :icon="arrowBack" slot="icon-only"></ion-icon>
           </ion-button>
         </ion-buttons>
-        <ion-title>{{ t('files.title') }}</ion-title>
+        <ion-title>{{ isPickerMode ? t('files.selectFile') : t('files.title') }}</ion-title>
+        <ion-buttons v-if="isPickerMode" slot="end">
+          <ion-button @click="handleCancelPicker">{{ t('files.cancelSelect') }}</ion-button>
+        </ion-buttons>
       </ion-toolbar>
       <ion-toolbar v-if="currentPath !== '/'">
         <div class="breadcrumb-scroll">
@@ -63,6 +66,7 @@
           v-for="file in sortedFiles"
           :key="file.path"
           @click="handleFileClick(file)"
+          @longpress.prevent="handleLongPress(file)"
           detail
         >
           <ion-icon
@@ -80,6 +84,10 @@
           </ion-badge>
         </ion-item>
       </ion-list>
+
+      <div v-if="isPickerMode && !loading && serverOnline && files.length > 0" class="picker-hint">
+        {{ t('files.tapToSelect') }}
+      </div>
     </ion-content>
   </ion-page>
 </template>
@@ -103,6 +111,9 @@ import {
   IonLabel,
   IonBadge,
   IonSpinner,
+  actionSheetController,
+  alertController,
+  toastController,
 } from '@ionic/vue'
 import {
   arrowBack,
@@ -117,20 +128,25 @@ import {
   lockClosed,
   cloudOffline,
   refresh,
+  trash,
 } from 'ionicons/icons'
 import {
   listFiles,
   formatFileSize,
   getFileCategory,
   PermissionDeniedError,
+  deleteFile,
+  createTask,
 } from '@/api/encv'
 import type { FileItem } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
+import { useFilePicker } from '@/composables/useFilePicker'
 import { isNative, requestStoragePermission } from '@/plugins/GoProcess'
 
 const { t } = useI18n()
 const router = useRouter()
+const { isPickerMode, confirmSelection, cancelPicking } = useFilePicker()
 const serverOnline = ref(false)
 const noPermission = ref(false)
 const files = ref<FileItem[]>([])
@@ -263,6 +279,19 @@ function goUp() {
 }
 
 async function handleFileClick(file: FileItem) {
+  if (isPickerMode.value) {
+    if (file.isDirectory) {
+      const newPath = currentPath.value === '/'
+        ? '/' + file.name
+        : currentPath.value + '/' + file.name
+      navigateTo(newPath)
+      return
+    }
+    confirmSelection(file.path, file.name)
+    router.back()
+    return
+  }
+
   if (file.isDirectory) {
     const newPath = currentPath.value === '/'
       ? '/' + file.name
@@ -284,6 +313,177 @@ async function handleFileClick(file: FileItem) {
       query: { path: file.path, name: file.name },
     })
   }
+}
+
+function handleCancelPicker() {
+  cancelPicking()
+  router.back()
+}
+
+async function handleLongPress(file: FileItem) {
+  const category = file.isDirectory ? 'directory' : getFileCategory(file.name)
+
+  const buttons: any[] = []
+
+  if (file.isDirectory) {
+    buttons.push({
+      text: t('files.open'),
+      icon: folderOpen,
+      handler: () => {
+        const newPath = currentPath.value === '/'
+          ? '/' + file.name
+          : currentPath.value + '/' + file.name
+        navigateTo(newPath)
+      },
+    })
+    buttons.push({
+      text: t('files.encrypt'),
+      icon: lockClosed,
+      handler: () => {
+        handleEncryptFile(file)
+      },
+    })
+  } else if (category === 'encrypted') {
+    buttons.push({
+      text: t('files.play'),
+      icon: videocam,
+      handler: () => {
+        router.push({
+          path: '/tabs/player',
+          query: { path: file.path, name: file.name },
+        })
+      },
+    })
+    buttons.push({
+      text: t('files.decrypt'),
+      icon: lockClosed,
+      handler: () => {
+        handleDecryptFile(file)
+      },
+    })
+    buttons.push({
+      text: t('files.delete'),
+      icon: trash,
+      role: 'destructive',
+      handler: () => {
+        handleDeleteFile(file)
+      },
+    })
+  } else {
+    const isMedia = category === 'video' || category === 'audio'
+    buttons.push({
+      text: isMedia ? t('files.play') : t('files.preview'),
+      icon: isMedia ? videocam : image,
+      handler: () => {
+        if (isMedia) {
+          router.push({
+            path: '/tabs/player',
+            query: { path: file.path, name: file.name },
+          })
+        } else {
+          router.push({
+            path: '/tabs/preview',
+            query: { path: file.path, name: file.name },
+          })
+        }
+      },
+    })
+    buttons.push({
+      text: t('files.encrypt'),
+      icon: lockClosed,
+      handler: () => {
+        handleEncryptFile(file)
+      },
+    })
+    buttons.push({
+      text: t('files.delete'),
+      icon: trash,
+      role: 'destructive',
+      handler: () => {
+        handleDeleteFile(file)
+      },
+    })
+  }
+
+  buttons.push({
+    text: t('files.cancelSelect'),
+    role: 'cancel',
+  })
+
+  const actionSheet = await actionSheetController.create({
+    header: file.name,
+    buttons,
+  })
+  await actionSheet.present()
+}
+
+async function handleEncryptFile(file: FileItem) {
+  try {
+    await createTask('encrypt', file.path)
+    const toast = await toastController.create({
+      message: t('tasks.taskCreated'),
+      duration: 1500,
+      color: 'success',
+    })
+    await toast.present()
+  } catch {
+    const toast = await toastController.create({
+      message: t('tasks.taskCreateFailed'),
+      duration: 2000,
+      color: 'danger',
+    })
+    await toast.present()
+  }
+}
+
+async function handleDecryptFile(file: FileItem) {
+  try {
+    await createTask('decrypt', file.path)
+    const toast = await toastController.create({
+      message: t('tasks.taskCreated'),
+      duration: 1500,
+      color: 'success',
+    })
+    await toast.present()
+  } catch {
+    const toast = await toastController.create({
+      message: t('tasks.taskCreateFailed'),
+      duration: 2000,
+      color: 'danger',
+    })
+    await toast.present()
+  }
+}
+
+async function handleDeleteFile(file: FileItem) {
+  const alert = await alertController.create({
+    header: t('files.delete'),
+    message: t('files.deleteConfirm', { name: file.name }),
+    buttons: [
+      {
+        text: t('files.cancelSelect'),
+        role: 'cancel',
+      },
+      {
+        text: t('files.delete'),
+        role: 'destructive',
+        handler: async () => {
+          try {
+            await deleteFile(file.path)
+            await loadFiles()
+          } catch {
+            const toast = await toastController.create({
+              message: t('files.deleteFailed'),
+              duration: 2000,
+              color: 'danger',
+            })
+            await toast.present()
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
 }
 
 function onFileChange(data: { path: string; action: string }) {
@@ -373,5 +573,19 @@ function onBackendReadyWindow(event: Event) {
 .breadcrumb-segment {
   display: flex;
   align-items: center;
+}
+
+.picker-hint {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 12px 16px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--ion-color-primary);
+  background: var(--ion-background-color, #fff);
+  border-top: 1px solid var(--ion-color-light, #f4f5f8);
+  z-index: 10;
 }
 </style>

@@ -107,6 +107,9 @@
                 label-placement="stacked"
                 placeholder="/path/to/file"
               ></ion-input>
+              <ion-button slot="end" fill="clear" @click="handleBrowse">
+                <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+              </ion-button>
             </ion-item>
           </ion-list>
           <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath">
@@ -156,6 +159,7 @@ import {
   closeCircle,
   timer,
   sync,
+  folderOpen,
 } from 'ionicons/icons'
 import {
   getTasks,
@@ -166,8 +170,10 @@ import {
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
+import { useFilePicker } from '@/composables/useFilePicker'
 
 const { t } = useI18n()
+const { startPicking } = useFilePicker()
 
 const tasks = ref<EncvTask[]>([])
 const loading = ref(false)
@@ -238,6 +244,15 @@ async function handleRefresh(event: CustomEvent) {
 function showNewTaskSheet() {
   newTaskType.value = 'encrypt'
   newTaskPath.value = ''
+  showNewTaskModal.value = true
+}
+
+async function handleBrowse() {
+  showNewTaskModal.value = false
+  const result = await startPicking()
+  if (result) {
+    newTaskPath.value = result.path
+  }
   showNewTaskModal.value = true
 }
 

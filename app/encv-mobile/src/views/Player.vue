@@ -18,7 +18,23 @@
       </div>
 
       <div v-else class="player-container">
-        <div v-if="isVideo" ref="artContainer" class="video-player"></div>
+        <div v-if="isVideo && !playerError" ref="artContainer" class="video-player"></div>
+
+        <div v-if="isVideo && playerError" class="player-error">
+          <ion-icon :icon="alertCircle" class="error-icon"></ion-icon>
+          <h3>{{ t('player.playError') }}</h3>
+          <p>{{ t('player.playErrorDesc') }}</p>
+          <div class="error-actions">
+            <ion-button router-link="/tabs/files" fill="outline">
+              <ion-icon :icon="folder" slot="start"></ion-icon>
+              {{ t('player.backToFiles') }}
+            </ion-button>
+            <ion-button @click="retryPlay">
+              <ion-icon :icon="refresh" slot="start"></ion-icon>
+              {{ t('player.retryPlay') }}
+            </ion-button>
+          </div>
+        </div>
 
         <div v-if="isAudio" class="audio-player-wrapper">
           <div class="audio-visual">
@@ -53,7 +69,7 @@ import {
   IonButton,
   toastController,
 } from '@ionic/vue'
-import { playCircle, folder, musicalNotes } from 'ionicons/icons'
+import { playCircle, folder, musicalNotes, alertCircle, refresh } from 'ionicons/icons'
 import { getFileStreamUrl, getFileCategory } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 
@@ -78,6 +94,7 @@ const streamUrl = computed(() => {
 
 const artContainer = ref<HTMLDivElement | null>(null)
 const audioRef = ref<HTMLAudioElement | null>(null)
+const playerError = ref(false)
 let art: Artplayer | null = null
 
 async function handlePlayerError() {
@@ -106,6 +123,7 @@ function initArtPlayer() {
 
   art.on('error', () => {
     console.error('[Player] ArtPlayer playback error')
+    playerError.value = true
     handlePlayerError()
   })
 
@@ -120,8 +138,15 @@ function destroyArtPlayer() {
   }
 }
 
+function retryPlay() {
+  playerError.value = false
+  destroyArtPlayer()
+  initArtPlayer()
+}
+
 onMounted(() => {
   if (isVideo.value) {
+    playerError.value = false
     initArtPlayer()
   }
 })
@@ -164,8 +189,33 @@ watch(streamUrl, (newUrl) => {
 
 .video-player {
   width: 100%;
-  max-height: 40vh;
+  min-height: 30vh;
+  aspect-ratio: 16/9;
   background: #000;
+}
+
+.player-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 30vh;
+  padding: 24px;
+  text-align: center;
+  color: var(--encv-text-secondary);
+}
+
+.error-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+  color: var(--ion-color-danger);
+  opacity: 0.7;
+}
+
+.error-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
 }
 
 .audio-player-wrapper {
