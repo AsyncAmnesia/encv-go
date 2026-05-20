@@ -78,7 +78,7 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
   if (!c.includes('compileOptions')) {
     c = c.replace(
       /defaultConfig\s*\{/,
-      "compileOptions {\n        targetCompatibility JavaVersion.VERSION_1_8\n        sourceCompatibility JavaVersion.VERSION_1_8\n    }\n\n    defaultConfig {",
+      "compileOptions {\n        targetCompatibility JavaVersion.VERSION_21\n        sourceCompatibility JavaVersion.VERSION_21\n    }\n\n    defaultConfig {",
     )
   }
 
@@ -127,7 +127,7 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     c += `
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = "21"
     }
 }
 `
