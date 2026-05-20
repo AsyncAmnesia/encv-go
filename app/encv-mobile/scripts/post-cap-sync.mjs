@@ -46,11 +46,11 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
         "plugins {\n    id 'kotlin-android'",
       )
       console.log('  [kotlin] injected id \'kotlin-android\' into plugins {} block')
-    } else if (c.includes("'com.android.application'")) {
-      // 旧 apply 格式
+    } else if (c.includes("apply plugin: 'com.android.application'")) {
+      // 旧 apply 格式: 添加 apply plugin: 'kotlin-android'
       c = c.replace(
-        "'com.android.application'",
-        "'com.android.application'\n    'kotlin-android'",
+        "apply plugin: 'com.android.application'",
+        "apply plugin: 'com.android.application'\napply plugin: 'kotlin-android'",
       )
       console.log('  [kotlin] applied kotlin-android via legacy apply')
     } else {
