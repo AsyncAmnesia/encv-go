@@ -112,12 +112,14 @@ jobs:
       - name: Copy assets, overlay files, and release config
         run: |
           mkdir -p app/encv-mobile/android/app/src/main/assets
-          cp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/assets/encv-go
+          mkdir -p app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a
+          cp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a/libencv-go.so
           cp app/encv-mobile/assets/config.mobile.json app/encv-mobile/android/app/src/main/assets/config.mobile.json
-          # Release config files (NEVER touched by cap sync — confirmed from source)
           cp app/encv-mobile/android-overlay/gradle.properties app/encv-mobile/android/gradle.properties
           echo "Assets:"
           ls -lhR app/encv-mobile/android/app/src/main/assets/
+          echo "JNI libs:"
+          ls -lhR app/encv-mobile/android/app/src/main/jniLibs/
           echo "Release config:"
           ls -lh app/encv-mobile/android/gradle.properties
 
@@ -183,6 +185,10 @@ jobs:
           grep -n "kotlin-stdlib" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: kotlin-stdlib not found"
           echo "=== jvmTarget ==="
           grep -n "jvmTarget" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: jvmTarget not found"
+          echo "=== jniLibs.srcDirs ==="
+          grep -n "jniLibs.srcDirs" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: jniLibs.srcDirs not found"
+          echo "=== useLegacyPackaging ==="
+          grep -n "useLegacyPackaging" app/encv-mobile/android/app/build.gradle || echo "❌ MISSING: useLegacyPackaging not set!"
           echo "=== proguard-rules.pro ==="
           test -f app/encv-mobile/android/app/proguard-rules.pro && echo "✅ proguard-rules.pro exists" || echo "⚠️ WARNING: no proguard-rules.pro"
           echo "=== GoProcessPlugin.kt source ==="
@@ -249,14 +255,10 @@ jobs:
               echo "⚠️ No encvgo .class (may be cleaned)"
             echo "=== capacitor.plugins.json ==="
             unzip -p "$APK_PATH" assets/capacitor.plugins.json
-            echo "=== Go binary in APK ==="
-            unzip -p "$APK_PATH" assets/encv-go > /tmp/test-binary 2>/dev/null
-            if [ -f /tmp/test-binary ]; then
-              echo "Size: $(wc -c < /tmp/test-binary) bytes"
-              file /tmp/test-binary || true
-            else
-              echo "❌ encv-go not in APK assets!"
-            fi
+            echo "=== Go binary in APK (jniLibs) ==="
+            unzip -l "$APK_PATH" | grep -E "libencv-go|lib/arm64" || echo "❌ libencv-go.so NOT in APK!"
+            echo "=== Go binary in APK (assets, legacy) ==="
+            unzip -l "$APK_PATH" | grep -E "assets/encv-go" || echo "(no assets/encv-go, expected with jniLibs packaging)"
           else
             echo "No APK found to verify"
           fi

@@ -124,10 +124,9 @@ class EncvGoService : Service() {
             }
 
             val configPath = File(filesDir, "config.user.json").absolutePath
-            val shellCommand = "${binary.absolutePath} start"
-            Log.i(TAG, "Starting backend: $shellCommand")
+            Log.i(TAG, "Starting backend: ${binary.absolutePath} start")
 
-            goProcess = ProcessBuilder("/system/bin/sh", "-c", shellCommand).apply {
+            goProcess = ProcessBuilder(binary.absolutePath, "start").apply {
                 environment()["ENCV_CONFIG_PATH"] = configPath
                 environment()["ENCV_MOBILE"] = "1"
                 environment()["HOME"] = filesDir.absolutePath
@@ -390,6 +389,28 @@ class EncvGoService : Service() {
     }
 
     private fun findExecutableBinary(): File? {
+        val nativeLibDir = applicationInfo.nativeLibraryDir
+        Log.i(TAG, "nativeLibraryDir: $nativeLibDir")
+
+        val nativeBinary = File(nativeLibDir, "libencv-go.so")
+        Log.i(TAG, "Checking native binary: exists=${nativeBinary.exists()}, canExecute=${nativeBinary.canExecute()}, path=${nativeBinary.absolutePath}")
+
+        if (nativeBinary.exists() && nativeBinary.canExecute()) {
+            Log.i(TAG, "Using binary from nativeLibraryDir: ${nativeBinary.absolutePath}")
+            return nativeBinary
+        }
+
+        val libDir = File(nativeLibDir)
+        if (libDir.exists()) {
+            libDir.listFiles()?.forEach { f ->
+                Log.i(TAG, "  lib dir entry: ${f.name} exe=${f.canExecute()}")
+            }
+        } else {
+            Log.w(TAG, "nativeLibraryDir does not exist: $nativeLibDir")
+        }
+
+        Log.w(TAG, "nativeLibraryDir lookup failed, falling back to filesDir (may fail on Android 10+)")
+
         val candidateDirs = listOf(
             filesDir to "filesDir",
             cacheDir to "cacheDir",
@@ -415,14 +436,18 @@ class EncvGoService : Service() {
 
     private fun copyBinaryFromAssets(dest: File) {
         dest.parentFile?.mkdirs()
-        assets.open(BINARY_NAME).use { input ->
-            FileOutputStream(dest).use { output ->
-                val buffer = ByteArray(8192)
-                var len: Int
-                while (input.read(buffer).also { len = it } != -1) {
-                    output.write(buffer, 0, len)
+        try {
+            assets.open(BINARY_NAME).use { input ->
+                FileOutputStream(dest).use { output ->
+                    val buffer = ByteArray(8192)
+                    var len: Int
+                    while (input.read(buffer).also { len = it } != -1) {
+                        output.write(buffer, 0, len)
+                    }
                 }
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "Binary not found in assets (expected on Android 10+ with jniLibs packaging)", e)
         }
     }
 
