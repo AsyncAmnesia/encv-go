@@ -37,12 +37,21 @@ patchFile(join(ANDROID_DIR, 'build.gradle'), (c) => {
 const version = process.env.ENCV_VERSION || ''
 
 patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
-  // 1. kotlin-android plugin
-  if (!c.includes("'kotlin-android'")) {
-    c = c.replace(
-      "'com.android.application'",
-      "'com.android.application'\n    'kotlin-android'",
-    )
+  // 1. kotlin-android plugin (兼容 plugins { id } 新格式 和 apply plugin: 旧格式)
+  if (!c.includes('kotlin-android') && !c.includes('org.jetbrains.kotlin.android')) {
+    if (c.match(/plugins\s*\{/)) {
+      // 新 DSL 格式: 在 plugins 块内添加 id 'kotlin-android'
+      c = c.replace(
+        /plugins\s*\{/,
+        "plugins {\n    id 'kotlin-android'",
+      )
+    } else if (c.includes("'com.android.application'")) {
+      // 旧 apply 格式
+      c = c.replace(
+        "'com.android.application'",
+        "'com.android.application'\n    'kotlin-android'",
+      )
+    }
   }
 
   // 2. kotlin-stdlib dependency + Logcat debug library
@@ -59,23 +68,15 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
   }
 
-  // 2b. compileOptions (required by Logcat)
+  // 3. compileOptions (required by Logcat)
   if (!c.includes('compileOptions')) {
     c = c.replace(
       /defaultConfig\s*\{/,
-      "compileOptions {\n        targetCompatibility JavaVersion.VERSION_17\n        sourceCompatibility JavaVersion.VERSION_17\n    }\n\n    defaultConfig {",
+      "compileOptions {\n        targetCompatibility JavaVersion.VERSION_1_8\n        sourceCompatibility JavaVersion.VERSION_1_8\n    }\n\n    defaultConfig {",
     )
   }
 
-  // 2c. kotlinOptions (required for Kotlin compilation)
-  if (!c.includes('kotlinOptions')) {
-    c = c.replace(
-      /compileOptions\s*\{[^}]*\}/,
-      "compileOptions {\n        targetCompatibility JavaVersion.VERSION_17\n        sourceCompatibility JavaVersion.VERSION_17\n    }\n\n    kotlinOptions {\n        jvmTarget = '17'\n    }",
-    )
-  }
-
-  // 3. ndk abiFilters (arm64 only)
+  // 4. ndk abiFilters (arm64 only)
   if (!c.includes('abiFilters') || !c.includes('arm64-v8a')) {
     c = c.replace(
       /defaultConfig\s*\{/,
@@ -83,14 +84,14 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
   }
 
-  // 4. Version injection
+  // 5. Version injection
   if (version) {
     const vcode = parseInt(version.replace(/\./g, '')) || 1
     c = c.replace(/versionCode\s+\d+/, `versionCode ${vcode}`)
     c = c.replace(/versionName\s+"[^"]*"/, `versionName "${version}"`)
   }
 
-  // 5. Signing config (only when building release)
+  // 6. Signing config (only when building release)
   if (version && c.includes('minifyEnabled false')) {
     const scBlock =
       "\n" +
@@ -111,6 +112,18 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
 
     console.log('  release: signing + minify + shrink applied')
+  }
+
+  // 7. Kotlin JVM target (顶层 kotlin {} 块，替代已废弃的 android.kotlinOptions)
+  // Kotlin 1.9+ / AGP 8.x 推荐方式，不依赖 kotlin-android 插件在 android {} 内注册 kotlinOptions
+  if (!c.includes('compilerOptions') && !c.includes('jvmTarget') && c.includes('kotlin-android')) {
+    c = c.trimEnd() + '\n'
+    c += `kotlin {
+    compilerOptions {
+        jvmTarget = "17"
+    }
+}
+`
   }
 
   return c
