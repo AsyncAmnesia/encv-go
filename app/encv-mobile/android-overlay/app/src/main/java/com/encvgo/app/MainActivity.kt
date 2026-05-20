@@ -82,12 +82,15 @@ class MainActivity : BridgeActivity() {
             Log.i(TAG, "Binary exists: ${binary.exists()}, size: ${binary.length()}, canExecute: ${binary.canExecute()}")
 
             val configPath = File(filesDir, "config.user.json").absolutePath
-            val pb = ProcessBuilder(binary.absolutePath, "start")
-            pb.environment()["ENCV_CONFIG_PATH"] = configPath
-            pb.environment()["ENCV_MOBILE"] = "1"
-            pb.environment()["HOME"] = filesDir.absolutePath
-            pb.redirectErrorStream(true)
-            goProcess = pb.start()
+            val cmd = "${binary.absolutePath} start"
+            Log.i(TAG, "Starting via sh -c: $cmd")
+            goProcess = ProcessBuilder("/system/bin/sh", "-c", cmd).apply {
+                environment()["ENCV_CONFIG_PATH"] = configPath
+                environment()["ENCV_MOBILE"] = "1"
+                environment()["HOME"] = filesDir.absolutePath
+                redirectErrorStream(true)
+                directory(filesDir)
+            }.start()
 
             Thread {
                 try {
@@ -107,9 +110,10 @@ class MainActivity : BridgeActivity() {
 
             Log.i(TAG, "ENCV-go daemon started (pid: unknown, async)")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start ENCV-go daemon", e)
-            e.message?.split("\n")?.forEach { Log.e(TAG, it) }
-            notifyFrontend(0, "start_failed")
+            Log.e(TAG, "=== Start daemon FAILED ===", e)
+            Log.e(TAG, "Exception: ${e.javaClass.name}: ${e.message}")
+            e.stackTraceToString().lines().forEach { Log.e(TAG, it) }
+            notifyFrontend(0, "start_failed:${e.message?.take(200) ?: 'unknown'}")
             readyCallback?.invoke(-1)
             readyCallback = null
         }
@@ -216,6 +220,17 @@ class MainActivity : BridgeActivity() {
 
         return null
     }
+
+    Log.e(TAG, "=== Binary diagnosis: ALL locations failed ===")
+    for ((dir, name) in candidateDirs) {
+        if (dir == null) continue
+        val binary = File(dir, BINARY_NAME)
+        Log.e(TAG, "$name: exists=${binary.exists()}, len=${binary.length()}, canExec=${binary.canExecute()}, path=${binary.absolutePath}")
+    }
+    Log.e(TAG, "SDK_INT=${Build.VERSION.SDK_INT}, RELEASE=${Build.VERSION.RELEASE}")
+    notifyFrontend(0, "no_binary")
+    return null
+}
 
     private fun ensureConfigExists() {
         val dest = File(filesDir, "config.user.json")

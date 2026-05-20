@@ -145,6 +145,7 @@ jobs:
               ('android.permission.WRITE_EXTERNAL_STORAGE', {'maxSdkVersion': '28'}),
               ('android.permission.MANAGE_EXTERNAL_STORAGE', None),
               ('android.permission.WAKE_LOCK', None),
+              ('android.permission.READ_LOGS', None),
           ]
           existing_perms = {p.get(ns + 'name', '') for p in root.findall('uses-permission')}
           for perm_name, attrs in perms:
@@ -234,6 +235,14 @@ jobs:
               echo "⚠️ No encvgo .class (may be cleaned)"
             echo "=== capacitor.plugins.json ==="
             unzip -p "$APK_PATH" assets/capacitor.plugins.json
+            echo "=== Go binary in APK ==="
+            unzip -p "$APK_PATH" assets/encv-go > /tmp/test-binary 2>/dev/null
+            if [ -f /tmp/test-binary ]; then
+              echo "Size: $(wc -c < /tmp/test-binary) bytes"
+              file /tmp/test-binary || true
+            else
+              echo "❌ encv-go not in APK assets!"
+            fi
           else
             echo "No APK found to verify"
           fi
