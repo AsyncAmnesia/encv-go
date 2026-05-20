@@ -1,22 +1,29 @@
 ## Summary
 
-- 推荐方案：采用 `1.md` 的“最小改动增强方案”作为主方案，即保留当前 `MainActivity` 直接拉起 Go 进程的架构，重点优化启动就绪检测、超时诊断、状态通知和失败可观测性。
-- 吸收内容：从 `3.md` 中仅吸收前端状态反馈的细化思路，不引入新的前端控制架构，不重做 `useGoProcess.ts`。
-- 明确不选：当前阶段不采用 `2.md` 的 `Foreground Service` 重构方案，也不采用 `3.md` 那种围绕 Service 重新设计前后端控制链路的完整重构方案。
-- 选择原因：当前仓库已经具备 `MainActivity.kt` + `GoProcessPlugin.kt` + `src/plugins/GoProcess.ts` + `useServerStatus.ts` + `ServerDetail.vue` 的完整控制链，主要问题集中在 Android 侧“进程启动与就绪判定”不稳定，而不是缺少启停入口。
+- 选定方案：采用 `2.md` 为主的 `Android 12+ Foreground Service` 重构方案，并吸收 `3.md` 中“前端服务控制”和“状态反馈”的必要部分。
+- 目标定义：
+  - 后端进程脱离 `MainActivity` 生命周期，改由常驻前台服务持有和管理。
+  - 支持第三方快速调用，且同时支持 `自定义 Scheme` 与 `显式 Intent` 两种入口。
+  - 第三方触发结果同时通过 `前台页面展示` 和 `Android Broadcast` 两种方式回传。
+  - 默认运行策略为 `常驻 + 可手动关闭`。
+- 范围收敛：只考虑 `Android 12+`，不再为更早 Android 版本保留兼容分支。
 
 ## Current State Analysis
 
 ### 现有实现
 
-- Android 入口在 `app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/MainActivity.kt`。
-- `MainActivity.kt` 当前负责：
+- Android 原生定制目前仅存在于 overlay 目录：
+  - `app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/MainActivity.kt`
+  - `app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt`
+  - `app/encv-mobile/android-overlay/app/src/main/res/xml/network_security_config.xml`
+- `MainActivity.kt` 当前同时承担了过多职责：
   - 注册 `GoProcessPlugin`
   - 从 assets 解压 `encv-go`
   - 在 `filesDir`/`cacheDir`/`externalFilesDir` 多目录尝试执行二进制
+  - 持有 `Process`
   - 用 `waitForBackendAndNotify()` 对 `/health` 做最多 30 秒、每 500ms 一次的轮询
   - 通过 `window.dispatchEvent('encv:backend-ready')` 通知前端
-- Capacitor 原生桥接已存在于 `app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt`，且已支持：
+- Capacitor 原生桥接 `GoProcessPlugin.kt` 已支持：
   - `restart`
   - `stop`
   - `getStatus`
@@ -26,152 +33,314 @@
   - `app/encv-mobile/src/plugins/web.ts`
   - `app/encv-mobile/src/composables/useServerStatus.ts`
   - `app/encv-mobile/src/views/ServerDetail.vue`
-- `post-cap-sync.mjs` 已经会把 `MainActivity.kt` 和 `GoProcessPlugin.kt` 覆盖到 Android 工程，说明当前定制点已固定在 overlay 模式。
+- `post-cap-sync.mjs` 已经会把 `MainActivity.kt` 和 `GoProcessPlugin.kt` 覆盖到 Android 工程，但当前不会生成：
+  - `EncvGoService.kt`
+  - 自定义 `AndroidManifest.xml`
+  - 外部调用入口清单
+- 仓库当前没有已有的 deep link、scheme、intent-filter、外部唤起协议实现。
+- `capacitor.config.ts` 当前只有基础配置：
+  - `appId = com.encvgo.app`
+  - `androidScheme = https`
+  - 没有为第三方入口预留协议或路由适配。
 
 ### 已确认的问题
 
-- 当前就绪判定完全依赖 HTTP 轮询，入口在 `MainActivity.kt` 的 `waitForBackendAndNotify()`。
-- 轮询策略较慢：最多 30 秒，每次 sleep 500ms，坏情况下用户等待明显。
-- 启动失败诊断弱：
-  - 虽然采集了 `goProcessOutput`
-  - 但超时只截取尾部 500 字
-  - 缺少“日志判定 ready”的一级信号
-- `findExecutableBinary()` 的多目录回退逻辑较重，但它仍是当前代码中唯一针对 `noexec` 的兼容手段；直接删除会增加回归风险。
-- 仓库当前并没有自己的 AndroidManifest overlay，也没有 `EncvGoService.kt`，说明切换到 Service 不是“补几行代码”，而是一次新的 Android 生命周期设计。
+- 当前后端进程与 `MainActivity` 绑定，不满足“稳定后台运行”的目标。
+- 当前启停链路只适用于 App 内部调用，不满足“第三方快速调用”的目标。
+- 当前没有外部触发协议，第三方既不能用自定义 URL，也不能用显式 Intent 精准控制服务。
+- 当前没有 Broadcast 形式的结果回传，外部 Android 调用方无法无 UI 地监听结果。
+- 当前服务化所需的关键基础设施全部缺失：
+  - `Foreground Service`
+  - `AndroidManifest` 权限与 service 声明
+  - 外部 `intent-filter`
+  - 外部动作协议与 extras 约定
+  - 服务状态广播规范
 
 ### 三份方案与现状匹配度
 
-- `1.md` 匹配度最高：
-  - 与当前 `MainActivity` 架构一致
-  - 可以直接落到已存在的方法与字段
-  - 改动面可控
-- `2.md` 匹配度中低：
-  - 需要新增 `EncvGoService.kt`
-  - 需要补 `AndroidManifest.xml` service 声明与前台服务权限
-  - 需要处理 Android 12/13/14 前台服务限制和常驻通知
-  - 会改变当前“Activity 持有进程”的控制边界
-- `3.md` 匹配度中等但收益偏低：
-  - 前端控制抽象更完整
-  - 但当前仓库已经有 `GoProcess.ts`、`useServerStatus.ts`、`ServerDetail.vue`
-  - 若底层启动可靠性不解决，前端再包装一层不会根治问题
+- `1.md`：
+  - 适合短期稳定性补丁
+  - 但不能满足“稳定后台运行”和“第三方快捷调用”的核心目标
+- `2.md`：
+  - 是当前目标最匹配的基础方案
+  - 能把进程生命周期从 `MainActivity` 迁移到系统级服务
+- `3.md`：
+  - 其中的前端控制链路和结果反馈思路可作为 Service 方案的上层配套
+  - 但不能单独作为底层方案
 
 ## Proposed Changes
 
 ### 方案结论
 
-- 选定方案：`方案一（保守增强版）`
-- 不选方案：
-  - 不做 `Foreground Service`
-  - 不做 JNI / `.so` 重构
-  - 不做新的前端控制抽象层大改
+- 选定方案：`Service 化重构方案`
+- 服务策略：`Foreground Service + START_STICKY + 用户可手动停止`
+- 外部调用：
+  - 支持 `encvgo://` 自定义 Scheme
+  - 支持显式 `Intent action`
+- 结果回传：
+  - 对前端页面继续发 `window.dispatchEvent('encv:backend-ready')`
+  - 对 Android 外部调用方发应用内限定的结果 Broadcast
+- 平台范围：仅支持 `Android 12+`
 
 ### 文件级改动计划
 
-#### 1. `app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/MainActivity.kt`
+#### 1. `app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/EncvGoService.kt`
 
-- 目标：把“启动是否成功”的判断从“纯 HTTP 轮询”升级为“日志事件优先 + HTTP 兜底”的混合机制。
+- 目标：新增真正持有 Go 进程的前台服务，成为唯一后端生命周期管理者。
 - 具体修改：
-  - 为 Go 进程输出监听增加 ready 关键字匹配，例如：
-    - `listening on`
-    - `ready`
-    - `server ready`
-  - 一旦命中 ready 关键词，立即触发端口探测和前端通知，避免继续傻等。
-  - 重写 `waitForBackendAndNotify()`：
-    - 超时从 30 秒缩到 10 秒
-    - 轮询间隔从 500ms 缩到 200ms
-    - 保留端口扫描逻辑
-  - 强化错误诊断：
-    - timeout 时打印更完整的 `goProcessOutput`
-    - `lastStartError` 中保留更有用的退出态、日志尾部和失败类别
-  - 修正并收敛状态流转：
-    - 启动前清理旧的 `backendReady` / `lastStartError` / 输出缓冲
-    - 避免既收到 ready 日志又重复通知前端
-    - 进程退出时，如果尚未 ready，应明确上报失败
+  - 新建 `EncvGoService.kt`
+  - 在 `companion object` 中定义统一动作常量：
+    - `ACTION_START`
+    - `ACTION_STOP`
+    - `ACTION_RESTART`
+    - `ACTION_STATUS`
+    - `ACTION_EXTERNAL_START`
+    - `ACTION_EXTERNAL_RESTART`
+  - 在 `companion object` 中定义统一广播常量：
+    - `BROADCAST_BACKEND_READY`
+    - `BROADCAST_BACKEND_STATUS`
+    - `BROADCAST_EXTERNAL_RESULT`
+  - `onStartCommand()` 根据 `Intent.action` 分流：
+    - 启动服务
+    - 停止服务
+    - 重启服务
+    - 查询状态
+    - 处理第三方入口映射后的外部启动动作
+  - 进入服务后在 5 秒内调用 `startForeground()`
+  - 服务内部持有：
+    - `Process`
+    - 当前端口
+    - 运行态
+    - 最近错误
+    - 输出缓冲
+  - 服务负责：
+    - `ensureConfigExists()`
+    - `findExecutableBinary()`
+    - `startGoProcess()`
+    - `stopGoProcess()`
+    - `restartGoProcess()`
+    - `monitorProcessOutput()`
+    - `waitForBackendReady()`
+  - 就绪判定采用：
+    - 日志关键字优先
+    - `/health` 探测兜底
+  - 状态变化时同时发送：
+    - 前端桥接需要的内部广播
+    - 第三方监听需要的结果广播
+  - 通知文案至少覆盖：
+    - 启动中
+    - 已就绪
+    - 已停止
+    - 启动失败
 - 原因：
-  - 当前启动不稳的核心就在这里
-  - 此处改完即可显著提升成功率、启动速度和可诊断性
+  - 这是满足“稳定后台运行”的核心改造点
 
-#### 2. `app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt`
+#### 2. `app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/MainActivity.kt`
 
-- 目标：保持 API 不变，只修正与 Android 状态同步相关的细节。
+- 目标：把 `MainActivity` 从“进程管理者”降级为“前端桥接与外部唤起入口协调者”。
 - 具体修改：
-  - 继续保留 `restart` / `stop` / `getStatus`
-  - 配合 `MainActivity` 的新状态流转，确保：
-    - `restart()` 在 ready 或明确失败后再 resolve/reject
-    - `getStatus()` 返回值和 `MainActivity` 的真实状态一致
+  - 删除 `Process` 持有和直接启动 Go 的逻辑
+  - 保留 `registerPlugin(GoProcessPlugin::class.java)`
+  - 启动时改为：
+    - 注册 Service 状态广播接收器
+    - 触发 `EncvGoService.ACTION_START`
+  - 新增 `onNewIntent()` 处理外部唤起：
+    - 解析 `encvgo://...`
+    - 解析显式 `Intent action`
+    - 统一转发给 `EncvGoService`
+  - 继续向 WebView 分发：
+    - `encv:backend-ready`
+    - 可选 `encv:backend-status`
+  - 对外部触发场景，必要时把页面切到指定设置页或状态页，确保“前台页面展示结果”成立
 - 原因：
-  - 当前前端接口已经接通，不需要破坏性调整
-  - 让原生实现稳定优先于扩展能力
+  - 这样才能让 Activity 被销毁后，服务依然独立运行
 
-#### 3. `app/encv-mobile/src/composables/useServerStatus.ts`
+#### 3. `app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt`
 
-- 目标：最小代价提升前端对原生状态的消费，不重做组合式封装。
+- 目标：Capacitor 插件不再直接操控 `MainActivity` 状态，而是通过 `Intent` 控制 `EncvGoService`。
 - 具体修改：
-  - 保留当前 `encv:backend-ready` 监听方案
-  - 在收到 `detail.error` 时更明确地更新 `isOnline` / `lastError`
-  - 在重启和停止过程中加入更清晰的状态切换，避免 UI 短时间显示旧状态
-  - 仅在必要时补一个“等待 native 回调”的兜底处理，不引入新的轮询框架
+  - `restart()`：
+    - 发送 `ACTION_RESTART` 到服务
+    - 监听服务结果广播后 resolve/reject
+  - `stop()`：
+    - 发送 `ACTION_STOP`
+    - 成功后 resolve
+  - `getStatus()`：
+    - 读取服务最新状态缓存，或通过广播 / 共享状态返回
+  - `checkPermissions()`：
+    - 收敛为 Android 12+ 所需权限模型
+  - `requestNotificationPermission()`：
+    - 保留 Android 13+ `POST_NOTIFICATIONS`
+  - `requestStoragePermission()`：
+    - 仅保留当前确有业务需要的 Android 12+ 路径
+    - 不再为更早系统保留分支逻辑
 - 原因：
-  - 当前问题在原生侧居多
-  - 前端只需配合，不应扩大改动面
+  - 当前插件 API 前端已使用，最稳妥的做法是保持 TS 接口尽量不变，只改底层路由
 
-#### 4. `app/encv-mobile/src/views/ServerDetail.vue`
+#### 4. `app/encv-mobile/android-overlay/app/src/main/AndroidManifest.xml`
 
-- 目标：对齐新的状态反馈，但不做 UI 架构重写。
+- 目标：新增 overlay Manifest，声明前台服务、权限和第三方入口。
 - 具体修改：
-  - 保留现有按钮与权限区块
-  - 如原生错误信息变得更明确，则直接复用当前 `connectionError` 展示
-  - 仅在必要时补充 loading/失败提示文案细节
+  - 新建 Android overlay Manifest
+  - 增加权限：
+    - `android.permission.INTERNET`
+    - `android.permission.FOREGROUND_SERVICE`
+    - `android.permission.FOREGROUND_SERVICE_DATA_SYNC`
+    - `android.permission.POST_NOTIFICATIONS`
+  - 在 `<application>` 中声明：
+    - `EncvGoService`
+    - `android:foregroundServiceType="dataSync"`
+    - `android:exported="false"` 或按外部调用需要谨慎设定
+  - 在 `MainActivity` 增加第三方入口 `intent-filter`
+    - 自定义 Scheme：`encvgo://`
+    - 显式 action：如 `com.encvgo.action.START`、`com.encvgo.action.RESTART`
+  - 约束导出边界：
+    - 对需要暴露给第三方的 Activity/入口设 `exported=true`
+    - 对内部服务本体保持最小暴露面
 - 原因：
-  - 当前页面已经具备启停交互
-  - 不需要按 `3.md` 再新增一整套调试展示逻辑
+  - Service 方案离不开 Manifest 层声明
+  - 第三方入口必须通过清单明确注册
 
 #### 5. `app/encv-mobile/scripts/post-cap-sync.mjs`
 
-- 目标：只在需要时同步 Android overlay 逻辑，不引入 Service 文件复制。
+- 目标：让 Android 生成工程始终能获得完整的 Service 化 overlay。
 - 具体修改：
-  - 保持当前 overlay 文件复制范围为 `MainActivity.kt` 和 `GoProcessPlugin.kt`
-  - 如新增了与日志/配置有关的小型辅助文件，再一并纳入复制
+  - overlay 复制文件扩展为：
+    - `MainActivity.kt`
+    - `GoProcessPlugin.kt`
+    - `EncvGoService.kt`
+    - `AndroidManifest.xml`
+  - 保留 `network_security_config.xml`
+  - 如当前脚本会清空 Java 目录，需确保新 Service 文件一起复制，避免 Android 工程缺类
+  - 如 Capacitor 生成的 Manifest 需要 patch 而非整体替换，则改为在脚本中做稳定的 XML 注入
 - 原因：
-  - 既然不选 Service 方案，就不应把 `EncvGoService.kt`、Manifest patch 等复杂度带进来
+  - Service 方案不只是一两个 Kotlin 文件，必须确保 sync 后 Android 工程结构完整
+
+#### 6. `app/encv-mobile/src/plugins/GoProcess.ts`
+
+- 目标：保持前端插件调用面稳定，补充服务化后的状态定义。
+- 具体修改：
+  - 保留：
+    - `restartBackend()`
+    - `stopBackend()`
+    - `getBackendStatus()`
+    - 权限方法
+  - 如有必要扩展返回值：
+    - `running`
+    - `port`
+    - `lastError`
+    - `source`（manual / external）
+  - Web fallback 保持轻量空实现
+- 原因：
+  - 避免前端大量重写
+
+#### 7. `app/encv-mobile/src/composables/useServerStatus.ts`
+
+- 目标：同时消费 Service 广播和 HTTP 状态，支撑前台页面展示。
+- 具体修改：
+  - 继续监听 `encv:backend-ready`
+  - 增加对 `encv:backend-status` 或错误事件的消费
+  - 在 restart/stop 时等待服务状态回传，而不是假定 `MainActivity` 本地状态
+  - 在第三方唤起后，如果页面已打开，能立即刷新状态并连接 WebSocket
+- 原因：
+  - 服务化后状态源从 Activity 本地变量变成 Service 广播
+
+#### 8. `app/encv-mobile/src/views/ServerDetail.vue`
+
+- 目标：保留现有设置页交互，但明确呈现“服务运行态”和错误反馈。
+- 具体修改：
+  - 保留启停按钮和权限面板
+  - 加上更明确的服务状态展示：
+    - 启动中
+    - 运行中
+    - 已停止
+    - 错误
+  - 与 `restartBackend()` / `stopBackend()` 的异步状态绑定
+- 原因：
+  - 用户需要能手动关闭常驻服务
+
+#### 9. `app/encv-mobile/src/main.ts` 或现有入口桥接文件
+
+- 目标：补上第三方唤起后的前端同步入口。
+- 具体修改：
+  - 若需要前端感知 App 被外部协议拉起，则在前端入口监听原生注入事件
+  - 如后续使用 Capacitor App 插件事件，则在现有入口中注册并把结果派发给状态层
+- 原因：
+  - 结果要求同时“前台页面展示 + 广播回传”，前端需要有明确接入口
+
+#### 10. `app/encv-mobile/src/composables/useI18n.ts`
+
+- 目标：补齐 Service 状态和错误提示文案。
+- 具体修改：
+  - 新增或校准文案键值：
+    - 服务启动中
+    - 服务已运行
+    - 服务停止
+    - 服务启动失败
+    - 第三方调用已接收
+- 原因：
+  - 当前页面会直接显示这些状态
 
 ## Assumptions & Decisions
 
-- 决策 1：本轮目标是“为当前仓库指定最适合落地的方案”，不是同时推进短期修复和长期架构升级。
-- 决策 2：主问题被定义为“Android 端进程拉起后的就绪检测与诊断不足”，不是“前端缺失启停能力”。
-- 决策 3：短期内继续保留 `MainActivity` 持有 `Process` 的结构，因为这与现有工程最一致，改动最小。
-- 决策 4：暂不引入 `Foreground Service`，原因是：
-  - 当前仓库没有相应清单与 Service 基础设施
-  - 会显著扩大 Android 适配面
-  - 会引入通知常驻、权限和审核层面的额外负担
-- 决策 5：暂不引入 `3.md` 中新的 `useGoProcess.ts` 方案，原因是当前已有 `src/plugins/GoProcess.ts` 与 `useServerStatus.ts`，重复抽象收益不高。
-- 假设 1：Go 后端输出中存在或可以识别稳定的 ready 关键词；若实际日志不包含 ready 标志，则回退到 HTTP 轮询兜底。
-- 假设 2：当前 `findExecutableBinary()` 的多目录执行策略虽然不优雅，但在未完成 `jniLibs/.so` 重构前仍需要保留。
+- 决策 1：必须做 Service 化，因为目标已明确为“稳定后台运行 + 第三方快捷调用支持”。
+- 决策 2：只考虑 `Android 12+`，不再为 Android 11 及更低版本增加兼容逻辑。
+- 决策 3：第三方入口同时支持两套协议：
+  - `自定义 Scheme`
+  - `显式 Intent`
+- 决策 4：默认后台策略为：
+  - 服务常驻运行
+  - 用户在设置页可手动停止
+- 决策 5：默认结果回传同时支持：
+  - ENCV 前台页面可见
+  - Android 广播结果可监听
+- 决策 6：`MainActivity` 不再持有 `Process`，进程管理权完全迁移给 `EncvGoService`
+- 决策 7：前端 TypeScript API 优先保持稳定，减少无谓重构
+- 假设 1：Go 后端启动日志中仍可识别 ready 关键字；若不稳定，则服务继续以 HTTP `/health` 作为兜底就绪判定
+- 假设 2：当前 assets 解压 + 多目录执行策略在 Service 中仍需保留，直到未来单独推进 `.so` / `jniLibs` 重构
+- 假设 3：显式 Intent 的 action 命名将统一收敛到 `com.encvgo.action.*` 命名空间
 
 ## Verification Steps
 
-- Android 编译验证：
-  - 执行 Capacitor Android 同步流程，确认 overlay 后 Kotlin 文件可正常编译。
-- 启动链路验证：
-  - 首次冷启动 App，确认后端能在 10 秒内完成 ready 通知或明确报错。
-  - 观察日志，确认 ready 检测优先于纯 HTTP 超时。
-- 重启链路验证：
-  - 在 `ServerDetail.vue` 点击重启，确认：
-    - UI 先进入重启中
-    - 后端 ready 后恢复在线
-    - 失败时展示更明确错误
-- 停止链路验证：
-  - 点击停止，确认：
-    - `getStatus()` 返回 `running=false`
-    - 前端状态变离线
-    - 不保留旧端口信息造成误判
+- Android 工程生成验证：
+  - 执行 `npx cap sync android` 后确认生成工程包含：
+    - `EncvGoService.kt`
+    - 更新后的 `MainActivity.kt`
+    - 更新后的 `GoProcessPlugin.kt`
+    - Manifest 中的 service 与 intent-filter
+- 编译验证：
+  - Android Studio / Gradle 编译通过
+  - Android 12+ 权限与前台服务声明无编译错误
+- 启动验证：
+  - 冷启动 App 后，服务自动进入前台并开始拉起 Go 后端
+  - 通知栏能看到常驻服务状态
+  - 前端收到 ready 事件并连上本地接口
+- 手动控制验证：
+  - 在 `ServerDetail.vue` 点击停止，服务停止、通知消失或状态变更、前端离线
+  - 再点击重启，服务恢复运行并前端恢复在线
+- Activity 生命周期验证：
+  - 关闭或重建 `MainActivity` 后，服务仍继续运行
+  - 再次进入 App 时能重新同步当前服务状态
+- 第三方 Scheme 验证：
+  - 通过 `encvgo://start`
+  - 通过 `encvgo://restart`
+  - 验证 App 被唤起、服务执行动作、前端展示结果
+- 第三方显式 Intent 验证：
+  - 发送 `com.encvgo.action.START`
+  - 发送 `com.encvgo.action.RESTART`
+  - 验证动作被正确路由到服务
+- 广播回传验证：
+  - 外部 Android 调用方可监听结果广播并收到成功/失败、端口、错误信息
 - 异常验证：
-  - 人为制造配置错误或二进制不可执行场景，确认：
-    - `lastStartError` 有可读信息
-    - 前端能拿到错误并展示
+  - 人为制造配置错误或二进制不可执行场景
+  - 验证通知、前端页面、外部广播三处都能收到可读错误
 
 ## 最终建议
 
-- 现在应执行的，就是把 `1.md` 中“短期修复现在的问题”落到现有仓库。
-- `2.md` 可以保留为后续“长期后台常驻能力”预研方案，但不应作为当前第一步。
-- `3.md` 的前端重构不应先做；只有在 Android 启动链路稳定后，再考虑是否值得继续抽象前端状态层。
+- 当前最适合的落地路线，不再是 `MainActivity` 内修修补补，而是直接推进 `Foreground Service` 正式重构。
+- 实施顺序应为：
+  - 先补 `EncvGoService.kt` 和 Manifest
+  - 再把 `MainActivity` 改成桥接层
+  - 再改 `GoProcessPlugin.kt`
+  - 最后让前端状态层和页面对齐 Service 广播
+- 第三方支持不应作为后加特性，而应在第一版 Service 方案中一并纳入，否则后续还会再次改动 Manifest、入口路由和结果回传协议。
