@@ -147,11 +147,8 @@ const debugManifest = `<?xml version="1.0" encoding="utf-8"?>
     <application>
         <activity
             android:name="com.hjq.logcat.LogcatActivity"
-            android:configChanges="orientation|screenSize|keyboardHidden"
-            android:launchMode="singleInstance"
-            android:screenOrientation="portrait"
             android:theme="@style/Theme.AppCompat.NoActionBar"
-            tools:node="replace" />
+            tools:replace="android:theme" />
 
         <meta-data
             android:name="LogcatWindowEntrance"
