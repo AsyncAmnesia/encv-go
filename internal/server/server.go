@@ -22,6 +22,7 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/handler"
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
+	mobileservice "github.com/Soltus/encv-go/internal/service"
 	"github.com/Soltus/encv-go/internal/v2/service"
 	"github.com/Soltus/encv-go/internal/webdav"
 	"github.com/dustin/go-humanize"
@@ -39,6 +40,7 @@ type Server struct {
 	webdavPath string // WebDAV 的路由前缀
 	// 【关键替换】用新的 ReaderService 替代旧的 ContainerManager
 	readerService  *service.ReaderService
+	mobileSvc      *mobileservice.MobileService
 	contentHandler *handler.ContentHandler
 	chunkNamers    []namer.ChunkNamer
 }
@@ -48,10 +50,12 @@ func NewServer(ctx context.Context, configPath string) *Server {
 	containerManager := service.NewContainerManager()
 	readerService := service.NewReaderService(containerManager)
 	contentHandler := handler.NewContentHandler()
+	mobileSvc := mobileservice.NewMobileService("")
 	return &Server{
 		cfg:            cfg,
 		configPath:     configPath,
 		readerService:  readerService,
+		mobileSvc:      mobileSvc,
 		contentHandler: contentHandler,
 		instanceID:     fmt.Sprintf("%x", time.Now().UnixNano()),
 	}
@@ -74,6 +78,7 @@ func (s *Server) Start(version string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve absolute path for directory '%s': %w", dir, err)
 	}
+	s.mobileSvc = mobileservice.NewMobileService(s.servingDir)
 	chunkNamers := plugins.GetAllRegisteredChunkNamers()
 	s.chunkNamers = chunkNamers
 
