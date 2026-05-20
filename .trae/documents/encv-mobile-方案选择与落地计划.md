@@ -1,12 +1,17 @@
 ## Summary
 
 - 选定方案：采用 `2.md` 为主的 `Android 12+ Foreground Service` 重构方案，并吸收 `3.md` 中“前端服务控制”和“状态反馈”的必要部分。
+- 收敛原则：继续采用 Capacitor 的前提是 `Android 原生复杂度严格封装在 overlay 层`，不把 Service 方案扩散成“全前端重构 + 全链路改造”。
 - 目标定义：
   - 后端进程脱离 `MainActivity` 生命周期，改由常驻前台服务持有和管理。
   - 支持第三方快速调用，且同时支持 `自定义 Scheme` 与 `显式 Intent` 两种入口。
   - 第三方触发结果同时通过 `前台页面展示` 和 `Android Broadcast` 两种方式回传。
   - 默认运行策略为 `常驻 + 可手动关闭`。
 - 范围收敛：只考虑 `Android 12+`，不再为更早 Android 版本保留兼容分支。
+- 低侵入边界：
+  - Web UI、Vue 路由、页面结构、业务 API 不重做。
+  - `src/plugins/GoProcess.ts` 对外接口尽量保持不变。
+  - 前端只消费已有或兼容扩展的事件，不引入新的一套控制架构。
 
 ## Current State Analysis
 
@@ -55,6 +60,7 @@
   - 外部 `intent-filter`
   - 外部动作协议与 extras 约定
   - 服务状态广播规范
+- 如果为实现 Service 而同步重写前端状态层、页面层和路由层，Capacitor 的“低侵入”优势会被抵消。
 
 ### 三份方案与现状匹配度
 
@@ -81,6 +87,10 @@
   - 对前端页面继续发 `window.dispatchEvent('encv:backend-ready')`
   - 对 Android 外部调用方发应用内限定的结果 Broadcast
 - 平台范围：仅支持 `Android 12+`
+- 侵入控制原则：
+  - 必改：Android overlay、Manifest、post-cap-sync、原生插件底层实现
+  - 可少改：前端状态消费层
+  - 不改或尽量不改：Vue 页面结构、路由、业务 API、全局应用入口架构
 
 ### 文件级改动计划
 
@@ -150,8 +160,8 @@
     - 统一转发给 `EncvGoService`
   - 继续向 WebView 分发：
     - `encv:backend-ready`
-    - 可选 `encv:backend-status`
-  - 对外部触发场景，必要时把页面切到指定设置页或状态页，确保“前台页面展示结果”成立
+    - `encv:backend-status`
+  - 不负责业务路由重写，只负责把服务状态桥接给现有前端
 - 原因：
   - 这样才能让 Activity 被销毁后，服务依然独立运行
 
@@ -176,6 +186,7 @@
     - 不再为更早系统保留分支逻辑
 - 原因：
   - 当前插件 API 前端已使用，最稳妥的做法是保持 TS 接口尽量不变，只改底层路由
+  - 这样可以把 Service 改造锁在 Android 原生层
 
 #### 4. `app/encv-mobile/android-overlay/app/src/main/AndroidManifest.xml`
 
@@ -236,39 +247,28 @@
 
 #### 7. `app/encv-mobile/src/composables/useServerStatus.ts`
 
-- 目标：同时消费 Service 广播和 HTTP 状态，支撑前台页面展示。
+- 目标：做最小兼容修改，只让现有状态层继续工作在 Service 架构上。
 - 具体修改：
   - 继续监听 `encv:backend-ready`
-  - 增加对 `encv:backend-status` 或错误事件的消费
+  - 如有必要，仅增加对 `encv:backend-status` 的消费
   - 在 restart/stop 时等待服务状态回传，而不是假定 `MainActivity` 本地状态
   - 在第三方唤起后，如果页面已打开，能立即刷新状态并连接 WebSocket
 - 原因：
   - 服务化后状态源从 Activity 本地变量变成 Service 广播
+  - 这是前端最小必要改动，不引入新的 composable 架构
 
 #### 8. `app/encv-mobile/src/views/ServerDetail.vue`
 
-- 目标：保留现有设置页交互，但明确呈现“服务运行态”和错误反馈。
+- 目标：尽量不改页面结构，仅复用现有启停 UI。
 - 具体修改：
   - 保留启停按钮和权限面板
-  - 加上更明确的服务状态展示：
-    - 启动中
-    - 运行中
-    - 已停止
-    - 错误
+  - 仅在确有必要时补充服务态提示文案
   - 与 `restartBackend()` / `stopBackend()` 的异步状态绑定
 - 原因：
   - 用户需要能手动关闭常驻服务
+  - 不应为了 Service 把页面重做一遍
 
-#### 9. `app/encv-mobile/src/main.ts` 或现有入口桥接文件
-
-- 目标：补上第三方唤起后的前端同步入口。
-- 具体修改：
-  - 若需要前端感知 App 被外部协议拉起，则在前端入口监听原生注入事件
-  - 如后续使用 Capacitor App 插件事件，则在现有入口中注册并把结果派发给状态层
-- 原因：
-  - 结果要求同时“前台页面展示 + 广播回传”，前端需要有明确接入口
-
-#### 10. `app/encv-mobile/src/composables/useI18n.ts`
+#### 9. `app/encv-mobile/src/composables/useI18n.ts`
 
 - 目标：补齐 Service 状态和错误提示文案。
 - 具体修改：
@@ -296,6 +296,7 @@
   - Android 广播结果可监听
 - 决策 6：`MainActivity` 不再持有 `Process`，进程管理权完全迁移给 `EncvGoService`
 - 决策 7：前端 TypeScript API 优先保持稳定，减少无谓重构
+- 决策 8：不因为 Service 化去重做 Vue 路由、页面结构和前端控制抽象；Capacitor 的价值就在于 Web 层尽量不动
 - 假设 1：Go 后端启动日志中仍可识别 ready 关键字；若不稳定，则服务继续以 HTTP `/health` 作为兜底就绪判定
 - 假设 2：当前 assets 解压 + 多目录执行策略在 Service 中仍需保留，直到未来单独推进 `.so` / `jniLibs` 重构
 - 假设 3：显式 Intent 的 action 命名将统一收敛到 `com.encvgo.action.*` 命名空间
@@ -342,5 +343,10 @@
   - 先补 `EncvGoService.kt` 和 Manifest
   - 再把 `MainActivity` 改成桥接层
   - 再改 `GoProcessPlugin.kt`
-  - 最后让前端状态层和页面对齐 Service 广播
+  - 最后只做前端最小兼容调整
 - 第三方支持不应作为后加特性，而应在第一版 Service 方案中一并纳入，否则后续还会再次改动 Manifest、入口路由和结果回传协议。
+- 如果后续需求继续扩大到：
+  - 多平台统一后台服务模型
+  - 更深的原生媒体、文件系统、系统集成
+  - 大量 Android / iOS 双端原生能力
+  那时再重新评估 KMP 会更合理；但以当前仓库现状，仍应先验证“Android 原生层封装 + Capacitor Web 层不大动”的低侵入路径是否足够。

@@ -25,7 +25,7 @@ export async function restartBackend(): Promise<GoProcessResult> {
     return await GoProcess.restart()
   } catch (e: any) {
     console.error('[ENCV] GoProcess.restart() failed:', e?.message || e)
-    return { success: false }
+    return { success: false, lastError: e?.message || String(e) }
   }
 }
 
@@ -34,7 +34,7 @@ export async function stopBackend(): Promise<GoProcessResult> {
     return await GoProcess.stop()
   } catch (e) {
     console.error('[ENCV] GoProcess.stop() failed:', e)
-    return { success: false }
+    return { success: false, lastError: e instanceof Error ? e.message : String(e) }
   }
 }
 

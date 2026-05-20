@@ -7,6 +7,8 @@ import { isNative, restartBackend, stopBackend, getBackendStatus } from '@/plugi
 const isOnline = ref(false)
 const lastError = ref('')
 const backendPort = ref(0)
+const isRestarting = ref(false)
+const isStopping = ref(false)
 let initialized = false
 let nativeBridgeListenerAdded = false
 
@@ -33,9 +35,13 @@ function addNativeBridgeListener() {
   nativeBridgeListenerAdded = true
 
   if (typeof window !== 'undefined') {
-    window.addEventListener('encv:backend-ready', ((event: CustomEvent) => {
-      const detail = event.detail || {}
-      console.log('[ENCV] Backend ready from native bridge:', detail)
+    const syncStatus = (event: Event) => {
+      const customEvent = event as CustomEvent
+      const detail = customEvent.detail || {}
+      console.log('[ENCV] Backend status from native bridge:', detail)
+      if (typeof detail.running === 'boolean') {
+        isOnline.value = detail.running
+      }
       if (detail.port && detail.port > 0) {
         backendPort.value = detail.port
         const newUrl = `http://127.0.0.1:${detail.port}`
@@ -44,13 +50,24 @@ function addNativeBridgeListener() {
         }
         isOnline.value = true
         lastError.value = ''
+        isRestarting.value = false
+        isStopping.value = false
         useWebSocket().connect()
       }
       if (detail.error) {
         lastError.value = detail.error
         isOnline.value = false
+        isRestarting.value = false
+        isStopping.value = false
       }
-    }) as EventListener)
+      if (detail.running === false && !detail.port) {
+        backendPort.value = 0
+        isStopping.value = false
+      }
+    }
+
+    window.addEventListener('encv:backend-ready', syncStatus as EventListener)
+    window.addEventListener('encv:backend-status', syncStatus as EventListener)
   }
 }
 
@@ -60,13 +77,20 @@ async function handleRestart(): Promise<boolean> {
     useWebSocket().disconnect()
     return false
   }
+  isRestarting.value = true
+  isStopping.value = false
   isOnline.value = false
   lastError.value = ''
   useWebSocket().disconnect()
   try {
     const result = await restartBackend()
+    if (!result.success) {
+      isRestarting.value = false
+      lastError.value = result.lastError || lastError.value
+    }
     return result.success
   } catch (e) {
+    isRestarting.value = false
     lastError.value = e instanceof Error ? e.message : String(e)
     return false
   }
@@ -74,13 +98,18 @@ async function handleRestart(): Promise<boolean> {
 
 async function handleStop(): Promise<boolean> {
   if (!isNative()) return false
+  isStopping.value = true
+  isRestarting.value = false
   isOnline.value = false
   lastError.value = ''
   useWebSocket().disconnect()
   try {
     const result = await stopBackend()
+    isStopping.value = false
+    backendPort.value = 0
     return result.success
   } catch (e) {
+    isStopping.value = false
     lastError.value = e instanceof Error ? e.message : String(e)
     return false
   }
@@ -99,7 +128,10 @@ export function useServerStatus() {
         if (status.running && status.port > 0) {
           isOnline.value = true
           backendPort.value = status.port
+          lastError.value = status.lastError || ''
           connect()
+        } else if (status.lastError) {
+          lastError.value = status.lastError
         }
       } else {
         const result = await checkStatus()
@@ -119,6 +151,8 @@ export function useServerStatus() {
     isOnline,
     lastError,
     backendPort,
+    isRestarting,
+    isStopping,
     checkStatus,
     connectionState,
     restartBackend: handleRestart,

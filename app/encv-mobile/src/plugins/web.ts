@@ -3,11 +3,13 @@ import { WebPlugin } from '@capacitor/core'
 export interface GoProcessStatus {
   running: boolean
   port: number
+  lastError?: string
 }
 
 export interface GoProcessResult {
   success: boolean
   port?: number
+  lastError?: string
 }
 
 export interface PermissionResult {

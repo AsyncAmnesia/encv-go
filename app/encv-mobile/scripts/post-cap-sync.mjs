@@ -157,7 +157,7 @@ android.sourceSets {
   return c
 })
 
-// --- Overlay files: MainActivity.kt, GoProcessPlugin.kt, proguard, network config ---
+// --- Overlay files: MainActivity.kt, GoProcessPlugin.kt, EncvGoService.kt, manifest, proguard, network config ---
 const JAVA_DIR = join(ANDROID_DIR, 'app', 'src', 'main', 'java', 'com', 'encvgo', 'app')
 
 if (existsSync(JAVA_DIR)) {
@@ -165,7 +165,7 @@ if (existsSync(JAVA_DIR)) {
 }
 mkdirSync(JAVA_DIR, { recursive: true })
 
-for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt']) {
+for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt', 'EncvGoService.kt']) {
   const src = join(OVERLAY_DIR, 'app', 'src', 'main', 'java', 'com', 'encvgo', 'app', f)
   if (existsSync(src)) {
     copyFileSync(src, join(JAVA_DIR, f))
@@ -173,6 +173,13 @@ for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt']) {
   } else {
     console.error(`  overlay: missing ${src}`)
   }
+}
+
+const overlayManifestSrc = join(OVERLAY_DIR, 'app', 'src', 'main', 'AndroidManifest.xml')
+const appManifestDest = join(ANDROID_DIR, 'app', 'src', 'main', 'AndroidManifest.xml')
+if (existsSync(overlayManifestSrc)) {
+  copyFileSync(overlayManifestSrc, appManifestDest)
+  console.log('  overlay: AndroidManifest.xml')
 }
 
 const proguardSrc = join(OVERLAY_DIR, 'proguard-rules.pro')
@@ -227,7 +234,7 @@ if (version) {
 }
 
 // --- 包名一致性验证 ---
-for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt']) {
+for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt', 'EncvGoService.kt']) {
   const fp = join(JAVA_DIR, f)
   if (existsSync(fp)) {
     const src = readFileSync(fp, 'utf-8')

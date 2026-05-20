@@ -42,8 +42,9 @@
             <ion-button fill="outline" size="small" @click="checkServer">
               <ion-icon :icon="refreshIcon" slot="icon-only"></ion-icon>
             </ion-button>
-            <ion-button v-if="serverOnline" fill="outline" size="small" color="danger" @click="handleStop">
-              <ion-icon :icon="stopIcon" slot="icon-only"></ion-icon>
+            <ion-button v-if="serverOnline" fill="outline" size="small" color="danger" @click="handleStop" :disabled="isStopping">
+              <ion-spinner v-if="isStopping" slot="icon-only" name="crescent"></ion-spinner>
+              <ion-icon v-else :icon="stopIcon" slot="icon-only"></ion-icon>
             </ion-button>
             <ion-button v-if="!serverOnline && !isRestarting" fill="outline" size="small" color="warning" @click="handleRestart">
               <ion-icon :icon="playIcon" slot="icon-only"></ion-icon>
@@ -101,7 +102,16 @@ import { useI18n } from '@/composables/useI18n'
 import { setApiBaseUrl, getServerUrl } from '@/api/encv'
 import { isNative, requestNotificationPermission, requestStoragePermission, checkPermissions } from '@/plugins/GoProcess'
 
-const { isOnline: serverOnline, lastError: connectionError, checkStatus, restartBackend, stopBackend, backendPort } = useServerStatus()
+const {
+  isOnline: serverOnline,
+  lastError: connectionError,
+  checkStatus,
+  restartBackend,
+  stopBackend,
+  backendPort,
+  isRestarting,
+  isStopping,
+} = useServerStatus()
 const { t } = useI18n()
 
 const serverUrl = ref(getServerUrl())
