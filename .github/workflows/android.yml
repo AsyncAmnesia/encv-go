@@ -124,6 +124,8 @@ jobs:
       - name: Apply Android overlay (MainActivity + permissions + network config)
         run: |
           mkdir -p app/encv-mobile/android/app/src/main/java/com/encvgo/app
+          # 先删除可能存在的默认 MainActivity，避免重复声明
+          rm -f app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt
           cp app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/MainActivity.kt \
              app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt
           cp app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt \

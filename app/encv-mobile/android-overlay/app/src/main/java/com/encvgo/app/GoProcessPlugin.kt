@@ -126,7 +126,7 @@ class GoProcessPlugin : Plugin() {
     }
 
     @PluginMethod
-    fun checkPermissions(call: PluginCall) {
+    override fun checkPermissions(call: PluginCall) {
         Log.d(TAG, "GoProcess.checkPermissions() called")
         val result = JSObject()
 
