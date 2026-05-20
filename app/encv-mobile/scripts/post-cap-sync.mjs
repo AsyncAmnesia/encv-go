@@ -136,20 +136,14 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
   return c
 })
 
-// --- Debug-only AndroidManifest.xml for Logcat dark theme + floating entry ---
+// --- Debug-only AndroidManifest.xml: enable Logcat floating + notify entries ---
 const debugManifestDir = join(ANDROID_DIR, 'app', 'src', 'debug')
 const debugManifestPath = join(debugManifestDir, 'AndroidManifest.xml')
 mkdirSync(debugManifestDir, { recursive: true })
 const debugManifest = `<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application>
-        <activity
-            android:name="com.hjq.logcat.LogcatActivity"
-            android:theme="@style/Theme.AppCompat.NoActionBar"
-            tools:replace="android:theme" />
-
         <meta-data
             android:name="LogcatWindowEntrance"
             android:value="true" />
