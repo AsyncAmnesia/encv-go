@@ -9,7 +9,7 @@ on:
         default: ''
         type: string
       version:
-        description: 'Version number (e.g. 1.0.0)'
+        description: 'Version number (e.g. 1.0.0). When set, builds release APK.'
         required: false
         default: ''
         type: string
@@ -48,95 +48,221 @@ jobs:
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
-      - name: Install frontend dependencies
-        run: cd app/encv-mobile && npm install
+      - name: Install frontend dependencies & Build
+        run: cd app/encv-mobile && npm install && npm run build
 
-      - name: Build frontend
-        run: cd app/encv-mobile && npm run build
-
-      - name: Build Go binary for Android arm64
+      - name: Build Go binary for Android arm64 (optimized)
+        env:
+          CGO_ENABLED: "0"
+          GOOS: android
+          GOARCH: arm64
         run: |
-          CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -o app/encv-mobile/encv-go-arm64 ./cmd/encv
+          go build \
+            -ldflags="-s -w -X main.version=${{ inputs.version || 'dev' }}" \
+            -o app/encv-mobile/encv-go-arm64 \
+            ./cmd/encv
+          echo "Go binary size:"
+          ls -lh app/encv-mobile/encv-go-arm64
 
-      - name: Add Capacitor Android platform
-        run: cd app/encv-mobile && npx cap add android
+      # Keystore 放在 android/ 外面，避免被 cap add/cap sync 重建时覆盖
+      - name: Restore release keystore from cache
+        uses: actions/cache@v4
+        id: keystore-cache
+        with:
+          path: app/encv-mobile/keystore
+          key: encv-release-keystore
 
-      - name: Configure Kotlin 2.1 in Android project
+      - name: Ensure release keystore exists
         run: |
-          cd app/encv-mobile/android
-          python3 -c "
-          import re
-          # Root build.gradle: add kotlin plugin to buildscript.dependencies
-          with open('build.gradle', 'r') as f:
-              content = f.read()
-          if 'kotlin-gradle-plugin' not in content:
-              content = content.replace(
-                  'dependencies {',
-                  'dependencies {\n        classpath \"org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0\"',
-                  1
-              )
-          with open('build.gradle', 'w') as f:
-              f.write(content)
-          # App build.gradle: add kotlin-android plugin and kotlin-stdlib
-          with open('app/build.gradle', 'r') as f:
-              content = f.read()
-          if 'kotlin-android' not in content:
-              content = content.replace(
-                  \"'com.android.application'\",
-                  \"'com.android.application'\\n    'kotlin-android'\",
-                  1
-              )
-          if 'kotlin-stdlib' not in content:
-              content = content.replace(
-                  'dependencies {',
-                  'dependencies {\n    implementation \"org.jetbrains.kotlin:kotlin-stdlib:2.1.0\"',
-                  1
-              )
-          with open('app/build.gradle', 'w') as f:
-              f.write(content)
-          "
+          KEYSTORE="app/encv-mobile/keystore/release.jks"
+          if [ -f "$KEYSTORE" ]; then
+            echo "Keystore ready:"
+            ls -lh "$KEYSTORE"
+          else
+            echo "Creating new release keystore..."
+            mkdir -p app/encv-mobile/keystore
+            keytool -genkeypair -v -keystore "$KEYSTORE" \
+              -storepass encv2025 -alias encvrelease \
+              -keypass encv2025 \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=ENCV-go, OU=Personal, O=ENCV, L=Unknown, ST=Unknown, C=CN"
+            echo "Keystore created:"
+            ls -lh "$KEYSTORE"
+          fi
 
-      - name: Apply Android overlay (MainActivity + permissions)
+      # cap sync triggers afterSync hook (capacitor.config.ts → post-cap-sync.mjs)
+      # which handles: kotlin plugin, abiFilters, version, signingConfigs, minify, shrink
+      - name: Sync Capacitor Android project
+        env:
+          ENCV_VERSION: ${{ inputs.version }}
         run: |
-          cp -r app/encv-mobile/android-overlay/app/src/main/java/* app/encv-mobile/android/app/src/main/java/
+          cd app/encv-mobile
+          if [ -d "./android" ] && [ -f "./android/build.gradle" ]; then
+            npx cap sync android
+          else
+            rm -rf ./android && npx cap add android && npx cap sync android
+          fi
+          echo "Android project ready:"
+          ls -la android/*.gradle android/app/*.gradle
+          echo "=== Signing config in build.gradle ==="
+          grep -A8 'signingConfigs' app/encv-mobile/android/app/build.gradle || echo "WARNING: No signingConfigs found!"
+          grep 'signingConfig\|minifyEnabled' app/encv-mobile/android/app/build.gradle || echo "WARNING: No release signing found!"
+
+      # === Non-Gradle customizations (after cap sync) ===
+      - name: Copy assets, overlay files, and release config
+        run: |
+          mkdir -p app/encv-mobile/android/app/src/main/assets
+          cp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/assets/encv-go
+          cp app/encv-mobile/assets/config.mobile.json app/encv-mobile/android/app/src/main/assets/config.mobile.json
+          # Release config files (NEVER touched by cap sync — confirmed from source)
+          cp app/encv-mobile/android-overlay/gradle.properties app/encv-mobile/android/gradle.properties
+          echo "Assets:"
+          ls -lhR app/encv-mobile/android/app/src/main/assets/
+          echo "Release config:"
+          ls -lh app/encv-mobile/android/gradle.properties
+
+      - name: Patch AndroidManifest (permissions + network config)
+        run: |
           python3 -c "
           import xml.etree.ElementTree as ET
           ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
           base = ET.parse('app/encv-mobile/android/app/src/main/AndroidManifest.xml')
-          base_root = base.getroot()
+          root = base.getroot()
           ns = '{http://schemas.android.com/apk/res/android}'
-          permissions = [
-              'android.permission.INTERNET',
-              'android.permission.FOREGROUND_SERVICE',
-              'android.permission.READ_MEDIA_VIDEO',
-              'android.permission.READ_MEDIA_AUDIO',
-              'android.permission.READ_MEDIA_IMAGES',
-              'android.permission.READ_EXTERNAL_STORAGE',
+
+          for app_tag in root.findall('application'):
+              app_tag.set(ns + 'networkSecurityConfig', '@xml/network_security_config')
+              app_tag.set(ns + 'usesCleartextTraffic', 'true')
+
+          perms = [
+              ('android.permission.INTERNET', None),
+              ('android.permission.FOREGROUND_SERVICE', None),
+              ('android.permission.POST_NOTIFICATIONS', None),
+              ('android.permission.READ_MEDIA_VIDEO', None),
+              ('android.permission.READ_MEDIA_AUDIO', None),
+              ('android.permission.READ_MEDIA_IMAGES', None),
+              ('android.permission.READ_EXTERNAL_STORAGE', {'maxSdkVersion': '32'}),
+              ('android.permission.WRITE_EXTERNAL_STORAGE', {'maxSdkVersion': '28'}),
+              ('android.permission.MANAGE_EXTERNAL_STORAGE', None),
+              ('android.permission.WAKE_LOCK', None),
+              ('android.permission.READ_LOGS', None),
           ]
-          for perm_name in permissions:
-              perm = ET.SubElement(base_root, 'uses-permission')
-              perm.set(ns + 'name', perm_name)
-              if perm_name == 'android.permission.READ_EXTERNAL_STORAGE':
-                  perm.set(ns + 'maxSdkVersion', '32')
+          existing_perms = {p.get(ns + 'name', '') for p in root.findall('uses-permission')}
+          for perm_name, attrs in perms:
+              if perm_name not in existing_perms:
+                  perm = ET.SubElement(root, 'uses-permission')
+                  perm.set(ns + 'name', perm_name)
+                  if attrs:
+                      for k, v in attrs.items():
+                          perm.set(ns + k, v)
+
           base.write('app/encv-mobile/android/app/src/main/AndroidManifest.xml', xml_declaration=True, encoding='utf-8')
+          print('AndroidManifest patched')
           "
 
-      - name: Copy Go binary to Android assets
+      # === Verify kotlin setup before build ===
+      - name: Verify build.gradle kotlin setup
         run: |
-          mkdir -p app/encv-mobile/android/app/src/main/assets
-          cp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/assets/encv-go
+          echo "=== kotlin-android plugin ==="
+          grep -n "kotlin-android" app/encv-mobile/android/app/build.gradle || { echo "❌ MISSING: kotlin-android plugin!"; exit 1; }
+          echo "=== kotlin-stdlib dependency ==="
+          grep -n "kotlin-stdlib" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: kotlin-stdlib not found"
+          echo "=== jvmTarget ==="
+          grep -n "jvmTarget" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: jvmTarget not found"
+          echo "=== proguard-rules.pro ==="
+          test -f app/encv-mobile/android/app/proguard-rules.pro && echo "✅ proguard-rules.pro exists" || echo "⚠️ WARNING: no proguard-rules.pro"
+          echo "=== GoProcessPlugin.kt source ==="
+          test -f app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt && echo "✅ GoProcessPlugin.kt exists" || echo "❌ MISSING: GoProcessPlugin.kt!"
+          echo "=== MainActivity.kt source ==="
+          test -f app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt && echo "✅ MainActivity.kt exists" || echo "❌ MISSING: MainActivity.kt!"
+          echo "✅ All checks passed"
 
-      - name: Sync Capacitor
-        run: cd app/encv-mobile && npx cap sync android
+      - name: Pre-build diagnosis
+        run: |
+          echo "=== build.gradle kotlin/sourceSets/namespace ==="
+          grep -n "kotlin\|sourceSets\|namespace\|apply plugin.*kotlin\|plugins\s*{" app/encv-mobile/android/app/build.gradle || true
+          echo "=== Source .kt files ==="
+          find app/encv-mobile/android/app/src/main/java -name "*.kt" -type f -exec sh -c 'echo "  {} ($(wc -l < {}) lines)"; head -1 {}' \;
+          echo "=== AndroidManifest activity ==="
+          grep -n "activity\|android:name" app/encv-mobile/android/app/src/main/AndroidManifest.xml | head -5
 
-      - name: Build APK (debug)
+      # === Build ===
+      - name: Build ${{ inputs.version && 'Release' || 'Debug' }} APK
         run: |
           cd app/encv-mobile/android
           chmod +x gradlew
-          ./gradlew assembleDebug
 
-      - name: Upload APK
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "=== Building RELEASE APK v${{ inputs.version }} ==="
+            ./gradlew assembleRelease
+
+            APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+            [ -z "$APK_PATH" ] && { echo "::error::No APK found"; exit 1; }
+
+            echo "Verifying signature..."
+            APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name "apksigner" -type f | head -1)
+            [ -z "$APKSIGNER" ] && { echo "::error::apksigner not found in $ANDROID_HOME/build-tools"; exit 1; }
+            "$APKSIGNER" verify --print-certs "$APK_PATH"
+            echo "✅ Signed OK: $(ls -lh "$APK_PATH" | awk '{print $5}')"
+          else
+            echo "=== Building DEBUG APK ==="
+            ./gradlew assembleDebug
+          fi
+
+      - name: Verify APK contents
+        run: |
+          APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk -name "*.apk" -type f | head -1)
+          if [ -n "$APK_PATH" ]; then
+            echo "=== APK size ==="
+            ls -lh "$APK_PATH"
+            echo "=== Assets ==="
+            unzip -l "$APK_PATH" | grep -E "encv-go|config.mobile" || true
+            echo "=== DEX strings check (real class presence) ==="
+            TMPDIR=$(mktemp -d)
+            unzip -q "$APK_PATH" -d "$TMPDIR"
+            if [ -f "$TMPDIR/classes.dex" ]; then
+              strings "$TMPDIR/classes.dex" | grep -i "encvgo\|GoProcess" && \
+                echo "✅ GoProcess found in DEX (compiled+packaged)" || \
+                echo "❌ Not found in DEX strings"
+            else
+              echo "❌ classes.dex missing!"
+              ls "$TMPDIR/"*.dex 2>/dev/null || echo "No dex files"
+            fi
+            rm -rf "$TMPDIR"
+            echo "=== Build output .class files ==="
+            find app/encv-mobile/android/app/build/tmp/kotlin-classes -name "*.class" -path "*encvgo*" 2>/dev/null && \
+              echo "✅ encvgo .class in kotlin-classes" || \
+              echo "⚠️ No encvgo .class (may be cleaned)"
+            echo "=== capacitor.plugins.json ==="
+            unzip -p "$APK_PATH" assets/capacitor.plugins.json
+            echo "=== Go binary in APK ==="
+            unzip -p "$APK_PATH" assets/encv-go > /tmp/test-binary 2>/dev/null
+            if [ -f /tmp/test-binary ]; then
+              echo "Size: $(wc -c < /tmp/test-binary) bytes"
+              file /tmp/test-binary || true
+            else
+              echo "❌ encv-go not in APK assets!"
+            fi
+          else
+            echo "No APK found to verify"
+          fi
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: encv-go-android-apk${{ inputs.version && format('-{0}', inputs.version) || '' }}
-          path: app/encv-mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          name: encv-go-android${{ inputs.version && format('-v{0}', inputs.version) || '-debug' }}
+          path: app/encv-mobile/android/app/build/outputs/apk/**/*.apk
+          retention-days: 30
+
+      - name: Build summary
+        if: always()
+        run: |
+          echo "## Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`${{ inputs.version || 'debug (development)' }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Go Binary | $(ls -lh app/encv-mobile/encv-go-arm64 2>/dev/null | awk '{print $5}' || echo N/A) |" >> $GITHUB_STEP_SUMMARY
+          find app/encv-mobile/android/app/build/outputs/apk -name "*.apk" -type f 2>/dev/null | while read apk; do
+            echo "| APK | $(basename "$apk") ($(\ls -lh "$apk" | awk '{print $5}')) |" >> $GITHUB_STEP_SUMMARY
+          done

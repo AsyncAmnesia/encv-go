@@ -71,6 +71,7 @@ function handleMessage(event: MessageEvent) {
     }
 
     eventBus.emit(msg.type as any, msg.data)
+    eventBus.emit('ws:message', { type: msg.type, data: msg.data })
   } catch (e) {
     console.error('[ENCV-WS] Failed to parse message:', e)
   }
@@ -107,12 +108,14 @@ function connect() {
     stopHeartbeat()
     eventBus.emit('server:status', { online: false })
     if (!event.wasClean) {
+      eventBus.emit('server:connection-error', { error: `Connection closed (code: ${event.code})` })
       scheduleReconnect()
     }
   }
 
   ws.onerror = () => {
     connectionState.value = 'disconnected'
+    eventBus.emit('server:connection-error', { error: 'Failed to connect to server' })
   }
 }
 

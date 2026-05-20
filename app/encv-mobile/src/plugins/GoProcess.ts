@@ -1,0 +1,75 @@
+import { registerPlugin } from '@capacitor/core'
+
+export type {
+  GoProcessStatus,
+  GoProcessResult,
+  PermissionResult,
+  PermissionCheckResult,
+  GoProcessPlugin
+} from './web'
+
+import type { GoProcessPlugin, GoProcessResult, GoProcessStatus, PermissionResult, PermissionCheckResult } from './web'
+
+const GoProcess = registerPlugin<GoProcessPlugin>('GoProcess', {
+  web: () => import('./web').then(m => new m.GoProcessWeb()),
+})
+
+export function isNative(): boolean {
+  return typeof window !== 'undefined' &&
+    !!(window as any).Capacitor &&
+    (window as any).Capacitor.isNativePlatform()
+}
+
+export async function restartBackend(): Promise<GoProcessResult> {
+  try {
+    return await GoProcess.restart()
+  } catch (e: any) {
+    console.error('[ENCV] GoProcess.restart() failed:', e?.message || e)
+    return { success: false }
+  }
+}
+
+export async function stopBackend(): Promise<GoProcessResult> {
+  try {
+    return await GoProcess.stop()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.stop() failed:', e)
+    return { success: false }
+  }
+}
+
+export async function getBackendStatus(): Promise<GoProcessStatus> {
+  try {
+    return await GoProcess.getStatus()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.getStatus() failed:', e)
+    return { running: false, port: 0 }
+  }
+}
+
+export async function requestNotificationPermission(): Promise<PermissionResult> {
+  try {
+    return await GoProcess.requestNotificationPermission()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.requestNotificationPermission() failed:', e)
+    return { granted: false }
+  }
+}
+
+export async function requestStoragePermission(): Promise<PermissionResult> {
+  try {
+    return await GoProcess.requestStoragePermission()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.requestStoragePermission() failed:', e)
+    return { granted: false }
+  }
+}
+
+export async function checkPermissions(): Promise<PermissionCheckResult> {
+  try {
+    return await GoProcess.checkPermissions()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.checkPermissions() failed:', e)
+    return { notifications: false, storage: false }
+  }
+}

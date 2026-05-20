@@ -170,7 +170,8 @@ function getFileIconColor(file: FileItem) {
 
 async function loadFiles() {
   loading.value = true
-  serverOnline.value = await checkServerStatus()
+  const result = await checkServerStatus()
+  serverOnline.value = result.online
   if (serverOnline.value) {
     try {
       files.value = await listFiles(currentPath.value)
@@ -188,7 +189,8 @@ async function loadFiles() {
 }
 
 async function handleRefresh(event: CustomEvent) {
-  serverOnline.value = await checkServerStatus()
+  const result = await checkServerStatus()
+  serverOnline.value = result.online
   if (serverOnline.value) {
     try {
       files.value = await listFiles(currentPath.value)
@@ -237,12 +239,10 @@ async function handleFileClick(file: FileItem) {
       query: { path: file.path, name: file.name },
     })
   } else {
-    const toast = await toastController.create({
-      message: t('files.previewNotSupported', { name: file.name }),
-      duration: 2000,
-      color: 'medium',
+    router.push({
+      path: '/tabs/preview',
+      query: { path: file.path, name: file.name },
     })
-    await toast.present()
   }
 }
 

@@ -23,7 +23,7 @@
         </ion-item>
         <ion-item>
           <ion-icon :icon="globeOutline" slot="start"></ion-icon>
-          <ion-select :value="locale" @ionChange="handleLocaleChange" interface="action-sheet">
+          <ion-select :value="locale" @ionChange="handleLocaleChange" interface="action-sheet" mode="ios">
             <ion-select-option value="zh-CN">简体中文</ion-select-option>
             <ion-select-option value="en">English</ion-select-option>
           </ion-select>
@@ -34,30 +34,19 @@
         <ion-list-header>
           <ion-label>{{ t('settings.connection') }}</ion-label>
         </ion-list-header>
-        <ion-item>
-          <ion-icon :icon="serverIcon" slot="start"></ion-icon>
-          <ion-input
-            v-model="serverUrl"
-            :label="t('settings.serverUrl')"
-            label-placement="stacked"
-            placeholder="http://127.0.0.1:2025"
-            @ionBlur="saveServerUrl"
-          ></ion-input>
-        </ion-item>
-        <ion-item>
+        <ion-item button @click="goServer">
           <ion-icon :icon="serverIcon" slot="start"></ion-icon>
           <ion-label>
-            <h3>{{ t('settings.status') }}</h3>
+            <h3>{{ t('settings.serverTitle') }}</h3>
             <p>
               <ion-badge :color="serverOnline ? 'success' : 'danger'">
                 {{ serverOnline ? t('settings.online') : t('settings.offline') }}
               </ion-badge>
+              <span v-if="serverOnline && backendPort" class="port-info">:{{ backendPort }}</span>
+              <span v-if="!serverOnline && connectionError" class="connection-error-inline"> - {{ connectionError }}</span>
             </p>
           </ion-label>
-          <ion-button fill="outline" slot="end" @click="checkServer">
-            <ion-icon :icon="refreshIcon" slot="start"></ion-icon>
-            {{ t('settings.check') }}
-          </ion-button>
+          <ion-icon :icon="chevronForward" slot="end"></ion-icon>
         </ion-item>
       </ion-list>
 
@@ -73,16 +62,18 @@
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
             </ion-list-header>
             <ion-item v-if="section.type === 'boolean'">
+              <ion-icon :icon="getFieldIcon(section.key, section.type)" slot="start"></ion-icon>
               <ion-toggle
                 :checked="!!getValue([section.key])"
                 @ionChange="setValue([section.key], !getValue([section.key]))"
               >{{ tField(section.key) }}</ion-toggle>
             </ion-item>
             <ion-item v-else>
+              <ion-icon :icon="getFieldIcon(section.key, section.type)" slot="start"></ion-icon>
               <ion-input
                 :value="String(getValue([section.key]) ?? '')"
                 :type="section.isPassword ? 'password' : section.type === 'integer' ? 'number' : 'text'"
-                :label="tField(section.key)"
+                :label="fieldLabel(section.key, section.required)"
                 label-placement="stacked"
                 :placeholder="section.description || tField(section.key)"
                 @ionInput="handleInput([section.key], section, $event)"
@@ -102,16 +93,18 @@
                 </ion-item-divider>
                 <template v-for="grandchild in child.properties" :key="grandchild.key">
                   <ion-item v-if="grandchild.type === 'boolean'">
+                    <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
                     <ion-toggle
                       :checked="!!getValue([section.key, child.key, grandchild.key])"
                       @ionChange="setValue([section.key, child.key, grandchild.key], !getValue([section.key, child.key, grandchild.key]))"
                     >{{ tField(grandchild.key) }}</ion-toggle>
                   </ion-item>
                   <ion-item v-else>
+                    <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
                     <ion-input
                       :value="String(getValue([section.key, child.key, grandchild.key]) ?? '')"
                       :type="grandchild.isPassword ? 'password' : grandchild.type === 'integer' ? 'number' : 'text'"
-                      :label="tField(grandchild.key)"
+                      :label="fieldLabel(grandchild.key, grandchild.required)"
                       label-placement="stacked"
                       :placeholder="grandchild.description || tField(grandchild.key)"
                       @ionInput="handleInput([section.key, child.key, grandchild.key], grandchild, $event)"
@@ -144,16 +137,34 @@
               </template>
 
               <ion-item v-else-if="child.type === 'boolean'">
+                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
                 <ion-toggle
                   :checked="!!getValue([section.key, child.key])"
                   @ionChange="setValue([section.key, child.key], !getValue([section.key, child.key]))"
                 >{{ tField(child.key) }}</ion-toggle>
               </ion-item>
+              <ion-item v-else-if="section.key === 'log' && child.key === 'level'">
+                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
+                <ion-select
+                  :value="String(getValue(['log', 'level']) ?? 'info')"
+                  :label="tField('level')"
+                  label-placement="stacked"
+                  interface="action-sheet"
+                  mode="ios"
+                  @ionChange="setValue(['log', 'level'], $event.detail.value)"
+                >
+                  <ion-select-option value="debug">DEBUG</ion-select-option>
+                  <ion-select-option value="info">INFO</ion-select-option>
+                  <ion-select-option value="warn">WARN</ion-select-option>
+                  <ion-select-option value="error">ERROR</ion-select-option>
+                </ion-select>
+              </ion-item>
               <ion-item v-else>
+                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
                 <ion-input
                   :value="String(getValue([section.key, child.key]) ?? '')"
                   :type="child.isPassword ? 'password' : child.type === 'integer' ? 'number' : 'text'"
-                  :label="tField(child.key)"
+                  :label="fieldLabel(child.key, child.required)"
                   label-placement="stacked"
                   :placeholder="child.description || tField(child.key)"
                   @ionInput="handleInput([section.key, child.key], child, $event)"
@@ -171,44 +182,13 @@
       </template>
 
       <ion-list>
-        <ion-list-header>
-          <ion-label>{{ t('settings.about') }}</ion-label>
-        </ion-list-header>
-        <ion-item>
+        <ion-item button @click="goAbout">
           <ion-icon :icon="informationCircle" slot="start"></ion-icon>
           <ion-label>
-            <h3>ENCV-go</h3>
-            <p>Version 1.0.0</p>
+            <h3>{{ t('settings.about') }}</h3>
+            <p>ENCV-go v1.0.0</p>
           </ion-label>
-        </ion-item>
-        <ion-item>
-          <ion-icon :icon="codeSlash" slot="start"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.engine') }}</h3>
-            <p>ENCV-go Daemon</p>
-          </ion-label>
-        </ion-item>
-        <ion-item button @click="openGitHub">
-          <ion-icon :icon="logoGithub" slot="start"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.github') }}</h3>
-            <p>{{ t('settings.sourceCode') }}</p>
-          </ion-label>
-          <ion-icon :icon="openOutline" slot="end"></ion-icon>
-        </ion-item>
-      </ion-list>
-
-      <ion-list>
-        <ion-list-header>
-          <ion-label color="danger">{{ t('settings.dangerZone') }}</ion-label>
-        </ion-list-header>
-        <ion-item button @click="handleClearCache">
-          <ion-icon :icon="trash" color="danger" slot="start"></ion-icon>
-          <ion-label color="danger">{{ t('settings.clearCache') }}</ion-label>
-        </ion-item>
-        <ion-item button @click="handleResetSettings">
-          <ion-icon :icon="refreshCircle" color="danger" slot="start"></ion-icon>
-          <ion-label color="danger">{{ t('settings.resetSettings') }}</ion-label>
+          <ion-icon :icon="chevronForward" slot="end"></ion-icon>
         </ion-item>
       </ion-list>
     </ion-content>
@@ -216,57 +196,44 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import {
-  IonPage,
-  IonHeader,
-  IonToolbar,
-  IonTitle,
-  IonButtons,
-  IonButton,
-  IonContent,
-  IonList,
-  IonListHeader,
-  IonItem,
-  IonItemDivider,
-  IonIcon,
-  IonLabel,
-  IonToggle,
-  IonInput,
-  IonBadge,
-  IonSpinner,
-  IonSelect,
-  IonSelectOption,
-  alertController,
-  toastController,
+  IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
+  IonContent, IonList, IonListHeader, IonItem, IonItemDivider,
+  IonIcon, IonLabel, IonToggle, IonInput, IonBadge, IonSpinner,
+  IonSelect, IonSelectOption, toastController,
 } from '@ionic/vue'
 import {
-  moon,
-  globeOutline,
-  server as serverIcon,
-  refresh as refreshIcon,
-  save as saveIcon,
-  informationCircle,
-  codeSlash,
-  logoGithub,
-  openOutline,
-  trash,
-  refreshCircle,
+  moon, globeOutline, server as serverIcon, save as saveIcon,
+  informationCircle, chevronForward,
+  key, lockClosed, documentText, terminal, settingsOutline,
+  cloudOutline, shieldCheckmark, eyeOutline, speedometerOutline,
+  filmOutline, musicalNotesOutline, imagesOutline, readerOutline,
+  newspaperOutline, colorWandOutline, gitNetworkOutline, toggleOutline,
+  textOutline, personOutline, folderOpen, refreshCircle,
 } from 'ionicons/icons'
 import { useTheme } from '@/composables/useTheme'
 import { useServerStatus } from '@/composables/useServerStatus'
 import { useConfig } from '@/composables/useConfig'
 import { useI18n } from '@/composables/useI18n'
-import { setApiBaseUrl, getServerUrl } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
 
+const router = useRouter()
 const { isDark, toggleDark } = useTheme()
-const { isOnline: serverOnline, checkStatus } = useServerStatus()
+const { isOnline: serverOnline, lastError: connectionError, checkStatus, backendPort } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
 const { t, tField, tSectionTitle, setLocale, locale } = useI18n()
 
-const serverUrl = ref(getServerUrl())
 const configLoaded = ref(false)
+
+function goServer() {
+  router.push('/tabs/settings/server')
+}
+
+function goAbout() {
+  router.push('/tabs/settings/about')
+}
 
 function getValue(path: string[]): unknown {
   return getFieldValue(path)
@@ -291,34 +258,61 @@ function handleInput(path: string[], field: FieldDef, event: CustomEvent) {
   }
 }
 
+function fieldLabel(key: string, required?: boolean): string {
+  return tField(key) + (required ? ' *' : '')
+}
+
+const fieldIconMap: Record<string, string> = {
+  password: key,
+  recover: refreshCircle,
+  output_path: folderOpen,
+  plugin_settings: settingsOutline,
+  server: cloudOutline,
+  admin: shieldCheckmark,
+  webdav: globeOutline,
+  proxy: gitNetworkOutline,
+  log: terminal,
+  port: speedometerOutline,
+  dir: folderOpen,
+  username: personOutline,
+  root: documentText,
+  level: speedometerOutline,
+  file: documentText,
+  console: terminal,
+  host: serverIcon,
+  description: textOutline,
+  sites: globeOutline,
+  disable_signature_verification: shieldCheckmark,
+  ext: documentText,
+  chunk_size_mb: speedometerOutline,
+  light_main_chunk_enabled: colorWandOutline,
+  track_extensions: eyeOutline,
+  keep_mkv_for_mkvSource: filmOutline,
+  verify_after_pack: shieldCheckmark,
+  plugin_cache_dir: folderOpen,
+  skip_merge_for_split_mkv: filmOutline,
+  video: filmOutline,
+  audio: musicalNotesOutline,
+  image: imagesOutline,
+  wps: readerOutline,
+  pdf: newspaperOutline,
+  text: textOutline,
+}
+
+function getFieldIcon(fieldKey: string, fieldType: string): string {
+  if (fieldIconMap[fieldKey]) return fieldIconMap[fieldKey]
+  if (fieldType === 'boolean') return toggleOutline
+  if (fieldType === 'integer') return speedometerOutline
+  if (fieldKey.includes('password')) return lockClosed
+  return settingsOutline
+}
+
 function handleDarkToggle() {
   toggleDark()
 }
 
 function handleLocaleChange(event: CustomEvent) {
   setLocale(event.detail.value as 'zh-CN' | 'en')
-}
-
-function saveServerUrl() {
-  const url = serverUrl.value.trim()
-  if (url) {
-    setApiBaseUrl(url)
-    checkStatus()
-  }
-}
-
-async function checkServer() {
-  await checkStatus()
-  const toast = await toastController.create({
-    message: serverOnline.value ? t('settings.serverOnline') : t('settings.serverOffline'),
-    duration: 1500,
-    color: serverOnline.value ? 'success' : 'danger',
-  })
-  await toast.present()
-}
-
-function openGitHub() {
-  window.open('https://github.com/encv-go', '_blank')
 }
 
 async function handleSaveConfig() {
@@ -330,10 +324,11 @@ async function handleSaveConfig() {
       color: 'success',
     })
     await toast.present()
-  } catch {
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
     const toast = await toastController.create({
-      message: t('settings.configSaveFailed'),
-      duration: 2000,
+      message: t('settings.configSaveFailed') + ': ' + detail,
+      duration: 3000,
       color: 'danger',
     })
     await toast.present()
@@ -344,66 +339,19 @@ function handleResetConfig() {
   resetConfig()
 }
 
-async function handleClearCache() {
-  const alert = await alertController.create({
-    header: t('settings.clearCache'),
-    message: t('settings.clearCacheConfirm'),
-    buttons: [
-      { text: t('settings.cancel'), role: 'cancel' },
-      {
-        text: t('settings.clear'),
-        role: 'destructive',
-        handler: () => {
-          const themePref = localStorage.getItem('encv-theme-preference')
-          const serverPref = localStorage.getItem('encv-server-url')
-          const webdavPref = localStorage.getItem('encv-webdav-configs')
-          const localePref = localStorage.getItem('encv-locale')
-          localStorage.clear()
-          if (themePref) localStorage.setItem('encv-theme-preference', themePref)
-          if (serverPref) localStorage.setItem('encv-server-url', serverPref)
-          if (webdavPref) localStorage.setItem('encv-webdav-configs', webdavPref)
-          if (localePref) localStorage.setItem('encv-locale', localePref)
-          toastController.create({
-            message: t('settings.cacheCleared'),
-            duration: 1500,
-            color: 'success',
-          }).then(t => t.present())
-        },
-      },
-    ],
-  })
-  await alert.present()
-}
-
-async function handleResetSettings() {
-  const alert = await alertController.create({
-    header: t('settings.resetSettings'),
-    message: t('settings.resetConfirm'),
-    buttons: [
-      { text: t('settings.cancel'), role: 'cancel' },
-      {
-        text: t('settings.reset'),
-        role: 'destructive',
-        handler: () => {
-          localStorage.clear()
-          serverUrl.value = 'http://127.0.0.1:2025'
-          if (isDark.value) toggleDark()
-          toastController.create({
-            message: t('settings.settingsReset'),
-            duration: 1500,
-            color: 'success',
-          }).then(t => t.present())
-        },
-      },
-    ],
-  })
-  await alert.present()
-}
-
 onMounted(async () => {
-  checkStatus()
-  await loadConfig()
-  configLoaded.value = true
+  await checkStatus()
+  if (serverOnline.value) {
+    await loadConfig()
+    configLoaded.value = true
+  }
+})
+
+watch(serverOnline, async (online) => {
+  if (online && !configLoaded.value) {
+    await loadConfig()
+    configLoaded.value = true
+  }
 })
 </script>
 
@@ -416,9 +364,17 @@ onMounted(async () => {
   padding: 24px;
   color: var(--encv-text-secondary);
 }
-
 .placeholder-text {
   opacity: 0.5;
   font-style: italic;
+}
+.port-info {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-left: 4px;
+}
+.connection-error-inline {
+  color: var(--ion-color-danger);
+  font-size: 12px;
 }
 </style>

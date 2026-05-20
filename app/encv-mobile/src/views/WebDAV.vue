@@ -229,41 +229,61 @@ function saveConfig() {
 
 async function testConfig(config: WebDAVConfig) {
   testingId.value = config.id
-  const success = await testWebDAVConnection({
-    name: config.name,
-    url: config.url,
-    username: config.username,
-    password: config.password,
-    mountPath: config.mountPath,
-  })
-  testingId.value = ''
-
-  const toast = await toastController.create({
-    message: success ? t('webdav.connectionSuccess') : t('webdav.connectionFailed'),
-    duration: 2000,
-    color: success ? 'success' : 'danger',
-  })
-  await toast.present()
+  try {
+    await testWebDAVConnection({
+      name: config.name,
+      url: config.url,
+      username: config.username,
+      password: config.password,
+      mountPath: config.mountPath,
+    })
+    testingId.value = ''
+    const toast = await toastController.create({
+      message: t('webdav.connectionSuccess'),
+      duration: 2000,
+      color: 'success',
+    })
+    await toast.present()
+  } catch (e) {
+    testingId.value = ''
+    const detail = e instanceof Error ? e.message : String(e)
+    const toast = await toastController.create({
+      message: t('webdav.connectionFailed') + ': ' + detail,
+      duration: 3000,
+      color: 'danger',
+    })
+    await toast.present()
+  }
 }
 
 async function testConnection() {
   if (!formUrl.value) return
   testing.value = true
-  const success = await testWebDAVConnection({
-    name: formName.value,
-    url: formUrl.value,
-    username: formUsername.value,
-    password: formPassword.value,
-    mountPath: formMountPath.value,
-  })
-  testing.value = false
-
-  const toast = await toastController.create({
-    message: success ? t('webdav.connectionSuccess') : t('webdav.connectionFailed'),
-    duration: 2000,
-    color: success ? 'success' : 'danger',
-  })
-  await toast.present()
+  try {
+    await testWebDAVConnection({
+      name: formName.value,
+      url: formUrl.value,
+      username: formUsername.value,
+      password: formPassword.value,
+      mountPath: formMountPath.value,
+    })
+    testing.value = false
+    const toast = await toastController.create({
+      message: t('webdav.connectionSuccess'),
+      duration: 2000,
+      color: 'success',
+    })
+    await toast.present()
+  } catch (e) {
+    testing.value = false
+    const detail = e instanceof Error ? e.message : String(e)
+    const toast = await toastController.create({
+      message: t('webdav.connectionFailed') + ': ' + detail,
+      duration: 3000,
+      color: 'danger',
+    })
+    await toast.present()
+  }
 }
 
 function deleteConfig(id: string) {

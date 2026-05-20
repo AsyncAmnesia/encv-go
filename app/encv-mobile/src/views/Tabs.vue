@@ -27,6 +27,11 @@
           <ion-icon :icon="settings"></ion-icon>
           <ion-label>{{ t('tabs.settings') }}</ion-label>
         </ion-tab-button>
+
+        <ion-tab-button tab="devlogs" href="/tabs/devlogs">
+          <ion-icon :icon="bug"></ion-icon>
+          <ion-label>DevLogs</ion-label>
+        </ion-tab-button>
       </ion-tab-bar>
     </ion-tabs>
   </ion-page>
@@ -42,7 +47,7 @@ import {
   IonTabButton,
   IonTabs,
 } from '@ionic/vue'
-import { folder, play, list, cloud, settings } from 'ionicons/icons'
+import { folder, play, list, cloud, settings, bug } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 
 const { t } = useI18n()

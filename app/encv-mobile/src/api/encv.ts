@@ -1,7 +1,8 @@
 const SERVER_URL_KEY = 'encv-server-url'
-const DEFAULT_API_BASE_URL = 'http://127.0.0.1:2025'
+export const DEFAULT_API_BASE_URL = 'http://127.0.0.1:2025'
 
 function getApiBaseUrl(): string {
+  if (import.meta.env.DEV) return ''
   return localStorage.getItem(SERVER_URL_KEY) || DEFAULT_API_BASE_URL
 }
 
@@ -18,6 +19,10 @@ export function resetServerUrl() {
 }
 
 export function getWebSocketUrl(): string {
+  if (import.meta.env.DEV) {
+    const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${wsProtocol}//${location.host}/ws`
+  }
   const baseUrl = getApiBaseUrl()
   const wsUrl = baseUrl
     .replace(/^https:\/\//, 'wss://')
@@ -48,17 +53,24 @@ export async function listFiles(path = '/'): Promise<FileItem[]> {
 }
 
 export function getFileStreamUrl(path: string): string {
+  if (import.meta.env.DEV) {
+    return `/stream?path=${encodeURIComponent(path)}`
+  }
   const baseUrl = getApiBaseUrl()
   return `${baseUrl}/stream?path=${encodeURIComponent(path)}`
 }
 
-export async function checkServerStatus(): Promise<boolean> {
+export async function checkServerStatus(): Promise<{ online: boolean; error?: string }> {
   try {
     const baseUrl = getApiBaseUrl()
     const response = await fetch(`${baseUrl}/health`)
-    return response.ok
-  } catch {
-    return false
+    if (response.ok) {
+      return { online: true }
+    }
+    return { online: false, error: `HTTP ${response.status}` }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { online: false, error: msg }
   }
 }
 
@@ -70,6 +82,23 @@ export async function deleteFile(path: string): Promise<void> {
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`)
   }
+}
+
+export interface FileContentResponse {
+  name: string
+  path: string
+  size: number
+  content: string
+  encoding: string
+}
+
+export async function readFileContent(path: string): Promise<FileContentResponse> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/file?path=${encodeURIComponent(path)}`)
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return await response.json()
 }
 
 export type TaskType = 'encrypt' | 'decrypt'
@@ -148,17 +177,20 @@ export function saveWebDAVConfigs(configs: WebDAVConfig[]) {
   localStorage.setItem(WEBDAV_CONFIGS_KEY, JSON.stringify(configs))
 }
 
-export async function testWebDAVConnection(config: Omit<WebDAVConfig, 'id'>): Promise<boolean> {
+export async function testWebDAVConnection(config: Omit<WebDAVConfig, 'id'>): Promise<void> {
   const baseUrl = getApiBaseUrl()
-  try {
-    const response = await fetch(`${baseUrl}/api/webdav/test`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config),
-    })
-    return response.ok
-  } catch {
-    return false
+  const response = await fetch(`${baseUrl}/api/webdav/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  })
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`
+    try {
+      const body = await response.text()
+      if (body) detail += `: ${body}`
+    } catch {}
+    throw new Error(detail)
   }
 }
 
@@ -198,7 +230,12 @@ export async function fetchConfig(): Promise<Record<string, unknown>> {
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/config`)
   if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`)
+    let detail = `HTTP ${response.status}`
+    try {
+      const body = await response.text()
+      if (body) detail += `: ${body}`
+    } catch {}
+    throw new Error(detail)
   }
   return await response.json()
 }
@@ -211,7 +248,12 @@ export async function updateConfig(config: Record<string, unknown>): Promise<voi
     body: JSON.stringify(config),
   })
   if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`)
+    let detail = `HTTP ${response.status}`
+    try {
+      const body = await response.text()
+      if (body) detail += `: ${body}`
+    } catch {}
+    throw new Error(detail)
   }
 }
 

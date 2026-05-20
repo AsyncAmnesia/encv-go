@@ -29,7 +29,8 @@ async function loadConfig() {
     config.value = data
     originalConfig.value = deepClone(data)
     dirty.value = false
-  } catch {
+  } catch (error) {
+    console.error('[ENCV] Failed to load config:', error)
     config.value = buildInitialConfig()
     originalConfig.value = deepClone(config.value)
     dirty.value = false
@@ -44,6 +45,7 @@ async function saveConfig() {
     originalConfig.value = deepClone(config.value)
     dirty.value = false
   } catch (error) {
+    console.error('[ENCV] Failed to save config:', error)
     throw error
   } finally {
     loading.value = false
