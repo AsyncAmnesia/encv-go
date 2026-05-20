@@ -45,13 +45,19 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
         /plugins\s*\{/,
         "plugins {\n    id 'kotlin-android'",
       )
+      console.log('  [kotlin] injected id \'kotlin-android\' into plugins {} block')
     } else if (c.includes("'com.android.application'")) {
       // 旧 apply 格式
       c = c.replace(
         "'com.android.application'",
         "'com.android.application'\n    'kotlin-android'",
       )
+      console.log('  [kotlin] applied kotlin-android via legacy apply')
+    } else {
+      console.error('  [kotlin] WARNING: could not find plugins block or com.android.application!')
     }
+  } else {
+    console.log('  [kotlin] kotlin-android already present')
   }
 
   // 2. kotlin-stdlib dependency + Logcat debug library
@@ -129,32 +135,6 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
 
   return c
 })
-
-// --- capacitor.plugins.json: register local GoProcessPlugin ---
-const assetsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'assets')
-const pluginsJsonPath = join(assetsDir, 'capacitor.plugins.json')
-const goProcessEntry = JSON.stringify({
-  pkg: 'encv-mobile',
-  classpath: 'com.encvgo.app.GoProcessPlugin'
-})
-
-if (existsSync(pluginsJsonPath)) {
-  let pluginsJson = readFileSync(pluginsJsonPath, 'utf-8')
-  if (!pluginsJson.includes('GoProcessPlugin')) {
-    try {
-      const arr = JSON.parse(pluginsJson)
-      arr.push(JSON.parse(goProcessEntry))
-      writeFileSync(pluginsJsonPath, JSON.stringify(arr, null, 2), 'utf-8')
-      console.log(`  added GoProcessPlugin to capacitor.plugins.json`)
-    } catch (e) {
-      console.warn(`  failed to patch capacitor.plugins.json: ${e.message}`)
-    }
-  }
-} else {
-  mkdirSync(assetsDir, { recursive: true })
-  writeFileSync(pluginsJsonPath, `[${goProcessEntry}]`, 'utf-8')
-  console.log(`  created capacitor.plugins.json with GoProcessPlugin`)
-}
 
 // --- Debug-only AndroidManifest.xml for Logcat dark theme + floating entry ---
 const debugManifestDir = join(ANDROID_DIR, 'app', 'src', 'debug')

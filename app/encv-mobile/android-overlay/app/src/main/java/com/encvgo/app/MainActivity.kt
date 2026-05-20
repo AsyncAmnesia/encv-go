@@ -27,8 +27,16 @@ class MainActivity : BridgeActivity() {
     private var readyCallback: ((Int) -> Unit)? = null
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
-        registerPlugin(GoProcessPlugin::class.java)
+        Log.d(TAG, "=== onCreate: start ===")
+        try {
+            Log.d(TAG, "Registering GoProcessPlugin...")
+            registerPlugin(GoProcessPlugin::class.java)
+            Log.d(TAG, "GoProcessPlugin registered successfully via registerPlugin()")
+        } catch (e: Exception) {
+            Log.e(TAG, "registerPlugin FAILED", e)
+        }
         super.onCreate(savedInstanceState)
+        Log.d(TAG, "=== onCreate: end, starting daemon ===")
         startGoDaemon()
     }
 

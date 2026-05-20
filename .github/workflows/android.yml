@@ -128,6 +128,8 @@ jobs:
              app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt
           cp app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt \
              app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt
+          cp app/encv-mobile/android-overlay/proguard-rules.pro \
+             app/encv-mobile/android/app/proguard-rules.pro
 
           mkdir -p app/encv-mobile/android/app/src/main/res/xml
           cp app/encv-mobile/android-overlay/app/src/main/res/xml/network_security_config.xml \
@@ -174,6 +176,22 @@ jobs:
         run: |
           cd app/encv-mobile/android
           chmod +x gradlew
+
+      - name: Verify build.gradle kotlin setup
+        run: |
+          echo "=== kotlin-android plugin ==="
+          grep -n "kotlin-android" app/encv-mobile/android/app/build.gradle || { echo "❌ MISSING: kotlin-android plugin!"; exit 1; }
+          echo "=== kotlin-stdlib dependency ==="
+          grep -n "kotlin-stdlib" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: kotlin-stdlib not found"
+          echo "=== jvmTarget ==="
+          grep -n "jvmTarget" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: jvmTarget not found"
+          echo "=== proguard-rules.pro ==="
+          test -f app/encv-mobile/android/app/proguard-rules.pro && echo "✅ proguard-rules.pro exists" || echo "⚠️ WARNING: no proguard-rules.pro"
+          echo "=== GoProcessPlugin.kt source ==="
+          test -f app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt && echo "✅ GoProcessPlugin.kt exists" || echo "❌ MISSING: GoProcessPlugin.kt!"
+          echo "=== MainActivity.kt source ==="
+          test -f app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt && echo "✅ MainActivity.kt exists" || echo "❌ MISSING: MainActivity.kt!"
+          echo "✅ All checks passed"
 
           if [ -n "${{ inputs.version }}" ]; then
             echo "=== Building RELEASE APK v${{ inputs.version }} ==="
