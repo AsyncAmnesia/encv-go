@@ -103,7 +103,6 @@ import {
   IonLabel,
   IonBadge,
   IonSpinner,
-  toastController,
 } from '@ionic/vue'
 import {
   arrowBack,

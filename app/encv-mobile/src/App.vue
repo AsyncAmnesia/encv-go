@@ -9,7 +9,7 @@ import { onMounted, onUnmounted } from 'vue'
 import { IonApp, IonRouterOutlet } from '@ionic/vue'
 import { useTheme } from '@/composables/useTheme'
 import { useWebSocket } from '@/composables/useWebSocket'
-import { isNative, requestNotificationPermission, requestStoragePermission, checkPermissions } from '@/plugins/GoProcess'
+import { isNative, requestNotificationPermission, requestStoragePermission } from '@/plugins/GoProcess'
 
 const { initTheme } = useTheme()
 const { connect, disconnect } = useWebSocket()
