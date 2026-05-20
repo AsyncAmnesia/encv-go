@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Soltus/encv-go/internal/utils"
+	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/provider"
 	"github.com/Soltus/encv-go/internal/v2/types"
@@ -102,7 +103,12 @@ func (s *Server) handleStreamRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	// 【核心】调用我们新的、统一的加密文件处理函数
+	_, detectErr := detector.DetectContainer(cleanedFilePath)
+	if detectErr != nil {
+		slog.Info("File is not an ENCV container, serving raw file", "path", cleanedFilePath)
+		http.ServeFile(w, r, cleanedFilePath)
+		return
+	}
 	s.serveEncryptedFile(w, r, cleanedFilePath)
 }
 

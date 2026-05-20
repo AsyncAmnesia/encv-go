@@ -43,11 +43,13 @@ func (h *WSLogHandler) Handle(ctx context.Context, r slog.Record) error {
 			levelStr = "info"
 		}
 
-		msg, _ := json.Marshal(map[string]string{
-			"type":      "log",
-			"level":     levelStr,
-			"message":   r.Message,
-			"timestamp": time.Now().Format("15:04:05"),
+		msg, _ := json.Marshal(map[string]any{
+			"type": "log",
+			"data": map[string]string{
+				"level":     levelStr,
+				"message":   r.Message,
+				"timestamp": time.Now().Format("15:04:05"),
+			},
 		})
 		h.hub.BroadcastRaw(msg)
 	}

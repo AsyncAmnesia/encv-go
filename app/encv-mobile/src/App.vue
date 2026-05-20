@@ -10,6 +10,7 @@ import { IonApp, IonRouterOutlet } from '@ionic/vue'
 import { useTheme } from '@/composables/useTheme'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { isNative, requestNotificationPermission, requestStoragePermission } from '@/plugins/GoProcess'
+import { hijackConsole } from '@/composables/useFrontendLogs'
 
 const { initTheme } = useTheme()
 const { connect, disconnect } = useWebSocket()
@@ -31,6 +32,7 @@ async function requestEssentialPermissions() {
 }
 
 onMounted(async () => {
+  hijackConsole()
   initTheme()
   connect()
   await requestEssentialPermissions()
