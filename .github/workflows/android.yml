@@ -205,16 +205,26 @@ jobs:
           if [ -n "$APK_PATH" ]; then
             echo "=== APK size ==="
             ls -lh "$APK_PATH"
-            echo "=== Assets in APK ==="
-            unzip -l "$APK_PATH" | grep "assets/" || echo "WARNING: No assets found!"
-            echo "=== encv-go in APK ==="
-            unzip -l "$APK_PATH" | grep "encv-go" || echo "WARNING: encv-go binary NOT found in APK!"
-            echo "=== config.mobile.json in APK ==="
-            unzip -l "$APK_PATH" | grep "config.mobile" || echo "WARNING: config.mobile.json NOT found in APK!"
-            echo "=== capacitor.plugins.json in APK ==="
-            unzip -p "$APK_PATH" assets/capacitor.plugins.json || echo "WARNING: capacitor.plugins.json NOT found in APK!"
-            echo "=== GoProcessPlugin class in APK ==="
-            unzip -l "$APK_PATH" | grep "GoProcessPlugin" || echo "WARNING: GoProcessPlugin class NOT found in APK!"
+            echo "=== Assets ==="
+            unzip -l "$APK_PATH" | grep -E "encv-go|config.mobile" || true
+            echo "=== DEX strings check (real class presence) ==="
+            TMPDIR=$(mktemp -d)
+            unzip -q "$APK_PATH" -d "$TMPDIR"
+            if [ -f "$TMPDIR/classes.dex" ]; then
+              strings "$TMPDIR/classes.dex" | grep -i "encvgo\|GoProcess" && \
+                echo "✅ GoProcess found in DEX (compiled+packaged)" || \
+                echo "❌ Not found in DEX strings"
+            else
+              echo "❌ classes.dex missing!"
+              ls "$TMPDIR/"*.dex 2>/dev/null || echo "No dex files"
+            fi
+            rm -rf "$TMPDIR"
+            echo "=== Build output .class files ==="
+            find app/encv-mobile/android/app/build/tmp/kotlin-classes -name "*.class" -path "*encvgo*" 2>/dev/null && \
+              echo "✅ encvgo .class in kotlin-classes" || \
+              echo "⚠️ No encvgo .class (may be cleaned)"
+            echo "=== capacitor.plugins.json ==="
+            unzip -p "$APK_PATH" assets/capacitor.plugins.json
           else
             echo "No APK found to verify"
           fi

@@ -132,6 +132,16 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
 `
   }
 
+  // 8. 显式声明 sourceSets（确保 Kotlin 编译器能找到 app/src/main/java 下的 .kt 文件）
+  if (!c.includes('sourceSets') && c.includes('kotlin-android')) {
+    c += `
+android.sourceSets {
+    main.java.srcDirs += 'src/main/java'
+}
+`
+    console.log('  [kotlin] added explicit sourceSets for kotlin sources')
+  }
+
   return c
 })
 
@@ -203,4 +213,19 @@ if (version) {
 } else {
   console.log(`  debug mode`)
 }
+
+// --- 包名一致性验证 ---
+for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt']) {
+  const fp = join(JAVA_DIR, f)
+  if (existsSync(fp)) {
+    const src = readFileSync(fp, 'utf-8')
+    const pkg = (src.match(/^package\s+(\S+)/m) || [])[1]
+    if (pkg !== 'com.encvgo.app') {
+      console.error(`  ERROR: ${f} package="${pkg}" ≠ expected "com.encvgo.app"`)
+      process.exit(1)
+    }
+    console.log(`  pkg-ok: ${f} → ${pkg}`)
+  }
+}
+
 console.log('done')
