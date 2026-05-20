@@ -16,16 +16,22 @@ import (
 func writeServiceError(w http.ResponseWriter, err error) {
 	w.Header().Set("Content-Type", "application/json")
 	switch err.(type) {
+	case *service.PermissionError:
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error(), "code": "PERMISSION_DENIED"})
 	case *service.ForbiddenError:
 		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 	case *service.NotFoundError:
 		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 	case *service.BadRequestError:
 		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 	default:
 		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 	}
-	json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -207,6 +213,20 @@ func (s *Server) handleTestWebDAV(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]any{"success": true})
+}
+
+func (s *Server) handlePermissions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{
+		"storage": s.mobileSvc.CheckStoragePermission(),
+	})
 }
 
 func (s *Server) handleMobileFiles(w http.ResponseWriter, r *http.Request) {

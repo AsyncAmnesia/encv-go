@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/Soltus/encv-go/internal/utils"
@@ -23,6 +24,10 @@ func (e *NotFoundError) Error() string { return e.Err.Error() }
 type BadRequestError struct{ Err error }
 
 func (e *BadRequestError) Error() string { return e.Err.Error() }
+
+type PermissionError struct{ Err error }
+
+func (e *PermissionError) Error() string { return e.Err.Error() }
 
 type FileInfo struct {
 	Name        string `json:"name"`
@@ -70,6 +75,10 @@ func (s *MobileService) ListFiles(queryPath string) ([]FileInfo, error) {
 		if os.IsNotExist(err) {
 			return nil, &NotFoundError{Err: err}
 		}
+		if isPermissionError(err) {
+			slog.Warn("ReadDir permission denied", "path", absPath, "error", err)
+			return nil, &PermissionError{Err: err}
+		}
 		slog.Error("ReadDir failed", "path", absPath, "error", err)
 		return nil, err
 	}
@@ -79,15 +88,23 @@ func (s *MobileService) ListFiles(queryPath string) ([]FileInfo, error) {
 		if strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
-		info, err := entry.Info()
-		if err != nil {
-			slog.Error("Failed to get file info", "name", entry.Name(), "error", err)
-			continue
-		}
 
 		filePath := queryPath + "/" + entry.Name()
 		if queryPath == "/" {
 			filePath = "/" + entry.Name()
+		}
+
+		info, err := entry.Info()
+		if err != nil {
+			slog.Warn("Failed to get file info, using fallback", "name", entry.Name(), "error", err)
+			files = append(files, FileInfo{
+				Name:        entry.Name(),
+				Path:        filePath,
+				IsDirectory: entry.IsDir(),
+				Size:        0,
+				Modified:    "",
+			})
+			continue
 		}
 
 		files = append(files, FileInfo{
@@ -99,6 +116,7 @@ func (s *MobileService) ListFiles(queryPath string) ([]FileInfo, error) {
 		})
 	}
 
+	slog.Debug("ListFiles result", "path", queryPath, "count", len(files))
 	return files, nil
 }
 
@@ -203,6 +221,35 @@ func (s *MobileService) GetWSHub() *WSHub {
 
 func (s *MobileService) SetServingDir(dir string) {
 	s.servingDir = dir
+}
+
+func (s *MobileService) GetServingDir() string {
+	return s.servingDir
+}
+
+func (s *MobileService) CheckStoragePermission() bool {
+	if s.servingDir == "" {
+		return false
+	}
+	f, err := os.Open(s.servingDir)
+	if err != nil {
+		return false
+	}
+	f.Close()
+	return true
+}
+
+func isPermissionError(err error) bool {
+	if os.IsPermission(err) {
+		return true
+	}
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) {
+		if errno, ok := pathErr.Err.(syscall.Errno); ok {
+			return errno == syscall.EACCES
+		}
+	}
+	return false
 }
 
 func isValidUTF8(data []byte) bool {

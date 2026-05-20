@@ -40,16 +40,44 @@ export interface FileItem {
 
 export interface FileListResponse {
   files: FileItem[]
+  error?: string
+  code?: string
+}
+
+export class PermissionDeniedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PermissionDeniedError'
+  }
 }
 
 export async function listFiles(path = '/'): Promise<FileItem[]> {
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/files?path=${encodeURIComponent(path)}`)
   if (!response.ok) {
+    if (response.status === 403) {
+      const data: FileListResponse = await response.json().catch(() => ({}))
+      if (data.code === 'PERMISSION_DENIED') {
+        throw new PermissionDeniedError(data.error || 'Permission denied')
+      }
+    }
     throw new Error(`HTTP error! status: ${response.status}`)
   }
   const data: FileListResponse = await response.json()
   return data.files || []
+}
+
+export interface BackendPermissions {
+  storage: boolean
+}
+
+export async function checkBackendPermissions(): Promise<BackendPermissions> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/permissions`)
+  if (!response.ok) {
+    return { storage: false }
+  }
+  return await response.json()
 }
 
 export function getFileStreamUrl(path: string): string {

@@ -29,7 +29,17 @@
 
       <div v-if="loading" class="loading-container">
         <ion-spinner name="crescent"></ion-spinner>
-        <p>{{ t('files.loading') }}</p>
+        <p>{{ connecting ? t('files.connecting') : t('files.loading') }}</p>
+      </div>
+
+      <div v-else-if="noPermission" class="empty-state">
+        <ion-icon :icon="lockClosed" class="empty-icon"></ion-icon>
+        <h3>{{ t('files.noPermission') }}</h3>
+        <p>{{ t('files.noPermissionDesc') }}</p>
+        <ion-button @click="handleRequestStorage">
+          <ion-icon :icon="folderOpen" slot="start"></ion-icon>
+          {{ t('files.grantPermission') }}
+        </ion-button>
       </div>
 
       <div v-else-if="!serverOnline" class="empty-state">
@@ -111,20 +121,26 @@ import {
 } from 'ionicons/icons'
 import {
   listFiles,
-  checkServerStatus,
   formatFileSize,
   getFileCategory,
+  PermissionDeniedError,
 } from '@/api/encv'
 import type { FileItem } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
+import { isNative, requestStoragePermission } from '@/plugins/GoProcess'
 
 const { t } = useI18n()
 const router = useRouter()
 const serverOnline = ref(false)
+const noPermission = ref(false)
 const files = ref<FileItem[]>([])
 const currentPath = ref('/')
 const loading = ref(false)
+const connecting = ref(false)
+
+const MAX_RETRIES = isNative() ? 15 : 3
+const RETRY_DELAY = 1000
 
 const pathSegments = computed(() => {
   if (currentPath.value === '/') return []
@@ -168,34 +184,55 @@ function getFileIconColor(file: FileItem) {
   }
 }
 
+let loadGeneration = 0
+
 async function loadFiles() {
+  const gen = ++loadGeneration
   loading.value = true
-  const result = await checkServerStatus()
-  serverOnline.value = result.online
-  if (serverOnline.value) {
+  connecting.value = false
+  noPermission.value = false
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (gen !== loadGeneration) return
+
     try {
       files.value = await listFiles(currentPath.value)
+      serverOnline.value = true
+      noPermission.value = false
+      loading.value = false
+      connecting.value = false
+      return
     } catch (error) {
-      console.error('Failed to load files:', error)
-      const toast = await toastController.create({
-        message: t('files.loadFailed'),
-        duration: 2000,
-        color: 'danger',
-      })
-      await toast.present()
+      if (error instanceof PermissionDeniedError) {
+        serverOnline.value = true
+        noPermission.value = true
+        loading.value = false
+        connecting.value = false
+        return
+      }
+
+      if (attempt < MAX_RETRIES) {
+        connecting.value = true
+        await new Promise(r => setTimeout(r, RETRY_DELAY))
+      }
     }
   }
+
+  if (gen !== loadGeneration) return
+  serverOnline.value = false
   loading.value = false
+  connecting.value = false
 }
 
 async function handleRefresh(event: CustomEvent) {
-  const result = await checkServerStatus()
-  serverOnline.value = result.online
-  if (serverOnline.value) {
-    try {
-      files.value = await listFiles(currentPath.value)
-    } catch {
-      // silent
+  try {
+    files.value = await listFiles(currentPath.value)
+    serverOnline.value = true
+    noPermission.value = false
+  } catch (error) {
+    if (error instanceof PermissionDeniedError) {
+      serverOnline.value = true
+      noPermission.value = true
     }
   }
   ;(event.target as any)?.complete?.()
@@ -203,6 +240,11 @@ async function handleRefresh(event: CustomEvent) {
 
 async function retryConnection() {
   await loadFiles()
+}
+
+async function handleRequestStorage() {
+  await requestStoragePermission()
+  setTimeout(() => loadFiles(), 1500)
 }
 
 function navigateTo(path: string) {
@@ -253,14 +295,27 @@ function onFileChange(data: { path: string; action: string }) {
   }
 }
 
+function onBackendReady(data: { port?: number; running?: boolean }) {
+  if (data.running || data.port) {
+    loadFiles()
+  }
+}
+
 onMounted(() => {
   loadFiles()
   eventBus.on('file:change', onFileChange)
+  window.addEventListener('encv:backend-ready', onBackendReadyWindow as EventListener)
 })
 
 onUnmounted(() => {
   eventBus.off('file:change', onFileChange)
+  window.removeEventListener('encv:backend-ready', onBackendReadyWindow as EventListener)
 })
+
+function onBackendReadyWindow(event: Event) {
+  const detail = (event as CustomEvent).detail || {}
+  onBackendReady(detail)
+}
 </script>
 
 <style scoped>
