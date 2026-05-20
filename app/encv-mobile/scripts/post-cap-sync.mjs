@@ -142,6 +142,18 @@ android.sourceSets {
     console.log('  [kotlin] added explicit sourceSets for kotlin sources')
   }
 
+  // 9. 打印 build.gradle 关键配置用于诊断（仅 debug 模式）
+  if (!version) {
+    const lines = c.split('\n')
+    console.log('  [diag] --- build.gradle key lines ---')
+    lines.forEach((line, i) => {
+      if (line.match(/kotlin|namespace|sourceSets|apply plugin|plugins\s*\{/)) {
+        console.log(`  [diag] L${i + 1}: ${line.trim()}`)
+      }
+    })
+    console.log(`  [diag] total: ${lines.length} lines`)
+  }
+
   return c
 })
 

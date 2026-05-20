@@ -176,6 +176,15 @@ jobs:
           test -f app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt && echo "✅ MainActivity.kt exists" || echo "❌ MISSING: MainActivity.kt!"
           echo "✅ All checks passed"
 
+      - name: Pre-build diagnosis
+        run: |
+          echo "=== build.gradle kotlin/sourceSets/namespace ==="
+          grep -n "kotlin\|sourceSets\|namespace\|apply plugin.*kotlin\|plugins\s*{" app/encv-mobile/android/app/build.gradle || true
+          echo "=== Source .kt files ==="
+          find app/encv-mobile/android/app/src/main/java -name "*.kt" -type f -exec sh -c 'echo "  {} ($(wc -l < {}) lines)"; head -1 {}' \;
+          echo "=== AndroidManifest activity ==="
+          grep -n "activity\|android:name" app/encv-mobile/android/app/src/main/AndroidManifest.xml | head -5
+
       # === Build ===
       - name: Build ${{ inputs.version && 'Release' || 'Debug' }} APK
         run: |

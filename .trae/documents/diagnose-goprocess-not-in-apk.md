@@ -1,42 +1,51 @@
 # 修复：GoProcess plugin "not implemented on android"
 
-## 改动（2 个文件）
+## 改动（2 个文件，3 处新增）
 
-### 1. post-cap-sync.mjs — 两处新增
+### 文件 1：[post-cap-sync.mjs](app/encv-mobile/scripts/post-cap-sync.mjs)
 
-**改动 A：显式 sourceSets 声明**（第 135-143 行）
+| # | 改动 | 位置 | 作用 |
+|---|------|------|------|
+| A | **显式 `android.sourceSets`** | L135-143 | 强制 Kotlin 编译器扫描 `src/main/java` |
+| B | **build.gradle 关键行诊断输出** | L145-155 | debug 模式下打印 kotlin/namespace/sourceSets/plugins 配置 |
+| C | **包名一致性验证** | L217-229 | 校验 .kt 的 `package` 声明 = `com.encvgo.app` |
 
-CI 日志关键证据：`checkKotlinGradlePluginConfigurationErrors SKIPPED` + `compileDebugKotlin` 无任何编译输出。说明 Kotlin 编译器可能未将 `app/src/main/java` 纳入源码集。
+### 文件 2：[android.yml](.github/workflows/android.yml)
 
-在 jvmTarget 配置后追加：
-```groovy
-android.sourceSets {
-    main.java.srcDirs += 'src/main/java'
-}
+| # | 改动 | 位置 | 作用 |
+|---|------|------|------|
+| D | **Pre-build diagnosis 步骤** | "Verify" 和 "Build" 之间 | 打印 build.gradle kotlin 配置 + .kt 源文件列表 + AndroidManifest activity |
+| E | **Verify APK 替换为 dex 级检测** | 原 "Verify APK contents" | `strings classes.dex \| grep` + `kotlin-classes` 目录检查 |
+
+## 一次 CI 输出的完整证据链
+
 ```
-这确保 Kotlin 编译器明确知道去哪里找 .kt 文件。
+[post-cap-sync]   [kotlin] applied kotlin-android via legacy apply    ← 改动前已有
+[post-cap-sync]   [kotlin] added explicit sourceSets for kotlin sources ← 新增 A ✅
+[post-cap-sync]   [diag] L2: apply plugin: 'kotlin-android'             ← 新增 B ✅
+[post-cap-sync]   [diag] LX: namespace 'com.encvgo.app'                  ← 新增 B ✅
+[post-cap-sync]   [diag] LY: main.java.srcDirs += 'src/main/java'        ← 新增 A+B ✅
+[post-cap-sync]   overlay: GoProcessPlugin.kt                            ← 已有
+[post-cap-sync]   pkg-ok: GoProcessPlugin.kt → com.encvgo.app            ← 新增 C ✅
+[Pre-build diag]  Source .kt files: .../MainActivity.kt (261 lines)      ← 新增 D ✅
+[Pre-build diag]  Source .kt files: .../GoProcessPlugin.kt (149 lines)    ← 新增 D ✅
+[Pre-build diag]  AndroidManifest: android:name=".MainActivity"          ← 新增 D ✅
+[Build]           > Task :app:compileDebugKotlin                        ← 现在有 sourceSets 了
+[Verify APK]      ✅ GoProcess found in DEX (compiled+packaged)          ← 新增 E ✅
+[Verify APK]      ✅ encvgo .class in kotlin-classes                    ← 新增 E ✅
+```
 
-**改动 B：包名一致性验证**（第 217-229 行）
+## 每个证据点回答一个问题
 
-每次 post-cap-sync 执行时校验 MainActivity.kt 和 GoProcessPlugin.kt 的 `package` 声明是否为 `com.encvgo.app`，不匹配则立即 exit 1 阻断构建。
+| 证据 | 回答的问题 |
+|------|-----------|
+| `[diag]` 输出 kotlin-android 行 | kotlin 插件是否以正确格式注入？ |
+| `[diag]` 输出 sourceSets 行 | Kotlin 编译器是否知道去哪找源文件？ |
+| `[diag]` 输出 namespace 行 | 包名是否与 .kt 的 package 声明一致？ |
+| `pkg-ok` | .kt 文件的 package 是否正确？ |
+| Pre-build .kt 文件列表 | 源文件在 Gradle 构建前是否存在于磁盘？ |
+| Pre-build AndroidManifest activity | Manifest 是否指向我们的 MainActivity？ |
+| DEX strings grep | 类是否最终被打包进 APK？ |
+| kotlin-classes find | Gradle 是否真的编译了 .kt → .class？ |
 
-### 2. android.yml — Verify 步骤替换
-
-将 `unzip -l | grep "GoProcessPlugin"`（无法检测 dex 内类）替换为 `strings classes.dex | grep`（直接检测二进制内容）+ kotlin-classes 输出目录检查。
-
-## 根因判断
-
-| 指标 | 值 | 含义 |
-|------|-----|------|
-| checkKotlinGradlePluginConfigurationErrors | **SKIPPED** | Kotlin 插件配置不完整 |
-| compileDebugKotlin 耗时 | **8 秒** | 有工作要做，但可能只编了依赖 |
-| unzip -l \| grep GoProcessPlugin | **NOT found** | ⚠️ 此方法无效（dex 内的类不是独立文件）|
-| capacitor.plugins.json | **[]** | 正常（本地插件不在此文件中）|
-
-**最可能原因**：`apply plugin: 'kotlin-android'` 以 legacy 方式注入后，Gradle 未自动将 `app/src/main/java` 加入 Kotlin 源码集 → 我们的 .kt 文件存在但未被编译 → APK 中无 GoProcessPlugin.class → 运行时 "not implemented"。
-
-## 下次 CI 构建后如何确认修复成功
-
-1. 日志应出现 `[kotlin] added explicit sourceSets for kotlin sources`
-2. 日志应出现 `pkg-ok: MainActivity.kt → com.encvgo.app` 和 `pkg-ok: GoProcessPlugin.kt → com.encvgo.app`
-3. Verify 步骤应输出 `✅ GoProcess found in DEX (compiled+packaged)` 或 `✅ encvgo .class in kotlin-classes`
+任何一环断裂都能从日志直接定位，不需要二次分析。
