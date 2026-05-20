@@ -80,12 +80,12 @@ class MainActivity : BridgeActivity() {
                 }
 
             Log.i(TAG, "Using binary at: ${binary.absolutePath}")
+            val configPath = File(filesDir, "config.user.json").absolutePath
             Log.i(TAG, "=== Launch environment ===")
             Log.i(TAG, "size=${binary.length()}, canExec=${binary.canExecute()}")
             Log.i(TAG, "configPath=$configPath, workDir=${filesDir.absolutePath}")
             Log.i(TAG, "SDK_INT=${Build.VERSION.SDK_INT}, ABI=${Build.SUPPORTED_ABIS.joinToString(",")}")
 
-            val configPath = File(filesDir, "config.user.json").absolutePath
             val cmd = "${binary.absolutePath} start"
             Log.i(TAG, "Starting via sh -c: $cmd")
             goProcess = ProcessBuilder("/system/bin/sh", "-c", cmd).apply {
