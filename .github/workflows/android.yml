@@ -171,12 +171,7 @@ jobs:
           print('AndroidManifest patched')
           "
 
-      # === Build ===
-      - name: Build ${{ inputs.version && 'Release' || 'Debug' }} APK
-        run: |
-          cd app/encv-mobile/android
-          chmod +x gradlew
-
+      # === Verify kotlin setup before build ===
       - name: Verify build.gradle kotlin setup
         run: |
           echo "=== kotlin-android plugin ==="
@@ -192,6 +187,12 @@ jobs:
           echo "=== MainActivity.kt source ==="
           test -f app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt && echo "✅ MainActivity.kt exists" || echo "❌ MISSING: MainActivity.kt!"
           echo "✅ All checks passed"
+
+      # === Build ===
+      - name: Build ${{ inputs.version && 'Release' || 'Debug' }} APK
+        run: |
+          cd app/encv-mobile/android
+          chmod +x gradlew
 
           if [ -n "${{ inputs.version }}" ]; then
             echo "=== Building RELEASE APK v${{ inputs.version }} ==="
