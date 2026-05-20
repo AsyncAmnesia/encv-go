@@ -198,16 +198,9 @@ func (s *Server) handleTestWebDAV(w http.ResponseWriter, r *http.Request) {
 
 	err = s.mobileSvc.TestWebDAV(req.URL, req.Username, req.Password)
 	if err != nil {
-		switch err.(type) {
-		case *service.BadRequestError:
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]any{"success": false, "error": "invalid URL"})
-		default:
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]any{"success": false, "error": err.Error()})
-		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]any{"success": false, "error": err.Error()})
 		return
 	}
 

@@ -78,7 +78,7 @@ func (s *Server) Start(version string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve absolute path for directory '%s': %w", dir, err)
 	}
-	s.mobileSvc = mobileservice.NewMobileService(s.servingDir)
+	s.mobileSvc.SetServingDir(s.servingDir)
 	chunkNamers := plugins.GetAllRegisteredChunkNamers()
 	s.chunkNamers = chunkNamers
 
@@ -123,28 +123,25 @@ func (s *Server) Start(version string) (string, error) {
 
 	// 如果启用了 WebDAV，则注册其处理器
 	if s.webdavDir != "" {
-		// 【关键修复】从插件系统获取所有已注册的 ChunkNamers
-		// 这是一种解耦且可扩展的方式，服务器无需知道具体的命名规则。
 		chunkNamers := plugins.GetAllRegisteredChunkNamers()
-		fs := webdav.NewENCVFS(config.NewContext(context.Background(), s.cfg), s.readerService, chunkNamers)
-		webdavHandler := &goWebdav.Handler{
-			FileSystem: fs,
-			LockSystem: goWebdav.NewMemLS(),
+		fs, fsErr := webdav.NewENCVFS(config.NewContext(context.Background(), s.cfg), s.readerService, chunkNamers)
+		if fsErr != nil {
+			slog.Warn("WebDAV initialization failed, skipping WebDAV", "error", fsErr)
+		} else {
+			webdavHandler := &goWebdav.Handler{
+				FileSystem: fs,
+				LockSystem: goWebdav.NewMemLS(),
+			}
+			configAwareWebdavHandler := middleware.WithConfig(s.cfg, webdavHandler)
+
+			webdavUser := s.cfg.Webdav.Username
+			webdavPass := s.cfg.Webdav.Password
+
+			authMiddleware := middleware.BasicAuth(webdavUser, webdavPass)
+			protectedWebdavHandler := authMiddleware(configAwareWebdavHandler)
+
+			mux.Handle(s.webdavPath, protectedWebdavHandler)
 		}
-		// WebDAV 也需要通过配置中间件来处理解密等
-		configAwareWebdavHandler := middleware.WithConfig(s.cfg, webdavHandler)
-
-		webdavUser := s.cfg.Webdav.Username
-		webdavPass := s.cfg.Webdav.Password
-
-		// 【新增】应用基础认证中间件
-		// 如果 webdavUser 或 webdavPass 为空，BasicAuth 中间件将不执行任何操作
-		authMiddleware := middleware.BasicAuth(webdavUser, webdavPass)
-		protectedWebdavHandler := authMiddleware(configAwareWebdavHandler)
-
-		// 【修改】使用受保护的处理器
-		mux.Handle(s.webdavPath, protectedWebdavHandler)
-
 	}
 
 	// CorsMiddleware 应该在最外层，最先处理请求
