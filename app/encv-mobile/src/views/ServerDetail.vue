@@ -45,8 +45,11 @@
             <ion-button v-if="serverOnline" fill="outline" size="small" color="danger" @click="handleStop">
               <ion-icon :icon="stopIcon" slot="icon-only"></ion-icon>
             </ion-button>
-            <ion-button v-if="!serverOnline" fill="outline" size="small" color="warning" @click="handleRestart">
+            <ion-button v-if="!serverOnline && !isRestarting" fill="outline" size="small" color="warning" @click="handleRestart">
               <ion-icon :icon="playIcon" slot="icon-only"></ion-icon>
+            </ion-button>
+            <ion-button v-if="isRestarting" fill="outline" size="small" color="medium" disabled>
+              <ion-spinner slot="icon-only" name="crescent"></ion-spinner>
             </ion-button>
           </div>
         </ion-item>
@@ -86,7 +89,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonIcon, IonLabel,
-  IonInput, IonBadge, IonButton, alertController, toastController,
+  IonInput, IonBadge, IonButton, alertController, toastController, IonSpinner,
 } from '@ionic/vue'
 import {
   server as serverIcon, refresh as refreshIcon,

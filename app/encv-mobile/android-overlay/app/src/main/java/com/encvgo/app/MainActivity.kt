@@ -26,6 +26,8 @@ class MainActivity : BridgeActivity() {
     private var intentionallyStopped = false
     private var readyCallback: ((Int) -> Unit)? = null
     var lastStartError: String? = null
+    private var goProcessOutput = StringBuilder()
+    private var goProcessExitCode: Int? = null
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         Log.d(TAG, "=== onCreate: start ===")
@@ -55,6 +57,9 @@ class MainActivity : BridgeActivity() {
             }
         }
         goProcess = null
+        goProcessOutput.clear()
+        goProcessExitCode = null
+        lastStartError = null
         notifyFrontend(0, "stopped")
     }
 
@@ -102,11 +107,20 @@ class MainActivity : BridgeActivity() {
                     var line: String?
                     while (reader.readLine().also { line = it } != null) {
                         Log.i(TAG, "[go] $line")
+                        goProcessOutput.append(line).append("\n")
+                        if (line.contains("error", ignoreCase = true) ||
+                            line.contains("fatal", ignoreCase = true) ||
+                            line.contains("panic", ignoreCase = true) ||
+                            line.contains("permission denied", ignoreCase = true) ||
+                            line.contains("no such file", ignoreCase = true)) {
+                            notifyFrontend(0, "go_error:$line")
+                        }
                     }
-                    val exitCode = goProcess?.waitFor() ?: -1
-                    Log.w(TAG, "[go] Process exited with code: $exitCode")
-                    if (exitCode != 0) {
+                    goProcessExitCode = goProcess?.waitFor() ?: -1
+                    Log.w(TAG, "[go] Process exited with code: $goProcessExitCode")
+                    if (goProcessExitCode != 0) {
                         Log.e(TAG, "[go] Non-zero exit code indicates crash or config error")
+                        notifyFrontend(0, "go_exit:$goProcessExitCode")
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Error reading process output", e)
@@ -152,6 +166,11 @@ class MainActivity : BridgeActivity() {
             }
         }
         Log.w(TAG, "Backend failed to start within 30 seconds")
+        val isAlive = goProcess?.isAlive == true
+        val exitInfo = if (goProcessExitCode != null) "exit=$goProcessExitCode" else if (isAlive) "alive=true" else "gone"
+        val outputPreview = goProcessOutput.takeLast(500).toString().trim()
+        lastStartError = "timeout:$exitInfo|output:${if (outputPreview.isEmpty()) "(empty)" else outputPreview}"
+        Log.w(TAG, lastStartError)
         notifyFrontend(0, "timeout")
         readyCallback?.invoke(-1)
         readyCallback = null
