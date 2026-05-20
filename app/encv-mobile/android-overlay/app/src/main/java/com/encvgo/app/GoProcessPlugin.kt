@@ -38,7 +38,8 @@ class GoProcessPlugin : Plugin() {
                 result.put("port", port)
                 call.resolve(result)
             } else {
-                call.reject("Backend failed to start")
+                val msg = mainActivity.lastStartError ?: "Backend failed to start"
+                call.reject(msg)
             }
         }
     }

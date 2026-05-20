@@ -23,8 +23,8 @@ export function isNative(): boolean {
 export async function restartBackend(): Promise<GoProcessResult> {
   try {
     return await GoProcess.restart()
-  } catch (e) {
-    console.error('[ENCV] GoProcess.restart() failed:', e)
+  } catch (e: any) {
+    console.error('[ENCV] GoProcess.restart() failed:', e?.message || e)
     return { success: false }
   }
 }

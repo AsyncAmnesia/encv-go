@@ -25,6 +25,7 @@ class MainActivity : BridgeActivity() {
     private var backendReady = false
     private var intentionallyStopped = false
     private var readyCallback: ((Int) -> Unit)? = null
+    var lastStartError: String? = null
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         Log.d(TAG, "=== onCreate: start ===")
@@ -79,7 +80,10 @@ class MainActivity : BridgeActivity() {
                 }
 
             Log.i(TAG, "Using binary at: ${binary.absolutePath}")
-            Log.i(TAG, "Binary exists: ${binary.exists()}, size: ${binary.length()}, canExecute: ${binary.canExecute()}")
+            Log.i(TAG, "=== Launch environment ===")
+            Log.i(TAG, "size=${binary.length()}, canExec=${binary.canExecute()}")
+            Log.i(TAG, "configPath=$configPath, workDir=${filesDir.absolutePath}")
+            Log.i(TAG, "SDK_INT=${Build.VERSION.SDK_INT}, ABI=${Build.SUPPORTED_ABIS.joinToString(",")}")
 
             val configPath = File(filesDir, "config.user.json").absolutePath
             val cmd = "${binary.absolutePath} start"
@@ -99,6 +103,11 @@ class MainActivity : BridgeActivity() {
                     while (reader.readLine().also { line = it } != null) {
                         Log.i(TAG, "[go] $line")
                     }
+                    val exitCode = goProcess?.waitFor() ?: -1
+                    Log.w(TAG, "[go] Process exited with code: $exitCode")
+                    if (exitCode != 0) {
+                        Log.e(TAG, "[go] Non-zero exit code indicates crash or config error")
+                    }
                 } catch (e: Exception) {
                     Log.w(TAG, "Error reading process output", e)
                 }
@@ -114,7 +123,8 @@ class MainActivity : BridgeActivity() {
             Log.e(TAG, "Exception: ${e.javaClass.name}: ${e.message}")
             e.stackTraceToString().lines().forEach { Log.e(TAG, it) }
             val errMsg = e.message?.take(200) ?: "unknown"
-            notifyFrontend(0, "start_failed:$errMsg")
+            lastStartError = "start_failed:$errMsg"
+            notifyFrontend(0, lastStartError!!)
             readyCallback?.invoke(-1)
             readyCallback = null
         }
@@ -261,6 +271,9 @@ class MainActivity : BridgeActivity() {
             }
         }
         Log.i(TAG, "Copied Go binary to ${dest.absolutePath} (${dest.length()} bytes)")
+        if (dest.length() < 1_000_000) {
+            Log.e(TAG, "Binary too small! Expected ~23MB, got ${dest.length()} bytes. Asset may be corrupted.")
+        }
     }
 
     override fun onDestroy() {
