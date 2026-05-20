@@ -121,22 +121,8 @@ jobs:
           echo "Release config:"
           ls -lh app/encv-mobile/android/gradle.properties
 
-      - name: Apply Android overlay (MainActivity + permissions + network config)
+      - name: Patch AndroidManifest (permissions + network config)
         run: |
-          mkdir -p app/encv-mobile/android/app/src/main/java/com/encvgo/app
-          # 先删除可能存在的默认 MainActivity，避免重复声明
-          rm -f app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt
-          cp app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/MainActivity.kt \
-             app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt
-          cp app/encv-mobile/android-overlay/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt \
-             app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt
-          cp app/encv-mobile/android-overlay/proguard-rules.pro \
-             app/encv-mobile/android/app/proguard-rules.pro
-
-          mkdir -p app/encv-mobile/android/app/src/main/res/xml
-          cp app/encv-mobile/android-overlay/app/src/main/res/xml/network_security_config.xml \
-             app/encv-mobile/android/app/src/main/res/xml/network_security_config.xml
-
           python3 -c "
           import xml.etree.ElementTree as ET
           ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')

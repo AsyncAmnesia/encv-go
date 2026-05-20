@@ -1,9 +1,10 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, copyFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ANDROID_DIR = join(__dirname, '..', 'android')
+const OVERLAY_DIR = join(__dirname, '..', 'android-overlay')
 
 function patchFile(filePath, transformer) {
   const content = readFileSync(filePath, 'utf-8')
@@ -121,8 +122,6 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
   }
 
   // 7. Kotlin JVM target (Groovy DSL 兼容写法)
-  // 使用 tasks.withType(KotlinCompile) 设置 jvmTarget
-  // 这是 Groovy DSL 中设置 Kotlin 编译参数的标准方式
   if (!c.includes('jvmTarget') && c.includes('kotlin-android')) {
     c += `
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
@@ -135,6 +134,49 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
 
   return c
 })
+
+// --- Overlay files: MainActivity.kt, GoProcessPlugin.kt, proguard, network config ---
+const JAVA_DIR = join(ANDROID_DIR, 'app', 'src', 'main', 'java', 'com', 'encvgo', 'app')
+
+if (existsSync(JAVA_DIR)) {
+  rmSync(JAVA_DIR, { recursive: true, force: true })
+}
+mkdirSync(JAVA_DIR, { recursive: true })
+
+for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt']) {
+  const src = join(OVERLAY_DIR, 'app', 'src', 'main', 'java', 'com', 'encvgo', 'app', f)
+  if (existsSync(src)) {
+    copyFileSync(src, join(JAVA_DIR, f))
+    console.log(`  overlay: ${f}`)
+  } else {
+    console.error(`  overlay: missing ${src}`)
+  }
+}
+
+const proguardSrc = join(OVERLAY_DIR, 'proguard-rules.pro')
+if (existsSync(proguardSrc)) {
+  copyFileSync(proguardSrc, join(ANDROID_DIR, 'app', 'proguard-rules.pro'))
+  console.log('  overlay: proguard-rules.pro')
+}
+
+const xmlDir = join(ANDROID_DIR, 'app', 'src', 'main', 'res', 'xml')
+mkdirSync(xmlDir, { recursive: true })
+const xmlSrc = join(OVERLAY_DIR, 'app', 'src', 'main', 'res', 'xml', 'network_security_config.xml')
+if (existsSync(xmlSrc)) {
+  copyFileSync(xmlSrc, join(xmlDir, 'network_security_config.xml'))
+  console.log('  overlay: network_security_config.xml')
+}
+
+const mainActivityPath = join(JAVA_DIR, 'MainActivity.kt')
+if (existsSync(mainActivityPath)) {
+  const content = readFileSync(mainActivityPath, 'utf-8')
+  const count = (content.match(/class MainActivity/g) || []).length
+  if (count !== 1) {
+    console.error(`  ERROR: Found ${count} MainActivity class declarations (expected 1)`)
+    process.exit(1)
+  }
+  console.log(`  verified: 1 MainActivity class declaration ✓`)
+}
 
 // --- Debug-only AndroidManifest.xml: enable Logcat floating + notify entries ---
 const debugManifestDir = join(ANDROID_DIR, 'app', 'src', 'debug')
