@@ -18,6 +18,30 @@ function patchFile(filePath, transformer) {
 console.log('encv-post-cap-sync: applying Android customizations...')
 
 // --- Root build.gradle: kotlin plugin + JitPack repository ---
+const rootBuildGradle = join(ANDROID_DIR, 'build.gradle')
+if (!existsSync(rootBuildGradle)) {
+  const stub = `buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0"
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' }
+    }
+}
+`
+  writeFileSync(rootBuildGradle, stub, 'utf-8')
+  console.log(`  created ${rootBuildGradle}`)
+}
+
 patchFile(join(ANDROID_DIR, 'build.gradle'), (c) => {
   if (!c.includes('kotlin-gradle-plugin')) {
     c = c.replace(
@@ -36,6 +60,55 @@ patchFile(join(ANDROID_DIR, 'build.gradle'), (c) => {
 
 // --- app/build.gradle ---
 const version = process.env.ENCV_VERSION || ''
+const appBuildGradle = join(ANDROID_DIR, 'app', 'build.gradle')
+
+if (!existsSync(appBuildGradle)) {
+  const stub = `plugins {
+    id 'com.android.application'
+    id 'kotlin-android'
+}
+
+android {
+    namespace "com.encvgo.app"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId "com.encvgo.app"
+        minSdk = 22
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0.0"
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+            minifyEnabled false
+        }
+        release {
+            minifyEnabled true
+            shrinkResources true
+            debuggable false
+        }
+    }
+
+    compileOptions {
+        targetCompatibility = JavaVersion.VERSION_21
+        sourceCompatibility = JavaVersion.VERSION_21
+    }
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.0"
+    debugImplementation 'com.github.getActivity:Logcat:13.0'
+}
+`
+  writeFileSync(appBuildGradle, stub, 'utf-8')
+  console.log(`  created ${appBuildGradle}`)
+}
 
 patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
   // 1. kotlin-android plugin (兼容 plugins { id } 新格式 和 apply plugin: 旧格式)
