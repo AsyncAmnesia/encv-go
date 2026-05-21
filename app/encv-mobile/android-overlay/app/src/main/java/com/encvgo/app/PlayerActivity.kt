@@ -1,5 +1,6 @@
 package com.encvgo.app
 
+import android.graphics.Bitmap
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -10,6 +11,11 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.util.Log
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.core.content.ContextCompat
 import com.getcapacitor.BridgeActivity
 import org.json.JSONObject
@@ -65,8 +71,47 @@ class PlayerActivity : BridgeActivity() {
         try {
             val playerUrl = "https://localhost/player.html"
             Log.i(TAG, "navigateToPlayer: $playerUrl")
-            bridge?.webView?.loadUrl(playerUrl)
-            Log.i(TAG, "navigateToPlayer: loadUrl dispatched")
+            val webView = bridge?.webView
+            if (webView == null) {
+                Log.e(TAG, "navigateToPlayer: webView is null!")
+                return
+            }
+            val originalClient = webView.webViewClient
+            Log.d(TAG, "navigateToPlayer: originalClient=${originalClient?.javaClass?.simpleName}")
+            webView.webViewClient = object : WebViewClient() {
+                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                    Log.i(TAG, "WVC.onPageStarted: url=$url")
+                    originalClient?.onPageStarted(view, url, favicon)
+                }
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    Log.i(TAG, "WVC.onPageFinished: url=$url")
+                    originalClient?.onPageFinished(view, url, favicon)
+                }
+                override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                    Log.e(TAG, "WVC.onReceivedError: url=${request?.url}, error=${error?.description} (${error?.errorCode}), isMain=${request?.isForMainFrame}")
+                    originalClient?.onReceivedError(view, request, error)
+                }
+                override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, response: WebResourceResponse?) {
+                    Log.e(TAG, "WVC.onReceivedHttpError: url=${request?.url}, status=${response?.statusCode}, reason=${response?.reasonPhrase}")
+                    originalClient?.onReceivedHttpError(view, request, response)
+                }
+                override fun shouldInterceptRequest(view: WebResourceRequest?): WebResourceResponse? {
+                    val url = request?.url.toString()
+                    val ext = url.substringAfterLast('.', "").lowercase()
+                    if (ext in listOf("html", "js", "css", "woff", "woff2", "ttf")) {
+                        Log.d(TAG, "WVC.shouldInterceptRequest: $url")
+                    }
+                    return try {
+                        originalClient?.shouldInterceptRequest(request)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "WVC.shouldInterceptRequest: originalClient failed, fallback to bridge localServer", e)
+                        @Suppress("UNCHECKED_CAST")
+                        (bridge as? com.getcapacitor.Bridge)?.localServer?.shouldInterceptRequest(request)
+                    }
+                }
+            }
+            webView.loadUrl(playerUrl)
+            Log.i(TAG, "navigateToPlayer: loadUrl dispatched with diagnostic WVC")
         } catch (e: Exception) {
             Log.e(TAG, "navigateToPlayer: failed", e)
         }
