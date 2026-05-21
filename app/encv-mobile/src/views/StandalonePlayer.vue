@@ -300,8 +300,9 @@ async function startPlayback() {
 
 onMounted(() => {
   console.log('[StandalonePlayer] onMounted fired, DOM element:', !!document.getElementById('app'))
-  console.log('[StandalonePlayer] Capacitor exists:', typeof Capacitor !== 'undefined')
-  console.log('[StandalonePlayer] Capacitor.Plugins:', !!Capacitor?.Plugins)
+  const cap = (window as any).Capacitor
+  console.log('[StandalonePlayer] Capacitor exists:', !!cap)
+  console.log('[StandalonePlayer] Capacitor.Plugins:', !!cap?.Plugins)
   initBackend()
   window.addEventListener('encv:backend-ready', handleBackendReady as EventListener)
   window.addEventListener('encv:backend-status', handleBackendStatus as EventListener)

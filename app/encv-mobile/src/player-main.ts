@@ -6,11 +6,12 @@ window.addEventListener('unhandledrejection', (e) => {
 })
 console.log('[PLAYER-INIT] player-main.ts starting')
 console.log('[PLAYER-INIT] URL:', location.href)
-console.log('[PLAYER-INIT] Capacitor:', typeof Capacitor !== 'undefined' ? 'exists' : 'MISSING')
-console.log('[PLAYER-INIT] Capacitor.isNativePlatform():', typeof Capacitor !== 'undefined' ? Capacitor?.isNativePlatform() : 'N/A')
-if (typeof Capacitor !== 'undefined') {
-  console.log('[PLAYER-INIT] Capacitor.platform:', Capacitor?.platform)
-  console.log('[PLAYER-INIT] Capacitor.Plugins keys:', Object.keys(Capacitor?.Plugins || {}))
+const cap = (window as any).Capacitor
+console.log('[PLAYER-INIT] Capacitor:', cap ? 'exists' : 'MISSING')
+console.log('[PLAYER-INIT] Capacitor.isNativePlatform():', cap?.isNativePlatform?.() ?? 'N/A')
+if (cap) {
+  console.log('[PLAYER-INIT] Capacitor.platform:', cap.platform)
+  console.log('[PLAYER-INIT] Capacitor.Plugins keys:', Object.keys(cap.Plugins || {}))
 }
 
 import { createApp } from 'vue'
