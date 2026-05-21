@@ -12,6 +12,7 @@
     "react": "^18.2.0"
   },
   "devDependencies": {
+    "@lynx-js/react-rsbuild-plugin": "^0.16.2",
     "@lynx-js/rspeedy": "^0.14.4",
     "@types/react": "^18.2.0",
     "typescript": "^5.0.0"

@@ -3,27 +3,28 @@ package com.encvgo.app
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.util.Log
+import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
-import com.lynx.tasm.LynxView
-import com.lynx.tasm.behavior.LynxModule
-import com.lynx.tasm.behavior.LynxModuleMethod
-import com.lynx.tasm.behavior.LynxPromise
+import com.lynx.jsbridge.LynxMethod
+import com.lynx.jsbridge.LynxModule
+import com.lynx.react.bridge.Callback
+import com.lynx.tasm.behavior.LynxContext
 import io.github.abdallahmehiz.mpvlib.MPVLib
 import io.github.abdallahmehiz.mpvlib.MPVView
 import org.json.JSONObject
 
-class MpvPlayerModule(lynxView: LynxView) : LynxModule(lynxView) {
+class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
     companion object {
         private const val TAG = "MpvPlayerModule"
         const val EVENT_STATE_CHANGE = "mpv:state-change"
         const val EVENT_POSITION_UPDATE = "mpv:position-update"
     }
 
-    private val activity = lynxView.context as Activity
+    private val lynxContext = context as LynxContext
+    private val activity = lynxContext.context as Activity
     private var mpvView: MPVView? = null
     private var isFullscreen = false
-    private var lastOrientationLock = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
 
     init {
         Log.d(TAG, "init: creating MPVView")
@@ -78,66 +79,59 @@ class MpvPlayerModule(lynxView: LynxView) : LynxModule(lynxView) {
         mpvView = null
     }
 
-    @LynxModuleMethod
-    fun play(params: Map<String, Any>, promise: LynxPromise) {
-        val url = params["url"] as? String ?: run {
-            promise.reject("url is required")
-            return
-        }
+    @LynxMethod
+    fun play(url: String, callback: Callback) {
         Log.d(TAG, "play: url=$url")
         try {
             mpvView?.loadUrl(url)
-            promise.resolve(true)
+            callback.invoke(true)
         } catch (e: Exception) {
             Log.e(TAG, "play failed", e)
-            promise.reject(e.message)
+            callback.invoke(e.message)
         }
     }
 
-    @LynxModuleMethod
-    fun pause(params: Map<String, Any>, promise: LynxPromise) {
+    @LynxMethod
+    fun pause(callback: Callback) {
         Log.d(TAG, "pause")
         try {
             mpvView?.setPause(true)
-            promise.resolve(true)
+            callback.invoke(true)
         } catch (e: Exception) {
             Log.e(TAG, "pause failed", e)
-            promise.reject(e.message)
+            callback.invoke(e.message)
         }
     }
 
-    @LynxModuleMethod
-    fun resume(params: Map<String, Any>, promise: LynxPromise) {
+    @LynxMethod
+    fun resume(callback: Callback) {
         Log.d(TAG, "resume")
         try {
             mpvView?.setPause(false)
-            promise.resolve(true)
+            callback.invoke(true)
         } catch (e: Exception) {
             Log.e(TAG, "resume failed", e)
-            promise.reject(e.message)
+            callback.invoke(e.message)
         }
     }
 
-    @LynxModuleMethod
-    fun seekTo(params: Map<String, Any>, promise: LynxPromise) {
-        val positionMs = params["positionMs"] as? Int ?: 0
+    @LynxMethod
+    fun seekTo(positionMs: Int, callback: Callback) {
         Log.d(TAG, "seekTo: $positionMs ms")
         try {
             mpvView?.seekTo(positionMs)
-            promise.resolve(true)
+            callback.invoke(true)
         } catch (e: Exception) {
             Log.e(TAG, "seekTo failed", e)
-            promise.reject(e.message)
+            callback.invoke(e.message)
         }
     }
 
-    @LynxModuleMethod
-    fun setFullscreen(params: Map<String, Any>, promise: LynxPromise) {
-        val enabled = params["enabled"] as? Boolean ?: false
+    @LynxMethod
+    fun setFullscreen(enabled: Boolean, callback: Callback) {
         Log.d(TAG, "setFullscreen: $enabled")
         try {
             if (enabled) {
-                lastOrientationLock = activity.requestedOrientation
                 val ratio = mpvView?.videoWidth?.toFloat() ?: 1f
                 val targetOrientation = if (ratio > 1.3) {
                     ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -161,16 +155,15 @@ class MpvPlayerModule(lynxView: LynxView) : LynxModule(lynxView) {
                 activity.window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
                 isFullscreen = false
             }
-            promise.resolve(true)
+            callback.invoke(true)
         } catch (e: Exception) {
             Log.e(TAG, "setFullscreen failed", e)
-            promise.reject(e.message)
+            callback.invoke(e.message)
         }
     }
 
-    @LynxModuleMethod
-    fun setOrientation(params: Map<String, Any>, promise: LynxPromise) {
-        val orientation = params["orientation"] as? String ?: "unlocked"
+    @LynxMethod
+    fun setOrientation(orientation: String, callback: Callback) {
         Log.d(TAG, "setOrientation: $orientation")
         try {
             activity.requestedOrientation = when (orientation) {
@@ -178,48 +171,43 @@ class MpvPlayerModule(lynxView: LynxView) : LynxModule(lynxView) {
                 "portrait" -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
                 else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             }
-            promise.resolve(true)
+            callback.invoke(true)
         } catch (e: Exception) {
             Log.e(TAG, "setOrientation failed", e)
-            promise.reject(e.message)
+            callback.invoke(e.message)
         }
     }
 
-    @LynxModuleMethod
-    fun getDuration(params: Map<String, Any>, promise: LynxPromise) {
+    @LynxMethod
+    fun getDuration(callback: Callback) {
         val durationMs = mpvView?.duration ?: 0
         Log.d(TAG, "getDuration: $durationMs ms")
-        promise.resolve(durationMs)
+        callback.invoke(durationMs)
     }
 
-    @LynxModuleMethod
-    fun getCurrentPosition(params: Map<String, Any>, promise: LynxPromise) {
+    @LynxMethod
+    fun getCurrentPosition(callback: Callback) {
         val positionMs = mpvView?.currentPosition ?: 0
         Log.d(TAG, "getCurrentPosition: $positionMs ms")
-        promise.resolve(positionMs)
+        callback.invoke(positionMs)
     }
 
-    @LynxModuleMethod
-    fun isPlaying(params: Map<String, Any>, promise: LynxPromise) {
+    @LynxMethod
+    fun isPlaying(callback: Callback) {
         val playing = mpvView?.isPlaying ?: false
         Log.d(TAG, "isPlaying: $playing")
-        promise.resolve(playing)
+        callback.invoke(playing)
     }
 
-    @LynxModuleMethod
-    fun setProperty(params: Map<String, Any>, promise: LynxPromise) {
-        val key = params["key"] as? String ?: run {
-            promise.reject("key is required")
-            return
-        }
-        val value = params["value"] as? String ?: ""
+    @LynxMethod
+    fun setProperty(key: String, value: String, callback: Callback) {
         Log.d(TAG, "setProperty: key=$key, value=$value")
         try {
             mpvView?.setProperty(key, value)
-            promise.resolve(true)
+            callback.invoke(true)
         } catch (e: Exception) {
             Log.e(TAG, "setProperty failed", e)
-            promise.reject(e.message)
+            callback.invoke(e.message)
         }
     }
 
@@ -230,7 +218,7 @@ class MpvPlayerModule(lynxView: LynxView) : LynxModule(lynxView) {
             put("position", position)
             put("duration", duration)
         }
-        lynxView.dispatchEvent(EVENT_POSITION_UPDATE, data)
+        lynxContext.dispatchEvent(EVENT_POSITION_UPDATE, data)
     }
 
     private fun dispatchStateChange(state: String, error: String? = null) {
@@ -238,6 +226,6 @@ class MpvPlayerModule(lynxView: LynxView) : LynxModule(lynxView) {
             put("state", state)
             if (error != null) put("error", error)
         }
-        lynxView.dispatchEvent(EVENT_STATE_CHANGE, data)
+        lynxContext.dispatchEvent(EVENT_STATE_CHANGE, data)
     }
 }

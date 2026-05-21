@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "@lynx-js/react";
+import { useCallback, useEffect, useState, useInitData, useLynxGlobalEventListener } from "@lynx-js/react";
 import { PlayerControls } from "./components/PlayerControls";
 import "./App.css";
 
@@ -12,6 +12,7 @@ interface InitData {
 type PlayerState = "idle" | "loading" | "playing" | "paused" | "ended" | "error";
 
 export function App() {
+  const initData = useInitData<InitData>();
   const [playerState, setPlayerState] = useState<PlayerState>("idle");
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -20,67 +21,50 @@ export function App() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
 
+  useLynxGlobalEventListener("mpv:state-change", (event: any) => {
+    const state = event?.detail?.state ?? event?.state;
+    const error = event?.detail?.error ?? event?.error;
+    setPlayerState(state as PlayerState);
+    if (error) setErrorMessage(error);
+    if (state === "playing" || state === "paused") {
+      setShowControls(true);
+    }
+  });
+
+  useLynxGlobalEventListener("mpv:position-update", (event: any) => {
+    setPosition(event?.detail?.position ?? event?.position ?? 0);
+    setDuration(event?.detail?.duration ?? event?.duration ?? 0);
+  });
+
+  useLynxGlobalEventListener("backend:ready", (event: any) => {
+    console.info("Backend ready, port:", event?.detail?.port ?? event?.port);
+  });
+
   useEffect(() => {
-    const initDataStr = globalThis.__lynx_view_global?.lynxCoreInject?.customSection?.initData;
-    if (initDataStr) {
-      let initData: InitData;
-      if (typeof initDataStr === "string") {
-        initData = JSON.parse(initDataStr);
-      } else {
-        initData = initDataStr as unknown as InitData;
-      }
+    if (initData) {
       setFileName(initData.fileName || "Unknown");
       startPlayback(initData);
     }
+  }, [initData]);
 
-    const onStateChange = (event: { detail: { state: string; error?: string } }) => {
-      const state = event.detail.state;
-      const error = event.detail.error;
-      setPlayerState(state as PlayerState);
-      if (error) setErrorMessage(error);
-      if (state === "playing" || state === "paused") {
-        setShowControls(true);
-      }
-    };
-
-    const onPositionUpdate = (event: { detail: { position: number; duration: number } }) => {
-      setPosition(event.detail.position);
-      setDuration(event.detail.duration);
-    };
-
-    const onBackendReady = (event: { detail: { port: number } }) => {
-      console.info("Backend ready, port:", event.detail.port);
-    };
-
-    globalThis.addEventListener("mpv:state-change", onStateChange as EventListener);
-    globalThis.addEventListener("mpv:position-update", onPositionUpdate as EventListener);
-    globalThis.addEventListener("backend:ready", onBackendReady as EventListener);
-
-    return () => {
-      globalThis.removeEventListener("mpv:state-change", onStateChange as EventListener);
-      globalThis.removeEventListener("mpv:position-update", onPositionUpdate as EventListener);
-      globalThis.removeEventListener("backend:ready", onBackendReady as EventListener);
-    };
-  }, []);
-
-  const startPlayback = useCallback(async (initData: InitData) => {
+  const startPlayback = useCallback(async (data: InitData) => {
     setPlayerState("loading");
     try {
-      const status = await NativeModules.GoBackendModule.getBackendStatus({});
-      let streamUrl: string;
-      if (initData.isExternal || !status.running) {
-        await NativeModules.GoBackendModule.startBackend({});
-        streamUrl = await NativeModules.GoBackendModule.getStreamUrl({
-          path: initData.filePath,
-          isExternal: initData.isExternal,
-        });
-      } else {
-        streamUrl = await NativeModules.GoBackendModule.getStreamUrl({
-          path: initData.filePath,
-          isExternal: initData.isExternal,
+      const statusJson = await new Promise<string>((resolve) => {
+        NativeModules.GoBackendModule.getBackendStatus(resolve);
+      });
+      const status = JSON.parse(statusJson);
+      if (data.isExternal || !status.running) {
+        await new Promise<any>((resolve) => {
+          NativeModules.GoBackendModule.startBackend(resolve);
         });
       }
-      await NativeModules.MpvPlayerModule.play({ url: streamUrl });
+      const streamUrl = await new Promise<string>((resolve) => {
+        NativeModules.GoBackendModule.getStreamUrl(data.filePath, data.isExternal, resolve);
+      });
+      await new Promise<any>((resolve) => {
+        NativeModules.MpvPlayerModule.play(streamUrl, resolve);
+      });
     } catch (e: any) {
       setPlayerState("error");
       setErrorMessage(e?.message || String(e));
@@ -89,17 +73,17 @@ export function App() {
 
   const handlePlayPause = useCallback(() => {
     if (playerState === "playing") {
-      NativeModules.MpvPlayerModule.pause({});
+      NativeModules.MpvPlayerModule.pause(() => {});
       setPlayerState("paused");
     } else if (playerState === "paused") {
-      NativeModules.MpvPlayerModule.resume({});
+      NativeModules.MpvPlayerModule.resume(() => {});
       setPlayerState("playing");
     }
   }, [playerState]);
 
   const handleSeek = useCallback(
     (positionMs: number) => {
-      NativeModules.MpvPlayerModule.seekTo({ positionMs });
+      NativeModules.MpvPlayerModule.seekTo(positionMs, () => {});
       setPosition(positionMs);
     },
     []
@@ -108,7 +92,7 @@ export function App() {
   const handleFullscreen = useCallback(() => {
     const next = !isFullscreen;
     setIsFullscreen(next);
-    NativeModules.MpvPlayerModule.setFullscreen({ enabled: next });
+    NativeModules.MpvPlayerModule.setFullscreen(next, () => {});
   }, [isFullscreen]);
 
   const handleToggleControls = useCallback(() => {

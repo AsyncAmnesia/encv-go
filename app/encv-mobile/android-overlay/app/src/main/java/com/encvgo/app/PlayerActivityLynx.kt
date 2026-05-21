@@ -11,6 +11,7 @@ import android.widget.FrameLayout
 import androidx.appcompat.app.AppCompatActivity
 import com.lynx.tasm.LynxView
 import com.lynx.tasm.LynxViewBuilder
+import com.lynx.tasm.behavior.LynxContext
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -215,6 +216,8 @@ class PlayerActivityLynx : AppCompatActivity() {
         Log.d(TAG, "createLynxView: building LynxView with LynxViewBuilder")
         val viewBuilder = LynxViewBuilder()
         viewBuilder.setTemplateProvider(PlayerTemplateProvider(this))
+        viewBuilder.config.registerModule(MpvPlayerModule::class.java)
+        viewBuilder.config.registerModule(GoBackendModule::class.java)
 
         lynxView = viewBuilder.build(this)
         val lynxParams = ViewGroup.LayoutParams(
@@ -249,17 +252,19 @@ class PlayerActivityLynx : AppCompatActivity() {
     }
 
     private fun createNativeModules() {
-        Log.d(TAG, "createNativeModules: creating modules")
-        mpvPlayerModule = MpvPlayerModule(lynxView!!)
-        goBackendModule = GoBackendModule(lynxView!!)
+        Log.d(TAG, "createNativeModules: getting module instances from LynxView")
+        val lynxContext = lynxView?.lynxContext
+        if (lynxContext != null) {
+            mpvPlayerModule = lynxContext.getModule(MpvPlayerModule::class.java) as? MpvPlayerModule
+            goBackendModule = lynxContext.getModule(GoBackendModule::class.java) as? GoBackendModule
+        }
 
-        lynxView!!.registerModule("MpvPlayerModule", mpvPlayerModule!!)
-        lynxView!!.registerModule("GoBackendModule", goBackendModule!!)
-
-        mpvPlayerModule!!.attachToLayout(rootLayout!!)
+        if (mpvPlayerModule != null) {
+            mpvPlayerModule!!.attachToLayout(rootLayout!!)
+        }
         lynxView!!.post(positionUpdateRunnable)
 
-        Log.d(TAG, "createNativeModules: modules registered")
+        Log.d(TAG, "createNativeModules: modules ready, mpv=$mpvPlayerModule, backend=$goBackendModule")
     }
 
     private fun handleBackend() {

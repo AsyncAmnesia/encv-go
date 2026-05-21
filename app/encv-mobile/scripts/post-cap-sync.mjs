@@ -157,11 +157,34 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
   }
 
+  // 3b. Enable buildConfig generation (AGP 8.0+ requires this explicitly)
+  if (!c.includes('buildConfig = true') && !c.includes('buildConfig true')) {
+    if (c.includes('buildFeatures')) {
+      c = c.replace(
+        /buildFeatures\s*\{/,
+        "buildFeatures {\n        buildConfig = true",
+      )
+    } else {
+      c = c.replace(
+        /android\s*\{/,
+        "android {\n    buildFeatures {\n        buildConfig = true\n    }",
+      )
+    }
+  }
+
+  // 3c. Add appcompat dependency for AppCompatActivity
+  if (!c.includes('appcompat')) {
+    c = c.replace(
+      'dependencies {',
+      "dependencies {\n    implementation 'androidx.appcompat:appcompat:1.6.1'",
+    )
+  }
+
   // 4. Add Lynx SDK 3.7 + mpv-android-lib dependencies
   if (!c.includes('org.lynxsdk.lynx')) {
     c = c.replace(
       'dependencies {',
-      "dependencies {\n    implementation 'org.lynxsdk.lynx:lynx:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-jssdk:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-trace:3.7.0'\n    implementation 'org.lynxsdk.lynx:primjs:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-image:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-log:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-http:3.7.0'\n    implementation 'com.facebook.fresco:fresco:2.3.0'\n    implementation 'com.squareup.okhttp3:okhttp:4.9.0'\n    implementation 'io.github.abdallahmehiz:mpv-android-lib:0.1.12'",
+      "dependencies {\n    implementation 'org.lynxsdk.lynx:lynx:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-jssdk:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-trace:3.7.0'\n    implementation 'org.lynxsdk.lynx:primjs:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-image:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-log:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-http:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-devtool:3.7.0'\n    implementation 'com.facebook.fresco:fresco:2.3.0'\n    implementation 'com.facebook.fresco:animated-gif:2.3.0'\n    implementation 'com.facebook.fresco:animated-webp:2.3.0'\n    implementation 'com.facebook.fresco:webpsupport:2.3.0'\n    implementation 'com.facebook.fresco:animated-base:2.3.0'\n    implementation 'com.squareup.okhttp3:okhttp:4.9.0'\n    implementation 'io.github.abdallahmehiz:mpv-android-lib:0.1.12'",
     )
   }
 

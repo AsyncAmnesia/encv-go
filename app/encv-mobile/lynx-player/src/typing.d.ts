@@ -1,40 +1,19 @@
-declare namespace NativeModules {
-  const MpvPlayerModule: {
-    play(params: { url: string }): Promise<boolean>;
-    pause(params: {}): Promise<boolean>;
-    resume(params: {}): Promise<boolean>;
-    seekTo(params: { positionMs: number }): Promise<boolean>;
-    setFullscreen(params: { enabled: boolean }): Promise<boolean>;
-    setOrientation(params: { orientation: string }): Promise<boolean>;
-    getDuration(params: {}): Promise<number>;
-    getCurrentPosition(params: {}): Promise<number>;
-    isPlaying(params: {}): Promise<boolean>;
-    setProperty(params: { key: string; value: string }): Promise<boolean>;
+declare let NativeModules: {
+  MpvPlayerModule: {
+    play(url: string, callback: (result: any) => void): void;
+    pause(callback: (result: any) => void): void;
+    resume(callback: (result: any) => void): void;
+    seekTo(positionMs: number, callback: (result: any) => void): void;
+    setFullscreen(enabled: boolean, callback: (result: any) => void): void;
+    setOrientation(orientation: string, callback: (result: any) => void): void;
+    getDuration(callback: (durationMs: number) => void): void;
+    getCurrentPosition(callback: (positionMs: number) => void): void;
+    isPlaying(callback: (playing: boolean) => void): void;
+    setProperty(key: string, value: string, callback: (result: any) => void): void;
   };
-  const GoBackendModule: {
-    getBackendStatus(params: {}): Promise<{ running: boolean; port: number }>;
-    startBackend(params: {}): Promise<boolean>;
-    getStreamUrl(params: { path: string; isExternal: boolean }): Promise<string>;
+  GoBackendModule: {
+    getBackendStatus(callback: (resultJson: string) => void): void;
+    startBackend(callback: (result: any) => void): void;
+    getStreamUrl(path: string, isExternal: boolean, callback: (url: string) => void): void;
   };
-}
-
-interface LynxInitData {
-  filePath: string;
-  fileName: string;
-  mimeType: string;
-  isExternal: boolean;
-}
-
-declare global {
-  interface Window {
-    __lynx_view_global?: {
-      lynxCoreInject?: {
-        customSection?: {
-          initData?: LynxInitData;
-        };
-      };
-    };
-  }
-}
-
-export {};
+};

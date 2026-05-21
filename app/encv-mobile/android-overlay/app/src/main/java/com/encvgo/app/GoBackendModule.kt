@@ -6,20 +6,21 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.util.Log
-import com.lynx.tasm.LynxView
-import com.lynx.tasm.behavior.LynxModule
-import com.lynx.tasm.behavior.LynxModuleMethod
-import com.lynx.tasm.behavior.LynxPromise
+import com.lynx.jsbridge.LynxMethod
+import com.lynx.jsbridge.LynxModule
+import com.lynx.react.bridge.Callback
+import com.lynx.tasm.behavior.LynxContext
 import org.json.JSONObject
 
-class GoBackendModule(lynxView: LynxView) : LynxModule(lynxView) {
+class GoBackendModule(context: android.content.Context) : LynxModule(context) {
     companion object {
         private const val TAG = "GoBackendModule"
         const val EVENT_READY = "backend:ready"
         const val EVENT_ERROR = "backend:error"
     }
 
-    private val context = lynxView.context
+    private val lynxContext = context as LynxContext
+    private val appContext = context.applicationContext
     private var receiverRegistered = false
 
     private val backendReceiver = object : BroadcastReceiver() {
@@ -57,10 +58,10 @@ class GoBackendModule(lynxView: LynxView) : LynxModule(lynxView) {
             addAction(EncvGoService.BROADCAST_BACKEND_STATUS)
         }
         if (Build.VERSION.SDK_INT >= 33) {
-            context.registerReceiver(backendReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            appContext.registerReceiver(backendReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
             @Suppress("DEPRECATION")
-            context.registerReceiver(backendReceiver, filter)
+            appContext.registerReceiver(backendReceiver, filter)
         }
         receiverRegistered = true
         Log.d(TAG, "registerReceiver: registered")
@@ -70,15 +71,15 @@ class GoBackendModule(lynxView: LynxView) : LynxModule(lynxView) {
         if (!receiverRegistered) return
         Log.d(TAG, "unregisterReceiver: unregistering backend receiver")
         try {
-            context.unregisterReceiver(backendReceiver)
+            appContext.unregisterReceiver(backendReceiver)
         } catch (e: Exception) {
             Log.e(TAG, "unregisterReceiver failed", e)
         }
         receiverRegistered = false
     }
 
-    @LynxModuleMethod
-    fun getBackendStatus(params: Map<String, Any>, promise: LynxPromise) {
+    @LynxMethod
+    fun getBackendStatus(callback: Callback) {
         val isRunning = EncvGoService.isRunning
         val port = EncvGoService.lastKnownPort
         Log.d(TAG, "getBackendStatus: running=$isRunning, port=$port")
@@ -86,36 +87,31 @@ class GoBackendModule(lynxView: LynxView) : LynxModule(lynxView) {
             put("running", isRunning)
             put("port", port)
         }
-        promise.resolve(result)
+        callback.invoke(result.toString())
     }
 
-    @LynxModuleMethod
-    fun startBackend(params: Map<String, Any>, promise: LynxPromise) {
+    @LynxMethod
+    fun startBackend(callback: Callback) {
         Log.d(TAG, "startBackend: starting EncvGoService")
         try {
-            val serviceIntent = EncvGoService.createIntent(context, EncvGoService.ACTION_START, "player")
+            val serviceIntent = EncvGoService.createIntent(appContext, EncvGoService.ACTION_START, "player")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(serviceIntent)
+                appContext.startForegroundService(serviceIntent)
             } else {
-                context.startService(serviceIntent)
+                appContext.startService(serviceIntent)
             }
-            promise.resolve(true)
+            callback.invoke(true)
         } catch (e: Exception) {
             Log.e(TAG, "startBackend failed", e)
-            promise.reject(e.message)
+            callback.invoke(e.message)
         }
     }
 
-    @LynxModuleMethod
-    fun getStreamUrl(params: Map<String, Any>, promise: LynxPromise) {
-        val path = params["path"] as? String ?: run {
-            promise.reject("path is required")
-            return
-        }
-        val isExternal = params["isExternal"] as? Boolean ?: false
+    @LynxMethod
+    fun getStreamUrl(path: String, isExternal: Boolean, callback: Callback) {
         val port = EncvGoService.lastKnownPort
         if (port <= 0) {
-            promise.reject("backend not ready, port invalid")
+            callback.invoke("backend not ready, port invalid")
             return
         }
         val encodedPath = android.net.Uri.encode(path)
@@ -125,20 +121,20 @@ class GoBackendModule(lynxView: LynxView) : LynxModule(lynxView) {
             "http://127.0.0.1:$port/stream?path=$encodedPath"
         }
         Log.d(TAG, "getStreamUrl: path=$path, isExternal=$isExternal → $url")
-        promise.resolve(url)
+        callback.invoke(url)
     }
 
     private fun dispatchReady(port: Int) {
         val data = JSONObject().apply {
             put("port", port)
         }
-        lynxView.dispatchEvent(EVENT_READY, data)
+        lynxContext.dispatchEvent(EVENT_READY, data)
     }
 
     private fun dispatchError(message: String) {
         val data = JSONObject().apply {
             put("message", message)
         }
-        lynxView.dispatchEvent(EVENT_ERROR, data)
+        lynxContext.dispatchEvent(EVENT_ERROR, data)
     }
 }

@@ -6,6 +6,7 @@ import com.facebook.drawee.backends.pipeline.Fresco
 import com.facebook.imagepipeline.core.ImagePipelineConfig
 import com.facebook.imagepipeline.memory.PoolConfig
 import com.facebook.imagepipeline.memory.PoolFactory
+import com.lynx.service.devtool.LynxDevToolService
 import com.lynx.service.http.LynxHttpService
 import com.lynx.service.image.LynxImageService
 import com.lynx.service.log.LynxLogService
@@ -38,6 +39,7 @@ class EncvApplication : Application() {
                 LynxServiceCenter.inst().registerService(LynxImageService.getInstance())
                 LynxServiceCenter.inst().registerService(LynxLogService)
                 LynxServiceCenter.inst().registerService(LynxHttpService)
+                LynxServiceCenter.inst().registerService(LynxDevToolService)
                 Log.d(TAG, "initLynxService: services registered")
             } catch (e: Exception) {
                 Log.e(TAG, "initLynxService failed", e)
