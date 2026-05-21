@@ -9,13 +9,85 @@
 
 ---
 
-## 问题 3 & 4：先修 Bug（长按菜单 + 文件选择器）
+## 问题 4：文件选择器 — 用 Modal 替代 Tab 导航
 
-### 问题 3 根因：`@longpress` 在 `ion-item` 上不触发
+### 根因
 
-**原因**：`ion-item` 是 Ionic 的 Shadow DOM web component，原生 `longpress` 事件在 Shadow DOM 边界被阻断。移动端 Capacitor WebView 也不一定支持 `longpress` 事件。
+`handleBrowse()` 调用 `startPicking()` 后只设置了 `isPickerMode = true`，但用户仍在 Tasks 标签页，根本看不到 Files 页面。而导航到另一个 tab 不是正常的开发思路。
 
-**方案**：创建自定义 `v-longpress` 指令，基于 `touchstart`/`touchend` + `setTimeout` 实现 500ms 长按检测。
+### 方案：新建 FilePickerModal.vue 组件
+
+**核心思路**：用 Ionic Modal 在 Tasks 页面上层弹出文件浏览器，用户选择文件后 Modal 关闭，路径回填。不需要 `useFilePicker` composable，不需要跨 tab 导航。
+
+#### 新建 `src/components/FilePickerModal.vue`
+
+独立的文件浏览 Modal 组件，包含：
+- 文件列表浏览（复用 Files.vue 的核心逻辑：`listFiles`、导航、面包屑）
+- 顶部标题"选择文件" + 取消按钮
+- 点击文件 → `dismiss({ path, name })`
+- 点击文件夹 → 进入子目录
+- 底部提示"点击文件以选择"
+
+```vue
+<template>
+  <ion-page>
+    <ion-header>
+      <ion-toolbar>
+        <ion-title>{{ t('files.selectFile') }}</ion-title>
+        <ion-buttons slot="end">
+          <ion-button @click="cancel">{{ t('files.cancelSelect') }}</ion-button>
+        </ion-button>
+      </ion-toolbar>
+      <!-- 面包屑 -->
+    </ion-header>
+    <ion-content>
+      <!-- 文件列表，点击文件调用 modalController.dismiss -->
+    </ion-content>
+  </ion-page>
+</template>
+```
+
+#### Tasks.vue 变更
+
+1. 删除 `useFilePicker` 引入
+2. `handleBrowse()` 改为打开 FilePickerModal：
+
+```ts
+import { modalController } from '@ionic/vue'
+import FilePickerModal from '@/components/FilePickerModal.vue'
+
+async function handleBrowse() {
+  const modal = await modalController.create({
+    component: FilePickerModal,
+  })
+  await modal.present()
+  const { data, role } = await modal.onDidDismiss()
+  if (role === 'select' && data) {
+    newTaskPath.value = data.path
+  }
+}
+```
+
+#### Files.vue 变更
+
+1. 删除 `useFilePicker` 引用和所有 picker 相关逻辑（`isPickerMode`, `confirmSelection`, `cancelPicking`, `handleCancelPicker`, picker 提示条等）
+2. Files.vue 回归纯文件浏览功能
+
+#### 删除 `src/composables/useFilePicker.ts`
+
+不再需要跨组件状态管理，Modal 自带 dismiss 回调机制。
+
+---
+
+## 问题 3：长按菜单无效
+
+### 根因
+
+`@longpress` 在 `ion-item` 上不触发。`ion-item` 是 Ionic 的 Shadow DOM web component，原生 `longpress` 事件在 Shadow DOM 边界被阻断。移动端 Capacitor WebView 也不一定支持 `longpress` 事件。
+
+### 方案：创建自定义 `v-longpress` 指令
+
+基于 `touchstart`/`touchend` + `setTimeout` 实现 500ms 长按检测。
 
 #### 新建 `src/directives/longpress.ts`
 
@@ -72,108 +144,6 @@ export const vLongpress: Directive<HTMLElement, () => void> = {
 
 1. 引入 `vLongpress` 指令
 2. 将 `@longpress.prevent="handleLongPress(file)"` 替换为 `v-longpress="() => handleLongPress(file)"`
-3. 移除 `@longpress.prevent`
-
-### 问题 4 根因：`startPicking()` 没有导航到 Files 页面
-
-**原因**：`handleBrowse()` 调用 `startPicking()` 后只设置了 `isPickerMode = true`，但用户仍在 Tasks 标签页，根本看不到 Files 页面。
-
-**方案**：`startPicking()` 之后立即 `router.push('/tabs/files')` 导航到文件页。
-
-#### useFilePicker.ts 变更
-
-`startPicking()` 不再负责导航（composable 不应耦合路由），改为在 Tasks.vue 的 `handleBrowse()` 中手动导航：
-
-```ts
-async function handleBrowse() {
-  showNewTaskModal.value = false
-  startPicking()
-  router.push('/tabs/files')  // 导航到文件页
-  // 等待 Promise resolve（用户选择或取消后自动 resolve）
-  const result = await pickerPromise
-  if (result) {
-    newTaskPath.value = result.path
-  }
-  showNewTaskModal.value = true
-}
-```
-
-但 `startPicking()` 返回 Promise，`router.push` 后需要等用户操作。当前设计已经是这样，只需加 `router.push`。
-
-#### 具体变更
-
-**Tasks.vue** `handleBrowse()`：
-```ts
-async function handleBrowse() {
-  showNewTaskModal.value = false
-  startPicking()
-  await router.push('/tabs/files')
-  // startPicking 的 Promise 会在 confirmSelection 或 cancelPicking 时 resolve
-  // 但这里不能 await startPicking() 因为页面已切换
-  // 需要改用 watch 或回调方式
-}
-```
-
-**问题**：`startPicking()` 返回 Promise，但 `router.push` 后页面切换了，Tasks 组件可能被卸载，`await` 会丢失。
-
-**更好的方案**：改用事件驱动而非 Promise。`useFilePicker` 增加 `onPickingComplete` 回调注册：
-
-```ts
-// useFilePicker.ts
-let onComplete: ((result: { path: string; name: string } | null) => void) | null = null
-
-function startPicking(onDone: (result: { path: string; name: string } | null) => void) {
-  isPickerMode.value = true
-  selectedPath.value = ''
-  selectedName.value = ''
-  onComplete = onDone
-}
-
-function confirmSelection(path: string, name: string) {
-  selectedPath.value = path
-  selectedName.value = name
-  isPickerMode.value = false
-  onComplete?.({ path, name })
-  onComplete = null
-}
-
-function cancelPicking() {
-  isPickerMode.value = false
-  selectedPath.value = ''
-  selectedName.value = ''
-  onComplete?.(null)
-  onComplete = null
-}
-```
-
-**Tasks.vue**：
-```ts
-async function handleBrowse() {
-  showNewTaskModal.value = false
-  startPicking((result) => {
-    if (result) {
-      newTaskPath.value = result.path
-    }
-    showNewTaskModal.value = true
-  })
-  router.push('/tabs/files')
-}
-```
-
-**Files.vue** `handleCancelPicker()`：
-```ts
-function handleCancelPicker() {
-  cancelPicking()
-  router.push('/tabs/tasks')
-}
-```
-
-**Files.vue** picker 选择完成：
-```ts
-// 在 handleFileClick 的 picker 分支
-confirmSelection(file.path, file.name)
-router.push('/tabs/tasks')
-```
 
 ---
 
@@ -191,18 +161,16 @@ router.push('/tabs/tasks')
 #### Player.vue 变更
 
 1. **移除 `aspect-ratio: 16/9`**：让 ArtPlayer 的 `autoSize` 根据视频实际比例自动调整
-2. **容器改为自适应**：`.video-player` 使用 `width: 100%` + `max-height: 70vh`，不强制比例
+2. **容器改为自适应**：`.video-player` 使用 `width: 100%`，不强制比例
 3. **ArtPlayer 配置增强**：
    - 添加 `fullscreen: true` 启用全屏按钮
    - 添加 `miniProgressBar: true`
-   - 添加 `autoOrientation: true`（ArtPlayer 插件，自动根据视频方向旋转）
-   - 监听 `resize` 和 `video:loadedmetadata` 事件，根据视频实际宽高比调整容器
-4. **视频信息区域**：非全屏时在播放器下方显示文件名、大小、路径等信息
+   - 监听 `video:loadedmetadata` 事件，autoSize 自动调整
+4. **视频信息区域**：非全屏时在播放器下方显示文件名、路径等信息
 5. **ArtPlayer fullscreen 事件**：监听 `fullscreen` 和 `fullscreenExit` 事件
 
-#### 具体实现
+#### 模板变更
 
-**模板**：
 ```html
 <div v-else class="player-container">
   <div v-if="isVideo && !playerError" ref="artContainer" class="video-player"></div>
@@ -211,7 +179,6 @@ router.push('/tabs/tasks')
     <!-- 错误 UI 不变 -->
   </div>
 
-  <!-- 非全屏时的视频信息区域 -->
   <div v-if="isVideo && !playerError && !isFullscreen" class="video-info">
     <h3>{{ fileName }}</h3>
     <p v-if="filePath" class="video-path">{{ filePath }}</p>
@@ -223,17 +190,16 @@ router.push('/tabs/tasks')
 </div>
 ```
 
-**CSS**：
+#### CSS 变更
+
 ```css
 .video-player {
   width: 100%;
   background: #000;
-  /* 不设 aspect-ratio，让 ArtPlayer autoSize 控制 */
 }
 
 .video-info {
   padding: 16px;
-  border-bottom: 1px solid var(--ion-color-light);
 }
 
 .video-path {
@@ -244,46 +210,25 @@ router.push('/tabs/tasks')
 }
 ```
 
-**ArtPlayer 初始化**：
+#### ArtPlayer 初始化变更
+
 ```ts
-function initArtPlayer() {
-  if (!artContainer.value || !streamUrl.value) return
+art = new Artplayer({
+  container: artContainer.value,
+  url: streamUrl.value,
+  autoplay: true,
+  autoSize: true,
+  autoMini: true,
+  mutex: true,
+  playsInline: true,
+  theme: '#ffad00',
+  volume: 0.7,
+  fullscreen: true,
+  miniProgressBar: true,
+})
 
-  art = new Artplayer({
-    container: artContainer.value,
-    url: streamUrl.value,
-    autoplay: true,
-    autoSize: true,
-    autoMini: true,
-    mutex: true,
-    playsInline: true,
-    theme: '#ffad00',
-    volume: 0.7,
-    fullscreen: true,
-    miniProgressBar: true,
-  })
-
-  art.on('video:loadedmetadata', () => {
-    // autoSize 会自动调整容器尺寸
-    console.info('[Player] Video metadata loaded, autoSize applied')
-  })
-
-  art.on('fullscreen', () => {
-    isFullscreen.value = true
-  })
-
-  art.on('fullscreenExit', () => {
-    isFullscreen.value = false
-  })
-
-  art.on('error', () => {
-    console.error('[Player] ArtPlayer playback error')
-    playerError.value = true
-    handlePlayerError()
-  })
-
-  console.info('[Player] ArtPlayer initialized')
-}
+art.on('fullscreen', () => { isFullscreen.value = true })
+art.on('fullscreenExit', () => { isFullscreen.value = false })
 ```
 
 新增 `isFullscreen` ref。
@@ -292,93 +237,36 @@ function initArtPlayer() {
 
 ## 问题 1：文件搜索
 
-### 方案
-
-分为后端和前端两部分。
-
 ### 后端：新增搜索 API
 
 #### `internal/service/mobile_service.go` — 新增 `SearchFiles` 方法
 
-```go
-func (s *MobileService) SearchFiles(queryPath string, keyword string, recursive bool) ([]FileInfo, error) {
-    absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
-    if err != nil {
-        return nil, &ForbiddenError{Err: err}
-    }
+- 接收 `queryPath`、`keyword`、`recursive` 参数
+- `recursive = false`：仅当前目录，`os.ReadDir` + `strings.Contains` 过滤
+- `recursive = true`：`filepath.WalkDir` 递归遍历，跳过隐藏文件和无权限目录
+- 模糊匹配：`strings.Contains(strings.ToLower(name), keyword)` 大小写不敏感
+- 返回 `[]FileInfo`，包含完整路径
 
-    var results []FileInfo
-    keyword = strings.ToLower(keyword)
+#### `internal/server/mobile_api.go` — 新增 `handleSearchFilesAPI`
 
-    if recursive {
-        err = filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
-            if err != nil { return nil } // 跳过无权限目录
-            if strings.HasPrefix(d.Name(), ".") { 
-                if d.IsDir() { return fs.SkipDir }
-                return nil 
-            }
-            if strings.Contains(strings.ToLower(d.Name()), keyword) {
-                relPath, _ := filepath.Rel(absPath, path)
-                urlPath := queryPath
-                if queryPath == "/" { urlPath = "" }
-                urlPath += "/" + relPath
-                info, _ := d.Info()
-                results = append(results, FileInfo{
-                    Name: d.Name(),
-                    Path: urlPath,
-                    IsDirectory: d.IsDir(),
-                    Size: func() int64 { if info != nil { return info.Size() }; return 0 }(),
-                    Modified: func() string { if info != nil { return info.ModTime().Format(time.RFC3339) }; return "" }(),
-                })
-            }
-            return nil
-        })
-    } else {
-        // 仅当前目录
-        entries, err := os.ReadDir(absPath)
-        if err != nil { return nil, err }
-        for _, entry := range entries {
-            if strings.HasPrefix(entry.Name(), ".") { continue }
-            if strings.Contains(strings.ToLower(entry.Name()), keyword) {
-                // 同 ListFiles 逻辑
-            }
-        }
-    }
-    return results, nil
-}
-```
-
-#### `internal/server/mobile_api.go` — 新增搜索 handler
-
-```go
-func (s *Server) handleSearchFilesAPI(w http.ResponseWriter, r *http.Request) {
-    queryPath := r.URL.Query().Get("path")
-    keyword := r.URL.Query().Get("keyword")
-    recursive := r.URL.Query().Get("recursive") == "true"
-
-    files, err := s.mobileSvc.SearchFiles(queryPath, keyword, recursive)
-    // ...
-}
-```
+- 解析 query 参数：`path`、`keyword`、`recursive`
+- 调用 `mobileSvc.SearchFiles()`
+- 返回 `{ files: []FileInfo }`
 
 #### `internal/server/server.go` — 注册路由
 
-添加 `/api/files/search` 路由。
+添加 `/api/files/search` GET 路由。
 
 ### 前端
 
-#### `src/api/encv.ts` — 新增搜索 API
+#### `src/api/encv.ts` — 新增 `searchFiles` 函数
 
 ```ts
 export async function searchFiles(path: string, keyword: string, recursive = false): Promise<FileItem[]> {
   const baseUrl = getApiBaseUrl()
-  const params = new URLSearchParams({
-    path,
-    keyword,
-    recursive: String(recursive),
-  })
+  const params = new URLSearchParams({ path, keyword, recursive: String(recursive) })
   const response = await fetch(`${baseUrl}/api/files/search?${params}`)
-  if (!response.ok) { throw new Error(`HTTP error! status: ${response.status}`) }
+  if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`)
   const data = await response.json()
   return data.files || []
 }
@@ -386,25 +274,160 @@ export async function searchFiles(path: string, keyword: string, recursive = fal
 
 #### Files.vue — 搜索 UI
 
-1. 在 header 区域添加 `ion-searchbar` 组件
-2. 搜索状态管理：
+1. 在 header 下方添加 `ion-searchbar`：
+   ```html
+   <ion-toolbar>
+     <ion-searchbar
+       v-model="searchQuery"
+       :placeholder="t('files.searchPlaceholder')"
+       @ionInput="handleSearchInput"
+       @ionClear="handleSearchClear"
+     ></ion-searchbar>
+   </ion-toolbar>
+   ```
+
+2. 搜索状态：
    - `searchQuery` ref：搜索关键词
-   - `searchRecursive` ref：是否递归搜索
-   - `searchResults` ref：搜索结果
-   - `isSearching` ref：搜索中状态
+   - `searchRecursive` ref：是否递归（默认 false）
+   - `searchResults` ref：搜索结果（null 表示未搜索，显示原始列表）
+   - `isSearching` ref：搜索中
+
 3. 搜索逻辑：
-   - 输入防抖 300ms
-   - 空关键词时恢复原始文件列表
-   - 有关键词时调用 `searchFiles` API
-4. 搜索结果列表复用现有 `ion-list`，显示匹配文件（包含完整路径）
-5. 递归搜索开关：搜索框右侧小图标或 toggle
+   - 输入防抖 300ms（`setTimeout` + `clearTimeout`）
+   - 空关键词 → `searchResults = null`，恢复原始文件列表
+   - 有关键词 → 调用 `searchFiles(currentPath, keyword, recursive)`
+   - 搜索结果替代 `sortedFiles` 显示
 
-#### 搜索缓存策略
+4. 递归搜索开关：搜索框旁的 toggle
 
-- 前端缓存：使用 `Map<string, { timestamp: number, results: FileItem[] }>` 缓存搜索结果
-- 缓存 key：`${path}:${keyword}:${recursive}`
-- 缓存有效期：30 秒
-- 目录变更时（`file:change` 事件）清除相关缓存
+5. 搜索结果列表：
+   - 复用现有 `ion-list` 模板
+   - 搜索模式下显示完整路径（而非仅文件名）
+   - 搜索模式下不显示面包屑
+
+6. 搜索缓存：
+   - `Map<string, { timestamp: number, results: FileItem[] }>`
+   - 缓存 key：`${path}:${keyword}:${recursive}`
+   - 有效期 30 秒
+   - `file:change` 事件时清除缓存
+
+---
+
+## 问题 5：设置新增缓存设置组 + 二级详情页
+
+### 需求
+
+在设置页新增"缓存与索引"设置组，点击进入二级页面显示全局索引详情，支持非阻塞更新和清空。
+
+### 后端：缓存/索引管理 API
+
+#### `internal/service/mobile_service.go` — 新增缓存管理方法
+
+```go
+type IndexStats struct {
+    TotalFiles    int   `json:"totalFiles"`
+    TotalDirs     int   `json:"totalDirs"`
+    TotalSize     int64 `json:"totalSize"`
+    IndexedAt     string `json:"indexedAt"`
+    IsIndexing    bool  `json:"isIndexing"`
+    LastBuildMs   int64 `json:"lastBuildMs"`
+}
+
+func (s *MobileService) GetIndexStats() *IndexStats { ... }
+func (s *MobileService) RebuildIndex() error { ... }  // 非阻塞，后台 goroutine
+func (s *MobileService) ClearIndex() error { ... }
+```
+
+**索引实现**：`filepath.WalkDir(s.servingDir)` 递归遍历，构建文件名→路径的搜索索引。索引数据存储在内存中（`sync.Map` 或 `map` + `sync.RWMutex`）。
+
+- `RebuildIndex()`：启动 goroutine 后台构建，`IsIndexing` 标记进行中状态
+- `ClearIndex()`：清空内存索引
+- `GetIndexStats()`：返回索引统计信息
+- `SearchFiles()` 优化：有索引时直接查索引，无索引时 fallback 到 `filepath.WalkDir`
+
+#### `internal/server/mobile_api.go` — 新增缓存管理 handler
+
+- `GET /api/index/stats` → 返回 `IndexStats`
+- `POST /api/index/rebuild` → 触发非阻塞重建
+- `POST /api/index/clear` → 清空索引
+
+#### `internal/server/server.go` — 注册路由
+
+```go
+mux.HandleFunc("/api/index/stats", s.handleIndexStats)
+mux.HandleFunc("/api/index/rebuild", s.handleIndexRebuild)
+mux.HandleFunc("/api/index/clear", s.handleIndexClear)
+```
+
+### 前端
+
+#### `src/api/encv.ts` — 新增索引 API
+
+```ts
+export interface IndexStats {
+  totalFiles: number
+  totalDirs: number
+  totalSize: number
+  indexedAt: string
+  isIndexing: boolean
+  lastBuildMs: number
+}
+
+export async function getIndexStats(): Promise<IndexStats> { ... }
+export async function rebuildIndex(): Promise<void> { ... }
+export async function clearIndex(): Promise<void> { ... }
+```
+
+#### `src/views/CacheDetail.vue` — 新建二级设置页
+
+参照 `ServerDetail.vue` 的模式，使用 `ion-back-button` 返回。
+
+**内容**：
+1. **索引状态**：
+   - 总文件数 / 总目录数
+   - 索引数据大小
+   - 最后索引时间
+   - 索引状态（空闲 / 索引中）
+   - 上次构建耗时
+
+2. **操作按钮**：
+   - "更新索引"按钮：调用 `rebuildIndex()`，非阻塞，按钮显示 spinner + "索引中..."
+   - "清空索引"按钮：确认弹窗后调用 `clearIndex()`
+
+3. **搜索缓存**（前端缓存）：
+   - 缓存条目数
+   - "清空搜索缓存"按钮
+
+4. **轮询更新**：索引中时每 2 秒轮询 `getIndexStats()` 更新状态
+
+#### `src/views/Settings.vue` — 新增缓存设置组
+
+在"连接"设置组之后添加：
+
+```html
+<ion-list>
+  <ion-list-header>
+    <ion-label>{{ t('settings.cache') }}</ion-label>
+  </ion-list-header>
+  <ion-item button @click="goCache">
+    <ion-icon :icon="databaseIcon" slot="start"></ion-icon>
+    <ion-label>
+      <h3>{{ t('settings.cacheAndIndex') }}</h3>
+      <p>{{ indexStats?.isIndexing ? t('settings.indexing') : t('settings.indexReady') }}</p>
+    </ion-label>
+    <ion-icon :icon="chevronForward" slot="end"></ion-icon>
+  </ion-item>
+</ion-list>
+```
+
+#### `src/router/index.ts` — 新增路由
+
+```ts
+{
+  path: 'settings/cache',
+  component: () => import('@/views/CacheDetail.vue'),
+},
+```
 
 ---
 
@@ -412,22 +435,27 @@ export async function searchFiles(path: string, keyword: string, recursive = fal
 
 | 文件 | 操作 | 变更内容 |
 |------|------|---------|
+| `src/components/FilePickerModal.vue` | 新建 | Modal 文件选择器组件 |
 | `src/directives/longpress.ts` | 新建 | 自定义 v-longpress 指令 |
-| `src/composables/useFilePicker.ts` | 修改 | 改用回调模式替代 Promise |
-| `src/views/Files.vue` | 修改 | 搜索框 + v-longpress 替换 @longpress + picker 导航修复 |
-| `src/views/Tasks.vue` | 修改 | handleBrowse 导航到 Files + 回调模式 |
-| `src/views/Player.vue` | 修改 | 移除 aspect-ratio + 全屏支持 + 视频信息区域 |
-| `src/api/encv.ts` | 修改 | 新增 searchFiles API |
-| `src/composables/useI18n.ts` | 修改 | 添加搜索和播放器相关 i18n |
-| `internal/service/mobile_service.go` | 修改 | 新增 SearchFiles 方法 |
-| `internal/server/mobile_api.go` | 修改 | 新增搜索 handler |
-| `internal/server/server.go` | 修改 | 注册搜索路由 |
+| `src/composables/useFilePicker.ts` | 删除 | 不再需要 |
+| `src/views/Files.vue` | 修改 | 搜索框 + v-longpress + 移除 picker 逻辑 |
+| `src/views/Tasks.vue` | 修改 | 用 Modal 替代 useFilePicker |
+| `src/views/Player.vue` | 修改 | 移除 aspect-ratio + 全屏 + 视频信息 |
+| `src/views/CacheDetail.vue` | 新建 | 缓存与索引二级设置页 |
+| `src/views/Settings.vue` | 修改 | 新增缓存设置组入口 |
+| `src/router/index.ts` | 修改 | 新增 settings/cache 路由 |
+| `src/api/encv.ts` | 修改 | 新增 searchFiles + 索引管理 API |
+| `src/composables/useI18n.ts` | 修改 | 添加搜索、播放器、缓存相关 i18n |
+| `internal/service/mobile_service.go` | 修改 | 新增 SearchFiles + 索引管理方法 |
+| `internal/server/mobile_api.go` | 修改 | 新增搜索 + 索引管理 handler |
+| `internal/server/server.go` | 修改 | 注册搜索 + 索引管理路由 |
 
 ## 实施顺序
 
-1. 修复 Bug：长按菜单（v-longpress 指令）+ 文件选择器（回调模式 + 导航）
+1. 修复 Bug：文件选择器（FilePickerModal）+ 长按菜单（v-longpress）
 2. 修复播放器：竖屏视频 + 全屏 + 视频信息
-3. 后端搜索 API
+3. 后端：搜索 API + 索引管理 API
 4. 前端搜索 UI
-5. i18n 文案
-6. 构建验证
+5. 缓存设置二级页（CacheDetail.vue + Settings.vue 入口 + 路由）
+6. i18n 文案
+7. 构建验证
