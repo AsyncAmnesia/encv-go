@@ -79,10 +79,11 @@ class PlayerActivity : BridgeActivity() {
     private fun navigateToStandalonePlayer() {
         try {
             val currentUrl = bridge?.webView?.url ?: ""
-            val baseUrl = when {
-                currentUrl.startsWith("http") -> Uri.parse(currentUrl).buildUpon()
+            val baseUrl = if (currentUrl.startsWith("http")) {
+                Uri.parse(currentUrl).buildUpon()
                     .path(null).fragment(null).clearQuery().build().toString()
-                else -> getAppUrl()
+            } else {
+                "https://localhost"
             }
             val targetUrl = "$baseUrl#/standalone/player"
             Log.i(TAG, "Loading player URL: $targetUrl")
