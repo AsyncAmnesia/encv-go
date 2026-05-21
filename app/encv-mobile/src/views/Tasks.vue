@@ -118,17 +118,8 @@
                 <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
               </ion-button>
             </ion-item>
-            <ion-item>
-              <ion-input
-                v-model="newTaskPassword"
-                :label="t('tasks.password')"
-                label-placement="stacked"
-                type="password"
-                :placeholder="t('tasks.passwordPlaceholder')"
-              ></ion-input>
-            </ion-item>
           </ion-list>
-          <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath || !newTaskPassword">
+          <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath">
             <ion-icon :icon="lockClosed" slot="start"></ion-icon>
             {{ t('tasks.createTask') }}
           </ion-button>
@@ -166,7 +157,6 @@ import {
   IonSelectOption,
   IonInput,
   IonSpinner,
-  toastController,
   modalController,
 } from '@ionic/vue'
 import {
@@ -187,6 +177,7 @@ import {
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
+import { showToast } from '@/composables/useToast'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const { t } = useI18n()
@@ -196,7 +187,6 @@ const loading = ref(false)
 const showNewTaskModal = ref(false)
 const newTaskType = ref<TaskType>('encrypt')
 const newTaskPath = ref('')
-const newTaskPassword = ref('')
 
 function getTaskIcon(task: EncvTask) {
   switch (task.status) {
@@ -267,7 +257,6 @@ async function handleRefresh(event: CustomEvent) {
 function showNewTaskSheet() {
   newTaskType.value = 'encrypt'
   newTaskPath.value = ''
-  newTaskPassword.value = ''
   showNewTaskModal.value = true
 }
 
@@ -285,24 +274,14 @@ async function handleBrowse() {
 }
 
 async function handleCreateTask() {
-  if (!newTaskPath.value || !newTaskPassword.value) return
+  if (!newTaskPath.value) return
   try {
-    await createTask(newTaskType.value, newTaskPath.value, newTaskPassword.value)
+    await createTask(newTaskType.value, newTaskPath.value)
     showNewTaskModal.value = false
-    const toast = await toastController.create({
-      message: t('tasks.taskCreated'),
-      duration: 1500,
-      color: 'success',
-    })
-    await toast.present()
+    showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
     await loadTasks()
   } catch {
-    const toast = await toastController.create({
-      message: t('tasks.taskCreateFailed'),
-      duration: 2000,
-      color: 'danger',
-    })
-    await toast.present()
+    showToast({ message: t('tasks.taskCreateFailed'), duration: 2000, color: 'danger' })
   }
 }
 
@@ -311,12 +290,7 @@ async function handleCancelTask(id: string) {
     await cancelTask(id)
     await loadTasks()
   } catch {
-    const toast = await toastController.create({
-      message: t('tasks.taskCancelFailed'),
-      duration: 2000,
-      color: 'danger',
-    })
-    await toast.present()
+    showToast({ message: t('tasks.taskCancelFailed'), duration: 2000, color: 'danger' })
   }
 }
 
@@ -325,12 +299,7 @@ async function handleRetryTask(id: string) {
     await retryTask(id)
     await loadTasks()
   } catch {
-    const toast = await toastController.create({
-      message: t('tasks.taskRetryFailed'),
-      duration: 2000,
-      color: 'danger',
-    })
-    await toast.present()
+    showToast({ message: t('tasks.taskRetryFailed'), duration: 2000, color: 'danger' })
   }
 }
 

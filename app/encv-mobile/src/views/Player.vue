@@ -71,7 +71,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import Artplayer from 'artplayer'
 import {
@@ -83,11 +83,11 @@ import {
   IonIcon,
   IonButton,
   IonChip,
-  toastController,
 } from '@ionic/vue'
 import { playCircle, folder, musicalNotes, alertCircle, refresh, resize, time } from 'ionicons/icons'
 import { getFileStreamUrl, getFileCategory } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
+import { showToast } from '@/composables/useToast'
 
 const route = useRoute()
 const { t } = useI18n()
@@ -126,16 +126,15 @@ function formatDuration(seconds: number): string {
 }
 
 async function handlePlayerError() {
-  const toast = await toastController.create({
-    message: t('player.playFailed', { name: fileName.value }),
-    duration: 3000,
-    color: 'danger',
-  })
-  await toast.present()
+  showToast({ message: t('player.playFailed', { name: fileName.value }), duration: 3000, color: 'danger' })
 }
 
 function initArtPlayer() {
   if (!artContainer.value || !streamUrl.value) return
+
+  const containerWidth = artContainer.value.clientWidth || window.innerWidth
+  const containerHeight = Math.round(containerWidth * 9 / 16)
+  artContainer.value.style.height = `${containerHeight}px`
 
   art = new Artplayer({
     container: artContainer.value,
@@ -199,10 +198,11 @@ function retryPlay() {
   initArtPlayer()
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (isVideo.value) {
     playerError.value = false
     mediaInfo.value = { duration: '', resolution: '' }
+    await nextTick()
     initArtPlayer()
   }
 })
@@ -245,7 +245,6 @@ watch(streamUrl, (newUrl) => {
 
 .video-player {
   width: 100%;
-  height: 30vh;
   background: #000;
 }
 

@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/utils"
 )
 
@@ -52,13 +53,15 @@ type MobileService struct {
 	taskManager *TaskManager
 	wsHub       *WSHub
 	fileIndex   *fileIndex
+	cfg         *config.Config
 }
 
-func NewMobileService(servingDir string) *MobileService {
+func NewMobileService(servingDir string, cfg *config.Config) *MobileService {
 	return &MobileService{
 		servingDir:  servingDir,
-		taskManager: NewTaskManager(servingDir),
+		taskManager: NewTaskManager(servingDir, cfg),
 		wsHub:       NewWSHub(),
+		cfg:         cfg,
 	}
 }
 
@@ -227,6 +230,7 @@ func (s *MobileService) GetWSHub() *WSHub {
 
 func (s *MobileService) SetServingDir(dir string) {
 	s.servingDir = dir
+	s.taskManager.servingDir = dir
 }
 
 func (s *MobileService) GetServingDir() string {
@@ -350,6 +354,7 @@ func (s *MobileService) SearchFiles(queryPath string, keyword string, recursive 
 
 	keyword = strings.ToLower(keyword)
 	var results []FileInfo
+	const maxResults = 200
 
 	if recursive && s.fileIndex != nil {
 		s.fileIndex.mu.RLock()
@@ -359,6 +364,9 @@ func (s *MobileService) SearchFiles(queryPath string, keyword string, recursive 
 		if hasIndex {
 			s.fileIndex.mu.RLock()
 			for _, entry := range s.fileIndex.entries {
+				if len(results) >= maxResults {
+					break
+				}
 				if !strings.Contains(strings.ToLower(entry.Name), keyword) {
 					continue
 				}
@@ -386,6 +394,9 @@ func (s *MobileService) SearchFiles(queryPath string, keyword string, recursive 
 		err = filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil
+			}
+			if len(results) >= maxResults {
+				return fs.SkipAll
 			}
 			if strings.HasPrefix(d.Name(), ".") {
 				if d.IsDir() {

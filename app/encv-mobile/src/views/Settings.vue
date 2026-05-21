@@ -216,7 +216,7 @@ import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonContent, IonList, IonListHeader, IonItem, IonItemDivider,
   IonIcon, IonLabel, IonToggle, IonInput, IonBadge, IonSpinner,
-  IonSelect, IonSelectOption, toastController,
+  IonSelect, IonSelectOption,
 } from '@ionic/vue'
 import {
   moon, globeOutline, server as serverIcon, save as saveIcon,
@@ -232,6 +232,7 @@ import { useTheme } from '@/composables/useTheme'
 import { useServerStatus } from '@/composables/useServerStatus'
 import { useConfig } from '@/composables/useConfig'
 import { useI18n } from '@/composables/useI18n'
+import { showToast } from '@/composables/useToast'
 import { getIndexStats } from '@/api/encv'
 import type { IndexStats } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
@@ -340,20 +341,18 @@ function handleLocaleChange(event: CustomEvent) {
 async function handleSaveConfig() {
   try {
     await saveConfig()
-    const toast = await toastController.create({
+    showToast({
       message: t('settings.configSaved'),
       duration: 1500,
       color: 'success',
     })
-    await toast.present()
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)
-    const toast = await toastController.create({
+    showToast({
       message: t('settings.configSaveFailed') + ': ' + detail,
       duration: 3000,
       color: 'danger',
     })
-    await toast.present()
   }
 }
 

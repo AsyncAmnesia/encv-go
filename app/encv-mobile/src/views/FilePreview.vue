@@ -68,7 +68,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons,
-  IonButton, IonIcon, IonContent, IonSpinner, toastController,
+  IonButton, IonIcon, IonContent, IonSpinner,
 } from '@ionic/vue'
 import {
   arrowBack, copyOutline, documentTextOutline,
@@ -77,6 +77,7 @@ import {
 import { readFileContent, getFileStreamUrl, getFileCategory, getFileExtension, formatFileSize } from '@/api/encv'
 import type { FileContentResponse } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
+import { showToast } from '@/composables/useToast'
 
 type PreviewType = 'image' | 'pdf' | 'text' | 'unsupported'
 
@@ -144,13 +145,12 @@ async function loadFile() {
 async function copyContent() {
   try {
     await navigator.clipboard.writeText(content.value)
-    const toast = await toastController.create({
+    showToast({
       message: t('filePreview.copied'),
       duration: 1500,
       position: 'middle',
       color: 'success',
     })
-    await toast.present()
   } catch {
     const textArea = document.createElement('textarea')
     textArea.value = content.value
@@ -158,13 +158,12 @@ async function copyContent() {
     textArea.select()
     document.execCommand('copy')
     document.body.removeChild(textArea)
-    const toast = await toastController.create({
+    showToast({
       message: t('filePreview.copied'),
       duration: 1500,
       position: 'middle',
       color: 'success',
     })
-    await toast.present()
   }
 }
 

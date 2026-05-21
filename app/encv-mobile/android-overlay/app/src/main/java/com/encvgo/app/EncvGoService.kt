@@ -379,13 +379,87 @@ class EncvGoService : Service() {
     private fun ensureConfigExists() {
         val dest = File(filesDir, "config.user.json")
         if (dest.exists()) {
+            mergeConfigDefaults(dest)
             return
         }
-        assets.open("config.mobile.json").use { input ->
-            FileOutputStream(dest).use { output ->
-                input.copyTo(output)
+        copyDefaultConfig(dest)
+    }
+
+    private fun copyDefaultConfig(dest: File) {
+        try {
+            assets.open("config.mobile.json").use { input ->
+                FileOutputStream(dest).use { output ->
+                    input.copyTo(output)
+                }
             }
+            Log.i(TAG, "Default config copied to ${dest.absolutePath}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to copy default config", e)
+            writeFallbackConfig(dest)
         }
+    }
+
+    private fun mergeConfigDefaults(dest: File) {
+        try {
+            val existing = JSONObject(dest.readText())
+            var changed = false
+
+            val defaults = try {
+                JSONObject(assets.open("config.mobile.json").bufferedReader().use { it.readText() })
+            } catch (e: Exception) {
+                Log.w(TAG, "Cannot read default config for merge", e)
+                return
+            }
+
+            val serverObj = existing.optJSONObject("server")
+            val defaultServer = defaults.optJSONObject("server")
+            if (serverObj != null && defaultServer != null) {
+                if (!serverObj.has("port")) {
+                    serverObj.put("port", defaultServer.optInt("port", DEFAULT_PORT))
+                    changed = true
+                }
+                if (!serverObj.has("dir")) {
+                    serverObj.put("dir", defaultServer.optString("dir", "/storage/emulated/0"))
+                    changed = true
+                }
+            }
+
+            if (!existing.has("password")) {
+                existing.put("password", defaults.optString("password", ""))
+                changed = true
+            }
+            if (!existing.has("output_path")) {
+                existing.put("output_path", defaults.optString("output_path", "/storage/emulated/0/encv-output"))
+                changed = true
+            }
+            if (!existing.has("plugin_settings")) {
+                existing.put("plugin_settings", defaults.optJSONObject("plugin_settings") ?: JSONObject())
+                changed = true
+            }
+            if (!existing.has("log")) {
+                existing.put("log", defaults.optJSONObject("log") ?: JSONObject().put("level", "info").put("console", true))
+                changed = true
+            }
+
+            if (changed) {
+                dest.writeText(existing.toString(2))
+                Log.i(TAG, "Config merged with new defaults")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to merge config defaults", e)
+        }
+    }
+
+    private fun writeFallbackConfig(dest: File) {
+        val fallback = JSONObject().apply {
+            put("password", "")
+            put("output_path", "/storage/emulated/0/encv-output")
+            put("server", JSONObject().put("port", DEFAULT_PORT).put("dir", "/storage/emulated/0"))
+            put("plugin_settings", JSONObject())
+            put("log", JSONObject().put("level", "info").put("console", true))
+        }
+        dest.writeText(fallback.toString(2))
+        Log.i(TAG, "Fallback config written to ${dest.absolutePath}")
     }
 
     private fun findExecutableBinary(): File? {

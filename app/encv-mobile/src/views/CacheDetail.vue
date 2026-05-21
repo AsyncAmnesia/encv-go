@@ -127,7 +127,6 @@ import {
   IonLabel,
   IonSpinner,
   alertController,
-  toastController,
 } from '@ionic/vue'
 import {
   documentText,
@@ -148,6 +147,7 @@ import {
 } from '@/api/encv'
 import type { IndexStats } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
+import { showToast } from '@/composables/useToast'
 
 const { t } = useI18n()
 const stats = ref<IndexStats | null>(null)
@@ -179,19 +179,9 @@ async function handleRebuild() {
   try {
     await rebuildIndex()
     await loadStats()
-    const toast = await toastController.create({
-      message: t('settings.rebuildStarted'),
-      duration: 1500,
-      color: 'success',
-    })
-    await toast.present()
+    showToast({ message: t('settings.rebuildStarted'), duration: 1500, color: 'success' })
   } catch {
-    const toast = await toastController.create({
-      message: t('settings.rebuildFailed'),
-      duration: 2000,
-      color: 'danger',
-    })
-    await toast.present()
+    showToast({ message: t('settings.rebuildFailed'), duration: 2000, color: 'danger' })
   }
 }
 
@@ -209,12 +199,7 @@ async function handleClearIndex() {
             await clearIndex()
             await loadStats()
           } catch {
-            const toast = await toastController.create({
-              message: t('settings.clearFailed'),
-              duration: 2000,
-              color: 'danger',
-            })
-            await toast.present()
+            showToast({ message: t('settings.clearFailed'), duration: 2000, color: 'danger' })
           }
         },
       },

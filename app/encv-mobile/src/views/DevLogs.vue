@@ -104,13 +104,14 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
   IonSegment, IonSegmentButton, IonSearchbar, IonButton,
-  IonIcon, IonBadge, IonToggle, IonFooter, alertController, toastController,
+  IonIcon, IonBadge, IonToggle, IonFooter, alertController,
 } from '@ionic/vue'
 import { trashOutline, copyOutline } from 'ionicons/icons'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useFrontendLogs, type LogEntry } from '@/composables/useFrontendLogs'
+import { showToast } from '@/composables/useToast'
 import { checkServerStatus } from '@/api/encv'
 
 const { t } = useI18n()
@@ -206,19 +207,17 @@ async function handleCopy() {
   const text = logs.map((l) => `[${l.timestamp}] ${l.level.toUpperCase()} ${l.message}`).join('\n')
   try {
     await navigator.clipboard.writeText(text)
-    const toast = await toastController.create({
+    showToast({
       message: t('devlogs.copied', { count: String(logs.length) }),
       duration: 1500,
       color: 'success',
     })
-    await toast.present()
   } catch {
-    const toast = await toastController.create({
+    showToast({
       message: t('devlogs.copyFailed'),
       duration: 1500,
       color: 'danger',
     })
-    await toast.present()
   }
 }
 

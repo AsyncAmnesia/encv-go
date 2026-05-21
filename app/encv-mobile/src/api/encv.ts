@@ -165,13 +165,13 @@ export async function getTasks(): Promise<EncvTask[]> {
   return data.tasks || []
 }
 
-export async function createTask(type: TaskType, sourcePath: string, password = ''): Promise<EncvTask> {
+export async function createTask(type: TaskType, sourcePath: string): Promise<EncvTask> {
   console.info('[API] createTask:', type, sourcePath)
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/tasks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type, sourcePath, password }),
+    body: JSON.stringify({ type, sourcePath }),
   })
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`)

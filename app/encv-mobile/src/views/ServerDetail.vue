@@ -90,7 +90,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonIcon, IonLabel,
-  IonInput, IonBadge, IonButton, alertController, toastController, IonSpinner,
+  IonInput, IonBadge, IonButton, alertController, IonSpinner,
 } from '@ionic/vue'
 import {
   server as serverIcon, refresh as refreshIcon,
@@ -99,6 +99,7 @@ import {
 } from 'ionicons/icons'
 import { useServerStatus } from '@/composables/useServerStatus'
 import { useI18n } from '@/composables/useI18n'
+import { showToast } from '@/composables/useToast'
 import { setApiBaseUrl, getServerUrl } from '@/api/encv'
 import { isNative, requestNotificationPermission, requestStoragePermission, checkPermissions } from '@/plugins/GoProcess'
 
@@ -154,28 +155,25 @@ function saveServerUrl() {
 
 async function checkServer() {
   await checkStatus()
-  const toast = await toastController.create({
+  showToast({
     message: serverOnline.value ? t('settings.serverOnline') : t('settings.serverOffline'),
     duration: 1500,
     color: serverOnline.value ? 'success' : 'danger',
   })
-  await toast.present()
 }
 
 async function handleRestart() {
-  const toast = await toastController.create({
+  const toast = await showToast({
     message: t('settings.restarting'),
     duration: 30000,
   })
-  await toast.present()
   const success = await restartBackend()
   await toast.dismiss()
-  const result = await toastController.create({
+  showToast({
     message: success ? t('settings.restartSuccess') : t('settings.restartFailed'),
     duration: 2000,
     color: success ? 'success' : 'danger',
   })
-  await result.present()
 }
 
 async function handleStop() {
@@ -188,12 +186,11 @@ async function handleStop() {
         role: 'destructive',
         handler: async () => {
           const success = await stopBackend()
-          const toast = await toastController.create({
+          showToast({
             message: success ? t('settings.stopped') : t('settings.stopFailed'),
             duration: 2000,
             color: success ? 'success' : 'danger',
           })
-          await toast.present()
         },
       },
     ],

@@ -50,7 +50,7 @@ func NewServer(ctx context.Context, configPath string) *Server {
 	containerManager := service.NewContainerManager()
 	readerService := service.NewReaderService(containerManager)
 	contentHandler := handler.NewContentHandler()
-	mobileSvc := mobileservice.NewMobileService("")
+	mobileSvc := mobileservice.NewMobileService("", cfg)
 	return &Server{
 		cfg:            cfg,
 		configPath:     configPath,

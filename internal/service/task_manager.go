@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/google/uuid"
 )
@@ -19,7 +20,6 @@ type MobileTask struct {
 	ID         string    `json:"id"`
 	Type       string    `json:"type"`
 	SourcePath string    `json:"sourcePath"`
-	Password   string    `json:"password,omitempty"`
 	Status     string    `json:"status"`
 	Progress   int       `json:"progress"`
 	Error      string    `json:"error,omitempty"`
@@ -30,14 +30,16 @@ type TaskManager struct {
 	tasks      map[string]*MobileTask
 	mu         sync.RWMutex
 	servingDir string
+	cfg        *config.Config
 	stopCh     chan struct{}
 	wg         sync.WaitGroup
 }
 
-func NewTaskManager(servingDir string) *TaskManager {
+func NewTaskManager(servingDir string, cfg *config.Config) *TaskManager {
 	tm := &TaskManager{
 		tasks:      make(map[string]*MobileTask),
 		servingDir: servingDir,
+		cfg:        cfg,
 		stopCh:     make(chan struct{}),
 	}
 	tm.wg.Add(1)
@@ -50,12 +52,11 @@ func (tm *TaskManager) Stop() {
 	tm.wg.Wait()
 }
 
-func (tm *TaskManager) Create(taskType, sourcePath, password string) *MobileTask {
+func (tm *TaskManager) Create(taskType, sourcePath string) *MobileTask {
 	task := &MobileTask{
 		ID:         uuid.New().String(),
 		Type:       taskType,
 		SourcePath: sourcePath,
-		Password:   password,
 		Status:     "queued",
 		Progress:   0,
 		CreatedAt:  time.Now(),
@@ -156,14 +157,25 @@ func (tm *TaskManager) dequeue() *MobileTask {
 	return nil
 }
 
+func (tm *TaskManager) resolveAbsPath(sourcePath string) string {
+	cleaned := filepath.Clean(sourcePath)
+	if strings.HasPrefix(cleaned, "..") {
+		return ""
+	}
+	relPath := strings.TrimPrefix(cleaned, "/")
+	return filepath.Join(tm.servingDir, relPath)
+}
+
 func (tm *TaskManager) processTask(task *MobileTask) {
 	slog.Info("Processing task", "id", task.ID, "type", task.Type, "source", task.SourcePath)
 
-	absPath := filepath.Join(tm.servingDir, filepath.Clean(task.SourcePath))
-	if strings.HasPrefix(filepath.Clean(task.SourcePath), "..") {
+	absPath := tm.resolveAbsPath(task.SourcePath)
+	if absPath == "" {
 		tm.failTask(task.ID, "invalid source path")
 		return
 	}
+
+	slog.Info("Resolved path", "source", task.SourcePath, "absPath", absPath)
 
 	switch task.Type {
 	case "encrypt":
@@ -176,11 +188,6 @@ func (tm *TaskManager) processTask(task *MobileTask) {
 }
 
 func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
-	if task.Password == "" {
-		tm.failTask(task.ID, "password is required for encryption")
-		return
-	}
-
 	info, err := os.Stat(absPath)
 	if err != nil {
 		tm.failTask(task.ID, fmt.Sprintf("source file not found: %v", err))
@@ -193,11 +200,16 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 	}
 
 	outputDir := filepath.Dir(absPath)
-	ctx := context.Background()
+	ctx := config.NewContext(context.Background(), tm.cfg)
 
 	plugin, err := plugins.FindEncryptingPlugin(absPath)
 	if err != nil {
 		tm.failTask(task.ID, fmt.Sprintf("no encrypting plugin found: %v", err))
+		return
+	}
+
+	if err := plugin.Initialize(ctx); err != nil {
+		tm.failTask(task.ID, fmt.Sprintf("plugin initialization failed: %v", err))
 		return
 	}
 
@@ -218,11 +230,6 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 }
 
 func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
-	if task.Password == "" {
-		tm.failTask(task.ID, "password is required for decryption")
-		return
-	}
-
 	info, err := os.Stat(absPath)
 	if err != nil {
 		tm.failTask(task.ID, fmt.Sprintf("source file not found: %v", err))
@@ -235,11 +242,16 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 	}
 
 	outputDir := filepath.Dir(absPath)
-	ctx := context.Background()
+	ctx := config.NewContext(context.Background(), tm.cfg)
 
 	plugin, err := plugins.FindDecryptingPlugin(absPath)
 	if err != nil {
 		tm.failTask(task.ID, fmt.Sprintf("no decrypting plugin found: %v", err))
+		return
+	}
+
+	if err := plugin.Initialize(ctx); err != nil {
+		tm.failTask(task.ID, fmt.Sprintf("plugin initialization failed: %v", err))
 		return
 	}
 
@@ -269,5 +281,3 @@ func (tm *TaskManager) failTask(id, errMsg string) {
 		slog.Error("Task failed", "id", id, "error", errMsg)
 	}
 }
-
-
