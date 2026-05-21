@@ -8,6 +8,10 @@ const routes: RouteRecordRaw[] = [
     redirect: '/tabs/files',
   },
   {
+    path: '/player',
+    component: () => import('@/views/StandalonePlayer.vue'),
+  },
+  {
     path: '/tabs/',
     component: Tabs,
     children: [
@@ -18,10 +22,6 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'files',
         component: () => import('@/views/Files.vue'),
-      },
-      {
-        path: 'player',
-        component: () => import('@/views/Player.vue'),
       },
       {
         path: 'tasks',

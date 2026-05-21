@@ -1,62 +1,73 @@
-# 播放器修复计划：ArtPlayer 控件崩溃 + 暗黑模式缺失
+# 播放器修复计划：ArtPlayer 控件崩溃 + 暗黑模式缺失 + 主应用清理
 
 ## 问题分析
 
 ### 问题 1：ArtPlayer 黑屏无法播放
-**错误信息**：`ArtPlayerError: option.controls.0.html require 'string' or 'Element' type`
+**错误**：`ArtPlayerError: option.controls.0.html require 'string' or 'Element' type`
 
-**根因**：StandalonePlayer.vue 中 ArtPlayer 的 `controls` 配置写法错误：
+**根因**：StandalonePlayer.vue 的 ArtPlayer 配置中 `controls` 数组写法错误：
 ```typescript
 controls: [
   { name: 'play' },
   { name: 'time' },
-  { name: 'progress' },
-  { name: 'volume' },
-  { name: 'settings' },
-  { name: 'fullscreen-web' },
-],
+  ...
+]
 ```
-ArtPlayer 5.x 的 `controls` 选项是用于**自定义控件**的，每个控件必须有 `html` 属性（string 或 Element）。内置控件（播放、进度条、音量、全屏等）默认就会显示，不需要在 `controls` 数组中声明。
+ArtPlayer 5.x 的 `controls` 选项只用于**自定义控件**，每项必须有 `html` 属性。内置控件默认显示，无需声明。主应用 Player.vue 没写 `controls`，一切正常。
 
-**对比**：主应用的 Player.vue 没有写 `controls` 数组，ArtPlayer 正常工作。
+**修复**：删除 `controls` 数组，使用默认内置控件。
 
 ### 问题 2：播放器未继承暗黑模式
-**根因**：`player-main.ts` 没有调用 `useTheme().initTheme()`，所以 `document.body` 上永远不会添加 `dark` class。主应用的 `main.ts` 通过 App.vue 间接调用了 `initTheme()`，但播放器入口完全跳过了这一步。
+**根因**：`player-main.ts` 没有调用 `useTheme().initTheme()`，`document.body` 永远不会加 `dark` class。同时缺少 5 个 Ionic CSS 导入（structure、typography、padding、flex-utils、display）。
 
-**补充问题**：`player-main.ts` 缺少主应用导入的多个 Ionic CSS 文件（structure、typography、padding、flex-utils、display），可能导致布局异常。
+**修复**：添加 `initTheme()` + 补全 CSS + PlayerSettings 加暗黑模式开关。
+
+### 问题 3：主应用 Player.vue 残留
+**现状**：
+- `Player.vue` 仍注册在主路由 `/tabs/player`
+- `Files.vue` 中 3 处 `router.push('/tabs/player')` 作为 web/PWA 回退
+- Tabs.vue 已移除 Player tab 按钮，但路由和组件仍在
+
+**修复**：删除 Player.vue，主路由中 `/tabs/player` 改为顶层 `/player` 路由指向 StandalonePlayer.vue（复用独立播放器组件），Files.vue 中 3 处路径同步更新。
 
 ---
 
 ## 修复步骤
 
-### 步骤 1：修复 ArtPlayer 控件配置
+### 步骤 1：修复 StandalonePlayer.vue 的 ArtPlayer 控件配置
 **文件**：`src/views/StandalonePlayer.vue`
 
 - 删除 `initArtPlayer()` 中 ArtPlayer 构造参数的 `controls` 数组
-- 与主应用 Player.vue 保持一致，让 ArtPlayer 使用默认内置控件
 
-### 步骤 2：播放器入口添加暗黑模式初始化
+### 步骤 2：player-main.ts 添加暗黑模式初始化 + 补全 CSS
 **文件**：`src/player-main.ts`
 
-- 导入 `useTheme`
-- 在应用挂载前调用 `initTheme()`，读取 localStorage 中的 `encv-theme-preference` 并应用 `dark` class
+- 导入并调用 `useTheme().initTheme()`
+- 补齐缺失的 Ionic CSS 导入（structure、typography、padding、flex-utils、display）
 
-### 步骤 3：补全 Ionic CSS 导入
-**文件**：`src/player-main.ts`
-
-- 补齐主应用 main.ts 中有但 player-main.ts 缺失的 Ionic CSS 导入：
-  - `@ionic/vue/css/structure.css`
-  - `@ionic/vue/css/typography.css`
-  - `@ionic/vue/css/padding.css`
-  - `@ionic/vue/css/flex-utils.css`
-  - `@ionic/vue/css/display.css`
-
-### 步骤 4：PlayerSettings 添加暗黑模式开关
+### 步骤 3：PlayerSettings.vue 添加暗黑模式开关
 **文件**：`src/views/PlayerSettings.vue`
 
 - 导入 `useTheme`
-- 在"播放"分组中添加暗黑模式 Toggle，与主应用 Settings.vue 一致
-- 调用 `toggleDark()` 切换
+- 新增"外观"分组，包含暗黑模式 Toggle
 
-### 步骤 5：本地构建验证
+### 步骤 4：删除 Player.vue，主路由改用 StandalonePlayer
+**文件**：`src/views/Player.vue` → 删除
+
+**文件**：`src/router/index.ts`
+- 删除 `/tabs/player` 子路由
+- 新增顶层 `/player` 路由，指向 StandalonePlayer.vue
+
+**文件**：`src/views/Files.vue`
+- 3 处 `router.push({ path: '/tabs/player', ... })` 改为 `router.push({ path: '/player', ... })`
+
+### 步骤 5：StandalonePlayer.vue 适配 web/PWA 模式
+**文件**：`src/views/StandalonePlayer.vue`
+
+当前 StandalonePlayer 在 `initBackend()` 中强制调用 `isStandaloneMode()`，如果不是 standalone 就报错退出。但 web/PWA 模式下也会用到这个组件（从主应用路由跳转），需要适配：
+- 如果 `isStandaloneMode()` 返回 false，从 route.query 读取 path/name（与旧 Player.vue 逻辑一致）
+- 不依赖 Capacitor 插件获取文件信息，直接用 query 参数
+- streamUrl 使用 `getFileStreamUrl()` 而非 `getExternalStreamUrl()`
+
+### 步骤 6：本地构建验证
 - 执行 `npm run build` 确认零错误

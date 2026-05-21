@@ -328,7 +328,7 @@ async function handleFileClick(file: FileItem) {
       openInPlayer(file.path, file.name, mimeType)
     } else {
       router.push({
-        path: '/tabs/player',
+        path: '/player',
         query: { path: file.path, name: file.name },
       })
     }
@@ -426,7 +426,7 @@ async function handleLongPress(file: FileItem) {
           openInPlayer(file.path, file.name, 'application/x-encv')
         } else {
           router.push({
-            path: '/tabs/player',
+            path: '/player',
             query: { path: file.path, name: file.name },
           })
         }
@@ -459,7 +459,7 @@ async function handleLongPress(file: FileItem) {
             openInPlayer(file.path, file.name, mimeType)
           } else {
             router.push({
-              path: '/tabs/player',
+              path: '/player',
               query: { path: file.path, name: file.name },
             })
           }

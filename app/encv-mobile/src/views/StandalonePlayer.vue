@@ -76,6 +76,7 @@
 <script setup lang="ts">
 console.log('[StandalonePlayer] <script setup> evaluating...')
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import Artplayer from 'artplayer'
 import {
   IonPage,
@@ -95,6 +96,7 @@ import { setApiBaseUrl, getFileStreamUrl, getExternalStreamUrl, getFileCategory 
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 
+const route = useRoute()
 const { t } = useI18n()
 const emit = defineEmits(['open-settings'])
 
@@ -159,35 +161,40 @@ async function initBackend() {
 
   const { standalone } = await isStandaloneMode()
   console.log('[StandalonePlayer] isStandaloneMode:', standalone)
-  if (!standalone) {
-    console.error('[StandalonePlayer] NOT in standalone mode!')
-    backendError.value = 'Not in standalone mode'
-    backendLoading.value = false
-    return
+
+  if (standalone) {
+    const intentInfo = await getIntentFileInfo()
+    console.log('[StandalonePlayer] intentInfo:', JSON.stringify(intentInfo))
+    filePath.value = intentInfo.path
+    fileName.value = intentInfo.name
+    fileMimeType.value = intentInfo.mimeType
+    isExternalFile.value = true
+  } else {
+    filePath.value = (route.query.path as string) || ''
+    fileName.value = (route.query.name as string) || ''
+    fileMimeType.value = ''
+    isExternalFile.value = false
+    console.log('[StandalonePlayer] web mode, query:', route.query.path, route.query.name)
   }
 
-  const intentInfo = await getIntentFileInfo()
-  console.log('[StandalonePlayer] intentInfo:', JSON.stringify(intentInfo))
-  filePath.value = intentInfo.path
-  fileName.value = intentInfo.name
-  fileMimeType.value = intentInfo.mimeType
-  isExternalFile.value = true
-
   if (!filePath.value) {
-    console.warn('[StandalonePlayer] No file path from intent')
+    console.warn('[StandalonePlayer] No file path')
     backendError.value = 'No file provided'
     backendLoading.value = false
     return
   }
 
-  const status = await getBackendStatus()
-  console.log('[StandalonePlayer] getBackendStatus:', JSON.stringify(status))
-  if (status.running && status.port > 0) {
-    setApiBaseUrl(`http://127.0.0.1:${status.port}`)
-    backendLoading.value = false
-    console.log('[StandalonePlayer] Backend already running, loading=false')
+  if (standalone) {
+    const status = await getBackendStatus()
+    console.log('[StandalonePlayer] getBackendStatus:', JSON.stringify(status))
+    if (status.running && status.port > 0) {
+      setApiBaseUrl(`http://127.0.0.1:${status.port}`)
+      backendLoading.value = false
+    } else {
+      console.log('[StandalonePlayer] Backend not ready yet, waiting for broadcast...')
+    }
   } else {
-    console.log('[StandalonePlayer] Backend not ready yet, waiting for broadcast...')
+    backendLoading.value = false
   }
 }
 
@@ -236,14 +243,6 @@ function initArtPlayer() {
     volume: 0.7,
     fullscreen: true,
     miniProgressBar: true,
-    controls: [
-      { name: 'play' },
-      { name: 'time' },
-      { name: 'progress' },
-      { name: 'volume' },
-      { name: 'settings' },
-      { name: 'fullscreen-web' },
-    ],
   })
 
   art.on('video:loadedmetadata', () => {

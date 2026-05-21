@@ -39,6 +39,17 @@
 
         <ion-item-group>
           <ion-item-divider>
+            <ion-label>外观</ion-label>
+          </ion-item-divider>
+
+          <ion-item>
+            <ion-label>深色模式</ion-label>
+            <ion-toggle :checked="isDark" @ionChange="toggleDark" />
+          </ion-item>
+        </ion-item-group>
+
+        <ion-item-group>
+          <ion-item-divider>
             <ion-label>高级</ion-label>
           </ion-item-divider>
 
@@ -65,8 +76,11 @@ import {
   IonItem, IonLabel, IonToggle, IonButtons, IonButton, IonIcon,
 } from '@ionic/vue'
 import { chevronBackOutline } from 'ionicons/icons'
+import { useTheme } from '@/composables/useTheme'
 
 const emit = defineEmits(['close'])
+
+const { isDark, toggleDark } = useTheme()
 
 const PREFIX = 'player:'
 
