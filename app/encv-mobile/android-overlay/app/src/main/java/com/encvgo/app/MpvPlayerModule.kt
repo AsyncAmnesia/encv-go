@@ -9,10 +9,11 @@ import android.view.WindowManager
 import com.lynx.jsbridge.LynxMethod
 import com.lynx.jsbridge.LynxModule
 import com.lynx.react.bridge.Callback
+import com.lynx.react.bridge.JavaOnlyArray
+import com.lynx.react.bridge.JavaOnlyMap
 import com.lynx.tasm.behavior.LynxContext
-import io.github.abdallahmehiz.mpvlib.MPVLib
-import io.github.abdallahmehiz.mpvlib.MPVView
-import org.json.JSONObject
+import is.xyz.mpv.MPVLib
+import is.xyz.mpv.MPVView
 
 class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
     companion object {
@@ -133,7 +134,7 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
         try {
             if (enabled) {
                 val ratio = mpvView?.videoWidth?.toFloat() ?: 1f
-                val targetOrientation = if (ratio > 1.3) {
+                val targetOrientation = if (ratio > 1.3f) {
                     ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                 } else {
                     ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
@@ -214,18 +215,20 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
     fun dispatchPositionUpdate() {
         val position = mpvView?.currentPosition ?: 0
         val duration = mpvView?.duration ?: 0
-        val data = JSONObject().apply {
-            put("position", position)
-            put("duration", duration)
-        }
-        lynxContext.dispatchEvent(EVENT_POSITION_UPDATE, data)
+        val data = JavaOnlyMap.of("position", position, "duration", duration)
+        val params = JavaOnlyArray()
+        params.pushMap(data)
+        lynxContext.sendGlobalEvent(EVENT_POSITION_UPDATE, params)
     }
 
     private fun dispatchStateChange(state: String, error: String? = null) {
-        val data = JSONObject().apply {
-            put("state", state)
-            if (error != null) put("error", error)
+        val data = if (error != null) {
+            JavaOnlyMap.of("state", state, "error", error)
+        } else {
+            JavaOnlyMap.of("state", state)
         }
-        lynxContext.dispatchEvent(EVENT_STATE_CHANGE, data)
+        val params = JavaOnlyArray()
+        params.pushMap(data)
+        lynxContext.sendGlobalEvent(EVENT_STATE_CHANGE, params)
     }
 }

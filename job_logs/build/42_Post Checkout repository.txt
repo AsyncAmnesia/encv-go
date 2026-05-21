@@ -1,0 +1,10 @@
+﻿2026-05-21T22:11:05.6555762Z Post job cleanup.
+2026-05-21T22:11:05.7558734Z [command]/usr/bin/git version
+2026-05-21T22:11:05.7596001Z git version 2.54.0
+2026-05-21T22:11:05.7643619Z Temporarily overriding HOME='/home/runner/work/_temp/582521a2-c37b-4ace-af05-41bc43190b9f' before making global git config changes
+2026-05-21T22:11:05.7645446Z Adding repository directory to the temporary git global config as a safe directory
+2026-05-21T22:11:05.7655567Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/encv-go/encv-go
+2026-05-21T22:11:05.7691958Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-05-21T22:11:05.7724306Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-05-21T22:11:05.7936581Z fatal: No url found for submodule path 'Sillot-KMP' in .gitmodules
+2026-05-21T22:11:05.7965315Z ##[warning]The process '/usr/bin/git' failed with exit code 128

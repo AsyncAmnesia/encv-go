@@ -26,6 +26,9 @@ import java.io.InputStream
 class PlayerActivityCapacitor : BridgeActivity() {
     companion object {
         private const val TAG = "ENCV-go"
+        var intentFilePath: String = ""
+        var intentFileName: String = ""
+        var intentFileMimeType: String = ""
     }
 
     private var backendReceiverRegistered = false
@@ -308,11 +311,5 @@ class PlayerActivityCapacitor : BridgeActivity() {
                 Log.w(TAG, "notifyFrontend: failed to notify frontend (WebView may not be ready yet)", e)
             }
         }
-    }
-
-    companion object {
-        var intentFilePath: String = ""
-        var intentFileName: String = ""
-        var intentFileMimeType: String = ""
     }
 }

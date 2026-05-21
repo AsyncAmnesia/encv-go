@@ -9,8 +9,9 @@ import android.util.Log
 import com.lynx.jsbridge.LynxMethod
 import com.lynx.jsbridge.LynxModule
 import com.lynx.react.bridge.Callback
+import com.lynx.react.bridge.JavaOnlyArray
+import com.lynx.react.bridge.JavaOnlyMap
 import com.lynx.tasm.behavior.LynxContext
-import org.json.JSONObject
 
 class GoBackendModule(context: android.content.Context) : LynxModule(context) {
     companion object {
@@ -83,11 +84,8 @@ class GoBackendModule(context: android.content.Context) : LynxModule(context) {
         val isRunning = EncvGoService.isRunning
         val port = EncvGoService.lastKnownPort
         Log.d(TAG, "getBackendStatus: running=$isRunning, port=$port")
-        val result = JSONObject().apply {
-            put("running", isRunning)
-            put("port", port)
-        }
-        callback.invoke(result.toString())
+        val result = JavaOnlyMap.of("running", isRunning, "port", port)
+        callback.invoke(result)
     }
 
     @LynxMethod
@@ -125,16 +123,16 @@ class GoBackendModule(context: android.content.Context) : LynxModule(context) {
     }
 
     private fun dispatchReady(port: Int) {
-        val data = JSONObject().apply {
-            put("port", port)
-        }
-        lynxContext.dispatchEvent(EVENT_READY, data)
+        val data = JavaOnlyMap.of("port", port)
+        val params = JavaOnlyArray()
+        params.pushMap(data)
+        lynxContext.sendGlobalEvent(EVENT_READY, params)
     }
 
     private fun dispatchError(message: String) {
-        val data = JSONObject().apply {
-            put("message", message)
-        }
-        lynxContext.dispatchEvent(EVENT_ERROR, data)
+        val data = JavaOnlyMap.of("message", message)
+        val params = JavaOnlyArray()
+        params.pushMap(data)
+        lynxContext.sendGlobalEvent(EVENT_ERROR, params)
     }
 }

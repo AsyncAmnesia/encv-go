@@ -129,17 +129,17 @@ class GoProcessPlugin : Plugin() {
     @PluginMethod
     fun isStandaloneMode(call: PluginCall) {
         val result = JSObject()
-        result.put("standalone", activity is PlayerActivity)
+        result.put("standalone", activity is PlayerActivityCapacitor)
         call.resolve(result)
     }
 
     @PluginMethod
     fun getIntentFileInfo(call: PluginCall) {
         val result = JSObject()
-        if (activity is PlayerActivity) {
-            result.put("path", PlayerActivity.intentFilePath)
-            result.put("name", PlayerActivity.intentFileName)
-            result.put("mimeType", PlayerActivity.intentFileMimeType)
+        if (activity is PlayerActivityCapacitor) {
+            result.put("path", PlayerActivityCapacitor.intentFilePath)
+            result.put("name", PlayerActivityCapacitor.intentFileName)
+            result.put("mimeType", PlayerActivityCapacitor.intentFileMimeType)
         } else {
             result.put("path", "")
             result.put("name", "")

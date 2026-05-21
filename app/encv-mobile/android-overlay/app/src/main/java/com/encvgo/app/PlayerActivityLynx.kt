@@ -11,7 +11,6 @@ import android.widget.FrameLayout
 import androidx.appcompat.app.AppCompatActivity
 import com.lynx.tasm.LynxView
 import com.lynx.tasm.LynxViewBuilder
-import com.lynx.tasm.behavior.LynxContext
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -28,8 +27,6 @@ class PlayerActivityLynx : AppCompatActivity() {
 
     private var rootLayout: FrameLayout? = null
     private var lynxView: LynxView? = null
-    private var mpvPlayerModule: MpvPlayerModule? = null
-    private var goBackendModule: GoBackendModule? = null
 
     private var backendReceiverRegistered = false
     private val backendReceiver = object : android.content.BroadcastReceiver() {
@@ -45,7 +42,11 @@ class PlayerActivityLynx : AppCompatActivity() {
 
     private val positionUpdateRunnable = object : Runnable {
         override fun run() {
-            mpvPlayerModule?.dispatchPositionUpdate()
+            val lynxContext = lynxView?.lynxContext
+            if (lynxContext != null) {
+                val mpvModule = lynxContext.getModuleByName("MpvPlayerModule") as? MpvPlayerModule
+                mpvModule?.dispatchPositionUpdate()
+            }
             lynxView?.postDelayed(this, 500)
         }
     }
@@ -64,7 +65,6 @@ class PlayerActivityLynx : AppCompatActivity() {
         Log.d(TAG, "onCreate: file info resolved, path=$intentFilePath, name=$intentFileName, mimeType=$intentFileMimeType, external=$isExternalFile")
 
         createLynxView()
-        createNativeModules()
         handleBackend()
 
         Log.d(TAG, "onCreate: setup complete")
@@ -83,9 +83,14 @@ class PlayerActivityLynx : AppCompatActivity() {
         Log.d(TAG, "onDestroy: cleaning up")
         try {
             lynxView?.removeCallbacks(positionUpdateRunnable)
-            mpvPlayerModule?.detachFromLayout(rootLayout ?: FrameLayout(this))
-            mpvPlayerModule?.release()
-            goBackendModule?.unregisterReceiver()
+            val lynxContext = lynxView?.lynxContext
+            if (lynxContext != null) {
+                val mpvModule = lynxContext.getModuleByName("MpvPlayerModule") as? MpvPlayerModule
+                mpvModule?.detachFromLayout(rootLayout ?: FrameLayout(this))
+                mpvModule?.release()
+                val goModule = lynxContext.getModuleByName("GoBackendModule") as? GoBackendModule
+                goModule?.unregisterReceiver()
+            }
             lynxView?.destroy()
             if (backendReceiverRegistered) {
                 unregisterReceiver(backendReceiver)
@@ -216,8 +221,8 @@ class PlayerActivityLynx : AppCompatActivity() {
         Log.d(TAG, "createLynxView: building LynxView with LynxViewBuilder")
         val viewBuilder = LynxViewBuilder()
         viewBuilder.setTemplateProvider(PlayerTemplateProvider(this))
-        viewBuilder.config.registerModule(MpvPlayerModule::class.java)
-        viewBuilder.config.registerModule(GoBackendModule::class.java)
+        viewBuilder.registerModule("MpvPlayerModule", MpvPlayerModule::class.java)
+        viewBuilder.registerModule("GoBackendModule", GoBackendModule::class.java)
 
         lynxView = viewBuilder.build(this)
         val lynxParams = ViewGroup.LayoutParams(
@@ -230,15 +235,17 @@ class PlayerActivityLynx : AppCompatActivity() {
         val initData = buildInitDataJson()
         lynxView?.renderTemplateUrl("player.lynx.bundle", initData)
         Log.d(TAG, "createLynxView: renderTemplateUrl called")
-    }
 
-    private fun buildInitData(): Map<String, Any> {
-        return mapOf(
-            "filePath" to intentFilePath,
-            "fileName" to intentFileName,
-            "mimeType" to intentFileMimeType,
-            "isExternal" to isExternalFile
-        )
+        lynxView?.post {
+            val lynxContext = lynxView?.lynxContext
+            if (lynxContext != null) {
+                val mpvModule = lynxContext.getModuleByName("MpvPlayerModule") as? MpvPlayerModule
+                if (mpvModule != null && rootLayout != null) {
+                    mpvModule.attachToLayout(rootLayout!!)
+                }
+                lynxView?.post(positionUpdateRunnable)
+            }
+        }
     }
 
     private fun buildInitDataJson(): String {
@@ -249,22 +256,6 @@ class PlayerActivityLynx : AppCompatActivity() {
             put("isExternal", isExternalFile)
         }
         return data.toString()
-    }
-
-    private fun createNativeModules() {
-        Log.d(TAG, "createNativeModules: getting module instances from LynxView")
-        val lynxContext = lynxView?.lynxContext
-        if (lynxContext != null) {
-            mpvPlayerModule = lynxContext.getModule(MpvPlayerModule::class.java) as? MpvPlayerModule
-            goBackendModule = lynxContext.getModule(GoBackendModule::class.java) as? GoBackendModule
-        }
-
-        if (mpvPlayerModule != null) {
-            mpvPlayerModule!!.attachToLayout(rootLayout!!)
-        }
-        lynxView!!.post(positionUpdateRunnable)
-
-        Log.d(TAG, "createNativeModules: modules ready, mpv=$mpvPlayerModule, backend=$goBackendModule")
     }
 
     private fun handleBackend() {

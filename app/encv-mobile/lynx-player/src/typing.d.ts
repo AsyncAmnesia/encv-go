@@ -12,7 +12,7 @@ declare let NativeModules: {
     setProperty(key: string, value: string, callback: (result: any) => void): void;
   };
   GoBackendModule: {
-    getBackendStatus(callback: (resultJson: string) => void): void;
+    getBackendStatus(callback: (result: { running: boolean; port: number }) => void): void;
     startBackend(callback: (result: any) => void): void;
     getStreamUrl(path: string, isExternal: boolean, callback: (url: string) => void): void;
   };

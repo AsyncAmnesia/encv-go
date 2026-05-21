@@ -50,10 +50,9 @@ export function App() {
   const startPlayback = useCallback(async (data: InitData) => {
     setPlayerState("loading");
     try {
-      const statusJson = await new Promise<string>((resolve) => {
+      const status = await new Promise<any>((resolve) => {
         NativeModules.GoBackendModule.getBackendStatus(resolve);
       });
-      const status = JSON.parse(statusJson);
       if (data.isExternal || !status.running) {
         await new Promise<any>((resolve) => {
           NativeModules.GoBackendModule.startBackend(resolve);

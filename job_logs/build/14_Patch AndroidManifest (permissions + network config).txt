@@ -1,0 +1,50 @@
+﻿2026-05-21T22:09:14.4381074Z ##[group]Run MANIFEST="app/encv-mobile/android/app/src/main/AndroidManifest.xml"
+2026-05-21T22:09:14.4381838Z [36;1mMANIFEST="app/encv-mobile/android/app/src/main/AndroidManifest.xml"[0m
+2026-05-21T22:09:14.4382232Z [36;1m[0m
+2026-05-21T22:09:14.4382850Z [36;1msed -i 's|<application|<application\n        android:networkSecurityConfig="@xml/network_security_config"\n        android:usesCleartextTraffic="true"|' "$MANIFEST"[0m
+2026-05-21T22:09:14.4383519Z [36;1m[0m
+2026-05-21T22:09:14.4383687Z [36;1mPERMS_TO_ADD=""[0m
+2026-05-21T22:09:14.4383911Z [36;1mfor ENTRY in \[0m
+2026-05-21T22:09:14.4384158Z [36;1m  "android.permission.INTERNET" \[0m
+2026-05-21T22:09:14.4384482Z [36;1m  "android.permission.FOREGROUND_SERVICE" \[0m
+2026-05-21T22:09:14.4384824Z [36;1m  "android.permission.POST_NOTIFICATIONS" \[0m
+2026-05-21T22:09:14.4385145Z [36;1m  "android.permission.READ_MEDIA_VIDEO" \[0m
+2026-05-21T22:09:14.4385453Z [36;1m  "android.permission.READ_MEDIA_AUDIO" \[0m
+2026-05-21T22:09:14.4385761Z [36;1m  "android.permission.READ_MEDIA_IMAGES" \[0m
+2026-05-21T22:09:14.4386131Z [36;1m  "android.permission.MANAGE_EXTERNAL_STORAGE" \[0m
+2026-05-21T22:09:14.4386453Z [36;1m  "android.permission.WAKE_LOCK" \[0m
+2026-05-21T22:09:14.4386749Z [36;1m  "android.permission.READ_LOGS"; do[0m
+2026-05-21T22:09:14.4387099Z [36;1m  if ! grep -q "android:name=\"${ENTRY}\"" "$MANIFEST"; then[0m
+2026-05-21T22:09:14.4387567Z [36;1m    PERMS_TO_ADD="${PERMS_TO_ADD}    <uses-permission android:name=\"${ENTRY}\" />\n"[0m
+2026-05-21T22:09:14.4387970Z [36;1m  fi[0m
+2026-05-21T22:09:14.4388149Z [36;1mdone[0m
+2026-05-21T22:09:14.4388317Z [36;1m[0m
+2026-05-21T22:09:14.4388480Z [36;1mfor ENTRY in \[0m
+2026-05-21T22:09:14.4388809Z [36;1m  "android.permission.READ_EXTERNAL_STORAGE|maxSdkVersion=32" \[0m
+2026-05-21T22:09:14.4389280Z [36;1m  "android.permission.WRITE_EXTERNAL_STORAGE|maxSdkVersion=28"; do[0m
+2026-05-21T22:09:14.4389655Z [36;1m  PERM="${ENTRY%%|*}"[0m
+2026-05-21T22:09:14.4389885Z [36;1m  ATTR="${ENTRY##*|}"[0m
+2026-05-21T22:09:14.4390190Z [36;1m  if ! grep -q "android:name=\"${PERM}\"" "$MANIFEST"; then[0m
+2026-05-21T22:09:14.4390918Z [36;1m    PERMS_TO_ADD="${PERMS_TO_ADD}    <uses-permission android:name=\"${PERM}\" android:${ATTR} />\n"[0m
+2026-05-21T22:09:14.4391418Z [36;1m  fi[0m
+2026-05-21T22:09:14.4391592Z [36;1mdone[0m
+2026-05-21T22:09:14.4391759Z [36;1m[0m
+2026-05-21T22:09:14.4391943Z [36;1mif [ -n "$PERMS_TO_ADD" ]; then[0m
+2026-05-21T22:09:14.4392283Z [36;1m  sed -i "s|</manifest>|${PERMS_TO_ADD}</manifest>|" "$MANIFEST"[0m
+2026-05-21T22:09:14.4392612Z [36;1mfi[0m
+2026-05-21T22:09:14.4392780Z [36;1m[0m
+2026-05-21T22:09:14.4392973Z [36;1mecho "AndroidManifest patched (sed)"[0m
+2026-05-21T22:09:14.4393262Z [36;1mecho "=== application tag ==="[0m
+2026-05-21T22:09:14.4393569Z [36;1mgrep -A2 '<application' "$MANIFEST" | head -5[0m
+2026-05-21T22:09:14.4425555Z shell: /usr/bin/bash -e {0}
+2026-05-21T22:09:14.4425799Z env:
+2026-05-21T22:09:14.4426102Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-21T22:09:14.4426602Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-21T22:09:14.4427003Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-21T22:09:14.4427298Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-21T22:09:14.4427561Z ##[endgroup]
+2026-05-21T22:09:14.4650790Z AndroidManifest patched (sed)
+2026-05-21T22:09:14.4651552Z === application tag ===
+2026-05-21T22:09:14.4662932Z     <application
+2026-05-21T22:09:14.4664087Z         android:networkSecurityConfig="@xml/network_security_config"
+2026-05-21T22:09:14.4664722Z         android:usesCleartextTraffic="true"
