@@ -1,24 +1,64 @@
-# PlayerActivity 待修复问题 Plan
+# PlayerActivity 待修复问题 Plan（完整版）
 
-## 问题 1：应用内打开视频路径 404
+## 问题清单（按优先级排序）
 
-### 根因
-Files.vue 通过 `openInPlayer(file.path, ...)` 发送的路径是 `/123云盘/xxx.mp4`（相对于 serve root），但 Android 文件系统需要完整绝对路径 `/storage/emulated/0/123云盘/xxx.mp4`。后端 `StreamExternalFile` 对该路径 `os.Stat()` 返回不存在 → 404。
+### 🔴 P0：播放器显示为浏览器原生控件而非 ArtPlayer
 
-### 修复：StandalonePlayer.vue 路径补全
+**现象**：即使第三方打开能播放，界面也是浏览器原生的 `<video>` 控件（原生进度条、播放按钮），不是 ArtPlayer 的橙色主题自定义控件。
 
-在 `startPlayback()` 或 `streamUrl` computed 中，检测并转换非标准绝对路径：
+**可能根因**：
+1. **ArtPlayer CSS 未加载** — 从 logcat 的 `shouldInterceptRequest` 日志看，只看到 JS/CSS chunk 被加载，但没有看到 ArtPlayer 自带的样式文件。Vite 多入口构建时 artplayer 的 CSS 可能没有被正确打包到 player 入口的依赖中。
+2. **Android WebView 全屏视频拦截** — 当 `<video>` 元素在某些条件下播放时，Android WebView 会自动启动系统原生全屏播放器（`WebChromeClient.onShowCustomView`），绕过 ArtPlayer 的自定义 UI。
+3. **ArtPlayer 初始化后立即报错** — 由于 404 导致 `art.on('error')` 触发后，ArtPlayer 可能降级为显示原始 video 元素。
+
+**排查方向**：
+- 检查 Vite 构建产物中 player 相关的 asset 是否包含 artplayer 样式
+- 确认 ArtPlayer 实例的 DOM 结构是否正确生成（检查 `artContainer` 内部是否有 `artplayer-container` 等 class）
+- 在 PlayerActivity.kt 中覆写 `onShowCustomView` / `onHideCustomView` 阻止 WebView 原生全屏拦截
+
+**修复方案**：
+```kotlin
+// PlayerActivity.kt — 阻止 WebView 原生全屏视频拦截
+override fun onCreate(savedInstanceState: Bundle?) {
+    // ... existing code ...
+    super.onCreate(savedInstanceState)
+    
+    // 阻止 WebView 拦截 <video> 全屏为原生播放器
+    bridge?.webView?.webChromeClient = object : WebChromeClient() {
+        // 不实现 onShowCustomView → 视频始终在页面内播放（playsInline）
+    }
+}
+```
+
+同时在前端确保：
+- ArtPlayer option 中 `playsInline: true` 已设置 ✅（已有）
+- 添加 `customType: 'normal'` 确保 ArtPlayer 使用自己的渲染模式
+- 检查并确认 artplayer CSS 正确导入
+
+**文件**：
+- `src/views/StandalonePlayer.vue` — ArtPlayer 配置优化
+- `android-overlay/.../PlayerActivity.kt` — 阻止原生全屏拦截
+
+---
+
+### P0：应用内打开视频无法播放（路径 404）
+
+**现象**：从 ENC 应用内 Files 页面点击视频 → PlayerActivity 打开 → `GET /api/stream/external?path=/123云盘/...` → **404** → ArtPlayer 循环报错
+
+**根因**：Files.vue 发送的路径 `/123云盘/xxx.mp4` 是相对于 serve root (`/storage/emulated/0`) 的路径。Android 文件系统中该路径不存在，真实路径是 `/storage/emulated/0/123云盘/xxx.mp4`。
+
+**对比**：第三方应用打开时 content URI 解析出的完整路径正常工作。
+
+**修复**：在 `StandalonePlayer.vue` 中添加路径补全函数：
 
 ```typescript
-// 在 StandalonePlayer.vue 中添加
 function resolveNativePath(raw: string): string {
   if (!raw.startsWith('/')) return raw
-  if (raw.startsWith('/storage/') || raw.startsWith('/sdcard/')) return raw
-  // 相对 serve root 的路径 → 补全 Android 存储根目录
+  if (raw.startsWith('/storage/') || raw.startsWith('/sdcard/') || raw.startsWith('/data/')) return raw
   return `/storage/emulated/0${raw}`
 }
 
-// streamUrl computed 中使用：
+// streamUrl computed 中使用
 const streamUrl = computed(() => {
   if (!filePath.value) return ''
   const resolvedPath = resolveNativePath(filePath.value)
@@ -31,37 +71,28 @@ const streamUrl = computed(() => {
 
 ---
 
-## 问题 2：设置按钮无响应
+### P1：设置按钮无响应
 
-### 根因
-`goSettings()` 使用 `router.push('/player/settings')`，但 `<ion-router-outlet>` 已移除，Vue Router 不工作。
+**现象**：右上角设置图标点击无反应
 
-### 修复方案：事件驱动 + 条件渲染
+**根因**：`goSettings()` 使用 `router.push('/player/settings')`，但 `<ion-router-outlet>` 已移除。
 
-**Step 1**: `StandalonePlayer.vue` — 将路由跳转改为 emit 事件
+**修复**：
 
+**Step 1**: `StandalonePlayer.vue` — emit 事件替代路由跳转
 ```typescript
-// 替换 goSettings() 方法
 const emit = defineEmits(['open-settings'])
-function goSettings() {
-  emit('open-settings')
-}
+function goSettings() { emit('open-settings') }
 ```
 
-**Step 2**: `PlayerApp.vue` — 添加设置页面条件渲染 + 状态管理
-
+**Step 2**: `PlayerApp.vue` — 条件渲染 player/settings
 ```vue
 <template>
   <ion-app>
     <Suspense>
       <template #default>
-        <StandalonePlayer v-if="currentView === 'player'" @open-settings="currentView = 'settings'" />
-        <PlayerSettings v-else @close="currentView = 'player'" />
-      </template>
-      <template #fallback>
-        <div style="display:flex;justify-content:center;align-items:center;height:100vh;background:#1a1a2e;color:#fff;">
-          Loading...
-        </div>
+        <StandalonePlayer v-if="view === 'player'" @open-settings="view = 'settings'" />
+        <PlayerSettings v-else @close="view = 'player'" />
       </template>
     </Suspense>
   </ion-app>
@@ -73,71 +104,47 @@ import { IonApp } from '@ionic/vue'
 import StandalonePlayer from '@/views/StandalonePlayer.vue'
 import PlayerSettings from '@/views/PlayerSettings.vue'
 
-const currentView = ref<'player' | 'settings'>('player')
+const view = ref<'player' | 'settings'>('player')
 </script>
 ```
 
-**Step 3**: `PlayerSettings.vue` — 添加返回按钮 emit close 事件
-
+**Step 3**: `PlayerSettings.vue` — 返回按钮 emit close
 ```typescript
-// 添加返回逻辑
 const emit = defineEmits(['close'])
-function goBack() {
-  emit('close')
-}
+function goBack() { emit('close') }
 ```
 
-**文件**：
-- `src/PlayerApp.vue`
-- `src/views/StandalonePlayer.vue`
-- `src/views/PlayerSettings.vue`
+**文件**：`src/PlayerApp.vue`, `src/views/StandalonePlayer.vue`, `src/views/PlayerSettings.vue`
 
 ---
 
-## 问题 3：ArtPlayer 全屏旋转屏幕
+### P2：全屏旋转屏幕
 
-### 需求
-进入全屏时根据视频宽高比自动选择横屏/竖屏，退出全屏恢复原始方向。
+**需求**：进入全屏时根据视频宽高比智能旋转（横屏/竖屏），退出恢复。
 
-### 修复：ArtPlayer fullscreen 监听 + Capacitor Screen Orientation
+**修复**：监听 ArtPlayer fullscreen 事件 + 屏幕方向 API
 
 ```typescript
-// 在 StandalonePlayer.vue 的 initArtPlayer() 中添加：
-
-import { ScreenOrientation } from '@capacitor/screen-orientation'
-
+// StandalonePlayer.vue initArtPlayer() 中添加
 art.on('fullscreen', (state: boolean) => {
   isFullscreen.value = state
   if (state) {
-    // 进入全屏：根据视频宽高比决定方向
-    const video = art.template?.<HTMLVideoElement>('video')
+    const video = art?.video
     if (video?.videoWidth && video?.videoHeight) {
       const ratio = video.videoWidth / video.videoHeight
-      if (ratio > 1.3) {
-        // 宽视频 → 横屏
-        ScreenOrientation.lock({ orientation: 'landscape' })
-      } else if (ratio < 0.77) {
-        // 竖视频 → 竖屏
-        ScreenOrientation.lock({ orientation: 'portrait' })
-      } else {
-        // 接近方屏 → 保持当前或横屏
-        ScreenOrientation.lock({ orientation: 'landscape' })
-      }
+      const orientation = ratio > 1.3 ? 'landscape' : ratio < 0.77 ? 'portrait' : 'landscape'
+      ScreenOrientation.lock({ orientation }).catch(() => {})
     }
   } else {
-    // 退出全屏：恢复
-    ScreenOrientation.unlock()
+    ScreenOrientation.unlock().catch(() => {})
   }
 })
 ```
 
-**依赖**：需要安装 `@capacitor/screen-orientation` 插件。
+**依赖**：`@capacitor/screen-orientation`
+**备选**：通过 GoProcessPlugin 调用原生 `setRequestedOrientation()`，无需新依赖。
 
-**备选**：如果不想引入新插件，可以通过 GoProcessPlugin 调用原生 Activity.setRequestedOrientation()。
-
-**文件**：
-- `src/views/StandalonePlayer.vue`
-- `package.json`（新增依赖）
+**文件**：`src/views/StandalonePlayer.vue`, `package.json`
 
 ---
 
@@ -145,15 +152,17 @@ art.on('fullscreen', (state: boolean) => {
 
 | # | 文件 | 修改内容 |
 |---|------|---------|
-| 1 | `src/views/StandalonePlayer.vue` | 路径补全函数 + 设置按钮改为 emit + ArtPlayer 全屏旋转 |
+| 1 | `src/views/StandalonePlayer.vue` | ArtPlayer 显示修复 + 路径补全 + 设置 emit + 全屏旋转 |
 | 2 | `src/PlayerApp.vue` | 条件渲染 player/settings |
-| 3 | `src/views/PlayerSettings.vue` | 返回按钮 emit close 事件 |
-| 4 | `package.json` | 新增 @capacitor/screen-orientation（可选） |
+| 3 | `src/views/PlayerSettings.vue` | 返回按钮 emit close |
+| 4 | `android-overlay/.../PlayerActivity.kt` | 阻止 WebView 原生全屏视频拦截 |
+| 5 | `package.json` | 新增 @capacitor/screen-orientation（可选） |
 
 ---
 
-## 执行顺序建议
+## 执行顺序
 
-1. **先修路径问题**（问题 1）— 这是播放功能的核心阻塞
-2. **再修设置按钮**（问题 2）— 用户体验
-3. **最后做全屏旋转**（问题 3）— 增强功能，需要新依赖
+1. **ArtPlayer 原生控件问题** — 最影响用户体验，必须先修
+2. **路径 404** — 应用内打开功能核心阻塞
+3. **设置按钮** — 用户体验
+4. **全屏旋转** — 增强功能

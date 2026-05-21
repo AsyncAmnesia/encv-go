@@ -20,6 +20,20 @@ Ionic 的 `<ion-router-outlet>` + Vue Router 在 PlayerActivity（同一进程�
 
 ## 待修复问题
 
+### 🔴 问题 0：播放器显示为浏览器原生控件而非 ArtPlayer
+
+**现象**：即使第三方打开能播放视频，界面也是 Android WebView 原生的 `<video>` 控件（原生进度条、播放按钮），不是 ArtPlayer 5.4.0 的橙色主题自定义控件。
+
+**可能根因**：
+1. **Android WebView 全屏视频拦截** — WebView 的 `WebChromeClient.onShowCustomView` 默认实现会在检测到 `<video>` 播放时启动系统原生全屏播放器，绕过 ArtPlayer
+2. **ArtPlayer CSS 未正确加载** — Vite 多入口构建时 artplayer 样式可能未包含在 player 入口的依赖中
+3. **ArtPlayer 初始化后立即报错（404）导致降级显示**
+
+**修复方向**：
+- PlayerActivity 中覆写 WebChromeClient，不实现 `onShowCustomView` → 阻止原生全屏拦截
+- 确认 artplayer CSS 在 player 入口构建产物中存在
+- ArtPlayer option 添加 `customType: 'normal'` 确保自定义渲染模式
+
 ### 问题 1：应用内打开视频无法播放（路径转换）
 
 **现象**：从 ENC 应用内 Files 页面点击视频 → PlayerActivity 打开 → ArtPlayer 报错循环重试
