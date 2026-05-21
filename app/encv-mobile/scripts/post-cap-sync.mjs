@@ -157,11 +157,11 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
   }
 
-  // 4. Add Lynx SDK dependency
+  // 4. Add Lynx SDK + mpv-android-lib dependencies
   if (!c.includes('org.lynxsdk.lynx')) {
     c = c.replace(
       'dependencies {',
-      "dependencies {\n    implementation 'org.lynxsdk.lynx:lynx:0.0.1'\n    implementation 'org.lynxsdk.lynx:lynx-service-image:0.0.1'\n    implementation 'io.github.abdallahmehiz:mpv-android-lib:0.1.12'",
+      "dependencies {\n    implementation 'org.lynxsdk.lynx:lynx:3.6.0'\n    implementation 'org.lynxsdk.lynx:lynx-jssdk:3.6.0'\n    implementation 'org.lynxsdk.lynx:lynx-trace:3.6.0'\n    implementation 'org.lynxsdk.lynx:primjs:3.6.1'\n    implementation 'org.lynxsdk.lynx:lynx-service-image:3.6.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-log:3.6.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-http:3.6.0'\n    implementation 'com.facebook.fresco:fresco:2.3.0'\n    implementation 'com.squareup.okhttp3:okhttp:4.9.0'\n    implementation 'io.github.abdallahmehiz:mpv-android-lib:0.1.12'",
     )
   }
 
