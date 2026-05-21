@@ -153,18 +153,23 @@ class GoProcessPlugin : Plugin() {
         val name = call.getString("name", "")
         val mimeType = call.getString("mimeType", "")
         if (path.isNullOrEmpty()) {
+            Log.w(TAG, "openInPlayer rejected: path is empty")
             call.reject("path is required")
             return
         }
         try {
+            Log.d(TAG, "openInPlayer: path=$path, name=$name, mimeType=$mimeType")
             val intent = Intent(activity, PlayerActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
                 putExtra("file_path", path)
                 putExtra("file_name", name)
                 putExtra("file_mime_type", mimeType)
             }
+            Log.d(TAG, "openInPlayer: launching PlayerActivity with NEW_TASK+MULTIPLE_TASK flags, taskAffinity=com.encvgo.app.player.task")
             activity.startActivity(intent)
             call.resolve()
         } catch (e: Exception) {
+            Log.e(TAG, "openInPlayer failed to start PlayerActivity", e)
             call.reject("Failed to open player: ${e.message}")
         }
     }

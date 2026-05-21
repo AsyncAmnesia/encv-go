@@ -38,6 +38,7 @@ class PlayerActivity : BridgeActivity() {
                     val running = intent.getBooleanExtra(EncvGoService.EXTRA_RUNNING, false)
                     val source = intent.getStringExtra(EncvGoService.EXTRA_SOURCE)
                     val command = intent.getStringExtra(EncvGoService.EXTRA_COMMAND)
+                    Log.d(TAG, "backendReceiver: received ${intent.action}, port=$port, running=$running, error=$error")
                     notifyFrontend(port, running, error, source, command)
                 }
             }
@@ -45,47 +46,70 @@ class PlayerActivity : BridgeActivity() {
     }
 
     override fun load() {
-        super.load()
         try {
-            bridge?.webView?.loadUrl("https://localhost/player.html")
-            Log.i(TAG, "PlayerActivity loading isolated player app")
+            val localUrl = bridge?.localUrl
+            Log.i(TAG, "load: bridge.localUrl=$localUrl")
+            if (localUrl.isNullOrEmpty()) {
+                Log.e(TAG, "load: bridge.localUrl is null or empty, falling back to https://localhost/")
+                bridge?.webView?.loadUrl("https://localhost/player.html")
+            } else {
+                val playerUrl = if (localUrl.endsWith("/")) "${localUrl}player.html" else "$localUrl/player.html"
+                Log.i(TAG, "load: loading player URL=$playerUrl")
+                bridge?.getWebView()?.loadUrl(playerUrl)
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to load player app", e)
+            Log.e(TAG, "load: failed to load player app", e)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        Log.i(TAG, "onCreate: savedInstanceState=${savedInstanceState != null}, intent.action=${intent.action}")
         try {
             registerPlugin(GoProcessPlugin::class.java)
+            Log.d(TAG, "onCreate: GoProcessPlugin registered")
         } catch (e: Exception) {
-            Log.e(TAG, "registerPlugin failed", e)
+            Log.e(TAG, "onCreate: registerPlugin failed", e)
         }
         super.onCreate(savedInstanceState)
+        Log.d(TAG, "onCreate: super.onCreate completed, bridge initialized=${bridge != null}")
+
         registerBackendReceiver()
         resolveFileInfo(intent)
-        if (EncvGoService.isRunning && EncvGoService.lastKnownPort > 0) {
-            notifyFrontend(EncvGoService.lastKnownPort, true, null, "player", null)
-        } else {
-            startBackendService(EncvGoService.ACTION_START, "player", null)
+
+        when {
+            EncvGoService.isRunning && EncvGoService.lastKnownPort > 0 -> {
+                Log.i(TAG, "onCreate: backend already running port=${EncvGoService.lastKnownPort}, notifying frontend directly")
+                notifyFrontend(EncvGoService.lastKnownPort, true, null, "player", null)
+            }
+            else -> {
+                Log.i(TAG, "onCreate: backend not running, starting service with source=player")
+                startBackendService(EncvGoService.ACTION_START, "player", null)
+            }
         }
     }
 
     override fun onNewIntent(intent: Intent) {
+        Log.i(TAG, "onNewIntent: action=${intent.action}, data=${intent.data}, extras=${intent.extras?.keySet()}")
         super.onNewIntent(intent)
         setIntent(intent)
         resolveFileInfo(intent)
     }
 
     override fun onDestroy() {
+        Log.d(TAG, "onDestroy: cleaning up")
         if (backendReceiverRegistered) {
             unregisterReceiver(backendReceiver)
             backendReceiverRegistered = false
+            Log.d(TAG, "onDestroy: backend receiver unregistered")
         }
         super.onDestroy()
     }
 
     private fun registerBackendReceiver() {
-        if (backendReceiverRegistered) return
+        if (backendReceiverRegistered) {
+            Log.d(TAG, "registerBackendReceiver: already registered, skipping")
+            return
+        }
         val filter = IntentFilter().apply {
             addAction(EncvGoService.BROADCAST_BACKEND_READY)
             addAction(EncvGoService.BROADCAST_BACKEND_STATUS)
@@ -97,13 +121,18 @@ class PlayerActivity : BridgeActivity() {
             registerReceiver(backendReceiver, filter)
         }
         backendReceiverRegistered = true
+        Log.d(TAG, "registerBackendReceiver: receiver registered successfully")
     }
 
     private fun resolveFileInfo(intent: Intent?) {
-        if (intent == null) return
+        if (intent == null) {
+            Log.w(TAG, "resolveFileInfo: intent is null, skipping")
+            return
+        }
 
         val internalPath = intent.getStringExtra("file_path")
         if (!internalPath.isNullOrEmpty()) {
+            Log.i(TAG, "resolveFileInfo: internal path provided: $internalPath")
             intentFilePath = internalPath
             intentFileName = intent.getStringExtra("file_name") ?: File(internalPath).name
             intentFileMimeType = intent.getStringExtra("file_mime_type") ?: ""
@@ -111,8 +140,12 @@ class PlayerActivity : BridgeActivity() {
         }
 
         val uri: Uri? = intent.data ?: intent.getParcelableExtra(Intent.EXTRA_STREAM)
-        if (uri == null) return
+        if (uri == null) {
+            Log.w(TAG, "resolveFileInfo: no URI found in intent data or EXTRA_STREAM")
+            return
+        }
 
+        Log.i(TAG, "resolveFileInfo: processing URI scheme=${uri.scheme}, uri=$uri")
         intentFileMimeType = intent.type ?: ""
 
         when (uri.scheme) {
@@ -141,6 +174,7 @@ class PlayerActivity : BridgeActivity() {
                 } catch (_: Exception) {
                 }
                 if (filePath.isEmpty() || !File(filePath).exists()) {
+                    Log.d(TAG, "resolveFileInfo: content URI file path not found, copying to cache")
                     filePath = copyContentToCache(uri)
                 }
                 intentFilePath = filePath
@@ -148,6 +182,7 @@ class PlayerActivity : BridgeActivity() {
                 if (intentFileMimeType.isEmpty()) {
                     intentFileMimeType = contentResolver.getType(uri) ?: ""
                 }
+                Log.i(TAG, "resolveFileInfo: content resolved -> fileName=$fileName, filePath=$filePath, mimeType=$intentFileMimeType")
             }
             "file" -> {
                 val path = uri.path ?: ""
@@ -156,6 +191,10 @@ class PlayerActivity : BridgeActivity() {
                 if (intentFileMimeType.isEmpty()) {
                     intentFileMimeType = contentResolver.getType(uri) ?: ""
                 }
+                Log.i(TAG, "resolveFileInfo: file scheme resolved -> path=$path, name=$intentFileName, mimeType=$intentFileMimeType")
+            }
+            else -> {
+                Log.w(TAG, "resolveFileInfo: unsupported URI scheme: ${uri.scheme}")
             }
         }
     }
@@ -188,14 +227,16 @@ class PlayerActivity : BridgeActivity() {
                     }
                 }
             }
+            Log.i(TAG, "copyContentToCache: copied to ${destFile.absolutePath} (${destFile.length()} bytes)")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to copy content to cache", e)
+            Log.e(TAG, "copyContentToCache: failed to copy content to cache", e)
             return ""
         }
         return destFile.absolutePath
     }
 
     private fun startBackendService(action: String, source: String, command: String?) {
+        Log.i(TAG, "startBackendService: action=$action, source=$source, command=$command")
         val serviceIntent = EncvGoService.createIntent(this, action, source).apply {
             if (!command.isNullOrEmpty()) {
                 putExtra(EncvGoService.EXTRA_COMMAND, command)
@@ -216,10 +257,11 @@ class PlayerActivity : BridgeActivity() {
                 }
                 val readyEvent = "window.dispatchEvent(new CustomEvent('encv:backend-ready',{detail:${detail}}))"
                 val statusEvent = "window.dispatchEvent(new CustomEvent('encv:backend-status',{detail:${detail}}))"
+                Log.d(TAG, "notifyFrontend: port=$port, running=$running, error=$error, source=$source, command=$command")
                 bridge?.webView?.evaluateJavascript(readyEvent, null)
                 bridge?.webView?.evaluateJavascript(statusEvent, null)
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to notify frontend", e)
+                Log.w(TAG, "notifyFrontend: failed to notify frontend (WebView may not be ready yet)", e)
             }
         }
     }
