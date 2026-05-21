@@ -77,7 +77,6 @@
 console.log('[StandalonePlayer] <script setup> evaluating...')
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import Artplayer from 'artplayer'
-import 'artplayer/dist/artplayer.css'
 import {
   IonPage,
   IonHeader,
