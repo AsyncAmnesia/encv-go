@@ -64,7 +64,9 @@
         <activity
             android:name=".PlayerActivity"
             android:exported="true"
-            android:launchMode="singleTask"
+            android:launchMode="standard"
+            android:documentLaunchMode="always"
+            android:maxRecents="16"
             android:taskAffinity="com.encvgo.app.player.task"
             android:theme="@style/AppTheme.NoActionBar"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"

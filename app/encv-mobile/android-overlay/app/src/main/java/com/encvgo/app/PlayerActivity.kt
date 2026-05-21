@@ -45,19 +45,8 @@ class PlayerActivity : BridgeActivity() {
         }
     }
 
-    override fun load() {
-        super.load()
-        try {
-            val playerUrl = "https://localhost/player.html"
-            Log.i(TAG, "load: bridge initialized, redirecting to $playerUrl")
-            bridge?.webView?.loadUrl(playerUrl)
-        } catch (e: Exception) {
-            Log.e(TAG, "load: failed to redirect to player.html", e)
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
-        Log.i(TAG, "onCreate: savedInstanceState=${savedInstanceState != null}, intent.action=${intent.action}")
+        Log.i(TAG, "onCreate: start")
         try {
             registerPlugin(GoProcessPlugin::class.java)
             Log.d(TAG, "onCreate: GoProcessPlugin registered")
@@ -65,18 +54,32 @@ class PlayerActivity : BridgeActivity() {
             Log.e(TAG, "onCreate: registerPlugin failed", e)
         }
         super.onCreate(savedInstanceState)
-        Log.d(TAG, "onCreate: super.onCreate completed, bridge initialized=${bridge != null}")
-
+        Log.i(TAG, "onCreate: super done, bridge=${bridge != null}, webView=${bridge?.webView != null}")
         registerBackendReceiver()
         resolveFileInfo(intent)
+        navigateToPlayer()
+        handleBackend()
+    }
 
+    private fun navigateToPlayer() {
+        try {
+            val playerUrl = "https://localhost/player.html"
+            Log.i(TAG, "navigateToPlayer: $playerUrl")
+            bridge?.webView?.loadUrl(playerUrl)
+            Log.i(TAG, "navigateToPlayer: loadUrl dispatched")
+        } catch (e: Exception) {
+            Log.e(TAG, "navigateToPlayer: failed", e)
+        }
+    }
+
+    private fun handleBackend() {
         when {
             EncvGoService.isRunning && EncvGoService.lastKnownPort > 0 -> {
-                Log.i(TAG, "onCreate: backend already running port=${EncvGoService.lastKnownPort}, notifying frontend directly")
+                Log.i(TAG, "handleBackend: already running port=${EncvGoService.lastKnownPort}")
                 notifyFrontend(EncvGoService.lastKnownPort, true, null, "player", null)
             }
             else -> {
-                Log.i(TAG, "onCreate: backend not running, starting service with source=player")
+                Log.i(TAG, "handleBackend: starting service source=player")
                 startBackendService(EncvGoService.ACTION_START, "player", null)
             }
         }
@@ -94,8 +97,9 @@ class PlayerActivity : BridgeActivity() {
         if (backendReceiverRegistered) {
             unregisterReceiver(backendReceiver)
             backendReceiverRegistered = false
-            Log.d(TAG, "onDestroy: backend receiver unregistered")
+            Log.d(TAG, "onDestroy: receiver unregistered")
         }
+        finishAndRemoveTask()
         super.onDestroy()
     }
 

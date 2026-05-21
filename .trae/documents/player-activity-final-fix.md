@@ -1,90 +1,107 @@
-# PlayerActivity 白屏 + 独立窗口彻底修复 Plan
+# PlayerActivity 彻底修复 Plan（正确使用 Capacitor API）
 
-## 问题 1：白屏根因分析
+## 核心思路转变
 
-### 当前 `load()` 执行链路
+**之前**：hack `load()` → 在 bridge 创建过程中/之后 redirect → 各种时序问题 → 白屏
+
+**现在**：完全不碰 `load()`，让 Capacitor 正常完成全部初始化流程，然后在 `onCreate()` 的 `super.onCreate()` 返回后再导航到 player.html
+
+### 为什么这是正确的
+
+Capacitor 8.x 的 `Bridge.Builder` 公开了 `setServerPath(ServerPath)` 方法：
+
+```java
+// Bridge.java 内部类
+public static class Builder {
+    public Builder setServerPath(ServerPath serverPath);  // 官方 API
+    public Bridge create();
+}
+```
+
+但 `setServerPath` 只能切换 asset base path（如 `public/` → 其他目录），不能指定具体 HTML 文件名。**最终还是要靠 URL 导航**，关键在于**正确的时机**。
+
+### 正确时机 = `super.onCreate()` 之后
 
 ```
 PlayerActivity.onCreate()
-  → registerPlugin(GoProcessPlugin)
-  → super.onCreate()  [BridgeActivity.onCreate]
-      → setContentView(WebView布局)
-      → bridgeBuilder.addPlugins(从assets加载的插件)
-      → this.load()  [我们的 override]
-          → super.load()  [BridgeActivity.load]
-              → bridge = bridgeBuilder.create()
-              → Bridge 构造函数内:
-                  → initWebView()
-                  → localServer = new WebViewLocalServer(context, this, injector, authorities, html5mode)
-                  → localServer.hostAssets(DEFAULT_WEB_ASSET_DIR)  // host "public" 目录
-                  → webView.loadUrl(appUrl)  // 开始异步加载 index.html ← 第一次 loadUrl
-          → bridge?.webView?.loadUrl("https://localhost/player.html")  // ← 第二次 loadUrl，取消第一次
+  ① registerPlugin(GoProcessPlugin)     // 注册自定义插件
+  ② super.onCreate()                   // [BridgeActivity.onCreate]
+       → setContentView(WebView)
+       → bridgeBuilder.addPlugins(...)
+       → this.load()                    // [我们的: 空的 或 super.load()]
+           → bridge = builder.create()   // ★ bridge 在这里创建
+           → webView.loadUrl(appUrl)    // 开始加载 index.html
+  ③ [我们在这里] bridge 已经就绪 ✅
+      → bridge.webView.loadUrl(player.html)  // 取代上面的 index.html
 ```
 
-### 为什么第二次 `loadUrl(player.html)` 可能失败
-
-从 [BridgeWebViewClient.java](https://unpkg.com/@capacitor/android@8.3.4/capacitor/src/main/java/com/getcapacitor/BridgeWebViewClient.java) 看到：
-
-1. **`onPageStarted` 中调用 `bridge.reset()`** — 每次 page load 开始都 reset bridge 状态
-2. **`shouldInterceptRequest` 将所有请求交给 `localServer.shouldInterceptRequest`** — LocalServer 从 assets 目录提供文件
-
-**核心风险**：`super.load()` 中的 `webView.loadUrl(appUrl)` 和我们的 `loadUrl(playerUrl)` 之间没有时序保证。WebView 可能在第一次 loadUrl 的回调链中（如 `shouldInterceptRequest` 正在处理 index.html 请求）就被第二次 loadUrl 打断，导致 LocalServer 进入不一致状态。
-
-### 更可靠的方案：不依赖 load() 中的二次 redirect
-
-**方案 A（推荐）：使用 `Handler().post { }` 延迟 redirect**
-
-将 redirect 放到下一个消息循环，确保 `super.load()` 的所有同步操作完成、WebView 的第一次 loadUrl 已经发起：
-
-```kotlin
-override fun load() {
-    super.load()
-    android.os.Handler(android.os.Looper.getMainLooper()).post {
-        try {
-            val playerUrl = "https://localhost/player.html"
-            Log.i(TAG, "load: deferred redirect to $playerUrl")
-            bridge?.webView?.loadUrl(playerUrl)
-        } catch (e: Exception) {
-            Log.e(TAG, "load: deferred redirect failed", e)
-        }
-    }
-}
-```
-
-**方案 B（最稳）：覆写 `this.config` 注入自定义 `serverPath`**
-
-在 `super.onCreate()` 之前设置 config，让 bridge 直接加载 player.html 而非 index.html：
-
-```kotlin
-override fun onCreate(savedInstanceState: Bundle?) {
-    registerPlugin(GoProcessPlugin::class.java)
-    config = CapConfig.loadDefault(this)  // 先加载默认配置
-    // 通过反射或 Builder 设置 serverPath 指向 player.html
-    super.onCreate(savedInstanceState)
-}
-```
-→ 太复杂且脆弱，不推荐。
-
-**最终选择：方案 A + 验证 LocalServer 能否提供 player.html**
+在步骤 ③ 时，bridge、WebView、LocalServer 全部就绪。此时的 `loadUrl(player.html)` 与 Capacitor 内部第一次 `loadUrl(appUrl)` 之间有完整的函数调用栈间隔，不存在"同一方法内连续两次 loadUrl"的竞态问题。
 
 ---
 
-## 问题 2：独立窗口 — 缺少文档中心模型
+## 修改方案
 
-### 用户明确指出的问题
+### Step 1：PlayerActivity.kt — 删除 `load()` override，改为 `onCreate()` 后导航
 
-当前配置缺少 Android **Document-Centric** 模型的核心要素：
+```kotlin
+class PlayerActivity : BridgeActivity() {
 
-| 当前状态 | 应有状态 |
-|---------|---------|
-| 无 `FLAG_ACTIVITY_NEW_DOCUMENT` | 必须添加 |
-| 无 `documentLaunchMode` | Manifest 必须声明 |
-| `launchMode="singleTask"` | 应改为 `"standard"` |
-| Intent 无区分 data | 每个"文档"应有唯一标识 |
+    // ❌ 删除整个 override fun load() { ... }
 
-### 修复详情
+    override fun onCreate(savedInstanceState: Bundle?) {
+        Log.i(TAG, "onCreate: start")
+        
+        // 1. 注册插件（必须在 super 之前）
+        try {
+            registerPlugin(GoProcessPlugin::class.java)
+            Log.d(TAG, "onCreate: GoProcessPlugin registered")
+        } catch (e: Exception) {
+            Log.e(TAG, "onCreate: registerPlugin failed", e)
+        }
+        
+        // 2. 让 Capacitor 完成 ALL 初始化（创建 bridge + WebView + LocalServer + load index.html）
+        super.onCreate(savedInstanceState)
+        Log.d(TAG, "onCreate: super done, bridge=${bridge != null}")
+        
+        // 3. ★ 在此点 bridge 100% 就绪，安全导航到 player.html
+        registerBackendReceiver()
+        resolveFileInfo(intent)
+        navigateToPlayer()
+        handleBackend()
+    }
 
-#### Step 1：AndroidManifest.xml — PlayerActivity 声明
+    private fun navigateToPlayer() {
+        try {
+            val playerUrl = "https://localhost/player.html"
+            Log.i(TAG, "navigateToPlayer: $playerUrl, bridge=${bridge != null}, webView=${bridge?.webView != null}")
+            bridge?.webView?.loadUrl(playerUrl)
+            Log.i(TAG, "navigateToPlayer: loadUrl called successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "navigateToPlayer: failed", e)
+        }
+    }
+
+    private fun handleBackend() {
+        when {
+            EncvGoService.isRunning && EncvGoService.lastKnownPort > 0 -> {
+                notifyFrontend(EncvGoService.lastKnownPort, true, null, "player", null)
+            }
+            else -> {
+                startBackendService(EncvGoService.ACTION_START, "player", null)
+            }
+        }
+    }
+    
+    // ... 其余方法保持不变 ...
+}
+```
+
+**关键变化**：
+- **删除 `override fun load()`** — 不再 hack Capacitor 的初始化流程
+- 新增 `navigateToPlayer()` — 在 `super.onCreate()` 返回后执行，时机完全安全
+- `handleBackend()` 提取为独立方法 — 保持 onCreate 整洁
+
+### Step 2：AndroidManifest.xml — Document-Centric 模型
 
 ```xml
 <activity
@@ -97,17 +114,16 @@ override fun onCreate(savedInstanceState: Bundle?) {
     android:theme="@style/AppTheme.NoActionBar"
     android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
     android:label="ENCV Player">
-    <!-- intent-filter 保持不变 -->
+    <!-- intent-filter 不变 -->
 </activity>
 ```
 
-变更点：
-- `launchMode`: `singleTask` → `standard`（singleTask 会强制合并同 affinity 任务）
-- 新增 `android:documentLaunchMode="always"`（**关键**，启用文档中心模型）
-- 新增 `android:maxRecents="16"`（限制最近任务卡片数）
-- 保留 `taskAffinity`（配合 documentLaunchMode 使用）
+变更：
+- `launchMode`: `singleTask` → `standard`
+- **新增** `android:documentLaunchMode="always"`（文档中心模型核心）
+- **新增** `android:maxRecents="16"`
 
-#### Step 2：GoProcessPlugin.kt — openInPlayer() Intent Flags
+### Step 3：GoProcessPlugin.kt — Intent Flags 补全
 
 ```kotlin
 @PluginMethod
@@ -121,38 +137,34 @@ fun openInPlayer(call: PluginCall) {
         return
     }
     try {
-        Log.d(TAG, "openInPlayer: path=$path, name=$name, mimeType=$mimeType")
-        val uniqueId = System.currentTimeMillis().toString()  // 每次打开生成唯一 ID
+        val uniqueId = System.currentTimeMillis().toString()
         val intent = Intent(activity, PlayerActivity::class.java).apply {
             addFlags(
                 Intent.FLAG_ACTIVITY_NEW_DOCUMENT
                     or Intent.FLAG_ACTIVITY_MULTIPLE_TASK
                     or Intent.FLAG_ACTIVITY_RETAIN_IN_RECENTS
             )
-            data = Uri.parse("encvgo://player/$uniqueId")  // 唯一 data 区分不同文档实例
+            data = Uri.parse("encvgo://player/$uniqueId")
             putExtra("file_path", path)
             putExtra("file_name", name)
             putExtra("file_mime_type", mimeType)
         }
-        Log.d(TAG, "openInPlayer: launching with NEW_DOCUMENT+MULTIPLE_TASK+RETAIN_IN_RECENTS, data=${intent.data}")
+        Log.d(TAG, "openInPlayer: NEW_DOCUMENT+MULTIPLE_TASK+RETAIN_IN_RECENTS, data=${intent.data}")
         activity.startActivity(intent)
         call.resolve()
     } catch (e: Exception) {
-        Log.e(TAG, "openInPlayer failed to start PlayerActivity", e)
+        Log.e(TAG, "openInPlayer failed", e)
         call.reject("Failed to open player: ${e.message}")
     }
 }
 ```
 
-变更点：
-- 添加 `FLAG_ACTIVITY_NEW_DOCUMENT`（**核心**，触发文档中心模型）
-- 保留 `FLAG_ACTIVITY_MULTIPLE_TASK`（允许同时存在多个播放器卡片）
-- 添加 `FLAG_ACTIVITY_RETAIN_IN_RECENTS`（关闭后仍保留卡片）
-- 设置唯一 `data` URI（系统据此判断是否为不同文档）
+变更：
+- **新增** `FLAG_ACTIVITY_NEW_DOCUMENT`（核心）
+- **新增** `FLAG_ACTIVITY_RETAIN_IN_RECENTS`
+- **新增** 唯一 `data` URI 区分不同播放器实例
 
-#### Step 3：PlayerActivity.kt — onDestroy 清理
-
-关闭播放器时移除任务卡片，避免残留空卡片：
+### Step 4：PlayerActivity.kt — onDestroy 清理卡片
 
 ```kotlin
 override fun onDestroy() {
@@ -161,7 +173,7 @@ override fun onDestroy() {
         unregisterReceiver(backendReceiver)
         backendReceiverRegistered = false
     }
-    finishAndRemoveTask()  // 移除最近任务中的卡片
+    finishAndRemoveTask()
     super.onDestroy()
 }
 ```
@@ -170,20 +182,19 @@ override fun onDestroy() {
 
 ## 修改文件清单
 
-| # | 文件 | 修改内容 |
-|---|------|---------|
-| 1 | `android-overlay/.../PlayerActivity.kt` | `load()` 改用 Handler.post 延迟 redirect；`onDestroy()` 添加 `finishAndRemoveTask()` |
-| 2 | `android-overlay/.../AndroidManifest.xml` | PlayerActivity 添加 `documentLaunchMode="always"`，`launchMode` 改为 `standard`，添加 `maxRecents` |
-| 3 | `android-overlay/.../GoProcessPlugin.kt` | `openInPlayer()` 添加 `FLAG_ACTIVITY_NEW_DOCUMENT` + `RETAIN_IN_RECENTS` + 唯一 data URI |
+| # | 文件 | 操作 |
+|---|------|------|
+| 1 | `.../PlayerActivity.kt` | **删除** `load()` override；`onCreate()` 末尾添加 `navigateToPlayer()`；`onDestroy()` 添加 `finishAndRemoveTask()` |
+| 2 | `.../AndroidManifest.xml` | `launchMode`→`standard`；添加 `documentLaunchMode="always"` + `maxRecents="16"` |
+| 3 | `.../GoProcessPlugin.kt` | 添加 `FLAG_ACTIVITY_NEW_DOCUMENT` + `RETAIN_IN_RECENTS` + 唯一 data URI |
 
 ---
 
-## 白屏补充诊断
+## 白屏诊断检查清单
 
-如果上述修复后仍白屏，需检查以下方向（按优先级排序）：
+如果修复后仍有问题，按顺序排查：
 
-1. **确认 `dist/player.html` 存在** — Vite 多入口构建必须产出该文件
-2. **logcat 过滤 `ENCV-go`** — 查看 `load:` 日志是否打印了 redirect URL
-3. **logcat 过滤 `Capacitor` / `LocalServer`** — 查看 shouldInterceptRequest 是否收到 `/player.html` 请求及返回结果
-4. **Chrome DevTools 远程调试** — 连接 WebView 检查 Console 错误和网络请求
-5. **验证 `player-main.ts` 及其 import 链** — 所有 Vue 组件、router、plugin 是否正确打包
+1. **logcat `ENCV-go`** — 必须看到 `navigateToPlayer: loadUrl called successfully`
+2. **logcat `Console`** — 检查 WebView 中是否有 JS 错误
+3. **确认构建产物** — `dist/player.html` 存在且非空，引用的 JS/CSS 路径正确
+4. **Chrome DevTools 远程调试** — `chrome://inspect` 连接 WebView 查看 Network 面板确认 `player.html` 是否返回 200 及其依赖资源是否加载成功

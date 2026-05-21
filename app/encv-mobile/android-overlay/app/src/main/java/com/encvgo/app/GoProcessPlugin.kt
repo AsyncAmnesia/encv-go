@@ -159,13 +159,19 @@ class GoProcessPlugin : Plugin() {
         }
         try {
             Log.d(TAG, "openInPlayer: path=$path, name=$name, mimeType=$mimeType")
+            val uniqueId = System.currentTimeMillis().toString()
             val intent = Intent(activity, PlayerActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_DOCUMENT
+                        or Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+                        or Intent.FLAG_ACTIVITY_RETAIN_IN_RECENTS
+                )
+                data = Uri.parse("encvgo://player/$uniqueId")
                 putExtra("file_path", path)
                 putExtra("file_name", name)
                 putExtra("file_mime_type", mimeType)
             }
-            Log.d(TAG, "openInPlayer: launching PlayerActivity with NEW_TASK+MULTIPLE_TASK flags, taskAffinity=com.encvgo.app.player.task")
+            Log.d(TAG, "openInPlayer: launching with NEW_DOCUMENT+MULTIPLE_TASK+RETAIN_IN_RECENTS, data=${intent.data}")
             activity.startActivity(intent)
             call.resolve()
         } catch (e: Exception) {
