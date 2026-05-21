@@ -1,0 +1,13 @@
+- [ ] Lynx 播放器子项目初始化完成，`npm run build` 生成 `player.lynx.bundle`
+- [ ] VideoPlayerModule Native Module 实现完成，ExoPlayer 可播放/暂停/seek/全屏
+- [ ] GoBackendModule Native Module 实现完成，可获取后端状态和流式 URL
+- [ ] PlayerActivity 改为 LynxView 宿主，加载 `player.lynx.bundle`
+- [ ] USE_LYNX_PLAYER 构建变体可切换 Lynx/Capacitor 双模式
+- [ ] 旧 Capacitor 播放器代码保留，回滚模式正常工作
+- [ ] Lynx 播放器 UI 显示自定义控件（非浏览器原生控件）
+- [ ] 暗黑模式在 Lynx 播放器中正常工作
+- [ ] 全屏进入/退出时屏幕方向正确切换
+- [ ] 第三方打开视频/音频/encv 文件正常播放
+- [ ] 应用内打开视频正常播放（路径补全）
+- [ ] 加密 .encv 文件通过后端解密流式播放
+- [ ] 本地构建零错误（npm run build + gradle assembleDebug）
