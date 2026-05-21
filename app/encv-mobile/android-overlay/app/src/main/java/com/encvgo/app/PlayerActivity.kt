@@ -182,7 +182,12 @@ class PlayerActivity : BridgeActivity() {
             return
         }
 
-        val uri: Uri? = intent.data ?: intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        val uri: Uri? = intent.data ?: if (Build.VERSION.SDK_INT >= 33) {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+        }
         if (uri == null) {
             Log.w(TAG, "resolveFileInfo: no URI found in intent data or EXTRA_STREAM")
             return
