@@ -189,8 +189,10 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
   }
 
   // 4b. Remove mpv-android-lib Maven dependency (using local jniLibs instead)
-  if (c.includes('io.github.abdallahmehiz:mpv-android-lib')) {
-    c = c.replace(/\s*implementation\s+'io\.github\.abdallahmehiz:mpv-android-lib[^']*'/, '')
+  //     Must run AFTER step 4 to catch both old and newly-added references
+  const beforeRemove = c
+  c = c.replace(/\s*implementation\s*\(?['"]io\.github\.abdallahmehiz:mpv[^'"]*['"][\s\S]*?\)?/g, '')
+  if (c !== beforeRemove) {
     console.log('  [mpv] removed Maven dependency (using local jniLibs)')
   }
 
@@ -219,13 +221,19 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     console.log('  [jniLibs] added jniLibs.srcDirs')
   }
 
-  // 6. useLegacyPackaging = true (critical: AGP 8.0+ defaults to false, which prevents .so extraction)
+  // 6. Packaging options (useLegacyPackaging + pickFirsts for .so conflicts)
   if (!c.includes('useLegacyPackaging')) {
     c = c.replace(
       /android\s*\{/,
-      "android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }",
+      "android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n            pickFirsts += ['**/*.so']\n        }\n        resources {\n            pickFirsts += ['**/*.so']\n        }\n    }",
     )
-    console.log('  [packaging] added useLegacyPackaging = true')
+    console.log('  [packaging] added useLegacyPackaging + pickFirsts')
+  } else if (!c.includes('pickFirsts')) {
+    c = c.replace(
+      /jniLibs\s*\{\s*useLegacyPackaging\s*=\s*true\s*\}/,
+      "jniLibs {\n            useLegacyPackaging = true\n            pickFirsts += ['**/*.so']\n        }\n        resources {\n            pickFirsts += ['**/*.so']\n        }",
+    )
+    console.log('  [packaging] added pickFirsts to existing packaging block')
   }
 
   // 7. Version injection
