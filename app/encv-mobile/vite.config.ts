@@ -9,6 +9,14 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        player: path.resolve(__dirname, 'player.html'),
+      },
+    },
+  },
   server: {
     port: 5173,
     host: '0.0.0.0',

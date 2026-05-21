@@ -81,6 +81,7 @@ func (s *Server) Start(version string) (string, error) {
 	s.mobileSvc.SetServingDir(s.servingDir)
 	chunkNamers := plugins.GetAllRegisteredChunkNamers()
 	s.chunkNamers = chunkNamers
+	s.mobileSvc.SetEncryptedFileDeps(s.readerService, s.contentHandler, chunkNamers)
 
 	// 2. 解析并存储 WebDAV 目录和路径
 	if s.cfg.Webdav.Dir != "" {

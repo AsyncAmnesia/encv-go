@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,11 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/utils"
+	"github.com/Soltus/encv-go/internal/v2/container/detector"
+	"github.com/Soltus/encv-go/internal/v2/handler"
+	"github.com/Soltus/encv-go/internal/v2/namer"
+	"github.com/Soltus/encv-go/internal/v2/provider"
+	"github.com/Soltus/encv-go/internal/v2/service"
 )
 
 type ForbiddenError struct{ Err error }
@@ -53,11 +59,14 @@ type FileContentResult struct {
 }
 
 type MobileService struct {
-	servingDir  string
-	taskManager *TaskManager
-	wsHub       *WSHub
-	fileIndex   *fileIndex
-	cfg         *config.Config
+	servingDir     string
+	taskManager    *TaskManager
+	wsHub          *WSHub
+	fileIndex      *fileIndex
+	cfg            *config.Config
+	readerService  *service.ReaderService
+	contentHandler *handler.ContentHandler
+	chunkNamers    []namer.ChunkNamer
 }
 
 func NewMobileService(servingDir string, cfg *config.Config) *MobileService {
@@ -235,6 +244,12 @@ func (s *MobileService) GetWSHub() *WSHub {
 func (s *MobileService) SetServingDir(dir string) {
 	s.servingDir = dir
 	s.taskManager.servingDir = dir
+}
+
+func (s *MobileService) SetEncryptedFileDeps(readerService *service.ReaderService, contentHandler *handler.ContentHandler, chunkNamers []namer.ChunkNamer) {
+	s.readerService = readerService
+	s.contentHandler = contentHandler
+	s.chunkNamers = chunkNamers
 }
 
 func (s *MobileService) GetServingDir() string {
@@ -589,6 +604,50 @@ var mediaExtensions = map[string]bool{
 	"encv": true,
 }
 
+type chunkNamerAdapter struct {
+	namers []namer.ChunkNamer
+}
+
+func (a *chunkNamerAdapter) GenerateMainChunkName(baseName string) string {
+	if len(a.namers) > 0 {
+		return a.namers[0].GenerateMainChunkName(baseName)
+	}
+	return baseName
+}
+
+func (a *chunkNamerAdapter) ParseFirstChunkName(firstChunkPath string) (string, error) {
+	for _, n := range a.namers {
+		base, err := n.ParseFirstChunkName(firstChunkPath)
+		if err == nil {
+			return base, nil
+		}
+	}
+	return "", fmt.Errorf("no suitable namer found for path: %s", firstChunkPath)
+}
+
+func (a *chunkNamerAdapter) GenerateDataChunkName(baseName string, index int) string {
+	if len(a.namers) > 0 {
+		return a.namers[0].GenerateDataChunkName(baseName, index)
+	}
+	return fmt.Sprintf("%s.%d", baseName, index)
+}
+
+func (a *chunkNamerAdapter) GetFirstDataChunkIndex() int {
+	if len(a.namers) > 0 {
+		return a.namers[0].GetFirstDataChunkIndex()
+	}
+	return 1
+}
+
+func (a *chunkNamerAdapter) IsDataChunk(filename string) bool {
+	for _, n := range a.namers {
+		if n.IsDataChunk(filename) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *MobileService) StreamExternalFile(w http.ResponseWriter, r *http.Request, filePath string) error {
 	if filePath == "" {
 		return &BadRequestError{Err: errors.New("'path' query parameter is required")}
@@ -611,6 +670,16 @@ func (s *MobileService) StreamExternalFile(w http.ResponseWriter, r *http.Reques
 		return &BadRequestError{Err: errors.New("path is a directory")}
 	}
 
+	if _, detectErr := detector.DetectContainer(absPath); detectErr == nil {
+		slog.Info("StreamExternalFile: detected ENCV container, serving decrypted", "path", absPath)
+		if s.readerService == nil || s.contentHandler == nil {
+			slog.Error("StreamExternalFile: encrypted file detected but dependencies not initialized")
+			return &BadRequestError{Err: errors.New("encrypted file service not available")}
+		}
+		s.serveEncryptedExternalFile(w, r, absPath)
+		return nil
+	}
+
 	ext := strings.ToLower(filepath.Ext(absPath))
 	if len(ext) > 0 {
 		ext = ext[1:]
@@ -622,4 +691,32 @@ func (s *MobileService) StreamExternalFile(w http.ResponseWriter, r *http.Reques
 	slog.Info("StreamExternalFile", "path", absPath, "size", info.Size())
 	http.ServeFile(w, r, absPath)
 	return nil
+}
+
+func (s *MobileService) serveEncryptedExternalFile(w http.ResponseWriter, r *http.Request, fullPath string) {
+	ctx := r.Context()
+	adapterNamer := &chunkNamerAdapter{namers: s.chunkNamers}
+
+	factory, decryptReader, _, _, err := s.readerService.GetDecryptReader(
+		*s.cfg,
+		fullPath,
+		s.cfg.Password,
+		adapterNamer,
+	)
+	if err != nil {
+		slog.Error("GetDecryptReader failed", "path", fullPath, "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer decryptReader.Close()
+
+	prov, err := provider.NewLocalFileProvider(ctx, factory, decryptReader)
+	if err != nil {
+		slog.Error("NewLocalFileProvider failed", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer prov.Close()
+
+	s.contentHandler.ServeFile(w, r, prov)
 }

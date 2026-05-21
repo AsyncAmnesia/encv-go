@@ -1,5 +1,16 @@
 <template>
   <ion-page>
+    <ion-header>
+      <ion-toolbar>
+        <ion-title>{{ fileName || 'ENCV Player' }}</ion-title>
+        <ion-buttons slot="end">
+          <ion-button @click="goSettings" fill="clear">
+            <ion-icon :icon="settingsOutline" slot="icon-only"></ion-icon>
+          </ion-button>
+        </ion-buttons>
+      </ion-toolbar>
+    </ion-header>
+
     <ion-content>
       <div v-if="backendLoading" class="loading-state">
         <ion-spinner name="crescent" class="loading-spinner"></ion-spinner>
@@ -64,22 +75,28 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 import Artplayer from 'artplayer'
 import {
   IonPage,
-  IonContent,
-  IonIcon,
+  IonHeader,
+  IonToolbar,
+  IonTitle,
+  IonButtons,
   IonButton,
+  IonIcon,
+  IonContent,
   IonChip,
   IonSpinner,
 } from '@ionic/vue'
-import { musicalNotes, alertCircle, refresh, resize, time } from 'ionicons/icons'
+import { musicalNotes, alertCircle, refresh, resize, time, settingsOutline } from 'ionicons/icons'
 import { isStandaloneMode, getIntentFileInfo, getBackendStatus } from '@/plugins/GoProcess'
 import { setApiBaseUrl, getFileStreamUrl, getExternalStreamUrl, getFileCategory } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 
 const { t } = useI18n()
+const router = useRouter()
 
 const backendLoading = ref(true)
 const backendError = ref('')
@@ -243,6 +260,10 @@ function destroyArtPlayer() {
 function retryBackend() {
   backendError.value = ''
   initBackend()
+}
+
+function goSettings() {
+  router.push('/player/settings')
 }
 
 function retryPlay() {

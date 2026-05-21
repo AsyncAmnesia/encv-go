@@ -47,10 +47,10 @@ class PlayerActivity : BridgeActivity() {
     override fun load() {
         super.load()
         try {
-            bridge?.webView?.loadUrl("https://localhost/#/standalone/player")
-            Log.i(TAG, "PlayerActivity loading standalone player")
+            bridge?.webView?.loadUrl("https://localhost/player.html")
+            Log.i(TAG, "PlayerActivity loading isolated player app")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to navigate to player", e)
+            Log.e(TAG, "Failed to load player app", e)
         }
     }
 
@@ -74,11 +74,6 @@ class PlayerActivity : BridgeActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         resolveFileInfo(intent)
-        try {
-            bridge?.webView?.loadUrl("https://localhost/#/standalone/player")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to navigate on new intent", e)
-        }
     }
 
     override fun onDestroy() {
