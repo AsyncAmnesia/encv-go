@@ -42,11 +42,7 @@ class PlayerActivityLynx : AppCompatActivity() {
 
     private val positionUpdateRunnable = object : Runnable {
         override fun run() {
-            val lynxContext = lynxView?.lynxContext
-            if (lynxContext != null) {
-                val mpvModule = lynxContext.getModuleByName("MpvPlayerModule") as? MpvPlayerModule
-                mpvModule?.dispatchPositionUpdate()
-            }
+            MpvPlayerModule.getInstance()?.dispatchPositionUpdate()
             lynxView?.postDelayed(this, 500)
         }
     }
@@ -83,14 +79,11 @@ class PlayerActivityLynx : AppCompatActivity() {
         Log.d(TAG, "onDestroy: cleaning up")
         try {
             lynxView?.removeCallbacks(positionUpdateRunnable)
-            val lynxContext = lynxView?.lynxContext
-            if (lynxContext != null) {
-                val mpvModule = lynxContext.getModuleByName("MpvPlayerModule") as? MpvPlayerModule
-                mpvModule?.detachFromLayout(rootLayout ?: FrameLayout(this))
-                mpvModule?.release()
-                val goModule = lynxContext.getModuleByName("GoBackendModule") as? GoBackendModule
-                goModule?.unregisterReceiver()
+            MpvPlayerModule.getInstance()?.let { mpvModule ->
+                mpvModule.detachFromLayout(rootLayout ?: FrameLayout(this))
+                mpvModule.release()
             }
+            GoBackendModule.getInstance()?.unregisterReceiver()
             lynxView?.destroy()
             if (backendReceiverRegistered) {
                 unregisterReceiver(backendReceiver)
@@ -237,14 +230,11 @@ class PlayerActivityLynx : AppCompatActivity() {
         Log.d(TAG, "createLynxView: renderTemplateUrl called")
 
         lynxView?.post {
-            val lynxContext = lynxView?.lynxContext
-            if (lynxContext != null) {
-                val mpvModule = lynxContext.getModuleByName("MpvPlayerModule") as? MpvPlayerModule
-                if (mpvModule != null && rootLayout != null) {
-                    mpvModule.attachToLayout(rootLayout!!)
-                }
-                lynxView?.post(positionUpdateRunnable)
+            val mpvModule = MpvPlayerModule.getInstance()
+            if (mpvModule != null && rootLayout != null) {
+                mpvModule.attachToLayout(rootLayout!!)
             }
+            lynxView?.post(positionUpdateRunnable)
         }
     }
 

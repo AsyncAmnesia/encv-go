@@ -1,32 +1,32 @@
-﻿2026-05-21T22:09:14.4686708Z ##[group]Run MANIFEST="app/encv-mobile/android/app/src/main/AndroidManifest.xml"
-2026-05-21T22:09:14.4687302Z [36;1mMANIFEST="app/encv-mobile/android/app/src/main/AndroidManifest.xml"[0m
-2026-05-21T22:09:14.4687697Z [36;1mecho "=== Manifest checks ==="[0m
-2026-05-21T22:09:14.4688278Z [36;1mgrep -q 'android.intent.action.MAIN' "$MANIFEST" && echo "✅ MAIN intent-filter" || { echo "❌ MISSING: MAIN intent-filter!"; exit 1; }[0m
-2026-05-21T22:09:14.4689285Z [36;1mgrep -q 'android.intent.category.LAUNCHER' "$MANIFEST" && echo "✅ LAUNCHER category" || { echo "❌ MISSING: LAUNCHER category!"; exit 1; }[0m
-2026-05-21T22:09:14.4690095Z [36;1mgrep -q 'android:icon' "$MANIFEST" && echo "✅ android:icon" || { echo "❌ MISSING: android:icon!"; exit 1; }[0m
-2026-05-21T22:09:14.4691090Z [36;1mgrep -q 'android:label' "$MANIFEST" && echo "✅ android:label" || { echo "❌ MISSING: android:label!"; exit 1; }[0m
-2026-05-21T22:09:14.4691818Z [36;1mgrep -q 'android:theme' "$MANIFEST" && echo "✅ android:theme" || { echo "❌ MISSING: android:theme!"; exit 1; }[0m
-2026-05-21T22:09:14.4705204Z [36;1mecho "=== mipmap resources ==="[0m
-2026-05-21T22:09:14.4705927Z [36;1mfind app/encv-mobile/android/app/src/main/res -name "ic_launcher*" -type f | head -5 && echo "✅ mipmap icons found" || echo "⚠️ WARNING: no ic_launcher in res/"[0m
-2026-05-21T22:09:14.4706619Z [36;1mecho "✅ Manifest integrity OK"[0m
-2026-05-21T22:09:14.4736813Z shell: /usr/bin/bash -e {0}
-2026-05-21T22:09:14.4737051Z env:
-2026-05-21T22:09:14.4737350Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
-2026-05-21T22:09:14.4737849Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
-2026-05-21T22:09:14.4738242Z   ANDROID_HOME: /usr/local/lib/android/sdk
-2026-05-21T22:09:14.4738523Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-2026-05-21T22:09:14.4738775Z ##[endgroup]
-2026-05-21T22:09:14.4789642Z === Manifest checks ===
-2026-05-21T22:09:14.4803390Z ✅ MAIN intent-filter
-2026-05-21T22:09:14.4816270Z ✅ LAUNCHER category
-2026-05-21T22:09:14.4828197Z ✅ android:icon
-2026-05-21T22:09:14.4839948Z ✅ android:label
-2026-05-21T22:09:14.4851852Z ✅ android:theme
-2026-05-21T22:09:14.4852203Z === mipmap resources ===
-2026-05-21T22:09:14.4868386Z app/encv-mobile/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png
-2026-05-21T22:09:14.4869557Z app/encv-mobile/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
-2026-05-21T22:09:14.4870283Z app/encv-mobile/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
-2026-05-21T22:09:14.4871738Z app/encv-mobile/android/app/src/main/res/mipmap-hdpi/ic_launcher_foreground.png
-2026-05-21T22:09:14.4872963Z app/encv-mobile/android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png
-2026-05-21T22:09:14.4873507Z ✅ mipmap icons found
-2026-05-21T22:09:14.4873837Z ✅ Manifest integrity OK
+﻿2026-05-21T22:49:11.2032347Z ##[group]Run MANIFEST="app/encv-mobile/android/app/src/main/AndroidManifest.xml"
+2026-05-21T22:49:11.2032929Z [36;1mMANIFEST="app/encv-mobile/android/app/src/main/AndroidManifest.xml"[0m
+2026-05-21T22:49:11.2033498Z [36;1mecho "=== Manifest checks ==="[0m
+2026-05-21T22:49:11.2034066Z [36;1mgrep -q 'android.intent.action.MAIN' "$MANIFEST" && echo "✅ MAIN intent-filter" || { echo "❌ MISSING: MAIN intent-filter!"; exit 1; }[0m
+2026-05-21T22:49:11.2034884Z [36;1mgrep -q 'android.intent.category.LAUNCHER' "$MANIFEST" && echo "✅ LAUNCHER category" || { echo "❌ MISSING: LAUNCHER category!"; exit 1; }[0m
+2026-05-21T22:49:11.2035612Z [36;1mgrep -q 'android:icon' "$MANIFEST" && echo "✅ android:icon" || { echo "❌ MISSING: android:icon!"; exit 1; }[0m
+2026-05-21T22:49:11.2036193Z [36;1mgrep -q 'android:label' "$MANIFEST" && echo "✅ android:label" || { echo "❌ MISSING: android:label!"; exit 1; }[0m
+2026-05-21T22:49:11.2037069Z [36;1mgrep -q 'android:theme' "$MANIFEST" && echo "✅ android:theme" || { echo "❌ MISSING: android:theme!"; exit 1; }[0m
+2026-05-21T22:49:11.2037709Z [36;1mecho "=== mipmap resources ==="[0m
+2026-05-21T22:49:11.2038326Z [36;1mfind app/encv-mobile/android/app/src/main/res -name "ic_launcher*" -type f | head -5 && echo "✅ mipmap icons found" || echo "⚠️ WARNING: no ic_launcher in res/"[0m
+2026-05-21T22:49:11.2038968Z [36;1mecho "✅ Manifest integrity OK"[0m
+2026-05-21T22:49:11.2068835Z shell: /usr/bin/bash -e {0}
+2026-05-21T22:49:11.2069141Z env:
+2026-05-21T22:49:11.2069512Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-21T22:49:11.2070020Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-21T22:49:11.2070427Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-21T22:49:11.2070785Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-21T22:49:11.2071124Z ##[endgroup]
+2026-05-21T22:49:11.2119876Z === Manifest checks ===
+2026-05-21T22:49:11.2132426Z ✅ MAIN intent-filter
+2026-05-21T22:49:11.2143410Z ✅ LAUNCHER category
+2026-05-21T22:49:11.2153707Z ✅ android:icon
+2026-05-21T22:49:11.2164118Z ✅ android:label
+2026-05-21T22:49:11.2174448Z ✅ android:theme
+2026-05-21T22:49:11.2174917Z === mipmap resources ===
+2026-05-21T22:49:11.2190345Z app/encv-mobile/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png
+2026-05-21T22:49:11.2191168Z app/encv-mobile/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png
+2026-05-21T22:49:11.2191840Z app/encv-mobile/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+2026-05-21T22:49:11.2192648Z app/encv-mobile/android/app/src/main/res/mipmap-hdpi/ic_launcher_foreground.png
+2026-05-21T22:49:11.2193776Z app/encv-mobile/android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png
+2026-05-21T22:49:11.2194647Z ✅ mipmap icons found
+2026-05-21T22:49:11.2195139Z ✅ Manifest integrity OK

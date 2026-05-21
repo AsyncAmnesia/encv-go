@@ -18,6 +18,10 @@ class GoBackendModule(context: android.content.Context) : LynxModule(context) {
         private const val TAG = "GoBackendModule"
         const val EVENT_READY = "backend:ready"
         const val EVENT_ERROR = "backend:error"
+
+        @Volatile
+        private var _instance: GoBackendModule? = null
+        fun getInstance(): GoBackendModule? = _instance
     }
 
     private val lynxContext = context as LynxContext
@@ -47,6 +51,7 @@ class GoBackendModule(context: android.content.Context) : LynxModule(context) {
     }
 
     init {
+        _instance = this
         registerReceiver()
         Log.d(TAG, "init: backend module created")
     }
@@ -84,7 +89,10 @@ class GoBackendModule(context: android.content.Context) : LynxModule(context) {
         val isRunning = EncvGoService.isRunning
         val port = EncvGoService.lastKnownPort
         Log.d(TAG, "getBackendStatus: running=$isRunning, port=$port")
-        val result = JavaOnlyMap.of("running", isRunning, "port", port)
+        val result = JavaOnlyMap().apply {
+            put("running", isRunning)
+            put("port", port)
+        }
         callback.invoke(result)
     }
 
@@ -123,14 +131,14 @@ class GoBackendModule(context: android.content.Context) : LynxModule(context) {
     }
 
     private fun dispatchReady(port: Int) {
-        val data = JavaOnlyMap.of("port", port)
+        val data = JavaOnlyMap().apply { put("port", port) }
         val params = JavaOnlyArray()
         params.pushMap(data)
         lynxContext.sendGlobalEvent(EVENT_READY, params)
     }
 
     private fun dispatchError(message: String) {
-        val data = JavaOnlyMap.of("message", message)
+        val data = JavaOnlyMap().apply { put("message", message) }
         val params = JavaOnlyArray()
         params.pushMap(data)
         lynxContext.sendGlobalEvent(EVENT_ERROR, params)

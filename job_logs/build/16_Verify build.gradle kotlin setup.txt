@@ -1,42 +1,42 @@
-﻿2026-05-21T22:09:14.4894641Z ##[group]Run echo "=== kotlin-android plugin ==="
-2026-05-21T22:09:14.4895031Z [36;1mecho "=== kotlin-android plugin ==="[0m
-2026-05-21T22:09:14.4895630Z [36;1mgrep -n "kotlin-android" app/encv-mobile/android/app/build.gradle || { echo "❌ MISSING: kotlin-android plugin!"; exit 1; }[0m
-2026-05-21T22:09:14.4896261Z [36;1mecho "=== kotlin-stdlib dependency ==="[0m
-2026-05-21T22:09:14.4896812Z [36;1mgrep -n "kotlin-stdlib" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: kotlin-stdlib not found"[0m
-2026-05-21T22:09:14.4897349Z [36;1mecho "=== jvmTarget ==="[0m
-2026-05-21T22:09:14.4897815Z [36;1mgrep -n "jvmTarget" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: jvmTarget not found"[0m
-2026-05-21T22:09:14.4898313Z [36;1mecho "=== jniLibs.srcDirs ==="[0m
-2026-05-21T22:09:14.4898836Z [36;1mgrep -n "jniLibs.srcDirs" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: jniLibs.srcDirs not found"[0m
-2026-05-21T22:09:14.4899384Z [36;1mecho "=== useLegacyPackaging ==="[0m
-2026-05-21T22:09:14.4899965Z [36;1mgrep -n "useLegacyPackaging" app/encv-mobile/android/app/build.gradle || echo "❌ MISSING: useLegacyPackaging not set!"[0m
-2026-05-21T22:09:14.4900623Z [36;1mecho "=== proguard-rules.pro ==="[0m
-2026-05-21T22:09:14.4901530Z [36;1mtest -f app/encv-mobile/android/app/proguard-rules.pro && echo "✅ proguard-rules.pro exists" || echo "⚠️ WARNING: no proguard-rules.pro"[0m
-2026-05-21T22:09:14.4902186Z [36;1mecho "=== GoProcessPlugin.kt source ==="[0m
-2026-05-21T22:09:14.4903012Z [36;1mtest -f app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt && echo "✅ GoProcessPlugin.kt exists" || echo "❌ MISSING: GoProcessPlugin.kt!"[0m
-2026-05-21T22:09:14.4903762Z [36;1mecho "=== MainActivity.kt source ==="[0m
-2026-05-21T22:09:14.4904438Z [36;1mtest -f app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt && echo "✅ MainActivity.kt exists" || echo "❌ MISSING: MainActivity.kt!"[0m
-2026-05-21T22:09:14.4905106Z [36;1mecho "✅ All checks passed"[0m
-2026-05-21T22:09:14.4935225Z shell: /usr/bin/bash -e {0}
-2026-05-21T22:09:14.4935466Z env:
-2026-05-21T22:09:14.4935763Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
-2026-05-21T22:09:14.4936259Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
-2026-05-21T22:09:14.4936659Z   ANDROID_HOME: /usr/local/lib/android/sdk
-2026-05-21T22:09:14.4936943Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-2026-05-21T22:09:14.4937210Z ##[endgroup]
-2026-05-21T22:09:14.4987124Z === kotlin-android plugin ===
-2026-05-21T22:09:14.4998042Z 2:apply plugin: 'kotlin-android'
-2026-05-21T22:09:14.4999924Z === kotlin-stdlib dependency ===
-2026-05-21T22:09:14.5011580Z 73:    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.0"
-2026-05-21T22:09:14.5012913Z === jvmTarget ===
-2026-05-21T22:09:14.5023496Z 98:        jvmTarget = "21"
-2026-05-21T22:09:14.5025389Z === jniLibs.srcDirs ===
-2026-05-21T22:09:14.5037068Z 12:            jniLibs.srcDirs = ['src/main/jniLibs']
-2026-05-21T22:09:14.5038921Z === useLegacyPackaging ===
-2026-05-21T22:09:14.5049569Z 7:            useLegacyPackaging = true
-2026-05-21T22:09:14.5051449Z === proguard-rules.pro ===
-2026-05-21T22:09:14.5052081Z ✅ proguard-rules.pro exists
-2026-05-21T22:09:14.5052469Z === GoProcessPlugin.kt source ===
-2026-05-21T22:09:14.5052846Z ✅ GoProcessPlugin.kt exists
-2026-05-21T22:09:14.5053172Z === MainActivity.kt source ===
-2026-05-21T22:09:14.5053497Z ✅ MainActivity.kt exists
-2026-05-21T22:09:14.5053928Z ✅ All checks passed
+﻿2026-05-21T22:49:11.2219479Z ##[group]Run echo "=== kotlin-android plugin ==="
+2026-05-21T22:49:11.2219969Z [36;1mecho "=== kotlin-android plugin ==="[0m
+2026-05-21T22:49:11.2220548Z [36;1mgrep -n "kotlin-android" app/encv-mobile/android/app/build.gradle || { echo "❌ MISSING: kotlin-android plugin!"; exit 1; }[0m
+2026-05-21T22:49:11.2221118Z [36;1mecho "=== kotlin-stdlib dependency ==="[0m
+2026-05-21T22:49:11.2221685Z [36;1mgrep -n "kotlin-stdlib" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: kotlin-stdlib not found"[0m
+2026-05-21T22:49:11.2222178Z [36;1mecho "=== jvmTarget ==="[0m
+2026-05-21T22:49:11.2222645Z [36;1mgrep -n "jvmTarget" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: jvmTarget not found"[0m
+2026-05-21T22:49:11.2223167Z [36;1mecho "=== jniLibs.srcDirs ==="[0m
+2026-05-21T22:49:11.2223630Z [36;1mgrep -n "jniLibs.srcDirs" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: jniLibs.srcDirs not found"[0m
+2026-05-21T22:49:11.2224127Z [36;1mecho "=== useLegacyPackaging ==="[0m
+2026-05-21T22:49:11.2224798Z [36;1mgrep -n "useLegacyPackaging" app/encv-mobile/android/app/build.gradle || echo "❌ MISSING: useLegacyPackaging not set!"[0m
+2026-05-21T22:49:11.2225415Z [36;1mecho "=== proguard-rules.pro ==="[0m
+2026-05-21T22:49:11.2226062Z [36;1mtest -f app/encv-mobile/android/app/proguard-rules.pro && echo "✅ proguard-rules.pro exists" || echo "⚠️ WARNING: no proguard-rules.pro"[0m
+2026-05-21T22:49:11.2226939Z [36;1mecho "=== GoProcessPlugin.kt source ==="[0m
+2026-05-21T22:49:11.2227629Z [36;1mtest -f app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt && echo "✅ GoProcessPlugin.kt exists" || echo "❌ MISSING: GoProcessPlugin.kt!"[0m
+2026-05-21T22:49:11.2228303Z [36;1mecho "=== MainActivity.kt source ==="[0m
+2026-05-21T22:49:11.2228878Z [36;1mtest -f app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt && echo "✅ MainActivity.kt exists" || echo "❌ MISSING: MainActivity.kt!"[0m
+2026-05-21T22:49:11.2229515Z [36;1mecho "✅ All checks passed"[0m
+2026-05-21T22:49:11.2258455Z shell: /usr/bin/bash -e {0}
+2026-05-21T22:49:11.2258831Z env:
+2026-05-21T22:49:11.2259202Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-21T22:49:11.2259725Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-21T22:49:11.2260152Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-21T22:49:11.2260480Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-21T22:49:11.2260816Z ##[endgroup]
+2026-05-21T22:49:11.2306485Z === kotlin-android plugin ===
+2026-05-21T22:49:11.2316406Z 2:apply plugin: 'kotlin-android'
+2026-05-21T22:49:11.2318110Z === kotlin-stdlib dependency ===
+2026-05-21T22:49:11.2327424Z 74:    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.0"
+2026-05-21T22:49:11.2328524Z === jvmTarget ===
+2026-05-21T22:49:11.2337523Z 99:        jvmTarget = "21"
+2026-05-21T22:49:11.2339076Z === jniLibs.srcDirs ===
+2026-05-21T22:49:11.2348701Z 12:            jniLibs.srcDirs = ['src/main/jniLibs']
+2026-05-21T22:49:11.2350155Z === useLegacyPackaging ===
+2026-05-21T22:49:11.2359444Z 7:            useLegacyPackaging = true
+2026-05-21T22:49:11.2360897Z === proguard-rules.pro ===
+2026-05-21T22:49:11.2361533Z ✅ proguard-rules.pro exists
+2026-05-21T22:49:11.2361960Z === GoProcessPlugin.kt source ===
+2026-05-21T22:49:11.2362351Z ✅ GoProcessPlugin.kt exists
+2026-05-21T22:49:11.2362621Z === MainActivity.kt source ===
+2026-05-21T22:49:11.2362941Z ✅ MainActivity.kt exists
+2026-05-21T22:49:11.2363484Z ✅ All checks passed
