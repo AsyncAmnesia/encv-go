@@ -44,6 +44,16 @@ class PlayerActivity : BridgeActivity() {
         }
     }
 
+    override fun load() {
+        super.load()
+        try {
+            bridge?.webView?.loadUrl("https://localhost/#/standalone/player")
+            Log.i(TAG, "PlayerActivity loading standalone player")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to navigate to player", e)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
             registerPlugin(GoProcessPlugin::class.java)
@@ -51,7 +61,6 @@ class PlayerActivity : BridgeActivity() {
             Log.e(TAG, "registerPlugin failed", e)
         }
         super.onCreate(savedInstanceState)
-        navigateToStandalonePlayer()
         registerBackendReceiver()
         resolveFileInfo(intent)
         if (EncvGoService.isRunning && EncvGoService.lastKnownPort > 0) {
@@ -65,7 +74,11 @@ class PlayerActivity : BridgeActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         resolveFileInfo(intent)
-        navigateToStandalonePlayer()
+        try {
+            bridge?.webView?.loadUrl("https://localhost/#/standalone/player")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to navigate on new intent", e)
+        }
     }
 
     override fun onDestroy() {
@@ -74,23 +87,6 @@ class PlayerActivity : BridgeActivity() {
             backendReceiverRegistered = false
         }
         super.onDestroy()
-    }
-
-    private fun navigateToStandalonePlayer() {
-        try {
-            val currentUrl = bridge?.webView?.url ?: ""
-            val baseUrl = if (currentUrl.startsWith("http")) {
-                Uri.parse(currentUrl).buildUpon()
-                    .path(null).fragment(null).clearQuery().build().toString()
-            } else {
-                "https://localhost"
-            }
-            val targetUrl = "$baseUrl#/standalone/player"
-            Log.i(TAG, "Loading player URL: $targetUrl")
-            bridge?.webView?.loadUrl(targetUrl)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to navigate to standalone player", e)
-        }
     }
 
     private fun registerBackendReceiver() {
