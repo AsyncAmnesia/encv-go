@@ -156,7 +156,7 @@ import type { FileItem } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
 import { vLongpress } from '@/directives/longpress'
-import { isNative, requestStoragePermission } from '@/plugins/GoProcess'
+import { isNative, requestStoragePermission, openInPlayer } from '@/plugins/GoProcess'
 import { showToast } from '@/composables/useToast'
 
 const { t } = useI18n()
@@ -323,10 +323,15 @@ async function handleFileClick(file: FileItem) {
   const category = getFileCategory(file.name)
   console.info('[Files] Click:', file.name, 'category:', category)
   if (category === 'video' || category === 'audio' || category === 'encrypted') {
-    router.push({
-      path: '/tabs/player',
-      query: { path: file.path, name: file.name },
-    })
+    if (isNative()) {
+      const mimeType = category === 'video' ? 'video/*' : category === 'audio' ? 'audio/*' : 'application/x-encv'
+      openInPlayer(file.path, file.name, mimeType)
+    } else {
+      router.push({
+        path: '/tabs/player',
+        query: { path: file.path, name: file.name },
+      })
+    }
   } else {
     router.push({
       path: '/tabs/preview',
@@ -417,10 +422,14 @@ async function handleLongPress(file: FileItem) {
       text: t('files.play'),
       icon: videocam,
       handler: () => {
-        router.push({
-          path: '/tabs/player',
-          query: { path: file.path, name: file.name },
-        })
+        if (isNative()) {
+          openInPlayer(file.path, file.name, 'application/x-encv')
+        } else {
+          router.push({
+            path: '/tabs/player',
+            query: { path: file.path, name: file.name },
+          })
+        }
       },
     })
     buttons.push({
@@ -445,10 +454,15 @@ async function handleLongPress(file: FileItem) {
       icon: isMedia ? videocam : image,
       handler: () => {
         if (isMedia) {
-          router.push({
-            path: '/tabs/player',
-            query: { path: file.path, name: file.name },
-          })
+          if (isNative()) {
+            const mimeType = category === 'audio' ? 'audio/*' : 'video/*'
+            openInPlayer(file.path, file.name, mimeType)
+          } else {
+            router.push({
+              path: '/tabs/player',
+              query: { path: file.path, name: file.name },
+            })
+          }
         } else {
           router.push({
             path: '/tabs/preview',

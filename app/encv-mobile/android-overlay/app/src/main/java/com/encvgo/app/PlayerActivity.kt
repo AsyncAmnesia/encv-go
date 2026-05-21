@@ -94,6 +94,15 @@ class PlayerActivity : BridgeActivity() {
 
     private fun resolveFileInfo(intent: Intent?) {
         if (intent == null) return
+
+        val internalPath = intent.getStringExtra("file_path")
+        if (!internalPath.isNullOrEmpty()) {
+            intentFilePath = internalPath
+            intentFileName = intent.getStringExtra("file_name") ?: File(internalPath).name
+            intentFileMimeType = intent.getStringExtra("file_mime_type") ?: ""
+            return
+        }
+
         val uri: Uri? = intent.data ?: intent.getParcelableExtra(Intent.EXTRA_STREAM)
         if (uri == null) return
 

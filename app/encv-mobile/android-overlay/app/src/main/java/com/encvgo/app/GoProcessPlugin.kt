@@ -148,6 +148,28 @@ class GoProcessPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun openInPlayer(call: PluginCall) {
+        val path = call.getString("path", "")
+        val name = call.getString("name", "")
+        val mimeType = call.getString("mimeType", "")
+        if (path.isEmpty()) {
+            call.reject("path is required")
+            return
+        }
+        try {
+            val intent = Intent(activity, PlayerActivity::class.java).apply {
+                putExtra("file_path", path)
+                putExtra("file_name", name)
+                putExtra("file_mime_type", mimeType)
+            }
+            activity.startActivity(intent)
+            call.resolve()
+        } catch (e: Exception) {
+            call.reject("Failed to open player: ${e.message}")
+        }
+    }
+
+    @PluginMethod
     override fun checkPermissions(call: PluginCall) {
         Log.d(TAG, "GoProcess.checkPermissions() called")
         val result = JSObject()

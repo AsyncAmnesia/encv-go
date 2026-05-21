@@ -91,3 +91,11 @@ export async function getIntentFileInfo(): Promise<{ path: string; name: string;
     return { path: '', name: '', mimeType: '' }
   }
 }
+
+export async function openInPlayer(path: string, name: string, mimeType: string): Promise<void> {
+  try {
+    await GoProcess.openInPlayer({ path, name, mimeType })
+  } catch (e) {
+    console.error('[ENCV] GoProcess.openInPlayer() failed:', e)
+  }
+}

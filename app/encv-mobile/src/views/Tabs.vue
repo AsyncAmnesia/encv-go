@@ -8,11 +8,6 @@
           <ion-label>{{ t('tabs.files') }}</ion-label>
         </ion-tab-button>
 
-        <ion-tab-button tab="player" href="/tabs/player">
-          <ion-icon :icon="play"></ion-icon>
-          <ion-label>{{ t('tabs.player') }}</ion-label>
-        </ion-tab-button>
-
         <ion-tab-button tab="tasks" href="/tabs/tasks">
           <ion-icon :icon="list"></ion-icon>
           <ion-label>{{ t('tabs.tasks') }}</ion-label>
@@ -47,7 +42,7 @@ import {
   IonTabButton,
   IonTabs,
 } from '@ionic/vue'
-import { folder, play, list, cloud, settings, bug } from 'ionicons/icons'
+import { folder, list, cloud, settings, bug } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 
 const { t } = useI18n()
