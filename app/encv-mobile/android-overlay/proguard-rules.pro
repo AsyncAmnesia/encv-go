@@ -3,3 +3,11 @@
 
 # Keep local classes
 -keep class com.encvgo.app.** { *; }
+
+# Keep Lynx SDK classes
+-keep class com.lynx.** { *; }
+-keep class org.lynxsdk.** { *; }
+
+# Keep mpv native methods
+-keep class is.xyz.mpv.** { *; }
+-keep class io.github.abdallahmehiz.mpvlib.** { *; }

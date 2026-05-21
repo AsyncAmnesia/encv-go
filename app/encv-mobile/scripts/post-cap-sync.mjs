@@ -397,7 +397,7 @@ if (version) {
 }
 
 // --- 包名一致性验证 ---
-for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt', 'EncvGoService.kt', 'PlayerActivity.kt']) {
+for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt', 'EncvGoService.kt', 'PlayerActivity.kt', 'PlayerActivityLynx.kt', 'MpvPlayerModule.kt', 'GoBackendModule.kt', 'EncvApplication.kt', 'PlayerTemplateProvider.kt']) {
   const fp = join(JAVA_DIR, f)
   if (existsSync(fp)) {
     const src = readFileSync(fp, 'utf-8')

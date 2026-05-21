@@ -73,7 +73,7 @@ export function PlayerControls({
   return (
     <view className="ControlsOverlay">
       <view className="TopBar">
-        <text className="FileName" numberOfLines={1}>
+        <text className="FileName" text-maxline="1">
           {fileName}
         </text>
         <text className="FullscreenButton" bindtap={onFullscreen}>
