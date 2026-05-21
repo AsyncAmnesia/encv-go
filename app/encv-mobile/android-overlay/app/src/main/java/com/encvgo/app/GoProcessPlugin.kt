@@ -152,7 +152,7 @@ class GoProcessPlugin : Plugin() {
         val path = call.getString("path", "")
         val name = call.getString("name", "")
         val mimeType = call.getString("mimeType", "")
-        if (path.isEmpty()) {
+        if (path.isNullOrEmpty()) {
             call.reject("path is required")
             return
         }
