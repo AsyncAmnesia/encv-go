@@ -226,7 +226,7 @@ jobs:
             echo "✅ Signed OK: $(ls -lh "$APK_PATH" | awk '{print $5}')"
           else
             echo "=== Building DEBUG APK ==="
-            ./gradlew assembleDebug
+            ./gradlew assembleDebug --stacktrace
           fi
 
       - name: Verify APK contents
