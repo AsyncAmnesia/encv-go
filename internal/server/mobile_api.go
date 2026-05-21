@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -27,6 +28,9 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 	case *service.BadRequestError:
 		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+	case *service.UnsupportedMediaTypeError:
+		w.WriteHeader(http.StatusUnsupportedMediaType)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 	default:
 		w.WriteHeader(http.StatusInternalServerError)
@@ -317,4 +321,20 @@ func (s *Server) handleIndexClear(w http.ResponseWriter, r *http.Request) {
 	s.mobileSvc.ClearIndex()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "cleared"})
+}
+
+func (s *Server) handleStreamExternalFile(w http.ResponseWriter, r *http.Request) {
+	queryPath := r.URL.Query().Get("path")
+	decodedPath, err := url.QueryUnescape(queryPath)
+	if err != nil {
+		decodedPath = queryPath
+	}
+
+	slog.Info("API: stream external file", "path", decodedPath)
+
+	err = s.mobileSvc.StreamExternalFile(w, r, decodedPath)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
 }

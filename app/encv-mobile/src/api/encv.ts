@@ -94,6 +94,14 @@ export function getFileStreamUrl(path: string): string {
   return `${baseUrl}/stream?path=${encodeURIComponent(path)}`
 }
 
+export function getExternalStreamUrl(path: string): string {
+  if (import.meta.env.DEV) {
+    return `/api/stream/external?path=${encodeURIComponent(path)}`
+  }
+  const baseUrl = getApiBaseUrl()
+  return `${baseUrl}/api/stream/external?path=${encodeURIComponent(path)}`
+}
+
 export async function checkServerStatus(): Promise<{ online: boolean; error?: string }> {
   try {
     const baseUrl = getApiBaseUrl()

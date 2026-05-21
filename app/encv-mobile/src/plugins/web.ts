@@ -29,6 +29,8 @@ export interface GoProcessPlugin {
   requestNotificationPermission(): Promise<PermissionResult>
   requestStoragePermission(): Promise<PermissionResult>
   checkPermissions(): Promise<PermissionCheckResult>
+  isStandaloneMode(): Promise<{ standalone: boolean }>
+  getIntentFileInfo(): Promise<{ path: string; name: string; mimeType: string }>
 }
 
 export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
@@ -54,5 +56,13 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
 
   async checkPermissions(): Promise<PermissionCheckResult> {
     return { notifications: true, storage: true }
+  }
+
+  async isStandaloneMode(): Promise<{ standalone: boolean }> {
+    return { standalone: false }
+  }
+
+  async getIntentFileInfo(): Promise<{ path: string; name: string; mimeType: string }> {
+    return { path: '', name: '', mimeType: '' }
   }
 }

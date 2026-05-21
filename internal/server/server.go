@@ -126,6 +126,7 @@ func (s *Server) Start(version string) (string, error) {
 	mux.HandleFunc("/api/index/stats", s.handleIndexStats)
 	mux.HandleFunc("/api/index/rebuild", s.handleIndexRebuild)
 	mux.HandleFunc("/api/index/clear", s.handleIndexClear)
+	mux.HandleFunc("/api/stream/external", s.handleStreamExternalFile)
 	mux.HandleFunc("/ws", s.handleWebSocket)
 
 	mux.HandleFunc("/", s.handleRequest)

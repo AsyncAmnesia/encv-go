@@ -57,6 +57,10 @@ const routes: RouteRecordRaw[] = [
       },
     ],
   },
+  {
+    path: '/standalone/player',
+    component: () => import('@/views/StandalonePlayer.vue'),
+  },
 ]
 
 const router = createRouter({

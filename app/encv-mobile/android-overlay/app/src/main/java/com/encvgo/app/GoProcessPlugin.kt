@@ -126,6 +126,28 @@ class GoProcessPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun isStandaloneMode(call: PluginCall) {
+        val result = JSObject()
+        result.put("standalone", activity is PlayerActivity)
+        call.resolve(result)
+    }
+
+    @PluginMethod
+    fun getIntentFileInfo(call: PluginCall) {
+        val result = JSObject()
+        if (activity is PlayerActivity) {
+            result.put("path", PlayerActivity.intentFilePath)
+            result.put("name", PlayerActivity.intentFileName)
+            result.put("mimeType", PlayerActivity.intentFileMimeType)
+        } else {
+            result.put("path", "")
+            result.put("name", "")
+            result.put("mimeType", "")
+        }
+        call.resolve(result)
+    }
+
+    @PluginMethod
     override fun checkPermissions(call: PluginCall) {
         Log.d(TAG, "GoProcess.checkPermissions() called")
         val result = JSObject()

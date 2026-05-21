@@ -73,3 +73,21 @@ export async function checkPermissions(): Promise<PermissionCheckResult> {
     return { notifications: false, storage: false }
   }
 }
+
+export async function isStandaloneMode(): Promise<{ standalone: boolean }> {
+  try {
+    return await GoProcess.isStandaloneMode()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.isStandaloneMode() failed:', e)
+    return { standalone: false }
+  }
+}
+
+export async function getIntentFileInfo(): Promise<{ path: string; name: string; mimeType: string }> {
+  try {
+    return await GoProcess.getIntentFileInfo()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.getIntentFileInfo() failed:', e)
+    return { path: '', name: '', mimeType: '' }
+  }
+}

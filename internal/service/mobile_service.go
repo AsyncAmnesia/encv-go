@@ -32,6 +32,10 @@ type PermissionError struct{ Err error }
 
 func (e *PermissionError) Error() string { return e.Err.Error() }
 
+type UnsupportedMediaTypeError struct{ Err error }
+
+func (e *UnsupportedMediaTypeError) Error() string { return e.Err.Error() }
+
 type FileInfo struct {
 	Name        string `json:"name"`
 	Path        string `json:"path"`
@@ -574,4 +578,48 @@ func (s *MobileService) ClearIndex() {
 	s.fileIndex.entries = nil
 	s.fileIndex.stats = IndexStats{}
 	slog.Info("ClearIndex completed")
+}
+
+var mediaExtensions = map[string]bool{
+	"mp4": true, "mkv": true, "avi": true, "mov": true,
+	"wmv": true, "flv": true, "webm": true, "m4v": true,
+	"ts": true, "mpg": true, "mpeg": true, "3gp": true,
+	"mp3": true, "flac": true, "wav": true, "aac": true,
+	"ogg": true, "wma": true, "m4a": true, "opus": true,
+	"encv": true,
+}
+
+func (s *MobileService) StreamExternalFile(w http.ResponseWriter, r *http.Request, filePath string) error {
+	if filePath == "" {
+		return &BadRequestError{Err: errors.New("'path' query parameter is required")}
+	}
+
+	absPath := filepath.Clean(filePath)
+	if !filepath.IsAbs(absPath) {
+		return &BadRequestError{Err: errors.New("path must be absolute")}
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &NotFoundError{Err: err}
+		}
+		return &ForbiddenError{Err: err}
+	}
+
+	if info.IsDir() {
+		return &BadRequestError{Err: errors.New("path is a directory")}
+	}
+
+	ext := strings.ToLower(filepath.Ext(absPath))
+	if len(ext) > 0 {
+		ext = ext[1:]
+	}
+	if !mediaExtensions[ext] {
+		return &UnsupportedMediaTypeError{Err: errors.New("file is not a supported media file")}
+	}
+
+	slog.Info("StreamExternalFile", "path", absPath, "size", info.Size())
+	http.ServeFile(w, r, absPath)
+	return nil
 }
