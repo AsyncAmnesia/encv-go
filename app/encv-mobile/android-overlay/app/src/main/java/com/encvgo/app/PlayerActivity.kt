@@ -8,9 +8,12 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.OpenableColumns
 import android.util.Log
-import android.webkit.ValueCallback
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.core.content.ContextCompat
 import com.getcapacitor.BridgeActivity
 import org.json.JSONObject
@@ -28,6 +31,8 @@ class PlayerActivity : BridgeActivity() {
     }
 
     private var backendReceiverRegistered = false
+    private var navigatedToPlayer = false
+    private var navigationHandler: Handler? = null
 
     private val backendReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -52,6 +57,8 @@ class PlayerActivity : BridgeActivity() {
             Log.e(TAG, "registerPlugin failed", e)
         }
         super.onCreate(savedInstanceState)
+        setupWebViewNavigation()
+        setupNavigationTimeout()
         registerBackendReceiver()
         resolveFileInfo(intent)
         if (EncvGoService.isRunning && EncvGoService.lastKnownPort > 0) {
@@ -59,22 +66,76 @@ class PlayerActivity : BridgeActivity() {
         } else {
             startBackendService(EncvGoService.ACTION_START, "player", null)
         }
-        navigateToPlayer()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        navigatedToPlayer = false
         resolveFileInfo(intent)
-        navigateToPlayer()
+        forceNavigateToPlayer()
     }
 
     override fun onDestroy() {
+        navigationHandler?.removeCallbacksAndMessages(null)
+        navigationHandler = null
         if (backendReceiverRegistered) {
             unregisterReceiver(backendReceiver)
             backendReceiverRegistered = false
         }
         super.onDestroy()
+    }
+
+    private fun setupWebViewNavigation() {
+        try {
+            val webView = bridge?.webView ?: return
+            val originalClient = webView.webViewClient
+            webView.webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    originalClient?.onPageFinished(view, url)
+                    if (!navigatedToPlayer) {
+                        navigatedToPlayer = true
+                        navigationHandler?.removeCallbacksAndMessages(null)
+                        Log.i(TAG, "onPageFinished triggered, navigating to #/standalone/player")
+                        runOnUiThread {
+                            try {
+                                bridge?.webView?.evaluateJavascript(
+                                    "window.location.hash='#/standalone/player'", null
+                                )
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Failed to navigate in onPageFinished", e)
+                            }
+                        }
+                    }
+                }
+            }
+            Log.d(TAG, "Custom WebViewClient installed for navigation")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to setup WebView navigation", e)
+        }
+    }
+
+    private fun setupNavigationTimeout() {
+        navigationHandler = Handler(Looper.getMainLooper())
+        navigationHandler?.postDelayed({
+            if (!navigatedToPlayer && !isFinishing && !isDestroyed) {
+                Log.w(TAG, "Navigation timeout (10s), forcing navigation")
+                navigatedToPlayer = true
+                forceNavigateToPlayer()
+            }
+        }, 10000)
+    }
+
+    private fun forceNavigateToPlayer() {
+        runOnUiThread {
+            try {
+                bridge?.webView?.evaluateJavascript(
+                    "window.location.hash='#/standalone/player'", null
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to force navigate to player", e)
+            }
+        }
     }
 
     private fun registerBackendReceiver() {
@@ -209,21 +270,11 @@ class PlayerActivity : BridgeActivity() {
                 }
                 val readyEvent = "window.dispatchEvent(new CustomEvent('encv:backend-ready',{detail:${detail}}))"
                 val statusEvent = "window.dispatchEvent(new CustomEvent('encv:backend-status',{detail:${detail}}))"
-                bridge.webView.evaluateJavascript(readyEvent, null)
-                bridge.webView.evaluateJavascript(statusEvent, null)
+                bridge?.webView?.evaluateJavascript(readyEvent, null)
+                bridge?.webView?.evaluateJavascript(statusEvent, null)
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to notify frontend", e)
             }
         }
-    }
-
-    private fun navigateToPlayer() {
-        bridge.webView.postDelayed({
-            try {
-                bridge.webView.evaluateJavascript("window.location.hash='#/standalone/player'", null)
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to navigate to player", e)
-            }
-        }, 500)
     }
 }
