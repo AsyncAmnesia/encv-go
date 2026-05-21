@@ -40,16 +40,50 @@ export interface FileItem {
 
 export interface FileListResponse {
   files: FileItem[]
+  error?: string
+  code?: string
+}
+
+export class PermissionDeniedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PermissionDeniedError'
+  }
 }
 
 export async function listFiles(path = '/'): Promise<FileItem[]> {
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/files?path=${encodeURIComponent(path)}`)
   if (!response.ok) {
+    if (response.status === 403) {
+      const data: FileListResponse = await response.json().catch(() => ({}))
+      if (data.code === 'PERMISSION_DENIED') {
+        console.warn('[API] listFiles permission denied:', path)
+        throw new PermissionDeniedError(data.error || 'Permission denied')
+      }
+    }
+    console.error('[API] listFiles failed:', response.status)
     throw new Error(`HTTP error! status: ${response.status}`)
   }
   const data: FileListResponse = await response.json()
+  console.info('[API] listFiles:', path, '→', data.files?.length || 0, 'files')
   return data.files || []
+}
+
+export interface BackendPermissions {
+  storage: boolean
+}
+
+export async function checkBackendPermissions(): Promise<BackendPermissions> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/permissions`)
+  if (!response.ok) {
+    console.warn('[API] checkPermissions failed:', response.status)
+    return { storage: false }
+  }
+  const result = await response.json()
+  console.info('[API] permissions:', JSON.stringify(result))
+  return result
 }
 
 export function getFileStreamUrl(path: string): string {
@@ -65,21 +99,25 @@ export async function checkServerStatus(): Promise<{ online: boolean; error?: st
     const baseUrl = getApiBaseUrl()
     const response = await fetch(`${baseUrl}/health`)
     if (response.ok) {
+      console.info('[API] server online')
       return { online: true }
     }
     return { online: false, error: `HTTP ${response.status}` }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
+    console.warn('[API] server offline:', msg)
     return { online: false, error: msg }
   }
 }
 
 export async function deleteFile(path: string): Promise<void> {
+  console.warn('[API] deleteFile:', path)
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/files?path=${encodeURIComponent(path)}`, {
     method: 'DELETE',
   })
   if (!response.ok) {
+    console.error('[API] deleteFile failed:', response.status)
     throw new Error(`HTTP error! status: ${response.status}`)
   }
 }
@@ -96,13 +134,16 @@ export async function readFileContent(path: string): Promise<FileContentResponse
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/file?path=${encodeURIComponent(path)}`)
   if (!response.ok) {
+    console.error('[API] readFileContent failed:', response.status)
     throw new Error(`HTTP error! status: ${response.status}`)
   }
-  return await response.json()
+  const data = await response.json()
+  console.info('[API] readFileContent:', path, 'size:', data.size)
+  return data
 }
 
 export type TaskType = 'encrypt' | 'decrypt'
-export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed'
+export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'cancelling'
 
 export interface EncvTask {
   id: string
@@ -125,6 +166,7 @@ export async function getTasks(): Promise<EncvTask[]> {
 }
 
 export async function createTask(type: TaskType, sourcePath: string): Promise<EncvTask> {
+  console.info('[API] createTask:', type, sourcePath)
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/tasks`, {
     method: 'POST',
@@ -178,6 +220,7 @@ export function saveWebDAVConfigs(configs: WebDAVConfig[]) {
 }
 
 export async function testWebDAVConnection(config: Omit<WebDAVConfig, 'id'>): Promise<void> {
+  console.info('[API] testWebDAV')
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/webdav/test`, {
     method: 'POST',
@@ -264,4 +307,59 @@ export async function fetchConfigSchema(): Promise<Record<string, unknown>> {
     throw new Error(`HTTP error! status: ${response.status}`)
   }
   return await response.json()
+}
+
+export async function searchFiles(path: string, keyword: string, recursive = false): Promise<FileItem[]> {
+  const baseUrl = getApiBaseUrl()
+  const params = new URLSearchParams({
+    path,
+    keyword,
+    recursive: String(recursive),
+  })
+  const response = await fetch(`${baseUrl}/api/files/search?${params}`)
+  if (!response.ok) {
+    if (response.status === 403) {
+      const data = await response.json().catch(() => ({}))
+      if (data.code === 'PERMISSION_DENIED') {
+        throw new PermissionDeniedError(data.error || 'Permission denied')
+      }
+    }
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  const data = await response.json()
+  return data.files || []
+}
+
+export interface IndexStats {
+  totalFiles: number
+  totalDirs: number
+  totalSize: number
+  indexedAt: string
+  isIndexing: boolean
+  lastBuildMs: number
+}
+
+export async function getIndexStats(): Promise<IndexStats> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/index/stats`)
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return await response.json()
+}
+
+export async function rebuildIndex(): Promise<void> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/index/rebuild`, { method: 'POST' })
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+}
+
+export async function clearIndex(): Promise<void> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/index/clear`, { method: 'POST' })
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
 }

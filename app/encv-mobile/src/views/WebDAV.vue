@@ -137,7 +137,6 @@ import {
   IonButtons,
   IonButton,
   IonInput,
-  toastController,
 } from '@ionic/vue'
 import {
   add,
@@ -154,6 +153,7 @@ import {
 } from '@/api/encv'
 import type { WebDAVConfig } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
+import { showToast } from '@/composables/useToast'
 
 const { t } = useI18n()
 
@@ -220,11 +220,11 @@ function saveConfig() {
   configs.value = updated
   showModal.value = false
 
-  toastController.create({
+  showToast({
     message: t('webdav.configSaved'),
     duration: 1500,
     color: 'success',
-  }).then(t => t.present())
+  })
 }
 
 async function testConfig(config: WebDAVConfig) {
@@ -238,21 +238,19 @@ async function testConfig(config: WebDAVConfig) {
       mountPath: config.mountPath,
     })
     testingId.value = ''
-    const toast = await toastController.create({
+    showToast({
       message: t('webdav.connectionSuccess'),
       duration: 2000,
       color: 'success',
     })
-    await toast.present()
   } catch (e) {
     testingId.value = ''
     const detail = e instanceof Error ? e.message : String(e)
-    const toast = await toastController.create({
+    showToast({
       message: t('webdav.connectionFailed') + ': ' + detail,
       duration: 3000,
       color: 'danger',
     })
-    await toast.present()
   }
 }
 
@@ -268,21 +266,19 @@ async function testConnection() {
       mountPath: formMountPath.value,
     })
     testing.value = false
-    const toast = await toastController.create({
+    showToast({
       message: t('webdav.connectionSuccess'),
       duration: 2000,
       color: 'success',
     })
-    await toast.present()
   } catch (e) {
     testing.value = false
     const detail = e instanceof Error ? e.message : String(e)
-    const toast = await toastController.create({
+    showToast({
       message: t('webdav.connectionFailed') + ': ' + detail,
       duration: 3000,
       color: 'danger',
     })
-    await toast.present()
   }
 }
 

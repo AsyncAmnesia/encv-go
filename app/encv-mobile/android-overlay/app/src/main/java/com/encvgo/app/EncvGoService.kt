@@ -124,10 +124,9 @@ class EncvGoService : Service() {
             }
 
             val configPath = File(filesDir, "config.user.json").absolutePath
-            val shellCommand = "${binary.absolutePath} start"
-            Log.i(TAG, "Starting backend: $shellCommand")
+            Log.i(TAG, "Starting backend: ${binary.absolutePath} start")
 
-            goProcess = ProcessBuilder("/system/bin/sh", "-c", shellCommand).apply {
+            goProcess = ProcessBuilder(binary.absolutePath, "start").apply {
                 environment()["ENCV_CONFIG_PATH"] = configPath
                 environment()["ENCV_MOBILE"] = "1"
                 environment()["HOME"] = filesDir.absolutePath
@@ -380,16 +379,112 @@ class EncvGoService : Service() {
     private fun ensureConfigExists() {
         val dest = File(filesDir, "config.user.json")
         if (dest.exists()) {
+            mergeConfigDefaults(dest)
             return
         }
-        assets.open("config.mobile.json").use { input ->
-            FileOutputStream(dest).use { output ->
-                input.copyTo(output)
+        copyDefaultConfig(dest)
+    }
+
+    private fun copyDefaultConfig(dest: File) {
+        try {
+            assets.open("config.mobile.json").use { input ->
+                FileOutputStream(dest).use { output ->
+                    input.copyTo(output)
+                }
             }
+            Log.i(TAG, "Default config copied to ${dest.absolutePath}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to copy default config", e)
+            writeFallbackConfig(dest)
         }
     }
 
+    private fun mergeConfigDefaults(dest: File) {
+        try {
+            val existing = JSONObject(dest.readText())
+            var changed = false
+
+            val defaults = try {
+                JSONObject(assets.open("config.mobile.json").bufferedReader().use { it.readText() })
+            } catch (e: Exception) {
+                Log.w(TAG, "Cannot read default config for merge", e)
+                return
+            }
+
+            val serverObj = existing.optJSONObject("server")
+            val defaultServer = defaults.optJSONObject("server")
+            if (serverObj != null && defaultServer != null) {
+                if (!serverObj.has("port")) {
+                    serverObj.put("port", defaultServer.optInt("port", DEFAULT_PORT))
+                    changed = true
+                }
+                if (!serverObj.has("dir")) {
+                    serverObj.put("dir", defaultServer.optString("dir", "/storage/emulated/0"))
+                    changed = true
+                }
+            }
+
+            if (!existing.has("password")) {
+                existing.put("password", defaults.optString("password", ""))
+                changed = true
+            }
+            if (!existing.has("output_path")) {
+                existing.put("output_path", defaults.optString("output_path", "/storage/emulated/0/encv-output"))
+                changed = true
+            }
+            if (!existing.has("plugin_settings")) {
+                existing.put("plugin_settings", defaults.optJSONObject("plugin_settings") ?: JSONObject())
+                changed = true
+            }
+            if (!existing.has("log")) {
+                existing.put("log", defaults.optJSONObject("log") ?: JSONObject().put("level", "info").put("console", true))
+                changed = true
+            }
+
+            if (changed) {
+                dest.writeText(existing.toString(2))
+                Log.i(TAG, "Config merged with new defaults")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to merge config defaults", e)
+        }
+    }
+
+    private fun writeFallbackConfig(dest: File) {
+        val fallback = JSONObject().apply {
+            put("password", "")
+            put("output_path", "/storage/emulated/0/encv-output")
+            put("server", JSONObject().put("port", DEFAULT_PORT).put("dir", "/storage/emulated/0"))
+            put("plugin_settings", JSONObject())
+            put("log", JSONObject().put("level", "info").put("console", true))
+        }
+        dest.writeText(fallback.toString(2))
+        Log.i(TAG, "Fallback config written to ${dest.absolutePath}")
+    }
+
     private fun findExecutableBinary(): File? {
+        val nativeLibDir = applicationInfo.nativeLibraryDir
+        Log.i(TAG, "nativeLibraryDir: $nativeLibDir")
+
+        val nativeBinary = File(nativeLibDir, "libencv-go.so")
+        Log.i(TAG, "Checking native binary: exists=${nativeBinary.exists()}, canExecute=${nativeBinary.canExecute()}, path=${nativeBinary.absolutePath}")
+
+        if (nativeBinary.exists() && nativeBinary.canExecute()) {
+            Log.i(TAG, "Using binary from nativeLibraryDir: ${nativeBinary.absolutePath}")
+            return nativeBinary
+        }
+
+        val libDir = File(nativeLibDir)
+        if (libDir.exists()) {
+            libDir.listFiles()?.forEach { f ->
+                Log.i(TAG, "  lib dir entry: ${f.name} exe=${f.canExecute()}")
+            }
+        } else {
+            Log.w(TAG, "nativeLibraryDir does not exist: $nativeLibDir")
+        }
+
+        Log.w(TAG, "nativeLibraryDir lookup failed, falling back to filesDir (may fail on Android 10+)")
+
         val candidateDirs = listOf(
             filesDir to "filesDir",
             cacheDir to "cacheDir",
@@ -415,14 +510,18 @@ class EncvGoService : Service() {
 
     private fun copyBinaryFromAssets(dest: File) {
         dest.parentFile?.mkdirs()
-        assets.open(BINARY_NAME).use { input ->
-            FileOutputStream(dest).use { output ->
-                val buffer = ByteArray(8192)
-                var len: Int
-                while (input.read(buffer).also { len = it } != -1) {
-                    output.write(buffer, 0, len)
+        try {
+            assets.open(BINARY_NAME).use { input ->
+                FileOutputStream(dest).use { output ->
+                    val buffer = ByteArray(8192)
+                    var len: Int
+                    while (input.read(buffer).also { len = it } != -1) {
+                        output.write(buffer, 0, len)
+                    }
                 }
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "Binary not found in assets (expected on Android 10+ with jniLibs packaging)", e)
         }
     }
 

@@ -48,6 +48,13 @@
           </ion-item>
           <ion-item-options side="end">
             <ion-item-option
+              v-if="task.status === 'queued'"
+              color="warning"
+              @click="handleCancelTask(task.id)"
+            >
+              {{ t('tasks.cancel') }}
+            </ion-item-option>
+            <ion-item-option
               v-if="task.status === 'running'"
               color="warning"
               @click="handleCancelTask(task.id)"
@@ -62,7 +69,7 @@
               {{ t('tasks.retry') }}
             </ion-item-option>
             <ion-item-option
-              v-if="task.status === 'completed' || task.status === 'failed'"
+              v-if="task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'"
               color="danger"
               @click="handleRemoveTask(task.id)"
             >
@@ -107,6 +114,9 @@
                 label-placement="stacked"
                 placeholder="/path/to/file"
               ></ion-input>
+              <ion-button slot="end" fill="clear" @click="handleBrowse">
+                <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+              </ion-button>
             </ion-item>
           </ion-list>
           <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath">
@@ -147,7 +157,7 @@ import {
   IonSelectOption,
   IonInput,
   IonSpinner,
-  toastController,
+  modalController,
 } from '@ionic/vue'
 import {
   add,
@@ -156,6 +166,7 @@ import {
   closeCircle,
   timer,
   sync,
+  folderOpen,
 } from 'ionicons/icons'
 import {
   getTasks,
@@ -166,6 +177,8 @@ import {
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
+import { showToast } from '@/composables/useToast'
+import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const { t } = useI18n()
 
@@ -181,6 +194,7 @@ function getTaskIcon(task: EncvTask) {
     case 'running': return sync
     case 'completed': return checkmarkCircle
     case 'failed': return closeCircle
+    default: return timer
   }
 }
 
@@ -190,6 +204,7 @@ function getTaskColor(task: EncvTask) {
     case 'running': return 'primary'
     case 'completed': return 'success'
     case 'failed': return 'danger'
+    default: return 'medium'
   }
 }
 
@@ -199,6 +214,7 @@ function getStatusColor(status: TaskStatus) {
     case 'running': return 'primary'
     case 'completed': return 'success'
     case 'failed': return 'danger'
+    default: return 'medium'
   }
 }
 
@@ -208,6 +224,9 @@ function getStatusLabel(status: TaskStatus) {
     case 'running': return t('tasks.running')
     case 'completed': return t('tasks.completed')
     case 'failed': return t('tasks.failed')
+    case 'cancelled': return t('tasks.cancelled')
+    case 'cancelling': return t('tasks.cancelling')
+    default: return status
   }
 }
 
@@ -241,25 +260,28 @@ function showNewTaskSheet() {
   showNewTaskModal.value = true
 }
 
+async function handleBrowse() {
+  showNewTaskModal.value = false
+  const modal = await modalController.create({
+    component: FilePickerModal,
+  })
+  await modal.present()
+  const { data, role } = await modal.onDidDismiss()
+  if (role === 'select' && data) {
+    newTaskPath.value = data.path
+  }
+  showNewTaskModal.value = true
+}
+
 async function handleCreateTask() {
   if (!newTaskPath.value) return
   try {
     await createTask(newTaskType.value, newTaskPath.value)
     showNewTaskModal.value = false
-    const toast = await toastController.create({
-      message: t('tasks.taskCreated'),
-      duration: 1500,
-      color: 'success',
-    })
-    await toast.present()
+    showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
     await loadTasks()
   } catch {
-    const toast = await toastController.create({
-      message: t('tasks.taskCreateFailed'),
-      duration: 2000,
-      color: 'danger',
-    })
-    await toast.present()
+    showToast({ message: t('tasks.taskCreateFailed'), duration: 2000, color: 'danger' })
   }
 }
 
@@ -268,12 +290,7 @@ async function handleCancelTask(id: string) {
     await cancelTask(id)
     await loadTasks()
   } catch {
-    const toast = await toastController.create({
-      message: t('tasks.taskCancelFailed'),
-      duration: 2000,
-      color: 'danger',
-    })
-    await toast.present()
+    showToast({ message: t('tasks.taskCancelFailed'), duration: 2000, color: 'danger' })
   }
 }
 
@@ -282,12 +299,7 @@ async function handleRetryTask(id: string) {
     await retryTask(id)
     await loadTasks()
   } catch {
-    const toast = await toastController.create({
-      message: t('tasks.taskRetryFailed'),
-      duration: 2000,
-      color: 'danger',
-    })
-    await toast.present()
+    showToast({ message: t('tasks.taskRetryFailed'), duration: 2000, color: 'danger' })
   }
 }
 

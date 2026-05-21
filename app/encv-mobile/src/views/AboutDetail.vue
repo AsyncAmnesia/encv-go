@@ -59,7 +59,7 @@
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonIcon, IonLabel,
-  alertController, toastController,
+  alertController,
 } from '@ionic/vue'
 import {
   informationCircle, codeSlash, logoGithub, openOutline,
@@ -67,6 +67,7 @@ import {
 } from 'ionicons/icons'
 import { useTheme } from '@/composables/useTheme'
 import { useI18n } from '@/composables/useI18n'
+import { showToast } from '@/composables/useToast'
 import { ref } from 'vue'
 
 const { isDark, toggleDark } = useTheme()
@@ -96,11 +97,11 @@ async function handleClearCache() {
           if (serverPref) localStorage.setItem('encv-server-url', serverPref)
           if (webdavPref) localStorage.setItem('encv-webdav-configs', webdavPref)
           if (localePref) localStorage.setItem('encv-locale', localePref)
-          toastController.create({
+          showToast({
             message: t('settings.cacheCleared'),
             duration: 1500,
             color: 'success',
-          }).then(t => t.present())
+          })
         },
       },
     ],
@@ -121,11 +122,11 @@ async function handleResetSettings() {
           localStorage.clear()
           serverUrl.value = 'http://127.0.0.1:2025'
           if (isDark.value) toggleDark()
-          toastController.create({
+          showToast({
             message: t('settings.settingsReset'),
             duration: 1500,
             color: 'success',
-          }).then(t => t.present())
+          })
         },
       },
     ],

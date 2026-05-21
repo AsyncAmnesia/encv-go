@@ -7,28 +7,31 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/Soltus/encv-go/internal/utils"
-	"github.com/google/uuid"
+	"github.com/Soltus/encv-go/internal/service"
 )
 
-var (
-	tasksMu sync.RWMutex
-	tasks   = map[string]*MobileTask{}
-)
-
-type MobileTask struct {
-	ID         string    `json:"id"`
-	Type       string    `json:"type"`
-	SourcePath string    `json:"sourcePath"`
-	Status     string    `json:"status"`
-	Progress   int       `json:"progress"`
-	Error      string    `json:"error,omitempty"`
-	CreatedAt  time.Time `json:"createdAt"`
+func writeServiceError(w http.ResponseWriter, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	switch err.(type) {
+	case *service.PermissionError:
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error(), "code": "PERMISSION_DENIED"})
+	case *service.ForbiddenError:
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+	case *service.NotFoundError:
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+	case *service.BadRequestError:
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+	default:
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -60,67 +63,15 @@ func (s *Server) handleServerShutdown(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListFilesAPI(w http.ResponseWriter, r *http.Request) {
 	queryPath := r.URL.Query().Get("path")
-	if queryPath == "" {
-		queryPath = "/"
-	}
+	slog.Info("API: list files", "path", queryPath)
 
-	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	files, err := s.mobileSvc.ListFiles(queryPath)
 	if err != nil {
-		slog.Error("SafeURLToAbsPath failed", "path", queryPath, "error", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		writeServiceError(w, err)
 		return
 	}
 
-	entries, err := os.ReadDir(absPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(map[string]string{"error": "directory not found"})
-			return
-		}
-		slog.Error("ReadDir failed", "path", absPath, "error", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to read directory"})
-		return
-	}
-
-	type FileInfo struct {
-		Name       string `json:"name"`
-		Path       string `json:"path"`
-		IsDirectory bool  `json:"isDirectory"`
-		Size       int64  `json:"size"`
-		Modified   string `json:"modified"`
-	}
-
-	var files []FileInfo
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			slog.Error("Failed to get file info", "name", entry.Name(), "error", err)
-			continue
-		}
-
-		filePath := queryPath + "/" + entry.Name()
-		if queryPath == "/" {
-			filePath = "/" + entry.Name()
-		}
-
-		files = append(files, FileInfo{
-			Name:        entry.Name(),
-			Path:        filePath,
-			IsDirectory: entry.IsDir(),
-			Size:        info.Size(),
-			Modified:    info.ModTime().Format(time.RFC3339),
-		})
-	}
-
+	slog.Info("API: list files result", "path", queryPath, "count", len(files))
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{"files": files})
@@ -128,34 +79,11 @@ func (s *Server) handleListFilesAPI(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteFileAPI(w http.ResponseWriter, r *http.Request) {
 	queryPath := r.URL.Query().Get("path")
-	if queryPath == "" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "'path' query parameter is required"})
-		return
-	}
+	slog.Warn("API: delete file", "path", queryPath)
 
-	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	err := s.mobileSvc.DeleteFile(queryPath)
 	if err != nil {
-		slog.Error("SafeURLToAbsPath failed", "path", queryPath, "error", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-		return
-	}
-
-	err = os.Remove(absPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
-			return
-		}
-		slog.Error("Remove failed", "path", absPath, "error", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to delete file"})
+		writeServiceError(w, err)
 		return
 	}
 
@@ -164,14 +92,23 @@ func (s *Server) handleDeleteFileAPI(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "deleted"})
 }
 
-func (s *Server) handleGetTasks(w http.ResponseWriter, r *http.Request) {
-	tasksMu.RLock()
-	defer tasksMu.RUnlock()
+func (s *Server) handleReadFileContent(w http.ResponseWriter, r *http.Request) {
+	queryPath := r.URL.Query().Get("path")
+	slog.Info("API: read file content", "path", queryPath)
 
-	taskList := make([]*MobileTask, 0, len(tasks))
-	for _, t := range tasks {
-		taskList = append(taskList, t)
+	result, err := s.mobileSvc.ReadFileContent(queryPath)
+	if err != nil {
+		writeServiceError(w, err)
+		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) handleGetTasks(w http.ResponseWriter, r *http.Request) {
+	taskList := s.mobileSvc.GetTaskManager().List()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -199,18 +136,8 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task := &MobileTask{
-		ID:         uuid.New().String(),
-		Type:       req.Type,
-		SourcePath: req.SourcePath,
-		Status:     "queued",
-		Progress:   0,
-		CreatedAt:  time.Now(),
-	}
-
-	tasksMu.Lock()
-	tasks[task.ID] = task
-	tasksMu.Unlock()
+	slog.Info("API: create task", "type", req.Type, "source", req.SourcePath)
+	task := s.mobileSvc.GetTaskManager().Create(req.Type, req.SourcePath)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -221,18 +148,13 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/tasks/")
 	id = strings.TrimSuffix(id, "/cancel")
 
-	tasksMu.Lock()
-	defer tasksMu.Unlock()
-
-	task, ok := tasks[id]
-	if !ok {
+	task, err := s.mobileSvc.GetTaskManager().Cancel(id)
+	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "task not found"})
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
-
-	task.Status = "cancelled"
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -243,20 +165,13 @@ func (s *Server) handleRetryTask(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/api/tasks/")
 	id = strings.TrimSuffix(id, "/retry")
 
-	tasksMu.Lock()
-	defer tasksMu.Unlock()
-
-	task, ok := tasks[id]
-	if !ok {
+	task, err := s.mobileSvc.GetTaskManager().Retry(id)
+	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "task not found"})
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
-
-	task.Status = "queued"
-	task.Error = ""
-	task.Progress = 0
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -264,140 +179,13 @@ func (s *Server) handleRetryTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTestWebDAV(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodPost:
-		s.handleTestWebDAVPost(w, r)
-	default:
+	if r.Method != http.MethodPost {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
-	}
-}
-
-func (s *Server) handleReadFileContent(w http.ResponseWriter, r *http.Request) {
-	queryPath := r.URL.Query().Get("path")
-	if queryPath == "" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "'path' query parameter is required"})
 		return
 	}
 
-	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-		return
-	}
-
-	info, err := os.Stat(absPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(map[string]string{"error": "file not found"})
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to stat file"})
-		return
-	}
-
-	if info.IsDir() {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "path is a directory"})
-		return
-	}
-
-	maxSize := int64(2 << 20)
-	if info.Size() > maxSize {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusRequestEntityTooLarge)
-		json.NewEncoder(w).Encode(map[string]interface{}{"error": "file too large", "maxSize": maxSize, "actualSize": info.Size()})
-		return
-	}
-
-	data, err := os.ReadFile(absPath)
-	if err != nil {
-		slog.Error("ReadFile failed", "path", absPath, "error", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to read file"})
-		return
-	}
-
-	content := string(data)
-	encoding := "utf-8"
-	if !isValidUTF8(data) {
-		content = string(data)
-		encoding = "binary"
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"name":     filepath.Base(absPath),
-		"path":     queryPath,
-		"size":     info.Size(),
-		"content":  content,
-		"encoding": encoding,
-	})
-}
-
-func isValidUTF8(data []byte) bool {
-	for i := 0; i < len(data); {
-		if data[i] < 0x80 {
-			i++
-			continue
-		}
-		_, size := decodeUTF8Rune(data[i:])
-		if size == 0 {
-			return false
-		}
-		i += size
-	}
-	return true
-}
-
-func decodeUTF8Rune(data []byte) (rune, int) {
-	if len(data) == 0 {
-		return 0, 0
-	}
-	b := data[0]
-	if b < 0x80 {
-		return rune(b), 1
-	}
-	var n uint32
-	var size int
-	switch {
-	case b&0xe0 == 0xc0:
-		n = uint32(b & 0x1f)
-		size = 2
-	case b&0xf0 == 0xe0:
-		n = uint32(b & 0x0f)
-		size = 3
-	case b&0xf8 == 0xf0:
-		n = uint32(b & 0x07)
-		size = 4
-	default:
-		return 0, 0
-	}
-	if len(data) < size {
-		return 0, 0
-	}
-	for i := 1; i < size; i++ {
-		if data[i]&0xc0 != 0x80 {
-			return 0, 0
-		}
-		n = n<<6 | uint32(data[i]&0x3f)
-	}
-	return rune(n), size
-}
-
-func (s *Server) handleTestWebDAVPost(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -419,31 +207,33 @@ func (s *Server) handleTestWebDAVPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	httpReq, err := http.NewRequest(http.MethodGet, req.URL, nil)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]any{"success": false, "error": "invalid URL"})
-		return
-	}
-
-	if req.Username != "" || req.Password != "" {
-		httpReq.SetBasicAuth(req.Username, req.Password)
-	}
-
-	resp, err := client.Do(httpReq)
+	err = s.mobileSvc.TestWebDAV(req.URL, req.Username, req.Password)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	resp.Body.Close()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]any{"success": true})
+}
+
+func (s *Server) handlePermissions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	storage := s.mobileSvc.CheckStoragePermission()
+	slog.Info("API: check permissions", "storage", storage)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{
+		"storage": storage,
+	})
 }
 
 func (s *Server) handleMobileFiles(w http.ResponseWriter, r *http.Request) {
@@ -475,4 +265,56 @@ func (s *Server) handleMobileTasks(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
 	}
+}
+
+func (s *Server) handleSearchFilesAPI(w http.ResponseWriter, r *http.Request) {
+	queryPath := r.URL.Query().Get("path")
+	keyword := r.URL.Query().Get("keyword")
+	recursive := r.URL.Query().Get("recursive") == "true"
+
+	slog.Info("API: search files", "path", queryPath, "keyword", keyword, "recursive", recursive)
+
+	files, err := s.mobileSvc.SearchFiles(queryPath, keyword, recursive)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{"files": files})
+}
+
+func (s *Server) handleIndexStats(w http.ResponseWriter, r *http.Request) {
+	stats := s.mobileSvc.GetIndexStats()
+	if stats.TotalFiles == 0 && !stats.IsIndexing {
+		s.mobileSvc.RebuildIndex()
+		stats = s.mobileSvc.GetIndexStats()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
+
+func (s *Server) handleIndexRebuild(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+		return
+	}
+	s.mobileSvc.RebuildIndex()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "indexing"})
+}
+
+func (s *Server) handleIndexClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+		return
+	}
+	s.mobileSvc.ClearIndex()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "cleared"})
 }

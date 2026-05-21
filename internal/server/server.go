@@ -22,6 +22,7 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/handler"
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
+	mobileservice "github.com/Soltus/encv-go/internal/service"
 	"github.com/Soltus/encv-go/internal/v2/service"
 	"github.com/Soltus/encv-go/internal/webdav"
 	"github.com/dustin/go-humanize"
@@ -39,6 +40,7 @@ type Server struct {
 	webdavPath string // WebDAV 的路由前缀
 	// 【关键替换】用新的 ReaderService 替代旧的 ContainerManager
 	readerService  *service.ReaderService
+	mobileSvc      *mobileservice.MobileService
 	contentHandler *handler.ContentHandler
 	chunkNamers    []namer.ChunkNamer
 }
@@ -48,10 +50,12 @@ func NewServer(ctx context.Context, configPath string) *Server {
 	containerManager := service.NewContainerManager()
 	readerService := service.NewReaderService(containerManager)
 	contentHandler := handler.NewContentHandler()
+	mobileSvc := mobileservice.NewMobileService("", cfg)
 	return &Server{
 		cfg:            cfg,
 		configPath:     configPath,
 		readerService:  readerService,
+		mobileSvc:      mobileSvc,
 		contentHandler: contentHandler,
 		instanceID:     fmt.Sprintf("%x", time.Now().UnixNano()),
 	}
@@ -74,6 +78,7 @@ func (s *Server) Start(version string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve absolute path for directory '%s': %w", dir, err)
 	}
+	s.mobileSvc.SetServingDir(s.servingDir)
 	chunkNamers := plugins.GetAllRegisteredChunkNamers()
 	s.chunkNamers = chunkNamers
 
@@ -99,6 +104,10 @@ func (s *Server) Start(version string) (string, error) {
 	slog.Info("Server starting", "instance", s.instanceID, "version", s.version)
 	slog.Info("Main service serving from", "dir", s.servingDir)
 
+	wsLogHandler := NewWSLogHandler(slog.Default().Handler(), s.mobileSvc.GetWSHub())
+	slog.SetDefault(slog.New(wsLogHandler))
+	slog.Info("WSLogHandler initialized, logs will be bridged to WebSocket")
+
 	// 3. 创建统一的 ServeMux 并注册路由
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ping", s.handlePing)
@@ -111,40 +120,43 @@ func (s *Server) Start(version string) (string, error) {
 	mux.HandleFunc("/api/tasks", s.handleMobileTasks)
 	mux.HandleFunc("/api/tasks/", s.handleMobileTasks)
 	mux.HandleFunc("/api/webdav/test", s.handleTestWebDAV)
+	mux.HandleFunc("/api/permissions", s.handlePermissions)
 	mux.HandleFunc("/api/server/shutdown", s.handleServerShutdown)
+	mux.HandleFunc("/api/files/search", s.handleSearchFilesAPI)
+	mux.HandleFunc("/api/index/stats", s.handleIndexStats)
+	mux.HandleFunc("/api/index/rebuild", s.handleIndexRebuild)
+	mux.HandleFunc("/api/index/clear", s.handleIndexClear)
 	mux.HandleFunc("/ws", s.handleWebSocket)
 
 	mux.HandleFunc("/", s.handleRequest)
 
 	// 如果启用了 WebDAV，则注册其处理器
 	if s.webdavDir != "" {
-		// 【关键修复】从插件系统获取所有已注册的 ChunkNamers
-		// 这是一种解耦且可扩展的方式，服务器无需知道具体的命名规则。
 		chunkNamers := plugins.GetAllRegisteredChunkNamers()
-		fs := webdav.NewENCVFS(config.NewContext(context.Background(), s.cfg), s.readerService, chunkNamers)
-		webdavHandler := &goWebdav.Handler{
-			FileSystem: fs,
-			LockSystem: goWebdav.NewMemLS(),
+		fs, fsErr := webdav.NewENCVFS(config.NewContext(context.Background(), s.cfg), s.readerService, chunkNamers)
+		if fsErr != nil {
+			slog.Warn("WebDAV initialization failed, skipping WebDAV", "error", fsErr)
+		} else {
+			webdavHandler := &goWebdav.Handler{
+				FileSystem: fs,
+				LockSystem: goWebdav.NewMemLS(),
+			}
+			configAwareWebdavHandler := middleware.WithConfig(s.cfg, webdavHandler)
+
+			webdavUser := s.cfg.Webdav.Username
+			webdavPass := s.cfg.Webdav.Password
+
+			authMiddleware := middleware.BasicAuth(webdavUser, webdavPass)
+			protectedWebdavHandler := authMiddleware(configAwareWebdavHandler)
+
+			mux.Handle(s.webdavPath, protectedWebdavHandler)
 		}
-		// WebDAV 也需要通过配置中间件来处理解密等
-		configAwareWebdavHandler := middleware.WithConfig(s.cfg, webdavHandler)
-
-		webdavUser := s.cfg.Webdav.Username
-		webdavPass := s.cfg.Webdav.Password
-
-		// 【新增】应用基础认证中间件
-		// 如果 webdavUser 或 webdavPass 为空，BasicAuth 中间件将不执行任何操作
-		authMiddleware := middleware.BasicAuth(webdavUser, webdavPass)
-		protectedWebdavHandler := authMiddleware(configAwareWebdavHandler)
-
-		// 【修改】使用受保护的处理器
-		mux.Handle(s.webdavPath, protectedWebdavHandler)
-
 	}
 
 	// CorsMiddleware 应该在最外层，最先处理请求
 	finalHandler := middleware.CorsMiddleware(middleware.WithConfig(s.cfg, mux))
-	return register.StartHttpHandlerWithRetry(finalHandler, s.cfg.Server.Port, s.instanceID, s.version)
+	loggedHandler := middleware.LoggingMiddleware(finalHandler)
+	return register.StartHttpHandlerWithRetry(loggedHandler, s.cfg.Server.Port, s.instanceID, s.version)
 }
 
 func (s *Server) Stop() error {

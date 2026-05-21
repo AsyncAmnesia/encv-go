@@ -112,55 +112,71 @@ jobs:
       - name: Copy assets, overlay files, and release config
         run: |
           mkdir -p app/encv-mobile/android/app/src/main/assets
-          cp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/assets/encv-go
+          mkdir -p app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a
+          cp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a/libencv-go.so
           cp app/encv-mobile/assets/config.mobile.json app/encv-mobile/android/app/src/main/assets/config.mobile.json
-          # Release config files (NEVER touched by cap sync — confirmed from source)
           cp app/encv-mobile/android-overlay/gradle.properties app/encv-mobile/android/gradle.properties
           echo "Assets:"
           ls -lhR app/encv-mobile/android/app/src/main/assets/
+          echo "JNI libs:"
+          ls -lhR app/encv-mobile/android/app/src/main/jniLibs/
           echo "Release config:"
           ls -lh app/encv-mobile/android/gradle.properties
 
       - name: Patch AndroidManifest (permissions + network config)
         run: |
-          python3 -c "
-          import xml.etree.ElementTree as ET
-          ET.register_namespace('android', 'http://schemas.android.com/apk/res/android')
-          base = ET.parse('app/encv-mobile/android/app/src/main/AndroidManifest.xml')
-          root = base.getroot()
-          ns = '{http://schemas.android.com/apk/res/android}'
+          MANIFEST="app/encv-mobile/android/app/src/main/AndroidManifest.xml"
 
-          for app_tag in root.findall('application'):
-              app_tag.set(ns + 'networkSecurityConfig', '@xml/network_security_config')
-              app_tag.set(ns + 'usesCleartextTraffic', 'true')
+          sed -i 's|<application|<application\n        android:networkSecurityConfig="@xml/network_security_config"\n        android:usesCleartextTraffic="true"|' "$MANIFEST"
 
-          perms = [
-              ('android.permission.INTERNET', None),
-              ('android.permission.FOREGROUND_SERVICE', None),
-              ('android.permission.POST_NOTIFICATIONS', None),
-              ('android.permission.READ_MEDIA_VIDEO', None),
-              ('android.permission.READ_MEDIA_AUDIO', None),
-              ('android.permission.READ_MEDIA_IMAGES', None),
-              ('android.permission.READ_EXTERNAL_STORAGE', {'maxSdkVersion': '32'}),
-              ('android.permission.WRITE_EXTERNAL_STORAGE', {'maxSdkVersion': '28'}),
-              ('android.permission.MANAGE_EXTERNAL_STORAGE', None),
-              ('android.permission.WAKE_LOCK', None),
-              ('android.permission.READ_LOGS', None),
-          ]
-          existing_perms = {p.get(ns + 'name', '') for p in root.findall('uses-permission')}
-          for perm_name, attrs in perms:
-              if perm_name not in existing_perms:
-                  perm = ET.SubElement(root, 'uses-permission')
-                  perm.set(ns + 'name', perm_name)
-                  if attrs:
-                      for k, v in attrs.items():
-                          perm.set(ns + k, v)
+          PERMS_TO_ADD=""
+          for ENTRY in \
+            "android.permission.INTERNET" \
+            "android.permission.FOREGROUND_SERVICE" \
+            "android.permission.POST_NOTIFICATIONS" \
+            "android.permission.READ_MEDIA_VIDEO" \
+            "android.permission.READ_MEDIA_AUDIO" \
+            "android.permission.READ_MEDIA_IMAGES" \
+            "android.permission.MANAGE_EXTERNAL_STORAGE" \
+            "android.permission.WAKE_LOCK" \
+            "android.permission.READ_LOGS"; do
+            if ! grep -q "android:name=\"${ENTRY}\"" "$MANIFEST"; then
+              PERMS_TO_ADD="${PERMS_TO_ADD}    <uses-permission android:name=\"${ENTRY}\" />\n"
+            fi
+          done
 
-          base.write('app/encv-mobile/android/app/src/main/AndroidManifest.xml', xml_declaration=True, encoding='utf-8')
-          print('AndroidManifest patched')
-          "
+          for ENTRY in \
+            "android.permission.READ_EXTERNAL_STORAGE|maxSdkVersion=32" \
+            "android.permission.WRITE_EXTERNAL_STORAGE|maxSdkVersion=28"; do
+            PERM="${ENTRY%%|*}"
+            ATTR="${ENTRY##*|}"
+            if ! grep -q "android:name=\"${PERM}\"" "$MANIFEST"; then
+              PERMS_TO_ADD="${PERMS_TO_ADD}    <uses-permission android:name=\"${PERM}\" android:${ATTR} />\n"
+            fi
+          done
+
+          if [ -n "$PERMS_TO_ADD" ]; then
+            sed -i "s|</manifest>|${PERMS_TO_ADD}</manifest>|" "$MANIFEST"
+          fi
+
+          echo "AndroidManifest patched (sed)"
+          echo "=== application tag ==="
+          grep -A2 '<application' "$MANIFEST" | head -5
 
       # === Verify kotlin setup before build ===
+      - name: Verify AndroidManifest integrity
+        run: |
+          MANIFEST="app/encv-mobile/android/app/src/main/AndroidManifest.xml"
+          echo "=== Manifest checks ==="
+          grep -q 'android.intent.action.MAIN' "$MANIFEST" && echo "✅ MAIN intent-filter" || { echo "❌ MISSING: MAIN intent-filter!"; exit 1; }
+          grep -q 'android.intent.category.LAUNCHER' "$MANIFEST" && echo "✅ LAUNCHER category" || { echo "❌ MISSING: LAUNCHER category!"; exit 1; }
+          grep -q 'android:icon' "$MANIFEST" && echo "✅ android:icon" || { echo "❌ MISSING: android:icon!"; exit 1; }
+          grep -q 'android:label' "$MANIFEST" && echo "✅ android:label" || { echo "❌ MISSING: android:label!"; exit 1; }
+          grep -q 'android:theme' "$MANIFEST" && echo "✅ android:theme" || { echo "❌ MISSING: android:theme!"; exit 1; }
+          echo "=== mipmap resources ==="
+          find app/encv-mobile/android/app/src/main/res -name "ic_launcher*" -type f | head -5 && echo "✅ mipmap icons found" || echo "⚠️ WARNING: no ic_launcher in res/"
+          echo "✅ Manifest integrity OK"
+
       - name: Verify build.gradle kotlin setup
         run: |
           echo "=== kotlin-android plugin ==="
@@ -169,6 +185,10 @@ jobs:
           grep -n "kotlin-stdlib" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: kotlin-stdlib not found"
           echo "=== jvmTarget ==="
           grep -n "jvmTarget" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: jvmTarget not found"
+          echo "=== jniLibs.srcDirs ==="
+          grep -n "jniLibs.srcDirs" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: jniLibs.srcDirs not found"
+          echo "=== useLegacyPackaging ==="
+          grep -n "useLegacyPackaging" app/encv-mobile/android/app/build.gradle || echo "❌ MISSING: useLegacyPackaging not set!"
           echo "=== proguard-rules.pro ==="
           test -f app/encv-mobile/android/app/proguard-rules.pro && echo "✅ proguard-rules.pro exists" || echo "⚠️ WARNING: no proguard-rules.pro"
           echo "=== GoProcessPlugin.kt source ==="
@@ -235,14 +255,10 @@ jobs:
               echo "⚠️ No encvgo .class (may be cleaned)"
             echo "=== capacitor.plugins.json ==="
             unzip -p "$APK_PATH" assets/capacitor.plugins.json
-            echo "=== Go binary in APK ==="
-            unzip -p "$APK_PATH" assets/encv-go > /tmp/test-binary 2>/dev/null
-            if [ -f /tmp/test-binary ]; then
-              echo "Size: $(wc -c < /tmp/test-binary) bytes"
-              file /tmp/test-binary || true
-            else
-              echo "❌ encv-go not in APK assets!"
-            fi
+            echo "=== Go binary in APK (jniLibs) ==="
+            unzip -l "$APK_PATH" | grep -E "libencv-go|lib/arm64" || echo "❌ libencv-go.so NOT in APK!"
+            echo "=== Go binary in APK (assets, legacy) ==="
+            unzip -l "$APK_PATH" | grep -E "assets/encv-go" || echo "(no assets/encv-go, expected with jniLibs packaging)"
           else
             echo "No APK found to verify"
           fi

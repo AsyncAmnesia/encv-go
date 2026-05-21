@@ -164,14 +164,32 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
   }
 
-  // 5. Version injection
+  // 5. jniLibs.srcDirs (ensure Gradle picks up src/main/jniLibs)
+  if (!c.includes('jniLibs.srcDirs')) {
+    c = c.replace(
+      /android\s*\{/,
+      "android {\n    sourceSets {\n        main {\n            jniLibs.srcDirs = ['src/main/jniLibs']\n        }\n    }",
+    )
+    console.log('  [jniLibs] added jniLibs.srcDirs')
+  }
+
+  // 6. useLegacyPackaging = true (critical: AGP 8.0+ defaults to false, which prevents .so extraction)
+  if (!c.includes('useLegacyPackaging')) {
+    c = c.replace(
+      /android\s*\{/,
+      "android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }",
+    )
+    console.log('  [packaging] added useLegacyPackaging = true')
+  }
+
+  // 7. Version injection
   if (version) {
     const vcode = parseInt(version.replace(/\./g, '')) || 1
     c = c.replace(/versionCode\s+\d+/, `versionCode ${vcode}`)
     c = c.replace(/versionName\s+"[^"]*"/, `versionName "${version}"`)
   }
 
-  // 6. Signing config (only when building release)
+  // 8. Signing config (only when building release)
   if (version && c.includes('minifyEnabled false')) {
     const scBlock =
       "\n" +
@@ -194,7 +212,7 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     console.log('  release: signing + minify + shrink applied')
   }
 
-  // 7. Kotlin JVM target (Groovy DSL 兼容写法)
+  // 9. Kotlin JVM target (Groovy DSL 兼容写法)
   if (!c.includes('jvmTarget') && c.includes('kotlin-android')) {
     c += `
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
@@ -205,7 +223,7 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
 `
   }
 
-  // 8. 显式声明 sourceSets（确保 Kotlin 编译器能找到 app/src/main/java 下的 .kt 文件）
+  // 10. 显式声明 sourceSets（确保 Kotlin 编译器能找到 app/src/main/java 下的 .kt 文件）
   if (!c.includes('sourceSets') && c.includes('kotlin-android')) {
     c += `
 android.sourceSets {
@@ -215,12 +233,12 @@ android.sourceSets {
     console.log('  [kotlin] added explicit sourceSets for kotlin sources')
   }
 
-  // 9. 打印 build.gradle 关键配置用于诊断（仅 debug 模式）
+  // 11. 打印 build.gradle 关键配置用于诊断（仅 debug 模式）
   if (!version) {
     const lines = c.split('\n')
     console.log('  [diag] --- build.gradle key lines ---')
     lines.forEach((line, i) => {
-      if (line.match(/kotlin|namespace|sourceSets|apply plugin|plugins\s*\{/)) {
+      if (line.match(/kotlin|namespace|sourceSets|apply plugin|plugins\s*\{|jniLibs|useLegacyPackaging/)) {
         console.log(`  [diag] L${i + 1}: ${line.trim()}`)
       }
     })
@@ -247,6 +265,10 @@ for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt', 'EncvGoService.kt']) {
     console.error(`  overlay: missing ${src}`)
   }
 }
+
+const jniLibsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'jniLibs', 'arm64-v8a')
+mkdirSync(jniLibsDir, { recursive: true })
+console.log('  ensured jniLibs/arm64-v8a directory exists')
 
 const overlayManifestSrc = join(OVERLAY_DIR, 'app', 'src', 'main', 'AndroidManifest.xml')
 const appManifestDest = join(ANDROID_DIR, 'app', 'src', 'main', 'AndroidManifest.xml')
@@ -278,6 +300,17 @@ if (existsSync(mainActivityPath)) {
     process.exit(1)
   }
   console.log(`  verified: 1 MainActivity class declaration ✓`)
+}
+
+// --- Copy config.mobile.json to Android assets directory ---
+const androidAssetsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'assets')
+mkdirSync(androidAssetsDir, { recursive: true })
+const configSrc = join(__dirname, '..', 'assets', 'config.mobile.json')
+if (existsSync(configSrc)) {
+  copyFileSync(configSrc, join(androidAssetsDir, 'config.mobile.json'))
+  console.log('  overlay: config.mobile.json → Android assets')
+} else {
+  console.error('  WARNING: assets/config.mobile.json not found')
 }
 
 // --- Debug-only AndroidManifest.xml: enable Logcat floating + notify entries ---

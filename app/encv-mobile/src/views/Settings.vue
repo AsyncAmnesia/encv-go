@@ -50,6 +50,20 @@
         </ion-item>
       </ion-list>
 
+      <ion-list>
+        <ion-list-header>
+          <ion-label>{{ t('settings.cache') }}</ion-label>
+        </ion-list-header>
+        <ion-item button @click="goCache">
+          <ion-icon :icon="databaseIcon" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.cacheAndIndex') }}</h3>
+            <p>{{ indexStats?.isIndexing ? t('settings.indexing') : t('settings.indexReady') }}</p>
+          </ion-label>
+          <ion-icon :icon="chevronForward" slot="end"></ion-icon>
+        </ion-item>
+      </ion-list>
+
       <div v-if="configLoading && !configLoaded" class="loading-container">
         <ion-spinner name="crescent"></ion-spinner>
         <p>{{ t('settings.loadingConfig') }}</p>
@@ -202,7 +216,7 @@ import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonContent, IonList, IonListHeader, IonItem, IonItemDivider,
   IonIcon, IonLabel, IonToggle, IonInput, IonBadge, IonSpinner,
-  IonSelect, IonSelectOption, toastController,
+  IonSelect, IonSelectOption,
 } from '@ionic/vue'
 import {
   moon, globeOutline, server as serverIcon, save as saveIcon,
@@ -212,11 +226,15 @@ import {
   filmOutline, musicalNotesOutline, imagesOutline, readerOutline,
   newspaperOutline, colorWandOutline, gitNetworkOutline, toggleOutline,
   textOutline, personOutline, folderOpen, refreshCircle,
+  fileTrayFull as databaseIcon,
 } from 'ionicons/icons'
 import { useTheme } from '@/composables/useTheme'
 import { useServerStatus } from '@/composables/useServerStatus'
 import { useConfig } from '@/composables/useConfig'
 import { useI18n } from '@/composables/useI18n'
+import { showToast } from '@/composables/useToast'
+import { getIndexStats } from '@/api/encv'
+import type { IndexStats } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
 
 const router = useRouter()
@@ -226,6 +244,7 @@ const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, res
 const { t, tField, tSectionTitle, setLocale, locale } = useI18n()
 
 const configLoaded = ref(false)
+const indexStats = ref<IndexStats | null>(null)
 
 function goServer() {
   router.push('/tabs/settings/server')
@@ -233,6 +252,10 @@ function goServer() {
 
 function goAbout() {
   router.push('/tabs/settings/about')
+}
+
+function goCache() {
+  router.push('/tabs/settings/cache')
 }
 
 function getValue(path: string[]): unknown {
@@ -318,20 +341,18 @@ function handleLocaleChange(event: CustomEvent) {
 async function handleSaveConfig() {
   try {
     await saveConfig()
-    const toast = await toastController.create({
+    showToast({
       message: t('settings.configSaved'),
       duration: 1500,
       color: 'success',
     })
-    await toast.present()
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)
-    const toast = await toastController.create({
+    showToast({
       message: t('settings.configSaveFailed') + ': ' + detail,
       duration: 3000,
       color: 'danger',
     })
-    await toast.present()
   }
 }
 
@@ -344,6 +365,7 @@ onMounted(async () => {
   if (serverOnline.value) {
     await loadConfig()
     configLoaded.value = true
+    try { indexStats.value = await getIndexStats() } catch {}
   }
 })
 

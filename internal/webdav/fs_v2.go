@@ -107,22 +107,25 @@ type decryptedDir struct {
 
 // NewENCVFS 创建一个新的 encvWebDAVFS 实例
 // 【修改】构造函数现在需要接收 ReaderService 和 Config
-func NewENCVFS(ctx context.Context, readerService *service.ReaderService, chunkNamers []namer.ChunkNamer) goWebdav.FileSystem {
+func NewENCVFS(ctx context.Context, readerService *service.ReaderService, chunkNamers []namer.ChunkNamer) (goWebdav.FileSystem, error) {
 	cfg := config.FromContext(ctx)
-	// 【关键】规范化服务目录路径，防止路径问题
 	dir := cfg.Webdav.Dir
 	var err error
 	if dir == "/" {
 		dir, err = os.Getwd()
 		if err != nil {
-			slog.Error("Failed to get current working directory for WebDAV", "error", err)
-			os.Exit(1)
+			return nil, fmt.Errorf("failed to get current working directory for WebDAV: %w", err)
 		}
 	}
 	dir, err = filepath.Abs(dir)
 	if err != nil {
-		slog.Error("Failed to resolve absolute path for WebDAV directory", "dir", dir, "error", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("failed to resolve absolute path for WebDAV directory '%s': %w", dir, err)
+	}
+	if _, statErr := os.Stat(dir); os.IsNotExist(statErr) {
+		slog.Warn("WebDAV directory does not exist, creating it", "dir", dir)
+		if mkdirErr := os.MkdirAll(dir, 0755); mkdirErr != nil {
+			return nil, fmt.Errorf("WebDAV directory '%s' does not exist and cannot be created: %w", dir, mkdirErr)
+		}
 	}
 	// 规范化 WebDAV 前缀，确保它是一个以 '/' 开头且不以 '/' 结尾的路径
 	webdavPrefix := strings.TrimSuffix(cfg.Webdav.Root, "/")
@@ -169,7 +172,7 @@ func NewENCVFS(ctx context.Context, readerService *service.ReaderService, chunkN
 	slog.Info("WebDAV FS initialized, index building in background", "dir", fs.dir)
 	slog.Info("WebDAV registered container extensions", "extensions", registeredExtsSlice)
 
-	return fs
+	return fs, nil
 }
 
 // runIndexer 现在负责初始构建和增量更新
@@ -193,6 +196,9 @@ func (fs *encvWebDAVFS) runIndexer(ctx context.Context) {
 	fs.watcher = watcher
 
 	_ = filepath.Walk(fs.dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
 		if info.IsDir() {
 			return watcher.Add(path)
 		}

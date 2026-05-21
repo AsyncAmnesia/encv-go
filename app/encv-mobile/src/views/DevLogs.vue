@@ -104,12 +104,14 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
   IonSegment, IonSegmentButton, IonSearchbar, IonButton,
-  IonIcon, IonBadge, IonToggle, IonFooter, alertController, toastController,
+  IonIcon, IonBadge, IonToggle, IonFooter, alertController,
 } from '@ionic/vue'
 import { trashOutline, copyOutline } from 'ionicons/icons'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
 import { useWebSocket } from '@/composables/useWebSocket'
+import { useFrontendLogs, type LogEntry } from '@/composables/useFrontendLogs'
+import { showToast } from '@/composables/useToast'
 import { checkServerStatus } from '@/api/encv'
 
 const { t } = useI18n()
@@ -141,29 +143,10 @@ function toggleLevel(level: string) {
   selectedLevels.value = s
 }
 
-interface LogEntry { id: number; timestamp: string; level: string; message: string }
-
 let nextId = 0
-const frontendLogs = ref<LogEntry[]>([])
+const { logs: frontendLogs, clearLogs: clearFrontendLogs } = useFrontendLogs()
 const backendLogs = ref<LogEntry[]>([])
 const serverOnline = ref(false)
-
-let origConsole: {
-  debug: Console['debug']
-  info: Console['info']
-  warn: Console['warn']
-  error: Console['error']
-  log: Console['log']
-} | null = null
-
-function addLog(level: string, args: any[]) {
-  frontendLogs.value.push({
-    id: ++nextId,
-    timestamp: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
-    level,
-    message: args.map((a) => typeof a === 'string' ? a : JSON.stringify(a)).join(' '),
-  })
-}
 
 function getBadgeColor(level: string): string {
   switch (level) {
@@ -224,19 +207,17 @@ async function handleCopy() {
   const text = logs.map((l) => `[${l.timestamp}] ${l.level.toUpperCase()} ${l.message}`).join('\n')
   try {
     await navigator.clipboard.writeText(text)
-    const toast = await toastController.create({
+    showToast({
       message: t('devlogs.copied', { count: String(logs.length) }),
       duration: 1500,
       color: 'success',
     })
-    await toast.present()
   } catch {
-    const toast = await toastController.create({
+    showToast({
       message: t('devlogs.copyFailed'),
       duration: 1500,
       color: 'danger',
     })
-    await toast.present()
   }
 }
 
@@ -247,7 +228,7 @@ async function handleClear() {
       { text: t('common.cancel'), role: 'cancel' },
       {
         text: t('common.confirm'), role: 'destructive',
-        handler: () => { if (activeTab.value === 'frontend') frontendLogs.value = []; else backendLogs.value = [] },
+        handler: () => { if (activeTab.value === 'frontend') clearFrontendLogs(); else backendLogs.value = [] },
       },
     ],
   })
@@ -255,6 +236,16 @@ async function handleClear() {
 }
 
 function onWsMessage(data: any) {
+  if (data && data.type === 'log' && data.data) {
+    const logData = data.data
+    backendLogs.value.push({
+      id: ++nextId,
+      timestamp: logData.timestamp || new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+      level: ['debug', 'info', 'warn', 'error'].includes(logData.level) ? logData.level : 'info',
+      message: logData.message || '',
+    })
+    return
+  }
   const msg = typeof data === 'string' ? data : JSON.stringify(data)
   backendLogs.value.push({ id: ++nextId, timestamp: new Date().toLocaleTimeString('zh-CN', { hour12: false }), level: 'info', message: msg })
 }
@@ -263,36 +254,9 @@ function onServerStatus(data: any) {
   serverOnline.value = data?.online ?? false
 }
 
-function hijackConsole() {
-  const saved = {
-    debug: console.debug,
-    info: console.info,
-    warn: console.warn,
-    error: console.error,
-    log: console.log,
-  }
-  origConsole = saved
-  console.debug = (...args: any[]) => { saved.debug(...args); addLog('debug', args) }
-  console.info = (...args: any[]) => { saved.info(...args); addLog('info', args) }
-  console.warn = (...args: any[]) => { saved.warn(...args); addLog('warn', args) }
-  console.error = (...args: any[]) => { saved.error(...args); addLog('error', args) }
-  console.log = (...args: any[]) => { saved.log(...args); addLog('info', args) }
-}
-
-function restoreConsole() {
-  if (!origConsole) return
-  console.debug = origConsole.debug
-  console.info = origConsole.info
-  console.warn = origConsole.warn
-  console.error = origConsole.error
-  console.log = origConsole.log
-  origConsole = null
-}
-
 onMounted(async () => {
   await nextTick()
 
-  hijackConsole()
   eventBus.on('ws:message', onWsMessage)
   eventBus.on('server:status', onServerStatus)
 
@@ -313,7 +277,6 @@ onMounted(async () => {
 onUnmounted(() => {
   eventBus.off('ws:message', onWsMessage)
   eventBus.off('server:status', onServerStatus)
-  restoreConsole()
 })
 </script>
 
