@@ -173,6 +173,7 @@ const searchRecursive = ref(false)
 const searchResults = ref<FileItem[] | null>(null)
 const isSearching = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
+let searchGeneration = 0
 
 const searchCache = new Map<string, { timestamp: number; results: FileItem[] }>()
 const CACHE_TTL = 30000
@@ -345,9 +346,10 @@ function handleSearchInput() {
 }
 
 function handleSearchClear() {
+  searchGeneration++
   searchQuery.value = ''
   searchResults.value = null
-  searchCache.clear()
+  isSearching.value = false
 }
 
 function handleSearchToggle() {
@@ -360,6 +362,8 @@ async function performSearch() {
   const query = searchQuery.value.trim()
   if (!query) return
 
+  const gen = ++searchGeneration
+
   const cacheKey = `${currentPath.value}:${query}:${searchRecursive.value}`
   const cached = searchCache.get(cacheKey)
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
@@ -370,9 +374,11 @@ async function performSearch() {
   isSearching.value = true
   try {
     const results = await searchFiles(currentPath.value, query, searchRecursive.value)
+    if (gen !== searchGeneration) return
     searchResults.value = results
     searchCache.set(cacheKey, { timestamp: Date.now(), results })
   } catch {
+    if (gen !== searchGeneration) return
     searchResults.value = []
   }
   isSearching.value = false
@@ -476,41 +482,83 @@ async function handleLongPress(file: FileItem) {
 }
 
 async function handleEncryptFile(file: FileItem) {
-  try {
-    await createTask('encrypt', file.path)
-    const toast = await toastController.create({
-      message: t('tasks.taskCreated'),
-      duration: 1500,
-      color: 'success',
-    })
-    await toast.present()
-  } catch {
-    const toast = await toastController.create({
-      message: t('tasks.taskCreateFailed'),
-      duration: 2000,
-      color: 'danger',
-    })
-    await toast.present()
-  }
+  const alert = await alertController.create({
+    header: t('files.encrypt'),
+    message: t('files.encryptPrompt', { name: file.name }),
+    inputs: [
+      {
+        name: 'password',
+        type: 'password',
+        placeholder: t('tasks.passwordPlaceholder'),
+      },
+    ],
+    buttons: [
+      { text: t('files.cancelSelect'), role: 'cancel' },
+      {
+        text: t('files.encrypt'),
+        handler: async (data: { password: string }) => {
+          if (!data.password) return false
+          try {
+            await createTask('encrypt', file.path, data.password)
+            const toast = await toastController.create({
+              message: t('tasks.taskCreated'),
+              duration: 1500,
+              color: 'success',
+            })
+            await toast.present()
+          } catch {
+            const toast = await toastController.create({
+              message: t('tasks.taskCreateFailed'),
+              duration: 2000,
+              color: 'danger',
+            })
+            await toast.present()
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
 }
 
 async function handleDecryptFile(file: FileItem) {
-  try {
-    await createTask('decrypt', file.path)
-    const toast = await toastController.create({
-      message: t('tasks.taskCreated'),
-      duration: 1500,
-      color: 'success',
-    })
-    await toast.present()
-  } catch {
-    const toast = await toastController.create({
-      message: t('tasks.taskCreateFailed'),
-      duration: 2000,
-      color: 'danger',
-    })
-    await toast.present()
-  }
+  const alert = await alertController.create({
+    header: t('files.decrypt'),
+    message: t('files.decryptPrompt', { name: file.name }),
+    inputs: [
+      {
+        name: 'password',
+        type: 'password',
+        placeholder: t('tasks.passwordPlaceholder'),
+      },
+    ],
+    buttons: [
+      { text: t('files.cancelSelect'), role: 'cancel' },
+      {
+        text: t('files.decrypt'),
+        handler: async (data: { password: string }) => {
+          if (!data.password) return false
+          try {
+            await createTask('decrypt', file.path, data.password)
+            const toast = await toastController.create({
+              message: t('tasks.taskCreated'),
+              duration: 1500,
+              color: 'success',
+            })
+            await toast.present()
+          } catch {
+            const toast = await toastController.create({
+              message: t('tasks.taskCreateFailed'),
+              duration: 2000,
+              color: 'danger',
+            })
+            await toast.present()
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
 }
 
 async function handleDeleteFile(file: FileItem) {

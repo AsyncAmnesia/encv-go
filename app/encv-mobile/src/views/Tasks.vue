@@ -48,6 +48,13 @@
           </ion-item>
           <ion-item-options side="end">
             <ion-item-option
+              v-if="task.status === 'queued'"
+              color="warning"
+              @click="handleCancelTask(task.id)"
+            >
+              {{ t('tasks.cancel') }}
+            </ion-item-option>
+            <ion-item-option
               v-if="task.status === 'running'"
               color="warning"
               @click="handleCancelTask(task.id)"
@@ -62,7 +69,7 @@
               {{ t('tasks.retry') }}
             </ion-item-option>
             <ion-item-option
-              v-if="task.status === 'completed' || task.status === 'failed'"
+              v-if="task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'"
               color="danger"
               @click="handleRemoveTask(task.id)"
             >
@@ -111,8 +118,17 @@
                 <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
               </ion-button>
             </ion-item>
+            <ion-item>
+              <ion-input
+                v-model="newTaskPassword"
+                :label="t('tasks.password')"
+                label-placement="stacked"
+                type="password"
+                :placeholder="t('tasks.passwordPlaceholder')"
+              ></ion-input>
+            </ion-item>
           </ion-list>
-          <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath">
+          <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath || !newTaskPassword">
             <ion-icon :icon="lockClosed" slot="start"></ion-icon>
             {{ t('tasks.createTask') }}
           </ion-button>
@@ -180,6 +196,7 @@ const loading = ref(false)
 const showNewTaskModal = ref(false)
 const newTaskType = ref<TaskType>('encrypt')
 const newTaskPath = ref('')
+const newTaskPassword = ref('')
 
 function getTaskIcon(task: EncvTask) {
   switch (task.status) {
@@ -187,6 +204,7 @@ function getTaskIcon(task: EncvTask) {
     case 'running': return sync
     case 'completed': return checkmarkCircle
     case 'failed': return closeCircle
+    default: return timer
   }
 }
 
@@ -196,6 +214,7 @@ function getTaskColor(task: EncvTask) {
     case 'running': return 'primary'
     case 'completed': return 'success'
     case 'failed': return 'danger'
+    default: return 'medium'
   }
 }
 
@@ -205,6 +224,7 @@ function getStatusColor(status: TaskStatus) {
     case 'running': return 'primary'
     case 'completed': return 'success'
     case 'failed': return 'danger'
+    default: return 'medium'
   }
 }
 
@@ -214,6 +234,9 @@ function getStatusLabel(status: TaskStatus) {
     case 'running': return t('tasks.running')
     case 'completed': return t('tasks.completed')
     case 'failed': return t('tasks.failed')
+    case 'cancelled': return t('tasks.cancelled')
+    case 'cancelling': return t('tasks.cancelling')
+    default: return status
   }
 }
 
@@ -244,6 +267,7 @@ async function handleRefresh(event: CustomEvent) {
 function showNewTaskSheet() {
   newTaskType.value = 'encrypt'
   newTaskPath.value = ''
+  newTaskPassword.value = ''
   showNewTaskModal.value = true
 }
 
@@ -261,9 +285,9 @@ async function handleBrowse() {
 }
 
 async function handleCreateTask() {
-  if (!newTaskPath.value) return
+  if (!newTaskPath.value || !newTaskPassword.value) return
   try {
-    await createTask(newTaskType.value, newTaskPath.value)
+    await createTask(newTaskType.value, newTaskPath.value, newTaskPassword.value)
     showNewTaskModal.value = false
     const toast = await toastController.create({
       message: t('tasks.taskCreated'),

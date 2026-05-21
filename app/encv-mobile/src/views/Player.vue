@@ -38,6 +38,16 @@
 
         <div v-if="isVideo && !playerError && !isFullscreen" class="video-info">
           <h3>{{ fileName }}</h3>
+          <div v-if="mediaInfo.duration || mediaInfo.resolution" class="media-meta">
+            <ion-chip v-if="mediaInfo.resolution" outline>
+              <ion-icon :icon="resize" slot="start"></ion-icon>
+              {{ mediaInfo.resolution }}
+            </ion-chip>
+            <ion-chip v-if="mediaInfo.duration" outline>
+              <ion-icon :icon="time" slot="start"></ion-icon>
+              {{ mediaInfo.duration }}
+            </ion-chip>
+          </div>
           <p v-if="filePath" class="video-path">{{ filePath }}</p>
         </div>
 
@@ -72,9 +82,10 @@ import {
   IonContent,
   IonIcon,
   IonButton,
+  IonChip,
   toastController,
 } from '@ionic/vue'
-import { playCircle, folder, musicalNotes, alertCircle, refresh } from 'ionicons/icons'
+import { playCircle, folder, musicalNotes, alertCircle, refresh, resize, time } from 'ionicons/icons'
 import { getFileStreamUrl, getFileCategory } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 
@@ -101,7 +112,18 @@ const artContainer = ref<HTMLDivElement | null>(null)
 const audioRef = ref<HTMLAudioElement | null>(null)
 const playerError = ref(false)
 const isFullscreen = ref(false)
+const mediaInfo = ref({ duration: '', resolution: '' })
 let art: Artplayer | null = null
+
+function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
+  return `${m}:${String(s).padStart(2, '0')}`
+}
 
 async function handlePlayerError() {
   const toast = await toastController.create({
@@ -130,7 +152,19 @@ function initArtPlayer() {
   })
 
   art.on('video:loadedmetadata', () => {
-    console.info('[Player] Video metadata loaded, autoSize applied')
+    const video = art?.video
+    if (video) {
+      const w = video.videoWidth
+      const h = video.videoHeight
+      const dur = video.duration
+      if (w && h) {
+        mediaInfo.value.resolution = `${w}×${h}`
+      }
+      if (dur && isFinite(dur)) {
+        mediaInfo.value.duration = formatDuration(dur)
+      }
+    }
+    console.info('[Player] Video metadata loaded', mediaInfo.value)
   })
 
   art.on('fullscreen', () => {
@@ -160,6 +194,7 @@ function destroyArtPlayer() {
 
 function retryPlay() {
   playerError.value = false
+  mediaInfo.value = { duration: '', resolution: '' }
   destroyArtPlayer()
   initArtPlayer()
 }
@@ -167,6 +202,7 @@ function retryPlay() {
 onMounted(() => {
   if (isVideo.value) {
     playerError.value = false
+    mediaInfo.value = { duration: '', resolution: '' }
     initArtPlayer()
   }
 })
@@ -209,7 +245,7 @@ watch(streamUrl, (newUrl) => {
 
 .video-player {
   width: 100%;
-  min-height: 30vh;
+  height: 30vh;
   background: #000;
 }
 
@@ -217,11 +253,18 @@ watch(streamUrl, (newUrl) => {
   padding: 16px;
 }
 
+.media-meta {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
 .video-path {
   font-size: 12px;
   color: var(--encv-text-secondary);
   word-break: break-all;
-  margin-top: 4px;
+  margin-top: 8px;
 }
 
 .player-error {

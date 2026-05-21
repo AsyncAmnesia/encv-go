@@ -143,7 +143,7 @@ export async function readFileContent(path: string): Promise<FileContentResponse
 }
 
 export type TaskType = 'encrypt' | 'decrypt'
-export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed'
+export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'cancelling'
 
 export interface EncvTask {
   id: string
@@ -165,13 +165,13 @@ export async function getTasks(): Promise<EncvTask[]> {
   return data.tasks || []
 }
 
-export async function createTask(type: TaskType, sourcePath: string): Promise<EncvTask> {
+export async function createTask(type: TaskType, sourcePath: string, password = ''): Promise<EncvTask> {
   console.info('[API] createTask:', type, sourcePath)
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/tasks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type, sourcePath }),
+    body: JSON.stringify({ type, sourcePath, password }),
   })
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`)

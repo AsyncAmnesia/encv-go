@@ -57,7 +57,7 @@ type MobileService struct {
 func NewMobileService(servingDir string) *MobileService {
 	return &MobileService{
 		servingDir:  servingDir,
-		taskManager: NewTaskManager(),
+		taskManager: NewTaskManager(servingDir),
 		wsHub:       NewWSHub(),
 	}
 }
@@ -351,6 +351,37 @@ func (s *MobileService) SearchFiles(queryPath string, keyword string, recursive 
 	keyword = strings.ToLower(keyword)
 	var results []FileInfo
 
+	if recursive && s.fileIndex != nil {
+		s.fileIndex.mu.RLock()
+		hasIndex := len(s.fileIndex.entries) > 0
+		s.fileIndex.mu.RUnlock()
+
+		if hasIndex {
+			s.fileIndex.mu.RLock()
+			for _, entry := range s.fileIndex.entries {
+				if !strings.Contains(strings.ToLower(entry.Name), keyword) {
+					continue
+				}
+				if !strings.HasPrefix(entry.Path, queryPath) && queryPath != "/" {
+					continue
+				}
+				if queryPath == "/" && !strings.HasPrefix(entry.Path, "/") {
+					continue
+				}
+				results = append(results, FileInfo{
+					Name:        entry.Name,
+					Path:        entry.Path,
+					IsDirectory: entry.IsDirectory,
+					Size:        entry.Size,
+					Modified:    entry.Modified,
+				})
+			}
+			s.fileIndex.mu.RUnlock()
+			slog.Info("SearchFiles using index", "path", queryPath, "keyword", keyword, "count", len(results))
+			return results, nil
+		}
+	}
+
 	if recursive {
 		err = filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -436,7 +467,7 @@ func (s *MobileService) SearchFiles(queryPath string, keyword string, recursive 
 
 func (s *MobileService) GetIndexStats() *IndexStats {
 	if s.fileIndex == nil {
-		return &IndexStats{}
+		s.fileIndex = &fileIndex{}
 	}
 	s.fileIndex.mu.RLock()
 	defer s.fileIndex.mu.RUnlock()
