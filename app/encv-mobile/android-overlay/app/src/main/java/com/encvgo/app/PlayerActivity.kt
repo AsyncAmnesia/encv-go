@@ -85,7 +85,7 @@ class PlayerActivity : BridgeActivity() {
                 }
                 override fun onPageFinished(view: WebView?, url: String?) {
                     Log.i(TAG, "WVC.onPageFinished: url=$url")
-                    originalClient?.onPageFinished(view, url, favicon)
+                    originalClient?.onPageFinished(view, url)
                 }
                 override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
                     Log.e(TAG, "WVC.onReceivedError: url=${request?.url}, error=${error?.description} (${error?.errorCode}), isMain=${request?.isForMainFrame}")
@@ -95,14 +95,14 @@ class PlayerActivity : BridgeActivity() {
                     Log.e(TAG, "WVC.onReceivedHttpError: url=${request?.url}, status=${response?.statusCode}, reason=${response?.reasonPhrase}")
                     originalClient?.onReceivedHttpError(view, request, response)
                 }
-                override fun shouldInterceptRequest(view: WebResourceRequest?): WebResourceResponse? {
+                override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                     val url = request?.url.toString()
                     val ext = url.substringAfterLast('.', "").lowercase()
                     if (ext in listOf("html", "js", "css", "woff", "woff2", "ttf")) {
                         Log.d(TAG, "WVC.shouldInterceptRequest: $url")
                     }
                     return try {
-                        originalClient?.shouldInterceptRequest(request)
+                        originalClient?.shouldInterceptRequest(view, request)
                     } catch (e: Exception) {
                         Log.w(TAG, "WVC.shouldInterceptRequest: originalClient failed, fallback to bridge localServer", e)
                         @Suppress("UNCHECKED_CAST")
