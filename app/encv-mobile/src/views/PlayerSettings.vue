@@ -3,7 +3,9 @@
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-back-button :default-href="'/player'" />
+          <ion-button @click="goBack" fill="clear">
+            <ion-icon :icon="chevronBackOutline" slot="icon-only"></ion-icon>
+          </ion-button>
         </ion-buttons>
         <ion-title>播放器设置</ion-title>
       </ion-toolbar>
@@ -60,8 +62,11 @@ import { ref, onMounted } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle,
   IonContent, IonList, IonItemGroup, IonItemDivider,
-  IonItem, IonLabel, IonToggle, IonButtons, IonBackButton,
+  IonItem, IonLabel, IonToggle, IonButtons, IonButton, IonIcon,
 } from '@ionic/vue'
+import { chevronBackOutline } from 'ionicons/icons'
+
+const emit = defineEmits(['close'])
 
 const PREFIX = 'player:'
 
@@ -99,6 +104,10 @@ async function clearCache() {
       if (name.includes('player')) await caches.delete(name)
     }
   }
+}
+
+function goBack() {
+  emit('close')
 }
 
 onMounted(load)

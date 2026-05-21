@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -233,6 +234,24 @@ class GoProcessPlugin : Plugin() {
             call.resolve(result)
         } else if (!error.isNullOrEmpty()) {
             call.reject(error)
+        }
+    }
+
+    @PluginMethod
+    fun setScreenOrientation(call: PluginCall) {
+        val orientation = call.getString("orientation", "unlocked")
+        try {
+            when (orientation) {
+                "portrait" -> activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                "landscape" -> activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                "unlocked" -> activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                else -> Log.w(TAG, "setScreenOrientation: unknown orientation=$orientation")
+            }
+            Log.d(TAG, "setScreenOrientation: $orientation")
+            call.resolve()
+        } catch (e: Exception) {
+            Log.e(TAG, "setScreenOrientation failed", e)
+            call.reject("Failed to set orientation: ${e.message}")
         }
     }
 }

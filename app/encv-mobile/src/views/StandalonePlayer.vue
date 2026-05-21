@@ -99,6 +99,7 @@ import { showToast } from '@/composables/useToast'
 
 const { t } = useI18n()
 const router = useRouter()
+const emit = defineEmits(['open-settings'])
 
 const backendLoading = ref(true)
 const backendError = ref('')
@@ -126,10 +127,18 @@ const fileCategory = computed(() => {
 const isVideo = computed(() => fileCategory.value === 'video' || fileCategory.value === 'encrypted')
 const isAudio = computed(() => fileCategory.value === 'audio')
 
+function resolveNativePath(raw: string): string {
+  if (!raw.startsWith('/')) return raw
+  if (raw.startsWith('/storage/') || raw.startsWith('/sdcard/') || raw.startsWith('/data/')) return raw
+  console.log('[StandalonePlayer] resolveNativePath: converting relative to absolute:', raw, '-> /storage/emulated/0' + raw)
+  return `/storage/emulated/0${raw}`
+}
+
 const streamUrl = computed(() => {
   if (!filePath.value) return ''
-  if (isExternalFile.value) return getExternalStreamUrl(filePath.value)
-  return getFileStreamUrl(filePath.value)
+  const resolvedPath = resolveNativePath(filePath.value)
+  if (isExternalFile.value) return getExternalStreamUrl(resolvedPath)
+  return getFileStreamUrl(resolvedPath)
 })
 
 function formatDuration(seconds: number): string {
@@ -259,10 +268,12 @@ function initArtPlayer() {
 
   art.on('fullscreen', () => {
     isFullscreen.value = true
+    handleFullscreenEnter()
   })
 
   art.on('fullscreenExit', () => {
     isFullscreen.value = false
+    handleFullscreenExit()
   })
 
   art.on('error', () => {
@@ -272,6 +283,37 @@ function initArtPlayer() {
   })
 
   console.info('[StandalonePlayer] ArtPlayer initialized')
+}
+
+function handleFullscreenEnter() {
+  const video = art?.video
+  if (!video?.videoWidth || !video?.videoHeight) return
+  const ratio = video.videoWidth / video.videoHeight
+  console.log('[StandalonePlayer] fullscreenEnter: video', video.videoWidth, 'x', video.videoHeight, 'ratio:', ratio)
+  const cap = (window as any).Capacitor
+  if (cap?.isNativePlatform?.()) {
+    const { GoProcess } = cap.Plugins || {}
+    if (GoProcess) {
+      const orientation = ratio > 1.3 ? 'landscape' : ratio < 0.77 ? 'portrait' : 'landscape'
+      console.log('[StandalonePlayer] fullscreenEnter: locking to', orientation)
+      GoProcess.setScreenOrientation({ orientation }).catch((e: any) => {
+        console.warn('[StandalonePlayer] fullscreenEnter: setScreenOrientation failed', e)
+      })
+    }
+  }
+}
+
+function handleFullscreenExit() {
+  console.log('[StandalonePlayer] fullscreenExit: unlocking orientation')
+  const cap = (window as any).Capacitor
+  if (cap?.isNativePlatform?.()) {
+    const { GoProcess } = cap.Plugins || {}
+    if (GoProcess) {
+      GoProcess.setScreenOrientation({ orientation: 'unlocked' }).catch((e: any) => {
+        console.warn('[StandalonePlayer] fullscreenExit: setScreenOrientation failed', e)
+      })
+    }
+  }
 }
 
 function destroyArtPlayer() {
@@ -288,7 +330,8 @@ function retryBackend() {
 }
 
 function goSettings() {
-  router.push('/player/settings')
+  console.log('[StandalonePlayer] goSettings: emitting open-settings event')
+  emit('open-settings')
 }
 
 function retryPlay() {
