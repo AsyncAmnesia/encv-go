@@ -308,3 +308,58 @@ export async function fetchConfigSchema(): Promise<Record<string, unknown>> {
   }
   return await response.json()
 }
+
+export async function searchFiles(path: string, keyword: string, recursive = false): Promise<FileItem[]> {
+  const baseUrl = getApiBaseUrl()
+  const params = new URLSearchParams({
+    path,
+    keyword,
+    recursive: String(recursive),
+  })
+  const response = await fetch(`${baseUrl}/api/files/search?${params}`)
+  if (!response.ok) {
+    if (response.status === 403) {
+      const data = await response.json().catch(() => ({}))
+      if (data.code === 'PERMISSION_DENIED') {
+        throw new PermissionDeniedError(data.error || 'Permission denied')
+      }
+    }
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  const data = await response.json()
+  return data.files || []
+}
+
+export interface IndexStats {
+  totalFiles: number
+  totalDirs: number
+  totalSize: number
+  indexedAt: string
+  isIndexing: boolean
+  lastBuildMs: number
+}
+
+export async function getIndexStats(): Promise<IndexStats> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/index/stats`)
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return await response.json()
+}
+
+export async function rebuildIndex(): Promise<void> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/index/rebuild`, { method: 'POST' })
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+}
+
+export async function clearIndex(): Promise<void> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/index/clear`, { method: 'POST' })
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+}

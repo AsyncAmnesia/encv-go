@@ -2,11 +2,13 @@ package service
 
 import (
 	"errors"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -49,6 +51,7 @@ type MobileService struct {
 	servingDir  string
 	taskManager *TaskManager
 	wsHub       *WSHub
+	fileIndex   *fileIndex
 }
 
 func NewMobileService(servingDir string) *MobileService {
@@ -306,4 +309,227 @@ func decodeUTF8Rune(data []byte) (rune, int) {
 		n = n<<6 | uint32(data[i]&0x3f)
 	}
 	return rune(n), size
+}
+
+type IndexStats struct {
+	TotalFiles  int   `json:"totalFiles"`
+	TotalDirs   int   `json:"totalDirs"`
+	TotalSize   int64 `json:"totalSize"`
+	IndexedAt   string `json:"indexedAt"`
+	IsIndexing  bool  `json:"isIndexing"`
+	LastBuildMs int64 `json:"lastBuildMs"`
+}
+
+type indexEntry struct {
+	Path        string
+	Name        string
+	IsDirectory bool
+	Size        int64
+	Modified    string
+}
+
+type fileIndex struct {
+	mu       sync.RWMutex
+	entries  []indexEntry
+	stats    IndexStats
+	building bool
+}
+
+func (s *MobileService) SearchFiles(queryPath string, keyword string, recursive bool) ([]FileInfo, error) {
+	if queryPath == "" {
+		queryPath = "/"
+	}
+	if keyword == "" {
+		return s.ListFiles(queryPath)
+	}
+
+	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	if err != nil {
+		return nil, &ForbiddenError{Err: err}
+	}
+
+	keyword = strings.ToLower(keyword)
+	var results []FileInfo
+
+	if recursive {
+		err = filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if strings.HasPrefix(d.Name(), ".") {
+				if d.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
+			}
+			if strings.Contains(strings.ToLower(d.Name()), keyword) {
+				relPath, relErr := filepath.Rel(absPath, path)
+				if relErr != nil {
+					relPath = d.Name()
+				}
+				urlPath := queryPath
+				if queryPath == "/" {
+					urlPath = ""
+				}
+				urlPath += "/" + filepath.ToSlash(relPath)
+
+				info, infoErr := d.Info()
+				size := int64(0)
+				modified := ""
+				if infoErr == nil {
+					size = info.Size()
+					modified = info.ModTime().Format(time.RFC3339)
+				}
+
+				results = append(results, FileInfo{
+					Name:        d.Name(),
+					Path:        urlPath,
+					IsDirectory: d.IsDir(),
+					Size:        size,
+					Modified:    modified,
+				})
+			}
+			return nil
+		})
+		if err != nil {
+			slog.Error("SearchFiles WalkDir failed", "path", absPath, "error", err)
+			return nil, err
+		}
+	} else {
+		entries, err := os.ReadDir(absPath)
+		if err != nil {
+			if isPermissionError(err) {
+				return nil, &PermissionError{Err: err}
+			}
+			return nil, err
+		}
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			if strings.Contains(strings.ToLower(entry.Name()), keyword) {
+				filePath := queryPath + "/" + entry.Name()
+				if queryPath == "/" {
+					filePath = "/" + entry.Name()
+				}
+				info, infoErr := entry.Info()
+				size := int64(0)
+				modified := ""
+				if infoErr == nil {
+					size = info.Size()
+					modified = info.ModTime().Format(time.RFC3339)
+				}
+				results = append(results, FileInfo{
+					Name:        entry.Name(),
+					Path:        filePath,
+					IsDirectory: entry.IsDir(),
+					Size:        size,
+					Modified:    modified,
+				})
+			}
+		}
+	}
+
+	slog.Info("SearchFiles result", "path", queryPath, "keyword", keyword, "recursive", recursive, "count", len(results))
+	return results, nil
+}
+
+func (s *MobileService) GetIndexStats() *IndexStats {
+	if s.fileIndex == nil {
+		return &IndexStats{}
+	}
+	s.fileIndex.mu.RLock()
+	defer s.fileIndex.mu.RUnlock()
+	stats := s.fileIndex.stats
+	return &stats
+}
+
+func (s *MobileService) RebuildIndex() {
+	if s.fileIndex == nil {
+		s.fileIndex = &fileIndex{}
+	}
+	s.fileIndex.mu.Lock()
+	if s.fileIndex.building {
+		s.fileIndex.mu.Unlock()
+		return
+	}
+	s.fileIndex.building = true
+	s.fileIndex.mu.Unlock()
+
+	go func() {
+		start := time.Now()
+		var entries []indexEntry
+		var totalSize int64
+		var fileCount, dirCount int
+
+		filepath.WalkDir(s.servingDir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if strings.HasPrefix(d.Name(), ".") {
+				if d.IsDir() {
+					return fs.SkipDir
+				}
+				return nil
+			}
+
+			relPath, relErr := filepath.Rel(s.servingDir, path)
+			if relErr != nil {
+				return nil
+			}
+			urlPath := "/" + filepath.ToSlash(relPath)
+
+			info, infoErr := d.Info()
+			size := int64(0)
+			modified := ""
+			if infoErr == nil {
+				size = info.Size()
+				modified = info.ModTime().Format(time.RFC3339)
+			}
+
+			if d.IsDir() {
+				dirCount++
+			} else {
+				fileCount++
+				totalSize += size
+			}
+
+			entries = append(entries, indexEntry{
+				Path:        urlPath,
+				Name:        d.Name(),
+				IsDirectory: d.IsDir(),
+				Size:        size,
+				Modified:    modified,
+			})
+			return nil
+		})
+
+		elapsed := time.Since(start).Milliseconds()
+
+		s.fileIndex.mu.Lock()
+		s.fileIndex.entries = entries
+		s.fileIndex.stats = IndexStats{
+			TotalFiles:  fileCount,
+			TotalDirs:   dirCount,
+			TotalSize:   totalSize,
+			IndexedAt:   time.Now().Format(time.RFC3339),
+			IsIndexing:  false,
+			LastBuildMs: elapsed,
+		}
+		s.fileIndex.building = false
+		s.fileIndex.mu.Unlock()
+
+		slog.Info("RebuildIndex completed", "files", fileCount, "dirs", dirCount, "ms", elapsed)
+	}()
+}
+
+func (s *MobileService) ClearIndex() {
+	if s.fileIndex == nil {
+		return
+	}
+	s.fileIndex.mu.Lock()
+	defer s.fileIndex.mu.Unlock()
+	s.fileIndex.entries = nil
+	s.fileIndex.stats = IndexStats{}
+	slog.Info("ClearIndex completed")
 }

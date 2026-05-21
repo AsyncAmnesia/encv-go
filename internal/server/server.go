@@ -122,6 +122,10 @@ func (s *Server) Start(version string) (string, error) {
 	mux.HandleFunc("/api/webdav/test", s.handleTestWebDAV)
 	mux.HandleFunc("/api/permissions", s.handlePermissions)
 	mux.HandleFunc("/api/server/shutdown", s.handleServerShutdown)
+	mux.HandleFunc("/api/files/search", s.handleSearchFilesAPI)
+	mux.HandleFunc("/api/index/stats", s.handleIndexStats)
+	mux.HandleFunc("/api/index/rebuild", s.handleIndexRebuild)
+	mux.HandleFunc("/api/index/clear", s.handleIndexClear)
 	mux.HandleFunc("/ws", s.handleWebSocket)
 
 	mux.HandleFunc("/", s.handleRequest)

@@ -151,6 +151,7 @@ import {
   IonInput,
   IonSpinner,
   toastController,
+  modalController,
 } from '@ionic/vue'
 import {
   add,
@@ -170,10 +171,9 @@ import {
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
-import { useFilePicker } from '@/composables/useFilePicker'
+import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const { t } = useI18n()
-const { startPicking } = useFilePicker()
 
 const tasks = ref<EncvTask[]>([])
 const loading = ref(false)
@@ -249,9 +249,13 @@ function showNewTaskSheet() {
 
 async function handleBrowse() {
   showNewTaskModal.value = false
-  const result = await startPicking()
-  if (result) {
-    newTaskPath.value = result.path
+  const modal = await modalController.create({
+    component: FilePickerModal,
+  })
+  await modal.present()
+  const { data, role } = await modal.onDidDismiss()
+  if (role === 'select' && data) {
+    newTaskPath.value = data.path
   }
   showNewTaskModal.value = true
 }

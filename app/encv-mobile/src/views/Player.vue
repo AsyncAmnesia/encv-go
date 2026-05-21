@@ -36,6 +36,11 @@
           </div>
         </div>
 
+        <div v-if="isVideo && !playerError && !isFullscreen" class="video-info">
+          <h3>{{ fileName }}</h3>
+          <p v-if="filePath" class="video-path">{{ filePath }}</p>
+        </div>
+
         <div v-if="isAudio" class="audio-player-wrapper">
           <div class="audio-visual">
             <ion-icon :icon="musicalNotes" class="audio-icon"></ion-icon>
@@ -95,6 +100,7 @@ const streamUrl = computed(() => {
 const artContainer = ref<HTMLDivElement | null>(null)
 const audioRef = ref<HTMLAudioElement | null>(null)
 const playerError = ref(false)
+const isFullscreen = ref(false)
 let art: Artplayer | null = null
 
 async function handlePlayerError() {
@@ -119,6 +125,20 @@ function initArtPlayer() {
     playsInline: true,
     theme: '#ffad00',
     volume: 0.7,
+    fullscreen: true,
+    miniProgressBar: true,
+  })
+
+  art.on('video:loadedmetadata', () => {
+    console.info('[Player] Video metadata loaded, autoSize applied')
+  })
+
+  art.on('fullscreen', () => {
+    isFullscreen.value = true
+  })
+
+  art.on('fullscreenExit', () => {
+    isFullscreen.value = false
   })
 
   art.on('error', () => {
@@ -190,8 +210,18 @@ watch(streamUrl, (newUrl) => {
 .video-player {
   width: 100%;
   min-height: 30vh;
-  aspect-ratio: 16/9;
   background: #000;
+}
+
+.video-info {
+  padding: 16px;
+}
+
+.video-path {
+  font-size: 12px;
+  color: var(--encv-text-secondary);
+  word-break: break-all;
+  margin-top: 4px;
 }
 
 .player-error {

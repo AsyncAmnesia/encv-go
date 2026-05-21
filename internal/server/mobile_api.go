@@ -266,3 +266,51 @@ func (s *Server) handleMobileTasks(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
 	}
 }
+
+func (s *Server) handleSearchFilesAPI(w http.ResponseWriter, r *http.Request) {
+	queryPath := r.URL.Query().Get("path")
+	keyword := r.URL.Query().Get("keyword")
+	recursive := r.URL.Query().Get("recursive") == "true"
+
+	slog.Info("API: search files", "path", queryPath, "keyword", keyword, "recursive", recursive)
+
+	files, err := s.mobileSvc.SearchFiles(queryPath, keyword, recursive)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{"files": files})
+}
+
+func (s *Server) handleIndexStats(w http.ResponseWriter, r *http.Request) {
+	stats := s.mobileSvc.GetIndexStats()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
+
+func (s *Server) handleIndexRebuild(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+		return
+	}
+	s.mobileSvc.RebuildIndex()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "indexing"})
+}
+
+func (s *Server) handleIndexClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+		return
+	}
+	s.mobileSvc.ClearIndex()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "cleared"})
+}
