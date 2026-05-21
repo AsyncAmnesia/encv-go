@@ -15,3 +15,5 @@ dist-ssr
 
 android/
 ios/
+
+android-overlay/app/src/main/jniLibs/

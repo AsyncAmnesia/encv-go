@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, copyFileSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, copyFileSync, readdirSync, statSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -180,12 +180,18 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
   }
 
-  // 4. Add Lynx SDK 3.7 + mpv-android-lib dependencies
+  // 4. Add Lynx SDK 3.7 dependencies (mpv-android-lib removed: using local MPVLib.kt + jniLibs)
   if (!c.includes('org.lynxsdk.lynx')) {
     c = c.replace(
       'dependencies {',
-      "dependencies {\n    implementation 'org.lynxsdk.lynx:lynx:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-jssdk:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-trace:3.7.0'\n    implementation 'org.lynxsdk.lynx:primjs:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-image:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-log:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-http:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-devtool:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-devtool:3.7.0'\n    implementation 'com.facebook.fresco:fresco:2.3.0'\n    implementation 'com.facebook.fresco:animated-gif:2.3.0'\n    implementation 'com.facebook.fresco:animated-webp:2.3.0'\n    implementation 'com.facebook.fresco:webpsupport:2.3.0'\n    implementation 'com.facebook.fresco:animated-base:2.3.0'\n    implementation 'com.squareup.okhttp3:okhttp:4.9.0'\n    implementation 'io.github.abdallahmehiz:mpv-android-lib:0.1.12'",
+      "dependencies {\n    implementation 'org.lynxsdk.lynx:lynx:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-jssdk:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-trace:3.7.0'\n    implementation 'org.lynxsdk.lynx:primjs:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-image:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-log:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-http:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-devtool:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-devtool:3.7.0'\n    implementation 'com.facebook.fresco:fresco:2.3.0'\n    implementation 'com.facebook.fresco:animated-gif:2.3.0'\n    implementation 'com.facebook.fresco:animated-webp:2.3.0'\n    implementation 'com.facebook.fresco:webpsupport:2.3.0'\n    implementation 'com.facebook.fresco:animated-base:2.3.0'\n    implementation 'com.squareup.okhttp3:okhttp:4.9.0'",
     )
+  }
+
+  // 4b. Remove mpv-android-lib Maven dependency (using local jniLibs instead)
+  if (c.includes('io.github.abdallahmehiz:mpv-android-lib')) {
+    c = c.replace(/\s*implementation\s+'io\.github\.abdallahmehiz:mpv-android-lib[^']*'/, '')
+    console.log('  [mpv] removed Maven dependency (using local jniLibs)')
   }
 
   // 3. compileOptions (required by Logcat)
@@ -303,6 +309,36 @@ for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt', 'EncvGoService.kt', 'P
     console.log(`  overlay: ${f}`)
   } else {
     console.error(`  overlay: missing ${src}`)
+  }
+}
+
+// Copy MPVLib.kt from is.xyz.mpv package
+const MPV_JAVA_DIR = join(ANDROID_DIR, 'app', 'src', 'main', 'java', 'is', 'xyz', 'mpv')
+mkdirSync(MPV_JAVA_DIR, { recursive: true })
+const mpvLibSrc = join(OVERLAY_DIR, 'app', 'src', 'main', 'java', 'is', 'xyz', 'mpv', 'MPVLib.kt')
+if (existsSync(mpvLibSrc)) {
+  copyFileSync(mpvLibSrc, join(MPV_JAVA_DIR, 'MPVLib.kt'))
+  console.log('  overlay: is/xyz/mpv/MPVLib.kt')
+} else {
+  console.error('  overlay: missing is/xyz/mpv/MPVLib.kt')
+}
+
+// Copy mpv native libraries from overlay jniLibs
+const overlayJniDir = join(OVERLAY_DIR, 'app', 'src', 'main', 'jniLibs')
+const targetJniDir = join(ANDROID_DIR, 'app', 'src', 'main', 'jniLibs')
+if (existsSync(overlayJniDir)) {
+  for (const abi of readdirSync(overlayJniDir)) {
+    const abiDir = join(overlayJniDir, abi)
+    if (statSync(abiDir).isDirectory()) {
+      const targetAbiDir = join(targetJniDir, abi)
+      mkdirSync(targetAbiDir, { recursive: true })
+      for (const soFile of readdirSync(abiDir)) {
+        if (soFile.endsWith('.so')) {
+          copyFileSync(join(abiDir, soFile), join(targetAbiDir, soFile))
+          console.log(`  jniLibs: ${abi}/${soFile}`)
+        }
+      }
+    }
   }
 }
 

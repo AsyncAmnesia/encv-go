@@ -8,6 +8,5 @@
 -keep class com.lynx.** { *; }
 -keep class org.lynxsdk.** { *; }
 
-# Keep mpv native methods
+# Keep mpv native methods (JNI bridge requires exact class name)
 -keep class is.xyz.mpv.** { *; }
--keep class io.github.abdallahmehiz.mpvlib.** { *; }

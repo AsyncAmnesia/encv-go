@@ -15,15 +15,14 @@ import com.lynx.react.bridge.JavaOnlyArray
 import com.lynx.react.bridge.JavaOnlyMap
 import com.lynx.tasm.behavior.LynxContext
 import `is`.xyz.mpv.MPVLib
+import `is`.xyz.mpv.MPVLib.MpvEvent
+import `is`.xyz.mpv.MPVLib.MpvFormat
 
 class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
     companion object {
         private const val TAG = "MpvPlayerModule"
         const val EVENT_STATE_CHANGE = "mpv:state-change"
         const val EVENT_POSITION_UPDATE = "mpv:position-update"
-        private const val MPV_EVENT_FILE_LOADED = 21
-        private const val MPV_EVENT_END_FILE = 7
-        private const val MPV_FORMAT_FLAG = 3
 
         @Volatile
         private var _instance: MpvPlayerModule? = null
@@ -50,8 +49,8 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
         override fun eventProperty(property: String, value: String) {}
         override fun event(eventId: Int) {
             when (eventId) {
-                MPV_EVENT_FILE_LOADED -> dispatchStateChange("playing")
-                MPV_EVENT_END_FILE -> dispatchStateChange("end-file")
+                MpvEvent.MPV_EVENT_FILE_LOADED -> dispatchStateChange("playing")
+                MpvEvent.MPV_EVENT_END_FILE -> dispatchStateChange("end-file")
             }
         }
     }
@@ -72,8 +71,8 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
         MPVLib.setOptionString("idle", "yes")
         MPVLib.init()
         MPVLib.addObserver(eventObserver)
-        MPVLib.observeProperty("pause", MPV_FORMAT_FLAG)
-        MPVLib.observeProperty("idle", MPV_FORMAT_FLAG)
+        MPVLib.observeProperty("pause", MpvFormat.MPV_FORMAT_FLAG)
+        MPVLib.observeProperty("idle", MpvFormat.MPV_FORMAT_FLAG)
         mpvInitialized = true
         Log.d(TAG, "ensureMpvInitialized: done")
     }

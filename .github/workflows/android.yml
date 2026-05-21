@@ -51,6 +51,9 @@ jobs:
       - name: Install frontend dependencies & Build
         run: cd app/encv-mobile && npm install && npm run build
 
+      - name: Setup mpv native libraries
+        run: cd app/encv-mobile && bash scripts/setup-mpv-libs.sh
+
       - name: Build Go binary for Android arm64 (optimized)
         env:
           CGO_ENABLED: "0"
