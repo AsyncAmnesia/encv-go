@@ -46,19 +46,13 @@ class PlayerActivity : BridgeActivity() {
     }
 
     override fun load() {
+        super.load()
         try {
-            val localUrl = bridge?.localUrl
-            Log.i(TAG, "load: bridge.localUrl=$localUrl")
-            if (localUrl.isNullOrEmpty()) {
-                Log.e(TAG, "load: bridge.localUrl is null or empty, falling back to https://localhost/")
-                bridge?.webView?.loadUrl("https://localhost/player.html")
-            } else {
-                val playerUrl = if (localUrl.endsWith("/")) "${localUrl}player.html" else "$localUrl/player.html"
-                Log.i(TAG, "load: loading player URL=$playerUrl")
-                bridge?.getWebView()?.loadUrl(playerUrl)
-            }
+            val playerUrl = "https://localhost/player.html"
+            Log.i(TAG, "load: bridge initialized, redirecting to $playerUrl")
+            bridge?.webView?.loadUrl(playerUrl)
         } catch (e: Exception) {
-            Log.e(TAG, "load: failed to load player app", e)
+            Log.e(TAG, "load: failed to redirect to player.html", e)
         }
     }
 
