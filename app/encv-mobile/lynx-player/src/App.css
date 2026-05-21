@@ -1,0 +1,107 @@
+.PlayerContainer {
+  flex: 1;
+  background-color: #000000;
+  justify-content: flex-end;
+}
+
+.ControlsOverlay {
+  background-color: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+  padding: 16px;
+}
+
+.TopBar {
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.FileName {
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  flex: 1;
+}
+
+.FullscreenButton {
+  color: #ffffff;
+  font-size: 20px;
+  padding: 8px;
+}
+
+.CenterControls {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.PlayButton {
+  color: #ffffff;
+  font-size: 36px;
+  padding: 16px;
+}
+
+.ProgressBar {
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.TimeLabel {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+  margin-left: 8px;
+  margin-right: 8px;
+}
+
+.SliderTrack {
+  flex: 1;
+  height: 4px;
+  background-color: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  position: relative;
+}
+
+.SliderFill {
+  height: 4px;
+  background-color: #4a90d9;
+  border-radius: 2px;
+}
+
+.LoadingIndicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.LoadingText {
+  color: #ffffff;
+  font-size: 16px;
+}
+
+.ErrorOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  justify-content: center;
+  align-items: center;
+  background-color: rgba(0, 0, 0, 0.9);
+  padding: 24px;
+}
+
+.ErrorTitle {
+  color: #ff4444;
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.ErrorMessage {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  text-align: center;
+}

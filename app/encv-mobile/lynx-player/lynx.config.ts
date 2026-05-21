@@ -5,6 +5,8 @@ export default defineConfig({
     entry: './src/App.tsx',
   },
   output: {
-    distPath: './dist',
+    distPath: {
+      root: './dist',
+    },
   },
 })

@@ -17,6 +17,7 @@
         android:minSdkVersion="30" />
 
     <application
+        android:name=".EncvApplication"
         android:allowBackup="true"
         android:extractNativeLibs="true"
         android:icon="@mipmap/ic_launcher"

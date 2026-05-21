@@ -53,6 +53,8 @@ class PlayerActivityLynx : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         Log.d(TAG, "onCreate: starting")
 
+        EncvApplication.ensureLynxInitialized(application)
+
         setContentView(R.layout.lynx_player_activity)
         rootLayout = findViewById(R.id.lynx_player_root)
         Log.d(TAG, "onCreate: root layout found: $rootLayout")
@@ -72,8 +74,8 @@ class PlayerActivityLynx : AppCompatActivity() {
         Log.d(TAG, "onNewIntent: new intent received")
         setIntent(intent)
         resolveFileInfo(intent)
-        val initData = buildInitData()
-        lynxView?.updateProps(mapOf("initData" to initData))
+        val initData = buildInitDataJson()
+        lynxView?.renderTemplateUrl("player.lynx.bundle", initData)
     }
 
     override fun onDestroy() {
@@ -210,22 +212,21 @@ class PlayerActivityLynx : AppCompatActivity() {
     }
 
     private fun createLynxView() {
-        Log.d(TAG, "createLynxView: building LynxView")
-        val initData = buildInitData()
-        lynxView = LynxViewBuilder(this)
-            .setLoadURL("player.lynx.bundle")
-            .setInitialProps(
-                mapOf(
-                    "initData" to initData
-                )
-            )
-            .build()
+        Log.d(TAG, "createLynxView: building LynxView with LynxViewBuilder")
+        val viewBuilder = LynxViewBuilder()
+        viewBuilder.setTemplateProvider(PlayerTemplateProvider(this))
+
+        lynxView = viewBuilder.build(this)
         val lynxParams = ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         )
         rootLayout?.addView(lynxView, lynxParams)
         Log.d(TAG, "createLynxView: LynxView added to layout")
+
+        val initData = buildInitDataJson()
+        lynxView?.renderTemplateUrl("player.lynx.bundle", initData)
+        Log.d(TAG, "createLynxView: renderTemplateUrl called")
     }
 
     private fun buildInitData(): Map<String, Any> {
@@ -235,6 +236,16 @@ class PlayerActivityLynx : AppCompatActivity() {
             "mimeType" to intentFileMimeType,
             "isExternal" to isExternalFile
         )
+    }
+
+    private fun buildInitDataJson(): String {
+        val data = JSONObject().apply {
+            put("filePath", intentFilePath)
+            put("fileName", intentFileName)
+            put("mimeType", intentFileMimeType)
+            put("isExternal", isExternalFile)
+        }
+        return data.toString()
     }
 
     private fun createNativeModules() {

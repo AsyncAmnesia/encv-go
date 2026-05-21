@@ -9,11 +9,11 @@
   },
   "dependencies": {
     "@lynx-js/react": "^0.121.0",
-    "react": "^19.0.0"
+    "react": "^18.2.0"
   },
   "devDependencies": {
     "@lynx-js/rspeedy": "^0.14.4",
-    "@types/react": "^19.0.0",
+    "@types/react": "^18.2.0",
     "typescript": "^5.0.0"
   }
 }
