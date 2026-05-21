@@ -71,7 +71,20 @@
 
       <template v-else-if="configLoaded">
         <template v-for="section in schemaFields" :key="section.key">
-          <ion-list v-if="section.type !== 'object' || !section.properties">
+          <ion-list v-if="section.key === 'plugin_settings'">
+            <ion-list-header>
+              <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
+            </ion-list-header>
+            <ion-item button @click="goPlugins" detail>
+              <ion-icon :icon="settingsOutline" slot="start"></ion-icon>
+              <ion-label>
+                <h3>{{ tField(section.key) }}</h3>
+              </ion-label>
+              <ion-icon :icon="chevronForward" slot="end"></ion-icon>
+            </ion-item>
+          </ion-list>
+
+          <ion-list v-else-if="section.type !== 'object' || !section.properties">
             <ion-list-header>
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
             </ion-list-header>
@@ -256,6 +269,10 @@ function goAbout() {
 
 function goCache() {
   router.push('/tabs/settings/cache')
+}
+
+function goPlugins() {
+  router.push('/tabs/settings/plugins')
 }
 
 function getValue(path: string[]): unknown {

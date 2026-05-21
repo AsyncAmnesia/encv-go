@@ -48,6 +48,10 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/CacheDetail.vue'),
       },
       {
+        path: 'settings/plugins',
+        component: () => import('@/views/PluginSettings.vue'),
+      },
+      {
         path: 'devlogs',
         component: () => import('@/views/DevLogs.vue'),
       },

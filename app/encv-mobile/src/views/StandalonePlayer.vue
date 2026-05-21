@@ -277,6 +277,13 @@ function initArtPlayer() {
     handlePlayerError()
   })
 
+  nextTick(() => {
+    if (art?.video) {
+      art.video.removeAttribute('controls')
+      art.video.controls = false
+    }
+  })
+
   console.info('[StandalonePlayer] ArtPlayer initialized')
 }
 
@@ -299,12 +306,12 @@ function handleFullscreenEnter() {
 }
 
 function handleFullscreenExit() {
-  console.log('[StandalonePlayer] fullscreenExit: unlocking orientation')
+  console.log('[StandalonePlayer] fullscreenExit: restoring portrait orientation')
   const cap = (window as any).Capacitor
   if (cap?.isNativePlatform?.()) {
     const { GoProcess } = cap.Plugins || {}
     if (GoProcess) {
-      GoProcess.setScreenOrientation({ orientation: 'unlocked' }).catch((e: any) => {
+      GoProcess.setScreenOrientation({ orientation: 'portrait' }).catch((e: any) => {
         console.warn('[StandalonePlayer] fullscreenExit: setScreenOrientation failed', e)
       })
     }
@@ -373,6 +380,16 @@ watch(backendLoading, (loading) => {
 </script>
 
 <style scoped>
+:deep(video::-webkit-media-controls) {
+  display: none !important;
+}
+:deep(video::-webkit-media-controls-enclosure) {
+  display: none !important;
+}
+:deep(video::-webkit-media-controls-panel) {
+  display: none !important;
+}
+
 .loading-state {
   display: flex;
   flex-direction: column;
