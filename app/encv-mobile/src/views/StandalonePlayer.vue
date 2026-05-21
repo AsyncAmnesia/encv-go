@@ -76,7 +76,6 @@
 <script setup lang="ts">
 console.log('[StandalonePlayer] <script setup> evaluating...')
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
 import Artplayer from 'artplayer'
 import 'artplayer/dist/artplayer.css'
 import {
@@ -98,7 +97,6 @@ import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 
 const { t } = useI18n()
-const router = useRouter()
 const emit = defineEmits(['open-settings'])
 
 const backendLoading = ref(true)
@@ -239,7 +237,6 @@ function initArtPlayer() {
     volume: 0.7,
     fullscreen: true,
     miniProgressBar: true,
-    customType: 'normal',
     controls: [
       { name: 'play' },
       { name: 'time' },
