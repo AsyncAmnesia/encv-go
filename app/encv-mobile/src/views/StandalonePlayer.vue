@@ -74,6 +74,7 @@
 </template>
 
 <script setup lang="ts">
+console.log('[StandalonePlayer] <script setup> evaluating...')
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import Artplayer from 'artplayer'
@@ -145,53 +146,67 @@ async function handlePlayerError() {
 }
 
 async function initBackend() {
+  console.log('[StandalonePlayer] initBackend() called')
   backendLoading.value = true
   backendError.value = ''
 
   const { standalone } = await isStandaloneMode()
+  console.log('[StandalonePlayer] isStandaloneMode:', standalone)
   if (!standalone) {
+    console.error('[StandalonePlayer] NOT in standalone mode!')
     backendError.value = 'Not in standalone mode'
     backendLoading.value = false
     return
   }
 
   const intentInfo = await getIntentFileInfo()
+  console.log('[StandalonePlayer] intentInfo:', JSON.stringify(intentInfo))
   filePath.value = intentInfo.path
   fileName.value = intentInfo.name
   fileMimeType.value = intentInfo.mimeType
   isExternalFile.value = true
 
   if (!filePath.value) {
+    console.warn('[StandalonePlayer] No file path from intent')
     backendError.value = 'No file provided'
     backendLoading.value = false
     return
   }
 
   const status = await getBackendStatus()
+  console.log('[StandalonePlayer] getBackendStatus:', JSON.stringify(status))
   if (status.running && status.port > 0) {
     setApiBaseUrl(`http://127.0.0.1:${status.port}`)
     backendLoading.value = false
+    console.log('[StandalonePlayer] Backend already running, loading=false')
+  } else {
+    console.log('[StandalonePlayer] Backend not ready yet, waiting for broadcast...')
   }
 }
 
 function handleBackendReady(event: CustomEvent) {
+  console.log('[StandalonePlayer] handleBackendReady event received:', JSON.stringify(event.detail))
   const { port, running } = event.detail || {}
   if (running && port > 0) {
     setApiBaseUrl(`http://127.0.0.1:${port}`)
     backendLoading.value = false
     backendError.value = ''
+    console.log('[StandalonePlayer] Backend ready via broadcast, loading=false')
   }
 }
 
 function handleBackendStatus(event: CustomEvent) {
+  console.log('[StandalonePlayer] handleBackendStatus event received:', JSON.stringify(event.detail))
   const { port, running, error } = event.detail || {}
   if (running && port > 0) {
     setApiBaseUrl(`http://127.0.0.1:${port}`)
     backendLoading.value = false
     backendError.value = ''
+    console.log('[StandalonePlayer] Backend status OK via broadcast, loading=false')
   }
   if (error) {
     backendError.value = error
+    console.error('[StandalonePlayer] Backend error via broadcast:', error)
   }
 }
 
@@ -284,18 +299,24 @@ async function startPlayback() {
 }
 
 onMounted(() => {
+  console.log('[StandalonePlayer] onMounted fired, DOM element:', !!document.getElementById('app'))
+  console.log('[StandalonePlayer] Capacitor exists:', typeof Capacitor !== 'undefined')
+  console.log('[StandalonePlayer] Capacitor.Plugins:', !!Capacitor?.Plugins)
   initBackend()
   window.addEventListener('encv:backend-ready', handleBackendReady as EventListener)
   window.addEventListener('encv:backend-status', handleBackendStatus as EventListener)
+  console.log('[StandalonePlayer] Backend event listeners registered')
 })
 
 onBeforeUnmount(() => {
+  console.log('[StandalonePlayer] onBeforeUnmount')
   window.removeEventListener('encv:backend-ready', handleBackendReady as EventListener)
   window.removeEventListener('encv:backend-status', handleBackendStatus as EventListener)
   destroyArtPlayer()
 })
 
 watch(backendLoading, (loading) => {
+  console.log('[StandalonePlayer] backendLoading changed:', loading, 'filePath:', filePath.value)
   if (!loading && filePath.value) {
     startPlayback()
   }
