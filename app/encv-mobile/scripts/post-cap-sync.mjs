@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ANDROID_DIR = join(__dirname, '..', 'android')
 const OVERLAY_DIR = join(__dirname, '..', 'android-overlay')
+const LYNX_BUNDLE_PATH = join(__dirname, '..', 'lynx-player', 'dist', 'player.lynx.bundle')
 
 function patchFile(filePath, transformer) {
   const content = readFileSync(filePath, 'utf-8')
@@ -148,6 +149,22 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
   }
 
+  // 3. Add USE_LYNX_PLAYER build config
+  if (!c.includes('USE_LYNX_PLAYER')) {
+    c = c.replace(
+      /defaultConfig\s*\{/,
+      "defaultConfig {\n        buildConfigField \"boolean\", \"USE_LYNX_PLAYER\", \"true\"",
+    )
+  }
+
+  // 4. Add Lynx SDK dependency
+  if (!c.includes('org.lynxsdk.lynx')) {
+    c = c.replace(
+      'dependencies {',
+      "dependencies {\n    implementation 'org.lynxsdk.lynx:lynx:0.0.1'\n    implementation 'org.lynxsdk.lynx:lynx-service-image:0.0.1'\n    implementation 'io.github.abdallahmehiz:mpv-android-lib:0.1.12'",
+    )
+  }
+
   // 3. compileOptions (required by Logcat)
   if (!c.includes('compileOptions')) {
     c = c.replace(
@@ -248,7 +265,7 @@ android.sourceSets {
   return c
 })
 
-// --- Overlay files: MainActivity.kt, GoProcessPlugin.kt, EncvGoService.kt, manifest, proguard, network config ---
+// --- Overlay files: MainActivity.kt, GoProcessPlugin.kt, EncvGoService.kt, PlayerActivity*.kt, manifest, proguard, network config ---
 const JAVA_DIR = join(ANDROID_DIR, 'app', 'src', 'main', 'java', 'com', 'encvgo', 'app')
 
 if (existsSync(JAVA_DIR)) {
@@ -256,7 +273,7 @@ if (existsSync(JAVA_DIR)) {
 }
 mkdirSync(JAVA_DIR, { recursive: true })
 
-for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt', 'EncvGoService.kt', 'PlayerActivity.kt']) {
+for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt', 'EncvGoService.kt', 'PlayerActivity.kt', 'PlayerActivityLynx.kt', 'PlayerActivityCapacitor.kt', 'MpvPlayerModule.kt', 'GoBackendModule.kt']) {
   const src = join(OVERLAY_DIR, 'app', 'src', 'main', 'java', 'com', 'encvgo', 'app', f)
   if (existsSync(src)) {
     copyFileSync(src, join(JAVA_DIR, f))
@@ -264,6 +281,23 @@ for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt', 'EncvGoService.kt', 'P
   } else {
     console.error(`  overlay: missing ${src}`)
   }
+}
+
+// Copy layout file
+const RES_LAYOUT_DIR = join(ANDROID_DIR, 'app', 'src', 'main', 'res', 'layout')
+mkdirSync(RES_LAYOUT_DIR, { recursive: true })
+const layoutSrc = join(OVERLAY_DIR, 'app', 'src', 'main', 'res', 'layout', 'lynx_player_activity.xml')
+if (existsSync(layoutSrc)) {
+  copyFileSync(layoutSrc, join(RES_LAYOUT_DIR, 'lynx_player_activity.xml'))
+  console.log('  overlay: layout/lynx_player_activity.xml')
+}
+
+// Copy lynx bundle to assets if exists
+if (existsSync(LYNX_BUNDLE_PATH)) {
+  const assetsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'assets')
+  mkdirSync(assetsDir, { recursive: true })
+  copyFileSync(LYNX_BUNDLE_PATH, join(assetsDir, 'player.lynx.bundle'))
+  console.log('  bundle: copied player.lynx.bundle to assets')
 }
 
 const jniLibsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'jniLibs', 'arm64-v8a')
