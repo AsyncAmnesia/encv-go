@@ -7,11 +7,6 @@ struct SwsContext;
 
 #define SWS_BICUBIC 4
 
-typedef struct {
-    int w;
-    int h;
-} AVPixelFormat;
-
 enum AVPixelFormat {
     AV_PIX_FMT_BGR0 = 28,
     AV_PIX_FMT_RGB32 = 25,

@@ -129,6 +129,7 @@ typedef struct mpv_event_property {
 
 typedef struct mpv_event_log_message {
     char *prefix;
+    int level;
     enum mpv_log_level log_level;
     char *text;
     int *log_level_internal;
@@ -160,6 +161,7 @@ typedef struct mpv_node {
         struct mpv_node_list *list;
         struct mpv_byte_array *ba;
     } u;
+    struct mpv_byte_array *ba;
 } mpv_node;
 
 MPV_EXPORT const char *mpv_event_name(mpv_event_id event);
