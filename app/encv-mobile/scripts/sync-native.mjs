@@ -91,6 +91,51 @@ if (existsSync(overlayInc)) {
   console.log('  include: synced')
 }
 
+const overlayManifest = join(OVERLAY_DIR, 'app', 'src', 'main', 'AndroidManifest.xml')
+const targetManifest = join(ANDROID_DIR, 'app', 'src', 'main', 'AndroidManifest.xml')
+if (existsSync(overlayManifest)) {
+  copyFileSync(overlayManifest, targetManifest)
+  console.log('  AndroidManifest.xml: synced from overlay')
+}
+
+const overlayProguard = join(OVERLAY_DIR, 'proguard-rules.pro')
+const targetProguard = join(ANDROID_DIR, 'app', 'proguard-rules.pro')
+if (existsSync(overlayProguard)) {
+  copyFileSync(overlayProguard, targetProguard)
+  console.log('  proguard-rules.pro: synced from overlay')
+}
+
+const overlayLayout = join(OVERLAY_DIR, 'app', 'src', 'main', 'res', 'layout')
+const targetLayout = join(ANDROID_DIR, 'app', 'src', 'main', 'res', 'layout')
+if (existsSync(overlayLayout)) {
+  mkdirSync(targetLayout, { recursive: true })
+  cpSync(overlayLayout, targetLayout, { recursive: true })
+  console.log('  layout: synced from overlay')
+}
+
+const overlayXml = join(OVERLAY_DIR, 'app', 'src', 'main', 'res', 'xml')
+const targetXml = join(ANDROID_DIR, 'app', 'src', 'main', 'res', 'xml')
+if (existsSync(overlayXml)) {
+  mkdirSync(targetXml, { recursive: true })
+  cpSync(overlayXml, targetXml, { recursive: true })
+  console.log('  res/xml: synced from overlay')
+}
+
+const overlayGradleProps = join(OVERLAY_DIR, 'gradle.properties')
+const targetGradleProps = join(ANDROID_DIR, 'gradle.properties')
+if (existsSync(overlayGradleProps)) {
+  copyFileSync(overlayGradleProps, targetGradleProps)
+  console.log('  gradle.properties: synced from overlay')
+}
+
+const assetsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'assets')
+mkdirSync(assetsDir, { recursive: true })
+const configMobile = join(__dirname, '..', 'assets', 'config.mobile.json')
+if (existsSync(configMobile)) {
+  copyFileSync(configMobile, join(assetsDir, 'config.mobile.json'))
+  console.log('  config.mobile.json: synced')
+}
+
 const mainActivity = join(JAVA_DIR, 'MainActivity.kt')
 if (existsSync(mainActivity)) {
   const content = readFileSync(mainActivity, 'utf-8')
@@ -109,8 +154,8 @@ if (!existsSync(LYNX_BUNDLE_PATH)) {
 }
 console.log('  Lynx bundle: exists ✓')
 
-// --- Gradle patching ---
-console.log('encv-sync-native: patching Gradle files...')
+// --- Gradle pre-injection (ensure Trapeze target nodes exist) ---
+console.log('encv-sync-native: pre-injecting Gradle nodes for Trapeze...')
 
 function patchFile(filePath, transformer) {
   if (!existsSync(filePath)) {
@@ -121,11 +166,10 @@ function patchFile(filePath, transformer) {
   const modified = transformer(content)
   if (modified !== content) {
     writeFileSync(filePath, modified, 'utf-8')
-    console.log(`  gradle: patched ${filePath}`)
+    console.log(`  gradle: pre-injected ${filePath}`)
   }
 }
 
-// Root build.gradle
 patchFile(join(ANDROID_DIR, 'build.gradle'), (c) => {
   if (!c.includes('kotlin-gradle-plugin')) {
     c = c.replace(
@@ -142,95 +186,10 @@ patchFile(join(ANDROID_DIR, 'build.gradle'), (c) => {
   return c
 })
 
-// App build.gradle
 patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
-  if (!c.includes('kotlin-android') && !c.includes('org.jetbrains.kotlin.android')) {
-    c = c.replace(
-      "apply plugin: 'com.android.application'",
-      "apply plugin: 'com.android.application'\napply plugin: 'kotlin-android'"
-    )
+  if (!c.includes('plugins {') && !c.includes('plugins{')) {
+    c = "plugins {\n    id 'kotlin-android'\n}\n\n" + c
   }
-
-  if (!c.includes('kotlin-stdlib')) {
-    c = c.replace(
-      'dependencies {',
-      "dependencies {\n    implementation \"org.jetbrains.kotlin:kotlin-stdlib:2.1.0\""
-    )
-  }
-  if (!c.includes('Logcat')) {
-    c = c.replace(
-      'dependencies {',
-      "dependencies {\n    debugImplementation 'com.github.getActivity:Logcat:13.0'"
-    )
-  }
-
-  if (!c.includes('USE_LYNX_PLAYER')) {
-    c = c.replace(
-      /defaultConfig\s*\{/,
-      "defaultConfig {\n        buildConfigField \"boolean\", \"USE_LYNX_PLAYER\", \"true\""
-    )
-  }
-
-  if (!c.includes('buildConfig = true') && !c.includes('buildConfig true')) {
-    if (c.includes('buildFeatures')) {
-      c = c.replace(/buildFeatures\s*\{/, "buildFeatures {\n        buildConfig = true")
-    } else {
-      c = c.replace(/android\s*\{/, "android {\n    buildFeatures {\n        buildConfig = true\n    }")
-    }
-  }
-
-  if (!c.includes('abiFilters') || !c.includes('arm64-v8a')) {
-    c = c.replace(
-      /defaultConfig\s*\{/,
-      "defaultConfig {\n        ndk {\n            abiFilters 'arm64-v8a'\n        }"
-    )
-  }
-
-  if (!c.includes('compileOptions')) {
-    c = c.replace(
-      /android\s*\{/,
-      "android {\n    compileOptions {\n        targetCompatibility JavaVersion.VERSION_21\n        sourceCompatibility JavaVersion.VERSION_21\n    }"
-    )
-  }
-
-  if (!c.includes('org.lynxsdk.lynx')) {
-    c = c.replace(
-      'dependencies {',
-      "dependencies {\n    implementation 'org.lynxsdk.lynx:lynx:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-jssdk:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-trace:3.7.0'\n    implementation 'org.lynxsdk.lynx:primjs:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-image:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-log:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-http:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-devtool:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-devtool:3.7.0'\n    implementation 'com.facebook.fresco:fresco:2.3.0'\n    implementation 'com.facebook.fresco:animated-gif:2.3.0'\n    implementation 'com.facebook.fresco:animated-webp:2.3.0'\n    implementation 'com.facebook.fresco:webpsupport:2.3.0'\n    implementation 'com.facebook.fresco:animated-base:2.3.0'\n    implementation 'com.squareup.okhttp3:okhttp:4.9.0'"
-    )
-  }
-
-  c = c.replace(/\s*implementation\s*\(?['"]io\.github\.abdallahmehiz:mpv[^'"]*['"][\s\S]*?\)?/g, '')
-
-  if (!c.includes('jniLibs.srcDirs')) {
-    c = c.replace(
-      /android\s*\{/,
-      "android {\n    sourceSets {\n        main {\n            jniLibs.srcDirs = ['src/main/jniLibs']\n        }\n    }"
-    )
-  }
-
-  if (!c.includes('useLegacyPackaging')) {
-    c = c.replace(
-      /android\s*\{/,
-      "android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n            pickFirsts += ['**/*.so']\n        }\n        resources {\n            pickFirsts += ['**/*.so']\n        }\n    }"
-    )
-  }
-
-  if (!c.includes('jvmTarget') && c.includes('kotlin-android')) {
-    c += `\ntasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {\n    kotlinOptions {\n        jvmTarget = "21"\n    }\n}\n`
-  }
-
-  if (!c.includes("main.java.srcDirs += 'src/main/java'") && c.includes('kotlin-android')) {
-    c += `\nandroid.sourceSets {\n    main.java.srcDirs += 'src/main/java'\n}\n`
-  }
-
-  const version = process.env.ENCV_VERSION || ''
-  if (version) {
-    const vcode = parseInt(version.replace(/\./g, '')) || 1
-    c = c.replace(/versionCode\s+\d+/, `versionCode ${vcode}`)
-    c = c.replace(/versionName\s+"[^"]*"/, `versionName "${version}"`)
-  }
-
   return c
 })
 
