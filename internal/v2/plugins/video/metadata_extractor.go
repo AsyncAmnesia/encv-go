@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -77,7 +76,7 @@ func extractMetadataFromOriginalFile(path string) (*VideoIndex, error) {
 	)
 
 	// 1. 使用 ffprobe 获取基础元数据
-	cmd := exec.Command("ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path)
+	cmd := utils.FFProbeCmd("-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
@@ -174,7 +173,7 @@ func parseDuration(d string) float64 {
 
 // 使用 ffprobe 提取章节
 func extractChaptersWithFFprobe(path string) ([]MKVChapterInfo, error) {
-	cmd := exec.Command("ffprobe", "-v", "error", "-show_chapters", "-of", "json", path)
+	cmd := utils.FFProbeCmd("-v", "error", "-show_chapters", "-of", "json", path)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("ffprobe command failed: %w", err)

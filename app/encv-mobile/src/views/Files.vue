@@ -89,17 +89,14 @@
           ></ion-icon>
           <ion-label>
             <h2>{{ file.name }}</h2>
-            <p v-if="searchQuery && !file.isDirectory" class="search-path">
-              {{ file.path }}
-              <span class="open-folder-link" @click.stop="openContainingFolder(file)">{{ t('files.openFolder') }}</span>
-            </p>
+            <p v-if="searchQuery && !file.isDirectory" class="search-path">{{ file.path }}</p>
             <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified && !searchQuery"> · {{ file.modified }}</span></p>
             <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
           </ion-label>
           <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
             ENCV
           </ion-badge>
-          <div v-if="searchQuery && !file.isDirectory" class="open-folder-btn" @click.stop="openContainingFolder(file)">
+          <div v-if="searchQuery" class="open-folder-btn" @click.stop="openContainingFolder(file)">
             <ion-icon :icon="folderOpen" class="open-folder-icon"></ion-icon>
           </div>
         </ion-item>
@@ -716,10 +713,5 @@ function onBackendReadyWindow(event: Event) {
   color: var(--ion-color-primary);
 }
 
-.open-folder-link {
-  color: var(--ion-color-primary);
-  font-size: 11px;
-  margin-left: 8px;
-  white-space: nowrap;
-}
+
 </style>

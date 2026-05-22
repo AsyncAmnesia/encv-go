@@ -233,6 +233,25 @@ export interface WebDAVConfig {
   username: string
   password: string
   mountPath: string
+  isBuiltIn?: boolean
+}
+
+export interface RemoteWebDAVInfo {
+  enabled: boolean
+  url: string
+  username: string
+  root: string
+}
+
+export interface OpenlistSiteInfo {
+  host: string
+  description: string
+  proxyUrl: string
+}
+
+export interface RemoteInfo {
+  webdav: RemoteWebDAVInfo
+  openlistSites: Record<string, OpenlistSiteInfo>
 }
 
 const WEBDAV_CONFIGS_KEY = 'encv-webdav-configs'
@@ -389,5 +408,51 @@ export async function clearIndex(): Promise<void> {
   const response = await fetch(`${baseUrl}/api/index/clear`, { method: 'POST' })
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`)
+  }
+}
+
+export async function fetchRemoteInfo(): Promise<RemoteInfo> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/remote/info`)
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return await response.json()
+}
+
+export async function addOpenlistSite(siteId: string, host: string, description: string): Promise<void> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/remote/openlist`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ siteId, host, description }),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.error || `HTTP ${response.status}`)
+  }
+}
+
+export async function updateOpenlistSite(siteId: string, host: string, description: string): Promise<void> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/remote/openlist/${siteId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ host, description }),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.error || `HTTP ${response.status}`)
+  }
+}
+
+export async function deleteOpenlistSite(siteId: string): Promise<void> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/remote/openlist/${siteId}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.error || `HTTP ${response.status}`)
   }
 }

@@ -13,9 +13,9 @@
           <ion-label>{{ t('tabs.tasks') }}</ion-label>
         </ion-tab-button>
 
-        <ion-tab-button tab="webdav" href="/tabs/webdav">
-          <ion-icon :icon="cloud"></ion-icon>
-          <ion-label>{{ t('tabs.webdav') }}</ion-label>
+        <ion-tab-button tab="remote" href="/tabs/remote">
+          <ion-icon :icon="globe"></ion-icon>
+          <ion-label>{{ t('tabs.remote') }}</ion-label>
         </ion-tab-button>
 
         <ion-tab-button tab="settings" href="/tabs/settings">
@@ -42,7 +42,7 @@ import {
   IonTabButton,
   IonTabs,
 } from '@ionic/vue'
-import { folder, list, cloud, settings, bug } from 'ionicons/icons'
+import { folder, list, globe, settings, bug } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 
 const { t } = useI18n()

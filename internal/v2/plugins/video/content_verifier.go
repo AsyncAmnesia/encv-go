@@ -10,12 +10,12 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
 	"github.com/Soltus/encv-go/internal/v2/container/manifest"
 	"github.com/Soltus/encv-go/internal/v2/types"
@@ -375,9 +375,8 @@ func (p *VideoContentVerifier) checkFFmpegDecoding(origPath, decPath string) err
 
 // runFFmpegStressTest 执行单个文件的解码测试 (性能优化版)
 func (p *VideoContentVerifier) runFFmpegStressTest(ctx context.Context, filePath, label string) error {
-	cmd := exec.CommandContext(ctx, "ffmpeg",
+	cmd := utils.FFmpegCmdContext(ctx,
 		"-v", "error",
-		"-loglevel", "error",
 		"-nostdin",
 		"-i", filePath,
 		"-f", "null",
@@ -459,7 +458,7 @@ func (p *VideoContentVerifier) getVideoMetrics(filePath string) (int, float64, e
 // 【性能优化】使用 nb_frames 而不是 -count_frames，避免耗时的帧解码
 func (p *VideoContentVerifier) getVideoMetricsFallback(filePath string) (int, float64, error) {
 	// 首先尝试使用 nb_frames（元数据中的帧数，非常快）
-	cmd := exec.Command("ffprobe",
+	cmd := utils.FFProbeCmd(
 		"-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries", "stream=nb_frames",
@@ -636,8 +635,8 @@ func (p *VideoContentVerifier) diagnoseFragmentation(origPath, decPath string) e
 
 // DiagnoseGOPAlignment ... (保留)
 func (p *VideoContentVerifier) DiagnoseGOPAlignment(filePath string, binaryOffsets []uint64) error {
-	cmd := exec.Command(
-		"ffprobe", "-v", "error", "-select_streams", "v:0",
+	cmd := utils.FFProbeCmd(
+		"-v", "error", "-select_streams", "v:0",
 		"-skip_frame", "nokey", "-show_entries", "frame=pkt_pos,pkt_pts_time",
 		"-of", "json", filePath,
 	)

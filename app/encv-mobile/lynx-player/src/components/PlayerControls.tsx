@@ -234,24 +234,10 @@ export function PlayerControls({
     );
   }
 
-  if (state === 'loading') {
+  if (state === 'loading' || state === 'idle') {
     return (
       <view className="CenterArea">
         <view className="LoadingSpinner" />
-        <text className="IdleTitle">正在加载...</text>
-      </view>
-    );
-  }
-
-  if (state === 'idle') {
-    return (
-      <view className="CenterArea">
-        <Button onClick={onPlayPause} className="PlayBtn">
-          <view className="PlayBtnInner">
-            <text className="PlayIcon">{'\u25B6'}</text>
-          </view>
-        </Button>
-        <text className="IdleTitle">{fileName || "等待文件信息..."}</text>
       </view>
     );
   }

@@ -223,6 +223,49 @@
           </ion-label>
         </ion-item>
       </ion-list>
+
+      <ion-list>
+        <ion-item button @click="openJsonEditor">
+          <ion-icon :icon="documentText" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.editRawConfig') }}</h3>
+          </ion-label>
+        </ion-item>
+      </ion-list>
+
+      <ion-modal :is-open="showJsonEditor" @didDismiss="showJsonEditor = false">
+        <ion-header>
+          <ion-toolbar>
+            <ion-title>{{ t('settings.editRawConfig') }}</ion-title>
+            <ion-buttons slot="end">
+              <ion-button @click="showJsonEditor = false">{{ t('settings.cancel') }}</ion-button>
+              <ion-button @click="handleSaveJson" :disabled="!!jsonError" color="primary">{{ t('settings.saveConfig') }}</ion-button>
+            </ion-buttons>
+          </ion-toolbar>
+        </ion-header>
+        <ion-content class="json-editor-content">
+          <div class="json-editor-layout">
+            <div class="json-annotations" v-if="configAnnotations.length > 0">
+              <div class="annotations-title">{{ t('settings.configAnnotations') }}</div>
+              <div v-for="ann in configAnnotations" :key="ann.path" class="annotation-item">
+                <span class="annotation-path">{{ ann.path }}</span>
+                <span class="annotation-desc">{{ ann.description }}</span>
+              </div>
+            </div>
+            <div class="json-textarea-wrapper">
+              <textarea
+                v-model="jsonText"
+                class="json-textarea"
+                spellcheck="false"
+                @input="validateJson"
+              ></textarea>
+              <div v-if="jsonError" class="json-error">
+                {{ t('settings.jsonError') }}: {{ jsonError }}
+              </div>
+            </div>
+          </div>
+        </ion-content>
+      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
@@ -251,7 +294,7 @@ import { useServerStatus } from '@/composables/useServerStatus'
 import { useConfig } from '@/composables/useConfig'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
-import { getIndexStats } from '@/api/encv'
+import { getIndexStats, fetchConfig, updateConfig } from '@/api/encv'
 import type { IndexStats } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
 import FilePickerModal from '@/components/FilePickerModal.vue'
@@ -264,6 +307,74 @@ const { t, tField, tSectionTitle, setLocale, locale } = useI18n()
 
 const configLoaded = ref(false)
 const indexStats = ref<IndexStats | null>(null)
+
+const showJsonEditor = ref(false)
+const jsonText = ref('')
+const jsonError = ref('')
+const configAnnotations = ref<{ path: string; description: string }[]>([])
+
+function extractAnnotations(schema: any, prefix: string = ''): { path: string; description: string }[] {
+  const result: { path: string; description: string }[] = []
+  if (!schema || typeof schema !== 'object') return result
+  if (schema.properties) {
+    for (const [key, val] of Object.entries(schema.properties)) {
+      const prop = val as any
+      const fullPath = prefix ? `${prefix}.${key}` : key
+      if (prop.description) {
+        result.push({ path: fullPath, description: prop.description })
+      }
+      if (prop.properties) {
+        result.push(...extractAnnotations(prop, fullPath))
+      }
+    }
+  }
+  if (schema.$defs) {
+    for (const [key, val] of Object.entries(schema.$defs)) {
+      result.push(...extractAnnotations(val, `$defs.${key}`))
+    }
+  }
+  return result
+}
+
+async function openJsonEditor() {
+  try {
+    const cfg = await fetchConfig()
+    jsonText.value = JSON.stringify(cfg, null, 2)
+    jsonError.value = ''
+    try {
+      const schemaResp = await fetch('/api/config/schema')
+      if (schemaResp.ok) {
+        const schema = await schemaResp.json()
+        configAnnotations.value = extractAnnotations(schema)
+      }
+    } catch {}
+    showJsonEditor.value = true
+  } catch {
+    showToast({ message: t('settings.configSaveFailed'), duration: 2000, color: 'danger' })
+  }
+}
+
+function validateJson() {
+  try {
+    JSON.parse(jsonText.value)
+    jsonError.value = ''
+  } catch (e) {
+    jsonError.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function handleSaveJson() {
+  try {
+    const parsed = JSON.parse(jsonText.value)
+    await updateConfig(parsed)
+    showJsonEditor.value = false
+    showToast({ message: t('settings.configSaved'), duration: 1500, color: 'success' })
+    await loadConfig()
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    showToast({ message: t('settings.configSaveFailed') + ': ' + detail, duration: 3000, color: 'danger' })
+  }
+}
 
 function goServer() {
   router.push('/tabs/settings/server')
@@ -444,5 +555,74 @@ watch(serverOnline, async (online) => {
   --padding-end: 8px;
   min-width: 44px;
   min-height: 44px;
+}
+.json-editor-content {
+  --background: var(--ion-background-color);
+}
+.json-editor-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.json-annotations {
+  border-bottom: 1px solid var(--ion-color-light);
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+.annotations-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ion-text-color);
+  margin-bottom: 8px;
+}
+.annotation-item {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(var(--ion-color-medium-rgb), 0.15);
+}
+.annotation-item:last-child {
+  border-bottom: none;
+}
+.annotation-path {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ion-color-primary);
+  font-family: monospace;
+}
+.annotation-desc {
+  font-size: 12px;
+  color: var(--encv-text-secondary);
+  margin-top: 2px;
+}
+.json-textarea-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  min-height: 0;
+}
+.json-textarea {
+  flex: 1;
+  width: 100%;
+  min-height: 200px;
+  padding: 12px 16px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  background: var(--ion-background-color);
+  color: var(--ion-text-color);
+  border: none;
+  outline: none;
+  resize: none;
+  box-sizing: border-box;
+}
+.json-error {
+  padding: 8px 16px;
+  background: rgba(var(--ion-color-danger-rgb), 0.1);
+  color: var(--ion-color-danger);
+  font-size: 12px;
+  font-family: monospace;
 }
 </style>

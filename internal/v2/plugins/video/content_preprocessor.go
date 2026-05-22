@@ -51,7 +51,7 @@ func detectPreferredEncoder() string {
 		if enc.args == nil {
 			return enc.name
 		}
-		cmd := exec.Command("ffmpeg", append([]string{"-y", "-threads", "1"}, enc.args...)...)
+		cmd := utils.FFmpegCmd(append([]string{"-y", "-threads", "1"}, enc.args...)...)
 		if err := cmd.Run(); err == nil {
 			log.Printf("-> [CONTENT_PREPROCESSOR] Detected available encoder: %s\n", enc.name)
 			return enc.name
@@ -231,7 +231,7 @@ func (p *VideoContentPreprocessor) updateWithPreprocessedInfo(preprocessedPath, 
 		p.index.MimeType = mimeType
 	}
 
-	cmd := exec.Command("ffprobe", "-v", "quiet", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", preprocessedPath)
+	cmd := utils.FFProbeCmd("-v", "quiet", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", preprocessedPath)
 	output, err := cmd.Output()
 	if err == nil {
 		if d, err := strconv.ParseFloat(strings.TrimSpace(string(output)), 64); err == nil {
@@ -285,8 +285,7 @@ func extractKeyFrameOffsets(filePath string, format string) ([]uint64, error) {
 func extractKeyFrameOffsetsWithFFProbe(filePath string) ([]uint64, error) {
 	fmt.Println("-> [DIAG] Optimized: Extracting exact keyframe positions in a single pass.")
 
-	cmd := exec.Command(
-		"ffprobe",
+	cmd := utils.FFProbeCmd(
 		"-v", "error",
 		"-select_streams", "v:0",
 		"-skip_frame", "nokey",
@@ -399,7 +398,7 @@ func (p *VideoContentPreprocessor) remapMP4ForFastStart(inputPath string) (io.Re
 	tempPath := tempFile.Name()
 	tempFile.Close()
 
-	ffmpegCmd := exec.Command("ffmpeg", "-y", "-threads", "2", "-i", inputPath, "-c", "copy", "-movflags", "+faststart", tempPath)
+	ffmpegCmd := utils.FFmpegCmd("-y", "-threads", "2", "-i", inputPath, "-c", "copy", "-movflags", "+faststart", tempPath)
 	if err := p.runFFmpegCmd(ffmpegCmd, tempPath); err != nil {
 		os.Remove(tempPath)
 		return nil, tempPath, fmt.Errorf("ffmpeg failed to remux MP4: %w", err)
@@ -435,7 +434,7 @@ func (p *VideoContentPreprocessor) transcodeToFastStartMP4(inputPath string) (io
 
 	args = append(args, "-c:a", "aac", "-movflags", "+faststart", tempPath)
 
-	ffmpegCmd := exec.Command("ffmpeg", args...)
+	ffmpegCmd := utils.FFmpegCmd(args...)
 	log.Printf("-> [CONTENT_PREPROCESSOR] Using encoder: %s, command: %s\n", encoder, ffmpegCmd.String())
 
 	if err := p.runFFmpegCmd(ffmpegCmd, tempPath); err != nil {
@@ -450,7 +449,7 @@ func (p *VideoContentPreprocessor) transcodeToFastStartMP4(inputPath string) (io
 			tempPath = tempFile2.Name()
 			tempFile2.Close()
 
-			fallbackCmd := exec.Command("ffmpeg", "-y", "-i", inputPath, "-threads", "2",
+			fallbackCmd := utils.FFmpegCmd("-y", "-i", inputPath, "-threads", "2",
 				"-c:v", "libx264", "-preset", "medium", "-crf", "23", "-profile:v", "high",
 				"-c:a", "aac", "-movflags", "+faststart", tempPath)
 			if err2 := p.runFFmpegCmd(fallbackCmd, tempPath); err2 != nil {

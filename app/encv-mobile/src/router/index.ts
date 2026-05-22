@@ -28,8 +28,8 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Tasks.vue'),
       },
       {
-        path: 'webdav',
-        component: () => import('@/views/WebDAV.vue'),
+        path: 'remote',
+        component: () => import('@/views/Remote.vue'),
       },
       {
         path: 'settings',

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Soltus/encv-go/internal/service"
+	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
 func writeServiceError(w http.ResponseWriter, err error) {
@@ -338,4 +340,238 @@ func (s *Server) handleStreamExternalFile(w http.ResponseWriter, r *http.Request
 		writeServiceError(w, err)
 		return
 	}
+}
+
+func (s *Server) handleRemoteInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	cfg := s.cfg
+
+	webdavInfo := map[string]interface{}{
+		"enabled":  cfg.Webdav.Port > 0,
+		"username": cfg.Webdav.Username,
+		"root":     cfg.Webdav.Root,
+	}
+	if cfg.Webdav.Port > 0 {
+		root := cfg.Webdav.Root
+		if root == "" {
+			root = "/webdav/"
+		}
+		if !strings.HasPrefix(root, "/") {
+			root = "/" + root
+		}
+		if !strings.HasSuffix(root, "/") {
+			root += "/"
+		}
+		webdavInfo["url"] = fmt.Sprintf("http://127.0.0.1:%d%s", cfg.Webdav.Port, root)
+	} else {
+		webdavInfo["url"] = ""
+	}
+
+	openlistSites := make(map[string]interface{})
+	for siteId, siteCfg := range cfg.Proxy.Sites {
+		proxyURL := fmt.Sprintf("http://127.0.0.1:%d/openlist/sites/%s/", cfg.Server.Port, siteId)
+		openlistSites[siteId] = map[string]string{
+			"host":        siteCfg.Host,
+			"description": siteCfg.Description,
+			"proxyUrl":    proxyURL,
+		}
+	}
+
+	response := map[string]interface{}{
+		"webdav":        webdavInfo,
+		"openlistSites": openlistSites,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+func (s *Server) handleOpenlistSites(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		s.handleAddOpenlistSite(w, r)
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+	}
+}
+
+func (s *Server) handleOpenlistSiteByID(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/remote/openlist/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "site id required"})
+		return
+	}
+	siteId := parts[0]
+
+	if !isValidSiteID(siteId) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "site id must contain only letters, digits and underscores"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPut:
+		s.handleUpdateOpenlistSite(w, r, siteId)
+	case http.MethodDelete:
+		s.handleDeleteOpenlistSite(w, r, siteId)
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+	}
+}
+
+func isValidSiteID(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, c := range id {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Server) handleAddOpenlistSite(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SiteID      string `json:"siteId"`
+		Host        string `json:"host"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if !isValidSiteID(req.SiteID) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "site id must contain only letters, digits and underscores"})
+		return
+	}
+	if req.Host == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "host is required"})
+		return
+	}
+
+	configMu.Lock()
+	defer configMu.Unlock()
+
+	if _, exists := s.cfg.Proxy.Sites[req.SiteID]; exists {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{"error": "site id already exists"})
+		return
+	}
+
+	if s.cfg.Proxy.Sites == nil {
+		s.cfg.Proxy.Sites = make(map[string]types.ProxySiteConfig)
+	}
+	s.cfg.Proxy.Sites[req.SiteID] = types.ProxySiteConfig{
+		Host:        req.Host,
+		Description: req.Description,
+	}
+
+	if err := s.writeConfigToFile(); err != nil {
+		slog.Error("Failed to write config after adding openlist site", "error", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to save config"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{"message": "site added"})
+}
+
+func (s *Server) handleUpdateOpenlistSite(w http.ResponseWriter, r *http.Request, siteId string) {
+	var req struct {
+		Host        string `json:"host"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	configMu.Lock()
+	defer configMu.Unlock()
+
+	if _, exists := s.cfg.Proxy.Sites[siteId]; !exists {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "site not found"})
+		return
+	}
+
+	s.cfg.Proxy.Sites[siteId] = types.ProxySiteConfig{
+		Host:        req.Host,
+		Description: req.Description,
+	}
+
+	if err := s.writeConfigToFile(); err != nil {
+		slog.Error("Failed to write config after updating openlist site", "error", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to save config"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "site updated"})
+}
+
+func (s *Server) handleDeleteOpenlistSite(w http.ResponseWriter, r *http.Request, siteId string) {
+	configMu.Lock()
+	defer configMu.Unlock()
+
+	if _, exists := s.cfg.Proxy.Sites[siteId]; !exists {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "site not found"})
+		return
+	}
+
+	delete(s.cfg.Proxy.Sites, siteId)
+
+	if err := s.writeConfigToFile(); err != nil {
+		slog.Error("Failed to write config after deleting openlist site", "error", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to save config"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "site deleted"})
+}
+
+func (s *Server) writeConfigToFile() error {
+	if s.configPath == "" {
+		return fmt.Errorf("config path not available")
+	}
+	indented, err := json.MarshalIndent(s.cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+	return os.WriteFile(s.configPath, append(indented, '\n'), 0644)
 }

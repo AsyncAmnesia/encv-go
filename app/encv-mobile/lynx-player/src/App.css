@@ -2,8 +2,6 @@
   width: 100%;
   height: 100%;
   background-color: transparent;
-  justify-content: center;
-  align-items: center;
 }
 
 .TopGradient {
@@ -81,13 +79,14 @@
   flex-direction: row;
   justify-content: center;
   align-items: center;
-  gap: 24px;
 }
 
 .SeekBtn {
   background-color: transparent;
   border: none;
   padding: 0;
+  margin-left: 24px;
+  margin-right: 24px;
 }
 
 .SeekBtnInner {
@@ -110,6 +109,8 @@
   background-color: transparent;
   border: none;
   padding: 0;
+  margin-left: 24px;
+  margin-right: 24px;
 }
 
 .PlayBtnInner {
@@ -124,14 +125,6 @@
 .PlayIcon {
   color: #ffffff;
   font-size: 28px;
-  text-align: center;
-}
-
-.IdleTitle {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 14px;
-  margin-top: 16px;
-  max-width: 280px;
   text-align: center;
 }
 
@@ -287,6 +280,5 @@
   flex-direction: row;
   justify-content: center;
   align-items: center;
-  gap: 16px;
   padding: 8px 0;
 }
