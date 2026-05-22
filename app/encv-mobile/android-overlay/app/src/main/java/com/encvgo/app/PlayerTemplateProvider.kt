@@ -14,10 +14,21 @@ class PlayerTemplateProvider(context: Context) : AbsTemplateProvider() {
     private val mContext = context.applicationContext
 
     override fun loadTemplate(uri: String, callback: Callback) {
-        Log.d(TAG, "loadTemplate: uri=$uri")
+        Log.d(TAG, "loadTemplate: uri=$uri, context=$mContext")
         Thread {
             try {
-                val inputStream = mContext.assets.open(uri)
+                val assetPath = uri
+                Log.d(TAG, "loadTemplate: attempting assets.open($assetPath)")
+
+                val fileList = mContext.assets.list("") ?: emptyArray()
+                val matchingFiles = fileList.filter { it.contains("lynx") || it.contains("player") }
+                Log.d(TAG, "loadTemplate: assets root files matching 'lynx'/'player': $matchingFiles")
+
+                if (!fileList.contains(assetPath)) {
+                    Log.e(TAG, "loadTemplate: WARNING - '$assetPath' not found in assets root! Total files: ${fileList.size}")
+                }
+
+                val inputStream = mContext.assets.open(assetPath)
                 inputStream.use { stream ->
                     ByteArrayOutputStream().use { byteArrayOutputStream ->
                         val buffer = ByteArray(4096)

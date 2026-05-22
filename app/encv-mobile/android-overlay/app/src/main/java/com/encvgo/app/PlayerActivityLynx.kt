@@ -11,6 +11,8 @@ import android.widget.FrameLayout
 import androidx.appcompat.app.AppCompatActivity
 import com.lynx.tasm.LynxView
 import com.lynx.tasm.LynxViewBuilder
+import com.lynx.tasm.LynxViewClient
+import com.lynx.tasm.ui.image.FlattenUIImage
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -215,25 +217,95 @@ class PlayerActivityLynx : AppCompatActivity() {
     }
 
     private fun createLynxView() {
-        Log.d(TAG, "createLynxView: building LynxView with LynxViewBuilder")
+        Log.d(TAG, "createLynxView: START")
         try {
             val viewBuilder = LynxViewBuilder()
+            Log.d(TAG, "createLynxView: LynxViewBuilder created")
+
             viewBuilder.setTemplateProvider(PlayerTemplateProvider(this))
+            Log.d(TAG, "createLynxView: TemplateProvider set")
+
             viewBuilder.registerModule("MpvPlayerModule", MpvPlayerModule::class.java)
             viewBuilder.registerModule("GoBackendModule", GoBackendModule::class.java)
+            Log.d(TAG, "createLynxView: Modules registered (MpvPlayerModule, GoBackendModule)")
 
             lynxView = viewBuilder.build(this)
+            Log.d(TAG, "createLynxView: LynxView built, instance=$lynxView")
+
+            lynxView?.addLynxViewClient(object : LynxViewClient() {
+                private const val CLIENT_TAG = "LynxPlayerClient"
+
+                override fun onPageStart(url: String?) {
+                    Log.d(CLIENT_TAG, "onPageStart: url=$url")
+                }
+
+                override fun onRuntimeReady() {
+                    Log.d(CLIENT_TAG, "onRuntimeReady: JS environment ready")
+                }
+
+                override fun onLoadSuccess() {
+                    Log.d(CLIENT_TAG, "onLoadSuccess: template loaded and rendered successfully")
+                }
+
+                override fun onLoadFailed(message: String) {
+                    Log.e(CLIENT_TAG, "onLoadFailed: message=$message")
+                    runOnUiThread {
+                        android.widget.Toast.makeText(
+                            this@PlayerActivityLynx,
+                            "Player load failed: $message",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+
+                override fun onFirstScreen() {
+                    Log.d(CLIENT_TAG, "onFirstScreen: first screen rendered")
+                }
+
+                override fun onReceivedError(error: com.lynx.tasm.LynxError) {
+                    Log.e(CLIENT_TAG, "onReceivedError: code=${error.errorCode} msg=${error.summaryMessage} stack=${error.callStack}")
+                    runOnUiThread {
+                        android.widget.Toast.makeText(
+                            this@PlayerActivityLynx,
+                            "Player error: ${error.summaryMessage}",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+
+                override fun onReceivedJSError(jsError: com.lynx.tasm.LynxError) {
+                    Log.e(CLIENT_TAG, "onReceivedJSError: msg=${jsError.getMsg()} stack=${jsError.callStack}")
+                    runOnUiThread {
+                        android.widget.Toast.makeText(
+                            this@PlayerActivityLynx,
+                            "JS error: ${jsError.summaryMessage}",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+
+                override fun onReceivedJavaError(javaError: com.lynx.tasm.LynxError) {
+                    Log.e(CLIENT_TAG, "onReceivedJavaError: msg=${javaError.getMsg()}")
+                }
+
+                override fun onReceivedNativeError(nativeError: com.lynx.tasm.LynxError) {
+                    Log.e(CLIENT_TAG, "onReceivedNativeError: msg=${nativeError.getMsg()}")
+                }
+            })
+            Log.d(TAG, "createLynxView: LynxViewClient registered")
+
             val lynxParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
             rootLayout?.addView(lynxView, lynxParams)
-            lynxView?.setBackgroundColor(android.graphics.Color.parseColor("#CC0010"))
-            Log.d(TAG, "createLynxView: LynxView added to layout")
+            Log.d(TAG, "createLynxView: LynxView added to rootLayout")
 
             val initData = buildInitDataJson()
+            Log.d(TAG, "createLynxView: initData=$initData")
+
             lynxView?.renderTemplateUrl("player.lynx.bundle", initData)
-            Log.d(TAG, "createLynxView: renderTemplateUrl called")
+            Log.d(TAG, "createLynxView: renderTemplateUrl called with player.lynx.bundle")
 
             lynxView?.post {
                 try {
