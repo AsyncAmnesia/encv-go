@@ -89,7 +89,10 @@
           ></ion-icon>
           <ion-label>
             <h2>{{ file.name }}</h2>
-            <p v-if="searchQuery && !file.isDirectory" class="search-path">{{ file.path }}</p>
+            <p v-if="searchQuery && !file.isDirectory" class="search-path">
+              {{ file.path }}
+              <span class="open-folder-link" @click.stop="openContainingFolder(file)">{{ t('files.openFolder') }}</span>
+            </p>
             <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified && !searchQuery"> · {{ file.modified }}</span></p>
             <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
           </ion-label>
@@ -711,5 +714,12 @@ function onBackendReadyWindow(event: Event) {
 .open-folder-icon {
   font-size: 20px;
   color: var(--ion-color-primary);
+}
+
+.open-folder-link {
+  color: var(--ion-color-primary);
+  font-size: 11px;
+  margin-left: 8px;
+  white-space: nowrap;
 }
 </style>

@@ -212,6 +212,7 @@ import {
   createTask,
   cancelTask,
   retryTask,
+  listFiles,
 } from '@/api/encv'
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
@@ -231,6 +232,28 @@ const sourcePathError = ref('')
 const targetPathError = ref('')
 let sourceValidateTimer: ReturnType<typeof setTimeout> | null = null
 let targetValidateTimer: ReturnType<typeof setTimeout> | null = null
+let sourceValidateGeneration = 0
+let targetValidateGeneration = 0
+
+async function validatePathExists(path: string): Promise<boolean> {
+  try {
+    const parentDir = path.substring(0, path.lastIndexOf('/')) || '/'
+    const fileName = path.substring(path.lastIndexOf('/') + 1)
+    const files = await listFiles(parentDir)
+    return files.some(f => f.name === fileName)
+  } catch {
+    return false
+  }
+}
+
+async function validateDirExists(path: string): Promise<boolean> {
+  try {
+    await listFiles(path)
+    return true
+  } catch {
+    return false
+  }
+}
 
 function getTaskIcon(task: EncvTask) {
   switch (task.status) {
@@ -323,7 +346,8 @@ function showNewTaskSheet() {
 
 function validateSourcePath() {
   if (sourceValidateTimer) clearTimeout(sourceValidateTimer)
-  sourceValidateTimer = setTimeout(() => {
+  sourceValidateTimer = setTimeout(async () => {
+    const gen = ++sourceValidateGeneration
     const path = newTaskPath.value.trim()
     if (!path) {
       sourcePathError.value = t('tasks.pathRequired')
@@ -331,13 +355,19 @@ function validateSourcePath() {
       sourcePathError.value = t('tasks.pathMustBeAbsolute')
     } else {
       sourcePathError.value = ''
+      const exists = await validatePathExists(path)
+      if (gen !== sourceValidateGeneration) return
+      if (!exists) {
+        sourcePathError.value = t('tasks.pathNotFound')
+      }
     }
-  }, 300)
+  }, 500)
 }
 
 function validateTargetPath() {
   if (targetValidateTimer) clearTimeout(targetValidateTimer)
-  targetValidateTimer = setTimeout(() => {
+  targetValidateTimer = setTimeout(async () => {
+    const gen = ++targetValidateGeneration
     const path = newTaskTargetPath.value.trim()
     if (!path) {
       targetPathError.value = ''
@@ -345,8 +375,13 @@ function validateTargetPath() {
       targetPathError.value = t('tasks.pathMustBeAbsolute')
     } else {
       targetPathError.value = ''
+      const exists = await validateDirExists(path)
+      if (gen !== targetValidateGeneration) return
+      if (!exists) {
+        targetPathError.value = t('tasks.pathNotFound')
+      }
     }
-  }, 300)
+  }, 500)
 }
 
 async function handleBrowseSource() {
