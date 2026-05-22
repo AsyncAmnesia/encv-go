@@ -59,6 +59,7 @@ include $(CLEAR_VARS)
 LOCAL_MODULE    := player
 LOCAL_CFLAGS    := -Wno-error -Wno-unused-parameter
 LOCAL_CPPFLAGS  += -std=c++11
+LOCAL_C_INCLUDES := $(PREBUILT_DIR)/../include
 LOCAL_SRC_FILES := \
 	main.cpp \
 	render.cpp \

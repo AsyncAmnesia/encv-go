@@ -371,6 +371,33 @@ if (existsSync(overlayJniDir)) {
   }
 }
 
+// Sync jni/ directory (C++ sources, headers, build files for ndk-build)
+const overlayJniDir = join(OVERLAY_DIR, 'app', 'src', 'main', 'jni')
+const targetJniDir = join(ANDROID_DIR, 'app', 'src', 'main', 'jni')
+if (existsSync(overlayJniDir)) {
+  if (existsSync(targetJniDir)) rmSync(targetJniDir, { recursive: true })
+  cpSync(overlayJniDir, targetJniDir, { recursive: true })
+  let fileCount = 0
+  function countFiles(dir) {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      if (statSync(full).isDirectory()) countFiles(full)
+      else fileCount++
+    }
+  }
+  if (existsSync(targetJniDir)) countFiles(targetJniDir)
+  console.log(`  overlay: jni/ (${fileCount} source+header files)`)
+}
+
+// Sync include/ directory (mpv/ffmpeg headers)
+const overlayIncludeDir = join(OVERLAY_DIR, 'app', 'src', 'main', 'include')
+if (existsSync(overlayIncludeDir)) {
+  const targetIncludeDir = join(ANDROID_DIR, 'app', 'src', 'main', 'include')
+  if (existsSync(targetIncludeDir)) rmSync(targetIncludeDir, { recursive: true })
+  cpSync(overlayIncludeDir, targetIncludeDir, { recursive: true })
+  console.log('  overlay: include/ (mpv/ffmpeg headers)')
+}
+
 // Copy layout file
 const RES_LAYOUT_DIR = join(ANDROID_DIR, 'app', 'src', 'main', 'res', 'layout')
 mkdirSync(RES_LAYOUT_DIR, { recursive: true })
