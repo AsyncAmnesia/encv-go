@@ -46,11 +46,11 @@ export function App() {
   useEffect(() => {
     if (initData) {
       setFileName(initData.fileName || "Unknown");
-      startPlayback(initData);
     }
   }, [initData]);
 
-  const startPlayback = useCallback(async (data: InitData) => {
+  const startPlayback = useCallback(async (data: InitData | undefined) => {
+    if (!data) return;
     setPlayerState("loading");
     try {
       const status = await new Promise<any>((resolve) => {
@@ -68,6 +68,7 @@ export function App() {
         NativeModules.MpvPlayerModule.play(streamUrl, resolve);
       });
     } catch (e: any) {
+      console.info("startPlayback error:", e?.message || String(e));
       setPlayerState("error");
       setErrorMessage(e?.message || String(e));
     }
@@ -80,8 +81,10 @@ export function App() {
     } else if (playerState === "paused") {
       NativeModules.MpvPlayerModule.resume(() => {});
       setPlayerState("playing");
+    } else {
+      startPlayback(initData);
     }
-  }, [playerState]);
+  }, [playerState, initData, startPlayback]);
 
   const handleSeek = useCallback(
     (positionMs: number) => {
