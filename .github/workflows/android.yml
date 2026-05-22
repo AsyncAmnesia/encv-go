@@ -109,11 +109,12 @@ jobs:
             ls -lh "$KEYSTORE"
           fi
 
-      # cap sync triggers afterSync hook (capacitor.config.ts → post-cap-sync.mjs)
-      # which handles: kotlin plugin, abiFilters, version, signingConfigs, minify, shrink
+      # cap sync triggers capacitor:sync:after hook (sync-native.mjs + trapeze)
+      # which handles: kotlin files, native libs, jni/, Gradle config (via Trapeze)
       - name: Sync Capacitor Android project
         env:
           ENCV_VERSION: ${{ inputs.version }}
+          BUILD_TYPE: ${{ inputs.version && 'release' || 'debug' }}
         run: |
           cd app/encv-mobile
           if [ -d "./android" ] && [ -f "./android/build.gradle" ]; then
@@ -127,60 +128,35 @@ jobs:
           grep -A8 'signingConfigs' app/encv-mobile/android/app/build.gradle || echo "WARNING: No signingConfigs found!"
           grep 'signingConfig\|minifyEnabled' app/encv-mobile/android/app/build.gradle || echo "WARNING: No release signing found!"
 
-      # === Non-Gradle customizations (after cap sync) ===
-      - name: Copy assets, overlay files, and release config
+      - name: Apply release signing config
+        if: inputs.version != ''
         run: |
-          mkdir -p app/encv-mobile/android/app/src/main/assets
+          APP_BUILD=app/encv-mobile/android/app/build.gradle
+          echo "Applying release signing to $APP_BUILD"
+
+          sed -i '/android {/a\
+\            signingConfigs {\
+\                release {\
+\                    storeFile file('"'"'../../keystore/release.jks'"'"')\
+\                    storePassword '"'"'encv2025'"'"'\
+\                    keyAlias '"'"'encvrelease'"'"'\
+\                    keyPassword '"'"'encv2025'"'"'\
+\                }\
+\            }' "$APP_BUILD"
+
+          sed -i 's/\(release {[^}]*\)minifyEnabled false/\1minifyEnabled true\n            shrinkResources true\n            signingConfig signingConfigs.release/' "$APP_BUILD"
+
+          echo "=== Signing config applied ==="
+          grep -A8 'signingConfigs' "$APP_BUILD" || echo "WARNING: No signingConfigs!"
+          grep 'signingConfig\|minifyEnabled\|shrinkResources' "$APP_BUILD" | head -5
+
+      # === Non-Gradle customizations (after cap sync + Trapeze) ===
+      - name: Copy Go binary to jniLibs
+        run: |
           mkdir -p app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a
           cp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a/libencv-go.so
-          cp app/encv-mobile/assets/config.mobile.json app/encv-mobile/android/app/src/main/assets/config.mobile.json
-          cp app/encv-mobile/android-overlay/gradle.properties app/encv-mobile/android/gradle.properties
-          echo "Assets:"
-          ls -lhR app/encv-mobile/android/app/src/main/assets/
           echo "JNI libs:"
           ls -lhR app/encv-mobile/android/app/src/main/jniLibs/
-          echo "Release config:"
-          ls -lh app/encv-mobile/android/gradle.properties
-
-      - name: Patch AndroidManifest (permissions + network config)
-        run: |
-          MANIFEST="app/encv-mobile/android/app/src/main/AndroidManifest.xml"
-
-          sed -i 's|<application|<application\n        android:networkSecurityConfig="@xml/network_security_config"\n        android:usesCleartextTraffic="true"|' "$MANIFEST"
-
-          PERMS_TO_ADD=""
-          for ENTRY in \
-            "android.permission.INTERNET" \
-            "android.permission.FOREGROUND_SERVICE" \
-            "android.permission.POST_NOTIFICATIONS" \
-            "android.permission.READ_MEDIA_VIDEO" \
-            "android.permission.READ_MEDIA_AUDIO" \
-            "android.permission.READ_MEDIA_IMAGES" \
-            "android.permission.MANAGE_EXTERNAL_STORAGE" \
-            "android.permission.WAKE_LOCK" \
-            "android.permission.READ_LOGS"; do
-            if ! grep -q "android:name=\"${ENTRY}\"" "$MANIFEST"; then
-              PERMS_TO_ADD="${PERMS_TO_ADD}    <uses-permission android:name=\"${ENTRY}\" />\n"
-            fi
-          done
-
-          for ENTRY in \
-            "android.permission.READ_EXTERNAL_STORAGE|maxSdkVersion=32" \
-            "android.permission.WRITE_EXTERNAL_STORAGE|maxSdkVersion=28"; do
-            PERM="${ENTRY%%|*}"
-            ATTR="${ENTRY##*|}"
-            if ! grep -q "android:name=\"${PERM}\"" "$MANIFEST"; then
-              PERMS_TO_ADD="${PERMS_TO_ADD}    <uses-permission android:name=\"${PERM}\" android:${ATTR} />\n"
-            fi
-          done
-
-          if [ -n "$PERMS_TO_ADD" ]; then
-            sed -i "s|</manifest>|${PERMS_TO_ADD}</manifest>|" "$MANIFEST"
-          fi
-
-          echo "AndroidManifest patched (sed)"
-          echo "=== application tag ==="
-          grep -A2 '<application' "$MANIFEST" | head -5
 
       # === Verify kotlin setup before build ===
       - name: Verify AndroidManifest integrity

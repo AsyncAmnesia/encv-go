@@ -1,0 +1,140 @@
+vars:
+  BUILD_TYPE:
+    default: debug
+  ENCV_VERSION:
+
+platforms:
+  android:
+    gradle:
+      - file: build.gradle
+        target:
+          buildscript:
+        insert: |
+          classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0"
+
+      - file: build.gradle
+        target:
+          allprojects:
+        insert: |
+          maven { url 'https://jitpack.io' }
+
+      - file: app/build.gradle
+        target:
+          plugins:
+        insert: |
+          id 'kotlin-android'
+
+      - file: app/build.gradle
+        target:
+          dependencies:
+        insert: |
+          implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.0"
+          debugImplementation 'com.github.getActivity:Logcat:13.0'
+
+      - file: app/build.gradle
+        target:
+          android:
+            defaultConfig:
+        insert: |
+          buildConfigField "boolean", "USE_LYNX_PLAYER", "true"
+          ndk {
+              abiFilters 'arm64-v8a'
+          }
+
+      - file: app/build.gradle
+        target:
+          android:
+        insert: |
+          compileOptions {
+              targetCompatibility JavaVersion.VERSION_21
+              sourceCompatibility JavaVersion.VERSION_21
+          }
+          buildFeatures {
+              buildConfig = true
+          }
+
+      - file: app/build.gradle
+        target:
+          dependencies:
+        insert: |
+          implementation 'androidx.appcompat:appcompat:1.6.1'
+
+      - file: app/build.gradle
+        target:
+          dependencies:
+        insert: |
+          implementation 'org.lynxsdk.lynx:lynx:3.7.0'
+          implementation 'org.lynxsdk.lynx:lynx-jssdk:3.7.0'
+          implementation 'org.lynxsdk.lynx:lynx-trace:3.7.0'
+          implementation 'org.lynxsdk.lynx:primjs:3.7.0'
+          implementation 'org.lynxsdk.lynx:lynx-service-image:3.7.0'
+          implementation 'org.lynxsdk.lynx:lynx-service-log:3.7.0'
+          implementation 'org.lynxsdk.lynx:lynx-service-http:3.7.0'
+          implementation 'org.lynxsdk.lynx:lynx-service-devtool:3.7.0'
+          implementation 'org.lynxsdk.lynx:lynx-devtool:3.7.0'
+          implementation 'com.facebook.fresco:fresco:2.3.0'
+          implementation 'com.facebook.fresco:animated-gif:2.3.0'
+          implementation 'com.facebook.fresco:animated-webp:2.3.0'
+          implementation 'com.facebook.fresco:webpsupport:2.3.0'
+          implementation 'com.facebook.fresco:animated-base:2.3.0'
+          implementation 'com.squareup.okhttp3:okhttp:4.9.0'
+
+      - file: app/build.gradle
+        target:
+          android:
+        insert: |
+          sourceSets {
+              main {
+                  jniLibs.srcDirs = ['src/main/jniLibs']
+              }
+          }
+
+      - file: app/build.gradle
+        target:
+          android:
+        insert: |
+          packaging {
+              jniLibs {
+                  useLegacyPackaging = true
+                  pickFirsts += ['**/*.so']
+              }
+              resources {
+                  pickFirsts += ['**/*.so']
+              }
+          }
+
+      - file: app/build.gradle
+        insert: |
+          tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+              kotlinOptions {
+                  jvmTarget = "21"
+              }
+          }
+
+      - file: app/build.gradle
+        insert: |
+          android.sourceSets {
+              main.java.srcDirs += 'src/main/java'
+          }
+
+    copy:
+      - src: ../android-overlay/app/src/main/AndroidManifest.xml
+        dest: app/src/main/AndroidManifest.xml
+
+      - src: ../android-overlay/proguard-rules.pro
+        dest: app/proguard-rules.pro
+
+      - src: ../android-overlay/app/src/main/res/layout/lynx_player_activity.xml
+        dest: app/src/main/res/layout/lynx_player_activity.xml
+
+      - src: ../android-overlay/app/src/main/res/xml/network_security_config.xml
+        dest: app/src/main/res/xml/network_security_config.xml
+
+      - src: ../android-overlay/gradle.properties
+        dest: gradle.properties
+
+      - src: ../lynx-player/dist/player.lynx.bundle
+        dest: app/src/main/assets/player.lynx.bundle
+
+      - src: ../assets/config.mobile.json
+        dest: app/src/main/assets/config.mobile.json

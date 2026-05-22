@@ -6,8 +6,10 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "capacitor:sync:after": "node scripts/post-cap-sync.mjs",
-    "check:kotlin": "node scripts/check-kotlin.mjs"
+    "capacitor:sync:after": "node scripts/sync-native.mjs && npx trapeze run trapeze.yaml --android-project android",
+    "check:kotlin": "node scripts/check-kotlin.mjs",
+    "sync:android": "node scripts/sync-native.mjs",
+    "configure:android": "npx trapeze run trapeze.yaml --android-project android"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.4",
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.3.4",
+    "@trapezedev/configure": "^7.1.4",
     "@vitejs/plugin-vue": "^6.0.7",
     "typescript": "^5.9.3",
     "vite": "^8.0.13",
