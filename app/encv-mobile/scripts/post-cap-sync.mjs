@@ -372,11 +372,11 @@ if (existsSync(overlayJniDir)) {
 }
 
 // Sync jni/ directory (C++ sources, headers, build files for ndk-build)
-const overlayJniDir = join(OVERLAY_DIR, 'app', 'src', 'main', 'jni')
-const targetJniDir = join(ANDROID_DIR, 'app', 'src', 'main', 'jni')
-if (existsSync(overlayJniDir)) {
-  if (existsSync(targetJniDir)) rmSync(targetJniDir, { recursive: true })
-  cpSync(overlayJniDir, targetJniDir, { recursive: true })
+const overlayJniSrcDir = join(OVERLAY_DIR, 'app', 'src', 'main', 'jni')
+const targetJniSrcDir = join(ANDROID_DIR, 'app', 'src', 'main', 'jni')
+if (existsSync(overlayJniSrcDir)) {
+  if (existsSync(targetJniSrcDir)) rmSync(targetJniSrcDir, { recursive: true })
+  cpSync(overlayJniSrcDir, targetJniSrcDir, { recursive: true })
   let fileCount = 0
   function countFiles(dir) {
     for (const entry of readdirSync(dir)) {
@@ -385,7 +385,7 @@ if (existsSync(overlayJniDir)) {
       else fileCount++
     }
   }
-  if (existsSync(targetJniDir)) countFiles(targetJniDir)
+  if (existsSync(targetJniSrcDir)) countFiles(targetJniSrcDir)
   console.log(`  overlay: jni/ (${fileCount} source+header files)`)
 }
 
