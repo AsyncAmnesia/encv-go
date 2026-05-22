@@ -310,7 +310,7 @@ if (existsSync(JAVA_DIR)) {
 }
 mkdirSync(JAVA_DIR, { recursive: true })
 
-for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt', 'EncvGoService.kt', 'PlayerActivity.kt', 'PlayerActivityLynx.kt', 'PlayerActivityCapacitor.kt', 'MpvPlayerModule.kt', 'GoBackendModule.kt', 'EncvApplication.kt', 'PlayerTemplateProvider.kt']) {
+for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt', 'EncvGoService.kt', 'PlayerActivity.kt', 'PlayerActivityLynx.kt', 'PlayerActivityCapacitor.kt', 'MpvPlayerModule.kt', 'GoBackendModule.kt', 'LogBridgeModule.kt', 'LogRelay.kt', 'EncvApplication.kt', 'PlayerTemplateProvider.kt']) {
   const src = join(OVERLAY_DIR, 'app', 'src', 'main', 'java', 'com', 'encvgo', 'app', f)
   if (existsSync(src)) {
     copyFileSync(src, join(JAVA_DIR, f))
@@ -446,7 +446,7 @@ if (version) {
 }
 
 // --- 包名一致性验证 ---
-for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt', 'EncvGoService.kt', 'PlayerActivity.kt', 'PlayerActivityLynx.kt', 'MpvPlayerModule.kt', 'GoBackendModule.kt', 'EncvApplication.kt', 'PlayerTemplateProvider.kt']) {
+for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt', 'EncvGoService.kt', 'PlayerActivity.kt', 'PlayerActivityLynx.kt', 'MpvPlayerModule.kt', 'GoBackendModule.kt', 'LogBridgeModule.kt', 'LogRelay.kt', 'EncvApplication.kt', 'PlayerTemplateProvider.kt']) {
   const fp = join(JAVA_DIR, f)
   if (existsSync(fp)) {
     const src = readFileSync(fp, 'utf-8')
