@@ -12,7 +12,6 @@ import androidx.appcompat.app.AppCompatActivity
 import com.lynx.tasm.LynxView
 import com.lynx.tasm.LynxViewBuilder
 import com.lynx.tasm.LynxViewClient
-import com.lynx.tasm.ui.image.FlattenUIImage
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -233,7 +232,7 @@ class PlayerActivityLynx : AppCompatActivity() {
             Log.d(TAG, "createLynxView: LynxView built, instance=$lynxView")
 
             lynxView?.addLynxViewClient(object : LynxViewClient() {
-                private const val CLIENT_TAG = "LynxPlayerClient"
+                private val CLIENT_TAG = "LynxPlayerClient"
 
                 override fun onPageStart(url: String?) {
                     Log.d(CLIENT_TAG, "onPageStart: url=$url")
@@ -263,7 +262,7 @@ class PlayerActivityLynx : AppCompatActivity() {
                 }
 
                 override fun onReceivedError(error: com.lynx.tasm.LynxError) {
-                    Log.e(CLIENT_TAG, "onReceivedError: code=${error.errorCode} msg=${error.summaryMessage} stack=${error.callStack}")
+                    Log.e(CLIENT_TAG, "onReceivedError: code=${error.errorCode} msg=${error.summaryMessage} rootCause=${error.rootCause}")
                     runOnUiThread {
                         android.widget.Toast.makeText(
                             this@PlayerActivityLynx,
@@ -274,7 +273,7 @@ class PlayerActivityLynx : AppCompatActivity() {
                 }
 
                 override fun onReceivedJSError(jsError: com.lynx.tasm.LynxError) {
-                    Log.e(CLIENT_TAG, "onReceivedJSError: msg=${jsError.getMsg()} stack=${jsError.callStack}")
+                    Log.e(CLIENT_TAG, "onReceivedJSError: msg=${jsError.getMsg()} rootCause=${jsError.rootCause}")
                     runOnUiThread {
                         android.widget.Toast.makeText(
                             this@PlayerActivityLynx,
