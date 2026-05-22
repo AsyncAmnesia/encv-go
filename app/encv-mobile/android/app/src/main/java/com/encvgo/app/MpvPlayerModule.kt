@@ -28,6 +28,38 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
         @Volatile
         private var _instance: MpvPlayerModule? = null
         fun getInstance(): MpvPlayerModule? = _instance
+
+        @Volatile
+        private var preInitialized = false
+
+        fun preInit(context: android.content.Context) {
+            if (preInitialized) return
+            if (Looper.myLooper() != Looper.getMainLooper()) {
+                LogRelay.get().relay(TAG, "error", "preInit: must be on main thread! current=${Thread.currentThread().name}")
+                return
+            }
+            try {
+                val configDir = context.filesDir.absolutePath + "/mpv"
+                val cacheDir = context.cacheDir.absolutePath + "/mpv"
+                java.io.File(configDir).mkdirs()
+                java.io.File(cacheDir).mkdirs()
+                MPVLib.create(context)
+                MPVLib.setOptionString("config", "yes")
+                MPVLib.setOptionString("config-dir", configDir)
+                for (opt in arrayOf("gpu-shader-cache-dir", "icc-cache-dir")) {
+                    MPVLib.setOptionString(opt, cacheDir)
+                }
+                MPVLib.setOptionString("vo", "gpu")
+                MPVLib.setOptionString("hwdec", "auto")
+                MPVLib.init()
+                MPVLib.setOptionString("force-window", "no")
+                MPVLib.setOptionString("idle", "once")
+                preInitialized = true
+                LogRelay.get().relay(TAG, "info", "preInit: MPV engine initialized on main thread")
+            } catch (e: Exception) {
+                LogRelay.get().relay(TAG, "error", "preInit: failed: ${e.message}")
+            }
+        }
     }
 
     private val lynxContext = context as? LynxContext
@@ -62,23 +94,23 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
     init {
         _instance = this
         LogRelay.get().relay(TAG, "info", "init: MpvPlayerModule created on thread: ${Thread.currentThread().name}")
-        mainHandler.post {
-            val act = activity
-            if (act is PlayerActivityLynx) {
-                val root = act.findViewById<android.widget.FrameLayout>(R.id.lynx_player_root)
-                if (root != null) {
-                    attachToLayout(root)
-                } else {
-                    LogRelay.get().relay(TAG, "warn", "init: lynx_player_root not found on main thread")
-                }
-            } else {
-                LogRelay.get().relay(TAG, "warn", "init: activity is not PlayerActivityLynx on main thread")
-            }
-        }
     }
 
     private fun ensureMpvInitialized() {
         if (mpvInitialized) return
+        if (preInitialized) {
+            mpvInitialized = true
+            MPVLib.addObserver(eventObserver)
+            MPVLib.observeProperty("pause", MpvFormat.MPV_FORMAT_FLAG)
+            MPVLib.observeProperty("idle", MpvFormat.MPV_FORMAT_FLAG)
+            dispatchStateChange("mpv_ready")
+            LogRelay.get().relay(TAG, "info", "ensureMpvInitialized: using pre-initialized MPV engine")
+            return
+        }
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            LogRelay.get().relay(TAG, "error", "ensureMpvInitialized: must be on main thread! current=${Thread.currentThread().name}")
+            return
+        }
         val act = activity ?: run {
             LogRelay.get().relay(TAG, "error", "ensureMpvInitialized: activity is null")
             dispatchStateChange("error", "Activity not available")
@@ -119,6 +151,10 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
     }
 
     fun attachToLayout(rootLayout: ViewGroup) {
+        if (mpvSurfaceView != null && mpvSurfaceView?.parent != null) {
+            LogRelay.get().relay(TAG, "info", "attachToLayout: already attached, skipping")
+            return
+        }
         LogRelay.get().relay(TAG, "info", "attachToLayout: adding MPV surface view to root layout (index 0)")
         try {
             ensureMpvInitialized()
@@ -165,6 +201,7 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
             }
             mpvInitialized = false
         }
+        preInitialized = false
         surfaceReady = false
         pendingUrl = null
         mpvSurfaceView = null
@@ -173,10 +210,28 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
 
     @LynxMethod
     fun play(url: String, callback: Callback) {
-        LogRelay.get().relay(TAG, "info", "play: url=$url, surfaceReady=$surfaceReady, mpvInitialized=$mpvInitialized")
+        LogRelay.get().relay(TAG, "info", "play: url=$url, surfaceReady=$surfaceReady, mpvInitialized=$mpvInitialized, preInitialized=$preInitialized")
         try {
             ensureMpvInitialized()
             if (!mpvInitialized) {
+                if (!preInitialized) {
+                    LogRelay.get().relay(TAG, "info", "play: MPV not pre-initialized, scheduling delayed init on main thread")
+                    mainHandler.post {
+                        try {
+                            ensureMpvInitialized()
+                            if (mpvInitialized && surfaceReady) {
+                                MPVLib.command(arrayOf("loadfile", url))
+                            } else if (mpvInitialized) {
+                                pendingUrl = url
+                                dispatchStateChange("waiting_surface")
+                            }
+                        } catch (e: Exception) {
+                            LogRelay.get().relay(TAG, "error", "play delayed init failed: ${e.message}")
+                        }
+                    }
+                    callback.invoke("MPV initializing, will play when ready")
+                    return
+                }
                 callback.invoke("MPV not initialized")
                 return
             }

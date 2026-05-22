@@ -61,10 +61,14 @@ class PlayerActivityLynx : AppCompatActivity() {
         rootLayout = findViewById(R.id.lynx_player_root)
         LogRelay.get().relay(TAG, "info", "onCreate: root layout found: $rootLayout")
 
+        MpvPlayerModule.preInit(this)
+        LogRelay.get().relay(TAG, "info", "onCreate: MPV preInit done")
+
         resolveFileInfo(intent)
         LogRelay.get().relay(TAG, "info", "onCreate: file info resolved, path=$intentFilePath, name=$intentFileName, mimeType=$intentFileMimeType, external=$isExternalFile")
 
         createLynxView()
+        attachMpvSurface()
         handleBackend()
 
         LogRelay.get().relay(TAG, "info", "onCreate: setup complete")
@@ -349,8 +353,26 @@ class PlayerActivityLynx : AppCompatActivity() {
             LogRelay.get().relay(TAG, "warn", "tryAttachMpvModule: lynx_player_root not found")
             return
         }
-        LogRelay.get().relay(TAG, "info", "tryAttachMpvModule: attaching mpvModule to rootLayout")
+        runOnUiThread {
+            if (!mpvModule.isAttached()) {
+                mpvModule.attachToLayout(root)
+            }
+        }
+    }
+
+    private fun attachMpvSurface() {
+        val mpvModule = MpvPlayerModule.getInstance()
+        if (mpvModule == null) {
+            LogRelay.get().relay(TAG, "info", "attachMpvSurface: mpvModule not yet created, will retry in tryAttachMpvModule")
+            return
+        }
+        if (mpvModule.isAttached()) {
+            LogRelay.get().relay(TAG, "info", "attachMpvSurface: already attached")
+            return
+        }
+        val root = rootLayout ?: return
         mpvModule.attachToLayout(root)
+        LogRelay.get().relay(TAG, "info", "attachMpvSurface: MPV surface attached")
     }
 
     private fun buildInitDataJson(): String {

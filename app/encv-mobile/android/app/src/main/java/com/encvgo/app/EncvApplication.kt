@@ -49,10 +49,21 @@ class EncvApplication : Application() {
         private fun initLynxEnv(app: Application) {
             try {
                 LynxEnv.inst().init(app, null, null, null)
-                LynxEnv.inst().enableLynxDebug(BuildConfig.DEBUG)
-                LynxEnv.inst().enableDevtool(BuildConfig.DEBUG)
-                LynxEnv.inst().enableLogBox(BuildConfig.DEBUG)
-                Log.d(TAG, "initLynxEnv: LynxEnv initialized")
+                val devtoolAvailable = try {
+                    System.loadLibrary("lynx_devtool")
+                    true
+                } catch (_: UnsatisfiedLinkError) {
+                    Log.w(TAG, "initLynxEnv: lynx_devtool native lib not available, skipping devtool features")
+                    false
+                }
+                if (devtoolAvailable && BuildConfig.DEBUG) {
+                    LynxEnv.inst().enableLynxDebug(true)
+                    LynxEnv.inst().enableDevtool(true)
+                    LynxEnv.inst().enableLogBox(true)
+                    Log.d(TAG, "initLynxEnv: LynxEnv initialized with devtool enabled")
+                } else {
+                    Log.d(TAG, "initLynxEnv: LynxEnv initialized, devtool disabled (available=$devtoolAvailable, debug=${BuildConfig.DEBUG})")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "initLynxEnv failed", e)
             }
