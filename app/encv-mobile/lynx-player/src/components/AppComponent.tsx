@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useInitData, useLynxGlobalEventListener } from "@lynx-js/react";
+import { useCallback, useEffect, useState, useInitData, useLynxGlobalEventListener, useRef } from "@lynx-js/react";
 import { PlayerControls } from "./PlayerControls";
 import "../App.css";
 
@@ -11,6 +11,8 @@ interface InitData {
 }
 
 type PlayerState = "idle" | "loading" | "playing" | "paused" | "ended" | "error";
+
+const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 const lynxLog = {
   info: (msg: string) => {
@@ -42,8 +44,23 @@ export function AppComponent() {
   const [showControls, setShowControls] = useState(true);
   const [pendingPlaybackData, setPendingPlaybackData] = useState<InitData | null>(null);
   const [mediaType, setMediaType] = useState<"video" | "audio">("video");
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const [locked, setLocked] = useState(false);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   lynxLog.info("AppComponent: rendering, initData=" + JSON.stringify(initData));
+
+  const resetHideTimer = useCallback(() => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+    }
+    setShowControls(true);
+    if (playerState === "playing") {
+      hideTimerRef.current = setTimeout(() => {
+        setShowControls(false);
+      }, 5000);
+    }
+  }, [playerState]);
 
   useLynxGlobalEventListener("mpv:state-change", (event: any) => {
     const state = event?.state;
@@ -75,6 +92,7 @@ export function AppComponent() {
     if (state === "playing" || state === "paused") {
       setErrorMessage("");
       setShowControls(true);
+      resetHideTimer();
     }
   });
 
@@ -98,6 +116,10 @@ export function AppComponent() {
       lynxLog.info("fileName set to: " + (initData.fileName || "Unknown") + ", mediaType=" + (initData.mediaType || "video"));
     }
   }, [initData]);
+
+  useEffect(() => {
+    resetHideTimer();
+  }, [playerState, resetHideTimer]);
 
   const startPlayback = useCallback(async (data: InitData | undefined | null) => {
     lynxLog.info("startPlayback called, data=" + JSON.stringify(data));
@@ -156,25 +178,57 @@ export function AppComponent() {
       setErrorMessage("");
       startPlayback(initData);
     }
-  }, [playerState, initData, startPlayback]);
+    resetHideTimer();
+  }, [playerState, initData, startPlayback, resetHideTimer]);
 
   const handleSeek = useCallback(
     (positionMs: number) => {
       NativeModules.MpvPlayerModule.seekTo(positionMs, () => {});
       setPosition(positionMs);
+      resetHideTimer();
     },
-    []
+    [resetHideTimer]
+  );
+
+  const handleSeekRelative = useCallback(
+    (deltaMs: number) => {
+      const newPos = Math.max(0, Math.min(position + deltaMs, duration));
+      NativeModules.MpvPlayerModule.seekTo(newPos, () => {});
+      setPosition(newPos);
+      resetHideTimer();
+    },
+    [position, duration, resetHideTimer]
   );
 
   const handleFullscreen = useCallback(() => {
     const next = !isFullscreen;
     setIsFullscreen(next);
     NativeModules.MpvPlayerModule.setFullscreen(next, () => {});
-  }, [isFullscreen]);
+    resetHideTimer();
+  }, [isFullscreen, resetHideTimer]);
+
+  const handleCycleSpeed = useCallback(() => {
+    const currentIdx = SPEED_OPTIONS.indexOf(playbackRate);
+    const nextIdx = (currentIdx + 1) % SPEED_OPTIONS.length;
+    const nextRate = SPEED_OPTIONS[nextIdx];
+    setPlaybackRate(nextRate);
+    NativeModules.MpvPlayerModule.setProperty("speed", String(nextRate), () => {});
+    resetHideTimer();
+  }, [playbackRate, resetHideTimer]);
+
+  const handleToggleLock = useCallback(() => {
+    setLocked((prev) => !prev);
+    resetHideTimer();
+  }, [resetHideTimer]);
 
   const handleToggleControls = useCallback(() => {
+    if (locked) {
+      setLocked(false);
+      return;
+    }
     setShowControls((prev) => !prev);
-  }, [showControls]);
+    resetHideTimer();
+  }, [locked, resetHideTimer]);
 
   const handleBack = useCallback(() => {
     lynxLog.info("handleBack: finishing player activity");
@@ -196,9 +250,14 @@ export function AppComponent() {
           showControls={showControls}
           error={errorMessage || undefined}
           mediaType={mediaType}
+          playbackRate={playbackRate}
+          locked={locked}
           onPlayPause={handlePlayPause}
           onSeek={handleSeek}
+          onSeekRelative={handleSeekRelative}
           onToggleFullscreen={handleFullscreen}
+          onCycleSpeed={handleCycleSpeed}
+          onToggleLock={handleToggleLock}
           onBack={handleBack}
         />
       </view>

@@ -50,7 +50,7 @@
                     :placeholder="grandchild.description || tField(grandchild.key)"
                     @ionInput="handleInput([pluginSection.key, child.key, grandchild.key], grandchild, $event)"
                   ></ion-input>
-                  <ion-button v-if="grandchild.isPath" slot="end" fill="clear" @click="handleBrowsePath([pluginSection.key, child.key, grandchild.key], grandchild)">
+                  <ion-button v-if="grandchild.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([pluginSection.key, child.key, grandchild.key], grandchild)">
                     <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
                   </ion-button>
                 </ion-item>
@@ -97,7 +97,7 @@
                 :placeholder="child.description || tField(child.key)"
                 @ionInput="handleInput([pluginSection.key, child.key], child, $event)"
               ></ion-input>
-              <ion-button v-if="child.isPath" slot="end" fill="clear" @click="handleBrowsePath([pluginSection.key, child.key], child)">
+              <ion-button v-if="child.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([pluginSection.key, child.key], child)">
                 <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
               </ion-button>
             </ion-item>
@@ -255,5 +255,11 @@ watch(serverOnline, async (online) => {
 .placeholder-text {
   opacity: 0.5;
   font-style: italic;
+}
+.browse-btn {
+  --padding-start: 8px;
+  --padding-end: 8px;
+  min-width: 44px;
+  min-height: 44px;
 }
 </style>

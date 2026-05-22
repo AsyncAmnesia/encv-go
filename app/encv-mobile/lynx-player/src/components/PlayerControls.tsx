@@ -16,9 +16,14 @@ interface PlayerControlsProps {
   showControls: boolean;
   error?: string | null;
   mediaType: "video" | "audio";
+  playbackRate: number;
+  locked: boolean;
   onPlayPause: () => void;
   onSeek: (positionMs: number) => void;
+  onSeekRelative: (deltaMs: number) => void;
   onToggleFullscreen: () => void;
+  onCycleSpeed: () => void;
+  onToggleLock: () => void;
   onBack: () => void;
 }
 
@@ -35,7 +40,7 @@ function formatTime(ms: number): string {
 function ProgressBar({ currentTime, duration, onSeek }: { currentTime: number; duration: number; onSeek: (ms: number) => void }) {
   const progress = duration > 0 ? currentTime / duration : 0;
   return (
-    <view className="BottomBar">
+    <view className="ProgressRow">
       <text className="TimeLabel">{formatTime(currentTime)}</text>
       <SliderRoot
         value={progress}
@@ -66,37 +71,77 @@ function VideoControls({
   currentTime,
   duration,
   showControls,
+  playbackRate,
+  locked,
   onPlayPause,
   onSeek,
+  onSeekRelative,
   onToggleFullscreen,
+  onCycleSpeed,
+  onToggleLock,
   onBack,
 }: Omit<PlayerControlsProps, 'error' | 'mediaType'>) {
   const isPlaying = state === 'playing';
+  if (locked) {
+    return (
+      <view style={{ flex: 1, flexDirection: 'column', justifyContent: 'flex-end' }}>
+        <view className="BottomGradient" />
+        <view className="LockBar">
+          <Button onClick={onToggleLock} className="CtrlBtn">
+            <text className="IconSm">&#x1F512;</text>
+          </Button>
+          <view style={{ flex: 1 }} />
+        </view>
+        <ProgressBar currentTime={currentTime} duration={duration} onSeek={onSeek} />
+      </view>
+    );
+  }
   return (
     <view style={{ flex: 1, flexDirection: 'column', justifyContent: 'space-between' }}>
+      <view className="TopGradient" />
       <view className="TopBar">
-        <Button onClick={onBack} className="TopBarBtn">
-          <text className="BackButton">✕</text>
+        <Button onClick={onBack} className="CtrlBtn">
+          <text className="IconMd">&#x2715;</text>
         </Button>
         <text className="TitleText">{fileName}</text>
-        <Button onClick={onToggleFullscreen} className="TopBarBtn">
-          <text className="FullscreenButton">
-            {isFullscreen ? '⤓' : '⤢'}
-          </text>
+        <Button onClick={onToggleLock} className="CtrlBtn">
+          <text className="IconSm">&#x1F512;</text>
         </Button>
       </view>
       <view className="CenterArea">
         {showControls && (
-          <Button onClick={onPlayPause} className="CenterPlayBtn">
-            {({ active }) => (
-              <view className="PlayButtonCircle">
-                <text className="PlayIconLarge">{isPlaying ? '⏸' : '▶'}</text>
+          <view className="CenterControls">
+            <Button onClick={() => onSeekRelative(-10000)} className="SeekBtn">
+              <view className="SeekBtnInner">
+                <text className="SeekIcon">-10</text>
               </view>
-            )}
-          </Button>
+            </Button>
+            <Button onClick={onPlayPause} className="PlayBtn">
+              <view className="PlayBtnInner">
+                <text className="PlayIcon">{isPlaying ? '\u275A\u275A' : '\u25B6'}</text>
+              </view>
+            </Button>
+            <Button onClick={() => onSeekRelative(10000)} className="SeekBtn">
+              <view className="SeekBtnInner">
+                <text className="SeekIcon">+10</text>
+              </view>
+            </Button>
+          </view>
         )}
       </view>
-      <ProgressBar currentTime={currentTime} duration={duration} onSeek={onSeek} />
+      <view className="BottomGradient" />
+      <view className="BottomBar">
+        <ProgressBar currentTime={currentTime} duration={duration} onSeek={onSeek} />
+        <view className="BottomActions">
+          <Button onClick={onCycleSpeed} className="SpeedChip">
+            <text className="SpeedText">{playbackRate}x</text>
+          </Button>
+          <view style={{ flex: 1 }} />
+          <Button onClick={onToggleFullscreen} className="CtrlBtn">
+            <text className="IconMd">{isFullscreen ? '\u2913' : '\u2912'}</text>
+          </Button>
+        </view>
+      </view>
     </view>
   );
 }
@@ -106,32 +151,49 @@ function AudioControls({
   fileName,
   currentTime,
   duration,
+  playbackRate,
   onPlayPause,
   onSeek,
+  onSeekRelative,
+  onCycleSpeed,
   onBack,
-}: Omit<PlayerControlsProps, 'error' | 'mediaType' | 'isFullscreen' | 'showControls' | 'onToggleFullscreen'>) {
+}: Omit<PlayerControlsProps, 'error' | 'mediaType' | 'isFullscreen' | 'showControls' | 'onToggleFullscreen' | 'onToggleLock' | 'locked'>) {
   const isPlaying = state === 'playing';
   return (
     <view style={{ flex: 1, flexDirection: 'column', justifyContent: 'space-between' }}>
       <view className="TopBar">
-        <Button onClick={onBack} className="TopBarBtn">
-          <text className="BackButton">✕</text>
+        <Button onClick={onBack} className="CtrlBtn">
+          <text className="IconMd">&#x2715;</text>
         </Button>
         <text className="TitleText">{fileName}</text>
+        <view style={{ width: 44 }} />
       </view>
       <view className="AudioCoverContainer">
         <view className="AudioCover">
-          <text className="AudioCoverIcon">🎵</text>
+          <text className="AudioCoverIcon">&#x1F3B5;</text>
         </view>
         <text className="AudioTitle">{fileName}</text>
       </view>
       <view className="AudioBottomSection">
         <ProgressBar currentTime={currentTime} duration={duration} onSeek={onSeek} />
-        <view className="AudioPlayControls">
-          <Button onClick={onPlayPause} className="CenterPlayBtn">
-            <view className="PlayButtonCircle">
-              <text className="PlayIconLarge">{isPlaying ? '⏸' : '▶'}</text>
+        <view className="AudioPlayRow">
+          <Button onClick={() => onSeekRelative(-10000)} className="SeekBtn">
+            <view className="SeekBtnInner">
+              <text className="SeekIcon">-10</text>
             </view>
+          </Button>
+          <Button onClick={onPlayPause} className="PlayBtn">
+            <view className="PlayBtnInner">
+              <text className="PlayIcon">{isPlaying ? '\u275A\u275A' : '\u25B6'}</text>
+            </view>
+          </Button>
+          <Button onClick={() => onSeekRelative(10000)} className="SeekBtn">
+            <view className="SeekBtnInner">
+              <text className="SeekIcon">+10</text>
+            </view>
+          </Button>
+          <Button onClick={onCycleSpeed} className="SpeedChip">
+            <text className="SpeedText">{playbackRate}x</text>
           </Button>
         </view>
       </view>
@@ -148,20 +210,25 @@ export function PlayerControls({
   showControls,
   error,
   mediaType,
+  playbackRate,
+  locked,
   onPlayPause,
   onSeek,
+  onSeekRelative,
   onToggleFullscreen,
+  onCycleSpeed,
+  onToggleLock,
   onBack,
 }: PlayerControlsProps) {
   if (error && state !== 'loading') {
     return (
       <view className="ErrorContainer">
-        <Button onClick={onPlayPause} className="ErrorRetryBtn">
-          <view className="PlayButtonCircle">
-            <text className="PlayIconLarge">🔄</text>
+        <Button onClick={onPlayPause} className="PlayBtn">
+          <view className="PlayBtnInner">
+            <text className="PlayIcon">&#x1F504;</text>
           </view>
         </Button>
-        <text className="ErrorTitle">⚠ 播放失败</text>
+        <text className="ErrorTitle">&#x26A0; 播放失败</text>
         <text className="ErrorDetail">{error || "未知错误，点击重试"}</text>
       </view>
     );
@@ -170,11 +237,7 @@ export function PlayerControls({
   if (state === 'loading') {
     return (
       <view className="CenterArea">
-        <view className="LoadingDots">
-          <view className="Dot DotDim1" />
-          <view className="Dot DotDim2" />
-          <view className="Dot DotDim3" />
-        </view>
+        <view className="LoadingSpinner" />
         <text className="IdleTitle">正在加载...</text>
       </view>
     );
@@ -183,9 +246,9 @@ export function PlayerControls({
   if (state === 'idle') {
     return (
       <view className="CenterArea">
-        <Button onClick={onPlayPause} className="IdlePlayBtn">
-          <view className="PlayButtonCircle">
-            <text className="PlayIconLarge">▶</text>
+        <Button onClick={onPlayPause} className="PlayBtn">
+          <view className="PlayBtnInner">
+            <text className="PlayIcon">{'\u25B6'}</text>
           </view>
         </Button>
         <text className="IdleTitle">{fileName || "等待文件信息..."}</text>
@@ -202,9 +265,11 @@ export function PlayerControls({
         currentTime={currentTime}
         duration={duration}
         showControls={showControls}
+        playbackRate={playbackRate}
         onPlayPause={onPlayPause}
         onSeek={onSeek}
-        onToggleFullscreen={onToggleFullscreen}
+        onSeekRelative={onSeekRelative}
+        onCycleSpeed={onCycleSpeed}
         onBack={onBack}
       />
     );
@@ -218,9 +283,14 @@ export function PlayerControls({
       currentTime={currentTime}
       duration={duration}
       showControls={showControls}
+      playbackRate={playbackRate}
+      locked={locked}
       onPlayPause={onPlayPause}
       onSeek={onSeek}
+      onSeekRelative={onSeekRelative}
       onToggleFullscreen={onToggleFullscreen}
+      onCycleSpeed={onCycleSpeed}
+      onToggleLock={onToggleLock}
       onBack={onBack}
     />
   );

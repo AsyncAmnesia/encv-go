@@ -135,15 +135,13 @@
                 :label="t('tasks.sourcePath')"
                 label-placement="stacked"
                 placeholder="/path/to/file"
-                :class="{ 'ion-invalid': sourcePathError }"
+                :error-text="sourcePathError"
+                :class="{ 'ion-invalid': !!sourcePathError, 'ion-touched': !!sourcePathError }"
                 @ionInput="validateSourcePath"
               ></ion-input>
-              <ion-button slot="end" fill="clear" @click="handleBrowseSource">
+              <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseSource">
                 <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
               </ion-button>
-            </ion-item>
-            <ion-item v-if="sourcePathError" class="path-error-item">
-              <ion-label class="path-error-text">{{ sourcePathError }}</ion-label>
             </ion-item>
             <ion-item>
               <ion-input
@@ -151,15 +149,13 @@
                 :label="t('tasks.targetPath')"
                 label-placement="stacked"
                 :placeholder="t('tasks.targetPathPlaceholder')"
-                :class="{ 'ion-invalid': targetPathError }"
+                :error-text="targetPathError"
+                :class="{ 'ion-invalid': !!targetPathError, 'ion-touched': !!targetPathError }"
                 @ionInput="validateTargetPath"
               ></ion-input>
-              <ion-button slot="end" fill="clear" @click="handleBrowseTarget">
+              <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseTarget">
                 <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
               </ion-button>
-            </ion-item>
-            <ion-item v-if="targetPathError" class="path-error-item">
-              <ion-label class="path-error-text">{{ targetPathError }}</ion-label>
             </ion-item>
           </ion-list>
           <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath || !!sourcePathError || !!targetPathError">
@@ -586,15 +582,10 @@ onUnmounted(() => {
   height: 20px;
 }
 
-.path-error-item {
-  --min-height: auto;
-  --padding-start: 16px;
-  --padding-end: 16px;
-  --inner-padding-end: 0;
-}
-
-.path-error-text {
-  color: var(--ion-color-danger);
-  font-size: 12px;
+.browse-btn {
+  --padding-start: 8px;
+  --padding-end: 8px;
+  min-width: 44px;
+  min-height: 44px;
 }
 </style>

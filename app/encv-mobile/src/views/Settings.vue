@@ -34,7 +34,7 @@
         <ion-list-header>
           <ion-label>{{ t('settings.connection') }}</ion-label>
         </ion-list-header>
-        <ion-item button @click="goServer">
+        <ion-item button @click="goServer" detail>
           <ion-icon :icon="serverIcon" slot="start"></ion-icon>
           <ion-label>
             <h3>{{ t('settings.serverTitle') }}</h3>
@@ -46,7 +46,6 @@
               <span v-if="!serverOnline && connectionError" class="connection-error-inline"> - {{ connectionError }}</span>
             </p>
           </ion-label>
-          <ion-icon :icon="chevronForward" slot="end"></ion-icon>
         </ion-item>
       </ion-list>
 
@@ -54,13 +53,12 @@
         <ion-list-header>
           <ion-label>{{ t('settings.cache') }}</ion-label>
         </ion-list-header>
-        <ion-item button @click="goCache">
+        <ion-item button @click="goCache" detail>
           <ion-icon :icon="databaseIcon" slot="start"></ion-icon>
           <ion-label>
             <h3>{{ t('settings.cacheAndIndex') }}</h3>
             <p>{{ indexStats?.isIndexing ? t('settings.indexing') : t('settings.indexReady') }}</p>
           </ion-label>
-          <ion-icon :icon="chevronForward" slot="end"></ion-icon>
         </ion-item>
       </ion-list>
 
@@ -80,7 +78,6 @@
               <ion-label>
                 <h3>{{ tField(section.key) }}</h3>
               </ion-label>
-              <ion-icon :icon="chevronForward" slot="end"></ion-icon>
             </ion-item>
           </ion-list>
 
@@ -105,7 +102,7 @@
                 :placeholder="section.description || tField(section.key)"
                 @ionInput="handleInput([section.key], section, $event)"
               ></ion-input>
-              <ion-button v-if="section.isPath" slot="end" fill="clear" @click="handleBrowsePath([section.key], section)">
+              <ion-button v-if="section.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([section.key], section)">
                 <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
               </ion-button>
             </ion-item>
@@ -139,7 +136,7 @@
                       :placeholder="grandchild.description || tField(grandchild.key)"
                       @ionInput="handleInput([section.key, child.key, grandchild.key], grandchild, $event)"
                     ></ion-input>
-                    <ion-button v-if="grandchild.isPath" slot="end" fill="clear" @click="handleBrowsePath([section.key, child.key, grandchild.key], grandchild)">
+                    <ion-button v-if="grandchild.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([section.key, child.key, grandchild.key], grandchild)">
                       <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
                     </ion-button>
                   </ion-item>
@@ -202,7 +199,7 @@
                   :placeholder="child.description || tField(child.key)"
                   @ionInput="handleInput([section.key, child.key], child, $event)"
                 ></ion-input>
-                <ion-button v-if="child.isPath" slot="end" fill="clear" @click="handleBrowsePath([section.key, child.key], child)">
+                <ion-button v-if="child.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([section.key, child.key], child)">
                   <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
                 </ion-button>
               </ion-item>
@@ -218,13 +215,12 @@
       </template>
 
       <ion-list>
-        <ion-item button @click="goAbout">
+        <ion-item button @click="goAbout" detail>
           <ion-icon :icon="informationCircle" slot="start"></ion-icon>
           <ion-label>
             <h3>{{ t('settings.about') }}</h3>
             <p>ENCV-go v1.0.0</p>
           </ion-label>
-          <ion-icon :icon="chevronForward" slot="end"></ion-icon>
         </ion-item>
       </ion-list>
     </ion-content>
@@ -242,7 +238,7 @@ import {
 } from '@ionic/vue'
 import {
   moon, globeOutline, server as serverIcon, save as saveIcon,
-  informationCircle, chevronForward,
+  informationCircle,
   key, lockClosed, documentText, terminal, settingsOutline,
   cloudOutline, shieldCheckmark, eyeOutline, speedometerOutline,
   filmOutline, musicalNotesOutline, imagesOutline, readerOutline,
@@ -442,5 +438,11 @@ watch(serverOnline, async (online) => {
 .connection-error-inline {
   color: var(--ion-color-danger);
   font-size: 12px;
+}
+.browse-btn {
+  --padding-start: 8px;
+  --padding-end: 8px;
+  min-width: 44px;
+  min-height: 44px;
 }
 </style>
