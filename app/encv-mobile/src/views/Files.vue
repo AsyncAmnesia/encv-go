@@ -94,7 +94,7 @@
             <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified && !searchQuery"> · {{ file.modified }}</span></p>
             <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
           </ion-label>
-          <ion-badge v-if="getFileCategory(file.name) === 'encrypted'" color="warning" slot="end">
+          <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
             ENCV
           </ion-badge>
         </ion-item>
@@ -149,6 +149,7 @@ import {
   formatFileSize,
   getFileCategory,
   PermissionDeniedError,
+  NotFoundError,
   deleteFile,
   createTask,
 } from '@/api/encv'
@@ -205,7 +206,7 @@ const sortedFiles = computed(() => {
 
 function getFileIcon(file: FileItem) {
   if (file.isDirectory) return folder
-  const category = getFileCategory(file.name)
+  const category = getFileCategory(file.name, file.isEncrypted)
   switch (category) {
     case 'video': return videocam
     case 'audio': return musicalNotes
@@ -218,7 +219,7 @@ function getFileIcon(file: FileItem) {
 
 function getFileIconColor(file: FileItem) {
   if (file.isDirectory) return 'primary'
-  const category = getFileCategory(file.name)
+  const category = getFileCategory(file.name, file.isEncrypted)
   switch (category) {
     case 'video': return 'danger'
     case 'audio': return 'tertiary'
@@ -257,6 +258,17 @@ async function loadFiles() {
         return
       }
 
+      if (error instanceof NotFoundError) {
+        serverOnline.value = true
+        loading.value = false
+        connecting.value = false
+        if (currentPath.value !== '/') {
+          showToast({ message: t('files.pathNotFound'), duration: 2000, color: 'warning' })
+          goUp()
+        }
+        return
+      }
+
       if (attempt < MAX_RETRIES) {
         connecting.value = true
         await new Promise(r => setTimeout(r, RETRY_DELAY))
@@ -279,6 +291,12 @@ async function handleRefresh(event: CustomEvent) {
     if (error instanceof PermissionDeniedError) {
       serverOnline.value = true
       noPermission.value = true
+    }
+    if (error instanceof NotFoundError) {
+      serverOnline.value = true
+      if (currentPath.value !== '/') {
+        goUp()
+      }
     }
   }
   ;(event.target as any)?.complete?.()
@@ -320,11 +338,11 @@ async function handleFileClick(file: FileItem) {
     return
   }
 
-  const category = getFileCategory(file.name)
+  const category = getFileCategory(file.name, file.isEncrypted)
   console.info('[Files] Click:', file.name, 'category:', category)
   if (category === 'video' || category === 'audio' || category === 'encrypted') {
     if (isNative()) {
-      const mimeType = category === 'video' ? 'video/*' : category === 'audio' ? 'audio/*' : 'application/x-encv'
+      const mimeType = category === 'encrypted' ? 'video/*' : category === 'video' ? 'video/*' : 'audio/*'
       openInPlayer(file.path, file.name, mimeType)
     } else {
       router.push({
@@ -395,7 +413,7 @@ async function performSearch() {
 }
 
 async function handleLongPress(file: FileItem) {
-  const category = file.isDirectory ? 'directory' : getFileCategory(file.name)
+  const category = file.isDirectory ? 'directory' : getFileCategory(file.name, file.isEncrypted)
 
   const buttons: any[] = []
 
@@ -423,7 +441,7 @@ async function handleLongPress(file: FileItem) {
       icon: videocam,
       handler: () => {
         if (isNative()) {
-          openInPlayer(file.path, file.name, 'application/x-encv')
+          openInPlayer(file.path, file.name, 'video/*')
         } else {
           router.push({
             path: '/player',

@@ -33,14 +33,16 @@ type TaskManager struct {
 	cfg        *config.Config
 	stopCh     chan struct{}
 	wg         sync.WaitGroup
+	wsHub      *WSHub
 }
 
-func NewTaskManager(servingDir string, cfg *config.Config) *TaskManager {
+func NewTaskManager(servingDir string, cfg *config.Config, wsHub *WSHub) *TaskManager {
 	tm := &TaskManager{
 		tasks:      make(map[string]*MobileTask),
 		servingDir: servingDir,
 		cfg:        cfg,
 		stopCh:     make(chan struct{}),
+		wsHub:      wsHub,
 	}
 	tm.wg.Add(1)
 	go tm.worker()
@@ -67,6 +69,9 @@ func (tm *TaskManager) Create(taskType, sourcePath string) *MobileTask {
 	tm.mu.Unlock()
 
 	slog.Info("Task created", "id", task.ID, "type", taskType, "source", sourcePath)
+	if tm.wsHub != nil {
+		tm.wsHub.Broadcast("task:created", task)
+	}
 	return task
 }
 
@@ -106,6 +111,12 @@ func (tm *TaskManager) Cancel(id string) (*MobileTask, error) {
 	} else {
 		task.Status = "cancelled"
 	}
+	if tm.wsHub != nil {
+		tm.wsHub.Broadcast("task:update", map[string]interface{}{
+			"id":     id,
+			"status": task.Status,
+		})
+	}
 	return task, nil
 }
 
@@ -121,6 +132,13 @@ func (tm *TaskManager) Retry(id string) (*MobileTask, error) {
 	task.Status = "queued"
 	task.Error = ""
 	task.Progress = 0
+	if tm.wsHub != nil {
+		tm.wsHub.Broadcast("task:update", map[string]interface{}{
+			"id":       id,
+			"status":   "queued",
+			"progress": 0,
+		})
+	}
 	return task, nil
 }
 
@@ -168,6 +186,15 @@ func (tm *TaskManager) resolveAbsPath(sourcePath string) string {
 
 func (tm *TaskManager) processTask(task *MobileTask) {
 	slog.Info("Processing task", "id", task.ID, "type", task.Type, "source", task.SourcePath)
+
+	if tm.wsHub != nil {
+		tm.wsHub.Broadcast("task:update", map[string]interface{}{
+			"id":       task.ID,
+			"type":     task.Type,
+			"status":   "running",
+			"progress": 0,
+		})
+	}
 
 	absPath := tm.resolveAbsPath(task.SourcePath)
 	if absPath == "" {
@@ -227,6 +254,15 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 	tm.mu.Unlock()
 
 	slog.Info("Task completed", "id", task.ID, "type", task.Type)
+	if tm.wsHub != nil {
+		tm.wsHub.Broadcast("task:completed", map[string]interface{}{
+			"id":     task.ID,
+			"status": "completed",
+		})
+		tm.wsHub.Broadcast("file:change", map[string]interface{}{
+			"path": task.SourcePath,
+		})
+	}
 }
 
 func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
@@ -269,6 +305,15 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 	tm.mu.Unlock()
 
 	slog.Info("Task completed", "id", task.ID, "type", task.Type)
+	if tm.wsHub != nil {
+		tm.wsHub.Broadcast("task:completed", map[string]interface{}{
+			"id":     task.ID,
+			"status": "completed",
+		})
+		tm.wsHub.Broadcast("file:change", map[string]interface{}{
+			"path": task.SourcePath,
+		})
+	}
 }
 
 func (tm *TaskManager) failTask(id, errMsg string) {
@@ -279,5 +324,12 @@ func (tm *TaskManager) failTask(id, errMsg string) {
 		task.Status = "failed"
 		task.Error = errMsg
 		slog.Error("Task failed", "id", id, "error", errMsg)
+		if tm.wsHub != nil {
+			tm.wsHub.Broadcast("task:completed", map[string]interface{}{
+				"id":     id,
+				"status": "failed",
+				"error":  errMsg,
+			})
+		}
 	}
 }

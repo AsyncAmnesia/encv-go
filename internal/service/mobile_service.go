@@ -46,6 +46,7 @@ type FileInfo struct {
 	Name        string `json:"name"`
 	Path        string `json:"path"`
 	IsDirectory bool   `json:"isDirectory"`
+	IsEncrypted bool   `json:"isEncrypted"`
 	Size        int64  `json:"size"`
 	Modified    string `json:"modified"`
 }
@@ -70,10 +71,11 @@ type MobileService struct {
 }
 
 func NewMobileService(servingDir string, cfg *config.Config) *MobileService {
+	wsHub := NewWSHub()
 	return &MobileService{
 		servingDir:  servingDir,
-		taskManager: NewTaskManager(servingDir, cfg),
-		wsHub:       NewWSHub(),
+		taskManager: NewTaskManager(servingDir, cfg, wsHub),
+		wsHub:       wsHub,
 		cfg:         cfg,
 	}
 }
@@ -126,10 +128,19 @@ func (s *MobileService) ListFiles(queryPath string) ([]FileInfo, error) {
 			continue
 		}
 
+		isEncrypted := false
+		if !entry.IsDir() {
+			entryAbsPath := filepath.Join(absPath, entry.Name())
+			if _, detectErr := detector.DetectContainer(entryAbsPath); detectErr == nil {
+				isEncrypted = true
+			}
+		}
+
 		files = append(files, FileInfo{
 			Name:        entry.Name(),
 			Path:        filePath,
 			IsDirectory: entry.IsDir(),
+			IsEncrypted: isEncrypted,
 			Size:        info.Size(),
 			Modified:    info.ModTime().Format(time.RFC3339),
 		})

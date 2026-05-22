@@ -34,6 +34,7 @@ export interface FileItem {
   name: string
   path: string
   isDirectory: boolean
+  isEncrypted?: boolean
   size?: number
   modified?: string
 }
@@ -51,6 +52,13 @@ export class PermissionDeniedError extends Error {
   }
 }
 
+export class NotFoundError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'NotFoundError'
+  }
+}
+
 export async function listFiles(path = '/'): Promise<FileItem[]> {
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/files?path=${encodeURIComponent(path)}`)
@@ -61,6 +69,11 @@ export async function listFiles(path = '/'): Promise<FileItem[]> {
         console.warn('[API] listFiles permission denied:', path)
         throw new PermissionDeniedError(data.error || 'Permission denied')
       }
+    }
+    if (response.status === 404) {
+      const data: FileListResponse = await response.json().catch(() => ({}))
+      console.warn('[API] listFiles not found:', path)
+      throw new NotFoundError(data.error || 'Path not found')
     }
     console.error('[API] listFiles failed:', response.status)
     throw new Error(`HTTP error! status: ${response.status}`)
@@ -262,7 +275,8 @@ export function getFileExtension(name: string): string {
 
 export type FileCategory = 'video' | 'audio' | 'image' | 'document' | 'encrypted' | 'other'
 
-export function getFileCategory(name: string): FileCategory {
+export function getFileCategory(name: string, isEncrypted?: boolean): FileCategory {
+  if (isEncrypted) return 'encrypted'
   const ext = getFileExtension(name)
   const videoExts = ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm', 'm4v']
   const audioExts = ['mp3', 'flac', 'wav', 'aac', 'ogg', 'wma', 'm4a']
