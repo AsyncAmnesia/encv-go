@@ -1,0 +1,108 @@
+﻿2026-05-22T07:09:16.9295485Z ##[group]Run cd app/encv-mobile && bash scripts/setup-mpv-libs.sh
+2026-05-22T07:09:16.9296296Z [36;1mcd app/encv-mobile && bash scripts/setup-mpv-libs.sh[0m
+2026-05-22T07:09:16.9348552Z shell: /usr/bin/bash -e {0}
+2026-05-22T07:09:16.9348847Z env:
+2026-05-22T07:09:16.9349184Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T07:09:16.9349720Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T07:09:16.9350131Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-22T07:09:16.9350454Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-22T07:09:16.9350746Z ##[endgroup]
+2026-05-22T07:09:16.9479590Z setup-mpv-libs: downloading mpv-android-lib 0.1.12 AAR...
+2026-05-22T07:09:16.9555889Z   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+2026-05-22T07:09:16.9557504Z                                  Dload  Upload   Total   Spent    Left  Speed
+2026-05-22T07:09:16.9557792Z 
+2026-05-22T07:09:17.4380879Z   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+2026-05-22T07:09:17.4382181Z 100 64.5M  100 64.5M    0     0   133M      0 --:--:-- --:--:-- --:--:--  133M
+2026-05-22T07:09:17.4410532Z setup-mpv-libs: Phase 1 — extracting prebuilt native libraries (mpv + ffmpeg)...
+2026-05-22T07:09:17.4428008Z   extracting arm64-v8a...
+2026-05-22T07:09:17.4458315Z Archive:  /tmp/tmp.2bZnUZsqRk/mpv-android-lib.aar
+2026-05-22T07:09:17.5535955Z   inflating: /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/libavcodec.so  
+2026-05-22T07:09:17.5537241Z   inflating: /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/libavdevice.so  
+2026-05-22T07:09:17.5889906Z   inflating: /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/libavfilter.so  
+2026-05-22T07:09:17.6204035Z   inflating: /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/libavformat.so  
+2026-05-22T07:09:17.6266415Z   inflating: /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/libavutil.so  
+2026-05-22T07:09:17.6882840Z   inflating: /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/libc++_shared.so  
+2026-05-22T07:09:17.7372805Z   inflating: /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/libmpv.so  
+2026-05-22T07:09:17.7375613Z   inflating: /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/libplayer.so  
+2026-05-22T07:09:17.7386065Z   inflating: /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/libswresample.so  
+2026-05-22T07:09:17.7480216Z   inflating: /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/libswscale.so  
+2026-05-22T07:09:17.7599252Z   inflating: /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/libxml2.so  
+2026-05-22T07:09:17.7729555Z   ✓ arm64-v8a: 10 .so files extracted (libplayer.so excluded, will be built from source)
+2026-05-22T07:09:17.7846229Z 
+2026-05-22T07:09:17.7847250Z setup-mpv-libs: Phase 2 — building libplayer.so (JNI wrapper) from source...
+2026-05-22T07:09:17.7892080Z build-player-so: Building libplayer.so from source...
+2026-05-22T07:09:17.7892873Z   NDK: /usr/local/lib/android/sdk/ndk/27.3.13750724
+2026-05-22T07:09:17.7913824Z   Prebuilt libraries: 10 .so files in /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a
+2026-05-22T07:09:17.7924422Z   Removed any existing libplayer.so (will rebuild from source)
+2026-05-22T07:09:17.7924895Z 
+2026-05-22T07:09:17.7925191Z   Running ndk-build...
+2026-05-22T07:09:22.0198802Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:22.0200957Z Android NDK: WARNING: APP_PLATFORM android-21 is higher than android:minSdkVersion 1 in ./AndroidManifest.xml. NDK binaries will *not* be compatible with devices older than android-21. See https://android.googlesource.com/platform/ndk/+/master/docs/user/common_problems.md for more information.    
+2026-05-22T07:09:22.0203683Z /usr/local/lib/android/sdk/ndk/27.3.13750724/build/core/build-binary.mk:708: warning: overriding recipe for target 'libs/arm64-v8a/libc++_shared.so'
+2026-05-22T07:09:22.0205030Z /usr/local/lib/android/sdk/ndk/27.3.13750724/build/core/install_stl.mk:19: warning: ignoring old recipe for target 'libs/arm64-v8a/libc++_shared.so'
+2026-05-22T07:09:22.0206141Z Android NDK: WARNING:jni/Android.mk:player: non-system libraries in linker flags: -latomic    
+2026-05-22T07:09:22.0207555Z Android NDK:     This is likely to result in incorrect builds. Try using LOCAL_STATIC_LIBRARIES    
+2026-05-22T07:09:22.0209055Z Android NDK:     or LOCAL_SHARED_LIBRARIES instead to list the library dependencies of the    
+2026-05-22T07:09:22.0209953Z Android NDK:     current module    
+2026-05-22T07:09:22.0211169Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:22.0276930Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:22.0286716Z [arm64-v8a] Prebuilt       : libavdevice.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/
+2026-05-22T07:09:22.0288613Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:22.0290252Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:22.0292410Z [arm64-v8a] Prebuilt       : libc++_shared.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/
+2026-05-22T07:09:22.0294182Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:22.0296916Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:22.0299104Z [arm64-v8a] Prebuilt       : libavfilter.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/
+2026-05-22T07:09:22.0301053Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:22.0305730Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:22.0307839Z [arm64-v8a] Prebuilt       : libavcodec.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/
+2026-05-22T07:09:22.0309833Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:22.0327748Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:22.0329738Z [arm64-v8a] Prebuilt       : libavformat.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/
+2026-05-22T07:09:22.0332004Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:22.0333744Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:22.0335587Z [arm64-v8a] Prebuilt       : libavutil.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/
+2026-05-22T07:09:22.0337291Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:22.0350222Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:22.0352577Z [arm64-v8a] Prebuilt       : libmpv.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/
+2026-05-22T07:09:22.0354815Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:23.7621362Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:23.7623065Z [arm64-v8a] Compile++      : player <= log.cpp
+2026-05-22T07:09:23.7624637Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:23.7626494Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:23.7627802Z [arm64-v8a] Compile++      : player <= jni_utils.cpp
+2026-05-22T07:09:23.7629271Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:24.0007929Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:24.0009161Z [arm64-v8a] Compile++      : player <= property.cpp
+2026-05-22T07:09:24.0010121Z jni/property.cpp:3:10: fatal error: 'mpv/client.h' file not found
+2026-05-22T07:09:24.0010742Z     3 | #include <mpv/client.h>
+2026-05-22T07:09:24.0011122Z       |          ^~~~~~~~~~~~~~
+2026-05-22T07:09:24.0011421Z 1 error generated.
+2026-05-22T07:09:24.0012695Z make: *** [/usr/local/lib/android/sdk/ndk/27.3.13750724/build/core/build-binary.mk:422: obj/local/arm64-v8a/objs/player/property.o] Error 1
+2026-05-22T07:09:24.0013733Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:24.0014343Z make: *** Waiting for unfinished jobs....
+2026-05-22T07:09:24.0015107Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:24.0015778Z [arm64-v8a] Compile++      : player <= render.cpp
+2026-05-22T07:09:24.0016342Z jni/render.cpp:2:10: fatal error: 'mpv/client.h' file not found
+2026-05-22T07:09:24.0016981Z     2 | #include <mpv/client.h>
+2026-05-22T07:09:24.0017375Z       |          ^~~~~~~~~~~~~~
+2026-05-22T07:09:24.0017662Z 1 error generated.
+2026-05-22T07:09:24.0018506Z make: *** [/usr/local/lib/android/sdk/ndk/27.3.13750724/build/core/build-binary.mk:422: obj/local/arm64-v8a/objs/player/render.o] Error 1
+2026-05-22T07:09:24.0019548Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:24.0020456Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:24.0021083Z [arm64-v8a] Compile++      : player <= main.cpp
+2026-05-22T07:09:24.0021820Z jni/main.cpp:7:10: fatal error: 'mpv/client.h' file not found
+2026-05-22T07:09:24.0022272Z     7 | #include <mpv/client.h>
+2026-05-22T07:09:24.0022634Z       |          ^~~~~~~~~~~~~~
+2026-05-22T07:09:24.0022909Z 1 error generated.
+2026-05-22T07:09:24.0023725Z make: *** [/usr/local/lib/android/sdk/ndk/27.3.13750724/build/core/build-binary.mk:422: obj/local/arm64-v8a/objs/player/main.o] Error 1
+2026-05-22T07:09:24.0024970Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:24.0123034Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:24.0123918Z [arm64-v8a] Compile++      : player <= event.cpp
+2026-05-22T07:09:24.0124542Z jni/event.cpp:2:10: fatal error: 'mpv/client.h' file not found
+2026-05-22T07:09:24.0125001Z     2 | #include <mpv/client.h>
+2026-05-22T07:09:24.0125364Z       |          ^~~~~~~~~~~~~~
+2026-05-22T07:09:24.0125646Z 1 error generated.
+2026-05-22T07:09:24.0126489Z make: *** [/usr/local/lib/android/sdk/ndk/27.3.13750724/build/core/build-binary.mk:422: obj/local/arm64-v8a/objs/player/event.o] Error 1
+2026-05-22T07:09:24.0127507Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main'
+2026-05-22T07:09:24.0142847Z ##[error]Process completed with exit code 2.

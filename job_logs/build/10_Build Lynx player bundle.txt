@@ -1,0 +1,44 @@
+﻿2026-05-22T07:09:07.7449121Z ##[group]Run cd app/encv-mobile/lynx-player && npm install && npm run build
+2026-05-22T07:09:07.7449995Z [36;1mcd app/encv-mobile/lynx-player && npm install && npm run build[0m
+2026-05-22T07:09:07.7498455Z shell: /usr/bin/bash -e {0}
+2026-05-22T07:09:07.7498852Z env:
+2026-05-22T07:09:07.7499353Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T07:09:07.7500185Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T07:09:07.7500859Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-22T07:09:07.7501354Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-22T07:09:07.7501969Z ##[endgroup]
+2026-05-22T07:09:14.5367685Z 
+2026-05-22T07:09:14.5368669Z added 374 packages, and audited 375 packages in 7s
+2026-05-22T07:09:14.5369119Z 
+2026-05-22T07:09:14.5369474Z 107 packages are looking for funding
+2026-05-22T07:09:14.5370068Z   run `npm fund` for details
+2026-05-22T07:09:14.5406423Z 
+2026-05-22T07:09:14.5407170Z 4 vulnerabilities (3 moderate, 1 high)
+2026-05-22T07:09:14.5407794Z 
+2026-05-22T07:09:14.5408417Z Some issues need review, and may require choosing
+2026-05-22T07:09:14.5409233Z a different dependency.
+2026-05-22T07:09:14.5409645Z 
+2026-05-22T07:09:14.5410081Z Run `npm audit` for details.
+2026-05-22T07:09:14.6624618Z 
+2026-05-22T07:09:14.6625468Z > encv-lynx-player@1.0.0 build
+2026-05-22T07:09:14.6626055Z > rspeedy build
+2026-05-22T07:09:14.6626280Z 
+2026-05-22T07:09:14.7514530Z 
+2026-05-22T07:09:14.7518548Z   Rspeedy v0.14.4 (Rsbuild v1.7.5, Rspack v1.7.11)
+2026-05-22T07:09:14.7519005Z 
+2026-05-22T07:09:15.5939288Z info    build started...
+2026-05-22T07:09:16.8483515Z warn    [1m[33mBuild warnings: 
+2026-05-22T07:09:16.8484658Z [39m[22mFile: [36m./src/App.css:32:3[39m
+2026-05-22T07:09:16.8485755Z   ⚠ Unsupported property "text-maxline" was removed during template encode.
+2026-05-22T07:09:16.8486263Z 
+2026-05-22T07:09:16.8486672Z File: [36m./src/App.css:70:3[39m
+2026-05-22T07:09:16.8487667Z   ⚠ Unsupported property "text-maxline" was removed during template encode.
+2026-05-22T07:09:16.8488023Z 
+2026-05-22T07:09:16.8488299Z File: [36m./src/App.css:173:3[39m
+2026-05-22T07:09:16.8488930Z   ⚠ Unsupported property "text-maxline" was removed during template encode.
+2026-05-22T07:09:16.8489245Z 
+2026-05-22T07:09:16.8489583Z ready   built in [1m1.25[22m s
+2026-05-22T07:09:16.8497627Z 
+2026-05-22T07:09:16.8498135Z [34mFile (lynx)               Size       [39m
+2026-05-22T07:09:16.8498960Z [2mdist/[22m[35mplayer.lynx.bundle[39m   103.1 kB
+2026-05-22T07:09:16.8499320Z 

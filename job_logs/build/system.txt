@@ -1,8 +1,8 @@
-2026-05-22T05:58:17.6060000Z Requested labels: ubuntu-latest
-2026-05-22T05:58:17.6060000Z Job defined at: Soltus/encv-go/.github/workflows/android.yml@refs/heads/trae/solo-agent-ArHDts
-2026-05-22T05:58:17.6060000Z Waiting for a runner to pick up this job...
-2026-05-22T05:58:17.6040000Z Evaluating build.if
-2026-05-22T05:58:17.6040000Z Evaluating: success()
-2026-05-22T05:58:17.6040000Z Result: true
-2026-05-22T05:58:17.9610000Z Job is about to start running on the hosted runner: GitHub Actions 1000000752
-2026-05-22T05:58:17.9610000Z Job is waiting for a hosted runner to come online.
+2026-05-22T07:07:56.1110000Z Evaluating build.if
+2026-05-22T07:07:56.1110000Z Evaluating: success()
+2026-05-22T07:07:56.1110000Z Result: true
+2026-05-22T07:07:56.1200000Z Requested labels: ubuntu-latest
+2026-05-22T07:07:56.1200000Z Job defined at: Soltus/encv-go/.github/workflows/android.yml@refs/heads/trae/solo-agent-ArHDts
+2026-05-22T07:07:56.1200000Z Waiting for a runner to pick up this job...
+2026-05-22T07:07:56.5060000Z Job is waiting for a hosted runner to come online.
+2026-05-22T07:07:56.5060000Z Job is about to start running on the hosted runner: GitHub Actions 1000000756
