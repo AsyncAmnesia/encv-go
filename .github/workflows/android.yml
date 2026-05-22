@@ -141,6 +141,13 @@ jobs:
               exit 1
             fi
           done
+          echo "=== Lynx bundle ==="
+          if [ -f "app/encv-mobile/android/app/src/main/assets/player.lynx.bundle" ]; then
+            echo "✅ player.lynx.bundle found ($(ls -lh app/encv-mobile/android/app/src/main/assets/player.lynx.bundle | awk '{print $5}'))"
+          else
+            echo "❌ player.lynx.bundle MISSING!"
+            exit 1
+          fi
 
       # === Verify kotlin setup before build ===
       - name: Verify AndroidManifest integrity
@@ -249,6 +256,8 @@ jobs:
             unzip -l "$APK_PATH" | grep -E "assets/encv-go" || echo "(no assets/encv-go, expected with jniLibs packaging)"
             echo "=== mpv/ffmpeg .so in APK ==="
             unzip -l "$APK_PATH" | grep -E "libmpv|libavcodec|libavformat|libplayer" || echo "❌ mpv/ffmpeg .so NOT in APK!"
+            echo "=== Lynx bundle in APK ==="
+            unzip -l "$APK_PATH" | grep "player.lynx.bundle" || echo "❌ player.lynx.bundle NOT in APK!"
           else
             echo "No APK found to verify"
           fi

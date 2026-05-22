@@ -53,6 +53,9 @@ if (!existsSync(LYNX_BUNDLE_PATH)) {
   console.error('Run: cd lynx-player && npm install && npm run build')
   process.exit(1)
 }
-console.log('  Lynx bundle: exists ✓')
+const assetsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'assets')
+mkdirSync(assetsDir, { recursive: true })
+copyFileSync(LYNX_BUNDLE_PATH, join(assetsDir, 'player.lynx.bundle'))
+console.log('  bundle: copied player.lynx.bundle to assets')
 
 console.log('encv-sync-native: done')
