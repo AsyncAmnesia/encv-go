@@ -1,192 +1,128 @@
-05-22 18:59:22.172  com.encvgo.app  
+05-22 19:19:27.980  com.encvgo.app  
   BBinder_init Processname  com.encvgo.app  
   BBinder_init hasGetProcessName  com.encvgo.app
 
-05-22 18:59:22.566  com.encvgo.app  No implementation found for void com.lynx.devtoolwrapper.DevToolLifecycle.nativeSyncStateToNative(int) (tried Java_com_lynx_devtoolwrapper_DevToolLifecycle_nativeSyncStateToNative and Java_com_lynx_devtoolwrapper_DevToolLifecycle_nativeSyncStateToNative__I) - is the library loaded, e.g. System.loadLibrary?
+05-22 19:19:28.346  com.encvgo.app  No implementation found for void com.lynx.devtoolwrapper.DevToolLifecycle.nativeSyncStateToNative(int) (tried Java_com_lynx_devtoolwrapper_DevToolLifecycle_nativeSyncStateToNative and Java_com_lynx_devtoolwrapper_DevToolLifecycle_nativeSyncStateToNative__I) - is the library loaded, e.g. System.loadLibrary?
 
-05-22 18:59:22.589  DebugRouterServiceCenter  IDebugRouterReportService is unregistered
+05-22 19:19:28.371  DebugRouterServiceCenter  IDebugRouterReportService is unregistered
 
-05-22 18:59:22.591  DebugRouterServiceCenter  IUSBHijackService is unregistered
+05-22 19:19:28.374  DebugRouterServiceCenter  IUSBHijackService is unregistered
 
-05-22 18:59:22.997  libEGL    eglQueryStringImpl display is EGL_NO_DISPLAY
+05-22 19:19:28.777  libEGL    eglQueryStringImpl display is EGL_NO_DISPLAY
 
-05-22 18:59:23.045  com.encvgo.app  
-  [perfctl] 28749 28749 FPSGO ver:0
+05-22 19:19:28.822  com.encvgo.app  
+  [perfctl] 17308 17308 FPSGO ver:0
   [perfctl] 0 0 0 0
 
-05-22 18:59:23.113  VivoJsonResourceManager  mmap ok
+05-22 19:19:28.852  MEMCWrapper  MEMC_POST_PROCESSING_ENABLE_PROPERTY false.
 
-05-22 18:59:23.116  VivoJsonResourceManager  mmap ok
+05-22 19:19:28.853  VivoJsonResourceManager  
+  mmap ok
+  mmap ok
 
-05-22 18:59:23.134  MEMCWrapper  MEMC_POST_PROCESSING_ENABLE_PROPERTY false.
+05-22 19:19:30.700  GPUAUX    [AUX]GuiExtAuxCheckAuxPath:682: Null anb
 
-05-22 18:59:24.909  GPUAUX    [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+05-22 19:19:31.083  GPUAUX    [AUX]GuiExtAuxCheckAuxPath:682: Null anb
 
-05-22 18:59:25.193  GPUAUX    [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+05-22 19:19:33.311  GPUAUX    
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
 
-05-22 18:59:27.401  GPUAUX    [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+05-22 19:19:34.381  GPUAUX    
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
 
-05-22 18:59:28.668  GPUAUX    [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+05-22 19:19:35.250  lynx      [6E85BC03C0:ERROR:js_cache_manager.cc(94)] ReadFile failed (file_path is empty): meta.json
 
-05-22 18:59:28.677  GPUAUX    [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+05-22 19:19:35.250  lynx      
+  [6E85BC03C0:ERROR:js_cache_manager.cc(109)] WriteFile failed (file_path is empty): meta.json
+  [6E85BC03C0:ERROR:js_cache_manager.cc(591)] Write Metadata failed!
 
-05-22 18:59:29.533  lynx      [6E85BBB3C0:ERROR:js_cache_manager.cc(94)] ReadFile failed (file_path is empty): meta.json
+05-22 19:19:35.261  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 18:59:29.533  lynx      
-  [6E85BBB3C0:ERROR:js_cache_manager.cc(109)] WriteFile failed (file_path is empty): meta.json
-  [6E85BBB3C0:ERROR:js_cache_manager.cc(591)] Write Metadata failed!
+05-22 19:19:35.278  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 18:59:29.550  LynxEventReporter  eventReporter service not found or event name is null.
+05-22 19:19:35.324  DebugRouterSlot  failed to invoke getTemplateView
 
-05-22 18:59:29.592  LynxEventReporter  eventReporter service not found or event name is null.
+05-22 19:19:35.337  lynx      [7163386090:ERROR:template_assembler.cc(947)] lynx_plugin: load original lynx so
 
-05-22 18:59:29.615  DebugRouterSlot  failed to invoke getTemplateView
+05-22 19:19:35.393  lynx      
+  [6DC55F83C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipelineStart
+  [6DC55F83C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipeline_start
+  [6DC55F83C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is loadBundleStart
+  [6DC55F83C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is load_template_start
 
-05-22 18:59:29.622  lynx      [7163386090:ERROR:template_assembler.cc(947)] lynx_plugin: load original lynx so
+05-22 19:19:35.393  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 18:59:29.626  lynx      
-  [6DBAECC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipelineStart
-  [6DBAECC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipeline_start
+05-22 19:19:35.397  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 18:59:29.662  lynx      [6DBAFD83C0:ERROR:lynx_console.cc(252)] "The following error occurred in the JSRuntime:"
+05-22 19:19:35.399  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 18:59:29.662  lynx      
-  [6DBAFD83C0:ERROR:lynx_console.cc(252)] "Error: Attempt to render more than one `<page />`, which is not supported.
-   at <anonymous> (/.rspeedy/main/background.46bee256.js:1:42123)
-   at ek (/.rspeedy/main/background.46bee256.js:1:12880)
-   at some (native)
-   at eb (/.rspeedy/main/background.46bee256.js:1:11711)
-  "
+05-22 19:19:35.404  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 18:59:29.662  lynx      [6DBAFD83C0:ERROR:js_error_reporter.cc(408)] JSErrorReporter::reportException 0xb400006f211a3de8, error code is 20100, dynamic component path is , message is  {"rawError":{"stack":"    at <anonymous> (/.rspeedy/main/background.46bee256.js:1:42123)\n    at ek (/.rspeedy/main/background.46bee256.js:1:12880)\n    at some (native)\n    at eb (/.rspeedy/main/background.46bee256.js:1:11711)\n","message":"Error: Attempt to render more than one `<page />`, which is not supported.","cause":{"cause":""}},"pid":"USER_ERROR","url":"file://lynx_core.js","dynamicComponentPath":"","sentry":{"platform":"javascript","sdk":{"name":"sentry.javascript.browser","version":"5.15.5","packages":[{"name":"npm:@sentry/browser","version":"5.15.5"}],"integrations":["InboundFilters","FunctionToString","Breadcrumbs","GlobalHandlers","LinkedErrors","UserAgent"]},"level":"error","exception":{"values":[{"type":"USER_RUNTIME_ERROR","value":"Error: Attempt to render more than one `<page />`, which is not supported.","stacktrace":{"frames":[{"colno":11711,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"eb","in_app":true,"release":"","lineno":1},{"colno":0,"filename":"native","function":"some","in_app":true,"release":"","lineno":0},{"colno":12880,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"ek","in_app":true,"release":"","lineno":1},{"colno":42123,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"<anonymous>","in_app":true,"release":"","lineno":1}]},"mechanism":{"handled":true,"type":"generic"}}]},"tags":{"error_type":"USER_RUNTIME_ERROR","extra":"Error: Attempt to render more than one `<page />`, which is not supported.","lib_version":"0.0.1","run_type":"lynx_core","version_code":"0.0.1"}}}
+05-22 19:19:36.470  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:29.663  LynxPlayerClient  onReceivedError: code=201 summary={"rawError":{"stack":"    at <anonymous> (/.rspeedy/main/background.46bee256.js:1:42123)\n    at ek (/.rspeedy/main/background.46bee256.js:1:12880)\n    at some (native)\n    at eb (/.rspeedy/main/background.46bee256.js:1:11711)\n","message":"Error: Attempt to render more than one `<page />`, which is not supported.","cause":{"cause":""}},"pid":"USER_ERROR","url":"file://lynx_core.js","dynamicComponentPath":"","sentry":{"platform":"javascript","sdk":{"name":"sentry.javascript.browser","version":"5.15.5","packages":[{"name":"npm:@sentry/browser","version":"5.15.5"}],"integrations":["InboundFilters","FunctionToString","Breadcrumbs","GlobalHandlers","LinkedErrors","UserAgent"]},"level":"error","exception":{"values":[{"type":"USER_RUNTIME_ERROR","value":"Error: Attempt to render more than one `<page />`, which is not supported.","stacktrace":{"frames":[{"colno":11711,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"eb","in_app":true,"release":"","lineno":1},{"colno":0,"filename":"native","function":"some","in_app":true,"release":"","lineno":0},{"colno":12880,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"ek","in_app":true,"release":"","lineno":1},{"colno":42123,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"<anonymous>","in_app":true,"release":"","lineno":1}]},"mechanism":{"handled":true,"type":"generic"}}]},"tags":{"error_type":"USER_RUNTIME_ERROR","extra":"Error: Attempt to render more than one `<page />`, which is not supported.","lib_version":"0.0.1","run_type":"lynx_core","version_code":"0.0.1"}}} rootCause= msg={"error_code":201,"sub_code":20100,"error":"{\"rawError\":{\"stack\":\"    at <anonymous> (\/.rspeedy\/main\/background.46bee256.js:1:42123)\\n    at ek (\/.rspeedy\/main\/background.46bee256.js:1:12880)\\n    at some (native)\\n    at eb (\/.rspeedy\/main\/background.46bee256.js:1:11711)\\n\",\"message\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"cause\":{\"cause\":\"\"}},\"pid\":\"USER_ERROR\",\"url\":\"file:\/\/lynx_core.js\",\"dynamicComponentPath\":\"\",\"sentry\":{\"platform\":\"javascript\",\"sdk\":{\"name\":\"sentry.javascript.browser\",\"version\":\"5.15.5\",\"packages\":[{\"name\":\"npm:@sentry\/browser\",\"version\":\"5.15.5\"}],\"integrations\":[\"InboundFilters\",\"FunctionToString\",\"Breadcrumbs\",\"GlobalHandlers\",\"LinkedErrors\",\"UserAgent\"]},\"level\":\"error\",\"exception\":{\"values\":[{\"type\":\"USER_RUNTIME_ERROR\",\"value\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"stacktrace\":{\"frames\":[{\"colno\":11711,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"eb\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":0,\"filename\":\"native\",\"function\":\"some\",\"in_app\":true,\"release\":\"\",\"lineno\":0},{\"colno\":12880,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"ek\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":42123,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"<anonymous>\",\"in_app\":true,\"release\":\"\",\"lineno\":1}]},\"mechanism\":{\"handled\":true,\"type\":\"generic\"}}]},\"tags\":{\"error_type\":\"USER_RUNTIME_ERROR\",\"extra\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"lib_version\":\"0.0.1\",\"run_type\":\"lynx_core\",\"version_code\":\"0.0.1\"}}}","sdk":"0.0.1","level":"error","consumers":[]}
+05-22 19:19:36.491  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:29.664  LynxEventReporter  eventReporter service not found or event name is null.
+05-22 19:19:36.524  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:29.666  LynxEventReporter  eventReporter service not found or event name is null.
+05-22 19:19:36.528  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:29.666  lynx      
-  [6DBAECC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is loadBundleStart
-  [6DBAECC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is load_template_start
+05-22 19:19:36.537  lynx      
+  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:raw-text
+  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:text
+  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:view
 
-05-22 18:59:29.673  LynxPlayerClient  onReceivedJSError: summary={"rawError":{"stack":"    at <anonymous> (/.rspeedy/main/background.46bee256.js:1:42123)\n    at ek (/.rspeedy/main/background.46bee256.js:1:12880)\n    at some (native)\n    at eb (/.rspeedy/main/background.46bee256.js:1:11711)\n","message":"Error: Attempt to render more than one `<page />`, which is not supported.","cause":{"cause":""}},"pid":"USER_ERROR","url":"file://lynx_core.js","dynamicComponentPath":"","sentry":{"platform":"javascript","sdk":{"name":"sentry.javascript.browser","version":"5.15.5","packages":[{"name":"npm:@sentry/browser","version":"5.15.5"}],"integrations":["InboundFilters","FunctionToString","Breadcrumbs","GlobalHandlers","LinkedErrors","UserAgent"]},"level":"error","exception":{"values":[{"type":"USER_RUNTIME_ERROR","value":"Error: Attempt to render more than one `<page />`, which is not supported.","stacktrace":{"frames":[{"colno":11711,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"eb","in_app":true,"release":"","lineno":1},{"colno":0,"filename":"native","function":"some","in_app":true,"release":"","lineno":0},{"colno":12880,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"ek","in_app":true,"release":"","lineno":1},{"colno":42123,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"<anonymous>","in_app":true,"release":"","lineno":1}]},"mechanism":{"handled":true,"type":"generic"}}]},"tags":{"error_type":"USER_RUNTIME_ERROR","extra":"Error: Attempt to render more than one `<page />`, which is not supported.","lib_version":"0.0.1","run_type":"lynx_core","version_code":"0.0.1"}}} rootCause= msg={"error_code":201,"sub_code":20100,"error":"{\"rawError\":{\"stack\":\"    at <anonymous> (\/.rspeedy\/main\/background.46bee256.js:1:42123)\\n    at ek (\/.rspeedy\/main\/background.46bee256.js:1:12880)\\n    at some (native)\\n    at eb (\/.rspeedy\/main\/background.46bee256.js:1:11711)\\n\",\"message\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"cause\":{\"cause\":\"\"}},\"pid\":\"USER_ERROR\",\"url\":\"file:\/\/lynx_core.js\",\"dynamicComponentPath\":\"\",\"sentry\":{\"platform\":\"javascript\",\"sdk\":{\"name\":\"sentry.javascript.browser\",\"version\":\"5.15.5\",\"packages\":[{\"name\":\"npm:@sentry\/browser\",\"version\":\"5.15.5\"}],\"integrations\":[\"InboundFilters\",\"FunctionToString\",\"Breadcrumbs\",\"GlobalHandlers\",\"LinkedErrors\",\"UserAgent\"]},\"level\":\"error\",\"exception\":{\"values\":[{\"type\":\"USER_RUNTIME_ERROR\",\"value\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"stacktrace\":{\"frames\":[{\"colno\":11711,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"eb\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":0,\"filename\":\"native\",\"function\":\"some\",\"in_app\":true,\"release\":\"\",\"lineno\":0},{\"colno\":12880,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"ek\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":42123,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"<anonymous>\",\"in_app\":true,\"release\":\"\",\"lineno\":1}]},\"mechanism\":{\"handled\":true,\"type\":\"generic\"}}]},\"tags\":{\"error_type\":\"USER_RUNTIME_ERROR\",\"extra\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"lib_version\":\"0.0.1\",\"run_type\":\"lynx_core\",\"version_code\":\"0.0.1\"}}}","sdk":"0.0.1","level":"error","consumers":[]}
+05-22 19:19:36.599  lynx      [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:view
 
-05-22 18:59:29.681  LynxTemplateRender  LynxTemplateRender com.lynx.tasm.LynxTemplateRender@e363e69: onErrorOccurred type -1,errCode:201,detail:{"error_code":201,"sub_code":20100,"error":"{\"rawError\":{\"stack\":\"    at <anonymous> (\/.rspeedy\/main\/background.46bee256.js:1:42123)\\n    at ek (\/.rspeedy\/main\/background.46bee256.js:1:12880)\\n    at some (native)\\n    at eb (\/.rspeedy\/main\/background.46bee256.js:1:11711)\\n\",\"message\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"cause\":{\"cause\":\"\"}},\"pid\":\"USER_ERROR\",\"url\":\"file:\/\/lynx_core.js\",\"dynamicComponentPath\":\"\",\"sentry\":{\"platform\":\"javascript\",\"sdk\":{\"name\":\"sentry.javascript.browser\",\"version\":\"5.15.5\",\"packages\":[{\"name\":\"npm:@sentry\/browser\",\"version\":\"5.15.5\"}],\"integrations\":[\"InboundFilters\",\"FunctionToString\",\"Breadcrumbs\",\"GlobalHandlers\",\"LinkedErrors\",\"UserAgent\"]},\"level\":\"error\",\"exception\":{\"values\":[{\"type\":\"USER_RUNTIME_ERROR\",\"value\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"stacktrace\":{\"frames\":[{\"colno\":11711,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"eb\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":0,\"filename\":\"native\",\"function\":\"some\",\"in_app\":true,\"release\":\"\",\"lineno\":0},{\"colno\":12880,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"ek\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":42123,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"<anonymous>\",\"in_app\":true,\"release\":\"\",\"lineno\":1}]},\"mechanism\":{\"handled\":true,\"type\":\"generic\"}}]},\"tags\":{\"error_type\":\"USER_RUNTIME_ERROR\",\"extra\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"lib_version\":\"0.0.1\",\"run_type\":\"lynx_core\",\"version_code\":\"0.0.1\"}}}","sdk":"0.0.1","level":"error","consumers":[]}
+05-22 19:19:39.227  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:29.690  LynxEventReporter  eventReporter service not found or event name is null.
+05-22 19:19:39.308  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:29.692  LynxEventReporter  eventReporter service not found or event name is null.
-
-05-22 18:59:32.211  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
-
-05-22 18:59:32.262  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
-
-05-22 18:59:32.272  lynx      
+05-22 19:19:39.310  lynx      
   [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:raw-text
   [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:text
 
-05-22 18:59:32.338  lynx      [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:view
+05-22 19:19:39.896  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:37.711  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:19:39.968  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:37.780  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:19:40.392  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:37.862  MpvPlayerModule  setFullscreen failed: Only the original thread that created a view hierarchy can touch its views. Expected: main Calling: Lynx_JS
+05-22 19:19:40.439  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:37.902  lynx      
+05-22 19:19:40.442  lynx      
   [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:raw-text
   [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:text
 
-05-22 18:59:39.090  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:19:40.766  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:39.149  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:19:40.816  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:39.308  GPUAUX    
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+05-22 19:19:41.071  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:39.895  lynx      
-  [7163386090:ERROR:element_manager.cc(176)] ElementManager::WillDestroy this:0xB400006F2119DFD0
-  [7163386090:ERROR:inspector_element_observer_impl.cc(64)] element_executor is null
+05-22 19:19:41.149  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:39.897  LynxEventReporter  eventReporter service not found or event name is null.
+05-22 19:19:41.152  lynx      
+  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:raw-text
+  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:text
 
-05-22 18:59:39.900  lynx      [6DBAFD83C0:ERROR:jsi.h(1712)] ~HostGlobal;
+05-22 19:19:41.439  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:39.901  lynx      [6DBAFD83C0:ERROR:jsi.h(1732)] ~JSIContext;
+05-22 19:19:41.509  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:39.901  lynx      [6DBAFD83C0:ERROR:quickjs_runtime_wrapper.cc(33)] LYNX free quickjs runtime start
+05-22 19:19:41.867  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:40.547  GPUAUX    
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+05-22 19:19:41.937  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:44.979  GPUAUX    
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+05-22 19:19:41.940  lynx      
+  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:raw-text
+  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:text
 
-05-22 18:59:48.887  LynxEventReporter  eventReporter service not found or event name is null.
+05-22 19:19:42.477  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:48.922  LynxEventReporter  eventReporter service not found or event name is null.
+05-22 19:19:42.530  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 18:59:48.957  DebugRouterSlot  failed to invoke getTemplateView
-
-05-22 18:59:48.958  lynx      [7163386090:ERROR:template_assembler.cc(947)] lynx_plugin: load original lynx so
-
-05-22 18:59:48.959  lynx      
-  [6DBAECC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipelineStart
-  [6DBAECC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipeline_start
-
-05-22 18:59:48.978  lynx      
-  [6DBAECC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is loadBundleStart
-  [6DBAECC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is load_template_start
-
-05-22 18:59:48.999  LynxEventReporter  eventReporter service not found or event name is null.
-
-05-22 18:59:49.000  lynx      
-  [6DBAFD83C0:ERROR:lynx_console.cc(252)] "The following error occurred in the JSRuntime:"
-  [6DBAFD83C0:ERROR:lynx_console.cc(252)] "Error: Attempt to render more than one `<page />`, which is not supported.
-   at <anonymous> (/.rspeedy/main/background.46bee256.js:1:42123)
-   at ek (/.rspeedy/main/background.46bee256.js:1:12880)
-   at some (native)
-   at eb (/.rspeedy/main/background.46bee256.js:1:11711)
-  "
-  [6DBAFD83C0:ERROR:js_error_reporter.cc(408)] JSErrorReporter::reportException 0xb400006f211dc338, error code is 20100, dynamic component path is , message is  {"rawError":{"stack":"    at <anonymous> (/.rspeedy/main/background.46bee256.js:1:42123)\n    at ek (/.rspeedy/main/background.46bee256.js:1:12880)\n    at some (native)\n    at eb (/.rspeedy/main/background.46bee256.js:1:11711)\n","message":"Error: Attempt to render more than one `<page />`, which is not supported.","cause":{"cause":""}},"pid":"USER_ERROR","url":"file://lynx_core.js","dynamicComponentPath":"","sentry":{"platform":"javascript","sdk":{"name":"sentry.javascript.browser","version":"5.15.5","packages":[{"name":"npm:@sentry/browser","version":"5.15.5"}],"integrations":["InboundFilters","FunctionToString","Breadcrumbs","GlobalHandlers","LinkedErrors","UserAgent"]},"level":"error","exception":{"values":[{"type":"USER_RUNTIME_ERROR","value":"Error: Attempt to render more than one `<page />`, which is not supported.","stacktrace":{"frames":[{"colno":11711,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"eb","in_app":true,"release":"","lineno":1},{"colno":0,"filename":"native","function":"some","in_app":true,"release":"","lineno":0},{"colno":12880,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"ek","in_app":true,"release":"","lineno":1},{"colno":42123,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"<anonymous>","in_app":true,"release":"","lineno":1}]},"mechanism":{"handled":true,"type":"generic"}}]},"tags":{"error_type":"USER_RUNTIME_ERROR","extra":"Error: Attempt to render more than one `<page />`, which is not supported.","lib_version":"0.0.1","run_type":"lynx_core","version_code":"0.0.1"}}}
-
-05-22 18:59:49.000  LynxPlayerClient  onReceivedError: code=201 summary={"rawError":{"stack":"    at <anonymous> (/.rspeedy/main/background.46bee256.js:1:42123)\n    at ek (/.rspeedy/main/background.46bee256.js:1:12880)\n    at some (native)\n    at eb (/.rspeedy/main/background.46bee256.js:1:11711)\n","message":"Error: Attempt to render more than one `<page />`, which is not supported.","cause":{"cause":""}},"pid":"USER_ERROR","url":"file://lynx_core.js","dynamicComponentPath":"","sentry":{"platform":"javascript","sdk":{"name":"sentry.javascript.browser","version":"5.15.5","packages":[{"name":"npm:@sentry/browser","version":"5.15.5"}],"integrations":["InboundFilters","FunctionToString","Breadcrumbs","GlobalHandlers","LinkedErrors","UserAgent"]},"level":"error","exception":{"values":[{"type":"USER_RUNTIME_ERROR","value":"Error: Attempt to render more than one `<page />`, which is not supported.","stacktrace":{"frames":[{"colno":11711,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"eb","in_app":true,"release":"","lineno":1},{"colno":0,"filename":"native","function":"some","in_app":true,"release":"","lineno":0},{"colno":12880,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"ek","in_app":true,"release":"","lineno":1},{"colno":42123,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"<anonymous>","in_app":true,"release":"","lineno":1}]},"mechanism":{"handled":true,"type":"generic"}}]},"tags":{"error_type":"USER_RUNTIME_ERROR","extra":"Error: Attempt to render more than one `<page />`, which is not supported.","lib_version":"0.0.1","run_type":"lynx_core","version_code":"0.0.1"}}} rootCause= msg={"error_code":201,"sub_code":20100,"error":"{\"rawError\":{\"stack\":\"    at <anonymous> (\/.rspeedy\/main\/background.46bee256.js:1:42123)\\n    at ek (\/.rspeedy\/main\/background.46bee256.js:1:12880)\\n    at some (native)\\n    at eb (\/.rspeedy\/main\/background.46bee256.js:1:11711)\\n\",\"message\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"cause\":{\"cause\":\"\"}},\"pid\":\"USER_ERROR\",\"url\":\"file:\/\/lynx_core.js\",\"dynamicComponentPath\":\"\",\"sentry\":{\"platform\":\"javascript\",\"sdk\":{\"name\":\"sentry.javascript.browser\",\"version\":\"5.15.5\",\"packages\":[{\"name\":\"npm:@sentry\/browser\",\"version\":\"5.15.5\"}],\"integrations\":[\"InboundFilters\",\"FunctionToString\",\"Breadcrumbs\",\"GlobalHandlers\",\"LinkedErrors\",\"UserAgent\"]},\"level\":\"error\",\"exception\":{\"values\":[{\"type\":\"USER_RUNTIME_ERROR\",\"value\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"stacktrace\":{\"frames\":[{\"colno\":11711,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"eb\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":0,\"filename\":\"native\",\"function\":\"some\",\"in_app\":true,\"release\":\"\",\"lineno\":0},{\"colno\":12880,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"ek\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":42123,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"<anonymous>\",\"in_app\":true,\"release\":\"\",\"lineno\":1}]},\"mechanism\":{\"handled\":true,\"type\":\"generic\"}}]},\"tags\":{\"error_type\":\"USER_RUNTIME_ERROR\",\"extra\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"lib_version\":\"0.0.1\",\"run_type\":\"lynx_core\",\"version_code\":\"0.0.1\"}}}","sdk":"0.0.1","level":"error","consumers":[]}
-
-05-22 18:59:49.004  LynxEventReporter  eventReporter service not found or event name is null.
-
-05-22 18:59:49.040  LynxPlayerClient  onReceivedJSError: summary={"rawError":{"stack":"    at <anonymous> (/.rspeedy/main/background.46bee256.js:1:42123)\n    at ek (/.rspeedy/main/background.46bee256.js:1:12880)\n    at some (native)\n    at eb (/.rspeedy/main/background.46bee256.js:1:11711)\n","message":"Error: Attempt to render more than one `<page />`, which is not supported.","cause":{"cause":""}},"pid":"USER_ERROR","url":"file://lynx_core.js","dynamicComponentPath":"","sentry":{"platform":"javascript","sdk":{"name":"sentry.javascript.browser","version":"5.15.5","packages":[{"name":"npm:@sentry/browser","version":"5.15.5"}],"integrations":["InboundFilters","FunctionToString","Breadcrumbs","GlobalHandlers","LinkedErrors","UserAgent"]},"level":"error","exception":{"values":[{"type":"USER_RUNTIME_ERROR","value":"Error: Attempt to render more than one `<page />`, which is not supported.","stacktrace":{"frames":[{"colno":11711,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"eb","in_app":true,"release":"","lineno":1},{"colno":0,"filename":"native","function":"some","in_app":true,"release":"","lineno":0},{"colno":12880,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"ek","in_app":true,"release":"","lineno":1},{"colno":42123,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"<anonymous>","in_app":true,"release":"","lineno":1}]},"mechanism":{"handled":true,"type":"generic"}}]},"tags":{"error_type":"USER_RUNTIME_ERROR","extra":"Error: Attempt to render more than one `<page />`, which is not supported.","lib_version":"0.0.1","run_type":"lynx_core","version_code":"0.0.1"}}} rootCause= msg={"error_code":201,"sub_code":20100,"error":"{\"rawError\":{\"stack\":\"    at <anonymous> (\/.rspeedy\/main\/background.46bee256.js:1:42123)\\n    at ek (\/.rspeedy\/main\/background.46bee256.js:1:12880)\\n    at some (native)\\n    at eb (\/.rspeedy\/main\/background.46bee256.js:1:11711)\\n\",\"message\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"cause\":{\"cause\":\"\"}},\"pid\":\"USER_ERROR\",\"url\":\"file:\/\/lynx_core.js\",\"dynamicComponentPath\":\"\",\"sentry\":{\"platform\":\"javascript\",\"sdk\":{\"name\":\"sentry.javascript.browser\",\"version\":\"5.15.5\",\"packages\":[{\"name\":\"npm:@sentry\/browser\",\"version\":\"5.15.5\"}],\"integrations\":[\"InboundFilters\",\"FunctionToString\",\"Breadcrumbs\",\"GlobalHandlers\",\"LinkedErrors\",\"UserAgent\"]},\"level\":\"error\",\"exception\":{\"values\":[{\"type\":\"USER_RUNTIME_ERROR\",\"value\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"stacktrace\":{\"frames\":[{\"colno\":11711,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"eb\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":0,\"filename\":\"native\",\"function\":\"some\",\"in_app\":true,\"release\":\"\",\"lineno\":0},{\"colno\":12880,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"ek\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":42123,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"<anonymous>\",\"in_app\":true,\"release\":\"\",\"lineno\":1}]},\"mechanism\":{\"handled\":true,\"type\":\"generic\"}}]},\"tags\":{\"error_type\":\"USER_RUNTIME_ERROR\",\"extra\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"lib_version\":\"0.0.1\",\"run_type\":\"lynx_core\",\"version_code\":\"0.0.1\"}}}","sdk":"0.0.1","level":"error","consumers":[]}
-
-05-22 18:59:49.047  LynxTemplateRender  LynxTemplateRender com.lynx.tasm.LynxTemplateRender@638794e: onErrorOccurred type -1,errCode:201,detail:{"error_code":201,"sub_code":20100,"error":"{\"rawError\":{\"stack\":\"    at <anonymous> (\/.rspeedy\/main\/background.46bee256.js:1:42123)\\n    at ek (\/.rspeedy\/main\/background.46bee256.js:1:12880)\\n    at some (native)\\n    at eb (\/.rspeedy\/main\/background.46bee256.js:1:11711)\\n\",\"message\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"cause\":{\"cause\":\"\"}},\"pid\":\"USER_ERROR\",\"url\":\"file:\/\/lynx_core.js\",\"dynamicComponentPath\":\"\",\"sentry\":{\"platform\":\"javascript\",\"sdk\":{\"name\":\"sentry.javascript.browser\",\"version\":\"5.15.5\",\"packages\":[{\"name\":\"npm:@sentry\/browser\",\"version\":\"5.15.5\"}],\"integrations\":[\"InboundFilters\",\"FunctionToString\",\"Breadcrumbs\",\"GlobalHandlers\",\"LinkedErrors\",\"UserAgent\"]},\"level\":\"error\",\"exception\":{\"values\":[{\"type\":\"USER_RUNTIME_ERROR\",\"value\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"stacktrace\":{\"frames\":[{\"colno\":11711,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"eb\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":0,\"filename\":\"native\",\"function\":\"some\",\"in_app\":true,\"release\":\"\",\"lineno\":0},{\"colno\":12880,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"ek\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":42123,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"<anonymous>\",\"in_app\":true,\"release\":\"\",\"lineno\":1}]},\"mechanism\":{\"handled\":true,\"type\":\"generic\"}}]},\"tags\":{\"error_type\":\"USER_RUNTIME_ERROR\",\"extra\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"lib_version\":\"0.0.1\",\"run_type\":\"lynx_core\",\"version_code\":\"0.0.1\"}}}","sdk":"0.0.1","level":"error","consumers":[]}
-
-05-22 18:59:49.059  LynxEventReporter  eventReporter service not found or event name is null.
-
-05-22 18:59:52.805  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
-
-05-22 18:59:52.841  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
-
-05-22 18:59:54.960  RecyclerView  No adapter attached; skipping layout
+05-22 19:19:43.360  RecyclerView  No adapter attached; skipping layout
 
