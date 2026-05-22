@@ -247,14 +247,12 @@ class PlayerActivityLynx : AppCompatActivity() {
 
                 override fun onRuntimeReady() {
                     LogRelay.get().relay(CLIENT_TAG, "info", "onRuntimeReady: JS environment ready")
+                    tryAttachMpvModule()
                 }
 
                 override fun onLoadSuccess() {
                     LogRelay.get().relay(CLIENT_TAG, "info", "onLoadSuccess: template loaded and rendered successfully")
-                    val mpvModule = MpvPlayerModule.getInstance()
-                    if (mpvModule == null) {
-                        LogRelay.get().relay(CLIENT_TAG, "warn", "onLoadSuccess: mpvModule still null after load")
-                    }
+                    tryAttachMpvModule()
                 }
 
                 override fun onLoadFailed(message: String) {
@@ -334,6 +332,25 @@ class PlayerActivityLynx : AppCompatActivity() {
             android.widget.Toast.makeText(this, "Player init failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
             finish()
         }
+    }
+
+    private fun tryAttachMpvModule() {
+        val mpvModule = MpvPlayerModule.getInstance()
+        if (mpvModule == null) {
+            LogRelay.get().relay(TAG, "info", "tryAttachMpvModule: mpvModule not yet created")
+            return
+        }
+        if (mpvModule.isAttached()) {
+            LogRelay.get().relay(TAG, "info", "tryAttachMpvModule: already attached")
+            return
+        }
+        val root = findViewById<android.widget.FrameLayout>(R.id.lynx_player_root)
+        if (root == null) {
+            LogRelay.get().relay(TAG, "warn", "tryAttachMpvModule: lynx_player_root not found")
+            return
+        }
+        LogRelay.get().relay(TAG, "info", "tryAttachMpvModule: attaching mpvModule to rootLayout")
+        mpvModule.attachToLayout(root)
     }
 
     private fun buildInitDataJson(): String {
