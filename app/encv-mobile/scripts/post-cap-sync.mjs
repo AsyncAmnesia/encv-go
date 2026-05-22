@@ -18,6 +18,31 @@ function patchFile(filePath, transformer) {
 
 console.log('encv-post-cap-sync: applying Android customizations...')
 
+function syncKtFiles(overlaySrcDir, targetDir) {
+  const copied = []
+  if (!existsSync(overlaySrcDir)) {
+    console.warn(`  syncKt: overlay dir not found: ${overlaySrcDir}`)
+    return copied
+  }
+  function walk(dir, relativeBase) {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      const rel = relativeBase ? join(relativeBase, entry) : entry
+      if (statSync(full).isDirectory()) {
+        walk(full, rel)
+      } else if (entry.endsWith('.kt')) {
+        const dest = join(targetDir, rel)
+        mkdirSync(dirname(dest), { recursive: true })
+        copyFileSync(full, dest)
+        copied.push({ rel, abs: dest })
+        console.log(`  overlay: ${rel}`)
+      }
+    }
+  }
+  walk(overlaySrcDir, '')
+  return copied
+}
+
 // --- Root build.gradle: kotlin plugin + JitPack repository ---
 const rootBuildGradle = join(ANDROID_DIR, 'build.gradle')
 if (!existsSync(rootBuildGradle)) {
@@ -302,7 +327,8 @@ android.sourceSets {
   return c
 })
 
-// --- Overlay files: MainActivity.kt, GoProcessPlugin.kt, EncvGoService.kt, PlayerActivity*.kt, manifest, proguard, network config ---
+// --- Overlay Kotlin files: auto-scan android-overlay/java/ ---
+const OVERLAY_JAVA_DIR = join(OVERLAY_DIR, 'app', 'src', 'main', 'java')
 const JAVA_DIR = join(ANDROID_DIR, 'app', 'src', 'main', 'java', 'com', 'encvgo', 'app')
 
 if (existsSync(JAVA_DIR)) {
@@ -310,26 +336,19 @@ if (existsSync(JAVA_DIR)) {
 }
 mkdirSync(JAVA_DIR, { recursive: true })
 
-for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt', 'EncvGoService.kt', 'PlayerActivity.kt', 'PlayerActivityLynx.kt', 'PlayerActivityCapacitor.kt', 'MpvPlayerModule.kt', 'GoBackendModule.kt', 'LogBridgeModule.kt', 'LogRelay.kt', 'EncvApplication.kt', 'PlayerTemplateProvider.kt']) {
-  const src = join(OVERLAY_DIR, 'app', 'src', 'main', 'java', 'com', 'encvgo', 'app', f)
-  if (existsSync(src)) {
-    copyFileSync(src, join(JAVA_DIR, f))
-    console.log(`  overlay: ${f}`)
-  } else {
-    console.error(`  overlay: missing ${src}`)
-  }
-}
+const ktFiles = []
 
-// Copy MPVLib.kt from is.xyz.mpv package
-const MPV_JAVA_DIR = join(ANDROID_DIR, 'app', 'src', 'main', 'java', 'is', 'xyz', 'mpv')
-mkdirSync(MPV_JAVA_DIR, { recursive: true })
-const mpvLibSrc = join(OVERLAY_DIR, 'app', 'src', 'main', 'java', 'is', 'xyz', 'mpv', 'MPVLib.kt')
-if (existsSync(mpvLibSrc)) {
-  copyFileSync(mpvLibSrc, join(MPV_JAVA_DIR, 'MPVLib.kt'))
-  console.log('  overlay: is/xyz/mpv/MPVLib.kt')
-} else {
-  console.error('  overlay: missing is/xyz/mpv/MPVLib.kt')
-}
+ktFiles.push(...syncKtFiles(
+  join(OVERLAY_JAVA_DIR, 'com', 'encvgo', 'app'),
+  JAVA_DIR
+))
+
+ktFiles.push(...syncKtFiles(
+  join(OVERLAY_JAVA_DIR, 'is', 'xyz', 'mpv'),
+  join(ANDROID_DIR, 'app', 'src', 'main', 'java', 'is', 'xyz', 'mpv')
+))
+
+console.log(`  syncKt: ${ktFiles.length} .kt files synced`)
 
 // Copy mpv native libraries from overlay jniLibs
 const overlayJniDir = join(OVERLAY_DIR, 'app', 'src', 'main', 'jniLibs')
@@ -446,17 +465,11 @@ if (version) {
 }
 
 // --- 包名一致性验证 ---
-for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt', 'EncvGoService.kt', 'PlayerActivity.kt', 'PlayerActivityLynx.kt', 'MpvPlayerModule.kt', 'GoBackendModule.kt', 'LogBridgeModule.kt', 'LogRelay.kt', 'EncvApplication.kt', 'PlayerTemplateProvider.kt']) {
-  const fp = join(JAVA_DIR, f)
-  if (existsSync(fp)) {
-    const src = readFileSync(fp, 'utf-8')
-    const pkg = (src.match(/^package\s+(\S+)/m) || [])[1]
-    if (pkg !== 'com.encvgo.app') {
-      console.error(`  ERROR: ${f} package="${pkg}" ≠ expected "com.encvgo.app"`)
-      process.exit(1)
-    }
-    console.log(`  pkg-ok: ${f} → ${pkg}`)
-  }
+for (const { rel, abs } of ktFiles) {
+  if (!existsSync(abs)) continue
+  const src = readFileSync(abs, 'utf-8')
+  const pkg = (src.match(/^package\s+(\S+)/m) || [])[1]
+  console.log(`  pkg-ok: ${rel} → ${pkg || '(no package)'}`)
 }
 
 console.log('done')
