@@ -1,56 +1,83 @@
-# 修复 Android 上 ffmpeg/ffprobe 不可用的问题
+# 修复 Android 上 ffmpeg/ffprobe/mkvmerge 不可用的问题
 
 ## 问题根因
 
-**Android 上根本没有 ffmpeg/ffprobe 可执行文件。** mpv-android-lib AAR 中打包的 ffmpeg .so 共享库（libavcodec.so, libavformat.so 等）是 mpv 播放器专用的解码库，**不支持编码**，且没有 ffmpeg/ffprobe CLI 可执行文件。
+Android 上没有以下 CLI 工具：
+- **ffprobe**：元数据提取（时长、格式、章节、关键帧）
+- **ffmpeg**：编码（H.264/AAC）、remux（fast-start MP4）
+- **mkvmerge/mkvinfo**：MKV 容器操作（合并、Cues 生成、验证）
 
-Go 后端的视频加密流程依赖 ffmpeg/ffprobe CLI：
-1. **ffprobe**：提取元数据（时长、格式、章节、关键帧位置）
-2. **ffmpeg 编码**：转码为 H.264/AAC MP4（h264_nvenc → h264_mediacodec → libx264 降级链）
-3. **ffmpeg remux**：MP4 fast-start 重封装（`-c copy -movflags +faststart`）
-4. **mkvmerge**：MKV 重封装（这个在 Android 上也没有）
+mpv-android-lib AAR 中的 ffmpeg .so 是**解码专用**的，不支持编码，且没有 CLI 可执行文件。
 
-上一轮方案的问题：
-- 下载了 **Dynamic** 版本的 ffmpeg/ffprobe，它们依赖 .so 文件，但 .so 文件与 mpv 捆绑的 .so 冲突
-- 三层方案过于复杂，且 Dynamic 版本运行时会找不到正确的 .so
+## 方案
 
-## 正确方案
+### 1. ffmpeg/ffprobe：使用 Static 版本
 
-使用 **Static** 版本的 ffmpeg/ffprobe。Static 版本是完全自包含的可执行文件，不依赖任何外部 .so，包含完整的编解码器（包括 libx264 编码器）。
+下载 KaluaBilla/ffmpeg-android 的 **Static** 版本（完全自包含，不依赖 .so，包含 libx264 编码器）。
 
-### 体积考量
-- Static ffmpeg: ~75MB（包含所有编解码器）
-- Static ffprobe: ~75MB
-- 合计 ~150MB 加入 APK
+- 改 `setup-ffmpeg-cli.sh`：`Dynamic` → `Static`
+- Static 版本 ~75MB/个，APK 增加约 150MB
+- 无 .so 冲突问题
 
-**优化**：只下载 ffprobe（用于元数据提取），ffmpeg 使用更精简的方案。但实际上加密流程中 ffmpeg 编码是核心功能，无法省略。
+### 2. mkvmerge/mkvinfo：用 ffmpeg 替代
 
-**进一步优化**：可以自行编译精简版 ffmpeg，只包含需要的编解码器（H.264 解码/编码、AAC 解码/编码、常用封装格式），体积可降至 ~20-30MB。但这需要维护编译脚本，暂不实施。
+在 Android（`ENCV_MOBILE=1`）环境下，mkvmerge 不可用。解决方案：
 
-### 实施步骤
+**MKV remux 场景**（`remapWithMKVMerge`）：
+- 原逻辑：mkvmerge --cues 重新生成 Cues
+- 替代方案：用 ffmpeg `-c copy` remux 为 MKV，虽然不生成 Cues，但 ffmpeg 的 MKV muxer 会自动生成基本的 Cues
+- 如果 `keep_mkv` 选项开启但 mkvmerge 不可用，降级为 ffmpeg remux
+
+**MKV 合并场景**（`mergeSplitParts`）：
+- 原逻辑：mkvmerge 用 `+` 追加合并
+- 替代方案：用 ffmpeg concat demuxer 合并
+
+**mkvinfo 验证场景**：
+- 原逻辑：mkvinfo -P 验证文件完整性
+- 替代方案：用 ffprobe 验证（检查 duration > 0、有视频流等）
+
+**mkvmerge -J 识别场景**：
+- 原逻辑：mkvmerge -J 获取轨道信息
+- 替代方案：用 ffprobe -show_streams 获取
+
+### 3. 实施步骤
 
 #### Step 1: 修改 setup-ffmpeg-cli.sh
-- 改为下载 **Static** 版本（`ffmpeg-8.0-e05f8ac-Static-android-arm64-v8a.zip`）
-- Static 版本是完全自包含的，不依赖 .so 文件
-- 仍然以 `libffmpeg_exec.so` / `libffprobe_exec.so` 命名放入 jniLibs（Android 只安装 .so 后缀的文件）
+- 下载 Static 版本：`ffmpeg-8.0-e05f8ac-Static-android-arm64-v8a.zip`
+- 以 `libffmpeg_exec.so` / `libffprobe_exec.so` 放入 jniLibs
 
-#### Step 2: 简化 EncvGoService.kt
-- `setupFFmpegBinaries()` 方法保持不变（从 nativeLibraryDir 复制到 filesDir/bin/）
-- 设置 PATH 和 ENCV_BIN_DIR 环境变量
-- 这部分逻辑是正确的，不需要改动
+#### Step 2: 添加 mkvmerge 不可用时的降级逻辑
+在 `content_preprocessor.go` 和 `mkvtoolnix.go` 中：
+- 检测 `ENCV_MOBILE` 环境变量或 mkvmerge 是否可用
+- 不可用时降级到 ffmpeg 方案：
+  - `remapWithMKVMerge` → `ffmpeg -c copy` remux MKV
+  - `mergeSplitParts` → ffmpeg concat demuxer
+  - `mkvinfo -P` 验证 → ffprobe 验证
+  - `mkvmerge -J` → ffprobe -show_streams
 
-#### Step 3: Go 后端 utils/video.go
-- `GetBinDir()` 优先检查 `ENCV_BIN_DIR` 环境变量
-- 这部分已经正确实现，不需要改动
+#### Step 3: 添加 ffmpeg concat 合并工具函数
+```go
+func mergeMKVWithFFmpeg(paths []string, outputPath string) error {
+    // 创建 concat 文件列表
+    // ffmpeg -f concat -safe 0 -i list.txt -c copy output.mkv
+}
+```
 
-#### Step 4: 验证 CI 构建流程
-- 确保下载的是 Static 版本
-- 确保 jniLibs 中包含 libffmpeg_exec.so 和 libffprobe_exec.so
-- 确保 APK 验证步骤检查这些文件
+#### Step 4: 添加 ffprobe 验证函数
+```go
+func verifyWithFFprobe(filePath string) error {
+    // ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 filePath
+    // 检查 duration > 0
+}
+```
+
+#### Step 5: 验证 CI 构建
+- 确保 Static 版本下载正确
+- 确保 APK 包含 libffmpeg_exec.so 和 libffprobe_exec.so
 
 ## 修改文件清单
 
-1. `/workspace/app/encv-mobile/scripts/setup-ffmpeg-cli.sh` — 改为下载 Static 版本
-2. `/workspace/.github/workflows/android.yml` — 已有 ffmpeg-cli 步骤，无需额外修改
-3. `/workspace/app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt` — 已有 setupFFmpegBinaries()，无需额外修改
-4. `/workspace/internal/utils/video.go` — 已有 ENCV_BIN_DIR 支持，无需额外修改
+1. `/workspace/app/encv-mobile/scripts/setup-ffmpeg-cli.sh` — Dynamic → Static
+2. `/workspace/internal/v2/plugins/video/content_preprocessor.go` — mkvmerge 降级逻辑
+3. `/workspace/internal/v2/plugins/video/mkvtoolnix.go` — mkvmerge/mkvinfo 降级逻辑
+4. `/workspace/internal/utils/video.go` — 添加 ffmpeg concat 和 ffprobe 验证辅助函数
