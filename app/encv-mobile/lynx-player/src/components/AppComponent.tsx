@@ -49,9 +49,8 @@ export function AppComponent() {
     lynxLog.info("mpv:state-change " + JSON.stringify(event));
     if (state) {
       if (state === "surface_ready") {
-        lynxLog.info("MPV surface ready, auto-retrying playback if pending");
+        lynxLog.info("MPV surface ready, native will auto-play pending URL");
         if (pendingPlaybackData) {
-          startPlayback(pendingPlaybackData);
           setPendingPlaybackData(null);
         }
         return;

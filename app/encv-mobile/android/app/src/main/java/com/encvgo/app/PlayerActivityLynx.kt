@@ -68,7 +68,6 @@ class PlayerActivityLynx : AppCompatActivity() {
         LogRelay.get().relay(TAG, "info", "onCreate: file info resolved, path=$intentFilePath, name=$intentFileName, mimeType=$intentFileMimeType, external=$isExternalFile")
 
         createLynxView()
-        attachMpvSurface()
         handleBackend()
 
         LogRelay.get().relay(TAG, "info", "onCreate: setup complete")
@@ -241,6 +240,7 @@ class PlayerActivityLynx : AppCompatActivity() {
 
             lynxView = viewBuilder.build(this)
             LogRelay.get().relay(TAG, "info", "createLynxView: LynxView built, instance=$lynxView")
+            lynxView?.setBackgroundColor(0)
 
             lynxView?.addLynxViewClient(object : LynxViewClient() {
                 private val CLIENT_TAG = "LynxPlayerClient"
@@ -358,21 +358,6 @@ class PlayerActivityLynx : AppCompatActivity() {
                 mpvModule.attachToLayout(root)
             }
         }
-    }
-
-    private fun attachMpvSurface() {
-        val mpvModule = MpvPlayerModule.getInstance()
-        if (mpvModule == null) {
-            LogRelay.get().relay(TAG, "info", "attachMpvSurface: mpvModule not yet created, will retry in tryAttachMpvModule")
-            return
-        }
-        if (mpvModule.isAttached()) {
-            LogRelay.get().relay(TAG, "info", "attachMpvSurface: already attached")
-            return
-        }
-        val root = rootLayout ?: return
-        mpvModule.attachToLayout(root)
-        LogRelay.get().relay(TAG, "info", "attachMpvSurface: MPV surface attached")
     }
 
     private fun buildInitDataJson(): String {
