@@ -12,7 +12,7 @@ AAR_TMP="$(mktemp -d)/mpv-android-lib.aar"
 echo "setup-mpv-libs: downloading mpv-android-lib ${MPV_LIB_VERSION} AAR..."
 curl -fSL -o "$AAR_TMP" "$AAR_URL"
 
-echo "setup-mpv-libs: extracting native libraries..."
+echo "setup-mpv-libs: Phase 1 — extracting prebuilt native libraries (mpv + ffmpeg)..."
 mkdir -p "$JNI_DIR"
 
 for abi in arm64-v8a; do
@@ -23,9 +23,17 @@ for abi in arm64-v8a; do
         echo "  ✗ $abi: libmpv.so not found in AAR!"
         exit 1
     fi
+    # Remove pre-built libplayer.so (we build our own from source to match MPVLib.kt)
+    rm -f "$JNI_DIR/$abi/libplayer.so"
     count=$(find "$JNI_DIR/$abi" -name "*.so" | wc -l)
-    echo "  ✓ $abi: ${count} .so files extracted"
+    echo "  ✓ $abi: ${count} .so files extracted (libplayer.so excluded, will be built from source)"
 done
 
 rm -f "$AAR_TMP"
-echo "setup-mpv-libs: done. Libraries saved to $JNI_DIR"
+
+echo ""
+echo "setup-mpv-libs: Phase 2 — building libplayer.so (JNI wrapper) from source..."
+bash "$SCRIPT_DIR/build-player-so.sh"
+
+echo ""
+echo "setup-mpv-libs: done. All libraries saved to $JNI_DIR"
