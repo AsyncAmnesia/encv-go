@@ -22,9 +22,10 @@ export function App() {
   const [showControls, setShowControls] = useState(true);
 
   useLynxGlobalEventListener("mpv:state-change", (event: any) => {
-    const state = event?.detail?.state ?? event?.state;
-    const error = event?.detail?.error ?? event?.error;
-    setPlayerState(state as PlayerState);
+    const state = event?.state;
+    const error = event?.error;
+    console.info("mpv:state-change", JSON.stringify(event));
+    if (state) setPlayerState(state as PlayerState);
     if (error) setErrorMessage(error);
     if (state === "playing" || state === "paused") {
       setShowControls(true);
@@ -32,8 +33,10 @@ export function App() {
   });
 
   useLynxGlobalEventListener("mpv:position-update", (event: any) => {
-    setPosition(event?.detail?.position ?? event?.position ?? 0);
-    setDuration(event?.detail?.duration ?? event?.duration ?? 0);
+    const pos = event?.position ?? 0;
+    const dur = event?.duration ?? 0;
+    setPosition(pos);
+    setDuration(dur);
   });
 
   useLynxGlobalEventListener("backend:ready", (event: any) => {

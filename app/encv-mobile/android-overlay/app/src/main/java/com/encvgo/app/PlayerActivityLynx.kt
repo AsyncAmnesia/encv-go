@@ -42,7 +42,11 @@ class PlayerActivityLynx : AppCompatActivity() {
 
     private val positionUpdateRunnable = object : Runnable {
         override fun run() {
-            MpvPlayerModule.getInstance()?.dispatchPositionUpdate()
+            try {
+                MpvPlayerModule.getInstance()?.dispatchPositionUpdate()
+            } catch (e: Exception) {
+                Log.e(TAG, "positionUpdateRunnable failed", e)
+            }
             lynxView?.postDelayed(this, 500)
         }
     }
@@ -212,29 +216,39 @@ class PlayerActivityLynx : AppCompatActivity() {
 
     private fun createLynxView() {
         Log.d(TAG, "createLynxView: building LynxView with LynxViewBuilder")
-        val viewBuilder = LynxViewBuilder()
-        viewBuilder.setTemplateProvider(PlayerTemplateProvider(this))
-        viewBuilder.registerModule("MpvPlayerModule", MpvPlayerModule::class.java)
-        viewBuilder.registerModule("GoBackendModule", GoBackendModule::class.java)
+        try {
+            val viewBuilder = LynxViewBuilder()
+            viewBuilder.setTemplateProvider(PlayerTemplateProvider(this))
+            viewBuilder.registerModule("MpvPlayerModule", MpvPlayerModule::class.java)
+            viewBuilder.registerModule("GoBackendModule", GoBackendModule::class.java)
 
-        lynxView = viewBuilder.build(this)
-        val lynxParams = ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT
-        )
-        rootLayout?.addView(lynxView, lynxParams)
-        Log.d(TAG, "createLynxView: LynxView added to layout")
+            lynxView = viewBuilder.build(this)
+            val lynxParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            rootLayout?.addView(lynxView, lynxParams)
+            Log.d(TAG, "createLynxView: LynxView added to layout")
 
-        val initData = buildInitDataJson()
-        lynxView?.renderTemplateUrl("player.lynx.bundle", initData)
-        Log.d(TAG, "createLynxView: renderTemplateUrl called")
+            val initData = buildInitDataJson()
+            lynxView?.renderTemplateUrl("player.lynx.bundle", initData)
+            Log.d(TAG, "createLynxView: renderTemplateUrl called")
 
-        lynxView?.post {
-            val mpvModule = MpvPlayerModule.getInstance()
-            if (mpvModule != null && rootLayout != null) {
-                mpvModule.attachToLayout(rootLayout!!)
+            lynxView?.post {
+                try {
+                    val mpvModule = MpvPlayerModule.getInstance()
+                    if (mpvModule != null && rootLayout != null) {
+                        mpvModule.attachToLayout(rootLayout!!)
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "createLynxView: attachToLayout failed", e)
+                }
+                lynxView?.post(positionUpdateRunnable)
             }
-            lynxView?.post(positionUpdateRunnable)
+        } catch (e: Exception) {
+            Log.e(TAG, "createLynxView: failed", e)
+            android.widget.Toast.makeText(this, "Player init failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+            finish()
         }
     }
 
