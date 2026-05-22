@@ -74,7 +74,7 @@ export function PlayerControls({
   const isPlaying = state === 'playing';
 
   return (
-    <view style={{ flex: 1; flexDirection: 'column'; justifyContent: 'space-between' }}>
+    <view style={{ flex: 1, flexDirection: 'column', justifyContent: 'space-between' }}>
       {/* Top Bar */}
       <view className="TopBar">
         <text className="BackButton" bindtap={onBack}>✕</text>
