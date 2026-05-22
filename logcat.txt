@@ -1,0 +1,2163 @@
+05-22 10:58:26.358  lynx      [6DC20E83C0:INFO:js_event_listener.cc(38)] JSClosureEventListener::Invoke name: __OnLifecycleEvent
+
+05-22 10:58:26.358  lynx      [6DC20E83C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnAppFirstScreen, phase: 2, target: 0, listener options: 0
+
+05-22 10:58:26.358  lynx      [6DC20E83C0:INFO:js_event_listener.cc(38)] JSClosureEventListener::Invoke name: __OnAppFirstScreen
+
+05-22 10:58:26.358  lynx      [6DC20E83C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.onWindowResize 0xB400006F211A6E20
+
+05-22 10:58:26.358  lynx      [6DC20E83C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnNativeAppReady, phase: 2, target: 0, listener options: 0
+
+05-22 10:58:26.358  lynx      [6DC20E83C0:INFO:js_event_listener.cc(38)] JSClosureEventListener::Invoke name: __OnNativeAppReady
+
+05-22 10:58:26.358  lynx      [6DC20E83C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.onFontScaleChanged 0xB400006F211A6E20
+
+05-22 10:58:26.359  lynx      [6DC1FDC3C0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_setup_timing
+
+05-22 10:58:26.359  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
+
+05-22 10:58:26.359  lynx      [6DC20E83C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __SendGlobalEvent, phase: 2, target: 0, listener options: 0
+
+05-22 10:58:26.359  lynx      [6DC20E83C0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __SendGlobalEvent, type: 0
+
+05-22 10:58:26.359  LynxEventReporter  
+  eventReporter service not found or event name is null.
+  eventReporter service not found or event name is null.
+
+05-22 10:58:26.359  lynx      [6DC20E83C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.lynx.performance.onPerformanceEvent 0xB400006F211A6E20
+
+05-22 10:58:26.360  lynx      [6DC1FDC3C0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_code_cache
+
+05-22 10:58:26.360  LynxPlayerClient  onRuntimeReady: JS environment ready
+
+05-22 10:58:26.360  lynx      [6DC20E83C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __SendGlobalEvent, phase: 2, target: 0, listener options: 0
+
+05-22 10:58:26.360  lynx      [6DC20E83C0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __SendGlobalEvent, type: 0
+
+05-22 10:58:26.360  lynx      [6DC20E83C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.lynx.performance.timing.onSetup 0xB400006F211A6E20
+
+05-22 10:58:26.712  VRI[PlayerActivity,type=2]  visibilityChanged oldVisibility=true newVisibility=false
+
+05-22 10:58:26.715  HWUI      [destroy] CanvasContext will be destroyed.
+
+05-22 10:58:26.717  ViewRootImpl  AppSizeAfterRelayout, size: Point(147, 147), rotation: ROTATION_0
+
+05-22 10:58:26.717  BLASTBufferQueue  [VRI[PlayerActivity,type=2]#4](f:0,a:1) destructor()
+
+05-22 10:58:26.718  BufferQueueConsumer  [VRI[PlayerActivity,type=2]#4(BLAST Consumer)4](id:6b0d00000004,api:0,p:-1,c:27405) disconnect
+
+05-22 10:58:26.724  WindowOnBackDispatcher  sendCancelIfRunning: isInProgress=false callback=android.view.ViewRootImpl$$ExternalSyntheticLambda13@dd577c4
+
+05-22 10:58:26.725  HWUI      [destroy] CanvasContext will be destroyed.
+
+05-22 10:58:28.392  com.encvgo.app  Skip GC, current heap: 15MB(0B), current native: 58MB(0B)
+
+05-22 10:58:28.393  com.encvgo.app  vart_dgc, 8192KB,32MB,0.5
+
+05-22 10:58:28.518  AutofillManager  view not autofillable - not passing ime action check
+
+05-22 10:58:28.536  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
+
+05-22 10:58:28.536  BufferQueueConsumer  [](id:6b0d00000007,api:0,p:-1,c:27405) connect: controlledByApp=false
+
+05-22 10:58:28.537  BLASTBufferQueue  [VRI[LogcatActivity,type=1]#7](f:0,a:0) constructor()
+
+05-22 10:58:28.537  BLASTBufferQueue  [VRI[LogcatActivity,type=1]#7](f:0,a:0) update width=1260 height=2800 format=-1 mTransformHint=0
+
+05-22 10:58:28.538  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
+
+05-22 10:58:28.542  RecyclerView  No adapter attached; skipping layout
+
+05-22 10:58:28.630  BLASTBufferQueue  [VRI[LogcatActivity,type=1]#7](f:0,a:1) acquireNextBufferLocked size=1260x2800 mFrameNumber=1 applyTransaction=true mTimestamp=101334218364116(auto) mPendingTransactions.size=0 graphicBufferId=117703578746929 transform=0
+
+05-22 10:58:28.657  ImeFocusController  onWindowFocus: com.android.internal.policy.DecorView{4de3bca V.E...... R......D 0,0-1260,2800}[LogcatActivity] softInputMode=STATE_UNSPECIFIED|ADJUST_RESIZE|IS_FORWARD_NAVIGATION
+
+05-22 10:58:28.664  ImeTracker  com.encvgo.app:60eb4caf: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+
+05-22 10:58:29.012  VRI[PlayerActivityLynx,type=2]  visibilityChanged oldVisibility=true newVisibility=false
+
+05-22 10:58:29.017  HWUI      [destroy] CanvasContext will be destroyed.
+
+05-22 10:58:29.021  ViewRootImpl  AppSizeAfterRelayout, size: Point(147, 147), rotation: ROTATION_0
+
+05-22 10:58:29.022  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=2]#5](f:0,a:3) destructor()
+
+05-22 10:58:29.022  BufferQueueConsumer  [VRI[PlayerActivityLynx,type=2]#5(BLAST Consumer)5](id:6b0d00000005,api:0,p:-1,c:27405) disconnect
+
+05-22 10:58:29.022  VRI[PlayerActivityLynx,type=1]  visibilityChanged oldVisibility=true newVisibility=false
+
+05-22 10:58:29.023  HWUI      [setStopped] CanvasContext will be destroyed.
+
+05-22 10:58:29.025  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=1]#6](f:0,a:2) destructor()
+
+05-22 10:58:29.025  BufferQueueConsumer  [VRI[PlayerActivityLynx,type=1]#6(BLAST Consumer)6](id:6b0d00000006,api:0,p:-1,c:27405) disconnect
+
+05-22 10:58:29.026  HWUI      [destroy] CanvasContext will be destroyed.
+
+05-22 10:58:29.030  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
+
+05-22 10:58:33.731  AutofillManager  view not autofillable - not passing ime action check
+
+05-22 10:58:33.736  AutofillManager  showAutofillDialog() return false due to improve fill dialog
+
+05-22 10:58:33.736  ImeTracker  com.encvgo.app:c3ac7804: onRequestShow at ORIGIN_CLIENT reason SHOW_SOFT_INPUT fromUser true
+
+05-22 10:58:33.737  InsetsController  Setting requestedVisibleTypes to -5121 (was -5129)
+
+05-22 10:58:33.949  InteractionJankMonitor  Initializing without READ_DEVICE_CONFIG permission. enabled=false, interval=1, missedFrameThreshold=3, frameTimeThreshold=64, package=com.encvgo.app
+
+05-22 10:58:34.417  InsetsAnimationCtrlImpl  notify control request finished for types: 8
+
+05-22 10:58:34.418  ANDR-VIVO-PERF  vivo inside perf_lock_rel of client
+
+05-22 10:58:34.418  ImeTracker  com.encvgo.app:c3ac7804: onShown
+
+05-22 10:58:38.435  WindowOnBackDispatcher  sendCancelIfRunning: isInProgress=false callback=ImeCallback=ImeOnBackInvokedCallback@142681659 Callback=android.window.IOnBackInvokedCallback$Stub$Proxy@987fd5f
+
+05-22 10:58:38.436  InsetsController  Setting requestedVisibleTypes to -5129 (was -5121)
+
+05-22 10:58:38.437  ImeTracker  com.sohu.inputmethod.sogou:bbeebbee: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+
+05-22 10:58:38.474  ImeTracker  system_server:2293bfaf: onCancelled at PHASE_CLIENT_ON_CONTROLS_CHANGED
+
+05-22 10:58:38.904  InsetsAnimationCtrlImpl  notify control request finished for types: 8
+
+05-22 10:58:38.905  ANDR-VIVO-PERF  vivo inside perf_lock_rel of client
+
+05-22 10:58:41.986  BLASTBufferQueue  
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+
+05-22 10:58:42.329  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:58:42.329  com.encvgo.app  GC delay 1th
+
+05-22 10:58:42.329  com.encvgo.app  Delay GC closed, start once background GC to reduce memory consumption
+
+05-22 10:58:42.329  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:58:42.368  com.encvgo.app  Cleared Reference was only reachable from finalizer (only reported once)
+
+05-22 10:58:42.454  com.encvgo.app  vart_dgc, 8192KB,32MB,0.5
+
+05-22 10:58:42.454  com.encvgo.app  Background concurrent copying GC freed 12MB AllocSpace bytes, 63(2684KB) LOS objects, 77% free, 7242KB(1952KB_144KB)/31MB, 2Fd, itvl 24.320s, cpu 124.425ms, paused 54us,31us total 125.332ms
+
+05-22 10:58:42.454  com.encvgo.app  vart_bigdata, last_report_time=1779418722454
+
+05-22 10:58:42.458  HWUI      [destroy] CanvasContext will be destroyed.
+
+05-22 10:58:43.504  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:58:43.504  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:58:44.570  Surface   IGraphicBufferProducer::setFlingType setMaxDequeuedBufferCount(2) returned Invalid argument
+
+05-22 10:58:44.581  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:58:44.581  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:58:44.627  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:58:44.627  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:58:44.839  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:58:44.839  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:58:45.142  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:58:45.142  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:58:45.361  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:58:45.361  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:58:46.682  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:58:46.682  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:58:47.465  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:58:47.465  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:58:47.503  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:58:47.503  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:58:47.718  BLASTBufferQueue  
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+
+05-22 10:58:50.021  Surface   IGraphicBufferProducer::setFlingType setMaxDequeuedBufferCount(2) returned Invalid argument
+
+05-22 10:58:50.023  BLASTBufferQueue  
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+
+05-22 10:58:50.098  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:58:50.099  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:58:50.886  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:58:50.886  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:58:51.211  Surface   IGraphicBufferProducer::setFlingType setMaxDequeuedBufferCount(2) returned Invalid argument
+
+05-22 10:58:51.212  BLASTBufferQueue  
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+
+05-22 10:58:51.230  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:58:51.231  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:58:51.370  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:58:51.370  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:58:51.787  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:58:51.787  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:58:52.443  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:58:52.443  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:58:52.931  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:58:52.931  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:58:57.311  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:58:57.311  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:58:57.920  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:58:57.920  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:58:57.963  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:58:57.963  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:58:59.523  Surface   IGraphicBufferProducer::setFlingType setMaxDequeuedBufferCount(2) returned Invalid argument
+
+05-22 10:58:59.532  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:58:59.532  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:58:59.570  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:58:59.570  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:58:59.821  BLASTBufferQueue  
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+
+05-22 10:58:59.884  Surface   IGraphicBufferProducer::setFlingType setMaxDequeuedBufferCount(2) returned Invalid argument
+
+05-22 10:58:59.895  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:58:59.895  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:58:59.956  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:58:59.956  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:59:00.359  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:59:00.359  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:59:00.877  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:59:00.877  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:59:01.345  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:59:01.345  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:59:01.895  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:59:01.895  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:59:02.451  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:59:02.451  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:59:02.733  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:59:02.733  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:59:02.967  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:59:02.967  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:59:02.983  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:59:02.983  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:59:03.421  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:59:03.421  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:59:04.776  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:59:04.776  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:59:06.028  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:59:06.028  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:59:12.412  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:59:12.412  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:59:13.002  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:59:13.003  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:59:13.098  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:59:13.098  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:59:13.416  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:59:13.416  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:59:16.129  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:59:16.129  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:59:16.231  BLASTBufferQueue  
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+
+05-22 10:59:16.726  Surface   IGraphicBufferProducer::setFlingType setMaxDequeuedBufferCount(2) returned Invalid argument
+
+05-22 10:59:16.738  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:59:16.739  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:59:16.760  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:59:16.760  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:59:16.848  BLASTBufferQueue  
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+
+05-22 10:59:17.405  Surface   IGraphicBufferProducer::setFlingType setMaxDequeuedBufferCount(2) returned Invalid argument
+
+05-22 10:59:17.408  BLASTBufferQueue  [VRI[LogcatActivity,type=1]#7](f:1,a:7) acquireNextBufferLocked: Can't acquire next buffer. Already acquired max frames 7 max:5 + 2
+
+05-22 10:59:17.443  LynxLog   failed to load LynxLog dependency
+
+05-22 10:59:17.482  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:59:17.482  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:59:18.047  ViewRootImpl  AppSizeAfterRelayout, size: Point(1050, 276), rotation: ROTATION_0
+
+05-22 10:59:18.048  BufferQueueConsumer  [](id:6b0d00000008,api:0,p:-1,c:27405) connect: controlledByApp=false
+
+05-22 10:59:18.048  BLASTBufferQueue  [VRI[LogcatActivity,type=2]#8](f:0,a:0) constructor()
+
+05-22 10:59:18.048  BLASTBufferQueue  [VRI[LogcatActivity,type=2]#8](f:0,a:0) update width=1050 height=276 format=-3 mTransformHint=0
+
+05-22 10:59:18.053  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
+
+05-22 10:59:18.070  BLASTBufferQueue  [VRI[LogcatActivity,type=2]#8](f:0,a:1) acquireNextBufferLocked size=1050x276 mFrameNumber=1 applyTransaction=true mTimestamp=101383658557965(auto) mPendingTransactions.size=0 graphicBufferId=117703578746946 transform=0
+
+05-22 10:59:18.754  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:59:18.754  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:59:18.768  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:59:18.768  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:59:19.307  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:59:19.308  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:59:19.309  InputMethodManager  IMM#invaldateInput() mLastPendingStartSeqId=-1
+
+05-22 10:59:19.322  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:59:19.322  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:59:20.637  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
+
+05-22 10:59:20.637  BufferQueueConsumer  [](id:6b0d00000009,api:0,p:-1,c:27405) connect: controlledByApp=false
+
+05-22 10:59:20.638  BLASTBufferQueue  [VRI[LogcatActivity,type=2]#9](f:0,a:0) constructor()
+
+05-22 10:59:20.638  BLASTBufferQueue  [VRI[LogcatActivity,type=2]#9](f:0,a:0) update width=1260 height=2800 format=-3 mTransformHint=0
+
+05-22 10:59:20.640  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
+
+05-22 10:59:20.654  BLASTBufferQueue  [VRI[LogcatActivity,type=2]#9](f:0,a:1) acquireNextBufferLocked size=1260x2800 mFrameNumber=1 applyTransaction=true mTimestamp=101386242214196(auto) mPendingTransactions.size=0 graphicBufferId=117703578746957 transform=0
+
+05-22 10:59:21.031  WindowOnBackDispatcher  sendCancelIfRunning: isInProgress=false callback=android.view.ViewRootImpl$$ExternalSyntheticLambda13@dd7621e
+
+05-22 10:59:21.034  HWUI      [destroy] CanvasContext will be destroyed.
+
+05-22 10:59:21.035  BLASTBufferQueue  [VRI[LogcatActivity,type=2]#8](f:0,a:1) destructor()
+
+05-22 10:59:21.035  BufferQueueConsumer  [VRI[LogcatActivity,type=2]#8(BLAST Consumer)8](id:6b0d00000008,api:0,p:-1,c:27405) disconnect
+
+05-22 10:59:21.456  WindowOnBackDispatcher  sendCancelIfRunning: isInProgress=false callback=android.view.ViewRootImpl$$ExternalSyntheticLambda13@b6ef306
+
+05-22 10:59:21.460  HWUI      endAllActiveAnimators on 0xb400006f011a62d0 (ListView) with handle 0xb400006f810501d0
+
+05-22 10:59:21.460  HWUI      [destroy] CanvasContext will be destroyed.
+
+05-22 10:59:21.477  BLASTBufferQueue  [VRI[LogcatActivity,type=2]#9](f:0,a:5) destructor()
+
+05-22 10:59:21.477  BufferQueueConsumer  [VRI[LogcatActivity,type=2]#9(BLAST Consumer)9](id:6b0d00000009,api:0,p:-1,c:27405) disconnect
+
+05-22 10:59:23.025  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:59:23.025  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:59:23.257  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:59:23.257  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:59:28.270  ActivityThread  updateVmProcessStateForGc sceneId =2 state=197376
+
+05-22 10:59:28.271  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:59:31.165  ActivityThread  updateVmProcessStateForGc sceneId =2 state=196608
+
+05-22 10:59:31.165  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:59:43.354  AutofillManager  view not autofillable - not passing ime action check
+
+05-22 10:59:43.356  ActivityThread  updateVmProcessStateForGc sceneId =1 state=197376
+
+05-22 10:59:43.356  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:59:43.361  VRI[PlayerActivityLynx,type=2]  visibilityChanged oldVisibility=false newVisibility=true
+
+05-22 10:59:43.377  ViewRootImpl  AppSizeAfterRelayout, size: Point(147, 147), rotation: ROTATION_0
+
+05-22 10:59:43.377  BufferQueueConsumer  [](id:6b0d0000000a,api:0,p:-1,c:27405) connect: controlledByApp=false
+
+05-22 10:59:43.377  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=2]#10](f:0,a:0) constructor()
+
+05-22 10:59:43.377  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=2]#10](f:0,a:0) update width=147 height=147 format=-3 mTransformHint=0
+
+05-22 10:59:43.379  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
+
+05-22 10:59:43.382  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=2]#10](f:0,a:1) acquireNextBufferLocked size=147x147 mFrameNumber=1 applyTransaction=true mTimestamp=101408970450812(auto) mPendingTransactions.size=0 graphicBufferId=117703578746960 transform=0
+
+05-22 10:59:43.383  HWUI      [setStopped] CanvasContext will be destroyed.
+
+05-22 10:59:43.394  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
+
+05-22 10:59:43.394  BufferQueueConsumer  [](id:6b0d0000000b,api:0,p:-1,c:27405) connect: controlledByApp=false
+
+05-22 10:59:43.394  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=1]#11](f:0,a:0) constructor()
+
+05-22 10:59:43.394  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=1]#11](f:0,a:0) update width=1260 height=2800 format=-1 mTransformHint=0
+
+05-22 10:59:43.395  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
+
+05-22 10:59:43.400  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=1]#11](f:0,a:1) acquireNextBufferLocked size=1260x2800 mFrameNumber=1 applyTransaction=true mTimestamp=101408988745582(auto) mPendingTransactions.size=0 graphicBufferId=117703578746967 transform=0
+
+05-22 10:59:43.467  ImeFocusController  onWindowFocus: com.android.internal.policy.DecorView{d2a8884 V.E...... R....... 0,0-1260,2800 aid=0}[PlayerActivityLynx] softInputMode=STATE_UNSPECIFIED|ADJUST_PAN
+
+05-22 10:59:43.471  ImeTracker  com.encvgo.app:15b16627: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+
+05-22 10:59:43.939  VRI[LogcatActivity,type=1]  visibilityChanged oldVisibility=true newVisibility=false
+
+05-22 10:59:43.945  AutofillManager  view not autofillable - not passing ime action check
+
+05-22 10:59:43.946  HWUI      [destroy] CanvasContext will be destroyed.
+
+05-22 10:59:43.949  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
+
+05-22 10:59:43.949  BLASTBufferQueue  [VRI[LogcatActivity,type=1]#7](f:0,a:4) destructor()
+
+05-22 10:59:43.949  BufferQueueConsumer  [VRI[LogcatActivity,type=1]#7(BLAST Consumer)7](id:6b0d00000007,api:0,p:-1,c:27405) disconnect
+
+05-22 10:59:43.951  HWUI      [setStopped] CanvasContext will be destroyed.
+
+05-22 10:59:43.955  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
+
+05-22 10:59:44.756  VRI[PlayerActivityLynx,type=1]  visibilityChanged oldVisibility=true newVisibility=false
+
+05-22 10:59:44.756  VRI[PlayerActivityLynx,type=2]  visibilityChanged oldVisibility=true newVisibility=false
+
+05-22 10:59:44.767  HWUI      [destroy] CanvasContext will be destroyed.
+
+05-22 10:59:44.779  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
+
+05-22 10:59:44.780  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=1]#11](f:0,a:1) destructor()
+
+05-22 10:59:44.780  BufferQueueConsumer  [VRI[PlayerActivityLynx,type=1]#11(BLAST Consumer)11](id:6b0d0000000b,api:0,p:-1,c:27405) disconnect
+
+05-22 10:59:44.782  HWUI      [destroy] CanvasContext will be destroyed.
+
+05-22 10:59:44.789  ViewRootImpl  AppSizeAfterRelayout, size: Point(147, 147), rotation: ROTATION_0
+
+05-22 10:59:44.790  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=2]#10](f:0,a:1) destructor()
+
+05-22 10:59:44.790  BufferQueueConsumer  [VRI[PlayerActivityLynx,type=2]#10(BLAST Consumer)10](id:6b0d0000000a,api:0,p:-1,c:27405) disconnect
+
+05-22 10:59:44.791  HWUI      [setStopped] CanvasContext will be destroyed.
+
+05-22 10:59:44.792  HWUI      [setStopped] CanvasContext will be destroyed.
+
+05-22 10:59:44.875  ActivityThread  updateVmProcessStateForGc sceneId =1001 state=-2080374784
+
+05-22 10:59:44.875  com.encvgo.app  vart_impl, update 67108864, state=75497472
+
+05-22 10:59:45.105  PlayerActivityLynx  onDestroy: cleaning up
+
+05-22 10:59:45.106  LynxView  lynxview destroy com.lynx.tasm.LynxView{3eed345 VFE...... ........ 0,0-1260,2800}
+
+05-22 10:59:48.008  com.encvgo.app  Late-enabling -Xcheck:jni
+
+05-22 10:59:48.031  com.encvgo.app  Using CollectorTypeCC GC.
+
+05-22 10:59:48.046  nativeloader  Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+
+05-22 10:59:48.049  com.encvgo.app  
+  BBinder_init Processname  com.encvgo.app  
+  BBinder_init hasGetProcessName  com.encvgo.app
+  No implementation found for void com.lynx.devtoolwrapper.DevToolLifecycle.nativeSyncStateToNative(int) (tried Java_com_lynx_devtoolwrapper_DevToolLifecycle_nativeSyncStateToNative and Java_com_lynx_devtoolwrapper_DevToolLifecycle_nativeSyncStateToNative__I) - is the library loaded, e.g. System.loadLibrary?
+
+05-22 10:59:48.172  nativeloader  Configuring clns-9 for other apk /data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/base.apk. target_sdk_version=36, uses_libraries=, library_path=/data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/lib/arm64:/data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/base.apk!/lib/arm64-v8a, permitted_path=/data:/mnt/expand:/data/user/0/com.encvgo.app
+
+05-22 10:59:48.187  com.encvgo.app  AssetManager2(0xb400006f310153d8) locale list changing from [] to [zh-CN]
+
+05-22 10:59:48.189  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 0, start = 1
+
+05-22 10:59:48.190  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 0, start = 0
+
+05-22 10:59:48.194  ShaderCache  Parse coeffs for /com.encvgo.app with space syetem(version 3)
+
+05-22 10:59:48.195  GraphicsEnvironment  Currently set values for:
+
+05-22 10:59:48.195  GraphicsEnvironment  angle_gl_driver_selection_pkgs=[com.android.angle, com.linecorp.b612.android, com.campmobile.snow, com.google.android.apps.tachyon]
+
+05-22 10:59:48.195  GraphicsEnvironment  angle_gl_driver_selection_values=[angle, native, native, native]
+
+05-22 10:59:48.195  GraphicsEnvironment  com.encvgo.app is not listed in per-application setting
+
+05-22 10:59:48.195  GraphicsEnvironment  ANGLE allowlist from config: 
+
+05-22 10:59:48.195  GraphicsEnvironment  com.encvgo.app is not listed in ANGLE allowlist or settings, returning default
+
+05-22 10:59:48.195  GraphicsEnvironment  Neither updatable production driver nor prerelease driver is supported.
+
+05-22 10:59:48.208  ActivityThread  updateVmProcessStateForGc sceneId =1000 state=-2038431744
+
+05-22 10:59:48.208  com.encvgo.app  vart_impl, update 109051904, state=109051904
+
+05-22 10:59:48.233  EncvApplication  ensureLynxInitialized: initializing Lynx SDK
+
+05-22 10:59:48.236  SoLoader  init start
+
+05-22 10:59:48.236  SoLoader  adding system library source: /vendor/lib64
+
+05-22 10:59:48.237  SoLoader  adding system library source: /system/lib64
+
+05-22 10:59:48.237  SoLoader  adding application source: com.facebook.soloader.DirectorySoSource[root = /data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/lib/arm64 flags = 0]
+
+05-22 10:59:48.237  SoLoader  adding backup source from : com.facebook.soloader.ApkSoSource[root = /data/data/com.encvgo.app/lib-main flags = 1]
+
+05-22 10:59:48.237  SoLoader  Preparing SO source: com.facebook.soloader.DirectorySoSource[root = /system/lib64 flags = 2]
+
+05-22 10:59:48.238  SoLoader  Preparing SO source: com.facebook.soloader.DirectorySoSource[root = /vendor/lib64 flags = 2]
+
+05-22 10:59:48.238  SoLoader  Preparing SO source: com.facebook.soloader.DirectorySoSource[root = /data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/lib/arm64 flags = 0]
+
+05-22 10:59:48.238  SoLoader  Preparing SO source: com.facebook.soloader.ApkSoSource[root = /data/data/com.encvgo.app/lib-main flags = 1]
+
+05-22 10:59:48.238  fb-UnpackingSoSource  locked dso store /data/user/0/com.encvgo.app/lib-main
+
+05-22 10:59:48.240  fb-UnpackingSoSource  dso store is up-to-date: /data/user/0/com.encvgo.app/lib-main
+
+05-22 10:59:48.240  fb-UnpackingSoSource  releasing dso store lock for /data/user/0/com.encvgo.app/lib-main
+
+05-22 10:59:48.240  SoLoader  init finish: 4 SO sources prepared
+
+05-22 10:59:48.240  SoLoader  init exiting
+
+05-22 10:59:48.253  EncvApplication  initLynxService: services registered
+
+05-22 10:59:48.255  nativeloader  Load /data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/lib/arm64/liblynxbase.so using class loader ns clns-9 (caller=/data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/base.apk): ok
+
+05-22 10:59:48.257  lynx      [7163386090:INFO:trace_event_utils.cc(32)] base trace init success, backend: 474689749908
+
+05-22 10:59:48.257  LynxBaseTrace  LynxBaseTrace init successfully by itself.
+
+05-22 10:59:48.258  DevToolLifecycle  DevTool attached. Transitioning to ATTACHED.
+
+05-22 10:59:48.258  DevToolLifecycle  UnsatisfiedLinkError! Trying to sync state [ATTACHED] before native library is loaded.
+
+05-22 10:59:48.258  LynxEnv   attachDevToolComponent: done.
+
+05-22 10:59:48.258  LynxEnv   LynxEnv start init
+
+05-22 10:59:48.258  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 29472, start = 1
+
+05-22 10:59:48.259  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 29472, start = 0
+
+05-22 10:59:48.262  nativeloader  Load /data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/lib/arm64/libquick.so using class loader ns clns-9 (caller=/data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/base.apk): ok
+
+05-22 10:59:48.266  nativeloader  Load /data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/lib/arm64/liblynx.so using class loader ns clns-9 (caller=/data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/base.apk): ok
+
+05-22 10:59:48.268  nativeloader  Load /data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/lib/arm64/liblynxtrace.so using class loader ns clns-9 (caller=/data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/base.apk): ok
+
+05-22 10:59:48.268  LynxEnv   Loading native libraries succeeded
+
+05-22 10:59:48.269  lynx      [7163386090:INFO:vsync_monitor.cc(23)] VSyncMonitor created with is_vsync_post_task_by_emergency_ true
+
+05-22 10:59:48.270  LynxEnv   LynxEnv failed to get LynxExtensionService
+
+05-22 10:59:48.270  DisplayManager  Implicitly registering for refresh rate
+
+05-22 10:59:48.271  primjs    RC: HEAP_TAG_OUTER: 0xb400000000000000, HEAP_TAG_INNER: 0xb400000000000000
+
+05-22 10:59:48.271  LynxEnv   enable lynx debug
+
+05-22 10:59:48.271  DevToolLifecycle  DevTool enabled. Transitioning to ENABLED.
+
+05-22 10:59:48.272  lynx      [7163386090:INFO:devtool_lifecycle.cc(162)] SyncStateFromPlatform: Transitioning from 0 to 2
+
+05-22 10:59:48.273  primjs    RC: HEAP_TAG_OUTER: 0xb400000000000000, HEAP_TAG_INNER: 0xb400000000000000
+
+05-22 10:59:48.274  primjs    RC: HEAP_TAG_OUTER: 0xb400000000000000, HEAP_TAG_INNER: 0xb400000000000000
+
+05-22 10:59:48.275  primjs    RC: HEAP_TAG_OUTER: 0xb400000000000000, HEAP_TAG_INNER: 0xb400000000000000
+
+05-22 10:59:48.275  nativeloader  Load /data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/lib/arm64/liblynxdebugrouter.so using class loader ns clns-9 (caller=/data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/base.apk): ok
+
+05-22 10:59:48.277  nativeloader  Load /data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/lib/arm64/libbasedevtool.so using class loader ns clns-9 (caller=/data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/base.apk): ok
+
+05-22 10:59:48.280  nativeloader  Load /data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/lib/arm64/liblynxdevtool.so using class loader ns clns-9 (caller=/data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/base.apk): ok
+
+05-22 10:59:48.280  LynxDevtoolEnv  liblynxdevtool loaded via library loader
+
+05-22 10:59:48.283  com.encvgo.app  hiddenapi: Accessing hidden method Landroid/app/ActivityThread;->currentProcessName()Ljava/lang/String; (runtime_flags=0, domain=platform, api=unsupported) from Lcom/lynx/debugrouter/DebugRouter; (domain=app) using reflection: allowed
+
+05-22 10:59:48.283  DebugRouterServiceCenter  
+  IDebugRouterReportService is unregistered
+  IUSBHijackService is unregistered
+
+05-22 10:59:48.283  DebugRouterReportServiceUtil  init: DebugRouterReportService == null
+
+05-22 10:59:48.283  DebugRouterReportServiceUtil  report: DebugRouterReportService == null
+
+05-22 10:59:48.284  DebugRouter  [0522/10:59:48:INFO:debug_router_core.cc(541)] DebugRouterCore: add a new message handler successfully.
+
+05-22 10:59:48.285  DebugRouter  [0522/10:59:48:INFO:debug_router_core.cc(541)] DebugRouterCore: add a new message handler successfully.
+
+05-22 10:59:48.285  DebugRouter  [0522/10:59:48:INFO:debug_router_core.cc(663)] DebugRouterCore: add a state listener.
+
+05-22 10:59:48.285  USBTransTemplateUtil  reflect to add Interceptor
+
+05-22 10:59:48.285  USBTransTemplateUtil  usbService is null.
+
+05-22 10:59:48.286  DebugRouter  [0522/10:59:48:INFO:debug_router_core.cc(663)] DebugRouterCore: add a state listener.
+
+05-22 10:59:48.287  DevToolLifecycle  DevTool env initialized. Transitioning to INITIALIZED.
+
+05-22 10:59:48.287  lynx      [7163386090:INFO:devtool_lifecycle.cc(162)] SyncStateFromPlatform: Transitioning from 2 to 3
+
+05-22 10:59:48.287  LynxEnv   Turn on devtool
+
+05-22 10:59:48.287  lynx      Please set a log level higher than INFO to filter lynx logs!
+
+05-22 10:59:48.287  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 0, start = 1
+
+05-22 10:59:48.288  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 0, start = 0
+
+05-22 10:59:48.288  LynxEnv   Turn on logbox
+
+05-22 10:59:48.288  EncvApplication  initLynxEnv: LynxEnv initialized
+
+05-22 10:59:48.288  EncvApplication  ensureLynxInitialized: done
+
+05-22 10:59:48.292  GameManager  __progname=com.encvgo.app
+
+05-22 10:59:48.293  com.encvgo.app  AssetManager2(0xb400006f31019bb8) locale list changing from [] to [zh-CN]
+
+05-22 10:59:48.298  AppCompatDelegate  Checking for metadata for AppLocalesMetadataHolderService : Service not found
+
+05-22 10:59:48.299  com.encvgo.app  AssetManager2(0xb400006f31016ff8) locale list changing from [] to [zh-CN]
+
+05-22 10:59:48.300  libEGL    skip_priority_level=0, isWorkaroundEnable=1
+
+05-22 10:59:48.328  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 0, start = 1
+
+05-22 10:59:48.329  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 0, start = 0
+
+05-22 10:59:48.333  CompatChangeReporter  Compat change id reported: 377864165; UID 11982; state: ENABLED
+
+05-22 10:59:48.334  DesktopModeFlags  Toggle override initialized to: OVERRIDE_UNSET
+
+05-22 10:59:48.353  libc      Access denied finding property "persist.vivo.ltw.enabled"
+
+05-22 10:59:48.365  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 0, start = 1
+
+05-22 10:59:48.365  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 0, start = 0
+
+05-22 10:59:48.370  com.encvgo.app  hiddenapi: Accessing hidden method Landroid/view/ViewGroup;->makeOptionalFitsSystemWindows()V (runtime_flags=0, domain=platform, api=unsupported) from Landroidx/appcompat/widget/ViewUtils; (domain=app) using reflection: allowed
+
+05-22 10:59:48.379  com.encvgo.app  AssetManager2(0xb400006f31020918) locale list changing from [] to [zh-CN]
+
+05-22 10:59:48.379  WebViewFactory  Loading com.google.android.webview version 148.0.7778.120 (code 777812003)
+
+05-22 10:59:48.381  com.encvgo.app  AssetManager2(0xb400006f3101f338) locale list changing from [] to [zh-CN]
+
+05-22 10:59:48.382  com.encvgo.app  AssetManager2(0xb400006f3101e398) locale list changing from [] to [zh-CN]
+
+05-22 10:59:48.384  com.encvgo.app  AssetManager2(0xb400006f3101e9d8) locale list changing from [] to [zh-CN]
+
+05-22 10:59:48.385  com.encvgo.app  AssetManager2(0xb400006f31026d18) locale list changing from [] to [zh-CN]
+
+05-22 10:59:48.385  ResourcesManager  The following library key has been added: ResourcesKey{ mHash=5ffcd364 mResDir=null mSplitDirs=[] mOverlayDirs=[] mLibDirs=[/data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/base.apk,/system/framework/android.test.base.jar,/system_ext/framework/androidx.window.extensions.jar] mDisplayId=0 mOverrideConfig=v36 mCompatInfo={480dpi always-compat} mLoaders=[]}
+
+05-22 10:59:48.388  ApplicationLoaders  Returning zygote-cached class loader: /system/framework/android.test.base.jar
+
+05-22 10:59:48.388  ApplicationLoaders  Returning zygote-cached class loader: /system_ext/framework/androidx.window.extensions.jar
+
+05-22 10:59:48.391  com.encvgo.app  Loading /data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/oat/arm64/base.odex non-executable as it requires an image which we failed to load
+
+05-22 10:59:48.392  nativeloader  Configuring clns-10 for other apk /data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/base.apk. target_sdk_version=36, uses_libraries=, library_path=/data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/lib/arm64:/data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/base.apk!/lib/arm64-v8a, permitted_path=/data:/mnt/expand
+
+05-22 10:59:48.410  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 29472, start = 1
+
+05-22 10:59:48.411  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 29472, start = 0
+
+05-22 10:59:48.413  cr_WVCFactoryProvider  version=148.0.7778.120 (777812003) minSdkVersion=29 multiprocess=true packageId=2 splits=<none>
+
+05-22 10:59:48.428  nativeloader  Load /data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/base.apk!/lib/arm64-v8a/libwebviewchromium.so using class loader ns clns-10 (caller=/data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/base.apk): ok
+
+05-22 10:59:48.431  nativeloader  Load /system/lib64/libwebviewchromium_plat_support.so using class loader ns clns-10 (caller=/data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/base.apk): ok
+
+05-22 10:59:48.443  cr_LibraryLoader  Successfully loaded native library
+
+05-22 10:59:48.444  cr_CachingUmaRecorder  Flushed 20 samples from 19 histograms, 0 samples were dropped.
+
+05-22 10:59:48.447  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 0, start = 1
+
+05-22 10:59:48.447  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 0, start = 0
+
+05-22 10:59:48.447  cr_ChildProcLH  ScopedServiceBindingBatch.tryActivate: false
+
+05-22 10:59:48.449  cr_CombinedPProvider  #registerProvider() provider:WV.wk@9c66fcd isPolicyCacheEnabled:false policyProvidersSize:0
+
+05-22 10:59:48.450  cr_PolicyProvider  #setManagerAndSource() 0
+
+05-22 10:59:48.452  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 29472, start = 1
+
+05-22 10:59:48.453  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 29472, start = 0
+
+05-22 10:59:48.453  cr_DisplayManager  Is Display Topology available: false
+
+05-22 10:59:48.454  com.encvgo.app  AssetManager2(0xb400006f3102bb38) locale list changing from [] to [zh-CN]
+
+05-22 10:59:48.457  com.encvgo.app  AssetManager2(0xb400006f310282f8) locale list changing from [] to [zh-CN]
+
+05-22 10:59:48.475  cr_CombinedPProvider  #linkNativeInternal() 1
+
+05-22 10:59:48.475  cr_AppResProvider  #getApplicationRestrictionsFromUserManager() Bundle[EMPTY_PARCEL]
+
+05-22 10:59:48.475  cr_PolicyProvider  #notifySettingsAvailable() 0
+
+05-22 10:59:48.475  cr_CombinedPProvider  #onSettingsAvailable() 0
+
+05-22 10:59:48.475  cr_CombinedPProvider  #flushPolicies()
+
+05-22 10:59:48.522  chromium  [WARNING:android_webview/browser/network_service/net_helpers.cc:137] HTTP Cache size is: 20971520
+
+05-22 10:59:48.537  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 29472, start = 1
+
+05-22 10:59:48.537  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 29472, start = 0
+
+05-22 10:59:48.587  Capacitor  Starting BridgeActivity
+
+05-22 10:59:48.589  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 0, start = 1
+
+05-22 10:59:48.592  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 0, start = 0
+
+05-22 10:59:48.598  Capacitor  Registering plugin instance: CapacitorCookies
+
+05-22 10:59:48.600  Capacitor  Registering plugin instance: WebView
+
+05-22 10:59:48.602  Capacitor  Registering plugin instance: CapacitorHttp
+
+05-22 10:59:48.603  Capacitor  Registering plugin instance: SystemBars
+
+05-22 10:59:48.605  Capacitor  Registering plugin instance: GoProcess
+
+05-22 10:59:48.651  Capacitor  Unable to read file at path public/plugins
+
+05-22 10:59:48.655  Capacitor  Loading app at https://localhost
+
+05-22 10:59:48.661  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 29472, start = 1
+
+05-22 10:59:48.663  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 29472, start = 0
+
+05-22 10:59:48.671  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 0, start = 1
+
+05-22 10:59:48.675  libEGL    eglQueryStringImpl display is EGL_NO_DISPLAY
+
+05-22 10:59:48.676  vulkan    searching for layers in '/data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/lib/arm64'
+
+05-22 10:59:48.676  vulkan    searching for layers in '/data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/base.apk!/lib/arm64-v8a'
+
+05-22 10:59:48.682  libEGL    skip_priority_level=0, isWorkaroundEnable=1
+
+05-22 10:59:48.685  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 0, start = 0
+
+05-22 10:59:48.701  Capacitor  Handling local request: https://localhost/
+
+05-22 10:59:48.708  Capacitor  App started
+
+05-22 10:59:48.709  cr_media  BLUETOOTH_CONNECT permission is missing.
+
+05-22 10:59:48.709  Capacitor  App resumed
+
+05-22 10:59:48.730  Choreographer  Skipped 59 frames!  The application may be doing too much work on its main thread.
+
+05-22 10:59:48.730  CameraManagerGlobal  Connecting to camera service
+
+05-22 10:59:48.733  libEGL    skip_priority_level=0, isWorkaroundEnable=1
+
+05-22 10:59:48.735  cr_media  getBluetoothAdapter() requires BLUETOOTH permission
+
+05-22 10:59:48.735  cr_media  registerBluetoothIntentsIfNeeded: Requires BLUETOOTH permission
+
+05-22 10:59:48.740  ViewRootImpl  AppSizeAfterRelayout, size: Point(147, 147), rotation: ROTATION_0
+
+05-22 10:59:48.741  com.encvgo.app  
+  [perfctl] 29428 29428 FPSGO ver:0
+  [perfctl] 0 0 0 0
+
+05-22 10:59:48.741  BufferQueueConsumer  [](id:72f400000000,api:0,p:-1,c:29428) connect: controlledByApp=false
+
+05-22 10:59:48.743  BLASTBufferQueue  [VRI[MainActivity,type=2]#0](f:0,a:0) constructor()
+
+05-22 10:59:48.743  BLASTBufferQueue  [VRI[MainActivity,type=2]#0](f:0,a:0) update width=147 height=147 format=-3 mTransformHint=0
+
+05-22 10:59:48.745  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
+
+05-22 10:59:48.746  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 0, start = 1
+
+05-22 10:59:48.746  VSPA      Jni_setThreadSpeed write data pid = 29428, tid = 0, start = 0
+
+05-22 10:59:48.750  AudioSystem  onNewService: media.audio_policy service obtained 0xb400006ff1068400
+
+05-22 10:59:48.752  AudioSystem  getService: checking for service media.audio_policy: 0xb400006ff1068400
+
+05-22 10:59:48.763  nativeloader  Load libVivoJsonResourceManager_jni.so using system ns (caller=/system/framework/framework.jar!classes2.dex): ok
+
+05-22 10:59:48.764  com.encvgo.app  JNI_OnLoad: get JNI environment,JNI_VERSION_1_6
+
+05-22 10:59:48.764  VivoJavaJsonManager  create() called
+
+05-22 10:59:48.764  VivoJsonResourceManager  Create
+
+05-22 10:59:48.764  VivoJsonResourceManager  Using Path:product/camera/jsons to parse Json Files!
+
+05-22 10:59:48.765  VivoJsonResourceManager  service is not null
+
+05-22 10:59:48.765  VivoJsonResourceManager  GetJsonConfigInfoSize 279
+
+05-22 10:59:48.765  DMABUFHEAPS  Using DMA-BUF heap named: system
+
+05-22 10:59:48.765  VivoJsonResourceManager  Allocate: alloc buffer_fd:210 success
+
+05-22 10:59:48.766  VivoJsonResourceManager  mmap ok
+
+05-22 10:59:48.766  VivoJsonResourceManager  begin to read file product/camera/jsons/StaticProjectConfig.json!
+
+05-22 10:59:48.766  VivoJsonResourceManager  Using Path:product/camera/jsons to parse Json Files!
+
+05-22 10:59:48.768  GrallocExtra  gralloc_extra_query:is_SW3D 0
+
+05-22 10:59:48.768  VivoJsonResourceManager  GetJsonConfigInfoSize 17536
+
+05-22 10:59:48.768  MEMCWrapper  MEMC_POST_PROCESSING_ENABLE_PROPERTY false.
+
+05-22 10:59:48.768  DMABUFHEAPS  Using DMA-BUF heap named: system
+
+05-22 10:59:48.768  VivoJsonResourceManager  Allocate: alloc buffer_fd:219 success
+
+05-22 10:59:48.768  BLASTBufferQueue  [VRI[MainActivity,type=2]#0](f:0,a:1) acquireNextBufferLocked size=147x147 mFrameNumber=1 applyTransaction=true mTimestamp=101414356365351(auto) mPendingTransactions.size=0 graphicBufferId=126392297586688 transform=0
+
+05-22 10:59:48.768  VivoJsonResourceManager  mmap ok
+
+05-22 10:59:48.768  VivoJsonResourceManager  begin to read file product/camera/jsons/StaticAppNameConfig.json!
+
+05-22 10:59:48.770  AudioSystem-JNI  listAudioPatches patch 0 num_sources 1 num_sinks 1, numPatches 5, nPatches.size 5
+
+05-22 10:59:48.770  AudioSystem-JNI  listAudioPatches patch 0 source 0 is a mix handle 1
+
+05-22 10:59:48.770  AudioSystem-JNI  listAudioPatches patch 1 num_sources 1 num_sinks 1, numPatches 5, nPatches.size 5
+
+05-22 10:59:48.770  AudioSystem-JNI  listAudioPatches patch 1 source 0 is a mix handle 5
+
+05-22 10:59:48.770  AudioSystem-JNI  listAudioPatches patch 2 num_sources 1 num_sinks 1, numPatches 5, nPatches.size 5
+
+05-22 10:59:48.770  AudioSystem-JNI  listAudioPatches patch 2 source 0 is a mix handle 7
+
+05-22 10:59:48.770  AudioSystem-JNI  listAudioPatches patch 3 num_sources 1 num_sinks 1, numPatches 5, nPatches.size 5
+
+05-22 10:59:48.770  AudioSystem-JNI  listAudioPatches patch 3 source 0 is a mix handle 10
+
+05-22 10:59:48.770  AudioSystem-JNI  listAudioPatches patch 4 num_sources 1 num_sinks 1, numPatches 5, nPatches.size 5
+
+05-22 10:59:48.770  AudioSystem-JNI  listAudioPatches patch 4 source 0 is a mix handle 12
+
+05-22 10:59:48.770  VivoJavaJsonManager  failed to find appName:com.encvgo.app from config key:mProtakePackages
+
+05-22 10:59:48.771  VivoJavaJsonManager  failed to find appName:com.encvgo.app from config key:mProtakePackages
+
+05-22 10:59:48.773  VivoJavaJsonManager  failed to find appName:com.encvgo.app from config key:mProtakePackages
+
+05-22 10:59:48.776  VivoJavaJsonManager  failed to find appName:com.encvgo.app from config key:mProtakePackages
+
+05-22 10:59:48.788  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
+
+05-22 10:59:48.788  BufferQueueConsumer  [](id:72f400000001,api:0,p:-1,c:29428) connect: controlledByApp=false
+
+05-22 10:59:48.788  BLASTBufferQueue  [VRI[MainActivity,type=1]#1](f:0,a:0) constructor()
+
+05-22 10:59:48.788  BLASTBufferQueue  [VRI[MainActivity,type=1]#1](f:0,a:0) update width=1260 height=2800 format=-1 mTransformHint=0
+
+05-22 10:59:48.790  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
+
+05-22 10:59:48.819  BLASTBufferQueue  [VRI[MainActivity,type=1]#1](f:0,a:1) acquireNextBufferLocked size=1260x2800 mFrameNumber=1 applyTransaction=true mTimestamp=101414407243428(auto) mPendingTransactions.size=0 graphicBufferId=126392297586695 transform=0
+
+05-22 10:59:48.832  HWUI      --- Failed to create image decoder with message 'unimplemented'
+
+05-22 10:59:48.857  ImeFocusController  onWindowFocus: com.getcapacitor.CapacitorWebView{2a21f0c VFEDHVC.. .F....ID 0,118-1260,2800 #7f09013d app:id/webview} softInputMode=STATE_UNSPECIFIED|ADJUST_RESIZE
+
+05-22 10:59:48.861  ImeTracker  com.encvgo.app:a072d68a: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+
+05-22 10:59:48.879  ENCV-Service  nativeLibraryDir: /data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/lib/arm64
+
+05-22 10:59:48.879  ENCV-Service  Checking native binary: exists=true, canExecute=true, path=/data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/lib/arm64/libencv-go.so
+
+05-22 10:59:48.879  ENCV-Service  Using binary from nativeLibraryDir: /data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/lib/arm64/libencv-go.so
+
+05-22 10:59:48.879  ENCV-Service  Starting backend: /data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/lib/arm64/libencv-go.so start
+
+05-22 10:59:48.889  com.encvgo.app  hiddenapi: Accessing hidden field Landroid/graphics/Bitmap;->mNativePtr:J (runtime_flags=0, domain=platform, api=unsupported) from Lcom/android/webview/chromium/WebViewChromium; (domain=app) using JNI: allowed
+
+05-22 10:59:48.890  System    ClassLoader referenced unknown path: /system/framework/tcmclient.jar
+
+05-22 10:59:48.890  System    ClassLoader referenced unknown path: /system/framework/tcmiface.jar
+
+05-22 10:59:48.893  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2025/health'
+
+05-22 10:59:48.904  Linux     [Posix_connect Debug]Process com.encvgo.app :2025 
+
+05-22 10:59:48.910  Capacitor  Handling local request: https://localhost/assets/main-Bt-9f2hx.js
+
+05-22 10:59:48.912  Capacitor  Handling local request: https://localhost/assets/variables-Co-jDXuX.js
+
+05-22 10:59:48.912  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2026/health'
+
+05-22 10:59:48.912  Capacitor  Handling local request: https://localhost/assets/variables-2h-WFR0z.css
+
+05-22 10:59:48.914  MediaCodec-JNI  pid:29428,client name:com.encvgo.app
+
+05-22 10:59:48.915  Linux     [Posix_connect Debug]Process com.encvgo.app :2026 
+
+05-22 10:59:48.915  AudioCapabilities  Unsupported mediaType audio/x-ms-wma
+
+05-22 10:59:48.915  AudioCapabilities  Unsupported mediaType audio/mpeg-L1
+
+05-22 10:59:48.916  AudioCapabilities  Unsupported mediaType audio/mpeg-L2
+
+05-22 10:59:48.916  AudioCapabilities  Unsupported mediaType audio/ra
+
+05-22 10:59:48.917  AudioCapabilities  Unsupported mediaType audio/alac
+
+05-22 10:59:48.918  AudioCapabilities  Unsupported mediaType audio/ape
+
+05-22 10:59:48.918  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2027/health'
+
+05-22 10:59:48.918  AudioCapabilities  Unsupported mediaType audio/x-ape
+
+05-22 10:59:48.918  AudioCapabilities  Unsupported mediaType audio/adpcm
+
+05-22 10:59:48.919  Linux     [Posix_connect Debug]Process com.encvgo.app :2027 
+
+05-22 10:59:48.920  AudioCapabilities  Unsupported mediaType audio/x-ms-adpcm
+
+05-22 10:59:48.920  AudioCapabilities  Unsupported mediaType audio/pcm
+
+05-22 10:59:48.920  AudioCapabilities  Unsupported mediaType audio/dsd
+
+05-22 10:59:48.920  VideoCapabilities  Unsupported mime video/rv
+
+05-22 10:59:48.921  VideoCapabilities  Unsupported mime video/x-ms-wmv
+
+05-22 10:59:48.921  VideoCapabilities  Unsupported mime video/x-ms-wmv2
+
+05-22 10:59:48.921  VideoCapabilities  Unsupported mime video/divx3
+
+05-22 10:59:48.922  VideoCapabilities  Unsupported mime video/flv1
+
+05-22 10:59:48.922  VideoCapabilities  Unsupported mime video/x-flv
+
+05-22 10:59:48.923  VideoCapabilities  Unsupported mime video/mjpeg
+
+05-22 10:59:48.923  VideoCapabilities  Unsupported mime video/x-motion-jpeg
+
+05-22 10:59:48.924  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2028/health'
+
+05-22 10:59:48.924  AudioCapabilities  Unsupported mediaType audio/x-adpcm-dvi-ima
+
+05-22 10:59:48.924  AudioCapabilities  Unsupported mediaType audio/x-adpcm-ms
+
+05-22 10:59:48.924  AudioCapabilities  Unsupported mediaType audio/alac
+
+05-22 10:59:48.925  Linux     [Posix_connect Debug]Process com.encvgo.app :2028 
+
+05-22 10:59:48.929  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2029/health'
+
+05-22 10:59:48.930  Linux     [Posix_connect Debug]Process com.encvgo.app :2029 
+
+05-22 10:59:48.934  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2030/health'
+
+05-22 10:59:48.935  Linux     [Posix_connect Debug]Process com.encvgo.app :2030 
+
+05-22 10:59:48.936  VideoCapabilities  Unsupported mime image/vnd.android.heic
+
+05-22 10:59:48.938  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2031/health'
+
+05-22 10:59:48.939  Linux     [Posix_connect Debug]Process com.encvgo.app :2031 
+
+05-22 10:59:48.939  VideoCapabilities  Unrecognized profile/level 32768/256 for video/mp4v-es
+
+05-22 10:59:48.941  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2032/health'
+
+05-22 10:59:48.942  Linux     [Posix_connect Debug]Process com.encvgo.app :2032 
+
+05-22 10:59:48.943  ENCV-Service  [go] time=2026-05-22T02:59:48.943Z level=INFO msg="Using config from environment variable ENCV_CONFIG_PATH" path=/data/user/0/com.encvgo.app/files/config.user.json
+
+05-22 10:59:48.946  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2033/health'
+
+05-22 10:59:48.948  ENCV-Service  [go] time=2026-05-22T02:59:48.944Z level=INFO msg="Configuration loaded successfully" path=/data/user/0/com.encvgo.app/files/config.user.json log_level=debug
+
+05-22 10:59:48.948  AudioCapabilities  Unsupported mediaType audio/x-ms-wma
+
+05-22 10:59:48.948  AudioCapabilities  Unsupported mediaType audio/mpeg-L1
+
+05-22 10:59:48.948  AudioCapabilities  Unsupported mediaType audio/mpeg-L2
+
+05-22 10:59:48.949  AudioCapabilities  Unsupported mediaType audio/ra
+
+05-22 10:59:48.949  AudioCapabilities  Unsupported mediaType audio/alac
+
+05-22 10:59:48.949  AudioCapabilities  Unsupported mediaType audio/ape
+
+05-22 10:59:48.949  AudioCapabilities  Unsupported mediaType audio/x-ape
+
+05-22 10:59:48.949  AudioCapabilities  Unsupported mediaType audio/adpcm
+
+05-22 10:59:48.949  AudioCapabilities  Unsupported mediaType audio/x-ms-adpcm
+
+05-22 10:59:48.949  AudioCapabilities  Unsupported mediaType audio/pcm
+
+05-22 10:59:48.949  Linux     [Posix_connect Debug]Process com.encvgo.app :2033 
+
+05-22 10:59:48.949  AudioCapabilities  Unsupported mediaType audio/dsd
+
+05-22 10:59:48.949  VideoCapabilities  Unsupported mime video/rv
+
+05-22 10:59:48.950  VideoCapabilities  Unsupported mime video/x-ms-wmv
+
+05-22 10:59:48.950  VideoCapabilities  Unsupported mime video/x-ms-wmv2
+
+05-22 10:59:48.950  ENCV-Service  [go] 🦢 2026-05-22 02:59:48 [32m[INFO][0m [90m[main.go:112][0m [36mfile=[0m Structured logging initialized
+
+05-22 10:59:48.953  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2034/health'
+
+05-22 10:59:48.953  VideoCapabilities  Unsupported mime video/divx3
+
+05-22 10:59:48.954  ENCV-Service  [go] 🦢 2026-05-22 02:59:48 [32m[INFO][0m [90m[main.go:119][0m [36mversion=[0mdev [36mconfig_path=[0m/data/user/0/com.encvgo.app/files/config.user.json [36margs=[0m[/data/app/~~2P_MV3rb-5XH6MOqMrRLIg==/com.encvgo.app-BcZCEXTwCH4-I3mlQ4_NtQ==/lib/arm64/libencv-go.so start] encv started
+
+05-22 10:59:48.955  Linux     [Posix_connect Debug]Process com.encvgo.app :2034 
+
+05-22 10:59:48.955  VideoCapabilities  Unsupported mime video/flv1
+
+05-22 10:59:48.955  VideoCapabilities  Unsupported mime video/x-flv
+
+05-22 10:59:48.956  VideoCapabilities  Unsupported mime video/mjpeg
+
+05-22 10:59:48.956  VideoCapabilities  Unsupported mime video/x-motion-jpeg
+
+05-22 10:59:48.956  AudioCapabilities  Unsupported mediaType audio/x-adpcm-dvi-ima
+
+05-22 10:59:48.956  AudioCapabilities  Unsupported mediaType audio/x-adpcm-ms
+
+05-22 10:59:48.957  AudioCapabilities  Unsupported mediaType audio/alac
+
+05-22 10:59:48.959  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2025/health'
+
+05-22 10:59:48.960  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2035/health'
+
+05-22 10:59:48.961  Linux     [Posix_connect Debug]Process com.encvgo.app :2025 
+
+05-22 10:59:48.961  Linux     [Posix_connect Debug]Process com.encvgo.app :2035 
+
+05-22 10:59:48.963  VideoCapabilities  Unsupported mime image/vnd.android.heic
+
+05-22 10:59:48.965  VideoCapabilities  Unrecognized profile/level 32768/256 for video/mp4v-es
+
+05-22 10:59:48.969  AudioCapabilities  Unsupported mime audio/x-ms-wma
+
+05-22 10:59:48.971  AudioCapabilities  Unsupported mime audio/mpeg-L1
+
+05-22 10:59:48.972  AudioCapabilities  Unsupported mime audio/mpeg-L2
+
+05-22 10:59:48.972  AudioCapabilities  Unsupported mime audio/ra
+
+05-22 10:59:48.973  AudioCapabilities  Unsupported mime audio/alac
+
+05-22 10:59:48.973  AudioCapabilities  Unsupported mime audio/ape
+
+05-22 10:59:48.974  AudioCapabilities  Unsupported mime audio/x-ape
+
+05-22 10:59:48.975  AudioCapabilities  Unsupported mime audio/adpcm
+
+05-22 10:59:48.975  AudioCapabilities  Unsupported mime audio/x-ms-adpcm
+
+05-22 10:59:48.975  AudioCapabilities  Unsupported mime audio/pcm
+
+05-22 10:59:48.976  AudioCapabilities  Unsupported mime audio/dsd
+
+05-22 10:59:48.978  VideoCapabilities  Unsupported mime video/rv
+
+05-22 10:59:48.979  VideoCapabilities  Unsupported mime video/x-ms-wmv
+
+05-22 10:59:48.979  ENCV-Service  [go] 🦢 2026-05-22 02:59:48 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mvideo Initializing plugin
+
+05-22 10:59:48.980  VideoCapabilities  Unsupported mime video/x-ms-wmv2
+
+05-22 10:59:48.980  ENCV-Service  [go] 🦢 2026-05-22 02:59:48 [32m[INFO][0m INFO: [video] Physical chunking disabled.
+
+05-22 10:59:48.981  ENCV-Service  [go] 🦢 2026-05-22 02:59:48 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0maudio Initializing plugin
+
+05-22 10:59:48.982  VideoCapabilities  Unsupported mime video/divx3
+
+05-22 10:59:48.982  ENCV-Service  [go] 🦢 2026-05-22 02:59:48 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mimage Initializing plugin
+
+05-22 10:59:48.983  VideoCapabilities  Unsupported mime video/flv1
+
+05-22 10:59:48.983  ENCV-Service  [go] 🦢 2026-05-22 02:59:48 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mwps Initializing plugin
+
+05-22 10:59:48.984  VideoCapabilities  Unsupported mime video/x-flv
+
+05-22 10:59:48.984  VideoCapabilities  Unsupported mime video/mjpeg
+
+05-22 10:59:48.985  ENCV-Service  [go] 🦢 2026-05-22 02:59:48 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mpdf Initializing plugin
+
+05-22 10:59:48.985  VideoCapabilities  Unsupported mime video/x-motion-jpeg
+
+05-22 10:59:48.986  ENCV-Service  [go] 🦢 2026-05-22 02:59:48 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mtext Initializing plugin
+
+05-22 10:59:48.987  ENCV-Service  [go] 🦢 2026-05-22 02:59:48 [32m[INFO][0m [90m[server.go:105][0m [36minstance=[0m18b1c3f5f5b65b66 [36mversion=[0mdev Server starting
+
+05-22 10:59:48.987  AudioCapabilities  Unsupported mime audio/x-adpcm-dvi-ima
+
+05-22 10:59:48.988  ENCV-Service  [go] 🦢 2026-05-22 02:59:48 [32m[INFO][0m [90m[server.go:106][0m [36mdir=[0m/storage/emulated/0 Main service serving from
+
+05-22 10:59:48.989  ENCV-Service  [go] 🦢 2026-05-22 02:59:48 [32m[INFO][0m [90m[server.go:110][0m WSLogHandler initialized, logs will be bridged to WebSocket
+
+05-22 10:59:48.990  AudioCapabilities  Unsupported mime audio/x-adpcm-ms
+
+05-22 10:59:48.990  AudioCapabilities  Unsupported mime audio/alac
+
+05-22 10:59:48.994  ENCV-Service  [go] 🦢 2026-05-22 02:59:48 [32m[INFO][0m [90m[server_start.go:31][0m [36maddr=[0m:2025 Backend attempting to start
+
+05-22 10:59:49.007  VideoCapabilities  Unsupported mime image/vnd.android.heic
+
+05-22 10:59:49.008  VideoCapabilities  Unsupported mime image/vnd.android.heic
+
+05-22 10:59:49.012  VideoCapabilities  Unrecognized profile/level 32768/256 for video/mp4v-es
+
+05-22 10:59:49.027  AudioCapabilities  Unsupported mime audio/x-ms-wma
+
+05-22 10:59:49.027  AudioCapabilities  Unsupported mime audio/mpeg-L1
+
+05-22 10:59:49.028  AudioCapabilities  Unsupported mime audio/ra
+
+05-22 10:59:49.028  AudioCapabilities  Unsupported mime audio/alac
+
+05-22 10:59:49.028  AudioCapabilities  Unsupported mime audio/ape
+
+05-22 10:59:49.029  AudioCapabilities  Unsupported mime audio/ape
+
+05-22 10:59:49.029  AudioCapabilities  Unsupported mime audio/pcm
+
+05-22 10:59:49.029  AudioCapabilities  Unsupported mime audio/dsd
+
+05-22 10:59:49.030  VideoCapabilities  Unsupported mime video/rv
+
+05-22 10:59:49.030  VideoCapabilities  Unsupported mime video/x-ms-wmv
+
+05-22 10:59:49.031  VideoCapabilities  Unsupported mime video/x-ms-wmv
+
+05-22 10:59:49.032  VideoCapabilities  Unsupported mime video/divx3
+
+05-22 10:59:49.032  VideoCapabilities  Unsupported mime video/flv1
+
+05-22 10:59:49.033  VideoCapabilities  Unsupported mime video/mjpeg
+
+05-22 10:59:49.034  AudioCapabilities  Unsupported mime audio/x-adpcm-dvi-ima
+
+05-22 10:59:49.034  AudioCapabilities  Unsupported mime audio/x-adpcm-ms
+
+05-22 10:59:49.034  AudioCapabilities  Unsupported mime audio/alac
+
+05-22 10:59:49.043  VideoCapabilities  Unsupported mime image/vnd.android.heic
+
+05-22 10:59:49.046  VideoCapabilities  Unrecognized profile/level 32768/256 for video/mp4v-es
+
+05-22 10:59:49.104  ENCV-Service  [go] 🦢 2026-05-22 02:59:49 [32m[INFO][0m [90m[server_start.go:50][0m [36maddr=[0m[::]:2025 Backend server successfully started
+
+05-22 10:59:49.105  ENCV-Service  [go] [36m[36m  ℹ  [0m[0m [96m[96mMobile mode: skipping admin server[0m[0m
+
+05-22 10:59:49.105  ENCV-Service  [go] 
+
+05-22 10:59:49.105  ENCV-Service  [go] # [1;33m[1;33mMobile Server Started[0m
+
+05-22 10:59:49.105  ENCV-Service  [go] [1;33m[0m[0m
+
+05-22 10:59:49.105  ENCV-Service  [go]   [36mServing files[0m: [90m/storage/emulated/0[0m
+
+05-22 10:59:49.106  ENCV-Service  [go]   [36mAPI endpoint[0m: [90mhttp://[::]:2025[0m
+
+05-22 10:59:49.118  ENCV-Service  [go] [36m[36m  ℹ  [0m[0m [96m[96mPress Ctrl+C to stop the server[0m[0m
+
+05-22 10:59:49.126  Capacitor  Handling local request: https://localhost/assets/Files-BsUoHQtW.js
+
+05-22 10:59:49.130  Capacitor  Handling local request: https://localhost/assets/_plugin-vue_export-helper-BOai-rQB.js
+
+05-22 10:59:49.135  Capacitor  Handling local request: https://localhost/assets/useToast-z6AJuz6y.js
+
+05-22 10:59:49.135  Capacitor  Handling local request: https://localhost/assets/Files-CwL3Tvwi.css
+
+05-22 10:59:49.177  Capacitor/Console  File: https://localhost/assets/Files-BsUoHQtW.js - Line 1 - Msg: [Files] Loading files, path: /
+
+05-22 10:59:49.190  Capacitor  Handling local request: https://localhost/assets/p-Cz5nLPGT-M2TQexUX.js
+
+05-22 10:59:49.191  ENCV-Service  [go] 🦢 2026-05-22 02:59:49 [32m[INFO][0m [90m[mobile_api.go:70][0m [36mpath=[0m/ API: list files
+
+05-22 10:59:49.196  ENCV-Service  [go] 🦢 2026-05-22 02:59:49 [32m[INFO][0m [90m[ws_hub.go:55][0m [36mremote=[0m127.0.0.1:59046 WebSocket client connected
+
+05-22 10:59:49.205  ENCV-Service  [go] 🦢 2026-05-22 02:59:49 [32m[INFO][0m [90m[mobile_service.go:138][0m [36mpath=[0m/ [36mcount=[0m81 ListFiles result
+
+05-22 10:59:49.207  ENCV-Service  [go] 🦢 2026-05-22 02:59:49 [32m[INFO][0m [90m[mobile_api.go:78][0m [36mpath=[0m/ [36mcount=[0m81 API: list files result
+
+05-22 10:59:49.208  ENCV-Service  [go] 🦢 2026-05-22 02:59:49 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/api/files [36mstatus=[0m200 [36mduration=[0m14.769769ms HTTP request
+
+05-22 10:59:49.229  Capacitor/Console  File: https://localhost/assets/main-Bt-9f2hx.js - Line 2 - Msg: [API] listFiles: / → 81 files
+
+05-22 10:59:49.233  Capacitor  Handling local request: https://localhost/favicon.ico
+
+05-22 10:59:49.235  Capacitor  Handling local request: https://localhost/favicon.ico
+
+05-22 10:59:49.261  Capacitor/Console  File: https://localhost/assets/main-Bt-9f2hx.js - Line 2 - Msg: [Files] Loaded 81 files
+
+05-22 10:59:49.304  GPUAUX    
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+
+05-22 10:59:49.432  Capacitor  Handling local request: https://localhost/assets/p-BgwEQWW6-DOrgYn2m.js
+
+05-22 10:59:49.432  Capacitor  Handling local request: https://localhost/assets/p-CneGxKsZ-CCCtCT9p.js
+
+05-22 10:59:49.602  com.encvgo.app  Compiler allocated 7216KB to compile void android.view.ViewRootImpl.performTraversals()
+
+05-22 10:59:50.117  ActivityThread  updateVmProcessStateForGc sceneId =1 state=196608
+
+05-22 10:59:50.117  com.encvgo.app  Close vivo delay for GC JIT .
+
+05-22 10:59:50.834  Capacitor/Console  File: https://localhost/assets/main-Bt-9f2hx.js - Line 2 - Msg: [Files] Loading files, path: /123云盘
+
+05-22 10:59:50.837  ENCV-Service  [go] 🦢 2026-05-22 02:59:50 [32m[INFO][0m [90m[mobile_api.go:70][0m [36mpath=[0m/123云盘 API: list files
+
+05-22 10:59:50.840  ENCV-Service  [go] 🦢 2026-05-22 02:59:50 [32m[INFO][0m [90m[mobile_service.go:138][0m [36mpath=[0m/123云盘 [36mcount=[0m6 ListFiles result
+
+05-22 10:59:50.841  ENCV-Service  [go] 🦢 2026-05-22 02:59:50 [32m[INFO][0m [90m[mobile_api.go:78][0m [36mpath=[0m/123云盘 [36mcount=[0m6 API: list files result
+
+05-22 10:59:50.841  ENCV-Service  [go] 🦢 2026-05-22 02:59:50 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/api/files [36mstatus=[0m200 [36mduration=[0m3.383769ms HTTP request
+
+05-22 10:59:50.849  Capacitor/Console  File: https://localhost/assets/main-Bt-9f2hx.js - Line 2 - Msg: [API] listFiles: /123云盘 → 6 files
+
+05-22 10:59:50.850  Capacitor/Console  File: https://localhost/assets/main-Bt-9f2hx.js - Line 2 - Msg: [Files] Loaded 6 files
+
+05-22 10:59:51.545  libc      Access denied finding property "ro.vendor.vivo.software.ai.llm.disable"
+
+05-22 10:59:51.543  support-thread  type=1400 audit(0.0:4688239): avc:  denied  { read } for  name="u:object_r:vendor_feature_prop:s0" dev="tmpfs" ino=563 scontext=u:r:untrusted_app:s0:c190,c263,c512,c768 tcontext=u:object_r:vendor_feature_prop:s0 tclass=file permissive=0 app=com.encvgo.app
+
+05-22 10:59:51.587  Capacitor/Console  File: https://localhost/assets/main-Bt-9f2hx.js - Line 2 - Msg: [Files] Click: e844e9ffb6650d294870a6d5ea963ec6mp4.mp4 category: video
+
+05-22 10:59:51.589  Capacitor/Console  File:  - Line 349 - Msg: [object Object]
+
+05-22 10:59:51.590  Capacitor/Plugin  To native (Capacitor plugin): callbackId: 34400734, pluginId: GoProcess, methodName: openInPlayer
+
+05-22 10:59:51.590  Capacitor  callback: 34400734, pluginId: GoProcess, methodName: openInPlayer, methodData: {"path":"\/123云盘\/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","name":"e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","mimeType":"video\/*"}
+
+05-22 10:59:51.590  ENCV-go   openInPlayer: path=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, name=e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, mimeType=video/*
+
+05-22 10:59:51.591  ENCV-go   openInPlayer: launching with NEW_DOCUMENT+MULTIPLE_TASK+RETAIN_IN_RECENTS, data=encvgo://player/1779418791590
+
+05-22 10:59:51.592  ActivityThread  updateVmProcessStateForGc sceneId =1 state=197376
+
+05-22 10:59:51.592  com.encvgo.app  Open vivo delay for GC JIT .
+
+05-22 10:59:51.610  Capacitor  App paused
+
+05-22 10:59:51.628  Capacitor/Console  File:  - Line 333 - Msg: undefined
+
+05-22 10:59:51.632  com.encvgo.app  AssetManager2(0xb400006f31029298) locale list changing from [] to [zh-CN]
+
+05-22 10:59:51.633  com.encvgo.app  AssetManager2(0xb400006f3102be58) locale list changing from [] to [zh-CN]
+
+05-22 10:59:51.636  com.encvgo.app  AssetManager2(0xb400006f310298d8) locale list changing from [] to [zh-CN]
+
+05-22 10:59:51.717  ViewRootImpl  AppSizeAfterRelayout, size: Point(147, 147), rotation: ROTATION_0
+
+05-22 10:59:51.717  BufferQueueConsumer  [](id:72f400000002,api:0,p:-1,c:29428) connect: controlledByApp=false
+
+05-22 10:59:51.717  BLASTBufferQueue  [VRI[PlayerActivity,type=2]#2](f:0,a:0) constructor()
+
+05-22 10:59:51.717  BLASTBufferQueue  [VRI[PlayerActivity,type=2]#2](f:0,a:0) update width=147 height=147 format=-3 mTransformHint=0
+
+05-22 10:59:51.718  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
+
+05-22 10:59:51.720  BLASTBufferQueue  [VRI[PlayerActivity,type=2]#2](f:0,a:1) acquireNextBufferLocked size=147x147 mFrameNumber=1 applyTransaction=true mTimestamp=101417308071198(auto) mPendingTransactions.size=0 graphicBufferId=126392297586702 transform=0
+
+05-22 10:59:51.788  PlayerActivityLynx  onCreate: starting
+
+05-22 10:59:51.789  PlayerActivityLynx  onCreate: root layout found: android.widget.FrameLayout{a7a717e V.E...... ......ID 0,0-0,0 #7f0900b5 app:id/lynx_player_root}
+
+05-22 10:59:51.789  PlayerActivityLynx  resolveFileInfo: internal file, path=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
+
+05-22 10:59:51.789  PlayerActivityLynx  onCreate: file info resolved, path=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, name=e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, mimeType=video/*, external=false
+
+05-22 10:59:51.789  PlayerActivityLynx  createLynxView: START
+
+05-22 10:59:51.790  PlayerActivityLynx  createLynxView: LynxViewBuilder created
+
+05-22 10:59:51.790  PlayerActivityLynx  createLynxView: TemplateProvider set
+
+05-22 10:59:51.790  PlayerActivityLynx  createLynxView: Modules registered (MpvPlayerModule, GoBackendModule)
+
+05-22 10:59:51.790  LynxView  new lynxview detail com.lynx.tasm.LynxView{a2ae6df V.E...... ......I. 0,0-0,0}
+
+05-22 10:59:51.798  LynxUIRenderer  lynxContext setUIBodyViewcom.lynx.tasm.LynxView{a2ae6df VFE...... ......I. 0,0-0,0}com.lynx.tasm.LynxTemplateRender$1@574edf5
+
+05-22 10:59:51.799  LynxUIRenderer  lynxContext setUIBodyViewcom.lynx.tasm.LynxView{a2ae6df VFE...... ......I. 0,0-0,0}com.lynx.tasm.LynxTemplateRender$1@574edf5
+
+05-22 10:59:51.799  LynxDevtool  Initialize LynxDevtool, lynxDebugEnabled:true
+
+05-22 10:59:51.800  LynxDevtool  devtoolEnabled:true, logBoxEnabled:false, debuggable:false
+
+05-22 10:59:51.800  LynxDevtool  owner init
+
+05-22 10:59:51.800  LynxTemplateRender  mEnableGenericResourceFetcher: false render: com.lynx.tasm.LynxTemplateRender@2115218
+
+05-22 10:59:51.800  lynx      [7163386090:INFO:vsync_monitor.cc(23)] VSyncMonitor created with is_vsync_post_task_by_emergency_ true
+
+05-22 10:59:51.800  lynx      [7163386090:INFO:task_runner_manufactor.cc(257)] TaskRunnerManufactor setThreadStrategy:0, multi_tasm:true, async_thread_cache:true
+
+05-22 10:59:51.801  lynx      [7163386090:INFO:lynx_shell.cc(131)] LynxShell create, this:0xB400006F3105D7F0
+
+05-22 10:59:51.801  lynx      [7163386090:INFO:memory_monitor.h(81)] [memory_monitor.h] new MemoryMonitor, this:0xB400006F61142DD0, Enable:false, MemoryChangeThresholdMb:0
+
+05-22 10:59:51.801  lynx      [7163386090:INFO:timing_handler.cc(26)] [TimingHandler.cc] new TimingHandler, this:0xB400006F61142E10
+
+05-22 10:59:51.801  lynx      [7163386090:INFO:template_assembler.h(518)] Lynx Set Enable Layout Only: true from LynxView,  this:0xB400006F010F8C40
+
+05-22 10:59:51.802  LynxTemplateRender  force use quick js engine
+
+05-22 10:59:51.803  lynx      [7163386090:INFO:vsync_monitor.cc(23)] VSyncMonitor created with is_vsync_post_task_by_emergency_ true
+
+05-22 10:59:51.803  LynxTemplateRender  set JSGroupThreadName to lynx context: 
+
+05-22 10:59:51.803  LynxLayoutProxy  LynxLayoutProxy is created
+
+05-22 10:59:51.803  lynx      [6DB43F83C0:INFO:runtime_lifecycle_observer_impl.cc(32)] [Runtime] RuntimeLifecycleObserverImpl::OnRuntimeCreate with observer:0xB4000070110A8848
+
+05-22 10:59:51.803  LynxDevtool  register LynxDevToolSetModule!
+
+05-22 10:59:51.803  lynx      [6DB43F83C0:INFO:bts_runtime.cc(143)] Init LynxRuntime group_id: -1 runtime_id: 0 this:0xB400006FB1057050
+
+05-22 10:59:51.803  lynx      [6DB43F83C0:INFO:runtime_lifecycle_observer_impl.cc(48)] [Runtime] RuntimeLifecycleObserverImpl::OnRuntimeInit with runtime id: 0
+
+05-22 10:59:51.803  LynxDevtool  register LynxWebSocketModule!
+
+05-22 10:59:51.803  LynxDevtool  register LynxTrailModule!
+
+05-22 10:59:51.803  lynx      [6DB43F83C0:INFO:inspector_runtime_observer_impl.cc(29)] js debug: CreateRuntimeManagerDelegate failed, JS debugging is not available
+
+05-22 10:59:51.803  lynx      [6DB43F83C0:INFO:runtime_manager.cc(444)] make runtime with force_use_lightweight_js_engine = true
+
+05-22 10:59:51.803  lynx      [6DB43F83C0:INFO:runtime_manager.cc(451)] make QuickJS runtime
+
+05-22 10:59:51.803  primjs    RC: HEAP_TAG_OUTER: 0xb400000000000000, HEAP_TAG_INNER: 0xb400000000000000
+
+05-22 10:59:51.803  lynx      [6E85A133C0:INFO:js_cache_manager.cc(607)] bytecode_generate_generate_version: 3400532428
+
+05-22 10:59:51.803  lynx      [6DB43F83C0:INFO:quickjs_runtime_wrapper.cc(115)] lynx InitQuickjsRuntime success
+
+05-22 10:59:51.803  lynx      
+  [6E85A133C0:ERROR:js_cache_manager.cc(94)] ReadFile failed (file_path is empty): meta.json
+  [6E85A133C0:ERROR:js_cache_manager.cc(109)] WriteFile failed (file_path is empty): meta.json
+  [6E85A133C0:ERROR:js_cache_manager.cc(591)] Write Metadata failed!
+
+05-22 10:59:51.803  lynx      [6E85A133C0:INFO:js_cache_manager.cc(619)] Metadata load failed, clearing cache
+
+05-22 10:59:51.803  lynx      [6E85A133C0:INFO:js_cache_manager.cc(658)] Clearing cache dir
+
+05-22 10:59:51.803  lynx      [6E85A133C0:INFO:js_cache_manager.cc(622)] Creating new Metadata
+
+05-22 10:59:51.803  lynx      [6E85A133C0:INFO:js_cache_manager.cc(597)] ClearExpiredCache time spent: 0 ms
+
+05-22 10:59:51.803  primjs    RC: HEAP_TAG_OUTER: 0xb400000000000000, HEAP_TAG_INNER: 0xb400000000000000
+
+05-22 10:59:51.803  lynx      [6DB43F83C0:INFO:runtime_manager.cc(187)] create single_context:0xB400006FC1051D18
+
+05-22 10:59:51.803  lynx      [6E85A133C0:INFO:quickjs_runtime_wrapper.cc(115)] lynx InitQuickjsRuntime success
+
+05-22 10:59:51.803  lynx      [7163386090:INFO:layout_context.cc(1098)] [Layout] UpdateViewport :size: 0.0, 0.0; mode: 0, 0
+
+05-22 10:59:51.803  lynx      [6DB3DF83C0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_code_cache
+
+05-22 10:59:51.803  LynxTemplateRender  1779418791803 create LynxView 1779418791798-170583775 
+
+05-22 10:59:51.803  LynxResourceLoader  loadJSSource with name assets://lynx_core.js
+
+05-22 10:59:51.803  PlayerActivityLynx  createLynxView: LynxView built, instance=com.lynx.tasm.LynxView{a2ae6df VFE...... ......I. 0,0-0,0}
+
+05-22 10:59:51.804  PlayerActivityLynx  createLynxView: LynxViewClient registered
+
+05-22 10:59:51.804  PlayerActivityLynx  createLynxView: LynxView added to rootLayout
+
+05-22 10:59:51.804  PlayerActivityLynx  createLynxView: initData={"filePath":"\/123云盘\/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","fileName":"e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","mimeType":"video\/*","isExternal":false}
+
+05-22 10:59:51.804  LynxEventReporter  
+  eventReporter service not found or event name is null.
+  eventReporter service not found or event name is null.
+  eventReporter service not found or event name is null.
+
+05-22 10:59:51.804  LynxView  renderTemplateUrl player.lynx.bundlewith jsonData incom.lynx.tasm.LynxView{a2ae6df VFE...... ......I. 0,0-0,0}
+
+05-22 10:59:51.804  System.err  java.io.FileNotFoundException: lynx_core_dev.js
+
+05-22 10:59:51.804  PageReloadHelper  loadFromURL:player.lynx.bundle
+
+05-22 10:59:51.804  LynxTemplateRender  dispatchOnPageStart url player.lynx.bundle in com.lynx.tasm.LynxTemplateRender@2115218
+
+05-22 10:59:51.805  LynxPlayerClient  onPageStart: url=player.lynx.bundle
+
+05-22 10:59:51.805  PlayerTemplateProvider  loadTemplate: uri=player.lynx.bundle, context=com.encvgo.app.EncvApplication@f88a40a
+
+05-22 10:59:51.805  LynxTemplateRender  1779418791805 renderTemplate LynxView 1779418791798-170583775 player.lynx.bundle
+
+05-22 10:59:51.805  PlayerActivityLynx  createLynxView: renderTemplateUrl called with player.lynx.bundle
+
+05-22 10:59:51.805  PlayerActivityLynx  handleBackend: checking backend state
+
+05-22 10:59:51.805  PlayerTemplateProvider  loadTemplate: attempting assets.open(player.lynx.bundle)
+
+05-22 10:59:51.805  PlayerActivityLynx  handleBackend: backend already running, port=2025
+
+05-22 10:59:51.805  System.err  at android.content.res.AssetManager.nativeOpenAsset(Native Method)
+
+05-22 10:59:51.805  System.err  at android.content.res.AssetManager.open(AssetManager.java:1161)
+
+05-22 10:59:51.805  System.err  at android.content.res.AssetManager.open(AssetManager.java:1138)
+
+05-22 10:59:51.805  System.err  at com.lynx.tasm.core.resource.LynxResourceLoader.loadJSSource(LynxResourceLoader.java:242)
+
+05-22 10:59:51.805  System.err  at com.lynx.tasm.core.resource.LynxResourceLoader.loadResource(LynxResourceLoader.java:96)
+
+05-22 10:59:51.805  System.err  at com.lynx.tasm.core.resource.LynxResourceLoader.loadResource(LynxResourceLoader.java:76)
+
+05-22 10:59:51.805  System.err  at android.os.MessageQueue.nativePollOnce(Native Method)
+
+05-22 10:59:51.805  System.err  at android.os.MessageQueue.nextLegacy(MessageQueue.java:917)
+
+05-22 10:59:51.805  System.err  at android.os.MessageQueue.next(MessageQueue.java:1029)
+
+05-22 10:59:51.805  System.err  at android.os.Looper.loopOnce(Looper.java:209)
+
+05-22 10:59:51.805  System.err  at android.os.Looper.loop(Looper.java:361)
+
+05-22 10:59:51.806  PlayerActivityLynx  onCreate: setup complete
+
+05-22 10:59:51.809  PlayerTemplateProvider  loadTemplate: assets root files matching 'lynx'/'player': [lynx_core.js, lynx_recorder.js, player.lynx.bundle]
+
+05-22 10:59:51.810  PlayerTemplateProvider  loadTemplate: loaded 84909 bytes for player.lynx.bundle
+
+05-22 10:59:51.810  lynx      [6DB43F83C0:INFO:quickjs_runtime.cc(906)] using new bytecode
+
+05-22 10:59:51.810  lynx      [6DB43F83C0:INFO:js_cache_manager.cc(713)] bytecode disabled by switch
+
+05-22 10:59:51.810  lynx      [6DB43F83C0:INFO:quickjs_runtime.cc(240)] QuickjsRuntime::evaluatePreparedJavaScript start: /lynx_core.js
+
+05-22 10:59:51.810  lynx      [6DB43F83C0:INFO:quickjs_runtime.cc(160)] QuickjsRuntime::evaluateJavaScript: /lynx_core.js
+
+05-22 10:59:51.821  lynx      [6DB43F83C0:INFO:quickjs_runtime.cc(173)] QuickjsRuntime::evaluateJavaScript finished successfully.
+
+05-22 10:59:51.821  lynx      [6DB43F83C0:INFO:bts_runtime.cc(179)] js_runtime_type :0 0xB400006FB1057050
+
+05-22 10:59:51.821  lynx      [6DB43F83C0:INFO:bts_runtime.cc(195)]  lynxRuntime:0xB400006FB1057050 create APP 0xB400006F211A2920
+
+05-22 10:59:51.822  ViewRootImpl  AppSizeAfterRelayout, size: Point(147, 147), rotation: ROTATION_0
+
+05-22 10:59:51.822  BufferQueueConsumer  [](id:72f400000003,api:0,p:-1,c:29428) connect: controlledByApp=false
+
+05-22 10:59:51.822  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=2]#3](f:0,a:0) constructor()
+
+05-22 10:59:51.822  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=2]#3](f:0,a:0) update width=147 height=147 format=-3 mTransformHint=0
+
+05-22 10:59:51.822  lynx      [6DB3DF83C0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_code_cache
+
+05-22 10:59:51.823  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
+
+05-22 10:59:51.827  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=2]#3](f:0,a:1) acquireNextBufferLocked size=147x147 mFrameNumber=1 applyTransaction=true mTimestamp=101417415607813(auto) mPendingTransactions.size=0 graphicBufferId=126392297586709 transform=0
+
+05-22 10:59:51.829  Lynx      onAttachedToWindow:170583775
+
+05-22 10:59:51.829  LynxTemplateRender  lynxview onAttachedToWindow com.lynx.tasm.LynxTemplateRender@2115218
+
+05-22 10:59:51.829  LynxTemplateRender  onEnterForeground. force: false
+
+05-22 10:59:51.831  lynx      [7163386090:INFO:layout_context.cc(1098)] [Layout] UpdateViewport :size: 1260.0, 2800.0; mode: 1, 1
+
+05-22 10:59:51.839  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
+
+05-22 10:59:51.839  BufferQueueConsumer  [](id:72f400000004,api:0,p:-1,c:29428) connect: controlledByApp=false
+
+05-22 10:59:51.839  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=1]#4](f:0,a:0) constructor()
+
+05-22 10:59:51.839  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=1]#4](f:0,a:0) update width=1260 height=2800 format=-1 mTransformHint=0
+
+05-22 10:59:51.840  LynxTemplateRender  updateViewport is unnecessary, because the size of the cache are the same as the size to be set.
+
+05-22 10:59:51.840  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
+
+05-22 10:59:51.847  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=1]#4](f:0,a:1) acquireNextBufferLocked size=1260x2800 mFrameNumber=1 applyTransaction=true mTimestamp=101417434763198(auto) mPendingTransactions.size=0 graphicBufferId=126392297586716 transform=0
+
+05-22 10:59:51.850  VRI[MainActivity,type=1]  visibilityChanged oldVisibility=true newVisibility=false
+
+05-22 10:59:51.850  VRI[MainActivity,type=2]  visibilityChanged oldVisibility=true newVisibility=false
+
+05-22 10:59:51.850  HWUI      [setStopped] CanvasContext will be destroyed.
+
+05-22 10:59:51.851  Capacitor  App stopped
+
+05-22 10:59:51.851  Capacitor  Saving instance state!
+
+05-22 10:59:51.852  LynxInspectorOwner  attachToDebugBridge:player.lynx.bundle
+
+05-22 10:59:51.852  DebugRouter  plug session player.lynx.bundle
+
+05-22 10:59:51.852  DebugRouter  [0522/10:59:51:INFO:debug_router_core.cc(271)] plug session: 1
+
+05-22 10:59:51.852  DebugRouter  [0522/10:59:51:INFO:debug_router_core.cc(709)] notify connect state: {"event": "Customized","data": {"type": "DebugRouter","data": {"client_id": -1,"session_id": -1,"message": {"id": -1,"method": "DebugRouter.State","params": {"ConnectState": 0}}},"sender": -1}}
+
+05-22 10:59:51.852  DebugRouter  [0522/10:59:51:INFO:processor.cc(93)] extension
+
+05-22 10:59:51.852  DebugRouterSlot  failed to invoke getTemplateView
+
+05-22 10:59:51.853  PageReloadHelper  loadFromLocalFile:null
+
+05-22 10:59:51.853  LynxTemplateRender  dispatchOnPageStart url null in com.lynx.tasm.LynxTemplateRender@2115218
+
+05-22 10:59:51.853  LynxInspectorOwner  attachToDebugBridge:null
+
+05-22 10:59:51.854  LynxTemplateRender  LoadMeta with binary, pre-painting: false ,pre-painting with draw:false enableRecycleTemplateBundle: false
+
+05-22 10:59:51.854  LynxInspectorOwner  attachToDebugBridge:null
+
+05-22 10:59:51.854  lynx      
+  [7163386090:ERROR:template_assembler.cc(947)] lynx_plugin: load original lynx so
+  [6DB3DF83C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipelineStart
+  [6DB3DF83C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipeline_start
+  [6DB3DF83C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is loadBundleStart
+  [6DB3DF83C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is load_template_start
+
+05-22 10:59:51.854  lynx      [7163386090:INFO:template_assembler.cc(344)] start TemplateAssembler::LoadTemplate, url: len: 84909 this:0xB400006F010F8C40
+
+05-22 10:59:51.854  lynx      [7163386090:INFO:lynx_binary_base_template_reader.cc(171)] client version:0.2.0.0  ;binary_version:0.2.0.0
+
+05-22 10:59:51.854  lynx      [7163386090:INFO:lynx_binary_base_template_reader.cc(122)] App Bundle's engine version: 3.2, lynx sdk version:3.7, min supported lynx version: 1.0
+
+05-22 10:59:51.854  lynx      [7163386090:INFO:template_binary_reader.cc(241)] CSSLazyDecode options FE_OPTION_UNDEFINED ABSetting: 
+
+05-22 10:59:51.855  lynx      [7163386090:WARNING:js_debug_helper.cc(41)] js debug: lepus_proxy_ is not set
+
+05-22 10:59:51.855  primjs    RC: HEAP_TAG_OUTER: 0xb400000000000000, HEAP_TAG_INNER: 0xb400000000000000
+
+05-22 10:59:51.856  lynx      [7163386090:INFO:template_assembler.cc(2479)] TemplateAssembler::OnScreenMetricsSet with width: 1260 height: 2800 device_pixel_ratio: 3.28125
+
+05-22 10:59:51.856  lynx      [7163386090:INFO:element_manager.cc(531)] ElementManager::UpdateScreenMetrics width:1260,height:2800
+
+05-22 10:59:51.857  lynx      [7163386090:INFO:layout_context.cc(1098)] [Layout] UpdateViewport :size: 1260.0, 2800.0; mode: 1, 1
+
+05-22 10:59:51.857  lynx      [7163386090:INFO:element_manager.cc(1341)] ElementManager::OnPatchFinishForFiber WithPatch!
+
+05-22 10:59:51.858  Lynx      setVisibility:170583775 0
+
+05-22 10:59:51.858  LynxTemplateRender  onFirstScreen
+
+05-22 10:59:51.858  lynx      [7163386090:INFO:touch_event_handler.cc(79)] TouchEventHandler init: support_component_js_: true; use_lepus_ng_: true
+
+05-22 10:59:51.858  lynx      [7163386090:INFO:touch_event_handler.cc(367)] SendCustomEvent event name:resize tag:10
+
+05-22 10:59:51.858  lynx      [7163386090:INFO:layout_context.cc(883)] [Layout] layout finish with result size: 1260, 2800 for viewport, size: 1260.0, 2800.0; mode: 1, 1 Time taken: 979462 ns
+
+05-22 10:59:51.858  LynxTemplateRender  dispatchLoadSuccess templateSize in com.lynx.tasm.LynxTemplateRender@2115218
+
+05-22 10:59:51.858  LynxPlayerClient  onLoadSuccess: template loaded and rendered successfully
+
+05-22 10:59:51.858  lynx      [7163386090:INFO:template_assembler.cc(839)] end TemplateAssembler::LoadTemplate, url: len: 84909
+
+05-22 10:59:51.858  LynxTemplateRender  1779418791858 renderTemplate LynxView 1779418791798-170583775 
+
+05-22 10:59:51.858  LynxTemplateRender  retain TemplateData for lifecycle, url=, data=com.lynx.tasm.TemplateData@87e57bc, listSize=1, bindContextEnabled=false
+
+05-22 10:59:51.861  lynx      [6DB43F83C0:INFO:bts_runtime.cc(654)] lynx runtime loadApp, napi id:0
+
+05-22 10:59:51.861  lynx      [6DB43F83C0:INFO:bts_runtime.cc(672)] [LynxRuntime] circular data check flag: true
+
+05-22 10:59:51.861  lynx      [6DB43F83C0:INFO:js_app.cc(2064)]  App::loadApp start 0xB400006F211A2920
+
+05-22 10:59:51.862  lynx      [6DB43F83C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxUIMethodModule
+
+05-22 10:59:51.862  lynx      [6DB43F83C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxResourceModule
+
+05-22 10:59:51.862  BLASTBufferQueue  [VRI[MainActivity,type=1]#1](f:0,a:5) destructor()
+
+05-22 10:59:51.862  BufferQueueConsumer  [VRI[MainActivity,type=1]#1(BLAST Consumer)1](id:72f400000001,api:0,p:-1,c:29428) disconnect
+
+05-22 10:59:51.862  lynx      [6DB43F83C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxAccessibilityModule
+
+05-22 10:59:51.862  HWUI      [destroy] CanvasContext will be destroyed.
+
+05-22 10:59:51.863  lynx      [6DB43F83C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxSetModule
+
+05-22 10:59:51.864  lynx      [6DB43F83C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxExposureModule
+
+05-22 10:59:51.864  lynx      [6DB43F83C0:INFO:js_app.cc(2920)] loadScript:app-service.js
+
+05-22 10:59:51.864  lynx      [6DB43F83C0:INFO:quickjs_runtime.cc(240)] QuickjsRuntime::evaluatePreparedJavaScript start: /app-service.js
+
+05-22 10:59:51.864  lynx      [6DB43F83C0:INFO:quickjs_runtime.cc(160)] QuickjsRuntime::evaluateJavaScript: /app-service.js
+
+05-22 10:59:51.865  lynx      [6DB43F83C0:INFO:quickjs_runtime.cc(173)] QuickjsRuntime::evaluateJavaScript finished successfully.
+
+05-22 10:59:51.865  lynx      [6DB43F83C0:INFO:js_app.cc(2920)] loadScript:/.rspeedy/main/background.25178405.js
+
+05-22 10:59:51.865  lynx      [6DB43F83C0:INFO:quickjs_runtime.cc(240)] QuickjsRuntime::evaluatePreparedJavaScript start: /.rspeedy/main/background.25178405.js
+
+05-22 10:59:51.865  lynx      [6DB43F83C0:INFO:quickjs_runtime.cc(160)] QuickjsRuntime::evaluateJavaScript: /.rspeedy/main/background.25178405.js
+
+05-22 10:59:51.869  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
+
+05-22 10:59:51.870  BLASTBufferQueue  [VRI[MainActivity,type=2]#0](f:0,a:1) destructor()
+
+05-22 10:59:51.870  BufferQueueConsumer  [VRI[MainActivity,type=2]#0(BLAST Consumer)0](id:72f400000000,api:0,p:-1,c:29428) disconnect
+
+05-22 10:59:51.870  HWUI      [destroy] CanvasContext will be destroyed.
+
+05-22 10:59:51.873  ViewRootImpl  AppSizeAfterRelayout, size: Point(147, 147), rotation: ROTATION_0
+
+05-22 10:59:51.873  LynxTemplateRender  updateViewport is unnecessary, because the size of the cache are the same as the size to be set.
+
+05-22 10:59:51.874  lynx      [6DB43F83C0:INFO:quickjs_runtime.cc(173)] QuickjsRuntime::evaluateJavaScript finished successfully.
+
+05-22 10:59:51.875  lynx      [6DB43F83C0:INFO:js_app.cc(361)] LYNX PageProxy get -> setCard
+
+05-22 10:59:51.875  lynx      [6DB43F83C0:INFO:js_app.cc(2196)]  App::loadApp end 0xB400006F211A2920
+
+05-22 10:59:51.875  lynx      [6DB43F83C0:INFO:bts_runtime.cc(920)] lynx runtime ready
+
+05-22 10:59:51.875  lynx      [6DB43F83C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnLifecycleEvent, phase: 2, target: 0, listener options: 0
+
+05-22 10:59:51.875  lynx      [6DB43F83C0:INFO:js_event_listener.cc(38)] JSClosureEventListener::Invoke name: __OnLifecycleEvent
+
+05-22 10:59:51.875  lynx      [6DB43F83C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnAppFirstScreen, phase: 2, target: 0, listener options: 0
+
+05-22 10:59:51.875  lynx      [6DB43F83C0:INFO:js_event_listener.cc(38)] JSClosureEventListener::Invoke name: __OnAppFirstScreen
+
+05-22 10:59:51.875  LynxPlayerClient  onRuntimeReady: JS environment ready
+
+05-22 10:59:51.875  lynx      [6DB43F83C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.onWindowResize 0xB400006F211A2920
+
+05-22 10:59:51.875  LynxPlayerClient  onFirstScreen: first screen rendered
+
+05-22 10:59:51.876  lynx      [6DB43F83C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnNativeAppReady, phase: 2, target: 0, listener options: 0
+
+05-22 10:59:51.876  lynx      [6DB43F83C0:INFO:js_event_listener.cc(38)] JSClosureEventListener::Invoke name: __OnNativeAppReady
+
+05-22 10:59:51.876  lynx      [6DB43F83C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.onFontScaleChanged 0xB400006F211A2920
+
+05-22 10:59:51.876  ImeFocusController  onWindowFocus: com.android.internal.policy.DecorView{70a1fc7 V.E...... R....... 0,0-1260,2800}[PlayerActivityLynx] softInputMode=STATE_UNSPECIFIED|ADJUST_PAN|IS_FORWARD_NAVIGATION
+
+05-22 10:59:51.876  Lynx.IntersectionObserver  onRootViewDraw ObserverHandler
+
+05-22 10:59:51.877  lynx      [6DB43F83C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __SendGlobalEvent, phase: 2, target: 0, listener options: 0
+
+05-22 10:59:51.877  lynx      [6DB43F83C0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __SendGlobalEvent, type: 0
+
+05-22 10:59:51.878  lynx      [6DB43F83C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.lynx.performance.onPerformanceEvent 0xB400006F211A2920
+
+05-22 10:59:51.878  lynx      [6DB3DF83C0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_setup_timing
+
+05-22 10:59:51.878  lynx      [6DB43F83C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __SendGlobalEvent, phase: 2, target: 0, listener options: 0
+
+05-22 10:59:51.878  lynx      [6DB43F83C0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __SendGlobalEvent, type: 0
+
+05-22 10:59:51.878  LynxEventReporter  
+  eventReporter service not found or event name is null.
+  eventReporter service not found or event name is null.
+
+05-22 10:59:51.878  lynx      [6DB3DF83C0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_code_cache
+
+05-22 10:59:51.878  lynx      [6DB43F83C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.lynx.performance.timing.onSetup 0xB400006F211A2920
+
+05-22 10:59:51.879  ImeTracker  com.encvgo.app:501a2432: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+
+05-22 10:59:51.880  lynx      [6DB3DF83C0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_code_cache
+
+05-22 10:59:52.318  VRI[PlayerActivity,type=2]  visibilityChanged oldVisibility=true newVisibility=false
+
+05-22 10:59:52.320  HWUI      [destroy] CanvasContext will be destroyed.
+
+05-22 10:59:52.325  ViewRootImpl  AppSizeAfterRelayout, size: Point(147, 147), rotation: ROTATION_0
+
+05-22 10:59:52.325  BLASTBufferQueue  [VRI[PlayerActivity,type=2]#2](f:0,a:1) destructor()
+
+05-22 10:59:52.325  BufferQueueConsumer  [VRI[PlayerActivity,type=2]#2(BLAST Consumer)2](id:72f400000002,api:0,p:-1,c:29428) disconnect
+
+05-22 10:59:52.332  WindowOnBackDispatcher  sendCancelIfRunning: isInProgress=false callback=android.view.ViewRootImpl$$ExternalSyntheticLambda13@4147a46
+
+05-22 10:59:52.334  HWUI      [destroy] CanvasContext will be destroyed.
+
+05-22 10:59:54.083  AutofillManager  view not autofillable - not passing ime action check
+
+05-22 10:59:54.107  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
+
+05-22 10:59:54.107  BufferQueueConsumer  [](id:72f400000005,api:0,p:-1,c:29428) connect: controlledByApp=false
+
+05-22 10:59:54.107  BLASTBufferQueue  [VRI[LogcatActivity,type=1]#5](f:0,a:0) constructor()
+
+05-22 10:59:54.107  BLASTBufferQueue  [VRI[LogcatActivity,type=1]#5](f:0,a:0) update width=1260 height=2800 format=-1 mTransformHint=0
+
+05-22 10:59:54.108  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
+
+05-22 10:59:54.111  RecyclerView  
+  No adapter attached; skipping layout
+  No adapter attached; skipping layout
+
+05-22 10:59:54.127  BLASTBufferQueue  [VRI[LogcatActivity,type=1]#5](f:0,a:1) acquireNextBufferLocked size=1260x2800 mFrameNumber=1 applyTransaction=true mTimestamp=101419715469659(auto) mPendingTransactions.size=0 graphicBufferId=126392297586728 transform=0
+
+05-22 10:59:54.161  ImeFocusController  onWindowFocus: com.android.internal.policy.DecorView{5049ac8 V.E...... R......D 0,0-1260,2800}[LogcatActivity] softInputMode=STATE_UNSPECIFIED|ADJUST_RESIZE|IS_FORWARD_NAVIGATION
+
+05-22 10:59:54.162  ImeTracker  com.encvgo.app:ad60a989: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+
+05-22 10:59:54.581  VRI[PlayerActivityLynx,type=2]  visibilityChanged oldVisibility=true newVisibility=false
+
+05-22 10:59:54.587  HWUI      [destroy] CanvasContext will be destroyed.
+
+05-22 10:59:54.591  ViewRootImpl  AppSizeAfterRelayout, size: Point(147, 147), rotation: ROTATION_0
+
+05-22 10:59:54.591  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=2]#3](f:0,a:3) destructor()
+
+05-22 10:59:54.591  BufferQueueConsumer  [VRI[PlayerActivityLynx,type=2]#3(BLAST Consumer)3](id:72f400000003,api:0,p:-1,c:29428) disconnect
+
+05-22 10:59:54.593  VRI[PlayerActivityLynx,type=1]  visibilityChanged oldVisibility=true newVisibility=false
+
+05-22 10:59:54.594  HWUI      [setStopped] CanvasContext will be destroyed.
+
+05-22 10:59:54.595  HWUI      [setStopped] CanvasContext will be destroyed.
+
+05-22 10:59:54.597  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=1]#4](f:0,a:2) destructor()
+
+05-22 10:59:54.597  BufferQueueConsumer  [VRI[PlayerActivityLynx,type=1]#4(BLAST Consumer)4](id:72f400000004,api:0,p:-1,c:29428) disconnect
+
+05-22 10:59:54.597  HWUI      [destroy] CanvasContext will be destroyed.
+
+05-22 10:59:54.602  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
+
+05-22 10:59:54.637  ProfileInstaller  Installing profile for com.encvgo.app
+
