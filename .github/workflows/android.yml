@@ -127,6 +127,21 @@ jobs:
           echo "JNI libs:"
           ls -lhR app/encv-mobile/android/app/src/main/jniLibs/
 
+      - name: Verify native libraries
+        run: |
+          echo "=== jniLibs contents ==="
+          find app/encv-mobile/android/app/src/main/jniLibs -name "*.so" -type f | sort
+          echo "=== Checking mpv/ffmpeg .so files ==="
+          JNI_DIR="app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a"
+          for lib in libmpv.so libavcodec.so libavformat.so libplayer.so; do
+            if [ -f "$JNI_DIR/$lib" ]; then
+              echo "✅ $lib found ($(ls -lh "$JNI_DIR/$lib" | awk '{print $5}'))"
+            else
+              echo "❌ $lib MISSING!"
+              exit 1
+            fi
+          done
+
       # === Verify kotlin setup before build ===
       - name: Verify AndroidManifest integrity
         run: |
@@ -232,6 +247,8 @@ jobs:
             unzip -l "$APK_PATH" | grep -E "libencv-go|lib/arm64" || echo "❌ libencv-go.so NOT in APK!"
             echo "=== Go binary in APK (assets, legacy) ==="
             unzip -l "$APK_PATH" | grep -E "assets/encv-go" || echo "(no assets/encv-go, expected with jniLibs packaging)"
+            echo "=== mpv/ffmpeg .so in APK ==="
+            unzip -l "$APK_PATH" | grep -E "libmpv|libavcodec|libavformat|libplayer" || echo "❌ mpv/ffmpeg .so NOT in APK!"
           else
             echo "No APK found to verify"
           fi
