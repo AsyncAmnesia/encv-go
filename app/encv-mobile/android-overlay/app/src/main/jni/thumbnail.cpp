@@ -61,7 +61,7 @@ jni_func(jobject, grabThumbnail, jint dimension) {
             } else if (key == "data") {
                 if (val->format != MPV_FORMAT_BYTE_ARRAY)
                     break;
-                data = val->ba;
+                data = val->u.ba;
             }
         }
     } while (0);

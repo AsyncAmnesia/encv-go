@@ -1,23 +1,20 @@
-#ifndef LIBSWSCALE_SWSCALE_H
-#define LIBSWSCALE_SWSCALE_H
-
-#include <stdint.h>
-
-struct SwsContext;
-
-#define SWS_BICUBIC 4
-
+#pragma once
 enum AVPixelFormat {
-    AV_PIX_FMT_BGR0 = 28,
+    AV_PIX_FMT_NONE = -1,
     AV_PIX_FMT_RGB32 = 25,
+    AV_PIX_FMT_BGR0 = 28,
 };
-
-struct SwsContext *sws_getContext(int srcW, int srcH, enum AVPixelFormat srcFormat,
-                                   int dstW, int dstH, enum AVPixelFormat dstFormat,
-                                   int flags, void *srcFilter, void *dstFilter,
-                                   const double *param);
+#define SWS_BICUBIC 4
+struct SwsContext;
+#ifdef __cplusplus
+extern "C" {
+#endif
+struct SwsContext *sws_getContext(int srcW, int srcH, int srcFormat,
+    int dstW, int dstH, int dstFormat, int flags,
+    void *srcFilter, void *dstFilter, const double *params);
 int sws_scale(struct SwsContext *c, const uint8_t *const srcSlice[], const int srcStride[],
-               int srcSliceY, int srcSliceH, uint8_t *const dstSlice[], const int dstStride[]);
+    int srcSliceY, int srcSliceH, uint8_t *const dst[], const int dstStride[]);
 void sws_freeContext(struct SwsContext *swsContext);
-
+#ifdef __cplusplus
+}
 #endif
