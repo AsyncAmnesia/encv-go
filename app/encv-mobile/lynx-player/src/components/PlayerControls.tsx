@@ -1,4 +1,11 @@
 import React from '@lynx-js/react';
+import {
+  SliderRoot,
+  SliderTrack,
+  SliderIndicator,
+  SliderThumb,
+  Button,
+} from '@lynx-js/lynx-ui';
 
 interface PlayerControlsProps {
   state: string;
@@ -37,14 +44,16 @@ export function PlayerControls({
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const progress = duration > 0 ? currentTime / duration : 0;
 
   if (error) {
     return (
       <view className="ErrorContainer">
-        <view className="PlayButtonCircle" bindtap={onPlayPause}>
-          <text className="PlayIconLarge">🔄</text>
-        </view>
+        <Button onClick={onPlayPause} className="ErrorRetryBtn">
+          <view className="PlayButtonCircle">
+            <text className="PlayIconLarge">🔄</text>
+          </view>
+        </Button>
         <text className="ErrorTitle">⚠ 播放失败</text>
         <text className="ErrorDetail">{error || "未知错误，点击重试"}</text>
       </view>
@@ -66,9 +75,11 @@ export function PlayerControls({
   if (state === 'idle') {
     return (
       <view className="CenterArea">
-        <view className="PlayButtonCircle" bindtap={onPlayPause}>
-          <text className="PlayIconLarge">▶</text>
-        </view>
+        <Button onClick={onPlayPause} className="IdlePlayBtn">
+          <view className="PlayButtonCircle">
+            <text className="PlayIconLarge">▶</text>
+          </view>
+        </Button>
         <text className="IdleTitle">{fileName || "等待文件信息..."}</text>
       </view>
     );
@@ -78,44 +89,50 @@ export function PlayerControls({
 
   return (
     <view style={{ flex: 1, flexDirection: 'column', justifyContent: 'space-between' }}>
-      {/* Top Bar */}
       <view className="TopBar">
-        <text className="BackButton" bindtap={onBack}>✕</text>
+        <Button onClick={onBack} className="TopBarBtn">
+          <text className="BackButton">✕</text>
+        </Button>
         <text className="TitleText">{fileName}</text>
-        <text className="FullscreenButton" bindtap={onToggleFullscreen}>
-          {isFullscreen ? '⤓' : '⤢'}
-        </text>
+        <Button onClick={onToggleFullscreen} className="TopBarBtn">
+          <text className="FullscreenButton">
+            {isFullscreen ? '⤓' : '⤢'}
+          </text>
+        </Button>
       </view>
 
-      {/* Center Area - Play/Pause Button */}
       <view className="CenterArea">
         {showControls && (
-          <view className="PlayButtonCircle" bindtap={onPlayPause}>
-            <text className="PlayIconLarge">{isPlaying ? '⏸' : '▶'}</text>
-          </view>
+          <Button onClick={onPlayPause} className="CenterPlayBtn">
+            {({ active }) => (
+              <view className="PlayButtonCircle">
+                <text className="PlayIconLarge">{isPlaying ? '⏸' : '▶'}</text>
+              </view>
+            )}
+          </Button>
         )}
       </view>
 
-      {/* Bottom Bar */}
       <view className="BottomBar">
         <text className="TimeLabel">{formatTime(currentTime)}</text>
 
-        <view
-          className="SliderContainer"
-          bindtap={(e: any) => {
-            const rect: any = e.detail || {};
-            if (typeof rect.x === 'number') {
-              const pct = Math.max(0, Math.min(1, rect.x / 300));
-              onSeek(pct * duration);
-            }
+        <SliderRoot
+          value={progress}
+          onValueChange={(val) => {
+            if (duration > 0) onSeek(val * duration);
           }}
+          onValueCommit={(val) => {
+            if (duration > 0) onSeek(val * duration);
+          }}
+          className="PlayerSlider"
         >
-          <view className="SliderTrackOuter">
-            <view className="SliderBuffered" style={{ width: progressPct + '%' }}>
-              <view className="SliderFill" style={{ width: '100%' }} />
-            </view>
-          </view>
-        </view>
+          <SliderTrack className="SliderTrackOuter">
+            <SliderIndicator className="SliderFill" />
+            <SliderThumb className="SliderThumbWrapper">
+              <view className="SliderThumbDot" />
+            </SliderThumb>
+          </SliderTrack>
+        </SliderRoot>
 
         <text className="TimeLabelEnd">{formatTime(duration)}</text>
       </view>

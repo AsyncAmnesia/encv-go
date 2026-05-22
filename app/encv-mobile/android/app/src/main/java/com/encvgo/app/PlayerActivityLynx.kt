@@ -251,6 +251,10 @@ class PlayerActivityLynx : AppCompatActivity() {
 
                 override fun onLoadSuccess() {
                     LogRelay.get().relay(CLIENT_TAG, "info", "onLoadSuccess: template loaded and rendered successfully")
+                    val mpvModule = MpvPlayerModule.getInstance()
+                    if (mpvModule == null) {
+                        LogRelay.get().relay(CLIENT_TAG, "warn", "onLoadSuccess: mpvModule still null after load")
+                    }
                 }
 
                 override fun onLoadFailed(message: String) {
@@ -320,15 +324,6 @@ class PlayerActivityLynx : AppCompatActivity() {
 
             val initData = buildInitDataJson()
             LogRelay.get().relay(TAG, "info", "createLynxView: initData=$initData")
-
-            val mpvModule = MpvPlayerModule.getInstance()
-            LogRelay.get().relay(TAG, "info", "createLynxView: mpvModule instance=$mpvModule")
-            if (rootLayout != null && mpvModule != null) {
-                mpvModule.attachToLayout(rootLayout!!)
-                LogRelay.get().relay(TAG, "info", "createLynxView: attachToLayout called synchronously before renderTemplateUrl")
-            } else {
-                LogRelay.get().relay(TAG, "error", "createLynxView: cannot attachToLayout, rootLayout=$rootLayout, mpvModule=$mpvModule")
-            }
 
             lynxView?.renderTemplateUrl("player.lynx.bundle", initData)
             LogRelay.get().relay(TAG, "info", "createLynxView: renderTemplateUrl called with player.lynx.bundle")

@@ -8,6 +8,7 @@
     "build": "rspeedy build"
   },
   "dependencies": {
+    "@lynx-js/lynx-ui": "^3.133.0",
     "@lynx-js/react": "^0.121.0",
     "react": "^18.2.0"
   },

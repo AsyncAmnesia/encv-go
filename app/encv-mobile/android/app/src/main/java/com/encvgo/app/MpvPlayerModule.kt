@@ -62,6 +62,17 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
     init {
         _instance = this
         LogRelay.get().relay(TAG, "info", "init: MpvPlayerModule created")
+        val act = activity
+        if (act is PlayerActivityLynx) {
+            val root = act.findViewById<android.widget.FrameLayout>(R.id.lynx_player_root)
+            if (root != null) {
+                attachToLayout(root)
+            } else {
+                LogRelay.get().relay(TAG, "warn", "init: lynx_player_root not found, will attach later")
+            }
+        } else {
+            LogRelay.get().relay(TAG, "warn", "init: activity is not PlayerActivityLynx, skipping auto-attach")
+        }
     }
 
     private fun ensureMpvInitialized() {
