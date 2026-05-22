@@ -5,40 +5,41 @@
 Android 上没有以下 CLI 工具：
 - **ffprobe**：元数据提取（时长、格式、章节、关键帧）
 - **ffmpeg**：编码（H.264/AAC）、remux（fast-start MP4）
-- **mkvmerge/mkvinfo**：MKV 容器操作（合并、Cues 生成、验证）
+- **mkvmerge/mkvinfo/mkvextract**：MKV 容器操作
 
 mpv-android-lib AAR 中的 ffmpeg .so 是**解码专用**的，不支持编码，且没有 CLI 可执行文件。
 
 ## 方案
 
-### 1. ffmpeg/ffprobe：使用 Static 版本
+### 1. ffmpeg/ffprobe：使用 Static 版本可执行文件
 
-下载 KaluaBilla/ffmpeg-android 的 **Static** 版本（完全自包含，不依赖 .so，包含 libx264 编码器）。
+从 `KaluaBilla/ffmpeg-android` 下载 **Static** 版本（完全自包含，不依赖 .so，包含 libx264 编码器）。
 
 - 改 `setup-ffmpeg-cli.sh`：`Dynamic` → `Static`
-- Static 版本 ~75MB/个，APK 增加约 150MB
-- 无 .so 冲突问题
+- 以 `libffmpeg_exec.so` / `libffprobe_exec.so` 放入 jniLibs
+- EncvGoService 启动时复制到 `filesDir/bin/` 并设置 PATH
 
-### 2. mkvmerge/mkvinfo：用 ffmpeg 替代
+### 2. mkvmerge/mkvinfo/mkvextract：用 Go 原生库替代
 
-在 Android（`ENCV_MOBILE=1`）环境下，mkvmerge 不可用。解决方案：
+MKV 基于 EBML 格式，完全开源。有两个可用的 Go 库：
 
-**MKV remux 场景**（`remapWithMKVMerge`）：
-- 原逻辑：mkvmerge --cues 重新生成 Cues
-- 替代方案：用 ffmpeg `-c copy` remux 为 MKV，虽然不生成 Cues，但 ffmpeg 的 MKV muxer 会自动生成基本的 Cues
-- 如果 `keep_mkv` 选项开启但 mkvmerge 不可用，降级为 ffmpeg remux
+- **`github.com/at-wat/ebml-go/mkvcore`** (Apache-2.0)：支持 MKV 读写，SimpleBlockReader/SimpleBlockWriter
+- **`github.com/coding-socks/matroska`** (MIT)：完整的 Matroska 类型定义，读取和提取
 
-**MKV 合并场景**（`mergeSplitParts`）：
-- 原逻辑：mkvmerge 用 `+` 追加合并
-- 替代方案：用 ffmpeg concat demuxer 合并
+用 Go 原生库替代所有 mkvtoolnix CLI 调用，**零外部依赖**，Android 和桌面端统一代码。
 
-**mkvinfo 验证场景**：
-- 原逻辑：mkvinfo -P 验证文件完整性
-- 替代方案：用 ffprobe 验证（检查 duration > 0、有视频流等）
+#### 当前 mkvtoolnix 使用场景 → Go 库替代方案
 
-**mkvmerge -J 识别场景**：
-- 原逻辑：mkvmerge -J 获取轨道信息
-- 替代方案：用 ffprobe -show_streams 获取
+| 场景 | 当前 CLI | Go 替代方案 |
+|------|---------|------------|
+| 识别轨道 | `mkvmerge -J` | ffprobe `-show_streams`（已有） |
+| 检查 Cues 元素 | `mkvinfo -v` + grep `"\|+ Cues"` | ebml-go 解析 EBML 结构，查找 Cues Element ID |
+| 提取关键帧偏移 | `mkvextract cues` | ebml-go 直接解析 Cues 元素，读取 CueClusterPosition |
+| 提取章节 | `mkvextract chapters` | matroska 库读取 Chapters 元素 |
+| MKV remux+Cues | `mkvmerge --cues` | ebml-go 读取所有 Cluster+Block，重新写入带 Cues 的 MKV |
+| 合并分片 | `mkvmerge -o ... +` | ebml-go 读取多个文件的 Cluster，按时间戳合并写入 |
+| 验证完整性 | `mkvinfo -P` | ffprobe 检查 duration > 0 |
+| 检查分片链接 | `mkvinfo -p` + grep PrevUID/NextUID | ebml-go 解析 SegmentInfo 中的 PrevUID/NextUID |
 
 ### 3. 实施步骤
 
@@ -46,38 +47,66 @@ mpv-android-lib AAR 中的 ffmpeg .so 是**解码专用**的，不支持编码�
 - 下载 Static 版本：`ffmpeg-8.0-e05f8ac-Static-android-arm64-v8a.zip`
 - 以 `libffmpeg_exec.so` / `libffprobe_exec.so` 放入 jniLibs
 
-#### Step 2: 添加 mkvmerge 不可用时的降级逻辑
-在 `content_preprocessor.go` 和 `mkvtoolnix.go` 中：
-- 检测 `ENCV_MOBILE` 环境变量或 mkvmerge 是否可用
-- 不可用时降级到 ffmpeg 方案：
-  - `remapWithMKVMerge` → `ffmpeg -c copy` remux MKV
-  - `mergeSplitParts` → ffmpeg concat demuxer
-  - `mkvinfo -P` 验证 → ffprobe 验证
-  - `mkvmerge -J` → ffprobe -show_streams
+#### Step 2: 添加 Go MKV 处理库
+创建 `internal/v2/plugins/video/mkv_native.go`，使用 `ebml-go` + `matroska` 库实现：
 
-#### Step 3: 添加 ffmpeg concat 合并工具函数
+1. **`nativeCheckCues(filePath string) (bool, error)`**
+   - 打开文件，解析 EBML 结构
+   - 查找 Cues 元素（EBML ID: 0x1C53BB6B）
+   - 返回是否存在
+
+2. **`nativeExtractKeyFrameOffsets(filePath string) ([]uint64, error)`**
+   - 解析 Cues 元素中的 CuePoint → CueClusterPosition
+   - 加上 Segment 起始偏移量得到全局偏移
+
+3. **`nativeExtractChapters(filePath string) ([]MKVChapterInfo, error)`**
+   - 使用 matroska 库读取 Chapters 元素
+   - 转换为 MKVChapterInfo 结构
+
+4. **`nativeRemuxWithCues(inputPath, outputPath string, cuesMode string) error`**
+   - 读取源 MKV 的所有轨道定义、Cluster、Block
+   - 重新写入新的 MKV 文件
+   - 根据关键帧信息生成 Cues 元素
+
+5. **`nativeMergeSplitParts(paths []string, outputPath string) error`**
+   - 读取多个 MKV 文件的 Cluster
+   - 按时间戳偏移合并写入
+   - 生成合并后的 Cues
+
+6. **`nativeCheckSplitInfo(filePath string) (segmentUID, prevUID, nextUID []byte, isSplit bool, error)`**
+   - 解析 SegmentInfo 中的 SegmentUID、PrevUID、NextUID
+
+7. **`nativeVerifyMKV(filePath string) error`**
+   - 解析 EBML 头和 Segment 结构
+   - 验证基本完整性
+
+#### Step 3: 添加降级逻辑
+在 `mkvtoolnix.go` 中，每个函数先尝试 Go 原生实现，失败时回退到 CLI：
+
 ```go
-func mergeMKVWithFFmpeg(paths []string, outputPath string) error {
-    // 创建 concat 文件列表
-    // ffmpeg -f concat -safe 0 -i list.txt -c copy output.mkv
+func extractKeyFrameOffsetsFromMKV(filePath string) ([]uint64, error) {
+    // 优先使用 Go 原生实现
+    offsets, err := nativeExtractKeyFrameOffsets(filePath)
+    if err == nil && len(offsets) > 0 {
+        return offsets, nil
+    }
+    // 回退到 CLI（桌面端）
+    return extractKeyFrameOffsetsFromMKVCli(filePath)
 }
 ```
 
-#### Step 4: 添加 ffprobe 验证函数
-```go
-func verifyWithFFprobe(filePath string) error {
-    // ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 filePath
-    // 检查 duration > 0
-}
-```
+#### Step 4: 更新 content_preprocessor.go
+- `remapWithMKVMerge` → 优先调用 `nativeRemuxWithCues`，失败回退 `mkvmerge` CLI
+- `ExtractChaptersWithMKVExtract` → 优先调用 `nativeExtractChapters`，失败回退 `mkvextract` CLI
 
-#### Step 5: 验证 CI 构建
-- 确保 Static 版本下载正确
-- 确保 APK 包含 libffmpeg_exec.so 和 libffprobe_exec.so
+#### Step 5: 验证
+- `go build ./internal/...` 编译通过
+- `vue-tsc --noEmit` 前端类型检查通过
 
 ## 修改文件清单
 
 1. `/workspace/app/encv-mobile/scripts/setup-ffmpeg-cli.sh` — Dynamic → Static
-2. `/workspace/internal/v2/plugins/video/content_preprocessor.go` — mkvmerge 降级逻辑
-3. `/workspace/internal/v2/plugins/video/mkvtoolnix.go` — mkvmerge/mkvinfo 降级逻辑
-4. `/workspace/internal/utils/video.go` — 添加 ffmpeg concat 和 ffprobe 验证辅助函数
+2. `/workspace/internal/v2/plugins/video/mkv_native.go` — 新建，Go 原生 MKV 处理
+3. `/workspace/internal/v2/plugins/video/mkvtoolnix.go` — 添加降级逻辑
+4. `/workspace/internal/v2/plugins/video/content_preprocessor.go` — remapWithMKVMerge 降级
+5. `/workspace/go.mod` / `go.sum` — 添加 ebml-go、matroska 依赖
