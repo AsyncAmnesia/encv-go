@@ -134,15 +134,8 @@ jobs:
           APP_BUILD=app/encv-mobile/android/app/build.gradle
           echo "Applying release signing to $APP_BUILD"
 
-          sed -i '/android {/a\
-\            signingConfigs {\
-\                release {\
-\                    storeFile file('"'"'../../keystore/release.jks'"'"')\
-\                    storePassword '"'"'encv2025'"'"'\
-\                    keyAlias '"'"'encvrelease'"'"'\
-\                    keyPassword '"'"'encv2025'"'"'\
-\                }\
-\            }' "$APP_BUILD"
+          SIGNING_BLOCK='signingConfigs { release { storeFile file('"'"'../../keystore/release.jks'"'"'); storePassword '"'"'encv2025'"'"'; keyAlias '"'"'encvrelease'"'"'; keyPassword '"'"'encv2025'"'"'; } }'
+          sed -i "/android {/a\\        $SIGNING_BLOCK" "$APP_BUILD"
 
           sed -i 's/\(release {[^}]*\)minifyEnabled false/\1minifyEnabled true\n            shrinkResources true\n            signingConfig signingConfigs.release/' "$APP_BUILD"
 
