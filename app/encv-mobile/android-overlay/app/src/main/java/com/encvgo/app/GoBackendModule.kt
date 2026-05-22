@@ -24,7 +24,7 @@ class GoBackendModule(context: android.content.Context) : LynxModule(context) {
         fun getInstance(): GoBackendModule? = _instance
     }
 
-    private val lynxContext = context as LynxContext
+    private val lynxContext = context as? LynxContext
     private val appContext = context.applicationContext
     private var receiverRegistered = false
 
@@ -134,13 +134,13 @@ class GoBackendModule(context: android.content.Context) : LynxModule(context) {
         val data = JavaOnlyMap().apply { put("port", port) }
         val params = JavaOnlyArray()
         params.pushMap(data)
-        lynxContext.sendGlobalEvent(EVENT_READY, params)
+        lynxContext?.sendGlobalEvent(EVENT_READY, params)
     }
 
     private fun dispatchError(message: String) {
         val data = JavaOnlyMap().apply { put("message", message) }
         val params = JavaOnlyArray()
         params.pushMap(data)
-        lynxContext.sendGlobalEvent(EVENT_ERROR, params)
+        lynxContext?.sendGlobalEvent(EVENT_ERROR, params)
     }
 }

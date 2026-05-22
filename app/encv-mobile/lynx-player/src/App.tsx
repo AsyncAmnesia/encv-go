@@ -101,9 +101,15 @@ export function App() {
     setShowControls((prev) => !prev);
   }, [showControls]);
 
+  const isOverlay = playerState === "loading" || playerState === "error" || playerState === "idle";
+
   return (
     <page>
-      <view className="PlayerContainer" bindtap={handleToggleControls}>
+      <view
+        className="PlayerContainer"
+        bindtap={handleToggleControls}
+        style={isOverlay ? { justifyContent: "center" } : undefined}
+      >
         {showControls && (
           <PlayerControls
             fileName={fileName}

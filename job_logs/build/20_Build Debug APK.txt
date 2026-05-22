@@ -1,0 +1,192 @@
+﻿2026-05-22T01:09:43.7628516Z ##[group]Run cd app/encv-mobile/android
+2026-05-22T01:09:43.7628908Z [36;1mcd app/encv-mobile/android[0m
+2026-05-22T01:09:43.7629215Z [36;1mchmod +x gradlew[0m
+2026-05-22T01:09:43.7629468Z [36;1m[0m
+2026-05-22T01:09:43.7629697Z [36;1mif [ -n "" ]; then[0m
+2026-05-22T01:09:43.7630013Z [36;1m  echo "=== Building RELEASE APK v ==="[0m
+2026-05-22T01:09:43.7630360Z [36;1m  ./gradlew assembleRelease[0m
+2026-05-22T01:09:43.7630639Z [36;1m[0m
+2026-05-22T01:09:43.7631020Z [36;1m  APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)[0m
+2026-05-22T01:09:43.7631551Z [36;1m  [ -z "$APK_PATH" ] && { echo "::error::No APK found"; exit 1; }[0m
+2026-05-22T01:09:43.7631913Z [36;1m[0m
+2026-05-22T01:09:43.7632153Z [36;1m  echo "Verifying signature..."[0m
+2026-05-22T01:09:43.7632608Z [36;1m  APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name "apksigner" -type f | head -1)[0m
+2026-05-22T01:09:43.7633243Z [36;1m  [ -z "$APKSIGNER" ] && { echo "::error::apksigner not found in $ANDROID_HOME/build-tools"; exit 1; }[0m
+2026-05-22T01:09:43.7633950Z [36;1m  "$APKSIGNER" verify --print-certs "$APK_PATH"[0m
+2026-05-22T01:09:43.7634646Z [36;1m  echo "✅ Signed OK: $(ls -lh "$APK_PATH" | awk '{print $5}')"[0m
+2026-05-22T01:09:43.7635170Z [36;1melse[0m
+2026-05-22T01:09:43.7635433Z [36;1m  echo "=== Building DEBUG APK ==="[0m
+2026-05-22T01:09:43.7635787Z [36;1m  ./gradlew assembleDebug --stacktrace[0m
+2026-05-22T01:09:43.7636098Z [36;1mfi[0m
+2026-05-22T01:09:43.7671297Z shell: /usr/bin/bash -e {0}
+2026-05-22T01:09:43.7671586Z env:
+2026-05-22T01:09:43.7671936Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T01:09:43.7672469Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T01:09:43.7672894Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-22T01:09:43.7673221Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-22T01:09:43.7673526Z ##[endgroup]
+2026-05-22T01:09:43.7743268Z === Building DEBUG APK ===
+2026-05-22T01:09:43.8583917Z Downloading https://services.gradle.org/distributions/gradle-8.14.3-all.zip
+2026-05-22T01:09:45.9926867Z .....................10%.....................20%......................30%.....................40%......................50%.....................60%.....................70%......................80%.....................90%......................100%
+2026-05-22T01:09:49.4373381Z 
+2026-05-22T01:09:49.4374698Z Welcome to Gradle 8.14.3!
+2026-05-22T01:09:49.4375435Z 
+2026-05-22T01:09:49.4376039Z Here are the highlights of this release:
+2026-05-22T01:09:49.4376903Z  - Java 24 support
+2026-05-22T01:09:49.4385757Z  - GraalVM Native Image toolchain selection
+2026-05-22T01:09:49.4386821Z  - Enhancements to test reporting
+2026-05-22T01:09:49.4387497Z  - Build Authoring improvements
+2026-05-22T01:09:49.4387822Z 
+2026-05-22T01:09:49.4388502Z For more details see https://docs.gradle.org/8.14.3/release-notes.html
+2026-05-22T01:09:49.4389013Z 
+2026-05-22T01:09:49.5385747Z Starting a Gradle Daemon (subsequent builds will be faster)
+2026-05-22T01:10:17.8379039Z 
+2026-05-22T01:10:17.8396823Z > Configure project :app
+2026-05-22T01:10:17.8398195Z WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
+2026-05-22T01:10:20.6390135Z 
+2026-05-22T01:10:20.6391586Z > Configure project :capacitor-cordova-android-plugins
+2026-05-22T01:10:20.6393327Z WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
+2026-05-22T01:10:21.9372131Z 
+2026-05-22T01:10:21.9373296Z > Task :app:preBuild UP-TO-DATE
+2026-05-22T01:10:21.9374540Z > Task :app:preDebugBuild UP-TO-DATE
+2026-05-22T01:10:22.0382120Z > Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+2026-05-22T01:10:22.0402738Z > Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+2026-05-22T01:10:22.0403900Z > Task :app:generateDebugBuildConfig
+2026-05-22T01:10:22.0405125Z > Task :capacitor-android:preBuild UP-TO-DATE
+2026-05-22T01:10:22.0406173Z > Task :capacitor-android:preDebugBuild UP-TO-DATE
+2026-05-22T01:10:22.0407784Z > Task :capacitor-cordova-android-plugins:preBuild UP-TO-DATE
+2026-05-22T01:10:22.0408984Z > Task :capacitor-cordova-android-plugins:preDebugBuild UP-TO-DATE
+2026-05-22T01:10:22.1398664Z > Task :capacitor-android:writeDebugAarMetadata
+2026-05-22T01:10:22.1405365Z > Task :capacitor-cordova-android-plugins:writeDebugAarMetadata
+2026-05-22T01:10:22.1408291Z > Task :capacitor-android:processDebugNavigationResources
+2026-05-22T01:10:30.7376268Z > Task :capacitor-cordova-android-plugins:processDebugNavigationResources
+2026-05-22T01:10:30.7394172Z > Task :app:checkDebugAarMetadata
+2026-05-22T01:10:30.8366897Z > Task :app:processDebugNavigationResources
+2026-05-22T01:10:31.1386233Z > Task :app:generateDebugResValues
+2026-05-22T01:10:31.1401299Z > Task :capacitor-android:generateDebugResValues
+2026-05-22T01:10:31.1402278Z > Task :app:compileDebugNavigationResources
+2026-05-22T01:10:31.1403219Z > Task :capacitor-android:generateDebugResources
+2026-05-22T01:10:31.1404166Z > Task :capacitor-android:packageDebugResources
+2026-05-22T01:10:31.1405845Z > Task :capacitor-cordova-android-plugins:generateDebugResValues
+2026-05-22T01:10:31.2367824Z > Task :capacitor-cordova-android-plugins:generateDebugResources
+2026-05-22T01:10:31.2374859Z > Task :capacitor-cordova-android-plugins:packageDebugResources
+2026-05-22T01:10:31.3380778Z > Task :app:mapDebugSourceSetPaths
+2026-05-22T01:10:31.3410949Z > Task :app:generateDebugResources
+2026-05-22T01:10:31.9383193Z > Task :app:packageDebugResources
+2026-05-22T01:10:32.5368716Z > Task :app:mergeDebugResources
+2026-05-22T01:10:32.9377213Z > Task :app:createDebugCompatibleScreenManifests
+2026-05-22T01:10:33.0406051Z > Task :app:extractDeepLinksDebug
+2026-05-22T01:10:33.0445283Z > Task :capacitor-android:extractDeepLinksDebug
+2026-05-22T01:10:33.0495433Z > Task :capacitor-cordova-android-plugins:extractDeepLinksDebug
+2026-05-22T01:10:33.0503254Z > Task :capacitor-android:compileDebugLibraryResources
+2026-05-22T01:10:33.0504099Z > Task :app:parseDebugLocalResources
+2026-05-22T01:10:33.1380402Z > Task :capacitor-android:processDebugManifest
+2026-05-22T01:10:33.1382169Z > Task :capacitor-cordova-android-plugins:processDebugManifest
+2026-05-22T01:10:33.1384845Z > Task :capacitor-cordova-android-plugins:compileDebugLibraryResources
+2026-05-22T01:10:33.1386262Z > Task :capacitor-android:parseDebugLocalResources
+2026-05-22T01:10:33.1387496Z > Task :capacitor-cordova-android-plugins:parseDebugLocalResources
+2026-05-22T01:10:33.3366955Z > Task :app:processDebugMainManifest
+2026-05-22T01:10:33.4385856Z > Task :app:processDebugManifest
+2026-05-22T01:10:33.4405232Z > Task :app:processDebugManifestForPackage
+2026-05-22T01:10:33.4435152Z > Task :capacitor-android:javaPreCompileDebug
+2026-05-22T01:10:33.4436294Z > Task :capacitor-cordova-android-plugins:javaPreCompileDebug
+2026-05-22T01:10:33.4437103Z > Task :app:javaPreCompileDebug
+2026-05-22T01:10:33.4437984Z > Task :capacitor-cordova-android-plugins:generateDebugRFile
+2026-05-22T01:10:33.5385960Z > Task :capacitor-android:generateDebugRFile
+2026-05-22T01:10:33.5455422Z > Task :app:mergeDebugShaders
+2026-05-22T01:10:35.2395676Z > Task :app:processDebugResources
+2026-05-22T01:10:40.5367545Z 
+2026-05-22T01:10:40.5368494Z > Task :capacitor-android:compileDebugJavaWithJavac
+2026-05-22T01:10:40.5395415Z Note: Some input files use unchecked or unsafe operations.
+2026-05-22T01:10:40.5431325Z Note: Recompile with -Xlint:unchecked for details.
+2026-05-22T01:10:42.4373863Z 
+2026-05-22T01:10:42.4406765Z > Task :capacitor-cordova-android-plugins:compileDebugJavaWithJavac NO-SOURCE
+2026-05-22T01:10:42.4435147Z > Task :app:compileDebugShaders NO-SOURCE
+2026-05-22T01:10:42.4465152Z > Task :app:generateDebugAssets UP-TO-DATE
+2026-05-22T01:10:42.4481430Z > Task :capacitor-cordova-android-plugins:bundleLibCompileToJarDebug
+2026-05-22T01:10:42.4489693Z > Task :capacitor-android:mergeDebugShaders
+2026-05-22T01:10:42.4490743Z > Task :capacitor-android:compileDebugShaders NO-SOURCE
+2026-05-22T01:10:42.4491868Z > Task :capacitor-android:generateDebugAssets UP-TO-DATE
+2026-05-22T01:10:42.4493715Z > Task :capacitor-android:bundleLibCompileToJarDebug
+2026-05-22T01:10:42.4494831Z > Task :capacitor-android:mergeDebugAssets
+2026-05-22T01:10:48.0372090Z > Task :capacitor-cordova-android-plugins:mergeDebugShaders
+2026-05-22T01:10:48.0385770Z > Task :capacitor-cordova-android-plugins:compileDebugShaders NO-SOURCE
+2026-05-22T01:10:48.0406070Z > Task :capacitor-cordova-android-plugins:generateDebugAssets UP-TO-DATE
+2026-05-22T01:10:48.0431894Z > Task :capacitor-cordova-android-plugins:mergeDebugAssets
+2026-05-22T01:10:48.3389075Z > Task :app:mergeDebugAssets
+2026-05-22T01:10:48.3396125Z > Task :capacitor-cordova-android-plugins:bundleLibRuntimeToJarDebug
+2026-05-22T01:10:48.3399715Z > Task :capacitor-android:bundleLibRuntimeToJarDebug
+2026-05-22T01:10:48.4370461Z > Task :app:compressDebugAssets
+2026-05-22T01:10:48.4407257Z > Task :app:desugarDebugFileDependencies
+2026-05-22T01:10:48.4460770Z > Task :capacitor-android:processDebugJavaRes NO-SOURCE
+2026-05-22T01:10:48.4535612Z > Task :capacitor-cordova-android-plugins:processDebugJavaRes NO-SOURCE
+2026-05-22T01:10:49.7376035Z > Task :app:checkDebugDuplicateClasses
+2026-05-22T01:10:49.7435477Z > Task :capacitor-android:bundleLibRuntimeToDirDebug
+2026-05-22T01:11:12.4367621Z > Task :app:compileDebugKotlin
+2026-05-22T01:11:15.9370423Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/java/com/encvgo/app/MpvPlayerModule.kt:229:64 'static field FLAG_FULLSCREEN: Int' is deprecated. Deprecated in Java.
+2026-05-22T01:11:15.9426934Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/java/com/encvgo/app/MpvPlayerModule.kt:242:66 'static field FLAG_FULLSCREEN: Int' is deprecated. Deprecated in Java.
+2026-05-22T01:11:19.7384839Z 
+2026-05-22T01:11:19.7435531Z > Task :app:mergeExtDexDebug
+2026-05-22T01:11:26.7366986Z > Task :app:compileDebugJavaWithJavac
+2026-05-22T01:11:27.3367303Z > Task :app:dexBuilderDebug
+2026-05-22T01:11:27.4368624Z > Task :app:mergeDebugGlobalSynthetics
+2026-05-22T01:11:27.4414695Z > Task :app:processDebugJavaRes
+2026-05-22T01:11:28.0367457Z > Task :capacitor-cordova-android-plugins:bundleLibRuntimeToDirDebug
+2026-05-22T01:11:28.3385972Z > Task :app:mergeProjectDexDebug
+2026-05-22T01:11:28.5396502Z > Task :app:mergeLibDexDebug
+2026-05-22T01:11:28.5455619Z > Task :app:mergeDebugJniLibFolders
+2026-05-22T01:11:28.6385936Z > Task :capacitor-android:mergeDebugJniLibFolders
+2026-05-22T01:11:28.6390012Z > Task :capacitor-android:mergeDebugNativeLibs NO-SOURCE
+2026-05-22T01:11:28.6391121Z > Task :capacitor-cordova-android-plugins:mergeDebugJniLibFolders
+2026-05-22T01:11:28.6396124Z > Task :capacitor-android:copyDebugJniLibsProjectOnly
+2026-05-22T01:11:28.6413387Z > Task :capacitor-cordova-android-plugins:mergeDebugNativeLibs NO-SOURCE
+2026-05-22T01:11:28.6414977Z > Task :capacitor-cordova-android-plugins:copyDebugJniLibsProjectOnly
+2026-05-22T01:11:29.2376019Z > Task :app:mergeDebugJavaResource
+2026-05-22T01:11:30.0388211Z > Task :app:validateSigningDebug
+2026-05-22T01:11:30.2367544Z > Task :app:writeDebugAppMetadata
+2026-05-22T01:11:30.2405487Z > Task :app:writeDebugSigningConfigVersions
+2026-05-22T01:11:30.3377246Z > Task :capacitor-android:stripDebugDebugSymbols NO-SOURCE
+2026-05-22T01:11:30.3378550Z > Task :capacitor-android:checkDebugAarMetadata
+2026-05-22T01:11:30.3379770Z > Task :capacitor-android:copyDebugJniLibsProjectAndLocalJars
+2026-05-22T01:11:30.7368152Z > Task :app:mergeDebugNativeLibs
+2026-05-22T01:11:34.9436052Z > Task :capacitor-android:extractDebugAnnotations
+2026-05-22T01:11:34.9495925Z > Task :capacitor-android:extractDeepLinksForAarDebug
+2026-05-22T01:11:34.9508819Z > Task :capacitor-android:mergeDebugGeneratedProguardFiles
+2026-05-22T01:11:34.9510178Z > Task :capacitor-android:mergeDebugConsumerProguardFiles
+2026-05-22T01:11:34.9515499Z > Task :capacitor-android:prepareDebugArtProfile
+2026-05-22T01:11:35.0368583Z > Task :capacitor-android:prepareLintJarForPublish
+2026-05-22T01:11:35.0369454Z > Task :capacitor-android:mergeDebugJavaResource
+2026-05-22T01:11:35.3365657Z 
+2026-05-22T01:11:35.3366550Z > Task :app:stripDebugDebugSymbols
+2026-05-22T01:11:35.3369810Z Unable to strip the following libraries, packaging them as they are: libbasedevtool.so, libencv-go.so, libgifimage.so, libimagepipeline.so, liblynx.so, liblynx_debug.so, liblynx_service_api.so, liblynx_v8_bridge.so, liblynxbase.so, liblynxdebugrouter.so, liblynxdevtool.so, liblynxdevtool_qjs_bridge.so, liblynxdevtool_v8_bridge.so, liblynxtrace.so, libmpv.so, libnapi.so, libnapi_v8.so, libnative-filters.so, libnative-imagetranscoder.so, libplayer.so, libquick.so, libstatic-webp.so, libv8_libfull.cr.so. Run with --info option to learn more.
+2026-05-22T01:11:35.8374997Z 
+2026-05-22T01:11:35.8395915Z > Task :capacitor-cordova-android-plugins:checkDebugAarMetadata
+2026-05-22T01:11:35.8455357Z > Task :capacitor-android:syncDebugLibJars
+2026-05-22T01:11:35.9367522Z > Task :capacitor-android:bundleDebugAar
+2026-05-22T01:11:35.9371476Z > Task :capacitor-android:assembleDebug
+2026-05-22T01:11:35.9385063Z > Task :capacitor-cordova-android-plugins:stripDebugDebugSymbols NO-SOURCE
+2026-05-22T01:11:35.9386818Z > Task :capacitor-cordova-android-plugins:copyDebugJniLibsProjectAndLocalJars
+2026-05-22T01:11:37.2367236Z > Task :capacitor-cordova-android-plugins:extractDebugAnnotations
+2026-05-22T01:11:37.3370860Z > Task :capacitor-cordova-android-plugins:extractDeepLinksForAarDebug
+2026-05-22T01:11:37.3388447Z > Task :capacitor-cordova-android-plugins:mergeDebugGeneratedProguardFiles
+2026-05-22T01:11:37.3390114Z > Task :capacitor-cordova-android-plugins:mergeDebugConsumerProguardFiles
+2026-05-22T01:11:37.3392998Z > Task :capacitor-cordova-android-plugins:prepareDebugArtProfile
+2026-05-22T01:11:37.3410025Z > Task :capacitor-cordova-android-plugins:prepareLintJarForPublish
+2026-05-22T01:11:37.3411612Z > Task :capacitor-cordova-android-plugins:mergeDebugJavaResource
+2026-05-22T01:11:37.3412590Z > Task :app:packageDebug
+2026-05-22T01:11:37.3413483Z > Task :app:createDebugApkListingFileRedirect
+2026-05-22T01:11:37.3414523Z > Task :app:assembleDebug
+2026-05-22T01:11:37.4367986Z > Task :capacitor-cordova-android-plugins:syncDebugLibJars
+2026-05-22T01:11:37.4377373Z > Task :capacitor-cordova-android-plugins:bundleDebugAar
+2026-05-22T01:11:37.4378590Z > Task :capacitor-cordova-android-plugins:assembleDebug
+2026-05-22T01:11:37.4379318Z 
+2026-05-22T01:11:37.4380981Z [Incubating] Problems report is available at: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/reports/problems/problems-report.html
+2026-05-22T01:11:37.4382174Z 
+2026-05-22T01:11:37.4383193Z Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+2026-05-22T01:11:37.4383983Z 
+2026-05-22T01:11:37.4385642Z You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+2026-05-22T01:11:37.4386776Z 
+2026-05-22T01:11:37.4388428Z For more on this, please refer to https://docs.gradle.org/8.14.3/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+2026-05-22T01:11:37.4389604Z 
+2026-05-22T01:11:37.4390052Z BUILD SUCCESSFUL in 1m 53s
+2026-05-22T01:11:37.4390822Z 98 actionable tasks: 98 executed

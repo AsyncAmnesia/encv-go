@@ -1,0 +1,50 @@
+﻿2026-05-22T01:09:43.7138971Z ##[group]Run echo "=== build.gradle kotlin/sourceSets/namespace ==="
+2026-05-22T01:09:43.7139503Z [36;1mecho "=== build.gradle kotlin/sourceSets/namespace ==="[0m
+2026-05-22T01:09:43.7140176Z [36;1mgrep -n "kotlin\|sourceSets\|namespace\|apply plugin.*kotlin\|plugins\s*{" app/encv-mobile/android/app/build.gradle || true[0m
+2026-05-22T01:09:43.7140781Z [36;1mecho "=== Source .kt files ==="[0m
+2026-05-22T01:09:43.7141369Z [36;1mfind app/encv-mobile/android/app/src/main/java -name "*.kt" -type f -exec sh -c 'echo "  {} ($(wc -l < {}) lines)"; head -1 {}' \;[0m
+2026-05-22T01:09:43.7141970Z [36;1mecho "=== AndroidManifest activity ==="[0m
+2026-05-22T01:09:43.7142528Z [36;1mgrep -n "activity\|android:name" app/encv-mobile/android/app/src/main/AndroidManifest.xml | head -5[0m
+2026-05-22T01:09:43.7176402Z shell: /usr/bin/bash -e {0}
+2026-05-22T01:09:43.7176689Z env:
+2026-05-22T01:09:43.7177031Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T01:09:43.7177565Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T01:09:43.7178021Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-22T01:09:43.7178347Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-22T01:09:43.7178767Z ##[endgroup]
+2026-05-22T01:09:43.7234582Z === build.gradle kotlin/sourceSets/namespace ===
+2026-05-22T01:09:43.7249782Z 2:apply plugin: 'kotlin-android'
+2026-05-22T01:09:43.7250293Z 14:    sourceSets {
+2026-05-22T01:09:43.7250678Z 22:    namespace = "com.encvgo.app"
+2026-05-22T01:09:43.7251246Z 77:    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.0"
+2026-05-22T01:09:43.7252218Z 100:tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+2026-05-22T01:09:43.7252777Z 101:    kotlinOptions {
+2026-05-22T01:09:43.7253108Z === Source .kt files ===
+2026-05-22T01:09:43.7289514Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerActivityLynx.kt (304 lines)
+2026-05-22T01:09:43.7296326Z package com.encvgo.app
+2026-05-22T01:09:43.7317932Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerActivityCapacitor.kt (315 lines)
+2026-05-22T01:09:43.7324256Z package com.encvgo.app
+2026-05-22T01:09:43.7345278Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvApplication.kt (66 lines)
+2026-05-22T01:09:43.7351820Z package com.encvgo.app
+2026-05-22T01:09:43.7372800Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt (540 lines)
+2026-05-22T01:09:43.7379886Z package com.encvgo.app
+2026-05-22T01:09:43.7400563Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt (148 lines)
+2026-05-22T01:09:43.7407107Z package com.encvgo.app
+2026-05-22T01:09:43.7428594Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt (257 lines)
+2026-05-22T01:09:43.7435461Z package com.encvgo.app
+2026-05-22T01:09:43.7456203Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoBackendModule.kt (146 lines)
+2026-05-22T01:09:43.7462681Z package com.encvgo.app
+2026-05-22T01:09:43.7483843Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/MpvPlayerModule.kt (411 lines)
+2026-05-22T01:09:43.7490497Z package com.encvgo.app
+2026-05-22T01:09:43.7511708Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerTemplateProvider.kt (43 lines)
+2026-05-22T01:09:43.7518581Z package com.encvgo.app
+2026-05-22T01:09:43.7539514Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerActivity.kt (22 lines)
+2026-05-22T01:09:43.7546190Z package com.encvgo.app
+2026-05-22T01:09:43.7568097Z   app/encv-mobile/android/app/src/main/java/is/xyz/mpv/MPVLib.kt (183 lines)
+2026-05-22T01:09:43.7575091Z package `is`.xyz.mpv
+2026-05-22T01:09:43.7580682Z === AndroidManifest activity ===
+2026-05-22T01:09:43.7595731Z 5:    <uses-permission android:name="android.permission.INTERNET" />
+2026-05-22T01:09:43.7597007Z 6:    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+2026-05-22T01:09:43.7599059Z 8:        android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"
+2026-05-22T01:09:43.7600360Z 11:        android:name="android.permission.POST_NOTIFICATIONS"
+2026-05-22T01:09:43.7601948Z 13:    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />

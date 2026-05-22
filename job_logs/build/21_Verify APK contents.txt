@@ -1,0 +1,104 @@
+﻿2026-05-22T01:11:37.7809511Z ##[group]Run APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk -name "*.apk" -type f | head -1)
+2026-05-22T01:11:37.7810328Z [36;1mAPK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk -name "*.apk" -type f | head -1)[0m
+2026-05-22T01:11:37.7810855Z [36;1mif [ -n "$APK_PATH" ]; then[0m
+2026-05-22T01:11:37.7811152Z [36;1m  echo "=== APK size ==="[0m
+2026-05-22T01:11:37.7811486Z [36;1m  ls -lh "$APK_PATH"[0m
+2026-05-22T01:11:37.7811768Z [36;1m  echo "=== Assets ==="[0m
+2026-05-22T01:11:37.7812139Z [36;1m  unzip -l "$APK_PATH" | grep -E "encv-go|config.mobile" || true[0m
+2026-05-22T01:11:37.7812592Z [36;1m  echo "=== DEX strings check (real class presence) ==="[0m
+2026-05-22T01:11:37.7812949Z [36;1m  TMPDIR=$(mktemp -d)[0m
+2026-05-22T01:11:37.7813246Z [36;1m  unzip -q "$APK_PATH" -d "$TMPDIR"[0m
+2026-05-22T01:11:37.7813599Z [36;1m  if [ -f "$TMPDIR/classes.dex" ]; then[0m
+2026-05-22T01:11:37.7814014Z [36;1m    strings "$TMPDIR/classes.dex" | grep -i "encvgo\|GoProcess" && \[0m
+2026-05-22T01:11:37.7814839Z [36;1m      echo "✅ GoProcess found in DEX (compiled+packaged)" || \[0m
+2026-05-22T01:11:37.7815265Z [36;1m      echo "❌ Not found in DEX strings"[0m
+2026-05-22T01:11:37.7815569Z [36;1m  else[0m
+2026-05-22T01:11:37.7815817Z [36;1m    echo "❌ classes.dex missing!"[0m
+2026-05-22T01:11:37.7816180Z [36;1m    ls "$TMPDIR/"*.dex 2>/dev/null || echo "No dex files"[0m
+2026-05-22T01:11:37.7816521Z [36;1m  fi[0m
+2026-05-22T01:11:37.7816753Z [36;1m  rm -rf "$TMPDIR"[0m
+2026-05-22T01:11:37.7817055Z [36;1m  echo "=== Build output .class files ==="[0m
+2026-05-22T01:11:37.7817630Z [36;1m  find app/encv-mobile/android/app/build/tmp/kotlin-classes -name "*.class" -path "*encvgo*" 2>/dev/null && \[0m
+2026-05-22T01:11:37.7818208Z [36;1m    echo "✅ encvgo .class in kotlin-classes" || \[0m
+2026-05-22T01:11:37.7818741Z [36;1m    echo "⚠️ No encvgo .class (may be cleaned)"[0m
+2026-05-22T01:11:37.7819095Z [36;1m  echo "=== capacitor.plugins.json ==="[0m
+2026-05-22T01:11:37.7819571Z [36;1m  unzip -p "$APK_PATH" assets/capacitor.plugins.json[0m
+2026-05-22T01:11:37.7819951Z [36;1m  echo "=== Go binary in APK (jniLibs) ==="[0m
+2026-05-22T01:11:37.7820428Z [36;1m  unzip -l "$APK_PATH" | grep -E "libencv-go|lib/arm64" || echo "❌ libencv-go.so NOT in APK!"[0m
+2026-05-22T01:11:37.7820956Z [36;1m  echo "=== Go binary in APK (assets, legacy) ==="[0m
+2026-05-22T01:11:37.7821495Z [36;1m  unzip -l "$APK_PATH" | grep -E "assets/encv-go" || echo "(no assets/encv-go, expected with jniLibs packaging)"[0m
+2026-05-22T01:11:37.7822003Z [36;1melse[0m
+2026-05-22T01:11:37.7822254Z [36;1m  echo "No APK found to verify"[0m
+2026-05-22T01:11:37.7822541Z [36;1mfi[0m
+2026-05-22T01:11:37.7858891Z shell: /usr/bin/bash -e {0}
+2026-05-22T01:11:37.7859179Z env:
+2026-05-22T01:11:37.7859513Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T01:11:37.7860043Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T01:11:37.7860478Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-22T01:11:37.7860797Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-22T01:11:37.7861098Z ##[endgroup]
+2026-05-22T01:11:37.7940046Z === APK size ===
+2026-05-22T01:11:37.7954031Z -rw-r--r-- 1 runner runner 35M May 22 01:11 app/encv-mobile/android/app/build/outputs/apk/debug/app-debug.apk
+2026-05-22T01:11:37.7955095Z === Assets ===
+2026-05-22T01:11:37.8036562Z  23789921  1981-01-01 01:01   lib/arm64-v8a/libencv-go.so
+2026-05-22T01:11:37.8037430Z       415  1981-01-01 01:01   assets/config.mobile.json
+2026-05-22T01:11:37.8038350Z === DEX strings check (real class presence) ===
+2026-05-22T01:11:38.6848583Z ❌ Not found in DEX strings
+2026-05-22T01:11:38.7058732Z === Build output .class files ===
+2026-05-22T01:11:38.7075490Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/EncvApplication$Companion.class
+2026-05-22T01:11:38.7076946Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/PlayerActivityCapacitor$backendReceiver$1.class
+2026-05-22T01:11:38.7079381Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/EncvApplication.class
+2026-05-22T01:11:38.7080854Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/GoBackendModule.class
+2026-05-22T01:11:38.7081799Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/PlayerTemplateProvider.class
+2026-05-22T01:11:38.7082784Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/MpvPlayerModule$Companion.class
+2026-05-22T01:11:38.7083737Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/GoProcessPlugin$Companion.class
+2026-05-22T01:11:38.7084942Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/PlayerActivityCapacitor.class
+2026-05-22T01:11:38.7085888Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/EncvGoService$Companion.class
+2026-05-22T01:11:38.7087320Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/PlayerActivityLynx$positionUpdateRunnable$1.class
+2026-05-22T01:11:38.7089029Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/GoBackendModule$backendReceiver$1.class
+2026-05-22T01:11:38.7090620Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/PlayerActivityLynx.class
+2026-05-22T01:11:38.7091516Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/EncvGoService.class
+2026-05-22T01:11:38.7092375Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/MpvPlayerModule.class
+2026-05-22T01:11:38.7093210Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/MainActivity.class
+2026-05-22T01:11:38.7094053Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/PlayerActivity.class
+2026-05-22T01:11:38.7095526Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/MpvPlayerModule$eventObserver$1.class
+2026-05-22T01:11:38.7096559Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/MainActivity$Companion.class
+2026-05-22T01:11:38.7097719Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/PlayerTemplateProvider$Companion.class
+2026-05-22T01:11:38.7098759Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/PlayerActivityCapacitor$Companion.class
+2026-05-22T01:11:38.7100301Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/PlayerActivityCapacitor$navigateToPlayer$1.class
+2026-05-22T01:11:38.7101410Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/GoBackendModule$Companion.class
+2026-05-22T01:11:38.7103052Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/GoProcessPlugin$statusReceiver$1.class
+2026-05-22T01:11:38.7104689Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/PlayerActivityLynx$Companion.class
+2026-05-22T01:11:38.7106740Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/PlayerActivityLynx$backendReceiver$1.class
+2026-05-22T01:11:38.7108484Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/MainActivity$backendReceiver$1.class
+2026-05-22T01:11:38.7110206Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/MpvPlayerModule$MpvSurfaceView.class
+2026-05-22T01:11:38.7111875Z app/encv-mobile/android/app/build/tmp/kotlin-classes/debug/com/encvgo/app/GoProcessPlugin.class
+2026-05-22T01:11:38.7113015Z ✅ encvgo .class in kotlin-classes
+2026-05-22T01:11:38.7113625Z === capacitor.plugins.json ===
+2026-05-22T01:11:38.7114046Z []
+2026-05-22T01:11:38.7114732Z === Go binary in APK (jniLibs) ===
+2026-05-22T01:11:38.7166579Z    559448  1981-01-01 01:01   lib/arm64-v8a/libbasedevtool.so
+2026-05-22T01:11:38.7167210Z  23789921  1981-01-01 01:01   lib/arm64-v8a/libencv-go.so
+2026-05-22T01:11:38.7168115Z    289232  1981-01-01 01:01   lib/arm64-v8a/libgifimage.so
+2026-05-22T01:11:38.7169032Z     10096  1981-01-01 01:01   lib/arm64-v8a/libimagepipeline.so
+2026-05-22T01:11:38.7170192Z   5879488  1981-01-01 01:01   lib/arm64-v8a/liblynx.so
+2026-05-22T01:11:38.7171050Z   6059776  1981-01-01 01:01   lib/arm64-v8a/liblynx_debug.so
+2026-05-22T01:11:38.7171980Z    182488  1981-01-01 01:01   lib/arm64-v8a/liblynx_service_api.so
+2026-05-22T01:11:38.7173035Z    133536  1981-01-01 01:01   lib/arm64-v8a/liblynx_v8_bridge.so
+2026-05-22T01:11:38.7173913Z    543560  1981-01-01 01:01   lib/arm64-v8a/liblynxbase.so
+2026-05-22T01:11:38.7175004Z   1264344  1981-01-01 01:01   lib/arm64-v8a/liblynxdebugrouter.so
+2026-05-22T01:11:38.7175925Z   1493752  1981-01-01 01:01   lib/arm64-v8a/liblynxdevtool.so
+2026-05-22T01:11:38.7176875Z    444824  1981-01-01 01:01   lib/arm64-v8a/liblynxdevtool_qjs_bridge.so
+2026-05-22T01:11:38.7177874Z    166424  1981-01-01 01:01   lib/arm64-v8a/liblynxdevtool_v8_bridge.so
+2026-05-22T01:11:38.7178784Z    182504  1981-01-01 01:01   lib/arm64-v8a/liblynxtrace.so
+2026-05-22T01:11:38.7179582Z   5805512  1981-01-01 01:01   lib/arm64-v8a/libmpv.so
+2026-05-22T01:11:38.7180370Z    411936  1981-01-01 01:01   lib/arm64-v8a/libnapi.so
+2026-05-22T01:11:38.7181159Z    133344  1981-01-01 01:01   lib/arm64-v8a/libnapi_v8.so
+2026-05-22T01:11:38.7182050Z     26408  1981-01-01 01:01   lib/arm64-v8a/libnative-filters.so
+2026-05-22T01:11:38.7183016Z    477096  1981-01-01 01:01   lib/arm64-v8a/libnative-imagetranscoder.so
+2026-05-22T01:11:38.7183932Z     34576  1981-01-01 01:01   lib/arm64-v8a/libplayer.so
+2026-05-22T01:11:38.7184902Z   2345608  1981-01-01 01:01   lib/arm64-v8a/libquick.so
+2026-05-22T01:11:38.7185790Z    612992  1981-01-01 01:01   lib/arm64-v8a/libstatic-webp.so
+2026-05-22T01:11:38.7186685Z  20315072  1981-01-01 01:01   lib/arm64-v8a/libv8_libfull.cr.so
+2026-05-22T01:11:38.7187458Z === Go binary in APK (assets, legacy) ===
+2026-05-22T01:11:38.7235268Z (no assets/encv-go, expected with jniLibs packaging)

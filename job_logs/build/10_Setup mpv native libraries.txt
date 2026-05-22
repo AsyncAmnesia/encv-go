@@ -1,0 +1,22 @@
+﻿2026-05-22T01:09:39.7162059Z ##[group]Run cd app/encv-mobile && bash scripts/setup-mpv-libs.sh
+2026-05-22T01:09:39.7162606Z [36;1mcd app/encv-mobile && bash scripts/setup-mpv-libs.sh[0m
+2026-05-22T01:09:39.7201047Z shell: /usr/bin/bash -e {0}
+2026-05-22T01:09:39.7201346Z env:
+2026-05-22T01:09:39.7201687Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T01:09:39.7202208Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T01:09:39.7202642Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-22T01:09:39.7202958Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-22T01:09:39.7203305Z ##[endgroup]
+2026-05-22T01:09:39.7320962Z setup-mpv-libs: downloading mpv-android-lib 0.1.12 AAR...
+2026-05-22T01:09:39.7391307Z   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+2026-05-22T01:09:39.7392914Z                                  Dload  Upload   Total   Spent    Left  Speed
+2026-05-22T01:09:39.7393309Z 
+2026-05-22T01:09:39.9819752Z   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+2026-05-22T01:09:39.9821036Z 100 64.5M  100 64.5M    0     0   265M      0 --:--:-- --:--:-- --:--:--  266M
+2026-05-22T01:09:39.9856375Z setup-mpv-libs: extracting native libraries...
+2026-05-22T01:09:39.9874023Z   extracting arm64-v8a...
+2026-05-22T01:09:39.9901652Z Archive:  /tmp/tmp.xXcwcBojjo/mpv-android-lib.aar
+2026-05-22T01:09:40.0392502Z   inflating: /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/libmpv.so  
+2026-05-22T01:09:40.0395972Z   inflating: /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs/arm64-v8a/libplayer.so  
+2026-05-22T01:09:40.0399908Z   ✓ arm64-v8a: libmpv.so + libplayer.so
+2026-05-22T01:09:40.0518531Z setup-mpv-libs: done. Libraries saved to /home/runner/work/encv-go/encv-go/app/encv-mobile/android-overlay/app/src/main/jniLibs

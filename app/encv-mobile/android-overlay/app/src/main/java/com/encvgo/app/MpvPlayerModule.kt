@@ -32,7 +32,7 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
     }
 
     private val lynxContext = context as? LynxContext
-    private val activity = lynxContext?.context as? Activity
+    private val activity = lynxContext?.activity
     private val mainHandler = Handler(Looper.getMainLooper())
     private var mpvSurfaceView: MpvSurfaceView? = null
     private var isFullscreen = false
@@ -74,14 +74,13 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
         }
         Log.d(TAG, "ensureMpvInitialized: initializing MPVLib")
         try {
-            val app = act.application
-            val configDir = app.filesDir.absolutePath + "/mpv"
-            val cacheDir = app.cacheDir.absolutePath + "/mpv"
+            val configDir = act.filesDir.absolutePath + "/mpv"
+            val cacheDir = act.cacheDir.absolutePath + "/mpv"
 
             java.io.File(configDir).mkdirs()
             java.io.File(cacheDir).mkdirs()
 
-            MPVLib.create(app)
+            MPVLib.create(act)
             MPVLib.setOptionString("config", "yes")
             MPVLib.setOptionString("config-dir", configDir)
             for (opt in arrayOf("gpu-shader-cache-dir", "icc-cache-dir")) {

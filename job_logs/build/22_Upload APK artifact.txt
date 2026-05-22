@@ -1,0 +1,30 @@
+﻿2026-05-22T01:11:38.7281683Z ##[group]Run actions/upload-artifact@v4
+2026-05-22T01:11:38.7282010Z with:
+2026-05-22T01:11:38.7282346Z   name: encv-go-android-debug
+2026-05-22T01:11:38.7282704Z   path: app/encv-mobile/android/app/build/outputs/apk/**/*.apk
+2026-05-22T01:11:38.7283082Z   retention-days: 30
+2026-05-22T01:11:38.7283331Z   if-no-files-found: warn
+2026-05-22T01:11:38.7283588Z   compression-level: 6
+2026-05-22T01:11:38.7283835Z   overwrite: false
+2026-05-22T01:11:38.7284073Z   include-hidden-files: false
+2026-05-22T01:11:38.7284489Z env:
+2026-05-22T01:11:38.7284816Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T01:11:38.7285332Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T01:11:38.7285757Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-22T01:11:38.7286077Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-22T01:11:38.7286375Z ##[endgroup]
+2026-05-22T01:11:38.9430359Z With the provided path, there will be 1 file uploaded
+2026-05-22T01:11:38.9435375Z Artifact name is valid!
+2026-05-22T01:11:38.9436721Z Root directory input is valid!
+2026-05-22T01:11:39.0655422Z Beginning upload of artifact content to blob storage
+2026-05-22T01:11:39.5574093Z Uploaded bytes 8388608
+2026-05-22T01:11:39.8603297Z Uploaded bytes 16777216
+2026-05-22T01:11:40.1232745Z Uploaded bytes 25165824
+2026-05-22T01:11:40.3947413Z Uploaded bytes 33554432
+2026-05-22T01:11:40.4357884Z Uploaded bytes 35374723
+2026-05-22T01:11:40.4502611Z Finished uploading artifact content to blob storage!
+2026-05-22T01:11:40.4506678Z SHA256 digest of uploaded artifact zip is cfbde3c9b3c0304aad913bb7ef2eed326231ddad8535fdf558dd7944269b21d8
+2026-05-22T01:11:40.4507772Z Finalizing artifact upload
+2026-05-22T01:11:40.6156369Z Artifact encv-go-android-debug.zip successfully finalized. Artifact ID 7150717185
+2026-05-22T01:11:40.6158031Z Artifact encv-go-android-debug has been successfully uploaded! Final size is 35374723 bytes. Artifact ID is 7150717185
+2026-05-22T01:11:40.6164787Z Artifact download URL: https://github.com/Soltus/encv-go/actions/runs/26262452016/artifacts/7150717185

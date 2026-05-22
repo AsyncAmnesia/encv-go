@@ -102,6 +102,26 @@
         </activity>
 
         <activity
+            android:name=".PlayerActivityLynx"
+            android:exported="false"
+            android:launchMode="standard"
+            android:documentLaunchMode="always"
+            android:taskAffinity="com.encvgo.app.player.task"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:label="ENCV Player" />
+
+        <activity
+            android:name=".PlayerActivityCapacitor"
+            android:exported="false"
+            android:launchMode="standard"
+            android:documentLaunchMode="always"
+            android:taskAffinity="com.encvgo.app.player.task"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:label="ENCV Player" />
+
+        <activity
             android:name="com.hjq.logcat.LogcatActivity"
             android:configChanges="orientation|screenSize|keyboardHidden"
             android:launchMode="singleInstance"

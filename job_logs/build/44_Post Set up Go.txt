@@ -1,0 +1,7 @@
+﻿2026-05-22T01:11:40.9793763Z Post job cleanup.
+2026-05-22T01:11:41.1452293Z [command]/opt/hostedtoolcache/go/1.23.12/x64/bin/go env GOMODCACHE
+2026-05-22T01:11:41.1490917Z [command]/opt/hostedtoolcache/go/1.23.12/x64/bin/go env GOCACHE
+2026-05-22T01:11:41.1553788Z /home/runner/go/pkg/mod
+2026-05-22T01:11:41.1578316Z /home/runner/.cache/go-build
+2026-05-22T01:11:41.1764044Z [command]/usr/bin/tar --posix -cf cache.tzst --exclude cache.tzst -P -C /home/runner/work/encv-go/encv-go --files-from manifest.txt --use-compress-program zstdmt
+2026-05-22T01:11:43.2296965Z Failed to save: Unable to reserve cache with key setup-go-Linux-x64-ubuntu24-go-1.25.5-939b248dc2cae4cc7a9eb63a38a325d33a9c35037cf262d8d419b105194511ce, another job may be creating this cache.
