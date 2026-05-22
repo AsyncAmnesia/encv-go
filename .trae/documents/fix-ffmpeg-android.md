@@ -11,35 +11,47 @@ mpv-android-lib AAR 中的 ffmpeg .so 是**解码专用**的，不支持编码�
 
 ## 方案
 
-### 1. ffmpeg/ffprobe：使用 Static 版本可执行文件
+### 1. ffmpeg/ffprobe：打包 Static 可执行文件
 
-从 `KaluaBilla/ffmpeg-android` 下载 **Static** 版本（完全自包含，不依赖 .so，包含 libx264 编码器）。
+**为什么不用 JNI 方式？** Go 后端通过 `exec.Command` 调用 ffmpeg/ffprobe，需要可执行文件。JNI 方式需要从 Kotlin 层封装，Go 后端无法直接调用。
 
-- 改 `setup-ffmpeg-cli.sh`：`Dynamic` → `Static`
-- 以 `libffmpeg_exec.so` / `libffprobe_exec.so` 放入 jniLibs
-- EncvGoService 启动时复制到 `filesDir/bin/` 并设置 PATH
+**为什么用 Static 版本？** Dynamic 版本依赖 .so 文件，与 mpv 捆绑的 .so 冲突。Static 版本完全自包含。
+
+**Android 上打包可执行文件的标准做法：**
+- `AndroidFFmpeg`、`FFmpegX-Android`、`ffmpeg-kit` 等库都打包了 ffmpeg 可执行文件
+- 运行时复制到 `filesDir` 并设置可执行权限
+- 通过 `ProcessBuilder` 执行
+
+**实施：**
+1. CI 中下载 KaluaBilla/ffmpeg-android 的 **Static** 版本
+2. 以 `libffmpeg_exec.so` / `libffprobe_exec.so` 命名放入 jniLibs（Android 只安装 .so 后缀文件）
+3. EncvGoService 启动时复制到 `filesDir/bin/ffmpeg` / `filesDir/bin/ffprobe`，设置可执行权限
+4. 设置 `ENCV_BIN_DIR` 环境变量，Go 后端通过 `utils.FFProbeCmd()` / `utils.FFmpegCmd()` 使用完整路径
+
+**体积：** Static ffmpeg ~75MB + ffprobe ~75MB = ~150MB。这是 Android 上使用 ffmpeg 编码功能的代价。
 
 ### 2. mkvmerge/mkvinfo/mkvextract：用 Go 原生库替代
 
-MKV 基于 EBML 格式，完全开源。有两个可用的 Go 库：
+MKV 基于 EBML 格式，完全开源。用 Go 原生库替代所有 mkvtoolnix CLI 调用，**零外部依赖**。
 
-- **`github.com/at-wat/ebml-go/mkvcore`** (Apache-2.0)：支持 MKV 读写，SimpleBlockReader/SimpleBlockWriter
-- **`github.com/coding-socks/matroska`** (MIT)：完整的 Matroska 类型定义，读取和提取
+**可用 Go 库：**
+- `github.com/at-wat/ebml-go/mkvcore` (Apache-2.0) — MKV 读写，SimpleBlockReader/SimpleBlockWriter
+- `github.com/coding-socks/matroska` (MIT) — 完整 Matroska 类型定义，读取和提取
 
-用 Go 原生库替代所有 mkvtoolnix CLI 调用，**零外部依赖**，Android 和桌面端统一代码。
-
-#### 当前 mkvtoolnix 使用场景 → Go 库替代方案
+**替代方案对照表：**
 
 | 场景 | 当前 CLI | Go 替代方案 |
 |------|---------|------------|
 | 识别轨道 | `mkvmerge -J` | ffprobe `-show_streams`（已有） |
-| 检查 Cues 元素 | `mkvinfo -v` + grep `"\|+ Cues"` | ebml-go 解析 EBML 结构，查找 Cues Element ID |
-| 提取关键帧偏移 | `mkvextract cues` | ebml-go 直接解析 Cues 元素，读取 CueClusterPosition |
+| 检查 Cues 元素 | `mkvinfo -v` + grep | ebml-go 解析 EBML，查找 Cues Element ID (0x1C53BB6B) |
+| 提取关键帧偏移 | `mkvextract cues` | ebml-go 解析 Cues → CueClusterPosition |
 | 提取章节 | `mkvextract chapters` | matroska 库读取 Chapters 元素 |
-| MKV remux+Cues | `mkvmerge --cues` | ebml-go 读取所有 Cluster+Block，重新写入带 Cues 的 MKV |
-| 合并分片 | `mkvmerge -o ... +` | ebml-go 读取多个文件的 Cluster，按时间戳合并写入 |
+| MKV remux+Cues | `mkvmerge --cues` | ebml-go 读 Cluster+Block，重写带 Cues 的 MKV |
+| 合并分片 | `mkvmerge -o ... +` | ebml-go 读多个文件的 Cluster，按时间戳合并写入 |
 | 验证完整性 | `mkvinfo -P` | ffprobe 检查 duration > 0 |
-| 检查分片链接 | `mkvinfo -p` + grep PrevUID/NextUID | ebml-go 解析 SegmentInfo 中的 PrevUID/NextUID |
+| 检查分片链接 | `mkvinfo -p` + grep PrevUID/NextUID | ebml-go 解析 SegmentInfo 的 PrevUID/NextUID |
+
+**降级策略：** 每个函数优先使用 Go 原生实现，失败时回退到 CLI（桌面端 mkvtoolnix 仍可用）。
 
 ### 3. 实施步骤
 
@@ -48,56 +60,22 @@ MKV 基于 EBML 格式，完全开源。有两个可用的 Go 库：
 - 以 `libffmpeg_exec.so` / `libffprobe_exec.so` 放入 jniLibs
 
 #### Step 2: 添加 Go MKV 处理库
-创建 `internal/v2/plugins/video/mkv_native.go`，使用 `ebml-go` + `matroska` 库实现：
+创建 `internal/v2/plugins/video/mkv_native.go`，使用 ebml-go + matroska 库实现：
 
-1. **`nativeCheckCues(filePath string) (bool, error)`**
-   - 打开文件，解析 EBML 结构
-   - 查找 Cues 元素（EBML ID: 0x1C53BB6B）
-   - 返回是否存在
-
-2. **`nativeExtractKeyFrameOffsets(filePath string) ([]uint64, error)`**
-   - 解析 Cues 元素中的 CuePoint → CueClusterPosition
-   - 加上 Segment 起始偏移量得到全局偏移
-
-3. **`nativeExtractChapters(filePath string) ([]MKVChapterInfo, error)`**
-   - 使用 matroska 库读取 Chapters 元素
-   - 转换为 MKVChapterInfo 结构
-
-4. **`nativeRemuxWithCues(inputPath, outputPath string, cuesMode string) error`**
-   - 读取源 MKV 的所有轨道定义、Cluster、Block
-   - 重新写入新的 MKV 文件
-   - 根据关键帧信息生成 Cues 元素
-
-5. **`nativeMergeSplitParts(paths []string, outputPath string) error`**
-   - 读取多个 MKV 文件的 Cluster
-   - 按时间戳偏移合并写入
-   - 生成合并后的 Cues
-
-6. **`nativeCheckSplitInfo(filePath string) (segmentUID, prevUID, nextUID []byte, isSplit bool, error)`**
-   - 解析 SegmentInfo 中的 SegmentUID、PrevUID、NextUID
-
-7. **`nativeVerifyMKV(filePath string) error`**
-   - 解析 EBML 头和 Segment 结构
-   - 验证基本完整性
+1. `nativeCheckCues(filePath) (bool, error)` — 解析 EBML 查找 Cues 元素
+2. `nativeExtractKeyFrameOffsets(filePath) ([]uint64, error)` — 解析 Cues → CueClusterPosition
+3. `nativeExtractChapters(filePath) ([]MKVChapterInfo, error)` — matroska 库读取 Chapters
+4. `nativeRemuxWithCues(inputPath, outputPath, cuesMode) error` — 重写带 Cues 的 MKV
+5. `nativeMergeSplitParts(paths, outputPath) error` — 合并多个 MKV
+6. `nativeCheckSplitInfo(filePath) (segmentUID, prevUID, nextUID []byte, isSplit bool, error)` — 解析 SegmentInfo
+7. `nativeVerifyMKV(filePath) error` — 验证基本完整性
 
 #### Step 3: 添加降级逻辑
-在 `mkvtoolnix.go` 中，每个函数先尝试 Go 原生实现，失败时回退到 CLI：
-
-```go
-func extractKeyFrameOffsetsFromMKV(filePath string) ([]uint64, error) {
-    // 优先使用 Go 原生实现
-    offsets, err := nativeExtractKeyFrameOffsets(filePath)
-    if err == nil && len(offsets) > 0 {
-        return offsets, nil
-    }
-    // 回退到 CLI（桌面端）
-    return extractKeyFrameOffsetsFromMKVCli(filePath)
-}
-```
+在 `mkvtoolnix.go` 中，每个函数先尝试 Go 原生实现，失败时回退到 CLI。
 
 #### Step 4: 更新 content_preprocessor.go
-- `remapWithMKVMerge` → 优先调用 `nativeRemuxWithCues`，失败回退 `mkvmerge` CLI
-- `ExtractChaptersWithMKVExtract` → 优先调用 `nativeExtractChapters`，失败回退 `mkvextract` CLI
+- `remapWithMKVMerge` → 优先调用 `nativeRemuxWithCues`
+- `ExtractChaptersWithMKVExtract` → 优先调用 `nativeExtractChapters`
 
 #### Step 5: 验证
 - `go build ./internal/...` 编译通过
