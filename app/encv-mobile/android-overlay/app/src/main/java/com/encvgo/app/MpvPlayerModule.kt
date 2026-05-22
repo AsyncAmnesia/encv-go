@@ -2,6 +2,8 @@ package com.encvgo.app
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -31,6 +33,7 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
 
     private val lynxContext = context as? LynxContext
     private val activity = lynxContext?.context as? Activity
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var mpvSurfaceView: MpvSurfaceView? = null
     private var isFullscreen = false
     private var mpvInitialized = false
@@ -327,7 +330,13 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
             }
             val params = JavaOnlyArray()
             params.pushMap(data)
-            lynxContext?.sendGlobalEvent(EVENT_POSITION_UPDATE, params)
+            mainHandler.post {
+                try {
+                    lynxContext?.sendGlobalEvent(EVENT_POSITION_UPDATE, params)
+                } catch (e: Exception) {
+                    Log.e(TAG, "dispatchPositionUpdate sendGlobalEvent failed", e)
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "dispatchPositionUpdate failed", e)
         }
@@ -341,7 +350,13 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
             }
             val params = JavaOnlyArray()
             params.pushMap(data)
-            lynxContext?.sendGlobalEvent(EVENT_STATE_CHANGE, params)
+            mainHandler.post {
+                try {
+                    lynxContext?.sendGlobalEvent(EVENT_STATE_CHANGE, params)
+                } catch (e: Exception) {
+                    Log.e(TAG, "dispatchStateChange sendGlobalEvent failed", e)
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "dispatchStateChange failed", e)
         }

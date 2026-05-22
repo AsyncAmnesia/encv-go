@@ -17,11 +17,12 @@ class PlayerTemplateProvider(context: Context) : AbsTemplateProvider() {
         Log.d(TAG, "loadTemplate: uri=$uri")
         Thread {
             try {
-                mContext.assets.open(uri).use { inputStream ->
+                val inputStream = mContext.assets.open(uri)
+                inputStream.use { stream ->
                     ByteArrayOutputStream().use { byteArrayOutputStream ->
                         val buffer = ByteArray(4096)
                         var length: Int
-                        while (inputStream.read(buffer).also { length = it } != -1) {
+                        while (stream.read(buffer).also { length = it } != -1) {
                             byteArrayOutputStream.write(buffer, 0, length)
                         }
                         val data = byteArrayOutputStream.toByteArray()
@@ -29,9 +30,13 @@ class PlayerTemplateProvider(context: Context) : AbsTemplateProvider() {
                         callback.onSuccess(data)
                     }
                 }
-            } catch (e: IOException) {
+            } catch (e: Exception) {
                 Log.e(TAG, "loadTemplate: failed to load $uri", e)
-                callback.onFailed(e.message)
+                try {
+                    callback.onFailed(e.message ?: "Template not found: $uri")
+                } catch (cbErr: Exception) {
+                    Log.e(TAG, "loadTemplate: callback.onFailed also threw", cbErr)
+                }
             }
         }.start()
     }

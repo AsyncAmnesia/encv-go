@@ -51,6 +51,9 @@ jobs:
       - name: Install frontend dependencies & Build
         run: cd app/encv-mobile && npm install && npm run build
 
+      - name: Build Lynx player bundle
+        run: cd app/encv-mobile/lynx-player && npm install && npm run build
+
       - name: Setup mpv native libraries
         run: cd app/encv-mobile && bash scripts/setup-mpv-libs.sh
 

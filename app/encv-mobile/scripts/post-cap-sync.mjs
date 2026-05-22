@@ -361,13 +361,16 @@ if (existsSync(layoutSrc)) {
   console.log('  overlay: layout/lynx_player_activity.xml')
 }
 
-// Copy lynx bundle to assets if exists
-if (existsSync(LYNX_BUNDLE_PATH)) {
-  const assetsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'assets')
-  mkdirSync(assetsDir, { recursive: true })
-  copyFileSync(LYNX_BUNDLE_PATH, join(assetsDir, 'player.lynx.bundle'))
-  console.log('  bundle: copied player.lynx.bundle to assets')
+// Copy lynx bundle to assets
+if (!existsSync(LYNX_BUNDLE_PATH)) {
+  console.error('ERROR: Lynx bundle not found at', LYNX_BUNDLE_PATH)
+  console.error('Run: cd lynx-player && npm install && npm run build')
+  process.exit(1)
 }
+const assetsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'assets')
+mkdirSync(assetsDir, { recursive: true })
+copyFileSync(LYNX_BUNDLE_PATH, join(assetsDir, 'player.lynx.bundle'))
+console.log('  bundle: copied player.lynx.bundle to assets')
 
 const jniLibsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'jniLibs', 'arm64-v8a')
 mkdirSync(jniLibsDir, { recursive: true })
