@@ -109,32 +109,17 @@ jobs:
             ls -lh "$KEYSTORE"
           fi
 
-      # android/ is in git — cap sync only copies web assets and updates plugins
-      # sync-native.mjs handles: native libs (.so), jni/ C++ sources
-      - name: Sync Capacitor Android project
+      # android/ is in git — cap copy only copies web assets (lighter than cap sync)
+      # For release builds, cap build includes its own sync, so this step is debug-only
+      - name: Copy web assets to Android project (debug)
+        if: inputs.version == ''
         run: |
           cd app/encv-mobile
-          npx cap sync android
+          npx cap copy android
           echo "Android project ready:"
           ls -la android/*.gradle android/app/*.gradle
 
-      - name: Apply release signing config
-        if: inputs.version != ''
-        run: |
-          cd app/encv-mobile
-          APP_BUILD=android/app/build.gradle
-          echo "Applying release signing to $APP_BUILD"
-
-          SIGNING_BLOCK='signingConfigs { release { storeFile file('"'"'../../keystore/release.jks'"'"'); storePassword '"'"'encv2025'"'"'; keyAlias '"'"'encvrelease'"'"'; keyPassword '"'"'encv2025'"'"'; } }'
-          sed -i "/android {/a\\        $SIGNING_BLOCK" "$APP_BUILD"
-
-          sed -i 's/\(release {[^}]*\)minifyEnabled false/\1minifyEnabled true\n            shrinkResources true\n            signingConfig signingConfigs.release/' "$APP_BUILD"
-
-          echo "=== Signing config applied ==="
-          grep -A8 'signingConfigs' "$APP_BUILD" || echo "WARNING: No signingConfigs!"
-          grep 'signingConfig\|minifyEnabled\|shrinkResources' "$APP_BUILD" | head -5
-
-      # === Non-Gradle customizations (after cap sync + Trapeze) ===
+      # === Non-Gradle customizations ===
       - name: Copy Go binary to jniLibs
         run: |
           mkdir -p app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a
@@ -145,15 +130,18 @@ jobs:
       # === Verify kotlin setup before build ===
       - name: Verify AndroidManifest integrity
         run: |
-          MANIFEST="app/encv-mobile/android/app/src/main/AndroidManifest.xml"
+          cd app/encv-mobile
+          echo "=== Capacitor plugins ==="
+          npx cap ls android
           echo "=== Manifest checks ==="
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
           grep -q 'android.intent.action.MAIN' "$MANIFEST" && echo "✅ MAIN intent-filter" || { echo "❌ MISSING: MAIN intent-filter!"; exit 1; }
           grep -q 'android.intent.category.LAUNCHER' "$MANIFEST" && echo "✅ LAUNCHER category" || { echo "❌ MISSING: LAUNCHER category!"; exit 1; }
           grep -q 'android:icon' "$MANIFEST" && echo "✅ android:icon" || { echo "❌ MISSING: android:icon!"; exit 1; }
           grep -q 'android:label' "$MANIFEST" && echo "✅ android:label" || { echo "❌ MISSING: android:label!"; exit 1; }
           grep -q 'android:theme' "$MANIFEST" && echo "✅ android:theme" || { echo "❌ MISSING: android:theme!"; exit 1; }
           echo "=== mipmap resources ==="
-          find app/encv-mobile/android/app/src/main/res -name "ic_launcher*" -type f | head -5 && echo "✅ mipmap icons found" || echo "⚠️ WARNING: no ic_launcher in res/"
+          find android/app/src/main/res -name "ic_launcher*" -type f | head -5 && echo "✅ mipmap icons found" || echo "⚠️ WARNING: no ic_launcher in res/"
           echo "✅ Manifest integrity OK"
 
       - name: Verify build.gradle kotlin setup
@@ -188,14 +176,18 @@ jobs:
       # === Build ===
       - name: Build ${{ inputs.version && 'Release' || 'Debug' }} APK
         run: |
-          cd app/encv-mobile/android
-          chmod +x gradlew
+          cd app/encv-mobile
 
           if [ -n "${{ inputs.version }}" ]; then
             echo "=== Building RELEASE APK v${{ inputs.version }} ==="
-            ./gradlew assembleRelease
+            npx cap build android \
+              --androidreleasetype APK \
+              --keystorepath keystore/release.jks \
+              --keystorepass encv2025 \
+              --keystorealias encvrelease \
+              --keystorealiaspass encv2025
 
-            APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+            APK_PATH=$(find android/app/build/outputs/apk/release -name "*.apk" -type f | head -1)
             [ -z "$APK_PATH" ] && { echo "::error::No APK found"; exit 1; }
 
             echo "Verifying signature..."
@@ -205,6 +197,8 @@ jobs:
             echo "✅ Signed OK: $(ls -lh "$APK_PATH" | awk '{print $5}')"
           else
             echo "=== Building DEBUG APK ==="
+            cd android
+            chmod +x gradlew
             ./gradlew assembleDebug --stacktrace
           fi
 

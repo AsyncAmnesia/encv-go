@@ -95,11 +95,8 @@ npm run preview
 # 构建前端
 npm run build
 
-# 添加 Android 平台（首次）
-npx cap add android
-
-# 同步资源
-npx cap sync android
+# 同步 web 资源到 Android 项目（android/ 已在 git 中，无需 cap add）
+npx cap copy android
 
 # 用 Android Studio 打开
 npx cap open android
