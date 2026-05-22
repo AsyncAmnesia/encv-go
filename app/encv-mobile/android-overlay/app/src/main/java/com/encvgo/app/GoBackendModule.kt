@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
-import android.util.Log
 import com.lynx.jsbridge.LynxMethod
 import com.lynx.jsbridge.LynxModule
 import com.lynx.react.bridge.Callback
@@ -30,18 +29,18 @@ class GoBackendModule(context: android.content.Context) : LynxModule(context) {
 
     private val backendReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
-            Log.d(TAG, "received broadcast: ${intent?.action}")
+            LogRelay.get().relay(TAG, "info", "received broadcast: ${intent?.action}")
             when (intent?.action) {
                 EncvGoService.BROADCAST_BACKEND_READY -> {
                     val port = intent.getIntExtra(EncvGoService.EXTRA_PORT, 0)
-                    Log.d(TAG, "broadcast: backend ready, port=$port")
+                    LogRelay.get().relay(TAG, "info", "broadcast: backend ready, port=$port")
                     dispatchReady(port)
                 }
                 EncvGoService.BROADCAST_BACKEND_STATUS -> {
                     val port = intent.getIntExtra(EncvGoService.EXTRA_PORT, 0)
                     val running = intent.getBooleanExtra(EncvGoService.EXTRA_RUNNING, false)
                     val error = intent.getStringExtra(EncvGoService.EXTRA_ERROR)
-                    Log.d(TAG, "broadcast: status, port=$port, running=$running, error=$error")
+                    LogRelay.get().relay(TAG, "info", "broadcast: status, port=$port, running=$running, error=$error")
                     if (error != null) {
                         dispatchError(error)
                     }
@@ -53,12 +52,12 @@ class GoBackendModule(context: android.content.Context) : LynxModule(context) {
     init {
         _instance = this
         registerReceiver()
-        Log.d(TAG, "init: backend module created")
+        LogRelay.get().relay(TAG, "info", "init: backend module created")
     }
 
     private fun registerReceiver() {
         if (receiverRegistered) return
-        Log.d(TAG, "registerReceiver: registering backend receiver")
+        LogRelay.get().relay(TAG, "info", "registerReceiver: registering backend receiver")
         val filter = IntentFilter().apply {
             addAction(EncvGoService.BROADCAST_BACKEND_READY)
             addAction(EncvGoService.BROADCAST_BACKEND_STATUS)
@@ -70,16 +69,16 @@ class GoBackendModule(context: android.content.Context) : LynxModule(context) {
             appContext.registerReceiver(backendReceiver, filter)
         }
         receiverRegistered = true
-        Log.d(TAG, "registerReceiver: registered")
+        LogRelay.get().relay(TAG, "info", "registerReceiver: registered")
     }
 
     fun unregisterReceiver() {
         if (!receiverRegistered) return
-        Log.d(TAG, "unregisterReceiver: unregistering backend receiver")
+        LogRelay.get().relay(TAG, "info", "unregisterReceiver: unregistering backend receiver")
         try {
             appContext.unregisterReceiver(backendReceiver)
         } catch (e: Exception) {
-            Log.e(TAG, "unregisterReceiver failed", e)
+            LogRelay.get().relay(TAG, "error", "unregisterReceiver failed: ${e.message}")
         }
         receiverRegistered = false
     }
@@ -88,7 +87,7 @@ class GoBackendModule(context: android.content.Context) : LynxModule(context) {
     fun getBackendStatus(callback: Callback) {
         val isRunning = EncvGoService.isRunning
         val port = EncvGoService.lastKnownPort
-        Log.d(TAG, "getBackendStatus: running=$isRunning, port=$port")
+        LogRelay.get().relay(TAG, "info", "getBackendStatus: running=$isRunning, port=$port")
         val result = JavaOnlyMap().apply {
             put("running", isRunning)
             put("port", port)
@@ -98,7 +97,7 @@ class GoBackendModule(context: android.content.Context) : LynxModule(context) {
 
     @LynxMethod
     fun startBackend(callback: Callback) {
-        Log.d(TAG, "startBackend: starting EncvGoService")
+        LogRelay.get().relay(TAG, "info", "startBackend: starting EncvGoService")
         try {
             val serviceIntent = EncvGoService.createIntent(appContext, EncvGoService.ACTION_START, "player")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -108,7 +107,7 @@ class GoBackendModule(context: android.content.Context) : LynxModule(context) {
             }
             callback.invoke(true)
         } catch (e: Exception) {
-            Log.e(TAG, "startBackend failed", e)
+            LogRelay.get().relay(TAG, "error", "startBackend failed: ${e.message}")
             callback.invoke(e.message)
         }
     }
@@ -126,7 +125,7 @@ class GoBackendModule(context: android.content.Context) : LynxModule(context) {
         } else {
             "http://127.0.0.1:$port/stream?path=$encodedPath"
         }
-        Log.d(TAG, "getStreamUrl: path=$path, isExternal=$isExternal → $url")
+        LogRelay.get().relay(TAG, "info", "getStreamUrl: path=$path, isExternal=$isExternal → $url")
         callback.invoke(url)
     }
 

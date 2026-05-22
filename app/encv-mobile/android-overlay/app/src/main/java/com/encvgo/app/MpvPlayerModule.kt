@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
@@ -62,17 +61,17 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
 
     init {
         _instance = this
-        Log.d(TAG, "init: MpvPlayerModule created")
+        LogRelay.get().relay(TAG, "info", "init: MpvPlayerModule created")
     }
 
     private fun ensureMpvInitialized() {
         if (mpvInitialized) return
         val act = activity ?: run {
-            Log.e(TAG, "ensureMpvInitialized: activity is null")
+            LogRelay.get().relay(TAG, "error", "ensureMpvInitialized: activity is null")
             dispatchStateChange("error", "Activity not available")
             return
         }
-        Log.d(TAG, "ensureMpvInitialized: initializing MPVLib")
+        LogRelay.get().relay(TAG, "info", "ensureMpvInitialized: initializing MPVLib")
         try {
             val configDir = act.filesDir.absolutePath + "/mpv"
             val cacheDir = act.cacheDir.absolutePath + "/mpv"
@@ -97,16 +96,16 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
             MPVLib.observeProperty("pause", MpvFormat.MPV_FORMAT_FLAG)
             MPVLib.observeProperty("idle", MpvFormat.MPV_FORMAT_FLAG)
             mpvInitialized = true
-            Log.d(TAG, "ensureMpvInitialized: done, configDir=$configDir, cacheDir=$cacheDir")
+            LogRelay.get().relay(TAG, "info", "ensureMpvInitialized: done, configDir=$configDir, cacheDir=$cacheDir")
         } catch (e: Exception) {
-            Log.e(TAG, "ensureMpvInitialized: failed", e)
+            LogRelay.get().relay(TAG, "error", "ensureMpvInitialized: failed: ${e.message}")
             mpvInitialized = false
             dispatchStateChange("error", "MPV init failed: ${e.message}")
         }
     }
 
     fun attachToLayout(rootLayout: ViewGroup) {
-        Log.d(TAG, "attachToLayout: adding MPV surface view to root layout (index 0)")
+        LogRelay.get().relay(TAG, "info", "attachToLayout: adding MPV surface view to root layout (index 0)")
         try {
             ensureMpvInitialized()
             mpvSurfaceView = MpvSurfaceView(rootLayout.context).apply {
@@ -118,34 +117,34 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
             rootLayout.addView(mpvSurfaceView, 0, params)
-            Log.d(TAG, "attachToLayout: MPV surface view attached")
+            LogRelay.get().relay(TAG, "info", "attachToLayout: MPV surface view attached")
         } catch (e: Exception) {
-            Log.e(TAG, "attachToLayout: failed", e)
+            LogRelay.get().relay(TAG, "error", "attachToLayout: failed: ${e.message}")
             dispatchStateChange("error", "Surface attach failed: ${e.message}")
         }
     }
 
     fun detachFromLayout(rootLayout: ViewGroup) {
-        Log.d(TAG, "detachFromLayout: removing MPV surface view")
+        LogRelay.get().relay(TAG, "info", "detachFromLayout: removing MPV surface view")
         try {
             mpvSurfaceView?.let { rootLayout.removeView(it) }
         } catch (e: Exception) {
-            Log.e(TAG, "detachFromLayout: failed", e)
+            LogRelay.get().relay(TAG, "error", "detachFromLayout: failed: ${e.message}")
         }
     }
 
     fun release() {
-        Log.d(TAG, "release: stopping MPV")
+        LogRelay.get().relay(TAG, "info", "release: stopping MPV")
         if (mpvInitialized) {
             try {
                 MPVLib.removeObserver(eventObserver)
             } catch (e: Exception) {
-                Log.e(TAG, "release: removeObserver failed", e)
+                LogRelay.get().relay(TAG, "error", "release: removeObserver failed: ${e.message}")
             }
             try {
                 MPVLib.destroy()
             } catch (e: Exception) {
-                Log.e(TAG, "release: MPVLib.destroy failed", e)
+                LogRelay.get().relay(TAG, "error", "release: MPVLib.destroy failed: ${e.message}")
             }
             mpvInitialized = false
         }
@@ -157,7 +156,7 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
 
     @LynxMethod
     fun play(url: String, callback: Callback) {
-        Log.d(TAG, "play: url=$url, surfaceReady=$surfaceReady, mpvInitialized=$mpvInitialized")
+        LogRelay.get().relay(TAG, "info", "play: url=$url, surfaceReady=$surfaceReady, mpvInitialized=$mpvInitialized")
         try {
             ensureMpvInitialized()
             if (!mpvInitialized) {
@@ -165,14 +164,15 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
                 return
             }
             if (surfaceReady) {
+                LogRelay.get().relay(TAG, "info", "play: calling loadfile with url=$url")
                 MPVLib.command(arrayOf("loadfile", url))
             } else {
-                Log.d(TAG, "play: surface not ready, queuing url as pending")
+                LogRelay.get().relay(TAG, "info", "play: surface not ready, queuing url as pending")
                 pendingUrl = url
             }
             callback.invoke(true)
         } catch (e: Exception) {
-            Log.e(TAG, "play failed", e)
+            LogRelay.get().relay(TAG, "error", "play failed: ${e.message}")
             dispatchStateChange("error", "Play failed: ${e.message}")
             callback.invoke(e.message)
         }
@@ -180,47 +180,47 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
 
     @LynxMethod
     fun pause(callback: Callback) {
-        Log.d(TAG, "pause")
+        LogRelay.get().relay(TAG, "info", "pause")
         try {
             if (!mpvInitialized) { callback.invoke("MPV not initialized"); return }
             MPVLib.setPropertyBoolean("pause", true)
             callback.invoke(true)
         } catch (e: Exception) {
-            Log.e(TAG, "pause failed", e)
+            LogRelay.get().relay(TAG, "error", "pause failed: ${e.message}")
             callback.invoke(e.message)
         }
     }
 
     @LynxMethod
     fun resume(callback: Callback) {
-        Log.d(TAG, "resume")
+        LogRelay.get().relay(TAG, "info", "resume")
         try {
             if (!mpvInitialized) { callback.invoke("MPV not initialized"); return }
             MPVLib.setPropertyBoolean("pause", false)
             callback.invoke(true)
         } catch (e: Exception) {
-            Log.e(TAG, "resume failed", e)
+            LogRelay.get().relay(TAG, "error", "resume failed: ${e.message}")
             callback.invoke(e.message)
         }
     }
 
     @LynxMethod
     fun seekTo(positionMs: Int, callback: Callback) {
-        Log.d(TAG, "seekTo: $positionMs ms")
+        LogRelay.get().relay(TAG, "info", "seekTo: $positionMs ms")
         try {
             if (!mpvInitialized) { callback.invoke("MPV not initialized"); return }
             val positionSec = positionMs / 1000.0
             MPVLib.command(arrayOf("seek", positionSec.toString(), "absolute"))
             callback.invoke(true)
         } catch (e: Exception) {
-            Log.e(TAG, "seekTo failed", e)
+            LogRelay.get().relay(TAG, "error", "seekTo failed: ${e.message}")
             callback.invoke(e.message)
         }
     }
 
     @LynxMethod
     fun setFullscreen(enabled: Boolean, callback: Callback) {
-        Log.d(TAG, "setFullscreen: $enabled")
+        LogRelay.get().relay(TAG, "info", "setFullscreen: $enabled")
         try {
             val act = activity ?: run { callback.invoke("Activity not available"); return }
             if (enabled) {
@@ -245,14 +245,14 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
             }
             callback.invoke(true)
         } catch (e: Exception) {
-            Log.e(TAG, "setFullscreen failed", e)
+            LogRelay.get().relay(TAG, "error", "setFullscreen failed: ${e.message}")
             callback.invoke(e.message)
         }
     }
 
     @LynxMethod
     fun setOrientation(orientation: String, callback: Callback) {
-        Log.d(TAG, "setOrientation: $orientation")
+        LogRelay.get().relay(TAG, "info", "setOrientation: $orientation")
         try {
             val act = activity ?: run { callback.invoke("Activity not available"); return }
             act.requestedOrientation = when (orientation) {
@@ -262,7 +262,7 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
             }
             callback.invoke(true)
         } catch (e: Exception) {
-            Log.e(TAG, "setOrientation failed", e)
+            LogRelay.get().relay(TAG, "error", "setOrientation failed: ${e.message}")
             callback.invoke(e.message)
         }
     }
@@ -274,7 +274,7 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
             val durationSec = MPVLib.getPropertyDouble("duration") ?: 0.0
             callback.invoke((durationSec * 1000).toInt())
         } catch (e: Exception) {
-            Log.e(TAG, "getDuration failed", e)
+            LogRelay.get().relay(TAG, "error", "getDuration failed: ${e.message}")
             callback.invoke(0)
         }
     }
@@ -286,7 +286,7 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
             val positionSec = MPVLib.getPropertyDouble("time-pos") ?: 0.0
             callback.invoke((positionSec * 1000).toInt())
         } catch (e: Exception) {
-            Log.e(TAG, "getCurrentPosition failed", e)
+            LogRelay.get().relay(TAG, "error", "getCurrentPosition failed: ${e.message}")
             callback.invoke(0)
         }
     }
@@ -298,20 +298,20 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
             val paused = MPVLib.getPropertyBoolean("pause") ?: true
             callback.invoke(!paused)
         } catch (e: Exception) {
-            Log.e(TAG, "isPlaying failed", e)
+            LogRelay.get().relay(TAG, "error", "isPlaying failed: ${e.message}")
             callback.invoke(false)
         }
     }
 
     @LynxMethod
     fun setProperty(key: String, value: String, callback: Callback) {
-        Log.d(TAG, "setProperty: key=$key, value=$value")
+        LogRelay.get().relay(TAG, "info", "setProperty: key=$key, value=$value")
         try {
             if (!mpvInitialized) { callback.invoke("MPV not initialized"); return }
             MPVLib.setPropertyString(key, value)
             callback.invoke(true)
         } catch (e: Exception) {
-            Log.e(TAG, "setProperty failed", e)
+            LogRelay.get().relay(TAG, "error", "setProperty failed: ${e.message}")
             callback.invoke(e.message)
         }
     }
@@ -333,11 +333,11 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
                 try {
                     lynxContext?.sendGlobalEvent(EVENT_POSITION_UPDATE, params)
                 } catch (e: Exception) {
-                    Log.e(TAG, "dispatchPositionUpdate sendGlobalEvent failed", e)
+                    LogRelay.get().relay(TAG, "error", "dispatchPositionUpdate sendGlobalEvent failed: ${e.message}")
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "dispatchPositionUpdate failed", e)
+            LogRelay.get().relay(TAG, "error", "dispatchPositionUpdate failed: ${e.message}")
         }
     }
 
@@ -349,15 +349,16 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
             }
             val params = JavaOnlyArray()
             params.pushMap(data)
+            LogRelay.get().relay(TAG, "info", "dispatchStateChange: state=$state${if (error != null) " error=$error" else ""}")
             mainHandler.post {
                 try {
                     lynxContext?.sendGlobalEvent(EVENT_STATE_CHANGE, params)
                 } catch (e: Exception) {
-                    Log.e(TAG, "dispatchStateChange sendGlobalEvent failed", e)
+                    LogRelay.get().relay(TAG, "error", "dispatchStateChange sendGlobalEvent failed: ${e.message}")
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "dispatchStateChange failed", e)
+            LogRelay.get().relay(TAG, "error", "dispatchStateChange failed: ${e.message}")
         }
     }
 
@@ -369,19 +370,19 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
         }
 
         override fun surfaceCreated(holder: SurfaceHolder) {
-            Log.d(TAG, "MpvSurfaceView: surfaceCreated, attaching surface")
+            LogRelay.get().relay(TAG, "info", "MpvSurfaceView: surfaceCreated, attaching surface")
             try {
                 MPVLib.attachSurface(holder.surface)
                 MPVLib.setOptionString("force-window", "yes")
                 MPVLib.setPropertyString("vo", "gpu")
                 surfaceReady = true
                 pendingUrl?.let { url ->
-                    Log.d(TAG, "MpvSurfaceView: playing pending url=$url")
+                    LogRelay.get().relay(TAG, "info", "MpvSurfaceView: playing pending url=$url")
                     MPVLib.command(arrayOf("loadfile", url))
                     pendingUrl = null
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "MpvSurfaceView: surfaceCreated failed", e)
+                LogRelay.get().relay(TAG, "error", "MpvSurfaceView: surfaceCreated failed: ${e.message}")
                 surfaceReady = false
                 dispatchStateChange("error", "Surface create failed: ${e.message}")
             }
@@ -391,18 +392,18 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
             try {
                 MPVLib.setPropertyString("android-surface-size", "${width}x$height")
             } catch (e: Exception) {
-                Log.e(TAG, "MpvSurfaceView: surfaceChanged failed", e)
+                LogRelay.get().relay(TAG, "error", "MpvSurfaceView: surfaceChanged failed: ${e.message}")
             }
         }
 
         override fun surfaceDestroyed(holder: SurfaceHolder) {
-            Log.d(TAG, "MpvSurfaceView: surfaceDestroyed, detaching surface")
+            LogRelay.get().relay(TAG, "info", "MpvSurfaceView: surfaceDestroyed, detaching surface")
             try {
                 MPVLib.setPropertyString("vo", "null")
                 MPVLib.setPropertyString("force-window", "no")
                 MPVLib.detachSurface()
             } catch (e: Exception) {
-                Log.e(TAG, "MpvSurfaceView: surfaceDestroyed failed", e)
+                LogRelay.get().relay(TAG, "error", "MpvSurfaceView: surfaceDestroyed failed: ${e.message}")
             }
             surfaceReady = false
         }

@@ -16,4 +16,7 @@ declare let NativeModules: {
     startBackend(callback: (result: any) => void): void;
     getStreamUrl(path: string, isExternal: boolean, callback: (url: string) => void): void;
   };
+  LogBridgeModule: {
+    log(level: string, msg: string, callback: (result: any) => void): void;
+  };
 };

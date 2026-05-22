@@ -5,7 +5,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
-import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.appcompat.app.AppCompatActivity
@@ -35,7 +34,7 @@ class PlayerActivityLynx : AppCompatActivity() {
             when (intent?.action) {
                 EncvGoService.BROADCAST_BACKEND_READY,
                 EncvGoService.BROADCAST_BACKEND_STATUS -> {
-                    Log.d(TAG, "backend broadcast: ${intent.action}")
+                    LogRelay.get().relay(TAG, "info", "backend broadcast: ${intent.action}")
                 }
             }
         }
@@ -46,7 +45,7 @@ class PlayerActivityLynx : AppCompatActivity() {
             try {
                 MpvPlayerModule.getInstance()?.dispatchPositionUpdate()
             } catch (e: Exception) {
-                Log.e(TAG, "positionUpdateRunnable failed", e)
+                LogRelay.get().relay(TAG, "error", "positionUpdateRunnable failed: ${e.message}")
             }
             lynxView?.postDelayed(this, 500)
         }
@@ -54,26 +53,26 @@ class PlayerActivityLynx : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d(TAG, "onCreate: starting")
+        LogRelay.get().relay(TAG, "info", "onCreate: starting")
 
         EncvApplication.ensureLynxInitialized(application)
 
         setContentView(R.layout.lynx_player_activity)
         rootLayout = findViewById(R.id.lynx_player_root)
-        Log.d(TAG, "onCreate: root layout found: $rootLayout")
+        LogRelay.get().relay(TAG, "info", "onCreate: root layout found: $rootLayout")
 
         resolveFileInfo(intent)
-        Log.d(TAG, "onCreate: file info resolved, path=$intentFilePath, name=$intentFileName, mimeType=$intentFileMimeType, external=$isExternalFile")
+        LogRelay.get().relay(TAG, "info", "onCreate: file info resolved, path=$intentFilePath, name=$intentFileName, mimeType=$intentFileMimeType, external=$isExternalFile")
 
         createLynxView()
         handleBackend()
 
-        Log.d(TAG, "onCreate: setup complete")
+        LogRelay.get().relay(TAG, "info", "onCreate: setup complete")
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        Log.d(TAG, "onNewIntent: new intent received")
+        LogRelay.get().relay(TAG, "info", "onNewIntent: new intent received")
         setIntent(intent)
         resolveFileInfo(intent)
         val initData = buildInitDataJson()
@@ -81,7 +80,7 @@ class PlayerActivityLynx : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        Log.d(TAG, "onDestroy: cleaning up")
+        LogRelay.get().relay(TAG, "info", "onDestroy: cleaning up")
         try {
             lynxView?.removeCallbacks(positionUpdateRunnable)
             MpvPlayerModule.getInstance()?.let { mpvModule ->
@@ -95,14 +94,14 @@ class PlayerActivityLynx : AppCompatActivity() {
             }
             finishAndRemoveTask()
         } catch (e: Exception) {
-            Log.e(TAG, "onDestroy: cleanup error", e)
+            LogRelay.get().relay(TAG, "error", "onDestroy: cleanup error: ${e.message}")
         }
         super.onDestroy()
     }
 
     private fun resolveFileInfo(intent: Intent?) {
         if (intent == null) {
-            Log.w(TAG, "resolveFileInfo: intent is null")
+            LogRelay.get().relay(TAG, "warn", "resolveFileInfo: intent is null")
             return
         }
 
@@ -112,7 +111,7 @@ class PlayerActivityLynx : AppCompatActivity() {
             intentFileName = intent.getStringExtra("file_name") ?: File(internalPath).name
             intentFileMimeType = intent.getStringExtra("file_mime_type") ?: ""
             isExternalFile = false
-            Log.d(TAG, "resolveFileInfo: internal file, path=$intentFilePath")
+            LogRelay.get().relay(TAG, "info", "resolveFileInfo: internal file, path=$intentFilePath")
             return
         }
 
@@ -124,13 +123,13 @@ class PlayerActivityLynx : AppCompatActivity() {
         }
 
         if (uri == null) {
-            Log.w(TAG, "resolveFileInfo: no URI found")
+            LogRelay.get().relay(TAG, "warn", "resolveFileInfo: no URI found")
             return
         }
 
         intentFileMimeType = intent.type ?: ""
         isExternalFile = true
-        Log.d(TAG, "resolveFileInfo: URI, scheme=${uri.scheme}, uri=$uri")
+        LogRelay.get().relay(TAG, "info", "resolveFileInfo: URI, scheme=${uri.scheme}, uri=$uri")
 
         when (uri.scheme) {
             "content" -> {
@@ -156,10 +155,10 @@ class PlayerActivityLynx : AppCompatActivity() {
                         }
                     }
                 } catch (e: Exception) {
-                    Log.w(TAG, "resolveFileInfo: query data failed", e)
+                    LogRelay.get().relay(TAG, "warn", "resolveFileInfo: query data failed: ${e.message}")
                 }
                 if (filePath.isEmpty() || !File(filePath).exists()) {
-                    Log.d(TAG, "resolveFileInfo: copying content to cache")
+                    LogRelay.get().relay(TAG, "info", "resolveFileInfo: copying content to cache")
                     filePath = copyContentToCache(uri)
                 }
                 intentFilePath = filePath
@@ -176,7 +175,7 @@ class PlayerActivityLynx : AppCompatActivity() {
                 }
             }
         }
-        Log.d(TAG, "resolveFileInfo: external file resolved, path=$intentFilePath, name=$intentFileName")
+        LogRelay.get().relay(TAG, "info", "resolveFileInfo: external file resolved, path=$intentFilePath, name=$intentFileName")
     }
 
     private fun copyContentToCache(uri: Uri): String {
@@ -207,54 +206,55 @@ class PlayerActivityLynx : AppCompatActivity() {
                     }
                 }
             }
-            Log.d(TAG, "copyContentToCache: copied to ${destFile.absolutePath}")
+            LogRelay.get().relay(TAG, "info", "copyContentToCache: copied to ${destFile.absolutePath}")
         } catch (e: Exception) {
-            Log.e(TAG, "copyContentToCache failed", e)
+            LogRelay.get().relay(TAG, "error", "copyContentToCache failed: ${e.message}")
             return ""
         }
         return destFile.absolutePath
     }
 
     private fun createLynxView() {
-        Log.d(TAG, "createLynxView: START")
+        LogRelay.get().relay(TAG, "info", "createLynxView: START")
         try {
             val viewBuilder = LynxViewBuilder()
-            Log.d(TAG, "createLynxView: LynxViewBuilder created")
+            LogRelay.get().relay(TAG, "info", "createLynxView: LynxViewBuilder created")
 
             viewBuilder.setTemplateProvider(PlayerTemplateProvider(this))
-            Log.d(TAG, "createLynxView: TemplateProvider set")
+            LogRelay.get().relay(TAG, "info", "createLynxView: TemplateProvider set")
 
             viewBuilder.registerModule("MpvPlayerModule", MpvPlayerModule::class.java)
             viewBuilder.registerModule("GoBackendModule", GoBackendModule::class.java)
-            Log.d(TAG, "createLynxView: Modules registered (MpvPlayerModule, GoBackendModule)")
+            viewBuilder.registerModule("LogBridge", LogBridgeModule::class.java)
+            LogRelay.get().relay(TAG, "info", "createLynxView: Modules registered (MpvPlayerModule, GoBackendModule, LogBridge)")
 
             val displayMetrics = resources.displayMetrics
             val screenWidth = displayMetrics.widthPixels
             val screenHeight = displayMetrics.heightPixels
-            Log.d(TAG, "createLynxView: screen size ${screenWidth}x${screenHeight}")
+            LogRelay.get().relay(TAG, "info", "createLynxView: screen size ${screenWidth}x${screenHeight}")
             viewBuilder.setScreenSize(screenWidth, screenHeight)
-            Log.d(TAG, "createLynxView: screenSize set")
+            LogRelay.get().relay(TAG, "info", "createLynxView: screenSize set")
 
             lynxView = viewBuilder.build(this)
-            Log.d(TAG, "createLynxView: LynxView built, instance=$lynxView")
+            LogRelay.get().relay(TAG, "info", "createLynxView: LynxView built, instance=$lynxView")
 
             lynxView?.addLynxViewClient(object : LynxViewClient() {
                 private val CLIENT_TAG = "LynxPlayerClient"
 
                 override fun onPageStart(url: String?) {
-                    Log.d(CLIENT_TAG, "onPageStart: url=$url")
+                    LogRelay.get().relay(CLIENT_TAG, "info", "onPageStart: url=$url")
                 }
 
                 override fun onRuntimeReady() {
-                    Log.d(CLIENT_TAG, "onRuntimeReady: JS environment ready")
+                    LogRelay.get().relay(CLIENT_TAG, "info", "onRuntimeReady: JS environment ready")
                 }
 
                 override fun onLoadSuccess() {
-                    Log.d(CLIENT_TAG, "onLoadSuccess: template loaded and rendered successfully")
+                    LogRelay.get().relay(CLIENT_TAG, "info", "onLoadSuccess: template loaded and rendered successfully")
                 }
 
                 override fun onLoadFailed(message: String) {
-                    Log.e(CLIENT_TAG, "onLoadFailed: message=$message")
+                    LogRelay.get().relay(CLIENT_TAG, "error", "onLoadFailed: message=$message")
                     runOnUiThread {
                         android.widget.Toast.makeText(
                             this@PlayerActivityLynx,
@@ -265,54 +265,64 @@ class PlayerActivityLynx : AppCompatActivity() {
                 }
 
                 override fun onFirstScreen() {
-                    Log.d(CLIENT_TAG, "onFirstScreen: first screen rendered")
+                    LogRelay.get().relay(CLIENT_TAG, "info", "onFirstScreen: first screen rendered")
                 }
 
                 override fun onReceivedError(error: com.lynx.tasm.LynxError) {
-                    Log.e(CLIENT_TAG, "onReceivedError: code=${error.errorCode} msg=${error.summaryMessage} rootCause=${error.rootCause}")
+                    val fullError = buildString {
+                        append("code=").append(error.errorCode)
+                        append(" summary=").append(error.summaryMessage)
+                        append(" rootCause=").append(error.rootCause)
+                        append(" msg=").append(error.getMsg())
+                    }
+                    LogRelay.get().relay(CLIENT_TAG, "error", "onReceivedError: $fullError")
                     runOnUiThread {
                         android.widget.Toast.makeText(
                             this@PlayerActivityLynx,
-                            "Player error: ${error.summaryMessage}",
+                            fullError,
                             android.widget.Toast.LENGTH_LONG
                         ).show()
                     }
                 }
 
                 override fun onReceivedJSError(jsError: com.lynx.tasm.LynxError) {
-                    Log.e(CLIENT_TAG, "onReceivedJSError: msg=${jsError.getMsg()} rootCause=${jsError.rootCause}")
+                    val fullError = buildString {
+                        append("summary=").append(jsError.summaryMessage)
+                        append(" rootCause=").append(jsError.rootCause)
+                        append(" msg=").append(jsError.getMsg())
+                    }
+                    LogRelay.get().relay(CLIENT_TAG, "error", "onReceivedJSError: $fullError")
                     runOnUiThread {
                         android.widget.Toast.makeText(
                             this@PlayerActivityLynx,
-                            "JS error: ${jsError.summaryMessage}",
+                            fullError,
                             android.widget.Toast.LENGTH_LONG
                         ).show()
                     }
                 }
 
                 override fun onReceivedJavaError(javaError: com.lynx.tasm.LynxError) {
-                    Log.e(CLIENT_TAG, "onReceivedJavaError: msg=${javaError.getMsg()}")
+                    LogRelay.get().relay(CLIENT_TAG, "error", "onReceivedJavaError: msg=${javaError.getMsg()}")
                 }
 
                 override fun onReceivedNativeError(nativeError: com.lynx.tasm.LynxError) {
-                    Log.e(CLIENT_TAG, "onReceivedNativeError: msg=${nativeError.getMsg()}")
+                    LogRelay.get().relay(CLIENT_TAG, "error", "onReceivedNativeError: msg=${nativeError.getMsg()}")
                 }
             })
-            Log.d(TAG, "createLynxView: LynxViewClient registered")
+            LogRelay.get().relay(TAG, "info", "createLynxView: LynxViewClient registered")
 
             val lynxParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
             rootLayout?.addView(lynxView, lynxParams)
-            lynxView?.setBackgroundColor(android.graphics.Color.parseColor("#CC0010"))
-            Log.d(TAG, "createLynxView: LynxView added to rootLayout")
+            LogRelay.get().relay(TAG, "info", "createLynxView: LynxView added to rootLayout")
 
             val initData = buildInitDataJson()
-            Log.d(TAG, "createLynxView: initData=$initData")
+            LogRelay.get().relay(TAG, "info", "createLynxView: initData=$initData")
 
             lynxView?.renderTemplateUrl("player.lynx.bundle", initData)
-            Log.d(TAG, "createLynxView: renderTemplateUrl called with player.lynx.bundle")
+            LogRelay.get().relay(TAG, "info", "createLynxView: renderTemplateUrl called with player.lynx.bundle")
 
             lynxView?.post {
                 try {
@@ -321,12 +331,12 @@ class PlayerActivityLynx : AppCompatActivity() {
                         mpvModule.attachToLayout(rootLayout!!)
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "createLynxView: attachToLayout failed", e)
+                    LogRelay.get().relay(TAG, "error", "createLynxView: attachToLayout failed: ${e.message}")
                 }
                 lynxView?.post(positionUpdateRunnable)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "createLynxView: failed", e)
+            LogRelay.get().relay(TAG, "error", "createLynxView: failed: ${e.message}")
             android.widget.Toast.makeText(this, "Player init failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
             finish()
         }
@@ -343,13 +353,13 @@ class PlayerActivityLynx : AppCompatActivity() {
     }
 
     private fun handleBackend() {
-        Log.d(TAG, "handleBackend: checking backend state")
+        LogRelay.get().relay(TAG, "info", "handleBackend: checking backend state")
         when {
             EncvGoService.isRunning && EncvGoService.lastKnownPort > 0 -> {
-                Log.d(TAG, "handleBackend: backend already running, port=${EncvGoService.lastKnownPort}")
+                LogRelay.get().relay(TAG, "info", "handleBackend: backend already running, port=${EncvGoService.lastKnownPort}")
             }
             else -> {
-                Log.d(TAG, "handleBackend: starting backend service")
+                LogRelay.get().relay(TAG, "info", "handleBackend: starting backend service")
                 startBackendService()
             }
         }

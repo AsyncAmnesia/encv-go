@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -128,6 +129,7 @@ func (s *Server) Start(version string) (string, error) {
 	mux.HandleFunc("/api/index/rebuild", s.handleIndexRebuild)
 	mux.HandleFunc("/api/index/clear", s.handleIndexClear)
 	mux.HandleFunc("/api/stream/external", s.handleStreamExternalFile)
+	mux.HandleFunc("/api/logs", s.handleAPILogs)
 	mux.HandleFunc("/ws", s.handleWebSocket)
 
 	mux.HandleFunc("/", s.handleRequest)
@@ -170,6 +172,36 @@ func (s *Server) Stop() error {
 		return s.server.Shutdown(ctx)
 	}
 	return nil
+}
+
+func (s *Server) handleAPILogs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Level     string `json:"level"`
+		Message   string `json:"message"`
+		Tag       string `json:"tag,omitempty"`
+		Timestamp int64  `json:"timestamp,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	msg := req.Message
+	if req.Tag != "" {
+		msg = "[" + req.Tag + "] " + msg
+	}
+	switch req.Level {
+	case "error":
+		slog.Error(msg)
+	case "warn":
+		slog.Warn(msg)
+	default:
+		slog.Info(msg)
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleRequest 是主路由 / 处理器

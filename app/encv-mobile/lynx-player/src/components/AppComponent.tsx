@@ -11,6 +11,25 @@ interface InitData {
 
 type PlayerState = "idle" | "loading" | "playing" | "paused" | "ended" | "error";
 
+const lynxLog = {
+  info: (msg: string) => {
+    try {
+      console.info(msg);
+      NativeModules.LogBridge.log("info", msg, () => {});
+    } catch (_e) {
+      console.info(msg);
+    }
+  },
+  error: (msg: string) => {
+    try {
+      console.error(msg);
+      NativeModules.LogBridge.log("error", msg, () => {});
+    } catch (_e) {
+      console.error(msg);
+    }
+  },
+};
+
 export function AppComponent() {
   const initData = useInitData<InitData>();
   const [playerState, setPlayerState] = useState<PlayerState>("idle");
@@ -21,10 +40,12 @@ export function AppComponent() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
 
+  lynxLog.info("AppComponent: rendering, initData=" + JSON.stringify(initData));
+
   useLynxGlobalEventListener("mpv:state-change", (event: any) => {
     const state = event?.state;
     const error = event?.error;
-    console.info("mpv:state-change", JSON.stringify(event));
+    lynxLog.info("mpv:state-change " + JSON.stringify(event));
     if (state) setPlayerState(state as PlayerState);
     if (error) setErrorMessage(error);
     if (state === "playing" || state === "paused") {
@@ -40,35 +61,50 @@ export function AppComponent() {
   });
 
   useLynxGlobalEventListener("backend:ready", (event: any) => {
-    console.info("Backend ready, port:", event?.detail?.port ?? event?.port);
+    lynxLog.info("Backend ready, port=" + String(event?.detail?.port ?? event?.port));
   });
 
   useEffect(() => {
     if (initData) {
       setFileName(initData.fileName || "Unknown");
+      lynxLog.info("fileName set to: " + (initData.fileName || "Unknown"));
     }
   }, [initData]);
 
   const startPlayback = useCallback(async (data: InitData | undefined) => {
-    if (!data) return;
+    if (!data) {
+      lynxLog.error("startPlayback: no data");
+      return;
+    }
     setPlayerState("loading");
     try {
+      lynxLog.info("startPlayback: step1 getBackendStatus");
       const status = await new Promise<any>((resolve) => {
         NativeModules.GoBackendModule.getBackendStatus(resolve);
       });
+      lynxLog.info("startPlayback: step1 result=" + JSON.stringify(status));
+
       if (data.isExternal || !status.running) {
+        lynxLog.info("startPlayback: step2 startBackend");
         await new Promise<any>((resolve) => {
           NativeModules.GoBackendModule.startBackend(resolve);
         });
+        lynxLog.info("startPlayback: step2 done");
       }
+
+      lynxLog.info("startPlayback: step3 getStreamUrl path=" + data.filePath);
       const streamUrl = await new Promise<string>((resolve) => {
         NativeModules.GoBackendModule.getStreamUrl(data.filePath, data.isExternal, resolve);
       });
+      lynxLog.info("startPlayback: step3 url=" + streamUrl);
+
+      lynxLog.info("startPlayback: step4 mpv.play url=" + streamUrl);
       await new Promise<any>((resolve) => {
         NativeModules.MpvPlayerModule.play(streamUrl, resolve);
       });
+      lynxLog.info("startPlayback: all steps done, playing");
     } catch (e: any) {
-      console.info("startPlayback error:", e?.message || String(e));
+      lynxLog.error("startPlayback caught: " + (e?.message || String(e)));
       setPlayerState("error");
       setErrorMessage(e?.message || String(e));
     }
@@ -76,12 +112,15 @@ export function AppComponent() {
 
   const handlePlayPause = useCallback(() => {
     if (playerState === "playing") {
+      lynxLog.info("handlePlayPause: pause");
       NativeModules.MpvPlayerModule.pause(() => {});
       setPlayerState("paused");
     } else if (playerState === "paused") {
+      lynxLog.info("handlePlayPause: resume");
       NativeModules.MpvPlayerModule.resume(() => {});
       setPlayerState("playing");
     } else {
+      lynxLog.info("handlePlayPause: startPlayback");
       startPlayback(initData);
     }
   }, [playerState, initData, startPlayback]);
@@ -104,14 +143,11 @@ export function AppComponent() {
     setShowControls((prev) => !prev);
   }, [showControls]);
 
-  const isOverlay = playerState === "loading" || playerState === "error" || playerState === "idle";
-
   return (
-    <page style={{ flex: 1 }}>
+    <page style={{ width: "100%", height: "100%" }}>
       <view
         className="PlayerContainer"
         bindtap={handleToggleControls}
-        style={isOverlay ? { justifyContent: "center" } : undefined}
       >
         {showControls && (
           <PlayerControls
