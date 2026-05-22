@@ -228,6 +228,13 @@ class PlayerActivityLynx : AppCompatActivity() {
             viewBuilder.registerModule("GoBackendModule", GoBackendModule::class.java)
             Log.d(TAG, "createLynxView: Modules registered (MpvPlayerModule, GoBackendModule)")
 
+            val displayMetrics = resources.displayMetrics
+            val screenWidth = displayMetrics.widthPixels
+            val screenHeight = displayMetrics.heightPixels
+            Log.d(TAG, "createLynxView: screen size ${screenWidth}x${screenHeight}")
+            viewBuilder.setScreenSize(screenWidth, screenHeight)
+            Log.d(TAG, "createLynxView: screenSize set")
+
             lynxView = viewBuilder.build(this)
             Log.d(TAG, "createLynxView: LynxView built, instance=$lynxView")
 
