@@ -96,6 +96,7 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
             MPVLib.observeProperty("pause", MpvFormat.MPV_FORMAT_FLAG)
             MPVLib.observeProperty("idle", MpvFormat.MPV_FORMAT_FLAG)
             mpvInitialized = true
+            dispatchStateChange("mpv_ready")
             LogRelay.get().relay(TAG, "info", "ensureMpvInitialized: done, configDir=$configDir, cacheDir=$cacheDir")
         } catch (e: Exception) {
             LogRelay.get().relay(TAG, "error", "ensureMpvInitialized: failed: ${e.message}")
@@ -169,6 +170,7 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
             } else {
                 LogRelay.get().relay(TAG, "info", "play: surface not ready, queuing url as pending")
                 pendingUrl = url
+                dispatchStateChange("waiting_surface")
             }
             callback.invoke(true)
         } catch (e: Exception) {
@@ -395,6 +397,7 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
                 MPVLib.setOptionString("force-window", "yes")
                 MPVLib.setPropertyString("vo", "gpu")
                 surfaceReady = true
+                dispatchStateChange("surface_ready")
                 pendingUrl?.let { url ->
                     LogRelay.get().relay(TAG, "info", "MpvSurfaceView: playing pending url=$url")
                     MPVLib.command(arrayOf("loadfile", url))

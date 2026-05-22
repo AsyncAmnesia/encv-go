@@ -42,8 +42,11 @@ export function PlayerControls({
   if (error) {
     return (
       <view className="ErrorContainer">
-        <text className="ErrorTitle">⚠ Playback Error</text>
-        <text className="ErrorDetail">{error}</text>
+        <view className="PlayButtonCircle" bindtap={onPlayPause}>
+          <text className="PlayIconLarge">🔄</text>
+        </view>
+        <text className="ErrorTitle">⚠ 播放失败</text>
+        <text className="ErrorDetail">{error || "未知错误，点击重试"}</text>
       </view>
     );
   }
@@ -66,7 +69,7 @@ export function PlayerControls({
         <view className="PlayButtonCircle" bindtap={onPlayPause}>
           <text className="PlayIconLarge">▶</text>
         </view>
-        <text className="IdleTitle">{fileName}</text>
+        <text className="IdleTitle">{fileName || "等待文件信息..."}</text>
       </view>
     );
   }

@@ -39,6 +39,7 @@ export function AppComponent() {
   const [errorMessage, setErrorMessage] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
+  const [pendingPlaybackData, setPendingPlaybackData] = useState<InitData | null>(null);
 
   lynxLog.info("AppComponent: rendering, initData=" + JSON.stringify(initData));
 
@@ -46,7 +47,26 @@ export function AppComponent() {
     const state = event?.state;
     const error = event?.error;
     lynxLog.info("mpv:state-change " + JSON.stringify(event));
-    if (state) setPlayerState(state as PlayerState);
+    if (state) {
+      if (state === "surface_ready") {
+        lynxLog.info("MPV surface ready, auto-retrying playback if pending");
+        if (pendingPlaybackData) {
+          startPlayback(pendingPlaybackData);
+          setPendingPlaybackData(null);
+        }
+        return;
+      }
+      if (state === "waiting_surface") {
+        setPlayerState("loading");
+        setErrorMessage("正在初始化视频窗口...");
+        return;
+      }
+      if (state === "mpv_ready") {
+        lynxLog.info("MPV engine ready");
+        return;
+      }
+      setPlayerState(state as PlayerState);
+    }
     if (error) setErrorMessage(error);
     if (state === "playing" || state === "paused") {
       setShowControls(true);
@@ -71,9 +91,12 @@ export function AppComponent() {
     }
   }, [initData]);
 
-  const startPlayback = useCallback(async (data: InitData | undefined) => {
-    if (!data) {
-      lynxLog.error("startPlayback: no data");
+  const startPlayback = useCallback(async (data: InitData | undefined | null) => {
+    lynxLog.info("startPlayback called, data=" + JSON.stringify(data));
+    if (!data || !data.filePath) {
+      lynxLog.error("startPlayback: filePath is empty! data=" + JSON.stringify(data));
+      setPlayerState("error");
+      setErrorMessage(data ? "文件路径为空" : "未收到播放数据");
       return;
     }
     setPlayerState("loading");
@@ -120,7 +143,8 @@ export function AppComponent() {
       NativeModules.MpvPlayerModule.resume(() => {});
       setPlayerState("playing");
     } else {
-      lynxLog.info("handlePlayPause: startPlayback");
+      lynxLog.info("handlePlayPause: startPlayback (state=" + playerState + ")");
+      setErrorMessage("");
       startPlayback(initData);
     }
   }, [playerState, initData, startPlayback]);
