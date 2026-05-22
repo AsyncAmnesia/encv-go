@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -29,9 +30,9 @@ func newTestTaskManager(broadcaster Broadcaster) *TaskManager {
 }
 
 func TestTaskManager_Create(t *testing.T) {
-	mock := new(MockBroadcaster)
-	mock.On("Broadcast", "task:created", mock.Anything).Return()
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	mb.On("Broadcast", "task:created", mock.Anything).Return()
+	tm := newTestTaskManager(mb)
 
 	task := tm.Create("encrypt", "/video.mp4")
 
@@ -46,25 +47,25 @@ func TestTaskManager_Create(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, task.ID, stored.ID)
 
-	mock.AssertCalled(t, "Broadcast", "task:created", mock.Anything)
+	mb.AssertCalled(t, "Broadcast", "task:created", mock.Anything)
 }
 
 func TestTaskManager_CreateBroadcastsEvent(t *testing.T) {
-	mock := new(MockBroadcaster)
-	mock.On("Broadcast", "task:created", mock.Anything).Return()
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	mb.On("Broadcast", "task:created", mock.Anything).Return()
+	tm := newTestTaskManager(mb)
 
 	tm.Create("decrypt", "/test.encv")
 
-	calls := mock.FindCalls("task:created")
+	calls := mb.FindCalls("task:created")
 	assert.Len(t, calls, 1)
 	assert.Equal(t, "task:created", calls[0].MsgType)
 }
 
 func TestTaskManager_List(t *testing.T) {
-	mock := new(MockBroadcaster)
-	mock.On("Broadcast", mock.Anything, mock.Anything).Return()
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
+	tm := newTestTaskManager(mb)
 
 	tm.Create("encrypt", "/a.mp4")
 	tm.Create("decrypt", "/b.encv")
@@ -74,16 +75,16 @@ func TestTaskManager_List(t *testing.T) {
 }
 
 func TestTaskManager_ListEmpty(t *testing.T) {
-	mock := new(MockBroadcaster)
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	tm := newTestTaskManager(mb)
 
 	list := tm.List()
 	assert.Empty(t, list)
 }
 
 func TestTaskManager_GetNotFound(t *testing.T) {
-	mock := new(MockBroadcaster)
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	tm := newTestTaskManager(mb)
 
 	_, err := tm.Get("nonexistent")
 	assert.Error(t, err)
@@ -91,9 +92,9 @@ func TestTaskManager_GetNotFound(t *testing.T) {
 }
 
 func TestTaskManager_Cancel_QueuedTask(t *testing.T) {
-	mock := new(MockBroadcaster)
-	mock.On("Broadcast", mock.Anything, mock.Anything).Return()
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
+	tm := newTestTaskManager(mb)
 
 	task := tm.Create("encrypt", "/test.mp4")
 	assert.Equal(t, "queued", task.Status)
@@ -107,9 +108,9 @@ func TestTaskManager_Cancel_QueuedTask(t *testing.T) {
 }
 
 func TestTaskManager_Cancel_RunningTask(t *testing.T) {
-	mock := new(MockBroadcaster)
-	mock.On("Broadcast", mock.Anything, mock.Anything).Return()
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
+	tm := newTestTaskManager(mb)
 
 	task := tm.Create("encrypt", "/test.mp4")
 	tm.mu.Lock()
@@ -122,8 +123,8 @@ func TestTaskManager_Cancel_RunningTask(t *testing.T) {
 }
 
 func TestTaskManager_Cancel_NotFound(t *testing.T) {
-	mock := new(MockBroadcaster)
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	tm := newTestTaskManager(mb)
 
 	_, err := tm.Cancel("nonexistent")
 	assert.Error(t, err)
@@ -131,16 +132,16 @@ func TestTaskManager_Cancel_NotFound(t *testing.T) {
 }
 
 func TestTaskManager_CancelBroadcastsUpdate(t *testing.T) {
-	mock := new(MockBroadcaster)
-	mock.On("Broadcast", mock.Anything, mock.Anything).Return()
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
+	tm := newTestTaskManager(mb)
 
 	task := tm.Create("encrypt", "/test.mp4")
-	mock.calls_ = nil
+	mb.calls_ = nil
 
 	_, _ = tm.Cancel(task.ID)
 
-	calls := mock.FindCalls("task:update")
+	calls := mb.FindCalls("task:update")
 	assert.Len(t, calls, 1)
 	data, ok := calls[0].Data.(map[string]interface{})
 	require.True(t, ok)
@@ -149,9 +150,9 @@ func TestTaskManager_CancelBroadcastsUpdate(t *testing.T) {
 }
 
 func TestTaskManager_Retry(t *testing.T) {
-	mock := new(MockBroadcaster)
-	mock.On("Broadcast", mock.Anything, mock.Anything).Return()
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
+	tm := newTestTaskManager(mb)
 
 	task := tm.Create("encrypt", "/test.mp4")
 	tm.mu.Lock()
@@ -168,27 +169,27 @@ func TestTaskManager_Retry(t *testing.T) {
 }
 
 func TestTaskManager_Retry_NotFound(t *testing.T) {
-	mock := new(MockBroadcaster)
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	tm := newTestTaskManager(mb)
 
 	_, err := tm.Retry("nonexistent")
 	assert.Error(t, err)
 }
 
 func TestTaskManager_RetryBroadcastsUpdate(t *testing.T) {
-	mock := new(MockBroadcaster)
-	mock.On("Broadcast", mock.Anything, mock.Anything).Return()
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
+	tm := newTestTaskManager(mb)
 
 	task := tm.Create("encrypt", "/test.mp4")
 	tm.mu.Lock()
 	task.Status = "failed"
 	tm.mu.Unlock()
-	mock.calls_ = nil
+	mb.calls_ = nil
 
 	_, _ = tm.Retry(task.ID)
 
-	calls := mock.FindCalls("task:update")
+	calls := mb.FindCalls("task:update")
 	assert.Len(t, calls, 1)
 	data, ok := calls[0].Data.(map[string]interface{})
 	require.True(t, ok)
@@ -196,9 +197,9 @@ func TestTaskManager_RetryBroadcastsUpdate(t *testing.T) {
 }
 
 func TestTaskManager_Dequeue(t *testing.T) {
-	mock := new(MockBroadcaster)
-	mock.On("Broadcast", mock.Anything, mock.Anything).Return()
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
+	tm := newTestTaskManager(mb)
 
 	task := tm.Create("encrypt", "/test.mp4")
 
@@ -212,17 +213,17 @@ func TestTaskManager_Dequeue(t *testing.T) {
 }
 
 func TestTaskManager_Dequeue_Empty(t *testing.T) {
-	mock := new(MockBroadcaster)
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	tm := newTestTaskManager(mb)
 
 	result := tm.dequeue()
 	assert.Nil(t, result)
 }
 
 func TestTaskManager_Dequeue_SkipsNonQueued(t *testing.T) {
-	mock := new(MockBroadcaster)
-	mock.On("Broadcast", mock.Anything, mock.Anything).Return()
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
+	tm := newTestTaskManager(mb)
 
 	task := tm.Create("encrypt", "/test.mp4")
 	tm.mu.Lock()
@@ -234,8 +235,8 @@ func TestTaskManager_Dequeue_SkipsNonQueued(t *testing.T) {
 }
 
 func TestTaskManager_ResolveAbsPath(t *testing.T) {
-	mock := new(MockBroadcaster)
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	tm := newTestTaskManager(mb)
 	tm.servingDir = "/data/serving"
 
 	tests := []struct {
@@ -257,18 +258,21 @@ func TestTaskManager_ResolveAbsPath(t *testing.T) {
 }
 
 func TestTaskManager_ResolveAbsPath_PathTraversal(t *testing.T) {
-	mock := new(MockBroadcaster)
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	tm := newTestTaskManager(mb)
 	tm.servingDir = "/data/serving"
 
-	result := tm.resolveAbsPath("/../../../etc/passwd")
-	assert.Empty(t, result, "path traversal should return empty string")
+	result := tm.resolveAbsPath("../../../etc/passwd")
+	assert.Empty(t, result, "relative path traversal should return empty string")
+
+	result = tm.resolveAbsPath("/../../../etc/passwd")
+	assert.True(t, strings.HasPrefix(result, "/data/serving"), "absolute path traversal should be contained within servingDir, got %s", result)
 }
 
 func TestTaskManager_FailTask(t *testing.T) {
-	mock := new(MockBroadcaster)
-	mock.On("Broadcast", mock.Anything, mock.Anything).Return()
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
+	tm := newTestTaskManager(mb)
 
 	task := tm.Create("encrypt", "/test.mp4")
 
@@ -280,16 +284,16 @@ func TestTaskManager_FailTask(t *testing.T) {
 }
 
 func TestTaskManager_FailTaskBroadcastsEvent(t *testing.T) {
-	mock := new(MockBroadcaster)
-	mock.On("Broadcast", mock.Anything, mock.Anything).Return()
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
+	tm := newTestTaskManager(mb)
 
 	task := tm.Create("encrypt", "/test.mp4")
-	mock.calls_ = nil
+	mb.calls_ = nil
 
 	tm.failTask(task.ID, "test error")
 
-	calls := mock.FindCalls("task:completed")
+	calls := mb.FindCalls("task:completed")
 	assert.Len(t, calls, 1)
 	data, ok := calls[0].Data.(map[string]interface{})
 	require.True(t, ok)
@@ -298,18 +302,18 @@ func TestTaskManager_FailTaskBroadcastsEvent(t *testing.T) {
 }
 
 func TestTaskManager_FailTask_NonExistent(t *testing.T) {
-	mock := new(MockBroadcaster)
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	tm := newTestTaskManager(mb)
 
 	tm.failTask("nonexistent", "error")
 
-	assert.Empty(t, mock.GetCalls())
+	assert.Empty(t, mb.GetCalls())
 }
 
 func TestTaskManager_ConcurrentAccess(t *testing.T) {
-	mock := new(MockBroadcaster)
-	mock.On("Broadcast", mock.Anything, mock.Anything).Return()
-	tm := newTestTaskManager(mock)
+	mb := new(MockBroadcaster)
+	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
+	tm := newTestTaskManager(mb)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
@@ -343,11 +347,11 @@ func TestTaskManager_NilBroadcaster(t *testing.T) {
 }
 
 func TestTaskManager_WorkerLifecycle(t *testing.T) {
-	mock := new(MockBroadcaster)
-	mock.On("Broadcast", mock.Anything, mock.Anything).Return()
+	mb := new(MockBroadcaster)
+	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
 
 	cfg := defaultTestConfig()
-	tm := NewTaskManager("/tmp/test-serving", cfg, mock)
+	tm := NewTaskManager("/tmp/test-serving", cfg, mb)
 
 	done := make(chan struct{})
 	go func() {

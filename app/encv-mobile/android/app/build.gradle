@@ -1,0 +1,120 @@
+plugins {
+    id 'kotlin-android'
+}
+
+apply plugin: 'com.android.application'
+
+android {
+    namespace = "com.encvgo.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "com.encvgo.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+        buildConfigField "boolean", "USE_LYNX_PLAYER", "true"
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        targetCompatibility JavaVersion.VERSION_21
+        sourceCompatibility JavaVersion.VERSION_21
+    }
+    buildFeatures {
+        buildConfig = true
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            pickFirsts += ['**/*.so']
+        }
+        resources {
+            pickFirsts += ['**/*.so']
+        }
+    }
+
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.0"
+    debugImplementation 'com.github.getActivity:Logcat:13.0'
+
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+
+    implementation 'org.lynxsdk.lynx:lynx:3.7.0'
+    implementation 'org.lynxsdk.lynx:lynx-jssdk:3.7.0'
+    implementation 'org.lynxsdk.lynx:lynx-trace:3.7.0'
+    implementation 'org.lynxsdk.lynx:primjs:3.7.0'
+    implementation 'org.lynxsdk.lynx:lynx-service-image:3.7.0'
+    implementation 'org.lynxsdk.lynx:lynx-service-log:3.7.0'
+    implementation 'org.lynxsdk.lynx:lynx-service-http:3.7.0'
+    implementation 'org.lynxsdk.lynx:lynx-service-devtool:3.7.0'
+    implementation 'org.lynxsdk.lynx:lynx-devtool:3.7.0'
+    implementation 'com.facebook.fresco:fresco:2.3.0'
+    implementation 'com.facebook.fresco:animated-gif:2.3.0'
+    implementation 'com.facebook.fresco:animated-webp:2.3.0'
+    implementation 'com.facebook.fresco:webpsupport:2.3.0'
+    implementation 'com.facebook.fresco:animated-base:2.3.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.9.0'
+
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
+
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    kotlinOptions {
+        jvmTarget = "21"
+    }
+}
+
+
+android.sourceSets {
+    main.java.srcDirs += 'src/main/java'
+}
+

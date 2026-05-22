@@ -13,7 +13,10 @@ dist-ssr
 *.sln
 *.sw?
 
-android/
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/capacitor.build.gradle
+android/capacitor.settings.gradle
 ios/
 
 android-overlay/app/src/main/jniLibs/

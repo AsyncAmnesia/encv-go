@@ -83,7 +83,7 @@ jobs:
           echo "Go binary size:"
           ls -lh app/encv-mobile/encv-go-arm64
 
-      # Keystore 放在 android/ 外面，避免被 cap add/cap sync 重建时覆盖
+      # Keystore stored outside android/app to avoid accidental commit
       - name: Restore release keystore from cache
         uses: actions/cache@v4
         id: keystore-cache
@@ -109,18 +109,12 @@ jobs:
             ls -lh "$KEYSTORE"
           fi
 
-      # cap sync triggers capacitor:sync:after hook (sync-native.mjs + trapeze)
-      # which handles: kotlin files, native libs, jni/, Gradle patching, file copies
+      # android/ is in git — cap sync only copies web assets and updates plugins
+      # sync-native.mjs handles: native libs (.so), jni/ C++ sources
       - name: Sync Capacitor Android project
-        env:
-          ENCV_VERSION: ${{ inputs.version }}
         run: |
           cd app/encv-mobile
-          if [ -d "./android" ] && [ -f "./android/build.gradle" ]; then
-            npx cap sync android
-          else
-            rm -rf ./android && npx cap add android && npx cap sync android
-          fi
+          npx cap sync android
           echo "Android project ready:"
           ls -la android/*.gradle android/app/*.gradle
 
