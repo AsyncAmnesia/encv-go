@@ -170,8 +170,12 @@ export interface EncvTask {
   id: string
   type: TaskType
   sourcePath: string
+  targetPath?: string
   status: TaskStatus
   progress: number
+  phase?: string
+  speed?: string
+  eta?: string
   error?: string
   createdAt: string
 }

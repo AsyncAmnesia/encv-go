@@ -276,6 +276,7 @@ func (p *VideoPlugin) GetContentPreprocessor() pluginInterfaces.ContentPreproces
 		index:          &p.index,
 		outputDir:      p.outputDir,
 		splitPartPaths: p.splitPartPaths,
+		ctx:            p.ctx,
 	}
 }
 

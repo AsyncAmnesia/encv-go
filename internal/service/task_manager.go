@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Soltus/encv-go/internal/config"
@@ -20,10 +21,15 @@ type MobileTask struct {
 	ID         string    `json:"id"`
 	Type       string    `json:"type"`
 	SourcePath string    `json:"sourcePath"`
+	TargetPath string    `json:"targetPath,omitempty"`
 	Status     string    `json:"status"`
 	Progress   int       `json:"progress"`
+	Phase      string    `json:"phase,omitempty"`
+	Speed      string    `json:"speed,omitempty"`
+	Eta        string    `json:"eta,omitempty"`
 	Error      string    `json:"error,omitempty"`
 	CreatedAt  time.Time `json:"createdAt"`
+	cancelFn   context.CancelFunc
 }
 
 type TaskManager struct {
@@ -54,11 +60,12 @@ func (tm *TaskManager) Stop() {
 	tm.wg.Wait()
 }
 
-func (tm *TaskManager) Create(taskType, sourcePath string) *MobileTask {
+func (tm *TaskManager) Create(taskType, sourcePath, targetPath string) *MobileTask {
 	task := &MobileTask{
 		ID:         uuid.New().String(),
 		Type:       taskType,
 		SourcePath: sourcePath,
+		TargetPath: targetPath,
 		Status:     "queued",
 		Progress:   0,
 		CreatedAt:  time.Now(),
@@ -68,7 +75,7 @@ func (tm *TaskManager) Create(taskType, sourcePath string) *MobileTask {
 	tm.tasks[task.ID] = task
 	tm.mu.Unlock()
 
-	slog.Info("Task created", "id", task.ID, "type", taskType, "source", sourcePath)
+	slog.Info("Task created", "id", task.ID, "type", taskType, "source", sourcePath, "target", targetPath)
 	if tm.broadcaster != nil {
 		tm.broadcaster.Broadcast("task:created", task)
 	}
@@ -108,6 +115,9 @@ func (tm *TaskManager) Cancel(id string) (*MobileTask, error) {
 
 	if task.Status == "running" {
 		task.Status = "cancelling"
+		if task.cancelFn != nil {
+			task.cancelFn()
+		}
 	} else {
 		task.Status = "cancelled"
 	}
@@ -118,6 +128,53 @@ func (tm *TaskManager) Cancel(id string) (*MobileTask, error) {
 		})
 	}
 	return task, nil
+}
+
+func (tm *TaskManager) updateProgress(id string, progress int, phase, speed, eta string) {
+	tm.mu.Lock()
+	if task, ok := tm.tasks[id]; ok {
+		task.Progress = progress
+		task.Phase = phase
+		task.Speed = speed
+		task.Eta = eta
+	}
+	tm.mu.Unlock()
+	if tm.broadcaster != nil {
+		tm.broadcaster.Broadcast("task:progress", map[string]interface{}{
+			"id":       id,
+			"progress": progress,
+			"phase":    phase,
+			"speed":    speed,
+			"eta":      eta,
+		})
+	}
+}
+
+func formatSpeed(bytesPerSec float64) string {
+	if bytesPerSec <= 0 {
+		return ""
+	}
+	if bytesPerSec < 1024 {
+		return fmt.Sprintf("%.1f B/s", bytesPerSec)
+	}
+	if bytesPerSec < 1024*1024 {
+		return fmt.Sprintf("%.1f KB/s", bytesPerSec/1024)
+	}
+	return fmt.Sprintf("%.1f MB/s", bytesPerSec/(1024*1024))
+}
+
+func formatDuration(seconds float64) string {
+	if seconds <= 0 {
+		return ""
+	}
+	d := time.Duration(seconds * float64(time.Second))
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm%ds", int(d.Minutes()), int(d.Seconds())%60)
+	}
+	return fmt.Sprintf("%dh%dm", int(d.Hours()), int(d.Minutes())%60)
 }
 
 func (tm *TaskManager) Retry(id string) (*MobileTask, error) {
@@ -187,14 +244,7 @@ func (tm *TaskManager) resolveAbsPath(sourcePath string) string {
 func (tm *TaskManager) processTask(task *MobileTask) {
 	slog.Info("Processing task", "id", task.ID, "type", task.Type, "source", task.SourcePath)
 
-	if tm.broadcaster != nil {
-		tm.broadcaster.Broadcast("task:update", map[string]interface{}{
-			"id":       task.ID,
-			"type":     task.Type,
-			"status":   "running",
-			"progress": 0,
-		})
-	}
+	tm.updateProgress(task.ID, 0, "queued", "", "")
 
 	absPath := tm.resolveAbsPath(task.SourcePath)
 	if absPath == "" {
@@ -215,34 +265,73 @@ func (tm *TaskManager) processTask(task *MobileTask) {
 }
 
 func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
+	taskID := task.ID
+
+	ctx, cancel := context.WithCancel(context.Background())
+	task.cancelFn = cancel
+	defer cancel()
+
+	tm.updateProgress(taskID, 5, "analyzing", "", "")
+
 	info, err := os.Stat(absPath)
 	if err != nil {
-		tm.failTask(task.ID, fmt.Sprintf("source file not found: %v", err))
+		tm.failTask(taskID, fmt.Sprintf("source file not found: %v", err))
 		return
 	}
 
 	if info.IsDir() {
-		tm.failTask(task.ID, "directory encryption is not supported yet")
+		tm.failTask(taskID, "directory encryption is not supported yet")
 		return
 	}
 
 	outputDir := filepath.Dir(absPath)
-	ctx := config.NewContext(context.Background(), tm.cfg)
+	if task.TargetPath != "" {
+		targetAbs := tm.resolveAbsPath(task.TargetPath)
+		if targetAbs != "" {
+			outputDir = targetAbs
+			if mkdirErr := os.MkdirAll(outputDir, 0755); mkdirErr != nil {
+				tm.failTask(taskID, fmt.Sprintf("failed to create target directory: %v", mkdirErr))
+				return
+			}
+		}
+	}
+
+	requiredSpace := info.Size() * 3 / 2
+	if freeSpace, diskErr := getAvailableDiskSpace(outputDir); diskErr == nil && freeSpace < requiredSpace {
+		tm.failTask(taskID, fmt.Sprintf("insufficient disk space: need %s, available %s", formatSpeed(float64(requiredSpace)), formatSpeed(float64(freeSpace))))
+		return
+	}
+
+	tm.updateProgress(taskID, 10, "initializing", "", "")
+	cfgCtx := config.NewContext(ctx, tm.cfg)
 
 	plugin, err := plugins.FindEncryptingPlugin(absPath)
 	if err != nil {
-		tm.failTask(task.ID, fmt.Sprintf("no encrypting plugin found: %v", err))
+		tm.failTask(taskID, fmt.Sprintf("no encrypting plugin found: %v", err))
 		return
 	}
 
-	if err := plugin.Initialize(ctx); err != nil {
-		tm.failTask(task.ID, fmt.Sprintf("plugin initialization failed: %v", err))
+	if err := plugin.Initialize(cfgCtx); err != nil {
+		tm.failTask(taskID, fmt.Sprintf("plugin initialization failed: %v", err))
 		return
 	}
 
-	err = plugins.EncryptFileWithPlugin(ctx, plugin, absPath, tm.servingDir, outputDir)
+	tm.updateProgress(taskID, 15, "preprocessing", "", "")
+
+	fileSize := info.Size()
+	stopMonitor := make(chan struct{})
+	go tm.monitorFileProgress(taskID, outputDir, fileSize, stopMonitor)
+
+	err = plugins.EncryptFileWithPlugin(cfgCtx, plugin, absPath, tm.servingDir, outputDir)
+	close(stopMonitor)
+
 	if err != nil {
-		tm.failTask(task.ID, fmt.Sprintf("encryption failed: %v", err))
+		tm.cleanupTempFiles(outputDir)
+		if ctx.Err() != nil || task.Status == "cancelling" {
+			tm.failTask(taskID, "task cancelled")
+		} else {
+			tm.failTask(taskID, fmt.Sprintf("encryption failed: %v", err))
+		}
 		return
 	}
 
@@ -250,6 +339,9 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 	if task.Status != "cancelling" {
 		task.Status = "completed"
 		task.Progress = 100
+		task.Phase = "completed"
+		task.Speed = ""
+		task.Eta = ""
 	}
 	tm.mu.Unlock()
 
@@ -265,35 +357,157 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 	}
 }
 
+func (tm *TaskManager) monitorFileProgress(taskID, outputDir string, totalSize int64, stopCh chan struct{}) {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+	startTime := time.Now()
+	var lastSize int64
+	var lastTime time.Time
+	estimatedTotal := totalSize * 2
+
+	for {
+		select {
+		case <-ticker.C:
+			var currentSize int64
+			filepath.WalkDir(outputDir, func(path string, d os.DirEntry, err error) error {
+				if err != nil || d.IsDir() {
+					return nil
+				}
+				if info, err := d.Info(); err == nil {
+					name := info.Name()
+					if strings.HasPrefix(name, "encv-pre-") || strings.HasSuffix(name, ".tmp") {
+						return nil
+					}
+					currentSize += info.Size()
+				}
+				return nil
+			})
+
+			now := time.Now()
+			elapsed := now.Sub(startTime).Seconds()
+			if elapsed <= 0 || currentSize <= 0 {
+				continue
+			}
+
+			avgSpeed := float64(currentSize) / elapsed
+			var instantSpeed float64
+			if !lastTime.IsZero() && currentSize > lastSize {
+				dt := now.Sub(lastTime).Seconds()
+				if dt > 0 {
+					instantSpeed = float64(currentSize-lastSize) / dt
+				}
+			}
+			lastSize = currentSize
+			lastTime = now
+
+			speed := instantSpeed
+			if speed <= 0 {
+				speed = avgSpeed
+			}
+
+			if currentSize > estimatedTotal/2 && estimatedTotal < currentSize*3 {
+				estimatedTotal = currentSize * 2
+			}
+
+			rawProgress := float64(currentSize) / float64(estimatedTotal)
+			if rawProgress > 0.95 {
+				rawProgress = 0.95
+			}
+			progress := int(rawProgress*80) + 15
+			if progress > 95 {
+				progress = 95
+			}
+
+			speedStr := formatSpeed(speed)
+			remaining := float64(estimatedTotal-currentSize) / speed
+			if remaining < 0 {
+				remaining = 0
+			}
+			etaStr := formatDuration(remaining)
+
+			tm.mu.RLock()
+			task, ok := tm.tasks[taskID]
+			currentPhase := ""
+			if ok {
+				currentPhase = task.Phase
+			}
+			tm.mu.RUnlock()
+
+			phase := "encrypting"
+			if currentPhase == "preprocessing" {
+				phase = "preprocessing"
+			}
+
+			tm.updateProgress(taskID, progress, phase, speedStr, etaStr)
+
+		case <-stopCh:
+			return
+		}
+	}
+}
+
 func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
+	taskID := task.ID
+
+	ctx, cancel := context.WithCancel(context.Background())
+	task.cancelFn = cancel
+	defer cancel()
+
+	tm.updateProgress(taskID, 5, "analyzing", "", "")
+
 	info, err := os.Stat(absPath)
 	if err != nil {
-		tm.failTask(task.ID, fmt.Sprintf("source file not found: %v", err))
+		tm.failTask(taskID, fmt.Sprintf("source file not found: %v", err))
 		return
 	}
 
 	if info.IsDir() {
-		tm.failTask(task.ID, "directory decryption is not supported yet")
+		tm.failTask(taskID, "directory decryption is not supported yet")
 		return
 	}
 
 	outputDir := filepath.Dir(absPath)
-	ctx := config.NewContext(context.Background(), tm.cfg)
+	if task.TargetPath != "" {
+		targetAbs := tm.resolveAbsPath(task.TargetPath)
+		if targetAbs != "" {
+			outputDir = targetAbs
+			if mkdirErr := os.MkdirAll(outputDir, 0755); mkdirErr != nil {
+				tm.failTask(taskID, fmt.Sprintf("failed to create target directory: %v", mkdirErr))
+				return
+			}
+		}
+	}
+
+	tm.updateProgress(taskID, 10, "initializing", "", "")
+	cfgCtx := config.NewContext(ctx, tm.cfg)
 
 	plugin, err := plugins.FindDecryptingPlugin(absPath)
 	if err != nil {
-		tm.failTask(task.ID, fmt.Sprintf("no decrypting plugin found: %v", err))
+		tm.failTask(taskID, fmt.Sprintf("no decrypting plugin found: %v", err))
 		return
 	}
 
-	if err := plugin.Initialize(ctx); err != nil {
-		tm.failTask(task.ID, fmt.Sprintf("plugin initialization failed: %v", err))
+	if err := plugin.Initialize(cfgCtx); err != nil {
+		tm.failTask(taskID, fmt.Sprintf("plugin initialization failed: %v", err))
 		return
 	}
 
-	err = plugins.DecryptContainerWithPlugin(ctx, plugin, absPath, outputDir)
+	tm.updateProgress(taskID, 15, "preprocessing", "", "")
+
+	fileSize := info.Size()
+	stopMonitor := make(chan struct{})
+	go tm.monitorFileProgress(taskID, outputDir, fileSize, stopMonitor)
+
+	err = plugins.DecryptContainerWithPlugin(cfgCtx, plugin, absPath, outputDir)
+	close(stopMonitor)
+
 	if err != nil {
-		tm.failTask(task.ID, fmt.Sprintf("decryption failed: %v", err))
+		tm.cleanupTempFiles(outputDir)
+		if ctx.Err() != nil || task.Status == "cancelling" {
+			tm.failTask(taskID, "task cancelled")
+		} else {
+			tm.failTask(taskID, fmt.Sprintf("decryption failed: %v", err))
+		}
 		return
 	}
 
@@ -301,6 +515,9 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 	if task.Status != "cancelling" {
 		task.Status = "completed"
 		task.Progress = 100
+		task.Phase = "completed"
+		task.Speed = ""
+		task.Eta = ""
 	}
 	tm.mu.Unlock()
 
@@ -330,6 +547,27 @@ func (tm *TaskManager) failTask(id, errMsg string) {
 				"status": "failed",
 				"error":  errMsg,
 			})
+		}
+	}
+}
+
+func getAvailableDiskSpace(path string) (int64, error) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(path, &stat); err != nil {
+		return 0, err
+	}
+	return int64(stat.Bavail) * int64(stat.Bsize), nil
+}
+
+func (tm *TaskManager) cleanupTempFiles(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, "encv-pre-") {
+			os.Remove(filepath.Join(dir, name))
 		}
 	}
 }

@@ -132,6 +132,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Type       string `json:"type"`
 		SourcePath string `json:"sourcePath"`
+		TargetPath string `json:"targetPath,omitempty"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -140,8 +141,8 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Info("API: create task", "type", req.Type, "source", req.SourcePath)
-	task := s.mobileSvc.GetTaskManager().Create(req.Type, req.SourcePath)
+	slog.Info("API: create task", "type", req.Type, "source", req.SourcePath, "target", req.TargetPath)
+	task := s.mobileSvc.GetTaskManager().Create(req.Type, req.SourcePath, req.TargetPath)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

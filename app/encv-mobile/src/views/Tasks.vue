@@ -38,24 +38,46 @@
                 </ion-badge>
                 <span class="task-type">{{ task.type === 'encrypt' ? t('tasks.encrypt') : t('tasks.decrypt') }}</span>
               </p>
-              <ion-progress-bar
-                v-if="task.status === 'running'"
-                :value="task.progress / 100"
-                class="task-progress"
-              ></ion-progress-bar>
+              <div v-if="task.status === 'running' || task.status === 'cancelling'" class="progress-section">
+                <ion-progress-bar
+                  :value="task.progress / 100"
+                  :buffer="task.status === 'cancelling' ? undefined : undefined"
+                  :class="['task-progress', { 'progress-cancelling': task.status === 'cancelling' }]"
+                ></ion-progress-bar>
+                <div class="progress-detail">
+                  <span v-if="task.phase" class="phase-label">{{ getPhaseLabel(task.phase) }}</span>
+                  <span class="progress-percent">{{ task.progress }}%</span>
+                  <span v-if="task.speed" class="speed-label">{{ task.speed }}</span>
+                  <span v-if="task.eta" class="eta-label">{{ t('tasks.eta') }} {{ task.eta }}</span>
+                </div>
+              </div>
+              <div v-if="task.status === 'completed'" class="completed-info">
+                <ion-icon :icon="checkmarkCircle" color="success" class="completed-icon"></ion-icon>
+                <span class="completed-text">{{ t('tasks.phaseCompleted') }}</span>
+              </div>
               <p v-if="task.error" class="task-error">{{ task.error }}</p>
             </ion-label>
+            <ion-button
+              v-if="task.status === 'running'"
+              slot="end"
+              fill="clear"
+              color="warning"
+              size="small"
+              @click="handleCancelTask(task.id)"
+            >
+              <ion-icon :icon="closeCircle" slot="icon-only"></ion-icon>
+            </ion-button>
+            <ion-spinner
+              v-if="task.status === 'cancelling'"
+              slot="end"
+              name="crescent"
+              color="warning"
+              class="cancelling-spinner"
+            ></ion-spinner>
           </ion-item>
           <ion-item-options side="end">
             <ion-item-option
               v-if="task.status === 'queued'"
-              color="warning"
-              @click="handleCancelTask(task.id)"
-            >
-              {{ t('tasks.cancel') }}
-            </ion-item-option>
-            <ion-item-option
-              v-if="task.status === 'running'"
               color="warning"
               @click="handleCancelTask(task.id)"
             >
@@ -256,6 +278,20 @@ function getStatusLabel(status: TaskStatus) {
   }
 }
 
+function getPhaseLabel(phase: string) {
+  switch (phase) {
+    case 'analyzing': return t('tasks.phaseAnalyzing')
+    case 'initializing': return t('tasks.phaseInitializing')
+    case 'preprocessing': return t('tasks.phasePreprocessing')
+    case 'encrypting': return t('tasks.phaseEncrypting')
+    case 'decrypting': return t('tasks.phaseDecrypting')
+    case 'packing': return t('tasks.phasePacking')
+    case 'verifying': return t('tasks.phaseVerifying')
+    case 'completed': return t('tasks.phaseCompleted')
+    default: return phase
+  }
+}
+
 function getTaskName(task: EncvTask) {
   const parts = task.sourcePath.split('/')
   return parts[parts.length - 1] || task.sourcePath
@@ -388,6 +424,19 @@ function onTaskUpdate(data: { id: string; type: string; status: string; progress
   }
 }
 
+function onTaskProgress(data: { id: string; progress: number; phase: string; speed: string; eta: string }) {
+  const idx = tasks.value.findIndex(t => t.id === data.id)
+  if (idx !== -1) {
+    tasks.value[idx] = {
+      ...tasks.value[idx],
+      progress: data.progress,
+      phase: data.phase,
+      speed: data.speed,
+      eta: data.eta,
+    }
+  }
+}
+
 function onTaskCreated(data: { id: string; type: string; sourcePath: string }) {
   const exists = tasks.value.some(t => t.id === data.id)
   if (!exists) {
@@ -409,6 +458,9 @@ function onTaskCompleted(data: { id: string; error?: string }) {
       ...tasks.value[idx],
       status: data.error ? 'failed' : 'completed',
       progress: data.error ? tasks.value[idx].progress : 100,
+      phase: data.error ? tasks.value[idx].phase : 'completed',
+      speed: '',
+      eta: '',
       error: data.error,
     }
   }
@@ -417,12 +469,14 @@ function onTaskCompleted(data: { id: string; error?: string }) {
 onMounted(() => {
   loadTasks()
   eventBus.on('task:update', onTaskUpdate)
+  eventBus.on('task:progress', onTaskProgress)
   eventBus.on('task:created', onTaskCreated)
   eventBus.on('task:completed', onTaskCompleted)
 })
 
 onUnmounted(() => {
   eventBus.off('task:update', onTaskUpdate)
+  eventBus.off('task:progress', onTaskProgress)
   eventBus.off('task:created', onTaskCreated)
   eventBus.off('task:completed', onTaskCompleted)
 })
@@ -465,14 +519,71 @@ onUnmounted(() => {
   color: var(--encv-text-secondary);
 }
 
-.task-progress {
+.progress-section {
   margin-top: 6px;
+}
+
+.task-progress {
+  margin-top: 2px;
+}
+
+.progress-cancelling {
+  --progress-background: var(--ion-color-warning);
+}
+
+.progress-detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+  flex-wrap: wrap;
+}
+
+.phase-label {
+  color: var(--ion-color-primary);
+  font-weight: 500;
+}
+
+.progress-percent {
+  font-weight: 600;
+  color: var(--encv-text-secondary);
+}
+
+.speed-label {
+  color: var(--encv-text-secondary);
+}
+
+.eta-label {
+  color: var(--encv-text-secondary);
+}
+
+.completed-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.completed-icon {
+  font-size: 16px;
+}
+
+.completed-text {
+  font-size: 12px;
+  color: var(--ion-color-success);
 }
 
 .task-error {
   color: var(--ion-color-danger);
   font-size: 12px;
   margin-top: 4px;
+}
+
+.cancelling-spinner {
+  width: 20px;
+  height: 20px;
 }
 
 .path-error-item {
