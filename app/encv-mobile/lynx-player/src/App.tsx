@@ -104,7 +104,7 @@ export function App() {
   const isOverlay = playerState === "loading" || playerState === "error" || playerState === "idle";
 
   return (
-    <page>
+    <page style={{ flex: 1 }}>
       <view
         className="PlayerContainer"
         bindtap={handleToggleControls}

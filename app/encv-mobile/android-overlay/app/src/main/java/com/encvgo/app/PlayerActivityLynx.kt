@@ -228,6 +228,7 @@ class PlayerActivityLynx : AppCompatActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
             rootLayout?.addView(lynxView, lynxParams)
+            lynxView?.setBackgroundColor(android.graphics.Color.parseColor("#CC0010"))
             Log.d(TAG, "createLynxView: LynxView added to layout")
 
             val initData = buildInitDataJson()

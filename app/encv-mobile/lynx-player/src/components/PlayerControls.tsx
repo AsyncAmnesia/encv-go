@@ -62,6 +62,17 @@ export function PlayerControls({
     );
   }
 
+  if (playerState === "idle") {
+    return (
+      <view className="LoadingIndicator">
+        <text className="PlayButton" bindtap={onPlayPause}>▶</text>
+        {fileName && fileName !== "Unknown" && (
+          <text className="LoadingText">{fileName}</text>
+        )}
+      </view>
+    );
+  }
+
   if (playerState === "loading") {
     return (
       <view className="LoadingIndicator">
