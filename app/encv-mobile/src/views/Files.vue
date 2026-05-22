@@ -96,9 +96,9 @@
           <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
             ENCV
           </ion-badge>
-          <div v-if="searchQuery" class="open-folder-btn" @click.stop="openContainingFolder(file)">
-            <ion-icon :icon="folderOpen" class="open-folder-icon"></ion-icon>
-          </div>
+          <ion-button v-if="searchQuery" slot="end" fill="clear" class="open-folder-btn" @click.stop="openContainingFolder(file)">
+            <ion-icon :icon="folderOpen" class="open-folder-icon" slot="icon-only"></ion-icon>
+          </ion-button>
         </ion-item>
       </ion-list>
     </ion-content>
@@ -699,13 +699,11 @@ function onBackendReadyWindow(event: Event) {
 }
 
 .open-folder-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  --padding-start: 8px;
+  --padding-end: 8px;
   min-width: 44px;
   min-height: 44px;
-  margin-right: -12px;
-  cursor: pointer;
+  margin: 0;
 }
 
 .open-folder-icon {

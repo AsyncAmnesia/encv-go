@@ -123,6 +123,7 @@ class EncvGoService : Service() {
                 return
             }
 
+            val binDir = setupFFmpegBinaries()
             val configPath = File(filesDir, "config.user.json").absolutePath
             Log.i(TAG, "Starting backend: ${binary.absolutePath} start")
 
@@ -130,6 +131,11 @@ class EncvGoService : Service() {
                 environment()["ENCV_CONFIG_PATH"] = configPath
                 environment()["ENCV_MOBILE"] = "1"
                 environment()["HOME"] = filesDir.absolutePath
+                if (binDir != null) {
+                    val currentPath = environment()["PATH"] ?: "/usr/bin:/bin"
+                    environment()["PATH"] = "$binDir:$currentPath"
+                    environment()["ENCV_BIN_DIR"] = binDir
+                }
                 redirectErrorStream(true)
                 directory(filesDir)
             }.start()
@@ -522,6 +528,57 @@ class EncvGoService : Service() {
             }
         } catch (e: Exception) {
             Log.w(TAG, "Binary not found in assets (expected on Android 10+ with jniLibs packaging)", e)
+        }
+    }
+
+    private fun setupFFmpegBinaries(): String? {
+        val binDir = File(filesDir, "bin")
+        binDir.mkdirs()
+
+        val nativeLibDir = applicationInfo.nativeLibraryDir
+        val mappings = listOf(
+            "libffmpeg_exec.so" to "ffmpeg",
+            "libffprobe_exec.so" to "ffprobe",
+        )
+
+        for ((soName, binName) in mappings) {
+            val source = File(nativeLibDir, soName)
+            val dest = File(binDir, binName)
+            if (!source.exists()) {
+                Log.i(TAG, "setupFFmpegBinaries: $soName not found in nativeLibDir, skipping")
+                continue
+            }
+            if (dest.exists() && dest.length() == source.length()) {
+                if (dest.canExecute()) {
+                    Log.i(TAG, "setupFFmpegBinaries: $binName already installed")
+                    continue
+                }
+            }
+            try {
+                source.inputStream().use { input ->
+                    FileOutputStream(dest).use { output ->
+                        val buffer = ByteArray(8192)
+                        var len: Int
+                        while (input.read(buffer).also { len = it } != -1) {
+                            output.write(buffer, 0, len)
+                        }
+                    }
+                }
+                dest.setExecutable(true, false)
+                dest.setReadable(true, false)
+                Log.i(TAG, "setupFFmpegBinaries: installed $binName (${dest.length()} bytes)")
+            } catch (e: Exception) {
+                Log.e(TAG, "setupFFmpegBinaries: failed to install $binName: ${e.message}")
+            }
+        }
+
+        val ffprobe = File(binDir, "ffprobe")
+        return if (ffprobe.exists() && ffprobe.canExecute()) {
+            Log.i(TAG, "setupFFmpegBinaries: binDir=${binDir.absolutePath}")
+            binDir.absolutePath
+        } else {
+            Log.w(TAG, "setupFFmpegBinaries: ffprobe not available")
+            null
         }
     }
 

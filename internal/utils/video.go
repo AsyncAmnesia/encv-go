@@ -17,6 +17,13 @@ var (
 
 func GetBinDir() string {
 	binDirOnce.Do(func() {
+		if envDir := os.Getenv("ENCV_BIN_DIR"); envDir != "" {
+			ffprobePath := filepath.Join(envDir, "ffprobe")
+			if _, err := os.Stat(ffprobePath); err == nil {
+				binDirCache = envDir
+				return
+			}
+		}
 		if exePath, err := os.Executable(); err == nil {
 			dir := filepath.Dir(exePath)
 			ffprobePath := filepath.Join(dir, "ffprobe")

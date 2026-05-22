@@ -114,6 +114,7 @@ export function AppComponent() {
         setMediaType(initData.mediaType);
       }
       lynxLog.info("fileName set to: " + (initData.fileName || "Unknown") + ", mediaType=" + (initData.mediaType || "video"));
+      startPlayback(initData);
     }
   }, [initData]);
 

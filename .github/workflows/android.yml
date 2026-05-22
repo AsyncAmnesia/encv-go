@@ -70,6 +70,9 @@ jobs:
       - name: Setup mpv native libraries
         run: cd app/encv-mobile && bash scripts/setup-mpv-libs.sh
 
+      - name: Setup ffmpeg/ffprobe CLI binaries
+        run: cd app/encv-mobile && bash scripts/setup-ffmpeg-cli.sh
+
       - name: Build Go binary for Android arm64 (optimized)
         env:
           CGO_ENABLED: "0"
@@ -138,6 +141,15 @@ jobs:
               echo "✅ $lib found ($(ls -lh "$JNI_DIR/$lib" | awk '{print $5}'))"
             else
               echo "❌ $lib MISSING!"
+              exit 1
+            fi
+          done
+          echo "=== Checking ffmpeg/ffprobe CLI binaries ==="
+          for bin in libffmpeg_exec.so libffprobe_exec.so; do
+            if [ -f "$JNI_DIR/$bin" ]; then
+              echo "✅ $bin found ($(ls -lh "$JNI_DIR/$bin" | awk '{print $5}'))"
+            else
+              echo "❌ $bin MISSING!"
               exit 1
             fi
           done
@@ -255,7 +267,7 @@ jobs:
             echo "=== Go binary in APK (assets, legacy) ==="
             unzip -l "$APK_PATH" | grep -E "assets/encv-go" || echo "(no assets/encv-go, expected with jniLibs packaging)"
             echo "=== mpv/ffmpeg .so in APK ==="
-            unzip -l "$APK_PATH" | grep -E "libmpv|libavcodec|libavformat|libplayer" || echo "❌ mpv/ffmpeg .so NOT in APK!"
+            unzip -l "$APK_PATH" | grep -E "libmpv|libavcodec|libavformat|libplayer|libffmpeg_exec|libffprobe_exec" || echo "❌ mpv/ffmpeg .so NOT in APK!"
             echo "=== Lynx bundle in APK ==="
             unzip -l "$APK_PATH" | grep "player.lynx.bundle" || echo "❌ player.lynx.bundle NOT in APK!"
           else
