@@ -41,33 +41,33 @@ export function PlayerControls({
 
   if (error) {
     return (
-      <page className="ErrorContainer">
+      <view className="ErrorContainer">
         <text className="ErrorTitle">⚠ Playback Error</text>
         <text className="ErrorDetail">{error}</text>
-      </page>
+      </view>
     );
   }
 
   if (state === 'loading') {
     return (
-      <page className="CenterArea">
+      <view className="CenterArea">
         <view className="LoadingDots">
           <view className="Dot DotDim1" />
           <view className="Dot DotDim2" />
           <view className="Dot DotDim3" />
         </view>
-      </page>
+      </view>
     );
   }
 
   if (state === 'idle') {
     return (
-      <page className="CenterArea">
+      <view className="CenterArea">
         <view className="PlayButtonCircle" bindtap={onPlayPause}>
           <text className="PlayIconLarge">▶</text>
         </view>
         <text className="IdleTitle">{fileName}</text>
-      </page>
+      </view>
     );
   }
 

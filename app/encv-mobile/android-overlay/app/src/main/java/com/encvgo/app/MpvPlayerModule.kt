@@ -221,61 +221,68 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
     @LynxMethod
     fun setFullscreen(enabled: Boolean, callback: Callback) {
         LogRelay.get().relay(TAG, "info", "setFullscreen: $enabled")
-        try {
-            val act = activity ?: run { callback.invoke("Activity not available"); return }
-            if (enabled) {
-                act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                act.window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-                @Suppress("DEPRECATION")
-                act.window.decorView.systemUiVisibility = (
-                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                        or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                        or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                        or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                        or View.SYSTEM_UI_FLAG_FULLSCREEN
-                        or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                )
-                isFullscreen = true
-            } else {
-                act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-                act.window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-                @Suppress("DEPRECATION")
-                act.window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
-                isFullscreen = false
+        val act = activity ?: run { callback.invoke("Activity not available"); return }
+        mainHandler.post {
+            try {
+                if (enabled) {
+                    act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    act.window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                    @Suppress("DEPRECATION")
+                    act.window.decorView.systemUiVisibility = (
+                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            or View.SYSTEM_UI_FLAG_FULLSCREEN
+                            or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                        )
+                    isFullscreen = true
+                } else {
+                    act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                    act.window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                    @Suppress("DEPRECATION")
+                    act.window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+                    isFullscreen = false
+                }
+                callback.invoke(true)
+            } catch (e: Exception) {
+                LogRelay.get().relay(TAG, "error", "setFullscreen failed: ${e.message}")
+                callback.invoke(e.message)
             }
-            callback.invoke(true)
-        } catch (e: Exception) {
-            LogRelay.get().relay(TAG, "error", "setFullscreen failed: ${e.message}")
-            callback.invoke(e.message)
         }
     }
 
     @LynxMethod
     fun setOrientation(orientation: String, callback: Callback) {
         LogRelay.get().relay(TAG, "info", "setOrientation: $orientation")
-        try {
-            val act = activity ?: run { callback.invoke("Activity not available"); return }
-            act.requestedOrientation = when (orientation) {
-                "landscape" -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                "portrait" -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-                else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        val act = activity ?: run { callback.invoke("Activity not available"); return }
+        mainHandler.post {
+            try {
+                act.requestedOrientation = when (orientation) {
+                    "landscape" -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                    "portrait" -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                    else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                }
+                callback.invoke(true)
+            } catch (e: Exception) {
+                LogRelay.get().relay(TAG, "error", "setOrientation failed: ${e.message}")
+                callback.invoke(e.message)
             }
-            callback.invoke(true)
-        } catch (e: Exception) {
-            LogRelay.get().relay(TAG, "error", "setOrientation failed: ${e.message}")
-            callback.invoke(e.message)
         }
     }
 
     @LynxMethod
     fun finish(callback: Callback) {
         LogRelay.get().relay(TAG, "info", "finish: closing player activity")
-        try {
-            activity?.finish()
-            callback.invoke(true)
-        } catch (e: Exception) {
-            LogRelay.get().relay(TAG, "error", "finish failed: ${e.message}")
-            callback.invoke(e.message)
+        val act = activity ?: run { callback.invoke("Activity not available"); return }
+        mainHandler.post {
+            try {
+                act.finish()
+                callback.invoke(true)
+            } catch (e: Exception) {
+                LogRelay.get().relay(TAG, "error", "finish failed: ${e.message}")
+                callback.invoke(e.message)
+            }
         }
     }
 

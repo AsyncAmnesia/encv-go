@@ -1,1219 +1,192 @@
-05-22 11:34:31.624  com.encvgo.app  
-  Late-enabling -Xcheck:jni
-  Using CollectorTypeCC GC.
-
-05-22 11:34:31.650  nativeloader  Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
-
-05-22 11:34:31.652  com.encvgo.app  
+05-22 18:59:22.172  com.encvgo.app  
   BBinder_init Processname  com.encvgo.app  
   BBinder_init hasGetProcessName  com.encvgo.app
 
-05-22 11:34:31.751  ActivityThread  updateVmProcessStateForGc sceneId =1000 state=-2038431744
+05-22 18:59:22.566  com.encvgo.app  No implementation found for void com.lynx.devtoolwrapper.DevToolLifecycle.nativeSyncStateToNative(int) (tried Java_com_lynx_devtoolwrapper_DevToolLifecycle_nativeSyncStateToNative and Java_com_lynx_devtoolwrapper_DevToolLifecycle_nativeSyncStateToNative__I) - is the library loaded, e.g. System.loadLibrary?
 
-05-22 11:34:31.751  com.encvgo.app  vart_impl, update 109051904, state=109051904
+05-22 18:59:22.589  DebugRouterServiceCenter  IDebugRouterReportService is unregistered
 
-05-22 11:34:31.867  nativeloader  Configuring clns-9 for other apk /data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/base.apk. target_sdk_version=36, uses_libraries=, library_path=/data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/lib/arm64:/data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/base.apk!/lib/arm64-v8a, permitted_path=/data:/mnt/expand:/data/user/0/com.encvgo.app
+05-22 18:59:22.591  DebugRouterServiceCenter  IUSBHijackService is unregistered
 
-05-22 11:34:31.871  com.encvgo.app  AssetManager2(0xb400006f310153d8) locale list changing from [] to [zh-CN]
+05-22 18:59:22.997  libEGL    eglQueryStringImpl display is EGL_NO_DISPLAY
 
-05-22 11:34:31.873  VSPA      
-  Jni_setThreadSpeed write data pid = 24663, tid = 0, start = 1
-  Jni_setThreadSpeed write data pid = 24663, tid = 0, start = 0
-
-05-22 11:34:31.877  ShaderCache  Parse coeffs for /com.encvgo.app with space syetem(version 3)
-
-05-22 11:34:31.878  GraphicsEnvironment  
-  Currently set values for:
-  angle_gl_driver_selection_pkgs=[com.android.angle, com.linecorp.b612.android, com.campmobile.snow, com.google.android.apps.tachyon]
-  angle_gl_driver_selection_values=[angle, native, native, native]
-  com.encvgo.app is not listed in per-application setting
-  ANGLE allowlist from config: 
-  com.encvgo.app is not listed in ANGLE allowlist or settings, returning default
-  Neither updatable production driver nor prerelease driver is supported.
-
-05-22 11:34:31.899  EncvApplication  ensureLynxInitialized: initializing Lynx SDK
-
-05-22 11:34:31.904  SoLoader  
-  init start
-  adding system library source: /vendor/lib64
-  adding system library source: /system/lib64
-  adding application source: com.facebook.soloader.DirectorySoSource[root = /data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/lib/arm64 flags = 0]
-  adding backup source from : com.facebook.soloader.ApkSoSource[root = /data/data/com.encvgo.app/lib-main flags = 1]
-  Preparing SO source: com.facebook.soloader.DirectorySoSource[root = /system/lib64 flags = 2]
-  Preparing SO source: com.facebook.soloader.DirectorySoSource[root = /vendor/lib64 flags = 2]
-  Preparing SO source: com.facebook.soloader.DirectorySoSource[root = /data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/lib/arm64 flags = 0]
-  Preparing SO source: com.facebook.soloader.ApkSoSource[root = /data/data/com.encvgo.app/lib-main flags = 1]
-
-05-22 11:34:31.906  fb-UnpackingSoSource  
-  locked dso store /data/user/0/com.encvgo.app/lib-main
-  deps mismatch on deps store: regenerating
-  so store dirty: regenerating
-
-05-22 11:34:31.954  ApkSoSource  
-  not allowing consideration of lib/arm64-v8a/libbasedevtool.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/libencv-go.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/libgifimage.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/libimagepipeline.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/liblynx.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/liblynx_debug.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/liblynx_service_api.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/liblynx_v8_bridge.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/liblynxbase.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/liblynxdebugrouter.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/liblynxdevtool.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/liblynxdevtool_qjs_bridge.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/liblynxdevtool_v8_bridge.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/liblynxtrace.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/libmpv.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/libnapi.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/libnapi_v8.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/libnative-filters.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/libnative-imagetranscoder.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/libplayer.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/libquick.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/libstatic-webp.so: deferring to libdir
-  not allowing consideration of lib/arm64-v8a/libv8_libfull.cr.so: deferring to libdir
-
-05-22 11:34:31.955  fb-UnpackingSoSource  
-  regenerating DSO store com.facebook.soloader.ApkSoSource
-  Finished regenerating DSO store com.facebook.soloader.ApkSoSource
-  starting syncer worker
-  releasing dso store lock for /data/user/0/com.encvgo.app/lib-main (from syncer thread)
-  not releasing dso store lock for /data/user/0/com.encvgo.app/lib-main (syncer thread started)
-
-05-22 11:34:31.959  SoLoader  
-  init finish: 4 SO sources prepared
-  init exiting
-
-05-22 11:34:31.992  EncvApplication  initLynxService: services registered
-
-05-22 11:34:31.994  nativeloader  Load /data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/lib/arm64/liblynxbase.so using class loader ns clns-9 (caller=/data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/base.apk): ok
-
-05-22 11:34:31.995  lynx      [7163386090:INFO:trace_event_utils.cc(32)] base trace init success, backend: 474692092820
-
-05-22 11:34:31.995  LynxBaseTrace  LynxBaseTrace init successfully by itself.
-
-05-22 11:34:31.996  DevToolLifecycle  DevTool attached. Transitioning to ATTACHED.
-
-05-22 11:34:31.996  com.encvgo.app  No implementation found for void com.lynx.devtoolwrapper.DevToolLifecycle.nativeSyncStateToNative(int) (tried Java_com_lynx_devtoolwrapper_DevToolLifecycle_nativeSyncStateToNative and Java_com_lynx_devtoolwrapper_DevToolLifecycle_nativeSyncStateToNative__I) - is the library loaded, e.g. System.loadLibrary?
-
-05-22 11:34:31.996  DevToolLifecycle  UnsatisfiedLinkError! Trying to sync state [ATTACHED] before native library is loaded.
-
-05-22 11:34:31.996  LynxEnv   
-  attachDevToolComponent: done.
-  LynxEnv start init
-
-05-22 11:34:31.997  VSPA      
-  Jni_setThreadSpeed write data pid = 24663, tid = 24780, start = 1
-  Jni_setThreadSpeed write data pid = 24663, tid = 24780, start = 0
-
-05-22 11:34:31.999  nativeloader  
-  Load /data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/lib/arm64/libquick.so using class loader ns clns-9 (caller=/data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/base.apk): ok
-  Load /data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/lib/arm64/liblynx.so using class loader ns clns-9 (caller=/data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/base.apk): ok
-  Load /data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/lib/arm64/liblynxtrace.so using class loader ns clns-9 (caller=/data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/base.apk): ok
-
-05-22 11:34:32.002  LynxEnv   Loading native libraries succeeded
-
-05-22 11:34:32.002  lynx      [7163386090:INFO:vsync_monitor.cc(23)] VSyncMonitor created with is_vsync_post_task_by_emergency_ true
-
-05-22 11:34:32.003  LynxEnv   LynxEnv failed to get LynxExtensionService
-
-05-22 11:34:32.003  DisplayManager  Implicitly registering for refresh rate
-
-05-22 11:34:32.005  LynxEnv   enable lynx debug
-
-05-22 11:34:32.005  DevToolLifecycle  DevTool enabled. Transitioning to ENABLED.
-
-05-22 11:34:32.005  lynx      [7163386090:INFO:devtool_lifecycle.cc(162)] SyncStateFromPlatform: Transitioning from 0 to 2
-
-05-22 11:34:32.007  nativeloader  
-  Load /data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/lib/arm64/liblynxdebugrouter.so using class loader ns clns-9 (caller=/data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/base.apk): ok
-  Load /data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/lib/arm64/libbasedevtool.so using class loader ns clns-9 (caller=/data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/base.apk): ok
-  Load /data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/lib/arm64/liblynxdevtool.so using class loader ns clns-9 (caller=/data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/base.apk): ok
-
-05-22 11:34:32.009  LynxDevtoolEnv  liblynxdevtool loaded via library loader
-
-05-22 11:34:32.013  com.encvgo.app  hiddenapi: Accessing hidden method Landroid/app/ActivityThread;->currentProcessName()Ljava/lang/String; (runtime_flags=0, domain=platform, api=unsupported) from Lcom/lynx/debugrouter/DebugRouter; (domain=app) using reflection: allowed
-
-05-22 11:34:32.013  primjs    RC: HEAP_TAG_OUTER: 0xb400000000000000, HEAP_TAG_INNER: 0xb400000000000000
-
-05-22 11:34:32.013  DebugRouterServiceCenter  IDebugRouterReportService is unregistered
-
-05-22 11:34:32.013  DebugRouterReportServiceUtil  
-  init: DebugRouterReportService == null
-  report: DebugRouterReportService == null
-
-05-22 11:34:32.014  DebugRouter  
-  [0522/11:34:32:INFO:debug_router_core.cc(541)] DebugRouterCore: add a new message handler successfully.
-  [0522/11:34:32:INFO:debug_router_core.cc(663)] DebugRouterCore: add a state listener.
-
-05-22 11:34:32.015  USBTransTemplateUtil  reflect to add Interceptor
-
-05-22 11:34:32.015  DebugRouterServiceCenter  IUSBHijackService is unregistered
-
-05-22 11:34:32.015  USBTransTemplateUtil  usbService is null.
-
-05-22 11:34:32.016  primjs    
-  RC: HEAP_TAG_OUTER: 0xb400000000000000, HEAP_TAG_INNER: 0xb400000000000000
-  RC: HEAP_TAG_OUTER: 0xb400000000000000, HEAP_TAG_INNER: 0xb400000000000000
-
-05-22 11:34:32.017  DebugRouter  [0522/11:34:32:INFO:debug_router_core.cc(663)] DebugRouterCore: add a state listener.
-
-05-22 11:34:32.019  DevToolLifecycle  DevTool env initialized. Transitioning to INITIALIZED.
-
-05-22 11:34:32.019  lynx      [7163386090:INFO:devtool_lifecycle.cc(162)] SyncStateFromPlatform: Transitioning from 2 to 3
-
-05-22 11:34:32.020  LynxEnv   Turn on devtool
-
-05-22 11:34:32.020  lynx      Please set a log level higher than INFO to filter lynx logs!
-
-05-22 11:34:32.020  VSPA      
-  Jni_setThreadSpeed write data pid = 24663, tid = 0, start = 1
-  Jni_setThreadSpeed write data pid = 24663, tid = 0, start = 0
-
-05-22 11:34:32.020  LynxEnv   Turn on logbox
-
-05-22 11:34:32.020  EncvApplication  
-  initLynxEnv: LynxEnv initialized
-  ensureLynxInitialized: done
-
-05-22 11:34:32.031  GameManager  __progname=com.encvgo.app
-
-05-22 11:34:32.033  com.encvgo.app  AssetManager2(0xb400006f31024dd8) locale list changing from [] to [zh-CN]
-
-05-22 11:34:32.038  libEGL    skip_priority_level=0, isWorkaroundEnable=1
-
-05-22 11:34:32.049  AppCompatDelegate  Checking for metadata for AppLocalesMetadataHolderService : Service not found
-
-05-22 11:34:32.049  com.encvgo.app  AssetManager2(0xb400006f31024478) locale list changing from [] to [zh-CN]
-
-05-22 11:34:32.083  VSPA      
-  Jni_setThreadSpeed write data pid = 24663, tid = 0, start = 1
-  Jni_setThreadSpeed write data pid = 24663, tid = 0, start = 0
-
-05-22 11:34:32.092  CompatChangeReporter  Compat change id reported: 377864165; UID 11983; state: ENABLED
-
-05-22 11:34:32.094  DesktopModeFlags  Toggle override initialized to: OVERRIDE_UNSET
-
-05-22 11:34:32.120  libc      Access denied finding property "persist.vivo.ltw.enabled"
-
-05-22 11:34:32.137  VSPA      
-  Jni_setThreadSpeed write data pid = 24663, tid = 0, start = 1
-  Jni_setThreadSpeed write data pid = 24663, tid = 0, start = 0
-
-05-22 11:34:32.144  com.encvgo.app  
-  hiddenapi: Accessing hidden method Landroid/view/ViewGroup;->makeOptionalFitsSystemWindows()V (runtime_flags=0, domain=platform, api=unsupported) from Landroidx/appcompat/widget/ViewUtils; (domain=app) using reflection: allowed
-  AssetManager2(0xb400006f3101e398) locale list changing from [] to [zh-CN]
-
-05-22 11:34:32.152  WebViewFactory  Loading com.google.android.webview version 148.0.7778.120 (code 777812003)
-
-05-22 11:34:32.153  com.encvgo.app  
-  AssetManager2(0xb400006f3101e9d8) locale list changing from [] to [zh-CN]
-  AssetManager2(0xb400006f3102b818) locale list changing from [] to [zh-CN]
-  AssetManager2(0xb400006f31025a58) locale list changing from [] to [zh-CN]
-  AssetManager2(0xb400006f31026098) locale list changing from [] to [zh-CN]
-
-05-22 11:34:32.155  ResourcesManager  The following library key has been added: ResourcesKey{ mHash=5ffcd364 mResDir=null mSplitDirs=[] mOverlayDirs=[] mLibDirs=[/data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/base.apk,/system/framework/android.test.base.jar,/system_ext/framework/androidx.window.extensions.jar] mDisplayId=0 mOverrideConfig=v36 mCompatInfo={480dpi always-compat} mLoaders=[]}
-
-05-22 11:34:32.157  ApplicationLoaders  
-  Returning zygote-cached class loader: /system/framework/android.test.base.jar
-  Returning zygote-cached class loader: /system_ext/framework/androidx.window.extensions.jar
-
-05-22 11:34:32.159  com.encvgo.app  Loading /data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/oat/arm64/base.odex non-executable as it requires an image which we failed to load
-
-05-22 11:34:32.161  nativeloader  Configuring clns-10 for other apk /data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/base.apk. target_sdk_version=36, uses_libraries=, library_path=/data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/lib/arm64:/data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/base.apk!/lib/arm64-v8a, permitted_path=/data:/mnt/expand
-
-05-22 11:34:32.177  VSPA      
-  Jni_setThreadSpeed write data pid = 24663, tid = 24780, start = 1
-  Jni_setThreadSpeed write data pid = 24663, tid = 24780, start = 0
-
-05-22 11:34:32.180  cr_WVCFactoryProvider  version=148.0.7778.120 (777812003) minSdkVersion=29 multiprocess=true packageId=2 splits=<none>
-
-05-22 11:34:32.193  nativeloader  
-  Load /data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/base.apk!/lib/arm64-v8a/libwebviewchromium.so using class loader ns clns-10 (caller=/data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/base.apk): ok
-  Load /system/lib64/libwebviewchromium_plat_support.so using class loader ns clns-10 (caller=/data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/base.apk): ok
-
-05-22 11:34:32.205  chromium  
-  [0522/113432.198649:INFO:android_webview/browser/variations/variations_seed_loader.cc:67] Failed to open file for reading.: No such file or directory (2)
-  [INFO:android_webview/browser/variations/variations_seed_loader.cc:67] Failed to open file for reading.: No such file or directory (2)
-
-05-22 11:34:32.208  cr_LibraryLoader  Successfully loaded native library
-
-05-22 11:34:32.208  cr_CachingUmaRecorder  Flushed 20 samples from 19 histograms, 0 samples were dropped.
-
-05-22 11:34:32.210  VSPA      
-  Jni_setThreadSpeed write data pid = 24663, tid = 0, start = 1
-  Jni_setThreadSpeed write data pid = 24663, tid = 0, start = 0
-
-05-22 11:34:32.217  cr_ChildProcLH  ScopedServiceBindingBatch.tryActivate: false
-
-05-22 11:34:32.219  cr_CombinedPProvider  #registerProvider() provider:WV.wk@f4c85ef isPolicyCacheEnabled:false policyProvidersSize:0
-
-05-22 11:34:32.221  cr_PolicyProvider  #setManagerAndSource() 0
-
-05-22 11:34:32.223  VSPA      
-  Jni_setThreadSpeed write data pid = 24663, tid = 24780, start = 1
-  Jni_setThreadSpeed write data pid = 24663, tid = 24780, start = 0
-
-05-22 11:34:32.224  cr_DisplayManager  Is Display Topology available: false
-
-05-22 11:34:32.224  com.encvgo.app  
-  AssetManager2(0xb400006f3100e038) locale list changing from [] to [zh-CN]
-  AssetManager2(0xb400006f3102bb38) locale list changing from [] to [zh-CN]
-
-05-22 11:34:32.255  cr_CombinedPProvider  #linkNativeInternal() 1
-
-05-22 11:34:32.255  cr_AppResProvider  #getApplicationRestrictionsFromUserManager() Bundle[EMPTY_PARCEL]
-
-05-22 11:34:32.255  cr_PolicyProvider  #notifySettingsAvailable() 0
-
-05-22 11:34:32.255  cr_CombinedPProvider  
-  #onSettingsAvailable() 0
-  #flushPolicies()
-
-05-22 11:34:32.290  chromium  [WARNING:android_webview/browser/network_service/net_helpers.cc:137] HTTP Cache size is: 20971520
-
-05-22 11:34:32.345  VSPA      
-  Jni_setThreadSpeed write data pid = 24663, tid = 24780, start = 1
-  Jni_setThreadSpeed write data pid = 24663, tid = 24780, start = 0
-
-05-22 11:34:32.395  Capacitor  Starting BridgeActivity
-
-05-22 11:34:32.399  VSPA      
-  Jni_setThreadSpeed write data pid = 24663, tid = 0, start = 1
-  Jni_setThreadSpeed write data pid = 24663, tid = 0, start = 0
-
-05-22 11:34:32.415  Capacitor  
-  Registering plugin instance: CapacitorCookies
-  Registering plugin instance: WebView
-  Registering plugin instance: CapacitorHttp
-  Registering plugin instance: SystemBars
-  Registering plugin instance: GoProcess
-
-05-22 11:34:32.439  Capacitor  Unable to read file at path public/plugins
-
-05-22 11:34:32.442  Capacitor  Loading app at https://localhost
-
-05-22 11:34:32.447  VSPA      
-  Jni_setThreadSpeed write data pid = 24663, tid = 24780, start = 1
-  Jni_setThreadSpeed write data pid = 24663, tid = 24780, start = 0
-
-05-22 11:34:32.460  libEGL    eglQueryStringImpl display is EGL_NO_DISPLAY
-
-05-22 11:34:32.461  cr_media  BLUETOOTH_CONNECT permission is missing.
-
-05-22 11:34:32.461  VSPA      Jni_setThreadSpeed write data pid = 24663, tid = 0, start = 1
-
-05-22 11:34:32.462  cr_media  
-  getBluetoothAdapter() requires BLUETOOTH permission
-  registerBluetoothIntentsIfNeeded: Requires BLUETOOTH permission
-
-05-22 11:34:32.463  vulkan    
-  searching for layers in '/data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/lib/arm64'
-  searching for layers in '/data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/base.apk!/lib/arm64-v8a'
-
-05-22 11:34:32.466  libEGL    skip_priority_level=0, isWorkaroundEnable=1
-
-05-22 11:34:32.470  VSPA      Jni_setThreadSpeed write data pid = 24663, tid = 0, start = 0
-
-05-22 11:34:32.476  Capacitor  Handling local request: https://localhost/
-
-05-22 11:34:32.477  AudioSystem  
-  onNewService: media.audio_policy service obtained 0xb400006ff1069cb0
-  getService: checking for service media.audio_policy: 0xb400006ff1069cb0
-
-05-22 11:34:32.482  Capacitor  
-  App started
-  App resumed
-
-05-22 11:34:32.494  AudioSystem-JNI  
-  listAudioPatches patch 0 num_sources 1 num_sinks 1, numPatches 5, nPatches.size 5
-  listAudioPatches patch 0 source 0 is a mix handle 1
-  listAudioPatches patch 1 num_sources 1 num_sinks 1, numPatches 5, nPatches.size 5
-  listAudioPatches patch 1 source 0 is a mix handle 5
-  listAudioPatches patch 2 num_sources 1 num_sinks 1, numPatches 5, nPatches.size 5
-  listAudioPatches patch 2 source 0 is a mix handle 7
-  listAudioPatches patch 3 num_sources 1 num_sinks 1, numPatches 5, nPatches.size 5
-  listAudioPatches patch 3 source 0 is a mix handle 10
-  listAudioPatches patch 4 num_sources 1 num_sinks 1, numPatches 5, nPatches.size 5
-  listAudioPatches patch 4 source 0 is a mix handle 12
-
-05-22 11:34:32.502  libEGL    skip_priority_level=0, isWorkaroundEnable=1
-
-05-22 11:34:32.502  Choreographer  Skipped 33 frames!  The application may be doing too much work on its main thread.
-
-05-22 11:34:32.511  ViewRootImpl  AppSizeAfterRelayout, size: Point(147, 147), rotation: ROTATION_0
-
-05-22 11:34:32.512  com.encvgo.app  
-  [perfctl] 24663 24663 FPSGO ver:0
+05-22 18:59:23.045  com.encvgo.app  
+  [perfctl] 28749 28749 FPSGO ver:0
   [perfctl] 0 0 0 0
 
-05-22 11:34:32.512  BufferQueueConsumer  [](id:605700000000,api:0,p:-1,c:24663) connect: controlledByApp=false
+05-22 18:59:23.113  VivoJsonResourceManager  mmap ok
 
-05-22 11:34:32.513  BLASTBufferQueue  
-  [VRI[MainActivity,type=2]#0](f:0,a:0) constructor()
-  [VRI[MainActivity,type=2]#0](f:0,a:0) update width=147 height=147 format=-3 mTransformHint=0
+05-22 18:59:23.116  VivoJsonResourceManager  mmap ok
 
-05-22 11:34:32.515  VSPA      Jni_setThreadSpeed write data pid = 24663, tid = 0, start = 1
+05-22 18:59:23.134  MEMCWrapper  MEMC_POST_PROCESSING_ENABLE_PROPERTY false.
 
-05-22 11:34:32.515  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
+05-22 18:59:24.909  GPUAUX    [AUX]GuiExtAuxCheckAuxPath:682: Null anb
 
-05-22 11:34:32.601  CameraManagerGlobal  Connecting to camera service
+05-22 18:59:25.193  GPUAUX    [AUX]GuiExtAuxCheckAuxPath:682: Null anb
 
-05-22 11:34:32.601  VSPA      Jni_setThreadSpeed write data pid = 24663, tid = 0, start = 0
+05-22 18:59:27.401  GPUAUX    [AUX]GuiExtAuxCheckAuxPath:682: Null anb
 
-05-22 11:34:32.631  nativeloader  Load libVivoJsonResourceManager_jni.so using system ns (caller=/system/framework/framework.jar!classes2.dex): ok
+05-22 18:59:28.668  GPUAUX    [AUX]GuiExtAuxCheckAuxPath:682: Null anb
 
-05-22 11:34:32.632  com.encvgo.app  JNI_OnLoad: get JNI environment,JNI_VERSION_1_6
+05-22 18:59:28.677  GPUAUX    [AUX]GuiExtAuxCheckAuxPath:682: Null anb
 
-05-22 11:34:32.632  VivoJavaJsonManager  create() called
+05-22 18:59:29.533  lynx      [6E85BBB3C0:ERROR:js_cache_manager.cc(94)] ReadFile failed (file_path is empty): meta.json
 
-05-22 11:34:32.632  GrallocExtra  gralloc_extra_query:is_SW3D 0
+05-22 18:59:29.533  lynx      
+  [6E85BBB3C0:ERROR:js_cache_manager.cc(109)] WriteFile failed (file_path is empty): meta.json
+  [6E85BBB3C0:ERROR:js_cache_manager.cc(591)] Write Metadata failed!
 
-05-22 11:34:32.632  MEMCWrapper  MEMC_POST_PROCESSING_ENABLE_PROPERTY false.
+05-22 18:59:29.550  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 11:34:32.632  VivoJsonResourceManager  
-  Create
-  Using Path:product/camera/jsons to parse Json Files!
+05-22 18:59:29.592  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 11:34:32.632  BLASTBufferQueue  [VRI[MainActivity,type=2]#0](f:0,a:1) acquireNextBufferLocked size=147x147 mFrameNumber=1 applyTransaction=true mTimestamp=103498220364552(auto) mPendingTransactions.size=0 graphicBufferId=105926778421248 transform=0
+05-22 18:59:29.615  DebugRouterSlot  failed to invoke getTemplateView
 
-05-22 11:34:32.633  VivoJsonResourceManager  
-  service is not null
-  GetJsonConfigInfoSize 279
+05-22 18:59:29.622  lynx      [7163386090:ERROR:template_assembler.cc(947)] lynx_plugin: load original lynx so
 
-05-22 11:34:32.633  DMABUFHEAPS  Using DMA-BUF heap named: system
+05-22 18:59:29.626  lynx      
+  [6DBAECC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipelineStart
+  [6DBAECC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipeline_start
 
-05-22 11:34:32.633  VivoJsonResourceManager  Allocate: alloc buffer_fd:285 success
+05-22 18:59:29.662  lynx      [6DBAFD83C0:ERROR:lynx_console.cc(252)] "The following error occurred in the JSRuntime:"
 
-05-22 11:34:32.634  VivoJsonResourceManager  mmap ok
+05-22 18:59:29.662  lynx      
+  [6DBAFD83C0:ERROR:lynx_console.cc(252)] "Error: Attempt to render more than one `<page />`, which is not supported.
+   at <anonymous> (/.rspeedy/main/background.46bee256.js:1:42123)
+   at ek (/.rspeedy/main/background.46bee256.js:1:12880)
+   at some (native)
+   at eb (/.rspeedy/main/background.46bee256.js:1:11711)
+  "
 
-05-22 11:34:32.634  VivoJsonResourceManager  
-  begin to read file product/camera/jsons/StaticProjectConfig.json!
-  Using Path:product/camera/jsons to parse Json Files!
-  GetJsonConfigInfoSize 17536
+05-22 18:59:29.662  lynx      [6DBAFD83C0:ERROR:js_error_reporter.cc(408)] JSErrorReporter::reportException 0xb400006f211a3de8, error code is 20100, dynamic component path is , message is  {"rawError":{"stack":"    at <anonymous> (/.rspeedy/main/background.46bee256.js:1:42123)\n    at ek (/.rspeedy/main/background.46bee256.js:1:12880)\n    at some (native)\n    at eb (/.rspeedy/main/background.46bee256.js:1:11711)\n","message":"Error: Attempt to render more than one `<page />`, which is not supported.","cause":{"cause":""}},"pid":"USER_ERROR","url":"file://lynx_core.js","dynamicComponentPath":"","sentry":{"platform":"javascript","sdk":{"name":"sentry.javascript.browser","version":"5.15.5","packages":[{"name":"npm:@sentry/browser","version":"5.15.5"}],"integrations":["InboundFilters","FunctionToString","Breadcrumbs","GlobalHandlers","LinkedErrors","UserAgent"]},"level":"error","exception":{"values":[{"type":"USER_RUNTIME_ERROR","value":"Error: Attempt to render more than one `<page />`, which is not supported.","stacktrace":{"frames":[{"colno":11711,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"eb","in_app":true,"release":"","lineno":1},{"colno":0,"filename":"native","function":"some","in_app":true,"release":"","lineno":0},{"colno":12880,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"ek","in_app":true,"release":"","lineno":1},{"colno":42123,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"<anonymous>","in_app":true,"release":"","lineno":1}]},"mechanism":{"handled":true,"type":"generic"}}]},"tags":{"error_type":"USER_RUNTIME_ERROR","extra":"Error: Attempt to render more than one `<page />`, which is not supported.","lib_version":"0.0.1","run_type":"lynx_core","version_code":"0.0.1"}}}
 
-05-22 11:34:32.634  DMABUFHEAPS  Using DMA-BUF heap named: system
+05-22 18:59:29.663  LynxPlayerClient  onReceivedError: code=201 summary={"rawError":{"stack":"    at <anonymous> (/.rspeedy/main/background.46bee256.js:1:42123)\n    at ek (/.rspeedy/main/background.46bee256.js:1:12880)\n    at some (native)\n    at eb (/.rspeedy/main/background.46bee256.js:1:11711)\n","message":"Error: Attempt to render more than one `<page />`, which is not supported.","cause":{"cause":""}},"pid":"USER_ERROR","url":"file://lynx_core.js","dynamicComponentPath":"","sentry":{"platform":"javascript","sdk":{"name":"sentry.javascript.browser","version":"5.15.5","packages":[{"name":"npm:@sentry/browser","version":"5.15.5"}],"integrations":["InboundFilters","FunctionToString","Breadcrumbs","GlobalHandlers","LinkedErrors","UserAgent"]},"level":"error","exception":{"values":[{"type":"USER_RUNTIME_ERROR","value":"Error: Attempt to render more than one `<page />`, which is not supported.","stacktrace":{"frames":[{"colno":11711,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"eb","in_app":true,"release":"","lineno":1},{"colno":0,"filename":"native","function":"some","in_app":true,"release":"","lineno":0},{"colno":12880,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"ek","in_app":true,"release":"","lineno":1},{"colno":42123,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"<anonymous>","in_app":true,"release":"","lineno":1}]},"mechanism":{"handled":true,"type":"generic"}}]},"tags":{"error_type":"USER_RUNTIME_ERROR","extra":"Error: Attempt to render more than one `<page />`, which is not supported.","lib_version":"0.0.1","run_type":"lynx_core","version_code":"0.0.1"}}} rootCause= msg={"error_code":201,"sub_code":20100,"error":"{\"rawError\":{\"stack\":\"    at <anonymous> (\/.rspeedy\/main\/background.46bee256.js:1:42123)\\n    at ek (\/.rspeedy\/main\/background.46bee256.js:1:12880)\\n    at some (native)\\n    at eb (\/.rspeedy\/main\/background.46bee256.js:1:11711)\\n\",\"message\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"cause\":{\"cause\":\"\"}},\"pid\":\"USER_ERROR\",\"url\":\"file:\/\/lynx_core.js\",\"dynamicComponentPath\":\"\",\"sentry\":{\"platform\":\"javascript\",\"sdk\":{\"name\":\"sentry.javascript.browser\",\"version\":\"5.15.5\",\"packages\":[{\"name\":\"npm:@sentry\/browser\",\"version\":\"5.15.5\"}],\"integrations\":[\"InboundFilters\",\"FunctionToString\",\"Breadcrumbs\",\"GlobalHandlers\",\"LinkedErrors\",\"UserAgent\"]},\"level\":\"error\",\"exception\":{\"values\":[{\"type\":\"USER_RUNTIME_ERROR\",\"value\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"stacktrace\":{\"frames\":[{\"colno\":11711,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"eb\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":0,\"filename\":\"native\",\"function\":\"some\",\"in_app\":true,\"release\":\"\",\"lineno\":0},{\"colno\":12880,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"ek\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":42123,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"<anonymous>\",\"in_app\":true,\"release\":\"\",\"lineno\":1}]},\"mechanism\":{\"handled\":true,\"type\":\"generic\"}}]},\"tags\":{\"error_type\":\"USER_RUNTIME_ERROR\",\"extra\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"lib_version\":\"0.0.1\",\"run_type\":\"lynx_core\",\"version_code\":\"0.0.1\"}}}","sdk":"0.0.1","level":"error","consumers":[]}
 
-05-22 11:34:32.635  VivoJsonResourceManager  Allocate: alloc buffer_fd:285 success
+05-22 18:59:29.664  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 11:34:32.635  VivoJsonResourceManager  mmap ok
+05-22 18:59:29.666  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 11:34:32.635  VivoJsonResourceManager  begin to read file product/camera/jsons/StaticAppNameConfig.json!
+05-22 18:59:29.666  lynx      
+  [6DBAECC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is loadBundleStart
+  [6DBAECC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is load_template_start
 
-05-22 11:34:32.635  VivoJavaJsonManager  failed to find appName:com.encvgo.app from config key:mProtakePackages
+05-22 18:59:29.673  LynxPlayerClient  onReceivedJSError: summary={"rawError":{"stack":"    at <anonymous> (/.rspeedy/main/background.46bee256.js:1:42123)\n    at ek (/.rspeedy/main/background.46bee256.js:1:12880)\n    at some (native)\n    at eb (/.rspeedy/main/background.46bee256.js:1:11711)\n","message":"Error: Attempt to render more than one `<page />`, which is not supported.","cause":{"cause":""}},"pid":"USER_ERROR","url":"file://lynx_core.js","dynamicComponentPath":"","sentry":{"platform":"javascript","sdk":{"name":"sentry.javascript.browser","version":"5.15.5","packages":[{"name":"npm:@sentry/browser","version":"5.15.5"}],"integrations":["InboundFilters","FunctionToString","Breadcrumbs","GlobalHandlers","LinkedErrors","UserAgent"]},"level":"error","exception":{"values":[{"type":"USER_RUNTIME_ERROR","value":"Error: Attempt to render more than one `<page />`, which is not supported.","stacktrace":{"frames":[{"colno":11711,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"eb","in_app":true,"release":"","lineno":1},{"colno":0,"filename":"native","function":"some","in_app":true,"release":"","lineno":0},{"colno":12880,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"ek","in_app":true,"release":"","lineno":1},{"colno":42123,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"<anonymous>","in_app":true,"release":"","lineno":1}]},"mechanism":{"handled":true,"type":"generic"}}]},"tags":{"error_type":"USER_RUNTIME_ERROR","extra":"Error: Attempt to render more than one `<page />`, which is not supported.","lib_version":"0.0.1","run_type":"lynx_core","version_code":"0.0.1"}}} rootCause= msg={"error_code":201,"sub_code":20100,"error":"{\"rawError\":{\"stack\":\"    at <anonymous> (\/.rspeedy\/main\/background.46bee256.js:1:42123)\\n    at ek (\/.rspeedy\/main\/background.46bee256.js:1:12880)\\n    at some (native)\\n    at eb (\/.rspeedy\/main\/background.46bee256.js:1:11711)\\n\",\"message\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"cause\":{\"cause\":\"\"}},\"pid\":\"USER_ERROR\",\"url\":\"file:\/\/lynx_core.js\",\"dynamicComponentPath\":\"\",\"sentry\":{\"platform\":\"javascript\",\"sdk\":{\"name\":\"sentry.javascript.browser\",\"version\":\"5.15.5\",\"packages\":[{\"name\":\"npm:@sentry\/browser\",\"version\":\"5.15.5\"}],\"integrations\":[\"InboundFilters\",\"FunctionToString\",\"Breadcrumbs\",\"GlobalHandlers\",\"LinkedErrors\",\"UserAgent\"]},\"level\":\"error\",\"exception\":{\"values\":[{\"type\":\"USER_RUNTIME_ERROR\",\"value\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"stacktrace\":{\"frames\":[{\"colno\":11711,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"eb\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":0,\"filename\":\"native\",\"function\":\"some\",\"in_app\":true,\"release\":\"\",\"lineno\":0},{\"colno\":12880,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"ek\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":42123,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"<anonymous>\",\"in_app\":true,\"release\":\"\",\"lineno\":1}]},\"mechanism\":{\"handled\":true,\"type\":\"generic\"}}]},\"tags\":{\"error_type\":\"USER_RUNTIME_ERROR\",\"extra\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"lib_version\":\"0.0.1\",\"run_type\":\"lynx_core\",\"version_code\":\"0.0.1\"}}}","sdk":"0.0.1","level":"error","consumers":[]}
 
-05-22 11:34:32.651  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
+05-22 18:59:29.681  LynxTemplateRender  LynxTemplateRender com.lynx.tasm.LynxTemplateRender@e363e69: onErrorOccurred type -1,errCode:201,detail:{"error_code":201,"sub_code":20100,"error":"{\"rawError\":{\"stack\":\"    at <anonymous> (\/.rspeedy\/main\/background.46bee256.js:1:42123)\\n    at ek (\/.rspeedy\/main\/background.46bee256.js:1:12880)\\n    at some (native)\\n    at eb (\/.rspeedy\/main\/background.46bee256.js:1:11711)\\n\",\"message\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"cause\":{\"cause\":\"\"}},\"pid\":\"USER_ERROR\",\"url\":\"file:\/\/lynx_core.js\",\"dynamicComponentPath\":\"\",\"sentry\":{\"platform\":\"javascript\",\"sdk\":{\"name\":\"sentry.javascript.browser\",\"version\":\"5.15.5\",\"packages\":[{\"name\":\"npm:@sentry\/browser\",\"version\":\"5.15.5\"}],\"integrations\":[\"InboundFilters\",\"FunctionToString\",\"Breadcrumbs\",\"GlobalHandlers\",\"LinkedErrors\",\"UserAgent\"]},\"level\":\"error\",\"exception\":{\"values\":[{\"type\":\"USER_RUNTIME_ERROR\",\"value\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"stacktrace\":{\"frames\":[{\"colno\":11711,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"eb\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":0,\"filename\":\"native\",\"function\":\"some\",\"in_app\":true,\"release\":\"\",\"lineno\":0},{\"colno\":12880,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"ek\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":42123,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"<anonymous>\",\"in_app\":true,\"release\":\"\",\"lineno\":1}]},\"mechanism\":{\"handled\":true,\"type\":\"generic\"}}]},\"tags\":{\"error_type\":\"USER_RUNTIME_ERROR\",\"extra\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"lib_version\":\"0.0.1\",\"run_type\":\"lynx_core\",\"version_code\":\"0.0.1\"}}}","sdk":"0.0.1","level":"error","consumers":[]}
 
-05-22 11:34:32.651  BufferQueueConsumer  [](id:605700000001,api:0,p:-1,c:24663) connect: controlledByApp=false
+05-22 18:59:29.690  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 11:34:32.651  BLASTBufferQueue  
-  [VRI[MainActivity,type=1]#1](f:0,a:0) constructor()
-  [VRI[MainActivity,type=1]#1](f:0,a:0) update width=1260 height=2800 format=-1 mTransformHint=0
+05-22 18:59:29.692  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 11:34:32.653  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
+05-22 18:59:32.211  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 11:34:32.657  VivoJavaJsonManager  
-  failed to find appName:com.encvgo.app from config key:mProtakePackages
-  failed to find appName:com.encvgo.app from config key:mProtakePackages
-  failed to find appName:com.encvgo.app from config key:mProtakePackages
+05-22 18:59:32.262  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 11:34:32.677  BLASTBufferQueue  [VRI[MainActivity,type=1]#1](f:0,a:1) acquireNextBufferLocked size=1260x2800 mFrameNumber=1 applyTransaction=true mTimestamp=103498265808783(auto) mPendingTransactions.size=0 graphicBufferId=105926778421255 transform=0
+05-22 18:59:32.272  lynx      
+  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:raw-text
+  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:text
 
-05-22 11:34:32.689  HWUI      --- Failed to create image decoder with message 'unimplemented'
+05-22 18:59:32.338  lynx      [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:view
 
-05-22 11:34:32.717  ImeFocusController  onWindowFocus: com.getcapacitor.CapacitorWebView{2a21f0c VFEDHVC.. .F....ID 0,118-1260,2800 #7f09013d app:id/webview} softInputMode=STATE_UNSPECIFIED|ADJUST_RESIZE|IS_FORWARD_NAVIGATION
+05-22 18:59:37.711  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 11:34:32.739  ImeTracker  com.encvgo.app:d65f0eaa: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+05-22 18:59:37.780  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 11:34:32.785  ENCV-Service  
-  Default config copied to /data/user/0/com.encvgo.app/files/config.user.json
-  nativeLibraryDir: /data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/lib/arm64
-  Checking native binary: exists=true, canExecute=true, path=/data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/lib/arm64/libencv-go.so
-  Using binary from nativeLibraryDir: /data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/lib/arm64/libencv-go.so
-  Starting backend: /data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/lib/arm64/libencv-go.so start
+05-22 18:59:37.862  MpvPlayerModule  setFullscreen failed: Only the original thread that created a view hierarchy can touch its views. Expected: main Calling: Lynx_JS
 
-05-22 11:34:32.798  System    
-  ClassLoader referenced unknown path: /system/framework/tcmclient.jar
-  ClassLoader referenced unknown path: /system/framework/tcmiface.jar
+05-22 18:59:37.902  lynx      
+  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:raw-text
+  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:text
 
-05-22 11:34:32.801  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2025/health'
+05-22 18:59:39.090  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 11:34:32.803  Linux     [Posix_connect Debug]Process com.encvgo.app :2025 
+05-22 18:59:39.149  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 11:34:32.806  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2026/health'
-
-05-22 11:34:32.807  Linux     [Posix_connect Debug]Process com.encvgo.app :2026 
-
-05-22 11:34:32.809  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2027/health'
-
-05-22 11:34:32.810  Linux     [Posix_connect Debug]Process com.encvgo.app :2027 
-
-05-22 11:34:32.812  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2028/health'
-
-05-22 11:34:32.813  Linux     [Posix_connect Debug]Process com.encvgo.app :2028 
-
-05-22 11:34:32.816  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2029/health'
-
-05-22 11:34:32.818  Linux     [Posix_connect Debug]Process com.encvgo.app :2029 
-
-05-22 11:34:32.820  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2030/health'
-
-05-22 11:34:32.821  Linux     [Posix_connect Debug]Process com.encvgo.app :2030 
-
-05-22 11:34:32.830  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2031/health'
-
-05-22 11:34:32.831  Linux     [Posix_connect Debug]Process com.encvgo.app :2031 
-
-05-22 11:34:32.833  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2032/health'
-
-05-22 11:34:32.834  Linux     [Posix_connect Debug]Process com.encvgo.app :2032 
-
-05-22 11:34:32.836  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2033/health'
-
-05-22 11:34:32.837  Linux     [Posix_connect Debug]Process com.encvgo.app :2033 
-
-05-22 11:34:32.844  ENCV-Service  
-  [go] time=2026-05-22T03:34:32.844Z level=INFO msg="Using config from environment variable ENCV_CONFIG_PATH" path=/data/user/0/com.encvgo.app/files/config.user.json
-  [go] time=2026-05-22T03:34:32.844Z level=INFO msg="Configuration loaded successfully" path=/data/user/0/com.encvgo.app/files/config.user.json log_level=debug
-  [go] 🦢 2026-05-22 03:34:32 [32m[INFO][0m [90m[main.go:112][0m [36mfile=[0m Structured logging initialized
-  [go] 🦢 2026-05-22 03:34:32 [32m[INFO][0m [90m[main.go:119][0m [36mversion=[0mdev [36mconfig_path=[0m/data/user/0/com.encvgo.app/files/config.user.json [36margs=[0m[/data/app/~~qA7NQttZ-YSW_33JBEHRKA==/com.encvgo.app-6kdA7xwFIwcJ8NfSkGQmTA==/lib/arm64/libencv-go.so start] encv started
-
-05-22 11:34:32.851  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2025/health'
-
-05-22 11:34:32.853  Linux     [Posix_connect Debug]Process com.encvgo.app :2025 
-
-05-22 11:34:32.892  ENCV-Service  
-  [go] 🦢 2026-05-22 03:34:32 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mvideo Initializing plugin
-  [go] 🦢 2026-05-22 03:34:32 [32m[INFO][0m INFO: [video] Physical chunking disabled.
-  [go] 🦢 2026-05-22 03:34:32 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0maudio Initializing plugin
-  [go] 🦢 2026-05-22 03:34:32 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mimage Initializing plugin
-  [go] 🦢 2026-05-22 03:34:32 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mwps Initializing plugin
-  [go] 🦢 2026-05-22 03:34:32 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mpdf Initializing plugin
-  [go] 🦢 2026-05-22 03:34:32 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mtext Initializing plugin
-  [go] 🦢 2026-05-22 03:34:32 [32m[INFO][0m [90m[server.go:105][0m [36minstance=[0m18b1c5db27d3c607 [36mversion=[0mdev Server starting
-  [go] 🦢 2026-05-22 03:34:32 [32m[INFO][0m [90m[server.go:106][0m [36mdir=[0m/storage/emulated/0 Main service serving from
-  [go] 🦢 2026-05-22 03:34:32 [32m[INFO][0m [90m[server.go:110][0m WSLogHandler initialized, logs will be bridged to WebSocket
-  [go] 🦢 2026-05-22 03:34:32 [32m[INFO][0m [90m[server_start.go:31][0m [36maddr=[0m:2025 Backend attempting to start
-
-05-22 11:34:32.905  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2034/health'
-
-05-22 11:34:32.906  Linux     [Posix_connect Debug]Process com.encvgo.app :2034 
-
-05-22 11:34:32.908  CapacitorCookies  Getting cookies at: 'http://127.0.0.1:2035/health'
-
-05-22 11:34:32.909  Linux     [Posix_connect Debug]Process com.encvgo.app :2035 
-
-05-22 11:34:32.997  ENCV-Service  
-  [go] 🦢 2026-05-22 03:34:32 [32m[INFO][0m [90m[server_start.go:50][0m [36maddr=[0m[::]:2025 Backend server successfully started
-  [go] [36m[36m  ℹ  [0m[0m [96m[96mMobile mode: skipping admin server[0m[0m
-  [go] 
-  [go] # [1;33m[1;33mMobile Server Started[0m
-  [go] [1;33m[0m[0m
-  [go]   [36mServing files[0m: [90m/storage/emulated/0[0m
-  [go]   [36mAPI endpoint[0m: [90mhttp://[::]:2025[0m
-  [go] [36m[36m  ℹ  [0m[0m [96m[96mPress Ctrl+C to stop the server[0m[0m
-
-05-22 11:34:33.240  com.encvgo.app  
-  Compiler allocated 7216KB to compile void android.view.ViewRootImpl.performTraversals()
-  hiddenapi: Accessing hidden field Landroid/graphics/Bitmap;->mNativePtr:J (runtime_flags=0, domain=platform, api=unsupported) from Lcom/android/webview/chromium/WebViewChromium; (domain=app) using JNI: allowed
-
-05-22 11:34:33.602  Capacitor  
-  Handling local request: https://localhost/assets/main-Bt-9f2hx.js
-  Handling local request: https://localhost/assets/variables-Co-jDXuX.js
-  Handling local request: https://localhost/assets/variables-2h-WFR0z.css
-
-05-22 11:34:33.609  MediaCodec-JNI  pid:24663,client name:com.encvgo.app
-
-05-22 11:34:33.610  AudioCapabilities  
-  Unsupported mediaType audio/x-ms-wma
-  Unsupported mediaType audio/mpeg-L1
-  Unsupported mediaType audio/mpeg-L2
-  Unsupported mediaType audio/ra
-  Unsupported mediaType audio/alac
-  Unsupported mediaType audio/ape
-  Unsupported mediaType audio/x-ape
-  Unsupported mediaType audio/adpcm
-  Unsupported mediaType audio/x-ms-adpcm
-  Unsupported mediaType audio/pcm
-  Unsupported mediaType audio/dsd
-
-05-22 11:34:33.615  VideoCapabilities  
-  Unsupported mime video/rv
-  Unsupported mime video/x-ms-wmv
-  Unsupported mime video/x-ms-wmv2
-  Unsupported mime video/divx3
-  Unsupported mime video/flv1
-  Unsupported mime video/x-flv
-  Unsupported mime video/mjpeg
-  Unsupported mime video/x-motion-jpeg
-
-05-22 11:34:33.622  AudioCapabilities  
-  Unsupported mediaType audio/x-adpcm-dvi-ima
-  Unsupported mediaType audio/x-adpcm-ms
-  Unsupported mediaType audio/alac
-
-05-22 11:34:33.637  VideoCapabilities  
-  Unsupported mime image/vnd.android.heic
-  Unrecognized profile/level 32768/256 for video/mp4v-es
-
-05-22 11:34:33.647  AudioCapabilities  
-  Unsupported mediaType audio/x-ms-wma
-  Unsupported mediaType audio/mpeg-L1
-  Unsupported mediaType audio/mpeg-L2
-  Unsupported mediaType audio/ra
-  Unsupported mediaType audio/alac
-  Unsupported mediaType audio/ape
-  Unsupported mediaType audio/x-ape
-  Unsupported mediaType audio/adpcm
-  Unsupported mediaType audio/x-ms-adpcm
-  Unsupported mediaType audio/pcm
-  Unsupported mediaType audio/dsd
-
-05-22 11:34:33.649  VideoCapabilities  
-  Unsupported mime video/rv
-  Unsupported mime video/x-ms-wmv
-  Unsupported mime video/x-ms-wmv2
-  Unsupported mime video/divx3
-  Unsupported mime video/flv1
-  Unsupported mime video/x-flv
-  Unsupported mime video/mjpeg
-  Unsupported mime video/x-motion-jpeg
-
-05-22 11:34:33.653  AudioCapabilities  
-  Unsupported mediaType audio/x-adpcm-dvi-ima
-  Unsupported mediaType audio/x-adpcm-ms
-  Unsupported mediaType audio/alac
-
-05-22 11:34:33.659  VideoCapabilities  
-  Unsupported mime image/vnd.android.heic
-  Unsupported mime image/vnd.android.heic
-  Unrecognized profile/level 32768/256 for video/mp4v-es
-
-05-22 11:34:33.674  AudioCapabilities  
-  Unsupported mime audio/x-ms-wma
-  Unsupported mime audio/mpeg-L1
-  Unsupported mime audio/mpeg-L2
-  Unsupported mime audio/ra
-  Unsupported mime audio/alac
-  Unsupported mime audio/ape
-  Unsupported mime audio/x-ape
-  Unsupported mime audio/adpcm
-  Unsupported mime audio/x-ms-adpcm
-  Unsupported mime audio/pcm
-  Unsupported mime audio/dsd
-
-05-22 11:34:33.684  VideoCapabilities  
-  Unsupported mime video/rv
-  Unsupported mime video/x-ms-wmv
-  Unsupported mime video/x-ms-wmv2
-  Unsupported mime video/divx3
-  Unsupported mime video/flv1
-  Unsupported mime video/x-flv
-  Unsupported mime video/mjpeg
-  Unsupported mime video/x-motion-jpeg
-
-05-22 11:34:33.687  AudioCapabilities  
-  Unsupported mime audio/x-adpcm-dvi-ima
-  Unsupported mime audio/x-adpcm-ms
-  Unsupported mime audio/alac
-
-05-22 11:34:33.692  VideoCapabilities  
-  Unsupported mime image/vnd.android.heic
-  Unrecognized profile/level 32768/256 for video/mp4v-es
-
-05-22 11:34:33.713  AudioCapabilities  
-  Unsupported mime audio/x-ms-wma
-  Unsupported mime audio/mpeg-L1
-  Unsupported mime audio/ra
-  Unsupported mime audio/alac
-  Unsupported mime audio/ape
-  Unsupported mime audio/pcm
-  Unsupported mime audio/dsd
-
-05-22 11:34:33.714  VideoCapabilities  
-  Unsupported mime video/rv
-  Unsupported mime video/x-ms-wmv
-  Unsupported mime video/divx3
-  Unsupported mime video/flv1
-  Unsupported mime video/mjpeg
-
-05-22 11:34:33.715  AudioCapabilities  
-  Unsupported mime audio/x-adpcm-dvi-ima
-  Unsupported mime audio/x-adpcm-ms
-  Unsupported mime audio/alac
-
-05-22 11:34:33.717  VideoCapabilities  
-  Unsupported mime image/vnd.android.heic
-  Unrecognized profile/level 32768/256 for video/mp4v-es
-
-05-22 11:34:33.743  Capacitor  
-  Handling local request: https://localhost/assets/_plugin-vue_export-helper-BOai-rQB.js
-  Handling local request: https://localhost/assets/useToast-z6AJuz6y.js
-  Handling local request: https://localhost/assets/Files-CwL3Tvwi.css
-  Handling local request: https://localhost/assets/Files-BsUoHQtW.js
-
-05-22 11:34:33.775  Capacitor/Console  
-  File: https://localhost/assets/Files-BsUoHQtW.js - Line 1 - Msg: [Files] Loading files, path: /
-  File: https://localhost/assets/main-Bt-9f2hx.js - Line 2 - Msg: [App] First launch, requesting essential permissions
-
-05-22 11:34:33.791  ENCV-Service  
-  [go] 🦢 2026-05-22 03:34:33 [32m[INFO][0m [90m[mobile_api.go:70][0m [36mpath=[0m/ API: list files
-  [go] 🦢 2026-05-22 03:34:33 [32m[INFO][0m [90m[ws_hub.go:55][0m [36mremote=[0m127.0.0.1:39722 WebSocket client connected
-
-05-22 11:34:33.814  Capacitor/Console  File:  - Line 349 - Msg: [object Object]
-
-05-22 11:34:33.814  Capacitor  Handling local request: https://localhost/assets/p-Cz5nLPGT-M2TQexUX.js
-
-05-22 11:34:33.818  Capacitor/Plugin  To native (Capacitor plugin): callbackId: 33797177, pluginId: GoProcess, methodName: requestNotificationPermission
-
-05-22 11:34:33.818  Capacitor  callback: 33797177, pluginId: GoProcess, methodName: requestNotificationPermission, methodData: {}
-
-05-22 11:34:33.819  ENCV-go   GoProcess.requestNotificationPermission() called
-
-05-22 11:34:33.828  ENCV-Service  
-  [go] 🦢 2026-05-22 03:34:33 [32m[INFO][0m [90m[mobile_service.go:138][0m [36mpath=[0m/ [36mcount=[0m77 ListFiles result
-  [go] 🦢 2026-05-22 03:34:33 [32m[INFO][0m [90m[mobile_api.go:78][0m [36mpath=[0m/ [36mcount=[0m77 API: list files result
-  [go] 🦢 2026-05-22 03:34:33 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/api/files [36mstatus=[0m200 [36mduration=[0m39.677ms HTTP request
-
-05-22 11:34:33.855  Capacitor  
-  App paused
-  Handling local request: https://localhost/favicon.ico
-  Handling local request: https://localhost/favicon.ico
-
-05-22 11:34:33.903  Capacitor/Console  
-  File:  - Line 333 - Msg: {"granted":false}
-  File: https://localhost/assets/main-Bt-9f2hx.js - Line 2 - Msg: [App] Notification permission: denied
-  File:  - Line 349 - Msg: [object Object]
-
-05-22 11:34:33.905  Capacitor/Plugin  To native (Capacitor plugin): callbackId: 33797178, pluginId: GoProcess, methodName: requestStoragePermission
-
-05-22 11:34:33.906  Capacitor  callback: 33797178, pluginId: GoProcess, methodName: requestStoragePermission, methodData: {}
-
-05-22 11:34:33.906  ENCV-go   GoProcess.requestStoragePermission() called
-
-05-22 11:34:34.307  GPUAUX    [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-
-05-22 11:34:34.317  Capacitor/Console  
-  File: https://localhost/assets/main-Bt-9f2hx.js - Line 2 - Msg: [API] listFiles: / → 77 files
-  File: https://localhost/assets/main-Bt-9f2hx.js - Line 2 - Msg: [Files] Loaded 77 files
-  File:  - Line 333 - Msg: {"granted":false,"requiresSettings":true}
-  File: https://localhost/assets/main-Bt-9f2hx.js - Line 2 - Msg: [App] Storage permission: denied
-
-05-22 11:34:34.660  GPUAUX    [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-
-05-22 11:34:34.821  VRI[MainActivity,type=1]  visibilityChanged oldVisibility=true newVisibility=false
-
-05-22 11:34:34.824  HWUI      [destroy] CanvasContext will be destroyed.
-
-05-22 11:34:34.835  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
-
-05-22 11:34:34.836  BLASTBufferQueue  [VRI[MainActivity,type=1]#1](f:0,a:4) destructor()
-
-05-22 11:34:34.836  BufferQueueConsumer  [VRI[MainActivity,type=1]#1(BLAST Consumer)1](id:605700000001,api:0,p:-1,c:24663) disconnect
-
-05-22 11:34:34.843  VRI[MainActivity,type=2]  visibilityChanged oldVisibility=true newVisibility=false
-
-05-22 11:34:34.846  Capacitor  Handling local request: https://localhost/assets/p-BgwEQWW6-DOrgYn2m.js
-
-05-22 11:34:34.849  HWUI      [destroy] CanvasContext will be destroyed.
-
-05-22 11:34:34.849  Capacitor  Handling local request: https://localhost/assets/p-CneGxKsZ-CCCtCT9p.js
-
-05-22 11:34:34.873  ViewRootImpl  AppSizeAfterRelayout, size: Point(147, 147), rotation: ROTATION_0
-
-05-22 11:34:34.873  BLASTBufferQueue  [VRI[MainActivity,type=2]#0](f:0,a:1) destructor()
-
-05-22 11:34:34.873  BufferQueueConsumer  [VRI[MainActivity,type=2]#0(BLAST Consumer)0](id:605700000000,api:0,p:-1,c:24663) disconnect
-
-05-22 11:34:34.943  HWUI      
-  [setStopped] CanvasContext will be destroyed.
-  [setStopped] CanvasContext will be destroyed.
-
-05-22 11:34:34.958  Capacitor  
-  App stopped
-  Saving instance state!
-
-05-22 11:34:34.982  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
-
-05-22 11:34:35.050  ActivityThread  updateVmProcessStateForGc sceneId =1001 state=-2080374784
-
-05-22 11:34:35.050  com.encvgo.app  vart_impl, update 67108864, state=75497472
-
-05-22 11:34:36.120  VRI[MainActivity,type=2]  visibilityChanged oldVisibility=false newVisibility=true
-
-05-22 11:34:36.153  ActivityThread  updateVmProcessStateForGc sceneId =1000 state=-2038431744
-
-05-22 11:34:36.154  com.encvgo.app  vart_impl, update 109051904, state=109051904
-
-05-22 11:34:36.158  ViewRootImpl  AppSizeAfterRelayout, size: Point(147, 147), rotation: ROTATION_0
-
-05-22 11:34:36.159  BufferQueueConsumer  [](id:605700000002,api:0,p:-1,c:24663) connect: controlledByApp=false
-
-05-22 11:34:36.159  BLASTBufferQueue  
-  [VRI[MainActivity,type=2]#2](f:0,a:0) constructor()
-  [VRI[MainActivity,type=2]#2](f:0,a:0) update width=147 height=147 format=-3 mTransformHint=0
-
-05-22 11:34:36.161  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
-
-05-22 11:34:36.164  BLASTBufferQueue  [VRI[MainActivity,type=2]#2](f:0,a:1) acquireNextBufferLocked size=147x147 mFrameNumber=1 applyTransaction=true mTimestamp=103501752518399(auto) mPendingTransactions.size=0 graphicBufferId=105926778421263 transform=0
-
-05-22 11:34:36.168  HWUI      [setStopped] CanvasContext will be destroyed.
-
-05-22 11:34:36.171  Capacitor  
-  App restarted
-  App started
-
-05-22 11:34:36.189  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
-
-05-22 11:34:36.189  BufferQueueConsumer  [](id:605700000003,api:0,p:-1,c:24663) connect: controlledByApp=false
-
-05-22 11:34:36.190  BLASTBufferQueue  
-  [VRI[MainActivity,type=1]#3](f:0,a:0) constructor()
-  [VRI[MainActivity,type=1]#3](f:0,a:0) update width=1260 height=2800 format=-1 mTransformHint=0
-
-05-22 11:34:36.192  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
-
-05-22 11:34:36.204  BLASTBufferQueue  [VRI[MainActivity,type=1]#3](f:0,a:1) acquireNextBufferLocked size=1260x2800 mFrameNumber=1 applyTransaction=true mTimestamp=103501792592783(auto) mPendingTransactions.size=0 graphicBufferId=105926778421269 transform=0
-
-05-22 11:34:36.306  GPUAUX    
+05-22 18:59:39.308  GPUAUX    
   [AUX]GuiExtAuxCheckAuxPath:682: Null anb
   [AUX]GuiExtAuxCheckAuxPath:682: Null anb
 
-05-22 11:34:37.379  Capacitor  
-  Unable to find a Capacitor plugin to handle permission requestCode, trying Cordova plugins 1001
-  App resumed
+05-22 18:59:39.895  lynx      
+  [7163386090:ERROR:element_manager.cc(176)] ElementManager::WillDestroy this:0xB400006F2119DFD0
+  [7163386090:ERROR:inspector_element_observer_impl.cc(64)] element_executor is null
 
-05-22 11:34:37.433  ImeFocusController  onWindowFocus: com.getcapacitor.CapacitorWebView{2a21f0c VFEDHVC.. .F....ID 0,118-1260,2800 #7f09013d app:id/webview aid=1073741824} softInputMode=STATE_UNSPECIFIED|ADJUST_RESIZE
+05-22 18:59:39.897  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 11:34:37.437  ImeTracker  com.encvgo.app:b868379: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+05-22 18:59:39.900  lynx      [6DBAFD83C0:ERROR:jsi.h(1712)] ~HostGlobal;
 
-05-22 11:34:37.945  ProfileInstaller  Installing profile for com.encvgo.app
+05-22 18:59:39.901  lynx      [6DBAFD83C0:ERROR:jsi.h(1732)] ~JSIContext;
 
-05-22 11:34:38.255  Capacitor/Console  File: https://localhost/assets/main-Bt-9f2hx.js - Line 2 - Msg: [Files] Loading files, path: /123云盘
+05-22 18:59:39.901  lynx      [6DBAFD83C0:ERROR:quickjs_runtime_wrapper.cc(33)] LYNX free quickjs runtime start
 
-05-22 11:34:38.262  ENCV-Service  
-  [go] 🦢 2026-05-22 03:34:38 [32m[INFO][0m [90m[mobile_api.go:70][0m [36mpath=[0m/123云盘 API: list files
-  [go] 🦢 2026-05-22 03:34:38 [32m[INFO][0m [90m[mobile_service.go:138][0m [36mpath=[0m/123云盘 [36mcount=[0m6 ListFiles result
-  [go] 🦢 2026-05-22 03:34:38 [32m[INFO][0m [90m[mobile_api.go:78][0m [36mpath=[0m/123云盘 [36mcount=[0m6 API: list files result
-  [go] 🦢 2026-05-22 03:34:38 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/api/files [36mstatus=[0m200 [36mduration=[0m9.895384ms HTTP request
-
-05-22 11:34:38.284  Capacitor/Console  
-  File: https://localhost/assets/main-Bt-9f2hx.js - Line 2 - Msg: [API] listFiles: /123云盘 → 6 files
-  File: https://localhost/assets/main-Bt-9f2hx.js - Line 2 - Msg: [Files] Loaded 6 files
-
-05-22 11:34:38.294  GPUAUX    
+05-22 18:59:40.547  GPUAUX    
   [AUX]GuiExtAuxCheckAuxPath:682: Null anb
   [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
 
-05-22 11:34:39.037  libc      Access denied finding property "ro.vendor.vivo.software.ai.llm.disable"
+05-22 18:59:44.979  GPUAUX    
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
 
-05-22 11:34:39.035  support-thread  type=1400 audit(0.0:4801384): avc:  denied  { read } for  name="u:object_r:vendor_feature_prop:s0" dev="tmpfs" ino=563 scontext=u:r:untrusted_app:s0:c191,c263,c512,c768 tcontext=u:object_r:vendor_feature_prop:s0 tclass=file permissive=0 app=com.encvgo.app
+05-22 18:59:48.887  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 11:34:39.090  Capacitor/Console  
-  File: https://localhost/assets/main-Bt-9f2hx.js - Line 2 - Msg: [Files] Click: e844e9ffb6650d294870a6d5ea963ec6mp4.mp4 category: video
-  File:  - Line 349 - Msg: [object Object]
+05-22 18:59:48.922  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 11:34:39.091  Capacitor/Plugin  To native (Capacitor plugin): callbackId: 33797179, pluginId: GoProcess, methodName: openInPlayer
+05-22 18:59:48.957  DebugRouterSlot  failed to invoke getTemplateView
 
-05-22 11:34:39.091  Capacitor  callback: 33797179, pluginId: GoProcess, methodName: openInPlayer, methodData: {"path":"\/123云盘\/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","name":"e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","mimeType":"video\/*"}
+05-22 18:59:48.958  lynx      [7163386090:ERROR:template_assembler.cc(947)] lynx_plugin: load original lynx so
 
-05-22 11:34:39.092  ENCV-go   
-  openInPlayer: path=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, name=e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, mimeType=video/*
-  openInPlayer: launching with NEW_DOCUMENT+MULTIPLE_TASK+RETAIN_IN_RECENTS, data=encvgo://player/1779420879092
+05-22 18:59:48.959  lynx      
+  [6DBAECC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipelineStart
+  [6DBAECC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipeline_start
 
-05-22 11:34:39.112  Capacitor  App paused
+05-22 18:59:48.978  lynx      
+  [6DBAECC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is loadBundleStart
+  [6DBAECC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is load_template_start
 
-05-22 11:34:39.129  com.encvgo.app  
-  AssetManager2(0xb400006f31040998) locale list changing from [] to [zh-CN]
-  AssetManager2(0xb400006f3103d798) locale list changing from [] to [zh-CN]
-  AssetManager2(0xb400006f31042bf8) locale list changing from [] to [zh-CN]
+05-22 18:59:48.999  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 11:34:39.176  Capacitor/Console  File:  - Line 333 - Msg: undefined
+05-22 18:59:49.000  lynx      
+  [6DBAFD83C0:ERROR:lynx_console.cc(252)] "The following error occurred in the JSRuntime:"
+  [6DBAFD83C0:ERROR:lynx_console.cc(252)] "Error: Attempt to render more than one `<page />`, which is not supported.
+   at <anonymous> (/.rspeedy/main/background.46bee256.js:1:42123)
+   at ek (/.rspeedy/main/background.46bee256.js:1:12880)
+   at some (native)
+   at eb (/.rspeedy/main/background.46bee256.js:1:11711)
+  "
+  [6DBAFD83C0:ERROR:js_error_reporter.cc(408)] JSErrorReporter::reportException 0xb400006f211dc338, error code is 20100, dynamic component path is , message is  {"rawError":{"stack":"    at <anonymous> (/.rspeedy/main/background.46bee256.js:1:42123)\n    at ek (/.rspeedy/main/background.46bee256.js:1:12880)\n    at some (native)\n    at eb (/.rspeedy/main/background.46bee256.js:1:11711)\n","message":"Error: Attempt to render more than one `<page />`, which is not supported.","cause":{"cause":""}},"pid":"USER_ERROR","url":"file://lynx_core.js","dynamicComponentPath":"","sentry":{"platform":"javascript","sdk":{"name":"sentry.javascript.browser","version":"5.15.5","packages":[{"name":"npm:@sentry/browser","version":"5.15.5"}],"integrations":["InboundFilters","FunctionToString","Breadcrumbs","GlobalHandlers","LinkedErrors","UserAgent"]},"level":"error","exception":{"values":[{"type":"USER_RUNTIME_ERROR","value":"Error: Attempt to render more than one `<page />`, which is not supported.","stacktrace":{"frames":[{"colno":11711,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"eb","in_app":true,"release":"","lineno":1},{"colno":0,"filename":"native","function":"some","in_app":true,"release":"","lineno":0},{"colno":12880,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"ek","in_app":true,"release":"","lineno":1},{"colno":42123,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"<anonymous>","in_app":true,"release":"","lineno":1}]},"mechanism":{"handled":true,"type":"generic"}}]},"tags":{"error_type":"USER_RUNTIME_ERROR","extra":"Error: Attempt to render more than one `<page />`, which is not supported.","lib_version":"0.0.1","run_type":"lynx_core","version_code":"0.0.1"}}}
 
-05-22 11:34:39.183  ViewRootImpl  AppSizeAfterRelayout, size: Point(147, 147), rotation: ROTATION_0
+05-22 18:59:49.000  LynxPlayerClient  onReceivedError: code=201 summary={"rawError":{"stack":"    at <anonymous> (/.rspeedy/main/background.46bee256.js:1:42123)\n    at ek (/.rspeedy/main/background.46bee256.js:1:12880)\n    at some (native)\n    at eb (/.rspeedy/main/background.46bee256.js:1:11711)\n","message":"Error: Attempt to render more than one `<page />`, which is not supported.","cause":{"cause":""}},"pid":"USER_ERROR","url":"file://lynx_core.js","dynamicComponentPath":"","sentry":{"platform":"javascript","sdk":{"name":"sentry.javascript.browser","version":"5.15.5","packages":[{"name":"npm:@sentry/browser","version":"5.15.5"}],"integrations":["InboundFilters","FunctionToString","Breadcrumbs","GlobalHandlers","LinkedErrors","UserAgent"]},"level":"error","exception":{"values":[{"type":"USER_RUNTIME_ERROR","value":"Error: Attempt to render more than one `<page />`, which is not supported.","stacktrace":{"frames":[{"colno":11711,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"eb","in_app":true,"release":"","lineno":1},{"colno":0,"filename":"native","function":"some","in_app":true,"release":"","lineno":0},{"colno":12880,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"ek","in_app":true,"release":"","lineno":1},{"colno":42123,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"<anonymous>","in_app":true,"release":"","lineno":1}]},"mechanism":{"handled":true,"type":"generic"}}]},"tags":{"error_type":"USER_RUNTIME_ERROR","extra":"Error: Attempt to render more than one `<page />`, which is not supported.","lib_version":"0.0.1","run_type":"lynx_core","version_code":"0.0.1"}}} rootCause= msg={"error_code":201,"sub_code":20100,"error":"{\"rawError\":{\"stack\":\"    at <anonymous> (\/.rspeedy\/main\/background.46bee256.js:1:42123)\\n    at ek (\/.rspeedy\/main\/background.46bee256.js:1:12880)\\n    at some (native)\\n    at eb (\/.rspeedy\/main\/background.46bee256.js:1:11711)\\n\",\"message\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"cause\":{\"cause\":\"\"}},\"pid\":\"USER_ERROR\",\"url\":\"file:\/\/lynx_core.js\",\"dynamicComponentPath\":\"\",\"sentry\":{\"platform\":\"javascript\",\"sdk\":{\"name\":\"sentry.javascript.browser\",\"version\":\"5.15.5\",\"packages\":[{\"name\":\"npm:@sentry\/browser\",\"version\":\"5.15.5\"}],\"integrations\":[\"InboundFilters\",\"FunctionToString\",\"Breadcrumbs\",\"GlobalHandlers\",\"LinkedErrors\",\"UserAgent\"]},\"level\":\"error\",\"exception\":{\"values\":[{\"type\":\"USER_RUNTIME_ERROR\",\"value\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"stacktrace\":{\"frames\":[{\"colno\":11711,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"eb\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":0,\"filename\":\"native\",\"function\":\"some\",\"in_app\":true,\"release\":\"\",\"lineno\":0},{\"colno\":12880,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"ek\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":42123,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"<anonymous>\",\"in_app\":true,\"release\":\"\",\"lineno\":1}]},\"mechanism\":{\"handled\":true,\"type\":\"generic\"}}]},\"tags\":{\"error_type\":\"USER_RUNTIME_ERROR\",\"extra\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"lib_version\":\"0.0.1\",\"run_type\":\"lynx_core\",\"version_code\":\"0.0.1\"}}}","sdk":"0.0.1","level":"error","consumers":[]}
 
-05-22 11:34:39.183  BufferQueueConsumer  [](id:605700000004,api:0,p:-1,c:24663) connect: controlledByApp=false
+05-22 18:59:49.004  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 11:34:39.183  BLASTBufferQueue  
-  [VRI[PlayerActivity,type=2]#4](f:0,a:0) constructor()
-  [VRI[PlayerActivity,type=2]#4](f:0,a:0) update width=147 height=147 format=-3 mTransformHint=0
+05-22 18:59:49.040  LynxPlayerClient  onReceivedJSError: summary={"rawError":{"stack":"    at <anonymous> (/.rspeedy/main/background.46bee256.js:1:42123)\n    at ek (/.rspeedy/main/background.46bee256.js:1:12880)\n    at some (native)\n    at eb (/.rspeedy/main/background.46bee256.js:1:11711)\n","message":"Error: Attempt to render more than one `<page />`, which is not supported.","cause":{"cause":""}},"pid":"USER_ERROR","url":"file://lynx_core.js","dynamicComponentPath":"","sentry":{"platform":"javascript","sdk":{"name":"sentry.javascript.browser","version":"5.15.5","packages":[{"name":"npm:@sentry/browser","version":"5.15.5"}],"integrations":["InboundFilters","FunctionToString","Breadcrumbs","GlobalHandlers","LinkedErrors","UserAgent"]},"level":"error","exception":{"values":[{"type":"USER_RUNTIME_ERROR","value":"Error: Attempt to render more than one `<page />`, which is not supported.","stacktrace":{"frames":[{"colno":11711,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"eb","in_app":true,"release":"","lineno":1},{"colno":0,"filename":"native","function":"some","in_app":true,"release":"","lineno":0},{"colno":12880,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"ek","in_app":true,"release":"","lineno":1},{"colno":42123,"filename":"file:///.rspeedy/main/background.46bee256.js","function":"<anonymous>","in_app":true,"release":"","lineno":1}]},"mechanism":{"handled":true,"type":"generic"}}]},"tags":{"error_type":"USER_RUNTIME_ERROR","extra":"Error: Attempt to render more than one `<page />`, which is not supported.","lib_version":"0.0.1","run_type":"lynx_core","version_code":"0.0.1"}}} rootCause= msg={"error_code":201,"sub_code":20100,"error":"{\"rawError\":{\"stack\":\"    at <anonymous> (\/.rspeedy\/main\/background.46bee256.js:1:42123)\\n    at ek (\/.rspeedy\/main\/background.46bee256.js:1:12880)\\n    at some (native)\\n    at eb (\/.rspeedy\/main\/background.46bee256.js:1:11711)\\n\",\"message\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"cause\":{\"cause\":\"\"}},\"pid\":\"USER_ERROR\",\"url\":\"file:\/\/lynx_core.js\",\"dynamicComponentPath\":\"\",\"sentry\":{\"platform\":\"javascript\",\"sdk\":{\"name\":\"sentry.javascript.browser\",\"version\":\"5.15.5\",\"packages\":[{\"name\":\"npm:@sentry\/browser\",\"version\":\"5.15.5\"}],\"integrations\":[\"InboundFilters\",\"FunctionToString\",\"Breadcrumbs\",\"GlobalHandlers\",\"LinkedErrors\",\"UserAgent\"]},\"level\":\"error\",\"exception\":{\"values\":[{\"type\":\"USER_RUNTIME_ERROR\",\"value\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"stacktrace\":{\"frames\":[{\"colno\":11711,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"eb\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":0,\"filename\":\"native\",\"function\":\"some\",\"in_app\":true,\"release\":\"\",\"lineno\":0},{\"colno\":12880,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"ek\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":42123,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"<anonymous>\",\"in_app\":true,\"release\":\"\",\"lineno\":1}]},\"mechanism\":{\"handled\":true,\"type\":\"generic\"}}]},\"tags\":{\"error_type\":\"USER_RUNTIME_ERROR\",\"extra\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"lib_version\":\"0.0.1\",\"run_type\":\"lynx_core\",\"version_code\":\"0.0.1\"}}}","sdk":"0.0.1","level":"error","consumers":[]}
 
-05-22 11:34:39.184  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
+05-22 18:59:49.047  LynxTemplateRender  LynxTemplateRender com.lynx.tasm.LynxTemplateRender@638794e: onErrorOccurred type -1,errCode:201,detail:{"error_code":201,"sub_code":20100,"error":"{\"rawError\":{\"stack\":\"    at <anonymous> (\/.rspeedy\/main\/background.46bee256.js:1:42123)\\n    at ek (\/.rspeedy\/main\/background.46bee256.js:1:12880)\\n    at some (native)\\n    at eb (\/.rspeedy\/main\/background.46bee256.js:1:11711)\\n\",\"message\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"cause\":{\"cause\":\"\"}},\"pid\":\"USER_ERROR\",\"url\":\"file:\/\/lynx_core.js\",\"dynamicComponentPath\":\"\",\"sentry\":{\"platform\":\"javascript\",\"sdk\":{\"name\":\"sentry.javascript.browser\",\"version\":\"5.15.5\",\"packages\":[{\"name\":\"npm:@sentry\/browser\",\"version\":\"5.15.5\"}],\"integrations\":[\"InboundFilters\",\"FunctionToString\",\"Breadcrumbs\",\"GlobalHandlers\",\"LinkedErrors\",\"UserAgent\"]},\"level\":\"error\",\"exception\":{\"values\":[{\"type\":\"USER_RUNTIME_ERROR\",\"value\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"stacktrace\":{\"frames\":[{\"colno\":11711,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"eb\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":0,\"filename\":\"native\",\"function\":\"some\",\"in_app\":true,\"release\":\"\",\"lineno\":0},{\"colno\":12880,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"ek\",\"in_app\":true,\"release\":\"\",\"lineno\":1},{\"colno\":42123,\"filename\":\"file:\/\/\/.rspeedy\/main\/background.46bee256.js\",\"function\":\"<anonymous>\",\"in_app\":true,\"release\":\"\",\"lineno\":1}]},\"mechanism\":{\"handled\":true,\"type\":\"generic\"}}]},\"tags\":{\"error_type\":\"USER_RUNTIME_ERROR\",\"extra\":\"Error: Attempt to render more than one `<page \/>`, which is not supported.\",\"lib_version\":\"0.0.1\",\"run_type\":\"lynx_core\",\"version_code\":\"0.0.1\"}}}","sdk":"0.0.1","level":"error","consumers":[]}
 
-05-22 11:34:39.186  BLASTBufferQueue  [VRI[PlayerActivity,type=2]#4](f:0,a:1) acquireNextBufferLocked size=147x147 mFrameNumber=1 applyTransaction=true mTimestamp=103504774185476(auto) mPendingTransactions.size=0 graphicBufferId=105926778421276 transform=0
+05-22 18:59:49.059  LynxEventReporter  eventReporter service not found or event name is null.
 
-05-22 11:34:39.241  PlayerActivityLynx  
-  onCreate: starting
-  onCreate: root layout found: android.widget.FrameLayout{eaa3542 V.E...... ......ID 0,0-0,0 #7f0900b5 app:id/lynx_player_root}
-  resolveFileInfo: internal file, path=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
-  onCreate: file info resolved, path=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, name=e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, mimeType=video/*, external=false
-  createLynxView: START
-  createLynxView: LynxViewBuilder created
-  createLynxView: TemplateProvider set
-  createLynxView: Modules registered (MpvPlayerModule, GoBackendModule)
-  createLynxView: screen size 1260x2800
-  createLynxView: screenSize set
+05-22 18:59:52.805  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 11:34:39.244  LynxView  new lynxview detail com.lynx.tasm.LynxView{dbef953 V.E...... ......I. 0,0-0,0}
+05-22 18:59:52.841  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
 
-05-22 11:34:39.248  LynxUIRenderer  
-  lynxContext setUIBodyViewcom.lynx.tasm.LynxView{dbef953 VFE...... ......I. 0,0-0,0}com.lynx.tasm.LynxTemplateRender$1@5b24789
-  lynxContext setUIBodyViewcom.lynx.tasm.LynxView{dbef953 VFE...... ......I. 0,0-0,0}com.lynx.tasm.LynxTemplateRender$1@5b24789
-
-05-22 11:34:39.253  LynxDevtool  
-  Initialize LynxDevtool, lynxDebugEnabled:true
-  devtoolEnabled:true, logBoxEnabled:false, debuggable:false
-  owner init
-
-05-22 11:34:39.255  LynxTemplateRender  mEnableGenericResourceFetcher: false render: com.lynx.tasm.LynxTemplateRender@87e57bc
-
-05-22 11:34:39.258  lynx      
-  [7163386090:INFO:vsync_monitor.cc(23)] VSyncMonitor created with is_vsync_post_task_by_emergency_ true
-  [7163386090:INFO:task_runner_manufactor.cc(257)] TaskRunnerManufactor setThreadStrategy:0, multi_tasm:true, async_thread_cache:true
-  [7163386090:INFO:lynx_shell.cc(131)] LynxShell create, this:0xB400006F3106A950
-  [7163386090:INFO:memory_monitor.h(81)] [memory_monitor.h] new MemoryMonitor, this:0xB400006F61157D80, Enable:false, MemoryChangeThresholdMb:0
-  [7163386090:INFO:timing_handler.cc(26)] [TimingHandler.cc] new TimingHandler, this:0xB400006F61157DC0
-  [7163386090:INFO:template_assembler.h(518)] Lynx Set Enable Layout Only: true from LynxView,  this:0xB400006F01110E80
-
-05-22 11:34:39.266  LynxTemplateRender  force use quick js engine
-
-05-22 11:34:39.266  lynx      
-  [7163386090:INFO:vsync_monitor.cc(23)] VSyncMonitor created with is_vsync_post_task_by_emergency_ true
-  [6DC48E83C0:INFO:runtime_lifecycle_observer_impl.cc(32)] [Runtime] RuntimeLifecycleObserverImpl::OnRuntimeCreate with observer:0xB400007011098FC8
-
-05-22 11:34:39.267  LynxTemplateRender  set JSGroupThreadName to lynx context: 
-
-05-22 11:34:39.267  lynx      
-  [6DC48E83C0:INFO:bts_runtime.cc(143)] Init LynxRuntime group_id: -1 runtime_id: 0 this:0xB400006FB10795D0
-  [6DC48E83C0:INFO:runtime_lifecycle_observer_impl.cc(48)] [Runtime] RuntimeLifecycleObserverImpl::OnRuntimeInit with runtime id: 0
-  [6DC48E83C0:INFO:inspector_runtime_observer_impl.cc(29)] js debug: CreateRuntimeManagerDelegate failed, JS debugging is not available
-  [6DC48E83C0:INFO:runtime_manager.cc(444)] make runtime with force_use_lightweight_js_engine = true
-
-05-22 11:34:39.267  LynxLayoutProxy  LynxLayoutProxy is created
-
-05-22 11:34:39.267  lynx      [6DC48E83C0:INFO:runtime_manager.cc(451)] make QuickJS runtime
-
-05-22 11:34:39.267  LynxDevtool  register LynxDevToolSetModule!
-
-05-22 11:34:39.267  primjs    RC: HEAP_TAG_OUTER: 0xb400000000000000, HEAP_TAG_INNER: 0xb400000000000000
-
-05-22 11:34:39.267  LynxDevtool  
-  register LynxWebSocketModule!
-  register LynxTrailModule!
-
-05-22 11:34:39.267  lynx      
-  [6DC48E83C0:INFO:quickjs_runtime_wrapper.cc(115)] lynx InitQuickjsRuntime success
-  [6DC48E83C0:INFO:runtime_manager.cc(187)] create single_context:0xB400006FC105B398
-  [6E85C4F3C0:INFO:js_cache_manager.cc(607)] bytecode_generate_generate_version: 3400532428
-
-05-22 11:34:39.268  lynx      [6E85C4F3C0:ERROR:js_cache_manager.cc(94)] ReadFile failed (file_path is empty): meta.json
-
-05-22 11:34:39.268  lynx      
-  [6E85C4F3C0:INFO:js_cache_manager.cc(619)] Metadata load failed, clearing cache
-  [6E85C4F3C0:INFO:js_cache_manager.cc(658)] Clearing cache dir
-  [6E85C4F3C0:INFO:js_cache_manager.cc(622)] Creating new Metadata
-  [7163386090:INFO:layout_context.cc(1098)] [Layout] UpdateViewport :size: 0.0, 0.0; mode: 0, 0
-
-05-22 11:34:39.268  LynxResourceLoader  loadJSSource with name assets://lynx_core.js
-
-05-22 11:34:39.268  lynx      
-  [6E85C4F3C0:ERROR:js_cache_manager.cc(109)] WriteFile failed (file_path is empty): meta.json
-  [6E85C4F3C0:ERROR:js_cache_manager.cc(591)] Write Metadata failed!
-
-05-22 11:34:39.268  LynxTemplateRender  1779420879268 create LynxView 1779420879248-230619475 
-
-05-22 11:34:39.268  lynx      [6E85C4F3C0:INFO:js_cache_manager.cc(597)] ClearExpiredCache time spent: 1 ms
-
-05-22 11:34:39.268  primjs    RC: HEAP_TAG_OUTER: 0xb400000000000000, HEAP_TAG_INNER: 0xb400000000000000
-
-05-22 11:34:39.268  lynx      [6E85C4F3C0:INFO:quickjs_runtime_wrapper.cc(115)] lynx InitQuickjsRuntime success
-
-05-22 11:34:39.268  System.err  java.io.FileNotFoundException: lynx_core_dev.js
-
-05-22 11:34:39.268  PlayerActivityLynx  createLynxView: LynxView built, instance=com.lynx.tasm.LynxView{dbef953 VFE...... ......I. 0,0-0,0}
-
-05-22 11:34:39.268  System.err  
-  at android.content.res.AssetManager.nativeOpenAsset(Native Method)
-  at android.content.res.AssetManager.open(AssetManager.java:1161)
-
-05-22 11:34:39.269  PlayerActivityLynx  createLynxView: LynxViewClient registered
-
-05-22 11:34:39.269  System.err  at android.content.res.AssetManager.open(AssetManager.java:1138)
-
-05-22 11:34:39.269  PlayerActivityLynx  
-  createLynxView: LynxView added to rootLayout
-  createLynxView: initData={"filePath":"\/123云盘\/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","fileName":"e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","mimeType":"video\/*","isExternal":false}
-
-05-22 11:34:39.269  LynxView  renderTemplateUrl player.lynx.bundlewith jsonData incom.lynx.tasm.LynxView{dbef953 VFE...... ......I. 0,0-0,0}
-
-05-22 11:34:39.269  System.err  
-  at com.lynx.tasm.core.resource.LynxResourceLoader.loadJSSource(LynxResourceLoader.java:242)
-  at com.lynx.tasm.core.resource.LynxResourceLoader.loadResource(LynxResourceLoader.java:96)
-  at com.lynx.tasm.core.resource.LynxResourceLoader.loadResource(LynxResourceLoader.java:76)
-  at android.os.MessageQueue.nativePollOnce(Native Method)
-  at android.os.MessageQueue.nextLegacy(MessageQueue.java:917)
-  at android.os.MessageQueue.next(MessageQueue.java:1029)
-  at android.os.Looper.loopOnce(Looper.java:209)
-  at android.os.Looper.loop(Looper.java:361)
-
-05-22 11:34:39.270  PageReloadHelper  loadFromURL:player.lynx.bundle
-
-05-22 11:34:39.270  lynx      
-  [6DC47DC3C0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_code_cache
-  [6DC48E83C0:INFO:quickjs_runtime.cc(906)] using new bytecode
-  [6DC48E83C0:INFO:js_cache_manager.cc(713)] bytecode disabled by switch
-  [6DC48E83C0:INFO:quickjs_runtime.cc(240)] QuickjsRuntime::evaluatePreparedJavaScript start: /lynx_core.js
-  [6DC48E83C0:INFO:quickjs_runtime.cc(160)] QuickjsRuntime::evaluateJavaScript: /lynx_core.js
-
-05-22 11:34:39.270  LynxTemplateRender  dispatchOnPageStart url player.lynx.bundle in com.lynx.tasm.LynxTemplateRender@87e57bc
-
-05-22 11:34:39.270  LynxEventReporter  eventReporter service not found or event name is null.
-
-05-22 11:34:39.270  LynxPlayerClient  onPageStart: url=player.lynx.bundle
-
-05-22 11:34:39.270  PlayerTemplateProvider  loadTemplate: uri=player.lynx.bundle, context=com.encvgo.app.EncvApplication@32f8c75
-
-05-22 11:34:39.271  LynxTemplateRender  1779420879271 renderTemplate LynxView 1779420879248-230619475 player.lynx.bundle
-
-05-22 11:34:39.271  PlayerActivityLynx  
-  createLynxView: renderTemplateUrl called with player.lynx.bundle
-  handleBackend: checking backend state
-  handleBackend: backend already running, port=2025
-  onCreate: setup complete
-
-05-22 11:34:39.273  PlayerTemplateProvider  loadTemplate: attempting assets.open(player.lynx.bundle)
-
-05-22 11:34:39.286  lynx      
-  [6DC48E83C0:INFO:quickjs_runtime.cc(173)] QuickjsRuntime::evaluateJavaScript finished successfully.
-  [6DC48E83C0:INFO:bts_runtime.cc(179)] js_runtime_type :99 0xB400006FB10795D0
-  [6DC48E83C0:INFO:bts_runtime.cc(195)]  lynxRuntime:0xB400006FB10795D0 create APP 0xB400006F21195A20
-  [6DC47DC3C0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_code_cache
-
-05-22 11:34:39.286  LynxEventReporter  eventReporter service not found or event name is null.
-
-05-22 11:34:39.294  PlayerTemplateProvider  
-  loadTemplate: assets root files matching 'lynx'/'player': [lynx_core.js, lynx_recorder.js, player.lynx.bundle]
-  loadTemplate: loaded 84912 bytes for player.lynx.bundle
-
-05-22 11:34:39.302  ViewRootImpl  AppSizeAfterRelayout, size: Point(147, 147), rotation: ROTATION_0
-
-05-22 11:34:39.302  BufferQueueConsumer  [](id:605700000005,api:0,p:-1,c:24663) connect: controlledByApp=false
-
-05-22 11:34:39.302  BLASTBufferQueue  
-  [VRI[PlayerActivityLynx,type=2]#5](f:0,a:0) constructor()
-  [VRI[PlayerActivityLynx,type=2]#5](f:0,a:0) update width=147 height=147 format=-3 mTransformHint=0
-
-05-22 11:34:39.303  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
-
-05-22 11:34:39.305  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=2]#5](f:0,a:1) acquireNextBufferLocked size=147x147 mFrameNumber=1 applyTransaction=true mTimestamp=103504893262630(auto) mPendingTransactions.size=0 graphicBufferId=105926778421283 transform=0
-
-05-22 11:34:39.307  Lynx      onAttachedToWindow:230619475
-
-05-22 11:34:39.307  LynxTemplateRender  
-  lynxview onAttachedToWindow com.lynx.tasm.LynxTemplateRender@87e57bc
-  onEnterForeground. force: false
-
-05-22 11:34:39.309  lynx      [7163386090:INFO:layout_context.cc(1098)] [Layout] UpdateViewport :size: 1260.0, 2800.0; mode: 1, 1
-
-05-22 11:34:39.321  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
-
-05-22 11:34:39.321  BufferQueueConsumer  [](id:605700000006,api:0,p:-1,c:24663) connect: controlledByApp=false
-
-05-22 11:34:39.321  BLASTBufferQueue  
-  [VRI[PlayerActivityLynx,type=1]#6](f:0,a:0) constructor()
-  [VRI[PlayerActivityLynx,type=1]#6](f:0,a:0) update width=1260 height=2800 format=-1 mTransformHint=0
-
-05-22 11:34:39.322  LynxTemplateRender  updateViewport is unnecessary, because the size of the cache are the same as the size to be set.
-
-05-22 11:34:39.322  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
-
-05-22 11:34:39.325  BLASTBufferQueue  [VRI[PlayerActivityLynx,type=1]#6](f:0,a:1) acquireNextBufferLocked size=1260x2800 mFrameNumber=1 applyTransaction=true mTimestamp=103504912977476(auto) mPendingTransactions.size=0 graphicBufferId=105926778421290 transform=0
-
-05-22 11:34:39.329  LynxInspectorOwner  attachToDebugBridge:player.lynx.bundle
-
-05-22 11:34:39.329  DebugRouter  
-  plug session player.lynx.bundle
-  [0522/11:34:39:INFO:debug_router_core.cc(271)] plug session: 1
-  [0522/11:34:39:INFO:debug_router_core.cc(709)] notify connect state: {"event": "Customized","data": {"type": "DebugRouter","data": {"client_id": -1,"session_id": -1,"message": {"id": -1,"method": "DebugRouter.State","params": {"ConnectState": 0}}},"sender": -1}}
-  [0522/11:34:39:INFO:processor.cc(93)] extension
-
-05-22 11:34:39.330  DebugRouterSlot  failed to invoke getTemplateView
-
-05-22 11:34:39.337  PageReloadHelper  loadFromLocalFile:null
-
-05-22 11:34:39.337  LynxTemplateRender  dispatchOnPageStart url null in com.lynx.tasm.LynxTemplateRender@87e57bc
-
-05-22 11:34:39.337  LynxInspectorOwner  attachToDebugBridge:null
-
-05-22 11:34:39.337  LynxTemplateRender  LoadMeta with binary, pre-painting: false ,pre-painting with draw:false enableRecycleTemplateBundle: false
-
-05-22 11:34:39.338  lynx      [7163386090:ERROR:template_assembler.cc(947)] lynx_plugin: load original lynx so
-
-05-22 11:34:39.338  lynx      [7163386090:INFO:template_assembler.cc(344)] start TemplateAssembler::LoadTemplate, url: len: 84912 this:0xB400006F01110E80
-
-05-22 11:34:39.338  lynx      
-  [6DC47DC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipelineStart
-  [6DC47DC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipeline_start
-
-05-22 11:34:39.339  lynx      
-  [7163386090:INFO:lynx_binary_base_template_reader.cc(171)] client version:0.2.0.0  ;binary_version:0.2.0.0
-  [7163386090:INFO:lynx_binary_base_template_reader.cc(122)] App Bundle's engine version: 3.2, lynx sdk version:3.7, min supported lynx version: 1.0
-  [7163386090:INFO:template_binary_reader.cc(241)] CSSLazyDecode options FE_OPTION_UNDEFINED ABSetting: 
-
-05-22 11:34:39.339  primjs    RC: HEAP_TAG_OUTER: 0xb400000000000000, HEAP_TAG_INNER: 0xb400000000000000
-
-05-22 11:34:39.339  lynx      [7163386090:WARNING:js_debug_helper.cc(41)] js debug: lepus_proxy_ is not set
-
-05-22 11:34:39.340  lynx      
-  [7163386090:INFO:template_assembler.cc(2479)] TemplateAssembler::OnScreenMetricsSet with width: 1260 height: 2800 device_pixel_ratio: 3.28125
-  [7163386090:INFO:element_manager.cc(531)] ElementManager::UpdateScreenMetrics width:1260,height:2800
-  [6DC48E83C0:INFO:bts_runtime.cc(654)] lynx runtime loadApp, napi id:0
-  [6DC48E83C0:INFO:bts_runtime.cc(672)] [LynxRuntime] circular data check flag: true
-  [6DC48E83C0:INFO:js_app.cc(2064)]  App::loadApp start 0xB400006F21195A20
-  [6DC48E83C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxUIMethodModule
-  [6DC48E83C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxResourceModule
-  [6DC48E83C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxAccessibilityModule
-  [7163386090:INFO:layout_context.cc(1098)] [Layout] UpdateViewport :size: 1260.0, 2800.0; mode: 1, 1
-  [7163386090:INFO:element_manager.cc(1341)] ElementManager::OnPatchFinishForFiber WithPatch!
-  [6DC48E83C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxSetModule
-  [6DC48E83C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxExposureModule
-
-05-22 11:34:39.343  Lynx      setVisibility:230619475 0
-
-05-22 11:34:39.344  LynxTemplateRender  onFirstScreen
-
-05-22 11:34:39.344  lynx      
-  [7163386090:INFO:touch_event_handler.cc(79)] TouchEventHandler init: support_component_js_: true; use_lepus_ng_: true
-  [7163386090:INFO:touch_event_handler.cc(367)] SendCustomEvent event name:resize tag:10
-  [7163386090:INFO:layout_context.cc(883)] [Layout] layout finish with result size: 1260, 2800 for viewport, size: 1260.0, 2800.0; mode: 1, 1 Time taken: 1460615 ns
-  [6DC48E83C0:INFO:js_app.cc(2920)] loadScript:app-service.js
-  [6DC48E83C0:INFO:quickjs_runtime.cc(240)] QuickjsRuntime::evaluatePreparedJavaScript start: /app-service.js
-  [6DC48E83C0:INFO:quickjs_runtime.cc(160)] QuickjsRuntime::evaluateJavaScript: /app-service.js
-  [6DC48E83C0:INFO:quickjs_runtime.cc(173)] QuickjsRuntime::evaluateJavaScript finished successfully.
-
-05-22 11:34:39.344  LynxTemplateRender  dispatchLoadSuccess templateSize in com.lynx.tasm.LynxTemplateRender@87e57bc
-
-05-22 11:34:39.344  LynxPlayerClient  onLoadSuccess: template loaded and rendered successfully
-
-05-22 11:34:39.344  lynx      
-  [6DC48E83C0:INFO:js_app.cc(2920)] loadScript:/.rspeedy/main/background.c82bc6ce.js
-  [6DC48E83C0:INFO:quickjs_runtime.cc(240)] QuickjsRuntime::evaluatePreparedJavaScript start: /.rspeedy/main/background.c82bc6ce.js
-  [7163386090:INFO:template_assembler.cc(839)] end TemplateAssembler::LoadTemplate, url: len: 84912
-
-05-22 11:34:39.344  LynxTemplateRender  1779420879344 renderTemplate LynxView 1779420879248-230619475 
-
-05-22 11:34:39.344  lynx      [6DC48E83C0:INFO:quickjs_runtime.cc(160)] QuickjsRuntime::evaluateJavaScript: /.rspeedy/main/background.c82bc6ce.js
-
-05-22 11:34:39.344  LynxTemplateRender  
-  retain TemplateData for lifecycle, url=, data=com.lynx.tasm.TemplateData@27ac14d, listSize=1, bindContextEnabled=false
-  updateViewport is unnecessary, because the size of the cache are the same as the size to be set.
-
-05-22 11:34:39.348  LynxPlayerClient  onFirstScreen: first screen rendered
-
-05-22 11:34:39.349  Lynx.IntersectionObserver  onRootViewDraw ObserverHandler
-
-05-22 11:34:39.352  lynx      
-  [6DC48E83C0:INFO:quickjs_runtime.cc(173)] QuickjsRuntime::evaluateJavaScript finished successfully.
-  [6DC48E83C0:INFO:js_app.cc(361)] LYNX PageProxy get -> setCard
-  [6DC48E83C0:INFO:js_app.cc(2196)]  App::loadApp end 0xB400006F21195A20
-  [6DC48E83C0:INFO:bts_runtime.cc(920)] lynx runtime ready
-  [6DC48E83C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnLifecycleEvent, phase: 2, target: 0, listener options: 0
-  [6DC48E83C0:INFO:js_event_listener.cc(38)] JSClosureEventListener::Invoke name: __OnLifecycleEvent
-
-05-22 11:34:39.353  LynxPlayerClient  onRuntimeReady: JS environment ready
-
-05-22 11:34:39.353  lynx      
-  [6DC48E83C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnAppFirstScreen, phase: 2, target: 0, listener options: 0
-  [6DC48E83C0:INFO:js_event_listener.cc(38)] JSClosureEventListener::Invoke name: __OnAppFirstScreen
-  [6DC48E83C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.onWindowResize 0xB400006F21195A20
-  [6DC48E83C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnNativeAppReady, phase: 2, target: 0, listener options: 0
-  [6DC48E83C0:INFO:js_event_listener.cc(38)] JSClosureEventListener::Invoke name: __OnNativeAppReady
-  [6DC48E83C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.onFontScaleChanged 0xB400006F21195A20
-
-05-22 11:34:39.356  lynx      
-  [6DC47DC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is loadBundleStart
-  [6DC47DC3C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is load_template_start
-
-05-22 11:34:39.356  ImeFocusController  onWindowFocus: com.android.internal.policy.DecorView{1356e4a V.E...... R....... 0,0-1260,2800}[PlayerActivityLynx] softInputMode=STATE_UNSPECIFIED|ADJUST_PAN|IS_FORWARD_NAVIGATION
-
-05-22 11:34:39.357  lynx      
-  [6DC48E83C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __SendGlobalEvent, phase: 2, target: 0, listener options: 0
-  [6DC48E83C0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __SendGlobalEvent, type: 0
-  [6DC48E83C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.lynx.performance.onPerformanceEvent 0xB400006F21195A20
-  [6DC47DC3C0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_setup_timing
-  [6DC48E83C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __SendGlobalEvent, phase: 2, target: 0, listener options: 0
-  [6DC48E83C0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __SendGlobalEvent, type: 0
-  [6DC48E83C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.lynx.performance.timing.onSetup 0xB400006F21195A20
-
-05-22 11:34:39.358  LynxEventReporter  eventReporter service not found or event name is null.
-
-05-22 11:34:39.358  lynx      [6DC47DC3C0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_code_cache
-
-05-22 11:34:39.358  ImeTracker  com.encvgo.app:a6a4c343: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
-
-05-22 11:34:39.746  VRI[MainActivity,type=2]  visibilityChanged oldVisibility=true newVisibility=false
-
-05-22 11:34:39.751  HWUI      [destroy] CanvasContext will be destroyed.
-
-05-22 11:34:39.754  ViewRootImpl  AppSizeAfterRelayout, size: Point(147, 147), rotation: ROTATION_0
-
-05-22 11:34:39.754  BLASTBufferQueue  [VRI[MainActivity,type=2]#2](f:0,a:1) destructor()
-
-05-22 11:34:39.754  BufferQueueConsumer  [VRI[MainActivity,type=2]#2(BLAST Consumer)2](id:605700000002,api:0,p:-1,c:24663) disconnect
-
-05-22 11:34:39.755  VRI[MainActivity,type=1]  visibilityChanged oldVisibility=true newVisibility=false
-
-05-22 11:34:39.756  HWUI      [setStopped] CanvasContext will be destroyed.
-
-05-22 11:34:39.756  Capacitor  
-  App stopped
-  Saving instance state!
-
-05-22 11:34:39.758  WindowOnBackDispatcher  sendCancelIfRunning: isInProgress=false callback=android.view.ViewRootImpl$$ExternalSyntheticLambda13@3c8278a
-
-05-22 11:34:39.759  HWUI      [destroy] CanvasContext will be destroyed.
-
-05-22 11:34:39.759  BLASTBufferQueue  [VRI[PlayerActivity,type=2]#4](f:0,a:1) destructor()
-
-05-22 11:34:39.759  BufferQueueConsumer  [VRI[PlayerActivity,type=2]#4(BLAST Consumer)4](id:605700000004,api:0,p:-1,c:24663) disconnect
-
-05-22 11:34:39.765  BLASTBufferQueue  [VRI[MainActivity,type=1]#3](f:0,a:5) destructor()
-
-05-22 11:34:39.765  BufferQueueConsumer  [VRI[MainActivity,type=1]#3(BLAST Consumer)3](id:605700000003,api:0,p:-1,c:24663) disconnect
-
-05-22 11:34:39.765  HWUI      [destroy] CanvasContext will be destroyed.
-
-05-22 11:34:39.775  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
-
-05-22 11:34:46.624  com.encvgo.app  Cleared Reference was only reachable from finalizer (only reported once)
-
-05-22 11:34:46.697  com.encvgo.app  
-  vart_dgc, 8192KB,32MB,0.5
-  Background concurrent copying GC freed 6994KB AllocSpace bytes, 59(2476KB) LOS objects, 79% free, 6144KB(1932KB_96KB)/30MB, 2Fd, itvl 14.942s, cpu 108.590ms, paused 65us,25us total 111.715ms
-  vart_bigdata, last_report_time=1779420886697
-
-05-22 11:34:46.699  HWUI      [destroy] CanvasContext will be destroyed.
-
-05-22 11:34:46.745  com.encvgo.app  AssetManager2(0xb400006f310ebe38) locale list changing from [] to [zh-CN]
-
-05-22 11:34:46.808  AutofillManager  view not autofillable - not passing ime action check
-
-05-22 11:34:46.825  ViewRootImpl  AppSizeAfterRelayout, size: Point(1260, 2800), rotation: ROTATION_0
-
-05-22 11:34:46.825  BufferQueueConsumer  [](id:605700000007,api:0,p:-1,c:24663) connect: controlledByApp=false
-
-05-22 11:34:46.825  BLASTBufferQueue  
-  [VRI[LogcatActivity,type=1]#7](f:0,a:0) constructor()
-  [VRI[LogcatActivity,type=1]#7](f:0,a:0) update width=1260 height=2800 format=-1 mTransformHint=0
-
-05-22 11:34:46.826  BLASTBufferQueue  QoSAllocBuff Successful. Ret 0 
-
-05-22 11:34:46.829  RecyclerView  No adapter attached; skipping layout
-
-05-22 11:34:46.884  BLASTBufferQueue  [VRI[LogcatActivity,type=1]#7](f:0,a:1) acquireNextBufferLocked size=1260x2800 mFrameNumber=1 applyTransaction=true mTimestamp=103512472386015(auto) mPendingTransactions.size=0 graphicBufferId=105926778421297 transform=0
-
-05-22 11:34:46.914  ImeFocusController  onWindowFocus: com.android.internal.policy.DecorView{daedf2b V.E...... R......D 0,0-1260,2800}[LogcatActivity] softInputMode=STATE_UNSPECIFIED|ADJUST_RESIZE|IS_FORWARD_NAVIGATION
-
-05-22 11:34:46.916  ImeTracker  com.encvgo.app:9e050f34: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+05-22 18:59:54.960  RecyclerView  No adapter attached; skipping layout
 
