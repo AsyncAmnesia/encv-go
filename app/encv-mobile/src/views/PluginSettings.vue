@@ -50,6 +50,9 @@
                     :placeholder="grandchild.description || tField(grandchild.key)"
                     @ionInput="handleInput([pluginSection.key, child.key, grandchild.key], grandchild, $event)"
                   ></ion-input>
+                  <ion-button v-if="grandchild.isPath" slot="end" fill="clear" @click="handleBrowsePath([pluginSection.key, child.key, grandchild.key], grandchild)">
+                    <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+                  </ion-button>
                 </ion-item>
               </template>
             </template>
@@ -94,6 +97,9 @@
                 :placeholder="child.description || tField(child.key)"
                 @ionInput="handleInput([pluginSection.key, child.key], child, $event)"
               ></ion-input>
+              <ion-button v-if="child.isPath" slot="end" fill="clear" @click="handleBrowsePath([pluginSection.key, child.key], child)">
+                <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+              </ion-button>
             </ion-item>
           </template>
 
@@ -113,7 +119,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonBackButton, IonContent, IonList, IonListHeader, IonItem, IonItemDivider,
-  IonIcon, IonLabel, IonToggle, IonInput, IonSpinner,
+  IonIcon, IonLabel, IonToggle, IonInput, IonSpinner, modalController,
 } from '@ionic/vue'
 import {
   save as saveIcon, settingsOutline, shieldCheckmark, speedometerOutline,
@@ -126,6 +132,7 @@ import { useServerStatus } from '@/composables/useServerStatus'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import type { FieldDef } from '@/config/schemaParser'
+import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const { isOnline: serverOnline } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
@@ -157,6 +164,23 @@ function handleInput(path: string[], field: FieldDef, event: CustomEvent) {
     setFieldValue(path, val ? Number(val) : 0)
   } else {
     setFieldValue(path, val)
+  }
+}
+
+async function handleBrowsePath(path: string[], field: FieldDef) {
+  const isFolder = field.key !== 'file'
+  const currentVal = String(getFieldValue(path) || '/')
+  const modal = await modalController.create({
+    component: FilePickerModal,
+    componentProps: {
+      mode: isFolder ? 'folder' : 'file',
+      initialPath: currentVal,
+    },
+  })
+  await modal.present()
+  const { data, role } = await modal.onDidDismiss()
+  if (role === 'select' && data) {
+    setFieldValue(path, data.path)
   }
 }
 

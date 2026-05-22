@@ -7,7 +7,7 @@
             <ion-icon :icon="arrowBack" slot="icon-only"></ion-icon>
           </ion-button>
         </ion-buttons>
-        <ion-title>{{ t('files.selectFile') }}</ion-title>
+        <ion-title>{{ mode === 'folder' ? t('files.selectFolder') : t('files.selectFile') }}</ion-title>
         <ion-buttons slot="end">
           <ion-button @click="cancel">{{ t('files.cancelSelect') }}</ion-button>
         </ion-buttons>
@@ -37,7 +37,7 @@
         <p>{{ t('files.noPermissionDesc') }}</p>
       </div>
 
-      <div v-else-if="files.length === 0" class="empty-state">
+      <div v-else-if="displayFiles.length === 0" class="empty-state">
         <ion-icon :icon="folderOpen" class="empty-icon"></ion-icon>
         <h3>{{ t('files.emptyDir') }}</h3>
         <p>{{ t('files.emptyDirDesc') }}</p>
@@ -45,7 +45,7 @@
 
       <ion-list v-else>
         <ion-item
-          v-for="file in sortedFiles"
+          v-for="file in displayFiles"
           :key="file.path"
           @click="handleFileClick(file)"
           detail
@@ -63,7 +63,14 @@
         </ion-item>
       </ion-list>
 
-      <div v-if="!loading && files.length > 0" class="picker-hint">
+      <div v-if="mode === 'folder' && !loading" class="folder-picker-bar">
+        <span class="current-path-label">{{ currentPath }}</span>
+        <ion-button size="small" @click="selectCurrentFolder">
+          {{ t('files.selectThisFolder') }}
+        </ion-button>
+      </div>
+
+      <div v-if="mode === 'file' && !loading && displayFiles.length > 0" class="picker-hint">
         {{ t('files.tapToSelect') }}
       </div>
     </ion-content>
@@ -108,9 +115,17 @@ import {
 import type { FileItem } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 
+const props = withDefaults(defineProps<{
+  mode?: 'file' | 'folder'
+  initialPath?: string
+}>(), {
+  mode: 'file',
+  initialPath: '/',
+})
+
 const { t } = useI18n()
 const files = ref<FileItem[]>([])
-const currentPath = ref('/')
+const currentPath = ref(props.initialPath || '/')
 const loading = ref(false)
 const noPermission = ref(false)
 
@@ -129,6 +144,13 @@ const sortedFiles = computed(() => {
     if (!a.isDirectory && b.isDirectory) return 1
     return a.name.localeCompare(b.name)
   })
+})
+
+const displayFiles = computed(() => {
+  if (props.mode === 'folder') {
+    return sortedFiles.value.filter(f => f.isDirectory)
+  }
+  return sortedFiles.value
 })
 
 function getFileIcon(file: FileItem) {
@@ -192,7 +214,13 @@ function handleFileClick(file: FileItem) {
     navigateTo(newPath)
     return
   }
-  modalController.dismiss({ path: file.path, name: file.name }, 'select')
+  if (props.mode === 'file') {
+    modalController.dismiss({ path: file.path, name: file.name }, 'select')
+  }
+}
+
+function selectCurrentFolder() {
+  modalController.dismiss({ path: currentPath.value, name: currentPath.value.split('/').filter(Boolean).pop() || '/' }, 'select')
 }
 
 function cancel() {
@@ -275,5 +303,29 @@ onMounted(() => {
   background: var(--ion-background-color, #fff);
   border-top: 1px solid var(--ion-color-light, #f4f5f8);
   z-index: 10;
+}
+
+.folder-picker-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--ion-background-color, #fff);
+  border-top: 1px solid var(--ion-color-light, #f4f5f8);
+  z-index: 10;
+}
+
+.current-path-label {
+  font-size: 13px;
+  color: var(--encv-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  margin-right: 12px;
 }
 </style>

@@ -113,13 +113,34 @@
                 :label="t('tasks.sourcePath')"
                 label-placement="stacked"
                 placeholder="/path/to/file"
+                :class="{ 'ion-invalid': sourcePathError }"
+                @ionInput="validateSourcePath"
               ></ion-input>
-              <ion-button slot="end" fill="clear" @click="handleBrowse">
+              <ion-button slot="end" fill="clear" @click="handleBrowseSource">
                 <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
               </ion-button>
             </ion-item>
+            <ion-item v-if="sourcePathError" class="path-error-item">
+              <ion-label class="path-error-text">{{ sourcePathError }}</ion-label>
+            </ion-item>
+            <ion-item>
+              <ion-input
+                v-model="newTaskTargetPath"
+                :label="t('tasks.targetPath')"
+                label-placement="stacked"
+                :placeholder="t('tasks.targetPathPlaceholder')"
+                :class="{ 'ion-invalid': targetPathError }"
+                @ionInput="validateTargetPath"
+              ></ion-input>
+              <ion-button slot="end" fill="clear" @click="handleBrowseTarget">
+                <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+              </ion-button>
+            </ion-item>
+            <ion-item v-if="targetPathError" class="path-error-item">
+              <ion-label class="path-error-text">{{ targetPathError }}</ion-label>
+            </ion-item>
           </ion-list>
-          <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath">
+          <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath || !!sourcePathError || !!targetPathError">
             <ion-icon :icon="lockClosed" slot="start"></ion-icon>
             {{ t('tasks.createTask') }}
           </ion-button>
@@ -187,6 +208,11 @@ const loading = ref(false)
 const showNewTaskModal = ref(false)
 const newTaskType = ref<TaskType>('encrypt')
 const newTaskPath = ref('')
+const newTaskTargetPath = ref('')
+const sourcePathError = ref('')
+const targetPathError = ref('')
+let sourceValidateTimer: ReturnType<typeof setTimeout> | null = null
+let targetValidateTimer: ReturnType<typeof setTimeout> | null = null
 
 function getTaskIcon(task: EncvTask) {
   switch (task.status) {
@@ -257,18 +283,66 @@ async function handleRefresh(event: CustomEvent) {
 function showNewTaskSheet() {
   newTaskType.value = 'encrypt'
   newTaskPath.value = ''
+  newTaskTargetPath.value = ''
+  sourcePathError.value = ''
+  targetPathError.value = ''
   showNewTaskModal.value = true
 }
 
-async function handleBrowse() {
+function validateSourcePath() {
+  if (sourceValidateTimer) clearTimeout(sourceValidateTimer)
+  sourceValidateTimer = setTimeout(() => {
+    const path = newTaskPath.value.trim()
+    if (!path) {
+      sourcePathError.value = t('tasks.pathRequired')
+    } else if (!path.startsWith('/')) {
+      sourcePathError.value = t('tasks.pathMustBeAbsolute')
+    } else {
+      sourcePathError.value = ''
+    }
+  }, 300)
+}
+
+function validateTargetPath() {
+  if (targetValidateTimer) clearTimeout(targetValidateTimer)
+  targetValidateTimer = setTimeout(() => {
+    const path = newTaskTargetPath.value.trim()
+    if (!path) {
+      targetPathError.value = ''
+    } else if (!path.startsWith('/')) {
+      targetPathError.value = t('tasks.pathMustBeAbsolute')
+    } else {
+      targetPathError.value = ''
+    }
+  }, 300)
+}
+
+async function handleBrowseSource() {
   showNewTaskModal.value = false
   const modal = await modalController.create({
     component: FilePickerModal,
+    componentProps: { mode: 'file' as const },
   })
   await modal.present()
   const { data, role } = await modal.onDidDismiss()
   if (role === 'select' && data) {
     newTaskPath.value = data.path
+    sourcePathError.value = ''
+  }
+  showNewTaskModal.value = true
+}
+
+async function handleBrowseTarget() {
+  showNewTaskModal.value = false
+  const modal = await modalController.create({
+    component: FilePickerModal,
+    componentProps: { mode: 'folder' as const },
+  })
+  await modal.present()
+  const { data, role } = await modal.onDidDismiss()
+  if (role === 'select' && data) {
+    newTaskTargetPath.value = data.path
+    targetPathError.value = ''
   }
   showNewTaskModal.value = true
 }
@@ -276,7 +350,7 @@ async function handleBrowse() {
 async function handleCreateTask() {
   if (!newTaskPath.value) return
   try {
-    await createTask(newTaskType.value, newTaskPath.value)
+    await createTask(newTaskType.value, newTaskPath.value, newTaskTargetPath.value || undefined)
     showNewTaskModal.value = false
     showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
     await loadTasks()
@@ -399,5 +473,17 @@ onUnmounted(() => {
   color: var(--ion-color-danger);
   font-size: 12px;
   margin-top: 4px;
+}
+
+.path-error-item {
+  --min-height: auto;
+  --padding-start: 16px;
+  --padding-end: 16px;
+  --inner-padding-end: 0;
+}
+
+.path-error-text {
+  color: var(--ion-color-danger);
+  font-size: 12px;
 }
 </style>

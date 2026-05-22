@@ -81,7 +81,6 @@
           :key="file.path"
           @click="handleFileClick(file)"
           v-longpress="() => handleLongPress(file)"
-          detail
         >
           <ion-icon
             :icon="getFileIcon(file)"
@@ -97,6 +96,9 @@
           <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
             ENCV
           </ion-badge>
+          <div v-if="searchQuery && !file.isDirectory" class="open-folder-btn" @click.stop="openContainingFolder(file)">
+            <ion-icon :icon="folderOpen" class="open-folder-icon"></ion-icon>
+          </div>
         </ion-item>
       </ion-list>
     </ion-content>
@@ -317,6 +319,13 @@ function navigateTo(path: string) {
   searchQuery.value = ''
   searchResults.value = null
   loadFiles()
+}
+
+function openContainingFolder(file: FileItem) {
+  const parentDir = file.path.substring(0, file.path.lastIndexOf('/')) || '/'
+  searchQuery.value = ''
+  searchResults.value = null
+  navigateTo(parentDir)
 }
 
 function goUp() {
@@ -687,5 +696,20 @@ function onBackendReadyWindow(event: Event) {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.open-folder-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin-right: -12px;
+  cursor: pointer;
+}
+
+.open-folder-icon {
+  font-size: 20px;
+  color: var(--ion-color-primary);
 }
 </style>

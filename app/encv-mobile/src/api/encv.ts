@@ -186,13 +186,15 @@ export async function getTasks(): Promise<EncvTask[]> {
   return data.tasks || []
 }
 
-export async function createTask(type: TaskType, sourcePath: string): Promise<EncvTask> {
-  console.info('[API] createTask:', type, sourcePath)
+export async function createTask(type: TaskType, sourcePath: string, targetPath?: string): Promise<EncvTask> {
+  console.info('[API] createTask:', type, sourcePath, targetPath || '')
   const baseUrl = getApiBaseUrl()
+  const body: Record<string, unknown> = { type, sourcePath }
+  if (targetPath) body.targetPath = targetPath
   const response = await fetch(`${baseUrl}/api/tasks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type, sourcePath }),
+    body: JSON.stringify(body),
   })
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`)
