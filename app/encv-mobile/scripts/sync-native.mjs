@@ -1,4 +1,4 @@
-import { rmSync, mkdirSync, copyFileSync, cpSync, readdirSync, statSync, existsSync, readFileSync } from 'fs'
+import { rmSync, mkdirSync, copyFileSync, cpSync, readdirSync, statSync, existsSync, readFileSync, writeFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
@@ -108,5 +108,130 @@ if (!existsSync(LYNX_BUNDLE_PATH)) {
   process.exit(1)
 }
 console.log('  Lynx bundle: exists ✓')
+
+// --- Gradle patching ---
+console.log('encv-sync-native: patching Gradle files...')
+
+function patchFile(filePath, transformer) {
+  if (!existsSync(filePath)) {
+    console.warn(`  gradle: file not found: ${filePath}`)
+    return
+  }
+  const content = readFileSync(filePath, 'utf-8')
+  const modified = transformer(content)
+  if (modified !== content) {
+    writeFileSync(filePath, modified, 'utf-8')
+    console.log(`  gradle: patched ${filePath}`)
+  }
+}
+
+// Root build.gradle
+patchFile(join(ANDROID_DIR, 'build.gradle'), (c) => {
+  if (!c.includes('kotlin-gradle-plugin')) {
+    c = c.replace(
+      /dependencies\s*\{/,
+      "dependencies {\n        classpath \"org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0\""
+    )
+  }
+  if (!c.includes('jitpack.io')) {
+    c = c.replace(
+      /allprojects\s*\{\s*repositories\s*\{/,
+      "allprojects {\n    repositories {\n        maven { url 'https://jitpack.io' }"
+    )
+  }
+  return c
+})
+
+// App build.gradle
+patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
+  if (!c.includes('kotlin-android') && !c.includes('org.jetbrains.kotlin.android')) {
+    c = c.replace(
+      "apply plugin: 'com.android.application'",
+      "apply plugin: 'com.android.application'\napply plugin: 'kotlin-android'"
+    )
+  }
+
+  if (!c.includes('kotlin-stdlib')) {
+    c = c.replace(
+      'dependencies {',
+      "dependencies {\n    implementation \"org.jetbrains.kotlin:kotlin-stdlib:2.1.0\""
+    )
+  }
+  if (!c.includes('Logcat')) {
+    c = c.replace(
+      'dependencies {',
+      "dependencies {\n    debugImplementation 'com.github.getActivity:Logcat:13.0'"
+    )
+  }
+
+  if (!c.includes('USE_LYNX_PLAYER')) {
+    c = c.replace(
+      /defaultConfig\s*\{/,
+      "defaultConfig {\n        buildConfigField \"boolean\", \"USE_LYNX_PLAYER\", \"true\""
+    )
+  }
+
+  if (!c.includes('buildConfig = true') && !c.includes('buildConfig true')) {
+    if (c.includes('buildFeatures')) {
+      c = c.replace(/buildFeatures\s*\{/, "buildFeatures {\n        buildConfig = true")
+    } else {
+      c = c.replace(/android\s*\{/, "android {\n    buildFeatures {\n        buildConfig = true\n    }")
+    }
+  }
+
+  if (!c.includes('abiFilters') || !c.includes('arm64-v8a')) {
+    c = c.replace(
+      /defaultConfig\s*\{/,
+      "defaultConfig {\n        ndk {\n            abiFilters 'arm64-v8a'\n        }"
+    )
+  }
+
+  if (!c.includes('compileOptions')) {
+    c = c.replace(
+      /android\s*\{/,
+      "android {\n    compileOptions {\n        targetCompatibility JavaVersion.VERSION_21\n        sourceCompatibility JavaVersion.VERSION_21\n    }"
+    )
+  }
+
+  if (!c.includes('org.lynxsdk.lynx')) {
+    c = c.replace(
+      'dependencies {',
+      "dependencies {\n    implementation 'org.lynxsdk.lynx:lynx:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-jssdk:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-trace:3.7.0'\n    implementation 'org.lynxsdk.lynx:primjs:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-image:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-log:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-http:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-devtool:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-devtool:3.7.0'\n    implementation 'com.facebook.fresco:fresco:2.3.0'\n    implementation 'com.facebook.fresco:animated-gif:2.3.0'\n    implementation 'com.facebook.fresco:animated-webp:2.3.0'\n    implementation 'com.facebook.fresco:webpsupport:2.3.0'\n    implementation 'com.facebook.fresco:animated-base:2.3.0'\n    implementation 'com.squareup.okhttp3:okhttp:4.9.0'"
+    )
+  }
+
+  c = c.replace(/\s*implementation\s*\(?['"]io\.github\.abdallahmehiz:mpv[^'"]*['"][\s\S]*?\)?/g, '')
+
+  if (!c.includes('jniLibs.srcDirs')) {
+    c = c.replace(
+      /android\s*\{/,
+      "android {\n    sourceSets {\n        main {\n            jniLibs.srcDirs = ['src/main/jniLibs']\n        }\n    }"
+    )
+  }
+
+  if (!c.includes('useLegacyPackaging')) {
+    c = c.replace(
+      /android\s*\{/,
+      "android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n            pickFirsts += ['**/*.so']\n        }\n        resources {\n            pickFirsts += ['**/*.so']\n        }\n    }"
+    )
+  }
+
+  if (!c.includes('jvmTarget') && c.includes('kotlin-android')) {
+    c += `\ntasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {\n    kotlinOptions {\n        jvmTarget = "21"\n    }\n}\n`
+  }
+
+  if (!c.includes("main.java.srcDirs += 'src/main/java'") && c.includes('kotlin-android')) {
+    c += `\nandroid.sourceSets {\n    main.java.srcDirs += 'src/main/java'\n}\n`
+  }
+
+  const version = process.env.ENCV_VERSION || ''
+  if (version) {
+    const vcode = parseInt(version.replace(/\./g, '')) || 1
+    c = c.replace(/versionCode\s+\d+/, `versionCode ${vcode}`)
+    c = c.replace(/versionName\s+"[^"]*"/, `versionName "${version}"`)
+  }
+
+  return c
+})
 
 console.log('encv-sync-native: done')

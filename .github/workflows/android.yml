@@ -110,11 +110,10 @@ jobs:
           fi
 
       # cap sync triggers capacitor:sync:after hook (sync-native.mjs + trapeze)
-      # which handles: kotlin files, native libs, jni/, Gradle config (via Trapeze)
+      # which handles: kotlin files, native libs, jni/, Gradle patching, file copies
       - name: Sync Capacitor Android project
         env:
           ENCV_VERSION: ${{ inputs.version }}
-          BUILD_TYPE: ${{ inputs.version && 'release' || 'debug' }}
         run: |
           cd app/encv-mobile
           if [ -d "./android" ] && [ -f "./android/build.gradle" ]; then
@@ -124,14 +123,12 @@ jobs:
           fi
           echo "Android project ready:"
           ls -la android/*.gradle android/app/*.gradle
-          echo "=== Signing config in build.gradle ==="
-          grep -A8 'signingConfigs' app/encv-mobile/android/app/build.gradle || echo "WARNING: No signingConfigs found!"
-          grep 'signingConfig\|minifyEnabled' app/encv-mobile/android/app/build.gradle || echo "WARNING: No release signing found!"
 
       - name: Apply release signing config
         if: inputs.version != ''
         run: |
-          APP_BUILD=app/encv-mobile/android/app/build.gradle
+          cd app/encv-mobile
+          APP_BUILD=android/app/build.gradle
           echo "Applying release signing to $APP_BUILD"
 
           SIGNING_BLOCK='signingConfigs { release { storeFile file('"'"'../../keystore/release.jks'"'"'); storePassword '"'"'encv2025'"'"'; keyAlias '"'"'encvrelease'"'"'; keyPassword '"'"'encv2025'"'"'; } }'
