@@ -1,128 +1,292 @@
-05-22 19:19:27.980  com.encvgo.app  
+05-22 19:54:14.083  com.encvgo.app  
+  Late-enabling -Xcheck:jni
+  Using CollectorTypeCC GC.
+
+05-22 19:54:14.117  com.encvgo.app  
   BBinder_init Processname  com.encvgo.app  
   BBinder_init hasGetProcessName  com.encvgo.app
 
-05-22 19:19:28.346  com.encvgo.app  No implementation found for void com.lynx.devtoolwrapper.DevToolLifecycle.nativeSyncStateToNative(int) (tried Java_com_lynx_devtoolwrapper_DevToolLifecycle_nativeSyncStateToNative and Java_com_lynx_devtoolwrapper_DevToolLifecycle_nativeSyncStateToNative__I) - is the library loaded, e.g. System.loadLibrary?
+05-22 19:54:14.243  com.encvgo.app  
+  vart_impl, update 109051904, state=109051904
+  AssetManager2(0xb400006f3101be18) locale list changing from [] to [zh-CN]
 
-05-22 19:19:28.371  DebugRouterServiceCenter  IDebugRouterReportService is unregistered
+05-22 19:54:14.389  ShaderCache  Parse coeffs for /com.encvgo.app with space syetem(version 3)
 
-05-22 19:19:28.374  DebugRouterServiceCenter  IUSBHijackService is unregistered
+05-22 19:54:14.577  com.encvgo.app  No implementation found for void com.lynx.devtoolwrapper.DevToolLifecycle.nativeSyncStateToNative(int) (tried Java_com_lynx_devtoolwrapper_DevToolLifecycle_nativeSyncStateToNative and Java_com_lynx_devtoolwrapper_DevToolLifecycle_nativeSyncStateToNative__I) - is the library loaded, e.g. System.loadLibrary?
 
-05-22 19:19:28.777  libEGL    eglQueryStringImpl display is EGL_NO_DISPLAY
+05-22 19:54:14.598  com.encvgo.app  hiddenapi: Accessing hidden method Landroid/app/ActivityThread;->currentProcessName()Ljava/lang/String; (runtime_flags=0, domain=platform, api=unsupported) from Lcom/lynx/debugrouter/DebugRouter; (domain=app) using reflection: allowed
 
-05-22 19:19:28.822  com.encvgo.app  
-  [perfctl] 17308 17308 FPSGO ver:0
+05-22 19:54:14.632  com.encvgo.app  
+  AssetManager2(0xb400006f3101d718) locale list changing from [] to [zh-CN]
+  AssetManager2(0xb400006f31017958) locale list changing from [] to [zh-CN]
+
+05-22 19:54:14.686  GameManager  __progname=com.encvgo.app
+
+05-22 19:54:14.756  com.encvgo.app  
+  hiddenapi: Accessing hidden method Landroid/view/ViewGroup;->makeOptionalFitsSystemWindows()V (runtime_flags=0, domain=platform, api=unsupported) from Landroidx/appcompat/widget/ViewUtils; (domain=app) using reflection: allowed
+  AssetManager2(0xb400006f3102bb38) locale list changing from [] to [zh-CN]
+
+05-22 19:54:14.768  com.encvgo.app  
+  AssetManager2(0xb400006f310282f8) locale list changing from [] to [zh-CN]
+  AssetManager2(0xb400006f3102aeb8) locale list changing from [] to [zh-CN]
+  AssetManager2(0xb400006f31029298) locale list changing from [] to [zh-CN]
+  AssetManager2(0xb400006f310263b8) locale list changing from [] to [zh-CN]
+
+05-22 19:54:14.776  com.encvgo.app  Loading /data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/oat/arm64/base.odex non-executable as it requires an image which we failed to load
+
+05-22 19:54:15.292  com.encvgo.app  
+  AssetManager2(0xb400006f31028938) locale list changing from [] to [zh-CN]
+  AssetManager2(0xb400006f3102c178) locale list changing from [] to [zh-CN]
+
+05-22 19:54:15.620  com.encvgo.app  
+  [perfctl] 27599 27599 FPSGO ver:0
   [perfctl] 0 0 0 0
 
-05-22 19:19:28.852  MEMCWrapper  MEMC_POST_PROCESSING_ENABLE_PROPERTY false.
+05-22 19:54:15.754  ENCV-Service  
+  Default config copied to /data/user/0/com.encvgo.app/files/config.user.json
+  nativeLibraryDir: /data/app/~~GFRP68eUcxh3AuY7M45NZw==/com.encvgo.app-ZBlWzomSh-YT4M_mgamudw==/lib/arm64
+  Checking native binary: exists=true, canExecute=true, path=/data/app/~~GFRP68eUcxh3AuY7M45NZw==/com.encvgo.app-ZBlWzomSh-YT4M_mgamudw==/lib/arm64/libencv-go.so
+  Using binary from nativeLibraryDir: /data/app/~~GFRP68eUcxh3AuY7M45NZw==/com.encvgo.app-ZBlWzomSh-YT4M_mgamudw==/lib/arm64/libencv-go.so
+  Starting backend: /data/app/~~GFRP68eUcxh3AuY7M45NZw==/com.encvgo.app-ZBlWzomSh-YT4M_mgamudw==/lib/arm64/libencv-go.so start
 
-05-22 19:19:28.853  VivoJsonResourceManager  
-  mmap ok
-  mmap ok
+05-22 19:54:15.756  ImeTracker  com.encvgo.app:de67d4a3: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
 
-05-22 19:19:30.700  GPUAUX    [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+05-22 19:54:15.790  com.encvgo.app  hiddenapi: Accessing hidden field Landroid/graphics/Bitmap;->mNativePtr:J (runtime_flags=0, domain=platform, api=unsupported) from Lcom/android/webview/chromium/WebViewChromium; (domain=app) using JNI: allowed
 
-05-22 19:19:31.083  GPUAUX    [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+05-22 19:54:15.806  MediaCodec-JNI  pid:27599,client name:com.encvgo.app
 
-05-22 19:19:33.311  GPUAUX    
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+05-22 19:54:15.837  ENCV-Service  [go] time=2026-05-22T11:54:15.836Z level=INFO msg="Using config from environment variable ENCV_CONFIG_PATH" path=/data/user/0/com.encvgo.app/files/config.user.json
 
-05-22 19:19:34.381  GPUAUX    
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
-  [AUX]GuiExtAuxCheckAuxPath:682: Null anb
+05-22 19:54:15.844  ENCV-Service  [go] time=2026-05-22T11:54:15.841Z level=INFO msg="Configuration loaded successfully" path=/data/user/0/com.encvgo.app/files/config.user.json log_level=debug
 
-05-22 19:19:35.250  lynx      [6E85BC03C0:ERROR:js_cache_manager.cc(94)] ReadFile failed (file_path is empty): meta.json
+05-22 19:54:15.850  ENCV-Service  
+  [go] 🦢 2026-05-22 11:54:15 [32m[INFO][0m [90m[main.go:112][0m [36mfile=[0m Structured logging initialized
+  [go] 🦢 2026-05-22 11:54:15 [32m[INFO][0m [90m[main.go:119][0m [36mversion=[0mdev [36mconfig_path=[0m/data/user/0/com.encvgo.app/files/config.user.json [36margs=[0m[/data/app/~~GFRP68eUcxh3AuY7M45NZw==/com.encvgo.app-ZBlWzomSh-YT4M_mgamudw==/lib/arm64/libencv-go.so start] encv started
 
-05-22 19:19:35.250  lynx      
-  [6E85BC03C0:ERROR:js_cache_manager.cc(109)] WriteFile failed (file_path is empty): meta.json
-  [6E85BC03C0:ERROR:js_cache_manager.cc(591)] Write Metadata failed!
+05-22 19:54:15.888  ENCV-Service  
+  [go] 🦢 2026-05-22 11:54:15 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mvideo Initializing plugin
+  [go] 🦢 2026-05-22 11:54:15 [32m[INFO][0m INFO: [video] Physical chunking disabled.
+  [go] 🦢 2026-05-22 11:54:15 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0maudio Initializing plugin
+  [go] 🦢 2026-05-22 11:54:15 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mimage Initializing plugin
+  [go] 🦢 2026-05-22 11:54:15 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mwps Initializing plugin
+  [go] 🦢 2026-05-22 11:54:15 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mpdf Initializing plugin
+  [go] 🦢 2026-05-22 11:54:15 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mtext Initializing plugin
+  [go] 🦢 2026-05-22 11:54:15 [32m[INFO][0m [90m[server.go:106][0m [36minstance=[0m18b1e1201db438a2 [36mversion=[0mdev Server starting
+  [go] 🦢 2026-05-22 11:54:15 [32m[INFO][0m [90m[server.go:107][0m [36mdir=[0m/storage/emulated/0 Main service serving from
+  [go] 🦢 2026-05-22 11:54:15 [32m[INFO][0m [90m[server.go:111][0m WSLogHandler initialized, logs will be bridged to WebSocket
+  [go] 🦢 2026-05-22 11:54:15 [32m[INFO][0m [90m[server_start.go:31][0m [36maddr=[0m:2025 Backend attempting to start
 
-05-22 19:19:35.261  LynxEventReporter  eventReporter service not found or event name is null.
+05-22 19:54:15.993  ENCV-Service  [go] 🦢 2026-05-22 11:54:15 [32m[INFO][0m [90m[server_start.go:50][0m [36maddr=[0m[::]:2025 Backend server successfully started
 
-05-22 19:19:35.278  LynxEventReporter  eventReporter service not found or event name is null.
+05-22 19:54:15.998  ENCV-Service  [go] [36m[36m  ℹ  [0m[0m [96m[96mMobile mode: skipping admin server[0m[0m
 
-05-22 19:19:35.324  DebugRouterSlot  failed to invoke getTemplateView
+05-22 19:54:16.001  ENCV-Service  
+  [go] 
+  [go] # [1;33m[1;33mMobile Server Started[0m
+  [go] [1;33m[0m[0m
 
-05-22 19:19:35.337  lynx      [7163386090:ERROR:template_assembler.cc(947)] lynx_plugin: load original lynx so
+05-22 19:54:16.003  ENCV-Service  
+  [go]   [36mServing files[0m: [90m/storage/emulated/0[0m
+  [go]   [36mAPI endpoint[0m: [90mhttp://[::]:2025[0m
+  [go] [36m[36m  ℹ  [0m[0m [96m[96mPress Ctrl+C to stop the server[0m[0m
 
-05-22 19:19:35.393  lynx      
-  [6DC55F83C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipelineStart
-  [6DC55F83C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipeline_start
-  [6DC55F83C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is loadBundleStart
-  [6DC55F83C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is load_template_start
+05-22 19:54:16.084  ENCV-Service  
+  [go] 🦢 2026-05-22 11:54:16 [32m[INFO][0m [90m[mobile_api.go:70][0m [36mpath=[0m/ API: list files
+  [go] 🦢 2026-05-22 11:54:16 [32m[INFO][0m [90m[ws_hub.go:55][0m [36mremote=[0m127.0.0.1:53202 WebSocket client connected
 
-05-22 19:19:35.393  LynxEventReporter  eventReporter service not found or event name is null.
+05-22 19:54:16.466  ENCV-Service  
+  [go] 🦢 2026-05-22 11:54:16 [32m[INFO][0m [90m[mobile_service.go:138][0m [36mpath=[0m/ [36mcount=[0m77 ListFiles result
+  [go] 🦢 2026-05-22 11:54:16 [32m[INFO][0m [90m[mobile_api.go:78][0m [36mpath=[0m/ [36mcount=[0m77 API: list files result
+  [go] 🦢 2026-05-22 11:54:16 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/api/files [36mstatus=[0m200 [36mduration=[0m382.989538ms HTTP request
 
-05-22 19:19:35.397  LynxEventReporter  eventReporter service not found or event name is null.
+05-22 19:54:17.082  com.encvgo.app  Compiler allocated 7216KB to compile void android.view.ViewRootImpl.performTraversals()
 
-05-22 19:19:35.399  LynxEventReporter  eventReporter service not found or event name is null.
+05-22 19:54:17.815  com.encvgo.app  vart_impl, update 67108864, state=75497472
 
-05-22 19:19:35.404  LynxEventReporter  eventReporter service not found or event name is null.
+05-22 19:54:19.081  com.encvgo.app  vart_impl, update 109051904, state=109051904
 
-05-22 19:19:36.470  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:19.871  ImeTracker  com.encvgo.app:ae960ac0: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
 
-05-22 19:19:36.491  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:20.407  ENCV-Service  
+  [go] 🦢 2026-05-22 11:54:20 [32m[INFO][0m [90m[mobile_api.go:70][0m [36mpath=[0m/123云盘 API: list files
+  [go] 🦢 2026-05-22 11:54:20 [32m[INFO][0m [90m[mobile_service.go:138][0m [36mpath=[0m/123云盘 [36mcount=[0m6 ListFiles result
+  [go] 🦢 2026-05-22 11:54:20 [32m[INFO][0m [90m[mobile_api.go:78][0m [36mpath=[0m/123云盘 [36mcount=[0m6 API: list files result
+  [go] 🦢 2026-05-22 11:54:20 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/api/files [36mstatus=[0m200 [36mduration=[0m5.393308ms HTTP request
 
-05-22 19:19:36.524  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:21.078  com.encvgo.app  
+  AssetManager2(0xb400006f3102cdf8) locale list changing from [] to [zh-CN]
+  AssetManager2(0xb400006f31068a38) locale list changing from [] to [zh-CN]
+  AssetManager2(0xb400006f31065e78) locale list changing from [] to [zh-CN]
 
-05-22 19:19:36.528  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:21.404  ENCV-Service  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] createLynxView: START
 
-05-22 19:19:36.537  lynx      
-  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:raw-text
-  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:text
-  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:view
+05-22 19:54:21.407  ENCV-Service  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m558.461µs HTTP request
 
-05-22 19:19:36.599  lynx      [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:view
+05-22 19:54:21.411  ENCV-Service  
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] onCreate: starting
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m61.308µs HTTP request
 
-05-22 19:19:39.227  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:21.417  ENCV-Service  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] createLynxView: LynxView built, instance=com.lynx.tasm.LynxView{d2a8884 VFE...... ......I. 0,0-0,0}
 
-05-22 19:19:39.308  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:21.421  ENCV-Service  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m465.231µs HTTP request
 
-05-22 19:19:39.310  lynx      
-  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:raw-text
-  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:text
+05-22 19:54:21.424  ENCV-Service  
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] createLynxView: LynxViewBuilder created
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] createLynxView: LynxView added to rootLayout
 
-05-22 19:19:39.896  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:21.430  ENCV-Service  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m10.374154ms HTTP request
 
-05-22 19:19:39.968  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:21.433  ENCV-Service  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m105.77µs HTTP request
 
-05-22 19:19:40.392  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:21.436  ENCV-Service  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] createLynxView: TemplateProvider set
 
-05-22 19:19:40.439  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:21.438  ENCV-Service  
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m116.924µs HTTP request
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] createLynxView: Modules registered (MpvPlayerModule, GoBackendModule, LogBridge)
 
-05-22 19:19:40.442  lynx      
-  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:raw-text
-  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:text
+05-22 19:54:21.445  ENCV-Service  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m186.462µs HTTP request
 
-05-22 19:19:40.766  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:21.446  ImeTracker  com.encvgo.app:b8d31596: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
 
-05-22 19:19:40.816  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:21.448  ENCV-Service  
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] onCreate: root layout found: android.widget.FrameLayout{8f4ae97 V.E...... ......ID 0,0-0,0 #7f0900b5 app:id/lynx_player_root}
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m60.692µs HTTP request
 
-05-22 19:19:41.071  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:21.456  ENCV-Service  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] handleBackend: checking backend state
 
-05-22 19:19:41.149  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:21.458  ENCV-Service  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m31.692µs HTTP request
 
-05-22 19:19:41.152  lynx      
-  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:raw-text
-  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:text
+05-22 19:54:21.462  ENCV-Service  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] onCreate: setup complete
 
-05-22 19:19:41.439  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:21.464  ENCV-Service  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m49µs HTTP request
 
-05-22 19:19:41.509  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:21.467  ENCV-Service  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] createLynxView: LynxViewClient registered
 
-05-22 19:19:41.867  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:21.469  ENCV-Service  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m74.693µs HTTP request
 
-05-22 19:19:41.937  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:21.472  ENCV-Service  
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] onCreate: file info resolved, path=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, name=e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, mimeType=video/*, external=false
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m135.308µs HTTP request
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] createLynxView: renderTemplateUrl called with player.lynx.bundle
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m4.077539ms HTTP request
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] handleBackend: backend already running, port=2025
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m104.923µs HTTP request
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] createLynxView: screen size 1260x2800
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m181.23µs HTTP request
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayerClient] onPageStart: url=player.lynx.bundle
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m36.923µs HTTP request
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] createLynxView: screenSize set
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m92.385µs HTTP request
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] resolveFileInfo: internal file, path=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m241.153µs HTTP request
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [PlayerActivityLynx] createLynxView: initData={"filePath":"\/123云盘\/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","fileName":"e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","mimeType":"video\/*","isExternal":false}
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m199.307µs HTTP request
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayerClient] onLoadSuccess: template loaded and rendered successfully
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m1.003384ms HTTP request
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayerClient] onFirstScreen: first screen rendered
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m72.923µs HTTP request
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] AppComponent: rendering, initData={"filePath":"/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","fileName":"e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","mimeType":"video/*","isExternal":false}
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m99.154µs HTTP request
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] fileName set to: e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m124.23µs HTTP request
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayerClient] onRuntimeReady: JS environment ready
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m78.462µs HTTP request
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] AppComponent: rendering, initData={"filePath":"/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","fileName":"e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","mimeType":"video/*","isExternal":false}
+  [go] 🦢 2026-05-22 11:54:21 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m34.539µs HTTP request
 
-05-22 19:19:41.940  lynx      
-  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:raw-text
-  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:text
+05-22 19:54:22.370  ENCV-Service  
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] handlePlayPause: startPlayback (state=idle)
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m109.769µs HTTP request
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] startPlayback called, data={"filePath":"/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","fileName":"e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","mimeType":"video/*","isExternal":false}
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m204.385µs HTTP request
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] startPlayback: step1 getBackendStatus
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m109.231µs HTTP request
 
-05-22 19:19:42.477  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:22.374  ENCV-Service  
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [GoBackendModule] registerReceiver: registering backend receiver
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m81.154µs HTTP request
 
-05-22 19:19:42.530  lynx      [7163386090:ERROR:lynx_inspector_owner_native_glue.cc(53)] ptr is null
+05-22 19:54:22.375  ENCV-Service  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [GoBackendModule] init: backend module created
 
-05-22 19:19:43.360  RecyclerView  No adapter attached; skipping layout
+05-22 19:54:22.377  ENCV-Service  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m83.154µs HTTP request
+
+05-22 19:54:22.378  ENCV-Service  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [GoBackendModule] registerReceiver: registered
+
+05-22 19:54:22.378  ENCV-Service  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m183.462µs HTTP request
+
+05-22 19:54:22.387  ENCV-Service  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] startPlayback: step3 url=http://127.0.0.1:2025/stream?path=%2F123%E4%BA%91%E7%9B%98%2Fe844e9ffb6650d294870a6d5ea963ec6mp4.mp4
+
+05-22 19:54:22.387  ENCV-Service  
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [GoBackendModule] getBackendStatus: running=true, port=2025
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m101.846µs HTTP request
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m213.231µs HTTP request
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] startPlayback: step1 result={"running":true,"port":2025}
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m502.846µs HTTP request
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] startPlayback: step3 getStreamUrl path=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m79.616µs HTTP request
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [MpvPlayerModule] play: url=http://127.0.0.1:2025/stream?path=%2F123%E4%BA%91%E7%9B%98%2Fe844e9ffb6650d294870a6d5ea963ec6mp4.mp4, surfaceReady=false, mpvInitialized=false
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m786.077µs HTTP request
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] startPlayback: step4 mpv.play url=http://127.0.0.1:2025/stream?path=%2F123%E4%BA%91%E7%9B%98%2Fe844e9ffb6650d294870a6d5ea963ec6mp4.mp4
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m76.077µs HTTP request
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [GoBackendModule] getStreamUrl: path=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, isExternal=false → http://127.0.0.1:2025/stream?path=%2F123%E4%BA%91%E7%9B%98%2Fe844e9ffb6650d294870a6d5ea963ec6mp4.mp4
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [MpvPlayerModule] init: MpvPlayerModule created
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m43.769µs HTTP request
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m276.384µs HTTP request
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] AppComponent: rendering, initData={"filePath":"/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","fileName":"e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","mimeType":"video/*","isExternal":false}
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m98.231µs HTTP request
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [MpvPlayerModule] ensureMpvInitialized: initializing MPVLib
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m88.231µs HTTP request
+
+05-22 19:54:22.422  MpvPlayerModule  
+  dispatchStateChange: state=mpv_ready
+  ensureMpvInitialized: done, configDir=/data/user/0/com.encvgo.app/files/mpv, cacheDir=/data/user/0/com.encvgo.app/cache/mpv
+  play: surface not ready, queuing url as pending
+  dispatchStateChange: state=waiting_surface
+
+05-22 19:54:22.429  ENCV-Service  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [MpvPlayerModule] ensureMpvInitialized: done, configDir=/data/user/0/com.encvgo.app/files/mpv, cacheDir=/data/user/0/com.encvgo.app/cache/mpv
+
+05-22 19:54:22.430  ENCV-Service  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m235µs HTTP request
+
+05-22 19:54:22.434  ENCV-Service  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] mpv:state-change {"state":"mpv_ready"}
+
+05-22 19:54:22.434  ENCV-Service  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m118.154µs HTTP request
+
+05-22 19:54:22.435  ENCV-Service  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] startPlayback: all steps done, playing
+
+05-22 19:54:22.435  ENCV-Service  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m193.615µs HTTP request
+
+05-22 19:54:22.436  ENCV-Service  
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] MPV engine ready
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m185.769µs HTTP request
+
+05-22 19:54:22.440  ENCV-Service  
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [MpvPlayerModule] dispatchStateChange: state=waiting_surface
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m72.692µs HTTP request
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [MpvPlayerModule] dispatchStateChange: state=mpv_ready
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m23.692µs HTTP request
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [MpvPlayerModule] play: surface not ready, queuing url as pending
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m17.846µs HTTP request
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [MpvPlayerModule] dispatchStateChange: state=playing
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m75.384µs HTTP request
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] mpv:state-change {"state":"waiting_surface"}
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m44.615µs HTTP request
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] AppComponent: rendering, initData={"filePath":"/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","fileName":"e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","mimeType":"video/*","isExternal":false}
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m68.846µs HTTP request
+
+05-22 19:54:22.448  ENCV-Service  
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] mpv:state-change {"state":"playing"}
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m184.692µs HTTP request
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[server.go:202][0m [LynxPlayer] AppComponent: rendering, initData={"filePath":"/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","fileName":"e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","mimeType":"video/*","isExternal":false}
+  [go] 🦢 2026-05-22 11:54:22 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mPOST [36mpath=[0m/api/logs [36mstatus=[0m204 [36mduration=[0m246.539µs HTTP request
+
+05-22 19:54:27.156  com.encvgo.app  Cleared Reference was only reachable from finalizer (only reported once)
+
+05-22 19:54:27.255  com.encvgo.app  
+  vart_dgc, 8192KB,32MB,0.5
+  Background concurrent copying GC freed 9472KB AllocSpace bytes, 61(2544KB) LOS objects, 79% free, 6401KB(2036KB_104KB)/30MB, 2Fd, itvl 13.002s, cpu 137.484ms, paused 67us,41us total 144.020ms
+  vart_bigdata, last_report_time=1779450867255
+
+05-22 19:54:28.404  com.encvgo.app  AssetManager2(0xb400006f310a0b18) locale list changing from [] to [zh-CN]
+
+05-22 19:54:28.570  ImeTracker  com.encvgo.app:b166c777: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
 
