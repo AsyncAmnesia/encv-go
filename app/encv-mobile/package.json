@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "capacitor:sync:after": "node scripts/post-cap-sync.mjs"
+    "capacitor:sync:after": "node scripts/post-cap-sync.mjs",
+    "check:kotlin": "node scripts/check-kotlin.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.4",

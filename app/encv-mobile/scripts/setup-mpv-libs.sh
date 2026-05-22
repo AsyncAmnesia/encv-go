@@ -18,16 +18,13 @@ mkdir -p "$JNI_DIR"
 for abi in arm64-v8a; do
     echo "  extracting $abi..."
     mkdir -p "$JNI_DIR/$abi"
-    unzip -o -j "$AAR_TMP" "jni/$abi/libmpv.so" "jni/$abi/libplayer.so" -d "$JNI_DIR/$abi" 2>/dev/null || true
+    unzip -o -j "$AAR_TMP" "jni/$abi/*.so" -d "$JNI_DIR/$abi" 2>/dev/null || true
     if [ ! -f "$JNI_DIR/$abi/libmpv.so" ]; then
         echo "  ✗ $abi: libmpv.so not found in AAR!"
         exit 1
     fi
-    if [ ! -f "$JNI_DIR/$abi/libplayer.so" ]; then
-        echo "  ✗ $abi: libplayer.so not found in AAR!"
-        exit 1
-    fi
-    echo "  ✓ $abi: libmpv.so + libplayer.so"
+    count=$(find "$JNI_DIR/$abi" -name "*.so" | wc -l)
+    echo "  ✓ $abi: ${count} .so files extracted"
 done
 
 rm -f "$AAR_TMP"

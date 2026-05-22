@@ -391,9 +391,25 @@ mkdirSync(assetsDir, { recursive: true })
 copyFileSync(LYNX_BUNDLE_PATH, join(assetsDir, 'player.lynx.bundle'))
 console.log('  bundle: copied player.lynx.bundle to assets')
 
-const jniLibsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'jniLibs', 'arm64-v8a')
-mkdirSync(jniLibsDir, { recursive: true })
-console.log('  ensured jniLibs/arm64-v8a directory exists')
+const overlayJniLibs = join(OVERLAY_DIR, 'app', 'src', 'main', 'jniLibs')
+const targetJniLibsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'jniLibs')
+if (existsSync(overlayJniLibs)) {
+  if (existsSync(targetJniLibsDir)) rmSync(targetJniLibsDir, { recursive: true })
+  cpSync(overlayJniLibs, targetJniLibsDir, { recursive: true })
+  let soCount = 0
+  function countSo(dir) {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      if (statSync(full).isDirectory()) countSo(full)
+      else if (entry.endsWith('.so')) soCount++
+    }
+  }
+  if (existsSync(targetJniLibsDir)) countSo(targetJniLibsDir)
+  console.log(`  overlay: jniLibs (${soCount} .so files)`)
+} else {
+  mkdirSync(join(targetJniLibsDir, 'arm64-v8a'), { recursive: true })
+  console.log('  ensured jniLibs/arm64-v8a directory exists (no overlay)')
+}
 
 const overlayManifestSrc = join(OVERLAY_DIR, 'app', 'src', 'main', 'AndroidManifest.xml')
 const appManifestDest = join(ANDROID_DIR, 'app', 'src', 'main', 'AndroidManifest.xml')
