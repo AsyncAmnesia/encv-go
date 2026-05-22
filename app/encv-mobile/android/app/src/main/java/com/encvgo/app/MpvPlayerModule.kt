@@ -84,7 +84,18 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
         override fun eventProperty(property: String, value: String) {}
         override fun event(eventId: Int) {
             when (eventId) {
-                MpvEvent.MPV_EVENT_FILE_LOADED -> dispatchStateChange("playing")
+                MpvEvent.MPV_EVENT_FILE_LOADED -> {
+                    val videoWidth = try { MPVLib.getPropertyLong("width") ?: 0 } catch (_: Exception) { 0 }
+                    val videoHeight = try { MPVLib.getPropertyLong("height") ?: 0 } catch (_: Exception) { 0 }
+                    val isAudioOnly = videoWidth == 0 || videoHeight == 0
+                    if (isAudioOnly) {
+                        mainHandler.post { mpvSurfaceView?.visibility = View.GONE }
+                        dispatchStateChange("audio_only")
+                    } else {
+                        mainHandler.post { mpvSurfaceView?.visibility = View.VISIBLE }
+                        dispatchStateChange("playing")
+                    }
+                }
                 MpvEvent.MPV_EVENT_END_FILE -> dispatchStateChange("ended")
                 MpvEvent.MPV_EVENT_SHUTDOWN -> dispatchStateChange("ended")
             }

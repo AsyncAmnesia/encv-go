@@ -186,3 +186,44 @@
   text-align: center;
   text-maxline: 3;
 }
+
+.AudioCoverContainer {
+  flex: 1;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.AudioCover {
+  width: 180px;
+  height: 180px;
+  border-radius: 16px;
+  background-color: rgba(74, 144, 217, 0.12);
+  justify-content: center;
+  align-items: center;
+}
+
+.AudioCoverIcon {
+  font-size: 56px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.AudioTitle {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 15px;
+  margin-top: 16px;
+  text-maxline: 1;
+  max-width: 280px;
+  text-align: center;
+}
+
+.AudioBottomSection {
+  width: 100%;
+}
+
+.AudioPlayControls {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 0 16px;
+}

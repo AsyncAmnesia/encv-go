@@ -7,6 +7,7 @@ interface InitData {
   fileName: string;
   mimeType: string;
   isExternal: boolean;
+  mediaType: "video" | "audio";
 }
 
 type PlayerState = "idle" | "loading" | "playing" | "paused" | "ended" | "error";
@@ -40,6 +41,7 @@ export function AppComponent() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [pendingPlaybackData, setPendingPlaybackData] = useState<InitData | null>(null);
+  const [mediaType, setMediaType] = useState<"video" | "audio">("video");
 
   lynxLog.info("AppComponent: rendering, initData=" + JSON.stringify(initData));
 
@@ -50,24 +52,28 @@ export function AppComponent() {
     if (state) {
       if (state === "surface_ready") {
         lynxLog.info("MPV surface ready, native will auto-play pending URL");
-        if (pendingPlaybackData) {
-          setPendingPlaybackData(null);
-        }
+        setErrorMessage("");
         return;
       }
       if (state === "waiting_surface") {
         setPlayerState("loading");
-        setErrorMessage("正在初始化视频窗口...");
         return;
       }
       if (state === "mpv_ready") {
         lynxLog.info("MPV engine ready");
         return;
       }
+      if (state === "audio_only") {
+        setMediaType("audio");
+        setErrorMessage("");
+        setPlayerState(state as PlayerState);
+        return;
+      }
       setPlayerState(state as PlayerState);
     }
     if (error) setErrorMessage(error);
     if (state === "playing" || state === "paused") {
+      setErrorMessage("");
       setShowControls(true);
     }
   });
@@ -86,7 +92,10 @@ export function AppComponent() {
   useEffect(() => {
     if (initData) {
       setFileName(initData.fileName || "Unknown");
-      lynxLog.info("fileName set to: " + (initData.fileName || "Unknown"));
+      if (initData.mediaType) {
+        setMediaType(initData.mediaType);
+      }
+      lynxLog.info("fileName set to: " + (initData.fileName || "Unknown") + ", mediaType=" + (initData.mediaType || "video"));
     }
   }, [initData]);
 
@@ -99,6 +108,7 @@ export function AppComponent() {
       return;
     }
     setPlayerState("loading");
+    setErrorMessage("");
     try {
       lynxLog.info("startPlayback: step1 getBackendStatus");
       const status = await new Promise<any>((resolve) => {
@@ -185,6 +195,7 @@ export function AppComponent() {
           duration={duration}
           showControls={showControls}
           error={errorMessage || undefined}
+          mediaType={mediaType}
           onPlayPause={handlePlayPause}
           onSeek={handleSeek}
           onToggleFullscreen={handleFullscreen}

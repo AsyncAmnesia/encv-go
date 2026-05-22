@@ -361,11 +361,24 @@ class PlayerActivityLynx : AppCompatActivity() {
     }
 
     private fun buildInitDataJson(): String {
+        val mediaType = when {
+            intentFileMimeType.startsWith("audio/") -> "audio"
+            intentFileMimeType.startsWith("video/") -> "video"
+            intentFileMimeType.isEmpty() -> {
+                val ext = intentFileName.substringAfterLast('.', "").lowercase()
+                when (ext) {
+                    "mp3", "flac", "wav", "ogg", "aac", "m4a", "wma", "opus", "ape", "alac" -> "audio"
+                    else -> "video"
+                }
+            }
+            else -> "video"
+        }
         val data = JSONObject().apply {
             put("filePath", intentFilePath)
             put("fileName", intentFileName)
             put("mimeType", intentFileMimeType)
             put("isExternal", isExternalFile)
+            put("mediaType", mediaType)
         }
         return data.toString()
     }
