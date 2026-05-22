@@ -12,6 +12,6 @@ class LogBridgeModule(context: android.content.Context) : LynxModule(context) {
             LogRelay.get().relay("LynxPlayer", level, msg)
         } catch (_e: Exception) {
         }
-        callback.onSuccess(null)
+        callback.invoke(null)
     }
 }
