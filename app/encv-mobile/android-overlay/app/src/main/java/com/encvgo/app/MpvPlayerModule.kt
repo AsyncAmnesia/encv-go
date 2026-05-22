@@ -118,7 +118,8 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
             rootLayout.addView(mpvSurfaceView, 0, params)
-            LogRelay.get().relay(TAG, "info", "attachToLayout: MPV surface view attached")
+            mpvSurfaceView.visibility = android.view.View.VISIBLE
+            LogRelay.get().relay(TAG, "info", "attachToLayout: MPV surface view attached (VISIBLE)")
         } catch (e: Exception) {
             LogRelay.get().relay(TAG, "error", "attachToLayout: failed: ${e.message}")
             dispatchStateChange("error", "Surface attach failed: ${e.message}")

@@ -321,20 +321,19 @@ class PlayerActivityLynx : AppCompatActivity() {
             val initData = buildInitDataJson()
             LogRelay.get().relay(TAG, "info", "createLynxView: initData=$initData")
 
+            val mpvModule = MpvPlayerModule.getInstance()
+            LogRelay.get().relay(TAG, "info", "createLynxView: mpvModule instance=$mpvModule")
+            if (rootLayout != null && mpvModule != null) {
+                mpvModule.attachToLayout(rootLayout!!)
+                LogRelay.get().relay(TAG, "info", "createLynxView: attachToLayout called synchronously before renderTemplateUrl")
+            } else {
+                LogRelay.get().relay(TAG, "error", "createLynxView: cannot attachToLayout, rootLayout=$rootLayout, mpvModule=$mpvModule")
+            }
+
             lynxView?.renderTemplateUrl("player.lynx.bundle", initData)
             LogRelay.get().relay(TAG, "info", "createLynxView: renderTemplateUrl called with player.lynx.bundle")
 
-            lynxView?.post {
-                try {
-                    val mpvModule = MpvPlayerModule.getInstance()
-                    if (mpvModule != null && rootLayout != null) {
-                        mpvModule.attachToLayout(rootLayout!!)
-                    }
-                } catch (e: Exception) {
-                    LogRelay.get().relay(TAG, "error", "createLynxView: attachToLayout failed: ${e.message}")
-                }
-                lynxView?.post(positionUpdateRunnable)
-            }
+            lynxView?.post(positionUpdateRunnable)
         } catch (e: Exception) {
             LogRelay.get().relay(TAG, "error", "createLynxView: failed: ${e.message}")
             android.widget.Toast.makeText(this, "Player init failed: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
