@@ -1,75 +1,75 @@
-﻿2026-05-21T22:48:10.7102859Z ##[group]Run actions/checkout@v4
-2026-05-21T22:48:10.7103456Z with:
-2026-05-21T22:48:10.7103628Z   ref: trae/solo-agent-ArHDts
-2026-05-21T22:48:10.7103838Z   repository: Soltus/encv-go
-2026-05-21T22:48:10.7104306Z   token: ***
-2026-05-21T22:48:10.7104457Z   ssh-strict: true
-2026-05-21T22:48:10.7104603Z   ssh-user: git
-2026-05-21T22:48:10.7104778Z   persist-credentials: true
-2026-05-21T22:48:10.7104951Z   clean: true
-2026-05-21T22:48:10.7105111Z   sparse-checkout-cone-mode: true
-2026-05-21T22:48:10.7105317Z   fetch-depth: 1
-2026-05-21T22:48:10.7105463Z   fetch-tags: false
-2026-05-21T22:48:10.7105622Z   show-progress: true
-2026-05-21T22:48:10.7105774Z   lfs: false
-2026-05-21T22:48:10.7105915Z   submodules: false
-2026-05-21T22:48:10.7106068Z   set-safe-directory: true
-2026-05-21T22:48:10.7106388Z ##[endgroup]
-2026-05-21T22:48:10.8036568Z Syncing repository: Soltus/encv-go
-2026-05-21T22:48:10.8038507Z ##[group]Getting Git version info
-2026-05-21T22:48:10.8038829Z Working directory is '/home/runner/work/encv-go/encv-go'
-2026-05-21T22:48:10.8039316Z [command]/usr/bin/git version
-2026-05-21T22:48:10.8079314Z git version 2.54.0
-2026-05-21T22:48:10.8099035Z ##[endgroup]
-2026-05-21T22:48:10.8117540Z Temporarily overriding HOME='/home/runner/work/_temp/c35f1fec-8868-40fa-b0fd-5f1410503123' before making global git config changes
-2026-05-21T22:48:10.8118490Z Adding repository directory to the temporary git global config as a safe directory
-2026-05-21T22:48:10.8122629Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/encv-go/encv-go
-2026-05-21T22:48:10.8337792Z Deleting the contents of '/home/runner/work/encv-go/encv-go'
-2026-05-21T22:48:10.8341610Z ##[group]Initializing the repository
-2026-05-21T22:48:10.8346365Z [command]/usr/bin/git init /home/runner/work/encv-go/encv-go
-2026-05-21T22:48:10.9433227Z hint: Using 'master' as the name for the initial branch. This default branch name
-2026-05-21T22:48:10.9434725Z hint: will change to "main" in Git 3.0. To configure the initial branch name
-2026-05-21T22:48:10.9435659Z hint: to use in all of your new repositories, which will suppress this warning,
-2026-05-21T22:48:10.9436399Z hint: call:
-2026-05-21T22:48:10.9437054Z hint:
-2026-05-21T22:48:10.9437435Z hint: 	git config --global init.defaultBranch <name>
-2026-05-21T22:48:10.9437801Z hint:
-2026-05-21T22:48:10.9438089Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
-2026-05-21T22:48:10.9438466Z hint: 'development'. The just-created branch can be renamed via this command:
-2026-05-21T22:48:10.9438776Z hint:
-2026-05-21T22:48:10.9438918Z hint: 	git branch -m <name>
-2026-05-21T22:48:10.9439091Z hint:
-2026-05-21T22:48:10.9439398Z hint: Disable this message with "git config set advice.defaultBranchName false"
-2026-05-21T22:48:10.9440036Z Initialized empty Git repository in /home/runner/work/encv-go/encv-go/.git/
-2026-05-21T22:48:10.9445304Z [command]/usr/bin/git remote add origin https://github.com/Soltus/encv-go
-2026-05-21T22:48:10.9834295Z ##[endgroup]
-2026-05-21T22:48:10.9834823Z ##[group]Disabling automatic garbage collection
-2026-05-21T22:48:10.9839442Z [command]/usr/bin/git config --local gc.auto 0
-2026-05-21T22:48:10.9935036Z ##[endgroup]
-2026-05-21T22:48:10.9935392Z ##[group]Setting up auth
-2026-05-21T22:48:10.9941814Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
-2026-05-21T22:48:10.9970278Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
-2026-05-21T22:48:11.0566724Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
-2026-05-21T22:48:11.0591118Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
-2026-05-21T22:48:11.0780365Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
-2026-05-21T22:48:11.0814013Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
-2026-05-21T22:48:11.1006373Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
-2026-05-21T22:48:11.1036720Z ##[endgroup]
-2026-05-21T22:48:11.1037401Z ##[group]Fetching the repository
-2026-05-21T22:48:11.1044062Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +refs/heads/trae/solo-agent-ArHDts*:refs/remotes/origin/trae/solo-agent-ArHDts* +refs/tags/trae/solo-agent-ArHDts*:refs/tags/trae/solo-agent-ArHDts*
-2026-05-21T22:48:12.2385993Z From https://github.com/Soltus/encv-go
-2026-05-21T22:48:12.2386802Z  * [new branch]      trae/solo-agent-ArHDts -> origin/trae/solo-agent-ArHDts
-2026-05-21T22:48:12.2413974Z ##[endgroup]
-2026-05-21T22:48:12.2414494Z ##[group]Determining the checkout info
-2026-05-21T22:48:12.2421280Z [command]/usr/bin/git branch --list --remote origin/trae/solo-agent-ArHDts
-2026-05-21T22:48:12.2442897Z   origin/trae/solo-agent-ArHDts
-2026-05-21T22:48:12.2447077Z ##[endgroup]
-2026-05-21T22:48:12.2452296Z [command]/usr/bin/git sparse-checkout disable
-2026-05-21T22:48:12.2485641Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
-2026-05-21T22:48:12.2510943Z ##[group]Checking out the ref
-2026-05-21T22:48:12.2515075Z [command]/usr/bin/git checkout --progress --force -B trae/solo-agent-ArHDts refs/remotes/origin/trae/solo-agent-ArHDts
-2026-05-21T22:48:12.3125088Z Switched to a new branch 'trae/solo-agent-ArHDts'
-2026-05-21T22:48:12.3126279Z branch 'trae/solo-agent-ArHDts' set up to track 'origin/trae/solo-agent-ArHDts'.
-2026-05-21T22:48:12.3136196Z ##[endgroup]
-2026-05-21T22:48:12.3175367Z [command]/usr/bin/git log -1 --format=%H
-2026-05-21T22:48:12.3196872Z 002ae866a4f8fd7877dd0b6a719f698f701c94c9
+﻿2026-05-21T23:45:19.0368234Z ##[group]Run actions/checkout@v4
+2026-05-21T23:45:19.0369585Z with:
+2026-05-21T23:45:19.0370301Z   ref: trae/solo-agent-ArHDts
+2026-05-21T23:45:19.0371206Z   repository: Soltus/encv-go
+2026-05-21T23:45:19.0372424Z   token: ***
+2026-05-21T23:45:19.0373127Z   ssh-strict: true
+2026-05-21T23:45:19.0373850Z   ssh-user: git
+2026-05-21T23:45:19.0374608Z   persist-credentials: true
+2026-05-21T23:45:19.0375432Z   clean: true
+2026-05-21T23:45:19.0376173Z   sparse-checkout-cone-mode: true
+2026-05-21T23:45:19.0377285Z   fetch-depth: 1
+2026-05-21T23:45:19.0378012Z   fetch-tags: false
+2026-05-21T23:45:19.0378758Z   show-progress: true
+2026-05-21T23:45:19.0379507Z   lfs: false
+2026-05-21T23:45:19.0380178Z   submodules: false
+2026-05-21T23:45:19.0380936Z   set-safe-directory: true
+2026-05-21T23:45:19.0381962Z ##[endgroup]
+2026-05-21T23:45:19.1532194Z Syncing repository: Soltus/encv-go
+2026-05-21T23:45:19.1534916Z ##[group]Getting Git version info
+2026-05-21T23:45:19.1536226Z Working directory is '/home/runner/work/encv-go/encv-go'
+2026-05-21T23:45:19.1538351Z [command]/usr/bin/git version
+2026-05-21T23:45:19.1568033Z git version 2.54.0
+2026-05-21T23:45:19.1593805Z ##[endgroup]
+2026-05-21T23:45:19.1609169Z Temporarily overriding HOME='/home/runner/work/_temp/c8e519b8-b6a4-4b27-ba15-b31e09e1435d' before making global git config changes
+2026-05-21T23:45:19.1611691Z Adding repository directory to the temporary git global config as a safe directory
+2026-05-21T23:45:19.1623216Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/encv-go/encv-go
+2026-05-21T23:45:19.1667388Z Deleting the contents of '/home/runner/work/encv-go/encv-go'
+2026-05-21T23:45:19.1671469Z ##[group]Initializing the repository
+2026-05-21T23:45:19.1675437Z [command]/usr/bin/git init /home/runner/work/encv-go/encv-go
+2026-05-21T23:45:19.1752259Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-05-21T23:45:19.1754257Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-05-21T23:45:19.1756595Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-05-21T23:45:19.1757931Z hint: call:
+2026-05-21T23:45:19.1758822Z hint:
+2026-05-21T23:45:19.1759672Z hint: 	git config --global init.defaultBranch <name>
+2026-05-21T23:45:19.1760896Z hint:
+2026-05-21T23:45:19.1761893Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-05-21T23:45:19.1763523Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-05-21T23:45:19.1764850Z hint:
+2026-05-21T23:45:19.1765611Z hint: 	git branch -m <name>
+2026-05-21T23:45:19.1766791Z hint:
+2026-05-21T23:45:19.1767888Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-05-21T23:45:19.1769639Z Initialized empty Git repository in /home/runner/work/encv-go/encv-go/.git/
+2026-05-21T23:45:19.1772558Z [command]/usr/bin/git remote add origin https://github.com/Soltus/encv-go
+2026-05-21T23:45:19.1806172Z ##[endgroup]
+2026-05-21T23:45:19.1807679Z ##[group]Disabling automatic garbage collection
+2026-05-21T23:45:19.1810542Z [command]/usr/bin/git config --local gc.auto 0
+2026-05-21T23:45:19.1841836Z ##[endgroup]
+2026-05-21T23:45:19.1843716Z ##[group]Setting up auth
+2026-05-21T23:45:19.1849737Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-05-21T23:45:19.1884461Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-05-21T23:45:19.2216728Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-05-21T23:45:19.2254046Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-05-21T23:45:19.2526130Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-05-21T23:45:19.2565377Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-05-21T23:45:19.2850263Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-05-21T23:45:19.2892191Z ##[endgroup]
+2026-05-21T23:45:19.2893633Z ##[group]Fetching the repository
+2026-05-21T23:45:19.2905208Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +refs/heads/trae/solo-agent-ArHDts*:refs/remotes/origin/trae/solo-agent-ArHDts* +refs/tags/trae/solo-agent-ArHDts*:refs/tags/trae/solo-agent-ArHDts*
+2026-05-21T23:45:19.8179869Z From https://github.com/Soltus/encv-go
+2026-05-21T23:45:19.8182145Z  * [new branch]      trae/solo-agent-ArHDts -> origin/trae/solo-agent-ArHDts
+2026-05-21T23:45:19.8213153Z ##[endgroup]
+2026-05-21T23:45:19.8215011Z ##[group]Determining the checkout info
+2026-05-21T23:45:19.8221151Z [command]/usr/bin/git branch --list --remote origin/trae/solo-agent-ArHDts
+2026-05-21T23:45:19.8249794Z   origin/trae/solo-agent-ArHDts
+2026-05-21T23:45:19.8254529Z ##[endgroup]
+2026-05-21T23:45:19.8258705Z [command]/usr/bin/git sparse-checkout disable
+2026-05-21T23:45:19.8301388Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-05-21T23:45:19.8330871Z ##[group]Checking out the ref
+2026-05-21T23:45:19.8335249Z [command]/usr/bin/git checkout --progress --force -B trae/solo-agent-ArHDts refs/remotes/origin/trae/solo-agent-ArHDts
+2026-05-21T23:45:19.9111604Z Switched to a new branch 'trae/solo-agent-ArHDts'
+2026-05-21T23:45:19.9113819Z branch 'trae/solo-agent-ArHDts' set up to track 'origin/trae/solo-agent-ArHDts'.
+2026-05-21T23:45:19.9123706Z ##[endgroup]
+2026-05-21T23:45:19.9165716Z [command]/usr/bin/git log -1 --format=%H
+2026-05-21T23:45:19.9191038Z 581f5326e483d91c61877692f58659a2bb10f263

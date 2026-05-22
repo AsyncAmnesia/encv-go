@@ -334,8 +334,10 @@ if (existsSync(mpvLibSrc)) {
 // Copy mpv native libraries from overlay jniLibs
 const overlayJniDir = join(OVERLAY_DIR, 'app', 'src', 'main', 'jniLibs')
 const targetJniDir = join(ANDROID_DIR, 'app', 'src', 'main', 'jniLibs')
+const ALLOWED_ABIS = ['arm64-v8a']
 if (existsSync(overlayJniDir)) {
   for (const abi of readdirSync(overlayJniDir)) {
+    if (!ALLOWED_ABIS.includes(abi)) continue
     const abiDir = join(overlayJniDir, abi)
     if (statSync(abiDir).isDirectory()) {
       const targetAbiDir = join(targetJniDir, abi)

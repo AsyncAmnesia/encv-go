@@ -1,69 +1,69 @@
-﻿2026-05-21T22:48:58.4421939Z ##[group]Run cd app/encv-mobile && npm install && npm run build
-2026-05-21T22:48:58.4422335Z [36;1mcd app/encv-mobile && npm install && npm run build[0m
-2026-05-21T22:48:58.4452378Z shell: /usr/bin/bash -e {0}
-2026-05-21T22:48:58.4452579Z env:
-2026-05-21T22:48:58.4452816Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
-2026-05-21T22:48:58.4453186Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
-2026-05-21T22:48:58.4453484Z   ANDROID_HOME: /usr/local/lib/android/sdk
-2026-05-21T22:48:58.4453713Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-2026-05-21T22:48:58.4453916Z ##[endgroup]
-2026-05-21T22:49:03.5566062Z 
-2026-05-21T22:49:03.5567169Z added 158 packages, and audited 159 packages in 5s
-2026-05-21T22:49:03.5567833Z 
-2026-05-21T22:49:03.5568278Z 23 packages are looking for funding
-2026-05-21T22:49:03.5568978Z   run `npm fund` for details
-2026-05-21T22:49:03.5574340Z 
-2026-05-21T22:49:03.5574755Z found 0 vulnerabilities
-2026-05-21T22:49:03.6831593Z 
-2026-05-21T22:49:03.6832830Z > encv-go-mobile@1.0.0 build
-2026-05-21T22:49:03.6833734Z > vue-tsc --noEmit && vite build
-2026-05-21T22:49:03.6834094Z 
-2026-05-21T22:49:07.1843285Z [36mvite v8.0.13 [32mbuilding client environment for production...[36m[39m
-2026-05-21T22:49:07.2320879Z [2K
-2026-05-21T22:49:07.4652881Z transforming...✓ 259 modules transformed.
-2026-05-21T22:49:07.5126077Z rendering chunks...
-2026-05-21T22:49:07.6359136Z computing gzip size...
-2026-05-21T22:49:07.6498939Z dist/index.html                                        0.47 kB │ gzip:   0.29 kB
-2026-05-21T22:49:07.6501535Z [33m[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/views/PlayerSettings.vue is dynamically imported by src/router/player.ts but also statically imported by src/PlayerApp.vue?vue&type=script&setup=true&lang.ts, dynamic import will not move module into another chunk.
-2026-05-21T22:49:07.6502854Z [39m
-2026-05-21T22:49:07.6503284Z [33m[plugin builtin:vite-reporter] 
-2026-05-21T22:49:07.6503927Z (!) Some chunks are larger than 500 kB after minification. Consider:
-2026-05-21T22:49:07.6504639Z - Using dynamic import() to code-split the application
-2026-05-21T22:49:07.6505827Z - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
-2026-05-21T22:49:07.6507304Z - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
-2026-05-21T22:49:07.6508196Z dist/player.html                                       0.83 kB │ gzip:   0.39 kB
-2026-05-21T22:49:07.6509050Z dist/assets/PluginSettings-Dkucshqk.css                0.22 kB │ gzip:   0.17 kB
-2026-05-21T22:49:07.6509985Z dist/assets/ServerDetail-B0OTuVCB.css                  0.23 kB │ gzip:   0.16 kB
-2026-05-21T22:49:07.6510827Z dist/assets/WebDAV-DZh0LxHW.css                        0.25 kB │ gzip:   0.20 kB
-2026-05-21T22:49:07.6511682Z dist/assets/Settings-BnDhDVzw.css                      0.38 kB │ gzip:   0.23 kB
-2026-05-21T22:49:07.6512627Z dist/assets/Files-CwL3Tvwi.css                         1.09 kB │ gzip:   0.41 kB
-2026-05-21T22:49:07.6513730Z dist/assets/FilePreview-Db8uPcna.css                   1.81 kB │ gzip:   0.63 kB
-2026-05-21T22:49:07.6514521Z dist/assets/StandalonePlayer-B4XzGnIN.css              1.81 kB │ gzip:   0.50 kB
-2026-05-21T22:49:07.6515369Z dist/assets/Tasks-JDnUYldL.css                         1.84 kB │ gzip:   0.53 kB
-2026-05-21T22:49:07.6516103Z dist/assets/DevLogs-ChDzmSPc.css                       3.57 kB │ gzip:   1.05 kB
-2026-05-21T22:49:07.6517036Z dist/assets/variables-2h-WFR0z.css                    38.85 kB │ gzip:   6.41 kB
-2026-05-21T22:49:07.6517805Z dist/assets/_plugin-vue_export-helper-BOai-rQB.js      0.08 kB │ gzip:   0.09 kB
-2026-05-21T22:49:07.6518552Z dist/assets/useToast-z6AJuz6y.js                       0.25 kB │ gzip:   0.21 kB
-2026-05-21T22:49:07.6519288Z dist/assets/p-CneGxKsZ-CCCtCT9p.js                     0.42 kB │ gzip:   0.29 kB
-2026-05-21T22:49:07.6520028Z dist/assets/web-CN-1NHwz.js                            0.53 kB │ gzip:   0.30 kB
-2026-05-21T22:49:07.6521224Z dist/assets/p-Cz5nLPGT-M2TQexUX.js                     0.58 kB │ gzip:   0.41 kB
-2026-05-21T22:49:07.6522079Z dist/assets/p-BgwEQWW6-DOrgYn2m.js                     1.53 kB │ gzip:   0.77 kB
-2026-05-21T22:49:07.6522981Z dist/assets/useServerStatus-BDX_1JZ8.js                1.91 kB │ gzip:   0.84 kB
-2026-05-21T22:49:07.6523843Z dist/assets/AboutDetail-BDCE3wiO.js                    3.27 kB │ gzip:   1.01 kB
-2026-05-21T22:49:07.6524693Z dist/assets/FilePreview-Ck0lQdts.js                    4.09 kB │ gzip:   1.58 kB
-2026-05-21T22:49:07.6525532Z dist/assets/p-CEmXdzGo-hpFanYQE.js                     4.63 kB │ gzip:   1.99 kB
-2026-05-21T22:49:07.6526380Z dist/assets/CacheDetail-BAaBTN1e.js                    4.90 kB │ gzip:   1.27 kB
-2026-05-21T22:49:07.6527386Z dist/assets/ServerDetail-BVs27Nt2.js                   4.92 kB │ gzip:   1.63 kB
-2026-05-21T22:49:07.6528260Z dist/assets/player-Co84odwY.js                         5.10 kB │ gzip:   1.99 kB
-2026-05-21T22:49:07.6529152Z dist/assets/PluginSettings-Dn43q71I.js                 5.60 kB │ gzip:   1.98 kB
-2026-05-21T22:49:07.6530039Z dist/assets/WebDAV-DNeFt5Pv.js                         5.86 kB │ gzip:   1.84 kB
-2026-05-21T22:49:07.6530878Z dist/assets/DevLogs-CEMoEZbc.js                        6.90 kB │ gzip:   2.62 kB
-2026-05-21T22:49:07.6531690Z dist/assets/main-Bt-9f2hx.js                           7.07 kB │ gzip:   2.59 kB
-2026-05-21T22:49:07.6532510Z dist/assets/useConfig-ByqcZ-ld.js                      8.96 kB │ gzip:   3.22 kB
-2026-05-21T22:49:07.6533406Z dist/assets/Tasks-PHnRufkA.js                         10.29 kB │ gzip:   3.11 kB
-2026-05-21T22:49:07.6534211Z dist/assets/Settings-C15TfzfW.js                      10.30 kB │ gzip:   2.98 kB
-2026-05-21T22:49:07.6535095Z dist/assets/Files-BsUoHQtW.js                         10.59 kB │ gzip:   3.50 kB
-2026-05-21T22:49:07.6536038Z dist/assets/StandalonePlayer-DMN5rBbl.js             149.03 kB │ gzip:  39.52 kB
-2026-05-21T22:49:07.6537219Z dist/assets/variables-Co-jDXuX.js                  1,271.57 kB │ gzip: 289.63 kB
-2026-05-21T22:49:07.6537605Z 
-2026-05-21T22:49:07.6537895Z [32m✓ built in 465ms[39m
+﻿2026-05-21T23:45:48.7983041Z ##[group]Run cd app/encv-mobile && npm install && npm run build
+2026-05-21T23:45:48.7983559Z [36;1mcd app/encv-mobile && npm install && npm run build[0m
+2026-05-21T23:45:48.8021039Z shell: /usr/bin/bash -e {0}
+2026-05-21T23:45:48.8021298Z env:
+2026-05-21T23:45:48.8021622Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-21T23:45:48.8022109Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-21T23:45:48.8022501Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-21T23:45:48.8022780Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-21T23:45:48.8023048Z ##[endgroup]
+2026-05-21T23:45:53.5884815Z 
+2026-05-21T23:45:53.5885669Z added 158 packages, and audited 159 packages in 5s
+2026-05-21T23:45:53.5886042Z 
+2026-05-21T23:45:53.5886512Z 23 packages are looking for funding
+2026-05-21T23:45:53.5886991Z   run `npm fund` for details
+2026-05-21T23:45:53.5895227Z 
+2026-05-21T23:45:53.5895685Z found 0 vulnerabilities
+2026-05-21T23:45:53.7327525Z 
+2026-05-21T23:45:53.7328493Z > encv-go-mobile@1.0.0 build
+2026-05-21T23:45:53.7328953Z > vue-tsc --noEmit && vite build
+2026-05-21T23:45:53.7329140Z 
+2026-05-21T23:45:58.3769338Z [36mvite v8.0.13 [32mbuilding client environment for production...[36m[39m
+2026-05-21T23:45:58.4394969Z [2K
+2026-05-21T23:45:58.8128735Z transforming...✓ 259 modules transformed.
+2026-05-21T23:45:58.8807741Z rendering chunks...
+2026-05-21T23:45:59.0454323Z computing gzip size...
+2026-05-21T23:45:59.0614298Z dist/index.html                                        0.47 kB │ gzip:   0.29 kB
+2026-05-21T23:45:59.0615429Z dist/player.html                                       0.83 kB │ gzip:   0.39 kB
+2026-05-21T23:45:59.0616761Z dist/assets/PluginSettings-Dkucshqk.css                0.22 kB │ gzip:   0.17 kB
+2026-05-21T23:45:59.0617990Z dist/assets/ServerDetail-B0OTuVCB.css                  0.23 kB │ gzip:   0.16 kB
+2026-05-21T23:45:59.0619210Z dist/assets/WebDAV-DZh0LxHW.css                        0.25 kB │ gzip:   0.20 kB
+2026-05-21T23:45:59.0620414Z dist/assets/Settings-BnDhDVzw.css                      0.38 kB │ gzip:   0.23 kB
+2026-05-21T23:45:59.0621580Z dist/assets/Files-CwL3Tvwi.css                         1.09 kB │ gzip:   0.41 kB
+2026-05-21T23:45:59.0622729Z dist/assets/FilePreview-Db8uPcna.css                   1.81 kB │ gzip:   0.63 kB
+2026-05-21T23:45:59.0623975Z dist/assets/StandalonePlayer-B4XzGnIN.css              1.81 kB │ gzip:   0.50 kB
+2026-05-21T23:45:59.0625214Z dist/assets/Tasks-JDnUYldL.css                         1.84 kB │ gzip:   0.53 kB
+2026-05-21T23:45:59.0626598Z dist/assets/DevLogs-ChDzmSPc.css                       3.57 kB │ gzip:   1.05 kB
+2026-05-21T23:45:59.0627767Z dist/assets/variables-2h-WFR0z.css                    38.85 kB │ gzip:   6.41 kB
+2026-05-21T23:45:59.0629011Z dist/assets/_plugin-vue_export-helper-BOai-rQB.js      0.08 kB │ gzip:   0.09 kB
+2026-05-21T23:45:59.0630284Z dist/assets/useToast-z6AJuz6y.js                       0.25 kB │ gzip:   0.21 kB
+2026-05-21T23:45:59.0631526Z dist/assets/p-CneGxKsZ-CCCtCT9p.js                     0.42 kB │ gzip:   0.29 kB
+2026-05-21T23:45:59.0632727Z dist/assets/web-CN-1NHwz.js                            0.53 kB │ gzip:   0.30 kB
+2026-05-21T23:45:59.0633878Z dist/assets/p-Cz5nLPGT-M2TQexUX.js                     0.58 kB │ gzip:   0.41 kB
+2026-05-21T23:45:59.0635451Z dist/assets/p-BgwEQWW6-DOrgYn2m.js                     1.53 kB │ gzip:   0.77 kB
+2026-05-21T23:45:59.0636893Z dist/assets/useServerStatus-BDX_1JZ8.js                1.91 kB │ gzip:   0.84 kB
+2026-05-21T23:45:59.0638353Z dist/assets/AboutDetail-BDCE3wiO.js                    3.27 kB │ gzip:   1.01 kB
+2026-05-21T23:45:59.0639630Z dist/assets/FilePreview-Ck0lQdts.js                    4.09 kB │ gzip:   1.58 kB
+2026-05-21T23:45:59.0640864Z dist/assets/p-CEmXdzGo-hpFanYQE.js                     4.63 kB │ gzip:   1.99 kB
+2026-05-21T23:45:59.0642070Z dist/assets/CacheDetail-BAaBTN1e.js                    4.90 kB │ gzip:   1.27 kB
+2026-05-21T23:45:59.0643175Z dist/assets/ServerDetail-BVs27Nt2.js                   4.92 kB │ gzip:   1.63 kB
+2026-05-21T23:45:59.0644740Z dist/assets/player-Co84odwY.js                         5.10 kB │ gzip:   1.99 kB
+2026-05-21T23:45:59.0645834Z dist/assets/PluginSettings-Dn43q71I.js                 5.60 kB │ gzip:   1.98 kB
+2026-05-21T23:45:59.0647145Z dist/assets/WebDAV-DNeFt5Pv.js                         5.86 kB │ gzip:   1.84 kB
+2026-05-21T23:45:59.0648289Z dist/assets/DevLogs-CEMoEZbc.js                        6.90 kB │ gzip:   2.62 kB
+2026-05-21T23:45:59.0649448Z dist/assets/main-Bt-9f2hx.js                           7.07 kB │ gzip:   2.59 kB
+2026-05-21T23:45:59.0650508Z dist/assets/useConfig-ByqcZ-ld.js                      8.96 kB │ gzip:   3.22 kB
+2026-05-21T23:45:59.0651764Z dist/assets/Tasks-PHnRufkA.js                         10.29 kB │ gzip:   3.11 kB
+2026-05-21T23:45:59.0652902Z dist/assets/Settings-C15TfzfW.js                      10.30 kB │ gzip:   2.98 kB
+2026-05-21T23:45:59.0653943Z dist/assets/Files-BsUoHQtW.js                         10.59 kB │ gzip:   3.50 kB
+2026-05-21T23:45:59.0655082Z dist/assets/StandalonePlayer-DMN5rBbl.js             149.03 kB │ gzip:  39.52 kB
+2026-05-21T23:45:59.0656192Z dist/assets/variables-Co-jDXuX.js                  1,271.57 kB │ gzip: 289.63 kB
+2026-05-21T23:45:59.0656788Z 
+2026-05-21T23:45:59.0659408Z [33m[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/views/PlayerSettings.vue is dynamically imported by src/router/player.ts but also statically imported by src/PlayerApp.vue?vue&type=script&setup=true&lang.ts, dynamic import will not move module into another chunk.
+2026-05-21T23:45:59.0660921Z [39m
+2026-05-21T23:45:59.0661406Z [33m[plugin builtin:vite-reporter] 
+2026-05-21T23:45:59.0662150Z (!) Some chunks are larger than 500 kB after minification. Consider:
+2026-05-21T23:45:59.0662919Z - Using dynamic import() to code-split the application
+2026-05-21T23:45:59.0664347Z - Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+2026-05-21T23:45:59.0665760Z - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+2026-05-21T23:45:59.0666776Z [32m✓ built in 686ms[39m

@@ -39,7 +39,7 @@ class EncvApplication : Application() {
                 LynxServiceCenter.inst().registerService(LynxImageService.getInstance())
                 LynxServiceCenter.inst().registerService(LynxLogService)
                 LynxServiceCenter.inst().registerService(LynxHttpService)
-                LynxServiceCenter.inst().registerService(LynxDevToolService())
+                LynxServiceCenter.inst().registerService(LynxDevToolService.INSTANCE)
                 Log.d(TAG, "initLynxService: services registered")
             } catch (e: Exception) {
                 Log.e(TAG, "initLynxService failed", e)

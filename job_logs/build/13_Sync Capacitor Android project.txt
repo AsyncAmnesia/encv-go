@@ -1,0 +1,159 @@
+﻿2026-05-21T23:46:01.8402892Z ##[group]Run cd app/encv-mobile
+2026-05-21T23:46:01.8403238Z [36;1mcd app/encv-mobile[0m
+2026-05-21T23:46:01.8403579Z [36;1mif [ -d "./android" ] && [ -f "./android/build.gradle" ]; then[0m
+2026-05-21T23:46:01.8403950Z [36;1m  npx cap sync android[0m
+2026-05-21T23:46:01.8404199Z [36;1melse[0m
+2026-05-21T23:46:01.8404504Z [36;1m  rm -rf ./android && npx cap add android && npx cap sync android[0m
+2026-05-21T23:46:01.8404858Z [36;1mfi[0m
+2026-05-21T23:46:01.8405073Z [36;1mecho "Android project ready:"[0m
+2026-05-21T23:46:01.8405384Z [36;1mls -la android/*.gradle android/app/*.gradle[0m
+2026-05-21T23:46:01.8405732Z [36;1mecho "=== Signing config in build.gradle ==="[0m
+2026-05-21T23:46:01.8406606Z [36;1mgrep -A8 'signingConfigs' app/encv-mobile/android/app/build.gradle || echo "WARNING: No signingConfigs found!"[0m
+2026-05-21T23:46:01.8407437Z [36;1mgrep 'signingConfig\|minifyEnabled' app/encv-mobile/android/app/build.gradle || echo "WARNING: No release signing found!"[0m
+2026-05-21T23:46:01.8442003Z shell: /usr/bin/bash -e {0}
+2026-05-21T23:46:01.8442267Z env:
+2026-05-21T23:46:01.8442575Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-21T23:46:01.8443070Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-21T23:46:01.8443470Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-21T23:46:01.8443894Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-21T23:46:01.8444177Z   ENCV_VERSION: 
+2026-05-21T23:46:01.8444392Z ##[endgroup]
+2026-05-21T23:46:02.5779606Z ✔ Adding native android project in android in 38.43ms
+2026-05-21T23:46:02.5780643Z ✔ add in 39.14ms
+2026-05-21T23:46:02.5979184Z ✔ Copying web assets from dist to android/app/src/main/assets/public in 5.98ms
+2026-05-21T23:46:02.5983110Z ✔ Creating capacitor.config.json in android/app/src/main/assets in 330.44μs
+2026-05-21T23:46:02.6023047Z ✔ copy android in 14.67ms
+2026-05-21T23:46:02.6082156Z ✔ Updating Android plugins in 1.66ms
+2026-05-21T23:46:02.6168395Z ✔ update android in 12.41ms
+2026-05-21T23:46:02.6492048Z encv-post-cap-sync: applying Android customizations...
+2026-05-21T23:46:02.6496800Z   patched /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build.gradle
+2026-05-21T23:46:02.6500254Z   [kotlin] applied kotlin-android via legacy apply
+2026-05-21T23:46:02.6500889Z   [jniLibs] added jniLibs.srcDirs
+2026-05-21T23:46:02.6501463Z   [packaging] added useLegacyPackaging = true
+2026-05-21T23:46:02.6501907Z   [diag] --- build.gradle key lines ---
+2026-05-21T23:46:02.6504242Z   [diag] L1: apply plugin: 'com.android.application'
+2026-05-21T23:46:02.6505234Z   [diag] L2: apply plugin: 'kotlin-android'
+2026-05-21T23:46:02.6505902Z   [diag] L6: jniLibs {
+2026-05-21T23:46:02.6508018Z   [diag] L7: useLegacyPackaging = true
+2026-05-21T23:46:02.6508740Z   [diag] L10: sourceSets {
+2026-05-21T23:46:02.6509493Z   [diag] L12: jniLibs.srcDirs = ['src/main/jniLibs']
+2026-05-21T23:46:02.6510280Z   [diag] L18: namespace = "com.encvgo.app"
+2026-05-21T23:46:02.6511283Z   [diag] L73: implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.0"
+2026-05-21T23:46:02.6512382Z   [diag] L90: apply plugin: 'com.google.gms.google-services'
+2026-05-21T23:46:02.6513691Z   [diag] L96: tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+2026-05-21T23:46:02.6514273Z   [diag] L97: kotlinOptions {
+2026-05-21T23:46:02.6514594Z   [diag] total: 101 lines
+2026-05-21T23:46:02.6515184Z   patched /home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/build.gradle
+2026-05-21T23:46:02.6519999Z   overlay: MainActivity.kt
+2026-05-21T23:46:02.6521739Z   overlay: GoProcessPlugin.kt
+2026-05-21T23:46:02.6523430Z   overlay: EncvGoService.kt
+2026-05-21T23:46:02.6525068Z   overlay: PlayerActivity.kt
+2026-05-21T23:46:02.6526809Z   overlay: PlayerActivityLynx.kt
+2026-05-21T23:46:02.6529569Z   overlay: PlayerActivityCapacitor.kt
+2026-05-21T23:46:02.6533830Z   overlay: MpvPlayerModule.kt
+2026-05-21T23:46:02.6540185Z   overlay: GoBackendModule.kt
+2026-05-21T23:46:02.6540902Z   overlay: EncvApplication.kt
+2026-05-21T23:46:02.6542095Z   overlay: PlayerTemplateProvider.kt
+2026-05-21T23:46:02.6543160Z   overlay: is/xyz/mpv/MPVLib.kt
+2026-05-21T23:46:02.6567307Z   jniLibs: arm64-v8a/libmpv.so
+2026-05-21T23:46:02.6568640Z   jniLibs: arm64-v8a/libplayer.so
+2026-05-21T23:46:02.6588908Z   jniLibs: armeabi-v7a/libmpv.so
+2026-05-21T23:46:02.6590187Z   jniLibs: armeabi-v7a/libplayer.so
+2026-05-21T23:46:02.6612734Z   jniLibs: x86/libmpv.so
+2026-05-21T23:46:02.6614234Z   jniLibs: x86/libplayer.so
+2026-05-21T23:46:02.6636516Z   jniLibs: x86_64/libmpv.so
+2026-05-21T23:46:02.6638119Z   jniLibs: x86_64/libplayer.so
+2026-05-21T23:46:02.6639740Z   overlay: layout/lynx_player_activity.xml
+2026-05-21T23:46:02.6640386Z   ensured jniLibs/arm64-v8a directory exists
+2026-05-21T23:46:02.6641331Z   overlay: AndroidManifest.xml
+2026-05-21T23:46:02.6642369Z   overlay: proguard-rules.pro
+2026-05-21T23:46:02.6643937Z   overlay: network_security_config.xml
+2026-05-21T23:46:02.6645321Z   verified: 1 MainActivity class declaration ✓
+2026-05-21T23:46:02.6646855Z   overlay: config.mobile.json → Android assets
+2026-05-21T23:46:02.6648708Z   created /home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/debug/AndroidManifest.xml
+2026-05-21T23:46:02.6649381Z   debug mode
+2026-05-21T23:46:02.6650011Z   pkg-ok: MainActivity.kt → com.encvgo.app
+2026-05-21T23:46:02.6650750Z   pkg-ok: GoProcessPlugin.kt → com.encvgo.app
+2026-05-21T23:46:02.6652000Z   pkg-ok: EncvGoService.kt → com.encvgo.app
+2026-05-21T23:46:02.6652711Z   pkg-ok: PlayerActivity.kt → com.encvgo.app
+2026-05-21T23:46:02.6653590Z   pkg-ok: PlayerActivityLynx.kt → com.encvgo.app
+2026-05-21T23:46:02.6654332Z   pkg-ok: MpvPlayerModule.kt → com.encvgo.app
+2026-05-21T23:46:02.6655049Z   pkg-ok: GoBackendModule.kt → com.encvgo.app
+2026-05-21T23:46:02.6655782Z   pkg-ok: EncvApplication.kt → com.encvgo.app
+2026-05-21T23:46:02.6656712Z   pkg-ok: PlayerTemplateProvider.kt → com.encvgo.app
+2026-05-21T23:46:02.6657183Z done
+2026-05-21T23:46:02.6726600Z ✔ Syncing Gradle in 180.19μs
+2026-05-21T23:46:02.6744628Z [success] android platform added!
+2026-05-21T23:46:02.6746210Z Follow the Developer Workflow guide to get building:
+2026-05-21T23:46:02.6747274Z https://capacitorjs.com/docs/basics/workflow
+2026-05-21T23:46:03.3695567Z ✔ Copying web assets from dist to android/app/src/main/assets/public in 9.07ms
+2026-05-21T23:46:03.3704235Z ✔ Creating capacitor.config.json in android/app/src/main/assets in 600.41μs
+2026-05-21T23:46:03.3744018Z ✔ copy android in 18.65ms
+2026-05-21T23:46:03.3807365Z ✔ Updating Android plugins in 1.71ms
+2026-05-21T23:46:03.3964615Z ✔ update android in 19.64ms
+2026-05-21T23:46:03.4282615Z encv-post-cap-sync: applying Android customizations...
+2026-05-21T23:46:03.4288231Z   [kotlin] kotlin-android already present
+2026-05-21T23:46:03.4288929Z   [diag] --- build.gradle key lines ---
+2026-05-21T23:46:03.4289978Z   [diag] L1: apply plugin: 'com.android.application'
+2026-05-21T23:46:03.4290741Z   [diag] L2: apply plugin: 'kotlin-android'
+2026-05-21T23:46:03.4291292Z   [diag] L6: jniLibs {
+2026-05-21T23:46:03.4292282Z   [diag] L7: useLegacyPackaging = true
+2026-05-21T23:46:03.4292846Z   [diag] L10: sourceSets {
+2026-05-21T23:46:03.4293622Z   [diag] L12: jniLibs.srcDirs = ['src/main/jniLibs']
+2026-05-21T23:46:03.4295655Z   [diag] L18: namespace = "com.encvgo.app"
+2026-05-21T23:46:03.4296662Z   [diag] L73: implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.0"
+2026-05-21T23:46:03.4297524Z   [diag] L90: apply plugin: 'com.google.gms.google-services'
+2026-05-21T23:46:03.4298272Z   [diag] L96: tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+2026-05-21T23:46:03.4298827Z   [diag] L97: kotlinOptions {
+2026-05-21T23:46:03.4299149Z   [diag] total: 101 lines
+2026-05-21T23:46:03.4311420Z   overlay: MainActivity.kt
+2026-05-21T23:46:03.4313131Z   overlay: GoProcessPlugin.kt
+2026-05-21T23:46:03.4314827Z   overlay: EncvGoService.kt
+2026-05-21T23:46:03.4316722Z   overlay: PlayerActivity.kt
+2026-05-21T23:46:03.4318315Z   overlay: PlayerActivityLynx.kt
+2026-05-21T23:46:03.4320209Z   overlay: PlayerActivityCapacitor.kt
+2026-05-21T23:46:03.4324657Z   overlay: MpvPlayerModule.kt
+2026-05-21T23:46:03.4326524Z   overlay: GoBackendModule.kt
+2026-05-21T23:46:03.4331874Z   overlay: EncvApplication.kt
+2026-05-21T23:46:03.4332704Z   overlay: PlayerTemplateProvider.kt
+2026-05-21T23:46:03.4333404Z   overlay: is/xyz/mpv/MPVLib.kt
+2026-05-21T23:46:03.4360814Z   jniLibs: arm64-v8a/libmpv.so
+2026-05-21T23:46:03.4361908Z   jniLibs: arm64-v8a/libplayer.so
+2026-05-21T23:46:03.4385664Z   jniLibs: armeabi-v7a/libmpv.so
+2026-05-21T23:46:03.4387106Z   jniLibs: armeabi-v7a/libplayer.so
+2026-05-21T23:46:03.4413479Z   jniLibs: x86/libmpv.so
+2026-05-21T23:46:03.4414814Z   jniLibs: x86/libplayer.so
+2026-05-21T23:46:03.4441170Z   jniLibs: x86_64/libmpv.so
+2026-05-21T23:46:03.4442393Z   jniLibs: x86_64/libplayer.so
+2026-05-21T23:46:03.4444314Z   overlay: layout/lynx_player_activity.xml
+2026-05-21T23:46:03.4445007Z   ensured jniLibs/arm64-v8a directory exists
+2026-05-21T23:46:03.4445750Z   overlay: AndroidManifest.xml
+2026-05-21T23:46:03.4447093Z   overlay: proguard-rules.pro
+2026-05-21T23:46:03.4448629Z   overlay: network_security_config.xml
+2026-05-21T23:46:03.4451007Z   verified: 1 MainActivity class declaration ✓
+2026-05-21T23:46:03.4452315Z   overlay: config.mobile.json → Android assets
+2026-05-21T23:46:03.4453963Z   created /home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/debug/AndroidManifest.xml
+2026-05-21T23:46:03.4454708Z   debug mode
+2026-05-21T23:46:03.4455195Z   pkg-ok: MainActivity.kt → com.encvgo.app
+2026-05-21T23:46:03.4455876Z   pkg-ok: GoProcessPlugin.kt → com.encvgo.app
+2026-05-21T23:46:03.4457741Z   pkg-ok: EncvGoService.kt → com.encvgo.app
+2026-05-21T23:46:03.4458304Z   pkg-ok: PlayerActivity.kt → com.encvgo.app
+2026-05-21T23:46:03.4458924Z   pkg-ok: PlayerActivityLynx.kt → com.encvgo.app
+2026-05-21T23:46:03.4459518Z   pkg-ok: MpvPlayerModule.kt → com.encvgo.app
+2026-05-21T23:46:03.4460069Z   pkg-ok: GoBackendModule.kt → com.encvgo.app
+2026-05-21T23:46:03.4460614Z   pkg-ok: EncvApplication.kt → com.encvgo.app
+2026-05-21T23:46:03.4461129Z   pkg-ok: PlayerTemplateProvider.kt → com.encvgo.app
+2026-05-21T23:46:03.4461436Z done
+2026-05-21T23:46:03.4544376Z [info] Sync finished in 0.104s
+2026-05-21T23:46:03.4834010Z Android project ready:
+2026-05-21T23:46:03.4851182Z -rw-r--r-- 1 runner runner 3773 May 21 23:46 android/app/build.gradle
+2026-05-21T23:46:03.4852294Z -rw-r--r-- 1 runner runner  370 May 21 23:46 android/app/capacitor.build.gradle
+2026-05-21T23:46:03.4853293Z -rw-r--r-- 1 runner runner  748 May 21 23:46 android/build.gradle
+2026-05-21T23:46:03.4854280Z -rw-r--r-- 1 runner runner  207 May 21 23:46 android/capacitor.settings.gradle
+2026-05-21T23:46:03.4855542Z -rw-r--r-- 1 runner runner  208 May 12 20:38 android/settings.gradle
+2026-05-21T23:46:03.4856569Z -rw-r--r-- 1 runner runner  498 May 12 20:38 android/variables.gradle
+2026-05-21T23:46:03.4857114Z === Signing config in build.gradle ===
+2026-05-21T23:46:03.4866711Z grep: app/encv-mobile/android/app/build.gradle: No such file or directory
+2026-05-21T23:46:03.4868724Z WARNING: No signingConfigs found!
+2026-05-21T23:46:03.4880950Z grep: app/encv-mobile/android/app/build.gradle: No such file or directory
+2026-05-21T23:46:03.4882940Z WARNING: No release signing found!

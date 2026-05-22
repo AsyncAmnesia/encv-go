@@ -15,7 +15,7 @@ curl -fSL -o "$AAR_TMP" "$AAR_URL"
 echo "setup-mpv-libs: extracting native libraries..."
 mkdir -p "$JNI_DIR"
 
-for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+for abi in arm64-v8a; do
     echo "  extracting $abi..."
     mkdir -p "$JNI_DIR/$abi"
     unzip -o -j "$AAR_TMP" "jni/$abi/libmpv.so" "jni/$abi/libplayer.so" -d "$JNI_DIR/$abi" 2>/dev/null || true

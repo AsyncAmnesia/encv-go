@@ -1,0 +1,100 @@
+﻿2026-05-21T23:46:03.4912178Z ##[group]Run mkdir -p app/encv-mobile/android/app/src/main/assets
+2026-05-21T23:46:03.4912705Z [36;1mmkdir -p app/encv-mobile/android/app/src/main/assets[0m
+2026-05-21T23:46:03.4913149Z [36;1mmkdir -p app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a[0m
+2026-05-21T23:46:03.4913747Z [36;1mcp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a/libencv-go.so[0m
+2026-05-21T23:46:03.4914468Z [36;1mcp app/encv-mobile/assets/config.mobile.json app/encv-mobile/android/app/src/main/assets/config.mobile.json[0m
+2026-05-21T23:46:03.4915205Z [36;1mcp app/encv-mobile/android-overlay/gradle.properties app/encv-mobile/android/gradle.properties[0m
+2026-05-21T23:46:03.4915687Z [36;1mecho "Assets:"[0m
+2026-05-21T23:46:03.4915989Z [36;1mls -lhR app/encv-mobile/android/app/src/main/assets/[0m
+2026-05-21T23:46:03.4916724Z [36;1mecho "JNI libs:"[0m
+2026-05-21T23:46:03.4917033Z [36;1mls -lhR app/encv-mobile/android/app/src/main/jniLibs/[0m
+2026-05-21T23:46:03.4917359Z [36;1mecho "Release config:"[0m
+2026-05-21T23:46:03.4917691Z [36;1mls -lh app/encv-mobile/android/gradle.properties[0m
+2026-05-21T23:46:03.4953819Z shell: /usr/bin/bash -e {0}
+2026-05-21T23:46:03.4954071Z env:
+2026-05-21T23:46:03.4954389Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-21T23:46:03.4954900Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-21T23:46:03.4955297Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-21T23:46:03.4955598Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-21T23:46:03.4955877Z ##[endgroup]
+2026-05-21T23:46:03.5161460Z Assets:
+2026-05-21T23:46:03.5179960Z app/encv-mobile/android/app/src/main/assets/:
+2026-05-21T23:46:03.5180518Z total 16K
+2026-05-21T23:46:03.5181288Z -rw-r--r-- 1 runner runner  117 May 21 23:46 capacitor.config.json
+2026-05-21T23:46:03.5182307Z -rw-r--r-- 1 runner runner    3 May 21 23:46 capacitor.plugins.json
+2026-05-21T23:46:03.5183579Z -rw-r--r-- 1 runner runner  415 May 21 23:46 config.mobile.json
+2026-05-21T23:46:03.5184456Z drwxr-xr-x 3 runner runner 4.0K May 21 23:46 public
+2026-05-21T23:46:03.5185036Z 
+2026-05-21T23:46:03.5185499Z app/encv-mobile/android/app/src/main/assets/public:
+2026-05-21T23:46:03.5186006Z total 12K
+2026-05-21T23:46:03.5186963Z drwxr-xr-x 2 runner runner 4.0K May 21 23:46 assets
+2026-05-21T23:46:03.5187770Z -rw-r--r-- 1 runner runner    0 May 21 23:46 cordova.js
+2026-05-21T23:46:03.5188705Z -rw-r--r-- 1 runner runner    0 May 21 23:46 cordova_plugins.js
+2026-05-21T23:46:03.5189521Z -rw-r--r-- 1 runner runner  474 May 21 23:46 index.html
+2026-05-21T23:46:03.5190328Z -rw-r--r-- 1 runner runner  834 May 21 23:46 player.html
+2026-05-21T23:46:03.5190716Z 
+2026-05-21T23:46:03.5191210Z app/encv-mobile/android/app/src/main/assets/public/assets:
+2026-05-21T23:46:03.5191769Z total 1.6M
+2026-05-21T23:46:03.5192543Z -rw-r--r-- 1 runner runner 3.2K May 21 23:46 AboutDetail-BDCE3wiO.js
+2026-05-21T23:46:03.5193582Z -rw-r--r-- 1 runner runner 4.8K May 21 23:46 CacheDetail-BAaBTN1e.js
+2026-05-21T23:46:03.5194563Z -rw-r--r-- 1 runner runner 6.8K May 21 23:46 DevLogs-CEMoEZbc.js
+2026-05-21T23:46:03.5195499Z -rw-r--r-- 1 runner runner 3.5K May 21 23:46 DevLogs-ChDzmSPc.css
+2026-05-21T23:46:03.5196685Z -rw-r--r-- 1 runner runner 4.0K May 21 23:46 FilePreview-Ck0lQdts.js
+2026-05-21T23:46:03.5197743Z -rw-r--r-- 1 runner runner 1.8K May 21 23:46 FilePreview-Db8uPcna.css
+2026-05-21T23:46:03.5198684Z -rw-r--r-- 1 runner runner  11K May 21 23:46 Files-BsUoHQtW.js
+2026-05-21T23:46:03.5199590Z -rw-r--r-- 1 runner runner 1.1K May 21 23:46 Files-CwL3Tvwi.css
+2026-05-21T23:46:03.5200880Z -rw-r--r-- 1 runner runner  224 May 21 23:46 PluginSettings-Dkucshqk.css
+2026-05-21T23:46:03.5202000Z -rw-r--r-- 1 runner runner 5.5K May 21 23:46 PluginSettings-Dn43q71I.js
+2026-05-21T23:46:03.5203028Z -rw-r--r-- 1 runner runner  235 May 21 23:46 ServerDetail-B0OTuVCB.css
+2026-05-21T23:46:03.5204032Z -rw-r--r-- 1 runner runner 4.9K May 21 23:46 ServerDetail-BVs27Nt2.js
+2026-05-21T23:46:03.5205023Z -rw-r--r-- 1 runner runner  381 May 21 23:46 Settings-BnDhDVzw.css
+2026-05-21T23:46:03.5206561Z -rw-r--r-- 1 runner runner  11K May 21 23:46 Settings-C15TfzfW.js
+2026-05-21T23:46:03.5207611Z -rw-r--r-- 1 runner runner 1.8K May 21 23:46 StandalonePlayer-B4XzGnIN.css
+2026-05-21T23:46:03.5208704Z -rw-r--r-- 1 runner runner 146K May 21 23:46 StandalonePlayer-DMN5rBbl.js
+2026-05-21T23:46:03.5209681Z -rw-r--r-- 1 runner runner 1.8K May 21 23:46 Tasks-JDnUYldL.css
+2026-05-21T23:46:03.5210567Z -rw-r--r-- 1 runner runner  11K May 21 23:46 Tasks-PHnRufkA.js
+2026-05-21T23:46:03.5211466Z -rw-r--r-- 1 runner runner 5.8K May 21 23:46 WebDAV-DNeFt5Pv.js
+2026-05-21T23:46:03.5212380Z -rw-r--r-- 1 runner runner  257 May 21 23:46 WebDAV-DZh0LxHW.css
+2026-05-21T23:46:03.5213458Z -rw-r--r-- 1 runner runner   84 May 21 23:46 _plugin-vue_export-helper-BOai-rQB.js
+2026-05-21T23:46:03.5214457Z -rw-r--r-- 1 runner runner 7.0K May 21 23:46 main-Bt-9f2hx.js
+2026-05-21T23:46:03.5215445Z -rw-r--r-- 1 runner runner 1.5K May 21 23:46 p-BgwEQWW6-DOrgYn2m.js
+2026-05-21T23:46:03.5216587Z -rw-r--r-- 1 runner runner 4.6K May 21 23:46 p-CEmXdzGo-hpFanYQE.js
+2026-05-21T23:46:03.5217546Z -rw-r--r-- 1 runner runner  422 May 21 23:46 p-CneGxKsZ-CCCtCT9p.js
+2026-05-21T23:46:03.5218532Z -rw-r--r-- 1 runner runner  586 May 21 23:46 p-Cz5nLPGT-M2TQexUX.js
+2026-05-21T23:46:03.5219476Z -rw-r--r-- 1 runner runner 5.0K May 21 23:46 player-Co84odwY.js
+2026-05-21T23:46:03.5220402Z -rw-r--r-- 1 runner runner 8.8K May 21 23:46 useConfig-ByqcZ-ld.js
+2026-05-21T23:46:03.5221406Z -rw-r--r-- 1 runner runner 1.9K May 21 23:46 useServerStatus-BDX_1JZ8.js
+2026-05-21T23:46:03.5222372Z -rw-r--r-- 1 runner runner  258 May 21 23:46 useToast-z6AJuz6y.js
+2026-05-21T23:46:03.5223304Z -rw-r--r-- 1 runner runner  38K May 21 23:46 variables-2h-WFR0z.css
+2026-05-21T23:46:03.5224223Z -rw-r--r-- 1 runner runner 1.3M May 21 23:46 variables-Co-jDXuX.js
+2026-05-21T23:46:03.5225095Z -rw-r--r-- 1 runner runner  539 May 21 23:46 web-CN-1NHwz.js
+2026-05-21T23:46:03.5225626Z JNI libs:
+2026-05-21T23:46:03.5226206Z app/encv-mobile/android/app/src/main/jniLibs/:
+2026-05-21T23:46:03.5227141Z total 16K
+2026-05-21T23:46:03.5227780Z drwxr-xr-x 2 runner runner 4.0K May 21 23:46 arm64-v8a
+2026-05-21T23:46:03.5228606Z drwxr-xr-x 2 runner runner 4.0K May 21 23:46 armeabi-v7a
+2026-05-21T23:46:03.5229521Z drwxr-xr-x 2 runner runner 4.0K May 21 23:46 x86
+2026-05-21T23:46:03.5230264Z drwxr-xr-x 2 runner runner 4.0K May 21 23:46 x86_64
+2026-05-21T23:46:03.5230598Z 
+2026-05-21T23:46:03.5231090Z app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a:
+2026-05-21T23:46:03.5231604Z total 29M
+2026-05-21T23:46:03.5232252Z -rwxr-xr-x 1 runner runner  23M May 21 23:46 libencv-go.so
+2026-05-21T23:46:03.5233060Z -rw-r--r-- 1 runner runner 5.6M May 21 23:46 libmpv.so
+2026-05-21T23:46:03.5233847Z -rw-r--r-- 1 runner runner  34K May 21 23:46 libplayer.so
+2026-05-21T23:46:03.5234205Z 
+2026-05-21T23:46:03.5234681Z app/encv-mobile/android/app/src/main/jniLibs/armeabi-v7a:
+2026-05-21T23:46:03.5235024Z total 5.1M
+2026-05-21T23:46:03.5235394Z -rw-r--r-- 1 runner runner 5.1M May 21 23:46 libmpv.so
+2026-05-21T23:46:03.5235865Z -rw-r--r-- 1 runner runner  24K May 21 23:46 libplayer.so
+2026-05-21T23:46:03.5236085Z 
+2026-05-21T23:46:03.5236565Z app/encv-mobile/android/app/src/main/jniLibs/x86:
+2026-05-21T23:46:03.5236882Z total 5.8M
+2026-05-21T23:46:03.5237233Z -rw-r--r-- 1 runner runner 5.7M May 21 23:46 libmpv.so
+2026-05-21T23:46:03.5237688Z -rw-r--r-- 1 runner runner  29K May 21 23:46 libplayer.so
+2026-05-21T23:46:03.5237903Z 
+2026-05-21T23:46:03.5238160Z app/encv-mobile/android/app/src/main/jniLibs/x86_64:
+2026-05-21T23:46:03.5238457Z total 5.8M
+2026-05-21T23:46:03.5238805Z -rw-r--r-- 1 runner runner 5.7M May 21 23:46 libmpv.so
+2026-05-21T23:46:03.5239260Z -rw-r--r-- 1 runner runner  33K May 21 23:46 libplayer.so
+2026-05-21T23:46:03.5239583Z Release config:
+2026-05-21T23:46:03.5240179Z -rw-r--r-- 1 runner runner 368 May 21 23:46 app/encv-mobile/android/gradle.properties
