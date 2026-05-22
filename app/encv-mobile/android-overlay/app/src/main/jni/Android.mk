@@ -1,7 +1,8 @@
 LOCAL_PATH := $(call my-dir)
 
 # Prebuilt shared libraries from AAR (extracted to jniLibs/)
-PREBUILT_DIR := $(LOCAL_PATH)/../jniLibs/arm64-v8a
+# Use abspath to avoid NDK's double jni/ prefix resolution issue
+PREBUILT_DIR := $(abspath $(LOCAL_PATH)/../jniLibs/arm64-v8a)
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := libswresample
