@@ -50,6 +50,26 @@ syncKtFiles(
   ''
 )
 
+let javaCleaned = 0
+function cleanConflictingJava(ktDir) {
+  if (!existsSync(ktDir)) return
+  for (const entry of readdirSync(ktDir)) {
+    const full = join(ktDir, entry)
+    if (statSync(full).isDirectory()) {
+      cleanConflictingJava(full)
+    } else if (entry.endsWith('.kt')) {
+      const javaFile = join(ktDir, entry.replace(/\.kt$/, '.java'))
+      if (existsSync(javaFile)) {
+        rmSync(javaFile)
+        javaCleaned++
+        console.log(`  clean: removed conflicting ${entry.replace(/\.kt$/, '.java')}`)
+      }
+    }
+  }
+}
+cleanConflictingJava(JAVA_DIR)
+if (javaCleaned > 0) console.log(`  clean: ${javaCleaned} conflicting .java files removed`)
+
 console.log(`  kt: ${ktFiles.length} files synced`)
 
 const overlayJni = join(OVERLAY_DIR, 'app', 'src', 'main', 'jniLibs')
