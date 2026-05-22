@@ -1,34 +1,34 @@
-﻿2026-05-22T01:09:30.6110958Z ##[group]Run cd app/encv-mobile/lynx-player && npm install && npm run build
-2026-05-22T01:09:30.6111850Z [36;1mcd app/encv-mobile/lynx-player && npm install && npm run build[0m
-2026-05-22T01:09:30.6160743Z shell: /usr/bin/bash -e {0}
-2026-05-22T01:09:30.6161173Z env:
-2026-05-22T01:09:30.6161703Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
-2026-05-22T01:09:30.6162571Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
-2026-05-22T01:09:30.6163285Z   ANDROID_HOME: /usr/local/lib/android/sdk
-2026-05-22T01:09:30.6163800Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-2026-05-22T01:09:30.6164277Z ##[endgroup]
-2026-05-22T01:09:37.3600896Z 
-2026-05-22T01:09:37.3602199Z added 374 packages, and audited 375 packages in 7s
-2026-05-22T01:09:37.3602674Z 
-2026-05-22T01:09:37.3602920Z 107 packages are looking for funding
-2026-05-22T01:09:37.3603328Z   run `npm fund` for details
-2026-05-22T01:09:37.3637154Z 
-2026-05-22T01:09:37.3637946Z 4 vulnerabilities (3 moderate, 1 high)
-2026-05-22T01:09:37.3638711Z 
-2026-05-22T01:09:37.3639389Z Some issues need review, and may require choosing
-2026-05-22T01:09:37.3640530Z a different dependency.
-2026-05-22T01:09:37.3640988Z 
-2026-05-22T01:09:37.3641428Z Run `npm audit` for details.
-2026-05-22T01:09:37.4866049Z 
-2026-05-22T01:09:37.4866855Z > encv-lynx-player@1.0.0 build
-2026-05-22T01:09:37.4867371Z > rspeedy build
-2026-05-22T01:09:37.4867639Z 
-2026-05-22T01:09:37.5758447Z 
-2026-05-22T01:09:37.5762243Z   Rspeedy v0.14.4 (Rsbuild v1.7.5, Rspack v1.7.11)
-2026-05-22T01:09:37.5762606Z 
-2026-05-22T01:09:38.4291381Z info    build started...
-2026-05-22T01:09:39.6371459Z ready   built in [1m1.21[22m s
-2026-05-22T01:09:39.6384798Z 
-2026-05-22T01:09:39.6385440Z [34mFile (lynx)               Size      [39m
-2026-05-22T01:09:39.6386362Z [2mdist/[22m[35mplayer.lynx.bundle[39m   84.3 kB
-2026-05-22T01:09:39.6386759Z 
+﻿2026-05-22T05:59:24.1809872Z ##[group]Run cd app/encv-mobile/lynx-player && npm install && npm run build
+2026-05-22T05:59:24.1811126Z [36;1mcd app/encv-mobile/lynx-player && npm install && npm run build[0m
+2026-05-22T05:59:24.1845425Z shell: /usr/bin/bash -e {0}
+2026-05-22T05:59:24.1845828Z env:
+2026-05-22T05:59:24.1846177Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T05:59:24.1846679Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T05:59:24.1847084Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-22T05:59:24.1847358Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-22T05:59:24.1847612Z ##[endgroup]
+2026-05-22T05:59:31.6990801Z 
+2026-05-22T05:59:31.6995420Z added 374 packages, and audited 375 packages in 7s
+2026-05-22T05:59:31.6996014Z 
+2026-05-22T05:59:31.6996396Z 107 packages are looking for funding
+2026-05-22T05:59:31.6997245Z   run `npm fund` for details
+2026-05-22T05:59:31.7035635Z 
+2026-05-22T05:59:31.7036168Z 4 vulnerabilities (3 moderate, 1 high)
+2026-05-22T05:59:31.7036601Z 
+2026-05-22T05:59:31.7037101Z Some issues need review, and may require choosing
+2026-05-22T05:59:31.7037786Z a different dependency.
+2026-05-22T05:59:31.7038294Z 
+2026-05-22T05:59:31.7038600Z Run `npm audit` for details.
+2026-05-22T05:59:31.8248888Z 
+2026-05-22T05:59:31.8249687Z > encv-lynx-player@1.0.0 build
+2026-05-22T05:59:31.8250282Z > rspeedy build
+2026-05-22T05:59:31.8250872Z 
+2026-05-22T05:59:31.9123843Z 
+2026-05-22T05:59:31.9128589Z   Rspeedy v0.14.4 (Rsbuild v1.7.5, Rspack v1.7.11)
+2026-05-22T05:59:31.9129168Z 
+2026-05-22T05:59:32.7781598Z info    build started...
+2026-05-22T05:59:34.0222162Z ready   built in [1m1.24[22m s
+2026-05-22T05:59:34.0235883Z 
+2026-05-22T05:59:34.0236466Z [34mFile (lynx)               Size       [39m
+2026-05-22T05:59:34.0237213Z [2mdist/[22m[35mplayer.lynx.bundle[39m   100.5 kB
+2026-05-22T05:59:34.0237474Z 

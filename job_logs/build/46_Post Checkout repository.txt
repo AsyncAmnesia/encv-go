@@ -1,10 +1,10 @@
-﻿2026-05-22T01:11:43.4287611Z Post job cleanup.
-2026-05-22T01:11:43.5304567Z [command]/usr/bin/git version
-2026-05-22T01:11:43.5340746Z git version 2.54.0
-2026-05-22T01:11:43.5384525Z Temporarily overriding HOME='/home/runner/work/_temp/c7027194-0c27-4387-a4ea-1488b114e241' before making global git config changes
-2026-05-22T01:11:43.5386193Z Adding repository directory to the temporary git global config as a safe directory
-2026-05-22T01:11:43.5397591Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/encv-go/encv-go
-2026-05-22T01:11:43.5434490Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
-2026-05-22T01:11:43.5468476Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
-2026-05-22T01:11:43.5698019Z fatal: No url found for submodule path 'Sillot-KMP' in .gitmodules
-2026-05-22T01:11:43.5727378Z ##[warning]The process '/usr/bin/git' failed with exit code 128
+﻿2026-05-22T06:00:30.8453420Z Post job cleanup.
+2026-05-22T06:00:30.9453257Z [command]/usr/bin/git version
+2026-05-22T06:00:30.9490734Z git version 2.54.0
+2026-05-22T06:00:30.9537563Z Temporarily overriding HOME='/home/runner/work/_temp/500ae993-5233-4337-ad16-bb6698a61183' before making global git config changes
+2026-05-22T06:00:30.9539357Z Adding repository directory to the temporary git global config as a safe directory
+2026-05-22T06:00:30.9551053Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/encv-go/encv-go
+2026-05-22T06:00:30.9587780Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-05-22T06:00:30.9622451Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-05-22T06:00:30.9838742Z fatal: No url found for submodule path 'Sillot-KMP' in .gitmodules
+2026-05-22T06:00:30.9868486Z ##[warning]The process '/usr/bin/git' failed with exit code 128

@@ -1,50 +1,54 @@
-﻿2026-05-22T01:09:43.7138971Z ##[group]Run echo "=== build.gradle kotlin/sourceSets/namespace ==="
-2026-05-22T01:09:43.7139503Z [36;1mecho "=== build.gradle kotlin/sourceSets/namespace ==="[0m
-2026-05-22T01:09:43.7140176Z [36;1mgrep -n "kotlin\|sourceSets\|namespace\|apply plugin.*kotlin\|plugins\s*{" app/encv-mobile/android/app/build.gradle || true[0m
-2026-05-22T01:09:43.7140781Z [36;1mecho "=== Source .kt files ==="[0m
-2026-05-22T01:09:43.7141369Z [36;1mfind app/encv-mobile/android/app/src/main/java -name "*.kt" -type f -exec sh -c 'echo "  {} ($(wc -l < {}) lines)"; head -1 {}' \;[0m
-2026-05-22T01:09:43.7141970Z [36;1mecho "=== AndroidManifest activity ==="[0m
-2026-05-22T01:09:43.7142528Z [36;1mgrep -n "activity\|android:name" app/encv-mobile/android/app/src/main/AndroidManifest.xml | head -5[0m
-2026-05-22T01:09:43.7176402Z shell: /usr/bin/bash -e {0}
-2026-05-22T01:09:43.7176689Z env:
-2026-05-22T01:09:43.7177031Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
-2026-05-22T01:09:43.7177565Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
-2026-05-22T01:09:43.7178021Z   ANDROID_HOME: /usr/local/lib/android/sdk
-2026-05-22T01:09:43.7178347Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-2026-05-22T01:09:43.7178767Z ##[endgroup]
-2026-05-22T01:09:43.7234582Z === build.gradle kotlin/sourceSets/namespace ===
-2026-05-22T01:09:43.7249782Z 2:apply plugin: 'kotlin-android'
-2026-05-22T01:09:43.7250293Z 14:    sourceSets {
-2026-05-22T01:09:43.7250678Z 22:    namespace = "com.encvgo.app"
-2026-05-22T01:09:43.7251246Z 77:    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.0"
-2026-05-22T01:09:43.7252218Z 100:tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-2026-05-22T01:09:43.7252777Z 101:    kotlinOptions {
-2026-05-22T01:09:43.7253108Z === Source .kt files ===
-2026-05-22T01:09:43.7289514Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerActivityLynx.kt (304 lines)
-2026-05-22T01:09:43.7296326Z package com.encvgo.app
-2026-05-22T01:09:43.7317932Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerActivityCapacitor.kt (315 lines)
-2026-05-22T01:09:43.7324256Z package com.encvgo.app
-2026-05-22T01:09:43.7345278Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvApplication.kt (66 lines)
-2026-05-22T01:09:43.7351820Z package com.encvgo.app
-2026-05-22T01:09:43.7372800Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt (540 lines)
-2026-05-22T01:09:43.7379886Z package com.encvgo.app
-2026-05-22T01:09:43.7400563Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt (148 lines)
-2026-05-22T01:09:43.7407107Z package com.encvgo.app
-2026-05-22T01:09:43.7428594Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt (257 lines)
-2026-05-22T01:09:43.7435461Z package com.encvgo.app
-2026-05-22T01:09:43.7456203Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoBackendModule.kt (146 lines)
-2026-05-22T01:09:43.7462681Z package com.encvgo.app
-2026-05-22T01:09:43.7483843Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/MpvPlayerModule.kt (411 lines)
-2026-05-22T01:09:43.7490497Z package com.encvgo.app
-2026-05-22T01:09:43.7511708Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerTemplateProvider.kt (43 lines)
-2026-05-22T01:09:43.7518581Z package com.encvgo.app
-2026-05-22T01:09:43.7539514Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerActivity.kt (22 lines)
-2026-05-22T01:09:43.7546190Z package com.encvgo.app
-2026-05-22T01:09:43.7568097Z   app/encv-mobile/android/app/src/main/java/is/xyz/mpv/MPVLib.kt (183 lines)
-2026-05-22T01:09:43.7575091Z package `is`.xyz.mpv
-2026-05-22T01:09:43.7580682Z === AndroidManifest activity ===
-2026-05-22T01:09:43.7595731Z 5:    <uses-permission android:name="android.permission.INTERNET" />
-2026-05-22T01:09:43.7597007Z 6:    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-2026-05-22T01:09:43.7599059Z 8:        android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"
-2026-05-22T01:09:43.7600360Z 11:        android:name="android.permission.POST_NOTIFICATIONS"
-2026-05-22T01:09:43.7601948Z 13:    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+﻿2026-05-22T05:59:37.8782418Z ##[group]Run echo "=== build.gradle kotlin/sourceSets/namespace ==="
+2026-05-22T05:59:37.8782927Z [36;1mecho "=== build.gradle kotlin/sourceSets/namespace ==="[0m
+2026-05-22T05:59:37.8783573Z [36;1mgrep -n "kotlin\|sourceSets\|namespace\|apply plugin.*kotlin\|plugins\s*{" app/encv-mobile/android/app/build.gradle || true[0m
+2026-05-22T05:59:37.8784161Z [36;1mecho "=== Source .kt files ==="[0m
+2026-05-22T05:59:37.8784725Z [36;1mfind app/encv-mobile/android/app/src/main/java -name "*.kt" -type f -exec sh -c 'echo "  {} ($(wc -l < {}) lines)"; head -1 {}' \;[0m
+2026-05-22T05:59:37.8785348Z [36;1mecho "=== AndroidManifest activity ==="[0m
+2026-05-22T05:59:37.8785878Z [36;1mgrep -n "activity\|android:name" app/encv-mobile/android/app/src/main/AndroidManifest.xml | head -5[0m
+2026-05-22T05:59:37.8817619Z shell: /usr/bin/bash -e {0}
+2026-05-22T05:59:37.8817871Z env:
+2026-05-22T05:59:37.8818181Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T05:59:37.8818682Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-22T05:59:37.8819117Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-22T05:59:37.8819408Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-22T05:59:37.8819671Z ##[endgroup]
+2026-05-22T05:59:37.8872903Z === build.gradle kotlin/sourceSets/namespace ===
+2026-05-22T05:59:37.8887053Z 2:apply plugin: 'kotlin-android'
+2026-05-22T05:59:37.8887579Z 14:    sourceSets {
+2026-05-22T05:59:37.8887970Z 22:    namespace = "com.encvgo.app"
+2026-05-22T05:59:37.8888574Z 77:    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.0"
+2026-05-22T05:59:37.8889769Z 100:tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+2026-05-22T05:59:37.8890284Z 101:    kotlinOptions {
+2026-05-22T05:59:37.8890804Z === Source .kt files ===
+2026-05-22T05:59:37.8918465Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/LogRelay.kt (53 lines)
+2026-05-22T05:59:37.8925094Z package com.encvgo.app
+2026-05-22T05:59:37.8944974Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerActivityLynx.kt (394 lines)
+2026-05-22T05:59:37.8951380Z package com.encvgo.app
+2026-05-22T05:59:37.8970929Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerActivityCapacitor.kt (315 lines)
+2026-05-22T05:59:37.8976715Z package com.encvgo.app
+2026-05-22T05:59:37.8998098Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvApplication.kt (66 lines)
+2026-05-22T05:59:37.9004617Z package com.encvgo.app
+2026-05-22T05:59:37.9024444Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt (540 lines)
+2026-05-22T05:59:37.9030678Z package com.encvgo.app
+2026-05-22T05:59:37.9050113Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt (148 lines)
+2026-05-22T05:59:37.9056272Z package com.encvgo.app
+2026-05-22T05:59:37.9075740Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt (257 lines)
+2026-05-22T05:59:37.9082131Z package com.encvgo.app
+2026-05-22T05:59:37.9101613Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/LogBridgeModule.kt (17 lines)
+2026-05-22T05:59:37.9107636Z package com.encvgo.app
+2026-05-22T05:59:37.9127688Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoBackendModule.kt (145 lines)
+2026-05-22T05:59:37.9133934Z package com.encvgo.app
+2026-05-22T05:59:37.9153966Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/MpvPlayerModule.kt (411 lines)
+2026-05-22T05:59:37.9159922Z package com.encvgo.app
+2026-05-22T05:59:37.9180147Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerTemplateProvider.kt (54 lines)
+2026-05-22T05:59:37.9186252Z package com.encvgo.app
+2026-05-22T05:59:37.9205822Z   app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerActivity.kt (32 lines)
+2026-05-22T05:59:37.9212263Z package com.encvgo.app
+2026-05-22T05:59:37.9232443Z   app/encv-mobile/android/app/src/main/java/is/xyz/mpv/MPVLib.kt (183 lines)
+2026-05-22T05:59:37.9238416Z package `is`.xyz.mpv
+2026-05-22T05:59:37.9243767Z === AndroidManifest activity ===
+2026-05-22T05:59:37.9256680Z 14:        <activity
+2026-05-22T05:59:37.9257366Z 16:            android:name=".MainActivity"
+2026-05-22T05:59:37.9258211Z 17:            android:label="@string/title_activity_main"
+2026-05-22T05:59:37.9258904Z 23:                <action android:name="android.intent.action.MAIN" />
+2026-05-22T05:59:37.9259628Z 24:                <category android:name="android.intent.category.LAUNCHER" />
