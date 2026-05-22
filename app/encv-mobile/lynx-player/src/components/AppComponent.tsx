@@ -143,25 +143,30 @@ export function AppComponent() {
     setShowControls((prev) => !prev);
   }, [showControls]);
 
+  const handleBack = useCallback(() => {
+    lynxLog.info("handleBack: finishing player activity");
+    NativeModules.MpvPlayerModule.finish(() => {});
+  }, []);
+
   return (
     <page style={{ width: "100%", height: "100%" }}>
       <view
         className="PlayerContainer"
         bindtap={handleToggleControls}
       >
-        {showControls && (
-          <PlayerControls
-            fileName={fileName}
-            playerState={playerState}
-            position={position}
-            duration={duration}
-            errorMessage={errorMessage}
-            isFullscreen={isFullscreen}
-            onPlayPause={handlePlayPause}
-            onSeek={handleSeek}
-            onFullscreen={handleFullscreen}
-          />
-        )}
+        <PlayerControls
+          state={playerState}
+          isFullscreen={isFullscreen}
+          fileName={fileName}
+          currentTime={position}
+          duration={duration}
+          showControls={showControls}
+          error={errorMessage || undefined}
+          onPlayPause={handlePlayPause}
+          onSeek={handleSeek}
+          onToggleFullscreen={handleFullscreen}
+          onBack={handleBack}
+        />
       </view>
     </page>
   );

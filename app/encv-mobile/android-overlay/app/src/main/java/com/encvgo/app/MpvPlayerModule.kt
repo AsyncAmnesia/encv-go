@@ -268,6 +268,18 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
     }
 
     @LynxMethod
+    fun finish(callback: Callback) {
+        LogRelay.get().relay(TAG, "info", "finish: closing player activity")
+        try {
+            activity?.finish()
+            callback.invoke(true)
+        } catch (e: Exception) {
+            LogRelay.get().relay(TAG, "error", "finish failed: ${e.message}")
+            callback.invoke(e.message)
+        }
+    }
+
+    @LynxMethod
     fun getDuration(callback: Callback) {
         try {
             if (!mpvInitialized) { callback.invoke(0); return }

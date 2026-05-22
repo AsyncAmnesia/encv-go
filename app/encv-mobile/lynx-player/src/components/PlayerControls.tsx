@@ -1,112 +1,120 @@
-import { useCallback, useMemo } from "@lynx-js/react";
+import React from '@lynx-js/react';
 
 interface PlayerControlsProps {
-  fileName: string;
-  playerState: string;
-  position: number;
-  duration: number;
-  errorMessage: string;
+  state: string;
   isFullscreen: boolean;
+  fileName: string;
+  currentTime: number;
+  duration: number;
+  showControls: boolean;
+  error?: string | null;
   onPlayPause: () => void;
   onSeek: (positionMs: number) => void;
-  onFullscreen: () => void;
-}
-
-function formatTime(ms: number): string {
-  if (!ms || ms <= 0) return "0:00";
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+  onToggleFullscreen: () => void;
+  onBack: () => void;
 }
 
 export function PlayerControls({
-  fileName,
-  playerState,
-  position,
-  duration,
-  errorMessage,
+  state,
   isFullscreen,
+  fileName,
+  currentTime,
+  duration,
+  showControls,
+  error,
   onPlayPause,
   onSeek,
-  onFullscreen,
+  onToggleFullscreen,
+  onBack,
 }: PlayerControlsProps) {
-  const progress = useMemo(() => {
-    if (!duration || duration <= 0) return 0;
-    return position / duration;
-  }, [position, duration]);
+  const formatTime = (ms: number): string => {
+    if (!isFinite(ms) || ms < 0) return '0:00';
+    const totalSec = Math.floor(ms / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
 
-  const handleSliderTap = useCallback(
-    (event: any) => {
-      if (!duration || duration <= 0) return;
-      const ratio = event.detail?.x / (event.detail?.width || 1);
-      const seekPosition = Math.floor(ratio * duration);
-      onSeek(seekPosition);
-    },
-    [duration, onSeek]
-  );
+  const progressPct = duration > 0 ? (currentTime / duration) * 100 : 0;
 
-  const playPauseIcon = playerState === "playing" ? "⏸" : "▶";
-  const fullscreenIcon = isFullscreen ? "⤓" : "⤢";
-
-  if (playerState === "error") {
+  if (error) {
     return (
-      <view className="ErrorOverlay">
-        <text className="ErrorTitle">Playback Error</text>
-        <text className="ErrorMessage">{errorMessage || "Unknown error occurred"}</text>
-      </view>
+      <page className="ErrorContainer">
+        <text className="ErrorTitle">⚠ Playback Error</text>
+        <text className="ErrorDetail">{error}</text>
+      </page>
     );
   }
 
-  if (playerState === "idle") {
+  if (state === 'loading') {
     return (
-      <view className="LoadingIndicator">
-        <text className="PlayButton" bindtap={onPlayPause}>▶</text>
-        {fileName && fileName !== "Unknown" && (
-          <text className="LoadingText">{fileName}</text>
-        )}
-      </view>
+      <page className="CenterArea">
+        <view className="LoadingDots">
+          <view className="Dot DotDim1" />
+          <view className="Dot DotDim2" />
+          <view className="Dot DotDim3" />
+        </view>
+      </page>
     );
   }
 
-  if (playerState === "loading") {
+  if (state === 'idle') {
     return (
-      <view className="LoadingIndicator">
-        <text className="LoadingText">Loading...</text>
-      </view>
+      <page className="CenterArea">
+        <view className="PlayButtonCircle" bindtap={onPlayPause}>
+          <text className="PlayIconLarge">▶</text>
+        </view>
+        <text className="IdleTitle">{fileName}</text>
+      </page>
     );
   }
+
+  const isPlaying = state === 'playing';
 
   return (
-    <view className="ControlsOverlay">
+    <view style={{ flex: 1; flexDirection: 'column'; justifyContent: 'space-between' }}>
+      {/* Top Bar */}
       <view className="TopBar">
-        <text className="FileName" text-maxline="1">
-          {fileName}
-        </text>
-        <text className="FullscreenButton" bindtap={onFullscreen}>
-          {fullscreenIcon}
-        </text>
-      </view>
-
-      <view className="CenterControls">
-        <text className="PlayButton" bindtap={onPlayPause}>
-          {playPauseIcon}
+        <text className="BackButton" bindtap={onBack}>✕</text>
+        <text className="TitleText">{fileName}</text>
+        <text className="FullscreenButton" bindtap={onToggleFullscreen}>
+          {isFullscreen ? '⤓' : '⤢'}
         </text>
       </view>
 
-      <view className="ProgressBar">
-        <text className="TimeLabel">{formatTime(position)}</text>
-        <view className="SliderTrack" bindtap={handleSliderTap}>
-          <view
-            className="SliderFill"
-            style={{ width: `${progress * 100}%` }}
-          />
+      {/* Center Area - Play/Pause Button */}
+      <view className="CenterArea">
+        {showControls && (
+          <view className="PlayButtonCircle" bindtap={onPlayPause}>
+            <text className="PlayIconLarge">{isPlaying ? '⏸' : '▶'}</text>
+          </view>
+        )}
+      </view>
+
+      {/* Bottom Bar */}
+      <view className="BottomBar">
+        <text className="TimeLabel">{formatTime(currentTime)}</text>
+
+        <view
+          className="SliderContainer"
+          bindtap={(e: any) => {
+            const rect: any = e.detail || {};
+            if (typeof rect.x === 'number') {
+              const pct = Math.max(0, Math.min(1, rect.x / 300));
+              onSeek(pct * duration);
+            }
+          }}
+        >
+          <view className="SliderTrackOuter">
+            <view className="SliderBuffered" style={{ width: progressPct + '%' }}>
+              <view className="SliderFill" style={{ width: '100%' }} />
+            </view>
+          </view>
         </view>
-        <text className="TimeLabel">{formatTime(duration)}</text>
+
+        <text className="TimeLabelEnd">{formatTime(duration)}</text>
       </view>
     </view>
   );

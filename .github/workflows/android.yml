@@ -48,6 +48,19 @@ jobs:
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
+      - name: Setup NDK for libplayer.so build
+        run: |
+          echo "Installing NDK..."
+          sdkmanager "ndk;26.1.10909125"
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
+          if [ -f "$ANDROID_NDK_HOME/ndk-build" ]; then
+            echo "✅ NDK ready at $ANDROID_NDK_HOME"
+            ls -la "$ANDROID_NDK_HOME/ndk-build"
+          else
+            echo "❌ ndk-build not found at $ANDROID_NDK_HOME"
+            exit 1
+          fi
+
       - name: Install frontend dependencies & Build
         run: cd app/encv-mobile && npm install && npm run build
 

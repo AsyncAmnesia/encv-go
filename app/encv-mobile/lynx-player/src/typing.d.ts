@@ -6,6 +6,7 @@ declare let NativeModules: {
     seekTo(positionMs: number, callback: (result: any) => void): void;
     setFullscreen(enabled: boolean, callback: (result: any) => void): void;
     setOrientation(orientation: string, callback: (result: any) => void): void;
+    finish(callback: (result: any) => void): void;
     getDuration(callback: (durationMs: number) => void): void;
     getCurrentPosition(callback: (positionMs: number) => void): void;
     isPlaying(callback: (playing: boolean) => void): void;

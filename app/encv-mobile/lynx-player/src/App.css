@@ -1,5 +1,4 @@
 .PlayerContainer {
-  flex: 1;
   width: 100%;
   height: 100%;
   background-color: #000000;
@@ -7,100 +6,169 @@
   align-items: center;
 }
 
-.ControlsOverlay {
-  background-color: rgba(0, 0, 0, 0.85);
-  padding: 16px;
-  width: 100%;
-}
-
 .TopBar {
   flex-direction: row;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  padding: 12px 16px 8px;
+  width: 100%;
 }
 
-.FileName {
+.BackButton {
   color: #ffffff;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 24px;
+  padding: 8px;
+  min-width: 40px;
+  text-align: center;
+}
+
+.TitleText {
+  color: #ffffff;
+  font-size: 14px;
   flex: 1;
+  margin-left: 8px;
+  margin-right: 8px;
   text-overflow: ellipsis;
+  text-maxline: 1;
 }
 
 .FullscreenButton {
   color: #ffffff;
-  font-size: 20px;
+  font-size: 22px;
   padding: 8px;
+  min-width: 40px;
+  text-align: center;
 }
 
-.CenterControls {
-  flex-direction: row;
+.CenterArea {
+  flex: 1;
   justify-content: center;
   align-items: center;
-  margin-bottom: 16px;
+  width: 100%;
 }
 
-.PlayButton {
+.PlayButtonCircle {
+  width: 72px;
+  height: 72px;
+  border-radius: 36px;
+  background-color: rgba(255, 255, 255, 0.2);
+  justify-content: center;
+  align-items: center;
+}
+
+.PlayIconLarge {
   color: #ffffff;
-  font-size: 36px;
-  padding: 16px;
+  font-size: 32px;
+  margin-left: 4px;
 }
 
-.ProgressBar {
+.IdleTitle {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  margin-top: 16px;
+  text-overflow: ellipsis;
+  text-maxline: 1;
+  max-width: 280px;
+  text-align: center;
+}
+
+.BottomBar {
   flex-direction: row;
   align-items: center;
-  margin-bottom: 8px;
+  padding: 8px 16px 12px;
+  width: 100%;
 }
 
 .TimeLabel {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 12px;
-  margin-left: 8px;
-  margin-right: 8px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  min-width: 48px;
 }
 
-.SliderTrack {
+.TimeLabelEnd {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+  min-width: 48px;
+  text-align: right;
+}
+
+.SliderContainer {
   flex: 1;
-  height: 4px;
+  height: 20px;
+  justify-content: center;
+  align-items: center;
+  margin-left: 10px;
+  margin-right: 10px;
+}
+
+.SliderTrackOuter {
+  width: 100%;
+  height: 5px;
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.SliderBuffered {
+  height: 5px;
   background-color: rgba(255, 255, 255, 0.3);
-  border-radius: 2px;
+  border-radius: 3px;
 }
 
 .SliderFill {
-  height: 4px;
+  height: 5px;
   background-color: #4a90d9;
-  border-radius: 2px;
+  border-radius: 3px;
 }
 
-.LoadingIndicator {
+.SliderThumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 7px;
+  background-color: #ffffff;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  margin-left: -7px;
+  margin-top: -7px;
+}
+
+.LoadingDots {
+  flex-direction: row;
   justify-content: center;
   align-items: center;
+  gap: 8px;
+  padding: 32px 0;
 }
 
-.LoadingText {
-  color: #ffffff;
-  font-size: 16px;
+.Dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 5px;
+  background-color: #4a90d9;
 }
 
-.ErrorOverlay {
-  flex: 1;
+.DotDim1 { opacity: 1.0; }
+.DotDim2 { opacity: 0.45; }
+.DotDim3 { opacity: 0.18; }
+
+.ErrorContainer {
   justify-content: center;
   align-items: center;
-  background-color: rgba(0, 0, 0, 0.9);
   padding: 24px;
   width: 100%;
 }
 
 .ErrorTitle {
   color: #ff4444;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 17px;
+  text-align: center;
   margin-bottom: 8px;
 }
 
-.ErrorMessage {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 14px;
+.ErrorDetail {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
   text-align: center;
+  text-maxline: 3;
 }
