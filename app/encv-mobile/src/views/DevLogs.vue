@@ -208,7 +208,11 @@ function onTabChange(event: CustomEvent) {
 async function getScrollEl(): Promise<HTMLElement | null> {
   if (!contentRef.value) return null
   try {
-    return await contentRef.value.getScrollElement()
+    const el = contentRef.value as any
+    if (typeof el.getScrollElement === 'function') {
+      return await el.getScrollElement()
+    }
+    return null
   } catch {
     return null
   }
