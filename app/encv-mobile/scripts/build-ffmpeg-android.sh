@@ -11,6 +11,7 @@ ARCH="aarch64"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/.ffmpeg-build"
 OUTPUT_DIR="${SCRIPT_DIR}/android/app/src/main/jniLibs/${ABI}"
+LOG_DIR="${BUILD_DIR}/logs"
 
 NDK_PATH="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}/ndk/${NDK_VERSION}"
 if [ ! -d "$NDK_PATH" ]; then
@@ -26,7 +27,7 @@ NM="${TOOLCHAIN}/bin/llvm-nm"
 RANLIB="${TOOLCHAIN}/bin/llvm-ranlib"
 STRIP="${TOOLCHAIN}/bin/llvm-strip"
 
-mkdir -p "$BUILD_DIR" "$OUTPUT_DIR"
+mkdir -p "$BUILD_DIR" "$OUTPUT_DIR" "$LOG_DIR"
 
 echo "=== Checking for cached ffmpeg output ==="
 if [ -f "${OUTPUT_DIR}/libffmpeg.so" ] && [ -f "${OUTPUT_DIR}/libffprobe.so" ]; then
@@ -71,10 +72,13 @@ if [ ! -f "${X264_INSTALL}/lib/libx264.a" ]; then
         --disable-opencl \
         --cross-prefix="${TOOLCHAIN}/bin/llvm-" \
         --extra-cflags="-fPIC -DANDROID" \
-        --extra-ldflags="-lm"
+        --extra-ldflags="-lm" \
+        > "${LOG_DIR}/x264-configure.log" 2>&1
+    echo "x264 configure done (log: ${LOG_DIR}/x264-configure.log)"
 
-    make -j$(nproc)
-    make install
+    make -j$(nproc) > "${LOG_DIR}/x264-make.log" 2>&1
+    make install > "${LOG_DIR}/x264-install.log" 2>&1
+    echo "✅ x264 built and installed"
 else
     echo "✅ x264 already built, skipping"
 fi
@@ -164,11 +168,14 @@ echo "=== Configuring ffmpeg ==="
 }
 
 echo "=== Building ffmpeg ==="
-make -j$(nproc)
-make install
+make -j$(nproc) > "${LOG_DIR}/ffmpeg-make.log" 2>&1
+echo "ffmpeg make done (log: ${LOG_DIR}/ffmpeg-make.log)"
+
+make install > "${LOG_DIR}/ffmpeg-install.log" 2>&1
+echo "✅ ffmpeg built and installed"
 
 echo "=== Copying shared libraries ==="
-for lib in libavcodec libavformat libavutil libswresample libswscale libavfilter libavdevice libpostproc; do
+for lib in libavcodec libavformat libavutil libswresample libswscale libavfilter libavdevice; do
     src="${BUILD_DIR}/ffmpeg-install/lib/${lib}.so"
     if [ -f "$src" ]; then
         cp "$src" "$OUTPUT_DIR/"
@@ -197,7 +204,7 @@ for src in $FFMPEG_FFTOOLS; do
     if [ -f "${FFMPEG_SRC}/${src}" ]; then
         objname=$(basename "${src}" .c)
         obj="${FTOOLS_BUILD}/ffmpeg_${objname}.o"
-        $CC $CFLAGS -c -o "$obj" "${FFMPEG_SRC}/${src}" || {
+        $CC $CFLAGS -c -o "$obj" "${FFMPEG_SRC}/${src" > /dev/null 2>&1 || {
             echo "⚠️  Failed to compile ${src}, skipping"
             continue
         }
@@ -210,10 +217,10 @@ done
 echo "Linking libffmpeg.so..."
 $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffmpeg.so" \
     $FFMPEG_OBJS \
-    -lavcodec -lavformat -lavutil -lswresample -lswscale -lavfilter -lavdevice -lpostproc \
+    -lavcodec -lavformat -lavutil -lswresample -lswscale -lavfilter -lavdevice \
     -lx264 -lm -llog \
     -Wl,-rpath,\$ORIGIN \
-    $LDFLAGS
+    $LDFLAGS > /dev/null 2>&1
 
 echo "Compiling ffprobe fftools..."
 FFPROBE_OBJS=""
@@ -221,7 +228,7 @@ for src in $FFPROBE_FFTOOLS; do
     if [ -f "${FFMPEG_SRC}/${src}" ]; then
         objname=$(basename "${src}" .c)
         obj="${FTOOLS_BUILD}/ffprobe_${objname}.o"
-        $CC $CFLAGS -c -o "$obj" "${FFMPEG_SRC}/${src}" || {
+        $CC $CFLAGS -c -o "$obj" "${FFMPEG_SRC}/${src}" > /dev/null 2>&1 || {
             echo "⚠️  Failed to compile ${src}, skipping"
             continue
         }
@@ -234,10 +241,10 @@ done
 echo "Linking libffprobe.so..."
 $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffprobe.so" \
     $FFPROBE_OBJS \
-    -lavcodec -lavformat -lavutil -lswresample -lswscale -lavfilter -lavdevice -lpostproc \
+    -lavcodec -lavformat -lavutil -lswresample -lswscale -lavfilter -lavdevice \
     -lx264 -lm -llog \
     -Wl,-rpath,\$ORIGIN \
-    $LDFLAGS
+    $LDFLAGS > /dev/null 2>&1
 
 cp "${FTOOLS_BUILD}/libffmpeg.so" "$OUTPUT_DIR/"
 cp "${FTOOLS_BUILD}/libffprobe.so" "$OUTPUT_DIR/"
