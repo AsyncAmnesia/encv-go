@@ -99,3 +99,11 @@ export async function openInPlayer(path: string, name: string, mimeType: string)
     console.error('[ENCV] GoProcess.openInPlayer() failed:', e)
   }
 }
+
+export async function openPlayerHome(): Promise<void> {
+  try {
+    await GoProcess.openPlayerHome()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.openPlayerHome() failed:', e)
+  }
+}

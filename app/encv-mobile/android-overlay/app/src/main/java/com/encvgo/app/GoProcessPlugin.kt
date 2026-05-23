@@ -182,6 +182,26 @@ class GoProcessPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun openPlayerHome(call: PluginCall) {
+        try {
+            Log.d(TAG, "openPlayerHome: launching PlayerActivity without file")
+            val intent = Intent(activity, PlayerActivity::class.java).apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_DOCUMENT
+                        or Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+                        or Intent.FLAG_ACTIVITY_RETAIN_IN_RECENTS
+                )
+                data = Uri.parse("encvgo://player/home/${System.currentTimeMillis()}")
+            }
+            activity.startActivity(intent)
+            call.resolve()
+        } catch (e: Exception) {
+            Log.e(TAG, "openPlayerHome failed", e)
+            call.reject("Failed to open player: ${e.message}")
+        }
+    }
+
+    @PluginMethod
     override fun checkPermissions(call: PluginCall) {
         Log.d(TAG, "GoProcess.checkPermissions() called")
         val result = JSObject()

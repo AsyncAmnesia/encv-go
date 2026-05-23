@@ -18,6 +18,8 @@ interface PlayerControlsProps {
   mediaType: "video" | "audio";
   playbackRate: number;
   locked: boolean;
+  hasNext: boolean;
+  hasPrev: boolean;
   onPlayPause: () => void;
   onSeek: (positionMs: number) => void;
   onSeekRelative: (deltaMs: number) => void;
@@ -25,6 +27,9 @@ interface PlayerControlsProps {
   onCycleSpeed: () => void;
   onToggleLock: () => void;
   onBack: () => void;
+  onNext: () => void;
+  onPrev: () => void;
+  onPlaylist: () => void;
 }
 
 function formatTime(ms: number): string {
@@ -73,6 +78,8 @@ function VideoControls({
   showControls,
   playbackRate,
   locked,
+  hasNext,
+  hasPrev,
   onPlayPause,
   onSeek,
   onSeekRelative,
@@ -80,6 +87,9 @@ function VideoControls({
   onCycleSpeed,
   onToggleLock,
   onBack,
+  onNext,
+  onPrev,
+  onPlaylist,
 }: Omit<PlayerControlsProps, 'error' | 'mediaType'>) {
   const isPlaying = state === 'playing';
   if (locked) {
@@ -114,21 +124,33 @@ function VideoControls({
       <view className="CenterArea">
         {showControls && (
           <view className="CenterControls">
-            <Button onClick={() => onSeekRelative(-10000)} className="SeekBtn">
-              <view className="SeekBtnInner">
-                <text className="SeekIcon">-10</text>
-              </view>
-            </Button>
+            {hasPrev ? (
+              <Button onClick={onPrev} className="TrackBtn">
+                <text className="TrackIcon">&#x23EE;</text>
+              </Button>
+            ) : (
+              <Button onClick={() => onSeekRelative(-10000)} className="SeekBtn">
+                <view className="SeekBtnInner">
+                  <text className="SeekIcon">-10</text>
+                </view>
+              </Button>
+            )}
             <Button onClick={onPlayPause} className="PlayBtn">
               <view className="PlayBtnInner">
                 <text className="PlayIcon">{isPlaying ? '\u275A\u275A' : '\u25B6'}</text>
               </view>
             </Button>
-            <Button onClick={() => onSeekRelative(10000)} className="SeekBtn">
-              <view className="SeekBtnInner">
-                <text className="SeekIcon">+10</text>
-              </view>
-            </Button>
+            {hasNext ? (
+              <Button onClick={onNext} className="TrackBtn">
+                <text className="TrackIcon">&#x23ED;</text>
+              </Button>
+            ) : (
+              <Button onClick={() => onSeekRelative(10000)} className="SeekBtn">
+                <view className="SeekBtnInner">
+                  <text className="SeekIcon">+10</text>
+                </view>
+              </Button>
+            )}
           </view>
         )}
       </view>
@@ -139,6 +161,11 @@ function VideoControls({
           <Button onClick={onCycleSpeed} className="SpeedChip">
             <text className="SpeedText">{playbackRate}x</text>
           </Button>
+          {(hasPrev || hasNext) && (
+            <Button onClick={onPlaylist} className="CtrlBtn">
+              <text className="IconMd">&#x2630;</text>
+            </Button>
+          )}
           <view className="FlexSpacer" />
           <Button onClick={onToggleFullscreen} className="CtrlBtn">
             <text className="IconMd">⛶</text>
@@ -155,11 +182,16 @@ function AudioControls({
   currentTime,
   duration,
   playbackRate,
+  hasNext,
+  hasPrev,
   onPlayPause,
   onSeek,
   onSeekRelative,
   onCycleSpeed,
   onBack,
+  onNext,
+  onPrev,
+  onPlaylist,
 }: Omit<PlayerControlsProps, 'error' | 'mediaType' | 'isFullscreen' | 'showControls' | 'onToggleFullscreen' | 'onToggleLock' | 'locked'>) {
   const isPlaying = state === 'playing';
   return (
@@ -180,24 +212,41 @@ function AudioControls({
       <view className="AudioBottomSection">
         <ProgressBar currentTime={currentTime} duration={duration} onSeek={onSeek} />
         <view className="AudioPlayRow">
-          <Button onClick={() => onSeekRelative(-10000)} className="SeekBtn">
-            <view className="SeekBtnInner">
-              <text className="SeekIcon">-10</text>
-            </view>
-          </Button>
+          {hasPrev ? (
+            <Button onClick={onPrev} className="TrackBtn">
+              <text className="TrackIcon">&#x23EE;</text>
+            </Button>
+          ) : (
+            <Button onClick={() => onSeekRelative(-10000)} className="SeekBtn">
+              <view className="SeekBtnInner">
+                <text className="SeekIcon">-10</text>
+              </view>
+            </Button>
+          )}
           <Button onClick={onPlayPause} className="PlayBtn">
             <view className="PlayBtnInner">
               <text className="PlayIcon">{isPlaying ? '\u275A\u275A' : '\u25B6'}</text>
             </view>
           </Button>
-          <Button onClick={() => onSeekRelative(10000)} className="SeekBtn">
-            <view className="SeekBtnInner">
-              <text className="SeekIcon">+10</text>
-            </view>
-          </Button>
+          {hasNext ? (
+            <Button onClick={onNext} className="TrackBtn">
+              <text className="TrackIcon">&#x23ED;</text>
+            </Button>
+          ) : (
+            <Button onClick={() => onSeekRelative(10000)} className="SeekBtn">
+              <view className="SeekBtnInner">
+                <text className="SeekIcon">+10</text>
+              </view>
+            </Button>
+          )}
           <Button onClick={onCycleSpeed} className="SpeedChip">
             <text className="SpeedText">{playbackRate}x</text>
           </Button>
+          {(hasPrev || hasNext) && (
+            <Button onClick={onPlaylist} className="CtrlBtn">
+              <text className="IconMd">&#x2630;</text>
+            </Button>
+          )}
         </view>
       </view>
     </view>
@@ -215,6 +264,8 @@ export function PlayerControls({
   mediaType,
   playbackRate,
   locked,
+  hasNext,
+  hasPrev,
   onPlayPause,
   onSeek,
   onSeekRelative,
@@ -222,6 +273,9 @@ export function PlayerControls({
   onCycleSpeed,
   onToggleLock,
   onBack,
+  onNext,
+  onPrev,
+  onPlaylist,
 }: PlayerControlsProps) {
   if (error && state !== 'loading') {
     return (
@@ -255,11 +309,16 @@ export function PlayerControls({
         duration={duration}
         showControls={showControls}
         playbackRate={playbackRate}
+        hasNext={hasNext}
+        hasPrev={hasPrev}
         onPlayPause={onPlayPause}
         onSeek={onSeek}
         onSeekRelative={onSeekRelative}
         onCycleSpeed={onCycleSpeed}
         onBack={onBack}
+        onNext={onNext}
+        onPrev={onPrev}
+        onPlaylist={onPlaylist}
       />
     );
   }
@@ -274,6 +333,8 @@ export function PlayerControls({
       showControls={showControls}
       playbackRate={playbackRate}
       locked={locked}
+      hasNext={hasNext}
+      hasPrev={hasPrev}
       onPlayPause={onPlayPause}
       onSeek={onSeek}
       onSeekRelative={onSeekRelative}
@@ -281,6 +342,9 @@ export function PlayerControls({
       onCycleSpeed={onCycleSpeed}
       onToggleLock={onToggleLock}
       onBack={onBack}
+      onNext={onNext}
+      onPrev={onPrev}
+      onPlaylist={onPlaylist}
     />
   );
 }

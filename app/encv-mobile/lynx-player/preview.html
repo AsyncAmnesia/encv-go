@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Lynx Player Controls Preview</title>
+  <title>Lynx Player Preview</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; font-family: -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
@@ -15,26 +15,14 @@
       position: relative;
     }
 
-    .VideoOverlay {
+    .VideoOverlay, .LockedOverlay, .AudioOverlay {
       display: flex; flex-direction: column;
-      justify-content: space-between;
       width: 100%; flex: 1;
       position: relative;
     }
-
-    .LockedOverlay {
-      display: flex; flex-direction: column;
-      justify-content: flex-end;
-      width: 100%; flex: 1;
-      position: relative;
-    }
-
-    .AudioOverlay {
-      display: flex; flex-direction: column;
-      justify-content: space-between;
-      width: 100%; flex: 1;
-      position: relative;
-    }
+    .VideoOverlay { justify-content: space-between; }
+    .LockedOverlay { justify-content: flex-end; }
+    .AudioOverlay { justify-content: space-between; }
 
     .FlexSpacer { flex: 1; }
 
@@ -52,20 +40,15 @@
       pointer-events: none;
     }
 
-    .TopBar {
+    .TopBar, .LockBar {
       display: flex; flex-direction: row;
-      justify-content: space-between; align-items: center;
-      padding: 8px 12px 4px; width: 100%;
+      align-items: center; width: 100%;
       position: relative; z-index: 2;
     }
+    .TopBar { justify-content: space-between; padding: 8px 12px 4px; }
+    .LockBar { padding: 4px 12px; }
 
-    .LockBar {
-      display: flex; flex-direction: row;
-      align-items: center; padding: 4px 12px; width: 100%;
-      position: relative; z-index: 2;
-    }
-
-    .CtrlBtn {
+    .CtrlBtn, .HeaderBtn {
       display: flex;
       background-color: transparent; border: none; padding: 0;
       min-width: 44px; min-height: 44px;
@@ -93,11 +76,13 @@
       justify-content: center; align-items: center;
     }
 
-    .SeekBtn {
+    .SeekBtn, .TrackBtn {
       display: flex;
       background-color: transparent; border: none; padding: 0;
-      margin-left: 24px; margin-right: 24px; cursor: pointer;
+      cursor: pointer;
     }
+    .SeekBtn { margin-left: 24px; margin-right: 24px; }
+    .TrackBtn { margin-left: 16px; margin-right: 16px; min-width: 52px; min-height: 52px; justify-content: center; align-items: center; }
 
     .SeekBtnInner {
       display: flex;
@@ -107,6 +92,7 @@
     }
 
     .SeekIcon { color: #fff; font-size: 14px; font-weight: 600; text-align: center; }
+    .TrackIcon { color: #fff; font-size: 24px; text-align: center; }
 
     .PlayBtn {
       display: flex;
@@ -145,38 +131,13 @@
     .TimeLabel { color: rgba(255,255,255,0.9); font-size: 13px; min-width: 48px; }
     .TimeLabelEnd { color: rgba(255,255,255,0.6); font-size: 13px; min-width: 48px; text-align: right; }
 
-    .PlayerSlider {
-      flex: 1; display: flex;
-      margin-left: 10px; margin-right: 10px;
-      height: 20px; align-items: center;
-    }
+    .PlayerSlider { flex: 1; display: flex; margin-left: 10px; margin-right: 10px; height: 20px; align-items: center; }
+    .SliderTrackOuter { display: flex; width: 100%; height: 20px; justify-content: center; position: relative; }
+    .SliderFill { height: 4px; background-color: #4a90d9; border-radius: 2px; position: absolute; left: 0; top: 50%; transform: translateY(-50%); }
+    .SliderThumbWrapper { position: absolute; display: flex; justify-content: center; align-items: center; }
+    .SliderThumbDot { width: 16px; height: 16px; border-radius: 8px; background-color: #4a90d9; border: 2px solid #fff; }
 
-    .SliderTrackOuter {
-      display: flex; width: 100%; height: 20px;
-      justify-content: center; position: relative;
-    }
-
-    .SliderFill {
-      height: 4px; background-color: #4a90d9;
-      border-radius: 2px; position: absolute;
-      left: 0; top: 50%; transform: translateY(-50%);
-    }
-
-    .SliderThumbWrapper {
-      position: absolute;
-      display: flex; justify-content: center; align-items: center;
-    }
-
-    .SliderThumbDot {
-      width: 16px; height: 16px; border-radius: 8px;
-      background-color: #4a90d9;
-      border: 2px solid #fff;
-    }
-
-    .BottomActions {
-      display: flex; flex-direction: row;
-      align-items: center; padding: 2px 0 4px; width: 100%;
-    }
+    .BottomActions { display: flex; flex-direction: row; align-items: center; padding: 2px 0 4px; width: 100%; }
 
     .SpeedChip {
       display: flex;
@@ -189,42 +150,75 @@
 
     .SpeedText { color: #fff; font-size: 12px; font-weight: 600; text-align: center; }
 
-    .ErrorContainer {
-      display: flex; flex-direction: column;
-      justify-content: center; align-items: center;
-      padding: 24px; width: 100%;
-    }
-
+    .ErrorContainer { display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 24px; width: 100%; }
     .ErrorTitle { color: #ff4444; font-size: 17px; text-align: center; margin-bottom: 8px; }
     .ErrorDetail { color: rgba(255,255,255,0.55); font-size: 13px; text-align: center; }
 
-    .AudioCoverContainer {
-      display: flex; flex-direction: column; flex: 1;
-      justify-content: center; align-items: center; width: 100%;
-    }
-
-    .AudioCover {
-      display: flex; width: 180px; height: 180px; border-radius: 16px;
-      background-color: rgba(74,144,217,0.12);
-      justify-content: center; align-items: center;
-    }
-
+    .AudioCoverContainer { display: flex; flex-direction: column; flex: 1; justify-content: center; align-items: center; width: 100%; }
+    .AudioCover { display: flex; width: 180px; height: 180px; border-radius: 16px; background-color: rgba(74,144,217,0.12); justify-content: center; align-items: center; }
     .AudioCoverIcon { font-size: 56px; color: rgba(255,255,255,0.5); }
     .AudioTitle { color: rgba(255,255,255,0.85); font-size: 15px; margin-top: 16px; max-width: 280px; text-align: center; }
+    .AudioBottomSection { display: flex; flex-direction: column; width: 100%; padding: 0 12px 16px; }
+    .AudioPlayRow { display: flex; flex-direction: row; justify-content: center; align-items: center; padding: 8px 0; }
 
-    .AudioBottomSection {
-      display: flex; flex-direction: column;
-      width: 100%; padding: 0 12px 16px;
-    }
+    /* Home Page */
+    .HomePage { display: flex; flex-direction: column; width: 100%; height: 100vh; background-color: #0a0a0f; overflow-y: auto; }
+    .HomeHeader { display: flex; flex-direction: row; align-items: center; padding: 12px 16px; width: 100%; }
+    .HomeTitle { color: #fff; font-size: 22px; font-weight: 700; flex: 1; }
+    .QuickPlayBanner { display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin: 0 16px 12px; padding: 12px 16px; border-radius: 12px; background-color: rgba(74,144,217,0.15); }
+    .QuickPlayText { color: rgba(255,255,255,0.9); font-size: 14px; }
+    .QuickPlayBtn { display: flex; background-color: #4a90d9; border: none; border-radius: 8px; padding: 0; min-width: 80px; min-height: 36px; justify-content: center; align-items: center; cursor: pointer; }
+    .QuickPlayBtnText { color: #fff; font-size: 14px; font-weight: 600; }
+    .SectionHeader { display: flex; flex-direction: row; align-items: center; padding: 12px 16px 6px; width: 100%; }
+    .SectionTitle { color: rgba(255,255,255,0.9); font-size: 16px; font-weight: 600; }
+    .EmptySection { display: flex; justify-content: center; align-items: center; padding: 24px 16px; }
+    .EmptyText { color: rgba(255,255,255,0.3); font-size: 13px; }
+    .CategoryGrid { display: flex; flex-direction: row; flex-wrap: wrap; padding: 0 16px; width: 100%; }
+    .CategoryCard { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 33.33%; padding: 12px 8px; cursor: pointer; }
+    .CategoryIcon { font-size: 32px; margin-bottom: 6px; }
+    .CategoryLabel { color: rgba(255,255,255,0.85); font-size: 13px; font-weight: 500; }
 
-    .AudioPlayRow {
-      display: flex; flex-direction: row;
-      justify-content: center; align-items: center; padding: 8px 0;
-    }
+    /* Playlist Page */
+    .PlaylistPage { display: flex; flex-direction: column; width: 100%; height: 100vh; background-color: #0a0a0f; }
+    .PlaylistHeader { display: flex; flex-direction: row; align-items: center; padding: 12px 16px; width: 100%; }
+    .PlaylistTitle { color: #fff; font-size: 18px; font-weight: 600; flex: 1; margin-left: 8px; }
+    .PlaylistCount { color: rgba(255,255,255,0.4); font-size: 13px; }
+    .PlaylistScroll { display: flex; flex: 1; width: 100%; overflow-y: auto; }
+    .PlaylistItem { display: flex; flex-direction: row; align-items: center; padding: 12px 16px; width: 100%; border-bottom: 1px solid rgba(255,255,255,0.06); cursor: pointer; }
+    .PlaylistItemActive { background-color: rgba(74,144,217,0.1); }
+    .PlaylistItemIndex { display: flex; width: 36px; min-height: 36px; justify-content: center; align-items: center; margin-right: 12px; }
+    .PlayingIcon { color: #4a90d9; font-size: 14px; }
+    .ItemIndexText { color: rgba(255,255,255,0.3); font-size: 14px; }
+    .PlaylistItemInfo { display: flex; flex-direction: column; flex: 1; }
+    .PlaylistItemName { color: rgba(255,255,255,0.9); font-size: 14px; }
+    .PlaylistItemType { color: rgba(255,255,255,0.35); font-size: 12px; margin-top: 2px; }
+
+    /* Settings Page */
+    .SettingsPage { display: flex; flex-direction: column; width: 100%; height: 100vh; background-color: #0a0a0f; }
+    .SettingsHeader { display: flex; flex-direction: row; align-items: center; padding: 12px 16px; width: 100%; }
+    .SettingsTitle { color: #fff; font-size: 18px; font-weight: 600; flex: 1; margin-left: 8px; }
+    .SettingsScroll { display: flex; flex: 1; width: 100%; overflow-y: auto; }
+    .SettingsSection { display: flex; flex-direction: column; padding: 8px 16px; width: 100%; margin-bottom: 8px; }
+    .SettingsSectionTitle { color: rgba(255,255,255,0.5); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .SettingsItem { display: flex; flex-direction: row; align-items: center; justify-content: space-between; padding: 12px 0; width: 100%; border-bottom: 1px solid rgba(255,255,255,0.06); }
+    .SettingsItemLeft { display: flex; flex-direction: column; flex: 1; margin-right: 12px; }
+    .SettingsItemLabel { color: rgba(255,255,255,0.9); font-size: 15px; }
+    .SettingsItemDesc { color: rgba(255,255,255,0.35); font-size: 12px; margin-top: 2px; }
+    .ToggleSwitch { display: flex; width: 48px; height: 28px; border-radius: 14px; background-color: rgba(255,255,255,0.15); justify-content: flex-start; align-items: center; padding: 2px; cursor: pointer; transition: background-color 0.2s; }
+    .ToggleActive { background-color: #4a90d9; justify-content: flex-end; }
+    .ToggleDisabled { opacity: 0.4; }
+    .ToggleThumb { width: 24px; height: 24px; border-radius: 12px; background-color: #fff; transition: margin 0.2s; }
+    .ToggleActive .ToggleThumb { margin-left: auto; }
+    .SpeedSelector { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; }
+    .SpeedOption { display: flex; padding: 4px 10px; border-radius: 8px; background-color: rgba(255,255,255,0.08); cursor: pointer; }
+    .SpeedOptionActive { background-color: rgba(74,144,217,0.3); }
+    .SpeedOptionText { color: rgba(255,255,255,0.7); font-size: 12px; }
+    .SettingsFooter { display: flex; justify-content: center; padding: 24px 16px 40px; }
+    .SettingsVersion { color: rgba(255,255,255,0.2); font-size: 12px; }
 
     .mode-switch {
       position: fixed; top: 8px; right: 8px; z-index: 100;
-      display: flex; gap: 4px;
+      display: flex; gap: 4px; flex-wrap: wrap;
     }
     .mode-switch button {
       background: rgba(255,255,255,0.2); border: none; color: #fff;
@@ -235,21 +229,23 @@
 </head>
 <body>
   <div class="mode-switch">
-    <button onclick="showMode('video')" id="btn-video" class="active">Video</button>
+    <button onclick="showMode('home')" id="btn-home" class="active">Home</button>
+    <button onclick="showMode('video')" id="btn-video">Video</button>
     <button onclick="showMode('locked')" id="btn-locked">Locked</button>
     <button onclick="showMode('audio')" id="btn-audio">Audio</button>
+    <button onclick="showMode('playlist')" id="btn-playlist">Playlist</button>
+    <button onclick="showMode('settings')" id="btn-settings">Settings</button>
     <button onclick="showMode('error')" id="btn-error">Error</button>
     <button onclick="showMode('loading')" id="btn-loading">Loading</button>
   </div>
 
-  <div class="PlayerContainer" id="player">
-  </div>
+  <div id="player"></div>
 
   <script>
     function renderSlider(progress) {
       const pct = (progress * 100).toFixed(1);
       return `<div class="ProgressRow">
-        <text class="TimeLabel">1:23</text>
+        <span class="TimeLabel">1:23</span>
         <div class="PlayerSlider">
           <div class="SliderTrackOuter">
             <div class="SliderFill" style="width:${pct}%"></div>
@@ -258,12 +254,33 @@
             </div>
           </div>
         </div>
-        <text class="TimeLabelEnd">4:56</text>
+        <span class="TimeLabelEnd">4:56</span>
       </div>`;
     }
 
     const modes = {
-      video: `<div class="VideoOverlay">
+      home: `<div class="HomePage">
+        <div class="HomeHeader">
+          <span class="HomeTitle">媒体中心</span>
+          <button class="HeaderBtn"><span class="IconMd">⚙</span></button>
+        </div>
+        <div class="QuickPlayBanner">
+          <span class="QuickPlayText">有文件待播放</span>
+          <button class="QuickPlayBtn"><span class="QuickPlayBtnText">立即播放</span></button>
+        </div>
+        <div class="SectionHeader"><span class="SectionTitle">最近播放</span></div>
+        <div class="EmptySection"><span class="EmptyText">暂无播放记录</span></div>
+        <div class="SectionHeader"><span class="SectionTitle">媒体分类</span></div>
+        <div class="CategoryGrid">
+          <div class="CategoryCard"><span class="CategoryIcon">🎬</span><span class="CategoryLabel">视频</span></div>
+          <div class="CategoryCard"><span class="CategoryIcon">🎵</span><span class="CategoryLabel">音频</span></div>
+          <div class="CategoryCard"><span class="CategoryIcon">📜</span><span class="CategoryLabel">播放列表</span></div>
+        </div>
+        <div class="SectionHeader"><span class="SectionTitle">播放列表</span></div>
+        <div class="EmptySection"><span class="EmptyText">暂无播放列表</span></div>
+      </div>`,
+
+      video: `<div class="PlayerContainer"><div class="VideoOverlay">
         <div class="TopGradient"></div>
         <div class="TopBar">
           <button class="CtrlBtn"><span class="IconMd">✕</span></button>
@@ -272,9 +289,9 @@
         </div>
         <div class="CenterArea">
           <div class="CenterControls">
-            <button class="SeekBtn"><div class="SeekBtnInner"><span class="SeekIcon">-10</span></div></button>
+            <button class="TrackBtn"><span class="TrackIcon">⏮</span></button>
             <button class="PlayBtn"><div class="PlayBtnInner"><span class="PlayIcon">▶</span></div></button>
-            <button class="SeekBtn"><div class="SeekBtnInner"><span class="SeekIcon">+10</span></div></button>
+            <button class="TrackBtn"><span class="TrackIcon">⏭</span></button>
           </div>
         </div>
         <div class="BottomGradient"></div>
@@ -282,13 +299,14 @@
           ${renderSlider(0.28)}
           <div class="BottomActions">
             <button class="SpeedChip"><span class="SpeedText">1x</span></button>
+            <button class="CtrlBtn"><span class="IconMd">☰</span></button>
             <div class="FlexSpacer"></div>
             <button class="CtrlBtn"><span class="IconMd">⛶</span></button>
           </div>
         </div>
-      </div>`,
+      </div></div>`,
 
-      locked: `<div class="LockedOverlay">
+      locked: `<div class="PlayerContainer"><div class="LockedOverlay">
         <div class="TopGradient"></div>
         <div class="LockBar">
           <button class="CtrlBtn"><span class="IconSm">🔒</span></button>
@@ -298,9 +316,9 @@
         <div class="BottomBar">
           ${renderSlider(0.28)}
         </div>
-      </div>`,
+      </div></div>`,
 
-      audio: `<div class="AudioOverlay">
+      audio: `<div class="PlayerContainer"><div class="AudioOverlay">
         <div class="TopBar">
           <button class="CtrlBtn"><span class="IconMd">✕</span></button>
           <span class="TitleText">测试音频文件名.mp3</span>
@@ -313,35 +331,135 @@
         <div class="AudioBottomSection">
           ${renderSlider(0.28)}
           <div class="AudioPlayRow">
-            <button class="SeekBtn"><div class="SeekBtnInner"><span class="SeekIcon">-10</span></div></button>
+            <button class="TrackBtn"><span class="TrackIcon">⏮</span></button>
             <button class="PlayBtn"><div class="PlayBtnInner"><span class="PlayIcon">▶</span></div></button>
-            <button class="SeekBtn"><div class="SeekBtnInner"><span class="SeekIcon">+10</span></div></button>
+            <button class="TrackBtn"><span class="TrackIcon">⏭</span></button>
             <button class="SpeedChip"><span class="SpeedText">1x</span></button>
+            <button class="CtrlBtn"><span class="IconMd">☰</span></button>
+          </div>
+        </div>
+      </div></div>`,
+
+      playlist: `<div class="PlaylistPage">
+        <div class="PlaylistHeader">
+          <button class="CtrlBtn"><span class="IconMd">←</span></button>
+          <span class="PlaylistTitle">播放列表</span>
+          <span class="PlaylistCount">3 首</span>
+        </div>
+        <div class="PlaylistScroll">
+          <div class="PlaylistItem PlaylistItemActive">
+            <div class="PlaylistItemIndex"><span class="PlayingIcon">▶</span></div>
+            <div class="PlaylistItemInfo">
+              <span class="PlaylistItemName">正在播放的视频.mp4</span>
+              <span class="PlaylistItemType">视频</span>
+            </div>
+          </div>
+          <div class="PlaylistItem">
+            <div class="PlaylistItemIndex"><span class="ItemIndexText">2</span></div>
+            <div class="PlaylistItemInfo">
+              <span class="PlaylistItemName">下一首音频.flac</span>
+              <span class="PlaylistItemType">音频</span>
+            </div>
+          </div>
+          <div class="PlaylistItem">
+            <div class="PlaylistItemIndex"><span class="ItemIndexText">3</span></div>
+            <div class="PlaylistItemInfo">
+              <span class="PlaylistItemName">最后一个文件.mkv</span>
+              <span class="PlaylistItemType">视频</span>
+            </div>
           </div>
         </div>
       </div>`,
 
-      error: `<div class="ErrorContainer">
+      settings: `<div class="SettingsPage">
+        <div class="SettingsHeader">
+          <button class="CtrlBtn"><span class="IconMd">←</span></button>
+          <span class="SettingsTitle">设置</span>
+          <div style="width:44px"></div>
+        </div>
+        <div class="SettingsScroll">
+          <div class="SettingsSection">
+            <span class="SettingsSectionTitle">播放</span>
+            <div class="SettingsItem">
+              <div class="SettingsItemLeft">
+                <span class="SettingsItemLabel">硬件解码</span>
+                <span class="SettingsItemDesc">使用硬件加速视频解码</span>
+              </div>
+              <div class="ToggleSwitch ToggleActive"><div class="ToggleThumb"></div></div>
+            </div>
+            <div class="SettingsItem">
+              <div class="SettingsItemLeft">
+                <span class="SettingsItemLabel">自动播放下一曲</span>
+                <span class="SettingsItemDesc">播放列表中当前曲目结束后自动播放下一首</span>
+              </div>
+              <div class="ToggleSwitch ToggleActive"><div class="ToggleThumb"></div></div>
+            </div>
+            <div class="SettingsItem">
+              <div class="SettingsItemLeft">
+                <span class="SettingsItemLabel">默认播放速度</span>
+                <span class="SettingsItemDesc">新视频开始播放时的速度</span>
+              </div>
+              <div class="SpeedSelector">
+                <div class="SpeedOption"><span class="SpeedOptionText">0.5x</span></div>
+                <div class="SpeedOption"><span class="SpeedOptionText">0.75x</span></div>
+                <div class="SpeedOption SpeedOptionActive"><span class="SpeedOptionText">1x</span></div>
+                <div class="SpeedOption"><span class="SpeedOptionText">1.25x</span></div>
+                <div class="SpeedOption"><span class="SpeedOptionText">1.5x</span></div>
+                <div class="SpeedOption"><span class="SpeedOptionText">2x</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="SettingsSection">
+            <span class="SettingsSectionTitle">音频</span>
+            <div class="SettingsItem">
+              <div class="SettingsItemLeft">
+                <span class="SettingsItemLabel">频谱动效</span>
+                <span class="SettingsItemDesc">音频播放时显示频谱可视化效果</span>
+              </div>
+              <div class="ToggleSwitch ToggleDisabled"><div class="ToggleThumb"></div></div>
+            </div>
+            <div class="SettingsItem">
+              <div class="SettingsItemLeft">
+                <span class="SettingsItemLabel">歌词显示</span>
+                <span class="SettingsItemDesc">自动匹配并显示歌词</span>
+              </div>
+              <div class="ToggleSwitch ToggleDisabled"><div class="ToggleThumb"></div></div>
+            </div>
+          </div>
+          <div class="SettingsSection">
+            <span class="SettingsSectionTitle">视频</span>
+            <div class="SettingsItem">
+              <div class="SettingsItemLeft">
+                <span class="SettingsItemLabel">边下边播</span>
+                <span class="SettingsItemDesc">加密视频边解密边播放（实验性）</span>
+              </div>
+              <div class="ToggleSwitch ToggleDisabled"><div class="ToggleThumb"></div></div>
+            </div>
+          </div>
+          <div class="SettingsFooter">
+            <span class="SettingsVersion">EncvGo Player v1.0</span>
+          </div>
+        </div>
+      </div>`,
+
+      error: `<div class="PlayerContainer"><div class="ErrorContainer">
         <button class="PlayBtn"><div class="PlayBtnInner"><span class="PlayIcon">🔄</span></div></button>
         <span class="ErrorTitle">⚠ 播放失败</span>
         <span class="ErrorDetail">ffprobe native call failed</span>
-      </div>`,
+      </div></div>`,
 
-      loading: `<div class="CenterArea">
+      loading: `<div class="PlayerContainer"><div class="CenterArea">
         <div class="LoadingSpinner"></div>
-      </div>`
+      </div></div>`
     };
 
-    let currentMode = 'video';
-
     function showMode(mode) {
-      currentMode = mode;
       document.getElementById('player').innerHTML = modes[mode];
       document.querySelectorAll('.mode-switch button').forEach(b => b.classList.remove('active'));
       document.getElementById('btn-' + mode).classList.add('active');
     }
 
-    showMode('video');
+    showMode('home');
   </script>
 </body>
 </html>

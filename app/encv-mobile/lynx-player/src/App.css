@@ -82,6 +82,17 @@
   align-items: center;
 }
 
+.HeaderBtn {
+  display: flex;
+  background-color: transparent;
+  border: none;
+  padding: 0;
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
+  align-items: center;
+}
+
 .IconMd {
   color: #ffffff;
   font-size: 22px;
@@ -141,6 +152,25 @@
   color: #ffffff;
   font-size: 14px;
   font-weight: 600;
+  text-align: center;
+}
+
+.TrackBtn {
+  display: flex;
+  background-color: transparent;
+  border: none;
+  padding: 0;
+  margin-left: 16px;
+  margin-right: 16px;
+  min-width: 52px;
+  min-height: 52px;
+  justify-content: center;
+  align-items: center;
+}
+
+.TrackIcon {
+  color: #ffffff;
+  font-size: 24px;
   text-align: center;
 }
 
@@ -336,4 +366,382 @@
   justify-content: center;
   align-items: center;
   padding: 8px 0;
+}
+
+.HomePage {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: #0a0a0f;
+}
+
+.HomeHeader {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 12px 16px;
+  width: 100%;
+}
+
+.HomeTitle {
+  color: #ffffff;
+  font-size: 22px;
+  font-weight: 700;
+  flex: 1;
+}
+
+.QuickPlayBanner {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 16px 12px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background-color: rgba(74, 144, 217, 0.15);
+}
+
+.QuickPlayText {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+}
+
+.QuickPlayBtn {
+  display: flex;
+  background-color: #4a90d9;
+  border: none;
+  border-radius: 8px;
+  padding: 0;
+  min-width: 80px;
+  min-height: 36px;
+  justify-content: center;
+  align-items: center;
+}
+
+.QuickPlayBtnText {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.SectionHeader {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 12px 16px 6px;
+  width: 100%;
+}
+
+.SectionTitle {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.EmptySection {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 24px 16px;
+}
+
+.EmptyText {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 13px;
+}
+
+.RecentScroll {
+  display: flex;
+  width: 100%;
+  height: 100px;
+  padding: 0 16px;
+}
+
+.RecentCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 80px;
+  margin-right: 12px;
+}
+
+.RecentCardIcon {
+  display: flex;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  background-color: rgba(255, 255, 255, 0.06);
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.RecentIconText {
+  font-size: 24px;
+}
+
+.RecentCardName {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  text-align: center;
+  max-width: 80px;
+}
+
+.CategoryGrid {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  padding: 0 16px;
+  width: 100%;
+}
+
+.CategoryCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 33.33%;
+  padding: 12px 8px;
+}
+
+.CategoryIcon {
+  font-size: 32px;
+  margin-bottom: 6px;
+}
+
+.CategoryLabel {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.CategoryCount {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.PlaylistPage {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: #0a0a0f;
+}
+
+.PlaylistHeader {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 12px 16px;
+  width: 100%;
+}
+
+.PlaylistTitle {
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 600;
+  flex: 1;
+  margin-left: 8px;
+}
+
+.PlaylistCount {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 13px;
+}
+
+.PlaylistScroll {
+  display: flex;
+  flex: 1;
+  width: 100%;
+}
+
+.PlaylistItem {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 12px 16px;
+  width: 100%;
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+.PlaylistItemActive {
+  background-color: rgba(74, 144, 217, 0.1);
+}
+
+.PlaylistItemIndex {
+  display: flex;
+  width: 36px;
+  min-height: 36px;
+  justify-content: center;
+  align-items: center;
+  margin-right: 12px;
+}
+
+.PlayingIcon {
+  color: #4a90d9;
+  font-size: 14px;
+}
+
+.ItemIndexText {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 14px;
+}
+
+.PlaylistItemInfo {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.PlaylistItemName {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+}
+
+.PlaylistItemType {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.SettingsPage {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: #0a0a0f;
+}
+
+.SettingsHeader {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 12px 16px;
+  width: 100%;
+}
+
+.SettingsTitle {
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 600;
+  flex: 1;
+  margin-left: 8px;
+}
+
+.SettingsScroll {
+  display: flex;
+  flex: 1;
+  width: 100%;
+}
+
+.SettingsSection {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 16px;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.SettingsSectionTitle {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.SettingsItem {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  width: 100%;
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+.SettingsItemLeft {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  margin-right: 12px;
+}
+
+.SettingsItemLabel {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 15px;
+}
+
+.SettingsItemDesc {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.ToggleSwitch {
+  display: flex;
+  width: 48px;
+  height: 28px;
+  border-radius: 14px;
+  background-color: rgba(255, 255, 255, 0.15);
+  justify-content: flex-start;
+  align-items: center;
+  padding: 2px;
+}
+
+.ToggleActive {
+  background-color: #4a90d9;
+  justify-content: flex-end;
+}
+
+.ToggleDisabled {
+  opacity: 0.4;
+}
+
+.ToggleThumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  background-color: #ffffff;
+}
+
+.SpeedSelector {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.SpeedOption {
+  display: flex;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.SpeedOptionActive {
+  background-color: rgba(74, 144, 217, 0.3);
+}
+
+.SpeedOptionText {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+}
+
+.SettingsFooter {
+  display: flex;
+  justify-content: center;
+  padding: 24px 16px 40px;
+}
+
+.SettingsVersion {
+  color: rgba(255, 255, 255, 0.2);
+  font-size: 12px;
 }

@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useState, useInitData, useLynxGlobalEventListener, useRef } from "@lynx-js/react";
-import { PlayerControls } from "./PlayerControls";
+import { useCallback, useState, useInitData, useLynxGlobalEventListener, useRef } from "@lynx-js/react";
+import { HomePage } from "./components/HomePage";
+import { PlayerPage } from "./components/PlayerPage";
+import { PlaylistPage } from "./components/PlaylistPage";
+import { SettingsPage } from "./components/SettingsPage";
 import "../App.css";
 
 interface InitData {
@@ -10,9 +13,7 @@ interface InitData {
   mediaType: "video" | "audio";
 }
 
-type PlayerState = "idle" | "loading" | "playing" | "paused" | "ended" | "error";
-
-const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+type AppView = "home" | "player" | "playlist" | "settings";
 
 const lynxLog = {
   info: (msg: string) => {
@@ -33,235 +34,123 @@ const lynxLog = {
   },
 };
 
+export interface PlaybackItem {
+  filePath: string;
+  fileName: string;
+  mimeType: string;
+  isExternal: boolean;
+  mediaType: "video" | "audio";
+}
+
 export function AppComponent() {
   const initData = useInitData<InitData>();
-  const [playerState, setPlayerState] = useState<PlayerState>("idle");
-  const [position, setPosition] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [fileName, setFileName] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showControls, setShowControls] = useState(true);
-  const [pendingPlaybackData, setPendingPlaybackData] = useState<InitData | null>(null);
-  const [mediaType, setMediaType] = useState<"video" | "audio">("video");
-  const [playbackRate, setPlaybackRate] = useState(1);
-  const [locked, setLocked] = useState(false);
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [currentView, setCurrentView] = useState<AppView>("home");
+  const [playbackItem, setPlaybackItem] = useState<PlaybackItem | null>(null);
+  const [playlist, setPlaylist] = useState<PlaybackItem[]>([]);
+  const [playlistIndex, setPlaylistIndex] = useState(-1);
 
-  lynxLog.info("AppComponent: rendering, initData=" + JSON.stringify(initData));
+  const navigateTo = useCallback((view: AppView) => {
+    setCurrentView(view);
+  }, []);
 
-  const resetHideTimer = useCallback(() => {
-    if (hideTimerRef.current) {
-      clearTimeout(hideTimerRef.current);
-    }
-    setShowControls(true);
-    if (playerState === "playing") {
-      hideTimerRef.current = setTimeout(() => {
-        setShowControls(false);
-      }, 5000);
-    }
-  }, [playerState]);
+  const playItem = useCallback((item: PlaybackItem) => {
+    setPlaybackItem(item);
+    setCurrentView("player");
+  }, []);
 
-  useLynxGlobalEventListener("mpv:state-change", (event: any) => {
-    const state = event?.state;
-    const error = event?.error;
-    lynxLog.info("mpv:state-change " + JSON.stringify(event));
-    if (state) {
-      if (state === "surface_ready") {
-        lynxLog.info("MPV surface ready, native will auto-play pending URL");
-        setErrorMessage("");
-        return;
-      }
-      if (state === "waiting_surface") {
-        setPlayerState("loading");
-        return;
-      }
-      if (state === "mpv_ready") {
-        lynxLog.info("MPV engine ready");
-        return;
-      }
-      if (state === "audio_only") {
-        setMediaType("audio");
-        setErrorMessage("");
-        setPlayerState(state as PlayerState);
-        return;
-      }
-      setPlayerState(state as PlayerState);
+  const playFromPlaylist = useCallback((items: PlaybackItem[], index: number) => {
+    setPlaylist(items);
+    setPlaylistIndex(index);
+    if (items[index]) {
+      setPlaybackItem(items[index]);
     }
-    if (error) setErrorMessage(error);
-    if (state === "playing" || state === "paused") {
-      setErrorMessage("");
-      setShowControls(true);
-      resetHideTimer();
-    }
-  });
+    setCurrentView("player");
+  }, []);
 
-  useLynxGlobalEventListener("mpv:position-update", (event: any) => {
-    const pos = event?.position ?? 0;
-    const dur = event?.duration ?? 0;
-    setPosition(pos);
-    setDuration(dur);
-  });
+  const handleNextTrack = useCallback(() => {
+    if (playlist.length === 0 || playlistIndex >= playlist.length - 1) return;
+    const nextIdx = playlistIndex + 1;
+    setPlaylistIndex(nextIdx);
+    setPlaybackItem(playlist[nextIdx]);
+  }, [playlist, playlistIndex]);
+
+  const handlePrevTrack = useCallback(() => {
+    if (playlist.length === 0 || playlistIndex <= 0) return;
+    const prevIdx = playlistIndex - 1;
+    setPlaylistIndex(prevIdx);
+    setPlaybackItem(playlist[prevIdx]);
+  }, [playlist, playlistIndex]);
 
   useLynxGlobalEventListener("backend:ready", (event: any) => {
     lynxLog.info("Backend ready, port=" + String(event?.detail?.port ?? event?.port));
   });
 
-  useEffect(() => {
-    if (initData) {
-      setFileName(initData.fileName || "Unknown");
-      if (initData.mediaType) {
-        setMediaType(initData.mediaType);
-      }
-      lynxLog.info("fileName set to: " + (initData.fileName || "Unknown") + ", mediaType=" + (initData.mediaType || "video"));
-      startPlayback(initData);
-    }
+  const handleInitPlayback = useCallback(() => {
+    if (!initData) return;
+    const item: PlaybackItem = {
+      filePath: initData.filePath,
+      fileName: initData.fileName || "Unknown",
+      mimeType: initData.mimeType,
+      isExternal: initData.isExternal,
+      mediaType: initData.mediaType || "video",
+    };
+    setPlaybackItem(item);
+    setCurrentView("player");
   }, [initData]);
 
-  useEffect(() => {
-    resetHideTimer();
-  }, [playerState, resetHideTimer]);
+  if (currentView === "player") {
+    return (
+      <page style={{ width: "100%", height: "100%" }}>
+        <PlayerPage
+          item={playbackItem}
+          playlist={playlist}
+          playlistIndex={playlistIndex}
+          onBack={() => setCurrentView("home")}
+          onNext={handleNextTrack}
+          onPrev={handlePrevTrack}
+          onPlaylist={() => setCurrentView("playlist")}
+          onSettings={() => setCurrentView("settings")}
+        />
+      </page>
+    );
+  }
 
-  const startPlayback = useCallback(async (data: InitData | undefined | null) => {
-    lynxLog.info("startPlayback called, data=" + JSON.stringify(data));
-    if (!data || !data.filePath) {
-      lynxLog.error("startPlayback: filePath is empty! data=" + JSON.stringify(data));
-      setPlayerState("error");
-      setErrorMessage(data ? "文件路径为空" : "未收到播放数据");
-      return;
-    }
-    setPlayerState("loading");
-    setErrorMessage("");
-    try {
-      lynxLog.info("startPlayback: step1 getBackendStatus");
-      const status = await new Promise<any>((resolve) => {
-        NativeModules.GoBackendModule.getBackendStatus(resolve);
-      });
-      lynxLog.info("startPlayback: step1 result=" + JSON.stringify(status));
+  if (currentView === "playlist") {
+    return (
+      <page style={{ width: "100%", height: "100%" }}>
+        <PlaylistPage
+          playlist={playlist}
+          currentIndex={playlistIndex}
+          onSelect={(index: number) => {
+            setPlaylistIndex(index);
+            setPlaybackItem(playlist[index]);
+            setCurrentView("player");
+          }}
+          onBack={() => setCurrentView("player")}
+        />
+      </page>
+    );
+  }
 
-      if (data.isExternal || !status.running) {
-        lynxLog.info("startPlayback: step2 startBackend");
-        await new Promise<any>((resolve) => {
-          NativeModules.GoBackendModule.startBackend(resolve);
-        });
-        lynxLog.info("startPlayback: step2 done");
-      }
-
-      lynxLog.info("startPlayback: step3 getStreamUrl path=" + data.filePath);
-      const streamUrl = await new Promise<string>((resolve) => {
-        NativeModules.GoBackendModule.getStreamUrl(data.filePath, data.isExternal, resolve);
-      });
-      lynxLog.info("startPlayback: step3 url=" + streamUrl);
-
-      lynxLog.info("startPlayback: step4 mpv.play url=" + streamUrl);
-      await new Promise<any>((resolve) => {
-        NativeModules.MpvPlayerModule.play(streamUrl, resolve);
-      });
-      lynxLog.info("startPlayback: all steps done, playing");
-    } catch (e: any) {
-      lynxLog.error("startPlayback caught: " + (e?.message || String(e)));
-      setPlayerState("error");
-      setErrorMessage(e?.message || String(e));
-    }
-  }, []);
-
-  const handlePlayPause = useCallback(() => {
-    if (playerState === "playing") {
-      lynxLog.info("handlePlayPause: pause");
-      NativeModules.MpvPlayerModule.pause(() => {});
-      setPlayerState("paused");
-    } else if (playerState === "paused") {
-      lynxLog.info("handlePlayPause: resume");
-      NativeModules.MpvPlayerModule.resume(() => {});
-      setPlayerState("playing");
-    } else {
-      lynxLog.info("handlePlayPause: startPlayback (state=" + playerState + ")");
-      setErrorMessage("");
-      startPlayback(initData);
-    }
-    resetHideTimer();
-  }, [playerState, initData, startPlayback, resetHideTimer]);
-
-  const handleSeek = useCallback(
-    (positionMs: number) => {
-      NativeModules.MpvPlayerModule.seekTo(positionMs, () => {});
-      setPosition(positionMs);
-      resetHideTimer();
-    },
-    [resetHideTimer]
-  );
-
-  const handleSeekRelative = useCallback(
-    (deltaMs: number) => {
-      const newPos = Math.max(0, Math.min(position + deltaMs, duration));
-      NativeModules.MpvPlayerModule.seekTo(newPos, () => {});
-      setPosition(newPos);
-      resetHideTimer();
-    },
-    [position, duration, resetHideTimer]
-  );
-
-  const handleFullscreen = useCallback(() => {
-    const next = !isFullscreen;
-    setIsFullscreen(next);
-    NativeModules.MpvPlayerModule.setFullscreen(next, () => {});
-    resetHideTimer();
-  }, [isFullscreen, resetHideTimer]);
-
-  const handleCycleSpeed = useCallback(() => {
-    const currentIdx = SPEED_OPTIONS.indexOf(playbackRate);
-    const nextIdx = (currentIdx + 1) % SPEED_OPTIONS.length;
-    const nextRate = SPEED_OPTIONS[nextIdx];
-    setPlaybackRate(nextRate);
-    NativeModules.MpvPlayerModule.setProperty("speed", String(nextRate), () => {});
-    resetHideTimer();
-  }, [playbackRate, resetHideTimer]);
-
-  const handleToggleLock = useCallback(() => {
-    setLocked((prev) => !prev);
-    resetHideTimer();
-  }, [resetHideTimer]);
-
-  const handleToggleControls = useCallback(() => {
-    if (locked) {
-      setLocked(false);
-      return;
-    }
-    setShowControls((prev) => !prev);
-    resetHideTimer();
-  }, [locked, resetHideTimer]);
-
-  const handleBack = useCallback(() => {
-    lynxLog.info("handleBack: finishing player activity");
-    NativeModules.MpvPlayerModule.finish(() => {});
-  }, []);
+  if (currentView === "settings") {
+    return (
+      <page style={{ width: "100%", height: "100%" }}>
+        <SettingsPage
+          onBack={() => setCurrentView("home")}
+        />
+      </page>
+    );
+  }
 
   return (
     <page style={{ width: "100%", height: "100%" }}>
-      <view
-        className="PlayerContainer"
-        bindtap={handleToggleControls}
-      >
-        <PlayerControls
-          state={playerState}
-          isFullscreen={isFullscreen}
-          fileName={fileName}
-          currentTime={position}
-          duration={duration}
-          showControls={showControls}
-          error={errorMessage || undefined}
-          mediaType={mediaType}
-          playbackRate={playbackRate}
-          locked={locked}
-          onPlayPause={handlePlayPause}
-          onSeek={handleSeek}
-          onSeekRelative={handleSeekRelative}
-          onToggleFullscreen={handleFullscreen}
-          onCycleSpeed={handleCycleSpeed}
-          onToggleLock={handleToggleLock}
-          onBack={handleBack}
-        />
-      </view>
+      <HomePage
+        onPlayItem={playItem}
+        onPlayFromList={playFromPlaylist}
+        onInitPlayback={handleInitPlayback}
+        hasInitData={!!initData?.filePath}
+        onSettings={() => setCurrentView("settings")}
+      />
     </page>
   );
 }
