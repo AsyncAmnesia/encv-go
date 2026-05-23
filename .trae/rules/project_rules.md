@@ -18,3 +18,9 @@
 - stdout/stderr 通过 dup2 重定向到临时文件捕获
 - 环境变量 `ENCV_LIB_DIR` 指向 Android `nativeLibraryDir`
 - 相关文件：`internal/utils/ffmpeg_dlopen.go`（Android）、`internal/utils/ffmpeg_dlopen_stub.go`（桌面端）、`internal/utils/video.go`
+
+## 前端构建验证
+
+- `vue-tsc --noEmit` 对 `.vue` 文件 `<script setup>` 中未使用导入存在漏检（TS6133）
+- **必须同时运行 `vite build`**，Rollup 会检测未使用导入并报错
+- 完整验证流程：`vue-tsc --noEmit && vite build`
