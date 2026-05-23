@@ -205,7 +205,8 @@ Lynx 播放器运行在独立的 `PlayerActivityLynx` 中，通过以下方式�
 
 #### Scenario: 移动端模式
 - **WHEN** 环境变量 `ENCV_MOBILE=1`
-- **THEN** 系统跳过 admin 相关路由（登录、代理、OpenList），仅注册移动端 API
+- **THEN** 系统注册所有路由（包括 admin 路由），移动端用户可通过同一端口访问 admin UI、OpenList 代理、登录认证等功能
+- **AND** 之前 GoFrame 太重导致移动端必须跳过 admin，Gin 极轻量不再有此限制
 
 ### Requirement: Gin 路由注册
 
@@ -303,11 +304,27 @@ Lynx 播放器运行在独立的 `PlayerActivityLynx` 中，通过以下方式�
 - **WHEN** 服务器启动后
 - **THEN** 通过 `/ping` 端点验证实例 ID
 
+### Requirement: 移动端 Admin 可用
+
+系统 SHALL 在移动端模式下提供完整的 admin 功能，不再因框架重量而跳过。
+
+#### Scenario: 移动端访问 Admin UI
+- **WHEN** 移动端用户在浏览器中访问 `http://127.0.0.1:{port}/admin/`
+- **THEN** 系统正常渲染 admin 页面，用户可登录、管理文件、使用 OpenList 代理
+
+#### Scenario: 移动端 OpenList 代理
+- **WHEN** 移动端用户访问 `/openlist/sites/{siteId}/*` 路由
+- **THEN** 系统正常代理 OpenList 请求，与桌面端行为一致
+
+#### Scenario: 移动端登录认证
+- **WHEN** 移动端用户访问需要认证的路由
+- **THEN** 系统重定向到 `/login` 页面，JWT 认证流程与桌面端一致
+
 ## MODIFIED Requirements
 
 ### Requirement: 服务器配置
 原：`cfg.Server.Port` 用于 backend，`cfg.Admin.Port` 用于 admin
-改：统一使用 `cfg.Server.Port`，`cfg.Admin.Port` 保留但作为向后兼容的别名（如果设置了则使用该端口，否则使用 Server.Port）
+改：统一使用 `cfg.Server.Port`，`cfg.Admin.Port` 配置项移除（移动端和桌面端共用单端口，不再需要区分）
 
 ### Requirement: OpenList 代理
 原：通过 GoFrame RouterGroup 注册
@@ -322,6 +339,14 @@ Lynx 播放器运行在独立的 `PlayerActivityLynx` 中，通过以下方式�
 ### Requirement: 双服务器架构
 **Reason**: 合并为单服务器
 **Migration**: 删除 `StartGfServerWithRetry`，简化 `cmd/encv/servers.go`
+
+### Requirement: 移动端跳过 Admin 逻辑
+**Reason**: GoFrame 太重导致移动端必须跳过 admin 服务器，Gin 极轻量不再需要此限制
+**Migration**: 移除 `ENCV_MOBILE=1` 时跳过 admin 服务器启动的逻辑，移动端统一注册所有路由
+
+### Requirement: cfg.Admin.Port 配置项
+**Reason**: 单端口架构不再需要区分 backend 和 admin 端口
+**Migration**: 移除 `cfg.Admin.Port` 配置项，统一使用 `cfg.Server.Port`
 
 ## 风险评估
 

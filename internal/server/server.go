@@ -3,7 +3,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"log/slog"
@@ -15,9 +14,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/Soltus/encv-go/internal/auth"
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/middleware"
+	"github.com/Soltus/encv-go/internal/openlist"
 	"github.com/Soltus/encv-go/internal/register"
+	"github.com/Soltus/encv-go/internal/routes"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/handler"
@@ -33,17 +36,17 @@ import (
 type Server struct {
 	server     *http.Server
 	cfg        *config.Config
-	configPath string // 配置文件路径，用于 API 读写
-	servingDir string // 主服务目录的绝对路径
-	version    string // 存储应用版本
-	instanceID string // 存储本次启动的唯一实例ID
-	webdavDir  string // WebDAV 目录的绝对路径
-	webdavPath string // WebDAV 的路由前缀
-	// 【关键替换】用新的 ReaderService 替代旧的 ContainerManager
+	configPath string
+	servingDir string
+	version    string
+	instanceID string
+	webdavDir  string
+	webdavPath string
 	readerService  *service.ReaderService
 	mobileSvc      *mobileservice.MobileService
 	contentHandler *handler.ContentHandler
 	chunkNamers    []namer.ChunkNamer
+	jwtManager     *auth.JWTManager
 }
 
 func NewServer(ctx context.Context, configPath string) *Server {
@@ -110,35 +113,90 @@ func (s *Server) Start(version string) (string, error) {
 	slog.SetDefault(slog.New(wsLogHandler))
 	slog.Info("WSLogHandler initialized, logs will be bridged to WebSocket")
 
-	// 3. 创建统一的 ServeMux 并注册路由
-	mux := http.NewServeMux()
-	mux.HandleFunc("/ping", s.handlePing)
-	mux.HandleFunc("/health", s.handleHealth)
-	mux.HandleFunc("/stream", s.handleStreamRequest)
-	mux.HandleFunc("/api/config", s.handleConfigAPI)
-	mux.HandleFunc("/api/config/schema", s.handleConfigSchemaAPI)
-	mux.HandleFunc("/api/files", s.handleMobileFiles)
-	mux.HandleFunc("/api/file", s.handleReadFileContent)
-	mux.HandleFunc("/api/tasks", s.handleMobileTasks)
-	mux.HandleFunc("/api/tasks/", s.handleMobileTasks)
-	mux.HandleFunc("/api/webdav/test", s.handleTestWebDAV)
-	mux.HandleFunc("/api/remote/info", s.handleRemoteInfo)
-	mux.HandleFunc("/api/remote/openlist", s.handleOpenlistSites)
-	mux.HandleFunc("/api/remote/openlist/", s.handleOpenlistSiteByID)
-	mux.HandleFunc("/api/permissions", s.handlePermissions)
-	mux.HandleFunc("/api/server/shutdown", s.handleServerShutdown)
-	mux.HandleFunc("/api/files/exists", s.handleFileExistsAPI)
-	mux.HandleFunc("/api/files/search", s.handleSearchFilesAPI)
-	mux.HandleFunc("/api/index/stats", s.handleIndexStats)
-	mux.HandleFunc("/api/index/rebuild", s.handleIndexRebuild)
-	mux.HandleFunc("/api/index/clear", s.handleIndexClear)
-	mux.HandleFunc("/api/stream/external", s.handleStreamExternalFile)
-	mux.HandleFunc("/api/logs", s.handleAPILogs)
-	mux.HandleFunc("/ws", s.handleWebSocket)
+	// 3. 创建 Gin 引擎并注册路由
+	r := NewGinApp(s.cfg)
 
-	mux.HandleFunc("/", s.handleRequest)
+	r.GET("/ping", s.handlePingGin)
+	r.GET("/health", s.handleHealthGin)
+	r.GET("/stream", gin.WrapF(s.handleStreamRequest))
+	r.GET("/api/config", s.handleGetConfigGin)
+	r.PUT("/api/config", s.handlePutConfigGin)
+	r.GET("/api/config/schema", s.handleConfigSchemaGin)
+	r.GET("/api/files", s.handleListFilesGin)
+	r.DELETE("/api/files", s.handleDeleteFileGin)
+	r.GET("/api/file", s.handleReadFileContentGin)
+	r.GET("/api/tasks", s.handleGetTasksGin)
+	r.POST("/api/tasks", s.handleCreateTaskGin)
+	r.POST("/api/tasks/:id/cancel", s.handleCancelTaskGin)
+	r.POST("/api/tasks/:id/retry", s.handleRetryTaskGin)
+	r.POST("/api/webdav/test", s.handleTestWebDAVGin)
+	r.GET("/api/remote/info", s.handleRemoteInfoGin)
+	r.GET("/api/remote/openlist", s.handleListOpenlistSitesGin)
+	r.POST("/api/remote/openlist", s.handleAddOpenlistSiteGin)
+	r.PUT("/api/remote/openlist/:id", s.handleUpdateOpenlistSiteGin)
+	r.DELETE("/api/remote/openlist/:id", s.handleDeleteOpenlistSiteGin)
+	r.GET("/api/permissions", s.handlePermissionsGin)
+	r.POST("/api/server/shutdown", s.handleServerShutdownGin)
+	r.GET("/api/files/exists", s.handleFileExistsGin)
+	r.GET("/api/files/search", s.handleSearchFilesGin)
+	r.GET("/api/index/stats", s.handleIndexStatsGin)
+	r.POST("/api/index/rebuild", s.handleIndexRebuildGin)
+	r.POST("/api/index/clear", s.handleIndexClearGin)
+	r.GET("/api/stream/external", s.handleStreamExternalFileGin)
+	r.POST("/api/logs", s.handleAPILogsGin)
+	r.GET("/ws", gin.WrapF(s.handleWebSocket))
 
-	// 如果启用了 WebDAV，则注册其处理器
+	// Admin 路由
+	loginRequired := s.cfg.Admin.Password != ""
+	if loginRequired {
+		s.jwtManager = auth.NewJWTManager(s.cfg.Admin.Password, 7*24*time.Hour)
+		slog.Info("Admin service requires login")
+	} else {
+		slog.Info("Admin service running without authentication (password is empty)")
+	}
+
+	r.GET(routes.Login, s.handleLoginGin)
+	r.POST(routes.Login, s.handleLoginGin)
+	r.Any(routes.Logout, s.handleLogoutGin)
+
+	adminGroup := r.Group(routes.Admin)
+	if loginRequired {
+		adminGroup.Use(JWTAuthMiddleware(s.jwtManager))
+	}
+	adminGroup.POST("/file/analyze", s.handleFileAnalyzeGin)
+	adminGroup.POST("/file/rename", s.handleFileRenameGin)
+
+	fsProxyGroup := r.Group(routes.FSProxy)
+	if loginRequired {
+		fsProxyGroup.Use(JWTAuthMiddleware(s.jwtManager))
+	}
+	fsProxyGroup.Any("/*path", s.handleFSProxyGin)
+
+	r.Any(routes.FSProxyAPI+"/*path", func(c *gin.Context) {
+		path := c.Param("path")
+		c.Redirect(http.StatusTemporaryRedirect, "/api"+path)
+	})
+
+	// OpenList 路由
+	if len(s.cfg.Proxy.Sites) > 0 {
+		multiSiteServer := openlist.NewMultiSiteServer(config.NewContext(context.Background(), s.cfg))
+		proxyGin := NewProxyGin(s.cfg)
+
+		r.GET(routes.OpenListProxy+"/sites", handleOpenlistSitesGin(multiSiteServer))
+		r.POST(routes.OpenListProxy+"/set-token", handleSetSiteTokenGin(multiSiteServer))
+		r.POST(routes.OpenListProxy+"/delete-token", handleDeleteTokenGin(multiSiteServer))
+		r.POST(routes.OpenListProxy+"/set-expiry", handleSetExpiryGin(multiSiteServer))
+
+		openlistGroup := r.Group(routes.OpenListProxy + "/sites")
+		openlistGroup.Use(OpenlistSiteMiddleware(multiSiteServer))
+		if loginRequired {
+			openlistGroup.Use(JWTAuthMiddleware(s.jwtManager))
+		}
+		openlistGroup.Any("/:siteId/_preview/*path", handleOpenlistPreviewGin())
+		openlistGroup.POST("/:siteId/decrypt", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.Any("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+	}
+
 	if s.webdavDir != "" {
 		chunkNamers := plugins.GetAllRegisteredChunkNamers()
 		fs, fsErr := webdav.NewENCVFS(config.NewContext(context.Background(), s.cfg), s.readerService, chunkNamers)
@@ -149,22 +207,17 @@ func (s *Server) Start(version string) (string, error) {
 				FileSystem: fs,
 				LockSystem: goWebdav.NewMemLS(),
 			}
-			configAwareWebdavHandler := middleware.WithConfig(s.cfg, webdavHandler)
-
 			webdavUser := s.cfg.Webdav.Username
 			webdavPass := s.cfg.Webdav.Password
-
 			authMiddleware := middleware.BasicAuth(webdavUser, webdavPass)
-			protectedWebdavHandler := authMiddleware(configAwareWebdavHandler)
-
-			mux.Handle(s.webdavPath, protectedWebdavHandler)
+			protectedWebdavHandler := authMiddleware(webdavHandler)
+			r.Any(s.webdavPath+"*path", gin.WrapH(protectedWebdavHandler))
 		}
 	}
 
-	// CorsMiddleware 应该在最外层，最先处理请求
-	finalHandler := middleware.CorsMiddleware(middleware.WithConfig(s.cfg, mux))
-	loggedHandler := middleware.LoggingMiddleware(finalHandler)
-	return register.StartHttpHandlerWithRetry(loggedHandler, s.cfg.Server.Port, s.instanceID, s.version)
+	r.NoRoute(gin.WrapF(s.handleRequest))
+
+	return register.StartGinWithRetry(r, s.cfg.Server.Port, s.instanceID, s.version)
 }
 
 func (s *Server) Stop() error {
@@ -176,36 +229,6 @@ func (s *Server) Stop() error {
 		return s.server.Shutdown(ctx)
 	}
 	return nil
-}
-
-func (s *Server) handleAPILogs(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var req struct {
-		Level     string `json:"level"`
-		Message   string `json:"message"`
-		Tag       string `json:"tag,omitempty"`
-		Timestamp int64  `json:"timestamp,omitempty"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	msg := req.Message
-	if req.Tag != "" {
-		msg = "[" + req.Tag + "] " + msg
-	}
-	switch req.Level {
-	case "error":
-		slog.Error(msg)
-	case "warn":
-		slog.Warn(msg)
-	default:
-		slog.Info(msg)
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleRequest 是主路由 / 处理器
