@@ -59,7 +59,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Artplayer from 'artplayer'
 import {
@@ -67,7 +67,7 @@ import {
   IonIcon, IonContent, IonChip, IonSpinner,
 } from '@ionic/vue'
 import { arrowBack, alertCircle, refresh, resize, time } from 'ionicons/icons'
-import { getFileStreamUrl, getExternalStreamUrl } from '@/api/encv'
+import { getFileStreamUrl } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { isNative } from '@/plugins/GoProcess'
