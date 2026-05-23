@@ -45,20 +45,16 @@ fi
 
 echo "=== Building x264 ==="
 cd "${BUILD_DIR}/x264"
+CC="$CC" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" \
 ./configure \
     --host=${ARCH}-linux-android \
     --prefix="${BUILD_DIR}/x264-install" \
     --enable-static \
-    --disable-shared \
     --disable-cli \
     --disable-opencl \
     --cross-prefix="${TOOLCHAIN}/bin/llvm-" \
-    --cc="$CC" \
-    --ar="$AR" \
-    --ranlib="$RANLIB" \
-    --strip="$STRIP" \
-    CFLAGS="-fPIC -DANDROID" \
-    LDFLAGS="-lm"
+    --extra-cflags="-fPIC -DANDROID" \
+    --extra-ldflags="-lm"
 
 make -j$(nproc)
 make install
