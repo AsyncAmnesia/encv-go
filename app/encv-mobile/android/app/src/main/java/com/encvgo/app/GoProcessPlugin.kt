@@ -166,7 +166,7 @@ class GoProcessPlugin : Plugin() {
                 return
             }
             PlayerOverlayManager.getInstance().showOverlay(
-                mainActivity, path, name, mimeType, false
+                mainActivity, path ?: "", name ?: "", mimeType ?: "", false
             )
             call.resolve()
         } catch (e: Exception) {
