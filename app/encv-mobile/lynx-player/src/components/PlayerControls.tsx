@@ -141,7 +141,7 @@ function VideoControls({
           </Button>
           <view className="FlexSpacer" />
           <Button onClick={onToggleFullscreen} className="CtrlBtn">
-            <text className="IconMd">{isFullscreen ? '\u2913' : '\u2912'}</text>
+            <text className="IconMd">⛶</text>
           </Button>
         </view>
       </view>

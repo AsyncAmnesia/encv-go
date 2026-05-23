@@ -217,7 +217,7 @@ jobs:
             echo "=== Building RELEASE APK v${{ inputs.version }} ==="
             npx cap build android \
               --androidreleasetype APK \
-              --keystorepath keystore/release.jks \
+              --keystorepath ${{ github.workspace }}/app/encv-mobile/keystore/release.jks \
               --keystorepass encv2025 \
               --keystorealias encvrelease \
               --keystorealiaspass encv2025
