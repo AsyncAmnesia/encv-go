@@ -66,6 +66,7 @@ if [ ! -f "${X264_INSTALL}/lib/libx264.a" ]; then
         --host=${ARCH}-linux-android \
         --prefix="${X264_INSTALL}" \
         --enable-static \
+        --enable-pic \
         --disable-cli \
         --disable-opencl \
         --cross-prefix="${TOOLCHAIN}/bin/llvm-" \
@@ -112,7 +113,8 @@ cat > "${BUILD_DIR}/pkg-config-wrapper" << PCEOF
 #!/bin/bash
 export PKG_CONFIG_PATH="${X264_INSTALL}/lib/pkgconfig"
 export PKG_CONFIG_LIBDIR="${X264_INSTALL}/lib/pkgconfig"
-export PKG_CONFIG_SYSROOT_DIR="${TOOLCHAIN}/sysroot"
+export PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1
+export PKG_CONFIG_ALLOW_SYSTEM_LIBS=1
 exec pkg-config "\$@"
 PCEOF
 chmod +x "${BUILD_DIR}/pkg-config-wrapper"
