@@ -30,8 +30,9 @@ type MobileTask struct {
 	Speed      string    `json:"speed,omitempty"`
 	Eta        string    `json:"eta,omitempty"`
 	Error      string    `json:"error,omitempty"`
-	CreatedAt  time.Time `json:"createdAt"`
-	cancelFn   context.CancelFunc
+	CreatedAt   time.Time  `json:"createdAt"`
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+	cancelFn    context.CancelFunc
 }
 
 type TaskManager struct {
@@ -110,8 +111,14 @@ func (tm *TaskManager) loadTasks() {
 		case "running", "queued":
 			t.Status = "failed"
 			t.Error = "interrupted by restart"
+			now := time.Now()
+			t.CompletedAt = &now
 		case "cancelling":
 			t.Status = "cancelled"
+			if t.CompletedAt == nil {
+				now := time.Now()
+				t.CompletedAt = &now
+			}
 		}
 		t.cancelFn = nil
 		t.Speed = ""
@@ -190,6 +197,8 @@ func (tm *TaskManager) Cancel(id string) (*MobileTask, error) {
 		}
 	} else {
 		task.Status = "cancelled"
+		now := time.Now()
+		task.CompletedAt = &now
 	}
 	if tm.broadcaster != nil {
 		tm.broadcaster.Broadcast("task:update", map[string]interface{}{
@@ -421,6 +430,8 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 		task.Phase = "completed"
 		task.Speed = ""
 		task.Eta = ""
+		now := time.Now()
+		task.CompletedAt = &now
 	}
 	tm.mu.Unlock()
 
@@ -599,6 +610,8 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 		task.Phase = "completed"
 		task.Speed = ""
 		task.Eta = ""
+		now := time.Now()
+		task.CompletedAt = &now
 	}
 	tm.mu.Unlock()
 
@@ -623,6 +636,8 @@ func (tm *TaskManager) failTask(id, errMsg string) {
 	if task, ok := tm.tasks[id]; ok {
 		task.Status = "failed"
 		task.Error = errMsg
+		now := time.Now()
+		task.CompletedAt = &now
 		slog.Error("Task failed", "id", id, "error", errMsg)
 		if tm.broadcaster != nil {
 			tm.broadcaster.Broadcast("task:completed", map[string]interface{}{

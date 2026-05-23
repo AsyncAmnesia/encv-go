@@ -1,116 +1,111 @@
-# ENCV Mobile PlayerActivity 修复总结与待办
+# Lynx 播放器 Activity 修复经验
 
-## ✅ 已解决：白屏问题
+## 核心问题：Lynx Vue 路由配置
+
+### 问题描述
+
+Lynx 播放器 Activity 启动后不显示任何 UI，首页和播放页均为空白。
 
 ### 根因
-Ionic 的 `<ion-router-outlet>` + Vue Router 在 PlayerActivity（同一进程中的第二个 BridgeActivity 实例）中无法正常工作。两个 Ionic App 实例共享全局状态导致路由系统冲突，`<ion-router-outlet>` 不渲染任何路由组件。
 
-### 修复
-[PlayerApp.vue](src/PlayerApp.vue) 移除 `<ion-router-outlet>`，改为直接用 `<Suspense>` 渲染 `StandalonePlayer` 组件，绕过 Ionic Router。
+Lynx 运行在非浏览器环境（无 `window.location`、无 History API），vue-router 必须使用 `createMemoryHistory()`。
 
-### 验证日志（logcat 确认）
-```
-[PLAYER-INIT] App mounted successfully           ✅ Vue挂载
-[StandalonePlayer] <script setup> evaluating...  ✅ 组件加载
-[StandalonePlayer] onMounted fired               ✅ 生命周期
-[StandalonePlayer] ArtPlayer initialized          ✅ ArtPlayer 5.4.0
-```
+两个关键 Bug：
 
----
+1. **`createMemoryHistory()` 参数误用**：其参数是 `base`（URL 前缀），不是初始路由。错误地将 `/player` 作为 base 传入，导致所有路由 URL 被加上 `/player` 前缀，路由匹配完全失败。
+2. **缺少手动初始导航**：Memory 模式不会自动触发初始导航，`RouterView` 始终为空，必须在 `app.use(router)` 之后手动 `router.push()` 到初始路由。
 
-## 待修复问题
+### 正确写法
 
-### 🔴 问题 0：播放器显示为浏览器原生控件而非 ArtPlayer
+```typescript
+// router.ts
+import { createRouter, createMemoryHistory } from 'vue-router'
 
-**现象**：即使第三方打开能播放视频，界面也是 Android WebView 原生的 `<video>` 控件（原生进度条、播放按钮），不是 ArtPlayer 5.4.0 的橙色主题自定义控件。
+const router = createRouter({
+  history: createMemoryHistory(), // 无参数！base 默认为 '/'
+  routes: [
+    { path: '/', name: 'home', component: HomeView },
+    { path: '/player', name: 'player', component: PlayerView },
+  ],
+})
 
-**可能根因**：
-1. **Android WebView 全屏视频拦截** — WebView 的 `WebChromeClient.onShowCustomView` 默认实现会在检测到 `<video>` 播放时启动系统原生全屏播放器，绕过 ArtPlayer
-2. **ArtPlayer CSS 未正确加载** — Vite 多入口构建时 artplayer 样式可能未包含在 player 入口的依赖中
-3. **ArtPlayer 初始化后立即报错（404）导致降级显示**
-
-**修复方向**：
-- PlayerActivity 中覆写 WebChromeClient，不实现 `onShowCustomView` → 阻止原生全屏拦截
-- 确认 artplayer CSS 在 player 入口构建产物中存在
-- ArtPlayer option 添加 `customType: 'normal'` 确保自定义渲染模式
-
-### 问题 1：应用内打开视频无法播放（路径转换）
-
-**现象**：从 ENC 应用内 Files 页面点击视频 → PlayerActivity 打开 → ArtPlayer 报错循环重试
-
-**根因链路**：
-```
-Files.vue → openInPlayer("/123云盘/xxx.mp4", ...)
-  → PlayerActivity.intentFilePath = "/123云盘/xxx.mp4"
-  → StandalonePlayer.streamUrl = getExternalStreamUrl("/123云盘/xxx.mp4")
-  → GET /api/stream/external?path=%2F123%E4%BA%91%E7%9B%98...
-  → 后端 os.Stat("/123云盘/xxx.mp4") → 文件不存在 → 404
-  → net::ERR_BLOCKED_BY_ORB (-1) → ArtPlayer playback error (循环)
+export default router
 ```
 
-**对比**：第三方应用打开时，content URI 解析出的路径是 `/storage/emulated/0/123云盘/xxx.mp4`（完整绝对路径）→ 正常播放
+```typescript
+// main.ts
+import { createApp } from 'vue-lynx'
+import App from './App.vue'
+import router from './router'
 
-**原因**：后端文件列表 API 返回的路径是相对于 serve root（`/storage/emulated/0`）的路径，如 `/123云盘/xxx.mp4`。这个路径在 Android 文件系统中不存在，真实路径是 `/storage/emulated/0/123云盘/xxx.mp4`。
+function getInitialRoute(): string {
+  try {
+    const lynxObj = (globalThis as any).lynx
+    const globalProps = lynxObj?.__globalProps
+    if (globalProps?.filePath) {
+      return '/player'
+    }
+  } catch (_e) {
+    // ignore
+  }
+  return '/'
+}
 
-**修复**：在 `StandalonePlayer.vue` 的 `startPlayback()` 中，对 `filePath.value` 做路径补全：
-- 如果路径以 `/` 开头但不是以 `/storage/` 开头 → 视为相对 serve root 的路径
-- 在原生平台上自动补全为 `/storage/emulated/0{原路径}`
-
-### 问题 2：设置按钮无响应
-
-**现象**：播放器界面右上角设置图标点击无反应
-
-**根因**：`goSettings()` 方法使用 `router.push('/player/settings')` 跳转，但我们已移除 `<ion-router-outlet>`，Vue Router 不再工作。
-
-**修复**：将设置页面改为内联渲染（类似主应用的 modal/popup 模式），或使用动态组件切换：
-
-```vue
-<!-- PlayerApp.vue 替代方案 -->
-<template>
-  <ion-app>
-    <Suspense>
-      <template #default>
-        <StandalonePlayer v-if="!showSettings" @settings="showSettings = true" />
-        <PlayerSettings v-else @close="showSettings = false" />
-      </template>
-    </Suspense>
-  </ion-app>
-</template>
+const app = createApp(App)
+app.use(router)
+router.push(getInitialRoute()) // 必须手动 push！
+app.mount()
 ```
 
-同时在 `StandalonePlayer.vue` 中将 `goSettings()` 改为 emit 事件。
+### 参考文档
 
-### 问题 3：ArtPlayer 全屏旋转
+- Lynx Vue Router 官方文档：https://vue.lynxjs.org/guide/routing
+- vue-router Memory 模式文档：https://router.vuejs.org/guide/essentials/history-mode.html#memory-mode
 
-**需求**：全屏后根据视频宽高比智能旋转屏幕（横屏/竖屏）
+> "Memory 模式不会假定自己处于浏览器环境，因此不会与 URL 交互也不会自动触发初始导航。需要你在调用 `app.use(router)` 之后手动 push 到初始导航。"
 
-**修复方向**：
-- 监听 ArtPlayer 的 `fullscreen:change` 事件
-- 进入全屏时获取视频宽高比 → 决定横屏还是竖屏
-- 调用 Capacitor 的屏幕方向 API 或原生插件锁定方向
-- 退出全屏时恢复原始方向
+## Lynx CSS 兼容性
 
----
+以下 CSS 属性在 Lynx 中均支持，无需替换：
 
-## 架构总结
+| CSS 属性 | 支持状态 | 官方文档 |
+|----------|---------|---------|
+| `linear-gradient` | ✅ 支持 | https://lynxjs.org/api/css/properties/background-image.html |
+| `transform` | ✅ 支持 | https://lynxjs.org/api/css/properties/transform |
+| `pointer-events` | ✅ 支持（`auto`/`none`） | https://lynxjs.org/api/css/properties/pointer-events |
+| `calc()` | ✅ 支持 | 在 bottom、inset-inline-start 等属性文档中可见 |
+| `position: absolute` | ✅ 支持 | — |
+| `flex` 布局 | ✅ 支持 | — |
 
-### 文件清单
+## 调试方法
 
-| 文件 | 用途 |
-|------|------|
-| `player.html` | 播放器 HTML 入口 |
-| `src/player-main.ts` | 播放器 Vue 应用入口 |
-| `src/PlayerApp.vue` | 播放器根组件（直接渲染 StandalonePlayer） |
-| `src/views/StandalonePlayer.vue` | 播放器主组件（ArtPlayer + 控制逻辑） |
-| `src/views/PlayerSettings.vue` | 播放器独立设置页 |
-| `src/router/player.ts` | 播放器路由（当前未使用，保留备用） |
-| `android-overlay/.../PlayerActivity.kt` | Android Activity（独立窗口 + 后端交互） |
-| `android-overlay/.../GoProcessPlugin.kt` | Capacitor 插件（openInPlayer/isStandaloneMode） |
-| `android-overlay/.../AndroidManifest.xml` | Document-Centric 声明 |
+### 1. LynxViewClient 错误捕获
 
-### 关键架构决策
+`PlayerActivityLynx.kt` 中通过 `LynxViewClient` 回调捕获错误：
 
-1. **不覆写 `load()`** — 让 Capacitor 正常完成初始化，在 `onCreate().super.onCreate()` 之后导航
-2. **不用 Ionic Router** — 直接组件渲染避免第二实例冲突
-3. **Document-Centric 模型** — `FLAG_ACTIVITY_NEW_DOCUMENT` + `documentLaunchMode="always"` 实现独立窗口
-4. **独立后端交互** — PlayerActivity 自己管理 EncvGoService 生命周期和广播接收
+- `onReceivedError`：通用错误
+- `onReceivedJSError`：JavaScript 运行时错误
+- `onReceivedJavaError`：Java 层错误
+- `onReceivedNativeError`：Native 层错误
+
+### 2. JS 端日志
+
+通过 `LogBridgeModule` 将 JS 日志转发到 Android LogRelay：
+
+```typescript
+globalThis.NativeModules.LogBridgeModule.log('error', message, () => {})
+```
+
+### 3. 常见排查步骤
+
+1. 检查 `onLoadFailed` 是否被调用 — 模板加载失败
+2. 检查 `onReceivedJSError` — JS 运行时错误
+3. 检查 `onRuntimeReady` 和 `onLoadSuccess` 是否正常触发
+4. 确认 `renderTemplateUrl` 的 initData 参数正确传递了 `filePath` 等信息
+
+## 经验教训
+
+1. **查阅官方文档优先**：Lynx Vue 官方文档明确说明了 router 的用法，不应凭猜测杜撰不支持的属性
+2. **`createMemoryHistory()` 参数是 base 不是路由**：这是 vue-router API 设计，不是 Lynx 特有问题
+3. **Memory 模式必须手动 push 初始路由**：这是 vue-router 官方文档明确说明的行为
+4. **CSS 兼容性需要查文档确认**：Lynx 的 CSS 支持度很高（97%），不要轻易假设某个 CSS 属性不支持

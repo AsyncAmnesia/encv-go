@@ -178,6 +178,7 @@ export interface EncvTask {
   eta?: string
   error?: string
   createdAt: string
+  completedAt?: string
 }
 
 export async function getTasks(): Promise<EncvTask[]> {

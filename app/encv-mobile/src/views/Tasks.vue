@@ -38,6 +38,10 @@
                 </ion-badge>
                 <span class="task-type">{{ task.type === 'encrypt' ? t('tasks.encrypt') : t('tasks.decrypt') }}</span>
               </p>
+              <p class="task-time-info">
+                <span class="time-created">{{ formatTaskTime(task.createdAt) }}</span>
+                <span v-if="getTaskDuration(task)" class="time-duration">{{ getTaskDuration(task) }}</span>
+              </p>
               <div v-if="task.status === 'running' || task.status === 'cancelling'" class="progress-section">
                 <ion-progress-bar
                   :value="task.progress / 100"
@@ -316,6 +320,45 @@ function getTaskName(task: EncvTask) {
   return parts[parts.length - 1] || task.sourcePath
 }
 
+function formatTaskTime(isoStr: string): string {
+  if (!isoStr) return ''
+  try {
+    const d = new Date(isoStr)
+    const h = d.getHours().toString().padStart(2, '0')
+    const m = d.getMinutes().toString().padStart(2, '0')
+    return `${h}:${m}`
+  } catch {
+    return ''
+  }
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 0) return ''
+  const totalSec = Math.floor(ms / 1000)
+  if (totalSec < 60) return `${totalSec}s`
+  const min = Math.floor(totalSec / 60)
+  const sec = totalSec % 60
+  if (min < 60) return `${min}m${sec}s`
+  const hr = Math.floor(min / 60)
+  const rm = min % 60
+  return `${hr}h${rm}m`
+}
+
+function getTaskDuration(task: EncvTask): string {
+  if (!task.createdAt) return ''
+  const created = new Date(task.createdAt).getTime()
+  if (isNaN(created)) return ''
+  if (task.completedAt) {
+    const completed = new Date(task.completedAt).getTime()
+    if (isNaN(completed)) return ''
+    return formatDuration(completed - created)
+  }
+  if (task.status === 'running' || task.status === 'cancelling') {
+    return formatDuration(Date.now() - created)
+  }
+  return ''
+}
+
 async function loadTasks() {
   loading.value = true
   try {
@@ -493,6 +536,7 @@ function onTaskCompleted(data: { id: string; error?: string }) {
       speed: '',
       eta: '',
       error: data.error,
+      completedAt: new Date().toISOString(),
     }
   }
 }
@@ -548,6 +592,24 @@ onUnmounted(() => {
 .task-type {
   font-size: 12px;
   color: var(--encv-text-secondary);
+}
+
+.task-time-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+}
+
+.time-created {
+  color: var(--encv-text-secondary);
+}
+
+.time-duration {
+  color: var(--ion-color-primary);
+  font-weight: 500;
 }
 
 .progress-section {

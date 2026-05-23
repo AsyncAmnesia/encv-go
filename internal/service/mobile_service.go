@@ -687,7 +687,7 @@ func (s *MobileService) CheckEncryptOutputExists(sourcePath, targetDir string) (
 		return false, "", &ForbiddenError{Err: err}
 	}
 
-	outputName, err := plugins.PredictEncryptOutputName(sourceAbs)
+	outputName, err := plugins.PredictEncryptOutputName(sourceAbs, s.cfg)
 	if err != nil {
 		return false, "", err
 	}

@@ -1,280 +1,219 @@
-# 修复计划：加密覆盖检测、任务列表增强、Lynx播放器UI
+# 修复计划：加密覆盖检测、任务列表增强、Lynx 播放器 UI
 
-## 问题 1：加密覆盖检测不符合事实
-
-### 根因分析
-
-`PredictEncryptOutputName` 调用 `FindEncryptingPlugin` 获取插件后，直接调用 `plugin.GetChunkNamer()` 获取命名器。但此时插件**未被初始化**（`Initialize` 未调用），导致：
-
-1. **VideoPlugin**：`p.chunkNamer` 在 `Initialize` 中才赋值为 `namer.NewPaddedNamer(p.settings.Ext, ...)`，未初始化时为 nil
-2. **AudioPlugin**：`GetChunkNamer()` 始终返回 nil（音频不用分片命名器）
-
-当 `chunkNamer == nil` 时，`PredictEncryptOutputName` 返回 `encryptedBaseName`（如 `test.4pm`），但实际加密输出文件名是：
-- 视频：`test.4pm.sccgv`（chunkNamer.GenerateMainChunkName 追加容器扩展名）
-- 音频：`test.3pm.sccga`（PostEncryptProcessor 中 `encryptedBaseName + p.settings.Ext`）
-
-**预测名 ≠ 实际名**，导致 `CheckEncryptOutputExists` 检查的文件路径与实际加密输出不一致，覆盖检测永远找不到已存在的加密文件。
-
-### 修复方案
-
-**方案：改用目录扫描 + 模式匹配替代精确预测**
-
-不再尝试精确预测输出文件名（这依赖插件初始化状态），改为在目标目录中扫描是否有匹配的加密容器文件：
-
-1. 修改 `CheckEncryptOutputExists`：
-   - 用 `GenerateEncryptedBaseName` 生成加密基础名（如 `test.4pm`）
-   - 列出目标目录中的文件
-   - 检查是否有文件名以该基础名开头且是已知容器文件（`IsContainer` 检测）
-   - 返回匹配的文件路径
-
-2. 删除 `PredictEncryptOutputName` 函数（不再需要）
-
-3. 具体实现：
-   ```go
-   func (s *MobileService) CheckEncryptOutputExists(sourcePath, targetDir string) (bool, string, error) {
-       sourceAbs, _ := utils.SafeURLToAbsPath(s.servingDir, sourcePath)
-       baseNamer := namer.NewDefaultBaseNamer()
-       encryptedBaseName := baseNamer.GenerateEncryptedBaseName(filepath.Base(sourceAbs))
-
-       // 确定目标目录的 URL 路径和绝对路径
-       outputDirURL := targetDir
-       if outputDirURL == "" {
-           outputDirURL = filepath.Dir(sourcePath)
-           if outputDirURL == "" { outputDirURL = "/" }
-       }
-       outputDirAbs, _ := utils.SafeURLToAbsPath(s.servingDir, outputDirURL)
-
-       // 扫描目标目录
-       entries, err := os.ReadDir(outputDirAbs)
-       if err != nil {
-           if os.IsNotExist(err) { return false, "", nil }
-           return false, "", err
-       }
-
-       for _, entry := range entries {
-           name := entry.Name()
-           if strings.HasPrefix(name, encryptedBaseName) && !entry.IsDir() {
-               entryAbs := filepath.Join(outputDirAbs, name)
-               if plugins.IsContainer(entryAbs) {
-                   // 构造 URL 路径返回
-                   outputPath := strings.TrimRight(outputDirURL, "/") + "/" + name
-                   return true, outputPath, nil
-               }
-           }
-       }
-       return false, "", nil
-   }
-   ```
-
-### 涉及文件
-
-| 文件 | 修改内容 |
-|------|---------|
-| `internal/service/mobile_service.go` | 重写 `CheckEncryptOutputExists`，改用目录扫描 |
-| `internal/v2/plugins/registry.go` | 删除 `PredictEncryptOutputName` 函数 |
-
----
-
-## 问题 2：任务列表增加创建时间和耗时显示
-
-### 现状分析
-
-- 后端 `MobileTask` 已有 `CreatedAt time.Time`，但无耗时字段
-- 前端 `EncvTask` 已有 `createdAt: string`，但 `Tasks.vue` 未显示
-- 前端 `Tasks.vue` 的 `onTaskCreated` 中手动设置 `createdAt: new Date().toISOString()`
-
-### 修复方案
-
-1. **后端**：在 `MobileTask` 增加 `CompletedAt` 字段
-   ```go
-   type MobileTask struct {
-       // ...existing fields...
-       CreatedAt   time.Time  `json:"createdAt"`
-       CompletedAt *time.Time `json:"completedAt,omitempty"`
-   }
-   ```
-
-2. **后端**：在任务完成/失败/取消时设置 `CompletedAt`
-   - `processEncrypt` 完成时：`now := time.Now(); task.CompletedAt = &now`
-   - `processDecrypt` 完成时：同上
-   - `failTask` 时：同上
-   - `Cancel` 时：同上
-
-3. **前端**：在 `EncvTask` 接口增加 `completedAt` 字段
-   ```typescript
-   export interface EncvTask {
-     // ...existing fields...
-     createdAt: string
-     completedAt?: string
-   }
-   ```
-
-4. **前端**：在 `Tasks.vue` 的任务项中显示创建时间和耗时
-   - 创建时间：格式化为 `HH:mm` 或 `MM/DD HH:mm`
-   - 耗时：如果有 `completedAt`，计算 `completedAt - createdAt`；如果任务正在运行，计算 `now - createdAt`
-   - 显示位置：在任务名称下方或状态标签旁
-
-5. **前端耗时计算工具函数**：
-   ```typescript
-   function formatDuration(start: string, end?: string): string {
-     const startTime = new Date(start).getTime()
-     const endTime = end ? new Date(end).getTime() : Date.now()
-     const diffSec = Math.floor((endTime - startTime) / 1000)
-     if (diffSec < 60) return `${diffSec}s`
-     if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m${diffSec % 60}s`
-     return `${Math.floor(diffSec / 3600)}h${Math.floor((diffSec % 3600) / 60)}m`
-   }
-   ```
-
-6. **持久化兼容**：`loadTasks` 中旧任务没有 `CompletedAt`，JSON 反序列化时自动为零值（nil），不影响
-
-### 涉及文件
-
-| 文件 | 修改内容 |
-|------|---------|
-| `internal/service/task_manager.go` | 增加 `CompletedAt` 字段，完成/失败/取消时赋值 |
-| `app/encv-mobile/src/api/encv.ts` | `EncvTask` 接口增加 `completedAt` |
-| `app/encv-mobile/src/views/Tasks.vue` | 显示创建时间和耗时 |
-
----
-
-## 问题 3：Lynx 播放器 UI 不显示
+## 问题1：加密覆盖没有正确识别
 
 ### 根因分析
 
-**核心问题：Lynx CSS 兼容性 + vue-router 兼容性**
+`PredictEncryptOutputName` 调用 `FindEncryptingPlugin` 获取插件后，直接调用 `plugin.GetChunkNamer()`。
+但此时插件**未被 Initialize**，导致：
+- VideoPlugin 的 `chunkNamer` 为 nil（在 `Initialize` 中才赋值）
+- AudioPlugin 的 `GetChunkNamer()` 始终返回 nil（设计如此，音频无分片）
 
-Lynx 不是浏览器，它使用原生渲染引擎，只支持 CSS 子集。当前代码使用了大量 Lynx 不支持的 CSS 属性，导致组件渲染失败或尺寸为 0。
-
-#### 不兼容的 CSS 属性清单
-
-| 属性 | 使用位置 | Lynx 支持情况 |
-|------|---------|--------------|
-| `background-image: linear-gradient(...)` | PlayerControls.vue, HomeView.vue | ❌ 不支持 |
-| `calc()` | HomeView.vue, ProgressBar.vue | ❌ 不支持 |
-| `transform: translateY(-50%)` | ProgressBar.vue | ❌ 不支持 |
-| `pointer-events: none` | PlayerControls.vue | ❌ 不支持 |
-| `border-style: solid` (简写) | PlayerControls.vue, ProgressBar.vue | ⚠️ 需拆分为独立属性 |
-| `text-overflow: ellipsis` | HomeView.vue | ⚠️ 需用 `lines` 属性替代 |
-| `text-transform: uppercase` | SettingsView.vue | ❌ 不支持 |
-| `letter-spacing` | SettingsView.vue | ⚠️ 部分支持 |
-| `display: flex` | 所有组件 | ✅ 默认即 flex，无需显式声明 |
-| `position: absolute` | PlayerControls.vue, ProgressBar.vue | ✅ 支持但需注意约束 |
-
-#### vue-router 兼容性问题
-
-`vue-lynx` v0.3.1 是早期版本，`vue-router` 的 `createMemoryHistory` 可能不被完全支持。`RouterView` 可能无法正确渲染子组件，导致整个页面空白。
-
-#### initData 传递问题
-
-`renderTemplateUrl("player.lynx.bundle", initData)` 的第二个参数映射到 `lynx.__globalProps`，但在 `vue-lynx` 中，这个值的读取时机可能在路由初始化之后，导致 `getInitialRoute()` 无法获取到 `filePath`。
+结果：`PredictEncryptOutputName` 返回不完整的名称（缺少分片后缀），导致 `CheckEncryptOutputExists` 检测不到已存在的加密文件。
 
 ### 修复方案
 
-#### 第一步：移除 vue-router，改用直接组件渲染
+**核心思路：让预测逻辑走与实际加密相同的初始化路径，确保命名器可用。**
 
-参考 React 版本修复经验（PLAYER_ACTIVITY_FIX.md），移除路由依赖，改为条件渲染：
+#### 步骤1：修改 `PredictEncryptOutputName` 增加 `cfg` 参数
 
-```vue
-<!-- App.vue -->
-<script setup lang="ts">
-import { computed } from 'vue'
-import HomeView from './views/HomeView.vue'
-import PlayerView from './views/PlayerView.vue'
+文件：`/workspace/internal/v2/plugins/registry.go`
 
-const initData = computed(() => {
-  try {
-    const lynxObj = (globalThis as any).lynx
-    return lynxObj?.__globalProps || {}
-  } catch { return {} }
-})
+- 函数签名改为 `PredictEncryptOutputName(inputPath string, cfg *config.Config) (string, error)`
+- 在预测前调用 `plugin.Initialize(ctx)` 初始化插件（与实际加密流程一致）
+- 初始化后 `GetChunkNamer()` 才能返回正确的命名器
+- 对于无分片命名器的插件（如 AudioPlugin），追加 `GetContainerExtension()` 作为扩展名
 
-const hasFilePath = computed(() => !!initData.value.filePath)
-</script>
-
-<template>
-  <view class="AppRoot">
-    <PlayerView v-if="hasFilePath" />
-    <HomeView v-else />
-  </view>
-</template>
+```go
+func PredictEncryptOutputName(inputPath string, cfg *config.Config) (string, error) {
+    plugin, err := FindEncryptingPlugin(inputPath)
+    if err != nil {
+        return "", err
+    }
+    ctx := config.NewContext(context.Background(), cfg)
+    if err := plugin.Initialize(ctx); err != nil {
+        return "", fmt.Errorf("failed to initialize plugin for prediction: %w", err)
+    }
+    baseNamer := namer.NewDefaultBaseNamer()
+    originalFilename := filepath.Base(inputPath)
+    encryptedBaseName := baseNamer.GenerateEncryptedBaseName(originalFilename)
+    chunkNamer := plugin.GetChunkNamer()
+    if chunkNamer != nil {
+        return chunkNamer.GenerateMainChunkName(encryptedBaseName), nil
+    }
+    ext := plugin.GetContainerExtension()
+    if ext != "" {
+        return encryptedBaseName + ext, nil
+    }
+    return encryptedBaseName, nil
+}
 ```
 
-- 删除 `router.ts`
-- 修改 `main.ts`：移除 `app.use(router)`
-- 修改 `PlayerView.vue`：移除 `useRouter`，返回首页改为 emit 事件或直接调用 NativeModules
-- 修改 `HomeView.vue`：移除 `useRouter`，导航改为直接切换组件状态
+#### 步骤2：修改 `CheckEncryptOutputExists` 传入 `s.cfg`
 
-#### 第二步：修复所有不兼容的 CSS
+文件：`/workspace/internal/service/mobile_service.go`
 
-1. **替换 `linear-gradient`**：
-   - 用纯色半透明背景替代渐变
-   - `.TopGradient { background-color: rgba(0, 0, 0, 0.4); }` 替代 `linear-gradient(to bottom, rgba(0,0,0,0.6), rgba(0,0,0,0))`
+- `MobileService` 已有 `cfg *config.Config` 字段（第68行）
+- 将 `plugins.PredictEncryptOutputName(sourceAbs)` 改为 `plugins.PredictEncryptOutputName(sourceAbs, s.cfg)`
 
-2. **替换 `calc()`**：
-   - 用固定百分比或 flex 布局替代
-   - `width: calc(33.33% - 12px)` → 用 `flex: 1` + `margin` 实现
+#### 步骤3：编译验证
 
-3. **替换 `transform: translateY(-50%)`**：
-   - 用 `margin-top: -8px` 或 flex `align-items: center` 替代
+---
 
-4. **移除 `pointer-events: none`**：
-   - Lynx 中无此属性，直接删除（渐变遮罩层本身不需要交互）
+## 问题2：任务列表增加创建时间和耗时显示
 
-5. **修复 `border` 简写**：
-   - `border-style: solid; border-width: 3px; border-color: xxx` → Lynx 需要分别设置 `border-top-width`, `border-right-width` 等，或使用 `border-width` 统一设置
+### 后端修改
 
-6. **替换 `text-overflow: ellipsis`**：
-   - Lynx 的 `<text>` 组件使用 `lines` 属性控制行数，超出自动截断
-   - 删除 `text-overflow: ellipsis`，保留 `lines: 2`
+#### 步骤4：`MobileTask` 增加 `CompletedAt` 字段
 
-7. **移除 `text-transform: uppercase`**：
-   - 在 JS 中手动转换为大写
+文件：`/workspace/internal/service/task_manager.go`
 
-8. **移除 `display: flex`**：
-   - Lynx 默认就是 flex 布局，无需显式声明
+```go
+type MobileTask struct {
+    // ... 现有字段 ...
+    CreatedAt   time.Time  `json:"createdAt"`
+    CompletedAt *time.Time `json:"completedAt,omitempty"` // 新增
+    cancelFn    context.CancelFunc
+}
+```
 
-#### 第三步：简化组件结构
+使用 `*time.Time` 指针类型，nil 表示未完成，非 nil 表示完成时间。
 
-1. **App.vue**：条件渲染 PlayerView 或 HomeView
-2. **PlayerView.vue**：移除 router 依赖，直接从 globalProps 读取数据
-3. **HomeView.vue**：移除 router 依赖，简化为静态展示
-4. **SettingsView.vue / PlaylistView.vue**：改为内联渲染（v-if 切换），不用路由导航
+#### 步骤5：在任务完成/失败/取消时设置 `CompletedAt`
 
-#### 第四步：验证 Lynx bundle 构建
+在以下位置添加 `now := time.Now(); task.CompletedAt = &now`：
 
-1. 确认 `rspeedy build` 输出的 `player.lynx.bundle` 文件在 Android assets 目录中
-2. 确认 `PlayerTemplateProvider` 能正确加载 bundle
-3. 添加 Lynx 错误日志捕获（`onReceivedError`, `onReceivedJSError`）
+1. `processEncrypt` 中任务完成时（第417-425行区域）
+2. `processDecrypt` 中任务完成时（第595-603行区域）
+3. `failTask` 中（第619-635行区域）
+4. `Cancel` 中取消时（第177-201行区域）
+5. `loadTasks` 中恢复中断任务时，对 `failed` 状态的任务设置 `CompletedAt`（可用 `time.Now()`）
 
-#### 第五步：编写修复文档
+### 前端修改
 
-将 Lynx 播放器 UI 修复经验固定为文档，更新 `PLAYER_ACTIVITY_FIX.md`，增加：
-- Lynx CSS 兼容性清单
-- vue-lynx 与 vue-router 的兼容性问题
-- 正确的 Lynx Vue 组件架构（无路由、条件渲染）
-- 调试方法（logcat 过滤、Lynx DevTool）
+#### 步骤6：`EncvTask` 接口增加 `completedAt`
 
-### 涉及文件
+文件：`/workspace/app/encv-mobile/src/api/encv.ts`
 
-| 文件 | 修改内容 |
-|------|---------|
-| `app/encv-mobile/lynx-player/src/App.vue` | 移除 RouterView，改为条件渲染 |
-| `app/encv-mobile/lynx-player/src/main.ts` | 移除 router 注册 |
-| `app/encv-mobile/lynx-player/src/router.ts` | 删除此文件 |
-| `app/encv-mobile/lynx-player/src/views/PlayerView.vue` | 移除 router，修复 CSS |
-| `app/encv-mobile/lynx-player/src/views/HomeView.vue` | 移除 router，修复 CSS |
-| `app/encv-mobile/lynx-player/src/views/SettingsView.vue` | 改为内联渲染，修复 CSS |
-| `app/encv-mobile/lynx-player/src/views/PlaylistView.vue` | 改为内联渲染，修复 CSS |
-| `app/encv-mobile/lynx-player/src/components/PlayerControls.vue` | 修复 CSS 兼容性 |
-| `app/encv-mobile/lynx-player/src/components/ProgressBar.vue` | 修复 CSS 兼容性 |
-| `app/encv-mobile/PLAYER_ACTIVITY_FIX.md` | 增加 Lynx 修复经验文档 |
+```typescript
+export interface EncvTask {
+  // ... 现有字段 ...
+  createdAt: string
+  completedAt?: string  // 新增
+}
+```
+
+#### 步骤7：`Tasks.vue` 显示创建时间和耗时
+
+文件：`/workspace/app/encv-mobile/src/views/Tasks.vue`
+
+- 在每个任务项中增加一行显示：
+  - 创建时间：格式化为 `HH:mm` 显示
+  - 耗时：如果有 `completedAt`，计算 `completedAt - createdAt` 的差值并格式化（如 `2m30s`）
+  - 运行中任务：显示已运行时间（从 `createdAt` 到现在的差值）
+- 在 `onTaskCreated` 和 `onTaskCompleted` 事件处理中传递 `completedAt` 字段
+
+---
+
+## 问题3：Lynx 播放器不显示任何 UI
+
+### 根因分析
+
+**经过查阅 Lynx Vue 官方文档（https://vue.lynxjs.org/guide/routing）确认：**
+
+1. Lynx Vue **完全支持** vue-router，官方文档有专门的 Routing 章节
+2. 必须使用 `createMemoryHistory()` 而非 `createWebHistory()`
+3. `createMemoryHistory()` 的参数是 `base`（URL 前缀），**不是**初始路由
+4. Memory 模式**不会自动触发初始导航**，需要在 `app.use(router)` 之后手动 `router.push()` 到初始路由
+
+**当前代码的两个 Bug：**
+
+1. `createMemoryHistory(getInitialRoute())` — 把初始路由（如 `/player`）当作 `base` 传入，导致所有路由 URL 被错误加上前缀（如 `/player/`、`/player/player`），路由匹配完全失败
+2. 缺少 `router.push(getInitialRoute())` — 即使修复了参数问题，Memory 模式不会自动导航到任何路由，`RouterView` 始终为空
+
+**CSS 兼容性确认（查阅 Lynx 官方文档）：**
+
+- `linear-gradient` ✅ 支持（background-image 文档明确列出）
+- `transform` ✅ 支持（有独立的 transform 属性文档）
+- `pointer-events` ✅ 支持（有独立的 pointer-events 属性文档，支持 `auto` 和 `none`）
+- `calc()` ✅ 支持（在 bottom、inset-inline-start 等属性文档的语法示例中可见 `calc(1px + 1px)`）
+
+**结论：播放器无 UI 的唯一原因是路由配置错误，CSS 全部兼容无需修改。**
+
+### 修复方案
+
+#### 步骤8：修复 `router.ts` — `createMemoryHistory` 无参数
+
+文件：`/workspace/app/encv-mobile/lynx-player/src/router.ts`
+
+```typescript
+const router = createRouter({
+  history: createMemoryHistory(),  // 移除 getInitialRoute() 参数
+  routes: [
+    { path: '/', name: 'home', component: HomeView },
+    { path: '/player', name: 'player', component: PlayerView },
+    { path: '/playlist', name: 'playlist', component: PlaylistView },
+    { path: '/settings', name: 'settings', component: SettingsView },
+  ],
+})
+```
+
+#### 步骤9：修复 `main.ts` — 手动 push 到初始路由
+
+文件：`/workspace/app/encv-mobile/lynx-player/src/main.ts`
+
+```typescript
+import { createApp } from 'vue-lynx'
+import App from './App.vue'
+import router from './router'
+
+function getInitialRoute(): string {
+  try {
+    const lynxObj = (globalThis as any).lynx
+    const globalProps = lynxObj?.__globalProps
+    if (globalProps?.filePath) {
+      return '/player'
+    }
+  } catch (_e) {
+    // ignore
+  }
+  return '/'
+}
+
+const app = createApp(App)
+app.use(router)
+router.push(getInitialRoute())  // 手动触发初始导航
+app.mount()
+```
+
+注意：`getInitialRoute()` 需要从 `router.ts` 移到 `main.ts`（或提取为共享模块），因为 `router.ts` 不再需要它。
+
+#### 步骤10：`PlayerActivityLynx.kt` 添加错误日志增强
+
+文件：`/workspace/app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerActivityLynx.kt`
+
+当前已有较完善的错误日志（`onReceivedError`、`onReceivedJSError`、`onReceivedJavaError`、`onReceivedNativeError`），无需额外修改。
+
+---
+
+## 问题4：文档更新
+
+#### 步骤11：创建 `PLAYER_ACTIVITY_FIX.md`
+
+文件：`/workspace/app/encv-mobile/PLAYER_ACTIVITY_FIX.md`
+
+记录 Lynx 播放器修复经验，核心要点：
+- Lynx Vue 支持 vue-router，必须使用 `createMemoryHistory()`
+- `createMemoryHistory()` 的参数是 `base`（URL 前缀），不是初始路由
+- Memory 模式不会自动触发初始导航，必须手动 `router.push()`
+- Lynx CSS 兼容性：`linear-gradient`、`transform`、`pointer-events`、`calc()` 均支持
+- 调试方法：通过 `LynxViewClient` 的 `onReceivedError`/`onReceivedJSError` 捕获错误
 
 ---
 
 ## 实施顺序
 
-1. **问题 1（加密覆盖检测）**— 影响数据安全，优先修复
-2. **问题 2（任务列表增强）**— 功能增强，简单直接
-3. **问题 3（Lynx 播放器 UI）**— 最复杂，需要逐步验证
-4. **文档更新**— 最后完成
+1. 问题1：步骤1 → 步骤2 → 步骤3（编译验证）
+2. 问题2：步骤4 → 步骤5 → 步骤6 → 步骤7
+3. 问题3：步骤8 → 步骤9 → 步骤10
+4. 文档：步骤11
