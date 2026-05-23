@@ -84,20 +84,23 @@ function VideoControls({
   const isPlaying = state === 'playing';
   if (locked) {
     return (
-      <view style={{ flex: 1, flexDirection: 'column', justifyContent: 'flex-end' }}>
-        <view className="BottomGradient" />
+      <view className="LockedOverlay">
+        <view className="TopGradient" />
         <view className="LockBar">
           <Button onClick={onToggleLock} className="CtrlBtn">
             <text className="IconSm">&#x1F512;</text>
           </Button>
-          <view style={{ flex: 1 }} />
+          <view className="FlexSpacer" />
         </view>
-        <ProgressBar currentTime={currentTime} duration={duration} onSeek={onSeek} />
+        <view className="BottomGradient" />
+        <view className="BottomBar">
+          <ProgressBar currentTime={currentTime} duration={duration} onSeek={onSeek} />
+        </view>
       </view>
     );
   }
   return (
-    <view style={{ flex: 1, flexDirection: 'column', justifyContent: 'space-between' }}>
+    <view className="VideoOverlay">
       <view className="TopGradient" />
       <view className="TopBar">
         <Button onClick={onBack} className="CtrlBtn">
@@ -136,7 +139,7 @@ function VideoControls({
           <Button onClick={onCycleSpeed} className="SpeedChip">
             <text className="SpeedText">{playbackRate}x</text>
           </Button>
-          <view style={{ flex: 1 }} />
+          <view className="FlexSpacer" />
           <Button onClick={onToggleFullscreen} className="CtrlBtn">
             <text className="IconMd">{isFullscreen ? '\u2913' : '\u2912'}</text>
           </Button>
@@ -160,7 +163,7 @@ function AudioControls({
 }: Omit<PlayerControlsProps, 'error' | 'mediaType' | 'isFullscreen' | 'showControls' | 'onToggleFullscreen' | 'onToggleLock' | 'locked'>) {
   const isPlaying = state === 'playing';
   return (
-    <view style={{ flex: 1, flexDirection: 'column', justifyContent: 'space-between' }}>
+    <view className="AudioOverlay">
       <view className="TopBar">
         <Button onClick={onBack} className="CtrlBtn">
           <text className="IconMd">&#x2715;</text>
