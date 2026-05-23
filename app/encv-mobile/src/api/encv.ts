@@ -190,11 +190,12 @@ export async function getTasks(): Promise<EncvTask[]> {
   return data.tasks || []
 }
 
-export async function createTask(type: TaskType, sourcePath: string, targetPath?: string): Promise<EncvTask> {
+export async function createTask(type: TaskType, sourcePath: string, targetPath?: string, password?: string): Promise<EncvTask> {
   console.info('[API] createTask:', type, sourcePath, targetPath || '')
   const baseUrl = getApiBaseUrl()
   const body: Record<string, unknown> = { type, sourcePath }
   if (targetPath) body.targetPath = targetPath
+  if (password) body.password = password
   const response = await fetch(`${baseUrl}/api/tasks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

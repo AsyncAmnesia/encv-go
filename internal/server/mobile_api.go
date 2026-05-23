@@ -135,6 +135,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		Type       string `json:"type"`
 		SourcePath string `json:"sourcePath"`
 		TargetPath string `json:"targetPath,omitempty"`
+		Password   string `json:"password,omitempty"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -144,7 +145,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("API: create task", "type", req.Type, "source", req.SourcePath, "target", req.TargetPath)
-	task := s.mobileSvc.GetTaskManager().Create(req.Type, req.SourcePath, req.TargetPath)
+	task := s.mobileSvc.GetTaskManager().Create(req.Type, req.SourcePath, req.TargetPath, req.Password)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

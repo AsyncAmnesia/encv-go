@@ -34,7 +34,7 @@ func TestTaskManager_Create(t *testing.T) {
 	mb.On("Broadcast", "task:created", mock.Anything).Return()
 	tm := newTestTaskManager(mb)
 
-	task := tm.Create("encrypt", "/video.mp4")
+	task := tm.Create("encrypt", "/video.mp4", "", "")
 
 	assert.NotEmpty(t, task.ID)
 	assert.Equal(t, "encrypt", task.Type)
@@ -55,7 +55,7 @@ func TestTaskManager_CreateBroadcastsEvent(t *testing.T) {
 	mb.On("Broadcast", "task:created", mock.Anything).Return()
 	tm := newTestTaskManager(mb)
 
-	tm.Create("decrypt", "/test.encv")
+	tm.Create("decrypt", "/test.encv", "", "")
 
 	calls := mb.FindCalls("task:created")
 	assert.Len(t, calls, 1)
@@ -67,8 +67,8 @@ func TestTaskManager_List(t *testing.T) {
 	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
 	tm := newTestTaskManager(mb)
 
-	tm.Create("encrypt", "/a.mp4")
-	tm.Create("decrypt", "/b.encv")
+	tm.Create("encrypt", "/a.mp4", "", "")
+	tm.Create("decrypt", "/b.encv", "", "")
 
 	list := tm.List()
 	assert.Len(t, list, 2)
@@ -96,7 +96,7 @@ func TestTaskManager_Cancel_QueuedTask(t *testing.T) {
 	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
 	tm := newTestTaskManager(mb)
 
-	task := tm.Create("encrypt", "/test.mp4")
+	task := tm.Create("encrypt", "/test.mp4", "", "")
 	assert.Equal(t, "queued", task.Status)
 
 	cancelled, err := tm.Cancel(task.ID)
@@ -112,7 +112,7 @@ func TestTaskManager_Cancel_RunningTask(t *testing.T) {
 	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
 	tm := newTestTaskManager(mb)
 
-	task := tm.Create("encrypt", "/test.mp4")
+	task := tm.Create("encrypt", "/test.mp4", "", "")
 	tm.mu.Lock()
 	task.Status = "running"
 	tm.mu.Unlock()
@@ -136,7 +136,7 @@ func TestTaskManager_CancelBroadcastsUpdate(t *testing.T) {
 	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
 	tm := newTestTaskManager(mb)
 
-	task := tm.Create("encrypt", "/test.mp4")
+	task := tm.Create("encrypt", "/test.mp4", "", "")
 	mb.calls_ = nil
 
 	_, _ = tm.Cancel(task.ID)
@@ -154,7 +154,7 @@ func TestTaskManager_Retry(t *testing.T) {
 	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
 	tm := newTestTaskManager(mb)
 
-	task := tm.Create("encrypt", "/test.mp4")
+	task := tm.Create("encrypt", "/test.mp4", "", "")
 	tm.mu.Lock()
 	task.Status = "failed"
 	task.Error = "something went wrong"
@@ -181,7 +181,7 @@ func TestTaskManager_RetryBroadcastsUpdate(t *testing.T) {
 	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
 	tm := newTestTaskManager(mb)
 
-	task := tm.Create("encrypt", "/test.mp4")
+	task := tm.Create("encrypt", "/test.mp4", "", "")
 	tm.mu.Lock()
 	task.Status = "failed"
 	tm.mu.Unlock()
@@ -201,7 +201,7 @@ func TestTaskManager_Dequeue(t *testing.T) {
 	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
 	tm := newTestTaskManager(mb)
 
-	task := tm.Create("encrypt", "/test.mp4")
+	task := tm.Create("encrypt", "/test.mp4", "", "")
 
 	dequeued := tm.dequeue()
 	require.NotNil(t, dequeued)
@@ -225,7 +225,7 @@ func TestTaskManager_Dequeue_SkipsNonQueued(t *testing.T) {
 	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
 	tm := newTestTaskManager(mb)
 
-	task := tm.Create("encrypt", "/test.mp4")
+	task := tm.Create("encrypt", "/test.mp4", "", "")
 	tm.mu.Lock()
 	task.Status = "running"
 	tm.mu.Unlock()
@@ -274,7 +274,7 @@ func TestTaskManager_FailTask(t *testing.T) {
 	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
 	tm := newTestTaskManager(mb)
 
-	task := tm.Create("encrypt", "/test.mp4")
+	task := tm.Create("encrypt", "/test.mp4", "", "")
 
 	tm.failTask(task.ID, "something broke")
 
@@ -288,7 +288,7 @@ func TestTaskManager_FailTaskBroadcastsEvent(t *testing.T) {
 	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
 	tm := newTestTaskManager(mb)
 
-	task := tm.Create("encrypt", "/test.mp4")
+	task := tm.Create("encrypt", "/test.mp4", "", "")
 	mb.calls_ = nil
 
 	tm.failTask(task.ID, "test error")
@@ -320,7 +320,7 @@ func TestTaskManager_ConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			tm.Create("encrypt", "/test.mp4")
+			tm.Create("encrypt", "/test.mp4", "", "")
 		}()
 	}
 	wg.Wait()
@@ -332,7 +332,7 @@ func TestTaskManager_ConcurrentAccess(t *testing.T) {
 func TestTaskManager_NilBroadcaster(t *testing.T) {
 	tm := newTestTaskManager(nil)
 
-	task := tm.Create("encrypt", "/test.mp4")
+	task := tm.Create("encrypt", "/test.mp4", "", "")
 	assert.Equal(t, "queued", task.Status)
 
 	tm.failTask(task.ID, "error")

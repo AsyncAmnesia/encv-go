@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -22,6 +23,7 @@ type MobileTask struct {
 	Type       string    `json:"type"`
 	SourcePath string    `json:"sourcePath"`
 	TargetPath string    `json:"targetPath,omitempty"`
+	Password   string    `json:"password,omitempty"`
 	Status     string    `json:"status"`
 	Progress   int       `json:"progress"`
 	Phase      string    `json:"phase,omitempty"`
@@ -33,26 +35,91 @@ type MobileTask struct {
 }
 
 type TaskManager struct {
-	tasks      map[string]*MobileTask
-	mu         sync.RWMutex
-	servingDir string
-	cfg        *config.Config
-	stopCh     chan struct{}
-	wg         sync.WaitGroup
+	tasks       map[string]*MobileTask
+	mu          sync.RWMutex
+	servingDir  string
+	cfg         *config.Config
+	stopCh      chan struct{}
+	wg          sync.WaitGroup
 	broadcaster Broadcaster
+	persistPath string
 }
 
 func NewTaskManager(servingDir string, cfg *config.Config, broadcaster Broadcaster) *TaskManager {
+	persistPath := filepath.Join(servingDir, ".encv-tasks.json")
+
 	tm := &TaskManager{
 		tasks:       make(map[string]*MobileTask),
 		servingDir:  servingDir,
 		cfg:         cfg,
 		stopCh:      make(chan struct{}),
 		broadcaster: broadcaster,
+		persistPath: persistPath,
 	}
+
+	tm.loadTasks()
+
 	tm.wg.Add(1)
 	go tm.worker()
 	return tm
+}
+
+func (tm *TaskManager) saveTasks() {
+	tm.mu.RLock()
+	taskList := make([]*MobileTask, 0, len(tm.tasks))
+	for _, t := range tm.tasks {
+		taskList = append(taskList, t)
+	}
+	tm.mu.RUnlock()
+
+	data, err := json.MarshalIndent(taskList, "", "  ")
+	if err != nil {
+		slog.Warn("Failed to marshal tasks for persistence", "error", err)
+		return
+	}
+
+	tmpPath := tm.persistPath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		slog.Warn("Failed to write tasks temp file", "error", err)
+		return
+	}
+
+	if err := os.Rename(tmpPath, tm.persistPath); err != nil {
+		slog.Warn("Failed to rename tasks file", "error", err)
+		return
+	}
+}
+
+func (tm *TaskManager) loadTasks() {
+	data, err := os.ReadFile(tm.persistPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			slog.Warn("Failed to read tasks file", "error", err)
+		}
+		return
+	}
+
+	var taskList []*MobileTask
+	if err := json.Unmarshal(data, &taskList); err != nil {
+		slog.Warn("Failed to unmarshal tasks", "error", err)
+		return
+	}
+
+	for _, t := range taskList {
+		switch t.Status {
+		case "running", "queued":
+			t.Status = "failed"
+			t.Error = "interrupted by restart"
+		case "cancelling":
+			t.Status = "cancelled"
+		}
+		t.cancelFn = nil
+		t.Speed = ""
+		t.Eta = ""
+		tm.tasks[t.ID] = t
+	}
+
+	slog.Info("Loaded persisted tasks", "count", len(taskList))
 }
 
 func (tm *TaskManager) Stop() {
@@ -60,12 +127,13 @@ func (tm *TaskManager) Stop() {
 	tm.wg.Wait()
 }
 
-func (tm *TaskManager) Create(taskType, sourcePath, targetPath string) *MobileTask {
+func (tm *TaskManager) Create(taskType, sourcePath, targetPath, password string) *MobileTask {
 	task := &MobileTask{
 		ID:         uuid.New().String(),
 		Type:       taskType,
 		SourcePath: sourcePath,
 		TargetPath: targetPath,
+		Password:   password,
 		Status:     "queued",
 		Progress:   0,
 		CreatedAt:  time.Now(),
@@ -74,6 +142,8 @@ func (tm *TaskManager) Create(taskType, sourcePath, targetPath string) *MobileTa
 	tm.mu.Lock()
 	tm.tasks[task.ID] = task
 	tm.mu.Unlock()
+
+	tm.saveTasks()
 
 	slog.Info("Task created", "id", task.ID, "type", taskType, "source", sourcePath, "target", targetPath)
 	if tm.broadcaster != nil {
@@ -264,6 +334,15 @@ func (tm *TaskManager) processTask(task *MobileTask) {
 	}
 }
 
+func (tm *TaskManager) getConfigForTask(task *MobileTask, ctx context.Context) context.Context {
+	if task.Password != "" {
+		cfgCopy := *tm.cfg
+		cfgCopy.Password = task.Password
+		return config.NewContext(ctx, &cfgCopy)
+	}
+	return config.NewContext(ctx, tm.cfg)
+}
+
 func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 	taskID := task.ID
 
@@ -303,7 +382,7 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 	}
 
 	tm.updateProgress(taskID, 10, "initializing", "", "")
-	cfgCtx := config.NewContext(ctx, tm.cfg)
+	cfgCtx := tm.getConfigForTask(task, ctx)
 
 	plugin, err := plugins.FindEncryptingPlugin(absPath)
 	if err != nil {
@@ -344,6 +423,8 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 		task.Eta = ""
 	}
 	tm.mu.Unlock()
+
+	tm.saveTasks()
 
 	slog.Info("Task completed", "id", task.ID, "type", task.Type)
 	if tm.broadcaster != nil {
@@ -479,7 +560,7 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 	}
 
 	tm.updateProgress(taskID, 10, "initializing", "", "")
-	cfgCtx := config.NewContext(ctx, tm.cfg)
+	cfgCtx := tm.getConfigForTask(task, ctx)
 
 	plugin, err := plugins.FindDecryptingPlugin(absPath)
 	if err != nil {
@@ -520,6 +601,8 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 		task.Eta = ""
 	}
 	tm.mu.Unlock()
+
+	tm.saveTasks()
 
 	slog.Info("Task completed", "id", task.ID, "type", task.Type)
 	if tm.broadcaster != nil {

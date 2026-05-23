@@ -154,6 +154,7 @@ import {
   NotFoundError,
   deleteFile,
   createTask,
+  fetchConfig,
 } from '@/api/encv'
 import type { FileItem } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
@@ -528,19 +529,57 @@ async function handleLongPress(file: FileItem) {
 }
 
 async function handleEncryptFile(file: FileItem) {
+  const parentDir = file.path.substring(0, file.path.lastIndexOf('/')) || '/'
+  let globalPassword = ''
+  try {
+    const cfg = await fetchConfig()
+    globalPassword = (cfg as any).password || ''
+  } catch {}
+
   const alert = await alertController.create({
     header: t('files.encrypt'),
-    message: t('files.encryptPrompt', { name: file.name }),
+    inputs: [
+      {
+        name: 'targetPath',
+        type: 'text',
+        placeholder: t('tasks.targetPathPlaceholder'),
+        value: parentDir,
+        attributes: { autocomplete: 'off' },
+      },
+      {
+        name: 'password',
+        type: 'password',
+        placeholder: t('tasks.passwordPlaceholder'),
+        value: globalPassword,
+        attributes: { autocomplete: 'off' },
+      },
+    ],
     buttons: [
       { text: t('files.cancelSelect'), role: 'cancel' },
       {
         text: t('files.encrypt'),
-        handler: async () => {
-          try {
-            await createTask('encrypt', file.path)
-            showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
-          } catch {
-            showToast({ message: t('tasks.taskCreateFailed'), duration: 2000, color: 'danger' })
+        handler: async (data: Record<string, string>) => {
+          const targetPath = (data.targetPath || '').trim()
+          const password = (data.password || '').trim()
+          const isDefaultPath = targetPath === parentDir
+
+          if (isDefaultPath) {
+            const confirm = await alertController.create({
+              header: t('files.encrypt'),
+              message: t('files.overwriteConfirm', { name: file.name }),
+              buttons: [
+                { text: t('files.cancelSelect'), role: 'cancel' },
+                {
+                  text: t('common.confirm'),
+                  handler: async () => {
+                    await doCreateTask('encrypt', file.path, targetPath, password)
+                  },
+                },
+              ],
+            })
+            await confirm.present()
+          } else {
+            await doCreateTask('encrypt', file.path, targetPath, password)
           }
         },
       },
@@ -550,25 +589,72 @@ async function handleEncryptFile(file: FileItem) {
 }
 
 async function handleDecryptFile(file: FileItem) {
+  const parentDir = file.path.substring(0, file.path.lastIndexOf('/')) || '/'
+  let globalPassword = ''
+  try {
+    const cfg = await fetchConfig()
+    globalPassword = (cfg as any).password || ''
+  } catch {}
+
   const alert = await alertController.create({
     header: t('files.decrypt'),
-    message: t('files.decryptPrompt', { name: file.name }),
+    inputs: [
+      {
+        name: 'targetPath',
+        type: 'text',
+        placeholder: t('tasks.targetPathPlaceholder'),
+        value: parentDir,
+        attributes: { autocomplete: 'off' },
+      },
+      {
+        name: 'password',
+        type: 'password',
+        placeholder: t('tasks.passwordPlaceholder'),
+        value: globalPassword,
+        attributes: { autocomplete: 'off' },
+      },
+    ],
     buttons: [
       { text: t('files.cancelSelect'), role: 'cancel' },
       {
         text: t('files.decrypt'),
-        handler: async () => {
-          try {
-            await createTask('decrypt', file.path)
-            showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
-          } catch {
-            showToast({ message: t('tasks.taskCreateFailed'), duration: 2000, color: 'danger' })
+        handler: async (data: Record<string, string>) => {
+          const targetPath = (data.targetPath || '').trim()
+          const password = (data.password || '').trim()
+          const isDefaultPath = targetPath === parentDir
+
+          if (isDefaultPath) {
+            const confirm = await alertController.create({
+              header: t('files.decrypt'),
+              message: t('files.overwriteConfirm', { name: file.name }),
+              buttons: [
+                { text: t('files.cancelSelect'), role: 'cancel' },
+                {
+                  text: t('common.confirm'),
+                  handler: async () => {
+                    await doCreateTask('decrypt', file.path, targetPath, password)
+                  },
+                },
+              ],
+            })
+            await confirm.present()
+          } else {
+            await doCreateTask('decrypt', file.path, targetPath, password)
           }
         },
       },
     ],
   })
   await alert.present()
+}
+
+async function doCreateTask(type: 'encrypt' | 'decrypt', sourcePath: string, targetPath: string, password: string) {
+  try {
+    await createTask(type, sourcePath, targetPath, password)
+    showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
+  } catch {
+    showToast({ message: t('tasks.taskCreateFailed'), duration: 2000, color: 'danger' })
+  }
 }
 
 async function handleDeleteFile(file: FileItem) {
