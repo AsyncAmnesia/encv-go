@@ -58,12 +58,10 @@ jobs:
 
       - name: Install Android NDK
         if: steps.cache-ndk.outputs.cache-hit != 'true'
-        run: sdkmanager "ndk;${{ env.NDK_VERSION }}"
+        run: yes | sdkmanager --install "ndk;${{ env.NDK_VERSION }}" > /dev/null 2>&1 && echo "✅ NDK installed"
 
       - name: Install Android platform & build tools
-        run: |
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
+        run: yes | sdkmanager --install "platforms;android-35" "build-tools;35.0.0" > /dev/null 2>&1 && echo "✅ Platform & build tools installed"
 
       - name: Cache npm dependencies (main)
         id: cache-npm

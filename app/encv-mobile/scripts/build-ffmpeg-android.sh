@@ -9,8 +9,9 @@ ABI="arm64-v8a"
 ARCH="aarch64"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/.ffmpeg-build"
-OUTPUT_DIR="${SCRIPT_DIR}/android/app/src/main/jniLibs/${ABI}"
+OUTPUT_DIR="${PROJECT_DIR}/android/app/src/main/jniLibs/${ABI}"
 LOG_DIR="${BUILD_DIR}/logs"
 
 NDK_PATH="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}/ndk/${NDK_VERSION}"
