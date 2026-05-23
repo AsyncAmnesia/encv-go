@@ -204,7 +204,7 @@ for src in $FFMPEG_FFTOOLS; do
     if [ -f "${FFMPEG_SRC}/${src}" ]; then
         objname=$(basename "${src}" .c)
         obj="${FTOOLS_BUILD}/ffmpeg_${objname}.o"
-        $CC $CFLAGS -c -o "$obj" "${FFMPEG_SRC}/${src" > /dev/null 2>&1 || {
+        $CC $CFLAGS -c -o "$obj" "${FFMPEG_SRC}/${src}" > /dev/null 2>&1 || {
             echo "⚠️  Failed to compile ${src}, skipping"
             continue
         }
