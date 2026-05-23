@@ -32,7 +32,8 @@
         <div v-if="playerError" class="player-error">
           <ion-icon :icon="alertCircle" class="error-icon"></ion-icon>
           <h3>{{ t('player.playError') }}</h3>
-          <p>{{ t('player.playErrorDesc') }}</p>
+          <p>{{ playerErrorMsg }}</p>
+          <p v-if="streamUrl" class="debug-url">{{ streamUrl }}</p>
           <ion-button @click="retryPlay">
             <ion-icon :icon="refresh" slot="start"></ion-icon>
             {{ t('player.retryPlay') }}
@@ -72,6 +73,8 @@ import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { isNative } from '@/plugins/GoProcess'
 
+const TAG = '[ArtPlayer]'
+
 const route = useRoute()
 const router = useRouter()
 const { t } = useI18n()
@@ -81,6 +84,7 @@ const error = ref('')
 const filePath = ref('')
 const fileName = ref('')
 const playerError = ref(false)
+const playerErrorMsg = ref('')
 const isFullscreen = ref(false)
 const mediaInfo = ref({ duration: '', resolution: '' })
 const artContainer = ref<HTMLDivElement | null>(null)
@@ -104,29 +108,76 @@ function goBack() {
   router.back()
 }
 
+function hideNativeControls() {
+  if (!art?.video) return
+  art.video.removeAttribute('controls')
+  art.video.controls = false
+  art.video.setAttribute('playsinline', '')
+  art.video.setAttribute('webkit-playsinline', '')
+  art.video.setAttribute('x5-playsinline', '')
+  art.video.setAttribute('x5-video-player-type', 'h5')
+}
+
 function initArtPlayer() {
-  if (!artContainer.value || !streamUrl.value) return
+  console.info(TAG, 'initArtPlayer called')
+  console.info(TAG, 'artContainer:', artContainer.value ? `exists (${artContainer.value.clientWidth}x${artContainer.value.clientHeight})` : 'null')
+  console.info(TAG, 'streamUrl:', streamUrl.value || '(empty)')
+  console.info(TAG, 'filePath:', filePath.value || '(empty)')
+
+  if (!artContainer.value) {
+    console.error(TAG, 'initArtPlayer: artContainer is null, cannot init')
+    playerError.value = true
+    playerErrorMsg.value = '播放器容器未就绪'
+    return
+  }
+
+  if (!streamUrl.value) {
+    console.error(TAG, 'initArtPlayer: streamUrl is empty, cannot init')
+    playerError.value = true
+    playerErrorMsg.value = '播放地址为空'
+    return
+  }
 
   const containerWidth = artContainer.value.clientWidth || window.innerWidth
   const containerHeight = Math.round(containerWidth * 9 / 16)
   artContainer.value.style.height = `${containerHeight}px`
+  console.info(TAG, 'container size:', containerWidth, 'x', containerHeight)
 
-  art = new Artplayer({
-    container: artContainer.value,
-    url: streamUrl.value,
-    autoplay: true,
-    autoSize: true,
-    autoMini: true,
-    mutex: true,
-    playsInline: true,
-    theme: '#ffad00',
-    volume: 0.7,
-    fullscreen: true,
-    miniProgressBar: true,
+  try {
+    art = new Artplayer({
+      container: artContainer.value,
+      url: streamUrl.value,
+      autoplay: true,
+      autoSize: true,
+      autoMini: true,
+      mutex: true,
+      playsInline: true,
+      theme: '#ffad00',
+      volume: 0.7,
+      fullscreen: true,
+      miniProgressBar: true,
+      moreVideoAttr: {
+        controls: false,
+        preload: 'metadata',
+        playsInline: true,
+      },
+    })
+    console.info(TAG, 'Artplayer instance created successfully, id:', art.id)
+  } catch (e: any) {
+    console.error(TAG, 'Artplayer constructor failed:', e?.message || String(e))
+    playerError.value = true
+    playerErrorMsg.value = `ArtPlayer 初始化失败: ${e?.message || String(e)}`
+    return
+  }
+
+  art.on('ready', () => {
+    console.info(TAG, 'Artplayer ready event fired')
+    hideNativeControls()
   })
 
   art.on('video:loadedmetadata', () => {
     const video = art?.video
+    console.info(TAG, 'video:loadedmetadata, videoWidth:', video?.videoWidth, 'videoHeight:', video?.videoHeight, 'duration:', video?.duration)
     if (video) {
       if (video.videoWidth && video.videoHeight) {
         mediaInfo.value.resolution = `${video.videoWidth}×${video.videoHeight}`
@@ -135,6 +186,17 @@ function initArtPlayer() {
         mediaInfo.value.duration = formatDuration(video.duration)
       }
     }
+    hideNativeControls()
+  })
+
+  art.on('video:play', () => {
+    console.info(TAG, 'video:play')
+    hideNativeControls()
+  })
+
+  art.on('video:playing', () => {
+    console.info(TAG, 'video:playing')
+    hideNativeControls()
   })
 
   art.on('fullscreen', () => {
@@ -148,16 +210,32 @@ function initArtPlayer() {
   })
 
   art.on('error', () => {
+    const video = art?.video
+    const networkState = video?.networkState
+    const readyState = video?.readyState
+    const src = video?.src
+    const currentSrc = video?.currentSrc
+    console.error(TAG, 'Artplayer error event, networkState:', networkState, 'readyState:', readyState, 'src:', src, 'currentSrc:', currentSrc)
     playerError.value = true
+    playerErrorMsg.value = `播放失败 (network=${networkState}, ready=${readyState})`
     showToast({ message: t('player.playFailed', { name: fileName.value }), duration: 3000, color: 'danger' })
   })
 
-  nextTick(() => {
-    if (art?.video) {
-      art.video.removeAttribute('controls')
-      art.video.controls = false
-    }
+  art.on('destroy', () => {
+    console.info(TAG, 'Artplayer destroy event')
   })
+
+  nextTick(() => {
+    hideNativeControls()
+  })
+
+  setTimeout(() => {
+    hideNativeControls()
+  }, 500)
+
+  setTimeout(() => {
+    hideNativeControls()
+  }, 2000)
 }
 
 function handleFullscreenEnter() {
@@ -186,30 +264,40 @@ function handleFullscreenExit() {
 
 function destroyArtPlayer() {
   if (art) {
+    console.info(TAG, 'destroyArtPlayer: destroying art instance')
     art.destroy()
     art = null
   }
 }
 
 function retryPlay() {
+  console.info(TAG, 'retryPlay called')
   playerError.value = false
+  playerErrorMsg.value = ''
   mediaInfo.value = { duration: '', resolution: '' }
   destroyArtPlayer()
   nextTick(() => initArtPlayer())
 }
 
 async function startPlayback() {
-  if (!filePath.value) return
+  console.info(TAG, 'startPlayback called, filePath:', filePath.value, 'streamUrl:', streamUrl.value)
+  if (!filePath.value) {
+    console.error(TAG, 'startPlayback: filePath is empty')
+    return
+  }
   loading.value = false
   playerError.value = false
+  playerErrorMsg.value = ''
   mediaInfo.value = { duration: '', resolution: '' }
   await nextTick()
+  console.info(TAG, 'startPlayback: nextTick done, artContainer:', artContainer.value ? 'exists' : 'null')
   initArtPlayer()
 }
 
 onMounted(() => {
   filePath.value = (route.query.path as string) || ''
   fileName.value = (route.query.name as string) || ''
+  console.info(TAG, 'onMounted: filePath=', filePath.value, 'fileName=', fileName.value)
 
   if (!filePath.value) {
     error.value = 'No file provided'
@@ -221,19 +309,30 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  console.info(TAG, 'onBeforeUnmount')
   destroyArtPlayer()
 })
 </script>
 
 <style scoped>
+:deep(video) {
+  outline: none !important;
+}
+
 :deep(video::-webkit-media-controls) {
   display: none !important;
 }
+
 :deep(video::-webkit-media-controls-enclosure) {
   display: none !important;
 }
+
 :deep(video::-webkit-media-controls-panel) {
   display: none !important;
+}
+
+:deep(.art-video-player) {
+  --art-control-height: 44px;
 }
 
 .loading-state {
@@ -302,6 +401,14 @@ onBeforeUnmount(() => {
   padding: 24px;
   text-align: center;
   color: var(--encv-text-secondary);
+}
+
+.debug-url {
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+  word-break: break-all;
+  margin-top: 8px;
+  opacity: 0.7;
 }
 
 .error-icon {

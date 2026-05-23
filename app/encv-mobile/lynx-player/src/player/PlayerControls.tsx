@@ -12,6 +12,7 @@ interface PlayerControlsProps {
   mediaType: 'video' | 'audio'
   playbackRate: number
   locked: boolean
+  streamUrl?: string
   onPlayPause: () => void
   onSeek: (ms: number) => void
   onSeekRelative: (ms: number) => void
@@ -34,7 +35,7 @@ function formatTime(ms: number): string {
 export function PlayerControls(props: PlayerControlsProps) {
   const {
     state, fileName, currentTime, duration, showControls,
-    error, mediaType, playbackRate, locked,
+    error, mediaType, playbackRate, locked, streamUrl,
     onPlayPause, onSeek, onSeekRelative, onToggleFullscreen,
     onCycleSpeed, onToggleLock, onBack,
   } = props
@@ -62,7 +63,9 @@ export function PlayerControls(props: PlayerControlsProps) {
           </view>
         </view>
         <text className="ErrorTitle">⚠ 播放失败</text>
-        <text className="ErrorDetail">{error || '未知错误，点击重试'}</text>
+        <text className="ErrorDetail">{fileName}</text>
+        {error ? <text className="ErrorDetail">{error}</text> : null}
+        {streamUrl ? <text className="ErrorDetail">{streamUrl}</text> : null}
       </view>
     )
   }

@@ -161,3 +161,10 @@ body.dark {
   --ion-select-popover-background: #1e1e1e;
   --ion-select-popover-color: #ffffff;
 }
+
+body.dark ion-action-sheet {
+  --button-color: #ffffff;
+  --button-color-activated: #cccccc;
+  --button-color-hover: #e0e0e0;
+  --title-color: #aaaaaa;
+}

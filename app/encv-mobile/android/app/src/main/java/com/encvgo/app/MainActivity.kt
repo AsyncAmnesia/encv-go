@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.webkit.WebSettings
 import androidx.core.content.ContextCompat
 import com.getcapacitor.BridgeActivity
 import org.json.JSONObject
@@ -42,6 +43,8 @@ class MainActivity : BridgeActivity() {
             Log.e(TAG, "registerPlugin failed", e)
         }
         super.onCreate(savedInstanceState)
+        bridge.webView.settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+        Log.i(TAG, "WebView mixedContentMode set to MIXED_CONTENT_ALWAYS_ALLOW")
         registerBackendReceiver()
         val handled = handleIntent(intent)
         if (!handled) {

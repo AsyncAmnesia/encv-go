@@ -283,6 +283,10 @@ export async function testWebDAVConnection(config: Omit<WebDAVConfig, 'id'>): Pr
     } catch {}
     throw new Error(detail)
   }
+  const data = await response.json()
+  if (data.success === false) {
+    throw new Error(data.error || '连接失败')
+  }
 }
 
 export function formatFileSize(bytes?: number): string {

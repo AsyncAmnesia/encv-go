@@ -373,13 +373,34 @@ class PlayerActivityLynx : AppCompatActivity() {
             }
             else -> "video"
         }
+        val streamUrl = if (isExternalFile && intentFilePath.isNotEmpty()) {
+            val port = EncvGoService.lastKnownPort
+            if (port > 0) {
+                val encodedPath = android.net.Uri.encode(intentFilePath)
+                "http://127.0.0.1:$port/api/stream/external?path=$encodedPath"
+            } else {
+                ""
+            }
+        } else if (intentFilePath.isNotEmpty()) {
+            val port = EncvGoService.lastKnownPort
+            if (port > 0) {
+                val encodedPath = android.net.Uri.encode(intentFilePath)
+                "http://127.0.0.1:$port/stream?path=$encodedPath"
+            } else {
+                ""
+            }
+        } else {
+            ""
+        }
         val data = JSONObject().apply {
             put("filePath", intentFilePath)
+            put("streamUrl", streamUrl)
             put("fileName", intentFileName)
             put("mimeType", intentFileMimeType)
             put("isExternal", isExternalFile)
             put("mediaType", mediaType)
         }
+        LogRelay.get().relay(TAG, "info", "buildInitDataJson: filePath=$intentFilePath, streamUrl=$streamUrl, isExternal=$isExternalFile")
         return data.toString()
     }
 
