@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Lynx Player Controls Preview</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; font-family: -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
+
+    .PlayerContainer {
+      width: 100%; height: 100vh;
+      background-color: #111;
+      display: flex; flex-direction: column;
+      position: relative;
+    }
+
+    .VideoOverlay {
+      display: flex; flex-direction: column;
+      justify-content: space-between;
+      width: 100%; flex: 1;
+      position: relative;
+    }
+
+    .LockedOverlay {
+      display: flex; flex-direction: column;
+      justify-content: flex-end;
+      width: 100%; flex: 1;
+      position: relative;
+    }
+
+    .AudioOverlay {
+      display: flex; flex-direction: column;
+      justify-content: space-between;
+      width: 100%; flex: 1;
+      position: relative;
+    }
+
+    .FlexSpacer { flex: 1; }
+
+    .TopGradient {
+      position: absolute; top: 0; left: 0; right: 0;
+      height: 120px;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.6), rgba(0,0,0,0));
+      pointer-events: none;
+    }
+
+    .BottomGradient {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: 160px;
+      background: linear-gradient(to top, rgba(0,0,0,0.7), rgba(0,0,0,0));
+      pointer-events: none;
+    }
+
+    .TopBar {
+      display: flex; flex-direction: row;
+      justify-content: space-between; align-items: center;
+      padding: 8px 12px 4px; width: 100%;
+      position: relative; z-index: 2;
+    }
+
+    .LockBar {
+      display: flex; flex-direction: row;
+      align-items: center; padding: 4px 12px; width: 100%;
+      position: relative; z-index: 2;
+    }
+
+    .CtrlBtn {
+      display: flex;
+      background-color: transparent; border: none; padding: 0;
+      min-width: 44px; min-height: 44px;
+      justify-content: center; align-items: center;
+      cursor: pointer; color: #fff;
+    }
+
+    .IconMd { color: #fff; font-size: 22px; text-align: center; }
+    .IconSm { color: rgba(255,255,255,0.85); font-size: 18px; text-align: center; }
+
+    .TitleText {
+      color: #fff; font-size: 15px; font-weight: 500;
+      flex: 1; margin-left: 8px; margin-right: 8px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .CenterArea {
+      display: flex; flex: 1;
+      justify-content: center; align-items: center;
+      width: 100%; position: relative; z-index: 2;
+    }
+
+    .CenterControls {
+      display: flex; flex-direction: row;
+      justify-content: center; align-items: center;
+    }
+
+    .SeekBtn {
+      display: flex;
+      background-color: transparent; border: none; padding: 0;
+      margin-left: 24px; margin-right: 24px; cursor: pointer;
+    }
+
+    .SeekBtnInner {
+      display: flex;
+      width: 52px; height: 52px; border-radius: 26px;
+      background-color: rgba(255,255,255,0.15);
+      justify-content: center; align-items: center;
+    }
+
+    .SeekIcon { color: #fff; font-size: 14px; font-weight: 600; text-align: center; }
+
+    .PlayBtn {
+      display: flex;
+      background-color: transparent; border: none; padding: 0;
+      margin-left: 24px; margin-right: 24px; cursor: pointer;
+    }
+
+    .PlayBtnInner {
+      display: flex;
+      width: 68px; height: 68px; border-radius: 34px;
+      background-color: rgba(255,255,255,0.25);
+      justify-content: center; align-items: center;
+    }
+
+    .PlayIcon { color: #fff; font-size: 28px; text-align: center; }
+
+    .LoadingSpinner {
+      width: 40px; height: 40px; border-radius: 20px;
+      border: 3px solid rgba(255,255,255,0.2);
+      border-top-color: #4a90d9;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .BottomBar {
+      display: flex; flex-direction: column;
+      padding: 0 12px 8px; width: 100%;
+      position: relative; z-index: 2;
+    }
+
+    .ProgressRow {
+      display: flex; flex-direction: row;
+      align-items: center; padding: 4px 0; width: 100%;
+    }
+
+    .TimeLabel { color: rgba(255,255,255,0.9); font-size: 13px; min-width: 48px; }
+    .TimeLabelEnd { color: rgba(255,255,255,0.6); font-size: 13px; min-width: 48px; text-align: right; }
+
+    .PlayerSlider {
+      flex: 1; display: flex;
+      margin-left: 10px; margin-right: 10px;
+      height: 20px; align-items: center;
+    }
+
+    .SliderTrackOuter {
+      display: flex; width: 100%; height: 20px;
+      justify-content: center; position: relative;
+    }
+
+    .SliderFill {
+      height: 4px; background-color: #4a90d9;
+      border-radius: 2px; position: absolute;
+      left: 0; top: 50%; transform: translateY(-50%);
+    }
+
+    .SliderThumbWrapper {
+      position: absolute;
+      display: flex; justify-content: center; align-items: center;
+    }
+
+    .SliderThumbDot {
+      width: 16px; height: 16px; border-radius: 8px;
+      background-color: #4a90d9;
+      border: 2px solid #fff;
+    }
+
+    .BottomActions {
+      display: flex; flex-direction: row;
+      align-items: center; padding: 2px 0 4px; width: 100%;
+    }
+
+    .SpeedChip {
+      display: flex;
+      background-color: rgba(255,255,255,0.15);
+      border: none; border-radius: 12px; padding: 0;
+      min-width: 44px; min-height: 32px;
+      justify-content: center; align-items: center;
+      cursor: pointer;
+    }
+
+    .SpeedText { color: #fff; font-size: 12px; font-weight: 600; text-align: center; }
+
+    .ErrorContainer {
+      display: flex; flex-direction: column;
+      justify-content: center; align-items: center;
+      padding: 24px; width: 100%;
+    }
+
+    .ErrorTitle { color: #ff4444; font-size: 17px; text-align: center; margin-bottom: 8px; }
+    .ErrorDetail { color: rgba(255,255,255,0.55); font-size: 13px; text-align: center; }
+
+    .AudioCoverContainer {
+      display: flex; flex-direction: column; flex: 1;
+      justify-content: center; align-items: center; width: 100%;
+    }
+
+    .AudioCover {
+      display: flex; width: 180px; height: 180px; border-radius: 16px;
+      background-color: rgba(74,144,217,0.12);
+      justify-content: center; align-items: center;
+    }
+
+    .AudioCoverIcon { font-size: 56px; color: rgba(255,255,255,0.5); }
+    .AudioTitle { color: rgba(255,255,255,0.85); font-size: 15px; margin-top: 16px; max-width: 280px; text-align: center; }
+
+    .AudioBottomSection {
+      display: flex; flex-direction: column;
+      width: 100%; padding: 0 12px 16px;
+    }
+
+    .AudioPlayRow {
+      display: flex; flex-direction: row;
+      justify-content: center; align-items: center; padding: 8px 0;
+    }
+
+    .mode-switch {
+      position: fixed; top: 8px; right: 8px; z-index: 100;
+      display: flex; gap: 4px;
+    }
+    .mode-switch button {
+      background: rgba(255,255,255,0.2); border: none; color: #fff;
+      padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
+    }
+    .mode-switch button.active { background: #4a90d9; }
+  </style>
+</head>
+<body>
+  <div class="mode-switch">
+    <button onclick="showMode('video')" id="btn-video" class="active">Video</button>
+    <button onclick="showMode('locked')" id="btn-locked">Locked</button>
+    <button onclick="showMode('audio')" id="btn-audio">Audio</button>
+    <button onclick="showMode('error')" id="btn-error">Error</button>
+    <button onclick="showMode('loading')" id="btn-loading">Loading</button>
+  </div>
+
+  <div class="PlayerContainer" id="player">
+  </div>
+
+  <script>
+    function renderSlider(progress) {
+      const pct = (progress * 100).toFixed(1);
+      return `<div class="ProgressRow">
+        <text class="TimeLabel">1:23</text>
+        <div class="PlayerSlider">
+          <div class="SliderTrackOuter">
+            <div class="SliderFill" style="width:${pct}%"></div>
+            <div class="SliderThumbWrapper" style="left:calc(${pct}% - 8px)">
+              <div class="SliderThumbDot"></div>
+            </div>
+          </div>
+        </div>
+        <text class="TimeLabelEnd">4:56</text>
+      </div>`;
+    }
+
+    const modes = {
+      video: `<div class="VideoOverlay">
+        <div class="TopGradient"></div>
+        <div class="TopBar">
+          <button class="CtrlBtn"><span class="IconMd">✕</span></button>
+          <span class="TitleText">测试视频文件名.mp4</span>
+          <button class="CtrlBtn"><span class="IconSm">🔒</span></button>
+        </div>
+        <div class="CenterArea">
+          <div class="CenterControls">
+            <button class="SeekBtn"><div class="SeekBtnInner"><span class="SeekIcon">-10</span></div></button>
+            <button class="PlayBtn"><div class="PlayBtnInner"><span class="PlayIcon">▶</span></div></button>
+            <button class="SeekBtn"><div class="SeekBtnInner"><span class="SeekIcon">+10</span></div></button>
+          </div>
+        </div>
+        <div class="BottomGradient"></div>
+        <div class="BottomBar">
+          ${renderSlider(0.28)}
+          <div class="BottomActions">
+            <button class="SpeedChip"><span class="SpeedText">1x</span></button>
+            <div class="FlexSpacer"></div>
+            <button class="CtrlBtn"><span class="IconMd">⤒</span></button>
+          </div>
+        </div>
+      </div>`,
+
+      locked: `<div class="LockedOverlay">
+        <div class="TopGradient"></div>
+        <div class="LockBar">
+          <button class="CtrlBtn"><span class="IconSm">🔒</span></button>
+          <div class="FlexSpacer"></div>
+        </div>
+        <div class="BottomGradient"></div>
+        <div class="BottomBar">
+          ${renderSlider(0.28)}
+        </div>
+      </div>`,
+
+      audio: `<div class="AudioOverlay">
+        <div class="TopBar">
+          <button class="CtrlBtn"><span class="IconMd">✕</span></button>
+          <span class="TitleText">测试音频文件名.mp3</span>
+          <div style="width:44px"></div>
+        </div>
+        <div class="AudioCoverContainer">
+          <div class="AudioCover"><span class="AudioCoverIcon">🎵</span></div>
+          <span class="AudioTitle">测试音频文件名.mp3</span>
+        </div>
+        <div class="AudioBottomSection">
+          ${renderSlider(0.28)}
+          <div class="AudioPlayRow">
+            <button class="SeekBtn"><div class="SeekBtnInner"><span class="SeekIcon">-10</span></div></button>
+            <button class="PlayBtn"><div class="PlayBtnInner"><span class="PlayIcon">▶</span></div></button>
+            <button class="SeekBtn"><div class="SeekBtnInner"><span class="SeekIcon">+10</span></div></button>
+            <button class="SpeedChip"><span class="SpeedText">1x</span></button>
+          </div>
+        </div>
+      </div>`,
+
+      error: `<div class="ErrorContainer">
+        <button class="PlayBtn"><div class="PlayBtnInner"><span class="PlayIcon">🔄</span></div></button>
+        <span class="ErrorTitle">⚠ 播放失败</span>
+        <span class="ErrorDetail">ffprobe native call failed</span>
+      </div>`,
+
+      loading: `<div class="CenterArea">
+        <div class="LoadingSpinner"></div>
+      </div>`
+    };
+
+    let currentMode = 'video';
+
+    function showMode(mode) {
+      currentMode = mode;
+      document.getElementById('player').innerHTML = modes[mode];
+      document.querySelectorAll('.mode-switch button').forEach(b => b.classList.remove('active'));
+      document.getElementById('btn-' + mode).classList.add('active');
+    }
+
+    showMode('video');
+  </script>
+</body>
+</html>
