@@ -90,7 +90,7 @@
           <ion-label>
             <h2>{{ file.name }}</h2>
             <p v-if="searchQuery && !file.isDirectory" class="search-path">{{ file.path }}</p>
-            <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified && !searchQuery"> · {{ file.modified }}</span></p>
+            <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified && !searchQuery"> · {{ formatDateTime(file.modified) }}</span></p>
             <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
           </ion-label>
           <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
@@ -161,6 +161,7 @@ import {
 import type { FileItem } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
+import { formatDateTime } from '@/composables/useDateFormat'
 import { vLongpress } from '@/directives/longpress'
 import { isNative, requestStoragePermission, openInPlayer } from '@/plugins/GoProcess'
 import { showToast } from '@/composables/useToast'

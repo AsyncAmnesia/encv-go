@@ -16,13 +16,13 @@
         </ion-list-header>
         <ion-item>
           <ion-icon :icon="serverIcon" slot="start"></ion-icon>
-          <ion-input
-            v-model="serverUrl"
-            :label="t('settings.serverUrl')"
-            label-placement="stacked"
-            placeholder="http://127.0.0.1:2025"
-            @ionBlur="saveServerUrl"
-          ></ion-input>
+          <ion-label class="ion-text-wrap">
+            <h3>{{ t('settings.serverUrl') }}</h3>
+            <p class="readonly-url" @click="copyToClipboard(serverUrl)">{{ serverUrl }}</p>
+          </ion-label>
+          <ion-button slot="end" fill="clear" size="small" @click="copyToClipboard(serverUrl)">
+            <ion-icon :icon="copyIcon" slot="icon-only"></ion-icon>
+          </ion-button>
         </ion-item>
         <ion-item>
           <ion-icon :icon="serverIcon" slot="start"></ion-icon>
@@ -56,6 +56,22 @@
         </ion-item>
       </ion-list>
 
+      <ion-list v-if="serviceUrls.length > 0">
+        <ion-list-header>
+          <ion-label>{{ t('settings.serviceAddresses') }}</ion-label>
+        </ion-list-header>
+        <ion-item v-for="svc in serviceUrls" :key="svc.label">
+          <ion-icon :icon="svc.icon" slot="start"></ion-icon>
+          <ion-label class="ion-text-wrap">
+            <h3>{{ svc.label }}</h3>
+            <p class="readonly-url" @click="copyToClipboard(svc.url)">{{ svc.url }}</p>
+          </ion-label>
+          <ion-button slot="end" fill="clear" size="small" @click="copyToClipboard(svc.url)">
+            <ion-icon :icon="copyIcon" slot="icon-only"></ion-icon>
+          </ion-button>
+        </ion-item>
+      </ion-list>
+
       <ion-list v-if="isNativePlatform">
         <ion-list-header>
           <ion-label>{{ t('settings.permissions') }}</ion-label>
@@ -86,22 +102,29 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonIcon, IonLabel,
-  IonInput, IonBadge, IonButton, alertController, IonSpinner,
+  IonBadge, IonButton, alertController, IonSpinner,
 } from '@ionic/vue'
 import {
   server as serverIcon, refresh as refreshIcon,
   stop as stopIcon, play as playIcon,
   notifications as notificationsIcon, folderOpen,
+  copy as copyIcon, shieldCheckmark, cloudOutline, globeOutline,
 } from 'ionicons/icons'
 import { useServerStatus } from '@/composables/useServerStatus'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
-import { setApiBaseUrl, getServerUrl } from '@/api/encv'
+import { getServerUrl, fetchConfig } from '@/api/encv'
 import { isNative, requestNotificationPermission, requestStoragePermission, checkPermissions } from '@/plugins/GoProcess'
+
+interface ServiceUrl {
+  label: string
+  url: string
+  icon: string
+}
 
 const {
   isOnline: serverOnline,
@@ -119,7 +142,54 @@ const serverUrl = ref(getServerUrl())
 const isNativePlatform = ref(isNative())
 const permNotifications = ref(false)
 const permStorage = ref(false)
+const configData = ref<Record<string, unknown> | null>(null)
 let permissionCheckTimer: number | null = null
+
+const serviceUrls = computed<ServiceUrl[]>(() => {
+  if (!configData.value || !serverOnline.value) return []
+  const result: ServiceUrl[] = []
+  const cfg = configData.value
+  const host = serverUrl.value.replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+
+  const serverCfg = cfg.server as Record<string, unknown> | undefined
+  if (serverCfg && typeof serverCfg.port === 'number' && serverCfg.port > 0) {
+    result.push({
+      label: t('settings.httpServerSettings'),
+      url: `http://${host}:${serverCfg.port}`,
+      icon: cloudOutline,
+    })
+  }
+
+  const adminCfg = cfg.admin as Record<string, unknown> | undefined
+  if (adminCfg && typeof adminCfg.port === 'number' && adminCfg.port > 0) {
+    result.push({
+      label: t('settings.adminServerSettings'),
+      url: `http://${host}:${adminCfg.port}`,
+      icon: shieldCheckmark,
+    })
+  }
+
+  const webdavCfg = cfg.webdav as Record<string, unknown> | undefined
+  if (webdavCfg && typeof webdavCfg.port === 'number' && webdavCfg.port > 0) {
+    const root = typeof webdavCfg.root === 'string' ? webdavCfg.root : '/webdav/'
+    result.push({
+      label: t('settings.webdavServerSettings'),
+      url: `http://${host}:${webdavCfg.port}${root}`,
+      icon: globeOutline,
+    })
+  }
+
+  return result
+})
+
+async function copyToClipboard(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    showToast({ message: t('remote.copied'), duration: 1000, color: 'success' })
+  } catch {
+    showToast({ message: t('devlogs.copyFailed'), duration: 1500, color: 'danger' })
+  }
+}
 
 async function refreshPermissions() {
   const perms = await checkPermissions()
@@ -129,7 +199,6 @@ async function refreshPermissions() {
 
 async function handleRequestNotification() {
   await requestNotificationPermission()
-  // 请求后设置定时器，稍后自动刷新权限状态
   if (permissionCheckTimer) clearTimeout(permissionCheckTimer)
   permissionCheckTimer = window.setTimeout(() => refreshPermissions(), 1000)
   setTimeout(() => refreshPermissions(), 3000)
@@ -138,19 +207,10 @@ async function handleRequestNotification() {
 
 async function handleRequestStorage() {
   await requestStoragePermission()
-  // 请求后设置定时器，稍后自动刷新权限状态
   if (permissionCheckTimer) clearTimeout(permissionCheckTimer)
   permissionCheckTimer = window.setTimeout(() => refreshPermissions(), 1000)
   setTimeout(() => refreshPermissions(), 3000)
   setTimeout(() => refreshPermissions(), 5000)
-}
-
-function saveServerUrl() {
-  const url = serverUrl.value.trim()
-  if (url) {
-    setApiBaseUrl(url)
-    checkStatus()
-  }
 }
 
 async function checkServer() {
@@ -202,10 +262,11 @@ onMounted(async () => {
   if (isNativePlatform.value) {
     await refreshPermissions()
   }
-})
-
-onUnmounted(() => {
-  if (permissionCheckTimer) clearTimeout(permissionCheckTimer)
+  if (serverOnline.value) {
+    try {
+      configData.value = await fetchConfig()
+    } catch {}
+  }
 })
 </script>
 
@@ -224,5 +285,13 @@ onUnmounted(() => {
   display: flex;
   gap: 4px;
   flex-shrink: 0;
+}
+.readonly-url {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  color: var(--ion-color-primary);
+  word-break: break-all;
+  cursor: pointer;
+  user-select: all;
 }
 </style>

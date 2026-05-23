@@ -39,7 +39,7 @@
                 <span class="task-type">{{ task.type === 'encrypt' ? t('tasks.encrypt') : t('tasks.decrypt') }}</span>
               </p>
               <p class="task-time-info">
-                <span class="time-created">{{ formatTaskTime(task.createdAt) }}</span>
+                <span class="time-created">{{ formatDateTime(task.createdAt) }}</span>
                 <span v-if="getTaskDuration(task)" class="time-duration">{{ getTaskDuration(task) }}</span>
               </p>
               <div v-if="task.status === 'running' || task.status === 'cancelling'" class="progress-section">
@@ -221,6 +221,7 @@ import {
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
+import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
 import { showToast } from '@/composables/useToast'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 
@@ -318,30 +319,6 @@ function getPhaseLabel(phase: string) {
 function getTaskName(task: EncvTask) {
   const parts = task.sourcePath.split('/')
   return parts[parts.length - 1] || task.sourcePath
-}
-
-function formatTaskTime(isoStr: string): string {
-  if (!isoStr) return ''
-  try {
-    const d = new Date(isoStr)
-    const h = d.getHours().toString().padStart(2, '0')
-    const m = d.getMinutes().toString().padStart(2, '0')
-    return `${h}:${m}`
-  } catch {
-    return ''
-  }
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 0) return ''
-  const totalSec = Math.floor(ms / 1000)
-  if (totalSec < 60) return `${totalSec}s`
-  const min = Math.floor(totalSec / 60)
-  const sec = totalSec % 60
-  if (min < 60) return `${min}m${sec}s`
-  const hr = Math.floor(min / 60)
-  const rm = min % 60
-  return `${hr}h${rm}m`
 }
 
 function getTaskDuration(task: EncvTask): string {
