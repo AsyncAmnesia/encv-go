@@ -81,7 +81,18 @@ void ffprobe_reset(void) {
 PATCH
 
 echo "=== Configuring ffmpeg ==="
-PKG_CONFIG_PATH="${BUILD_DIR}/x264-install/lib/pkgconfig"
+export PKG_CONFIG_PATH="${BUILD_DIR}/x264-install/lib/pkgconfig"
+export PKG_CONFIG_LIBDIR="${BUILD_DIR}/x264-install/lib/pkgconfig"
+export PKG_CONFIG_SYSROOT_DIR="${TOOLCHAIN}/sysroot"
+
+if ! command -v pkg-config &>/dev/null; then
+    echo "pkg-config not found, installing..."
+    apt-get update -qq && apt-get install -y -qq pkg-config
+fi
+
+echo "Verifying x264 pkg-config:"
+pkg-config --exists x264 2>/dev/null && echo "✅ x264 found via pkg-config" || echo "⚠️  x264 not found via pkg-config, will use extra-cflags/ldflags"
+ls -la "${BUILD_DIR}/x264-install/lib/pkgconfig/" 2>/dev/null || echo "⚠️  No .pc files in x264-install"
 
 ./configure \
     --prefix="${BUILD_DIR}/ffmpeg-install" \
