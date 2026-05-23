@@ -14,6 +14,9 @@ on:
         default: ''
         type: string
 
+env:
+  NDK_VERSION: "26.1.10909125"
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -28,11 +31,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: app/encv-mobile/package-lock.json
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.23'
+          cache-dependency-path: go.sum
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -43,23 +49,65 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        id: cache-ndk
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/lib/android/sdk/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
+
+      - name: Install Android NDK
+        if: steps.cache-ndk.outputs.cache-hit != 'true'
+        run: sdkmanager "ndk;${{ env.NDK_VERSION }}"
+
       - name: Install Android platform & build tools
         run: |
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
-      - name: Setup NDK for libplayer.so build
-        run: |
-          echo "Installing NDK..."
-          sdkmanager "ndk;26.1.10909125"
-          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
-          if [ -f "$ANDROID_NDK_HOME/ndk-build" ]; then
-            echo "✅ NDK ready at $ANDROID_NDK_HOME"
-            ls -la "$ANDROID_NDK_HOME/ndk-build"
-          else
-            echo "❌ ndk-build not found at $ANDROID_NDK_HOME"
-            exit 1
-          fi
+      - name: Cache npm dependencies (main)
+        id: cache-npm
+        uses: actions/cache@v4
+        with:
+          path: app/encv-mobile/node_modules
+          key: npm-main-${{ hashFiles('app/encv-mobile/package-lock.json') }}
+          restore-keys: |
+            npm-main-
+
+      - name: Cache npm dependencies (lynx-player)
+        id: cache-npm-lynx
+        uses: actions/cache@v4
+        with:
+          path: app/encv-mobile/lynx-player/node_modules
+          key: npm-lynx-${{ hashFiles('app/encv-mobile/lynx-player/package-lock.json') }}
+          restore-keys: |
+            npm-lynx-
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('app/encv-mobile/android/*.gradle', 'app/encv-mobile/android/app/*.gradle', 'app/encv-mobile/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-
+
+      - name: Cache ffmpeg/x264 build
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: app/encv-mobile/scripts/.ffmpeg-build
+          key: ffmpeg-build-${{ hashFiles('app/encv-mobile/scripts/build-ffmpeg-android.sh') }}
+          restore-keys: |
+            ffmpeg-build-
+
+      - name: Cache ffmpeg output (jniLibs)
+        id: cache-ffmpeg-output
+        uses: actions/cache@v4
+        with:
+          path: app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a
+          key: ffmpeg-output-${{ hashFiles('app/encv-mobile/scripts/build-ffmpeg-android.sh') }}
 
       - name: Install frontend dependencies & Build
         run: cd app/encv-mobile && npm install && npm run build
@@ -78,7 +126,7 @@ jobs:
           CGO_ENABLED: "1"
           GOOS: android
           GOARCH: arm64
-          CC: /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
+          CC: /usr/local/lib/android/sdk/ndk/${{ env.NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
         run: |
           go build \
             -ldflags="-s -w -X main.version=${{ inputs.version || 'dev' }}" \
@@ -162,52 +210,6 @@ jobs:
             exit 1
           fi
 
-      # === Verify kotlin setup before build ===
-      - name: Verify AndroidManifest integrity
-        run: |
-          cd app/encv-mobile
-          echo "=== Capacitor plugins ==="
-          npx cap ls android
-          echo "=== Manifest checks ==="
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          grep -q 'android.intent.action.MAIN' "$MANIFEST" && echo "✅ MAIN intent-filter" || { echo "❌ MISSING: MAIN intent-filter!"; exit 1; }
-          grep -q 'android.intent.category.LAUNCHER' "$MANIFEST" && echo "✅ LAUNCHER category" || { echo "❌ MISSING: LAUNCHER category!"; exit 1; }
-          grep -q 'android:icon' "$MANIFEST" && echo "✅ android:icon" || { echo "❌ MISSING: android:icon!"; exit 1; }
-          grep -q 'android:label' "$MANIFEST" && echo "✅ android:label" || { echo "❌ MISSING: android:label!"; exit 1; }
-          grep -q 'android:theme' "$MANIFEST" && echo "✅ android:theme" || { echo "❌ MISSING: android:theme!"; exit 1; }
-          echo "=== mipmap resources ==="
-          find android/app/src/main/res -name "ic_launcher*" -type f | head -5 && echo "✅ mipmap icons found" || echo "⚠️ WARNING: no ic_launcher in res/"
-          echo "✅ Manifest integrity OK"
-
-      - name: Verify build.gradle kotlin setup
-        run: |
-          echo "=== kotlin-android plugin ==="
-          grep -n "kotlin-android" app/encv-mobile/android/app/build.gradle || { echo "❌ MISSING: kotlin-android plugin!"; exit 1; }
-          echo "=== kotlin-stdlib dependency ==="
-          grep -n "kotlin-stdlib" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: kotlin-stdlib not found"
-          echo "=== jvmTarget ==="
-          grep -n "jvmTarget" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: jvmTarget not found"
-          echo "=== jniLibs.srcDirs ==="
-          grep -n "jniLibs.srcDirs" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: jniLibs.srcDirs not found"
-          echo "=== useLegacyPackaging ==="
-          grep -n "useLegacyPackaging" app/encv-mobile/android/app/build.gradle || echo "❌ MISSING: useLegacyPackaging not set!"
-          echo "=== proguard-rules.pro ==="
-          test -f app/encv-mobile/android/app/proguard-rules.pro && echo "✅ proguard-rules.pro exists" || echo "⚠️ WARNING: no proguard-rules.pro"
-          echo "=== GoProcessPlugin.kt source ==="
-          test -f app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt && echo "✅ GoProcessPlugin.kt exists" || echo "❌ MISSING: GoProcessPlugin.kt!"
-          echo "=== MainActivity.kt source ==="
-          test -f app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt && echo "✅ MainActivity.kt exists" || echo "❌ MISSING: MainActivity.kt!"
-          echo "✅ All checks passed"
-
-      - name: Pre-build diagnosis
-        run: |
-          echo "=== build.gradle kotlin/sourceSets/namespace ==="
-          grep -n "kotlin\|sourceSets\|namespace\|apply plugin.*kotlin\|plugins\s*{" app/encv-mobile/android/app/build.gradle || true
-          echo "=== Source .kt files ==="
-          find app/encv-mobile/android/app/src/main/java -name "*.kt" -type f -exec sh -c 'echo "  {} ($(wc -l < {}) lines)"; head -1 {}' \;
-          echo "=== AndroidManifest activity ==="
-          grep -n "activity\|android:name" app/encv-mobile/android/app/src/main/AndroidManifest.xml | head -5
-
       # === Build ===
       - name: Build ${{ inputs.version && 'Release' || 'Debug' }} APK
         run: |
@@ -257,16 +259,8 @@ jobs:
               ls "$TMPDIR/"*.dex 2>/dev/null || echo "No dex files"
             fi
             rm -rf "$TMPDIR"
-            echo "=== Build output .class files ==="
-            find app/encv-mobile/android/app/build/tmp/kotlin-classes -name "*.class" -path "*encvgo*" 2>/dev/null && \
-              echo "✅ encvgo .class in kotlin-classes" || \
-              echo "⚠️ No encvgo .class (may be cleaned)"
-            echo "=== capacitor.plugins.json ==="
-            unzip -p "$APK_PATH" assets/capacitor.plugins.json
             echo "=== Go binary in APK (jniLibs) ==="
             unzip -l "$APK_PATH" | grep -E "libencv-go|lib/arm64" || echo "❌ libencv-go.so NOT in APK!"
-            echo "=== Go binary in APK (assets, legacy) ==="
-            unzip -l "$APK_PATH" | grep -E "assets/encv-go" || echo "(no assets/encv-go, expected with jniLibs packaging)"
             echo "=== mpv/ffmpeg .so in APK ==="
             unzip -l "$APK_PATH" | grep -E "libmpv|libplayer|libavcodec|libavformat|libavutil|libswresample|libswscale|libavfilter|libavdevice|libpostproc|libffmpeg\.so|libffprobe\.so" || echo "❌ mpv/ffmpeg .so NOT in APK!"
             echo "=== Lynx bundle in APK ==="

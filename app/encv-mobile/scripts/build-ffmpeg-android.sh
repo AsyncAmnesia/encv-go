@@ -27,6 +27,20 @@ RANLIB="${TOOLCHAIN}/bin/llvm-ranlib"
 STRIP="${TOOLCHAIN}/bin/llvm-strip"
 
 mkdir -p "$BUILD_DIR" "$OUTPUT_DIR"
+
+echo "=== Checking for cached ffmpeg output ==="
+if [ -f "${OUTPUT_DIR}/libffmpeg.so" ] && [ -f "${OUTPUT_DIR}/libffprobe.so" ]; then
+    echo "✅ ffmpeg output already exists, checking symbols..."
+    ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" | grep -q "ffmpeg_run" && \
+    ${NM} -D "${OUTPUT_DIR}/libffprobe.so" | grep -q "ffprobe_run" && {
+        echo "✅ All ffmpeg libraries cached and valid, skipping build"
+        echo "Output: $OUTPUT_DIR"
+        ls -lh "$OUTPUT_DIR"
+        exit 0
+    }
+    echo "⚠️  Cached libraries missing expected symbols, rebuilding..."
+fi
+
 cd "$BUILD_DIR"
 
 echo "=== Building ffmpeg ${FFMPEG_VERSION} for Android ${ABI} ==="
@@ -38,26 +52,31 @@ if [ ! -d "ffmpeg-${FFMPEG_VERSION}" ]; then
     rm ffmpeg.tar.xz
 fi
 
-if [ ! -d "x264" ]; then
-    echo "Downloading x264..."
-    git clone --depth 1 --branch ${X264_VERSION} https://code.videolan.org/videolan/x264.git
+X264_INSTALL="${BUILD_DIR}/x264-install"
+if [ ! -f "${X264_INSTALL}/lib/libx264.a" ]; then
+    if [ ! -d "x264" ]; then
+        echo "Downloading x264..."
+        git clone --depth 1 --branch ${X264_VERSION} https://code.videolan.org/videolan/x264.git
+    fi
+
+    echo "=== Building x264 ==="
+    cd "${BUILD_DIR}/x264"
+    CC="$CC" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" \
+    ./configure \
+        --host=${ARCH}-linux-android \
+        --prefix="${X264_INSTALL}" \
+        --enable-static \
+        --disable-cli \
+        --disable-opencl \
+        --cross-prefix="${TOOLCHAIN}/bin/llvm-" \
+        --extra-cflags="-fPIC -DANDROID" \
+        --extra-ldflags="-lm"
+
+    make -j$(nproc)
+    make install
+else
+    echo "✅ x264 already built, skipping"
 fi
-
-echo "=== Building x264 ==="
-cd "${BUILD_DIR}/x264"
-CC="$CC" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" \
-./configure \
-    --host=${ARCH}-linux-android \
-    --prefix="${BUILD_DIR}/x264-install" \
-    --enable-static \
-    --disable-cli \
-    --disable-opencl \
-    --cross-prefix="${TOOLCHAIN}/bin/llvm-" \
-    --extra-cflags="-fPIC -DANDROID" \
-    --extra-ldflags="-lm"
-
-make -j$(nproc)
-make install
 
 echo "=== Patching ffmpeg source ==="
 cd "${BUILD_DIR}/ffmpeg-${FFMPEG_VERSION}"
@@ -80,24 +99,28 @@ void ffprobe_reset(void) {
 }
 PATCH
 
-echo "=== Configuring ffmpeg ==="
-export PKG_CONFIG_PATH="${BUILD_DIR}/x264-install/lib/pkgconfig"
-export PKG_CONFIG_LIBDIR="${BUILD_DIR}/x264-install/lib/pkgconfig"
-export PKG_CONFIG_SYSROOT_DIR="${TOOLCHAIN}/sysroot"
-
+echo "=== Setting up pkg-config for cross-compilation ==="
 if ! command -v pkg-config &>/dev/null; then
     echo "pkg-config not found, installing..."
     apt-get update -qq && apt-get install -y -qq pkg-config
 fi
 
-echo "Verifying x264 pkg-config:"
-pkg-config --exists x264 2>/dev/null && echo "✅ x264 found via pkg-config" || echo "⚠️  x264 not found via pkg-config, will use extra-cflags/ldflags"
-ls -la "${BUILD_DIR}/x264-install/lib/pkgconfig/" 2>/dev/null || echo "⚠️  No .pc files in x264-install"
-
 echo "Fixing x264.pc for Android (remove -lpthread -ldl)..."
-sed -i 's/-lpthread//g; s/-ldl//g' "${BUILD_DIR}/x264-install/lib/pkgconfig/x264.pc"
-cat "${BUILD_DIR}/x264-install/lib/pkgconfig/x264.pc"
+sed -i 's/-lpthread//g; s/-ldl//g' "${X264_INSTALL}/lib/pkgconfig/x264.pc" 2>/dev/null || true
 
+cat > "${BUILD_DIR}/pkg-config-wrapper" << PCEOF
+#!/bin/bash
+export PKG_CONFIG_PATH="${X264_INSTALL}/lib/pkgconfig"
+export PKG_CONFIG_LIBDIR="${X264_INSTALL}/lib/pkgconfig"
+export PKG_CONFIG_SYSROOT_DIR="${TOOLCHAIN}/sysroot"
+exec pkg-config "\$@"
+PCEOF
+chmod +x "${BUILD_DIR}/pkg-config-wrapper"
+
+echo "Verifying x264 via wrapper:"
+"${BUILD_DIR}/pkg-config-wrapper" --cflags --libs x264 || echo "⚠️  x264 not found via wrapper"
+
+echo "=== Configuring ffmpeg ==="
 ./configure \
     --prefix="${BUILD_DIR}/ffmpeg-install" \
     --enable-cross-compile \
@@ -128,10 +151,15 @@ cat "${BUILD_DIR}/x264-install/lib/pkgconfig/x264.pc"
     --enable-filter=aresample \
     --enable-libx264 \
     --enable-gpl \
-    --pkg-config-flags="--static" \
-    --extra-cflags="-fPIC -DANDROID -I${BUILD_DIR}/x264-install/include" \
-    --extra-ldflags="-L${BUILD_DIR}/x264-install/lib -lm" \
-    --extra-libs="-lm"
+    --pkg-config="${BUILD_DIR}/pkg-config-wrapper" \
+    --extra-cflags="-fPIC -DANDROID -I${X264_INSTALL}/include" \
+    --extra-ldflags="-L${X264_INSTALL}/lib -lm" \
+    --extra-libs="-lm" || {
+    echo "=== ffmpeg configure FAILED ==="
+    echo "=== Last 80 lines of config.log ==="
+    tail -80 ffbuild/config.log 2>/dev/null || echo "(no config.log found)"
+    exit 1
+}
 
 echo "=== Building ffmpeg ==="
 make -j$(nproc)
@@ -155,7 +183,7 @@ FTOOLS_BUILD="${BUILD_DIR}/ftools-build"
 mkdir -p "$FTOOLS_BUILD"
 
 CFLAGS="-fPIC -DANDROID -I${FFMPEG_INSTALL}/include -I${FFMPEG_SRC}"
-LDFLAGS="-L${FFMPEG_INSTALL}/lib -L${BUILD_DIR}/x264-install/lib"
+LDFLAGS="-L${FFMPEG_INSTALL}/lib -L${X264_INSTALL}/lib"
 
 FFMPEG_FFTOOLS="fftools/ffmpeg.c fftools/ffmpeg_dec.c fftools/ffmpeg_demux.c fftools/ffmpeg_enc.c fftools/ffmpeg_filter.c fftools/ffmpeg_hw.c fftools/ffmpeg_mux.c fftools/ffmpeg_opt.c fftools/cmdutils.c fftools/opt_common.c fftools/sync_queue.c fftools/thread_queue.c"
 
