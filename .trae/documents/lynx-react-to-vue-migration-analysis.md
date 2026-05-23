@@ -1,148 +1,105 @@
-# Lynx React → Vue Lynx 迁移分析
+# Lynx 播放器 React → Vue Lynx 迁移计划
 
-## 背景
+## 决策
 
-当前 Lynx 播放器使用 `@lynx-js/react`（React），主应用使用 Vue + Ionic。用户提出：既然 Lynx 没有路由库，是否应该迁移到 `vue-lynx` 以获得 Vue Router 支持，同时与主应用技术栈统一。
+用户确认：lynx-ui 本身质量一般，Lynx 生态小需要自己写组件，使用 vue-lynx 重构。
 
-## vue-lynx 路由方案分析
+## 迁移步骤
 
-### 核心机制
+### 步骤 1：替换项目依赖和构建配置
 
-vue-lynx 官方支持 Vue Router，使用 `createMemoryHistory()` 代替 `createWebHistory()`（因为 Lynx 无 `window.location` / History API）。
+**文件变更：**
+- `package.json`：移除 `@lynx-js/react`、`@lynx-js/lynx-ui`、`react`、`@lynx-js/react-rsbuild-plugin`、`@types/react`；添加 `vue-lynx`、`vue-router`、`vue-lynx/plugin`
+- `lynx.config.ts`：移除 `reactPlugin()`，添加 `pluginVueLynx()`
+- `tsconfig.json`：调整 JSX 配置（移除 jsx: "react-jsx"，vue-lynx 用 SFC 不需要）
 
-```ts
-// src/router.ts
-import { createRouter, createMemoryHistory } from 'vue-router'
-import Home from './views/Home.vue'
-import Player from './views/Player.vue'
+### 步骤 2：创建 Vue Router 配置
 
-const router = createRouter({
-  history: createMemoryHistory(),
-  routes: [
-    { path: '/', name: 'home', component: Home },
-    { path: '/player', name: 'player', component: Player },
-    { path: '/playlist', name: 'playlist', component: Playlist },
-    { path: '/settings', name: 'settings', component: Settings },
-  ],
-})
-```
+**新建文件：**
+- `src/router.ts`：`createMemoryHistory()` + 4 条路由（home/player/playlist/settings）
 
-```ts
-// src/index.ts
-import { createApp } from 'vue-lynx'
-import router from './router'
-import App from './App.vue'
+### 步骤 3：创建 App.vue 根组件
 
-const app = createApp(App)
-app.use(router)
-app.mount()
-```
+**新建文件：**
+- `src/App.vue`：`<RouterView />` 容器，替代原 AppComponent.tsx 的路由逻辑
+- `src/main.ts`：`createApp(App).use(router).mount()`，替代原 App.tsx
 
-```vue
-<!-- src/App.vue -->
-<script setup lang="ts">
-import { RouterView } from 'vue-router'
-</script>
-<template>
-  <view>
-    <RouterView />
-  </view>
-</template>
-```
+### 步骤 4：迁移页面组件（TSX → SFC）
 
-### 导航链接
+| 原 React 组件 | 新 Vue SFC | 说明 |
+|---|---|---|
+| `HomePage.tsx` | `views/HomeView.vue` | 首页，Composition API |
+| `PlayerPage.tsx` | `views/PlayerView.vue` | 播放页，MPV 交互逻辑 |
+| `PlaylistPage.tsx` | `views/PlaylistView.vue` | 播放列表 |
+| `SettingsPage.tsx` | `views/SettingsView.vue` | 设置页 |
 
-Lynx 没有 `<a>` 标签，所以 `RouterLink` 的默认渲染不适用。需使用 `custom` + `v-slot` API：
+### 步骤 5：迁移 PlayerControls 组件
 
-```vue
-<script setup lang="ts">
-import { RouterLink } from 'vue-router'
-</script>
-<template>
-  <RouterLink to="/player" custom v-slot="{ isActive, navigate }">
-    <view :class="{ active: isActive }" @tap="navigate">
-      <text>播放器</text>
-    </view>
-  </RouterLink>
-</template>
-```
+**原组件：** `PlayerControls.tsx`（使用 `@lynx-js/lynx-ui` 的 SliderRoot/Button）
+**新组件：** `components/PlayerControls.vue`
 
-### 生态支持
+需要自实现的 UI 原语（替代 lynx-ui）：
+- **Slider**：用 `<view>` + `@panstart/@panmove/@panend` 手势实现进度条
+- **Button**：用 `<view>` + `@tap` 实现（Lynx 原生支持手势事件）
 
-vue-lynx 官方文档列出完整生态：
-- ✅ **Vue Router** — `createMemoryHistory()` 完整支持
-- ✅ **Pinia** — 状态管理
-- ✅ **Vue Query** — 数据获取
-- ✅ **Tailwind CSS** — 样式
-- ✅ **TypeScript** — 类型支持
-- ✅ **Testing Library** — 测试
+### 步骤 6：迁移 CSS
 
-## 对比分析
+从 `App.css` 拆分到各 SFC 的 `<style scoped>` 中，共享样式提取到 `src/styles/` 目录。
 
-### 当前方案（Lynx React + 手动状态路由）
+### 步骤 7：NativeModules 适配
 
-| 维度 | 评价 |
-|------|------|
-| **路由** | 手动 `useState<AppView>` 切换，无路由守卫/动画/历史 |
-| **状态管理** | React `useState/useCallback`，无全局 store |
-| **代码量** | AppComponent.tsx 170 行路由逻辑 + 5 个 TSX 页面 |
-| **与主应用一致性** | ❌ 主应用 Vue，播放器 React |
-| **UI 组件** | `@lynx-js/lynx-ui`（React 版） |
-| **调试** | 需要单独的 React 开发工具 |
-| **维护成本** | 两套框架知识 |
+`NativeModules.MpvPlayerModule`、`NativeModules.GoBackendModule`、`NativeModules.LogBridge` 是 Lynx 原生桥接，与框架无关，直接在 Vue 组件中调用即可。
 
-### 迁移方案（vue-lynx + Vue Router）
+需确认 vue-lynx 的 `useLynxGlobalEventListener` 等价 API。根据文档，vue-lynx 使用 `onGlobalEvent` 或 `useLynxGlobalEventListener`（需验证）。
 
-| 维度 | 评价 |
-|------|------|
-| **路由** | ✅ Vue Router `createMemoryHistory()`，完整路由守卫/动画/历史 |
-| **状态管理** | ✅ Pinia，与主应用共享模式 |
-| **代码量** | SFC 更简洁，`<style scoped>` 替代 App.css |
-| **与主应用一致性** | ✅ 统一 Vue 生态 |
-| **UI 组件** | 需要确认 vue-lynx 是否有对应 UI 库 |
-| **调试** | Vue DevTools |
-| **维护成本** | 单一框架 |
+### 步骤 8：清理旧文件
 
-### 关键风险
+删除所有 `.tsx` 文件和 `App.css`。
 
-| 风险 | 严重度 | 说明 |
-|------|--------|------|
-| **vue-lynx Pre-Alpha** | 🔴 高 | npm 周下载量仅 75，版本 0.3.1，官方标注 "Expect bugs and enjoy!" |
-| **@lynx-js/lynx-ui 不兼容** | 🔴 高 | 当前使用的 SliderRoot/SliderTrack/Button 等是 React 组件，vue-lynx 无对应 UI 库 |
-| **rspeedy 插件不兼容** | 🟡 中 | 需从 `@lynx-js/react-rsbuild-plugin` 换为 `vue-lynx/plugin` |
-| **NativeModules 调用** | 🟢 低 | `NativeModules.MpvPlayerModule` 等是 Lynx 原生桥接，与框架无关 |
-| **双线程架构差异** | 🟡 中 | vue-lynx 有 `runOnMainThread`/`useMainThreadRef` 等 API，需学习 |
-| **CI 构建变更** | 🟡 中 | rspeedy 配置、依赖安装流程需调整 |
-| **迁移工作量** | 🟡 中 | 6 个 TSX → 6 个 SFC，约 800 行代码重写 |
+### 步骤 9：更新 Android 端构建配置
 
-## 决策分析
+确认 `PlayerActivityLynx.kt` 中加载的 bundle 路径是否需要调整（vue-lynx 编译产物可能不同）。
 
-### 不迁移的理由（推荐）
+### 步骤 10：更新 preview.html
 
-1. **vue-lynx 太不成熟**：Pre-Alpha，周下载 75，可能存在未发现的 bug，不适合生产环境
-2. **lynx-ui 不可用**：当前播放器重度使用 `@lynx-js/lynx-ui`（SliderRoot/Button 等），vue-lynx 没有对应 UI 库，需要手动实现所有 UI 原语
-3. **当前手动路由已够用**：播放器只有 4 个页面（首页/播放/列表/设置），状态切换足够，不需要路由守卫或复杂导航
-4. **风险收益不成比例**：迁移工作量大、风险高，收益仅为"技术栈统一"和"Vue Router"
+保持 HTML 预览页面用于本地开发调试。
 
-### 迁移的理由
+## 文件清单
 
-1. **技术栈统一**：主应用和播放器都用 Vue，降低维护成本
-2. **Vue Router**：`createMemoryHistory()` 提供完整路由能力（历史、守卫、动画）
-3. **Pinia 共享**：如果后续需要主应用和播放器共享状态
-4. **SFC 开发体验**：`<style scoped>` 比 App.css 更模块化
+### 删除
+- `src/App.tsx`
+- `src/App.css`
+- `src/typing.d.ts`
+- `src/components/AppComponent.tsx`
+- `src/components/HomePage.tsx`
+- `src/components/PlayerPage.tsx`
+- `src/components/PlayerControls.tsx`
+- `src/components/PlaylistPage.tsx`
+- `src/components/SettingsPage.tsx`
 
-## 结论
+### 新建
+- `src/main.ts`
+- `src/App.vue`
+- `src/router.ts`
+- `src/views/HomeView.vue`
+- `src/views/PlayerView.vue`
+- `src/views/PlaylistView.vue`
+- `src/views/SettingsView.vue`
+- `src/components/PlayerControls.vue`
+- `src/components/ProgressBar.vue`（自实现 Slider）
+- `src/styles/variables.css`（共享 CSS 变量）
 
-**推荐不迁移**，理由：
+### 修改
+- `package.json`
+- `lynx.config.ts`
+- `tsconfig.json`
+- `preview.html`
 
-1. vue-lynx 处于 Pre-Alpha 阶段，不适合生产项目
-2. `@lynx-js/lynx-ui` 是 React 专属，vue-lynx 无替代品
-3. 当前 4 页面的手动路由完全够用
-4. 可以在 vue-lynx 成熟后（达到 Beta/Stable）再考虑迁移
+## 风险与缓解
 
-### 替代方案：优化当前 React 手动路由
-
-在当前 React 架构下改进路由体验：
-- 封装 `useRouter` hook，提供 `push/pop/replace/back` 等方法
-- 添加页面切换动画（Lynx `animation` API）
-- 维护导航历史栈（支持返回）
+| 风险 | 缓解措施 |
+|---|---|
+| vue-lynx Pre-Alpha 有 bug | 先搭建最小 Hello World 验证 rspeedy + vue-lynx 能正常编译运行 |
+| Slider 手势实现复杂 | 先用简化版（tap 定位），后续迭代加拖拽 |
+| NativeModules 调用方式不同 | 验证 vue-lynx 中 `globalThis.NativeModules` 是否可用 |
+| CI 构建失败 | 先在本地验证 `rspeedy build` 成功再推送 |

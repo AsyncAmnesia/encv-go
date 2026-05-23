@@ -1,10 +1,10 @@
 import { defineConfig } from '@lynx-js/rspeedy'
-import { pluginReactLynx } from '@lynx-js/react-rsbuild-plugin'
+import { pluginVueLynx } from 'vue-lynx/plugin'
 
 export default defineConfig({
-  plugins: [pluginReactLynx({ enableNewGesture: true })],
+  plugins: [pluginVueLynx()],
   source: {
-    entry: './src/App.tsx',
+    entry: './src/main.ts',
   },
   output: {
     distPath: {
