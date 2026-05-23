@@ -149,6 +149,45 @@ class GoProcessPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun openPlayer(call: PluginCall) {
+        val path = call.getString("path", "")
+        val name = call.getString("name", "")
+        val mimeType = call.getString("mimeType", "")
+        try {
+            Log.d(TAG, "openPlayer: path=$path, name=$name, mimeType=$mimeType")
+            val mainActivity = activity as? MainActivity
+            if (mainActivity == null) {
+                Log.w(TAG, "openPlayer: activity is not MainActivity, falling back to openInPlayer")
+                if (path.isNullOrEmpty()) {
+                    openPlayerHome(call)
+                } else {
+                    openInPlayer(call)
+                }
+                return
+            }
+            PlayerOverlayManager.getInstance().showOverlay(
+                mainActivity, path, name, mimeType, false
+            )
+            call.resolve()
+        } catch (e: Exception) {
+            Log.e(TAG, "openPlayer failed", e)
+            call.reject("Failed to open player: ${e.message}")
+        }
+    }
+
+    @PluginMethod
+    fun closePlayer(call: PluginCall) {
+        try {
+            Log.d(TAG, "closePlayer: closing player overlay")
+            PlayerOverlayManager.getInstance().hideOverlay()
+            call.resolve()
+        } catch (e: Exception) {
+            Log.e(TAG, "closePlayer failed", e)
+            call.reject("Failed to close player: ${e.message}")
+        }
+    }
+
+    @PluginMethod
     fun openInPlayer(call: PluginCall) {
         val path = call.getString("path", "")
         val name = call.getString("name", "")

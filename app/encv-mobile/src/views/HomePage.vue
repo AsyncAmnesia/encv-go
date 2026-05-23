@@ -59,14 +59,14 @@ import {
 } from '@ionic/vue'
 import { playCircle, folder, lockClosed, globe } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
-import { openPlayerHome } from '@/plugins/GoProcess'
+import { openPlayer } from '@/plugins/GoProcess'
 import { useRouter } from 'vue-router'
 
 const { t } = useI18n()
 const router = useRouter()
 
 async function handleOpenPlayer() {
-  await openPlayerHome()
+  await openPlayer('', '', '')
 }
 
 function handleOpenFiles() {

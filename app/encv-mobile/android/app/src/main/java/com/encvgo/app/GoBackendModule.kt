@@ -113,6 +113,21 @@ class GoBackendModule(context: android.content.Context) : LynxModule(context) {
     }
 
     @LynxMethod
+    fun closePlayer(callback: Callback) {
+        LogRelay.get().relay(TAG, "info", "closePlayer: closing player overlay")
+        try {
+            MpvPlayerModule.getInstance()?.let { mpv ->
+                try { mpv.pause {} } catch (_: Exception) {}
+            }
+            PlayerOverlayManager.getInstance().hideOverlay()
+            callback.invoke(true)
+        } catch (e: Exception) {
+            LogRelay.get().relay(TAG, "error", "closePlayer failed: ${e.message}")
+            callback.invoke(e.message)
+        }
+    }
+
+    @LynxMethod
     fun getStreamUrl(path: String, isExternal: Boolean, callback: Callback) {
         val port = EncvGoService.lastKnownPort
         if (port <= 0) {

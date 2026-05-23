@@ -1,10 +1,14 @@
 import { defineConfig } from '@lynx-js/rspeedy'
-import { pluginVueLynx } from 'vue-lynx/plugin'
+import { pluginReactLynx } from '@lynx-js/react-rsbuild-plugin'
 
 export default defineConfig({
-  plugins: [pluginVueLynx()],
+  plugins: [
+    pluginReactLynx({
+      defaultDisplayLinear: false,
+    }),
+  ],
   source: {
-    entry: './src/main.ts',
+    entry: './src/player/index.tsx',
   },
   output: {
     distPath: {

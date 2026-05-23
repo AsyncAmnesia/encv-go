@@ -163,7 +163,7 @@ import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
 import { formatDateTime } from '@/composables/useDateFormat'
 import { vLongpress } from '@/directives/longpress'
-import { isNative, requestStoragePermission, openInPlayer } from '@/plugins/GoProcess'
+import { isNative, requestStoragePermission, openPlayer } from '@/plugins/GoProcess'
 import { showToast } from '@/composables/useToast'
 
 const { t } = useI18n()
@@ -356,7 +356,7 @@ async function handleFileClick(file: FileItem) {
   if (category === 'video' || category === 'audio' || category === 'encrypted') {
     if (isNative()) {
       const mimeType = category === 'encrypted' ? 'video/*' : category === 'video' ? 'video/*' : 'audio/*'
-      openInPlayer(file.path, file.name, mimeType)
+      openPlayer(file.path, file.name, mimeType)
     } else {
       router.push({
         path: '/player',
@@ -454,7 +454,7 @@ async function handleLongPress(file: FileItem) {
       icon: videocam,
       handler: () => {
         if (isNative()) {
-          openInPlayer(file.path, file.name, 'video/*')
+          openPlayer(file.path, file.name, 'video/*')
         } else {
           router.push({
             path: '/player',
@@ -487,7 +487,7 @@ async function handleLongPress(file: FileItem) {
         if (isMedia) {
           if (isNative()) {
             const mimeType = category === 'audio' ? 'audio/*' : 'video/*'
-            openInPlayer(file.path, file.name, mimeType)
+            openPlayer(file.path, file.name, mimeType)
           } else {
             router.push({
               path: '/player',

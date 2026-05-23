@@ -56,11 +56,21 @@ class MainActivity : BridgeActivity() {
     }
 
     override fun onDestroy() {
+        PlayerOverlayManager.getInstance().hideOverlay()
         if (backendReceiverRegistered) {
             unregisterReceiver(backendReceiver)
             backendReceiverRegistered = false
         }
         super.onDestroy()
+    }
+
+    override fun onBackPressed() {
+        if (PlayerOverlayManager.getInstance().isOverlayShowing()) {
+            PlayerOverlayManager.getInstance().hideOverlay()
+            return
+        }
+        @Suppress("DEPRECATION")
+        super.onBackPressed()
     }
 
     private fun registerBackendReceiver() {

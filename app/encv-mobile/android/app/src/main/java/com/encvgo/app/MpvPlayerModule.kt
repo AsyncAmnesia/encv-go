@@ -379,11 +379,14 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
 
     @LynxMethod
     fun finish(callback: Callback) {
-        LogRelay.get().relay(TAG, "info", "finish: closing player activity")
-        val act = activity ?: run { callback.invoke("Activity not available"); return }
+        LogRelay.get().relay(TAG, "info", "finish: closing player")
         mainHandler.post {
             try {
-                act.finish()
+                if (PlayerOverlayManager.getInstance().isOverlayShowing()) {
+                    PlayerOverlayManager.getInstance().hideOverlay()
+                } else {
+                    activity?.finish()
+                }
                 callback.invoke(true)
             } catch (e: Exception) {
                 LogRelay.get().relay(TAG, "error", "finish failed: ${e.message}")
