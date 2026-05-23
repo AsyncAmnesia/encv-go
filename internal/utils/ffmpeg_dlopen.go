@@ -16,8 +16,19 @@ typedef int (*run_func_t)(int argc, char **argv);
 typedef void (*reset_func_t)(void);
 
 static pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
-static void *g_ffmpeg_handle = NULL;
-static void *g_ffprobe_handle = NULL;
+
+static const char *g_dep_libs[] = {
+    "libavutil.so",
+    "libswresample.so",
+    "libswscale.so",
+    "libavcodec.so",
+    "libavformat.so",
+    "libavfilter.so",
+    "libavdevice.so",
+    NULL
+};
+
+static char g_dlerror[1024] = {0};
 
 static int call_native_run(
     const char *lib_path,
@@ -29,9 +40,25 @@ static int call_native_run(
     const char *stderr_file
 ) {
     pthread_mutex_lock(&g_mutex);
+    g_dlerror[0] = '\0';
 
+    char dir[512];
+    snprintf(dir, sizeof(dir), "%s", lib_path);
+    char *last_slash = strrchr(dir, '/');
+    if (last_slash) *last_slash = '\0';
+
+    for (int i = 0; g_dep_libs[i]; i++) {
+        char dep_path[512];
+        snprintf(dep_path, sizeof(dep_path), "%s/%s", dir, g_dep_libs[i]);
+        dlopen(dep_path, RTLD_NOW | RTLD_GLOBAL);
+    }
+
+    dlerror();
     void *handle = dlopen(lib_path, RTLD_NOW);
     if (!handle) {
+        const char *err = dlerror();
+        if (err) snprintf(g_dlerror, sizeof(g_dlerror), "%s", err);
+        else snprintf(g_dlerror, sizeof(g_dlerror), "dlopen failed: unknown error");
         pthread_mutex_unlock(&g_mutex);
         return -1;
     }
@@ -41,6 +68,9 @@ static int call_native_run(
 
     run_func_t run_fn = (run_func_t)dlsym(handle, run_sym);
     if (!run_fn) {
+        const char *err = dlerror();
+        if (err) snprintf(g_dlerror, sizeof(g_dlerror), "%s", err);
+        else snprintf(g_dlerror, sizeof(g_dlerror), "symbol %s not found", run_sym);
         dlclose(handle);
         pthread_mutex_unlock(&g_mutex);
         return -2;
@@ -83,6 +113,10 @@ static int call_native_run(
     dlclose(handle);
     pthread_mutex_unlock(&g_mutex);
     return ret;
+}
+
+static const char* get_dlerror(void) {
+    return g_dlerror;
 }
 */
 import "C"
@@ -159,10 +193,12 @@ func callFFmpegNative(args []string) (*nativeResult, error) {
 	}
 
 	if ret == -1 {
-		return result, fmt.Errorf("failed to load %s", libPath)
+		dlErr := C.GoString(C.get_dlerror())
+		return result, fmt.Errorf("failed to load %s: %s", libPath, dlErr)
 	}
 	if ret == -2 {
-		return result, fmt.Errorf("ffmpeg_run symbol not found in %s", libPath)
+		dlErr := C.GoString(C.get_dlerror())
+		return result, fmt.Errorf("ffmpeg_run symbol not found in %s: %s", libPath, dlErr)
 	}
 
 	return result, nil
@@ -214,10 +250,12 @@ func callFFprobeNative(args []string) (*nativeResult, error) {
 	}
 
 	if ret == -1 {
-		return result, fmt.Errorf("failed to load %s", libPath)
+		dlErr := C.GoString(C.get_dlerror())
+		return result, fmt.Errorf("failed to load %s: %s", libPath, dlErr)
 	}
 	if ret == -2 {
-		return result, fmt.Errorf("ffprobe_run symbol not found in %s", libPath)
+		dlErr := C.GoString(C.get_dlerror())
+		return result, fmt.Errorf("ffprobe_run symbol not found in %s: %s", libPath, dlErr)
 	}
 
 	return result, nil

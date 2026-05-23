@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -52,7 +52,7 @@ func detectPreferredEncoder() string {
 			return enc.name
 		}
 		if err := utils.FFmpegRun(append([]string{"-y", "-threads", "1"}, enc.args...)...); err == nil {
-			log.Printf("-> [CONTENT_PREPROCESSOR] Detected available encoder: %s\n", enc.name)
+			slog.Info("Detected available encoder", "component", "CONTENT_PREPROCESSOR", "encoder", enc.name)
 			return enc.name
 		}
 	}
@@ -160,7 +160,7 @@ func (p *VideoContentPreprocessor) runFFmpegCmdMobile(args []string, tempPath st
 }
 
 func (p *VideoContentPreprocessor) Preprocess(inputPath string) (io.ReadCloser, error) {
-	log.Printf("-> [CONTENT_PREPROCESSOR] Analyzing '%s' for optimal processing...\n", filepath.Base(inputPath))
+	slog.Info("Analyzing for optimal processing", "component", "CONTENT_PREPROCESSOR", "file", filepath.Base(inputPath))
 
 	if p.ctx != nil {
 		select {
@@ -172,7 +172,7 @@ func (p *VideoContentPreprocessor) Preprocess(inputPath string) (io.ReadCloser, 
 
 	format, err := utils.DetectVideoFormat(inputPath)
 	if err != nil {
-		log.Printf("-> [CONTENT_PREPROCESSOR] Warning: Could not detect format for %s, falling back to transcoding. Error: %v\n", filepath.Base(inputPath), err)
+		slog.Warn("Could not detect format, falling back to transcoding", "component", "CONTENT_PREPROCESSOR", "file", filepath.Base(inputPath), "error", err)
 		r, path, err := p.transcodeToFastStartMP4(inputPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to transcode to fast-start MP4: %w", err)
@@ -226,7 +226,7 @@ func (p *VideoContentPreprocessor) Preprocess(inputPath string) (io.ReadCloser, 
 			return r, nil
 		} else {
 			if err != nil {
-				log.Printf("-> [CONTENT_PREPROCESSOR] Warning: Could not verify fast-start status (%v), proceeding with remuxing.\n", err)
+				slog.Warn("Could not verify fast-start status, proceeding with remuxing", "component", "CONTENT_PREPROCESSOR", "error", err)
 			} else {
 				fmt.Println("-> [CONTENT_PREPROCESSOR] Input is not a fast-start MP4, remuxing is required.")
 			}
@@ -239,7 +239,7 @@ func (p *VideoContentPreprocessor) Preprocess(inputPath string) (io.ReadCloser, 
 		}
 	}
 
-	log.Printf("-> [CONTENT_PREPROCESSOR] Strategy: Source is '%s', transcoding to fast-start MP4.\n", format)
+	slog.Info("Transcoding to fast-start MP4", "component", "CONTENT_PREPROCESSOR", "format", format)
 	r, path, err := p.transcodeToFastStartMP4(inputPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to transcode to fast-start MP4: %w", err)
@@ -259,7 +259,7 @@ func (p *VideoContentPreprocessor) updateWithPreprocessedInfo(preprocessedPath, 
 	if err == nil {
 		if d, err := strconv.ParseFloat(strings.TrimSpace(string(output)), 64); err == nil {
 			p.index.DurationSeconds = d
-			log.Printf("-> [CONTENT_PREPROCESSOR] Updated duration to: %f seconds\n", d)
+			slog.Info("Updated duration", "component", "CONTENT_PREPROCESSOR", "duration_seconds", d)
 		}
 	}
 
@@ -267,7 +267,7 @@ func (p *VideoContentPreprocessor) updateWithPreprocessedInfo(preprocessedPath, 
 	if finalFormat == "mkv" {
 		chapters, err = ExtractChaptersWithMKVExtract(preprocessedPath)
 		if err != nil {
-			log.Printf("-> [CONTENT_PREPROCESSOR] Warning: mkvextract failed, falling back to ffprobe: %v\n", err)
+			slog.Warn("mkvextract failed, falling back to ffprobe", "component", "CONTENT_PREPROCESSOR", "error", err)
 			chapters, err = extractChaptersWithFFprobe(preprocessedPath)
 		}
 	} else {
@@ -275,17 +275,17 @@ func (p *VideoContentPreprocessor) updateWithPreprocessedInfo(preprocessedPath, 
 	}
 	if err == nil && chapters != nil {
 		p.index.Chapters = chapters
-		log.Printf("-> [CONTENT_PREPROCESSOR] Updated %d chapters.\n", len(chapters))
+		slog.Info("Updated chapters", "component", "CONTENT_PREPROCESSOR", "count", len(chapters))
 	} else {
-		log.Printf("-> [CONTENT_PREPROCESSOR] Warning: Could not extract chapters from preprocessed file: %v\n", err)
+		slog.Warn("Could not extract chapters from preprocessed file", "component", "CONTENT_PREPROCESSOR", "error", err)
 	}
 
 	keyFrames, err := extractKeyFrameOffsets(preprocessedPath, finalFormat)
 	if err == nil {
 		p.index.KeyFrameOffsets = keyFrames
-		log.Printf("-> [CONTENT_PREPROCESSOR] Found %d keyframes for intelligent splitting.\n", len(keyFrames))
+		slog.Info("Found keyframes for intelligent splitting", "component", "CONTENT_PREPROCESSOR", "count", len(keyFrames))
 	} else {
-		log.Printf("-> [CONTENT_PREPROCESSOR] Warning: Could not extract keyframes for intelligent splitting: %v\n", err)
+		slog.Warn("Could not extract keyframes for intelligent splitting", "component", "CONTENT_PREPROCESSOR", "error", err)
 		p.index.KeyFrameOffsets = nil
 	}
 }
@@ -300,7 +300,7 @@ func extractKeyFrameOffsets(filePath string, format string) ([]uint64, error) {
 	if err == nil && len(offsets) > 0 {
 		return offsets, nil
 	}
-	log.Printf("-> [DIAG] FFProbe failed or empty (%v). Attempting binary NAL scan...\n", err)
+	slog.Info("FFProbe failed or empty, attempting binary NAL scan", "component", "DIAG", "error", err)
 
 	return nil, fmt.Errorf("all keyframe extraction methods failed")
 }
@@ -347,7 +347,7 @@ func extractKeyFrameOffsetsWithFFProbe(filePath string) ([]uint64, error) {
 		return nil, fmt.Errorf("no valid keyframes found with ffprobe")
 	}
 
-	log.Printf("-> [DIAG] SUCCESS: Extracted %d exact keyframe positions in a single pass.\n", len(offsets))
+	slog.Info("Extracted exact keyframe positions in a single pass", "component", "DIAG", "count", len(offsets))
 	return offsets, nil
 }
 
@@ -364,7 +364,7 @@ func (p *VideoContentPreprocessor) remapWithMKVMerge(inputPath string) (io.ReadC
 			fmt.Println("-> [DIAG] Original file DOES NOT have Cues. This is likely the root cause.")
 		}
 	} else {
-		log.Printf("-> [DIAG] WARNING: Could not check original file for Cues: %v\n", err)
+		slog.Warn("Could not check original file for Cues", "component", "DIAG", "error", err)
 	}
 	tempFile, err := os.CreateTemp(p.outputDir, "encv-pre-*.mkv")
 	if err != nil {
@@ -375,7 +375,7 @@ func (p *VideoContentPreprocessor) remapWithMKVMerge(inputPath string) (io.ReadC
 
 	fmt.Println("-> [DIAG] Attempting to create Cues for all video tracks with 'iframes' mode.")
 	cmd := exec.Command("mkvmerge", "--cues", "video:iframes", "-o", tempPath, inputPath)
-	log.Printf("-> [DIAG] Executing command: %s\n", cmd.String())
+	slog.Info("Executing command", "component", "DIAG", "command", cmd.String())
 
 	if p.ctx != nil {
 		select {
@@ -394,11 +394,11 @@ func (p *VideoContentPreprocessor) remapWithMKVMerge(inputPath string) (io.ReadC
 
 	hasCues, _ := checkFileForCues(tempPath)
 	if !hasCues {
-		log.Printf("-> [DIAG] FAILED: 'video:iframes' succeeded but created no Cues. Trying with 'all' as a last resort.\n")
+		slog.Error("'video:iframes' succeeded but created no Cues, trying with 'all' as a last resort", "component", "DIAG")
 
 		fmt.Println("-> [DIAG] Attempting to create Cues for all video tracks with 'all' mode.")
 		cmdAll := exec.Command("mkvmerge", "--cues", "video:all", "-o", tempPath, inputPath)
-		log.Printf("-> [DIAG] Executing command: %s\n", cmdAll.String())
+		slog.Info("Executing command", "component", "DIAG", "command", cmdAll.String())
 		cmdAll.Stderr = os.Stderr
 		if err := cmdAll.Run(); err != nil {
 			os.Remove(tempPath)
@@ -409,7 +409,7 @@ func (p *VideoContentPreprocessor) remapWithMKVMerge(inputPath string) (io.ReadC
 		fmt.Println("-> [DIAG] SUCCESS: mkvmerge with 'video:iframes' Cues succeeded and Cues were created.")
 	}
 
-	log.Printf("-> [CONTENT_PREPROCESSOR] SUCCESS: Remuxed MKV to %s\n", tempPath)
+	slog.Info("Remuxed MKV", "component", "CONTENT_PREPROCESSOR", "temp_path", tempPath)
 	r, _ := reader.NewTempFileReadCloser(tempPath)
 	return r, tempPath, nil
 }
@@ -428,7 +428,7 @@ func (p *VideoContentPreprocessor) remapMKVWithFFmpeg(inputPath string) (io.Read
 		return nil, tempPath, fmt.Errorf("ffmpeg MKV remuxing failed: %w", err)
 	}
 
-	log.Printf("-> [CONTENT_PREPROCESSOR] SUCCESS: Remuxed MKV with ffmpeg to %s\n", tempPath)
+	slog.Info("Remuxed MKV with ffmpeg", "component", "CONTENT_PREPROCESSOR", "temp_path", tempPath)
 	r, _ := reader.NewTempFileReadCloser(tempPath)
 	return r, tempPath, nil
 }
@@ -448,7 +448,7 @@ func (p *VideoContentPreprocessor) remapMP4ForFastStart(inputPath string) (io.Re
 		return nil, tempPath, fmt.Errorf("ffmpeg failed to remux MP4: %w", err)
 	}
 
-	log.Printf("-> [CONTENT_PREPROCESSOR] SUCCESS: Remuxed to %s\n", tempPath)
+	slog.Info("Remuxed to fast-start", "component", "CONTENT_PREPROCESSOR", "temp_path", tempPath)
 	r, _ := reader.NewTempFileReadCloser(tempPath)
 	return r, tempPath, nil
 }
@@ -479,11 +479,11 @@ func (p *VideoContentPreprocessor) transcodeToFastStartMP4(inputPath string) (io
 	args = append(args, "-c:a", "aac", "-movflags", "+faststart", tempPath)
 
 	ffmpegCmd := utils.FFmpegCmd(args...)
-	log.Printf("-> [CONTENT_PREPROCESSOR] Using encoder: %s, command: %s\n", encoder, ffmpegCmd.String())
+	slog.Info("Using encoder", "component", "CONTENT_PREPROCESSOR", "encoder", encoder, "command", ffmpegCmd.String())
 
 	if err := p.runFFmpegCmd(ffmpegCmd, tempPath); err != nil {
 		if encoder != "libx264" {
-			log.Printf("-> [CONTENT_PREPROCESSOR] Encoder %s failed, falling back to libx264: %v\n", encoder, err)
+			slog.Warn("Encoder failed, falling back to libx264", "component", "CONTENT_PREPROCESSOR", "encoder", encoder, "error", err)
 			os.Remove(tempPath)
 
 			tempFile2, err2 := os.CreateTemp(p.outputDir, "encv-pre-*.mp4")
@@ -506,7 +506,7 @@ func (p *VideoContentPreprocessor) transcodeToFastStartMP4(inputPath string) (io
 		}
 	}
 
-	log.Printf("-> [CONTENT_PREPROCESSOR] SUCCESS: Transcoded to %s\n", tempPath)
+	slog.Info("Transcoded successfully", "component", "CONTENT_PREPROCESSOR", "temp_path", tempPath)
 	r, _ := reader.NewTempFileReadCloser(tempPath)
 	return r, tempPath, nil
 }
