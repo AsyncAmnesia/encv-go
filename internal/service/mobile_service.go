@@ -240,9 +240,12 @@ func (s *MobileService) TestWebDAV(url, username, password string) error {
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
 
-	return nil
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	return fmt.Errorf("连接失败: HTTP %d", resp.StatusCode)
 }
 
 func (s *MobileService) GetTaskManager() *TaskManager {

@@ -32,10 +32,12 @@
 
 .ErrorContainer {
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   padding: 24px;
   width: 100%;
+  flex: 1;
 }
 
 .FlexSpacer {

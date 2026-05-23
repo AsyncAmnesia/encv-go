@@ -11,6 +11,7 @@ import { useTheme } from '@/composables/useTheme'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { isNative, requestNotificationPermission, requestStoragePermission } from '@/plugins/GoProcess'
 import { hijackConsole } from '@/composables/useFrontendLogs'
+import { autoInitVConsole } from '@/composables/useDevTools'
 
 const { initTheme } = useTheme()
 const { connect, disconnect } = useWebSocket()
@@ -34,6 +35,7 @@ async function requestEssentialPermissions() {
 onMounted(async () => {
   hijackConsole()
   initTheme()
+  autoInitVConsole()
   connect()
   await requestEssentialPermissions()
 })

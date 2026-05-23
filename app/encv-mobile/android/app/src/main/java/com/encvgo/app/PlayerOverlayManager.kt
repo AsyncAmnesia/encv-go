@@ -41,7 +41,7 @@ class PlayerOverlayManager private constructor() {
 
     fun showOverlay(
         activity: MainActivity,
-        filePath: String,
+        streamUrl: String,
         fileName: String,
         mimeType: String,
         isExternal: Boolean
@@ -52,7 +52,7 @@ class PlayerOverlayManager private constructor() {
         }
 
         this.activity = activity
-        LogRelay.get().relay(TAG, "info", "showOverlay: path=$filePath, name=$fileName, mimeType=$mimeType, external=$isExternal")
+        LogRelay.get().relay(TAG, "info", "showOverlay: streamUrl=$streamUrl, name=$fileName, mimeType=$mimeType, external=$isExternal")
 
         mainHandler.post {
             try {
@@ -76,7 +76,7 @@ class PlayerOverlayManager private constructor() {
                 decorView.addView(overlayLayout)
                 LogRelay.get().relay(TAG, "info", "showOverlay: overlay FrameLayout added to decorView")
 
-                createLynxView(filePath, fileName, mimeType, isExternal)
+                createLynxView(streamUrl, fileName, mimeType, isExternal)
 
                 isShowing = true
                 LogRelay.get().relay(TAG, "info", "showOverlay: complete")
@@ -101,7 +101,7 @@ class PlayerOverlayManager private constructor() {
     fun isOverlayShowing(): Boolean = isShowing
 
     private fun createLynxView(
-        filePath: String,
+        streamUrl: String,
         fileName: String,
         mimeType: String,
         isExternal: Boolean
@@ -152,7 +152,7 @@ class PlayerOverlayManager private constructor() {
             root.addView(lynxView, lynxParams)
             LogRelay.get().relay(TAG, "info", "createLynxView: LynxView added to overlay (on top of MPV surface)")
 
-            val initData = buildInitDataJson(filePath, fileName, mimeType, isExternal)
+            val initData = buildInitDataJson(streamUrl, fileName, mimeType, isExternal)
             LogRelay.get().relay(TAG, "info", "createLynxView: initData=$initData")
             lynxView?.renderTemplateUrl("player.lynx.bundle", initData)
 
@@ -181,7 +181,7 @@ class PlayerOverlayManager private constructor() {
     }
 
     private fun buildInitDataJson(
-        filePath: String,
+        streamUrl: String,
         fileName: String,
         mimeType: String,
         isExternal: Boolean
@@ -199,7 +199,7 @@ class PlayerOverlayManager private constructor() {
             else -> "video"
         }
         return JSONObject().apply {
-            put("filePath", filePath)
+            put("streamUrl", streamUrl)
             put("fileName", fileName)
             put("mimeType", mimeType)
             put("isExternal", isExternal)

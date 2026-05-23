@@ -4,6 +4,9 @@ type Locale = 'zh-CN' | 'en'
 
 const messages: Record<Locale, Record<string, string>> = {
   'zh-CN': {
+    'common.confirm': '确认',
+    'common.cancel': '取消',
+
     'tabs.home': '首页',
     'tabs.files': '文件',
     'tabs.tasks': '任务',
@@ -293,6 +296,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'devlogs.copied': '已复制 {count} 条日志',
     'devlogs.copyFailed': '复制失败',
 
+    'devtools.title': '开发者选项',
+    'devtools.vconsole': 'vConsole 调试工具',
+    'devtools.vconsoleDesc': '启用移动端调试控制台',
+
     'filePreview.loading': '正在加载文件...',
     'filePreview.loadError': '加载失败',
     'filePreview.retry': '重试',
@@ -300,6 +307,9 @@ const messages: Record<Locale, Record<string, string>> = {
     'filePreview.copied': '已复制到剪贴板',
   },
   'en': {
+    'common.confirm': 'Confirm',
+    'common.cancel': 'Cancel',
+
     'tabs.home': 'Home',
     'tabs.files': 'Files',
     'tabs.tasks': 'Tasks',
@@ -588,6 +598,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'devlogs.noLogsDesc': 'Log output will appear here.',
     'devlogs.copied': 'Copied {count} logs',
     'devlogs.copyFailed': 'Copy failed',
+
+    'devtools.title': 'Developer Options',
+    'devtools.vconsole': 'vConsole Debug Tool',
+    'devtools.vconsoleDesc': 'Enable mobile debug console',
 
     'filePreview.loading': 'Loading file...',
     'filePreview.loadError': 'Load Error',

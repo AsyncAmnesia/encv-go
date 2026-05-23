@@ -149,22 +149,19 @@ const serviceUrls = computed<ServiceUrl[]>(() => {
   if (!configData.value || !serverOnline.value) return []
   const result: ServiceUrl[] = []
   const cfg = configData.value
-  const host = serverUrl.value.replace(/^https?:\/\//, '').replace(/\/.*$/, '')
+  const baseUrl = serverUrl.value
 
-  const serverCfg = cfg.server as Record<string, unknown> | undefined
-  if (serverCfg && typeof serverCfg.port === 'number' && serverCfg.port > 0) {
-    result.push({
-      label: t('settings.httpServerSettings'),
-      url: `http://${host}:${serverCfg.port}`,
-      icon: cloudOutline,
-    })
-  }
+  result.push({
+    label: t('settings.httpServerSettings'),
+    url: baseUrl,
+    icon: cloudOutline,
+  })
 
   const adminCfg = cfg.admin as Record<string, unknown> | undefined
-  if (adminCfg && typeof adminCfg.port === 'number' && adminCfg.port > 0) {
+  if (adminCfg) {
     result.push({
       label: t('settings.adminServerSettings'),
-      url: `http://${host}:${adminCfg.port}`,
+      url: `${baseUrl}/admin`,
       icon: shieldCheckmark,
     })
   }
@@ -174,7 +171,7 @@ const serviceUrls = computed<ServiceUrl[]>(() => {
     const root = typeof webdavCfg.root === 'string' ? webdavCfg.root : '/webdav/'
     result.push({
       label: t('settings.webdavServerSettings'),
-      url: `http://${host}:${webdavCfg.port}${root}`,
+      url: `${baseUrl}${root}`,
       icon: globeOutline,
     })
   }

@@ -250,6 +250,16 @@
       </template>
 
       <ion-list>
+        <ion-list-header>
+          <ion-label>{{ t('devtools.title') }}</ion-label>
+        </ion-list-header>
+        <ion-item>
+          <ion-icon :icon="bugOutline" slot="start"></ion-icon>
+          <ion-toggle :checked="vconsoleEnabled" @ionChange="handleVConsoleToggle">{{ t('devtools.vconsole') }}</ion-toggle>
+        </ion-item>
+      </ion-list>
+
+      <ion-list>
         <ion-item button @click="goAbout" detail>
           <ion-icon :icon="informationCircle" slot="start"></ion-icon>
           <ion-label>
@@ -322,6 +332,7 @@ import {
   filmOutline, musicalNotesOutline, imagesOutline, readerOutline,
   newspaperOutline, colorWandOutline, gitNetworkOutline, toggleOutline,
   textOutline, personOutline, folderOpen, refreshCircle,
+  bugOutline,
   fileTrayFull as databaseIcon,
 } from 'ionicons/icons'
 import { useTheme } from '@/composables/useTheme'
@@ -329,6 +340,7 @@ import { useServerStatus } from '@/composables/useServerStatus'
 import { useConfig } from '@/composables/useConfig'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
+import { useDevTools } from '@/composables/useDevTools'
 import { getIndexStats, fetchConfig, updateConfig } from '@/api/encv'
 import type { IndexStats } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
@@ -339,6 +351,7 @@ const { isDark, toggleDark } = useTheme()
 const { isOnline: serverOnline, lastError: connectionError, checkStatus, backendPort } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
 const { t, tField, tSectionTitle, setLocale, locale } = useI18n()
+const { vconsoleEnabled, toggleVConsole } = useDevTools()
 
 const configLoaded = ref(false)
 const indexStats = ref<IndexStats | null>(null)
@@ -356,6 +369,10 @@ function handleAudioPlayerChange(event: CustomEvent) {
   const value = event.detail.value
   audioPlayerMode.value = value
   localStorage.setItem('encv_player_audio', value)
+}
+
+function handleVConsoleToggle(event: CustomEvent) {
+  toggleVConsole(event.detail.checked)
 }
 
 const showJsonEditor = ref(false)

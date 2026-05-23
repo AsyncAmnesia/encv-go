@@ -241,6 +241,10 @@ func (s *Server) handleStreamExternalFileGin(c *gin.Context) {
 
 func (s *Server) handleRemoteInfoGin(c *gin.Context) {
 	cfg := s.cfg
+	port := s.actualPort
+	if port <= 0 {
+		port = cfg.Server.Port
+	}
 
 	webdavInfo := gin.H{
 		"enabled":  cfg.Webdav.Port > 0,
@@ -258,14 +262,14 @@ func (s *Server) handleRemoteInfoGin(c *gin.Context) {
 		if !strings.HasSuffix(root, "/") {
 			root += "/"
 		}
-		webdavInfo["url"] = fmt.Sprintf("http://127.0.0.1:%d%s", cfg.Webdav.Port, root)
+		webdavInfo["url"] = fmt.Sprintf("http://127.0.0.1:%d%s", port, root)
 	} else {
 		webdavInfo["url"] = ""
 	}
 
 	openlistSites := make(map[string]interface{})
 	for siteId, siteCfg := range cfg.Proxy.Sites {
-		proxyURL := fmt.Sprintf("http://127.0.0.1:%d/openlist/sites/%s/", cfg.Server.Port, siteId)
+		proxyURL := fmt.Sprintf("http://127.0.0.1:%d/openlist/sites/%s/", port, siteId)
 		openlistSites[siteId] = map[string]string{
 			"host":        siteCfg.Host,
 			"description": siteCfg.Description,

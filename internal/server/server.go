@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"html/template"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -42,6 +44,7 @@ type Server struct {
 	servingDir string
 	version    string
 	instanceID string
+	actualPort int
 	webdavDir  string
 	webdavPath string
 	readerService  *service.ReaderService
@@ -225,6 +228,12 @@ func (s *Server) Start(version string) (string, error) {
 		return "", err
 	}
 	s.server = srv
+	_, portStr, splitErr := net.SplitHostPort(addr)
+	if splitErr == nil {
+		if p, parseErr := strconv.Atoi(portStr); parseErr == nil {
+			s.actualPort = p
+		}
+	}
 	return addr, nil
 }
 
