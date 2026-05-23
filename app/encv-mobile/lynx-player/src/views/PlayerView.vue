@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { onGlobalEvent } from 'vue-lynx'
 import PlayerControls from '../components/PlayerControls.vue'
 
-// TODO: Verify onGlobalEvent API in vue-lynx — confirm import path and callback signature
 // TODO: Verify NativeModules access pattern in vue-lynx — confirm globalThis.NativeModules works the same as @lynx-js/react
 
 type PlayerState = 'idle' | 'loading' | 'playing' | 'paused' | 'ended' | 'error'
@@ -237,7 +235,7 @@ const hasNext = computed(
 )
 const hasPrev = computed(() => hasPlaylist.value && playlistIndex.value > 0)
 
-onGlobalEvent('mpv:state-change', (event: any) => {
+function onMpvStateChange(event: any) {
   const state = event?.state
   const error = event?.error
   lynxLog.info('mpv:state-change ' + JSON.stringify(event))
@@ -269,13 +267,22 @@ onGlobalEvent('mpv:state-change', (event: any) => {
     showControls.value = true
     resetHideTimer()
   }
-})
+}
 
-onGlobalEvent('mpv:position-update', (event: any) => {
+function onMpvPositionUpdate(event: any) {
   const pos = event?.position ?? 0
   const dur = event?.duration ?? 0
   position.value = pos
   duration.value = dur
+}
+
+onMounted(() => {
+  try {
+    globalThis.addEventListener('mpv:state-change', onMpvStateChange)
+    globalThis.addEventListener('mpv:position-update', onMpvPositionUpdate)
+  } catch (_e) {
+    lynxLog.error('Failed to register global event listeners')
+  }
 })
 
 watch(playerState, () => {
@@ -296,6 +303,12 @@ onUnmounted(() => {
   if (hideTimer) {
     clearTimeout(hideTimer)
     hideTimer = null
+  }
+  try {
+    globalThis.removeEventListener('mpv:state-change', onMpvStateChange)
+    globalThis.removeEventListener('mpv:position-update', onMpvPositionUpdate)
+  } catch (_e) {
+    // ignore
   }
   try {
     globalThis.NativeModules.MpvPlayerModule.pause(() => {})
