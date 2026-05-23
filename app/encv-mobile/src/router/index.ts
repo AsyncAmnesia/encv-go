@@ -5,7 +5,7 @@ import Tabs from '@/views/Tabs.vue'
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    redirect: '/tabs/files',
+    redirect: '/tabs/home',
   },
   {
     path: '/player',
@@ -17,7 +17,11 @@ const routes: RouteRecordRaw[] = [
     children: [
       {
         path: '',
-        redirect: '/tabs/files',
+        redirect: '/tabs/home',
+      },
+      {
+        path: 'home',
+        component: () => import('@/views/HomePage.vue'),
       },
       {
         path: 'files',

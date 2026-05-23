@@ -659,6 +659,27 @@ func (a *chunkNamerAdapter) IsDataChunk(filename string) bool {
 	return false
 }
 
+func (s *MobileService) FileExists(queryPath string) (bool, error) {
+	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, &ForbiddenError{Err: err}
+	}
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		if isPermissionError(err) {
+			return false, &ForbiddenError{Err: err}
+		}
+		return false, err
+	}
+	return info != nil, nil
+}
+
 func (s *MobileService) StreamExternalFile(w http.ResponseWriter, r *http.Request, filePath string) error {
 	if filePath == "" {
 		return &BadRequestError{Err: errors.New("'path' query parameter is required")}

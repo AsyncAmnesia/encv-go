@@ -3,14 +3,14 @@
     <ion-tabs>
       <ion-router-outlet></ion-router-outlet>
       <ion-tab-bar slot="bottom">
+        <ion-tab-button tab="home" href="/tabs/home">
+          <ion-icon :icon="home"></ion-icon>
+          <ion-label>{{ t('tabs.home') }}</ion-label>
+        </ion-tab-button>
+
         <ion-tab-button tab="files" href="/tabs/files">
           <ion-icon :icon="folder"></ion-icon>
           <ion-label>{{ t('tabs.files') }}</ion-label>
-        </ion-tab-button>
-
-        <ion-tab-button tab="player" @click="handlePlayerTab">
-          <ion-icon :icon="playCircle"></ion-icon>
-          <ion-label>{{ t('tabs.player') }}</ion-label>
         </ion-tab-button>
 
         <ion-tab-button tab="tasks" href="/tabs/tasks">
@@ -47,13 +47,8 @@ import {
   IonTabButton,
   IonTabs,
 } from '@ionic/vue'
-import { folder, list, globe, settings, bug, playCircle } from 'ionicons/icons'
+import { home, folder, list, globe, settings, bug } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
-import { openPlayerHome } from '@/plugins/GoProcess'
 
 const { t } = useI18n()
-
-async function handlePlayerTab() {
-  await openPlayerHome()
-}
 </script>

@@ -127,6 +127,7 @@ func (s *Server) Start(version string) (string, error) {
 	mux.HandleFunc("/api/remote/openlist/", s.handleOpenlistSiteByID)
 	mux.HandleFunc("/api/permissions", s.handlePermissions)
 	mux.HandleFunc("/api/server/shutdown", s.handleServerShutdown)
+	mux.HandleFunc("/api/files/exists", s.handleFileExistsAPI)
 	mux.HandleFunc("/api/files/search", s.handleSearchFilesAPI)
 	mux.HandleFunc("/api/index/stats", s.handleIndexStats)
 	mux.HandleFunc("/api/index/rebuild", s.handleIndexRebuild)

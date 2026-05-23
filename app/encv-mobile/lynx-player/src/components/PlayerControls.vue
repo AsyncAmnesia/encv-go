@@ -67,7 +67,7 @@ function handleSeek(progressVal: number) {
 }
 
 const isError = computed(() => props.error && props.state !== 'loading')
-const isLoading = computed(() => props.state === 'loading' || props.state === 'idle')
+const isLoading = computed(() => props.state === 'loading')
 </script>
 
 <template>

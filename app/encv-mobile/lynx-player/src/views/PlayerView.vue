@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import PlayerControls from '../components/PlayerControls.vue'
 
 // TODO: Verify NativeModules access pattern in vue-lynx — confirm globalThis.NativeModules works the same as @lynx-js/react
@@ -29,14 +29,22 @@ const lynxLog = {
 }
 
 const router = useRouter()
-const route = useRoute()
 
-const filePath = computed(() => (route.query.filePath as string) || '')
-const fileName = computed(() => (route.query.fileName as string) || 'Unknown')
-const mimeType = computed(() => (route.query.mimeType as string) || '')
-const isExternal = computed(() => route.query.isExternal === 'true')
+const initData = computed(() => {
+  try {
+    const lynxObj = (globalThis as any).lynx
+    return lynxObj?.__globalProps || {}
+  } catch {
+    return {}
+  }
+})
+
+const filePath = computed(() => (initData.value.filePath as string) || '')
+const fileName = computed(() => (initData.value.fileName as string) || 'Unknown')
+const mimeType = computed(() => (initData.value.mimeType as string) || '')
+const isExternal = computed(() => !!initData.value.isExternal)
 const mediaType = ref<'video' | 'audio'>(
-  (route.query.mediaType as string) === 'audio' ? 'audio' : 'video'
+  (initData.value.mediaType as string) === 'audio' ? 'audio' : 'video'
 )
 
 const playerState = ref<PlayerState>('idle')
@@ -276,10 +284,17 @@ function onMpvPositionUpdate(event: any) {
   duration.value = dur
 }
 
+const lynxRuntime = (globalThis as any).lynx
+const globalEventEmitter = lynxRuntime?.getJSModule?.('GlobalEventEmitter')
+
 onMounted(() => {
   try {
-    globalThis.addEventListener('mpv:state-change', onMpvStateChange)
-    globalThis.addEventListener('mpv:position-update', onMpvPositionUpdate)
+    if (globalEventEmitter) {
+      globalEventEmitter.addListener('mpv:state-change', onMpvStateChange)
+      globalEventEmitter.addListener('mpv:position-update', onMpvPositionUpdate)
+    } else {
+      lynxLog.error('GlobalEventEmitter not available')
+    }
   } catch (_e) {
     lynxLog.error('Failed to register global event listeners')
   }
@@ -305,8 +320,10 @@ onUnmounted(() => {
     hideTimer = null
   }
   try {
-    globalThis.removeEventListener('mpv:state-change', onMpvStateChange)
-    globalThis.removeEventListener('mpv:position-update', onMpvPositionUpdate)
+    if (globalEventEmitter) {
+      globalEventEmitter.removeListener('mpv:state-change', onMpvStateChange)
+      globalEventEmitter.removeListener('mpv:position-update', onMpvPositionUpdate)
+    }
   } catch (_e) {
     // ignore
   }

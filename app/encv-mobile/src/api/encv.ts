@@ -457,3 +457,14 @@ export async function deleteOpenlistSite(siteId: string): Promise<void> {
     throw new Error(data.error || `HTTP ${response.status}`)
   }
 }
+
+export async function checkFileExists(path: string): Promise<boolean> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/files/exists?path=${encodeURIComponent(path)}`)
+  if (!response.ok) {
+    console.warn('[API] checkFileExists failed:', response.status)
+    return false
+  }
+  const data = await response.json()
+  return !!data.exists
+}

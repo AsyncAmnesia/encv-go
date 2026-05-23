@@ -155,6 +155,7 @@ import {
   deleteFile,
   createTask,
   fetchConfig,
+  checkFileExists,
 } from '@/api/encv'
 import type { FileItem } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
@@ -561,12 +562,14 @@ async function handleEncryptFile(file: FileItem) {
         handler: async (data: Record<string, string>) => {
           const targetPath = (data.targetPath || '').trim()
           const password = (data.password || '').trim()
-          const isDefaultPath = targetPath === parentDir
+          const outputName = file.name + '.encv'
+          const outputPath = targetPath === '/' ? '/' + outputName : targetPath + '/' + outputName
+          const outputExists = await checkFileExists(outputPath)
 
-          if (isDefaultPath) {
+          if (outputExists) {
             const confirm = await alertController.create({
               header: t('files.encrypt'),
-              message: t('files.overwriteConfirm', { name: file.name }),
+              message: t('files.overwriteConfirm', { name: outputName }),
               buttons: [
                 { text: t('files.cancelSelect'), role: 'cancel' },
                 {
@@ -621,12 +624,14 @@ async function handleDecryptFile(file: FileItem) {
         handler: async (data: Record<string, string>) => {
           const targetPath = (data.targetPath || '').trim()
           const password = (data.password || '').trim()
-          const isDefaultPath = targetPath === parentDir
+          const outputName = file.name.replace(/\.encv$/i, '')
+          const outputPath = targetPath === '/' ? '/' + outputName : targetPath + '/' + outputName
+          const outputExists = await checkFileExists(outputPath)
 
-          if (isDefaultPath) {
+          if (outputExists) {
             const confirm = await alertController.create({
               header: t('files.decrypt'),
-              message: t('files.overwriteConfirm', { name: file.name }),
+              message: t('files.overwriteConfirm', { name: outputName }),
               buttons: [
                 { text: t('files.cancelSelect'), role: 'cancel' },
                 {

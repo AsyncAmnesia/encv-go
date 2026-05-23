@@ -566,6 +566,18 @@ func (s *Server) handleDeleteOpenlistSite(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(map[string]string{"message": "site deleted"})
 }
 
+func (s *Server) handleFileExistsAPI(w http.ResponseWriter, r *http.Request) {
+	queryPath := r.URL.Query().Get("path")
+	exists, err := s.mobileSvc.FileExists(queryPath)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]bool{"exists": exists})
+}
+
 func (s *Server) writeConfigToFile() error {
 	if s.configPath == "" {
 		return fmt.Errorf("config path not available")
