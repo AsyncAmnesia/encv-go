@@ -13,7 +13,7 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
-func StartHttpHandlerWithRetry(handler http.Handler, initialPort int, instanceID, version string) (string, error) {
+func StartHttpHandlerWithRetry(handler http.Handler, initialPort int, instanceID, version string) (*http.Server, string, error) {
 	maxTries := 100
 	for i := 0; i < maxTries; i++ {
 		currentPort := initialPort + i
@@ -25,10 +25,10 @@ func StartHttpHandlerWithRetry(handler http.Handler, initialPort int, instanceID
 			continue
 		}
 
+		srv := &http.Server{Handler: handler}
 		go func() {
 			slog.Info("Backend attempting to start", "addr", addr)
-			backendServer := &http.Server{Handler: handler}
-			if serveErr := backendServer.Serve(listener); serveErr != nil && serveErr != http.ErrServerClosed {
+			if serveErr := srv.Serve(listener); serveErr != nil && serveErr != http.ErrServerClosed {
 				slog.Error("Backend server encountered an error", "addr", listener.Addr().String(), "error", serveErr)
 			}
 		}()
@@ -43,13 +43,13 @@ func StartHttpHandlerWithRetry(handler http.Handler, initialPort int, instanceID
 
 		actualAddr := listener.Addr().String()
 		slog.Info("Backend server successfully started", "addr", actualAddr)
-		return actualAddr, nil
+		return srv, actualAddr, nil
 	}
 
-	return "", fmt.Errorf("failed to start http.Handler after %d tries", maxTries)
+	return nil, "", fmt.Errorf("failed to start http.Handler after %d tries", maxTries)
 }
 
-func StartGinWithRetry(engine *gin.Engine, initialPort int, instanceID, version string) (string, error) {
+func StartGinWithRetry(engine *gin.Engine, initialPort int, instanceID, version string) (*http.Server, string, error) {
 	handler := engine
 	maxTries := 100
 	for i := 0; i < maxTries; i++ {
@@ -62,9 +62,9 @@ func StartGinWithRetry(engine *gin.Engine, initialPort int, instanceID, version 
 			continue
 		}
 
+		srv := &http.Server{Handler: handler}
 		go func() {
 			slog.Info("Server attempting to start", "addr", addr)
-			srv := &http.Server{Handler: handler}
 			if serveErr := srv.Serve(listener); serveErr != nil && serveErr != http.ErrServerClosed {
 				slog.Error("Server encountered an error", "addr", listener.Addr().String(), "error", serveErr)
 			}
@@ -80,10 +80,10 @@ func StartGinWithRetry(engine *gin.Engine, initialPort int, instanceID, version 
 
 		actualAddr := listener.Addr().String()
 		slog.Info("Server successfully started", "addr", actualAddr)
-		return actualAddr, nil
+		return srv, actualAddr, nil
 	}
 
-	return "", fmt.Errorf("failed to start server after %d tries", maxTries)
+	return nil, "", fmt.Errorf("failed to start server after %d tries", maxTries)
 }
 
 func performPingCheck(port int, expectedInstanceID, expectedVersion string) error {

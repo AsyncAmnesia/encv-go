@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -37,6 +38,7 @@ type Server struct {
 	server     *http.Server
 	cfg        *config.Config
 	configPath string
+	configMu   sync.Mutex
 	servingDir string
 	version    string
 	instanceID string
@@ -217,7 +219,12 @@ func (s *Server) Start(version string) (string, error) {
 
 	r.NoRoute(gin.WrapF(s.handleRequest))
 
-	return register.StartGinWithRetry(r, s.cfg.Server.Port, s.instanceID, s.version)
+	srv, addr, err := register.StartGinWithRetry(r, s.cfg.Server.Port, s.instanceID, s.version)
+	if err != nil {
+		return "", err
+	}
+	s.server = srv
+	return addr, nil
 }
 
 func (s *Server) Stop() error {

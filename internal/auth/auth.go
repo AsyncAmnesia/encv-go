@@ -3,11 +3,11 @@ package auth
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -134,9 +134,8 @@ func (m *JWTManager) sign(message string) []byte {
 // generateSessionID 生成随机会话ID
 func generateSessionID() string {
 	b := make([]byte, 16)
-	// 这里应该使用crypto/rand，为了简化示例使用伪随机
-	for i := range b {
-		b[i] = byte(time.Now().UnixNano() >> (i * 8))
+	if _, err := rand.Read(b); err != nil {
+		panic("failed to generate random session ID: " + err.Error())
 	}
 	return base64.URLEncoding.EncodeToString(b)
 }
@@ -171,21 +170,17 @@ func GetTokenFromCookie(r *http.Request) string {
 	if cookie, err := r.Cookie("encv_auth_token"); err == nil {
 		return cookie.Value
 	}
-	log.Printf("cookie not found")
 	return ""
 }
 
 // SetRedirectCookie 设置重定向Cookie
 func SetRedirectCookie(w http.ResponseWriter, redirectURL string) {
-	// 检查是否是登录相关URL
 	if strings.Contains(redirectURL, routes.Login) ||
 		strings.Contains(redirectURL, routes.Logout) {
-		log.Printf("[SetRedirectCookie] Skipping login-related URL: %s", redirectURL)
 		return
 	}
 
 	if redirectURL == "" {
-		log.Printf("[SetRedirectCookie] Skipping empty URL")
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
@@ -193,7 +188,7 @@ func SetRedirectCookie(w http.ResponseWriter, redirectURL string) {
 		Value:    redirectURL,
 		Path:     "/",
 		HttpOnly: true,
-		MaxAge:   300, // 5分钟有效期
+		MaxAge:   300,
 	})
 }
 
@@ -201,10 +196,8 @@ func SetRedirectCookie(w http.ResponseWriter, redirectURL string) {
 func GetRedirectCookie(r *http.Request) string {
 	if cookie, err := r.Cookie("encv_redirect_url"); err == nil {
 		redirectURL := cookie.Value
-		// 检查是否是登录相关URL
 		if strings.Contains(redirectURL, routes.Login) ||
 			strings.Contains(redirectURL, routes.Logout) {
-			log.Printf("[SetRedirectCookie] Skipping login-related URL: %s", redirectURL)
 			return ""
 		}
 		return redirectURL

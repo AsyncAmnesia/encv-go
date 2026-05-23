@@ -2,7 +2,7 @@ package server
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,8 +31,8 @@ func (s *Server) handleLoginGin(c *gin.Context) {
 	if c.Request.Method == http.MethodGet {
 		token := auth.GetTokenFromCookie(c.Request)
 		if token != "" && jwtManager != nil {
-			if claims, err := jwtManager.ValidateToken(token); err == nil {
-				log.Printf("[handleLoginGin] User already logged in, session: %s", claims.SessionID)
+			if _, err := jwtManager.ValidateToken(token); err == nil {
+				slog.Debug("user already logged in")
 				tmpl := template.Must(template.New("already_logged").Parse(`<!DOCTYPE html>
 <html>
 <head>
@@ -59,7 +59,7 @@ func (s *Server) handleLoginGin(c *gin.Context) {
 				tmpl.Execute(c.Writer, nil)
 				return
 			} else {
-				log.Printf("[handleLoginGin] Invalid token: %v", err)
+				slog.Debug("invalid token on login page", "error", err)
 				auth.ClearAuthCookie(c.Writer)
 			}
 		}
@@ -210,7 +210,7 @@ func (s *Server) handleFileAnalyzeGin(c *gin.Context) {
 	if isContainerFile {
 		htmlContent, err = detector.AnalyzeContainerV2(c.Request.Context(), absPath, false)
 		if err != nil {
-			log.Printf("ERROR: Failed to analyze container '%s': %v", absPath, err)
+			slog.Error("failed to analyze container", "path", absPath, "error", err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"code":    50,
 				"message": "Analysis failed: " + err.Error(),
@@ -279,7 +279,7 @@ func (s *Server) handleFileRenameGin(c *gin.Context) {
 	newAbsPath := filepath.Join(filepath.Dir(oldAbsPath), req.NewName)
 
 	if _, err := os.Stat(newAbsPath); err == nil {
-		log.Printf("WARN: Rename failed, destination already exists: '%s'", newAbsPath)
+		slog.Warn("rename failed, destination already exists", "path", newAbsPath)
 		c.JSON(http.StatusConflict, gin.H{
 			"code":    52,
 			"message": "Conflict: a file with that name already exists",
@@ -288,10 +288,10 @@ func (s *Server) handleFileRenameGin(c *gin.Context) {
 		return
 	}
 
-	log.Printf("INFO: Attempting to rename '%s' to '%s'", oldAbsPath, newAbsPath)
+	slog.Debug("attempting rename", "old", oldAbsPath, "new", newAbsPath)
 	err = os.Rename(oldAbsPath, newAbsPath)
 	if err != nil {
-		log.Printf("ERROR: Failed to rename file: %v", err)
+		slog.Error("failed to rename file", "error", err)
 		if os.IsNotExist(err) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    44,
@@ -316,7 +316,7 @@ func (s *Server) handleFileRenameGin(c *gin.Context) {
 		}
 	}
 
-	log.Printf("INFO: Successfully renamed to '%s'", newAbsPath)
+	slog.Debug("successfully renamed", "path", newAbsPath)
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
 		"message": "File renamed successfully.",

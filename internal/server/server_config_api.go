@@ -7,16 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/gin-gonic/gin"
 )
 
-var configMu sync.Mutex
-
 func (s *Server) handleGetConfigGin(c *gin.Context) {
-	configMu.Lock()
-	defer configMu.Unlock()
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
 
 	if s.configPath == "" {
 		c.JSON(http.StatusNotFound, gin.H{"error": "config path not available"})
@@ -34,8 +31,8 @@ func (s *Server) handleGetConfigGin(c *gin.Context) {
 }
 
 func (s *Server) handlePutConfigGin(c *gin.Context) {
-	configMu.Lock()
-	defer configMu.Unlock()
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
 
 	if s.configPath == "" {
 		c.JSON(http.StatusNotFound, gin.H{"error": "config path not available"})

@@ -1,7 +1,6 @@
 package server
 
 import (
-	"log"
 	"net/http"
 	"strings"
 
@@ -18,8 +17,6 @@ func JWTAuthMiddleware(jwtManager *auth.JWTManager) gin.HandlerFunc {
 			return
 		}
 
-		log.Printf("[JWTAuthMiddleware] Processing path: %s", c.Request.URL.Path)
-
 		token := auth.GetTokenFromCookie(c.Request)
 
 		if token != "" {
@@ -32,7 +29,7 @@ func JWTAuthMiddleware(jwtManager *auth.JWTManager) gin.HandlerFunc {
 			return
 		}
 
-		_, err := jwtManager.ValidateToken(token)
+		claims, err := jwtManager.ValidateToken(token)
 		if err != nil {
 			auth.ClearAuthCookie(c.Writer)
 			redirectToLoginGin(c)
@@ -40,7 +37,6 @@ func JWTAuthMiddleware(jwtManager *auth.JWTManager) gin.HandlerFunc {
 			return
 		}
 
-		claims, _ := jwtManager.ValidateToken(token)
 		c.Set("auth_claims", claims)
 		c.Set("is_authenticated", true)
 
