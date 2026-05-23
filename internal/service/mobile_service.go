@@ -18,6 +18,7 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/handler"
 	"github.com/Soltus/encv-go/internal/v2/namer"
+	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/Soltus/encv-go/internal/v2/provider"
 	"github.com/Soltus/encv-go/internal/v2/service"
 )
@@ -678,6 +679,47 @@ func (s *MobileService) FileExists(queryPath string) (bool, error) {
 		return false, err
 	}
 	return info != nil, nil
+}
+
+func (s *MobileService) CheckEncryptOutputExists(sourcePath, targetDir string) (bool, string, error) {
+	sourceAbs, err := utils.SafeURLToAbsPath(s.servingDir, sourcePath)
+	if err != nil {
+		return false, "", &ForbiddenError{Err: err}
+	}
+
+	outputName, err := plugins.PredictEncryptOutputName(sourceAbs)
+	if err != nil {
+		return false, "", err
+	}
+
+	outputDir := targetDir
+	if outputDir == "" {
+		outputDir = filepath.Dir(sourcePath)
+		if outputDir == "" {
+			outputDir = "/"
+		}
+	}
+
+	outputPath := outputDir
+	if outputPath == "/" {
+		outputPath = "/" + outputName
+	} else {
+		outputPath = strings.TrimRight(outputPath, "/") + "/" + outputName
+	}
+
+	outputAbs, err := utils.SafeURLToAbsPath(s.servingDir, outputPath)
+	if err != nil {
+		return false, outputPath, nil
+	}
+
+	_, err = os.Stat(outputAbs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, outputPath, nil
+		}
+		return false, outputPath, err
+	}
+	return true, outputPath, nil
 }
 
 func (s *MobileService) StreamExternalFile(w http.ResponseWriter, r *http.Request, filePath string) error {

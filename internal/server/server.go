@@ -140,6 +140,7 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/api/permissions", s.handlePermissionsGin)
 	r.POST("/api/server/shutdown", s.handleServerShutdownGin)
 	r.GET("/api/files/exists", s.handleFileExistsGin)
+	r.GET("/api/files/encrypt-output-exists", s.handleEncryptOutputExistsGin)
 	r.GET("/api/files/search", s.handleSearchFilesGin)
 	r.GET("/api/index/stats", s.handleIndexStatsGin)
 	r.POST("/api/index/rebuild", s.handleIndexRebuildGin)

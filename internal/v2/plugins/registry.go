@@ -183,6 +183,22 @@ func initializeChunkNamers() {
 	allChunkNamers = tempNamers
 }
 
+func PredictEncryptOutputName(inputPath string) (string, error) {
+	plugin, err := FindEncryptingPlugin(inputPath)
+	if err != nil {
+		return "", err
+	}
+	baseNamer := namer.NewDefaultBaseNamer()
+	originalFilename := filepath.Base(inputPath)
+	encryptedBaseName := baseNamer.GenerateEncryptedBaseName(originalFilename)
+	chunkNamer := plugin.GetChunkNamer()
+	if chunkNamer == nil {
+		return encryptedBaseName, nil
+	}
+	mainChunkName := chunkNamer.GenerateMainChunkName(encryptedBaseName)
+	return mainChunkName, nil
+}
+
 // 【新增】GetAllRegisteredChunkNamers 返回所有已注册插件的 ChunkNamer 列表。
 // 此函数是线程安全的，并且会在第一次被调用时自动完成初始化。
 func GetAllRegisteredChunkNamers() []namer.ChunkNamer {

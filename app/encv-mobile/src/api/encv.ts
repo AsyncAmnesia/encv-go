@@ -468,3 +468,16 @@ export async function checkFileExists(path: string): Promise<boolean> {
   const data = await response.json()
   return !!data.exists
 }
+
+export async function checkEncryptOutputExists(sourcePath: string, targetDir?: string): Promise<{ exists: boolean; outputPath: string }> {
+  const baseUrl = getApiBaseUrl()
+  const params = new URLSearchParams({ sourcePath })
+  if (targetDir) params.set('targetDir', targetDir)
+  const response = await fetch(`${baseUrl}/api/files/encrypt-output-exists?${params}`)
+  if (!response.ok) {
+    console.warn('[API] checkEncryptOutputExists failed:', response.status)
+    return { exists: false, outputPath: '' }
+  }
+  const data = await response.json()
+  return { exists: !!data.exists, outputPath: data.outputPath || '' }
+}

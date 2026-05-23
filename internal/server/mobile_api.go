@@ -411,6 +411,21 @@ func (s *Server) handleFileExistsGin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"exists": exists})
 }
 
+func (s *Server) handleEncryptOutputExistsGin(c *gin.Context) {
+	sourcePath := c.Query("sourcePath")
+	targetDir := c.Query("targetDir")
+	if sourcePath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "sourcePath is required"})
+		return
+	}
+	exists, outputPath, err := s.mobileSvc.CheckEncryptOutputExists(sourcePath, targetDir)
+	if err != nil {
+		writeServiceErrorGin(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"exists": exists, "outputPath": outputPath})
+}
+
 func (s *Server) handleAPILogsGin(c *gin.Context) {
 	var req struct {
 		Level     string `json:"level"`
