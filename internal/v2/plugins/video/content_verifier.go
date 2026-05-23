@@ -24,27 +24,6 @@ import (
 
 type VideoContentVerifier struct{}
 
-// LimitWriter 用于限制写入的 Writer，防止日志撑爆内存
-type LimitWriter struct {
-	Writer io.Writer
-	N      int64
-	Limit  int64
-}
-
-func (l *LimitWriter) Write(p []byte) (int, error) {
-	remaining := l.Limit - l.N
-	if remaining <= 0 {
-		// 丢弃后续所有数据
-		return len(p), nil
-	}
-	if int64(len(p)) > remaining {
-		p = p[:remaining]
-	}
-	n, err := l.Writer.Write(p)
-	l.N += int64(n)
-	return n, err
-}
-
 // Verify 实现 ContentVerifier 接口
 func (p *VideoContentVerifier) Verify(originalPath, decryptedPath string) error {
 	log.Println("╔════════════════════════════════════════════════╗")
@@ -375,7 +354,7 @@ func (p *VideoContentVerifier) checkFFmpegDecoding(origPath, decPath string) err
 
 // runFFmpegStressTest 执行单个文件的解码测试 (性能优化版)
 func (p *VideoContentVerifier) runFFmpegStressTest(ctx context.Context, filePath, label string) error {
-	cmd := utils.FFmpegCmdContext(ctx,
+	stderrStr, err := utils.FFmpegRunWithContext(ctx,
 		"-v", "error",
 		"-nostdin",
 		"-i", filePath,
@@ -383,22 +362,11 @@ func (p *VideoContentVerifier) runFFmpegStressTest(ctx context.Context, filePath
 		"-",
 	)
 
-	// 【关键优化】使用 LimitWriter，限制 stderr 最多缓存 64KB
-	stderrBuf := &bytes.Buffer{}
-	limitedStderr := &LimitWriter{
-		Writer: stderrBuf,
-		Limit:  64 * 1024, // 64KB 限制
-	}
-	cmd.Stderr = limitedStderr
-
-	err := cmd.Run()
-
-	errorOutput := stderrBuf.String()
-	if strings.Contains(errorOutput, "corrupt") ||
-		strings.Contains(errorOutput, "Invalid") ||
-		strings.Contains(errorOutput, "missing picture") ||
-		strings.Contains(errorOutput, "Invalid data") {
-		return fmt.Errorf("ffmpeg detected corruption (truncated log output):\n%s", errorOutput)
+	if strings.Contains(stderrStr, "corrupt") ||
+		strings.Contains(stderrStr, "Invalid") ||
+		strings.Contains(stderrStr, "missing picture") ||
+		strings.Contains(stderrStr, "Invalid data") {
+		return fmt.Errorf("ffmpeg detected corruption (truncated log output):\n%s", stderrStr)
 	}
 
 	if err != nil && ctx.Err() == context.DeadlineExceeded {
@@ -458,15 +426,13 @@ func (p *VideoContentVerifier) getVideoMetrics(filePath string) (int, float64, e
 // 【性能优化】使用 nb_frames 而不是 -count_frames，避免耗时的帧解码
 func (p *VideoContentVerifier) getVideoMetricsFallback(filePath string) (int, float64, error) {
 	// 首先尝试使用 nb_frames（元数据中的帧数，非常快）
-	cmd := utils.FFProbeCmd(
+	output, err := utils.FFProbeOutput(
 		"-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries", "stream=nb_frames",
 		"-of", "default=noprint_wrappers=1:nokey=1",
 		filePath,
 	)
-
-	output, err := cmd.Output()
 	if err == nil {
 		framesStr := strings.TrimSpace(string(output))
 		if framesStr != "" && framesStr != "N/A" {
@@ -635,12 +601,11 @@ func (p *VideoContentVerifier) diagnoseFragmentation(origPath, decPath string) e
 
 // DiagnoseGOPAlignment ... (保留)
 func (p *VideoContentVerifier) DiagnoseGOPAlignment(filePath string, binaryOffsets []uint64) error {
-	cmd := utils.FFProbeCmd(
+	output, err := utils.FFProbeOutput(
 		"-v", "error", "-select_streams", "v:0",
 		"-skip_frame", "nokey", "-show_entries", "frame=pkt_pos,pkt_pts_time",
 		"-of", "json", filePath,
 	)
-	output, err := cmd.Output()
 	if err != nil {
 		return err
 	}

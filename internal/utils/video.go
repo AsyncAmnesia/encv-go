@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -40,6 +41,18 @@ func GetBinDir() string {
 	return binDirCache
 }
 
+var (
+	isMobileOnce sync.Once
+	isMobileVal  bool
+)
+
+func IsMobile() bool {
+	isMobileOnce.Do(func() {
+		isMobileVal = os.Getenv("ENCV_MOBILE") == "1"
+	})
+	return isMobileVal
+}
+
 func FFProbeCmd(args ...string) *exec.Cmd {
 	binDir := GetBinDir()
 	if binDir != "" {
@@ -73,14 +86,76 @@ func FFmpegCmdContext(ctx context.Context, args ...string) *exec.Cmd {
 	return exec.CommandContext(ctx, "ffmpeg", args...)
 }
 
-func DetectVideoFormat(filePath string) (string, error) {
-	cmd := FFProbeCmd("-v", "error", "-show_entries", "format=format_name", "-of", "default=noprint_wrappers=1:nokey=1", filePath)
-	output, err := cmd.Output()
-	if err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
-			return "", fmt.Errorf("ffprobe failed: %s", string(ee.Stderr))
+func FFProbeOutput(args ...string) ([]byte, error) {
+	if IsMobile() {
+		result, err := callFFprobeNative(args)
+		if err != nil {
+			return nil, fmt.Errorf("ffprobe native call failed: %w", err)
 		}
-		return "", fmt.Errorf("failed to run ffprobe: %w", err)
+		if result.exitCode != 0 {
+			return nil, fmt.Errorf("ffprobe failed (exit %d): %s", result.exitCode, result.stderr)
+		}
+		return []byte(result.stdout), nil
+	}
+	cmd := FFProbeCmd(args...)
+	return cmd.Output()
+}
+
+func FFmpegRun(args ...string) error {
+	if IsMobile() {
+		result, err := callFFmpegNative(args)
+		if err != nil {
+			return fmt.Errorf("ffmpeg native call failed: %w", err)
+		}
+		if result.exitCode != 0 {
+			return fmt.Errorf("ffmpeg failed (exit %d): %s", result.exitCode, result.stderr)
+		}
+		return nil
+	}
+	cmd := FFmpegCmd(args...)
+	return cmd.Run()
+}
+
+func FFmpegRunWithStderr(args ...string) (string, error) {
+	if IsMobile() {
+		result, err := callFFmpegNative(args)
+		if err != nil {
+			return "", fmt.Errorf("ffmpeg native call failed: %w", err)
+		}
+		if result.exitCode != 0 {
+			return result.stderr, fmt.Errorf("ffmpeg failed (exit %d): %s", result.exitCode, result.stderr)
+		}
+		return result.stderr, nil
+	}
+	cmd := FFmpegCmd(args...)
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
+	err := cmd.Run()
+	return stderrBuf.String(), err
+}
+
+func FFmpegRunWithContext(ctx context.Context, args ...string) (string, error) {
+	if IsMobile() {
+		result, err := callFFmpegNative(args)
+		if err != nil {
+			return "", fmt.Errorf("ffmpeg native call failed: %w", err)
+		}
+		if result.exitCode != 0 {
+			return result.stderr, fmt.Errorf("ffmpeg failed (exit %d): %s", result.exitCode, result.stderr)
+		}
+		return result.stderr, nil
+	}
+	cmd := FFmpegCmdContext(ctx, args...)
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
+	err := cmd.Run()
+	return stderrBuf.String(), err
+}
+
+func DetectVideoFormat(filePath string) (string, error) {
+	output, err := FFProbeOutput("-v", "error", "-show_entries", "format=format_name", "-of", "default=noprint_wrappers=1:nokey=1", filePath)
+	if err != nil {
+		return "", fmt.Errorf("ffprobe failed: %w", err)
 	}
 
 	formatName := strings.TrimSpace(string(output))

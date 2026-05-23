@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Soltus/encv-go/internal/utils"
 )
 
 // TrackInfo 用于解析 mkvmerge -J 的输出
@@ -31,6 +33,9 @@ type MkvmergeInfo struct {
 
 // getVideoTrackID 使用 mkvmerge -J 获取第一个视频轨道的 ID
 func getVideoTrackID(filePath string) (string, error) {
+	if utils.IsMobile() {
+		return getVideoTrackIDWithFFProbe(filePath)
+	}
 	cmd := exec.Command("mkvmerge", "-J", filePath)
 	output, err := cmd.Output()
 	if err != nil {
@@ -52,8 +57,23 @@ func getVideoTrackID(filePath string) (string, error) {
 	return "", fmt.Errorf("no video track found in the file")
 }
 
+func getVideoTrackIDWithFFProbe(filePath string) (string, error) {
+	output, err := utils.FFProbeOutput("-v", "error", "-select_streams", "v:0", "-show_entries", "stream=index", "-of", "csv=p=0", filePath)
+	if err != nil {
+		return "", fmt.Errorf("ffprobe failed to get video track ID: %w", err)
+	}
+	idx := strings.TrimSpace(string(output))
+	if idx == "" {
+		return "", fmt.Errorf("no video track found in the file")
+	}
+	return idx, nil
+}
+
 // IsMkvPartOfSplit 检查 MKV 文件是否是一个分片集的一部分
 func IsMkvPartOfSplit(filePath string) (bool, error) {
+	if utils.IsMobile() {
+		return IsMkvPartOfSplitNative(filePath)
+	}
 	cmd := exec.Command("mkvinfo", "-p", filePath)
 	output, err := cmd.Output()
 	if err != nil {
@@ -137,6 +157,9 @@ func IdentifyWithMKVMerge(filePath string) (*MKVMergeIdentity, error) {
 
 // ExtractChaptersWithMKVExtract 使用 mkvextract 提取章节到临时 XML 文件
 func ExtractChaptersWithMKVExtract(filePath string) ([]MKVChapterInfo, error) {
+	if utils.IsMobile() {
+		return ExtractChaptersFromMKVNative(filePath)
+	}
 	// 创建临时文件来存储章节 XML
 	tempFile, err := os.CreateTemp("", "encv-chapters-*.xml")
 	if err != nil {
@@ -189,6 +212,9 @@ func ExtractChaptersWithMKVExtract(filePath string) ([]MKVChapterInfo, error) {
 
 // checkFileForCues 使用 mkvinfo 快速检查文件是否包含 Cues 元素
 func checkFileForCues(filePath string) (bool, error) {
+	if utils.IsMobile() {
+		return CheckFileForCuesNative(filePath)
+	}
 	cmd := exec.Command("mkvinfo", "-v", filePath)
 	output, err := cmd.Output()
 	if err != nil {
@@ -199,6 +225,17 @@ func checkFileForCues(filePath string) (bool, error) {
 
 func extractKeyFrameOffsetsFromMKV(filePath string) ([]uint64, error) {
 	log.Printf("-> [DIAG] Attempting to extract keyframes from MKV: %s\n", filePath)
+
+	if utils.IsMobile() {
+		offsets, err := ExtractKeyFrameOffsetsFromMKVCuesNative(filePath)
+		if err == nil && len(offsets) > 0 {
+			log.Printf("-> [DIAG] SUCCESS: Got %d keyframes from native Cues\n", len(offsets))
+			return offsets, nil
+		}
+		log.Printf("-> [DIAG] Native Cues extraction failed: %v\n", err)
+		return nil, nil
+	}
+
 	// 在解析 Cues 之前，先检查文件是否有 Cues
 	cmdCheck := exec.Command("mkvinfo", "-v", filePath)
 	outputCheck, err := cmdCheck.Output()
@@ -413,6 +450,9 @@ func batchGetMkvInfos(paths []string) (map[string]*MkvInfo, error) {
 
 // getMkvInfo 解析单个 MKV 文件的 mkvinfo -p 输出
 func getMkvInfo(path string) (*MkvInfo, error) {
+	if utils.IsMobile() {
+		return getMkvInfoNative(path)
+	}
 	cmd := exec.Command("mkvinfo", "-p", path)
 	output, err := cmd.Output()
 	if err != nil {
@@ -568,6 +608,10 @@ func mergeSplitPartsFromSet(sortedPaths []string, outputDir string, cacheDir str
 		return "", fmt.Errorf("no paths provided for merging")
 	}
 
+	if utils.IsMobile() {
+		return mergeSplitPartsWithFFmpeg(sortedPaths, outputDir, cacheDir)
+	}
+
 	log.Printf("-> [VIDEO_PLUGIN] mergeSplitPartsFromSet: cacheDir='%s', outputDir='%s', paths=%v\n", cacheDir, outputDir, sortedPaths)
 
 	// 【新增】首先检查缓存
@@ -704,4 +748,62 @@ func findAndSortChain(startInfo *MkvInfo, allInfos map[string]*MkvInfo) ([]strin
 	}
 
 	return sortedPaths, chainUIDs
+}
+
+func getMkvInfoNative(path string) (*MkvInfo, error) {
+	info := &MkvInfo{Path: path}
+	prevUID, nextUID, err := ReadMKVSegmentInfoNative(path)
+	if err != nil {
+		return nil, fmt.Errorf("native MKV info extraction failed on %s: %w", path, err)
+	}
+	if len(prevUID) > 0 {
+		h := hex.EncodeToString(prevUID)
+		info.PrevUID, _ = strconv.ParseInt("0x"+h, 0, 64)
+	}
+	if len(nextUID) > 0 {
+		h := hex.EncodeToString(nextUID)
+		info.NextUID, _ = strconv.ParseInt("0x"+h, 0, 64)
+	}
+	info.IsSplitPart = (info.PrevUID != 0) || (info.NextUID != 0)
+	return info, nil
+}
+
+func mergeSplitPartsWithFFmpeg(sortedPaths []string, outputDir string, cacheDir string) (string, error) {
+	if len(sortedPaths) == 1 {
+		return sortedPaths[0], nil
+	}
+
+	mergeDir := outputDir
+	if cacheDir != "" {
+		if err := os.MkdirAll(cacheDir, 0755); err == nil {
+			mergeDir = cacheDir
+		}
+	}
+
+	hash := calculateSplitSetHash(sortedPaths)
+	tempPath := filepath.Join(mergeDir, "encv-merged-"+hash+".mkv")
+
+	if info, err := os.Stat(tempPath); err == nil && info.Size() > 0 {
+		return tempPath, nil
+	}
+
+	concatFile, err := os.CreateTemp(mergeDir, "encv-concat-*.txt")
+	if err != nil {
+		return "", fmt.Errorf("failed to create concat list: %w", err)
+	}
+	concatPath := concatFile.Name()
+	defer os.Remove(concatPath)
+
+	for _, p := range sortedPaths {
+		fmt.Fprintf(concatFile, "file '%s'\n", p)
+	}
+	concatFile.Close()
+
+	args := []string{"-y", "-f", "concat", "-safe", "0", "-i", concatPath, "-c", "copy", tempPath}
+	if err := utils.FFmpegRun(args...); err != nil {
+		os.Remove(tempPath)
+		return "", fmt.Errorf("ffmpeg concat merge failed: %w", err)
+	}
+
+	return tempPath, nil
 }

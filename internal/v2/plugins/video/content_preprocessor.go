@@ -51,8 +51,7 @@ func detectPreferredEncoder() string {
 		if enc.args == nil {
 			return enc.name
 		}
-		cmd := utils.FFmpegCmd(append([]string{"-y", "-threads", "1"}, enc.args...)...)
-		if err := cmd.Run(); err == nil {
+		if err := utils.FFmpegRun(append([]string{"-y", "-threads", "1"}, enc.args...)...); err == nil {
 			log.Printf("-> [CONTENT_PREPROCESSOR] Detected available encoder: %s\n", enc.name)
 			return enc.name
 		}
@@ -68,6 +67,10 @@ func getPreferredEncoder() string {
 }
 
 func (p *VideoContentPreprocessor) runFFmpegCmd(cmd *exec.Cmd, tempPath string) error {
+	if utils.IsMobile() {
+		return p.runFFmpegCmdMobile(cmd.Args[1:], tempPath)
+	}
+
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return fmt.Errorf("failed to create stderr pipe: %w", err)
@@ -130,6 +133,27 @@ func (p *VideoContentPreprocessor) runFFmpegCmd(cmd *exec.Cmd, tempPath string) 
 			}
 		}
 		return fmt.Errorf("ffmpeg command failed: %w", err)
+	}
+
+	return nil
+}
+
+func (p *VideoContentPreprocessor) runFFmpegCmdMobile(args []string, tempPath string) error {
+	if p.ctx != nil {
+		select {
+		case <-p.ctx.Done():
+			return p.ctx.Err()
+		default:
+		}
+	}
+
+	_, err := utils.FFmpegRunWithStderr(args...)
+	if err != nil {
+		return err
+	}
+
+	if _, statErr := os.Stat(tempPath); statErr != nil {
+		return fmt.Errorf("ffmpeg completed but output file not found: %s", tempPath)
 	}
 
 	return nil
@@ -231,8 +255,7 @@ func (p *VideoContentPreprocessor) updateWithPreprocessedInfo(preprocessedPath, 
 		p.index.MimeType = mimeType
 	}
 
-	cmd := utils.FFProbeCmd("-v", "quiet", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", preprocessedPath)
-	output, err := cmd.Output()
+	output, err := utils.FFProbeOutput("-v", "quiet", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", preprocessedPath)
 	if err == nil {
 		if d, err := strconv.ParseFloat(strings.TrimSpace(string(output)), 64); err == nil {
 			p.index.DurationSeconds = d
@@ -285,7 +308,7 @@ func extractKeyFrameOffsets(filePath string, format string) ([]uint64, error) {
 func extractKeyFrameOffsetsWithFFProbe(filePath string) ([]uint64, error) {
 	fmt.Println("-> [DIAG] Optimized: Extracting exact keyframe positions in a single pass.")
 
-	cmd := utils.FFProbeCmd(
+	output, err := utils.FFProbeOutput(
 		"-v", "error",
 		"-select_streams", "v:0",
 		"-skip_frame", "nokey",
@@ -293,8 +316,6 @@ func extractKeyFrameOffsetsWithFFProbe(filePath string) ([]uint64, error) {
 		"-of", "csv=p=0",
 		filePath,
 	)
-
-	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("ffprobe keyframe command failed: %w", err)
 	}
@@ -331,6 +352,10 @@ func extractKeyFrameOffsetsWithFFProbe(filePath string) ([]uint64, error) {
 }
 
 func (p *VideoContentPreprocessor) remapWithMKVMerge(inputPath string) (io.ReadCloser, string, error) {
+	if utils.IsMobile() {
+		return p.remapMKVWithFFmpeg(inputPath)
+	}
+
 	fmt.Println("-> [DIAG] Checking original file for Cues...")
 	if hasCues, err := checkFileForCues(inputPath); err == nil {
 		if hasCues {
@@ -385,6 +410,25 @@ func (p *VideoContentPreprocessor) remapWithMKVMerge(inputPath string) (io.ReadC
 	}
 
 	log.Printf("-> [CONTENT_PREPROCESSOR] SUCCESS: Remuxed MKV to %s\n", tempPath)
+	r, _ := reader.NewTempFileReadCloser(tempPath)
+	return r, tempPath, nil
+}
+
+func (p *VideoContentPreprocessor) remapMKVWithFFmpeg(inputPath string) (io.ReadCloser, string, error) {
+	tempFile, err := os.CreateTemp(p.outputDir, "encv-pre-*.mkv")
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create temp file for MKV remuxing: %w", err)
+	}
+	tempPath := tempFile.Name()
+	tempFile.Close()
+
+	args := []string{"-y", "-i", inputPath, "-c", "copy", "-reserve_index_space", "500", tempPath}
+	if err := utils.FFmpegRun(args...); err != nil {
+		os.Remove(tempPath)
+		return nil, tempPath, fmt.Errorf("ffmpeg MKV remuxing failed: %w", err)
+	}
+
+	log.Printf("-> [CONTENT_PREPROCESSOR] SUCCESS: Remuxed MKV with ffmpeg to %s\n", tempPath)
 	r, _ := reader.NewTempFileReadCloser(tempPath)
 	return r, tempPath, nil
 }
