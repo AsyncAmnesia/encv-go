@@ -188,6 +188,29 @@ class GoProcessPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun openExternal(call: PluginCall) {
+        val url = call.getString("url", "")
+        val mimeType = call.getString("mimeType", "video/*")
+        if (url.isNullOrEmpty()) {
+            call.reject("url is required")
+            return
+        }
+        try {
+            Log.d(TAG, "openExternal: url=$url, mimeType=$mimeType")
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(Uri.parse(url), mimeType)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val chooser = Intent.createChooser(intent, null)
+            activity.startActivity(chooser)
+            call.resolve()
+        } catch (e: Exception) {
+            Log.e(TAG, "openExternal failed", e)
+            call.reject("Failed to open externally: ${e.message}")
+        }
+    }
+
+    @PluginMethod
     fun openInPlayer(call: PluginCall) {
         val path = call.getString("path", "")
         val name = call.getString("name", "")

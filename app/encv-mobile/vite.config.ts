@@ -10,12 +10,6 @@ export default defineConfig({
     },
   },
   build: {
-    rollupOptions: {
-      input: {
-        main: path.resolve(__dirname, 'index.html'),
-        player: path.resolve(__dirname, 'player.html'),
-      },
-    },
   },
   server: {
     port: 5173,

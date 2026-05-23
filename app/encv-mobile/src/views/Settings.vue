@@ -32,6 +32,41 @@
 
       <ion-list>
         <ion-list-header>
+          <ion-label>{{ t('settings.player') }}</ion-label>
+        </ion-list-header>
+        <ion-item>
+          <ion-icon :icon="filmOutline" slot="start"></ion-icon>
+          <ion-select
+            :value="videoPlayerMode"
+            @ionChange="handleVideoPlayerChange"
+            :label="t('settings.videoPlayer')"
+            label-placement="stacked"
+            interface="action-sheet"
+            mode="ios"
+          >
+            <ion-select-option value="artplayer">{{ t('settings.builtInArtplayer') }}</ion-select-option>
+            <ion-select-option value="mpv">{{ t('settings.builtInMpv') }}</ion-select-option>
+            <ion-select-option value="external">{{ t('settings.openExternal') }}</ion-select-option>
+          </ion-select>
+        </ion-item>
+        <ion-item>
+          <ion-icon :icon="musicalNotesOutline" slot="start"></ion-icon>
+          <ion-select
+            :value="audioPlayerMode"
+            @ionChange="handleAudioPlayerChange"
+            :label="t('settings.audioPlayer')"
+            label-placement="stacked"
+            interface="action-sheet"
+            mode="ios"
+          >
+            <ion-select-option value="mpv">{{ t('settings.builtInMpv') }}</ion-select-option>
+            <ion-select-option value="external">{{ t('settings.openExternal') }}</ion-select-option>
+          </ion-select>
+        </ion-item>
+      </ion-list>
+
+      <ion-list>
+        <ion-list-header>
           <ion-label>{{ t('settings.connection') }}</ion-label>
         </ion-list-header>
         <ion-item button @click="goServer" detail>
@@ -307,6 +342,21 @@ const { t, tField, tSectionTitle, setLocale, locale } = useI18n()
 
 const configLoaded = ref(false)
 const indexStats = ref<IndexStats | null>(null)
+
+const videoPlayerMode = ref(localStorage.getItem('encv_player_video') || 'artplayer')
+const audioPlayerMode = ref(localStorage.getItem('encv_player_audio') || 'mpv')
+
+function handleVideoPlayerChange(event: CustomEvent) {
+  const value = event.detail.value
+  videoPlayerMode.value = value
+  localStorage.setItem('encv_player_video', value)
+}
+
+function handleAudioPlayerChange(event: CustomEvent) {
+  const value = event.detail.value
+  audioPlayerMode.value = value
+  localStorage.setItem('encv_player_audio', value)
+}
 
 const showJsonEditor = ref(false)
 const jsonText = ref('')

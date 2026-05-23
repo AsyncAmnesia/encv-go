@@ -108,6 +108,14 @@ export async function closePlayer(): Promise<void> {
   }
 }
 
+export async function openExternal(url: string, mimeType: string): Promise<void> {
+  try {
+    await GoProcess.openExternal({ url, mimeType })
+  } catch (e) {
+    console.error('[ENCV] GoProcess.openExternal() failed:', e)
+  }
+}
+
 export async function openInPlayer(path: string, name: string, mimeType: string): Promise<void> {
   try {
     await GoProcess.openInPlayer({ path, name, mimeType })

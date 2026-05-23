@@ -9,7 +9,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/player',
-    component: () => import('@/views/StandalonePlayer.vue'),
+    component: () => import('@/views/ArtPlayerView.vue'),
   },
   {
     path: '/tabs/',

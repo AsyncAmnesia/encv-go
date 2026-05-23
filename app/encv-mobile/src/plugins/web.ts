@@ -33,6 +33,7 @@ export interface GoProcessPlugin {
   getIntentFileInfo(): Promise<{ path: string; name: string; mimeType: string }>
   openPlayer(options: { path: string; name: string; mimeType: string }): Promise<void>
   closePlayer(): Promise<void>
+  openExternal(options: { url: string; mimeType: string }): Promise<void>
   openInPlayer(options: { path: string; name: string; mimeType: string }): Promise<void>
   openPlayerHome(): Promise<void>
   setScreenOrientation(options: { orientation: string }): Promise<void>
@@ -75,6 +76,9 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
   }
 
   async closePlayer(): Promise<void> {
+  }
+
+  async openExternal(_options: { url: string; mimeType: string }): Promise<void> {
   }
 
   async openInPlayer(_options: { path: string; name: string; mimeType: string }): Promise<void> {
