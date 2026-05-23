@@ -12,6 +12,20 @@
 - [ ] 反向代理保留 `httputil.ReverseProxy`，通过 Gin 路由注册
 - [ ] 启动逻辑统一为 `StartGinWithRetry`，无 `StartGfServerWithRetry`
 - [ ] `cmd/encv/servers.go` 使用统一启动逻辑
-- [ ] 移动端模式 (`ENCV_MOBILE=1`) 跳过 admin 路由
 - [ ] `go build ./...` 编译通过
-- [ ] 所有 API 端点功能正常（手动验证或自动化测试）
+
+### 移动端兼容性验证
+- [ ] 所有 23 个 HTTP API 端点响应格式不变（对照 encv.ts 逐一测试）
+- [ ] CORS 配置正确（移动端 WebView 跨域请求正常）
+- [ ] WebSocket 连接正常（心跳 ping/pong，日志推送）
+- [ ] 视频流端点正常（`/stream` 和 `/api/stream/external`）
+- [ ] Capacitor 插件调用不受影响（JNI 桥接不经过 HTTP）
+- [ ] `ENCV_MOBILE=1` 模式下跳过 admin 路由
+- [ ] 单端口模式正常（移动端不再区分 backend/admin 端口）
+
+### 桌面端验证
+- [ ] Admin 登录/登出功能正常
+- [ ] 反向代理（`/p/*`、`/p-api/*`）功能正常
+- [ ] OpenList 代理功能正常
+- [ ] WebDAV 功能正常
+- [ ] 文件浏览和目录列表页面正常

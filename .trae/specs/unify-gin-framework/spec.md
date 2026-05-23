@@ -112,6 +112,84 @@
 - `internal/admin/logic/openlist/` — OpenList 代理（5 个文件）
 - `internal/admin/injector/` — HTML 注入（1 个文件）
 - `internal/admin/routes/` — 路由常量（1 个文件）
+
+### 移动端 (encv-mobile) 与后端 API 交互全景
+
+移动端通过 **3 种方式** 与后端交互：HTTP API、Capacitor 插件（JNI）、WebSocket。
+
+#### HTTP API 调用（src/api/encv.ts）
+
+所有 HTTP 请求通过 `getApiBaseUrl()` 获取基础 URL（默认 `http://127.0.0.1:2025`），使用 `fetch` 发起请求。
+
+| 前端函数 | HTTP 方法 | 后端路由 | 请求参数 | 响应格式 | 使用页面 |
+|---------|----------|---------|---------|---------|---------|
+| `listFiles(path)` | GET | `/api/files?path=` | path | `{files: FileItem[]}` | Files.vue |
+| `checkBackendPermissions()` | GET | `/api/permissions` | - | `{storage: bool}` | Files.vue |
+| `getFileStreamUrl(path)` | - (URL构造) | `/stream?path=` | path | 视频流 | StandalonePlayer.vue |
+| `getExternalStreamUrl(path)` | - (URL构造) | `/api/stream/external?path=` | path | 视频流 | PlayerView (Lynx) |
+| `checkServerStatus()` | GET | `/health` | - | `{online: bool}` | useServerStatus |
+| `deleteFile(path)` | DELETE | `/api/files?path=` | path | - | Files.vue |
+| `readFileContent(path)` | GET | `/api/file?path=` | path | `{name, content, size}` | FilePreview.vue |
+| `getTasks()` | GET | `/api/tasks` | - | `{tasks: EncvTask[]}` | Tasks.vue |
+| `createTask(type, src, tgt, pwd)` | POST | `/api/tasks` | JSON body | `EncvTask` | Files.vue |
+| `cancelTask(id)` | POST | `/api/tasks/{id}/cancel` | - | - | Tasks.vue |
+| `retryTask(id)` | POST | `/api/tasks/{id}/retry` | - | - | Tasks.vue |
+| `testWebDAVConnection(config)` | POST | `/api/webdav/test` | JSON body | - | Remote.vue |
+| `fetchConfig()` | GET | `/api/config` | - | `Record<string, any>` | Settings.vue |
+| `updateConfig(config)` | PUT | `/api/config` | JSON body | - | Settings.vue |
+| `fetchConfigSchema()` | GET | `/api/config/schema` | - | `Record<string, any>` | Settings.vue |
+| `searchFiles(path, kw, rec)` | GET | `/api/files/search?` | query params | `{files: FileItem[]}` | Files.vue |
+| `getIndexStats()` | GET | `/api/index/stats` | - | `IndexStats` | Settings.vue |
+| `rebuildIndex()` | POST | `/api/index/rebuild` | - | - | Settings.vue |
+| `clearIndex()` | POST | `/api/index/clear` | - | - | Settings.vue |
+| `fetchRemoteInfo()` | GET | `/api/remote/info` | - | `RemoteInfo` | Remote.vue |
+| `addOpenlistSite(...)` | POST | `/api/remote/openlist` | JSON body | - | Remote.vue |
+| `updateOpenlistSite(...)` | PUT | `/api/remote/openlist/{id}` | JSON body | - | Remote.vue |
+| `deleteOpenlistSite(id)` | DELETE | `/api/remote/openlist/{id}` | - | - | Remote.vue |
+| `checkFileExists(path)` | GET | `/api/files/exists?path=` | path | `{exists: bool}` | Files.vue |
+
+#### Capacitor 插件调用（src/plugins/GoProcess.ts）
+
+这些调用不经过 HTTP，而是通过 Capacitor JNI 桥接直接调用 Kotlin 原生方法：
+
+| 前端函数 | Kotlin 方法 | 用途 | 使用页面 |
+|---------|-----------|------|---------|
+| `restartBackend()` | `GoProcessPlugin.restart()` | 重启 Go 后端进程 | Settings.vue |
+| `stopBackend()` | `GoProcessPlugin.stop()` | 停止 Go 后端进程 | Settings.vue |
+| `getBackendStatus()` | `GoProcessPlugin.getStatus()` | 获取后端运行状态 | useServerStatus |
+| `requestNotificationPermission()` | `GoProcessPlugin.requestNotificationPermission()` | 请求通知权限 | Settings.vue |
+| `requestStoragePermission()` | `GoProcessPlugin.requestStoragePermission()` | 请求存储权限 | Files.vue |
+| `checkPermissions()` | `GoProcessPlugin.checkPermissions()` | 检查权限状态 | Settings.vue |
+| `isStandaloneMode()` | `GoProcessPlugin.isStandaloneMode()` | 检查是否独立模式 | useServerStatus |
+| `getIntentFileInfo()` | `GoProcessPlugin.getIntentFileInfo()` | 获取外部打开的文件信息 | Tabs.vue |
+| `openInPlayer(path, name, mime)` | `GoProcessPlugin.openInPlayer()` | 在 Lynx 播放器中打开文件 | Files.vue |
+| `openPlayerHome()` | `GoProcessPlugin.openPlayerHome()` | 打开播放器首页 | HomePage.vue |
+
+#### WebSocket 连接（src/composables/useWebSocket.ts）
+
+- 连接地址：`ws://127.0.0.1:2025/ws`
+- 心跳机制：每 30s 发送 `{type: "ping"}`，10s 内未收到 `{type: "pong"}` 则重连
+- 断线重连：指数退避，最大 30s
+- 消息格式：`{type: string, data: any}`
+- 事件分发：通过 `eventBus.emit(msg.type, msg.data)` 分发到各组件
+- 使用页面：DevLogs.vue（接收日志推送）、useServerStatus（连接状态监控）
+
+#### Lynx 播放器与后端交互
+
+Lynx 播放器运行在独立的 `PlayerActivityLynx` 中，通过以下方式与后端交互：
+
+1. **视频流**：`/stream?path=` 和 `/api/stream/external?path=` — MPV 直接请求 HTTP 流
+2. **NativeModules**：`globalThis.NativeModules.MpvPlayerModule` — 通过 Lynx 桥接调用原生 MPV 播放
+3. **GlobalEventEmitter**：`lynx.getJSModule('GlobalEventEmitter')` — 接收 MPV 状态变化和位置更新事件
+4. **initData**：`lynx.__globalProps` — 从 Kotlin 端接收文件路径、文件名、MIME 类型等初始数据
+
+#### 移动端对框架迁移的影响
+
+1. **HTTP API 兼容性**：移动端所有 HTTP 调用都是标准 `fetch`，只要后端路由路径和响应格式不变，前端零改动
+2. **CORS 重要性**：移动端 WebView 发起的 HTTP 请求需要 CORS 支持，Gin CORS 中间件必须正确配置
+3. **WebSocket 兼容性**：Gin 完全兼容 `gorilla/websocket`，WebSocket 连接零改动
+4. **单端口简化**：合并为单服务器后，移动端不再需要区分 backend 端口和 admin 端口，`getApiBaseUrl()` 统一指向一个端口
+5. **移动端可承载 Admin**：之前 GoFrame 太重（ORM、模板引擎、配置管理等大量不需要的依赖），移动端 `ENCV_MOBILE=1` 时跳过 admin 服务器。Gin 极轻量（零额外依赖），admin 路由只是几个 handler + JWT 中间件，移动端完全可以承载。这意味着移动端用户也可以通过浏览器访问 admin UI、使用 OpenList 代理、登录认证等
 - `internal/register/server_start.go` — `StartGfServerWithRetry`
 
 ## ADDED Requirements

@@ -56,13 +56,21 @@
   - [ ] SubTask 8.3: 将配置 API handler 改为 Gin 原生
   - [ ] 注：此任务为优化项，可在功能验证通过后分批进行
 
-- [ ] Task 9: 验证和测试
-  - [ ] SubTask 9.1: 启动服务器，验证所有 API 端点正常
-  - [ ] SubTask 9.2: 验证移动端 API 功能
-  - [ ] SubTask 9.3: 验证 Admin 登录/代理功能
-  - [ ] SubTask 9.4: 验证 OpenList 代理功能
-  - [ ] SubTask 9.5: 验证 WebDAV 功能
-  - [ ] SubTask 9.6: 验证 WebSocket 日志推送
+- [ ] Task 9: 移动端兼容性验证
+  - [ ] SubTask 9.1: 验证所有 23 个 HTTP API 端点响应格式不变（对照 encv.ts 中的前端函数逐一测试）
+  - [ ] SubTask 9.2: 验证 CORS 配置正确（移动端 WebView 跨域请求正常）
+  - [ ] SubTask 9.3: 验证 WebSocket 连接正常（`ws://127.0.0.1:2025/ws`，心跳 ping/pong，日志推送）
+  - [ ] SubTask 9.4: 验证视频流端点正常（`/stream?path=` 和 `/api/stream/external?path=`，MPV 可正常播放）
+  - [ ] SubTask 9.5: 验证 Capacitor 插件调用不受影响（GoProcessPlugin 通过 JNI 调用，不经过 HTTP）
+  - [ ] SubTask 9.6: 验证 `ENCV_MOBILE=1` 模式下跳过 admin 路由
+  - [ ] SubTask 9.7: 验证单端口模式（移动端不再需要区分 backend/admin 端口）
+
+- [ ] Task 10: 桌面端验证
+  - [ ] SubTask 10.1: 验证 Admin 登录/登出功能
+  - [ ] SubTask 10.2: 验证反向代理（`/p/*`、`/p-api/*`）功能
+  - [ ] SubTask 10.3: 验证 OpenList 代理功能
+  - [ ] SubTask 10.4: 验证 WebDAV 功能
+  - [ ] SubTask 10.5: 验证文件浏览和目录列表页面
 
 # Task Dependencies
 
@@ -75,6 +83,7 @@
 - [Task 7] 依赖 [Task 3-6] 全部完成
 - [Task 8] 依赖 [Task 7]，是优化项
 - [Task 9] 依赖 [Task 7]
+- [Task 10] 依赖 [Task 7]，可与 [Task 9] 并行
 
 # 渐进式迁移策略
 
