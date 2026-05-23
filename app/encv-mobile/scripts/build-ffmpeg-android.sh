@@ -94,6 +94,10 @@ echo "Verifying x264 pkg-config:"
 pkg-config --exists x264 2>/dev/null && echo "✅ x264 found via pkg-config" || echo "⚠️  x264 not found via pkg-config, will use extra-cflags/ldflags"
 ls -la "${BUILD_DIR}/x264-install/lib/pkgconfig/" 2>/dev/null || echo "⚠️  No .pc files in x264-install"
 
+echo "Fixing x264.pc for Android (remove -lpthread -ldl)..."
+sed -i 's/-lpthread//g; s/-ldl//g' "${BUILD_DIR}/x264-install/lib/pkgconfig/x264.pc"
+cat "${BUILD_DIR}/x264-install/lib/pkgconfig/x264.pc"
+
 ./configure \
     --prefix="${BUILD_DIR}/ffmpeg-install" \
     --enable-cross-compile \
