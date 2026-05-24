@@ -100,6 +100,8 @@ class PlayerOverlayManager private constructor() {
 
     fun isOverlayShowing(): Boolean = isShowing
 
+    fun getOverlayLayout(): FrameLayout? = overlayLayout
+
     private fun createLynxView(
         filePath: String,
         fileName: String,

@@ -36,4 +36,12 @@
 - **禁止在组件渲染阶段（函数体顶层）调用 NativeModules**
 - 模块名必须与 Android 端 `registerModule()` 的第一个参数一致（如注册 "LogBridge" 则 JS 用 `NativeModules.LogBridge`，不是 `NativeModules.LogBridgeModule`）
 - 类型声明在 `lynx-player/src/typing.d.ts`
-- 构建脚本会检查 `globalThis.NativeModules` 用法，发现则构建失败
+- 构建脚本会检查 `globalThis.NativeModules` 和 `globalThis.lynx.getJSModule` 用法，发现则构建失败
+
+## Lynx 全局事件监听规则（重要！）
+
+- **禁止使用 `globalThis.lynx.getJSModule('GlobalEventEmitter')`**，必须使用 `useLynxGlobalEventListener` hook
+- 原因：`globalThis.lynx.getJSModule` 在后台线程中不可用，返回 null
+- `useLynxGlobalEventListener` 是 ReactLynx 官方 hook，内部使用 `lynx.getJSModule`（注意是 `lynx` 全局变量，不是 `globalThis.lynx`），并通过 `useMemo` 尽早注册监听器
+- 用法：`useLynxGlobalEventListener('event-name', useCallback((event) => { ... }, [deps]))`
+- 导入：`import { useLynxGlobalEventListener } from '@lynx-js/react'`

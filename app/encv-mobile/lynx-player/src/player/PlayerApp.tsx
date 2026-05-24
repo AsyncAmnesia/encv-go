@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from '@lynx-js/react'
-import { useInitData } from '@lynx-js/react'
+import { useInitData, useLynxGlobalEventListener } from '@lynx-js/react'
 import { PlayerControls } from './PlayerControls'
 
 type PlayerState = 'idle' | 'loading' | 'playing' | 'paused' | 'ended' | 'error' | 'audio_only'
@@ -91,6 +91,56 @@ export function PlayerApp() {
     setErrorType(type || classifyError(msg))
     setPlayerState('error')
   }, [])
+
+  useLynxGlobalEventListener('mpv:state-change', useCallback((event: any) => {
+    const state = event?.state
+    const error = event?.error
+    lynxLogInfo('mpv:state-change: ' + JSON.stringify(event))
+    if (state) {
+      if (state === 'surface_ready') {
+        lynxLogInfo('MPV surface ready')
+        setErrorMessage('')
+        setErrorType('')
+        return
+      }
+      if (state === 'waiting_surface') {
+        setPlayerState('loading')
+        return
+      }
+      if (state === 'mpv_ready') {
+        lynxLogInfo('MPV engine ready')
+        return
+      }
+      if (state === 'audio_only') {
+        setMediaType('audio')
+        setErrorMessage('')
+        setErrorType('')
+        setPlayerState('audio_only')
+        return
+      }
+      if (state === 'error') {
+        const errDetail = error || 'MPV 进入错误状态'
+        lynxLogError('mpv:state-change error state: ' + errDetail + ', filePath=' + filePath)
+        setError(errDetail)
+        return
+      }
+      setPlayerState(state as PlayerState)
+    }
+    if (error) {
+      lynxLogError('mpv:state-change error field: ' + error)
+      setError(String(error))
+    }
+    if (state === 'playing' || state === 'paused') {
+      setErrorMessage('')
+      setErrorType('')
+      setShowControls(true)
+    }
+  }, [filePath, setError]))
+
+  useLynxGlobalEventListener('mpv:position-update', useCallback((event: any) => {
+    setPosition(event?.position ?? 0)
+    setDuration(event?.duration ?? 0)
+  }, []))
 
   const startPlayback = useCallback(
     (data: { filePath: string; isExternal: boolean; mediaType: string }) => {
@@ -236,78 +286,6 @@ export function PlayerApp() {
   }, [])
 
   useEffect(() => {
-    const onMpvStateChange = (event: any) => {
-      const state = event?.state
-      const error = event?.error
-      lynxLogInfo('mpv:state-change: ' + JSON.stringify(event))
-      if (state) {
-        if (state === 'surface_ready') {
-          lynxLogInfo('MPV surface ready')
-          setErrorMessage('')
-          setErrorType('')
-          return
-        }
-        if (state === 'waiting_surface') {
-          setPlayerState('loading')
-          return
-        }
-        if (state === 'mpv_ready') {
-          lynxLogInfo('MPV engine ready')
-          return
-        }
-        if (state === 'audio_only') {
-          setMediaType('audio')
-          setErrorMessage('')
-          setErrorType('')
-          setPlayerState('audio_only')
-          return
-        }
-        if (state === 'error') {
-          const errDetail = error || 'MPV 进入错误状态'
-          lynxLogError('mpv:state-change error state: ' + errDetail + ', filePath=' + filePath)
-          setError(errDetail)
-          return
-        }
-        setPlayerState(state as PlayerState)
-      }
-      if (error) {
-        lynxLogError('mpv:state-change error field: ' + error)
-        setError(String(error))
-      }
-      if (state === 'playing' || state === 'paused') {
-        setErrorMessage('')
-        setErrorType('')
-        setShowControls(true)
-      }
-    }
-
-    const onMpvPositionUpdate = (event: any) => {
-      setPosition(event?.position ?? 0)
-      setDuration(event?.duration ?? 0)
-    }
-
-    const lynxRuntime = (globalThis as any).lynx
-    const globalEventEmitter = lynxRuntime?.getJSModule?.('GlobalEventEmitter')
-
-    if (globalEventEmitter) {
-      globalEventEmitter.addListener('mpv:state-change', onMpvStateChange)
-      globalEventEmitter.addListener('mpv:position-update', onMpvPositionUpdate)
-    } else {
-      lynxLogError('GlobalEventEmitter not available')
-    }
-
-    return () => {
-      if (globalEventEmitter) {
-        globalEventEmitter.removeListener('mpv:state-change', onMpvStateChange)
-        globalEventEmitter.removeListener('mpv:position-update', onMpvPositionUpdate)
-      }
-      try {
-        NativeModules.MpvPlayerModule.pause(() => {})
-      } catch (_e) {}
-    }
-  }, [])
-
-  useEffect(() => {
     resetHideTimer()
   }, [playerState, resetHideTimer])
 
@@ -325,6 +303,14 @@ export function PlayerApp() {
       if (hideTimerRef.current) {
         clearTimeout(hideTimerRef.current)
       }
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      try {
+        NativeModules.MpvPlayerModule.pause(() => {})
+      } catch (_e) {}
     }
   }, [])
 

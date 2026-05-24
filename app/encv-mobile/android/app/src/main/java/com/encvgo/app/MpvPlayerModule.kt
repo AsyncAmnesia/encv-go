@@ -117,8 +117,10 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
                     return@post
                 }
                 val root = act.findViewById<android.widget.FrameLayout>(R.id.lynx_player_root)
+                    ?: act.findViewById<android.widget.FrameLayout>(R.id.player_overlay_root)
+                    ?: PlayerOverlayManager.getInstance().getOverlayLayout()
                 if (root == null) {
-                    LogRelay.get().relay(TAG, "error", "init auto-attach: lynx_player_root not found")
+                    LogRelay.get().relay(TAG, "error", "init auto-attach: no suitable root view found (tried lynx_player_root, player_overlay_root, and PlayerOverlayManager)")
                     return@post
                 }
                 attachToLayout(root)

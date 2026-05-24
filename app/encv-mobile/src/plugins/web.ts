@@ -20,6 +20,7 @@ export interface PermissionResult {
 export interface PermissionCheckResult {
   notifications: boolean
   storage: boolean
+  batteryOptimization: boolean
 }
 
 export interface GoProcessPlugin {
@@ -28,6 +29,7 @@ export interface GoProcessPlugin {
   getStatus(): Promise<GoProcessStatus>
   requestNotificationPermission(): Promise<PermissionResult>
   requestStoragePermission(): Promise<PermissionResult>
+  requestBatteryOptimization(): Promise<PermissionResult>
   checkPermissions(): Promise<PermissionCheckResult>
   isStandaloneMode(): Promise<{ standalone: boolean }>
   getIntentFileInfo(): Promise<{ path: string; name: string; mimeType: string }>
@@ -60,8 +62,12 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
     return { granted: true }
   }
 
+  async requestBatteryOptimization(): Promise<PermissionResult> {
+    return { granted: true }
+  }
+
   async checkPermissions(): Promise<PermissionCheckResult> {
-    return { notifications: true, storage: true }
+    return { notifications: true, storage: true, batteryOptimization: true }
   }
 
   async isStandaloneMode(): Promise<{ standalone: boolean }> {

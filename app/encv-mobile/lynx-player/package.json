@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "rspeedy dev",
-    "build": "grep -rn 'globalThis.NativeModules' src/ && echo 'ERROR: globalThis.NativeModules is forbidden in Lynx. Use NativeModules directly (declared in typing.d.ts) and only in background thread contexts.' && exit 1 || rspeedy build"
+    "build": "grep -rn 'globalThis.NativeModules\\|globalThis.lynx.getJSModule' src/ && echo 'ERROR: Forbidden Lynx API usage detected. Use NativeModules directly (typing.d.ts) and useLynxGlobalEventListener for events.' && exit 1 || rspeedy build"
   },
   "dependencies": {
     "@lynx-js/react": "^0.121.0"

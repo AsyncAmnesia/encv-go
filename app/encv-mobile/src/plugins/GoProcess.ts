@@ -65,12 +65,21 @@ export async function requestStoragePermission(): Promise<PermissionResult> {
   }
 }
 
+export async function requestBatteryOptimization(): Promise<PermissionResult> {
+  try {
+    return await GoProcess.requestBatteryOptimization()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.requestBatteryOptimization() failed:', e)
+    return { granted: false }
+  }
+}
+
 export async function checkPermissions(): Promise<PermissionCheckResult> {
   try {
     return await GoProcess.checkPermissions()
   } catch (e) {
     console.error('[ENCV] GoProcess.checkPermissions() failed:', e)
-    return { notifications: false, storage: false }
+    return { notifications: false, storage: false, batteryOptimization: false }
   }
 }
 

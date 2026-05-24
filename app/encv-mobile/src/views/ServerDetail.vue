@@ -96,6 +96,16 @@
             {{ t('settings.request') }}
           </ion-button>
         </ion-item>
+        <ion-item>
+          <ion-icon :icon="batteryOptimizationIcon" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.batteryOptimization') }}</h3>
+            <p>{{ permBatteryOpt ? t('settings.granted') : t('settings.denied') }}</p>
+          </ion-label>
+          <ion-button v-if="!permBatteryOpt" fill="outline" size="small" @click="handleRequestBatteryOpt">
+            {{ t('settings.request') }}
+          </ion-button>
+        </ion-item>
       </ion-list>
     </ion-content>
   </ion-page>
@@ -113,12 +123,13 @@ import {
   stop as stopIcon, play as playIcon,
   notifications as notificationsIcon, folderOpen,
   copy as copyIcon, shieldCheckmark, cloudOutline, globeOutline,
+  batteryCharging as batteryOptimizationIcon,
 } from 'ionicons/icons'
 import { useServerStatus } from '@/composables/useServerStatus'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { getServerUrl, fetchConfig } from '@/api/encv'
-import { isNative, requestNotificationPermission, requestStoragePermission, checkPermissions } from '@/plugins/GoProcess'
+import { isNative, requestNotificationPermission, requestStoragePermission, requestBatteryOptimization, checkPermissions } from '@/plugins/GoProcess'
 
 interface ServiceUrl {
   label: string
@@ -142,6 +153,7 @@ const serverUrl = ref(getServerUrl())
 const isNativePlatform = ref(isNative())
 const permNotifications = ref(false)
 const permStorage = ref(false)
+const permBatteryOpt = ref(false)
 const configData = ref<Record<string, unknown> | null>(null)
 let permissionCheckTimer: number | null = null
 
@@ -192,6 +204,7 @@ async function refreshPermissions() {
   const perms = await checkPermissions()
   permNotifications.value = perms.notifications
   permStorage.value = perms.storage
+  permBatteryOpt.value = perms.batteryOptimization
 }
 
 async function handleRequestNotification() {
@@ -204,6 +217,14 @@ async function handleRequestNotification() {
 
 async function handleRequestStorage() {
   await requestStoragePermission()
+  if (permissionCheckTimer) clearTimeout(permissionCheckTimer)
+  permissionCheckTimer = window.setTimeout(() => refreshPermissions(), 1000)
+  setTimeout(() => refreshPermissions(), 3000)
+  setTimeout(() => refreshPermissions(), 5000)
+}
+
+async function handleRequestBatteryOpt() {
+  await requestBatteryOptimization()
   if (permissionCheckTimer) clearTimeout(permissionCheckTimer)
   permissionCheckTimer = window.setTimeout(() => refreshPermissions(), 1000)
   setTimeout(() => refreshPermissions(), 3000)

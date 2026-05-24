@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -123,6 +124,31 @@ class GoProcessPlugin : Plugin() {
         }
         result.put("granted", false)
         result.put("requiresSettings", true)
+        call.resolve(result)
+    }
+
+    @PluginMethod
+    fun requestBatteryOptimization(call: PluginCall) {
+        Log.d(TAG, "GoProcess.requestBatteryOptimization() called")
+        val result = JSObject()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (pm.isIgnoringBatteryOptimizations(context.packageName)) {
+                result.put("granted", true)
+            } else {
+                try {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                    intent.data = Uri.parse("package:${context.packageName}")
+                    activity.startActivity(intent)
+                } catch (e: Exception) {
+                    Log.w(TAG, "requestBatteryOptimization failed", e)
+                }
+                result.put("granted", false)
+                result.put("requiresSettings", true)
+            }
+        } else {
+            result.put("granted", true)
+        }
         call.resolve(result)
     }
 
@@ -275,6 +301,13 @@ class GoProcessPlugin : Plugin() {
         }
         result.put("notifications", notificationGranted)
         result.put("storage", Environment.isExternalStorageManager())
+        val batteryOptGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            pm.isIgnoringBatteryOptimizations(context.packageName)
+        } else {
+            true
+        }
+        result.put("batteryOptimization", batteryOptGranted)
         call.resolve(result)
     }
 
