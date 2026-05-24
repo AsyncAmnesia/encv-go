@@ -247,11 +247,11 @@ func (s *Server) handleRemoteInfoGin(c *gin.Context) {
 	}
 
 	webdavInfo := gin.H{
-		"enabled":  cfg.Webdav.Port > 0,
+		"enabled":  cfg.Webdav.Root != "",
 		"username": cfg.Webdav.Username,
 		"root":     cfg.Webdav.Root,
 	}
-	if cfg.Webdav.Port > 0 {
+	if cfg.Webdav.Root != "" {
 		root := cfg.Webdav.Root
 		if root == "" {
 			root = "/webdav/"

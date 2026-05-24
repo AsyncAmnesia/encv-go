@@ -167,8 +167,8 @@ const serviceUrls = computed<ServiceUrl[]>(() => {
   }
 
   const webdavCfg = cfg.webdav as Record<string, unknown> | undefined
-  if (webdavCfg && typeof webdavCfg.port === 'number' && webdavCfg.port > 0) {
-    const root = typeof webdavCfg.root === 'string' ? webdavCfg.root : '/webdav/'
+  if (webdavCfg && typeof webdavCfg.root === 'string' && webdavCfg.root) {
+    const root = webdavCfg.root.startsWith('/') ? webdavCfg.root : '/' + webdavCfg.root
     result.push({
       label: t('settings.webdavServerSettings'),
       url: `${baseUrl}${root}`,

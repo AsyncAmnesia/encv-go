@@ -164,7 +164,7 @@ import { useI18n } from '@/composables/useI18n'
 import { formatDateTime } from '@/composables/useDateFormat'
 import { vLongpress } from '@/directives/longpress'
 import { isNative, requestStoragePermission, openPlayer, openExternal } from '@/plugins/GoProcess'
-import { getExternalStreamUrl, getFileStreamUrl } from '@/api/encv'
+import { getExternalStreamUrl } from '@/api/encv'
 import { showToast } from '@/composables/useToast'
 
 type PlayMode = 'artplayer' | 'mpv' | 'external'
@@ -188,8 +188,7 @@ function playMedia(file: FileItem, category: string) {
       break
     case 'mpv':
       if (isNative()) {
-        const streamUrl = getFileStreamUrl(file.path)
-        openPlayer(streamUrl, file.name, mimeType)
+        openPlayer(file.path, file.name, mimeType)
       } else {
         router.push({ path: '/player', query: { path: file.path, name: file.name } })
       }

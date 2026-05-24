@@ -134,7 +134,7 @@ class GoBackendModule(context: android.content.Context) : LynxModule(context) {
             callback.invoke("backend not ready, port invalid")
             return
         }
-        val encodedPath = android.net.Uri.encode(path)
+        val encodedPath = android.net.Uri.encode(path, "/")
         val url = if (isExternal) {
             "http://127.0.0.1:$port/api/stream/external?path=$encodedPath"
         } else {

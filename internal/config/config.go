@@ -76,7 +76,6 @@ func DefaultConfig() *Config {
 		OutputPath: "./encrypted",
 		Server:     types.HttpServer{Port: 1999, Dir: "./"},
 		Webdav: types.WebdavServer{
-			Port: 2299,
 			Root: "/webdav/",
 			Dir:  "./output",
 		},

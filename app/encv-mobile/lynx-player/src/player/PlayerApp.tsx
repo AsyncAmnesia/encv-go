@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from '@lynx-js/react'
+import { useInitData } from '@lynx-js/react'
 import { PlayerControls } from './PlayerControls'
 
 type PlayerState = 'idle' | 'loading' | 'playing' | 'paused' | 'ended' | 'error' | 'audio_only'
@@ -52,24 +53,11 @@ function classifyError(err: string): string {
   return '未知错误'
 }
 
-function getInitData(): Record<string, any> {
-  try {
-    const lynxObj = (globalThis as any).lynx
-    return lynxObj?.__globalProps || {}
-  } catch {
-    return {}
-  }
-}
-
 export function PlayerApp() {
-  const initData = getInitData()
-  const initStreamUrl = (initData.streamUrl as string) || ''
-  const initFilePath = (initData.filePath as string) || ''
+  const initData = useInitData() as Record<string, any>
+  const filePath = (initData.filePath as string) || ''
   const fileName = (initData.fileName as string) || 'Unknown'
-  const mimeType = (initData.mimeType as string) || ''
   const isExternal = !!initData.isExternal
-
-  lynxLog.info('PlayerApp: initData=' + JSON.stringify(initData))
 
   const [playerState, setPlayerState] = useState<PlayerState>('idle')
   const [position, setPosition] = useState(0)
@@ -80,12 +68,14 @@ export function PlayerApp() {
   const [showControls, setShowControls] = useState(true)
   const [playbackRate, setPlaybackRate] = useState(1)
   const [locked, setLocked] = useState(false)
-  const [resolvedStreamUrl, setResolvedStreamUrl] = useState(initStreamUrl)
+  const [streamUrl, setStreamUrl] = useState('')
   const [mediaType, setMediaType] = useState<'video' | 'audio'>(
     (initData.mediaType as string) === 'audio' ? 'audio' : 'video'
   )
 
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  lynxLog.info('PlayerApp: initData=' + JSON.stringify(initData) + ', filePath=' + filePath + ', fileName=' + fileName + ', isExternal=' + String(isExternal))
 
   const resetHideTimer = useCallback(() => {
     if (hideTimerRef.current) {
@@ -108,10 +98,11 @@ export function PlayerApp() {
   }, [])
 
   const startPlayback = useCallback(
-    (data: { streamUrl: string; mediaType: string }) => {
-      lynxLog.info('startPlayback: url=' + data.streamUrl + ' mediaType=' + data.mediaType + ' fileName=' + fileName)
-      if (!data.streamUrl) {
-        setError('播放地址为空 (fileName=' + fileName + ', initStreamUrl=' + initStreamUrl + ', initFilePath=' + initFilePath + ')', '地址无效')
+    (data: { filePath: string; isExternal: boolean; mediaType: string }) => {
+      lynxLog.info('startPlayback: filePath=' + data.filePath + ' isExternal=' + String(data.isExternal) + ' mediaType=' + data.mediaType + ' fileName=' + fileName)
+      if (!data.filePath) {
+        lynxLog.error('startPlayback: filePath is empty!')
+        setError('文件路径为空', '地址无效')
         return
       }
       setPlayerState('loading')
@@ -120,26 +111,57 @@ export function PlayerApp() {
 
       ;(async () => {
         try {
-          lynxLog.info('startPlayback: calling MpvPlayerModule.play(' + data.streamUrl + ')')
-          const result = await new Promise<any>((resolve) => {
-            globalThis.NativeModules.MpvPlayerModule.play(data.streamUrl, resolve)
+          lynxLog.info('startPlayback: step1 getBackendStatus')
+          const status = await new Promise<any>((resolve) => {
+            globalThis.NativeModules.GoBackendModule.getBackendStatus(resolve)
           })
-          lynxLog.info('startPlayback: play() returned: ' + JSON.stringify(result))
-          if (result !== undefined && result !== null && result !== true) {
-            const errMsg = typeof result === 'string' ? result : JSON.stringify(result)
+          lynxLog.info('startPlayback: step1 result=' + JSON.stringify(status))
+
+          if (data.isExternal || !status.running) {
+            lynxLog.info('startPlayback: step2 startBackend')
+            await new Promise<any>((resolve) => {
+              globalThis.NativeModules.GoBackendModule.startBackend(resolve)
+            })
+            lynxLog.info('startPlayback: step2 done')
+          }
+
+          lynxLog.info('startPlayback: step3 getStreamUrl path=' + data.filePath)
+          const resolvedUrl = await new Promise<string>((resolve) => {
+            globalThis.NativeModules.GoBackendModule.getStreamUrl(
+              data.filePath,
+              data.isExternal,
+              resolve
+            )
+          })
+          lynxLog.info('startPlayback: step3 url=' + resolvedUrl)
+
+          if (!resolvedUrl || !resolvedUrl.startsWith('http')) {
+            setError('无法获取播放地址: ' + resolvedUrl + ' (path=' + data.filePath + ', isExternal=' + String(data.isExternal) + ')', '地址无效')
+            return
+          }
+          setStreamUrl(resolvedUrl)
+
+          lynxLog.info('startPlayback: step4 mpv.play url=' + resolvedUrl)
+          const playResult = await new Promise<any>((resolve) => {
+            globalThis.NativeModules.MpvPlayerModule.play(resolvedUrl, resolve)
+          })
+          lynxLog.info('startPlayback: step4 result=' + JSON.stringify(playResult))
+          if (playResult !== undefined && playResult !== null && playResult !== true) {
+            const errMsg = typeof playResult === 'string' ? playResult : JSON.stringify(playResult)
             if (errMsg && errMsg !== 'true') {
               setError('MPV 返回错误: ' + errMsg)
               return
             }
           }
-          lynxLog.info('startPlayback: play() succeeded')
+          lynxLog.info('startPlayback: all steps done, playing')
         } catch (e: any) {
           const msg = e?.message || String(e)
+          lynxLog.error('startPlayback caught: ' + msg)
           setError('播放异常: ' + msg)
         }
       })()
     },
-    [fileName, initStreamUrl, initFilePath, setError]
+    [fileName, setError]
   )
 
   const handlePlayPause = useCallback(() => {
@@ -152,10 +174,10 @@ export function PlayerApp() {
     } else {
       setErrorMessage('')
       setErrorType('')
-      startPlayback({ streamUrl: resolvedStreamUrl, mediaType })
+      startPlayback({ filePath, isExternal, mediaType })
     }
     resetHideTimer()
-  }, [playerState, resolvedStreamUrl, mediaType, startPlayback, resetHideTimer])
+  }, [playerState, filePath, isExternal, mediaType, startPlayback, resetHideTimer])
 
   const handleSeek = useCallback(
     (ms: number) => {
@@ -242,7 +264,7 @@ export function PlayerApp() {
         }
         if (state === 'error') {
           const errDetail = error || 'MPV 进入错误状态'
-          lynxLog.error('mpv:state-change error state: ' + errDetail + ', initData=' + JSON.stringify(initData))
+          lynxLog.error('mpv:state-change error state: ' + errDetail + ', filePath=' + filePath)
           setError(errDetail)
           return
         }
@@ -290,29 +312,11 @@ export function PlayerApp() {
   }, [playerState, resetHideTimer])
 
   useEffect(() => {
-    if (initStreamUrl) {
-      lynxLog.info('autoPlay: streamUrl from initData: ' + initStreamUrl)
-      startPlayback({ streamUrl: initStreamUrl, mediaType })
-    } else if (initFilePath) {
-      lynxLog.info('autoPlay: no streamUrl, resolving filePath=' + initFilePath + ', isExternal=' + isExternal)
-      setPlayerState('loading')
-      setErrorMessage('')
-      const resolveAndPlay = () => {
-        lynxLog.info('autoPlay: calling GoBackendModule.getStreamUrl for path=' + initFilePath)
-        globalThis.NativeModules.GoBackendModule.getStreamUrl(initFilePath, isExternal, (result: string) => {
-          lynxLog.info('autoPlay: getStreamUrl result=' + result)
-          if (result && result.startsWith('http')) {
-            setResolvedStreamUrl(result)
-            startPlayback({ streamUrl: result, mediaType })
-          } else {
-            setError('无法获取播放地址: ' + result + ' (path=' + initFilePath + ', isExternal=' + isExternal + ')')
-          }
-        })
-      }
-      resolveAndPlay()
+    if (filePath) {
+      startPlayback({ filePath, isExternal, mediaType })
     } else {
-      lynxLog.error('autoPlay: no streamUrl or filePath in initData: ' + JSON.stringify(initData))
-      setError('播放地址为空 (initData=' + JSON.stringify(initData).substring(0, 200) + ')', '地址无效')
+      lynxLog.error('autoPlay: no filePath in initData: ' + JSON.stringify(initData).substring(0, 200))
+      setError('文件路径为空 (initData=' + JSON.stringify(initData).substring(0, 200) + ')', '地址无效')
     }
   }, [])
 
@@ -338,7 +342,7 @@ export function PlayerApp() {
         mediaType={mediaType}
         playbackRate={playbackRate}
         locked={locked}
-        streamUrl={resolvedStreamUrl}
+        streamUrl={streamUrl || undefined}
         onPlayPause={handlePlayPause}
         onSeek={handleSeek}
         onSeekRelative={handleSeekRelative}

@@ -31,7 +31,7 @@ export interface GoProcessPlugin {
   checkPermissions(): Promise<PermissionCheckResult>
   isStandaloneMode(): Promise<{ standalone: boolean }>
   getIntentFileInfo(): Promise<{ path: string; name: string; mimeType: string }>
-  openPlayer(options: { streamUrl: string; name: string; mimeType: string }): Promise<void>
+  openPlayer(options: { filePath: string; name: string; mimeType: string }): Promise<void>
   closePlayer(): Promise<void>
   openExternal(options: { url: string; mimeType: string }): Promise<void>
   openInPlayer(options: { path: string; name: string; mimeType: string }): Promise<void>
@@ -72,7 +72,7 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
     return { path: '', name: '', mimeType: '' }
   }
 
-  async openPlayer(_options: { streamUrl: string; name: string; mimeType: string }): Promise<void> {
+  async openPlayer(_options: { filePath: string; name: string; mimeType: string }): Promise<void> {
   }
 
   async closePlayer(): Promise<void> {

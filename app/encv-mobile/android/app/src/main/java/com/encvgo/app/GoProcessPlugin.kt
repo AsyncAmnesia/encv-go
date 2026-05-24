@@ -150,15 +150,15 @@ class GoProcessPlugin : Plugin() {
 
     @PluginMethod
     fun openPlayer(call: PluginCall) {
-        val streamUrl = call.getString("streamUrl", "")
+        val filePath = call.getString("filePath", "")
         val name = call.getString("name", "")
         val mimeType = call.getString("mimeType", "")
         try {
-            Log.d(TAG, "openPlayer: streamUrl=$streamUrl, name=$name, mimeType=$mimeType")
+            Log.d(TAG, "openPlayer: filePath=$filePath, name=$name, mimeType=$mimeType")
             val mainActivity = activity as? MainActivity
             if (mainActivity == null) {
                 Log.w(TAG, "openPlayer: activity is not MainActivity, falling back to openInPlayer")
-                if (streamUrl.isNullOrEmpty()) {
+                if (filePath.isNullOrEmpty()) {
                     openPlayerHome(call)
                 } else {
                     openInPlayer(call)
@@ -166,7 +166,7 @@ class GoProcessPlugin : Plugin() {
                 return
             }
             PlayerOverlayManager.getInstance().showOverlay(
-                mainActivity, streamUrl ?: "", name ?: "", mimeType ?: "", false
+                mainActivity, filePath ?: "", name ?: "", mimeType ?: "", false
             )
             call.resolve()
         } catch (e: Exception) {

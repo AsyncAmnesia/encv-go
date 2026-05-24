@@ -19,13 +19,19 @@
 
 ### 修复方案
 
-**核心修复：PlayerApp.tsx 使用 `useInitData()` 替代手动 `getInitData()`**
+**核心原则：ArtPlayer 和 MPV 统一使用 Go 后端流式播放**
+
+ArtPlayer 已经通过 `getFileStreamUrl()` → `baseUrl/stream?path=...` 使用 Go 后端流式播放。MPV 也必须走同样的路径，通过 `GoBackendModule.getStreamUrl()` 获取 Go 后端的流 URL，而不是直接播放文件路径。这样才能支持加密视频的流式预览和 seek。
+
+**核心修复：PlayerApp.tsx 使用 `useInitData()` 替代手动 `getInitData()`，恢复四步播放流程**
 
 1. **`PlayerApp.tsx`**：
    - 导入 `useInitData` from `@lynx-js/react`
    - 用 `useInitData()` 替代手动 `getInitData()` 读取 `lynx.__globalProps`
-   - 恢复 f53917d 版本的四步播放流程（`getBackendStatus` → `startBackend` → `getStreamUrl` → `mpv.play`），因为这是经过验证的可靠流程
-   - 移除 `initStreamUrl` 的直接使用（Kotlin 侧构建的 streamUrl 不可靠，因为 `lastKnownPort` 可能为 0）
+   - 恢复 f53917d 版本的四步播放流程（`getBackendStatus` → `startBackend` → `getStreamUrl` → `mpv.play`），这是唯一可靠的流程
+   - 移除 `initStreamUrl`、`resolvedStreamUrl` 等状态变量
+   - 保留错误分类 `classifyError()` 和 `setError()` 统一错误处理
+   - 保留 `lynxLog` 日志推送到 DevLogs
 
 2. **`GoBackendModule.getStreamUrl`**：
    - `Uri.encode(path)` → `Uri.encode(path, "/")`，保留路径分隔符 `/` 不被编码
@@ -104,7 +110,7 @@ gin 重构后，所有路由（主服务、Admin、WebDAV、OpenList 代理）�
    - WebDAV URL 不再使用独立端口，改为使用主服务端口 + webdav root 路径
 
 6. **`server_finder.go`**：
-   - `FindAdminServer` 函数已无用（admin 路由在主服务上），可以标记废弃或移除
+   - `FindAdminServer` 函数已无用（admin 路由在主服务上），标记为废弃
 
 ### 具体步骤
 
