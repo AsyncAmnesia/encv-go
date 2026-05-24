@@ -153,6 +153,9 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/ws", gin.WrapF(s.handleWebSocket))
 
 	// Admin 路由
+	r.GET(routes.Admin, func(c *gin.Context) {
+		c.Redirect(http.StatusFound, routes.FSProxy+"/")
+	})
 	loginRequired := s.cfg.Admin.Password != ""
 	if loginRequired {
 		s.jwtManager = auth.NewJWTManager(s.cfg.Admin.Password, 7*24*time.Hour)

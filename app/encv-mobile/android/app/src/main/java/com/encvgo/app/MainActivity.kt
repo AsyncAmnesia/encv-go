@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.util.Log
 import android.webkit.WebSettings
 import androidx.core.content.ContextCompat
@@ -46,6 +47,7 @@ class MainActivity : BridgeActivity() {
         bridge.webView.settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         Log.i(TAG, "WebView mixedContentMode set to MIXED_CONTENT_ALWAYS_ALLOW")
         registerBackendReceiver()
+        requestBatteryOptimizationExemption()
         val handled = handleIntent(intent)
         if (!handled) {
             startBackendService(EncvGoService.ACTION_START, "app", null)
@@ -155,6 +157,24 @@ class MainActivity : BridgeActivity() {
                 bridge.webView.evaluateJavascript(statusEvent, null)
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to notify frontend", e)
+            }
+        }
+    }
+
+    private fun requestBatteryOptimizationExemption() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                try {
+                    val intent = Intent(
+                        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+                    ).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to request battery optimization exemption", e)
+                }
             }
         }
     }

@@ -24,3 +24,16 @@
 - `vue-tsc --noEmit` 对 `.vue` 文件 `<script setup>` 中未使用导入存在漏检（TS6133）
 - **必须同时运行 `vite build`**，Rollup 会检测未使用导入并报错
 - 完整验证流程：`vue-tsc --noEmit && vite build`
+
+## Lynx NativeModules 访问规则（重要！）
+
+- **禁止使用 `globalThis.NativeModules`**，必须使用 `declare let NativeModules` 声明后直接用 `NativeModules.XXX`
+- 原因：ReactLynx 双线程架构中，`globalThis.NativeModules` 在主线程/Lepus 线程中被设为 `undefined`
+- NativeModules 只能在**后台线程**上下文中调用：
+  - `useEffect` / `useLayoutEffect` hooks
+  - 事件处理函数（bindtap 等）
+  - `'background only'` 指令标记的函数
+- **禁止在组件渲染阶段（函数体顶层）调用 NativeModules**
+- 模块名必须与 Android 端 `registerModule()` 的第一个参数一致（如注册 "LogBridge" 则 JS 用 `NativeModules.LogBridge`，不是 `NativeModules.LogBridgeModule`）
+- 类型声明在 `lynx-player/src/typing.d.ts`
+- 构建脚本会检查 `globalThis.NativeModules` 用法，发现则构建失败

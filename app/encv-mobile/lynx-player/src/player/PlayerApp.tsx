@@ -6,31 +6,28 @@ type PlayerState = 'idle' | 'loading' | 'playing' | 'paused' | 'ended' | 'error'
 
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
-const lynxLog = {
-  info: (msg: string) => {
-    try {
-      console.info(msg)
-      globalThis.NativeModules.LogBridgeModule.log('info', msg, () => {})
-    } catch (_e) {
-      console.info(msg)
-    }
-  },
-  error: (msg: string) => {
-    try {
-      console.error(msg)
-      globalThis.NativeModules.LogBridgeModule.log('error', msg, () => {})
-    } catch (_e) {
-      console.error(msg)
-    }
-  },
-  warn: (msg: string) => {
-    try {
-      console.warn(msg)
-      globalThis.NativeModules.LogBridgeModule.log('warn', msg, () => {})
-    } catch (_e) {
-      console.warn(msg)
-    }
-  },
+function lynxLogInfo(msg: string) {
+  'background only';
+  console.info(msg);
+  try {
+    NativeModules.LogBridge.log('info', msg, () => {});
+  } catch (_e) {}
+}
+
+function lynxLogError(msg: string) {
+  'background only';
+  console.error(msg);
+  try {
+    NativeModules.LogBridge.log('error', msg, () => {});
+  } catch (_e) {}
+}
+
+function lynxLogWarn(msg: string) {
+  'background only';
+  console.warn(msg);
+  try {
+    NativeModules.LogBridge.log('warn', msg, () => {});
+  } catch (_e) {}
 }
 
 function classifyError(err: string): string {
@@ -67,15 +64,13 @@ export function PlayerApp() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showControls, setShowControls] = useState(true)
   const [playbackRate, setPlaybackRate] = useState(1)
-  const [locked, setLocked] = useState(false)
   const [streamUrl, setStreamUrl] = useState('')
+  const [locked, setLocked] = useState(false)
   const [mediaType, setMediaType] = useState<'video' | 'audio'>(
     (initData.mediaType as string) === 'audio' ? 'audio' : 'video'
   )
 
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  lynxLog.info('PlayerApp: initData=' + JSON.stringify(initData) + ', filePath=' + filePath + ', fileName=' + fileName + ', isExternal=' + String(isExternal))
 
   const resetHideTimer = useCallback(() => {
     if (hideTimerRef.current) {
@@ -91,7 +86,7 @@ export function PlayerApp() {
   }, [playerState])
 
   const setError = useCallback((msg: string, type?: string) => {
-    lynxLog.error('setError: ' + msg + ' (type=' + (type || classifyError(msg)) + ')')
+    lynxLogError('setError: ' + msg + ' (type=' + (type || classifyError(msg)) + ')')
     setErrorMessage(msg)
     setErrorType(type || classifyError(msg))
     setPlayerState('error')
@@ -99,9 +94,10 @@ export function PlayerApp() {
 
   const startPlayback = useCallback(
     (data: { filePath: string; isExternal: boolean; mediaType: string }) => {
-      lynxLog.info('startPlayback: filePath=' + data.filePath + ' isExternal=' + String(data.isExternal) + ' mediaType=' + data.mediaType + ' fileName=' + fileName)
+      'background only';
+      lynxLogInfo('startPlayback: filePath=' + data.filePath + ' isExternal=' + String(data.isExternal) + ' mediaType=' + data.mediaType + ' fileName=' + fileName)
       if (!data.filePath) {
-        lynxLog.error('startPlayback: filePath is empty!')
+        lynxLogError('startPlayback: filePath is empty!')
         setError('文件路径为空', '地址无效')
         return
       }
@@ -111,29 +107,29 @@ export function PlayerApp() {
 
       ;(async () => {
         try {
-          lynxLog.info('startPlayback: step1 getBackendStatus')
+          lynxLogInfo('startPlayback: step1 getBackendStatus')
           const status = await new Promise<any>((resolve) => {
-            globalThis.NativeModules.GoBackendModule.getBackendStatus(resolve)
+            NativeModules.GoBackendModule.getBackendStatus(resolve)
           })
-          lynxLog.info('startPlayback: step1 result=' + JSON.stringify(status))
+          lynxLogInfo('startPlayback: step1 result=' + JSON.stringify(status))
 
           if (data.isExternal || !status.running) {
-            lynxLog.info('startPlayback: step2 startBackend')
+            lynxLogInfo('startPlayback: step2 startBackend')
             await new Promise<any>((resolve) => {
-              globalThis.NativeModules.GoBackendModule.startBackend(resolve)
+              NativeModules.GoBackendModule.startBackend(resolve)
             })
-            lynxLog.info('startPlayback: step2 done')
+            lynxLogInfo('startPlayback: step2 done')
           }
 
-          lynxLog.info('startPlayback: step3 getStreamUrl path=' + data.filePath)
+          lynxLogInfo('startPlayback: step3 getStreamUrl path=' + data.filePath)
           const resolvedUrl = await new Promise<string>((resolve) => {
-            globalThis.NativeModules.GoBackendModule.getStreamUrl(
+            NativeModules.GoBackendModule.getStreamUrl(
               data.filePath,
               data.isExternal,
               resolve
             )
           })
-          lynxLog.info('startPlayback: step3 url=' + resolvedUrl)
+          lynxLogInfo('startPlayback: step3 url=' + resolvedUrl)
 
           if (!resolvedUrl || !resolvedUrl.startsWith('http')) {
             setError('无法获取播放地址: ' + resolvedUrl + ' (path=' + data.filePath + ', isExternal=' + String(data.isExternal) + ')', '地址无效')
@@ -141,11 +137,11 @@ export function PlayerApp() {
           }
           setStreamUrl(resolvedUrl)
 
-          lynxLog.info('startPlayback: step4 mpv.play url=' + resolvedUrl)
+          lynxLogInfo('startPlayback: step4 mpv.play url=' + resolvedUrl)
           const playResult = await new Promise<any>((resolve) => {
-            globalThis.NativeModules.MpvPlayerModule.play(resolvedUrl, resolve)
+            NativeModules.MpvPlayerModule.play(resolvedUrl, resolve)
           })
-          lynxLog.info('startPlayback: step4 result=' + JSON.stringify(playResult))
+          lynxLogInfo('startPlayback: step4 result=' + JSON.stringify(playResult))
           if (playResult !== undefined && playResult !== null && playResult !== true) {
             const errMsg = typeof playResult === 'string' ? playResult : JSON.stringify(playResult)
             if (errMsg && errMsg !== 'true') {
@@ -153,10 +149,10 @@ export function PlayerApp() {
               return
             }
           }
-          lynxLog.info('startPlayback: all steps done, playing')
+          lynxLogInfo('startPlayback: all steps done, playing')
         } catch (e: any) {
           const msg = e?.message || String(e)
-          lynxLog.error('startPlayback caught: ' + msg)
+          lynxLogError('startPlayback caught: ' + msg)
           setError('播放异常: ' + msg)
         }
       })()
@@ -166,10 +162,10 @@ export function PlayerApp() {
 
   const handlePlayPause = useCallback(() => {
     if (playerState === 'playing') {
-      globalThis.NativeModules.MpvPlayerModule.pause(() => {})
+      NativeModules.MpvPlayerModule.pause(() => {})
       setPlayerState('paused')
     } else if (playerState === 'paused') {
-      globalThis.NativeModules.MpvPlayerModule.resume(() => {})
+      NativeModules.MpvPlayerModule.resume(() => {})
       setPlayerState('playing')
     } else {
       setErrorMessage('')
@@ -181,7 +177,7 @@ export function PlayerApp() {
 
   const handleSeek = useCallback(
     (ms: number) => {
-      globalThis.NativeModules.MpvPlayerModule.seekTo(ms, () => {})
+      NativeModules.MpvPlayerModule.seekTo(ms, () => {})
       setPosition(ms)
       resetHideTimer()
     },
@@ -191,7 +187,7 @@ export function PlayerApp() {
   const handleSeekRelative = useCallback(
     (deltaMs: number) => {
       const newPos = Math.max(0, Math.min(position + deltaMs, duration))
-      globalThis.NativeModules.MpvPlayerModule.seekTo(newPos, () => {})
+      NativeModules.MpvPlayerModule.seekTo(newPos, () => {})
       setPosition(newPos)
       resetHideTimer()
     },
@@ -201,7 +197,7 @@ export function PlayerApp() {
   const handleToggleFullscreen = useCallback(() => {
     const next = !isFullscreen
     setIsFullscreen(next)
-    globalThis.NativeModules.MpvPlayerModule.setFullscreen(next, () => {})
+    NativeModules.MpvPlayerModule.setFullscreen(next, () => {})
     resetHideTimer()
   }, [isFullscreen, resetHideTimer])
 
@@ -210,7 +206,7 @@ export function PlayerApp() {
     const nextIdx = (currentIdx + 1) % SPEED_OPTIONS.length
     const nextRate = SPEED_OPTIONS[nextIdx]
     setPlaybackRate(nextRate)
-    globalThis.NativeModules.MpvPlayerModule.setProperty('speed', String(nextRate), () => {})
+    NativeModules.MpvPlayerModule.setProperty('speed', String(nextRate), () => {})
     resetHideTimer()
   }, [playbackRate, resetHideTimer])
 
@@ -229,20 +225,24 @@ export function PlayerApp() {
   }, [locked, resetHideTimer])
 
   const handleBack = useCallback(() => {
-    globalThis.NativeModules.MpvPlayerModule.pause(() => {})
+    NativeModules.MpvPlayerModule.pause(() => {})
     try {
-      globalThis.NativeModules.GoBackendModule.closePlayer(() => {})
+      NativeModules.GoBackendModule.closePlayer(() => {})
     } catch (_e) {}
+  }, [])
+
+  useEffect(() => {
+    lynxLogInfo('PlayerApp: initData=' + JSON.stringify(initData) + ', filePath=' + filePath + ', fileName=' + fileName + ', isExternal=' + String(isExternal))
   }, [])
 
   useEffect(() => {
     const onMpvStateChange = (event: any) => {
       const state = event?.state
       const error = event?.error
-      lynxLog.info('mpv:state-change: ' + JSON.stringify(event))
+      lynxLogInfo('mpv:state-change: ' + JSON.stringify(event))
       if (state) {
         if (state === 'surface_ready') {
-          lynxLog.info('MPV surface ready')
+          lynxLogInfo('MPV surface ready')
           setErrorMessage('')
           setErrorType('')
           return
@@ -252,7 +252,7 @@ export function PlayerApp() {
           return
         }
         if (state === 'mpv_ready') {
-          lynxLog.info('MPV engine ready')
+          lynxLogInfo('MPV engine ready')
           return
         }
         if (state === 'audio_only') {
@@ -264,14 +264,14 @@ export function PlayerApp() {
         }
         if (state === 'error') {
           const errDetail = error || 'MPV 进入错误状态'
-          lynxLog.error('mpv:state-change error state: ' + errDetail + ', filePath=' + filePath)
+          lynxLogError('mpv:state-change error state: ' + errDetail + ', filePath=' + filePath)
           setError(errDetail)
           return
         }
         setPlayerState(state as PlayerState)
       }
       if (error) {
-        lynxLog.error('mpv:state-change error field: ' + error)
+        lynxLogError('mpv:state-change error field: ' + error)
         setError(String(error))
       }
       if (state === 'playing' || state === 'paused') {
@@ -293,7 +293,7 @@ export function PlayerApp() {
       globalEventEmitter.addListener('mpv:state-change', onMpvStateChange)
       globalEventEmitter.addListener('mpv:position-update', onMpvPositionUpdate)
     } else {
-      lynxLog.error('GlobalEventEmitter not available')
+      lynxLogError('GlobalEventEmitter not available')
     }
 
     return () => {
@@ -302,7 +302,7 @@ export function PlayerApp() {
         globalEventEmitter.removeListener('mpv:position-update', onMpvPositionUpdate)
       }
       try {
-        globalThis.NativeModules.MpvPlayerModule.pause(() => {})
+        NativeModules.MpvPlayerModule.pause(() => {})
       } catch (_e) {}
     }
   }, [])
@@ -315,7 +315,7 @@ export function PlayerApp() {
     if (filePath) {
       startPlayback({ filePath, isExternal, mediaType })
     } else {
-      lynxLog.error('autoPlay: no filePath in initData: ' + JSON.stringify(initData).substring(0, 200))
+      lynxLogError('autoPlay: no filePath in initData: ' + JSON.stringify(initData).substring(0, 200))
       setError('文件路径为空 (initData=' + JSON.stringify(initData).substring(0, 200) + ')', '地址无效')
     }
   }, [])

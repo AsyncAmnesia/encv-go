@@ -223,12 +223,49 @@ private fun releaseWakeLock() {
 
 ---
 
+## 防重犯机制：构建时检查
+
+### 1.5 添加构建时 lint 检查脚本
+
+在 `lynx-player/package.json` 的 `build` 脚本中添加 grep 检查，如果发现 `globalThis.NativeModules` 则构建失败：
+
+```json
+{
+  "scripts": {
+    "build": "grep -rn 'globalThis.NativeModules' src/ && echo 'ERROR: globalThis.NativeModules is forbidden in Lynx. Use NativeModules directly (declared in typing.d.ts) and only in background thread contexts.' && exit 1 || rspeedy build"
+  }
+}
+```
+
+### 1.6 更新项目规则
+
+在 `.trae/rules/project_rules.md` 中添加 Lynx NativeModules 规则，确保后续 AI 不会犯同样的错误：
+
+```markdown
+## Lynx NativeModules 访问规则（重要！）
+
+- **禁止使用 `globalThis.NativeModules`**，必须使用 `declare let NativeModules` 声明后直接用 `NativeModules.XXX`
+- 原因：ReactLynx 双线程架构中，`globalThis.NativeModules` 在主线程/Lepus 线程中被设为 `undefined`
+- NativeModules 只能在**后台线程**上下文中调用：
+  - `useEffect` / `useLayoutEffect` hooks
+  - 事件处理函数（bindtap 等）
+  - `'background only'` 指令标记的函数
+- **禁止在组件渲染阶段（函数体顶层）调用 NativeModules**
+- 模块名必须与 Android 端 `registerModule()` 的第一个参数一致
+- 类型声明在 `lynx-player/src/typing.d.ts`
+- 构建脚本会检查 `globalThis.NativeModules` 用法，发现则构建失败
+```
+
+---
+
 ## 修改文件清单
 
 | 文件 | 修改内容 |
 |------|----------|
 | `lynx-player/src/typing.d.ts` | 新建，声明 NativeModules 类型 |
 | `lynx-player/src/player/PlayerApp.tsx` | 重写 NativeModules 访问方式，修复模块名，移动日志调用到合法上下文 |
+| `lynx-player/package.json` | 添加构建时 `globalThis.NativeModules` 检查 |
+| `.trae/rules/project_rules.md` | 添加 Lynx NativeModules 访问规则 |
 | `internal/server/server.go` | 添加 GET `/admin` 重定向到 `/p/` |
 | `android/app/src/main/AndroidManifest.xml` | 添加 REQUEST_IGNORE_BATTERY_OPTIMIZATIONS 权限 |
 | `android/app/src/main/java/com/encvgo/app/MainActivity.kt` | 添加电池优化豁免请求 |

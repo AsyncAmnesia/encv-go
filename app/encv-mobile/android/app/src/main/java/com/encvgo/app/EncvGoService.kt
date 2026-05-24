@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import java.io.BufferedReader
@@ -77,6 +78,7 @@ class EncvGoService : Service() {
     private var outputBuffer = StringBuilder()
     private var lastExitCode: Int? = null
     private val processReady = AtomicBoolean(false)
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -113,6 +115,7 @@ class EncvGoService : Service() {
         }
 
         startForeground(NOTIFICATION_ID, buildNotification("后端启动中"))
+        acquireWakeLock()
         resetStateForStart(source)
 
         try {
@@ -154,6 +157,7 @@ class EncvGoService : Service() {
         lastKnownPort = 0
         currentPort = DEFAULT_PORT
         lastError = errorMessage
+        releaseWakeLock()
 
         goProcess?.let {
             try {
@@ -537,5 +541,27 @@ class EncvGoService : Service() {
         } catch (_: Exception) {
             false
         }
+    }
+
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "encvgo::GoService")
+            wakeLock?.acquire()
+            Log.i(TAG, "WakeLock acquired")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to acquire WakeLock", e)
+        }
+    }
+
+    private fun releaseWakeLock() {
+        wakeLock?.let {
+            if (it.isHeld) {
+                it.release()
+                Log.i(TAG, "WakeLock released")
+            }
+        }
+        wakeLock = null
     }
 }
