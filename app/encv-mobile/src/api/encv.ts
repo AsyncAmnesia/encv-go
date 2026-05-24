@@ -34,6 +34,7 @@ export interface FileItem {
   name: string
   path: string
   isDirectory: boolean
+  isEncrypted?: boolean
   size?: number
   modified?: string
 }
@@ -51,6 +52,13 @@ export class PermissionDeniedError extends Error {
   }
 }
 
+export class NotFoundError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'NotFoundError'
+  }
+}
+
 export async function listFiles(path = '/'): Promise<FileItem[]> {
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/files?path=${encodeURIComponent(path)}`)
@@ -61,6 +69,11 @@ export async function listFiles(path = '/'): Promise<FileItem[]> {
         console.warn('[API] listFiles permission denied:', path)
         throw new PermissionDeniedError(data.error || 'Permission denied')
       }
+    }
+    if (response.status === 404) {
+      const data: FileListResponse = await response.json().catch(() => ({}))
+      console.warn('[API] listFiles not found:', path)
+      throw new NotFoundError(data.error || 'Path not found')
     }
     console.error('[API] listFiles failed:', response.status)
     throw new Error(`HTTP error! status: ${response.status}`)
@@ -92,6 +105,14 @@ export function getFileStreamUrl(path: string): string {
   }
   const baseUrl = getApiBaseUrl()
   return `${baseUrl}/stream?path=${encodeURIComponent(path)}`
+}
+
+export function getExternalStreamUrl(path: string): string {
+  if (import.meta.env.DEV) {
+    return `/api/stream/external?path=${encodeURIComponent(path)}`
+  }
+  const baseUrl = getApiBaseUrl()
+  return `${baseUrl}/api/stream/external?path=${encodeURIComponent(path)}`
 }
 
 export async function checkServerStatus(): Promise<{ online: boolean; error?: string }> {
@@ -149,10 +170,15 @@ export interface EncvTask {
   id: string
   type: TaskType
   sourcePath: string
+  targetPath?: string
   status: TaskStatus
   progress: number
+  phase?: string
+  speed?: string
+  eta?: string
   error?: string
   createdAt: string
+  completedAt?: string
 }
 
 export async function getTasks(): Promise<EncvTask[]> {
@@ -165,13 +191,16 @@ export async function getTasks(): Promise<EncvTask[]> {
   return data.tasks || []
 }
 
-export async function createTask(type: TaskType, sourcePath: string): Promise<EncvTask> {
-  console.info('[API] createTask:', type, sourcePath)
+export async function createTask(type: TaskType, sourcePath: string, targetPath?: string, password?: string): Promise<EncvTask> {
+  console.info('[API] createTask:', type, sourcePath, targetPath || '')
   const baseUrl = getApiBaseUrl()
+  const body: Record<string, unknown> = { type, sourcePath }
+  if (targetPath) body.targetPath = targetPath
+  if (password) body.password = password
   const response = await fetch(`${baseUrl}/api/tasks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type, sourcePath }),
+    body: JSON.stringify(body),
   })
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`)
@@ -206,6 +235,25 @@ export interface WebDAVConfig {
   username: string
   password: string
   mountPath: string
+  isBuiltIn?: boolean
+}
+
+export interface RemoteWebDAVInfo {
+  enabled: boolean
+  url: string
+  username: string
+  root: string
+}
+
+export interface OpenlistSiteInfo {
+  host: string
+  description: string
+  proxyUrl: string
+}
+
+export interface RemoteInfo {
+  webdav: RemoteWebDAVInfo
+  openlistSites: Record<string, OpenlistSiteInfo>
 }
 
 const WEBDAV_CONFIGS_KEY = 'encv-webdav-configs'
@@ -217,6 +265,27 @@ export function getWebDAVConfigs(): WebDAVConfig[] {
 
 export function saveWebDAVConfigs(configs: WebDAVConfig[]) {
   localStorage.setItem(WEBDAV_CONFIGS_KEY, JSON.stringify(configs))
+}
+
+export interface LocalWebDAVTestResult {
+  available: boolean
+  url?: string
+  authRequired?: boolean
+  details?: {
+    propfindRoot: string
+    authWorks: string
+    dirReadable: string
+  }
+  error?: string
+}
+
+export async function testLocalWebDAV(): Promise<LocalWebDAVTestResult> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/webdav/test-local`)
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return await response.json()
 }
 
 export async function testWebDAVConnection(config: Omit<WebDAVConfig, 'id'>): Promise<void> {
@@ -234,6 +303,10 @@ export async function testWebDAVConnection(config: Omit<WebDAVConfig, 'id'>): Pr
       if (body) detail += `: ${body}`
     } catch {}
     throw new Error(detail)
+  }
+  const data = await response.json()
+  if (data.success === false) {
+    throw new Error(data.error || '连接失败')
   }
 }
 
@@ -254,7 +327,8 @@ export function getFileExtension(name: string): string {
 
 export type FileCategory = 'video' | 'audio' | 'image' | 'document' | 'encrypted' | 'other'
 
-export function getFileCategory(name: string): FileCategory {
+export function getFileCategory(name: string, isEncrypted?: boolean): FileCategory {
+  if (isEncrypted) return 'encrypted'
   const ext = getFileExtension(name)
   const videoExts = ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm', 'm4v']
   const audioExts = ['mp3', 'flac', 'wav', 'aac', 'ogg', 'wma', 'm4a']
@@ -283,7 +357,7 @@ export async function fetchConfig(): Promise<Record<string, unknown>> {
   return await response.json()
 }
 
-export async function updateConfig(config: Record<string, unknown>): Promise<void> {
+export async function updateConfig(config: Record<string, unknown>): Promise<{ message: string; needsRestart?: boolean }> {
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/config`, {
     method: 'PUT',
@@ -297,6 +371,11 @@ export async function updateConfig(config: Record<string, unknown>): Promise<voi
       if (body) detail += `: ${body}`
     } catch {}
     throw new Error(detail)
+  }
+  try {
+    return await response.json()
+  } catch {
+    return { message: 'config updated' }
   }
 }
 
@@ -337,6 +416,8 @@ export interface IndexStats {
   indexedAt: string
   isIndexing: boolean
   lastBuildMs: number
+  source?: string
+  containers?: number
 }
 
 export async function getIndexStats(): Promise<IndexStats> {
@@ -362,4 +443,74 @@ export async function clearIndex(): Promise<void> {
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`)
   }
+}
+
+export async function fetchRemoteInfo(): Promise<RemoteInfo> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/remote/info`)
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return await response.json()
+}
+
+export async function addOpenlistSite(siteId: string, host: string, description: string): Promise<void> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/remote/openlist`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ siteId, host, description }),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.error || `HTTP ${response.status}`)
+  }
+}
+
+export async function updateOpenlistSite(siteId: string, host: string, description: string): Promise<void> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/remote/openlist/${siteId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ host, description }),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.error || `HTTP ${response.status}`)
+  }
+}
+
+export async function deleteOpenlistSite(siteId: string): Promise<void> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/remote/openlist/${siteId}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.error || `HTTP ${response.status}`)
+  }
+}
+
+export async function checkFileExists(path: string): Promise<boolean> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/files/exists?path=${encodeURIComponent(path)}`)
+  if (!response.ok) {
+    console.warn('[API] checkFileExists failed:', response.status)
+    return false
+  }
+  const data = await response.json()
+  return !!data.exists
+}
+
+export async function checkEncryptOutputExists(sourcePath: string, targetDir?: string): Promise<{ exists: boolean; outputPath: string }> {
+  const baseUrl = getApiBaseUrl()
+  const params = new URLSearchParams({ sourcePath })
+  if (targetDir) params.set('targetDir', targetDir)
+  const response = await fetch(`${baseUrl}/api/files/encrypt-output-exists?${params}`)
+  if (!response.ok) {
+    console.warn('[API] checkEncryptOutputExists failed:', response.status)
+    return { exists: false, outputPath: '' }
+  }
+  const data = await response.json()
+  return { exists: !!data.exists, outputPath: data.outputPath || '' }
 }

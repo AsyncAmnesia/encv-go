@@ -1,0 +1,47 @@
+# 项目规则
+
+## FFmpeg 版本备注
+
+- 当前使用 FFmpeg 7.1.1，构建脚本: `app/encv-mobile/scripts/build-ffmpeg-android.sh`
+- **暂不升级到 8.x**。原因：7.1.1 满足需求（h264/hevc 编解码 + ffprobe）；8.x 有 breaking changes（移除 libpostproc、废弃 AVFrame 字段、ffttools 源码结构变化）；8.x 新功能（Vulkan compute、D3D12、VVC）在 Android 移动端用不到
+- **升级到 8.x 时需注意**：
+  1. libpostproc 已完全移除，链接参数中不能有 `-lpostproc`
+  2. fftools 源码文件可能有增减/重命名，需对照 8.x 源码调整 `FFMPEG_FFTOOLS`/`FFPROBE_FFTOOLS` 列表
+  3. API 有 breaking changes（如 AVFrame.coded_picture_number 被废弃），Go cgo 层无需改动（我们通过 dlopen 调用 fftools 的 run 函数，不直接使用 libav* API）
+  4. x264 的 `--enable-pic` 仍然必须（共享库需要位置无关代码）
+  5. pkg-config wrapper 方案仍然适用
+
+## 移动端 ffmpeg 调用架构
+
+- Go 后端通过 cgo + dlopen 直接加载 `libffmpeg.so`/`libffprobe.so`，调用 `ffmpeg_run()`/`ffprobe_run()` 函数
+- 不经过 HTTP/Kotlin/JNI 中间层
+- stdout/stderr 通过 dup2 重定向到临时文件捕获
+- 环境变量 `ENCV_LIB_DIR` 指向 Android `nativeLibraryDir`
+- 相关文件：`internal/utils/ffmpeg_dlopen.go`（Android）、`internal/utils/ffmpeg_dlopen_stub.go`（桌面端）、`internal/utils/video.go`
+
+## 前端构建验证
+
+- `vue-tsc --noEmit` 对 `.vue` 文件 `<script setup>` 中未使用导入存在漏检（TS6133）
+- **必须同时运行 `vite build`**，Rollup 会检测未使用导入并报错
+- 完整验证流程：`vue-tsc --noEmit && vite build`
+
+## Lynx NativeModules 访问规则（重要！）
+
+- **禁止使用 `globalThis.NativeModules`**，必须使用 `declare let NativeModules` 声明后直接用 `NativeModules.XXX`
+- 原因：ReactLynx 双线程架构中，`globalThis.NativeModules` 在主线程/Lepus 线程中被设为 `undefined`
+- NativeModules 只能在**后台线程**上下文中调用：
+  - `useEffect` / `useLayoutEffect` hooks
+  - 事件处理函数（bindtap 等）
+  - `'background only'` 指令标记的函数
+- **禁止在组件渲染阶段（函数体顶层）调用 NativeModules**
+- 模块名必须与 Android 端 `registerModule()` 的第一个参数一致（如注册 "LogBridge" 则 JS 用 `NativeModules.LogBridge`，不是 `NativeModules.LogBridgeModule`）
+- 类型声明在 `lynx-player/src/typing.d.ts`
+- 构建脚本会检查 `globalThis.NativeModules` 和 `globalThis.lynx.getJSModule` 用法，发现则构建失败
+
+## Lynx 全局事件监听规则（重要！）
+
+- **禁止使用 `globalThis.lynx.getJSModule('GlobalEventEmitter')`**，必须使用 `useLynxGlobalEventListener` hook
+- 原因：`globalThis.lynx.getJSModule` 在后台线程中不可用，返回 null
+- `useLynxGlobalEventListener` 是 ReactLynx 官方 hook，内部使用 `lynx.getJSModule`（注意是 `lynx` 全局变量，不是 `globalThis.lynx`），并通过 `useMemo` 尽早注册监听器
+- 用法：`useLynxGlobalEventListener('event-name', useCallback((event) => { ... }, [deps]))`
+- 导入：`import { useLynxGlobalEventListener } from '@lynx-js/react'`

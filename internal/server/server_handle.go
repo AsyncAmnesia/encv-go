@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,7 +10,6 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/provider"
-	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
 // compositeChunkNamer 实现 ChunkNamer 接口
@@ -110,25 +108,6 @@ func (s *Server) handleStreamRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.serveEncryptedFile(w, r, cleanedFilePath)
-}
-
-// handlePing 处理 /ping 请求，返回带有服务信息的 JSON
-func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
-	response := types.PingResponse{
-		Status:        types.ServiceStatuses.OK,
-		Version:       s.version,
-		InstanceID:    s.instanceID,
-		ServerDirPath: s.servingDir,
-		WebdavDirPath: s.webdavDir, // 如果未启用，则为空字符串
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		slog.Error("Error encoding ping response", "error", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-	}
 }
 
 func (s *Server) serveEncryptedFile(w http.ResponseWriter, r *http.Request, fullPath string) {

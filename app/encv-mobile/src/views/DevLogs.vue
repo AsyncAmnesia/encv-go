@@ -5,18 +5,15 @@
         <ion-title>{{ t('devlogs.title') }}</ion-title>
       </ion-toolbar>
       <ion-toolbar class="tab-toolbar">
-        <ion-segment :value="activeTab" @ionChange="activeTab = ($event.detail.value || 'frontend') as 'frontend' | 'backend'">
-          <ion-segment-button value="frontend">
+        <ion-segment :value="activeTab" @ionChange="onTabChange">
+          <ion-segment-button value="frontend" @click="onTabClick('frontend')">
             {{ t('devlogs.frontend') }}
           </ion-segment-button>
-          <ion-segment-button value="backend">
+          <ion-segment-button value="backend" @click="onTabClick('backend')">
             {{ t('devlogs.backend') }}
           </ion-segment-button>
         </ion-segment>
       </ion-toolbar>
-    </ion-header>
-
-    <ion-content class="log-content">
       <div class="toolbar-row">
         <div class="level-filters">
           <button
@@ -45,8 +42,10 @@
           :debounce="150"
         ></ion-searchbar>
       </div>
+    </ion-header>
 
-      <div v-if="activeTab === 'frontend'" ref="logListRef" class="log-list">
+    <ion-content ref="contentRef" class="log-content" :class="{ 'scrollbar-visible': scrollbarVisible }" @ionScroll="onContentScroll" @ionScrollEnd="onContentScrollEnd">
+      <div v-if="activeTab === 'frontend'" class="log-list">
         <div v-if="filteredFrontend.length === 0" class="empty-logs">
           <p>{{ t('devlogs.noLogs') }}</p>
         </div>
@@ -62,7 +61,7 @@
         </div>
       </div>
 
-      <div v-else ref="logListRef" class="log-list">
+      <div v-else class="log-list">
         <div class="conn-indicator">
           <ion-badge :color="serverOnline ? 'success' : 'danger'">
             {{ serverOnline ? t('devlogs.connected') : t('devlogs.disconnected') }}
@@ -120,6 +119,8 @@ const ws = useWebSocket()
 const activeTab = ref<'frontend' | 'backend'>('frontend')
 const searchText = ref('')
 const autoScroll = ref(true)
+const contentRef = ref<InstanceType<typeof IonContent> | null>(null)
+const scrollbarVisible = ref(false)
 
 const selectedLevels = ref<Set<string>>(new Set(['debug', 'info', 'warn', 'error']))
 const levelOptions = [
@@ -191,16 +192,61 @@ const totalCurrent = computed(() => activeTab.value === 'frontend' ? frontendLog
 const filteredCurrent = computed(() => activeTab.value === 'frontend' ? filteredFrontend.value.length : filteredBackend.value.length)
 
 let isUserScrolling = false
+let userScrollTimer: ReturnType<typeof setTimeout> | null = null
+let scrollbarTimer: ReturnType<typeof setTimeout> | null = null
 
-function scrollToBottom() {
-  if (!autoScroll.value || isUserScrolling) return
-  requestAnimationFrame(() => {
-    const list = document.querySelector('.log-list:last-of-type') as HTMLElement | null
-    if (list) list.scrollTop = list.scrollHeight
-  })
+function onTabClick(tab: 'frontend' | 'backend') {
+  if (activeTab.value === tab) {
+    scrollToTop()
+  }
 }
 
-watch([filteredFrontend, filteredBackend], () => scrollToBottom(), { deep: true })
+function onTabChange(event: CustomEvent) {
+  activeTab.value = (event.detail.value || 'frontend') as 'frontend' | 'backend'
+}
+
+async function getScrollEl(): Promise<HTMLElement | null> {
+  if (!contentRef.value) return null
+  try {
+    const el = contentRef.value as any
+    if (typeof el.getScrollElement === 'function') {
+      return await el.getScrollElement()
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+async function scrollToTop() {
+  const el = await getScrollEl()
+  if (el) el.scrollTop = 0
+}
+
+async function scrollToBottom() {
+  if (!autoScroll.value || isUserScrolling) return
+  const el = await getScrollEl()
+  if (el) el.scrollTop = el.scrollHeight
+}
+
+function onContentScroll() {
+  isUserScrolling = true
+  if (userScrollTimer) clearTimeout(userScrollTimer)
+  userScrollTimer = setTimeout(() => { isUserScrolling = false }, 1500)
+
+  scrollbarVisible.value = true
+  if (scrollbarTimer) clearTimeout(scrollbarTimer)
+  scrollbarTimer = setTimeout(() => { scrollbarVisible.value = false }, 2000)
+}
+
+function onContentScrollEnd() {
+  if (scrollbarTimer) clearTimeout(scrollbarTimer)
+  scrollbarTimer = setTimeout(() => { scrollbarVisible.value = false }, 2000)
+}
+
+watch([filteredFrontend, filteredBackend], () => {
+  nextTick(() => scrollToBottom())
+}, { deep: true })
 
 async function handleCopy() {
   const logs = activeTab.value === 'frontend' ? filteredFrontend.value : filteredBackend.value
@@ -277,6 +323,8 @@ onMounted(async () => {
 onUnmounted(() => {
   eventBus.off('ws:message', onWsMessage)
   eventBus.off('server:status', onServerStatus)
+  if (userScrollTimer) clearTimeout(userScrollTimer)
+  if (scrollbarTimer) clearTimeout(scrollbarTimer)
 })
 </script>
 
@@ -350,6 +398,29 @@ onUnmounted(() => {
 .log-searchbar .searchbar-search-icon { display: none !important; }
 
 .log-content { --background: var(--ion-background-color); }
+
+.log-content::part(scroll) {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.log-content::part(scroll)::-webkit-scrollbar {
+  width: 6px;
+  display: none;
+}
+.log-content.scrollbar-visible::part(scroll) {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+.log-content.scrollbar-visible::part(scroll)::-webkit-scrollbar {
+  display: block;
+}
+.log-content.scrollbar-visible::part(scroll)::-webkit-scrollbar-track {
+  background: transparent;
+}
+.log-content.scrollbar-visible::part(scroll)::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 3px;
+}
 
 .log-list {
   font-family: 'Courier New', monospace;

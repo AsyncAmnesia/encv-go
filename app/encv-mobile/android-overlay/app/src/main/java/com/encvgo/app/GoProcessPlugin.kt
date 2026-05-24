@@ -5,6 +5,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -126,6 +127,81 @@ class GoProcessPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun isStandaloneMode(call: PluginCall) {
+        val result = JSObject()
+        result.put("standalone", activity is PlayerActivityCapacitor)
+        call.resolve(result)
+    }
+
+    @PluginMethod
+    fun getIntentFileInfo(call: PluginCall) {
+        val result = JSObject()
+        if (activity is PlayerActivityCapacitor) {
+            result.put("path", PlayerActivityCapacitor.intentFilePath)
+            result.put("name", PlayerActivityCapacitor.intentFileName)
+            result.put("mimeType", PlayerActivityCapacitor.intentFileMimeType)
+        } else {
+            result.put("path", "")
+            result.put("name", "")
+            result.put("mimeType", "")
+        }
+        call.resolve(result)
+    }
+
+    @PluginMethod
+    fun openInPlayer(call: PluginCall) {
+        val path = call.getString("path", "")
+        val name = call.getString("name", "")
+        val mimeType = call.getString("mimeType", "")
+        if (path.isNullOrEmpty()) {
+            Log.w(TAG, "openInPlayer rejected: path is empty")
+            call.reject("path is required")
+            return
+        }
+        try {
+            Log.d(TAG, "openInPlayer: path=$path, name=$name, mimeType=$mimeType")
+            val uniqueId = System.currentTimeMillis().toString()
+            val intent = Intent(activity, PlayerActivity::class.java).apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_DOCUMENT
+                        or Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+                        or Intent.FLAG_ACTIVITY_RETAIN_IN_RECENTS
+                )
+                data = Uri.parse("encvgo://player/$uniqueId")
+                putExtra("file_path", path)
+                putExtra("file_name", name)
+                putExtra("file_mime_type", mimeType)
+            }
+            Log.d(TAG, "openInPlayer: launching with NEW_DOCUMENT+MULTIPLE_TASK+RETAIN_IN_RECENTS, data=${intent.data}")
+            activity.startActivity(intent)
+            call.resolve()
+        } catch (e: Exception) {
+            Log.e(TAG, "openInPlayer failed to start PlayerActivity", e)
+            call.reject("Failed to open player: ${e.message}")
+        }
+    }
+
+    @PluginMethod
+    fun openPlayerHome(call: PluginCall) {
+        try {
+            Log.d(TAG, "openPlayerHome: launching PlayerActivity without file")
+            val intent = Intent(activity, PlayerActivity::class.java).apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_DOCUMENT
+                        or Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+                        or Intent.FLAG_ACTIVITY_RETAIN_IN_RECENTS
+                )
+                data = Uri.parse("encvgo://player/home/${System.currentTimeMillis()}")
+            }
+            activity.startActivity(intent)
+            call.resolve()
+        } catch (e: Exception) {
+            Log.e(TAG, "openPlayerHome failed", e)
+            call.reject("Failed to open player: ${e.message}")
+        }
+    }
+
+    @PluginMethod
     override fun checkPermissions(call: PluginCall) {
         Log.d(TAG, "GoProcess.checkPermissions() called")
         val result = JSObject()
@@ -178,6 +254,24 @@ class GoProcessPlugin : Plugin() {
             call.resolve(result)
         } else if (!error.isNullOrEmpty()) {
             call.reject(error)
+        }
+    }
+
+    @PluginMethod
+    fun setScreenOrientation(call: PluginCall) {
+        val orientation = call.getString("orientation", "unlocked")
+        try {
+            when (orientation) {
+                "portrait" -> activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                "landscape" -> activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                "unlocked" -> activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                else -> Log.w(TAG, "setScreenOrientation: unknown orientation=$orientation")
+            }
+            Log.d(TAG, "setScreenOrientation: $orientation")
+            call.resolve()
+        } catch (e: Exception) {
+            Log.e(TAG, "setScreenOrientation failed", e)
+            call.reject("Failed to set orientation: ${e.message}")
         }
     }
 }

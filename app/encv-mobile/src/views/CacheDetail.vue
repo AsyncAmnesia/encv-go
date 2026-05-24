@@ -63,6 +63,22 @@
           </ion-label>
           <ion-spinner v-if="stats?.isIndexing" name="crescent" slot="end"></ion-spinner>
         </ion-item>
+
+        <ion-item v-if="stats?.source">
+          <ion-icon :icon="server" slot="start" color="primary"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.indexSource') }}</h3>
+            <p>{{ stats.source === 'webdav' ? 'WebDAV' : t('settings.mobileIndex') }}</p>
+          </ion-label>
+        </ion-item>
+
+        <ion-item v-if="stats?.containers">
+          <ion-icon :icon="lockClosed" slot="start" color="warning"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.encryptedContainers') }}</h3>
+            <p>{{ stats.containers }}</p>
+          </ion-label>
+        </ion-item>
       </ion-list>
 
       <ion-list>
@@ -138,6 +154,8 @@ import {
   checkmarkCircle,
   trash,
   search,
+  server,
+  lockClosed,
 } from 'ionicons/icons'
 import {
   getIndexStats,

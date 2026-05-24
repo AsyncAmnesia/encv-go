@@ -2,108 +2,126 @@ package server
 
 import (
 	"encoding/json"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
+	"time"
+
+	"github.com/Soltus/encv-go/internal/auth"
+	"github.com/Soltus/encv-go/internal/config"
+	"github.com/gin-gonic/gin"
 )
 
-var configMu sync.Mutex
-
-func (s *Server) handleConfigAPI(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	switch r.Method {
-	case http.MethodGet:
-		s.handleGetConfig(w, r)
-	case http.MethodPut:
-		s.handlePutConfig(w, r)
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
-	}
-}
-
-func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
-	configMu.Lock()
-	defer configMu.Unlock()
+func (s *Server) handleGetConfigGin(c *gin.Context) {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
 
 	if s.configPath == "" {
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "config path not available"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "config path not available"})
 		return
 	}
 
 	data, err := os.ReadFile(s.configPath)
 	if err != nil {
 		slog.Error("Failed to read config file", "path", s.configPath, "error", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to read config"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read config"})
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	w.Write(data)
+	c.Data(http.StatusOK, "application/json", data)
 }
 
-func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
-	configMu.Lock()
-	defer configMu.Unlock()
+func (s *Server) handlePutConfigGin(c *gin.Context) {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
 
 	if s.configPath == "" {
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "config path not available"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "config path not available"})
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	body, err := c.GetRawData()
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to read request body"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read request body"})
 		return
 	}
-	defer r.Body.Close()
 
 	var raw map[string]interface{}
 	if err := json.Unmarshal(body, &raw); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
 		return
 	}
 
 	indented, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to format config"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to format config"})
 		return
 	}
 
 	if err := os.WriteFile(s.configPath, append(indented, '\n'), 0644); err != nil {
 		slog.Error("Failed to write config file", "path", s.configPath, "error", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to write config"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to write config"})
 		return
 	}
 
 	slog.Info("Config updated via API", "path", s.configPath)
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"message": "config updated"})
-}
-
-func (s *Server) handleConfigSchemaAPI(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		json.NewEncoder(w).Encode(map[string]string{"error": "method not allowed"})
+	var newCfg config.Config
+	needsRestart := false
+	if err := json.Unmarshal(body, &newCfg); err != nil {
+		slog.Warn("Config written but failed to parse for hot reload", "error", err)
+		c.JSON(http.StatusOK, gin.H{"message": "config saved (hot reload skipped)"})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	s.cfg.Password = newCfg.Password
+	s.cfg.Recover = newCfg.Recover
+	s.cfg.OutputPath = newCfg.OutputPath
+	s.cfg.PluginSettings = newCfg.PluginSettings
 
+	if newCfg.Admin.Password != s.cfg.Admin.Password {
+		s.cfg.Admin.Password = newCfg.Admin.Password
+		if newCfg.Admin.Password != "" {
+			s.jwtManager = auth.NewJWTManager(newCfg.Admin.Password, 7*24*time.Hour)
+		} else {
+			s.jwtManager = nil
+		}
+		slog.Info("Admin password hot-reloaded")
+	}
+
+	s.cfg.Webdav.Username = newCfg.Webdav.Username
+	s.cfg.Webdav.Password = newCfg.Webdav.Password
+
+	if newCfg.Log.Level != s.cfg.Log.Level {
+		s.cfg.Log.Level = newCfg.Log.Level
+		slog.Info("Log level hot-reloaded", "level", newCfg.Log.Level)
+	}
+
+	if newCfg.Server.Port != s.cfg.Server.Port {
+		needsRestart = true
+	}
+	if newCfg.Webdav.Root != s.cfg.Webdav.Root || newCfg.Webdav.Dir != s.cfg.Webdav.Dir {
+		needsRestart = true
+	}
+	if newCfg.Server.Dir != s.cfg.Server.Dir {
+		needsRestart = true
+	}
+
+	s.cfg.Server = newCfg.Server
+	s.cfg.Webdav.Root = newCfg.Webdav.Root
+	s.cfg.Webdav.Dir = newCfg.Webdav.Dir
+	s.cfg.Log = newCfg.Log
+
+	msg := "config updated"
+	if needsRestart {
+		msg = "config saved, some changes require restart to take effect"
+	}
+	c.JSON(http.StatusOK, gin.H{"message": msg, "needsRestart": needsRestart})
+}
+
+func (s *Server) handleConfigSchemaGin(c *gin.Context) {
 	schemaPaths := []string{}
 
 	if s.configPath != "" {
@@ -121,12 +139,10 @@ func (s *Server) handleConfigSchemaAPI(w http.ResponseWriter, r *http.Request) {
 	for _, p := range schemaPaths {
 		data, err := os.ReadFile(p)
 		if err == nil {
-			w.WriteHeader(http.StatusOK)
-			w.Write(data)
+			c.Data(http.StatusOK, "application/json", data)
 			return
 		}
 	}
 
-	w.WriteHeader(http.StatusNotFound)
-	json.NewEncoder(w).Encode(map[string]string{"error": "schema file not found"})
+	c.JSON(http.StatusNotFound, gin.H{"error": "schema file not found"})
 }

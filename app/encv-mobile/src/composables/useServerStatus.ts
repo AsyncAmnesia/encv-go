@@ -13,6 +13,7 @@ let initialized = false
 let nativeBridgeListenerAdded = false
 
 function onServerStatus(data: { online: boolean }) {
+  if (isRestarting.value && !data.online) return
   isOnline.value = data.online
   if (data.online) {
     lastError.value = ''
@@ -20,6 +21,7 @@ function onServerStatus(data: { online: boolean }) {
 }
 
 function onConnectionError(data: { error: string }) {
+  if (isRestarting.value) return
   lastError.value = data.error
 }
 
@@ -27,6 +29,10 @@ async function checkStatus() {
   const result = await checkServerStatus()
   isOnline.value = result.online
   lastError.value = result.error || ''
+  if (result.online) {
+    isRestarting.value = false
+    isStopping.value = false
+  }
   return result
 }
 
@@ -84,8 +90,20 @@ async function handleRestart(): Promise<boolean> {
   useWebSocket().disconnect()
   try {
     const result = await restartBackend()
-    if (!result.success) {
-      isRestarting.value = false
+    isRestarting.value = false
+    if (result.success) {
+      isOnline.value = true
+      const status = await getBackendStatus()
+      if (status.running && status.port > 0) {
+        backendPort.value = status.port
+        const newUrl = `http://127.0.0.1:${status.port}`
+        if (DEFAULT_API_BASE_URL !== newUrl) {
+          setApiBaseUrl(newUrl)
+        }
+        lastError.value = ''
+        useWebSocket().connect()
+      }
+    } else {
       lastError.value = result.lastError || lastError.value
     }
     return result.success

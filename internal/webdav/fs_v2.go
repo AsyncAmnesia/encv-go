@@ -107,24 +107,24 @@ type decryptedDir struct {
 
 // NewENCVFS 创建一个新的 encvWebDAVFS 实例
 // 【修改】构造函数现在需要接收 ReaderService 和 Config
-func NewENCVFS(ctx context.Context, readerService *service.ReaderService, chunkNamers []namer.ChunkNamer) (goWebdav.FileSystem, error) {
+func NewENCVFS(ctx context.Context, readerService *service.ReaderService, chunkNamers []namer.ChunkNamer) (goWebdav.FileSystem, IndexProvider, error) {
 	cfg := config.FromContext(ctx)
 	dir := cfg.Webdav.Dir
 	var err error
 	if dir == "/" {
 		dir, err = os.Getwd()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get current working directory for WebDAV: %w", err)
+			return nil, nil, fmt.Errorf("failed to get current working directory for WebDAV: %w", err)
 		}
 	}
 	dir, err = filepath.Abs(dir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve absolute path for WebDAV directory '%s': %w", dir, err)
+		return nil, nil, fmt.Errorf("failed to resolve absolute path for WebDAV directory '%s': %w", dir, err)
 	}
 	if _, statErr := os.Stat(dir); os.IsNotExist(statErr) {
 		slog.Warn("WebDAV directory does not exist, creating it", "dir", dir)
 		if mkdirErr := os.MkdirAll(dir, 0755); mkdirErr != nil {
-			return nil, fmt.Errorf("WebDAV directory '%s' does not exist and cannot be created: %w", dir, mkdirErr)
+			return nil, nil, fmt.Errorf("WebDAV directory '%s' does not exist and cannot be created: %w", dir, mkdirErr)
 		}
 	}
 	// 规范化 WebDAV 前缀，确保它是一个以 '/' 开头且不以 '/' 结尾的路径
@@ -172,7 +172,7 @@ func NewENCVFS(ctx context.Context, readerService *service.ReaderService, chunkN
 	slog.Info("WebDAV FS initialized, index building in background", "dir", fs.dir)
 	slog.Info("WebDAV registered container extensions", "extensions", registeredExtsSlice)
 
-	return fs, nil
+	return fs, fs, nil
 }
 
 // runIndexer 现在负责初始构建和增量更新
@@ -491,6 +491,90 @@ func (fs *encvWebDAVFS) getIndexes() *pathIndexes {
 	return snapshot
 }
 
+type IndexProvider interface {
+	GetIndexStats() IndexStatsResult
+	SearchInIndex(keyword, queryPath string, maxResults int) []SearchEntry
+	Dir() string
+	IsContainerExtension(filename string) bool
+}
+
+type IndexStatsResult struct {
+	TotalFiles   int `json:"totalFiles"`
+	TotalDirs    int `json:"totalDirs"`
+	Containers   int `json:"containers"`
+	Source       string `json:"source"`
+}
+
+func (fs *encvWebDAVFS) GetIndexStats() IndexStatsResult {
+	idx := fs.getIndexes()
+	containers := 0
+	for range idx.reversePathMap {
+		containers++
+	}
+	return IndexStatsResult{
+		TotalFiles: len(idx.pathMap),
+		TotalDirs:  len(idx.dirMap),
+		Containers: containers,
+		Source:     "webdav",
+	}
+}
+
+type SearchEntry struct {
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	IsDir   bool   `json:"isDir"`
+	Size    int64  `json:"size,omitempty"`
+	ModTime string `json:"modTime,omitempty"`
+}
+
+func (fs *encvWebDAVFS) SearchInIndex(keyword, queryPath string, maxResults int) []SearchEntry {
+	idx := fs.getIndexes()
+	keyword = strings.ToLower(keyword)
+	var results []SearchEntry
+
+	for vPath, info := range idx.fileInfoMap {
+		name := info.Name()
+		if !strings.Contains(strings.ToLower(name), keyword) {
+			continue
+		}
+		if queryPath != "" && !strings.HasPrefix(vPath, queryPath) {
+			continue
+		}
+		results = append(results, SearchEntry{
+			Name:    name,
+			Path:    vPath,
+			IsDir:   info.IsDir(),
+			Size:    info.Size(),
+			ModTime: info.ModTime().Format(time.RFC3339),
+		})
+		if maxResults > 0 && len(results) >= maxResults {
+			break
+		}
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Name < results[j].Name
+	})
+
+	return results
+}
+
+func (fs *encvWebDAVFS) Dir() string {
+	return fs.dir
+}
+
+func (fs *encvWebDAVFS) IsContainerExtension(filename string) bool {
+	ext := strings.ToLower(filepath.Ext(filename))
+	return fs.containerExtensions[ext]
+}
+
+func (fs *encvWebDAVFS) WaitForIndexReady(ctx context.Context) {
+	select {
+	case <-fs.indexReady:
+	case <-ctx.Done():
+	}
+}
+
 // validateContainerHeader 检查文件是否具有有效的 ENCV 头部（V2 或 V3）
 // 它利用 types 包中的通用检测器来统一处理版本识别和 Header 大小获取。
 func (fs *encvWebDAVFS) validateContainerHeader(filePath string) bool {
@@ -616,11 +700,12 @@ func (fs *encvWebDAVFS) statFile(ctx context.Context, fullPath string) (os.FileI
 // --- 实现 webdav.FileSystem 接口 ---
 
 func (fs *encvWebDAVFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
-	// 【关键修复 1】优先使用索引键进行查找
-	indexKey := fs.webdavPathToIndexKey(name)
+	indexKey, keyErr := fs.webdavPathToIndexKey(name)
+	if keyErr != nil {
+		return nil, keyErr
+	}
 	indexes := fs.getIndexes()
 
-	// 1. 【核心】首先在索引中查找虚拟文件（内存操作，极快）
 	if fileInfo, ok := indexes.fileInfoMap[indexKey]; ok {
 		slog.Debug("Found virtual file in index, returning cached info", "name", name)
 		return fileInfo, nil
@@ -643,16 +728,15 @@ func (fs *encvWebDAVFS) Stat(ctx context.Context, name string) (os.FileInfo, err
 }
 
 func (fs *encvWebDAVFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (goWebdav.File, error) {
-	// 1. 权限检查
 	if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC|os.O_APPEND) != 0 {
 		return nil, os.ErrPermission
 	}
 
-	// 【使用辅助函数】将 WebDAV 路径转换为标准索引键
-	indexKey := fs.webdavPathToIndexKey(name)
-	// log.Printf("[OpenFile-DEBUG] Called with name='%s', converted indexKey='%s'", name, indexKey)
+	indexKey, keyErr := fs.webdavPathToIndexKey(name)
+	if keyErr != nil {
+		return nil, keyErr
+	}
 
-	// 注意：resolvePath 仍然需要原始的 name 来获取物理路径
 	fullPath, err := fs.resolvePath(name)
 	if err != nil {
 		return nil, err
@@ -744,8 +828,10 @@ func (fs *encvWebDAVFS) openAsDirectory(fullPath string, name string) (goWebdav.
 
 // ReadDir 方法完全重写，变为高性能且无竞争
 func (fs *encvWebDAVFS) ReadDir(ctx context.Context, name string) ([]os.FileInfo, error) {
-	// 【使用辅助函数】将 WebDAV 路径转换为标准索引键
-	indexKey := fs.webdavPathToIndexKey(name)
+	indexKey, keyErr := fs.webdavPathToIndexKey(name)
+	if keyErr != nil {
+		return nil, keyErr
+	}
 	slog.Debug("ReadDir called", "name", name, "indexKey", indexKey)
 
 	// 1. 获取当前索引（这是一个内存快照，非常快）
@@ -901,7 +987,10 @@ func (d *decryptedDir) Readdir(count int) ([]os.FileInfo, error) {
 	indexes := d.fs.getIndexes()
 
 	// 2. 将 WebDAV 路径转换为索引键
-	indexKey := d.fs.webdavPathToIndexKey(d.name)
+	indexKey, keyErr := d.fs.webdavPathToIndexKey(d.name)
+	if keyErr != nil {
+		return nil, keyErr
+	}
 	slog.Debug("decryptedDir Readdir called", "path", d.name, "indexKey", indexKey)
 
 	// 3. 使用 map 来自动去重和合并，键为文件名

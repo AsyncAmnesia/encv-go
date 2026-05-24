@@ -3,14 +3,14 @@
     <ion-tabs>
       <ion-router-outlet></ion-router-outlet>
       <ion-tab-bar slot="bottom">
+        <ion-tab-button tab="home" href="/tabs/home">
+          <ion-icon :icon="home"></ion-icon>
+          <ion-label>{{ t('tabs.home') }}</ion-label>
+        </ion-tab-button>
+
         <ion-tab-button tab="files" href="/tabs/files">
           <ion-icon :icon="folder"></ion-icon>
           <ion-label>{{ t('tabs.files') }}</ion-label>
-        </ion-tab-button>
-
-        <ion-tab-button tab="player" href="/tabs/player">
-          <ion-icon :icon="play"></ion-icon>
-          <ion-label>{{ t('tabs.player') }}</ion-label>
         </ion-tab-button>
 
         <ion-tab-button tab="tasks" href="/tabs/tasks">
@@ -18,9 +18,9 @@
           <ion-label>{{ t('tabs.tasks') }}</ion-label>
         </ion-tab-button>
 
-        <ion-tab-button tab="webdav" href="/tabs/webdav">
-          <ion-icon :icon="cloud"></ion-icon>
-          <ion-label>{{ t('tabs.webdav') }}</ion-label>
+        <ion-tab-button tab="remote" href="/tabs/remote">
+          <ion-icon :icon="globe"></ion-icon>
+          <ion-label>{{ t('tabs.remote') }}</ion-label>
         </ion-tab-button>
 
         <ion-tab-button tab="settings" href="/tabs/settings">
@@ -47,7 +47,7 @@ import {
   IonTabButton,
   IonTabs,
 } from '@ionic/vue'
-import { folder, play, list, cloud, settings, bug } from 'ionicons/icons'
+import { home, folder, list, globe, settings, bug } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 
 const { t } = useI18n()

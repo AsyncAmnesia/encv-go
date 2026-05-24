@@ -5,10 +5,6 @@
   "$defs": {
     "AdminServer": {
       "properties": {
-        "port": {
-          "type": "integer",
-          "description": "encv 管理后台服务器的端口，请不要填写 encv Webdav Server、 OpenList 或其他已使用的端口"
-        },
         "password": {
           "type": "string",
           "description": "管理员密码，留空则禁用登录"
@@ -17,7 +13,6 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "port",
         "password"
       ],
       "description": "--- 管理后台服务器 设置 ---"
@@ -293,10 +288,6 @@
     },
     "WebdavServer": {
       "properties": {
-        "port": {
-          "type": "integer",
-          "description": "encv Webdav 服务器的端口，请不要填写 encv HTTP Server、 OpenList 或其他已使用的端口"
-        },
         "root": {
           "type": "string",
           "description": "路由（例如 /webdav/）"
@@ -317,7 +308,6 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "port",
         "root",
         "dir",
         "username",

@@ -81,7 +81,6 @@
           :key="file.path"
           @click="handleFileClick(file)"
           v-longpress="() => handleLongPress(file)"
-          detail
         >
           <ion-icon
             :icon="getFileIcon(file)"
@@ -91,12 +90,15 @@
           <ion-label>
             <h2>{{ file.name }}</h2>
             <p v-if="searchQuery && !file.isDirectory" class="search-path">{{ file.path }}</p>
-            <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified && !searchQuery"> · {{ file.modified }}</span></p>
+            <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified && !searchQuery"> · {{ formatDateTime(file.modified) }}</span></p>
             <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
           </ion-label>
-          <ion-badge v-if="getFileCategory(file.name) === 'encrypted'" color="warning" slot="end">
+          <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
             ENCV
           </ion-badge>
+          <ion-button v-if="searchQuery" slot="end" fill="clear" class="open-folder-btn" @click.stop="openContainingFolder(file)">
+            <ion-icon :icon="folderOpen" class="open-folder-icon" slot="icon-only"></ion-icon>
+          </ion-button>
         </ion-item>
       </ion-list>
     </ion-content>
@@ -149,15 +151,58 @@ import {
   formatFileSize,
   getFileCategory,
   PermissionDeniedError,
+  NotFoundError,
   deleteFile,
   createTask,
+  fetchConfig,
+  checkFileExists,
+  checkEncryptOutputExists,
 } from '@/api/encv'
 import type { FileItem } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
+import { formatDateTime } from '@/composables/useDateFormat'
 import { vLongpress } from '@/directives/longpress'
-import { isNative, requestStoragePermission } from '@/plugins/GoProcess'
+import { isNative, requestStoragePermission, openPlayer, openExternal } from '@/plugins/GoProcess'
+import { getExternalStreamUrl } from '@/api/encv'
 import { showToast } from '@/composables/useToast'
+
+type PlayMode = 'artplayer' | 'mpv' | 'external'
+
+function getPlayMode(mediaType: 'video' | 'audio'): PlayMode {
+  const key = mediaType === 'video' ? 'encv_player_video' : 'encv_player_audio'
+  const stored = localStorage.getItem(key)
+  if (stored === 'artplayer' || stored === 'mpv' || stored === 'external') return stored
+  return mediaType === 'video' ? 'artplayer' : 'mpv'
+}
+
+function playMedia(file: FileItem, category: string) {
+  const isVideo = category === 'video' || category === 'encrypted'
+  const mediaType = isVideo ? 'video' : 'audio'
+  const mimeType = isVideo ? 'video/*' : 'audio/*'
+  const mode = getPlayMode(mediaType)
+
+  switch (mode) {
+    case 'artplayer':
+      router.push({ path: '/player', query: { path: file.path, name: file.name } })
+      break
+    case 'mpv':
+      if (isNative()) {
+        openPlayer(file.path, file.name, mimeType)
+      } else {
+        router.push({ path: '/player', query: { path: file.path, name: file.name } })
+      }
+      break
+    case 'external':
+      if (isNative()) {
+        const url = getExternalStreamUrl(file.path)
+        openExternal(url, mimeType)
+      } else {
+        router.push({ path: '/player', query: { path: file.path, name: file.name } })
+      }
+      break
+  }
+}
 
 const { t } = useI18n()
 const router = useRouter()
@@ -205,7 +250,7 @@ const sortedFiles = computed(() => {
 
 function getFileIcon(file: FileItem) {
   if (file.isDirectory) return folder
-  const category = getFileCategory(file.name)
+  const category = getFileCategory(file.name, file.isEncrypted)
   switch (category) {
     case 'video': return videocam
     case 'audio': return musicalNotes
@@ -218,7 +263,7 @@ function getFileIcon(file: FileItem) {
 
 function getFileIconColor(file: FileItem) {
   if (file.isDirectory) return 'primary'
-  const category = getFileCategory(file.name)
+  const category = getFileCategory(file.name, file.isEncrypted)
   switch (category) {
     case 'video': return 'danger'
     case 'audio': return 'tertiary'
@@ -257,6 +302,17 @@ async function loadFiles() {
         return
       }
 
+      if (error instanceof NotFoundError) {
+        serverOnline.value = true
+        loading.value = false
+        connecting.value = false
+        if (currentPath.value !== '/') {
+          showToast({ message: t('files.pathNotFound'), duration: 2000, color: 'warning' })
+          goUp()
+        }
+        return
+      }
+
       if (attempt < MAX_RETRIES) {
         connecting.value = true
         await new Promise(r => setTimeout(r, RETRY_DELAY))
@@ -280,6 +336,12 @@ async function handleRefresh(event: CustomEvent) {
       serverOnline.value = true
       noPermission.value = true
     }
+    if (error instanceof NotFoundError) {
+      serverOnline.value = true
+      if (currentPath.value !== '/') {
+        goUp()
+      }
+    }
   }
   ;(event.target as any)?.complete?.()
 }
@@ -301,6 +363,13 @@ function navigateTo(path: string) {
   loadFiles()
 }
 
+function openContainingFolder(file: FileItem) {
+  const parentDir = file.path.substring(0, file.path.lastIndexOf('/')) || '/'
+  searchQuery.value = ''
+  searchResults.value = null
+  navigateTo(parentDir)
+}
+
 function goUp() {
   if (currentPath.value === '/') return
   const parts = currentPath.value.split('/').filter(Boolean)
@@ -320,13 +389,10 @@ async function handleFileClick(file: FileItem) {
     return
   }
 
-  const category = getFileCategory(file.name)
+  const category = getFileCategory(file.name, file.isEncrypted)
   console.info('[Files] Click:', file.name, 'category:', category)
   if (category === 'video' || category === 'audio' || category === 'encrypted') {
-    router.push({
-      path: '/tabs/player',
-      query: { path: file.path, name: file.name },
-    })
+    playMedia(file, category)
   } else {
     router.push({
       path: '/tabs/preview',
@@ -390,7 +456,7 @@ async function performSearch() {
 }
 
 async function handleLongPress(file: FileItem) {
-  const category = file.isDirectory ? 'directory' : getFileCategory(file.name)
+  const category = file.isDirectory ? 'directory' : getFileCategory(file.name, file.isEncrypted)
 
   const buttons: any[] = []
 
@@ -417,10 +483,7 @@ async function handleLongPress(file: FileItem) {
       text: t('files.play'),
       icon: videocam,
       handler: () => {
-        router.push({
-          path: '/tabs/player',
-          query: { path: file.path, name: file.name },
-        })
+        playMedia(file, 'encrypted')
       },
     })
     buttons.push({
@@ -445,10 +508,7 @@ async function handleLongPress(file: FileItem) {
       icon: isMedia ? videocam : image,
       handler: () => {
         if (isMedia) {
-          router.push({
-            path: '/tabs/player',
-            query: { path: file.path, name: file.name },
-          })
+          playMedia(file, category)
         } else {
           router.push({
             path: '/tabs/preview',
@@ -487,19 +547,58 @@ async function handleLongPress(file: FileItem) {
 }
 
 async function handleEncryptFile(file: FileItem) {
+  const parentDir = file.path.substring(0, file.path.lastIndexOf('/')) || '/'
+  let globalPassword = ''
+  try {
+    const cfg = await fetchConfig()
+    globalPassword = (cfg as any).password || ''
+  } catch {}
+
   const alert = await alertController.create({
     header: t('files.encrypt'),
-    message: t('files.encryptPrompt', { name: file.name }),
+    inputs: [
+      {
+        name: 'targetPath',
+        type: 'text',
+        placeholder: t('tasks.targetPathPlaceholder'),
+        value: parentDir,
+        attributes: { autocomplete: 'off' },
+      },
+      {
+        name: 'password',
+        type: 'password',
+        placeholder: t('tasks.passwordPlaceholder'),
+        value: globalPassword,
+        attributes: { autocomplete: 'off' },
+      },
+    ],
     buttons: [
       { text: t('files.cancelSelect'), role: 'cancel' },
       {
         text: t('files.encrypt'),
-        handler: async () => {
-          try {
-            await createTask('encrypt', file.path)
-            showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
-          } catch {
-            showToast({ message: t('tasks.taskCreateFailed'), duration: 2000, color: 'danger' })
+        handler: async (data: Record<string, string>) => {
+          const targetPath = (data.targetPath || '').trim()
+          const password = (data.password || '').trim()
+          const result = await checkEncryptOutputExists(file.path, targetPath || undefined)
+
+          if (result.exists) {
+            const outputName = result.outputPath.split('/').pop() || ''
+            const confirm = await alertController.create({
+              header: t('files.encrypt'),
+              message: t('files.overwriteConfirm', { name: outputName }),
+              buttons: [
+                { text: t('files.cancelSelect'), role: 'cancel' },
+                {
+                  text: t('common.confirm'),
+                  handler: async () => {
+                    await doCreateTask('encrypt', file.path, targetPath, password)
+                  },
+                },
+              ],
+            })
+            await confirm.present()
+          } else {
+            await doCreateTask('encrypt', file.path, targetPath, password)
           }
         },
       },
@@ -509,25 +608,74 @@ async function handleEncryptFile(file: FileItem) {
 }
 
 async function handleDecryptFile(file: FileItem) {
+  const parentDir = file.path.substring(0, file.path.lastIndexOf('/')) || '/'
+  let globalPassword = ''
+  try {
+    const cfg = await fetchConfig()
+    globalPassword = (cfg as any).password || ''
+  } catch {}
+
   const alert = await alertController.create({
     header: t('files.decrypt'),
-    message: t('files.decryptPrompt', { name: file.name }),
+    inputs: [
+      {
+        name: 'targetPath',
+        type: 'text',
+        placeholder: t('tasks.targetPathPlaceholder'),
+        value: parentDir,
+        attributes: { autocomplete: 'off' },
+      },
+      {
+        name: 'password',
+        type: 'password',
+        placeholder: t('tasks.passwordPlaceholder'),
+        value: globalPassword,
+        attributes: { autocomplete: 'off' },
+      },
+    ],
     buttons: [
       { text: t('files.cancelSelect'), role: 'cancel' },
       {
         text: t('files.decrypt'),
-        handler: async () => {
-          try {
-            await createTask('decrypt', file.path)
-            showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
-          } catch {
-            showToast({ message: t('tasks.taskCreateFailed'), duration: 2000, color: 'danger' })
+        handler: async (data: Record<string, string>) => {
+          const targetPath = (data.targetPath || '').trim()
+          const password = (data.password || '').trim()
+          const outputName = file.name.replace(/\.encv$/i, '')
+          const outputPath = targetPath === '/' ? '/' + outputName : targetPath + '/' + outputName
+          const outputExists = await checkFileExists(outputPath)
+
+          if (outputExists) {
+            const confirm = await alertController.create({
+              header: t('files.decrypt'),
+              message: t('files.overwriteConfirm', { name: outputName }),
+              buttons: [
+                { text: t('files.cancelSelect'), role: 'cancel' },
+                {
+                  text: t('common.confirm'),
+                  handler: async () => {
+                    await doCreateTask('decrypt', file.path, targetPath, password)
+                  },
+                },
+              ],
+            })
+            await confirm.present()
+          } else {
+            await doCreateTask('decrypt', file.path, targetPath, password)
           }
         },
       },
     ],
   })
   await alert.present()
+}
+
+async function doCreateTask(type: 'encrypt' | 'decrypt', sourcePath: string, targetPath: string, password: string) {
+  try {
+    await createTask(type, sourcePath, targetPath, password)
+    showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
+  } catch {
+    showToast({ message: t('tasks.taskCreateFailed'), duration: 2000, color: 'danger' })
+  }
 }
 
 async function handleDeleteFile(file: FileItem) {
@@ -656,4 +804,19 @@ function onBackendReadyWindow(event: Event) {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.open-folder-btn {
+  --padding-start: 8px;
+  --padding-end: 8px;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+}
+
+.open-folder-icon {
+  font-size: 20px;
+  color: var(--ion-color-primary);
+}
+
+
 </style>

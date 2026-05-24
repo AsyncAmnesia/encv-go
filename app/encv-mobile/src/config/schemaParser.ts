@@ -15,6 +15,7 @@ export interface FieldDef {
   sectionTitle?: string
   isMap?: boolean
   mapItemFields?: FieldDef[]
+  isPath?: boolean
 }
 
 interface JsonSchemaProperty {
@@ -80,6 +81,7 @@ function parseProperty(
     required: isRequired,
     sectionTitle: sectionTitle || undefined,
     isPassword: isPasswordField(key),
+    isPath: isPathField(key),
   }
 
   if (resolved.enum) {
@@ -119,6 +121,11 @@ function formatLabel(key: string): string {
 
 function isPasswordField(key: string): boolean {
   return key.toLowerCase().includes('password')
+}
+
+function isPathField(key: string): boolean {
+  const pathKeys = ['output_path', 'dir', 'file', 'plugin_cache_dir', 'root']
+  return pathKeys.includes(key) || key.includes('_path') || key.includes('_dir')
 }
 
 export function parseSchema(): FieldDef[] {

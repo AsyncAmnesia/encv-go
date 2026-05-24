@@ -32,9 +32,59 @@
 
       <ion-list>
         <ion-list-header>
+          <ion-label>{{ t('settings.player') }}</ion-label>
+        </ion-list-header>
+        <ion-item>
+          <ion-icon :icon="filmOutline" slot="start"></ion-icon>
+          <ion-select
+            :value="videoPlayerMode"
+            @ionChange="handleVideoPlayerChange"
+            :label="t('settings.videoPlayer')"
+            label-placement="stacked"
+            interface="action-sheet"
+            mode="ios"
+          >
+            <ion-select-option value="artplayer">{{ t('settings.builtInArtplayer') }}</ion-select-option>
+            <ion-select-option value="mpv">{{ t('settings.builtInMpv') }}</ion-select-option>
+            <ion-select-option value="external">{{ t('settings.openExternal') }}</ion-select-option>
+          </ion-select>
+        </ion-item>
+        <ion-item>
+          <ion-icon :icon="musicalNotesOutline" slot="start"></ion-icon>
+          <ion-select
+            :value="audioPlayerMode"
+            @ionChange="handleAudioPlayerChange"
+            :label="t('settings.audioPlayer')"
+            label-placement="stacked"
+            interface="action-sheet"
+            mode="ios"
+          >
+            <ion-select-option value="mpv">{{ t('settings.builtInMpv') }}</ion-select-option>
+            <ion-select-option value="external">{{ t('settings.openExternal') }}</ion-select-option>
+          </ion-select>
+        </ion-item>
+        <ion-item>
+          <ion-icon :icon="phonePortraitOutline" slot="start"></ion-icon>
+          <ion-select
+            :value="screenOrientation"
+            @ionChange="handleScreenOrientationChange"
+            :label="t('settings.screenOrientation')"
+            label-placement="stacked"
+            interface="action-sheet"
+            mode="ios"
+          >
+            <ion-select-option value="auto">{{ t('settings.orientationAuto') }}</ion-select-option>
+            <ion-select-option value="portrait">{{ t('settings.orientationPortrait') }}</ion-select-option>
+            <ion-select-option value="landscape">{{ t('settings.orientationLandscape') }}</ion-select-option>
+          </ion-select>
+        </ion-item>
+      </ion-list>
+
+      <ion-list>
+        <ion-list-header>
           <ion-label>{{ t('settings.connection') }}</ion-label>
         </ion-list-header>
-        <ion-item button @click="goServer">
+        <ion-item button @click="goServer" detail>
           <ion-icon :icon="serverIcon" slot="start"></ion-icon>
           <ion-label>
             <h3>{{ t('settings.serverTitle') }}</h3>
@@ -46,7 +96,6 @@
               <span v-if="!serverOnline && connectionError" class="connection-error-inline"> - {{ connectionError }}</span>
             </p>
           </ion-label>
-          <ion-icon :icon="chevronForward" slot="end"></ion-icon>
         </ion-item>
       </ion-list>
 
@@ -54,13 +103,12 @@
         <ion-list-header>
           <ion-label>{{ t('settings.cache') }}</ion-label>
         </ion-list-header>
-        <ion-item button @click="goCache">
+        <ion-item button @click="goCache" detail>
           <ion-icon :icon="databaseIcon" slot="start"></ion-icon>
           <ion-label>
             <h3>{{ t('settings.cacheAndIndex') }}</h3>
-            <p>{{ indexStats?.isIndexing ? t('settings.indexing') : t('settings.indexReady') }}</p>
+            <p>{{ indexStats?.isIndexing ? t('settings.indexing') : (indexStats && indexStats.totalFiles > 0 ? (indexStats.source === 'webdav' ? 'WebDAV ' + t('settings.indexReady') : t('settings.indexReady')) : t('settings.noIndexData')) }}</p>
           </ion-label>
-          <ion-icon :icon="chevronForward" slot="end"></ion-icon>
         </ion-item>
       </ion-list>
 
@@ -71,7 +119,19 @@
 
       <template v-else-if="configLoaded">
         <template v-for="section in schemaFields" :key="section.key">
-          <ion-list v-if="section.type !== 'object' || !section.properties">
+          <ion-list v-if="section.key === 'plugin_settings'">
+            <ion-list-header>
+              <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
+            </ion-list-header>
+            <ion-item button @click="goPlugins" detail>
+              <ion-icon :icon="settingsOutline" slot="start"></ion-icon>
+              <ion-label>
+                <h3>{{ tField(section.key) }}</h3>
+              </ion-label>
+            </ion-item>
+          </ion-list>
+
+          <ion-list v-else-if="section.type !== 'object' || !section.properties">
             <ion-list-header>
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
             </ion-list-header>
@@ -92,6 +152,9 @@
                 :placeholder="section.description || tField(section.key)"
                 @ionInput="handleInput([section.key], section, $event)"
               ></ion-input>
+              <ion-button v-if="section.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([section.key], section)">
+                <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+              </ion-button>
             </ion-item>
           </ion-list>
 
@@ -123,6 +186,9 @@
                       :placeholder="grandchild.description || tField(grandchild.key)"
                       @ionInput="handleInput([section.key, child.key, grandchild.key], grandchild, $event)"
                     ></ion-input>
+                    <ion-button v-if="grandchild.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([section.key, child.key, grandchild.key], grandchild)">
+                      <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+                    </ion-button>
                   </ion-item>
                 </template>
               </template>
@@ -183,6 +249,9 @@
                   :placeholder="child.description || tField(child.key)"
                   @ionInput="handleInput([section.key, child.key], child, $event)"
                 ></ion-input>
+                <ion-button v-if="child.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([section.key, child.key], child)">
+                  <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+                </ion-button>
               </ion-item>
             </template>
 
@@ -196,15 +265,67 @@
       </template>
 
       <ion-list>
-        <ion-item button @click="goAbout">
+        <ion-list-header>
+          <ion-label>{{ t('devtools.title') }}</ion-label>
+        </ion-list-header>
+        <ion-item>
+          <ion-icon :icon="bugOutline" slot="start"></ion-icon>
+          <ion-toggle :checked="vconsoleEnabled" @ionChange="handleVConsoleToggle">{{ t('devtools.vconsole') }}</ion-toggle>
+        </ion-item>
+      </ion-list>
+
+      <ion-list>
+        <ion-item button @click="goAbout" detail>
           <ion-icon :icon="informationCircle" slot="start"></ion-icon>
           <ion-label>
             <h3>{{ t('settings.about') }}</h3>
             <p>ENCV-go v1.0.0</p>
           </ion-label>
-          <ion-icon :icon="chevronForward" slot="end"></ion-icon>
         </ion-item>
       </ion-list>
+
+      <ion-list>
+        <ion-item button @click="openJsonEditor">
+          <ion-icon :icon="documentText" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.editRawConfig') }}</h3>
+          </ion-label>
+        </ion-item>
+      </ion-list>
+
+      <ion-modal :is-open="showJsonEditor" @didDismiss="showJsonEditor = false">
+        <ion-header>
+          <ion-toolbar>
+            <ion-title>{{ t('settings.editRawConfig') }}</ion-title>
+            <ion-buttons slot="end">
+              <ion-button @click="showJsonEditor = false">{{ t('settings.cancel') }}</ion-button>
+              <ion-button @click="handleSaveJson" :disabled="!!jsonError" color="primary">{{ t('settings.saveConfig') }}</ion-button>
+            </ion-buttons>
+          </ion-toolbar>
+        </ion-header>
+        <ion-content class="json-editor-content">
+          <div class="json-editor-layout">
+            <div class="json-annotations" v-if="configAnnotations.length > 0">
+              <div class="annotations-title">{{ t('settings.configAnnotations') }}</div>
+              <div v-for="ann in configAnnotations" :key="ann.path" class="annotation-item">
+                <span class="annotation-path">{{ ann.path }}</span>
+                <span class="annotation-desc">{{ ann.description }}</span>
+              </div>
+            </div>
+            <div class="json-textarea-wrapper">
+              <textarea
+                v-model="jsonText"
+                class="json-textarea"
+                spellcheck="false"
+                @input="validateJson"
+              ></textarea>
+              <div v-if="jsonError" class="json-error">
+                {{ t('settings.jsonError') }}: {{ jsonError }}
+              </div>
+            </div>
+          </div>
+        </ion-content>
+      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
@@ -216,16 +337,18 @@ import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonContent, IonList, IonListHeader, IonItem, IonItemDivider,
   IonIcon, IonLabel, IonToggle, IonInput, IonBadge, IonSpinner,
-  IonSelect, IonSelectOption,
+  IonSelect, IonSelectOption, modalController,
 } from '@ionic/vue'
 import {
   moon, globeOutline, server as serverIcon, save as saveIcon,
-  informationCircle, chevronForward,
+  informationCircle,
   key, lockClosed, documentText, terminal, settingsOutline,
   cloudOutline, shieldCheckmark, eyeOutline, speedometerOutline,
   filmOutline, musicalNotesOutline, imagesOutline, readerOutline,
   newspaperOutline, colorWandOutline, gitNetworkOutline, toggleOutline,
   textOutline, personOutline, folderOpen, refreshCircle,
+  bugOutline,
+  phonePortraitOutline,
   fileTrayFull as databaseIcon,
 } from 'ionicons/icons'
 import { useTheme } from '@/composables/useTheme'
@@ -233,18 +356,133 @@ import { useServerStatus } from '@/composables/useServerStatus'
 import { useConfig } from '@/composables/useConfig'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
-import { getIndexStats } from '@/api/encv'
+import { useDevTools } from '@/composables/useDevTools'
+import { isNative } from '@/plugins/GoProcess'
+import { getIndexStats, fetchConfig, updateConfig } from '@/api/encv'
 import type { IndexStats } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
+import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const router = useRouter()
 const { isDark, toggleDark } = useTheme()
 const { isOnline: serverOnline, lastError: connectionError, checkStatus, backendPort } = useServerStatus()
-const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
+const { schemaFields, loading: configLoading, dirty, restartNeeded, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
 const { t, tField, tSectionTitle, setLocale, locale } = useI18n()
+const { vconsoleEnabled, toggleVConsole } = useDevTools()
 
 const configLoaded = ref(false)
 const indexStats = ref<IndexStats | null>(null)
+
+const videoPlayerMode = ref(localStorage.getItem('encv_player_video') || 'artplayer')
+const audioPlayerMode = ref(localStorage.getItem('encv_player_audio') || 'mpv')
+const screenOrientation = ref(localStorage.getItem('encv_screen_orientation') || 'auto')
+
+function handleVideoPlayerChange(event: CustomEvent) {
+  const value = event.detail.value
+  videoPlayerMode.value = value
+  localStorage.setItem('encv_player_video', value)
+}
+
+function handleAudioPlayerChange(event: CustomEvent) {
+  const value = event.detail.value
+  audioPlayerMode.value = value
+  localStorage.setItem('encv_player_audio', value)
+}
+
+function handleScreenOrientationChange(event: CustomEvent) {
+  const value = event.detail.value
+  screenOrientation.value = value
+  localStorage.setItem('encv_screen_orientation', value)
+  applyScreenOrientation(value)
+}
+
+async function applyScreenOrientation(orientation: string) {
+  if (!isNative()) return
+  try {
+    const { ScreenOrientation } = await import('@capacitor/screen-orientation')
+    if (orientation === 'portrait') {
+      await ScreenOrientation.lock({ orientation: 'portrait' })
+    } else if (orientation === 'landscape') {
+      await ScreenOrientation.lock({ orientation: 'landscape' })
+    } else {
+      await ScreenOrientation.unlock()
+    }
+  } catch (e) {
+    console.warn('Failed to apply screen orientation:', e)
+  }
+}
+
+function handleVConsoleToggle(event: CustomEvent) {
+  toggleVConsole(event.detail.checked)
+}
+
+const showJsonEditor = ref(false)
+const jsonText = ref('')
+const jsonError = ref('')
+const configAnnotations = ref<{ path: string; description: string }[]>([])
+
+function extractAnnotations(schema: any, prefix: string = ''): { path: string; description: string }[] {
+  const result: { path: string; description: string }[] = []
+  if (!schema || typeof schema !== 'object') return result
+  if (schema.properties) {
+    for (const [key, val] of Object.entries(schema.properties)) {
+      const prop = val as any
+      const fullPath = prefix ? `${prefix}.${key}` : key
+      if (prop.description) {
+        result.push({ path: fullPath, description: prop.description })
+      }
+      if (prop.properties) {
+        result.push(...extractAnnotations(prop, fullPath))
+      }
+    }
+  }
+  if (schema.$defs) {
+    for (const [key, val] of Object.entries(schema.$defs)) {
+      result.push(...extractAnnotations(val, `$defs.${key}`))
+    }
+  }
+  return result
+}
+
+async function openJsonEditor() {
+  try {
+    const cfg = await fetchConfig()
+    jsonText.value = JSON.stringify(cfg, null, 2)
+    jsonError.value = ''
+    try {
+      const schemaResp = await fetch('/api/config/schema')
+      if (schemaResp.ok) {
+        const schema = await schemaResp.json()
+        configAnnotations.value = extractAnnotations(schema)
+      }
+    } catch {}
+    showJsonEditor.value = true
+  } catch {
+    showToast({ message: t('settings.configSaveFailed'), duration: 2000, color: 'danger' })
+  }
+}
+
+function validateJson() {
+  try {
+    JSON.parse(jsonText.value)
+    jsonError.value = ''
+  } catch (e) {
+    jsonError.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function handleSaveJson() {
+  try {
+    const parsed = JSON.parse(jsonText.value)
+    await updateConfig(parsed)
+    showJsonEditor.value = false
+    showToast({ message: t('settings.configSaved'), duration: 1500, color: 'success' })
+    await loadConfig()
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    showToast({ message: t('settings.configSaveFailed') + ': ' + detail, duration: 3000, color: 'danger' })
+  }
+}
 
 function goServer() {
   router.push('/tabs/settings/server')
@@ -256,6 +494,10 @@ function goAbout() {
 
 function goCache() {
   router.push('/tabs/settings/cache')
+}
+
+function goPlugins() {
+  router.push('/tabs/settings/plugins')
 }
 
 function getValue(path: string[]): unknown {
@@ -278,6 +520,23 @@ function handleInput(path: string[], field: FieldDef, event: CustomEvent) {
     setFieldValue(path, val ? Number(val) : 0)
   } else {
     setFieldValue(path, val)
+  }
+}
+
+async function handleBrowsePath(path: string[], field: FieldDef) {
+  const isFolder = field.key !== 'file'
+  const currentVal = String(getFieldValue(path) || '/')
+  const modal = await modalController.create({
+    component: FilePickerModal,
+    componentProps: {
+      mode: isFolder ? 'folder' : 'file',
+      initialPath: currentVal,
+    },
+  })
+  await modal.present()
+  const { data, role } = await modal.onDidDismiss()
+  if (role === 'select' && data) {
+    setFieldValue(path, data.path)
   }
 }
 
@@ -341,11 +600,19 @@ function handleLocaleChange(event: CustomEvent) {
 async function handleSaveConfig() {
   try {
     await saveConfig()
-    showToast({
-      message: t('settings.configSaved'),
-      duration: 1500,
-      color: 'success',
-    })
+    if (restartNeeded.value) {
+      showToast({
+        message: t('settings.configSavedRestartNeeded'),
+        duration: 4000,
+        color: 'warning',
+      })
+    } else {
+      showToast({
+        message: t('settings.configSaved'),
+        duration: 1500,
+        color: 'success',
+      })
+    }
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)
     showToast({
@@ -370,9 +637,12 @@ onMounted(async () => {
 })
 
 watch(serverOnline, async (online) => {
-  if (online && !configLoaded.value) {
-    await loadConfig()
-    configLoaded.value = true
+  if (online) {
+    if (!configLoaded.value) {
+      await loadConfig()
+      configLoaded.value = true
+    }
+    try { indexStats.value = await getIndexStats() } catch {}
   }
 })
 </script>
@@ -398,5 +668,80 @@ watch(serverOnline, async (online) => {
 .connection-error-inline {
   color: var(--ion-color-danger);
   font-size: 12px;
+}
+.browse-btn {
+  --padding-start: 8px;
+  --padding-end: 8px;
+  min-width: 44px;
+  min-height: 44px;
+}
+.json-editor-content {
+  --background: var(--ion-background-color);
+}
+.json-editor-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.json-annotations {
+  border-bottom: 1px solid var(--ion-color-light);
+  max-height: 40%;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+.annotations-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ion-text-color);
+  margin-bottom: 8px;
+}
+.annotation-item {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(var(--ion-color-medium-rgb), 0.15);
+}
+.annotation-item:last-child {
+  border-bottom: none;
+}
+.annotation-path {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ion-color-primary);
+  font-family: monospace;
+}
+.annotation-desc {
+  font-size: 12px;
+  color: var(--encv-text-secondary);
+  margin-top: 2px;
+}
+.json-textarea-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  min-height: 0;
+}
+.json-textarea {
+  flex: 1;
+  width: 100%;
+  min-height: 200px;
+  padding: 12px 16px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  background: var(--ion-background-color);
+  color: var(--ion-text-color);
+  border: none;
+  outline: none;
+  resize: none;
+  box-sizing: border-box;
+}
+.json-error {
+  padding: 8px 16px;
+  background: rgba(var(--ion-color-danger-rgb), 0.1);
+  color: var(--ion-color-danger);
+  font-size: 12px;
+  font-family: monospace;
 }
 </style>

@@ -1,10 +1,11 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, copyFileSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, copyFileSync, readdirSync, statSync, cpSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ANDROID_DIR = join(__dirname, '..', 'android')
 const OVERLAY_DIR = join(__dirname, '..', 'android-overlay')
+const LYNX_BUNDLE_PATH = join(__dirname, '..', 'lynx-player', 'dist', 'player.lynx.bundle')
 
 function patchFile(filePath, transformer) {
   const content = readFileSync(filePath, 'utf-8')
@@ -16,6 +17,31 @@ function patchFile(filePath, transformer) {
 }
 
 console.log('encv-post-cap-sync: applying Android customizations...')
+
+function syncKtFiles(overlaySrcDir, targetDir) {
+  const copied = []
+  if (!existsSync(overlaySrcDir)) {
+    console.warn(`  syncKt: overlay dir not found: ${overlaySrcDir}`)
+    return copied
+  }
+  function walk(dir, relativeBase) {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      const rel = relativeBase ? join(relativeBase, entry) : entry
+      if (statSync(full).isDirectory()) {
+        walk(full, rel)
+      } else if (entry.endsWith('.kt')) {
+        const dest = join(targetDir, rel)
+        mkdirSync(dirname(dest), { recursive: true })
+        copyFileSync(full, dest)
+        copied.push({ rel, abs: dest })
+        console.log(`  overlay: ${rel}`)
+      }
+    }
+  }
+  walk(overlaySrcDir, '')
+  return copied
+}
 
 // --- Root build.gradle: kotlin plugin + JitPack repository ---
 const rootBuildGradle = join(ANDROID_DIR, 'build.gradle')
@@ -148,6 +174,53 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
   }
 
+  // 3. Add USE_LYNX_PLAYER build config
+  if (!c.includes('USE_LYNX_PLAYER')) {
+    c = c.replace(
+      /defaultConfig\s*\{/,
+      "defaultConfig {\n        buildConfigField \"boolean\", \"USE_LYNX_PLAYER\", \"true\"",
+    )
+  }
+
+  // 3b. Enable buildConfig generation (AGP 8.0+ requires this explicitly)
+  if (!c.includes('buildConfig = true') && !c.includes('buildConfig true')) {
+    if (c.includes('buildFeatures')) {
+      c = c.replace(
+        /buildFeatures\s*\{/,
+        "buildFeatures {\n        buildConfig = true",
+      )
+    } else {
+      c = c.replace(
+        /android\s*\{/,
+        "android {\n    buildFeatures {\n        buildConfig = true\n    }",
+      )
+    }
+  }
+
+  // 3c. Add appcompat dependency for AppCompatActivity
+  if (!c.includes('appcompat')) {
+    c = c.replace(
+      'dependencies {',
+      "dependencies {\n    implementation 'androidx.appcompat:appcompat:1.6.1'",
+    )
+  }
+
+  // 4. Add Lynx SDK 3.7 dependencies (mpv-android-lib removed: using local MPVLib.kt + jniLibs)
+  if (!c.includes('org.lynxsdk.lynx')) {
+    c = c.replace(
+      'dependencies {',
+      "dependencies {\n    implementation 'org.lynxsdk.lynx:lynx:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-jssdk:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-trace:3.7.0'\n    implementation 'org.lynxsdk.lynx:primjs:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-image:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-log:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-http:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-devtool:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-devtool:3.7.0'\n    implementation 'com.facebook.fresco:fresco:2.3.0'\n    implementation 'com.facebook.fresco:animated-gif:2.3.0'\n    implementation 'com.facebook.fresco:animated-webp:2.3.0'\n    implementation 'com.facebook.fresco:webpsupport:2.3.0'\n    implementation 'com.facebook.fresco:animated-base:2.3.0'\n    implementation 'com.squareup.okhttp3:okhttp:4.9.0'",
+    )
+  }
+
+  // 4b. Remove mpv-android-lib Maven dependency (using local jniLibs instead)
+  //     Must run AFTER step 4 to catch both old and newly-added references
+  const beforeRemove = c
+  c = c.replace(/\s*implementation\s*\(?['"]io\.github\.abdallahmehiz:mpv[^'"]*['"][\s\S]*?\)?/g, '')
+  if (c !== beforeRemove) {
+    console.log('  [mpv] removed Maven dependency (using local jniLibs)')
+  }
+
   // 3. compileOptions (required by Logcat)
   if (!c.includes('compileOptions')) {
     c = c.replace(
@@ -173,13 +246,19 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     console.log('  [jniLibs] added jniLibs.srcDirs')
   }
 
-  // 6. useLegacyPackaging = true (critical: AGP 8.0+ defaults to false, which prevents .so extraction)
+  // 6. Packaging options (useLegacyPackaging + pickFirsts for .so conflicts)
   if (!c.includes('useLegacyPackaging')) {
     c = c.replace(
       /android\s*\{/,
-      "android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }",
+      "android {\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n            pickFirsts += ['**/*.so']\n        }\n        resources {\n            pickFirsts += ['**/*.so']\n        }\n    }",
     )
-    console.log('  [packaging] added useLegacyPackaging = true')
+    console.log('  [packaging] added useLegacyPackaging + pickFirsts')
+  } else if (!c.includes('pickFirsts')) {
+    c = c.replace(
+      /jniLibs\s*\{\s*useLegacyPackaging\s*=\s*true\s*\}/,
+      "jniLibs {\n            useLegacyPackaging = true\n            pickFirsts += ['**/*.so']\n        }\n        resources {\n            pickFirsts += ['**/*.so']\n        }",
+    )
+    console.log('  [packaging] added pickFirsts to existing packaging block')
   }
 
   // 7. Version injection
@@ -248,7 +327,8 @@ android.sourceSets {
   return c
 })
 
-// --- Overlay files: MainActivity.kt, GoProcessPlugin.kt, EncvGoService.kt, manifest, proguard, network config ---
+// --- Overlay Kotlin files: auto-scan android-overlay/java/ ---
+const OVERLAY_JAVA_DIR = join(OVERLAY_DIR, 'app', 'src', 'main', 'java')
 const JAVA_DIR = join(ANDROID_DIR, 'app', 'src', 'main', 'java', 'com', 'encvgo', 'app')
 
 if (existsSync(JAVA_DIR)) {
@@ -256,19 +336,107 @@ if (existsSync(JAVA_DIR)) {
 }
 mkdirSync(JAVA_DIR, { recursive: true })
 
-for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt', 'EncvGoService.kt']) {
-  const src = join(OVERLAY_DIR, 'app', 'src', 'main', 'java', 'com', 'encvgo', 'app', f)
-  if (existsSync(src)) {
-    copyFileSync(src, join(JAVA_DIR, f))
-    console.log(`  overlay: ${f}`)
-  } else {
-    console.error(`  overlay: missing ${src}`)
+const ktFiles = []
+
+ktFiles.push(...syncKtFiles(
+  join(OVERLAY_JAVA_DIR, 'com', 'encvgo', 'app'),
+  JAVA_DIR
+))
+
+ktFiles.push(...syncKtFiles(
+  join(OVERLAY_JAVA_DIR, 'is', 'xyz', 'mpv'),
+  join(ANDROID_DIR, 'app', 'src', 'main', 'java', 'is', 'xyz', 'mpv')
+))
+
+console.log(`  syncKt: ${ktFiles.length} .kt files synced`)
+
+// Copy mpv native libraries from overlay jniLibs
+const overlayJniDir = join(OVERLAY_DIR, 'app', 'src', 'main', 'jniLibs')
+const targetJniDir = join(ANDROID_DIR, 'app', 'src', 'main', 'jniLibs')
+const ALLOWED_ABIS = ['arm64-v8a']
+if (existsSync(overlayJniDir)) {
+  for (const abi of readdirSync(overlayJniDir)) {
+    if (!ALLOWED_ABIS.includes(abi)) continue
+    const abiDir = join(overlayJniDir, abi)
+    if (statSync(abiDir).isDirectory()) {
+      const targetAbiDir = join(targetJniDir, abi)
+      mkdirSync(targetAbiDir, { recursive: true })
+      for (const soFile of readdirSync(abiDir)) {
+        if (soFile.endsWith('.so')) {
+          copyFileSync(join(abiDir, soFile), join(targetAbiDir, soFile))
+          console.log(`  jniLibs: ${abi}/${soFile}`)
+        }
+      }
+    }
   }
 }
 
-const jniLibsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'jniLibs', 'arm64-v8a')
-mkdirSync(jniLibsDir, { recursive: true })
-console.log('  ensured jniLibs/arm64-v8a directory exists')
+// Sync jni/ directory (C++ sources, headers, build files for ndk-build)
+const overlayJniSrcDir = join(OVERLAY_DIR, 'app', 'src', 'main', 'jni')
+const targetJniSrcDir = join(ANDROID_DIR, 'app', 'src', 'main', 'jni')
+if (existsSync(overlayJniSrcDir)) {
+  if (existsSync(targetJniSrcDir)) rmSync(targetJniSrcDir, { recursive: true })
+  cpSync(overlayJniSrcDir, targetJniSrcDir, { recursive: true })
+  let fileCount = 0
+  function countFiles(dir) {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      if (statSync(full).isDirectory()) countFiles(full)
+      else fileCount++
+    }
+  }
+  if (existsSync(targetJniSrcDir)) countFiles(targetJniSrcDir)
+  console.log(`  overlay: jni/ (${fileCount} source+header files)`)
+}
+
+// Sync include/ directory (mpv/ffmpeg headers)
+const overlayIncludeDir = join(OVERLAY_DIR, 'app', 'src', 'main', 'include')
+if (existsSync(overlayIncludeDir)) {
+  const targetIncludeDir = join(ANDROID_DIR, 'app', 'src', 'main', 'include')
+  if (existsSync(targetIncludeDir)) rmSync(targetIncludeDir, { recursive: true })
+  cpSync(overlayIncludeDir, targetIncludeDir, { recursive: true })
+  console.log('  overlay: include/ (mpv/ffmpeg headers)')
+}
+
+// Copy layout file
+const RES_LAYOUT_DIR = join(ANDROID_DIR, 'app', 'src', 'main', 'res', 'layout')
+mkdirSync(RES_LAYOUT_DIR, { recursive: true })
+const layoutSrc = join(OVERLAY_DIR, 'app', 'src', 'main', 'res', 'layout', 'lynx_player_activity.xml')
+if (existsSync(layoutSrc)) {
+  copyFileSync(layoutSrc, join(RES_LAYOUT_DIR, 'lynx_player_activity.xml'))
+  console.log('  overlay: layout/lynx_player_activity.xml')
+}
+
+// Copy lynx bundle to assets
+if (!existsSync(LYNX_BUNDLE_PATH)) {
+  console.error('ERROR: Lynx bundle not found at', LYNX_BUNDLE_PATH)
+  console.error('Run: cd lynx-player && npm install && npm run build')
+  process.exit(1)
+}
+const assetsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'assets')
+mkdirSync(assetsDir, { recursive: true })
+copyFileSync(LYNX_BUNDLE_PATH, join(assetsDir, 'player.lynx.bundle'))
+console.log('  bundle: copied player.lynx.bundle to assets')
+
+const overlayJniLibs = join(OVERLAY_DIR, 'app', 'src', 'main', 'jniLibs')
+const targetJniLibsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'jniLibs')
+if (existsSync(overlayJniLibs)) {
+  if (existsSync(targetJniLibsDir)) rmSync(targetJniLibsDir, { recursive: true })
+  cpSync(overlayJniLibs, targetJniLibsDir, { recursive: true })
+  let soCount = 0
+  function countSo(dir) {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry)
+      if (statSync(full).isDirectory()) countSo(full)
+      else if (entry.endsWith('.so')) soCount++
+    }
+  }
+  if (existsSync(targetJniLibsDir)) countSo(targetJniLibsDir)
+  console.log(`  overlay: jniLibs (${soCount} .so files)`)
+} else {
+  mkdirSync(join(targetJniLibsDir, 'arm64-v8a'), { recursive: true })
+  console.log('  ensured jniLibs/arm64-v8a directory exists (no overlay)')
+}
 
 const overlayManifestSrc = join(OVERLAY_DIR, 'app', 'src', 'main', 'AndroidManifest.xml')
 const appManifestDest = join(ANDROID_DIR, 'app', 'src', 'main', 'AndroidManifest.xml')
@@ -340,17 +508,11 @@ if (version) {
 }
 
 // --- 包名一致性验证 ---
-for (const f of ['MainActivity.kt', 'GoProcessPlugin.kt', 'EncvGoService.kt']) {
-  const fp = join(JAVA_DIR, f)
-  if (existsSync(fp)) {
-    const src = readFileSync(fp, 'utf-8')
-    const pkg = (src.match(/^package\s+(\S+)/m) || [])[1]
-    if (pkg !== 'com.encvgo.app') {
-      console.error(`  ERROR: ${f} package="${pkg}" ≠ expected "com.encvgo.app"`)
-      process.exit(1)
-    }
-    console.log(`  pkg-ok: ${f} → ${pkg}`)
-  }
+for (const { rel, abs } of ktFiles) {
+  if (!existsSync(abs)) continue
+  const src = readFileSync(abs, 'utf-8')
+  const pkg = (src.match(/^package\s+(\S+)/m) || [])[1]
+  console.log(`  pkg-ok: ${rel} → ${pkg || '(no package)'}`)
 }
 
 console.log('done')

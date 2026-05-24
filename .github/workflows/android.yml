@@ -14,6 +14,9 @@ on:
         default: ''
         type: string
 
+env:
+  NDK_VERSION: "26.1.10909125"
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -28,11 +31,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: app/encv-mobile/package-lock.json
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.23'
+          cache-dependency-path: go.sum
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -43,19 +49,82 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Cache Android NDK
+        id: cache-ndk
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/lib/android/sdk/ndk/${{ env.NDK_VERSION }}
+          key: ndk-${{ env.NDK_VERSION }}
+
+      - name: Install Android NDK
+        if: steps.cache-ndk.outputs.cache-hit != 'true'
+        run: yes | sdkmanager --install "ndk;${{ env.NDK_VERSION }}" > /dev/null 2>&1 && echo "✅ NDK installed"
+
       - name: Install Android platform & build tools
-        run: |
-          sdkmanager "platforms;android-35"
-          sdkmanager "build-tools;35.0.0"
+        run: yes | sdkmanager --install "platforms;android-35" "build-tools;35.0.0" > /dev/null 2>&1 && echo "✅ Platform & build tools installed"
+
+      - name: Cache npm dependencies (main)
+        id: cache-npm
+        uses: actions/cache@v4
+        with:
+          path: app/encv-mobile/node_modules
+          key: npm-main-${{ hashFiles('app/encv-mobile/package-lock.json') }}
+          restore-keys: |
+            npm-main-
+
+      - name: Cache npm dependencies (lynx-player)
+        id: cache-npm-lynx
+        uses: actions/cache@v4
+        with:
+          path: app/encv-mobile/lynx-player/node_modules
+          key: npm-lynx-${{ hashFiles('app/encv-mobile/lynx-player/package-lock.json') }}
+          restore-keys: |
+            npm-lynx-
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('app/encv-mobile/android/*.gradle', 'app/encv-mobile/android/app/*.gradle', 'app/encv-mobile/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-
+
+      - name: Cache ffmpeg/x264 build
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: app/encv-mobile/scripts/.ffmpeg-build
+          key: ffmpeg-build-${{ hashFiles('app/encv-mobile/scripts/build-ffmpeg-android.sh') }}
+          restore-keys: |
+            ffmpeg-build-
+
+      - name: Cache ffmpeg output (jniLibs)
+        id: cache-ffmpeg-output
+        uses: actions/cache@v4
+        with:
+          path: app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a
+          key: ffmpeg-output-${{ hashFiles('app/encv-mobile/scripts/build-ffmpeg-android.sh') }}
 
       - name: Install frontend dependencies & Build
         run: cd app/encv-mobile && npm install && npm run build
 
-      - name: Build Go binary for Android arm64 (optimized)
+      - name: Build Lynx player bundle
+        run: cd app/encv-mobile/lynx-player && npm install && npm run build
+
+      - name: Setup mpv native libraries
+        run: cd app/encv-mobile && bash scripts/setup-mpv-libs.sh
+
+      - name: Build ffmpeg shared libraries for Android
+        run: cd app/encv-mobile && bash scripts/build-ffmpeg-android.sh
+
+      - name: Build Go binary for Android arm64 (with CGO for ffmpeg dlopen)
         env:
-          CGO_ENABLED: "0"
+          CGO_ENABLED: "1"
           GOOS: android
           GOARCH: arm64
+          CC: /usr/local/lib/android/sdk/ndk/${{ env.NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
         run: |
           go build \
             -ldflags="-s -w -X main.version=${{ inputs.version || 'dev' }}" \
@@ -64,7 +133,7 @@ jobs:
           echo "Go binary size:"
           ls -lh app/encv-mobile/encv-go-arm64
 
-      # Keystore 放在 android/ 外面，避免被 cap add/cap sync 重建时覆盖
+      # Keystore stored outside android/app to avoid accidental commit
       - name: Restore release keystore from cache
         uses: actions/cache@v4
         id: keystore-cache
@@ -90,133 +159,70 @@ jobs:
             ls -lh "$KEYSTORE"
           fi
 
-      # cap sync triggers afterSync hook (capacitor.config.ts → post-cap-sync.mjs)
-      # which handles: kotlin plugin, abiFilters, version, signingConfigs, minify, shrink
-      - name: Sync Capacitor Android project
-        env:
-          ENCV_VERSION: ${{ inputs.version }}
+      # android/ is in git — cap copy only copies web assets (lighter than cap sync)
+      # For release builds, cap build includes its own sync, so this step is debug-only
+      - name: Copy web assets to Android project (debug)
+        if: inputs.version == ''
         run: |
           cd app/encv-mobile
-          if [ -d "./android" ] && [ -f "./android/build.gradle" ]; then
-            npx cap sync android
-          else
-            rm -rf ./android && npx cap add android && npx cap sync android
-          fi
+          npx cap copy android
           echo "Android project ready:"
           ls -la android/*.gradle android/app/*.gradle
-          echo "=== Signing config in build.gradle ==="
-          grep -A8 'signingConfigs' app/encv-mobile/android/app/build.gradle || echo "WARNING: No signingConfigs found!"
-          grep 'signingConfig\|minifyEnabled' app/encv-mobile/android/app/build.gradle || echo "WARNING: No release signing found!"
 
-      # === Non-Gradle customizations (after cap sync) ===
-      - name: Copy assets, overlay files, and release config
+      # === Non-Gradle customizations ===
+      - name: Copy Go binary to jniLibs
         run: |
-          mkdir -p app/encv-mobile/android/app/src/main/assets
           mkdir -p app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a
           cp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a/libencv-go.so
-          cp app/encv-mobile/assets/config.mobile.json app/encv-mobile/android/app/src/main/assets/config.mobile.json
-          cp app/encv-mobile/android-overlay/gradle.properties app/encv-mobile/android/gradle.properties
-          echo "Assets:"
-          ls -lhR app/encv-mobile/android/app/src/main/assets/
           echo "JNI libs:"
           ls -lhR app/encv-mobile/android/app/src/main/jniLibs/
-          echo "Release config:"
-          ls -lh app/encv-mobile/android/gradle.properties
 
-      - name: Patch AndroidManifest (permissions + network config)
+      - name: Verify native libraries
         run: |
-          MANIFEST="app/encv-mobile/android/app/src/main/AndroidManifest.xml"
-
-          sed -i 's|<application|<application\n        android:networkSecurityConfig="@xml/network_security_config"\n        android:usesCleartextTraffic="true"|' "$MANIFEST"
-
-          PERMS_TO_ADD=""
-          for ENTRY in \
-            "android.permission.INTERNET" \
-            "android.permission.FOREGROUND_SERVICE" \
-            "android.permission.POST_NOTIFICATIONS" \
-            "android.permission.READ_MEDIA_VIDEO" \
-            "android.permission.READ_MEDIA_AUDIO" \
-            "android.permission.READ_MEDIA_IMAGES" \
-            "android.permission.MANAGE_EXTERNAL_STORAGE" \
-            "android.permission.WAKE_LOCK" \
-            "android.permission.READ_LOGS"; do
-            if ! grep -q "android:name=\"${ENTRY}\"" "$MANIFEST"; then
-              PERMS_TO_ADD="${PERMS_TO_ADD}    <uses-permission android:name=\"${ENTRY}\" />\n"
+          echo "=== jniLibs contents ==="
+          find app/encv-mobile/android/app/src/main/jniLibs -name "*.so" -type f | sort
+          echo "=== Checking mpv .so files ==="
+          JNI_DIR="app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a"
+          for lib in libmpv.so libplayer.so; do
+            if [ -f "$JNI_DIR/$lib" ]; then
+              echo "✅ $lib found ($(ls -lh "$JNI_DIR/$lib" | awk '{print $5}'))"
+            else
+              echo "❌ $lib MISSING!"
+              exit 1
             fi
           done
-
-          for ENTRY in \
-            "android.permission.READ_EXTERNAL_STORAGE|maxSdkVersion=32" \
-            "android.permission.WRITE_EXTERNAL_STORAGE|maxSdkVersion=28"; do
-            PERM="${ENTRY%%|*}"
-            ATTR="${ENTRY##*|}"
-            if ! grep -q "android:name=\"${PERM}\"" "$MANIFEST"; then
-              PERMS_TO_ADD="${PERMS_TO_ADD}    <uses-permission android:name=\"${PERM}\" android:${ATTR} />\n"
+          echo "=== Checking ffmpeg shared libraries ==="
+          for lib in libavcodec.so libavformat.so libavutil.so libswresample.so libswscale.so libavfilter.so libavdevice.so libffmpeg.so libffprobe.so; do
+            if [ -f "$JNI_DIR/$lib" ]; then
+              echo "✅ $lib found ($(ls -lh "$JNI_DIR/$lib" | awk '{print $5}'))"
+            else
+              echo "❌ $lib MISSING!"
+              exit 1
             fi
           done
-
-          if [ -n "$PERMS_TO_ADD" ]; then
-            sed -i "s|</manifest>|${PERMS_TO_ADD}</manifest>|" "$MANIFEST"
+          echo "=== Lynx bundle ==="
+          if [ -f "app/encv-mobile/android/app/src/main/assets/player.lynx.bundle" ]; then
+            echo "✅ player.lynx.bundle found ($(ls -lh app/encv-mobile/android/app/src/main/assets/player.lynx.bundle | awk '{print $5}'))"
+          else
+            echo "❌ player.lynx.bundle MISSING!"
+            exit 1
           fi
-
-          echo "AndroidManifest patched (sed)"
-          echo "=== application tag ==="
-          grep -A2 '<application' "$MANIFEST" | head -5
-
-      # === Verify kotlin setup before build ===
-      - name: Verify AndroidManifest integrity
-        run: |
-          MANIFEST="app/encv-mobile/android/app/src/main/AndroidManifest.xml"
-          echo "=== Manifest checks ==="
-          grep -q 'android.intent.action.MAIN' "$MANIFEST" && echo "✅ MAIN intent-filter" || { echo "❌ MISSING: MAIN intent-filter!"; exit 1; }
-          grep -q 'android.intent.category.LAUNCHER' "$MANIFEST" && echo "✅ LAUNCHER category" || { echo "❌ MISSING: LAUNCHER category!"; exit 1; }
-          grep -q 'android:icon' "$MANIFEST" && echo "✅ android:icon" || { echo "❌ MISSING: android:icon!"; exit 1; }
-          grep -q 'android:label' "$MANIFEST" && echo "✅ android:label" || { echo "❌ MISSING: android:label!"; exit 1; }
-          grep -q 'android:theme' "$MANIFEST" && echo "✅ android:theme" || { echo "❌ MISSING: android:theme!"; exit 1; }
-          echo "=== mipmap resources ==="
-          find app/encv-mobile/android/app/src/main/res -name "ic_launcher*" -type f | head -5 && echo "✅ mipmap icons found" || echo "⚠️ WARNING: no ic_launcher in res/"
-          echo "✅ Manifest integrity OK"
-
-      - name: Verify build.gradle kotlin setup
-        run: |
-          echo "=== kotlin-android plugin ==="
-          grep -n "kotlin-android" app/encv-mobile/android/app/build.gradle || { echo "❌ MISSING: kotlin-android plugin!"; exit 1; }
-          echo "=== kotlin-stdlib dependency ==="
-          grep -n "kotlin-stdlib" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: kotlin-stdlib not found"
-          echo "=== jvmTarget ==="
-          grep -n "jvmTarget" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: jvmTarget not found"
-          echo "=== jniLibs.srcDirs ==="
-          grep -n "jniLibs.srcDirs" app/encv-mobile/android/app/build.gradle || echo "⚠️ WARNING: jniLibs.srcDirs not found"
-          echo "=== useLegacyPackaging ==="
-          grep -n "useLegacyPackaging" app/encv-mobile/android/app/build.gradle || echo "❌ MISSING: useLegacyPackaging not set!"
-          echo "=== proguard-rules.pro ==="
-          test -f app/encv-mobile/android/app/proguard-rules.pro && echo "✅ proguard-rules.pro exists" || echo "⚠️ WARNING: no proguard-rules.pro"
-          echo "=== GoProcessPlugin.kt source ==="
-          test -f app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt && echo "✅ GoProcessPlugin.kt exists" || echo "❌ MISSING: GoProcessPlugin.kt!"
-          echo "=== MainActivity.kt source ==="
-          test -f app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt && echo "✅ MainActivity.kt exists" || echo "❌ MISSING: MainActivity.kt!"
-          echo "✅ All checks passed"
-
-      - name: Pre-build diagnosis
-        run: |
-          echo "=== build.gradle kotlin/sourceSets/namespace ==="
-          grep -n "kotlin\|sourceSets\|namespace\|apply plugin.*kotlin\|plugins\s*{" app/encv-mobile/android/app/build.gradle || true
-          echo "=== Source .kt files ==="
-          find app/encv-mobile/android/app/src/main/java -name "*.kt" -type f -exec sh -c 'echo "  {} ($(wc -l < {}) lines)"; head -1 {}' \;
-          echo "=== AndroidManifest activity ==="
-          grep -n "activity\|android:name" app/encv-mobile/android/app/src/main/AndroidManifest.xml | head -5
 
       # === Build ===
       - name: Build ${{ inputs.version && 'Release' || 'Debug' }} APK
         run: |
-          cd app/encv-mobile/android
-          chmod +x gradlew
+          cd app/encv-mobile
 
           if [ -n "${{ inputs.version }}" ]; then
             echo "=== Building RELEASE APK v${{ inputs.version }} ==="
-            ./gradlew assembleRelease
+            npx cap build android \
+              --androidreleasetype APK \
+              --keystorepath ${{ github.workspace }}/app/encv-mobile/keystore/release.jks \
+              --keystorepass encv2025 \
+              --keystorealias encvrelease \
+              --keystorealiaspass encv2025
 
-            APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+            APK_PATH=$(find android/app/build/outputs/apk/release -name "*.apk" -type f | head -1)
             [ -z "$APK_PATH" ] && { echo "::error::No APK found"; exit 1; }
 
             echo "Verifying signature..."
@@ -226,7 +232,9 @@ jobs:
             echo "✅ Signed OK: $(ls -lh "$APK_PATH" | awk '{print $5}')"
           else
             echo "=== Building DEBUG APK ==="
-            ./gradlew assembleDebug
+            cd android
+            chmod +x gradlew
+            ./gradlew assembleDebug --stacktrace
           fi
 
       - name: Verify APK contents
@@ -249,16 +257,12 @@ jobs:
               ls "$TMPDIR/"*.dex 2>/dev/null || echo "No dex files"
             fi
             rm -rf "$TMPDIR"
-            echo "=== Build output .class files ==="
-            find app/encv-mobile/android/app/build/tmp/kotlin-classes -name "*.class" -path "*encvgo*" 2>/dev/null && \
-              echo "✅ encvgo .class in kotlin-classes" || \
-              echo "⚠️ No encvgo .class (may be cleaned)"
-            echo "=== capacitor.plugins.json ==="
-            unzip -p "$APK_PATH" assets/capacitor.plugins.json
             echo "=== Go binary in APK (jniLibs) ==="
             unzip -l "$APK_PATH" | grep -E "libencv-go|lib/arm64" || echo "❌ libencv-go.so NOT in APK!"
-            echo "=== Go binary in APK (assets, legacy) ==="
-            unzip -l "$APK_PATH" | grep -E "assets/encv-go" || echo "(no assets/encv-go, expected with jniLibs packaging)"
+            echo "=== mpv/ffmpeg .so in APK ==="
+            unzip -l "$APK_PATH" | grep -E "libmpv|libplayer|libavcodec|libavformat|libavutil|libswresample|libswscale|libavfilter|libavdevice|libffmpeg\.so|libffprobe\.so" || echo "❌ mpv/ffmpeg .so NOT in APK!"
+            echo "=== Lynx bundle in APK ==="
+            unzip -l "$APK_PATH" | grep "player.lynx.bundle" || echo "❌ player.lynx.bundle NOT in APK!"
           else
             echo "No APK found to verify"
           fi

@@ -5,7 +5,11 @@ import Tabs from '@/views/Tabs.vue'
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    redirect: '/tabs/files',
+    redirect: '/tabs/home',
+  },
+  {
+    path: '/player',
+    component: () => import('@/views/ArtPlayerView.vue'),
   },
   {
     path: '/tabs/',
@@ -13,23 +17,23 @@ const routes: RouteRecordRaw[] = [
     children: [
       {
         path: '',
-        redirect: '/tabs/files',
+        redirect: '/tabs/home',
+      },
+      {
+        path: 'home',
+        component: () => import('@/views/HomePage.vue'),
       },
       {
         path: 'files',
         component: () => import('@/views/Files.vue'),
       },
       {
-        path: 'player',
-        component: () => import('@/views/Player.vue'),
-      },
-      {
         path: 'tasks',
         component: () => import('@/views/Tasks.vue'),
       },
       {
-        path: 'webdav',
-        component: () => import('@/views/WebDAV.vue'),
+        path: 'remote',
+        component: () => import('@/views/Remote.vue'),
       },
       {
         path: 'settings',
@@ -46,6 +50,10 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'settings/cache',
         component: () => import('@/views/CacheDetail.vue'),
+      },
+      {
+        path: 'settings/plugins',
+        component: () => import('@/views/PluginSettings.vue'),
       },
       {
         path: 'devlogs',

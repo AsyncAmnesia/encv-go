@@ -1,6 +1,6 @@
 package server
 
-import "github.com/Soltus/encv-go/internal/admin/injector"
+import "github.com/Soltus/encv-go/internal/injector"
 
 var tmpl_dynamic_files = `<!DOCTYPE html>
 <html lang="en">

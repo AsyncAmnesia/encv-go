@@ -148,8 +148,6 @@ type BinExtGroup struct {
 
 // --- WebDAV 服务器设置 ---
 type WebdavServer struct {
-	// encv Webdav 服务器的端口，请不要填写 encv HTTP Server、 OpenList 或其他已使用的端口
-	Port int `json:"port"`
 	// 路由（例如 /webdav/）
 	Root string `json:"root"`
 	// 文件系统的根目录（例如 /path/to/your/files），而不是 WebDAV 的路由前缀（例如 /webdav/）
@@ -170,8 +168,6 @@ type HttpServer struct {
 
 // --- 管理后台服务器 设置 ---
 type AdminServer struct {
-	// encv 管理后台服务器的端口，请不要填写 encv Webdav Server、 OpenList 或其他已使用的端口
-	Port int `json:"port"`
 	// 管理员密码，留空则禁用登录
 	Password string `json:"password"`
 }

@@ -1,288 +1,527 @@
-05-21 07:17:32.191  com.encvgo.app  
-  Late-enabling -Xcheck:jni
-  Using CollectorTypeCC GC.
-
-05-21 07:17:32.223  com.encvgo.app  
-  BBinder_init Processname  com.encvgo.app  
-  BBinder_init hasGetProcessName  com.encvgo.app
-
-05-21 07:17:32.378  com.encvgo.app  
-  vart_impl, update 109051904, state=109051904
-  AssetManager2(0xb400006f310153d8) locale list changing from [] to [zh-CN]
-
-05-21 07:17:32.459  ShaderCache  Parse coeffs for /com.encvgo.app with space syetem(version 3)
-
-05-21 07:17:32.497  GameManager  __progname=com.encvgo.app
-
-05-21 07:17:32.504  com.encvgo.app  
-  AssetManager2(0xb400006f3100e038) locale list changing from [] to [zh-CN]
-  AssetManager2(0xb400006f3101c458) locale list changing from [] to [zh-CN]
-
-05-21 07:17:32.639  com.encvgo.app  
-  hiddenapi: Accessing hidden method Landroid/view/ViewGroup;->makeOptionalFitsSystemWindows()V (runtime_flags=0, domain=platform, api=unsupported) from Landroidx/appcompat/widget/ViewUtils; (domain=app) using reflection: allowed
-  AssetManager2(0xb400006f31019578) locale list changing from [] to [zh-CN]
-
-05-21 07:17:32.649  com.encvgo.app  
-  AssetManager2(0xb400006f310169b8) locale list changing from [] to [zh-CN]
-  AssetManager2(0xb400006f31017f98) locale list changing from [] to [zh-CN]
-  AssetManager2(0xb400006f3101ecf8) locale list changing from [] to [zh-CN]
-  AssetManager2(0xb400006f31021bd8) locale list changing from [] to [zh-CN]
-
-05-21 07:17:32.657  com.encvgo.app  Loading /data/app/~~WlM8u2vGmu_T2l32TXL3Hg==/com.google.android.webview-SJHntIrmJeLLsUyDfq3fmQ==/oat/arm64/base.odex non-executable as it requires an image which we failed to load
-
-05-21 07:17:32.718  com.encvgo.app  
-  AssetManager2(0xb400006f31022b78) locale list changing from [] to [zh-CN]
-  AssetManager2(0xb400006f310205f8) locale list changing from [] to [zh-CN]
-
-05-21 07:17:32.976  com.encvgo.app  
-  [perfctl] 2891 2891 FPSGO ver:0
-  [perfctl] 0 0 0 0
-
-05-21 07:17:33.106  ImeTracker  com.encvgo.app:af2f9f35: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
-
-05-21 07:17:33.123  ENCV-Service  
-  nativeLibraryDir: /data/app/~~6cnc1fZp4dREjsNcElfxrA==/com.encvgo.app-etamuTJwuAZo_ZF07zYrRg==/lib/arm64
-  Checking native binary: exists=true, canExecute=true, path=/data/app/~~6cnc1fZp4dREjsNcElfxrA==/com.encvgo.app-etamuTJwuAZo_ZF07zYrRg==/lib/arm64/libencv-go.so
-  Using binary from nativeLibraryDir: /data/app/~~6cnc1fZp4dREjsNcElfxrA==/com.encvgo.app-etamuTJwuAZo_ZF07zYrRg==/lib/arm64/libencv-go.so
-  Starting backend: /data/app/~~6cnc1fZp4dREjsNcElfxrA==/com.encvgo.app-etamuTJwuAZo_ZF07zYrRg==/lib/arm64/libencv-go.so start
-
-05-21 07:17:33.147  ENCV-Service  
-  [go] time=2026-05-20T23:17:33.146Z level=INFO msg="Using config from environment variable ENCV_CONFIG_PATH" path=/data/user/0/com.encvgo.app/files/config.user.json
-  [go] time=2026-05-20T23:17:33.147Z level=INFO msg="Configuration loaded successfully" path=/data/user/0/com.encvgo.app/files/config.user.json log_level=debug
-  [go] 🦢 2026-05-20 23:17:33 [32m[INFO][0m [90m[main.go:112][0m [36mfile=[0m Structured logging initialized
-  [go] 🦢 2026-05-20 23:17:33 [32m[INFO][0m [90m[main.go:119][0m [36mversion=[0mdev [36mconfig_path=[0m/data/user/0/com.encvgo.app/files/config.user.json [36margs=[0m[/data/app/~~6cnc1fZp4dREjsNcElfxrA==/com.encvgo.app-etamuTJwuAZo_ZF07zYrRg==/lib/arm64/libencv-go.so start] encv started
-
-05-21 07:17:33.176  ENCV-Service  
-  [go] 🦢 2026-05-20 23:17:33 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mvideo Initializing plugin
-  [go] 🦢 2026-05-20 23:17:33 [32m[INFO][0m INFO: [video] Physical chunking disabled.
-  [go] 🦢 2026-05-20 23:17:33 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0maudio Initializing plugin
-  [go] 🦢 2026-05-20 23:17:33 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mimage Initializing plugin
-  [go] 🦢 2026-05-20 23:17:33 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mwps Initializing plugin
-  [go] 🦢 2026-05-20 23:17:33 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mpdf Initializing plugin
-  [go] 🦢 2026-05-20 23:17:33 [32m[INFO][0m [90m[registry.go:226][0m [36mname=[0mtext Initializing plugin
-  [go] 🦢 2026-05-20 23:17:33 [32m[INFO][0m [90m[server.go:104][0m [36minstance=[0m18b1694068ee108b [36mversion=[0mdev Server starting
-  [go] 🦢 2026-05-20 23:17:33 [32m[INFO][0m [90m[server.go:105][0m [36mdir=[0m/storage/emulated/0 Main service serving from
-  [go] 🦢 2026-05-20 23:17:33 [32m[INFO][0m [90m[server.go:109][0m WSLogHandler initialized, logs will be bridged to WebSocket
-  [go] 🦢 2026-05-20 23:17:33 [32m[INFO][0m [90m[server_start.go:31][0m [36maddr=[0m:2025 Backend attempting to start
-  [go] 🦢 2026-05-20 23:17:33 [32m[INFO][0m [90m[server_start.go:50][0m [36maddr=[0m[::]:2025 Backend server successfully started
-  [go] [36m[36m  ℹ  [0m[0m [96m[96mMobile mode: skipping admin server[0m[0m
-  [go] 
-  [go] # [1;33m[1;33mMobile Server Started[0m
-  [go] [1;33m[0m[0m
-  [go]   [36mServing files[0m: [90m/storage/emulated/0[0m
-  [go]   [36mAPI endpoint[0m: [90mhttp://[::]:2025[0m
-  [go] [36m[36m  ℹ  [0m[0m [96m[96mPress Ctrl+C to stop the server[0m[0m
-
-05-21 07:17:33.793  com.encvgo.app  
-  Compiler allocated 7216KB to compile void android.view.ViewRootImpl.performTraversals()
-  hiddenapi: Accessing hidden field Landroid/graphics/Bitmap;->mNativePtr:J (runtime_flags=0, domain=platform, api=unsupported) from Lcom/android/webview/chromium/WebViewChromium; (domain=app) using JNI: allowed
-
-05-21 07:17:33.871  MediaCodec-JNI  pid:2891,client name:com.encvgo.app
-
-05-21 07:17:34.074  ENCV-Service  
-  [go] 🦢 2026-05-20 23:17:34 [32m[INFO][0m [90m[mobile_api.go:66][0m [36mpath=[0m/ API: list files
-  [go] 🦢 2026-05-20 23:17:34 [32m[INFO][0m [90m[ws_hub.go:55][0m [36mremote=[0m127.0.0.1:39960 WebSocket client connected
-
-05-21 07:17:34.149  ENCV-Service  
-  [go] 🦢 2026-05-20 23:17:34 [32m[INFO][0m [90m[mobile_service.go:119][0m [36mpath=[0m/ [36mcount=[0m76 ListFiles result
-  [go] 🦢 2026-05-20 23:17:34 [32m[INFO][0m [90m[mobile_api.go:74][0m [36mpath=[0m/ [36mcount=[0m76 API: list files result
-  [go] 🦢 2026-05-20 23:17:34 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/api/files [36mstatus=[0m200 [36mduration=[0m56.936923ms HTTP request
-
-05-21 07:17:35.120  com.encvgo.app  
-  vart_impl, update 67108864, state=75497472
-  vart_impl, update 109051904, state=109051904
-
-05-21 07:17:38.759  ImeTracker  com.encvgo.app:bb3cdbdf: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
-
-05-21 07:17:43.556  com.encvgo.app  Open vivo delay for GC JIT .
-
-05-21 07:17:43.587  ENCV-Service  [go] 🦢 2026-05-20 23:17:43 [32m[INFO][0m [90m[mobile_api.go:66][0m [36mpath=[0m/测试 API: list files
-
-05-21 07:17:43.590  com.encvgo.app  
-  vart_dgc, 8192KB,32MB,0.5
-  Background concurrent copying GC freed 4733KB AllocSpace bytes, 44(1704KB) LOS objects, 83% free, 4827KB(1688KB_44KB)/28MB, 2Fd, itvl 11.261s, cpu 99.771ms, paused 112us,22us total 113.052ms
-  vart_bigdata, last_report_time=1779319063590
+05-24 10:27:09.767  lynx      [7163386090:INFO:trace_event_utils.cc(32)] base trace init success, backend: 474692141972
 
-05-21 07:17:43.594  ENCV-Service  
-  [go] 🦢 2026-05-20 23:17:43 [32m[INFO][0m [90m[mobile_service.go:119][0m [36mpath=[0m/测试 [36mcount=[0m7 ListFiles result
-  [go] 🦢 2026-05-20 23:17:43 [32m[INFO][0m [90m[mobile_api.go:74][0m [36mpath=[0m/测试 [36mcount=[0m7 API: list files result
-  [go] 🦢 2026-05-20 23:17:43 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/api/files [36mstatus=[0m200 [36mduration=[0m6.961616ms HTTP request
+05-24 10:27:09.768  LynxBaseTrace  LynxBaseTrace init successfully by itself.
 
-05-21 07:17:43.595  com.encvgo.app  Close vivo delay for GC JIT .
+05-24 10:27:09.769  com.encvgo.app  No implementation found for void com.lynx.devtoolwrapper.DevToolLifecycle.nativeSyncStateToNative(int) (tried Java_com_lynx_devtoolwrapper_DevToolLifecycle_nativeSyncStateToNative and Java_com_lynx_devtoolwrapper_DevToolLifecycle_nativeSyncStateToNative__I) - is the library loaded, e.g. System.loadLibrary?
 
-05-21 07:17:46.656  com.encvgo.app  vart_impl, update 67108864, state=75497472
-
-05-21 07:17:46.722  ENCV-Service  
-  [go] 🦢 2026-05-20 23:17:46 [90m[DEBUG][0m [90m[mobile_ws.go:32][0m [36mremote=[0m127.0.0.1:39960 WebSocket connection closed
-  [go] 🦢 2026-05-20 23:17:46 [32m[INFO][0m [90m[ws_hub.go:78][0m [36mremote=[0m127.0.0.1:39960 WebSocket client disconnected
+05-24 10:27:09.769  LynxEnv   
+  attachDevToolComponent: done.
+  LynxEnv start init
 
-05-21 07:17:49.662  com.encvgo.app  vart_dgc,  GetCoefficient 13
+05-24 10:27:09.774  LynxEnv   Loading native libraries succeeded
 
-05-21 07:17:50.534  com.encvgo.app  
-  AssetManager2(0xb400006f31021278) locale list changing from [] to [zh-CN]
-  AssetManager2(0xb400006f3101e398) locale list changing from [] to [zh-CN]
-  AssetManager2(0xb400006f31046a78) locale list changing from [] to [zh-CN]
-  vart_impl, update 109051904, state=109051904
-
-05-21 07:17:50.737  ImeTracker  com.encvgo.app:eb56d8be: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
-
-05-21 07:17:51.012  ENCV-Service  
-  [go] 🦢 2026-05-20 23:17:51 [32m[INFO][0m [90m[mobile_api.go:66][0m [36mpath=[0m/ API: list files
-  [go] 🦢 2026-05-20 23:17:51 [32m[INFO][0m [90m[ws_hub.go:55][0m [36mremote=[0m127.0.0.1:58824 WebSocket client connected
-  [go] 🦢 2026-05-20 23:17:51 [32m[INFO][0m [90m[mobile_service.go:119][0m [36mpath=[0m/ [36mcount=[0m80 ListFiles result
-  [go] 🦢 2026-05-20 23:17:51 [32m[INFO][0m [90m[mobile_api.go:74][0m [36mpath=[0m/ [36mcount=[0m80 API: list files result
-  [go] 🦢 2026-05-20 23:17:51 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/api/files [36mstatus=[0m200 [36mduration=[0m10.806846ms HTTP request
-
-05-21 07:17:52.295  com.encvgo.app  Open vivo delay for GC JIT .
-
-05-21 07:17:53.012  com.encvgo.app  
-  Close vivo delay for GC JIT .
-  Open vivo delay for GC JIT .
-
-05-21 07:17:53.594  com.encvgo.app  
-  Close vivo delay for GC JIT .
-  Open vivo delay for GC JIT .
-
-05-21 07:17:54.647  com.encvgo.app  
-  Close vivo delay for GC JIT .
-  Open vivo delay for GC JIT .
-
-05-21 07:17:55.300  com.encvgo.app  
-  Close vivo delay for GC JIT .
-  Open vivo delay for GC JIT .
-
-05-21 07:17:55.653  com.encvgo.app  
-  Close vivo delay for GC JIT .
-  Open vivo delay for GC JIT .
-
-05-21 07:17:56.561  com.encvgo.app  
-  Close vivo delay for GC JIT .
-  Open vivo delay for GC JIT .
-
-05-21 07:17:57.731  com.encvgo.app  
-  Close vivo delay for GC JIT .
-  Open vivo delay for GC JIT .
-  Close vivo delay for GC JIT .
-
-05-21 07:17:58.751  ENCV-Service  
-  [go] 🦢 2026-05-20 23:17:58 [32m[INFO][0m [90m[mobile_api.go:66][0m [36mpath=[0m/Download API: list files
-  [go] 🦢 2026-05-20 23:17:58 [32m[INFO][0m [90m[mobile_service.go:119][0m [36mpath=[0m/Download [36mcount=[0m213 ListFiles result
-  [go] 🦢 2026-05-20 23:17:58 [32m[INFO][0m [90m[mobile_api.go:74][0m [36mpath=[0m/Download [36mcount=[0m213 API: list files result
-  [go] 🦢 2026-05-20 23:17:58 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/api/files [36mstatus=[0m200 [36mduration=[0m39.209846ms HTTP request
-
-05-21 07:18:00.508  com.encvgo.app  Open vivo delay for GC JIT .
-
-05-21 07:18:01.209  com.encvgo.app  
-  Close vivo delay for GC JIT .
-  Open vivo delay for GC JIT .
-
-05-21 07:18:01.929  com.encvgo.app  
-  Close vivo delay for GC JIT .
-  Open vivo delay for GC JIT .
-
-05-21 07:18:02.948  com.encvgo.app  
-  Close vivo delay for GC JIT .
-  Open vivo delay for GC JIT .
-
-05-21 07:18:04.555  com.encvgo.app  
-  Close vivo delay for GC JIT .
-  Open vivo delay for GC JIT .
-
-05-21 07:18:04.860  ENCV-Service  
-  [go] 🦢 2026-05-20 23:18:04 [32m[INFO][0m [90m[mobile_api.go:66][0m [36mpath=[0m/Download/分享保存 API: list files
-  [go] 🦢 2026-05-20 23:18:04 [32m[INFO][0m [90m[mobile_service.go:119][0m [36mpath=[0m/Download/分享保存 [36mcount=[0m15 ListFiles result
-  [go] 🦢 2026-05-20 23:18:04 [32m[INFO][0m [90m[mobile_api.go:74][0m [36mpath=[0m/Download/分享保存 [36mcount=[0m15 API: list files result
-  [go] 🦢 2026-05-20 23:18:04 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/api/files [36mstatus=[0m200 [36mduration=[0m4.910769ms HTTP request
-
-05-21 07:18:04.875  com.encvgo.app  Close vivo delay for GC JIT .
-
-05-21 07:18:06.362  com.encvgo.app  Open vivo delay for GC JIT .
-
-05-21 07:18:07.084  com.encvgo.app  
-  Close vivo delay for GC JIT .
-  Open vivo delay for GC JIT .
-
-05-21 07:18:07.721  com.encvgo.app  Close vivo delay for GC JIT .
-
-05-21 07:18:08.124  ENCV-Service  
-  [go] DEBUG: [Detector] Starting detection for file: /storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
-  [go] DEBUG: [Detector] Reading footer from the END of the file using SectionReader...
-  [go] DEBUG: [Detector] Read footer from file '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4'. Magic: '������'
-  [go] DEBUG: [Detector] FAILED: Footer magic number mismatch. Expected: ENVC, Got: ������
-  [go] 🦢 2026-05-20 23:18:08 [33m[WARN][0m [90m[container_manager.go:65][0m [36mpath=[0m/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4 Container is invalid and not cached, rebuilding as last resort
-  [go] 🦢 2026-05-20 23:18:08 [32m[INFO][0m DEBUG: [Unpack] Cleaning up temp file: /storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4_unified_4198913574.tmp
-
-05-21 07:18:08.144  ENCV-Service  [go] 🦢 2026-05-20 23:18:08 [31m[ERROR][0m [90m[server_handle.go:143][0m [36mpath=[0m/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4 [36merror=[0mfailed to get a readable container path for '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4': container manager failed to rebuild '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4': failed to find and parse manifest: failed to read header for version detection: invalid header GetDecryptReader failed
-
-05-21 07:18:08.148  ENCV-Service  [go] 🦢 2026-05-20 23:18:08 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/stream [36mstatus=[0m500 [36mduration=[0m19.004615ms HTTP request
-
-05-21 07:18:09.163  ENCV-Service  
-  [go] DEBUG: [Detector] Starting detection for file: /storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
-  [go] DEBUG: [Detector] Reading footer from the END of the file using SectionReader...
-  [go] DEBUG: [Detector] Read footer from file '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4'. Magic: '������'
-  [go] DEBUG: [Detector] FAILED: Footer magic number mismatch. Expected: ENVC, Got: ������
-  [go] 🦢 2026-05-20 23:18:09 [33m[WARN][0m [90m[container_manager.go:65][0m [36mpath=[0m/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4 Container is invalid and not cached, rebuilding as last resort
-  [go] 🦢 2026-05-20 23:18:09 [32m[INFO][0m DEBUG: [Unpack] Cleaning up temp file: /storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4_unified_1424593046.tmp
-  [go] 🦢 2026-05-20 23:18:09 [31m[ERROR][0m [90m[server_handle.go:143][0m [36mpath=[0m/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4 [36merror=[0mfailed to get a readable container path for '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4': container manager failed to rebuild '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4': failed to find and parse manifest: failed to read header for version detection: invalid header GetDecryptReader failed
-  [go] 🦢 2026-05-20 23:18:09 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/stream [36mstatus=[0m500 [36mduration=[0m15.485539ms HTTP request
-
-05-21 07:18:10.183  ENCV-Service  
-  [go] DEBUG: [Detector] Starting detection for file: /storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
-  [go] DEBUG: [Detector] Reading footer from the END of the file using SectionReader...
-  [go] DEBUG: [Detector] Read footer from file '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4'. Magic: '������'
-  [go] DEBUG: [Detector] FAILED: Footer magic number mismatch. Expected: ENVC, Got: ������
-  [go] 🦢 2026-05-20 23:18:10 [33m[WARN][0m [90m[container_manager.go:65][0m [36mpath=[0m/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4 Container is invalid and not cached, rebuilding as last resort
-
-05-21 07:18:10.191  ENCV-Service  
-  [go] 🦢 2026-05-20 23:18:10 [32m[INFO][0m DEBUG: [Unpack] Cleaning up temp file: /storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4_unified_434575113.tmp
-  [go] 🦢 2026-05-20 23:18:10 [31m[ERROR][0m [90m[server_handle.go:143][0m [36mpath=[0m/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4 [36merror=[0mfailed to get a readable container path for '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4': container manager failed to rebuild '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4': failed to find and parse manifest: failed to read header for version detection: invalid header GetDecryptReader failed
-  [go] 🦢 2026-05-20 23:18:10 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/stream [36mstatus=[0m500 [36mduration=[0m11.855692ms HTTP request
-
-05-21 07:18:11.202  ENCV-Service  
-  [go] DEBUG: [Detector] Starting detection for file: /storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
-  [go] DEBUG: [Detector] Reading footer from the END of the file using SectionReader...
-  [go] DEBUG: [Detector] Read footer from file '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4'. Magic: '������'
-  [go] DEBUG: [Detector] FAILED: Footer magic number mismatch. Expected: ENVC, Got: ������
-  [go] 🦢 2026-05-20 23:18:11 [33m[WARN][0m [90m[container_manager.go:65][0m [36mpath=[0m/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4 Container is invalid and not cached, rebuilding as last resort
-  [go] 🦢 2026-05-20 23:18:11 [32m[INFO][0m DEBUG: [Unpack] Cleaning up temp file: /storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4_unified_1877279957.tmp
-
-05-21 07:18:11.217  ENCV-Service  
-  [go] 🦢 2026-05-20 23:18:11 [31m[ERROR][0m [90m[server_handle.go:143][0m [36mpath=[0m/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4 [36merror=[0mfailed to get a readable container path for '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4': container manager failed to rebuild '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4': failed to find and parse manifest: failed to read header for version detection: invalid header GetDecryptReader failed
-  [go] 🦢 2026-05-20 23:18:11 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/stream [36mstatus=[0m500 [36mduration=[0m14.60677ms HTTP request
-
-05-21 07:18:12.225  ENCV-Service  
-  [go] DEBUG: [Detector] Starting detection for file: /storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
-  [go] DEBUG: [Detector] Reading footer from the END of the file using SectionReader...
-  [go] DEBUG: [Detector] Read footer from file '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4'. Magic: '������'
-  [go] DEBUG: [Detector] FAILED: Footer magic number mismatch. Expected: ENVC, Got: ������
-  [go] 🦢 2026-05-20 23:18:12 [33m[WARN][0m [90m[container_manager.go:65][0m [36mpath=[0m/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4 Container is invalid and not cached, rebuilding as last resort
-
-05-21 07:18:12.232  ENCV-Service  
-  [go] 🦢 2026-05-20 23:18:12 [32m[INFO][0m DEBUG: [Unpack] Cleaning up temp file: /storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4_unified_1639502411.tmp
-  [go] 🦢 2026-05-20 23:18:12 [31m[ERROR][0m [90m[server_handle.go:143][0m [36mpath=[0m/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4 [36merror=[0mfailed to get a readable container path for '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4': container manager failed to rebuild '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4': failed to find and parse manifest: failed to read header for version detection: invalid header GetDecryptReader failed
-  [go] 🦢 2026-05-20 23:18:12 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/stream [36mstatus=[0m500 [36mduration=[0m12.45077ms HTTP request
-
-05-21 07:18:13.245  ENCV-Service  
-  [go] DEBUG: [Detector] Starting detection for file: /storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
-  [go] DEBUG: [Detector] Reading footer from the END of the file using SectionReader...
-  [go] DEBUG: [Detector] Read footer from file '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4'. Magic: '������'
-  [go] DEBUG: [Detector] FAILED: Footer magic number mismatch. Expected: ENVC, Got: ������
-  [go] 🦢 2026-05-20 23:18:13 [33m[WARN][0m [90m[container_manager.go:65][0m [36mpath=[0m/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4 Container is invalid and not cached, rebuilding as last resort
-
-05-21 07:18:13.257  ENCV-Service  
-  [go] 🦢 2026-05-20 23:18:13 [32m[INFO][0m DEBUG: [Unpack] Cleaning up temp file: /storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4_unified_2608396270.tmp
-  [go] 🦢 2026-05-20 23:18:13 [31m[ERROR][0m [90m[server_handle.go:143][0m [36mpath=[0m/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4 [36merror=[0mfailed to get a readable container path for '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4': container manager failed to rebuild '/storage/emulated/0/Download/分享保存/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4': failed to find and parse manifest: failed to read header for version detection: invalid header GetDecryptReader failed
-  [go] 🦢 2026-05-20 23:18:13 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/stream [36mstatus=[0m500 [36mduration=[0m15.207077ms HTTP request
-
-05-21 07:18:21.098  com.encvgo.app  Open vivo delay for GC JIT .
-
-05-21 07:18:21.155  com.encvgo.app  Close vivo delay for GC JIT .
-
-05-21 07:18:25.262  ENCV-Service  
-  [go] 🦢 2026-05-20 23:18:25 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/api/config [36mstatus=[0m200 [36mduration=[0m77.154µs HTTP request
-  [go] 🦢 2026-05-20 23:18:25 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/api/config [36mstatus=[0m200 [36mduration=[0m151.692µs HTTP request
-
-05-21 07:18:30.545  ENCV-Service  [go] 🦢 2026-05-20 23:18:30 [32m[INFO][0m [90m[logging.go:29][0m [36mmethod=[0mGET [36mpath=[0m/api/tasks [36mstatus=[0m200 [36mduration=[0m932.615µs HTTP request
-
-05-21 07:18:34.083  com.encvgo.app  Open vivo delay for GC JIT .
+05-24 10:27:09.775  lynx      [7163386090:INFO:vsync_monitor.cc(23)] VSyncMonitor created with is_vsync_post_task_by_emergency_ true
+
+05-24 10:27:09.776  LynxEnv   LynxEnv failed to get LynxExtensionService
+
+05-24 10:27:09.799  EncvApplication  initLynxEnv: lynx_devtool native lib not available, skipping devtool features
+
+05-24 10:27:39.586  PlayerOverlay  
+  showOverlay: overlay FrameLayout added to decorView
+  createLynxView: START
+
+05-24 10:27:39.590  LynxView  new lynxview detail com.lynx.tasm.LynxView{19fbc78 V.E...... ......I. 0,0-0,0}
+
+05-24 10:27:39.594  LynxUIRenderer  
+  lynxContext setUIBodyViewcom.lynx.tasm.LynxView{19fbc78 VFE...... ......I. 0,0-0,0}com.lynx.tasm.LynxTemplateRender$1@9b093b6
+  lynxContext setUIBodyViewcom.lynx.tasm.LynxView{19fbc78 VFE...... ......I. 0,0-0,0}com.lynx.tasm.LynxTemplateRender$1@9b093b6
+
+05-24 10:27:39.600  LynxTemplateRender  mEnableGenericResourceFetcher: false render: com.lynx.tasm.LynxTemplateRender@d343f8d
+
+05-24 10:27:39.602  lynx      
+  [7163386090:INFO:vsync_monitor.cc(23)] VSyncMonitor created with is_vsync_post_task_by_emergency_ true
+  [7163386090:INFO:task_runner_manufactor.cc(257)] TaskRunnerManufactor setThreadStrategy:0, multi_tasm:true, async_thread_cache:true
+  [7163386090:INFO:lynx_shell.cc(131)] LynxShell create, this:0xB400006F31086510
+  [7163386090:INFO:memory_monitor.h(81)] [memory_monitor.h] new MemoryMonitor, this:0xB400006F6116FE50, Enable:false, MemoryChangeThresholdMb:0
+  [7163386090:INFO:timing_handler.cc(26)] [TimingHandler.cc] new TimingHandler, this:0xB400006F6116FE90
+  [7163386090:INFO:template_assembler.h(518)] Lynx Set Enable Layout Only: true from LynxView,  this:0xB400006F01169D30
+
+05-24 10:27:39.604  LynxTemplateRender  force use quick js engine
+
+05-24 10:27:39.604  lynx      [7163386090:INFO:vsync_monitor.cc(23)] VSyncMonitor created with is_vsync_post_task_by_emergency_ true
+
+05-24 10:27:39.604  LynxTemplateRender  set JSGroupThreadName to lynx context: 
+
+05-24 10:27:39.604  lynx      
+  [6DCA3E23C0:INFO:runtime_lifecycle_observer_impl.cc(32)] [Runtime] RuntimeLifecycleObserverImpl::OnRuntimeCreate with observer:0xB40000701106B988
+  [6DCA3E23C0:INFO:bts_runtime.cc(143)] Init LynxRuntime group_id: -1 runtime_id: 0 this:0xB400006FB105B810
+  [6DCA3E23C0:INFO:runtime_lifecycle_observer_impl.cc(48)] [Runtime] RuntimeLifecycleObserverImpl::OnRuntimeInit with runtime id: 0
+  [6DCA3E23C0:INFO:runtime_manager.cc(444)] make runtime with force_use_lightweight_js_engine = true
+  [6DCA3E23C0:INFO:runtime_manager.cc(451)] make QuickJS runtime
+
+05-24 10:27:39.605  LynxLayoutProxy  LynxLayoutProxy is created
+
+05-24 10:27:39.605  lynx      
+  [6DCA3E23C0:INFO:quickjs_runtime_wrapper.cc(115)] lynx InitQuickjsRuntime success
+  [6DCA3E23C0:INFO:runtime_manager.cc(187)] create single_context:0xB400006FC10A3778
+
+05-24 10:27:39.605  LynxResourceLoader  loadJSSource with name assets://lynx_core.js
+
+05-24 10:27:39.606  lynx      
+  [6DCA3E23C0:INFO:quickjs_runtime.cc(906)] using new bytecode
+  [6DCA3E23C0:INFO:js_cache_manager.cc(222)] bytecode enabled, url: '/lynx_core.js', template_url: '', file_content size:64939
+  [7163386090:INFO:layout_context.cc(1098)] [Layout] UpdateViewport :size: 0.0, 0.0; mode: 0, 0
+  [6E85C5B3C0:INFO:js_cache_manager.cc(607)] bytecode_generate_generate_version: 3400532428
+
+05-24 10:27:39.607  LynxTemplateRender  1779589659607 create LynxView 1779589659594-27245688 
+
+05-24 10:27:39.607  lynx      [6E85C5B3C0:INFO:js_cache_manager.cc(174)] js_cache_dir created:/data/user/0/com.encvgo.app/cache/quickjs_cache
+
+05-24 10:27:39.607  lynx      [6E85C5B3C0:ERROR:js_cache_manager.cc(99)] ReadFile failed: /data/user/0/com.encvgo.app/cache/quickjs_cache/meta.json
+
+05-24 10:27:39.607  lynx      
+  [6E85C5B3C0:INFO:js_cache_manager.cc(619)] Metadata load failed, clearing cache
+  [6E85C5B3C0:INFO:js_cache_manager.cc(658)] Clearing cache dir
+  [6E85C5B3C0:INFO:js_cache_manager.cc(622)] Creating new Metadata
+
+05-24 10:27:39.607  Lynx      onAttachedToWindow:27245688
+
+05-24 10:27:39.607  LynxTemplateRender  
+  lynxview onAttachedToWindow com.lynx.tasm.LynxTemplateRender@d343f8d
+  onEnterForeground. force: false
+
+05-24 10:27:39.607  PlayerOverlay  createLynxView: LynxView added to overlay (on top of MPV surface)
+
+05-24 10:27:39.607  lynx      
+  [6E85C5B3C0:INFO:js_cache_manager.cc(597)] ClearExpiredCache time spent: 2 ms
+  [6DCA2D63C0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_code_cache
+
+05-24 10:27:39.608  PlayerOverlay  createLynxView: initData={"filePath":"\/123云盘\/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","fileName":"e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","mimeType":"video\/*","isExternal":false,"mediaType":"video"}
+
+05-24 10:27:39.608  lynx      [6DCA3E23C0:INFO:js_cache_manager.cc(287)] no cache matches this url.
+
+05-24 10:27:39.608  LynxView  renderTemplateUrl player.lynx.bundlewith jsonData incom.lynx.tasm.LynxView{19fbc78 VFE...... ......I. 0,0-0,0}
+
+05-24 10:27:39.608  lynx      
+  [6DCA3E23C0:INFO:quickjs_runtime.cc(240)] QuickjsRuntime::evaluatePreparedJavaScript start: /lynx_core.js
+  [6E85C5B3C0:INFO:quickjs_runtime_wrapper.cc(115)] lynx InitQuickjsRuntime success
+  [6DCA3E23C0:INFO:quickjs_runtime.cc(160)] QuickjsRuntime::evaluateJavaScript: /lynx_core.js
+  [6E85C5B3C0:INFO:js_cache_manager.cc(368)] RunTask start, url: '/lynx_core.js', template_url: '', file_md5: de201b688ec3f4fc5336d6ad133308b0, buffer size: 64939 bytes
+
+05-24 10:27:39.608  LynxEventReporter  eventReporter service not found or event name is null.
+
+05-24 10:27:39.608  LynxTemplateRender  
+  dispatchOnPageStart url player.lynx.bundle in com.lynx.tasm.LynxTemplateRender@d343f8d
+  1779589659608 renderTemplate LynxView 1779589659594-27245688 player.lynx.bundle
+
+05-24 10:27:39.609  lynx      [7163386090:INFO:layout_context.cc(1098)] [Layout] UpdateViewport :size: 1260.0, 2800.0; mode: 1, 1
+
+05-24 10:27:39.615  ENCV-Service  
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [MpvPlayerModule] preInit: MPV engine initialized on main thread
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [PlayerOverlay] createLynxView: START
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 468.077µs |       127.0.0.1 | POST     "/api/logs"
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 59.461µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [PlayerOverlay] showOverlay: overlay FrameLayout added to decorView
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 28.308µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [PlayerOverlay] createLynxView: initData={"filePath":"\/123云盘\/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","fileName":"e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","mimeType":"video\/*","isExternal":false,"mediaType":"video"}
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 192.077µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [PlayerOverlay] createLynxView: LynxView added to overlay (on top of MPV surface)
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 69.231µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [PlayerOverlay] showOverlay: complete
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 65.538µs |       127.0.0.1 | POST     "/api/logs"
+
+05-24 10:27:39.625  lynx      
+  [6E85C5B3C0:INFO:js_cache_manager.cc(453)] SaveCacheContentToStorage template_url=' ', url='/lynx_core.js'
+  [6E85C5B3C0:INFO:js_cache_manager.cc(408)] MakeCache success:true, cache size: 146872 bytes, time spent: 18 ms
+  [6DCA2D63C0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_code_cache
+
+05-24 10:27:39.626  LynxEventReporter  eventReporter service not found or event name is null.
+
+05-24 10:27:39.626  lynx      
+  [6DCA3E23C0:INFO:quickjs_runtime.cc(173)] QuickjsRuntime::evaluateJavaScript finished successfully.
+  [6DCA3E23C0:INFO:bts_runtime.cc(179)] js_runtime_type :0 0xB400006FB105B810
+  [6DCA3E23C0:INFO:bts_runtime.cc(195)]  lynxRuntime:0xB400006FB105B810 create APP 0xB400006F211AA630
+
+05-24 10:27:39.632  LynxTemplateRender  
+  dispatchOnPageStart url null in com.lynx.tasm.LynxTemplateRender@d343f8d
+  LoadMeta with binary, pre-painting: false ,pre-painting with draw:false enableRecycleTemplateBundle: false
+
+05-24 10:27:39.632  lynx      [7163386090:ERROR:template_assembler.cc(947)] lynx_plugin: load original lynx so
+
+05-24 10:27:39.632  lynx      [7163386090:INFO:template_assembler.cc(344)] start TemplateAssembler::LoadTemplate, url: len: 115820 this:0xB400006F01169D30
+
+05-24 10:27:39.633  lynx      
+  [6DCA2D63C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipelineStart
+  [6DCA2D63C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is pipeline_start
+
+05-24 10:27:39.633  lynx      
+  [7163386090:INFO:lynx_binary_base_template_reader.cc(171)] client version:0.2.0.0  ;binary_version:0.2.0.0
+  [7163386090:INFO:lynx_binary_base_template_reader.cc(122)] App Bundle's engine version: 3.2, lynx sdk version:3.7, min supported lynx version: 1.0
+  [7163386090:INFO:template_binary_reader.cc(241)] CSSLazyDecode options FE_OPTION_UNDEFINED ABSetting: 
+
+05-24 10:27:39.634  lynx      
+  [7163386090:INFO:template_assembler.cc(2479)] TemplateAssembler::OnScreenMetricsSet with width: 1260 height: 2800 device_pixel_ratio: 3.28125
+  [7163386090:INFO:element_manager.cc(531)] ElementManager::UpdateScreenMetrics width:1260,height:2800
+  [6DCA3E23C0:INFO:bts_runtime.cc(654)] lynx runtime loadApp, napi id:0
+  [6DCA3E23C0:INFO:bts_runtime.cc(672)] [LynxRuntime] circular data check flag: true
+  [6DCA3E23C0:INFO:js_app.cc(2064)]  App::loadApp start 0xB400006F211AA630
+  [6DCA3E23C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxUIMethodModule
+  [7163386090:INFO:layout_context.cc(1098)] [Layout] UpdateViewport :size: 1260.0, 2800.0; mode: 1, 1
+  [6DCA3E23C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxResourceModule
+  [6DCA3E23C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxAccessibilityModule
+  [6DCA3E23C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxSetModule
+  [6DCA3E23C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LynxExposureModule
+  [6DCA3E23C0:INFO:js_app.cc(2920)] loadScript:app-service.js
+  [6DCA3E23C0:INFO:quickjs_runtime.cc(240)] QuickjsRuntime::evaluatePreparedJavaScript start: /app-service.js
+  [6DCA3E23C0:INFO:quickjs_runtime.cc(160)] QuickjsRuntime::evaluateJavaScript: /app-service.js
+  [6DCA3E23C0:INFO:quickjs_runtime.cc(173)] QuickjsRuntime::evaluateJavaScript finished successfully.
+  [6DCA3E23C0:INFO:js_app.cc(2920)] loadScript:/.rspeedy/main/background.d5177a2b.js
+  [6DCA3E23C0:INFO:quickjs_runtime.cc(240)] QuickjsRuntime::evaluatePreparedJavaScript start: /.rspeedy/main/background.d5177a2b.js
+  [6DCA3E23C0:INFO:quickjs_runtime.cc(160)] QuickjsRuntime::evaluateJavaScript: /.rspeedy/main/background.d5177a2b.js
+  [7163386090:INFO:element_manager.cc(1341)] ElementManager::OnPatchFinishForFiber WithPatch!
+  [6DCA3E23C0:INFO:quickjs_runtime.cc(173)] QuickjsRuntime::evaluateJavaScript finished successfully.
+  [6DCA3E23C0:INFO:js_app.cc(361)] LYNX PageProxy get -> setCard
+  [6DCA3E23C0:INFO:js_app.cc(2196)]  App::loadApp end 0xB400006F211AA630
+  [6DCA3E23C0:INFO:bts_runtime.cc(920)] lynx runtime ready
+  [6DCA3E23C0:INFO:lynx_console.cc(246)] "PlayerApp: initData={"filePath":"/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","fileName":"e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","mimeType":"video/*","isExternal":false,"mediaType":"video"}, filePath=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, fileName=e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, isExternal=false"
+  [6DCA2D63C0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_code_cache
+
+05-24 10:27:39.653  LynxEventReporter  eventReporter service not found or event name is null.
+
+05-24 10:27:39.653  lynx      
+  [6DCA2D63C0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_code_cache
+  [6DCA3E23C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: LogBridge
+  [6DCA3E23C0:INFO:method_invoker.cc(481)] NativeModule: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (LogBridge.log.info) will fire 0xB400007081044288
+
+05-24 10:27:39.653  LynxPlayer  PlayerApp: initData={"filePath":"/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","fileName":"e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","mimeType":"video/*","isExternal":false,"mediaType":"video"}, filePath=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, fileName=e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, isExternal=false
+
+05-24 10:27:39.653  lynx      [6DCA3E23C0:INFO:method_invoker.cc(565)] NativeModules: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (LogBridge.log.info) call platform implementation0xB400007081044288
+
+05-24 10:27:39.653  lynx      [6DCA3E23C0:ERROR:lynx_console.cc(252)] "GlobalEventEmitter not available"
+
+05-24 10:27:39.653  lynx      [6DCA3E23C0:INFO:method_invoker.cc(481)] NativeModule: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (LogBridge.log.error) will fire 0xB400007081044288
+
+05-24 10:27:39.653  LynxPlayer  GlobalEventEmitter not available
+
+05-24 10:27:39.653  lynx      
+  [6DCA3E23C0:INFO:method_invoker.cc(565)] NativeModules: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (LogBridge.log.error) call platform implementation0xB400007081044288
+  [6DCA3E23C0:INFO:lynx_console.cc(246)] "startPlayback: filePath=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4 isExternal=false mediaType=video fileName=e844e9ffb6650d294870a6d5ea963ec6mp4.mp4"
+  [6DCA3E23C0:INFO:method_invoker.cc(481)] NativeModule: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (LogBridge.log.info) will fire 0xB400007081044288
+
+05-24 10:27:39.654  LynxPlayer  startPlayback: filePath=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4 isExternal=false mediaType=video fileName=e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
+
+05-24 10:27:39.654  lynx      [6DCA3E23C0:INFO:method_invoker.cc(565)] NativeModules: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (LogBridge.log.info) call platform implementation0xB400007081044288
+
+05-24 10:27:39.654  Lynx      setVisibility:27245688 0
+
+05-24 10:27:39.654  lynx      [6DCA3E23C0:INFO:lynx_console.cc(246)] "startPlayback: step1 getBackendStatus"
+
+05-24 10:27:39.654  LynxPlayer  startPlayback: step1 getBackendStatus
+
+05-24 10:27:39.655  LynxTemplateRender  onFirstScreen
+
+05-24 10:27:39.655  lynx      
+  [7163386090:INFO:touch_event_handler.cc(79)] TouchEventHandler init: support_component_js_: true; use_lepus_ng_: true
+  [7163386090:INFO:touch_event_handler.cc(367)] SendCustomEvent event name:resize tag:10
+  [7163386090:INFO:layout_context.cc(883)] [Layout] layout finish with result size: 1260, 2800 for viewport, size: 1260.0, 2800.0; mode: 1, 1 Time taken: 11374154 ns
+
+05-24 10:27:39.656  LynxTemplateRender  dispatchLoadSuccess templateSize in com.lynx.tasm.LynxTemplateRender@d343f8d
+
+05-24 10:27:39.656  lynx      [7163386090:INFO:template_assembler.cc(839)] end TemplateAssembler::LoadTemplate, url: len: 115820
+
+05-24 10:27:39.656  lynx      
+  [6DCA2D63C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is loadBundleStart
+  [6DCA2D63C0:ERROR:timing_map.cc(20)] Set duplicated timing_key, timing_key is load_template_start
+
+05-24 10:27:39.656  LynxTemplateRender  
+  1779589659656 renderTemplate LynxView 1779589659594-27245688 
+  retain TemplateData for lifecycle, url=, data=com.lynx.tasm.TemplateData@3db9495, listSize=1, bindContextEnabled=false
+
+05-24 10:27:39.656  lynx      [6DCA3E23C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: GoBackendModule
+
+05-24 10:27:39.656  lynx      [6DCA3E23C0:INFO:method_invoker.cc(481)] NativeModule: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (GoBackendModule.getBackendStatus.) will fire 0xB40000708103A728
+
+05-24 10:27:39.657  lynx      [6DCA3E23C0:INFO:method_invoker.cc(565)] NativeModules: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (GoBackendModule.getBackendStatus.) call platform implementation0xB40000708103A728
+
+05-24 10:27:39.657  LynxTemplateRender  updateViewport is unnecessary, because the size of the cache are the same as the size to be set.
+
+05-24 10:27:39.657  lynx      
+  [6DCA3E23C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnLifecycleEvent, phase: 2, target: 0, listener options: 0
+  [6DCA3E23C0:INFO:js_event_listener.cc(38)] JSClosureEventListener::Invoke name: __OnLifecycleEvent
+  [6DCA3E23C0:INFO:js_app.cc(1248)] LYNX PageProxy get -> GeneratePipelineOptions0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(1274)] LYNX PageProxy get -> OnPipelineStart0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(1356)] LYNX PageProxy get -> BindPipelineIdWithTimingFlag0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(1325)] LYNX PageProxy get -> MarkPipelineTiming0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(1178)] LYNX PageProxy get -> callLepusMethod0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(3537)]  CallLepusMethod: rLynxChange 0xB400006F211AA630
+  [6DCA3E23C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnAppFirstScreen, phase: 2, target: 0, listener options: 0
+  [6DCA3E23C0:INFO:js_event_listener.cc(38)] JSClosureEventListener::Invoke name: __OnAppFirstScreen
+  [6DCA3E23C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.onWindowResize 0xB400006F211AA630
+  [6DCA3E23C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __OnNativeAppReady, phase: 2, target: 0, listener options: 0
+  [6DCA3E23C0:INFO:js_event_listener.cc(38)] JSClosureEventListener::Invoke name: __OnNativeAppReady
+  [6DCA3E23C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.onFontScaleChanged 0xB400006F211AA630
+  [6DCA3E23C0:INFO:lynx_console.cc(246)] "startPlayback: step1 result={"running":true,"port":2025}"
+  [6DCA3E23C0:INFO:method_invoker.cc(481)] NativeModule: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (LogBridge.log.info) will fire 0xB400007081044288
+
+05-24 10:27:39.659  LynxPlayer  startPlayback: step1 result={"running":true,"port":2025}
+
+05-24 10:27:39.659  lynx      
+  [6DCA3E23C0:INFO:method_invoker.cc(565)] NativeModules: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (LogBridge.log.info) call platform implementation0xB400007081044288
+  [6DCA3E23C0:INFO:lynx_console.cc(246)] "startPlayback: step3 getStreamUrl path=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4"
+
+05-24 10:27:39.659  LynxPlayer  startPlayback: step3 getStreamUrl path=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
+
+05-24 10:27:39.659  lynx      [6DCA3E23C0:INFO:method_invoker.cc(481)] NativeModule: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (GoBackendModule.getStreamUrl./123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4) will fire 0xB4000070810388E8
+
+05-24 10:27:39.659  lynx      
+  [6DCA3E23C0:INFO:method_invoker.cc(565)] NativeModules: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (GoBackendModule.getStreamUrl./123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4) call platform implementation0xB4000070810388E8
+  [6DCA3E23C0:INFO:lynx_console.cc(246)] "startPlayback: step3 url=http://127.0.0.1:2025/stream?path=/123%E4%BA%91%E7%9B%98/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4"
+  [6DCA3E23C0:INFO:method_invoker.cc(481)] NativeModule: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (LogBridge.log.info) will fire 0xB400007081044288
+
+05-24 10:27:39.660  LynxPlayer  startPlayback: step3 url=http://127.0.0.1:2025/stream?path=/123%E4%BA%91%E7%9B%98/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
+
+05-24 10:27:39.660  lynx      
+  [6DCA3E23C0:INFO:method_invoker.cc(565)] NativeModules: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (LogBridge.log.info) call platform implementation0xB400007081044288
+  [6DCA3E23C0:INFO:lynx_console.cc(246)] "startPlayback: step4 mpv.play url=http://127.0.0.1:2025/stream?path=/123%E4%BA%91%E7%9B%98/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4"
+
+05-24 10:27:39.660  LynxPlayer  startPlayback: step4 mpv.play url=http://127.0.0.1:2025/stream?path=/123%E4%BA%91%E7%9B%98/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
+
+05-24 10:27:39.661  MpvPlayerModule  init: MpvPlayerModule created on thread: Lynx_JS
+
+05-24 10:27:39.661  lynx      
+  [6DCA3E23C0:INFO:lynx_module_android.cc(61)] NativeModule: LynxModuleAndroid Create: MpvPlayerModule
+  [6DCA3E23C0:INFO:method_invoker.cc(481)] NativeModule: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (MpvPlayerModule.play.http://127.0.0.1:2025/stream?path=/123%E4%BA%91%E7%9B%98/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4) will fire 0xB400007081023C28
+
+05-24 10:27:39.661  lynx      [6DCA2D63C0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_setup_timing
+
+05-24 10:27:39.662  LynxEventReporter  eventReporter service not found or event name is null.
+
+05-24 10:27:39.662  lynx      [7163386090:INFO:template_assembler.cc(3336)] TemplateAssembler::CallLepusMethod. this:0xB400006F01169D30 url: method name: rLynxChange
+
+05-24 10:27:39.662  lynx      [6DCA3E23C0:INFO:method_invoker.cc(565)] NativeModules: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (MpvPlayerModule.play.http://127.0.0.1:2025/stream?path=/123%E4%BA%91%E7%9B%98/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4) call platform implementation0xB400007081023C28
+
+05-24 10:27:39.662  lynx      
+  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:text
+  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:view
+  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:raw-text
+
+05-24 10:27:39.662  lynx      
+  [6DCA3E23C0:INFO:js_app.cc(1248)] LYNX PageProxy get -> GeneratePipelineOptions0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(1274)] LYNX PageProxy get -> OnPipelineStart0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(1325)] LYNX PageProxy get -> MarkPipelineTiming0xB400006FF11017A8
+
+05-24 10:27:39.663  lynx      
+  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:view
+  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:text
+  [7163386090:ERROR:layout_context.cc(549)] DestroyLayoutNodeBeforeRemoveFromParent tag:raw-text
+
+05-24 10:27:39.663  lynx      
+  [6DCA3E23C0:INFO:js_app.cc(1178)] LYNX PageProxy get -> callLepusMethod0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(3537)]  CallLepusMethod: rLynxChange 0xB400006F211AA630
+  [6DCA3E23C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __SendGlobalEvent, phase: 2, target: 0, listener options: 0
+  [6DCA3E23C0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __SendGlobalEvent, type: 0
+  [6DCA3E23C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.lynx.performance.timing.onSetup 0xB400006F211AA630
+  [6DCA3E23C0:INFO:lynx_console.cc(246)] "startPlayback: step4 result=true"
+
+05-24 10:27:39.663  lynx      
+  [7163386090:INFO:element_manager.cc(1341)] ElementManager::OnPatchFinishForFiber WithPatch!
+  [6DCA3E23C0:INFO:method_invoker.cc(481)] NativeModule: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (LogBridge.log.info) will fire 0xB400007081044288
+
+05-24 10:27:39.663  LynxPlayer  startPlayback: step4 result=true
+
+05-24 10:27:39.663  lynx      
+  [6DCA3E23C0:INFO:method_invoker.cc(565)] NativeModules: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (LogBridge.log.info) call platform implementation0xB400007081044288
+  [6DCA3E23C0:INFO:lynx_console.cc(246)] "startPlayback: all steps done, playing"
+  [6DCA3E23C0:INFO:method_invoker.cc(481)] NativeModule: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (LogBridge.log.info) will fire 0xB400007081044288
+
+05-24 10:27:39.664  LynxPlayer  startPlayback: all steps done, playing
+
+05-24 10:27:39.664  lynx      
+  [6DCA3E23C0:INFO:method_invoker.cc(565)] NativeModules: LynxModuleAndroid MethodInvoker::InvokeMethod, method: (LogBridge.log.info) call platform implementation0xB400007081044288
+  [6DCA3E23C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __SendGlobalEvent, phase: 2, target: 0, listener options: 0
+  [6DCA3E23C0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __SendGlobalEvent, type: 0
+  [6DCA3E23C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.lynx.performance.onPerformanceEvent 0xB400006F211AA630
+
+05-24 10:27:39.665  LynxTemplateRender  onPageUpdate
+
+05-24 10:27:39.665  lynx      
+  [7163386090:INFO:layout_context.cc(883)] [Layout] layout finish with result size: 1260, 2800 for viewport, size: 1260.0, 2800.0; mode: 1, 1 Time taken: 1613615 ns
+  [7163386090:INFO:template_assembler.cc(3336)] TemplateAssembler::CallLepusMethod. this:0xB400006F01169D30 url: method name: rLynxChange
+  [7163386090:INFO:element_manager.cc(1331)] ElementManager::OnPatchFinishForFiber NoPatch!
+
+05-24 10:27:39.669  ENCV-Service  
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [LynxPlayer] PlayerApp: initData={"filePath":"/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","fileName":"e844e9ffb6650d294870a6d5ea963ec6mp4.mp4","mimeType":"video/*","isExternal":false,"mediaType":"video"}, filePath=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, fileName=e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, isExternal=false
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 |    128µs |       127.0.0.1 | POST     "/api/logs"
+
+05-24 10:27:39.672  ENCV-Service  [go] 🦢 2026-05-24 02:27:39 [31m[ERROR][0m [90m[mobile_api.go:450][0m [LynxPlayer] GlobalEventEmitter not available
+
+05-24 10:27:39.678  ENCV-Service  
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [LynxPlayer] startPlayback: filePath=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4 isExternal=false mediaType=video fileName=e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 137.461µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [GoBackendModule] registerReceiver: registering backend receiver
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 149.231µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [LynxPlayer] startPlayback: step1 getBackendStatus
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [PlayerOverlay] tryAttachMpvModule: mpvModule not yet created
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 416.923µs |       127.0.0.1 | POST     "/api/logs"
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 55.692µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [PlayerOverlayClient] onLoadSuccess
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 172.923µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [GoBackendModule] registerReceiver: registered
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 |     73µs |       127.0.0.1 | POST     "/api/logs"
+
+05-24 10:27:39.680  MpvPlayerModule  init auto-attach: lynx_player_root not found
+
+05-24 10:27:39.681  LynxContext  LynxContext sendGlobalEvent mpv:state-change with this: com.lynx.tasm.LynxTemplateRender$1@9b093b6
+
+05-24 10:27:39.682  lynx      [6DCA3E23C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.mpv:state-change 0xB400006F211AA630
+
+05-24 10:27:39.682  LynxContext  LynxContext sendGlobalEvent mpv:state-change with this: com.lynx.tasm.LynxTemplateRender$1@9b093b6
+
+05-24 10:27:39.683  lynx      [6DCA3E23C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.mpv:state-change 0xB400006F211AA630
+
+05-24 10:27:39.684  LynxContext  LynxContext sendGlobalEvent mpv:state-change with this: com.lynx.tasm.LynxTemplateRender$1@9b093b6
+
+05-24 10:27:39.684  Lynx.IntersectionObserver  onRootViewDraw ObserverHandler
+
+05-24 10:27:39.684  LynxTemplateRender  updateViewport is unnecessary, because the size of the cache are the same as the size to be set.
+
+05-24 10:27:39.684  lynx      [6DCA3E23C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.mpv:state-change 0xB400006F211AA630
+
+05-24 10:27:39.686  lynx      
+  [6DCA3E23C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __SendGlobalEvent, phase: 2, target: 0, listener options: 0
+  [6DCA3E23C0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __SendGlobalEvent, type: 0
+
+05-24 10:27:39.686  lynx      
+  [6DCA3E23C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.lynx.performance.timing.onUpdate 0xB400006F211AA630
+  [6DCA2D63C0:INFO:event_tracker_platform_impl.cc(52)] EventTracker onEvent with name: lynxsdk_update_timing
+
+05-24 10:27:39.687  LynxEventReporter  eventReporter service not found or event name is null.
+
+05-24 10:27:39.687  lynx      
+  [6DCA3E23C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __SendGlobalEvent, phase: 2, target: 0, listener options: 0
+  [6DCA3E23C0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __SendGlobalEvent, type: 0
+  [6DCA3E23C0:INFO:js_app.cc(2545)] call jsmodule:GlobalEventEmitter.emit.lynx.performance.onPerformanceEvent 0xB400006F211AA630
+
+05-24 10:27:39.688  ENCV-Service  
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [LynxPlayer] startPlayback: step4 mpv.play url=http://127.0.0.1:2025/stream?path=/123%E4%BA%91%E7%9B%98/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 132.538µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [LynxPlayer] startPlayback: step3 url=http://127.0.0.1:2025/stream?path=/123%E4%BA%91%E7%9B%98/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 132.616µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [MpvPlayerModule] play: url=http://127.0.0.1:2025/stream?path=/123%E4%BA%91%E7%9B%98/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4, surfaceReady=false, mpvInitialized=false, preInitialized=true
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 56.077µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [MpvPlayerModule] dispatchStateChange: state=waiting_surface
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 133.154µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [LynxPlayer] startPlayback: step3 getStreamUrl path=/123云盘/e844e9ffb6650d294870a6d5ea963ec6mp4.mp4
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 101.461µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [LynxPlayer] startPlayback: step1 result={"running":true,"port":2025}
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 67.384µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [GoBackendModule] getBackendStatus: running=true, port=2025
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 |     92µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [MpvPlayerModule] init: MpvPlayerModule created on thread: Lynx_JS
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 116.692µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [MpvPlayerModule] dispatchStateChange: state=mpv_ready
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 63.077µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [MpvPlayerModule] dispatchStateChange: state=playing
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 149.231µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [PlayerOverlayClient] onRuntimeReady
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 53.615µs |       127.0.0.1 | POST     "/api/logs"
+
+05-24 10:27:39.701  ENCV-Service  
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [LynxPlayer] startPlayback: all steps done, playing
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 105.847µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [LynxPlayer] startPlayback: step4 result=true
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 36.308µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [31m[ERROR][0m [90m[mobile_api.go:450][0m [MpvPlayerModule] init auto-attach: lynx_player_root not found
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 29.538µs |       127.0.0.1 | POST     "/api/logs"
+  [go] 🦢 2026-05-24 02:27:39 [32m[INFO][0m [90m[mobile_api.go:454][0m [PlayerOverlayClient] onFirstScreen
+  [go] [GIN] 2026/05/24 - 02:27:39 | 204 | 126.461µs |       127.0.0.1 | POST     "/api/logs"
+
+05-24 10:27:41.565  Lynx      LynxView dispatchTouchEvent, this: 27245688, touch: 0 x: 910.9004 y: 1197.7998
+
+05-24 10:27:41.572  lynx      
+  [7163386090:INFO:touch_event_handler.cc(166)] HandleTouchEvent page: ;event: touchstart tag:11 ;multiFinger:false
+  [7163386090:INFO:touch_event_handler.cc(419)] HandlePseudoStatusChanged sign:10 , with pre_status: 0 , and current_status:8
+  [7163386090:INFO:touch_event_handler.cc(419)] HandlePseudoStatusChanged sign:11 , with pre_status: 0 , and current_status:8
+
+05-24 10:27:41.574  Lynx      
+  LynxView onInterceptTouchEvent, this: 27245688
+  LynxView onTouchEvent, this: 27245688
+  LynxView dispatchTouchEvent, this: 27245688, touch: 1 x: 910.9004 y: 1197.7998
+
+05-24 10:27:41.629  lynx      
+  [7163386090:INFO:touch_event_handler.cc(166)] HandleTouchEvent page: ;event: touchend tag:11 ;multiFinger:false
+  [7163386090:INFO:touch_event_handler.cc(419)] HandlePseudoStatusChanged sign:10 , with pre_status: 8 , and current_status:0
+  [7163386090:INFO:touch_event_handler.cc(419)] HandlePseudoStatusChanged sign:11 , with pre_status: 8 , and current_status:0
+  [7163386090:INFO:touch_event_handler.cc(166)] HandleTouchEvent page: ;event: tap tag:11 ;multiFinger:false
+  [7163386090:INFO:touch_event_handler.cc(1310)] SendPageEvent TouchEvent: tap with function: -2:0:
+  [6DCA3E23C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __SendPageEvent, phase: 2, target: 0, listener options: 0
+  [6DCA3E23C0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __SendPageEvent, type: 0
+
+05-24 10:27:41.630  Lynx      LynxView onTouchEvent, this: 27245688
+
+05-24 10:27:41.630  lynx      
+  [6DCA3E23C0:INFO:js_app.cc(2340)] App::SendPageEvent, handler: -2:0: 0xB400006F211AA630
+  [6DCA3E23C0:INFO:js_app.cc(1248)] LYNX PageProxy get -> GeneratePipelineOptions0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(1274)] LYNX PageProxy get -> OnPipelineStart0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(1325)] LYNX PageProxy get -> MarkPipelineTiming0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(1178)] LYNX PageProxy get -> callLepusMethod0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(3537)]  CallLepusMethod: rLynxChange 0xB400006F211AA630
+  [7163386090:INFO:template_assembler.cc(3336)] TemplateAssembler::CallLepusMethod. this:0xB400006F01169D30 url: method name: rLynxChange
+  [7163386090:INFO:element_manager.cc(1331)] ElementManager::OnPatchFinishForFiber NoPatch!
+
+05-24 10:27:43.390  Lynx      LynxView dispatchTouchEvent, this: 27245688, touch: 0 x: 754.5996 y: 1463.9004
+
+05-24 10:27:43.391  lynx      
+  [7163386090:INFO:touch_event_handler.cc(166)] HandleTouchEvent page: ;event: touchstart tag:11 ;multiFinger:false
+  [7163386090:INFO:touch_event_handler.cc(419)] HandlePseudoStatusChanged sign:10 , with pre_status: 0 , and current_status:8
+  [7163386090:INFO:touch_event_handler.cc(419)] HandlePseudoStatusChanged sign:11 , with pre_status: 0 , and current_status:8
+
+05-24 10:27:43.392  Lynx      
+  LynxView onInterceptTouchEvent, this: 27245688
+  LynxView onTouchEvent, this: 27245688
+  LynxView dispatchTouchEvent, this: 27245688, touch: 1 x: 754.5996 y: 1463.9004
+
+05-24 10:27:43.434  lynx      
+  [7163386090:INFO:touch_event_handler.cc(166)] HandleTouchEvent page: ;event: touchend tag:11 ;multiFinger:false
+  [7163386090:INFO:touch_event_handler.cc(419)] HandlePseudoStatusChanged sign:10 , with pre_status: 8 , and current_status:0
+  [7163386090:INFO:touch_event_handler.cc(419)] HandlePseudoStatusChanged sign:11 , with pre_status: 8 , and current_status:0
+  [7163386090:INFO:touch_event_handler.cc(166)] HandleTouchEvent page: ;event: tap tag:11 ;multiFinger:false
+  [7163386090:INFO:touch_event_handler.cc(1310)] SendPageEvent TouchEvent: tap with function: -2:0:
+
+05-24 10:27:43.435  Lynx      LynxView onTouchEvent, this: 27245688
+
+05-24 10:27:43.435  lynx      
+  [6DCA3E23C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __SendPageEvent, phase: 2, target: 0, listener options: 0
+  [6DCA3E23C0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __SendPageEvent, type: 0
+  [6DCA3E23C0:INFO:js_app.cc(2340)] App::SendPageEvent, handler: -2:0: 0xB400006F211AA630
+  [6DCA3E23C0:INFO:js_app.cc(1248)] LYNX PageProxy get -> GeneratePipelineOptions0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(1274)] LYNX PageProxy get -> OnPipelineStart0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(1325)] LYNX PageProxy get -> MarkPipelineTiming0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(1178)] LYNX PageProxy get -> callLepusMethod0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(3537)]  CallLepusMethod: rLynxChange 0xB400006F211AA630
+  [7163386090:INFO:template_assembler.cc(3336)] TemplateAssembler::CallLepusMethod. this:0xB400006F01169D30 url: method name: rLynxChange
+  [7163386090:INFO:element_manager.cc(1331)] ElementManager::OnPatchFinishForFiber NoPatch!
+
+05-24 10:27:45.838  Lynx      LynxView dispatchTouchEvent, this: 27245688, touch: 0 x: 915.7998 y: 1625.5
+
+05-24 10:27:45.839  lynx      
+  [7163386090:INFO:touch_event_handler.cc(166)] HandleTouchEvent page: ;event: touchstart tag:11 ;multiFinger:false
+  [7163386090:INFO:touch_event_handler.cc(419)] HandlePseudoStatusChanged sign:10 , with pre_status: 0 , and current_status:8
+  [7163386090:INFO:touch_event_handler.cc(419)] HandlePseudoStatusChanged sign:11 , with pre_status: 0 , and current_status:8
+
+05-24 10:27:45.840  Lynx      
+  LynxView onInterceptTouchEvent, this: 27245688
+  LynxView onTouchEvent, this: 27245688
+  LynxView dispatchTouchEvent, this: 27245688, touch: 1 x: 915.7998 y: 1625.5
+
+05-24 10:27:45.890  lynx      
+  [7163386090:INFO:touch_event_handler.cc(166)] HandleTouchEvent page: ;event: touchend tag:11 ;multiFinger:false
+  [7163386090:INFO:touch_event_handler.cc(419)] HandlePseudoStatusChanged sign:10 , with pre_status: 8 , and current_status:0
+  [7163386090:INFO:touch_event_handler.cc(419)] HandlePseudoStatusChanged sign:11 , with pre_status: 8 , and current_status:0
+  [7163386090:INFO:touch_event_handler.cc(166)] HandleTouchEvent page: ;event: tap tag:11 ;multiFinger:false
+  [7163386090:INFO:touch_event_handler.cc(1310)] SendPageEvent TouchEvent: tap with function: -2:0:
+  [6DCA3E23C0:INFO:event_target.cc(98)] EventTarget::DispatchEvent name: __SendPageEvent, phase: 2, target: 0, listener options: 0
+
+05-24 10:27:45.891  Lynx      LynxView onTouchEvent, this: 27245688
+
+05-24 10:27:45.891  lynx      
+  [6DCA3E23C0:INFO:closure_event_listener.cc(38)] ClosureEventListener::Invoke name: __SendPageEvent, type: 0
+  [6DCA3E23C0:INFO:js_app.cc(2340)] App::SendPageEvent, handler: -2:0: 0xB400006F211AA630
+  [6DCA3E23C0:INFO:js_app.cc(1248)] LYNX PageProxy get -> GeneratePipelineOptions0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(1274)] LYNX PageProxy get -> OnPipelineStart0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(1325)] LYNX PageProxy get -> MarkPipelineTiming0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(1178)] LYNX PageProxy get -> callLepusMethod0xB400006FF11017A8
+  [6DCA3E23C0:INFO:js_app.cc(3537)]  CallLepusMethod: rLynxChange 0xB400006F211AA630
+  [7163386090:INFO:template_assembler.cc(3336)] TemplateAssembler::CallLepusMethod. this:0xB400006F01169D30 url: method name: rLynxChange
+  [7163386090:INFO:element_manager.cc(1331)] ElementManager::OnPatchFinishForFiber NoPatch!
 

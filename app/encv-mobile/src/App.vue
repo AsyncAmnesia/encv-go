@@ -11,6 +11,7 @@ import { useTheme } from '@/composables/useTheme'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { isNative, requestNotificationPermission, requestStoragePermission } from '@/plugins/GoProcess'
 import { hijackConsole } from '@/composables/useFrontendLogs'
+import { autoInitVConsole } from '@/composables/useDevTools'
 
 const { initTheme } = useTheme()
 const { connect, disconnect } = useWebSocket()
@@ -34,9 +35,28 @@ async function requestEssentialPermissions() {
 onMounted(async () => {
   hijackConsole()
   initTheme()
+  autoInitVConsole()
   connect()
   await requestEssentialPermissions()
+  applyScreenOrientation()
 })
+
+async function applyScreenOrientation() {
+  if (!isNative()) return
+  const orientation = localStorage.getItem('encv_screen_orientation') || 'auto'
+  try {
+    const { ScreenOrientation } = await import('@capacitor/screen-orientation')
+    if (orientation === 'portrait') {
+      await ScreenOrientation.lock({ orientation: 'portrait' })
+    } else if (orientation === 'landscape') {
+      await ScreenOrientation.lock({ orientation: 'landscape' })
+    } else {
+      await ScreenOrientation.unlock()
+    }
+  } catch (e) {
+    console.warn('[App] Failed to apply screen orientation:', e)
+  }
+}
 
 onUnmounted(() => {
   disconnect()

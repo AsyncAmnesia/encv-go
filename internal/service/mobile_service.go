@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -14,6 +15,12 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/utils"
+	"github.com/Soltus/encv-go/internal/v2/container/detector"
+	"github.com/Soltus/encv-go/internal/v2/handler"
+	"github.com/Soltus/encv-go/internal/v2/namer"
+	"github.com/Soltus/encv-go/internal/v2/plugins"
+	"github.com/Soltus/encv-go/internal/v2/provider"
+	"github.com/Soltus/encv-go/internal/v2/service"
 )
 
 type ForbiddenError struct{ Err error }
@@ -32,10 +39,15 @@ type PermissionError struct{ Err error }
 
 func (e *PermissionError) Error() string { return e.Err.Error() }
 
+type UnsupportedMediaTypeError struct{ Err error }
+
+func (e *UnsupportedMediaTypeError) Error() string { return e.Err.Error() }
+
 type FileInfo struct {
 	Name        string `json:"name"`
 	Path        string `json:"path"`
 	IsDirectory bool   `json:"isDirectory"`
+	IsEncrypted bool   `json:"isEncrypted"`
 	Size        int64  `json:"size"`
 	Modified    string `json:"modified"`
 }
@@ -49,18 +61,22 @@ type FileContentResult struct {
 }
 
 type MobileService struct {
-	servingDir  string
-	taskManager *TaskManager
-	wsHub       *WSHub
-	fileIndex   *fileIndex
-	cfg         *config.Config
+	servingDir     string
+	taskManager    *TaskManager
+	wsHub          *WSHub
+	fileIndex      *fileIndex
+	cfg            *config.Config
+	readerService  *service.ReaderService
+	contentHandler *handler.ContentHandler
+	chunkNamers    []namer.ChunkNamer
 }
 
 func NewMobileService(servingDir string, cfg *config.Config) *MobileService {
+	wsHub := NewWSHub()
 	return &MobileService{
 		servingDir:  servingDir,
-		taskManager: NewTaskManager(servingDir, cfg),
-		wsHub:       NewWSHub(),
+		taskManager: NewTaskManager(servingDir, cfg, wsHub),
+		wsHub:       wsHub,
 		cfg:         cfg,
 	}
 }
@@ -113,10 +129,19 @@ func (s *MobileService) ListFiles(queryPath string) ([]FileInfo, error) {
 			continue
 		}
 
+		isEncrypted := false
+		if !entry.IsDir() {
+			entryAbsPath := filepath.Join(absPath, entry.Name())
+			if _, detectErr := detector.DetectContainer(entryAbsPath); detectErr == nil {
+				isEncrypted = true
+			}
+		}
+
 		files = append(files, FileInfo{
 			Name:        entry.Name(),
 			Path:        filePath,
 			IsDirectory: entry.IsDir(),
+			IsEncrypted: isEncrypted,
 			Size:        info.Size(),
 			Modified:    info.ModTime().Format(time.RFC3339),
 		})
@@ -215,9 +240,12 @@ func (s *MobileService) TestWebDAV(url, username, password string) error {
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
 
-	return nil
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	return fmt.Errorf("连接失败: HTTP %d", resp.StatusCode)
 }
 
 func (s *MobileService) GetTaskManager() *TaskManager {
@@ -231,6 +259,12 @@ func (s *MobileService) GetWSHub() *WSHub {
 func (s *MobileService) SetServingDir(dir string) {
 	s.servingDir = dir
 	s.taskManager.servingDir = dir
+}
+
+func (s *MobileService) SetEncryptedFileDeps(readerService *service.ReaderService, contentHandler *handler.ContentHandler, chunkNamers []namer.ChunkNamer) {
+	s.readerService = readerService
+	s.contentHandler = contentHandler
+	s.chunkNamers = chunkNamers
 }
 
 func (s *MobileService) GetServingDir() string {
@@ -316,12 +350,14 @@ func decodeUTF8Rune(data []byte) (rune, int) {
 }
 
 type IndexStats struct {
-	TotalFiles  int   `json:"totalFiles"`
-	TotalDirs   int   `json:"totalDirs"`
-	TotalSize   int64 `json:"totalSize"`
+	TotalFiles  int    `json:"totalFiles"`
+	TotalDirs   int    `json:"totalDirs"`
+	TotalSize   int64  `json:"totalSize"`
 	IndexedAt   string `json:"indexedAt"`
-	IsIndexing  bool  `json:"isIndexing"`
-	LastBuildMs int64 `json:"lastBuildMs"`
+	IsIndexing  bool   `json:"isIndexing"`
+	LastBuildMs int64  `json:"lastBuildMs"`
+	Source      string `json:"source"`
+	Containers  int    `json:"containers"`
 }
 
 type indexEntry struct {
@@ -574,4 +610,213 @@ func (s *MobileService) ClearIndex() {
 	s.fileIndex.entries = nil
 	s.fileIndex.stats = IndexStats{}
 	slog.Info("ClearIndex completed")
+}
+
+var mediaExtensions = map[string]bool{
+	"mp4": true, "mkv": true, "avi": true, "mov": true,
+	"wmv": true, "flv": true, "webm": true, "m4v": true,
+	"ts": true, "mpg": true, "mpeg": true, "3gp": true,
+	"mp3": true, "flac": true, "wav": true, "aac": true,
+	"ogg": true, "wma": true, "m4a": true, "opus": true,
+	"encv": true,
+}
+
+type chunkNamerAdapter struct {
+	namers []namer.ChunkNamer
+}
+
+func (a *chunkNamerAdapter) GenerateMainChunkName(baseName string) string {
+	if len(a.namers) > 0 {
+		return a.namers[0].GenerateMainChunkName(baseName)
+	}
+	return baseName
+}
+
+func (a *chunkNamerAdapter) ParseFirstChunkName(firstChunkPath string) (string, error) {
+	for _, n := range a.namers {
+		base, err := n.ParseFirstChunkName(firstChunkPath)
+		if err == nil {
+			return base, nil
+		}
+	}
+	return "", fmt.Errorf("no suitable namer found for path: %s", firstChunkPath)
+}
+
+func (a *chunkNamerAdapter) GenerateDataChunkName(baseName string, index int) string {
+	if len(a.namers) > 0 {
+		return a.namers[0].GenerateDataChunkName(baseName, index)
+	}
+	return fmt.Sprintf("%s.%d", baseName, index)
+}
+
+func (a *chunkNamerAdapter) GetFirstDataChunkIndex() int {
+	if len(a.namers) > 0 {
+		return a.namers[0].GetFirstDataChunkIndex()
+	}
+	return 1
+}
+
+func (a *chunkNamerAdapter) IsDataChunk(filename string) bool {
+	for _, n := range a.namers {
+		if n.IsDataChunk(filename) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *MobileService) FileExists(queryPath string) (bool, error) {
+	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) || errors.Is(err, fs.ErrNotExist) {
+			return false, nil
+		}
+		return false, &ForbiddenError{Err: err}
+	}
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		if isPermissionError(err) {
+			return false, &ForbiddenError{Err: err}
+		}
+		return false, err
+	}
+	return info != nil, nil
+}
+
+func (s *MobileService) CheckEncryptOutputExists(sourcePath, targetDir string) (bool, string, error) {
+	sourceAbs, err := utils.SafeURLToAbsPath(s.servingDir, sourcePath)
+	if err != nil {
+		return false, "", &ForbiddenError{Err: err}
+	}
+
+	outputName, err := plugins.PredictEncryptOutputName(sourceAbs, s.cfg)
+	if err != nil {
+		return false, "", err
+	}
+
+	outputDir := targetDir
+	if outputDir == "" {
+		outputDir = filepath.Dir(sourcePath)
+		if outputDir == "" {
+			outputDir = "/"
+		}
+	}
+
+	outputPath := outputDir
+	if outputPath == "/" {
+		outputPath = "/" + outputName
+	} else {
+		outputPath = strings.TrimRight(outputPath, "/") + "/" + outputName
+	}
+
+	outputAbs, err := utils.SafeURLToAbsPath(s.servingDir, outputPath)
+	if err != nil {
+		return false, outputPath, nil
+	}
+
+	_, err = os.Stat(outputAbs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, outputPath, nil
+		}
+		return false, outputPath, err
+	}
+	return true, outputPath, nil
+}
+
+func (s *MobileService) StreamExternalFile(w http.ResponseWriter, r *http.Request, filePath string) error {
+	if filePath == "" {
+		return &BadRequestError{Err: errors.New("'path' query parameter is required")}
+	}
+
+	absPath := filepath.Clean(filePath)
+
+	if !filepath.IsAbs(absPath) {
+		resolved, err := utils.SafeURLToAbsPath(s.servingDir, filePath)
+		if err == nil {
+			slog.Info("StreamExternalFile: resolved relative path via servingDir", "input", filePath, "resolved", resolved)
+			absPath = resolved
+		} else {
+			return &BadRequestError{Err: fmt.Errorf("path is not absolute and cannot be resolved via servingDir: %s", filePath)}
+		}
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			resolved, resolveErr := utils.SafeURLToAbsPath(s.servingDir, filePath)
+			if resolveErr == nil {
+				if resolvedInfo, statErr := os.Stat(resolved); statErr == nil {
+					slog.Info("StreamExternalFile: absolute path not found, resolved via servingDir", "input", absPath, "resolved", resolved)
+					absPath = resolved
+					info = resolvedInfo
+					err = nil
+				}
+			}
+		}
+	}
+
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &NotFoundError{Err: fmt.Errorf("file not found: %s (also tried servingDir resolution)", absPath)}
+		}
+		return &ForbiddenError{Err: err}
+	}
+
+	if info.IsDir() {
+		return &BadRequestError{Err: errors.New("path is a directory")}
+	}
+
+	if _, detectErr := detector.DetectContainer(absPath); detectErr == nil {
+		slog.Info("StreamExternalFile: detected ENCV container, serving decrypted", "path", absPath)
+		if s.readerService == nil || s.contentHandler == nil {
+			slog.Error("StreamExternalFile: encrypted file detected but dependencies not initialized")
+			return &BadRequestError{Err: errors.New("encrypted file service not available")}
+		}
+		s.serveEncryptedExternalFile(w, r, absPath)
+		return nil
+	}
+
+	ext := strings.ToLower(filepath.Ext(absPath))
+	if len(ext) > 0 {
+		ext = ext[1:]
+	}
+	if !mediaExtensions[ext] {
+		return &UnsupportedMediaTypeError{Err: errors.New("file is not a supported media file")}
+	}
+
+	slog.Info("StreamExternalFile", "path", absPath, "size", info.Size())
+	http.ServeFile(w, r, absPath)
+	return nil
+}
+
+func (s *MobileService) serveEncryptedExternalFile(w http.ResponseWriter, r *http.Request, fullPath string) {
+	ctx := r.Context()
+	adapterNamer := &chunkNamerAdapter{namers: s.chunkNamers}
+
+	factory, decryptReader, _, _, err := s.readerService.GetDecryptReader(
+		*s.cfg,
+		fullPath,
+		s.cfg.Password,
+		adapterNamer,
+	)
+	if err != nil {
+		slog.Error("GetDecryptReader failed", "path", fullPath, "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer decryptReader.Close()
+
+	prov, err := provider.NewLocalFileProvider(ctx, factory, decryptReader)
+	if err != nil {
+		slog.Error("NewLocalFileProvider failed", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer prov.Close()
+
+	s.contentHandler.ServeFile(w, r, prov)
 }

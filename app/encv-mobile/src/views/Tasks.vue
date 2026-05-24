@@ -38,24 +38,50 @@
                 </ion-badge>
                 <span class="task-type">{{ task.type === 'encrypt' ? t('tasks.encrypt') : t('tasks.decrypt') }}</span>
               </p>
-              <ion-progress-bar
-                v-if="task.status === 'running'"
-                :value="task.progress / 100"
-                class="task-progress"
-              ></ion-progress-bar>
+              <p class="task-time-info">
+                <span class="time-created">{{ formatDateTime(task.createdAt) }}</span>
+                <span v-if="getTaskDuration(task)" class="time-duration">{{ getTaskDuration(task) }}</span>
+              </p>
+              <div v-if="task.status === 'running' || task.status === 'cancelling'" class="progress-section">
+                <ion-progress-bar
+                  :value="task.progress / 100"
+                  :buffer="task.status === 'cancelling' ? undefined : undefined"
+                  :class="['task-progress', { 'progress-cancelling': task.status === 'cancelling' }]"
+                ></ion-progress-bar>
+                <div class="progress-detail">
+                  <span v-if="task.phase" class="phase-label">{{ getPhaseLabel(task.phase) }}</span>
+                  <span class="progress-percent">{{ task.progress }}%</span>
+                  <span v-if="task.speed" class="speed-label">{{ task.speed }}</span>
+                  <span v-if="task.eta" class="eta-label">{{ t('tasks.eta') }} {{ task.eta }}</span>
+                </div>
+              </div>
+              <div v-if="task.status === 'completed'" class="completed-info">
+                <ion-icon :icon="checkmarkCircle" color="success" class="completed-icon"></ion-icon>
+                <span class="completed-text">{{ t('tasks.phaseCompleted') }}</span>
+              </div>
               <p v-if="task.error" class="task-error">{{ task.error }}</p>
             </ion-label>
+            <ion-button
+              v-if="task.status === 'running'"
+              slot="end"
+              fill="clear"
+              color="warning"
+              size="small"
+              @click="handleCancelTask(task.id)"
+            >
+              <ion-icon :icon="closeCircle" slot="icon-only"></ion-icon>
+            </ion-button>
+            <ion-spinner
+              v-if="task.status === 'cancelling'"
+              slot="end"
+              name="crescent"
+              color="warning"
+              class="cancelling-spinner"
+            ></ion-spinner>
           </ion-item>
           <ion-item-options side="end">
             <ion-item-option
               v-if="task.status === 'queued'"
-              color="warning"
-              @click="handleCancelTask(task.id)"
-            >
-              {{ t('tasks.cancel') }}
-            </ion-item-option>
-            <ion-item-option
-              v-if="task.status === 'running'"
               color="warning"
               @click="handleCancelTask(task.id)"
             >
@@ -113,13 +139,30 @@
                 :label="t('tasks.sourcePath')"
                 label-placement="stacked"
                 placeholder="/path/to/file"
+                :error-text="sourcePathError"
+                :class="{ 'ion-invalid': !!sourcePathError, 'ion-touched': !!sourcePathError }"
+                @ionInput="validateSourcePath"
               ></ion-input>
-              <ion-button slot="end" fill="clear" @click="handleBrowse">
+              <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseSource">
+                <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+              </ion-button>
+            </ion-item>
+            <ion-item>
+              <ion-input
+                v-model="newTaskTargetPath"
+                :label="t('tasks.targetPath')"
+                label-placement="stacked"
+                :placeholder="t('tasks.targetPathPlaceholder')"
+                :error-text="targetPathError"
+                :class="{ 'ion-invalid': !!targetPathError, 'ion-touched': !!targetPathError }"
+                @ionInput="validateTargetPath"
+              ></ion-input>
+              <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseTarget">
                 <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
               </ion-button>
             </ion-item>
           </ion-list>
-          <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath">
+          <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath || !!sourcePathError || !!targetPathError">
             <ion-icon :icon="lockClosed" slot="start"></ion-icon>
             {{ t('tasks.createTask') }}
           </ion-button>
@@ -173,10 +216,12 @@ import {
   createTask,
   cancelTask,
   retryTask,
+  listFiles,
 } from '@/api/encv'
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
+import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
 import { showToast } from '@/composables/useToast'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 
@@ -187,6 +232,33 @@ const loading = ref(false)
 const showNewTaskModal = ref(false)
 const newTaskType = ref<TaskType>('encrypt')
 const newTaskPath = ref('')
+const newTaskTargetPath = ref('')
+const sourcePathError = ref('')
+const targetPathError = ref('')
+let sourceValidateTimer: ReturnType<typeof setTimeout> | null = null
+let targetValidateTimer: ReturnType<typeof setTimeout> | null = null
+let sourceValidateGeneration = 0
+let targetValidateGeneration = 0
+
+async function validatePathExists(path: string): Promise<boolean> {
+  try {
+    const parentDir = path.substring(0, path.lastIndexOf('/')) || '/'
+    const fileName = path.substring(path.lastIndexOf('/') + 1)
+    const files = await listFiles(parentDir)
+    return files.some(f => f.name === fileName)
+  } catch {
+    return false
+  }
+}
+
+async function validateDirExists(path: string): Promise<boolean> {
+  try {
+    await listFiles(path)
+    return true
+  } catch {
+    return false
+  }
+}
 
 function getTaskIcon(task: EncvTask) {
   switch (task.status) {
@@ -230,9 +302,38 @@ function getStatusLabel(status: TaskStatus) {
   }
 }
 
+function getPhaseLabel(phase: string) {
+  switch (phase) {
+    case 'analyzing': return t('tasks.phaseAnalyzing')
+    case 'initializing': return t('tasks.phaseInitializing')
+    case 'preprocessing': return t('tasks.phasePreprocessing')
+    case 'encrypting': return t('tasks.phaseEncrypting')
+    case 'decrypting': return t('tasks.phaseDecrypting')
+    case 'packing': return t('tasks.phasePacking')
+    case 'verifying': return t('tasks.phaseVerifying')
+    case 'completed': return t('tasks.phaseCompleted')
+    default: return phase
+  }
+}
+
 function getTaskName(task: EncvTask) {
   const parts = task.sourcePath.split('/')
   return parts[parts.length - 1] || task.sourcePath
+}
+
+function getTaskDuration(task: EncvTask): string {
+  if (!task.createdAt) return ''
+  const created = new Date(task.createdAt).getTime()
+  if (isNaN(created)) return ''
+  if (task.completedAt) {
+    const completed = new Date(task.completedAt).getTime()
+    if (isNaN(completed)) return ''
+    return formatDuration(completed - created)
+  }
+  if (task.status === 'running' || task.status === 'cancelling') {
+    return formatDuration(Date.now() - created)
+  }
+  return ''
 }
 
 async function loadTasks() {
@@ -257,18 +358,78 @@ async function handleRefresh(event: CustomEvent) {
 function showNewTaskSheet() {
   newTaskType.value = 'encrypt'
   newTaskPath.value = ''
+  newTaskTargetPath.value = ''
+  sourcePathError.value = ''
+  targetPathError.value = ''
   showNewTaskModal.value = true
 }
 
-async function handleBrowse() {
+function validateSourcePath() {
+  if (sourceValidateTimer) clearTimeout(sourceValidateTimer)
+  sourceValidateTimer = setTimeout(async () => {
+    const gen = ++sourceValidateGeneration
+    const path = newTaskPath.value.trim()
+    if (!path) {
+      sourcePathError.value = t('tasks.pathRequired')
+    } else if (!path.startsWith('/')) {
+      sourcePathError.value = t('tasks.pathMustBeAbsolute')
+    } else {
+      sourcePathError.value = ''
+      const exists = await validatePathExists(path)
+      if (gen !== sourceValidateGeneration) return
+      if (!exists) {
+        sourcePathError.value = t('tasks.pathNotFound')
+      }
+    }
+  }, 500)
+}
+
+function validateTargetPath() {
+  if (targetValidateTimer) clearTimeout(targetValidateTimer)
+  targetValidateTimer = setTimeout(async () => {
+    const gen = ++targetValidateGeneration
+    const path = newTaskTargetPath.value.trim()
+    if (!path) {
+      targetPathError.value = ''
+    } else if (!path.startsWith('/')) {
+      targetPathError.value = t('tasks.pathMustBeAbsolute')
+    } else {
+      targetPathError.value = ''
+      const exists = await validateDirExists(path)
+      if (gen !== targetValidateGeneration) return
+      if (!exists) {
+        targetPathError.value = t('tasks.pathNotFound')
+      }
+    }
+  }, 500)
+}
+
+async function handleBrowseSource() {
   showNewTaskModal.value = false
   const modal = await modalController.create({
     component: FilePickerModal,
+    componentProps: { mode: 'file' as const },
   })
   await modal.present()
   const { data, role } = await modal.onDidDismiss()
   if (role === 'select' && data) {
     newTaskPath.value = data.path
+    sourcePathError.value = ''
+  }
+  showNewTaskModal.value = true
+}
+
+async function handleBrowseTarget() {
+  showNewTaskModal.value = false
+  const modal = await modalController.create({
+    component: FilePickerModal,
+    componentProps: { mode: 'folder' as const },
+  })
+  await modal.present()
+  const { data, role } = await modal.onDidDismiss()
+  if (role === 'select' && data) {
+    newTaskTargetPath.value = data.path
+    targetPathError.value = ''
   }
   showNewTaskModal.value = true
 }
@@ -276,7 +437,7 @@ async function handleBrowse() {
 async function handleCreateTask() {
   if (!newTaskPath.value) return
   try {
-    await createTask(newTaskType.value, newTaskPath.value)
+    await createTask(newTaskType.value, newTaskPath.value, newTaskTargetPath.value || undefined)
     showNewTaskModal.value = false
     showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
     await loadTasks()
@@ -314,6 +475,19 @@ function onTaskUpdate(data: { id: string; type: string; status: string; progress
   }
 }
 
+function onTaskProgress(data: { id: string; progress: number; phase: string; speed: string; eta: string }) {
+  const idx = tasks.value.findIndex(t => t.id === data.id)
+  if (idx !== -1) {
+    tasks.value[idx] = {
+      ...tasks.value[idx],
+      progress: data.progress,
+      phase: data.phase,
+      speed: data.speed,
+      eta: data.eta,
+    }
+  }
+}
+
 function onTaskCreated(data: { id: string; type: string; sourcePath: string }) {
   const exists = tasks.value.some(t => t.id === data.id)
   if (!exists) {
@@ -335,7 +509,11 @@ function onTaskCompleted(data: { id: string; error?: string }) {
       ...tasks.value[idx],
       status: data.error ? 'failed' : 'completed',
       progress: data.error ? tasks.value[idx].progress : 100,
+      phase: data.error ? tasks.value[idx].phase : 'completed',
+      speed: '',
+      eta: '',
       error: data.error,
+      completedAt: new Date().toISOString(),
     }
   }
 }
@@ -343,12 +521,14 @@ function onTaskCompleted(data: { id: string; error?: string }) {
 onMounted(() => {
   loadTasks()
   eventBus.on('task:update', onTaskUpdate)
+  eventBus.on('task:progress', onTaskProgress)
   eventBus.on('task:created', onTaskCreated)
   eventBus.on('task:completed', onTaskCompleted)
 })
 
 onUnmounted(() => {
   eventBus.off('task:update', onTaskUpdate)
+  eventBus.off('task:progress', onTaskProgress)
   eventBus.off('task:created', onTaskCreated)
   eventBus.off('task:completed', onTaskCompleted)
 })
@@ -391,13 +571,95 @@ onUnmounted(() => {
   color: var(--encv-text-secondary);
 }
 
-.task-progress {
+.task-time-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+}
+
+.time-created {
+  color: var(--encv-text-secondary);
+}
+
+.time-duration {
+  color: var(--ion-color-primary);
+  font-weight: 500;
+}
+
+.progress-section {
   margin-top: 6px;
+}
+
+.task-progress {
+  margin-top: 2px;
+}
+
+.progress-cancelling {
+  --progress-background: var(--ion-color-warning);
+}
+
+.progress-detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+  flex-wrap: wrap;
+}
+
+.phase-label {
+  color: var(--ion-color-primary);
+  font-weight: 500;
+}
+
+.progress-percent {
+  font-weight: 600;
+  color: var(--encv-text-secondary);
+}
+
+.speed-label {
+  color: var(--encv-text-secondary);
+}
+
+.eta-label {
+  color: var(--encv-text-secondary);
+}
+
+.completed-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.completed-icon {
+  font-size: 16px;
+}
+
+.completed-text {
+  font-size: 12px;
+  color: var(--ion-color-success);
 }
 
 .task-error {
   color: var(--ion-color-danger);
   font-size: 12px;
   margin-top: 4px;
+}
+
+.cancelling-spinner {
+  width: 20px;
+  height: 20px;
+}
+
+.browse-btn {
+  --padding-start: 8px;
+  --padding-end: 8px;
+  min-width: 44px;
+  min-height: 44px;
 }
 </style>

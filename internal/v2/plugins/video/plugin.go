@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -201,10 +201,10 @@ func (p *VideoPlugin) Initialize(ctx context.Context) error {
 	p.splitSets = make([][]string, 0)
 	p.splitPartPaths = make(map[string]bool)
 	if p.settings.ChunkSizeMB > 0 {
-		log.Printf("INFO: [%s] Physical chunking enabled. Size: %d MB\n", p.Name(), p.settings.ChunkSizeMB)
+		slog.Info("Physical chunking enabled", "plugin", p.Name(), "size_mb", p.settings.ChunkSizeMB)
 		p.physicalPacker = physical.NewFileChunkerPhysicalPacker(int64(p.settings.ChunkSizeMB)*1024*1024, p.chunkNamer)
 	} else {
-		log.Printf("INFO: [%s] Physical chunking disabled.\n", p.Name())
+		slog.Info("Physical chunking disabled", "plugin", p.Name())
 		p.physicalPacker = physical.NewSinglePhysicalPacker()
 	}
 	return nil
@@ -276,6 +276,7 @@ func (p *VideoPlugin) GetContentPreprocessor() pluginInterfaces.ContentPreproces
 		index:          &p.index,
 		outputDir:      p.outputDir,
 		splitPartPaths: p.splitPartPaths,
+		ctx:            p.ctx,
 	}
 }
 
@@ -329,7 +330,7 @@ func (p *VideoPlugin) GroupFiles(inputPaths []string, inputRootDir, outputDir st
 	// 【新增】如果启用了不合并模式，直接返回所有文件路径（包括分片）
 	// 加密阶段会处理多文件读取
 	if p.settings.SkipMergeForSplitMKV && len(splitSets) > 0 {
-		log.Printf("-> [VIDEO_PLUGIN] SkipMergeForSplitMKV enabled, processing %d split sets without merging\n", len(splitSets))
+		slog.Info("SkipMergeForSplitMKV enabled, processing split sets without merging", "component", "VIDEO_PLUGIN", "split_sets", len(splitSets))
 		return inputPaths, nil
 	}
 
@@ -348,12 +349,12 @@ func (p *VideoPlugin) GroupFiles(inputPaths []string, inputRootDir, outputDir st
 	cacheDir := p.settings.PluginCacheDir
 	if cacheDir == "" {
 		cacheDir = outputDir // 默认使用输出目录作为缓存
-		log.Printf("-> [VIDEO_PLUGIN] PluginCacheDir not set, using outputDir as cache: %s\n", cacheDir)
+		slog.Info("PluginCacheDir not set, using outputDir as cache", "component", "VIDEO_PLUGIN", "cache_dir", cacheDir)
 	} else {
-		log.Printf("-> [VIDEO_PLUGIN] Using configured PluginCacheDir: %s\n", cacheDir)
+		slog.Info("Using configured PluginCacheDir", "component", "VIDEO_PLUGIN", "cache_dir", cacheDir)
 	}
 	for _, set := range splitSets {
-		log.Printf("-> [VIDEO_PLUGIN] Found a split set with %d parts. Merging...\n", len(set))
+		slog.Info("Found a split set, merging", "component", "VIDEO_PLUGIN", "parts", len(set))
 		mergedPath, err := mergeSplitPartsFromSet(set, outputDir, cacheDir)
 		if err != nil {
 			return nil, fmt.Errorf("failed to merge a split set: %w", err)
@@ -397,7 +398,7 @@ func (p *VideoPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRoo
 			// 这是合并后的文件，使用第一个分片的文件名
 			firstPartPath := p.splitSets[0][0]
 			originalFilename = filepath.Base(firstPartPath)
-			log.Printf("-> [VIDEO_PLUGIN] Using original filename from first split part: %s\n", originalFilename)
+			slog.Info("Using original filename from first split part", "component", "VIDEO_PLUGIN", "filename", originalFilename)
 			// 更新 index 中的原始文件名
 			p.index.OriginalFilename = originalFilename
 		}
@@ -435,14 +436,14 @@ func (p *VideoPlugin) Encrypt(dataReader io.Reader) (*crypto.EncryptionResult, e
 		encryptTempDir := p.settings.PluginCacheDir
 		if encryptTempDir == "" {
 			encryptTempDir = p.outputDir
-			log.Printf("-> [VIDEO_PLUGIN] PluginCacheDir not set, using outputDir for encryption temp files\n")
+			slog.Info("PluginCacheDir not set, using outputDir for encryption temp files", "component", "VIDEO_PLUGIN")
 		} else {
 			// 确保缓存目录存在
 			if mkdirErr := os.MkdirAll(encryptTempDir, 0755); mkdirErr != nil {
-				log.Printf("-> [VIDEO_PLUGIN] Failed to create cache dir, falling back to outputDir: %v\n", mkdirErr)
+				slog.Warn("Failed to create cache dir, falling back to outputDir", "component", "VIDEO_PLUGIN", "error", mkdirErr)
 				encryptTempDir = p.outputDir
 			} else {
-				log.Printf("-> [VIDEO_PLUGIN] Using PluginCacheDir for encryption temp files: %s\n", encryptTempDir)
+				slog.Info("Using PluginCacheDir for encryption temp files", "component", "VIDEO_PLUGIN", "dir", encryptTempDir)
 			}
 		}
 		result, err = crypto.EncryptToTempFile_v2(dataReader, p.cfg.Password, encryptTempDir)
@@ -450,9 +451,9 @@ func (p *VideoPlugin) Encrypt(dataReader io.Reader) (*crypto.EncryptionResult, e
 			return fmt.Errorf("failed to encrypt to temp file: %w", err)
 		}
 
-		log.Printf("INFO: [%s] Encrypted to temporary file: %s\n", p.Name(), result.TempPath)
-		log.Printf("DEBUG: [%s] Actual Encrypted Source Path: %s\n", p.Name(), p.encryptedSourcePath)
-		log.Printf("✅ [%s] Encrypted successfully.\n", p.Name())
+		slog.Info("Encrypted to temporary file", "plugin", p.Name(), "temp_path", result.TempPath)
+		slog.Info("Actual encrypted source path", "plugin", p.Name(), "source_path", p.encryptedSourcePath)
+		slog.Info("Encrypted successfully", "plugin", p.Name())
 		return nil
 	})
 
@@ -471,7 +472,7 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 
 	logicalFragments, err = p.createGOPAlignedFragments(logicalDataSize)
 	if err != nil {
-		log.Printf("WARN: Failed to align fragments to GOP (%v). Falling back to size-based fragments.\n", err)
+		slog.Warn("Failed to align fragments to GOP, falling back to size-based fragments", "error", err)
 		baseSize := fragment.CalculateFragmentSize(logicalDataSize, int64(p.settings.ChunkSizeMB)*1024*1024)
 		logicalFragments, err = fragment.CreateLogicalFragmentsFromSize(logicalDataSize, baseSize, types.FragmentType_SeekableStream)
 		if err != nil {
@@ -552,7 +553,7 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 		return p.verifyContainer()
 	}
 
-	log.Printf("✅ [%s] packed successfully.\n", p.Name())
+	slog.Info("Packed successfully", "plugin", p.Name())
 	return nil
 }
 
@@ -626,12 +627,12 @@ func (p *VideoPlugin) createGOPAlignedFragments(fileSize int64) ([]types.Fragmen
 	for _, f := range fragments {
 		totalCalculatedLen += f.Length
 	}
-	log.Printf("INFO: [GOP Frag] FileSize=%d, CalculatedTotalLen=%d, Diff=%d", fileSize, totalCalculatedLen, int64(fileSize)-int64(totalCalculatedLen))
+	slog.Info("GOP fragment calculation", "file_size", fileSize, "calculated_total_len", totalCalculatedLen, "diff", int64(fileSize)-int64(totalCalculatedLen))
 
 	// 【修复】如果计算出的总大小与文件大小不一致，说明 GOP 对齐导致最后一块丢失，这里强制截断最后一个 Fragment
 	if totalCalculatedLen > uint64(fileSize) {
 		missingBytes := totalCalculatedLen - uint64(fileSize)
-		log.Printf("WARN: [GOP Frag] Calculated total length exceeds file size by %d bytes. Trimming last fragment.", missingBytes)
+		slog.Warn("Calculated total length exceeds file size, trimming last fragment", "missing_bytes", missingBytes)
 		lastFrag := &fragments[len(fragments)-1]
 		lastFrag.Length = lastFrag.Length - uint64(missingBytes)
 		totalCalculatedLen -= uint64(missingBytes)
@@ -672,7 +673,7 @@ func (p *VideoPlugin) verifyContainer() error {
 		return fmt.Errorf("container verification failed: %w", err)
 	}
 	os.RemoveAll(verifyTempDir)
-	log.Printf("✅ [%s] Container verified successfully.\n", p.Name())
+	slog.Info("Container verified successfully", "plugin", p.Name())
 	return nil
 }
 
@@ -686,7 +687,7 @@ func (p *VideoPlugin) PreDecryptProcessor(containerPath, outputDir string) error
 
 // Plugin 接口实现
 func (p *VideoPlugin) Decrypt(containerPath, outputDir string) error {
-	log.Printf("DEBUG: [%s] Starting decryption for: %s\n", p.Name(), containerPath)
+	slog.Info("Starting decryption", "plugin", p.Name(), "container_path", containerPath)
 	p.outputDir = outputDir
 
 	// --- 1. 【关键】通过 ContainerManager 获取一个可读的容器路径 ---
@@ -695,7 +696,7 @@ func (p *VideoPlugin) Decrypt(containerPath, outputDir string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get readable path from container manager: %w", err)
 	}
-	log.Printf("DEBUG: [%s] Using readable path: %s\n", p.Name(), readablePath)
+	slog.Info("Using readable path", "plugin", p.Name(), "readable_path", readablePath)
 
 	// --- 2. 使用统一路径创建 reader 工厂 ---
 	factory, err := reader.NewDecryptReaderFactory(readablePath, p.cfg.Password)
@@ -703,7 +704,7 @@ func (p *VideoPlugin) Decrypt(containerPath, outputDir string) error {
 		return fmt.Errorf("failed to create reader factory for '%s': %w", readablePath, err)
 	}
 	defer factory.Close() // 【关键】这个 Close 会同时清理物理临时文件（如果存在）
-	log.Printf("DEBUG: [%s] Reader factory created successfully.\n", p.Name())
+	slog.Info("Reader factory created successfully", "plugin", p.Name())
 
 	// --- 3. 使用工厂创建解密流并写入文件 ---
 	decryptedReader, err := factory.NewDecryptReader()
@@ -732,7 +733,7 @@ func (p *VideoPlugin) Decrypt(containerPath, outputDir string) error {
 
 	p.index = *vIndex
 
-	log.Printf("✅ [%s] Decrypted to: %s\n", p.Name(), outputPath)
+	slog.Info("Decrypted successfully", "plugin", p.Name(), "output_path", outputPath)
 	return nil
 }
 
