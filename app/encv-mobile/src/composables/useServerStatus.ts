@@ -13,6 +13,7 @@ let initialized = false
 let nativeBridgeListenerAdded = false
 
 function onServerStatus(data: { online: boolean }) {
+  if (isRestarting.value && !data.online) return
   isOnline.value = data.online
   if (data.online) {
     lastError.value = ''
@@ -20,6 +21,7 @@ function onServerStatus(data: { online: boolean }) {
 }
 
 function onConnectionError(data: { error: string }) {
+  if (isRestarting.value) return
   lastError.value = data.error
 }
 

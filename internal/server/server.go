@@ -241,7 +241,13 @@ func (s *Server) Start(version string) (string, error) {
 			loggingMiddleware := s.webdavLoggingMiddleware()
 			protectedWebdavHandler := authMiddleware(loggingMiddleware(webdavHandler))
 			r.Any(s.webdavPath+"*path", gin.WrapH(protectedWebdavHandler))
-			r.Any(s.webdavPath, gin.WrapH(protectedWebdavHandler))
+			webdavRoot := strings.TrimSuffix(s.webdavPath, "/")
+			if webdavRoot != "" {
+				r.Any(webdavRoot, func(c *gin.Context) {
+					c.Request.URL.Path = s.webdavPath
+					protectedWebdavHandler.ServeHTTP(c.Writer, c.Request)
+				})
+			}
 		}
 	}
 
@@ -285,6 +291,12 @@ type loggingResponseWriter struct {
 func (lrw *loggingResponseWriter) WriteHeader(code int) {
 	lrw.statusCode = code
 	lrw.ResponseWriter.WriteHeader(code)
+}
+
+func (lrw *loggingResponseWriter) Flush() {
+	if f, ok := lrw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func (s *Server) Stop() error {
