@@ -38,7 +38,25 @@ onMounted(async () => {
   autoInitVConsole()
   connect()
   await requestEssentialPermissions()
+  applyScreenOrientation()
 })
+
+async function applyScreenOrientation() {
+  if (!isNative()) return
+  const orientation = localStorage.getItem('encv_screen_orientation') || 'auto'
+  try {
+    const { ScreenOrientation } = await import('@capacitor/screen-orientation')
+    if (orientation === 'portrait') {
+      await ScreenOrientation.lock({ orientation: 'portrait' })
+    } else if (orientation === 'landscape') {
+      await ScreenOrientation.lock({ orientation: 'landscape' })
+    } else {
+      await ScreenOrientation.unlock()
+    }
+  } catch (e) {
+    console.warn('[App] Failed to apply screen orientation:', e)
+  }
+}
 
 onUnmounted(() => {
   disconnect()

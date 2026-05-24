@@ -731,14 +731,35 @@ func (s *MobileService) StreamExternalFile(w http.ResponseWriter, r *http.Reques
 	}
 
 	absPath := filepath.Clean(filePath)
+
 	if !filepath.IsAbs(absPath) {
-		return &BadRequestError{Err: errors.New("path must be absolute")}
+		resolved, err := utils.SafeURLToAbsPath(s.servingDir, filePath)
+		if err == nil {
+			slog.Info("StreamExternalFile: resolved relative path via servingDir", "input", filePath, "resolved", resolved)
+			absPath = resolved
+		} else {
+			return &BadRequestError{Err: fmt.Errorf("path is not absolute and cannot be resolved via servingDir: %s", filePath)}
+		}
 	}
 
 	info, err := os.Stat(absPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return &NotFoundError{Err: err}
+			resolved, resolveErr := utils.SafeURLToAbsPath(s.servingDir, filePath)
+			if resolveErr == nil {
+				if resolvedInfo, statErr := os.Stat(resolved); statErr == nil {
+					slog.Info("StreamExternalFile: absolute path not found, resolved via servingDir", "input", absPath, "resolved", resolved)
+					absPath = resolved
+					info = resolvedInfo
+					err = nil
+				}
+			}
+		}
+	}
+
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &NotFoundError{Err: fmt.Errorf("file not found: %s (also tried servingDir resolution)", absPath)}
 		}
 		return &ForbiddenError{Err: err}
 	}

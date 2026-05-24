@@ -63,6 +63,21 @@
             <ion-select-option value="external">{{ t('settings.openExternal') }}</ion-select-option>
           </ion-select>
         </ion-item>
+        <ion-item>
+          <ion-icon :icon="phonePortraitOutline" slot="start"></ion-icon>
+          <ion-select
+            :value="screenOrientation"
+            @ionChange="handleScreenOrientationChange"
+            :label="t('settings.screenOrientation')"
+            label-placement="stacked"
+            interface="action-sheet"
+            mode="ios"
+          >
+            <ion-select-option value="auto">{{ t('settings.orientationAuto') }}</ion-select-option>
+            <ion-select-option value="portrait">{{ t('settings.orientationPortrait') }}</ion-select-option>
+            <ion-select-option value="landscape">{{ t('settings.orientationLandscape') }}</ion-select-option>
+          </ion-select>
+        </ion-item>
       </ion-list>
 
       <ion-list>
@@ -333,6 +348,7 @@ import {
   newspaperOutline, colorWandOutline, gitNetworkOutline, toggleOutline,
   textOutline, personOutline, folderOpen, refreshCircle,
   bugOutline,
+  phonePortraitOutline,
   fileTrayFull as databaseIcon,
 } from 'ionicons/icons'
 import { useTheme } from '@/composables/useTheme'
@@ -341,6 +357,7 @@ import { useConfig } from '@/composables/useConfig'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { useDevTools } from '@/composables/useDevTools'
+import { isNative } from '@/plugins/GoProcess'
 import { getIndexStats, fetchConfig, updateConfig } from '@/api/encv'
 import type { IndexStats } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
@@ -358,6 +375,7 @@ const indexStats = ref<IndexStats | null>(null)
 
 const videoPlayerMode = ref(localStorage.getItem('encv_player_video') || 'artplayer')
 const audioPlayerMode = ref(localStorage.getItem('encv_player_audio') || 'mpv')
+const screenOrientation = ref(localStorage.getItem('encv_screen_orientation') || 'auto')
 
 function handleVideoPlayerChange(event: CustomEvent) {
   const value = event.detail.value
@@ -369,6 +387,29 @@ function handleAudioPlayerChange(event: CustomEvent) {
   const value = event.detail.value
   audioPlayerMode.value = value
   localStorage.setItem('encv_player_audio', value)
+}
+
+function handleScreenOrientationChange(event: CustomEvent) {
+  const value = event.detail.value
+  screenOrientation.value = value
+  localStorage.setItem('encv_screen_orientation', value)
+  applyScreenOrientation(value)
+}
+
+async function applyScreenOrientation(orientation: string) {
+  if (!isNative()) return
+  try {
+    const { ScreenOrientation } = await import('@capacitor/screen-orientation')
+    if (orientation === 'portrait') {
+      await ScreenOrientation.lock({ orientation: 'portrait' })
+    } else if (orientation === 'landscape') {
+      await ScreenOrientation.lock({ orientation: 'landscape' })
+    } else {
+      await ScreenOrientation.unlock()
+    }
+  } catch (e) {
+    console.warn('Failed to apply screen orientation:', e)
+  }
 }
 
 function handleVConsoleToggle(event: CustomEvent) {

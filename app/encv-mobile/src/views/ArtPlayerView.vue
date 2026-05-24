@@ -63,6 +63,8 @@
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import Artplayer from 'artplayer'
+import { StatusBar, Style } from '@capacitor/status-bar'
+import { ScreenOrientation } from '@capacitor/screen-orientation'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonIcon, IonContent, IonChip, IonSpinner,
@@ -118,11 +120,49 @@ function hideNativeControls() {
   art.video.setAttribute('x5-video-player-type', 'h5')
 }
 
+async function handleFullscreenEnter() {
+  isFullscreen.value = true
+  if (!isNative()) return
+  try {
+    await StatusBar.hide()
+    const video = art?.video
+    if (video?.videoWidth && video?.videoHeight) {
+      const ratio = video.videoWidth / video.videoHeight
+      if (ratio > 1.3) {
+        await ScreenOrientation.lock({ orientation: 'landscape' })
+      } else if (ratio < 0.77) {
+        await ScreenOrientation.lock({ orientation: 'portrait' })
+      } else {
+        await ScreenOrientation.lock({ orientation: 'landscape' })
+      }
+    } else {
+      await ScreenOrientation.lock({ orientation: 'landscape' })
+    }
+  } catch (e) {
+    console.warn(TAG, 'handleFullscreenEnter error:', e)
+  }
+}
+
+async function handleFullscreenExit() {
+  isFullscreen.value = false
+  if (!isNative()) return
+  try {
+    await ScreenOrientation.lock({ orientation: 'portrait' })
+    await StatusBar.show()
+    await StatusBar.setStyle({ style: Style.Default })
+  } catch (e) {
+    console.warn(TAG, 'handleFullscreenExit error:', e)
+  }
+}
+
 function initArtPlayer() {
   console.info(TAG, 'initArtPlayer called')
   console.info(TAG, 'artContainer:', artContainer.value ? `exists (${artContainer.value.clientWidth}x${artContainer.value.clientHeight})` : 'null')
   console.info(TAG, 'streamUrl:', streamUrl.value || '(empty)')
   console.info(TAG, 'filePath:', filePath.value || '(empty)')
+
+  const styleEl = document.getElementById('artplayer-style')
+  console.info(TAG, 'artplayer-style element:', styleEl ? `exists (${styleEl.textContent?.length ?? 0} chars)` : 'NOT FOUND')
 
   if (!artContainer.value) {
     console.error(TAG, 'initArtPlayer: artContainer is null, cannot init')
@@ -155,7 +195,19 @@ function initArtPlayer() {
       theme: '#ffad00',
       volume: 0.7,
       fullscreen: true,
+      fullscreenWeb: !isNative(),
       miniProgressBar: true,
+      setting: true,
+      playbackRate: true,
+      aspectRatio: true,
+      flip: true,
+      lock: true,
+      autoOrientation: true,
+      autoPlayback: true,
+      subtitleOffset: true,
+      fastForward: true,
+      hotkey: true,
+      gesture: true,
       moreVideoAttr: {
         controls: false,
         preload: 'metadata',
@@ -199,14 +251,12 @@ function initArtPlayer() {
     hideNativeControls()
   })
 
-  art.on('fullscreen', () => {
-    isFullscreen.value = true
-    handleFullscreenEnter()
-  })
-
-  art.on('fullscreenExit', () => {
-    isFullscreen.value = false
-    handleFullscreenExit()
+  art.on('fullscreen', (state: boolean) => {
+    if (state) {
+      handleFullscreenEnter()
+    } else {
+      handleFullscreenExit()
+    }
   })
 
   art.on('error', () => {
@@ -236,30 +286,6 @@ function initArtPlayer() {
   setTimeout(() => {
     hideNativeControls()
   }, 2000)
-}
-
-function handleFullscreenEnter() {
-  const video = art?.video
-  if (!video?.videoWidth || !video?.videoHeight) return
-  const ratio = video.videoWidth / video.videoHeight
-  if (isNative()) {
-    const cap = (window as any).Capacitor
-    const { GoProcess } = cap?.Plugins || {}
-    if (GoProcess) {
-      const orientation = ratio > 1.3 ? 'landscape' : ratio < 0.77 ? 'portrait' : 'landscape'
-      GoProcess.setScreenOrientation({ orientation }).catch(() => {})
-    }
-  }
-}
-
-function handleFullscreenExit() {
-  if (isNative()) {
-    const cap = (window as any).Capacitor
-    const { GoProcess } = cap?.Plugins || {}
-    if (GoProcess) {
-      GoProcess.setScreenOrientation({ orientation: 'portrait' }).catch(() => {})
-    }
-  }
 }
 
 function destroyArtPlayer() {
@@ -308,9 +334,16 @@ onMounted(() => {
   startPlayback()
 })
 
-onBeforeUnmount(() => {
+onBeforeUnmount(async () => {
   console.info(TAG, 'onBeforeUnmount')
   destroyArtPlayer()
+  if (isNative()) {
+    try {
+      await ScreenOrientation.lock({ orientation: 'portrait' })
+      await StatusBar.show()
+      await StatusBar.setStyle({ style: Style.Default })
+    } catch {}
+  }
 })
 </script>
 
@@ -372,6 +405,8 @@ onBeforeUnmount(() => {
 .video-player {
   width: 100%;
   background: #000;
+  position: relative;
+  overflow: hidden;
 }
 
 .video-info {
