@@ -85,16 +85,23 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
         override fun event(eventId: Int) {
             when (eventId) {
                 MpvEvent.MPV_EVENT_FILE_LOADED -> {
-                    val videoWidth = try { MPVLib.getPropertyInt("width") ?: 0 } catch (_: Exception) { 0 }
-                    val videoHeight = try { MPVLib.getPropertyInt("height") ?: 0 } catch (_: Exception) { 0 }
-                    val isAudioOnly = videoWidth == 0 || videoHeight == 0
-                    if (isAudioOnly) {
-                        mainHandler.post { mpvSurfaceView?.visibility = View.GONE }
-                        dispatchStateChange("audio_only")
-                    } else {
-                        mainHandler.post { mpvSurfaceView?.visibility = View.VISIBLE }
-                        dispatchStateChange("playing")
-                    }
+                    mainHandler.postDelayed({
+                        try {
+                            val videoWidth = try { MPVLib.getPropertyInt("width") ?: 0 } catch (_: Exception) { 0 }
+                            val videoHeight = try { MPVLib.getPropertyInt("height") ?: 0 } catch (_: Exception) { 0 }
+                            val isAudioOnly = videoWidth == 0 || videoHeight == 0
+                            if (isAudioOnly) {
+                                mainHandler.post { mpvSurfaceView?.visibility = View.GONE }
+                                dispatchStateChange("audio_only")
+                            } else {
+                                mainHandler.post { mpvSurfaceView?.visibility = View.VISIBLE }
+                                dispatchStateChange("playing")
+                            }
+                        } catch (e: Exception) {
+                            LogRelay.get().relay(TAG, "error", "MPV_EVENT_FILE_LOADED delayed check failed: ${e.message}")
+                            dispatchStateChange("playing")
+                        }
+                    }, 500)
                 }
                 MpvEvent.MPV_EVENT_END_FILE -> dispatchStateChange("ended")
                 MpvEvent.MPV_EVENT_SHUTDOWN -> dispatchStateChange("ended")
@@ -318,7 +325,7 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
         try {
             if (!mpvInitialized) { callback.invoke("MPV not initialized"); return }
             val positionSec = positionMs / 1000.0
-            MPVLib.command(arrayOf("seek", positionSec.toString(), "absolute"))
+            MPVLib.command(arrayOf("seek", positionSec.toString(), "absolute+keyframes"))
             callback.invoke(true)
         } catch (e: Exception) {
             LogRelay.get().relay(TAG, "error", "seekTo failed: ${e.message}")
@@ -346,7 +353,7 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
                         )
                     isFullscreen = true
                 } else {
-                    act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                    act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                     act.window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
                     @Suppress("DEPRECATION")
                     act.window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
