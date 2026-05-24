@@ -45,7 +45,7 @@ export function PlayerControls(props: PlayerControlsProps) {
   const progress = duration > 0 ? currentTime / duration : 0
   const currentTimeStr = formatTime(currentTime)
   const durationStr = formatTime(duration)
-  const isError = error && state !== 'loading'
+  const isError = !!error
   const isLoading = state === 'loading'
 
   const handleSeek = useCallback(
@@ -74,8 +74,18 @@ export function PlayerControls(props: PlayerControlsProps) {
 
   if (isLoading) {
     return (
-      <view className="CenterArea">
-        <view className="LoadingSpinner" />
+      <view className="VideoOverlay">
+        <view className="TopGradient" />
+        <view className="TopBar">
+          <view className="CtrlBtn" bindtap={onBack}>
+            <text className="IconMd">✕</text>
+          </view>
+          <text className="TitleText">{fileName}</text>
+          <view className="TopBarSpacer" />
+        </view>
+        <view className="CenterArea">
+          <view className="LoadingSpinner" />
+        </view>
       </view>
     )
   }

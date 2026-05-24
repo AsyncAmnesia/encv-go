@@ -179,9 +179,9 @@ function initArtPlayer() {
   }
 
   const containerWidth = artContainer.value.clientWidth || window.innerWidth
-  const containerHeight = Math.round(containerWidth * 9 / 16)
-  artContainer.value.style.height = `${containerHeight}px`
-  console.info(TAG, 'container size:', containerWidth, 'x', containerHeight)
+  artContainer.value.style.minHeight = '200px'
+  artContainer.value.style.maxHeight = `${window.innerHeight - 56}px`
+  console.info(TAG, 'container size:', containerWidth)
 
   try {
     art = new Artplayer({
@@ -233,6 +233,14 @@ function initArtPlayer() {
     if (video) {
       if (video.videoWidth && video.videoHeight) {
         mediaInfo.value.resolution = `${video.videoWidth}×${video.videoHeight}`
+        const ratio = video.videoHeight / video.videoWidth
+        const containerWidth = artContainer.value?.clientWidth || window.innerWidth
+        const naturalHeight = Math.round(containerWidth * ratio)
+        const maxHeight = window.innerHeight - 56
+        const finalHeight = Math.min(naturalHeight, maxHeight)
+        if (artContainer.value) {
+          artContainer.value.style.height = `${finalHeight}px`
+        }
       }
       if (video.duration && isFinite(video.duration)) {
         mediaInfo.value.duration = formatDuration(video.duration)

@@ -17,11 +17,16 @@ export function ProgressBar(props: ProgressBarProps) {
     (e: any) => {
       const trackEl = trackRef.current
       if (!trackEl) return
-      const trackX = e.detail?.clientX ?? e.clientX ?? 0
+      const tapX = e.detail?.clientX ?? e.detail?.pageX ?? e.detail?.localX ?? e.clientX ?? 0
       const rect = trackEl.getBoundingClientRect?.()
-      if (!rect) return
-      const relativeX = trackX - rect.left
-      const ratio = Math.max(0, Math.min(1, relativeX / rect.width))
+      let ratio: number
+      if (rect && rect.width > 0) {
+        ratio = Math.max(0, Math.min(1, (tapX - rect.left) / rect.width))
+      } else {
+        const trackWidth = trackEl.offsetWidth ?? trackEl.clientWidth ?? 1
+        const tapLocalX = e.detail?.localX ?? tapX
+        ratio = Math.max(0, Math.min(1, tapLocalX / trackWidth))
+      }
       onSeek(ratio)
     },
     [onSeek]

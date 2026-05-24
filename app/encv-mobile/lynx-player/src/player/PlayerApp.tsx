@@ -5,6 +5,7 @@ import { PlayerControls } from './PlayerControls'
 type PlayerState = 'idle' | 'loading' | 'playing' | 'paused' | 'ended' | 'error' | 'audio_only'
 
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2]
+const LOADING_TIMEOUT_MS = 15000
 
 function lynxLogInfo(msg: string) {
   'background only';
@@ -71,6 +72,7 @@ export function PlayerApp() {
   )
 
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const resetHideTimer = useCallback(() => {
     if (hideTimerRef.current) {
@@ -85,17 +87,32 @@ export function PlayerApp() {
     }
   }, [playerState])
 
+  const clearLoadingTimer = useCallback(() => {
+    if (loadingTimerRef.current) {
+      clearTimeout(loadingTimerRef.current)
+      loadingTimerRef.current = null
+    }
+  }, [])
+
   const setError = useCallback((msg: string, type?: string) => {
     lynxLogError('setError: ' + msg + ' (type=' + (type || classifyError(msg)) + ')')
     setErrorMessage(msg)
     setErrorType(type || classifyError(msg))
     setPlayerState('error')
-  }, [])
+    clearLoadingTimer()
+  }, [clearLoadingTimer])
 
   useLynxGlobalEventListener('mpv:state-change', useCallback((event: any) => {
     const state = event?.state
     const error = event?.error
     lynxLogInfo('mpv:state-change: ' + JSON.stringify(event))
+
+    if (error) {
+      lynxLogError('mpv:state-change error: ' + error)
+      setError(String(error))
+      return
+    }
+
     if (state) {
       if (state === 'surface_ready') {
         lynxLogInfo('MPV surface ready')
@@ -116,6 +133,7 @@ export function PlayerApp() {
         setErrorMessage('')
         setErrorType('')
         setPlayerState('audio_only')
+        clearLoadingTimer()
         return
       }
       if (state === 'error') {
@@ -125,17 +143,14 @@ export function PlayerApp() {
         return
       }
       setPlayerState(state as PlayerState)
+      if (state === 'playing' || state === 'paused') {
+        setErrorMessage('')
+        setErrorType('')
+        setShowControls(true)
+        clearLoadingTimer()
+      }
     }
-    if (error) {
-      lynxLogError('mpv:state-change error field: ' + error)
-      setError(String(error))
-    }
-    if (state === 'playing' || state === 'paused') {
-      setErrorMessage('')
-      setErrorType('')
-      setShowControls(true)
-    }
-  }, [filePath, setError]))
+  }, [filePath, setError, clearLoadingTimer]))
 
   useLynxGlobalEventListener('mpv:position-update', useCallback((event: any) => {
     setPosition(event?.position ?? 0)
@@ -154,6 +169,11 @@ export function PlayerApp() {
       setPlayerState('loading')
       setErrorMessage('')
       setErrorType('')
+      clearLoadingTimer()
+      loadingTimerRef.current = setTimeout(() => {
+        lynxLogWarn('loading timeout after ' + LOADING_TIMEOUT_MS + 'ms')
+        setError('播放超时，请检查网络或文件', '网络错误')
+      }, LOADING_TIMEOUT_MS)
 
       ;(async () => {
         try {
@@ -207,7 +227,7 @@ export function PlayerApp() {
         }
       })()
     },
-    [fileName, setError]
+    [fileName, setError, clearLoadingTimer]
   )
 
   const handlePlayPause = useCallback(() => {
@@ -303,6 +323,7 @@ export function PlayerApp() {
       if (hideTimerRef.current) {
         clearTimeout(hideTimerRef.current)
       }
+      clearLoadingTimer()
     }
   }, [])
 
