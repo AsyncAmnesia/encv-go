@@ -92,7 +92,7 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffprobe.so" \
 
 ---
 
-## 任务 3：移动端设置界面可视化桌面 JSON 配置与移动端独有配置
+## 任务 3：移动端设置界面可视化 — 区分配置来源与平台
 
 ### 现状
 
@@ -100,8 +100,21 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffprobe.so" \
 - 桌面端和移动端都有效的配置（如 `container_chunk_size_mb`）
 - 仅桌面端有效的配置（如某些 NVENC 相关参数）
 - 仅移动端有效的配置（如 `default_stream_preset`，因为移动端用 MediaCodec）
+- **移动端应用自身独有的设置**（如视频打开方式、播放器选择），这些不是后端 JSON 配置的一部分
 
 ### 设计方案
+
+#### 3.1 配置来源分类
+
+将设置分为三大类，用**视觉徽章（Badge）**区分：
+
+| 来源 | 徽章颜色 | 徽章文字 | 说明 |
+|------|----------|----------|------|
+| 后端 JSON 配置 | `primary`（蓝色） | "服务端" | 来自 Go 后端 config.json，桌面端和移动端共享 |
+| 移动端独有配置 | `tertiary`（紫色） | "移动端" | 仅移动端应用本地存储的设置 |
+| v4 新增 | `success`（绿色） | "v4" | v4 架构新增的配置项 |
+
+#### 3.2 字段平台过滤
 
 在 `schema.json` 的 `VideoPluginConfig` 中，为每个字段添加 `x-platform` 扩展属性：
 - `"x-platform": "both"` — 桌面端和移动端都显示（默认）
@@ -112,40 +125,91 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffprobe.so" \
 
 在前端根据当前平台过滤字段显示。
 
+#### 3.3 移动端独有设置区域
+
+在 `PluginSettings.vue` 中新增一个独立的 ion-list 区域，专门展示移动端应用独有的设置（存储在 localStorage）：
+
+- **视频打开方式**（已有，在 Settings.vue 中，但应移至 PluginSettings 中与视频配置一起）
+- **画质预设选择器**（v4 新增，使用 ion-select + 卡片式选项展示）
+
+这些设置使用**紫色徽章**标记，与蓝色徽章的后端配置形成视觉区分。
+
+#### 3.4 视觉设计
+
+每个配置项的展示格式：
+
+```
+┌─────────────────────────────────────────────┐
+│ 🎬 container_chunk_size_mb        [服务端]  │
+│    容器分片大小（MB）                        │
+│    [0                                    ]   │
+├─────────────────────────────────────────────┤
+│ 🎬 default_stream_preset     [移动端] [v4]  │
+│    画质预设                                  │
+│    ┌──────────┐ ┌──────────┐ ┌──────────┐   │
+│    │ 平衡(推荐)│ │  高质量  │ │ 极致画质 │   │
+│    │  28 VBR  │ │  24 VBR  │ │  20 VBR  │   │
+│    └──────────┘ └──────────┘ └──────────┘   │
+├─────────────────────────────────────────────┤
+│ 🎬 视频打开方式                   [移动端]  │
+│    ┌─────────────────────────────────────┐  │
+│    │ Artplayer (内置)        ▼           │  │
+│    └─────────────────────────────────────┘  │
+└─────────────────────────────────────────────┘
+```
+
+徽章样式：
+- **服务端**：蓝色小圆角徽章，白字
+- **移动端**：紫色小圆角徽章，白字
+- **v4**：绿色小圆角徽章，白字
+
 ### 字段平台分类
 
-| 字段 | 平台 | 原因 |
-|------|------|------|
-| `ext` | both | 通用 |
-| `container_chunk_size_mb` | both | 通用 |
-| `light_container_main_chunk_enabled` | both | 通用 |
-| `track_extensions` | both | 通用 |
-| `keep_mkv_for_mkv_source` | both | 通用 |
-| `verify_after_pack` | both | 通用 |
-| `plugin_cache_dir` | both | 通用 |
-| `skip_merge_for_split_mkv` | both | 通用 |
-| `allow_no_reencode` | both | 通用（v4 新功能） |
-| `default_stream_preset` | mobile | 移动端用 MediaCodec，桌面端用 NVENC，参数不同 |
+| 字段 | 平台 | v4 新增 | 原因 |
+|------|------|---------|------|
+| `ext` | both | 否 | 通用 |
+| `container_chunk_size_mb` | both | 否(重命名) | 通用 |
+| `light_container_main_chunk_enabled` | both | 否(重命名) | 通用 |
+| `track_extensions` | both | 否 | 通用 |
+| `keep_mkv_for_mkv_source` | both | 否 | 通用 |
+| `verify_after_pack` | both | 否 | 通用 |
+| `plugin_cache_dir` | both | 否 | 通用 |
+| `skip_merge_for_split_mkv` | both | 否 | 通用 |
+| `allow_no_reencode` | both | 是 | v4 新功能 |
+| `default_stream_preset` | mobile | 是 | 移动端用 MediaCodec |
 
 ### 实施步骤
 
-1. **更新 `schema.json`（前端和后端）**：为 `VideoPluginConfig` 的每个属性添加 `x-platform` 扩展属性
+1. **更新 `schema.json`（前端和后端）**：
+   - 为 `VideoPluginConfig` 的每个属性添加 `x-platform` 扩展属性
+   - 为 v4 新增字段添加 `x-v4: true` 扩展属性
+   - 为 `default_stream_preset` 添加 `enum` 和 `x-enum-labels` 扩展
 
 2. **更新 `schemaParser.ts`**：
    - `FieldDef` 增加 `platform?: 'both' | 'desktop' | 'mobile'` 字段
-   - `parseProperty` 解析 `x-platform` 属性
+   - `FieldDef` 增加 `isV4?: boolean` 字段
+   - `FieldDef` 增加 `isSelect?: boolean` 和 `selectOptions?: { value: string; label: string; description: string }[]` 字段
+   - `parseProperty` 解析 `x-platform`、`x-v4`、`enum`、`x-enum-labels` 属性
 
 3. **更新 `PluginSettings.vue`**：
    - 导入平台检测工具（`isNative()` from `@/plugins/GoProcess`）
    - 过滤 `pluginSection.properties`，根据 `platform` 字段和当前平台决定是否显示
-   - 移动端显示 `platform === 'both' | 'mobile'` 的字段
-   - 桌面端显示 `platform === 'both' | 'desktop'` 的字段
+   - 为每个字段添加徽章组件（服务端/移动端/v4）
+   - 新增移动端独有设置区域（视频打开方式等，从 Settings.vue 迁移）
+   - 为 `default_stream_preset` 实现卡片式选择器（而非简单 select）
 
-4. **更新 `Settings.vue`**：同上，对 plugin_settings 的子字段进行平台过滤
+4. **更新 `Settings.vue`**：
+   - 同上，对 plugin_settings 的子字段进行平台过滤
+   - 将视频打开方式等移动端独有设置移至 PluginSettings.vue
 
-5. **为 `default_stream_preset` 添加可视化选择器**：
-   - 在移动端，使用 `ion-select` 展示三个预设选项
-   - 每个选项显示中文名称和描述
+5. **添加徽章样式**：
+   - 在 `PluginSettings.vue` 的 `<style>` 中添加徽章 CSS
+   - 蓝色 `.badge-server`、紫色 `.badge-mobile`、绿色 `.badge-v4`
+
+6. **为 `default_stream_preset` 添加卡片式选择器**：
+   - 在移动端，使用 ion-card 组展示三个预设选项
+   - 每个卡片显示：预设名称、参数概要（quality/bitrateMode/keyFrameInterval）、描述
+   - 选中状态用边框高亮
    - 在 `schema.json` 中为 `default_stream_preset` 添加 `enum` 和 `x-enum-labels` 扩展
 
 ---

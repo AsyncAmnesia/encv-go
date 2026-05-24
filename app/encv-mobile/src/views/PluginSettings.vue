@@ -33,27 +33,47 @@
                 <ion-label>{{ tField(child.key) }}</ion-label>
               </ion-item-divider>
               <template v-for="grandchild in child.properties" :key="grandchild.key">
-                <ion-item v-if="grandchild.type === 'boolean'">
-                  <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
-                  <ion-toggle
-                    :checked="!!getValue([pluginSection.key, child.key, grandchild.key])"
-                    @ionChange="setValue([pluginSection.key, child.key, grandchild.key], !getValue([pluginSection.key, child.key, grandchild.key]))"
-                  >{{ tField(grandchild.key) }}</ion-toggle>
-                </ion-item>
-                <ion-item v-else>
-                  <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
-                  <ion-input
-                    :value="String(getValue([pluginSection.key, child.key, grandchild.key]) ?? '')"
-                    :type="grandchild.isPassword ? 'password' : grandchild.type === 'integer' ? 'number' : 'text'"
-                    :label="fieldLabel(grandchild.key, grandchild.required)"
-                    label-placement="stacked"
-                    :placeholder="grandchild.description || tField(grandchild.key)"
-                    @ionInput="handleInput([pluginSection.key, child.key, grandchild.key], grandchild, $event)"
-                  ></ion-input>
-                  <ion-button v-if="grandchild.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([pluginSection.key, child.key, grandchild.key], grandchild)">
-                    <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-                  </ion-button>
-                </ion-item>
+                <template v-if="isFieldVisible(grandchild)">
+                  <ion-item v-if="grandchild.type === 'boolean'">
+                    <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
+                    <ion-toggle
+                      :checked="!!getValue([pluginSection.key, child.key, grandchild.key])"
+                      @ionChange="setValue([pluginSection.key, child.key, grandchild.key], !getValue([pluginSection.key, child.key, grandchild.key]))"
+                    >{{ tField(grandchild.key) }}<span v-if="shouldShowBadge(grandchild)" class="config-badge" :class="grandchild.isV4 ? 'badge-v4' : grandchild.platform === 'mobile' ? 'badge-mobile' : 'badge-server'">{{ grandchild.isV4 ? 'v4' : grandchild.platform === 'mobile' ? '移动端' : '服务端' }}</span></ion-toggle>
+                  </ion-item>
+                  <ion-item v-else-if="grandchild.isSelect && grandchild.selectOptions">
+                    <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
+                    <ion-label>
+                      <h3>{{ tField(grandchild.key) }}<span v-if="shouldShowBadge(grandchild)" class="config-badge" :class="grandchild.isV4 ? 'badge-v4' : grandchild.platform === 'mobile' ? 'badge-mobile' : 'badge-server'">{{ grandchild.isV4 ? 'v4' : grandchild.platform === 'mobile' ? '移动端' : '服务端' }}</span></h3>
+                    </ion-label>
+                    <div class="preset-cards" slot="end">
+                      <div
+                        v-for="opt in grandchild.selectOptions"
+                        :key="opt.value"
+                        class="preset-card"
+                        :class="{ 'preset-card-active': getValue([pluginSection.key, child.key, grandchild.key]) === opt.value }"
+                        @click="setValue([pluginSection.key, child.key, grandchild.key], opt.value)"
+                      >
+                        <div class="preset-card-title">{{ opt.label }}</div>
+                        <div class="preset-card-desc">{{ opt.description }}</div>
+                      </div>
+                    </div>
+                  </ion-item>
+                  <ion-item v-else>
+                    <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
+                    <ion-input
+                      :value="String(getValue([pluginSection.key, child.key, grandchild.key]) ?? '')"
+                      :type="grandchild.isPassword ? 'password' : grandchild.type === 'integer' ? 'number' : 'text'"
+                      :label="fieldLabel(grandchild.key, grandchild.required)"
+                      label-placement="stacked"
+                      :placeholder="grandchild.description || tField(grandchild.key)"
+                      @ionInput="handleInput([pluginSection.key, child.key, grandchild.key], grandchild, $event)"
+                    ></ion-input>
+                    <ion-button v-if="grandchild.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([pluginSection.key, child.key, grandchild.key], grandchild)">
+                      <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+                    </ion-button>
+                  </ion-item>
+                </template>
               </template>
             </template>
 
@@ -80,33 +100,74 @@
               </ion-item>
             </template>
 
-            <ion-item v-else-if="child.type === 'boolean'">
-              <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
-              <ion-toggle
-                :checked="!!getValue([pluginSection.key, child.key])"
-                @ionChange="setValue([pluginSection.key, child.key], !getValue([pluginSection.key, child.key]))"
-              >{{ tField(child.key) }}</ion-toggle>
-            </ion-item>
-            <ion-item v-else>
-              <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
-              <ion-input
-                :value="String(getValue([pluginSection.key, child.key]) ?? '')"
-                :type="child.isPassword ? 'password' : child.type === 'integer' ? 'number' : 'text'"
-                :label="fieldLabel(child.key, child.required)"
-                label-placement="stacked"
-                :placeholder="child.description || tField(child.key)"
-                @ionInput="handleInput([pluginSection.key, child.key], child, $event)"
-              ></ion-input>
-              <ion-button v-if="child.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([pluginSection.key, child.key], child)">
-                <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-              </ion-button>
-            </ion-item>
+            <template v-else-if="isFieldVisible(child)">
+              <ion-item v-if="child.type === 'boolean'">
+                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
+                <ion-toggle
+                  :checked="!!getValue([pluginSection.key, child.key])"
+                  @ionChange="setValue([pluginSection.key, child.key], !getValue([pluginSection.key, child.key]))"
+                >{{ tField(child.key) }}<span v-if="shouldShowBadge(child)" class="config-badge" :class="child.isV4 ? 'badge-v4' : child.platform === 'mobile' ? 'badge-mobile' : 'badge-server'">{{ child.isV4 ? 'v4' : child.platform === 'mobile' ? '移动端' : '服务端' }}</span></ion-toggle>
+              </ion-item>
+              <ion-item v-else-if="child.isSelect && child.selectOptions">
+                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
+                <ion-label>
+                  <h3>{{ tField(child.key) }}<span v-if="shouldShowBadge(child)" class="config-badge" :class="child.isV4 ? 'badge-v4' : child.platform === 'mobile' ? 'badge-mobile' : 'badge-server'">{{ child.isV4 ? 'v4' : child.platform === 'mobile' ? '移动端' : '服务端' }}</span></h3>
+                </ion-label>
+                <div class="preset-cards" slot="end">
+                  <div
+                    v-for="opt in child.selectOptions"
+                    :key="opt.value"
+                    class="preset-card"
+                    :class="{ 'preset-card-active': getValue([pluginSection.key, child.key]) === opt.value }"
+                    @click="setValue([pluginSection.key, child.key], opt.value)"
+                  >
+                    <div class="preset-card-title">{{ opt.label }}</div>
+                    <div class="preset-card-desc">{{ opt.description }}</div>
+                  </div>
+                </div>
+              </ion-item>
+              <ion-item v-else>
+                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
+                <ion-input
+                  :value="String(getValue([pluginSection.key, child.key]) ?? '')"
+                  :type="child.isPassword ? 'password' : child.type === 'integer' ? 'number' : 'text'"
+                  :label="fieldLabel(child.key, child.required)"
+                  label-placement="stacked"
+                  :placeholder="child.description || tField(child.key)"
+                  @ionInput="handleInput([pluginSection.key, child.key], child, $event)"
+                ></ion-input>
+                <ion-button v-if="child.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([pluginSection.key, child.key], child)">
+                  <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+                </ion-button>
+              </ion-item>
+            </template>
           </template>
 
           <ion-item v-if="!pluginSection.properties || pluginSection.properties.length === 0">
             <ion-label class="ion-text-wrap placeholder-text">
               <p>{{ t('settings.noEntries') }}</p>
             </ion-label>
+          </ion-item>
+        </ion-list>
+
+        <ion-list v-if="isNative()">
+          <ion-list-header>
+            <ion-label>移动端独有设置</ion-label>
+          </ion-list-header>
+          <ion-item>
+            <ion-icon :icon="filmOutline" slot="start"></ion-icon>
+            <ion-select
+              :value="mobileVideoPlayer"
+              @ionChange="handleMobileVideoPlayerChange"
+              :label="'视频打开方式'"
+              label-placement="stacked"
+              interface="action-sheet"
+              mode="ios"
+            >
+              <ion-select-option value="artplayer">Artplayer (内置)</ion-select-option>
+              <ion-select-option value="external">外部播放器</ion-select-option>
+            </ion-select>
+            <ion-badge color="primary" slot="end" class="config-badge badge-mobile">移动端</ion-badge>
           </ion-item>
         </ion-list>
       </template>
@@ -162,13 +223,15 @@ import { ref, computed, onMounted, watch } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonBackButton, IonContent, IonList, IonListHeader, IonItem, IonItemDivider,
-  IonIcon, IonLabel, IonToggle, IonInput, IonSpinner, IonModal, modalController,
+  IonIcon, IonLabel, IonToggle, IonInput, IonSpinner, IonModal, IonBadge,
+  IonSelect, IonSelectOption, modalController,
 } from '@ionic/vue'
 import {
   save as saveIcon, settingsOutline, shieldCheckmark, speedometerOutline,
   filmOutline, musicalNotesOutline, imagesOutline, readerOutline,
-  newspaperOutline, colorWandOutline, eyeOutline, folderOpen,
+  newspaperOutline, eyeOutline, folderOpen,
   documentText, toggleOutline, lockClosed, textOutline,
+  colorPaletteOutline, layersOutline,
 } from 'ionicons/icons'
 import { useConfig } from '@/composables/useConfig'
 import { useServerStatus } from '@/composables/useServerStatus'
@@ -176,6 +239,7 @@ import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { fetchConfig, updateConfig } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
+import { isNative } from '@/plugins/GoProcess'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const { isOnline: serverOnline } = useServerStatus()
@@ -303,12 +367,14 @@ function fieldLabel(key: string, required?: boolean): string {
 const fieldIconMap: Record<string, string> = {
   plugin_cache_dir: folderOpen,
   ext: documentText,
-  chunk_size_mb: speedometerOutline,
-  light_main_chunk_enabled: colorWandOutline,
+  container_chunk_size_mb: filmOutline,
+  light_container_main_chunk_enabled: layersOutline,
   track_extensions: eyeOutline,
-  keep_mkv_for_mkvSource: filmOutline,
+  keep_mkv_for_mkv_source: filmOutline,
   verify_after_pack: shieldCheckmark,
   skip_merge_for_split_mkv: filmOutline,
+  allow_no_reencode: speedometerOutline,
+  default_stream_preset: colorPaletteOutline,
   video: filmOutline,
   audio: musicalNotesOutline,
   image: imagesOutline,
@@ -324,6 +390,25 @@ function getFieldIcon(fieldKey: string, fieldType: string): string {
   if (fieldType === 'integer') return speedometerOutline
   if (fieldKey.includes('password')) return lockClosed
   return settingsOutline
+}
+
+function isFieldVisible(field: FieldDef): boolean {
+  if (!field.platform || field.platform === 'both') return true
+  if (field.platform === 'mobile') return isNative()
+  if (field.platform === 'desktop') return !isNative()
+  return true
+}
+
+function shouldShowBadge(field: FieldDef): boolean {
+  return !!field.isV4 || field.platform === 'mobile'
+}
+
+const mobileVideoPlayer = ref(localStorage.getItem('encv_player_video') || 'artplayer')
+
+function handleMobileVideoPlayerChange(event: CustomEvent) {
+  const value = event.detail.value
+  mobileVideoPlayer.value = value
+  localStorage.setItem('encv_player_video', value)
 }
 
 async function handleSaveConfig() {
@@ -373,6 +458,43 @@ watch(serverOnline, async (online) => {
   --padding-end: 8px;
   min-width: 44px;
   min-height: 44px;
+}
+.config-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 6px;
+}
+.badge-server { background: #3880ff; color: white; }
+.badge-mobile { background: #8c61ff; color: white; }
+.badge-v4 { background: #2dd36f; color: white; }
+.preset-cards {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.preset-card {
+  flex: 1;
+  padding: 12px;
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.preset-card-active {
+  border-color: #3880ff;
+  background: rgba(56, 128, 255, 0.08);
+}
+.preset-card-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+.preset-card-desc {
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
 }
 .json-editor-content {
   --background: var(--ion-background-color);

@@ -169,27 +169,29 @@
                   <ion-label>{{ tField(child.key) }}</ion-label>
                 </ion-item-divider>
                 <template v-for="grandchild in child.properties" :key="grandchild.key">
-                  <ion-item v-if="grandchild.type === 'boolean'">
-                    <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
-                    <ion-toggle
-                      :checked="!!getValue([section.key, child.key, grandchild.key])"
-                      @ionChange="setValue([section.key, child.key, grandchild.key], !getValue([section.key, child.key, grandchild.key]))"
-                    >{{ tField(grandchild.key) }}</ion-toggle>
-                  </ion-item>
-                  <ion-item v-else>
-                    <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
-                    <ion-input
-                      :value="String(getValue([section.key, child.key, grandchild.key]) ?? '')"
-                      :type="grandchild.isPassword ? 'password' : grandchild.type === 'integer' ? 'number' : 'text'"
-                      :label="fieldLabel(grandchild.key, grandchild.required)"
-                      label-placement="stacked"
-                      :placeholder="grandchild.description || tField(grandchild.key)"
-                      @ionInput="handleInput([section.key, child.key, grandchild.key], grandchild, $event)"
-                    ></ion-input>
-                    <ion-button v-if="grandchild.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([section.key, child.key, grandchild.key], grandchild)">
-                      <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-                    </ion-button>
-                  </ion-item>
+                  <template v-if="isFieldVisible(grandchild)">
+                    <ion-item v-if="grandchild.type === 'boolean'">
+                      <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
+                      <ion-toggle
+                        :checked="!!getValue([section.key, child.key, grandchild.key])"
+                        @ionChange="setValue([section.key, child.key, grandchild.key], !getValue([section.key, child.key, grandchild.key]))"
+                      >{{ tField(grandchild.key) }}</ion-toggle>
+                    </ion-item>
+                    <ion-item v-else>
+                      <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
+                      <ion-input
+                        :value="String(getValue([section.key, child.key, grandchild.key]) ?? '')"
+                        :type="grandchild.isPassword ? 'password' : grandchild.type === 'integer' ? 'number' : 'text'"
+                        :label="fieldLabel(grandchild.key, grandchild.required)"
+                        label-placement="stacked"
+                        :placeholder="grandchild.description || tField(grandchild.key)"
+                        @ionInput="handleInput([section.key, child.key, grandchild.key], grandchild, $event)"
+                      ></ion-input>
+                      <ion-button v-if="grandchild.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([section.key, child.key, grandchild.key], grandchild)">
+                        <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+                      </ion-button>
+                    </ion-item>
+                  </template>
                 </template>
               </template>
 
@@ -216,43 +218,45 @@
                 </ion-item>
               </template>
 
-              <ion-item v-else-if="child.type === 'boolean'">
-                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
-                <ion-toggle
-                  :checked="!!getValue([section.key, child.key])"
-                  @ionChange="setValue([section.key, child.key], !getValue([section.key, child.key]))"
-                >{{ tField(child.key) }}</ion-toggle>
-              </ion-item>
-              <ion-item v-else-if="section.key === 'log' && child.key === 'level'">
-                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
-                <ion-select
-                  :value="String(getValue(['log', 'level']) ?? 'info')"
-                  :label="tField('level')"
-                  label-placement="stacked"
-                  interface="action-sheet"
-                  mode="ios"
-                  @ionChange="setValue(['log', 'level'], $event.detail.value)"
-                >
-                  <ion-select-option value="debug">DEBUG</ion-select-option>
-                  <ion-select-option value="info">INFO</ion-select-option>
-                  <ion-select-option value="warn">WARN</ion-select-option>
-                  <ion-select-option value="error">ERROR</ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item v-else>
-                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
-                <ion-input
-                  :value="String(getValue([section.key, child.key]) ?? '')"
-                  :type="child.isPassword ? 'password' : child.type === 'integer' ? 'number' : 'text'"
-                  :label="fieldLabel(child.key, child.required)"
-                  label-placement="stacked"
-                  :placeholder="child.description || tField(child.key)"
-                  @ionInput="handleInput([section.key, child.key], child, $event)"
-                ></ion-input>
-                <ion-button v-if="child.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([section.key, child.key], child)">
-                  <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-                </ion-button>
-              </ion-item>
+              <template v-else-if="isFieldVisible(child)">
+                <ion-item v-if="child.type === 'boolean'">
+                  <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
+                  <ion-toggle
+                    :checked="!!getValue([section.key, child.key])"
+                    @ionChange="setValue([section.key, child.key], !getValue([section.key, child.key]))"
+                  >{{ tField(child.key) }}</ion-toggle>
+                </ion-item>
+                <ion-item v-else-if="section.key === 'log' && child.key === 'level'">
+                  <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
+                  <ion-select
+                    :value="String(getValue(['log', 'level']) ?? 'info')"
+                    :label="tField('level')"
+                    label-placement="stacked"
+                    interface="action-sheet"
+                    mode="ios"
+                    @ionChange="setValue(['log', 'level'], $event.detail.value)"
+                  >
+                    <ion-select-option value="debug">DEBUG</ion-select-option>
+                    <ion-select-option value="info">INFO</ion-select-option>
+                    <ion-select-option value="warn">WARN</ion-select-option>
+                    <ion-select-option value="error">ERROR</ion-select-option>
+                  </ion-select>
+                </ion-item>
+                <ion-item v-else>
+                  <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
+                  <ion-input
+                    :value="String(getValue([section.key, child.key]) ?? '')"
+                    :type="child.isPassword ? 'password' : child.type === 'integer' ? 'number' : 'text'"
+                    :label="fieldLabel(child.key, child.required)"
+                    label-placement="stacked"
+                    :placeholder="child.description || tField(child.key)"
+                    @ionInput="handleInput([section.key, child.key], child, $event)"
+                  ></ion-input>
+                  <ion-button v-if="child.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([section.key, child.key], child)">
+                    <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+                  </ion-button>
+                </ion-item>
+              </template>
             </template>
 
             <ion-item v-if="!section.properties || section.properties.length === 0">
@@ -345,10 +349,11 @@ import {
   key, lockClosed, documentText, terminal, settingsOutline,
   cloudOutline, shieldCheckmark, eyeOutline, speedometerOutline,
   filmOutline, musicalNotesOutline, imagesOutline, readerOutline,
-  newspaperOutline, colorWandOutline, gitNetworkOutline, toggleOutline,
+  newspaperOutline, gitNetworkOutline, toggleOutline,
   textOutline, personOutline, folderOpen, refreshCircle,
   bugOutline,
   phonePortraitOutline,
+  colorPaletteOutline, layersOutline,
   fileTrayFull as databaseIcon,
 } from 'ionicons/icons'
 import { useTheme } from '@/composables/useTheme'
@@ -566,13 +571,15 @@ const fieldIconMap: Record<string, string> = {
   sites: globeOutline,
   disable_signature_verification: shieldCheckmark,
   ext: documentText,
-  chunk_size_mb: speedometerOutline,
-  light_main_chunk_enabled: colorWandOutline,
+  container_chunk_size_mb: filmOutline,
+  light_container_main_chunk_enabled: layersOutline,
   track_extensions: eyeOutline,
-  keep_mkv_for_mkvSource: filmOutline,
+  keep_mkv_for_mkv_source: filmOutline,
   verify_after_pack: shieldCheckmark,
   plugin_cache_dir: folderOpen,
   skip_merge_for_split_mkv: filmOutline,
+  allow_no_reencode: speedometerOutline,
+  default_stream_preset: colorPaletteOutline,
   video: filmOutline,
   audio: musicalNotesOutline,
   image: imagesOutline,
@@ -587,6 +594,13 @@ function getFieldIcon(fieldKey: string, fieldType: string): string {
   if (fieldType === 'integer') return speedometerOutline
   if (fieldKey.includes('password')) return lockClosed
   return settingsOutline
+}
+
+function isFieldVisible(field: FieldDef): boolean {
+  if (!field.platform || field.platform === 'both') return true
+  if (field.platform === 'mobile') return isNative()
+  if (field.platform === 'desktop') return !isNative()
+  return true
 }
 
 function handleDarkToggle() {

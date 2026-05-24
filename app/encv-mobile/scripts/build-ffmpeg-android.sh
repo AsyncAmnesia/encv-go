@@ -35,10 +35,16 @@ if [ -f "${OUTPUT_DIR}/libffmpeg.so" ] && [ -f "${OUTPUT_DIR}/libffprobe.so" ]; 
     echo "✅ ffmpeg output already exists, checking symbols..."
     ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" | grep -q "ffmpeg_run" && \
     ${NM} -D "${OUTPUT_DIR}/libffprobe.so" | grep -q "ffprobe_run" && {
-        echo "✅ All ffmpeg libraries cached and valid, skipping build"
-        echo "Output: $OUTPUT_DIR"
-        ls -lh "$OUTPUT_DIR"
-        exit 0
+        if ${NM} -D "${OUTPUT_DIR}/libffprobe.so" | grep -q "av_log"; then
+            echo "✅ libffprobe.so contains FFmpeg symbols (static-linked)"
+            echo "✅ All ffmpeg libraries cached and valid, skipping build"
+            echo "Output: $OUTPUT_DIR"
+            ls -lh "$OUTPUT_DIR"
+            exit 0
+        else
+            echo "⚠️  libffprobe.so missing FFmpeg symbols (not static-linked), rebuilding..."
+            rm -f "${OUTPUT_DIR}/libffmpeg.so" "${OUTPUT_DIR}/libffprobe.so"
+        fi
     }
     echo "⚠️  Cached libraries missing expected symbols, rebuilding..."
 fi
@@ -141,7 +147,7 @@ echo "=== Configuring ffmpeg ==="
     --target-os=android \
     --sysroot="${TOOLCHAIN}/sysroot" \
     --enable-shared \
-    --disable-static \
+    --enable-static \
     --disable-programs \
     --disable-doc \
     --disable-htmlpages \
@@ -175,16 +181,7 @@ echo "ffmpeg make done (log: ${LOG_DIR}/ffmpeg-make.log)"
 make install > "${LOG_DIR}/ffmpeg-install.log" 2>&1
 echo "✅ ffmpeg built and installed"
 
-echo "=== Copying shared libraries ==="
-for lib in libavcodec libavformat libavutil libswresample libswscale libavfilter libavdevice; do
-    src="${BUILD_DIR}/ffmpeg-install/lib/${lib}.so"
-    if [ -f "$src" ]; then
-        cp "$src" "$OUTPUT_DIR/"
-        echo "✅ Copied ${lib}.so"
-    else
-        echo "⚠️  ${lib}.so not found (may be disabled)"
-    fi
-done
+echo "=== FFmpeg shared libs (.so) are statically linked into libffmpeg.so/libffprobe.so ==="
 
 echo "=== Building fftools shared libraries ==="
 FFMPEG_SRC="${BUILD_DIR}/ffmpeg-${FFMPEG_VERSION}"
@@ -218,9 +215,17 @@ done
 echo "Linking libffmpeg.so..."
 $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffmpeg.so" \
     $FFMPEG_OBJS \
-    -lavcodec -lavformat -lavutil -lswresample -lswscale -lavfilter -lavdevice \
-    -lx264 -lm -llog \
-    -Wl,-rpath,\$ORIGIN \
+    -Wl,--whole-archive \
+    ${FFMPEG_INSTALL}/lib/libavformat.a \
+    ${FFMPEG_INSTALL}/lib/libavcodec.a \
+    ${FFMPEG_INSTALL}/lib/libavutil.a \
+    ${FFMPEG_INSTALL}/lib/libswresample.a \
+    ${FFMPEG_INSTALL}/lib/libswscale.a \
+    ${FFMPEG_INSTALL}/lib/libavfilter.a \
+    ${FFMPEG_INSTALL}/lib/libavdevice.a \
+    -Wl,--no-whole-archive \
+    ${X264_INSTALL}/lib/libx264.a \
+    -lm -llog \
     $LDFLAGS > /dev/null 2>&1
 
 echo "Compiling ffprobe fftools..."
@@ -242,9 +247,17 @@ done
 echo "Linking libffprobe.so..."
 $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffprobe.so" \
     $FFPROBE_OBJS \
-    -lavcodec -lavformat -lavutil -lswresample -lswscale -lavfilter -lavdevice \
-    -lx264 -lm -llog \
-    -Wl,-rpath,\$ORIGIN \
+    -Wl,--whole-archive \
+    ${FFMPEG_INSTALL}/lib/libavformat.a \
+    ${FFMPEG_INSTALL}/lib/libavcodec.a \
+    ${FFMPEG_INSTALL}/lib/libavutil.a \
+    ${FFMPEG_INSTALL}/lib/libswresample.a \
+    ${FFMPEG_INSTALL}/lib/libswscale.a \
+    ${FFMPEG_INSTALL}/lib/libavfilter.a \
+    ${FFMPEG_INSTALL}/lib/libavdevice.a \
+    -Wl,--no-whole-archive \
+    ${X264_INSTALL}/lib/libx264.a \
+    -lm -llog \
     $LDFLAGS > /dev/null 2>&1
 
 cp "${FTOOLS_BUILD}/libffmpeg.so" "$OUTPUT_DIR/"

@@ -16,6 +16,10 @@ export interface FieldDef {
   isMap?: boolean
   mapItemFields?: FieldDef[]
   isPath?: boolean
+  platform?: 'both' | 'desktop' | 'mobile'
+  isV4?: boolean
+  isSelect?: boolean
+  selectOptions?: { value: string; label: string; description: string }[]
 }
 
 interface JsonSchemaProperty {
@@ -86,6 +90,19 @@ function parseProperty(
 
   if (resolved.enum) {
     field.enum = resolved.enum
+  }
+
+  field.platform = (resolved as any)['x-platform'] || 'both'
+  field.isV4 = (resolved as any)['x-v4'] || false
+  if (resolved.enum && Array.isArray(resolved.enum)) {
+    field.isSelect = true
+    const labels = (resolved as any)['x-enum-labels'] as Record<string, string> || {}
+    const descriptions = (resolved as any)['x-enum-descriptions'] as Record<string, string> || {}
+    field.selectOptions = (resolved.enum as string[]).map(v => ({
+      value: v,
+      label: labels[v] || v,
+      description: descriptions[v] || ''
+    }))
   }
 
   if (resolved.type === 'object' && resolved.properties) {

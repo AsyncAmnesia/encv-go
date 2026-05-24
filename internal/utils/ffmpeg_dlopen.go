@@ -17,17 +17,6 @@ typedef void (*reset_func_t)(void);
 
 static pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-static const char *g_dep_libs[] = {
-    "libavutil.so",
-    "libswresample.so",
-    "libswscale.so",
-    "libavcodec.so",
-    "libavformat.so",
-    "libavfilter.so",
-    "libavdevice.so",
-    NULL
-};
-
 static char g_dlerror[1024] = {0};
 
 static int call_native_run(
@@ -41,17 +30,6 @@ static int call_native_run(
 ) {
     pthread_mutex_lock(&g_mutex);
     g_dlerror[0] = '\0';
-
-    char dir[512];
-    snprintf(dir, sizeof(dir), "%s", lib_path);
-    char *last_slash = strrchr(dir, '/');
-    if (last_slash) *last_slash = '\0';
-
-    for (int i = 0; g_dep_libs[i]; i++) {
-        char dep_path[512];
-        snprintf(dep_path, sizeof(dep_path), "%s/%s", dir, g_dep_libs[i]);
-        dlopen(dep_path, RTLD_NOW | RTLD_GLOBAL);
-    }
 
     dlerror();
     void *handle = dlopen(lib_path, RTLD_NOW);
