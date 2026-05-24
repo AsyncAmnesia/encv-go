@@ -156,6 +156,7 @@ func (s *Server) Start(version string) (string, error) {
 	r.POST("/api/tasks/:id/cancel", s.handleCancelTaskGin)
 	r.POST("/api/tasks/:id/retry", s.handleRetryTaskGin)
 	r.POST("/api/webdav/test", s.handleTestWebDAVGin)
+	r.GET("/api/webdav/test-local", s.handleTestLocalWebDAVGin)
 	r.GET("/api/remote/info", s.handleRemoteInfoGin)
 	r.GET("/api/remote/openlist", s.handleListOpenlistSitesGin)
 	r.POST("/api/remote/openlist", s.handleAddOpenlistSiteGin)
@@ -240,13 +241,23 @@ func (s *Server) Start(version string) (string, error) {
 			authMiddleware := middleware.BasicAuthDynamic(s)
 			loggingMiddleware := s.webdavLoggingMiddleware()
 			protectedWebdavHandler := authMiddleware(loggingMiddleware(webdavHandler))
-			r.Any(s.webdavPath+"*path", gin.WrapH(protectedWebdavHandler))
+
+			webdavMethods := []string{
+				"GET", "POST", "PUT", "PATCH", "HEAD", "OPTIONS", "DELETE", "CONNECT", "TRACE",
+				"PROPFIND", "PROPPATCH", "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK",
+			}
+			for _, method := range webdavMethods {
+				r.Handle(method, s.webdavPath+"*path", gin.WrapH(protectedWebdavHandler))
+			}
+
 			webdavRoot := strings.TrimSuffix(s.webdavPath, "/")
 			if webdavRoot != "" {
-				r.Any(webdavRoot, func(c *gin.Context) {
-					c.Request.URL.Path = s.webdavPath
-					protectedWebdavHandler.ServeHTTP(c.Writer, c.Request)
-				})
+				for _, method := range webdavMethods {
+					r.Handle(method, webdavRoot, func(c *gin.Context) {
+						c.Request.URL.Path = s.webdavPath
+						protectedWebdavHandler.ServeHTTP(c.Writer, c.Request)
+					})
+				}
 			}
 		}
 	}

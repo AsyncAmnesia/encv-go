@@ -66,7 +66,11 @@
             <h3>{{ svc.label }}</h3>
             <p class="readonly-url" @click="copyToClipboard(svc.url)">{{ svc.url }}</p>
           </ion-label>
-          <ion-button slot="end" fill="clear" size="small" @click="copyToClipboard(svc.url)">
+          <ion-button v-if="svc.isWebdav" slot="end" fill="clear" size="small" @click="handleTestWebdav" :disabled="webdavTesting">
+            <ion-spinner v-if="webdavTesting" slot="icon-only" name="crescent"></ion-spinner>
+            <ion-icon v-else :icon="pulseIcon" slot="icon-only"></ion-icon>
+          </ion-button>
+          <ion-button v-else slot="end" fill="clear" size="small" @click="copyToClipboard(svc.url)">
             <ion-icon :icon="copyIcon" slot="icon-only"></ion-icon>
           </ion-button>
         </ion-item>
@@ -124,17 +128,19 @@ import {
   notifications as notificationsIcon, folderOpen,
   copy as copyIcon, shieldCheckmark, cloudOutline, globeOutline,
   batteryCharging as batteryOptimizationIcon,
+  pulse as pulseIcon,
 } from 'ionicons/icons'
 import { useServerStatus } from '@/composables/useServerStatus'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
-import { getServerUrl, fetchConfig } from '@/api/encv'
+import { getServerUrl, fetchConfig, testLocalWebDAV } from '@/api/encv'
 import { isNative, requestNotificationPermission, requestStoragePermission, requestBatteryOptimization, checkPermissions } from '@/plugins/GoProcess'
 
 interface ServiceUrl {
   label: string
   url: string
   icon: string
+  isWebdav?: boolean
 }
 
 const {
@@ -155,6 +161,7 @@ const permNotifications = ref(false)
 const permStorage = ref(false)
 const permBatteryOpt = ref(false)
 const configData = ref<Record<string, unknown> | null>(null)
+const webdavTesting = ref(false)
 let permissionCheckTimer: number | null = null
 
 const serviceUrls = computed<ServiceUrl[]>(() => {
@@ -185,6 +192,7 @@ const serviceUrls = computed<ServiceUrl[]>(() => {
       label: t('settings.webdavServerSettings'),
       url: `${baseUrl}${root}`,
       icon: globeOutline,
+      isWebdav: true,
     })
   }
 
@@ -229,6 +237,53 @@ async function handleRequestBatteryOpt() {
   permissionCheckTimer = window.setTimeout(() => refreshPermissions(), 1000)
   setTimeout(() => refreshPermissions(), 3000)
   setTimeout(() => refreshPermissions(), 5000)
+}
+
+async function handleTestWebdav() {
+  webdavTesting.value = true
+  try {
+    const result = await testLocalWebDAV()
+    if (!result.available) {
+      showToast({
+        message: t('settings.webdavTestFailed') + ': ' + (result.error || 'WebDAV not enabled'),
+        duration: 4000,
+        color: 'danger',
+      })
+      return
+    }
+    const details = result.details
+    if (details && details.propfindRoot === 'ok' && details.dirReadable === 'ok') {
+      const authInfo = result.authRequired
+        ? (details.authWorks === 'ok' ? ' ✅' : ' ❌')
+        : ''
+      showToast({
+        message: t('settings.webdavTestSuccess') + authInfo,
+        duration: 3000,
+        color: 'success',
+      })
+    } else {
+      const parts: string[] = []
+      if (details) {
+        if (details.propfindRoot !== 'ok') parts.push('PROPFIND: ❌')
+        if (details.authWorks === 'fail') parts.push('Auth: ❌')
+        if (details.dirReadable !== 'ok') parts.push('Dir: ❌')
+      }
+      showToast({
+        message: t('settings.webdavTestFailed') + (parts.length ? ' ' + parts.join(' ') : ''),
+        duration: 5000,
+        color: 'warning',
+      })
+    }
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    showToast({
+      message: t('settings.webdavTestFailed') + ': ' + detail,
+      duration: 4000,
+      color: 'danger',
+    })
+  } finally {
+    webdavTesting.value = false
+  }
 }
 
 async function checkServer() {

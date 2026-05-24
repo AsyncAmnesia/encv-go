@@ -267,6 +267,27 @@ export function saveWebDAVConfigs(configs: WebDAVConfig[]) {
   localStorage.setItem(WEBDAV_CONFIGS_KEY, JSON.stringify(configs))
 }
 
+export interface LocalWebDAVTestResult {
+  available: boolean
+  url?: string
+  authRequired?: boolean
+  details?: {
+    propfindRoot: string
+    authWorks: string
+    dirReadable: string
+  }
+  error?: string
+}
+
+export async function testLocalWebDAV(): Promise<LocalWebDAVTestResult> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/webdav/test-local`)
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return await response.json()
+}
+
 export async function testWebDAVConnection(config: Omit<WebDAVConfig, 'id'>): Promise<void> {
   console.info('[API] testWebDAV')
   const baseUrl = getApiBaseUrl()

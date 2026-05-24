@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -274,6 +275,77 @@ func (s *Server) handleIndexRebuildGin(c *gin.Context) {
 		source = "webdav"
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "indexing", "source": source})
+}
+
+func (s *Server) handleTestLocalWebDAVGin(c *gin.Context) {
+	if s.webdavFS == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"available": false,
+			"error":     "WebDAV not enabled",
+		})
+		return
+	}
+
+	result := gin.H{
+		"available":    true,
+		"url":          fmt.Sprintf("http://127.0.0.1:%d%s", s.cfg.Server.Port, s.webdavPath),
+		"authRequired": s.cfg.Webdav.Username != "" || s.cfg.Webdav.Password != "",
+		"details": gin.H{
+			"propfindRoot": "fail",
+			"authWorks":    "skip",
+			"dirReadable":  "fail",
+		},
+	}
+
+	webdavURL := fmt.Sprintf("http://127.0.0.1:%d%s", s.cfg.Server.Port, s.webdavPath)
+	details := gin.H{
+		"propfindRoot": "fail",
+		"authWorks":    "skip",
+		"dirReadable":  "fail",
+	}
+
+	propfindBody := `<?xml version="1.0" encoding="UTF-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>`
+	req, err := http.NewRequest("PROPFIND", webdavURL, bytes.NewBufferString(propfindBody))
+	if err == nil {
+		req.Header.Set("Content-Type", "application/xml; charset=utf-8")
+		req.Header.Set("Depth", "1")
+		if s.cfg.Webdav.Username != "" {
+			req.SetBasicAuth(s.cfg.Webdav.Username, s.cfg.Webdav.Password)
+		}
+		client := &http.Client{Timeout: 3 * time.Second}
+		resp, err := client.Do(req)
+		if err == nil {
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusMultiStatus {
+				details["propfindRoot"] = "ok"
+				details["dirReadable"] = "ok"
+			} else if resp.StatusCode == http.StatusUnauthorized {
+				details["propfindRoot"] = "ok"
+				details["dirReadable"] = "fail"
+			}
+		}
+	}
+
+	if s.cfg.Webdav.Username != "" {
+		details["authWorks"] = "fail"
+		req2, err := http.NewRequest("PROPFIND", webdavURL, bytes.NewBufferString(propfindBody))
+		if err == nil {
+			req2.Header.Set("Content-Type", "application/xml; charset=utf-8")
+			req2.Header.Set("Depth", "0")
+			req2.SetBasicAuth(s.cfg.Webdav.Username, s.cfg.Webdav.Password)
+			client := &http.Client{Timeout: 3 * time.Second}
+			resp2, err := client.Do(req2)
+			if err == nil {
+				defer resp2.Body.Close()
+				if resp2.StatusCode == http.StatusMultiStatus {
+					details["authWorks"] = "ok"
+				}
+			}
+		}
+	}
+
+	result["details"] = details
+	c.JSON(http.StatusOK, result)
 }
 
 func (s *Server) handleIndexClearGin(c *gin.Context) {
