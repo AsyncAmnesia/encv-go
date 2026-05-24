@@ -107,7 +107,7 @@
           <ion-icon :icon="databaseIcon" slot="start"></ion-icon>
           <ion-label>
             <h3>{{ t('settings.cacheAndIndex') }}</h3>
-            <p>{{ indexStats?.isIndexing ? t('settings.indexing') : (indexStats?.source === 'webdav' ? 'WebDAV ' + t('settings.indexReady') : t('settings.indexReady')) }}</p>
+            <p>{{ indexStats?.isIndexing ? t('settings.indexing') : (indexStats && indexStats.totalFiles > 0 ? (indexStats.source === 'webdav' ? 'WebDAV ' + t('settings.indexReady') : t('settings.indexReady')) : t('settings.noIndexData')) }}</p>
           </ion-label>
         </ion-item>
       </ion-list>

@@ -495,6 +495,7 @@ type IndexProvider interface {
 	GetIndexStats() IndexStatsResult
 	SearchInIndex(keyword, queryPath string, maxResults int) []SearchEntry
 	Dir() string
+	IsContainerExtension(filename string) bool
 }
 
 type IndexStatsResult struct {
@@ -560,6 +561,11 @@ func (fs *encvWebDAVFS) SearchInIndex(keyword, queryPath string, maxResults int)
 
 func (fs *encvWebDAVFS) Dir() string {
 	return fs.dir
+}
+
+func (fs *encvWebDAVFS) IsContainerExtension(filename string) bool {
+	ext := strings.ToLower(filepath.Ext(filename))
+	return fs.containerExtensions[ext]
 }
 
 func (fs *encvWebDAVFS) WaitForIndexReady(ctx context.Context) {

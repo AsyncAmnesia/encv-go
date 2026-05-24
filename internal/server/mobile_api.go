@@ -199,17 +199,35 @@ func (s *Server) handleSearchFilesGin(c *gin.Context) {
 
 	slog.Info("API: search files", "path", queryPath, "keyword", keyword, "recursive", recursive)
 
-	if recursive && s.canUseWebdavIndex() && keyword != "" {
-		entries := s.webdavFS.SearchInIndex(keyword, queryPath, 200)
-		files := make([]mobileservice.FileInfo, 0, len(entries))
-		for _, e := range entries {
-			files = append(files, mobileservice.FileInfo{
-				Name:        e.Name,
-				Path:        e.Path,
-				IsDirectory: e.IsDir,
-				Size:        e.Size,
-			})
+	if recursive && keyword != "" {
+		var files []mobileservice.FileInfo
+
+		mobileFiles, err := s.mobileSvc.SearchFiles(queryPath, keyword, true)
+		if err != nil {
+			writeServiceErrorGin(c, err)
+			return
 		}
+
+		if s.canUseWebdavIndex() {
+			for _, f := range mobileFiles {
+				if !s.webdavFS.IsContainerExtension(f.Name) {
+					files = append(files, f)
+				}
+			}
+			entries := s.webdavFS.SearchInIndex(keyword, queryPath, 200)
+			for _, e := range entries {
+				files = append(files, mobileservice.FileInfo{
+					Name:        e.Name,
+					Path:        e.Path,
+					IsDirectory: e.IsDir,
+					Size:        e.Size,
+				})
+			}
+		} else {
+			files = mobileFiles
+		}
+
+		slog.Info("API: search files result", "path", queryPath, "keyword", keyword, "count", len(files))
 		c.JSON(http.StatusOK, gin.H{"files": files})
 		return
 	}
@@ -224,32 +242,38 @@ func (s *Server) handleSearchFilesGin(c *gin.Context) {
 }
 
 func (s *Server) handleIndexStatsGin(c *gin.Context) {
-	if s.canUseWebdavIndex() {
-		wdStats := s.webdavFS.GetIndexStats()
-		c.JSON(http.StatusOK, mobileservice.IndexStats{
-			TotalFiles: wdStats.TotalFiles,
-			TotalDirs:  wdStats.TotalDirs,
-			Containers: wdStats.Containers,
-			Source:     "webdav",
-		})
-		return
-	}
 	stats := s.mobileSvc.GetIndexStats()
 	if stats.TotalFiles == 0 && !stats.IsIndexing {
 		s.mobileSvc.RebuildIndex()
 		stats = s.mobileSvc.GetIndexStats()
 	}
 	stats.Source = "mobile"
+
+	if s.canUseWebdavIndex() {
+		wdStats := s.webdavFS.GetIndexStats()
+		ordinaryFiles := stats.TotalFiles
+		containerPhysicalCount := 0
+		if ordinaryFiles > 0 && wdStats.Containers > 0 {
+			containerPhysicalCount = wdStats.Containers
+		}
+		stats.TotalFiles = ordinaryFiles - containerPhysicalCount + wdStats.TotalFiles
+		if stats.TotalFiles < 0 {
+			stats.TotalFiles = 0
+		}
+		stats.Containers = wdStats.Containers
+		stats.Source = "webdav"
+	}
+
 	c.JSON(http.StatusOK, stats)
 }
 
 func (s *Server) handleIndexRebuildGin(c *gin.Context) {
-	if s.canUseWebdavIndex() {
-		c.JSON(http.StatusOK, gin.H{"status": "webdav_index_auto_updated", "source": "webdav"})
-		return
-	}
 	s.mobileSvc.RebuildIndex()
-	c.JSON(http.StatusOK, gin.H{"status": "indexing", "source": "mobile"})
+	source := "mobile"
+	if s.canUseWebdavIndex() {
+		source = "webdav"
+	}
+	c.JSON(http.StatusOK, gin.H{"status": "indexing", "source": source})
 }
 
 func (s *Server) handleIndexClearGin(c *gin.Context) {

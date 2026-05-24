@@ -84,7 +84,20 @@ async function handleRestart(): Promise<boolean> {
   useWebSocket().disconnect()
   try {
     const result = await restartBackend()
-    if (!result.success) {
+    if (result.success) {
+      isRestarting.value = false
+      const status = await getBackendStatus()
+      if (status.running && status.port > 0) {
+        isOnline.value = true
+        backendPort.value = status.port
+        const newUrl = `http://127.0.0.1:${status.port}`
+        if (DEFAULT_API_BASE_URL !== newUrl) {
+          setApiBaseUrl(newUrl)
+        }
+        lastError.value = ''
+        useWebSocket().connect()
+      }
+    } else {
       isRestarting.value = false
       lastError.value = result.lastError || lastError.value
     }

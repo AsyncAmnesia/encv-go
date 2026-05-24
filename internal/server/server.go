@@ -238,8 +238,16 @@ func (s *Server) Start(version string) (string, error) {
 				LockSystem: goWebdav.NewMemLS(),
 			}
 			authMiddleware := middleware.BasicAuthDynamic(s)
-			protectedWebdavHandler := authMiddleware(webdavHandler)
+			loggingMiddleware := s.webdavLoggingMiddleware()
+			protectedWebdavHandler := authMiddleware(loggingMiddleware(webdavHandler))
 			r.Any(s.webdavPath+"*path", gin.WrapH(protectedWebdavHandler))
+
+			webdavRoot := strings.TrimSuffix(s.webdavPath, "/")
+			if webdavRoot != "" {
+				r.GET(webdavRoot, func(c *gin.Context) {
+					c.Redirect(http.StatusMovedPermanently, s.webdavPath)
+				})
+			}
 		}
 	}
 
@@ -257,6 +265,32 @@ func (s *Server) Start(version string) (string, error) {
 		}
 	}
 	return addr, nil
+}
+
+func (s *Server) webdavLoggingMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			method := r.Method
+			path := r.URL.Path
+
+			lrw := &loggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+			next.ServeHTTP(lrw, r)
+
+			elapsed := time.Since(start)
+			slog.Info("WebDAV", "method", method, "path", path, "status", lrw.statusCode, "elapsed", elapsed)
+		})
+	}
+}
+
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (lrw *loggingResponseWriter) WriteHeader(code int) {
+	lrw.statusCode = code
+	lrw.ResponseWriter.WriteHeader(code)
 }
 
 func (s *Server) Stop() error {

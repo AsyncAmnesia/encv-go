@@ -42,15 +42,15 @@
             <ion-button fill="outline" size="small" @click="checkServer">
               <ion-icon :icon="refreshIcon" slot="icon-only"></ion-icon>
             </ion-button>
-            <ion-button v-if="serverOnline" fill="outline" size="small" color="danger" @click="handleStop" :disabled="isStopping">
+            <ion-button v-if="isRestarting" fill="outline" size="small" color="medium" disabled>
+              <ion-spinner slot="icon-only" name="crescent"></ion-spinner>
+            </ion-button>
+            <ion-button v-else-if="serverOnline" fill="outline" size="small" color="danger" @click="handleStop" :disabled="isStopping">
               <ion-spinner v-if="isStopping" slot="icon-only" name="crescent"></ion-spinner>
               <ion-icon v-else :icon="stopIcon" slot="icon-only"></ion-icon>
             </ion-button>
-            <ion-button v-if="!serverOnline && !isRestarting" fill="outline" size="small" color="warning" @click="handleRestart">
+            <ion-button v-else fill="outline" size="small" color="warning" @click="handleRestart">
               <ion-icon :icon="playIcon" slot="icon-only"></ion-icon>
-            </ion-button>
-            <ion-button v-if="isRestarting" fill="outline" size="small" color="medium" disabled>
-              <ion-spinner slot="icon-only" name="crescent"></ion-spinner>
             </ion-button>
           </div>
         </ion-item>
