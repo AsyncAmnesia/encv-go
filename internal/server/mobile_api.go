@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/Soltus/encv-go/internal/service"
+	mobileservice "github.com/Soltus/encv-go/internal/service"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -30,15 +30,15 @@ func isValidSiteID(id string) bool {
 
 func writeServiceErrorGin(c *gin.Context, err error) {
 	switch err.(type) {
-	case *service.PermissionError:
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error(), "code": "PERMISSION_DENIED"})
-	case *service.ForbiddenError:
+	case *mobileservice.PermissionError:
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
-	case *service.NotFoundError:
+	case *mobileservice.ForbiddenError:
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+	case *mobileservice.NotFoundError:
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-	case *service.BadRequestError:
+	case *mobileservice.BadRequestError:
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-	case *service.UnsupportedMediaTypeError:
+	case *mobileservice.UnsupportedMediaTypeError:
 		c.JSON(http.StatusUnsupportedMediaType, gin.H{"error": err.Error()})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -188,12 +188,31 @@ func (s *Server) handlePermissionsGin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"storage": storage})
 }
 
+func (s *Server) canUseWebdavIndex() bool {
+	return s.webdavFS != nil && s.webdavFS.Dir() == s.servingDir
+}
+
 func (s *Server) handleSearchFilesGin(c *gin.Context) {
 	queryPath := c.Query("path")
 	keyword := c.Query("keyword")
 	recursive := c.Query("recursive") == "true"
 
 	slog.Info("API: search files", "path", queryPath, "keyword", keyword, "recursive", recursive)
+
+	if recursive && s.canUseWebdavIndex() && keyword != "" {
+		entries := s.webdavFS.SearchInIndex(keyword, queryPath, 200)
+		files := make([]mobileservice.FileInfo, 0, len(entries))
+		for _, e := range entries {
+			files = append(files, mobileservice.FileInfo{
+				Name:        e.Name,
+				Path:        e.Path,
+				IsDirectory: e.IsDir,
+				Size:        e.Size,
+			})
+		}
+		c.JSON(http.StatusOK, gin.H{"files": files})
+		return
+	}
 
 	files, err := s.mobileSvc.SearchFiles(queryPath, keyword, recursive)
 	if err != nil {
@@ -205,17 +224,32 @@ func (s *Server) handleSearchFilesGin(c *gin.Context) {
 }
 
 func (s *Server) handleIndexStatsGin(c *gin.Context) {
+	if s.canUseWebdavIndex() {
+		wdStats := s.webdavFS.GetIndexStats()
+		c.JSON(http.StatusOK, mobileservice.IndexStats{
+			TotalFiles: wdStats.TotalFiles,
+			TotalDirs:  wdStats.TotalDirs,
+			Containers: wdStats.Containers,
+			Source:     "webdav",
+		})
+		return
+	}
 	stats := s.mobileSvc.GetIndexStats()
 	if stats.TotalFiles == 0 && !stats.IsIndexing {
 		s.mobileSvc.RebuildIndex()
 		stats = s.mobileSvc.GetIndexStats()
 	}
+	stats.Source = "mobile"
 	c.JSON(http.StatusOK, stats)
 }
 
 func (s *Server) handleIndexRebuildGin(c *gin.Context) {
+	if s.canUseWebdavIndex() {
+		c.JSON(http.StatusOK, gin.H{"status": "webdav_index_auto_updated", "source": "webdav"})
+		return
+	}
 	s.mobileSvc.RebuildIndex()
-	c.JSON(http.StatusOK, gin.H{"status": "indexing"})
+	c.JSON(http.StatusOK, gin.H{"status": "indexing", "source": "mobile"})
 }
 
 func (s *Server) handleIndexClearGin(c *gin.Context) {
@@ -450,6 +484,8 @@ func (s *Server) handleAPILogsGin(c *gin.Context) {
 		slog.Error(msg)
 	case "warn":
 		slog.Warn(msg)
+	case "debug":
+		slog.Debug(msg)
 	default:
 		slog.Info(msg)
 	}

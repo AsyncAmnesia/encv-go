@@ -10,12 +10,17 @@ import (
 )
 
 type WSLogHandler struct {
-	inner slog.Handler
-	hub   *service.WSHub
+	inner    slog.Handler
+	hub      *service.WSHub
+	minLevel slog.Level
 }
 
-func NewWSLogHandler(inner slog.Handler, hub *service.WSHub) *WSLogHandler {
-	return &WSLogHandler{inner: inner, hub: hub}
+func NewWSLogHandler(inner slog.Handler, hub *service.WSHub, minLevel slog.Level) *WSLogHandler {
+	return &WSLogHandler{inner: inner, hub: hub, minLevel: minLevel}
+}
+
+func (h *WSLogHandler) SetMinLevel(level slog.Level) {
+	h.minLevel = level
 }
 
 func (h *WSLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
@@ -28,7 +33,7 @@ func (h *WSLogHandler) Handle(ctx context.Context, r slog.Record) error {
 		return err
 	}
 
-	if r.Level < slog.LevelInfo {
+	if r.Level < h.minLevel {
 		return nil
 	}
 

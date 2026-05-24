@@ -7,7 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/Soltus/encv-go/internal/auth"
+	"github.com/Soltus/encv-go/internal/config"
 	"github.com/gin-gonic/gin"
 )
 
@@ -64,7 +67,58 @@ func (s *Server) handlePutConfigGin(c *gin.Context) {
 	}
 
 	slog.Info("Config updated via API", "path", s.configPath)
-	c.JSON(http.StatusOK, gin.H{"message": "config updated"})
+
+	var newCfg config.Config
+	needsRestart := false
+	if err := json.Unmarshal(body, &newCfg); err != nil {
+		slog.Warn("Config written but failed to parse for hot reload", "error", err)
+		c.JSON(http.StatusOK, gin.H{"message": "config saved (hot reload skipped)"})
+		return
+	}
+
+	s.cfg.Password = newCfg.Password
+	s.cfg.Recover = newCfg.Recover
+	s.cfg.OutputPath = newCfg.OutputPath
+	s.cfg.PluginSettings = newCfg.PluginSettings
+
+	if newCfg.Admin.Password != s.cfg.Admin.Password {
+		s.cfg.Admin.Password = newCfg.Admin.Password
+		if newCfg.Admin.Password != "" {
+			s.jwtManager = auth.NewJWTManager(newCfg.Admin.Password, 7*24*time.Hour)
+		} else {
+			s.jwtManager = nil
+		}
+		slog.Info("Admin password hot-reloaded")
+	}
+
+	s.cfg.Webdav.Username = newCfg.Webdav.Username
+	s.cfg.Webdav.Password = newCfg.Webdav.Password
+
+	if newCfg.Log.Level != s.cfg.Log.Level {
+		s.cfg.Log.Level = newCfg.Log.Level
+		slog.Info("Log level hot-reloaded", "level", newCfg.Log.Level)
+	}
+
+	if newCfg.Server.Port != s.cfg.Server.Port {
+		needsRestart = true
+	}
+	if newCfg.Webdav.Root != s.cfg.Webdav.Root || newCfg.Webdav.Dir != s.cfg.Webdav.Dir {
+		needsRestart = true
+	}
+	if newCfg.Server.Dir != s.cfg.Server.Dir {
+		needsRestart = true
+	}
+
+	s.cfg.Server = newCfg.Server
+	s.cfg.Webdav.Root = newCfg.Webdav.Root
+	s.cfg.Webdav.Dir = newCfg.Webdav.Dir
+	s.cfg.Log = newCfg.Log
+
+	msg := "config updated"
+	if needsRestart {
+		msg = "config saved, some changes require restart to take effect"
+	}
+	c.JSON(http.StatusOK, gin.H{"message": msg, "needsRestart": needsRestart})
 }
 
 func (s *Server) handleConfigSchemaGin(c *gin.Context) {

@@ -58,16 +58,27 @@ export function PlayerControls(props: PlayerControlsProps) {
   if (isError) {
     return (
       <view className="ErrorContainer">
-        <view className="PlayBtn" bindtap={onPlayPause}>
-          <view className="PlayBtnInner">
-            <text className="PlayIcon">🔄</text>
+        <view className="TopBar">
+          <view className="CtrlBtn" bindtap={onBack}>
+            <text className="IconMd">✕</text>
+          </view>
+          <text className="TitleText">{fileName}</text>
+          <view className="TopBarSpacer" />
+        </view>
+        <view className="ErrorContent">
+          <text className="ErrorIcon">⚠</text>
+          <text className="ErrorTitle">播放失败</text>
+          {errorType ? <text className="ErrorType">{errorType}</text> : null}
+          <text className="ErrorDetail">{error || '未知错误'}</text>
+          <view className="ErrorActions">
+            <view className="RetryBtn" bindtap={onPlayPause}>
+              <text className="RetryBtnText">重试</text>
+            </view>
+            <view className="BackBtn" bindtap={onBack}>
+              <text className="BackBtnText">返回</text>
+            </view>
           </view>
         </view>
-        <text className="ErrorTitle">⚠ 播放失败</text>
-        {errorType ? <text className="ErrorType">[{errorType}]</text> : null}
-        <text className="ErrorDetail">{fileName}</text>
-        {error ? <text className="ErrorDetail">{error}</text> : null}
-        {streamUrl ? <text className="ErrorDetail">{streamUrl}</text> : null}
       </view>
     )
   }

@@ -33,11 +33,65 @@
 .ErrorContainer {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  padding: 24px;
   width: 100%;
   flex: 1;
+}
+
+.ErrorContent {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  flex: 1;
+  padding: 24px;
+}
+
+.ErrorIcon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.ErrorActions {
+  display: flex;
+  flex-direction: row;
+  margin-top: 20px;
+}
+
+.RetryBtn {
+  display: flex;
+  background-color: #4a90d9;
+  border: none;
+  border-radius: 20px;
+  padding: 0;
+  min-width: 80px;
+  min-height: 40px;
+  justify-content: center;
+  align-items: center;
+  margin-right: 12px;
+}
+
+.RetryBtnText {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.BackBtn {
+  display: flex;
+  background-color: rgba(255, 255, 255, 0.15);
+  border: none;
+  border-radius: 20px;
+  padding: 0;
+  min-width: 80px;
+  min-height: 40px;
+  justify-content: center;
+  align-items: center;
+}
+
+.BackBtnText {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+  font-weight: 600;
 }
 
 .FlexSpacer {

@@ -1,9 +1,12 @@
 package com.encvgo.app
 
+import android.content.pm.ActivityInfo
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.FrameLayout
 import com.lynx.tasm.LynxView
 import com.lynx.tasm.LynxViewBuilder
@@ -211,6 +214,13 @@ class PlayerOverlayManager private constructor() {
 
     private fun cleanupOverlay() {
         try {
+            activity?.let { act ->
+                act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                act.window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+                @Suppress("DEPRECATION")
+                act.window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+            }
+
             lynxView?.removeCallbacks(positionUpdateRunnable)
 
             MpvPlayerModule.getInstance()?.let { mpvModule ->

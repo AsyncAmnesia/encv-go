@@ -350,12 +350,14 @@ func decodeUTF8Rune(data []byte) (rune, int) {
 }
 
 type IndexStats struct {
-	TotalFiles  int   `json:"totalFiles"`
-	TotalDirs   int   `json:"totalDirs"`
-	TotalSize   int64 `json:"totalSize"`
+	TotalFiles  int    `json:"totalFiles"`
+	TotalDirs   int    `json:"totalDirs"`
+	TotalSize   int64  `json:"totalSize"`
 	IndexedAt   string `json:"indexedAt"`
-	IsIndexing  bool  `json:"isIndexing"`
-	LastBuildMs int64 `json:"lastBuildMs"`
+	IsIndexing  bool   `json:"isIndexing"`
+	LastBuildMs int64  `json:"lastBuildMs"`
+	Source      string `json:"source"`
+	Containers  int    `json:"containers"`
 }
 
 type indexEntry struct {

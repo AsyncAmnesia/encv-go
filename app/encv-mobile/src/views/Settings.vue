@@ -107,7 +107,7 @@
           <ion-icon :icon="databaseIcon" slot="start"></ion-icon>
           <ion-label>
             <h3>{{ t('settings.cacheAndIndex') }}</h3>
-            <p>{{ indexStats?.isIndexing ? t('settings.indexing') : t('settings.indexReady') }}</p>
+            <p>{{ indexStats?.isIndexing ? t('settings.indexing') : (indexStats?.source === 'webdav' ? 'WebDAV ' + t('settings.indexReady') : t('settings.indexReady')) }}</p>
           </ion-label>
         </ion-item>
       </ion-list>
@@ -366,7 +366,7 @@ import FilePickerModal from '@/components/FilePickerModal.vue'
 const router = useRouter()
 const { isDark, toggleDark } = useTheme()
 const { isOnline: serverOnline, lastError: connectionError, checkStatus, backendPort } = useServerStatus()
-const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
+const { schemaFields, loading: configLoading, dirty, restartNeeded, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
 const { t, tField, tSectionTitle, setLocale, locale } = useI18n()
 const { vconsoleEnabled, toggleVConsole } = useDevTools()
 
@@ -600,11 +600,19 @@ function handleLocaleChange(event: CustomEvent) {
 async function handleSaveConfig() {
   try {
     await saveConfig()
-    showToast({
-      message: t('settings.configSaved'),
-      duration: 1500,
-      color: 'success',
-    })
+    if (restartNeeded.value) {
+      showToast({
+        message: t('settings.configSavedRestartNeeded'),
+        duration: 4000,
+        color: 'warning',
+      })
+    } else {
+      showToast({
+        message: t('settings.configSaved'),
+        duration: 1500,
+        color: 'success',
+      })
+    }
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)
     showToast({

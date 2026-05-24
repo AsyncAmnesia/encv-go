@@ -205,21 +205,87 @@ if s.cfg.Webdav.Dir == "" && s.cfg.Webdav.Root != "" {
    - 包含加密容器的虚拟文件映射
    - 通过 fsnotify 自动增量更新
 
-在移动端，如果 WebDAV 启用，两套系统会扫描同一目录，浪费资源。
+**核心问题**：WebDAV.Dir 和 Server.Dir 可能不一致：
+- 场景 A：`Server.Dir = /storage/emulated/0/`，`WebDAV.Dir = /storage/emulated/0/`（相同）
+- 场景 B：`Server.Dir = /storage/emulated/0/`，`WebDAV.Dir = /storage/emulated/0/Music/`（WebDAV 是子目录）
+- 场景 C：`Server.Dir = /storage/emulated/0/Docs/`，`WebDAV.Dir = /storage/emulated/0/Music/`（完全不同）
 
-### 修复方案
+不能简单共享同一个索引，因为：
+1. 两套索引的数据结构完全不同（扁平 vs 嵌套映射）
+2. WebDAV 索引包含容器解密虚拟文件映射，MobileService 不需要
+3. 路径范围可能不同
 
-**方案：让 MobileService 的搜索功能复用 WebDAV FS 的索引**
+### 修复方案：共享文件发现层，独立索引处理
 
-1. 在 `Server` 中持有 WebDAV FS 实例的引用
-2. 当 WebDAV 启用时，`MobileService.SearchFiles` 优先使用 WebDAV FS 的索引
-3. 当 WebDAV 未启用时，使用现有的 `fileIndex`
+核心思路：**避免重复扫描文件系统，但保持各自的索引结构**。
 
-具体实现：
-- 给 `encvWebDAVFS` 添加一个公开的搜索方法 `SearchFiles(keyword string, queryPath string, maxResults int) []FileInfo`
-- 在 `Server` 中持有 `encvWebDAVFS` 实例
-- `MobileService` 添加 `SetWebDAVFS(fs *webdav.encvWebDAVFS)` 方法
-- `handleSearchFilesGin` 优先使用 WebDAV FS 的搜索
+**5a. 引入 FileDiscoveryService 共享文件发现**
+
+```go
+// internal/service/file_discovery.go
+type FileDiscoveryService struct {
+    mu          sync.RWMutex
+    rootDir     string
+    fileEntries map[string]os.FileInfo  // 相对路径 -> FileInfo
+    dirEntries  map[string][]string     // 目录 -> 子项列表
+    watchers    []FileDiscoveryListener
+    watcher     *fsnotify.Watcher
+}
+
+type FileDiscoveryListener interface {
+    OnFileAdded(relPath string, info os.FileInfo)
+    OnFileRemoved(relPath string)
+    OnFileModified(relPath string, info os.FileInfo)
+}
+```
+
+- FileDiscoveryService 负责扫描和监控文件系统
+- MobileService 和 WebDAV FS 都注册为 Listener
+- 当文件变化时，FileDiscoveryService 通知所有 Listener
+- 每个 Listener 维护自己的索引结构
+
+**5b. 处理路径不一致的情况**
+
+- 当 WebDAV.Dir == Server.Dir 时：共享同一个 FileDiscoveryService
+- 当 WebDAV.Dir 是 Server.Dir 的子目录时：共享同一个 FileDiscoveryService，WebDAV FS 只处理自己路径范围内的文件
+- 当两者完全不同时：各自有独立的 FileDiscoveryService（但这种情况在移动端很少见）
+
+**5c. 具体实现步骤**
+
+1. 创建 `FileDiscoveryService`，封装文件遍历和 fsnotify 监控
+2. 修改 `MobileService`：使用 FileDiscoveryService 替代自己的 `RebuildIndex`
+3. 修改 `encvWebDAVFS`：使用 FileDiscoveryService 替代自己的 `runIndexer`
+4. 在 `Server.Start()` 中创建 FileDiscoveryService 实例，根据路径关系决定共享策略
+
+**5d. 简化方案（推荐先实施）**
+
+考虑到重构复杂度，先实施简化版：
+
+1. 在 `Server` 中持有 `encvWebDAVFS` 实例引用
+2. 给 `encvWebDAVFS` 添加公开方法 `GetIndexStats()` 和 `SearchInIndex(keyword, queryPath string, maxResults int) []FileInfo`
+3. 当 WebDAV 启用且 WebDAV.Dir == Server.Dir 时，`MobileService.SearchFiles` 和 `handleListFilesGin` 优先使用 WebDAV FS 的索引
+4. 当 WebDAV 未启用或路径不同时，使用 MobileService 自己的索引
+5. MobileService 不再需要 `RebuildIndex`（当 WebDAV FS 已有索引时）
+
+这样在移动端最常见的场景（WebDAV.Dir == Server.Dir）下，只有一套索引在工作。
+
+**5e. 移动端设置界面索引管理适配**
+
+当前 `CacheDetail.vue` 和 `Settings.vue` 中的索引管理直接调用 `MobileService` 的索引 API（`/api/index/stats`、`/api/index/rebuild`、`/api/index/clear`），需要适配复用索引后的变化：
+
+1. **后端 API 适配**：
+   - `handleIndexStatsGin`：当 WebDAV FS 启用且路径一致时，返回 WebDAV FS 的索引统计（更准确，包含容器虚拟文件信息）
+   - `handleIndexRebuildGin`：当 WebDAV FS 启用时，触发 WebDAV FS 的索引重建（而非 MobileService 的 `RebuildIndex`）
+   - `handleIndexClearGin`：当 WebDAV FS 启用时，同时清除 WebDAV FS 的索引缓存
+   - `IndexStats` 结构添加 `source` 字段（`"mobile"` 或 `"webdav"`），前端可据此显示索引来源
+
+2. **前端 CacheDetail.vue 适配**：
+   - 显示索引来源（WebDAV 索引 / 移动端索引）
+   - WebDAV 索引模式下，显示额外的统计信息（如加密容器数量）
+   - 重建索引按钮在 WebDAV 模式下触发 WebDAV FS 的索引重建
+
+3. **前端 Settings.vue 适配**：
+   - 索引状态行显示来源标识
 
 ---
 
@@ -352,11 +418,16 @@ func (s *Server) handlePutConfigGin(c *gin.Context) {
 1. 修改 `server.go`：WebDAV Dir 为空时默认使用 Server.Dir
 2. 确认 `fs_v2.go` 的路径解析兼容 Android
 
-### 步骤 5：移动端 WebDAV 复用索引
-1. 给 `encvWebDAVFS` 添加公开搜索方法
-2. 在 `Server` 中持有 WebDAV FS 引用
-3. `MobileService` 添加 WebDAV FS 引用
-4. `handleSearchFilesGin` 优先使用 WebDAV FS 搜索
+### 步骤 5：移动端 WebDAV 复用索引（简化方案）
+1. 在 `Server` 中持有 `encvWebDAVFS` 实例引用
+2. 给 `encvWebDAVFS` 添加公开方法 `GetIndexStats()` 和 `SearchInIndex()`
+3. `MobileService` 添加 `SetWebDAVFS()` 方法
+4. `handleSearchFilesGin` 和 `handleListFilesGin` 优先使用 WebDAV FS 索引（当路径一致时）
+5. 当 WebDAV 未启用或路径不同时，回退到 MobileService 自己的索引
+6. 后端 API 适配：`handleIndexStatsGin`/`handleIndexRebuildGin`/`handleIndexClearGin` 支持 WebDAV FS 索引
+7. `IndexStats` 结构添加 `source` 字段
+8. 前端 `CacheDetail.vue` 适配：显示索引来源、WebDAV 模式额外统计
+9. 前端 `Settings.vue` 适配：索引状态行显示来源标识
 
 ### 步骤 6：配置热重载
 1. 修改 `handlePutConfigGin`：添加热重载逻辑

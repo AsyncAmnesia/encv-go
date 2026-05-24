@@ -336,7 +336,7 @@ export async function fetchConfig(): Promise<Record<string, unknown>> {
   return await response.json()
 }
 
-export async function updateConfig(config: Record<string, unknown>): Promise<void> {
+export async function updateConfig(config: Record<string, unknown>): Promise<{ message: string; needsRestart?: boolean }> {
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/config`, {
     method: 'PUT',
@@ -350,6 +350,11 @@ export async function updateConfig(config: Record<string, unknown>): Promise<voi
       if (body) detail += `: ${body}`
     } catch {}
     throw new Error(detail)
+  }
+  try {
+    return await response.json()
+  } catch {
+    return { message: 'config updated' }
   }
 }
 
@@ -390,6 +395,8 @@ export interface IndexStats {
   indexedAt: string
   isIndexing: boolean
   lastBuildMs: number
+  source?: string
+  containers?: number
 }
 
 export async function getIndexStats(): Promise<IndexStats> {

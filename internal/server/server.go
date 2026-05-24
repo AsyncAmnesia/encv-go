@@ -52,6 +52,7 @@ type Server struct {
 	contentHandler *handler.ContentHandler
 	chunkNamers    []namer.ChunkNamer
 	jwtManager     *auth.JWTManager
+	webdavFS       webdav.IndexProvider
 }
 
 func NewServer(ctx context.Context, configPath string) *Server {
@@ -74,7 +75,12 @@ func (s *Server) GetInstanceID() string {
 	return s.instanceID
 }
 
-// Start 启动播放器服务器，如果端口被占用或被其他服务劫持，会自动递增尝试
+func (s *Server) GetCredentials() (string, string) {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	return s.cfg.Webdav.Username, s.cfg.Webdav.Password
+}
+
 func (s *Server) Start(version string) (string, error) {
 	// 【关键修改】在启动时初始化版本和实例ID
 	s.version = version // 从 main 包获取编译时注入的版本
@@ -93,10 +99,16 @@ func (s *Server) Start(version string) (string, error) {
 	s.mobileSvc.SetEncryptedFileDeps(s.readerService, s.contentHandler, chunkNamers)
 
 	// 2. 解析并存储 WebDAV 目录和路径
-	if s.cfg.Webdav.Dir != "" {
-		s.webdavDir, err = filepath.Abs(s.cfg.Webdav.Dir)
+	if s.cfg.Webdav.Root != "" {
+		webdavDir := s.cfg.Webdav.Dir
+		if webdavDir == "" {
+			webdavDir = s.servingDir
+			s.cfg.Webdav.Dir = s.servingDir
+			slog.Info("WebDAV dir not specified, using server dir", "dir", webdavDir)
+		}
+		s.webdavDir, err = filepath.Abs(webdavDir)
 		if err != nil {
-			return "", fmt.Errorf("failed to resolve absolute path for webdav dir '%s': %w", s.cfg.Webdav.Dir, err)
+			return "", fmt.Errorf("failed to resolve absolute path for webdav dir '%s': %w", webdavDir, err)
 		}
 		s.webdavPath = s.cfg.Webdav.Root
 		if s.webdavPath == "" {
@@ -114,7 +126,16 @@ func (s *Server) Start(version string) (string, error) {
 	slog.Info("Server starting", "instance", s.instanceID, "version", s.version)
 	slog.Info("Main service serving from", "dir", s.servingDir)
 
-	wsLogHandler := NewWSLogHandler(slog.Default().Handler(), s.mobileSvc.GetWSHub())
+	wsMinLevel := slog.LevelInfo
+	switch s.cfg.Log.Level {
+	case "debug":
+		wsMinLevel = slog.LevelDebug
+	case "warn":
+		wsMinLevel = slog.LevelWarn
+	case "error":
+		wsMinLevel = slog.LevelError
+	}
+	wsLogHandler := NewWSLogHandler(slog.Default().Handler(), s.mobileSvc.GetWSHub(), wsMinLevel)
 	slog.SetDefault(slog.New(wsLogHandler))
 	slog.Info("WSLogHandler initialized, logs will be bridged to WebSocket")
 
@@ -207,18 +228,16 @@ func (s *Server) Start(version string) (string, error) {
 	}
 
 	if s.webdavDir != "" {
-		chunkNamers := plugins.GetAllRegisteredChunkNamers()
-		fs, fsErr := webdav.NewENCVFS(config.NewContext(context.Background(), s.cfg), s.readerService, chunkNamers)
+		webdavFS, indexProvider, fsErr := webdav.NewENCVFS(config.NewContext(context.Background(), s.cfg), s.readerService, s.chunkNamers)
 		if fsErr != nil {
 			slog.Warn("WebDAV initialization failed, skipping WebDAV", "error", fsErr)
 		} else {
+			s.webdavFS = indexProvider
 			webdavHandler := &goWebdav.Handler{
-				FileSystem: fs,
+				FileSystem: webdavFS,
 				LockSystem: goWebdav.NewMemLS(),
 			}
-			webdavUser := s.cfg.Webdav.Username
-			webdavPass := s.cfg.Webdav.Password
-			authMiddleware := middleware.BasicAuth(webdavUser, webdavPass)
+			authMiddleware := middleware.BasicAuthDynamic(s)
 			protectedWebdavHandler := authMiddleware(webdavHandler)
 			r.Any(s.webdavPath+"*path", gin.WrapH(protectedWebdavHandler))
 		}

@@ -107,24 +107,24 @@ type decryptedDir struct {
 
 // NewENCVFS 创建一个新的 encvWebDAVFS 实例
 // 【修改】构造函数现在需要接收 ReaderService 和 Config
-func NewENCVFS(ctx context.Context, readerService *service.ReaderService, chunkNamers []namer.ChunkNamer) (goWebdav.FileSystem, error) {
+func NewENCVFS(ctx context.Context, readerService *service.ReaderService, chunkNamers []namer.ChunkNamer) (goWebdav.FileSystem, IndexProvider, error) {
 	cfg := config.FromContext(ctx)
 	dir := cfg.Webdav.Dir
 	var err error
 	if dir == "/" {
 		dir, err = os.Getwd()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get current working directory for WebDAV: %w", err)
+			return nil, nil, fmt.Errorf("failed to get current working directory for WebDAV: %w", err)
 		}
 	}
 	dir, err = filepath.Abs(dir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve absolute path for WebDAV directory '%s': %w", dir, err)
+		return nil, nil, fmt.Errorf("failed to resolve absolute path for WebDAV directory '%s': %w", dir, err)
 	}
 	if _, statErr := os.Stat(dir); os.IsNotExist(statErr) {
 		slog.Warn("WebDAV directory does not exist, creating it", "dir", dir)
 		if mkdirErr := os.MkdirAll(dir, 0755); mkdirErr != nil {
-			return nil, fmt.Errorf("WebDAV directory '%s' does not exist and cannot be created: %w", dir, mkdirErr)
+			return nil, nil, fmt.Errorf("WebDAV directory '%s' does not exist and cannot be created: %w", dir, mkdirErr)
 		}
 	}
 	// 规范化 WebDAV 前缀，确保它是一个以 '/' 开头且不以 '/' 结尾的路径
@@ -172,7 +172,7 @@ func NewENCVFS(ctx context.Context, readerService *service.ReaderService, chunkN
 	slog.Info("WebDAV FS initialized, index building in background", "dir", fs.dir)
 	slog.Info("WebDAV registered container extensions", "extensions", registeredExtsSlice)
 
-	return fs, nil
+	return fs, fs, nil
 }
 
 // runIndexer 现在负责初始构建和增量更新
@@ -489,6 +489,84 @@ func (fs *encvWebDAVFS) getIndexes() *pathIndexes {
 	}
 
 	return snapshot
+}
+
+type IndexProvider interface {
+	GetIndexStats() IndexStatsResult
+	SearchInIndex(keyword, queryPath string, maxResults int) []SearchEntry
+	Dir() string
+}
+
+type IndexStatsResult struct {
+	TotalFiles   int `json:"totalFiles"`
+	TotalDirs    int `json:"totalDirs"`
+	Containers   int `json:"containers"`
+	Source       string `json:"source"`
+}
+
+func (fs *encvWebDAVFS) GetIndexStats() IndexStatsResult {
+	idx := fs.getIndexes()
+	containers := 0
+	for range idx.reversePathMap {
+		containers++
+	}
+	return IndexStatsResult{
+		TotalFiles: len(idx.pathMap),
+		TotalDirs:  len(idx.dirMap),
+		Containers: containers,
+		Source:     "webdav",
+	}
+}
+
+type SearchEntry struct {
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	IsDir   bool   `json:"isDir"`
+	Size    int64  `json:"size,omitempty"`
+	ModTime string `json:"modTime,omitempty"`
+}
+
+func (fs *encvWebDAVFS) SearchInIndex(keyword, queryPath string, maxResults int) []SearchEntry {
+	idx := fs.getIndexes()
+	keyword = strings.ToLower(keyword)
+	var results []SearchEntry
+
+	for vPath, info := range idx.fileInfoMap {
+		name := info.Name()
+		if !strings.Contains(strings.ToLower(name), keyword) {
+			continue
+		}
+		if queryPath != "" && !strings.HasPrefix(vPath, queryPath) {
+			continue
+		}
+		results = append(results, SearchEntry{
+			Name:    name,
+			Path:    vPath,
+			IsDir:   info.IsDir(),
+			Size:    info.Size(),
+			ModTime: info.ModTime().Format(time.RFC3339),
+		})
+		if maxResults > 0 && len(results) >= maxResults {
+			break
+		}
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Name < results[j].Name
+	})
+
+	return results
+}
+
+func (fs *encvWebDAVFS) Dir() string {
+	return fs.dir
+}
+
+func (fs *encvWebDAVFS) WaitForIndexReady(ctx context.Context) {
+	select {
+	case <-fs.indexReady:
+	case <-ctx.Done():
+	}
 }
 
 // validateContainerHeader 检查文件是否具有有效的 ENCV 头部（V2 或 V3）

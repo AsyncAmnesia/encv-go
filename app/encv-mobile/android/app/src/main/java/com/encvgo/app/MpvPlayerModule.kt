@@ -73,15 +73,31 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
 
     private val eventObserver = object : MPVLib.EventObserver {
         override fun eventProperty(property: String) {}
-        override fun eventProperty(property: String, value: Long) {}
+        override fun eventProperty(property: String, value: Long) {
+            when (property) {
+                "end-file-reason" -> {
+                    if (value == 3L) {
+                        mainHandler.post {
+                            try {
+                                val errorText = MPVLib.getPropertyString("error-text") ?: "未知播放错误"
+                                dispatchStateChange("error", "播放失败: $errorText")
+                            } catch (e: Exception) {
+                                LogRelay.get().relay(TAG, "error", "end-file-reason error but failed to get error-text: ${e.message}")
+                                dispatchStateChange("error", "播放失败")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        override fun eventProperty(property: String, value: Double) {}
+        override fun eventProperty(property: String, value: String) {}
         override fun eventProperty(property: String, value: Boolean) {
             when (property) {
                 "pause" -> dispatchStateChange(if (value) "paused" else "playing")
                 "idle" -> { if (value) dispatchStateChange("ended") }
             }
         }
-        override fun eventProperty(property: String, value: Double) {}
-        override fun eventProperty(property: String, value: String) {}
         override fun event(eventId: Int) {
             when (eventId) {
                 MpvEvent.MPV_EVENT_FILE_LOADED -> {
@@ -103,7 +119,16 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
                         }
                     }, 500)
                 }
-                MpvEvent.MPV_EVENT_END_FILE -> dispatchStateChange("ended")
+                MpvEvent.MPV_EVENT_END_FILE -> {
+                    try {
+                        val reason = MPVLib.getPropertyInt("end-file-reason") ?: 0
+                        if (reason != 3) {
+                            dispatchStateChange("ended")
+                        }
+                    } catch (e: Exception) {
+                        dispatchStateChange("ended")
+                    }
+                }
                 MpvEvent.MPV_EVENT_SHUTDOWN -> dispatchStateChange("ended")
             }
         }
@@ -145,6 +170,7 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
             MPVLib.addObserver(eventObserver)
             MPVLib.observeProperty("pause", MpvFormat.MPV_FORMAT_FLAG)
             MPVLib.observeProperty("idle", MpvFormat.MPV_FORMAT_FLAG)
+            MPVLib.observeProperty("end-file-reason", MpvFormat.MPV_FORMAT_INT64)
             dispatchStateChange("mpv_ready")
             LogRelay.get().relay(TAG, "info", "ensureMpvInitialized: using pre-initialized MPV engine")
             return
@@ -182,6 +208,7 @@ class MpvPlayerModule(context: android.content.Context) : LynxModule(context) {
             MPVLib.addObserver(eventObserver)
             MPVLib.observeProperty("pause", MpvFormat.MPV_FORMAT_FLAG)
             MPVLib.observeProperty("idle", MpvFormat.MPV_FORMAT_FLAG)
+            MPVLib.observeProperty("end-file-reason", MpvFormat.MPV_FORMAT_INT64)
             mpvInitialized = true
             dispatchStateChange("mpv_ready")
             LogRelay.get().relay(TAG, "info", "ensureMpvInitialized: done, configDir=$configDir, cacheDir=$cacheDir")

@@ -33,6 +33,9 @@ function lynxLogWarn(msg: string) {
 
 function classifyError(err: string): string {
   const lower = err.toLowerCase()
+  if (lower.includes('播放失败') || lower.includes('corrupt') || lower.includes('damaged') || lower.includes('invalid data') || lower.includes('demux')) {
+    return '文件损坏'
+  }
   if (lower.includes('network') || lower.includes('connection') || lower.includes('timeout') || lower.includes('http 4') || lower.includes('http 5')) {
     return '网络错误'
   }
