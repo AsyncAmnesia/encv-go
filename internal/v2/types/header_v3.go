@@ -48,12 +48,14 @@ type EnvelopeHeaderV3 struct {
 // 这是一个辅助函数，用于统一处理 V2/V3 Header 的跳过逻辑
 func GetHeaderSize(version int) int64 {
 	switch version {
+	case 4:
+		return EnvelopeHeaderSize_v4
 	case 3:
-		return EnvelopeHeaderSize_v3 // 2048
+		return EnvelopeHeaderSize_v3
 	case 2:
-		return EnvelopeHeaderSize_v2 // 16
+		return EnvelopeHeaderSize_v2
 	default:
-		return 0 // 未知版本
+		return 0
 	}
 }
 
@@ -251,7 +253,10 @@ func DetectHeaderVersion(data []byte) int {
 	if magic == string(MagicHeader_v2[:]) {
 		if len(data) >= 6 {
 			version := binary.LittleEndian.Uint16(data[4:6])
-			if version == 0x03 {
+			switch version {
+			case 0x04:
+				return 4
+			case 0x03:
 				return 3
 			}
 		}

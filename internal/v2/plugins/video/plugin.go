@@ -60,30 +60,16 @@ func (p *VideoPlugin) GetContainerExtension() string {
 }
 
 type VideoPluginConfig struct {
-	// 容器扩展名，包含点前缀，默认值为 ".sccgv"
 	Ext string `json:"ext"`
-	// 分片大小，0 表示不启用，允许的最小值为 30
-	ChunkSizeMB int `json:"chunk_size_mb"`
-	// 分片最大数量，0 表示不限制，优先级高于 ChunkSizeMB TODO: 待实现
-	// ChunkMax              int    `json:"chunck_max"`
-
-	// 是否启用轻量级主分片，启用后主分片只包含清单，不包含源数据
-	LightMainChunkEnabled bool `json:"light_main_chunk_enabled"`
-	// TrackExtensions 视频容器的字幕/轨道文件扩展名列表，它们并不会打包到容器里。
+	ContainerChunkSizeMB int `json:"container_chunk_size_mb"`
+	LightContainerMainChunkEnabled bool `json:"light_container_main_chunk_enabled"`
 	TrackExtensions string `json:"track_extensions"`
-	// 对于 MKV 源，是否保持其 MKV 封装
-	// true: 保持 MKV (使用 mkvmerge 规范化，需要 MKVToolNix)
-	// false: 转换为 fast-start MP4 (使用 ffmpeg)
 	KeepMkvForMkvSource bool `json:"keep_mkv_for_mkv_source"`
-	// 是否在打包后进行解密验证（耗时，默认关闭）
-	// 启用后会对生成的容器进行全量解密并比对 MD5，确保解密逻辑无误。
 	VerifyAfterPack bool `json:"verify_after_pack"`
-	// 【新增】视频插件缓存目录，用于存放合并后的MKV和加密临时文件，为空则使用输出目录
 	PluginCacheDir string `json:"plugin_cache_dir"`
-	// 【新增】是否启用不合并直接加密模式
-	// true: 分片MKV不合并，直接按顺序加密（更快，但可能不兼容某些播放器）
-	// false: 先合并再加密（默认，兼容性更好）
 	SkipMergeForSplitMKV bool `json:"skip_merge_for_split_mkv"`
+	AllowNoReencode bool `json:"allow_no_reencode"`
+	DefaultStreamPreset string `json:"default_stream_preset"`
 }
 
 func (p *VideoPlugin) GetSettingsSchemaType() interface{} {
@@ -93,12 +79,14 @@ func (p *VideoPlugin) GetSettingsSchemaType() interface{} {
 // 2. 实现接口方法，返回默认配置的 JSON
 func (p *VideoPlugin) GetDefaultSettings() json.RawMessage {
 	defaultCfg := VideoPluginConfig{
-		Ext:         ".sccgv",
-		ChunkSizeMB: 0,
-		// ChunkMax:    0,
-		TrackExtensions:     ".ass,.srt,.dm.ass",
-		KeepMkvForMkvSource: true,
-		VerifyAfterPack:     false, // 默认关闭，避免影响打包速度
+		Ext:                          ".sccgv",
+		ContainerChunkSizeMB:         0,
+		LightContainerMainChunkEnabled: false,
+		TrackExtensions:              ".ass,.srt,.dm.ass",
+		KeepMkvForMkvSource:          true,
+		VerifyAfterPack:              false,
+		AllowNoReencode:              false,
+		DefaultStreamPreset:          "balanced",
 	}
 	data, _ := json.Marshal(defaultCfg) // 忽略错误，因为默认值是硬编码的，不会出错
 	return data
@@ -113,13 +101,13 @@ func (p *VideoPlugin) GetSettingFields() []pluginInterfaces.SettingField {
 			Help:         "The container file extension for encrypted video files (e.g., '.sccgv').",
 		},
 		{
-			Key:          "chunk_size_mb",
+			Key:          "container_chunk_size_mb",
 			Type:         "number",
 			DefaultValue: 0,
 			Help:         "The chunk size in MB. Set to 0 to disable physical chunking. Minimum value is 30 if enabled.",
 		},
 		{
-			Key:          "light_main_chunk_enabled",
+			Key:          "light_container_main_chunk_enabled",
 			Type:         "bool",
 			DefaultValue: false,
 			Help:         "If enabled, the main chunk will only contain the manifest, not the source data.",
@@ -154,6 +142,18 @@ func (p *VideoPlugin) GetSettingFields() []pluginInterfaces.SettingField {
 			DefaultValue: false,
 			Help:         "If enabled, split MKV files will NOT be merged before encryption. Instead, they will be encrypted sequentially as multiple streams. This is faster but may have compatibility issues with some players.",
 		},
+		{
+			Key:          "allow_no_reencode",
+			Type:         "bool",
+			DefaultValue: false,
+			Help:         "Whether to allow encrypting video without re-encoding.",
+		},
+		{
+			Key:          "default_stream_preset",
+			Type:         "string",
+			DefaultValue: "balanced",
+			Help:         "Default stream preset name (e.g., 'balanced').",
+		},
 	}
 }
 
@@ -180,9 +180,35 @@ func (p *VideoPlugin) Initialize(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("could not get settings for plugin %s: %w", p.Name(), err)
 	}
-	p.settings = *settings // 将指针解引用，存入
-	if p.settings.ChunkSizeMB > 0 && p.settings.ChunkSizeMB < 30 {
-		p.settings.ChunkSizeMB = 30 // 强制修改为 30
+	p.settings = *settings
+
+	var rawSettings json.RawMessage
+	if p.cfg.Provider != nil {
+		rawSettings, _ = p.cfg.Provider.GetPluginSettings(p.Name())
+	} else {
+		rawSettings = p.cfg.PluginSettings[p.Name()]
+	}
+	if len(rawSettings) > 0 {
+		var raw map[string]interface{}
+		if json.Unmarshal(rawSettings, &raw) == nil {
+			if p.settings.ContainerChunkSizeMB == 0 {
+				if v, ok := raw["chunk_size_mb"]; ok {
+					if f, ok := v.(float64); ok && f > 0 {
+						p.settings.ContainerChunkSizeMB = int(f)
+					}
+				}
+			}
+			if !p.settings.LightContainerMainChunkEnabled {
+				if v, ok := raw["light_main_chunk_enabled"]; ok {
+					if b, ok := v.(bool); ok && b {
+						p.settings.LightContainerMainChunkEnabled = true
+					}
+				}
+			}
+		}
+	}
+	if p.settings.ContainerChunkSizeMB > 0 && p.settings.ContainerChunkSizeMB < 30 {
+		p.settings.ContainerChunkSizeMB = 30 // 强制修改为 30
 	}
 	// 处理逗号分隔的字符串，并存储到 trackExtensionsList
 	if p.settings.TrackExtensions != "" {
@@ -200,9 +226,9 @@ func (p *VideoPlugin) Initialize(ctx context.Context) error {
 	// 初始化新增字段
 	p.splitSets = make([][]string, 0)
 	p.splitPartPaths = make(map[string]bool)
-	if p.settings.ChunkSizeMB > 0 {
-		slog.Info("Physical chunking enabled", "plugin", p.Name(), "size_mb", p.settings.ChunkSizeMB)
-		p.physicalPacker = physical.NewFileChunkerPhysicalPacker(int64(p.settings.ChunkSizeMB)*1024*1024, p.chunkNamer)
+	if p.settings.ContainerChunkSizeMB > 0 {
+		slog.Info("Physical chunking enabled", "plugin", p.Name(), "size_mb", p.settings.ContainerChunkSizeMB)
+		p.physicalPacker = physical.NewFileChunkerPhysicalPacker(int64(p.settings.ContainerChunkSizeMB)*1024*1024, p.chunkNamer)
 	} else {
 		slog.Info("Physical chunking disabled", "plugin", p.Name())
 		p.physicalPacker = physical.NewSinglePhysicalPacker()
@@ -296,7 +322,6 @@ func (p *VideoPlugin) BuildFragments(logicalFileSize int64) ([]types.Fragment_v2
 
 func (p *VideoPlugin) GroupFiles(inputPaths []string, inputRootDir, outputDir string) ([]string, error) {
 
-	// 1. 过滤出当前插件需要处理的 MKV 文件
 	var mkvPaths []string
 	for _, path := range inputPaths {
 		if strings.ToLower(filepath.Ext(path)) == ".mkv" {
@@ -304,22 +329,18 @@ func (p *VideoPlugin) GroupFiles(inputPaths []string, inputRootDir, outputDir st
 		}
 	}
 	if len(mkvPaths) == 0 {
-		return inputPaths, nil // 没有 MKV，无需处理
+		return inputPaths, nil
 	}
 
-	// 2. 批量获取所有 MKV 的信息并缓存
 	fmt.Println("-> [VIDEO_PLUGIN] Pre-scanning all MKV files in the directory for split parts...")
 	mkvInfos, err := batchGetMkvInfos(mkvPaths)
 	if err != nil {
 		return nil, fmt.Errorf("failed to batch scan MKV files: %w", err)
 	}
 
-	// 3. 根据 UID 关联分片
 	splitSets := groupSplitParts(mkvInfos)
 
-	// 【关键修复】始终保存分片集信息，供后续阶段使用（包括缓存文件名恢复）
 	p.splitSets = splitSets
-	// 【新增】构建分片路径集合，用于预处理时快速判断
 	p.splitPartPaths = make(map[string]bool)
 	for _, set := range splitSets {
 		for _, path := range set {
@@ -327,28 +348,22 @@ func (p *VideoPlugin) GroupFiles(inputPaths []string, inputRootDir, outputDir st
 		}
 	}
 
-	// 【新增】如果启用了不合并模式，直接返回所有文件路径（包括分片）
-	// 加密阶段会处理多文件读取
 	if p.settings.SkipMergeForSplitMKV && len(splitSets) > 0 {
 		slog.Info("SkipMergeForSplitMKV enabled, processing split sets without merging", "component", "VIDEO_PLUGIN", "split_sets", len(splitSets))
 		return inputPaths, nil
 	}
 
-	// 4. 合并分片并构建最终的文件列表
 	finalPaths := make([]string, 0)
 
-	// 1. 首先将所有非 MKV 文件加入最终列表
 	for _, path := range inputPaths {
 		if strings.ToLower(filepath.Ext(path)) != ".mkv" {
 			finalPaths = append(finalPaths, path)
 		}
 	}
 
-	// 2. 然后处理所有分片集
-	// 【修改】传入缓存目录
 	cacheDir := p.settings.PluginCacheDir
 	if cacheDir == "" {
-		cacheDir = outputDir // 默认使用输出目录作为缓存
+		cacheDir = outputDir
 		slog.Info("PluginCacheDir not set, using outputDir as cache", "component", "VIDEO_PLUGIN", "cache_dir", cacheDir)
 	} else {
 		slog.Info("Using configured PluginCacheDir", "component", "VIDEO_PLUGIN", "cache_dir", cacheDir)
@@ -362,7 +377,6 @@ func (p *VideoPlugin) GroupFiles(inputPaths []string, inputRootDir, outputDir st
 		finalPaths = append(finalPaths, mergedPath)
 	}
 
-	// 3. 最后，将所有独立的（非分片）MKV 文件加入最终列表
 	for _, info := range mkvInfos {
 		if !info.IsSplitPart {
 			finalPaths = append(finalPaths, info.Path)
@@ -370,6 +384,21 @@ func (p *VideoPlugin) GroupFiles(inputPaths []string, inputRootDir, outputDir st
 	}
 
 	return finalPaths, nil
+}
+
+func (p *VideoPlugin) ContainerType() uint16 {
+	return types.ContainerTypeVideo
+}
+
+func (p *VideoPlugin) DefaultIsSeekable(inputPath string) bool {
+	ext := strings.ToLower(filepath.Ext(inputPath))
+	return ext == ".mp4" || ext == ".mkv"
+}
+
+func (p *VideoPlugin) DisasterZones(inputPath string) []types.DisasterZone {
+	return []types.DisasterZone{
+		{Name: "video_header", Offset: 0, Size: 4096},
+	}
 }
 
 // --- 加密逻辑 ---
@@ -473,7 +502,7 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 	logicalFragments, err = p.createGOPAlignedFragments(logicalDataSize)
 	if err != nil {
 		slog.Warn("Failed to align fragments to GOP, falling back to size-based fragments", "error", err)
-		baseSize := fragment.CalculateFragmentSize(logicalDataSize, int64(p.settings.ChunkSizeMB)*1024*1024)
+		baseSize := fragment.CalculateFragmentSize(logicalDataSize, int64(p.settings.ContainerChunkSizeMB)*1024*1024)
 		logicalFragments, err = fragment.CreateLogicalFragmentsFromSize(logicalDataSize, baseSize, types.FragmentType_SeekableStream)
 		if err != nil {
 			return fmt.Errorf("fallback fragment creation failed: %w", err)
@@ -504,7 +533,7 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 	finalBaseName := strings.TrimSuffix(finalFilename, p.settings.Ext)
 
 	startIdx := 1
-	if !p.settings.LightMainChunkEnabled {
+	if !p.settings.LightContainerMainChunkEnabled {
 		startIdx = 0
 	}
 
@@ -527,13 +556,13 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 		Index:                 &p.index,
 		Namer:                 p.chunkNamer,
 		StartIdx:              startIdx,
-		LightMainChunkEnabled: p.settings.LightMainChunkEnabled,
+		LightMainChunkEnabled: p.settings.LightContainerMainChunkEnabled,
 		HeaderVersion:         3,
 		SpecialIDType:         types.IDType_Raw,
 		SpecialID:             nil,
 	}
 
-	if p.settings.ChunkSizeMB == 0 {
+	if p.settings.ContainerChunkSizeMB == 0 {
 		packParams.FinalFileName = finalFilename
 	}
 
@@ -566,7 +595,7 @@ func (p *VideoPlugin) createGOPAlignedFragments(fileSize int64) ([]types.Fragmen
 	}
 
 	// 计算目标逻辑分片大小（例如 4MB）
-	targetLogicalSize := fragment.CalculateFragmentSize(fileSize, int64(p.settings.ChunkSizeMB)*1024*1024)
+	targetLogicalSize := fragment.CalculateFragmentSize(fileSize, int64(p.settings.ContainerChunkSizeMB)*1024*1024)
 	minLogicalSize := int64(2 * 1024 * 1024) // 2MB
 
 	var fragments []types.Fragment_v2

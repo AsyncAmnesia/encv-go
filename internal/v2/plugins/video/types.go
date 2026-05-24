@@ -24,7 +24,8 @@ type VideoIndex struct {
 	OriginalFileMD5   string           `json:"original_file_md5"`
 	EncryptedFileMD5  string           `json:"encrypted_file_md5"`
 	SubtitleTracks    []SubtitleTracks `json:"subtitle_tracks,omitempty"`
-	Chapters          []MKVChapterInfo `json:"chapters,omitempty"`
+	Chapters          []MKVChapterInfo       `json:"chapters,omitempty"`
+	ChaptersV4        []types.ChapterInfo_v4 `json:"chapters_v4,omitempty"`
 	KeyFrameOffsets   []uint64         `json:"key_frame_offsets,omitempty"` // 存储所有关键帧的字节偏移量
 }
 
@@ -46,11 +47,20 @@ type SubtitleTracks struct {
 }
 
 // MKVChapterInfo 是专门为 MKV 视频定义的章节信息结构
+type ChapterInfo = types.ChapterInfo_v4
+
 type MKVChapterInfo struct {
 	ID        int           `json:"id"`
 	Title     string        `json:"title"`
 	StartTime time.Duration `json:"start_time"`
 	EndTime   time.Duration `json:"end_time"`
+}
+
+func (m MKVChapterInfo) ToChapterInfoV4() types.ChapterInfo_v4 {
+	return types.ChapterInfo_v4{
+		Time:  m.StartTime.Seconds(),
+		Title: m.Title,
+	}
 }
 
 // 视频容器专用的 KVI

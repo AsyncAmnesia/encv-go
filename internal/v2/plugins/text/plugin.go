@@ -217,6 +217,18 @@ func (p *TextPlugin) GroupFiles(inputPaths []string, inputRootDir, outputDir str
 	return inputPaths, nil
 }
 
+func (p *TextPlugin) ContainerType() uint16 {
+	return types.ContainerTypeText
+}
+
+func (p *TextPlugin) DefaultIsSeekable(inputPath string) bool {
+	return false
+}
+
+func (p *TextPlugin) DisasterZones(inputPath string) []types.DisasterZone {
+	return nil
+}
+
 // --- 加密逻辑 ---
 
 // Plugin 接口实现

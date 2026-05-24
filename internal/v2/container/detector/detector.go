@@ -99,6 +99,111 @@ func DetectContainer(filePath string) (*types.ContainerDescriptor, error) {
 
 // DetectIndexKind 读取容器文件并返回其内部索引的类型（例如 "video", "archive"）。
 // 此函数现在完全依赖接口，实现了类型安全、高效且可扩展的检测。
+func indexKindToContainerType(kind types.IndexKind) uint16 {
+	switch kind {
+	case "video":
+		return types.ContainerTypeVideo
+	case "audio":
+		return types.ContainerTypeAudio
+	case "image":
+		return types.ContainerTypeImage
+	case "PDF", "WPS":
+		return types.ContainerTypeDocument
+	case "text":
+		return types.ContainerTypeText
+	default:
+		return types.ContainerTypeUnknown
+	}
+}
+
+func DetectContainerType(path string) (uint16, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return types.ContainerTypeUnknown, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	version, _, err := types.DetectHeaderInfoFromReaderAt(file)
+	if err != nil {
+		return types.ContainerTypeUnknown, fmt.Errorf("failed to detect header version: %w", err)
+	}
+
+	if version == 4 {
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			return types.ContainerTypeUnknown, fmt.Errorf("failed to seek to start: %w", err)
+		}
+		header, err := types.ReadHeaderV4(file)
+		if err != nil {
+			return types.ContainerTypeUnknown, fmt.Errorf("failed to read v4 header: %w", err)
+		}
+		return header.ContainerType, nil
+	}
+
+	kind, err := DetectIndexKind(path)
+	if err != nil {
+		return types.ContainerTypeUnknown, fmt.Errorf("failed to detect index kind: %w", err)
+	}
+	return indexKindToContainerType(kind), nil
+}
+
+func DetectIsSeekable(path string) (bool, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return false, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	version, _, err := types.DetectHeaderInfoFromReaderAt(file)
+	if err != nil {
+		return false, fmt.Errorf("failed to detect header version: %w", err)
+	}
+
+	if version == 4 {
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			return false, fmt.Errorf("failed to seek to start: %w", err)
+		}
+		header, err := types.ReadHeaderV4(file)
+		if err != nil {
+			return false, fmt.Errorf("failed to read v4 header: %w", err)
+		}
+		return header.IsSeekable == 1, nil
+	}
+
+	kind, err := DetectIndexKind(path)
+	if err != nil {
+		return false, fmt.Errorf("failed to detect index kind: %w", err)
+	}
+	return kind == "video", nil
+}
+
+func DetectV4Header(path string) (*types.EnvelopeHeaderV4, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	version, _, err := types.DetectHeaderInfoFromReaderAt(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect header version: %w", err)
+	}
+
+	if version != 4 {
+		return nil, fmt.Errorf("file is not a v4 container (detected version: %d)", version)
+	}
+
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("failed to seek to start: %w", err)
+	}
+
+	header, err := types.ReadHeaderV4(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read v4 header: %w", err)
+	}
+
+	return header, nil
+}
+
 func DetectIndexKind(filePath string) (types.IndexKind, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
