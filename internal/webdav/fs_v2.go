@@ -700,11 +700,12 @@ func (fs *encvWebDAVFS) statFile(ctx context.Context, fullPath string) (os.FileI
 // --- 实现 webdav.FileSystem 接口 ---
 
 func (fs *encvWebDAVFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
-	// 【关键修复 1】优先使用索引键进行查找
-	indexKey := fs.webdavPathToIndexKey(name)
+	indexKey, keyErr := fs.webdavPathToIndexKey(name)
+	if keyErr != nil {
+		return nil, keyErr
+	}
 	indexes := fs.getIndexes()
 
-	// 1. 【核心】首先在索引中查找虚拟文件（内存操作，极快）
 	if fileInfo, ok := indexes.fileInfoMap[indexKey]; ok {
 		slog.Debug("Found virtual file in index, returning cached info", "name", name)
 		return fileInfo, nil
@@ -727,16 +728,15 @@ func (fs *encvWebDAVFS) Stat(ctx context.Context, name string) (os.FileInfo, err
 }
 
 func (fs *encvWebDAVFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (goWebdav.File, error) {
-	// 1. 权限检查
 	if flag&(os.O_WRONLY|os.O_RDWR|os.O_CREATE|os.O_TRUNC|os.O_APPEND) != 0 {
 		return nil, os.ErrPermission
 	}
 
-	// 【使用辅助函数】将 WebDAV 路径转换为标准索引键
-	indexKey := fs.webdavPathToIndexKey(name)
-	// log.Printf("[OpenFile-DEBUG] Called with name='%s', converted indexKey='%s'", name, indexKey)
+	indexKey, keyErr := fs.webdavPathToIndexKey(name)
+	if keyErr != nil {
+		return nil, keyErr
+	}
 
-	// 注意：resolvePath 仍然需要原始的 name 来获取物理路径
 	fullPath, err := fs.resolvePath(name)
 	if err != nil {
 		return nil, err
@@ -828,8 +828,10 @@ func (fs *encvWebDAVFS) openAsDirectory(fullPath string, name string) (goWebdav.
 
 // ReadDir 方法完全重写，变为高性能且无竞争
 func (fs *encvWebDAVFS) ReadDir(ctx context.Context, name string) ([]os.FileInfo, error) {
-	// 【使用辅助函数】将 WebDAV 路径转换为标准索引键
-	indexKey := fs.webdavPathToIndexKey(name)
+	indexKey, keyErr := fs.webdavPathToIndexKey(name)
+	if keyErr != nil {
+		return nil, keyErr
+	}
 	slog.Debug("ReadDir called", "name", name, "indexKey", indexKey)
 
 	// 1. 获取当前索引（这是一个内存快照，非常快）
@@ -985,7 +987,10 @@ func (d *decryptedDir) Readdir(count int) ([]os.FileInfo, error) {
 	indexes := d.fs.getIndexes()
 
 	// 2. 将 WebDAV 路径转换为索引键
-	indexKey := d.fs.webdavPathToIndexKey(d.name)
+	indexKey, keyErr := d.fs.webdavPathToIndexKey(d.name)
+	if keyErr != nil {
+		return nil, keyErr
+	}
 	slog.Debug("decryptedDir Readdir called", "path", d.name, "indexKey", indexKey)
 
 	// 3. 使用 map 来自动去重和合并，键为文件名

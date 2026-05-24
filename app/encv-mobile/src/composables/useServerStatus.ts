@@ -27,6 +27,10 @@ async function checkStatus() {
   const result = await checkServerStatus()
   isOnline.value = result.online
   lastError.value = result.error || ''
+  if (result.online) {
+    isRestarting.value = false
+    isStopping.value = false
+  }
   return result
 }
 
@@ -84,11 +88,11 @@ async function handleRestart(): Promise<boolean> {
   useWebSocket().disconnect()
   try {
     const result = await restartBackend()
+    isRestarting.value = false
     if (result.success) {
-      isRestarting.value = false
+      isOnline.value = true
       const status = await getBackendStatus()
       if (status.running && status.port > 0) {
-        isOnline.value = true
         backendPort.value = status.port
         const newUrl = `http://127.0.0.1:${status.port}`
         if (DEFAULT_API_BASE_URL !== newUrl) {
@@ -98,7 +102,6 @@ async function handleRestart(): Promise<boolean> {
         useWebSocket().connect()
       }
     } else {
-      isRestarting.value = false
       lastError.value = result.lastError || lastError.value
     }
     return result.success

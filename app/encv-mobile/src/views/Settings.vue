@@ -637,9 +637,12 @@ onMounted(async () => {
 })
 
 watch(serverOnline, async (online) => {
-  if (online && !configLoaded.value) {
-    await loadConfig()
-    configLoaded.value = true
+  if (online) {
+    if (!configLoaded.value) {
+      await loadConfig()
+      configLoaded.value = true
+    }
+    try { indexStats.value = await getIndexStats() } catch {}
   }
 })
 </script>

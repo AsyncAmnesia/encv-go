@@ -241,13 +241,7 @@ func (s *Server) Start(version string) (string, error) {
 			loggingMiddleware := s.webdavLoggingMiddleware()
 			protectedWebdavHandler := authMiddleware(loggingMiddleware(webdavHandler))
 			r.Any(s.webdavPath+"*path", gin.WrapH(protectedWebdavHandler))
-
-			webdavRoot := strings.TrimSuffix(s.webdavPath, "/")
-			if webdavRoot != "" {
-				r.GET(webdavRoot, func(c *gin.Context) {
-					c.Redirect(http.StatusMovedPermanently, s.webdavPath)
-				})
-			}
+			r.Any(s.webdavPath, gin.WrapH(protectedWebdavHandler))
 		}
 	}
 
