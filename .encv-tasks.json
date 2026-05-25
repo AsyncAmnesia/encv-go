@@ -20,5 +20,16 @@
     "phase": "completed",
     "createdAt": "2026-05-25T16:33:39.249008681Z",
     "completedAt": "2026-05-25T16:33:39.545154055Z"
+  },
+  {
+    "id": "a48936c9-a90a-48ab-929f-fe7ddfbc6dd2",
+    "type": "encrypt",
+    "sourcePath": "/logcat.txt",
+    "targetPath": "/",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "createdAt": "2026-05-25T16:35:28.013984824Z",
+    "completedAt": "2026-05-25T16:35:28.937081048Z"
   }
 ]

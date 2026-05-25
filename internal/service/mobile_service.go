@@ -314,6 +314,8 @@ func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
 				containerTypeStr = "image"
 			case 4:
 				containerTypeStr = "document"
+			case 5:
+				containerTypeStr = "text"
 			default:
 				containerTypeStr = fmt.Sprintf("unknown(%d)", hdr.ContainerType)
 			}
@@ -361,6 +363,8 @@ func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
 				containerTypeStr = "image"
 			case 4:
 				containerTypeStr = "document"
+			case 5:
+				containerTypeStr = "text"
 			default:
 				containerTypeStr = fmt.Sprintf("unknown(%d)", containerType)
 			}
