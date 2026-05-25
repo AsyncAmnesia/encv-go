@@ -120,7 +120,7 @@ import {
   alertCircle, informationCircle, warning, helpCircleOutline,
   lockClosed, checkmarkCircle, chevronDown, chevronForward,
 } from 'ionicons/icons'
-import { readFileContent, getFileStreamUrl, getFileCategory, getFileExtension, formatFileSize, fetchTextPreviewExts } from '@/api/encv'
+import { readFileContent, getFileStreamUrl, getFileCategory, getFileExtension, formatFileSize, fetchTextPreviewExts, getApiBaseUrl } from '@/api/encv'
 import type { FileContentResponse } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
@@ -206,7 +206,7 @@ async function loadFile() {
       encoding.value = data.encoding
     } else if (previewType.value === 'container') {
       console.info('Loading container info:', fileName.value)
-      const baseUrl = import.meta.env.DEV ? '' : (await import('@/api/encv')).getApiBaseUrl()
+      const baseUrl = getApiBaseUrl()
       const resp = await fetch(`${baseUrl}/api/file/info?path=${encodeURIComponent(path)}`)
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
       const info = await resp.json()
