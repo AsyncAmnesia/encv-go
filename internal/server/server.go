@@ -147,7 +147,7 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/health", s.handleHealthGin)
 	r.GET("/stream", gin.WrapF(s.handleStreamRequest))
 	r.GET("/decrypt", gin.WrapF(s.handleStreamRequest))
-	r.GET("/preview/*filepath", gin.WrapH(web.PreviewHandler()))
+	r.GET("/preview/*filepath", gin.WrapH(http.StripPrefix("/preview", web.PreviewHandler())))
 	r.GET("/api/config", s.handleGetConfigGin)
 	r.PUT("/api/config", s.handlePutConfigGin)
 	r.GET("/api/config/schema", s.handleConfigSchemaGin)
