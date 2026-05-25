@@ -298,7 +298,7 @@ func checkLibAvailable(libPath, symbol string) bool {
 	cLibPath := C.CString(libPath)
 	defer C.free(unsafe.Pointer(cLibPath))
 
-	dlerror()
+	C.dlerror()
 	handle := C.dlopen(cLibPath, C.RTLD_NOW|C.RTLD_LOCAL)
 	if handle == nil {
 		return false
