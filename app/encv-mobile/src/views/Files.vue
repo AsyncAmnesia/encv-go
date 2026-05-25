@@ -487,10 +487,13 @@ async function handleLongPress(file: FileItem) {
     })
   } else if (category === 'encrypted') {
     buttons.push({
-      text: t('files.play'),
-      icon: videocam,
+      text: t('files.preview'),
+      icon: image,
       handler: () => {
-        playMedia(file, 'encrypted')
+        router.push({
+          path: '/tabs/preview',
+          query: { path: file.path, name: file.name, isEncrypted: 'true' },
+        })
       },
     })
     buttons.push({
