@@ -177,6 +177,7 @@ export interface EncvTask {
   speed?: string
   eta?: string
   error?: string
+  errorDetail?: string
   createdAt: string
   completedAt?: string
 }
@@ -513,6 +514,21 @@ export async function checkEncryptOutputExists(sourcePath: string, targetDir?: s
   }
   const data = await response.json()
   return { exists: !!data.exists, outputPath: data.outputPath || '' }
+}
+
+export interface FFmpegStatus {
+  ffmpeg_available: boolean
+  ffprobe_available: boolean
+  error?: string
+}
+
+export async function fetchFFmpegStatus(): Promise<FFmpegStatus> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/ffmpeg-status`)
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return await response.json()
 }
 
 export interface BuildInfo {

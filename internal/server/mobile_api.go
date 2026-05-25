@@ -609,3 +609,12 @@ func (s *Server) handleBuildInfoGin(c *gin.Context) {
 	info["app_version"] = s.version
 	c.JSON(http.StatusOK, info)
 }
+
+func (s *Server) handleFFmpegStatusGin(c *gin.Context) {
+	ffmpegOk, ffprobeOk, errMsg := utils.CheckFFmpegAvailable()
+	c.JSON(http.StatusOK, gin.H{
+		"ffmpeg_available":  ffmpegOk,
+		"ffprobe_available": ffprobeOk,
+		"error":             errMsg,
+	})
+}

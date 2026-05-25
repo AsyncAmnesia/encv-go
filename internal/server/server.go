@@ -172,6 +172,7 @@ func (s *Server) Start(version string) (string, error) {
 	r.POST("/api/index/clear", s.handleIndexClearGin)
 	r.GET("/api/stream/external", s.handleStreamExternalFileGin)
 	r.GET("/api/build-info", s.handleBuildInfoGin)
+	r.GET("/api/ffmpeg-status", s.handleFFmpegStatusGin)
 	r.POST("/api/logs", s.handleAPILogsGin)
 	r.GET("/ws", gin.WrapF(s.handleWebSocket))
 

@@ -99,6 +99,29 @@
         </ion-item>
       </ion-list>
 
+      <ion-list v-if="isNative()">
+        <ion-list-header>
+          <ion-label>{{ t('settings.engineStatus') }}</ion-label>
+        </ion-list-header>
+        <ion-item>
+          <ion-icon :icon="filmOutline" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.engineStatus') }}</h3>
+            <p>
+              <ion-badge :color="engineStatus?.ffmpeg_available ? 'success' : 'danger'" class="status-badge">
+                {{ t('settings.ffmpegAvail') }}
+              </ion-badge>
+              <ion-badge :color="engineStatus?.ffprobe_available ? 'success' : 'danger'" class="status-badge">
+                {{ t('settings.ffprobeAvail') }}
+              </ion-badge>
+              <span v-if="engineStatus && !engineStatus.ffmpeg_available && !engineStatus.ffprobe_available" class="engine-error-inline">
+                {{ t('settings.engineError') }}
+              </span>
+            </p>
+          </ion-label>
+        </ion-item>
+      </ion-list>
+
       <ion-list>
         <ion-list-header>
           <ion-label>{{ t('settings.cache') }}</ion-label>
@@ -363,8 +386,8 @@ import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { useDevTools } from '@/composables/useDevTools'
 import { isNative } from '@/plugins/GoProcess'
-import { getIndexStats, fetchConfig, updateConfig } from '@/api/encv'
-import type { IndexStats } from '@/api/encv'
+import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus } from '@/api/encv'
+import type { IndexStats, FFmpegStatus } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 
@@ -377,6 +400,7 @@ const { vconsoleEnabled, toggleVConsole } = useDevTools()
 
 const configLoaded = ref(false)
 const indexStats = ref<IndexStats | null>(null)
+const engineStatus = ref<FFmpegStatus | null>(null)
 
 const videoPlayerMode = ref(localStorage.getItem('encv_player_video') || 'artplayer')
 const audioPlayerMode = ref(localStorage.getItem('encv_player_audio') || 'mpv')
@@ -647,6 +671,7 @@ onMounted(async () => {
     await loadConfig()
     configLoaded.value = true
     try { indexStats.value = await getIndexStats() } catch {}
+    if (isNative()) { try { engineStatus.value = await fetchFFmpegStatus() } catch {} }
   }
 })
 
@@ -657,6 +682,7 @@ watch(serverOnline, async (online) => {
       configLoaded.value = true
     }
     try { indexStats.value = await getIndexStats() } catch {}
+    if (isNative()) { try { engineStatus.value = await fetchFFmpegStatus() } catch {} }
   }
 })
 </script>
@@ -682,6 +708,11 @@ watch(serverOnline, async (online) => {
 .connection-error-inline {
   color: var(--ion-color-danger);
   font-size: 12px;
+}
+.engine-error-inline {
+  color: var(--ion-color-danger);
+  font-size: 12px;
+  margin-left: 4px;
 }
 .browse-btn {
   --padding-start: 8px;

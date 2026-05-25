@@ -60,6 +60,9 @@
                 <span class="completed-text">{{ t('tasks.phaseCompleted') }}</span>
               </div>
               <p v-if="task.error" class="task-error">{{ task.error }}</p>
+              <p v-if="task.errorDetail && task.errorDetail !== task.error" class="task-error-detail" @click="toggleErrorDetail(task.id)">
+                {{ showErrorDetail[task.id] ? task.errorDetail : t('tasks.showDetail') }}
+              </p>
             </ion-label>
             <ion-button
               v-if="task.status === 'running'"
@@ -229,6 +232,7 @@ const { t } = useI18n()
 
 const tasks = ref<EncvTask[]>([])
 const loading = ref(false)
+const showErrorDetail = ref<Record<string, boolean>>({})
 const showNewTaskModal = ref(false)
 const newTaskType = ref<TaskType>('encrypt')
 const newTaskPath = ref('')
@@ -344,6 +348,10 @@ async function loadTasks() {
     tasks.value = []
   }
   loading.value = false
+}
+
+function toggleErrorDetail(taskId: string) {
+  showErrorDetail.value[taskId] = !showErrorDetail.value[taskId]
 }
 
 async function handleRefresh(event: CustomEvent) {
@@ -649,6 +657,14 @@ onUnmounted(() => {
   color: var(--ion-color-danger);
   font-size: 12px;
   margin-top: 4px;
+}
+
+.task-error-detail {
+  color: var(--ion-color-medium);
+  font-size: 11px;
+  margin-top: 2px;
+  cursor: pointer;
+  word-break: break-all;
 }
 
 .cancelling-spinner {

@@ -19,7 +19,11 @@ static pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static char g_dlerror[1024] = {0};
 
-static int call_native_run(
+static void *g_ffmpeg_handle = NULL;
+static void *g_ffprobe_handle = NULL;
+
+static int call_native_run_cached(
+    void **cached_handle,
     const char *lib_path,
     const char *run_sym,
     const char *reset_sym,
@@ -31,25 +35,27 @@ static int call_native_run(
     pthread_mutex_lock(&g_mutex);
     g_dlerror[0] = '\0';
 
-    dlerror();
-    void *handle = dlopen(lib_path, RTLD_NOW);
-    if (!handle) {
-        const char *err = dlerror();
-        if (err) snprintf(g_dlerror, sizeof(g_dlerror), "%s", err);
-        else snprintf(g_dlerror, sizeof(g_dlerror), "dlopen failed: unknown error");
-        pthread_mutex_unlock(&g_mutex);
-        return -1;
+    if (!*cached_handle) {
+        dlerror();
+        void *h = dlopen(lib_path, RTLD_NOW | RTLD_LOCAL);
+        if (!h) {
+            const char *err = dlerror();
+            if (err) snprintf(g_dlerror, sizeof(g_dlerror), "%s", err);
+            else snprintf(g_dlerror, sizeof(g_dlerror), "dlopen failed: unknown error");
+            pthread_mutex_unlock(&g_mutex);
+            return -1;
+        }
+        *cached_handle = h;
     }
 
-    reset_func_t reset_fn = (reset_func_t)dlsym(handle, reset_sym);
+    reset_func_t reset_fn = (reset_func_t)dlsym(*cached_handle, reset_sym);
     if (reset_fn) reset_fn();
 
-    run_func_t run_fn = (run_func_t)dlsym(handle, run_sym);
+    run_func_t run_fn = (run_func_t)dlsym(*cached_handle, run_sym);
     if (!run_fn) {
         const char *err = dlerror();
         if (err) snprintf(g_dlerror, sizeof(g_dlerror), "%s", err);
         else snprintf(g_dlerror, sizeof(g_dlerror), "symbol %s not found", run_sym);
-        dlclose(handle);
         pthread_mutex_unlock(&g_mutex);
         return -2;
     }
@@ -88,7 +94,6 @@ static int call_native_run(
         close(saved_stderr);
     }
 
-    dlclose(handle);
     pthread_mutex_unlock(&g_mutex);
     return ret;
 }
@@ -119,6 +124,33 @@ func getLibDir() string {
 	return libDirCache
 }
 
+type NativeErrorType int
+
+const (
+	NativeErrorDlopen   NativeErrorType = iota
+	NativeErrorSymbol                    NativeErrorType = iota
+	NativeErrorExit                      NativeErrorType = iota
+)
+
+type NativeError struct {
+	Type    NativeErrorType
+	Detail  string
+	ExitCode int
+}
+
+func (e *NativeError) Error() string {
+	switch e.Type {
+	case NativeErrorDlopen:
+		return fmt.Sprintf("library load failed: %s", e.Detail)
+	case NativeErrorSymbol:
+		return fmt.Sprintf("symbol not found: %s", e.Detail)
+	case NativeErrorExit:
+		return fmt.Sprintf("exit code %d: %s", e.ExitCode, e.Detail)
+	default:
+		return e.Detail
+	}
+}
+
 type nativeResult struct {
 	exitCode int
 	stdout   string
@@ -128,7 +160,7 @@ type nativeResult struct {
 func callFFmpegNative(args []string) (*nativeResult, error) {
 	libDir := getLibDir()
 	if libDir == "" {
-		return nil, fmt.Errorf("ENCV_LIB_DIR not set")
+		return nil, &NativeError{Type: NativeErrorDlopen, Detail: "ENCV_LIB_DIR not set"}
 	}
 
 	libPath := filepath.Join(libDir, "libffmpeg.so")
@@ -161,7 +193,7 @@ func callFFmpegNative(args []string) (*nativeResult, error) {
 	cStderrPath := C.CString(stderrPath)
 	defer C.free(unsafe.Pointer(cStderrPath))
 
-	ret := C.call_native_run(cLibPath, cRunSym, cResetSym, argc, &argv[0], nil, cStderrPath)
+	ret := C.call_native_run_cached(&C.g_ffmpeg_handle, cLibPath, cRunSym, cResetSym, argc, &argv[0], nil, cStderrPath)
 
 	stderrData, _ := os.ReadFile(stderrPath)
 
@@ -172,11 +204,11 @@ func callFFmpegNative(args []string) (*nativeResult, error) {
 
 	if ret == -1 {
 		dlErr := C.GoString(C.get_dlerror())
-		return result, fmt.Errorf("failed to load %s: %s", libPath, dlErr)
+		return result, &NativeError{Type: NativeErrorDlopen, Detail: fmt.Sprintf("%s: %s", libPath, dlErr)}
 	}
 	if ret == -2 {
 		dlErr := C.GoString(C.get_dlerror())
-		return result, fmt.Errorf("ffmpeg_run symbol not found in %s: %s", libPath, dlErr)
+		return result, &NativeError{Type: NativeErrorSymbol, Detail: fmt.Sprintf("ffmpeg_run in %s: %s", libPath, dlErr)}
 	}
 
 	return result, nil
@@ -185,7 +217,7 @@ func callFFmpegNative(args []string) (*nativeResult, error) {
 func callFFprobeNative(args []string) (*nativeResult, error) {
 	libDir := getLibDir()
 	if libDir == "" {
-		return nil, fmt.Errorf("ENCV_LIB_DIR not set")
+		return nil, &NativeError{Type: NativeErrorDlopen, Detail: "ENCV_LIB_DIR not set"}
 	}
 
 	libPath := filepath.Join(libDir, "libffprobe.so")
@@ -218,7 +250,7 @@ func callFFprobeNative(args []string) (*nativeResult, error) {
 	cStdoutPath := C.CString(stdoutPath)
 	defer C.free(unsafe.Pointer(cStdoutPath))
 
-	ret := C.call_native_run(cLibPath, cRunSym, cResetSym, argc, &argv[0], cStdoutPath, nil)
+	ret := C.call_native_run_cached(&C.g_ffprobe_handle, cLibPath, cRunSym, cResetSym, argc, &argv[0], cStdoutPath, nil)
 
 	stdoutData, _ := os.ReadFile(stdoutPath)
 
@@ -229,12 +261,53 @@ func callFFprobeNative(args []string) (*nativeResult, error) {
 
 	if ret == -1 {
 		dlErr := C.GoString(C.get_dlerror())
-		return result, fmt.Errorf("failed to load %s: %s", libPath, dlErr)
+		return result, &NativeError{Type: NativeErrorDlopen, Detail: fmt.Sprintf("%s: %s", libPath, dlErr)}
 	}
 	if ret == -2 {
 		dlErr := C.GoString(C.get_dlerror())
-		return result, fmt.Errorf("ffprobe_run symbol not found in %s: %s", libPath, dlErr)
+		return result, &NativeError{Type: NativeErrorSymbol, Detail: fmt.Sprintf("ffprobe_run in %s: %s", libPath, dlErr)}
 	}
 
 	return result, nil
+}
+
+func CheckFFmpegAvailable() (ffmpegOk bool, ffprobeOk bool, errMsg string) {
+	libDir := getLibDir()
+	if libDir == "" {
+		return false, false, "ENCV_LIB_DIR not set"
+	}
+
+	ffmpegPath := filepath.Join(libDir, "libffmpeg.so")
+	ffprobePath := filepath.Join(libDir, "libffprobe.so")
+
+	ffmpegOk = checkLibAvailable(ffmpegPath, "ffmpeg_run")
+	ffprobeOk = checkLibAvailable(ffprobePath, "ffprobe_run")
+
+	if !ffmpegOk && !ffprobeOk {
+		errMsg = "ffmpeg and ffprobe libraries not available"
+	} else if !ffmpegOk {
+		errMsg = "ffmpeg library not available"
+	} else if !ffprobeOk {
+		errMsg = "ffprobe library not available"
+	}
+
+	return
+}
+
+func checkLibAvailable(libPath, symbol string) bool {
+	cLibPath := C.CString(libPath)
+	defer C.free(unsafe.Pointer(cLibPath))
+
+	dlerror()
+	handle := C.dlopen(cLibPath, C.RTLD_NOW|C.RTLD_LOCAL)
+	if handle == nil {
+		return false
+	}
+
+	cSymbol := C.CString(symbol)
+	defer C.free(unsafe.Pointer(cSymbol))
+
+	sym := C.dlsym(handle, cSymbol)
+	C.dlclose(handle)
+	return sym != nil
 }
