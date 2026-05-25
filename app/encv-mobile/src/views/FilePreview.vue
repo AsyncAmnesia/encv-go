@@ -55,7 +55,11 @@
               <ion-icon :icon="lockClosed" class="title-icon"></ion-icon>
               ENCV Container
             </h4>
-            <div class="info-grid" v-if="containerInfo">
+            <div v-if="containerInfo?.error" class="container-error">
+              <ion-icon :icon="alertCircle" class="error-icon"></ion-icon>
+              <p>{{ containerInfo.error }}</p>
+            </div>
+            <div class="info-grid" v-if="containerInfo && !containerInfo.error">
               <div class="info-row">
                 <span class="info-label">{{ t('fileInfo.version') }}</span>
                 <span class="info-value">V{{ containerInfo.version ?? '?' }}</span>
@@ -128,13 +132,14 @@ import { showToast } from '@/composables/useToast'
 type PreviewType = 'image' | 'pdf' | 'text' | 'container' | 'unsupported'
 
 interface ContainerInfo {
-  version: number
-  container_id: string
-  container_type: string
-  is_seekable: boolean
+  version?: number
+  container_id?: string
+  container_type?: string
+  is_seekable?: boolean
   original_duration?: number
   segment_count?: number
-  segments: unknown[]
+  segments?: unknown[]
+  error?: string
 }
 
 const { t } = useI18n()
@@ -378,6 +383,19 @@ onMounted(() => loadFile())
   gap: 12px;
   overflow-y: auto;
 }
+
+.container-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(231, 76, 60, 0.1);
+  border-radius: 6px;
+  color: #e74c3c;
+  margin-bottom: 12px;
+}
+.container-error .error-icon { font-size: 20px; }
+.container-error p { margin: 0; font-size: 13px; }
 
 .container-card {
   background: rgba(255, 255, 255, 0.04);
