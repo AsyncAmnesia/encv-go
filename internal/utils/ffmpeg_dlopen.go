@@ -19,8 +19,8 @@ static pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static char g_dlerror[1024] = {0};
 
-static void *g_ffmpeg_handle = NULL;
-static void *g_ffprobe_handle = NULL;
+void *g_ffmpeg_handle = NULL;
+void *g_ffprobe_handle = NULL;
 
 static int call_native_run_cached(
     void **cached_handle,
