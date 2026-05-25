@@ -22,6 +22,7 @@ import (
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/middleware"
 	"github.com/Soltus/encv-go/internal/openlist"
+	"github.com/Soltus/encv-go/internal/openlist/web"
 	"github.com/Soltus/encv-go/internal/register"
 	"github.com/Soltus/encv-go/internal/routes"
 	"github.com/Soltus/encv-go/internal/utils"
@@ -145,6 +146,8 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/ping", s.handlePingGin)
 	r.GET("/health", s.handleHealthGin)
 	r.GET("/stream", gin.WrapF(s.handleStreamRequest))
+	r.GET("/decrypt", gin.WrapF(s.handleStreamRequest))
+	r.GET("/preview/*filepath", gin.WrapH(web.PreviewHandler()))
 	r.GET("/api/config", s.handleGetConfigGin)
 	r.PUT("/api/config", s.handlePutConfigGin)
 	r.GET("/api/config/schema", s.handleConfigSchemaGin)

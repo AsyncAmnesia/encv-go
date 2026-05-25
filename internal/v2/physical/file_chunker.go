@@ -270,7 +270,7 @@ func (p *FileChunkerPhysicalPacker) finalize(mainFile *os.File, manifest *types.
 		if err != nil {
 			return "", fmt.Errorf("failed to recreate v4 header for finalize: %w", err)
 		}
-		mainHeaderV4.ManifestOffset = uint64(actualManifestOffset)
+		mainHeaderV4.ManifestOffset = uint64(actualManifestOffset + block.GetBlockHeader_v2_Size())
 		mainHeaderV4.ManifestLength = uint64(ctx.chunkedWriter.LastManifestLen())
 
 		if _, err := mainFile.Seek(0, io.SeekStart); err != nil {

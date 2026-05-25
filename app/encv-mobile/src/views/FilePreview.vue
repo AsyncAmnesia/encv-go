@@ -59,11 +59,11 @@
         </div>
 
         <div v-else-if="previewType === 'pdf'" class="preview-wrapper pdf-preview">
-          <iframe :src="streamUrl" class="preview-iframe"></iframe>
+          <iframe :src="pdfPreviewUrl" class="preview-iframe"></iframe>
         </div>
 
         <div v-else-if="previewType === 'text'" class="preview-wrapper text-preview">
-          <iframe :src="streamUrl" class="preview-iframe"></iframe>
+          <iframe :src="textPreviewUrl" class="preview-iframe"></iframe>
         </div>
 
         <div v-else-if="previewType === 'container'" class="preview-wrapper container-info">
@@ -142,7 +142,7 @@ import {
   helpCircleOutline, lockClosed,
   chevronDown, chevronForward,
 } from 'ionicons/icons'
-import { getFileStreamUrl, getFileCategory, getFileExtension, formatFileSize, fetchTextPreviewExts, getApiBaseUrl } from '@/api/encv'
+import { getFileStreamUrl, getFileCategory, getFileExtension, formatFileSize, fetchTextPreviewExts, getApiBaseUrl, getFilePreviewUrl } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 
 type PreviewType = 'image' | 'pdf' | 'text' | 'container' | 'unsupported'
@@ -169,6 +169,8 @@ const loading = ref(true)
 const error = ref('')
 const previewType = ref<PreviewType>('unsupported')
 const streamUrl = ref('')
+const textPreviewUrl = ref('')
+const pdfPreviewUrl = ref('')
 const showManifest = ref(false)
 const containerInfo = ref<ContainerInfo | null>(null)
 const manifestJson = ref('')
@@ -247,10 +249,10 @@ async function loadFile() {
             const ext = getFileExtension(fileName.value)
             if (ext === 'pdf') {
               previewType.value = 'pdf'
-              streamUrl.value = getFileStreamUrl(path)
+              pdfPreviewUrl.value = getFilePreviewUrl('pdf.html', path)
             } else {
               previewType.value = 'text'
-              streamUrl.value = getFileStreamUrl(path)
+              textPreviewUrl.value = getFilePreviewUrl('text.html', path)
             }
             break
           default:
@@ -271,9 +273,15 @@ async function loadFile() {
   previewType.value = await determinePreviewType(fileName.value, isEncrypted)
 
   try {
-    if (previewType.value === 'image' || previewType.value === 'pdf' || previewType.value === 'text') {
+    if (previewType.value === 'image') {
       console.info('Loading stream preview:', fileName.value)
       streamUrl.value = getFileStreamUrl(path)
+    } else if (previewType.value === 'pdf') {
+      console.info('Loading PDF preview:', fileName.value)
+      pdfPreviewUrl.value = getFilePreviewUrl('pdf.html', path)
+    } else if (previewType.value === 'text') {
+      console.info('Loading text preview:', fileName.value)
+      textPreviewUrl.value = getFilePreviewUrl('text.html', path)
     } else {
       console.info('Unsupported file type:', fileName.value)
       fileSize.value = 0

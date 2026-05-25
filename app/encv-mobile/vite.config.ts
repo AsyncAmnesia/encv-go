@@ -27,6 +27,14 @@ export default defineConfig({
         target: 'http://127.0.0.1:2025',
         changeOrigin: true,
       },
+      '/decrypt': {
+        target: 'http://127.0.0.1:2025',
+        changeOrigin: true,
+      },
+      '/preview': {
+        target: 'http://127.0.0.1:2025',
+        changeOrigin: true,
+      },
       '/ping': {
         target: 'http://127.0.0.1:2025',
         changeOrigin: true,

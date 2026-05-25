@@ -107,6 +107,14 @@ export function getFileStreamUrl(path: string): string {
   return `${baseUrl}/stream?path=${encodeURIComponent(path)}`
 }
 
+export function getFilePreviewUrl(previewPage: string, filePath: string): string {
+  if (import.meta.env.DEV) {
+    return `/preview/${previewPage}?file=${encodeURIComponent(filePath)}`
+  }
+  const baseUrl = getApiBaseUrl()
+  return `${baseUrl}/preview/${previewPage}?file=${encodeURIComponent(filePath)}`
+}
+
 export function getExternalStreamUrl(path: string): string {
   if (import.meta.env.DEV) {
     return `/api/stream/external?path=${encodeURIComponent(path)}`
@@ -178,6 +186,7 @@ export interface EncvTask {
   eta?: string
   error?: string
   errorDetail?: string
+  containerVersion?: number
   createdAt: string
   completedAt?: string
 }

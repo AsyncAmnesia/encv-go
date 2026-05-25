@@ -184,10 +184,10 @@ func (w *SingleFileContainerWriter) Close() error {
 	}
 
 	manifestBlockSize := block.GetBlockHeader_v2_Size() + int64(len(w.manifestBytes))
-	manifestOffset := fileInfo.Size() - manifestBlockSize
+	manifestBlockStart := fileInfo.Size() - manifestBlockSize
 
 	if w.headerVersion == 4 {
-		w.v4Header.ManifestOffset = uint64(manifestOffset)
+		w.v4Header.ManifestOffset = uint64(manifestBlockStart + block.GetBlockHeader_v2_Size())
 		w.v4Header.ManifestLength = w.manifestLength
 
 		if _, err := w.file.Seek(0, io.SeekStart); err != nil {
@@ -210,7 +210,7 @@ func (w *SingleFileContainerWriter) Close() error {
 
 	footer := &types.EnvelopeFooter_v2{
 		Magic:          types.MagicFooter_v2,
-		ManifestOffset: uint64(manifestOffset),
+		ManifestOffset: uint64(manifestBlockStart),
 		ManifestLength: w.manifestLength,
 		ManifestCRC32:  w.manifestCRC,
 		GlobalCRC32:    w.globalHasher.Sum32(),

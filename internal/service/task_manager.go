@@ -15,25 +15,27 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
+	"github.com/Soltus/encv-go/internal/v2/types"
 	"github.com/google/uuid"
 )
 
 type MobileTask struct {
-	ID         string    `json:"id"`
-	Type       string    `json:"type"`
-	SourcePath string    `json:"sourcePath"`
-	TargetPath string    `json:"targetPath,omitempty"`
-	Password   string    `json:"password,omitempty"`
-	Status     string    `json:"status"`
-	Progress   int       `json:"progress"`
-	Phase      string    `json:"phase,omitempty"`
-	Speed      string    `json:"speed,omitempty"`
-	Eta        string    `json:"eta,omitempty"`
-	Error       string    `json:"error,omitempty"`
-	ErrorDetail string    `json:"errorDetail,omitempty"`
-	CreatedAt   time.Time  `json:"createdAt"`
-	CompletedAt *time.Time `json:"completedAt,omitempty"`
-	cancelFn    context.CancelFunc
+	ID               string     `json:"id"`
+	Type             string     `json:"type"`
+	SourcePath       string     `json:"sourcePath"`
+	TargetPath       string     `json:"targetPath,omitempty"`
+	Password         string     `json:"password,omitempty"`
+	Status           string     `json:"status"`
+	Progress         int        `json:"progress"`
+	Phase            string     `json:"phase,omitempty"`
+	Speed            string     `json:"speed,omitempty"`
+	Eta              string     `json:"eta,omitempty"`
+	Error            string     `json:"error,omitempty"`
+	ErrorDetail      string     `json:"errorDetail,omitempty"`
+	ContainerVersion int        `json:"containerVersion,omitempty"`
+	CreatedAt        time.Time  `json:"createdAt"`
+	CompletedAt      *time.Time `json:"completedAt,omitempty"`
+	cancelFn         context.CancelFunc
 }
 
 type TaskManager struct {
@@ -442,6 +444,13 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 		task.Eta = ""
 		now := time.Now()
 		task.CompletedAt = &now
+
+		sourceBaseName := filepath.Base(absPath)
+		ext := filepath.Ext(sourceBaseName)
+		baseNameWithoutExt := strings.TrimSuffix(sourceBaseName, ext)
+		if outputFile := findEncryptedOutputFile(outputDir, baseNameWithoutExt); outputFile != "" {
+			task.ContainerVersion = detectContainerVersion(outputFile)
+		}
 	}
 	tm.mu.Unlock()
 
@@ -556,6 +565,8 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 	defer cancel()
 
 	tm.updateProgress(taskID, 5, "analyzing", "", "")
+
+	task.ContainerVersion = detectContainerVersion(absPath)
 
 	info, err := os.Stat(absPath)
 	if err != nil {
@@ -713,4 +724,42 @@ func (tm *TaskManager) cleanupTempFiles(dir string) {
 			os.Remove(filepath.Join(dir, name))
 		}
 	}
+}
+
+func detectContainerVersion(filePath string) int {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return 0
+	}
+	defer file.Close()
+
+	version, _, err := types.DetectHeaderInfoFromReaderAt(file)
+	if err != nil {
+		return 0
+	}
+	return version
+}
+
+func findEncryptedOutputFile(outputDir string, sourceBaseName string) string {
+	extensions := []string{".sccgt", ".sccgv", ".sccgi", ".sccga", ".sccgpdf", ".sccgwps"}
+	for _, ext := range extensions {
+		candidate := filepath.Join(outputDir, sourceBaseName+ext)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+	}
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		return ""
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, sourceBaseName) && plugins.IsContainer(name) {
+			return filepath.Join(outputDir, name)
+		}
+	}
+	return ""
 }
