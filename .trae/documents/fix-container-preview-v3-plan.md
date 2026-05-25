@@ -1,166 +1,88 @@
 # 修复计划：加密容器预览 + V3 容器读取 + 通用信息卡片
 
-## 问题概览
+## V4 容器迁移分析
 
-| # | 问题 | 根因 |
-|---|------|------|
-| 1 | 加密容器预览不显示文件通用信息卡片 | FilePreview.vue 的加密容器分支没有渲染文件基本信息（名称、大小、修改时间等） |
-| 2 | logcat.txt.sccgt 无法预览 | **所有插件都使用 `HeaderVersion: 3` 写入容器，但 `GetFileInfo` 只调用 `OpenV4Container`**，V3 容器无法被读取 |
-| 3 | FFmpeg 构建脚本缓存问题 | 旧缓存 .so 仍含 `ff_graph_css_data` 符号（已在之前修复，此处不再重复） |
+### 为什么所有插件还在用 V3？
 
----
+V4 header 结构（`EnvelopeHeaderV4`）相比 V3 新增了以下字段：
+- `ContainerType uint16` — 容器类型（video=1, audio=2, image=3, document=4）
+- `IsSeekable uint8` — 是否可寻址
+- `ManifestOffset uint64` — Manifest 绝对偏移
+- `ManifestLength uint64` — Manifest 长度
 
-## 问题 2 详细分析：V3 容器无法被 GetFileInfo 读取
+V3 header 没有这些字段，V3 的 Manifest 位置是通过扫描块头（block scan）找到的，而不是通过 header 中的偏移量直接定位。
 
-### 根因链路
+**迁移到 V4 的工作量评估**：
 
-1. 所有插件（video/audio/image/text/pdf/wps）的 `HeaderVersion` 都是 `3`
-2. `mobile_service.go:302` 调用 `reader.OpenV4Container(absPath, s.cfg.Password)`
-3. `OpenV4Container` 调用 `types.ReadHeaderV4(f)`，该方法：
-   - 读取 2048 字节 header
-   - 校验 CRC32
-   - 检查 Magic == `ENVC`（通过）
-   - **但 V3 header 的字段布局与 V4 不同**：
-     - V3 没有 `ContainerType`、`IsSeekable`、`ManifestOffset`、`ManifestLength` 字段
-     - V3 的 `Flags` 字段在偏移 6-8，V4 的 `Flags` 也在 6-8 但含义不同
-   - CRC32 校验可能通过（因为数据确实被正确写入），但解析出的字段值是错误的
-   - `ManifestOffset` 和 `ManifestLength` 被解析为 V3 SpecialID 区域的随机数据
-   - `DeobfuscateManifest` 读到的数据太短（< 16 字节 salt），报错 "obfuscated data too short to contain salt"
+| 插件 | 修改点 | 工作量 |
+|------|--------|--------|
+| video | `HeaderVersion: 3` → `4`，需设置 `ContainerType=1`, `IsSeekable=1` | 小 |
+| audio | `HeaderVersion: 3` → `4`，需设置 `ContainerType=2`, `IsSeekable=0` | 小 |
+| image | `HeaderVersion: 3` → `4`，需设置 `ContainerType=3`, `IsSeekable=0` | 小 |
+| text | `HeaderVersion: 3` → `4`，需设置 `ContainerType=4`, `IsSeekable=0` | 小 |
+| pdf | `HeaderVersion: 3` → `4`，需设置 `ContainerType=4`, `IsSeekable=0` | 小 |
+| wps | `HeaderVersion: 3` → `4`，需设置 `ContainerType=4`, `IsSeekable=0` | 小 |
 
-### 修复方案
+**关键**：`StandardPostEncrypt` → `PhysicalPacker.Pack` → `SingleFileContainerWriter` / `V4ContainerWriter` 已经根据 `HeaderVersion` 选择写入 V3 或 V4 header。所以**只需将 `HeaderVersion: 3` 改为 `HeaderVersion: 4`，并设置对应的 `ContainerType` 和 `IsSeekable`**。
 
-修改 `mobile_service.go` 的 `GetFileInfo`，先检测容器版本，再根据版本选择不同的读取方式：
+但 `PackParams` / `PackRequest` 目前没有 `ContainerType` 和 `IsSeekable` 字段，需要添加。
 
-1. 使用 `types.DetectHeaderInfoFromReaderAt` 检测版本
-2. V4 容器：使用现有的 `OpenV4Container`
-3. V3 容器：使用 `detector.DetectContainerType` 获取 container_type，使用 `reader.NewDecryptReaderFactory` 获取 manifest 信息
+### 推荐方案：双管齐下
 
-```go
-if isContainer {
-    result.IsEncvContainer = true
-    result.IsEncrypted = true
-    result.Category = "encrypted"
-
-    // 检测容器版本
-    containerVersion, _, detectErr := detector.DetectContainerVersion(absPath)
-
-    if containerVersion == 4 {
-        // V4 容器：使用 OpenV4Container
-        containerInfo, openErr := reader.OpenV4Container(absPath, s.cfg.Password)
-        if openErr != nil {
-            // ... error handling
-        }
-        // ... 现有的 V4 处理逻辑
-    } else {
-        // V3 容器：使用 DecryptReaderFactory
-        factory, factoryErr := reader.NewDecryptReaderFactory(absPath, s.cfg.Password)
-        if factoryErr != nil {
-            // ... error handling
-        }
-        defer factory.Close()
-
-        containerType, _ := detector.DetectContainerType(absPath)
-        isSeekable := factory.IsSeekable()
-        index := factory.GetIndex()
-        originalSize := factory.GetOriginalSize()
-
-        // 从 manifest 获取 segments 信息
-        // ...
-    }
-}
-```
-
-但更简洁的方案是：**让 `OpenV4Container` 也支持 V3 容器**，或者创建一个通用的 `OpenContainer` 函数。
-
-### 推荐方案：修改 GetFileInfo 使用通用读取方式
-
-修改 `mobile_service.go`，对 V3 容器使用 `DecryptReaderFactory` + `DetectContainerType`：
-
-```go
-if isContainer {
-    result.IsEncvContainer = true
-    result.IsEncrypted = true
-    result.Category = "encrypted"
-
-    // 先尝试 V4 容器
-    containerInfo, openErr := reader.OpenV4Container(absPath, s.cfg.Password)
-    if openErr == nil {
-        // V4 容器处理（现有逻辑）
-        hdr := containerInfo.Header
-        mf := containerInfo.Manifest
-        // ... 现有代码
-    } else {
-        // V4 失败，尝试 V3 通用方式
-        slog.Info("GetFileInfo: V4 open failed, trying generic reader", "path", queryPath, "error", openErr)
-
-        containerType, typeErr := detector.DetectContainerType(absPath)
-        if typeErr != nil {
-            slog.Warn("GetFileInfo: cannot detect container type", "path", queryPath, "error", typeErr)
-            result.Container = map[string]interface{}{
-                "error": "cannot read container metadata: " + openErr.Error(),
-            }
-            return result, nil
-        }
-
-        isSeekable, seekErr := detector.DetectIsSeekable(absPath)
-        if seekErr != nil {
-            isSeekable = false
-        }
-
-        var containerTypeStr string
-        switch containerType {
-        case 1:
-            containerTypeStr = "video"
-        case 2:
-            containerTypeStr = "audio"
-        case 3:
-            containerTypeStr = "image"
-        case 4:
-            containerTypeStr = "document"
-        default:
-            containerTypeStr = fmt.Sprintf("unknown(%d)", containerType)
-        }
-
-        result.Container = map[string]interface{}{
-            "version":        3,
-            "container_type": containerTypeStr,
-            "is_seekable":    isSeekable,
-        }
-    }
-}
-```
+1. **短期**：修改 `GetFileInfo` 支持 V3 容器读取（向后兼容已有容器）
+2. **长期**：将所有插件迁移到 V4 header（新加密的容器使用 V4）
 
 ---
 
-## 问题 1 详细分析：加密容器预览缺少通用信息卡片
-
-### 当前 FilePreview.vue 的加密容器分支
-
-加密容器进入 `if (isEncrypted)` 分支后，只获取了 `containerInfo` 和 `manifestJson`，但没有显示文件基本信息（名称、大小、修改时间、MIME 类型等）。
+## 问题 1：加密容器预览缺少通用信息卡片
 
 ### 修复方案
 
-在 `loadFile()` 的加密分支中，也设置文件基本信息。在模板中，对加密容器也显示通用信息卡片（类似 FileInfo.vue 的第一个 section-card）。
+在 `FilePreview.vue` 的加密容器分支中，添加文件基本信息显示（名称、大小、修改时间、MIME 类型等）。API 响应中已有这些字段。
+
+---
+
+## 问题 2：V3 容器无法被 GetFileInfo 读取
+
+### 修复方案
+
+修改 `mobile_service.go` 的 `GetFileInfo`：
+1. 先尝试 `OpenV4Container`
+2. V4 失败时，降级使用 `detector.DetectContainerType` + `detector.DetectIsSeekable`
+3. 返回基本的 container_type、is_seekable 等字段
+
+---
+
+## 问题 3：所有插件迁移到 V4
+
+### 修复方案
+
+1. 在 `PackParams` / `PackRequest` 中添加 `ContainerType` 和 `IsSeekable` 字段
+2. 在 `V4ContainerWriter` / `SingleFileContainerWriter` 中使用这些字段设置 V4 header
+3. 将所有插件的 `HeaderVersion: 3` 改为 `HeaderVersion: 4`，并设置对应的 `ContainerType` 和 `IsSeekable`
 
 ---
 
 ## 执行步骤
 
-### Step 1：修改 mobile_service.go 支持读取 V3 容器信息
-
-1. 在 `OpenV4Container` 失败时，使用 `detector.DetectContainerType` 和 `detector.DetectIsSeekable` 获取 V3 容器信息
-2. 返回基本的 container_type、is_seekable 等字段
+### Step 1：修改 mobile_service.go 支持 V3 容器读取
 
 ### Step 2：修改 FilePreview.vue 显示通用信息卡片
 
-1. 在加密容器预览中添加文件基本信息显示（名称、大小、修改时间等）
-2. 在 API 响应中已有这些字段（name、size、modified、mime_type、category），只需在模板中渲染
+### Step 3：将所有插件迁移到 V4 header
 
-### Step 3：验证
+1. `PackParams` 添加 `ContainerType uint16` 和 `IsSeekable bool`
+2. `PackRequest` 添加对应字段
+3. `V4ContainerWriter` 使用这些字段
+4. `SingleFileContainerWriter` 使用这些字段
+5. 所有插件设置 `HeaderVersion: 4` + 对应的 `ContainerType` + `IsSeekable`
+
+### Step 4：验证
 
 1. 重启后端
 2. 测试 V3 容器（logcat.txt.sccgt）的预览
-3. 测试各种类型加密容器的预览
+3. 测试新加密的 V4 容器
+4. 测试各种类型加密容器的预览
 
 ---
 
@@ -168,5 +90,14 @@ if isContainer {
 
 | 文件 | 修改内容 |
 |------|----------|
-| `internal/service/mobile_service.go` | `GetFileInfo` 支持 V3 容器：V4 失败后降级到 `DetectContainerType` + `DetectIsSeekable` |
+| `internal/service/mobile_service.go` | `GetFileInfo` V3 容器降级读取 |
+| `internal/v2/plugins/interfaces/packer/packer_helper.go` | `PackParams` 添加 `ContainerType`、`IsSeekable` |
+| `internal/v2/writer/single_file_container_writer.go` | 使用 V4 header，设置 ContainerType、IsSeekable |
+| `internal/v2/writer/container_writer_v4.go` | 使用 PackParams 中的 ContainerType、IsSeekable |
+| `internal/v2/plugins/video/plugin.go` | `HeaderVersion: 4`, `ContainerType: 1`, `IsSeekable: true` |
+| `internal/v2/plugins/audio/plugin.go` | `HeaderVersion: 4`, `ContainerType: 2`, `IsSeekable: false` |
+| `internal/v2/plugins/image/plugin.go` | `HeaderVersion: 4`, `ContainerType: 3`, `IsSeekable: false` |
+| `internal/v2/plugins/text/plugin.go` | `HeaderVersion: 4`, `ContainerType: 4`, `IsSeekable: false` |
+| `internal/v2/plugins/pdf/plugin.go` | `HeaderVersion: 4`, `ContainerType: 4`, `IsSeekable: false` |
+| `internal/v2/plugins/wps/plugin.go` | `HeaderVersion: 4`, `ContainerType: 4`, `IsSeekable: false` |
 | `src/views/FilePreview.vue` | 加密容器预览添加文件通用信息卡片 |
