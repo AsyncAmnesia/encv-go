@@ -204,13 +204,6 @@ CFLAGS="-std=c11 -fPIC -DANDROID -D_POSIX_C_SOURCE=200809L \
   -I${FFMPEG_SRC}/fftools/textformat \
   -I${FFMPEG_SRC}/fftools/graph \
   -I${FFMPEG_SRC}/fftools/resources \
-  -I${FFMPEG_SRC}/libavcodec \
-  -I${FFMPEG_SRC}/libavformat \
-  -I${FFMPEG_SRC}/libavutil \
-  -I${FFMPEG_SRC}/libavfilter \
-  -I${FFMPEG_SRC}/libswresample \
-  -I${FFMPEG_SRC}/libswscale \
-  -I${FFMPEG_SRC}/libavdevice \
   -I${X264_INSTALL}/include"
 LDFLAGS="-L${FFMPEG_INSTALL}/lib -L${X264_INSTALL}/lib"
 

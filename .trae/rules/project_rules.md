@@ -6,6 +6,7 @@
 - fftools（libffmpeg.so/libffprobe.so）采用静态链接方式：FFmpeg 各库的 `.a` 文件被整体链接进 fftools .so，运行时无需额外的 libavutil.so 等依赖
 - 链接时使用 `--whole-archive` + `--allow-multiple-definition`（解决 FFmpeg 多库重复符号如 ff_log2_tab）
 - CFLAGS 使用 `-std=c11 -include time.h`（解决 NDK Clang 的 struct tm 前向声明问题）
+- CFLAGS **禁止**添加 `-I${FFMPEG_SRC}/libavutil` 等直接指向 FFmpeg 库子目录的 `-I` 标志（`libavutil/time.h` 会被 `-include time.h` 或 `#include <time.h>` 优先匹配到，导致系统 `<time.h>` 被遮蔽，`struct tm`/`gmtime`/`localtime`/`strftime`/`time` 未声明；fftools 源码使用 `#include "libavutil/xxx.h"` 形式，`-I${FFMPEG_SRC}` 已足够覆盖）
 - CFLAGS 必须定义 `-DHAVE_SYS_RESOURCE_H=1 -DHAVE_UNISTD_H=1 -DHAVE_SYS_SELECT_H=1`（FFmpeg fftools 手动编译时不经过 configure 生成 config.h，这些宏控制条件包含 `<sys/time.h>`/`<unistd.h>`/`<sys/select.h>`；缺少 `HAVE_SYS_RESOURCE_H` 会导致 `ffmpeg_opt.c` 中 `struct tm`/`gmtime`/`localtime`/`strftime`/`time` 未声明，因为 NDK 的 `<time.h>` 在 `-std=c11 -D_POSIX_C_SOURCE` 下需要 `<sys/time.h>` 前置包含才能提供完整定义）
 - CFLAGS 必须包含 `-I compat/stdbit`（FFmpeg 8.0 fftools 使用 C23 `<stdbit.h>`，NDK Clang 17 不支持，需使用 FFmpeg 自带的兼容头文件 `compat/stdbit/stdbit.h`，该文件使用 `__builtin_clz`/`__builtin_ctz`/`__builtin_popcount` 等 Clang 内建函数实现）
 - FFmpeg 8.0 已移除 libpostproc，链接列表中不能有 `-lpostproc`
