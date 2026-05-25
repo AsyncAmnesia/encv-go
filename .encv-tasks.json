@@ -1,0 +1,13 @@
+[
+  {
+    "id": "c0c01a72-28c1-4063-978c-32ca82d27e50",
+    "type": "encrypt",
+    "sourcePath": "/logcat.txt",
+    "targetPath": "/",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "createdAt": "2026-05-25T15:46:08.723268049Z",
+    "completedAt": "2026-05-25T15:46:08.807774857Z"
+  }
+]
