@@ -1,27 +1,62 @@
-name: Sync Fork (Force Overwrite)
+name: Sync Fork & Auto PR
 
 on:
   schedule:
-    - cron: '1 16 * * *'    # 北京时间每天 00:01 (UTC 16:01)
+    - cron: '1 16 * * *'          # 北京时间 00:01
+  push:
+    branches: [dev]
   workflow_dispatch:
 
+concurrency: fork-automation
+
 jobs:
-  force-sync:
+  sync-and-pr:
     if: github.event.repository.fork
     runs-on: ubuntu-latest
+    env:
+      UPSTREAM_REPO: Soltus/encv-go
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
+          ref: dev
 
-      - name: Add upstream remote
+      - name: Add upstream
         run: |
-          git remote add upstream https://github.com/Soltus/encv-go.git
-          git fetch upstream
+          git remote add upstream https://github.com/${{ env.UPSTREAM_REPO }}.git
+          git fetch upstream dev
 
-      - name: Force reset to upstream
+      - name: Check if we have local commits not in upstream
+        id: diff_check
+        run: |
+          if git diff --quiet upstream/dev...HEAD; then
+            echo "has_diff=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_diff=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create PR if needed
+        if: steps.diff_check.outputs.has_diff == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.UPSTREAM_PR_TOKEN }}   # ← 需要有效public_repo权限
+        run: |
+          existing_pr=$(gh pr list --repo $UPSTREAM_REPO \
+            --head "${{ github.repository_owner }}:dev" \
+            --base dev --state open --json number -q '.[0].number')
+          if [ -z "$existing_pr" ]; then
+            echo "Creating new PR..."
+            gh pr create \
+              --repo $UPSTREAM_REPO \
+              --base dev \
+              --head "${{ github.repository_owner }}:dev" \
+              --title "自动 PR: Fork dev 分支更新" \
+              --body "由自动化流程在强制同步前创建，保存 Fork 上的独立提交。"
+          else
+            echo "PR #$existing_pr already exists."
+          fi
+
+      - name: Force sync dev to upstream
         run: |
           git checkout dev
           git reset --hard upstream/dev
