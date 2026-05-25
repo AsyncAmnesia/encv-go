@@ -194,7 +194,9 @@ FFMPEG_INSTALL="${BUILD_DIR}/ffmpeg-install"
 FTOOLS_BUILD="${BUILD_DIR}/ftools-build"
 mkdir -p "$FTOOLS_BUILD"
 
-CFLAGS="-std=c11 -fPIC -DANDROID -D_POSIX_C_SOURCE=200809L -include time.h \
+CFLAGS="-std=c11 -fPIC -DANDROID -D_POSIX_C_SOURCE=200809L \
+  -DHAVE_SYS_RESOURCE_H=1 -DHAVE_UNISTD_H=1 -DHAVE_SYS_SELECT_H=1 \
+  -include time.h \
   -I${FFMPEG_INSTALL}/include \
   -I${FFMPEG_SRC} \
   -I${FFMPEG_SRC}/compat/stdbit \
