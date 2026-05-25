@@ -32,11 +32,13 @@ mkdir -p "$BUILD_DIR" "$OUTPUT_DIR" "$LOG_DIR"
 
 echo "=== Checking for cached ffmpeg output ==="
 if [ -f "${OUTPUT_DIR}/libffmpeg.so" ] && [ -f "${OUTPUT_DIR}/libffprobe.so" ]; then
-    echo "✅ ffmpeg output already exists, checking symbols..."
-    if ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" | grep -q "ffmpeg_run" && \
-       ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" | grep -q "ffmpeg_reset" && \
-       ${NM} -D "${OUTPUT_DIR}/libffprobe.so" | grep -q "ffprobe_run" && \
-       ${NM} -D "${OUTPUT_DIR}/libffprobe.so" | grep -q "ffprobe_reset"; then
+    if ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" 2>/dev/null | grep -q "ff_graph_css_data"; then
+        echo "⚠️  Cached libraries contain deprecated ff_graph_css_data symbol, forcing rebuild..."
+        rm -f "${OUTPUT_DIR}/libffmpeg.so" "${OUTPUT_DIR}/libffprobe.so"
+    elif ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" | grep -q "ffmpeg_run" && \
+         ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" | grep -q "ffmpeg_reset" && \
+         ${NM} -D "${OUTPUT_DIR}/libffprobe.so" | grep -q "ffprobe_run" && \
+         ${NM} -D "${OUTPUT_DIR}/libffprobe.so" | grep -q "ffprobe_reset"; then
         echo "✅ All ffmpeg libraries cached and valid, skipping build"
         echo "Output: $OUTPUT_DIR"
         ls -lh "$OUTPUT_DIR"

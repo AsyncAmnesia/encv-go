@@ -177,7 +177,7 @@ function getPlayMode(mediaType: 'video' | 'audio'): PlayMode {
 }
 
 function playMedia(file: FileItem, category: string) {
-  const isVideo = category === 'video' || category === 'encrypted'
+  const isVideo = category === 'video'
   const mediaType = isVideo ? 'video' : 'audio'
   const mimeType = isVideo ? 'video/*' : 'audio/*'
   const mode = getPlayMode(mediaType)

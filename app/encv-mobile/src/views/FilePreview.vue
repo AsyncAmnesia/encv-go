@@ -192,6 +192,59 @@ async function loadFile() {
   containerInfo.value = null
 
   const isEncrypted = route.query.isEncrypted === 'true'
+
+  if (isEncrypted) {
+    try {
+      const baseUrl = getApiBaseUrl()
+      const resp = await fetch(`${baseUrl}/api/file/info?path=${encodeURIComponent(path)}`)
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      const info = await resp.json()
+
+      fileSize.value = info.size || 0
+
+      if (info.is_encv_container && info.container) {
+        const containerType = info.container.container_type
+        containerInfo.value = info.container
+        manifestJson.value = JSON.stringify(info.container.manifest || info.container, null, 2)
+
+        switch (containerType) {
+          case 'image':
+            previewType.value = 'image'
+            streamUrl.value = getFileStreamUrl(path)
+            break
+          case 'video':
+          case 'audio':
+            router.push({ path: '/player', query: { path, name: fileName.value } })
+            loading.value = false
+            return
+          case 'document':
+            const ext = getFileExtension(fileName.value)
+            if (ext === 'pdf') {
+              previewType.value = 'pdf'
+              streamUrl.value = getFileStreamUrl(path)
+            } else {
+              previewType.value = 'text'
+              const data: FileContentResponse = await readFileContent(path)
+              content.value = data.content
+              fileSize.value = data.size
+              encoding.value = data.encoding
+            }
+            break
+          default:
+            previewType.value = 'container'
+        }
+      } else {
+        previewType.value = 'unsupported'
+      }
+    } catch (e: any) {
+      console.error('Failed to load encrypted file:', e)
+      error.value = e?.message || String(e)
+    } finally {
+      loading.value = false
+    }
+    return
+  }
+
   previewType.value = await determinePreviewType(fileName.value, isEncrypted)
 
   try {
@@ -204,17 +257,6 @@ async function loadFile() {
       content.value = data.content
       fileSize.value = data.size
       encoding.value = data.encoding
-    } else if (previewType.value === 'container') {
-      console.info('Loading container info:', fileName.value)
-      const baseUrl = getApiBaseUrl()
-      const resp = await fetch(`${baseUrl}/api/file/info?path=${encodeURIComponent(path)}`)
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-      const info = await resp.json()
-      containerInfo.value = info.container || null
-      fileSize.value = info.size || 0
-      if (info.container) {
-        manifestJson.value = JSON.stringify(info.container.manifest || info.container, null, 2)
-      }
     } else {
       console.info('Unsupported file type:', fileName.value)
       fileSize.value = 0
