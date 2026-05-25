@@ -5,10 +5,6 @@
   "$defs": {
     "AdminServer": {
       "properties": {
-        "port": {
-          "type": "integer",
-          "description": "encv 管理后台服务器的端口，请不要填写 encv Webdav Server、 OpenList 或其他已使用的端口"
-        },
         "password": {
           "type": "string",
           "description": "管理员密码，留空则禁用登录"
@@ -17,7 +13,6 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "port",
         "password"
       ],
       "description": "--- 管理后台服务器 设置 ---"
@@ -242,36 +237,67 @@
     "VideoPluginConfig": {
       "properties": {
         "ext": {
-          "type": "string"
+          "type": "string",
+          "x-platform": "both"
         },
-        "chunk_size_mb": {
-          "type": "integer"
+        "container_chunk_size_mb": {
+          "type": "integer",
+          "x-platform": "both"
         },
-        "light_main_chunk_enabled": {
-          "type": "boolean"
+        "light_container_main_chunk_enabled": {
+          "type": "boolean",
+          "x-platform": "both"
         },
         "track_extensions": {
-          "type": "string"
+          "type": "string",
+          "x-platform": "both"
         },
         "keep_mkv_for_mkv_source": {
-          "type": "boolean"
+          "type": "boolean",
+          "x-platform": "both"
         },
         "verify_after_pack": {
-          "type": "boolean"
+          "type": "boolean",
+          "x-platform": "both"
         },
         "plugin_cache_dir": {
-          "type": "string"
+          "type": "string",
+          "x-platform": "both"
         },
         "skip_merge_for_split_mkv": {
-          "type": "boolean"
+          "type": "boolean",
+          "x-platform": "both"
+        },
+        "allow_no_reencode": {
+          "type": "boolean",
+          "default": false,
+          "x-platform": "both",
+          "x-v4": true
+        },
+        "default_stream_preset": {
+          "type": "string",
+          "default": "balanced",
+          "enum": ["balanced", "quality", "high_quality"],
+          "x-enum-labels": {
+            "balanced": "平衡（推荐）",
+            "quality": "高质量",
+            "high_quality": "极致画质"
+          },
+          "x-enum-descriptions": {
+            "balanced": "画质较好、体积适中、延迟可接受",
+            "quality": "画质更好，体积稍大，延迟略高",
+            "high_quality": "画质最佳，体积控制好，但延迟更高"
+          },
+          "x-platform": "mobile",
+          "x-v4": true
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
         "ext",
-        "chunk_size_mb",
-        "light_main_chunk_enabled",
+        "container_chunk_size_mb",
+        "light_container_main_chunk_enabled",
         "track_extensions",
         "keep_mkv_for_mkv_source",
         "verify_after_pack",
@@ -293,10 +319,6 @@
     },
     "WebdavServer": {
       "properties": {
-        "port": {
-          "type": "integer",
-          "description": "encv Webdav 服务器的端口，请不要填写 encv HTTP Server、 OpenList 或其他已使用的端口"
-        },
         "root": {
           "type": "string",
           "description": "路由（例如 /webdav/）"
@@ -317,7 +339,6 @@
       "additionalProperties": false,
       "type": "object",
       "required": [
-        "port",
         "root",
         "dir",
         "username",

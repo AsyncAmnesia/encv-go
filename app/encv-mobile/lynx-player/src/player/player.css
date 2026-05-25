@@ -1,0 +1,427 @@
+.PlayerContainer {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background-color: transparent;
+}
+
+.VideoOverlay {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 100%;
+  flex: 1;
+}
+
+.LockedOverlay {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: 100%;
+  flex: 1;
+}
+
+.AudioOverlay {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 100%;
+  flex: 1;
+}
+
+.ErrorContainer {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  flex: 1;
+}
+
+.ErrorContent {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  flex: 1;
+  padding: 24px;
+}
+
+.ErrorIcon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.ErrorActions {
+  display: flex;
+  flex-direction: row;
+  margin-top: 20px;
+}
+
+.RetryBtn {
+  display: flex;
+  background-color: #4a90d9;
+  border: none;
+  border-radius: 20px;
+  padding: 0;
+  min-width: 80px;
+  min-height: 40px;
+  justify-content: center;
+  align-items: center;
+  margin-right: 12px;
+}
+
+.RetryBtnText {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.BackBtn {
+  display: flex;
+  background-color: rgba(255, 255, 255, 0.15);
+  border: none;
+  border-radius: 20px;
+  padding: 0;
+  min-width: 80px;
+  min-height: 40px;
+  justify-content: center;
+  align-items: center;
+}
+
+.BackBtnText {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.FlexSpacer {
+  flex: 1;
+}
+
+.TopGradient {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 120px;
+  background-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0));
+  pointer-events: none;
+}
+
+.BottomGradient {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 160px;
+  background-image: linear-gradient(to top, rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0));
+  pointer-events: none;
+}
+
+.TopBar {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px 4px;
+  width: 100%;
+}
+
+.TopBarSpacer {
+  width: 44px;
+}
+
+.LockBar {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 4px 12px;
+  width: 100%;
+}
+
+.CtrlBtn {
+  display: flex;
+  background-color: transparent;
+  border: none;
+  padding: 0;
+  min-width: 44px;
+  min-height: 44px;
+  justify-content: center;
+  align-items: center;
+}
+
+.IconMd {
+  color: #ffffff;
+  font-size: 22px;
+  text-align: center;
+}
+
+.IconSm {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 18px;
+  text-align: center;
+}
+
+.TitleText {
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 500;
+  flex: 1;
+  margin-left: 8px;
+  margin-right: 8px;
+}
+
+.CenterArea {
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.CenterControls {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+}
+
+.SeekBtn {
+  display: flex;
+  background-color: transparent;
+  border: none;
+  padding: 0;
+  margin-left: 24px;
+  margin-right: 24px;
+}
+
+.SeekBtnInner {
+  display: flex;
+  width: 52px;
+  height: 52px;
+  border-radius: 26px;
+  background-color: rgba(255, 255, 255, 0.15);
+  justify-content: center;
+  align-items: center;
+}
+
+.SeekIcon {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.PlayBtn {
+  display: flex;
+  background-color: transparent;
+  border: none;
+  padding: 0;
+  margin-left: 24px;
+  margin-right: 24px;
+}
+
+.PlayBtnInner {
+  display: flex;
+  width: 68px;
+  height: 68px;
+  border-radius: 34px;
+  background-color: rgba(255, 255, 255, 0.25);
+  justify-content: center;
+  align-items: center;
+}
+
+.PlayIcon {
+  color: #ffffff;
+  font-size: 28px;
+  text-align: center;
+}
+
+.LoadingSpinner {
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+  border-width: 3px;
+  border-style: solid;
+  border-color: rgba(255, 255, 255, 0.2);
+  border-top-color: #4a90d9;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.BottomBar {
+  display: flex;
+  flex-direction: column;
+  padding: 0 12px 8px;
+  width: 100%;
+}
+
+.BottomActions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 2px 0 4px;
+  width: 100%;
+}
+
+.SpeedChip {
+  display: flex;
+  background-color: rgba(255, 255, 255, 0.15);
+  border: none;
+  border-radius: 12px;
+  padding: 0;
+  min-width: 44px;
+  min-height: 32px;
+  justify-content: center;
+  align-items: center;
+}
+
+.SpeedText {
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.ErrorTitle {
+  color: #ff4444;
+  font-size: 17px;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.ErrorType {
+  color: #ffaa00;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.ErrorDetail {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 13px;
+  text-align: center;
+}
+
+.AudioCoverContainer {
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.AudioCover {
+  display: flex;
+  width: 180px;
+  height: 180px;
+  border-radius: 16px;
+  background-color: rgba(74, 144, 217, 0.12);
+  justify-content: center;
+  align-items: center;
+}
+
+.AudioCoverIcon {
+  font-size: 56px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.AudioTitle {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 15px;
+  margin-top: 16px;
+  max-width: 280px;
+  text-align: center;
+}
+
+.AudioBottomSection {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 0 12px 16px;
+}
+
+.AudioPlayRow {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.ProgressRow {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 4px 0;
+  width: 100%;
+}
+
+.TimeLabel {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  min-width: 48px;
+}
+
+.TimeLabelEnd {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+  min-width: 48px;
+  text-align: right;
+}
+
+.SliderTrackOuter {
+  flex: 1;
+  display: flex;
+  position: relative;
+  height: 20px;
+  margin-left: 10px;
+  margin-right: 10px;
+  justify-content: center;
+  align-items: center;
+}
+
+.SliderTrackBg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
+
+.SliderFill {
+  position: absolute;
+  left: 0;
+  height: 4px;
+  background-color: #4a90d9;
+  border-radius: 2px;
+}
+
+.SliderThumbWrapper {
+  position: absolute;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.SliderThumbDot {
+  width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background-color: #4a90d9;
+  border-width: 2px;
+  border-style: solid;
+  border-color: #ffffff;
+}

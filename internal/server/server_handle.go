@@ -1,16 +1,15 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/Soltus/encv-go/internal/utils"
+	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/provider"
-	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
 // compositeChunkNamer 实现 ChunkNamer 接口
@@ -82,9 +81,12 @@ func (c *compositeChunkNamer) GetFirstDataChunkIndex() int {
 // handleStreamRequest 处理 /stream?file=... 格式的请求
 func (s *Server) handleStreamRequest(w http.ResponseWriter, r *http.Request) {
 	// 1. 从查询参数中获取文件的绝对路径
-	filePath := r.URL.Query().Get("file")
+	filePath := r.URL.Query().Get("path")
 	if filePath == "" {
-		http.Error(w, "Bad Request: 'file' query parameter is missing", http.StatusBadRequest)
+		filePath = r.URL.Query().Get("file")
+	}
+	if filePath == "" {
+		http.Error(w, "Bad Request: 'path' or 'file' query parameter is missing", http.StatusBadRequest)
 		return
 	}
 
@@ -99,27 +101,13 @@ func (s *Server) handleStreamRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	// 【核心】调用我们新的、统一的加密文件处理函数
+	_, detectErr := detector.DetectContainer(cleanedFilePath)
+	if detectErr != nil {
+		slog.Info("File is not an ENCV container, serving raw file", "path", cleanedFilePath)
+		http.ServeFile(w, r, cleanedFilePath)
+		return
+	}
 	s.serveEncryptedFile(w, r, cleanedFilePath)
-}
-
-// handlePing 处理 /ping 请求，返回带有服务信息的 JSON
-func (s *Server) handlePing(w http.ResponseWriter, r *http.Request) {
-	response := types.PingResponse{
-		Status:        types.ServiceStatuses.OK,
-		Version:       s.version,
-		InstanceID:    s.instanceID,
-		ServerDirPath: s.servingDir,
-		WebdavDirPath: s.webdavDir, // 如果未启用，则为空字符串
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		slog.Error("Error encoding ping response", "error", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-	}
 }
 
 func (s *Server) serveEncryptedFile(w http.ResponseWriter, r *http.Request, fullPath string) {

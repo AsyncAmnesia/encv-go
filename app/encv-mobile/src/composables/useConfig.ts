@@ -7,6 +7,7 @@ const config = ref<Record<string, unknown>>({})
 const loading = ref(false)
 const dirty = ref(false)
 const originalConfig = ref<Record<string, unknown>>({})
+const restartNeeded = ref(false)
 
 const schemaFields = computed<FieldDef[]>(() => parseSchema())
 
@@ -29,7 +30,8 @@ async function loadConfig() {
     config.value = data
     originalConfig.value = deepClone(data)
     dirty.value = false
-  } catch {
+  } catch (error) {
+    console.error('[ENCV] Failed to load config:', error)
     config.value = buildInitialConfig()
     originalConfig.value = deepClone(config.value)
     dirty.value = false
@@ -40,10 +42,14 @@ async function loadConfig() {
 async function saveConfig() {
   loading.value = true
   try {
-    await updateConfig(config.value)
+    const result = await updateConfig(config.value)
     originalConfig.value = deepClone(config.value)
     dirty.value = false
+    if (result.needsRestart) {
+      restartNeeded.value = true
+    }
   } catch (error) {
+    console.error('[ENCV] Failed to save config:', error)
     throw error
   } finally {
     loading.value = false
@@ -89,6 +95,7 @@ export function useConfig() {
     schemaFields,
     loading,
     dirty,
+    restartNeeded,
     loadConfig,
     saveConfig,
     resetConfig,

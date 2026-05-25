@@ -175,6 +175,18 @@ func (p *WPSPlugin) GroupFiles(inputPaths []string, inputRootDir, outputDir stri
 	return inputPaths, nil
 }
 
+func (p *WPSPlugin) ContainerType() uint16 {
+	return types.ContainerTypeDocument
+}
+
+func (p *WPSPlugin) DefaultIsSeekable(inputPath string) bool {
+	return false
+}
+
+func (p *WPSPlugin) DisasterZones(inputPath string) []types.DisasterZone {
+	return nil
+}
+
 // --- 加密逻辑 ---
 
 // Plugin 接口实现

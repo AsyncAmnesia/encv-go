@@ -140,4 +140,31 @@ body.dark {
   --encv-text-secondary: #aaaaaa;
   --encv-border-color: #333333;
   --encv-hover-bg: #2a2a2a;
+
+  --ion-overlay-background-color: #1e1e1e;
+
+  --ion-action-sheet-background: #1e1e1e;
+  --ion-action-sheet-button-background: #2a2a2a;
+  --ion-action-sheet-button-color: #ffffff;
+  --ion-action-sheet-button-color-activated: #cccccc;
+  --ion-action-sheet-button-color-hover: #e0e0e0;
+  --ion-action-sheet-button-color-focused: #e0e0e0;
+  --ion-action-sheet-destructive-color: #ff4961;
+  --ion-action-sheet-title-color: #aaaaaa;
+
+  --ion-alert-background: #1e1e1e;
+  --ion-alert-color: #ffffff;
+
+  --ion-popover-background: #1e1e1e;
+  --ion-popover-color: #ffffff;
+
+  --ion-select-popover-background: #1e1e1e;
+  --ion-select-popover-color: #ffffff;
+}
+
+body.dark ion-action-sheet {
+  --button-color: #ffffff;
+  --button-color-activated: #cccccc;
+  --button-color-hover: #e0e0e0;
+  --title-color: #aaaaaa;
 }

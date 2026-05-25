@@ -3,12 +3,10 @@
 package video
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -77,15 +75,20 @@ func extractMetadataFromOriginalFile(path string) (*VideoIndex, error) {
 	)
 
 	// 1. 使用 ffprobe 获取基础元数据
-	cmd := exec.Command("ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path)
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
+	output, err := utils.FFProbeOutput("-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path)
+	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "ENGINE_LOAD_FAILED") || strings.Contains(errMsg, "ENGINE_SYMBOL_MISSING") {
+			return nil, fmt.Errorf("video engine unavailable, please reinstall the app: %w", err)
+		}
+		if strings.Contains(errMsg, "No such file") || strings.Contains(errMsg, "Permission denied") {
+			return nil, fmt.Errorf("cannot access file '%s': %w", filepath.Base(path), err)
+		}
 		return nil, fmt.Errorf("ffprobe failed on original file: %w", err)
 	}
 
 	var rawMeta types.FFProbeRawMetadata
-	if err := json.Unmarshal(out.Bytes(), &rawMeta); err != nil {
+	if err := json.Unmarshal(output, &rawMeta); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal ffprobe data: %w", err)
 	}
 
@@ -174,8 +177,7 @@ func parseDuration(d string) float64 {
 
 // 使用 ffprobe 提取章节
 func extractChaptersWithFFprobe(path string) ([]MKVChapterInfo, error) {
-	cmd := exec.Command("ffprobe", "-v", "error", "-show_chapters", "-of", "json", path)
-	output, err := cmd.Output()
+	output, err := utils.FFProbeOutput("-v", "error", "-show_chapters", "-of", "json", path)
 	if err != nil {
 		return nil, fmt.Errorf("ffprobe command failed: %w", err)
 	}

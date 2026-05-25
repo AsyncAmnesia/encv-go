@@ -38,6 +38,12 @@ type Config struct {
 	// --- 日志设置 ---
 	// Log 配置结构化日志的输出级别和文件路径。
 	Log types.LogConfig `json:"log"`
+	// --- 预览设置 ---
+	Preview *PreviewConfig `json:"preview,omitempty"`
+}
+
+type PreviewConfig struct {
+	TextExtensions []string `json:"text_extensions,omitempty"`
 }
 
 // ConfigProvider 定义了获取插件配置的抽象接口
@@ -76,7 +82,6 @@ func DefaultConfig() *Config {
 		OutputPath: "./encrypted",
 		Server:     types.HttpServer{Port: 1999, Dir: "./"},
 		Webdav: types.WebdavServer{
-			Port: 2299,
 			Root: "/webdav/",
 			Dir:  "./output",
 		},
@@ -84,9 +89,8 @@ func DefaultConfig() *Config {
 			DisableSignatureVerification: false,
 		},
 		Log: types.LogConfig{
-			Level:   "info",
-			File:    "",
-			Console: true,
+			Level: "info",
+			File:  "",
 		},
 	}
 }
@@ -175,9 +179,9 @@ func FindConfigPath(flagPath string) (string, error) {
 	}
 
 	// 2. 次高优先级：环境变量
-	if envPath := os.Getenv("ENVC_CONFIG_PATH"); envPath != "" {
+	if envPath := os.Getenv("ENCV_CONFIG_PATH"); envPath != "" {
 		if _, err := os.Stat(envPath); err == nil {
-			slog.Info("Using config from environment variable ENVC_CONFIG_PATH", "path", envPath)
+			slog.Info("Using config from environment variable ENCV_CONFIG_PATH", "path", envPath)
 			return envPath, nil
 		}
 		return "", fmt.Errorf("config file from environment variable not found: %s", envPath)
@@ -286,4 +290,15 @@ var ContentTypes = map[string]string{
 	"pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 	"pdf":  "application/pdf",
 	"epub": "application/epub+zip",
+}
+
+// GetTextPreviewExtensions 返回所有 MIME 类型含 "text/" 的扩展名列表
+func GetTextPreviewExtensions() []string {
+	var exts []string
+	for ext, mime := range ContentTypes {
+		if len(mime) >= 5 && mime[:5] == "text/" {
+			exts = append(exts, ext)
+		}
+	}
+	return exts
 }

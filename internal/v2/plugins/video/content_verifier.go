@@ -8,14 +8,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
 	"github.com/Soltus/encv-go/internal/v2/container/manifest"
 	"github.com/Soltus/encv-go/internal/v2/types"
@@ -24,35 +24,10 @@ import (
 
 type VideoContentVerifier struct{}
 
-// LimitWriter 用于限制写入的 Writer，防止日志撑爆内存
-type LimitWriter struct {
-	Writer io.Writer
-	N      int64
-	Limit  int64
-}
-
-func (l *LimitWriter) Write(p []byte) (int, error) {
-	remaining := l.Limit - l.N
-	if remaining <= 0 {
-		// 丢弃后续所有数据
-		return len(p), nil
-	}
-	if int64(len(p)) > remaining {
-		p = p[:remaining]
-	}
-	n, err := l.Writer.Write(p)
-	l.N += int64(n)
-	return n, err
-}
-
 // Verify 实现 ContentVerifier 接口
 func (p *VideoContentVerifier) Verify(originalPath, decryptedPath string) error {
-	log.Println("╔════════════════════════════════════════════════╗")
-	log.Println("║  VIDEO INTEGRITY CHECKER v5.0 (Stratified Opt) ║")
-	log.Println("╚════════════════════════════════════════════════╝")
-	log.Printf("  Original Path: %s\n", originalPath)
-	log.Printf("  Decrypted Path: %s\n", decryptedPath)
-	log.Println("------------------------------------------------------------")
+	slog.Info("VIDEO INTEGRITY CHECKER v5.0 (Stratified Opt)")
+	slog.Info("Verification started", "original_path", originalPath, "decrypted_path", decryptedPath)
 
 	origFile, err := os.Open(originalPath)
 	if err != nil {
@@ -78,20 +53,20 @@ func (p *VideoContentVerifier) Verify(originalPath, decryptedPath string) error 
 
 	// === 第一级防线：结构完整性检查 (< 1秒) ===
 	if err := p.QuickStructCheck(decryptedPath); err != nil {
-		log.Printf("❌ [L1 FAIL] %v\n", err)
+		slog.Error("L1 structure check failed", "error", err)
 		verificationError = err
 	}
 
 	// === 第二级防线：采样完整性抽检 (< 2秒) ===
 	if err := p.QuickSampleHashCheck(originalPath, decryptedPath); err != nil {
-		log.Printf("❌ [L2 FAIL] %v\n", err)
+		slog.Error("L2 sample hash check failed", "error", err)
 		verificationError = err
 	}
 
 	// === 【修正点】在检测到 L1/L2 结构或采样损坏时，立即执行分片诊断 ===
 	// 这样可以确保无论主程序是否忽略错误，诊断日志都能打印出来
 	if verificationError != nil {
-		log.Println(">>> SUSPECTED FRAGMENTATION DAMAGE. Running forced diagnosis...")
+		slog.Warn("Suspected fragmentation damage, running forced diagnosis")
 
 		// 强制调用诊断，不依赖后续的 return
 		p.diagnoseFragmentation(originalPath, decryptedPath)
@@ -103,7 +78,7 @@ func (p *VideoContentVerifier) Verify(originalPath, decryptedPath string) error 
 	// === 第三级防线：全盘字节级验证 (耗时操作，仅在 L1/L2 通过后执行) ===
 	// 只有当结构完整且关键采样点正确时，才进行全盘 MD5
 	const chunkSize = 5 * 1024 * 1024 // 5MB
-	log.Println("Starting Level 3 Verification (Full Byte-Level Scan)...")
+	slog.Info("Starting Level 3 verification (full byte-level scan)")
 
 	hasher1 := md5.New()
 	hasher2 := md5.New()
@@ -135,23 +110,20 @@ func (p *VideoContentVerifier) Verify(originalPath, decryptedPath string) error 
 
 		if !bytes.Equal(hasher1.Sum(nil), hasher2.Sum(nil)) {
 			duration := time.Since(startTime)
-			log.Printf("❌ [L3 FAIL] Hash mismatch at chunk %d (elapsed: %v). Aborting.\n",
-				offset/chunkSize, duration.Round(time.Millisecond))
+			slog.Error("L3 hash mismatch, aborting", "chunk", offset/chunkSize, "elapsed", duration.Round(time.Millisecond))
 			return fmt.Errorf("hash mismatch at chunk %d (diff detected quickly)", offset/chunkSize)
 		}
 	}
 
 	duration := time.Since(startTime)
-	log.Printf("✅ [L3 SUCCESS] Verified %d chunks in %v. Integrity: 100%%.\n", totalChunks, duration)
+	slog.Info("L3 verification passed, integrity 100%", "chunks", totalChunks, "elapsed", duration)
 
 	// === 深度诊断 (仅在 L3 成功后执行) ===
 	if err := p.runDeepVideoIntegrityCheck(originalPath, decryptedPath, err); err != nil {
 		return fmt.Errorf("deep integrity check failed: %w", err)
 	}
 
-	log.Println("╔═════════════════════════════════════════════╗")
-	log.Println("║  ✅ VERIFICATION PASSED (100%)             ║")
-	log.Println("╚═════════════════════════════════════════════╝")
+	slog.Info("Verification passed (100%)")
 	return nil
 }
 
@@ -185,7 +157,7 @@ func (p *VideoContentVerifier) QuickStructCheck(filePath string) error {
 		return fmt.Errorf("quick check: stsz payload type assertion failed (data corrupt)")
 	}
 
-	log.Printf("✅ [L1 STRUCT] Quick structure check passed (valid moov/stsz).\n")
+	slog.Info("L1 quick structure check passed (valid moov/stsz)")
 	return nil
 }
 
@@ -250,7 +222,7 @@ func (p *VideoContentVerifier) QuickSampleHashCheck(origPath, decPath string) er
 		return fmt.Errorf("hash mismatch at sample offsets (integrity check failed)")
 	}
 
-	log.Printf("✅ [L2 SAMPLE] Sample integrity check passed (keyframes match).\n")
+	slog.Info("L2 sample integrity check passed (keyframes match)")
 	return nil
 }
 
@@ -288,15 +260,13 @@ func (p *VideoContentVerifier) runByteLevelVerification(f1, f2 *os.File, totalSi
 			return fmt.Errorf("hash mismatch at chunk %d (diff at %d)", offset/chunkSize, diffOffset)
 		}
 	}
-	log.Printf("✅ [BYTE LEVEL] Verified %d chunks. Integrity: 100%%.\n", totalChunks)
+	slog.Info("Byte level verification passed, integrity 100%", "chunks", totalChunks)
 	return nil
 }
 
 // runDeepVideoIntegrityCheck 核心视频完整性检测工具 (优化版)
 func (p *VideoContentVerifier) runDeepVideoIntegrityCheck(origPath, decPath string, byteErr error) error {
-	log.Println("╔════════════════════════════════════════════════╗")
-	log.Println("║  🚨 DEEP VIDEO INTEGRITY DIAGNOSTIC                    ║")
-	log.Println("╚════════════════════════════════════════════════╝")
+	slog.Warn("Deep video integrity diagnostic started")
 
 	var issues []string
 
@@ -304,29 +274,27 @@ func (p *VideoContentVerifier) runDeepVideoIntegrityCheck(origPath, decPath stri
 	if err := p.checkMP4Structure(origPath, decPath); err != nil {
 		issues = append(issues, fmt.Sprintf("[MP4 Structure] %v", err))
 	} else {
-		log.Println("✅ [MP4 Structure] Valid.")
+		slog.Info("MP4 structure valid")
 	}
 
 	// 2. FFmpeg 解码压力测试 (使用 LimitedWriter 防止内存爆炸)
 	if err := p.checkFFmpegDecoding(origPath, decPath); err != nil {
 		issues = append(issues, fmt.Sprintf("[Decoding] %v", err))
 	} else {
-		log.Println("✅ [Decoding] Valid.")
+		slog.Info("Decoding valid")
 	}
 
 	// 3. 帧数与时长比对 (使用优化的 getVideoMetrics)
 	if err := p.checkFrameConsistency(origPath, decPath); err != nil {
 		issues = append(issues, fmt.Sprintf("[Consistency] %v", err))
 	} else {
-		log.Println("✅ [Consistency] Valid.")
+		slog.Info("Consistency valid")
 	}
 
 	if len(issues) > 0 {
-		log.Println("\n╔════════════════════════════════════════════╗")
-		log.Println("║  🚨 DIAGNOSIS REPORT                                ║")
-		log.Println("╚════════════════════════════════════════════╝")
+		slog.Error("Diagnosis report")
 		for _, issue := range issues {
-			log.Printf("  - %s\n", issue)
+			slog.Error("Issue found", "issue", issue)
 		}
 		return fmt.Errorf("deep integrity check failed")
 	}
@@ -375,31 +343,19 @@ func (p *VideoContentVerifier) checkFFmpegDecoding(origPath, decPath string) err
 
 // runFFmpegStressTest 执行单个文件的解码测试 (性能优化版)
 func (p *VideoContentVerifier) runFFmpegStressTest(ctx context.Context, filePath, label string) error {
-	cmd := exec.CommandContext(ctx, "ffmpeg",
+	stderrStr, err := utils.FFmpegRunWithContext(ctx,
 		"-v", "error",
-		"-loglevel", "error",
 		"-nostdin",
 		"-i", filePath,
 		"-f", "null",
 		"-",
 	)
 
-	// 【关键优化】使用 LimitWriter，限制 stderr 最多缓存 64KB
-	stderrBuf := &bytes.Buffer{}
-	limitedStderr := &LimitWriter{
-		Writer: stderrBuf,
-		Limit:  64 * 1024, // 64KB 限制
-	}
-	cmd.Stderr = limitedStderr
-
-	err := cmd.Run()
-
-	errorOutput := stderrBuf.String()
-	if strings.Contains(errorOutput, "corrupt") ||
-		strings.Contains(errorOutput, "Invalid") ||
-		strings.Contains(errorOutput, "missing picture") ||
-		strings.Contains(errorOutput, "Invalid data") {
-		return fmt.Errorf("ffmpeg detected corruption (truncated log output):\n%s", errorOutput)
+	if strings.Contains(stderrStr, "corrupt") ||
+		strings.Contains(stderrStr, "Invalid") ||
+		strings.Contains(stderrStr, "missing picture") ||
+		strings.Contains(stderrStr, "Invalid data") {
+		return fmt.Errorf("ffmpeg detected corruption (truncated log output):\n%s", stderrStr)
 	}
 
 	if err != nil && ctx.Err() == context.DeadlineExceeded {
@@ -459,15 +415,13 @@ func (p *VideoContentVerifier) getVideoMetrics(filePath string) (int, float64, e
 // 【性能优化】使用 nb_frames 而不是 -count_frames，避免耗时的帧解码
 func (p *VideoContentVerifier) getVideoMetricsFallback(filePath string) (int, float64, error) {
 	// 首先尝试使用 nb_frames（元数据中的帧数，非常快）
-	cmd := exec.Command("ffprobe",
+	output, err := utils.FFProbeOutput(
 		"-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries", "stream=nb_frames",
 		"-of", "default=noprint_wrappers=1:nokey=1",
 		filePath,
 	)
-
-	output, err := cmd.Output()
 	if err == nil {
 		framesStr := strings.TrimSpace(string(output))
 		if framesStr != "" && framesStr != "N/A" {
@@ -559,15 +513,13 @@ func (p *VideoContentVerifier) DiagnoseHeaders(containerPath string) error {
 		chunksMap[physPath].Frags = append(chunksMap[physPath].Frags, *frag)
 	}
 
-	log.Println("╔════════════════════════════════════════════════════════╗")
-	log.Println("║  COMPREHENSIVE PHYSICAL FILE DIAGNOSTIC             ║")
-	log.Println("╚════════════════════════════════════════════════════════╝")
+	slog.Info("Comprehensive physical file diagnostic")
 
 	var hasErrors bool
 	for _, chunk := range chunksMap {
 		f, err := os.Open(chunk.PhysicalPath)
 		if err != nil {
-			log.Printf("ERROR: Failed to open file: %v\n", err)
+			slog.Error("Failed to open file", "error", err)
 			hasErrors = true
 			continue
 		}
@@ -620,15 +572,15 @@ func (p *VideoContentVerifier) diagnoseFragmentation(origPath, decPath string) e
 
 	lossRate := float64(origFrames-decFrames) / float64(origFrames) * 100
 
-	log.Printf("🔍 [DIAGNOSIS] Fragmentation Damage Detected.\n")
-	log.Printf("   Original Frames: %d\n", origFrames)
-	log.Printf("   Decrypted Frames: %d\n", decFrames)
-	log.Printf("   Data Loss: %.2f%%\n", lossRate)
+	slog.Warn("Fragmentation damage detected")
+	slog.Info("Original frames", "frames", origFrames)
+	slog.Info("Decrypted frames", "frames", decFrames)
+	slog.Warn("Data loss percentage", "loss_percent", lossRate)
 
 	if lossRate > 10.0 {
 		return fmt.Errorf("critical fragmentation damage: %.2f%% data loss detected", lossRate)
 	} else if lossRate > 1.0 {
-		log.Printf("   Note: Minor data loss (%.2f%%) detected, but might be GOP alignment drift.\n", lossRate)
+		slog.Warn("Minor data loss detected, might be GOP alignment drift", "loss_percent", lossRate)
 	}
 
 	return nil
@@ -636,12 +588,11 @@ func (p *VideoContentVerifier) diagnoseFragmentation(origPath, decPath string) e
 
 // DiagnoseGOPAlignment ... (保留)
 func (p *VideoContentVerifier) DiagnoseGOPAlignment(filePath string, binaryOffsets []uint64) error {
-	cmd := exec.Command(
-		"ffprobe", "-v", "error", "-select_streams", "v:0",
+	output, err := utils.FFProbeOutput(
+		"-v", "error", "-select_streams", "v:0",
 		"-skip_frame", "nokey", "-show_entries", "frame=pkt_pos,pkt_pts_time",
 		"-of", "json", filePath,
 	)
-	output, err := cmd.Output()
 	if err != nil {
 		return err
 	}

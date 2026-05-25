@@ -8,7 +8,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Soltus/encv-go/internal/utils"
 )
 
 // TrackInfo 用于解析 mkvmerge -J 的输出
@@ -31,6 +33,9 @@ type MkvmergeInfo struct {
 
 // getVideoTrackID 使用 mkvmerge -J 获取第一个视频轨道的 ID
 func getVideoTrackID(filePath string) (string, error) {
+	if utils.IsMobile() {
+		return getVideoTrackIDWithFFProbe(filePath)
+	}
 	cmd := exec.Command("mkvmerge", "-J", filePath)
 	output, err := cmd.Output()
 	if err != nil {
@@ -44,7 +49,7 @@ func getVideoTrackID(filePath string) (string, error) {
 
 	for _, track := range info.Tracks {
 		if track.Type == "video" {
-			log.Printf("-> [DIAG] Found video track with ID: %d\n", track.ID)
+			slog.Info("Found video track", "component", "DIAG", "track_id", track.ID)
 			return fmt.Sprintf("%d", track.ID), nil
 		}
 	}
@@ -52,8 +57,23 @@ func getVideoTrackID(filePath string) (string, error) {
 	return "", fmt.Errorf("no video track found in the file")
 }
 
+func getVideoTrackIDWithFFProbe(filePath string) (string, error) {
+	output, err := utils.FFProbeOutput("-v", "error", "-select_streams", "v:0", "-show_entries", "stream=index", "-of", "csv=p=0", filePath)
+	if err != nil {
+		return "", fmt.Errorf("ffprobe failed to get video track ID: %w", err)
+	}
+	idx := strings.TrimSpace(string(output))
+	if idx == "" {
+		return "", fmt.Errorf("no video track found in the file")
+	}
+	return idx, nil
+}
+
 // IsMkvPartOfSplit 检查 MKV 文件是否是一个分片集的一部分
 func IsMkvPartOfSplit(filePath string) (bool, error) {
+	if utils.IsMobile() {
+		return IsMkvPartOfSplitNative(filePath)
+	}
 	cmd := exec.Command("mkvinfo", "-p", filePath)
 	output, err := cmd.Output()
 	if err != nil {
@@ -70,7 +90,7 @@ func IsMkvPartOfSplit(filePath string) (bool, error) {
 	hasNextUID = hasNextUID || strings.Contains(outputStr, "| + Next segment UID")
 
 	if hasPrevUID || hasNextUID {
-		log.Printf("-> [DIAG] File is a split part. Has PrevUID: %v, HasNextUID: %v\n", hasPrevUID, hasNextUID)
+		slog.Info("File is a split part", "component", "DIAG", "has_prev_uid", hasPrevUID, "has_next_uid", hasNextUID)
 		return true, nil
 	}
 
@@ -137,6 +157,9 @@ func IdentifyWithMKVMerge(filePath string) (*MKVMergeIdentity, error) {
 
 // ExtractChaptersWithMKVExtract 使用 mkvextract 提取章节到临时 XML 文件
 func ExtractChaptersWithMKVExtract(filePath string) ([]MKVChapterInfo, error) {
+	if utils.IsMobile() {
+		return ExtractChaptersFromMKVNative(filePath)
+	}
 	// 创建临时文件来存储章节 XML
 	tempFile, err := os.CreateTemp("", "encv-chapters-*.xml")
 	if err != nil {
@@ -189,6 +212,9 @@ func ExtractChaptersWithMKVExtract(filePath string) ([]MKVChapterInfo, error) {
 
 // checkFileForCues 使用 mkvinfo 快速检查文件是否包含 Cues 元素
 func checkFileForCues(filePath string) (bool, error) {
+	if utils.IsMobile() {
+		return CheckFileForCuesNative(filePath)
+	}
 	cmd := exec.Command("mkvinfo", "-v", filePath)
 	output, err := cmd.Output()
 	if err != nil {
@@ -198,7 +224,18 @@ func checkFileForCues(filePath string) (bool, error) {
 }
 
 func extractKeyFrameOffsetsFromMKV(filePath string) ([]uint64, error) {
-	log.Printf("-> [DIAG] Attempting to extract keyframes from MKV: %s\n", filePath)
+	slog.Info("Attempting to extract keyframes from MKV", "component", "DIAG", "file", filePath)
+
+	if utils.IsMobile() {
+		offsets, err := ExtractKeyFrameOffsetsFromMKVCuesNative(filePath)
+		if err == nil && len(offsets) > 0 {
+			slog.Info("Got keyframes from native Cues", "component", "DIAG", "count", len(offsets))
+			return offsets, nil
+		}
+		slog.Warn("Native Cues extraction failed", "component", "DIAG", "error", err)
+		return nil, nil
+	}
+
 	// 在解析 Cues 之前，先检查文件是否有 Cues
 	cmdCheck := exec.Command("mkvinfo", "-v", filePath)
 	outputCheck, err := cmdCheck.Output()
@@ -209,37 +246,37 @@ func extractKeyFrameOffsetsFromMKV(filePath string) ([]uint64, error) {
 			fmt.Println("-> [DIAG] File seems to contain a Cues element.")
 		}
 	} else {
-		log.Printf("-> [DIAG] WARNING: Could not run mkvinfo to check for Cues: %v\n", err)
+		slog.Warn("Could not run mkvinfo to check for Cues", "component", "DIAG", "error", err)
 	}
 
 	// 方法1：尝试使用Cues元素（最可靠）
 	fmt.Println("-> [DIAG] Method 1: Trying mkvextract for Cues...")
 	offsets, err := extractKeyFrameOffsetsFromMKVCues(filePath)
 	if err == nil && len(offsets) > 0 {
-		log.Printf("-> [DIAG] SUCCESS: Got %d keyframes from Cues\n", len(offsets))
+		slog.Info("Got keyframes from Cues", "component", "DIAG", "count", len(offsets))
 		return offsets, nil
 	}
-	log.Printf("-> [DIAG] FAILED: Cues extraction failed: %v\n", err)
+	slog.Error("Cues extraction failed", "component", "DIAG", "error", err)
 
 	// 方法2：使用mkvinfo解析
 	fmt.Println("-> [DIAG] Method 2: Trying mkvinfo parsing...")
 	cmd := exec.Command("mkvinfo", "-v", filePath)
 	output, err := cmd.Output()
 	if err != nil {
-		log.Printf("-> [DIAG] FAILED: mkvinfo command failed: %v\n", err)
-		log.Printf("-> [DIAG] Command was: %s\n", cmd.String())
+		slog.Error("mkvinfo command failed", "component", "DIAG", "error", err)
+		slog.Info("Command was", "component", "DIAG", "command", cmd.String())
 	} else {
-		log.Printf("-> [DIAG] mkvinfo raw output (first 500 chars): %s\n", string(output)[:min(500, len(output))])
+		slog.Info("mkvinfo raw output (first 500 chars)", "component", "DIAG", "output", string(output)[:min(500, len(output))])
 		segmentPos, err := getSegmentPosition(filePath)
 		if err != nil {
-			log.Printf("-> [DIAG] FAILED: Could not get segment position: %v\n", err)
+			slog.Error("Could not get segment position", "component", "DIAG", "error", err)
 		}
 		offsets, err := parseMKVInfoForKeyFrames(output, segmentPos)
 		if err == nil && len(offsets) > 0 {
-			log.Printf("-> [DIAG] SUCCESS: Got %d keyframes from mkvinfo\n", len(offsets))
+			slog.Info("Got keyframes from mkvinfo", "component", "DIAG", "count", len(offsets))
 			return offsets, nil
 		}
-		log.Printf("-> [DIAG] FAILED: mkvinfo parsing failed: %v\n", err)
+		slog.Error("mkvinfo parsing failed", "component", "DIAG", "error", err)
 	}
 
 	return nil, nil
@@ -303,15 +340,13 @@ func extractPositionFromLine(line string) uint64 {
 }
 
 func extractKeyFrameOffsetsFromMKVCues(filePath string) ([]uint64, error) {
-	log.Printf("-> [DIAG] Attempting to extract keyframes from MKV: %s\n", filePath)
+	slog.Info("Attempting to extract keyframes from MKV", "component", "DIAG", "file", filePath)
 
-	// 【关键修复】步骤 1: 获取第一个视频轨道的 ID
 	videoTrackID, err := getVideoTrackID(filePath)
 	if err != nil {
-		// 如果获取失败，我们不能继续，因为不知道提取哪个轨道
 		return nil, fmt.Errorf("failed to get video track ID for cues extraction: %w", err)
 	}
-	log.Printf("-> [DIAG] Found video track ID: %s for cues extraction.\n", videoTrackID)
+	slog.Info("Found video track ID for cues extraction", "component", "DIAG", "track_id", videoTrackID)
 
 	// 步骤 2: 获取 Segment 元素的全局文件偏移量
 	segmentPos, err := getSegmentPosition(filePath)
@@ -322,7 +357,7 @@ func extractKeyFrameOffsetsFromMKVCues(filePath string) ([]uint64, error) {
 	// 【关键修复】步骤 3: 使用正确的、完整的语法提取 Cues
 	// 命令格式: mkvextract <file> cues <TID>:-
 	cmd := exec.Command("mkvextract", filePath, "cues", fmt.Sprintf("%s:-", videoTrackID))
-	log.Printf("-> [DIAG] Executing CORRECTED command: %s\n", cmd.String())
+	slog.Info("Executing corrected command", "component", "DIAG", "command", cmd.String())
 
 	output, err := cmd.Output()
 	if err != nil {
@@ -351,7 +386,7 @@ func extractKeyFrameOffsetsFromMKVCues(filePath string) ([]uint64, error) {
 		return nil, fmt.Errorf("no cues found in mkvextract output for track ID %s", videoTrackID)
 	}
 
-	log.Printf("-> [DIAG] SUCCESS: Got %d keyframes from Cues for track ID %s\n", len(offsets), videoTrackID)
+	slog.Info("Got keyframes from Cues", "component", "DIAG", "count", len(offsets), "track_id", videoTrackID)
 	return offsets, nil
 }
 
@@ -403,7 +438,7 @@ func batchGetMkvInfos(paths []string) (map[string]*MkvInfo, error) {
 	for _, path := range paths {
 		info, err := getMkvInfo(path)
 		if err != nil {
-			log.Printf("-> [VIDEO_PLUGIN] Warning: Could not get info for %s: %v\n", path, err)
+			slog.Warn("Could not get MKV info", "component", "VIDEO_PLUGIN", "path", path, "error", err)
 			continue
 		}
 		infos[path] = info
@@ -413,6 +448,9 @@ func batchGetMkvInfos(paths []string) (map[string]*MkvInfo, error) {
 
 // getMkvInfo 解析单个 MKV 文件的 mkvinfo -p 输出
 func getMkvInfo(path string) (*MkvInfo, error) {
+	if utils.IsMobile() {
+		return getMkvInfoNative(path)
+	}
 	cmd := exec.Command("mkvinfo", "-p", path)
 	output, err := cmd.Output()
 	if err != nil {
@@ -488,53 +526,53 @@ func calculateSplitSetHash(sortedPaths []string) string {
 // getCachedMergedPath 检查缓存中是否存在有效的合并文件
 func getCachedMergedPath(sortedPaths []string, cacheDir string) (string, bool) {
 	if cacheDir == "" {
-		log.Printf("-> [VIDEO_PLUGIN] getCachedMergedPath: cacheDir is empty\n")
+		slog.Info("getCachedMergedPath: cacheDir is empty", "component", "VIDEO_PLUGIN")
 		return "", false
 	}
 
 	hash := calculateSplitSetHash(sortedPaths)
 	cachePath := filepath.Join(cacheDir, "encv-merged-"+hash+".mkv")
-	log.Printf("-> [VIDEO_PLUGIN] getCachedMergedPath: hash=%s, cachePath=%s\n", hash, cachePath)
+	slog.Info("getCachedMergedPath", "component", "VIDEO_PLUGIN", "hash", hash, "cache_path", cachePath)
 
 	// 检查缓存文件是否存在且有效
 	info, err := os.Stat(cachePath)
 	if err != nil {
-		log.Printf("-> [VIDEO_PLUGIN] getCachedMergedPath: cache file not found: %v\n", err)
+		slog.Info("getCachedMergedPath: cache file not found", "component", "VIDEO_PLUGIN", "error", err)
 		return "", false
 	}
 	if info.Size() == 0 {
-		log.Printf("-> [VIDEO_PLUGIN] getCachedMergedPath: cache file is empty\n")
+		slog.Info("getCachedMergedPath: cache file is empty", "component", "VIDEO_PLUGIN")
 		return "", false
 	}
-	log.Printf("-> [VIDEO_PLUGIN] getCachedMergedPath: cache file exists, size=%d\n", info.Size())
+	slog.Info("getCachedMergedPath: cache file exists", "component", "VIDEO_PLUGIN", "size", info.Size())
 
 	// 验证缓存文件的完整性
 	verifyCmd := exec.Command("mkvinfo", "-P", cachePath)
 	if err := verifyCmd.Run(); err != nil {
-		log.Printf("-> [VIDEO_PLUGIN] Cached file verification failed, will re-merge: %v\n", err)
+		slog.Warn("Cached file verification failed, will re-merge", "component", "VIDEO_PLUGIN", "error", err)
 		os.Remove(cachePath)
 		return "", false
 	}
 
-	log.Printf("-> [VIDEO_PLUGIN] Using cached merged file: %s\n", cachePath)
+	slog.Info("Using cached merged file", "component", "VIDEO_PLUGIN", "cache_path", cachePath)
 	return cachePath, true
 }
 
 // saveToCache 将合并后的文件保存到缓存目录
 func saveToCache(sourcePath string, sortedPaths []string, cacheDir string) (string, error) {
 	if cacheDir == "" {
-		log.Printf("-> [VIDEO_PLUGIN] saveToCache: cacheDir is empty, returning source path\n")
+		slog.Info("saveToCache: cacheDir is empty, returning source path", "component", "VIDEO_PLUGIN")
 		return sourcePath, nil // 没有缓存目录，直接使用原文件
 	}
 
-	log.Printf("-> [VIDEO_PLUGIN] saveToCache: attempting to save to cacheDir: %s\n", cacheDir)
+	slog.Info("saveToCache: attempting to save to cacheDir", "component", "VIDEO_PLUGIN", "cache_dir", cacheDir)
 
 	// 确保缓存目录存在
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		log.Printf("-> [VIDEO_PLUGIN] saveToCache: failed to create cache directory: %v\n", err)
+		slog.Error("saveToCache: failed to create cache directory", "component", "VIDEO_PLUGIN", "error", err)
 		return "", fmt.Errorf("failed to create cache directory: %w", err)
 	}
-	log.Printf("-> [VIDEO_PLUGIN] saveToCache: cache directory ensured\n")
+	slog.Info("saveToCache: cache directory ensured", "component", "VIDEO_PLUGIN")
 
 	hash := calculateSplitSetHash(sortedPaths)
 	cachePath := filepath.Join(cacheDir, "encv-merged-"+hash+".mkv")
@@ -557,7 +595,7 @@ func saveToCache(sourcePath string, sortedPaths []string, cacheDir string) (stri
 		return "", fmt.Errorf("failed to copy to cache: %w", err)
 	}
 
-	log.Printf("-> [VIDEO_PLUGIN] Saved merged file to cache: %s\n", cachePath)
+	slog.Info("Saved merged file to cache", "component", "VIDEO_PLUGIN", "cache_path", cachePath)
 	return cachePath, nil
 }
 
@@ -568,14 +606,18 @@ func mergeSplitPartsFromSet(sortedPaths []string, outputDir string, cacheDir str
 		return "", fmt.Errorf("no paths provided for merging")
 	}
 
-	log.Printf("-> [VIDEO_PLUGIN] mergeSplitPartsFromSet: cacheDir='%s', outputDir='%s', paths=%v\n", cacheDir, outputDir, sortedPaths)
+	if utils.IsMobile() {
+		return mergeSplitPartsWithFFmpeg(sortedPaths, outputDir, cacheDir)
+	}
+
+	slog.Info("mergeSplitPartsFromSet", "component", "VIDEO_PLUGIN", "cache_dir", cacheDir, "output_dir", outputDir, "paths", sortedPaths)
 
 	// 【新增】首先检查缓存
 	if cachedPath, found := getCachedMergedPath(sortedPaths, cacheDir); found {
-		log.Printf("-> [VIDEO_PLUGIN] Cache hit! Using cached file: %s\n", cachedPath)
+		slog.Info("Cache hit, using cached file", "component", "VIDEO_PLUGIN", "cached_path", cachedPath)
 		return cachedPath, nil
 	}
-	log.Printf("-> [VIDEO_PLUGIN] Cache miss, will merge files\n")
+	slog.Info("Cache miss, will merge files", "component", "VIDEO_PLUGIN")
 
 	// 【修改】确定合并文件的创建位置
 	// 如果配置了缓存目录且与输出目录不同，直接在缓存目录中创建
@@ -584,9 +626,9 @@ func mergeSplitPartsFromSet(sortedPaths []string, outputDir string, cacheDir str
 		// 确保缓存目录存在
 		if err := os.MkdirAll(cacheDir, 0755); err == nil {
 			mergeDir = cacheDir
-			log.Printf("-> [VIDEO_PLUGIN] Using cacheDir for merged file: %s\n", mergeDir)
+			slog.Info("Using cacheDir for merged file", "component", "VIDEO_PLUGIN", "merge_dir", mergeDir)
 		} else {
-			log.Printf("-> [VIDEO_PLUGIN] Failed to create cacheDir, falling back to outputDir: %v\n", err)
+			slog.Warn("Failed to create cacheDir, falling back to outputDir", "component", "VIDEO_PLUGIN", "error", err)
 		}
 	}
 
@@ -599,7 +641,7 @@ func mergeSplitPartsFromSet(sortedPaths []string, outputDir string, cacheDir str
 		// 文件已存在，验证完整性
 		verifyCmd := exec.Command("mkvinfo", "-P", tempPath)
 		if verifyErr := verifyCmd.Run(); verifyErr == nil {
-			log.Printf("-> [VIDEO_PLUGIN] Merged file already exists and valid: %s\n", tempPath)
+			slog.Info("Merged file already exists and valid", "component", "VIDEO_PLUGIN", "path", tempPath)
 			return tempPath, nil
 		}
 		// 文件存在但无效，删除后重新创建
@@ -626,7 +668,7 @@ func mergeSplitPartsFromSet(sortedPaths []string, outputDir string, cacheDir str
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	log.Printf("-> [VIDEO_PLUGIN] Executing CORRECTED merge command: %s\n", cmd.String())
+	slog.Info("Executing corrected merge command", "component", "VIDEO_PLUGIN", "command", cmd.String())
 
 	if err := cmd.Run(); err != nil {
 		os.Remove(tempPath) // 清理可能损坏的文件
@@ -641,26 +683,26 @@ func mergeSplitPartsFromSet(sortedPaths []string, outputDir string, cacheDir str
 		return "", fmt.Errorf("mkvmerge succeeded but output file verification failed: %w", verifyErr)
 	}
 
-	log.Printf("-> [VIDEO_PLUGIN] SUCCESS: Merged and verified file at %s\n", tempPath)
+	slog.Info("Merged and verified file", "component", "VIDEO_PLUGIN", "path", tempPath)
 
 	// 如果直接在缓存目录中创建，不需要额外复制
 	if mergeDir == cacheDir {
-		log.Printf("-> [VIDEO_PLUGIN] Merged file already in cacheDir: %s\n", tempPath)
+		slog.Info("Merged file already in cacheDir", "component", "VIDEO_PLUGIN", "path", tempPath)
 		return tempPath, nil
 	}
 
 	// 【新增】保存到缓存（如果配置了缓存目录且文件在 outputDir）
 	if cacheDir != "" && cacheDir != outputDir {
-		log.Printf("-> [VIDEO_PLUGIN] Attempting to save merged file to cache...\n")
+		slog.Info("Attempting to save merged file to cache", "component", "VIDEO_PLUGIN")
 		cachedPath, err := saveToCache(tempPath, sortedPaths, cacheDir)
 		if err == nil && cachedPath != tempPath {
 			// 成功保存到缓存，删除临时文件，返回缓存路径
-			log.Printf("-> [VIDEO_PLUGIN] Successfully cached merged file, removing temp file\n")
+			slog.Info("Successfully cached merged file, removing temp file", "component", "VIDEO_PLUGIN")
 			os.Remove(tempPath)
 			return cachedPath, nil
 		}
 		if err != nil {
-			log.Printf("-> [VIDEO_PLUGIN] Failed to save to cache: %v\n", err)
+			slog.Warn("Failed to save to cache", "component", "VIDEO_PLUGIN", "error", err)
 		}
 	}
 
@@ -684,7 +726,7 @@ func findAndSortChain(startInfo *MkvInfo, allInfos map[string]*MkvInfo) ([]strin
 			headInfo = prevInfo
 		} else {
 			// 链条断了，我们就在这里停止
-			log.Printf("-> [VIDEO_PLUGIN] Warning: Split chain is broken before UID %d.\n", headInfo.SegmentUID)
+			slog.Warn("Split chain is broken", "component", "VIDEO_PLUGIN", "uid", headInfo.SegmentUID)
 			break
 		}
 	}
@@ -704,4 +746,62 @@ func findAndSortChain(startInfo *MkvInfo, allInfos map[string]*MkvInfo) ([]strin
 	}
 
 	return sortedPaths, chainUIDs
+}
+
+func getMkvInfoNative(path string) (*MkvInfo, error) {
+	info := &MkvInfo{Path: path}
+	prevUID, nextUID, err := ReadMKVSegmentInfoNative(path)
+	if err != nil {
+		return nil, fmt.Errorf("native MKV info extraction failed on %s: %w", path, err)
+	}
+	if len(prevUID) > 0 {
+		h := hex.EncodeToString(prevUID)
+		info.PrevUID, _ = strconv.ParseInt("0x"+h, 0, 64)
+	}
+	if len(nextUID) > 0 {
+		h := hex.EncodeToString(nextUID)
+		info.NextUID, _ = strconv.ParseInt("0x"+h, 0, 64)
+	}
+	info.IsSplitPart = (info.PrevUID != 0) || (info.NextUID != 0)
+	return info, nil
+}
+
+func mergeSplitPartsWithFFmpeg(sortedPaths []string, outputDir string, cacheDir string) (string, error) {
+	if len(sortedPaths) == 1 {
+		return sortedPaths[0], nil
+	}
+
+	mergeDir := outputDir
+	if cacheDir != "" {
+		if err := os.MkdirAll(cacheDir, 0755); err == nil {
+			mergeDir = cacheDir
+		}
+	}
+
+	hash := calculateSplitSetHash(sortedPaths)
+	tempPath := filepath.Join(mergeDir, "encv-merged-"+hash+".mkv")
+
+	if info, err := os.Stat(tempPath); err == nil && info.Size() > 0 {
+		return tempPath, nil
+	}
+
+	concatFile, err := os.CreateTemp(mergeDir, "encv-concat-*.txt")
+	if err != nil {
+		return "", fmt.Errorf("failed to create concat list: %w", err)
+	}
+	concatPath := concatFile.Name()
+	defer os.Remove(concatPath)
+
+	for _, p := range sortedPaths {
+		fmt.Fprintf(concatFile, "file '%s'\n", p)
+	}
+	concatFile.Close()
+
+	args := []string{"-y", "-f", "concat", "-safe", "0", "-i", concatPath, "-c", "copy", tempPath}
+	if err := utils.FFmpegRun(args...); err != nil {
+		os.Remove(tempPath)
+		return "", fmt.Errorf("ffmpeg concat merge failed: %w", err)
+	}
+
+	return tempPath, nil
 }

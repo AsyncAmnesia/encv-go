@@ -1,7 +1,7 @@
 package openlist
 
 import (
-	encvOpenlist "github.com/Soltus/encv-go/internal/admin/logic/openlist"
+	encvOpenlist "github.com/Soltus/encv-go/internal/openlist"
 )
 
 func NewOpenListURLResolver(host, token, originalContainerPath string) *encvOpenlist.OpenListURLResolver {

@@ -6,22 +6,30 @@ import (
 	"fmt"
 	"html/template"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/Soltus/encv-go/internal/auth"
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/middleware"
+	"github.com/Soltus/encv-go/internal/openlist"
 	"github.com/Soltus/encv-go/internal/register"
+	"github.com/Soltus/encv-go/internal/routes"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/handler"
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
+	mobileservice "github.com/Soltus/encv-go/internal/service"
 	"github.com/Soltus/encv-go/internal/v2/service"
 	"github.com/Soltus/encv-go/internal/webdav"
 	"github.com/dustin/go-humanize"
@@ -31,16 +39,20 @@ import (
 type Server struct {
 	server     *http.Server
 	cfg        *config.Config
-	configPath string // 配置文件路径，用于 API 读写
-	servingDir string // 主服务目录的绝对路径
-	version    string // 存储应用版本
-	instanceID string // 存储本次启动的唯一实例ID
-	webdavDir  string // WebDAV 目录的绝对路径
-	webdavPath string // WebDAV 的路由前缀
-	// 【关键替换】用新的 ReaderService 替代旧的 ContainerManager
+	configPath string
+	configMu   sync.Mutex
+	servingDir string
+	version    string
+	instanceID string
+	actualPort int
+	webdavDir  string
+	webdavPath string
 	readerService  *service.ReaderService
+	mobileSvc      *mobileservice.MobileService
 	contentHandler *handler.ContentHandler
 	chunkNamers    []namer.ChunkNamer
+	jwtManager     *auth.JWTManager
+	webdavFS       webdav.IndexProvider
 }
 
 func NewServer(ctx context.Context, configPath string) *Server {
@@ -48,10 +60,12 @@ func NewServer(ctx context.Context, configPath string) *Server {
 	containerManager := service.NewContainerManager()
 	readerService := service.NewReaderService(containerManager)
 	contentHandler := handler.NewContentHandler()
+	mobileSvc := mobileservice.NewMobileService("", cfg)
 	return &Server{
 		cfg:            cfg,
 		configPath:     configPath,
 		readerService:  readerService,
+		mobileSvc:      mobileSvc,
 		contentHandler: contentHandler,
 		instanceID:     fmt.Sprintf("%x", time.Now().UnixNano()),
 	}
@@ -61,7 +75,12 @@ func (s *Server) GetInstanceID() string {
 	return s.instanceID
 }
 
-// Start 启动播放器服务器，如果端口被占用或被其他服务劫持，会自动递增尝试
+func (s *Server) GetCredentials() (string, string) {
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+	return s.cfg.Webdav.Username, s.cfg.Webdav.Password
+}
+
 func (s *Server) Start(version string) (string, error) {
 	// 【关键修改】在启动时初始化版本和实例ID
 	s.version = version // 从 main 包获取编译时注入的版本
@@ -74,14 +93,22 @@ func (s *Server) Start(version string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve absolute path for directory '%s': %w", dir, err)
 	}
+	s.mobileSvc.SetServingDir(s.servingDir)
 	chunkNamers := plugins.GetAllRegisteredChunkNamers()
 	s.chunkNamers = chunkNamers
+	s.mobileSvc.SetEncryptedFileDeps(s.readerService, s.contentHandler, chunkNamers)
 
 	// 2. 解析并存储 WebDAV 目录和路径
-	if s.cfg.Webdav.Dir != "" {
-		s.webdavDir, err = filepath.Abs(s.cfg.Webdav.Dir)
+	if s.cfg.Webdav.Root != "" {
+		webdavDir := s.cfg.Webdav.Dir
+		if webdavDir == "" {
+			webdavDir = s.servingDir
+			s.cfg.Webdav.Dir = s.servingDir
+			slog.Info("WebDAV dir not specified, using server dir", "dir", webdavDir)
+		}
+		s.webdavDir, err = filepath.Abs(webdavDir)
 		if err != nil {
-			return "", fmt.Errorf("failed to resolve absolute path for webdav dir '%s': %w", s.cfg.Webdav.Dir, err)
+			return "", fmt.Errorf("failed to resolve absolute path for webdav dir '%s': %w", webdavDir, err)
 		}
 		s.webdavPath = s.cfg.Webdav.Root
 		if s.webdavPath == "" {
@@ -99,44 +126,192 @@ func (s *Server) Start(version string) (string, error) {
 	slog.Info("Server starting", "instance", s.instanceID, "version", s.version)
 	slog.Info("Main service serving from", "dir", s.servingDir)
 
-	// 3. 创建统一的 ServeMux 并注册路由
-	mux := http.NewServeMux()
-	mux.HandleFunc("/ping", s.handlePing)
-	mux.HandleFunc("/stream", s.handleStreamRequest)
-	mux.HandleFunc("/api/config", s.handleConfigAPI)
-	mux.HandleFunc("/api/config/schema", s.handleConfigSchemaAPI)
+	wsMinLevel := slog.LevelInfo
+	switch s.cfg.Log.Level {
+	case "debug":
+		wsMinLevel = slog.LevelDebug
+	case "warn":
+		wsMinLevel = slog.LevelWarn
+	case "error":
+		wsMinLevel = slog.LevelError
+	}
+	wsLogHandler := NewWSLogHandler(slog.Default().Handler(), s.mobileSvc.GetWSHub(), wsMinLevel)
+	slog.SetDefault(slog.New(wsLogHandler))
+	slog.Info("WSLogHandler initialized, logs will be bridged to WebSocket")
 
-	mux.HandleFunc("/", s.handleRequest)
+	// 3. 创建 Gin 引擎并注册路由
+	r := NewGinApp(s.cfg)
 
-	// 如果启用了 WebDAV，则注册其处理器
-	if s.webdavDir != "" {
-		// 【关键修复】从插件系统获取所有已注册的 ChunkNamers
-		// 这是一种解耦且可扩展的方式，服务器无需知道具体的命名规则。
-		chunkNamers := plugins.GetAllRegisteredChunkNamers()
-		fs := webdav.NewENCVFS(config.NewContext(context.Background(), s.cfg), s.readerService, chunkNamers)
-		webdavHandler := &goWebdav.Handler{
-			FileSystem: fs,
-			LockSystem: goWebdav.NewMemLS(),
-		}
-		// WebDAV 也需要通过配置中间件来处理解密等
-		configAwareWebdavHandler := middleware.WithConfig(s.cfg, webdavHandler)
+	r.GET("/ping", s.handlePingGin)
+	r.GET("/health", s.handleHealthGin)
+	r.GET("/stream", gin.WrapF(s.handleStreamRequest))
+	r.GET("/api/config", s.handleGetConfigGin)
+	r.PUT("/api/config", s.handlePutConfigGin)
+	r.GET("/api/config/schema", s.handleConfigSchemaGin)
+	r.GET("/api/files", s.handleListFilesGin)
+	r.DELETE("/api/files", s.handleDeleteFileGin)
+	r.GET("/api/file", s.handleReadFileContentGin)
+	r.GET("/api/file/text-preview-exts", s.handleTextPreviewExtsGin)
+	r.GET("/api/file/info", s.handleFileInfoGin)
+	r.GET("/api/tasks", s.handleGetTasksGin)
+	r.POST("/api/tasks", s.handleCreateTaskGin)
+	r.POST("/api/tasks/:id/cancel", s.handleCancelTaskGin)
+	r.POST("/api/tasks/:id/retry", s.handleRetryTaskGin)
+	r.POST("/api/webdav/test", s.handleTestWebDAVGin)
+	r.GET("/api/webdav/test-local", s.handleTestLocalWebDAVGin)
+	r.GET("/api/remote/info", s.handleRemoteInfoGin)
+	r.GET("/api/remote/openlist", s.handleListOpenlistSitesGin)
+	r.POST("/api/remote/openlist", s.handleAddOpenlistSiteGin)
+	r.PUT("/api/remote/openlist/:id", s.handleUpdateOpenlistSiteGin)
+	r.DELETE("/api/remote/openlist/:id", s.handleDeleteOpenlistSiteGin)
+	r.GET("/api/permissions", s.handlePermissionsGin)
+	r.POST("/api/server/shutdown", s.handleServerShutdownGin)
+	r.GET("/api/files/exists", s.handleFileExistsGin)
+	r.GET("/api/files/encrypt-output-exists", s.handleEncryptOutputExistsGin)
+	r.GET("/api/files/search", s.handleSearchFilesGin)
+	r.GET("/api/index/stats", s.handleIndexStatsGin)
+	r.POST("/api/index/rebuild", s.handleIndexRebuildGin)
+	r.POST("/api/index/clear", s.handleIndexClearGin)
+	r.GET("/api/stream/external", s.handleStreamExternalFileGin)
+	r.GET("/api/build-info", s.handleBuildInfoGin)
+	r.GET("/api/ffmpeg-status", s.handleFFmpegStatusGin)
+	r.POST("/api/logs", s.handleAPILogsGin)
+	r.GET("/ws", gin.WrapF(s.handleWebSocket))
 
-		webdavUser := s.cfg.Webdav.Username
-		webdavPass := s.cfg.Webdav.Password
-
-		// 【新增】应用基础认证中间件
-		// 如果 webdavUser 或 webdavPass 为空，BasicAuth 中间件将不执行任何操作
-		authMiddleware := middleware.BasicAuth(webdavUser, webdavPass)
-		protectedWebdavHandler := authMiddleware(configAwareWebdavHandler)
-
-		// 【修改】使用受保护的处理器
-		mux.Handle(s.webdavPath, protectedWebdavHandler)
-
+	// Admin 路由
+	r.GET(routes.Admin, func(c *gin.Context) {
+		c.Redirect(http.StatusFound, routes.FSProxy+"/")
+	})
+	loginRequired := s.cfg.Admin.Password != ""
+	if loginRequired {
+		s.jwtManager = auth.NewJWTManager(s.cfg.Admin.Password, 7*24*time.Hour)
+		slog.Info("Admin service requires login")
+	} else {
+		slog.Info("Admin service running without authentication (password is empty)")
 	}
 
-	// CorsMiddleware 应该在最外层，最先处理请求
-	finalHandler := middleware.CorsMiddleware(middleware.WithConfig(s.cfg, mux))
-	return register.StartHttpHandlerWithRetry(finalHandler, s.cfg.Server.Port, s.instanceID, s.version)
+	r.GET(routes.Login, s.handleLoginGin)
+	r.POST(routes.Login, s.handleLoginGin)
+	r.Any(routes.Logout, s.handleLogoutGin)
+
+	adminGroup := r.Group(routes.Admin)
+	if loginRequired {
+		adminGroup.Use(JWTAuthMiddleware(s.jwtManager))
+	}
+	adminGroup.POST("/file/analyze", s.handleFileAnalyzeGin)
+	adminGroup.POST("/file/rename", s.handleFileRenameGin)
+
+	fsProxyGroup := r.Group(routes.FSProxy)
+	if loginRequired {
+		fsProxyGroup.Use(JWTAuthMiddleware(s.jwtManager))
+	}
+	fsProxyGroup.Any("/*path", s.handleFSProxyGin)
+
+	r.Any(routes.FSProxyAPI+"/*path", func(c *gin.Context) {
+		path := c.Param("path")
+		c.Redirect(http.StatusTemporaryRedirect, "/api"+path)
+	})
+
+	// OpenList 路由
+	if len(s.cfg.Proxy.Sites) > 0 {
+		multiSiteServer := openlist.NewMultiSiteServer(config.NewContext(context.Background(), s.cfg))
+		proxyGin := NewProxyGin(s.cfg)
+
+		r.GET(routes.OpenListProxy+"/sites", handleOpenlistSitesGin(multiSiteServer))
+		r.POST(routes.OpenListProxy+"/set-token", handleSetSiteTokenGin(multiSiteServer))
+		r.POST(routes.OpenListProxy+"/delete-token", handleDeleteTokenGin(multiSiteServer))
+		r.POST(routes.OpenListProxy+"/set-expiry", handleSetExpiryGin(multiSiteServer))
+
+		openlistGroup := r.Group(routes.OpenListProxy + "/sites")
+		openlistGroup.Use(OpenlistSiteMiddleware(multiSiteServer))
+		if loginRequired {
+			openlistGroup.Use(JWTAuthMiddleware(s.jwtManager))
+		}
+		openlistGroup.Any("/:siteId/_preview/*path", handleOpenlistPreviewGin())
+		openlistGroup.POST("/:siteId/decrypt", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.Any("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+	}
+
+	if s.webdavDir != "" {
+		webdavFS, indexProvider, fsErr := webdav.NewENCVFS(config.NewContext(context.Background(), s.cfg), s.readerService, s.chunkNamers)
+		if fsErr != nil {
+			slog.Warn("WebDAV initialization failed, skipping WebDAV", "error", fsErr)
+		} else {
+			s.webdavFS = indexProvider
+			webdavHandler := &goWebdav.Handler{
+				FileSystem: webdavFS,
+				LockSystem: goWebdav.NewMemLS(),
+			}
+			authMiddleware := middleware.BasicAuthDynamic(s)
+			loggingMiddleware := s.webdavLoggingMiddleware()
+			protectedWebdavHandler := authMiddleware(loggingMiddleware(webdavHandler))
+
+			webdavMethods := []string{
+				"GET", "POST", "PUT", "PATCH", "HEAD", "OPTIONS", "DELETE", "CONNECT", "TRACE",
+				"PROPFIND", "PROPPATCH", "MKCOL", "COPY", "MOVE", "LOCK", "UNLOCK",
+			}
+			for _, method := range webdavMethods {
+				r.Handle(method, s.webdavPath+"*path", gin.WrapH(protectedWebdavHandler))
+			}
+
+			webdavRoot := strings.TrimSuffix(s.webdavPath, "/")
+			if webdavRoot != "" {
+				for _, method := range webdavMethods {
+					r.Handle(method, webdavRoot, func(c *gin.Context) {
+						c.Request.URL.Path = s.webdavPath
+						protectedWebdavHandler.ServeHTTP(c.Writer, c.Request)
+					})
+				}
+			}
+		}
+	}
+
+	r.NoRoute(gin.WrapF(s.handleRequest))
+
+	srv, addr, err := register.StartGinWithRetry(r, s.cfg.Server.Port, s.instanceID, s.version)
+	if err != nil {
+		return "", err
+	}
+	s.server = srv
+	_, portStr, splitErr := net.SplitHostPort(addr)
+	if splitErr == nil {
+		if p, parseErr := strconv.Atoi(portStr); parseErr == nil {
+			s.actualPort = p
+		}
+	}
+	return addr, nil
+}
+
+func (s *Server) webdavLoggingMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			method := r.Method
+			path := r.URL.Path
+
+			lrw := &loggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+			next.ServeHTTP(lrw, r)
+
+			elapsed := time.Since(start)
+			slog.Info("WebDAV", "method", method, "path", path, "status", lrw.statusCode, "elapsed", elapsed)
+		})
+	}
+}
+
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (lrw *loggingResponseWriter) WriteHeader(code int) {
+	lrw.statusCode = code
+	lrw.ResponseWriter.WriteHeader(code)
+}
+
+func (lrw *loggingResponseWriter) Flush() {
+	if f, ok := lrw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func (s *Server) Stop() error {

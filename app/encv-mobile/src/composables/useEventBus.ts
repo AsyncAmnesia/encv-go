@@ -2,11 +2,14 @@ type Handler<T = any> = (data: T) => void
 
 export interface EncvEvents {
   'task:update': { id: string; type: string; status: string; progress: number }
+  'task:progress': { id: string; progress: number; phase: string; speed: string; eta: string }
   'task:created': { id: string; type: string; sourcePath: string }
   'task:completed': { id: string; error?: string }
   'file:change': { path: string; action: 'create' | 'delete' | 'modify' }
   'server:status': { online: boolean }
+  'server:connection-error': { error: string }
   'log:message': { level: string; message: string }
+  'ws:message': { type: string; data: any }
 }
 
 type EventKey = keyof EncvEvents

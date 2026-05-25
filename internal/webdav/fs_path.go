@@ -12,22 +12,23 @@ import (
 // webdavPathToIndexKey 将 WebDAV Handler 传入的绝对路径，转换为用于索引查找的标准键。
 // 例如："/webdav/output/file.txt" -> "output/file.txt"
 // 例如："/webdav/" -> "."
-func (fs *encvWebDAVFS) webdavPathToIndexKey(webdavPath string) string {
-	// 1. 剥离 WebDAV 挂载点前缀
-	key := strings.TrimPrefix(webdavPath, fs.webdavPrefix)
-
-	// 2. 剥除剩余部分可能存在的前导斜杠，以匹配索引键格式
-	key = strings.TrimPrefix(key, "/")
-
-	// 【关键修复】剥离剩余部分可能存在的末尾斜杠，以兼容不同客户端
-	key = strings.TrimSuffix(key, "/")
-
-	// 3. 规范化根目录
-	if key == "" {
-		return "." // WebDAV根目录映射为 "."
+func (fs *encvWebDAVFS) webdavPathToIndexKey(webdavPath string) (string, error) {
+	if strings.HasPrefix(webdavPath, fs.webdavPrefix) {
+		key := strings.TrimPrefix(webdavPath, fs.webdavPrefix)
+		key = strings.TrimPrefix(key, "/")
+		key = strings.TrimSuffix(key, "/")
+		if key == "" {
+			return ".", nil
+		}
+		return key, nil
 	}
 
-	return key
+	trimmed := strings.TrimSuffix(fs.webdavPrefix, "/")
+	if webdavPath == trimmed {
+		return ".", nil
+	}
+
+	return "", fmt.Errorf("path '%s' is not under webdav root '%s'", webdavPath, fs.webdavPrefix)
 }
 
 // physicalPathToIndexKey 将物理容器路径和解析出的虚拟文件名，组合成标准的索引键。
@@ -49,18 +50,18 @@ func (fs *encvWebDAVFS) physicalPathToIndexKey(physicalPath, virtualFilename str
 
 // resolvePath 将 WebDAV 路径安全地解析为本地文件系统绝对路径
 func (fs *encvWebDAVFS) resolvePath(name string) (string, error) {
-	// 1. 检查并剥离 webdavPrefix
 	if !strings.HasPrefix(name, fs.webdavPrefix) {
+		trimmed := strings.TrimSuffix(fs.webdavPrefix, "/")
+		if name == trimmed {
+			return fs.dir, nil
+		}
 		return "", fmt.Errorf("path '%s' is not under webdav root '%s'", name, fs.webdavPrefix)
 	}
 
-	// 剥离前缀，得到相对于 WebDAV 根的用户路径
 	userPath := strings.TrimPrefix(name, fs.webdavPrefix)
 	if userPath == "" {
-		userPath = "." // 表示请求的是 WebDAV 根目录
+		userPath = "."
 	}
 
-	// 2. 【核心】调用通用工具函数进行安全解析
-	// fs.dir 是我们的基础目录，userPath 是用户提供的相对路径
 	return utils.SafeResolveToAbsPath(fs.dir, userPath)
 }

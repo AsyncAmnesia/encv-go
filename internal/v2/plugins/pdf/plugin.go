@@ -165,6 +165,18 @@ func (p *PDFPlugin) GroupFiles(inputPaths []string, inputRootDir, outputDir stri
 	return inputPaths, nil
 }
 
+func (p *PDFPlugin) ContainerType() uint16 {
+	return types.ContainerTypeDocument
+}
+
+func (p *PDFPlugin) DefaultIsSeekable(inputPath string) bool {
+	return false
+}
+
+func (p *PDFPlugin) DisasterZones(inputPath string) []types.DisasterZone {
+	return nil
+}
+
 // --- 加密逻辑 ---
 
 // Plugin 接口实现

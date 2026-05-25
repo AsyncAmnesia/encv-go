@@ -175,6 +175,18 @@ func (p *ImagePlugin) GroupFiles(inputPaths []string, inputRootDir, outputDir st
 	return inputPaths, nil
 }
 
+func (p *ImagePlugin) ContainerType() uint16 {
+	return types.ContainerTypeImage
+}
+
+func (p *ImagePlugin) DefaultIsSeekable(inputPath string) bool {
+	return false
+}
+
+func (p *ImagePlugin) DisasterZones(inputPath string) []types.DisasterZone {
+	return nil
+}
+
 // --- 加密逻辑 ---
 
 // Plugin 接口实现

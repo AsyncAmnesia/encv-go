@@ -5,7 +5,11 @@ import Tabs from '@/views/Tabs.vue'
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    redirect: '/tabs/files',
+    redirect: '/tabs/home',
+  },
+  {
+    path: '/player',
+    component: () => import('@/views/ArtPlayerView.vue'),
   },
   {
     path: '/tabs/',
@@ -13,27 +17,59 @@ const routes: RouteRecordRaw[] = [
     children: [
       {
         path: '',
-        redirect: '/tabs/files',
+        redirect: '/tabs/home',
+      },
+      {
+        path: 'home',
+        component: () => import('@/views/HomePage.vue'),
       },
       {
         path: 'files',
         component: () => import('@/views/Files.vue'),
       },
       {
-        path: 'player',
-        component: () => import('@/views/Player.vue'),
-      },
-      {
         path: 'tasks',
         component: () => import('@/views/Tasks.vue'),
       },
       {
-        path: 'webdav',
-        component: () => import('@/views/WebDAV.vue'),
+        path: 'remote',
+        component: () => import('@/views/Remote.vue'),
       },
       {
         path: 'settings',
         component: () => import('@/views/Settings.vue'),
+      },
+      {
+        path: 'settings/server',
+        component: () => import('@/views/ServerDetail.vue'),
+      },
+      {
+        path: 'settings/engine',
+        component: () => import('@/views/EngineDetail.vue'),
+      },
+      {
+        path: 'settings/about',
+        component: () => import('@/views/AboutDetail.vue'),
+      },
+      {
+        path: 'settings/cache',
+        component: () => import('@/views/CacheDetail.vue'),
+      },
+      {
+        path: 'settings/plugins',
+        component: () => import('@/views/PluginSettings.vue'),
+      },
+      {
+        path: 'devlogs',
+        component: () => import('@/views/DevLogs.vue'),
+      },
+      {
+        path: 'preview',
+        component: () => import('@/views/FilePreview.vue'),
+      },
+      {
+        path: 'file-info',
+        component: () => import('@/views/FileInfo.vue'),
       },
     ],
   },

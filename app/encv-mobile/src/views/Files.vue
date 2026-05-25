@@ -9,7 +9,7 @@
         </ion-buttons>
         <ion-title>{{ t('files.title') }}</ion-title>
       </ion-toolbar>
-      <ion-toolbar v-if="currentPath !== '/'">
+      <ion-toolbar v-if="currentPath !== '/' && !isSearching">
         <div class="breadcrumb-scroll">
           <div class="breadcrumb">
             <span class="breadcrumb-item" @click="navigateTo('/')">{{ t('files.root') }}</span>
@@ -20,16 +20,43 @@
           </div>
         </div>
       </ion-toolbar>
+      <ion-toolbar>
+        <ion-searchbar
+          v-model="searchQuery"
+          :placeholder="t('files.searchPlaceholder')"
+          @ionInput="handleSearchInput"
+          @ionClear="handleSearchClear"
+        ></ion-searchbar>
+        <ion-toggle
+          v-if="searchQuery"
+          slot="end"
+          v-model="searchRecursive"
+          @ionChange="handleSearchToggle"
+          class="recursive-toggle"
+        >
+          {{ t('files.recursive') }}
+        </ion-toggle>
+      </ion-toolbar>
     </ion-header>
 
     <ion-content>
-      <ion-refresher slot="fixed" @ionRefresh="handleRefresh">
+      <ion-refresher slot="fixed" @ionRefresh="handleRefresh" v-if="!searchQuery">
         <ion-refresher-content></ion-refresher-content>
       </ion-refresher>
 
-      <div v-if="loading" class="loading-container">
+      <div v-if="loading || isSearching" class="loading-container">
         <ion-spinner name="crescent"></ion-spinner>
-        <p>{{ t('files.loading') }}</p>
+        <p>{{ isSearching ? t('files.searching') : (connecting ? t('files.connecting') : t('files.loading')) }}</p>
+      </div>
+
+      <div v-else-if="noPermission" class="empty-state">
+        <ion-icon :icon="lockClosed" class="empty-icon"></ion-icon>
+        <h3>{{ t('files.noPermission') }}</h3>
+        <p>{{ t('files.noPermissionDesc') }}</p>
+        <ion-button @click="handleRequestStorage">
+          <ion-icon :icon="folderOpen" slot="start"></ion-icon>
+          {{ t('files.grantPermission') }}
+        </ion-button>
       </div>
 
       <div v-else-if="!serverOnline" class="empty-state">
@@ -42,18 +69,18 @@
         </ion-button>
       </div>
 
-      <div v-else-if="files.length === 0" class="empty-state">
-        <ion-icon :icon="folderOpen" class="empty-icon"></ion-icon>
-        <h3>{{ t('files.emptyDir') }}</h3>
-        <p>{{ t('files.emptyDirDesc') }}</p>
+      <div v-else-if="displayFiles.length === 0" class="empty-state">
+        <ion-icon :icon="searchQuery ? search : folderOpen" class="empty-icon"></ion-icon>
+        <h3>{{ searchQuery ? t('files.noSearchResults') : t('files.emptyDir') }}</h3>
+        <p>{{ searchQuery ? t('files.noSearchResultsDesc') : t('files.emptyDirDesc') }}</p>
       </div>
 
       <ion-list v-else>
         <ion-item
-          v-for="file in sortedFiles"
+          v-for="file in displayFiles"
           :key="file.path"
           @click="handleFileClick(file)"
-          detail
+          v-longpress="() => handleLongPress(file)"
         >
           <ion-icon
             :icon="getFileIcon(file)"
@@ -62,12 +89,16 @@
           ></ion-icon>
           <ion-label>
             <h2>{{ file.name }}</h2>
-            <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified"> · {{ file.modified }}</span></p>
+            <p v-if="searchQuery && !file.isDirectory" class="search-path">{{ file.path }}</p>
+            <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified && !searchQuery"> · {{ formatDateTime(file.modified) }}</span></p>
             <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
           </ion-label>
-          <ion-badge v-if="getFileCategory(file.name) === 'encrypted'" color="warning" slot="end">
+          <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
             ENCV
           </ion-badge>
+          <ion-button v-if="searchQuery" slot="end" fill="clear" class="open-folder-btn" @click.stop="openContainingFolder(file)">
+            <ion-icon :icon="folderOpen" class="open-folder-icon" slot="icon-only"></ion-icon>
+          </ion-button>
         </ion-item>
       </ion-list>
     </ion-content>
@@ -93,7 +124,10 @@ import {
   IonLabel,
   IonBadge,
   IonSpinner,
-  toastController,
+  IonSearchbar,
+  IonToggle,
+  actionSheetController,
+  alertController,
 } from '@ionic/vue'
 import {
   arrowBack,
@@ -108,23 +142,89 @@ import {
   lockClosed,
   cloudOffline,
   refresh,
+  trash,
+  search,
+  informationCircle,
 } from 'ionicons/icons'
 import {
   listFiles,
-  checkServerStatus,
+  searchFiles,
   formatFileSize,
   getFileCategory,
+  PermissionDeniedError,
+  NotFoundError,
+  deleteFile,
+  createTask,
+  fetchConfig,
+  checkEncryptOutputExists,
 } from '@/api/encv'
 import type { FileItem } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
+import { formatDateTime } from '@/composables/useDateFormat'
+import { vLongpress } from '@/directives/longpress'
+import { isNative, requestStoragePermission, openPlayer, openExternal } from '@/plugins/GoProcess'
+import { getExternalStreamUrl } from '@/api/encv'
+import { showToast } from '@/composables/useToast'
+
+type PlayMode = 'artplayer' | 'mpv' | 'external'
+
+function getPlayMode(mediaType: 'video' | 'audio'): PlayMode {
+  const key = mediaType === 'video' ? 'encv_player_video' : 'encv_player_audio'
+  const stored = localStorage.getItem(key)
+  if (stored === 'artplayer' || stored === 'mpv' || stored === 'external') return stored
+  return mediaType === 'video' ? 'artplayer' : 'mpv'
+}
+
+function playMedia(file: FileItem, category: string) {
+  const isVideo = category === 'video' || category === 'encrypted'
+  const mediaType = isVideo ? 'video' : 'audio'
+  const mimeType = isVideo ? 'video/*' : 'audio/*'
+  const mode = getPlayMode(mediaType)
+
+  switch (mode) {
+    case 'artplayer':
+      router.push({ path: '/player', query: { path: file.path, name: file.name } })
+      break
+    case 'mpv':
+      if (isNative()) {
+        openPlayer(file.path, file.name, mimeType)
+      } else {
+        router.push({ path: '/player', query: { path: file.path, name: file.name } })
+      }
+      break
+    case 'external':
+      if (isNative()) {
+        const url = getExternalStreamUrl(file.path)
+        openExternal(url, mimeType)
+      } else {
+        router.push({ path: '/player', query: { path: file.path, name: file.name } })
+      }
+      break
+  }
+}
 
 const { t } = useI18n()
 const router = useRouter()
 const serverOnline = ref(false)
+const noPermission = ref(false)
 const files = ref<FileItem[]>([])
 const currentPath = ref('/')
 const loading = ref(false)
+const connecting = ref(false)
+
+const searchQuery = ref('')
+const searchRecursive = ref(false)
+const searchResults = ref<FileItem[] | null>(null)
+const isSearching = ref(false)
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+let searchGeneration = 0
+
+const searchCache = new Map<string, { timestamp: number; results: FileItem[] }>()
+const CACHE_TTL = 30000
+
+const MAX_RETRIES = isNative() ? 15 : 3
+const RETRY_DELAY = 1000
 
 const pathSegments = computed(() => {
   if (currentPath.value === '/') return []
@@ -133,6 +233,11 @@ const pathSegments = computed(() => {
     name,
     path: '/' + parts.slice(0, index + 1).join('/'),
   }))
+})
+
+const displayFiles = computed(() => {
+  if (searchResults.value !== null) return searchResults.value
+  return sortedFiles.value
 })
 
 const sortedFiles = computed(() => {
@@ -145,7 +250,7 @@ const sortedFiles = computed(() => {
 
 function getFileIcon(file: FileItem) {
   if (file.isDirectory) return folder
-  const category = getFileCategory(file.name)
+  const category = getFileCategory(file.name, file.isEncrypted)
   switch (category) {
     case 'video': return videocam
     case 'audio': return musicalNotes
@@ -158,7 +263,7 @@ function getFileIcon(file: FileItem) {
 
 function getFileIconColor(file: FileItem) {
   if (file.isDirectory) return 'primary'
-  const category = getFileCategory(file.name)
+  const category = getFileCategory(file.name, file.isEncrypted)
   switch (category) {
     case 'video': return 'danger'
     case 'audio': return 'tertiary'
@@ -168,32 +273,74 @@ function getFileIconColor(file: FileItem) {
   }
 }
 
+let loadGeneration = 0
+
 async function loadFiles() {
+  console.info('[Files] Loading files, path:', currentPath.value)
+  const gen = ++loadGeneration
   loading.value = true
-  serverOnline.value = await checkServerStatus()
-  if (serverOnline.value) {
+  connecting.value = false
+  noPermission.value = false
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (gen !== loadGeneration) return
+
     try {
       files.value = await listFiles(currentPath.value)
+      serverOnline.value = true
+      noPermission.value = false
+      loading.value = false
+      connecting.value = false
+      console.info('[Files] Loaded', files.value.length, 'files')
+      return
     } catch (error) {
-      console.error('Failed to load files:', error)
-      const toast = await toastController.create({
-        message: t('files.loadFailed'),
-        duration: 2000,
-        color: 'danger',
-      })
-      await toast.present()
+      if (error instanceof PermissionDeniedError) {
+        serverOnline.value = true
+        noPermission.value = true
+        loading.value = false
+        connecting.value = false
+        return
+      }
+
+      if (error instanceof NotFoundError) {
+        serverOnline.value = true
+        loading.value = false
+        connecting.value = false
+        if (currentPath.value !== '/') {
+          showToast({ message: t('files.pathNotFound'), duration: 2000, color: 'warning' })
+          goUp()
+        }
+        return
+      }
+
+      if (attempt < MAX_RETRIES) {
+        connecting.value = true
+        await new Promise(r => setTimeout(r, RETRY_DELAY))
+      }
     }
   }
+
+  if (gen !== loadGeneration) return
+  serverOnline.value = false
   loading.value = false
+  connecting.value = false
 }
 
 async function handleRefresh(event: CustomEvent) {
-  serverOnline.value = await checkServerStatus()
-  if (serverOnline.value) {
-    try {
-      files.value = await listFiles(currentPath.value)
-    } catch {
-      // silent
+  try {
+    files.value = await listFiles(currentPath.value)
+    serverOnline.value = true
+    noPermission.value = false
+  } catch (error) {
+    if (error instanceof PermissionDeniedError) {
+      serverOnline.value = true
+      noPermission.value = true
+    }
+    if (error instanceof NotFoundError) {
+      serverOnline.value = true
+      if (currentPath.value !== '/') {
+        goUp()
+      }
     }
   }
   ;(event.target as any)?.complete?.()
@@ -203,9 +350,24 @@ async function retryConnection() {
   await loadFiles()
 }
 
+async function handleRequestStorage() {
+  console.info('[Files] Requesting storage permission')
+  await requestStoragePermission()
+  setTimeout(() => loadFiles(), 1500)
+}
+
 function navigateTo(path: string) {
   currentPath.value = path
+  searchQuery.value = ''
+  searchResults.value = null
   loadFiles()
+}
+
+function openContainingFolder(file: FileItem) {
+  const parentDir = file.path.substring(0, file.path.lastIndexOf('/')) || '/'
+  searchQuery.value = ''
+  searchResults.value = null
+  navigateTo(parentDir)
 }
 
 function goUp() {
@@ -213,6 +375,8 @@ function goUp() {
   const parts = currentPath.value.split('/').filter(Boolean)
   parts.pop()
   currentPath.value = parts.length === 0 ? '/' : '/' + parts.join('/')
+  searchQuery.value = ''
+  searchResults.value = null
   loadFiles()
 }
 
@@ -225,30 +389,311 @@ async function handleFileClick(file: FileItem) {
     return
   }
 
-  const category = getFileCategory(file.name)
+  const category = getFileCategory(file.name, file.isEncrypted)
+  console.info('[Files] Click:', file.name, 'category:', category)
   if (category === 'video' || category === 'audio') {
-    router.push({
-      path: '/tabs/player',
-      query: { path: file.path, name: file.name },
-    })
-  } else if (category === 'encrypted') {
-    router.push({
-      path: '/tabs/player',
-      query: { path: file.path, name: file.name },
-    })
+    playMedia(file, category)
   } else {
-    const toast = await toastController.create({
-      message: t('files.previewNotSupported', { name: file.name }),
-      duration: 2000,
-      color: 'medium',
+    router.push({
+      path: '/tabs/preview',
+      query: { path: file.path, name: file.name, isEncrypted: String(!!file.isEncrypted) },
     })
-    await toast.present()
   }
 }
 
-function onFileChange(data: { path: string; action: string }) {
-  const dir = data.path.substring(0, data.path.lastIndexOf('/')) || '/'
-  if (dir === currentPath.value) {
+function handleSearchInput() {
+  const query = searchQuery.value.trim()
+  if (!query) {
+    searchGeneration++
+    searchResults.value = null
+    isSearching.value = false
+    return
+  }
+  searchTimer = setTimeout(() => performSearch(), searchRecursive.value ? 600 : 300)
+}
+
+function handleSearchClear() {
+  searchGeneration++
+  searchQuery.value = ''
+  searchResults.value = null
+  isSearching.value = false
+}
+
+function handleSearchToggle() {
+  if (searchQuery.value.trim()) {
+    performSearch()
+  }
+}
+
+async function performSearch() {
+  const query = searchQuery.value.trim()
+  if (!query) return
+
+  if (isSearching.value) {
+    searchGeneration++
+  }
+  const gen = ++searchGeneration
+
+  const cacheKey = `${currentPath.value}:${query}:${searchRecursive.value}`
+  const cached = searchCache.get(cacheKey)
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    searchResults.value = cached.results
+    return
+  }
+
+  isSearching.value = true
+  try {
+    const results = await searchFiles(currentPath.value, query, searchRecursive.value)
+    if (gen !== searchGeneration) return
+    searchResults.value = results
+    searchCache.set(cacheKey, { timestamp: Date.now(), results })
+  } catch {
+    if (gen !== searchGeneration) return
+    searchResults.value = []
+  }
+  isSearching.value = false
+}
+
+async function handleLongPress(file: FileItem) {
+  const category = file.isDirectory ? 'directory' : getFileCategory(file.name, file.isEncrypted)
+
+  const buttons: any[] = []
+
+  buttons.push({
+    text: t('files.info'),
+    icon: informationCircle,
+    handler: () => {
+      router.push({ path: '/tabs/file-info', query: { path: file.path, name: file.name } })
+    },
+  })
+
+  if (file.isDirectory) {
+    buttons.push({
+      text: t('files.open'),
+      icon: folderOpen,
+      handler: () => {
+        const newPath = currentPath.value === '/'
+          ? '/' + file.name
+          : currentPath.value + '/' + file.name
+        navigateTo(newPath)
+      },
+    })
+    buttons.push({
+      text: t('files.encrypt'),
+      icon: lockClosed,
+      handler: () => {
+        handleEncryptFile(file)
+      },
+    })
+  } else if (category === 'encrypted') {
+    buttons.push({
+      text: t('files.play'),
+      icon: videocam,
+      handler: () => {
+        playMedia(file, 'encrypted')
+      },
+    })
+    buttons.push({
+      text: t('files.decrypt'),
+      icon: lockClosed,
+      handler: () => {
+        handleDecryptFile(file)
+      },
+    })
+    buttons.push({
+      text: t('files.delete'),
+      icon: trash,
+      role: 'destructive',
+      handler: () => {
+        handleDeleteFile(file)
+      },
+    })
+  } else {
+    const isMedia = category === 'video' || category === 'audio'
+    buttons.push({
+      text: isMedia ? t('files.play') : t('files.preview'),
+      icon: isMedia ? videocam : image,
+      handler: () => {
+        if (isMedia) {
+          playMedia(file, category)
+        } else {
+          router.push({
+            path: '/tabs/preview',
+            query: { path: file.path, name: file.name, isEncrypted: String(!!file.isEncrypted) },
+          })
+        }
+      },
+    })
+    buttons.push({
+      text: t('files.encrypt'),
+      icon: lockClosed,
+      handler: () => {
+        handleEncryptFile(file)
+      },
+    })
+    buttons.push({
+      text: t('files.delete'),
+      icon: trash,
+      role: 'destructive',
+      handler: () => {
+        handleDeleteFile(file)
+      },
+    })
+  }
+
+  buttons.push({
+    text: t('files.cancelSelect'),
+    role: 'cancel',
+  })
+
+  const actionSheet = await actionSheetController.create({
+    header: file.name,
+    buttons,
+  })
+  await actionSheet.present()
+}
+
+async function handleEncryptFile(file: FileItem) {
+  const parentDir = file.path.substring(0, file.path.lastIndexOf('/')) || '/'
+  let globalPassword = ''
+  try {
+    const cfg = await fetchConfig()
+    globalPassword = (cfg as any).password || ''
+  } catch {}
+
+  if (!globalPassword) {
+    showToast({ message: t('files.noPassword'), duration: 2000, color: 'danger' })
+    return
+  }
+
+  const alert = await alertController.create({
+    header: t('files.encrypt'),
+    inputs: [
+      {
+        name: 'targetPath',
+        type: 'text',
+        placeholder: t('tasks.targetPathPlaceholder'),
+        value: parentDir,
+        attributes: { autocomplete: 'off' },
+      },
+    ],
+    buttons: [
+      { text: t('files.cancelSelect'), role: 'cancel' },
+      {
+        text: t('files.encrypt'),
+        handler: async (data: Record<string, string>) => {
+          const targetPath = (data.targetPath || '').trim()
+          const result = await checkEncryptOutputExists(file.path, targetPath || undefined)
+
+          if (result.exists) {
+            const outputName = result.outputPath.split('/').pop() || ''
+            const confirm = await alertController.create({
+              header: t('files.encrypt'),
+              message: t('files.overwriteConfirm', { name: outputName }),
+              buttons: [
+                { text: t('files.cancelSelect'), role: 'cancel' },
+                {
+                  text: t('common.confirm'),
+                  handler: async () => {
+                    await doCreateTask('encrypt', file.path, targetPath, '')
+                  },
+                },
+              ],
+            })
+            await confirm.present()
+          } else {
+            await doCreateTask('encrypt', file.path, targetPath, '')
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
+async function handleDecryptFile(file: FileItem) {
+  const parentDir = file.path.substring(0, file.path.lastIndexOf('/')) || '/'
+  let globalPassword = ''
+  try {
+    const cfg = await fetchConfig()
+    globalPassword = (cfg as any).password || ''
+  } catch {}
+
+  const alert = await alertController.create({
+    header: t('files.decrypt'),
+    inputs: [
+      {
+        name: 'targetPath',
+        type: 'text',
+        placeholder: t('tasks.targetPathPlaceholder'),
+        value: parentDir,
+        attributes: { autocomplete: 'off' },
+      },
+      {
+        name: 'password',
+        type: 'password',
+        placeholder: t('tasks.passwordPlaceholder'),
+        value: globalPassword,
+        attributes: { autocomplete: 'off' },
+      },
+    ],
+    buttons: [
+      { text: t('files.cancelSelect'), role: 'cancel' },
+      {
+        text: t('files.decrypt'),
+        handler: async (data: Record<string, string>) => {
+          const targetPath = (data.targetPath || '').trim()
+          const password = (data.password || '').trim()
+          await doCreateTask('decrypt', file.path, targetPath, password)
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
+async function doCreateTask(type: 'encrypt' | 'decrypt', sourcePath: string, targetPath: string, password: string) {
+  try {
+    await createTask(type, sourcePath, targetPath, password)
+    showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
+  } catch {
+    showToast({ message: t('tasks.taskCreateFailed'), duration: 2000, color: 'danger' })
+  }
+}
+
+async function handleDeleteFile(file: FileItem) {
+  const alert = await alertController.create({
+    header: t('files.delete'),
+    message: t('files.deleteConfirm', { name: file.name }),
+    buttons: [
+      {
+        text: t('files.cancelSelect'),
+        role: 'cancel',
+      },
+      {
+        text: t('files.delete'),
+        role: 'destructive',
+        handler: async () => {
+          try {
+            await deleteFile(file.path)
+            await loadFiles()
+          } catch {
+            showToast({ message: t('files.deleteFailed'), duration: 2000, color: 'danger' })
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
+function onFileChange() {
+  searchCache.clear()
+  loadFiles()
+}
+
+function onBackendReady(data: { port?: number; running?: boolean }) {
+  if (data.running || data.port) {
     loadFiles()
   }
 }
@@ -256,11 +701,19 @@ function onFileChange(data: { path: string; action: string }) {
 onMounted(() => {
   loadFiles()
   eventBus.on('file:change', onFileChange)
+  window.addEventListener('encv:backend-ready', onBackendReadyWindow as EventListener)
 })
 
 onUnmounted(() => {
   eventBus.off('file:change', onFileChange)
+  window.removeEventListener('encv:backend-ready', onBackendReadyWindow as EventListener)
+  if (searchTimer) clearTimeout(searchTimer)
 })
+
+function onBackendReadyWindow(event: Event) {
+  const detail = (event as CustomEvent).detail || {}
+  onBackendReady(detail)
+}
 </script>
 
 <style scoped>
@@ -321,4 +774,32 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
 }
+
+.recursive-toggle {
+  margin-right: 8px;
+  font-size: 12px;
+}
+
+.search-path {
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.open-folder-btn {
+  --padding-start: 8px;
+  --padding-end: 8px;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+}
+
+.open-folder-icon {
+  font-size: 20px;
+  color: var(--ion-color-primary);
+}
+
+
 </style>
