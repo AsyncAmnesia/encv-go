@@ -1,5 +1,11 @@
 name: Sync Fork & Auto PR
 
+# 确保 UPSTREAM_PR_TOKEN 是一个 Classic Token，并勾选了 public_repo 权限（因为上游和 Fork 都是公开的）。
+# Fork 仓库 → Settings → Secrets and variables → Actions → Repository secrets
+# · Name：UPSTREAM_PR_TOKEN
+# · Value：直接粘贴，确保没有前后空格或换行。
+
+
 on:
   schedule:
     - cron: '1 16 * * *'          # 北京时间 00:01
@@ -19,6 +25,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          token: ${{ secrets.UPSTREAM_PR_TOKEN }}
           fetch-depth: 0
           ref: dev
 
@@ -39,7 +46,7 @@ jobs:
       - name: Create PR if needed
         if: steps.diff_check.outputs.has_diff == 'true'
         env:
-          GH_TOKEN: ${{ secrets.UPSTREAM_PR_TOKEN }}   # ← 需要有效public_repo权限
+          GH_TOKEN: ${{ secrets.UPSTREAM_PR_TOKEN }}
         run: |
           existing_pr=$(gh pr list --repo $UPSTREAM_REPO \
             --head "${{ github.repository_owner }}:dev" \
