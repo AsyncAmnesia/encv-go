@@ -45,8 +45,30 @@
                 <p>{{ config.url }}</p>
                 <p v-if="config.mountPath">{{ t('webdav.mount') }}: {{ config.mountPath }}</p>
               </ion-label>
-              <ion-badge color="medium" slot="end">{{ t('webdav.saved') }}</ion-badge>
+              <ion-badge :color="config.id === testingId ? 'warning' : 'medium'" slot="end">
+                {{ config.id === testingId ? t('webdav.testing') : t('webdav.saved') }}
+              </ion-badge>
             </ion-item>
+
+            <div v-if="listTestResults[config.id]" class="list-test-result-area" :class="{ 'result-error': !listTestResults[config.id].success, 'result-ok': listTestResults[config.id].success }">
+              <div class="result-items">
+                <div class="result-item">
+                  <span class="result-label">{{ listTestResults[config.id].reachable ? t('webdav.reachable') : t('webdav.notReachable') }}</span>
+                  <ion-badge :color="listTestResults[config.id].reachable ? 'success' : 'danger'" class="mini-badge">
+                    {{ listTestResults[config.id].reachable ? 'OK' : 'FAIL' }}
+                  </ion-badge>
+                </div>
+                <div class="result-item">
+                  <span class="result-label">{{ listTestResults[config.id].is_webdav ? t('webdav.isWebDAV') : t('webdav.notWebDAV') }}</span>
+                  <ion-badge :color="listTestResults[config.id].is_webdav ? 'success' : 'danger'" class="mini-badge">
+                    {{ listTestResults[config.id].is_webdav ? 'OK' : 'FAIL' }}
+                  </ion-badge>
+                </div>
+                <div v-if="listTestResults[config.id].error" class="result-error-inline">
+                  {{ listTestResults[config.id].error }}
+                </div>
+              </div>
+            </div>
             <ion-item-options side="end">
               <ion-item-option color="primary" @click="testConfig(config)">
                 {{ t('webdav.test') }}
@@ -135,6 +157,56 @@
             <ion-icon :icon="flash" slot="start"></ion-icon>
             {{ testing ? t('webdav.testing') : t('webdav.testConnection') }}
           </ion-button>
+
+          <div v-if="testResult" class="test-result-area" :class="{ 'result-error': !testResult.success, 'result-ok': testResult.success }">
+            <h4 class="result-title">{{ t('webdav.testResult') }}</h4>
+
+            <div class="result-items">
+              <div class="result-item">
+                <span class="result-label">{{ testResult.reachable ? t('webdav.reachable') : t('webdav.notReachable') }}</span>
+                <ion-badge :color="testResult.reachable ? 'success' : 'danger'">
+                  {{ testResult.reachable ? 'OK' : 'FAIL' }}
+                </ion-badge>
+              </div>
+
+              <div class="result-item">
+                <span class="result-label">{{ testResult.is_webdav ? t('webdav.isWebDAV') : t('webdav.notWebDAV') }}</span>
+                <ion-badge :color="testResult.is_webdav ? 'success' : 'danger'">
+                  {{ testResult.is_webdav ? 'OK' : 'FAIL' }}
+                </ion-badge>
+              </div>
+
+              <div v-if="testResult.is_webdav" class="result-item">
+                <span class="result-label">{{ testResult.auth_ok ? t('webdav.authOK') : t('webdav.authFailed') }}</span>
+                <ion-badge :color="testResult.auth_ok ? 'success' : 'danger'">
+                  {{ testResult.auth_ok ? 'OK' : 'FAIL' }}
+                </ion-badge>
+              </div>
+
+              <div v-if="testResult.is_webdav && testResult.status_code === 207" class="result-item">
+                <span class="result-label">{{ testResult.dir_readable ? t('webdav.dirReadable') : t('webdav.dirNotReadable') }}</span>
+                <ion-badge :color="testResult.dir_readable ? 'success' : 'danger'">
+                  {{ testResult.dir_readable ? 'OK' : 'FAIL' }}
+                </ion-badge>
+              </div>
+
+              <div class="result-item">
+                <span class="result-label">{{ t('webdav.statusCode') }}</span>
+                <span class="result-value">HTTP {{ testResult.status_code }}</span>
+              </div>
+
+              <div v-if="testResult.dav_header" class="result-item">
+                <span class="result-label">{{ t('webdav.davHeader') }}</span>
+                <span class="result-value code-text">{{ testResult.dav_header }}</span>
+              </div>
+            </div>
+
+            <div v-if="testResult.error" class="result-error-msg">
+              <p>{{ t('webdav.testDetail') }}:</p>
+              <p class="error-detail">{{ testResult.error }}</p>
+            </div>
+          </div>
+
           <ion-button expand="block" class="ion-margin-top" @click="saveConfig" :disabled="!formName || !formUrl">
             <ion-icon :icon="saveIcon" slot="start"></ion-icon>
             {{ t('webdav.save') }}
@@ -203,7 +275,7 @@ import {
   getWebDAVConfigs, saveWebDAVConfigs, testWebDAVConnection,
   fetchRemoteInfo, addOpenlistSite, updateOpenlistSite, deleteOpenlistSite,
 } from '@/api/encv'
-import type { WebDAVConfig, RemoteWebDAVInfo, OpenlistSiteInfo } from '@/api/encv'
+import type { WebDAVConfig, RemoteWebDAVInfo, OpenlistSiteInfo, WebDAVTestResult } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 
@@ -218,7 +290,10 @@ const openlistSiteKeys = computed(() => Object.keys(openlistSites.value))
 const showWebdavModal = ref(false)
 const editingId = ref('')
 const testing = ref(false)
+const testingId = ref('')
 const showPassword = ref(false)
+const testResult = ref<WebDAVTestResult | null>(null)
+const listTestResults = ref<Record<string, WebDAVTestResult>>({})
 const formName = ref('')
 const formUrl = ref('')
 const formUsername = ref('')
@@ -264,6 +339,7 @@ function openNewConfig() {
   formUsername.value = ''
   formPassword.value = ''
   formMountPath.value = '/webdav'
+  testResult.value = null
   showWebdavModal.value = true
 }
 
@@ -274,6 +350,7 @@ function editConfig(config: WebDAVConfig) {
   formUsername.value = config.username
   formPassword.value = config.password
   formMountPath.value = config.mountPath
+  testResult.value = null
   showWebdavModal.value = true
 }
 
@@ -304,26 +381,29 @@ function saveConfig() {
 }
 
 async function testConfig(config: WebDAVConfig) {
+  testingId.value = config.id
+  listTestResults.value[config.id] = { success: false, reachable: false, is_webdav: false, auth_ok: false, dir_readable: false, status_code: 0 }
   try {
-    await testWebDAVConnection({ name: config.name, url: config.url, username: config.username, password: config.password, mountPath: config.mountPath })
-    showToast({ message: t('webdav.connectionSuccess'), duration: 2000, color: 'success' })
+    const result = await testWebDAVConnection({ name: config.name, url: config.url, username: config.username, password: config.password, mountPath: config.mountPath })
+    testingId.value = ''
+    listTestResults.value[config.id] = result
   } catch (e) {
-    const detail = e instanceof Error ? e.message : String(e)
-    showToast({ message: t('webdav.connectionFailed') + ': ' + detail, duration: 3000, color: 'danger' })
+    testingId.value = ''
+    listTestResults.value[config.id] = { success: false, reachable: false, is_webdav: false, auth_ok: false, dir_readable: false, status_code: 0, error: e instanceof Error ? e.message : String(e) }
   }
 }
 
 async function testConnection() {
   if (!formUrl.value) return
   testing.value = true
+  testResult.value = null
   try {
-    await testWebDAVConnection({ name: formName.value, url: formUrl.value, username: formUsername.value, password: formPassword.value, mountPath: formMountPath.value })
+    const result = await testWebDAVConnection({ name: formName.value, url: formUrl.value, username: formUsername.value, password: formPassword.value, mountPath: formMountPath.value })
     testing.value = false
-    showToast({ message: t('webdav.connectionSuccess'), duration: 2000, color: 'success' })
+    testResult.value = result
   } catch (e) {
     testing.value = false
-    const detail = e instanceof Error ? e.message : String(e)
-    showToast({ message: t('webdav.connectionFailed') + ': ' + detail, duration: 3000, color: 'danger' })
+    testResult.value = { success: false, reachable: false, is_webdav: false, auth_ok: false, dir_readable: false, status_code: 0, error: e instanceof Error ? e.message : String(e) }
   }
 }
 
@@ -443,5 +523,104 @@ onMounted(() => {
 .proxy-url {
   font-size: 12px;
   color: var(--ion-color-primary);
+}
+
+.test-result-area {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 8px;
+  background: var(--ion-background-color);
+}
+
+.result-ok {
+  border-left: 3px solid var(--ion-color-success);
+}
+
+.result-error {
+  border-left: 3px solid var(--ion-color-danger);
+}
+
+.result-title {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ion-text-color);
+}
+
+.result-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.result-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.result-label {
+  color: var(--ion-text-color);
+  font-weight: 500;
+}
+
+.result-value {
+  color: var(--ion-text-secondary);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.code-text {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.result-error-msg {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(var(--ion-color-danger-rgb), 0.15);
+}
+
+.result-error-msg p:first-child {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ion-color-danger);
+}
+
+.error-detail {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ion-color-medium);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.list-test-result-area {
+  padding: 10px 14px;
+  background: var(--ion-background-color);
+}
+
+.list-test-result-area.result-ok {
+  border-left: 3px solid var(--ion-color-success);
+}
+
+.list-test-result-area.result-error {
+  border-left: 3px solid var(--ion-color-danger);
+}
+
+.mini-badge {
+  font-size: 11px;
+  --padding-start: 6px;
+  --padding-end: 6px;
+}
+
+.result-error-inline {
+  color: var(--ion-color-danger);
+  font-size: 12px;
+  margin-top: 4px;
+  word-break: break-word;
 }
 </style>
