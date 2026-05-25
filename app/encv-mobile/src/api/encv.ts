@@ -533,6 +533,8 @@ export interface FFmpegStatus {
   ffmpeg_available: boolean
   ffprobe_available: boolean
   error?: string
+  ffmpeg_detail?: string
+  ffprobe_detail?: string
 }
 
 export async function fetchFFmpegStatus(): Promise<FFmpegStatus> {

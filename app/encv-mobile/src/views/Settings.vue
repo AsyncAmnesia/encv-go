@@ -111,10 +111,16 @@
               <ion-badge :color="engineStatus?.ffmpeg_available ? 'success' : 'danger'" class="status-badge">
                 {{ t('settings.ffmpegAvail') }}
               </ion-badge>
+              <span v-if="!engineStatus?.ffmpeg_available && engineStatus?.ffmpeg_detail" class="engine-detail-text">
+                {{ engineStatus.ffmpeg_detail }}
+              </span>
               <ion-badge :color="engineStatus?.ffprobe_available ? 'success' : 'danger'" class="status-badge">
                 {{ t('settings.ffprobeAvail') }}
               </ion-badge>
-              <span v-if="engineStatus && !engineStatus.ffmpeg_available && !engineStatus.ffprobe_available" class="engine-error-inline">
+              <span v-if="!engineStatus?.ffprobe_available && engineStatus?.ffprobe_detail" class="engine-detail-text">
+                {{ engineStatus.ffprobe_detail }}
+              </span>
+              <span v-if="engineStatus && !engineStatus.ffmpeg_available && !engineStatus.ffprobe_available && !engineStatus.ffmpeg_detail && !engineStatus.ffprobe_detail" class="engine-error-inline">
                 {{ t('settings.engineError') }}
               </span>
             </p>
@@ -713,6 +719,12 @@ watch(serverOnline, async (online) => {
   color: var(--ion-color-danger);
   font-size: 12px;
   margin-left: 4px;
+}
+.engine-detail-text {
+  color: var(--ion-color-danger);
+  font-size: 11px;
+  margin-left: 4px;
+  word-break: break-all;
 }
 .browse-btn {
   --padding-start: 8px;

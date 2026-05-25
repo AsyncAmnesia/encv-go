@@ -107,7 +107,7 @@ func FFProbeOutput(args ...string) ([]byte, error) {
 			return nil, fmt.Errorf("ffprobe: %s", classifyNativeError(err))
 		}
 		if result.exitCode != 0 {
-			return nil, fmt.Errorf("ffprobe failed (exit %d): %s", result.exitCode, truncateString(result.stderr, 200))
+			return nil, fmt.Errorf("ffprobe failed (exit %d): %s", result.exitCode, result.stderr)
 		}
 		return []byte(result.stdout), nil
 	}
@@ -122,7 +122,7 @@ func FFmpegRun(args ...string) error {
 			return fmt.Errorf("ffmpeg: %s", classifyNativeError(err))
 		}
 		if result.exitCode != 0 {
-			return fmt.Errorf("ffmpeg failed (exit %d): %s", result.exitCode, truncateString(result.stderr, 200))
+			return fmt.Errorf("ffmpeg failed (exit %d): %s", result.exitCode, result.stderr)
 		}
 		return nil
 	}

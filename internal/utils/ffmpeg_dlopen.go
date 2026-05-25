@@ -271,17 +271,20 @@ func callFFprobeNative(args []string) (*nativeResult, error) {
 	return result, nil
 }
 
-func CheckFFmpegAvailable() (ffmpegOk bool, ffprobeOk bool, errMsg string) {
+func CheckFFmpegAvailable() (ffmpegOk bool, ffprobeOk bool, errMsg string, ffmpegDetail string, ffprobeDetail string) {
 	libDir := getLibDir()
 	if libDir == "" {
-		return false, false, "ENCV_LIB_DIR not set"
+		return false, false, "ENCV_LIB_DIR not set", "", ""
 	}
 
 	ffmpegPath := filepath.Join(libDir, "libffmpeg.so")
 	ffprobePath := filepath.Join(libDir, "libffprobe.so")
 
-	ffmpegOk = checkLibAvailable(ffmpegPath, "ffmpeg_run")
-	ffprobeOk = checkLibAvailable(ffprobePath, "ffprobe_run")
+	var ffmpegErr, ffprobeErr string
+	ffmpegOk, ffmpegErr = checkLibAvailable(ffmpegPath, "ffmpeg_run")
+	ffprobeOk, ffprobeErr = checkLibAvailable(ffprobePath, "ffprobe_run")
+	ffmpegDetail = ffmpegErr
+	ffprobeDetail = ffprobeErr
 
 	if !ffmpegOk && !ffprobeOk {
 		errMsg = "ffmpeg and ffprobe libraries not available"
@@ -294,20 +297,26 @@ func CheckFFmpegAvailable() (ffmpegOk bool, ffprobeOk bool, errMsg string) {
 	return
 }
 
-func checkLibAvailable(libPath, symbol string) bool {
+func checkLibAvailable(libPath, symbol string) (bool, string) {
 	cLibPath := C.CString(libPath)
 	defer C.free(unsafe.Pointer(cLibPath))
 
 	C.dlerror()
 	handle := C.dlopen(cLibPath, C.RTLD_NOW|C.RTLD_LOCAL)
 	if handle == nil {
-		return false
+		err := C.GoString(C.dlerror())
+		return false, fmt.Sprintf("dlopen failed: %s", err)
 	}
 
 	cSymbol := C.CString(symbol)
 	defer C.free(unsafe.Pointer(cSymbol))
 
 	sym := C.dlsym(handle, cSymbol)
+	if sym == nil {
+		err := C.GoString(C.dlerror())
+		C.dlclose(handle)
+		return false, fmt.Sprintf("symbol '%s' not found: %s", symbol, err)
+	}
 	C.dlclose(handle)
-	return sym != nil
+	return true, ""
 }

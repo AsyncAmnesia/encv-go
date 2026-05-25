@@ -611,10 +611,12 @@ func (s *Server) handleBuildInfoGin(c *gin.Context) {
 }
 
 func (s *Server) handleFFmpegStatusGin(c *gin.Context) {
-	ffmpegOk, ffprobeOk, errMsg := utils.CheckFFmpegAvailable()
+	ffmpegOk, ffprobeOk, errMsg, ffmpegDetail, ffprobeDetail := utils.CheckFFmpegAvailable()
 	c.JSON(http.StatusOK, gin.H{
-		"ffmpeg_available":  ffmpegOk,
-		"ffprobe_available": ffprobeOk,
-		"error":             errMsg,
+		"ffmpeg_available":   ffmpegOk,
+		"ffprobe_available":  ffprobeOk,
+		"error":              errMsg,
+		"ffmpeg_detail":      ffmpegDetail,
+		"ffprobe_detail":     ffprobeDetail,
 	})
 }

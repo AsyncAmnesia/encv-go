@@ -36,6 +36,6 @@ func callFFprobeNative(args []string) (*nativeResult, error) {
 	return nil, fmt.Errorf("ffprobe native not available on this platform")
 }
 
-func CheckFFmpegAvailable() (ffmpegOk bool, ffprobeOk bool, errMsg string) {
-	return false, false, "not available on this platform"
+func CheckFFmpegAvailable() (ffmpegOk bool, ffprobeOk bool, errMsg string, ffmpegDetail string, ffprobeDetail string) {
+	return false, false, "not available on this platform", "", ""
 }
