@@ -3,8 +3,12 @@
 ## FFmpeg 版本备注
 
 - 当前使用 FFmpeg 8.0，构建脚本: `app/encv-mobile/scripts/build-ffmpeg-android.sh`
-- fftools（libffmpeg.so/libffprobe.so）采用静态链接方式：FFmpeg 各库的 `.a` 文件被整体链接进 fftools .so，运行时无需额外的 libavutil.so 等依赖
-- 链接时使用 `--whole-archive` + `--allow-multiple-definition`（解决 FFmpeg 多库重复符号如 ff_log2_tab）
+- fftools（libffmpeg.so/libffprobe.so）采用静态链接方式：FFmpeg 各库的 `.a` 文件被链接进 fftools .so，运行时无需额外的 libavutil.so 等依赖
+- 链接时使用 `--allow-multiple-definition`（解决 FFmpeg 多库重复符号如 ff_log2_tab）+ `--gc-sections`（死代码消除）
+- 链接时必须包含 `-lz`（FFmpeg 默认启用 zlib，`libavformat` 使用 `uncompress()` 解压 MOV/MP4 容器数据；缺少 `-lz` 导致 `dlopen` 失败：`cannot locate symbol "uncompress"`）
+- 编译和链接时使用 `-ffunction-sections -fdata-sections` + `-Wl,--gc-sections`（启用死代码消除，减小 .so 体积）
+- FFmpeg configure 使用 `--enable-small`（优化代码大小）+ `--disable-asm`（见下文）
+- 链接后使用 `llvm-strip --strip-all` 剥离调试符号
 - CFLAGS 使用 `-std=c11 -include time.h`（解决 NDK Clang 的 struct tm 前向声明问题）
 - CFLAGS **禁止**添加 `-I${FFMPEG_SRC}/libavutil` 等直接指向 FFmpeg 库子目录的 `-I` 标志（`libavutil/time.h` 会被 `-include time.h` 或 `#include <time.h>` 优先匹配到，导致系统 `<time.h>` 被遮蔽，`struct tm`/`gmtime`/`localtime`/`strftime`/`time` 未声明；fftools 源码使用 `#include "libavutil/xxx.h"` 形式，`-I${FFMPEG_SRC}` 已足够覆盖）
 - CFLAGS 必须定义 `-DHAVE_SYS_RESOURCE_H=1 -DHAVE_UNISTD_H=1 -DHAVE_SYS_SELECT_H=1`（FFmpeg fftools 手动编译时不经过 configure 生成 config.h，这些宏控制条件包含 `<sys/time.h>`/`<unistd.h>`/`<sys/select.h>`；缺少 `HAVE_SYS_RESOURCE_H` 会导致 `ffmpeg_opt.c` 中 `struct tm`/`gmtime`/`localtime`/`strftime`/`time` 未声明，因为 NDK 的 `<time.h>` 在 `-std=c11 -D_POSIX_C_SOURCE` 下需要 `<sys/time.h>` 前置包含才能提供完整定义）
@@ -23,7 +27,8 @@
 - 不经过 HTTP/Kotlin/JNI 中间层
 - stdout/stderr 通过 dup2 重定向到临时文件捕获
 - 环境变量 `ENCV_LIB_DIR` 指向 Android `nativeLibraryDir`
-- 相关文件：`internal/utils/ffmpeg_dlopen.go`（Android）、`internal/utils/ffmpeg_dlopen_stub.go`（桌面端）、`internal/utils/video.go`
+- `build-info.json` 通过 Android assets 分发：构建脚本复制到 `assets/`，Kotlin 端 `ensureBuildInfoExists()` 复制到 `filesDir`，Go 后端从 `HOME` 环境变量（即 `filesDir`）读取
+- 相关文件：`internal/utils/ffmpeg_dlopen.go`（Android）、`internal/utils/ffmpeg_dlopen_stub.go`（桌面端）、`internal/utils/video.go`、`internal/utils/build_info.go`
 
 ## 前端构建验证
 

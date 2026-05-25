@@ -120,6 +120,7 @@ class EncvGoService : Service() {
 
         try {
             ensureConfigExists()
+            ensureBuildInfoExists()
             configPort = readConfigPort()
             val binary = findExecutableBinary() ?: run {
                 publishFailure("no_binary", source, command)
@@ -388,6 +389,21 @@ class EncvGoService : Service() {
             return
         }
         copyDefaultConfig(dest)
+    }
+
+    private fun ensureBuildInfoExists() {
+        val dest = File(filesDir, "build-info.json")
+        if (dest.exists()) return
+        try {
+            assets.open("build-info.json").use { input ->
+                FileOutputStream(dest).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            Log.i(TAG, "Copied build-info.json to filesDir")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to copy build-info.json", e)
+        }
     }
 
     private fun copyDefaultConfig(dest: File) {

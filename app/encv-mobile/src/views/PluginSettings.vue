@@ -151,24 +151,6 @@
         </ion-list>
 
         <ion-list v-if="isNative()">
-          <ion-list-header>
-            <ion-label>移动端独有设置</ion-label>
-          </ion-list-header>
-          <ion-item>
-            <ion-icon :icon="filmOutline" slot="start"></ion-icon>
-            <ion-select
-              :value="mobileVideoPlayer"
-              @ionChange="handleMobileVideoPlayerChange"
-              :label="'视频打开方式'"
-              label-placement="stacked"
-              interface="action-sheet"
-              mode="ios"
-            >
-              <ion-select-option value="artplayer">Artplayer (内置)</ion-select-option>
-              <ion-select-option value="external">外部播放器</ion-select-option>
-            </ion-select>
-            <ion-badge color="primary" slot="end" class="config-badge badge-mobile">移动端</ion-badge>
-          </ion-item>
         </ion-list>
       </template>
 
@@ -223,8 +205,8 @@ import { ref, computed, onMounted, watch } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonBackButton, IonContent, IonList, IonListHeader, IonItem, IonItemDivider,
-  IonIcon, IonLabel, IonToggle, IonInput, IonSpinner, IonModal, IonBadge,
-  IonSelect, IonSelectOption, modalController,
+  IonIcon, IonLabel, IonToggle, IonInput, IonSpinner, IonModal,
+  modalController,
 } from '@ionic/vue'
 import {
   save as saveIcon, settingsOutline, shieldCheckmark, speedometerOutline,
@@ -401,14 +383,6 @@ function isFieldVisible(field: FieldDef): boolean {
 
 function shouldShowBadge(field: FieldDef): boolean {
   return !!field.isV4 || field.platform === 'mobile'
-}
-
-const mobileVideoPlayer = ref(localStorage.getItem('encv_player_video') || 'artplayer')
-
-function handleMobileVideoPlayerChange(event: CustomEvent) {
-  const value = event.detail.value
-  mobileVideoPlayer.value = value
-  localStorage.setItem('encv_player_video', value)
 }
 
 async function handleSaveConfig() {

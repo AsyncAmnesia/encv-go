@@ -33,20 +33,16 @@ mkdir -p "$BUILD_DIR" "$OUTPUT_DIR" "$LOG_DIR"
 echo "=== Checking for cached ffmpeg output ==="
 if [ -f "${OUTPUT_DIR}/libffmpeg.so" ] && [ -f "${OUTPUT_DIR}/libffprobe.so" ]; then
     echo "✅ ffmpeg output already exists, checking symbols..."
-    ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" | grep -q "ffmpeg_run" && \
-    ${NM} -D "${OUTPUT_DIR}/libffprobe.so" | grep -q "ffprobe_run" && {
-        if ${NM} -D "${OUTPUT_DIR}/libffprobe.so" | grep -q "av_log"; then
-            echo "✅ libffprobe.so contains FFmpeg symbols (static-linked)"
-            echo "✅ All ffmpeg libraries cached and valid, skipping build"
-            echo "Output: $OUTPUT_DIR"
-            ls -lh "$OUTPUT_DIR"
-            exit 0
-        else
-            echo "⚠️  libffprobe.so missing FFmpeg symbols (not static-linked), rebuilding..."
-            rm -f "${OUTPUT_DIR}/libffmpeg.so" "${OUTPUT_DIR}/libffprobe.so"
-        fi
-    }
-    echo "⚠️  Cached libraries missing expected symbols, rebuilding..."
+    if ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" | grep -q "ffmpeg_run" && \
+       ${NM} -D "${OUTPUT_DIR}/libffprobe.so" | grep -q "ffprobe_run"; then
+        echo "✅ All ffmpeg libraries cached and valid, skipping build"
+        echo "Output: $OUTPUT_DIR"
+        ls -lh "$OUTPUT_DIR"
+        exit 0
+    else
+        echo "⚠️  Cached libraries missing expected symbols, rebuilding..."
+        rm -f "${OUTPUT_DIR}/libffmpeg.so" "${OUTPUT_DIR}/libffprobe.so"
+    fi
 fi
 
 cd "$BUILD_DIR"
@@ -168,10 +164,11 @@ echo "=== Configuring ffmpeg ==="
     --enable-parser=h264,hevc,aac,aac_latm,mpegaudio,opus,vorbis \
     --enable-protocol=file,pipe \
     --enable-filter=aresample \
+    --enable-small \
     --enable-libx264 \
     --enable-gpl \
     --pkg-config="${BUILD_DIR}/pkg-config-wrapper" \
-    --extra-cflags="-fPIC -DANDROID -I${X264_INSTALL}/include" \
+    --extra-cflags="-fPIC -ffunction-sections -fdata-sections -DANDROID -I${X264_INSTALL}/include" \
     --extra-ldflags="-L${X264_INSTALL}/lib -lm" \
     --extra-libs="-lm" || {
     echo "=== ffmpeg configure FAILED ==="
@@ -195,7 +192,7 @@ FFMPEG_INSTALL="${BUILD_DIR}/ffmpeg-install"
 FTOOLS_BUILD="${BUILD_DIR}/ftools-build"
 mkdir -p "$FTOOLS_BUILD"
 
-CFLAGS="-std=c11 -fPIC -DANDROID -D_POSIX_C_SOURCE=200809L \
+CFLAGS="-std=c11 -fPIC -ffunction-sections -fdata-sections -DANDROID -D_POSIX_C_SOURCE=200809L \
   -DHAVE_SYS_RESOURCE_H=1 -DHAVE_UNISTD_H=1 -DHAVE_SYS_SELECT_H=1 \
   -include time.h \
   -I${FFMPEG_INSTALL}/include \
@@ -269,11 +266,10 @@ done
 echo "Linking libffmpeg.so..."
 $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffmpeg.so" \
     $FFMPEG_OBJS \
-    -Wl,--whole-archive \
     $STATIC_LIBS \
-    -Wl,--no-whole-archive \
     ${X264_INSTALL}/lib/libx264.a \
-    -lm -llog \
+    -lm -lz -llog \
+    -Wl,--gc-sections \
     -Wl,--allow-multiple-definition \
     $LDFLAGS > "${LOG_DIR}/link_ffmpeg.log" 2>&1 || {
     echo "❌ Failed to link libffmpeg.so (see ${LOG_DIR}/link_ffmpeg.log)"
@@ -301,11 +297,10 @@ done
 echo "Linking libffprobe.so..."
 $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffprobe.so" \
     $FFPROBE_OBJS \
-    -Wl,--whole-archive \
     $STATIC_LIBS \
-    -Wl,--no-whole-archive \
     ${X264_INSTALL}/lib/libx264.a \
-    -lm -llog \
+    -lm -lz -llog \
+    -Wl,--gc-sections \
     -Wl,--allow-multiple-definition \
     $LDFLAGS > "${LOG_DIR}/link_ffprobe.log" 2>&1 || {
     echo "❌ Failed to link libffprobe.so (see ${LOG_DIR}/link_ffprobe.log)"
@@ -316,8 +311,12 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffprobe.so" \
 cp "${FTOOLS_BUILD}/libffmpeg.so" "$OUTPUT_DIR/"
 cp "${FTOOLS_BUILD}/libffprobe.so" "$OUTPUT_DIR/"
 
-echo "✅ Copied libffmpeg.so"
-echo "✅ Copied libffprobe.so"
+echo "=== Stripping debug symbols ==="
+$STRIP --strip-all "${OUTPUT_DIR}/libffmpeg.so"
+$STRIP --strip-all "${OUTPUT_DIR}/libffprobe.so"
+
+echo "✅ Copied and stripped libffmpeg.so"
+echo "✅ Copied and stripped libffprobe.so"
 
 echo "=== Verifying exported symbols ==="
 for lib in libffmpeg.so libffprobe.so; do
@@ -370,6 +369,11 @@ cat > "${OUTPUT_DIR}/build-info.json" << BIEOF
 BIEOF
 
 echo "✅ Generated build-info.json"
+
+ASSETS_DIR="${PROJECT_DIR}/android/app/src/main/assets"
+mkdir -p "$ASSETS_DIR"
+cp "${OUTPUT_DIR}/build-info.json" "${ASSETS_DIR}/"
+echo "✅ Copied build-info.json to Android assets"
 
 echo "=== Build complete ==="
 echo "Output: $OUTPUT_DIR"

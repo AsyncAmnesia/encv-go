@@ -11,30 +11,57 @@ import (
 )
 
 var (
-	buildInfoOnce sync.Once
+	buildInfoMu   sync.RWMutex
 	buildInfoData map[string]interface{}
 	buildInfoErr  error
+	buildInfoInit bool
 )
 
 func GetBuildInfo() (map[string]interface{}, error) {
-	buildInfoOnce.Do(func() {
-		libDir := os.Getenv("ENCV_LIB_DIR")
-		if libDir == "" {
-			buildInfoErr = fmt.Errorf("ENCV_LIB_DIR not set")
-			return
+	buildInfoMu.RLock()
+	if buildInfoInit {
+		data, err := buildInfoData, buildInfoErr
+		buildInfoMu.RUnlock()
+		return data, err
+	}
+	buildInfoMu.RUnlock()
+
+	buildInfoMu.Lock()
+	defer buildInfoMu.Unlock()
+
+	if buildInfoInit {
+		return buildInfoData, buildInfoErr
+	}
+
+	var lastErr error
+	for _, dir := range []string{
+		os.Getenv("ENCV_LIB_DIR"),
+		os.Getenv("HOME"),
+	} {
+		if dir == "" {
+			continue
 		}
-		path := filepath.Join(libDir, "build-info.json")
+		path := filepath.Join(dir, "build-info.json")
 		data, err := os.ReadFile(path)
 		if err != nil {
-			buildInfoErr = fmt.Errorf("failed to read build-info.json: %w", err)
-			return
+			lastErr = fmt.Errorf("failed to read build-info.json from %s: %w", dir, err)
+			continue
 		}
 		var result map[string]interface{}
 		if err := json.Unmarshal(data, &result); err != nil {
-			buildInfoErr = fmt.Errorf("failed to parse build-info.json: %w", err)
-			return
+			lastErr = fmt.Errorf("failed to parse build-info.json from %s: %w", dir, err)
+			continue
 		}
 		buildInfoData = result
-	})
-	return buildInfoData, buildInfoErr
+		buildInfoInit = true
+		return buildInfoData, nil
+	}
+
+	if lastErr != nil {
+		buildInfoErr = lastErr
+	} else {
+		buildInfoErr = fmt.Errorf("ENCV_LIB_DIR and HOME not set")
+	}
+	buildInfoInit = true
+	return nil, buildInfoErr
 }
