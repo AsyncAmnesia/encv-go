@@ -270,6 +270,7 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffmpeg.so" \
     ${X264_INSTALL}/lib/libx264.a \
     -lm -lz -llog \
     -Wl,--gc-sections \
+    -Wl,--undefined=ff_graph_css_data \
     -Wl,--allow-multiple-definition \
     $LDFLAGS > "${LOG_DIR}/link_ffmpeg.log" 2>&1 || {
     echo "❌ Failed to link libffmpeg.so (see ${LOG_DIR}/link_ffmpeg.log)"
@@ -301,6 +302,7 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffprobe.so" \
     ${X264_INSTALL}/lib/libx264.a \
     -lm -lz -llog \
     -Wl,--gc-sections \
+    -Wl,--undefined=ff_graph_css_data \
     -Wl,--allow-multiple-definition \
     $LDFLAGS > "${LOG_DIR}/link_ffprobe.log" 2>&1 || {
     echo "❌ Failed to link libffprobe.so (see ${LOG_DIR}/link_ffprobe.log)"

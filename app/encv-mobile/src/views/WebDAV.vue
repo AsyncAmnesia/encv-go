@@ -26,6 +26,26 @@
               {{ config.id === testingId ? t('webdav.testing') : t('webdav.saved') }}
             </ion-badge>
           </ion-item>
+
+          <div v-if="listTestResults[config.id]" class="list-test-result-area" :class="{ 'result-error': !listTestResults[config.id].success, 'result-ok': listTestResults[config.id].success }">
+            <div class="result-items">
+              <div class="result-item">
+                <span class="result-label">{{ listTestResults[config.id].reachable ? t('webdav.reachable') : t('webdav.notReachable') }}</span>
+                <ion-badge :color="listTestResults[config.id].reachable ? 'success' : 'danger'" class="mini-badge">
+                  {{ listTestResults[config.id].reachable ? 'OK' : 'FAIL' }}
+                </ion-badge>
+              </div>
+              <div class="result-item">
+                <span class="result-label">{{ listTestResults[config.id].is_webdav ? t('webdav.isWebDAV') : t('webdav.notWebDAV') }}</span>
+                <ion-badge :color="listTestResults[config.id].is_webdav ? 'success' : 'danger'" class="mini-badge">
+                  {{ listTestResults[config.id].is_webdav ? 'OK' : 'FAIL' }}
+                </ion-badge>
+              </div>
+              <div v-if="listTestResults[config.id].error" class="result-error-inline">
+                {{ listTestResults[config.id].error }}
+              </div>
+            </div>
+          </div>
           <ion-item-options side="end">
             <ion-item-option color="primary" @click="testConfig(config)">
               {{ t('webdav.test') }}
@@ -213,6 +233,7 @@ const testing = ref(false)
 const testingId = ref('')
 const showPassword = ref(false)
 const testResult = ref<WebDAVTestResult | null>(null)
+const listTestResults = ref<Record<string, WebDAVTestResult>>({})
 
 const formName = ref('')
 const formUrl = ref('')
@@ -281,6 +302,7 @@ function saveConfig() {
 
 async function testConfig(config: WebDAVConfig) {
   testingId.value = config.id
+  listTestResults.value[config.id] = { success: false, reachable: false, is_webdav: false, auth_ok: false, dir_readable: false, status_code: 0 }
   try {
     const result = await testWebDAVConnection({
       name: config.name,
@@ -290,26 +312,18 @@ async function testConfig(config: WebDAVConfig) {
       mountPath: config.mountPath,
     })
     testingId.value = ''
-    if (!result.success) {
-      showToast({
-        message: t('webdav.connectionFailed'),
-        duration: 2000,
-        color: 'danger',
-      })
-    } else {
-      showToast({
-        message: t('webdav.connectionSuccess'),
-        duration: 2000,
-        color: 'success',
-      })
-    }
+    listTestResults.value[config.id] = result
   } catch (e) {
     testingId.value = ''
-    showToast({
-      message: t('webdav.connectionFailed') + ': ' + (e instanceof Error ? e.message : String(e)),
-      duration: 3000,
-      color: 'danger',
-    })
+    listTestResults.value[config.id] = {
+      success: false,
+      reachable: false,
+      is_webdav: false,
+      auth_ok: false,
+      dir_readable: false,
+      status_code: 0,
+      error: e instanceof Error ? e.message : String(e),
+    }
   }
 }
 
@@ -440,6 +454,32 @@ onMounted(() => {
   font-size: 13px;
   color: var(--ion-color-medium);
   line-height: 1.5;
+  word-break: break-word;
+}
+
+.list-test-result-area {
+  padding: 10px 14px;
+  background: var(--ion-background-color);
+}
+
+.list-test-result-area.result-ok {
+  border-left: 3px solid var(--ion-color-success);
+}
+
+.list-test-result-area.result-error {
+  border-left: 3px solid var(--ion-color-danger);
+}
+
+.mini-badge {
+  font-size: 11px;
+  --padding-start: 6px;
+  --padding-end: 6px;
+}
+
+.result-error-inline {
+  color: var(--ion-color-danger);
+  font-size: 12px;
+  margin-top: 4px;
   word-break: break-word;
 }
 </style>

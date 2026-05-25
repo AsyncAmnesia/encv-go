@@ -669,6 +669,18 @@ func simplifyErrorMessage(errMsg string) string {
 	if strings.Contains(errMsg, "Permission denied") {
 		return "permission denied, cannot access the file"
 	}
+	if strings.Contains(errMsg, "ffprobe failed") {
+		return "failed to read video metadata"
+	}
+	if strings.Contains(errMsg, "ffmpeg failed") {
+		return "video encoding failed"
+	}
+	if strings.Contains(errMsg, "encryption failed") || strings.Contains(errMsg, "plugin failed") {
+		return "encryption processing failed"
+	}
+	if len(errMsg) > 120 {
+		return errMsg[:120] + "..."
+	}
 	return errMsg
 }
 

@@ -1,43 +1,26 @@
-# 修复 FFmpeg 符号缺失 + simplifyErrorMessage bug
+# 修复 FFmpeg 符号 + Tasks bug + WebDAV 完整修复
 
 ## 问题 1：`ff_graph_css_data` 符号缺失
 
-```
-dlopen failed: cannot locate symbol "ff_graph_css_data" referenced by libffmpeg.so
-```
+`--gc-sections` 删除了 libavfilter 间接引用符号。
+**文件**：[build-ffmpeg-android.sh](file:///workspace/app/encv-mobile/scripts/build-ffmpeg-android.sh)
+**修复**：ffmpeg + ffprobe 链接命令各加 `-Wl,--undefined=ff_graph_css_data \`
 
-**根因**：`--gc-sections` 删除了 libavfilter 中仅被间接引用的 `ff_graph_css_data`。
+## 问题 2：Tasks 错误详情/复制按钮永远不显示
 
-**修复**：[build-ffmpeg-android.sh](file:///workspace/app/encv-mobile/scripts/build-ffmpeg-android.sh) 两处链接命令添加 `-Wl,--undefined=ff_graph_css_data`
+`simplifyErrorMessage()` 对 ffprobe/ffmpeg 等错误原样返回 → `task.Error === task.ErrorDetail` → 前端 `!==` 条件永远 false。
+**文件**：[task_manager.go](file:///workspace/internal/service/task_manager.go)
+**修复**：`return errMsg` 前新增 ffprobe/ffmpeg/encryption 匹配规则 + 超长截断
 
-## 问题 2（关键 bug）：Tasks 错误详情/复制按钮永远不显示
+## 问题 3：WebDAV modal 测试连接
 
-**根因**：[task_manager.go:672](file:///workspace/internal/service/task_manager.go#L672) `simplifyErrorMessage()` 对不匹配的错误原样返回：
+源码已确认包含新逻辑（PROPFIND 后端 + 内联结果区前端），需确保 Go 重编后生效。同时补充：列表滑动测试（`testConfig`）也改为内联结果展示，移除 toast 依赖。
 
-```go
-task.Error = simplifyErrorMessage(errMsg)  // = "ffprobe failed (exit 1): ..."
-task.ErrorDetail = errMsg                  // = "ffprobe failed (exit 1): ..." ← 完全相同！
-```
+## 步骤
 
-前端 [Tasks.vue:63](file:///workspace/app/encv-mobile/src/views/Tasks.vue#L63)：`v-if="task.errorDetail && task.errorDetail !== task.error"` → **永远 false**
+### 1. build-ffmpeg-android.sh — 两处链接加 `--undefined=ff_graph_css_data`
 
-**修复**：新增 ffprobe/ffmpeg/encryption 模式的简化规则 + 超长消息截断，确保 Error ≠ ErrorDetail。
-
-## 问题 3：WebDAV 确认
-
-WebDAV.vue（内联结果区）、mobile_service.go（PROPFIND）、mobile_api.go（结构化返回）、encv.ts（WebDAVTestResult 接口）均已确认包含新代码。Go 后端需重编方可生效。
-
-## 实施步骤
-
-### 步骤 1：修复 FFmpeg 链接符号
-**文件**：`app/encv-mobile/scripts/build-ffmpeg-android.sh`
-- ffmpeg 链接命令（~272行）：`-Wl,--gc-sections \` 后加 `-Wl,--undefined=ff_graph_css_data \`
-- ffprobe 链接命令（~303行）：同上
-
-### 步骤 2：修复 simplifyErrorMessage
-**文件**：`internal/service/task_manager.go`
-
-在 `return errMsg` 前新增：
+### 2. task_manager.go — simplifyErrorMessage 新增：
 ```go
 if strings.Contains(errMsg, "ffprobe failed") {
     return "failed to read video metadata"
@@ -53,13 +36,19 @@ if len(errMsg) > 120 {
 }
 ```
 
-### 步骤 3：验证
-- `go vet ./internal/service/... ./internal/server/... ./internal/utils/...`
-- `vue-tsc --noEmit && vite build`
+### 3. WebDAV.vue — testConfig 改为内联结果
+- 添加 `listTestResults: Ref<Record<string, WebDAVTestResult>>`
+- `testConfig()` 调用 API → 存入 `listTestResults[config.id]`
+- 列表模板每个 config 项下方渲染 `.test-result-area`
+- 移除 testConfig 中所有 showToast
 
-## 文件变更清单
+### 4. 验证
+`go vet` + `vue-tsc --noEmit && vite build`
+
+## 文件变更
 
 | 文件 | 操作 |
 |------|------|
 | `app/encv-mobile/scripts/build-ffmpeg-android.sh` | 修改 |
 | `internal/service/task_manager.go` | 修改 |
+| `app/encv-mobile/src/views/WebDAV.vue` | 修改 |
