@@ -34,7 +34,9 @@ echo "=== Checking for cached ffmpeg output ==="
 if [ -f "${OUTPUT_DIR}/libffmpeg.so" ] && [ -f "${OUTPUT_DIR}/libffprobe.so" ]; then
     echo "✅ ffmpeg output already exists, checking symbols..."
     if ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" | grep -q "ffmpeg_run" && \
-       ${NM} -D "${OUTPUT_DIR}/libffprobe.so" | grep -q "ffprobe_run"; then
+       ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" | grep -q "ff_graph_css_data" && \
+       ${NM} -D "${OUTPUT_DIR}/libffprobe.so" | grep -q "ffprobe_run" && \
+       ${NM} -D "${OUTPUT_DIR}/libffprobe.so" | grep -q "ff_graph_css_data"; then
         echo "✅ All ffmpeg libraries cached and valid, skipping build"
         echo "Output: $OUTPUT_DIR"
         ls -lh "$OUTPUT_DIR"
@@ -323,7 +325,7 @@ echo "✅ Copied and stripped libffprobe.so"
 echo "=== Verifying exported symbols ==="
 for lib in libffmpeg.so libffprobe.so; do
     echo "--- ${lib} symbols ---"
-    ${NM} -D "${OUTPUT_DIR}/${lib}" | grep -E "ffmpeg_run|ffprobe_run|ffmpeg_reset|ffprobe_reset" || echo "⚠️  No expected symbols found"
+    ${NM} -D "${OUTPUT_DIR}/${lib}" | grep -E "ffmpeg_run|ffprobe_run|ffmpeg_reset|ffprobe_reset|ff_graph_css_data" || echo "⚠️  No expected symbols found"
 done
 
 echo "=== Generating build-info.json ==="

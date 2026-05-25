@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/Soltus/encv-go/internal/config"
 	mobileservice "github.com/Soltus/encv-go/internal/service"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/types"
@@ -114,6 +115,37 @@ func (s *Server) handleReadFileContentGin(c *gin.Context) {
 		return
 	}
 
+	c.JSON(http.StatusOK, result)
+}
+
+func (s *Server) handleTextPreviewExtsGin(c *gin.Context) {
+	builtIn := config.GetTextPreviewExtensions()
+	var custom []string
+	if s.cfg.Preview != nil {
+		custom = s.cfg.Preview.TextExtensions
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"extensions":        builtIn,
+		"custom_extensions": custom,
+	})
+}
+
+func (s *Server) handleFileInfoGin(c *gin.Context) {
+	queryPath := c.Query("path")
+	if queryPath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "'path' query parameter is required"})
+		return
+	}
+
+	result, err := s.mobileSvc.GetFileInfo(queryPath)
+	if err != nil {
+		if _, ok := err.(*mobileservice.NotFoundError); ok {
+			c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, result)
 }
 

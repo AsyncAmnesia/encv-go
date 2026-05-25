@@ -299,6 +299,27 @@
 
       <ion-list>
         <ion-list-header>
+          <ion-label>{{ t('settings.preview') }}</ion-label>
+        </ion-list-header>
+        <ion-item>
+          <ion-icon :icon="textOutline" slot="start"></ion-icon>
+          <ion-input
+            :value="customTextExts"
+            :label="t('settings.customTextExts')"
+            label-placement="stacked"
+            :placeholder="t('settings.customTextExtsHint')"
+            @ionInput="handleCustomTextExtsChange"
+          ></ion-input>
+        </ion-item>
+        <ion-item v-if="builtInTextExtsCount > 0" lines="none">
+          <ion-label class="ion-text-wrap hint-text">
+            <p>{{ t('settings.builtInTextExts', { count: String(builtInTextExtsCount) }) }}</p>
+          </ion-label>
+        </ion-item>
+      </ion-list>
+
+      <ion-list>
+        <ion-list-header>
           <ion-label>{{ t('devtools.title') }}</ion-label>
         </ion-list-header>
         <ion-item>
@@ -392,7 +413,7 @@ import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { useDevTools } from '@/composables/useDevTools'
 import { isNative } from '@/plugins/GoProcess'
-import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus } from '@/api/encv'
+import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus, fetchTextPreviewExts, invalidateTextExtsCache } from '@/api/encv'
 import type { IndexStats, FFmpegStatus } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
 import FilePickerModal from '@/components/FilePickerModal.vue'
@@ -411,6 +432,8 @@ const engineStatus = ref<FFmpegStatus | null>(null)
 const videoPlayerMode = ref(localStorage.getItem('encv_player_video') || 'artplayer')
 const audioPlayerMode = ref(localStorage.getItem('encv_player_audio') || 'mpv')
 const screenOrientation = ref(localStorage.getItem('encv_screen_orientation') || 'auto')
+const customTextExts = ref('')
+const builtInTextExtsCount = ref(0)
 
 function handleVideoPlayerChange(event: CustomEvent) {
   const value = event.detail.value
@@ -445,6 +468,39 @@ async function applyScreenOrientation(orientation: string) {
   } catch (e) {
     console.warn('Failed to apply screen orientation:', e)
   }
+}
+
+async function loadPreviewConfig() {
+  try {
+    const cfg = await fetchConfig()
+    const preview = cfg.preview as Record<string, unknown> | undefined
+    if (preview?.text_extensions && Array.isArray(preview.text_extensions)) {
+      customTextExts.value = (preview.text_extensions as string[]).join(',')
+    }
+  } catch {}
+  try {
+    const exts = await fetchTextPreviewExts()
+    builtInTextExtsCount.value = exts.size
+  } catch {}
+}
+
+function handleCustomTextExtsChange(event: CustomEvent) {
+  const raw = (event.target as HTMLInputElement).value || ''
+  customTextExts.value = raw
+  const parsed = raw.split(',')
+    .map(s => s.trim().toLowerCase())
+    .filter(s => s.length > 0)
+  ;(async () => {
+    try {
+      const cfg = await fetchConfig()
+      if (!cfg.preview) cfg.preview = {}
+      ;(cfg.preview as Record<string, unknown>).text_extensions = parsed
+      await updateConfig(cfg)
+      invalidateTextExtsCache()
+    } catch (e) {
+      console.error('Failed to save preview config:', e)
+    }
+  })()
 }
 
 function handleVConsoleToggle(event: CustomEvent) {
@@ -678,6 +734,7 @@ onMounted(async () => {
     configLoaded.value = true
     try { indexStats.value = await getIndexStats() } catch {}
     if (isNative()) { try { engineStatus.value = await fetchFFmpegStatus() } catch {} }
+    loadPreviewConfig()
   }
 })
 
@@ -694,6 +751,11 @@ watch(serverOnline, async (online) => {
 </script>
 
 <style scoped>
+.hint-text p {
+  font-size: 13px;
+  color: var(--ion-text-secondary);
+  margin: 0;
+}
 .loading-container {
   display: flex;
   flex-direction: column;

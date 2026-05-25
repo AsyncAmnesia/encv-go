@@ -63,6 +63,10 @@ const routes: RouteRecordRaw[] = [
         path: 'preview',
         component: () => import('@/views/FilePreview.vue'),
       },
+      {
+        path: 'file-info',
+        component: () => import('@/views/FileInfo.vue'),
+      },
     ],
   },
 ]

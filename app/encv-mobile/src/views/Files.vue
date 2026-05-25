@@ -144,6 +144,7 @@ import {
   refresh,
   trash,
   search,
+  informationCircle,
 } from 'ionicons/icons'
 import {
   listFiles,
@@ -459,6 +460,14 @@ async function handleLongPress(file: FileItem) {
   const category = file.isDirectory ? 'directory' : getFileCategory(file.name, file.isEncrypted)
 
   const buttons: any[] = []
+
+  buttons.push({
+    text: t('files.info'),
+    icon: informationCircle,
+    handler: () => {
+      router.push({ path: '/tabs/file-info', query: { path: file.path, name: file.name } })
+    },
+  })
 
   if (file.isDirectory) {
     buttons.push({

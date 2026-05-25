@@ -20,6 +20,7 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/Soltus/encv-go/internal/v2/provider"
+	"github.com/Soltus/encv-go/internal/v2/reader"
 	"github.com/Soltus/encv-go/internal/v2/service"
 )
 
@@ -199,6 +200,11 @@ func (s *MobileService) ReadFileContent(queryPath string) (*FileContentResult, e
 		return nil, &BadRequestError{Err: errors.New("path is a directory")}
 	}
 
+	ext := strings.ToLower(filepath.Ext(queryPath))
+	if ext == ".encv" {
+		return nil, &BadRequestError{Err: errors.New("is_encv_container: use /api/file/info endpoint for metadata")}
+	}
+
 	maxSize := int64(2 << 20)
 	if info.Size() > maxSize {
 		return nil, &BadRequestError{Err: errors.New("file too large")}
@@ -223,6 +229,114 @@ func (s *MobileService) ReadFileContent(queryPath string) (*FileContentResult, e
 		Content:  content,
 		Encoding: encoding,
 	}, nil
+}
+
+type FileInfoResult struct {
+	Name            string                 `json:"name"`
+	Path            string                 `json:"path"`
+	Size            int64                  `json:"size"`
+	Modified        string                 `json:"modified"`
+	MimeType        string                 `json:"mime_type"`
+	Category        string                 `json:"category"`
+	IsDirectory     bool                   `json:"is_directory"`
+	IsEncrypted     bool                   `json:"is_encrypted"`
+	IsEncvContainer bool                   `json:"is_encv_container"`
+	Container       map[string]interface{} `json:"container,omitempty"`
+}
+
+func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
+	if queryPath == "" {
+		return nil, &BadRequestError{Err: errors.New("'path' query parameter is required")}
+	}
+
+	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	if err != nil {
+		return nil, &ForbiddenError{Err: err}
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, &NotFoundError{Err: err}
+		}
+		return nil, err
+	}
+
+	ext := strings.ToLower(filepath.Ext(queryPath))
+	mimeType := utils.GetContentType(ext)
+
+	category := "other"
+	if strings.HasPrefix(mimeType, "image/") {
+		category = "image"
+	} else if strings.HasPrefix(mimeType, "video/") {
+		category = "video"
+	} else if strings.HasPrefix(mimeType, "audio/") {
+		category = "audio"
+	} else if strings.HasPrefix(mimeType, "text/") || ext == ".encv" || mimeType == "application/pdf" || mimeType == "application/epub+zip" {
+		category = "document"
+	}
+
+	result := &FileInfoResult{
+		Name:            filepath.Base(absPath),
+		Path:            queryPath,
+		Size:            info.Size(),
+		Modified:        info.ModTime().Format(time.RFC3339),
+		MimeType:        mimeType,
+		Category:        category,
+		IsDirectory:     info.IsDir(),
+		IsEncrypted:     false,
+		IsEncvContainer: false,
+	}
+
+	if ext == ".encv" {
+		result.IsEncvContainer = true
+		result.IsEncrypted = true
+
+		containerInfo, openErr := reader.OpenV4Container(absPath, s.cfg.Password)
+		if openErr != nil {
+			slog.Warn("GetFileInfo: cannot open container", "path", queryPath, "error", openErr)
+			result.Container = map[string]interface{}{
+				"error": "cannot read container metadata: " + openErr.Error(),
+			}
+			return result, nil
+		}
+
+		hdr := containerInfo.Header
+		mf := containerInfo.Manifest
+
+		var containerTypeStr string
+		switch hdr.ContainerType {
+		case 1:
+			containerTypeStr = "video"
+		case 2:
+			containerTypeStr = "audio"
+		case 3:
+			containerTypeStr = "image"
+		case 4:
+			containerTypeStr = "document"
+		default:
+			containerTypeStr = fmt.Sprintf("unknown(%d)", hdr.ContainerType)
+		}
+
+		result.Container = map[string]interface{}{
+			"version":           4,
+			"container_id":      mf.ContainerID,
+			"container_type":    containerTypeStr,
+			"is_seekable":       hdr.IsSeekable == 1,
+			"original_duration": mf.OriginalDuration,
+			"segment_count":     len(mf.Segments),
+			"segments":          mf.Segments,
+			"manifest_size":     hdr.ManifestLength,
+			"header": map[string]interface{}{
+				"flags":           hdr.Flags,
+				"manifest_offset": hdr.ManifestOffset,
+				"manifest_length": hdr.ManifestLength,
+			},
+			"manifest": mf,
+		}
+	}
+
+	return result, nil
 }
 
 type WebDAVTestResult struct {

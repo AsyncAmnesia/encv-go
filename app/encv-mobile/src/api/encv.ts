@@ -1,7 +1,7 @@
 const SERVER_URL_KEY = 'encv-server-url'
 export const DEFAULT_API_BASE_URL = 'http://127.0.0.1:2025'
 
-function getApiBaseUrl(): string {
+export function getApiBaseUrl(): string {
   if (import.meta.env.DEV) return ''
   return localStorage.getItem(SERVER_URL_KEY) || DEFAULT_API_BASE_URL
 }
@@ -331,6 +331,37 @@ export function formatFileSize(bytes?: number): string {
   const k = 1024
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${units[i]}`
+}
+
+export interface TextPreviewExts {
+  extensions: string[]
+  custom_extensions: string[]
+}
+
+let cachedTextExts: Set<string> | null = null
+
+export async function fetchTextPreviewExts(): Promise<Set<string>> {
+  if (cachedTextExts) return cachedTextExts
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/file/text-preview-exts`)
+  if (!response.ok) {
+    console.error('[API] fetchTextPreviewExts failed:', response.status)
+    return new Set()
+  }
+  const data = await response.json() as TextPreviewExts
+  const all = new Set([...data.extensions, ...data.custom_extensions])
+  cachedTextExts = all
+  return all
+}
+
+export function isTextPreviewable(name: string): boolean {
+  if (!cachedTextExts) return false
+  const ext = getFileExtension(name)
+  return cachedTextExts.has(ext)
+}
+
+export function invalidateTextExtsCache(): void {
+  cachedTextExts = null
 }
 
 export function getFileExtension(name: string): string {
