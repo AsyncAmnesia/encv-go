@@ -200,8 +200,7 @@ func (s *MobileService) ReadFileContent(queryPath string) (*FileContentResult, e
 		return nil, &BadRequestError{Err: errors.New("path is a directory")}
 	}
 
-	ext := strings.ToLower(filepath.Ext(queryPath))
-	if ext == ".encv" {
+	if _, detectErr := detector.DetectContainer(absPath); detectErr == nil {
 		return nil, &BadRequestError{Err: errors.New("is_encv_container: use /api/file/info endpoint for metadata")}
 	}
 
@@ -272,7 +271,7 @@ func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
 		category = "video"
 	} else if strings.HasPrefix(mimeType, "audio/") {
 		category = "audio"
-	} else if strings.HasPrefix(mimeType, "text/") || ext == ".encv" || mimeType == "application/pdf" || mimeType == "application/epub+zip" {
+	} else if strings.HasPrefix(mimeType, "text/") || mimeType == "application/pdf" || mimeType == "application/epub+zip" {
 		category = "document"
 	}
 
@@ -288,9 +287,17 @@ func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
 		IsEncvContainer: false,
 	}
 
-	if ext == ".encv" {
+	isContainer := false
+	if !info.IsDir() {
+		if _, detectErr := detector.DetectContainer(absPath); detectErr == nil {
+			isContainer = true
+		}
+	}
+
+	if isContainer {
 		result.IsEncvContainer = true
 		result.IsEncrypted = true
+		result.Category = "encrypted"
 
 		containerInfo, openErr := reader.OpenV4Container(absPath, s.cfg.Password)
 		if openErr != nil {
@@ -813,7 +820,6 @@ var mediaExtensions = map[string]bool{
 	"ts": true, "mpg": true, "mpeg": true, "3gp": true,
 	"mp3": true, "flac": true, "wav": true, "aac": true,
 	"ogg": true, "wma": true, "m4a": true, "opus": true,
-	"encv": true,
 }
 
 type chunkNamerAdapter struct {

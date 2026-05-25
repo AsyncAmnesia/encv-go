@@ -166,7 +166,7 @@ async function determinePreviewType(name: string, isEncrypted?: boolean): Promis
 
   if (category === 'image') return 'image'
   if (ext === 'pdf') return 'pdf'
-  if (category === 'encrypted' || ext === 'encv') return 'container'
+  if (category === 'encrypted') return 'container'
 
   const textExts = await fetchTextPreviewExts()
   if (textExts.has(ext)) return 'text'
@@ -190,7 +190,8 @@ async function loadFile() {
   showManifest.value = false
   containerInfo.value = null
 
-  previewType.value = await determinePreviewType(fileName.value)
+  const isEncrypted = route.query.isEncrypted === 'true'
+  previewType.value = await determinePreviewType(fileName.value, isEncrypted)
 
   try {
     if (previewType.value === 'image' || previewType.value === 'pdf') {

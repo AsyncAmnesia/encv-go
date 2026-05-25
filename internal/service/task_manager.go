@@ -356,6 +356,15 @@ func (tm *TaskManager) getConfigForTask(task *MobileTask, ctx context.Context) c
 func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 	taskID := task.ID
 
+	password := tm.cfg.Password
+	if task.Password != "" {
+		password = task.Password
+	}
+	if password == "" {
+		tm.failTask(taskID, "encryption requires a password: global password is empty")
+		return
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	task.cancelFn = cancel
 	defer cancel()

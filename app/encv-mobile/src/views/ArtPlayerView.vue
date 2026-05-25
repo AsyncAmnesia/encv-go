@@ -179,8 +179,6 @@ function initArtPlayer() {
   }
 
   const containerWidth = artContainer.value.clientWidth || window.innerWidth
-  artContainer.value.style.minHeight = '200px'
-  artContainer.value.style.maxHeight = `${window.innerHeight - 56}px`
   console.info(TAG, 'container size:', containerWidth)
 
   try {
@@ -233,13 +231,25 @@ function initArtPlayer() {
     if (video) {
       if (video.videoWidth && video.videoHeight) {
         mediaInfo.value.resolution = `${video.videoWidth}×${video.videoHeight}`
-        const ratio = video.videoHeight / video.videoWidth
-        const containerWidth = artContainer.value?.clientWidth || window.innerWidth
-        const naturalHeight = Math.round(containerWidth * ratio)
-        const maxHeight = window.innerHeight - 56
-        const finalHeight = Math.min(naturalHeight, maxHeight)
-        if (artContainer.value) {
-          artContainer.value.style.height = `${finalHeight}px`
+        const maxH = window.innerHeight - 56
+        const maxW = artContainer.value?.parentElement?.clientWidth || window.innerWidth
+        const isPortrait = video.videoHeight > video.videoWidth
+
+        if (isPortrait) {
+          const h = maxH
+          const w = Math.round(h * video.videoWidth / video.videoHeight)
+          if (artContainer.value) {
+            artContainer.value.style.width = `${Math.min(w, maxW)}px`
+            artContainer.value.style.height = `${h}px`
+            artContainer.value.style.margin = '0 auto'
+          }
+        } else {
+          const w = maxW
+          const h = Math.round(w * video.videoHeight / video.videoWidth)
+          if (artContainer.value) {
+            artContainer.value.style.width = `${w}px`
+            artContainer.value.style.height = `${Math.min(h, maxH)}px`
+          }
         }
       }
       if (video.duration && isFinite(video.duration)) {

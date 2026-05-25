@@ -380,7 +380,6 @@ export function getFileCategory(name: string, isEncrypted?: boolean): FileCatego
   const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg']
   const docExts = ['pdf', 'doc', 'docx', 'txt', 'xls', 'xlsx', 'ppt', 'pptx']
 
-  if (ext === 'encv') return 'encrypted'
   if (videoExts.includes(ext)) return 'video'
   if (audioExts.includes(ext)) return 'audio'
   if (imageExts.includes(ext)) return 'image'

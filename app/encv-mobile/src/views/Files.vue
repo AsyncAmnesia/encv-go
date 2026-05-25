@@ -156,7 +156,6 @@ import {
   deleteFile,
   createTask,
   fetchConfig,
-  checkFileExists,
   checkEncryptOutputExists,
 } from '@/api/encv'
 import type { FileItem } from '@/api/encv'
@@ -397,13 +396,12 @@ async function handleFileClick(file: FileItem) {
   } else {
     router.push({
       path: '/tabs/preview',
-      query: { path: file.path, name: file.name },
+      query: { path: file.path, name: file.name, isEncrypted: String(!!file.isEncrypted) },
     })
   }
 }
 
 function handleSearchInput() {
-  if (searchTimer) clearTimeout(searchTimer)
   const query = searchQuery.value.trim()
   if (!query) {
     searchGeneration++
@@ -521,7 +519,7 @@ async function handleLongPress(file: FileItem) {
         } else {
           router.push({
             path: '/tabs/preview',
-            query: { path: file.path, name: file.name },
+            query: { path: file.path, name: file.name, isEncrypted: String(!!file.isEncrypted) },
           })
         }
       },
@@ -563,6 +561,11 @@ async function handleEncryptFile(file: FileItem) {
     globalPassword = (cfg as any).password || ''
   } catch {}
 
+  if (!globalPassword) {
+    showToast({ message: t('files.noPassword'), duration: 2000, color: 'danger' })
+    return
+  }
+
   const alert = await alertController.create({
     header: t('files.encrypt'),
     inputs: [
@@ -573,13 +576,6 @@ async function handleEncryptFile(file: FileItem) {
         value: parentDir,
         attributes: { autocomplete: 'off' },
       },
-      {
-        name: 'password',
-        type: 'password',
-        placeholder: t('tasks.passwordPlaceholder'),
-        value: globalPassword,
-        attributes: { autocomplete: 'off' },
-      },
     ],
     buttons: [
       { text: t('files.cancelSelect'), role: 'cancel' },
@@ -587,7 +583,6 @@ async function handleEncryptFile(file: FileItem) {
         text: t('files.encrypt'),
         handler: async (data: Record<string, string>) => {
           const targetPath = (data.targetPath || '').trim()
-          const password = (data.password || '').trim()
           const result = await checkEncryptOutputExists(file.path, targetPath || undefined)
 
           if (result.exists) {
@@ -600,14 +595,14 @@ async function handleEncryptFile(file: FileItem) {
                 {
                   text: t('common.confirm'),
                   handler: async () => {
-                    await doCreateTask('encrypt', file.path, targetPath, password)
+                    await doCreateTask('encrypt', file.path, targetPath, '')
                   },
                 },
               ],
             })
             await confirm.present()
           } else {
-            await doCreateTask('encrypt', file.path, targetPath, password)
+            await doCreateTask('encrypt', file.path, targetPath, '')
           }
         },
       },
@@ -649,28 +644,7 @@ async function handleDecryptFile(file: FileItem) {
         handler: async (data: Record<string, string>) => {
           const targetPath = (data.targetPath || '').trim()
           const password = (data.password || '').trim()
-          const outputName = file.name.replace(/\.encv$/i, '')
-          const outputPath = targetPath === '/' ? '/' + outputName : targetPath + '/' + outputName
-          const outputExists = await checkFileExists(outputPath)
-
-          if (outputExists) {
-            const confirm = await alertController.create({
-              header: t('files.decrypt'),
-              message: t('files.overwriteConfirm', { name: outputName }),
-              buttons: [
-                { text: t('files.cancelSelect'), role: 'cancel' },
-                {
-                  text: t('common.confirm'),
-                  handler: async () => {
-                    await doCreateTask('decrypt', file.path, targetPath, password)
-                  },
-                },
-              ],
-            })
-            await confirm.present()
-          } else {
-            await doCreateTask('decrypt', file.path, targetPath, password)
-          }
+          await doCreateTask('decrypt', file.path, targetPath, password)
         },
       },
     ],
