@@ -540,7 +540,7 @@ function onTaskCreated(data: { id: string; type: string; sourcePath: string }) {
   }
 }
 
-function onTaskCompleted(data: { id: string; error?: string }) {
+function onTaskCompleted(data: { id: string; status?: string; error?: string; errorDetail?: string }) {
   const idx = tasks.value.findIndex(t => t.id === data.id)
   if (idx !== -1) {
     tasks.value[idx] = {
@@ -551,6 +551,7 @@ function onTaskCompleted(data: { id: string; error?: string }) {
       speed: '',
       eta: '',
       error: data.error,
+      errorDetail: data.errorDetail,
       completedAt: new Date().toISOString(),
     }
   }
