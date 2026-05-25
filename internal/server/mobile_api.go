@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	mobileservice "github.com/Soltus/encv-go/internal/service"
+	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -597,4 +598,14 @@ func (s *Server) writeConfigToFile() error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 	return os.WriteFile(s.configPath, append(indented, '\n'), 0644)
+}
+
+func (s *Server) handleBuildInfoGin(c *gin.Context) {
+	info, err := utils.GetBuildInfo()
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	info["app_version"] = s.version
+	c.JSON(http.StatusOK, info)
 }

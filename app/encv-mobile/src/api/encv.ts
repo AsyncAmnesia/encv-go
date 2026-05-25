@@ -514,3 +514,36 @@ export async function checkEncryptOutputExists(sourcePath: string, targetDir?: s
   const data = await response.json()
   return { exists: !!data.exists, outputPath: data.outputPath || '' }
 }
+
+export interface BuildInfo {
+  ffmpeg_version: string
+  ffmpeg_codename: string
+  x264_version: string
+  x264_configure_opts: string
+  ndk_version: string
+  api_level: number
+  abi: string
+  build_date: string
+  enabled_decoders: string[]
+  enabled_encoders: string[]
+  enabled_muxers: string[]
+  enabled_demuxers: string[]
+  enabled_parsers: string[]
+  enabled_protocols: string[]
+  enabled_filters: string[]
+  static_libs: string[]
+  linking: string
+  cflags: string
+  ffmpeg_license: string
+  x264_license: string
+  app_version?: string
+}
+
+export async function fetchBuildInfo(): Promise<BuildInfo> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/build-info`)
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return await response.json()
+}

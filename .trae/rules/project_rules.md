@@ -2,14 +2,15 @@
 
 ## FFmpeg 版本备注
 
-- 当前使用 FFmpeg 7.1.1，构建脚本: `app/encv-mobile/scripts/build-ffmpeg-android.sh`
-- **暂不升级到 8.x**。原因：7.1.1 满足需求（h264/hevc 编解码 + ffprobe）；8.x 有 breaking changes（移除 libpostproc、废弃 AVFrame 字段、ffttools 源码结构变化）；8.x 新功能（Vulkan compute、D3D12、VVC）在 Android 移动端用不到
-- **升级到 8.x 时需注意**：
-  1. libpostproc 已完全移除，链接参数中不能有 `-lpostproc`
-  2. fftools 源码文件可能有增减/重命名，需对照 8.x 源码调整 `FFMPEG_FFTOOLS`/`FFPROBE_FFTOOLS` 列表
-  3. API 有 breaking changes（如 AVFrame.coded_picture_number 被废弃），Go cgo 层无需改动（我们通过 dlopen 调用 fftools 的 run 函数，不直接使用 libav* API）
-  4. x264 的 `--enable-pic` 仍然必须（共享库需要位置无关代码）
-  5. pkg-config wrapper 方案仍然适用
+- 当前使用 FFmpeg 8.0，构建脚本: `app/encv-mobile/scripts/build-ffmpeg-android.sh`
+- fftools（libffmpeg.so/libffprobe.so）采用静态链接方式：FFmpeg 各库的 `.a` 文件被整体链接进 fftools .so，运行时无需额外的 libavutil.so 等依赖
+- 链接时使用 `--whole-archive` + `--allow-multiple-definition`（解决 FFmpeg 多库重复符号如 ff_log2_tab）
+- CFLAGS 使用 `-std=c11 -include time.h`（解决 NDK Clang 的 struct tm 前向声明问题）
+- FFmpeg 8.0 已移除 libpostproc，链接列表中不能有 `-lpostproc`
+- FFmpeg 8.0 fftools 新增 `textformat/` 子目录（ffprobe 输出格式化），需在 CFLAGS 中添加 `-I fftools/textformat`
+- h264 编码器在 8.0 中通过 `libx264` 包装器提供，configure 使用 `--enable-encoder=libx264`
+- x264 的 `--enable-pic` 仍然必须（共享库需要位置无关代码）
+- pkg-config wrapper 方案仍然适用
 
 ## 移动端 ffmpeg 调用架构
 
