@@ -58,7 +58,7 @@ func (p *ProxyGin) HandleRequest(c *gin.Context) {
 
 	slog.Info("[Proxy] siteHost", "host", siteHostStr, "original", originalPath, "path", path)
 
-	if strings.HasPrefix(path, "_preview/") {
+	if strings.HasPrefix(path, "/_preview/") {
 		h := http.StripPrefix("/openlist/sites/"+siteIdStr+"/_preview/", web.PreviewHandler())
 		h.ServeHTTP(c.Writer, c.Request)
 		return
@@ -103,6 +103,11 @@ func (p *ProxyGin) HandleRequest(c *gin.Context) {
 
 	slog.Info("Received valid request for", "path", path)
 
+	if after, ok := strings.CutPrefix(path, "/d/"); ok {
+		path = "/" + after
+		slog.Info("[Proxy] Stripped /d/ prefix", "path", path)
+	}
+
 	if isDirectory {
 		p.handleDirectoryRequest(c, path, siteHostStr, siteTokenStr)
 		return
@@ -139,10 +144,12 @@ func (p *ProxyGin) handleDecrypt(c *gin.Context, siteHost, siteToken string) {
 		}
 
 		routePath = u.Path
-		if after, ok := strings.CutPrefix(routePath, "/d/"); ok {
-			routePath = after
-		}
 	}
+
+	if after, ok := strings.CutPrefix(routePath, "/d/"); ok {
+		routePath = "/" + after
+	}
+
 	slog.Info("[Proxy] routePath", "path", routePath)
 
 	fileInfo, err := openlist.OpenListGetFileURL(routePath, siteHost, siteToken)
