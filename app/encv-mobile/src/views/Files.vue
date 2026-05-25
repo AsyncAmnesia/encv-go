@@ -391,7 +391,7 @@ async function handleFileClick(file: FileItem) {
 
   const category = getFileCategory(file.name, file.isEncrypted)
   console.info('[Files] Click:', file.name, 'category:', category)
-  if (category === 'video' || category === 'audio' || category === 'encrypted') {
+  if (category === 'video' || category === 'audio') {
     playMedia(file, category)
   } else {
     router.push({

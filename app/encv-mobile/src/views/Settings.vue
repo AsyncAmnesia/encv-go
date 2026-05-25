@@ -97,32 +97,17 @@
             </p>
           </ion-label>
         </ion-item>
-      </ion-list>
-
-      <ion-list v-if="isNative()">
-        <ion-list-header>
-          <ion-label>{{ t('settings.engineStatus') }}</ion-label>
-        </ion-list-header>
-        <ion-item>
+        <ion-item v-if="isNative()" button @click="goEngine" detail>
           <ion-icon :icon="filmOutline" slot="start"></ion-icon>
           <ion-label>
             <h3>{{ t('settings.engineStatus') }}</h3>
             <p>
-              <ion-badge :color="engineStatus?.ffmpeg_available ? 'success' : 'danger'" class="status-badge">
+              <ion-badge :color="engineStatus?.ffmpeg_available ? 'success' : 'danger'">
                 {{ t('settings.ffmpegAvail') }}
               </ion-badge>
-              <span v-if="!engineStatus?.ffmpeg_available && engineStatus?.ffmpeg_detail" class="engine-detail-text">
-                {{ engineStatus.ffmpeg_detail }}
-              </span>
-              <ion-badge :color="engineStatus?.ffprobe_available ? 'success' : 'danger'" class="status-badge">
+              <ion-badge :color="engineStatus?.ffprobe_available ? 'success' : 'danger'">
                 {{ t('settings.ffprobeAvail') }}
               </ion-badge>
-              <span v-if="!engineStatus?.ffprobe_available && engineStatus?.ffprobe_detail" class="engine-detail-text">
-                {{ engineStatus.ffprobe_detail }}
-              </span>
-              <span v-if="engineStatus && !engineStatus.ffmpeg_available && !engineStatus.ffprobe_available && !engineStatus.ffmpeg_detail && !engineStatus.ffprobe_detail" class="engine-error-inline">
-                {{ t('settings.engineError') }}
-              </span>
             </p>
           </ion-label>
         </ion-item>

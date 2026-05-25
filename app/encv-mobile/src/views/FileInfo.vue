@@ -70,15 +70,15 @@
           <div class="info-grid">
             <div class="info-row">
               <span class="info-label">{{ t('fileInfo.version') }}</span>
-              <span class="info-value">V{{ containerData.version }}</span>
+              <span class="info-value">V{{ containerData.version ?? '?' }}</span>
             </div>
             <div class="info-row">
               <span class="info-label">{{ t('fileInfo.containerId') }}</span>
-              <span class="info-value code-text">{{ containerData.container_id }}</span>
+              <span class="info-value code-text">{{ containerData.container_id ?? '-' }}</span>
             </div>
             <div class="info-row">
               <span class="info-label">{{ t('fileInfo.containerType') }}</span>
-              <ion-badge color="primary">{{ containerData.container_type }}</ion-badge>
+              <ion-badge color="primary">{{ containerData.container_type ?? '-' }}</ion-badge>
             </div>
             <div class="info-row">
               <span class="info-label">{{ t('fileInfo.seekable') }}</span>

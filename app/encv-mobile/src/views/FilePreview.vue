@@ -58,15 +58,15 @@
             <div class="info-grid" v-if="containerInfo">
               <div class="info-row">
                 <span class="info-label">{{ t('fileInfo.version') }}</span>
-                <span class="info-value">V{{ containerInfo.version }}</span>
+                <span class="info-value">V{{ containerInfo.version ?? '?' }}</span>
               </div>
               <div class="info-row">
                 <span class="info-label">{{ t('fileInfo.containerId') }}</span>
-                <span class="info-value code-text">{{ containerInfo.container_id }}</span>
+                <span class="info-value code-text">{{ containerInfo.container_id ?? '-' }}</span>
               </div>
               <div class="info-row">
                 <span class="info-label">{{ t('fileInfo.containerType') }}</span>
-                <span class="info-value">{{ containerInfo.container_type }}</span>
+                <span class="info-value">{{ containerInfo.container_type ?? '-' }}</span>
               </div>
               <div class="info-row">
                 <span class="info-label">{{ t('fileInfo.seekable') }}</span>
@@ -80,7 +80,7 @@
               </div>
               <div class="info-row">
                 <span class="info-label">{{ t('fileInfo.segmentCount') }}</span>
-                <span class="info-value">{{ containerInfo.segments?.length || 0 }}</span>
+                <span class="info-value">{{ containerInfo.segment_count ?? 0 }}</span>
               </div>
             </div>
           </div>
