@@ -227,9 +227,13 @@ func (s *Server) Start(version string) (string, error) {
 		if loginRequired {
 			openlistGroup.Use(JWTAuthMiddleware(s.jwtManager))
 		}
-		openlistGroup.Any("/:siteId/_preview/*path", handleOpenlistPreviewGin())
-		openlistGroup.POST("/:siteId/decrypt", handleOpenlistProxyGin(proxyGin))
-		openlistGroup.Any("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.GET("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.HEAD("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.POST("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.PUT("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.DELETE("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.PATCH("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.OPTIONS("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
 	}
 
 	if s.webdavDir != "" {

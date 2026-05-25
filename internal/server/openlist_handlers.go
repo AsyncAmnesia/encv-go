@@ -58,6 +58,12 @@ func (p *ProxyGin) HandleRequest(c *gin.Context) {
 
 	slog.Info("[Proxy] siteHost", "host", siteHostStr, "original", originalPath, "path", path)
 
+	if strings.HasPrefix(path, "_preview/") {
+		h := http.StripPrefix("/openlist/sites/"+siteIdStr+"/_preview/", web.PreviewHandler())
+		h.ServeHTTP(c.Writer, c.Request)
+		return
+	}
+
 	sign := c.Request.URL.Query().Get("sign")
 	isInternalRequest, _ := c.Get("internal_request")
 	isInternal := fmt.Sprintf("%v", isInternalRequest) == "true"
