@@ -133,6 +133,7 @@ interface ContainerInfo {
   container_type: string
   is_seekable: boolean
   original_duration?: number
+  segment_count?: number
   segments: unknown[]
 }
 
