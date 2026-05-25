@@ -564,6 +564,10 @@ function goServer() {
   router.push('/tabs/settings/server')
 }
 
+function goEngine() {
+  router.push('/tabs/settings/engine')
+}
+
 function goAbout() {
   router.push('/tabs/settings/about')
 }
@@ -761,17 +765,6 @@ watch(serverOnline, async (online) => {
 .connection-error-inline {
   color: var(--ion-color-danger);
   font-size: 12px;
-}
-.engine-error-inline {
-  color: var(--ion-color-danger);
-  font-size: 12px;
-  margin-left: 4px;
-}
-.engine-detail-text {
-  color: var(--ion-color-danger);
-  font-size: 11px;
-  margin-left: 4px;
-  word-break: break-all;
 }
 .browse-btn {
   --padding-start: 8px;
