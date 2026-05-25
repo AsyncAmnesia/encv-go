@@ -1,211 +1,171 @@
-# 三个 UI/功能问题修复计划
+# 三个问题修复计划（正确理解版）
 
 ## 问题概览
 
-| # | 问题 | 根因 | 修复方向 |
-|---|------|------|----------|
-| 1 | 预览加密容器显示的是"信息卡片"而非播放器 | `FilePreview.vue` 对 `previewType === 'container'` 分支渲染的是容器元数据卡片，而非视频/音频播放器 | 添加播放器组件，或跳转到播放页面 |
-| 2 | 容器信息和清单信息没有正确解析 | 可能是 API 调用失败（之前 `getApiBaseUrl` 问题），或数据未正确传递 | 验证 API 响应处理逻辑，确保 `containerInfo` 正确赋值 |
-| 3 | ffmpeg/ffprobe 失败没有变化 | **之前的修复需要重新构建 FFmpeg 才能生效**。构建脚本有缓存检查，旧 .so 文件仍包含 `ff_graph_css_data` 未解析符号 | 删除旧缓存强制重建，或验证构建脚本是否正确执行 |
+| # | 问题 | 根因 |
+|---|------|------|
+| 1 | 预览加密容器显示元数据而非内容 | `FilePreview.vue` 对所有加密容器显示元数据卡片，应根据 `container_type` 调用对应预览方式 |
+| 2 | 容器信息/清单未正确解析 | 需验证 API 调用和数据传递 |
+| 3 | ffmpeg/ffprobe 失败无变化 | 旧缓存 .so 仍含 `ff_graph_css_data` 符号，需强制重建 |
 
 ---
 
-## 问题 1 详细分析：预览 vs 查看信息
+## 问题 1：加密容器预览应根据类型调用对应插件
 
-### 当前行为
+### 容器类型系统
 
-[FilePreview.vue](src/views/FilePreview.vue) 第 52-95 行：
+后端 `GetFileInfo` 返回 `container_type`：
+- `"video"` → 视频容器
+- `"audio"` → 音频容器
+- `"image"` → 图片容器
+- `"document"` → 文档容器
 
-```vue
-<div v-else-if="previewType === 'container'" class="preview-wrapper container-info">
-  <div class="container-card">
-    <!-- 显示容器元数据：version, container_id, container_type, is_seekable, duration, segment_count -->
-  </div>
-  <div class="manifest-section">
-    <!-- 显示 manifest JSON -->
-  </div>
-</div>
-```
+### 流式传输端点
 
-### 用户期望
+`/stream?path=xxx` 端点会：
+1. 检测文件是否是 ENCV 容器
+2. 如果是容器，解密并流式传输内容
+3. 如果不是容器，直接提供原始文件
 
-"预览"加密容器应该是**播放视频/音频内容**，而不是显示元数据信息。元数据应该在"查看信息"（FileInfo.vue）中显示。
+### 正确的预览逻辑
+
+根据 `container_type` 决定预览方式：
+- **image** → `<img src="/stream?path=xxx">` 显示图片
+- **video** → 跳转到 `/player` 播放器
+- **audio** → 跳转到 `/player` 播放器
+- **document** → PDF 用 iframe，文本用文本预览
+
+### 当前代码问题
+
+`FilePreview.vue` 的 `determinePreviewType()` 只根据 `category === 'encrypted'` 返回 `'container'`，然后在模板中显示元数据卡片。
 
 ### 修复方案
 
-**方案 A（推荐）**：预览加密容器时跳转到播放页面
-
-1. 在 `determinePreviewType()` 中，对 `category === 'encrypted'` 返回 `'unsupported'` 或新类型 `'playback'`
-2. 在模板中添加播放器组件或跳转按钮
-
-**方案 B**：在 FilePreview.vue 中嵌入播放器组件
-
-需要引入现有的播放器组件（如果存在），或创建一个简单的视频播放器。
-
-### 推荐方案 A 实现
-
-修改 `determinePreviewType()` 函数：
+**方案**：在 `loadFile()` 中，先调用 `/api/file/info` 获取 `container_type`，然后根据类型设置 `previewType`：
 
 ```typescript
-async function determinePreviewType(name: string, isEncrypted?: boolean): Promise<PreviewType> {
-  const category = getFileCategory(name, isEncrypted)
-  const ext = getFileExtension(name)
+async function loadFile() {
+  // ... 省略前面代码 ...
 
-  if (category === 'image') return 'image'
-  if (ext === 'pdf') return 'pdf'
-  // 加密容器不应该在"预览"中显示元数据，而是播放或提示跳转
-  if (category === 'encrypted') return 'encrypted'  // 新类型，用于显示播放提示
+  const isEncrypted = route.query.isEncrypted === 'true'
 
-  const textExts = await fetchTextPreviewExts()
-  if (textExts.has(ext)) return 'text'
-  if (category === 'document' || category === 'other') return 'text'
-  return 'unsupported'
+  if (isEncrypted) {
+    // 加密文件需要先获取 container_type 来决定预览方式
+    try {
+      const baseUrl = getApiBaseUrl()
+      const resp = await fetch(`${baseUrl}/api/file/info?path=${encodeURIComponent(path)}`)
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      const info = await resp.json()
+
+      if (info.is_encv_container && info.container) {
+        const containerType = info.container.container_type
+        containerInfo.value = info.container
+        fileSize.value = info.size || 0
+        manifestJson.value = JSON.stringify(info.container.manifest || info.container, null, 2)
+
+        // 根据 container_type 设置预览类型
+        switch (containerType) {
+          case 'image':
+            previewType.value = 'image'
+            streamUrl.value = getFileStreamUrl(path)
+            break
+          case 'video':
+          case 'audio':
+            // 跳转到播放器
+            router.push({ path: '/player', query: { path, name: fileName.value } })
+            return
+          case 'document':
+            // 判断是 PDF 还是文本
+            const ext = getFileExtension(fileName.value)
+            if (ext === 'pdf') {
+              previewType.value = 'pdf'
+              streamUrl.value = getFileStreamUrl(path)
+            } else {
+              previewType.value = 'text'
+              // 需要读取解密后的文本内容
+              const data = await readFileContent(path)
+              content.value = data.content
+              fileSize.value = data.size
+              encoding.value = data.encoding
+            }
+            break
+          default:
+            previewType.value = 'container' // 显示元数据
+        }
+      } else {
+        previewType.value = 'unsupported'
+      }
+    } catch (e: any) {
+      error.value = e?.message || String(e)
+    } finally {
+      loading.value = false
+    }
+    return
+  }
+
+  // 非加密文件的现有逻辑
+  previewType.value = await determinePreviewType(fileName.value, isEncrypted)
+  // ... 省略后续代码 ...
 }
 ```
 
-在模板中添加 `encrypted` 类型的处理：
+---
 
-```vue
-<div v-else-if="previewType === 'encrypted'" class="preview-wrapper encrypted-preview">
-  <ion-icon :icon="playCircle} class="play-icon"></ion-icon>
-  <h3>{{ fileName }}</h3>
-  <p class="hint">{{ t('filePreview.encryptedHint') }}</p>
-  <ion-button @click="goToPlayer" color="primary">
-    <ion-icon :icon="play} slot="start"></ion-icon>
-    {{ t('filePreview.play') }}
-  </ion-button>
-</div>
-```
+## 问题 2：容器信息未正确解析
+
+### 验证
+
+后端 `GetFileInfo` 返回正确的 `Container` 数据结构，前端接口定义也正确。问题可能是：
+- API 调用失败（之前 `getApiBaseUrl` 问题已修复）
+- 网络错误
+
+修复问题 1 后，如果仍有问题需要进一步排查。
 
 ---
 
-## 问题 2 详细分析：容器信息未正确解析
-
-### 可能原因
-
-1. **API 调用失败**：之前 `getApiBaseUrl` 动态导入问题导致 `fetch` 调用失败（已修复）
-2. **数据结构不匹配**：后端返回的字段名与前端期望不一致
-3. **容器打开失败**：后端 `reader.OpenV4Container` 返回错误，导致 `Container` 字段只有 `error` 键
-
-### 验证步骤
-
-1. 检查后端 `GetFileInfo` 返回的数据结构（已确认正确）：
-   ```go
-   result.Container = map[string]interface{}{
-       "version":           4,
-       "container_id":      mf.ContainerID,
-       "container_type":    containerTypeStr,
-       "is_seekable":       hdr.IsSeekable == 1,
-       "original_duration": mf.OriginalDuration,
-       "segment_count":     len(mf.Segments),
-       "segments":          mf.Segments,
-       "manifest_size":     hdr.ManifestLength,
-       "header":            {...},
-       "manifest":          mf,
-   }
-   ```
-
-2. 检查前端 `ContainerInfo` 接口定义（已确认正确）：
-   ```typescript
-   interface ContainerInfo {
-     version: number
-     container_id: string
-     container_type: string
-     is_seekable: boolean
-     original_duration?: number
-     segment_count?: number
-     segments: unknown[]
-   }
-   ```
-
-3. 检查前端数据赋值逻辑（已确认正确）：
-   ```typescript
-   containerInfo.value = info.container || null
-   manifestJson.value = JSON.stringify(info.container.manifest || info.container, null, 2)
-   ```
-
-### 结论
-
-问题 2 应该已随问题 1（`getApiBaseUrl` 修复）自动解决。如果仍有问题，需要：
-- 在浏览器开发者工具中检查 `/api/file/info?path=...` 的实际响应
-- 检查是否有 CORS 错误或网络错误
-
----
-
-## 问题 3 详细分析：ffmpeg/ffprobe 失败没有变化
+## 问题 3：ffmpeg/ffprobe 失败无变化
 
 ### 根因
 
-之前的修复（移除 `-Wl,--undefined=ff_graph_css_data`）**需要重新执行构建脚本才能生效**。
-
-构建脚本的缓存检查逻辑（第 36-43 行）：
-
-```bash
-if ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" | grep -q "ffmpeg_run" && \
-   ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" | grep -q "ffmpeg_reset" && \
-   ${NM} -D "${OUTPUT_DIR}/libffprobe.so" | grep -q "ffprobe_run" && \
-   ${NM} -D "${OUTPUT_DIR}/libffprobe.so" | grep -q "ffprobe_reset"; then
-    echo "✅ All ffmpeg libraries cached and valid, skipping build"
-    exit 0
-```
-
-**关键点**：如果旧的 `libffmpeg.so` / `libffprobe.so` 文件存在且包含 `ffmpeg_run`/`ffprobe_run`/`ffmpeg_reset`/`ffprobe_reset` 符号，脚本会跳过构建。
-
-但旧文件仍然包含 `ff_graph_css_data` 作为未解析符号，导致 dlopen 失败。
+之前的修复需要重新构建才能生效。旧缓存 .so 文件仍含 `ff_graph_css_data` 未解析符号。
 
 ### 修复方案
 
-**方案 A**：删除旧缓存强制重建
-
-在构建脚本开头添加强制重建检查：
+在构建脚本缓存检查前添加 `ff_graph_css_data` 符号检测，强制重建：
 
 ```bash
-# 检查是否需要强制重建（移除 ff_graph_css_data 符号）
-if [ -f "${OUTPUT_DIR}/libffmpeg.so" ]; then
-    if ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" | grep -q "ff_graph_css_data"; then
+echo "=== Checking for cached ffmpeg output ==="
+if [ -f "${OUTPUT_DIR}/libffmpeg.so" ] && [ -f "${OUTPUT_DIR}/libffprobe.so" ]; then
+    # 检查是否包含已弃用的 ff_graph_css_data 符号
+    if ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" 2>/dev/null | grep -q "ff_graph_css_data"; then
         echo "⚠️  Cached libraries contain deprecated ff_graph_css_data symbol, forcing rebuild..."
         rm -f "${OUTPUT_DIR}/libffmpeg.so" "${OUTPUT_DIR}/libffprobe.so"
+    elif ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" | grep -q "ffmpeg_run" && \
+         ...; then
+        echo "✅ All ffmpeg libraries cached and valid, skipping build"
+        exit 0
     fi
 fi
 ```
-
-**方案 B**：用户手动删除旧文件
-
-```bash
-rm -f android/app/src/main/jniLibs/arm64-v8a/libffmpeg.so
-rm -f android/app/src/main/jniLibs/arm64-v8a/libffprobe.so
-```
-
-然后重新执行构建脚本。
-
-### 推荐方案 A 实现
-
-在构建脚本第 33 行后添加检查逻辑。
 
 ---
 
 ## 执行步骤
 
-### Step 1：修复 FilePreview.vue 预览逻辑
+### Step 1：修复 FilePreview.vue 加密容器预览逻辑
 
-1. 修改 `PreviewType` 类型定义，添加 `'encrypted'` 类型
-2. 修改 `determinePreviewType()` 函数，对加密容器返回 `'encrypted'`
-3. 在模板中添加 `encrypted` 类型的处理分支，显示播放提示和跳转按钮
-4. 添加 `goToPlayer()` 函数，跳转到播放页面
+修改 `loadFile()` 函数：
+1. 对加密文件先调用 `/api/file/info` 获取 `container_type`
+2. 根据 `container_type` 设置正确的 `previewType`
+3. image → 显示图片，video/audio → 跳转播放器，document → PDF/文本预览
 
 ### Step 2：修复 FFmpeg 构建脚本缓存问题
 
-1. 在缓存检查前添加 `ff_graph_css_data` 符号检测
-2. 如果检测到该符号，删除旧缓存强制重建
+添加 `ff_graph_css_data` 符号检测强制重建。
 
 ### Step 3：验证
 
-1. 删除旧的 FFmpeg 缓存文件
-2. 重新执行构建脚本
-3. 在设备上测试：
-   - 预览加密容器应显示播放提示
-   - 查看信息应正确显示容器元数据
-   - 加密视频应能正常处理
+在设备上测试各种类型的加密容器预览。
 
 ---
 
@@ -213,5 +173,5 @@ rm -f android/app/src/main/jniLibs/arm64-v8a/libffprobe.so
 
 | 文件 | 修改内容 |
 |------|----------|
-| `src/views/FilePreview.vue` | 添加 `encrypted` 预览类型，显示播放提示而非元数据卡片 |
-| `scripts/build-ffmpeg-android.sh` | 添加 `ff_graph_css_data` 符号检测，强制重建旧缓存 |
+| `src/views/FilePreview.vue` | 根据 `container_type` 调用对应预览方式 |
+| `scripts/build-ffmpeg-android.sh` | 添加 `ff_graph_css_data` 符号检测强制重建 |
