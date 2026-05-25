@@ -225,27 +225,108 @@ func (s *MobileService) ReadFileContent(queryPath string) (*FileContentResult, e
 	}, nil
 }
 
-func (s *MobileService) TestWebDAV(url, username, password string) error {
-	client := &http.Client{Timeout: 5 * time.Second}
-	httpReq, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return &BadRequestError{Err: err}
+type WebDAVTestResult struct {
+	Success     bool   `json:"success"`
+	Reachable   bool   `json:"reachable"`
+	IsWebDAV    bool   `json:"is_webdav"`
+	AuthOK      bool   `json:"auth_ok"`
+	DirReadable bool   `json:"dir_readable"`
+	StatusCode  int    `json:"status_code"`
+	DAVHeader   string `json:"dav_header,omitempty"`
+	Error       string `json:"error,omitempty"`
+}
+
+func (s *MobileService) TestWebDAV(urlStr, username, password string) (*WebDAVTestResult, error) {
+	result := &WebDAVTestResult{
+		StatusCode: 0,
 	}
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	propfindBody := `<?xml version="1.0" encoding="UTF-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>`
+
+	req, err := http.NewRequest("PROPFIND", urlStr, strings.NewReader(propfindBody))
+	if err != nil {
+		result.Error = fmt.Sprintf("invalid URL: %v", err)
+		return result, nil
+	}
+	req.Header.Set("Content-Type", "application/xml; charset=utf-8")
+	req.Header.Set("Depth", "0")
 
 	if username != "" || password != "" {
-		httpReq.SetBasicAuth(username, password)
+		req.SetBasicAuth(username, password)
 	}
 
-	resp, err := client.Do(httpReq)
+	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		result.Error = fmt.Sprintf("连接失败: %v", err)
+		return result, nil
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return nil
+	result.StatusCode = resp.StatusCode
+	result.DAVHeader = resp.Header.Get("Dav")
+	result.Reachable = true
+
+	switch resp.StatusCode {
+	case http.StatusMultiStatus:
+		result.IsWebDAV = true
+		result.AuthOK = true
+		result.DirReadable = true
+		result.Success = true
+	case http.StatusUnauthorized:
+		result.IsWebDAV = true
+		result.AuthOK = false
+		result.Success = false
+		result.Error = "认证失败，请检查用户名和密码"
+	case http.StatusForbidden:
+		result.IsWebDAV = true
+		result.AuthOK = false
+		result.Success = false
+		result.Error = "访问被拒绝，权限不足"
+	case http.StatusNotFound:
+		result.IsWebDAV = false
+		result.Success = false
+		result.Error = fmt.Sprintf("路径不存在 (HTTP %d)，请检查 WebDAV 地址是否正确", resp.StatusCode)
+	default:
+		if result.DAVHeader != "" {
+			result.IsWebDAV = true
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				result.AuthOK = true
+				result.DirReadable = true
+				result.Success = true
+			} else {
+				result.Success = false
+				result.Error = fmt.Sprintf("服务器返回 HTTP %d，但未返回标准 WebDAV MultiStatus 响应", resp.StatusCode)
+			}
+		} else {
+			result.IsWebDAV = false
+			result.Success = false
+			result.Error = fmt.Sprintf("该地址返回了 HTTP %d，但未检测到 WebDAV 协议支持。这看起来不是一个 WebDAV 服务器（普通 HTTP 网站也会返回 2xx）。请确认地址和端口正确。", resp.StatusCode)
+		}
 	}
-	return fmt.Errorf("连接失败: HTTP %d", resp.StatusCode)
+
+	if result.IsWebDAV && !result.DirReadable && result.StatusCode == http.StatusMultiStatus {
+		req2, _ := http.NewRequest("PROPFIND", urlStr, strings.NewReader(propfindBody))
+		if req2 != nil {
+			req2.Header.Set("Content-Type", "application/xml; charset=utf-8")
+			req2.Header.Set("Depth", "1")
+			if username != "" || password != "" {
+				req2.SetBasicAuth(username, password)
+			}
+			resp2, err2 := client.Do(req2)
+			if err2 == nil {
+				defer resp2.Body.Close()
+				if resp2.StatusCode == http.StatusMultiStatus {
+					result.DirReadable = true
+				}
+			}
+		}
+	}
+
+	return result, nil
 }
 
 func (s *MobileService) GetTaskManager() *TaskManager {

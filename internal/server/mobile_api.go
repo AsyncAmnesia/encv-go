@@ -171,17 +171,17 @@ func (s *Server) handleTestWebDAVGin(c *gin.Context) {
 		Password string `json:"password"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid JSON"})
 		return
 	}
 
-	err := s.mobileSvc.TestWebDAV(req.URL, req.Username, req.Password)
+	result, err := s.mobileSvc.TestWebDAV(req.URL, req.Username, req.Password)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true})
+	c.JSON(http.StatusOK, result)
 }
 
 func (s *Server) handlePermissionsGin(c *gin.Context) {

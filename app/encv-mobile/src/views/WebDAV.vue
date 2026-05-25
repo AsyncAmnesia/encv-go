@@ -105,6 +105,55 @@
             {{ testing ? t('webdav.testing') : t('webdav.testConnection') }}
           </ion-button>
 
+          <div v-if="testResult" class="test-result-area" :class="{ 'result-error': !testResult.success, 'result-ok': testResult.success }">
+            <h4 class="result-title">{{ t('webdav.testResult') }}</h4>
+
+            <div class="result-items">
+              <div class="result-item">
+                <span class="result-label">{{ testResult.reachable ? t('webdav.reachable') : t('webdav.notReachable') }}</span>
+                <ion-badge :color="testResult.reachable ? 'success' : 'danger'">
+                  {{ testResult.reachable ? 'OK' : 'FAIL' }}
+                </ion-badge>
+              </div>
+
+              <div class="result-item">
+                <span class="result-label">{{ testResult.is_webdav ? t('webdav.isWebDAV') : t('webdav.notWebDAV') }}</span>
+                <ion-badge :color="testResult.is_webdav ? 'success' : 'danger'">
+                  {{ testResult.is_webdav ? 'OK' : 'FAIL' }}
+                </ion-badge>
+              </div>
+
+              <div v-if="testResult.is_webdav" class="result-item">
+                <span class="result-label">{{ testResult.auth_ok ? t('webdav.authOK') : t('webdav.authFailed') }}</span>
+                <ion-badge :color="testResult.auth_ok ? 'success' : 'danger'">
+                  {{ testResult.auth_ok ? 'OK' : 'FAIL' }}
+                </ion-badge>
+              </div>
+
+              <div v-if="testResult.is_webdav && testResult.status_code === 207" class="result-item">
+                <span class="result-label">{{ testResult.dir_readable ? t('webdav.dirReadable') : t('webdav.dirNotReadable') }}</span>
+                <ion-badge :color="testResult.dir_readable ? 'success' : 'danger'">
+                  {{ testResult.dir_readable ? 'OK' : 'FAIL' }}
+                </ion-badge>
+              </div>
+
+              <div class="result-item">
+                <span class="result-label">{{ t('webdav.statusCode') }}</span>
+                <span class="result-value">HTTP {{ testResult.status_code }}</span>
+              </div>
+
+              <div v-if="testResult.dav_header" class="result-item">
+                <span class="result-label">{{ t('webdav.davHeader') }}</span>
+                <span class="result-value code-text">{{ testResult.dav_header }}</span>
+              </div>
+            </div>
+
+            <div v-if="testResult.error" class="result-error-msg">
+              <p>{{ t('webdav.testDetail') }}:</p>
+              <p class="error-detail">{{ testResult.error }}</p>
+            </div>
+          </div>
+
           <ion-button expand="block" class="ion-margin-top" @click="saveConfig" :disabled="!formName || !formUrl">
             <ion-icon :icon="save" slot="start"></ion-icon>
             {{ t('webdav.save') }}
@@ -151,7 +200,7 @@ import {
   saveWebDAVConfigs,
   testWebDAVConnection,
 } from '@/api/encv'
-import type { WebDAVConfig } from '@/api/encv'
+import type { WebDAVConfig, WebDAVTestResult } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 
@@ -163,6 +212,7 @@ const editingId = ref('')
 const testing = ref(false)
 const testingId = ref('')
 const showPassword = ref(false)
+const testResult = ref<WebDAVTestResult | null>(null)
 
 const formName = ref('')
 const formUrl = ref('')
@@ -181,6 +231,7 @@ function openNewConfig() {
   formUsername.value = ''
   formPassword.value = ''
   formMountPath.value = '/webdav'
+  testResult.value = null
   showModal.value = true
 }
 
@@ -191,6 +242,7 @@ function editConfig(config: WebDAVConfig) {
   formUsername.value = config.username
   formPassword.value = config.password
   formMountPath.value = config.mountPath
+  testResult.value = null
   showModal.value = true
 }
 
@@ -230,7 +282,7 @@ function saveConfig() {
 async function testConfig(config: WebDAVConfig) {
   testingId.value = config.id
   try {
-    await testWebDAVConnection({
+    const result = await testWebDAVConnection({
       name: config.name,
       url: config.url,
       username: config.username,
@@ -238,16 +290,23 @@ async function testConfig(config: WebDAVConfig) {
       mountPath: config.mountPath,
     })
     testingId.value = ''
-    showToast({
-      message: t('webdav.connectionSuccess'),
-      duration: 2000,
-      color: 'success',
-    })
+    if (!result.success) {
+      showToast({
+        message: t('webdav.connectionFailed'),
+        duration: 2000,
+        color: 'danger',
+      })
+    } else {
+      showToast({
+        message: t('webdav.connectionSuccess'),
+        duration: 2000,
+        color: 'success',
+      })
+    }
   } catch (e) {
     testingId.value = ''
-    const detail = e instanceof Error ? e.message : String(e)
     showToast({
-      message: t('webdav.connectionFailed') + ': ' + detail,
+      message: t('webdav.connectionFailed') + ': ' + (e instanceof Error ? e.message : String(e)),
       duration: 3000,
       color: 'danger',
     })
@@ -257,8 +316,9 @@ async function testConfig(config: WebDAVConfig) {
 async function testConnection() {
   if (!formUrl.value) return
   testing.value = true
+  testResult.value = null
   try {
-    await testWebDAVConnection({
+    const result = await testWebDAVConnection({
       name: formName.value,
       url: formUrl.value,
       username: formUsername.value,
@@ -266,19 +326,18 @@ async function testConnection() {
       mountPath: formMountPath.value,
     })
     testing.value = false
-    showToast({
-      message: t('webdav.connectionSuccess'),
-      duration: 2000,
-      color: 'success',
-    })
+    testResult.value = result
   } catch (e) {
     testing.value = false
-    const detail = e instanceof Error ? e.message : String(e)
-    showToast({
-      message: t('webdav.connectionFailed') + ': ' + detail,
-      duration: 3000,
-      color: 'danger',
-    })
+    testResult.value = {
+      success: false,
+      reachable: false,
+      is_webdav: false,
+      auth_ok: false,
+      dir_readable: false,
+      status_code: 0,
+      error: e instanceof Error ? e.message : String(e),
+    }
   }
 }
 
@@ -309,5 +368,78 @@ onMounted(() => {
   font-size: 64px;
   margin-bottom: 16px;
   opacity: 0.5;
+}
+
+.test-result-area {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 8px;
+  background: var(--ion-background-color);
+}
+
+.result-ok {
+  border-left: 3px solid var(--ion-color-success);
+}
+
+.result-error {
+  border-left: 3px solid var(--ion-color-danger);
+}
+
+.result-title {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ion-text-color);
+}
+
+.result-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.result-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.result-label {
+  color: var(--ion-text-color);
+  font-weight: 500;
+}
+
+.result-value {
+  color: var(--ion-text-secondary);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.code-text {
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.result-error-msg {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(var(--ion-color-danger-rgb), 0.15);
+}
+
+.result-error-msg p:first-child {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ion-color-danger);
+}
+
+.error-detail {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ion-color-medium);
+  line-height: 1.5;
+  word-break: break-word;
 }
 </style>

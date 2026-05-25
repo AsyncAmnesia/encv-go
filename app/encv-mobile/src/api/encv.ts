@@ -289,7 +289,18 @@ export async function testLocalWebDAV(): Promise<LocalWebDAVTestResult> {
   return await response.json()
 }
 
-export async function testWebDAVConnection(config: Omit<WebDAVConfig, 'id'>): Promise<void> {
+export interface WebDAVTestResult {
+  success: boolean
+  reachable: boolean
+  is_webdav: boolean
+  auth_ok: boolean
+  dir_readable: boolean
+  status_code: number
+  dav_header?: string
+  error?: string
+}
+
+export async function testWebDAVConnection(config: Omit<WebDAVConfig, 'id'>): Promise<WebDAVTestResult> {
   console.info('[API] testWebDAV')
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/webdav/test`, {
@@ -307,8 +318,10 @@ export async function testWebDAVConnection(config: Omit<WebDAVConfig, 'id'>): Pr
   }
   const data = await response.json()
   if (data.success === false) {
-    throw new Error(data.error || '连接失败')
+    const result = data as WebDAVTestResult
+    return result
   }
+  return data as WebDAVTestResult
 }
 
 export function formatFileSize(bytes?: number): string {
