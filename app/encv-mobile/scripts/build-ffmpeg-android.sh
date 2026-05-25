@@ -189,8 +189,15 @@ FFMPEG_INSTALL="${BUILD_DIR}/ffmpeg-install"
 FTOOLS_BUILD="${BUILD_DIR}/ftools-build"
 mkdir -p "$FTOOLS_BUILD"
 
-CFLAGS="-fPIC -DANDROID -I${FFMPEG_INSTALL}/include -I${FFMPEG_SRC}"
+CFLAGS="-fPIC -DANDROID -I${FFMPEG_INSTALL}/include -I${FFMPEG_SRC} -I${FFMPEG_SRC}/fftools -I${FFMPEG_SRC}/libavcodec -I${FFMPEG_SRC}/libavformat -I${FFMPEG_SRC}/libavutil -I${FFMPEG_SRC}/libavfilter -I${FFMPEG_SRC}/libswresample -I${FFMPEG_SRC}/libswscale -I${FFMPEG_SRC}/libavdevice -I${FFMPEG_SRC}/libpostproc -I${X264_INSTALL}/include"
 LDFLAGS="-L${FFMPEG_INSTALL}/lib -L${X264_INSTALL}/lib"
+
+STATIC_LIBS=""
+for lib in libavformat libavcodec libavutil libswresample libswscale libavfilter libavdevice libpostproc; do
+    if [ -f "${FFMPEG_INSTALL}/lib/${lib}.a" ]; then
+        STATIC_LIBS="$STATIC_LIBS ${FFMPEG_INSTALL}/lib/${lib}.a"
+    fi
+done
 
 FFMPEG_FFTOOLS="fftools/ffmpeg.c fftools/ffmpeg_dec.c fftools/ffmpeg_demux.c fftools/ffmpeg_enc.c fftools/ffmpeg_filter.c fftools/ffmpeg_hw.c fftools/ffmpeg_mux.c fftools/ffmpeg_opt.c fftools/cmdutils.c fftools/opt_common.c fftools/sync_queue.c fftools/thread_queue.c"
 
@@ -202,8 +209,9 @@ for src in $FFMPEG_FFTOOLS; do
     if [ -f "${FFMPEG_SRC}/${src}" ]; then
         objname=$(basename "${src}" .c)
         obj="${FTOOLS_BUILD}/ffmpeg_${objname}.o"
-        $CC $CFLAGS -c -o "$obj" "${FFMPEG_SRC}/${src}" > /dev/null 2>&1 || {
-            echo "⚠️  Failed to compile ${src}, skipping"
+        $CC $CFLAGS -c -o "$obj" "${FFMPEG_SRC}/${src}" > "${LOG_DIR}/ffmpeg_${objname}.log" 2>&1 || {
+            echo "⚠️  Failed to compile ${src} (see ${LOG_DIR}/ffmpeg_${objname}.log)"
+            cat "${LOG_DIR}/ffmpeg_${objname}.log" | tail -5
             continue
         }
         FFMPEG_OBJS="$FFMPEG_OBJS $obj"
@@ -216,17 +224,15 @@ echo "Linking libffmpeg.so..."
 $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffmpeg.so" \
     $FFMPEG_OBJS \
     -Wl,--whole-archive \
-    ${FFMPEG_INSTALL}/lib/libavformat.a \
-    ${FFMPEG_INSTALL}/lib/libavcodec.a \
-    ${FFMPEG_INSTALL}/lib/libavutil.a \
-    ${FFMPEG_INSTALL}/lib/libswresample.a \
-    ${FFMPEG_INSTALL}/lib/libswscale.a \
-    ${FFMPEG_INSTALL}/lib/libavfilter.a \
-    ${FFMPEG_INSTALL}/lib/libavdevice.a \
+    $STATIC_LIBS \
     -Wl,--no-whole-archive \
     ${X264_INSTALL}/lib/libx264.a \
     -lm -llog \
-    $LDFLAGS > /dev/null 2>&1
+    $LDFLAGS > "${LOG_DIR}/link_ffmpeg.log" 2>&1 || {
+    echo "❌ Failed to link libffmpeg.so (see ${LOG_DIR}/link_ffmpeg.log)"
+    cat "${LOG_DIR}/link_ffmpeg.log" | tail -10
+    exit 1
+}
 
 echo "Compiling ffprobe fftools..."
 FFPROBE_OBJS=""
@@ -234,8 +240,9 @@ for src in $FFPROBE_FFTOOLS; do
     if [ -f "${FFMPEG_SRC}/${src}" ]; then
         objname=$(basename "${src}" .c)
         obj="${FTOOLS_BUILD}/ffprobe_${objname}.o"
-        $CC $CFLAGS -c -o "$obj" "${FFMPEG_SRC}/${src}" > /dev/null 2>&1 || {
-            echo "⚠️  Failed to compile ${src}, skipping"
+        $CC $CFLAGS -c -o "$obj" "${FFMPEG_SRC}/${src}" > "${LOG_DIR}/ffprobe_${objname}.log" 2>&1 || {
+            echo "⚠️  Failed to compile ${src} (see ${LOG_DIR}/ffprobe_${objname}.log)"
+            cat "${LOG_DIR}/ffprobe_${objname}.log" | tail -5
             continue
         }
         FFPROBE_OBJS="$FFPROBE_OBJS $obj"
@@ -248,17 +255,15 @@ echo "Linking libffprobe.so..."
 $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffprobe.so" \
     $FFPROBE_OBJS \
     -Wl,--whole-archive \
-    ${FFMPEG_INSTALL}/lib/libavformat.a \
-    ${FFMPEG_INSTALL}/lib/libavcodec.a \
-    ${FFMPEG_INSTALL}/lib/libavutil.a \
-    ${FFMPEG_INSTALL}/lib/libswresample.a \
-    ${FFMPEG_INSTALL}/lib/libswscale.a \
-    ${FFMPEG_INSTALL}/lib/libavfilter.a \
-    ${FFMPEG_INSTALL}/lib/libavdevice.a \
+    $STATIC_LIBS \
     -Wl,--no-whole-archive \
     ${X264_INSTALL}/lib/libx264.a \
     -lm -llog \
-    $LDFLAGS > /dev/null 2>&1
+    $LDFLAGS > "${LOG_DIR}/link_ffprobe.log" 2>&1 || {
+    echo "❌ Failed to link libffprobe.so (see ${LOG_DIR}/link_ffprobe.log)"
+    cat "${LOG_DIR}/link_ffprobe.log" | tail -10
+    exit 1
+}
 
 cp "${FTOOLS_BUILD}/libffmpeg.so" "$OUTPUT_DIR/"
 cp "${FTOOLS_BUILD}/libffprobe.so" "$OUTPUT_DIR/"
