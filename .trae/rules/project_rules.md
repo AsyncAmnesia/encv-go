@@ -10,6 +10,7 @@
 - CFLAGS 必须定义 `-DHAVE_SYS_RESOURCE_H=1 -DHAVE_UNISTD_H=1 -DHAVE_SYS_SELECT_H=1`（FFmpeg fftools 手动编译时不经过 configure 生成 config.h，这些宏控制条件包含 `<sys/time.h>`/`<unistd.h>`/`<sys/select.h>`；缺少 `HAVE_SYS_RESOURCE_H` 会导致 `ffmpeg_opt.c` 中 `struct tm`/`gmtime`/`localtime`/`strftime`/`time` 未声明，因为 NDK 的 `<time.h>` 在 `-std=c11 -D_POSIX_C_SOURCE` 下需要 `<sys/time.h>` 前置包含才能提供完整定义）
 - CFLAGS 必须包含 `-I compat/stdbit`（FFmpeg 8.0 fftools 使用 C23 `<stdbit.h>`，NDK Clang 17 不支持，需使用 FFmpeg 自带的兼容头文件 `compat/stdbit/stdbit.h`，该文件使用 `__builtin_clz`/`__builtin_ctz`/`__builtin_popcount` 等 Clang 内建函数实现）
 - FFmpeg 8.0 已移除 libpostproc，链接列表中不能有 `-lpostproc`
+- FFmpeg configure 必须使用 `--disable-asm`（Android ARM64 上 NEON 汇编 `.S` 文件使用 `ADRP` 等 PC 相对重定位，与共享库链接不兼容，导致 `R_AARCH64_ADR_PREL_PG_HI21 cannot be used against symbol; recompile with -fPIC` 链接错误；vcpkg 的 FFmpeg 构建脚本同样在 Android 上禁用 asm）
 - FFmpeg 8.0 fftools 新增 `textformat/` 子目录（ffprobe 输出格式化），需在 CFLAGS 中添加 `-I fftools/textformat`
 - FFmpeg 8.0 fftools 新增 `graph/` 和 `resources/` 子目录，需在 CFLAGS 中添加 `-I fftools/graph` 和 `-I fftools/resources`
 - h264 编码器在 8.0 中通过 `libx264` 包装器提供，configure 使用 `--enable-encoder=libx264`

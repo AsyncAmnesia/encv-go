@@ -153,6 +153,7 @@ echo "=== Configuring ffmpeg ==="
     --sysroot="${TOOLCHAIN}/sysroot" \
     --enable-shared \
     --enable-static \
+    --disable-asm \
     --disable-programs \
     --disable-doc \
     --disable-htmlpages \
