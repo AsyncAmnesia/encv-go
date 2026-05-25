@@ -200,8 +200,6 @@ type LogConfig struct {
 	// 支持相对路径（相对于可执行文件）和绝对路径。
 	// 示例: "encv.log" 或 "D:/logs/encv.log"
 	File string `json:"file"`
-	// 是否输出到控制台。当前仅做标记，控制台输出始终开启。
-	Console bool `json:"console"`
 }
 
 // DecryptedContent 包含解密后的所有内容

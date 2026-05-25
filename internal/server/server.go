@@ -151,6 +151,8 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/api/files", s.handleListFilesGin)
 	r.DELETE("/api/files", s.handleDeleteFileGin)
 	r.GET("/api/file", s.handleReadFileContentGin)
+	r.GET("/api/file/text-preview-exts", s.handleTextPreviewExtsGin)
+	r.GET("/api/file/info", s.handleFileInfoGin)
 	r.GET("/api/tasks", s.handleGetTasksGin)
 	r.POST("/api/tasks", s.handleCreateTaskGin)
 	r.POST("/api/tasks/:id/cancel", s.handleCancelTaskGin)
@@ -171,6 +173,8 @@ func (s *Server) Start(version string) (string, error) {
 	r.POST("/api/index/rebuild", s.handleIndexRebuildGin)
 	r.POST("/api/index/clear", s.handleIndexClearGin)
 	r.GET("/api/stream/external", s.handleStreamExternalFileGin)
+	r.GET("/api/build-info", s.handleBuildInfoGin)
+	r.GET("/api/ffmpeg-status", s.handleFFmpegStatusGin)
 	r.POST("/api/logs", s.handleAPILogsGin)
 	r.GET("/ws", gin.WrapF(s.handleWebSocket))
 

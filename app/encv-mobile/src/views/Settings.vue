@@ -97,6 +97,20 @@
             </p>
           </ion-label>
         </ion-item>
+        <ion-item v-if="isNative()" button @click="goEngine" detail>
+          <ion-icon :icon="filmOutline" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.engineStatus') }}</h3>
+            <p>
+              <ion-badge :color="engineStatus?.ffmpeg_available ? 'success' : 'danger'">
+                {{ t('settings.ffmpegAvail') }}
+              </ion-badge>
+              <ion-badge :color="engineStatus?.ffprobe_available ? 'success' : 'danger'">
+                {{ t('settings.ffprobeAvail') }}
+              </ion-badge>
+            </p>
+          </ion-label>
+        </ion-item>
       </ion-list>
 
       <ion-list>
@@ -169,27 +183,29 @@
                   <ion-label>{{ tField(child.key) }}</ion-label>
                 </ion-item-divider>
                 <template v-for="grandchild in child.properties" :key="grandchild.key">
-                  <ion-item v-if="grandchild.type === 'boolean'">
-                    <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
-                    <ion-toggle
-                      :checked="!!getValue([section.key, child.key, grandchild.key])"
-                      @ionChange="setValue([section.key, child.key, grandchild.key], !getValue([section.key, child.key, grandchild.key]))"
-                    >{{ tField(grandchild.key) }}</ion-toggle>
-                  </ion-item>
-                  <ion-item v-else>
-                    <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
-                    <ion-input
-                      :value="String(getValue([section.key, child.key, grandchild.key]) ?? '')"
-                      :type="grandchild.isPassword ? 'password' : grandchild.type === 'integer' ? 'number' : 'text'"
-                      :label="fieldLabel(grandchild.key, grandchild.required)"
-                      label-placement="stacked"
-                      :placeholder="grandchild.description || tField(grandchild.key)"
-                      @ionInput="handleInput([section.key, child.key, grandchild.key], grandchild, $event)"
-                    ></ion-input>
-                    <ion-button v-if="grandchild.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([section.key, child.key, grandchild.key], grandchild)">
-                      <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-                    </ion-button>
-                  </ion-item>
+                  <template v-if="isFieldVisible(grandchild)">
+                    <ion-item v-if="grandchild.type === 'boolean'">
+                      <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
+                      <ion-toggle
+                        :checked="!!getValue([section.key, child.key, grandchild.key])"
+                        @ionChange="setValue([section.key, child.key, grandchild.key], !getValue([section.key, child.key, grandchild.key]))"
+                      >{{ tField(grandchild.key) }}</ion-toggle>
+                    </ion-item>
+                    <ion-item v-else>
+                      <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
+                      <ion-input
+                        :value="String(getValue([section.key, child.key, grandchild.key]) ?? '')"
+                        :type="grandchild.isPassword ? 'password' : grandchild.type === 'integer' ? 'number' : 'text'"
+                        :label="fieldLabel(grandchild.key, grandchild.required)"
+                        label-placement="stacked"
+                        :placeholder="grandchild.description || tField(grandchild.key)"
+                        @ionInput="handleInput([section.key, child.key, grandchild.key], grandchild, $event)"
+                      ></ion-input>
+                      <ion-button v-if="grandchild.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([section.key, child.key, grandchild.key], grandchild)">
+                        <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+                      </ion-button>
+                    </ion-item>
+                  </template>
                 </template>
               </template>
 
@@ -216,43 +232,45 @@
                 </ion-item>
               </template>
 
-              <ion-item v-else-if="child.type === 'boolean'">
-                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
-                <ion-toggle
-                  :checked="!!getValue([section.key, child.key])"
-                  @ionChange="setValue([section.key, child.key], !getValue([section.key, child.key]))"
-                >{{ tField(child.key) }}</ion-toggle>
-              </ion-item>
-              <ion-item v-else-if="section.key === 'log' && child.key === 'level'">
-                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
-                <ion-select
-                  :value="String(getValue(['log', 'level']) ?? 'info')"
-                  :label="tField('level')"
-                  label-placement="stacked"
-                  interface="action-sheet"
-                  mode="ios"
-                  @ionChange="setValue(['log', 'level'], $event.detail.value)"
-                >
-                  <ion-select-option value="debug">DEBUG</ion-select-option>
-                  <ion-select-option value="info">INFO</ion-select-option>
-                  <ion-select-option value="warn">WARN</ion-select-option>
-                  <ion-select-option value="error">ERROR</ion-select-option>
-                </ion-select>
-              </ion-item>
-              <ion-item v-else>
-                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
-                <ion-input
-                  :value="String(getValue([section.key, child.key]) ?? '')"
-                  :type="child.isPassword ? 'password' : child.type === 'integer' ? 'number' : 'text'"
-                  :label="fieldLabel(child.key, child.required)"
-                  label-placement="stacked"
-                  :placeholder="child.description || tField(child.key)"
-                  @ionInput="handleInput([section.key, child.key], child, $event)"
-                ></ion-input>
-                <ion-button v-if="child.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([section.key, child.key], child)">
-                  <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-                </ion-button>
-              </ion-item>
+              <template v-else-if="isFieldVisible(child)">
+                <ion-item v-if="child.type === 'boolean'">
+                  <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
+                  <ion-toggle
+                    :checked="!!getValue([section.key, child.key])"
+                    @ionChange="setValue([section.key, child.key], !getValue([section.key, child.key]))"
+                  >{{ tField(child.key) }}</ion-toggle>
+                </ion-item>
+                <ion-item v-else-if="section.key === 'log' && child.key === 'level'">
+                  <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
+                  <ion-select
+                    :value="String(getValue(['log', 'level']) ?? 'info')"
+                    :label="tField('level')"
+                    label-placement="stacked"
+                    interface="action-sheet"
+                    mode="ios"
+                    @ionChange="setValue(['log', 'level'], $event.detail.value)"
+                  >
+                    <ion-select-option value="debug">DEBUG</ion-select-option>
+                    <ion-select-option value="info">INFO</ion-select-option>
+                    <ion-select-option value="warn">WARN</ion-select-option>
+                    <ion-select-option value="error">ERROR</ion-select-option>
+                  </ion-select>
+                </ion-item>
+                <ion-item v-else>
+                  <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
+                  <ion-input
+                    :value="String(getValue([section.key, child.key]) ?? '')"
+                    :type="child.isPassword ? 'password' : child.type === 'integer' ? 'number' : 'text'"
+                    :label="fieldLabel(child.key, child.required)"
+                    label-placement="stacked"
+                    :placeholder="child.description || tField(child.key)"
+                    @ionInput="handleInput([section.key, child.key], child, $event)"
+                  ></ion-input>
+                  <ion-button v-if="child.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([section.key, child.key], child)">
+                    <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+                  </ion-button>
+                </ion-item>
+              </template>
             </template>
 
             <ion-item v-if="!section.properties || section.properties.length === 0">
@@ -263,6 +281,27 @@
           </ion-list>
         </template>
       </template>
+
+      <ion-list>
+        <ion-list-header>
+          <ion-label>{{ t('settings.preview') }}</ion-label>
+        </ion-list-header>
+        <ion-item>
+          <ion-icon :icon="textOutline" slot="start"></ion-icon>
+          <ion-input
+            :value="customTextExts"
+            :label="t('settings.customTextExts')"
+            label-placement="stacked"
+            :placeholder="t('settings.customTextExtsHint')"
+            @ionInput="handleCustomTextExtsChange"
+          ></ion-input>
+        </ion-item>
+        <ion-item v-if="builtInTextExtsCount > 0" lines="none">
+          <ion-label class="ion-text-wrap hint-text">
+            <p>{{ t('settings.builtInTextExts', { count: String(builtInTextExtsCount) }) }}</p>
+          </ion-label>
+        </ion-item>
+      </ion-list>
 
       <ion-list>
         <ion-list-header>
@@ -345,10 +384,11 @@ import {
   key, lockClosed, documentText, terminal, settingsOutline,
   cloudOutline, shieldCheckmark, eyeOutline, speedometerOutline,
   filmOutline, musicalNotesOutline, imagesOutline, readerOutline,
-  newspaperOutline, colorWandOutline, gitNetworkOutline, toggleOutline,
+  newspaperOutline, gitNetworkOutline, toggleOutline,
   textOutline, personOutline, folderOpen, refreshCircle,
   bugOutline,
   phonePortraitOutline,
+  colorPaletteOutline, layersOutline,
   fileTrayFull as databaseIcon,
 } from 'ionicons/icons'
 import { useTheme } from '@/composables/useTheme'
@@ -358,8 +398,8 @@ import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { useDevTools } from '@/composables/useDevTools'
 import { isNative } from '@/plugins/GoProcess'
-import { getIndexStats, fetchConfig, updateConfig } from '@/api/encv'
-import type { IndexStats } from '@/api/encv'
+import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus, fetchTextPreviewExts, invalidateTextExtsCache } from '@/api/encv'
+import type { IndexStats, FFmpegStatus } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 
@@ -372,10 +412,13 @@ const { vconsoleEnabled, toggleVConsole } = useDevTools()
 
 const configLoaded = ref(false)
 const indexStats = ref<IndexStats | null>(null)
+const engineStatus = ref<FFmpegStatus | null>(null)
 
 const videoPlayerMode = ref(localStorage.getItem('encv_player_video') || 'artplayer')
 const audioPlayerMode = ref(localStorage.getItem('encv_player_audio') || 'mpv')
 const screenOrientation = ref(localStorage.getItem('encv_screen_orientation') || 'auto')
+const customTextExts = ref('')
+const builtInTextExtsCount = ref(0)
 
 function handleVideoPlayerChange(event: CustomEvent) {
   const value = event.detail.value
@@ -410,6 +453,39 @@ async function applyScreenOrientation(orientation: string) {
   } catch (e) {
     console.warn('Failed to apply screen orientation:', e)
   }
+}
+
+async function loadPreviewConfig() {
+  try {
+    const cfg = await fetchConfig()
+    const preview = cfg.preview as Record<string, unknown> | undefined
+    if (preview?.text_extensions && Array.isArray(preview.text_extensions)) {
+      customTextExts.value = (preview.text_extensions as string[]).join(',')
+    }
+  } catch {}
+  try {
+    const exts = await fetchTextPreviewExts()
+    builtInTextExtsCount.value = exts.size
+  } catch {}
+}
+
+function handleCustomTextExtsChange(event: CustomEvent) {
+  const raw = (event.target as HTMLInputElement).value || ''
+  customTextExts.value = raw
+  const parsed = raw.split(',')
+    .map(s => s.trim().toLowerCase())
+    .filter(s => s.length > 0)
+  ;(async () => {
+    try {
+      const cfg = await fetchConfig()
+      if (!cfg.preview) cfg.preview = {}
+      ;(cfg.preview as Record<string, unknown>).text_extensions = parsed
+      await updateConfig(cfg)
+      invalidateTextExtsCache()
+    } catch (e) {
+      console.error('Failed to save preview config:', e)
+    }
+  })()
 }
 
 function handleVConsoleToggle(event: CustomEvent) {
@@ -486,6 +562,10 @@ async function handleSaveJson() {
 
 function goServer() {
   router.push('/tabs/settings/server')
+}
+
+function goEngine() {
+  router.push('/tabs/settings/engine')
 }
 
 function goAbout() {
@@ -566,13 +646,15 @@ const fieldIconMap: Record<string, string> = {
   sites: globeOutline,
   disable_signature_verification: shieldCheckmark,
   ext: documentText,
-  chunk_size_mb: speedometerOutline,
-  light_main_chunk_enabled: colorWandOutline,
+  container_chunk_size_mb: filmOutline,
+  light_container_main_chunk_enabled: layersOutline,
   track_extensions: eyeOutline,
-  keep_mkv_for_mkvSource: filmOutline,
+  keep_mkv_for_mkv_source: filmOutline,
   verify_after_pack: shieldCheckmark,
   plugin_cache_dir: folderOpen,
   skip_merge_for_split_mkv: filmOutline,
+  allow_no_reencode: speedometerOutline,
+  default_stream_preset: colorPaletteOutline,
   video: filmOutline,
   audio: musicalNotesOutline,
   image: imagesOutline,
@@ -587,6 +669,13 @@ function getFieldIcon(fieldKey: string, fieldType: string): string {
   if (fieldType === 'integer') return speedometerOutline
   if (fieldKey.includes('password')) return lockClosed
   return settingsOutline
+}
+
+function isFieldVisible(field: FieldDef): boolean {
+  if (!field.platform || field.platform === 'both') return true
+  if (field.platform === 'mobile') return isNative()
+  if (field.platform === 'desktop') return !isNative()
+  return true
 }
 
 function handleDarkToggle() {
@@ -633,6 +722,8 @@ onMounted(async () => {
     await loadConfig()
     configLoaded.value = true
     try { indexStats.value = await getIndexStats() } catch {}
+    if (isNative()) { try { engineStatus.value = await fetchFFmpegStatus() } catch {} }
+    loadPreviewConfig()
   }
 })
 
@@ -643,11 +734,17 @@ watch(serverOnline, async (online) => {
       configLoaded.value = true
     }
     try { indexStats.value = await getIndexStats() } catch {}
+    if (isNative()) { try { engineStatus.value = await fetchFFmpegStatus() } catch {} }
   }
 })
 </script>
 
 <style scoped>
+.hint-text p {
+  font-size: 13px;
+  color: var(--ion-text-secondary);
+  margin: 0;
+}
 .loading-container {
   display: flex;
   flex-direction: column;

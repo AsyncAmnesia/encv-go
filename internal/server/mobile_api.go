@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/Soltus/encv-go/internal/config"
 	mobileservice "github.com/Soltus/encv-go/internal/service"
+	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -116,6 +118,37 @@ func (s *Server) handleReadFileContentGin(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+func (s *Server) handleTextPreviewExtsGin(c *gin.Context) {
+	builtIn := config.GetTextPreviewExtensions()
+	var custom []string
+	if s.cfg.Preview != nil {
+		custom = s.cfg.Preview.TextExtensions
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"extensions":        builtIn,
+		"custom_extensions": custom,
+	})
+}
+
+func (s *Server) handleFileInfoGin(c *gin.Context) {
+	queryPath := c.Query("path")
+	if queryPath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "'path' query parameter is required"})
+		return
+	}
+
+	result, err := s.mobileSvc.GetFileInfo(queryPath)
+	if err != nil {
+		if _, ok := err.(*mobileservice.NotFoundError); ok {
+			c.JSON(http.StatusNotFound, gin.H{"error": "file not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
 func (s *Server) handleGetTasksGin(c *gin.Context) {
 	taskList := s.mobileSvc.GetTaskManager().List()
 	c.JSON(http.StatusOK, gin.H{"tasks": taskList})
@@ -170,17 +203,17 @@ func (s *Server) handleTestWebDAVGin(c *gin.Context) {
 		Password string `json:"password"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid JSON"})
 		return
 	}
 
-	err := s.mobileSvc.TestWebDAV(req.URL, req.Username, req.Password)
+	result, err := s.mobileSvc.TestWebDAV(req.URL, req.Username, req.Password)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"success": true})
+	c.JSON(http.StatusOK, result)
 }
 
 func (s *Server) handlePermissionsGin(c *gin.Context) {
@@ -597,4 +630,25 @@ func (s *Server) writeConfigToFile() error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 	return os.WriteFile(s.configPath, append(indented, '\n'), 0644)
+}
+
+func (s *Server) handleBuildInfoGin(c *gin.Context) {
+	info, err := utils.GetBuildInfo()
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	info["app_version"] = s.version
+	c.JSON(http.StatusOK, info)
+}
+
+func (s *Server) handleFFmpegStatusGin(c *gin.Context) {
+	ffmpegOk, ffprobeOk, errMsg, ffmpegDetail, ffprobeDetail := utils.CheckFFmpegAvailable()
+	c.JSON(http.StatusOK, gin.H{
+		"ffmpeg_available":   ffmpegOk,
+		"ffprobe_available":  ffprobeOk,
+		"error":              errMsg,
+		"ffmpeg_detail":      ffmpegDetail,
+		"ffprobe_detail":     ffprobeDetail,
+	})
 }

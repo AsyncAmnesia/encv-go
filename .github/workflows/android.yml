@@ -119,6 +119,15 @@ jobs:
       - name: Build ffmpeg shared libraries for Android
         run: cd app/encv-mobile && bash scripts/build-ffmpeg-android.sh
 
+      - name: Upload FFmpeg build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-build-logs
+          path: app/encv-mobile/scripts/.ffmpeg-build/logs/
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Build Go binary for Android arm64 (with CGO for ffmpeg dlopen)
         env:
           CGO_ENABLED: "1"

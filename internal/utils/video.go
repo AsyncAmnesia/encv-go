@@ -86,11 +86,25 @@ func FFmpegCmdContext(ctx context.Context, args ...string) *exec.Cmd {
 	return exec.CommandContext(ctx, "ffmpeg", args...)
 }
 
+func classifyNativeError(err error) string {
+	if nativeErr, ok := err.(*NativeError); ok {
+		switch nativeErr.Type {
+		case NativeErrorDlopen:
+			return fmt.Sprintf("[ENGINE_LOAD_FAILED] %s", nativeErr.Detail)
+		case NativeErrorSymbol:
+			return fmt.Sprintf("[ENGINE_SYMBOL_MISSING] %s", nativeErr.Detail)
+		case NativeErrorExit:
+			return fmt.Sprintf("[ENGINE_EXIT_ERROR] exit code %d: %s", nativeErr.ExitCode, nativeErr.Detail)
+		}
+	}
+	return err.Error()
+}
+
 func FFProbeOutput(args ...string) ([]byte, error) {
 	if IsMobile() {
 		result, err := callFFprobeNative(args)
 		if err != nil {
-			return nil, fmt.Errorf("ffprobe native call failed: %w", err)
+			return nil, fmt.Errorf("ffprobe: %s", classifyNativeError(err))
 		}
 		if result.exitCode != 0 {
 			return nil, fmt.Errorf("ffprobe failed (exit %d): %s", result.exitCode, result.stderr)
@@ -105,7 +119,7 @@ func FFmpegRun(args ...string) error {
 	if IsMobile() {
 		result, err := callFFmpegNative(args)
 		if err != nil {
-			return fmt.Errorf("ffmpeg native call failed: %w", err)
+			return fmt.Errorf("ffmpeg: %s", classifyNativeError(err))
 		}
 		if result.exitCode != 0 {
 			return fmt.Errorf("ffmpeg failed (exit %d): %s", result.exitCode, result.stderr)
@@ -120,10 +134,10 @@ func FFmpegRunWithStderr(args ...string) (string, error) {
 	if IsMobile() {
 		result, err := callFFmpegNative(args)
 		if err != nil {
-			return "", fmt.Errorf("ffmpeg native call failed: %w", err)
+			return "", fmt.Errorf("ffmpeg: %s", classifyNativeError(err))
 		}
 		if result.exitCode != 0 {
-			return result.stderr, fmt.Errorf("ffmpeg failed (exit %d): %s", result.exitCode, result.stderr)
+			return result.stderr, fmt.Errorf("ffmpeg failed (exit %d): %s", result.exitCode, truncateString(result.stderr, 200))
 		}
 		return result.stderr, nil
 	}
@@ -138,10 +152,10 @@ func FFmpegRunWithContext(ctx context.Context, args ...string) (string, error) {
 	if IsMobile() {
 		result, err := callFFmpegNative(args)
 		if err != nil {
-			return "", fmt.Errorf("ffmpeg native call failed: %w", err)
+			return "", fmt.Errorf("ffmpeg: %s", classifyNativeError(err))
 		}
 		if result.exitCode != 0 {
-			return result.stderr, fmt.Errorf("ffmpeg failed (exit %d): %s", result.exitCode, result.stderr)
+			return result.stderr, fmt.Errorf("ffmpeg failed (exit %d): %s", result.exitCode, truncateString(result.stderr, 200))
 		}
 		return result.stderr, nil
 	}
@@ -172,4 +186,12 @@ func DetectVideoFormat(filePath string) (string, error) {
 		parts := strings.Split(formatName, ",")
 		return strings.ToLower(parts[0]), nil
 	}
+}
+
+func truncateString(s string, maxLen int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

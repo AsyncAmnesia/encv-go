@@ -169,6 +169,18 @@ func (p *AudioPlugin) GroupFiles(inputPaths []string, inputRootDir, outputDir st
 	return inputPaths, nil
 }
 
+func (p *AudioPlugin) ContainerType() uint16 {
+	return types.ContainerTypeAudio
+}
+
+func (p *AudioPlugin) DefaultIsSeekable(inputPath string) bool {
+	return false
+}
+
+func (p *AudioPlugin) DisasterZones(inputPath string) []types.DisasterZone {
+	return nil
+}
+
 // --- 加密逻辑 ---
 
 // Plugin 接口实现

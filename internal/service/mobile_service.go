@@ -20,6 +20,7 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/Soltus/encv-go/internal/v2/provider"
+	"github.com/Soltus/encv-go/internal/v2/reader"
 	"github.com/Soltus/encv-go/internal/v2/service"
 )
 
@@ -199,6 +200,10 @@ func (s *MobileService) ReadFileContent(queryPath string) (*FileContentResult, e
 		return nil, &BadRequestError{Err: errors.New("path is a directory")}
 	}
 
+	if _, detectErr := detector.DetectContainer(absPath); detectErr == nil {
+		return nil, &BadRequestError{Err: errors.New("is_encv_container: use /api/file/info endpoint for metadata")}
+	}
+
 	maxSize := int64(2 << 20)
 	if info.Size() > maxSize {
 		return nil, &BadRequestError{Err: errors.New("file too large")}
@@ -225,27 +230,224 @@ func (s *MobileService) ReadFileContent(queryPath string) (*FileContentResult, e
 	}, nil
 }
 
-func (s *MobileService) TestWebDAV(url, username, password string) error {
-	client := &http.Client{Timeout: 5 * time.Second}
-	httpReq, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return &BadRequestError{Err: err}
+type FileInfoResult struct {
+	Name            string                 `json:"name"`
+	Path            string                 `json:"path"`
+	Size            int64                  `json:"size"`
+	Modified        string                 `json:"modified"`
+	MimeType        string                 `json:"mime_type"`
+	Category        string                 `json:"category"`
+	IsDirectory     bool                   `json:"is_directory"`
+	IsEncrypted     bool                   `json:"is_encrypted"`
+	IsEncvContainer bool                   `json:"is_encv_container"`
+	Container       map[string]interface{} `json:"container,omitempty"`
+}
+
+func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
+	if queryPath == "" {
+		return nil, &BadRequestError{Err: errors.New("'path' query parameter is required")}
 	}
+
+	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	if err != nil {
+		return nil, &ForbiddenError{Err: err}
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, &NotFoundError{Err: err}
+		}
+		return nil, err
+	}
+
+	ext := strings.ToLower(filepath.Ext(queryPath))
+	mimeType := utils.GetContentType(ext)
+
+	category := "other"
+	if strings.HasPrefix(mimeType, "image/") {
+		category = "image"
+	} else if strings.HasPrefix(mimeType, "video/") {
+		category = "video"
+	} else if strings.HasPrefix(mimeType, "audio/") {
+		category = "audio"
+	} else if strings.HasPrefix(mimeType, "text/") || mimeType == "application/pdf" || mimeType == "application/epub+zip" {
+		category = "document"
+	}
+
+	result := &FileInfoResult{
+		Name:            filepath.Base(absPath),
+		Path:            queryPath,
+		Size:            info.Size(),
+		Modified:        info.ModTime().Format(time.RFC3339),
+		MimeType:        mimeType,
+		Category:        category,
+		IsDirectory:     info.IsDir(),
+		IsEncrypted:     false,
+		IsEncvContainer: false,
+	}
+
+	isContainer := false
+	if !info.IsDir() {
+		if _, detectErr := detector.DetectContainer(absPath); detectErr == nil {
+			isContainer = true
+		}
+	}
+
+	if isContainer {
+		result.IsEncvContainer = true
+		result.IsEncrypted = true
+		result.Category = "encrypted"
+
+		containerInfo, openErr := reader.OpenV4Container(absPath, s.cfg.Password)
+		if openErr != nil {
+			slog.Warn("GetFileInfo: cannot open container", "path", queryPath, "error", openErr)
+			result.Container = map[string]interface{}{
+				"error": "cannot read container metadata: " + openErr.Error(),
+			}
+			return result, nil
+		}
+
+		hdr := containerInfo.Header
+		mf := containerInfo.Manifest
+
+		var containerTypeStr string
+		switch hdr.ContainerType {
+		case 1:
+			containerTypeStr = "video"
+		case 2:
+			containerTypeStr = "audio"
+		case 3:
+			containerTypeStr = "image"
+		case 4:
+			containerTypeStr = "document"
+		default:
+			containerTypeStr = fmt.Sprintf("unknown(%d)", hdr.ContainerType)
+		}
+
+		result.Container = map[string]interface{}{
+			"version":           4,
+			"container_id":      mf.ContainerID,
+			"container_type":    containerTypeStr,
+			"is_seekable":       hdr.IsSeekable == 1,
+			"original_duration": mf.OriginalDuration,
+			"segment_count":     len(mf.Segments),
+			"segments":          mf.Segments,
+			"manifest_size":     hdr.ManifestLength,
+			"header": map[string]interface{}{
+				"flags":           hdr.Flags,
+				"manifest_offset": hdr.ManifestOffset,
+				"manifest_length": hdr.ManifestLength,
+			},
+			"manifest": mf,
+		}
+	}
+
+	return result, nil
+}
+
+type WebDAVTestResult struct {
+	Success     bool   `json:"success"`
+	Reachable   bool   `json:"reachable"`
+	IsWebDAV    bool   `json:"is_webdav"`
+	AuthOK      bool   `json:"auth_ok"`
+	DirReadable bool   `json:"dir_readable"`
+	StatusCode  int    `json:"status_code"`
+	DAVHeader   string `json:"dav_header,omitempty"`
+	Error       string `json:"error,omitempty"`
+}
+
+func (s *MobileService) TestWebDAV(urlStr, username, password string) (*WebDAVTestResult, error) {
+	result := &WebDAVTestResult{
+		StatusCode: 0,
+	}
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	propfindBody := `<?xml version="1.0" encoding="UTF-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>`
+
+	req, err := http.NewRequest("PROPFIND", urlStr, strings.NewReader(propfindBody))
+	if err != nil {
+		result.Error = fmt.Sprintf("invalid URL: %v", err)
+		return result, nil
+	}
+	req.Header.Set("Content-Type", "application/xml; charset=utf-8")
+	req.Header.Set("Depth", "0")
 
 	if username != "" || password != "" {
-		httpReq.SetBasicAuth(username, password)
+		req.SetBasicAuth(username, password)
 	}
 
-	resp, err := client.Do(httpReq)
+	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		result.Error = fmt.Sprintf("连接失败: %v", err)
+		return result, nil
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return nil
+	result.StatusCode = resp.StatusCode
+	result.DAVHeader = resp.Header.Get("Dav")
+	result.Reachable = true
+
+	switch resp.StatusCode {
+	case http.StatusMultiStatus:
+		result.IsWebDAV = true
+		result.AuthOK = true
+		result.DirReadable = true
+		result.Success = true
+	case http.StatusUnauthorized:
+		result.IsWebDAV = true
+		result.AuthOK = false
+		result.Success = false
+		result.Error = "认证失败，请检查用户名和密码"
+	case http.StatusForbidden:
+		result.IsWebDAV = true
+		result.AuthOK = false
+		result.Success = false
+		result.Error = "访问被拒绝，权限不足"
+	case http.StatusNotFound:
+		result.IsWebDAV = false
+		result.Success = false
+		result.Error = fmt.Sprintf("路径不存在 (HTTP %d)，请检查 WebDAV 地址是否正确", resp.StatusCode)
+	default:
+		if result.DAVHeader != "" {
+			result.IsWebDAV = true
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				result.AuthOK = true
+				result.DirReadable = true
+				result.Success = true
+			} else {
+				result.Success = false
+				result.Error = fmt.Sprintf("服务器返回 HTTP %d，但未返回标准 WebDAV MultiStatus 响应", resp.StatusCode)
+			}
+		} else {
+			result.IsWebDAV = false
+			result.Success = false
+			result.Error = fmt.Sprintf("该地址返回了 HTTP %d，但未检测到 WebDAV 协议支持。这看起来不是一个 WebDAV 服务器（普通 HTTP 网站也会返回 2xx）。请确认地址和端口正确。", resp.StatusCode)
+		}
 	}
-	return fmt.Errorf("连接失败: HTTP %d", resp.StatusCode)
+
+	if result.IsWebDAV && !result.DirReadable && result.StatusCode == http.StatusMultiStatus {
+		req2, _ := http.NewRequest("PROPFIND", urlStr, strings.NewReader(propfindBody))
+		if req2 != nil {
+			req2.Header.Set("Content-Type", "application/xml; charset=utf-8")
+			req2.Header.Set("Depth", "1")
+			if username != "" || password != "" {
+				req2.SetBasicAuth(username, password)
+			}
+			resp2, err2 := client.Do(req2)
+			if err2 == nil {
+				defer resp2.Body.Close()
+				if resp2.StatusCode == http.StatusMultiStatus {
+					result.DirReadable = true
+				}
+			}
+		}
+	}
+
+	return result, nil
 }
 
 func (s *MobileService) GetTaskManager() *TaskManager {
@@ -618,7 +820,6 @@ var mediaExtensions = map[string]bool{
 	"ts": true, "mpg": true, "mpeg": true, "3gp": true,
 	"mp3": true, "flac": true, "wav": true, "aac": true,
 	"ogg": true, "wma": true, "m4a": true, "opus": true,
-	"encv": true,
 }
 
 type chunkNamerAdapter struct {

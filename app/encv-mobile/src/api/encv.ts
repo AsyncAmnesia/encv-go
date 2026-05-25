@@ -1,7 +1,7 @@
 const SERVER_URL_KEY = 'encv-server-url'
 export const DEFAULT_API_BASE_URL = 'http://127.0.0.1:2025'
 
-function getApiBaseUrl(): string {
+export function getApiBaseUrl(): string {
   if (import.meta.env.DEV) return ''
   return localStorage.getItem(SERVER_URL_KEY) || DEFAULT_API_BASE_URL
 }
@@ -177,6 +177,7 @@ export interface EncvTask {
   speed?: string
   eta?: string
   error?: string
+  errorDetail?: string
   createdAt: string
   completedAt?: string
 }
@@ -288,7 +289,18 @@ export async function testLocalWebDAV(): Promise<LocalWebDAVTestResult> {
   return await response.json()
 }
 
-export async function testWebDAVConnection(config: Omit<WebDAVConfig, 'id'>): Promise<void> {
+export interface WebDAVTestResult {
+  success: boolean
+  reachable: boolean
+  is_webdav: boolean
+  auth_ok: boolean
+  dir_readable: boolean
+  status_code: number
+  dav_header?: string
+  error?: string
+}
+
+export async function testWebDAVConnection(config: Omit<WebDAVConfig, 'id'>): Promise<WebDAVTestResult> {
   console.info('[API] testWebDAV')
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/webdav/test`, {
@@ -306,8 +318,10 @@ export async function testWebDAVConnection(config: Omit<WebDAVConfig, 'id'>): Pr
   }
   const data = await response.json()
   if (data.success === false) {
-    throw new Error(data.error || '连接失败')
+    const result = data as WebDAVTestResult
+    return result
   }
+  return data as WebDAVTestResult
 }
 
 export function formatFileSize(bytes?: number): string {
@@ -317,6 +331,37 @@ export function formatFileSize(bytes?: number): string {
   const k = 1024
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${units[i]}`
+}
+
+export interface TextPreviewExts {
+  extensions: string[]
+  custom_extensions: string[]
+}
+
+let cachedTextExts: Set<string> | null = null
+
+export async function fetchTextPreviewExts(): Promise<Set<string>> {
+  if (cachedTextExts) return cachedTextExts
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/file/text-preview-exts`)
+  if (!response.ok) {
+    console.error('[API] fetchTextPreviewExts failed:', response.status)
+    return new Set()
+  }
+  const data = await response.json() as TextPreviewExts
+  const all = new Set([...data.extensions, ...data.custom_extensions])
+  cachedTextExts = all
+  return all
+}
+
+export function isTextPreviewable(name: string): boolean {
+  if (!cachedTextExts) return false
+  const ext = getFileExtension(name)
+  return cachedTextExts.has(ext)
+}
+
+export function invalidateTextExtsCache(): void {
+  cachedTextExts = null
 }
 
 export function getFileExtension(name: string): string {
@@ -335,7 +380,6 @@ export function getFileCategory(name: string, isEncrypted?: boolean): FileCatego
   const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg']
   const docExts = ['pdf', 'doc', 'docx', 'txt', 'xls', 'xlsx', 'ppt', 'pptx']
 
-  if (ext === 'encv') return 'encrypted'
   if (videoExts.includes(ext)) return 'video'
   if (audioExts.includes(ext)) return 'audio'
   if (imageExts.includes(ext)) return 'image'
@@ -513,4 +557,54 @@ export async function checkEncryptOutputExists(sourcePath: string, targetDir?: s
   }
   const data = await response.json()
   return { exists: !!data.exists, outputPath: data.outputPath || '' }
+}
+
+export interface FFmpegStatus {
+  ffmpeg_available: boolean
+  ffprobe_available: boolean
+  error?: string
+  ffmpeg_detail?: string
+  ffprobe_detail?: string
+}
+
+export async function fetchFFmpegStatus(): Promise<FFmpegStatus> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/ffmpeg-status`)
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return await response.json()
+}
+
+export interface BuildInfo {
+  ffmpeg_version: string
+  ffmpeg_codename: string
+  x264_version: string
+  x264_configure_opts: string
+  ndk_version: string
+  api_level: number
+  abi: string
+  build_date: string
+  enabled_decoders: string[]
+  enabled_encoders: string[]
+  enabled_muxers: string[]
+  enabled_demuxers: string[]
+  enabled_parsers: string[]
+  enabled_protocols: string[]
+  enabled_filters: string[]
+  static_libs: string[]
+  linking: string
+  cflags: string
+  ffmpeg_license: string
+  x264_license: string
+  app_version?: string
+}
+
+export async function fetchBuildInfo(): Promise<BuildInfo> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/build-info`)
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return await response.json()
 }

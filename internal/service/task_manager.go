@@ -29,7 +29,8 @@ type MobileTask struct {
 	Phase      string    `json:"phase,omitempty"`
 	Speed      string    `json:"speed,omitempty"`
 	Eta        string    `json:"eta,omitempty"`
-	Error      string    `json:"error,omitempty"`
+	Error       string    `json:"error,omitempty"`
+	ErrorDetail string    `json:"errorDetail,omitempty"`
 	CreatedAt   time.Time  `json:"createdAt"`
 	CompletedAt *time.Time `json:"completedAt,omitempty"`
 	cancelFn    context.CancelFunc
@@ -355,6 +356,15 @@ func (tm *TaskManager) getConfigForTask(task *MobileTask, ctx context.Context) c
 func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 	taskID := task.ID
 
+	password := tm.cfg.Password
+	if task.Password != "" {
+		password = task.Password
+	}
+	if password == "" {
+		tm.failTask(taskID, "encryption requires a password: global password is empty")
+		return
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	task.cancelFn = cancel
 	defer cancel()
@@ -633,20 +643,55 @@ func (tm *TaskManager) failTask(id, errMsg string) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 
+	friendlyMsg := simplifyErrorMessage(errMsg)
+
 	if task, ok := tm.tasks[id]; ok {
 		task.Status = "failed"
-		task.Error = errMsg
+		task.Error = friendlyMsg
+		task.ErrorDetail = errMsg
 		now := time.Now()
 		task.CompletedAt = &now
 		slog.Error("Task failed", "id", id, "error", errMsg)
 		if tm.broadcaster != nil {
 			tm.broadcaster.Broadcast("task:completed", map[string]interface{}{
-				"id":     id,
-				"status": "failed",
-				"error":  errMsg,
-			})
+			"id":          id,
+			"status":      "failed",
+			"error":       friendlyMsg,
+			"errorDetail": errMsg,
+		})
 		}
 	}
+}
+
+func simplifyErrorMessage(errMsg string) string {
+	if strings.Contains(errMsg, "ENGINE_LOAD_FAILED") || strings.Contains(errMsg, "ENGINE_SYMBOL_MISSING") {
+		return "video engine unavailable, please reinstall the app"
+	}
+	if strings.Contains(errMsg, "video engine unavailable") {
+		return errMsg
+	}
+	if strings.Contains(errMsg, "cannot access file") {
+		return errMsg
+	}
+	if strings.Contains(errMsg, "No such file") || strings.Contains(errMsg, "source file not found") {
+		return "source file not found, it may have been moved or deleted"
+	}
+	if strings.Contains(errMsg, "Permission denied") {
+		return "permission denied, cannot access the file"
+	}
+	if strings.Contains(errMsg, "ffprobe failed") {
+		return "failed to read video metadata"
+	}
+	if strings.Contains(errMsg, "ffmpeg failed") {
+		return "video encoding failed"
+	}
+	if strings.Contains(errMsg, "encryption failed") || strings.Contains(errMsg, "plugin failed") {
+		return "encryption processing failed"
+	}
+	if len(errMsg) > 120 {
+		return errMsg[:120] + "..."
+	}
+	return errMsg
 }
 
 func getAvailableDiskSpace(path string) (int64, error) {

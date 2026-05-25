@@ -77,6 +77,13 @@ func extractMetadataFromOriginalFile(path string) (*VideoIndex, error) {
 	// 1. 使用 ffprobe 获取基础元数据
 	output, err := utils.FFProbeOutput("-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path)
 	if err != nil {
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "ENGINE_LOAD_FAILED") || strings.Contains(errMsg, "ENGINE_SYMBOL_MISSING") {
+			return nil, fmt.Errorf("video engine unavailable, please reinstall the app: %w", err)
+		}
+		if strings.Contains(errMsg, "No such file") || strings.Contains(errMsg, "Permission denied") {
+			return nil, fmt.Errorf("cannot access file '%s': %w", filepath.Base(path), err)
+		}
 		return nil, fmt.Errorf("ffprobe failed on original file: %w", err)
 	}
 

@@ -60,6 +60,15 @@
                 <span class="completed-text">{{ t('tasks.phaseCompleted') }}</span>
               </div>
               <p v-if="task.error" class="task-error">{{ task.error }}</p>
+              <div v-if="task.errorDetail && task.errorDetail !== task.error" class="error-detail-row">
+                <p class="task-error-detail" @click="toggleErrorDetail(task.id)">
+                  {{ showErrorDetail[task.id] ? t('tasks.hideDetail') : t('tasks.showDetail') }}
+                </p>
+                <ion-button fill="clear" size="small" color="medium" class="copy-btn" @click="copyErrorDetail(task)">
+                  <ion-icon :icon="copiedTaskId === task.id ? checkmarkCircle : copyOutline" slot="icon-only"></ion-icon>
+                </ion-button>
+              </div>
+              <pre v-if="showErrorDetail[task.id] && task.errorDetail" class="error-detail-pre">{{ task.errorDetail }}</pre>
             </ion-label>
             <ion-button
               v-if="task.status === 'running'"
@@ -210,6 +219,7 @@ import {
   timer,
   sync,
   folderOpen,
+  copyOutline,
 } from 'ionicons/icons'
 import {
   getTasks,
@@ -229,6 +239,8 @@ const { t } = useI18n()
 
 const tasks = ref<EncvTask[]>([])
 const loading = ref(false)
+const showErrorDetail = ref<Record<string, boolean>>({})
+const copiedTaskId = ref<string | null>(null)
 const showNewTaskModal = ref(false)
 const newTaskType = ref<TaskType>('encrypt')
 const newTaskPath = ref('')
@@ -344,6 +356,32 @@ async function loadTasks() {
     tasks.value = []
   }
   loading.value = false
+}
+
+function toggleErrorDetail(taskId: string) {
+  showErrorDetail.value[taskId] = !showErrorDetail.value[taskId]
+}
+
+async function copyErrorDetail(task: EncvTask) {
+  const text = task.errorDetail || task.error || ''
+  try {
+    await navigator.clipboard.writeText(text)
+    copiedTaskId.value = task.id
+    showToast({ message: t('tasks.copied'), duration: 1200, color: 'success' })
+    setTimeout(() => { if (copiedTaskId.value === task.id) copiedTaskId.value = null }, 2000)
+  } catch {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+    copiedTaskId.value = task.id
+    showToast({ message: t('tasks.copied'), duration: 1200, color: 'success' })
+    setTimeout(() => { if (copiedTaskId.value === task.id) copiedTaskId.value = null }, 2000)
+  }
 }
 
 async function handleRefresh(event: CustomEvent) {
@@ -502,7 +540,7 @@ function onTaskCreated(data: { id: string; type: string; sourcePath: string }) {
   }
 }
 
-function onTaskCompleted(data: { id: string; error?: string }) {
+function onTaskCompleted(data: { id: string; status?: string; error?: string; errorDetail?: string }) {
   const idx = tasks.value.findIndex(t => t.id === data.id)
   if (idx !== -1) {
     tasks.value[idx] = {
@@ -513,6 +551,7 @@ function onTaskCompleted(data: { id: string; error?: string }) {
       speed: '',
       eta: '',
       error: data.error,
+      errorDetail: data.errorDetail,
       completedAt: new Date().toISOString(),
     }
   }
@@ -649,6 +688,43 @@ onUnmounted(() => {
   color: var(--ion-color-danger);
   font-size: 12px;
   margin-top: 4px;
+}
+
+.task-error-detail {
+  color: var(--ion-color-medium);
+  font-size: 11px;
+  margin-top: 2px;
+  cursor: pointer;
+  word-break: break-all;
+}
+
+.error-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.copy-btn {
+  --padding-start: 4px;
+  --padding-end: 4px;
+  min-width: 28px;
+  min-height: 28px;
+  font-size: 16px;
+}
+
+.error-detail-pre {
+  background: var(--ion-color-light);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--ion-text-color);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+  line-height: 1.5;
 }
 
 .cancelling-spinner {

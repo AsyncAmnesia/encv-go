@@ -100,6 +100,11 @@ type Plugin interface {
 	Decrypt(containerPath, outputDir string) error
 	// 解密后处理器
 	PostDecryptProcessor(containerPath string) error
+
+	// --- v4 特性 ---
+	ContainerType() uint16
+	DefaultIsSeekable(inputPath string) bool
+	DisasterZones(inputPath string) []types.DisasterZone
 }
 
 // normalizeExtension 确保扩展名带有前导点，使其符合标准格式
@@ -334,6 +339,15 @@ func FindDecryptingPlugin(containerPath string) (Plugin, error) {
 		}
 	}
 	return nil, fmt.Errorf("no suitable plugin found to decrypt container: %s", containerPath)
+}
+
+func FindDecryptingPluginByContainerType(containerType uint16) (Plugin, error) {
+	for _, p := range Plugins {
+		if p.ContainerType() == containerType {
+			return p, nil
+		}
+	}
+	return nil, fmt.Errorf("no plugin found for container type: %d", containerType)
 }
 
 // ProcessFileWithPlugin 是一个通用的辅助函数，它使用插件提供的策略来处理文件。
