@@ -58,8 +58,10 @@ type PackRequest struct {
 	StartIdx              int
 	LightMainChunkEnabled bool // 是否启用轻量级主分片，启用后主分片只包含清单，不包含源数据
 
-	// V3 头部配置
+	// V3/V4 头部配置
 	HeaderVersion int
+	ContainerType uint16
+	IsSeekable    bool
 	SpecialID     []byte // 可选，如果不提供且 HeaderVersion=3，将自动生成占位符
 	SpecialIDType types.IDType
 }

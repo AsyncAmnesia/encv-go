@@ -33,23 +33,25 @@ func NewFileChunkerPhysicalPacker(chunkSize int64, namer namer.ChunkNamer) *File
 
 // Pack 实现 PhysicalPacker 接口
 func (p *FileChunkerPhysicalPacker) Pack(manifest *types.Manifest_v2, req *PackRequest) (string, error) {
-	// 1. 准备 Header
-	mainHeader, chunkHeader, err := p.prepareHeaders(req.HeaderVersion, req.SpecialIDType, req.SpecialID)
+	mainHeader, chunkHeader, mainHeaderV4, chunkHeaderV4, err := p.prepareHeaders(req.HeaderVersion, req.ContainerType, req.IsSeekable, req.SpecialIDType, req.SpecialID)
 	if err != nil {
 		return "", fmt.Errorf("failed to prepare headers: %w", err)
 	}
 
-	// 2. 准备主文件
-	mainFile, err := p.prepareMainFile(req, mainHeader)
+	mainFile, err := p.prepareMainFile(req, mainHeader, mainHeaderV4)
 	if err != nil {
 		return "", fmt.Errorf("failed to prepare main file: %w", err)
 	}
 	defer p.cleanup(mainFile, err)
 
-	// 3. 【关键】将 Header 写入 Global Hasher
 	globalHasher := crc32.NewIEEE()
-	if mainHeader != nil {
-		headerSize := types.EnvelopeHeaderSize_v3
+	headerSize := 0
+	if req.HeaderVersion == 4 && mainHeaderV4 != nil {
+		headerSize = types.EnvelopeHeaderSize_v4
+	} else if mainHeader != nil {
+		headerSize = types.EnvelopeHeaderSize_v3
+	}
+	if headerSize > 0 {
 		headerBytes := make([]byte, headerSize)
 		if _, err := mainFile.Seek(0, io.SeekStart); err == nil {
 			if _, err := io.ReadFull(mainFile, headerBytes); err == nil {
@@ -62,12 +64,17 @@ func (p *FileChunkerPhysicalPacker) Pack(manifest *types.Manifest_v2, req *PackR
 	chunkedWriter := writer.NewChunkedContainerWriter(globalHasher)
 	chunkContext := &chunkContext{
 		chunkHeader:      chunkHeader,
+		chunkHeaderV4:    chunkHeaderV4,
 		chunkedWriter:    chunkedWriter,
 		currentPartIndex: 0,
 		currentPartSize:  0,
+		headerVersion:    req.HeaderVersion,
+		containerType:    req.ContainerType,
+		isSeekable:       req.IsSeekable,
+		specialIDType:    req.SpecialIDType,
+		specialID:        req.SpecialID,
 	}
 
-	// 4. 遍历写入
 	for i := range manifest.Fragments {
 		frag := &manifest.Fragments[i]
 		if err := p.processFragment(mainFile, req, frag, chunkContext); err != nil {
@@ -83,28 +90,50 @@ type chunkContext struct {
 	currentPartIndex int
 	currentPartSize  int64
 	chunkHeader      *types.EnvelopeHeaderV3
+	chunkHeaderV4    *types.EnvelopeHeaderV4
 	chunkedWriter    *writer.ChunkedContainerWriter
+	headerVersion    int
+	containerType    uint16
+	isSeekable       bool
+	specialIDType    types.IDType
+	specialID        []byte
 }
 
-func (p *FileChunkerPhysicalPacker) prepareHeaders(v int, t types.IDType, d []byte) (*types.EnvelopeHeaderV3, *types.EnvelopeHeaderV3, error) {
-	if v != 3 {
-		return nil, nil, nil
+func (p *FileChunkerPhysicalPacker) prepareHeaders(v int, containerType uint16, isSeekable bool, t types.IDType, d []byte) (*types.EnvelopeHeaderV3, *types.EnvelopeHeaderV3, *types.EnvelopeHeaderV4, *types.EnvelopeHeaderV4, error) {
+	if v == 4 {
+		mainH, err := types.CreateHeaderV4(true, containerType, isSeekable, t, d)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		chunkH, err := types.CreateHeaderV4(false, containerType, isSeekable, t, mainH.SpecialID[:mainH.IDLength])
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		return nil, nil, mainH, chunkH, nil
 	}
-	h, err := types.CreateHeaderV3(true, t, d)
-	if err != nil {
-		return nil, nil, err
+	if v == 3 {
+		h, err := types.CreateHeaderV3(true, t, d)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		c, err := types.CreateHeaderV3(false, t, h.SpecialID[:h.IDLength])
+		return h, c, nil, nil, err
 	}
-	c, err := types.CreateHeaderV3(false, t, h.SpecialID[:h.IDLength])
-	return h, c, err
+	return nil, nil, nil, nil, nil
 }
 
-func (p *FileChunkerPhysicalPacker) prepareMainFile(req *PackRequest, header *types.EnvelopeHeaderV3) (*os.File, error) {
+func (p *FileChunkerPhysicalPacker) prepareMainFile(req *PackRequest, header *types.EnvelopeHeaderV3, headerV4 *types.EnvelopeHeaderV4) (*os.File, error) {
 	path := filepath.Join(req.OutputDir, req.Namer.GenerateMainChunkName(req.BaseName)) + ".tmp"
 	f, err := os.Create(path)
 	if err != nil {
 		return nil, err
 	}
-	if header != nil {
+	if headerV4 != nil {
+		if err := types.WriteHeaderV4(f, headerV4); err != nil {
+			f.Close()
+			return nil, err
+		}
+	} else if header != nil {
 		if err := types.WriteHeaderV3(f, header); err != nil {
 			f.Close()
 			return nil, err
@@ -177,8 +206,12 @@ func (p *FileChunkerPhysicalPacker) getActiveWriter(mainFile *os.File, req *Pack
 			return nil, fmt.Errorf("failed to create part file: %w", err)
 		}
 
-		// 写入分片 Header
-		if ctx.chunkHeader != nil {
+		if ctx.chunkHeaderV4 != nil {
+			if err := types.WriteHeaderV4(f, ctx.chunkHeaderV4); err != nil {
+				f.Close()
+				return nil, err
+			}
+		} else if ctx.chunkHeader != nil {
 			if err := types.WriteHeaderV3(f, ctx.chunkHeader); err != nil {
 				f.Close()
 				return nil, err
@@ -186,7 +219,11 @@ func (p *FileChunkerPhysicalPacker) getActiveWriter(mainFile *os.File, req *Pack
 		}
 
 		ctx.currentPartFile = f
-		ctx.currentPartSize = int64(binary.Size(types.EnvelopeHeaderV3{}))
+		if ctx.headerVersion == 4 {
+			ctx.currentPartSize = int64(types.EnvelopeHeaderSize_v4)
+		} else {
+			ctx.currentPartSize = int64(binary.Size(types.EnvelopeHeaderV3{}))
+		}
 		activeWriter = f
 
 		// 更新 Manifest
@@ -217,8 +254,47 @@ func (p *FileChunkerPhysicalPacker) finalize(mainFile *os.File, manifest *types.
 		ctx.currentPartFile.Close()
 	}
 
-	if err := ctx.chunkedWriter.WriteManifestAndFooter(mainFile, manifest); err != nil {
-		return "", err
+	if ctx.headerVersion == 4 {
+		if err := ctx.chunkedWriter.WriteManifestOnly(mainFile, manifest); err != nil {
+			return "", err
+		}
+
+		manifestOffset, err := mainFile.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return "", err
+		}
+		manifestBlockSize := block.GetBlockHeader_v2_Size() + int64(ctx.chunkedWriter.LastManifestLen())
+		actualManifestOffset := manifestOffset - manifestBlockSize
+
+		mainHeaderV4, err := types.CreateHeaderV4(true, ctx.containerType, ctx.isSeekable, ctx.specialIDType, ctx.specialID)
+		if err != nil {
+			return "", fmt.Errorf("failed to recreate v4 header for finalize: %w", err)
+		}
+		mainHeaderV4.ManifestOffset = uint64(actualManifestOffset)
+		mainHeaderV4.ManifestLength = uint64(ctx.chunkedWriter.LastManifestLen())
+
+		if _, err := mainFile.Seek(0, io.SeekStart); err != nil {
+			return "", fmt.Errorf("failed to seek to header for v4 rewrite: %w", err)
+		}
+		if err := types.WriteHeaderV4(mainFile, mainHeaderV4); err != nil {
+			return "", fmt.Errorf("failed to rewrite v4 header: %w", err)
+		}
+
+		if _, err := mainFile.Seek(0, io.SeekEnd); err != nil {
+			return "", fmt.Errorf("failed to seek to end for v4 footer: %w", err)
+		}
+
+		footer := &types.EnvelopeFooterV4{
+			Magic:       types.MagicFooter_v2,
+			GlobalCRC32: ctx.chunkedWriter.GlobalCRC32(),
+		}
+		if err := types.WriteFooterV4(mainFile, footer); err != nil {
+			return "", fmt.Errorf("failed to write v4 footer: %w", err)
+		}
+	} else {
+		if err := ctx.chunkedWriter.WriteManifestAndFooter(mainFile, manifest); err != nil {
+			return "", err
+		}
 	}
 
 	if err := mainFile.Close(); err != nil {

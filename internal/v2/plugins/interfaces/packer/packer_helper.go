@@ -32,6 +32,8 @@ type PackParams struct {
 	StartIdx              int
 	LightMainChunkEnabled bool
 	HeaderVersion         int
+	ContainerType         uint16
+	IsSeekable            bool
 	SpecialID             []byte
 	SpecialIDType         types.IDType
 	FinalFileName         string
@@ -107,6 +109,8 @@ func StandardPostEncrypt(params *PackParams) error {
 		StartIdx:              params.StartIdx,
 		LightMainChunkEnabled: params.LightMainChunkEnabled,
 		HeaderVersion:         params.HeaderVersion,
+		ContainerType:         params.ContainerType,
+		IsSeekable:            params.IsSeekable,
 		SpecialID:             params.SpecialID,
 		SpecialIDType:         params.SpecialIDType,
 		FinalFileName:         params.FinalFileName,

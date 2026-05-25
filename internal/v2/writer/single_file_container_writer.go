@@ -23,7 +23,9 @@ type SingleFileContainerWriter struct {
 	currentDataStreamOffset uint64      // 用于追踪连续数据流的偏移量
 	globalHasher            hash.Hash32 // 全局哈希器
 	manifestBytes           []byte      // 缓存序列化后的 Manifest
-	manifestCRC             uint32      // 【新增】缓存 Manifest CRC 以免重复计算
+	manifestCRC             uint32      // 缓存 Manifest CRC 以免重复计算
+	headerVersion           int         // 3 or 4
+	v4Header                *types.EnvelopeHeaderV4
 }
 
 // 创建一个新的文件容器写入器，他会在关闭的时候自动写入 Footer
@@ -33,17 +35,16 @@ func NewSingleFileContainerWriter(outputPath string, header *types.EnvelopeHeade
 		return nil, err
 	}
 
-	// 1. 写入 Header (如果有)
+	headerSize := 0
 	if header != nil {
 		if err := types.WriteHeaderV3(file, header); err != nil {
 			return nil, err
 		}
+		headerSize = types.EnvelopeHeaderSize_v3
 	}
 
-	// 2. 初始化 Hasher 并将 Header 写入 Hasher
 	globalHasher := crc32.NewIEEE()
-	if header != nil {
-		headerSize := types.EnvelopeHeaderSize_v3
+	if headerSize > 0 {
 		headerBytes := make([]byte, headerSize)
 		if _, err := file.Seek(0, io.SeekStart); err == nil {
 			if _, err := io.ReadFull(file, headerBytes); err == nil {
@@ -53,7 +54,35 @@ func NewSingleFileContainerWriter(outputPath string, header *types.EnvelopeHeade
 		file.Seek(int64(headerSize), io.SeekStart)
 	}
 
-	return &SingleFileContainerWriter{file: file, globalHasher: globalHasher, manifestCRC: 0}, nil
+	return &SingleFileContainerWriter{file: file, globalHasher: globalHasher, manifestCRC: 0, headerVersion: 3}, nil
+}
+
+func NewSingleFileContainerWriterV4(outputPath string, header *types.EnvelopeHeaderV4) (*SingleFileContainerWriter, error) {
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return nil, err
+	}
+
+	headerSize := 0
+	if header != nil {
+		if err := types.WriteHeaderV4(file, header); err != nil {
+			return nil, err
+		}
+		headerSize = types.EnvelopeHeaderSize_v4
+	}
+
+	globalHasher := crc32.NewIEEE()
+	if headerSize > 0 {
+		headerBytes := make([]byte, headerSize)
+		if _, err := file.Seek(0, io.SeekStart); err == nil {
+			if _, err := io.ReadFull(file, headerBytes); err == nil {
+				globalHasher.Write(headerBytes)
+			}
+		}
+		file.Seek(int64(headerSize), io.SeekStart)
+	}
+
+	return &SingleFileContainerWriter{file: file, globalHasher: globalHasher, manifestCRC: 0, headerVersion: 4, v4Header: header}, nil
 }
 
 func (w *SingleFileContainerWriter) WriteKVI(kviData []byte) error {
@@ -149,22 +178,41 @@ func (w *SingleFileContainerWriter) WriteManifest(manifestObj *types.Manifest_v2
 func (w *SingleFileContainerWriter) Close() error {
 	defer w.file.Close()
 
-	// 1. 获取文件信息以计算 ManifestOffset
 	fileInfo, err := w.file.Stat()
 	if err != nil {
 		return err
 	}
 
-	// 2. 计算 Footer 元素
-	// ManifestBlock 偏移 = EOF - (HeaderSize + EncryptedManifestSize)
 	manifestBlockSize := block.GetBlockHeader_v2_Size() + int64(len(w.manifestBytes))
 	manifestOffset := fileInfo.Size() - manifestBlockSize
+
+	if w.headerVersion == 4 {
+		w.v4Header.ManifestOffset = uint64(manifestOffset)
+		w.v4Header.ManifestLength = w.manifestLength
+
+		if _, err := w.file.Seek(0, io.SeekStart); err != nil {
+			return fmt.Errorf("failed to seek to header for v4 rewrite: %w", err)
+		}
+		if err := types.WriteHeaderV4(w.file, w.v4Header); err != nil {
+			return fmt.Errorf("failed to rewrite v4 header: %w", err)
+		}
+
+		if _, err := w.file.Seek(0, io.SeekEnd); err != nil {
+			return fmt.Errorf("failed to seek to end for v4 footer: %w", err)
+		}
+
+		footer := &types.EnvelopeFooterV4{
+			Magic:       types.MagicFooter_v2,
+			GlobalCRC32: w.globalHasher.Sum32(),
+		}
+		return types.WriteFooterV4(w.file, footer)
+	}
 
 	footer := &types.EnvelopeFooter_v2{
 		Magic:          types.MagicFooter_v2,
 		ManifestOffset: uint64(manifestOffset),
-		ManifestLength: w.manifestLength, // 加密数据长度
-		ManifestCRC32:  w.manifestCRC,    // 加密数据 CRC
+		ManifestLength: w.manifestLength,
+		ManifestCRC32:  w.manifestCRC,
 		GlobalCRC32:    w.globalHasher.Sum32(),
 	}
 	return binary.Write(w.file, types.ByteOrder_v2, footer)

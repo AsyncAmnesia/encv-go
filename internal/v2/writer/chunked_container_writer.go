@@ -16,7 +16,8 @@ import (
 
 // ChunkedContainerWriter 提供构建物理分片容器所需的工具方法
 type ChunkedContainerWriter struct {
-	globalHasher hash.Hash32
+	globalHasher   hash.Hash32
+	lastManifestLen uint64
 }
 
 func NewChunkedContainerWriter(globalHasher hash.Hash32) *ChunkedContainerWriter {
@@ -135,4 +136,41 @@ func (w *ChunkedContainerWriter) WriteManifestAndFooter(mainFile *os.File, manif
 		GlobalCRC32:    w.globalHasher.Sum32(),
 	}
 	return binary.Write(mainFile, types.ByteOrder_v2, footer)
+}
+
+func (w *ChunkedContainerWriter) WriteManifestOnly(mainFile *os.File, manifestObj *types.Manifest_v2) error {
+	manifestBytes, err := manifestObj.SerializeToJSON_v2()
+	if err != nil {
+		return err
+	}
+
+	encryptedManifestBytes, err := manifest.EncryptManifest(manifestBytes)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt manifest: %w", err)
+	}
+
+	crcVal, err := block.WriteBlock_v2(mainFile, types.BlockTypeManifest_v2, encryptedManifestBytes)
+	if err != nil {
+		return fmt.Errorf("failed to write manifest block: %w", err)
+	}
+
+	manifestBlockHeader := &block.BlockHeader_v2{
+		Type:   types.BlockTypeManifest_v2,
+		Length: uint64(len(encryptedManifestBytes)),
+		CRC32:  crcVal,
+	}
+	if err := block.WriteBlockToHasherFromHeader(w.globalHasher, manifestBlockHeader, encryptedManifestBytes); err != nil {
+		return err
+	}
+
+	w.lastManifestLen = uint64(len(encryptedManifestBytes))
+	return nil
+}
+
+func (w *ChunkedContainerWriter) LastManifestLen() uint64 {
+	return w.lastManifestLen
+}
+
+func (w *ChunkedContainerWriter) GlobalCRC32() uint32 {
+	return w.globalHasher.Sum32()
 }

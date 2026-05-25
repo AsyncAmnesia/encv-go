@@ -30,6 +30,35 @@
       </div>
 
       <template v-else>
+        <div v-if="isEncryptedPreview" class="file-info-card">
+          <div class="info-grid">
+            <div class="info-row">
+              <span class="info-label">{{ t('fileInfo.name') || 'Name' }}</span>
+              <span class="info-value">{{ fileName }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">{{ t('fileInfo.size') || 'Size' }}</span>
+              <span class="info-value">{{ formatFileSize(fileSize) }}</span>
+            </div>
+            <div class="info-row" v-if="fileModified">
+              <span class="info-label">{{ t('fileInfo.modified') || 'Modified' }}</span>
+              <span class="info-value">{{ fileModified }}</span>
+            </div>
+            <div class="info-row" v-if="fileMimeType">
+              <span class="info-label">MIME</span>
+              <span class="info-value code-text">{{ fileMimeType }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">{{ t('fileInfo.category') || 'Category' }}</span>
+              <ion-badge color="medium">{{ fileCategory }}</ion-badge>
+            </div>
+            <div class="info-row">
+              <span class="info-label">{{ t('files.encrypted') }}</span>
+              <ion-badge color="warning">Yes</ion-badge>
+            </div>
+          </div>
+        </div>
+
         <div v-if="previewType === 'image'" class="preview-wrapper image-preview">
           <img :src="streamUrl" class="preview-image" />
         </div>
@@ -113,7 +142,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons,
@@ -159,6 +188,11 @@ const copied = ref(false)
 const showManifest = ref(false)
 const containerInfo = ref<ContainerInfo | null>(null)
 const manifestJson = ref('')
+const fileModified = ref('')
+const fileMimeType = ref('')
+const fileCategory = ref('')
+
+const isEncryptedPreview = computed(() => route.query.isEncrypted === 'true')
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -206,6 +240,9 @@ async function loadFile() {
       const info = await resp.json()
 
       fileSize.value = info.size || 0
+      fileModified.value = info.modified || ''
+      fileMimeType.value = info.mime_type || ''
+      fileCategory.value = info.category || ''
 
       if (info.is_encv_container && info.container) {
         const containerType = info.container.container_type
@@ -223,6 +260,7 @@ async function loadFile() {
             loading.value = false
             return
           case 'document':
+          case 'text':
             const ext = getFileExtension(fileName.value)
             if (ext === 'pdf') {
               previewType.value = 'pdf'
@@ -382,6 +420,14 @@ onMounted(() => loadFile())
   padding: 16px;
   gap: 12px;
   overflow-y: auto;
+}
+
+.file-info-card {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  padding: 14px;
+  margin: 12px 16px 0;
+  border-left: 3px solid var(--ion-color-primary);
 }
 
 .container-error {

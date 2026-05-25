@@ -557,7 +557,9 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 		Namer:                 p.chunkNamer,
 		StartIdx:              startIdx,
 		LightMainChunkEnabled: p.settings.LightContainerMainChunkEnabled,
-		HeaderVersion:         3,
+		HeaderVersion:         4,
+		ContainerType:         p.ContainerType(),
+		IsSeekable:            p.DefaultIsSeekable(p.inputPath),
 		SpecialIDType:         types.IDType_Raw,
 		SpecialID:             nil,
 	}
