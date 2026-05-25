@@ -1,0 +1,28 @@
+name: Sync Fork (Force Overwrite)
+
+on:
+  schedule:
+    - cron: '1 16 * * *'    # 北京时间每天 00:01 (UTC 16:01)
+  workflow_dispatch:
+
+jobs:
+  force-sync:
+    if: github.event.repository.fork
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/Soltus/encv-go.git
+          git fetch upstream
+
+      - name: Force reset to upstream
+        run: |
+          git checkout dev
+          git reset --hard upstream/dev
+          git push origin dev --force
