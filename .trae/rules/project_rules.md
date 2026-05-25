@@ -6,8 +6,10 @@
 - fftools（libffmpeg.so/libffprobe.so）采用静态链接方式：FFmpeg 各库的 `.a` 文件被整体链接进 fftools .so，运行时无需额外的 libavutil.so 等依赖
 - 链接时使用 `--whole-archive` + `--allow-multiple-definition`（解决 FFmpeg 多库重复符号如 ff_log2_tab）
 - CFLAGS 使用 `-std=c11 -include time.h`（解决 NDK Clang 的 struct tm 前向声明问题）
+- CFLAGS 必须包含 `-I compat/stdbit`（FFmpeg 8.0 fftools 使用 C23 `<stdbit.h>`，NDK Clang 17 不支持，需使用 FFmpeg 自带的兼容头文件 `compat/stdbit/stdbit.h`，该文件使用 `__builtin_clz`/`__builtin_ctz`/`__builtin_popcount` 等 Clang 内建函数实现）
 - FFmpeg 8.0 已移除 libpostproc，链接列表中不能有 `-lpostproc`
 - FFmpeg 8.0 fftools 新增 `textformat/` 子目录（ffprobe 输出格式化），需在 CFLAGS 中添加 `-I fftools/textformat`
+- FFmpeg 8.0 fftools 新增 `graph/` 和 `resources/` 子目录，需在 CFLAGS 中添加 `-I fftools/graph` 和 `-I fftools/resources`
 - h264 编码器在 8.0 中通过 `libx264` 包装器提供，configure 使用 `--enable-encoder=libx264`
 - x264 的 `--enable-pic` 仍然必须（共享库需要位置无关代码）
 - pkg-config wrapper 方案仍然适用

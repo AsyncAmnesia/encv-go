@@ -197,6 +197,7 @@ mkdir -p "$FTOOLS_BUILD"
 CFLAGS="-std=c11 -fPIC -DANDROID -D_POSIX_C_SOURCE=200809L -include time.h \
   -I${FFMPEG_INSTALL}/include \
   -I${FFMPEG_SRC} \
+  -I${FFMPEG_SRC}/compat/stdbit \
   -I${FFMPEG_SRC}/fftools \
   -I${FFMPEG_SRC}/fftools/textformat \
   -I${FFMPEG_SRC}/fftools/graph \
