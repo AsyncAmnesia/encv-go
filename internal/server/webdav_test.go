@@ -66,8 +66,7 @@ func setupTestServer(t *testing.T, webdavUsername, webdavPassword string) (*Serv
 			Password: webdavPassword,
 		},
 		Log: types.LogConfig{
-			Level:   "debug",
-			Console: true,
+			Level: "debug",
 		},
 		PluginSettings: map[string]json.RawMessage{},
 	}

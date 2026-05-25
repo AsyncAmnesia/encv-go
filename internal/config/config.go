@@ -83,9 +83,8 @@ func DefaultConfig() *Config {
 			DisableSignatureVerification: false,
 		},
 		Log: types.LogConfig{
-			Level:   "info",
-			File:    "",
-			Console: true,
+			Level: "info",
+			File:  "",
 		},
 	}
 }
