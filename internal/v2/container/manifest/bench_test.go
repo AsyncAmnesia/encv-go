@@ -8,10 +8,10 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
-func makeBenchManifest(fragCount int) *types.Manifest_v2 {
-	fragments := make([]types.Fragment_v2, fragCount)
+func makeBenchManifest(fragCount int) *types.Manifest {
+	fragments := make([]types.Fragment, fragCount)
 	for i := 0; i < fragCount; i++ {
-		fragments[i] = types.Fragment_v2{
+		fragments[i] = types.Fragment{
 			ID:                fmt.Sprintf("logical_fragment_%d", i),
 			Type:              types.FragmentType_SeekableStream,
 			Length:            uint64(1024 * 1024),
@@ -21,20 +21,20 @@ func makeBenchManifest(fragCount int) *types.Manifest_v2 {
 		}
 	}
 
-	kviData, _ := json.Marshal(types.KVI_v2{
+	kviData, _ := json.Marshal(types.KVI{
 		SaltBase64: "dGVzdHNhbHQ=",
 		IVBase64:   "dGVzdGl2",
 	})
 
-	return &types.Manifest_v2{
-		Version:   types.ContainerVersion,
+	return &types.Manifest{
+		Version:   types.ManifestSchemaVersion,
 		Kind:      "video",
 		KVI:       kviData,
 		Fragments: fragments,
 	}
 }
 
-func BenchmarkSerializeManifest_v2(b *testing.B) {
+func BenchmarkSerializeManifest(b *testing.B) {
 	fragCounts := []int{1, 10, 100, 500}
 
 	for _, count := range fragCounts {
@@ -45,26 +45,26 @@ func BenchmarkSerializeManifest_v2(b *testing.B) {
 			b.ResetTimer()
 
 			for b.Loop() {
-				_, _ = m.SerializeToJSON_v2()
+				_, _ = m.SerializeToJSON()
 			}
 		})
 	}
 }
 
-func BenchmarkDeserializeManifest_v2(b *testing.B) {
+func BenchmarkDeserializeManifest(b *testing.B) {
 	fragCounts := []int{1, 10, 100, 500}
 
 	for _, count := range fragCounts {
 		b.Run(fmt.Sprintf("frags=%d", count), func(b *testing.B) {
 			m := makeBenchManifest(count)
-			data, _ := m.SerializeToJSON_v2()
+			data, _ := m.SerializeToJSON()
 
 			b.ReportAllocs()
 			b.SetBytes(int64(len(data)))
 			b.ResetTimer()
 
 			for b.Loop() {
-				_, _ = DeserializeFromJSON_v2(data)
+				_, _ = DeserializeFromJSON(data)
 			}
 		})
 	}
@@ -76,7 +76,7 @@ func BenchmarkEncryptManifest(b *testing.B) {
 	for _, count := range fragCounts {
 		b.Run(fmt.Sprintf("frags=%d", count), func(b *testing.B) {
 			m := makeBenchManifest(count)
-			data, _ := m.SerializeToJSON_v2()
+			data, _ := m.SerializeToJSON()
 
 			b.ReportAllocs()
 			b.SetBytes(int64(len(data)))
@@ -95,7 +95,7 @@ func BenchmarkDecryptManifest(b *testing.B) {
 	for _, count := range fragCounts {
 		b.Run(fmt.Sprintf("frags=%d", count), func(b *testing.B) {
 			m := makeBenchManifest(count)
-			data, _ := m.SerializeToJSON_v2()
+			data, _ := m.SerializeToJSON()
 			encData, _ := EncryptManifest(data)
 
 			b.ReportAllocs()

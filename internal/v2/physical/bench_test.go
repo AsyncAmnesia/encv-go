@@ -16,22 +16,23 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/writer"
 )
 
-func init() {
+func TestMain(m *testing.M) {
 	types.RegisterKVIProvider("video", func(rawKVI json.RawMessage) (types.KVIProvider, error) {
-		var kvi types.KVI_v2
+		var kvi types.KVI
 		if err := json.Unmarshal(rawKVI, &kvi); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal KVI: %w", err)
 		}
-		return physBenchKVI{KVI_v2: kvi}, nil
+		return physBenchKVI{KVI: kvi}, nil
 	})
+	m.Run()
 }
 
 type physBenchKVI struct {
-	types.KVI_v2
+	types.KVI
 }
 
 func (k physBenchKVI) GetKind() types.IndexKind        { return "video" }
-func (k physBenchKVI) GetEncryptionInfo() types.KVI_v2 { return k.KVI_v2 }
+func (k physBenchKVI) GetEncryptionInfo() types.KVI { return k.KVI }
 func (k physBenchKVI) GetIndex() types.Index {
 	return &physBenchIndex{size: 0}
 }
@@ -52,11 +53,11 @@ func benchMaxDataSize() int64 {
 	return 5 * 1024 * 1024 // 正常模式：最大 5MB
 }
 
-func createPhysBenchManifest(dataSize int64, fragCount int) (*types.Manifest_v2, []byte, string) {
+func createPhysBenchManifest(dataSize int64, fragCount int) (*types.Manifest, []byte, string) {
 	password := "bench-phys-password"
 	salt, _ := crypto.GenerateSalt_v2(types.SaltSize_v2)
 	iv, _ := crypto.GenerateIV_v2(types.IVSize_v2)
-	key := crypto.GenerateKey_v2(password, salt, types.KeySize_v2)
+	key := crypto.GenerateKey(password, salt, types.KeySize_v2)
 
 	originalData := make([]byte, dataSize)
 	rand.Read(originalData)
@@ -65,7 +66,7 @@ func createPhysBenchManifest(dataSize int64, fragCount int) (*types.Manifest_v2,
 	payloadData := encData
 
 	kvi := &physBenchKVI{
-		KVI_v2: types.KVI_v2{
+		KVI: types.KVI{
 			SaltBase64: crypto.Base64Encode_v2(salt),
 			IVBase64:   crypto.Base64Encode_v2(iv),
 		},
@@ -76,14 +77,14 @@ func createPhysBenchManifest(dataSize int64, fragCount int) (*types.Manifest_v2,
 		fragmentSize = dataSize
 		fragCount = 1
 	}
-	fragments := make([]types.Fragment_v2, 0, fragCount)
+	fragments := make([]types.Fragment, 0, fragCount)
 	var offset uint64
 	for i := 0; i < fragCount; i++ {
 		size := fragmentSize
 		if i == fragCount-1 {
 			size = dataSize - int64(offset)
 		}
-		fragments = append(fragments, types.Fragment_v2{
+		fragments = append(fragments, types.Fragment{
 			ID:                fmt.Sprintf("logical_fragment_%d", i),
 			Type:              types.FragmentType_SeekableStream,
 			Length:            uint64(size),
@@ -92,7 +93,7 @@ func createPhysBenchManifest(dataSize int64, fragCount int) (*types.Manifest_v2,
 		offset += uint64(size)
 	}
 
-	manifest, _ := types.NewManifest_v2(kvi, fragments)
+	manifest, _ := types.NewManifest(kvi, fragments)
 	return manifest, payloadData, password
 }
 
@@ -263,7 +264,7 @@ func BenchmarkFileChunkerPhysicalUnpacker_Unpack(b *testing.B) {
 	})
 }
 
-func buildSingleContainer(b *testing.B, manifest *types.Manifest_v2, payloadData []byte) string {
+func buildSingleContainer(b *testing.B, manifest *types.Manifest, payloadData []byte) string {
 	b.Helper()
 
 	tempDir := b.TempDir()

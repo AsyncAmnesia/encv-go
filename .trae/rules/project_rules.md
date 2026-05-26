@@ -55,4 +55,11 @@
 - 原因：`globalThis.lynx.getJSModule` 在后台线程中不可用，返回 null
 - `useLynxGlobalEventListener` 是 ReactLynx 官方 hook，内部使用 `lynx.getJSModule`（注意是 `lynx` 全局变量，不是 `globalThis.lynx`），并通过 `useMemo` 尽早注册监听器
 - 用法：`useLynxGlobalEventListener('event-name', useCallback((event) => { ... }, [deps]))`
-- 导入：`import { useLynxGlobalEventListener } from '@lynx-js/react'`
+- 用法：`import { useLynxGlobalEventListener } from '@lynx-js/react'`
+
+## 配置模板保护（重要！）
+
+- **严禁擅自修改 `config.user.json`**：该文件是唯一用户配置模板（桌面端+移动端共用），任何端口/路径/密码等值的修改必须通过用户明确指令执行
+- 如需临时改变开发端口等参数，应使用环境变量 `ENCV_CONFIG_PATH` 指向临时配置文件，或命令行 `--config` 标志
+- **不得创建独立的 `config.mobile.json` 或其他平台特定配置模板**：移动端适配通过 Go 端 `Load()` 中的 `ENCV_MOBILE` 路径自动修正实现
+- 违反此规则导致的配置模板破坏将被视为严重错误

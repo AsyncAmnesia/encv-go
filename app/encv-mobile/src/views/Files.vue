@@ -177,7 +177,7 @@ function getPlayMode(mediaType: 'video' | 'audio'): PlayMode {
 }
 
 function playMedia(file: FileItem, category: string) {
-  const isVideo = category === 'video' || category === 'encrypted'
+  const isVideo = category === 'video'
   const mediaType = isVideo ? 'video' : 'audio'
   const mimeType = isVideo ? 'video/*' : 'audio/*'
   const mode = getPlayMode(mediaType)
@@ -487,10 +487,13 @@ async function handleLongPress(file: FileItem) {
     })
   } else if (category === 'encrypted') {
     buttons.push({
-      text: t('files.play'),
-      icon: videocam,
+      text: t('files.preview'),
+      icon: image,
       handler: () => {
-        playMedia(file, 'encrypted')
+        router.push({
+          path: '/tabs/preview',
+          query: { path: file.path, name: file.name, isEncrypted: 'true' },
+        })
       },
     })
     buttons.push({

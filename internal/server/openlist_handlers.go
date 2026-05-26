@@ -58,6 +58,12 @@ func (p *ProxyGin) HandleRequest(c *gin.Context) {
 
 	slog.Info("[Proxy] siteHost", "host", siteHostStr, "original", originalPath, "path", path)
 
+	if strings.HasPrefix(path, "/_preview/") {
+		h := http.StripPrefix("/openlist/sites/"+siteIdStr+"/_preview/", web.PreviewHandler())
+		h.ServeHTTP(c.Writer, c.Request)
+		return
+	}
+
 	sign := c.Request.URL.Query().Get("sign")
 	isInternalRequest, _ := c.Get("internal_request")
 	isInternal := fmt.Sprintf("%v", isInternalRequest) == "true"
@@ -97,6 +103,11 @@ func (p *ProxyGin) HandleRequest(c *gin.Context) {
 
 	slog.Info("Received valid request for", "path", path)
 
+	if after, ok := strings.CutPrefix(path, "/d/"); ok {
+		path = "/" + after
+		slog.Info("[Proxy] Stripped /d/ prefix", "path", path)
+	}
+
 	if isDirectory {
 		p.handleDirectoryRequest(c, path, siteHostStr, siteTokenStr)
 		return
@@ -133,10 +144,12 @@ func (p *ProxyGin) handleDecrypt(c *gin.Context, siteHost, siteToken string) {
 		}
 
 		routePath = u.Path
-		if after, ok := strings.CutPrefix(routePath, "/d/"); ok {
-			routePath = after
-		}
 	}
+
+	if after, ok := strings.CutPrefix(routePath, "/d/"); ok {
+		routePath = "/" + after
+	}
+
 	slog.Info("[Proxy] routePath", "path", routePath)
 
 	fileInfo, err := openlist.OpenListGetFileURL(routePath, siteHost, siteToken)
@@ -163,7 +176,7 @@ func (p *ProxyGin) handleDecrypt(c *gin.Context, siteHost, siteToken string) {
 	slog.Info("[Proxy] Upstream responded with Content-Type", "type", contentType)
 
 	slog.Info("[Proxy] Validating stream URL before decryption...")
-	resp, err := utils.GetRemoteStreamWithRange(streamURL, fileInfo.Data.Header, -32, -1)
+	resp, err := utils.GetRemoteStreamWithRange(streamURL, fileInfo.Data.Header, 0, 5)
 	if err != nil {
 		slog.Error("[Proxy] Failed to validate stream URL", "url", streamURL, "error", err)
 		c.Status(http.StatusBadGateway)
@@ -178,7 +191,7 @@ func (p *ProxyGin) handleDecrypt(c *gin.Context, siteHost, siteToken string) {
 		return
 	}
 
-	footerBytes, err := io.ReadAll(resp.Body)
+	headerBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		slog.Error("[Proxy] Failed to read validation data", "url", streamURL, "error", err)
 		c.Status(http.StatusInternalServerError)
@@ -186,7 +199,7 @@ func (p *ProxyGin) handleDecrypt(c *gin.Context, siteHost, siteToken string) {
 		return
 	}
 
-	isValid, err := detector.IsEncvContainerFromBytes(footerBytes)
+	isValid, err := detector.IsEncvContainerFromBytes(headerBytes)
 	if err != nil {
 		slog.Error("[Proxy] Validation check failed", "url", streamURL, "error", err)
 		c.Status(http.StatusInternalServerError)

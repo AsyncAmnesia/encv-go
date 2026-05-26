@@ -21,17 +21,41 @@ func NewSinglePhysicalPacker() *SinglePhysicalPacker {
 
 // Pack 实现 PhysicalPacker 接口
 // SinglePhysicalPacker namer 和 startIdx 参数暂时无用，保留接口兼容性
-func (p *SinglePhysicalPacker) Pack(manifest *types.Manifest_v2, req *PackRequest) (string, error) {
+func (p *SinglePhysicalPacker) Pack(manifest *types.Manifest, req *PackRequest) (string, error) {
 	outputPath := filepath.Join(req.OutputDir, req.FinalFileName)
 	tempPath := outputPath + ".tmp"
 
-	var header *types.EnvelopeHeaderV3
 	var err error
 
-	// 【修正】Header 配置：支持 SpecialID 为 None/nil
+	if req.HeaderVersion == 4 {
+		header, headerErr := types.CreateHeaderV4(
+			true,
+			req.ContainerType,
+			req.IsSeekable,
+			req.SpecialIDType,
+			req.SpecialID,
+		)
+		if headerErr != nil {
+			return "", fmt.Errorf("failed to prepare v4 header: %w", headerErr)
+		}
+
+		tempWriter, writerErr := writer.NewSingleFileContainerWriterV4(tempPath, header)
+		if writerErr != nil {
+			return "", fmt.Errorf("failed to create v4 container writer: %w", writerErr)
+		}
+
+		finalPath, packErr := p.writeAndClose(req.EncryptedDataReader, manifest, *tempWriter, tempPath, outputPath)
+		if packErr != nil {
+			return "", packErr
+		}
+
+		log.Printf("✅ [SinglePhysicalPacker] Packed (V4) to: %s\n", finalPath)
+		return finalPath, nil
+	}
+
+	var header *types.EnvelopeHeaderV3
+
 	if req.HeaderVersion == 3 {
-		// 如果 SpecialID 为 nil，使用空字节切片或 nil
-		// CreateHeaderV3 内部应能处理这种情况
 		idData := req.SpecialID
 		header, err = types.CreateHeaderV3(
 			true,
@@ -43,7 +67,6 @@ func (p *SinglePhysicalPacker) Pack(manifest *types.Manifest_v2, req *PackReques
 		}
 	}
 
-	// 创建 Writer (Writer 内部负责写入 Header 并 Hash)
 	tempWriter, err := writer.NewSingleFileContainerWriter(tempPath, header)
 	if err != nil {
 		return "", fmt.Errorf("failed to create container writer: %w", err)
@@ -58,7 +81,7 @@ func (p *SinglePhysicalPacker) Pack(manifest *types.Manifest_v2, req *PackReques
 	return finalPath, nil
 }
 
-func (p *SinglePhysicalPacker) writeAndClose(data io.Reader, manifest *types.Manifest_v2, tempWriter writer.SingleFileContainerWriter, tempPath, outputPath string) (string, error) {
+func (p *SinglePhysicalPacker) writeAndClose(data io.Reader, manifest *types.Manifest, tempWriter writer.SingleFileContainerWriter, tempPath, outputPath string) (string, error) {
 	// 确保临时文件在函数退出时被清理，除非操作成功
 	var success bool
 	defer func() {

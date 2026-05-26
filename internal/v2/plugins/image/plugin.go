@@ -241,13 +241,13 @@ func (p *ImagePlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 
 	// 3. 构造 Manifest
 	kvi := ImageKVI_v2{
-		KVI_v2: types.KVI_v2{
+		KVI: types.KVI{
 			SaltBase64: crypto.Base64Encode_v2(result.Salt),
 			IVBase64:   crypto.Base64Encode_v2(result.IV),
 		},
 		ImageIndex: &p.index,
 	}
-	manifest, err := types.NewManifest_v2(kvi, logicalFragments)
+	manifest, err := types.NewManifest(kvi, logicalFragments)
 	if err != nil {
 		return fmt.Errorf("failed to create manifest: %w", err)
 	}
@@ -268,7 +268,9 @@ func (p *ImagePlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 		BaseName:             finalBaseName,
 		OutputDir:            p.outputDir,
 		Index:                &p.index,
-		HeaderVersion:        3,
+		HeaderVersion:        4,
+		ContainerType:        p.ContainerType(),
+		IsSeekable:           p.DefaultIsSeekable(p.inputPath),
 		SpecialIDType:        types.IDType_Raw,
 		SpecialID:            nil,
 		FinalFileName:        finalFilename,

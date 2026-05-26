@@ -10,9 +10,9 @@ type ContainerWriter_v2 interface {
 	// WriteKVI 写入 KVI (Key and IV) 元数据块
 	WriteKVI(kviData []byte) error
 	// WriteFragment 写入一个数据分片
-	WriteFragment(frag *types.Fragment_v2, data []byte) error
+	WriteFragment(frag *types.Fragment, data []byte) error
 	// WriteManifest 写入清单块，并记录其位置信息
-	WriteManifest(manifest *types.Manifest_v2) error
+	WriteManifest(manifest *types.Manifest) error
 	// Close 写入 Footer 并关闭文件
 	Close() error
 }

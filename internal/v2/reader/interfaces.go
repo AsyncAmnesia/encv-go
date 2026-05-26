@@ -35,13 +35,13 @@ type EncryptedContainerReader interface {
 
 	// GetManifest 返回已解析的容器清单。
 	// 这是获取容器元数据（如 Fragment 列表、KVI）的唯一入口。
-	GetManifest() *types.Manifest_v2
+	GetManifest() *types.Manifest
 
 	// GetKVIProvider 返回解析后的 KVI 提供者接口
 	GetKVIProvider() (types.KVIProvider, error)
 
 	// GetFragments 返回 Manifest 中的所有片段定义
-	GetFragments() []types.Fragment_v2
+	GetFragments() []types.Fragment
 
 	// Close 关闭容器及其打开的所有底层资源（如文件句柄）。
 	Close() error

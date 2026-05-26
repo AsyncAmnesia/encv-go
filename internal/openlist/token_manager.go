@@ -120,7 +120,7 @@ func (tm *TokenManager) saveTokenToFile(siteId string, siteToken SiteToken) erro
 	if err != nil {
 		return err
 	}
-	key := crypto.GenerateKey_v2(tm.cfg.Password, salt, crypto.KeySize_v2)
+	key := crypto.GenerateKey(tm.cfg.Password, salt, crypto.KeySize_v2)
 
 	// 生成 IV
 	iv, err := crypto.GenerateIV_v2(crypto.IVSize_v2)
@@ -165,7 +165,7 @@ func (tm *TokenManager) loadTokenFromFile(siteId string) (*SiteToken, error) {
 	encryptedData := fileData[crypto.SaltSize_v2+crypto.IVSize_v2:]
 
 	// 生成密钥
-	key := crypto.GenerateKey_v2(tm.cfg.Password, salt, crypto.KeySize_v2)
+	key := crypto.GenerateKey(tm.cfg.Password, salt, crypto.KeySize_v2)
 
 	// 解密数据
 	decryptedData, err := crypto.DecryptBytes_v2(encryptedData, key, iv)

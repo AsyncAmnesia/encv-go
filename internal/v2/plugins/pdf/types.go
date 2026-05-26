@@ -26,7 +26,7 @@ func (t *PDFIndex) GetMimeType() string         { return t.MimeType }
 
 // 视频容器专用的 KVI
 type PDFKVI_v2 struct {
-	types.KVI_v2
+	types.KVI
 	PDFIndex *PDFIndex `json:"pdf_index"`
 }
 
@@ -35,8 +35,8 @@ func (v PDFKVI_v2) GetKind() types.IndexKind {
 }
 
 // 【关键新增】实现 KVIProvider 接口
-func (v PDFKVI_v2) GetEncryptionInfo() types.KVI_v2 {
-	return v.KVI_v2
+func (v PDFKVI_v2) GetEncryptionInfo() types.KVI {
+	return v.KVI
 }
 
 func (v PDFKVI_v2) GetIndex() types.Index {

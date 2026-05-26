@@ -140,6 +140,8 @@ type MKVChapterXML struct {
 }
 
 // IdentifyWithMKVMerge 使用 mkvmerge 获取文件的详细信息
+// DEAD CODE: no callers found in project. Kept for potential future use.
+// NOTE: has no IsMobile() guard — if re-activated, add mobile fallback (e.g. ffprobe-based identification).
 func IdentifyWithMKVMerge(filePath string) (*MKVMergeIdentity, error) {
 	cmd := exec.Command("mkvmerge", "-J", filePath)
 	output, err := cmd.Output()

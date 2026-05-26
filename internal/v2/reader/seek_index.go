@@ -13,13 +13,13 @@ import (
 )
 
 type fragmentRangeIndex struct {
-	fragments []types.Fragment_v2
+	fragments []types.Fragment
 	ends      []uint64
 	totalSize int64
 }
 
-func newFragmentRangeIndex(fragments []types.Fragment_v2) *fragmentRangeIndex {
-	copied := append([]types.Fragment_v2(nil), fragments...)
+func newFragmentRangeIndex(fragments []types.Fragment) *fragmentRangeIndex {
+	copied := append([]types.Fragment(nil), fragments...)
 	sort.Slice(copied, func(i, j int) bool {
 		return copied[i].GlobalStartOffset < copied[j].GlobalStartOffset
 	})
