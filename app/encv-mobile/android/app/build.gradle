@@ -1,3 +1,5 @@
+import com.combo.aar2apk.PackageBuildType
+
 plugins {
     id 'kotlin-android'
 }
@@ -62,7 +64,8 @@ android {
 
 packagePlugins {
     enabled.set(true)
-    buildType.set(io.github.combolite.core.build.PackageBuildType.DEBUG)
+    def isReleaseBuild = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+    buildType.set(isReleaseBuild ? PackageBuildType.RELEASE : PackageBuildType.DEBUG)
     pluginsDir.set("plugins")
 }
 
