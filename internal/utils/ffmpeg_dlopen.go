@@ -151,13 +151,13 @@ func (e *NativeError) Error() string {
 	}
 }
 
-type nativeResult struct {
-	exitCode int
-	stdout   string
-	stderr   string
+type NativeResult struct {
+	ExitCode int
+	Stdout   string
+	Stderr   string
 }
 
-func callFFmpegNative(args []string) (*nativeResult, error) {
+func CallFFmpegNative(args []string) (*NativeResult, error) {
 	libDir := getLibDir()
 	if libDir == "" {
 		return nil, &NativeError{Type: NativeErrorDlopen, Detail: "ENCV_LIB_DIR not set"}
@@ -197,9 +197,9 @@ func callFFmpegNative(args []string) (*nativeResult, error) {
 
 	stderrData, _ := os.ReadFile(stderrPath)
 
-	result := &nativeResult{
-		exitCode: int(ret),
-		stderr:   string(stderrData),
+	result := &NativeResult{
+		ExitCode: int(ret),
+		Stderr:   string(stderrData),
 	}
 
 	if ret == -1 {
@@ -214,7 +214,7 @@ func callFFmpegNative(args []string) (*nativeResult, error) {
 	return result, nil
 }
 
-func callFFprobeNative(args []string) (*nativeResult, error) {
+func CallFFprobeNative(args []string) (*NativeResult, error) {
 	libDir := getLibDir()
 	if libDir == "" {
 		return nil, &NativeError{Type: NativeErrorDlopen, Detail: "ENCV_LIB_DIR not set"}
@@ -254,9 +254,9 @@ func callFFprobeNative(args []string) (*nativeResult, error) {
 
 	stdoutData, _ := os.ReadFile(stdoutPath)
 
-	result := &nativeResult{
-		exitCode: int(ret),
-		stdout:   string(stdoutData),
+	result := &NativeResult{
+		ExitCode: int(ret),
+		Stdout:   string(stdoutData),
 	}
 
 	if ret == -1 {

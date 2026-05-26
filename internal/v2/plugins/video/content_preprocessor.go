@@ -1,9 +1,7 @@
-//go:build !android
-
 package video
 
+
 import (
-	"bufio"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -18,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/Soltus/encv-go/internal/utils"
+	"github.com/Soltus/encv-go/internal/utils/ffmpeg"
 	"github.com/Soltus/encv-go/internal/v2/reader"
 )
 
@@ -53,7 +52,7 @@ func detectPreferredEncoder() string {
 		if enc.args == nil {
 			return enc.name
 		}
-		if err := utils.FFmpegRun(append([]string{"-y", "-threads", "1"}, enc.args...)...); err == nil {
+		if err := ffmpeg.Run(context.Background(), append([]string{"-y", "-threads", "1"}, enc.args...)...); err == nil {
 			slog.Info("Detected available encoder", "component", "CONTENT_PREPROCESSOR", "encoder", enc.name)
 			return enc.name
 		}
@@ -68,18 +67,18 @@ func getPreferredEncoder() string {
 	return encoderCache.preferred
 }
 
-func (p *VideoContentPreprocessor) runFFmpegCmd(cmd *exec.Cmd, tempPath string) error {
-	if utils.IsMobile() {
-		return p.runFFmpegCmdMobile(cmd.Args[1:], tempPath)
+func (p *VideoContentPreprocessor) runFFmpegCmd(args []string, tempPath string) error {
+	ctx := p.ctx
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("failed to create stderr pipe: %w", err)
-	}
-
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start ffmpeg: %w", err)
+	stdout, stderrStr, exitCode, err := ffmpeg.RunWithOutput(ctx, args...)
+	if err != nil || exitCode != 0 {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("ffmpeg command failed: %w", err)
 	}
 
 	var totalDuration float64
@@ -87,21 +86,8 @@ func (p *VideoContentPreprocessor) runFFmpegCmd(cmd *exec.Cmd, tempPath string) 
 		totalDuration = p.index.DurationSeconds
 	}
 
-	scanner := bufio.NewScanner(stderr)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-
-	for scanner.Scan() {
-		line := scanner.Text()
-
-		if p.ctx != nil {
-			select {
-			case <-p.ctx.Done():
-				cmd.Process.Kill()
-				return p.ctx.Err()
-			default:
-			}
-		}
-
+	lines := strings.Split(stderrStr, "\n")
+	for _, line := range lines {
 		if totalDuration > 0 && p.onFFmpegProgress != nil {
 			var timeSec float64
 			if m := ffmpegTimeRe.FindStringSubmatch(line); len(m) > 3 {
@@ -126,40 +112,11 @@ func (p *VideoContentPreprocessor) runFFmpegCmd(cmd *exec.Cmd, tempPath string) 
 		}
 	}
 
-	if err := cmd.Wait(); err != nil {
-		if p.ctx != nil {
-			select {
-			case <-p.ctx.Done():
-				return p.ctx.Err()
-			default:
-			}
-		}
-		return fmt.Errorf("ffmpeg command failed: %w", err)
-	}
+	_ = stdout
 
 	return nil
 }
 
-func (p *VideoContentPreprocessor) runFFmpegCmdMobile(args []string, tempPath string) error {
-	if p.ctx != nil {
-		select {
-		case <-p.ctx.Done():
-			return p.ctx.Err()
-		default:
-		}
-	}
-
-	_, err := utils.FFmpegRunWithStderr(args...)
-	if err != nil {
-		return err
-	}
-
-	if _, statErr := os.Stat(tempPath); statErr != nil {
-		return fmt.Errorf("ffmpeg completed but output file not found: %s", tempPath)
-	}
-
-	return nil
-}
 
 func (p *VideoContentPreprocessor) Preprocess(inputPath string) (io.ReadCloser, error) {
 	slog.Info("Analyzing for optimal processing", "component", "CONTENT_PREPROCESSOR", "file", filepath.Base(inputPath))
@@ -172,7 +129,7 @@ func (p *VideoContentPreprocessor) Preprocess(inputPath string) (io.ReadCloser, 
 		}
 	}
 
-	format, err := utils.DetectVideoFormat(inputPath)
+	format, err := ffmpeg.DetectVideoFormat(inputPath)
 	if err != nil {
 		slog.Warn("Could not detect format, falling back to transcoding", "component", "CONTENT_PREPROCESSOR", "file", filepath.Base(inputPath), "error", err)
 		r, path, err := p.transcodeToFastStartMP4(inputPath)
@@ -257,7 +214,7 @@ func (p *VideoContentPreprocessor) updateWithPreprocessedInfo(preprocessedPath, 
 		p.index.MimeType = mimeType
 	}
 
-	output, err := utils.FFProbeOutput("-v", "quiet", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", preprocessedPath)
+	output, err := ffmpeg.Probe("-v", "quiet", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", preprocessedPath)
 	if err == nil {
 		if d, err := strconv.ParseFloat(strings.TrimSpace(string(output)), 64); err == nil {
 			p.index.DurationSeconds = d
@@ -310,7 +267,7 @@ func extractKeyFrameOffsets(filePath string, format string) ([]uint64, error) {
 func extractKeyFrameOffsetsWithFFProbe(filePath string) ([]uint64, error) {
 	fmt.Println("-> [DIAG] Optimized: Extracting exact keyframe positions in a single pass.")
 
-	output, err := utils.FFProbeOutput(
+	output, err := ffmpeg.Probe(
 		"-v", "error",
 		"-select_streams", "v:0",
 		"-skip_frame", "nokey",
@@ -354,10 +311,6 @@ func extractKeyFrameOffsetsWithFFProbe(filePath string) ([]uint64, error) {
 }
 
 func (p *VideoContentPreprocessor) remapWithMKVMerge(inputPath string) (io.ReadCloser, string, error) {
-	if utils.IsMobile() {
-		return p.remapMKVWithFFmpeg(inputPath)
-	}
-
 	fmt.Println("-> [DIAG] Checking original file for Cues...")
 	if hasCues, err := checkFileForCues(inputPath); err == nil {
 		if hasCues {
@@ -425,7 +378,7 @@ func (p *VideoContentPreprocessor) remapMKVWithFFmpeg(inputPath string) (io.Read
 	tempFile.Close()
 
 	args := []string{"-y", "-i", inputPath, "-c", "copy", "-reserve_index_space", "500", tempPath}
-	if err := utils.FFmpegRun(args...); err != nil {
+	if err := ffmpeg.Run(context.Background(), args...); err != nil {
 		os.Remove(tempPath)
 		return nil, tempPath, fmt.Errorf("ffmpeg MKV remuxing failed: %w", err)
 	}
@@ -444,8 +397,8 @@ func (p *VideoContentPreprocessor) remapMP4ForFastStart(inputPath string) (io.Re
 	tempPath := tempFile.Name()
 	tempFile.Close()
 
-	ffmpegCmd := utils.FFmpegCmd("-y", "-threads", "2", "-i", inputPath, "-c", "copy", "-movflags", "+faststart", tempPath)
-	if err := p.runFFmpegCmd(ffmpegCmd, tempPath); err != nil {
+	args := []string{"-y", "-threads", "2", "-i", inputPath, "-c", "copy", "-movflags", "+faststart", tempPath}
+	if err := p.runFFmpegCmd(args, tempPath); err != nil {
 		os.Remove(tempPath)
 		return nil, tempPath, fmt.Errorf("ffmpeg failed to remux MP4: %w", err)
 	}
@@ -480,10 +433,9 @@ func (p *VideoContentPreprocessor) transcodeToFastStartMP4(inputPath string) (io
 
 	args = append(args, "-c:a", "aac", "-movflags", "+faststart", tempPath)
 
-	ffmpegCmd := utils.FFmpegCmd(args...)
-	slog.Info("Using encoder", "component", "CONTENT_PREPROCESSOR", "encoder", encoder, "command", ffmpegCmd.String())
+	slog.Info("Using encoder", "component", "CONTENT_PREPROCESSOR", "encoder", encoder, "command", strings.Join(args, " "))
 
-	if err := p.runFFmpegCmd(ffmpegCmd, tempPath); err != nil {
+	if err := p.runFFmpegCmd(args, tempPath); err != nil {
 		if encoder != "libx264" {
 			slog.Warn("Encoder failed, falling back to libx264", "component", "CONTENT_PREPROCESSOR", "encoder", encoder, "error", err)
 			os.Remove(tempPath)
@@ -495,10 +447,10 @@ func (p *VideoContentPreprocessor) transcodeToFastStartMP4(inputPath string) (io
 			tempPath = tempFile2.Name()
 			tempFile2.Close()
 
-			fallbackCmd := utils.FFmpegCmd("-y", "-i", inputPath, "-threads", "2",
+			fallbackArgs := []string{"-y", "-i", inputPath, "-threads", "2",
 				"-c:v", "libx264", "-preset", "medium", "-crf", "23", "-profile:v", "high",
-				"-c:a", "aac", "-movflags", "+faststart", tempPath)
-			if err2 := p.runFFmpegCmd(fallbackCmd, tempPath); err2 != nil {
+				"-c:a", "aac", "-movflags", "+faststart", tempPath}
+			if err2 := p.runFFmpegCmd(fallbackArgs, tempPath); err2 != nil {
 				os.Remove(tempPath)
 				return nil, tempPath, fmt.Errorf("ffmpeg failed to transcode video (fallback): %w", err2)
 			}

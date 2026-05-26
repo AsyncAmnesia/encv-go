@@ -1,7 +1,5 @@
 // internal/v2/plugins/video/metadata_extractor.go
 
-//go:build !android
-
 package video
 
 import (
@@ -16,6 +14,7 @@ import (
 
 	"github.com/Soltus/encv-go/internal/logger"
 	"github.com/Soltus/encv-go/internal/utils"
+	"github.com/Soltus/encv-go/internal/utils/ffmpeg"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -77,7 +76,7 @@ func extractMetadataFromOriginalFile(path string) (*VideoIndex, error) {
 	)
 
 	// 1. 使用 ffprobe 获取基础元数据
-	output, err := utils.FFProbeOutput("-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path)
+	output, err := ffmpeg.Probe("-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path)
 	if err != nil {
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "ENGINE_LOAD_FAILED") || strings.Contains(errMsg, "ENGINE_SYMBOL_MISSING") {
@@ -121,7 +120,7 @@ func extractMetadataFromOriginalFile(path string) (*VideoIndex, error) {
 		)
 
 		// 如果 ffprobe 失败，并且文件是 MKV，再尝试 mkvextract
-		format, _ := utils.DetectVideoFormat(path)
+		format, _ := ffmpeg.DetectVideoFormat(path)
 		if strings.ToLower(format) == "mkv" {
 			videoLogger.Debug("attempting mkvextract for chapters",
 				slog.String("file", filepath.Base(path)),
@@ -179,7 +178,7 @@ func parseDuration(d string) float64 {
 
 // 使用 ffprobe 提取章节
 func extractChaptersWithFFprobe(path string) ([]MKVChapterInfo, error) {
-	output, err := utils.FFProbeOutput("-v", "error", "-show_chapters", "-of", "json", path)
+	output, err := ffmpeg.Probe("-v", "error", "-show_chapters", "-of", "json", path)
 	if err != nil {
 		return nil, fmt.Errorf("ffprobe command failed: %w", err)
 	}
