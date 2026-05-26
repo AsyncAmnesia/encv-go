@@ -62,18 +62,6 @@ android {
         jniLibs {
             useLegacyPackaging = true
             pickFirsts += setOf("**/*.so")
-            excludes += setOf(
-                "**/libmpv.so",
-                "**/libplayer.so",
-                "**/libavcodec.so",
-                "**/libavformat.so",
-                "**/libavutil.so",
-                "**/libswresample.so",
-                "**/libswscale.so",
-                "**/libavfilter.so",
-                "**/libavdevice.so",
-                "**/libxml2.so"
-            )
         }
         resources {
             pickFirsts += setOf("**/*.so")
@@ -82,10 +70,7 @@ android {
 }
 
 packagePlugins {
-    enabled.set(true)
-    val isReleaseBuild = gradle.startParameter.taskNames.any { it.lowercase().contains("release") }
-    buildType.set(if (isReleaseBuild) PackageBuildType.RELEASE else PackageBuildType.DEBUG)
-    pluginsDir.set("plugins")
+    enabled.set(false)
 }
 
 dependencies {

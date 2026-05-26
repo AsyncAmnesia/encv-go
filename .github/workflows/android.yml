@@ -248,6 +248,9 @@ jobs:
           if [ -n "$PLUGIN_APK" ] && [ -f "$PLUGIN_APK" ]; then
             echo "✅ Plugin APK generated:"
             ls -lh "$PLUGIN_APK"
+            mkdir -p app/src/main/assets/plugins
+            cp "$PLUGIN_APK" app/src/main/assets/plugins/mpv-player.apk
+            echo "✅ Copied to host assets/plugins/"
           else
             echo "::error::Plugin APK not found after successful build"
             find build/outputs -name "*.apk" 2>/dev/null | head -5 || echo "No APKs found"
