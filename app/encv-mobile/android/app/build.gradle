@@ -3,6 +3,7 @@ plugins {
 }
 
 apply plugin: 'com.android.application'
+apply plugin: 'io.github.lnzz123.combolite-aar2apk'
 
 android {
     namespace = "com.encvgo.app"
