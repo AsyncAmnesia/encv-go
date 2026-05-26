@@ -36,9 +36,9 @@ func DecryptManifest(encryptedData []byte) ([]byte, error) {
 	return crypto.DecryptSystemPayload(encryptedData)
 }
 
-// DeserializeFromJSON_v2 从 JSON 字节反序列化清单
-func DeserializeFromJSON_v2(data []byte) (*types.Manifest_v2, error) {
-	var manifest types.Manifest_v2
+// DeserializeFromJSON 从 JSON 字节反序列化清单
+func DeserializeFromJSON(data []byte) (*types.Manifest, error) {
+	var manifest types.Manifest
 	err := json.Unmarshal(data, &manifest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
@@ -46,8 +46,8 @@ func DeserializeFromJSON_v2(data []byte) (*types.Manifest_v2, error) {
 	return &manifest, nil
 }
 
-// ExtractKVI_v2 从 v2 容器文件中直接扫描并提取 KVI 块的数据，不依赖清单。
-func ExtractKVI_v2(containerPath string) ([]byte, error) {
+// ExtractKVI 从容器文件中直接扫描并提取 KVI 块的数据，不依赖清单。
+func ExtractKVI(containerPath string) ([]byte, error) {
 	file, err := os.Open(containerPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file '%s': %w", containerPath, err)
@@ -74,7 +74,7 @@ func ExtractKVI_v2(containerPath string) ([]byte, error) {
 		}
 
 		// 读取块头
-		header, err := block.ReadBlockHeader_v2(file)
+		header, err := block.ReadBlockHeader(file)
 		if err != nil {
 			if err == io.EOF {
 				return nil, fmt.Errorf("reached end of file but KVI block was not found in '%s'", containerPath)
@@ -88,8 +88,8 @@ func ExtractKVI_v2(containerPath string) ([]byte, error) {
 				slog.Int64("offset", blockStartOffset),
 				slog.Uint64("length", header.Length),
 			)
-			// 使用 ReadBlockData_v2 来读取并验证 CRC
-			kviData, err := block.ReadBlockData_v2(file, header)
+			// 使用 ReadBlockData 来读取并验证 CRC
+			kviData, err := block.ReadBlockData(file, header)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read KVI block data: %w", err)
 			}
@@ -104,8 +104,8 @@ func ExtractKVI_v2(containerPath string) ([]byte, error) {
 	}
 }
 
-// ExtractManifest_v2 从 v2 容器文件中直接扫描并提取 Manifest 块的数据。
-func ExtractManifest_v2(containerPath string) ([]byte, error) {
+// ExtractManifest 从容器文件中直接扫描并提取 Manifest 块的数据。
+func ExtractManifest(containerPath string) ([]byte, error) {
 	file, err := os.Open(containerPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file '%s': %w", containerPath, err)
@@ -124,7 +124,7 @@ func ExtractManifest_v2(containerPath string) ([]byte, error) {
 	}
 
 	for {
-		header, err := block.ReadBlockHeader_v2(file)
+		header, err := block.ReadBlockHeader(file)
 		if err != nil {
 			if err == io.EOF {
 				return nil, fmt.Errorf("reached end of file but Manifest block was not found in '%s'", containerPath)
@@ -134,7 +134,7 @@ func ExtractManifest_v2(containerPath string) ([]byte, error) {
 
 		if header.Type == types.BlockTypeManifest_v2 {
 			// log.Printf("DEBUG: Found Manifest block.")
-			manifestData, err := block.ReadBlockData_v2(file, header)
+			manifestData, err := block.ReadBlockData(file, header)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read Manifest block data: %w", err)
 			}
@@ -168,18 +168,18 @@ func ReadManifestAt(filePath string, offset int64, length int64) ([]byte, error)
 	}
 
 	// 重新序列化为 JSON 字节返回（保持接口兼容）
-	return manifest.SerializeToJSON_v2()
+	return manifest.SerializeToJSON()
 }
 
 // ParseManifestFromBytes 从 JSON 字节切片中解析 Manifest
-func ParseManifestFromBytes(data []byte) (*types.Manifest_v2, error) {
-	return DeserializeFromJSON_v2(data)
+func ParseManifestFromBytes(data []byte) (*types.Manifest, error) {
+	return DeserializeFromJSON(data)
 }
 
 // ReadManifestFromFile 直接从文件路径读取并解析 Manifest
 // 这是一个低级函数，用于避免包之间的循环依赖
 // 返回：Manifest, Footer, HeaderVersion, HeaderSize, Error
-func ReadManifestFromFile(filePath string) (*types.Manifest_v2, *types.EnvelopeFooter_v2, int, int64, error) {
+func ReadManifestFromFile(filePath string) (*types.Manifest, *types.EnvelopeFooter_v2, int, int64, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, nil, 0, 0, fmt.Errorf("failed to open file: %w", err)
@@ -224,7 +224,7 @@ func ReadManifestFromFile(filePath string) (*types.Manifest_v2, *types.EnvelopeF
 
 
 // ScanManifestFromFile 从头扫描文件，寻找 Manifest 块
-func ScanManifestFromFile(filePath string) (*types.Manifest_v2, int, int64, error) {
+func ScanManifestFromFile(filePath string) (*types.Manifest, int, int64, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, 0, 0, err
@@ -241,7 +241,7 @@ func ScanManifestFromFile(filePath string) (*types.Manifest_v2, int, int64, erro
 	}
 
 	for {
-		header, err := block.ReadBlockHeader_v2(file)
+		header, err := block.ReadBlockHeader(file)
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -256,7 +256,7 @@ func ScanManifestFromFile(filePath string) (*types.Manifest_v2, int, int64, erro
 				return nil, 0, 0, err
 			}
 
-			var manifest types.Manifest_v2
+			var manifest types.Manifest
 			if err := json.Unmarshal(data, &manifest); err != nil {
 				return nil, 0, 0, err
 			}
@@ -273,9 +273,9 @@ func ScanManifestFromFile(filePath string) (*types.Manifest_v2, int, int64, erro
 
 // readAndDecryptManifest 从当前位置读取并解密 Manifest
 // 这是一个通用的内部函数，可以被 Scan 和 Footer 路径复用
-func readAndDecryptManifest(r io.Reader) (*types.Manifest_v2, error) {
+func readAndDecryptManifest(r io.Reader) (*types.Manifest, error) {
 	// 1. 读取 Block Header
-	header, err := block.ReadBlockHeader_v2(r)
+	header, err := block.ReadBlockHeader(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read block header: %w", err)
 	}
@@ -287,7 +287,7 @@ func readAndDecryptManifest(r io.Reader) (*types.Manifest_v2, error) {
 	}
 
 	// 3. 反序列化
-	var manifest types.Manifest_v2
+	var manifest types.Manifest
 	if err := json.Unmarshal(plainData, &manifest); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
 	}
@@ -315,7 +315,7 @@ func readBlockDataAndDecrypt(r io.Reader, header *block.BlockHeader_v2) ([]byte,
 	if err != nil {
 		// 如果解密失败，可能是旧版本未加密的 Manifest，或者是损坏数据
 		// 尝试直接解析 JSON
-		if err := json.Unmarshal(rawData, &types.Manifest_v2{}); err == nil {
+		if err := json.Unmarshal(rawData, &types.Manifest{}); err == nil {
 			out := append([]byte(nil), rawData...)
 			return out, nil // 是未加密的旧版本
 		}
@@ -329,11 +329,11 @@ func readBlockDataAndDecrypt(r io.Reader, header *block.BlockHeader_v2) ([]byte,
 // ReadEncryptedManifestBlock 直接从加密的字节数组（Header + Data）中读取并解密 Manifest
 // 这是一个辅助函数，用于 remote reader 或其他内存操作场景。
 // 它封装了读取 Header、读取/解密 Data 以及反序列化的完整流程。
-func ReadEncryptedManifestBlock(encryptedData []byte) (*types.Manifest_v2, error) {
+func ReadEncryptedManifestBlock(encryptedData []byte) (*types.Manifest, error) {
 	reader := bytes.NewReader(encryptedData)
 
 	// 1. 读取 Block Header
-	header, err := block.ReadBlockHeader_v2(reader)
+	header, err := block.ReadBlockHeader(reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read block header: %w", err)
 	}
@@ -345,7 +345,7 @@ func ReadEncryptedManifestBlock(encryptedData []byte) (*types.Manifest_v2, error
 	}
 
 	// 3. 反序列化 JSON
-	var manifest types.Manifest_v2
+	var manifest types.Manifest
 	if err := json.Unmarshal(plainData, &manifest); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
 	}

@@ -18,7 +18,7 @@ type ContainerHandle interface {
 	IsSeekable() bool
 	ContainerID() string
 	OriginalDuration() float64
-	Manifest() *types.Manifest_v2
+	Manifest() *types.Manifest
 	ManifestV4() *types.Manifest_v4
 	HeaderV2() *types.EnvelopeHeader_v2
 	HeaderV3() *types.EnvelopeHeaderV3
@@ -41,7 +41,7 @@ type containerHandle struct {
 	headerV4 *types.EnvelopeHeaderV4
 	footerV4 *types.EnvelopeFooterV4
 
-	manifestV2 *types.Manifest_v2
+	manifestV2 *types.Manifest
 	manifestV4 *types.Manifest_v4
 
 	containerType    uint16
@@ -184,8 +184,8 @@ func (h *containerHandle) openV23Common() error {
 	return nil
 }
 
-func readAndDecryptManifest(r io.Reader) (*types.Manifest_v2, error) {
-	blockHeader, err := block.ReadBlockHeader_v2(r)
+func readAndDecryptManifest(r io.Reader) (*types.Manifest, error) {
+	blockHeader, err := block.ReadBlockHeader(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read block header: %w", err)
 	}
@@ -198,7 +198,7 @@ func readAndDecryptManifest(r io.Reader) (*types.Manifest_v2, error) {
 	var plainData []byte
 	plainData, err = crypto.DecryptSystemPayload(rawData)
 	if err != nil {
-		var check types.Manifest_v2
+		var check types.Manifest
 		if json.Unmarshal(rawData, &check) == nil {
 			out := make([]byte, len(rawData))
 			copy(out, rawData)
@@ -208,7 +208,7 @@ func readAndDecryptManifest(r io.Reader) (*types.Manifest_v2, error) {
 		}
 	}
 
-	var manifest types.Manifest_v2
+	var manifest types.Manifest
 	if err := json.Unmarshal(plainData, &manifest); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
 	}
@@ -238,7 +238,7 @@ func (h *containerHandle) ContainerType() uint16         { return h.containerTyp
 func (h *containerHandle) IsSeekable() bool              { return h.isSeekable }
 func (h *containerHandle) ContainerID() string           { return h.containerID }
 func (h *containerHandle) OriginalDuration() float64     { return h.originalDuration }
-func (h *containerHandle) Manifest() *types.Manifest_v2  { return h.manifestV2 }
+func (h *containerHandle) Manifest() *types.Manifest  { return h.manifestV2 }
 func (h *containerHandle) ManifestV4() *types.Manifest_v4 { return h.manifestV4 }
 func (h *containerHandle) HeaderV2() *types.EnvelopeHeader_v2 { return h.headerV2 }
 func (h *containerHandle) HeaderV3() *types.EnvelopeHeaderV3  { return h.headerV3 }

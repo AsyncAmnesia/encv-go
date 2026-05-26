@@ -29,7 +29,7 @@ func NewChunkedContainerWriter(globalHasher hash.Hash32) *ChunkedContainerWriter
 // WriteDataChunk 将一个数据块写入指定的目标 writer，并返回其 CRC
 func (w *ChunkedContainerWriter) WriteDataChunk(targetWriter io.Writer, data []byte) (uint32, error) {
 	// 1. 写入文件并获取 CRC
-	crcVal, err := block.WriteBlock_v2(targetWriter, types.BlockTypeData_v2, data)
+	crcVal, err := block.WriteBlock(targetWriter, types.BlockTypeData_v2, data)
 	if err != nil {
 		return 0, err
 	}
@@ -88,8 +88,8 @@ func (w *ChunkedContainerWriter) WriteDataChunkFromReader(targetFile *os.File, r
 }
 
 // WriteManifestAndFooter 将 Manifest 和 Footer 写入主容器文件的末尾
-func (w *ChunkedContainerWriter) WriteManifestAndFooter(mainFile *os.File, manifestObj *types.Manifest_v2) error {
-	manifestBytes, err := manifestObj.SerializeToJSON_v2()
+func (w *ChunkedContainerWriter) WriteManifestAndFooter(mainFile *os.File, manifestObj *types.Manifest) error {
+	manifestBytes, err := manifestObj.SerializeToJSON()
 	if err != nil {
 		return err
 	}
@@ -102,8 +102,8 @@ func (w *ChunkedContainerWriter) WriteManifestAndFooter(mainFile *os.File, manif
 
 	// 写入 Manifest 块并获取 CRC
 	// 3. 写入加密块到文件 (计算并写入 Header + EncryptedData)
-	// WriteBlock_v2 会计算 EncryptedData 的 CRC
-	crcVal, err := block.WriteBlock_v2(mainFile, types.BlockTypeManifest_v2, encryptedManifestBytes)
+	// WriteBlock 会计算 EncryptedData 的 CRC
+	crcVal, err := block.WriteBlock(mainFile, types.BlockTypeManifest_v2, encryptedManifestBytes)
 	if err != nil {
 		return fmt.Errorf("failed to write manifest block: %w", err)
 	}
@@ -138,8 +138,8 @@ func (w *ChunkedContainerWriter) WriteManifestAndFooter(mainFile *os.File, manif
 	return binary.Write(mainFile, types.ByteOrder_v2, footer)
 }
 
-func (w *ChunkedContainerWriter) WriteManifestOnly(mainFile *os.File, manifestObj *types.Manifest_v2) error {
-	manifestBytes, err := manifestObj.SerializeToJSON_v2()
+func (w *ChunkedContainerWriter) WriteManifestOnly(mainFile *os.File, manifestObj *types.Manifest) error {
+	manifestBytes, err := manifestObj.SerializeToJSON()
 	if err != nil {
 		return err
 	}
@@ -149,7 +149,7 @@ func (w *ChunkedContainerWriter) WriteManifestOnly(mainFile *os.File, manifestOb
 		return fmt.Errorf("failed to encrypt manifest: %w", err)
 	}
 
-	crcVal, err := block.WriteBlock_v2(mainFile, types.BlockTypeManifest_v2, encryptedManifestBytes)
+	crcVal, err := block.WriteBlock(mainFile, types.BlockTypeManifest_v2, encryptedManifestBytes)
 	if err != nil {
 		return fmt.Errorf("failed to write manifest block: %w", err)
 	}

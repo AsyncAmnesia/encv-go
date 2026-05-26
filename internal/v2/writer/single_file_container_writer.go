@@ -17,7 +17,7 @@ import (
 // SingleFileContainerWriter 是 ContainerWriter_v2 的一个具体实现，专用于单文件容器
 type SingleFileContainerWriter struct {
 	file                    *os.File
-	fragments               []types.Fragment_v2
+	fragments               []types.Fragment
 	manifestOffset          uint64
 	manifestLength          uint64
 	currentDataStreamOffset uint64      // 用于追踪连续数据流的偏移量
@@ -87,7 +87,7 @@ func NewSingleFileContainerWriterV4(outputPath string, header *types.EnvelopeHea
 
 func (w *SingleFileContainerWriter) WriteKVI(kviData []byte) error {
 	// 1. 写入文件 (并获得 CRC)
-	crcVal, err := block.WriteBlock_v2(w.file, types.BlockTypeKVI_v2, kviData)
+	crcVal, err := block.WriteBlock(w.file, types.BlockTypeKVI_v2, kviData)
 	if err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ func (w *SingleFileContainerWriter) WriteKVI(kviData []byte) error {
 	return block.WriteBlockToHasherFromHeader(w.globalHasher, header, kviData)
 }
 
-func (w *SingleFileContainerWriter) WriteFragment(frag *types.Fragment_v2, data []byte) error {
+func (w *SingleFileContainerWriter) WriteFragment(frag *types.Fragment, data []byte) error {
 	// 1. 记录 PhysicalOffset
 	if w.file != nil {
 		if pos, err := w.file.Seek(0, io.SeekCurrent); err == nil {
@@ -111,7 +111,7 @@ func (w *SingleFileContainerWriter) WriteFragment(frag *types.Fragment_v2, data 
 	}
 
 	// 2. 写入文件 (获得 CRC)
-	crc, err := block.WriteBlock_v2(w.file, types.BlockTypeData_v2, data)
+	crc, err := block.WriteBlock(w.file, types.BlockTypeData_v2, data)
 	if err != nil {
 		return fmt.Errorf("failed to write data block: %w", err)
 	}
@@ -121,7 +121,7 @@ func (w *SingleFileContainerWriter) WriteFragment(frag *types.Fragment_v2, data 
 	block.WriteBlockToHasherFromHeader(w.globalHasher, header, data)
 
 	// 4. 更新状态
-	w.fragments = append(w.fragments, types.Fragment_v2{
+	w.fragments = append(w.fragments, types.Fragment{
 		ID:                frag.ID,
 		Type:              frag.Type,
 		Length:            uint64(len(data)),
@@ -134,9 +134,9 @@ func (w *SingleFileContainerWriter) WriteFragment(frag *types.Fragment_v2, data 
 	return nil
 }
 
-func (w *SingleFileContainerWriter) WriteManifest(manifestObj *types.Manifest_v2) error {
+func (w *SingleFileContainerWriter) WriteManifest(manifestObj *types.Manifest) error {
 	manifestObj.Fragments = w.fragments
-	manifestBytes, err := manifestObj.SerializeToJSON_v2()
+	manifestBytes, err := manifestObj.SerializeToJSON()
 	if err != nil {
 		return err
 	}
@@ -153,7 +153,7 @@ func (w *SingleFileContainerWriter) WriteManifest(manifestObj *types.Manifest_v2
 	w.manifestLength = uint64(len(encryptedManifestBytes))
 
 	// 3. 写入加密块到文件
-	crcVal, err := block.WriteBlock_v2(w.file, types.BlockTypeManifest_v2, encryptedManifestBytes)
+	crcVal, err := block.WriteBlock(w.file, types.BlockTypeManifest_v2, encryptedManifestBytes)
 	if err != nil {
 		return err
 	}

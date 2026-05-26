@@ -21,7 +21,7 @@ func NewSinglePhysicalPacker() *SinglePhysicalPacker {
 
 // Pack 实现 PhysicalPacker 接口
 // SinglePhysicalPacker namer 和 startIdx 参数暂时无用，保留接口兼容性
-func (p *SinglePhysicalPacker) Pack(manifest *types.Manifest_v2, req *PackRequest) (string, error) {
+func (p *SinglePhysicalPacker) Pack(manifest *types.Manifest, req *PackRequest) (string, error) {
 	outputPath := filepath.Join(req.OutputDir, req.FinalFileName)
 	tempPath := outputPath + ".tmp"
 
@@ -81,7 +81,7 @@ func (p *SinglePhysicalPacker) Pack(manifest *types.Manifest_v2, req *PackReques
 	return finalPath, nil
 }
 
-func (p *SinglePhysicalPacker) writeAndClose(data io.Reader, manifest *types.Manifest_v2, tempWriter writer.SingleFileContainerWriter, tempPath, outputPath string) (string, error) {
+func (p *SinglePhysicalPacker) writeAndClose(data io.Reader, manifest *types.Manifest, tempWriter writer.SingleFileContainerWriter, tempPath, outputPath string) (string, error) {
 	// 确保临时文件在函数退出时被清理，除非操作成功
 	var success bool
 	defer func() {

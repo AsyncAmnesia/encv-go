@@ -231,13 +231,13 @@ func (p *PDFPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) error 
 
 	// 3. 构造 Manifest
 	kvi := PDFKVI_v2{
-		KVI_v2: types.KVI_v2{
+		KVI: types.KVI{
 			SaltBase64: crypto.Base64Encode_v2(result.Salt),
 			IVBase64:   crypto.Base64Encode_v2(result.IV),
 		},
 		PDFIndex: &p.index,
 	}
-	manifest, err := types.NewManifest_v2(kvi, logicalFragments)
+	manifest, err := types.NewManifest(kvi, logicalFragments)
 	if err != nil {
 		return fmt.Errorf("failed to create manifest: %w", err)
 	}

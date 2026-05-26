@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/Soltus/encv-go/internal/utils"
+	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
-	"github.com/Soltus/encv-go/internal/v2/container/manifest"
 	"github.com/Soltus/encv-go/internal/v2/types"
 	mp4 "github.com/abema/go-mp4"
 )
@@ -485,15 +485,27 @@ func (p *VideoContentVerifier) findFirstDifference(f1, f2 *os.File, start, lengt
 
 // DiagnoseHeaders ... (保留)
 func (p *VideoContentVerifier) DiagnoseHeaders(containerPath string) error {
-	mf, _, _, _, err := manifest.ReadManifestFromFile(containerPath)
+	src, err := containerhandle.NewFileSource(containerPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open container: %w", err)
+	}
+	defer src.Close()
+
+	h, err := containerhandle.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open container handle: %w", err)
+	}
+	defer h.Close()
+
+	mf := h.Manifest()
+	if mf == nil {
+		return fmt.Errorf("no manifest available")
 	}
 	containerDir := filepath.Dir(containerPath)
 
 	type ChunkInfo struct {
 		Filename     string
-		Frags        []types.Fragment_v2
+		Frags        []types.Fragment
 		PhysicalPath string
 	}
 	chunksMap := make(map[string]*ChunkInfo)

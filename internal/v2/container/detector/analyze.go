@@ -214,7 +214,7 @@ type scannedBlock struct {
 	crc    uint32
 }
 
-func performPhysicalLayoutScan(source io.ReaderAt, manifestObj types.Manifest_v2, fileSize int64, headerSize int64) (string, []scannedBlock, error) {
+func performPhysicalLayoutScan(source io.ReaderAt, manifestObj types.Manifest, fileSize int64, headerSize int64) (string, []scannedBlock, error) {
 	var buf bytes.Buffer
 	w := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
 	defer w.Flush()
@@ -281,7 +281,7 @@ func performPhysicalLayoutScan(source io.ReaderAt, manifestObj types.Manifest_v2
 				break
 			}
 
-			header, err := block.ReadBlockHeader_v2(sectionReader)
+			header, err := block.ReadBlockHeader(sectionReader)
 			if err != nil {
 				if err == io.EOF {
 					break
@@ -320,7 +320,7 @@ func performPhysicalLayoutScan(source io.ReaderAt, manifestObj types.Manifest_v2
 	return buf.String(), scannedBlocks, nil
 }
 
-func performCrossValidation(footer *types.EnvelopeFooter_v2, scannedBlocks []scannedBlock, manifestObj types.Manifest_v2) (string, error) {
+func performCrossValidation(footer *types.EnvelopeFooter_v2, scannedBlocks []scannedBlock, manifestObj types.Manifest) (string, error) {
 	var buf bytes.Buffer
 	w := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
 	defer w.Flush()
@@ -432,12 +432,12 @@ func scanForManifestWithOffset(source io.ReaderAt, headerSize int64, fileSize in
 			break
 		}
 
-		header, err := block.ReadBlockHeader_v2(sectionReader)
+		header, err := block.ReadBlockHeader(sectionReader)
 		if err != nil {
 			return 0, nil, fmt.Errorf("failed to read block header: %w", err)
 		}
 		if header.Type == types.BlockTypeManifest_v2 {
-			data, err := block.ReadBlockData_v2(sectionReader, header)
+			data, err := block.ReadBlockData(sectionReader, header)
 			if err != nil {
 				return 0, nil, fmt.Errorf("failed to read manifest data: %w", err)
 			}

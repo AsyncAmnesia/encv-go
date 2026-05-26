@@ -13,7 +13,7 @@ import (
 type PhysicalPacker interface {
 	// Pack 执行完整的物理打包，包括数据分片和 Manifest 写入
 	// 【关键修改】接收 manifest 作为参数，并负责完成所有写入
-	Pack(manifest *types.Manifest_v2, req *PackRequest) (mainChunkPath string, err error)
+	Pack(manifest *types.Manifest, req *PackRequest) (mainChunkPath string, err error)
 }
 
 // PhysicalUnpacker 定义了物理分片的解包接口

@@ -13,7 +13,7 @@ import (
 type SequentialDecryptReader struct {
 	containerReader   EncryptedContainerReader
 	key, iv           []byte
-	atomicFragments   []types.Fragment_v2
+	atomicFragments   []types.Fragment
 	currentFragIndex  int
 	currentFragReader io.ReadCloser
 	currentDecryptor  io.Reader

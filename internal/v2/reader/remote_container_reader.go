@@ -37,7 +37,7 @@ type remoteEncryptedContainerReader struct {
 	headerSize int64
 	version     int
 	// 缓存，避免重复请求
-	manifest *types.Manifest_v2
+	manifest *types.Manifest
 }
 
 // NewRemoteEncryptedContainerReader 创建一个新的远程容器读取器
@@ -90,7 +90,7 @@ func (r *remoteEncryptedContainerReader) initHeaderSize() error {
 // 公式：HeaderSize + (FragIndex * BlockHeaderSize) + GlobalStartOffset
 // 因为 GlobalStartOffset 是数据流的偏移量，但每个数据块前都有一个 BlockHeader
 // 注意：此函数仅用于主文件中的逻辑分片
-func (r *remoteEncryptedContainerReader) calculateDiskOffset(frag *types.Fragment_v2) (int64, error) {
+func (r *remoteEncryptedContainerReader) calculateDiskOffset(frag *types.Fragment) (int64, error) {
 	if r.manifest == nil {
 		return 0, fmt.Errorf("manifest not loaded, cannot calculate offset")
 	}
@@ -301,7 +301,7 @@ func (w *responseBodyWrapper) Close() error {
 }
 
 // GetManifest 按需获取并缓存 Manifest
-func (r *remoteEncryptedContainerReader) GetManifest() *types.Manifest_v2 {
+func (r *remoteEncryptedContainerReader) GetManifest() *types.Manifest {
 	if r.manifest != nil {
 		return r.manifest
 	}
@@ -313,7 +313,7 @@ func (r *remoteEncryptedContainerReader) GetManifest() *types.Manifest_v2 {
 	return r.getManifestV23()
 }
 
-func (r *remoteEncryptedContainerReader) getManifestV23() *types.Manifest_v2 {
+func (r *remoteEncryptedContainerReader) getManifestV23() *types.Manifest {
 	// 1. 【V2/V3】下载 Footer (最后 32 字节)
 	footerResp, err := utils.GetRemoteStreamWithRange(r.containerURL, r.headers, -32, -1)
 	if err != nil {
@@ -372,7 +372,7 @@ func (r *remoteEncryptedContainerReader) getManifestV23() *types.Manifest_v2 {
 	return r.manifest
 }
 
-func (r *remoteEncryptedContainerReader) getManifestV4() *types.Manifest_v2 {
+func (r *remoteEncryptedContainerReader) getManifestV4() *types.Manifest {
 	// 1. 读取 V4 Footer（最后 12 字节）
 	footerResp, err := utils.GetRemoteStreamWithRange(r.containerURL, r.headers, -int64(types.EnvelopeFooterSize_v4), -1)
 	if err != nil {
@@ -448,7 +448,7 @@ func (r *remoteEncryptedContainerReader) getManifestV4() *types.Manifest_v2 {
 		return nil
 	}
 
-	// 5. 适配为 Manifest_v2
+	// 5. 适配为 Manifest
 	r.manifest = containerhandle.AdaptV4ToV2(v4Manifest, v4Header)
 
 	readerLogger.Info("v4 manifest loaded successfully",
@@ -469,7 +469,7 @@ func (r *remoteEncryptedContainerReader) GetKVIProvider() (types.KVIProvider, er
 }
 
 // GetFragments 返回 Manifest 中的所有片段定义
-func (r *remoteEncryptedContainerReader) GetFragments() []types.Fragment_v2 {
+func (r *remoteEncryptedContainerReader) GetFragments() []types.Fragment {
 	manifest := r.GetManifest()
 	if manifest == nil {
 		return nil

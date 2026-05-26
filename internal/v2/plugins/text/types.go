@@ -27,7 +27,7 @@ func (t *TextIndex) GetMimeType() string         { return t.MimeType }
 
 // 视频容器专用的 KVI
 type TextKVI_v2 struct {
-	types.KVI_v2
+	types.KVI
 	TextIndex *TextIndex `json:"text_index"`
 }
 
@@ -36,8 +36,8 @@ func (v TextKVI_v2) GetKind() types.IndexKind {
 }
 
 // 【关键新增】实现 KVIProvider 接口
-func (v TextKVI_v2) GetEncryptionInfo() types.KVI_v2 {
-	return v.KVI_v2
+func (v TextKVI_v2) GetEncryptionInfo() types.KVI {
+	return v.KVI
 }
 
 func (v TextKVI_v2) GetIndex() types.Index {

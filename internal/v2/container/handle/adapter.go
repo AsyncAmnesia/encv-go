@@ -6,12 +6,12 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
-func AdaptV4ToV2(v4 *types.Manifest_v4, header *types.EnvelopeHeaderV4) *types.Manifest_v2 {
-	fragments := make([]types.Fragment_v2, len(v4.Segments))
+func AdaptV4ToV2(v4 *types.Manifest_v4, header *types.EnvelopeHeaderV4) *types.Manifest {
+	fragments := make([]types.Fragment, len(v4.Segments))
 	for i, seg := range v4.Segments {
 		nonce, _ := base64.StdEncoding.DecodeString(seg.Nonce)
 		encDataSize := seg.Size - uint64(types.SegmentHeaderSize) - uint64(len(nonce))
-		fragments[i] = types.Fragment_v2{
+		fragments[i] = types.Fragment{
 			ID:             seg.ID,
 			Type:           types.FragmentType_SeekableStream,
 			Length:         encDataSize,
@@ -36,7 +36,7 @@ func AdaptV4ToV2(v4 *types.Manifest_v4, header *types.EnvelopeHeaderV4) *types.M
 		kind = types.IndexKind(v4.ContainerType)
 	}
 
-	return &types.Manifest_v2{
+	return &types.Manifest{
 		Version:   int64(header.Version),
 		Kind:      kind,
 		KVI:       v4.KVI,
@@ -61,7 +61,7 @@ func indexKindToContainerType(kind types.IndexKind) uint16 {
 	}
 }
 
-func hasSeekableFragment(mf *types.Manifest_v2) bool {
+func hasSeekableFragment(mf *types.Manifest) bool {
 	for _, frag := range mf.Fragments {
 		if frag.Type == types.FragmentType_SeekableStream {
 			return true

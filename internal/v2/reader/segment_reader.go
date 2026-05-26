@@ -50,7 +50,7 @@ func OpenV4Container(filePath string, password string) (*V4ContainerInfo, error)
 		return nil, fmt.Errorf("failed to decode salt from KVI: %w", err)
 	}
 
-	key := crypto.GenerateKey_v2(password, salt, types.KeySize_v2)
+	key := crypto.GenerateKey(password, salt, types.KeySize_v2)
 
 	return &V4ContainerInfo{
 		Header:   h.HeaderV4(),

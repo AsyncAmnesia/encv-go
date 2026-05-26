@@ -19,7 +19,7 @@ import (
 // 它负责从单个或多个文件中读取原始的、加密的数据块，并具备强大的错误恢复能力。
 type fileContainerReader struct {
 	// 核心元数据，在构造时解析并缓存
-	manifest     *types.Manifest_v2
+	manifest     *types.Manifest
 	footer       *types.EnvelopeFooter_v2 // 可能为 nil
 	kviProvider  types.KVIProvider
 	containerDir string
@@ -131,7 +131,7 @@ func NewEncryptedContainerReaderFromFile(mainFilePath string) (EncryptedContaine
 
 // NewFileContainerReaderFromMetadata 是一个新的、轻量级的构造函数。
 // 它使用预先解析好的 manifest、headerVersion 和 physicalOffsets 来创建 reader，避免了重复的文件扫描。
-func NewFileContainerReaderFromMetadata(mainFilePath string, manifest *types.Manifest_v2, headerVersion int, physicalOffsets map[string]uint64) (*fileContainerReader, error) {
+func NewFileContainerReaderFromMetadata(mainFilePath string, manifest *types.Manifest, headerVersion int, physicalOffsets map[string]uint64) (*fileContainerReader, error) {
 	kviProvider, err := types.NewKVIProviderFromManifest(manifest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal KVI from manifest: %w", err)
@@ -152,7 +152,7 @@ func NewFileContainerReaderFromMetadata(mainFilePath string, manifest *types.Man
 }
 
 // GetManifest 返回已解析的容器清单。
-func (r *fileContainerReader) GetManifest() *types.Manifest_v2 {
+func (r *fileContainerReader) GetManifest() *types.Manifest {
 	return r.manifest
 }
 
@@ -161,7 +161,7 @@ func (r *fileContainerReader) GetKVIProvider() (types.KVIProvider, error) {
 	return types.NewKVIProviderFromManifest(r.manifest)
 }
 
-func (r *fileContainerReader) GetFragments() []types.Fragment_v2 {
+func (r *fileContainerReader) GetFragments() []types.Fragment {
 	return r.manifest.Fragments
 }
 
@@ -279,7 +279,7 @@ func (r *fileContainerReader) Close() error {
 	return combinedErr
 }
 
-func (r *fileContainerReader) findFragmentByID(fragID string) (*types.Fragment_v2, error) {
+func (r *fileContainerReader) findFragmentByID(fragID string) (*types.Fragment, error) {
 	for _, frag := range r.manifest.Fragments {
 		if frag.ID == fragID {
 			return &frag, nil
@@ -338,7 +338,7 @@ func (r *fileContainerReader) findManifestBlockOffset() (int64, error) {
 		}
 
 		// 读取块头
-		header, err := block.ReadBlockHeader_v2(fileHandle)
+		header, err := block.ReadBlockHeader(fileHandle)
 		if err != nil {
 			// 如果读到文件末尾还没找到，也是一种明确的错误
 			if err == io.EOF {
@@ -371,7 +371,7 @@ func (r *fileContainerReader) ensureChunkScanned(chunkFilename string) error {
 
 	log.Printf("INFO: Scanning chunk layout '%s'...", chunkFilename)
 
-	var fragsInChunk []types.Fragment_v2
+	var fragsInChunk []types.Fragment
 	for _, frag := range r.manifest.Fragments {
 		if frag.PhysicalPath == chunkFilename {
 			fragsInChunk = append(fragsInChunk, frag)
@@ -405,7 +405,7 @@ func (r *fileContainerReader) ensureChunkScanned(chunkFilename string) error {
 	for i := 0; i < len(fragsInChunk); i++ {
 		frag := fragsInChunk[i]
 
-		header, err := block.ReadBlockHeader_v2(file)
+		header, err := block.ReadBlockHeader(file)
 		if err != nil {
 			return fmt.Errorf("failed to read block header in chunk %s at offset %d: %w", chunkFilename, currentOffset, err)
 		}
@@ -451,10 +451,10 @@ func (r *fileContainerReader) ensureChunkScanned(chunkFilename string) error {
 
 // verifyFragmentAt 从给定的 ReaderAt 的特定偏移量处验证一个片段。
 // 线程安全（不修改接收者状态）。
-func (r *fileContainerReader) verifyFragmentAt(readerAt io.ReaderAt, blockStartOffset int64, frag *types.Fragment_v2) error {
+func (r *fileContainerReader) verifyFragmentAt(readerAt io.ReaderAt, blockStartOffset int64, frag *types.Fragment) error {
 	headerSize := block.GetBlockHeader_v2_Size()
 	headerReader := io.NewSectionReader(readerAt, blockStartOffset, headerSize)
-	header, err := block.ReadBlockHeader_v2(headerReader)
+	header, err := block.ReadBlockHeader(headerReader)
 	if err != nil {
 		return fmt.Errorf("failed to read block header at offset %d: %w", blockStartOffset, err)
 	}
@@ -470,7 +470,7 @@ func (r *fileContainerReader) verifyFragmentAt(readerAt io.ReaderAt, blockStartO
 }
 
 // findAndOpenFragmentRecovery 扫描目录以查找匹配的文件
-func (r *fileContainerReader) findAndOpenFragmentRecovery(frag *types.Fragment_v2) (*os.File, error) {
+func (r *fileContainerReader) findAndOpenFragmentRecovery(frag *types.Fragment) (*os.File, error) {
 	log.Printf("INFO: Entering recovery mode for fragment '%s' (CRC: %08x)", frag.ID, frag.DataCRC32)
 
 	entries, err := os.ReadDir(r.containerDir)
@@ -572,7 +572,7 @@ func (r *fileContainerReader) findAndOpenFragmentRecovery(frag *types.Fragment_v
 // 			break
 // 		}
 
-// 		header, err := block.ReadBlockHeader_v2(mainFile)
+// 		header, err := block.ReadBlockHeader(mainFile)
 // 		if err != nil {
 // 			if err == io.EOF {
 // 				break

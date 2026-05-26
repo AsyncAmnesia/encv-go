@@ -32,7 +32,7 @@ func NewFileChunkerPhysicalPacker(chunkSize int64, namer namer.ChunkNamer) *File
 }
 
 // Pack 实现 PhysicalPacker 接口
-func (p *FileChunkerPhysicalPacker) Pack(manifest *types.Manifest_v2, req *PackRequest) (string, error) {
+func (p *FileChunkerPhysicalPacker) Pack(manifest *types.Manifest, req *PackRequest) (string, error) {
 	mainHeader, chunkHeader, mainHeaderV4, chunkHeaderV4, err := p.prepareHeaders(req.HeaderVersion, req.ContainerType, req.IsSeekable, req.SpecialIDType, req.SpecialID)
 	if err != nil {
 		return "", fmt.Errorf("failed to prepare headers: %w", err)
@@ -150,7 +150,7 @@ func (p *FileChunkerPhysicalPacker) cleanup(f *os.File, err error) {
 }
 
 // processFragment 处理单个分片
-func (p *FileChunkerPhysicalPacker) processFragment(mainFile *os.File, req *PackRequest, frag *types.Fragment_v2, ctx *chunkContext) error {
+func (p *FileChunkerPhysicalPacker) processFragment(mainFile *os.File, req *PackRequest, frag *types.Fragment, ctx *chunkContext) error {
 	// 【关键修复】跳过 Metadata Fragments (如 KVI)
 	// Unpacker 在重建时也会跳过这些 Fragments，为了保持哈希一致性，Packer 也不应写入数据流
 	if frag.Type == types.FragmentType_Metadata {
@@ -177,7 +177,7 @@ func (p *FileChunkerPhysicalPacker) processFragment(mainFile *os.File, req *Pack
 }
 
 // getActiveWriter 获取目标 Writer 并更新元数据
-func (p *FileChunkerPhysicalPacker) getActiveWriter(mainFile *os.File, req *PackRequest, frag *types.Fragment_v2, ctx *chunkContext) (*os.File, error) {
+func (p *FileChunkerPhysicalPacker) getActiveWriter(mainFile *os.File, req *PackRequest, frag *types.Fragment, ctx *chunkContext) (*os.File, error) {
 	// 【修正】将 activeFile 重命名为 activeWriter，避免与 return 语句不匹配
 	activeWriter := mainFile
 	needsSwitch := false
@@ -249,7 +249,7 @@ func (p *FileChunkerPhysicalPacker) getActiveWriter(mainFile *os.File, req *Pack
 	return activeWriter, nil
 }
 
-func (p *FileChunkerPhysicalPacker) finalize(mainFile *os.File, manifest *types.Manifest_v2, ctx *chunkContext, req *PackRequest) (string, error) {
+func (p *FileChunkerPhysicalPacker) finalize(mainFile *os.File, manifest *types.Manifest, ctx *chunkContext, req *PackRequest) (string, error) {
 	if ctx.currentPartFile != nil {
 		ctx.currentPartFile.Close()
 	}
@@ -369,12 +369,12 @@ func (u *FileChunkerPhysicalUnpacker) Unpack(mainContainerPath string) (string, 
 }
 
 // findAndParseManifest 封装了查找和解析 Manifest 的逻辑
-func (u *FileChunkerPhysicalUnpacker) findAndParseManifest(mainContainerPath string) (*types.Manifest_v2, error) {
+func (u *FileChunkerPhysicalUnpacker) findAndParseManifest(mainContainerPath string) (*types.Manifest, error) {
 	// 尝试从 Footer 读取
 	if footer, err := readFooter(mainContainerPath); err == nil {
 		manifestBytes, err := manifest.ReadManifestAt(mainContainerPath, int64(footer.ManifestOffset), int64(footer.ManifestLength))
 		if err == nil {
-			var manifest types.Manifest_v2
+			var manifest types.Manifest
 			if err := json.Unmarshal(manifestBytes, &manifest); err == nil {
 				return &manifest, nil
 			}
@@ -385,7 +385,7 @@ func (u *FileChunkerPhysicalUnpacker) findAndParseManifest(mainContainerPath str
 	if err != nil {
 		return nil, err
 	}
-	var manifest types.Manifest_v2
+	var manifest types.Manifest
 	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
 		return nil, err
 	}
@@ -395,7 +395,7 @@ func (u *FileChunkerPhysicalUnpacker) findAndParseManifest(mainContainerPath str
 // rebuildToSingleFile 【核心修复】统一的重建函数
 // 它遍历原始 Manifest 的所有 fragments，将它们的数据从各自的物理位置读取出来，
 // 连续地写入到目标文件，并生成一个描述新布局的、正确的 Manifest。
-func (u *FileChunkerPhysicalUnpacker) rebuildToSingleFile(sourcePath string, originalManifest *types.Manifest_v2, destFile *os.File) ([]byte, error) {
+func (u *FileChunkerPhysicalUnpacker) rebuildToSingleFile(sourcePath string, originalManifest *types.Manifest, destFile *os.File) ([]byte, error) {
 	containerDir := filepath.Dir(sourcePath)
 
 	// --- 1. 将源文件的 Header 复制到重建文件中 ---
@@ -425,7 +425,7 @@ func (u *FileChunkerPhysicalUnpacker) rebuildToSingleFile(sourcePath string, ori
 	// -------------------------------------------------------
 
 	// 1. 创建一个新的 Manifest，复制 KVI 等元数据
-	newManifest := &types.Manifest_v2{
+	newManifest := &types.Manifest{
 		Version:    originalManifest.Version,
 		KVI:        originalManifest.KVI,
 		Redundancy: originalManifest.Redundancy,
@@ -472,12 +472,12 @@ func (u *FileChunkerPhysicalUnpacker) rebuildToSingleFile(sourcePath string, ori
 			}
 
 			// 获取写入时计算的 CRC，确保 Manifest CRC 与磁盘 Header 一致
-			crcVal, err := block.WriteBlock_v2(destFile, types.BlockTypeData_v2, chunkData)
+			crcVal, err := block.WriteBlock(destFile, types.BlockTypeData_v2, chunkData)
 			if err != nil {
 				return nil, fmt.Errorf("failed to write data block for fragment '%s': %w", frag.ID, err)
 			}
 
-			newFrag := types.Fragment_v2{
+			newFrag := types.Fragment{
 				ID:                frag.ID,
 				Type:              frag.Type,
 				Length:            header.Length,
@@ -505,12 +505,12 @@ func (u *FileChunkerPhysicalUnpacker) rebuildToSingleFile(sourcePath string, ori
 			}
 
 			// 将数据写入目标文件
-			crcVal, err := block.WriteBlock_v2(destFile, types.BlockTypeData_v2, chunkData)
+			crcVal, err := block.WriteBlock(destFile, types.BlockTypeData_v2, chunkData)
 			if err != nil {
 				return nil, fmt.Errorf("failed to write data block for fragment '%s': %w", frag.ID, err)
 			}
 
-			newFrag := types.Fragment_v2{
+			newFrag := types.Fragment{
 				ID:                frag.ID,
 				Type:              frag.Type,
 				Length:            frag.Length,
@@ -543,7 +543,7 @@ func (u *FileChunkerPhysicalUnpacker) rebuildToSingleFile(sourcePath string, ori
 	}
 
 	// 5. 将新的 Manifest 块写入到临时文件末尾
-	if _, err := block.WriteBlock_v2(destFile, types.BlockTypeManifest_v2, encryptedManifestBytes); err != nil {
+	if _, err := block.WriteBlock(destFile, types.BlockTypeManifest_v2, encryptedManifestBytes); err != nil {
 		return nil, fmt.Errorf("failed to write new manifest block to unified file: %w", err)
 	}
 
@@ -629,7 +629,7 @@ func extractManifestWithScan(filePath string) ([]byte, int64, error) {
 
 	currentOffset := startOffset
 	for {
-		header, err := block.ReadBlockHeader_v2(file)
+		header, err := block.ReadBlockHeader(file)
 		if err != nil {
 			if err == io.EOF {
 				return nil, 0, fmt.Errorf("reached end of file but Manifest block was not found in '%s'", filePath)
@@ -638,7 +638,7 @@ func extractManifestWithScan(filePath string) ([]byte, int64, error) {
 		}
 
 		if header.Type == types.BlockTypeManifest_v2 {
-			manifestData, err := block.ReadBlockData_v2(file, header)
+			manifestData, err := block.ReadBlockData(file, header)
 			if err != nil {
 				return nil, 0, fmt.Errorf("failed to read Manifest block data: %w", err)
 			}

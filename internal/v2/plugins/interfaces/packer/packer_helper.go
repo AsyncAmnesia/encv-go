@@ -13,7 +13,7 @@ import (
 // PackParams 通用打包所需的所有参数
 type PackParams struct {
 	// --- 核心数据 ---
-	Manifest       *types.Manifest_v2
+	Manifest       *types.Manifest
 	PhysicalPacker physical.PhysicalPacker
 	TempEncPath    string
 
