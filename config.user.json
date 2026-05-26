@@ -1,19 +1,19 @@
 {
-  "password": "test123",
-  "server": {
-    "port": 2025,
-    "dir": "/tmp/encv-test"
-  },
-  "proxy": {
-    "sites": {
-      "mysite": {
-        "host": "http://127.0.0.1:5244",
-        "description": "test site"
-      }
-    },
-    "disable_signature_verification": true
-  },
   "log": {
     "level": "debug"
+  },
+  "password": "test123",
+  "proxy": {
+    "disable_signature_verification": true,
+    "sites": {
+      "mysite": {
+        "description": "test site",
+        "host": "http://127.0.0.1:5244"
+      }
+    }
+  },
+  "server": {
+    "dir": "/",
+    "port": 2025
   }
 }
