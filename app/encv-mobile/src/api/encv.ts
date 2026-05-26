@@ -352,15 +352,28 @@ let cachedTextExts: Set<string> | null = null
 export async function fetchTextPreviewExts(): Promise<Set<string>> {
   if (cachedTextExts) return cachedTextExts
   const baseUrl = getApiBaseUrl()
-  const response = await fetch(`${baseUrl}/api/file/text-preview-exts`)
-  if (!response.ok) {
-    console.error('[API] fetchTextPreviewExts failed:', response.status)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 5000)
+  try {
+    const response = await fetch(`${baseUrl}/api/file/text-preview-exts`, { signal: controller.signal })
+    if (!response.ok) {
+      console.error('[API] fetchTextPreviewExts failed:', response.status)
+      return new Set()
+    }
+    const data = await response.json() as TextPreviewExts
+    const all = new Set([...data.extensions, ...data.custom_extensions])
+    cachedTextExts = all
+    return all
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      console.warn('[API] fetchTextPreviewExts timed out after 5s')
+    } else {
+      console.error('[API] fetchTextPreviewExts error:', err)
+    }
     return new Set()
+  } finally {
+    clearTimeout(timer)
   }
-  const data = await response.json() as TextPreviewExts
-  const all = new Set([...data.extensions, ...data.custom_extensions])
-  cachedTextExts = all
-  return all
 }
 
 export function isTextPreviewable(name: string): boolean {

@@ -411,11 +411,6 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 		return
 	}
 
-	if err := plugin.Initialize(cfgCtx); err != nil {
-		tm.failTask(taskID, fmt.Sprintf("plugin initialization failed: %v", err))
-		return
-	}
-
 	tm.updateProgress(taskID, 15, "preprocessing", "", "")
 
 	fileSize := info.Size()
@@ -600,11 +595,6 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 		return
 	}
 
-	if err := plugin.Initialize(cfgCtx); err != nil {
-		tm.failTask(taskID, fmt.Sprintf("plugin initialization failed: %v", err))
-		return
-	}
-
 	tm.updateProgress(taskID, 15, "preprocessing", "", "")
 
 	fileSize := info.Size()
@@ -670,6 +660,10 @@ func (tm *TaskManager) failTask(id, errMsg string) {
 			"error":       friendlyMsg,
 			"errorDetail": errMsg,
 		})
+			tm.broadcaster.Broadcast("log", map[string]interface{}{
+				"level":   "error",
+				"message": fmt.Sprintf("[Task %s] %s", id, errMsg),
+			})
 		}
 	}
 }

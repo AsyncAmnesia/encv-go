@@ -1,174 +1,145 @@
 # 移动端三问题修复计划
 
-## 问题概览
+## 架构背景：双端插件初始化不一致
 
-| # | 问题 | 现象 | 根因 |
-|---|------|------|------|
-| 1 | 插件初始化错误未广播到 devlogs | 加密报错 "could not get settings for plugin text" 但 DevLogs 后端 tab 看不到 | `slog.Error` 虽然走了 `WSLogHandler`，但可能被级别过滤或广播时机问题 |
-| 2 | 预览正常但加密报错 | 预览 ENCV 容器文件正常显示，但加密时报插件初始化失败 | `processEncrypt` 中 `plugin.Initialize(cfgCtx)` 重新初始化时找不到 plugin settings |
-| 3 | 未知类型卡加载中 | 非 ENCV 容器、非文本文件（如图片）打开预览时一直转圈 | `FilePreview.vue` 的 loading 状态在某些分支未被正确关闭 |
+### 桌面端 CLI 流程（正确）
+```
+encrypt-v2 /path/to/file
+  → encv.Init(rootCtx)           // 1次初始化：BuildFullPluginSettings + InitializePlugins
+  → encv.EncryptPathV2(rootCtx)  // 直接用已初始化的 plugin，不再 Init
+```
+
+### 移动端 Server 流程（有 bug）
+```
+start
+  → encv.Init(rootCtx)                    // 启动时初始化所有插件 ✅
+  → NewServer(rootCtx) → NewTaskManager(cfg)
+
+用户点击加密:
+  → POST /api/tasks {type:"encrypt", ...}
+  → TaskManager.processEncrypt()
+    → plugin.FindEncryptingPlugin()       // 拿到已初始化的 TextPlugin 实例
+    → plugin.Initialize(cfgCtx)           // ❌ 重新初始化！cfgCtx ≠ rootCtx，缓存失效
+    → GetPluginSettingsFor(cfgCtx, "text") // ❌ 找不到 settings（或找到错误的）
+```
+
+### 关键证据
+- [registry.go:376](file:///workspace/internal/v2/plugins/registry.go#L376): `EncryptFileWithPlugin` 中 `plugin.Initialize(ctx)` **已注释掉**
+- [registry.go:410](file:///workspace/internal/v2/plugins/registry.go#L410): `DecryptContainerWithPlugin` 中同样**已注释掉**
+- 说明核心加密/解密函数**不需要也不应该**重复初始化插件
+- 但 TaskManager 违反了这个约定
 
 ---
 
-## 问题 2 深入分析（核心 bug）
+## 问题 1: 加密报错 "could not get settings for plugin text"
 
-### 预览为什么正常？
+**根因**: `processEncrypt` / `processDecrypt` 冗余调用 `plugin.Initialize(cfgCtx)` 
 
-`GetFileInfo()` ([mobile_service.go:246](file:///workspace/internal/service/mobile_service.go#L246)) **不调用** `plugin.Initialize()`：
-- 用 `detector.DetectContainer(absPath)` 读文件字节检测容器 → 不需要 plugin settings
-- 用 `reader.OpenV4Container(absPath, password)` 打开容器 → 只需要密码
-
-### 加密为什么失败？
-
-`TaskManager.processEncrypt()` ([task_manager.go:358](file:////workspace/internal/service/task_manager.go#L358)) 流程：
-
-```
-processEncrypt()
-  → cfgCtx = getConfigForTask(task, ctx)    // 创建新 context，放入 tm.cfg
-  → plugin.FindEncryptingPlugin(absPath)     // 找到 TextPlugin 实例
-  → plugin.Initialize(cfgCtx)               // ❌ 重新初始化！
-```
-
-`TextPlugin.Initialize()` ([text/plugin.go:90](file:///workspace/internal/v2/plugins/text/plugin.go#L90))：
-
+TextPlugin 有缓存优化 ([text/plugin.go:91-93](file:///workspace/internal/v2/plugins/text/plugin.go#L91-L93)):
 ```go
-func (p *TextPlugin) Initialize(ctx context.Context) error {
-    if ctx == p.ctx {
-        return nil  // 启动时已初始化过，p.ctx = rootCtx，如果相同则跳过
-    }
-    // ctx != p.ctx（因为 processEncrypt 创建了新 context）
-    // ↓ 尝试重新初始化
-    p.cfg = config.FromContext(ctx)
-    settings, err := config.GetPluginSettingsFor[TextPluginConfig](p.cfg, p.Name())
-    // ❌ p.cfg.PluginSettings["text"] 不存在 → 报错
+if ctx == p.ctx {
+    return nil  // 避免重复初始化
 }
 ```
+- 启动时 `p.ctx = rootCtx`（来自 `encv.Init`）
+- 任务执行时 `cfgCtx = config.NewContext(context.Background(), tm.cfg)` 是**全新 context**
+- `cfgCtx != p.ctx` → 缓存未命中 → 尝试重新初始化
+- `config.FromContext(cfgCtx)` 返回 `tm.cfg`
+- 如果 `tm.cfg.PluginSettings` 因某种原因不完整 → 报错
 
-### 为什么 `PluginSettings["text"]` 会不存在？
+**修复**: 删除 `processEncrypt` 和 `processDecrypt` 中的冗余 `plugin.Initialize(cfgCtx)` 调用，
+与 `EncryptFileWithPlugin` / `DecryptContainerWithPlugin` 保持一致。
 
-调用链：
-1. `encv.Init(rootCtx)` → `BuildFullPluginSettings(cfg.PluginSettings)` → 填充所有插件设置 → 存回 `cfg.PluginSettings`
-2. `InitializePlugins(rootCtx)` → `p.Initialize(rootCtx)` → 成功（此时有 settings）
-3. `NewServer(rootCtx)` → `config.FromContext(rootCtx)` → 同一个 `*Config` 指针 → 传给 `NewTaskManager`
-4. 任务执行 → `getConfigForTask` → `config.NewContext(ctx, tm.cfg)` → `tm.cfg` 就是步骤 1-3 的同一个对象
-
-**理论上** `tm.cfg.PluginSettings["text"]` 应该存在。但如果 `encv.Init` 的返回值被忽略且内部出错（如 `BuildFullPluginSettings` 失败），则 `cfg.PluginSettings` 可能不完整。
-
-**关键代码** [servers.go:20](file:///workspace/cmd/encv/servers.go#L20)：`encv.Init(rootCtx)` 返回值被**完全忽略**。
+**涉及文件**:
+- [task_manager.go:414-417](file:///workspace/internal/service/task_manager.go#L414-L417) — 删除 processEncrypt 中的 Initialize
+- [task_manager.go:603-606](file:///workspace/internal/service/task_manager.go#L603-L606) — 删除 processDecrypt 中的 Initialize
 
 ---
 
-## 修复方案
+## 问题 2: 插件错误应广播到 DevLogs
 
-### Fix 1: 插件错误广播到 DevLogs
+**当前状态**: `failTask` 已调用 `slog.Error` + `broadcaster.Broadcast("task:completed")`
+- `slog.Error` → `WSLogHandler` → WebSocket → DevLogs 后端 tab（理论上应该工作）
+- `broadcaster.Broadcast` 发送的是 task 事件，不是 log 事件
 
-**文件**: [task_manager.go:653-675](file:///workspace/internal/service/task_manager.go#L653-L675)
+**需要确认**:
+1. [server.go:130](file:///workspace/internal/server/server.go#L130) 的 `wsMinLevel` 默认为 `slog.LevelInfo`，Error 级别能通过 ✓
+2. 前端 DevLogs [DevLogs.vue:284-297](file:///workspace/app/encv-mobile/src/views/DevLogs.vue#L284-L297) 监听 `ws:message` 事件，格式匹配 ✓
 
-当前 `failTask` 已有 `slog.Error` + `broadcaster.Broadcast`，但需要确认：
-1. `WSLogHandler` 的 `wsMinLevel` 是否包含 `LevelError`
-2. 广播消息格式是否与前端 DevLogs 期望的一致
+**可能的问题**: 如果错误发生在 WebSocket 连接建立之前（如启动后第一个任务），消息会丢失。或者 slog 的 message 格式与前端期望不匹配。
 
-**修复**：在 `failTask` 中额外通过 `Broadcaster` 直接发送结构化的 log 类型消息（与 WSLogHandler 格式一致），确保 DevLogs 能收到。
-
-同时检查 [server.go:139](file:///workspace/internal/server/server.go#L139) 处 `wsMinLevel` 的值。
-
-### Fix 2: 加密流程插件初始化失败（核心修复）
-
-**根因**: `processEncrypt` / `processDecrypt` 中重复调用 `plugin.Initialize(cfgCtx)` 时，新的 context 导致缓存失效，重新读取 settings 失败。
-
-**方案 A（推荐）**: 在 `getConfigForTask` 中确保 PluginSettings 完整
-
-**文件**: [task_manager.go:349-356](file:////workspace/internal/service/task_manager.go#L349-L356)
+**修复**: 在 `failTask` 中增加显式的 WSHub broadcast（log 类型），确保格式与 DevLogs 一致：
 
 ```go
-func (tm *TaskManager) getConfigForTask(task *MobileTask, ctx context.Context) context.Context {
-    if task.Password != "" {
-        cfgCopy := *tm.cfg
-        cfgCopy.Password = task.Password
-        return config.NewContext(ctx, &cfgCopy)
-    }
-    // 确保 PluginSettings 已填充（防止 encv.Init 失败时丢失）
-    if len(tm.cfg.PluginSettings) == 0 {
-        fullSettings, _ := plugins.BuildFullPluginSettings(nil)
-        tm.cfg.PluginSettings = fullSettings
-    }
-    return config.NewContext(ctx, tm.cfg)
+if tm.broadcaster != nil {
+    tm.broadcaster.Broadcast("log", map[string]interface{}{
+        "level":   "error",
+        "message": friendlyMsg,
+    })
 }
 ```
 
-**方案 B（更彻底）**: 避免重复 Initialize — 如果插件已初始化过，跳过
+**涉及文件**: [task_manager.go:666-673](file:///workspace/internal/service/task_manager.go#L666-L673)
 
-**文件**: [task_manager.go:408-417](file:////workspace/internal/service/task_manager.go#L408-L417) 和 [task_manager.go:597-606](file:////workspace/internal/service/task_manager.go#L597-L606)
+---
 
-```go
-// processEncrypt 中：移除重复的 plugin.Initialize 调用
-// 因为 encv.Init → InitializePlugins 已经初始化过所有插件了
-// plugin.Initialize(cfgCtx)  // ← 删除这行
-```
-
-**推荐方案 A + B 组合**: 既保底填充 settings，又避免不必要的重复初始化。
-
-### Fix 3: 未知类型卡加载中
+## 问题 3: 未知类型文件卡加载中
 
 **文件**: [FilePreview.vue:203-295](file:///workspace/app/encv-mobile/src/views/FilePreview.vue#L203-L295)
 
-分析 `loadFile()` 的 loading 状态管理：
+**分析 `loadFile()` 所有路径**:
 
+| 路径 | loading 关闭? | 位置 |
+|------|-------------|------|
+| 加密文件 + 是 ENCV 容器 | ✅ finally | L267-269 |
+| 加密文件 + 非 ENCV 容器 | ✅ finally | L267-269 |
+| 加密文件 + fetchFileInfo 异常 | ✅ catch+finally | L256-269 |
+| 非加密文件 + determinePreviewType 成功 | ✅ finally | L292-294 |
+| 非加密文件 + determinePreviewType 异常 | ✅ catch+finally | L289-294 |
+
+**看起来所有路径都有 finally 关闭 loading**。但有一个隐藏风险：
+
+[determinePreviewType()](file:///workspace/app/encv-mobile/src/views/FilePreview.vue#L185-L201) 内部调用 `fetchTextPreviewExts()`：
+```javascript
+const textExts = await fetchTextPreviewExts()  // ← API 请求
+```
+
+[fetchTextPreviewExts()](file:///workspace/app/encv-mobile/src/api/encv.ts#L352-L364) 没有**超时控制**：
 ```typescript
-// 当前代码流程：
-async function loadFile() {
-  loading.value = true          // ✅ 开始加载
-  try {
-    if (isEncrypted === 'true') {
-      // 分支 A: 加密文件
-      const info = await fetchFileInfo(...)
-      if (info.is_encv_container && info.container) {
-        previewType.value = ...   // 根据 container_type 设置
-      } else {
-        previewType.value = 'unsupported'  // ← 不是 ENCV 容器
-      }
-    } finally { loading.value = false }  // ✅ finally 关闭 loading
-  }
-
-  // 分支 B: 非加密文件
-  previewType.value = await determinePreviewType(...)
-  } catch (e) { ... }
-  finally { loading.value = false }       // ✅ finally 关闭 loading
+export async function fetchTextPreviewExts(): Promise<Set<string>> {
+    if (cachedTextExts) return cachedTextExts
+    const response = await fetch(`${baseUrl}/api/file/text-preview-exts`)  // ← 无超时!
+    ...
 }
 ```
 
-**看起来** finally 应该能关闭 loading。但需要检查以下边界情况：
-
-1. **`determinePreviewType()` 内部调用 `fetchTextPreviewExts()`** ([encv.ts:352](file:///workspace/app/encv-mobile/src/api/encv.ts#L352)) — 如果此 API 请求挂起（服务器不可达、超时），整个 `loadFile()` 会卡住
-2. **`fetchFileInfo` API 返回异常状态** — 如果 `/api/file/info` 对某些文件类型返回非预期响应
+如果 `/api/file/text-preview-exts` 端点挂起或响应慢，整个 `loadFile()` 会卡住，loading 永远不会关闭。
 
 **修复**:
-1. 给 `fetchTextPreviewExts()` 加超时保护（已在 api 层面加了 AbortController？需要确认）
-2. 在 `determinePreviewType()` 中加 try/catch，失败时 fallback 到 `'unsupported'`
-3. 确认所有路径都有 `finally { loading.value = false }`
+1. 给 `fetchTextPreviewExts()` 加 AbortController 超时（5秒）
+2. 超时时 fallback 到空 Set（等同于"没有文本扩展名"→ 文件被判定为 unsupported）
+
+**涉及文件**: [encv.ts:352-364](file:///workspace/app/encv-mobile/src/api/encv.ts#L352-L364)
 
 ---
 
 ## 实施步骤
 
-1. **Fix 2 先行**（最关键的加密失败问题）
-   - 修改 `task_manager.go` 的 `getConfigForTask` 保底填充 PluginSettings
-   - 同时考虑移除 `processEncrypt` / `processDecrypt` 中的冗余 `plugin.Initialize` 调用
-   - 编译验证
+### Step 1: Fix 核心加密 bug（删除冗余 Initialize）
+1. 编辑 `task_manager.go` processEncrypt：删除 L414-417 的 `plugin.Initialize(cfgCtx)`
+2. 编辑 `task_manager.go` processDecrypt：删除 L603-606 的 `plugin.Initialize(cfgCtx)`
+3. `go build ./cmd/encv/` 编译验证
 
-2. **Fix 1**（DevLogs 广播）
-   - 检查 `wsMinLevel` 配置
-   - 在 `failTask` 中增加显式的 log broadcast
-   - 编译验证
+### Step 2: Fix DevLogs 广播
+1. 编辑 `task_manager.go` failTask：在 broadcaster 处增加 `"log"` 类型消息
+2. 编译验证
 
-3. **Fix 3**（未知类型加载）
-   - 检查 `fetchTextPreviewExts` 是否有超时
-   - 在 `determinePreviewType` 加 fallback
-   - `vue-tsc --noEmit && vite build` 验证
+### Step 3: Fix 未知类型卡加载
+1. 编辑 `encv.ts` fetchTextPreviewExts：加 AbortController 5秒超时
+2. `vue-tsc --noEmit && vite build` 验证
 
-4. **端到端测试**
-   - 启动移动端服务
-   - 测试加密文本文件 → 验证不再报 plugin settings 错误
-   - 测试预览 ENCV 容器 → 验证仍然正常
-   - 测试打开未知类型文件 → 验证不再卡加载
-   - 检查 DevLogs → 验证错误信息可见
+### Step 4: 端到端验证
+1. 启动服务，用移动端触发加密 → 不再报 plugin settings 错误
+2. 预览 ENCV 容器 → 仍然正常
+3. 打开未知类型文件（如图片）→ 显示 "unsupported" 不再卡加载
+4. 触发一个会失败的加密任务 → DevLogs 后端 tab 能看到错误信息
