@@ -16,14 +16,15 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/writer"
 )
 
-func init() {
+func TestMain(m *testing.M) {
 	types.RegisterKVIProvider("video", func(rawKVI json.RawMessage) (types.KVIProvider, error) {
-		var kvi types.KVI_v2
+		var kvi types.KVI
 		if err := json.Unmarshal(rawKVI, &kvi); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal KVI: %w", err)
 		}
-		return benchKVI{KVI_v2: kvi}, nil
+		return benchKVI{KVI: kvi}, nil
 	})
+	m.Run()
 }
 
 // benchReaderMaxSize 根据环境变量决定最大测试数据尺寸
@@ -40,7 +41,7 @@ type containerFixture struct {
 	Password      string
 	DataSize      int64
 	OriginalData  []byte
-	Manifest      *types.Manifest_v2
+	Manifest      *types.Manifest
 	FragCount     int
 	cleanup       func()
 }
@@ -58,13 +59,13 @@ func createContainerFixture(tb testing.TB, dataSize int64, fragCount int) *conta
 
 	salt, _ := crypto.GenerateSalt_v2(types.SaltSize_v2)
 	iv, _ := crypto.GenerateIV_v2(types.IVSize_v2)
-	key := crypto.GenerateKey_v2(password, salt, types.KeySize_v2)
+	key := crypto.GenerateKey(password, salt, types.KeySize_v2)
 
 	var encryptedBuf bytes.Buffer
 	crypto.EncryptStream_v2(bytes.NewReader(originalData), &encryptedBuf, key, iv)
 
 	kvi := &benchKVI{
-		KVI_v2: types.KVI_v2{
+		KVI: types.KVI{
 			SaltBase64: crypto.Base64Encode_v2(salt),
 			IVBase64:   crypto.Base64Encode_v2(iv),
 		},
@@ -75,14 +76,14 @@ func createContainerFixture(tb testing.TB, dataSize int64, fragCount int) *conta
 		fragmentSize = dataSize
 		fragCount = 1
 	}
-	fragments := make([]types.Fragment_v2, 0, fragCount)
+	fragments := make([]types.Fragment, 0, fragCount)
 	var offset uint64
 	for i := 0; i < fragCount; i++ {
 		size := fragmentSize
 		if i == fragCount-1 {
 			size = dataSize - int64(offset)
 		}
-		fragments = append(fragments, types.Fragment_v2{
+		fragments = append(fragments, types.Fragment{
 			ID:                fmt.Sprintf("logical_fragment_%d", i),
 			Type:              types.FragmentType_SeekableStream,
 			Length:            uint64(size),
@@ -91,7 +92,7 @@ func createContainerFixture(tb testing.TB, dataSize int64, fragCount int) *conta
 		offset += uint64(size)
 	}
 
-	manifest, _ := types.NewManifest_v2(kvi, fragments)
+	manifest, _ := types.NewManifest(kvi, fragments)
 
 	header, _ := types.CreateHeaderV3(true, types.IDType_Raw, nil)
 	containerPath := filepath.Join(tempDir, "bench_container.sccgv")
@@ -142,15 +143,15 @@ func createContainerFixture(tb testing.TB, dataSize int64, fragCount int) *conta
 
 // benchKVI 是测试专用的 KVI 实现
 type benchKVI struct {
-	types.KVI_v2
+	types.KVI
 }
 
 func (k benchKVI) GetKind() types.IndexKind {
 	return "video"
 }
 
-func (k benchKVI) GetEncryptionInfo() types.KVI_v2 {
-	return k.KVI_v2
+func (k benchKVI) GetEncryptionInfo() types.KVI {
+	return k.KVI
 }
 
 func (k benchKVI) GetIndex() types.Index {

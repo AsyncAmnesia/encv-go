@@ -19,10 +19,14 @@ func defaultTestConfig() *config.Config {
 	}
 }
 
-func newTestTaskManager(broadcaster Broadcaster) *TaskManager {
+func newTestTaskManager(broadcaster Broadcaster, servingDir ...string) *TaskManager {
+	dir := "/tmp/test-serving"
+	if len(servingDir) > 0 && servingDir[0] != "" {
+		dir = servingDir[0]
+	}
 	return &TaskManager{
 		tasks:       make(map[string]*MobileTask),
-		servingDir:  "/tmp/test-serving",
+		servingDir:  dir,
 		cfg:         nil,
 		stopCh:      make(chan struct{}),
 		broadcaster: broadcaster,
@@ -351,7 +355,7 @@ func TestTaskManager_WorkerLifecycle(t *testing.T) {
 	mb.On("Broadcast", mock.Anything, mock.Anything).Return()
 
 	cfg := defaultTestConfig()
-	tm := NewTaskManager("/tmp/test-serving", cfg, mb)
+	tm := NewTaskManager(t.TempDir(), cfg, mb)
 
 	done := make(chan struct{})
 	go func() {

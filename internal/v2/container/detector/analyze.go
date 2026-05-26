@@ -114,7 +114,7 @@ func writeHeaderAnalysis(buf *bytes.Buffer, w *tabwriter.Writer, h containerhand
 		fmt.Fprintf(w, "  ID Type:\t%d\n", hdr.IDType)
 		fmt.Fprintf(w, "  ID Length:\t%d bytes\n", hdr.IDLength)
 		fmt.Fprintf(w, "  Header CRC32:\t%08x (Verified OK)\n", hdr.HeaderCRC32)
-		fmt.Fprintf(w, "  ContainerType:\t%s\n", hdr.ContainerType)
+		fmt.Fprintf(w, "  ContainerType:\t%d\n", hdr.ContainerType)
 		fmt.Fprintf(w, "  IsSeekable:\t%v\n", hdr.IsSeekable)
 		fmt.Fprintf(w, "  ManifestOffset:\t%d\n", hdr.ManifestOffset)
 		fmt.Fprintf(w, "  ManifestLength:\t%d\n", hdr.ManifestLength)
