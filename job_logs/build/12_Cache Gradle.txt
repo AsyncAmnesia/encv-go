@@ -1,0 +1,30 @@
+﻿2026-05-26T17:20:31.1392963Z ##[group]Run actions/cache@v4
+2026-05-26T17:20:31.1393237Z with:
+2026-05-26T17:20:31.1393472Z   path: ~/.gradle/caches
+~/.gradle/wrapper
+
+2026-05-26T17:20:31.1393895Z   key: gradle-6c5872c911861e2f10d8e4cdc5301d5505924205d7ec88df515bb5374e0e4bfb
+2026-05-26T17:20:31.1394293Z   restore-keys: gradle-
+
+2026-05-26T17:20:31.1394546Z   enableCrossOsArchive: false
+2026-05-26T17:20:31.1394811Z   fail-on-cache-miss: false
+2026-05-26T17:20:31.1395049Z   lookup-only: false
+2026-05-26T17:20:31.1395271Z   save-always: false
+2026-05-26T17:20:31.1395484Z env:
+2026-05-26T17:20:31.1395684Z   NDK_VERSION: 26.1.10909125
+2026-05-26T17:20:31.1396030Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-26T17:20:31.1396509Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-26T17:20:31.1396892Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-26T17:20:31.1397202Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-26T17:20:31.1397473Z ##[endgroup]
+2026-05-26T17:20:31.6341792Z Cache hit for restore-key: gradle-ab6a60b6a2f1748035f2664e36c64646f18c0de5ecb36cd28492c5759a5192e4
+2026-05-26T17:20:32.8622384Z Received 41943040 of 780609984 (5.4%), 39.9 MBs/sec
+2026-05-26T17:20:33.8629620Z Received 201326592 of 780609984 (25.8%), 95.8 MBs/sec
+2026-05-26T17:20:34.8671951Z Received 394264576 of 780609984 (50.5%), 125.0 MBs/sec
+2026-05-26T17:20:35.8676230Z Received 553648128 of 780609984 (70.9%), 131.7 MBs/sec
+2026-05-26T17:20:36.8711324Z Received 750780416 of 780609984 (96.2%), 142.9 MBs/sec
+2026-05-26T17:20:37.0282315Z Received 780609984 of 780609984 (100.0%), 144.0 MBs/sec
+2026-05-26T17:20:37.0285205Z Cache Size: ~744 MB (780609984 B)
+2026-05-26T17:20:37.0331264Z [command]/usr/bin/tar -xf /home/runner/work/_temp/2a34c9f2-59ef-4f97-809c-a3dd9516f03a/cache.tzst -P -C /home/runner/work/encv-go/encv-go --use-compress-program unzstd
+2026-05-26T17:20:40.2906695Z Cache restored successfully
+2026-05-26T17:20:40.3230658Z Cache restored from key: gradle-ab6a60b6a2f1748035f2664e36c64646f18c0de5ecb36cd28492c5759a5192e4

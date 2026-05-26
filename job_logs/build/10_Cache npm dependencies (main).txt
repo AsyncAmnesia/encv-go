@@ -1,0 +1,24 @@
+﻿2026-05-26T17:20:26.1244516Z ##[group]Run actions/cache@v4
+2026-05-26T17:20:26.1244787Z with:
+2026-05-26T17:20:26.1244997Z   path: app/encv-mobile/node_modules
+2026-05-26T17:20:26.1245432Z   key: npm-main-4dba6e2d36a72f06fb0e7aaa550d4d07c135ef29fe3681b7d5059f0a95671772
+2026-05-26T17:20:26.1245853Z   restore-keys: npm-main-
+
+2026-05-26T17:20:26.1246095Z   enableCrossOsArchive: false
+2026-05-26T17:20:26.1246337Z   fail-on-cache-miss: false
+2026-05-26T17:20:26.1246560Z   lookup-only: false
+2026-05-26T17:20:26.1246765Z   save-always: false
+2026-05-26T17:20:26.1246952Z env:
+2026-05-26T17:20:26.1247130Z   NDK_VERSION: 26.1.10909125
+2026-05-26T17:20:26.1247464Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-26T17:20:26.1247922Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-26T17:20:26.1248296Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-26T17:20:26.1248572Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-26T17:20:26.1248840Z ##[endgroup]
+2026-05-26T17:20:26.5044265Z Cache hit for: npm-main-4dba6e2d36a72f06fb0e7aaa550d4d07c135ef29fe3681b7d5059f0a95671772
+2026-05-26T17:20:27.7168154Z Received 37748736 of 49638707 (76.0%), 36.0 MBs/sec
+2026-05-26T17:20:27.8204734Z Received 49638707 of 49638707 (100.0%), 42.9 MBs/sec
+2026-05-26T17:20:27.8205499Z Cache Size: ~47 MB (49638707 B)
+2026-05-26T17:20:27.8234742Z [command]/usr/bin/tar -xf /home/runner/work/_temp/130f70e0-9dce-4beb-b78f-b40c0d51c5d0/cache.tzst -P -C /home/runner/work/encv-go/encv-go --use-compress-program unzstd
+2026-05-26T17:20:28.3144906Z Cache restored successfully
+2026-05-26T17:20:28.3240724Z Cache restored from key: npm-main-4dba6e2d36a72f06fb0e7aaa550d4d07c135ef29fe3681b7d5059f0a95671772

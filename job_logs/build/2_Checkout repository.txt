@@ -1,0 +1,77 @@
+﻿2026-05-26T17:19:44.0066347Z ##[group]Run actions/checkout@v4
+2026-05-26T17:19:44.0066921Z with:
+2026-05-26T17:19:44.0067125Z   ref: trae/solo-agent-4zR5St
+2026-05-26T17:19:44.0067361Z   repository: Soltus/encv-go
+2026-05-26T17:19:44.0067813Z   token: ***
+2026-05-26T17:19:44.0067999Z   ssh-strict: true
+2026-05-26T17:19:44.0068184Z   ssh-user: git
+2026-05-26T17:19:44.0068406Z   persist-credentials: true
+2026-05-26T17:19:44.0068629Z   clean: true
+2026-05-26T17:19:44.0068871Z   sparse-checkout-cone-mode: true
+2026-05-26T17:19:44.0069098Z   fetch-depth: 1
+2026-05-26T17:19:44.0069282Z   fetch-tags: false
+2026-05-26T17:19:44.0069465Z   show-progress: true
+2026-05-26T17:19:44.0069659Z   lfs: false
+2026-05-26T17:19:44.0069823Z   submodules: false
+2026-05-26T17:19:44.0070012Z   set-safe-directory: true
+2026-05-26T17:19:44.0070611Z env:
+2026-05-26T17:19:44.0070929Z   NDK_VERSION: 26.1.10909125
+2026-05-26T17:19:44.0071133Z ##[endgroup]
+2026-05-26T17:19:44.1166783Z Syncing repository: Soltus/encv-go
+2026-05-26T17:19:44.1168691Z ##[group]Getting Git version info
+2026-05-26T17:19:44.1169255Z Working directory is '/home/runner/work/encv-go/encv-go'
+2026-05-26T17:19:44.1169952Z [command]/usr/bin/git version
+2026-05-26T17:19:44.1204483Z git version 2.54.0
+2026-05-26T17:19:44.1229410Z ##[endgroup]
+2026-05-26T17:19:44.1245427Z Temporarily overriding HOME='/home/runner/work/_temp/d450ede4-a26f-423c-bce1-2b28f90c350b' before making global git config changes
+2026-05-26T17:19:44.1247096Z Adding repository directory to the temporary git global config as a safe directory
+2026-05-26T17:19:44.1262463Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/encv-go/encv-go
+2026-05-26T17:19:44.1303269Z Deleting the contents of '/home/runner/work/encv-go/encv-go'
+2026-05-26T17:19:44.1307167Z ##[group]Initializing the repository
+2026-05-26T17:19:44.1312183Z [command]/usr/bin/git init /home/runner/work/encv-go/encv-go
+2026-05-26T17:19:44.1387553Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-05-26T17:19:44.1388690Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-05-26T17:19:44.1389785Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-05-26T17:19:44.1390630Z hint: call:
+2026-05-26T17:19:44.1391034Z hint:
+2026-05-26T17:19:44.1391520Z hint: 	git config --global init.defaultBranch <name>
+2026-05-26T17:19:44.1391864Z hint:
+2026-05-26T17:19:44.1392222Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-05-26T17:19:44.1392739Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-05-26T17:19:44.1393156Z hint:
+2026-05-26T17:19:44.1393420Z hint: 	git branch -m <name>
+2026-05-26T17:19:44.1393746Z hint:
+2026-05-26T17:19:44.1394130Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-05-26T17:19:44.1394651Z Initialized empty Git repository in /home/runner/work/encv-go/encv-go/.git/
+2026-05-26T17:19:44.1401519Z [command]/usr/bin/git remote add origin https://github.com/Soltus/encv-go
+2026-05-26T17:19:44.1435307Z ##[endgroup]
+2026-05-26T17:19:44.1435807Z ##[group]Disabling automatic garbage collection
+2026-05-26T17:19:44.1439398Z [command]/usr/bin/git config --local gc.auto 0
+2026-05-26T17:19:44.1464071Z ##[endgroup]
+2026-05-26T17:19:44.1464541Z ##[group]Setting up auth
+2026-05-26T17:19:44.1470829Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-05-26T17:19:44.1505172Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-05-26T17:19:44.1772868Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-05-26T17:19:44.1798837Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-05-26T17:19:44.1977424Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-05-26T17:19:44.2004078Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-05-26T17:19:44.2190811Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-05-26T17:19:44.2219973Z ##[endgroup]
+2026-05-26T17:19:44.2221109Z ##[group]Fetching the repository
+2026-05-26T17:19:44.2229666Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +refs/heads/trae/solo-agent-4zR5St*:refs/remotes/origin/trae/solo-agent-4zR5St* +refs/tags/trae/solo-agent-4zR5St*:refs/tags/trae/solo-agent-4zR5St*
+2026-05-26T17:19:45.5037572Z From https://github.com/Soltus/encv-go
+2026-05-26T17:19:45.5069676Z  * [new branch]      trae/solo-agent-4zR5St -> origin/trae/solo-agent-4zR5St
+2026-05-26T17:19:45.5071306Z ##[endgroup]
+2026-05-26T17:19:45.5071725Z ##[group]Determining the checkout info
+2026-05-26T17:19:45.5077115Z [command]/usr/bin/git branch --list --remote origin/trae/solo-agent-4zR5St
+2026-05-26T17:19:45.5100952Z   origin/trae/solo-agent-4zR5St
+2026-05-26T17:19:45.5105243Z ##[endgroup]
+2026-05-26T17:19:45.5110713Z [command]/usr/bin/git sparse-checkout disable
+2026-05-26T17:19:45.5146415Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-05-26T17:19:45.5169532Z ##[group]Checking out the ref
+2026-05-26T17:19:45.5175231Z [command]/usr/bin/git checkout --progress --force -B trae/solo-agent-4zR5St refs/remotes/origin/trae/solo-agent-4zR5St
+2026-05-26T17:19:45.5804893Z Switched to a new branch 'trae/solo-agent-4zR5St'
+2026-05-26T17:19:45.5805786Z branch 'trae/solo-agent-4zR5St' set up to track 'origin/trae/solo-agent-4zR5St'.
+2026-05-26T17:19:45.5812179Z ##[endgroup]
+2026-05-26T17:19:45.5848940Z [command]/usr/bin/git log -1 --format=%H
+2026-05-26T17:19:45.5869225Z f00b1e08e1dda6523be3ebab691747289d8ac2d5

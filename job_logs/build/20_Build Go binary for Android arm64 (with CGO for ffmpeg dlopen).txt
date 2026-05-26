@@ -1,0 +1,21 @@
+﻿2026-05-26T17:21:18.8159513Z ##[group]Run go build \
+2026-05-26T17:21:18.8159817Z [36;1mgo build \[0m
+2026-05-26T17:21:18.8160121Z [36;1m  -ldflags="-s -w -X main.version=dev" \[0m
+2026-05-26T17:21:18.8160720Z [36;1m  -o app/encv-mobile/encv-go-arm64 \[0m
+2026-05-26T17:21:18.8161035Z [36;1m  ./cmd/encv[0m
+2026-05-26T17:21:18.8161306Z [36;1mecho "Go binary size:"[0m
+2026-05-26T17:21:18.8161647Z [36;1mls -lh app/encv-mobile/encv-go-arm64[0m
+2026-05-26T17:21:18.8182446Z shell: /usr/bin/bash -e {0}
+2026-05-26T17:21:18.8182755Z env:
+2026-05-26T17:21:18.8182979Z   NDK_VERSION: 26.1.10909125
+2026-05-26T17:21:18.8183361Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-26T17:21:18.8183874Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-26T17:21:18.8184292Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-26T17:21:18.8184619Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-26T17:21:18.8184918Z   CGO_ENABLED: 1
+2026-05-26T17:21:18.8185142Z   GOOS: android
+2026-05-26T17:21:18.8185404Z   GOARCH: arm64
+2026-05-26T17:21:18.8185885Z   CC: /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
+2026-05-26T17:21:18.8186418Z ##[endgroup]
+2026-05-26T17:21:21.2609782Z Go binary size:
+2026-05-26T17:21:21.2622586Z -rwxr-xr-x 1 runner runner 26M May 26 17:21 app/encv-mobile/encv-go-arm64
