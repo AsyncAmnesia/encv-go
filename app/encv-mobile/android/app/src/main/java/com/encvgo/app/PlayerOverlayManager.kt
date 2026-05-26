@@ -1,18 +1,15 @@
-package com.encvgo.app
-
-import android.content.pm.ActivityInfo
-import android.os.Handler
-import android.os.Looper
-import android.util.Log
-import android.view.View
-import android.view.ViewGroup
-import android.view.WindowManager
-import android.widget.FrameLayout
-import com.lynx.tasm.LynxView
-import com.lynx.tasm.LynxViewBuilder
-import com.lynx.tasm.LynxViewClient
-import org.json.JSONObject
-
+/**
+ * 覆盖层模式播放器管理器。
+ * 
+ * 此类采用覆盖层模式，在 MainActivity 上叠加 LynxView 作为播放器界面，
+ * 与 Activity 路由模式不同。它直接使用 [MpvPlayerModule] 进行媒体播放控制。
+ * 
+ * ## 迁移路径说明（Part B3）
+ * - 当前状态：直接依赖 [MpvPlayerModule] 的原生实现
+ * - 迁移目标：[MpvPlayerModule] 将标记为已迁移（Part C）
+ * - 迁移后影响：本类需适配新的模块接口或通过桥接层调用
+ * - 注意事项：由于覆盖层模式的特殊性，迁移时需确保 LynxView 与播放器生命周期的同步
+ */
 class PlayerOverlayManager private constructor() {
     companion object {
         private const val TAG = "PlayerOverlay"

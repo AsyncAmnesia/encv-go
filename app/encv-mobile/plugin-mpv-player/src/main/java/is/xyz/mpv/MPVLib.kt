@@ -1,8 +1,3 @@
-@file:Suppress("unused")
-// MIGRATED to :plugin-mpv-player module — kept for reference only
-// 原始 MPV JNI 绑定层，已迁移至 plugin-mpv-player/src/main/java/is/xyz/mpv/MPVLib.kt
-// 宿主 APK 不再链接 libmpv.so / libplayer.so，此文件仅作参考
-
 package `is`.xyz.mpv
 
 import android.content.Context

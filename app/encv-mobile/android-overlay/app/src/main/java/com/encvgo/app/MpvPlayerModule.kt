@@ -1,3 +1,8 @@
+@file:Suppress("unused")
+// MIGRATED to :plugin-mpv-player module — kept for reference only
+// 原 Lynx NativeModule (MpvPlayerModule) 已迁移至插件的 MpvEngine
+// 新播放路径：PlayerEntry → MpvPlayerActivity (plugin) 或 PlayerActivityCapacitor (fallback)
+
 package com.encvgo.app
 
 import android.app.Activity

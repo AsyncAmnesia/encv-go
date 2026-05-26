@@ -1,5 +1,6 @@
 include ':app'
 include ':capacitor-cordova-android-plugins'
+include ':plugin-mpv-player'
 project(':capacitor-cordova-android-plugins').projectDir = new File('./capacitor-cordova-android-plugins/')
 
 apply from: 'capacitor.settings.gradle'

@@ -1,3 +1,9 @@
+@file:Suppress("unused")
+// MIGRATED to :plugin-mpv-player module — kept for reference only
+// 原 Lynx 播放器 Activity 已迁移至插件的 MpvPlayerActivity (Compose UI)
+// 新播放路径：PlayerEntry → MpvPlayerActivity (plugin) 或 PlayerActivityCapacitor (fallback)
+// 注意：overlay 变体保留此文件作为参考（overlay 不含 PlayerOverlayManager）
+
 package com.encvgo.app
 
 import android.content.Intent

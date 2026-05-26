@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-JNI_DIR="$PROJECT_DIR/android-overlay/app/src/main/jniLibs"
+JNI_DIR="$PROJECT_DIR/plugin-mpv-player/src/main/jniLibs"
 
 MPV_LIB_VERSION="0.1.12"
 AAR_URL="https://repo1.maven.org/maven2/io/github/abdallahmehiz/mpv-android-lib/${MPV_LIB_VERSION}/mpv-android-lib-${MPV_LIB_VERSION}.aar"
