@@ -40,6 +40,7 @@ type Config struct {
 	Log types.LogConfig `json:"log"`
 	// --- 预览设置 ---
 	Preview *PreviewConfig `json:"preview,omitempty"`
+	Mobile  *types.MobileConfig  `json:"mobile,omitempty"`
 }
 
 type PreviewConfig struct {
@@ -122,16 +123,20 @@ func Load(configPath string) (*Config, error) {
 		}
 	}
 
-	if os.Getenv("ENCV_MOBILE") == "1" {
+	if os.Getenv("ENCV_MOBILE") == "1" && cfg.Mobile != nil {
 		home := os.Getenv("HOME")
-		if cfg.Server.Dir == "" || cfg.Server.Dir == "." || cfg.Server.Dir == home {
+		if cfg.Mobile.ServerDir != "" {
+			cfg.Server.Dir = cfg.Mobile.ServerDir
+		} else if cfg.Server.Dir == "/" || cfg.Server.Dir == "." {
 			cfg.Server.Dir = home
 		}
-		if cfg.OutputPath == "" || cfg.OutputPath == "./encrypted" {
+		if cfg.Mobile.OutputPath != "" {
+			cfg.OutputPath = cfg.Mobile.OutputPath
+		} else if cfg.OutputPath == "" || cfg.OutputPath == "./encrypted" {
 			cfg.OutputPath = filepath.Join(home, "encv-output")
 		}
-		if cfg.Webdav.Dir == "./output" {
-			cfg.Webdav.Dir = ""
+		if cfg.Mobile.WebdavDir != "" {
+			cfg.Webdav.Dir = cfg.Mobile.WebdavDir
 		}
 	}
 
