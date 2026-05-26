@@ -1,0 +1,18 @@
+﻿2026-05-26T19:10:45.8477979Z ##[group]Run echo "## Build Results" >> $GITHUB_STEP_SUMMARY
+2026-05-26T19:10:45.8478530Z [36;1mecho "## Build Results" >> $GITHUB_STEP_SUMMARY[0m
+2026-05-26T19:10:45.8478926Z [36;1mecho "" >> $GITHUB_STEP_SUMMARY[0m
+2026-05-26T19:10:45.8479318Z [36;1mecho "| Item | Value |" >> $GITHUB_STEP_SUMMARY[0m
+2026-05-26T19:10:45.8479731Z [36;1mecho "|------|-------|" >> $GITHUB_STEP_SUMMARY[0m
+2026-05-26T19:10:45.8480215Z [36;1mecho "| Version | \`debug (development)\` |" >> $GITHUB_STEP_SUMMARY[0m
+2026-05-26T19:10:45.8480971Z [36;1mecho "| Go Binary | $(ls -lh app/encv-mobile/encv-go-arm64 2>/dev/null | awk '{print $5}' || echo N/A) |" >> $GITHUB_STEP_SUMMARY[0m
+2026-05-26T19:10:45.8481995Z [36;1mfind app/encv-mobile/android/app/build/outputs/apk -name "*.apk" -type f 2>/dev/null | while read apk; do[0m
+2026-05-26T19:10:45.8482749Z [36;1m  echo "| APK | $(basename "$apk") ($(\ls -lh "$apk" | awk '{print $5}')) |" >> $GITHUB_STEP_SUMMARY[0m
+2026-05-26T19:10:45.8483319Z [36;1mdone[0m
+2026-05-26T19:10:45.8519182Z shell: /usr/bin/bash -e {0}
+2026-05-26T19:10:45.8519509Z env:
+2026-05-26T19:10:45.8519766Z   NDK_VERSION: 26.1.10909125
+2026-05-26T19:10:45.8520207Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-26T19:10:45.8520803Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-26T19:10:45.8521271Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-26T19:10:45.8521648Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-26T19:10:45.8521988Z ##[endgroup]

@@ -1,0 +1,23 @@
+﻿2026-05-26T19:08:25.9183070Z ##[group]Run actions/cache@v4
+2026-05-26T19:08:25.9183615Z with:
+2026-05-26T19:08:25.9184057Z   path: app/encv-mobile/scripts/.ffmpeg-build
+2026-05-26T19:08:25.9184943Z   key: ffmpeg-build-265d77f1374815b4e99a7ce19f5a6c6d4ccba80cc11d1f675796fbe7587d4925
+2026-05-26T19:08:25.9185864Z   restore-keys: ffmpeg-build-
+
+2026-05-26T19:08:25.9186814Z   enableCrossOsArchive: false
+2026-05-26T19:08:25.9187342Z   fail-on-cache-miss: false
+2026-05-26T19:08:25.9187810Z   lookup-only: false
+2026-05-26T19:08:25.9188314Z   save-always: false
+2026-05-26T19:08:25.9188722Z env:
+2026-05-26T19:08:25.9189088Z   NDK_VERSION: 26.1.10909125
+2026-05-26T19:08:25.9189715Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-26T19:08:25.9190667Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-26T19:08:25.9191465Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-26T19:08:25.9192044Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-26T19:08:25.9192585Z ##[endgroup]
+2026-05-26T19:08:26.1964552Z Cache hit for: ffmpeg-build-265d77f1374815b4e99a7ce19f5a6c6d4ccba80cc11d1f675796fbe7587d4925
+2026-05-26T19:08:26.7084018Z Received 68185940 of 68185940 (100.0%), 144.8 MBs/sec
+2026-05-26T19:08:26.7085166Z Cache Size: ~65 MB (68185940 B)
+2026-05-26T19:08:26.7124117Z [command]/usr/bin/tar -xf /home/runner/work/_temp/6dcacfed-1ee5-4b97-aab2-5d11f564b3e5/cache.tzst -P -C /home/runner/work/encv-go/encv-go --use-compress-program unzstd
+2026-05-26T19:08:27.5534637Z Cache restored successfully
+2026-05-26T19:08:27.5652380Z Cache restored from key: ffmpeg-build-265d77f1374815b4e99a7ce19f5a6c6d4ccba80cc11d1f675796fbe7587d4925
