@@ -60,7 +60,11 @@
                 <span class="completed-text">{{ t('tasks.phaseCompleted') }}</span>
                 <span v-if="task.containerVersion" class="container-version">V{{ task.containerVersion }}</span>
               </div>
-              <p v-if="task.error" class="task-error">{{ task.error }}</p>
+              <p v-if="isPasswordError(task)" class="task-error password-error">
+                <ion-icon :icon="lockClosed"></ion-icon>
+                {{ t('tasks.passwordErrorHint') }}
+              </p>
+              <p v-else-if="task.error" class="task-error">{{ task.error }}</p>
               <div v-if="task.errorDetail && task.errorDetail !== task.error" class="error-detail-row">
                 <p class="task-error-detail" @click="toggleErrorDetail(task.id)">
                   {{ showErrorDetail[task.id] ? t('tasks.hideDetail') : t('tasks.showDetail') }}
@@ -228,6 +232,7 @@ import {
   cancelTask,
   retryTask,
   listFiles,
+  isWrongPasswordError,
 } from '@/api/encv'
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
@@ -347,6 +352,11 @@ function getTaskDuration(task: EncvTask): string {
     return formatDuration(Date.now() - created)
   }
   return ''
+}
+
+function isPasswordError(task: EncvTask): boolean {
+  if (!task.error) return false
+  return isWrongPasswordError(task.error)
 }
 
 async function loadTasks() {
@@ -699,6 +709,21 @@ onUnmounted(() => {
   color: var(--ion-color-danger);
   font-size: 12px;
   margin-top: 4px;
+}
+
+.password-error {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(var(--ion-color-danger-rgb), 0.08);
+  padding: 6px 10px;
+  border-radius: 6px;
+  border-left: 3px solid var(--ion-color-danger);
+}
+
+.password-error ion-icon {
+  font-size: 14px;
+  flex-shrink: 0;
 }
 
 .task-error-detail {

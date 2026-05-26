@@ -27,6 +27,21 @@ const (
 	IVSize_v2   = 16
 )
 
+const (
+	ContainerV2            = 2
+	ContainerV3            = 3
+	ContainerV4            = 4
+	DefaultContainerVersion = ContainerV4
+)
+
+type VersionStatus string
+
+const (
+	VersionStatusDeprecated VersionStatus = "deprecated"
+	VersionStatusStable      VersionStatus = "stable"
+	VersionStatusRecommended VersionStatus = "recommended"
+)
+
 func GetBlockTypeName(blockType uint32) string {
 	switch blockType {
 	case uint32(BlockTypeData_v2):
@@ -45,7 +60,9 @@ func GetBlockTypeName(blockType uint32) string {
 var (
 	ByteOrder_v2       = binary.LittleEndian
 	ErrInvalidMagic_v2 = errors.New("invalid magic number")
-	// 将数组转换为切片用法 types.MagicFooter_v2[:]
+	ErrWrongPassword   = errors.New("wrong password: password hint mismatch")
+	ErrDataCorrupted   = errors.New("data corrupted: integrity check failed")
+	ErrDeprecatedVersion = errors.New("container version is deprecated")
 	MagicHeader_v2 = [4]byte{'E', 'N', 'C', 'V'}
 	MagicFooter_v2 = [4]byte{'E', 'N', 'C', 'V'}
 
@@ -55,6 +72,34 @@ var (
 		},
 	}
 )
+
+var SupportedVersions = []int{ContainerV2, ContainerV3, ContainerV4}
+
+func GetVersionStatus(version int) VersionStatus {
+	switch version {
+	case ContainerV2:
+		return VersionStatusDeprecated
+	case ContainerV3:
+		return VersionStatusStable
+	case ContainerV4:
+		return VersionStatusRecommended
+	default:
+		return ""
+	}
+}
+
+func IsValidVersion(version int) bool {
+	for _, v := range SupportedVersions {
+		if v == version {
+			return true
+		}
+	}
+	return false
+}
+
+func IsDeprecatedVersion(version int) bool {
+	return GetVersionStatus(version) == VersionStatusDeprecated
+}
 
 // FragmentType 定义分片的用途类型，使其意图更加明确
 type FragmentType string

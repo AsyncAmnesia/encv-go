@@ -33,7 +33,7 @@ func NewFileChunkerPhysicalPacker(chunkSize int64, namer namer.ChunkNamer) *File
 
 // Pack 实现 PhysicalPacker 接口
 func (p *FileChunkerPhysicalPacker) Pack(manifest *types.Manifest, req *PackRequest) (string, error) {
-	mainHeader, chunkHeader, mainHeaderV4, chunkHeaderV4, err := p.prepareHeaders(req.HeaderVersion, req.ContainerType, req.IsSeekable, req.SpecialIDType, req.SpecialID)
+	mainHeader, chunkHeader, mainHeaderV4, chunkHeaderV4, err := p.prepareHeaders(req.HeaderVersion, req.ContainerType, req.IsSeekable, req.SpecialIDType, req.SpecialID, req.PasswordHint)
 	if err != nil {
 		return "", fmt.Errorf("failed to prepare headers: %w", err)
 	}
@@ -73,6 +73,7 @@ func (p *FileChunkerPhysicalPacker) Pack(manifest *types.Manifest, req *PackRequ
 		isSeekable:       req.IsSeekable,
 		specialIDType:    req.SpecialIDType,
 		specialID:        req.SpecialID,
+		passwordHint:     req.PasswordHint,
 	}
 
 	for i := range manifest.Fragments {
@@ -97,15 +98,16 @@ type chunkContext struct {
 	isSeekable       bool
 	specialIDType    types.IDType
 	specialID        []byte
+	passwordHint     [16]byte
 }
 
-func (p *FileChunkerPhysicalPacker) prepareHeaders(v int, containerType uint16, isSeekable bool, t types.IDType, d []byte) (*types.EnvelopeHeaderV3, *types.EnvelopeHeaderV3, *types.EnvelopeHeaderV4, *types.EnvelopeHeaderV4, error) {
+func (p *FileChunkerPhysicalPacker) prepareHeaders(v int, containerType uint16, isSeekable bool, t types.IDType, d []byte, passwordHint [16]byte) (*types.EnvelopeHeaderV3, *types.EnvelopeHeaderV3, *types.EnvelopeHeaderV4, *types.EnvelopeHeaderV4, error) {
 	if v == 4 {
-		mainH, err := types.CreateHeaderV4(true, containerType, isSeekable, t, d)
+		mainH, err := types.CreateHeaderV4(true, containerType, isSeekable, t, d, passwordHint)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
-		chunkH, err := types.CreateHeaderV4(false, containerType, isSeekable, t, mainH.SpecialID[:mainH.IDLength])
+		chunkH, err := types.CreateHeaderV4(false, containerType, isSeekable, t, mainH.SpecialID[:mainH.IDLength], passwordHint)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
@@ -266,12 +268,12 @@ func (p *FileChunkerPhysicalPacker) finalize(mainFile *os.File, manifest *types.
 		manifestBlockSize := block.GetBlockHeader_v2_Size() + int64(ctx.chunkedWriter.LastManifestLen())
 		actualManifestOffset := manifestOffset - manifestBlockSize
 
-		mainHeaderV4, err := types.CreateHeaderV4(true, ctx.containerType, ctx.isSeekable, ctx.specialIDType, ctx.specialID)
+		mainHeaderV4, err := types.CreateHeaderV4(true, ctx.containerType, ctx.isSeekable, ctx.specialIDType, ctx.specialID, ctx.passwordHint)
 		if err != nil {
 			return "", fmt.Errorf("failed to recreate v4 header for finalize: %w", err)
 		}
-		mainHeaderV4.ManifestOffset = uint64(actualManifestOffset + block.GetBlockHeader_v2_Size())
-		mainHeaderV4.ManifestLength = uint64(ctx.chunkedWriter.LastManifestLen())
+		mainHeaderV4.ManifestOffset = uint32(actualManifestOffset + block.GetBlockHeader_v2_Size())
+		mainHeaderV4.ManifestLength = uint32(ctx.chunkedWriter.LastManifestLen())
 
 		if _, err := mainFile.Seek(0, io.SeekStart); err != nil {
 			return "", fmt.Errorf("failed to seek to header for v4 rewrite: %w", err)

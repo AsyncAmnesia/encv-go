@@ -101,6 +101,37 @@
           </ion-button>
         </ion-item>
       </ion-list>
+
+      <ion-modal :is-open="showEncryptModal" @didDismiss="showEncryptModal = false">
+        <ion-header>
+          <ion-toolbar>
+            <ion-title>{{ t('files.encrypt') }} - {{ encryptFileName }}</ion-title>
+            <ion-buttons slot="end">
+              <ion-button @click="showEncryptModal = false">{{ t('tasks.close') }}</ion-button>
+            </ion-buttons>
+          </ion-toolbar>
+        </ion-header>
+        <ion-content class="ion-padding">
+          <ion-list>
+            <ion-item>
+              <ion-input
+                v-model="encryptTargetPath"
+                :label="t('tasks.targetPath')"
+                label-placement="stacked"
+                :placeholder="t('tasks.targetPathPlaceholder')"
+              ></ion-input>
+            </ion-item>
+          </ion-list>
+          <div class="version-section">
+            <p class="section-label">{{ t('containerVersion.title') }}</p>
+            <ContainerVersionSelector v-model="selectedVersion" />
+          </div>
+          <ion-button expand="block" @click="handleEncryptSubmit">
+            <ion-icon :icon="lockClosed" slot="start"></ion-icon>
+            {{ t('files.encrypt') }}
+          </ion-button>
+        </ion-content>
+      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
@@ -126,6 +157,8 @@ import {
   IonSpinner,
   IonSearchbar,
   IonToggle,
+  IonModal,
+  IonInput,
   actionSheetController,
   alertController,
 } from '@ionic/vue'
@@ -166,6 +199,7 @@ import { vLongpress } from '@/directives/longpress'
 import { isNative, requestStoragePermission, openPlayer, openExternal } from '@/plugins/GoProcess'
 import { getExternalStreamUrl } from '@/api/encv'
 import { showToast } from '@/composables/useToast'
+import ContainerVersionSelector from '@/components/ContainerVersionSelector.vue'
 
 type PlayMode = 'artplayer' | 'mpv' | 'external'
 
@@ -219,6 +253,12 @@ const searchResults = ref<FileItem[] | null>(null)
 const isSearching = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 let searchGeneration = 0
+
+const showEncryptModal = ref(false)
+const encryptSourcePath = ref('')
+const encryptTargetPath = ref('')
+const encryptFileName = ref('')
+const selectedVersion = ref(4)
 
 const searchCache = new Map<string, { timestamp: number; results: FileItem[] }>()
 const CACHE_TTL = 30000
@@ -569,49 +609,11 @@ async function handleEncryptFile(file: FileItem) {
     return
   }
 
-  const alert = await alertController.create({
-    header: t('files.encrypt'),
-    inputs: [
-      {
-        name: 'targetPath',
-        type: 'text',
-        placeholder: t('tasks.targetPathPlaceholder'),
-        value: parentDir,
-        attributes: { autocomplete: 'off' },
-      },
-    ],
-    buttons: [
-      { text: t('files.cancelSelect'), role: 'cancel' },
-      {
-        text: t('files.encrypt'),
-        handler: async (data: Record<string, string>) => {
-          const targetPath = (data.targetPath || '').trim()
-          const result = await checkEncryptOutputExists(file.path, targetPath || undefined)
-
-          if (result.exists) {
-            const outputName = result.outputPath.split('/').pop() || ''
-            const confirm = await alertController.create({
-              header: t('files.encrypt'),
-              message: t('files.overwriteConfirm', { name: outputName }),
-              buttons: [
-                { text: t('files.cancelSelect'), role: 'cancel' },
-                {
-                  text: t('common.confirm'),
-                  handler: async () => {
-                    await doCreateTask('encrypt', file.path, targetPath, '')
-                  },
-                },
-              ],
-            })
-            await confirm.present()
-          } else {
-            await doCreateTask('encrypt', file.path, targetPath, '')
-          }
-        },
-      },
-    ],
-  })
-  await alert.present()
+  encryptSourcePath.value = file.path
+  encryptTargetPath.value = parentDir
+  encryptFileName.value = file.name
+  selectedVersion.value = 4
+  showEncryptModal.value = true
 }
 
 async function handleDecryptFile(file: FileItem) {
@@ -655,10 +657,41 @@ async function handleDecryptFile(file: FileItem) {
   await alert.present()
 }
 
-async function doCreateTask(type: 'encrypt' | 'decrypt', sourcePath: string, targetPath: string, password: string) {
+async function doCreateTask(type: 'encrypt' | 'decrypt', sourcePath: string, targetPath: string, password: string, containerVersion?: number) {
   try {
-    await createTask(type, sourcePath, targetPath, password)
+    await createTask(type, sourcePath, targetPath, password, containerVersion)
     showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
+  } catch {
+    showToast({ message: t('tasks.taskCreateFailed'), duration: 2000, color: 'danger' })
+  }
+}
+
+async function handleEncryptSubmit() {
+  const targetPath = encryptTargetPath.value.trim()
+  if (!targetPath) return
+  try {
+    const result = await checkEncryptOutputExists(encryptSourcePath.value, targetPath || undefined)
+    if (result.exists) {
+      const outputName = result.outputPath.split('/').pop() || ''
+      const confirm = await alertController.create({
+        header: t('files.encrypt'),
+        message: t('files.overwriteConfirm', { name: outputName }),
+        buttons: [
+          { text: t('files.cancelSelect'), role: 'cancel' },
+          {
+            text: t('common.confirm'),
+            handler: async () => {
+              showEncryptModal.value = false
+              await doCreateTask('encrypt', encryptSourcePath.value, targetPath, '', selectedVersion.value)
+            },
+          },
+        ],
+      })
+      await confirm.present()
+    } else {
+      showEncryptModal.value = false
+      await doCreateTask('encrypt', encryptSourcePath.value, targetPath, '', selectedVersion.value)
+    }
   } catch {
     showToast({ message: t('tasks.taskCreateFailed'), duration: 2000, color: 'danger' })
   }
@@ -804,5 +837,13 @@ function onBackendReadyWindow(event: Event) {
   color: var(--ion-color-primary);
 }
 
+.version-section {
+  margin: 16px 0;
+}
 
-</style>
+.section-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ion-color-dark);
+  margin-bottom: 8px;
+}</style>

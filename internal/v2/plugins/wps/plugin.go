@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -184,6 +185,24 @@ func (p *WPSPlugin) DefaultIsSeekable(inputPath string) bool {
 }
 
 func (p *WPSPlugin) DisasterZones(inputPath string) []types.DisasterZone {
+	return nil
+}
+
+func (p *WPSPlugin) SupportedContainerVersions() []int {
+	return types.SupportedVersions
+}
+
+func (p *WPSPlugin) DefaultContainerVersion() int {
+	return types.DefaultContainerVersion
+}
+
+func (p *WPSPlugin) ValidateVersion(version int) error {
+	if !types.IsValidVersion(version) {
+		return fmt.Errorf("wps plugin: unsupported container version: %d", version)
+	}
+	if types.IsDeprecatedVersion(version) {
+		slog.Warn("wps plugin: using deprecated container version", "version", version)
+	}
 	return nil
 }
 

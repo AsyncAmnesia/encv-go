@@ -60,16 +60,16 @@ func (p *VideoPlugin) GetContainerExtension() string {
 }
 
 type VideoPluginConfig struct {
-	Ext string `json:"ext"`
-	ContainerChunkSizeMB int `json:"container_chunk_size_mb"`
-	LightContainerMainChunkEnabled bool `json:"light_container_main_chunk_enabled"`
-	TrackExtensions string `json:"track_extensions"`
-	KeepMkvForMkvSource bool `json:"keep_mkv_for_mkv_source"`
-	VerifyAfterPack bool `json:"verify_after_pack"`
-	PluginCacheDir string `json:"plugin_cache_dir"`
-	SkipMergeForSplitMKV bool `json:"skip_merge_for_split_mkv"`
-	AllowNoReencode bool `json:"allow_no_reencode"`
-	DefaultStreamPreset string `json:"default_stream_preset"`
+	Ext                            string `json:"ext"`
+	ContainerChunkSizeMB           int    `json:"container_chunk_size_mb"`
+	LightContainerMainChunkEnabled bool   `json:"light_container_main_chunk_enabled"`
+	TrackExtensions                string `json:"track_extensions"`
+	KeepMkvForMkvSource            bool   `json:"keep_mkv_for_mkv_source"`
+	VerifyAfterPack                bool   `json:"verify_after_pack"`
+	PluginCacheDir                 string `json:"plugin_cache_dir"`
+	SkipMergeForSplitMKV           bool   `json:"skip_merge_for_split_mkv"`
+	AllowNoReencode                bool   `json:"allow_no_reencode"`
+	DefaultStreamPreset            string `json:"default_stream_preset"`
 }
 
 func (p *VideoPlugin) GetSettingsSchemaType() interface{} {
@@ -79,14 +79,14 @@ func (p *VideoPlugin) GetSettingsSchemaType() interface{} {
 // 2. 实现接口方法，返回默认配置的 JSON
 func (p *VideoPlugin) GetDefaultSettings() json.RawMessage {
 	defaultCfg := VideoPluginConfig{
-		Ext:                          ".sccgv",
-		ContainerChunkSizeMB:         0,
+		Ext:                            ".sccgv",
+		ContainerChunkSizeMB:           0,
 		LightContainerMainChunkEnabled: false,
-		TrackExtensions:              ".ass,.srt,.dm.ass",
-		KeepMkvForMkvSource:          true,
-		VerifyAfterPack:              false,
-		AllowNoReencode:              false,
-		DefaultStreamPreset:          "balanced",
+		TrackExtensions:                ".ass,.srt,.dm.ass",
+		KeepMkvForMkvSource:            true,
+		VerifyAfterPack:                false,
+		AllowNoReencode:                false,
+		DefaultStreamPreset:            "balanced",
 	}
 	data, _ := json.Marshal(defaultCfg) // 忽略错误，因为默认值是硬编码的，不会出错
 	return data
@@ -401,6 +401,24 @@ func (p *VideoPlugin) DisasterZones(inputPath string) []types.DisasterZone {
 	}
 }
 
+func (p *VideoPlugin) SupportedContainerVersions() []int {
+	return types.SupportedVersions
+}
+
+func (p *VideoPlugin) DefaultContainerVersion() int {
+	return types.DefaultContainerVersion
+}
+
+func (p *VideoPlugin) ValidateVersion(version int) error {
+	if !types.IsValidVersion(version) {
+		return fmt.Errorf("video plugin: unsupported container version: %d", version)
+	}
+	if types.IsDeprecatedVersion(version) {
+		slog.Warn("video plugin: using deprecated container version", "version", version)
+	}
+	return nil
+}
+
 // --- 加密逻辑 ---
 
 // Plugin 接口实现
@@ -567,6 +585,12 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 	if p.settings.ContainerChunkSizeMB == 0 {
 		packParams.FinalFileName = finalFilename
 	}
+
+	passwordHint, err := crypto.CalculatePasswordHint(p.cfg.Password, result.Salt)
+	if err != nil {
+		slog.Warn("Failed to calculate password hint, using empty hint", "error", err)
+	}
+	packParams.PasswordHint = passwordHint
 
 	// 6. 调用唯一通用代理：packer.StandardPostEncrypt
 	// Helper 内部会组装 physical.PackRequest

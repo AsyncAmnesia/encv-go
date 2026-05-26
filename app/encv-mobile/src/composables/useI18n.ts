@@ -122,6 +122,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'tasks.phaseCompleted': '已完成',
     'tasks.eta': '剩余',
 
+    'tasks.passwordErrorHint': '密码可能错误，请检查后重试',
+
     'webdav.title': 'WebDAV',
     'webdav.noServers': '暂无 WebDAV 服务器',
     'webdav.noServersDesc': '添加 WebDAV 服务器以同步加密文件。',
@@ -423,6 +425,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'engine.refresh': '刷新',
     'engine.loadFailed': '加载失败',
     'engine.configureOpts': '配置选项',
+
+    'containerVersion.title': '容器版本',
+    'containerVersion.recommended': '推荐',
+    'containerVersion.deprecated': '已弃用',
   },
   'en': {
     'common.confirm': 'Confirm',
@@ -542,6 +548,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'tasks.phaseVerifying': 'Verifying...',
     'tasks.phaseCompleted': 'Completed',
     'tasks.eta': 'ETA',
+
+    'tasks.passwordErrorHint': 'Password may be wrong, please check and retry',
 
     'webdav.title': 'WebDAV',
     'webdav.noServers': 'No WebDAV Servers',
@@ -844,6 +852,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'engine.refresh': 'Refresh',
     'engine.loadFailed': 'Failed to load',
     'engine.configureOpts': 'Configure Options',
+
+    'containerVersion.title': 'Container Version',
+    'containerVersion.recommended': 'Recommended',
+    'containerVersion.deprecated': 'Deprecated',
   },
 }
 

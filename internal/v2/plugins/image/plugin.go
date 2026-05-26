@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -184,6 +185,24 @@ func (p *ImagePlugin) DefaultIsSeekable(inputPath string) bool {
 }
 
 func (p *ImagePlugin) DisasterZones(inputPath string) []types.DisasterZone {
+	return nil
+}
+
+func (p *ImagePlugin) SupportedContainerVersions() []int {
+	return types.SupportedVersions
+}
+
+func (p *ImagePlugin) DefaultContainerVersion() int {
+	return types.DefaultContainerVersion
+}
+
+func (p *ImagePlugin) ValidateVersion(version int) error {
+	if !types.IsValidVersion(version) {
+		return fmt.Errorf("image plugin: unsupported container version: %d", version)
+	}
+	if types.IsDeprecatedVersion(version) {
+		slog.Warn("image plugin: using deprecated container version", "version", version)
+	}
 	return nil
 }
 

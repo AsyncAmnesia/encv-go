@@ -22,6 +22,7 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/Soltus/encv-go/internal/v2/provider"
 	"github.com/Soltus/encv-go/internal/v2/service"
+	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
 type ForbiddenError struct{ Err error }
@@ -1024,6 +1025,14 @@ func (s *MobileService) serveEncryptedExternalFile(w http.ResponseWriter, r *htt
 	)
 	if err != nil {
 		slog.Error("GetDecryptReader failed", "path", fullPath, "error", err)
+		if errors.Is(err, types.ErrWrongPassword) {
+			http.Error(w, `{"error":"wrong_password","message":"密码可能错误，请检查后重试"}`, http.StatusForbidden)
+			return
+		}
+		if errors.Is(err, types.ErrDataCorrupted) {
+			http.Error(w, `{"error":"data_corrupted","message":"文件数据已损坏"}`, http.StatusUnprocessableEntity)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

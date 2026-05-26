@@ -37,6 +37,8 @@ type PackParams struct {
 	SpecialID             []byte
 	SpecialIDType         types.IDType
 	FinalFileName         string
+
+	PasswordHint          [16]byte
 }
 
 // StandardPostEncrypt 执行通用的打包流程
@@ -114,6 +116,7 @@ func StandardPostEncrypt(params *PackParams) error {
 		SpecialID:             params.SpecialID,
 		SpecialIDType:         params.SpecialIDType,
 		FinalFileName:         params.FinalFileName,
+		PasswordHint:          params.PasswordHint,
 	}
 
 	// 4. 调用 PhysicalPacker 完成打包

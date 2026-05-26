@@ -21,10 +21,11 @@ type V4WriteParams struct {
 	Manifest       *types.Manifest_v4
 	SegmentResults []*crypto.SegmentEncryptionResult
 	DisasterZones  []types.DisasterZone
+	PasswordHint   [16]byte
 }
 
 func WriteV4Container(params *V4WriteParams) error {
-	header, err := types.CreateHeaderV4(params.IsMain, params.ContainerType, params.IsSeekable, params.IDType, params.IDData)
+	header, err := types.CreateHeaderV4(params.IsMain, params.ContainerType, params.IsSeekable, params.IDType, params.IDData, params.PasswordHint)
 	if err != nil {
 		return fmt.Errorf("failed to create v4 header: %w", err)
 	}
@@ -138,8 +139,8 @@ func WriteV4Container(params *V4WriteParams) error {
 	}
 	globalCRC32 := crc32.ChecksumIEEE(allDataBuf)
 
-	header.ManifestOffset = uint64(manifestOffset)
-	header.ManifestLength = manifestLength
+	header.ManifestOffset = uint32(manifestOffset)
+	header.ManifestLength = uint32(manifestLength)
 
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("failed to seek to header: %w", err)

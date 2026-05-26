@@ -54,7 +54,7 @@ func NewMockV4Handle(containerType uint16, isSeekable bool, segmentCount int, ma
 		HeaderV4Val: &types.EnvelopeHeaderV4{
 			Flags:          1,
 			ManifestOffset: 2048,
-			ManifestLength: uint64(manifestSize),
+			ManifestLength: uint32(manifestSize),
 			ContainerType:  containerType,
 			IsSeekable:     func() uint8 { if isSeekable { return 1 }; return 0 }(),
 		},

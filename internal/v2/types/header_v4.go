@@ -2,6 +2,7 @@ package types
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
@@ -11,6 +12,7 @@ import (
 const (
 	EnvelopeHeaderSize_v4 = 2048
 	EnvelopeFooterSize_v4 = 12
+	SpecialIDMaxLenV4     = 1992
 )
 
 const (
@@ -23,19 +25,20 @@ const (
 )
 
 type EnvelopeHeaderV4 struct {
-	Magic          [4]byte
-	Version        uint16
-	Flags          uint16
-	ContainerType  uint16
-	IsSeekable     uint8
-	Reserved1      uint8
-	IDType         uint32
-	IDLength       uint32
-	Reserved2      [8]byte
-	SpecialID      [SpecialIDMaxLen]byte
-	ManifestOffset uint64
-	ManifestLength uint64
-	HeaderCRC32    uint32
+	Magic           [4]byte
+	Version         uint16
+	Flags           uint16
+	ContainerType   uint16
+	IsSeekable      uint8
+	Reserved1       uint8
+	IDType          uint32
+	IDLength        uint32
+	PasswordHint    [16]byte
+	SpecialID       [SpecialIDMaxLenV4]byte
+	ManifestOffset  uint32
+	ManifestLength  uint32
+	HeaderCRC32     uint32
+	Reserved2       [8]byte
 }
 
 type EnvelopeFooterV4 struct {
@@ -57,13 +60,13 @@ func WriteHeaderV4(w io.Writer, h *EnvelopeHeaderV4) error {
 	buf[11] = h.Reserved1
 	binary.LittleEndian.PutUint32(buf[12:16], h.IDType)
 	binary.LittleEndian.PutUint32(buf[16:20], h.IDLength)
-	copy(buf[20:28], h.Reserved2[:])
-	copy(buf[28:28+SpecialIDMaxLen], h.SpecialID[:])
-	binary.LittleEndian.PutUint64(buf[2028:2036], h.ManifestOffset)
-	binary.LittleEndian.PutUint64(buf[2036:2044], h.ManifestLength)
+	copy(buf[20:36], h.PasswordHint[:])
+	copy(buf[36:36+SpecialIDMaxLenV4], h.SpecialID[:])
+	binary.LittleEndian.PutUint32(buf[2028:2032], h.ManifestOffset)
+	binary.LittleEndian.PutUint32(buf[2032:2036], h.ManifestLength)
 
-	crc := crc32.ChecksumIEEE(buf[:EnvelopeHeaderSize_v4-4])
-	binary.LittleEndian.PutUint32(buf[EnvelopeHeaderSize_v4-4:EnvelopeHeaderSize_v4], crc)
+	crc := crc32.ChecksumIEEE(buf[:EnvelopeHeaderSize_v4-12])
+	binary.LittleEndian.PutUint32(buf[2036:2040], crc)
 	h.HeaderCRC32 = crc
 
 	_, err := w.Write(buf)
@@ -76,8 +79,8 @@ func ReadHeaderV4(r io.Reader) (*EnvelopeHeaderV4, error) {
 		return nil, fmt.Errorf("failed to read header bytes: %w", err)
 	}
 
-	storedCRC := binary.LittleEndian.Uint32(buf[EnvelopeHeaderSize_v4-4 : EnvelopeHeaderSize_v4])
-	calculatedCRC := crc32.ChecksumIEEE(buf[:EnvelopeHeaderSize_v4-4])
+	storedCRC := binary.LittleEndian.Uint32(buf[2036:2040])
+	calculatedCRC := crc32.ChecksumIEEE(buf[:2036])
 	if storedCRC != calculatedCRC {
 		return nil, fmt.Errorf("header CRC32 mismatch: stored=%08x, calculated=%08x", storedCRC, calculatedCRC)
 	}
@@ -123,12 +126,11 @@ func ReadFooterV4(r io.Reader) (*EnvelopeFooterV4, error) {
 	return footer, nil
 }
 
-func CreateHeaderV4(isMain bool, containerType uint16, isSeekable bool, idType IDType, idData []byte) (*EnvelopeHeaderV4, error) {
+func CreateHeaderV4(isMain bool, containerType uint16, isSeekable bool, idType IDType, idData []byte, passwordHint [16]byte) (*EnvelopeHeaderV4, error) {
 	if idData == nil {
 		if idType == IDType_Raw {
-			var err error
-			idData, err = GeneratePlaceholderIDV3()
-			if err != nil {
+			idData = make([]byte, SpecialIDMaxLenV4)
+			if _, err := rand.Read(idData); err != nil {
 				return nil, fmt.Errorf("failed to generate placeholder ID: %w", err)
 			}
 		} else {
@@ -136,8 +138,8 @@ func CreateHeaderV4(isMain bool, containerType uint16, isSeekable bool, idType I
 		}
 	}
 
-	if len(idData) > SpecialIDMaxLen {
-		return nil, fmt.Errorf("special ID data exceeds max length %d", SpecialIDMaxLen)
+	if len(idData) > SpecialIDMaxLenV4 {
+		return nil, fmt.Errorf("special ID data exceeds max length %d", SpecialIDMaxLenV4)
 	}
 
 	flags := uint16(0)
@@ -153,12 +155,13 @@ func CreateHeaderV4(isMain bool, containerType uint16, isSeekable bool, idType I
 	}
 
 	header := &EnvelopeHeaderV4{
-		Magic:         MagicHeader_v2,
-		Version:       0x04,
-		Flags:         flags,
+		Magic:        MagicHeader_v2,
+		Version:      0x04,
+		Flags:        flags,
 		ContainerType: containerType,
-		IsSeekable:    seekable,
-		IDType:        uint32(idType),
+		IsSeekable:   seekable,
+		IDType:       uint32(idType),
+		PasswordHint: passwordHint,
 	}
 	copy(header.SpecialID[:], idData)
 	header.IDLength = uint32(len(idData))

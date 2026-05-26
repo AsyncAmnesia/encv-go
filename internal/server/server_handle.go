@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/provider"
+	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
 // compositeChunkNamer 实现 ChunkNamer 接口
@@ -126,6 +128,14 @@ func (s *Server) serveEncryptedFile(w http.ResponseWriter, r *http.Request, full
 	)
 	if err != nil {
 		slog.Error("GetDecryptReader failed", "path", fullPath, "error", err)
+		if errors.Is(err, types.ErrWrongPassword) {
+			http.Error(w, `{"error":"wrong_password","message":"密码可能错误，请检查后重试"}`, http.StatusForbidden)
+			return
+		}
+		if errors.Is(err, types.ErrDataCorrupted) {
+			http.Error(w, `{"error":"data_corrupted","message":"文件数据已损坏"}`, http.StatusUnprocessableEntity)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

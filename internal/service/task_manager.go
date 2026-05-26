@@ -137,16 +137,17 @@ func (tm *TaskManager) Stop() {
 	tm.wg.Wait()
 }
 
-func (tm *TaskManager) Create(taskType, sourcePath, targetPath, password string) *MobileTask {
+func (tm *TaskManager) Create(taskType, sourcePath, targetPath, password string, version int) *MobileTask {
 	task := &MobileTask{
-		ID:         uuid.New().String(),
-		Type:       taskType,
-		SourcePath: sourcePath,
-		TargetPath: targetPath,
-		Password:   password,
-		Status:     "queued",
-		Progress:   0,
-		CreatedAt:  time.Now(),
+		ID:               uuid.New().String(),
+		Type:             taskType,
+		SourcePath:       sourcePath,
+		TargetPath:       targetPath,
+		Password:         password,
+		Status:           "queued",
+		Progress:         0,
+		ContainerVersion: version,
+		CreatedAt:        time.Now(),
 	}
 
 	tm.mu.Lock()
@@ -155,7 +156,7 @@ func (tm *TaskManager) Create(taskType, sourcePath, targetPath, password string)
 
 	tm.saveTasks()
 
-	slog.Info("Task created", "id", task.ID, "type", taskType, "source", sourcePath, "target", targetPath)
+	slog.Info("Task created", "id", task.ID, "type", taskType, "source", sourcePath, "target", targetPath, "version", version)
 	if tm.broadcaster != nil {
 		tm.broadcaster.Broadcast("task:created", task)
 	}
@@ -364,6 +365,19 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 	}
 	if password == "" {
 		tm.failTask(taskID, "encryption requires a password: global password is empty")
+		return
+	}
+
+	effectiveVersion := task.ContainerVersion
+	if effectiveVersion == 0 {
+		effectiveVersion = tm.cfg.GetEffectiveDefaultVersion()
+	}
+	if !types.IsValidVersion(effectiveVersion) {
+		tm.failTask(taskID, fmt.Sprintf("invalid container version: %d", effectiveVersion))
+		return
+	}
+	if types.IsDeprecatedVersion(effectiveVersion) && tm.cfg.IsStrictMode() {
+		tm.failTask(taskID, fmt.Sprintf("container version %d is deprecated and strict mode is enabled", effectiveVersion))
 		return
 	}
 
