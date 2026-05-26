@@ -113,30 +113,6 @@ func (r *ExecRunner) Available() (bool, bool, string) {
 	return ffmpegOk, ffprobeOk, errMsg
 }
 
-// DetectVideoFormat 检测视频文件的容器格式。
-// 从原 utils/video.go 迁移过来，因为它是纯业务逻辑而非平台相关。
-func DetectVideoFormat(filePath string) (string, error) {
-	output, err := Probe("-v", "error", "-show_entries", "format=format_name", "-of", "default=noprint_wrappers=1:nokey=1", filePath)
-	if err != nil {
-		return "", fmt.Errorf("ffprobe failed: %w", err)
-	}
-
-	formatName := strings.TrimSpace(string(output))
-	if formatName == "" {
-		return "", fmt.Errorf("could not determine container format")
-	}
-
-	switch {
-	case strings.Contains(formatName, "matroska"):
-		return "mkv", nil
-	case strings.Contains(formatName, "mp4"):
-		return "mp4", nil
-	default:
-		parts := strings.Split(formatName, ",")
-		return strings.ToLower(parts[0]), nil
-	}
-}
-
 func init() {
 	SetRunner(&ExecRunner{})
 }

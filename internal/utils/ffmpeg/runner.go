@@ -3,6 +3,7 @@ package ffmpeg
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -70,3 +71,26 @@ func Available() (bool, bool, string) {
 
 // ErrNotInitialized 在 Runner 未初始化时返回。
 var ErrNotInitialized = fmt.Errorf("ffmpeg: runner not initialized")
+
+// DetectVideoFormat 检测视频文件的容器格式。
+func DetectVideoFormat(filePath string) (string, error) {
+	output, err := Probe("-v", "error", "-show_entries", "format=format_name", "-of", "default=noprint_wrappers=1:nokey=1", filePath)
+	if err != nil {
+		return "", fmt.Errorf("ffprobe failed: %w", err)
+	}
+
+	formatName := strings.TrimSpace(string(output))
+	if formatName == "" {
+		return "", fmt.Errorf("could not determine container format")
+	}
+
+	switch {
+	case strings.Contains(formatName, "matroska"):
+		return "mkv", nil
+	case strings.Contains(formatName, "mp4"):
+		return "mp4", nil
+	default:
+		parts := strings.Split(formatName, ",")
+		return strings.ToLower(parts[0]), nil
+	}
+}
