@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"sync"
 
+	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
-	"github.com/Soltus/encv-go/internal/v2/container/manifest"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -91,40 +91,41 @@ func (r *readOnlySectionCloser) Close() error {
 // 它会解析并缓存所有必要的元数据，后续操作将基于这些缓存数据进行，非常高效。
 
 func NewEncryptedContainerReaderFromFile(mainFilePath string) (EncryptedContainerReader, error) {
-	// 1. 确保池清理
 	globalFileHandlePool.Close(mainFilePath)
+
+	src, err := containerhandle.NewFileSource(mainFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open container source: %w", err)
+	}
+
+	h, err := containerhandle.Open(src)
+	if err != nil {
+		src.Close()
+		return nil, fmt.Errorf("failed to open container handle: %w", err)
+	}
+	defer h.Close()
 
 	r := &fileContainerReader{
 		mainFilePath:         mainFilePath,
 		containerDir:         filepath.Dir(mainFilePath),
+		manifest:             h.Manifest(),
+		headerVersion:        h.Version(),
 		physicalOffsets:      make(map[string]uint64),
 		openExternalFiles:    make(map[string]*os.File),
 		chunkPhysicalOffsets: make(map[string]map[string]uint64),
 	}
 
-	// 2. 读取 Manifest (统一入口)
-	mf, _, headerVersion, _, err := readManifestWithFallback(mainFilePath)
-	if err != nil {
-		return nil, err
-	}
-	r.manifest = mf
-	r.headerVersion = headerVersion
-
-	kvi, _ := types.NewKVIProviderFromManifest(mf)
+	kvi, _ := types.NewKVIProviderFromManifest(r.manifest)
 	r.kviProvider = kvi
 
-	// 3. 构建 Offset Map (核心优化)
-	// 逻辑：Manifest.PhysicalOffset (BlockHeader) + HeaderSize = PayloadOffset
 	headerSize := block.GetBlockHeader_v2_Size()
 	for _, frag := range r.manifest.Fragments {
 		if frag.PhysicalPath == "" {
-			// 主文件
 			r.physicalOffsets[frag.ID] = frag.PhysicalOffset + uint64(headerSize)
 		}
-		// 外部文件 Reader 中动态扫描，此处略过
 	}
 
-	log.Printf("INFO: [Reader] Initialized from Manifest offsets. Scan skipped.")
+	log.Printf("INFO: [Reader] Initialized from ContainerHandle. Scan skipped.")
 	return r, nil
 }
 
@@ -300,26 +301,6 @@ func (r *fileContainerReader) acquireMainFile() (*os.File, bool, error) {
 	return f, false, err
 }
 
-// readManifestWithFallback 尝试从 Footer 读取，失败则扫描整个文件
-func readManifestWithFallback(mainFilePath string) (*types.Manifest_v2, *types.EnvelopeFooter_v2, int, int64, error) {
-	// 尝试从 Footer 读取
-	_manifest, footer, headerVersion, headerSize, err := manifest.ReadManifestFromFile(mainFilePath)
-	if err == nil {
-		log.Printf("DEBUG: [readManifestWithFallback] Read from Footer. Header Version: %d", headerVersion)
-		return _manifest, footer, headerVersion, headerSize, nil
-	}
-
-	log.Printf("WARN: Footer is invalid, falling back to scan. Reason: %v", err)
-	// 降级到扫描
-	_manifest, headerVersion, headerSize, err = manifest.ScanManifestFromFile(mainFilePath)
-	if err != nil {
-		return nil, nil, 0, 0, fmt.Errorf("fallback scan also failed: %w", err)
-	}
-	log.Printf("DEBUG: [readManifestWithFallback] Read from Scan. Header Version: %d", headerVersion)
-	log.Printf("INFO: Scan successful. Found manifest without a valid footer.")
-	// Scan 模式下 Footer 为 nil
-	return _manifest, nil, headerVersion, headerSize, nil
-}
 
 // findManifestBlockOffset 是一个辅助函数，用于找到 Manifest 块的起始偏移量。
 // 它会从文件开头扫描，直到找到第一个 BlockTypeManifest_v2 类型的块。

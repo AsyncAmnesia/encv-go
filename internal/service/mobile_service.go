@@ -15,12 +15,12 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/utils"
+	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/handler"
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/Soltus/encv-go/internal/v2/provider"
-	"github.com/Soltus/encv-go/internal/v2/reader"
 	"github.com/Soltus/encv-go/internal/v2/service"
 )
 
@@ -299,81 +299,48 @@ func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
 		result.IsEncrypted = true
 		result.Category = "encrypted"
 
-		containerInfo, openErr := reader.OpenV4Container(absPath, s.cfg.Password)
-		if openErr == nil {
-			hdr := containerInfo.Header
-			mf := containerInfo.Manifest
-
-			var containerTypeStr string
-			switch hdr.ContainerType {
-			case 1:
-				containerTypeStr = "video"
-			case 2:
-				containerTypeStr = "audio"
-			case 3:
-				containerTypeStr = "image"
-			case 4:
-				containerTypeStr = "document"
-			case 5:
-				containerTypeStr = "text"
-			default:
-				containerTypeStr = fmt.Sprintf("unknown(%d)", hdr.ContainerType)
-			}
-
+		src, srcErr := containerhandle.NewFileSource(absPath)
+		if srcErr != nil {
+			slog.Warn("GetFileInfo: failed to open file source", "path", queryPath, "error", srcErr)
 			result.Container = map[string]interface{}{
-				"version":           4,
-				"container_id":      mf.ContainerID,
-				"container_type":    containerTypeStr,
-				"is_seekable":       hdr.IsSeekable == 1,
-				"original_duration": mf.OriginalDuration,
-				"segment_count":     len(mf.Segments),
-				"segments":          mf.Segments,
-				"manifest_size":     hdr.ManifestLength,
-				"header": map[string]interface{}{
-					"flags":           hdr.Flags,
-					"manifest_offset": hdr.ManifestOffset,
-					"manifest_length": hdr.ManifestLength,
-				},
-				"manifest": mf,
+				"error": "cannot open container file: " + srcErr.Error(),
 			}
-		} else {
-			slog.Info("GetFileInfo: V4 open failed, trying generic reader", "path", queryPath, "error", openErr)
+			return result, nil
+		}
+		defer src.Close()
 
-			containerType, typeErr := detector.DetectContainerType(absPath)
-			if typeErr != nil {
-				slog.Warn("GetFileInfo: cannot detect container type", "path", queryPath, "error", typeErr)
-				result.Container = map[string]interface{}{
-					"error": "cannot read container metadata: " + openErr.Error(),
-				}
-				return result, nil
-			}
-
-			isSeekable := false
-			if seekable, seekErr := detector.DetectIsSeekable(absPath); seekErr == nil {
-				isSeekable = seekable
-			}
-
-			var containerTypeStr string
-			switch containerType {
-			case 1:
-				containerTypeStr = "video"
-			case 2:
-				containerTypeStr = "audio"
-			case 3:
-				containerTypeStr = "image"
-			case 4:
-				containerTypeStr = "document"
-			case 5:
-				containerTypeStr = "text"
-			default:
-				containerTypeStr = fmt.Sprintf("unknown(%d)", containerType)
-			}
-
+		h, openErr := containerhandle.Open(src)
+		if openErr != nil {
+			slog.Warn("GetFileInfo: ContainerHandle.Open failed", "path", queryPath, "error", openErr)
 			result.Container = map[string]interface{}{
-				"version":        3,
-				"container_type": containerTypeStr,
-				"is_seekable":    isSeekable,
+				"error": "cannot read container metadata: " + openErr.Error(),
 			}
+			return result, nil
+		}
+		defer h.Close()
+
+		result.Container = map[string]interface{}{
+			"version":        h.Version(),
+			"container_type": containerTypeToString(h.ContainerType()),
+			"is_seekable":    h.IsSeekable(),
+		}
+
+		if h.Version() == 4 && h.ManifestV4() != nil {
+			mf := h.ManifestV4()
+			hdr := h.HeaderV4()
+			result.Container["container_id"] = mf.ContainerID
+			result.Container["original_duration"] = mf.OriginalDuration
+			result.Container["segment_count"] = len(mf.Segments)
+			result.Container["segments"] = mf.Segments
+			result.Container["manifest_size"] = hdr.ManifestLength
+			result.Container["header"] = map[string]interface{}{
+				"flags":           hdr.Flags,
+				"manifest_offset": hdr.ManifestOffset,
+				"manifest_length": hdr.ManifestLength,
+			}
+			result.Container["manifest"] = mf
+		} else if h.Manifest() != nil {
+			result.Container["manifest"] = h.Manifest()
 		}
 	}
 
@@ -520,6 +487,23 @@ func (s *MobileService) CheckStoragePermission() bool {
 	f.Close()
 	slog.Info("CheckStoragePermission: OK", "dir", s.servingDir)
 	return true
+}
+
+func containerTypeToString(ct uint16) string {
+	switch ct {
+	case 1:
+		return "video"
+	case 2:
+		return "audio"
+	case 3:
+		return "image"
+	case 4:
+		return "document"
+	case 5:
+		return "text"
+	default:
+		return fmt.Sprintf("unknown(%d)", ct)
+	}
 }
 
 func isPermissionError(err error) bool {

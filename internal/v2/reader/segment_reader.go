@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 
+	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/crypto"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
@@ -20,54 +21,27 @@ type V4ContainerInfo struct {
 }
 
 func OpenV4Container(filePath string, password string) (*V4ContainerInfo, error) {
-	f, err := os.Open(filePath)
+	src, err := containerhandle.NewFileSource(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %w", err)
+		return nil, fmt.Errorf("failed to open container source: %w", err)
 	}
-	defer f.Close()
 
-	header, err := types.ReadHeaderV4(f)
+	h, err := containerhandle.Open(src)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read V4 header: %w", err)
+		src.Close()
+		return nil, fmt.Errorf("failed to open container handle: %w", err)
 	}
+	defer h.Close()
 
-	manifestData := make([]byte, header.ManifestLength)
-	if _, err := f.Seek(int64(header.ManifestOffset), io.SeekStart); err != nil {
-		return nil, fmt.Errorf("failed to seek to manifest offset %d: %w", header.ManifestOffset, err)
-	}
-	if _, err := io.ReadFull(f, manifestData); err != nil {
-		return nil, fmt.Errorf("failed to read manifest data: %w", err)
-	}
-
-	plainManifest, err := crypto.DeobfuscateManifest(manifestData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to deobfuscate manifest: %w", err)
-	}
-
-	manifest, err := types.DeserializeManifest_v4(plainManifest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to deserialize manifest: %w", err)
-	}
-
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("failed to stat file: %w", err)
-	}
-
-	if _, err := f.Seek(fi.Size()-types.EnvelopeFooterSize_v4, io.SeekStart); err != nil {
-		return nil, fmt.Errorf("failed to seek to footer: %w", err)
-	}
-
-	footer, err := types.ReadFooterV4(f)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read V4 footer: %w", err)
+	if h.Version() != 4 {
+		return nil, fmt.Errorf("not a v4 container (version: %d)", h.Version())
 	}
 
 	var kvi struct {
 		SaltBase64 string `json:"salt_base64"`
 		IVBase64   string `json:"iv_base64"`
 	}
-	if err := json.Unmarshal(manifest.KVI, &kvi); err != nil {
+	if err := json.Unmarshal(h.Manifest().KVI, &kvi); err != nil {
 		return nil, fmt.Errorf("failed to parse KVI from manifest: %w", err)
 	}
 
@@ -79,9 +53,9 @@ func OpenV4Container(filePath string, password string) (*V4ContainerInfo, error)
 	key := crypto.GenerateKey_v2(password, salt, types.KeySize_v2)
 
 	return &V4ContainerInfo{
-		Header:   header,
-		Footer:   footer,
-		Manifest: manifest,
+		Header:   h.HeaderV4(),
+		Footer:   h.FooterV4(),
+		Manifest: h.ManifestV4(),
 		FilePath: filePath,
 		Key:      key,
 	}, nil

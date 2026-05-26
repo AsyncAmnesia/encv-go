@@ -2,13 +2,13 @@ package reader
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 
+	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/logger"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
@@ -388,7 +388,7 @@ func (r *remoteEncryptedContainerReader) getManifestV4() *types.Manifest_v2 {
 	}
 
 	v4Footer := &types.EnvelopeFooterV4{}
-	if err := binaryRead(footerData, v4Footer); err != nil {
+	if err := binary.Read(bytes.NewReader(footerData), binary.LittleEndian, v4Footer); err != nil {
 		readerLogger.Error("failed to parse v4 footer", slog.Any("error", err))
 		return nil
 	}
@@ -407,7 +407,7 @@ func (r *remoteEncryptedContainerReader) getManifestV4() *types.Manifest_v2 {
 		return nil
 	}
 
-	v4Header, err := types.ReadHeaderV4(headerDataAsReader(headerData))
+	v4Header, err := types.ReadHeaderV4(bytes.NewReader(headerData))
 	if err != nil {
 		readerLogger.Error("failed to parse v4 header", slog.Any("error", err))
 		return nil
@@ -449,7 +449,7 @@ func (r *remoteEncryptedContainerReader) getManifestV4() *types.Manifest_v2 {
 	}
 
 	// 5. 适配为 Manifest_v2
-	r.manifest = adaptV4ToV2ManifestRemote(v4Manifest, v4Header)
+	r.manifest = containerhandle.AdaptV4ToV2(v4Manifest, v4Header)
 
 	readerLogger.Info("v4 manifest loaded successfully",
 		slog.Int("segment_count", len(v4Manifest.Segments)),
@@ -482,48 +482,4 @@ func (r *remoteEncryptedContainerReader) Close() error {
 	return nil
 }
 
-func binaryRead(data []byte, v interface{}) error {
-	return binary.Read(bytes.NewReader(data), binary.LittleEndian, v)
-}
 
-func headerDataAsReader(data []byte) io.Reader {
-	return bytes.NewReader(data)
-}
-
-func adaptV4ToV2ManifestRemote(v4 *types.Manifest_v4, header *types.EnvelopeHeaderV4) *types.Manifest_v2 {
-	fragments := make([]types.Fragment_v2, len(v4.Segments))
-	for i, seg := range v4.Segments {
-		nonce, _ := base64.StdEncoding.DecodeString(seg.Nonce)
-		encDataSize := seg.Size - uint64(types.SegmentHeaderSize) - uint64(len(nonce))
-		fragments[i] = types.Fragment_v2{
-			ID:       seg.ID,
-			Type:     types.FragmentType_SeekableStream,
-			Length:   encDataSize,
-			PhysicalOffset: seg.Offset + uint64(types.SegmentHeaderSize) + uint64(len(nonce)),
-			DataCRC32:      0,
-		}
-	}
-
-	var kind types.IndexKind
-	switch v4.ContainerType {
-	case "video":
-		kind = "video"
-	case "audio":
-		kind = "audio"
-	case "image":
-		kind = "image"
-	case "document":
-		kind = "PDF"
-	case "text":
-		kind = "text"
-	default:
-		kind = types.IndexKind(v4.ContainerType)
-	}
-
-	return &types.Manifest_v2{
-		Version:   int64(header.Version),
-		Kind:      kind,
-		KVI:       v4.KVI,
-		Fragments: fragments,
-	}
-}
