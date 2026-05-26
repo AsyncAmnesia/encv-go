@@ -408,7 +408,7 @@ class EncvGoService : Service() {
 
     private fun copyDefaultConfig(dest: File) {
         try {
-            assets.open("config.mobile.json").use { input ->
+            assets.open("config.user.json").use { input ->
                 FileOutputStream(dest).use { output ->
                     input.copyTo(output)
                 }
@@ -426,7 +426,7 @@ class EncvGoService : Service() {
             var changed = false
 
             val defaults = try {
-                JSONObject(assets.open("config.mobile.json").bufferedReader().use { it.readText() })
+                JSONObject(assets.open("config.user.json").bufferedReader().use { it.readText() })
             } catch (e: Exception) {
                 Log.w(TAG, "Cannot read default config for merge", e)
                 return

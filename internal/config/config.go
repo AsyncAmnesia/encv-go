@@ -80,7 +80,7 @@ func FromContext(ctx context.Context) *Config {
 func DefaultConfig() *Config {
 	return &Config{
 		OutputPath: "./encrypted",
-		Server:     types.HttpServer{Port: 2025, Dir: "./"},
+		Server:     types.HttpServer{Port: 1999, Dir: "./"},
 		Webdav: types.WebdavServer{
 			Root: "/webdav/",
 			Dir:  "./output",
@@ -119,6 +119,19 @@ func Load(configPath string) (*Config, error) {
 		cfg.Server.Dir, err = os.Getwd()
 		if err != nil {
 			return cfg, fmt.Errorf("failed to get current working directory: %w", err)
+		}
+	}
+
+	if os.Getenv("ENCV_MOBILE") == "1" {
+		home := os.Getenv("HOME")
+		if cfg.Server.Dir == "" || cfg.Server.Dir == "." || cfg.Server.Dir == home {
+			cfg.Server.Dir = home
+		}
+		if cfg.OutputPath == "" || cfg.OutputPath == "./encrypted" {
+			cfg.OutputPath = filepath.Join(home, "encv-output")
+		}
+		if cfg.Webdav.Dir == "./output" {
+			cfg.Webdav.Dir = ""
 		}
 	}
 
