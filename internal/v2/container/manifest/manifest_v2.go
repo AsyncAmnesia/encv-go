@@ -13,6 +13,7 @@ import (
 	"github.com/Soltus/encv-go/internal/logger"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
 	"github.com/Soltus/encv-go/internal/v2/container/envelope"
+	"github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/crypto"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
@@ -54,13 +55,15 @@ func ExtractKVI(containerPath string) ([]byte, error) {
 	}
 	defer file.Close()
 
-	// log.Printf("INFO: Scanning '%s' for KVI block...", containerPath)
-
-	// 1. 【关键修复】探测 Header 并跳过
-	_, headerSize, err := types.DetectHeaderInfoFromReaderAt(file)
+	version, headerSize, err := types.DetectHeaderInfoFromReaderAt(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect header size: %w", err)
 	}
+
+	if version == 4 {
+		return extractKVIV4(file)
+	}
+
 	if _, err := file.Seek(headerSize, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("failed to seek to data stream start: %w", err)
 	}
@@ -112,13 +115,15 @@ func ExtractManifest(containerPath string) ([]byte, error) {
 	}
 	defer file.Close()
 
-	// log.Printf("INFO: Scanning '%s' for Manifest block...", containerPath)
-
-	// 1. 【关键修复】探测 Header 并跳过
-	_, headerSize, err := types.DetectHeaderInfoFromReaderAt(file)
+	version, headerSize, err := types.DetectHeaderInfoFromReaderAt(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect header size: %w", err)
 	}
+
+	if version == 4 {
+		return extractManifestV4(file)
+	}
+
 	if _, err := file.Seek(headerSize, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("failed to seek to data stream start: %w", err)
 	}
@@ -133,12 +138,19 @@ func ExtractManifest(containerPath string) ([]byte, error) {
 		}
 
 		if header.Type == types.BlockTypeManifest_v2 {
-			// log.Printf("DEBUG: Found Manifest block.")
-			manifestData, err := block.ReadBlockData(file, header)
+			rawData, err := block.ReadBlockData(file, header)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read Manifest block data: %w", err)
 			}
-			return manifestData, nil
+			plainData, err := DecryptManifest(rawData)
+			if err != nil {
+				var check types.Manifest
+				if json.Unmarshal(rawData, &check) == nil {
+					return rawData, nil
+				}
+				return nil, fmt.Errorf("failed to decrypt manifest block (and raw parse failed): %w", err)
+			}
+			return plainData, nil
 		}
 
 		_, err = file.Seek(int64(header.Length), io.SeekCurrent)
@@ -198,7 +210,15 @@ func ReadManifestFromFile(filePath string) (*types.Manifest, *types.EnvelopeFoot
 	}
 
 	if headerVersion == 4 {
-		return nil, nil, headerVersion, headerSize, fmt.Errorf("v4 containers must be opened via ContainerHandle (handle package), not ReadManifestFromFile")
+		plainBytes, err := extractManifestV4(file)
+		if err != nil {
+			return nil, nil, headerVersion, headerSize, fmt.Errorf("failed to extract v4 manifest: %w", err)
+		}
+		mf, err := DeserializeFromJSON(plainBytes)
+		if err != nil {
+			return nil, nil, headerVersion, headerSize, fmt.Errorf("failed to deserialize v4 manifest: %w", err)
+		}
+		return mf, nil, headerVersion, headerSize, nil
 	}
 
 	// 2. 【V2/V3 路径】使用 envelope 包读取 Footer
@@ -234,6 +254,18 @@ func ScanManifestFromFile(filePath string) (*types.Manifest, int, int64, error) 
 	version, headerSize, err := types.DetectHeaderInfoFromReaderAt(file)
 	if err != nil {
 		return nil, 0, 0, err
+	}
+
+	if version == 4 {
+		plainBytes, err := extractManifestV4(file)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		mf, err := DeserializeFromJSON(plainBytes)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		return mf, version, headerSize, nil
 	}
 
 	if _, err := file.Seek(headerSize, io.SeekStart); err != nil {
@@ -332,23 +364,72 @@ func readBlockDataAndDecrypt(r io.Reader, header *block.BlockHeader_v2) ([]byte,
 func ReadEncryptedManifestBlock(encryptedData []byte) (*types.Manifest, error) {
 	reader := bytes.NewReader(encryptedData)
 
-	// 1. 读取 Block Header
 	header, err := block.ReadBlockHeader(reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read block header: %w", err)
 	}
 
-	// 2. 读取并解密数据 (复用已有的通用逻辑)
 	plainData, err := readBlockDataAndDecrypt(reader, header)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read/decrypt manifest: %w", err)
 	}
 
-	// 3. 反序列化 JSON
 	var manifest types.Manifest
 	if err := json.Unmarshal(plainData, &manifest); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
 	}
 
 	return &manifest, nil
+}
+
+func extractManifestV4(file *os.File) ([]byte, error) {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("failed to seek to start: %w", err)
+	}
+	hdr, err := types.ReadHeaderV4(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read v4 header: %w", err)
+	}
+
+	if hdr.ManifestOffset == 0 || hdr.ManifestLength == 0 {
+		return nil, fmt.Errorf("v4 header has invalid manifest offset/length")
+	}
+	obfuscated := make([]byte, hdr.ManifestLength)
+	if _, err := file.ReadAt(obfuscated, int64(hdr.ManifestOffset)); err != nil {
+		return nil, fmt.Errorf("failed to read v4 manifest data at offset %d: %w", hdr.ManifestOffset, err)
+	}
+
+	plainData, err := crypto.DeobfuscateManifest(obfuscated)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deobfuscate v4 manifest: %w", err)
+	}
+
+	v4Manifest, err := types.DeserializeManifest_v4(plainData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deserialize v4 manifest: %w", err)
+	}
+
+	v2Manifest := handle.AdaptV4ToV2(v4Manifest, hdr)
+	resultJSON, err := v2Manifest.SerializeToJSON()
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize adapted V2 manifest: %w", err)
+	}
+
+	return resultJSON, nil
+}
+
+func extractKVIV4(file *os.File) ([]byte, error) {
+	plainBytes, err := extractManifestV4(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract manifest for KVI: %w", err)
+	}
+	mf, err := DeserializeFromJSON(plainBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deserialize manifest for KVI: %w", err)
+	}
+	kviJSON, err := json.Marshal(mf.KVI)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal KVI: %w", err)
+	}
+	return kviJSON, nil
 }
