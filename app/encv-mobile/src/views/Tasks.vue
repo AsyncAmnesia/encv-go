@@ -58,6 +58,7 @@
               <div v-if="task.status === 'completed'" class="completed-info">
                 <ion-icon :icon="checkmarkCircle" color="success" class="completed-icon"></ion-icon>
                 <span class="completed-text">{{ t('tasks.phaseCompleted') }}</span>
+                <span v-if="task.containerVersion" class="container-version">V{{ task.containerVersion }}</span>
               </div>
               <p v-if="task.error" class="task-error">{{ task.error }}</p>
               <div v-if="task.errorDetail && task.errorDetail !== task.error" class="error-detail-row">
@@ -682,6 +683,16 @@ onUnmounted(() => {
 .completed-text {
   font-size: 12px;
   color: var(--ion-color-success);
+}
+
+.container-version {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ion-color-primary);
+  background: rgba(var(--ion-color-primary-rgb), 0.12);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
 }
 
 .task-error {

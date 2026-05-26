@@ -33,5 +33,5 @@ type ContentVerifier interface {
 // FragmentBuilder 定义了自定义逻辑分片策略的接口（如视频 GOP 对齐）
 type FragmentBuilder interface {
 	// BuildFragments 根据逻辑文件大小生成分片元数据
-	BuildFragments(logicalFileSize int64) ([]types.Fragment_v2, error)
+	BuildFragments(logicalFileSize int64) ([]types.Fragment, error)
 }

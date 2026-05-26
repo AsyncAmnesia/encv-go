@@ -22,6 +22,7 @@ import (
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/middleware"
 	"github.com/Soltus/encv-go/internal/openlist"
+	"github.com/Soltus/encv-go/internal/openlist/web"
 	"github.com/Soltus/encv-go/internal/register"
 	"github.com/Soltus/encv-go/internal/routes"
 	"github.com/Soltus/encv-go/internal/utils"
@@ -145,6 +146,8 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/ping", s.handlePingGin)
 	r.GET("/health", s.handleHealthGin)
 	r.GET("/stream", gin.WrapF(s.handleStreamRequest))
+	r.GET("/decrypt", gin.WrapF(s.handleStreamRequest))
+	r.GET("/preview/*filepath", gin.WrapH(http.StripPrefix("/preview", web.PreviewHandler())))
 	r.GET("/api/config", s.handleGetConfigGin)
 	r.PUT("/api/config", s.handlePutConfigGin)
 	r.GET("/api/config/schema", s.handleConfigSchemaGin)
@@ -227,9 +230,13 @@ func (s *Server) Start(version string) (string, error) {
 		if loginRequired {
 			openlistGroup.Use(JWTAuthMiddleware(s.jwtManager))
 		}
-		openlistGroup.Any("/:siteId/_preview/*path", handleOpenlistPreviewGin())
-		openlistGroup.POST("/:siteId/decrypt", handleOpenlistProxyGin(proxyGin))
-		openlistGroup.Any("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.GET("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.HEAD("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.POST("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.PUT("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.DELETE("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.PATCH("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.OPTIONS("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
 	}
 
 	if s.webdavDir != "" {

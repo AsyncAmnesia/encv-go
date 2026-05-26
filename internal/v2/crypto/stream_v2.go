@@ -37,7 +37,7 @@ func EncryptToTempFile_v2(src io.Reader, password string, outputDir string) (*En
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate iv: %w", err)
 	}
-	key := GenerateKey_v2(password, salt, types.KeySize_v2)
+	key := GenerateKey(password, salt, types.KeySize_v2)
 
 	// 2. 创建临时文件
 	tempFile, err := os.CreateTemp(outputDir, "*.enc.tmp")

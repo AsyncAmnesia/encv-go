@@ -259,16 +259,18 @@
 
         if (file) {
             const decryptUrl = baseUrl + '/decrypt?file=' + encodeURIComponent(file);
-            fetch(decryptUrl)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+            fetch(decryptUrl, { signal: controller.signal })
                 .then(response => {
+                    clearTimeout(timeoutId);
                     if (!response.ok) throw new Error(`Server returned ${response.status}: ${response.statusText}`);
                     return response.text();
                 })
                 .then(text => {
-                    // 【关键优化】文本只设置一次，后续不再改动
                     textContent.textContent = text;
 
-                    // 根据初始状态设置是否换行
                     if (!isWrapping) {
                         textContent.classList.add('no-wrap');
                     }
@@ -277,8 +279,12 @@
                     textContent.style.display = 'block';
                 })
                 .catch(error => {
+                    clearTimeout(timeoutId);
                     console.error('Error fetching text file:', error);
-                    loading.innerHTML = `<span class="error-message">Failed to load text file: ${error.message}</span>`;
+                    const msg = error.name === 'AbortError'
+                        ? 'Request timed out after 30 seconds'
+                        : `Failed to load text file: ${error.message}`;
+                    loading.innerHTML = `<span class="error-message">${msg}</span>`;
                 });
         } else {
             document.body.innerText = 'Error: URL not provided.';

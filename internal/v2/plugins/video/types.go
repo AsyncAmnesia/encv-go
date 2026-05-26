@@ -65,7 +65,7 @@ func (m MKVChapterInfo) ToChapterInfoV4() types.ChapterInfo_v4 {
 
 // 视频容器专用的 KVI
 type VideoKVI_v2 struct {
-	types.KVI_v2
+	types.KVI
 	VideoIndex *VideoIndex `json:"video_index"`
 }
 
@@ -74,8 +74,8 @@ func (v VideoKVI_v2) GetKind() types.IndexKind {
 }
 
 // 【关键新增】实现 KVIProvider 接口
-func (v VideoKVI_v2) GetEncryptionInfo() types.KVI_v2 {
-	return v.KVI_v2
+func (v VideoKVI_v2) GetEncryptionInfo() types.KVI {
+	return v.KVI
 }
 
 func (v VideoKVI_v2) GetIndex() types.Index {

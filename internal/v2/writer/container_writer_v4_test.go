@@ -71,16 +71,16 @@ func writeAndOpenContainer(t *testing.T, password string, manifest *types.Manife
 }
 
 func TestV4ContainerSingleSegment(t *testing.T) {
-	testData := make([]byte, 1024)
+	testData := make([]byte, 512)
 	if _, err := rand.Read(testData); err != nil {
 		t.Fatalf("rand.Read: %v", err)
 	}
 
 	salt, err := crypto.GenerateSalt_v2(16)
 	if err != nil {
-		t.Fatalf("GenerateSalt_v2: %v", err)
+		t.Fatalf("GenerateSalt: %v", err)
 	}
-	key := crypto.GenerateKey_v2("testpassword", salt, 32)
+	key := crypto.GenerateKey("testpassword", salt, 32)
 
 	encResult, err := crypto.EncryptSegment(testData, key, 0)
 	if err != nil {
@@ -118,9 +118,9 @@ func TestV4ContainerMultipleSegments(t *testing.T) {
 
 	salt, err := crypto.GenerateSalt_v2(16)
 	if err != nil {
-		t.Fatalf("GenerateSalt_v2: %v", err)
+		t.Fatalf("GenerateSalt: %v", err)
 	}
-	key := crypto.GenerateKey_v2("testpassword", salt, 32)
+	key := crypto.GenerateKey("testpassword", salt, 32)
 
 	testDatas := make([][]byte, numSegments)
 	segResults := make([]*crypto.SegmentEncryptionResult, numSegments)
@@ -177,7 +177,7 @@ func TestV4ContainerMultipleSegments(t *testing.T) {
 func TestV4ContainerEmptyContainer(t *testing.T) {
 	salt, err := crypto.GenerateSalt_v2(16)
 	if err != nil {
-		t.Fatalf("GenerateSalt_v2: %v", err)
+		t.Fatalf("GenerateSalt: %v", err)
 	}
 
 	manifest := makeTestManifest(salt, []types.Segment_v4{}, []string{})
@@ -218,9 +218,9 @@ func TestV4ContainerSegmentIndependence(t *testing.T) {
 
 	salt, err := crypto.GenerateSalt_v2(16)
 	if err != nil {
-		t.Fatalf("GenerateSalt_v2: %v", err)
+		t.Fatalf("GenerateSalt: %v", err)
 	}
-	key := crypto.GenerateKey_v2("testpassword", salt, 32)
+	key := crypto.GenerateKey("testpassword", salt, 32)
 
 	testDatas := make([][]byte, numSegments)
 	segResults := make([]*crypto.SegmentEncryptionResult, numSegments)
@@ -284,17 +284,17 @@ func TestV4ContainerSegmentIndependence(t *testing.T) {
 	}
 }
 
-func TestV4ContainerManifestObfuscation(t *testing.T) {
-	testData := make([]byte, 1024)
+func TestV4ContainerDetection(t *testing.T) {
+	testData := make([]byte, 512)
 	if _, err := rand.Read(testData); err != nil {
 		t.Fatalf("rand.Read: %v", err)
 	}
 
 	salt, err := crypto.GenerateSalt_v2(16)
 	if err != nil {
-		t.Fatalf("GenerateSalt_v2: %v", err)
+		t.Fatalf("GenerateSalt: %v", err)
 	}
-	key := crypto.GenerateKey_v2("testpassword", salt, 32)
+	key := crypto.GenerateKey("testpassword", salt, 32)
 
 	encResult, err := crypto.EncryptSegment(testData, key, 0)
 	if err != nil {
@@ -333,17 +333,17 @@ func TestV4ContainerManifestObfuscation(t *testing.T) {
 	}
 }
 
-func TestV4ContainerDetection(t *testing.T) {
-	testData := make([]byte, 512)
+func TestV4ContainerManifestObfuscation(t *testing.T) {
+	testData := make([]byte, 1024)
 	if _, err := rand.Read(testData); err != nil {
 		t.Fatalf("rand.Read: %v", err)
 	}
 
 	salt, err := crypto.GenerateSalt_v2(16)
 	if err != nil {
-		t.Fatalf("GenerateSalt_v2: %v", err)
+		t.Fatalf("GenerateSalt: %v", err)
 	}
-	key := crypto.GenerateKey_v2("testpassword", salt, 32)
+	key := crypto.GenerateKey("testpassword", salt, 32)
 
 	encResult, err := crypto.EncryptSegment(testData, key, 0)
 	if err != nil {
@@ -381,9 +381,9 @@ func TestV4ContainerSeekByTime(t *testing.T) {
 
 	salt, err := crypto.GenerateSalt_v2(16)
 	if err != nil {
-		t.Fatalf("GenerateSalt_v2: %v", err)
+		t.Fatalf("GenerateSalt: %v", err)
 	}
-	key := crypto.GenerateKey_v2("testpassword", salt, 32)
+	key := crypto.GenerateKey("testpassword", salt, 32)
 
 	testDatas := make([][]byte, numSegments)
 	segResults := make([]*crypto.SegmentEncryptionResult, numSegments)

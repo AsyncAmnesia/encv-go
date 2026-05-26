@@ -202,6 +202,14 @@ type LogConfig struct {
 	File string `json:"file"`
 }
 
+// MobileConfig 移动端专用配置段，桌面端忽略。
+// 用于覆盖 server.dir / output_path / webdav.dir 等平台敏感路径。
+type MobileConfig struct {
+	ServerDir  string `json:"server_dir"`  // 覆盖 server.dir
+	OutputPath string `json:"output_path"` // 覆盖 output_path
+	WebdavDir  string `json:"webdav_dir"` // 覆盖 webdav.dir
+}
+
 // DecryptedContent 包含解密后的所有内容
 type DecryptedContent struct {
 	Index      Index

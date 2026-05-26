@@ -47,6 +47,9 @@ func OpenlistSiteMiddleware(mss *openlist.MultiSiteServer) gin.HandlerFunc {
 						if cleanPath == "" {
 							cleanPath = "/"
 						}
+						if after, ok := strings.CutPrefix(cleanPath, "/d/"); ok {
+							cleanPath = "/" + after
+						}
 						c.Set("routePath", cleanPath)
 						slog.Info("[MultiSite Middleware] Extracted routePath", "path", cleanPath)
 					}

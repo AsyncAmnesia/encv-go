@@ -34,8 +34,8 @@ const (
 	Iterations_v2 = 100000
 )
 
-// GenerateKey_v2 使用 PBKDF2 从密码和盐派生密钥
-func GenerateKey_v2(password string, salt []byte, keyLen int) []byte {
+// GenerateKey 使用 PBKDF2 从密码和盐派生密钥
+func GenerateKey(password string, salt []byte, keyLen int) []byte {
 	if keyLen <= 0 {
 		keyLen = KeySize_v2 // 默认 AES-256
 	}

@@ -30,7 +30,7 @@ func BenchmarkWriteBlock_v2(b *testing.B) {
 
 			for b.Loop() {
 				var buf bytes.Buffer
-				_, _ = WriteBlock_v2(&buf, types.BlockTypeData_v2, data)
+				_, _ = WriteBlock(&buf, types.BlockTypeData_v2, data)
 			}
 		})
 	}
@@ -39,7 +39,7 @@ func BenchmarkWriteBlock_v2(b *testing.B) {
 func BenchmarkReadBlockHeader_v2(b *testing.B) {
 	data := make([]byte, 1024)
 	var buf bytes.Buffer
-	WriteBlock_v2(&buf, types.BlockTypeData_v2, data)
+	WriteBlock(&buf, types.BlockTypeData_v2, data)
 	blockBytes := buf.Bytes()
 
 	b.ReportAllocs()
@@ -47,7 +47,7 @@ func BenchmarkReadBlockHeader_v2(b *testing.B) {
 
 	for b.Loop() {
 		r := bytes.NewReader(blockBytes)
-		_, _ = ReadBlockHeader_v2(r)
+		_, _ = ReadBlockHeader(r)
 	}
 }
 
@@ -66,7 +66,7 @@ func BenchmarkReadBlockData_v2(b *testing.B) {
 			}
 
 			var buf bytes.Buffer
-			WriteBlock_v2(&buf, types.BlockTypeData_v2, data)
+			WriteBlock(&buf, types.BlockTypeData_v2, data)
 			blockBytes := buf.Bytes()
 
 			b.SetBytes(int64(size))
@@ -75,8 +75,8 @@ func BenchmarkReadBlockData_v2(b *testing.B) {
 
 			for b.Loop() {
 				r := bytes.NewReader(blockBytes)
-				header, _ := ReadBlockHeader_v2(r)
-				_, _ = ReadBlockData_v2(r, header)
+				header, _ := ReadBlockHeader(r)
+				_, _ = ReadBlockData(r, header)
 			}
 		})
 	}

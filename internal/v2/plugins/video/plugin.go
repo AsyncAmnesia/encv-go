@@ -316,7 +316,7 @@ func (p *VideoPlugin) GetPhysicalPacker() physical.PhysicalPacker {
 	return p.physicalPacker
 }
 
-func (p *VideoPlugin) BuildFragments(logicalFileSize int64) ([]types.Fragment_v2, error) {
+func (p *VideoPlugin) BuildFragments(logicalFileSize int64) ([]types.Fragment, error) {
 	return p.createGOPAlignedFragments(logicalFileSize)
 }
 
@@ -496,7 +496,7 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 	logicalDataSize := result.EncryptedPayloadSize
 
 	// 2. 生成逻辑分片 (视频特有逻辑)
-	var logicalFragments []types.Fragment_v2
+	var logicalFragments []types.Fragment
 	var err error
 
 	logicalFragments, err = p.createGOPAlignedFragments(logicalDataSize)
@@ -517,13 +517,13 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 	// 3. 构造 Video 特有的 Manifest（KVI + LogicalFragments）
 	// 使用 result 中的 Salt 和 IV
 	kvi := VideoKVI_v2{
-		KVI_v2: types.KVI_v2{
+		KVI: types.KVI{
 			SaltBase64: crypto.Base64Encode_v2(result.Salt),
 			IVBase64:   crypto.Base64Encode_v2(result.IV),
 		},
 		VideoIndex: &p.index,
 	}
-	manifest, err := types.NewManifest_v2(kvi, logicalFragments)
+	manifest, err := types.NewManifest(kvi, logicalFragments)
 	if err != nil {
 		return fmt.Errorf("failed to create manifest: %w", err)
 	}
@@ -557,7 +557,9 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 		Namer:                 p.chunkNamer,
 		StartIdx:              startIdx,
 		LightMainChunkEnabled: p.settings.LightContainerMainChunkEnabled,
-		HeaderVersion:         3,
+		HeaderVersion:         4,
+		ContainerType:         p.ContainerType(),
+		IsSeekable:            p.DefaultIsSeekable(p.inputPath),
 		SpecialIDType:         types.IDType_Raw,
 		SpecialID:             nil,
 	}
@@ -588,7 +590,7 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 
 // createGOPAlignedFragments 基于关键帧位置生成逻辑分片
 // 【通用性】适用于所有视频，依赖 p.index.KeyFrameOffsets
-func (p *VideoPlugin) createGOPAlignedFragments(fileSize int64) ([]types.Fragment_v2, error) {
+func (p *VideoPlugin) createGOPAlignedFragments(fileSize int64) ([]types.Fragment, error) {
 	// 如果没有提取到关键帧（例如 ffprobe 失败），则无法进行 GOP 对齐
 	if len(p.index.KeyFrameOffsets) == 0 {
 		return nil, fmt.Errorf("no keyframe offsets available for GOP alignment")
@@ -598,7 +600,7 @@ func (p *VideoPlugin) createGOPAlignedFragments(fileSize int64) ([]types.Fragmen
 	targetLogicalSize := fragment.CalculateFragmentSize(fileSize, int64(p.settings.ContainerChunkSizeMB)*1024*1024)
 	minLogicalSize := int64(2 * 1024 * 1024) // 2MB
 
-	var fragments []types.Fragment_v2
+	var fragments []types.Fragment
 	currentOffset := uint64(0)
 	fragIndex := 0
 
@@ -636,7 +638,7 @@ func (p *VideoPlugin) createGOPAlignedFragments(fileSize int64) ([]types.Fragmen
 		}
 
 		// 4. 创建 Fragment
-		frag := types.Fragment_v2{
+		frag := types.Fragment{
 			ID:                fmt.Sprintf("logical_fragment_%d", fragIndex),
 			Type:              types.FragmentType_SeekableStream,
 			GlobalStartOffset: currentOffset,

@@ -37,7 +37,7 @@ type decryptReaderFactory struct {
 
 	// 缓存解析结果，避免重复读取文件
 	mu                  sync.RWMutex
-	cachedManifest      *types.Manifest_v2
+	cachedManifest      *types.Manifest
 	cachedHeaderVersion int
 	cachedIndex         types.Index
 	kviProvider         types.KVIProvider

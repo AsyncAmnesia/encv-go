@@ -34,8 +34,8 @@ func GetBlockHeader_v2_Size() int64 {
 	return size
 }
 
-// ReadBlockHeader_v2 从当前位置读取一个块头
-func ReadBlockHeader_v2(r io.Reader) (*BlockHeader_v2, error) {
+// ReadBlockHeader 从当前位置读取一个块头
+func ReadBlockHeader(r io.Reader) (*BlockHeader_v2, error) {
 	var header BlockHeader_v2
 	err := binary.Read(r, types.ByteOrder_v2, &header)
 	if err != nil {
@@ -44,8 +44,8 @@ func ReadBlockHeader_v2(r io.Reader) (*BlockHeader_v2, error) {
 	return &header, nil
 }
 
-// ReadBlockData_v2 读取块的数据并校验CRC
-func ReadBlockData_v2(r io.Reader, header *BlockHeader_v2) ([]byte, error) {
+// ReadBlockData 读取块的数据并校验CRC
+func ReadBlockData(r io.Reader, header *BlockHeader_v2) ([]byte, error) {
 	data := make([]byte, header.Length)
 	if _, err := io.ReadFull(r, data); err != nil {
 		return nil, fmt.Errorf("failed to read block data: %w", err)
@@ -58,9 +58,9 @@ func ReadBlockData_v2(r io.Reader, header *BlockHeader_v2) ([]byte, error) {
 	return data, nil
 }
 
-// WriteBlock_v2 写入一个完整的块 (头 + 数据)
+// WriteBlock 写入一个完整的块 (头 + 数据)
 // 返回计算出的数据 CRC32，避免上层重复计算
-func WriteBlock_v2(w io.Writer, blockType uint16, data []byte) (uint32, error) {
+func WriteBlock(w io.Writer, blockType uint16, data []byte) (uint32, error) {
 	crc := crc32.ChecksumIEEE(data) // 【只计算一次】
 
 	header := &BlockHeader_v2{

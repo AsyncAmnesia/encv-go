@@ -32,9 +32,9 @@ type SpecialIDPatch struct {
 //   - idBytes: 序列化后的 SpecialID 字节数据 (CBOR/Raw bytes)，供 Packer 生成 Header
 //   - error: 错误信息
 func ApplyContainerPatch(
-	originalManifest *Manifest_v2,
+	originalManifest *Manifest,
 	patch *ContainerPatch,
-) (*Manifest_v2, []byte, error) {
+) (*Manifest, []byte, error) {
 	if patch == nil {
 		return originalManifest, nil, nil
 	}
@@ -56,7 +56,7 @@ func ApplyContainerPatch(
 }
 
 // applyIndexPatch 处理 Index 的覆盖逻辑
-func applyIndexPatch(original *Manifest_v2, indexPatch map[string]interface{}) (*Manifest_v2, error) {
+func applyIndexPatch(original *Manifest, indexPatch map[string]interface{}) (*Manifest, error) {
 	if len(indexPatch) == 0 {
 		return original, nil
 	}
