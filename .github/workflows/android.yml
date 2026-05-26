@@ -228,23 +228,26 @@ jobs:
       - name: Build MPV player plugin (JNI + Kotlin)
         run: |
           cd app/encv-mobile/android
-          
+
           # Ensure libplayer.so is built
           if [ ! -f "plugin-mpv-player/src/main/jniLibs/arm64-v8a/libplayer.so" ]; then
             echo "Building libplayer.so via ndk-build..."
             bash ../scripts/build-player-so.sh || echo "⚠️ libplayer.so build failed"
           fi
-          
-          # Compile plugin Kotlin code
-          ./gradlew :plugin-mpv-player:compileDebugKotlin --stacktrace 2>&1 || true
-          echo "=== Plugin compile done ==="
 
-      - name: Package MPV plugin as APK (debug)
+          # Compile plugin Kotlin code (debug or release)
+          BUILD_TYPE="${{ inputs.version && 'Release' || 'Debug' }}"
+          ./gradlew ":plugin-mpv-player:compile${BUILD_TYPE}Kotlin" --stacktrace 2>&1 || true
+          echo "=== Plugin compile done (${BUILD_TYPE}) ==="
+
+      - name: Package MPV plugin as APK
         run: |
           cd app/encv-mobile/android
-          ./gradlew convert_plugin-mpv-player_debug --stacktrace
-          
-          PLUGIN_APK=$(find build -name "plugin-mpv-player-debug.apk" -type f 2>/dev/null | head -1)
+          BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
+
+          ./gradlew "convert_plugin-mpv-player_${BUILD_TYPE}" --stacktrace
+
+          PLUGIN_APK=$(find build -name "plugin-mpv-player-${BUILD_TYPE}.apk" -type f 2>/dev/null | head -1)
           if [ -n "$PLUGIN_APK" ] && [ -f "$PLUGIN_APK" ]; then
             echo "✅ Plugin APK generated:"
             ls -lh "$PLUGIN_APK"
@@ -333,6 +336,13 @@ jobs:
             fi
             echo "=== Lynx bundle in APK ==="
             unzip -l "$APK_PATH" | grep "player.lynx.bundle" || echo "❌ player.lynx.bundle NOT in APK!"
+            echo "=== Plugin APK in assets ==="
+            if unzip -l "$APK_PATH" | grep -q "mpv-player.apk"; then
+              echo "✅ PASS: Plugin APK found in host assets"
+              unzip -l "$APK_PATH" | grep "mpv-player.apk"
+            else
+              echo "::warning::Plugin APK not found in host assets (may be expected for local dev builds)"
+            fi
           else
             echo "No APK found to verify"
           fi
