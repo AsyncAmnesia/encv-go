@@ -15,16 +15,16 @@ val localProps = Properties().apply {
     if (f.exists()) load(f.inputStream())
 }
 
-val keystorePath = localProps.getProperty("aar2apk.keystorePath")
+val ksPath = localProps.getProperty("aar2apk.keystorePath")
     ?: System.getenv("AAR2APK_KEYSTORE_PATH")
     ?: rootProject.file("../keystore/release.jks").absolutePath
-val keystorePassword = localProps.getProperty("aar2apk.keystorePassword")
+val ksPassword = localProps.getProperty("aar2apk.keystorePassword")
     ?: System.getenv("AAR2APK_KEYSTORE_PASSWORD")
     ?: "encv2025"
-val keyAlias = localProps.getProperty("aar2apk.keyAlias")
+val ksAlias = localProps.getProperty("aar2apk.keyAlias")
     ?: System.getenv("AAR2APK_KEY_ALIAS")
     ?: "encvrelease"
-val keyPassword = localProps.getProperty("aar2apk.keyPassword")
+val ksKeyPassword = localProps.getProperty("aar2apk.keyPassword")
     ?: System.getenv("AAR2APK_KEY_PASSWORD")
     ?: "encv2025"
 
@@ -33,10 +33,10 @@ aar2apk {
         module(":plugin-mpv-player")
     }
     signing {
-        keystorePath.set(keystorePath)
-        keystorePassword.set(keystorePassword)
-        keyAlias.set(keyAlias)
-        keyPassword.set(keyPassword)
+        keystorePath.set(ksPath)
+        keystorePassword.set(ksPassword)
+        keyAlias.set(ksAlias)
+        keyPassword.set(ksKeyPassword)
     }
 }
 

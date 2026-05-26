@@ -240,10 +240,9 @@ jobs:
           echo "=== Plugin compile done ==="
 
       - name: Package MPV plugin as APK (debug)
-        continue-on-error: true
         run: |
           cd app/encv-mobile/android
-          ./gradlew convert_plugin-mpv-player_debug --stacktrace 2>&1 || echo "⚠️ Plugin APK packaging skipped"
+          ./gradlew convert_plugin-mpv-player_debug --stacktrace
           
           PLUGIN_APK=$(find build -name "plugin-mpv-player-debug.apk" -type f 2>/dev/null | head -1)
           if [ -n "$PLUGIN_APK" ] && [ -f "$PLUGIN_APK" ]; then
@@ -253,8 +252,9 @@ jobs:
             cp "$PLUGIN_APK" app/src/main/assets/plugins/mpv-player.apk
             echo "✅ Copied to host assets/plugins/"
           else
-            echo "⚠️ Plugin APK not found, checking outputs..."
+            echo "::error::Plugin APK not found after successful build"
             find build/outputs -name "*.apk" 2>/dev/null | head -5 || echo "No APKs found"
+            exit 1
           fi
 
       - name: Verify plugin APK contents
