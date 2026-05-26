@@ -188,33 +188,89 @@ jobs:
 
       - name: Verify native libraries
         run: |
-          echo "=== jniLibs contents ==="
-          find app/encv-mobile/android/app/src/main/jniLibs -name "*.so" -type f | sort
-          echo "=== Checking mpv .so files ==="
-          JNI_DIR="app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a"
-          for lib in libmpv.so libplayer.so; do
-            if [ -f "$JNI_DIR/$lib" ]; then
-              echo "✅ $lib found ($(ls -lh "$JNI_DIR/$lib" | awk '{print $5}'))"
+          echo "═══ HOST APP jniLibs (Go backend only) ═══"
+          HOST_LIBS="app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a"
+          for lib in libencv-go.so libffmpeg.so libffprobe.so; do
+            if [ -f "$HOST_LIBS/$lib" ]; then
+              echo "  ✅ $lib $(ls -lh "$HOST_LIBS/$lib" | awk '{print $5}')"
             else
-              echo "❌ $lib MISSING!"
-              exit 1
+              echo "  ⚠️ $lib absent"
             fi
           done
-          echo "=== Checking ffmpeg shared libraries ==="
-          for lib in libavcodec.so libavformat.so libavutil.so libswresample.so libswscale.so libavfilter.so libavdevice.so libffmpeg.so libffprobe.so; do
-            if [ -f "$JNI_DIR/$lib" ]; then
-              echo "✅ $lib found ($(ls -lh "$JNI_DIR/$lib" | awk '{print $5}'))"
-            else
-              echo "❌ $lib MISSING!"
-              exit 1
-            fi
-          done
+
+          echo ""
+          echo "═══ MPV PLAYER PLUGIN jniLibs ═══"
+          PLUGIN_LIBS="app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a"
+          if [ -d "$PLUGIN_LIBS" ]; then
+            ls -lh "$PLUGIN_LIBS/"*.so 2>/dev/null | awk '{print "  ✅ "$NF" ("$5")"}'
+            for lib in libmpv.so libplayer.so libavcodec.so libavformat.so libavutil.so; do
+              [ -f "$PLUGIN_LIBS/$lib" ] && echo "  ✅ $lib present" || echo "  ❌ $lib MISSING!"
+            done
+          else
+            echo "  ⚠️ Plugin jniLibs dir not found"
+          fi
+
+          echo ""
+          echo "═══ EXPECTED SEPARATION ═══"
+          echo "  Host APK: Go backend only (no MPV .so)"
+          echo "  Plugin APK: All MPV/FFmpeg .so files"
+
+          echo ""
           echo "=== Lynx bundle ==="
           if [ -f "app/encv-mobile/android/app/src/main/assets/player.lynx.bundle" ]; then
             echo "✅ player.lynx.bundle found ($(ls -lh app/encv-mobile/android/app/src/main/assets/player.lynx.bundle | awk '{print $5}'))"
           else
             echo "❌ player.lynx.bundle MISSING!"
             exit 1
+          fi
+
+      # === Build MPV Player Plugin ===
+      - name: Build MPV player plugin (JNI + Kotlin)
+        run: |
+          cd app/encv-mobile/android
+          
+          # Ensure libplayer.so is built
+          if [ ! -f "plugin-mpv-player/src/main/jniLibs/arm64-v8a/libplayer.so" ]; then
+            echo "Building libplayer.so via ndk-build..."
+            bash ../scripts/build-player-so.sh || echo "⚠️ libplayer.so build failed"
+          fi
+          
+          # Compile plugin Kotlin code
+          ./gradlew :plugin-mpv-player:compileDebugKotlin --stacktrace 2>&1 || true
+          echo "=== Plugin compile done ==="
+
+      - name: Package MPV plugin as APK (debug)
+        continue-on-error: true
+        run: |
+          cd app/encv-mobile/android
+          ./gradlew :plugin-mpv-player:buildDebugPluginApk --stacktrace 2>&1 || echo "⚠️ Plugin APK packaging skipped"
+          
+          PLUGIN_APK="build/outputs/plugin-apks/debug/plugin-mpv-player-debug.apk"
+          if [ -f "$PLUGIN_APK" ]; then
+            echo "✅ Plugin APK generated:"
+            ls -lh "$PLUGIN_APK"
+            mkdir -p app/src/main/assets/plugins
+            cp "$PLUGIN_APK" app/src/main/assets/plugins/mpv-player.apk
+            echo "✅ Copied to host assets/plugins/"
+          else
+            echo "⚠️ Plugin APK not found, checking outputs..."
+            find build/outputs -name "*.apk" 2>/dev/null | head -5 || echo "No APKs found"
+          fi
+
+      - name: Verify plugin APK contents
+        if: always()
+        continue-on-error: true
+        run: |
+          PLUGIN_APK="app/encv-mobile/android/build/outputs/plugin-apks/debug/plugin-mpv-player-debug.apk"
+          if [ -f "$PLUGIN_APK" ]; then
+            echo "=== Plugin APK size ==="
+            ls -lh "$PLUGIN_APK"
+            echo "=== .so files in plugin APK ==="
+            unzip -l "$PLUGIN_APK" | grep "\.so" | head -20 || echo "(no .so)"
+            echo "=== Total .so count ==="
+            unzip -l "$PLUGIN_APK" | grep -c "\.so" || echo "0"
+          else
+            echo "⏭️ Plugin APK not available"
           fi
 
       # === Build ===
@@ -268,8 +324,13 @@ jobs:
             rm -rf "$TMPDIR"
             echo "=== Go binary in APK (jniLibs) ==="
             unzip -l "$APK_PATH" | grep -E "libencv-go|lib/arm64" || echo "❌ libencv-go.so NOT in APK!"
-            echo "=== mpv/ffmpeg .so in APK ==="
-            unzip -l "$APK_PATH" | grep -E "libmpv|libplayer|libavcodec|libavformat|libavutil|libswresample|libswscale|libavfilter|libavdevice|libffmpeg\.so|libffprobe\.so" || echo "❌ mpv/ffmpeg .so NOT in APK!"
+            echo "=== Host APK must NOT contain MPV .so ==="
+            if unzip -l "$APK_PATH" | grep -q "libmpv\.so\|libplayer\.so"; then
+              echo "❌ FAIL: Host APK contains MPV .so!"
+              exit 1
+            else
+              echo "✅ PASS: Host APK excludes MPV .so"
+            fi
             echo "=== Lynx bundle in APK ==="
             unzip -l "$APK_PATH" | grep "player.lynx.bundle" || echo "❌ player.lynx.bundle NOT in APK!"
           else

@@ -43,6 +43,14 @@
             <p>{{ t('home.remoteDesc') }}</p>
           </div>
         </div>
+
+        <div class="home-card extensions-card" @click="handleOpenExtensions">
+          <ion-icon :icon="layersOutline" class="card-icon extensions-icon"></ion-icon>
+          <div class="card-info">
+            <h3>{{ t('home.extensions') }}</h3>
+            <p>{{ t('home.extensionsDesc') }}</p>
+          </div>
+        </div>
       </div>
     </ion-content>
   </ion-page>
@@ -57,7 +65,7 @@ import {
   IonContent,
   IonIcon,
 } from '@ionic/vue'
-import { playCircle, folder, lockClosed, globe } from 'ionicons/icons'
+import { playCircle, folder, lockClosed, globe, layersOutline } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { useRouter } from 'vue-router'
 
@@ -78,6 +86,10 @@ function handleOpenTasks() {
 
 function handleOpenRemote() {
   router.push('/tabs/remote')
+}
+
+function handleOpenExtensions() {
+  router.push('/tabs/extensions')
 }
 </script>
 
@@ -161,6 +173,10 @@ function handleOpenRemote() {
 
 .remote-icon {
   color: var(--ion-color-success);
+}
+
+.extensions-icon {
+  color: #8b5cf6;
 }
 
 .card-info {

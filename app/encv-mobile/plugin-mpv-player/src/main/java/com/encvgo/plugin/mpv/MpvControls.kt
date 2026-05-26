@@ -14,6 +14,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Fullscreen
@@ -126,11 +130,11 @@ private fun TopBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.statusBars)
             .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent)))
             .padding(
                 start = 8.dp,
-                end = 8.dp,
-                top = WindowInsetsSafeTop()
+                end = 8.dp
             ),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -154,11 +158,6 @@ private fun TopBar(
         )
         trailing?.invoke()
     }
-}
-
-@Composable
-private fun WindowInsetsSafeTop(): Int {
-    return 0
 }
 
 @Composable
@@ -364,8 +363,9 @@ private fun LockedLayout(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.statusBars)
                     .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.5f), Color.Transparent)))
-                    .padding(start = 8.dp, end = 8.dp, top = WindowInsetsSafeTop()),
+                    .padding(start = 8.dp, end = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onUnlock, modifier = Modifier.size(40.dp)) {
@@ -384,7 +384,7 @@ private fun LockedLayout(
                 .fillMaxWidth()
                 .clickable(onClick = onUnlock)
                 .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.5f))))
-                .padding(bottom = WindowInsetsSafeBottom())
+                .windowInsetsPadding(WindowInsets.navigationBars)
         ) {
             MpvProgressBar(
                 progress = progress,
@@ -394,11 +394,6 @@ private fun LockedLayout(
             )
         }
     }
-}
-
-@Composable
-private fun WindowInsetsSafeBottom(): Int {
-    return 0
 }
 
 @Composable
@@ -487,7 +482,7 @@ private fun AudioOnlyLayout(
                 Spacer(Modifier.width(24.dp))
                 SpeedChip(speed = playbackSpeed, onClick = onChangeSpeed)
             }
-            Spacer(Modifier.height(WindowInsetsSafeBottom().dp))
+            Spacer(Modifier.windowInsetsPadding(WindowInsets.navigationBars))
         }
     }
 }

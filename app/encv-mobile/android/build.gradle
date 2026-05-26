@@ -30,3 +30,11 @@ allprojects {
 task clean(type: Delete) {
     delete rootProject.buildDir
 }
+
+apply plugin: 'io.github.lnzz123.combolite-aar2apk'
+
+aar2apk {
+    modules {
+        module(':plugin-mpv-player')
+    }
+}

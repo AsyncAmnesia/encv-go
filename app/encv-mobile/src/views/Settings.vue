@@ -45,7 +45,7 @@
             mode="ios"
           >
             <ion-select-option value="artplayer">{{ t('settings.builtInArtplayer') }}</ion-select-option>
-            <ion-select-option value="mpv">{{ t('settings.builtInMpv') }}</ion-select-option>
+            <ion-select-option value="mpv-plugin">{{ t('settings.mpvPluginExtension') }}</ion-select-option>
             <ion-select-option value="external">{{ t('settings.openExternal') }}</ion-select-option>
           </ion-select>
         </ion-item>
@@ -415,6 +415,10 @@ const indexStats = ref<IndexStats | null>(null)
 const engineStatus = ref<FFmpegStatus | null>(null)
 
 const videoPlayerMode = ref(localStorage.getItem('encv_player_video') || 'artplayer')
+
+if (videoPlayerMode.value === 'mpv') {
+  videoPlayerMode.value = 'mpv-plugin'
+}
 const audioPlayerMode = ref(localStorage.getItem('encv_player_audio') || 'mpv')
 const screenOrientation = ref(localStorage.getItem('encv_screen_orientation') || 'auto')
 const customTextExts = ref('')

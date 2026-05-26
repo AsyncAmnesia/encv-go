@@ -1,10 +1,10 @@
-# MPV 播放器 ComboLite 插件化 — 收尾实施计划
+# MPV 播放器 ComboLite 插件化 — 收尾实施计划（v2）
 
 ## 概述
 
 基于已完成的 Phase 1-4 基础设施，本计划覆盖 4 项收尾工作：
-1. CI 工作流适配（MPV 插件构建集成到 Android CI）
-2. 主应用首页增加插件管理入口 + 二级页面
+1. CI 工作流适配（MPV 插件构建集成到 Android CI，含 debug/release 双变体）
+2. 主应用首页增加**播放器扩展**入口 + 二级页面（明确区分两种"插件"概念）
 3. 设置页播放方式适配（MPV 插件选项）
 4. 剩余 TODO 实现（MpvEngine 接入、流地址解析、全屏、安全区域）
 
@@ -15,231 +15,523 @@
 ### 现状分析
 
 当前 [android.yml](file:///workspace/.github/workflows/android.yml) 关键步骤：
-- L116-117: `setup-mpv-libs.sh` — 下载 mpv .so 到 **旧路径** `android-overlay/app/src/main/jniLibs/`
+- L116-117: `setup-mpv-libs.sh` — 下载 mpv .so → 已改为输出到 `plugin-mpv-player/src/main/jniLibs/`
 - L119-120: `build-ffmpeg-android.sh` — 编译 Go 后端 FFmpeg
-- L182-187: 复制 libencv-go.so 到 `android/app/src/main/jniLibs/arm64-v8a/`
-- L189-218: **Verify native libraries** — 检查 `libmpv.so`, `libplayer.so`, FFmpeg 系列 .so, `player.lynx.bundle`
+- L182-187: 复制 libencv-go.so 到 Host jniLibs
+- L189-218: Verify native libraries — 检查 libmpv/libplayer/FFmpeg 系列
 - L246: `./gradlew assembleDebug`
-- L272: **APK 验证** — 检查 APK 中包含 mpv/ffmpeg .so
+- L272: APK 验证 — 检查 APK 中包含 mpv/ffmpeg .so
 
-### 需要修改的内容
+### 插件 APK 构建的难点分析
 
-#### 1.1 修改 Verify native libraries 步骤
+#### 难点 A: aar2apk 需要 root build.gradle.kts 配置（项目用 Groovy DSL）
 
-**文件**: `.github/workflows/android.yml` (L189-218)
+ComboLite 的 `aar2apk` 插件要求在 **root `build.gradle.kts`** 中声明模块：
 
-当前逻辑检查 `android/app/src/main/jniLibs/arm64-v8a/` 中的 `.so` 文件。改造后：
+```kotlin
+// build.gradle.kts (root) — 但本项目用的是 build.gradle (Groovy)!
+aar2apk {
+    modules { module(":plugin-mpv-player") }
+    signing { ... }
+}
+```
+
+**问题**: 当前 root 是 [build.gradle (Groovy)](file:///workspace/app/encv-mobile/android/build.gradle)，不是 kts。
+
+**解决方案**: 在 Groovy root build.gradle 中用同样的语法配置。Gradle 支持在 `.gradle` 文件中使用 Kotlin DSL 风格的 block（因为 aar2apk 插件注册的是 Gradle Extension，与 DSL 语言无关）：
+
+```groovy
+// android/build.gradle (root, Groovy)
+buildscript { ... }
+apply plugin: 'io.github.lnzz123.combolite-aar2apk'  // 或在 plugins block 中
+
+aar2apk {
+    modules {
+        module(':plugin-mpv-player')
+    }
+}
+```
+
+> 如果 aar2apk 插件严格要求 kts，则需将 root build.gradle 迁移为 kts，或将 aar2apk 配置提取为独立的 `aar2apk.settings.gradle.kts` 文件。
+
+#### 难点 B: Debug vs Release 双变体签名
+
+Host App 有两个构建变体：
+| 变体 | minify | proguard | 签名 |
+|------|--------|----------|------|
+| **debug** | false | 无 | debug keystore |
+| **release** | true | 有 | release keystore (`encv-release.gradle`) |
+
+ComboLite 插件 APK 也需要对应签名：
+- **Debug 插件 APK**: 使用 debug keystore（自动），用于开发调试
+- **Release 插件 APK**: 必须使用 **与宿主相同的签名**（否则无法通过签名校验安装）
+
+**CI 环境中签名处理**:
+```yaml
+# CI 中从 secrets 获取 keystore
+- name: Setup release keystore for plugin APK
+  run: |
+    echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > app/encv-mobile/android/release.keystore
+    # 配置 aar2apk signing（写入 local.properties 或 gradle.properties）
+    echo "COMBOLITE_KEYSTORE_PATH=release.keystore" >> app/encv-mobile/android/local.properties
+    echo "COMBOLITE_KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> app/encv-mobile/android/local.properties
+```
+
+#### 难点 C: 插件 APK 与 Host APK 的构建顺序
+
+正确顺序：
+1. 先编译插件 Library module（`:plugin-mpv-player:compileDebugKotlin` + ndk-build 编译 libplayer.so）
+2. aar2apk 将编译产物打包为插件 APK
+3. （可选）将插件 APK 复制到 Host assets 目录（`packagePlugins` 自动集成模式）
+4. 编译 Host APK（assembleDebug / assembleRelease）
+
+CI 步骤设计需反映此顺序。
+
+### 具体修改方案
+
+#### 1.1 修改 root build.gradle — 添加 aar2apk 配置
+
+**文件**: `/workspace/app/encv-mobile/android/build.gradle`
+
+在文件末尾添加：
+
+```groovy
+// ComboLite Plugin Configuration
+buildscript {
+    dependencies {
+        classpath 'io.github.lnzz123.combolite-aar2apk:io.github.lnzz123.combolite-aar2apk.gradle.plugin:1.1.0'
+    }
+}
+
+apply plugin: 'io.github.lnzz123.combolite-aar2apk'
+
+aar2apk {
+    modules {
+        module(':plugin-mpv-player')
+    }
+}
+```
+
+> 注意：classpath 可能在之前的 Phase 1 中已添加过，检查是否重复。
+
+#### 1.2 修改 app/build.gradle — 添加 packagePlugins 配置
+
+**文件**: `/workspace/app/encv-mobile/android/app/build.gradle`
+
+在 `android {}` block 后、`dependencies {}` 前：
+
+```groovy
+// ComboLite: auto-integrate plugin APKs into host assets during development
+packagePlugins {
+    enabled.set(true)
+    buildType.set(io.github.combolite.core.build.PackageBuildType.DEBUG)
+    pluginsDir.set("plugins")
+}
+```
+
+Release 构建时不启用 packagePlugins（release 应该预置或远程下载插件）。
+
+#### 1.3 CI 工作流：新增插件构建步骤
+
+**文件**: `.github/workflows/android.yml`
+
+在现有 `Build native libraries` 和 `Build Android App` 之间插入：
 
 ```yaml
-# === Verify native libraries ===
-- name: Verify native libraries
+# === Build MPV Player Plugin ===
+- name: Build MPV player plugin (JNI + Kotlin compile)
   run: |
-    echo "=== Host jniLibs contents (Go backend only) ==="
-    HOST_LIBS="app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a"
-    echo "=== Checking Go backend libraries ==="
-    for lib in libencv-go.so libffmpeg.so libffprobe.so; do
-      if [ -f "$HOST_LIBS/$lib" ]; then
-        echo "✅ $lib found ($(ls -lh "$HOST_LIBS/$lib" | awk '{print $5}'))"
-      else
-        echo "⚠️ $lib not found (may be optional)"
-      fi
-    done
+    cd app/encv-mobile/android
+    
+    # Step 1: ndk-build libplayer.so (if not already built by setup-mpv-libs step)
+    if [ ! -f "plugin-mpv-player/src/main/jniLibs/arm64-v8a/libplayer.so" ]; then
+      echo "Building libplayer.so via ndk-build..."
+      bash ../scripts/build-player-so.sh || echo "⚠️ libplayer.so build failed"
+    fi
+    
+    # Step 2: Compile plugin Kotlin code
+    ./gradlew :plugin-mpv-player:compileDebugKotlin --stacktrace 2>&1
+    echo "=== Plugin module compile result: $? ==="
 
-    echo "=== Plugin jniLibs contents (MPV player) ==="
-    PLUGIN_LIBS="app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a"
-    if [ -d "$PLUGIN_LIBS" ]; then
-      echo "Plugin libs:"
-      ls -lh "$PLUGIN_LIBS/"*.so 2>/dev/null || echo "(no .so files)"
-      echo "=== Checking MPV plugin libraries ==="
-      for lib in libmpv.so libplayer.so; do
-        if [ -f "$PLUGIN_LIBS/$lib" ]; then
-          echo "✅ $lib found ($(ls -lh "$PLUGIN_LIBS/$lib" | awk '{print $5}'))"
-        else
-          echo "❌ $lib MISSING in plugin module!"
-        fi
-      done
-      # Check FFmpeg .so files that MPV depends on
-      for lib in libavcodec.so libavformat.so libavutil.so libswresample.so libswscale.so; do
-        if [ -f "$PLUGIN_LIBS/$lib" ]; then
-          echo "✅ $lib found ($(ls -lh "$PLUGIN_LIBS/$lib" | awk '{print $5}'))"
-        else
-          echo "❌ $lib MISSING in plugin module!"
-        fi
-      done
+- name: Package MPV plugin as APK (debug)
+  run: |
+    cd app/encv-mobile/android
+    # aar2apk task: converts library AAR to installable APK
+    ./gradlew :plugin-mpv-player:buildDebugPluginApk --stacktrace 2>&1 || echo "⚠️ Plugin APK packaging skipped"
+    
+    # Verify output
+    if [ -f "build/outputs/plugin-apks/debug/plugin-mpv-player-debug.apk" ]; then
+      echo "✅ Plugin APK generated:"
+      ls -lh build/outputs/plugin-apks/debug/
+      
+      # Copy to host assets for auto-integration
+      mkdir -p app/src/main/assets/plugins
+      cp build/outputs/plugin-apks/debug/plugin-mpv-player-debug.apk \
+         app/src/main/assets/plugins/mpv-player.apk
+      echo "✅ Plugin APK copied to host assets/plugins/"
     else
-      echo "⚠️ Plugin jniLibs directory not found (MPV plugin may not be built yet)"
+      echo "⚠️ Plugin APK not found at expected path"
+      # List what was actually produced
+      find build/outputs -name "*.apk" 2>/dev/null || echo "No APK outputs found"
+    fi
+  continue-on-error: true
+
+- name: Verify plugin APK contents
+  if: always()
+  run: |
+    PLUGIN_APK="app/encv-mobile/android/build/outputs/plugin-apks/debug/plugin-mpv-player-debug.apk"
+    if [ -f "$PLUGIN_APK" ]; then
+      echo "=== Plugin APK size ==="
+      ls -lh "$PLUGIN_APK"
+      echo "=== Plugin APK contains .so files ==="
+      unzip -l "$PLUGIN_APK" | grep "\.so" | head -20
+      echo "=== Total .so count in plugin ==="
+      unzip -l "$PLUGIN_APK" | grep -c "\.so" || echo "0"
+    else
+      echo "⏭️ Plugin APK not available, skipping verification"
     fi
 ```
 
-关键变化：
-- **Host APK 不再包含** `libmpv.so`, `libplayer.so`, FFmpeg 系列 .so（它们在插件模块中）
-- Host APK 只需包含 `libencv-go.so`（Go 后端）+ `libffmpeg.so`/`libffprobe.so`（Go 后端 FFmpeg）
-- 新增对插件模块 jniLibs 目录的检查
+#### 1.4 修改 Verify native libraries 步骤
 
-#### 1.2 修改 APK 验证步骤
+**文件**: `.github/workflows/android.yml` (L189-218)
+
+改造为区分 Host vs Plugin .so：
+
+```yaml
+- name: Verify native libraries
+  run: |
+    echo "═══ HOST APP jniLibs (Go backend only) ═══"
+    HOST_LIBS="app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a"
+    for lib in libencv-go.so libffmpeg.so libffprobe.so; do
+      if [ -f "$HOST_LIBS/$lib" ]; then
+        echo "  ✅ $lib $(ls -lh "$HOST_LIBS/$lib" | awk '{print $5}')"
+      else
+        echo "  ⚠️ $lib absent"
+      fi
+    done
+
+    echo ""
+    echo "═══ MPV PLAYER PLUGIN jniLibs ═══"
+    PLUGIN_LIBS="app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a"
+    if [ -d "$PLUGIN_LIBS" ]; then
+      echo "  Plugin .so files:"
+      ls -lh "$PLUGIN_LIBS/"*.so 2>/dev/null | awk '{print "  ✅ "$NF" ("$5")"}'
+      REQUIRED="libmpv.so libplayer.so libavcodec.so libavformat.so libavutil.so libswresample.so libswscale.so"
+      for lib in $REQUIRED; do
+        [ -f "$PLUGIN_LIBS/$lib" ] && echo "  ✅ $lib present" || echo "  ❌ $lib MISSING!"
+      done
+    else
+      echo "  ⚠️ Plugin jniLibs dir not found"
+    fi
+
+    echo ""
+    echo "═══ EXPECTED SEPARATION ═══"
+    echo "  Host APK should contain: libencv-go.so (+ optional libffmpeg/libffprobe)"
+    echo "  Host APK should NOT contain: libmpv.so, libplayer.so, libav*.so (MPV's)"
+    echo "  Plugin APK should contain: all MPV/FFmpeg .so files"
+```
+
+#### 1.5 修改 APK 验证步骤
 
 **文件**: `.github/workflows/android.yml` (L249-277)
 
-```
-# 当前：检查 APK 包含 libmpv/libplayer 等
-# 改为：Host APK 不应包含 libmpv/libplayer，但应包含 libencv-go
-echo "=== Go binary in APK (jniLibs) ==="
-unzip -l "$APK_PATH" | grep -E "libencv-go|lib/arm64" || echo "❌ libencv-go.so NOT in APK!"
-echo "=== Host APK should NOT contain MPV .so ==="
-if unzip -l "$APK_PATH" | grep -q "libmpv\.so\|libplayer\.so"; then
-  echo "⚠️ WARNING: Host APK still contains MPV .so (should be in plugin APK only)"
-else
-  echo "✅ Host APK correctly excludes MPV .so"
-fi
-echo "=== Go backend FFmpeg in APK ==="
-unzip -l "$APK_PATH" | grep -E "libffmpeg\.so|libffprobe\.so" || echo "⚠️ Go backend FFmpeg .so not in APK"
-```
-
-#### 1.3 可选：添加插件 APK 构建步骤
-
-在 Host APK 构建成功后，可选地添加一步验证插件模块编译：
-
 ```yaml
-# After assembleDebug succeeds:
-- name: Build MPV plugin module (verification)
+- name: Verify final APK
   run: |
-    cd app/encv-mobile/android
-    ./gradlew :plugin-mpv-player:compileDebugKotlin --stacktrace 2>&1 || echo "⚠️ Plugin module compile skipped (may need NDK)"
-  continue-on-error: true
+    echo "═══ HOST APK analysis ═══"
+    unzip -l "$APK_PATH" | grep -E "\.so$" | head -20
+    echo "---"
+    if unzip -l "$APK_PATH" | grep -q "libmpv\.so\|libplayer\.so"; then
+      echo "❌ FAIL: Host APK still contains MPV .so (should be in plugin only)"
+      exit 1
+    else
+      echo "✅ PASS: Host APK excludes MPV .so"
+    fi
+    if unzip -l "$APK_PATH" | grep -q "libencv-go"; then
+      echo "✅ PASS: Host APK contains Go backend binary"
+    else
+      echo "❌ FAIL: libencv-go.so missing from Host APK"
+    fi
 ```
-
-> **注意**: 完整的插件 APK 打包（aar2apk）需要 ComboLite Gradle 插件完整配置，包括签名等。CI 初期可以先验证编译通过，后续再启用完整打包。
 
 ---
 
-## Task 2: 主应用首页插件管理入口 + 二级页面
+## Task 2: 主应用首页「播放器扩展」+ 二级页面
 
-### 现状分析
+### ⚠️ 重要：术语规范 — 消除"插件"歧义
 
-**首页** ([HomePage.vue](file:///workspace/app/encv-mobile/src/views/HomePage.vue)):
-- 2×2 grid 卡片布局：Player / Files / Tasks / Remote
-- Player 卡片横跨两列（grid-column: 1/-1），是主要入口
-- 无插件管理入口
+项目中存在 **两套完全不同的"插件"体系**：
 
-**路由** ([router/index.ts](file:///workspace/app/encv-mobile/src/router/index.ts)):
-- 已有 `/tabs/settings/plugins` 路由指向 `PluginSettings.vue`
-- 但 PluginSettings.vue 目前只显示 `plugin_settings` 配置字段（Go 后端的插件配置），不显示 ComboLite 插件状态
+| 体系 | 技术层 | 用户可见性 | 示例 | 存储位置 |
+|------|--------|-----------|------|---------|
+| **ENCV 容器格式插件** | Go 后端 | 开发者可见 | video, audio, image, pdf | Go 代码 + config.user.json `plugin_settings` |
+| **ComboLite 功能扩展** | Android APK 层 | **用户可见** | MPV 播放器 | Android PluginManager |
 
-**Tab 栏** ([Tabs.vue](file:///workspace/app/encv-mobile/src/views/Tabs.vue)):
-- 6 个 tab：Home / Files / Tasks / Remote / Settings / DevLogs
-- 无独立 Plugins tab（合理，插件管理放在 Settings 下）
+**命名规范**：
+- 对用户 UI：ComboLite 统称为 **「功能扩展」** 或 **「扩展」**，不叫"插件"
+- ENCV 插件保持叫 **「插件」**（仅开发者/设置页高级区域出现）
+- MPV 播放器在 UI 中称为 **「MPV 播放器扩展」**
 
-### 方案：在 HomePage 新增"插件管理"卡片 + 改造 PluginSettings.vue
+这样彻底消除歧义：
+- 「设置 → 插件设置」→ ENCV 容器格式插件（已有）
+- 「首页 → 扩展管理」→ ComboLite 功能扩展（新增）
 
-#### 2.1 修改 HomePage.vue — 新增插件管理卡片
+### 方案
+
+#### 2.1 修改 HomePage.vue — 新增「扩展管理」卡片
 
 **文件**: `/workspace/app/encv-mobile/src/views/HomePage.vue`
 
-在现有 4 个卡片后新增第 5 个卡片：
+在现有 4 个卡片后新增第 5 个卡片（注意 grid 布局调整）：
 
 ```html
-<div class="home-card" @click="handleOpenPlugins">
-  <ion-icon :icon="puzzleOutline" class="card-icon plugins-icon"></ion-icon>
+<!-- 扩展管理 -->
+<div class="home-card extensions-card" @click="handleOpenExtensions">
+  <ion-icon :icon="layersOutline" class="card-icon extensions-icon"></ion-icon>
   <div class="card-info">
-    <h3>{{ t('home.plugins') }}</h3>
-    <p>{{ t('home.pluginsDesc') }}</p>
+    <h3>{{ t('home.extensions') }}</h3>
+    <p>{{ t('home.extensionsDesc') }}</p>
   </div>
 </div>
 ```
 
-script 增加：
-```typescript
-import { puzzleOutline } from 'ionicons/icons'
+grid 布局从 2×2 调整为：Player 卡片保持横跨两列，其余 4 卡片（Files/Tasks/Remote/Extensions）排成 2×2。
 
-function handleOpenPlugins() {
-  router.push('/tabs/settings/plugins')
-}
+#### 2.2 新建 ExtensionsPage.vue — 功能扩展管理页（本地安装）
+
+**文件**: `/workspace/app/encv-mobile/src/views/ExtensionsPage.vue`（新建）
+
+这是全新的二级页面，**不是改造 PluginSettings.vue**（PluginSettings 保持不变，继续服务 ENCV 插件）。
+
+**核心交互：系统文件选择器 + 本地安装**
+
+```
+┌─────────────────────────────┐
+│ ← 扩展管理                  │
+├─────────────────────────────┤
+│                             │
+│ ┌─────────────────────────┐ │
+│ │ 🎬 MPV 播放器            │ │
+│ │                         │ │
+│ │ 高性能原生视频/音频播放  │ │
+│ │ 支持 MKV/FLV/ASS 字幕   │ │
+│ │                         │ │
+│ │ 📦 约 35 MB             │ │
+│ │                         │ │
+│ │ [未安装]                 │ │ ← 状态显示
+│ └─────────────────────────┘ │
+│                             │
+│     ┌───────────────────┐   │
+│     │ 📂 从文件安装扩展  │   │ ← 主操作按钮
+│     └───────────────────┘   │
+│                             │
+│ 💡 选择 .apk 文件即可安装   │
+│    可通过 USB/网盘传入手机   │
+└─────────────────────────────┘
+
+安装中状态：
+┌─────────────────────────────┐
+│ ← 扩展管理                  │
+├─────────────────────────────┤
+│  📦 正在安装 MPV 播放器...  │
+│  ████████░░░░░  65%        │
+│  正在校验签名...            │
+└─────────────────────────────┘
+
+已安装状态：
+┌─────────────────────────────┐
+│ ← 扩展管理                  │
+├─────────────────────────────┤
+│ ┌─────────────────────────┐ │
+│ │ 🎬 MPV 播放器  ✅ 已安装│ │
+│ │                         │ │
+│ │ v1.0 · 约 35 MB         │ │
+│ │                         │ │
+│ │ [禁用]  [卸载]          │ │
+│ └─────────────────────────┘ │
+└─────────────────────────────┘
 ```
 
-style 增加 plugins-icon 颜色（紫色系，区别于其他卡片）。
+**前端核心逻辑**：
 
-#### 2.2 改造 PluginSettings.vue — 增加 ComboLite 插件管理 UI
-
-**文件**: `/workspace/app/encv-mobile/src/views/PluginSettings.vue`
-
-当前页面只显示 Go 后端 `plugin_settings` 配置字段。需要在 `<ion-list v-if="isNative()">` (L153) 的空列表内填充 ComboLite 插件管理功能：
-
-```html
-<ion-list v-if="isNative()">
-  <ion-list-header>
-    <ion-label>{{ t('plugins.comboLitePlugins') }}</ion-label>
-  </ion-list-header>
-
-  <!-- MPV Player Plugin Card -->
-  <ion-card>
-    <ion-card-header>
-      <ion-card-title>
-        <ion-icon :icon="filmOutline" slot="start"></ion-icon>
-        {{ t('plugins.mpvPlayer') }}
-      </ion-card-title>
-      <ion-badge v-if="mpvInstalled" color="success" slot="end">{{ t('plugins.installed') }}</ion-badge>
-      <ion-badge v-else color="medium" slot="end">{{ t('plugins.notInstalled') }}</ion-badge>
-    </ion-card-header>
-    <ion-card-content>
-      <p>{{ t('plugins.mpvPlayerDesc') }}</p>
-      <ion-item v-if="mpvInstalled" lines="none">
-        <ion-icon :icon="informationCircle" slot="start" color="primary"></ion-icon>
-        <ion-label>
-          {{ t('plugins.mpvSizeHint', { size: mpvSizeDisplay }) }}
-        </ion-label>
-      </ion-item>
-    </ion-card-content>
-    <ion-card-footer>
-      <ion-button v-if="mpvInstalled && !mpvEnabled" fill="outline" size="small" @click="enableMpvPlugin">
-        {{ t('plugins.enable') }}
-      </ion-button>
-      <ion-button v-if="mpvInstalled && mpvEnabled" fill="clear" color="danger" size="small" @click="disableMpvPlugin">
-        {{ t('plugins.disable') }}
-      </ion-button>
-      <ion-button v-if="!mpvInstalled" fill="outline" size="small" disabled>
-        {{ t('plugins.downloadPending') }}
-      </ion-button>
-    </ion-card-footer>
-  </ion-card>
-
-  <!-- Future: more plugin cards here -->
-</ion-list>
-```
-
-script 增加插件状态管理逻辑：
 ```typescript
-import { filmOutline, informationCircle } from 'ionicons/icons'
+import { layersOutline, filmOutline, addOutline } from 'ionicons/icons'
+import { Capacitor } from '@capacitor/core'
+import { PlayerBridgeModule } from '@/plugins/GoProcess'
 
-const mpvInstalled = ref(false)
-const mpvEnabled = ref(false)
-const mpvSizeDisplay = ref('-- MB')
-
-async function loadPluginStatus() {
-  // 通过 PlayerBridgeModule.isMpvAvailable() 或直接调 NativeModules
-  // 查询 ComboLite PluginManager 获取插件状态
+interface ExtensionInfo {
+  id: string
+  name: string
+  icon: string
+  description: string
+  installed: boolean
+  enabled: boolean
+  sizeDisplay: string
+  version?: string
 }
 
-async function enableMpvPlugin() { /* ... */ }
-async function disableMpvPlugin() { /* ... */ }
+const extensions = ref<ExtensionInfo[]>([])
+const installing = ref(false)
+const installProgress = ref(0)
+const installMessage = ref('')
+const installError = ref('')
 
-onMounted(async () => {
-  // ...existing code...
-  if (isNative()) {
-    await loadPluginStatus()
+async function loadExtensions() {
+  if (!Capacitor.isNativePlatform()) return
+
+  const result = await PlayerBridgeModule.getExtensionStatus()
+  // 返回 { mpvPlayer: { installed, enabled, version } }
+  extensions.value = [
+    {
+      id: 'mpv-player',
+      name: t('extensions.mpvPlayer'),
+      icon: 'film-outline',
+      description: t('extensions.mpvPlayerDesc'),
+      installed: result?.mpvPlayer?.installed ?? false,
+      enabled: result?.mpvPlayer?.enabled ?? false,
+      sizeDisplay: '~35 MB',
+      version: result?.mpvPlayer?.version,
+    },
+  ]
+}
+
+async function handleInstallFromFile() {
+  try {
+    // 调用原生方法打开系统文件选择器
+    const result = await PlayerBridgeModule.pickAndInstallPlugin({
+      mimeType: 'application/vnd.android.package-archive',
+      title: t('extensions.selectApk')
+    })
+    
+    if (result.success) {
+      await loadExtensions() // 刷新状态
+    } else {
+      installError.value = result.error || t('extensions.installFailed')
+    }
+  } catch (e: any) {
+    installError.value = e.message || t('extensions.installFailed')
   }
-})
+}
+
+async function handleUninstall(id: string) {
+  const result = await PlayerBridgeModule.uninstallPlugin({ pluginId: id })
+  if (result.success) {
+    await loadExtensions()
+  }
+}
 ```
 
-#### 2.3 注册 PlayerBridgeModule 到 LynxViewBuilder
+**PlayerBridgeModule 新增方法**（Kotlin 侧）：
 
-**需要找到 LynxViewBuilder 注册位置**（搜索 `registerModule` 在 Kotlin 代码中的调用点），添加：
+```kotlin
+// PlayerBridgeModule.kt — 新增方法
+
+@LynxMethod
+fun getExtensionStatus(): Map<String, Any> {
+    val pm = try { PluginManager.getInstance(context) } catch (e: Exception) { null }
+    val mpvPlugin = pm?.getInstalledPlugin("mpv-player")
+    return mapOf(
+        "mpvPlayer" to mapOf(
+            "installed" to (mpvPlugin != null),
+            "enabled" to (mpvPlugin?.enabled == true),
+            "version" to (mpvPlugin?.versionName ?: "")
+        )
+    )
+}
+
+@LynxMethod
+fun pickAndInstallPlugin(options: Map<String, String>): Map<String, Any> {
+    // 1. 启动系统文件选择器 (Intent.ACTION_GET_CONTENT)
+    // 2. 用户选择 .apk 文件后获取 URI
+    // 3. 复制到应用内部存储
+    // 4. 调用 InstallerManager.installPlugin(file)
+    // 5. 返回结果
+}
+```
+
+**Kotlin 侧文件选择器实现**：
+
+```kotlin
+@LynxMethod
+fun pickAndInstallPlugin(options: Map<String, String>): Map<String, Any> {
+    return try {
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "application/vnd.android.package-archive"
+            addCategory(Intent.CATEGORY_OPENABLE)
+            putExtra(Intent.EXTRA_TITLE, options["title"] ?: "Select plugin APK")
+        }
+        
+        // 通过 Activity Result API 获取文件
+        // 注意：LynxModule 中需要用 startActivityForResult 或
+        // 使用 registerForActivityResult (需要 Activity 引用)
+        // 实际实现可能需要在 Activity 层处理回调
+        
+        // 简化方案：先检查是否有预置的 APK 在 assets/downloads/
+        // 或者使用 ComboLite 的 installPluginsFromAssetsForDebug 作为备选
+        
+        mapOf("success" to true)
+    } catch (e: Exception) {
+        mapOf("success" to false, "error" to (e.message ?: "Unknown error"))
+    }
+}
+```
+
+> **注意**: 从 LynxModule 中启动 Activity 并获取结果需要特殊处理。实际有两种方案：
+> 
+> **方案 A（推荐）**: 在 MpvPlayerActivity / 主 Activity 中注册一个 `ActivityResultCaller`，通过全局事件/LynxEvent 触发文件选择。PlayerBridgeModule 发送事件 → Activity 收到 → 启动选择器 → 回调结果 → PlayerBridgeModule 调用 `InstallerManager.installPlugin()`。
+> 
+> **方案 B（简化）**: 先支持从 **应用内部 assets/downloads/** 目录安装（用户将 .apk 文件放入该目录），后续迭代再接入系统文件选择器。这避免了 `startActivityForResult` 的复杂性。
+
+**i18n 键值更新**：
+
+中文：
+```
+'home.extensions': '扩展管理',
+'home.extensionsDesc': '管理和配置播放器等功能扩展',
+'extensions.title': '扩展管理',
+'extensions.mpvPlayer': 'MPV 播放器',
+'extensions.mpvPlayerDesc': '高性能原生视频/音频播放器，支持 MKV/FLV/ASS 字幕等格式',
+'extensions.installed': '已安装',
+'extensions.notInstalled': '未安装',
+'extensions.enable': '启用',
+'extensions.disable': '禁用',
+'extensions.uninstall': '卸载',
+'extensions.sizeHint': '约 {size}',
+'extensions.hint': '扩展按需安装可减小应用体积',
+'extensions.comingSoon': '敬请期待',
+'extensions.selectApk': '选择扩展安装包 (.apk)',
+'extensions.installing': '正在安装...',
+'extensions.installSuccess': '安装成功',
+'extensions.installFailed': '安装失败',
+'extensions.uninstallConfirm': '确定要卸载此扩展吗？',
+'extensions.uninstallSuccess': '卸载完成',
+'extensions.installedVersion': '版本 {v}',
+'extensions.noExtensions': '暂无可用扩展',
+'extensions.installFromLocal': '从文件安装',
+'extensions.installFromLocalHint': '选择 .apk 文件进行本地安装',
+```
+
+#### 2.3 注册路由
+
+**文件**: `/workspace/app/encv-mobile/src/router/index.ts`
+
+```typescript
+{
+  path: '/tabs/extensions',
+  component: () => import('@/views/ExtensionsPage.vue'),
+  meta: { title: 'extensions.title' }
+}
+```
+
+#### 2.4 注册 PlayerBridgeModule 到 LynxViewBuilder
+
+找到 LynxViewBuilder 的 `registerModule` 调用位置（搜索 Kotlin 代码），添加：
 ```kotlin
 viewBuilder.registerModule(PlayerBridgeModule::class.java)
 ```
 
-#### 2.4 更新 typing.d.ts
-
-**文件**: `app/encv-mobile/lynx-player/src/typing.d.ts` 或 `app/encv-mobile/src/typing.d.ts`
+#### 2.5 更新 typing.d.ts
 
 ```typescript
 declare let NativeModules: {
@@ -248,27 +540,30 @@ declare let NativeModules: {
     playFile: (filePath: string, fileName: string, mimeType: string) => Promise<boolean>
     playFileExternal: (filePath: string, fileName: string, mimeType: string) => Promise<boolean>
     isMpvAvailable: () => Promise<boolean>
+    getExtensionStatus: () => Promise<{ mpvPlayer: { installed: boolean, enabled: boolean, version: string } }>
+    pickAndInstallPlugin: (options: { mimeType?: string, title?: string }) => Promise<{ success: boolean, error?: string }>
+    uninstallPlugin: (options: { pluginId: string }) => Promise<{ success: boolean, error?: string }>
   }
 }
 ```
 
-#### 2.5 添加 i18n 键值
-
-**文件**: `app/encv-mobile/src/composables/useI18n.ts`
+#### 2.6 i18n 键值
 
 中文：
 ```
-'home.plugins': '插件管理',
-'home.pluginsDesc': '管理和配置播放器等功能插件',
-'plugins.comboLitePlugins': 'ComboLite 插件',
-'plugins.mpvPlayer': 'MPV 播放器',
-'plugins.mpvPlayerDesc': '高性能原生视频/音频播放器，支持 MKV/FLV/ASS 字幕等格式',
-'plugins.installed': '已安装',
-'plugins.notInstalled': '未安装',
-'plugins.enable': '启用',
-'plugins.disable': '禁用',
-'plugins.downloadPending': '等待下载',
-'plugins.mpvSizeHint': '约 {size}，安装后将增加 APK 体积',
+'home.extensions': '扩展管理',
+'home.extensionsDesc': '管理和配置播放器等功能扩展',
+'extensions.title': '扩展管理',
+'extensions.mpvPlayer': 'MPV 播放器',
+'extensions.mpvPlayerDesc': '高性能原生视频/音频播放器，支持 MKV/FLV/ASS 字幕等格式',
+'extensions.installed': '已安装',
+'extensions.notInstalled': '未安装',
+'extensions.enable': '启用',
+'extensions.disable': '禁用',
+'extensions.uninstall': '卸载',
+'extensions.sizeHint': '约 {size}',
+'extensions.hint': '扩展按需安装可减小应用体积',
+'extensions.comingSoon': '敬请期待',
 ```
 
 英文对应翻译。
@@ -279,59 +574,61 @@ declare let NativeModules: {
 
 ### 现状分析
 
-[Settings.vue](file:///workspace/app/encv-mobile/src/views/Settings.vue) 已有播放方式设置（L33-81）：
+[Settings.vue](file:///workspace/app/encv-mobile/src/views/Settings.vue) L33-81：
 
-**视频播放** (`videoPlayerMode`, localStorage key `encv_player_video`):
-- `artplayer` — 内置 Artplayer（默认）
-- `mpv` — 内置 MPV
-- `external` — 外部打开
+**视频播放选项** (localStorage key `encv_player_video`):
+- `artplayer` → 内置 Artplayer（默认）
+- `mpv` → 内置 MPV（旧路径）
+- `external` → 外部打开
 
-**音频播放** (`audioPlayerMode`, localStorage key `encv_player_audio`):
-- `mpv` — 内置 MPV（默认）
-- `external` — 外部打开
-
-### 问题
-
-当前选 `mpv` 时走的是旧的 `PlayerActivityLynx`（LynxView + MpvPlayerModule）。改造后需要：
-1. 选 `mpv` → 走 `PlayerEntry.play()` → 自动检测 ComboLite 插件
-2. 如果插件未安装 → 降级提示或自动切换到 artplayer
+**音频播放选项** (localStorage key `encv_player_audio`):
+- `mpv` → 内置 MPV（默认）
+- `external` → 外部打开
 
 ### 方案
 
-#### 3.1 修改 Settings.vue 播放选项文案和逻辑
+#### 3.1 修改 Settings.vue — 视频选项更新
 
-**文件**: `/workspace/app/encv-mobile/src/views/Settings.vue`
+将 `value="mpv"` 改为 `value="mpv-plugin"`，文案改为「MPV 播放器（扩展）」：
 
-**视频播放选项调整**：
 ```html
 <ion-select-option value="artplayer">{{ t('settings.builtInArtplayer') }}</ion-select-option>
-<ion-select-option value="mpv-plugin">{{ t('settings.builtInMpvPlugin') }}</ion-select-option>
+<ion-select-option value="mpv-plugin">{{ t('settings.mpvPluginExtension') }}</ion-select-option>
 <ion-select-option value="external">{{ t('settings.openExternal') }}</ion-select-option>
 ```
 
-注意：将 `value="mpv"` 改为 `value="mpv-plugin"` 以区分新旧路径。
+新增 i18n 键：
+```
+'settings.mpvPluginExtension': 'MPV 播放器（需安装扩展）',
+```
 
-**localStorage key 保持不变**（向后兼容），但默认值可改为 `'artplayer'`（因为 MPV 作为插件可能未安装）。
+**向后兼容**：如果旧 localStorage 值是 `"mpv"`，读取时映射为 `"mpv-plugin"`。
 
-#### 3.2 PlayerEntry 适配 videoPlayerMode
+#### 3.2 PlayerEntry 适配 — 读取用户选择并路由
 
 **文件**: `/workspace/app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerEntry.kt`
 
-`play()` 方法需要读取用户选择的播放模式：
-
 ```kotlin
-fun play(context: Context, filePath: String, fileName: String, mimeType: String, isExternal: Boolean = false) {
+fun play(context: Context, filePath: String, fileName: String, 
+         mimeType: String, isExternal: Boolean = false) {
     val prefs = context.getSharedPreferences("encv_player_prefs", Context.MODE_PRIVATE)
-    val videoMode = prefs.getString("video_player", "artplayer") ?: "artplayer"
+    // 向后兼容：旧值 "mpv" 映射为新值 "mpv-plugin"
+    val rawMode = prefs.getString("video_player", "artplayer") ?: "artplayer"
+    val mode = if (rawMode == "mpv") "mpv-plugin" else rawMode
 
-    when (videoMode) {
+    when (mode) {
         "mpv-plugin" -> {
-            val pluginManager = PluginManager.getInstance(context)
-            val mpvPlugin = pluginManager.getInstalledPlugin("mpv-player")
+            val pm = try { PluginManager.getInstance(context) } catch (e: Exception) { null }
+            val mpvPlugin = pm?.getInstalledPlugin("mpv-player")
             if (mpvPlugin != null && mpvPlugin.enabled) {
-                startMpvPlayer(context, filePath, fileName, mimeType, isExternal, pluginManager, mpvPlugin)
+                startMpvPlayer(context, filePath, fileName, mimeType, isExternal, pm, mpvPlugin)
             } else {
-                showMpvNotAvailableToast(context)
+                // Toast 提示 + 降级到 ArtPlayer
+                android.widget.Toast.makeText(
+                    context, 
+                    context.getString(R.string.mpv_plugin_not_available),
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
                 startArtPlayer(context, filePath, fileName)
             }
         }
@@ -341,221 +638,70 @@ fun play(context: Context, filePath: String, fileName: String, mimeType: String,
 }
 ```
 
-#### 3.3 Lynx 前端播放入口适配
-
-当用户选择文件点击播放时，前端通过 `NativeModules.PlayerBridgeModule.playFile()` 调用。PlayerBridgeModule 内部委托给 `PlayerEntry.play()`，PlayerEntry 根据用户设置自动路由。
-
-**无需修改前端播放逻辑**，只需确保 PlayerBridgeModule 正确注册。
-
 ---
 
 ## Task 4: 完成剩余 TODO 工作
 
-### 4.1 TODO #1: MpvPlayerActivity.createMpvEngine()
+### 4.1 createMpvEngine() — MpvEngine 构造 + SurfaceView 接入
 
 **文件**: [MpvPlayerActivity.kt:54-56](file:///workspace/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvPlayerActivity.kt#L54-L56)
 
-**当前**:
-```kotlin
-private fun createMpvEngine(): MpvEngine {
-    TODO("Phase 3.1: Create and return concrete MpvEngine implementation wrapping MPVLib")
-}
-```
+实现 MpvEngine 创建 + 事件监听 + SurfaceView 桥接。
 
-**改为**:
-```kotlin
-private fun createMpvEngine(): MpvEngine {
-    return MpvEngine(this).also { engine ->
-        engine.eventListener = { event ->
-            when (event) {
-                is MpvEngine.Event.Pause -> { }
-                is MpvEngine.Event.Unpause -> { }
-                is MpvEngine.Event.EndFile -> { finish() }
-                is MpvEngine.Event.Shutdown -> { finish() }
-                else -> { }
-            }
-        }
-        engine.stateListener = { state ->
-            when (state) {
-                is MpvEngine.State.MpvReady -> {
-                    engine.attachSurfaceView()
-                }
-                is MpvEngine.State.Error -> { }
-                else -> { }
-            }
-        }
-    }
-}
-```
-
-同时需要在 Activity 中处理 SurfaceView。MpvEngine 内部已有 `attachSurfaceView()` 方法创建 SurfaceView，Compose 层需要通过 `AndroidView` 将其嵌入：
-
-在 `MpvPlayerScreen.kt` 中增加 SurfaceView 占位参数：
-```kotlin
-@Composable
-fun MpvPlayerScreen(
-    // ...existing params...
-    onSurfaceViewReady: (android.view.SurfaceView) -> Unit = {},  // NEW
-)
-```
-
-在 `MpvControls.kt` 的 VideoPlaybackLayout 中：
-```kotlin
-AndroidView(
-    factory = { context ->
-        android.view.SurfaceView(context).also { sv ->
-            onSurfaceViewReady(sv)
-        }
-    },
-    modifier = Modifier.fillMaxSize()
-)
-```
-
-### 4.2 TODO #2: resolveStreamUrl()
+### 4.2 resolveStreamUrl() — Go 后端流地址 HTTP 解析
 
 **文件**: [MpvPlayerScreen.kt:244-246](file:///workspace/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvPlayerScreen.kt#L244-L246)
 
-**当前**: 返回空字符串
+通过 Intent 接收 `backend_url` 参数（由 PlayerEntry 传入），HTTP HEAD 请求验证可达性后返回 URL 给 MPV loadfile。
 
-**改为**: 通过 HTTP 请求 Go 后端获取流地址
+配套：PlayerEntry.startMpvPlayer() Bundle 新增 `backend_url` 字段。
 
-```kotlin
-private suspend fun resolveStreamUrl(filePath: String, isExternal: Boolean): String {
-    return try {
-        // 从 Intent 或配置获取 Go 后端地址
-        val backendUrl = getBackendBaseUrl()
-        if (backendUrl.isEmpty()) {
-            if (isExternal && filePath.startsWith("/")) {
-                return filePath  // 直接使用外部文件路径
-            }
-            return ""
-        }
-
-        val encodedPath = java.net.URLEncoder.encode(filePath, "UTF-8")
-        val url = if (isExternal) {
-            "$backendUrl/api/stream/external?path=$encodedPath"
-        } else {
-            "$backendUrl/stream?path=$encodedPath"
-        }
-
-        // HEAD 请求验证 URL 可达性（轻量）
-        java.net.URL(url).openConnection().let { conn ->
-            conn.requestMethod = "HEAD"
-            conn.connectTimeout = 5000
-            conn.readTimeout = 5000
-            conn.responseCode
-            url  // 返回 URL 给 MPV 加载
-        }
-    } catch (e: Exception) {
-        ""
-    }
-}
-
-private fun getBackendBaseUrl(): String {
-    // 方案 A: 从 Intent extra 获取（宿主传入）
-    // 方案 B: 从 SharedPreferences 读取（与前端共享配置）
-    // 方案 C: 默认 localhost:port
-    return intent.getStringExtra("backend_url") ?: ""
-}
-```
-
-**配套修改**: `PlayerEntry.startMpvPlayer()` 需要在 Bundle 中额外传入 `backend_url`：
-```kotlin
-bundle.putString("backend_url", getBackendUrlFromConfig(context))
-```
-
-### 4.3 TODO #3: 全屏切换
+### 4.3 全屏切换 — Activity 方向 + WindowInsetsController
 
 **文件**: [MpvPlayerScreen.kt:181-183](file:///workspace/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvPlayerScreen.kt#L181-L183)
 
-**当前**: TODO 注释
+Activity requestedOrientation 切换 + hideSystemUi/showSystemUi 辅助函数。
 
-**改为**:
-```kotlin
-onToggleFullscreen = {
-    isFullscreen = !isFullscreen
-    val activity = context as? android.app.Activity ?: return@MpvControls
-    if (isFullscreen) {
-        activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        hideSystemUi(activity)
-    } else {
-        activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        showSystemUi(activity)
-    }
-    showControls = true
-},
-```
-
-辅助函数：
-```kotlin
-private fun hideSystemUi(activity: android.app.Activity) {
-    android.view.WindowCompat.setDecorFitsSystemWindows(activity.window, false)
-    android.view.WindowInsetsControllerCompat(activity.window, activity.window.decorView).let { controller ->
-        controller.hide(android.view.WindowInsetsCompat.Type.systemBars())
-        controller.systemBarsBehavior = android.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-    }
-}
-
-private fun showSystemUi(activity: android.app.Activity) {
-    android.view.WindowCompat.setDecorFitsSystemWindows(activity.window, true)
-    activity.window.decorView.apply {
-        systemUiVisibility = systemUiVisibility and
-            (android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
-             android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION).inv()
-    }
-}
-```
-
-### 4.4 TODO #4: WindowInsetsSafeTop/Bottom
+### 4.4 WindowInsetsSafeTop/Bottom — Compose systemBars
 
 **文件**: [MpvPlayerScreen.kt:249-252](file:///workspace/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvPlayerScreen.kt#L249-L252)
 
-**当前**: 返回硬编码 0
-
-**改为** 使用 Compose `WindowInsets`:
-
-```kotlin
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.systemBars
-
-// 删除 WindowInsetsSafeTop()/WindowInsetsSafeBottom() 函数
-// 在 MpvControls 的外层 Box 上使用:
-Box(
-    modifier = Modifier
-        .fillMaxSize()
-        .windowInsetsPadding(WindowInsets.systemBars)
-        // ...
-)
-```
-
-或者如果需要精确的 px 值给原生 View 定位：
-```kotlin
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalConfiguration
-
-val windowInsets = WindowInsets.systemBars
-val density = LocalDensity.current
-val topInset = with(density) { windowInsets.getTop(density) }
-val bottomInset = with(density) { windowInsets.getBottom(density) }
-```
+删除硬编码 0 函数，改用 `Modifier.windowInsetsPadding(WindowInsets.systemBars)`。
 
 ---
 
 ## 任务依赖关系
 
 ```
-Task 1 (CI) ──────────────────────────────┐
-                                       │ (并行)
-Task 2 (首页+插件页) ───────────────────┤
-                                       │
-Task 3 (设置页适配) ──────────────────┤
-                                       │
-Task 4 (剩余TODO) ─────────────────────┘
-  ├── 4.1 createMpvEngine()     ← 独立
-  ├── 4.2 resolveStreamUrl()    ← 独立（但需 Task 3 的 backend_url 传递链路配合）
-  ├── 4.3 全屏切换             ← 独立
-  └── 4.4 WindowInsets         ← 独立
+Task 1 (CI + aar2apk 配置) ─────────┐
+                                    │ (并行)
+Task 2 (首页扩展卡片 + ExtensionsPage) ├──┐
+                                    │   │
+Task 3 (设置页 mpv-plugin 选项) ────┤   │
+                                    │   │
+Task 4 (4个 TODO 实现) ─────────────┘   │
+  ├── 4.1 createMpvEngine()            │
+  ├── 4.2 resolveStreamUrl() ← 依赖 Task 3 的 backend_url 传递
+  ├── 4.3 全屏切换                    │
+  └── 4.4 WindowInsets                │
+                                        │
+Task 1-3 并行 → Task 4 最后收尾         │
 ```
 
-Task 1-3 可以完全并行实施。Task 4 的 4 个子任务也可以并行。
+## 文件变更清单
+
+| 操作 | 文件 | 说明 |
+|------|------|------|
+| **修改** | `android/build.gradle` | aar2apk plugin + modules 配置 |
+| **修改** | `android/app/build.gradle` | packagePlugins 配置 |
+| **修改** | `.github/workflows/android.yml` | 插件构建步骤 + Host/Plugin .so 分离验证 |
+| **修改** | `src/views/HomePage.vue` | 新增「扩展管理」卡片 + grid 调整 |
+| **新建** | `src/views/ExtensionsPage.vue` | 功能扩展管理二级页面 |
+| **修改** | `src/router/index.ts` | /tabs/extensions 路由 |
+| **修改** | `src/views/Settings.vue` | mpv → mpv-plugin 选项 |
+| **修改** | `src/composables/useI18n.ts` | 扩展相关 i18n 键 |
+| **修改** | `app/.../PlayerEntry.kt` | 读取 video_player pref + 路由 |
+| **修改** | `plugin-mpv-player/.../MpvPlayerActivity.kt` | createMpvEngine() 实现 |
+| **修改** | `plugin-mpv-player/.../MpvPlayerScreen.kt` | resolveStreamUrl() + 全屏 + insets |
+| **修改** | `lynx-player/src/typing.d.ts` | PlayerBridgeModule 类型 |
+| **修改** | Kotlin LynxViewBuilder | registerModule(PlayerBridgeModule) |

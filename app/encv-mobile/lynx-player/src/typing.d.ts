@@ -16,4 +16,12 @@ declare let NativeModules: {
   LogBridge: {
     log(level: string, msg: string, callback: (result: any) => void): void;
   };
+  PlayerBridgeModule: {
+    playFile: (filePath: string, fileName: string, mimeType: string) => Promise<boolean>;
+    playFileExternal: (filePath: string, fileName: string, mimeType: string) => Promise<boolean>;
+    isMpvAvailable: () => Promise<boolean>;
+    getExtensionStatus: () => Promise<{ mpvPlayer: { installed: boolean; enabled: boolean; version: string } }>;
+    pickAndInstallPlugin: (options: { mimeType?: string; title?: string }) => Promise<{ success: boolean; error?: string }>;
+    uninstallPlugin: (options: { pluginId: string }) => Promise<{ success: boolean; error?: string }>;
+  };
 };

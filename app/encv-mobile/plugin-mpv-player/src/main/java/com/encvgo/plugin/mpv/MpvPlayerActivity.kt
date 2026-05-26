@@ -24,6 +24,7 @@ class MpvPlayerActivity : AppCompatActivity() {
         val isExternal = intent.getBooleanExtra("is_external", false)
 
         engine = createMpvEngine()
+        engine.initialize()
 
         setContent {
             EncvMpVPlayerTheme {
@@ -52,6 +53,30 @@ class MpvPlayerActivity : AppCompatActivity() {
     }
 
     private fun createMpvEngine(): MpvEngine {
-        TODO("Phase 3.1: Create and return concrete MpvEngine implementation wrapping MPVLib")
+        return MpvEngine(this).also { engine ->
+            engine.eventListener = { event ->
+                when (event) {
+                    is MpvEngine.Event.Pause -> { }
+                    is MpvEngine.Event.Unpause -> { }
+                    is MpvEngine.Event.EndFile -> finish()
+                    is MpvEngine.Event.Shutdown -> finish()
+                    is MpvEngine.Event.PlaybackRestart -> { }
+                    else -> { }
+                }
+            }
+            engine.stateListener = { state ->
+                when (state) {
+                    is MpvEngine.State.MpvReady -> {
+                        engine.attachSurfaceView()
+                    }
+                    is MpvEngine.State.Error -> { }
+                    is MpvEngine.State.AudioOnly -> { }
+                    else -> { }
+                }
+            }
+            engine.logListener = { msg ->
+                android.util.Log.d("MpvEngine", "[${msg.prefix}] ${msg.text}")
+            }
+        }
     }
 }

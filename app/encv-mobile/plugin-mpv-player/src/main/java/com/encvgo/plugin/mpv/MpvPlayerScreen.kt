@@ -179,7 +179,15 @@ fun MpvPlayerScreen(
                 },
                 onToggleFullscreen = {
                     isFullscreen = !isFullscreen
-                    TODO("Phase 3.1: Implement fullscreen via Activity orientation or WindowInsets controller")
+                    val activity = context as? android.app.Activity ?: return@MpvControls
+
+                    if (isFullscreen) {
+                        activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                        hideSystemUi(activity)
+                    } else {
+                        activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                        showSystemUi(activity)
+                    }
                     showControls = true
                 },
                 onRetry = {
@@ -242,11 +250,51 @@ private suspend fun startPlayback(
 }
 
 private suspend fun resolveStreamUrl(filePath: String, isExternal: Boolean): String {
-    return ""
+    return try {
+        val backendUrl = intent.getStringExtra("backend_url") ?: ""
+
+        if (isExternal && filePath.startsWith("/")) {
+            if (java.io.File(filePath).exists()) {
+                return filePath
+            }
+        }
+
+        if (backendUrl.isEmpty()) {
+            if (java.io.File(filePath).exists()) return filePath
+            return ""
+        }
+
+        val encodedPath = java.net.URLEncoder.encode(filePath, "UTF-8")
+        val url = if (isExternal) {
+            "$backendUrl/api/stream/external?path=$encodedPath"
+        } else {
+            "$backendUrl/stream?path=$encodedPath"
+        }
+
+        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        conn.requestMethod = "HEAD"
+        conn.connectTimeout = 5000
+        conn.readTimeout = 5000
+        val responseCode = conn.responseCode
+        conn.disconnect()
+
+        if (responseCode in 200..299) url else ""
+    } catch (e: Exception) {
+        android.util.Log.w("MpvPlayer", "resolveStreamUrl failed: ${e.message}")
+        ""
+    }
 }
 
-@Suppress("UNUSED_PARAMETER")
-private fun WindowInsetsSafeTop(): Int = 0
+private fun hideSystemUi(activity: android.app.Activity) {
+    android.view.WindowCompat.setDecorFitsSystemWindows(activity.window, false)
+    val controller = androidx.core.view.WindowInsetsControllerCompat(
+        activity.window, activity.window.decorView
+    )
+    controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+    controller.systemBarsBehavior =
+        androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+}
 
-@Suppress("UNUSED_PARAMETER")
-private fun WindowInsetsSafeBottom(): Int = 0
+private fun showSystemUi(activity: android.app.Activity) {
+    android.view.WindowCompat.setDecorFitsSystemWindows(activity.window, true)
+}

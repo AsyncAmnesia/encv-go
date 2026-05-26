@@ -59,6 +59,12 @@ android {
 
 }
 
+packagePlugins {
+    enabled.set(true)
+    buildType.set(io.github.combolite.core.build.PackageBuildType.DEBUG)
+    pluginsDir.set("plugins")
+}
+
 repositories {
     flatDir{
         dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
