@@ -2,8 +2,8 @@ import com.combo.aar2apk.PackageBuildType
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
     alias(libs.plugins.combolite.aar2apk)
 }
 
