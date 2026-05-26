@@ -243,10 +243,10 @@ jobs:
         continue-on-error: true
         run: |
           cd app/encv-mobile/android
-          ./gradlew :plugin-mpv-player:buildDebugPluginApk --stacktrace 2>&1 || echo "⚠️ Plugin APK packaging skipped"
+          ./gradlew convert_plugin-mpv-player_debug --stacktrace 2>&1 || echo "⚠️ Plugin APK packaging skipped"
           
-          PLUGIN_APK="build/outputs/plugin-apks/debug/plugin-mpv-player-debug.apk"
-          if [ -f "$PLUGIN_APK" ]; then
+          PLUGIN_APK=$(find build -name "plugin-mpv-player-debug.apk" -type f 2>/dev/null | head -1)
+          if [ -n "$PLUGIN_APK" ] && [ -f "$PLUGIN_APK" ]; then
             echo "✅ Plugin APK generated:"
             ls -lh "$PLUGIN_APK"
             mkdir -p app/src/main/assets/plugins
@@ -261,7 +261,7 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
-          PLUGIN_APK="app/encv-mobile/android/build/outputs/plugin-apks/debug/plugin-mpv-player-debug.apk"
+          PLUGIN_APK=$(find app/encv-mobile/android/build -name "plugin-mpv-player-debug.apk" -type f 2>/dev/null | head -1)
           if [ -f "$PLUGIN_APK" ]; then
             echo "=== Plugin APK size ==="
             ls -lh "$PLUGIN_APK"
