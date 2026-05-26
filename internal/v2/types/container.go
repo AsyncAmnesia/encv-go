@@ -46,8 +46,8 @@ var (
 	ByteOrder_v2       = binary.LittleEndian
 	ErrInvalidMagic_v2 = errors.New("invalid magic number")
 	// 将数组转换为切片用法 types.MagicFooter_v2[:]
-	MagicHeader_v2 = [4]byte{'E', 'N', 'V', 'C'}
-	MagicFooter_v2 = [4]byte{'E', 'N', 'V', 'C'}
+	MagicHeader_v2 = [4]byte{'E', 'N', 'C', 'V'}
+	MagicFooter_v2 = [4]byte{'E', 'N', 'C', 'V'}
 
 	manifestJSONBufferPool_v2 = sync.Pool{
 		New: func() interface{} {

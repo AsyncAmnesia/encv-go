@@ -248,8 +248,13 @@ func (w *SingleFileContainerWriter) Close() error {
 		return err
 	}
 
-	manifestBlockSize := block.GetBlockHeader_v2_Size() + int64(len(w.manifestBytes))
-	manifestBlockStart := fileInfo.Size() - manifestBlockSize
+	var manifestBlockStart int64
+	if w.headerVersion == 4 {
+		manifestBlockStart = fileInfo.Size() - int64(len(w.manifestBytes))
+	} else {
+		manifestBlockSize := block.GetBlockHeader_v2_Size() + int64(len(w.manifestBytes))
+		manifestBlockStart = fileInfo.Size() - manifestBlockSize
+	}
 
 	if w.headerVersion == 4 {
 		// V4: manifest 直接写在当前位置，无 Block header 包裹

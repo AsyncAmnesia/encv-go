@@ -103,7 +103,7 @@ func TestIsEncvContainerFromBytes_ShortData(t *testing.T) {
 		{"Empty", []byte{}},
 		{"OneByte", []byte{0x45}},
 		{"ThreeBytes", []byte("ENC")},
-		{"FiveBytes", []byte("ENVC\x00")},
+		{"FiveBytes", []byte("XXXX\x00")},
 	}
 
 	for _, tc := range cases {
