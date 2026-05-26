@@ -11,6 +11,7 @@ import (
 
 	"github.com/Soltus/encv-go/internal/v2/container/block"
 	"github.com/Soltus/encv-go/internal/v2/container/manifest"
+	"github.com/Soltus/encv-go/internal/v2/crypto"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -136,6 +137,58 @@ func (w *SingleFileContainerWriter) WriteFragment(frag *types.Fragment, data []b
 
 func (w *SingleFileContainerWriter) WriteManifest(manifestObj *types.Manifest) error {
 	manifestObj.Fragments = w.fragments
+	if w.headerVersion == 4 {
+		return w.writeManifestV4(manifestObj)
+	}
+	return w.writeManifestV23(manifestObj)
+}
+
+// writeManifestV4 使用 V4 格式：XOR 混淆 + 无 Block header 包裹
+func (w *SingleFileContainerWriter) writeManifestV4(manifestObj *types.Manifest) error {
+	containerTypeStr := containerTypeToString(w.v4Header.ContainerType)
+
+	segments := make([]types.Segment_v4, 0, len(manifestObj.Fragments))
+	for _, frag := range manifestObj.Fragments {
+		segments = append(segments, types.Segment_v4{
+			ID:     frag.ID,
+			Offset: frag.PhysicalOffset,
+			Size:   frag.Length,
+			Nonce:  "",
+		})
+	}
+
+	mf := &types.Manifest_v4{
+		Version:       4,
+		ContainerID:   string(w.v4Header.SpecialID[:w.v4Header.IDLength]),
+		ContainerType: containerTypeStr,
+		IsSeekable:    w.v4Header.IsSeekable != 0,
+		Segments:      segments,
+		KVI:           manifestObj.KVI,
+	}
+
+	manifestJSON, err := mf.SerializeToJSON_v4()
+	if err != nil {
+		return fmt.Errorf("failed to serialize v4 manifest: %w", err)
+	}
+
+	obfuscatedManifest, err := crypto.ObfuscateManifest(manifestJSON)
+	if err != nil {
+		return fmt.Errorf("failed to obfuscate v4 manifest: %w", err)
+	}
+
+	if _, err := w.file.Write(obfuscatedManifest); err != nil {
+		return fmt.Errorf("failed to write obfuscated v4 manifest: %w", err)
+	}
+
+	w.globalHasher.Write(obfuscatedManifest)
+
+	w.manifestBytes = obfuscatedManifest
+	w.manifestLength = uint64(len(obfuscatedManifest))
+	return nil
+}
+
+// writeManifestV23 保持原有 V2/V3 逻辑：AES 加密 + Block header 包裹
+func (w *SingleFileContainerWriter) writeManifestV23(manifestObj *types.Manifest) error {
 	manifestBytes, err := manifestObj.SerializeToJSON()
 	if err != nil {
 		return err
@@ -143,23 +196,18 @@ func (w *SingleFileContainerWriter) WriteManifest(manifestObj *types.Manifest) e
 	w.manifestBytes = manifestBytes
 	w.manifestLength = uint64(len(manifestBytes))
 
-	// 2. 【关键新增】加密 Manifest
 	encryptedManifestBytes, err := manifest.EncryptManifest(manifestBytes)
 	if err != nil {
 		return err
 	}
-	// 缓存加密后的数据，用于 Footer 计算
 	w.manifestBytes = encryptedManifestBytes
 	w.manifestLength = uint64(len(encryptedManifestBytes))
 
-	// 3. 写入加密块到文件
 	crcVal, err := block.WriteBlock(w.file, types.BlockTypeManifest_v2, encryptedManifestBytes)
 	if err != nil {
 		return err
 	}
 
-	// 4. 将加密块 Header 写入 Global Hasher
-	// 确保 Header 和 EncryptedData 都在 Global Hash 中
 	manifestBlockHeader := &block.BlockHeader_v2{
 		Type:   types.BlockTypeManifest_v2,
 		Length: uint64(len(encryptedManifestBytes)),
@@ -169,9 +217,26 @@ func (w *SingleFileContainerWriter) WriteManifest(manifestObj *types.Manifest) e
 		return err
 	}
 
-	// 5. 缓存 CRC (用于 Footer)
 	w.manifestCRC = crcVal
 	return nil
+}
+
+// containerTypeToString 将 ContainerType uint16 转换为 Manifest_v4 使用的字符串
+func containerTypeToString(ct uint16) string {
+	switch ct {
+	case types.ContainerTypeVideo:
+		return "video"
+	case types.ContainerTypeAudio:
+		return "audio"
+	case types.ContainerTypeImage:
+		return "image"
+	case types.ContainerTypeDocument:
+		return "document"
+	case types.ContainerTypeText:
+		return "text"
+	default:
+		return "unknown"
+	}
 }
 
 // Close 写入 Footer 并关闭文件
@@ -187,7 +252,8 @@ func (w *SingleFileContainerWriter) Close() error {
 	manifestBlockStart := fileInfo.Size() - manifestBlockSize
 
 	if w.headerVersion == 4 {
-		w.v4Header.ManifestOffset = uint64(manifestBlockStart + block.GetBlockHeader_v2_Size())
+		// V4: manifest 直接写在当前位置，无 Block header 包裹
+		w.v4Header.ManifestOffset = uint64(manifestBlockStart)
 		w.v4Header.ManifestLength = w.manifestLength
 
 		if _, err := w.file.Seek(0, io.SeekStart); err != nil {

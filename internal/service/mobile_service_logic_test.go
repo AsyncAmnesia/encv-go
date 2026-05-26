@@ -245,3 +245,117 @@ func TestCheckStoragePermission_HasPermission(t *testing.T) {
 	hasPerm := svc.CheckStoragePermission()
 	assert.True(t, hasPerm, "t.TempDir() 创建的目录一定有读写权限")
 }
+
+// TestMobileService_V4Container_ListFilesDetectsEncrypted 验证 ListFiles 能正确识别 V4 容器为已加密文件
+func TestMobileService_V4Container_ListFilesDetectsEncrypted(t *testing.T) {
+	svc, dir := newTestMobileService(t)
+
+	fixture := testutil.CreateV4Fixture(t, 1024, 2)
+
+	containerName := filepath.Base(fixture.Path)
+	destPath := filepath.Join(dir, containerName)
+	data, err := os.ReadFile(fixture.Path)
+	require.NoError(t, err)
+	err = os.WriteFile(destPath, data, 0644)
+	require.NoError(t, err)
+
+	files, err := svc.ListFiles("/")
+	require.NoError(t, err)
+	require.NotEmpty(t, files, "ListFiles 应返回至少一个文件")
+
+	var v4FileFound bool
+	for _, f := range files {
+		if f.Name == containerName {
+			v4FileFound = true
+			assert.True(t, f.IsEncrypted, "V4 容器文件应被标记为加密")
+			assert.False(t, f.IsDirectory, "V4 容器文件不应是目录")
+			assert.Greater(t, f.Size, int64(0), "V4 容器文件大小应大于 0")
+			break
+		}
+	}
+	assert.True(t, v4FileFound, "应在文件列表中找到 V4 容器文件")
+}
+
+// TestMobileService_V4Container_GetFileInfoRecognizes 验证 GetFileInfo 对 V4 容器返回完整的容器信息
+func TestMobileService_V4Container_GetFileInfoRecognizes(t *testing.T) {
+	svc, dir := newTestMobileService(t)
+
+	fixture := testutil.CreateV4Fixture(t, 2048, 3)
+
+	containerName := filepath.Base(fixture.Path)
+	destPath := filepath.Join(dir, containerName)
+	data, err := os.ReadFile(fixture.Path)
+	require.NoError(t, err)
+	err = os.WriteFile(destPath, data, 0644)
+	require.NoError(t, err)
+
+	info, err := svc.GetFileInfo("/" + containerName)
+	require.NoError(t, err)
+	require.NotNil(t, info)
+
+	assert.True(t, info.IsEncvContainer, "应识别为 ENCV 容器")
+	assert.True(t, info.IsEncrypted, "应标记为已加密")
+	assert.Equal(t, "encrypted", info.Category, "分类应为 encrypted")
+	require.NotNil(t, info.Container, "Container 字段不应为 nil")
+
+	version, hasVersion := info.Container["version"]
+	assert.True(t, hasVersion, "Container 应包含 version 字段")
+	assert.Equal(t, 4, version, "版本号应为 4")
+
+	isSeekable, hasSeekable := info.Container["is_seekable"]
+	assert.True(t, hasSeekable, "Container 应包含 is_seekable 字段")
+	assert.True(t, isSeekable.(bool), "V4 容器应为可寻址")
+
+	segCount, hasSegCount := info.Container["segment_count"]
+	assert.True(t, hasSegCount, "Container 应包含 segment_count 字段")
+	assert.Greater(t, segCount.(int), 0, "segment_count 应大于 0")
+
+	containerType, hasType := info.Container["container_type"]
+	assert.True(t, hasType, "Container 应包含 container_type 字段")
+	assert.Equal(t, "video", containerType, "容器类型应为 video")
+}
+
+// TestMobileService_V4Container_EncryptFlowRoundtrip 验证完整的加密→检测→识别链路
+func TestMobileService_V4Container_EncryptFlowRoundtrip(t *testing.T) {
+	svc, dir := newTestMobileService(t)
+
+	fixture := testutil.CreateV4Fixture(t, 512, 1)
+
+	containerName := filepath.Base(fixture.Path)
+	destPath := filepath.Join(dir, containerName)
+	data, err := os.ReadFile(fixture.Path)
+	require.NoError(t, err)
+	err = os.WriteFile(destPath, data, 0644)
+	require.NoError(t, err)
+
+	files, err := svc.ListFiles("/")
+	require.NoError(t, err)
+
+	var targetFile *FileInfo
+	for i := range files {
+		if files[i].Name == containerName {
+			targetFile = &files[i]
+			break
+		}
+	}
+	require.NotNil(t, targetFile, "应在列表中找到 V4 容器文件")
+	assert.True(t, targetFile.IsEncrypted, "ListFiles 检测: IsEncrypted 应为 true")
+
+	info, err := svc.GetFileInfo("/" + containerName)
+	require.NoError(t, err)
+	require.NotNil(t, info)
+
+	assert.True(t, info.IsEncvContainer, "GetFileInfo 识别: IsEncvContainer 应为 true")
+	assert.True(t, info.IsEncrypted, "GetFileInfo 识别: IsEncrypted 应为 true")
+	assert.Equal(t, "encrypted", info.Category, "GetFileInfo 分类: Category 应为 'encrypted'")
+	require.NotNil(t, info.Container, "Container 元数据不应为 nil")
+
+	assert.Equal(t, 4, info.Container["version"], "容器版本应为 4")
+	assert.NotNil(t, info.Container["is_seekable"], "应包含 is_seekable 字段")
+	assert.Greater(t, info.Container["segment_count"].(int), 0, "segment_count 应大于 0")
+
+	category := info.Category
+	isEncrypted := info.IsEncrypted
+	assert.Equal(t, "encrypted", category, "模拟前端逻辑: getFileCategory(name, isEncrypted=true) 应返回 'encrypted'")
+	assert.True(t, isEncrypted, "模拟前端逻辑: isEncrypted 标志应为 true")
+}

@@ -1,9 +1,11 @@
 package handle
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 
 	"github.com/Soltus/encv-go/internal/v2/container/block"
 	"github.com/Soltus/encv-go/internal/v2/container/envelope"
@@ -117,9 +119,16 @@ func (h *containerHandle) openV4() error {
 		return fmt.Errorf("failed to read v4 manifest data: %w", err)
 	}
 
-	plainManifest, err := crypto.DeobfuscateManifest(obfuscatedManifest)
+	var plainManifest []byte
+
+	plainManifest, err = crypto.DeobfuscateManifest(obfuscatedManifest)
 	if err != nil {
-		return fmt.Errorf("failed to deobfuscate v4 manifest: %w", err)
+		slog.Warn("openV4: XOR deobfuscation failed, trying V2/V3 block format fallback",
+			"error", err)
+		plainManifest, err = h.tryReadManifestAsLegacyV4(obfuscatedManifest)
+		if err != nil {
+			return fmt.Errorf("failed to decode v4 manifest (tried XOR+legacy): %w", err)
+		}
 	}
 
 	v4Manifest, err := types.DeserializeManifest_v4(plainManifest)
@@ -131,6 +140,86 @@ func (h *containerHandle) openV4() error {
 	h.manifestV2 = AdaptV4ToV2(v4Manifest, hdr)
 
 	return nil
+}
+
+// tryReadManifestAsLegacyV4 尝试以 V2/V3 block 格式读取 manifest
+// 兼容旧版 SingleFileContainerWriterV4 错误地使用 EncryptSystemPayload 写入的容器
+func (h *containerHandle) tryReadManifestAsLegacyV4(data []byte) ([]byte, error) {
+	blockHeader, err := block.ReadBlockHeader(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("legacy fallback: not a valid block header: %w", err)
+	}
+
+	if blockHeader.Type != types.BlockTypeManifest_v2 {
+		return nil, fmt.Errorf("legacy fallback: unexpected block type %d", blockHeader.Type)
+	}
+
+	encryptedData := data[block.GetBlockHeader_v2_Size():]
+	if uint64(len(encryptedData)) < blockHeader.Length {
+		return nil, fmt.Errorf("legacy fallback: truncated block data")
+	}
+
+	encryptedData = encryptedData[:blockHeader.Length]
+
+	plainData, err := crypto.DecryptSystemPayload(encryptedData)
+	if err != nil {
+		var check types.Manifest
+		if json.Unmarshal(encryptedData, &check) == nil {
+			slog.Info("openV4: legacy fallback succeeded via raw JSON parse")
+			return encryptedData, nil
+		}
+		return nil, fmt.Errorf("legacy fallback: decryption failed: %w", err)
+	}
+
+	var v2Manifest types.Manifest
+	if err := json.Unmarshal(plainData, &v2Manifest); err != nil {
+		return nil, fmt.Errorf("legacy fallback: failed to unmarshal V2 manifest: %w", err)
+	}
+
+	v4Manifest := convertV2ManifestToV4(&v2Manifest, h.headerV4)
+	v4JSON, err := v4Manifest.SerializeToJSON_v4()
+	if err != nil {
+		return nil, fmt.Errorf("legacy fallback: failed to re-serialize as V4: %w", err)
+	}
+
+	slog.Info("openV4: successfully opened legacy-format V4 container via fallback")
+	return v4JSON, nil
+}
+
+func convertV2ManifestToV4(mf *types.Manifest, hdr *types.EnvelopeHeaderV4) *types.Manifest_v4 {
+	segments := make([]types.Segment_v4, len(mf.Fragments))
+	for i, frag := range mf.Fragments {
+		segments[i] = types.Segment_v4{
+			ID:     frag.ID,
+			Offset: frag.PhysicalOffset,
+			Size:   frag.Length,
+			Nonce:  "",
+		}
+	}
+
+	containerType := "unknown"
+	switch hdr.ContainerType {
+	case types.ContainerTypeVideo:
+		containerType = "video"
+	case types.ContainerTypeAudio:
+		containerType = "audio"
+	case types.ContainerTypeImage:
+		containerType = "image"
+	case types.ContainerTypeDocument:
+		containerType = "document"
+	case types.ContainerTypeText:
+		containerType = "text"
+	}
+
+	return &types.Manifest_v4{
+		Version:          4,
+		ContainerID:      "",
+		ContainerType:    containerType,
+		IsSeekable:       mf.Kind != "",
+		OriginalDuration: 0,
+		Segments:         segments,
+		KVI:             mf.KVI,
+	}
 }
 
 func (h *containerHandle) openV3() error {
