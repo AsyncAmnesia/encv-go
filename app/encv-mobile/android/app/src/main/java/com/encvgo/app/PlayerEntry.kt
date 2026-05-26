@@ -41,9 +41,9 @@ object PlayerEntry {
 
     fun isMpvAvailable(context: Context): Boolean {
         return try {
-            val pm = io.github.combolite.core.PluginManager.getInstance(context)
-            val plugin = pm.getInstalledPlugin(PLUGIN_ID)
-            plugin != null
+            val pm = com.combo.core.runtime.PluginManager
+            if (!pm.isInitialized) return false
+            pm.getPluginInfo(PLUGIN_ID) != null
         } catch (e: Exception) {
             Log.w(TAG, "isMpvAvailable check failed", e)
             false

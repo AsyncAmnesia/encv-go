@@ -1,6 +1,7 @@
 package com.encvgo.plugin.mpv
 
 import android.os.Bundle
+import android.view.ViewGroup
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
@@ -43,6 +44,21 @@ class MpvPlayerActivity : AppCompatActivity() {
                 }
             }
         }
+
+        val decorView = window.decorView as? ViewGroup
+        if (decorView != null) {
+            engine.stateListener = { state ->
+                when (state) {
+                    is MpvEngine.State.MpvReady -> {
+                        val contentRoot = decorView.findViewById<ViewGroup>(android.R.id.content)
+                        if (contentRoot != null) {
+                            engine.attachSurfaceView(contentRoot)
+                        }
+                    }
+                    else -> {}
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -61,16 +77,6 @@ class MpvPlayerActivity : AppCompatActivity() {
                     is MpvEngine.Event.EndFile -> finish()
                     is MpvEngine.Event.Shutdown -> finish()
                     is MpvEngine.Event.PlaybackRestart -> { }
-                    else -> { }
-                }
-            }
-            engine.stateListener = { state ->
-                when (state) {
-                    is MpvEngine.State.MpvReady -> {
-                        engine.attachSurfaceView()
-                    }
-                    is MpvEngine.State.Error -> { }
-                    is MpvEngine.State.AudioOnly -> { }
                     else -> { }
                 }
             }

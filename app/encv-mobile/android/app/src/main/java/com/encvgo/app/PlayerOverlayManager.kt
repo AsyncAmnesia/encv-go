@@ -9,7 +9,7 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import com.lynx.tasm.LynxView
 import com.lynx.tasm.LynxViewBuilder
-import com.lynx.tasm.behavior.LynxViewClient
+import com.lynx.tasm.LynxViewClient
 import org.json.JSONObject
 
 class PlayerOverlayManager private constructor() {
