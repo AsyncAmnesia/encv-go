@@ -119,9 +119,15 @@ func NewEncryptedContainerReaderFromFile(mainFilePath string) (EncryptedContaine
 	r.kviProvider = kvi
 
 	headerSize := block.GetBlockHeader_v2_Size()
+	var headerOverhead int64
+	if r.headerVersion == 4 {
+		headerOverhead = 0
+	} else {
+		headerOverhead = headerSize
+	}
 	for _, frag := range r.manifest.Fragments {
 		if frag.PhysicalPath == "" {
-			r.physicalOffsets[frag.ID] = frag.PhysicalOffset + uint64(headerSize)
+			r.physicalOffsets[frag.ID] = frag.PhysicalOffset + uint64(headerOverhead)
 		}
 	}
 
@@ -188,11 +194,13 @@ func (r *fileContainerReader) GetFragmentReader(fragID string) (io.ReadCloser, e
 			return nil, err
 		}
 
-		if err := r.verifyFragmentAt(mainFile, int64(payloadOffset)-headerSize, frag); err != nil {
-			if !useInit {
-				globalFileHandlePool.Put(mainFile)
+		if r.headerVersion != 4 {
+			if err := r.verifyFragmentAt(mainFile, int64(payloadOffset)-headerSize, frag); err != nil {
+				if !useInit {
+					globalFileHandlePool.Put(mainFile)
+				}
+				return nil, err
 			}
-			return nil, err
 		}
 
 		section := io.NewSectionReader(mainFile, int64(payloadOffset), int64(frag.Length))

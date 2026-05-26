@@ -17,13 +17,16 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	types.RegisterKVIProvider("video", func(rawKVI json.RawMessage) (types.KVIProvider, error) {
-		var kvi types.KVI
-		if err := json.Unmarshal(rawKVI, &kvi); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal KVI: %w", err)
-		}
-		return benchKVI{KVI: kvi}, nil
-	})
+	for _, kind := range []types.IndexKind{"text", "image", "video"} {
+		kind := kind
+		types.RegisterKVIProvider(kind, func(rawKVI json.RawMessage) (types.KVIProvider, error) {
+			var kvi types.KVI
+			if err := json.Unmarshal(rawKVI, &kvi); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal KVI: %w", err)
+			}
+			return &benchKVI{KVI: kvi, testKind: kind}, nil
+		})
+	}
 	m.Run()
 }
 
@@ -69,6 +72,7 @@ func createContainerFixture(tb testing.TB, dataSize int64, fragCount int) *conta
 			SaltBase64: crypto.Base64Encode_v2(salt),
 			IVBase64:   crypto.Base64Encode_v2(iv),
 		},
+		testKind: "video",
 	}
 
 	fragmentSize := dataSize / int64(fragCount)
@@ -144,11 +148,10 @@ func createContainerFixture(tb testing.TB, dataSize int64, fragCount int) *conta
 // benchKVI 是测试专用的 KVI 实现
 type benchKVI struct {
 	types.KVI
+	testKind types.IndexKind
 }
 
-func (k benchKVI) GetKind() types.IndexKind {
-	return "video"
-}
+func (k benchKVI) GetKind() types.IndexKind { return k.testKind }
 
 func (k benchKVI) GetEncryptionInfo() types.KVI {
 	return k.KVI

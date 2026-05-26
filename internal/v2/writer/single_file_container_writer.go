@@ -87,50 +87,60 @@ func NewSingleFileContainerWriterV4(outputPath string, header *types.EnvelopeHea
 }
 
 func (w *SingleFileContainerWriter) WriteKVI(kviData []byte) error {
-	// 1. 写入文件 (并获得 CRC)
+	if w.headerVersion == 4 {
+		w.globalHasher.Write(kviData)
+		return nil
+	}
 	crcVal, err := block.WriteBlock(w.file, types.BlockTypeKVI_v2, kviData)
 	if err != nil {
 		return err
 	}
-
-	// 2. 写入 Hasher
-	// 【关键修复】必须使用上面返回的 crcVal，而不是 0
 	header := &block.BlockHeader_v2{
 		Type:   types.BlockTypeKVI_v2,
 		Length: uint64(len(kviData)),
-		CRC32:  crcVal, // 修正：使用实际计算的 CRC
+		CRC32:  crcVal,
 	}
 	return block.WriteBlockToHasherFromHeader(w.globalHasher, header, kviData)
 }
 
 func (w *SingleFileContainerWriter) WriteFragment(frag *types.Fragment, data []byte) error {
-	// 1. 记录 PhysicalOffset
 	if w.file != nil {
 		if pos, err := w.file.Seek(0, io.SeekCurrent); err == nil {
 			frag.PhysicalOffset = uint64(pos)
 		}
 	}
 
-	// 2. 写入文件 (获得 CRC)
-	crc, err := block.WriteBlock(w.file, types.BlockTypeData_v2, data)
-	if err != nil {
-		return fmt.Errorf("failed to write data block: %w", err)
+	if w.headerVersion == 4 {
+		if _, err := w.file.Write(data); err != nil {
+			return fmt.Errorf("failed to write v4 fragment data: %w", err)
+		}
+		w.globalHasher.Write(data)
+		w.fragments = append(w.fragments, types.Fragment{
+			ID:                frag.ID,
+			Type:              frag.Type,
+			Length:            uint64(len(data)),
+			GlobalStartOffset: w.currentDataStreamOffset,
+			DataCRC32:         0,
+			PhysicalPath:      "",
+			PhysicalOffset:    frag.PhysicalOffset,
+		})
+	} else {
+		crc, err := block.WriteBlock(w.file, types.BlockTypeData_v2, data)
+		if err != nil {
+			return fmt.Errorf("failed to write data block: %w", err)
+		}
+		header := &block.BlockHeader_v2{Type: types.BlockTypeData_v2, Length: uint64(len(data)), CRC32: crc}
+		block.WriteBlockToHasherFromHeader(w.globalHasher, header, data)
+		w.fragments = append(w.fragments, types.Fragment{
+			ID:                frag.ID,
+			Type:              frag.Type,
+			Length:            uint64(len(data)),
+			GlobalStartOffset: w.currentDataStreamOffset,
+			DataCRC32:         crc,
+			PhysicalPath:      "",
+			PhysicalOffset:    frag.PhysicalOffset,
+		})
 	}
-
-	// 3. 写入 Hasher
-	header := &block.BlockHeader_v2{Type: types.BlockTypeData_v2, Length: uint64(len(data)), CRC32: crc}
-	block.WriteBlockToHasherFromHeader(w.globalHasher, header, data)
-
-	// 4. 更新状态
-	w.fragments = append(w.fragments, types.Fragment{
-		ID:                frag.ID,
-		Type:              frag.Type,
-		Length:            uint64(len(data)),
-		GlobalStartOffset: w.currentDataStreamOffset,
-		DataCRC32:         crc,
-		PhysicalPath:      "",
-		PhysicalOffset:    frag.PhysicalOffset,
-	})
 	w.currentDataStreamOffset += uint64(len(data))
 	return nil
 }
