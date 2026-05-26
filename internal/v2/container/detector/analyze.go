@@ -64,18 +64,42 @@ func AnalyzeContainerV2(ctx context.Context, containerPath string, printToStdout
 
 	// --- 1. Footer Analysis ---
 	fmt.Fprintln(&buf, ">>> 1. Footer Analysis (from end of file)")
-	footer, footerErr := envelope.ReadEnvelopeFooter_v2(file)
-	if footerErr != nil {
-		fmt.Printf("  Status: FAILED\n  Reason: %v\n\n", footerErr)
+	detectedVersion, _, _ := types.DetectHeaderInfoFromReaderAt(file)
+	var footer *types.EnvelopeFooter_v2
+	var footerErr error
+	if detectedVersion == 4 {
+		footerSize := int64(types.EnvelopeFooterSize_v4)
+		stat, _ := file.Stat()
+		if stat.Size() >= footerSize {
+			footerReader := io.NewSectionReader(file, stat.Size()-footerSize, footerSize)
+			v4Footer, v4Err := types.ReadFooterV4(footerReader)
+			if v4Err != nil {
+				fmt.Fprintf(&buf, "  Status: FAILED\n  Reason: %v\n\n", v4Err)
+			} else {
+				fmt.Fprintf(w, "  Status:\tOK\n")
+				fmt.Fprintf(w, "  Magic:\t%s\n", string(v4Footer.Magic[:]))
+				fmt.Fprintf(w, "  Global CRC32:\t%08x\n", v4Footer.GlobalCRC32)
+				w.Flush()
+				fmt.Fprintln(&buf)
+			}
+		} else {
+			fmt.Fprintf(&buf, "  Status: FAILED\n  Reason: file too small for v4 footer\n\n")
+		}
+		footerErr = fmt.Errorf("v4 container: footer not in v2 format")
 	} else {
-		fmt.Fprintf(w, "  Status:\tOK\n")
-		fmt.Fprintf(w, "  Magic:\t%s\n", string(footer.Magic[:]))
-		fmt.Fprintf(w, "  Manifest Offset:\t%d\n", footer.ManifestOffset)
-		fmt.Fprintf(w, "  Manifest Length:\t%d\n", footer.ManifestLength)
-		fmt.Fprintf(w, "  Manifest CRC32:\t%08x\n", footer.ManifestCRC32)
-		fmt.Fprintf(w, "  Global CRC32:\t%08x\n", footer.GlobalCRC32)
-		w.Flush()
-		fmt.Println(&buf)
+		footer, footerErr = envelope.ReadEnvelopeFooter_v2(file)
+		if footerErr != nil {
+			fmt.Printf("  Status: FAILED\n  Reason: %v\n\n", footerErr)
+		} else {
+			fmt.Fprintf(w, "  Status:\tOK\n")
+			fmt.Fprintf(w, "  Magic:\t%s\n", string(footer.Magic[:]))
+			fmt.Fprintf(w, "  Manifest Offset:\t%d\n", footer.ManifestOffset)
+			fmt.Fprintf(w, "  Manifest Length:\t%d\n", footer.ManifestLength)
+			fmt.Fprintf(w, "  Manifest CRC32:\t%08x\n", footer.ManifestCRC32)
+			fmt.Fprintf(w, "  Global CRC32:\t%08x\n", footer.GlobalCRC32)
+			w.Flush()
+			fmt.Println(&buf)
+		}
 	}
 
 	// --- 2. Manifest Analysis ---
@@ -130,8 +154,13 @@ func AnalyzeContainerV2(ctx context.Context, containerPath string, printToStdout
 
 	// 只有当 JSON 解析成功时，才进行交叉验证
 	if jsonParseErr == nil {
-		// 【修改】调用返回字符串的辅助函数
-		validationHTML, validationErr := performCrossValidation(footer, scannedBlocks, manifestObj)
+		var validationHTML string
+		var validationErr error
+		if detectedVersion == 4 {
+			validationHTML, validationErr = performCrossValidationV4(file, headerSize, scannedBlocks)
+		} else {
+			validationHTML, validationErr = performCrossValidation(footer, scannedBlocks, manifestObj)
+		}
 		if validationErr != nil {
 			// 交叉验证失败通常不是致命错误，可以记录但继续
 			detectorLogger.Warn("cross-validation failed",
@@ -179,6 +208,34 @@ func analyzeHeader(buf *bytes.Buffer, file *os.File) (int64, error) {
 	}
 
 	switch version {
+	case 4:
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			return 0, err
+		}
+		header, err := types.ReadHeaderV4(file)
+		if err != nil {
+			return 0, fmt.Errorf("failed to read v4 header: %w", err)
+		}
+		fmt.Fprintf(w, "  Version:\t%d (V4)\n", header.Version)
+		fmt.Fprintf(w, "  Magic:\t%s\n", string(header.Magic[:]))
+		flagStr := ""
+		if header.Flags&types.FlagIsMainContainer != 0 {
+			flagStr += "MainContainer "
+		}
+		if header.Flags&types.FlagIsPhysicalChunk != 0 {
+			flagStr += "PhysicalChunk "
+		}
+		fmt.Fprintf(w, "  Flags:\t0x%04x (%s)\n", header.Flags, flagStr)
+		fmt.Fprintf(w, "  ID Type:\t%d\n", header.IDType)
+		fmt.Fprintf(w, "  ID Length:\t%d bytes\n", header.IDLength)
+		fmt.Fprintf(w, "  Header CRC32:\t%08x (Verified OK)\n", header.HeaderCRC32)
+		fmt.Fprintf(w, "  ContainerType:\t%s\n", header.ContainerType)
+		fmt.Fprintf(w, "  IsSeekable:\t%v\n", header.IsSeekable)
+		fmt.Fprintf(w, "  ManifestOffset:\t%d\n", header.ManifestOffset)
+		fmt.Fprintf(w, "  ManifestLength:\t%d\n", header.ManifestLength)
+		w.Flush()
+		return types.EnvelopeHeaderSize_v4, nil
+
 	case 3:
 		// 2. Seek 回到文件开头，因为 ReadHeaderV3 需要从头读取
 		if _, err := file.Seek(0, io.SeekStart); err != nil {
@@ -458,6 +515,58 @@ func performCrossValidation(footer *types.EnvelopeFooter_v2, scannedBlocks []sca
 	}
 
 	// 【关键】确保所有内容都写入 buffer 并返回
+	w.Flush()
+	return buf.String(), nil
+}
+
+func performCrossValidationV4(file *os.File, headerSize int64, scannedBlocks []scannedBlock) (string, error) {
+	var buf bytes.Buffer
+	w := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)
+	defer w.Flush()
+
+	fmt.Fprintln(&buf, ">>> 4. Cross-Validation Report (V4)")
+
+	stat, err := file.Stat()
+	if err != nil {
+		return "", fmt.Errorf("failed to stat file: %w", err)
+	}
+	fileSize := stat.Size()
+
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", fmt.Errorf("failed to seek: %w", err)
+	}
+	v4Header, err := types.ReadHeaderV4(file)
+	if err != nil {
+		return "", fmt.Errorf("failed to read v4 header for validation: %w", err)
+	}
+
+	footerSize := int64(types.EnvelopeFooterSize_v4)
+	footerReader := io.NewSectionReader(file, fileSize-footerSize, footerSize)
+	v4Footer, err := types.ReadFooterV4(footerReader)
+	if err != nil {
+		return "", fmt.Errorf("failed to read v4 footer for validation: %w", err)
+	}
+
+	headerCRC, err := streamCRC32(file, 0, uint64(headerSize))
+	if err != nil {
+		return "", fmt.Errorf("failed to compute header CRC: %w", err)
+	}
+	if headerCRC == v4Header.HeaderCRC32 {
+		fmt.Fprintf(&buf, "  [OK] Header CRC32 matches computed value (%08x).\n", headerCRC)
+	} else {
+		fmt.Fprintf(&buf, "  [ERROR] Header CRC32 mismatch! Stored: %08x, Computed: %08x.\n", v4Header.HeaderCRC32, headerCRC)
+	}
+
+	dataBlocks := findAllBlocksByType(scannedBlocks, uint32(types.BlockTypeData_v2))
+	totalDataCRC := crc32.NewIEEE()
+	for _, b := range dataBlocks {
+		totalDataCRC.Write([]byte{byte(b.crc), byte(b.crc >> 8), byte(b.crc >> 16), byte(b.crc >> 24)})
+	}
+
+	fmt.Fprintf(&buf, "  [INFO] V4 Footer GlobalCRC32: %08x\n", v4Footer.GlobalCRC32)
+	fmt.Fprintf(&buf, "  [INFO] Scanned %d data blocks, manifest stored in V4 Header (offset=%d, length=%d).\n",
+		len(dataBlocks), v4Header.ManifestOffset, v4Header.ManifestLength)
+
 	w.Flush()
 	return buf.String(), nil
 }

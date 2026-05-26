@@ -411,6 +411,8 @@ func (r *fileContainerReader) ensureChunkScanned(chunkFilename string) error {
 	headerSize := int64(0)
 	if r.headerVersion == 3 {
 		headerSize = types.EnvelopeHeaderSize_v3
+	} else if r.headerVersion == 4 {
+		headerSize = types.EnvelopeHeaderSize_v4
 	}
 	if _, err := file.Seek(headerSize, io.SeekStart); err != nil {
 		return err
@@ -514,6 +516,8 @@ func (r *fileContainerReader) findAndOpenFragmentRecovery(frag *types.Fragment_v
 		chunkHeaderOffset := int64(0)
 		if r.headerVersion == 3 {
 			chunkHeaderOffset = types.EnvelopeHeaderSize_v3
+		} else if r.headerVersion == 4 {
+			chunkHeaderOffset = types.EnvelopeHeaderSize_v4
 		}
 
 		// 验证候选文件：校验在正确偏移量处的块头是否匹配 frag

@@ -3,6 +3,7 @@ package manifest
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -197,8 +198,11 @@ func ReadManifestFromFile(filePath string) (*types.Manifest_v2, *types.EnvelopeF
 		return nil, nil, 0, 0, fmt.Errorf("failed to detect header info: %w", err)
 	}
 
-	// 2. 【关键修复】使用 envelope 包读取 Footer
-	// 直接传入已经打开的 file 句柄，无需再次打开文件
+	if headerVersion == 4 {
+		return readManifestV4(file, filePath, headerSize)
+	}
+
+	// 2. 【V2/V3 路径】使用 envelope 包读取 Footer
 	footer, err := envelope.ReadEnvelopeFooter_v2(file)
 	if err != nil {
 		return nil, nil, headerVersion, headerSize, fmt.Errorf("failed to read envelope footer: %w", err)
@@ -217,6 +221,99 @@ func ReadManifestFromFile(filePath string) (*types.Manifest_v2, *types.EnvelopeF
 	}
 
 	return manifest, footer, headerVersion, headerSize, nil
+}
+
+func readManifestV4(file *os.File, filePath string, headerSize int64) (*types.Manifest_v2, *types.EnvelopeFooter_v2, int, int64, error) {
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return nil, nil, 4, headerSize, fmt.Errorf("failed to stat file: %w", err)
+	}
+
+	footerSize := int64(types.EnvelopeFooterSize_v4)
+	if fileInfo.Size() < footerSize {
+		return nil, nil, 4, headerSize, fmt.Errorf("file too small for v4 footer")
+	}
+
+	footerReader := io.NewSectionReader(file, fileInfo.Size()-footerSize, footerSize)
+	v4Footer, err := types.ReadFooterV4(footerReader)
+	if err != nil {
+		return nil, nil, 4, headerSize, fmt.Errorf("failed to read v4 footer: %w", err)
+	}
+	if string(v4Footer.Magic[:]) != string(types.MagicFooter_v2[:]) {
+		return nil, nil, 4, headerSize, fmt.Errorf("v4 footer magic mismatch")
+	}
+
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, nil, 4, headerSize, fmt.Errorf("failed to seek to header: %w", err)
+	}
+	v4Header, err := types.ReadHeaderV4(file)
+	if err != nil {
+		return nil, nil, 4, headerSize, fmt.Errorf("failed to read v4 header: %w", err)
+	}
+
+	if v4Header.ManifestLength == 0 || v4Header.ManifestOffset == 0 {
+		return nil, nil, 4, headerSize, fmt.Errorf("v4 header has invalid manifest offset/length")
+	}
+
+	obfuscatedManifest := make([]byte, v4Header.ManifestLength)
+	if _, err := file.Seek(int64(v4Header.ManifestOffset), io.SeekStart); err != nil {
+		return nil, nil, 4, headerSize, fmt.Errorf("failed to seek to v4 manifest: %w", err)
+	}
+	if _, err := io.ReadFull(file, obfuscatedManifest); err != nil {
+		return nil, nil, 4, headerSize, fmt.Errorf("failed to read v4 manifest data: %w", err)
+	}
+
+	plainManifest, err := crypto.DeobfuscateManifest(obfuscatedManifest)
+	if err != nil {
+		return nil, nil, 4, headerSize, fmt.Errorf("failed to deobfuscate v4 manifest: %w", err)
+	}
+
+	v4Manifest, err := types.DeserializeManifest_v4(plainManifest)
+	if err != nil {
+		return nil, nil, 4, headerSize, fmt.Errorf("failed to deserialize v4 manifest: %w", err)
+	}
+
+	v2Manifest := adaptV4ToV2Manifest(v4Manifest, v4Header)
+
+	return v2Manifest, nil, 4, headerSize, nil
+}
+
+func adaptV4ToV2Manifest(v4 *types.Manifest_v4, header *types.EnvelopeHeaderV4) *types.Manifest_v2 {
+	fragments := make([]types.Fragment_v2, len(v4.Segments))
+	for i, seg := range v4.Segments {
+		nonce, _ := base64.StdEncoding.DecodeString(seg.Nonce)
+		encDataSize := seg.Size - uint64(types.SegmentHeaderSize) - uint64(len(nonce))
+		fragments[i] = types.Fragment_v2{
+			ID:       seg.ID,
+			Type:     types.FragmentType_SeekableStream,
+			Length:   encDataSize,
+			PhysicalOffset: seg.Offset + uint64(types.SegmentHeaderSize) + uint64(len(nonce)),
+			DataCRC32:      0,
+		}
+	}
+
+	var kind types.IndexKind
+	switch v4.ContainerType {
+	case "video":
+		kind = "video"
+	case "audio":
+		kind = "audio"
+	case "image":
+		kind = "image"
+	case "document":
+		kind = "PDF"
+	case "text":
+		kind = "text"
+	default:
+		kind = types.IndexKind(v4.ContainerType)
+	}
+
+	return &types.Manifest_v2{
+		Version:   int64(header.Version),
+		Kind:      kind,
+		KVI:       v4.KVI,
+		Fragments: fragments,
+	}
 }
 
 // ScanManifestFromFile 从头扫描文件，寻找 Manifest 块

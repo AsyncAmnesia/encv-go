@@ -1,6 +1,9 @@
 package reader
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +14,7 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/container/block"
 	"github.com/Soltus/encv-go/internal/v2/container/envelope"
 	"github.com/Soltus/encv-go/internal/v2/container/manifest"
+	"github.com/Soltus/encv-go/internal/v2/crypto"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -29,8 +33,9 @@ type remoteEncryptedContainerReader struct {
 	containerURL string
 	headers      map[string][]string
 	urlResolver  URLResolver
-	// 【V3 适配】缓存 Header 大小 (16 for V2, 2048 for V3)
+	// 【V3/V4 适配】缓存 Header 版本和大小 (V2:16, V3:2048, V4:2048)
 	headerSize int64
+	version     int
 	// 缓存，避免重复请求
 	manifest *types.Manifest_v2
 }
@@ -69,6 +74,7 @@ func (r *remoteEncryptedContainerReader) initHeaderSize() error {
 	}
 
 	r.headerSize = headerSize
+	r.version = version
 	if r.headerSize == 0 {
 		return fmt.Errorf("unknown header version detected: %d", version)
 	}
@@ -300,8 +306,15 @@ func (r *remoteEncryptedContainerReader) GetManifest() *types.Manifest_v2 {
 		return r.manifest
 	}
 
-	// 1. 【关键】下载 Footer (最后 32 字节)
-	// 使用 GetRemoteStreamWithRange(offset, -1) -> offset 到结束
+	if r.version == 4 {
+		return r.getManifestV4()
+	}
+
+	return r.getManifestV23()
+}
+
+func (r *remoteEncryptedContainerReader) getManifestV23() *types.Manifest_v2 {
+	// 1. 【V2/V3】下载 Footer (最后 32 字节)
 	footerResp, err := utils.GetRemoteStreamWithRange(r.containerURL, r.headers, -32, -1)
 	if err != nil {
 		readerLogger.Error("failed to fetch footer", slog.Any("error", err))
@@ -315,16 +328,14 @@ func (r *remoteEncryptedContainerReader) GetManifest() *types.Manifest_v2 {
 		return nil
 	}
 
-	// 2. 【关键】使用 envelope 包的 Bytes 解析函数
+	// 2. 使用 envelope 包的 Bytes 解析函数
 	footer, err := envelope.ParseEnvelopeFooterFromBytes(footerData)
 	if err != nil {
 		readerLogger.Error("failed to parse footer", slog.Any("error", err))
 		return nil
 	}
 
-	// 3. 【关键】下载整个 Manifest 块 (Header + EncryptedData)
-	// Footer.ManifestOffset 是 Header 开始的绝对偏移量
-	// Footer.ManifestLength 是 Header + EncryptedData 的总长度
+	// 3. 下载整个 Manifest 块 (Header + EncryptedData)
 	manifestStart := int64(footer.ManifestOffset)
 	manifestEnd := manifestStart + int64(footer.ManifestLength) - 1
 
@@ -346,9 +357,7 @@ func (r *remoteEncryptedContainerReader) GetManifest() *types.Manifest_v2 {
 		return nil
 	}
 
-	// 4. 【关键】使用 manifest 包的辅助函数解密并解析
-	// ReadEncryptedManifestBlock 处理了：读取 Header -> 读取 Data -> 解密 -> 解析
-	// 这实现了与 ReadManifestFromFile 相同的"逻辑"，统一了处理流程
+	// 4. 使用 manifest 包的辅助函数解密并解析
 	r.manifest, err = manifest.ReadEncryptedManifestBlock(manifestBlockData)
 	if err != nil {
 		readerLogger.Error("failed to decrypt/parse manifest", slog.Any("error", err))
@@ -358,6 +367,93 @@ func (r *remoteEncryptedContainerReader) GetManifest() *types.Manifest_v2 {
 	readerLogger.Info("manifest loaded successfully",
 		slog.Int("fragment_count", len(r.manifest.Fragments)),
 		slog.String("kind", string(r.manifest.Kind)),
+	)
+
+	return r.manifest
+}
+
+func (r *remoteEncryptedContainerReader) getManifestV4() *types.Manifest_v2 {
+	// 1. 读取 V4 Footer（最后 12 字节）
+	footerResp, err := utils.GetRemoteStreamWithRange(r.containerURL, r.headers, -int64(types.EnvelopeFooterSize_v4), -1)
+	if err != nil {
+		readerLogger.Error("failed to fetch v4 footer", slog.Any("error", err))
+		return nil
+	}
+	defer footerResp.Body.Close()
+
+	footerData, err := io.ReadAll(footerResp.Body)
+	if err != nil {
+		readerLogger.Error("failed to read v4 footer data", slog.Any("error", err))
+		return nil
+	}
+
+	v4Footer := &types.EnvelopeFooterV4{}
+	if err := binaryRead(footerData, v4Footer); err != nil {
+		readerLogger.Error("failed to parse v4 footer", slog.Any("error", err))
+		return nil
+	}
+
+	// 2. 读取 V4 Header（前 2048 字节）获取 ManifestOffset/ManifestLength
+	headerResp, err := utils.GetRemoteStreamWithRange(r.containerURL, r.headers, 0, int64(types.EnvelopeHeaderSize_v4)-1)
+	if err != nil {
+		readerLogger.Error("failed to fetch v4 header", slog.Any("error", err))
+		return nil
+	}
+	defer headerResp.Body.Close()
+
+	headerData, err := io.ReadAll(headerResp.Body)
+	if err != nil {
+		readerLogger.Error("failed to read v4 header data", slog.Any("error", err))
+		return nil
+	}
+
+	v4Header, err := types.ReadHeaderV4(headerDataAsReader(headerData))
+	if err != nil {
+		readerLogger.Error("failed to parse v4 header", slog.Any("error", err))
+		return nil
+	}
+
+	if v4Header.ManifestLength == 0 || v4Header.ManifestOffset == 0 {
+		readerLogger.Error("v4 header has invalid manifest offset/length")
+		return nil
+	}
+
+	// 3. 读取 Obfuscated Manifest 数据
+	manifestStart := int64(v4Header.ManifestOffset)
+	manifestEnd := manifestStart + int64(v4Header.ManifestLength) - 1
+
+	manifestResp, err := utils.GetRemoteStreamWithRange(r.containerURL, r.headers, manifestStart, manifestEnd)
+	if err != nil {
+		readerLogger.Error("failed to fetch v4 manifest", slog.Any("error", err))
+		return nil
+	}
+	defer manifestResp.Body.Close()
+
+	obfuscatedData, err := io.ReadAll(manifestResp.Body)
+	if err != nil {
+		readerLogger.Error("failed to read v4 manifest data", slog.Any("error", err))
+		return nil
+	}
+
+	// 4. Deobfuscate + Deserialize
+	plainData, err := crypto.DeobfuscateManifest(obfuscatedData)
+	if err != nil {
+		readerLogger.Error("failed to deobfuscate v4 manifest", slog.Any("error", err))
+		return nil
+	}
+
+	v4Manifest, err := types.DeserializeManifest_v4(plainData)
+	if err != nil {
+		readerLogger.Error("failed to deserialize v4 manifest", slog.Any("error", err))
+		return nil
+	}
+
+	// 5. 适配为 Manifest_v2
+	r.manifest = adaptV4ToV2ManifestRemote(v4Manifest, v4Header)
+
+	readerLogger.Info("v4 manifest loaded successfully",
+		slog.Int("segment_count", len(v4Manifest.Segments)),
+		slog.String("container_type", v4Manifest.ContainerType),
 	)
 
 	return r.manifest
@@ -384,4 +480,50 @@ func (r *remoteEncryptedContainerReader) GetFragments() []types.Fragment_v2 {
 // Close 对于远程读取器是空操作
 func (r *remoteEncryptedContainerReader) Close() error {
 	return nil
+}
+
+func binaryRead(data []byte, v interface{}) error {
+	return binary.Read(bytes.NewReader(data), binary.LittleEndian, v)
+}
+
+func headerDataAsReader(data []byte) io.Reader {
+	return bytes.NewReader(data)
+}
+
+func adaptV4ToV2ManifestRemote(v4 *types.Manifest_v4, header *types.EnvelopeHeaderV4) *types.Manifest_v2 {
+	fragments := make([]types.Fragment_v2, len(v4.Segments))
+	for i, seg := range v4.Segments {
+		nonce, _ := base64.StdEncoding.DecodeString(seg.Nonce)
+		encDataSize := seg.Size - uint64(types.SegmentHeaderSize) - uint64(len(nonce))
+		fragments[i] = types.Fragment_v2{
+			ID:       seg.ID,
+			Type:     types.FragmentType_SeekableStream,
+			Length:   encDataSize,
+			PhysicalOffset: seg.Offset + uint64(types.SegmentHeaderSize) + uint64(len(nonce)),
+			DataCRC32:      0,
+		}
+	}
+
+	var kind types.IndexKind
+	switch v4.ContainerType {
+	case "video":
+		kind = "video"
+	case "audio":
+		kind = "audio"
+	case "image":
+		kind = "image"
+	case "document":
+		kind = "PDF"
+	case "text":
+		kind = "text"
+	default:
+		kind = types.IndexKind(v4.ContainerType)
+	}
+
+	return &types.Manifest_v2{
+		Version:   int64(header.Version),
+		Kind:      kind,
+		KVI:       v4.KVI,
+		Fragments: fragments,
+	}
 }
