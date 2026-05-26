@@ -74,7 +74,7 @@
             </div>
             <div class="info-row">
               <span class="info-label">{{ t('fileInfo.containerId') }}</span>
-              <span class="info-value code-text">{{ containerData.container_id ?? '-' }}</span>
+              <span class="info-value code-text">{{ containerData.container_id ? containerData.container_id : '(auto)' }}</span>
             </div>
             <div class="info-row">
               <span class="info-label">{{ t('fileInfo.containerType') }}</span>
@@ -97,7 +97,7 @@
           </div>
         </div>
 
-        <div v-if="info.is_encv_container && containerData?.manifest" class="section-card manifest-card">
+        <div v-if="info.is_encv_container && containerData" class="section-card manifest-card">
           <div class="manifest-header" @click="showManifest = !showManifest">
             <h4 class="card-title inline-title">
               <ion-icon :icon="listOutline" class="title-icon"></ion-icon>
@@ -197,7 +197,13 @@ async function loadInfo() {
     info.value = data
     containerData.value = data.container || null
     if (data.container?.manifest) {
-      manifestJson.value = JSON.stringify(data.container.manifest, null, 2)
+      try {
+        manifestJson.value = JSON.stringify(data.container.manifest, null, 2)
+      } catch {
+        manifestJson.value = '(invalid)'
+      }
+    } else {
+      manifestJson.value = '(none)'
     }
   } catch (e: any) {
     console.error('[FileInfo] failed:', e)

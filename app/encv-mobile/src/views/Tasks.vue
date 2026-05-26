@@ -176,6 +176,40 @@
               </ion-button>
             </ion-item>
           </ion-list>
+
+          <!-- 全局密码显示（只读） -->
+          <ion-item>
+            <ion-input
+              :model-value="newTaskPassword"
+              :label="t('tasks.globalPassword')"
+              label-placement="stacked"
+              type="password"
+              readonly
+              :clear-on-edit="false"
+            >
+              <ion-icon :icon="lockClosed" slot="end" color="medium"></ion-icon>
+            </ion-input>
+          </ion-item>
+
+          <!-- 容器版本选择（仅加密时显示） -->
+          <ion-item v-if="newTaskType === 'encrypt'">
+            <ContainerVersionSelector v-model="newTaskVersion" />
+          </ion-item>
+
+          <!-- 二级密码（占位，计划中） -->
+          <ion-item>
+            <ion-input
+              v-model="newTaskSecondaryPassword"
+              :label="t('tasks.secondaryPassword')"
+              label-placement="stacked"
+              type="password"
+              disabled
+              placeholder=""
+            >
+              <ion-badge color="medium" slot="end">{{ t('tasks.comingSoon') }}</ion-badge>
+            </ion-input>
+          </ion-item>
+
           <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath || !!sourcePathError || !!targetPathError">
             <ion-icon :icon="lockClosed" slot="start"></ion-icon>
             {{ t('tasks.createTask') }}
@@ -226,6 +260,8 @@ import {
   folderOpen,
   copyOutline,
 } from 'ionicons/icons'
+import { useRoute, useRouter } from 'vue-router'
+import ContainerVersionSelector from '@/components/ContainerVersionSelector.vue'
 import {
   getTasks,
   createTask,
@@ -237,11 +273,15 @@ import {
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
+import { useConfig } from '@/composables/useConfig'
 import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
 import { showToast } from '@/composables/useToast'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
+const { config } = useConfig()
 
 const tasks = ref<EncvTask[]>([])
 const loading = ref(false)
@@ -253,6 +293,9 @@ const newTaskPath = ref('')
 const newTaskTargetPath = ref('')
 const sourcePathError = ref('')
 const targetPathError = ref('')
+const newTaskPassword = ref('')
+const newTaskVersion = ref(4)
+const newTaskSecondaryPassword = ref('')
 let sourceValidateTimer: ReturnType<typeof setTimeout> | null = null
 let targetValidateTimer: ReturnType<typeof setTimeout> | null = null
 let sourceValidateGeneration = 0
@@ -486,8 +529,17 @@ async function handleBrowseTarget() {
 async function handleCreateTask() {
   if (!newTaskPath.value) return
   try {
-    await createTask(newTaskType.value, newTaskPath.value, newTaskTargetPath.value || undefined)
+    await createTask(
+      newTaskType.value,
+      newTaskPath.value,
+      newTaskTargetPath.value || undefined,
+      undefined,
+      newTaskType.value === 'encrypt' ? newTaskVersion.value : undefined
+    )
     showNewTaskModal.value = false
+    if (route.query.action) {
+      router.replace({ query: {} as Record<string, undefined> })
+    }
     showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
     await loadTasks()
   } catch {
@@ -569,6 +621,19 @@ function onTaskCompleted(data: { id: string; status?: string; error?: string; er
 }
 
 onMounted(() => {
+  if (config.value?.password) {
+    newTaskPassword.value = config.value.password as string
+  }
+  if (route.query.action === 'new') {
+    if (route.query.type === 'encrypt' || route.query.type === 'decrypt') {
+      newTaskType.value = route.query.type as TaskType
+    }
+    if (route.query.source) {
+      newTaskPath.value = route.query.source as string
+      sourcePathError.value = ''
+    }
+    showNewTaskModal.value = true
+  }
   loadTasks()
   eventBus.on('task:update', onTaskUpdate)
   eventBus.on('task:progress', onTaskProgress)

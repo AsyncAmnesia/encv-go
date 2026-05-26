@@ -1,5 +1,7 @@
 // internal/v2/plugins/video/metadata_extractor.go
 
+//go:build !android
+
 package video
 
 import (

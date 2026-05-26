@@ -1,184 +1,172 @@
-# 多问题修复计划
+# 多问题修复计划（v3 - 最终版）
 
 ## 问题清单
 
 | # | 问题 | 严重程度 | 根因 |
 |---|------|----------|------|
-| 1 | video.go 缺少 `!android` build tag | 🔴 CI 编译失败 | 无平台约束，引用 Android 特有函数 |
-| 2 | 加密/解密任务 UI 不统一 | 🟡 功能缺失 | 解密用 alertController，加密用 ion-modal |
-| 3 | v4 容器图片信息乱码（版本/ContainerID/Manifest） | 🔴 数据错误 | ContainerID 来源是 SpecialID（所有插件都传 nil→空）；KVI 原始 JSON 直接暴露给前端 |
-| 4 | config.user.json 初始化内容丢失 | 🔴 数据丢失 | PUT /api/config 全量替换；前端 Settings 页 schema-driven 编辑可能丢弃未知字段 |
+| 1 | video.go Android 编译失败 | 🔴 CI 失败 | 引用 Android 特有类型/函数 |
+| 2 | 加密入口分散维护 | 🟡 架构问题 | Files.vue 独立维护加密/解密 modal，应委托给统一入口 |
+| 3 | v4 容器图片信息乱码 | 🔴 数据错误 | ContainerID 为空；KVI 原始 JSON 直接暴露前端 |
+| 4 | config.user.json 内容丢失 | 🔴 数据丢失 | PUT /api/config 全量替换 |
 
 ---
 
-## 问题 1: video.go 缺少 android build tag
-
-### 根因
-[video.go](file:///workspace/internal/utils/video.go) 无 build tag 约束，直接引用 Android 特有类型和函数：`NativeError`, `callFFprobeNative()`, `callFFmpegNative()` 等。这些定义在 `ffmpeg_dlopen.go` (android) / `ffmpeg_dlopen_stub.go` (!android) 中。
+## 问题 1: video.go Android 编译失败
 
 ### 修复
-在 `/workspace/internal/utils/video.go` 顶部添加 `//go:build !android`
+[video.go](file:///workspace/internal/utils/video.go) 添加 `//go:build !android`
+
+Android 上视频处理走 native ffmpeg 直接调用路径（不经过 Go 层 video.go）。
 
 ---
 
-## 问题 2: 加密/解密任务统一为模态框
+## 问题 2: 加密入口统一委托（核心架构调整）
 
-### 当前状态
-- **加密** (`handleEncryptFile`): ✅ 已用 `ion-modal` + `ContainerVersionSelector`
-- **解密** (`handleDecryptFile`): ❌ 使用 `alertController.create()` 弹出表单
+### 用户意图
+- **Tasks.vue 是唯一的新建任务入口**，负责维护完整的创建 UI
+- **Files.vue 长按加密/解密** 不再独立维护 modal → 直接**委托**给 Tasks 的创建流程
+- 使用全局密码（正确），不需要每任务输入密码
+- 二级密码：先写 UI 但显示"计划中/不可用"
 
-### 修复方案
+### 当前状态 vs 目标状态
 
-**修改文件**: `/workspace/app/encv-mobile/src/views/Files.vue`
+**当前（两套独立逻辑）**:
+```
+Files.vue 长按 → handleEncryptFile() → showEncryptModal (ion-modal, 含 ContainerVersionSelector)
+             → handleDecryptFile() → alertController (旧风格)
 
-1. 新增解密模态框状态变量:
-   - `showDecryptModal`, `decryptSourcePath`, `decryptTargetPath`, `decryptPassword`
-   
-2. 新增 `<ion-modal>` 解密模板（与加密 modal 并列），包含:
-   - 目标路径输入 (ion-input)
-   - 密码输入 (ion-input type=password)
-   - 提交按钮
+Tasks.vue FAB → showNewTaskModal (ion-modal, 无版本选择, 无密码)
+```
 
-3. 修改 `handleDecryptFile()`:
-   - 从 alertController 改为设置状态变量并打开 `showDecryptModal = true`
-   - 预填充目标路径和密码（从 fetchConfig 获取全局密码）
+**目标（单一入口）**:
+```
+Files.vue 长按 → handleEncryptFile() → 打开 Tasks 的新建任务 modal（预填 type=encrypt, sourcePath）
+             → handleDecryptFile() → 打开 Tasks 的新建任务 modal（预填 type=decrypt, sourcePath）
 
-4. 新增 `handleDecryptSubmit()`:
-   - 调用 `doCreateTask('decrypt', ...)`
-   - 包含覆盖确认逻辑（与 `handleEncryptSubmit` 一致）
+Tasks.vue FAB → showNewTaskModal（唯一入口，功能完整）
+```
+
+### 具体实现方案
+
+#### Step 1: 增强 Tasks.vue 的 `showNewTaskModal`
+
+修改 `/workspace/app/encv-mobile/src/views/Tasks.vue`：
+
+1. 新增状态变量:
+   - `newTaskPassword` (ref<string>) — 从全局 config.password 预填充（只读显示）
+   - `newTaskVersion` (ref<number>) — 默认 4
+   - `newTaskSecondaryPassword` (ref<string>) — 二级密码（UI 存在但 disabled + 提示"计划中"）
+
+2. Modal 模板增强:
+   ```
+   ┌─ 新建任务 ─────────────────┐
+   │ 任务类型: [加密 ▼]          │
+   │                             │
+   │ 源路径:   [________] [📁]    │
+   │ 目标路径: [________] [📁]    │
+   │                             │
+   │ 密码:     [从全局配置读取]🔒 │  ← 只读显示，说明"使用全局密码"
+   │                             │
+   │ 容器版本:                     │  ← 仅 encrypt 时显示
+   │   ○ V2 (已弃用)            │
+   │   ○ V3                      │
+   │   ● V4 (推荐)               │
+   │                             │
+   │ 二级密码: [____________]     │  ← disabled + "计划中" badge
+   │                             │
+   │      [ 创建任务 ]           │
+   └─────────────────────────────┘
+   ```
+
+3. `handleCreateTask()` 更新:
+   ```typescript
+   await createTask(
+       newTaskType.value,
+       newTaskPath.value,
+       newTaskTargetPath.value || undefined,
+       newTaskType.value === 'encrypt' ? newTaskVersion.value : undefined
+       // password 不传 → 后端使用全局配置密码
+       // secondaryPassword 不传 → 功能未启用
+   )
+   ```
+
+#### Step 2: Files.vue 委托给 Tasks
+
+修改 `/workspace/app/encv-mobile/src/views/Files.vue`：
+
+1. **删除** `showEncryptModal`, `handleEncryptSubmit`, `encryptSourcePath`, `encryptTargetPath`, `selectedVersion`, `encryptFileName` 等变量和模板
+2. **删除** `showDecryptModal`, `decryptSourcePath`, `decryptTargetPath`, `decryptPassword` 等变量和模板
+3. **修改** `handleEncryptFile(file)`:
+   ```typescript
+   // 方案 A: 导航到 Tasks 页面并触发新建任务（推荐）
+   router.push({ name: 'Tasks', query: { action: 'new', type: 'encrypt', source: file.path } })
+
+   // 或方案 B: 通过事件总线 / store 触发 Tasks 页面的 modal（需要共享状态）
+   ```
+
+4. **修改** `handleDecryptFile(file)`:
+   ```typescript
+   router.push({ name: 'Tasks', query: { action: 'new', type: 'decrypt', source: file.path } })
+   ```
+
+5. **Tasks.vue 接收预填参数**:
+   - 在 `onMounted` 或 watcher 中检查 route.query
+   - 如果有 `action=new` → 自动打开 modal 并预填 type 和 sourcePath
+
+#### Step 3: 二级密码 UI（占位）
+
+- 在 Tasks modal 中添加二级密码 input
+- 设置 `disabled` 属性
+- 显示 badge "计划中" (coming soon)
+- i18n 键: `tasks.secondaryPassword`, `tasks.comingSoon`
 
 ---
 
 ## 问题 3: v4 容器图片信息乱码
 
-### 根因分析（已确认）
+### 根因
+- ContainerID 为空：所有插件传 `SpecialID:nil` → `writeManifestV4` 中 `ContainerID=""`
+- KVI "乱码"：后端 GetFileInfo 将整个 Manifest_v4（含 base64 KVI）返回前端，JSON.stringify 后显示为长串
 
-**ContainerID 为空的链路**:
+### 修复
 
-1. Image plugin [PostEncryptProcessor](file:///workspace/internal/v2/plugins/image/plugin.go#L293-L294) 设置 `SpecialID: nil`
-2. [writeManifestV4](file:///workspace/internal/v2/writer/single_file_container_writer.go#L172) 中:
-   ```go
-   ContainerID: string(w.v4Header.SpecialID[:w.v4Header.IDLength])
-   // SpecialID=nil → IDLength=0 → ContainerID=""
-   ```
-3. Video plugin 同样 `SpecialID: nil`（[plugin.go:582](file:///workspace/internal/v2/plugins/video/plugin.go#L582)）
+**Step 1: 后端 GetFileInfo 清理** ([mobile_service.go](file:///workspace/internal/service/mobile_service.go))
+- 返回前删除 KVI 字段（敏感+冗长）
+- ContainerID 为空时标注 `(auto)`
 
-**KVI 字段暴露原始内容**:
-
-- [GetFileInfo](file:///workspace/internal/service/mobile_service.go#L342) 直接将整个 `mf` (Manifest_v4) 作为 `manifest` 返回给前端
-- `Manifest_v4.KVI` 是 `json.RawMessage` 类型，包含 base64 编码的 salt/iv 等
-- 前端 [FileInfo.vue](file:///workspace/app/encv-mobile/src/views/FileInfo.vue#L108) 用 `JSON.stringify(data.container.manifest, null, 2)` 直接序列化显示
-- 如果 XOR deobfuscation 失败 → legacy fallback → 数据不完整或格式异常
-
-**"乱码"的真正含义**:
-- ContainerID 显示空字符串或 `-`
-- Manifest JSON 中的 KVI 字段显示为一长串 base64 字符串（看起来像乱码）
-- 版本号应该正确（来自 Header，不依赖 Manifest）
-
-### 修复方案
-
-**Step 1: 后端 GetFileInfo 增强** ([mobile_service.go](file:///workspace/internal/service/mobile_service.go#L329-L346))
-
-```go
-// 在返回 container 数据前清理敏感/无用字段
-if h.Version() == 4 && h.ManifestV4() != nil {
-    mf := h.ManifestV4()
-    // 清理 KVI（含敏感信息且很长）
-    cleanManifest := make(map[string]interface{})
-    data, _ := json.Marshal(mf)
-    json.Unmarshal(data, &cleanManifest)
-    delete(cleanManifest, "kvi") // 不向前端暴露 KVI
-    
-    result.Container["container_id"] = mf.ContainerID
-    if mf.ContainerID == "" {
-        result.Container["container_id"] = "(auto-generated)" // 或从 Header 生成
-    }
-    result.Container["manifest"] = cleanManifest
-}
-```
-
-**Step 2: 前端 FileInfo.vue 容错**
-
-- ContainerID 为空时显示 `(none)` 而非空白
-- 添加 manifest 解析错误捕获
-- 对 manifest 显示区域添加最大高度限制和折叠支持（已有）
-
-**Step 3: (可选改进) ContainerID 自动生成**
-
-如果希望 ContainerID 有意义，可以在 `writeManifestV4` 中当 SpecialID 为 nil 时自动生成一个 UUID 作为 ContainerID：
-
-```go
-if w.v4Header.IDLength == 0 {
-    mf.ContainerID = generateShortUUID() // 如 "img_a1b2c3d4"
-}
-```
+**Step 2: 前端 FileInfo 容错**
+- 空值友好显示
 
 ---
 
-## 问题 4: config.user.json 初始化内容丢失
+## 问题 4: config.user.json 内容丢失
 
-### 根因分析（已确认）
+### 根因
+PUT `/api/config` 全量替换，如果前端 saveConfig 发送不完整则丢失字段。
 
-**PUT /api/config 全量替换** ([server_config_api.go:36-122](file:///workspace/internal/server/server_config_api.go#L36-L122)):
-
-```go
-body, _ := c.GetRawData()
-var raw map[string]interface{}
-json.Unmarshal(body, &raw)
-indented, _ := json.MarshalIndent(raw, "", "  ")
-os.WriteFile(s.configPath, indented, 0644) // ← 全量写入！
-```
-
-**问题场景**：
-1. 用户首次安装 app → 后端初始化生成默认 config.user.json（完整）
-2. 用户打开 Settings 页面 → `fetchConfig()` 获取完整配置
-3. 用户修改某个字段（如密码）→ `saveConfig()` → `updateConfig()`
-4. **关键**：`useConfig` composable 的 `saveConfig` 是否发送了**完整配置**还是**仅修改的字段**？
-5. 如果只发送部分字段 → PUT API 全量替换 → **其他字段丢失**
-
-**另一个可能**：移动端首次启动时的 `ensureConfigExists()` 逻辑是否用默认值覆盖了已有文件？
-
-### 排查/修复方向
-
-**Step 1: 检查 useConfig composable 的 saveConfig 实现**
-- 文件: `/workspace/app/encv-mobile/src/composables/useConfig.ts`
-- 确认 `saveConfig` 发送的是完整 Config 对象还是仅 dirty fields
-
-**Step 2: 检查移动端初始化逻辑**
-- 搜索 `ensureConfigExists` / `initConfig` / `copyDefaultConfig`
-- 确认不会在已有配置文件存在时覆盖
-
-**Step 3: (防御性修复) PUT API 增加 merge 逻辑**
-- 修改 `handlePutConfigGin`: 先读取现有配置 → deep merge → 写入
-- 或者在 API 层不做改变，而是确保前端始终发送完整配置
-
-**Step 4: DefaultConfig() 补全缺失字段**
-- 确保 `proxy`, `admin`, `mobile` 等字段有合理的默认值
-- 这样即使发生替换，至少不会丢失结构
+### 修复方向
+- 排查 useConfig composable saveConfig 是否发送完整配置
+- PUT API 改为 merge 策略（防御性）
 
 ---
 
 ## 实施顺序
 
-### Phase 1: 编译修复（立即阻断）⚡
-1. [ ] **Fix 1 - video.go**: 添加 `//go:build !android`
+### Phase 1: 编译修复 ⚡
+1. [ ] Fix 1 - video.go: `//go:build !android`
 
-### Phase 2: 功能修复
-2. [ ] **Fix 2 - 统一加解密模态框**: Files.vue 解密改为 ion-modal
-3. [ ] **Fix 3a - 后端 GetFileInfo 增强**: 清理 KVI、容错 ContainerID
-4. [ ] **Fix 3b - 前端 FileInfo 容错**: 空值处理、错误捕获
-5. [ ] **Fix 4a - 排查 config 丢失**: 检查 useConfig saveConfig + 移动端初始化
-6. [ ] **Fix 4b - 防御性修复**: 确保 saveConfig 发送完整配置 / PUT API merge
+### Phase 2: 架构统一（核心工作量）
+2. [ ] Fix 2a - 增强 Tasks.vue modal: 密码只读显示 + 版本选择 + 二级密码占位
+3. [ ] Fix 2b - Tasks.vue 支持路由预填参数 (query: action, type, source)
+4. [ ] Fix 2c - Files.vue 删除独立 modal，改为 router.push 委托
+5. [ ] Fix 2d - i18n 更新（新键: secondaryPassword, comingSoon, 使用全局密码等）
 
-### Phase 3: 验证
-7. [ ] `CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build ./internal/...`
-8. [ ] `go build ./internal/...` (桌面端)
-9. [ ] `cd app/encv-mobile && npm run build`
-10. [ ] `go test ./internal/v2/...` (回归测试)
+### Phase 3: 数据修复
+6. [ ] Fix 3a - 后端 GetFileInfo 清理 KVI + ContainerID 容错
+7. [ ] Fix 3b - 前端 FileInfo 容错
+8. [ ] Fix 4 - 排查 config 丢失 + 防御性修复
 
-## 任务依赖关系
-- Fix 1 可独立执行
-- Fix 2 可独立执行
-- Fix 3a/3b 可并行
-- Fix 4a 必须在 Fix 4b 之前（先排查再修复）
-- 所有 Fix 完成后统一验证
+### Phase 4: 验证
+9. [ ] Android 交叉编译验证
+10. [ ] 桌面端编译 + 测试
+11. [ ] 前端构建验证

@@ -122,6 +122,11 @@ const messages: Record<Locale, Record<string, string>> = {
     'tasks.phaseCompleted': '已完成',
     'tasks.eta': '剩余',
 
+    'tasks.globalPassword': '全局密码',
+    'tasks.secondaryPassword': '二级密码',
+    'tasks.comingSoon': '计划中',
+    'tasks.usingGlobalPassword': '使用全局配置中的密码',
+
     'tasks.passwordErrorHint': '密码可能错误，请检查后重试',
 
     'webdav.title': 'WebDAV',
@@ -548,6 +553,11 @@ const messages: Record<Locale, Record<string, string>> = {
     'tasks.phaseVerifying': 'Verifying...',
     'tasks.phaseCompleted': 'Completed',
     'tasks.eta': 'ETA',
+
+    'tasks.globalPassword': 'Global Password',
+    'tasks.secondaryPassword': 'Secondary Password',
+    'tasks.comingSoon': 'Coming Soon',
+    'tasks.usingGlobalPassword': 'Using password from global config',
 
     'tasks.passwordErrorHint': 'Password may be wrong, please check and retry',
 

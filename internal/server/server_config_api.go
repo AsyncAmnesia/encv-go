@@ -54,6 +54,20 @@ func (s *Server) handlePutConfigGin(c *gin.Context) {
 		return
 	}
 
+	existingData, readErr := os.ReadFile(s.configPath)
+	if readErr == nil {
+		var existing map[string]interface{}
+		if json.Unmarshal(existingData, &existing) == nil {
+			for k, v := range raw {
+				existing[k] = v
+			}
+			raw = existing
+			slog.Info("Merged incoming config with existing file", "path", s.configPath)
+		}
+	} else {
+		slog.Warn("No existing config to merge with (first write)", "path", s.configPath, "error", readErr)
+	}
+
 	indented, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to format config"})

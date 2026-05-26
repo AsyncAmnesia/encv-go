@@ -1,4 +1,4 @@
-// internal/v2/plugins/video/plugin.go
+//go:build !android
 
 package video
 
