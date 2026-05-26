@@ -4,6 +4,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
     alias(libs.plugins.combolite.aar2apk)
 }
 
@@ -73,12 +74,6 @@ packagePlugins {
     val isReleaseBuild = gradle.startParameter.taskNames.any { it.lowercase().contains("release") }
     buildType.set(if (isReleaseBuild) PackageBuildType.RELEASE else PackageBuildType.DEBUG)
     pluginsDir.set("plugins")
-}
-
-repositories {
-    flatDir {
-        dirs("../capacitor-cordova-android-plugins/src/main/libs", "libs")
-    }
 }
 
 dependencies {
