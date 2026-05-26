@@ -63,3 +63,12 @@
 - 如需临时改变开发端口等参数，应使用环境变量 `ENCV_CONFIG_PATH` 指向临时配置文件，或命令行 `--config` 标志
 - **不得创建独立的 `config.mobile.json` 或其他平台特定配置模板**：移动端适配通过 Go 端 `Load()` 中的 `ENCV_MOBILE` 路径自动修正实现
 - 违反此规则导致的配置模板破坏将被视为严重错误
+
+## Go Build Tag 平台约束规则（重要！）
+
+- **凡是有平台特定 stub 实现的函数，其对应的主实现文件必须添加互斥 build tag**
+- 移动端存根文件使用 `//go:build android`，对应桌面端实现必须使用 `//go:build !android`
+- Windows 平台同理：`//go:build windows` ↔ `//go:build !windows`
+- **禁止**只给 stub 文件加 tag 而主文件留空（会导致 GOOS 交叉编译时重复声明错误）
+- 正确示例参考：`internal/utils/ffmpeg_dlopen.go` (android) ↔ `internal/utils/ffmpeg_dlopen_stub.go` (!android)
+- 每次新增平台 stub 文件对时，**必须**同时验证 `GOOS=android` 和默认平台的编译通过
