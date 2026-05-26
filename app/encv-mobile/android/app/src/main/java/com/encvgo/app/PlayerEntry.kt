@@ -2,11 +2,8 @@ package com.encvgo.app
 
 import android.content.Context
 import android.content.Intent
-import android.os.Bundle
 import android.util.Log
 import androidx.core.content.FileProvider
-import io.github.combolite.core.PluginManager
-import com.encvgo.plugin.mpv.MpvPlayerActivity
 import java.io.File
 
 object PlayerEntry {
@@ -35,24 +32,7 @@ object PlayerEntry {
 
         when (mode) {
             "mpv-plugin" -> {
-                val pm = try { PluginManager.getInstance(context) } catch (e: Exception) {
-                    Log.w(TAG, "PluginManager not available", e)
-                    null
-                }
-                val mpvPlugin = pm?.getInstalledPlugin(PLUGIN_ID)
-
-                if (mpvPlugin != null && mpvPlugin.enabled) {
-                    Log.i(TAG, "MPV plugin available, routing to MpvPlayerActivity")
-                    startMpvPlayer(context, filePath, fileName, mimeType, isExternal, pm, mpvPlugin)
-                } else {
-                    Log.w(TAG, "MPV plugin not available or disabled, showing toast + fallback")
-                    android.widget.Toast.makeText(
-                        context,
-                        "MPV plugin not available",
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
-                    startArtPlayer(context, filePath, fileName)
-                }
+                startMpvPlayer(context, filePath, fileName, mimeType, isExternal)
             }
             "external" -> openExternal(context, filePath)
             else -> startArtPlayer(context, filePath, fileName)
@@ -61,8 +41,9 @@ object PlayerEntry {
 
     fun isMpvAvailable(context: Context): Boolean {
         return try {
-            val pluginManager = PluginManager.getInstance(context)
-            pluginManager.getInstalledPlugin(PLUGIN_ID)?.enabled == true
+            val pm = io.github.combolite.core.PluginManager.getInstance(context)
+            val plugin = pm.getInstalledPlugin(PLUGIN_ID)
+            plugin != null
         } catch (e: Exception) {
             Log.w(TAG, "isMpvAvailable check failed", e)
             false
@@ -74,27 +55,20 @@ object PlayerEntry {
         filePath: String,
         fileName: String,
         mimeType: String,
-        isExternal: Boolean,
-        pluginManager: PluginManager,
-        mpvPlugin: io.github.combolite.core.model.PluginInfo
+        isExternal: Boolean
     ) {
         try {
-            val intent = pluginManager.createPluginIntent(
-                mpvPlugin,
-                MpvPlayerActivity::class.java,
-                Bundle().apply {
-                    putString(EXTRA_FILE_PATH, filePath)
-                    putString(EXTRA_FILE_NAME, fileName)
-                    putString(EXTRA_MIME_TYPE, mimeType)
-                    putBoolean(EXTRA_IS_EXTERNAL, isExternal)
-                    putString(EXTRA_BACKEND_URL, getBackendBaseUrl(context))
+            val intent = Intent().apply {
+                setClassName(context, "com.encvgo.plugin.mpv.MpvPlayerActivity")
+                putExtra(EXTRA_FILE_PATH, filePath)
+                putExtra(EXTRA_FILE_NAME, fileName)
+                putExtra(EXTRA_MIME_TYPE, mimeType)
+                putExtra(EXTRA_IS_EXTERNAL, isExternal)
+                putExtra(EXTRA_BACKEND_URL, getBackendBaseUrl(context))
+                if (context !is android.app.Activity) {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-            )
-
-            if (context !is android.app.Activity) {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-
             context.startActivity(intent)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start MPV player, falling back to ArtPlayer", e)

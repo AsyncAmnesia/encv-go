@@ -2,6 +2,7 @@ plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    alias(libs.plugins.combolite.aar2apk)
 }
 
 android {
@@ -38,7 +39,7 @@ android {
 }
 
 dependencies {
-    compileOnly(libs.combolite.core)
+    implementation(libs.combolite.core)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
@@ -46,4 +47,9 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.appcompat)
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.core:core-ktx:1.17.0")
+    implementation("androidx.activity:activity-ktx:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }

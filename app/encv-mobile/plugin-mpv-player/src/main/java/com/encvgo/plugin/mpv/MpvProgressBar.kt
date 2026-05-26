@@ -22,7 +22,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 
 fun formatTime(ms: Long): String {
-    if (!ms.isFinite() || ms < 0) return "0:00"
+    if (ms < 0) return "0:00"
     val totalSec = (ms / 1000).toInt()
     val h = totalSec / 3600
     val m = (totalSec % 3600) / 60

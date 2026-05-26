@@ -1,7 +1,9 @@
 package com.encvgo.plugin.mpv
 
+import android.app.Activity
+import android.content.pm.ActivityInfo
+import android.view.WindowCompat
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,15 +17,20 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.launch
 
-private const val SPEED_OPTIONS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
+private val SPEED_OPTIONS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
 private const val CONTROLS_HIDE_DELAY_MS = 3000L
 private const val LOADING_TIMEOUT_MS = 15_000L
 private const val POSITION_UPDATE_INTERVAL_MS = 1000L
@@ -44,6 +51,9 @@ fun MpvPlayerScreen(
     var isLocked by remember { mutableStateOf(false) }
     var isFullscreen by remember { mutableStateOf(false) }
     var playbackSpeed by remember { mutableFloatStateOf(1f) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val backendUrl = (context as? Activity)?.intent?.getStringExtra("backend_url") ?: ""
 
     LaunchedEffect(filePath) {
         startPlayback(
@@ -52,6 +62,7 @@ fun MpvPlayerScreen(
             isExternal = isExternal,
             mimeType = mimeType,
             engine = engine,
+            backendUrl = backendUrl,
             onStateChange = { playerState = it },
             onError = { msg -> playerState = PlayerState.Error(classifyError(msg), msg) }
         )
@@ -143,15 +154,18 @@ fun MpvPlayerScreen(
                             }
                         }
                         else -> {
-                            startPlayback(
-                                filePath = filePath,
-                                fileName = fileName,
-                                isExternal = isExternal,
-                                mimeType = mimeType,
-                                engine = engine,
-                                onStateChange = { playerState = it },
-                                onError = { msg -> playerState = PlayerState.Error(classifyError(msg), msg) }
-                            )
+                            scope.launch {
+                                startPlayback(
+                                    filePath = filePath,
+                                    fileName = fileName,
+                                    isExternal = isExternal,
+                                    mimeType = mimeType,
+                                    engine = engine,
+                                    backendUrl = backendUrl,
+                                    onStateChange = { playerState = it },
+                                    onError = { msg -> playerState = PlayerState.Error(classifyError(msg), msg) }
+                                )
+                            }
                         }
                     }
                     showControls = true
@@ -179,27 +193,30 @@ fun MpvPlayerScreen(
                 },
                 onToggleFullscreen = {
                     isFullscreen = !isFullscreen
-                    val activity = context as? android.app.Activity ?: return@MpvControls
+                    val activity = context as? Activity ?: return@MpvControls
 
                     if (isFullscreen) {
-                        activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                         hideSystemUi(activity)
                     } else {
-                        activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                        activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                         showSystemUi(activity)
                     }
                     showControls = true
                 },
                 onRetry = {
-                    startPlayback(
-                        filePath = filePath,
-                        fileName = fileName,
-                        isExternal = isExternal,
-                        mimeType = mimeType,
-                        engine = engine,
-                        onStateChange = { playerState = it },
-                        onError = { msg -> playerState = PlayerState.Error(classifyError(msg), msg) }
-                    )
+                    scope.launch {
+                        startPlayback(
+                            filePath = filePath,
+                            fileName = fileName,
+                            isExternal = isExternal,
+                            mimeType = mimeType,
+                            engine = engine,
+                            backendUrl = backendUrl,
+                            onStateChange = { playerState = it },
+                            onError = { msg -> playerState = PlayerState.Error(classifyError(msg), msg) }
+                        )
+                    }
                 },
                 onBack = {
                     engine.pause()
@@ -216,43 +233,37 @@ private suspend fun startPlayback(
     isExternal: Boolean,
     mimeType: String,
     engine: MpvEngine,
+    backendUrl: String,
     onStateChange: (PlayerState) -> Unit,
     onError: (String) -> Unit
 ) {
     if (filePath.isEmpty()) {
-        onError("文件路径为空 / File path is empty")
+        onError("File path is empty")
         return
     }
 
     onStateChange(PlayerState.Loading)
 
-    var loadingTimedOut = false
-    kotlinx.coroutines.async {
-        delay(LOADING_TIMEOUT_MS)
-        loadingTimedOut = true
-        onError("播放超时，请检查网络或文件 / Playback timeout")
-    }
-
     try {
-        val streamUrl = resolveStreamUrl(filePath, isExternal)
+        val streamUrl = resolveStreamUrl(filePath, isExternal, backendUrl)
 
         if (streamUrl.isEmpty() || !streamUrl.startsWith("http")) {
-            onError("无法获取播放地址 / Unable to get stream URL: $streamUrl")
-            return
+            if (streamUrl.isEmpty()) {
+                onError("Unable to get stream URL")
+                return
+            }
         }
 
         engine.play(streamUrl)
         onStateChange(PlayerState.Loading)
     } catch (e: Exception) {
         val msg = e.message ?: e.toString()
-        onError("播放异常 / Playback error: $msg")
+        onError("Playback error: $msg")
     }
 }
 
-private suspend fun resolveStreamUrl(filePath: String, isExternal: Boolean): String {
+private suspend fun resolveStreamUrl(filePath: String, isExternal: Boolean, backendUrl: String): String {
     return try {
-        val backendUrl = intent.getStringExtra("backend_url") ?: ""
-
         if (isExternal && filePath.startsWith("/")) {
             if (java.io.File(filePath).exists()) {
                 return filePath
@@ -285,16 +296,16 @@ private suspend fun resolveStreamUrl(filePath: String, isExternal: Boolean): Str
     }
 }
 
-private fun hideSystemUi(activity: android.app.Activity) {
-    android.view.WindowCompat.setDecorFitsSystemWindows(activity.window, false)
-    val controller = androidx.core.view.WindowInsetsControllerCompat(
+private fun hideSystemUi(activity: Activity) {
+    WindowCompat.setDecorFitsSystemWindows(activity.window, false)
+    val controller = WindowInsetsControllerCompat(
         activity.window, activity.window.decorView
     )
-    controller.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+    controller.hide(WindowInsetsCompat.Type.systemBars())
     controller.systemBarsBehavior =
-        androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 }
 
-private fun showSystemUi(activity: android.app.Activity) {
-    android.view.WindowCompat.setDecorFitsSystemWindows(activity.window, true)
+private fun showSystemUi(activity: Activity) {
+    WindowCompat.setDecorFitsSystemWindows(activity.window, true)
 }
