@@ -248,9 +248,6 @@ jobs:
           if [ -n "$PLUGIN_APK" ] && [ -f "$PLUGIN_APK" ]; then
             echo "✅ Plugin APK generated:"
             ls -lh "$PLUGIN_APK"
-            mkdir -p app/src/main/assets/plugins
-            cp "$PLUGIN_APK" app/src/main/assets/plugins/mpv-player.apk
-            echo "✅ Copied to host assets/plugins/"
           else
             echo "::error::Plugin APK not found after successful build"
             find build/outputs -name "*.apk" 2>/dev/null | head -5 || echo "No APKs found"
@@ -341,7 +338,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: encv-go-android${{ inputs.version && format('-v{0}', inputs.version) || '-debug' }}
-          path: app/encv-mobile/android/app/build/outputs/apk/**/*.apk
+          path: |
+            app/encv-mobile/android/app/build/outputs/apk/**/*.apk
+            app/encv-mobile/android/build/outputs/plugin-apks/**/*.apk
           retention-days: 30
 
       - name: Build summary
