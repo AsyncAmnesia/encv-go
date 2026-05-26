@@ -80,7 +80,7 @@ func FromContext(ctx context.Context) *Config {
 func DefaultConfig() *Config {
 	return &Config{
 		OutputPath: "./encrypted",
-		Server:     types.HttpServer{Port: 1999, Dir: "./"},
+		Server:     types.HttpServer{Port: 2025, Dir: "./"},
 		Webdav: types.WebdavServer{
 			Root: "/webdav/",
 			Dir:  "./output",

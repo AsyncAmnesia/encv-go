@@ -1,7 +1,7 @@
 {
   "password": "test123",
   "server": {
-    "port": 1999,
+    "port": 2025,
     "dir": "/tmp/encv-test"
   },
   "proxy": {
