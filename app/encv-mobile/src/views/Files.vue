@@ -52,6 +52,10 @@
       </ion-header>
       <ion-content>
         <ion-list>
+          <ion-item button @click="exitPluginMode()" detail>
+            <ion-icon :icon="folder" slot="start" color="primary"></ion-icon>
+            <ion-label><h2>所有文件</h2><p>{{ currentPath || '/' }}</p></ion-label>
+          </ion-item>
           <ion-list-header>文件类型</ion-list-header>
           <ion-item v-for="plugin in plugins" :key="plugin.name" button detail @click="openPluginView(plugin)">
             <ion-icon :icon="getPluginIcon(plugin.name)" slot="start" color="primary" />
@@ -114,7 +118,7 @@
       <div v-if="selectedPlugin">
         <ion-toolbar>
           <ion-buttons slot="start">
-            <ion-back-button @click="selectedPlugin = null; loadFiles()" />
+            <ion-back-button @click="exitPluginMode()" />
           </ion-buttons>
           <ion-title>{{ selectedPlugin.name }} 文件</ion-title>
         </ion-toolbar>
@@ -124,11 +128,21 @@
         </ion-segment>
         <ion-list :inset="true">
           <ion-item v-for="file in filteredPluginFiles" :key="file.path" button @click="handleFileClick(file)" v-longpress="() => handleLongPress(file)">
-            <ion-icon
-              :icon="getFileIcon(file)"
-              :color="getFileIconColor(file)"
-              slot="start"
-            ></ion-icon>
+            <div slot="start" class="file-thumbnail-slot lazy-thumb-target" :data-file-path="file.path">
+              <img
+                v-if="isImageFile(file) && thumbnailUrls[file.path]"
+                :src="thumbnailUrls[file.path]"
+                class="file-thumb"
+                loading="lazy"
+                @error="($event.target as HTMLImageElement).style.display='none'"
+              />
+              <ion-icon
+                v-else
+                :icon="getFileIcon(file)"
+                :color="getFileIcon(file)"
+                :class="{ 'thumb-fallback': isImageFile(file) }"
+              ></ion-icon>
+            </div>
             <ion-label>
               <h2>{{ file.name }}</h2>
               <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified"> · {{ formatDateTime(file.modified) }}</span></p>
@@ -154,11 +168,21 @@
           @click="handleFileClick(file)"
           v-longpress="() => handleLongPress(file)"
         >
-          <ion-icon
-            :icon="getFileIcon(file)"
-            :color="getFileIconColor(file)"
-            slot="start"
-          ></ion-icon>
+          <div slot="start" class="file-thumbnail-slot lazy-thumb-target" :data-file-path="file.path">
+            <img
+              v-if="isImageFile(file) && thumbnailUrls[file.path]"
+              :src="thumbnailUrls[file.path]"
+              class="file-thumb"
+              loading="lazy"
+              @error="($event.target as HTMLImageElement).style.display='none'"
+            />
+            <ion-icon
+              v-else
+              :icon="getFileIcon(file)"
+              :color="getFileIconColor(file)"
+              :class="{ 'thumb-fallback': isImageFile(file) }"
+            ></ion-icon>
+          </div>
           <ion-label>
             <h2>{{ file.name }}</h2>
             <p v-if="searchQuery && !file.isDirectory" class="search-path">{{ file.path }}</p>
@@ -224,7 +248,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   IonPage,
@@ -265,7 +289,7 @@ import {
   videocam,
   musicalNotes,
   image,
-  document,
+  document as documentIcon,
   documentText,
   lockClosed,
   cloudOffline,
@@ -361,6 +385,15 @@ const moveTargetPath = ref('')
 const editingFileTags = ref<string[]>([])
 const newTagInput = ref('')
 const fileTagMap = ref<Record<string, string[]>>({})
+const thumbnailUrls = ref<Record<string, string>>({})
+
+const imageExts = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif', '.avif'])
+
+function isImageFile(file: FileItem): boolean {
+  if (file.isDirectory) return false
+  const ext = '.' + file.name.split('.').pop()?.toLowerCase()
+  return imageExts.has(ext || '')
+}
 const currentPath = ref('/')
 const loading = ref(false)
 const connecting = ref(false)
@@ -407,7 +440,7 @@ function getFileIcon(file: FileItem) {
     case 'video': return videocam
     case 'audio': return musicalNotes
     case 'image': return image
-    case 'document': return document
+    case 'document': return documentIcon
     case 'encrypted': return lockClosed
     default: return documentText
   }
@@ -845,6 +878,26 @@ async function loadFileTagsForCurrentDir() {
     }
     fileTagMap.value = map
   } catch {}
+  setupLazyThumbnails()
+}
+
+function setupLazyThumbnails() {
+  nextTick(() => {
+    const targets = document.querySelectorAll('.lazy-thumb-target') as NodeListOf<Element>
+    if (!targets.length) return
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const path = entry.target.getAttribute('data-file-path')
+          if (path && !thumbnailUrls.value[path]) {
+            thumbnailUrls.value[path] = getExternalStreamUrl(path)
+          }
+          observer.unobserve(entry.target)
+        }
+      })
+    }, { rootMargin: '100px' })
+    targets.forEach((el: Element) => observer.observe(el))
+  })
 }
 
 function handleEncryptFile(file: FileItem) {
@@ -900,8 +953,18 @@ async function loadTags() {
 }
 
 function openPluginView(plugin: PluginMeta) {
+  files.value = []
+  loading.value = true
   selectedPlugin.value = plugin
   menuController.close()
+}
+
+async function exitPluginMode() {
+  selectedPlugin.value = null
+  await menuController.close()
+  files.value = []
+  loading.value = true
+  await loadFiles()
 }
 
 async function openSideDrawer() {
@@ -926,9 +989,14 @@ async function searchPluginFiles(plugin: PluginMeta): Promise<FileItem[]> {
 
 async function handleTagFilter(tagName: string) {
   menuController.close()
+  files.value = []
+  loading.value = true
+  selectedPlugin.value = null
   try {
     files.value = await listFilesByTag(tagName, currentPath.value)
+    loadFileTagsForCurrentDir()
   } catch (e) { showToast({ message: `筛选失败: ${e}` }) }
+  finally { loading.value = false }
 }
 
 const pluginTab = ref<'source' | 'container'>('source')
@@ -945,6 +1013,7 @@ watch(selectedPlugin, async (plugin) => {
   if (plugin) {
     pluginTab.value = 'source'
     pluginFiles.value = await searchPluginFiles(plugin)
+    setupLazyThumbnails()
   }
 })
 
@@ -1087,4 +1156,23 @@ function onBackendReadyWindow(event: Event) {
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 4px;
+}
+.file-thumbnail-slot {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.file-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+.thumb-fallback {
+  opacity: 0.4;
 }</style>
