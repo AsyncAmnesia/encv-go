@@ -149,3 +149,28 @@ export async function installExtensionApk(apkPath: string): Promise<{ success: b
     return { success: false }
   }
 }
+
+export interface PickAndInstallResult {
+  success: boolean
+  method?: string
+  fileName?: string
+}
+
+export async function pickAndInstallPlugin(): Promise<PickAndInstallResult> {
+  try {
+    return await GoProcess.pickAndInstallPlugin()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.pickAndInstallPlugin() failed:', e)
+    return { success: false }
+  }
+}
+
+export async function checkInstalledPlugins(): Promise<Record<string, boolean>> {
+  try {
+    const result = await GoProcess.checkInstalledPlugins()
+    return result as Record<string, boolean>
+  } catch (e) {
+    console.error('[ENCV] GoProcess.checkInstalledPlugins() failed:', e)
+    return {}
+  }
+}
