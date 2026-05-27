@@ -174,13 +174,17 @@ func CallFFmpegNative(args []string) (*NativeResult, error) {
 	cResetSym := C.CString("ffmpeg_reset")
 	defer C.free(unsafe.Pointer(cResetSym))
 
-	argc := C.int(len(args))
-	argv := make([]*C.char, len(args)+1)
-	for i, arg := range args {
+	fullArgs := make([]string, len(args)+1)
+	fullArgs[0] = "ffmpeg"
+	copy(fullArgs[1:], args)
+
+	argc := C.int(len(fullArgs))
+	argv := make([]*C.char, len(fullArgs)+1)
+	for i, arg := range fullArgs {
 		argv[i] = C.CString(arg)
 		defer C.free(unsafe.Pointer(argv[i]))
 	}
-	argv[len(args)] = nil
+	argv[len(fullArgs)] = nil
 
 	stderrFile, err := os.CreateTemp("", "ffmpeg_stderr_*.txt")
 	if err != nil {
@@ -231,13 +235,17 @@ func CallFFprobeNative(args []string) (*NativeResult, error) {
 	cResetSym := C.CString("ffprobe_reset")
 	defer C.free(unsafe.Pointer(cResetSym))
 
-	argc := C.int(len(args))
-	argv := make([]*C.char, len(args)+1)
-	for i, arg := range args {
+	fullArgs := make([]string, len(args)+1)
+	fullArgs[0] = "ffprobe"
+	copy(fullArgs[1:], args)
+
+	argc := C.int(len(fullArgs))
+	argv := make([]*C.char, len(fullArgs)+1)
+	for i, arg := range fullArgs {
 		argv[i] = C.CString(arg)
 		defer C.free(unsafe.Pointer(argv[i]))
 	}
-	argv[len(args)] = nil
+	argv[len(fullArgs)] = nil
 
 	stdoutFile, err := os.CreateTemp("", "ffprobe_stdout_*.txt")
 	if err != nil {

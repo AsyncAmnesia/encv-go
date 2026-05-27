@@ -184,7 +184,7 @@
           <div
             ref="virtualizerRef"
             class="virtual-scroll-container"
-            :style="{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }"
+            :style="{ height: `${rowVirtualizer?.getTotalSize() ?? 0}px`, position: 'relative' }"
           >
             <div
               v-for="virtualItem in virtualItems"
@@ -326,7 +326,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, shallowRef, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   IonPage,
@@ -511,21 +511,36 @@ const shouldUseVirtualScroll = computed(() => {
 })
 
 const virtualizerRef = ref<HTMLElement | null>(null)
+const rowVirtualizer = shallowRef<any>(null)
 
-const rowVirtualizer = useVirtualizer({
-  count: shouldUseVirtualScroll.value ? displayFiles.value.length : 0,
-  getScrollElement: () => virtualizerRef.value,
-  estimateSize: () => VIRTUAL_SCROLL_CONFIG.ESTIMATE_SIZE,
-  overscan: VIRTUAL_SCROLL_CONFIG.OVERSCAN,
-})
+watch(shouldUseVirtualScroll, (enabled) => {
+  if (enabled && displayFiles.value.length >= VIRTUAL_SCROLL_CONFIG.THRESHOLD) {
+    const vz = useVirtualizer({
+      count: displayFiles.value.length,
+      getScrollElement: () => virtualizerRef.value,
+      estimateSize: () => VIRTUAL_SCROLL_CONFIG.ESTIMATE_SIZE,
+      overscan: VIRTUAL_SCROLL_CONFIG.OVERSCAN,
+    })
+    rowVirtualizer.value = vz.value
+  } else {
+    rowVirtualizer.value = null
+  }
+}, { immediate: false })
 
 watch(() => displayFiles.value.length, () => {
-  if (shouldUseVirtualScroll.value && rowVirtualizer.value) {
+  if (rowVirtualizer.value && shouldUseVirtualScroll.value) {
     rowVirtualizer.value.measure()
   }
 })
 
-const virtualItems = computed(() => rowVirtualizer.value.getVirtualItems())
+const virtualItems = computed(() => {
+  if (!rowVirtualizer.value || !shouldUseVirtualScroll.value) return []
+  try {
+    return rowVirtualizer.value.getVirtualItems()
+  } catch {
+    return []
+  }
+})
 
 const sortedFiles = computed(() => {
   return sortFiles(files.value, sortBy.value, sortDesc.value)

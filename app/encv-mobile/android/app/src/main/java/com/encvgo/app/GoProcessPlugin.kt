@@ -376,8 +376,9 @@ class GoProcessPlugin : Plugin() {
                     .getMethod("getInstance", Context::class.java)
                     .invoke(null, context)
             } catch (e: Exception) {
-                Log.w(TAG, "ComboLite PluginManager not available, using fallback", e)
-                null
+                Log.w(TAG, "ComboLite PluginManager not available on this device", e)
+                call.reject("ComboLite PluginManager not available on this device")
+                return
             }
             if (pm != null) {
                 val installMethod = pm.javaClass.methods.find { it.name == "installPlugin" && it.parameterCount == 1 }
@@ -387,6 +388,7 @@ class GoProcessPlugin : Plugin() {
                     call.resolve(JSObject().put("success", true).put("method", "combolite"))
                     return
                 }
+                Log.w(TAG, "ComboLite PluginManager found but installPlugin method not available, using fallback")
             }
             val uri = androidx.core.content.FileProvider.getUriForFile(
                 context,
