@@ -243,7 +243,8 @@ mkdir -p "$FTOOLS_BUILD"
 echo "=== Phase 2: Generating resource files via bin2c ==="
 cd "${FFMPEG_SRC}"
 
-$(${TOOLCHAIN}/bin/llvm-gcc 2>/dev/null || which gcc 2>/dev/null || echo "gcc") -o "${BUILD_DIR}/bin2c" ffbuild/bin2c.c \
+BIN2C_CC="$(command -v gcc 2>/dev/null || command -v cc 2>/dev/null || echo "gcc")"
+$BIN2C_CC -o "${BUILD_DIR}/bin2c" ffbuild/bin2c.c \
     > "${LOG_DIR}/bin2c-build.log" 2>&1 || {
     echo "❌ Failed to build bin2c"
     tail -5 "${LOG_DIR}/bin2c-build.log"
@@ -326,14 +327,35 @@ compile_modules LIBFFPROBE_SO_MODULES FFPROBE_OBJS
 
 echo "=== Phase 4: Linking shared libraries ==="
 
+cat > "${FTOOLS_BUILD}/ffmpeg.ver" << 'VEOF'
+{
+  global:
+    ffmpeg_run;
+    ffmpeg_reset;
+  local: *;
+};
+VEOF
+
+cat > "${FTOOLS_BUILD}/ffprobe.ver" << 'VEOF'
+{
+  global:
+    ffprobe_run;
+    ffprobe_reset;
+  local: *;
+};
+VEOF
+
 echo "Linking libffmpeg.so..."
 $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffmpeg.so" \
     $FFMPEG_OBJS \
     $STATIC_LIBS \
     ${X264_INSTALL}/lib/libx264.a \
     -lm -lz -llog \
+    -Wl,-u,ffmpeg_run \
+    -Wl,-u,ffmpeg_reset \
     -Wl,--gc-sections \
     -Wl,--allow-multiple-definition \
+    -Wl,--version-script,"${FTOOLS_BUILD}/ffmpeg.ver" \
     $LDFLAGS > "${LOG_DIR}/link_ffmpeg.log" 2>&1 || {
     echo "❌ Failed to link libffmpeg.so (see ${LOG_DIR}/link_ffmpeg.log)"
     tail -10 "${LOG_DIR}/link_ffmpeg.log"
@@ -346,8 +368,11 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffprobe.so" \
     $STATIC_LIBS \
     ${X264_INSTALL}/lib/libx264.a \
     -lm -lz -llog \
+    -Wl,-u,ffprobe_run \
+    -Wl,-u,ffprobe_reset \
     -Wl,--gc-sections \
     -Wl,--allow-multiple-definition \
+    -Wl,--version-script,"${FTOOLS_BUILD}/ffprobe.ver" \
     $LDFLAGS > "${LOG_DIR}/link_ffprobe.log" 2>&1 || {
     echo "❌ Failed to link libffprobe.so (see ${LOG_DIR}/link_ffprobe.log)"
     tail -10 "${LOG_DIR}/link_ffprobe.log"
