@@ -1,0 +1,38 @@
+﻿2026-05-27T13:12:44.6195055Z ##[group]Run actions/upload-artifact@v4
+2026-05-27T13:12:44.6195638Z with:
+2026-05-27T13:12:44.6196015Z   name: encv-go-android-debug
+2026-05-27T13:12:44.6197102Z   path: app/encv-mobile/android/app/build/outputs/apk/**/*.apk
+app/encv-mobile/android/build/outputs/plugin-apks/**/*.apk
+
+2026-05-27T13:12:44.6198155Z   retention-days: 3
+2026-05-27T13:12:44.6198426Z   if-no-files-found: warn
+2026-05-27T13:12:44.6198689Z   compression-level: 6
+2026-05-27T13:12:44.6198954Z   overwrite: false
+2026-05-27T13:12:44.6199180Z   include-hidden-files: false
+2026-05-27T13:12:44.6199427Z env:
+2026-05-27T13:12:44.6199614Z   NDK_VERSION: 26.1.10909125
+2026-05-27T13:12:44.6199980Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T13:12:44.6200506Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T13:12:44.6201201Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-27T13:12:44.6201620Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-27T13:12:44.6201952Z ##[endgroup]
+2026-05-27T13:12:44.8587634Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-05-27T13:12:44.8591719Z The least common ancestor is /home/runner/work/encv-go/encv-go/app/encv-mobile/android. This will be the root directory of the artifact
+2026-05-27T13:12:44.8593700Z With the provided path, there will be 2 files uploaded
+2026-05-27T13:12:44.8598987Z Artifact name is valid!
+2026-05-27T13:12:44.8600681Z Root directory input is valid!
+2026-05-27T13:12:45.4033782Z Beginning upload of artifact content to blob storage
+2026-05-27T13:12:46.9354629Z Uploaded bytes 8388608
+2026-05-27T13:12:47.3981868Z Uploaded bytes 16777216
+2026-05-27T13:12:47.4788197Z Uploaded bytes 25165824
+2026-05-27T13:12:47.6351966Z Uploaded bytes 33554432
+2026-05-27T13:12:47.6912051Z Uploaded bytes 41943040
+2026-05-27T13:12:47.9681822Z Uploaded bytes 50331648
+2026-05-27T13:12:48.0538144Z Uploaded bytes 58720256
+2026-05-27T13:12:48.3920293Z Uploaded bytes 62486660
+2026-05-27T13:12:48.4765018Z Finished uploading artifact content to blob storage!
+2026-05-27T13:12:48.4768262Z SHA256 digest of uploaded artifact zip is 53a9d66e302e955b675587956ef2a05cec7aef72295d40ba76b210dca6341ba2
+2026-05-27T13:12:48.4769658Z Finalizing artifact upload
+2026-05-27T13:12:48.7687388Z Artifact encv-go-android-debug.zip successfully finalized. Artifact ID 7241076100
+2026-05-27T13:12:48.7689520Z Artifact encv-go-android-debug has been successfully uploaded! Final size is 62486660 bytes. Artifact ID is 7241076100
+2026-05-27T13:12:48.7696822Z Artifact download URL: https://github.com/AsyncAmnesia/encv-go/actions/runs/26511948377/artifacts/7241076100

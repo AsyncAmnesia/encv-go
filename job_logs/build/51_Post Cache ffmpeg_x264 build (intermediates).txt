@@ -1,0 +1,6 @@
+﻿2026-05-27T13:12:49.9259643Z Post job cleanup.
+2026-05-27T13:12:50.0802909Z [command]/usr/bin/tar --posix -cf cache.tzst --exclude cache.tzst -P -C /home/runner/work/encv-go/encv-go --files-from manifest.txt --use-compress-program zstdmt
+2026-05-27T13:12:52.3900790Z Sent 18677760 of 67889102 (27.5%), 17.8 MBs/sec
+2026-05-27T13:12:53.3895366Z Sent 66387968 of 67889102 (97.8%), 31.7 MBs/sec
+2026-05-27T13:12:53.9202674Z Sent 67889102 of 67889102 (100.0%), 25.6 MBs/sec
+2026-05-27T13:12:54.0800871Z Cache saved with key: ffmpeg-build-956c4c78c70f69d77d2d109731f367da3fdb194f65e440594656ecd1653ac103

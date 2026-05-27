@@ -1,0 +1,18 @@
+﻿2026-05-27T13:02:54.2142147Z ##[group]Run actions/cache@v4
+2026-05-27T13:02:54.2142501Z with:
+2026-05-27T13:02:54.2142735Z   path: app/encv-mobile/node_modules
+2026-05-27T13:02:54.2143171Z   key: npm-main-26b241843709f27890ba20ab2cd34d63487cbb53b6306175bd45d6f5d53aacc8
+2026-05-27T13:02:54.2143615Z   restore-keys: npm-main-
+
+2026-05-27T13:02:54.2144053Z   enableCrossOsArchive: false
+2026-05-27T13:02:54.2144324Z   fail-on-cache-miss: false
+2026-05-27T13:02:54.2144885Z   lookup-only: false
+2026-05-27T13:02:54.2145108Z   save-always: false
+2026-05-27T13:02:54.2145311Z env:
+2026-05-27T13:02:54.2145501Z   NDK_VERSION: 26.1.10909125
+2026-05-27T13:02:54.2145860Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T13:02:54.2146383Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T13:02:54.2146805Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-27T13:02:54.2147110Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-27T13:02:54.2147398Z ##[endgroup]
+2026-05-27T13:02:54.6489173Z Cache not found for input keys: npm-main-26b241843709f27890ba20ab2cd34d63487cbb53b6306175bd45d6f5d53aacc8, npm-main-

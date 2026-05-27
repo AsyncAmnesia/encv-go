@@ -1,0 +1,69 @@
+﻿2026-05-27T13:12:43.3618592Z ##[group]Run if [ -n "" ]; then
+2026-05-27T13:12:43.3619197Z [36;1mif [ -n "" ]; then[0m
+2026-05-27T13:12:43.3620140Z [36;1m  APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk/release -name "*signed*.apk" -type f | head -1)[0m
+2026-05-27T13:12:43.3621968Z [36;1m  [ -z "$APK_PATH" ] && APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk/release -name "*.apk" -type f | head -1)[0m
+2026-05-27T13:12:43.3623034Z [36;1melse[0m
+2026-05-27T13:12:43.3623857Z [36;1m  APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk/debug -name "*.apk" -type f | head -1)[0m
+2026-05-27T13:12:43.3624826Z [36;1mfi[0m
+2026-05-27T13:12:43.3625196Z [36;1mif [ -n "$APK_PATH" ]; then[0m
+2026-05-27T13:12:43.3625700Z [36;1m  echo "=== APK size ==="[0m
+2026-05-27T13:12:43.3626181Z [36;1m  ls -lh "$APK_PATH"[0m
+2026-05-27T13:12:43.3626626Z [36;1m  echo "=== Assets ==="[0m
+2026-05-27T13:12:43.3627240Z [36;1m  unzip -l "$APK_PATH" | grep -E "encv-go|config.mobile" || true[0m
+2026-05-27T13:12:43.3628052Z [36;1m  echo "=== DEX strings check (real class presence) ==="[0m
+2026-05-27T13:12:43.3628675Z [36;1m  TMPDIR=$(mktemp -d)[0m
+2026-05-27T13:12:43.3629182Z [36;1m  unzip -q "$APK_PATH" -d "$TMPDIR"[0m
+2026-05-27T13:12:43.3629759Z [36;1m  if [ -f "$TMPDIR/classes.dex" ]; then[0m
+2026-05-27T13:12:43.3630514Z [36;1m    strings "$TMPDIR/classes.dex" | grep -i "encvgo\|GoProcess" && \[0m
+2026-05-27T13:12:43.3631828Z [36;1m      echo "✅ GoProcess found in DEX (compiled+packaged)" || \[0m
+2026-05-27T13:12:43.3632552Z [36;1m      echo "❌ Not found in DEX strings"[0m
+2026-05-27T13:12:43.3633084Z [36;1m  else[0m
+2026-05-27T13:12:43.3633476Z [36;1m    echo "❌ classes.dex missing!"[0m
+2026-05-27T13:12:43.3634108Z [36;1m    ls "$TMPDIR/"*.dex 2>/dev/null || echo "No dex files"[0m
+2026-05-27T13:12:43.3634710Z [36;1m  fi[0m
+2026-05-27T13:12:43.3635087Z [36;1m  rm -rf "$TMPDIR"[0m
+2026-05-27T13:12:43.3635595Z [36;1m  echo "=== Go binary in APK (jniLibs) ==="[0m
+2026-05-27T13:12:43.3636506Z [36;1m  unzip -l "$APK_PATH" | grep -E "libencv-go|lib/arm64" || echo "❌ libencv-go.so NOT in APK!"[0m
+2026-05-27T13:12:43.3637502Z [36;1m  echo "=== Host APK must NOT contain MPV .so ==="[0m
+2026-05-27T13:12:43.3638285Z [36;1m  if unzip -l "$APK_PATH" | grep -q "libmpv\.so\|libplayer\.so"; then[0m
+2026-05-27T13:12:43.3639059Z [36;1m    echo "❌ FAIL: Host APK contains MPV .so!"[0m
+2026-05-27T13:12:43.3639603Z [36;1m    exit 1[0m
+2026-05-27T13:12:43.3640158Z [36;1m  else[0m
+2026-05-27T13:12:43.3640722Z [36;1m    echo "✅ PASS: Host APK excludes MPV .so"[0m
+2026-05-27T13:12:43.3641831Z [36;1m  fi[0m
+2026-05-27T13:12:43.3642455Z [36;1m  echo "=== Plugin APK in assets ==="[0m
+2026-05-27T13:12:43.3643168Z [36;1m  if [ "false" = "true" ]; then[0m
+2026-05-27T13:12:43.3643940Z [36;1m    echo "⏭️ Skipped (skip_plugin=true)"[0m
+2026-05-27T13:12:43.3644831Z [36;1m  elif unzip -l "$APK_PATH" | grep -q "mpv-player.apk"; then[0m
+2026-05-27T13:12:43.3645812Z [36;1m    echo "✅ PASS: Plugin APK found in host assets"[0m
+2026-05-27T13:12:43.3646700Z [36;1m    unzip -l "$APK_PATH" | grep "mpv-player.apk"[0m
+2026-05-27T13:12:43.3647492Z [36;1m  else[0m
+2026-05-27T13:12:43.3648381Z [36;1m    echo "::warning::Plugin APK not found in host assets (may be expected for local dev builds)"[0m
+2026-05-27T13:12:43.3649385Z [36;1m  fi[0m
+2026-05-27T13:12:43.3649996Z [36;1melse[0m
+2026-05-27T13:12:43.3650604Z [36;1m  echo "No APK found to verify"[0m
+2026-05-27T13:12:43.3651815Z [36;1mfi[0m
+2026-05-27T13:12:43.3726223Z shell: /usr/bin/bash -e {0}
+2026-05-27T13:12:43.3726688Z env:
+2026-05-27T13:12:43.3727027Z   NDK_VERSION: 26.1.10909125
+2026-05-27T13:12:43.3727669Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T13:12:43.3728928Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T13:12:43.3729686Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-27T13:12:43.3730230Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-27T13:12:43.3731331Z ##[endgroup]
+2026-05-27T13:12:43.3847094Z === APK size ===
+2026-05-27T13:12:43.3862678Z -rw-r--r-- 1 runner runner 46M May 27 13:12 app/encv-mobile/android/app/build/outputs/apk/debug/app-debug.apk
+2026-05-27T13:12:43.3864395Z === Assets ===
+2026-05-27T13:12:43.3944196Z  26836736  1981-01-01 01:01   lib/arm64-v8a/libencv-go.so
+2026-05-27T13:12:43.3948749Z === DEX strings check (real class presence) ===
+2026-05-27T13:12:44.5529064Z ❌ Not found in DEX strings
+2026-05-27T13:12:44.5807964Z === Go binary in APK (jniLibs) ===
+2026-05-27T13:12:44.5893051Z     10096  1981-01-01 01:01   lib/arm64-v8a/libandroidx.graphics.path.so
+2026-05-27T13:12:44.5894625Z  26836736  1981-01-01 01:01   lib/arm64-v8a/libencv-go.so
+2026-05-27T13:12:44.5896227Z   4545488  1981-01-01 01:01   lib/arm64-v8a/libffmpeg.so
+2026-05-27T13:12:44.5897689Z   4219648  1981-01-01 01:01   lib/arm64-v8a/libffprobe.so
+2026-05-27T13:12:44.5899086Z === Host APK must NOT contain MPV .so ===
+2026-05-27T13:12:44.5972651Z ✅ PASS: Host APK excludes MPV .so
+2026-05-27T13:12:44.5973891Z === Plugin APK in assets ===
+2026-05-27T13:12:44.6024283Z ✅ PASS: Plugin APK found in host assets
+2026-05-27T13:12:44.6119241Z  15938748  1981-01-01 01:01   assets/plugins/mpv-player.apk

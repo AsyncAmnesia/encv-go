@@ -1,0 +1,24 @@
+﻿2026-05-27T13:04:47.0752833Z ##[group]Run cd app/encv-mobile
+2026-05-27T13:04:47.0753209Z [36;1mcd app/encv-mobile[0m
+2026-05-27T13:04:47.0753715Z [36;1mnpx cap copy android[0m
+2026-05-27T13:04:47.0754035Z [36;1mecho "Android project ready:"[0m
+2026-05-27T13:04:47.0754438Z [36;1mls -la android/*.gradle android/app/*.gradle[0m
+2026-05-27T13:04:47.0788557Z shell: /usr/bin/bash -e {0}
+2026-05-27T13:04:47.0788896Z env:
+2026-05-27T13:04:47.0789148Z   NDK_VERSION: 26.1.10909125
+2026-05-27T13:04:47.0789662Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T13:04:47.0790354Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T13:04:47.0791157Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-27T13:04:47.0791636Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-27T13:04:47.0792015Z ##[endgroup]
+2026-05-27T13:04:47.7686709Z ✔ Copying web assets from dist to android/app/src/main/assets/public in 10.04ms
+2026-05-27T13:04:47.7704971Z ✔ Creating capacitor.config.json in android/app/src/main/assets in 1.57ms
+2026-05-27T13:04:47.7756931Z ✔ copy android in 28.03ms
+2026-05-27T13:04:47.8068480Z encv-sync-native: syncing native libs to Android project...
+2026-05-27T13:04:47.8071348Z   so: ensured jniLibs/arm64-v8a (no overlay)
+2026-05-27T13:04:47.8103430Z   jni: synced
+2026-05-27T13:04:47.8104854Z encv-sync-native: done
+2026-05-27T13:04:47.8492808Z Android project ready:
+2026-05-27T13:04:47.8508591Z -rw-r--r-- 1 runner runner 481 May 27 13:02 android/app/capacitor.build.gradle
+2026-05-27T13:04:47.8509932Z -rw-r--r-- 1 runner runner 505 May 27 13:02 android/capacitor.settings.gradle
+2026-05-27T13:04:47.8511859Z -rw-r--r-- 1 runner runner 498 May 27 13:02 android/variables.gradle

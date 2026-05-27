@@ -1,0 +1,10 @@
+﻿2026-05-27T13:13:06.7362959Z Post job cleanup.
+2026-05-27T13:13:06.9045837Z [command]/opt/hostedtoolcache/go/1.23.12/x64/bin/go env GOMODCACHE
+2026-05-27T13:13:06.9086527Z [command]/opt/hostedtoolcache/go/1.23.12/x64/bin/go env GOCACHE
+2026-05-27T13:13:06.9156708Z /home/runner/go/pkg/mod
+2026-05-27T13:13:06.9187961Z /home/runner/.cache/go-build
+2026-05-27T13:13:06.9408390Z [command]/usr/bin/tar --posix -cf cache.tzst --exclude cache.tzst -P -C /home/runner/work/encv-go/encv-go --files-from manifest.txt --use-compress-program zstdmt
+2026-05-27T13:13:10.1767705Z Sent 0 of 243334565 (0.0%), 0.0 MBs/sec
+2026-05-27T13:13:11.1773299Z Sent 42007973 of 243334565 (17.3%), 20.0 MBs/sec
+2026-05-27T13:13:11.9191671Z Sent 243334565 of 243334565 (100.0%), 84.6 MBs/sec
+2026-05-27T13:13:12.2909849Z Cache saved with the key: setup-go-Linux-x64-ubuntu24-go-1.25.1-f348b8c4b3b023f3e60fbd665c8f0fe5a9b29aabbe12cf648f7588f3cd487f79
