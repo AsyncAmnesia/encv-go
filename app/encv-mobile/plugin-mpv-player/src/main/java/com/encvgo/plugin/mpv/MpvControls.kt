@@ -30,7 +30,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.VolumeMute
 import androidx.compose.material.icons.outlined.Subtitles
-import androidx.compose.material.icons.outlined.Audiotrack
+import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,7 +41,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -270,7 +270,7 @@ private fun BottomBar(
             }
             IconButton(onClick = onCycleAudio, modifier = Modifier.size(36.dp)) {
                 Icon(
-                    imageVector = Icons.outlined.Audiotrack,
+                    imageVector = Icons.outlined.MusicNote,
                     contentDescription = "Audio Track",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -300,7 +300,7 @@ private fun VolumeIcon(volume: Float, onClick: () -> Unit) {
 
 @Composable
 private fun VolumeSliderRow(volume: Float, onVolumeChange: (Float) -> Unit) {
-    var sliderVolume by remember { mutableFloatStateOf(volume) }
+    var sliderVolume by remember { mutableStateOf(volume) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -597,6 +597,10 @@ private fun VideoPlaybackLayout(
     onToggleLock: () -> Unit,
     onChangeSpeed: () -> Unit,
     onToggleFullscreen: () -> Unit,
+    volume: Float = 1f,
+    onVolumeChange: (Float) -> Unit,
+    onToggleSubtitle: () -> Unit,
+    onCycleAudio: () -> Unit,
     onBack: () -> Unit
 ) {
     val controlsAlpha by animateFloatAsState(
