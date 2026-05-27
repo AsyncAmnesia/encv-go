@@ -90,122 +90,123 @@
         <ion-refresher-content></ion-refresher-content>
       </ion-refresher>
 
-      <div v-if="(loading || isSearching) && !selectedPlugin" class="loading-container">
-        <ion-spinner name="crescent"></ion-spinner>
-        <p>{{ isSearching ? t('files.searching') : (connecting ? t('files.connecting') : t('files.loading')) }}</p>
-      </div>
+      <template v-if="(loading || isSearching || noPermission || !serverOnline || displayFiles.length === 0) && !selectedPlugin">
+        <div v-if="loading || isSearching" class="loading-container">
+          <ion-spinner name="crescent"></ion-spinner>
+          <p>{{ isSearching ? t('files.searching') : (connecting ? t('files.connecting') : t('files.loading')) }}</p>
+        </div>
+        <div v-else-if="noPermission" class="empty-state">
+          <ion-icon :icon="lockClosed" class="empty-icon"></ion-icon>
+          <h3>{{ t('files.noPermission') }}</h3>
+          <p>{{ t('files.noPermissionDesc') }}</p>
+          <ion-button @click="handleRequestStorage">
+            <ion-icon :icon="folderOpen" slot="start"></ion-icon>
+            {{ t('files.grantPermission') }}
+          </ion-button>
+        </div>
+        <div v-else-if="!serverOnline" class="empty-state">
+          <ion-icon :icon="cloudOffline" class="empty-icon"></ion-icon>
+          <h3>{{ t('files.serverOffline') }}</h3>
+          <p>{{ t('files.serverOfflineDesc') }}</p>
+          <ion-button @click="retryConnection">
+            <ion-icon :icon="refresh" slot="start"></ion-icon>
+            {{ t('files.retry') }}
+          </ion-button>
+        </div>
+        <div v-else class="empty-state">
+          <ion-icon :icon="searchQuery ? search : folderOpen" class="empty-icon"></ion-icon>
+          <h3>{{ searchQuery ? t('files.noSearchResults') : t('files.emptyDir') }}</h3>
+          <p>{{ searchQuery ? t('files.noSearchResultsDesc') : t('files.emptyDirDesc') }}</p>
+        </div>
+      </template>
 
-      <div v-else-if="noPermission" class="empty-state">
-        <ion-icon :icon="lockClosed" class="empty-icon"></ion-icon>
-        <h3>{{ t('files.noPermission') }}</h3>
-        <p>{{ t('files.noPermissionDesc') }}</p>
-        <ion-button @click="handleRequestStorage">
-          <ion-icon :icon="folderOpen" slot="start"></ion-icon>
-          {{ t('files.grantPermission') }}
-        </ion-button>
-      </div>
+      <template v-else>
+        <div v-if="selectedPlugin">
+          <ion-toolbar>
+            <ion-buttons slot="start">
+              <ion-back-button @click="exitPluginMode()" />
+            </ion-buttons>
+            <ion-title>{{ selectedPlugin.name }} 文件</ion-title>
+          </ion-toolbar>
+          <ion-segment v-model="pluginTab" value="source">
+            <ion-segment-button value="source">未加密</ion-segment-button>
+            <ion-segment-button value="container">已加密</ion-segment-button>
+          </ion-segment>
+          <ion-list :inset="true">
+            <ion-item v-for="file in filteredPluginFiles" :key="file.path" button @click="handleFileClick(file)" v-longpress="() => handleLongPress(file)">
+              <div slot="start" class="file-thumbnail-slot lazy-thumb-target" :data-file-path="file.path">
+                <img
+                  v-if="isImageFile(file) && thumbnailUrls[file.path]"
+                  :src="thumbnailUrls[file.path]"
+                  class="file-thumb"
+                  loading="lazy"
+                  @error="onThumbError(file.path)"
+                />
+                <ion-icon
+                  v-else
+                  :icon="getFileIcon(file)"
+                  :color="getFileIconColor(file)"
+                  :class="{ 'thumb-fallback': isImageFile(file) }"
+                ></ion-icon>
+              </div>
+              <ion-label>
+                <h2>{{ file.name }}</h2>
+                <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified"> · {{ formatDateTime(file.modified) }}</span></p>
+                <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
+                <div v-if="!file.isDirectory && getFileTags(file.path).length > 0" class="file-tag-chips">
+                  <ion-chip v-for="tag in getFileTags(file.path)" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
+                </div>
+              </ion-label>
+              <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
+                ENCV
+              </ion-badge>
+            </ion-item>
+            <ion-item v-if="filteredPluginFiles.length === 0">
+              <ion-label>无匹配文件</ion-label>
+            </ion-item>
+          </ion-list>
+        </div>
 
-      <div v-else-if="!serverOnline" class="empty-state">
-        <ion-icon :icon="cloudOffline" class="empty-icon"></ion-icon>
-        <h3>{{ t('files.serverOffline') }}</h3>
-        <p>{{ t('files.serverOfflineDesc') }}</p>
-        <ion-button @click="retryConnection">
-          <ion-icon :icon="refresh" slot="start"></ion-icon>
-          {{ t('files.retry') }}
-        </ion-button>
-      </div>
-
-      <div v-else-if="displayFiles.length === 0" class="empty-state">
-        <ion-icon :icon="searchQuery ? search : folderOpen" class="empty-icon"></ion-icon>
-        <h3>{{ searchQuery ? t('files.noSearchResults') : t('files.emptyDir') }}</h3>
-        <p>{{ searchQuery ? t('files.noSearchResultsDesc') : t('files.emptyDirDesc') }}</p>
-      </div>
-
-      <div v-if="selectedPlugin">
-        <ion-toolbar>
-          <ion-buttons slot="start">
-            <ion-back-button @click="exitPluginMode()" />
-          </ion-buttons>
-          <ion-title>{{ selectedPlugin.name }} 文件</ion-title>
-        </ion-toolbar>
-        <ion-segment v-model="pluginTab" value="source">
-          <ion-segment-button value="source">未加密</ion-segment-button>
-          <ion-segment-button value="container">已加密</ion-segment-button>
-        </ion-segment>
-        <ion-list :inset="true">
-          <ion-item v-for="file in filteredPluginFiles" :key="file.path" button @click="handleFileClick(file)" v-longpress="() => handleLongPress(file)">
+        <ion-list v-else>
+          <ion-item
+            v-for="file in displayFiles"
+            :key="file.path"
+            @click="handleFileClick(file)"
+            v-longpress="() => handleLongPress(file)"
+          >
             <div slot="start" class="file-thumbnail-slot lazy-thumb-target" :data-file-path="file.path">
-              <img
-                v-if="isImageFile(file) && thumbnailUrls[file.path]"
-                :src="thumbnailUrls[file.path]"
-                class="file-thumb"
-                loading="lazy"
-                @error="onThumbError(file.path)"
-              />
-              <ion-icon
-                v-else
-                :icon="getFileIcon(file)"
-                :color="getFileIconColor(file)"
-                :class="{ 'thumb-fallback': isImageFile(file) }"
-              ></ion-icon>
-            </div>
+                <img
+                  v-if="isImageFile(file) && thumbnailUrls[file.path]"
+                  :src="thumbnailUrls[file.path]"
+                  class="file-thumb"
+                  loading="lazy"
+                  @error="onThumbError(file.path)"
+                />
+                <ion-icon
+                  v-else
+                  :icon="getFileIcon(file)"
+                  :color="getFileIconColor(file)"
+                  :class="{ 'thumb-fallback': isImageFile(file) }"
+                ></ion-icon>
+              </div>
             <ion-label>
               <h2>{{ file.name }}</h2>
-              <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified"> · {{ formatDateTime(file.modified) }}</span></p>
+              <p v-if="searchQuery && !file.isDirectory" class="search-path">{{ file.path }}</p>
+              <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified && !searchQuery"> · {{ formatDateTime(file.modified) }}</span></p>
               <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
-              <div v-if="!file.isDirectory && getFileTags(file.path).length > 0" class="file-tag-chips">
+              <div v-if="!file.isDirectory && !searchQuery && getFileTags(file.path).length > 0" class="file-tag-chips">
                 <ion-chip v-for="tag in getFileTags(file.path)" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
               </div>
             </ion-label>
             <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
               ENCV
             </ion-badge>
-          </ion-item>
-          <ion-item v-if="filteredPluginFiles.length === 0">
-            <ion-label>无匹配文件</ion-label>
+            <ion-button v-if="searchQuery" slot="end" fill="clear" class="open-folder-btn" @click.stop="openContainingFolder(file)">
+              <ion-icon :icon="folderOpen" class="open-folder-icon" slot="icon-only"></ion-icon>
+            </ion-button>
           </ion-item>
         </ion-list>
-      </div>
-
-      <ion-list v-else>
-        <ion-item
-          v-for="file in displayFiles"
-          :key="file.path"
-          @click="handleFileClick(file)"
-          v-longpress="() => handleLongPress(file)"
-        >
-          <div slot="start" class="file-thumbnail-slot lazy-thumb-target" :data-file-path="file.path">
-              <img
-                v-if="isImageFile(file) && thumbnailUrls[file.path]"
-                :src="thumbnailUrls[file.path]"
-                class="file-thumb"
-                loading="lazy"
-                @error="onThumbError(file.path)"
-              />
-              <ion-icon
-                v-else
-                :icon="getFileIcon(file)"
-                :color="getFileIconColor(file)"
-                :class="{ 'thumb-fallback': isImageFile(file) }"
-              ></ion-icon>
-            </div>
-          <ion-label>
-            <h2>{{ file.name }}</h2>
-            <p v-if="searchQuery && !file.isDirectory" class="search-path">{{ file.path }}</p>
-            <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified && !searchQuery"> · {{ formatDateTime(file.modified) }}</span></p>
-            <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
-            <div v-if="!file.isDirectory && !searchQuery && getFileTags(file.path).length > 0" class="file-tag-chips">
-              <ion-chip v-for="tag in getFileTags(file.path)" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
-            </div>
-          </ion-label>
-          <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
-            ENCV
-          </ion-badge>
-          <ion-button v-if="searchQuery" slot="end" fill="clear" class="open-folder-btn" @click.stop="openContainingFolder(file)">
-            <ion-icon :icon="folderOpen" class="open-folder-icon" slot="icon-only"></ion-icon>
-          </ion-button>
-        </ion-item>
-      </ion-list>
+      </template>
 
       <ion-alert :is-open="showRenameDialog" header="重命名"
         :inputs="[{ name: 'name', type: 'text', placeholder: '新文件名', value: renameValue }]"
@@ -1042,10 +1043,24 @@ const pluginTab = ref<'source' | 'container'>('source')
 const pluginFiles = ref<FileItem[]>([])
 const filteredPluginFiles = computed(() => {
   if (!selectedPlugin.value) return []
+  let list: FileItem[]
   if (pluginTab.value === 'container') {
-    return pluginFiles.value.filter(f => f.isEncrypted || selectedPlugin.value?.containerExtension && f.name.endsWith(selectedPlugin.value.containerExtension))
+    list = pluginFiles.value.filter(f => f.isEncrypted || selectedPlugin.value?.containerExtension && f.name.endsWith(selectedPlugin.value.containerExtension))
+  } else {
+    list = pluginFiles.value.filter(f => !f.isEncrypted)
   }
-  return pluginFiles.value.filter(f => !f.isEncrypted)
+  list.sort((a, b) => {
+    if (a.isDirectory && !b.isDirectory) return -1
+    if (!a.isDirectory && b.isDirectory) return 1
+    let cmp = 0
+    switch (sortBy.value) {
+      case 'name': cmp = a.name.localeCompare(b.name); break
+      case 'size': cmp = (a.size || 0) - (b.size || 0); break
+      case 'time': cmp = (Number(a.modified) || 0) - (Number(b.modified) || 0); break
+    }
+    return sortDesc.value ? -cmp : cmp
+  })
+  return list
 })
 
 watch(selectedPlugin, async (plugin) => {
