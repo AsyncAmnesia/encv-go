@@ -143,6 +143,53 @@
               <ion-segment-button value="source">未加密</ion-segment-button>
               <ion-segment-button value="container">已加密</ion-segment-button>
             </ion-segment>
+            <ion-item button detail @click="showPluginFilters = !showPluginFilters">
+              <ion-icon :icon="filterOutline" slot="start"></ion-icon>
+              <ion-label>筛选</ion-label>
+              <ion-badge v-if="activeFilterCount > 0" slot="end" color="primary">{{ activeFilterCount }}</ion-badge>
+            </ion-item>
+            <ion-list v-if="showPluginFilters" :inset="true">
+              <ion-item>
+                <ion-label position="stacked">大小范围</ion-label>
+                <div style="display:flex;gap:8px;align-items:center;width:100%">
+                  <ion-input type="number" placeholder="最小"
+                    :value="sizeFilterMin !== null ? String(sizeFilterMin) : ''"
+                    @ionInput="sizeFilterMin = $event.detail.value ? Number($event.detail.value) : null">
+                  </ion-input>
+                  <span>~</span>
+                  <ion-input type="number" placeholder="最大"
+                    :value="sizeFilterMax !== null ? String(sizeFilterMax) : ''"
+                    @ionInput="sizeFilterMax = $event.detail.value ? Number($event.detail.value) : null">
+                  </ion-input>
+                  <ion-button fill="clear" size="small" @click="sizeFilterMin=null;sizeFilterMax=null">清除</ion-button>
+                </div>
+                <div class="filter-chips">
+                  <ion-chip v-for="p in SIZE_PRESETS" :key="p.label" outline @click="applySizePreset(p)">{{ p.label }}</ion-chip>
+                </div>
+              </ion-item>
+              <ion-item>
+                <ion-label position="stacked">修改时间</ion-label>
+                <div style="display:flex;gap:8px;align-items:center;width:100%">
+                  <ion-input type="date" placeholder="起始"
+                    :value="timeFilterFrom || ''"
+                    @ionInput="timeFilterFrom = ($event.detail.value as string) || null">
+                  </ion-input>
+                  <span>~</span>
+                  <ion-input type="date" placeholder="结束"
+                    :value="timeFilterTo || ''"
+                    @ionInput="timeFilterTo = ($event.detail.value as string) || null">
+                  </ion-input>
+                  <ion-button fill="clear" size="small" @click="timeFilterFrom=null;timeFilterTo=null">清除</ion-button>
+                </div>
+                <div class="filter-chips">
+                  <ion-chip v-for="p in TIME_PRESETS" :key="p.label" outline @click="applyTimePreset(p)">{{ p.label }}</ion-chip>
+                </div>
+              </ion-item>
+              <ion-item button @click="clearAllPluginFilters">
+                <ion-icon :icon="closeCircleOutline" slot="start" color="danger"></ion-icon>
+                <ion-label color="danger">清除所有筛选</ion-label>
+              </ion-item>
+            </ion-list>
             <ion-list :inset="true">
             <ion-item v-for="file in filteredPluginFiles" :key="file.path" button @click="handleFileClick(file)" v-longpress="() => handleLongPress(file)">
               <div slot="start" class="file-thumbnail-slot lazy-thumb-target" :data-file-path="file.path">
@@ -322,6 +369,8 @@ import {
   arrowForwardOutline,
   shareOutline,
   closeCircle,
+  closeCircleOutline,
+  filterOutline,
   swapVertical,
 } from 'ionicons/icons'
 import {
@@ -986,6 +1035,58 @@ async function handleTagFilter(tagName: string) {
 const pluginTab = ref<'source' | 'container'>('source')
 const pluginFiles = ref<FileItem[]>([])
 const pluginLoaded = ref(false)
+let pluginLoadGeneration = 0
+
+const sizeFilterMin = ref<number | null>(null)
+const sizeFilterMax = ref<number | null>(null)
+const timeFilterFrom = ref<string | null>(null)
+const timeFilterTo = ref<string | null>(null)
+const showPluginFilters = ref(false)
+
+const SIZE_PRESETS = [
+  { label: '< 1MB', max: 1024 * 1024 },
+  { label: '1MB - 10MB', min: 1024 * 1024, max: 10 * 1024 * 1024 },
+  { label: '10MB - 100MB', min: 10 * 1024 * 1024, max: 100 * 1024 * 1024 },
+  { label: '> 100MB', min: 100 * 1024 * 1024 },
+] as const
+const TIME_PRESETS = [
+  { label: '今天', days: 0 },
+  { label: '近 3 天', days: 3 },
+  { label: '近 7 天', days: 7 },
+  { label: '近 30 天', days: 30 },
+] as const
+
+const activeFilterCount = computed(() => {
+  let c = 0
+  if (sizeFilterMin.value !== null) c++
+  if (sizeFilterMax.value !== null) c++
+  if (timeFilterFrom.value !== null) c++
+  if (timeFilterTo.value !== null) c++
+  return c
+})
+
+function applySizePreset(preset: typeof SIZE_PRESETS[number]) {
+  sizeFilterMin.value = 'min' in preset ? (preset as { min?: number }).min ?? null : null
+  sizeFilterMax.value = 'max' in preset ? (preset as { max?: number }).max ?? null : null
+}
+function applyTimePreset(preset: typeof TIME_PRESETS[number]) {
+  const now = new Date()
+  const from = new Date(now)
+  from.setDate(from.getDate() - preset.days)
+  from.setHours(0, 0, 0, 0)
+  timeFilterFrom.value = from.toISOString()
+  if (preset.days === 0) {
+    timeFilterTo.value = now.toISOString()
+  } else {
+    timeFilterTo.value = null
+  }
+}
+function clearAllPluginFilters() {
+  sizeFilterMin.value = null
+  sizeFilterMax.value = null
+  timeFilterFrom.value = null
+  timeFilterTo.value = null
+}
 const filteredPluginFiles = computed(() => {
   if (!selectedPlugin.value) return []
   let list: FileItem[]
@@ -997,6 +1098,20 @@ const filteredPluginFiles = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   if (query) {
     list = list.filter(f => f.name.toLowerCase().includes(query))
+  }
+  if (sizeFilterMin.value !== null) {
+    list = list.filter(f => (f.size || 0) >= sizeFilterMin.value!)
+  }
+  if (sizeFilterMax.value !== null) {
+    list = list.filter(f => (f.size || 0) <= sizeFilterMax.value!)
+  }
+  if (timeFilterFrom.value !== null) {
+    const from = new Date(timeFilterFrom.value).getTime()
+    list = list.filter(f => (f.modified ? new Date(f.modified).getTime() : 0) >= from)
+  }
+  if (timeFilterTo.value !== null) {
+    const to = new Date(timeFilterTo.value).getTime()
+    list = list.filter(f => (f.modified ? new Date(f.modified).getTime() : 0) <= to)
   }
   list.sort((a, b) => {
     if (a.isDirectory && !b.isDirectory) return -1
@@ -1015,23 +1130,28 @@ const filteredPluginFiles = computed(() => {
 
 watch(selectedPlugin, async (plugin) => {
   if (plugin) {
+    const gen = ++pluginLoadGeneration
     pluginTab.value = 'source'
     pluginLoaded.value = false
     pluginFiles.value = []
     console.info('[Files] Loading plugin files (stream):', plugin.name)
     try {
       const results = await searchPluginFiles(plugin, (file) => {
+        if (gen !== pluginLoadGeneration) return
         pluginFiles.value.push(file)
         if (pluginFiles.value.length === 1 && !pluginLoaded.value) {
           console.info('[Files] First plugin item arrived, UI unlocked')
         }
       })
+      if (gen !== pluginLoadGeneration) return
       pluginFiles.value = results
     } catch (e) {
       console.error('[Files] Plugin stream load failed:', e)
     }
-    pluginLoaded.value = true
-    setupLazyThumbnails()
+    if (gen === pluginLoadGeneration) {
+      pluginLoaded.value = true
+      setupLazyThumbnails()
+    }
   }
 })
 
@@ -1216,4 +1336,16 @@ ion-item {
 }
 .file-tag-chips {
   contain: content;
+}
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.filter-chips ion-chip {
+  font-size: 12px;
+  --padding-start: 8px;
+  --padding-end: 8px;
+  cursor: pointer;
 }</style>
