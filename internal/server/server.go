@@ -193,6 +193,8 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/api/files/exists", s.handleFileExistsGin)
 	r.GET("/api/files/encrypt-output-exists", s.handleEncryptOutputExistsGin)
 	r.GET("/api/files/search", s.handleSearchFilesGin)
+	r.GET("/api/files/tags", s.handleTagsListGin)
+	r.POST("/api/files/tags", s.handleTagsMutateGin)
 	r.GET("/api/index/stats", s.handleIndexStatsGin)
 	r.POST("/api/index/rebuild", s.handleIndexRebuildGin)
 	r.POST("/api/index/clear", s.handleIndexClearGin)
@@ -200,6 +202,7 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/api/build-info", s.handleBuildInfoGin)
 	r.GET("/api/ffmpeg-status", s.handleFFmpegStatusGin)
 	r.GET("/api/container/versions", s.handleGetContainerVersionsGin)
+	r.GET("/api/plugins", s.handlePluginsGin)
 	r.POST("/api/logs", s.handleAPILogsGin)
 	r.GET("/ws", gin.WrapF(s.handleWebSocket))
 
@@ -225,6 +228,8 @@ func (s *Server) Start(version string) (string, error) {
 	}
 	adminGroup.POST("/file/analyze", s.handleFileAnalyzeGin)
 	adminGroup.POST("/file/rename", s.handleFileRenameGin)
+	adminGroup.POST("/file/copy", s.handleFileCopyGin)
+	adminGroup.POST("/file/move", s.handleFileMoveGin)
 
 	fsProxyGroup := r.Group(routes.FSProxy)
 	if loginRequired {

@@ -3,6 +3,9 @@
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
+          <ion-button fill="clear" @click="showSideDrawer = true">
+            <ion-icon :icon="menuOutline" slot="icon-only" />
+          </ion-button>
           <ion-button v-if="currentPath !== '/'" @click="goUp">
             <ion-icon :icon="arrowBack" slot="icon-only"></ion-icon>
           </ion-button>
@@ -39,7 +42,38 @@
       </ion-toolbar>
     </ion-header>
 
-    <ion-content>
+    <ion-menu side="start" menu-id="plugin-menu" content-id="main-content" :opened="showSideDrawer" @ionDidClose="showSideDrawer = false">
+      <ion-header>
+        <ion-toolbar>
+          <ion-title>插件分类</ion-title>
+        </ion-toolbar>
+      </ion-header>
+      <ion-content>
+        <ion-list>
+          <ion-list-header>文件类型</ion-list-header>
+          <ion-item v-for="plugin in plugins" :key="plugin.name" button detail @click="openPluginView(plugin)">
+            <ion-icon :icon="getPluginIcon(plugin.name)" slot="start" color="primary" />
+            <ion-label>
+              <h2>{{ plugin.name }}</h2>
+              <p>{{ plugin.supportedExtensions.length }} 种格式 · 容器 {{ plugin.containerExtension }}</p>
+            </ion-label>
+          </ion-item>
+        </ion-list>
+
+        <ion-list v-if="tags.length > 0" style="margin-top: 16px">
+          <ion-list-header>标签</ion-list-header>
+          <ion-item v-for="tag in tags" :key="tag.name" button @click="handleTagFilter(tag.name)">
+            <ion-icon :icon="pricetagOutline" slot="start" color="success" />
+            <ion-label>
+              <h2>{{ tag.name }}</h2>
+              <p>{{ tag.count }} 个文件</p>
+            </ion-label>
+          </ion-item>
+        </ion-list>
+      </ion-content>
+    </ion-menu>
+
+    <ion-content id="main-content">
       <ion-refresher slot="fixed" @ionRefresh="handleRefresh" v-if="!searchQuery">
         <ion-refresher-content></ion-refresher-content>
       </ion-refresher>
@@ -75,6 +109,39 @@
         <p>{{ searchQuery ? t('files.noSearchResultsDesc') : t('files.emptyDirDesc') }}</p>
       </div>
 
+      <div v-if="selectedPlugin">
+        <ion-toolbar>
+          <ion-buttons slot="start">
+            <ion-back-button @click="selectedPlugin = null; loadFiles()" />
+          </ion-buttons>
+          <ion-title>{{ selectedPlugin.name }} 文件</ion-title>
+        </ion-toolbar>
+        <ion-segment v-model="pluginTab" value="source">
+          <ion-segment-button value="source">未加密</ion-segment-button>
+          <ion-segment-button value="container">已加密</ion-segment-button>
+        </ion-segment>
+        <ion-list :inset="true">
+          <ion-item v-for="file in filteredPluginFiles" :key="file.path" button @click="handleFileClick(file)" v-longpress="() => handleLongPress(file)">
+            <ion-icon
+              :icon="getFileIcon(file)"
+              :color="getFileIconColor(file)"
+              slot="start"
+            ></ion-icon>
+            <ion-label>
+              <h2>{{ file.name }}</h2>
+              <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified"> · {{ formatDateTime(file.modified) }}</span></p>
+              <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
+            </ion-label>
+            <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
+              ENCV
+            </ion-badge>
+          </ion-item>
+          <ion-item v-if="filteredPluginFiles.length === 0">
+            <ion-label>无匹配文件</ion-label>
+          </ion-item>
+        </ion-list>
+      </div>
+
       <ion-list v-else>
         <ion-item
           v-for="file in displayFiles"
@@ -102,12 +169,34 @@
         </ion-item>
       </ion-list>
 
+      <ion-alert :is-open="showRenameDialog" header="重命名"
+        :inputs="[{ name: 'name', type: 'text', placeholder: '新文件名', value: renameValue }]"
+        :buttons="[
+          { text: '取消', role: 'cancel' },
+          { text: '确定', handler: (d: any) => { renameValue = d.name; handleRename(selectedFile!); } }
+        ]"
+        @didDismiss="showRenameDialog = false" />
+      <ion-alert :is-open="showTagDialog" header="标签管理"
+        :inputs="[{ name: 'tag', type: 'text', placeholder: '输入标签名', value: tagInputValue }]"
+        :buttons="[
+          { text: '取消', role: 'cancel' },
+          { text: '添加', handler: (d: any) => { tagInputValue = d.tag; handleAddTag(); } }
+        ]"
+        @didDismiss="showTagDialog = false" />
+      <ion-alert :is-open="showMoveDialog" header="移动到"
+        :inputs="[{ name: 'target', type: 'text', placeholder: '目标路径', value: moveTargetPath }]"
+        :buttons="[
+          { text: '取消', role: 'cancel' },
+          { text: '移动', handler: (d: any) => { moveTargetPath = d.target; handleMove(selectedFile!); } }
+        ]"
+        @didDismiss="showMoveDialog = false" />
+
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   IonPage,
@@ -129,6 +218,12 @@ import {
   IonToggle,
   actionSheetController,
   alertController,
+  IonAlert,
+  IonMenu,
+  IonSegment,
+  IonSegmentButton,
+  IonListHeader,
+  IonBackButton,
 } from '@ionic/vue'
 import {
   arrowBack,
@@ -146,6 +241,8 @@ import {
   trash,
   search,
   informationCircle,
+  menuOutline,
+  pricetagOutline,
 } from 'ionicons/icons'
 import {
   listFiles,
@@ -155,8 +252,15 @@ import {
   PermissionDeniedError,
   NotFoundError,
   deleteFile,
+  renameFile,
+  copyFile,
+  moveFile,
+  fetchPlugins,
+  fetchTags,
+  addTag,
+  listFilesByTag,
 } from '@/api/encv'
-import type { FileItem } from '@/api/encv'
+import type { FileItem, PluginMeta, TagInfo } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
 import { formatDateTime } from '@/composables/useDateFormat'
@@ -164,6 +268,7 @@ import { vLongpress } from '@/directives/longpress'
 import { isNative, requestStoragePermission, openPlayer, openExternal } from '@/plugins/GoProcess'
 import { getExternalStreamUrl } from '@/api/encv'
 import { showToast } from '@/composables/useToast'
+import { Share } from '@capacitor/share'
 
 type PlayMode = 'artplayer' | 'mpv' | 'external'
 
@@ -207,6 +312,17 @@ const router = useRouter()
 const serverOnline = ref(false)
 const noPermission = ref(false)
 const files = ref<FileItem[]>([])
+const plugins = ref<PluginMeta[]>([])
+const tags = ref<TagInfo[]>([])
+const showRenameDialog = ref(false)
+const showTagDialog = ref(false)
+const showMoveDialog = ref(false)
+const showSideDrawer = ref(false)
+const selectedPlugin = ref<PluginMeta | null>(null)
+const selectedFile = ref<FileItem | null>(null)
+const renameValue = ref('')
+const tagInputValue = ref('')
+const moveTargetPath = ref('')
 const currentPath = ref('/')
 const loading = ref(false)
 const connecting = ref(false)
@@ -543,6 +659,43 @@ async function handleLongPress(file: FileItem) {
   }
 
   buttons.push({
+    text: '重命名',
+    handler: () => {
+      selectedFile.value = file
+      renameValue.value = file.name
+      showRenameDialog.value = true
+    },
+  })
+  buttons.push({
+    text: '复制',
+    handler: () => {
+      handleCopy(file)
+    },
+  })
+  buttons.push({
+    text: '移动',
+    handler: () => {
+      selectedFile.value = file
+      moveTargetPath.value = currentPath.value
+      showMoveDialog.value = true
+    },
+  })
+  buttons.push({
+    text: '分享',
+    handler: () => {
+      handleShare(file)
+    },
+  })
+  buttons.push({
+    text: '标签管理',
+    handler: () => {
+      selectedFile.value = file
+      tagInputValue.value = ''
+      showTagDialog.value = true
+    },
+  })
+
+  buttons.push({
     text: t('files.cancelSelect'),
     role: 'cancel',
   })
@@ -552,6 +705,55 @@ async function handleLongPress(file: FileItem) {
     buttons,
   })
   await actionSheet.present()
+}
+
+async function handleCopy(file: FileItem) {
+  const ext = file.name.includes('.') ? '.' + file.name.split('.').pop() : ''
+  const baseName = ext ? file.name.slice(0, -ext.length) : file.name
+  const destName = `${baseName}_copy${ext}`
+  const destPath = currentPath.value === '/' ? `/${destName}` : `${currentPath.value}/${destName}`
+  try {
+    await copyFile(file.path, destPath)
+    await loadFiles()
+  } catch (e) { showToast({ message: `复制失败: ${e}` }) }
+}
+
+async function handleRename(file: FileItem) {
+  if (!renameValue.value.trim() || renameValue.value === file.name) return
+  try {
+    await renameFile(file.path, renameValue.value.trim())
+    showRenameDialog.value = false
+    await loadFiles()
+  } catch (e) { showToast({ message: `重命名失败: ${e}` }) }
+}
+
+async function handleMove(file: FileItem) {
+  if (!moveTargetPath.value || moveTargetPath.value === file.path) return
+  try {
+    const destPath = moveTargetPath.value.endsWith('/') ? `${moveTargetPath.value}${file.name}` : `${moveTargetPath.value}/${file.name}`
+    await moveFile(file.path, destPath)
+    showMoveDialog.value = false
+    await loadFiles()
+  } catch (e) { showToast({ message: `移动失败: ${e}` }) }
+}
+
+async function handleShare(file: FileItem) {
+  if (isNative()) {
+    try {
+      await Share.share({ title: file.name, url: getExternalStreamUrl(file.path) })
+    } catch (e) { showToast({ message: '分享失败或已取消' }) }
+  } else {
+    navigator.clipboard.writeText(getExternalStreamUrl(file.path)).then(() => showToast({ message: '链接已复制到剪贴板' })).catch(() => showToast({ message: '复制失败' }))
+  }
+}
+
+async function handleAddTag() {
+  if (!selectedFile.value || !tagInputValue.value.trim()) return
+  try {
+    await addTag(selectedFile.value.path, tagInputValue.value.trim())
+    tagInputValue.value = ''
+    await loadTags()
+  } catch (e) { showToast({ message: '标签操作失败' }) }
 }
 
 function handleEncryptFile(file: FileItem) {
@@ -599,6 +801,58 @@ function onFileChange() {
   loadFiles()
 }
 
+async function loadPlugins() {
+  try { plugins.value = await fetchPlugins() } catch {}
+}
+async function loadTags() {
+  try { tags.value = await fetchTags() } catch {}
+}
+
+function openPluginView(plugin: PluginMeta) {
+  selectedPlugin.value = plugin
+  showSideDrawer.value = false
+}
+
+function getPluginIcon(name: string): string {
+  const icons: Record<string, string> = { video: 'film-outline', audio: 'musical-notes-outline', image: 'image-outline', pdf: 'document-text-outline', text: 'document-outline', wps: 'document-outline' }
+  return icons[name] || 'cube-outline'
+}
+
+async function searchPluginFiles(plugin: PluginMeta): Promise<FileItem[]> {
+  const results: FileItem[] = []
+  for (const ext of plugin.supportedExtensions) {
+    try {
+      const found = await searchFiles(currentPath.value, `.${ext}`, true)
+      results.push(...found)
+    } catch {}
+  }
+  return results
+}
+
+async function handleTagFilter(tagName: string) {
+  showSideDrawer.value = false
+  try {
+    files.value = await listFilesByTag(tagName, currentPath.value)
+  } catch (e) { showToast({ message: `筛选失败: ${e}` }) }
+}
+
+const pluginTab = ref<'source' | 'container'>('source')
+const pluginFiles = ref<FileItem[]>([])
+const filteredPluginFiles = computed(() => {
+  if (!selectedPlugin.value) return []
+  if (pluginTab.value === 'container') {
+    return pluginFiles.value.filter(f => f.isEncrypted || selectedPlugin.value?.containerExtension && f.name.endsWith(selectedPlugin.value.containerExtension))
+  }
+  return pluginFiles.value.filter(f => !f.isEncrypted)
+})
+
+watch(selectedPlugin, async (plugin) => {
+  if (plugin) {
+    pluginTab.value = 'source'
+    pluginFiles.value = await searchPluginFiles(plugin)
+  }
+})
+
 function onBackendReady(data: { port?: number; running?: boolean }) {
   if (data.running || data.port) {
     loadFiles()
@@ -607,6 +861,8 @@ function onBackendReady(data: { port?: number; running?: boolean }) {
 
 onMounted(() => {
   loadFiles()
+  loadPlugins()
+  loadTags()
   eventBus.on('file:change', onFileChange)
   window.addEventListener('encv:backend-ready', onBackendReadyWindow as EventListener)
 })

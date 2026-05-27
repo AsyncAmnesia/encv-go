@@ -664,3 +664,125 @@ export function isWrongPasswordError(error: unknown): boolean {
   const msg = String(error).toLowerCase()
   return msg.includes('wrong password') || msg.includes('密码')
 }
+
+export async function renameFile(oldPath: string, newName: string): Promise<void> {
+  console.info('[API] renameFile:', oldPath, '→', newName)
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/file/rename`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ oldPath, newName }),
+  })
+  if (!response.ok) {
+    console.error('[API] renameFile failed:', response.status)
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+}
+
+export async function copyFile(srcPath: string, destPath: string): Promise<void> {
+  console.info('[API] copyFile:', srcPath, '→', destPath)
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/file/copy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ srcPath, destPath }),
+  })
+  if (!response.ok) {
+    console.error('[API] copyFile failed:', response.status)
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+}
+
+export async function moveFile(srcPath: string, destPath: string): Promise<void> {
+  console.info('[API] moveFile:', srcPath, '→', destPath)
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/file/move`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ srcPath, destPath }),
+  })
+  if (!response.ok) {
+    console.error('[API] moveFile failed:', response.status)
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+}
+
+export interface PluginMeta {
+  name: string
+  supportedExtensions: string[]
+  supportedMimePrefixes: string[]
+  containerExtension: string
+}
+
+export async function fetchPlugins(): Promise<PluginMeta[]> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/plugins`)
+  if (!response.ok) {
+    console.error('[API] fetchPlugins failed:', response.status)
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  const data = await response.json()
+  console.info('[API] fetchPlugins:', data.plugins?.length || 0, 'plugins')
+  return data.plugins || []
+}
+
+export interface TagInfo {
+  name: string
+  count: number
+}
+
+export async function fetchTags(): Promise<TagInfo[]> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/files/tags`)
+  if (!response.ok) {
+    console.error('[API] fetchTags failed:', response.status)
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  const data = await response.json()
+  console.info('[API] fetchTags:', data.tags?.length || 0, 'tags')
+  return data.tags || []
+}
+
+export async function addTag(path: string, tag: string): Promise<void> {
+  console.info('[API] addTag:', path, tag)
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/files/tags`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, tag, action: 'add' }),
+  })
+  if (!response.ok) {
+    console.error('[API] addTag failed:', response.status)
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+}
+
+export async function removeTag(path: string, tag: string): Promise<void> {
+  console.info('[API] removeTag:', path, tag)
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/files/tags`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, tag, action: 'remove' }),
+  })
+  if (!response.ok) {
+    console.error('[API] removeTag failed:', response.status)
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+}
+
+export async function listFilesByTag(tag: string, path?: string): Promise<FileItem[]> {
+  const baseUrl = getApiBaseUrl()
+  const params = new URLSearchParams({
+    path: encodeURIComponent(path || '/'),
+    tag: encodeURIComponent(tag),
+  })
+  const response = await fetch(`${baseUrl}/api/files?${params}`)
+  if (!response.ok) {
+    console.error('[API] listFilesByTag failed:', response.status)
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  const data: FileListResponse = await response.json()
+  console.info('[API] listFilesByTag:', tag, '→', data.files?.length || 0, 'files')
+  return data.files || []
+}
