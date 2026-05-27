@@ -128,11 +128,16 @@
             </ion-buttons>
             <ion-title>{{ selectedPlugin.name }} 文件</ion-title>
           </ion-toolbar>
-          <ion-segment v-model="pluginTab" value="source">
-            <ion-segment-button value="source">未加密</ion-segment-button>
-            <ion-segment-button value="container">已加密</ion-segment-button>
-          </ion-segment>
-          <ion-list :inset="true">
+          <div v-if="pluginFiles.length === 0" class="loading-container">
+            <ion-spinner name="crescent"></ion-spinner>
+            <p>{{ t('files.loading') }}</p>
+          </div>
+          <template v-else>
+            <ion-segment v-model="pluginTab" value="source">
+              <ion-segment-button value="source">未加密</ion-segment-button>
+              <ion-segment-button value="container">已加密</ion-segment-button>
+            </ion-segment>
+            <ion-list :inset="true">
             <ion-item v-for="file in filteredPluginFiles" :key="file.path" button @click="handleFileClick(file)" v-longpress="() => handleLongPress(file)">
               <div slot="start" class="file-thumbnail-slot lazy-thumb-target" :data-file-path="file.path">
                 <img
@@ -165,6 +170,7 @@
               <ion-label>无匹配文件</ion-label>
             </ion-item>
           </ion-list>
+          </template>
         </div>
 
         <ion-list v-else>
@@ -255,7 +261,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   IonPage,
@@ -294,10 +300,7 @@ import {
   folder,
   folderOpen,
   videocam,
-  musicalNotes,
   image,
-  document as documentIcon,
-  documentText,
   lockClosed,
   cloudOffline,
   refresh,
@@ -334,6 +337,14 @@ import type { FileItem, PluginMeta, TagInfo } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
 import { formatDateTime } from '@/composables/useDateFormat'
+import { useThumbnailCache } from '@/composables/useThumbnailCache'
+import {
+  isImageFile,
+  getFileIcon,
+  getFileIconColor,
+  useFileListSort,
+  sortFiles,
+} from '@/composables/useFileList'
 import { vLongpress } from '@/directives/longpress'
 import { isNative, requestStoragePermission, openPlayer, openExternal, getLocalFilePath } from '@/plugins/GoProcess'
 import { getExternalStreamUrl } from '@/api/encv'
@@ -377,6 +388,8 @@ function playMedia(file: FileItem, category: string) {
 }
 
 const { t } = useI18n()
+const { thumbnailUrls, setupLazyThumbnails, onThumbError } = useThumbnailCache()
+const { sortBy, sortDesc, sortLabel, cycleSort } = useFileListSort()
 const router = useRouter()
 const serverOnline = ref(false)
 const noPermission = ref(false)
@@ -393,20 +406,10 @@ const moveTargetPath = ref('')
 const editingFileTags = ref<string[]>([])
 const newTagInput = ref('')
 const fileTagMap = ref<Record<string, string[]>>({})
-const thumbnailUrls = ref<Record<string, string>>({})
 
-const imageExts = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg', '.heic', '.heif', '.avif'])
-
-function isImageFile(file: FileItem): boolean {
-  if (file.isDirectory) return false
-  const ext = '.' + file.name.split('.').pop()?.toLowerCase()
-  return imageExts.has(ext || '')
-}
 const currentPath = ref('/')
 const loading = ref(false)
 const connecting = ref(false)
-const sortBy = ref<'name' | 'size' | 'time'>('name')
-const sortDesc = ref(false)
 
 const searchQuery = ref('')
 const searchRecursive = ref(false)
@@ -436,63 +439,8 @@ const displayFiles = computed(() => {
 })
 
 const sortedFiles = computed(() => {
-  const list = [...files.value]
-  list.sort((a, b) => {
-    if (a.isDirectory && !b.isDirectory) return -1
-    if (!a.isDirectory && b.isDirectory) return 1
-    let cmp = 0
-    switch (sortBy.value) {
-      case 'name': cmp = a.name.localeCompare(b.name); break
-      case 'size': cmp = (a.size || 0) - (b.size || 0); break
-      case 'time': cmp = (Number(a.modified) || 0) - (Number(b.modified) || 0); break
-    }
-    return sortDesc.value ? -cmp : cmp
-  })
-  return list
+  return sortFiles(files.value, sortBy.value, sortDesc.value)
 })
-
-const sortLabel = computed(() => {
-  const map: Record<string, string> = { name: '名字', size: '大小', time: '时间' }
-  return `${map[sortBy.value]}${sortDesc.value ? '↓' : '↑'}`
-})
-
-const SORT_CYCLE: Array<{ by: 'name' | 'size' | 'time'; desc: boolean }> = [
-  { by: 'name', desc: false }, { by: 'name', desc: true },
-  { by: 'size', desc: false }, { by: 'size', desc: true },
-  { by: 'time', desc: false }, { by: 'time', desc: true },
-]
-
-function cycleSort() {
-  const current = SORT_CYCLE.findIndex(s => s.by === sortBy.value && s.desc === sortDesc.value)
-  const next = SORT_CYCLE[(current + 1) % SORT_CYCLE.length]
-  sortBy.value = next.by
-  sortDesc.value = next.desc
-}
-
-function getFileIcon(file: FileItem) {
-  if (file.isDirectory) return folder
-  const category = getFileCategory(file.name, file.isEncrypted)
-  switch (category) {
-    case 'video': return videocam
-    case 'audio': return musicalNotes
-    case 'image': return image
-    case 'document': return documentIcon
-    case 'encrypted': return lockClosed
-    default: return documentText
-  }
-}
-
-function getFileIconColor(file: FileItem) {
-  if (file.isDirectory) return 'primary'
-  const category = getFileCategory(file.name, file.isEncrypted)
-  switch (category) {
-    case 'video': return 'danger'
-    case 'audio': return 'tertiary'
-    case 'image': return 'success'
-    case 'encrypted': return 'warning'
-    default: return 'medium'
-  }
-}
 
 let loadGeneration = 0
 
@@ -916,29 +864,6 @@ async function loadFileTagsForCurrentDir() {
     fileTagMap.value = map
   } catch {}
   setupLazyThumbnails()
-}
-
-function onThumbError(path: string) {
-  delete thumbnailUrls.value[path]
-}
-
-function setupLazyThumbnails() {
-  nextTick(() => {
-    const targets = document.querySelectorAll('.lazy-thumb-target') as NodeListOf<Element>
-    if (!targets.length) return
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          const path = entry.target.getAttribute('data-file-path')
-          if (path && !thumbnailUrls.value[path]) {
-            thumbnailUrls.value[path] = getExternalStreamUrl(path)
-          }
-          observer.unobserve(entry.target)
-        }
-      })
-    }, { rootMargin: '100px' })
-    targets.forEach((el: Element) => observer.observe(el))
-  })
 }
 
 function handleEncryptFile(file: FileItem) {
