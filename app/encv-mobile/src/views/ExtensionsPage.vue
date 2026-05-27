@@ -124,7 +124,7 @@ import {
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { Capacitor } from '@capacitor/core'
-import { isNative } from '@/plugins/GoProcess'
+import { isNative, installExtensionApk } from '@/plugins/GoProcess'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const { t } = useI18n()
@@ -206,7 +206,7 @@ async function handleInstallFromFile() {
   installError.value = ''
 
   try {
-    const result = await GoProcess.installPlugin({ apkPath })
+    const result = await installExtensionApk(apkPath)
     if (result.success) {
       const alert = await alertController.create({
         header: t('extensions.installSuccess'),

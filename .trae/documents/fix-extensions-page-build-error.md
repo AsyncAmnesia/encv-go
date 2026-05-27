@@ -14,12 +14,14 @@
 
 ## 修改方案
 
-### 修改 1：在 GoProcess.ts 添加 `installPlugin` 包装函数（推荐）
+### 修改 1：在 GoProcess.ts 添加 `installExtensionApk` 包装函数
+
+> **命名说明**：项目中 `plugin` 有多重含义（encv-go 扩展插件、Capacitor 原生插件、combo/lite 模式等），使用 `installExtensionApk` 明确语义——通过 GoProcess 安装一个 APK 作为扩展插件。
 
 在 [GoProcess.ts](file:///workspace/app/encv-mobile/src/plugins/GoProcess.ts) 中新增 export 函数，与现有模式保持一致：
 
 ```typescript
-export async function installPlugin(apkPath: string): Promise<{ success: boolean; method?: string }> {
+export async function installExtensionApk(apkPath: string): Promise<{ success: boolean; method?: string }> {
   try {
     return await GoProcess.installPlugin({ apkPath })
   } catch (e) {
@@ -37,12 +39,12 @@ const result = await GoProcess.installPlugin({ apkPath })
 ```
 改为：
 ```typescript
-const result = await installPlugin(apkPath)
+const result = await installExtensionApk(apkPath)
 ```
 
-import 行保持现状（只 import `isNative`），额外添加 `installPlugin`：
+import 行更新为：
 ```typescript
-import { isNative, installPlugin } from '@/plugins/GoProcess'
+import { isNative, installExtensionApk } from '@/plugins/GoProcess'
 ```
 
 ## 全面排查结果
