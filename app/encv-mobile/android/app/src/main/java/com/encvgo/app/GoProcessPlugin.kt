@@ -1,8 +1,7 @@
 package com.encvgo.app
 
 import android.Manifest
-import android.content.BroadcastReceiver
-import android.content.Context
+import android.app.Activity
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ActivityInfo
@@ -19,6 +18,7 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
 @CapacitorPlugin(
@@ -181,19 +181,7 @@ class GoProcessPlugin : Plugin() {
         val mimeType = call.getString("mimeType", "")
         try {
             Log.d(TAG, "openPlayer: filePath=$filePath, name=$name, mimeType=$mimeType")
-            val mainActivity = activity as? MainActivity
-            if (mainActivity == null) {
-                Log.w(TAG, "openPlayer: activity is not MainActivity, falling back to openInPlayer")
-                if (filePath.isNullOrEmpty()) {
-                    openPlayerHome(call)
-                } else {
-                    openInPlayer(call)
-                }
-                return
-            }
-            PlayerOverlayManager.getInstance().showOverlay(
-                mainActivity, filePath ?: "", name ?: "", mimeType ?: "", false
-            )
+            PlayerEntry.play(context ?: activity!!, filePath!!, name!!, mimeType!!)
             call.resolve()
         } catch (e: Exception) {
             Log.e(TAG, "openPlayer failed", e)
@@ -204,11 +192,9 @@ class GoProcessPlugin : Plugin() {
     @PluginMethod
     fun closePlayer(call: PluginCall) {
         try {
-            Log.d(TAG, "closePlayer: closing player overlay")
-            PlayerOverlayManager.getInstance().hideOverlay()
+            Log.d(TAG, "closePlayer: MPV player is standalone Activity, no-op")
             call.resolve()
         } catch (e: Exception) {
-            Log.e(TAG, "closePlayer failed", e)
             call.reject("Failed to close player: ${e.message}")
         }
     }
@@ -417,6 +403,210 @@ class GoProcessPlugin : Plugin() {
         } catch (e: Exception) {
             Log.e(TAG, "installPlugin failed", e)
             call.reject("Failed to install plugin: ${e.message}")
+        }
+    }
+
+    private companion object {
+        const val REQUEST_CODE_PLUGIN_PICK = 9001
+    }
+
+    @PluginMethod
+    fun pickAndInstallPlugin(call: PluginCall) {
+        Log.d(TAG, "pickAndInstallPlugin() called")
+        pendingCalls["pickPlugin"] = call
+        try {
+            val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                type = "application/vnd.android.package-archive"
+                addCategory(Intent.CATEGORY_OPENABLE)
+                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/vnd.android.package-archive"))
+            }
+            activity.startActivityForResult(intent, REQUEST_CODE_PLUGIN_PICK)
+        } catch (e: Exception) {
+            Log.e(TAG, "pickAndInstallPlugin failed", e)
+            pendingCalls.remove("pickPlugin")?.reject("Failed to open file picker: ${e.message}")
+        }
+    }
+
+    @PluginMethod
+    fun checkInstalledPlugins(call: PluginCall) {
+        Log.d(TAG, "checkInstalledPlugins() called")
+        val result = JSObject()
+        try {
+            val pm = try {
+                Class.forName("com.combo.core.runtime.PluginManager")
+                    .getMethod("getInstance", Context::class.java)
+                    .invoke(null, context)
+            } catch (e: Exception) {
+                Log.w(TAG, "ComboLite PluginManager not available for check", e)
+                null
+            }
+            if (pm != null) {
+                val getPluginsMethod = pm.javaClass.methods.find { method ->
+                    method.name == "getInstalledPlugins" || method.name == "getLoadedPlugins"
+                        || method.name == "getAllPlugins" || method.name == "getPluginList"
+                }
+                if (getPluginsMethod != null) {
+                    val plugins = getPluginsMethod.invoke(pm)
+                    if (plugins is Collection<*>) {
+                        plugins.forEach { p ->
+                            if (p != null) {
+                                val id = try {
+                                    p.javaClass.getMethod("getPluginId").invoke(p)?.toString()
+                                        ?: p.javaClass.getField("pluginId").get(p)?.toString()
+                                } catch (_: Exception) { null }
+                                if (!id.isNullOrEmpty()) result.put(id, true)
+                            }
+                        }
+                    } else if (plugins is Array<*>) {
+                        plugins.forEach { p ->
+                            if (p != null) {
+                                val id = try {
+                                    p.javaClass.getMethod("getPluginId").invoke(p)?.toString()
+                                        ?: p.javaClass.getField("pluginId").get(p)?.toString()
+                                } catch (_: Exception) { null }
+                                if (!id.isNullOrEmpty()) result.put(id, true)
+                            }
+                        }
+                    }
+                    Log.i(TAG, "checkInstalledPlugins via ComboLite: $result")
+                    call.resolve(result)
+                    return
+                }
+            }
+            fallbackCheckInstalled(result)
+            call.resolve(result)
+        } catch (e: Exception) {
+            Log.e(TAG, "checkInstalledPlugins failed", e)
+            call.reject("Failed to check installed plugins: ${e.message}")
+        }
+    }
+
+    private fun fallbackCheckInstalled(result: JSObject) {
+        val pluginDirs = listOf(
+            File(context.applicationInfo.dataDir, "app_plugins"),
+            File(context.filesDir, "assets/plugins"),
+            File(context.applicationInfo.dataDir, "app_plugins")
+        )
+        for (dir in pluginDirs) {
+            if (dir.exists() && dir.isDirectory) {
+                dir.listFiles()
+                    ?.filter { it.extension == "apk" && it.isFile }
+                    ?.forEach { apk ->
+                        result.put(apk.nameWithoutExtension.replace(Regex("[^a-z0-9_-]"), "-"), true)
+                    }
+            }
+        }
+        Log.i(TAG, "fallbackCheckInstalled: $result")
+    }
+
+    override fun handleOnActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.handleOnActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_CODE_PLUGIN_PICK) return
+        val call = pendingCalls.remove("pickPlugin") ?: return
+        if (resultCode != Activity.RESULT_OK || data?.data == null) {
+            call.reject("File picker cancelled or no file selected")
+            return
+        }
+        val uri = data.data!!
+        Log.d(TAG, "handleOnActivityResult: picked URI=$uri")
+        try {
+            val contentResolver = context.contentResolver
+            val cursor = contentResolver.query(uri, null, null, null, null)
+            var displayName = ""
+            if (cursor != null && cursor.moveToFirst()) {
+                val nameIndex = cursor.getColumnIndex("_display_name")
+                if (nameIndex >= 0) displayName = cursor.getString(nameIndex)
+                cursor.close()
+            }
+            if (displayName.isEmpty()) displayName = uri.lastPathSegment ?: "plugin.apk"
+            val inputStream = contentResolver.openInputStream(uri)
+            if (inputStream == null) {
+                call.reject("Cannot read selected file")
+                return
+            }
+            val tempDir = File(context.cacheDir, "plugin_install")
+            tempDir.mkdirs()
+            val tempApk = File(tempDir, displayName)
+            tempApk.outputStream().use { output -> inputStream.copyTo(output) }
+            inputStream.close()
+            installFromPath(call, tempApk.absolutePath, displayName)
+        } catch (e: Exception) {
+            Log.e(TAG, "handleOnActivityResult failed", e)
+            call.reject("Failed to process selected file: ${e.message}")
+        }
+    }
+
+    private fun installFromPath(call: PluginCall, apkPath: String, name: String) {
+        try {
+            val apkFile = File(apkPath)
+            if (!apkFile.exists()) {
+                call.reject("APK file not found after copy: $apkPath")
+                return
+            }
+            val pm = try {
+                Class.forName("com.combo.core.runtime.PluginManager")
+                    .getMethod("getInstance", Context::class.java)
+                    .invoke(null, context)
+            } catch (e: Exception) {
+                Log.w(TAG, "ComboLite PluginManager not available for install from path", e)
+                null
+            }
+            if (pm != null) {
+                val installMethod = pm.javaClass.methods.find { it.name == "installPlugin" && it.parameterCount == 1 }
+                if (installMethod != null) {
+                    installMethod.invoke(pm, apkFile)
+                    Log.i(TAG, "Plugin installed via ComboLite from picker: $name")
+                    call.resolve(JSObject().put("success", true).put("method", "combolite").put("fileName", name))
+                    return
+                }
+            }
+            val providerUri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                apkFile
+            )
+            val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                setDataAndType(providerUri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                if (context !is Activity) {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+            context.startActivity(intent)
+            Log.i(TAG, "Install intent fired from picker: $name")
+            call.resolve(JSObject().put("success", true).put("method", "intent").put("fileName", name))
+        } catch (e: Exception) {
+            Log.e(TAG, "installFromPath failed", e)
+            call.reject("Failed to install plugin: ${e.message}")
+        }
+    }
+
+    @PluginMethod
+    fun getLocalFilePath(call: PluginCall) {
+        val path = call.getString("path", "")
+        val result = JSObject()
+        try {
+            if (path.isEmpty()) {
+                result.put("path", "")
+                call.resolve(result)
+                return
+            }
+            val file = File(path)
+            if (file.exists() && file.isFile && file.canRead()) {
+                result.put("path", file.absolutePath)
+            } else {
+                val resolved = File(context.filesDir, path.removePrefix("/"))
+                if (resolved.exists() && resolved.isFile && resolved.canRead()) {
+                    result.put("path", resolved.absolutePath)
+                } else {
+                    result.put("path", "")
+                }
+            }
+            call.resolve(result)
+        } catch (e: Exception) {
+            Log.e(TAG, "getLocalFilePath failed", e)
+            result.put("path", "")
+            call.resolve(result)
         }
     }
 }

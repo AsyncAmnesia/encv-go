@@ -40,6 +40,9 @@ export interface GoProcessPlugin {
   openPlayerHome(): Promise<void>
   setScreenOrientation(options: { orientation: string }): Promise<void>
   installPlugin(options: { apkPath: string }): Promise<{ success: boolean; method?: string }>
+  pickAndInstallPlugin(): Promise<{ success: boolean; method?: string; fileName?: string }>
+  checkInstalledPlugins(): Promise<Record<string, boolean>>
+  getLocalFilePath(options: { path: string }): Promise<{ path: string }>
 }
 
 export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
@@ -99,5 +102,17 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
 
   async installPlugin(_options: { apkPath: string }): Promise<{ success: boolean; method?: string }> {
     return { success: false }
+  }
+
+  async pickAndInstallPlugin(): Promise<{ success: boolean; method?: string; fileName?: string }> {
+    return { success: false }
+  }
+
+  async checkInstalledPlugins(): Promise<Record<string, boolean>> {
+    return {}
+  }
+
+  async getLocalFilePath(_options: { path: string }): Promise<{ path: string }> {
+    return { path: '' }
   }
 }

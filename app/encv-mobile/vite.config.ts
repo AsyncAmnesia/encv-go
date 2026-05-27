@@ -18,6 +18,7 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:2025',
         changeOrigin: true,
+        timeout: 120_000,
       },
       '/health': {
         target: 'http://127.0.0.1:2025',
@@ -26,14 +27,17 @@ export default defineConfig({
       '/stream': {
         target: 'http://127.0.0.1:2025',
         changeOrigin: true,
+        timeout: 120_000,
       },
       '/decrypt': {
         target: 'http://127.0.0.1:2025',
         changeOrigin: true,
+        timeout: 120_000,
       },
       '/preview': {
         target: 'http://127.0.0.1:2025',
         changeOrigin: true,
+        timeout: 120_000,
       },
       '/ping': {
         target: 'http://127.0.0.1:2025',

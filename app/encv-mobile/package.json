@@ -9,12 +9,16 @@
     "capacitor:copy:after": "node scripts/sync-native.mjs",
     "check:kotlin": "node scripts/check-kotlin.mjs",
     "sync:android": "node scripts/sync-native.mjs",
-    "rebuild:android": "echo 'To rebuild android/ from scratch: rm -rf android && npx cap add android && npx cap sync android && npx @trapezedev/configure run trapeze.yaml --android-project android'"
+    "rebuild:android": "echo 'To rebuild android/ from scratch: rm -rf android && npx cap add android && npx cap sync android && npx @trapezedev/configure run trapeze.yaml --android-project android'",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.4",
     "@capacitor/core": "^8.3.4",
     "@capacitor/screen-orientation": "^8.0.1",
+    "@capacitor/share": "^8.0.1",
     "@capacitor/status-bar": "^8.0.2",
     "@ionic/vue": "^8.8.7",
     "@ionic/vue-router": "^8.8.7",
@@ -27,8 +31,12 @@
   "devDependencies": {
     "@capacitor/cli": "^8.3.4",
     "@vitejs/plugin-vue": "^6.0.7",
+    "@vitest/coverage-v8": "^4.1.7",
+    "@vue/test-utils": "^2.4.10",
+    "jsdom": "^29.1.1",
     "typescript": "^5.9.3",
     "vite": "^8.0.13",
+    "vitest": "^4.1.7",
     "vue-tsc": "^2.2.10"
   }
 }

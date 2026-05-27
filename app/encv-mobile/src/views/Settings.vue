@@ -401,6 +401,7 @@ import { isNative } from '@/plugins/GoProcess'
 import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus, fetchTextPreviewExts, invalidateTextExtsCache } from '@/api/encv'
 import type { IndexStats, FFmpegStatus } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
+import { PLAY_MODE } from '@/constants/player'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const router = useRouter()
@@ -414,12 +415,8 @@ const configLoaded = ref(false)
 const indexStats = ref<IndexStats | null>(null)
 const engineStatus = ref<FFmpegStatus | null>(null)
 
-const videoPlayerMode = ref(localStorage.getItem('encv_player_video') || 'artplayer')
-
-if (videoPlayerMode.value === 'mpv') {
-  videoPlayerMode.value = 'mpv-plugin'
-}
-const audioPlayerMode = ref(localStorage.getItem('encv_player_audio') || 'mpv')
+const videoPlayerMode = ref(localStorage.getItem('encv_player_video') || PLAY_MODE.ARTPLAYER)
+const audioPlayerMode = ref(localStorage.getItem('encv_player_audio') || PLAY_MODE.MPV_PLUGIN)
 const screenOrientation = ref(localStorage.getItem('encv_screen_orientation') || 'auto')
 const customTextExts = ref('')
 const builtInTextExtsCount = ref(0)
@@ -600,11 +597,26 @@ function getMapEntries(path: string[]): [string, Record<string, unknown>][] {
 
 function handleInput(path: string[], field: FieldDef, event: CustomEvent) {
   const val = (event.target as HTMLInputElement).value
+  if (path.length >= 2 && path[0] === 'webdav' && path[1] === 'root' && val) {
+    const err = validateWebdavRoute(val)
+    if (err) {
+      showToast({ message: err, duration: 3000, color: 'danger' })
+      return
+    }
+  }
   if (field.type === 'integer') {
     setFieldValue(path, val ? Number(val) : 0)
   } else {
     setFieldValue(path, val)
   }
+}
+
+function validateWebdavRoute(val: string): string | null {
+  const t = val.trim()
+  if (!t) return null
+  if (t === '/' || t === '//') return "WebDAV 路由不能为 \"/\"，这会导致服务崩溃"
+  if (!t.startsWith('/')) return 'WebDAV 路由必须以 "/" 开头'
+  return null
 }
 
 async function handleBrowsePath(path: string[], field: FieldDef) {

@@ -122,6 +122,27 @@
           </ion-label>
         </ion-item>
       </ion-list>
+
+      <ion-list>
+        <ion-list-header>
+          <ion-label>{{ t('settings.thumbCache') }}</ion-label>
+        </ion-list-header>
+
+        <ion-item>
+          <ion-icon :icon="image" slot="start" color="primary"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.thumbCacheEntries') }}</h3>
+            <p>{{ thumbCacheSize }} / {{ THUMB_CACHE_MAX }}</p>
+          </ion-label>
+        </ion-item>
+
+        <ion-item button @click="handleClearThumbCache">
+          <ion-icon :icon="trash" slot="start" color="danger"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.clearThumbCache') }}</h3>
+          </ion-label>
+        </ion-item>
+      </ion-list>
     </ion-content>
   </ion-page>
 </template>
@@ -156,6 +177,7 @@ import {
   search,
   server,
   lockClosed,
+  image,
 } from 'ionicons/icons'
 import {
   getIndexStats,
@@ -166,10 +188,12 @@ import {
 import type { IndexStats } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
+import { getThumbCacheSize, clearThumbCache, THUMB_CACHE_MAX } from '@/composables/useThumbnailCache'
 
 const { t } = useI18n()
 const stats = ref<IndexStats | null>(null)
 const searchCacheSize = ref(0)
+const thumbCacheSize = ref(0)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 async function loadStats() {
@@ -236,9 +260,33 @@ function handleClearSearchCache() {
   searchCacheSize.value = 0
 }
 
+function updateThumbCacheSize() {
+  thumbCacheSize.value = getThumbCacheSize()
+}
+
+async function handleClearThumbCache() {
+  const alert = await alertController.create({
+    header: t('settings.clearThumbCache'),
+    message: t('settings.clearIndexConfirm'),
+    buttons: [
+      { text: t('files.cancelSelect'), role: 'cancel' },
+      {
+        text: t('settings.clearThumbCache'),
+        role: 'destructive',
+        handler: () => {
+          clearThumbCache()
+          thumbCacheSize.value = 0
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
 onMounted(() => {
   loadStats()
   updateSearchCacheSize()
+  updateThumbCacheSize()
   pollTimer = setInterval(() => {
     if (stats.value?.isIndexing) {
       loadStats()

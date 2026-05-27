@@ -27,14 +27,23 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.VolumeMute
+import androidx.compose.material.icons.outlined.Subtitles
+import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -54,6 +63,7 @@ fun MpvControls(
     isLocked: Boolean,
     isFullscreen: Boolean,
     playbackSpeed: Float,
+    volume: Float = 1f,
     showControls: Boolean = true,
     onPlayPause: () -> Unit,
     onSeek: (Long) -> Unit,
@@ -61,6 +71,9 @@ fun MpvControls(
     onToggleLock: () -> Unit,
     onChangeSpeed: () -> Unit,
     onToggleFullscreen: () -> Unit,
+    onVolumeChange: (Float) -> Unit,
+    onToggleSubtitle: () -> Unit,
+    onCycleAudio: () -> Unit,
     onRetry: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -92,11 +105,13 @@ fun MpvControls(
             progress = progress,
             isPlaying = isPlaying,
             playbackSpeed = playbackSpeed,
+            volume = volume,
             showControls = showControls,
             onPlayPause = onPlayPause,
             onSeek = { onSeek(it.toLong()) },
             onSeekDelta = onSeekDelta,
             onChangeSpeed = onChangeSpeed,
+            onVolumeChange = onVolumeChange,
             onBack = onBack
         )
         else -> VideoPlaybackLayout(
@@ -108,6 +123,7 @@ fun MpvControls(
             isLocked = isLocked,
             isFullscreen = isFullscreen,
             playbackSpeed = playbackSpeed,
+            volume = volume,
             showControls = showControls,
             onPlayPause = onPlayPause,
             onSeek = { onSeek(it.toLong()) },
@@ -115,6 +131,9 @@ fun MpvControls(
             onToggleLock = onToggleLock,
             onChangeSpeed = onChangeSpeed,
             onToggleFullscreen = onToggleFullscreen,
+            onVolumeChange = onVolumeChange,
+            onToggleSubtitle = onToggleSubtitle,
+            onCycleAudio = onCycleAudio,
             onBack = onBack
         )
     }
@@ -218,9 +237,13 @@ private fun BottomBar(
     duration: Long,
     playbackSpeed: Float,
     isFullscreen: Boolean,
+    volume: Float,
     onSeek: (Float) -> Unit,
     onChangeSpeed: () -> Unit,
-    onToggleFullscreen: () -> Unit
+    onToggleFullscreen: () -> Unit,
+    onVolumeChange: (Float) -> Unit,
+    onToggleSubtitle: () -> Unit,
+    onCycleAudio: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f))))) {
         MpvProgressBar(
@@ -238,6 +261,21 @@ private fun BottomBar(
         ) {
             SpeedChip(speed = playbackSpeed, onClick = onChangeSpeed)
             Spacer(Modifier.weight(1f))
+            VolumeIcon(volume = volume, onClick = { onVolumeChange(if (volume > 0f) 0f else 1f) })
+            IconButton(onClick = onToggleSubtitle, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    imageVector = Icons.Outlined.Subtitles,
+                    contentDescription = "Subtitle",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = onCycleAudio, modifier = Modifier.size(36.dp)) {
+                Icon(
+                    imageVector = Icons.Outlined.MusicNote,
+                    contentDescription = "Audio Track",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             IconButton(onClick = onToggleFullscreen) {
                 Icon(
                     imageVector = if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
@@ -246,6 +284,56 @@ private fun BottomBar(
                 )
             }
         }
+        VolumeSliderRow(volume = volume, onVolumeChange = onVolumeChange)
+    }
+}
+
+@Composable
+private fun VolumeIcon(volume: Float, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) {
+        Icon(
+            imageVector = if (volume > 0f) Icons.Default.VolumeUp else Icons.Default.VolumeMute,
+            contentDescription = if (volume > 0f) "Mute" else "Unmute",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun VolumeSliderRow(volume: Float, onVolumeChange: (Float) -> Unit) {
+    var sliderVolume by remember { mutableStateOf(volume) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = if (sliderVolume > 0f) Icons.Default.VolumeUp else Icons.Default.VolumeMute,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            modifier = Modifier.size(16.dp)
+        )
+        Slider(
+            value = sliderVolume,
+            onValueChange = { sliderVolume = it },
+            onValueChangeFinished = { onVolumeChange(sliderVolume) },
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 8.dp),
+            valueRange = 0f..1f,
+            colors = SliderDefaults.colors(
+                thumbColor = MaterialTheme.colorScheme.primary,
+                activeTrackColor = MaterialTheme.colorScheme.primary,
+                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        )
+        Text(
+            text = "${(sliderVolume * 100).toInt()}%",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            modifier = Modifier.width(32.dp)
+        )
     }
 }
 
@@ -404,11 +492,13 @@ private fun AudioOnlyLayout(
     progress: Float,
     isPlaying: Boolean,
     playbackSpeed: Float,
+    volume: Float,
     showControls: Boolean,
     onPlayPause: () -> Unit,
     onSeek: (Long) -> Unit,
     onSeekDelta: (Long) -> Unit,
     onChangeSpeed: () -> Unit,
+    onVolumeChange: (Float) -> Unit,
     onBack: () -> Unit
 ) {
     val alpha by animateFloatAsState(targetValue = if (showControls) 1f else 0.3f, label = "audioAlpha")
@@ -481,10 +571,14 @@ private fun AudioOnlyLayout(
                 SeekDeltaButton(delta = "+10") { onSeekDelta(10_000L) }
                 Spacer(Modifier.width(24.dp))
                 SpeedChip(speed = playbackSpeed, onClick = onChangeSpeed)
+                Spacer(Modifier.width(24.dp))
+                VolumeIcon(volume = volume, onClick = { onVolumeChange(if (volume > 0f) 0f else 1f) })
             }
             Spacer(Modifier.windowInsetsPadding(WindowInsets.navigationBars))
         }
     }
+
+    VolumeSliderRow(volume = volume, onVolumeChange = onVolumeChange)
 }
 
 @Composable
@@ -504,6 +598,10 @@ private fun VideoPlaybackLayout(
     onToggleLock: () -> Unit,
     onChangeSpeed: () -> Unit,
     onToggleFullscreen: () -> Unit,
+    volume: Float = 1f,
+    onVolumeChange: (Float) -> Unit,
+    onToggleSubtitle: () -> Unit,
+    onCycleAudio: () -> Unit,
     onBack: () -> Unit
 ) {
     val controlsAlpha by animateFloatAsState(
@@ -544,15 +642,19 @@ private fun VideoPlaybackLayout(
             }
             Spacer(Modifier.weight(1f))
             BottomBar(
-                progress = progress,
-                currentPosition = currentPosition,
-                duration = duration,
-                playbackSpeed = playbackSpeed,
-                isFullscreen = isFullscreen,
-                onSeek = { onSeek((it * duration).toLong()) },
-                onChangeSpeed = onChangeSpeed,
-                onToggleFullscreen = onToggleFullscreen
-            )
+            progress = progress,
+            currentPosition = currentPosition,
+            duration = duration,
+            playbackSpeed = playbackSpeed,
+            isFullscreen = isFullscreen,
+            volume = volume,
+            onSeek = { onSeek((it * duration).toLong()) },
+            onChangeSpeed = onChangeSpeed,
+            onToggleFullscreen = onToggleFullscreen,
+            onVolumeChange = onVolumeChange,
+            onToggleSubtitle = onToggleSubtitle,
+            onCycleAudio = onCycleAudio
+        )
         }
     }
 }
