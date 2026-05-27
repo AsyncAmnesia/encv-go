@@ -32,12 +32,6 @@
           @ionInput="handleSearchInput"
           @ionClear="handleSearchClear"
         ></ion-searchbar>
-        <div v-if="!searchQuery" class="sort-btn-wrapper">
-          <ion-button fill="clear" size="small" @click="cycleSort">
-            <ion-icon :icon="swapVertical" slot="start"></ion-icon>
-            {{ sortLabel }}
-          </ion-button>
-        </div>
         <ion-toggle
           v-if="searchQuery"
           slot="end"
@@ -121,28 +115,96 @@
       </template>
 
       <template v-else>
-        <div v-if="selectedPlugin">
-          <ion-toolbar>
-            <ion-buttons slot="start">
-              <ion-back-button @click="exitPluginMode()" />
-            </ion-buttons>
-            <ion-title>{{ selectedPlugin.name }} 文件</ion-title>
-          </ion-toolbar>
-          <div v-if="!pluginLoaded" class="loading-container">
-            <ion-spinner name="crescent"></ion-spinner>
-            <p>{{ t('files.loading') }}</p>
-          </div>
-          <template v-else>
+        <div v-if="selectedPlugin" class="plugin-view">
+            <div class="plugin-header">
+              <div class="plugin-header-top">
+                <ion-button fill="clear" size="small" class="plugin-back-btn" @click="exitPluginMode()">
+                  <ion-icon :icon="arrowBack" slot="icon-only"></ion-icon>
+                </ion-button>
+                <span class="plugin-title">{{ selectedPlugin?.name }} 文件</span>
+                <ion-segment v-model="pluginTab" value="source" class="plugin-segment">
+                  <ion-segment-button value="source">未加密</ion-segment-button>
+                  <ion-segment-button value="container">已加密</ion-segment-button>
+                </ion-segment>
+              </div>
+              <ion-item button detail @click="showPluginFilters = !showPluginFilters" class="filter-toggle-item">
+                <ion-icon :icon="filterOutline" slot="start"></ion-icon>
+                <ion-label>筛选与排序</ion-label>
+                <ion-badge v-if="activeFilterCount > 0" slot="end" color="primary">{{ activeFilterCount }}</ion-badge>
+                <ion-badge slot="end" color="medium">{{ pluginSortLabel }}</ion-badge>
+              </ion-item>
+            </div>
+            <div v-if="!pluginLoaded" class="loading-container">
+              <ion-spinner name="crescent"></ion-spinner>
+              <p>{{ t('files.loading') }}</p>
+            </div>
+            <template v-else>
             <div v-if="pluginFiles.length === 0" class="empty-state">
               <ion-icon :icon="folderOpen" class="empty-icon"></ion-icon>
               <h3>{{ t('files.emptyDir') }}</h3>
-              <p>{{ t('settings.emptyPluginDesc', { name: selectedPlugin?.name }) || '该类型下暂无文件' }}</p>
+              <p>{{ t('settings.emptyPluginDesc', { name: selectedPlugin?.name ?? '' }) || '该类型下暂无文件' }}</p>
             </div>
             <template v-else>
-            <ion-segment v-model="pluginTab" value="source">
-              <ion-segment-button value="source">未加密</ion-segment-button>
-              <ion-segment-button value="container">已加密</ion-segment-button>
-            </ion-segment>
+            <ion-list v-if="showPluginFilters" :inset="true">
+              <ion-item>
+                <ion-label position="stacked">大小范围</ion-label>
+                <div style="display:flex;gap:8px;align-items:center;width:100%">
+                  <ion-input type="number" placeholder="最小"
+                    :value="sizeFilterMin !== null ? String(sizeFilterMin) : ''"
+                    @ionInput="sizeFilterMin = $event.detail.value ? Number($event.detail.value) : null">
+                  </ion-input>
+                  <span>~</span>
+                  <ion-input type="number" placeholder="最大"
+                    :value="sizeFilterMax !== null ? String(sizeFilterMax) : ''"
+                    @ionInput="sizeFilterMax = $event.detail.value ? Number($event.detail.value) : null">
+                  </ion-input>
+                  <ion-button fill="clear" size="small" @click="sizeFilterMin=null;sizeFilterMax=null">
+                    <ion-icon :icon="closeCircleOutline" slot="icon-only"></ion-icon>
+                  </ion-button>
+                </div>
+                <div class="filter-chips">
+                  <ion-chip v-for="p in SIZE_PRESETS" :key="p.label" :button="true" outline @click.stop="applySizePreset(p)">{{ p.label }}</ion-chip>
+                </div>
+              </ion-item>
+              <ion-item>
+                <ion-label position="stacked">修改时间</ion-label>
+                <div style="display:flex;gap:8px;align-items:center;width:100%">
+                  <ion-input type="date" placeholder="起始"
+                    :value="timeFilterFrom || ''"
+                    @ionInput="timeFilterFrom = ($event.detail.value as string) || null">
+                  </ion-input>
+                  <span>~</span>
+                  <ion-input type="date" placeholder="结束"
+                    :value="timeFilterTo || ''"
+                    @ionInput="timeFilterTo = ($event.detail.value as string) || null">
+                  </ion-input>
+                  <ion-button fill="clear" size="small" @click="timeFilterFrom=null;timeFilterTo=null">
+                    <ion-icon :icon="closeCircleOutline" slot="icon-only"></ion-icon>
+                  </ion-button>
+                </div>
+                <div class="filter-chips">
+                  <ion-chip v-for="p in TIME_PRESETS" :key="p.label" :button="true" outline @click.stop="applyTimePreset(p)">{{ p.label }}</ion-chip>
+                </div>
+              </ion-item>
+              <ion-item>
+                <ion-label position="stacked">排序方式</ion-label>
+                <div class="filter-chips">
+                  <ion-chip v-for="s in ['name', 'size', 'time'] as const" :key="s"
+                    :button="true" :outline="pluginSortBy !== s" :color="pluginSortBy === s ? 'primary' : undefined"
+                    @click.stop="pluginSortBy = s">
+                    {{ s === 'name' ? '名称' : s === 'size' ? '大小' : '时间' }}
+                  </ion-chip>
+                </div>
+                <div class="filter-chips" style="margin-top:4px">
+                  <ion-chip :button="true" :outline="!!pluginSortDesc" :color="!pluginSortDesc ? 'primary' : undefined" @click.stop="pluginSortDesc = false">升序 ↑</ion-chip>
+                  <ion-chip :button="true" :outline="!pluginSortDesc" :color="!!pluginSortDesc ? 'primary' : undefined" @click.stop="pluginSortDesc = true">降序 ↓</ion-chip>
+                </div>
+              </ion-item>
+              <ion-item button @click="clearAllPluginFilters">
+                <ion-icon :icon="closeCircleOutline" slot="start" color="danger"></ion-icon>
+                <ion-label color="danger">清除所有筛选</ion-label>
+              </ion-item>
+            </ion-list>
             <ion-list :inset="true">
             <ion-item v-for="file in filteredPluginFiles" :key="file.path" button @click="handleFileClick(file)" v-longpress="() => handleLongPress(file)">
               <div slot="start" class="file-thumbnail-slot lazy-thumb-target" :data-file-path="file.path">
@@ -164,8 +226,8 @@
                 <h2>{{ file.name }}</h2>
                 <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified"> · {{ formatDateTime(file.modified) }}</span></p>
                 <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
-                <div v-if="!file.isDirectory && getFileTags(file.path).length > 0" class="file-tag-chips">
-                  <ion-chip v-for="tag in getFileTags(file.path)" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
+                <div v-if="!file.isDirectory && file._tags && file._tags.length > 0" class="file-tag-chips">
+                  <ion-chip v-for="tag in file._tags" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
                 </div>
               </ion-label>
               <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
@@ -180,7 +242,31 @@
           </template>
         </div>
 
-        <ion-list v-else>
+        <div v-if="!selectedPlugin && !searchQuery" class="main-sort-bar">
+          <ion-item button detail @click="showMainSort = !showMainSort">
+            <ion-icon :icon="swapVerticalOutline" slot="start"></ion-icon>
+            <ion-label>排序</ion-label>
+            <ion-badge slot="end" color="medium">{{ mainSortLabel }}</ion-badge>
+          </ion-item>
+          <ion-list v-if="showMainSort" :inset="true">
+            <ion-item>
+              <ion-label position="stacked">排序方式</ion-label>
+              <div class="filter-chips">
+                <ion-chip v-for="s in ['name', 'size', 'time'] as const" :key="s"
+                  :button="true" :outline="sortBy !== s" :color="sortBy === s ? 'primary' : undefined"
+                  @click.stop="sortBy = s">
+                  {{ s === 'name' ? '名称' : s === 'size' ? '大小' : '时间' }}
+                </ion-chip>
+              </div>
+              <div class="filter-chips" style="margin-top:4px">
+                <ion-chip :button="true" :outline="!!sortDesc" :color="!sortDesc ? 'primary' : undefined" @click.stop="sortDesc = false">升序 ↑</ion-chip>
+                <ion-chip :button="true" :outline="!sortDesc" :color="!!sortDesc ? 'primary' : undefined" @click.stop="sortDesc = true">降序 ↓</ion-chip>
+              </div>
+            </ion-item>
+          </ion-list>
+        </div>
+
+        <ion-list>
           <ion-item
             v-for="file in displayFiles"
             :key="file.path"
@@ -207,8 +293,8 @@
               <p v-if="searchQuery && !file.isDirectory" class="search-path">{{ file.path }}</p>
               <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified && !searchQuery"> · {{ formatDateTime(file.modified) }}</span></p>
               <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
-              <div v-if="!file.isDirectory && !searchQuery && getFileTags(file.path).length > 0" class="file-tag-chips">
-                <ion-chip v-for="tag in getFileTags(file.path)" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
+              <div v-if="!file.isDirectory && !searchQuery && file._tags && file._tags.length > 0" class="file-tag-chips">
+                <ion-chip v-for="tag in file._tags" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
               </div>
             </ion-label>
             <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
@@ -270,6 +356,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { onIonViewWillEnter } from '@ionic/vue'
 import {
   IonPage,
   IonHeader,
@@ -296,7 +383,6 @@ import {
   IonSegment,
   IonSegmentButton,
   IonListHeader,
-  IonBackButton,
   IonChip,
   IonModal,
   IonInput,
@@ -321,10 +407,14 @@ import {
   arrowForwardOutline,
   shareOutline,
   closeCircle,
-  swapVertical,
+  closeCircleOutline,
+  filterOutline,
+  swapVerticalOutline,
 } from 'ionicons/icons'
 import {
   listFiles,
+  listFilesStream,
+  listPluginFilesStream,
   searchFiles,
   formatFileSize,
   getFileCategory,
@@ -396,7 +486,13 @@ function playMedia(file: FileItem, category: string) {
 
 const { t } = useI18n()
 const { thumbnailUrls, setupLazyThumbnails, onThumbError } = useThumbnailCache()
-const { sortBy, sortDesc, sortLabel, cycleSort } = useFileListSort()
+const { sortBy, sortDesc } = useFileListSort()
+const showMainSort = ref(false)
+
+const mainSortLabel = computed(() => {
+  const map: Record<string, string> = { name: '名称', size: '大小', time: '时间' }
+  return (map[sortBy.value] || '名称') + (sortDesc.value ? '↓' : '↑')
+})
 const router = useRouter()
 const serverOnline = ref(false)
 const noPermission = ref(false)
@@ -441,8 +537,9 @@ const pathSegments = computed(() => {
 })
 
 const displayFiles = computed(() => {
-  if (searchResults.value !== null) return searchResults.value
-  return sortedFiles.value
+  const raw = searchResults.value !== null ? searchResults.value : sortedFiles.value
+  const tagMap = fileTagMap.value
+  return raw.map(f => ({ ...f, _tags: tagMap[f.path] || [] }))
 })
 
 const sortedFiles = computed(() => {
@@ -452,22 +549,32 @@ const sortedFiles = computed(() => {
 let loadGeneration = 0
 
 async function loadFiles() {
-  console.info('[Files] Loading files, path:', currentPath.value)
+  console.info('[Files] Loading files (stream), path:', currentPath.value)
   const gen = ++loadGeneration
   loading.value = true
   connecting.value = false
   noPermission.value = false
+  files.value = []
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (gen !== loadGeneration) return
 
     try {
-      files.value = await listFiles(currentPath.value)
+      const result = await listFilesStream(currentPath.value, (file) => {
+        if (gen !== loadGeneration) return
+        files.value.push(file)
+        if (files.value.length === 1 && loading.value) {
+          loading.value = false
+          console.info('[Files] First item arrived, UI unlocked')
+        }
+      })
+
       serverOnline.value = true
       noPermission.value = false
       loading.value = false
       connecting.value = false
-      console.info('[Files] Loaded', files.value.length, 'files')
+      console.info('[Files] Stream complete, total:', result.files.length, 'files')
+
       loadFileTagsForCurrentDir()
       return
     } catch (error) {
@@ -478,7 +585,6 @@ async function loadFiles() {
         connecting.value = false
         return
       }
-
       if (error instanceof NotFoundError) {
         serverOnline.value = true
         loading.value = false
@@ -489,7 +595,6 @@ async function loadFiles() {
         }
         return
       }
-
       if (attempt < MAX_RETRIES) {
         connecting.value = true
         await new Promise(r => setTimeout(r, RETRY_DELAY))
@@ -852,10 +957,6 @@ async function handleRemoveTag(tag: string) {
   } catch (e) { showToast({ message: '移除标签失败' }) }
 }
 
-function getFileTags(filePath: string): string[] {
-  return fileTagMap.value[filePath] || []
-}
-
 async function loadFileTagsForCurrentDir() {
   try {
     const allTags = await fetchTags()
@@ -950,15 +1051,17 @@ function getPluginIcon(name: string): string {
   return icons[name] || 'cube-outline'
 }
 
-async function searchPluginFiles(plugin: PluginMeta): Promise<FileItem[]> {
-  const results: FileItem[] = []
-  for (const ext of plugin.supportedExtensions) {
-    try {
-      const found = await searchFiles(currentPath.value, `.${ext}`, true)
-      results.push(...found)
-    } catch {}
-  }
-  return results
+async function searchPluginFiles(
+  plugin: PluginMeta,
+  onItem?: (file: FileItem) => void
+): Promise<FileItem[]> {
+  if (plugin.supportedExtensions.length === 0) return []
+  const result = await listPluginFilesStream(
+    currentPath.value,
+    plugin.supportedExtensions,
+    (file) => { onItem?.(file) }
+  )
+  return result.files
 }
 
 async function handleTagFilter(tagName: string) {
@@ -976,6 +1079,75 @@ async function handleTagFilter(tagName: string) {
 const pluginTab = ref<'source' | 'container'>('source')
 const pluginFiles = ref<FileItem[]>([])
 const pluginLoaded = ref(false)
+let pluginLoadGeneration = 0
+
+const sizeFilterMin = ref<number | null>(null)
+const sizeFilterMax = ref<number | null>(null)
+const timeFilterFrom = ref<string | null>(null)
+const timeFilterTo = ref<string | null>(null)
+const showPluginFilters = ref(false)
+
+const pluginSortBy = ref<'name' | 'size' | 'time'>('name')
+const pluginSortDesc = ref(false)
+
+const pluginSortLabel = computed(() => {
+  const map: Record<string, string> = { name: '名称', size: '大小', time: '时间' }
+  return (map[pluginSortBy.value] || '名称') + (pluginSortDesc.value ? '↓' : '↑')
+})
+
+const SIZE_PRESETS = [
+  { label: '< 1MB', max: 1024 * 1024 },
+  { label: '1MB - 10MB', min: 1024 * 1024, max: 10 * 1024 * 1024 },
+  { label: '10MB - 100MB', min: 10 * 1024 * 1024, max: 100 * 1024 * 1024 },
+  { label: '> 100MB', min: 100 * 1024 * 1024 },
+] as const
+const TIME_PRESETS = [
+  { label: '今天', days: 0 },
+  { label: '近 3 天', days: 3 },
+  { label: '近 7 天', days: 7 },
+  { label: '近 30 天', days: 30 },
+] as const
+
+const activeFilterCount = computed(() => {
+  let c = 0
+  if (sizeFilterMin.value !== null) c++
+  if (sizeFilterMax.value !== null) c++
+  if (timeFilterFrom.value !== null) c++
+  if (timeFilterTo.value !== null) c++
+  return c
+})
+
+function applySizePreset(preset: typeof SIZE_PRESETS[number]) {
+  sizeFilterMin.value = 'min' in preset ? (preset as { min?: number }).min ?? null : null
+  sizeFilterMax.value = 'max' in preset ? (preset as { max?: number }).max ?? null : null
+}
+function applyTimePreset(preset: typeof TIME_PRESETS[number]) {
+  const now = new Date()
+  const from = new Date(now)
+  from.setDate(from.getDate() - preset.days)
+  from.setHours(0, 0, 0, 0)
+  timeFilterFrom.value = formatDateInput(from)
+  if (preset.days === 0) {
+    timeFilterTo.value = formatDateInput(now)
+  } else {
+    timeFilterTo.value = null
+  }
+}
+
+function formatDateInput(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+function clearAllPluginFilters() {
+  sizeFilterMin.value = null
+  sizeFilterMax.value = null
+  timeFilterFrom.value = null
+  timeFilterTo.value = null
+  pluginSortBy.value = 'name'
+  pluginSortDesc.value = false
+}
 const filteredPluginFiles = computed(() => {
   if (!selectedPlugin.value) return []
   let list: FileItem[]
@@ -988,27 +1160,59 @@ const filteredPluginFiles = computed(() => {
   if (query) {
     list = list.filter(f => f.name.toLowerCase().includes(query))
   }
+  if (sizeFilterMin.value !== null) {
+    list = list.filter(f => (f.size || 0) >= sizeFilterMin.value!)
+  }
+  if (sizeFilterMax.value !== null) {
+    list = list.filter(f => (f.size || 0) <= sizeFilterMax.value!)
+  }
+  if (timeFilterFrom.value !== null) {
+    const from = new Date(timeFilterFrom.value).getTime()
+    list = list.filter(f => (f.modified ? new Date(f.modified).getTime() : 0) >= from)
+  }
+  if (timeFilterTo.value !== null) {
+    const to = new Date(timeFilterTo.value).getTime()
+    list = list.filter(f => (f.modified ? new Date(f.modified).getTime() : 0) <= to)
+  }
   list.sort((a, b) => {
     if (a.isDirectory && !b.isDirectory) return -1
     if (!a.isDirectory && b.isDirectory) return 1
     let cmp = 0
-    switch (sortBy.value) {
+    switch (pluginSortBy.value) {
       case 'name': cmp = a.name.localeCompare(b.name); break
       case 'size': cmp = (a.size || 0) - (b.size || 0); break
       case 'time': cmp = (Number(a.modified) || 0) - (Number(b.modified) || 0); break
     }
-    return sortDesc.value ? -cmp : cmp
+    return pluginSortDesc.value ? -cmp : cmp
   })
-  return list
+  const tagMap = fileTagMap.value
+  return list.map(f => ({ ...f, _tags: tagMap[f.path] || [] }))
 })
 
 watch(selectedPlugin, async (plugin) => {
   if (plugin) {
+    const gen = ++pluginLoadGeneration
     pluginTab.value = 'source'
     pluginLoaded.value = false
-    pluginFiles.value = await searchPluginFiles(plugin)
-    pluginLoaded.value = true
-    setupLazyThumbnails()
+    pluginFiles.value = []
+    console.info('[Files] Loading plugin files (stream):', plugin.name)
+    try {
+      const results = await searchPluginFiles(plugin, (file) => {
+        if (gen !== pluginLoadGeneration) return
+        pluginFiles.value.push(file)
+        if (pluginFiles.value.length === 1 && !pluginLoaded.value) {
+          console.info('[Files] First plugin item arrived, UI unlocked')
+        }
+      })
+      if (gen !== pluginLoadGeneration) return
+      pluginFiles.value = results
+    } catch (e) {
+      console.error('[Files] Plugin stream load failed:', e)
+    }
+    if (gen === pluginLoadGeneration) {
+      pluginLoaded.value = true
+      setupLazyThumbnails()
+    }
   }
 })
 
@@ -1024,6 +1228,12 @@ onMounted(() => {
   loadTags()
   eventBus.on('file:change', onFileChange)
   window.addEventListener('encv:backend-ready', onBackendReadyWindow as EventListener)
+})
+
+onIonViewWillEnter(() => {
+  if (files.value.length === 0 && !loading.value && !connecting.value) {
+    loadFiles()
+  }
 })
 
 onUnmounted(() => {
@@ -1171,14 +1381,69 @@ function onBackendReadyWindow(event: Event) {
 .thumb-fallback {
   opacity: 0.4;
 }
-.sort-btn-wrapper {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 16px 4px;
+ion-item {
+  contain: layout style;
 }
-.sort-btn-wrapper ion-button {
+.file-tag-chips {
+  contain: content;
+}
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.filter-chips ion-chip {
+  font-size: 12px;
   --padding-start: 8px;
   --padding-end: 8px;
-  font-size: 13px;
-  --color: var(--ion-color-medium);
+  cursor: pointer;
+}
+.plugin-header {
+  padding: 0 4px;
+}
+.plugin-header-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px 4px;
+}
+.plugin-back-btn {
+  --padding-start: 4px;
+  --padding-end: 4px;
+  --padding-top: 4px;
+  --padding-bottom: 4px;
+  min-width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+.plugin-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ion-color-dark);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+  min-width: 0;
+}
+.plugin-segment {
+  flex-shrink: 0;
+  --segment-height: 28px;
+  margin: 0;
+}
+.plugin-segment ion-segment-button {
+  --padding-start: 10px;
+  --padding-end: 10px;
+  font-size: 12px;
+  min-height: 28px;
+  line-height: 1;
+}
+.filter-toggle-item {
+  --padding-start: 12px;
+  --padding-end: 12px;
+  --min-height: 40px;
+}
+.main-sort-bar {
+  padding: 0 4px;
 }</style>

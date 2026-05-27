@@ -22,6 +22,7 @@
     "@capacitor/status-bar": "^8.0.2",
     "@ionic/vue": "^8.8.7",
     "@ionic/vue-router": "^8.8.7",
+    "@tanstack/vue-virtual": "^3.13.26",
     "artplayer": "^5.4.0",
     "ionicons": "^8.0.13",
     "vconsole": "^3.15.1",

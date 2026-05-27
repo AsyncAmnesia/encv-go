@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   listFiles,
+  listFilesStream,
   searchFiles,
   fetchPlugins,
   fetchTags,
@@ -106,5 +107,135 @@ describe('API Mock Tests', () => {
       expect(url).toContain('/api/stream/external')
       expect(url).toContain('video.mp4')
     })
+  })
+
+  describe('listFilesStream', () => {
+    it('streams files one by one via SSE', async () => {
+      const mockFiles = [
+        { name: 'a.txt', path: '/a.txt', isDirectory: false, size: 100, modified: '2026-01-01' },
+        { name: 'b.mp4', path: '/b.mp4', isDirectory: false, size: 5000, modified: '2026-01-02' },
+        { name: 'c_dir', path: '/c_dir', isDirectory: true },
+      ]
+
+      const receivedFiles: any[] = []
+
+      // 构造 SSE 响应流
+      const sseData = mockFiles
+        .map(f => `data: ${JSON.stringify(f)}\n\n`)
+        .join('') + 'data: [DONE]\n\n'
+
+      fetchSpy.mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          body: new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(sseData))
+              controller.close()
+            }
+          })
+        } as Response)
+      )
+
+      const result = await listFilesStream('/', (file) => {
+        receivedFiles.push(file)
+      })
+
+      expect(result.files).toEqual(mockFiles)
+      expect(receivedFiles).toEqual(mockFiles)
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('handles empty directory stream', async () => {
+      const received: any[] = []
+
+      fetchSpy.mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          body: new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))
+              controller.close()
+            }
+          })
+        } as Response)
+      )
+
+      const result = await listFilesStream('/', (f) => received.push(f))
+      expect(result.files).toEqual([])
+      expect(received).toEqual([])
+    })
+
+    it('throws PermissionDeniedError on 403', async () => {
+      fetchSpy.mockImplementation(mockFetch({ code: 'PERMISSION_DENIED', error: 'Forbidden' }, 403, false))
+
+      await expect(listFilesStream('/', () => {})).rejects.toThrow(PermissionDeniedError)
+    })
+
+    it('throws NotFoundError on 404', async () => {
+      fetchSpy.mockImplementation(mockFetch({ code: 'NOT_FOUND', error: 'Not found' }, 404, false))
+
+      await expect(listFilesStream('/missing', () => {})).rejects.toThrow(NotFoundError)
+    })
+
+    it('handles malformed JSON gracefully (skips bad entries)', async () => {
+      const received: any[] = []
+      const goodFile = { name: 'good.txt', path: '/good.txt', isDirectory: false, size: 50, modified: '2026-01-01' }
+
+      const sseData = [
+        'data: {broken json\n\n',
+        `data: ${JSON.stringify(goodFile)}\n\n`,
+        'data: not-json-at-all\n\n',
+        'data: [DONE]\n\n',
+      ].join('')
+
+      fetchSpy.mockImplementation(() =>
+        Promise.resolve({
+          ok: true,
+          body: new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(sseData))
+              controller.close()
+            }
+          })
+        } as Response)
+      )
+
+      const result = await listFilesStream('/', (f) => received.push(f))
+      expect(received).toEqual([goodFile])
+      expect(result.files).toEqual([goodFile])
+    })
+
+    it('handles chunked SSE data (split across reads)', async () => {
+    const goodFile = { name: 'chunked.bin', path: '/chunked.bin', isDirectory: false, size: 999, modified: '2026-01-01' }
+    const fullData = `data: ${JSON.stringify(goodFile)}\n\ndata: [DONE]\n\n`
+    const encoder = new TextEncoder()
+    const encoded = encoder.encode(fullData)
+
+    const mid = Math.floor(encoded.length / 2)
+    const chunk1 = encoded.slice(0, mid)
+    const chunk2 = encoded.slice(mid)
+
+    let readCount = 0
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        body: new ReadableStream({
+          pull(controller) {
+            readCount++
+            if (readCount === 1) {
+              controller.enqueue(chunk1)
+            } else if (readCount === 2) {
+              controller.enqueue(chunk2)
+              controller.close()
+            }
+          }
+        })
+      } as Response)
+    )
+
+    const result = await listFilesStream('/', () => {})
+    expect(result.files).toEqual([goodFile])
+  })
   })
 })
