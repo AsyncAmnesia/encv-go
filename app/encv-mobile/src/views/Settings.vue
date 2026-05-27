@@ -149,30 +149,16 @@
             <ion-list-header>
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
             </ion-list-header>
-            <ion-item v-if="section.type === 'boolean'">
-              <ion-icon :icon="getFieldIcon(section.key, section.type)" slot="start"></ion-icon>
-              <ion-toggle
-                :checked="!!getValue([section.key])"
-                @ionChange="setValue([section.key], !getValue([section.key]))"
-              >{{ tField(section.key) }}</ion-toggle>
-            </ion-item>
-            <ion-item v-else>
-              <ion-icon :icon="getFieldIcon(section.key, section.type)" slot="start"></ion-icon>
-              <ion-input
-                :value="String(getValue([section.key]) ?? '')"
-                :type="section.isPassword ? (isPasswordVisible([section.key]) ? 'text' : 'password') : section.type === 'integer' ? 'number' : 'text'"
-                :label="fieldLabel(section.key, section.required)"
-                label-placement="stacked"
-                :placeholder="section.description || tField(section.key)"
-                @ionInput="handleInput([section.key], section, $event)"
-              ></ion-input>
-              <ion-button v-if="section.isPassword" slot="end" fill="clear" class="browse-btn" @click="togglePasswordVisibility([section.key])">
-                <ion-icon :icon="isPasswordVisible([section.key]) ? eyeOffOutline : eyeOutline" slot="icon-only"></ion-icon>
-              </ion-button>
-              <ion-button v-else-if="section.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([section.key], section)">
-                <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-              </ion-button>
-            </ion-item>
+            <ConfigFieldItem
+              :field="section"
+              :model-value="getValue([section.key])"
+              :label="fieldLabel(section.key, section.required)"
+              :placeholder="section.description || tField(section.key)"
+              :icon="getFieldIcon(section.key, section.type)"
+              @update:model-value="setValue([section.key], $event)"
+              @input="handleInput([section.key], section, $event)"
+              @browse="handleBrowsePath([section.key], section)"
+            />
           </ion-list>
 
           <ion-list v-else>
@@ -187,30 +173,16 @@
                 </ion-item-divider>
                 <template v-for="grandchild in child.properties" :key="grandchild.key">
                   <template v-if="isFieldVisible(grandchild)">
-                    <ion-item v-if="grandchild.type === 'boolean'">
-                      <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
-                      <ion-toggle
-                        :checked="!!getValue([section.key, child.key, grandchild.key])"
-                        @ionChange="setValue([section.key, child.key, grandchild.key], !getValue([section.key, child.key, grandchild.key]))"
-                      >{{ tField(grandchild.key) }}</ion-toggle>
-                    </ion-item>
-                    <ion-item v-else>
-                      <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
-                      <ion-input
-                        :value="String(getValue([section.key, child.key, grandchild.key]) ?? '')"
-                        :type="grandchild.isPassword ? (isPasswordVisible([section.key, child.key, grandchild.key]) ? 'text' : 'password') : grandchild.type === 'integer' ? 'number' : 'text'"
-                        :label="fieldLabel(grandchild.key, grandchild.required)"
-                        label-placement="stacked"
-                        :placeholder="grandchild.description || tField(grandchild.key)"
-                        @ionInput="handleInput([section.key, child.key, grandchild.key], grandchild, $event)"
-                      ></ion-input>
-                      <ion-button v-if="grandchild.isPassword" slot="end" fill="clear" class="browse-btn" @click="togglePasswordVisibility([section.key, child.key, grandchild.key])">
-                        <ion-icon :icon="isPasswordVisible([section.key, child.key, grandchild.key]) ? eyeOffOutline : eyeOutline" slot="icon-only"></ion-icon>
-                      </ion-button>
-                      <ion-button v-else-if="grandchild.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([section.key, child.key, grandchild.key], grandchild)">
-                        <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-                      </ion-button>
-                    </ion-item>
+                    <ConfigFieldItem
+                      :field="grandchild"
+                      :model-value="getValue([section.key, child.key, grandchild.key])"
+                      :label="fieldLabel(grandchild.key, grandchild.required)"
+                      :placeholder="grandchild.description || tField(grandchild.key)"
+                      :icon="getFieldIcon(grandchild.key, grandchild.type)"
+                      @update:model-value="setValue([section.key, child.key, grandchild.key], $event)"
+                      @input="handleInput([section.key, child.key, grandchild.key], grandchild, $event)"
+                      @browse="handleBrowsePath([section.key, child.key, grandchild.key], grandchild)"
+                    />
                   </template>
                 </template>
               </template>
@@ -262,23 +234,17 @@
                     <ion-select-option value="error">ERROR</ion-select-option>
                   </ion-select>
                 </ion-item>
-                <ion-item v-else>
-                  <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
-                  <ion-input
-                    :value="String(getValue([section.key, child.key]) ?? '')"
-                    :type="child.isPassword ? (isPasswordVisible([section.key, child.key]) ? 'text' : 'password') : child.type === 'integer' ? 'number' : 'text'"
-                    :label="fieldLabel(child.key, child.required)"
-                    label-placement="stacked"
-                    :placeholder="child.description || tField(child.key)"
-                    @ionInput="handleInput([section.key, child.key], child, $event)"
-                  ></ion-input>
-                  <ion-button v-if="child.isPassword" slot="end" fill="clear" class="browse-btn" @click="togglePasswordVisibility([section.key, child.key])">
-                    <ion-icon :icon="isPasswordVisible([section.key, child.key]) ? eyeOffOutline : eyeOutline" slot="icon-only"></ion-icon>
-                  </ion-button>
-                  <ion-button v-else-if="child.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([section.key, child.key], child)">
-                    <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-                  </ion-button>
-                </ion-item>
+                <ConfigFieldItem
+                  v-else
+                  :field="child"
+                  :model-value="getValue([section.key, child.key])"
+                  :label="fieldLabel(child.key, child.required)"
+                  :placeholder="child.description || tField(child.key)"
+                  :icon="getFieldIcon(child.key, child.type)"
+                  @update:model-value="setValue([section.key, child.key], $event)"
+                  @input="handleInput([section.key, child.key], child, $event)"
+                  @browse="handleBrowsePath([section.key, child.key], child)"
+                />
               </template>
             </template>
 
@@ -391,7 +357,7 @@ import {
   moon, globeOutline, server as serverIcon, save as saveIcon,
   informationCircle,
   key, lockClosed, documentText, terminal, settingsOutline,
-  cloudOutline, shieldCheckmark, eyeOutline, eyeOffOutline, speedometerOutline,
+  cloudOutline, shieldCheckmark, eyeOutline, speedometerOutline,
   filmOutline, musicalNotesOutline, imagesOutline, readerOutline,
   newspaperOutline, gitNetworkOutline, toggleOutline,
   textOutline, personOutline, folderOpen, refreshCircle,
@@ -412,6 +378,7 @@ import type { IndexStats, FFmpegStatus } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
 import { PLAY_MODE } from '@/constants/player'
 import FilePickerModal from '@/components/FilePickerModal.vue'
+import ConfigFieldItem from '@/components/ConfigFieldItem.vue'
 
 const router = useRouter()
 const { isDark, toggleDark } = useTheme()
@@ -429,21 +396,6 @@ const audioPlayerMode = ref(localStorage.getItem('encv_player_audio') || PLAY_MO
 const screenOrientation = ref(localStorage.getItem('encv_screen_orientation') || 'auto')
 const customTextExts = ref('')
 const builtInTextExtsCount = ref(0)
-const visiblePasswords = ref<Set<string>>(new Set())
-
-function isPasswordVisible(path: string[]): boolean {
-  return visiblePasswords.value.has(path.join('.'))
-}
-function togglePasswordVisibility(path: string[]) {
-  const key = path.join('.')
-  const next = new Set(visiblePasswords.value)
-  if (next.has(key)) {
-    next.delete(key)
-  } else {
-    next.add(key)
-  }
-  visiblePasswords.value = next
-}
 
 function handleVideoPlayerChange(event: CustomEvent) {
   const value = event.detail.value
