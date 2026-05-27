@@ -181,7 +181,7 @@ class GoProcessPlugin : Plugin() {
         val mimeType = call.getString("mimeType", "")
         try {
             Log.d(TAG, "openPlayer: filePath=$filePath, name=$name, mimeType=$mimeType")
-            PlayerEntry.play(context ?: activity!!, filePath, name, mimeType)
+            PlayerEntry.play(context ?: activity!!, filePath!!, name!!, mimeType!!)
             call.resolve()
         } catch (e: Exception) {
             Log.e(TAG, "openPlayer failed", e)
