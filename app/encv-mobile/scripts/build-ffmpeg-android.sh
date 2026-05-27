@@ -137,7 +137,16 @@ for lib_name, modules in m['ftools_modules'].items():
     lines = []
     for mod_name, files in modules.items():
         if not isinstance(files, list):
-            continue
+            if isinstance(files, bool) and files:
+                resolved_name = mod_name.replace('_shared', '')
+                for other_lib, other_mods in m['ftools_modules'].items():
+                    if resolved_name in other_mods and isinstance(other_mods[resolved_name], list):
+                        files = other_mods[resolved_name]
+                        break
+                else:
+                    continue
+            else:
+                continue
         files_str = ' '.join(files)
         lines.append('  \"' + mod_name + ':' + files_str + '\"')
     print(var_name + '=(')
