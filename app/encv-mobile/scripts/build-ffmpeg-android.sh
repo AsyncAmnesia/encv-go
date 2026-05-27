@@ -344,6 +344,12 @@ cat > "${FTOOLS_BUILD}/ffmpeg.ver" << 'VEOF'
   global:
     ffmpeg_run;
     ffmpeg_reset;
+    ff_graph_css_data;
+    ff_graph_css_len;
+    ff_graph_html_data;
+    ff_graph_html_len;
+    ff_resman_get_string;
+    ff_resman_uninit;
   local: *;
 };
 VEOF
@@ -367,6 +373,9 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffmpeg.so" \
     -lm -lz -llog \
     -Wl,-u,ffmpeg_run \
     -Wl,-u,ffmpeg_reset \
+    -Wl,-u,ff_graph_css_data \
+    -Wl,-u,ff_graph_html_data \
+    -Wl,-u,ff_resman_get_string \
     -Wl,--gc-sections \
     -Wl,--allow-multiple-definition \
     -Wl,--version-script,"${FTOOLS_BUILD}/ffmpeg.ver" \
@@ -425,13 +434,13 @@ for lib in "${!REQUIRED_SYMBOLS[@]}"; do
 done
 
 echo "=== Verifying resource symbols in libffmpeg.so ==="
-for res_sym in ff_graph_css_data ff_graph_html_data; do
-    if ${NM} "${FTOOLS_BUILD}/libffmpeg.so" 2>/dev/null | grep -q " ${res_sym}$"; then
+for res_sym in ff_graph_css_data ff_graph_html_data ff_resman_get_string; do
+    if ${NM} -D "${FTOOLS_BUILD}/libffmpeg.so" 2>/dev/null | grep -q " ${res_sym}$"; then
         echo "  ✅ $res_sym"
     else
         echo "  ❌ $res_sym missing from libffmpeg.so"
         echo "     This will cause dlopen failure: cannot locate symbol \"$res_sym\""
-        echo "     Check bin2c symbol naming in Phase 2"
+        echo "     Check: bin2c naming in Phase 2, --gc-sections in Phase 4, version script"
         exit 1
     fi
 done
