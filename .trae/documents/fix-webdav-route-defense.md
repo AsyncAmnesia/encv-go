@@ -48,57 +48,54 @@ function isPathField(key: string): boolean {
 }
 ```
 
-### Step 2: 前端 — WebDAV root 输入时实时拦截危险值
+### Step 2: 前端 — WebDAV root 输入时拦截唯一致命值
 
-**文件**: [Settings.vue](app/encv-mobile/src/views/Settings.vue) `handleInput()` 或新增专用校验
+**文件**: [Settings.vue](app/encv-mobile/src/views/Settings.vue) `handleInput()`
 
-**方案**: 在 `handleInput` 中增加对 `webdav.root` 字段的特殊校验：
-- 禁止值为 `/`、空字符串、`//`、不含前导 `/` 的值
-- 禁止与已知 API 前缀冲突（`/api/`, `/admin`, `/login`, `/p`, `/openlist`, `/preview/`, `/stream`, `/ws`, `/ping`, `/health`）
-- 实时显示错误提示
+**原则**: 前端只做 **确定性拦截**——唯一能导致后端崩溃的值就是 `/`。其他任何自定义路由（如 `/webdav/`、`/dav`、`/my-files/`）在技术上都合法，冲突检测交给后端 `checkWebdavRouteConflict` 精确判断。
 
-**实现位置**: 在 Settings.vue 的 `handleInput` 函数（L598-605）中添加路由字段校验逻辑：
+**方案**: 在 `handleInput` 中增加对 `webdav.root` 字段的轻量校验：
 
 ```typescript
 function handleInput(path: string[], field: FieldDef, event: CustomEvent) {
   const val = (event.target as HTMLInputElement).value
-  // 新增：WebDAV 路由字段安全校验
   if (path.length >= 2 && path[0] === 'webdav' && path[1] === 'root' && val) {
     const err = validateWebdavRoute(val)
     if (err) {
       showToast({ message: err, duration: 3000, color: 'danger' })
-      return  // 阻止设置非法值
+      return
     }
   }
-  // ...原有逻辑
+  if (field.type === 'integer') {
+    setFieldValue(path, val ? Number(val) : 0)
+  } else {
+    setFieldValue(path, val)
+  }
 }
 ```
 
-辅助函数：
+辅助函数（只拦截确定致命的值）：
 ```typescript
-const DANGEROUS_ROUTE_PREFIXES = [
-  '/', '/api', '/admin', '/login', '/logout', '/p',
-  '/openlist', '/preview', '/stream', '/decrypt',
-  '/ws', '/ping', '/health',
-]
-
 function validateWebdavRoute(val: string): string | null {
-  const trimmed = val.trim()
-  if (!trimmed) return null  // 允许清空（禁用 WebDAV）
-  if (trimmed === '/' || trimmed === '//') return 'WebDAV 路由不能为 "/"'
-  if (!trimmed.startsWith('/')) return 'WebDAV 路由必须以 "/" 开头'
-  const normalized = trimmed.endsWith('/') ? trimmed : trimmed + '/'
-  for (const prefix of DANGEROUS_ROUTE_PREFIXES) {
-    const p = prefix.endsWith('/') ? prefix : prefix + '/'
-    if (normalized.startsWith(p) || p.startsWith(normalized)) {
-      return `路由 "${trimmed}" 与系统路由 "${prefix}" 冲突`
-    }
-  }
+  const t = val.trim()
+  if (!t) return null
+  if (t === '/' || t === '//') return 'WebDAV 路由不能为 "/"，这会导致服务崩溃'
+  if (!t.startsWith('/')) return 'WebDAV 路由必须以 "/" 开头'
   return null
 }
 ```
 
-同时需要在 Settings.vue 的 `<script setup>` 中添加 `showToast`（已有 import）和 `webdavRouteError` ref 用于 UI 反馈。
+**校验策略说明**：
+| 输入值 | 前端行为 | 后端行为 |
+|--------|---------|---------|
+| `/` | ❌ 拦截（确定致命） | N/A |
+| `//` | ❌ 拦截（等价于 `/`） | N/A |
+| `webdav`（无前导 `/`） | ❌ 提示必须以 `/` 开头 | N/A |
+| `` （空） | ✅ 放行（=禁用 WebDAV） | ✅ |
+| `/webdav/` | ✅ 放行 | ✅ checkWebdavRouteConflict 通过 |
+| `/dav` | ✅ 放行 | ✅ checkWebdavRouteConflict 通过 |
+| `/api-custom/` | ✅ 放行 | ✅ 不与 `/api/` 冲突 |
+| `/api` | ✅ 放行 | ❌ 后端 API 返回 400 冲突错误 |
 
 ### Step 3: 后端 — 配置保存 API 增加路由校验
 
@@ -236,6 +233,8 @@ func checkWebdavRouteConflict(webdavRoot string) string {
 2. **Go 编译**: `cd /workspace && go build ./cmd/encv/`
 3. **手动测试**:
    - 设置 webdav.root="/" → 前端应阻止并显示错误提示
-   - 设置 webdav.root="/api/test" → 前端应阻止（与 /api/ 冲突）
+   - 设置 webdav.root="//" → 前端应阻止
+   - 设置 webdav.root="webdav"（无前导 `/`）→ 前端应提示必须以 `/` 开头
    - 设置 webdav.root="/webdav/" → 应正常保存
-   - 直接修改 config.user.json 中 webdav.root="/" → 重启不应崩溃，WebDAV 应被禁用并修正配置
+   - 设置 webdav.root=""（清空）→ 应正常保存（禁用 WebDAV）
+   - 直接修改 config.user.json 中 `webdav.root="/"` → 重启不应崩溃，WebDAV 被禁用并自动修正配置

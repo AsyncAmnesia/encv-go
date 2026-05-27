@@ -54,6 +54,11 @@ func (s *Server) handlePutConfigGin(c *gin.Context) {
 		return
 	}
 
+	if errMsg := validateWebdavRouteInConfig(raw); errMsg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
+		return
+	}
+
 	existingData, readErr := os.ReadFile(s.configPath)
 	if readErr == nil {
 		var existing map[string]interface{}
@@ -159,4 +164,23 @@ func (s *Server) handleConfigSchemaGin(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusNotFound, gin.H{"error": "schema file not found"})
+}
+
+func validateWebdavRouteInConfig(raw map[string]interface{}) string {
+	wd, ok := raw["webdav"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+	root, ok := wd["root"].(string)
+	if !ok || root == "" {
+		return ""
+	}
+	cleaned := strings.TrimSpace(root)
+	if cleaned == "/" || cleaned == "//" {
+		return "webdav root cannot be '/' (would capture all routes and crash server)"
+	}
+	if !strings.HasPrefix(cleaned, "/") {
+		return "webdav root must start with '/'"
+	}
+	return ""
 }

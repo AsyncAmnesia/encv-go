@@ -597,11 +597,26 @@ function getMapEntries(path: string[]): [string, Record<string, unknown>][] {
 
 function handleInput(path: string[], field: FieldDef, event: CustomEvent) {
   const val = (event.target as HTMLInputElement).value
+  if (path.length >= 2 && path[0] === 'webdav' && path[1] === 'root' && val) {
+    const err = validateWebdavRoute(val)
+    if (err) {
+      showToast({ message: err, duration: 3000, color: 'danger' })
+      return
+    }
+  }
   if (field.type === 'integer') {
     setFieldValue(path, val ? Number(val) : 0)
   } else {
     setFieldValue(path, val)
   }
+}
+
+function validateWebdavRoute(val: string): string | null {
+  const t = val.trim()
+  if (!t) return null
+  if (t === '/' || t === '//') return "WebDAV 路由不能为 \"/\"，这会导致服务崩溃"
+  if (!t.startsWith('/')) return 'WebDAV 路由必须以 "/" 开头'
+  return null
 }
 
 async function handleBrowsePath(path: string[], field: FieldDef) {

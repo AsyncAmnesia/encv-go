@@ -90,7 +90,12 @@ var knownRoutePrefixes = []string{
 }
 
 func checkWebdavRouteConflict(webdavRoot string) string {
-	cleanRoot := strings.TrimSuffix(webdavRoot, "/")
+	cleanRoot := strings.TrimSuffix(strings.TrimSpace(webdavRoot), "/")
+
+	if cleanRoot == "" {
+		return "<root>"
+	}
+
 	for _, prefix := range knownRoutePrefixes {
 		cleanPrefix := strings.TrimSuffix(prefix, "/")
 		if strings.HasPrefix(cleanPrefix, cleanRoot) || strings.HasPrefix(cleanRoot, cleanPrefix) {
@@ -98,6 +103,31 @@ func checkWebdavRouteConflict(webdavRoot string) string {
 		}
 	}
 	return ""
+}
+
+func sanitizeWebdavRootInConfig(configPath string) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return
+	}
+	var cfg map[string]interface{}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return
+	}
+	wd, ok := cfg["webdav"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	wd["root"] = ""
+	updated, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return
+	}
+	if err := os.WriteFile(configPath, append(updated, '\n'), 0644); err != nil {
+		slog.Warn("Failed to sanitize webdav root in config", "error", err)
+		return
+	}
+	slog.Info("Sanitized webdav root in config file (set to empty to disable WebDAV)", "path", configPath)
 }
 
 func (s *Server) Start(version string) (string, error) {
@@ -140,9 +170,16 @@ func (s *Server) Start(version string) (string, error) {
 			s.webdavPath += "/"
 		}
 		if conflict := checkWebdavRouteConflict(s.webdavPath); conflict != "" {
-			return "", fmt.Errorf("webdav root '%s' conflicts with existing route: %s", s.webdavPath, conflict)
+			slog.Error("WebDAV route conflicts with existing route, DISABLING WebDAV to avoid crash",
+				"webdav_path", s.webdavPath,
+				"conflict_with", conflict,
+			)
+			s.webdavDir = ""
+			s.webdavPath = ""
+			sanitizeWebdavRootInConfig(s.configPath)
+		} else {
+			slog.Info("WebDAV enabled", "dir", s.webdavDir, "path", s.webdavPath)
 		}
-		slog.Info("WebDAV enabled", "dir", s.webdavDir, "path", s.webdavPath)
 	}
 
 	slog.Info("Server starting", "instance", s.instanceID, "version", s.version)
