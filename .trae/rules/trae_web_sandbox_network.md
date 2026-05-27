@@ -135,6 +135,14 @@ Kotlin 2.3.21 的 plugin marker POM 在以上所有源中均返回 200。
 | **GitHub Actions CI** | ✅ 正常出站 | ✅ 可正常运行 |
 | **Trae Web 沙箱本地** | ❌ 出站 TCP 被拦截 | ❌ 无法下载依赖 |
 
+### Go 构建（mise 管理）
+
+- 项目使用 [mise](https://mise.jdx.dev/) 管理工具链，配置文件：`/workspace/mise.toml`
+- `go.mod` 要求 **Go 1.25.1**，`mise.toml` 必须匹配：`go = "1.25.1"`
+- mise 已安装 Go 1.25.1（路径：`~/.local/share/mise/installs/go/1.25.1/bin/go`）
+- 编译命令：`cd /workspace && mise exec -- go build ./cmd/encv/`
+- ⚠️ **不要** 使用 `go build`（可能指向系统旧版本），必须通过 `mise exec --` 执行
+
 ### 沙箱内可行的替代方案
 
 **方案 A：curl 预下载依赖 + gradle --offline**
