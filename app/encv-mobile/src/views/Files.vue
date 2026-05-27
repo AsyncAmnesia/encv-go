@@ -170,8 +170,8 @@ type PlayMode = 'artplayer' | 'mpv' | 'external'
 function getPlayMode(mediaType: 'video' | 'audio'): PlayMode {
   const key = mediaType === 'video' ? 'encv_player_video' : 'encv_player_audio'
   const stored = localStorage.getItem(key)
-  if (stored === 'artplayer' || stored === 'mpv' || stored === 'external') return stored
-  return mediaType === 'video' ? 'artplayer' : 'mpv'
+  if (stored === 'artplayer' || stored === 'mpv-plugin' || stored === 'external') return stored
+  return mediaType === 'video' ? 'artplayer' : 'mpv-plugin'
 }
 
 function playMedia(file: FileItem, category: string) {
@@ -184,7 +184,7 @@ function playMedia(file: FileItem, category: string) {
     case 'artplayer':
       router.push({ path: '/player', query: { path: file.path, name: file.name } })
       break
-    case 'mpv':
+    case 'mpv-plugin':
       if (isNative()) {
         openPlayer(file.path, file.name, mimeType)
       } else {

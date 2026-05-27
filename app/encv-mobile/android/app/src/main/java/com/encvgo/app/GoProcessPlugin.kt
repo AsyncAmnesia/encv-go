@@ -181,19 +181,7 @@ class GoProcessPlugin : Plugin() {
         val mimeType = call.getString("mimeType", "")
         try {
             Log.d(TAG, "openPlayer: filePath=$filePath, name=$name, mimeType=$mimeType")
-            val mainActivity = activity as? MainActivity
-            if (mainActivity == null) {
-                Log.w(TAG, "openPlayer: activity is not MainActivity, falling back to openInPlayer")
-                if (filePath.isNullOrEmpty()) {
-                    openPlayerHome(call)
-                } else {
-                    openInPlayer(call)
-                }
-                return
-            }
-            PlayerOverlayManager.getInstance().showOverlay(
-                mainActivity, filePath ?: "", name ?: "", mimeType ?: "", false
-            )
+            PlayerEntry.play(context ?: activity!!, filePath, name, mimeType)
             call.resolve()
         } catch (e: Exception) {
             Log.e(TAG, "openPlayer failed", e)
@@ -204,11 +192,9 @@ class GoProcessPlugin : Plugin() {
     @PluginMethod
     fun closePlayer(call: PluginCall) {
         try {
-            Log.d(TAG, "closePlayer: closing player overlay")
-            PlayerOverlayManager.getInstance().hideOverlay()
+            Log.d(TAG, "closePlayer: MPV player is standalone Activity, no-op")
             call.resolve()
         } catch (e: Exception) {
-            Log.e(TAG, "closePlayer failed", e)
             call.reject("Failed to close player: ${e.message}")
         }
     }

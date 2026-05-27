@@ -51,6 +51,7 @@ fun MpvPlayerScreen(
     var isLocked by remember { mutableStateOf(false) }
     var isFullscreen by remember { mutableStateOf(false) }
     var playbackSpeed by remember { mutableFloatStateOf(1f) }
+    var volume by remember { mutableFloatStateOf(1f) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val backendUrl = (context as? Activity)?.intent?.getStringExtra("backend_url") ?: ""
@@ -135,6 +136,7 @@ fun MpvPlayerScreen(
                 isLocked = isLocked,
                 isFullscreen = isFullscreen,
                 playbackSpeed = playbackSpeed,
+                volume = volume,
                 showControls = showControls,
                 onPlayPause = {
                     when (playerState) {
@@ -202,6 +204,19 @@ fun MpvPlayerScreen(
                         activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                         showSystemUi(activity)
                     }
+                    showControls = true
+                },
+                onVolumeChange = { vol ->
+                    volume = vol
+                    engine.setVolume(vol)
+                    showControls = true
+                },
+                onToggleSubtitle = {
+                    engine.toggleSubtitleVisibility()
+                    showControls = true
+                },
+                onCycleAudio = {
+                    engine.cycleAudioTrack()
                     showControls = true
                 },
                 onRetry = {
