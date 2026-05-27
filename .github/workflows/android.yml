@@ -290,8 +290,15 @@ jobs:
               --keystorealias encvrelease \
               --keystorealiaspass encv2025
 
-            APK_PATH=$(find android/app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+            echo "=== Locating signed APK ==="
+            ls -la android/app/build/outputs/apk/release/
+            APK_PATH=$(find android/app/build/outputs/apk/release -name "*signed*.apk" -type f | head -1)
+            if [ -z "$APK_PATH" ]; then
+              echo "::warning::Signed APK not found, falling back to any APK"
+              APK_PATH=$(find android/app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+            fi
             [ -z "$APK_PATH" ] && { echo "::error::No APK found"; exit 1; }
+            echo "Selected APK: $APK_PATH"
 
             echo "Verifying signature..."
             APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name "apksigner" -type f | head -1)
@@ -307,7 +314,12 @@ jobs:
 
       - name: Verify APK contents
         run: |
-          APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk -name "*.apk" -type f | head -1)
+          if [ -n "${{ inputs.version }}" ]; then
+            APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk/release -name "*signed*.apk" -type f | head -1)
+            [ -z "$APK_PATH" ] && APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+          else
+            APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk/debug -name "*.apk" -type f | head -1)
+          fi
           if [ -n "$APK_PATH" ]; then
             echo "=== APK size ==="
             ls -lh "$APK_PATH"
