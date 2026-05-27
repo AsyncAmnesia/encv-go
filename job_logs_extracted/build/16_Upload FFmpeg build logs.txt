@@ -1,0 +1,27 @@
+﻿2026-05-27T07:24:36.2916744Z ##[group]Run actions/upload-artifact@v4
+2026-05-27T07:24:36.2917027Z with:
+2026-05-27T07:24:36.2917213Z   name: ffmpeg-build-logs
+2026-05-27T07:24:36.2917484Z   path: app/encv-mobile/scripts/.ffmpeg-build/logs/
+2026-05-27T07:24:36.2917773Z   retention-days: 7
+2026-05-27T07:24:36.2917964Z   if-no-files-found: ignore
+2026-05-27T07:24:36.2918185Z   compression-level: 6
+2026-05-27T07:24:36.2918387Z   overwrite: false
+2026-05-27T07:24:36.2918824Z   include-hidden-files: false
+2026-05-27T07:24:36.2919050Z env:
+2026-05-27T07:24:36.2919223Z   NDK_VERSION: 26.1.10909125
+2026-05-27T07:24:36.2919553Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T07:24:36.2920018Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T07:24:36.2920411Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-27T07:24:36.2920690Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-27T07:24:36.2920943Z ##[endgroup]
+2026-05-27T07:24:36.5144754Z With the provided path, there will be 49 files uploaded
+2026-05-27T07:24:36.5148902Z Artifact name is valid!
+2026-05-27T07:24:36.5149995Z Root directory input is valid!
+2026-05-27T07:24:36.6392942Z Beginning upload of artifact content to blob storage
+2026-05-27T07:24:36.7660065Z Uploaded bytes 23333
+2026-05-27T07:24:36.7849438Z Finished uploading artifact content to blob storage!
+2026-05-27T07:24:36.7852673Z SHA256 digest of uploaded artifact zip is f862bf0eb8b07534bfaa3c5248ce0a000a1322b7a1c2cae7a050c59e68936a8d
+2026-05-27T07:24:36.7854845Z Finalizing artifact upload
+2026-05-27T07:24:36.9523502Z Artifact ffmpeg-build-logs.zip successfully finalized. Artifact ID 7234325824
+2026-05-27T07:24:36.9525062Z Artifact ffmpeg-build-logs has been successfully uploaded! Final size is 23333 bytes. Artifact ID is 7234325824
+2026-05-27T07:24:36.9531630Z Artifact download URL: https://github.com/AsyncAmnesia/encv-go/actions/runs/26495364254/artifacts/7234325824

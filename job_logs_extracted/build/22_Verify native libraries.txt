@@ -1,0 +1,61 @@
+﻿2026-05-27T07:25:10.5333095Z ##[group]Run echo "═══ HOST APP jniLibs (Go backend only) ═══"
+2026-05-27T07:25:10.5333870Z [36;1mecho "═══ HOST APP jniLibs (Go backend only) ═══"[0m
+2026-05-27T07:25:10.5334732Z [36;1mHOST_LIBS="app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a"[0m
+2026-05-27T07:25:10.5335439Z [36;1mfor lib in libencv-go.so libffmpeg.so libffprobe.so; do[0m
+2026-05-27T07:25:10.5336022Z [36;1m  if [ -f "$HOST_LIBS/$lib" ]; then[0m
+2026-05-27T07:25:10.5336549Z [36;1m    echo "  ✅ $lib $(ls -lh "$HOST_LIBS/$lib" | awk '{print $5}')"[0m
+2026-05-27T07:25:10.5337042Z [36;1m  else[0m
+2026-05-27T07:25:10.5337337Z [36;1m    echo "  ⚠️ $lib absent"[0m
+2026-05-27T07:25:10.5337694Z [36;1m  fi[0m
+2026-05-27T07:25:10.5337982Z [36;1mdone[0m
+2026-05-27T07:25:10.5338240Z [36;1m[0m
+2026-05-27T07:25:10.5338493Z [36;1mecho ""[0m
+2026-05-27T07:25:10.5338997Z [36;1mecho "═══ MPV PLAYER PLUGIN jniLibs ═══"[0m
+2026-05-27T07:25:10.5339666Z [36;1mPLUGIN_LIBS="app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a"[0m
+2026-05-27T07:25:10.5340348Z [36;1mif [ -d "$PLUGIN_LIBS" ]; then[0m
+2026-05-27T07:25:10.5340902Z [36;1m  ls -lh "$PLUGIN_LIBS/"*.so 2>/dev/null | awk '{print "  ✅ "$NF" ("$5")"}'[0m
+2026-05-27T07:25:10.5341682Z [36;1m  for lib in libmpv.so libplayer.so libavcodec.so libavformat.so libavutil.so; do[0m
+2026-05-27T07:25:10.5342517Z [36;1m    [ -f "$PLUGIN_LIBS/$lib" ] && echo "  ✅ $lib present" || echo "  ❌ $lib MISSING!"[0m
+2026-05-27T07:25:10.5343089Z [36;1m  done[0m
+2026-05-27T07:25:10.5343369Z [36;1melse[0m
+2026-05-27T07:25:10.5343706Z [36;1m  echo "  ⚠️ Plugin jniLibs dir not found"[0m
+2026-05-27T07:25:10.5344131Z [36;1mfi[0m
+2026-05-27T07:25:10.5344397Z [36;1m[0m
+2026-05-27T07:25:10.5344663Z [36;1mecho ""[0m
+2026-05-27T07:25:10.5344987Z [36;1mecho "═══ EXPECTED SEPARATION ═══"[0m
+2026-05-27T07:25:10.5345473Z [36;1mecho "  Host APK: Go backend only (no MPV .so)"[0m
+2026-05-27T07:25:10.5345986Z [36;1mecho "  Plugin APK: All MPV/FFmpeg .so files"[0m
+2026-05-27T07:25:10.5393918Z shell: /usr/bin/bash -e {0}
+2026-05-27T07:25:10.5394180Z env:
+2026-05-27T07:25:10.5394369Z   NDK_VERSION: 26.1.10909125
+2026-05-27T07:25:10.5394805Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T07:25:10.5395533Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T07:25:10.5396049Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-27T07:25:10.5396418Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-27T07:25:10.5396687Z ##[endgroup]
+2026-05-27T07:25:10.5466798Z ═══ HOST APP jniLibs (Go backend only) ═══
+2026-05-27T07:25:10.5504662Z   ✅ libencv-go.so 26M
+2026-05-27T07:25:10.5530169Z   ✅ libffmpeg.so 4.4M
+2026-05-27T07:25:10.5557159Z   ✅ libffprobe.so 4.1M
+2026-05-27T07:25:10.5557418Z 
+2026-05-27T07:25:10.5557824Z ═══ MPV PLAYER PLUGIN jniLibs ═══
+2026-05-27T07:25:10.5578738Z   ✅ app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/libavcodec.so (12M)
+2026-05-27T07:25:10.5580167Z   ✅ app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/libavdevice.so (9.0K)
+2026-05-27T07:25:10.5581041Z   ✅ app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/libavfilter.so (4.1M)
+2026-05-27T07:25:10.5581932Z   ✅ app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/libavformat.so (3.3M)
+2026-05-27T07:25:10.5583316Z   ✅ app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/libavutil.so (716K)
+2026-05-27T07:25:10.5584929Z   ✅ app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/libc++_shared.so (8.9M)
+2026-05-27T07:25:10.5586136Z   ✅ app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/libmpv.so (5.6M)
+2026-05-27T07:25:10.5586919Z   ✅ app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/libplayer.so (22K)
+2026-05-27T07:25:10.5587743Z   ✅ app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/libswresample.so (95K)
+2026-05-27T07:25:10.5588816Z   ✅ app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/libswscale.so (1.1M)
+2026-05-27T07:25:10.5589750Z   ✅ app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/libxml2.so (1.4M)
+2026-05-27T07:25:10.5590465Z   ✅ libmpv.so present
+2026-05-27T07:25:10.5590775Z   ✅ libplayer.so present
+2026-05-27T07:25:10.5591089Z   ✅ libavcodec.so present
+2026-05-27T07:25:10.5591402Z   ✅ libavformat.so present
+2026-05-27T07:25:10.5591707Z   ✅ libavutil.so present
+2026-05-27T07:25:10.5591851Z 
+2026-05-27T07:25:10.5592059Z ═══ EXPECTED SEPARATION ═══
+2026-05-27T07:25:10.5592449Z   Host APK: Go backend only (no MPV .so)
+2026-05-27T07:25:10.5592840Z   Plugin APK: All MPV/FFmpeg .so files
