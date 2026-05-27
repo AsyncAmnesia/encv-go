@@ -3,6 +3,7 @@
 package video
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -70,6 +71,106 @@ func (e *VideoMetadataExtractor) ExtractMetadata(inputPath string) (types.Index,
 	return e.index, nil
 }
 
+// sanitizeFFProbeOutput 清理 ffprobe 输出的 JSON 数据，提高解析容错性。
+// 返回清理后的数据和可能的警告信息（如果数据有问题但可修复）。
+// 如果 JSON 被截断无法修复，返回错误。
+func sanitizeFFProbeOutput(data []byte) ([]byte, string, error) {
+	var warnings []string
+
+	data = removeBOM(data, &warnings)
+	data = removeTrailingCommas(data, &warnings)
+
+	if err := checkJSONBalanced(data); err != nil {
+		return nil, "", fmt.Errorf("ffprobe output appears truncated: %w", err)
+	}
+
+	warningStr := strings.Join(warnings, "; ")
+	return data, warningStr, nil
+}
+
+func removeBOM(data []byte, warnings *[]string) []byte {
+	if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
+		*warnings = append(*warnings, "removed UTF-8 BOM")
+		return data[3:]
+	}
+	if len(data) >= 2 {
+		if data[0] == 0xFE && data[1] == 0xFF {
+			*warnings = append(*warnings, "removed UTF-16 BE BOM (data may be corrupted)")
+			return data[2:]
+		}
+		if data[0] == 0xFF && data[1] == 0xFE {
+			*warnings = append(*warnings, "removed UTF-16 LE BOM (data may be corrupted)")
+			return data[2:]
+		}
+	}
+	return data
+}
+
+func removeTrailingCommas(data []byte, warnings *[]string) []byte {
+	result := make([]byte, 0, len(data))
+	modified := false
+	for i := 0; i < len(data); i++ {
+		if data[i] == ',' && i+1 < len(data) {
+			next := data[i+1]
+			if next == '}' || next == ']' || next == ' ' || next == '\t' || next == '\n' || next == '\r' {
+				j := i + 1
+				for j < len(data) && (data[j] == ' ' || data[j] == '\t' || data[j] == '\n' || data[j] == '\r') {
+					j++
+				}
+				if j < len(data) && (data[j] == '}' || data[j] == ']') {
+					modified = true
+					continue
+				}
+			}
+		}
+		result = append(result, data[i])
+	}
+	if modified {
+		*warnings = append(*warnings, "removed trailing commas before } or ]")
+	}
+	return result
+}
+
+func checkJSONBalanced(data []byte) error {
+	var depthObj, depthArr int
+	inString := false
+	escaped := false
+	for _, b := range data {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if b == '\\' && inString {
+			escaped = true
+			continue
+		}
+		if b == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		switch b {
+		case '{':
+			depthObj++
+		case '}':
+			depthObj--
+		case '[':
+			depthArr++
+		case ']':
+			depthArr--
+		}
+	}
+	if depthObj != 0 {
+		return fmt.Errorf("unbalanced braces: %d unclosed", depthObj)
+	}
+	if depthArr != 0 {
+		return fmt.Errorf("unbalanced brackets: %d unclosed", depthArr)
+	}
+	return nil
+}
+
 func extractMetadataFromOriginalFile(path string) (*VideoIndex, error) {
 	videoLogger.Debug("using ffprobe/mkvtoolnix for metadata extraction",
 		slog.String("file", filepath.Base(path)),
@@ -88,9 +189,24 @@ func extractMetadataFromOriginalFile(path string) (*VideoIndex, error) {
 		return nil, fmt.Errorf("ffprobe failed on original file: %w", err)
 	}
 
+	sanitized, warning, err := sanitizeFFProbeOutput(output)
+	if err != nil {
+		return nil, fmt.Errorf("ffprobe output sanitization failed: %w", err)
+	}
+	if warning != "" {
+		videoLogger.Warn("ffprobe output sanitized",
+			slog.String("warnings", warning),
+		)
+	}
+
 	var rawMeta types.FFProbeRawMetadata
-	if err := json.Unmarshal(output, &rawMeta); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal ffprobe data: %w", err)
+	if err := json.Unmarshal(sanitized, &rawMeta); err != nil {
+		hexLen := len(sanitized)
+		if hexLen > 128 {
+			hexLen = 128
+		}
+		return nil, fmt.Errorf("failed to unmarshal ffprobe data: %w (hex dump first %d bytes: %s)",
+			err, hexLen, hex.EncodeToString(sanitized[:hexLen]))
 	}
 
 	var width, height int

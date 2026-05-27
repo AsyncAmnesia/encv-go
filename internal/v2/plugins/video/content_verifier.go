@@ -18,6 +18,7 @@ import (
 	"github.com/Soltus/encv-go/internal/utils/ffmpeg"
 	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
+	"github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	"github.com/Soltus/encv-go/internal/v2/types"
 	mp4 "github.com/abema/go-mp4"
 )
@@ -25,9 +26,14 @@ import (
 type VideoContentVerifier struct{}
 
 // Verify 实现 ContentVerifier 接口
-func (p *VideoContentVerifier) Verify(originalPath, decryptedPath string) error {
+func (p *VideoContentVerifier) Verify(originalPath, decryptedPath string, opts ...*interfaces.VerifyOptions) error {
+	var skipSizeCheck bool
+	if len(opts) > 0 && opts[0] != nil {
+		skipSizeCheck = opts[0].SkipSizeCheck
+	}
+
 	slog.Info("VIDEO INTEGRITY CHECKER v5.0 (Stratified Opt)")
-	slog.Info("Verification started", "original_path", originalPath, "decrypted_path", decryptedPath)
+	slog.Info("Verification started", "original_path", originalPath, "decrypted_path", decryptedPath, "skip_size_check", skipSizeCheck)
 
 	origFile, err := os.Open(originalPath)
 	if err != nil {
@@ -45,8 +51,12 @@ func (p *VideoContentVerifier) Verify(originalPath, decryptedPath string) error 
 	decInfo, _ := decFile.Stat()
 	totalSize := origInfo.Size()
 
-	if totalSize != decInfo.Size() {
+	if !skipSizeCheck && totalSize != decInfo.Size() {
 		return fmt.Errorf("size mismatch")
+	}
+	if skipSizeCheck && totalSize != decInfo.Size() {
+		slog.Warn("Size mismatch detected but skipped (re-encode mode)",
+			"original_size", totalSize, "decrypted_size", decInfo.Size())
 	}
 
 	var verificationError error
@@ -58,7 +68,7 @@ func (p *VideoContentVerifier) Verify(originalPath, decryptedPath string) error 
 	}
 
 	// === 第二级防线：采样完整性抽检 (< 2秒) ===
-	if err := p.QuickSampleHashCheck(originalPath, decryptedPath); err != nil {
+	if err := p.QuickSampleHashCheck(originalPath, decryptedPath, skipSizeCheck); err != nil {
 		slog.Error("L2 sample hash check failed", "error", err)
 		verificationError = err
 	}
@@ -163,7 +173,7 @@ func (p *VideoContentVerifier) QuickStructCheck(filePath string) error {
 
 // QuickSampleHashCheck 采样完整性抽检（第二级防线）
 // 不再进行全盘扫描，而是随机抽取关键位置的 1MB 数据进行 Hash 对比
-func (p *VideoContentVerifier) QuickSampleHashCheck(origPath, decPath string) error {
+func (p *VideoContentVerifier) QuickSampleHashCheck(origPath, decPath string, skipSizeCheck bool) error {
 	const sampleSize = 1 * 1024 * 1024 // 1MB 抽样缓冲区
 
 	origFile, err := os.Open(origPath)
@@ -182,8 +192,12 @@ func (p *VideoContentVerifier) QuickSampleHashCheck(origPath, decPath string) er
 	decInfo, _ := decFile.Stat()
 	totalSize := origInfo.Size()
 
-	if totalSize != decInfo.Size() {
+	if !skipSizeCheck && totalSize != decInfo.Size() {
 		return fmt.Errorf("size mismatch")
+	}
+	if skipSizeCheck && totalSize != decInfo.Size() {
+		slog.Warn("QuickSampleHashCheck: size mismatch skipped (re-encode mode)",
+			"original_size", totalSize, "decrypted_size", decInfo.Size())
 	}
 
 	// 策略：仅在文件开头和结尾附近进行采样

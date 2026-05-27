@@ -20,14 +20,20 @@ type ContentPreprocessor interface {
 	Preprocess(inputPath string) (io.ReadCloser, error)
 }
 
+// VerifyOptions 定义 Verify 方法的可选行为参数
+type VerifyOptions struct {
+	SkipSizeCheck bool // 跳过精确文件大小比对（用于重编码/转码模式，此时原始文件与解密文件大小天然不同）
+}
+
 // ContentVerifier 定义了插件校验解密内容完整性的能力。
 // 这是一个可选接口，插件应根据自身特性（如是否支持随机访问、文件大小）来实现。
 type ContentVerifier interface {
 	// Verify 校验解密后的文件与原始文件是否一致。
 	// originalPath: 原始输入文件路径。
 	// decryptedPath: 经过加密再解密后的文件路径（通常位于临时目录）。
+	// opts: 可选的验证选项，不传时使用默认严格模式。
 	// 返回 error 表示校验失败。
-	Verify(originalPath, decryptedPath string) error
+	Verify(originalPath, decryptedPath string, opts ...*VerifyOptions) error
 }
 
 // FragmentBuilder 定义了自定义逻辑分片策略的接口（如视频 GOP 对齐）

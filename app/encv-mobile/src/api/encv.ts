@@ -268,6 +268,19 @@ export async function deleteFile(path: string): Promise<void> {
   }
 }
 
+export async function createDirectory(parentPath: string, name: string): Promise<void> {
+  console.info('[API] createDirectory:', parentPath, name)
+  const response = await fetch(`${getApiBaseUrl()}/files/mkdir`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ parent_path: parentPath, name }),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.error || `Failed to create directory (${response.status})`)
+  }
+}
+
 export interface FileContentResponse {
   name: string
   path: string

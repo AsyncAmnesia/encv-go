@@ -66,6 +66,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'files.searching': '搜索中...',
     'files.noSearchResults': '无搜索结果',
     'files.noSearchResultsDesc': '未找到匹配的文件，尝试切换递归搜索。',
+    'files.newFolderName': '文件夹名称',
+    'files.createFolderFailed': '创建文件夹失败',
 
     'player.title': '播放器',
     'player.loading': '正在加载...',
@@ -526,6 +528,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'files.searching': 'Searching...',
     'files.noSearchResults': 'No results',
     'files.noSearchResultsDesc': 'No matching files found. Try enabling recursive search.',
+    'files.newFolderName': 'Folder name',
+    'files.createFolderFailed': 'Failed to create folder',
 
     'player.title': 'Player',
     'player.loading': 'Loading...',

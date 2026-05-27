@@ -190,6 +190,40 @@ func (s *MobileService) DeleteFile(queryPath string) error {
 	return nil
 }
 
+func (s *MobileService) CreateDirectory(parentPath, name string) error {
+	if name == "" {
+		return &BadRequestError{Err: errors.New("directory name cannot be empty")}
+	}
+	if len(name) > 255 {
+		return &BadRequestError{Err: errors.New("directory name too long (max 255 characters)")}
+	}
+	if strings.ContainsAny(name, "\000/") {
+		return &BadRequestError{Err: errors.New("directory name contains illegal characters")}
+	}
+	if strings.Contains(name, "..") {
+		return &ForbiddenError{Err: errors.New("directory name contains path traversal sequence")}
+	}
+
+	fullPath := filepath.Join(s.servingDir, parentPath, name)
+
+	absServing, _ := filepath.Abs(s.servingDir)
+	absFull, _ := filepath.Abs(fullPath)
+	if !strings.HasPrefix(absFull, absServing) {
+		return &ForbiddenError{Err: errors.New("path traversal detected")}
+	}
+
+	if err := os.Mkdir(fullPath, 0755); err != nil {
+		if os.IsExist(err) {
+			return &BadRequestError{Err: fmt.Errorf("directory already exists: %s", name)}
+		}
+		slog.Error("Mkdir failed", "path", fullPath, "error", err)
+		return err
+	}
+
+	slog.Info("Directory created", "path", fullPath)
+	return nil
+}
+
 func (s *MobileService) ReadFileContent(queryPath string) (*FileContentResult, error) {
 	if queryPath == "" {
 		return nil, &BadRequestError{Err: errors.New("'path' query parameter is required")}

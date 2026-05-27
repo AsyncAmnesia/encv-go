@@ -124,6 +124,27 @@ func (s *Server) handleDeleteFileGin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
+func (s *Server) handleCreateDirectoryGin(c *gin.Context) {
+	var req struct {
+		ParentPath string `json:"parent_path"`
+		Name       string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	slog.Info("API: create directory", "parent_path", req.ParentPath, "name", req.Name)
+
+	err := s.mobileSvc.CreateDirectory(req.ParentPath, req.Name)
+	if err != nil {
+		writeServiceErrorGin(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "created"})
+}
+
 func (s *Server) handleReadFileContentGin(c *gin.Context) {
 	queryPath := c.Query("path")
 	slog.Info("API: read file content", "path", queryPath)
