@@ -42,6 +42,7 @@ export interface GoProcessPlugin {
   installPlugin(options: { apkPath: string }): Promise<{ success: boolean; method?: string }>
   pickAndInstallPlugin(): Promise<{ success: boolean; method?: string; fileName?: string }>
   checkInstalledPlugins(): Promise<Record<string, boolean>>
+  getLocalFilePath(options: { path: string }): Promise<{ path: string }>
 }
 
 export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
@@ -109,5 +110,9 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
 
   async checkInstalledPlugins(): Promise<Record<string, boolean>> {
     return {}
+  }
+
+  async getLocalFilePath(_options: { path: string }): Promise<{ path: string }> {
+    return { path: '' }
   }
 }

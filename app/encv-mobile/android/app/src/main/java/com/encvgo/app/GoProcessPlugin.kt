@@ -580,4 +580,33 @@ class GoProcessPlugin : Plugin() {
             call.reject("Failed to install plugin: ${e.message}")
         }
     }
+
+    @PluginMethod
+    fun getLocalFilePath(call: PluginCall) {
+        val path = call.getString("path", "")
+        val result = JSObject()
+        try {
+            if (path.isEmpty()) {
+                result.put("path", "")
+                call.resolve(result)
+                return
+            }
+            val file = File(path)
+            if (file.exists() && file.isFile && file.canRead()) {
+                result.put("path", file.absolutePath)
+            } else {
+                val resolved = File(context.filesDir, path.removePrefix("/"))
+                if (resolved.exists() && resolved.isFile && resolved.canRead()) {
+                    result.put("path", resolved.absolutePath)
+                } else {
+                    result.put("path", "")
+                }
+            }
+            call.resolve(result)
+        } catch (e: Exception) {
+            Log.e(TAG, "getLocalFilePath failed", e)
+            result.put("path", "")
+            call.resolve(result)
+        }
+    }
 }

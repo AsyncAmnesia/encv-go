@@ -174,3 +174,13 @@ export async function checkInstalledPlugins(): Promise<Record<string, boolean>> 
     return {}
   }
 }
+
+export async function getLocalFilePath(path: string): Promise<string> {
+  try {
+    const result = await GoProcess.getLocalFilePath({ path })
+    return result.path as string || ''
+  } catch (e) {
+    console.error('[ENCV] GoProcess.getLocalFilePath() failed:', e)
+    return ''
+  }
+}

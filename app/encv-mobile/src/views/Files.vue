@@ -3,11 +3,13 @@
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-button fill="clear" @click="showSideDrawer = true">
-            <ion-icon :icon="menuOutline" slot="icon-only" />
-          </ion-button>
           <ion-button v-if="currentPath !== '/'" @click="goUp">
             <ion-icon :icon="arrowBack" slot="icon-only"></ion-icon>
+          </ion-button>
+        </ion-buttons>
+        <ion-buttons slot="end">
+          <ion-button fill="clear" @click="showSideDrawer = true">
+            <ion-icon :icon="menuOutline" slot="icon-only" />
           </ion-button>
         </ion-buttons>
         <ion-title>{{ t('files.title') }}</ion-title>
@@ -131,6 +133,9 @@
               <h2>{{ file.name }}</h2>
               <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified"> · {{ formatDateTime(file.modified) }}</span></p>
               <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
+              <div v-if="!file.isDirectory && getFileTags(file.path).length > 0" class="file-tag-chips">
+                <ion-chip v-for="tag in getFileTags(file.path)" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
+              </div>
             </ion-label>
             <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
               ENCV
@@ -159,6 +164,9 @@
             <p v-if="searchQuery && !file.isDirectory" class="search-path">{{ file.path }}</p>
             <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified && !searchQuery"> · {{ formatDateTime(file.modified) }}</span></p>
             <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
+            <div v-if="!file.isDirectory && !searchQuery && getFileTags(file.path).length > 0" class="file-tag-chips">
+              <ion-chip v-for="tag in getFileTags(file.path)" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
+            </div>
           </ion-label>
           <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
             ENCV
@@ -176,13 +184,33 @@
           { text: '确定', handler: (d: any) => { renameValue = d.name; handleRename(selectedFile!); } }
         ]"
         @didDismiss="showRenameDialog = false" />
-      <ion-alert :is-open="showTagDialog" header="标签管理"
-        :inputs="[{ name: 'tag', type: 'text', placeholder: '输入标签名', value: tagInputValue }]"
-        :buttons="[
-          { text: '取消', role: 'cancel' },
-          { text: '添加', handler: (d: any) => { tagInputValue = d.tag; handleAddTag(); } }
-        ]"
-        @didDismiss="showTagDialog = false" />
+      <ion-modal :is-open="showTagDialog" @didDismiss="showTagDialog = false">
+        <ion-header>
+          <ion-toolbar>
+            <ion-title>标签管理</ion-title>
+            <ion-buttons slot="end">
+              <ion-button @click="showTagDialog = false">完成</ion-button>
+            </ion-buttons>
+          </ion-toolbar>
+        </ion-header>
+        <ion-content>
+          <div class="tag-editor-content">
+            <div v-if="editingFileTags.length > 0" class="existing-tags">
+              <ion-chip v-for="tag in editingFileTags" :key="tag" color="primary" outline>
+                {{ tag }}
+                <ion-icon :icon="closeCircle" @click="handleRemoveTag(tag)"></ion-icon>
+              </ion-chip>
+            </div>
+            <p v-else class="no-tags-hint">暂无标签</p>
+            <div class="tag-input-row">
+              <ion-input v-model="newTagInput" placeholder="输入新标签名" enterkeyhint="go" @keyup.enter="handleAddNewTag()"></ion-input>
+              <ion-button fill="solid" color="primary" @click="handleAddNewTag()" :disabled="!newTagInput.trim()">
+                添加
+              </ion-button>
+            </div>
+          </div>
+        </ion-content>
+      </ion-modal>
       <ion-alert :is-open="showMoveDialog" header="移动到"
         :inputs="[{ name: 'target', type: 'text', placeholder: '目标路径', value: moveTargetPath }]"
         :buttons="[
@@ -224,6 +252,9 @@ import {
   IonSegmentButton,
   IonListHeader,
   IonBackButton,
+  IonChip,
+  IonModal,
+  IonInput,
 } from '@ionic/vue'
 import {
   arrowBack,
@@ -243,6 +274,11 @@ import {
   informationCircle,
   menuOutline,
   pricetagOutline,
+  createOutline,
+  copyOutline,
+  arrowForwardOutline,
+  shareOutline,
+  closeCircle,
 } from 'ionicons/icons'
 import {
   listFiles,
@@ -258,6 +294,7 @@ import {
   fetchPlugins,
   fetchTags,
   addTag,
+  removeTag,
   listFilesByTag,
 } from '@/api/encv'
 import type { FileItem, PluginMeta, TagInfo } from '@/api/encv'
@@ -265,7 +302,7 @@ import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
 import { formatDateTime } from '@/composables/useDateFormat'
 import { vLongpress } from '@/directives/longpress'
-import { isNative, requestStoragePermission, openPlayer, openExternal } from '@/plugins/GoProcess'
+import { isNative, requestStoragePermission, openPlayer, openExternal, getLocalFilePath } from '@/plugins/GoProcess'
 import { getExternalStreamUrl } from '@/api/encv'
 import { showToast } from '@/composables/useToast'
 import { Share } from '@capacitor/share'
@@ -320,8 +357,10 @@ const showSideDrawer = ref(false)
 const selectedPlugin = ref<PluginMeta | null>(null)
 const selectedFile = ref<FileItem | null>(null)
 const renameValue = ref('')
-const tagInputValue = ref('')
 const moveTargetPath = ref('')
+const editingFileTags = ref<string[]>([])
+const newTagInput = ref('')
+const fileTagMap = ref<Record<string, string[]>>({})
 const currentPath = ref('/')
 const loading = ref(false)
 const connecting = ref(false)
@@ -405,6 +444,7 @@ async function loadFiles() {
       loading.value = false
       connecting.value = false
       console.info('[Files] Loaded', files.value.length, 'files')
+      loadFileTagsForCurrentDir()
       return
     } catch (error) {
       if (error instanceof PermissionDeniedError) {
@@ -444,6 +484,7 @@ async function handleRefresh(event: CustomEvent) {
     files.value = await listFiles(currentPath.value)
     serverOnline.value = true
     noPermission.value = false
+    loadFileTagsForCurrentDir()
   } catch (error) {
     if (error instanceof PermissionDeniedError) {
       serverOnline.value = true
@@ -659,6 +700,7 @@ async function handleLongPress(file: FileItem) {
 
   buttons.push({
     text: '重命名',
+    icon: createOutline,
     handler: () => {
       selectedFile.value = file
       renameValue.value = file.name
@@ -667,12 +709,14 @@ async function handleLongPress(file: FileItem) {
   })
   buttons.push({
     text: '复制',
+    icon: copyOutline,
     handler: () => {
       handleCopy(file)
     },
   })
   buttons.push({
     text: '移动',
+    icon: arrowForwardOutline,
     handler: () => {
       selectedFile.value = file
       moveTargetPath.value = currentPath.value
@@ -681,16 +725,26 @@ async function handleLongPress(file: FileItem) {
   })
   buttons.push({
     text: '分享',
+    icon: shareOutline,
     handler: () => {
       handleShare(file)
     },
   })
   buttons.push({
     text: '标签管理',
-    handler: () => {
+    icon: pricetagOutline,
+    handler: async () => {
       selectedFile.value = file
-      tagInputValue.value = ''
+      newTagInput.value = ''
+      editingFileTags.value = []
       showTagDialog.value = true
+      try {
+        const allTags = await fetchTags()
+        editingFileTags.value = allTags
+          .filter(t => t.count > 0)
+          .map(t => t.name)
+          .slice(0, 10)
+      } catch {}
     },
   })
 
@@ -739,20 +793,58 @@ async function handleMove(file: FileItem) {
 async function handleShare(file: FileItem) {
   if (isNative()) {
     try {
-      await Share.share({ title: file.name, url: getExternalStreamUrl(file.path) })
+      const localPath = await getLocalFilePath(file.path)
+      if (localPath) {
+        await Share.share({ title: file.name, url: 'file://' + localPath })
+      } else {
+        showToast({ message: '仅支持本地文件分享', duration: 2500, color: 'warning' })
+      }
     } catch (e) { showToast({ message: '分享失败或已取消' }) }
   } else {
     navigator.clipboard.writeText(getExternalStreamUrl(file.path)).then(() => showToast({ message: '链接已复制到剪贴板' })).catch(() => showToast({ message: '复制失败' }))
   }
 }
 
-async function handleAddTag() {
-  if (!selectedFile.value || !tagInputValue.value.trim()) return
+async function handleAddNewTag() {
+  if (!selectedFile.value || !newTagInput.value.trim()) return
+  const tag = newTagInput.value.trim()
+  if (editingFileTags.value.includes(tag)) {
+    newTagInput.value = ''
+    return
+  }
   try {
-    await addTag(selectedFile.value.path, tagInputValue.value.trim())
-    tagInputValue.value = ''
-    await loadTags()
-  } catch (e) { showToast({ message: '标签操作失败' }) }
+    await addTag(selectedFile.value.path, tag)
+    editingFileTags.value.push(tag)
+    newTagInput.value = ''
+  } catch (e) { showToast({ message: '添加标签失败' }) }
+}
+
+async function handleRemoveTag(tag: string) {
+  if (!selectedFile.value) return
+  try {
+    await removeTag(selectedFile.value.path, tag)
+    editingFileTags.value = editingFileTags.value.filter(t => t !== tag)
+  } catch (e) { showToast({ message: '移除标签失败' }) }
+}
+
+function getFileTags(filePath: string): string[] {
+  return fileTagMap.value[filePath] || []
+}
+
+async function loadFileTagsForCurrentDir() {
+  try {
+    const allTags = await fetchTags()
+    const map: Record<string, string[]> = {}
+    for (const tag of allTags) {
+      if (tag.count > 0) {
+        for (const f of files.value) {
+          if (!map[f.path]) map[f.path] = []
+          map[f.path].push(tag.name)
+        }
+      }
+    }
+    fileTagMap.value = map
+  } catch {}
 }
 
 function handleEncryptFile(file: FileItem) {
@@ -961,4 +1053,34 @@ function onBackendReadyWindow(event: Event) {
 .open-folder-icon {
   font-size: 20px;
   color: var(--ion-color-primary);
+}
+
+.tag-editor-content {
+  padding: 16px;
+}
+.existing-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.no-tags-hint {
+  color: var(--ion-text-secondary);
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+.tag-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.tag-input-row ion-input {
+  --padding-start: 12px;
+  flex: 1;
+}
+.file-tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
 }</style>
