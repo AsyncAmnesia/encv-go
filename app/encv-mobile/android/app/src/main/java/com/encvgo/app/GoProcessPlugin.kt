@@ -3,6 +3,8 @@ package com.encvgo.app
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
@@ -28,6 +30,7 @@ class GoProcessPlugin : Plugin() {
 
     companion object {
         private const val TAG = "ENCV-go"
+        const val REQUEST_CODE_PLUGIN_PICK = 9001
     }
 
     private val pendingCalls = ConcurrentHashMap<String, PluginCall>()
@@ -406,10 +409,6 @@ class GoProcessPlugin : Plugin() {
         }
     }
 
-    private companion object {
-        const val REQUEST_CODE_PLUGIN_PICK = 9001
-    }
-
     @PluginMethod
     fun pickAndInstallPlugin(call: PluginCall) {
         Log.d(TAG, "pickAndInstallPlugin() called")
@@ -586,7 +585,7 @@ class GoProcessPlugin : Plugin() {
         val path = call.getString("path", "")
         val result = JSObject()
         try {
-            if (path.isEmpty()) {
+            if (path.isNullOrEmpty()) {
                 result.put("path", "")
                 call.resolve(result)
                 return
@@ -595,7 +594,7 @@ class GoProcessPlugin : Plugin() {
             if (file.exists() && file.isFile && file.canRead()) {
                 result.put("path", file.absolutePath)
             } else {
-                val resolved = File(context.filesDir, path.removePrefix("/"))
+                val resolved = File(context.filesDir, path!!.removePrefix("/"))
                 if (resolved.exists() && resolved.isFile && resolved.canRead()) {
                     result.put("path", resolved.absolutePath)
                 } else {
