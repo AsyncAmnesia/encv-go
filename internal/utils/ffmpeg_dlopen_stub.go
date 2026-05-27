@@ -22,17 +22,17 @@ func (e *NativeError) Error() string {
 	return e.Detail
 }
 
-type nativeResult struct {
-	exitCode int
-	stdout   string
-	stderr   string
+type NativeResult struct {
+	ExitCode int
+	Stdout   string
+	Stderr   string
 }
 
-func callFFmpegNative(args []string) (*nativeResult, error) {
+func CallFFmpegNative(args []string) (*NativeResult, error) {
 	return nil, fmt.Errorf("ffmpeg native not available on this platform")
 }
 
-func callFFprobeNative(args []string) (*nativeResult, error) {
+func CallFFprobeNative(args []string) (*NativeResult, error) {
 	return nil, fmt.Errorf("ffprobe native not available on this platform")
 }
 

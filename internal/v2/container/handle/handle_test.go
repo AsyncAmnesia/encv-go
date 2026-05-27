@@ -68,8 +68,8 @@ func TestOpen_V4_ValidContainer(t *testing.T) {
 
 	headerSize := types.EnvelopeHeaderSize_v4
 	footerSize := types.EnvelopeFooterSize_v4
-	manifestOffset := uint64(headerSize)
-	manifestLength := uint64(len(obfuscatedManifest))
+	manifestOffset := uint32(headerSize)
+	manifestLength := uint32(len(obfuscatedManifest))
 
 	header := &types.EnvelopeHeaderV4{
 		Magic:          types.MagicHeader_v2,
@@ -227,8 +227,8 @@ func TestOpen_V4_BadFooterMagic(t *testing.T) {
 		Magic:          types.MagicHeader_v2,
 		Version:        0x04,
 		ContainerType:  types.ContainerTypeVideo,
-		ManifestOffset: uint64(types.EnvelopeHeaderSize_v4),
-		ManifestLength: uint64(len(obfuscatedManifest)),
+		ManifestOffset: uint32(types.EnvelopeHeaderSize_v4),
+		ManifestLength: uint32(len(obfuscatedManifest)),
 	}
 	var headerBuf bytes.Buffer
 	types.WriteHeaderV4(&headerBuf, header)
@@ -337,8 +337,8 @@ func TestOpen_V4_LegacyFormat_Fallback(t *testing.T) {
 		IsSeekable:     1,
 		IDType:         0,
 		IDLength:       0,
-		ManifestOffset: uint64(types.EnvelopeHeaderSize_v4),
-		ManifestLength: uint64(len(legacyManifestData)),
+		ManifestOffset: uint32(types.EnvelopeHeaderSize_v4),
+		ManifestLength: uint32(len(legacyManifestData)),
 	}
 
 	var headerBuf bytes.Buffer

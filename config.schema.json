@@ -44,6 +44,18 @@
           "type": "boolean",
           "description": "Recover 在解密时是否尝试覆盖已有文件。"
         },
+        "default_container_version": {
+          "type": "integer",
+          "default": 4,
+          "minimum": 2,
+          "maximum": 4,
+          "description": "默认容器版本（2=已弃用, 3=稳定, 4=推荐）"
+        },
+        "strict_deprecated_version": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否严格禁止使用已弃用版本创建容器"
+        },
         "output_path": {
           "type": "string",
           "description": "--- 加密/解密设置 ---\nOutputPath 加密后的文件输出目录。"

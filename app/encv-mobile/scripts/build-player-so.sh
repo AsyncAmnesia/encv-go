@@ -3,8 +3,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-JNI_DIR="$PROJECT_DIR/android-overlay/app/src/main/jni"
-OUTPUT_DIR="$PROJECT_DIR/android-overlay/app/src/main/jniLibs/arm64-v8a"
+JNI_DIR="$PROJECT_DIR/plugin-mpv-player/src/main/jni"
+OUTPUT_DIR="$PROJECT_DIR/plugin-mpv-player/src/main/jniLibs/arm64-v8a"
 
 echo "build-player-so: Building libplayer.so from source..."
 
@@ -45,7 +45,7 @@ NDBUILD_CMD="$NDK_ROOT/ndk-build"
 echo ""
 echo "  Running ndk-build..."
 $NDBUILD_CMD \
-    -C "$PROJECT_DIR/android-overlay/app/src/main" \
+    -C "$PROJECT_DIR/plugin-mpv-player/src/main" \
     APP_ABI=arm64-v8a \
     APP_PLATFORM=android-21 \
     NDK_PROJECT_PATH=. \
@@ -60,7 +60,7 @@ if [ -f "$OUTPUT_DIR/libplayer.so" ]; then
     echo "✅ libplayer.so built successfully ($SIZE)"
 else
     # ndk-build may output to libs/ instead of jniLibs/
-    ALT_OUTPUT="$PROJECT_DIR/android-overlay/app/src/main/libs/arm64-v8a/libplayer.so"
+    ALT_OUTPUT="$PROJECT_DIR/plugin-mpv-player/src/main/libs/arm64-v8a/libplayer.so"
     if [ -f "$ALT_OUTPUT" ]; then
         mkdir -p "$OUTPUT_DIR"
         cp "$ALT_OUTPUT" "$OUTPUT_DIR/libplayer.so"

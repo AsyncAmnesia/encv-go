@@ -268,8 +268,8 @@ func (w *SingleFileContainerWriter) Close() error {
 
 	if w.headerVersion == 4 {
 		// V4: manifest 直接写在当前位置，无 Block header 包裹
-		w.v4Header.ManifestOffset = uint64(manifestBlockStart)
-		w.v4Header.ManifestLength = w.manifestLength
+		w.v4Header.ManifestOffset = uint32(manifestBlockStart)
+		w.v4Header.ManifestLength = uint32(w.manifestLength)
 
 		if _, err := w.file.Seek(0, io.SeekStart); err != nil {
 			return fmt.Errorf("failed to seek to header for v4 rewrite: %w", err)

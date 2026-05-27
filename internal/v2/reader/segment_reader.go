@@ -50,6 +50,12 @@ func OpenV4Container(filePath string, password string) (*V4ContainerInfo, error)
 		return nil, fmt.Errorf("failed to decode salt from KVI: %w", err)
 	}
 
+	if hdr := h.HeaderV4(); hdr.PasswordHint != [16]byte{} {
+		if !crypto.VerifyPasswordHint(hdr.PasswordHint, password, salt) {
+			return nil, fmt.Errorf("%w: password hint verification failed", types.ErrWrongPassword)
+		}
+	}
+
 	key := crypto.GenerateKey(password, salt, types.KeySize_v2)
 
 	return &V4ContainerInfo{

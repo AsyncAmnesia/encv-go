@@ -34,6 +34,7 @@ func (p *SinglePhysicalPacker) Pack(manifest *types.Manifest, req *PackRequest) 
 			req.IsSeekable,
 			req.SpecialIDType,
 			req.SpecialID,
+			req.PasswordHint,
 		)
 		if headerErr != nil {
 			return "", fmt.Errorf("failed to prepare v4 header: %w", headerErr)

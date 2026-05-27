@@ -82,6 +82,24 @@ func (s *Server) GetCredentials() (string, string) {
 	return s.cfg.Webdav.Username, s.cfg.Webdav.Password
 }
 
+var knownRoutePrefixes = []string{
+	"/api/", "/admin", "/login", "/logout",
+	"/p", "/p-api", "/openlist",
+	"/preview/", "/stream", "/decrypt",
+	"/ws", "/ping", "/health",
+}
+
+func checkWebdavRouteConflict(webdavRoot string) string {
+	cleanRoot := strings.TrimSuffix(webdavRoot, "/")
+	for _, prefix := range knownRoutePrefixes {
+		cleanPrefix := strings.TrimSuffix(prefix, "/")
+		if strings.HasPrefix(cleanPrefix, cleanRoot) || strings.HasPrefix(cleanRoot, cleanPrefix) {
+			return prefix
+		}
+	}
+	return ""
+}
+
 func (s *Server) Start(version string) (string, error) {
 	// 【关键修改】在启动时初始化版本和实例ID
 	s.version = version // 从 main 包获取编译时注入的版本
@@ -120,6 +138,9 @@ func (s *Server) Start(version string) (string, error) {
 		}
 		if !strings.HasSuffix(s.webdavPath, "/") {
 			s.webdavPath += "/"
+		}
+		if conflict := checkWebdavRouteConflict(s.webdavPath); conflict != "" {
+			return "", fmt.Errorf("webdav root '%s' conflicts with existing route: %s", s.webdavPath, conflict)
 		}
 		slog.Info("WebDAV enabled", "dir", s.webdavDir, "path", s.webdavPath)
 	}
@@ -178,6 +199,7 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/api/stream/external", s.handleStreamExternalFileGin)
 	r.GET("/api/build-info", s.handleBuildInfoGin)
 	r.GET("/api/ffmpeg-status", s.handleFFmpegStatusGin)
+	r.GET("/api/container/versions", s.handleGetContainerVersionsGin)
 	r.POST("/api/logs", s.handleAPILogsGin)
 	r.GET("/ws", gin.WrapF(s.handleWebSocket))
 

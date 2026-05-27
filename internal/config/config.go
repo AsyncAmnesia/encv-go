@@ -18,6 +18,10 @@ type Config struct {
 	Password string `json:"password"`
 	// Recover 在解密时是否尝试覆盖已有文件。
 	Recover bool `json:"recover"`
+	// DefaultContainerVersion 默认容器版本（2=已弃用, 3=稳定, 4=推荐）
+	DefaultContainerVersion int `json:"default_container_version"`
+	// StrictDeprecatedVersion 是否严格禁止使用已弃用版本创建容器
+	StrictDeprecatedVersion bool `json:"strict_deprecated_version"`
 
 	// --- 加密/解密设置 ---
 	// OutputPath 加密后的文件输出目录。
@@ -80,11 +84,12 @@ func FromContext(ctx context.Context) *Config {
 // DefaultConfig 返回一个包含所有默认值的配置实例。
 func DefaultConfig() *Config {
 	return &Config{
-		OutputPath: "./encrypted",
+		OutputPath:             "./encrypted",
+		DefaultContainerVersion: 4,
 		Server:     types.HttpServer{Port: 1999, Dir: "./"},
 		Webdav: types.WebdavServer{
-			Root: "/webdav/",
-			Dir:  "./output",
+			Root: "",
+			Dir:  "",
 		},
 		Proxy: types.OpenlistProxyServer{
 			DisableSignatureVerification: false,
@@ -94,6 +99,17 @@ func DefaultConfig() *Config {
 			File:  "",
 		},
 	}
+}
+
+func (c *Config) GetEffectiveDefaultVersion() int {
+	if c.DefaultContainerVersion > 0 && types.IsValidVersion(c.DefaultContainerVersion) {
+		return c.DefaultContainerVersion
+	}
+	return types.DefaultContainerVersion
+}
+
+func (c *Config) IsStrictMode() bool {
+	return c.StrictDeprecatedVersion
 }
 
 // Load 从指定的文件路径加载配置。

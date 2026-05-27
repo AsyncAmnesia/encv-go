@@ -105,6 +105,30 @@ type Plugin interface {
 	ContainerType() uint16
 	DefaultIsSeekable(inputPath string) bool
 	DisasterZones(inputPath string) []types.DisasterZone
+
+	// === 版本选择支持 ===
+	SupportedContainerVersions() []int
+	DefaultContainerVersion() int
+	ValidateVersion(version int) error
+}
+
+// DefaultPluginVersionMethods 提供版本方法的默认实现
+func DefaultSupportedVersions() []int {
+	return types.SupportedVersions
+}
+
+func DefaultContainerVersion() int {
+	return types.DefaultContainerVersion
+}
+
+func ValidateVersionDefault(version int) error {
+	if !types.IsValidVersion(version) {
+		return fmt.Errorf("unsupported container version: %d", version)
+	}
+	if types.IsDeprecatedVersion(version) {
+		slog.Warn("using deprecated container version", "version", version)
+	}
+	return nil
 }
 
 // normalizeExtension 确保扩展名带有前导点，使其符合标准格式

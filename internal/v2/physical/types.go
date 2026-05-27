@@ -64,4 +64,6 @@ type PackRequest struct {
 	IsSeekable    bool
 	SpecialID     []byte // 可选，如果不提供且 HeaderVersion=3，将自动生成占位符
 	SpecialIDType types.IDType
+
+	PasswordHint [16]byte
 }

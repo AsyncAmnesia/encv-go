@@ -48,9 +48,9 @@ func createV4ContainerForWebDAV(t testing.TB) string {
 
 	obfuscatedManifest, _ := crypto.ObfuscateManifest(manifestJSON)
 
-	hdr, _ := types.CreateHeaderV4(true, types.ContainerTypeText, false, types.IDType_Raw, nil)
-	hdr.ManifestOffset = uint64(types.EnvelopeHeaderSize_v4 + len(encResult.EncryptedData))
-	hdr.ManifestLength = uint64(len(obfuscatedManifest))
+	hdr, _ := types.CreateHeaderV4(true, types.ContainerTypeText, false, types.IDType_Raw, nil, [16]byte{})
+	hdr.ManifestOffset = uint32(types.EnvelopeHeaderSize_v4 + len(encResult.EncryptedData))
+	hdr.ManifestLength = uint32(len(obfuscatedManifest))
 
 	f, _ := os.Create(containerPath)
 	types.WriteHeaderV4(f, hdr)

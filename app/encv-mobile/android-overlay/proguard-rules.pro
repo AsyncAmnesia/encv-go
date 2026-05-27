@@ -4,9 +4,5 @@
 # Keep local classes
 -keep class com.encvgo.app.** { *; }
 
-# Keep Lynx SDK classes
--keep class com.lynx.** { *; }
--keep class org.lynxsdk.** { *; }
-
 # Keep mpv native methods (JNI bridge requires exact class name)
 -keep class is.xyz.mpv.** { *; }

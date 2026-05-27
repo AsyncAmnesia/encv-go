@@ -160,14 +160,15 @@ func (s *Server) handleCreateTaskGin(c *gin.Context) {
 		SourcePath string `json:"sourcePath"`
 		TargetPath string `json:"targetPath,omitempty"`
 		Password   string `json:"password,omitempty"`
+		Version    int    `json:"version,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
 		return
 	}
 
-	slog.Info("API: create task", "type", req.Type, "source", req.SourcePath, "target", req.TargetPath)
-	task := s.mobileSvc.GetTaskManager().Create(req.Type, req.SourcePath, req.TargetPath, req.Password)
+	slog.Info("API: create task", "type", req.Type, "source", req.SourcePath, "target", req.TargetPath, "version", req.Version)
+	task := s.mobileSvc.GetTaskManager().Create(req.Type, req.SourcePath, req.TargetPath, req.Password, req.Version)
 
 	c.JSON(http.StatusCreated, task)
 }
@@ -640,6 +641,17 @@ func (s *Server) handleBuildInfoGin(c *gin.Context) {
 	}
 	info["app_version"] = s.version
 	c.JSON(http.StatusOK, info)
+}
+
+func (s *Server) handleGetContainerVersionsGin(c *gin.Context) {
+	c.JSON(200, gin.H{
+		"versions": []gin.H{
+			{"version": 2, "status": "deprecated", "label": "V2 (已弃用)"},
+			{"version": 3, "status": "stable", "label": "V3"},
+			{"version": 4, "status": "recommended", "label": "V4 (推荐)"},
+		},
+		"default": s.cfg.GetEffectiveDefaultVersion(),
+	})
 }
 
 func (s *Server) handleFFmpegStatusGin(c *gin.Context) {

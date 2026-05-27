@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -226,6 +227,24 @@ func (p *TextPlugin) DefaultIsSeekable(inputPath string) bool {
 }
 
 func (p *TextPlugin) DisasterZones(inputPath string) []types.DisasterZone {
+	return nil
+}
+
+func (p *TextPlugin) SupportedContainerVersions() []int {
+	return types.SupportedVersions
+}
+
+func (p *TextPlugin) DefaultContainerVersion() int {
+	return types.DefaultContainerVersion
+}
+
+func (p *TextPlugin) ValidateVersion(version int) error {
+	if !types.IsValidVersion(version) {
+		return fmt.Errorf("text plugin: unsupported container version: %d", version)
+	}
+	if types.IsDeprecatedVersion(version) {
+		slog.Warn("text plugin: using deprecated container version", "version", version)
+	}
 	return nil
 }
 
