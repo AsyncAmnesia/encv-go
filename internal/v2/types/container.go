@@ -27,6 +27,21 @@ const (
 	IVSize_v2   = 16
 )
 
+const (
+	ContainerV2            = 2
+	ContainerV3            = 3
+	ContainerV4            = 4
+	DefaultContainerVersion = ContainerV4
+)
+
+type VersionStatus string
+
+const (
+	VersionStatusDeprecated VersionStatus = "deprecated"
+	VersionStatusStable      VersionStatus = "stable"
+	VersionStatusRecommended VersionStatus = "recommended"
+)
+
 func GetBlockTypeName(blockType uint32) string {
 	switch blockType {
 	case uint32(BlockTypeData_v2):
@@ -45,9 +60,11 @@ func GetBlockTypeName(blockType uint32) string {
 var (
 	ByteOrder_v2       = binary.LittleEndian
 	ErrInvalidMagic_v2 = errors.New("invalid magic number")
-	// 将数组转换为切片用法 types.MagicFooter_v2[:]
-	MagicHeader_v2 = [4]byte{'E', 'N', 'V', 'C'}
-	MagicFooter_v2 = [4]byte{'E', 'N', 'V', 'C'}
+	ErrWrongPassword   = errors.New("wrong password: password hint mismatch")
+	ErrDataCorrupted   = errors.New("data corrupted: integrity check failed")
+	ErrDeprecatedVersion = errors.New("container version is deprecated")
+	MagicHeader_v2 = [4]byte{'E', 'N', 'C', 'V'}
+	MagicFooter_v2 = [4]byte{'E', 'N', 'C', 'V'}
 
 	manifestJSONBufferPool_v2 = sync.Pool{
 		New: func() interface{} {
@@ -56,26 +73,57 @@ var (
 	}
 )
 
-// FragmentType_v2 定义分片的用途类型，使其意图更加明确
-type FragmentType_v2 string
+var SupportedVersions = []int{ContainerV2, ContainerV3, ContainerV4}
+
+func GetVersionStatus(version int) VersionStatus {
+	switch version {
+	case ContainerV2:
+		return VersionStatusDeprecated
+	case ContainerV3:
+		return VersionStatusStable
+	case ContainerV4:
+		return VersionStatusRecommended
+	default:
+		return ""
+	}
+}
+
+func IsValidVersion(version int) bool {
+	for _, v := range SupportedVersions {
+		if v == version {
+			return true
+		}
+	}
+	return false
+}
+
+func IsDeprecatedVersion(version int) bool {
+	return GetVersionStatus(version) == VersionStatusDeprecated
+}
+
+// FragmentType 定义分片的用途类型，使其意图更加明确
+type FragmentType string
+
+// FragmentType_v2 是 FragmentType 的兼容别名（过渡期）
+type FragmentType_v2 = FragmentType
 
 const (
 	// FragmentType_Metadata 用于存储 KVI 等元数据，通常只有一个
-	FragmentType_Metadata FragmentType_v2 = "metadata"
+	FragmentType_Metadata FragmentType = "metadata"
 	// FragmentType_SeekableStream 用于存储可寻址的数据流，如视频、大型日志文件
 	// 支持随机访问，其 GlobalStartOffset 字段有效
-	FragmentType_SeekableStream FragmentType_v2 = "seekable_stream"
+	FragmentType_SeekableStream FragmentType = "seekable_stream"
 	// FragmentType_AtomicFile 用于存储不可分割的原子文件，如文档、图片、数据库
 	// 必须完整读取，其 GlobalStartOffset 字段无效
-	FragmentType_AtomicFile FragmentType_v2 = "atomic_file"
+	FragmentType_AtomicFile FragmentType = "atomic_file"
 )
 
-// Fragment_v2 定义了清单中的一个分片项
-type Fragment_v2 struct {
-	ID       string          `json:"id"`                 // 唯一标识符
-	Type     FragmentType_v2 `json:"type"`               // 【更新】分片类型，使用枚举
-	Filename string          `json:"filename,omitempty"` // 可选，用于外部文件
-	Length   uint64          `json:"length"`             // 数据长度（字节）
+// Fragment 定义了清单中的一个分片项
+type Fragment struct {
+	ID       string        `json:"id"`                 // 唯一标识符
+	Type     FragmentType  `json:"type"`               // 【更新】分片类型，使用枚举
+	Filename string        `json:"filename,omitempty"` // 可选，用于外部文件
+	Length   uint64        `json:"length"`             // 数据长度（字节）
 
 	// GlobalStartOffset 仅在 Type 为 FragmentType_SeekableStream 时有效。
 	// 它表示该分片在整个虚拟数据流中的起始字节位置，用于 O(1) 寻址。
@@ -91,6 +139,9 @@ type Fragment_v2 struct {
 	// 这是验证物理文件是否正确的“指纹”，与文件名无关
 	DataCRC32 uint32 `json:"data_crc32"`
 }
+
+// Fragment_v2 是 Fragment 的兼容别名（过渡期）
+type Fragment_v2 = Fragment
 
 type EnvelopeHeader_v2 struct {
 	Magic    [4]byte
@@ -115,38 +166,44 @@ type ContainerDescriptor struct {
 }
 
 // KVIProvider 定义了从 KVI 数据中获取所需信息的通用接口
-// Manifest_v2 将依赖此接口，而不是具体的结构体，从而实现解耦
+// Manifest 将依赖此接口，而不是具体的结构体，从而实现解耦
 type KVIProvider interface {
 	// 获取索引类型，用于快速路由和判断
 	GetKind() IndexKind
 	// GetEncryptionInfo 返回用于序列化到 Manifest 的 KVI 数据
-	GetEncryptionInfo() KVI_v2
+	GetEncryptionInfo() KVI
 
 	// GetIndex 返回实现了 types.Index 接口的文件索引，供上层服务使用
 	GetIndex() Index
 }
 
-// KVI_v2 加密信息
-type KVI_v2 struct {
+// KVI 加密信息
+type KVI struct {
 	SaltBase64 string `json:"salt_base64"`
 	IVBase64   string `json:"iv_base64"`
 }
 
-// Manifest_v2 容器清单，这是json的最外层
-type Manifest_v2 struct {
-	Version int64 `json:"version"`
+// KVI_v2 是 KVI 的兼容别名（过渡期）
+type KVI_v2 = KVI
+
+// Manifest 容器清单，这是json的最外层
+type Manifest struct {
+	Version int64          `json:"version"`
 	// Kind 现在是 Manifest 的顶级字段，用于标识 KVI 类型
-	Kind IndexKind `json:"kind"`
+	Kind IndexKind      `json:"kind"`
 	// KVI 字段持有原始的 JSON 数据，其具体类型由上层处理
 	KVI        json.RawMessage `json:"kvi"` // index在里面
-	Fragments  []Fragment_v2   `json:"fragments"`
+	Fragments  []Fragment       `json:"fragments"`
 	Redundancy struct {
 		KVIBackupCRC string `json:"kvi_backup_crc,omitempty"`
 	} `json:"redundancy,omitempty"`
 }
 
-// SerializeToJSON_v2 将清单序列化为 JSON 字节
-func (m *Manifest_v2) SerializeToJSON_v2() ([]byte, error) {
+// Manifest_v2 是 Manifest 的兼容别名（过渡期）
+type Manifest_v2 = Manifest
+
+// SerializeToJSON 将清单序列化为 JSON 字节
+func (m *Manifest) SerializeToJSON() ([]byte, error) {
 	buf := manifestJSONBufferPool_v2.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer manifestJSONBufferPool_v2.Put(buf)
@@ -168,7 +225,7 @@ func (m *Manifest_v2) SerializeToJSON_v2() ([]byte, error) {
 }
 
 // GetFragmentByID 根据 ID 查找并返回一个 Fragment 的副本
-func (m *Manifest_v2) GetFragmentByID(id string) (*Fragment_v2, error) {
+func (m *Manifest) GetFragmentByID(id string) (*Fragment, error) {
 	for _, frag := range m.Fragments {
 		if frag.ID == id {
 			// 返回一个副本以防止外部修改
@@ -196,7 +253,7 @@ func RegisterKVIProvider(kind IndexKind, factory KVIProviderFactory) {
 
 // NewKVIProviderFromManifest 【重构】使用注册表动态创建 KVIProvider
 // 现在这个函数是通用的，不再需要为每个新插件修改它。
-func NewKVIProviderFromManifest(manifest *Manifest_v2) (KVIProvider, error) {
+func NewKVIProviderFromManifest(manifest *Manifest) (KVIProvider, error) {
 	factory, exists := kviProviderRegistry[manifest.Kind]
 	if !exists {
 		// 提供一个友好的错误信息，列出所有已注册的 Kind
@@ -211,9 +268,9 @@ func NewKVIProviderFromManifest(manifest *Manifest_v2) (KVIProvider, error) {
 	return factory(manifest.KVI)
 }
 
-// NewManifest_v2 是一个工厂函数，用于创建 Manifest_v2 实例
+// NewManifest 是一个工厂函数，用于创建 Manifest 实例
 // 它接收一个 KVIProvider 接口，并将其序列化为 json.RawMessage
-func NewManifest_v2(kviProvider KVIProvider, fragments []Fragment_v2) (*Manifest_v2, error) {
+func NewManifest(kviProvider KVIProvider, fragments []Fragment) (*Manifest, error) {
 	// 1. 将 KVIProvider 接口实例序列化为 JSON 字节切片
 	// json.Marshal 可以处理任何具有可导出字段的结构体，或者实现了 json.Marshaler 接口的类型
 	// 我们的 VideoKVI_v2 完全符合这个条件
@@ -226,8 +283,8 @@ func NewManifest_v2(kviProvider KVIProvider, fragments []Fragment_v2) (*Manifest
 	// json.RawMessage 本质上就是 []byte，这个转换是类型安全的
 	rawKVI := json.RawMessage(kviBytes)
 
-	// 3. 创建并返回 Manifest_v2 实例
-	manifest := &Manifest_v2{
+	// 3. 创建并返回 Manifest 实例
+	manifest := &Manifest{
 		Version:   ContainerVersion,
 		Kind:      kviProvider.GetKind(),
 		KVI:       rawKVI,
@@ -241,8 +298,11 @@ func NewManifest_v2(kviProvider KVIProvider, fragments []Fragment_v2) (*Manifest
 type IndexKind string
 
 const (
-	ContainerVersion int64 = 2
+	// ManifestSchemaVersion 是 Manifest JSON schema 的版本号（注意：不是容器格式版本！）
+	ManifestSchemaVersion int64 = 2
 )
+// 兼容别名：旧名 ContainerVersion 仍有误导性，保留过渡
+const ContainerVersion = ManifestSchemaVersion // deprecated: use ManifestSchemaVersion
 
 // Index 是所有 KVI 结构体的通用接口
 type Index interface {

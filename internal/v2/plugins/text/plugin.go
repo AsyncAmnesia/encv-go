@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -229,6 +230,24 @@ func (p *TextPlugin) DisasterZones(inputPath string) []types.DisasterZone {
 	return nil
 }
 
+func (p *TextPlugin) SupportedContainerVersions() []int {
+	return types.SupportedVersions
+}
+
+func (p *TextPlugin) DefaultContainerVersion() int {
+	return types.DefaultContainerVersion
+}
+
+func (p *TextPlugin) ValidateVersion(version int) error {
+	if !types.IsValidVersion(version) {
+		return fmt.Errorf("text plugin: unsupported container version: %d", version)
+	}
+	if types.IsDeprecatedVersion(version) {
+		slog.Warn("text plugin: using deprecated container version", "version", version)
+	}
+	return nil
+}
+
 // --- 加密逻辑 ---
 
 // Plugin 接口实现
@@ -287,13 +306,13 @@ func (p *TextPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) error
 
 	// 3. 构造 Manifest (使用 result 中的 Salt 和 IV)
 	kvi := TextKVI_v2{
-		KVI_v2: types.KVI_v2{
+		KVI: types.KVI{
 			SaltBase64: crypto.Base64Encode_v2(result.Salt),
 			IVBase64:   crypto.Base64Encode_v2(result.IV),
 		},
 		TextIndex: &p.index,
 	}
-	manifest, err := types.NewManifest_v2(kvi, logicalFragments)
+	manifest, err := types.NewManifest(kvi, logicalFragments)
 	if err != nil {
 		return fmt.Errorf("failed to create manifest: %w", err)
 	}
@@ -319,7 +338,9 @@ func (p *TextPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) error
 		BaseName:      finalBaseName,
 		OutputDir:     p.outputDir,
 		Index:         &p.index,
-		HeaderVersion: 3,
+		HeaderVersion: 4,
+		ContainerType: p.ContainerType(),
+		IsSeekable:    p.DefaultIsSeekable(p.inputPath),
 		SpecialIDType: types.IDType_Raw,
 		SpecialID:     nil,
 		FinalFileName: finalFilename,

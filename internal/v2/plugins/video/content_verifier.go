@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Soltus/encv-go/internal/utils"
+	"github.com/Soltus/encv-go/internal/utils/ffmpeg"
+	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
-	"github.com/Soltus/encv-go/internal/v2/container/manifest"
 	"github.com/Soltus/encv-go/internal/v2/types"
 	mp4 "github.com/abema/go-mp4"
 )
@@ -343,7 +343,7 @@ func (p *VideoContentVerifier) checkFFmpegDecoding(origPath, decPath string) err
 
 // runFFmpegStressTest 执行单个文件的解码测试 (性能优化版)
 func (p *VideoContentVerifier) runFFmpegStressTest(ctx context.Context, filePath, label string) error {
-	stderrStr, err := utils.FFmpegRunWithContext(ctx,
+	_, stderrStr, exitCode, err := ffmpeg.RunWithOutput(ctx,
 		"-v", "error",
 		"-nostdin",
 		"-i", filePath,
@@ -360,6 +360,10 @@ func (p *VideoContentVerifier) runFFmpegStressTest(ctx context.Context, filePath
 
 	if err != nil && ctx.Err() == context.DeadlineExceeded {
 		return fmt.Errorf("decoding timeout (file too large?)")
+	}
+
+	if exitCode != 0 {
+		return fmt.Errorf("ffmpeg exited with code %d: %s", exitCode, stderrStr)
 	}
 
 	return nil
@@ -415,7 +419,7 @@ func (p *VideoContentVerifier) getVideoMetrics(filePath string) (int, float64, e
 // 【性能优化】使用 nb_frames 而不是 -count_frames，避免耗时的帧解码
 func (p *VideoContentVerifier) getVideoMetricsFallback(filePath string) (int, float64, error) {
 	// 首先尝试使用 nb_frames（元数据中的帧数，非常快）
-	output, err := utils.FFProbeOutput(
+	output, err := ffmpeg.Probe(
 		"-v", "error",
 		"-select_streams", "v:0",
 		"-show_entries", "stream=nb_frames",
@@ -485,15 +489,27 @@ func (p *VideoContentVerifier) findFirstDifference(f1, f2 *os.File, start, lengt
 
 // DiagnoseHeaders ... (保留)
 func (p *VideoContentVerifier) DiagnoseHeaders(containerPath string) error {
-	mf, _, _, _, err := manifest.ReadManifestFromFile(containerPath)
+	src, err := containerhandle.NewFileSource(containerPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open container: %w", err)
+	}
+	defer src.Close()
+
+	h, err := containerhandle.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open container handle: %w", err)
+	}
+	defer h.Close()
+
+	mf := h.Manifest()
+	if mf == nil {
+		return fmt.Errorf("no manifest available")
 	}
 	containerDir := filepath.Dir(containerPath)
 
 	type ChunkInfo struct {
 		Filename     string
-		Frags        []types.Fragment_v2
+		Frags        []types.Fragment
 		PhysicalPath string
 	}
 	chunksMap := make(map[string]*ChunkInfo)
@@ -588,7 +604,7 @@ func (p *VideoContentVerifier) diagnoseFragmentation(origPath, decPath string) e
 
 // DiagnoseGOPAlignment ... (保留)
 func (p *VideoContentVerifier) DiagnoseGOPAlignment(filePath string, binaryOffsets []uint64) error {
-	output, err := utils.FFProbeOutput(
+	output, err := ffmpeg.Probe(
 		"-v", "error", "-select_streams", "v:0",
 		"-skip_frame", "nokey", "-show_entries", "frame=pkt_pos,pkt_pts_time",
 		"-of", "json", filePath,

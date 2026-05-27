@@ -107,6 +107,14 @@ export function getFileStreamUrl(path: string): string {
   return `${baseUrl}/stream?path=${encodeURIComponent(path)}`
 }
 
+export function getFilePreviewUrl(previewPage: string, filePath: string): string {
+  if (import.meta.env.DEV) {
+    return `/preview/${previewPage}?file=${encodeURIComponent(filePath)}`
+  }
+  const baseUrl = getApiBaseUrl()
+  return `${baseUrl}/preview/${previewPage}?file=${encodeURIComponent(filePath)}`
+}
+
 export function getExternalStreamUrl(path: string): string {
   if (import.meta.env.DEV) {
     return `/api/stream/external?path=${encodeURIComponent(path)}`
@@ -178,6 +186,7 @@ export interface EncvTask {
   eta?: string
   error?: string
   errorDetail?: string
+  containerVersion?: number
   createdAt: string
   completedAt?: string
 }
@@ -192,12 +201,13 @@ export async function getTasks(): Promise<EncvTask[]> {
   return data.tasks || []
 }
 
-export async function createTask(type: TaskType, sourcePath: string, targetPath?: string, password?: string): Promise<EncvTask> {
-  console.info('[API] createTask:', type, sourcePath, targetPath || '')
+export async function createTask(type: TaskType, sourcePath: string, targetPath?: string, password?: string, containerVersion?: number): Promise<EncvTask> {
+  console.info('[API] createTask:', type, sourcePath, targetPath || '', 'version:', containerVersion ?? 'default')
   const baseUrl = getApiBaseUrl()
   const body: Record<string, unknown> = { type, sourcePath }
   if (targetPath) body.targetPath = targetPath
   if (password) body.password = password
+  if (containerVersion) body.containerVersion = containerVersion
   const response = await fetch(`${baseUrl}/api/tasks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -343,15 +353,28 @@ let cachedTextExts: Set<string> | null = null
 export async function fetchTextPreviewExts(): Promise<Set<string>> {
   if (cachedTextExts) return cachedTextExts
   const baseUrl = getApiBaseUrl()
-  const response = await fetch(`${baseUrl}/api/file/text-preview-exts`)
-  if (!response.ok) {
-    console.error('[API] fetchTextPreviewExts failed:', response.status)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 5000)
+  try {
+    const response = await fetch(`${baseUrl}/api/file/text-preview-exts`, { signal: controller.signal })
+    if (!response.ok) {
+      console.error('[API] fetchTextPreviewExts failed:', response.status)
+      return new Set()
+    }
+    const data = await response.json() as TextPreviewExts
+    const all = new Set([...data.extensions, ...data.custom_extensions])
+    cachedTextExts = all
+    return all
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      console.warn('[API] fetchTextPreviewExts timed out after 5s')
+    } else {
+      console.error('[API] fetchTextPreviewExts error:', err)
+    }
     return new Set()
+  } finally {
+    clearTimeout(timer)
   }
-  const data = await response.json() as TextPreviewExts
-  const all = new Set([...data.extensions, ...data.custom_extensions])
-  cachedTextExts = all
-  return all
 }
 
 export function isTextPreviewable(name: string): boolean {
@@ -607,4 +630,37 @@ export async function fetchBuildInfo(): Promise<BuildInfo> {
     throw new Error(`HTTP error! status: ${response.status}`)
   }
   return await response.json()
+}
+
+export interface ContainerVersionInfo {
+  version: number
+  status: 'deprecated' | 'stable' | 'recommended'
+  label: string
+}
+
+export interface ContainerVersionsResponse {
+  versions: ContainerVersionInfo[]
+  default: number
+}
+
+export async function fetchContainerVersions(): Promise<ContainerVersionsResponse> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/container/versions`)
+  if (!response.ok) throw new Error('Failed to fetch container versions')
+  return response.json()
+}
+
+export type DecryptErrorCode = 'wrong_password' | 'data_corrupted' | 'decrypt_failed' | 'deprecated_version'
+
+export interface DecryptError {
+  error: DecryptErrorCode
+  message: string
+}
+
+export function isWrongPasswordError(error: unknown): boolean {
+  if (error && typeof error === 'object' && 'error' in error) {
+    return (error as DecryptError).error === 'wrong_password'
+  }
+  const msg = String(error).toLowerCase()
+  return msg.includes('wrong password') || msg.includes('密码')
 }

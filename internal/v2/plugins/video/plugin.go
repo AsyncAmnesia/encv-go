@@ -1,5 +1,3 @@
-// internal/v2/plugins/video/plugin.go
-
 package video
 
 import (
@@ -60,16 +58,16 @@ func (p *VideoPlugin) GetContainerExtension() string {
 }
 
 type VideoPluginConfig struct {
-	Ext string `json:"ext"`
-	ContainerChunkSizeMB int `json:"container_chunk_size_mb"`
-	LightContainerMainChunkEnabled bool `json:"light_container_main_chunk_enabled"`
-	TrackExtensions string `json:"track_extensions"`
-	KeepMkvForMkvSource bool `json:"keep_mkv_for_mkv_source"`
-	VerifyAfterPack bool `json:"verify_after_pack"`
-	PluginCacheDir string `json:"plugin_cache_dir"`
-	SkipMergeForSplitMKV bool `json:"skip_merge_for_split_mkv"`
-	AllowNoReencode bool `json:"allow_no_reencode"`
-	DefaultStreamPreset string `json:"default_stream_preset"`
+	Ext                            string `json:"ext"`
+	ContainerChunkSizeMB           int    `json:"container_chunk_size_mb"`
+	LightContainerMainChunkEnabled bool   `json:"light_container_main_chunk_enabled"`
+	TrackExtensions                string `json:"track_extensions"`
+	KeepMkvForMkvSource            bool   `json:"keep_mkv_for_mkv_source"`
+	VerifyAfterPack                bool   `json:"verify_after_pack"`
+	PluginCacheDir                 string `json:"plugin_cache_dir"`
+	SkipMergeForSplitMKV           bool   `json:"skip_merge_for_split_mkv"`
+	AllowNoReencode                bool   `json:"allow_no_reencode"`
+	DefaultStreamPreset            string `json:"default_stream_preset"`
 }
 
 func (p *VideoPlugin) GetSettingsSchemaType() interface{} {
@@ -79,14 +77,14 @@ func (p *VideoPlugin) GetSettingsSchemaType() interface{} {
 // 2. 实现接口方法，返回默认配置的 JSON
 func (p *VideoPlugin) GetDefaultSettings() json.RawMessage {
 	defaultCfg := VideoPluginConfig{
-		Ext:                          ".sccgv",
-		ContainerChunkSizeMB:         0,
+		Ext:                            ".sccgv",
+		ContainerChunkSizeMB:           0,
 		LightContainerMainChunkEnabled: false,
-		TrackExtensions:              ".ass,.srt,.dm.ass",
-		KeepMkvForMkvSource:          true,
-		VerifyAfterPack:              false,
-		AllowNoReencode:              false,
-		DefaultStreamPreset:          "balanced",
+		TrackExtensions:                ".ass,.srt,.dm.ass",
+		KeepMkvForMkvSource:            true,
+		VerifyAfterPack:                false,
+		AllowNoReencode:                false,
+		DefaultStreamPreset:            "balanced",
 	}
 	data, _ := json.Marshal(defaultCfg) // 忽略错误，因为默认值是硬编码的，不会出错
 	return data
@@ -316,7 +314,7 @@ func (p *VideoPlugin) GetPhysicalPacker() physical.PhysicalPacker {
 	return p.physicalPacker
 }
 
-func (p *VideoPlugin) BuildFragments(logicalFileSize int64) ([]types.Fragment_v2, error) {
+func (p *VideoPlugin) BuildFragments(logicalFileSize int64) ([]types.Fragment, error) {
 	return p.createGOPAlignedFragments(logicalFileSize)
 }
 
@@ -399,6 +397,24 @@ func (p *VideoPlugin) DisasterZones(inputPath string) []types.DisasterZone {
 	return []types.DisasterZone{
 		{Name: "video_header", Offset: 0, Size: 4096},
 	}
+}
+
+func (p *VideoPlugin) SupportedContainerVersions() []int {
+	return types.SupportedVersions
+}
+
+func (p *VideoPlugin) DefaultContainerVersion() int {
+	return types.DefaultContainerVersion
+}
+
+func (p *VideoPlugin) ValidateVersion(version int) error {
+	if !types.IsValidVersion(version) {
+		return fmt.Errorf("video plugin: unsupported container version: %d", version)
+	}
+	if types.IsDeprecatedVersion(version) {
+		slog.Warn("video plugin: using deprecated container version", "version", version)
+	}
+	return nil
 }
 
 // --- 加密逻辑 ---
@@ -496,7 +512,7 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 	logicalDataSize := result.EncryptedPayloadSize
 
 	// 2. 生成逻辑分片 (视频特有逻辑)
-	var logicalFragments []types.Fragment_v2
+	var logicalFragments []types.Fragment
 	var err error
 
 	logicalFragments, err = p.createGOPAlignedFragments(logicalDataSize)
@@ -517,13 +533,13 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 	// 3. 构造 Video 特有的 Manifest（KVI + LogicalFragments）
 	// 使用 result 中的 Salt 和 IV
 	kvi := VideoKVI_v2{
-		KVI_v2: types.KVI_v2{
+		KVI: types.KVI{
 			SaltBase64: crypto.Base64Encode_v2(result.Salt),
 			IVBase64:   crypto.Base64Encode_v2(result.IV),
 		},
 		VideoIndex: &p.index,
 	}
-	manifest, err := types.NewManifest_v2(kvi, logicalFragments)
+	manifest, err := types.NewManifest(kvi, logicalFragments)
 	if err != nil {
 		return fmt.Errorf("failed to create manifest: %w", err)
 	}
@@ -557,7 +573,9 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 		Namer:                 p.chunkNamer,
 		StartIdx:              startIdx,
 		LightMainChunkEnabled: p.settings.LightContainerMainChunkEnabled,
-		HeaderVersion:         3,
+		HeaderVersion:         4,
+		ContainerType:         p.ContainerType(),
+		IsSeekable:            p.DefaultIsSeekable(p.inputPath),
 		SpecialIDType:         types.IDType_Raw,
 		SpecialID:             nil,
 	}
@@ -565,6 +583,12 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 	if p.settings.ContainerChunkSizeMB == 0 {
 		packParams.FinalFileName = finalFilename
 	}
+
+	passwordHint, err := crypto.CalculatePasswordHint(p.cfg.Password, result.Salt)
+	if err != nil {
+		slog.Warn("Failed to calculate password hint, using empty hint", "error", err)
+	}
+	packParams.PasswordHint = passwordHint
 
 	// 6. 调用唯一通用代理：packer.StandardPostEncrypt
 	// Helper 内部会组装 physical.PackRequest
@@ -588,7 +612,7 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 
 // createGOPAlignedFragments 基于关键帧位置生成逻辑分片
 // 【通用性】适用于所有视频，依赖 p.index.KeyFrameOffsets
-func (p *VideoPlugin) createGOPAlignedFragments(fileSize int64) ([]types.Fragment_v2, error) {
+func (p *VideoPlugin) createGOPAlignedFragments(fileSize int64) ([]types.Fragment, error) {
 	// 如果没有提取到关键帧（例如 ffprobe 失败），则无法进行 GOP 对齐
 	if len(p.index.KeyFrameOffsets) == 0 {
 		return nil, fmt.Errorf("no keyframe offsets available for GOP alignment")
@@ -598,7 +622,7 @@ func (p *VideoPlugin) createGOPAlignedFragments(fileSize int64) ([]types.Fragmen
 	targetLogicalSize := fragment.CalculateFragmentSize(fileSize, int64(p.settings.ContainerChunkSizeMB)*1024*1024)
 	minLogicalSize := int64(2 * 1024 * 1024) // 2MB
 
-	var fragments []types.Fragment_v2
+	var fragments []types.Fragment
 	currentOffset := uint64(0)
 	fragIndex := 0
 
@@ -636,7 +660,7 @@ func (p *VideoPlugin) createGOPAlignedFragments(fileSize int64) ([]types.Fragmen
 		}
 
 		// 4. 创建 Fragment
-		frag := types.Fragment_v2{
+		frag := types.Fragment{
 			ID:                fmt.Sprintf("logical_fragment_%d", fragIndex),
 			Type:              types.FragmentType_SeekableStream,
 			GlobalStartOffset: currentOffset,

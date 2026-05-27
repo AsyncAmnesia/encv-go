@@ -614,13 +614,13 @@ func (fs *encvWebDAVFS) getIndexFromContainerPathWithCache(fullPath string) (typ
 // 从容器路径获取 Index，封装了新的架构逻辑
 func (fs *encvWebDAVFS) getIndexFromContainerPath(fullPath string) (types.Index, error) {
 	// 1. 提取 Manifest 的原始 JSON 字节
-	manifestBytes, err := manifest.ExtractManifest_v2(fullPath)
+	manifestBytes, err := manifest.ExtractManifest(fullPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract manifest bytes from %s: %w", fullPath, err)
 	}
 
 	// 2. 将字节反序列化为 Manifest 结构体
-	manifestStruct, err := manifest.DeserializeFromJSON_v2(manifestBytes)
+	manifestStruct, err := manifest.DeserializeFromJSON(manifestBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to deserialize manifest from %s: %w", fullPath, err)
 	}

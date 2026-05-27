@@ -1,3 +1,5 @@
+//go:build !android
+
 // internal/service/decrypt_preview.go
 // 预览功能：处理通过HTTP流和mpv播放器来预览加密文件的逻辑。
 

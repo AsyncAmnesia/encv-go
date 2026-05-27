@@ -1,0 +1,7 @@
+# MIGRATED to :plugin-mpv-player module
+# This directory contained MPV JNI source code (C++) and Android.mk build config.
+# The native build pipeline (libmpv.so + libplayer.so) has been fully moved to
+# the :plugin-mpv-player ComboLite plugin module.
+#
+# Status: NOT compiled — this is the overlay variant, no externalNativeBuild configured
+# The files here are kept for reference only (identical to android/app variant).

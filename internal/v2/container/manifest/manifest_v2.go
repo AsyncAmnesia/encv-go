@@ -13,6 +13,7 @@ import (
 	"github.com/Soltus/encv-go/internal/logger"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
 	"github.com/Soltus/encv-go/internal/v2/container/envelope"
+	"github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/crypto"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
@@ -36,9 +37,9 @@ func DecryptManifest(encryptedData []byte) ([]byte, error) {
 	return crypto.DecryptSystemPayload(encryptedData)
 }
 
-// DeserializeFromJSON_v2 从 JSON 字节反序列化清单
-func DeserializeFromJSON_v2(data []byte) (*types.Manifest_v2, error) {
-	var manifest types.Manifest_v2
+// DeserializeFromJSON 从 JSON 字节反序列化清单
+func DeserializeFromJSON(data []byte) (*types.Manifest, error) {
+	var manifest types.Manifest
 	err := json.Unmarshal(data, &manifest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
@@ -46,21 +47,23 @@ func DeserializeFromJSON_v2(data []byte) (*types.Manifest_v2, error) {
 	return &manifest, nil
 }
 
-// ExtractKVI_v2 从 v2 容器文件中直接扫描并提取 KVI 块的数据，不依赖清单。
-func ExtractKVI_v2(containerPath string) ([]byte, error) {
+// ExtractKVI 从容器文件中直接扫描并提取 KVI 块的数据，不依赖清单。
+func ExtractKVI(containerPath string) ([]byte, error) {
 	file, err := os.Open(containerPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file '%s': %w", containerPath, err)
 	}
 	defer file.Close()
 
-	// log.Printf("INFO: Scanning '%s' for KVI block...", containerPath)
-
-	// 1. 【关键修复】探测 Header 并跳过
-	_, headerSize, err := types.DetectHeaderInfoFromReaderAt(file)
+	version, headerSize, err := types.DetectHeaderInfoFromReaderAt(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect header size: %w", err)
 	}
+
+	if version == 4 {
+		return extractKVIV4(file)
+	}
+
 	if _, err := file.Seek(headerSize, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("failed to seek to data stream start: %w", err)
 	}
@@ -74,7 +77,7 @@ func ExtractKVI_v2(containerPath string) ([]byte, error) {
 		}
 
 		// 读取块头
-		header, err := block.ReadBlockHeader_v2(file)
+		header, err := block.ReadBlockHeader(file)
 		if err != nil {
 			if err == io.EOF {
 				return nil, fmt.Errorf("reached end of file but KVI block was not found in '%s'", containerPath)
@@ -88,8 +91,8 @@ func ExtractKVI_v2(containerPath string) ([]byte, error) {
 				slog.Int64("offset", blockStartOffset),
 				slog.Uint64("length", header.Length),
 			)
-			// 使用 ReadBlockData_v2 来读取并验证 CRC
-			kviData, err := block.ReadBlockData_v2(file, header)
+			// 使用 ReadBlockData 来读取并验证 CRC
+			kviData, err := block.ReadBlockData(file, header)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read KVI block data: %w", err)
 			}
@@ -104,27 +107,29 @@ func ExtractKVI_v2(containerPath string) ([]byte, error) {
 	}
 }
 
-// ExtractManifest_v2 从 v2 容器文件中直接扫描并提取 Manifest 块的数据。
-func ExtractManifest_v2(containerPath string) ([]byte, error) {
+// ExtractManifest 从容器文件中直接扫描并提取 Manifest 块的数据。
+func ExtractManifest(containerPath string) ([]byte, error) {
 	file, err := os.Open(containerPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file '%s': %w", containerPath, err)
 	}
 	defer file.Close()
 
-	// log.Printf("INFO: Scanning '%s' for Manifest block...", containerPath)
-
-	// 1. 【关键修复】探测 Header 并跳过
-	_, headerSize, err := types.DetectHeaderInfoFromReaderAt(file)
+	version, headerSize, err := types.DetectHeaderInfoFromReaderAt(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect header size: %w", err)
 	}
+
+	if version == 4 {
+		return extractManifestV4(file)
+	}
+
 	if _, err := file.Seek(headerSize, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("failed to seek to data stream start: %w", err)
 	}
 
 	for {
-		header, err := block.ReadBlockHeader_v2(file)
+		header, err := block.ReadBlockHeader(file)
 		if err != nil {
 			if err == io.EOF {
 				return nil, fmt.Errorf("reached end of file but Manifest block was not found in '%s'", containerPath)
@@ -133,12 +138,19 @@ func ExtractManifest_v2(containerPath string) ([]byte, error) {
 		}
 
 		if header.Type == types.BlockTypeManifest_v2 {
-			// log.Printf("DEBUG: Found Manifest block.")
-			manifestData, err := block.ReadBlockData_v2(file, header)
+			rawData, err := block.ReadBlockData(file, header)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read Manifest block data: %w", err)
 			}
-			return manifestData, nil
+			plainData, err := DecryptManifest(rawData)
+			if err != nil {
+				var check types.Manifest
+				if json.Unmarshal(rawData, &check) == nil {
+					return rawData, nil
+				}
+				return nil, fmt.Errorf("failed to decrypt manifest block (and raw parse failed): %w", err)
+			}
+			return plainData, nil
 		}
 
 		_, err = file.Seek(int64(header.Length), io.SeekCurrent)
@@ -168,18 +180,18 @@ func ReadManifestAt(filePath string, offset int64, length int64) ([]byte, error)
 	}
 
 	// 重新序列化为 JSON 字节返回（保持接口兼容）
-	return manifest.SerializeToJSON_v2()
+	return manifest.SerializeToJSON()
 }
 
 // ParseManifestFromBytes 从 JSON 字节切片中解析 Manifest
-func ParseManifestFromBytes(data []byte) (*types.Manifest_v2, error) {
-	return DeserializeFromJSON_v2(data)
+func ParseManifestFromBytes(data []byte) (*types.Manifest, error) {
+	return DeserializeFromJSON(data)
 }
 
 // ReadManifestFromFile 直接从文件路径读取并解析 Manifest
 // 这是一个低级函数，用于避免包之间的循环依赖
 // 返回：Manifest, Footer, HeaderVersion, HeaderSize, Error
-func ReadManifestFromFile(filePath string) (*types.Manifest_v2, *types.EnvelopeFooter_v2, int, int64, error) {
+func ReadManifestFromFile(filePath string) (*types.Manifest, *types.EnvelopeFooter_v2, int, int64, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, nil, 0, 0, fmt.Errorf("failed to open file: %w", err)
@@ -197,8 +209,19 @@ func ReadManifestFromFile(filePath string) (*types.Manifest_v2, *types.EnvelopeF
 		return nil, nil, 0, 0, fmt.Errorf("failed to detect header info: %w", err)
 	}
 
-	// 2. 【关键修复】使用 envelope 包读取 Footer
-	// 直接传入已经打开的 file 句柄，无需再次打开文件
+	if headerVersion == 4 {
+		plainBytes, err := extractManifestV4(file)
+		if err != nil {
+			return nil, nil, headerVersion, headerSize, fmt.Errorf("failed to extract v4 manifest: %w", err)
+		}
+		mf, err := DeserializeFromJSON(plainBytes)
+		if err != nil {
+			return nil, nil, headerVersion, headerSize, fmt.Errorf("failed to deserialize v4 manifest: %w", err)
+		}
+		return mf, nil, headerVersion, headerSize, nil
+	}
+
+	// 2. 【V2/V3 路径】使用 envelope 包读取 Footer
 	footer, err := envelope.ReadEnvelopeFooter_v2(file)
 	if err != nil {
 		return nil, nil, headerVersion, headerSize, fmt.Errorf("failed to read envelope footer: %w", err)
@@ -219,8 +242,9 @@ func ReadManifestFromFile(filePath string) (*types.Manifest_v2, *types.EnvelopeF
 	return manifest, footer, headerVersion, headerSize, nil
 }
 
+
 // ScanManifestFromFile 从头扫描文件，寻找 Manifest 块
-func ScanManifestFromFile(filePath string) (*types.Manifest_v2, int, int64, error) {
+func ScanManifestFromFile(filePath string) (*types.Manifest, int, int64, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, 0, 0, err
@@ -232,12 +256,24 @@ func ScanManifestFromFile(filePath string) (*types.Manifest_v2, int, int64, erro
 		return nil, 0, 0, err
 	}
 
+	if version == 4 {
+		plainBytes, err := extractManifestV4(file)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		mf, err := DeserializeFromJSON(plainBytes)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		return mf, version, headerSize, nil
+	}
+
 	if _, err := file.Seek(headerSize, io.SeekStart); err != nil {
 		return nil, 0, 0, err
 	}
 
 	for {
-		header, err := block.ReadBlockHeader_v2(file)
+		header, err := block.ReadBlockHeader(file)
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -252,7 +288,7 @@ func ScanManifestFromFile(filePath string) (*types.Manifest_v2, int, int64, erro
 				return nil, 0, 0, err
 			}
 
-			var manifest types.Manifest_v2
+			var manifest types.Manifest
 			if err := json.Unmarshal(data, &manifest); err != nil {
 				return nil, 0, 0, err
 			}
@@ -269,9 +305,9 @@ func ScanManifestFromFile(filePath string) (*types.Manifest_v2, int, int64, erro
 
 // readAndDecryptManifest 从当前位置读取并解密 Manifest
 // 这是一个通用的内部函数，可以被 Scan 和 Footer 路径复用
-func readAndDecryptManifest(r io.Reader) (*types.Manifest_v2, error) {
+func readAndDecryptManifest(r io.Reader) (*types.Manifest, error) {
 	// 1. 读取 Block Header
-	header, err := block.ReadBlockHeader_v2(r)
+	header, err := block.ReadBlockHeader(r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read block header: %w", err)
 	}
@@ -283,7 +319,7 @@ func readAndDecryptManifest(r io.Reader) (*types.Manifest_v2, error) {
 	}
 
 	// 3. 反序列化
-	var manifest types.Manifest_v2
+	var manifest types.Manifest
 	if err := json.Unmarshal(plainData, &manifest); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
 	}
@@ -311,7 +347,7 @@ func readBlockDataAndDecrypt(r io.Reader, header *block.BlockHeader_v2) ([]byte,
 	if err != nil {
 		// 如果解密失败，可能是旧版本未加密的 Manifest，或者是损坏数据
 		// 尝试直接解析 JSON
-		if err := json.Unmarshal(rawData, &types.Manifest_v2{}); err == nil {
+		if err := json.Unmarshal(rawData, &types.Manifest{}); err == nil {
 			out := append([]byte(nil), rawData...)
 			return out, nil // 是未加密的旧版本
 		}
@@ -325,26 +361,75 @@ func readBlockDataAndDecrypt(r io.Reader, header *block.BlockHeader_v2) ([]byte,
 // ReadEncryptedManifestBlock 直接从加密的字节数组（Header + Data）中读取并解密 Manifest
 // 这是一个辅助函数，用于 remote reader 或其他内存操作场景。
 // 它封装了读取 Header、读取/解密 Data 以及反序列化的完整流程。
-func ReadEncryptedManifestBlock(encryptedData []byte) (*types.Manifest_v2, error) {
+func ReadEncryptedManifestBlock(encryptedData []byte) (*types.Manifest, error) {
 	reader := bytes.NewReader(encryptedData)
 
-	// 1. 读取 Block Header
-	header, err := block.ReadBlockHeader_v2(reader)
+	header, err := block.ReadBlockHeader(reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read block header: %w", err)
 	}
 
-	// 2. 读取并解密数据 (复用已有的通用逻辑)
 	plainData, err := readBlockDataAndDecrypt(reader, header)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read/decrypt manifest: %w", err)
 	}
 
-	// 3. 反序列化 JSON
-	var manifest types.Manifest_v2
+	var manifest types.Manifest
 	if err := json.Unmarshal(plainData, &manifest); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
 	}
 
 	return &manifest, nil
+}
+
+func extractManifestV4(file *os.File) ([]byte, error) {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("failed to seek to start: %w", err)
+	}
+	hdr, err := types.ReadHeaderV4(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read v4 header: %w", err)
+	}
+
+	if hdr.ManifestOffset == 0 || hdr.ManifestLength == 0 {
+		return nil, fmt.Errorf("v4 header has invalid manifest offset/length")
+	}
+	obfuscated := make([]byte, hdr.ManifestLength)
+	if _, err := file.ReadAt(obfuscated, int64(hdr.ManifestOffset)); err != nil {
+		return nil, fmt.Errorf("failed to read v4 manifest data at offset %d: %w", hdr.ManifestOffset, err)
+	}
+
+	plainData, err := crypto.DeobfuscateManifest(obfuscated)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deobfuscate v4 manifest: %w", err)
+	}
+
+	v4Manifest, err := types.DeserializeManifest_v4(plainData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deserialize v4 manifest: %w", err)
+	}
+
+	v2Manifest := handle.AdaptV4ToV2(v4Manifest, hdr)
+	resultJSON, err := v2Manifest.SerializeToJSON()
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize adapted V2 manifest: %w", err)
+	}
+
+	return resultJSON, nil
+}
+
+func extractKVIV4(file *os.File) ([]byte, error) {
+	plainBytes, err := extractManifestV4(file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract manifest for KVI: %w", err)
+	}
+	mf, err := DeserializeFromJSON(plainBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to deserialize manifest for KVI: %w", err)
+	}
+	kviJSON, err := json.Marshal(mf.KVI)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal KVI: %w", err)
+	}
+	return kviJSON, nil
 }

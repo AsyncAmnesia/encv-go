@@ -369,4 +369,54 @@ class GoProcessPlugin : Plugin() {
             call.reject("Failed to set orientation: ${e.message}")
         }
     }
+
+    @PluginMethod
+    fun installPlugin(call: PluginCall) {
+        val apkPath = call.getString("apkPath") ?: run {
+            call.reject("apkPath is required")
+            return
+        }
+        try {
+            val apkFile = java.io.File(apkPath)
+            if (!apkFile.exists()) {
+                call.reject("APK file not found: $apkPath")
+                return
+            }
+            val pm = try {
+                Class.forName("com.combo.core.runtime.PluginManager")
+                    .getMethod("getInstance", Context::class.java)
+                    .invoke(null, context)
+            } catch (e: Exception) {
+                Log.w(TAG, "ComboLite PluginManager not available, using fallback", e)
+                null
+            }
+            if (pm != null) {
+                val installMethod = pm.javaClass.methods.find { it.name == "installPlugin" && it.parameterCount == 1 }
+                if (installMethod != null) {
+                    installMethod.invoke(pm, apkFile)
+                    Log.i(TAG, "Plugin installed via ComboLite: $apkPath")
+                    call.resolve(JSObject().put("success", true).put("method", "combolite"))
+                    return
+                }
+            }
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                apkFile
+            )
+            val intent = android.content.Intent(android.content.Intent.ACTION_INSTALL_PACKAGE).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                if (context !is android.app.Activity) {
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+            context.startActivity(intent)
+            Log.i(TAG, "Install intent fired for: $apkPath")
+            call.resolve(JSObject().put("success", true).put("method", "intent"))
+        } catch (e: Exception) {
+            Log.e(TAG, "installPlugin failed", e)
+            call.reject("Failed to install plugin: ${e.message}")
+        }
+    }
 }

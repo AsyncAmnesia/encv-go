@@ -8,11 +8,6 @@
           </ion-button>
         </ion-buttons>
         <ion-title>{{ fileName }}</ion-title>
-        <ion-buttons slot="end">
-          <ion-button v-if="previewType === 'text'" @click="copyContent" fill="clear" size="small">
-            <ion-icon :icon="copied ? checkmarkCircle : copyOutline" slot="icon-only"></ion-icon>
-          </ion-button>
-        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -30,23 +25,45 @@
       </div>
 
       <template v-else>
+        <div v-if="isEncryptedPreview" class="file-info-card">
+          <div class="info-grid">
+            <div class="info-row">
+              <span class="info-label">{{ t('fileInfo.name') || 'Name' }}</span>
+              <span class="info-value">{{ fileName }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">{{ t('fileInfo.size') || 'Size' }}</span>
+              <span class="info-value">{{ formatFileSize(fileSize) }}</span>
+            </div>
+            <div class="info-row" v-if="fileModified">
+              <span class="info-label">{{ t('fileInfo.modified') || 'Modified' }}</span>
+              <span class="info-value">{{ fileModified }}</span>
+            </div>
+            <div class="info-row" v-if="fileMimeType">
+              <span class="info-label">MIME</span>
+              <span class="info-value code-text">{{ fileMimeType }}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">{{ t('fileInfo.category') || 'Category' }}</span>
+              <ion-badge color="medium">{{ fileCategory }}</ion-badge>
+            </div>
+            <div class="info-row">
+              <span class="info-label">{{ t('files.encrypted') }}</span>
+              <ion-badge color="warning">Yes</ion-badge>
+            </div>
+          </div>
+        </div>
+
         <div v-if="previewType === 'image'" class="preview-wrapper image-preview">
           <img :src="streamUrl" class="preview-image" />
         </div>
 
         <div v-else-if="previewType === 'pdf'" class="preview-wrapper pdf-preview">
-          <iframe :src="streamUrl" class="preview-iframe"></iframe>
+          <iframe :src="pdfPreviewUrl" class="preview-iframe"></iframe>
         </div>
 
-        <div v-else-if="previewType === 'text'" class="preview-wrapper">
-          <div class="file-meta">
-            <span class="meta-item"><ion-icon :icon="documentTextOutline"></ion-icon> {{ filePath }}</span>
-            <span class="meta-item"><ion-icon :icon="informationCircle"></ion-icon> {{ formatFileSize(fileSize) }}</span>
-            <span v-if="encoding !== 'utf-8'" class="meta-item warn">
-              <ion-icon :icon="warning"></ion-icon> {{ encoding }}
-            </span>
-          </div>
-          <pre class="file-content"><code>{{ content }}</code></pre>
+        <div v-else-if="previewType === 'text'" class="preview-wrapper text-preview">
+          <iframe :src="textPreviewUrl" class="preview-iframe"></iframe>
         </div>
 
         <div v-else-if="previewType === 'container'" class="preview-wrapper container-info">
@@ -55,7 +72,11 @@
               <ion-icon :icon="lockClosed" class="title-icon"></ion-icon>
               ENCV Container
             </h4>
-            <div class="info-grid" v-if="containerInfo">
+            <div v-if="containerInfo?.error" class="container-error">
+              <ion-icon :icon="alertCircle" class="error-icon"></ion-icon>
+              <p>{{ containerInfo.error }}</p>
+            </div>
+            <div class="info-grid" v-if="containerInfo && !containerInfo.error">
               <div class="info-row">
                 <span class="info-label">{{ t('fileInfo.version') }}</span>
                 <span class="info-value">V{{ containerInfo.version ?? '?' }}</span>
@@ -109,31 +130,32 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons,
   IonButton, IonIcon, IonContent, IonSpinner, IonBadge,
 } from '@ionic/vue'
 import {
-  arrowBack, copyOutline, documentTextOutline,
-  alertCircle, informationCircle, warning, helpCircleOutline,
-  lockClosed, checkmarkCircle, chevronDown, chevronForward,
+  arrowBack, documentTextOutline,
+  alertCircle, informationCircle,
+  helpCircleOutline, lockClosed,
+  chevronDown, chevronForward,
 } from 'ionicons/icons'
-import { readFileContent, getFileStreamUrl, getFileCategory, getFileExtension, formatFileSize, fetchTextPreviewExts } from '@/api/encv'
-import type { FileContentResponse } from '@/api/encv'
+import { getFileStreamUrl, getFileCategory, getFileExtension, formatFileSize, fetchTextPreviewExts, getApiBaseUrl, getFilePreviewUrl } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
-import { showToast } from '@/composables/useToast'
 
 type PreviewType = 'image' | 'pdf' | 'text' | 'container' | 'unsupported'
 
 interface ContainerInfo {
-  version: number
-  container_id: string
-  container_type: string
-  is_seekable: boolean
+  version?: number
+  container_id?: string
+  container_type?: string
+  is_seekable?: boolean
   original_duration?: number
-  segments: unknown[]
+  segment_count?: number
+  segments?: unknown[]
+  error?: string
 }
 
 const { t } = useI18n()
@@ -142,17 +164,21 @@ const route = useRoute()
 
 const filePath = ref('')
 const fileName = ref('')
-const content = ref('')
 const fileSize = ref(0)
-const encoding = ref('utf-8')
 const loading = ref(true)
 const error = ref('')
 const previewType = ref<PreviewType>('unsupported')
 const streamUrl = ref('')
-const copied = ref(false)
+const textPreviewUrl = ref('')
+const pdfPreviewUrl = ref('')
 const showManifest = ref(false)
 const containerInfo = ref<ContainerInfo | null>(null)
 const manifestJson = ref('')
+const fileModified = ref('')
+const fileMimeType = ref('')
+const fileCategory = ref('')
+
+const isEncryptedPreview = computed(() => route.query.isEncrypted === 'true')
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -186,34 +212,76 @@ async function loadFile() {
   fileName.value = name || path.split('/').pop() || path
   loading.value = true
   error.value = ''
-  copied.value = false
   showManifest.value = false
   containerInfo.value = null
 
   const isEncrypted = route.query.isEncrypted === 'true'
-  previewType.value = await determinePreviewType(fileName.value, isEncrypted)
 
-  try {
-    if (previewType.value === 'image' || previewType.value === 'pdf') {
-      console.info('Loading stream preview:', fileName.value)
-      streamUrl.value = getFileStreamUrl(path)
-    } else if (previewType.value === 'text') {
-      console.info('Loading text preview:', fileName.value)
-      const data: FileContentResponse = await readFileContent(path)
-      content.value = data.content
-      fileSize.value = data.size
-      encoding.value = data.encoding
-    } else if (previewType.value === 'container') {
-      console.info('Loading container info:', fileName.value)
-      const baseUrl = import.meta.env.DEV ? '' : (await import('@/api/encv')).getApiBaseUrl()
+  if (isEncrypted) {
+    try {
+      const baseUrl = getApiBaseUrl()
       const resp = await fetch(`${baseUrl}/api/file/info?path=${encodeURIComponent(path)}`)
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
       const info = await resp.json()
-      containerInfo.value = info.container || null
+
       fileSize.value = info.size || 0
-      if (info.container) {
+      fileModified.value = info.modified || ''
+      fileMimeType.value = info.mime_type || ''
+      fileCategory.value = info.category || ''
+
+      if (info.is_encv_container && info.container) {
+        const containerType = info.container.container_type
+        containerInfo.value = info.container
         manifestJson.value = JSON.stringify(info.container.manifest || info.container, null, 2)
+
+        switch (containerType) {
+          case 'image':
+            previewType.value = 'image'
+            streamUrl.value = getFileStreamUrl(path)
+            break
+          case 'video':
+          case 'audio':
+            router.push({ path: '/player', query: { path, name: fileName.value } })
+            loading.value = false
+            return
+          case 'document':
+          case 'text':
+            const ext = getFileExtension(fileName.value)
+            if (ext === 'pdf') {
+              previewType.value = 'pdf'
+              pdfPreviewUrl.value = getFilePreviewUrl('pdf.html', path)
+            } else {
+              previewType.value = 'text'
+              textPreviewUrl.value = getFilePreviewUrl('text.html', path)
+            }
+            break
+          default:
+            previewType.value = 'container'
+        }
+      } else {
+        previewType.value = 'unsupported'
       }
+    } catch (e: any) {
+      console.error('Failed to load encrypted file:', e)
+      error.value = e?.message || String(e)
+    } finally {
+      loading.value = false
+    }
+    return
+  }
+
+  previewType.value = await determinePreviewType(fileName.value, isEncrypted)
+
+  try {
+    if (previewType.value === 'image') {
+      console.info('Loading stream preview:', fileName.value)
+      streamUrl.value = getFileStreamUrl(path)
+    } else if (previewType.value === 'pdf') {
+      console.info('Loading PDF preview:', fileName.value)
+      pdfPreviewUrl.value = getFilePreviewUrl('pdf.html', path)
+    } else if (previewType.value === 'text') {
+      console.info('Loading text preview:', fileName.value)
+      textPreviewUrl.value = getFilePreviewUrl('text.html', path)
     } else {
       console.info('Unsupported file type:', fileName.value)
       fileSize.value = 0
@@ -223,33 +291,6 @@ async function loadFile() {
     error.value = e?.message || String(e)
   } finally {
     loading.value = false
-  }
-}
-
-async function copyContent() {
-  try {
-    await navigator.clipboard.writeText(content.value)
-    copied.value = true
-    showToast({
-      message: t('filePreview.copied'),
-      duration: 1500,
-      position: 'middle',
-      color: 'success',
-    })
-    setTimeout(() => { copied.value = false }, 2000)
-  } catch {
-    const textArea = document.createElement('textarea')
-    textArea.value = content.value
-    document.body.appendChild(textArea)
-    textArea.select()
-    document.execCommand('copy')
-    document.body.removeChild(textArea)
-    showToast({
-      message: t('filePreview.copied'),
-      duration: 1500,
-      position: 'middle',
-      color: 'success',
-    })
   }
 }
 
@@ -280,7 +321,7 @@ onMounted(() => loadFile())
   border-radius: 4px;
 }
 
-.pdf-preview {
+.pdf-preview, .text-preview {
   flex: 1;
 }
 
@@ -291,50 +332,32 @@ onMounted(() => loadFile())
   flex: 1;
 }
 
-.file-meta {
-  display: flex;
-  gap: 12px;
-  padding: 8px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  font-size: 11px;
-  color: #888;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.meta-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.meta-item.warn { color: #f39c12; }
-
-.file-content {
-  margin: 0;
-  padding: 10px 14px;
-  flex: 1;
-  overflow: auto;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Courier New', monospace;
-  font-size: 13px;
-  line-height: 1.6;
-  color: #cdd6f4;
-  background: transparent;
-  white-space: pre-wrap;
-  word-break: break-all;
-  tab-size: 2;
-}
-
-.file-content code {
-  font-family: inherit;
-  background: none;
-  padding: 0;
-}
-
 .container-info {
   padding: 16px;
   gap: 12px;
   overflow-y: auto;
 }
+
+.file-info-card {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+  padding: 14px;
+  margin: 12px 16px 0;
+  border-left: 3px solid var(--ion-color-primary);
+}
+
+.container-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(231, 76, 60, 0.1);
+  border-radius: 6px;
+  color: #e74c3c;
+  margin-bottom: 12px;
+}
+.container-error .error-icon { font-size: 20px; }
+.container-error p { margin: 0; font-size: 13px; }
 
 .container-card {
   background: rgba(255, 255, 255, 0.04);

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -15,13 +16,14 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/utils"
+	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/handler"
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/Soltus/encv-go/internal/v2/provider"
-	"github.com/Soltus/encv-go/internal/v2/reader"
 	"github.com/Soltus/encv-go/internal/v2/service"
+	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
 type ForbiddenError struct{ Err error }
@@ -299,47 +301,67 @@ func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
 		result.IsEncrypted = true
 		result.Category = "encrypted"
 
-		containerInfo, openErr := reader.OpenV4Container(absPath, s.cfg.Password)
+		src, srcErr := containerhandle.NewFileSource(absPath)
+		if srcErr != nil {
+			slog.Warn("GetFileInfo: failed to open file source", "path", queryPath, "error", srcErr)
+			result.Container = map[string]interface{}{
+				"error": "cannot open container file: " + srcErr.Error(),
+			}
+			return result, nil
+		}
+		defer src.Close()
+
+		h, openErr := containerhandle.Open(src)
 		if openErr != nil {
-			slog.Warn("GetFileInfo: cannot open container", "path", queryPath, "error", openErr)
+			slog.Warn("GetFileInfo: ContainerHandle.Open failed", "path", queryPath, "error", openErr)
 			result.Container = map[string]interface{}{
 				"error": "cannot read container metadata: " + openErr.Error(),
 			}
 			return result, nil
 		}
-
-		hdr := containerInfo.Header
-		mf := containerInfo.Manifest
-
-		var containerTypeStr string
-		switch hdr.ContainerType {
-		case 1:
-			containerTypeStr = "video"
-		case 2:
-			containerTypeStr = "audio"
-		case 3:
-			containerTypeStr = "image"
-		case 4:
-			containerTypeStr = "document"
-		default:
-			containerTypeStr = fmt.Sprintf("unknown(%d)", hdr.ContainerType)
-		}
+		defer h.Close()
 
 		result.Container = map[string]interface{}{
-			"version":           4,
-			"container_id":      mf.ContainerID,
-			"container_type":    containerTypeStr,
-			"is_seekable":       hdr.IsSeekable == 1,
-			"original_duration": mf.OriginalDuration,
-			"segment_count":     len(mf.Segments),
-			"segments":          mf.Segments,
-			"manifest_size":     hdr.ManifestLength,
-			"header": map[string]interface{}{
-				"flags":           hdr.Flags,
-				"manifest_offset": hdr.ManifestOffset,
-				"manifest_length": hdr.ManifestLength,
-			},
-			"manifest": mf,
+			"version":        h.Version(),
+			"container_type": containerTypeToString(h.ContainerType()),
+			"is_seekable":    h.IsSeekable(),
+		}
+
+		if h.Version() == 4 && h.ManifestV4() != nil {
+		mf := h.ManifestV4()
+		hdr := h.HeaderV4()
+
+		containerID := mf.ContainerID
+		if containerID == "" {
+			containerID = "(auto)"
+		}
+		result.Container["container_id"] = containerID
+		result.Container["original_duration"] = mf.OriginalDuration
+		result.Container["segment_count"] = len(mf.Segments)
+		result.Container["segments"] = mf.Segments
+		result.Container["manifest_size"] = hdr.ManifestLength
+		result.Container["header"] = map[string]interface{}{
+			"flags":           hdr.Flags,
+			"manifest_offset": hdr.ManifestOffset,
+			"manifest_length": hdr.ManifestLength,
+		}
+
+		mfBytes, err := json.Marshal(mf)
+		if err != nil {
+			slog.Warn("GetFileInfo: failed to marshal manifest v4", "path", queryPath, "error", err)
+			result.Container["manifest"] = nil
+		} else {
+			var mfMap map[string]interface{}
+			if err := json.Unmarshal(mfBytes, &mfMap); err != nil {
+				slog.Warn("GetFileInfo: failed to unmarshal manifest v4", "path", queryPath, "error", err)
+				result.Container["manifest"] = nil
+			} else {
+				delete(mfMap, "kvi")
+				result.Container["manifest"] = mfMap
+			}
+		}
+	} else if h.Manifest() != nil {
+			result.Container["manifest"] = h.Manifest()
 		}
 	}
 
@@ -486,6 +508,23 @@ func (s *MobileService) CheckStoragePermission() bool {
 	f.Close()
 	slog.Info("CheckStoragePermission: OK", "dir", s.servingDir)
 	return true
+}
+
+func containerTypeToString(ct uint16) string {
+	switch ct {
+	case 1:
+		return "video"
+	case 2:
+		return "audio"
+	case 3:
+		return "image"
+	case 4:
+		return "document"
+	case 5:
+		return "text"
+	default:
+		return fmt.Sprintf("unknown(%d)", ct)
+	}
 }
 
 func isPermissionError(err error) bool {
@@ -1006,6 +1045,14 @@ func (s *MobileService) serveEncryptedExternalFile(w http.ResponseWriter, r *htt
 	)
 	if err != nil {
 		slog.Error("GetDecryptReader failed", "path", fullPath, "error", err)
+		if errors.Is(err, types.ErrWrongPassword) {
+			http.Error(w, `{"error":"wrong_password","message":"密码可能错误，请检查后重试"}`, http.StatusForbidden)
+			return
+		}
+		if errors.Is(err, types.ErrDataCorrupted) {
+			http.Error(w, `{"error":"data_corrupted","message":"文件数据已损坏"}`, http.StatusUnprocessableEntity)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

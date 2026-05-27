@@ -1,11 +1,14 @@
 package reader
 
 import (
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"sync"
 
+	"github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/container/fragment"
+	"github.com/Soltus/encv-go/internal/v2/crypto"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -37,7 +40,7 @@ type decryptReaderFactory struct {
 
 	// 缓存解析结果，避免重复读取文件
 	mu                  sync.RWMutex
-	cachedManifest      *types.Manifest_v2
+	cachedManifest      *types.Manifest
 	cachedHeaderVersion int
 	cachedIndex         types.Index
 	kviProvider         types.KVIProvider
@@ -64,6 +67,12 @@ func NewDecryptReaderFactory(containerPath, password string) (DecryptReaderFacto
 	// 在创建时就解析并缓存元数据
 	if err := f.parseAndCacheMetadata(); err != nil {
 		return nil, fmt.Errorf("failed to initialize factory: %w", err)
+	}
+
+	if f.cachedHeaderVersion == 4 {
+		if err := f.verifyPasswordHint(); err != nil {
+			return nil, err
+		}
 	}
 
 	return f, nil
@@ -103,6 +112,37 @@ func (f *decryptReaderFactory) parseAndCacheMetadata() error {
 	if len(seekableFragments) > 0 {
 		f.seekableIndex = newFragmentRangeIndex(seekableFragments)
 		f.isSeekable = true
+	}
+
+	return nil
+}
+
+func (f *decryptReaderFactory) verifyPasswordHint() error {
+	src, err := handle.NewFileSource(f.containerPath)
+	if err != nil {
+		return fmt.Errorf("failed to open container for password hint verification: %w", err)
+	}
+	defer src.Close()
+
+	h, err := handle.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open container handle: %w", err)
+	}
+	defer h.Close()
+
+	hdr := h.HeaderV4()
+	if hdr.PasswordHint == [16]byte{} {
+		return nil
+	}
+
+	saltBase64 := f.kviProvider.GetEncryptionInfo().SaltBase64
+	salt, err := base64.StdEncoding.DecodeString(saltBase64)
+	if err != nil {
+		return fmt.Errorf("failed to decode salt for password hint verification: %w", err)
+	}
+
+	if !crypto.VerifyPasswordHint(hdr.PasswordHint, f.password, salt) {
+		return fmt.Errorf("%w: password hint verification failed", types.ErrWrongPassword)
 	}
 
 	return nil

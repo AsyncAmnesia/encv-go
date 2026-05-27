@@ -408,7 +408,7 @@ class EncvGoService : Service() {
 
     private fun copyDefaultConfig(dest: File) {
         try {
-            assets.open("config.mobile.json").use { input ->
+            assets.open("config.user.json").use { input ->
                 FileOutputStream(dest).use { output ->
                     input.copyTo(output)
                 }
@@ -426,7 +426,7 @@ class EncvGoService : Service() {
             var changed = false
 
             val defaults = try {
-                JSONObject(assets.open("config.mobile.json").bufferedReader().use { it.readText() })
+                JSONObject(assets.open("config.user.json").bufferedReader().use { it.readText() })
             } catch (e: Exception) {
                 Log.w(TAG, "Cannot read default config for merge", e)
                 return
@@ -462,6 +462,50 @@ class EncvGoService : Service() {
                 changed = true
             }
 
+            val existingMobile = existing.optJSONObject("mobile")
+            val defaultMobile = defaults.optJSONObject("mobile")
+            if (defaultMobile != null) {
+                val targetMobile = existingMobile ?: JSONObject().also {
+                    existing.put("mobile", it)
+                    changed = true
+                }
+                if (!targetMobile.has("server_dir")) {
+                    targetMobile.put("server_dir", defaultMobile.optString("server_dir", ""))
+                    changed = true
+                }
+                if (!targetMobile.has("output_path")) {
+                    targetMobile.put("output_path", defaultMobile.optString("output_path", ""))
+                    changed = true
+                }
+                if (!targetMobile.has("webdav_dir")) {
+                    targetMobile.put("webdav_dir", defaultMobile.optString("webdav_dir", ""))
+                    changed = true
+                }
+            }
+
+            if (!existing.has("recover")) {
+                existing.put("recover", defaults.optBoolean("recover", false))
+                changed = true
+            }
+            if (!existing.has("default_container_version")) {
+                existing.put("default_container_version", defaults.optInt("default_container_version", 4))
+                changed = true
+            }
+            if (!existing.has("admin")) {
+                existing.put("admin", defaults.optJSONObject("admin") ?: JSONObject().put("password", ""))
+                changed = true
+            }
+            if (!existing.has("webdav")) {
+                val defaultWebdav = defaults.optJSONObject("webdav")
+                existing.put("webdav", defaultWebdav ?: JSONObject().put("root", "").put("dir", "").put("username", "").put("password", ""))
+                changed = true
+            }
+            if (!existing.has("proxy")) {
+                val defaultProxy = defaults.optJSONObject("proxy")
+                existing.put("proxy", defaultProxy ?: JSONObject().put("sites", JSONObject()).put("disable_signature_verification", true))
+                changed = true
+            }
+
             if (changed) {
                 dest.writeText(existing.toString(2))
                 Log.i(TAG, "Config merged with new defaults")
@@ -474,10 +518,20 @@ class EncvGoService : Service() {
     private fun writeFallbackConfig(dest: File) {
         val fallback = JSONObject().apply {
             put("password", "")
+            put("recover", false)
+            put("default_container_version", 4)
             put("output_path", "/storage/emulated/0/encv-output")
             put("server", JSONObject().put("port", DEFAULT_PORT).put("dir", "/storage/emulated/0"))
+            put("admin", JSONObject().put("password", ""))
+            put("webdav", JSONObject().put("root", "").put("dir", "").put("username", "").put("password", ""))
+            put("proxy", JSONObject().put("sites", JSONObject()).put("disable_signature_verification", true))
             put("plugin_settings", JSONObject())
-            put("log", JSONObject().put("level", "info").put("console", true))
+            put("log", JSONObject().put("level", "info").put("file", "").put("console", true))
+            put("mobile", JSONObject().apply {
+                put("server_dir", "/storage/emulated/0")
+                put("output_path", "/storage/emulated/0/encv-output")
+                put("webdav_dir", "")
+            })
         }
         dest.writeText(fallback.toString(2))
         Log.i(TAG, "Fallback config written to ${dest.absolutePath}")

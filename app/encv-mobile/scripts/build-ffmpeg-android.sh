@@ -32,17 +32,17 @@ mkdir -p "$BUILD_DIR" "$OUTPUT_DIR" "$LOG_DIR"
 
 echo "=== Checking for cached ffmpeg output ==="
 if [ -f "${OUTPUT_DIR}/libffmpeg.so" ] && [ -f "${OUTPUT_DIR}/libffprobe.so" ]; then
-    echo "✅ ffmpeg output already exists, checking symbols..."
-    if ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" | grep -q "ffmpeg_run" && \
-       ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" | grep -q "ff_graph_css_data" && \
-       ${NM} -D "${OUTPUT_DIR}/libffprobe.so" | grep -q "ffprobe_run" && \
-       ${NM} -D "${OUTPUT_DIR}/libffprobe.so" | grep -q "ff_graph_css_data"; then
+    HAS_FFMPEG_RUN=$(${NM} -D "${OUTPUT_DIR}/libffmpeg.so" 2>/dev/null | grep -q "ffmpeg_run" && echo "yes" || echo "")
+    HAS_FF_GRAPH_CSS=$(${NM} -D "${OUTPUT_DIR}/libffmpeg.so" 2>/dev/null | grep -q "ff_graph_css_data" && echo "yes" || "")
+    HAS_FFPROBE_RUN=$(${NM} -D "${OUTPUT_DIR}/libffprobe.so" 2>/dev/null | grep -q "ffprobe_run" && echo "yes" || "")
+
+    if [ "$HAS_FFMPEG_RUN" = "yes" ] && [ "$HAS_FF_GRAPH_CSS" = "yes" ] && [ "$HAS_FFPROBE_RUN" = "yes" ]; then
         echo "✅ All ffmpeg libraries cached and valid, skipping build"
         echo "Output: $OUTPUT_DIR"
         ls -lh "$OUTPUT_DIR"
         exit 0
     else
-        echo "⚠️  Cached libraries missing expected symbols, rebuilding..."
+        echo "⚠️  Cached libraries missing expected symbols (ffmpeg_run=$HAS_FFMPEG_RUN ff_graph_css_data=$HAS_FF_GRAPH_CSS ffprobe_run=$HAS_FFPROBE_RUN), rebuilding..."
         rm -f "${OUTPUT_DIR}/libffmpeg.so" "${OUTPUT_DIR}/libffprobe.so"
     fi
 fi
@@ -221,7 +221,15 @@ for f in $FFMPEG_CORE_FFTOOLS; do
     [ -f "${FFMPEG_SRC}/${f}" ] && FFMPEG_FFTOOLS="$FFMPEG_FFTOOLS $f"
 done
 
-FFMPEG_OPTIONAL_DIRS="fftools/textformat fftools/graph fftools/resources"
+FFMPEG_GRAPH_FFTOOLS=""
+if [ -d "${FFMPEG_SRC}/fftools/graph" ]; then
+    for f in ${FFMPEG_SRC}/fftools/graph/*.c; do
+        [ -f "$f" ] && FFMPEG_GRAPH_FFTOOLS="$FFMPEG_GRAPH_FFTOOLS fftools/graph/$(basename $f)"
+        FFMPEG_FFTOOLS="$FFMPEG_FFTOOLS fftools/graph/$(basename $f)"
+    done
+fi
+
+FFMPEG_OPTIONAL_DIRS="fftools/textformat fftools/resources"
 for dir in $FFMPEG_OPTIONAL_DIRS; do
     if [ -d "${FFMPEG_SRC}/${dir}" ]; then
         for f in ${FFMPEG_SRC}/${dir}/*.c; do
@@ -252,11 +260,15 @@ for src in $FFMPEG_FFTOOLS; do
     for core in $FFMPEG_CORE_FFTOOLS; do
         [ "$src" = "$core" ] && is_core=true && break
     done
+    is_graph=false
+    for graph in $FFMPEG_GRAPH_FFTOOLS; do
+        [ "$src" = "$graph" ] && is_graph=true && break
+    done
     if $CC $CFLAGS -c -o "$obj" "${FFMPEG_SRC}/${src}" > "${LOG_DIR}/ffmpeg_${objname}.log" 2>&1; then
         FFMPEG_OBJS="$FFMPEG_OBJS $obj"
     else
-        if $is_core; then
-            echo "❌ Failed to compile core file ${src} (see ${LOG_DIR}/ffmpeg_${objname}.log)"
+        if $is_core || $is_graph; then
+            echo "❌ Failed to compile required file ${src} (see ${LOG_DIR}/ffmpeg_${objname}.log)"
             cat "${LOG_DIR}/ffmpeg_${objname}.log" | tail -10
             exit 1
         else
@@ -272,7 +284,6 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffmpeg.so" \
     ${X264_INSTALL}/lib/libx264.a \
     -lm -lz -llog \
     -Wl,--gc-sections \
-    -Wl,--undefined=ff_graph_css_data \
     -Wl,--allow-multiple-definition \
     $LDFLAGS > "${LOG_DIR}/link_ffmpeg.log" 2>&1 || {
     echo "❌ Failed to link libffmpeg.so (see ${LOG_DIR}/link_ffmpeg.log)"
@@ -304,7 +315,6 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffprobe.so" \
     ${X264_INSTALL}/lib/libx264.a \
     -lm -lz -llog \
     -Wl,--gc-sections \
-    -Wl,--undefined=ff_graph_css_data \
     -Wl,--allow-multiple-definition \
     $LDFLAGS > "${LOG_DIR}/link_ffprobe.log" 2>&1 || {
     echo "❌ Failed to link libffprobe.so (see ${LOG_DIR}/link_ffprobe.log)"
@@ -325,8 +335,15 @@ echo "✅ Copied and stripped libffprobe.so"
 echo "=== Verifying exported symbols ==="
 for lib in libffmpeg.so libffprobe.so; do
     echo "--- ${lib} symbols ---"
-    ${NM} -D "${OUTPUT_DIR}/${lib}" | grep -E "ffmpeg_run|ffprobe_run|ffmpeg_reset|ffprobe_reset|ff_graph_css_data" || echo "⚠️  No expected symbols found"
+    ${NM} -D "${OUTPUT_DIR}/${lib}" | grep -E "ffmpeg_run|ffprobe_run|ffmpeg_reset|ffprobe_reset" || echo "⚠️  No expected symbols found"
 done
+
+echo "=== Verifying ff_graph_css_data in libffmpeg.so ==="
+if ! ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" 2>/dev/null | grep -q "ff_graph_css_data"; then
+    echo "❌ ff_graph_css_data not found in libffmpeg.so — graph module compilation may have failed"
+    exit 1
+fi
+echo "✅ ff_graph_css_data present"
 
 echo "=== Generating build-info.json ==="
 ENABLED_DECODERS="h264,hevc,aac,mp3,opus,vorbis,flac,pcm_s16le,pcm_s24le,pcm_s32le,aac_latm"

@@ -13,7 +13,7 @@ import (
 type PhysicalPacker interface {
 	// Pack 执行完整的物理打包，包括数据分片和 Manifest 写入
 	// 【关键修改】接收 manifest 作为参数，并负责完成所有写入
-	Pack(manifest *types.Manifest_v2, req *PackRequest) (mainChunkPath string, err error)
+	Pack(manifest *types.Manifest, req *PackRequest) (mainChunkPath string, err error)
 }
 
 // PhysicalUnpacker 定义了物理分片的解包接口
@@ -58,8 +58,12 @@ type PackRequest struct {
 	StartIdx              int
 	LightMainChunkEnabled bool // 是否启用轻量级主分片，启用后主分片只包含清单，不包含源数据
 
-	// V3 头部配置
+	// V3/V4 头部配置
 	HeaderVersion int
+	ContainerType uint16
+	IsSeekable    bool
 	SpecialID     []byte // 可选，如果不提供且 HeaderVersion=3，将自动生成占位符
 	SpecialIDType types.IDType
+
+	PasswordHint [16]byte
 }

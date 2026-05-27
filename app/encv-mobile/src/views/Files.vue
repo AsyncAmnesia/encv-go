@@ -101,6 +101,7 @@
           </ion-button>
         </ion-item>
       </ion-list>
+
     </ion-content>
   </ion-page>
 </template>
@@ -154,9 +155,6 @@ import {
   PermissionDeniedError,
   NotFoundError,
   deleteFile,
-  createTask,
-  fetchConfig,
-  checkEncryptOutputExists,
 } from '@/api/encv'
 import type { FileItem } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
@@ -177,7 +175,7 @@ function getPlayMode(mediaType: 'video' | 'audio'): PlayMode {
 }
 
 function playMedia(file: FileItem, category: string) {
-  const isVideo = category === 'video' || category === 'encrypted'
+  const isVideo = category === 'video'
   const mediaType = isVideo ? 'video' : 'audio'
   const mimeType = isVideo ? 'video/*' : 'audio/*'
   const mode = getPlayMode(mediaType)
@@ -487,10 +485,13 @@ async function handleLongPress(file: FileItem) {
     })
   } else if (category === 'encrypted') {
     buttons.push({
-      text: t('files.play'),
-      icon: videocam,
+      text: t('files.preview'),
+      icon: image,
       handler: () => {
-        playMedia(file, 'encrypted')
+        router.push({
+          path: '/tabs/preview',
+          query: { path: file.path, name: file.name, isEncrypted: 'true' },
+        })
       },
     })
     buttons.push({
@@ -553,112 +554,18 @@ async function handleLongPress(file: FileItem) {
   await actionSheet.present()
 }
 
-async function handleEncryptFile(file: FileItem) {
-  const parentDir = file.path.substring(0, file.path.lastIndexOf('/')) || '/'
-  let globalPassword = ''
-  try {
-    const cfg = await fetchConfig()
-    globalPassword = (cfg as any).password || ''
-  } catch {}
-
-  if (!globalPassword) {
-    showToast({ message: t('files.noPassword'), duration: 2000, color: 'danger' })
-    return
-  }
-
-  const alert = await alertController.create({
-    header: t('files.encrypt'),
-    inputs: [
-      {
-        name: 'targetPath',
-        type: 'text',
-        placeholder: t('tasks.targetPathPlaceholder'),
-        value: parentDir,
-        attributes: { autocomplete: 'off' },
-      },
-    ],
-    buttons: [
-      { text: t('files.cancelSelect'), role: 'cancel' },
-      {
-        text: t('files.encrypt'),
-        handler: async (data: Record<string, string>) => {
-          const targetPath = (data.targetPath || '').trim()
-          const result = await checkEncryptOutputExists(file.path, targetPath || undefined)
-
-          if (result.exists) {
-            const outputName = result.outputPath.split('/').pop() || ''
-            const confirm = await alertController.create({
-              header: t('files.encrypt'),
-              message: t('files.overwriteConfirm', { name: outputName }),
-              buttons: [
-                { text: t('files.cancelSelect'), role: 'cancel' },
-                {
-                  text: t('common.confirm'),
-                  handler: async () => {
-                    await doCreateTask('encrypt', file.path, targetPath, '')
-                  },
-                },
-              ],
-            })
-            await confirm.present()
-          } else {
-            await doCreateTask('encrypt', file.path, targetPath, '')
-          }
-        },
-      },
-    ],
+function handleEncryptFile(file: FileItem) {
+  router.push({
+    path: '/tabs/tasks',
+    query: { action: 'new', type: 'encrypt', source: file.path },
   })
-  await alert.present()
 }
 
-async function handleDecryptFile(file: FileItem) {
-  const parentDir = file.path.substring(0, file.path.lastIndexOf('/')) || '/'
-  let globalPassword = ''
-  try {
-    const cfg = await fetchConfig()
-    globalPassword = (cfg as any).password || ''
-  } catch {}
-
-  const alert = await alertController.create({
-    header: t('files.decrypt'),
-    inputs: [
-      {
-        name: 'targetPath',
-        type: 'text',
-        placeholder: t('tasks.targetPathPlaceholder'),
-        value: parentDir,
-        attributes: { autocomplete: 'off' },
-      },
-      {
-        name: 'password',
-        type: 'password',
-        placeholder: t('tasks.passwordPlaceholder'),
-        value: globalPassword,
-        attributes: { autocomplete: 'off' },
-      },
-    ],
-    buttons: [
-      { text: t('files.cancelSelect'), role: 'cancel' },
-      {
-        text: t('files.decrypt'),
-        handler: async (data: Record<string, string>) => {
-          const targetPath = (data.targetPath || '').trim()
-          const password = (data.password || '').trim()
-          await doCreateTask('decrypt', file.path, targetPath, password)
-        },
-      },
-    ],
+function handleDecryptFile(file: FileItem) {
+  router.push({
+    path: '/tabs/tasks',
+    query: { action: 'new', type: 'decrypt', source: file.path },
   })
-  await alert.present()
-}
-
-async function doCreateTask(type: 'encrypt' | 'decrypt', sourcePath: string, targetPath: string, password: string) {
-  try {
-    await createTask(type, sourcePath, targetPath, password)
-    showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
-  } catch {
-    showToast({ message: t('tasks.taskCreateFailed'), duration: 2000, color: 'danger' })
-  }
 }
 
 async function handleDeleteFile(file: FileItem) {
@@ -799,7 +706,4 @@ function onBackendReadyWindow(event: Event) {
 .open-folder-icon {
   font-size: 20px;
   color: var(--ion-color-primary);
-}
-
-
-</style>
+}</style>

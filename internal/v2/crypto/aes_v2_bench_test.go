@@ -18,7 +18,7 @@ func BenchmarkGenerateKey_v2(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		GenerateKey_v2("benchmark-password", salt, KeySize_v2)
+		GenerateKey("benchmark-password", salt, KeySize_v2)
 	}
 }
 
@@ -54,7 +54,7 @@ func BenchmarkEncryptStream_v2(b *testing.B) {
 	}
 
 	salt, _ := GenerateSalt_v2(SaltSize_v2)
-	key := GenerateKey_v2("benchmark-password", salt, KeySize_v2)
+	key := GenerateKey("benchmark-password", salt, KeySize_v2)
 	iv, _ := GenerateIV_v2(IVSize_v2)
 
 	for _, size := range sizes {
@@ -90,7 +90,7 @@ func BenchmarkDecryptStream_v2(b *testing.B) {
 	}
 
 	salt, _ := GenerateSalt_v2(SaltSize_v2)
-	key := GenerateKey_v2("benchmark-password", salt, KeySize_v2)
+	key := GenerateKey("benchmark-password", salt, KeySize_v2)
 	iv, _ := GenerateIV_v2(IVSize_v2)
 
 	for _, size := range sizes {
@@ -123,7 +123,7 @@ func BenchmarkEncryptBytes_v2(b *testing.B) {
 	}
 
 	salt, _ := GenerateSalt_v2(SaltSize_v2)
-	key := GenerateKey_v2("benchmark-password", salt, KeySize_v2)
+	key := GenerateKey("benchmark-password", salt, KeySize_v2)
 	iv, _ := GenerateIV_v2(IVSize_v2)
 
 	for _, size := range sizes {
@@ -150,7 +150,7 @@ func BenchmarkDecryptBytes_v2(b *testing.B) {
 	}
 
 	salt, _ := GenerateSalt_v2(SaltSize_v2)
-	key := GenerateKey_v2("benchmark-password", salt, KeySize_v2)
+	key := GenerateKey("benchmark-password", salt, KeySize_v2)
 	iv, _ := GenerateIV_v2(IVSize_v2)
 
 	for _, size := range sizes {

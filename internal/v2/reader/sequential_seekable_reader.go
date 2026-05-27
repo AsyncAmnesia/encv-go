@@ -14,7 +14,7 @@ import (
 type SequentialSeekableDecryptReader struct {
 	containerReader  EncryptedContainerReader
 	key, iv          []byte
-	fragments        []types.Fragment_v2
+	fragments        []types.Fragment
 	seekIndex        *fragmentRangeIndex
 	currentIndex     int
 	currentReader    io.ReadCloser

@@ -14,14 +14,15 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/writer"
 )
 
-func init() {
+func TestMain(m *testing.M) {
 	types.RegisterKVIProvider("video", func(rawKVI json.RawMessage) (types.KVIProvider, error) {
-		var kvi types.KVI_v2
+		var kvi types.KVI
 		if err := json.Unmarshal(rawKVI, &kvi); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal KVI: %w", err)
 		}
-		return benchKVI{KVI_v2: kvi}, nil
+		return benchKVI{KVI: kvi}, nil
 	})
+	m.Run()
 }
 
 // suppressOutput 抑制 fmt.Printf 等输出，返回恢复函数
@@ -37,11 +38,11 @@ func suppressOutput() func() {
 }
 
 type benchKVI struct {
-	types.KVI_v2
+	types.KVI
 }
 
 func (k benchKVI) GetKind() types.IndexKind        { return "video" }
-func (k benchKVI) GetEncryptionInfo() types.KVI_v2 { return k.KVI_v2 }
+func (k benchKVI) GetEncryptionInfo() types.KVI { return k.KVI }
 func (k benchKVI) GetIndex() types.Index {
 	return &benchIndex{size: 0}
 }
@@ -65,7 +66,7 @@ func createDetectorFixture(b *testing.B, dataSize int64, fragCount int) string {
 
 	salt, _ := crypto.GenerateSalt_v2(types.SaltSize_v2)
 	iv, _ := crypto.GenerateIV_v2(types.IVSize_v2)
-	key := crypto.GenerateKey_v2(password, salt, types.KeySize_v2)
+	key := crypto.GenerateKey(password, salt, types.KeySize_v2)
 
 	var encryptedBuf struct{ WriteTo func() error }
 	_ = encryptedBuf
@@ -75,7 +76,7 @@ func createDetectorFixture(b *testing.B, dataSize int64, fragCount int) string {
 	payloadData := encData[saltIVSize:]
 
 	kvi := &benchKVI{
-		KVI_v2: types.KVI_v2{
+		KVI: types.KVI{
 			SaltBase64: crypto.Base64Encode_v2(salt),
 			IVBase64:   crypto.Base64Encode_v2(iv),
 		},
@@ -86,14 +87,14 @@ func createDetectorFixture(b *testing.B, dataSize int64, fragCount int) string {
 		fragmentSize = dataSize
 		fragCount = 1
 	}
-	fragments := make([]types.Fragment_v2, 0, fragCount)
+	fragments := make([]types.Fragment, 0, fragCount)
 	var offset uint64
 	for i := 0; i < fragCount; i++ {
 		size := fragmentSize
 		if i == fragCount-1 {
 			size = dataSize - int64(offset)
 		}
-		fragments = append(fragments, types.Fragment_v2{
+		fragments = append(fragments, types.Fragment{
 			ID:                fmt.Sprintf("logical_fragment_%d", i),
 			Type:              types.FragmentType_SeekableStream,
 			Length:            uint64(size),
@@ -102,7 +103,7 @@ func createDetectorFixture(b *testing.B, dataSize int64, fragCount int) string {
 		offset += uint64(size)
 	}
 
-	manifest, _ := types.NewManifest_v2(kvi, fragments)
+	manifest, _ := types.NewManifest(kvi, fragments)
 
 	header, _ := types.CreateHeaderV3(true, types.IDType_Raw, nil)
 	containerPath := filepath.Join(tempDir, "bench_detect.sccgv")

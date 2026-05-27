@@ -58,8 +58,13 @@
               <div v-if="task.status === 'completed'" class="completed-info">
                 <ion-icon :icon="checkmarkCircle" color="success" class="completed-icon"></ion-icon>
                 <span class="completed-text">{{ t('tasks.phaseCompleted') }}</span>
+                <span v-if="task.containerVersion" class="container-version">V{{ task.containerVersion }}</span>
               </div>
-              <p v-if="task.error" class="task-error">{{ task.error }}</p>
+              <p v-if="isPasswordError(task)" class="task-error password-error">
+                <ion-icon :icon="lockClosed"></ion-icon>
+                {{ t('tasks.passwordErrorHint') }}
+              </p>
+              <p v-else-if="task.error" class="task-error">{{ task.error }}</p>
               <div v-if="task.errorDetail && task.errorDetail !== task.error" class="error-detail-row">
                 <p class="task-error-detail" @click="toggleErrorDetail(task.id)">
                   {{ showErrorDetail[task.id] ? t('tasks.hideDetail') : t('tasks.showDetail') }}
@@ -171,6 +176,26 @@
               </ion-button>
             </ion-item>
           </ion-list>
+
+          <!-- 容器版本选择（仅加密时显示） -->
+          <ion-item v-if="newTaskType === 'encrypt'">
+            <ContainerVersionSelector v-model="newTaskVersion" />
+          </ion-item>
+
+          <!-- 二级密码（占位，计划中） -->
+          <ion-item>
+            <ion-input
+              v-model="newTaskSecondaryPassword"
+              :label="t('tasks.secondaryPassword')"
+              label-placement="stacked"
+              type="password"
+              disabled
+              placeholder=""
+            >
+              <ion-badge color="medium" slot="end">{{ t('tasks.comingSoon') }}</ion-badge>
+            </ion-input>
+          </ion-item>
+
           <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath || !!sourcePathError || !!targetPathError">
             <ion-icon :icon="lockClosed" slot="start"></ion-icon>
             {{ t('tasks.createTask') }}
@@ -182,7 +207,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import {
   IonPage,
   IonHeader,
@@ -221,21 +246,28 @@ import {
   folderOpen,
   copyOutline,
 } from 'ionicons/icons'
+import { useRoute, useRouter } from 'vue-router'
+import ContainerVersionSelector from '@/components/ContainerVersionSelector.vue'
 import {
   getTasks,
   createTask,
   cancelTask,
   retryTask,
   listFiles,
+  isWrongPasswordError,
 } from '@/api/encv'
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
+import { useConfig } from '@/composables/useConfig'
 import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
 import { showToast } from '@/composables/useToast'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
+const { config } = useConfig()
 
 const tasks = ref<EncvTask[]>([])
 const loading = ref(false)
@@ -247,6 +279,9 @@ const newTaskPath = ref('')
 const newTaskTargetPath = ref('')
 const sourcePathError = ref('')
 const targetPathError = ref('')
+const newTaskPassword = ref('')
+const newTaskVersion = ref(4)
+const newTaskSecondaryPassword = ref('')
 let sourceValidateTimer: ReturnType<typeof setTimeout> | null = null
 let targetValidateTimer: ReturnType<typeof setTimeout> | null = null
 let sourceValidateGeneration = 0
@@ -346,6 +381,11 @@ function getTaskDuration(task: EncvTask): string {
     return formatDuration(Date.now() - created)
   }
   return ''
+}
+
+function isPasswordError(task: EncvTask): boolean {
+  if (!task.error) return false
+  return isWrongPasswordError(task.error)
 }
 
 async function loadTasks() {
@@ -475,8 +515,17 @@ async function handleBrowseTarget() {
 async function handleCreateTask() {
   if (!newTaskPath.value) return
   try {
-    await createTask(newTaskType.value, newTaskPath.value, newTaskTargetPath.value || undefined)
+    await createTask(
+      newTaskType.value,
+      newTaskPath.value,
+      newTaskTargetPath.value || undefined,
+      undefined,
+      newTaskType.value === 'encrypt' ? newTaskVersion.value : undefined
+    )
     showNewTaskModal.value = false
+    if (route.query.action) {
+      router.replace({ query: {} as Record<string, undefined> })
+    }
     showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
     await loadTasks()
   } catch {
@@ -557,13 +606,33 @@ function onTaskCompleted(data: { id: string; status?: string; error?: string; er
   }
 }
 
+function processQueryAction() {
+  if (route.query.action === 'new') {
+    if (route.query.type === 'encrypt' || route.query.type === 'decrypt') {
+      newTaskType.value = route.query.type as TaskType
+    }
+    if (route.query.source) {
+      newTaskPath.value = route.query.source as string
+      sourcePathError.value = ''
+    }
+    showNewTaskModal.value = true
+    router.replace({ path: '/tabs/tasks', query: {} })
+  }
+}
+
 onMounted(() => {
+  if (config.value?.password) {
+    newTaskPassword.value = config.value.password as string
+  }
+  processQueryAction()
   loadTasks()
   eventBus.on('task:update', onTaskUpdate)
   eventBus.on('task:progress', onTaskProgress)
   eventBus.on('task:created', onTaskCreated)
   eventBus.on('task:completed', onTaskCompleted)
 })
+
+watch(() => route.query, processQueryAction, { immediate: false })
 
 onUnmounted(() => {
   eventBus.off('task:update', onTaskUpdate)
@@ -684,10 +753,35 @@ onUnmounted(() => {
   color: var(--ion-color-success);
 }
 
+.container-version {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ion-color-primary);
+  background: rgba(var(--ion-color-primary-rgb), 0.12);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+
 .task-error {
   color: var(--ion-color-danger);
   font-size: 12px;
   margin-top: 4px;
+}
+
+.password-error {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(var(--ion-color-danger-rgb), 0.08);
+  padding: 6px 10px;
+  border-radius: 6px;
+  border-left: 3px solid var(--ion-color-danger);
+}
+
+.password-error ion-icon {
+  font-size: 14px;
+  flex-shrink: 0;
 }
 
 .task-error-detail {

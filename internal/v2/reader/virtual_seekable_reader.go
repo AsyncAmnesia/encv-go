@@ -17,7 +17,7 @@ type VirtualSeekableDecryptReader struct {
 	key             []byte
 	iv              []byte
 
-	streamFragments      []types.Fragment_v2
+	streamFragments      []types.Fragment
 	seekIndex            *fragmentRangeIndex
 	currentFragmentIndex int
 
@@ -251,13 +251,13 @@ func deriveKeyAndIV(kviProvider types.KVIProvider, password string) (key, iv []b
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to decode iv: %w", err)
 	}
-	key = crypto.GenerateKey_v2(password, salt, types.KeySize_v2)
+	key = crypto.GenerateKey(password, salt, types.KeySize_v2)
 	return key, iv, nil
 }
 
 // filterFragmentsByType 筛选出指定类型的 Fragment
-func filterFragmentsByType(frags []types.Fragment_v2, fragType string) []types.Fragment_v2 {
-	var result []types.Fragment_v2
+func filterFragmentsByType(frags []types.Fragment, fragType string) []types.Fragment {
+	var result []types.Fragment
 	for _, f := range frags {
 		if string(f.Type) == fragType {
 			result = append(result, f)

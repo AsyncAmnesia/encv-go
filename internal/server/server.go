@@ -22,6 +22,7 @@ import (
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/middleware"
 	"github.com/Soltus/encv-go/internal/openlist"
+	"github.com/Soltus/encv-go/internal/openlist/web"
 	"github.com/Soltus/encv-go/internal/register"
 	"github.com/Soltus/encv-go/internal/routes"
 	"github.com/Soltus/encv-go/internal/utils"
@@ -81,6 +82,24 @@ func (s *Server) GetCredentials() (string, string) {
 	return s.cfg.Webdav.Username, s.cfg.Webdav.Password
 }
 
+var knownRoutePrefixes = []string{
+	"/api/", "/admin", "/login", "/logout",
+	"/p", "/p-api", "/openlist",
+	"/preview/", "/stream", "/decrypt",
+	"/ws", "/ping", "/health",
+}
+
+func checkWebdavRouteConflict(webdavRoot string) string {
+	cleanRoot := strings.TrimSuffix(webdavRoot, "/")
+	for _, prefix := range knownRoutePrefixes {
+		cleanPrefix := strings.TrimSuffix(prefix, "/")
+		if strings.HasPrefix(cleanPrefix, cleanRoot) || strings.HasPrefix(cleanRoot, cleanPrefix) {
+			return prefix
+		}
+	}
+	return ""
+}
+
 func (s *Server) Start(version string) (string, error) {
 	// 【关键修改】在启动时初始化版本和实例ID
 	s.version = version // 从 main 包获取编译时注入的版本
@@ -120,6 +139,9 @@ func (s *Server) Start(version string) (string, error) {
 		if !strings.HasSuffix(s.webdavPath, "/") {
 			s.webdavPath += "/"
 		}
+		if conflict := checkWebdavRouteConflict(s.webdavPath); conflict != "" {
+			return "", fmt.Errorf("webdav root '%s' conflicts with existing route: %s", s.webdavPath, conflict)
+		}
 		slog.Info("WebDAV enabled", "dir", s.webdavDir, "path", s.webdavPath)
 	}
 
@@ -145,6 +167,8 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/ping", s.handlePingGin)
 	r.GET("/health", s.handleHealthGin)
 	r.GET("/stream", gin.WrapF(s.handleStreamRequest))
+	r.GET("/decrypt", gin.WrapF(s.handleStreamRequest))
+	r.GET("/preview/*filepath", gin.WrapH(http.StripPrefix("/preview", web.PreviewHandler())))
 	r.GET("/api/config", s.handleGetConfigGin)
 	r.PUT("/api/config", s.handlePutConfigGin)
 	r.GET("/api/config/schema", s.handleConfigSchemaGin)
@@ -175,6 +199,7 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/api/stream/external", s.handleStreamExternalFileGin)
 	r.GET("/api/build-info", s.handleBuildInfoGin)
 	r.GET("/api/ffmpeg-status", s.handleFFmpegStatusGin)
+	r.GET("/api/container/versions", s.handleGetContainerVersionsGin)
 	r.POST("/api/logs", s.handleAPILogsGin)
 	r.GET("/ws", gin.WrapF(s.handleWebSocket))
 
@@ -227,9 +252,13 @@ func (s *Server) Start(version string) (string, error) {
 		if loginRequired {
 			openlistGroup.Use(JWTAuthMiddleware(s.jwtManager))
 		}
-		openlistGroup.Any("/:siteId/_preview/*path", handleOpenlistPreviewGin())
-		openlistGroup.POST("/:siteId/decrypt", handleOpenlistProxyGin(proxyGin))
-		openlistGroup.Any("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.GET("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.HEAD("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.POST("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.PUT("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.DELETE("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.PATCH("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
+		openlistGroup.OPTIONS("/:siteId/*path", handleOpenlistProxyGin(proxyGin))
 	}
 
 	if s.webdavDir != "" {

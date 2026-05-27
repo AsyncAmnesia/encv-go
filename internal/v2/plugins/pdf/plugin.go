@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -177,6 +178,24 @@ func (p *PDFPlugin) DisasterZones(inputPath string) []types.DisasterZone {
 	return nil
 }
 
+func (p *PDFPlugin) SupportedContainerVersions() []int {
+	return types.SupportedVersions
+}
+
+func (p *PDFPlugin) DefaultContainerVersion() int {
+	return types.DefaultContainerVersion
+}
+
+func (p *PDFPlugin) ValidateVersion(version int) error {
+	if !types.IsValidVersion(version) {
+		return fmt.Errorf("pdf plugin: unsupported container version: %d", version)
+	}
+	if types.IsDeprecatedVersion(version) {
+		slog.Warn("pdf plugin: using deprecated container version", "version", version)
+	}
+	return nil
+}
+
 // --- 加密逻辑 ---
 
 // Plugin 接口实现
@@ -231,13 +250,13 @@ func (p *PDFPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) error 
 
 	// 3. 构造 Manifest
 	kvi := PDFKVI_v2{
-		KVI_v2: types.KVI_v2{
+		KVI: types.KVI{
 			SaltBase64: crypto.Base64Encode_v2(result.Salt),
 			IVBase64:   crypto.Base64Encode_v2(result.IV),
 		},
 		PDFIndex: &p.index,
 	}
-	manifest, err := types.NewManifest_v2(kvi, logicalFragments)
+	manifest, err := types.NewManifest(kvi, logicalFragments)
 	if err != nil {
 		return fmt.Errorf("failed to create manifest: %w", err)
 	}
@@ -258,7 +277,9 @@ func (p *PDFPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) error 
 		BaseName:             finalBaseName,
 		OutputDir:            p.outputDir,
 		Index:                &p.index,
-		HeaderVersion:        3,
+		HeaderVersion:        4,
+		ContainerType:        p.ContainerType(),
+		IsSeekable:           p.DefaultIsSeekable(p.inputPath),
 		SpecialIDType:        types.IDType_Raw,
 		SpecialID:            nil,
 		FinalFileName:        finalFilename,

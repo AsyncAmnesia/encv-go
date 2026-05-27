@@ -13,7 +13,7 @@ import (
 // PackParams 通用打包所需的所有参数
 type PackParams struct {
 	// --- 核心数据 ---
-	Manifest       *types.Manifest_v2
+	Manifest       *types.Manifest
 	PhysicalPacker physical.PhysicalPacker
 	TempEncPath    string
 
@@ -32,9 +32,13 @@ type PackParams struct {
 	StartIdx              int
 	LightMainChunkEnabled bool
 	HeaderVersion         int
+	ContainerType         uint16
+	IsSeekable            bool
 	SpecialID             []byte
 	SpecialIDType         types.IDType
 	FinalFileName         string
+
+	PasswordHint          [16]byte
 }
 
 // StandardPostEncrypt 执行通用的打包流程
@@ -107,9 +111,12 @@ func StandardPostEncrypt(params *PackParams) error {
 		StartIdx:              params.StartIdx,
 		LightMainChunkEnabled: params.LightMainChunkEnabled,
 		HeaderVersion:         params.HeaderVersion,
+		ContainerType:         params.ContainerType,
+		IsSeekable:            params.IsSeekable,
 		SpecialID:             params.SpecialID,
 		SpecialIDType:         params.SpecialIDType,
 		FinalFileName:         params.FinalFileName,
+		PasswordHint:          params.PasswordHint,
 	}
 
 	// 4. 调用 PhysicalPacker 完成打包

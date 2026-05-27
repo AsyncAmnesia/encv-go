@@ -40,6 +40,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Settings.vue'),
       },
       {
+        path: 'extensions',
+        component: () => import('@/views/ExtensionsPage.vue'),
+        meta: { title: 'extensions.title' },
+      },
+      {
         path: 'settings/server',
         component: () => import('@/views/ServerDetail.vue'),
       },

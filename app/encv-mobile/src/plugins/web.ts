@@ -39,6 +39,7 @@ export interface GoProcessPlugin {
   openInPlayer(options: { path: string; name: string; mimeType: string }): Promise<void>
   openPlayerHome(): Promise<void>
   setScreenOrientation(options: { orientation: string }): Promise<void>
+  installPlugin(options: { apkPath: string }): Promise<{ success: boolean; method?: string }>
 }
 
 export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
@@ -94,5 +95,9 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
   }
 
   async setScreenOrientation(_options: { orientation: string }): Promise<void> {
+  }
+
+  async installPlugin(_options: { apkPath: string }): Promise<{ success: boolean; method?: string }> {
+    return { success: false }
   }
 }
