@@ -301,8 +301,7 @@ EOF
 
             echo "=== Locating signed APK ==="
             ls -la app/build/outputs/apk/release/
-            APK_PATH=$(find app/build/outputs/apk/release -name "*release*.apk" -type f | head -1)
-            [ -z "$APK_PATH" ] && APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+            APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" ! -name "*-unsigned*" -type f | head -1)
             [ -z "$APK_PATH" ] && { echo "::error::No APK found"; exit 1; }
             echo "Selected APK: $APK_PATH"
 
@@ -325,8 +324,7 @@ EOF
       - name: Verify APK contents
         run: |
           if [ -n "${{ inputs.version }}" ]; then
-            APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk/release -name "*release*.apk" -type f | head -1)
-            [ -z "$APK_PATH" ] && APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk/release -name "*.apk" -type f | head -1)
+            APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk/release -name "*.apk" ! -name "*-unsigned*" -type f | head -1)
           else
             APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk/debug -name "*.apk" -type f | head -1)
           fi
