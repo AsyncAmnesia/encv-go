@@ -1,0 +1,5 @@
+- [ ] android-overlay/EncvGoService.kt 中无 config.mobile.json 引用（grep 验证）
+- [ ] sync-native.mjs 执行后 android/app/src/main/assets/config.user.json 存在
+- [ ] CI workflow 的 "Copy web assets" 步骤对 release 构建也生效（无 if: inputs.version == '' 限制）
+- [ ] CI "Verify APK contents" 步骤检查 public/index.html 存在性，缺失时构建失败
+- [ ] CI "Verify APK contents" 步骤检查 config.user.json 在 assets 中存在

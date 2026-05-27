@@ -1,4 +1,0 @@
-﻿2026-05-27T19:20:33.4282561Z Post job cleanup.
-2026-05-27T19:20:33.5843427Z [command]/usr/bin/tar --posix -cf cache.tzst --exclude cache.tzst -P -C /home/runner/work/encv-go/encv-go --files-from manifest.txt --use-compress-program zstdmt
-2026-05-27T19:20:35.6428224Z Sent 59825532 of 59825532 (100.0%), 57.1 MBs/sec
-2026-05-27T19:20:36.0207439Z Cache saved with key: npm-main-16873ced8d093d5fe4c08d0ae26b08f38b98ea5b0a6b713caabd83ebc180c0c5
