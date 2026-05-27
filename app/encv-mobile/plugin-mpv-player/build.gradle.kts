@@ -11,7 +11,6 @@ android {
 
     defaultConfig {
         minSdk = libs.versions.minSdk.get().toInt()
-        targetSdk = libs.versions.targetSdk.get().toInt()
     }
 
     buildTypes {
@@ -29,12 +28,14 @@ android {
         targetCompatibility = JavaVersion.VERSION_25
     }
 
-    kotlinOptions {
-        jvmTarget = "25"
-    }
-
     buildFeatures {
         compose = true
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.fromTarget("25"))
     }
 }
 
