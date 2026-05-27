@@ -269,14 +269,13 @@ import { isNative, requestStoragePermission, openPlayer, openExternal } from '@/
 import { getExternalStreamUrl } from '@/api/encv'
 import { showToast } from '@/composables/useToast'
 import { Share } from '@capacitor/share'
-
-type PlayMode = 'artplayer' | 'mpv' | 'external'
+import { PLAY_MODE, type PlayMode, VIDEO_DEFAULT, AUDIO_DEFAULT } from '@/constants/player'
 
 function getPlayMode(mediaType: 'video' | 'audio'): PlayMode {
   const key = mediaType === 'video' ? 'encv_player_video' : 'encv_player_audio'
   const stored = localStorage.getItem(key)
-  if (stored === 'artplayer' || stored === 'mpv-plugin' || stored === 'external') return stored
-  return mediaType === 'video' ? 'artplayer' : 'mpv-plugin'
+  if (stored === PLAY_MODE.ARTPLAYER || stored === PLAY_MODE.MPV_PLUGIN || stored === PLAY_MODE.EXTERNAL) return stored as PlayMode
+  return mediaType === 'video' ? VIDEO_DEFAULT : AUDIO_DEFAULT
 }
 
 function playMedia(file: FileItem, category: string) {
@@ -286,17 +285,17 @@ function playMedia(file: FileItem, category: string) {
   const mode = getPlayMode(mediaType)
 
   switch (mode) {
-    case 'artplayer':
+    case PLAY_MODE.ARTPLAYER:
       router.push({ path: '/player', query: { path: file.path, name: file.name } })
       break
-    case 'mpv-plugin':
+    case PLAY_MODE.MPV_PLUGIN:
       if (isNative()) {
         openPlayer(file.path, file.name, mimeType)
       } else {
         router.push({ path: '/player', query: { path: file.path, name: file.name } })
       }
       break
-    case 'external':
+    case PLAY_MODE.EXTERNAL:
       if (isNative()) {
         const url = getExternalStreamUrl(file.path)
         openExternal(url, mimeType)

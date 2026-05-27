@@ -401,6 +401,7 @@ import { isNative } from '@/plugins/GoProcess'
 import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus, fetchTextPreviewExts, invalidateTextExtsCache } from '@/api/encv'
 import type { IndexStats, FFmpegStatus } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
+import { PLAY_MODE } from '@/constants/player'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const router = useRouter()
@@ -414,12 +415,8 @@ const configLoaded = ref(false)
 const indexStats = ref<IndexStats | null>(null)
 const engineStatus = ref<FFmpegStatus | null>(null)
 
-const videoPlayerMode = ref(localStorage.getItem('encv_player_video') || 'artplayer')
-
-if (videoPlayerMode.value === 'mpv') {
-  videoPlayerMode.value = 'mpv-plugin'
-}
-const audioPlayerMode = ref(localStorage.getItem('encv_player_audio') || 'mpv')
+const videoPlayerMode = ref(localStorage.getItem('encv_player_video') || PLAY_MODE.ARTPLAYER)
+const audioPlayerMode = ref(localStorage.getItem('encv_player_audio') || PLAY_MODE.MPV_PLUGIN)
 const screenOrientation = ref(localStorage.getItem('encv_screen_orientation') || 'auto')
 const customTextExts = ref('')
 const builtInTextExtsCount = ref(0)
