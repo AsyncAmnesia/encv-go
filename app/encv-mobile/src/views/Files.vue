@@ -242,6 +242,30 @@
           </template>
         </div>
 
+        <div v-if="!selectedPlugin && !searchQuery" class="main-sort-bar">
+          <ion-item button detail @click="showMainSort = !showMainSort">
+            <ion-icon :icon="swapVerticalOutline" slot="start"></ion-icon>
+            <ion-label>排序</ion-label>
+            <ion-badge slot="end" color="medium">{{ mainSortLabel }}</ion-badge>
+          </ion-item>
+          <ion-list v-if="showMainSort" :inset="true">
+            <ion-item>
+              <ion-label position="stacked">排序方式</ion-label>
+              <div class="filter-chips">
+                <ion-chip v-for="s in ['name', 'size', 'time'] as const" :key="s"
+                  :button="true" :outline="sortBy !== s" :color="sortBy === s ? 'primary' : undefined"
+                  @click.stop="sortBy = s">
+                  {{ s === 'name' ? '名称' : s === 'size' ? '大小' : '时间' }}
+                </ion-chip>
+              </div>
+              <div class="filter-chips" style="margin-top:4px">
+                <ion-chip :button="true" :outline="!!sortDesc" :color="!sortDesc ? 'primary' : undefined" @click.stop="sortDesc = false">升序 ↑</ion-chip>
+                <ion-chip :button="true" :outline="!sortDesc" :color="!!sortDesc ? 'primary' : undefined" @click.stop="sortDesc = true">降序 ↓</ion-chip>
+              </div>
+            </ion-item>
+          </ion-list>
+        </div>
+
         <ion-list>
           <ion-item
             v-for="file in displayFiles"
@@ -385,6 +409,7 @@ import {
   closeCircle,
   closeCircleOutline,
   filterOutline,
+  swapVerticalOutline,
 } from 'ionicons/icons'
 import {
   listFiles,
@@ -462,6 +487,12 @@ function playMedia(file: FileItem, category: string) {
 const { t } = useI18n()
 const { thumbnailUrls, setupLazyThumbnails, onThumbError } = useThumbnailCache()
 const { sortBy, sortDesc } = useFileListSort()
+const showMainSort = ref(false)
+
+const mainSortLabel = computed(() => {
+  const map: Record<string, string> = { name: '名称', size: '大小', time: '时间' }
+  return (map[sortBy.value] || '名称') + (sortDesc.value ? '↓' : '↑')
+})
 const router = useRouter()
 const serverOnline = ref(false)
 const noPermission = ref(false)
@@ -1412,4 +1443,7 @@ ion-item {
   --padding-start: 12px;
   --padding-end: 12px;
   --min-height: 40px;
+}
+.main-sort-bar {
+  padding: 0 4px;
 }</style>
