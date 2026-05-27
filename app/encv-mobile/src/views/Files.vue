@@ -326,6 +326,7 @@ import {
 import {
   listFiles,
   listFilesStream,
+  listPluginFilesStream,
   searchFiles,
   formatFileSize,
   getFileCategory,
@@ -959,15 +960,17 @@ function getPluginIcon(name: string): string {
   return icons[name] || 'cube-outline'
 }
 
-async function searchPluginFiles(plugin: PluginMeta): Promise<FileItem[]> {
-  const results: FileItem[] = []
-  for (const ext of plugin.supportedExtensions) {
-    try {
-      const found = await searchFiles(currentPath.value, `.${ext}`, true)
-      results.push(...found)
-    } catch {}
-  }
-  return results
+async function searchPluginFiles(
+  plugin: PluginMeta,
+  onItem?: (file: FileItem) => void
+): Promise<FileItem[]> {
+  if (plugin.supportedExtensions.length === 0) return []
+  const result = await listPluginFilesStream(
+    currentPath.value,
+    plugin.supportedExtensions,
+    (file) => { onItem?.(file) }
+  )
+  return result.files
 }
 
 async function handleTagFilter(tagName: string) {
@@ -1015,7 +1018,19 @@ watch(selectedPlugin, async (plugin) => {
   if (plugin) {
     pluginTab.value = 'source'
     pluginLoaded.value = false
-    pluginFiles.value = await searchPluginFiles(plugin)
+    pluginFiles.value = []
+    console.info('[Files] Loading plugin files (stream):', plugin.name)
+    try {
+      const results = await searchPluginFiles(plugin, (file) => {
+        pluginFiles.value.push(file)
+        if (pluginFiles.value.length === 1 && !pluginLoaded.value) {
+          console.info('[Files] First plugin item arrived, UI unlocked')
+        }
+      })
+      pluginFiles.value = results
+    } catch (e) {
+      console.error('[Files] Plugin stream load failed:', e)
+    }
     pluginLoaded.value = true
     setupLazyThumbnails()
   }

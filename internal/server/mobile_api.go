@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -825,6 +826,113 @@ func (s *Server) handleListFilesStreamGin(c *gin.Context) {
 		}
 		data, _ := json.Marshal(fi)
 		s.writeSSEEvent(c, flusher, string(data))
+	}
+
+	s.writeSSEEvent(c, flusher, `[DONE]`)
+}
+
+func (s *Server) handlePluginFilesStreamGin(c *gin.Context) {
+	queryPath := c.Query("path")
+	if queryPath == "" {
+		queryPath = "/"
+	}
+	extensionsStr := c.Query("extensions")
+	if extensionsStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "'extensions' query parameter is required"})
+		return
+	}
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+
+	c.Status(http.StatusOK)
+
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		flusher = nil
+	}
+
+	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	if err != nil {
+		s.writeSSEEvent(c, flusher, `{"error":"invalid path"}`)
+		s.writeSSEEvent(c, flusher, `[DONE]`)
+		return
+	}
+
+	extSet := make(map[string]bool)
+	for _, ext := range strings.Split(extensionsStr, ",") {
+		e := strings.TrimSpace(strings.ToLower(ext))
+		if e != "" {
+			extSet[e] = true
+		}
+	}
+
+	const maxResults = 500
+	count := 0
+
+	err = filepath.WalkDir(absPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if count >= maxResults {
+			return fs.SkipAll
+		}
+
+		name := d.Name()
+		if strings.HasPrefix(name, ".") {
+			return nil
+		}
+
+		ext := strings.ToLower(filepath.Ext(name))
+		if !extSet[ext] {
+			return nil
+		}
+
+		relPath, _ := filepath.Rel(absPath, path)
+		filePath := queryPath + "/" + relPath
+		if queryPath == "/" {
+			filePath = "/" + relPath
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			fi := mobileservice.FileInfo{
+				Name:        name,
+				Path:        filePath,
+				IsDirectory: false,
+				Size:        0,
+				Modified:    "",
+			}
+			data, _ := json.Marshal(fi)
+			s.writeSSEEvent(c, flusher, string(data))
+			count++
+			return nil
+		}
+
+		isEncrypted := false
+		if _, detectErr := detector.DetectContainer(path); detectErr == nil {
+			isEncrypted = true
+		}
+
+		fi := mobileservice.FileInfo{
+			Name:        name,
+			Path:        filePath,
+			IsDirectory: false,
+			IsEncrypted: isEncrypted,
+			Size:        info.Size(),
+			Modified:    info.ModTime().Format(time.RFC3339),
+		}
+		data, _ := json.Marshal(fi)
+		s.writeSSEEvent(c, flusher, string(data))
+		count++
+		return nil
+	})
+
+	if err != nil && count < maxResults {
+		errMsg := fmt.Sprintf(`{"error":"walk failed: %s"}`, err.Error())
+		s.writeSSEEvent(c, flusher, errMsg)
 	}
 
 	s.writeSSEEvent(c, flusher, `[DONE]`)

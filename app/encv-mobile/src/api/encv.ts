@@ -142,6 +142,64 @@ export async function listFilesStream(
   return { files }
 }
 
+export async function listPluginFilesStream(
+  path: string,
+  extensions: string[],
+  onItem: (file: FileItem) => void,
+  signal?: AbortSignal
+): Promise<{ files: FileItem[]; error?: string }> {
+  const baseUrl = getApiBaseUrl()
+  const extParam = extensions.map(e => `.${e.toLowerCase()}`).join(',')
+  const response = await fetch(`${baseUrl}/api/files/plugin-stream?path=${encodeURIComponent(path)}&extensions=${encodeURIComponent(extParam)}`, {
+    signal,
+  })
+
+  if (!response.ok) {
+    if (response.status === 403) {
+      throw new PermissionDeniedError('Permission denied')
+    }
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+
+  const files: FileItem[] = []
+  const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const data = line.slice(6).trim()
+        if (!data) continue
+
+        if (data === '[DONE]') {
+          return { files }
+        }
+
+        try {
+          const file = JSON.parse(data) as FileItem
+          files.push(file)
+          onItem(file)
+        } catch {
+          // skip malformed JSON
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  return { files }
+}
+
 export interface BackendPermissions {
   storage: boolean
 }
