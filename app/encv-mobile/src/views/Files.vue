@@ -383,6 +383,7 @@ import {
 } from 'ionicons/icons'
 import {
   listFiles,
+  listFilesStream,
   searchFiles,
   formatFileSize,
   getFileCategory,
@@ -518,6 +519,12 @@ const rowVirtualizer = useVirtualizer({
   overscan: VIRTUAL_SCROLL_CONFIG.OVERSCAN,
 })
 
+watch(() => displayFiles.value.length, () => {
+  if (shouldUseVirtualScroll.value && rowVirtualizer.value) {
+    rowVirtualizer.value.measure()
+  }
+})
+
 const virtualItems = computed(() => rowVirtualizer.value.getVirtualItems())
 
 const sortedFiles = computed(() => {
@@ -527,22 +534,36 @@ const sortedFiles = computed(() => {
 let loadGeneration = 0
 
 async function loadFiles() {
-  console.info('[Files] Loading files, path:', currentPath.value)
+  console.info('[Files] Loading files (stream), path:', currentPath.value)
   const gen = ++loadGeneration
   loading.value = true
   connecting.value = false
   noPermission.value = false
+  files.value = []
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (gen !== loadGeneration) return
 
     try {
-      files.value = await listFiles(currentPath.value)
+      const result = await listFilesStream(currentPath.value, (file) => {
+        if (gen !== loadGeneration) return
+        files.value.push(file)
+        if (files.value.length === 1 && loading.value) {
+          loading.value = false
+          console.info('[Files] First item arrived, UI unlocked')
+        }
+      })
+
       serverOnline.value = true
       noPermission.value = false
       loading.value = false
       connecting.value = false
-      console.info('[Files] Loaded', files.value.length, 'files')
+      console.info('[Files] Stream complete, total:', result.files.length, 'files')
+
+      if (shouldUseVirtualScroll.value && rowVirtualizer.value) {
+        rowVirtualizer.value.measure()
+      }
+
       loadFileTagsForCurrentDir()
       return
     } catch (error) {
@@ -553,7 +574,6 @@ async function loadFiles() {
         connecting.value = false
         return
       }
-
       if (error instanceof NotFoundError) {
         serverOnline.value = true
         loading.value = false
@@ -564,7 +584,6 @@ async function loadFiles() {
         }
         return
       }
-
       if (attempt < MAX_RETRIES) {
         connecting.value = true
         await new Promise(r => setTimeout(r, RETRY_DELAY))
