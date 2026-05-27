@@ -140,3 +140,12 @@ export async function openPlayerHome(): Promise<void> {
     console.error('[ENCV] GoProcess.openPlayerHome() failed:', e)
   }
 }
+
+export async function installExtensionApk(apkPath: string): Promise<{ success: boolean; method?: string }> {
+  try {
+    return await GoProcess.installPlugin({ apkPath })
+  } catch (e) {
+    console.error('[ENCV] GoProcess.installPlugin() failed:', e)
+    return { success: false }
+  }
+}
