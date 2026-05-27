@@ -1,0 +1,20 @@
+﻿2026-05-27T05:03:07.8123922Z ##[group]Run actions/setup-node@v4
+2026-05-27T05:03:07.8124198Z with:
+2026-05-27T05:03:07.8124386Z   node-version: 22
+2026-05-27T05:03:07.8124589Z   cache: npm
+2026-05-27T05:03:07.8124858Z   cache-dependency-path: app/encv-mobile/package-lock.json
+2026-05-27T05:03:07.8125184Z   always-auth: false
+2026-05-27T05:03:07.8125402Z   check-latest: false
+2026-05-27T05:03:07.8125725Z   token: ***
+2026-05-27T05:03:07.8125911Z env:
+2026-05-27T05:03:07.8126115Z   NDK_VERSION: 26.1.10909125
+2026-05-27T05:03:07.8126331Z ##[endgroup]
+2026-05-27T05:03:07.9932261Z Found in cache @ /opt/hostedtoolcache/node/22.22.3/x64
+2026-05-27T05:03:07.9939100Z ##[group]Environment details
+2026-05-27T05:03:08.3627883Z node: v22.22.3
+2026-05-27T05:03:08.3628492Z npm: 10.9.8
+2026-05-27T05:03:08.3628771Z yarn: 1.22.22
+2026-05-27T05:03:08.3629515Z ##[endgroup]
+2026-05-27T05:03:08.3657759Z [command]/opt/hostedtoolcache/node/22.22.3/x64/bin/npm config get cache
+2026-05-27T05:03:08.4725560Z /home/runner/.npm
+2026-05-27T05:03:08.7081286Z npm cache is not found
