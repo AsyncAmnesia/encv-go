@@ -32,12 +32,6 @@
           @ionInput="handleSearchInput"
           @ionClear="handleSearchClear"
         ></ion-searchbar>
-        <div v-if="!searchQuery" class="sort-btn-wrapper">
-          <ion-button fill="clear" size="small" @click="cycleSort">
-            <ion-icon :icon="swapVertical" slot="start"></ion-icon>
-            {{ sortLabel }}
-          </ion-button>
-        </div>
         <ion-toggle
           v-if="searchQuery"
           slot="end"
@@ -121,6 +115,7 @@
       </template>
 
       <template v-else>
+        <div v-if="selectedPlugin" class="plugin-view">
             <div class="plugin-header">
               <div class="plugin-header-top">
                 <ion-button fill="clear" size="small" class="plugin-back-btn" @click="exitPluginMode()">
@@ -166,7 +161,7 @@
                   <ion-button fill="clear" size="small" @click="sizeFilterMin=null;sizeFilterMax=null">清除</ion-button>
                 </div>
                 <div class="filter-chips">
-                  <ion-chip v-for="p in SIZE_PRESETS" :key="p.label" button outline @click="applySizePreset(p)">{{ p.label }}</ion-chip>
+                  <ion-chip v-for="p in SIZE_PRESETS" :key="p.label" :button="true" outline @click.stop="applySizePreset(p)">{{ p.label }}</ion-chip>
                 </div>
               </ion-item>
               <ion-item>
@@ -184,7 +179,7 @@
                   <ion-button fill="clear" size="small" @click="timeFilterFrom=null;timeFilterTo=null">清除</ion-button>
                 </div>
                 <div class="filter-chips">
-                  <ion-chip v-for="p in TIME_PRESETS" :key="p.label" button outline @click="applyTimePreset(p)">{{ p.label }}</ion-chip>
+                  <ion-chip v-for="p in TIME_PRESETS" :key="p.label" :button="true" outline @click.stop="applyTimePreset(p)">{{ p.label }}</ion-chip>
                 </div>
               </ion-item>
               <ion-item>
@@ -192,13 +187,13 @@
                 <div class="filter-chips">
                   <ion-chip v-for="s in ['name', 'size', 'time'] as const" :key="s"
                     :button="true" :outline="pluginSortBy !== s" :color="pluginSortBy === s ? 'primary' : undefined"
-                    @click="pluginSortBy = s">
+                    @click.stop="pluginSortBy = s">
                     {{ s === 'name' ? '名称' : s === 'size' ? '大小' : '时间' }}
                   </ion-chip>
                 </div>
                 <div class="filter-chips" style="margin-top:4px">
-                  <ion-chip :button="true" :outline="!pluginSortDesc" color="primary" @click="pluginSortDesc = false">升序 ↑</ion-chip>
-                  <ion-chip :button="true" :outline="!pluginSortDesc" color="primary" @click="pluginSortDesc = true">降序 ↓</ion-chip>
+                  <ion-chip :button="true" :outline="!!pluginSortDesc" :color="!pluginSortDesc ? 'primary' : undefined" @click.stop="pluginSortDesc = false">升序 ↑</ion-chip>
+                  <ion-chip :button="true" :outline="!pluginSortDesc" :color="!!pluginSortDesc ? 'primary' : undefined" @click.stop="pluginSortDesc = true">降序 ↓</ion-chip>
                 </div>
               </ion-item>
               <ion-item button @click="clearAllPluginFilters">
@@ -241,6 +236,7 @@
           </ion-list>
           </template>
           </template>
+        </div>
 
         <ion-list>
           <ion-item
@@ -385,7 +381,6 @@ import {
   closeCircle,
   closeCircleOutline,
   filterOutline,
-  swapVertical,
 } from 'ionicons/icons'
 import {
   listFiles,
@@ -462,7 +457,7 @@ function playMedia(file: FileItem, category: string) {
 
 const { t } = useI18n()
 const { thumbnailUrls, setupLazyThumbnails, onThumbError } = useThumbnailCache()
-const { sortBy, sortDesc, sortLabel, cycleSort } = useFileListSort()
+const { sortBy, sortDesc } = useFileListSort()
 const router = useRouter()
 const serverOnline = ref(false)
 const noPermission = ref(false)
@@ -1343,17 +1338,6 @@ function onBackendReadyWindow(event: Event) {
 }
 .thumb-fallback {
   opacity: 0.4;
-}
-.sort-btn-wrapper {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 16px 4px;
-}
-.sort-btn-wrapper ion-button {
-  --padding-start: 8px;
-  --padding-end: 8px;
-  font-size: 13px;
-  --color: var(--ion-color-medium);
 }
 ion-item {
   contain: layout style;
