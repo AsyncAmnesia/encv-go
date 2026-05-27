@@ -111,7 +111,6 @@ import {
   IonIcon,
   IonSpinner,
   alertController,
-  modalController,
 } from '@ionic/vue'
 import {
   filmOutline,
@@ -124,8 +123,7 @@ import {
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { Capacitor } from '@capacitor/core'
-import { isNative, installExtensionApk } from '@/plugins/GoProcess'
-import FilePickerModal from '@/components/FilePickerModal.vue'
+import { isNative, pickAndInstallPlugin, checkInstalledPlugins } from '@/plugins/GoProcess'
 
 const { t } = useI18n()
 
@@ -154,27 +152,14 @@ onMounted(async () => {
 async function loadExtensions() {
   isLoading.value = true
   try {
-    if (!Capacitor.isNativePlatform()) {
-      extensions.value = [
-        {
-          id: 'mpv-player',
-          name: t('extensions.mpvPlayer'),
-          description: t('extensions.mpvPlayerDesc'),
-          installed: false,
-          enabled: false,
-          sizeDisplay: '~35 MB',
-        },
-      ]
-      return
-    }
-
+    const installedMap = Capacitor.isNativePlatform() ? await checkInstalledPlugins() : {}
     extensions.value = [
       {
         id: 'mpv-player',
         name: t('extensions.mpvPlayer'),
         description: t('extensions.mpvPlayerDesc'),
-        installed: false,
-        enabled: false,
+        installed: !!installedMap['mpv-player'],
+        enabled: true,
         sizeDisplay: '~35 MB',
       },
     ]
@@ -188,32 +173,19 @@ async function loadExtensions() {
 async function handleInstallFromFile() {
   if (!isNativePlatform()) return
 
-  const modal = await modalController.create({
-    component: FilePickerModal,
-    componentProps: { mode: 'file', initialPath: '/storage/emulated/0' },
-  })
-  await modal.present()
-  const { data, role } = await modal.onDidDismiss<{ path: string; name: string }>()
-  if (role !== 'select' || !data?.path) return
-
-  const apkPath = data.path
-  if (!apkPath.endsWith('.apk')) {
-    installError.value = t('extensions.notApkFile')
-    return
-  }
-
   isInstalling.value = true
   installError.value = ''
 
   try {
-    const result = await installExtensionApk(apkPath)
+    const result = await pickAndInstallPlugin()
     if (result.success) {
       const alert = await alertController.create({
         header: t('extensions.installSuccess'),
-        message: `${data.name}\n${t('extensions.installHint')}`,
+        message: `${result.fileName || ''}\n${t('extensions.installHint')}`,
         buttons: [t('common.confirm')],
       })
       await alert.present()
+      await loadExtensions()
     } else {
       installError.value = t('extensions.installFailed')
     }
@@ -221,7 +193,6 @@ async function handleInstallFromFile() {
     installError.value = e.message || t('extensions.installFailed')
   } finally {
     isInstalling.value = false
-    await loadExtensions()
   }
 }
 

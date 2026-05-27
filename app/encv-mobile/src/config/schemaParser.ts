@@ -141,7 +141,7 @@ function isPasswordField(key: string): boolean {
 }
 
 function isPathField(key: string): boolean {
-  const pathKeys = ['output_path', 'dir', 'file', 'plugin_cache_dir', 'root']
+  const pathKeys = ['output_path', 'dir', 'file', 'plugin_cache_dir']
   return pathKeys.includes(key) || key.includes('_path') || key.includes('_dir')
 }
 

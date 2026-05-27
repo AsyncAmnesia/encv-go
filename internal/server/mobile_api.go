@@ -16,6 +16,7 @@ import (
 	"github.com/Soltus/encv-go/internal/config"
 	mobileservice "github.com/Soltus/encv-go/internal/service"
 	"github.com/Soltus/encv-go/internal/utils"
+	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -86,6 +87,21 @@ func (s *Server) handleListFilesGin(c *gin.Context) {
 	if err != nil {
 		writeServiceErrorGin(c, err)
 		return
+	}
+
+	if tag := c.Query("tag"); tag != "" {
+		taggedPaths := GlobalTagStore.GetFilesByTag(tag)
+		taggedSet := make(map[string]bool, len(taggedPaths))
+		for _, p := range taggedPaths {
+			taggedSet[p] = true
+		}
+		filtered := make([]mobileservice.FileInfo, 0, len(files))
+		for _, f := range files {
+			if taggedSet[f.Path] {
+				filtered = append(filtered, f)
+			}
+		}
+		files = filtered
 	}
 
 	slog.Info("API: list files result", "path", queryPath, "count", len(files))
@@ -663,4 +679,64 @@ func (s *Server) handleFFmpegStatusGin(c *gin.Context) {
 		"ffmpeg_detail":      ffmpegDetail,
 		"ffprobe_detail":     ffprobeDetail,
 	})
+}
+
+func (s *Server) handleTagsListGin(c *gin.Context) {
+	allTags := GlobalTagStore.GetAllTags()
+	type tagEntry struct {
+		Name  string `json:"name"`
+		Count int    `json:"count"`
+	}
+	result := make([]tagEntry, 0, len(allTags))
+	for name, count := range allTags {
+		result = append(result, tagEntry{Name: name, Count: count})
+	}
+	c.JSON(http.StatusOK, gin.H{"tags": result})
+}
+
+func (s *Server) handleTagsMutateGin(c *gin.Context) {
+	var req struct {
+		Path   string `json:"path"`
+		Tag    string `json:"tag"`
+		Action string `json:"action"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
+		return
+	}
+	if req.Path == "" || req.Tag == "" || req.Action == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path, tag and action are required"})
+		return
+	}
+
+	switch req.Action {
+	case "add":
+		GlobalTagStore.AddTag(req.Path, req.Tag)
+		c.JSON(http.StatusOK, gin.H{"message": "tag added"})
+	case "remove":
+		GlobalTagStore.RemoveTag(req.Path, req.Tag)
+		c.JSON(http.StatusOK, gin.H{"message": "tag removed"})
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "action must be 'add' or 'remove'"})
+	}
+}
+
+type PluginMeta struct {
+	Name                  string   `json:"name"`
+	SupportedExtensions   []string `json:"supportedExtensions"`
+	SupportedMimePrefixes []string `json:"supportedMimePrefixes"`
+	ContainerExtension    string   `json:"containerExtension"`
+}
+
+func (s *Server) handlePluginsGin(c *gin.Context) {
+	var metas []PluginMeta
+	for _, p := range plugins.Plugins {
+		metas = append(metas, PluginMeta{
+			Name:                  p.Name(),
+			SupportedExtensions:   p.SupportedExtensions(),
+			SupportedMimePrefixes: p.SupportedMimePrefixes(),
+			ContainerExtension:    p.GetContainerExtension(),
+		})
+	}
+	c.JSON(200, gin.H{"plugins": metas})
 }

@@ -859,6 +859,9 @@ var mediaExtensions = map[string]bool{
 	"ts": true, "mpg": true, "mpeg": true, "3gp": true,
 	"mp3": true, "flac": true, "wav": true, "aac": true,
 	"ogg": true, "wma": true, "m4a": true, "opus": true,
+	"jpg": true, "jpeg": true, "png": true, "gif": true,
+	"webp": true, "bmp": true, "svg": true, "heic": true,
+	"heif": true, "avif": true,
 }
 
 type chunkNamerAdapter struct {

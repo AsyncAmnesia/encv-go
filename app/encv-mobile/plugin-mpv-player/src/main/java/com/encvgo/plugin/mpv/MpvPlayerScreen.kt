@@ -12,7 +12,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,7 +49,8 @@ fun MpvPlayerScreen(
     var showControls by remember { mutableStateOf(true) }
     var isLocked by remember { mutableStateOf(false) }
     var isFullscreen by remember { mutableStateOf(false) }
-    var playbackSpeed by remember { mutableFloatStateOf(1f) }
+    var playbackSpeed by remember { mutableStateOf(1f) }
+    var volume by remember { mutableStateOf(1f) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val backendUrl = (context as? Activity)?.intent?.getStringExtra("backend_url") ?: ""
@@ -135,6 +135,7 @@ fun MpvPlayerScreen(
                 isLocked = isLocked,
                 isFullscreen = isFullscreen,
                 playbackSpeed = playbackSpeed,
+                volume = volume,
                 showControls = showControls,
                 onPlayPause = {
                     when (playerState) {
@@ -202,6 +203,19 @@ fun MpvPlayerScreen(
                         activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
                         showSystemUi(activity)
                     }
+                    showControls = true
+                },
+                onVolumeChange = { vol ->
+                    volume = vol
+                    engine.setVolume(vol)
+                    showControls = true
+                },
+                onToggleSubtitle = {
+                    engine.toggleSubtitleVisibility()
+                    showControls = true
+                },
+                onCycleAudio = {
+                    engine.cycleAudioTrack()
                     showControls = true
                 },
                 onRetry = {
