@@ -1,0 +1,24 @@
+﻿2026-05-27T07:43:12.2673998Z ##[group]Run mkdir -p app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a
+2026-05-27T07:43:12.2674846Z [36;1mmkdir -p app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a[0m
+2026-05-27T07:43:12.2675829Z [36;1mcp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a/libencv-go.so[0m
+2026-05-27T07:43:12.2676683Z [36;1mecho "=== Host jniLibs BEFORE build ==="[0m
+2026-05-27T07:43:12.2677699Z [36;1mls -lhR app/encv-mobile/android/app/src/main/jniLibs/[0m
+2026-05-27T07:43:12.2717224Z shell: /usr/bin/bash -e {0}
+2026-05-27T07:43:12.2717850Z env:
+2026-05-27T07:43:12.2718129Z   NDK_VERSION: 26.1.10909125
+2026-05-27T07:43:12.2718667Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T07:43:12.2719440Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T07:43:12.2720051Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-27T07:43:12.2720468Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-27T07:43:12.2720920Z ##[endgroup]
+2026-05-27T07:43:12.2897502Z === Host jniLibs BEFORE build ===
+2026-05-27T07:43:12.2912339Z app/encv-mobile/android/app/src/main/jniLibs/:
+2026-05-27T07:43:12.2912689Z total 4.0K
+2026-05-27T07:43:12.2913113Z drwxr-xr-x 2 runner runner 4.0K May 27 07:43 arm64-v8a
+2026-05-27T07:43:12.2913362Z 
+2026-05-27T07:43:12.2913660Z app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a:
+2026-05-27T07:43:12.2914002Z total 34M
+2026-05-27T07:43:12.2914423Z -rw-r--r-- 1 runner runner 1.3K May 27 07:42 build-info.json
+2026-05-27T07:43:12.2914945Z -rwxr-xr-x 1 runner runner  26M May 27 07:43 libencv-go.so
+2026-05-27T07:43:12.2915466Z -rwxr-xr-x 1 runner runner 4.4M May 27 07:42 libffmpeg.so
+2026-05-27T07:43:12.2916435Z -rwxr-xr-x 1 runner runner 4.1M May 27 07:42 libffprobe.so
