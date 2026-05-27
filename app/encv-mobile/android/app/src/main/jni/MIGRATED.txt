@@ -3,5 +3,5 @@
 # The native build pipeline (libmpv.so + libplayer.so) has been fully moved to
 # the :plugin-mpv-player ComboLite plugin module.
 #
-# Status: NOT compiled — no externalNativeBuild/ndkBuild configured in app/build.gradle
-# The Android.mk and *.cpp files here are kept for reference only.
+# Status: NOT compiled — this is the overlay variant, no externalNativeBuild configured
+# The files here are kept for reference only (identical to android/app variant).

@@ -172,10 +172,8 @@ jobs:
             ls -lh "$KEYSTORE"
           fi
 
-      # android/ is in git — cap copy only copies web assets (lighter than cap sync)
-      # For release builds, cap build includes its own sync, so this step is debug-only
-      - name: Copy web assets to Android project (debug)
-        if: inputs.version == ''
+      # android/ is in git — cap copy copies web assets (dist/ → assets/public/). Required for BOTH debug and release because we use gradlew directly instead of npx cap build
+      - name: Copy web assets to Android project
         run: |
           cd app/encv-mobile
           npx cap copy android
@@ -334,6 +332,23 @@ jobs:
             ls -lh "$APK_PATH"
             echo "=== Assets ==="
             unzip -l "$APK_PATH" | grep -E "encv-go|config.mobile" || true
+
+            echo "=== Web assets (public/index.html) ==="
+            if unzip -l "$APK_PATH" | grep -q "public/index.html"; then
+              echo "✅ PASS: Web assets found in APK"
+              unzip -l "$APK_PATH" | grep "public/index.html"
+            else
+              echo "::error::Web assets (public/index.html) MISSING from APK! Did npx cap copy android run?"
+              exit 1
+            fi
+
+            echo "=== Config file (config.user.json) ==="
+            if unzip -l "$APK_PATH" | grep -q "config.user.json"; then
+              echo "✅ PASS: config.user.json found in APK"
+            else
+              echo "::warning::config.user.json not in APK assets (will use fallback config on first launch)"
+            fi
+
             echo "=== DEX strings check (real class presence) ==="
             TMPDIR=$(mktemp -d)
             unzip -q "$APK_PATH" -d "$TMPDIR"

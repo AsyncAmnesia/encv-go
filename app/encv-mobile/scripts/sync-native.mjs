@@ -47,4 +47,15 @@ if (existsSync(overlayInc)) {
   console.log('  include: synced')
 }
 
+// Copy config.user.json to Android assets
+const configSrc = join(__dirname, '..', '..', '..', 'config.user.json')
+const configDest = join(ANDROID_DIR, 'app', 'src', 'main', 'assets', 'config.user.json')
+if (existsSync(configSrc)) {
+    mkdirSync(dirname(configDest), { recursive: true })
+    copyFileSync(configSrc, configDest)
+    console.log(`  config: config.user.json → assets`)
+} else {
+    console.warn(`  config: config.user.json not found at project root (expected for fresh clones)`)
+}
+
 console.log('encv-sync-native: done')
