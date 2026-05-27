@@ -90,8 +90,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 
 // Outlined 图标（⚠️ 大写 O）
-import androidx.compose.material.icons.Icons.Outlined.Subtitles   // ✅ 正确
-import androidx.compose.material.icons.Icons.Outlined.MusicNote   // ✅ 正确
+import androidx.compose.material.icons.outlined.Subtitles         // ✅ 正确
+import androidx.compose.material.icons.outlined.MusicNote         // ✅ 正确
 ```
 
 ### 2.3 使用方式

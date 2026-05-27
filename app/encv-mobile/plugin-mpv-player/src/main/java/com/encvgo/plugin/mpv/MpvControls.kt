@@ -29,8 +29,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.VolumeMute
-import androidx.compose.material.icons.Icons.Outlined.Subtitles
-import androidx.compose.material.icons.Icons.Outlined.MusicNote
+import androidx.compose.material.icons.outlined.Subtitles
+import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
