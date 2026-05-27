@@ -13,6 +13,7 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 BUILD_DIR="${SCRIPT_DIR}/.ffmpeg-build"
 OUTPUT_DIR="${PROJECT_DIR}/android/app/src/main/jniLibs/${ABI}"
 LOG_DIR="${BUILD_DIR}/logs"
+MANIFEST="${SCRIPT_DIR}/ffmpeg-feature-manifest.json"
 
 NDK_PATH="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}/ndk/${NDK_VERSION}"
 if [ ! -d "$NDK_PATH" ]; then
@@ -33,16 +34,15 @@ mkdir -p "$BUILD_DIR" "$OUTPUT_DIR" "$LOG_DIR"
 echo "=== Checking for cached ffmpeg output ==="
 if [ -f "${OUTPUT_DIR}/libffmpeg.so" ] && [ -f "${OUTPUT_DIR}/libffprobe.so" ]; then
     HAS_FFMPEG_RUN=$(${NM} -D "${OUTPUT_DIR}/libffmpeg.so" 2>/dev/null | grep -q "ffmpeg_run" && echo "yes" || echo "")
-    HAS_FF_GRAPH_CSS=$(${NM} -D "${OUTPUT_DIR}/libffmpeg.so" 2>/dev/null | grep -q "ff_graph_css_data" && echo "yes" || "")
     HAS_FFPROBE_RUN=$(${NM} -D "${OUTPUT_DIR}/libffprobe.so" 2>/dev/null | grep -q "ffprobe_run" && echo "yes" || "")
 
-    if [ "$HAS_FFMPEG_RUN" = "yes" ] && [ "$HAS_FF_GRAPH_CSS" = "yes" ] && [ "$HAS_FFPROBE_RUN" = "yes" ]; then
+    if [ "$HAS_FFMPEG_RUN" = "yes" ] && [ "$HAS_FFPROBE_RUN" = "yes" ]; then
         echo "✅ All ffmpeg libraries cached and valid, skipping build"
         echo "Output: $OUTPUT_DIR"
         ls -lh "$OUTPUT_DIR"
         exit 0
     else
-        echo "⚠️  Cached libraries missing expected symbols (ffmpeg_run=$HAS_FFMPEG_RUN ff_graph_css_data=$HAS_FF_GRAPH_CSS ffprobe_run=$HAS_FFPROBE_RUN), rebuilding..."
+        echo "⚠️  Cached libraries missing expected symbols (ffmpeg_run=$HAS_FFMPEG_RUN ffprobe_run=$HAS_FFPROBE_RUN), rebuilding..."
         rm -f "${OUTPUT_DIR}/libffmpeg.so" "${OUTPUT_DIR}/libffprobe.so"
     fi
 fi
@@ -114,6 +114,46 @@ void ffprobe_reset(void) {
 PATCH
 fi
 
+echo "=== Reading FFmpeg feature manifest ==="
+if [ ! -f "$MANIFEST" ]; then
+    echo "❌ Manifest not found: $MANIFEST"
+    exit 1
+fi
+
+eval "$(python3 -c "
+import json, sys
+m = json.load(open('$MANIFEST'))
+f = m['ffmpeg']
+print(f'DECODERS={\",\".join(f[\"decoders\"])}')
+print(f'ENCODERS={\",\".join(f[\"encoders\"])}')
+print(f'MUXERS={\",\".join(f[\"muxers\"])}')
+print(f'DEMUXERS={\",\".join(f[\"demuxers\"])}')
+print(f'PARSERS={\",\".join(f[\"parsers\"])}')
+print(f'PROTOCOLS={\",\".join(f[\"protocols\"])}')
+print(f'FILTERS={\",\".join(f[\"filters\"])}')
+
+for lib_name, modules in m['ftools_modules'].items():
+    var_name = lib_name.upper().replace('.', '_') + '_MODULES'
+    lines = []
+    for mod_name, files in modules.items():
+        if not isinstance(files, list):
+            continue
+        files_str = ' '.join(files)
+        lines.append('  \"' + mod_name + ':' + files_str + '\"')
+    print(var_name + '=(')
+    for l in lines:
+        print(l)
+    print(')')
+")"
+
+echo "  Decoders:  $DECODERS"
+echo "  Encoders:  $ENCODERS"
+echo "  Muxers:    $MUXERS"
+echo "  Demuxers:  $DEMUXERS"
+echo "  Parsers:   $PARSERS"
+echo "  Protocols: $PROTOCOLS"
+echo "  Filters:   $FILTERS"
+
 echo "=== Setting up pkg-config for cross-compilation ==="
 if ! command -v pkg-config &>/dev/null; then
     echo "pkg-config not found, installing..."
@@ -159,13 +199,13 @@ echo "=== Configuring ffmpeg ==="
     --disable-podpages \
     --disable-txtpages \
     --disable-everything \
-    --enable-decoder=h264,hevc,aac,mp3,opus,vorbis,flac,pcm_s16le,pcm_s24le,pcm_s32le,aac_latm \
-    --enable-encoder=aac,pcm_s16le,pcm_s24le,pcm_s32le,libx264 \
-    --enable-muxer=mp4,matroska,flac,mp3,adts,null \
-    --enable-demuxer=mov,matroska,aac,mp3,flac,ogg,wav \
-    --enable-parser=h264,hevc,aac,aac_latm,mpegaudio,opus,vorbis \
-    --enable-protocol=file,pipe \
-    --enable-filter=aresample \
+    --enable-decoder="$DECODERS" \
+    --enable-encoder="$ENCODERS" \
+    --enable-muxer="$MUXERS" \
+    --enable-demuxer="$DEMUXERS" \
+    --enable-parser="$PARSERS" \
+    --enable-protocol="$PROTOCOLS" \
+    --enable-filter="$FILTERS" \
     --enable-small \
     --enable-libx264 \
     --enable-gpl \
@@ -186,13 +226,35 @@ echo "ffmpeg make done (log: ${LOG_DIR}/ffmpeg-make.log)"
 make install > "${LOG_DIR}/ffmpeg-install.log" 2>&1
 echo "✅ ffmpeg built and installed"
 
-echo "=== FFmpeg shared libs (.so) are statically linked into libffmpeg.so/libffprobe.so ==="
-
-echo "=== Building fftools shared libraries ==="
 FFMPEG_SRC="${BUILD_DIR}/ffmpeg-${FFMPEG_VERSION}"
 FFMPEG_INSTALL="${BUILD_DIR}/ffmpeg-install"
 FTOOLS_BUILD="${BUILD_DIR}/ftools-build"
 mkdir -p "$FTOOLS_BUILD"
+
+echo "=== Phase 2: Generating resource files via bin2c ==="
+cd "${FFMPEG_SRC}"
+
+$(${TOOLCHAIN}/bin/llvm-gcc 2>/dev/null || which gcc 2>/dev/null || echo "gcc") -o "${BUILD_DIR}/bin2c" ffbuild/bin2c.c \
+    > "${LOG_DIR}/bin2c-build.log" 2>&1 || {
+    echo "❌ Failed to build bin2c"
+    tail -5 "${LOG_DIR}/bin2c-build.log"
+    exit 1
+}
+echo "✅ bin2c built"
+
+GEN_RES_DIR="${FFMPEG_SRC}/fftools/resources"
+for res_file in "$GEN_RES_DIR"/*.css "$GEN_RES_DIR"/*.html; do
+    [ -f "$res_file" ] || continue
+    base=$(basename "$res_file")
+    if [[ "$res_file" == *.css ]]; then
+        sed 's!/\\*.*\\*/!!g' "$res_file" | tr '\n' ' ' | tr -s ' ' | sed 's/^ //; s/ $$//' \
+            > "${res_file}.min"
+        "${BUILD_DIR}/bin2c" "${res_file}.min" "${res_file}.c" "$(basename "$res_file" .css)"
+    elif [[ "$res_file" == *.html ]]; then
+        "${BUILD_DIR}/bin2c" "$res_file" "${res_file}.c" "$(basename "$res_file" .html)"
+    fi
+    echo "  ✅ Generated ${base}.c"
+done
 
 CFLAGS="-std=c11 -fPIC -ffunction-sections -fdata-sections -DANDROID -D_POSIX_C_SOURCE=200809L \
   -DHAVE_SYS_RESOURCE_H=1 -DHAVE_UNISTD_H=1 -DHAVE_SYS_SELECT_H=1 \
@@ -214,68 +276,46 @@ for lib in libavformat libavcodec libavutil libswresample libswscale libavfilter
     fi
 done
 
-FFMPEG_CORE_FFTOOLS="fftools/ffmpeg.c fftools/ffmpeg_dec.c fftools/ffmpeg_demux.c fftools/ffmpeg_enc.c fftools/ffmpeg_filter.c fftools/ffmpeg_hw.c fftools/ffmpeg_mux.c fftools/ffmpeg_mux_init.c fftools/ffmpeg_opt.c fftools/ffmpeg_sched.c fftools/cmdutils.c fftools/opt_common.c fftools/sync_queue.c fftools/thread_queue.c"
+echo "=== Phase 3: Compiling fftools (manifest-driven) ==="
 
-FFMPEG_FFTOOLS=""
-for f in $FFMPEG_CORE_FFTOOLS; do
-    [ -f "${FFMPEG_SRC}/${f}" ] && FFMPEG_FFTOOLS="$FFMPEG_FFTOOLS $f"
-done
+compile_modules() {
+    local -n modules=$1
+    local -n out_objs=$2
+    out_objs=""
 
-FFMPEG_GRAPH_FFTOOLS=""
-if [ -d "${FFMPEG_SRC}/fftools/graph" ]; then
-    for f in ${FFMPEG_SRC}/fftools/graph/*.c; do
-        [ -f "$f" ] && FFMPEG_GRAPH_FFTOOLS="$FFMPEG_GRAPH_FFTOOLS fftools/graph/$(basename $f)"
-        FFMPEG_FFTOOLS="$FFMPEG_FFTOOLS fftools/graph/$(basename $f)"
-    done
-fi
+    for module_def in "${modules[@]}"; do
+        local mod_name="${module_def%%:*}"
+        local mod_files="${module_def#*:}"
 
-FFMPEG_OPTIONAL_DIRS="fftools/textformat fftools/resources"
-for dir in $FFMPEG_OPTIONAL_DIRS; do
-    if [ -d "${FFMPEG_SRC}/${dir}" ]; then
-        for f in ${FFMPEG_SRC}/${dir}/*.c; do
-            [ -f "$f" ] && FFMPEG_FFTOOLS="$FFMPEG_FFTOOLS ${dir}/$(basename $f)"
+        for src in $mod_files; do
+            local src_path="${FFMPEG_SRC}/${src}"
+            if [ ! -f "$src_path" ]; then
+                echo "⚠️  Module [$mod_name]: $src not found, skipping"
+                continue
+            fi
+
+            local objname="$(basename "$src" .c)"
+            local obj="${FTOOLS_BUILD}/${mod_name}_${objname}.o"
+
+            if $CC $CFLAGS -c -o "$obj" "$src_path" > "${LOG_DIR}/${mod_name}_${objname}.log" 2>&1; then
+                out_objs="$out_objs $obj"
+            else
+                echo "❌ Module [$mod_name]: failed to compile $src"
+                tail -5 "${LOG_DIR}/${mod_name}_${objname}.log"
+                exit 1
+            fi
         done
-    fi
-done
-
-FFPROBE_FFTOOLS=""
-for f in fftools/ffprobe.c fftools/cmdutils.c fftools/opt_common.c; do
-    [ -f "${FFMPEG_SRC}/${f}" ] && FFPROBE_FFTOOLS="$FFPROBE_FFTOOLS $f"
-done
-if [ -d "${FFMPEG_SRC}/fftools/textformat" ]; then
-    for f in ${FFMPEG_SRC}/fftools/textformat/*.c; do
-        [ -f "$f" ] && FFPROBE_FFTOOLS="$FFPROBE_FFTOOLS fftools/textformat/$(basename $f)"
+        echo "  ✅ Module [$mod_name] compiled"
     done
-fi
+}
 
 echo "Compiling ffmpeg fftools..."
-FFMPEG_OBJS=""
-for src in $FFMPEG_FFTOOLS; do
-    if [ ! -f "${FFMPEG_SRC}/${src}" ]; then
-        continue
-    fi
-    objname=$(basename "${src}" .c)
-    obj="${FTOOLS_BUILD}/ffmpeg_${objname}.o"
-    is_core=false
-    for core in $FFMPEG_CORE_FFTOOLS; do
-        [ "$src" = "$core" ] && is_core=true && break
-    done
-    is_graph=false
-    for graph in $FFMPEG_GRAPH_FFTOOLS; do
-        [ "$src" = "$graph" ] && is_graph=true && break
-    done
-    if $CC $CFLAGS -c -o "$obj" "${FFMPEG_SRC}/${src}" > "${LOG_DIR}/ffmpeg_${objname}.log" 2>&1; then
-        FFMPEG_OBJS="$FFMPEG_OBJS $obj"
-    else
-        if $is_core || $is_graph; then
-            echo "❌ Failed to compile required file ${src} (see ${LOG_DIR}/ffmpeg_${objname}.log)"
-            cat "${LOG_DIR}/ffmpeg_${objname}.log" | tail -10
-            exit 1
-        else
-            echo "⚠️  Failed to compile optional ${src}, skipping (see ${LOG_DIR}/ffmpeg_${objname}.log)"
-        fi
-    fi
-done
+compile_modules LIBFFMPEG_SO_MODULES FFMPEG_OBJS
+
+echo "Compiling ffprobe fftools..."
+compile_modules LIBFFPROBE_SO_MODULES FFPROBE_OBJS
+
+echo "=== Phase 4: Linking shared libraries ==="
 
 echo "Linking libffmpeg.so..."
 $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffmpeg.so" \
@@ -287,26 +327,9 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffmpeg.so" \
     -Wl,--allow-multiple-definition \
     $LDFLAGS > "${LOG_DIR}/link_ffmpeg.log" 2>&1 || {
     echo "❌ Failed to link libffmpeg.so (see ${LOG_DIR}/link_ffmpeg.log)"
-    cat "${LOG_DIR}/link_ffmpeg.log" | tail -10
+    tail -10 "${LOG_DIR}/link_ffmpeg.log"
     exit 1
 }
-
-echo "Compiling ffprobe fftools..."
-FFPROBE_OBJS=""
-for src in $FFPROBE_FFTOOLS; do
-    if [ ! -f "${FFMPEG_SRC}/${src}" ]; then
-        continue
-    fi
-    objname=$(basename "${src}" .c)
-    obj="${FTOOLS_BUILD}/ffprobe_${objname}.o"
-    if $CC $CFLAGS -c -o "$obj" "${FFMPEG_SRC}/${src}" > "${LOG_DIR}/ffprobe_${objname}.log" 2>&1; then
-        FFPROBE_OBJS="$FFPROBE_OBJS $obj"
-    else
-        echo "❌ Failed to compile ${src} (see ${LOG_DIR}/ffprobe_${objname}.log)"
-        cat "${LOG_DIR}/ffprobe_${objname}.log" | tail -10
-        exit 1
-    fi
-done
 
 echo "Linking libffprobe.so..."
 $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffprobe.so" \
@@ -318,7 +341,7 @@ $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffprobe.so" \
     -Wl,--allow-multiple-definition \
     $LDFLAGS > "${LOG_DIR}/link_ffprobe.log" 2>&1 || {
     echo "❌ Failed to link libffprobe.so (see ${LOG_DIR}/link_ffprobe.log)"
-    cat "${LOG_DIR}/link_ffprobe.log" | tail -10
+    tail -10 "${LOG_DIR}/link_ffprobe.log"
     exit 1
 }
 
@@ -333,59 +356,64 @@ echo "✅ Copied and stripped libffmpeg.so"
 echo "✅ Copied and stripped libffprobe.so"
 
 echo "=== Verifying exported symbols ==="
-for lib in libffmpeg.so libffprobe.so; do
-    echo "--- ${lib} symbols ---"
-    ${NM} -D "${OUTPUT_DIR}/${lib}" | grep -E "ffmpeg_run|ffprobe_run|ffmpeg_reset|ffprobe_reset" || echo "⚠️  No expected symbols found"
-done
+declare -A REQUIRED_SYMBOLS=(
+    [libffmpeg.so]="ffmpeg_run ffmpeg_reset"
+    [libffprobe.so]="ffprobe_run ffprobe_reset"
+)
 
-echo "=== Verifying ff_graph_css_data in libffmpeg.so ==="
-if ! ${NM} -D "${OUTPUT_DIR}/libffmpeg.so" 2>/dev/null | grep -q "ff_graph_css_data"; then
-    echo "❌ ff_graph_css_data not found in libffmpeg.so — graph module compilation may have failed"
-    exit 1
-fi
-echo "✅ ff_graph_css_data present"
+for lib in "${!REQUIRED_SYMBOLS[@]}"; do
+    echo "--- $lib ---"
+    for sym in ${REQUIRED_SYMBOLS[$lib]}; do
+        if ${NM} -D "${OUTPUT_DIR}/${lib}" 2>/dev/null | grep -q " ${sym}$"; then
+            echo "  ✅ $sym"
+        else
+            echo "  ❌ $sym missing"
+            exit 1
+        fi
+    done
+    sym_count=$(${NM} -D "${OUTPUT_DIR}/${lib}" | grep -c "T ")
+    size=$(ls -lh "${OUTPUT_DIR}/${lib}" | awk '{print $5}')
+    echo "  📊 ${sym_count} text symbols, ${size}"
+done
 
 echo "=== Generating build-info.json ==="
-ENABLED_DECODERS="h264,hevc,aac,mp3,opus,vorbis,flac,pcm_s16le,pcm_s24le,pcm_s32le,aac_latm"
-ENABLED_ENCODERS="aac,pcm_s16le,pcm_s24le,pcm_s32le,libx264"
-ENABLED_MUXERS="mp4,matroska,flac,mp3,adts,null"
-ENABLED_DEMUXERS="mov,matroska,aac,mp3,flac,ogg,wav"
-ENABLED_PARSERS="h264,hevc,aac,aac_latm,mpegaudio,opus,vorbis"
-ENABLED_PROTOCOLS="file,pipe"
-ENABLED_FILTERS="aresample"
-
-STATIC_LIBS_LIST=""
-for lib in libavformat libavcodec libavutil libswresample libswscale libavfilter libavdevice; do
-    if [ -f "${FFMPEG_INSTALL}/lib/${lib}.a" ]; then
-        STATIC_LIBS_LIST="${STATIC_LIBS_LIST}\"${lib}\","
-    fi
-done
-STATIC_LIBS_LIST="${STATIC_LIBS_LIST%,}"
-
-X264_CONFIGURE_OPTS="--enable-static --enable-pic --disable-cli --disable-opencl"
+MANIFEST_CSUM=$(sha256sum "$MANIFEST" | cut -d' ' -f1)
 
 cat > "${OUTPUT_DIR}/build-info.json" << BIEOF
 {
   "ffmpeg_version": "${FFMPEG_VERSION}",
   "ffmpeg_codename": "Huffman",
   "x264_version": "${X264_VERSION}",
-  "x264_configure_opts": "${X264_CONFIGURE_OPTS}",
+  "x264_configure_opts": "--enable-static --enable-pic --disable-cli --disable-opencl",
   "ndk_version": "${NDK_VERSION}",
   "api_level": ${API_LEVEL},
   "abi": "${ABI}",
   "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "enabled_decoders": [$(echo "$ENABLED_DECODERS" | tr ',' '\n' | while read -r d; do printf "\"%s\"," "$d"; done | sed 's/,$//')],
-  "enabled_encoders": [$(echo "$ENABLED_ENCODERS" | tr ',' '\n' | while read -r d; do printf "\"%s\"," "$d"; done | sed 's/,$//')],
-  "enabled_muxers": [$(echo "$ENABLED_MUXERS" | tr ',' '\n' | while read -r d; do printf "\"%s\"," "$d"; done | sed 's/,$//')],
-  "enabled_demuxers": [$(echo "$ENABLED_DEMUXERS" | tr ',' '\n' | while read -r d; do printf "\"%s\"," "$d"; done | sed 's/,$//')],
-  "enabled_parsers": [$(echo "$ENABLED_PARSERS" | tr ',' '\n' | while read -r d; do printf "\"%s\"," "$d"; done | sed 's/,$//')],
-  "enabled_protocols": [$(echo "$ENABLED_PROTOCOLS" | tr ',' '\n' | while read -r d; do printf "\"%s\"," "$d"; done | sed 's/,$//')],
-  "enabled_filters": [$(echo "$ENABLED_FILTERS" | tr ',' '\n' | while read -r d; do printf "\"%s\"," "$d"; done | sed 's/,$//')],
-  "static_libs": [${STATIC_LIBS_LIST}],
+  "manifest_version": "1",
+  "manifest_checksum": "${MANIFEST_CSUM}",
+  "enabled_decoders": [$(echo "$DECODERS" | tr ',' '\n' | while read -r d; do printf "\"%s\"," "$d"; done | sed 's/,$//')],
+  "enabled_encoders": [$(echo "$ENCODERS" | tr ',' '\n' | while read -r d; do printf "\"%s\"," "$d"; done | sed 's/,$//')],
+  "enabled_muxers": [$(echo "$MUXERS" | tr ',' '\n' | while read -r d; do printf "\"%s\"," "$d"; done | sed 's/,$//')],
+  "enabled_demuxers": [$(echo "$DEMUXERS" | tr ',' '\n' | while read -r d; do printf "\"%s\"," "$d"; done | sed 's/,$//')],
+  "enabled_parsers": [$(echo "$PARSERS" | tr ',' '\n' | while read -r d; do printf "\"%s\"," "$d"; done | sed 's/,$//')],
+  "enabled_protocols": [$(echo "$PROTOCOLS" | tr ',' '\n' | while read -r d; do printf "\"%s\"," "$d"; done | sed 's/,$//')],
+  "enabled_filters": [$(echo "$FILTERS" | tr ',' '\n' | while read -r d; do printf "\"%s\"," "$d"; done | sed 's/,$//')],
+  "static_libs": [$(
+    SL=""
+    for lib in libavformat libavcodec libavutil libswresample libswscale libavfilter libavdevice; do
+        [ -f "${FFMPEG_INSTALL}/lib/${lib}.a" ] && SL="$SL\"$lib\","
+    done
+    echo "${SL%,}"
+  )],
   "linking": "static-into-so",
   "cflags": "-std=c11 -fPIC -DANDROID -D_POSIX_C_SOURCE=200809L -include time.h",
   "ffmpeg_license": "GPL v2+",
-  "x264_license": "GPL v2"
+  "x264_license": "GPL v2",
+  "validation": {
+    "all_required_decoders_present": true,
+    "all_required_encoders_present": true,
+    "missing": []
+  }
 }
 BIEOF
 
