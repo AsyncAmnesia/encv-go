@@ -55,27 +55,78 @@
 
 ---
 
-## Issue #3：WebDAV 硬编码已启用
+## Issue #3：WebDAV 硬编码已启用 + 默认配置 Bug 链
 
-### 根因分析
+### 根因分析（多层 Bug 链）
 
-后端数据流：
+这不是单一问题，而是一条 **4 层 Bug 链**，导致安装 APP 后"大量配置为空"且 WebDAV 永远显示已启用：
 
-1. **类型定义** [types.go:150-159](internal/v2/types/types.go#L150-L159)：`WebdavServer` 结构体有 `Root`、`Dir`、`Username`、`Password`
-2. **默认配置** [config.go:90-93](internal/config/config.go#L90-L93)：`DefaultConfig()` 无条件设置 `Root: "/webdav/"`、`Dir: "./output"` —— **目录非空 = 默认启用**
-3. **API 返回** [mobile_api.go:414](internal/server/mobile_api.go#L414)：`enabled: cfg.Webdav.Root != ""` —— 因为 Root 默认非空，所以 **永远返回 enabled=true**
-4. **前端展示** [Remote.vue:320](app/encv-mobile/src/views/Remote.vue#L320)：`if (info.webdav && info.webdav.enabled)` —— 始终显示内置 WebDAV 信息（"傻呵呵显示已启用"）
+#### 第 1 层：Asset 文件名不匹配
 
-### 修复方案
+| 环节 | 实际文件名 | 期望文件名 |
+|------|-----------|-----------|
+| 构建脚本 [post-cap-sync.mjs:424](app/encv-mobile/scripts/post-cap-sync.mjs#L424) 复制到 assets | `config.mobile.json` | — |
+| Kotlin [EncvGoService.kt:411](app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt#L411) 从 assets 读取 | 寻找 `config.user.json` | ❌ **找不到！** |
 
-**不需要新增 Enabled 字段**。语义：**Root 为空即禁用**（Root 是路由前缀，无前缀即无服务）。
+结果：`copyDefaultConfig()` 抛异常 → 走 `writeFallbackConfig()` 写出一个**极度残缺的配置**
 
-1. **config.go**：`DefaultConfig()` 中将 `Root` 设为空字符串 `""`（Dir 也清空），表示默认不启用 WebDAV
-2. **mobile_api.go**：判断逻辑 `cfg.Webdav.Root != ""` **无需改动**（逻辑正确，只是默认值错误导致永远为 true）
+#### 第 2 层：Fallback 配置严重缺失
 
-### 修改文件
-- [config.go](internal/config/config.go)：`DefaultConfig()` 设置 `Root: ""`, `Dir: ""`
-- [mobile_api.go](internal/server/mobile_api.go)：无需改动
+[EncvGoService.kt:495-510](app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt#L495-L510) 的 fallback 配置缺少以下字段：
+- ❌ `webdav` 整段（无 root/dir/username/password）
+- ❌ `admin` 整段
+- ❌ `proxy` 整段
+- ❌ `default_container_version`
+- ❌ `strict_deprecated_version`
+- ❌ `recover`
+- ❌ `webdav.port`
+
+这就是用户说的"大量配置为空"的直接原因。
+
+#### 第 3 层：DefaultConfig() 强制启用 WebDAV
+
+[config.go:90-93](internal/config/config.go#L90-L93)：`DefaultConfig()` 无条件设置 `Root: "/webdav/"`, `Dir: "./output"`
+
+由于 fallback 没有 webdav 键，Go `Load()` 的 `json.Unmarshal` 不会覆盖 → **DefaultConfig 的值保留** → WebDAV 永远启用。
+
+#### 第 4 层：config.mobile.json 缺少 mobile 段 + 同样硬编码启用 WebDAV
+
+即使修复了第 1 层文件名问题，assets 中的 [config.mobile.json](app/encv-mobile/android/app/src/main/assets/config.mobile.json) 也有两个问题：
+1. **`"root": "/webdav/"`** —— 同样硬编码启用
+2. **缺少 `"mobile"` 段** —— 导致 Go `Load()` 中 L142 的 ENCV_MOBILE 路径修正被跳过（`cfg.Mobile != nil` 为 false）
+
+### 修复方案（按依赖顺序）
+
+#### Step A：修复 DefaultConfig() — 根源
+- [config.go](internal/config/config.go)：`DefaultConfig()` 设置 `Root: ""`, `Dir: ""`（默认禁用）
+- 这一步单独就能解决 WebDAV 硬编码启用问题（即使上层配置全错，默认值也是禁用）
+
+#### Step B：修复 Asset 文件名不匹配
+- [post-cap-sync.mjs](app/encv-mobile/scripts/post-cap-sync.mjs)：确认复制产物名为 `config.user.json`（与 Kotlin 读取一致），或者 Kotlin 改读 `config.mobile.json`
+- **推荐改 Kotlin 侧**：因为 assets 里可以有多个配置文件，Kotlin 应该明确读 `config.mobile.json`
+- [EncvGoService.kt](app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt) L411：`assets.open("config.user.json")` → `assets.open("config.mobile.json")`
+
+#### Step C：补全 config.mobile.json
+- [config.mobile.json](app/encv-mobile/android/app/src/main/assets/config.mobile.json)：
+  - `"webdav": {"root": "", "dir": "", ...}` （默认禁用）
+  - 添加 `"mobile"` 段：`{"server_dir": "/storage/emulated/0", "output_path": "/storage/emulated/0/encv-output", "webdav_dir": ""}`
+
+#### Step D：补全 Fallback 配置 + Merge 逻辑
+- [EncvGoService.kt](app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt) `writeFallbackConfig()`：补全 `webdav`、`admin`、`proxy`、`default_container_version`、`recover` 字段
+- [EncvGoService.kt](app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt) `mergeConfigDefaults()`：补充 `webdav`、`admin`、`proxy`、`default_container_version`、`recover` 的合并逻辑
+
+#### Step E：路由冲突检测
+- [server.go](internal/server/server.go)：在 WebDAV 初始化前（L103 块开头）添加路由冲突检测
+- 冲突时 fatal error（启动失败），不是 silent continue
+
+### 修改文件清单
+| 文件 | 改动 |
+|------|------|
+| [internal/config/config.go](internal/config/config.go) | `DefaultConfig()` Root="", Dir="" |
+| [android/.../EncvGoService.kt](app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt) | 读 `config.mobile.json`；补全 fallback 和 merge |
+| [android/.../assets/config.mobile.json](app/encv-mobile/android/app/src/main/assets/config.mobile.json) | root=""; 补充 mobile 段 |
+| [internal/server/server.go](internal/server/server.go) | 路由冲突检测 |
+| [internal/server/mobile_api.go](internal/server/mobile_api.go) | 无需改动 |
 
 ---
 
