@@ -1,0 +1,21 @@
+﻿2026-05-27T18:02:35.6502520Z ##[group]Run PLUGIN_APK=$(find app/encv-mobile/android/build -name "plugin-mpv-player-debug.apk" -type f 2>/dev/null | head -1)
+2026-05-27T18:02:35.6503995Z [36;1mPLUGIN_APK=$(find app/encv-mobile/android/build -name "plugin-mpv-player-debug.apk" -type f 2>/dev/null | head -1)[0m
+2026-05-27T18:02:35.6505009Z [36;1mif [ -f "$PLUGIN_APK" ]; then[0m
+2026-05-27T18:02:35.6505477Z [36;1m  echo "=== Plugin APK size ==="[0m
+2026-05-27T18:02:35.6505950Z [36;1m  ls -lh "$PLUGIN_APK"[0m
+2026-05-27T18:02:35.6506565Z [36;1m  echo "=== .so files in plugin APK ==="[0m
+2026-05-27T18:02:35.6507227Z [36;1m  unzip -l "$PLUGIN_APK" | grep "\.so" | head -20 || echo "(no .so)"[0m
+2026-05-27T18:02:35.6507869Z [36;1m  echo "=== Total .so count ==="[0m
+2026-05-27T18:02:35.6508436Z [36;1m  unzip -l "$PLUGIN_APK" | grep -c "\.so" || echo "0"[0m
+2026-05-27T18:02:35.6508972Z [36;1melse[0m
+2026-05-27T18:02:35.6509324Z [36;1m  echo "⏭️ Plugin APK not available"[0m
+2026-05-27T18:02:35.6509788Z [36;1mfi[0m
+2026-05-27T18:02:35.6535632Z shell: /usr/bin/bash -e {0}
+2026-05-27T18:02:35.6536071Z env:
+2026-05-27T18:02:35.6536514Z   NDK_VERSION: 26.1.10909125
+2026-05-27T18:02:35.6537130Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T18:02:35.6537977Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T18:02:35.6538692Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-27T18:02:35.6539228Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-27T18:02:35.6539692Z ##[endgroup]
+2026-05-27T18:02:35.6609599Z ⏭️ Plugin APK not available

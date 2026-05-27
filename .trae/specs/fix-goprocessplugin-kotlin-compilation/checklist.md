@@ -1,0 +1,6 @@
+- [ ] GoProcessPlugin.kt 包含 `import android.content.BroadcastReceiver`
+- [ ] GoProcessPlugin.kt 包含 `import android.content.Context`
+- [ ] GoProcessPlugin.kt 只有一个 `companion object`（包含 TAG 和 REQUEST_CODE_PLUGIN_PICK）
+- [ ] `REQUEST_CODE_PLUGIN_PICK` 可在类内所有引用处访问
+- [ ] `String?` 类型的 nullable 安全调用正确
+- [ ] Kotlin 编译无错误（需 CI 验证）

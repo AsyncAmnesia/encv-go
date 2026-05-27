@@ -1,0 +1,12 @@
+﻿2026-05-27T17:56:09.8098182Z ##[group]Run yes | sdkmanager --install "ndk;26.1.10909125" > /dev/null 2>&1 && echo "✅ NDK installed"
+2026-05-27T17:56:09.8098982Z [36;1myes | sdkmanager --install "ndk;26.1.10909125" > /dev/null 2>&1 && echo "✅ NDK installed"[0m
+2026-05-27T17:56:09.8126531Z shell: /usr/bin/bash -e {0}
+2026-05-27T17:56:09.8126813Z env:
+2026-05-27T17:56:09.8126992Z   NDK_VERSION: 26.1.10909125
+2026-05-27T17:56:09.8127338Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T17:56:09.8127773Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T17:56:09.8128134Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-27T17:56:09.8128404Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-27T17:56:09.8128650Z ##[endgroup]
+2026-05-27T17:56:27.5711060Z yes: standard output: Broken pipe
+2026-05-27T17:56:27.5714581Z ✅ NDK installed

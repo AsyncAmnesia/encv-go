@@ -1,0 +1,167 @@
+﻿2026-05-27T17:58:27.7412968Z ##[group]Run cd app/encv-mobile/android
+2026-05-27T17:58:27.7413320Z [36;1mcd app/encv-mobile/android[0m
+2026-05-27T17:58:27.7413567Z [36;1m[0m
+2026-05-27T17:58:27.7413760Z [36;1m# Ensure libplayer.so is built[0m
+2026-05-27T17:58:27.7414155Z [36;1mif [ ! -f "plugin-mpv-player/src/main/jniLibs/arm64-v8a/libplayer.so" ]; then[0m
+2026-05-27T17:58:27.7414591Z [36;1m  echo "Building libplayer.so via ndk-build..."[0m
+2026-05-27T17:58:27.7415017Z [36;1m  bash ../scripts/build-player-so.sh || echo "⚠️ libplayer.so build failed"[0m
+2026-05-27T17:58:27.7415386Z [36;1mfi[0m
+2026-05-27T17:58:27.7415554Z [36;1m[0m
+2026-05-27T17:58:27.7415775Z [36;1m# Compile plugin Kotlin code (debug or release)[0m
+2026-05-27T17:58:27.7416059Z [36;1mBUILD_TYPE="Release"[0m
+2026-05-27T17:58:27.7417152Z [36;1m./gradlew ":plugin-mpv-player:compile${BUILD_TYPE}Kotlin" --stacktrace 2>&1 || true[0m
+2026-05-27T17:58:27.7417602Z [36;1mecho "=== Plugin compile done (${BUILD_TYPE}) ==="[0m
+2026-05-27T17:58:27.7434612Z shell: /usr/bin/bash -e {0}
+2026-05-27T17:58:27.7434914Z env:
+2026-05-27T17:58:27.7435104Z   NDK_VERSION: 26.1.10909125
+2026-05-27T17:58:27.7435449Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T17:58:27.7435920Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T17:58:27.7436464Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-27T17:58:27.7436789Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-27T17:58:27.7437056Z ##[endgroup]
+2026-05-27T17:58:27.7481531Z Building libplayer.so via ndk-build...
+2026-05-27T17:58:27.7523039Z build-player-so: Building libplayer.so from source...
+2026-05-27T17:58:27.7523637Z   NDK: /usr/local/lib/android/sdk/ndk/27.3.13750724
+2026-05-27T17:58:27.7546750Z   Prebuilt libraries: 10 .so files in /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a
+2026-05-27T17:58:27.7555610Z   Removed any existing libplayer.so (will rebuild from source)
+2026-05-27T17:58:27.7556075Z 
+2026-05-27T17:58:27.7556633Z   Running ndk-build...
+2026-05-27T17:58:32.5778011Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:32.5779930Z Android NDK: WARNING: APP_PLATFORM android-21 is higher than android:minSdkVersion 1 in ./AndroidManifest.xml. NDK binaries will *not* be compatible with devices older than android-21. See https://android.googlesource.com/platform/ndk/+/master/docs/user/common_problems.md for more information.    
+2026-05-27T17:58:32.5781625Z /usr/local/lib/android/sdk/ndk/27.3.13750724/build/core/build-binary.mk:708: warning: overriding recipe for target 'libs/arm64-v8a/libc++_shared.so'
+2026-05-27T17:58:32.5782804Z /usr/local/lib/android/sdk/ndk/27.3.13750724/build/core/install_stl.mk:19: warning: ignoring old recipe for target 'libs/arm64-v8a/libc++_shared.so'
+2026-05-27T17:58:32.5784023Z Android NDK: WARNING:jni/Android.mk:player: non-system libraries in linker flags: -latomic    
+2026-05-27T17:58:32.5785215Z Android NDK:     This is likely to result in incorrect builds. Try using LOCAL_STATIC_LIBRARIES    
+2026-05-27T17:58:32.5786696Z Android NDK:     or LOCAL_SHARED_LIBRARIES instead to list the library dependencies of the    
+2026-05-27T17:58:32.5787547Z Android NDK:     current module    
+2026-05-27T17:58:32.5788675Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:32.5857296Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:32.5859775Z [arm64-v8a] Prebuilt       : libavdevice.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T17:58:32.5862110Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:32.5863919Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:32.5866525Z [arm64-v8a] Prebuilt       : libc++_shared.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T17:58:32.5868433Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:32.5879976Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:32.5881902Z [arm64-v8a] Prebuilt       : libavfilter.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T17:58:32.5883962Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:32.5885836Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:32.5888088Z [arm64-v8a] Prebuilt       : libavcodec.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T17:58:32.5890325Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:32.5905211Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:32.5907454Z [arm64-v8a] Prebuilt       : libavformat.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T17:58:32.5909449Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:32.5917636Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:32.5919744Z [arm64-v8a] Prebuilt       : libavutil.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T17:58:32.5921706Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:32.5924877Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:32.5926755Z [arm64-v8a] Prebuilt       : libmpv.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T17:58:32.5928720Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.3758886Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.3759937Z [arm64-v8a] Compile++      : player <= log.cpp
+2026-05-27T17:58:34.3760765Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.3761592Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.3762476Z [arm64-v8a] Compile++      : player <= jni_utils.cpp
+2026-05-27T17:58:34.3763971Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.5781078Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.5782135Z [arm64-v8a] Compile++      : player <= render.cpp
+2026-05-27T17:58:34.5783108Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.6509356Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.6514432Z [arm64-v8a] Compile++      : player <= event.cpp
+2026-05-27T17:58:34.6516097Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.6517818Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.6519105Z [arm64-v8a] Compile++      : player <= property.cpp
+2026-05-27T17:58:34.6520363Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.6521572Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.6522262Z [arm64-v8a] Compile++      : player <= main.cpp
+2026-05-27T17:58:34.6523091Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.6551470Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.6553529Z [arm64-v8a] Prebuilt       : libswscale.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T17:58:34.6554827Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.6555706Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.6558357Z [arm64-v8a] Prebuilt       : libswresample.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T17:58:34.6560057Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.6561498Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:34.6562950Z [arm64-v8a] Prebuilt       : libxml2.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T17:58:34.6564079Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1053671Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1054926Z [arm64-v8a] Install        : libavdevice.so => libs/arm64-v8a/libavdevice.so
+2026-05-27T17:58:35.1056391Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1057787Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1059016Z [arm64-v8a] Install        : libc++_shared.so => libs/arm64-v8a/libc++_shared.so
+2026-05-27T17:58:35.1060215Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1061617Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1062855Z [arm64-v8a] Install        : libavcodec.so => libs/arm64-v8a/libavcodec.so
+2026-05-27T17:58:35.1064117Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1150830Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1155520Z [arm64-v8a] Install        : libavutil.so => libs/arm64-v8a/libavutil.so
+2026-05-27T17:58:35.1163962Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1173784Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1175632Z [arm64-v8a] Install        : libavfilter.so => libs/arm64-v8a/libavfilter.so
+2026-05-27T17:58:35.1178174Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1179958Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1181406Z [arm64-v8a] Install        : libavformat.so => libs/arm64-v8a/libavformat.so
+2026-05-27T17:58:35.1182940Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1225054Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1227093Z [arm64-v8a] Install        : libswresample.so => libs/arm64-v8a/libswresample.so
+2026-05-27T17:58:35.1228476Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1253497Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1255144Z [arm64-v8a] Install        : libswscale.so => libs/arm64-v8a/libswscale.so
+2026-05-27T17:58:35.1256939Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1278243Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1279752Z [arm64-v8a] Install        : libmpv.so => libs/arm64-v8a/libmpv.so
+2026-05-27T17:58:35.1281284Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1311773Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.1312555Z [arm64-v8a] Install        : libxml2.so => libs/arm64-v8a/libxml2.so
+2026-05-27T17:58:35.1313272Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.6556051Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:35.6556955Z [arm64-v8a] Compile++      : player <= thumbnail.cpp
+2026-05-27T17:58:35.6557634Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:38.6317806Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:38.6318509Z [arm64-v8a] SharedLibrary  : libplayer.so
+2026-05-27T17:58:38.6319165Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:38.6359099Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:38.6359934Z [arm64-v8a] Install        : libplayer.so => libs/arm64-v8a/libplayer.so
+2026-05-27T17:58:38.6360660Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T17:58:38.6409241Z 
+2026-05-27T17:58:38.6410570Z ✅ libplayer.so built and copied (22K)
+2026-05-27T17:58:38.6430435Z   Total .so files in /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a: 11
+2026-05-27T17:58:38.7621687Z Downloading https://mirrors.cloud.tencent.com/gradle/gradle-9.0.0-bin.zip
+2026-05-27T17:58:42.8278210Z ............10%.............20%.............30%.............40%.............50%............60%.............70%.............80%.............90%.............100%
+2026-05-27T17:58:44.3170565Z 
+2026-05-27T17:58:44.3171432Z Welcome to Gradle 9.0.0!
+2026-05-27T17:58:44.3171722Z 
+2026-05-27T17:58:44.3172022Z Here are the highlights of this release:
+2026-05-27T17:58:44.3172763Z  - Configuration Cache is the recommended execution mode
+2026-05-27T17:58:44.3173469Z  - Gradle requires JVM 17 or higher to run
+2026-05-27T17:58:44.3174100Z  - Build scripts use Kotlin 2.2 and Groovy 4.0
+2026-05-27T17:58:44.3174750Z  - Improved Kotlin DSL script compilation avoidance
+2026-05-27T17:58:44.3175131Z 
+2026-05-27T17:58:44.3175721Z For more details see https://docs.gradle.org/9.0.0/release-notes.html
+2026-05-27T17:58:44.3176409Z 
+2026-05-27T17:58:44.4156592Z Starting a Gradle Daemon (subsequent builds will be faster)
+2026-05-27T18:00:32.6162933Z 
+2026-05-27T18:00:32.6178143Z > Configure project :capacitor-cordova-android-plugins
+2026-05-27T18:00:32.6180049Z WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
+2026-05-27T18:00:34.4153805Z 
+2026-05-27T18:00:34.4155036Z > Task :plugin-mpv-player:checkKotlinGradlePluginConfigurationErrors SKIPPED
+2026-05-27T18:00:34.4158027Z > Task :plugin-mpv-player:preBuild UP-TO-DATE
+2026-05-27T18:00:34.4159507Z > Task :plugin-mpv-player:preReleaseBuild UP-TO-DATE
+2026-05-27T18:00:34.5151142Z > Task :plugin-mpv-player:generateReleaseResValues
+2026-05-27T18:00:34.5151970Z > Task :plugin-mpv-player:generateReleaseResources
+2026-05-27T18:00:34.6151294Z > Task :plugin-mpv-player:packageReleaseResources
+2026-05-27T18:00:34.6152291Z > Task :plugin-mpv-player:processReleaseNavigationResources
+2026-05-27T18:00:36.6151948Z > Task :plugin-mpv-player:parseReleaseLocalResources
+2026-05-27T18:00:36.7151374Z > Task :plugin-mpv-player:generateReleaseRFile
+2026-05-27T18:01:06.7151559Z > Task :plugin-mpv-player:compileReleaseKotlin
+2026-05-27T18:01:27.0219293Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:88:32 No cast needed.
+2026-05-27T18:01:27.0222631Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:111:34 Redundant call of conversion method.
+2026-05-27T18:01:27.0259056Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:129:34 Redundant call of conversion method.
+2026-05-27T18:01:27.1171069Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:295:58 'val Icons.Filled.VolumeUp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.VolumeUp.
+2026-05-27T18:01:27.1174047Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:295:86 'val Icons.Filled.VolumeMute: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.VolumeMute.
+2026-05-27T18:01:27.1176379Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:312:64 'val Icons.Filled.VolumeUp: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.VolumeUp.
+2026-05-27T18:01:27.1179969Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:312:92 'val Icons.Filled.VolumeMute: ImageVector' is deprecated. Use the AutoMirrored version at Icons.AutoMirrored.Filled.VolumeMute.
+2026-05-27T18:01:27.6156889Z 
+2026-05-27T18:01:27.6157997Z BUILD SUCCESSFUL in 2m 48s
+2026-05-27T18:01:27.6158808Z 7 actionable tasks: 7 executed
+2026-05-27T18:01:27.6613957Z Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.0.0/userguide/configuration_cache_enabling.html
+2026-05-27T18:01:27.9839590Z === Plugin compile done (Release) ===

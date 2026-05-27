@@ -1,0 +1,18 @@
+﻿2026-05-27T17:56:29.9817457Z ##[group]Run actions/cache@v4
+2026-05-27T17:56:29.9817774Z with:
+2026-05-27T17:56:29.9818002Z   path: app/encv-mobile/scripts/.ffmpeg-build
+2026-05-27T17:56:29.9818461Z   key: ffmpeg-build-ed47e3a65fe97aa4150673ec41ca9bdeb8a82089eae04a589c1a2626505cb8ba
+2026-05-27T17:56:29.9818888Z   restore-keys: ffmpeg-build-
+
+2026-05-27T17:56:29.9819138Z   enableCrossOsArchive: false
+2026-05-27T17:56:29.9819363Z   fail-on-cache-miss: false
+2026-05-27T17:56:29.9819583Z   lookup-only: false
+2026-05-27T17:56:29.9819784Z   save-always: false
+2026-05-27T17:56:29.9819956Z env:
+2026-05-27T17:56:29.9820132Z   NDK_VERSION: 26.1.10909125
+2026-05-27T17:56:29.9820455Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T17:56:29.9820891Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T17:56:29.9821254Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-27T17:56:29.9821520Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-27T17:56:29.9821775Z ##[endgroup]
+2026-05-27T17:56:30.3048511Z Cache not found for input keys: ffmpeg-build-ed47e3a65fe97aa4150673ec41ca9bdeb8a82089eae04a589c1a2626505cb8ba, ffmpeg-build-

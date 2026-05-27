@@ -1,0 +1,158 @@
+﻿2026-05-27T17:56:46.3447125Z ##[group]Run cd app/encv-mobile && bash scripts/build-ffmpeg-android.sh
+2026-05-27T17:56:46.3447912Z [36;1mcd app/encv-mobile && bash scripts/build-ffmpeg-android.sh[0m
+2026-05-27T17:56:46.3472900Z shell: /usr/bin/bash -e {0}
+2026-05-27T17:56:46.3473272Z env:
+2026-05-27T17:56:46.3473527Z   NDK_VERSION: 26.1.10909125
+2026-05-27T17:56:46.3474039Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T17:56:46.3474797Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T17:56:46.3475427Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-27T17:56:46.3475878Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-27T17:56:46.3476478Z ##[endgroup]
+2026-05-27T17:56:46.3570456Z === Checking for cached ffmpeg output ===
+2026-05-27T17:56:46.3571106Z === Building ffmpeg 8.0 for Android arm64-v8a ===
+2026-05-27T17:56:46.3571459Z Downloading ffmpeg 8.0...
+2026-05-27T17:56:50.4336950Z Downloading x264...
+2026-05-27T17:56:50.4349776Z Cloning into 'x264'...
+2026-05-27T17:56:52.5823094Z === Building x264 ===
+2026-05-27T17:56:53.9834828Z x264 configure done (log: /home/runner/work/encv-go/encv-go/app/encv-mobile/scripts/.ffmpeg-build/logs/x264-configure.log)
+2026-05-27T17:57:04.4590143Z ✅ x264 built and installed
+2026-05-27T17:57:04.4590773Z === Patching ffmpeg source ===
+2026-05-27T17:57:04.4722416Z === Reading FFmpeg feature manifest ===
+2026-05-27T17:57:04.4957287Z   Decoders:  h264,hevc,aac,mp3,opus,vorbis,flac,pcm_s16le,pcm_s24le,pcm_s32le,aac_latm
+2026-05-27T17:57:04.4958248Z   Encoders:  aac,pcm_s16le,pcm_s24le,pcm_s32le,libx264
+2026-05-27T17:57:04.4958768Z   Muxers:    mp4,matroska,flac,mp3,adts,null
+2026-05-27T17:57:04.4959174Z   Demuxers:  mov,matroska,aac,mp3,flac,ogg,wav
+2026-05-27T17:57:04.4959632Z   Parsers:   h264,hevc,aac,aac_latm,mpegaudio,opus,vorbis
+2026-05-27T17:57:04.4959988Z   Protocols: file,pipe
+2026-05-27T17:57:04.4960254Z   Filters:   aresample
+2026-05-27T17:57:04.4960604Z === Setting up pkg-config for cross-compilation ===
+2026-05-27T17:57:04.4961105Z Fixing x264.pc for Android (remove -lpthread -ldl)...
+2026-05-27T17:57:04.4995947Z Verifying x264 via wrapper:
+2026-05-27T17:57:04.5706801Z -I/home/runner/work/encv-go/encv-go/app/encv-mobile/scripts/.ffmpeg-build/x264-install/include -L/home/runner/work/encv-go/encv-go/app/encv-mobile/scripts/.ffmpeg-build/x264-install/lib -lx264 -lm 
+2026-05-27T17:57:04.5707827Z === Configuring ffmpeg ===
+2026-05-27T17:57:21.2631054Z install prefix            /home/runner/work/encv-go/encv-go/app/encv-mobile/scripts/.ffmpeg-build/ffmpeg-install
+2026-05-27T17:57:21.2631986Z source path               .
+2026-05-27T17:57:21.2633109Z C compiler                /usr/local/lib/android/sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
+2026-05-27T17:57:21.2634092Z C library                 bionic
+2026-05-27T17:57:21.2634569Z host C compiler           gcc
+2026-05-27T17:57:21.2635040Z host C library            glibc
+2026-05-27T17:57:21.2635523Z ARCH                      c (generic)
+2026-05-27T17:57:21.2636035Z big-endian                no
+2026-05-27T17:57:21.2636879Z runtime cpu detection     yes
+2026-05-27T17:57:21.2637358Z debug symbols             yes
+2026-05-27T17:57:21.2637842Z strip symbols             yes
+2026-05-27T17:57:21.2638299Z optimize for size         yes
+2026-05-27T17:57:21.2638744Z optimizations             yes
+2026-05-27T17:57:21.2639611Z static                    yes
+2026-05-27T17:57:21.2640045Z shared                    yes
+2026-05-27T17:57:21.2640474Z network support           yes
+2026-05-27T17:57:21.2640985Z threading support         pthreads
+2026-05-27T17:57:21.2641440Z safe bitstream reader     yes
+2026-05-27T17:57:21.2641863Z texi2html enabled         no
+2026-05-27T17:57:21.2642314Z perl enabled              yes
+2026-05-27T17:57:21.2642845Z pod2man enabled           yes
+2026-05-27T17:57:21.2643586Z makeinfo enabled          yes
+2026-05-27T17:57:21.2644452Z makeinfo supports HTML    yes
+2026-05-27T17:57:21.2645175Z xmllint enabled           no
+2026-05-27T17:57:21.2645921Z 
+2026-05-27T17:57:21.2657402Z External libraries:
+2026-05-27T17:57:21.2675668Z libx264                 zlib
+2026-05-27T17:57:21.2677057Z 
+2026-05-27T17:57:21.2677813Z External libraries providing hardware acceleration:
+2026-05-27T17:57:21.2713065Z cuda_llvm               v4l2_m2m
+2026-05-27T17:57:21.2714626Z 
+2026-05-27T17:57:21.2714803Z Libraries:
+2026-05-27T17:57:21.2748992Z avcodec                 avformat                swscale
+2026-05-27T17:57:21.2749815Z avdevice                avutil
+2026-05-27T17:57:21.2750317Z avfilter                swresample
+2026-05-27T17:57:21.2750584Z 
+2026-05-27T17:57:21.2750730Z Programs:
+2026-05-27T17:57:21.2788478Z 
+2026-05-27T17:57:21.2789202Z Enabled decoders:
+2026-05-27T17:57:21.2860756Z aac                     hevc                    pcm_s24le
+2026-05-27T17:57:21.2861614Z aac_latm                mp3                     pcm_s32le
+2026-05-27T17:57:21.2862347Z flac                    opus                    vorbis
+2026-05-27T17:57:21.2862912Z h264                    pcm_s16le
+2026-05-27T17:57:21.2863104Z 
+2026-05-27T17:57:21.2863269Z Enabled encoders:
+2026-05-27T17:57:21.2921304Z aac                     pcm_s16le               pcm_s32le
+2026-05-27T17:57:21.2922013Z libx264                 pcm_s24le
+2026-05-27T17:57:21.2922440Z 
+2026-05-27T17:57:21.2922607Z Enabled hwaccels:
+2026-05-27T17:57:21.2988183Z 
+2026-05-27T17:57:21.2989205Z Enabled parsers:
+2026-05-27T17:57:21.3043689Z aac                     flac                    mpegaudio
+2026-05-27T17:57:21.3044459Z aac_latm                h264                    opus
+2026-05-27T17:57:21.3045123Z ac3                     hevc                    vorbis
+2026-05-27T17:57:21.3045450Z 
+2026-05-27T17:57:21.3045583Z Enabled demuxers:
+2026-05-27T17:57:21.3104930Z aac                     mov                     wav
+2026-05-27T17:57:21.3105382Z flac                    mp3
+2026-05-27T17:57:21.3105675Z matroska                ogg
+2026-05-27T17:57:21.3108136Z 
+2026-05-27T17:57:21.3108611Z Enabled muxers:
+2026-05-27T17:57:21.3165240Z adts                    mov                     null
+2026-05-27T17:57:21.3165934Z flac                    mp3
+2026-05-27T17:57:21.3166578Z matroska                mp4
+2026-05-27T17:57:21.3166819Z 
+2026-05-27T17:57:21.3167547Z Enabled protocols:
+2026-05-27T17:57:21.3221285Z file                    pipe
+2026-05-27T17:57:21.3223216Z 
+2026-05-27T17:57:21.3223423Z Enabled filters:
+2026-05-27T17:57:21.3293399Z aresample
+2026-05-27T17:57:21.3294892Z 
+2026-05-27T17:57:21.3295219Z Enabled bsfs:
+2026-05-27T17:57:21.3349651Z aac_adtstoasc           pgs_frame_merge         vp9_superframe
+2026-05-27T17:57:21.3350513Z 
+2026-05-27T17:57:21.3350703Z Enabled indevs:
+2026-05-27T17:57:21.3401949Z 
+2026-05-27T17:57:21.3402942Z Enabled outdevs:
+2026-05-27T17:57:21.3450716Z 
+2026-05-27T17:57:21.3451262Z License: GPL version 2 or later
+2026-05-27T17:57:21.4753326Z === Building ffmpeg ===
+2026-05-27T17:57:47.9839520Z ffmpeg make done (log: /home/runner/work/encv-go/encv-go/app/encv-mobile/scripts/.ffmpeg-build/logs/ffmpeg-make.log)
+2026-05-27T17:57:48.2727048Z ✅ ffmpeg built and installed
+2026-05-27T17:57:48.2739245Z === Phase 2: Generating resource files via bin2c ===
+2026-05-27T17:57:48.7269765Z ✅ bin2c built
+2026-05-27T17:57:48.7334657Z   ✅ Generated graph.css.c (symbol: ff_graph_css_data)
+2026-05-27T17:57:48.7371988Z   ✅ Generated graph.html.c (symbol: ff_graph_html_data)
+2026-05-27T17:57:48.7372575Z === Verifying CONFIG_RESOURCE_COMPRESSION ===
+2026-05-27T17:57:48.7391335Z ✅ CONFIG_RESOURCE_COMPRESSION is disabled (resources will be embedded uncompressed)
+2026-05-27T17:57:48.7392848Z === Phase 3: Compiling fftools (manifest-driven) ===
+2026-05-27T17:57:48.7393563Z Compiling ffmpeg fftools...
+2026-05-27T17:57:49.6914239Z   ✅ Module [core] compiled
+2026-05-27T17:57:49.7526646Z   ✅ Module [graph] compiled
+2026-05-27T17:57:50.1244691Z   ✅ Module [textformat] compiled
+2026-05-27T17:57:50.2066889Z   ✅ Module [resources] compiled
+2026-05-27T17:57:50.2067317Z Compiling ffprobe fftools...
+2026-05-27T17:57:50.4568141Z   ✅ Module [core] compiled
+2026-05-27T17:57:50.8270245Z   ✅ Module [textformat_shared] compiled
+2026-05-27T17:57:50.8271024Z === Phase 4: Linking shared libraries ===
+2026-05-27T17:57:50.8298077Z Linking libffmpeg.so...
+2026-05-27T17:57:50.9160901Z Linking libffprobe.so...
+2026-05-27T17:57:51.0143425Z === Stripping debug symbols ===
+2026-05-27T17:57:51.0337924Z ✅ Copied and stripped libffmpeg.so
+2026-05-27T17:57:51.0338525Z ✅ Copied and stripped libffprobe.so
+2026-05-27T17:57:51.0338976Z === Verifying exported symbols ===
+2026-05-27T17:57:51.0339375Z --- libffprobe.so ---
+2026-05-27T17:57:51.0381113Z   ✅ ffprobe_run
+2026-05-27T17:57:51.0421213Z   ✅ ffprobe_reset
+2026-05-27T17:57:51.0497453Z   📊 2 text symbols, 4.1M
+2026-05-27T17:57:51.0497941Z --- libffmpeg.so ---
+2026-05-27T17:57:51.0542634Z   ✅ ffmpeg_run
+2026-05-27T17:57:51.0585208Z   ✅ ffmpeg_reset
+2026-05-27T17:57:51.0662997Z   📊 4 text symbols, 4.4M
+2026-05-27T17:57:51.0663988Z === Verifying resource symbols in libffmpeg.so ===
+2026-05-27T17:57:51.0707735Z   ✅ ff_graph_css_data
+2026-05-27T17:57:51.0751365Z   ✅ ff_graph_html_data
+2026-05-27T17:57:51.0793724Z   ✅ ff_resman_get_string
+2026-05-27T17:57:51.0794508Z === Generating build-info.json ===
+2026-05-27T17:57:51.1012703Z ✅ Generated build-info.json
+2026-05-27T17:57:51.1038636Z ✅ Copied build-info.json to Android assets
+2026-05-27T17:57:51.1039481Z === Build complete ===
+2026-05-27T17:57:51.1040603Z Output: /home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a
+2026-05-27T17:57:51.1050763Z total 8.4M
+2026-05-27T17:57:51.1051385Z -rw-r--r-- 1 runner runner 1.3K May 27 17:57 build-info.json
+2026-05-27T17:57:51.1052012Z -rwxr-xr-x 1 runner runner 4.4M May 27 17:57 libffmpeg.so
+2026-05-27T17:57:51.1052575Z -rwxr-xr-x 1 runner runner 4.1M May 27 17:57 libffprobe.so
+2026-05-27T17:57:51.1083174Z Total size: 8.4M
