@@ -256,14 +256,15 @@ GEN_RES_DIR="${FFMPEG_SRC}/fftools/resources"
 for res_file in "$GEN_RES_DIR"/*.css "$GEN_RES_DIR"/*.html; do
     [ -f "$res_file" ] || continue
     base=$(basename "$res_file")
+    bin2c_name=$(basename "${base}" | sed 's/\.[^.]*$//' | tr '.' '_')
     if [[ "$res_file" == *.css ]]; then
         sed 's!/\\*.*\\*/!!g' "$res_file" | tr '\n' ' ' | tr -s ' ' | sed 's/^ //; s/ $$//' \
             > "${res_file}.min"
-        "${BUILD_DIR}/bin2c" "${res_file}.min" "${res_file}.c" "$(basename "$res_file" .css)"
+        "${BUILD_DIR}/bin2c" "${res_file}.min" "${res_file}.c" "$bin2c_name"
     elif [[ "$res_file" == *.html ]]; then
-        "${BUILD_DIR}/bin2c" "$res_file" "${res_file}.c" "$(basename "$res_file" .html)"
+        "${BUILD_DIR}/bin2c" "$res_file" "${res_file}.c" "$bin2c_name"
     fi
-    echo "  ✅ Generated ${base}.c"
+    echo "  ✅ Generated ${base}.c (symbol: ff_${bin2c_name}_data)"
 done
 
 CFLAGS="-std=c11 -fPIC -ffunction-sections -fdata-sections -DANDROID -D_POSIX_C_SOURCE=200809L \
