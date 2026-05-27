@@ -202,6 +202,28 @@ jobs:
           echo "JNI libs:"
           ls -lhR app/encv-mobile/android/app/src/main/jniLibs/
 
+      - name: Clean plugin native libs (skip_plugin mode)
+        if: inputs.skip_plugin == true
+        run: |
+          HOST_LIBS="app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a"
+          PLUGIN_LIBS="app/encv-mobile/plugin-mpv-player/src/main/jniLibs"
+
+          echo "=== Removing any MPV/plugin .so from host jniLibs ==="
+          for f in libmpv.so libplayer.so libavcodec.so libavformat.so libavutil.so \
+                   libswresample.so libswscale.so; do
+            if [ -f "$HOST_LIBS/$f" ]; then
+              rm -f "$HOST_LIBS/$f"
+              echo "  removed $f"
+            fi
+          done
+
+          echo "=== Removing plugin jniLibs entirely ==="
+          rm -rf "$PLUGIN_LIBS"
+          echo "  $PLUGIN_LIBS removed"
+
+          echo "=== Final host jniLibs contents ==="
+          ls -lh "$HOST_LIBS"/
+
       - name: Verify native libraries
         run: |
           echo "═══ HOST APP jniLibs (Go backend only) ═══"
