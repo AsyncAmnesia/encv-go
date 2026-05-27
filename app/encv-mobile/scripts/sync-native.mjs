@@ -5,7 +5,6 @@ import { fileURLToPath } from 'url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ANDROID_DIR = join(__dirname, '..', 'android')
 const OVERLAY_DIR = join(__dirname, '..', 'android-overlay')
-const LYNX_BUNDLE_PATH = join(__dirname, '..', 'lynx-player', 'dist', 'player.lynx.bundle')
 
 console.log('encv-sync-native: syncing native libs to Android project...')
 
@@ -47,15 +46,5 @@ if (existsSync(overlayInc)) {
   cpSync(overlayInc, targetInc, { recursive: true })
   console.log('  include: synced')
 }
-
-if (!existsSync(LYNX_BUNDLE_PATH)) {
-  console.error('ERROR: Lynx bundle not found.')
-  console.error('Run: cd lynx-player && npm install && npm run build')
-  process.exit(1)
-}
-const assetsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'assets')
-mkdirSync(assetsDir, { recursive: true })
-copyFileSync(LYNX_BUNDLE_PATH, join(assetsDir, 'player.lynx.bundle'))
-console.log('  bundle: copied player.lynx.bundle to assets')
 
 console.log('encv-sync-native: done')

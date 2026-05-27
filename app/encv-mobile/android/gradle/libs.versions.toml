@@ -23,8 +23,6 @@ mockito = "5.8.0"
 mockitoKotlin = "5.2.1"
 logcat = "13.0"
 okhttp = "4.9.0"
-fresco = "2.3.0"
-lynx = "3.7.0"
 googleServices = "4.4.4"
 
 [libraries]
@@ -41,21 +39,7 @@ mockito-core = { group = "org.mockito", name = "mockito-core", version.ref = "mo
 mockito-kotlin = { group = "org.mockito.kotlin", name = "mockito-kotlin", version.ref = "mockitoKotlin" }
 combolite-core = { group = "io.github.lnzz123", name = "combolite-core", version.ref = "combolite" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
-fresco = { group = "com.facebook.fresco", name = "fresco", version.ref = "fresco" }
-fresco-animated-gif = { group = "com.facebook.fresco", name = "animated-gif", version.ref = "fresco" }
-fresco-animated-webp = { group = "com.facebook.fresco", name = "animated-webp", version.ref = "fresco" }
-fresco-webpsupport = { group = "com.facebook.fresco", name = "webpsupport", version.ref = "fresco" }
-fresco-animated-base = { group = "com.facebook.fresco", name = "animated-base", version.ref = "fresco" }
 logcat = { group = "com.github.getActivity", name = "Logcat", version.ref = "logcat" }
-lynx = { group = "org.lynxsdk.lynx", name = "lynx", version.ref = "lynx" }
-lynx-jssdk = { group = "org.lynxsdk.lynx", name = "lynx-jssdk", version.ref = "lynx" }
-lynx-trace = { group = "org.lynxsdk.lynx", name = "lynx-trace", version.ref = "lynx" }
-primjs = { group = "org.lynxsdk.lynx", name = "primjs", version.ref = "lynx" }
-lynx-service-image = { group = "org.lynxsdk.lynx", name = "lynx-service-image", version.ref = "lynx" }
-lynx-service-log = { group = "org.lynxsdk.lynx", name = "lynx-service-log", version.ref = "lynx" }
-lynx-service-http = { group = "org.lynxsdk.lynx", name = "lynx-service-http", version.ref = "lynx" }
-lynx-service-devtool = { group = "org.lynxsdk.lynx", name = "lynx-service-devtool", version.ref = "lynx" }
-lynx-devtool = { group = "org.lynxsdk.lynx", name = "lynx-devtool", version.ref = "lynx" }
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 compose-ui = { group = "androidx.compose.ui", name = "ui" }
 compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }

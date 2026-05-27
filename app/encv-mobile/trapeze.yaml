@@ -18,7 +18,6 @@ platforms:
           android:
             defaultConfig:
         insert: |
-          buildConfigField "boolean", "USE_LYNX_PLAYER", "true"
           ndk {
               abiFilters 'arm64-v8a'
           }
@@ -45,20 +44,6 @@ platforms:
         target:
           dependencies:
         insert: |
-          implementation 'org.lynxsdk.lynx:lynx:3.7.0'
-          implementation 'org.lynxsdk.lynx:lynx-jssdk:3.7.0'
-          implementation 'org.lynxsdk.lynx:lynx-trace:3.7.0'
-          implementation 'org.lynxsdk.lynx:primjs:3.7.0'
-          implementation 'org.lynxsdk.lynx:lynx-service-image:3.7.0'
-          implementation 'org.lynxsdk.lynx:lynx-service-log:3.7.0'
-          implementation 'org.lynxsdk.lynx:lynx-service-http:3.7.0'
-          implementation 'org.lynxsdk.lynx:lynx-service-devtool:3.7.0'
-          implementation 'org.lynxsdk.lynx:lynx-devtool:3.7.0'
-          implementation 'com.facebook.fresco:fresco:2.3.0'
-          implementation 'com.facebook.fresco:animated-gif:2.3.0'
-          implementation 'com.facebook.fresco:animated-webp:2.3.0'
-          implementation 'com.facebook.fresco:webpsupport:2.3.0'
-          implementation 'com.facebook.fresco:animated-base:2.3.0'
           implementation 'com.squareup.okhttp3:okhttp:4.9.0'
 
       - file: app/build.gradle

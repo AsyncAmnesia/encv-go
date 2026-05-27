@@ -24,8 +24,6 @@ android {
             ignoreAssetsPattern = "!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~"
         }
 
-        buildConfigField("boolean", "USE_LYNX_PLAYER", "true")
-
         ndk {
             abiFilters += setOf("arm64-v8a")
         }
@@ -88,21 +86,6 @@ dependencies {
     implementation(project(":capacitor-cordova-android-plugins"))
     implementation(libs.kotlin.stdlib)
     debugImplementation(libs.logcat)
-
-    implementation(libs.lynx)
-    implementation(libs.lynx.jssdk)
-    implementation(libs.lynx.trace)
-    implementation(libs.primjs)
-    implementation(libs.lynx.service.image)
-    implementation(libs.lynx.service.log)
-    implementation(libs.lynx.service.http)
-    implementation(libs.lynx.service.devtool)
-    implementation(libs.lynx.devtool)
-    implementation(libs.fresco)
-    implementation(libs.fresco.animated.gif)
-    implementation(libs.fresco.animated.webp)
-    implementation(libs.fresco.webpsupport)
-    implementation(libs.fresco.animated.base)
     implementation(libs.okhttp)
 
     implementation(libs.combolite.core)

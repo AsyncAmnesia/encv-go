@@ -5,7 +5,6 @@ import { fileURLToPath } from 'url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ANDROID_DIR = join(__dirname, '..', 'android')
 const OVERLAY_DIR = join(__dirname, '..', 'android-overlay')
-const LYNX_BUNDLE_PATH = join(__dirname, '..', 'lynx-player', 'dist', 'player.lynx.bundle')
 
 function patchFile(filePath, transformer) {
   const content = readFileSync(filePath, 'utf-8')
@@ -174,30 +173,7 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
   }
 
-  // 3. Add USE_LYNX_PLAYER build config
-  if (!c.includes('USE_LYNX_PLAYER')) {
-    c = c.replace(
-      /defaultConfig\s*\{/,
-      "defaultConfig {\n        buildConfigField \"boolean\", \"USE_LYNX_PLAYER\", \"true\"",
-    )
-  }
-
-  // 3b. Enable buildConfig generation (AGP 8.0+ requires this explicitly)
-  if (!c.includes('buildConfig = true') && !c.includes('buildConfig true')) {
-    if (c.includes('buildFeatures')) {
-      c = c.replace(
-        /buildFeatures\s*\{/,
-        "buildFeatures {\n        buildConfig = true",
-      )
-    } else {
-      c = c.replace(
-        /android\s*\{/,
-        "android {\n    buildFeatures {\n        buildConfig = true\n    }",
-      )
-    }
-  }
-
-  // 3c. Add appcompat dependency for AppCompatActivity
+  // 3. Add appcompat dependency for AppCompatActivity
   if (!c.includes('appcompat')) {
     c = c.replace(
       'dependencies {',
@@ -205,15 +181,7 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     )
   }
 
-  // 4. Add Lynx SDK 3.7 dependencies (mpv-android-lib removed: using local MPVLib.kt + jniLibs)
-  if (!c.includes('org.lynxsdk.lynx')) {
-    c = c.replace(
-      'dependencies {',
-      "dependencies {\n    implementation 'org.lynxsdk.lynx:lynx:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-jssdk:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-trace:3.7.0'\n    implementation 'org.lynxsdk.lynx:primjs:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-image:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-log:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-http:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-service-devtool:3.7.0'\n    implementation 'org.lynxsdk.lynx:lynx-devtool:3.7.0'\n    implementation 'com.facebook.fresco:fresco:2.3.0'\n    implementation 'com.facebook.fresco:animated-gif:2.3.0'\n    implementation 'com.facebook.fresco:animated-webp:2.3.0'\n    implementation 'com.facebook.fresco:webpsupport:2.3.0'\n    implementation 'com.facebook.fresco:animated-base:2.3.0'\n    implementation 'com.squareup.okhttp3:okhttp:4.9.0'",
-    )
-  }
-
-  // 4b. Remove mpv-android-lib Maven dependency (using local jniLibs instead)
+  // 4. Remove mpv-android-lib Maven dependency (using local jniLibs instead)
   //     Must run AFTER step 4 to catch both old and newly-added references
   const beforeRemove = c
   c = c.replace(/\s*implementation\s*\(?['"]io\.github\.abdallahmehiz:mpv[^'"]*['"][\s\S]*?\)?/g, '')
@@ -397,26 +365,6 @@ if (existsSync(overlayIncludeDir)) {
   cpSync(overlayIncludeDir, targetIncludeDir, { recursive: true })
   console.log('  overlay: include/ (mpv/ffmpeg headers)')
 }
-
-// Copy layout file
-const RES_LAYOUT_DIR = join(ANDROID_DIR, 'app', 'src', 'main', 'res', 'layout')
-mkdirSync(RES_LAYOUT_DIR, { recursive: true })
-const layoutSrc = join(OVERLAY_DIR, 'app', 'src', 'main', 'res', 'layout', 'lynx_player_activity.xml')
-if (existsSync(layoutSrc)) {
-  copyFileSync(layoutSrc, join(RES_LAYOUT_DIR, 'lynx_player_activity.xml'))
-  console.log('  overlay: layout/lynx_player_activity.xml')
-}
-
-// Copy lynx bundle to assets
-if (!existsSync(LYNX_BUNDLE_PATH)) {
-  console.error('ERROR: Lynx bundle not found at', LYNX_BUNDLE_PATH)
-  console.error('Run: cd lynx-player && npm install && npm run build')
-  process.exit(1)
-}
-const assetsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'assets')
-mkdirSync(assetsDir, { recursive: true })
-copyFileSync(LYNX_BUNDLE_PATH, join(assetsDir, 'player.lynx.bundle'))
-console.log('  bundle: copied player.lynx.bundle to assets')
 
 const overlayJniLibs = join(OVERLAY_DIR, 'app', 'src', 'main', 'jniLibs')
 const targetJniLibsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'jniLibs')
