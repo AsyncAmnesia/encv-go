@@ -164,8 +164,8 @@
                 <h2>{{ file.name }}</h2>
                 <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified"> · {{ formatDateTime(file.modified) }}</span></p>
                 <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
-                <div v-if="!file.isDirectory && getFileTags(file.path).length > 0" class="file-tag-chips">
-                  <ion-chip v-for="tag in getFileTags(file.path)" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
+                <div v-if="!file.isDirectory && file._tags && file._tags.length > 0" class="file-tag-chips">
+                  <ion-chip v-for="tag in file._tags" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
                 </div>
               </ion-label>
               <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
@@ -207,8 +207,8 @@
               <p v-if="searchQuery && !file.isDirectory" class="search-path">{{ file.path }}</p>
               <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified && !searchQuery"> · {{ formatDateTime(file.modified) }}</span></p>
               <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
-              <div v-if="!file.isDirectory && !searchQuery && getFileTags(file.path).length > 0" class="file-tag-chips">
-                <ion-chip v-for="tag in getFileTags(file.path)" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
+              <div v-if="!file.isDirectory && !searchQuery && file._tags && file._tags.length > 0" class="file-tag-chips">
+                <ion-chip v-for="tag in file._tags" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
               </div>
             </ion-label>
             <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
@@ -270,6 +270,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { onIonViewWillEnter } from '@ionic/vue'
 import {
   IonPage,
   IonHeader,
@@ -443,8 +444,9 @@ const pathSegments = computed(() => {
 })
 
 const displayFiles = computed(() => {
-  if (searchResults.value !== null) return searchResults.value
-  return sortedFiles.value
+  const raw = searchResults.value !== null ? searchResults.value : sortedFiles.value
+  const tagMap = fileTagMap.value
+  return raw.map(f => ({ ...f, _tags: tagMap[f.path] || [] }))
 })
 
 const sortedFiles = computed(() => {
@@ -862,10 +864,6 @@ async function handleRemoveTag(tag: string) {
   } catch (e) { showToast({ message: '移除标签失败' }) }
 }
 
-function getFileTags(filePath: string): string[] {
-  return fileTagMap.value[filePath] || []
-}
-
 async function loadFileTagsForCurrentDir() {
   try {
     const allTags = await fetchTags()
@@ -1011,7 +1009,8 @@ const filteredPluginFiles = computed(() => {
     }
     return sortDesc.value ? -cmp : cmp
   })
-  return list
+  const tagMap = fileTagMap.value
+  return list.map(f => ({ ...f, _tags: tagMap[f.path] || [] }))
 })
 
 watch(selectedPlugin, async (plugin) => {
@@ -1048,6 +1047,12 @@ onMounted(() => {
   loadTags()
   eventBus.on('file:change', onFileChange)
   window.addEventListener('encv:backend-ready', onBackendReadyWindow as EventListener)
+})
+
+onIonViewWillEnter(() => {
+  if (files.value.length === 0 && !loading.value && !connecting.value) {
+    loadFiles()
+  }
 })
 
 onUnmounted(() => {
@@ -1205,4 +1210,10 @@ function onBackendReadyWindow(event: Event) {
   --padding-end: 8px;
   font-size: 13px;
   --color: var(--ion-color-medium);
+}
+ion-item {
+  contain: layout style;
+}
+.file-tag-chips {
+  contain: content;
 }</style>
