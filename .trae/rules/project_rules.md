@@ -1,5 +1,12 @@
 # 项目规则
 
+## Trae Web 沙箱网络限制（重要！本地构建必读）
+
+- **沙箱禁止 Java/JVM 进程出站 TCP 连接**（所有 JDK 版本均受影响）
+- 详细诊断数据、进程级网络策略矩阵、绕过方案 → [trae_web_sandbox_network.md](.trae/rules/trae_web_sandbox_network.md)
+- **CI 环境不受此限制**，Gradle 构建应在 CI 执行
+- 沙箱内 `curl`/`npm`(走 MCP HTTP 代理) 可正常联网
+
 ## FFmpeg 版本备注
 
 - 当前使用 FFmpeg 8.0，构建脚本: `app/encv-mobile/scripts/build-ffmpeg-android.sh`
