@@ -51,7 +51,7 @@ if (!existsSync(rootBuildGradle)) {
         mavenCentral()
     }
     dependencies {
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.21"
     }
 }
 
@@ -71,7 +71,7 @@ patchFile(join(ANDROID_DIR, 'build.gradle'), (c) => {
   if (!c.includes('kotlin-gradle-plugin')) {
     c = c.replace(
       'dependencies {',
-      "dependencies {\n        classpath \"org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0\"",
+      "dependencies {\n        classpath \"org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.21\"",
     )
   }
   if (!c.includes('jitpack.io')) {
@@ -127,7 +127,7 @@ android {
 }
 
 dependencies {
-    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.0"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.3.21"
     debugImplementation 'com.github.getActivity:Logcat:13.0'
 }
 `
@@ -163,7 +163,7 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
   if (!c.includes('kotlin-stdlib')) {
     c = c.replace(
       'dependencies {',
-      "dependencies {\n    implementation \"org.jetbrains.kotlin:kotlin-stdlib:2.1.0\"",
+      "dependencies {\n    implementation \"org.jetbrains.kotlin:kotlin-stdlib:2.3.21\"",
     )
   }
   if (!c.includes('Logcat')) {
@@ -236,28 +236,6 @@ patchFile(join(ANDROID_DIR, 'app', 'build.gradle'), (c) => {
     c = c.replace(/versionName\s+"[^"]*"/, `versionName "${version}"`)
   }
 
-  // 8. Signing config (only when building release)
-  if (version && c.includes('minifyEnabled false')) {
-    const scBlock =
-      "\n" +
-      "    signingConfigs {\n" +
-      "        release {\n" +
-      "            storeFile file('../../keystore/release.jks')\n" +
-      "            storePassword 'encv2025'\n" +
-      "            keyAlias 'encvrelease'\n" +
-      "            keyPassword 'encv2025'\n" +
-      "        }\n" +
-      "    }\n"
-
-    c = c.replace("android {", "android {" + scBlock)
-
-    c = c.replace(
-      "minifyEnabled false",
-      "minifyEnabled true\n        shrinkResources true\n        signingConfig signingConfigs.release",
-    )
-
-    console.log('  release: signing + minify + shrink applied')
-  }
 
   // 9. Kotlin JVM target (Groovy DSL 兼容写法)
   if (!c.includes('jvmTarget') && c.includes('kotlin-android')) {
