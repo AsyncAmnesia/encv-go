@@ -12,7 +12,7 @@ pluginManagement {
 }
 
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
     repositories {
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         if (System.getenv("CI") == null) {

@@ -211,6 +211,8 @@ func (s *Server) Start(version string) (string, error) {
 	r.PUT("/api/config", s.handlePutConfigGin)
 	r.GET("/api/config/schema", s.handleConfigSchemaGin)
 	r.GET("/api/files", s.handleListFilesGin)
+	r.GET("/api/files/stream", s.handleListFilesStreamGin)
+	r.GET("/api/files/plugin-stream", s.handlePluginFilesStreamGin)
 	r.DELETE("/api/files", s.handleDeleteFileGin)
 	r.GET("/api/file", s.handleReadFileContentGin)
 	r.GET("/api/file/text-preview-exts", s.handleTextPreviewExtsGin)

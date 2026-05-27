@@ -114,3 +114,9 @@ export function useFileListSort() {
 
   return { sortBy, sortDesc, sortLabel, cycleSort }
 }
+
+export const VIRTUAL_SCROLL_CONFIG = {
+  THRESHOLD: 200,
+  ESTIMATE_SIZE: 72,
+  OVERSCAN: 5,
+} as const
