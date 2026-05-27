@@ -221,3 +221,74 @@ describe('getSortLabel', () => {
     expect(getSortLabel('time', true)).toBe('时间↓')
   })
 })
+
+describe('Edge cases - sortFiles', () => {
+  it('single element returns same array', () => {
+    const single = [makeFile({ name: 'solo.txt' })]
+    expect(sortFiles(single, 'name', false)).toEqual(single)
+  })
+
+  it('all directories stay in original relative order for same sort key', () => {
+    const dirs = [
+      makeFile({ name: 'beta', isDirectory: true }),
+      makeFile({ name: 'alpha', isDirectory: true }),
+    ]
+    const result = sortFiles(dirs, 'name', false)
+    expect(result[0].name).toBe('alpha')
+    expect(result[1].name).toBe('beta')
+  })
+
+  it('unicode names sort without crashing', () => {
+    const unicode = [
+      makeFile({ name: '中文.txt' }),
+      makeFile({ name: 'alpha.txt' }),
+      makeFile({ name: 'ß.txt' }),
+      makeFile({ name: '日本語.txt' }),
+    ]
+    const result = sortFiles(unicode, 'name', false)
+    expect(result.length).toBe(4)
+    expect(result[0].name).toBe('alpha.txt')
+    const rest = result.slice(1).map(f => f.name)
+    expect(rest).toContain('ß.txt')
+    expect(rest).toContain('日本語.txt')
+    expect(rest).toContain('中文.txt')
+  })
+
+  it('same-name files with different case are stable-sorted by insertion order', () => {
+    const sameName = [
+      makeFile({ name: 'a.txt', size: 100 }),
+      makeFile({ name: 'A.TXT', size: 200 }),
+    ]
+    const result = sortFiles(sameName, 'name', false)
+    expect(result.length).toBe(2)
+  })
+
+  it('mixed directory/file with identical names keeps dir first', () => {
+    const mixed = [
+      makeFile({ name: 'notes', isDirectory: false, size: 50 }),
+      makeFile({ name: 'notes', isDirectory: true }),
+    ]
+    const result = sortFiles(mixed, 'name', false)
+    expect(result[0].isDirectory).toBe(true)
+    expect(result[1].isDirectory).toBe(false)
+  })
+})
+
+describe('Edge cases - isImageFile', () => {
+  it('hidden file (dot-prefixed) with image ext returns true', () => {
+    expect(isImageFile(makeFile({ name: '.hidden.jpg' }))).toBe(true)
+  })
+
+  it('file with multiple dots uses last extension', () => {
+    expect(isImageFile(makeFile({ name: 'archive.tar.gz' }))).toBe(false)
+    expect(isImageFile(makeFile({ name: 'photo.mini.png' }))).toBe(true)
+  })
+
+  it('empty string name returns false', () => {
+    expect(isImageFile(makeFile({ name: '' }))).toBe(false)
+  })
+
+  it('file named only extension (e.g. ".jpg") returns true', () => {
+    expect(isImageFile(makeFile({ name: '.jpg' }))).toBe(true)
+  })
+})

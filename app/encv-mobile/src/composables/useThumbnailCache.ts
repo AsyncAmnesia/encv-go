@@ -10,6 +10,15 @@ const pendingQueue: string[] = []
 let queueTimer: ReturnType<typeof setTimeout> | null = null
 const MAX_CONCURRENT = 3
 
+type CacheUpdateListener = (paths: string[]) => void
+const cacheListeners: CacheUpdateListener[] = []
+
+function notifyCacheUpdate(paths: string[]) {
+  if (paths.length === 0) return
+  const listeners = [...cacheListeners]
+  listeners.forEach(cb => cb(paths))
+}
+
 export function getThumbCacheSize(): number {
   return thumbCache.size
 }
@@ -26,6 +35,7 @@ function processQueue() {
   if (queueTimer) return
   queueTimer = setTimeout(() => {
     const batch = pendingQueue.splice(0, MAX_CONCURRENT)
+    const newlyCached: string[] = []
     for (const path of batch) {
       if (!thumbCache.has(path)) {
         const url = getExternalStreamUrl(path)
@@ -34,9 +44,11 @@ function processQueue() {
           if (firstKey !== undefined) thumbCache.delete(firstKey)
         }
         thumbCache.set(path, url)
+        newlyCached.push(path)
       }
     }
     queueTimer = null
+    notifyCacheUpdate(newlyCached)
     if (pendingQueue.length > 0) processQueue()
   }, 50)
 }
@@ -76,6 +88,11 @@ export function useThumbnailCache() {
     }
   }
 
+  function handleCacheUpdate(paths: string[]) {
+    if (paths.length === 0) return
+    syncFromCache(paths)
+  }
+
   function setupLazyThumbnails() {
     nextTick(() => {
       createObserver()
@@ -90,6 +107,7 @@ export function useThumbnailCache() {
         }
       })
       syncFromCache(pathsToSync)
+      cacheListeners.push(handleCacheUpdate)
     })
   }
 
@@ -99,6 +117,8 @@ export function useThumbnailCache() {
   }
 
   onUnmounted(() => {
+    const idx = cacheListeners.indexOf(handleCacheUpdate)
+    if (idx !== -1) cacheListeners.splice(idx, 1)
     if (observer) {
       observer.disconnect()
       observer = null

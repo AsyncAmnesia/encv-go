@@ -128,11 +128,16 @@
             </ion-buttons>
             <ion-title>{{ selectedPlugin.name }} 文件</ion-title>
           </ion-toolbar>
-          <div v-if="pluginFiles.length === 0" class="loading-container">
+          <div v-if="!pluginLoaded" class="loading-container">
             <ion-spinner name="crescent"></ion-spinner>
             <p>{{ t('files.loading') }}</p>
           </div>
           <template v-else>
+            <div v-if="pluginFiles.length === 0" class="empty-state">
+              <ion-icon :icon="folderOpen" class="empty-icon"></ion-icon>
+              <h3>{{ t('files.emptyDir') }}</h3>
+              <p>{{ t('settings.emptyPluginDesc', { name: selectedPlugin?.name }) || '该类型下暂无文件' }}</p>
+            </div>
             <ion-segment v-model="pluginTab" value="source">
               <ion-segment-button value="source">未加密</ion-segment-button>
               <ion-segment-button value="container">已加密</ion-segment-button>
@@ -921,6 +926,7 @@ async function loadTags() {
 function openPluginView(plugin: PluginMeta) {
   files.value = []
   loading.value = true
+  pluginLoaded.value = false
   selectedPlugin.value = plugin
   menuController.close()
 }
@@ -967,6 +973,7 @@ async function handleTagFilter(tagName: string) {
 
 const pluginTab = ref<'source' | 'container'>('source')
 const pluginFiles = ref<FileItem[]>([])
+const pluginLoaded = ref(false)
 const filteredPluginFiles = computed(() => {
   if (!selectedPlugin.value) return []
   let list: FileItem[]
@@ -996,7 +1003,9 @@ const filteredPluginFiles = computed(() => {
 watch(selectedPlugin, async (plugin) => {
   if (plugin) {
     pluginTab.value = 'source'
+    pluginLoaded.value = false
     pluginFiles.value = await searchPluginFiles(plugin)
+    pluginLoaded.value = true
     setupLazyThumbnails()
   }
 })

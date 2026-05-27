@@ -60,3 +60,41 @@ describe('useThumbnailCache composable', () => {
     }
   })
 })
+
+describe('useThumbnailCache - cache update callback (Issue 1 fix)', () => {
+  beforeEach(() => {
+    clearThumbCache()
+  })
+
+  it('onThumbError on non-existent path is no-op', () => {
+    const { thumbnailUrls, onThumbError } = useThumbnailCache()
+    const keysBefore = Object.keys(thumbnailUrls.value)
+    onThumbError('/nonexistent.jpg')
+    expect(Object.keys(thumbnailUrls.value)).toEqual(keysBefore)
+  })
+
+  it('multiple instances have independent thumbnailUrls refs', () => {
+    const a = useThumbnailCache()
+    const b = useThumbnailCache()
+    a.thumbnailUrls.value['/a.jpg'] = '/mock-stream/a.jpg'
+    b.thumbnailUrls.value['/b.jpg'] = '/mock-stream/b.jpg'
+    expect(a.thumbnailUrls.value['/a.jpg']).toBeDefined()
+    expect(a.thumbnailUrls.value['/b.jpg']).toBeUndefined()
+    expect(b.thumbnailUrls.value['/b.jpg']).toBeDefined()
+    expect(b.thumbnailUrls.value['/a.jpg']).toBeUndefined()
+  })
+
+  it('clearThumbCache does not crash when already empty', () => {
+    expect(() => clearThumbCache()).not.toThrow()
+    expect(getThumbCacheSize()).toBe(0)
+  })
+
+  it('onThumbError only removes the specified path', () => {
+    const { thumbnailUrls, onThumbError } = useThumbnailCache()
+    thumbnailUrls.value['/a.jpg'] = '/stream/a.jpg'
+    thumbnailUrls.value['/b.png'] = '/stream/b.png'
+    onThumbError('/a.jpg')
+    expect(thumbnailUrls.value['/a.jpg']).toBeUndefined()
+    expect(thumbnailUrls.value['/b.png']).toBe('/stream/b.png')
+  })
+})
