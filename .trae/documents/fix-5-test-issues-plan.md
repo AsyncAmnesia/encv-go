@@ -61,22 +61,21 @@
 
 后端数据流：
 
-1. **类型定义** [types.go:150-159](internal/v2/types/types.go#L150-L159)：`WebdavServer` 结构体只有 `Root`、`Dir`、`Username`、`Password`，**无 `Enabled` 字段**
-2. **默认配置** [config.go:90-93](internal/config/config.go#L90-L93)：`DefaultConfig()` 无条件设置 `Root: "/webdav/"`、`Dir: "./output"`
+1. **类型定义** [types.go:150-159](internal/v2/types/types.go#L150-L159)：`WebdavServer` 结构体有 `Root`、`Dir`、`Username`、`Password`
+2. **默认配置** [config.go:90-93](internal/config/config.go#L90-L93)：`DefaultConfig()` 无条件设置 `Root: "/webdav/"`、`Dir: "./output"` —— **目录非空 = 默认启用**
 3. **API 返回** [mobile_api.go:414](internal/server/mobile_api.go#L414)：`enabled: cfg.Webdav.Root != ""` —— 因为 Root 默认非空，所以 **永远返回 enabled=true**
-4. **前端展示** [Remote.vue:320](app/encv-mobile/src/views/Remote.vue#L320)：`if (info.webdav && info.webdav.enabled)` —— 始终显示内置 WebDAV 信息
+4. **前端展示** [Remote.vue:320](app/encv-mobile/src/views/Remote.vue#L320)：`if (info.webdav && info.webdav.enabled)` —— 始终显示内置 WebDAV 信息（"傻呵呵显示已启用"）
 
 ### 修复方案
 
-1. **types.go**：给 `WebdavServer` 添加 `Enabled bool \`json:"enabled"\`` 字段
-2. **config.go**：`DefaultConfig()` 中设置 `Enabled: false`（默认关闭）
-3. **mobile_api.go**：将 `cfg.Webdav.Root != ""` 改为 `cfg.Webdav.Enabled`（同时保留 Root 非空检查作为防御）
-4. **前端 Remote.vue**：已有 `builtInWebdav` 展示逻辑基于 `enabled` 字段，无需大改；但应考虑是否需要在前端增加开关（本次先处理后端硬编码，前端开关可作为后续优化）
+**不需要新增 Enabled 字段**。语义：**Root 为空即禁用**（Root 是路由前缀，无前缀即无服务）。
+
+1. **config.go**：`DefaultConfig()` 中将 `Root` 设为空字符串 `""`（Dir 也清空），表示默认不启用 WebDAV
+2. **mobile_api.go**：判断逻辑 `cfg.Webdav.Root != ""` **无需改动**（逻辑正确，只是默认值错误导致永远为 true）
 
 ### 修改文件
-- [types.go](internal/v2/types/types.go)：`WebdavServer` 添加 `Enabled bool` 字段
-- [config.go](internal/config/config.go)：`DefaultConfig()` 设置 `Enabled: false`
-- [mobile_api.go](internal/server/mobile_api.go)：`handleRemoteInfoGin` 用 `cfg.Webdav.Enabled` 判断
+- [config.go](internal/config/config.go)：`DefaultConfig()` 设置 `Root: ""`, `Dir: ""`
+- [mobile_api.go](internal/server/mobile_api.go)：无需改动
 
 ---
 
