@@ -199,30 +199,25 @@ jobs:
         run: |
           mkdir -p app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a
           cp app/encv-mobile/encv-go-arm64 app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a/libencv-go.so
-          echo "JNI libs:"
+          echo "=== Host jniLibs BEFORE build ==="
           ls -lhR app/encv-mobile/android/app/src/main/jniLibs/
 
-      - name: Clean plugin native libs (skip_plugin mode)
-        if: inputs.skip_plugin == true
+      - name: Diagnose MPV .so leak source
         run: |
-          HOST_LIBS="app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a"
-          PLUGIN_LIBS="app/encv-mobile/plugin-mpv-player/src/main/jniLibs"
-
-          echo "=== Removing any MPV/plugin .so from host jniLibs ==="
-          for f in libmpv.so libplayer.so libavcodec.so libavformat.so libavutil.so \
-                   libswresample.so libswscale.so; do
-            if [ -f "$HOST_LIBS/$f" ]; then
-              rm -f "$HOST_LIBS/$f"
-              echo "  removed $f"
-            fi
-          done
-
-          echo "=== Removing plugin jniLibs entirely ==="
-          rm -rf "$PLUGIN_LIBS"
-          echo "  $PLUGIN_LIBS removed"
-
-          echo "=== Final host jniLibs contents ==="
-          ls -lh "$HOST_LIBS"/
+          echo "═══ DIAGNOSIS: Where do MPV .so come from? ═══"
+          echo ""
+          echo "1. Host jniLibs contents:"
+          ls -lhR app/encv-mobile/android/app/src/main/jniLibs/ 2>/dev/null || echo "  (empty/not found)"
+          echo ""
+          echo "2. Plugin jniLibs contents:"
+          ls -lhR app/encv-mobile/plugin-mpv-player/src/main/jniLibs/ 2>/dev/null || echo "  (empty/not found)"
+          echo ""
+          echo "3. Gradle dependency tree (looking for :plugin-mpv-player):"
+          cd app/encv-mobile/android
+          ./gradlew :app:dependencies --configuration releaseRuntimeClasspath 2>/dev/null | grep -i "mpv\|plugin" || echo "  (not found in runtime classpath)"
+          echo ""
+          echo "4. aar2apk registered modules in project:"
+          ./gradlew properties 2>/dev/null | grep -i "aar2apk\|combolite" | head -10 || echo "  (none)"
 
       - name: Verify native libraries
         run: |
