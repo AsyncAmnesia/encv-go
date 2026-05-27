@@ -1,0 +1,62 @@
+﻿2026-05-27T07:01:16.1234851Z ##[group]Run cd app/encv-mobile/plugin-mpv-player/src/main
+2026-05-27T07:01:16.1235367Z [36;1mcd app/encv-mobile/plugin-mpv-player/src/main[0m
+2026-05-27T07:01:16.1235713Z [36;1mmkdir -p jniLibs/arm64-v8a[0m
+2026-05-27T07:01:16.1236001Z [36;1mASSET_URL=$(curl -sf \[0m
+2026-05-27T07:01:16.1236449Z [36;1m  "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/mpv-native-libs" \[0m
+2026-05-27T07:01:16.1237125Z [36;1m  | jq -r '.assets[] | select(.name | startswith("mpv-jniLibs-arm64")) | .browser_download_url')[0m
+2026-05-27T07:01:16.1237590Z [36;1mif [ -z "$ASSET_URL" ]; then[0m
+2026-05-27T07:01:16.1238118Z [36;1m  echo "::error::No MPV lib asset found in release 'mpv-native-libs'. Run 'Build MPV Native Libraries' workflow first."[0m
+2026-05-27T07:01:16.1238835Z [36;1m  exit 1[0m
+2026-05-27T07:01:16.1239052Z [36;1mfi[0m
+2026-05-27T07:01:16.1239277Z [36;1mecho "Downloading: $ASSET_URL"[0m
+2026-05-27T07:01:16.1239611Z [36;1mcurl -fSL -o /tmp/mpv-jniLibs.zip "$ASSET_URL"[0m
+2026-05-27T07:01:16.1240018Z [36;1munzip -o /tmp/mpv-jniLibs.zip -d jniLibs/[0m
+2026-05-27T07:01:16.1240345Z [36;1mecho "✅ MPV libs extracted:"[0m
+2026-05-27T07:01:16.1240629Z [36;1mls -lhR jniLibs/[0m
+2026-05-27T07:01:16.1269787Z shell: /usr/bin/bash -e {0}
+2026-05-27T07:01:16.1270059Z env:
+2026-05-27T07:01:16.1270275Z   NDK_VERSION: 26.1.10909125
+2026-05-27T07:01:16.1270637Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T07:01:16.1271139Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T07:01:16.1271545Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-27T07:01:16.1271868Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-27T07:01:16.1272182Z ##[endgroup]
+2026-05-27T07:01:16.2688475Z Downloading: https://github.com/AsyncAmnesia/encv-go/releases/download/mpv-native-libs/mpv-jniLibs-arm64-v8a-v0.1.12.zip
+2026-05-27T07:01:16.2748580Z   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+2026-05-27T07:01:16.2750300Z                                  Dload  Upload   Total   Spent    Left  Speed
+2026-05-27T07:01:16.2750693Z 
+2026-05-27T07:01:16.4458170Z   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+2026-05-27T07:01:16.4459212Z   0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+2026-05-27T07:01:16.6157294Z 
+2026-05-27T07:01:16.7572461Z   0 15.1M    0 13771    0     0  40369      0  0:06:32 --:--:--  0:06:32 40369
+2026-05-27T07:01:16.7573261Z 100 15.1M  100 15.1M    0     0  31.3M      0 --:--:-- --:--:-- --:--:--  107M
+2026-05-27T07:01:16.7629137Z Archive:  /tmp/mpv-jniLibs.zip
+2026-05-27T07:01:16.8252235Z   inflating: jniLibs/arm64-v8a/libc++_shared.so  
+2026-05-27T07:01:16.8741640Z   inflating: jniLibs/arm64-v8a/libmpv.so  
+2026-05-27T07:01:16.8860342Z   inflating: jniLibs/arm64-v8a/libxml2.so  
+2026-05-27T07:01:16.9208381Z   inflating: jniLibs/arm64-v8a/libavfilter.so  
+2026-05-27T07:01:16.9270799Z   inflating: jniLibs/arm64-v8a/libavutil.so  
+2026-05-27T07:01:16.9364963Z   inflating: jniLibs/arm64-v8a/libswscale.so  
+2026-05-27T07:01:16.9677080Z   inflating: jniLibs/arm64-v8a/libavformat.so  
+2026-05-27T07:01:16.9677967Z   inflating: jniLibs/arm64-v8a/libavdevice.so  
+2026-05-27T07:01:16.9687785Z   inflating: jniLibs/arm64-v8a/libswresample.so  
+2026-05-27T07:01:16.9690042Z   inflating: jniLibs/arm64-v8a/libplayer.so  
+2026-05-27T07:01:17.0754851Z   inflating: jniLibs/arm64-v8a/libavcodec.so  
+2026-05-27T07:01:17.0759205Z ✅ MPV libs extracted:
+2026-05-27T07:01:17.0777576Z jniLibs/:
+2026-05-27T07:01:17.0777937Z total 4.0K
+2026-05-27T07:01:17.0778610Z drwxr-xr-x 2 runner runner 4.0K May 27 07:01 arm64-v8a
+2026-05-27T07:01:17.0779018Z 
+2026-05-27T07:01:17.0779246Z jniLibs/arm64-v8a:
+2026-05-27T07:01:17.0779631Z total 37M
+2026-05-27T07:01:17.0780278Z -rw-r--r-- 1 runner runner  12M Feb  1  1980 libavcodec.so
+2026-05-27T07:01:17.0781356Z -rw-r--r-- 1 runner runner 9.0K Feb  1  1980 libavdevice.so
+2026-05-27T07:01:17.0781941Z -rw-r--r-- 1 runner runner 4.1M Feb  1  1980 libavfilter.so
+2026-05-27T07:01:17.0782819Z -rw-r--r-- 1 runner runner 3.3M Feb  1  1980 libavformat.so
+2026-05-27T07:01:17.0783303Z -rw-r--r-- 1 runner runner 716K Feb  1  1980 libavutil.so
+2026-05-27T07:01:17.0783821Z -rw-r--r-- 1 runner runner 8.9M Feb  1  1980 libc++_shared.so
+2026-05-27T07:01:17.0784318Z -rw-r--r-- 1 runner runner 5.6M Feb  1  1980 libmpv.so
+2026-05-27T07:01:17.0785015Z -rwxr-xr-x 1 runner runner  22K May 27 06:40 libplayer.so
+2026-05-27T07:01:17.0785530Z -rw-r--r-- 1 runner runner  95K Feb  1  1980 libswresample.so
+2026-05-27T07:01:17.0786020Z -rw-r--r-- 1 runner runner 1.1M Feb  1  1980 libswscale.so
+2026-05-27T07:01:17.0786487Z -rw-r--r-- 1 runner runner 1.4M Feb  1  1980 libxml2.so

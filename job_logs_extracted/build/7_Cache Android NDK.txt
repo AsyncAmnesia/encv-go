@@ -1,0 +1,23 @@
+﻿2026-05-27T07:00:54.9463296Z ##[group]Run actions/cache@v4
+2026-05-27T07:00:54.9463580Z with:
+2026-05-27T07:00:54.9463840Z   path: /usr/local/lib/android/sdk/ndk/26.1.10909125
+2026-05-27T07:00:54.9464158Z   key: ndk-26.1.10909125
+2026-05-27T07:00:54.9464670Z   enableCrossOsArchive: false
+2026-05-27T07:00:54.9464946Z   fail-on-cache-miss: false
+2026-05-27T07:00:54.9465187Z   lookup-only: false
+2026-05-27T07:00:54.9465419Z   save-always: false
+2026-05-27T07:00:54.9465621Z env:
+2026-05-27T07:00:54.9465819Z   NDK_VERSION: 26.1.10909125
+2026-05-27T07:00:54.9466167Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T07:00:54.9466657Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T07:00:54.9467056Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-27T07:00:54.9467360Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-27T07:00:54.9467648Z ##[endgroup]
+2026-05-27T07:00:55.1732519Z Cache hit for: ndk-26.1.10909125
+2026-05-27T07:00:56.2366057Z Received 247463936 of 629207778 (39.3%), 236.2 MBs/sec
+2026-05-27T07:00:57.2358079Z Received 503316480 of 629207778 (80.0%), 240.0 MBs/sec
+2026-05-27T07:00:57.7166720Z Received 629207778 of 629207778 (100.0%), 241.9 MBs/sec
+2026-05-27T07:00:57.7168552Z Cache Size: ~600 MB (629207778 B)
+2026-05-27T07:00:57.7216741Z [command]/usr/bin/tar -xf /home/runner/work/_temp/39a34426-60a0-4e48-90f4-1dbb6dd34cca/cache.tzst -P -C /home/runner/work/encv-go/encv-go --use-compress-program unzstd
+2026-05-27T07:01:01.5248940Z Cache restored successfully
+2026-05-27T07:01:01.5618981Z Cache restored from key: ndk-26.1.10909125

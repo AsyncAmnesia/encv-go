@@ -1,0 +1,469 @@
+﻿2026-05-27T07:02:58.3300195Z ##[group]Run cd app/encv-mobile/android
+2026-05-27T07:02:58.3300575Z [36;1mcd app/encv-mobile/android[0m
+2026-05-27T07:02:58.3300853Z [36;1m[0m
+2026-05-27T07:02:58.3301078Z [36;1m# Ensure libplayer.so is built[0m
+2026-05-27T07:02:58.3301513Z [36;1mif [ ! -f "plugin-mpv-player/src/main/jniLibs/arm64-v8a/libplayer.so" ]; then[0m
+2026-05-27T07:02:58.3301996Z [36;1m  echo "Building libplayer.so via ndk-build..."[0m
+2026-05-27T07:02:58.3302465Z [36;1m  bash ../scripts/build-player-so.sh || echo "⚠️ libplayer.so build failed"[0m
+2026-05-27T07:02:58.3302877Z [36;1mfi[0m
+2026-05-27T07:02:58.3303083Z [36;1m[0m
+2026-05-27T07:02:58.3303339Z [36;1m# Compile plugin Kotlin code (debug or release)[0m
+2026-05-27T07:02:58.3303671Z [36;1mBUILD_TYPE="Release"[0m
+2026-05-27T07:02:58.3304113Z [36;1m./gradlew ":plugin-mpv-player:compile${BUILD_TYPE}Kotlin" --stacktrace 2>&1 || true[0m
+2026-05-27T07:02:58.3304882Z [36;1mecho "=== Plugin compile done (${BUILD_TYPE}) ==="[0m
+2026-05-27T07:02:58.3331569Z shell: /usr/bin/bash -e {0}
+2026-05-27T07:02:58.3331881Z env:
+2026-05-27T07:02:58.3332094Z   NDK_VERSION: 26.1.10909125
+2026-05-27T07:02:58.3332469Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T07:02:58.3332977Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T07:02:58.3333394Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-27T07:02:58.3333707Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-27T07:02:58.3333997Z ##[endgroup]
+2026-05-27T07:02:58.3385783Z Building libplayer.so via ndk-build...
+2026-05-27T07:02:58.3434369Z build-player-so: Building libplayer.so from source...
+2026-05-27T07:02:58.3435279Z   NDK: /usr/local/lib/android/sdk/ndk/27.3.13750724
+2026-05-27T07:02:58.3456478Z   Prebuilt libraries: 10 .so files in /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a
+2026-05-27T07:02:58.3468333Z   Removed any existing libplayer.so (will rebuild from source)
+2026-05-27T07:02:58.3469008Z 
+2026-05-27T07:02:58.3469174Z   Running ndk-build...
+2026-05-27T07:03:07.7792556Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:07.7794966Z Android NDK: WARNING: APP_PLATFORM android-21 is higher than android:minSdkVersion 1 in ./AndroidManifest.xml. NDK binaries will *not* be compatible with devices older than android-21. See https://android.googlesource.com/platform/ndk/+/master/docs/user/common_problems.md for more information.    
+2026-05-27T07:03:07.7796845Z /usr/local/lib/android/sdk/ndk/27.3.13750724/build/core/build-binary.mk:708: warning: overriding recipe for target 'libs/arm64-v8a/libc++_shared.so'
+2026-05-27T07:03:07.7798195Z /usr/local/lib/android/sdk/ndk/27.3.13750724/build/core/install_stl.mk:19: warning: ignoring old recipe for target 'libs/arm64-v8a/libc++_shared.so'
+2026-05-27T07:03:07.7799489Z Android NDK: WARNING:jni/Android.mk:player: non-system libraries in linker flags: -latomic    
+2026-05-27T07:03:07.7801015Z Android NDK:     This is likely to result in incorrect builds. Try using LOCAL_STATIC_LIBRARIES    
+2026-05-27T07:03:07.7802538Z Android NDK:     or LOCAL_SHARED_LIBRARIES instead to list the library dependencies of the    
+2026-05-27T07:03:07.7803434Z Android NDK:     current module    
+2026-05-27T07:03:07.7804838Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:07.7859877Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:07.7862059Z [arm64-v8a] Prebuilt       : libavdevice.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T07:03:07.7864069Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:07.7878816Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:07.7890130Z [arm64-v8a] Prebuilt       : libc++_shared.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T07:03:07.7892342Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:07.7894222Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:07.7896903Z [arm64-v8a] Prebuilt       : libavfilter.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T07:03:07.7898832Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:07.7902941Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:07.7905249Z [arm64-v8a] Prebuilt       : libavcodec.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T07:03:07.7907263Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:07.7908934Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:07.7910996Z [arm64-v8a] Prebuilt       : libavutil.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T07:03:07.7912958Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:07.7924293Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:07.7926551Z [arm64-v8a] Prebuilt       : libavformat.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T07:03:07.7928280Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:07.7950830Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:07.7953179Z [arm64-v8a] Prebuilt       : libmpv.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T07:03:07.7955304Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:11.7846690Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:11.7847875Z [arm64-v8a] Compile++      : player <= log.cpp
+2026-05-27T07:03:11.7849083Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:11.7850039Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:11.7850746Z [arm64-v8a] Compile++      : player <= jni_utils.cpp
+2026-05-27T07:03:11.7851505Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:12.3688668Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:12.3689875Z [arm64-v8a] Compile++      : player <= render.cpp
+2026-05-27T07:03:12.3691139Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:12.4448788Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:12.4449991Z [arm64-v8a] Compile++      : player <= event.cpp
+2026-05-27T07:03:12.4451229Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:12.4479758Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:12.4481683Z [arm64-v8a] Prebuilt       : libswscale.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T07:03:12.4483463Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:12.4503460Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:12.4505607Z [arm64-v8a] Prebuilt       : libswresample.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T07:03:12.4507188Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:12.5063519Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:12.5064767Z [arm64-v8a] Compile++      : player <= main.cpp
+2026-05-27T07:03:12.5065944Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:12.5068331Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:12.5069475Z [arm64-v8a] Compile++      : player <= property.cpp
+2026-05-27T07:03:12.5070707Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:12.5095155Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:12.5096655Z [arm64-v8a] Prebuilt       : libxml2.so <= /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a/
+2026-05-27T07:03:12.5098380Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3527193Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3528587Z [arm64-v8a] Install        : libswscale.so => libs/arm64-v8a/libswscale.so
+2026-05-27T07:03:13.3529936Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3531223Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3532002Z [arm64-v8a] Install        : libc++_shared.so => libs/arm64-v8a/libc++_shared.so
+2026-05-27T07:03:13.3532845Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3533783Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3534800Z [arm64-v8a] Install        : libavcodec.so => libs/arm64-v8a/libavcodec.so
+2026-05-27T07:03:13.3535775Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3576549Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3577993Z [arm64-v8a] Install        : libavdevice.so => libs/arm64-v8a/libavdevice.so
+2026-05-27T07:03:13.3579957Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3628150Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3629938Z [arm64-v8a] Install        : libavfilter.so => libs/arm64-v8a/libavfilter.so
+2026-05-27T07:03:13.3631685Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3633489Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3635182Z [arm64-v8a] Install        : libavformat.so => libs/arm64-v8a/libavformat.so
+2026-05-27T07:03:13.3636766Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3641333Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3642939Z [arm64-v8a] Install        : libavutil.so => libs/arm64-v8a/libavutil.so
+2026-05-27T07:03:13.3646610Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3685176Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3686835Z [arm64-v8a] Install        : libswresample.so => libs/arm64-v8a/libswresample.so
+2026-05-27T07:03:13.3688489Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3713010Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3714323Z [arm64-v8a] Install        : libxml2.so => libs/arm64-v8a/libxml2.so
+2026-05-27T07:03:13.3716089Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3735514Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:13.3736667Z [arm64-v8a] Install        : libmpv.so => libs/arm64-v8a/libmpv.so
+2026-05-27T07:03:13.3737538Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:14.8638223Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:14.8639472Z [arm64-v8a] Compile++      : player <= thumbnail.cpp
+2026-05-27T07:03:14.8640725Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:21.0586006Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:21.0587176Z [arm64-v8a] SharedLibrary  : libplayer.so
+2026-05-27T07:03:21.0588325Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:21.0635906Z make: Entering directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:21.0637607Z [arm64-v8a] Install        : libplayer.so => libs/arm64-v8a/libplayer.so
+2026-05-27T07:03:21.0638843Z make: Leaving directory '/home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main'
+2026-05-27T07:03:21.0700997Z 
+2026-05-27T07:03:21.0701962Z ✅ libplayer.so built and copied (22K)
+2026-05-27T07:03:21.0722370Z   Total .so files in /home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/jniLibs/arm64-v8a: 11
+2026-05-27T07:03:21.1697984Z Downloading https://services.gradle.org/distributions/gradle-8.14.3-all.zip
+2026-05-27T07:03:22.6604331Z .....................10%.....................20%......................30%.....................40%......................50%.....................60%.....................70%......................80%.....................90%......................100%
+2026-05-27T07:03:26.0730306Z 
+2026-05-27T07:03:26.0731484Z Welcome to Gradle 8.14.3!
+2026-05-27T07:03:26.0732401Z 
+2026-05-27T07:03:26.0735324Z Here are the highlights of this release:
+2026-05-27T07:03:26.0739647Z  - Java 24 support
+2026-05-27T07:03:26.0740466Z  - GraalVM Native Image toolchain selection
+2026-05-27T07:03:26.0741215Z  - Enhancements to test reporting
+2026-05-27T07:03:26.0741899Z  - Build Authoring improvements
+2026-05-27T07:03:26.0742258Z 
+2026-05-27T07:03:26.0743075Z For more details see https://docs.gradle.org/8.14.3/release-notes.html
+2026-05-27T07:03:26.0743469Z 
+2026-05-27T07:03:26.2738730Z Starting a Gradle Daemon (subsequent builds will be faster)
+2026-05-27T07:04:19.7729378Z 
+2026-05-27T07:04:19.7784378Z > Configure project :plugin-mpv-player
+2026-05-27T07:04:19.7814799Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/build.gradle.kts:14:9: 'targetSdk: Int?' is deprecated. Will be removed from library DSL in AGP 9.0. Use testOptions.targetSdk or/and lint.targetSdk instead
+2026-05-27T07:04:19.7818651Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/build.gradle.kts:33:9: 'jvmTarget: String' is deprecated. Please migrate to the compilerOptions DSL. More details are here: https://kotl.in/u1r8ln
+2026-05-27T07:04:25.3750796Z 
+2026-05-27T07:04:25.3775721Z > Configure project :capacitor-android
+2026-05-27T07:04:25.3806379Z Build was configured to prefer settings repositories over project repositories but repository 'Google' was added by build file '../node_modules/@capacitor/android/capacitor/build.gradle'
+2026-05-27T07:04:25.3836543Z Build was configured to prefer settings repositories over project repositories but repository 'MavenRepo' was added by build file '../node_modules/@capacitor/android/capacitor/build.gradle'
+2026-05-27T07:04:25.8750206Z 
+2026-05-27T07:04:25.8775660Z > Configure project :capacitor-cordova-android-plugins
+2026-05-27T07:04:25.8777807Z Build was configured to prefer settings repositories over project repositories but repository 'Google' was added by build file 'capacitor-cordova-android-plugins/build.gradle'
+2026-05-27T07:04:25.8780609Z Build was configured to prefer settings repositories over project repositories but repository 'MavenRepo' was added by build file 'capacitor-cordova-android-plugins/build.gradle'
+2026-05-27T07:04:25.8783239Z Build was configured to prefer settings repositories over project repositories but repository 'flatDir' was added by build file 'capacitor-cordova-android-plugins/build.gradle'
+2026-05-27T07:04:25.8785248Z WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
+2026-05-27T07:04:26.2735186Z 
+2026-05-27T07:04:26.2765896Z > Configure project :capacitor-screen-orientation
+2026-05-27T07:04:26.2786645Z Build was configured to prefer settings repositories over project repositories but repository 'Google' was added by build file '../node_modules/@capacitor/screen-orientation/android/build.gradle'
+2026-05-27T07:04:26.2806648Z Build was configured to prefer settings repositories over project repositories but repository 'MavenRepo' was added by build file '../node_modules/@capacitor/screen-orientation/android/build.gradle'
+2026-05-27T07:04:26.5743712Z 
+2026-05-27T07:04:26.5785664Z > Configure project :capacitor-status-bar
+2026-05-27T07:04:26.5816871Z Build was configured to prefer settings repositories over project repositories but repository 'Google' was added by build file '../node_modules/@capacitor/status-bar/android/build.gradle'
+2026-05-27T07:04:26.5819646Z Build was configured to prefer settings repositories over project repositories but repository 'MavenRepo' was added by build file '../node_modules/@capacitor/status-bar/android/build.gradle'
+2026-05-27T07:04:27.1735350Z 
+2026-05-27T07:04:27.1736733Z > Task :plugin-mpv-player:checkKotlinGradlePluginConfigurationErrors SKIPPED
+2026-05-27T07:04:27.1737799Z > Task :plugin-mpv-player:preBuild UP-TO-DATE
+2026-05-27T07:04:27.1738620Z > Task :plugin-mpv-player:preReleaseBuild UP-TO-DATE
+2026-05-27T07:04:27.2724108Z > Task :plugin-mpv-player:generateReleaseResValues
+2026-05-27T07:04:27.2745874Z > Task :plugin-mpv-player:generateReleaseResources
+2026-05-27T07:04:27.3724004Z > Task :plugin-mpv-player:packageReleaseResources
+2026-05-27T07:04:27.3724963Z > Task :plugin-mpv-player:processReleaseNavigationResources
+2026-05-27T07:04:30.1724872Z > Task :plugin-mpv-player:parseReleaseLocalResources
+2026-05-27T07:04:30.1726859Z > Task :plugin-mpv-player:generateReleaseRFile
+2026-05-27T07:04:57.2732005Z 
+2026-05-27T07:04:57.2827264Z > Task :plugin-mpv-player:compileReleaseKotlin FAILED
+2026-05-27T07:04:57.2833349Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:31:25 Packages cannot be imported.
+2026-05-27T07:04:57.2866850Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:31:33 Syntax error: Expecting a top level declaration.
+2026-05-27T07:04:57.2881415Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:31:34 Syntax error: Expecting a top level declaration.
+2026-05-27T07:04:57.2885549Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:31:39 Syntax error: Expecting a top level declaration.
+2026-05-27T07:04:57.2888837Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:31:40 Syntax error: Expecting a top level declaration.
+2026-05-27T07:04:57.2892262Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:31:46 Syntax error: Expecting a top level declaration.
+2026-05-27T07:04:57.2896156Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:31:47 Syntax error: Expecting a top level declaration.
+2026-05-27T07:04:57.2899521Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:31:56 Syntax error: imports are only allowed in the beginning of file.
+2026-05-27T07:04:57.2902692Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:32:40 Unresolved reference 'Outlined'.
+2026-05-27T07:04:57.2905928Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:33:40 Unresolved reference 'Outlined'.
+2026-05-27T07:04:57.2908997Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:121:13 No parameter with name 'volume' found.
+2026-05-27T07:04:57.2912164Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:129:13 No parameter with name 'onVolumeChange' found.
+2026-05-27T07:04:57.2915581Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:130:13 No parameter with name 'onToggleSubtitle' found.
+2026-05-27T07:04:57.2919257Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:131:13 No parameter with name 'onCycleAudio' found.
+2026-05-27T07:04:57.2922303Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:262:50 Unresolved reference 'Subtitles'.
+2026-05-27T07:04:57.2925514Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:269:50 Unresolved reference 'Audiotrack'.
+2026-05-27T07:04:57.2928538Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:290:86 Unresolved reference 'VolumeOff'.
+2026-05-27T07:04:57.2931559Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:299:25 Unresolved reference 'remember'.
+2026-05-27T07:04:57.2934932Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:299:36 Unresolved reference 'mutableFloatStateOf'.
+2026-05-27T07:04:57.2938673Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:307:44 'operator' modifier is required on 'FirNamedFunctionSymbol kotlin/compareTo' in 'compareTo'.
+2026-05-27T07:04:57.2942070Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:307:92 Unresolved reference 'VolumeOff'.
+2026-05-27T07:04:57.2945918Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:312:9 Unresolved reference 'Slider'.
+2026-05-27T07:04:57.2949131Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:314:46 Unresolved reference 'it'.
+2026-05-27T07:04:57.2952109Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:320:22 Unresolved reference 'SliderDefaults'.
+2026-05-27T07:04:57.2955413Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:641:22 Unresolved reference 'volume'.
+2026-05-27T07:04:57.2958438Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:645:30 Unresolved reference 'onVolumeChange'.
+2026-05-27T07:04:57.2961589Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:646:32 Unresolved reference 'onToggleSubtitle'.
+2026-05-27T07:04:57.2964871Z e: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt:647:28 Unresolved reference 'onCycleAudio'.
+2026-05-27T07:04:57.2966240Z 
+2026-05-27T07:04:57.2966918Z FAILURE: Build failed with an exception.
+2026-05-27T07:04:57.2967456Z 
+2026-05-27T07:04:57.2967866Z * What went wrong:
+2026-05-27T07:04:57.2968905Z Execution failed for task ':plugin-mpv-player:compileReleaseKotlin'.
+2026-05-27T07:04:57.2970967Z > A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+2026-05-27T07:04:57.2972598Z    > Compilation error. See log for more details
+2026-05-27T07:04:57.2973154Z 
+2026-05-27T07:04:57.2973479Z * Try:
+2026-05-27T07:04:57.2974344Z > Run with --info or --debug option to get more log output.
+2026-05-27T07:04:57.2975443Z > Run with --scan to get full insights.
+2026-05-27T07:04:57.2976320Z > Get more help at https://help.gradle.org.
+2026-05-27T07:04:57.2976854Z 
+2026-05-27T07:04:57.2977491Z * Exception is:
+2026-05-27T07:04:57.2979123Z org.gradle.api.tasks.TaskExecutionException: Execution failed for task ':plugin-mpv-player:compileReleaseKotlin'.
+2026-05-27T07:04:57.2981540Z 	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.lambda$executeIfValid$1(ExecuteActionsTaskExecuter.java:130)
+2026-05-27T07:04:57.2983351Z 	at org.gradle.internal.Try$Failure.ifSuccessfulOrElse(Try.java:293)
+2026-05-27T07:04:57.2985375Z 	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.executeIfValid(ExecuteActionsTaskExecuter.java:128)
+2026-05-27T07:04:57.2987597Z 	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.execute(ExecuteActionsTaskExecuter.java:116)
+2026-05-27T07:04:57.2990009Z 	at org.gradle.api.internal.tasks.execution.ProblemsTaskPathTrackingTaskExecuter.execute(ProblemsTaskPathTrackingTaskExecuter.java:41)
+2026-05-27T07:04:57.2992475Z 	at org.gradle.api.internal.tasks.execution.FinalizePropertiesTaskExecuter.execute(FinalizePropertiesTaskExecuter.java:46)
+2026-05-27T07:04:57.2995144Z 	at org.gradle.api.internal.tasks.execution.ResolveTaskExecutionModeExecuter.execute(ResolveTaskExecutionModeExecuter.java:51)
+2026-05-27T07:04:57.2997529Z 	at org.gradle.api.internal.tasks.execution.SkipTaskWithNoActionsExecuter.execute(SkipTaskWithNoActionsExecuter.java:57)
+2026-05-27T07:04:57.2999623Z 	at org.gradle.api.internal.tasks.execution.SkipOnlyIfTaskExecuter.execute(SkipOnlyIfTaskExecuter.java:74)
+2026-05-27T07:04:57.3001745Z 	at org.gradle.api.internal.tasks.execution.CatchExceptionTaskExecuter.execute(CatchExceptionTaskExecuter.java:36)
+2026-05-27T07:04:57.3003870Z 	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.executeTask(EventFiringTaskExecuter.java:77)
+2026-05-27T07:04:57.3006140Z 	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.call(EventFiringTaskExecuter.java:55)
+2026-05-27T07:04:57.3008185Z 	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.call(EventFiringTaskExecuter.java:52)
+2026-05-27T07:04:57.3011048Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:210)
+2026-05-27T07:04:57.3013518Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:205)
+2026-05-27T07:04:57.3015991Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:67)
+2026-05-27T07:04:57.3018102Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:60)
+2026-05-27T07:04:57.3020179Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:167)
+2026-05-27T07:04:57.3022260Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:60)
+2026-05-27T07:04:57.3024249Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:54)
+2026-05-27T07:04:57.3026525Z 	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter.execute(EventFiringTaskExecuter.java:52)
+2026-05-27T07:04:57.3028613Z 	at org.gradle.execution.plan.LocalTaskNodeExecutor.execute(LocalTaskNodeExecutor.java:42)
+2026-05-27T07:04:57.3030795Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$InvokeNodeExecutorsAction.execute(DefaultTaskExecutionGraph.java:331)
+2026-05-27T07:04:57.3033220Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$InvokeNodeExecutorsAction.execute(DefaultTaskExecutionGraph.java:318)
+2026-05-27T07:04:57.3036092Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.lambda$execute$0(DefaultTaskExecutionGraph.java:314)
+2026-05-27T07:04:57.3038425Z 	at org.gradle.internal.operations.CurrentBuildOperationRef.with(CurrentBuildOperationRef.java:85)
+2026-05-27T07:04:57.3040652Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:314)
+2026-05-27T07:04:57.3043638Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:303)
+2026-05-27T07:04:57.3046201Z 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.execute(DefaultPlanExecutor.java:459)
+2026-05-27T07:04:57.3048207Z 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(DefaultPlanExecutor.java:376)
+2026-05-27T07:04:57.3049955Z 	at org.gradle.execution.plan.DefaultPlanExecutor.process(DefaultPlanExecutor.java:111)
+2026-05-27T07:04:57.3051979Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph.executeWithServices(DefaultTaskExecutionGraph.java:138)
+2026-05-27T07:04:57.3054140Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph.execute(DefaultTaskExecutionGraph.java:123)
+2026-05-27T07:04:57.3056256Z 	at org.gradle.execution.SelectedTaskExecutionAction.execute(SelectedTaskExecutionAction.java:35)
+2026-05-27T07:04:57.3058121Z 	at org.gradle.execution.DryRunBuildExecutionAction.execute(DryRunBuildExecutionAction.java:51)
+2026-05-27T07:04:57.3060319Z 	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor$ExecuteTasks.call(BuildOperationFiringBuildWorkerExecutor.java:54)
+2026-05-27T07:04:57.3062761Z 	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor$ExecuteTasks.call(BuildOperationFiringBuildWorkerExecutor.java:43)
+2026-05-27T07:04:57.3065458Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:210)
+2026-05-27T07:04:57.3068264Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:205)
+2026-05-27T07:04:57.3070551Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:67)
+2026-05-27T07:04:57.3072640Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:60)
+2026-05-27T07:04:57.3075286Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:167)
+2026-05-27T07:04:57.3077372Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:60)
+2026-05-27T07:04:57.3079484Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:54)
+2026-05-27T07:04:57.3081696Z 	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor.execute(BuildOperationFiringBuildWorkerExecutor.java:40)
+2026-05-27T07:04:57.3084053Z 	at org.gradle.internal.build.DefaultBuildLifecycleController.lambda$executeTasks$10(DefaultBuildLifecycleController.java:313)
+2026-05-27T07:04:57.3086417Z 	at org.gradle.internal.model.StateTransitionController.doTransition(StateTransitionController.java:266)
+2026-05-27T07:04:57.3088536Z 	at org.gradle.internal.model.StateTransitionController.lambda$tryTransition$8(StateTransitionController.java:177)
+2026-05-27T07:04:57.3090425Z 	at org.gradle.internal.work.DefaultSynchronizer.withLock(DefaultSynchronizer.java:46)
+2026-05-27T07:04:57.3092296Z 	at org.gradle.internal.model.StateTransitionController.tryTransition(StateTransitionController.java:177)
+2026-05-27T07:04:57.3094608Z 	at org.gradle.internal.build.DefaultBuildLifecycleController.executeTasks(DefaultBuildLifecycleController.java:304)
+2026-05-27T07:04:57.3096912Z 	at org.gradle.internal.build.DefaultBuildWorkGraphController$DefaultBuildWorkGraph.runWork(DefaultBuildWorkGraphController.java:220)
+2026-05-27T07:04:57.3099018Z 	at org.gradle.internal.work.DefaultWorkerLeaseService.withLocks(DefaultWorkerLeaseService.java:263)
+2026-05-27T07:04:57.3101040Z 	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:127)
+2026-05-27T07:04:57.3103004Z 	at org.gradle.composite.internal.DefaultBuildController.doRun(DefaultBuildController.java:181)
+2026-05-27T07:04:57.3105005Z 	at org.gradle.composite.internal.DefaultBuildController.access$000(DefaultBuildController.java:50)
+2026-05-27T07:04:57.3107407Z 	at org.gradle.composite.internal.DefaultBuildController$BuildOpRunnable.lambda$run$0(DefaultBuildController.java:198)
+2026-05-27T07:04:57.3109385Z 	at org.gradle.internal.operations.CurrentBuildOperationRef.with(CurrentBuildOperationRef.java:85)
+2026-05-27T07:04:57.3111598Z 	at org.gradle.composite.internal.DefaultBuildController$BuildOpRunnable.run(DefaultBuildController.java:198)
+2026-05-27T07:04:57.3113601Z 	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
+2026-05-27T07:04:57.3115681Z 	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:48)
+2026-05-27T07:04:57.3118870Z Caused by: org.gradle.workers.internal.DefaultWorkerExecutor$WorkExecutionException: A failure occurred while executing org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction
+2026-05-27T07:04:57.3121776Z 	at org.gradle.workers.internal.DefaultWorkerExecutor$WorkItemExecution.waitForCompletion(DefaultWorkerExecutor.java:287)
+2026-05-27T07:04:57.3124074Z 	at org.gradle.internal.work.DefaultAsyncWorkTracker.lambda$waitForItemsAndGatherFailures$2(DefaultAsyncWorkTracker.java:130)
+2026-05-27T07:04:57.3126179Z 	at org.gradle.internal.Factories$1.create(Factories.java:31)
+2026-05-27T07:04:57.3127816Z 	at org.gradle.internal.work.DefaultWorkerLeaseService.withoutLocks(DefaultWorkerLeaseService.java:335)
+2026-05-27T07:04:57.3129722Z 	at org.gradle.internal.work.DefaultWorkerLeaseService.withoutLocks(DefaultWorkerLeaseService.java:318)
+2026-05-27T07:04:57.3131661Z 	at org.gradle.internal.work.DefaultWorkerLeaseService.withoutLock(DefaultWorkerLeaseService.java:323)
+2026-05-27T07:04:57.3133883Z 	at org.gradle.internal.work.DefaultAsyncWorkTracker.waitForItemsAndGatherFailures(DefaultAsyncWorkTracker.java:126)
+2026-05-27T07:04:57.3136445Z 	at org.gradle.internal.work.DefaultAsyncWorkTracker.waitForItemsAndGatherFailures(DefaultAsyncWorkTracker.java:92)
+2026-05-27T07:04:57.3138932Z 	at org.gradle.internal.work.DefaultAsyncWorkTracker.waitForAll(DefaultAsyncWorkTracker.java:78)
+2026-05-27T07:04:57.3140864Z 	at org.gradle.internal.work.DefaultAsyncWorkTracker.waitForCompletion(DefaultAsyncWorkTracker.java:66)
+2026-05-27T07:04:57.3142620Z 	at org.gradle.api.internal.tasks.execution.TaskExecution$3.run(TaskExecution.java:252)
+2026-05-27T07:04:57.3144626Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:30)
+2026-05-27T07:04:57.3146722Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:27)
+2026-05-27T07:04:57.3148795Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:67)
+2026-05-27T07:04:57.3150795Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:60)
+2026-05-27T07:04:57.3152820Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:167)
+2026-05-27T07:04:57.3155131Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:60)
+2026-05-27T07:04:57.3157169Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.run(DefaultBuildOperationRunner.java:48)
+2026-05-27T07:04:57.3159032Z 	at org.gradle.api.internal.tasks.execution.TaskExecution.executeAction(TaskExecution.java:229)
+2026-05-27T07:04:57.3160848Z 	at org.gradle.api.internal.tasks.execution.TaskExecution.executeActions(TaskExecution.java:212)
+2026-05-27T07:04:57.3162863Z 	at org.gradle.api.internal.tasks.execution.TaskExecution.executeWithPreviousOutputFiles(TaskExecution.java:195)
+2026-05-27T07:04:57.3164820Z 	at org.gradle.api.internal.tasks.execution.TaskExecution.execute(TaskExecution.java:162)
+2026-05-27T07:04:57.3166513Z 	at org.gradle.internal.execution.steps.ExecuteStep.executeInternal(ExecuteStep.java:105)
+2026-05-27T07:04:57.3168135Z 	at org.gradle.internal.execution.steps.ExecuteStep.access$000(ExecuteStep.java:44)
+2026-05-27T07:04:57.3170306Z 	at org.gradle.internal.execution.steps.ExecuteStep$1.call(ExecuteStep.java:59)
+2026-05-27T07:04:57.3171881Z 	at org.gradle.internal.execution.steps.ExecuteStep$1.call(ExecuteStep.java:56)
+2026-05-27T07:04:57.3173916Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:210)
+2026-05-27T07:04:57.3176560Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:205)
+2026-05-27T07:04:57.3178718Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:67)
+2026-05-27T07:04:57.3180681Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:60)
+2026-05-27T07:04:57.3182786Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:167)
+2026-05-27T07:04:57.3184857Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:60)
+2026-05-27T07:04:57.3186776Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:54)
+2026-05-27T07:04:57.3188437Z 	at org.gradle.internal.execution.steps.ExecuteStep.execute(ExecuteStep.java:56)
+2026-05-27T07:04:57.3190071Z 	at org.gradle.internal.execution.steps.ExecuteStep.execute(ExecuteStep.java:44)
+2026-05-27T07:04:57.3191777Z 	at org.gradle.internal.execution.steps.CancelExecutionStep.execute(CancelExecutionStep.java:42)
+2026-05-27T07:04:57.3193539Z 	at org.gradle.internal.execution.steps.TimeoutStep.executeWithoutTimeout(TimeoutStep.java:75)
+2026-05-27T07:04:57.3195252Z 	at org.gradle.internal.execution.steps.TimeoutStep.execute(TimeoutStep.java:55)
+2026-05-27T07:04:57.3197067Z 	at org.gradle.internal.execution.steps.PreCreateOutputParentsStep.execute(PreCreateOutputParentsStep.java:50)
+2026-05-27T07:04:57.3199110Z 	at org.gradle.internal.execution.steps.PreCreateOutputParentsStep.execute(PreCreateOutputParentsStep.java:28)
+2026-05-27T07:04:57.3201462Z 	at org.gradle.internal.execution.steps.RemovePreviousOutputsStep.execute(RemovePreviousOutputsStep.java:67)
+2026-05-27T07:04:57.3203513Z 	at org.gradle.internal.execution.steps.RemovePreviousOutputsStep.execute(RemovePreviousOutputsStep.java:37)
+2026-05-27T07:04:57.3205842Z 	at org.gradle.internal.execution.steps.BroadcastChangingOutputsStep.execute(BroadcastChangingOutputsStep.java:61)
+2026-05-27T07:04:57.3208032Z 	at org.gradle.internal.execution.steps.BroadcastChangingOutputsStep.execute(BroadcastChangingOutputsStep.java:26)
+2026-05-27T07:04:57.3210319Z 	at org.gradle.internal.execution.steps.CaptureOutputsAfterExecutionStep.execute(CaptureOutputsAfterExecutionStep.java:69)
+2026-05-27T07:04:57.3212689Z 	at org.gradle.internal.execution.steps.CaptureOutputsAfterExecutionStep.execute(CaptureOutputsAfterExecutionStep.java:46)
+2026-05-27T07:04:57.3215020Z 	at org.gradle.internal.execution.steps.ResolveInputChangesStep.execute(ResolveInputChangesStep.java:40)
+2026-05-27T07:04:57.3217023Z 	at org.gradle.internal.execution.steps.ResolveInputChangesStep.execute(ResolveInputChangesStep.java:29)
+2026-05-27T07:04:57.3218919Z 	at org.gradle.internal.execution.steps.BuildCacheStep.executeWithoutCache(BuildCacheStep.java:189)
+2026-05-27T07:04:57.3220722Z 	at org.gradle.internal.execution.steps.BuildCacheStep.lambda$execute$1(BuildCacheStep.java:75)
+2026-05-27T07:04:57.3222026Z 	at org.gradle.internal.Either$Right.fold(Either.java:175)
+2026-05-27T07:04:57.3223374Z 	at org.gradle.internal.execution.caching.CachingState.fold(CachingState.java:62)
+2026-05-27T07:04:57.3225125Z 	at org.gradle.internal.execution.steps.BuildCacheStep.execute(BuildCacheStep.java:73)
+2026-05-27T07:04:57.3226699Z 	at org.gradle.internal.execution.steps.BuildCacheStep.execute(BuildCacheStep.java:48)
+2026-05-27T07:04:57.3228405Z 	at org.gradle.internal.execution.steps.StoreExecutionStateStep.execute(StoreExecutionStateStep.java:46)
+2026-05-27T07:04:57.3230394Z 	at org.gradle.internal.execution.steps.StoreExecutionStateStep.execute(StoreExecutionStateStep.java:35)
+2026-05-27T07:04:57.3232727Z 	at org.gradle.internal.execution.steps.SkipUpToDateStep.executeBecause(SkipUpToDateStep.java:75)
+2026-05-27T07:04:57.3234927Z 	at org.gradle.internal.execution.steps.SkipUpToDateStep.lambda$execute$2(SkipUpToDateStep.java:53)
+2026-05-27T07:04:57.3236656Z 	at org.gradle.internal.execution.steps.SkipUpToDateStep.execute(SkipUpToDateStep.java:53)
+2026-05-27T07:04:57.3238297Z 	at org.gradle.internal.execution.steps.SkipUpToDateStep.execute(SkipUpToDateStep.java:35)
+2026-05-27T07:04:57.3240430Z 	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsFinishedStep.execute(MarkSnapshottingInputsFinishedStep.java:37)
+2026-05-27T07:04:57.3242948Z 	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsFinishedStep.execute(MarkSnapshottingInputsFinishedStep.java:27)
+2026-05-27T07:04:57.3245545Z 	at org.gradle.internal.execution.steps.ResolveIncrementalCachingStateStep.executeDelegate(ResolveIncrementalCachingStateStep.java:49)
+2026-05-27T07:04:57.3248116Z 	at org.gradle.internal.execution.steps.ResolveIncrementalCachingStateStep.executeDelegate(ResolveIncrementalCachingStateStep.java:27)
+2026-05-27T07:04:57.3250494Z 	at org.gradle.internal.execution.steps.AbstractResolveCachingStateStep.execute(AbstractResolveCachingStateStep.java:71)
+2026-05-27T07:04:57.3252675Z 	at org.gradle.internal.execution.steps.AbstractResolveCachingStateStep.execute(AbstractResolveCachingStateStep.java:39)
+2026-05-27T07:04:57.3254720Z 	at org.gradle.internal.execution.steps.ResolveChangesStep.execute(ResolveChangesStep.java:65)
+2026-05-27T07:04:57.3256443Z 	at org.gradle.internal.execution.steps.ResolveChangesStep.execute(ResolveChangesStep.java:36)
+2026-05-27T07:04:57.3258053Z 	at org.gradle.internal.execution.steps.ValidateStep.execute(ValidateStep.java:107)
+2026-05-27T07:04:57.3259573Z 	at org.gradle.internal.execution.steps.ValidateStep.execute(ValidateStep.java:56)
+2026-05-27T07:04:57.3261990Z 	at org.gradle.internal.execution.steps.AbstractCaptureStateBeforeExecutionStep.execute(AbstractCaptureStateBeforeExecutionStep.java:64)
+2026-05-27T07:04:57.3264726Z 	at org.gradle.internal.execution.steps.AbstractCaptureStateBeforeExecutionStep.execute(AbstractCaptureStateBeforeExecutionStep.java:43)
+2026-05-27T07:04:57.3267265Z 	at org.gradle.internal.execution.steps.AbstractSkipEmptyWorkStep.executeWithNonEmptySources(AbstractSkipEmptyWorkStep.java:125)
+2026-05-27T07:04:57.3269595Z 	at org.gradle.internal.execution.steps.AbstractSkipEmptyWorkStep.execute(AbstractSkipEmptyWorkStep.java:61)
+2026-05-27T07:04:57.3271637Z 	at org.gradle.internal.execution.steps.AbstractSkipEmptyWorkStep.execute(AbstractSkipEmptyWorkStep.java:36)
+2026-05-27T07:04:57.3273916Z 	at org.gradle.internal.execution.steps.legacy.MarkSnapshottingInputsStartedStep.execute(MarkSnapshottingInputsStartedStep.java:38)
+2026-05-27T07:04:57.3276442Z 	at org.gradle.internal.execution.steps.LoadPreviousExecutionStateStep.execute(LoadPreviousExecutionStateStep.java:36)
+2026-05-27T07:04:57.3278690Z 	at org.gradle.internal.execution.steps.LoadPreviousExecutionStateStep.execute(LoadPreviousExecutionStateStep.java:23)
+2026-05-27T07:04:57.3280777Z 	at org.gradle.internal.execution.steps.HandleStaleOutputsStep.execute(HandleStaleOutputsStep.java:75)
+2026-05-27T07:04:57.3282701Z 	at org.gradle.internal.execution.steps.HandleStaleOutputsStep.execute(HandleStaleOutputsStep.java:41)
+2026-05-27T07:04:57.3284993Z 	at org.gradle.internal.execution.steps.AssignMutableWorkspaceStep.lambda$execute$0(AssignMutableWorkspaceStep.java:35)
+2026-05-27T07:04:57.3286982Z 	at org.gradle.api.internal.tasks.execution.TaskExecution$4.withWorkspace(TaskExecution.java:289)
+2026-05-27T07:04:57.3288945Z 	at org.gradle.internal.execution.steps.AssignMutableWorkspaceStep.execute(AssignMutableWorkspaceStep.java:31)
+2026-05-27T07:04:57.3291050Z 	at org.gradle.internal.execution.steps.AssignMutableWorkspaceStep.execute(AssignMutableWorkspaceStep.java:22)
+2026-05-27T07:04:57.3293174Z 	at org.gradle.internal.execution.steps.ChoosePipelineStep.execute(ChoosePipelineStep.java:40)
+2026-05-27T07:04:57.3295113Z 	at org.gradle.internal.execution.steps.ChoosePipelineStep.execute(ChoosePipelineStep.java:23)
+2026-05-27T07:04:57.3297295Z 	at org.gradle.internal.execution.steps.ExecuteWorkBuildOperationFiringStep.lambda$execute$2(ExecuteWorkBuildOperationFiringStep.java:67)
+2026-05-27T07:04:57.3299722Z 	at org.gradle.internal.execution.steps.ExecuteWorkBuildOperationFiringStep.execute(ExecuteWorkBuildOperationFiringStep.java:67)
+2026-05-27T07:04:57.3302097Z 	at org.gradle.internal.execution.steps.ExecuteWorkBuildOperationFiringStep.execute(ExecuteWorkBuildOperationFiringStep.java:39)
+2026-05-27T07:04:57.3304291Z 	at org.gradle.internal.execution.steps.IdentityCacheStep.execute(IdentityCacheStep.java:46)
+2026-05-27T07:04:57.3306260Z 	at org.gradle.internal.execution.steps.IdentityCacheStep.execute(IdentityCacheStep.java:34)
+2026-05-27T07:04:57.3307826Z 	at org.gradle.internal.execution.steps.IdentifyStep.execute(IdentifyStep.java:48)
+2026-05-27T07:04:57.3309349Z 	at org.gradle.internal.execution.steps.IdentifyStep.execute(IdentifyStep.java:35)
+2026-05-27T07:04:57.3311059Z 	at org.gradle.internal.execution.impl.DefaultExecutionEngine$1.execute(DefaultExecutionEngine.java:64)
+2026-05-27T07:04:57.3313127Z 	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.executeIfValid(ExecuteActionsTaskExecuter.java:127)
+2026-05-27T07:04:57.3315512Z 	at org.gradle.api.internal.tasks.execution.ExecuteActionsTaskExecuter.execute(ExecuteActionsTaskExecuter.java:116)
+2026-05-27T07:04:57.3317915Z 	at org.gradle.api.internal.tasks.execution.ProblemsTaskPathTrackingTaskExecuter.execute(ProblemsTaskPathTrackingTaskExecuter.java:41)
+2026-05-27T07:04:57.3320350Z 	at org.gradle.api.internal.tasks.execution.FinalizePropertiesTaskExecuter.execute(FinalizePropertiesTaskExecuter.java:46)
+2026-05-27T07:04:57.3322723Z 	at org.gradle.api.internal.tasks.execution.ResolveTaskExecutionModeExecuter.execute(ResolveTaskExecutionModeExecuter.java:51)
+2026-05-27T07:04:57.3325495Z 	at org.gradle.api.internal.tasks.execution.SkipTaskWithNoActionsExecuter.execute(SkipTaskWithNoActionsExecuter.java:57)
+2026-05-27T07:04:57.3327631Z 	at org.gradle.api.internal.tasks.execution.SkipOnlyIfTaskExecuter.execute(SkipOnlyIfTaskExecuter.java:74)
+2026-05-27T07:04:57.3329748Z 	at org.gradle.api.internal.tasks.execution.CatchExceptionTaskExecuter.execute(CatchExceptionTaskExecuter.java:36)
+2026-05-27T07:04:57.3331858Z 	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.executeTask(EventFiringTaskExecuter.java:77)
+2026-05-27T07:04:57.3333965Z 	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.call(EventFiringTaskExecuter.java:55)
+2026-05-27T07:04:57.3336146Z 	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter$1.call(EventFiringTaskExecuter.java:52)
+2026-05-27T07:04:57.3338616Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:210)
+2026-05-27T07:04:57.3341166Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:205)
+2026-05-27T07:04:57.3343430Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:67)
+2026-05-27T07:04:57.3345645Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:60)
+2026-05-27T07:04:57.3347782Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:167)
+2026-05-27T07:04:57.3349854Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:60)
+2026-05-27T07:04:57.3351886Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:54)
+2026-05-27T07:04:57.3353987Z 	at org.gradle.api.internal.tasks.execution.EventFiringTaskExecuter.execute(EventFiringTaskExecuter.java:52)
+2026-05-27T07:04:57.3356230Z 	at org.gradle.execution.plan.LocalTaskNodeExecutor.execute(LocalTaskNodeExecutor.java:42)
+2026-05-27T07:04:57.3358478Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$InvokeNodeExecutorsAction.execute(DefaultTaskExecutionGraph.java:331)
+2026-05-27T07:04:57.3360901Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$InvokeNodeExecutorsAction.execute(DefaultTaskExecutionGraph.java:318)
+2026-05-27T07:04:57.3363514Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.lambda$execute$0(DefaultTaskExecutionGraph.java:314)
+2026-05-27T07:04:57.3365834Z 	at org.gradle.internal.operations.CurrentBuildOperationRef.with(CurrentBuildOperationRef.java:85)
+2026-05-27T07:04:57.3368087Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:314)
+2026-05-27T07:04:57.3370731Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph$BuildOperationAwareExecutionAction.execute(DefaultTaskExecutionGraph.java:303)
+2026-05-27T07:04:57.3372939Z 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.execute(DefaultPlanExecutor.java:459)
+2026-05-27T07:04:57.3374917Z 	at org.gradle.execution.plan.DefaultPlanExecutor$ExecutorWorker.run(DefaultPlanExecutor.java:376)
+2026-05-27T07:04:57.3376595Z 	at org.gradle.execution.plan.DefaultPlanExecutor.process(DefaultPlanExecutor.java:111)
+2026-05-27T07:04:57.3378587Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph.executeWithServices(DefaultTaskExecutionGraph.java:138)
+2026-05-27T07:04:57.3380641Z 	at org.gradle.execution.taskgraph.DefaultTaskExecutionGraph.execute(DefaultTaskExecutionGraph.java:123)
+2026-05-27T07:04:57.3382541Z 	at org.gradle.execution.SelectedTaskExecutionAction.execute(SelectedTaskExecutionAction.java:35)
+2026-05-27T07:04:57.3384324Z 	at org.gradle.execution.DryRunBuildExecutionAction.execute(DryRunBuildExecutionAction.java:51)
+2026-05-27T07:04:57.3386681Z 	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor$ExecuteTasks.call(BuildOperationFiringBuildWorkerExecutor.java:54)
+2026-05-27T07:04:57.3389362Z 	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor$ExecuteTasks.call(BuildOperationFiringBuildWorkerExecutor.java:43)
+2026-05-27T07:04:57.3391906Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:210)
+2026-05-27T07:04:57.3394618Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:205)
+2026-05-27T07:04:57.3396851Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:67)
+2026-05-27T07:04:57.3398893Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:60)
+2026-05-27T07:04:57.3400928Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:167)
+2026-05-27T07:04:57.3403019Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:60)
+2026-05-27T07:04:57.3405378Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:54)
+2026-05-27T07:04:57.3407622Z 	at org.gradle.execution.BuildOperationFiringBuildWorkerExecutor.execute(BuildOperationFiringBuildWorkerExecutor.java:40)
+2026-05-27T07:04:57.3409972Z 	at org.gradle.internal.build.DefaultBuildLifecycleController.lambda$executeTasks$10(DefaultBuildLifecycleController.java:313)
+2026-05-27T07:04:57.3412063Z 	at org.gradle.internal.model.StateTransitionController.doTransition(StateTransitionController.java:266)
+2026-05-27T07:04:57.3414119Z 	at org.gradle.internal.model.StateTransitionController.lambda$tryTransition$8(StateTransitionController.java:177)
+2026-05-27T07:04:57.3416054Z 	at org.gradle.internal.work.DefaultSynchronizer.withLock(DefaultSynchronizer.java:46)
+2026-05-27T07:04:57.3417895Z 	at org.gradle.internal.model.StateTransitionController.tryTransition(StateTransitionController.java:177)
+2026-05-27T07:04:57.3420353Z 	at org.gradle.internal.build.DefaultBuildLifecycleController.executeTasks(DefaultBuildLifecycleController.java:304)
+2026-05-27T07:04:57.3422711Z 	at org.gradle.internal.build.DefaultBuildWorkGraphController$DefaultBuildWorkGraph.runWork(DefaultBuildWorkGraphController.java:220)
+2026-05-27T07:04:57.3425000Z 	at org.gradle.internal.work.DefaultWorkerLeaseService.withLocks(DefaultWorkerLeaseService.java:263)
+2026-05-27T07:04:57.3427085Z 	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:127)
+2026-05-27T07:04:57.3428982Z 	at org.gradle.composite.internal.DefaultBuildController.doRun(DefaultBuildController.java:181)
+2026-05-27T07:04:57.3430797Z 	at org.gradle.composite.internal.DefaultBuildController.access$000(DefaultBuildController.java:50)
+2026-05-27T07:04:57.3432862Z 	at org.gradle.composite.internal.DefaultBuildController$BuildOpRunnable.lambda$run$0(DefaultBuildController.java:198)
+2026-05-27T07:04:57.3434992Z 	at org.gradle.internal.operations.CurrentBuildOperationRef.with(CurrentBuildOperationRef.java:85)
+2026-05-27T07:04:57.3436965Z 	at org.gradle.composite.internal.DefaultBuildController$BuildOpRunnable.run(DefaultBuildController.java:198)
+2026-05-27T07:04:57.3438934Z 	at org.gradle.internal.concurrent.ExecutorPolicy$CatchAndRecordFailures.onExecute(ExecutorPolicy.java:64)
+2026-05-27T07:04:57.3440795Z 	at org.gradle.internal.concurrent.AbstractManagedExecutor$1.run(AbstractManagedExecutor.java:48)
+2026-05-27T07:04:57.3442857Z Caused by: org.jetbrains.kotlin.gradle.tasks.CompilationErrorException: Compilation error. See log for more details
+2026-05-27T07:04:57.3445209Z 	at org.jetbrains.kotlin.gradle.tasks.TasksUtilsKt.throwExceptionIfCompilationFailed(tasksUtils.kt:21)
+2026-05-27T07:04:57.3447195Z 	at org.jetbrains.kotlin.compilerRunner.GradleKotlinCompilerWork.run(GradleKotlinCompilerWork.kt:119)
+2026-05-27T07:04:57.3449504Z 	at org.jetbrains.kotlin.compilerRunner.GradleCompilerRunnerWithWorkers$GradleKotlinCompilerWorkAction.execute(GradleCompilerRunnerWithWorkers.kt:74)
+2026-05-27T07:04:57.3451794Z 	at org.gradle.workers.internal.DefaultWorkerServer.execute(DefaultWorkerServer.java:63)
+2026-05-27T07:04:57.3453581Z 	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$1.create(NoIsolationWorkerFactory.java:66)
+2026-05-27T07:04:57.3455590Z 	at org.gradle.workers.internal.NoIsolationWorkerFactory$1$1.create(NoIsolationWorkerFactory.java:62)
+2026-05-27T07:04:57.3457442Z 	at org.gradle.internal.classloader.ClassLoaderUtils.executeInClassloader(ClassLoaderUtils.java:100)
+2026-05-27T07:04:57.3459373Z 	at org.gradle.workers.internal.NoIsolationWorkerFactory$1.lambda$execute$0(NoIsolationWorkerFactory.java:62)
+2026-05-27T07:04:57.3460991Z 	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:44)
+2026-05-27T07:04:57.3462374Z 	at org.gradle.workers.internal.AbstractWorker$1.call(AbstractWorker.java:41)
+2026-05-27T07:04:57.3464558Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:210)
+2026-05-27T07:04:57.3467084Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$CallableBuildOperationWorker.execute(DefaultBuildOperationRunner.java:205)
+2026-05-27T07:04:57.3469303Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:67)
+2026-05-27T07:04:57.3471283Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:60)
+2026-05-27T07:04:57.3473288Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:167)
+2026-05-27T07:04:57.3475432Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.execute(DefaultBuildOperationRunner.java:60)
+2026-05-27T07:04:57.3477354Z 	at org.gradle.internal.operations.DefaultBuildOperationRunner.call(DefaultBuildOperationRunner.java:54)
+2026-05-27T07:04:57.3479156Z 	at org.gradle.workers.internal.AbstractWorker.executeWrappedInBuildOperation(AbstractWorker.java:41)
+2026-05-27T07:04:57.3481323Z 	at org.gradle.workers.internal.NoIsolationWorkerFactory$1.execute(NoIsolationWorkerFactory.java:59)
+2026-05-27T07:04:57.3483437Z 	at org.gradle.workers.internal.DefaultWorkerExecutor.lambda$submitWork$0(DefaultWorkerExecutor.java:174)
+2026-05-27T07:04:57.3485792Z 	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.runExecution(DefaultConditionalExecutionQueue.java:194)
+2026-05-27T07:04:57.3488200Z 	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.access$700(DefaultConditionalExecutionQueue.java:127)
+2026-05-27T07:04:57.3490507Z 	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner$1.run(DefaultConditionalExecutionQueue.java:169)
+2026-05-27T07:04:57.3492129Z 	at org.gradle.internal.Factories$1.create(Factories.java:31)
+2026-05-27T07:04:57.3493684Z 	at org.gradle.internal.work.DefaultWorkerLeaseService.withLocks(DefaultWorkerLeaseService.java:263)
+2026-05-27T07:04:57.3495766Z 	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:127)
+2026-05-27T07:04:57.3497792Z 	at org.gradle.internal.work.DefaultWorkerLeaseService.runAsWorkerThread(DefaultWorkerLeaseService.java:132)
+2026-05-27T07:04:57.3499991Z 	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.runBatch(DefaultConditionalExecutionQueue.java:164)
+2026-05-27T07:04:57.3502286Z 	at org.gradle.internal.work.DefaultConditionalExecutionQueue$ExecutionRunner.run(DefaultConditionalExecutionQueue.java:133)
+2026-05-27T07:04:57.3503604Z 	... 2 more
+2026-05-27T07:04:57.3503990Z 
+2026-05-27T07:04:57.3504182Z 
+2026-05-27T07:04:57.3504746Z BUILD FAILED in 1m 36s
+2026-05-27T07:04:57.3505484Z 7 actionable tasks: 7 executed
+2026-05-27T07:04:57.8189691Z === Plugin compile done (Release) ===
