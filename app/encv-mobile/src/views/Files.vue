@@ -8,7 +8,7 @@
           </ion-button>
         </ion-buttons>
         <ion-buttons slot="end">
-          <ion-button fill="clear" @click="showSideDrawer = true">
+          <ion-button fill="clear" @click="openSideDrawer()">
             <ion-icon :icon="menuOutline" slot="icon-only" />
           </ion-button>
         </ion-buttons>
@@ -44,7 +44,7 @@
       </ion-toolbar>
     </ion-header>
 
-    <ion-menu side="start" menu-id="plugin-menu" content-id="main-content" :opened="showSideDrawer" @ionDidClose="showSideDrawer = false">
+    <ion-menu side="start" menu-id="plugin-menu" content-id="main-content">
       <ion-header>
         <ion-toolbar>
           <ion-title>插件分类</ion-title>
@@ -246,6 +246,7 @@ import {
   IonToggle,
   actionSheetController,
   alertController,
+  menuController,
   IonAlert,
   IonMenu,
   IonSegment,
@@ -353,7 +354,6 @@ const tags = ref<TagInfo[]>([])
 const showRenameDialog = ref(false)
 const showTagDialog = ref(false)
 const showMoveDialog = ref(false)
-const showSideDrawer = ref(false)
 const selectedPlugin = ref<PluginMeta | null>(null)
 const selectedFile = ref<FileItem | null>(null)
 const renameValue = ref('')
@@ -901,7 +901,11 @@ async function loadTags() {
 
 function openPluginView(plugin: PluginMeta) {
   selectedPlugin.value = plugin
-  showSideDrawer.value = false
+  menuController.close()
+}
+
+async function openSideDrawer() {
+  await menuController.open('plugin-menu')
 }
 
 function getPluginIcon(name: string): string {
@@ -921,7 +925,7 @@ async function searchPluginFiles(plugin: PluginMeta): Promise<FileItem[]> {
 }
 
 async function handleTagFilter(tagName: string) {
-  showSideDrawer.value = false
+  menuController.close()
   try {
     files.value = await listFilesByTag(tagName, currentPath.value)
   } catch (e) { showToast({ message: `筛选失败: ${e}` }) }

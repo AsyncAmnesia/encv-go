@@ -362,7 +362,7 @@ export async function fetchTextPreviewExts(): Promise<Set<string>> {
       return new Set()
     }
     const data = await response.json() as TextPreviewExts
-    const all = new Set([...data.extensions, ...data.custom_extensions])
+    const all = new Set([...(data.extensions || []), ...(data.custom_extensions || [])])
     cachedTextExts = all
     return all
   } catch (err: any) {
