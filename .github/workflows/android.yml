@@ -264,7 +264,8 @@ jobs:
         if: always() && inputs.skip_plugin != true
         continue-on-error: true
         run: |
-          PLUGIN_APK=$(find app/encv-mobile/android/build -name "plugin-mpv-player-debug.apk" -type f 2>/dev/null | head -1)
+          BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
+          PLUGIN_APK=$(find app/encv-mobile/android/build -name "plugin-mpv-player-${BUILD_TYPE}.apk" -type f 2>/dev/null | head -1)
           if [ -f "$PLUGIN_APK" ]; then
             echo "=== Plugin APK size ==="
             ls -lh "$PLUGIN_APK"
