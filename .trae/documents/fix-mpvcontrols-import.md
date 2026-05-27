@@ -1,37 +1,68 @@
-# 修复 MpvControls.kt import 路径错误
+# 修复 MpvControls.kt 全部编译错误（CI 日志分析）
 
-## 问题
+## 错误清单（共 5 类 15+ 处）
 
-CI 构建失败于 `:plugin-mpv-player:compileReleaseKotlin`：
+### 错误 A: import 路径大小写（4 处）
+`androidx.compose.material.icons.Outlined` 包不存在，正确为全小写 `outlined`
 
+| 行号 | 当前（错误） | 正确 |
+|------|-------------|------|
+| L32 | `Icons.Outlined.Subtitles` | `Icons.outlined.Subtitles` |
+| L33 | `Icons.Outlined.Audiotrack` | `Icons.outlined.Audiotrack` |
+| L262 | `Icons.Outlined.Subtitles` | `Icons.outlined.Subtitles` |
+| L269 | `Icons.Outlined.Audiotrack` | `Icons.outlined.Audiotrack` |
+
+### 错误 B: 缺少 Material3 组件 import（2 处）
+新增的 `VolumeSliderRow` 使用了 `Slider` 和 `SliderDefaults` 但未 import：
+
+```kotlin
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 ```
-e: MpvControls.kt:32: Syntax error: Expecting a top level declaration.
-e: MpvControls.kt:33: Syntax error: imports are only allowed in the beginning of file.
+
+### 错误 C: 缺少 Compose Runtime import（2 处）
+新增的 `VolumeSliderRow` 使用了 `remember` 和 `mutableFloatStateOf`：
+
+```kotlin
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableFloatStateOf
 ```
+（需确认现有 import 区是否已包含这些；如已包含则忽略此项）
 
-**根因**：L32-L33 的 import 路径使用了大写 `Outlined`，但 Compose Material Icons 包名是小写 `outlined`。
+### 错误 D: AudioOnlyLayout 签名/调用不匹配
+`AudioOnlyLayout` 函数签名已添加 `volume` + `onVolumeChange` 参数，但需确认：
+- 函数定义处参数完整
+- MpvControls 中调用 AudioOnlyLayout 时传参完整（含 `volume=volume`, `onVolumeChange=onVolumeChange`）
+- AudioOnlyLayout 内部调用 `VolumeIcon` 和 `VolumeSliderRow` 存在且正确
 
-| 错误（当前） | 正确 |
-|-------------|------|
-| `androidx.compose.material.icons.Outlined.Subtitles` | `androidx.compose.material.icons.outlined.Subtitles` |
-| `androidx.compose.material.icons.Outlined.Audiotrack` | `androidx.compose.material.icons.outlined.Audiotrack` |
+### 错误 E: VolumeOff 图标引用
+`Icons.Default.VolumeOff` 在 Material Icons 中可能不存在。Compose Material Icons 的音量图标集：
+- ✅ `Icons.Default.VolumeUp`
+- ✅ `Icons.Default.VolumeDown`
+- ✅ `Icons.Default.VolumeMute`（或 `VolumeOff`）
+- 需确认 `VolumeOff` 是否可用，若不可用则替换为 `VolumeMute`
 
-同时 L262、L269 的引用 `Icons.Outlined.Subtitles` / `Icons.Outlined.Audiotrack` 也需改为 `Icons.outlined.Subtitles` / `Icons.outlined.Audiotrack`。
+## 修复步骤
 
-## 修复
+### Step 1: 修复所有 import 问题
+在文件顶部 import 区域：
+1. `Outlined` → `outlined`（2 处）
+2. 追加 `Slider`, `SliderDefaults` import（如果缺失）
+3. 追加 `remember`, `mutableFloatStateOf` import（如果缺失）
 
-**文件**: `app/encv-mobile/plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvControls.kt`
+### Step 2: 修复所有引用处的 Outlined 大小写（2 处）
+L262、L269 的 `Icons.Outlined` → `Icons.outlined`
 
-1. L32: `Icons.Outlined` → `Icons.outlined`
-2. L33: `Icons.Outlined` → `Icons.outlined`
-3. L262: `Icons.Outlined` → `Icons.outlined`
-4. L269: `Icons.Outlined` → `Icons.outlined`
+### Step 3: 确认/修复 VolumeOff 图标
+检查 `Icons.Default.VolumeOff` 是否可解析，若不行改用 `Icons.Default.VolumeMute`
 
-## 验证
-
-修复后无需本地验证（纯字符串替换），CI 应能通过 Kotlin 编译。
+### Step 4: 验证函数调用链完整性
+逐个确认：
+- `MpvControls()` → `VideoPlaybackLayout()` 参数传递完整
+- `MpvControls()` → `AudioOnlyLayout()` 参数传递完整
+- `VideoPlaybackLayout()` → `BottomBar()` / `VolumeIcon()` / `VolumeSliderRow()` 参数匹配
+- `AudioOnlyLayout()` → `VolumeIcon()` / `VolumeSliderRow()` 参数匹配
 
 ## 清理
-
 - 删除 `job_logs_extracted/`
 - 删除 `job_logs.zip`

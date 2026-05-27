@@ -28,17 +28,21 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material-icons.filled.VolumeOff
-import androidx.compose.material.icons.Outlined.Subtitles
-import androidx.compose.material.icons.Outlined.Audiotrack
+import androidx.compose.material.icons.filled.VolumeMute
+import androidx.compose.material.icons.outlined.Subtitles
+import androidx.compose.material.icons.outlined.Audiotrack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -259,14 +263,14 @@ private fun BottomBar(
             VolumeIcon(volume = volume, onClick = { onVolumeChange(if (volume > 0f) 0f else 1f) })
             IconButton(onClick = onToggleSubtitle, modifier = Modifier.size(36.dp)) {
                 Icon(
-                    imageVector = Icons.Outlined.Subtitles,
+                    imageVector = Icons.outlined.Subtitles,
                     contentDescription = "Subtitle",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             IconButton(onClick = onCycleAudio, modifier = Modifier.size(36.dp)) {
                 Icon(
-                    imageVector = Icons.Outlined.Audiotrack,
+                    imageVector = Icons.outlined.Audiotrack,
                     contentDescription = "Audio Track",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -287,7 +291,7 @@ private fun BottomBar(
 private fun VolumeIcon(volume: Float, onClick: () -> Unit) {
     IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) {
         Icon(
-            imageVector = if (volume > 0f) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+            imageVector = if (volume > 0f) Icons.Default.VolumeUp else Icons.Default.VolumeMute,
             contentDescription = if (volume > 0f) "Mute" else "Unmute",
             tint = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -304,7 +308,7 @@ private fun VolumeSliderRow(volume: Float, onVolumeChange: (Float) -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            imageVector = if (sliderVolume > 0f) Icons.Default.VolumeUp else Icons.Default.VolumeOff,
+            imageVector = if (sliderVolume > 0f) Icons.Default.VolumeUp else Icons.Default.VolumeMute,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             modifier = Modifier.size(16.dp)
