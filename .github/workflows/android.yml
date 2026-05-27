@@ -288,12 +288,12 @@ jobs:
             echo "=== Building RELEASE APK v${{ inputs.version }} ==="
 
             echo "=== Generating keystore.properties for signing ==="
-            cat > android/keystore.properties << EOF
-storeFile=${{ github.workspace }}/app/encv-mobile/keystore/release.jks
-storePassword=encv2025
-keyAlias=encvrelease
-keyPassword=encv2025
-EOF
+            {
+              echo "storeFile=${{ github.workspace }}/app/encv-mobile/keystore/release.jks"
+              echo "storePassword=encv2025"
+              echo "keyAlias=encvrelease"
+              echo "keyPassword=encv2025"
+            } > android/keystore.properties
             echo "keystore.properties created"
 
             cd android
