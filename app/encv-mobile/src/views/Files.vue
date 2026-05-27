@@ -32,6 +32,12 @@
           @ionInput="handleSearchInput"
           @ionClear="handleSearchClear"
         ></ion-searchbar>
+        <div v-if="!searchQuery" class="sort-btn-wrapper">
+          <ion-button fill="clear" size="small" @click="cycleSort">
+            <ion-icon :icon="swapVertical" slot="start"></ion-icon>
+            {{ sortLabel }}
+          </ion-button>
+        </div>
         <ion-toggle
           v-if="searchQuery"
           slot="end"
@@ -84,7 +90,7 @@
         <ion-refresher-content></ion-refresher-content>
       </ion-refresher>
 
-      <div v-if="loading || isSearching" class="loading-container">
+      <div v-if="(loading || isSearching) && !selectedPlugin" class="loading-container">
         <ion-spinner name="crescent"></ion-spinner>
         <p>{{ isSearching ? t('files.searching') : (connecting ? t('files.connecting') : t('files.loading')) }}</p>
       </div>
@@ -134,12 +140,12 @@
                 :src="thumbnailUrls[file.path]"
                 class="file-thumb"
                 loading="lazy"
-                @error="($event.target as HTMLImageElement).style.display='none'"
+                @error="onThumbError(file.path)"
               />
               <ion-icon
                 v-else
                 :icon="getFileIcon(file)"
-                :color="getFileIcon(file)"
+                :color="getFileIconColor(file)"
                 :class="{ 'thumb-fallback': isImageFile(file) }"
               ></ion-icon>
             </div>
@@ -169,20 +175,20 @@
           v-longpress="() => handleLongPress(file)"
         >
           <div slot="start" class="file-thumbnail-slot lazy-thumb-target" :data-file-path="file.path">
-            <img
-              v-if="isImageFile(file) && thumbnailUrls[file.path]"
-              :src="thumbnailUrls[file.path]"
-              class="file-thumb"
-              loading="lazy"
-              @error="($event.target as HTMLImageElement).style.display='none'"
-            />
-            <ion-icon
-              v-else
-              :icon="getFileIcon(file)"
-              :color="getFileIconColor(file)"
-              :class="{ 'thumb-fallback': isImageFile(file) }"
-            ></ion-icon>
-          </div>
+              <img
+                v-if="isImageFile(file) && thumbnailUrls[file.path]"
+                :src="thumbnailUrls[file.path]"
+                class="file-thumb"
+                loading="lazy"
+                @error="onThumbError(file.path)"
+              />
+              <ion-icon
+                v-else
+                :icon="getFileIcon(file)"
+                :color="getFileIconColor(file)"
+                :class="{ 'thumb-fallback': isImageFile(file) }"
+              ></ion-icon>
+            </div>
           <ion-label>
             <h2>{{ file.name }}</h2>
             <p v-if="searchQuery && !file.isDirectory" class="search-path">{{ file.path }}</p>
@@ -304,6 +310,7 @@ import {
   arrowForwardOutline,
   shareOutline,
   closeCircle,
+  swapVertical,
 } from 'ionicons/icons'
 import {
   listFiles,
@@ -397,6 +404,8 @@ function isImageFile(file: FileItem): boolean {
 const currentPath = ref('/')
 const loading = ref(false)
 const connecting = ref(false)
+const sortBy = ref<'name' | 'size' | 'time'>('name')
+const sortDesc = ref(false)
 
 const searchQuery = ref('')
 const searchRecursive = ref(false)
@@ -426,12 +435,38 @@ const displayFiles = computed(() => {
 })
 
 const sortedFiles = computed(() => {
-  return [...files.value].sort((a, b) => {
+  const list = [...files.value]
+  list.sort((a, b) => {
     if (a.isDirectory && !b.isDirectory) return -1
     if (!a.isDirectory && b.isDirectory) return 1
-    return a.name.localeCompare(b.name)
+    let cmp = 0
+    switch (sortBy.value) {
+      case 'name': cmp = a.name.localeCompare(b.name); break
+      case 'size': cmp = (a.size || 0) - (b.size || 0); break
+      case 'time': cmp = (Number(a.modified) || 0) - (Number(b.modified) || 0); break
+    }
+    return sortDesc.value ? -cmp : cmp
   })
+  return list
 })
+
+const sortLabel = computed(() => {
+  const map: Record<string, string> = { name: '名字', size: '大小', time: '时间' }
+  return `${map[sortBy.value]}${sortDesc.value ? '↓' : '↑'}`
+})
+
+const SORT_CYCLE: Array<{ by: 'name' | 'size' | 'time'; desc: boolean }> = [
+  { by: 'name', desc: false }, { by: 'name', desc: true },
+  { by: 'size', desc: false }, { by: 'size', desc: true },
+  { by: 'time', desc: false }, { by: 'time', desc: true },
+]
+
+function cycleSort() {
+  const current = SORT_CYCLE.findIndex(s => s.by === sortBy.value && s.desc === sortDesc.value)
+  const next = SORT_CYCLE[(current + 1) % SORT_CYCLE.length]
+  sortBy.value = next.by
+  sortDesc.value = next.desc
+}
 
 function getFileIcon(file: FileItem) {
   if (file.isDirectory) return folder
@@ -881,6 +916,10 @@ async function loadFileTagsForCurrentDir() {
   setupLazyThumbnails()
 }
 
+function onThumbError(path: string) {
+  delete thumbnailUrls.value[path]
+}
+
 function setupLazyThumbnails() {
   nextTick(() => {
     const targets = document.querySelectorAll('.lazy-thumb-target') as NodeListOf<Element>
@@ -1175,4 +1214,15 @@ function onBackendReadyWindow(event: Event) {
 }
 .thumb-fallback {
   opacity: 0.4;
+}
+.sort-btn-wrapper {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 16px 4px;
+}
+.sort-btn-wrapper ion-button {
+  --padding-start: 8px;
+  --padding-end: 8px;
+  font-size: 13px;
+  --color: var(--ion-color-medium);
 }</style>
