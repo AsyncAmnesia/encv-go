@@ -1,0 +1,7 @@
+- [x] CallFFprobeNative 同时捕获 stdout 和 stderr（stderr_file 不再为 nil）
+- [x] ffprobe 失败时错误消息包含完整 stderr 输出（非空字符串）
+- [x] combolite 插件格式已确认并修正（enabled.set(false) → enabled.set(true)）
+- [x] CI workflow 插件打包输出格式正确
+- [x] Files.vue 使用虚拟滚动组件替代全量 v-for
+- [x] useFileList 支持增量数据加载（VIRTUAL_SCROLL_CONFIG）
+- [x] 文件列表首屏 <1s 显示，滚动时不卡顿（vue-tsc + vite build 通过）

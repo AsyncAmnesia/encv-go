@@ -90,7 +90,7 @@ android {
 }
 
 packagePlugins {
-    enabled.set(false)
+    enabled.set(true)
 }
 
 dependencies {

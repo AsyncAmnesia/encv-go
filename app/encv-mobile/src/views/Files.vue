@@ -180,6 +180,64 @@
           </template>
         </div>
 
+        <template v-if="shouldUseVirtualScroll">
+          <div
+            ref="virtualizerRef"
+            class="virtual-scroll-container"
+            :style="{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }"
+          >
+            <div
+              v-for="virtualItem in virtualItems"
+              :key="displayFiles[virtualItem.index]?.path"
+              :style="{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualItem.start}px)`,
+              }"
+              class="virtual-item-wrapper"
+            >
+              <ion-item
+                :button="true"
+                @click="handleFileClick(displayFiles[virtualItem.index])"
+                v-longpress="() => handleLongPress(displayFiles[virtualItem.index])"
+              >
+                <div slot="start" class="file-thumbnail-slot lazy-thumb-target" :data-file-path="displayFiles[virtualItem.index].path">
+                  <img
+                    v-if="isImageFile(displayFiles[virtualItem.index]) && thumbnailUrls[displayFiles[virtualItem.index].path]"
+                    :src="thumbnailUrls[displayFiles[virtualItem.index].path]"
+                    class="file-thumb"
+                    loading="lazy"
+                    @error="onThumbError(displayFiles[virtualItem.index].path)"
+                  />
+                  <ion-icon
+                    v-else
+                    :icon="getFileIcon(displayFiles[virtualItem.index])"
+                    :color="getFileIconColor(displayFiles[virtualItem.index])"
+                    :class="{ 'thumb-fallback': isImageFile(displayFiles[virtualItem.index]) }"
+                  ></ion-icon>
+                </div>
+                <ion-label>
+                  <h2>{{ displayFiles[virtualItem.index].name }}</h2>
+                  <p v-if="searchQuery && !displayFiles[virtualItem.index].isDirectory" class="search-path">{{ displayFiles[virtualItem.index].path }}</p>
+                  <p v-if="!displayFiles[virtualItem.index].isDirectory && displayFiles[virtualItem.index].size">{{ formatFileSize(displayFiles[virtualItem.index].size) }}<span v-if="displayFiles[virtualItem.index].modified && !searchQuery"> · {{ formatDateTime(displayFiles[virtualItem.index].modified) }}</span></p>
+                  <p v-else-if="displayFiles[virtualItem.index].isDirectory">{{ t('files.directory') }}</p>
+                  <div v-if="!displayFiles[virtualItem.index].isDirectory && !searchQuery && getFileTags(displayFiles[virtualItem.index].path).length > 0" class="file-tag-chips">
+                    <ion-chip v-for="tag in getFileTags(displayFiles[virtualItem.index].path)" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
+                  </div>
+                </ion-label>
+                <ion-badge v-if="displayFiles[virtualItem.index].isEncrypted || getFileCategory(displayFiles[virtualItem.index].name, displayFiles[virtualItem.index].isEncrypted) === 'encrypted'" color="warning" slot="end">
+                  ENCV
+                </ion-badge>
+                <ion-button v-if="searchQuery" slot="end" fill="clear" class="open-folder-btn" @click.stop="openContainingFolder(displayFiles[virtualItem.index])">
+                  <ion-icon :icon="folderOpen" class="open-folder-icon" slot="icon-only"></ion-icon>
+                </ion-button>
+              </ion-item>
+            </div>
+          </div>
+        </template>
+
         <ion-list v-else>
           <ion-item
             v-for="file in displayFiles"
@@ -351,8 +409,10 @@ import {
   getFileIconColor,
   useFileListSort,
   sortFiles,
+  VIRTUAL_SCROLL_CONFIG,
 } from '@/composables/useFileList'
 import { vLongpress } from '@/directives/longpress'
+import { useVirtualizer } from '@tanstack/vue-virtual'
 import { isNative, requestStoragePermission, openPlayer, openExternal, getLocalFilePath } from '@/plugins/GoProcess'
 import { getExternalStreamUrl } from '@/api/encv'
 import { showToast } from '@/composables/useToast'
@@ -444,6 +504,21 @@ const displayFiles = computed(() => {
   if (searchResults.value !== null) return searchResults.value
   return sortedFiles.value
 })
+
+const shouldUseVirtualScroll = computed(() => {
+  return displayFiles.value.length >= VIRTUAL_SCROLL_CONFIG.THRESHOLD
+})
+
+const virtualizerRef = ref<HTMLElement | null>(null)
+
+const rowVirtualizer = useVirtualizer({
+  count: shouldUseVirtualScroll.value ? displayFiles.value.length : 0,
+  getScrollElement: () => virtualizerRef.value,
+  estimateSize: () => VIRTUAL_SCROLL_CONFIG.ESTIMATE_SIZE,
+  overscan: VIRTUAL_SCROLL_CONFIG.OVERSCAN,
+})
+
+const virtualItems = computed(() => rowVirtualizer.value.getVirtualItems())
 
 const sortedFiles = computed(() => {
   return sortFiles(files.value, sortBy.value, sortDesc.value)
@@ -1181,4 +1256,11 @@ function onBackendReadyWindow(event: Event) {
   --padding-end: 8px;
   font-size: 13px;
   --color: var(--ion-color-medium);
+}
+.virtual-scroll-container {
+  overflow-y: auto;
+  width: 100%;
+}
+.virtual-item-wrapper {
+  padding: 0;
 }</style>

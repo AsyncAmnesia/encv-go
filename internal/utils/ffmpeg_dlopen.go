@@ -250,13 +250,26 @@ func CallFFprobeNative(args []string) (*NativeResult, error) {
 	cStdoutPath := C.CString(stdoutPath)
 	defer C.free(unsafe.Pointer(cStdoutPath))
 
-	ret := C.call_native_run_cached(&C.g_ffprobe_handle, cLibPath, cRunSym, cResetSym, argc, &argv[0], cStdoutPath, nil)
+	stderrFile, err := os.CreateTemp("", "ffprobe_stderr_*.txt")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	stderrPath := stderrFile.Name()
+	stderrFile.Close()
+	defer os.Remove(stderrPath)
+
+	cStderrPath := C.CString(stderrPath)
+	defer C.free(unsafe.Pointer(cStderrPath))
+
+	ret := C.call_native_run_cached(&C.g_ffprobe_handle, cLibPath, cRunSym, cResetSym, argc, &argv[0], cStdoutPath, cStderrPath)
 
 	stdoutData, _ := os.ReadFile(stdoutPath)
+	stderrData, _ := os.ReadFile(stderrPath)
 
 	result := &NativeResult{
 		ExitCode: int(ret),
 		Stdout:   string(stdoutData),
+		Stderr:   string(stderrData),
 	}
 
 	if ret == -1 {
