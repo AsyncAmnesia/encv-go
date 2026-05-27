@@ -218,6 +218,7 @@ echo "=== Configuring ffmpeg ==="
     --enable-small \
     --enable-libx264 \
     --enable-gpl \
+    --disable-resource-compression \
     --pkg-config="${BUILD_DIR}/pkg-config-wrapper" \
     --extra-cflags="-fPIC -ffunction-sections -fdata-sections -DANDROID -I${X264_INSTALL}/include" \
     --extra-ldflags="-L${X264_INSTALL}/lib -lm" \
@@ -256,7 +257,7 @@ GEN_RES_DIR="${FFMPEG_SRC}/fftools/resources"
 for res_file in "$GEN_RES_DIR"/*.css "$GEN_RES_DIR"/*.html; do
     [ -f "$res_file" ] || continue
     base=$(basename "$res_file")
-    bin2c_name=$(basename "${base}" | sed 's/\.[^.]*$//' | tr '.' '_')
+    bin2c_name=$(echo "${base}" | tr '.' '_')
     if [[ "$res_file" == *.css ]]; then
         sed 's!/\\*.*\\*/!!g' "$res_file" | tr '\n' ' ' | tr -s ' ' | sed 's/^ //; s/ $$//' \
             > "${res_file}.min"
@@ -266,6 +267,16 @@ for res_file in "$GEN_RES_DIR"/*.css "$GEN_RES_DIR"/*.html; do
     fi
     echo "  ✅ Generated ${base}.c (symbol: ff_${bin2c_name}_data)"
 done
+
+echo "=== Verifying CONFIG_RESOURCE_COMPRESSION ==="
+RES_COMP=$(grep -c "^#define CONFIG_RESOURCE_COMPRESSION 1$" "${FFMPEG_SRC}/config.h" 2>/dev/null || echo "0")
+if [ "$RES_COMP" = "1" ]; then
+    echo "❌ CONFIG_RESOURCE_COMPRESSION is enabled but build script generates uncompressed resources"
+    echo "   This will cause runtime gzip decompression failures"
+    echo "   Fix: add --disable-resource-compression to FFmpeg configure"
+    exit 1
+fi
+echo "✅ CONFIG_RESOURCE_COMPRESSION is disabled (resources will be embedded uncompressed)"
 
 CFLAGS="-std=c11 -fPIC -ffunction-sections -fdata-sections -DANDROID -D_POSIX_C_SOURCE=200809L \
   -DHAVE_SYS_RESOURCE_H=1 -DHAVE_UNISTD_H=1 -DHAVE_SYS_SELECT_H=1 \
@@ -346,6 +357,8 @@ cat > "${FTOOLS_BUILD}/ffprobe.ver" << 'VEOF'
 };
 VEOF
 
+# --allow-multiple-definition: required for FFmpeg static libs which have
+# duplicate symbols (e.g. ff_log2_tab in libavutil and libavcodec)
 echo "Linking libffmpeg.so..."
 $CC $CFLAGS -shared -o "${FTOOLS_BUILD}/libffmpeg.so" \
     $FFMPEG_OBJS \
@@ -409,6 +422,18 @@ for lib in "${!REQUIRED_SYMBOLS[@]}"; do
     sym_count=$(${NM} -D "${OUTPUT_DIR}/${lib}" | grep -c "T ")
     size=$(ls -lh "${OUTPUT_DIR}/${lib}" | awk '{print $5}')
     echo "  📊 ${sym_count} text symbols, ${size}"
+done
+
+echo "=== Verifying resource symbols in libffmpeg.so ==="
+for res_sym in ff_graph_css_data ff_graph_html_data; do
+    if ${NM} "${FTOOLS_BUILD}/libffmpeg.so" 2>/dev/null | grep -q " ${res_sym}$"; then
+        echo "  ✅ $res_sym"
+    else
+        echo "  ❌ $res_sym missing from libffmpeg.so"
+        echo "     This will cause dlopen failure: cannot locate symbol \"$res_sym\""
+        echo "     Check bin2c symbol naming in Phase 2"
+        exit 1
+    fi
 done
 
 echo "=== Generating build-info.json ==="
