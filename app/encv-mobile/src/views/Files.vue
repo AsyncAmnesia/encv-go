@@ -121,33 +121,35 @@
       </template>
 
       <template v-else>
-        <div v-if="selectedPlugin">
-          <ion-toolbar>
-            <ion-buttons slot="start">
-              <ion-back-button @click="exitPluginMode()" />
-            </ion-buttons>
-            <ion-title>{{ selectedPlugin.name }} 文件</ion-title>
-          </ion-toolbar>
-          <div v-if="!pluginLoaded" class="loading-container">
-            <ion-spinner name="crescent"></ion-spinner>
-            <p>{{ t('files.loading') }}</p>
-          </div>
-          <template v-else>
+            <div class="plugin-header">
+              <div class="plugin-header-top">
+                <ion-button fill="clear" size="small" class="plugin-back-btn" @click="exitPluginMode()">
+                  <ion-icon :icon="arrowBack" slot="icon-only"></ion-icon>
+                </ion-button>
+                <span class="plugin-title">{{ selectedPlugin?.name }} 文件</span>
+                <ion-segment v-model="pluginTab" value="source" class="plugin-segment">
+                  <ion-segment-button value="source">未加密</ion-segment-button>
+                  <ion-segment-button value="container">已加密</ion-segment-button>
+                </ion-segment>
+              </div>
+              <ion-item button detail @click="showPluginFilters = !showPluginFilters" class="filter-toggle-item">
+                <ion-icon :icon="filterOutline" slot="start"></ion-icon>
+                <ion-label>筛选与排序</ion-label>
+                <ion-badge v-if="activeFilterCount > 0" slot="end" color="primary">{{ activeFilterCount }}</ion-badge>
+                <ion-badge slot="end" color="medium">{{ pluginSortLabel }}</ion-badge>
+              </ion-item>
+            </div>
+            <div v-if="!pluginLoaded" class="loading-container">
+              <ion-spinner name="crescent"></ion-spinner>
+              <p>{{ t('files.loading') }}</p>
+            </div>
+            <template v-else>
             <div v-if="pluginFiles.length === 0" class="empty-state">
               <ion-icon :icon="folderOpen" class="empty-icon"></ion-icon>
               <h3>{{ t('files.emptyDir') }}</h3>
-              <p>{{ t('settings.emptyPluginDesc', { name: selectedPlugin?.name }) || '该类型下暂无文件' }}</p>
+              <p>{{ t('settings.emptyPluginDesc', { name: selectedPlugin?.name ?? '' }) || '该类型下暂无文件' }}</p>
             </div>
             <template v-else>
-            <ion-segment v-model="pluginTab" value="source">
-              <ion-segment-button value="source">未加密</ion-segment-button>
-              <ion-segment-button value="container">已加密</ion-segment-button>
-            </ion-segment>
-            <ion-item button detail @click="showPluginFilters = !showPluginFilters">
-              <ion-icon :icon="filterOutline" slot="start"></ion-icon>
-              <ion-label>筛选</ion-label>
-              <ion-badge v-if="activeFilterCount > 0" slot="end" color="primary">{{ activeFilterCount }}</ion-badge>
-            </ion-item>
             <ion-list v-if="showPluginFilters" :inset="true">
               <ion-item>
                 <ion-label position="stacked">大小范围</ion-label>
@@ -164,7 +166,7 @@
                   <ion-button fill="clear" size="small" @click="sizeFilterMin=null;sizeFilterMax=null">清除</ion-button>
                 </div>
                 <div class="filter-chips">
-                  <ion-chip v-for="p in SIZE_PRESETS" :key="p.label" outline @click="applySizePreset(p)">{{ p.label }}</ion-chip>
+                  <ion-chip v-for="p in SIZE_PRESETS" :key="p.label" button outline @click="applySizePreset(p)">{{ p.label }}</ion-chip>
                 </div>
               </ion-item>
               <ion-item>
@@ -182,7 +184,21 @@
                   <ion-button fill="clear" size="small" @click="timeFilterFrom=null;timeFilterTo=null">清除</ion-button>
                 </div>
                 <div class="filter-chips">
-                  <ion-chip v-for="p in TIME_PRESETS" :key="p.label" outline @click="applyTimePreset(p)">{{ p.label }}</ion-chip>
+                  <ion-chip v-for="p in TIME_PRESETS" :key="p.label" button outline @click="applyTimePreset(p)">{{ p.label }}</ion-chip>
+                </div>
+              </ion-item>
+              <ion-item>
+                <ion-label position="stacked">排序方式</ion-label>
+                <div class="filter-chips">
+                  <ion-chip v-for="s in ['name', 'size', 'time'] as const" :key="s"
+                    :button="true" :outline="pluginSortBy !== s" :color="pluginSortBy === s ? 'primary' : undefined"
+                    @click="pluginSortBy = s">
+                    {{ s === 'name' ? '名称' : s === 'size' ? '大小' : '时间' }}
+                  </ion-chip>
+                </div>
+                <div class="filter-chips" style="margin-top:4px">
+                  <ion-chip :button="true" :outline="!pluginSortDesc" color="primary" @click="pluginSortDesc = false">升序 ↑</ion-chip>
+                  <ion-chip :button="true" :outline="!pluginSortDesc" color="primary" @click="pluginSortDesc = true">降序 ↓</ion-chip>
                 </div>
               </ion-item>
               <ion-item button @click="clearAllPluginFilters">
@@ -225,7 +241,6 @@
           </ion-list>
           </template>
           </template>
-        </div>
 
         <ion-list>
           <ion-item
@@ -344,7 +359,6 @@ import {
   IonSegment,
   IonSegmentButton,
   IonListHeader,
-  IonBackButton,
   IonChip,
   IonModal,
   IonInput,
@@ -1043,6 +1057,14 @@ const timeFilterFrom = ref<string | null>(null)
 const timeFilterTo = ref<string | null>(null)
 const showPluginFilters = ref(false)
 
+const pluginSortBy = ref<'name' | 'size' | 'time'>('name')
+const pluginSortDesc = ref(false)
+
+const pluginSortLabel = computed(() => {
+  const map: Record<string, string> = { name: '名称', size: '大小', time: '时间' }
+  return (map[pluginSortBy.value] || '名称') + (pluginSortDesc.value ? '↓' : '↑')
+})
+
 const SIZE_PRESETS = [
   { label: '< 1MB', max: 1024 * 1024 },
   { label: '1MB - 10MB', min: 1024 * 1024, max: 10 * 1024 * 1024 },
@@ -1086,6 +1108,8 @@ function clearAllPluginFilters() {
   sizeFilterMax.value = null
   timeFilterFrom.value = null
   timeFilterTo.value = null
+  pluginSortBy.value = 'name'
+  pluginSortDesc.value = false
 }
 const filteredPluginFiles = computed(() => {
   if (!selectedPlugin.value) return []
@@ -1117,12 +1141,12 @@ const filteredPluginFiles = computed(() => {
     if (a.isDirectory && !b.isDirectory) return -1
     if (!a.isDirectory && b.isDirectory) return 1
     let cmp = 0
-    switch (sortBy.value) {
+    switch (pluginSortBy.value) {
       case 'name': cmp = a.name.localeCompare(b.name); break
       case 'size': cmp = (a.size || 0) - (b.size || 0); break
       case 'time': cmp = (Number(a.modified) || 0) - (Number(b.modified) || 0); break
     }
-    return sortDesc.value ? -cmp : cmp
+    return pluginSortDesc.value ? -cmp : cmp
   })
   const tagMap = fileTagMap.value
   return list.map(f => ({ ...f, _tags: tagMap[f.path] || [] }))
@@ -1348,4 +1372,49 @@ ion-item {
   --padding-start: 8px;
   --padding-end: 8px;
   cursor: pointer;
+}
+.plugin-header {
+  padding: 0 4px;
+}
+.plugin-header-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px 4px;
+}
+.plugin-back-btn {
+  --padding-start: 4px;
+  --padding-end: 4px;
+  --padding-top: 4px;
+  --padding-bottom: 4px;
+  min-width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+.plugin-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ion-color-dark);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 1;
+  min-width: 0;
+}
+.plugin-segment {
+  flex-shrink: 0;
+  --segment-height: 28px;
+  margin: 0;
+}
+.plugin-segment ion-segment-button {
+  --padding-start: 10px;
+  --padding-end: 10px;
+  font-size: 12px;
+  min-height: 28px;
+  line-height: 1;
+}
+.filter-toggle-item {
+  --padding-start: 12px;
+  --padding-end: 12px;
+  --min-height: 40px;
 }</style>
