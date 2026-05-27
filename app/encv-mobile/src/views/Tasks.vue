@@ -177,20 +177,6 @@
             </ion-item>
           </ion-list>
 
-          <!-- 全局密码显示（只读） -->
-          <ion-item>
-            <ion-input
-              :model-value="newTaskPassword"
-              :label="t('tasks.globalPassword')"
-              label-placement="stacked"
-              type="password"
-              readonly
-              :clear-on-edit="false"
-            >
-              <ion-icon :icon="lockClosed" slot="end" color="medium"></ion-icon>
-            </ion-input>
-          </ion-item>
-
           <!-- 容器版本选择（仅加密时显示） -->
           <ion-item v-if="newTaskType === 'encrypt'">
             <ContainerVersionSelector v-model="newTaskVersion" />
@@ -221,7 +207,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import {
   IonPage,
   IonHeader,
@@ -620,10 +606,7 @@ function onTaskCompleted(data: { id: string; status?: string; error?: string; er
   }
 }
 
-onMounted(() => {
-  if (config.value?.password) {
-    newTaskPassword.value = config.value.password as string
-  }
+function processQueryAction() {
   if (route.query.action === 'new') {
     if (route.query.type === 'encrypt' || route.query.type === 'decrypt') {
       newTaskType.value = route.query.type as TaskType
@@ -633,13 +616,23 @@ onMounted(() => {
       sourcePathError.value = ''
     }
     showNewTaskModal.value = true
+    router.replace({ path: '/tabs/tasks', query: {} })
   }
+}
+
+onMounted(() => {
+  if (config.value?.password) {
+    newTaskPassword.value = config.value.password as string
+  }
+  processQueryAction()
   loadTasks()
   eventBus.on('task:update', onTaskUpdate)
   eventBus.on('task:progress', onTaskProgress)
   eventBus.on('task:created', onTaskCreated)
   eventBus.on('task:completed', onTaskCompleted)
 })
+
+watch(() => route.query, processQueryAction, { immediate: false })
 
 onUnmounted(() => {
   eventBus.off('task:update', onTaskUpdate)

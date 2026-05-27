@@ -418,15 +418,15 @@ if (existsSync(mainActivityPath)) {
   console.log(`  verified: 1 MainActivity class declaration ✓`)
 }
 
-// --- Copy config.mobile.json to Android assets directory ---
+// --- Copy config.user.json to Android assets directory ---
 const androidAssetsDir = join(ANDROID_DIR, 'app', 'src', 'main', 'assets')
 mkdirSync(androidAssetsDir, { recursive: true })
-const configSrc = join(__dirname, '..', 'assets', 'config.mobile.json')
+const configSrc = join(__dirname, '..', '..', '..', 'config.user.json')
 if (existsSync(configSrc)) {
-  copyFileSync(configSrc, join(androidAssetsDir, 'config.mobile.json'))
-  console.log('  overlay: config.mobile.json → Android assets')
+  copyFileSync(configSrc, join(androidAssetsDir, 'config.user.json'))
+  console.log('  overlay: config.user.json → Android assets')
 } else {
-  console.error('  WARNING: assets/config.mobile.json not found')
+  console.error('  WARNING: config.user.json not found at project root')
 }
 
 // --- Debug-only AndroidManifest.xml: enable Logcat floating + notify entries ---

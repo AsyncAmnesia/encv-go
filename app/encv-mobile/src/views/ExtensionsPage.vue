@@ -111,6 +111,7 @@ import {
   IonIcon,
   IonSpinner,
   alertController,
+  modalController,
 } from '@ionic/vue'
 import {
   filmOutline,
@@ -123,6 +124,8 @@ import {
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { Capacitor } from '@capacitor/core'
+import { GoProcess, isNative } from '@/plugins/GoProcess'
+import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const { t } = useI18n()
 
@@ -141,7 +144,7 @@ const installError = ref('')
 const isInstalling = ref(false)
 
 function isNativePlatform(): boolean {
-  return Capacitor.isNativePlatform()
+  return isNative()
 }
 
 onMounted(async () => {
@@ -183,23 +186,42 @@ async function loadExtensions() {
 }
 
 async function handleInstallFromFile() {
-  if (!Capacitor.isNativePlatform()) return
+  if (!isNativePlatform()) return
+
+  const modal = await modalController.create({
+    component: FilePickerModal,
+    componentProps: { mode: 'file', initialPath: '/storage/emulated/0' },
+  })
+  await modal.present()
+  const { data, role } = await modal.onDidDismiss<{ path: string; name: string }>()
+  if (role !== 'select' || !data?.path) return
+
+  const apkPath = data.path
+  if (!apkPath.endsWith('.apk')) {
+    installError.value = t('extensions.notApkFile')
+    return
+  }
 
   isInstalling.value = true
   installError.value = ''
 
   try {
-    const alert = await alertController.create({
-      header: t('extensions.installFromLocal'),
-      message:
-        '请将 MPV 播放器扩展的 .apk 文件传到手机，然后通过此功能安装。\n\nCI 构建产物位于:\nbuild/outputs/plugin-apks/debug/',
-      buttons: ['确定'],
-    })
-    await alert.present()
+    const result = await GoProcess.installPlugin({ apkPath })
+    if (result.success) {
+      const alert = await alertController.create({
+        header: t('extensions.installSuccess'),
+        message: `${data.name}\n${t('extensions.installHint')}`,
+        buttons: [t('common.confirm')],
+      })
+      await alert.present()
+    } else {
+      installError.value = t('extensions.installFailed')
+    }
   } catch (e: any) {
     installError.value = e.message || t('extensions.installFailed')
   } finally {
     isInstalling.value = false
+    await loadExtensions()
   }
 }
 

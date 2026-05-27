@@ -61,14 +61,15 @@
 
 这不是单一问题，而是一条 **4 层 Bug 链**，导致安装 APP 后"大量配置为空"且 WebDAV 永远显示已启用：
 
-#### 第 1 层：Asset 文件名不匹配
+#### 第 1 层：构建脚本复制了错误的配置文件
 
-| 环节 | 实际文件名 | 期望文件名 |
-|------|-----------|-----------|
-| 构建脚本 [post-cap-sync.mjs:424](app/encv-mobile/scripts/post-cap-sync.mjs#L424) 复制到 assets | `config.mobile.json` | — |
-| Kotlin [EncvGoService.kt:411](app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt#L411) 从 assets 读取 | 寻找 `config.user.json` | ❌ **找不到！** |
+| 环节 | 实际行为 | 正确行为 |
+|------|---------|---------|
+| [post-cap-sync.mjs:424](app/encv-mobile/scripts/post-cap-sync.mjs#L424) | 复制 `assets/config.mobile.json` → assets | 应复制 `config.user.json` → assets |
+| 产物文件 | `android/app/src/main/assets/config.mobile.json`（**错误产物**） | 应为 `config.user.json` |
+| [EncvGoService.kt:411](app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt#L411) 从 assets 读取 | 寻找 `config.user.json` | ✅ 名称正确，但文件不存在 |
 
-结果：`copyDefaultConfig()` 抛异常 → 走 `writeFallbackConfig()` 写出一个**极度残缺的配置**
+结果：`copyDefaultConfig()` 找不到 `config.user.json` → 抛异常 → 走 `writeFallbackConfig()` 写出一个**极度残缺的配置**
 
 #### 第 2 层：Fallback 配置严重缺失
 
@@ -89,11 +90,11 @@
 
 由于 fallback 没有 webdav 键，Go `Load()` 的 `json.Unmarshal` 不会覆盖 → **DefaultConfig 的值保留** → WebDAV 永远启用。
 
-#### 第 4 层：config.mobile.json 缺少 mobile 段 + 同样硬编码启用 WebDAV
+#### 第 4 层：config.mobile.json 是错误产物（应删除）
 
-即使修复了第 1 层文件名问题，assets 中的 [config.mobile.json](app/encv-mobile/android/app/src/main/assets/config.mobile.json) 也有两个问题：
-1. **`"root": "/webdav/"`** —— 同样硬编码启用
-2. **缺少 `"mobile"` 段** —— 导致 Go `Load()` 中 L142 的 ENCV_MOBILE 路径修正被跳过（`cfg.Mobile != nil` 为 false）
+assets 中的 `config.mobile.json` 存在两个问题：
+1. 它是**多余的**——项目规则明确"不得创建独立的 config.mobile.json 或其他平台特定配置模板"
+2. 即使它被正确加载，`"root": "/webdav/"` 同样硬编码启用 WebDAV，且缺少 `"mobile"` 段
 
 ### 修复方案（按依赖顺序）
 
@@ -101,30 +102,27 @@
 - [config.go](internal/config/config.go)：`DefaultConfig()` 设置 `Root: ""`, `Dir: ""`（默认禁用）
 - 这一步单独就能解决 WebDAV 硬编码启用问题（即使上层配置全错，默认值也是禁用）
 
-#### Step B：修复 Asset 文件名不匹配
-- [post-cap-sync.mjs](app/encv-mobile/scripts/post-cap-sync.mjs)：确认复制产物名为 `config.user.json`（与 Kotlin 读取一致），或者 Kotlin 改读 `config.mobile.json`
-- **推荐改 Kotlin 侧**：因为 assets 里可以有多个配置文件，Kotlin 应该明确读 `config.mobile.json`
-- [EncvGoService.kt](app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt) L411：`assets.open("config.user.json")` → `assets.open("config.mobile.json")`
+#### Step B：移除 config.mobile.json，改用 config.user.json
+- **删除** `app/encv-mobile/assets/config.mobile.json`（如果存在）
+- **删除** `app/encv-mobile/android/app/src/main/assets/config.mobile.json`
+- [post-cap-sync.mjs](app/encv-mobile/scripts/post-cap-sync.mjs) L421-430：将复制目标从 `config.mobile.json` 改为项目根目录的 `config.user.json`，产物名为 `config.user.json`
+- Kotlin 侧无需改动（已经读 `config.user.json` ✅）
 
-#### Step C：补全 config.mobile.json
-- [config.mobile.json](app/encv-mobile/android/app/src/main/assets/config.mobile.json)：
-  - `"webdav": {"root": "", "dir": "", ...}` （默认禁用）
-  - 添加 `"mobile"` 段：`{"server_dir": "/storage/emulated/0", "output_path": "/storage/emulated/0/encv-output", "webdav_dir": ""}`
-
-#### Step D：补全 Fallback 配置 + Merge 逻辑
+#### Step C：补全 Fallback 配置 + Merge 逻辑
 - [EncvGoService.kt](app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt) `writeFallbackConfig()`：补全 `webdav`、`admin`、`proxy`、`default_container_version`、`recover` 字段
 - [EncvGoService.kt](app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt) `mergeConfigDefaults()`：补充 `webdav`、`admin`、`proxy`、`default_container_version`、`recover` 的合并逻辑
 
-#### Step E：路由冲突检测
+#### Step D：路由冲突检测
 - [server.go](internal/server/server.go)：在 WebDAV 初始化前（L103 块开头）添加路由冲突检测
 - 冲突时 fatal error（启动失败），不是 silent continue
 
 ### 修改文件清单
-| 文件 | 改动 |
+| 文件 | 操作 |
 |------|------|
 | [internal/config/config.go](internal/config/config.go) | `DefaultConfig()` Root="", Dir="" |
-| [android/.../EncvGoService.kt](app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt) | 读 `config.mobile.json`；补全 fallback 和 merge |
-| [android/.../assets/config.mobile.json](app/encv-mobile/android/app/src/main/assets/config.mobile.json) | root=""; 补充 mobile 段 |
+| [app/encv-mobile/scripts/post-cap-sync.mjs](app/encv-mobile/scripts/post-cap-sync.mjs) | 复制 `config.user.json`（非 config.mobile.json） |
+| [app/encv-mobile/android/app/src/main/assets/config.mobile.json](app/encv-mobile/android/app/src/main/assets/config.mobile.json) | **删除** |
+| [android/.../EncvGoService.kt](app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt) | 补全 fallback + merge |
 | [internal/server/server.go](internal/server/server.go) | 路由冲突检测 |
 | [internal/server/mobile_api.go](internal/server/mobile_api.go) | 无需改动 |
 

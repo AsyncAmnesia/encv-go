@@ -88,8 +88,8 @@ func DefaultConfig() *Config {
 		DefaultContainerVersion: 4,
 		Server:     types.HttpServer{Port: 1999, Dir: "./"},
 		Webdav: types.WebdavServer{
-			Root: "/webdav/",
-			Dir:  "./output",
+			Root: "",
+			Dir:  "",
 		},
 		Proxy: types.OpenlistProxyServer{
 			DisableSignatureVerification: false,
