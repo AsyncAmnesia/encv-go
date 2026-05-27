@@ -1,101 +1,158 @@
-# 修复 CI 构建失败：PlayerOverlayManager 类缺失
+# 修复 CI 构建：创建 PlayerOverlayManager.kt（完整设计）
 
-## 问题
+## CI 日志结论
 
-CI 构建日志显示 **Kotlin 编译错误**：
+**FFmpeg 构建已通过** ✅ — P1/P2/P3 全部生效
 
-```
-e: GoProcessPlugin.kt:194:13 Unresolved reference 'PlayerOverlayManager'
-e: GoProcessPlugin.kt:208:13 Unresolved reference 'PlayerOverlayManager'
-e: MainActivity.kt:64:9   Unresolved reference 'PlayerOverlayManager'
-e: MainActivity.kt:73:13 Unresolved reference 'PlayerOverlayManager'
-e: MainActivity.kt:74:13 Unresolved reference 'PlayerOverlayManager'
+**唯一阻塞错误**：Kotlin 编译 — `PlayerOverlayManager` 类缺失（5 处引用）
 
-FAILURE: Build failed with an exception
-Execution failed for task ':app:compileReleaseKotlin'.
-```
+## 完整架构分析
 
-**FFmpeg 构建已通过**（`-Wl,-u` + version script 修复生效）：
-```
-✅ ffprobe_run    ✅ ffprobe_reset    📊 2 text symbols, 4.1M
-✅ ffmpeg_run     ✅ ffmpeg_reset     📊 2 text symbols, 4.4M
-```
-
-## 根因
-
-`PlayerOverlayManager` 类被 5 处引用但**从未创建**。它是一个 singleton 管理器，负责在 `MainActivity` 上以 overlay 方式嵌入播放器（而非启动新 Activity）。
-
-### 调用点分析
-
-| 文件 | 行为 | 调用 | 用途 |
-|------|------|------|------|
-| [GoProcessPlugin.kt:194](file:///workspace/app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt#L194) | `openPlayer()` | `showOverlay(activity, filePath, name, mimeType, isExternal)` | 在主 Activity 上内嵌显示播放器 |
-| [GoProcessPlugin.kt:208](file:///workspace/app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt#L208) | `closePlayer()` | `hideOverlay()` | 关闭播放器 overlay |
-| [MainActivity.kt:64](file:///workspace/app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt#L64) | `onDestroy()` | `hideOverlay()` | Activity 销毁时清理 |
-| [MainActivity.kt:73](file:///workspace/app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt#L73) | `onBackPressed()` | `isOverlayShowing()` | 拦截返回键 |
-| [MainActivity.kt:74](file:///workspace/app/encv-go/mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt#L74) | `onBackPressed()` | `hideOverlay()` | 返回键关闭 overlay |
-
-### Player 系统架构（已有）
+### 两种启动路径 + 三种播放模式
 
 ```
-PlayerEntry (入口)
-├── mpv-plugin → MpvPlayerActivity (独立 Activity)
-├── external → 系统外部播放器
-└── artplayer → PlayerActivityCapacitor (独立 Activity)
-
-PlayerOverlayManager (新增，内嵌模式)
-└── 在 MainActivity 上以 Fragment/View 方式内嵌 ArtPlayer WebView
+Go 后端调用 openPlayer()
+    │
+    ├── activity 是 MainActivity?
+    │       │
+    │       ├── YES → PlayerOverlayManager.showOverlay()
+    │       │              │
+    │       │              ├── 用户选择 artplayer → bridge.webView.loadUrl(#/player) ← 真正的 overlay
+    │       │              ├── 用户选择 mpv      → PlayerEntry.startMpvPlayer() (MpvPlayerActivity)
+    │       │              └── 用户选择 external  → PlayerEntry.openExternal() (系统播放器)
+    │       │
+    │       └── NO  → PlayerEntry.play() (独立 Activity)
+    │
+    Go 后端调用 closePlayer()
+        └── PlayerOverlayManager.hideOverlay()
+               ├── artplayer: webView.history.back()
+               ├── mpv: finish MpvPlayerActivity (如果还在)
+               └── external: 标记状态即可
 ```
 
-## 修复方案
+### OverlayManager 的职责（不只是"WebView overlay"）
 
-创建 `PlayerOverlayManager.kt`，实现 singleton 管理 overlay 的显示/隐藏。
+它是一个**播放器会话生命周期管理器**：
+
+| 方法 | artplayer | mpv | external |
+|------|-----------|-----|----------|
+| `showOverlay()` | WebView 导航 | startActivity(MpvPlayer) | startActivity(外部) |
+| `hideOverlay()` | history.back() | 无操作（Activity 自管） | 标记状态 |
+| `isOverlayShowing()` | true/false | true/false | true/false |
+
+**为什么 mpv/external 也走 OverlayManager？**
+- 统一的 `showing` 状态供 `MainActivity.onBackPressed()` 判断是否拦截返回键
+- 统一的 `closePlayer()` 入口供 Go 后端调用
+- 未来可扩展：如需在 mpv 播放时显示自定义 UI 浮层
+
+## 实现方案
 
 ### 新建文件
 
-**路径**：`app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerOverlayManager.kt`
-
-**设计要点**：
-
-1. **Singleton 模式** — `getInstance()` 
-2. **showOverlay()** — 使用 `PlayerEntry.play()` 的逻辑但在当前 Activity 上以 Fragment/Dialog 方式嵌入，或简化为启动 `PlayerActivityCapacitor` 并用 `startActivityForResult` 管理
-3. **hideOverlay()** — 关闭 overlay
-4. **isOverlayShowing()** — 返回当前状态
-5. **与 MainActivity 生命周期联动** — 已有 `onDestroy`/`onBackPressed` 钩子
-
-**最小可行实现**：由于已有完整的 `PlayerEntry` → `PlayerActivityCapacitor` 路径，`PlayerOverlayManager` 可以封装为一个轻量级管理器——内部使用 Fragment 容器加载 player WebView，或退化为 `startActivityForResult` 模式。
-
-### 实现策略（推荐）
-
-考虑到项目已有 `PlayerActivityCapacitor`（BridgeActivity + WebView），最简方案是：
+**路径**：`android/app/src/main/java/com/encvgo/app/PlayerOverlayManager.kt`
 
 ```kotlin
+package com.encvgo.app
+
+import android.app.Activity
+import android.util.Log
+import com.getcapacitor.Bridge
+
 class PlayerOverlayManager private constructor() {
-    var isShowing = false
+    private var showing = false
         private set
+    private var currentMode = ""
     
     fun showOverlay(activity: Activity, filePath: String, name: String, mimeType: String, isExternal: Boolean) {
-        // 通过 PlayerEntry 启动内嵌播放器
-        // 使用 Fragment 或 DialogFragment 在 activity 上叠加
-        isShowing = true
+        val mainActivity = activity as? MainActivity ?: run {
+            Log.w(TAG, "showOverlay: not MainActivity, falling back to PlayerEntry")
+            PlayerEntry.play(activity, filePath, name, mimeType, isExternal)
+            showing = true
+            return
+        }
+        
+        val prefs = mainActivity.getSharedPreferences(PREFS_NAME, Activity.MODE_PRIVATE)
+        val rawMode = prefs.getString(PREF_KEY_VIDEO_PLAYER, "artplayer") ?: "artplayer"
+        currentMode = if (rawMode == "mpv") "mpv-plugin" else rawMode
+        
+        Log.i(TAG, "showOverlay: mode=$currentMode filePath=$filePath")
+        
+        when (currentMode) {
+            "mpv-plugin" -> {
+                PlayerEntry.play(mainActivity, filePath, name, mimeType, isExternal)
+                showing = true
+            }
+            "external" -> {
+                PlayerEntry.play(mainActivity, filePath, name, mimeType, true)
+                showing = true
+            }
+            else -> {
+                navigateToArtPlayer(mainActivity, filePath, name)
+                showing = true
+            }
+        }
     }
     
     fun hideOverlay() {
-        // 移除 overlay
-        isShowing = false
+        if (!showing) return
+        
+        when (currentMode) {
+            "artplayer", "" -> {
+                try {
+                    currentActivity?.let { act ->
+                        (act as? MainActivity)?.bridge?.webView?.loadUrl(
+                            "javascript:window.history.back()"
+                        )
+                    }
+                } catch (_: Exception) {}
+            }
+            else -> {}
+        }
+        
+        showing = false
+        currentActivity = null
+        currentMode = ""
     }
     
-    fun isOverlayShowing(): Boolean = isShowing
+    fun isOverlayShowing(): Boolean = showing
     
     companion object {
+        private const val TAG = "PlayerOverlayMgr"
+        private const val PREFS_NAME = "encv_player_prefs"
+        private const val PREF_KEY_VIDEO_PLAYER = "video_player"
         @Volatile private var instance: PlayerOverlayManager? = null
+        private var currentActivity: Activity? = null
+        
         fun getInstance(): PlayerOverlayManager =
             instance ?: synchronized(this) { instance ?: PlayerOverlayManager().also { instance = it } }
     }
+    
+    private fun navigateToArtPlayer(activity: MainActivity, filePath: String, fileName: String) {
+        currentActivity = activity
+        val bridge = activity.bridge ?: run {
+            Log.e(TAG, "navigateToArtPlayer: bridge is null")
+            return
+        }
+        val playerUrl = buildPlayerUrl(bridge, filePath, fileName)
+        Log.i(TAG, "navigateToArtPlayer: $playerUrl")
+        try {
+            bridge.webView.loadUrl(playerUrl)
+        } catch (e: Exception) {
+            Log.e(TAG, "navigateToArtPlayer failed", e)
+        }
+    }
+}
+
+private fun buildPlayerUrl(bridge: Bridge, filePath: String, fileName: String): String {
+    val localUrl = bridge.localServer?.url()
+    if (localUrl != null) {
+        val encodedPath = java.net.URLEncoder.encode(filePath, "UTF-8")
+        val encodedName = java.net.URLEncoder.encode(fileName, "UTF-8")
+        return "${localUrl}#/player?path=${encodedPath}&name=${encodedName}"
+    }
+    return "#/player"
 }
 ```
-
-具体实现细节需参考项目中 Fragment/WebView 复用的现有模式。
 
 ## 修改清单
 
@@ -103,11 +160,10 @@ class PlayerOverlayManager private constructor() {
 |------|------|
 | **新建** | `android/app/src/main/java/com/encvgo/app/PlayerOverlayManager.kt` |
 
-仅新建 1 个文件，不修改任何现有文件。
+仅新建 1 个文件，零修改现有代码。
 
 ## 清理
 
 完成后删除：
 - `/workspace/job_logs/` 目录
 - `/workspace/job_logs.zip`
-- `/workspace/.trae/documents/job_logs.zip`
