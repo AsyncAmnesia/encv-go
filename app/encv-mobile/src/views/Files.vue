@@ -138,6 +138,7 @@
               <h3>{{ t('files.emptyDir') }}</h3>
               <p>{{ t('settings.emptyPluginDesc', { name: selectedPlugin?.name }) || '该类型下暂无文件' }}</p>
             </div>
+            <template v-else>
             <ion-segment v-model="pluginTab" value="source">
               <ion-segment-button value="source">未加密</ion-segment-button>
               <ion-segment-button value="container">已加密</ion-segment-button>
@@ -175,6 +176,7 @@
               <ion-label>无匹配文件</ion-label>
             </ion-item>
           </ion-list>
+          </template>
           </template>
         </div>
 
