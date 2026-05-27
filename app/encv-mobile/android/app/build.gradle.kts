@@ -27,6 +27,8 @@ android {
         ndk {
             abiFilters += setOf("arm64-v8a")
         }
+
+        buildConfigField("String", "BUGLY_APP_ID", "\"${System.getenv("BUGLY_APP_ID") ?: ""}\"")
     }
 
     buildTypes {
@@ -87,6 +89,7 @@ dependencies {
     implementation(libs.kotlin.stdlib)
     debugImplementation(libs.logcat)
     implementation(libs.okhttp)
+    implementation(libs.bugly.crashreport)
 
     implementation(libs.combolite.core)
     implementation(platform(libs.compose.bom))

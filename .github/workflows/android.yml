@@ -278,6 +278,8 @@ jobs:
 
       # === Build ===
       - name: Build ${{ inputs.version && 'Release' || 'Debug' }} APK
+        env:
+          BUGLY_APP_ID: ${{ secrets.BUGLY_APP_ID }}
         run: |
           cd app/encv-mobile
 

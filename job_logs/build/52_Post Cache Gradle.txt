@@ -1,8 +1,0 @@
-﻿2026-05-27T13:12:54.1813405Z Post job cleanup.
-2026-05-27T13:12:54.3328899Z [command]/usr/bin/tar --posix -cf cache.tzst --exclude cache.tzst -P -C /home/runner/work/encv-go/encv-go --files-from manifest.txt --use-compress-program zstdmt
-2026-05-27T13:12:59.6197719Z Sent 0 of 941812995 (0.0%), 0.0 MBs/sec
-2026-05-27T13:13:00.6202309Z Sent 0 of 941812995 (0.0%), 0.0 MBs/sec
-2026-05-27T13:13:01.6227581Z Sent 539159811 of 941812995 (57.2%), 171.2 MBs/sec
-2026-05-27T13:13:02.6224951Z Sent 874704131 of 941812995 (92.9%), 208.3 MBs/sec
-2026-05-27T13:13:02.7300027Z Sent 941812995 of 941812995 (100.0%), 218.5 MBs/sec
-2026-05-27T13:13:02.9582239Z Cache saved with key: gradle-3d8e85a5ae164bd66219e5994f61a05e9b6302828d19a66ccd44acc217caae4f
