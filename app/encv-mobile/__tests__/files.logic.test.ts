@@ -8,6 +8,7 @@ import {
   cycleSortState,
   sortFiles,
   SORT_CYCLE,
+  VIRTUAL_SCROLL_CONFIG,
 } from '@/composables/useFileList'
 import type { FileItem } from '@/api/encv'
 import { folder, videocam, musicalNotes, image, lockClosed, documentText } from 'ionicons/icons'
@@ -290,5 +291,105 @@ describe('Edge cases - isImageFile', () => {
 
   it('file named only extension (e.g. ".jpg") returns true', () => {
     expect(isImageFile(makeFile({ name: '.jpg' }))).toBe(true)
+  })
+})
+
+describe('VIRTUAL_SCROLL_CONFIG', () => {
+  it('should have correct threshold value', () => {
+    expect(VIRTUAL_SCROLL_CONFIG.THRESHOLD).toBe(200)
+  })
+
+  it('should have positive estimate size', () => {
+    expect(VIRTUAL_SCROLL_CONFIG.ESTIMATE_SIZE).toBeGreaterThan(0)
+  })
+
+  it('should have reasonable overscan value', () => {
+    expect(VIRTUAL_SCROLL_CONFIG.OVERSCAN).toBeGreaterThanOrEqual(1)
+    expect(VIRTUAL_SCROLL_CONFIG.OVERSCAN).toBeLessThanOrEqual(20)
+  })
+})
+
+describe('sortFiles - stress test with large dataset', () => {
+  function generateFiles(n: number): FileItem[] {
+    return Array.from({ length: n }, (_, i) => ({
+      name: `file_${String(i).padStart(5, '0')}.txt`,
+      path: `/file_${String(i).padStart(5, '0')}.txt`,
+      isDirectory: false,
+      size: Math.floor(Math.random() * 1000000),
+      modified: `${1000000 + i}`,
+    }))
+  }
+
+  it('sorts 5000 files by name without crashing', () => {
+    const files = generateFiles(5000)
+    const start = Date.now()
+    const result = sortFiles(files, 'name', false)
+    const elapsed = Date.now() - start
+
+    expect(result.length).toBe(5000)
+    expect(elapsed).toBeLessThan(500, 'sorting 5000 files should take < 500ms')
+
+    // 验证排序正确性
+    for (let i = 1; i < result.length; i++) {
+      expect(result[i - 1].name <= result[i].name).toBe(true)
+    }
+  })
+
+  it('sorts 5000 files with mixed dirs and files (dirs first)', () => {
+    const files: FileItem[] = []
+    for (let i = 0; i < 5000; i++) {
+      if (i % 10 === 0) {
+        files.push(makeFile({ name: `dir_${i}`, isDirectory: true }))
+      } else {
+        files.push(makeFile({ name: `file_${i}` }))
+      }
+    }
+
+    const result = sortFiles(files, 'name', false)
+
+    // 找到第一个非目录的位置
+    let firstNonDir = result.length
+    for (let i = 0; i < result.length; i++) {
+      if (!result[i].isDirectory) {
+        firstNonDir = i
+        break
+      }
+    }
+
+    // 所有目录应在非目录之前
+    for (let i = 0; i < firstNonDir; i++) {
+      expect(result[i].isDirectory).toBe(true)
+    }
+    for (let i = firstNonDir; i < result.length; i++) {
+      expect(result[i].isDirectory).toBe(false)
+    }
+  })
+})
+
+describe('sortFiles - unicode stability', () => {
+  it('handles CJK filenames correctly', () => {
+    const files: FileItem[] = [
+      makeFile({ name: '中文文件.txt' }),
+      makeFile({ name: '日本語.doc' }),
+      makeFile({ name: '한국어.pdf' }),
+      makeFile({ name: 'alpha.txt' }),
+    ]
+    const result = sortFiles(files, 'name', false)
+    // alpha (ASCII) should come before CJK in most collations
+    expect(result[0].name).toBe('alpha.txt')
+    expect(result.length).toBe(4)
+  })
+
+  it('handles emoji in filenames without crashing', () => {
+    const files: FileItem[] = [
+      makeFile({ name: '🎵 song.mp3' }),
+      makeFile({ name: '📷 photo.jpg' }),
+      makeFile({ name: '🎬 movie.mp4' }),
+    ]
+    const result = sortFiles(files, 'name', false)
+    expect(result.length).toBe(3)
+    // Just verify no crash and order is stable
+    const result2 = sortFiles(files, 'name', false)
+    expect(result.map(f => f.name)).toEqual(result2.map(f => f.name))
   })
 })

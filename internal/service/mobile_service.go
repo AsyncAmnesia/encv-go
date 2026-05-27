@@ -26,6 +26,14 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
+type DirReader interface {
+	ReadDir(name string) ([]fs.DirEntry, error)
+}
+
+type ContainerDetector interface {
+	DetectContainer(path string) (interface{}, error)
+}
+
 type ForbiddenError struct{ Err error }
 
 func (e *ForbiddenError) Error() string { return e.Err.Error() }
@@ -72,6 +80,10 @@ type MobileService struct {
 	readerService  *service.ReaderService
 	contentHandler *handler.ContentHandler
 	chunkNamers    []namer.ChunkNamer
+
+	// --- 可选依赖注入（用于测试） ---
+	dirReader        DirReader          // nil = 使用 os.ReadDir
+	containerDetector ContainerDetector  // nil = 使用 detector.DetectContainer
 }
 
 func NewMobileService(servingDir string, cfg *config.Config) *MobileService {
@@ -95,7 +107,7 @@ func (s *MobileService) ListFiles(queryPath string) ([]FileInfo, error) {
 		return nil, &ForbiddenError{Err: err}
 	}
 
-	entries, err := os.ReadDir(absPath)
+	entries, err := s.readDir(absPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, &NotFoundError{Err: err}
@@ -135,7 +147,7 @@ func (s *MobileService) ListFiles(queryPath string) ([]FileInfo, error) {
 		isEncrypted := false
 		if !entry.IsDir() {
 			entryAbsPath := filepath.Join(absPath, entry.Name())
-			if _, detectErr := detector.DetectContainer(entryAbsPath); detectErr == nil {
+			if s.detectContainer(entryAbsPath) {
 				isEncrypted = true
 			}
 		}
@@ -202,7 +214,7 @@ func (s *MobileService) ReadFileContent(queryPath string) (*FileContentResult, e
 		return nil, &BadRequestError{Err: errors.New("path is a directory")}
 	}
 
-	if _, detectErr := detector.DetectContainer(absPath); detectErr == nil {
+	if s.detectContainer(absPath) {
 		return nil, &BadRequestError{Err: errors.New("is_encv_container: use /api/file/info endpoint for metadata")}
 	}
 
@@ -291,7 +303,7 @@ func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
 
 	isContainer := false
 	if !info.IsDir() {
-		if _, detectErr := detector.DetectContainer(absPath); detectErr == nil {
+		if s.detectContainer(absPath) {
 			isContainer = true
 		}
 	}
@@ -538,6 +550,22 @@ func isPermissionError(err error) bool {
 		}
 	}
 	return false
+}
+
+func (s *MobileService) readDir(path string) ([]fs.DirEntry, error) {
+	if s.dirReader != nil {
+		return s.dirReader.ReadDir(path)
+	}
+	return os.ReadDir(path)
+}
+
+func (s *MobileService) detectContainer(path string) bool {
+	if s.containerDetector != nil {
+		_, err := s.containerDetector.DetectContainer(path)
+		return err == nil
+	}
+	_, err := detector.DetectContainer(path)
+	return err == nil
 }
 
 func isValidUTF8(data []byte) bool {
@@ -1013,7 +1041,7 @@ func (s *MobileService) StreamExternalFile(w http.ResponseWriter, r *http.Reques
 		return &BadRequestError{Err: errors.New("path is a directory")}
 	}
 
-	if _, detectErr := detector.DetectContainer(absPath); detectErr == nil {
+	if s.detectContainer(absPath) {
 		slog.Info("StreamExternalFile: detected ENCV container, serving decrypted", "path", absPath)
 		if s.readerService == nil || s.contentHandler == nil {
 			slog.Error("StreamExternalFile: encrypted file detected but dependencies not initialized")

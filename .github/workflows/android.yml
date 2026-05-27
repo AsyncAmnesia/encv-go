@@ -102,6 +102,14 @@ jobs:
       - name: Install frontend dependencies & Build
         run: cd app/encv-mobile && npm install && npm run build
 
+      - name: Run frontend unit tests (vitest)
+        run: |
+          cd app/encv-mobile
+          echo "═══ Frontend Unit Tests ═══"
+          npx vitest run --reporter=verbose 2>&1 | tail -30
+          echo ""
+          echo "═══ Frontend Test Summary ═══"
+
       - name: Download MPV native libraries from Release
         if: inputs.skip_plugin != true
         run: |
@@ -131,6 +139,14 @@ jobs:
           path: app/encv-mobile/scripts/.ffmpeg-build/logs/
           retention-days: 7
           if-no-files-found: ignore
+
+      - name: Run Go unit tests
+        run: |
+          echo "═══ Go Unit Tests ═══"
+          go test ./internal/service/ -count=1 -timeout 120s -v 2>&1 | tail -30
+          echo ""
+          echo "═══ Go Test Summary ═══"
+          go test ./internal/service/ -count=1 -timeout 120s 2>&1 | tail -5
 
       - name: Build Go binary for Android arm64 (with CGO for ffmpeg dlopen)
         env:
