@@ -1,0 +1,139 @@
+﻿2026-05-27T19:20:20.0660719Z ##[group]Run if [ -n "1.0.1" ]; then
+2026-05-27T19:20:20.0661175Z [36;1mif [ -n "1.0.1" ]; then[0m
+2026-05-27T19:20:20.0662271Z [36;1m  APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk/release -name "*.apk" ! -name "*-unsigned*" -type f | head -1)[0m
+2026-05-27T19:20:20.0662953Z [36;1melse[0m
+2026-05-27T19:20:20.0663388Z [36;1m  APK_PATH=$(find app/encv-mobile/android/app/build/outputs/apk/debug -name "*.apk" -type f | head -1)[0m
+2026-05-27T19:20:20.0663874Z [36;1mfi[0m
+2026-05-27T19:20:20.0664074Z [36;1mif [ -n "$APK_PATH" ]; then[0m
+2026-05-27T19:20:20.0664334Z [36;1m  echo "=== APK size ==="[0m
+2026-05-27T19:20:20.0664581Z [36;1m  ls -lh "$APK_PATH"[0m
+2026-05-27T19:20:20.0664816Z [36;1m  echo "=== Assets ==="[0m
+2026-05-27T19:20:20.0665144Z [36;1m  unzip -l "$APK_PATH" | grep -E "encv-go|config.mobile" || true[0m
+2026-05-27T19:20:20.0665572Z [36;1m  echo "=== DEX strings check (real class presence) ==="[0m
+2026-05-27T19:20:20.0665903Z [36;1m  TMPDIR=$(mktemp -d)[0m
+2026-05-27T19:20:20.0666198Z [36;1m  unzip -q "$APK_PATH" -d "$TMPDIR"[0m
+2026-05-27T19:20:20.0666491Z [36;1m  if [ -f "$TMPDIR/classes.dex" ]; then[0m
+2026-05-27T19:20:20.0666873Z [36;1m    strings "$TMPDIR/classes.dex" | grep -i "encvgo\|GoProcess" && \[0m
+2026-05-27T19:20:20.0667349Z [36;1m      echo "✅ GoProcess found in DEX (compiled+packaged)" || \[0m
+2026-05-27T19:20:20.0667733Z [36;1m      echo "❌ Not found in DEX strings"[0m
+2026-05-27T19:20:20.0668004Z [36;1m  else[0m
+2026-05-27T19:20:20.0668213Z [36;1m    echo "❌ classes.dex missing!"[0m
+2026-05-27T19:20:20.0668540Z [36;1m    ls "$TMPDIR/"*.dex 2>/dev/null || echo "No dex files"[0m
+2026-05-27T19:20:20.0668851Z [36;1m  fi[0m
+2026-05-27T19:20:20.0669061Z [36;1m  rm -rf "$TMPDIR"[0m
+2026-05-27T19:20:20.0669325Z [36;1m  echo "=== Go binary in APK (jniLibs) ==="[0m
+2026-05-27T19:20:20.0669784Z [36;1m  unzip -l "$APK_PATH" | grep -E "libencv-go|lib/arm64" || echo "❌ libencv-go.so NOT in APK!"[0m
+2026-05-27T19:20:20.0670270Z [36;1m  echo "=== Host APK must NOT contain MPV .so ==="[0m
+2026-05-27T19:20:20.0670677Z [36;1m  if unzip -l "$APK_PATH" | grep -q "libmpv\.so\|libplayer\.so"; then[0m
+2026-05-27T19:20:20.0671264Z [36;1m    echo "❌ FAIL: Host APK contains MPV .so!"[0m
+2026-05-27T19:20:20.0671802Z [36;1m    exit 1[0m
+2026-05-27T19:20:20.0672005Z [36;1m  else[0m
+2026-05-27T19:20:20.0672232Z [36;1m    echo "✅ PASS: Host APK excludes MPV .so"[0m
+2026-05-27T19:20:20.0672502Z [36;1m  fi[0m
+2026-05-27T19:20:20.0672717Z [36;1m  echo "=== Plugin APK in assets ==="[0m
+2026-05-27T19:20:20.0673001Z [36;1m  if [ "false" = "true" ]; then[0m
+2026-05-27T19:20:20.0673287Z [36;1m    echo "⏭️ Skipped (skip_plugin=true)"[0m
+2026-05-27T19:20:20.0673649Z [36;1m  elif unzip -l "$APK_PATH" | grep -q "mpv-player.apk"; then[0m
+2026-05-27T19:20:20.0674035Z [36;1m    echo "✅ PASS: Plugin APK found in host assets"[0m
+2026-05-27T19:20:20.0674389Z [36;1m    unzip -l "$APK_PATH" | grep "mpv-player.apk"[0m
+2026-05-27T19:20:20.0674681Z [36;1m  else[0m
+2026-05-27T19:20:20.0675068Z [36;1m    echo "::warning::Plugin APK not found in host assets (may be expected for local dev builds)"[0m
+2026-05-27T19:20:20.0675497Z [36;1m  fi[0m
+2026-05-27T19:20:20.0675682Z [36;1melse[0m
+2026-05-27T19:20:20.0675878Z [36;1m  echo "No APK found to verify"[0m
+2026-05-27T19:20:20.0676125Z [36;1mfi[0m
+2026-05-27T19:20:20.0758358Z shell: /usr/bin/bash -e {0}
+2026-05-27T19:20:20.0758623Z env:
+2026-05-27T19:20:20.0758812Z   NDK_VERSION: 26.1.10909125
+2026-05-27T19:20:20.0759173Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T19:20:20.0759683Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T19:20:20.0760103Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-27T19:20:20.0760393Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-27T19:20:20.0760662Z ##[endgroup]
+2026-05-27T19:20:20.0834854Z === APK size ===
+2026-05-27T19:20:20.0847953Z -rw-r--r-- 1 runner runner 34M May 27 19:20 app/encv-mobile/android/app/build/outputs/apk/release/app-release.apk
+2026-05-27T19:20:20.0849383Z === Assets ===
+2026-05-27T19:20:20.0898043Z  26840064  1981-01-01 01:01   lib/arm64-v8a/libencv-go.so
+2026-05-27T19:20:20.0899943Z === DEX strings check (real class presence) ===
+2026-05-27T19:20:20.6292278Z 	GoProcess
+2026-05-27T19:20:20.6293010Z #GoProcess.checkPermissions() called
+2026-05-27T19:20:20.6293662Z GoProcess.getStatus() called
+2026-05-27T19:20:20.6294404Z -GoProcess.requestBatteryOptimization() called
+2026-05-27T19:20:20.6295279Z 0GoProcess.requestNotificationPermission() called
+2026-05-27T19:20:20.6296301Z +GoProcess.requestStoragePermission() called
+2026-05-27T19:20:20.6297201Z GoProcess.restart() called
+2026-05-27T19:20:20.6297730Z GoProcess.stop() called
+2026-05-27T19:20:20.6298290Z  Lcom/encvgo/app/EncvApplication;
+2026-05-27T19:20:20.6298899Z  Lcom/encvgo/app/EncvGoService$a;
+2026-05-27T19:20:20.6299495Z Lcom/encvgo/app/EncvGoService;
+2026-05-27T19:20:20.6300021Z "Lcom/encvgo/app/GoProcessPlugin$a;
+2026-05-27T19:20:20.6300444Z "Lcom/encvgo/app/GoProcessPlugin$b;
+2026-05-27T19:20:20.6300888Z 1Lcom/encvgo/app/GoProcessPlugin$statusReceiver$1;
+2026-05-27T19:20:20.6301294Z  Lcom/encvgo/app/GoProcessPlugin;
+2026-05-27T19:20:20.6302016Z Lcom/encvgo/app/MainActivity$a;
+2026-05-27T19:20:20.6302391Z Lcom/encvgo/app/MainActivity$b;
+2026-05-27T19:20:20.6302814Z /Lcom/encvgo/app/MainActivity$backendReceiver$1;
+2026-05-27T19:20:20.6303205Z Lcom/encvgo/app/MainActivity;
+2026-05-27T19:20:20.6303630Z 0Lcom/encvgo/app/PlayerActivity$ResolvedFileInfo;
+2026-05-27T19:20:20.6304047Z !Lcom/encvgo/app/PlayerActivity$a;
+2026-05-27T19:20:20.6304399Z !Lcom/encvgo/app/PlayerActivity$b;
+2026-05-27T19:20:20.6304751Z Lcom/encvgo/app/PlayerActivity;
+2026-05-27T19:20:20.6305146Z *Lcom/encvgo/app/PlayerActivityCapacitor$a;
+2026-05-27T19:20:20.6305566Z *Lcom/encvgo/app/PlayerActivityCapacitor$b;
+2026-05-27T19:20:20.6306076Z :Lcom/encvgo/app/PlayerActivityCapacitor$backendReceiver$1;
+2026-05-27T19:20:20.6306561Z *Lcom/encvgo/app/PlayerActivityCapacitor$c;
+2026-05-27T19:20:20.6306983Z (Lcom/encvgo/app/PlayerActivityCapacitor;
+2026-05-27T19:20:20.6307299Z Lcom/encvgo/app/a;
+2026-05-27T19:20:20.6307546Z Lcom/encvgo/app/b;
+2026-05-27T19:20:20.6308130Z Lcom/encvgo/app/c;
+2026-05-27T19:20:20.6308391Z Lcom/encvgo/app/d;
+2026-05-27T19:20:20.6308642Z Lcom/encvgo/app/e;
+2026-05-27T19:20:20.6308878Z Lcom/encvgo/app/f;
+2026-05-27T19:20:20.6309109Z Lcom/encvgo/app/g;
+2026-05-27T19:20:20.6309344Z Lcom/encvgo/app/h;
+2026-05-27T19:20:20.6309579Z Lcom/encvgo/app/i;
+2026-05-27T19:20:20.6309818Z Lcom/encvgo/app/j;
+2026-05-27T19:20:20.6310050Z Lcom/encvgo/app/k;
+2026-05-27T19:20:20.6310283Z Lcom/encvgo/app/l;
+2026-05-27T19:20:20.6310512Z Lcom/encvgo/app/m;
+2026-05-27T19:20:20.6310745Z Lcom/encvgo/app/n;
+2026-05-27T19:20:20.6310980Z Lcom/encvgo/app/o;
+2026-05-27T19:20:20.6311217Z Lcom/encvgo/app/p;
+2026-05-27T19:20:20.6311448Z Lcom/encvgo/app/q;
+2026-05-27T19:20:20.6312011Z Lcom/encvgo/app/r;
+2026-05-27T19:20:20.6312247Z Lcom/encvgo/app/s;
+2026-05-27T19:20:20.6312489Z Lcom/encvgo/app/t;
+2026-05-27T19:20:20.6312732Z com.encvgo.action.
+2026-05-27T19:20:20.6313050Z "com.encvgo.action.EXTERNAL_RESTART
+2026-05-27T19:20:20.6313419Z  com.encvgo.action.EXTERNAL_START
+2026-05-27T19:20:20.6313748Z com.encvgo.action.RESTART
+2026-05-27T19:20:20.6314034Z com.encvgo.action.START
+2026-05-27T19:20:20.6314321Z com.encvgo.action.STATUS
+2026-05-27T19:20:20.6314603Z com.encvgo.action.STOP
+2026-05-27T19:20:20.6314935Z "com.encvgo.broadcast.BACKEND_READY
+2026-05-27T19:20:20.6315308Z #com.encvgo.broadcast.BACKEND_STATUS
+2026-05-27T19:20:20.6315695Z $com.encvgo.broadcast.EXTERNAL_RESULT
+2026-05-27T19:20:20.6316101Z 'com.encvgo.plugin.mpv.MpvPlayerActivity
+2026-05-27T19:20:20.6316545Z /com/encvgo/app/GoProcessPlugin$statusReceiver$1
+2026-05-27T19:20:20.6317005Z -com/encvgo/app/MainActivity$backendReceiver$1
+2026-05-27T19:20:20.6317524Z 8com/encvgo/app/PlayerActivityCapacitor$backendReceiver$1
+2026-05-27T19:20:20.6317893Z encvgo://player/
+2026-05-27T19:20:20.6318162Z encvgo://player/home/
+2026-05-27T19:20:20.6318756Z encvgo::GoService
+2026-05-27T19:20:20.6318967Z 	goProcess
+2026-05-27T19:20:20.6319284Z $onCreate: GoProcessPlugin registered
+2026-05-27T19:20:20.6319580Z restartGoProcess
+2026-05-27T19:20:20.6319790Z startGoProcess
+2026-05-27T19:20:20.6319992Z stopGoProcess
+2026-05-27T19:20:20.6320581Z ✅ GoProcess found in DEX (compiled+packaged)
+2026-05-27T19:20:20.6447707Z === Go binary in APK (jniLibs) ===
+2026-05-27T19:20:20.6489933Z    195200  1981-01-01 01:01   lib/arm64-v8a/libBugly_Native.so
+2026-05-27T19:20:20.6491229Z     10096  1981-01-01 01:01   lib/arm64-v8a/libandroidx.graphics.path.so
+2026-05-27T19:20:20.6492741Z  26840064  1981-01-01 01:01   lib/arm64-v8a/libencv-go.so
+2026-05-27T19:20:20.6493720Z   4553512  1981-01-01 01:01   lib/arm64-v8a/libffmpeg.so
+2026-05-27T19:20:20.6494807Z   4219696  1981-01-01 01:01   lib/arm64-v8a/libffprobe.so
+2026-05-27T19:20:20.6495573Z === Host APK must NOT contain MPV .so ===
+2026-05-27T19:20:20.6539420Z ✅ PASS: Host APK excludes MPV .so
+2026-05-27T19:20:20.6540330Z === Plugin APK in assets ===
+2026-05-27T19:20:20.6575806Z ✅ PASS: Plugin APK found in host assets
+2026-05-27T19:20:20.6615267Z  15885500  1981-01-01 01:01   assets/plugins/mpv-player.apk

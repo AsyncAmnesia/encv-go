@@ -1,0 +1,408 @@
+﻿2026-05-27T19:17:13.6653202Z ##[group]Run cd app/encv-mobile
+2026-05-27T19:17:13.6653580Z [36;1mcd app/encv-mobile[0m
+2026-05-27T19:17:13.6653808Z [36;1m[0m
+2026-05-27T19:17:13.6653991Z [36;1mif [ -n "1.0.1" ]; then[0m
+2026-05-27T19:17:13.6654277Z [36;1m  echo "=== Building RELEASE APK v1.0.1 ==="[0m
+2026-05-27T19:17:13.6654575Z [36;1m[0m
+2026-05-27T19:17:13.6654850Z [36;1m  echo "=== Generating keystore.properties for signing ==="[0m
+2026-05-27T19:17:13.6655193Z [36;1m  {[0m
+2026-05-27T19:17:13.6655579Z [36;1m    echo "storeFile=/home/runner/work/encv-go/encv-go/app/encv-mobile/keystore/release.jks"[0m
+2026-05-27T19:17:13.6656061Z [36;1m    echo "storePassword=encv2025"[0m
+2026-05-27T19:17:13.6656344Z [36;1m    echo "keyAlias=encvrelease"[0m
+2026-05-27T19:17:13.6656611Z [36;1m    echo "keyPassword=encv2025"[0m
+2026-05-27T19:17:13.6656889Z [36;1m  } > android/keystore.properties[0m
+2026-05-27T19:17:13.6657195Z [36;1m  echo "keystore.properties created"[0m
+2026-05-27T19:17:13.6657460Z [36;1m[0m
+2026-05-27T19:17:13.6657656Z [36;1m  cd android[0m
+2026-05-27T19:17:13.6657872Z [36;1m  chmod +x gradlew[0m
+2026-05-27T19:17:13.6658137Z [36;1m  ./gradlew assembleRelease --stacktrace[0m
+2026-05-27T19:17:13.6658410Z [36;1m[0m
+2026-05-27T19:17:13.6658601Z [36;1m  echo "=== Locating signed APK ==="[0m
+2026-05-27T19:17:13.6658899Z [36;1m  ls -la app/build/outputs/apk/release/[0m
+2026-05-27T19:17:13.6659411Z [36;1m  APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" ! -name "*-unsigned*" -type f | head -1)[0m
+2026-05-27T19:17:13.6659973Z [36;1m  [ -z "$APK_PATH" ] && { echo "::error::No APK found"; exit 1; }[0m
+2026-05-27T19:17:13.6660343Z [36;1m  echo "Selected APK: $APK_PATH"[0m
+2026-05-27T19:17:13.6660597Z [36;1m[0m
+2026-05-27T19:17:13.6660792Z [36;1m  echo "Verifying signature..."[0m
+2026-05-27T19:17:13.6661230Z [36;1m  APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name "apksigner" -type f | head -1)[0m
+2026-05-27T19:17:13.6662249Z [36;1m  [ -z "$APKSIGNER" ] && { echo "::error::apksigner not found in $ANDROID_HOME/build-tools"; exit 1; }[0m
+2026-05-27T19:17:13.6662796Z [36;1m  if "$APKSIGNER" verify --print-certs "$APK_PATH"; then[0m
+2026-05-27T19:17:13.6663219Z [36;1m    echo "✅ Signed OK: $(ls -lh "$APK_PATH" | awk '{print $5}')"[0m
+2026-05-27T19:17:13.6663569Z [36;1m  else[0m
+2026-05-27T19:17:13.6664014Z [36;1m    echo "::error::APK signature verification FAILED — signingConfig may not be applied in build.gradle.kts"[0m
+2026-05-27T19:17:13.6664520Z [36;1m    exit 1[0m
+2026-05-27T19:17:13.6664706Z [36;1m  fi[0m
+2026-05-27T19:17:13.6664880Z [36;1melse[0m
+2026-05-27T19:17:13.6665104Z [36;1m  echo "=== Building DEBUG APK ==="[0m
+2026-05-27T19:17:13.6665374Z [36;1m  cd android[0m
+2026-05-27T19:17:13.6665577Z [36;1m  chmod +x gradlew[0m
+2026-05-27T19:17:13.6665848Z [36;1m  ./gradlew assembleDebug --stacktrace[0m
+2026-05-27T19:17:13.6666128Z [36;1mfi[0m
+2026-05-27T19:17:13.6693217Z shell: /usr/bin/bash -e {0}
+2026-05-27T19:17:13.6693469Z env:
+2026-05-27T19:17:13.6693658Z   NDK_VERSION: 26.1.10909125
+2026-05-27T19:17:13.6694226Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T19:17:13.6694739Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-27T19:17:13.6695156Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-27T19:17:13.6695459Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-27T19:17:13.6695834Z   BUGLY_APP_ID: ***
+2026-05-27T19:17:13.6696041Z ##[endgroup]
+2026-05-27T19:17:13.6748973Z === Building RELEASE APK v1.0.1 ===
+2026-05-27T19:17:13.6749875Z === Generating keystore.properties for signing ===
+2026-05-27T19:17:13.6750567Z keystore.properties created
+2026-05-27T19:17:15.1732308Z 
+2026-05-27T19:17:15.1755222Z > Configure project :capacitor-cordova-android-plugins
+2026-05-27T19:17:15.1756850Z WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
+2026-05-27T19:17:15.9700335Z 
+2026-05-27T19:17:15.9709279Z > Task :app:preBuild UP-TO-DATE
+2026-05-27T19:17:15.9713932Z > Task :app:preReleaseBuild UP-TO-DATE
+2026-05-27T19:17:16.0720231Z > Task :app:mergeReleaseJniLibFolders
+2026-05-27T19:17:16.0752634Z > Task :capacitor-android:preBuild UP-TO-DATE
+2026-05-27T19:17:16.0759858Z > Task :capacitor-android:preReleaseBuild UP-TO-DATE
+2026-05-27T19:17:16.0762203Z > Task :capacitor-android:mergeReleaseJniLibFolders
+2026-05-27T19:17:16.0763468Z > Task :capacitor-android:mergeReleaseNativeLibs NO-SOURCE
+2026-05-27T19:17:16.0764625Z > Task :capacitor-cordova-android-plugins:preBuild UP-TO-DATE
+2026-05-27T19:17:16.0766084Z > Task :capacitor-cordova-android-plugins:preReleaseBuild UP-TO-DATE
+2026-05-27T19:17:16.0767481Z > Task :capacitor-android:copyReleaseJniLibsProjectOnly
+2026-05-27T19:17:16.0768759Z > Task :capacitor-cordova-android-plugins:mergeReleaseJniLibFolders
+2026-05-27T19:17:16.0770258Z > Task :capacitor-cordova-android-plugins:mergeReleaseNativeLibs NO-SOURCE
+2026-05-27T19:17:16.0771941Z > Task :capacitor-screen-orientation:preBuild UP-TO-DATE
+2026-05-27T19:17:16.0774468Z > Task :capacitor-screen-orientation:preReleaseBuild UP-TO-DATE
+2026-05-27T19:17:16.0776200Z > Task :capacitor-cordova-android-plugins:copyReleaseJniLibsProjectOnly
+2026-05-27T19:17:16.0777532Z > Task :capacitor-screen-orientation:mergeReleaseJniLibFolders
+2026-05-27T19:17:16.1704550Z > Task :capacitor-screen-orientation:mergeReleaseNativeLibs NO-SOURCE
+2026-05-27T19:17:16.1705846Z > Task :capacitor-status-bar:preBuild UP-TO-DATE
+2026-05-27T19:17:16.1706974Z > Task :capacitor-status-bar:preReleaseBuild UP-TO-DATE
+2026-05-27T19:17:16.1708316Z > Task :capacitor-screen-orientation:copyReleaseJniLibsProjectOnly
+2026-05-27T19:17:16.1709593Z > Task :capacitor-status-bar:mergeReleaseJniLibFolders
+2026-05-27T19:17:16.1710865Z > Task :capacitor-status-bar:mergeReleaseNativeLibs NO-SOURCE
+2026-05-27T19:17:16.1712295Z > Task :capacitor-status-bar:copyReleaseJniLibsProjectOnly
+2026-05-27T19:17:16.1713155Z > Task :capacitor-android:generateReleaseResValues
+2026-05-27T19:17:46.1701104Z > Task :app:mergeReleaseNativeLibs
+2026-05-27T19:18:04.7717349Z > Task :capacitor-android:generateReleaseResources
+2026-05-27T19:18:04.7802856Z > Task :capacitor-android:packageReleaseResources
+2026-05-27T19:18:04.7814356Z > Task :capacitor-android:processReleaseNavigationResources
+2026-05-27T19:18:04.7844941Z > Task :capacitor-screen-orientation:generateReleaseResValues
+2026-05-27T19:18:04.7889453Z > Task :capacitor-android:javaPreCompileRelease
+2026-05-27T19:18:04.8733135Z > Task :capacitor-screen-orientation:generateReleaseResources
+2026-05-27T19:18:04.8762947Z > Task :capacitor-screen-orientation:packageReleaseResources
+2026-05-27T19:18:04.8792683Z > Task :capacitor-screen-orientation:processReleaseNavigationResources
+2026-05-27T19:18:04.8822510Z > Task :capacitor-screen-orientation:javaPreCompileRelease
+2026-05-27T19:18:04.8842577Z > Task :capacitor-android:parseReleaseLocalResources
+2026-05-27T19:18:04.8843842Z > Task :capacitor-status-bar:generateReleaseResValues
+2026-05-27T19:18:04.8844990Z > Task :capacitor-screen-orientation:parseReleaseLocalResources
+2026-05-27T19:18:04.8846458Z > Task :capacitor-android:generateReleaseRFile
+2026-05-27T19:18:04.8847498Z > Task :capacitor-screen-orientation:generateReleaseRFile
+2026-05-27T19:18:04.9705235Z 
+2026-05-27T19:18:04.9732932Z > Task :app:stripReleaseDebugSymbols
+2026-05-27T19:18:04.9743931Z Unable to strip the following libraries, packaging them as they are: libBugly_Native.so, libandroidx.graphics.path.so, libencv-go.so, libffmpeg.so, libffprobe.so. Run with --info option to learn more.
+2026-05-27T19:18:17.1701396Z Note: Some input files use unchecked or unsafe operations.
+2026-05-27T19:18:17.1702161Z 
+2026-05-27T19:18:17.1702490Z Note: Recompile with -Xlint:unchecked for details.
+2026-05-27T19:18:17.1722717Z > Task :capacitor-android:compileReleaseJavaWithJavac
+2026-05-27T19:18:19.3729698Z 
+2026-05-27T19:18:19.3753116Z > Task :app:extractReleaseNativeSymbolTables
+2026-05-27T19:18:19.3759431Z > Task :capacitor-status-bar:generateReleaseResources
+2026-05-27T19:18:19.3760404Z > Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE
+2026-05-27T19:18:19.3762175Z > Task :capacitor-status-bar:packageReleaseResources
+2026-05-27T19:18:19.3763198Z > Task :capacitor-status-bar:processReleaseNavigationResources
+2026-05-27T19:18:19.3764223Z > Task :capacitor-status-bar:parseReleaseLocalResources
+2026-05-27T19:18:19.3765151Z > Task :capacitor-status-bar:javaPreCompileRelease
+2026-05-27T19:18:19.3766091Z > Task :capacitor-android:bundleLibCompileToJarRelease
+2026-05-27T19:18:19.3766946Z > Task :capacitor-status-bar:generateReleaseRFile
+2026-05-27T19:18:19.6733076Z > Task :capacitor-screen-orientation:compileReleaseJavaWithJavac
+2026-05-27T19:18:19.6762703Z > Task :capacitor-screen-orientation:mergeReleaseGeneratedProguardFiles
+2026-05-27T19:18:19.6792677Z > Task :capacitor-screen-orientation:exportReleaseConsumerProguardFiles
+2026-05-27T19:18:19.8723306Z > Task :capacitor-status-bar:compileReleaseJavaWithJavac
+2026-05-27T19:18:19.8753617Z > Task :capacitor-status-bar:mergeReleaseGeneratedProguardFiles
+2026-05-27T19:18:19.9707303Z > Task :capacitor-status-bar:exportReleaseConsumerProguardFiles
+2026-05-27T19:18:19.9738401Z > Task :capacitor-android:mergeReleaseGeneratedProguardFiles
+2026-05-27T19:18:19.9762847Z > Task :capacitor-android:exportReleaseConsumerProguardFiles
+2026-05-27T19:18:19.9792739Z > Task :capacitor-cordova-android-plugins:generateReleaseResValues
+2026-05-27T19:18:19.9822813Z > Task :capacitor-cordova-android-plugins:generateReleaseResources
+2026-05-27T19:18:19.9837710Z > Task :capacitor-cordova-android-plugins:packageReleaseResources
+2026-05-27T19:18:19.9839327Z > Task :capacitor-cordova-android-plugins:processReleaseNavigationResources
+2026-05-27T19:18:19.9840809Z > Task :capacitor-cordova-android-plugins:javaPreCompileRelease
+2026-05-27T19:18:19.9842520Z > Task :capacitor-cordova-android-plugins:parseReleaseLocalResources
+2026-05-27T19:18:19.9843935Z > Task :app:buildKotlinToolingMetadata
+2026-05-27T19:18:20.0723257Z > Task :capacitor-cordova-android-plugins:generateReleaseRFile
+2026-05-27T19:18:20.5713377Z > Task :capacitor-cordova-android-plugins:compileReleaseJavaWithJavac NO-SOURCE
+2026-05-27T19:18:20.5733025Z > Task :capacitor-cordova-android-plugins:mergeReleaseGeneratedProguardFiles
+2026-05-27T19:18:20.5734348Z > Task :app:checkKotlinGradlePluginConfigurationErrors SKIPPED
+2026-05-27T19:18:20.5735666Z > Task :capacitor-cordova-android-plugins:exportReleaseConsumerProguardFiles
+2026-05-27T19:18:20.5736722Z > Task :app:generateReleaseBuildConfig
+2026-05-27T19:18:20.5737573Z > Task :capacitor-android:writeReleaseAarMetadata
+2026-05-27T19:18:20.5738607Z > Task :capacitor-cordova-android-plugins:writeReleaseAarMetadata
+2026-05-27T19:18:20.5739612Z > Task :capacitor-screen-orientation:writeReleaseAarMetadata
+2026-05-27T19:18:20.5740438Z > Task :app:checkReleaseDuplicateClasses
+2026-05-27T19:18:20.5741316Z > Task :capacitor-status-bar:writeReleaseAarMetadata
+2026-05-27T19:18:20.6703957Z > Task :app:processReleaseNavigationResources
+2026-05-27T19:18:20.7713262Z > Task :app:checkReleaseAarMetadata
+2026-05-27T19:18:20.7714611Z > Task :app:generateReleaseResValues
+2026-05-27T19:18:20.7720457Z > Task :app:compileReleaseNavigationResources
+2026-05-27T19:18:20.8700999Z > Task :app:mapReleaseSourceSetPaths
+2026-05-27T19:18:20.8702428Z > Task :app:generateReleaseResources
+2026-05-27T19:18:21.5700425Z > Task :app:packageReleaseResources
+2026-05-27T19:18:21.6710359Z > Task :app:createReleaseCompatibleScreenManifests
+2026-05-27T19:18:21.6722779Z > Task :app:extractDeepLinksRelease
+2026-05-27T19:18:21.6812804Z > Task :capacitor-android:extractDeepLinksRelease
+2026-05-27T19:18:21.6872788Z > Task :capacitor-cordova-android-plugins:extractDeepLinksRelease
+2026-05-27T19:18:21.9743131Z > Task :capacitor-cordova-android-plugins:processReleaseManifest
+2026-05-27T19:18:21.9788245Z > Task :capacitor-screen-orientation:extractDeepLinksRelease
+2026-05-27T19:18:21.9862663Z > Task :app:parseReleaseLocalResources
+2026-05-27T19:18:21.9892901Z > Task :capacitor-status-bar:extractDeepLinksRelease
+2026-05-27T19:18:21.9923855Z > Task :capacitor-android:processReleaseManifest
+2026-05-27T19:18:21.9961325Z > Task :capacitor-screen-orientation:processReleaseManifest
+2026-05-27T19:18:22.0013823Z > Task :capacitor-status-bar:processReleaseManifest
+2026-05-27T19:18:22.2720730Z > Task :capacitor-cordova-android-plugins:bundleLibCompileToJarRelease
+2026-05-27T19:18:22.2772841Z > Task :capacitor-screen-orientation:bundleLibCompileToJarRelease
+2026-05-27T19:18:22.4742145Z 
+2026-05-27T19:18:22.4769022Z > Task :app:processReleaseMainManifest
+2026-05-27T19:18:22.4804023Z /home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/AndroidManifest.xml:115:9-122:11 Warning:
+2026-05-27T19:18:22.4842003Z 	activity#com.hjq.logcat.LogcatActivity was tagged at AndroidManifest.xml:115 to replace another declaration but no other declaration present
+2026-05-27T19:18:22.4882686Z 
+2026-05-27T19:18:22.4921380Z > Task :app:processReleaseManifest
+2026-05-27T19:18:22.5704156Z > Task :app:processReleaseManifestForPackage
+2026-05-27T19:18:22.5705192Z > Task :capacitor-status-bar:bundleLibCompileToJarRelease
+2026-05-27T19:18:22.5706018Z > Task :app:javaPreCompileRelease
+2026-05-27T19:18:22.5706805Z > Task :capacitor-android:prepareReleaseArtProfile
+2026-05-27T19:18:22.5707878Z > Task :capacitor-cordova-android-plugins:prepareReleaseArtProfile
+2026-05-27T19:18:22.5709006Z > Task :capacitor-screen-orientation:prepareReleaseArtProfile
+2026-05-27T19:18:22.5709988Z > Task :capacitor-status-bar:prepareReleaseArtProfile
+2026-05-27T19:18:22.7700366Z > Task :app:mergeReleaseResources
+2026-05-27T19:18:22.7702926Z > Task :app:mergeReleaseArtProfile
+2026-05-27T19:18:24.9726948Z > Task :capacitor-cordova-android-plugins:bundleLibRuntimeToJarRelease
+2026-05-27T19:18:24.9752891Z > Task :capacitor-screen-orientation:bundleLibRuntimeToJarRelease
+2026-05-27T19:18:24.9777934Z > Task :capacitor-android:bundleLibRuntimeToJarRelease
+2026-05-27T19:18:24.9806944Z > Task :app:extractProguardFiles
+2026-05-27T19:18:24.9832665Z > Task :capacitor-android:processReleaseJavaRes NO-SOURCE
+2026-05-27T19:18:24.9862529Z > Task :capacitor-status-bar:bundleLibRuntimeToJarRelease
+2026-05-27T19:18:24.9887132Z > Task :capacitor-cordova-android-plugins:processReleaseJavaRes NO-SOURCE
+2026-05-27T19:18:24.9900150Z > Task :capacitor-screen-orientation:processReleaseJavaRes NO-SOURCE
+2026-05-27T19:18:24.9912022Z > Task :capacitor-status-bar:processReleaseJavaRes NO-SOURCE
+2026-05-27T19:18:24.9913383Z > Task :app:mergeReleaseStartupProfile
+2026-05-27T19:18:25.0710575Z > Task :app:mergeReleaseShaders
+2026-05-27T19:18:25.0711961Z > Task :app:compileReleaseShaders NO-SOURCE
+2026-05-27T19:18:25.0713110Z > Task :app:generateReleaseAssets UP-TO-DATE
+2026-05-27T19:18:25.0714027Z > Task :capacitor-android:mergeReleaseShaders
+2026-05-27T19:18:25.0715067Z > Task :capacitor-android:compileReleaseShaders NO-SOURCE
+2026-05-27T19:18:25.0716168Z > Task :capacitor-android:generateReleaseAssets UP-TO-DATE
+2026-05-27T19:18:25.0717142Z > Task :capacitor-android:mergeReleaseAssets
+2026-05-27T19:18:25.0718214Z > Task :capacitor-cordova-android-plugins:mergeReleaseShaders
+2026-05-27T19:18:25.0719905Z > Task :capacitor-cordova-android-plugins:compileReleaseShaders NO-SOURCE
+2026-05-27T19:18:25.0721318Z > Task :capacitor-cordova-android-plugins:generateReleaseAssets UP-TO-DATE
+2026-05-27T19:18:25.0722829Z > Task :capacitor-cordova-android-plugins:mergeReleaseAssets
+2026-05-27T19:18:25.0723945Z > Task :capacitor-screen-orientation:mergeReleaseShaders
+2026-05-27T19:18:25.0725153Z > Task :capacitor-screen-orientation:compileReleaseShaders NO-SOURCE
+2026-05-27T19:18:25.0726451Z > Task :capacitor-screen-orientation:generateReleaseAssets UP-TO-DATE
+2026-05-27T19:18:25.0727609Z > Task :capacitor-screen-orientation:mergeReleaseAssets
+2026-05-27T19:18:25.0728596Z > Task :capacitor-status-bar:mergeReleaseShaders
+2026-05-27T19:18:25.0729664Z > Task :capacitor-status-bar:compileReleaseShaders NO-SOURCE
+2026-05-27T19:18:25.0730799Z > Task :capacitor-status-bar:generateReleaseAssets UP-TO-DATE
+2026-05-27T19:18:25.0732022Z > Task :capacitor-status-bar:mergeReleaseAssets
+2026-05-27T19:18:25.2724119Z > Task :app:mergeReleaseAssets
+2026-05-27T19:18:25.3700439Z > Task :app:extractReleaseVersionControlInfo
+2026-05-27T19:18:25.3732316Z > Task :capacitor-android:createFullJarRelease
+2026-05-27T19:18:25.3733393Z > Task :capacitor-android:extractProguardFiles
+2026-05-27T19:18:25.5699761Z > Task :app:processReleaseResources
+2026-05-27T19:18:25.8703629Z > Task :app:compressReleaseAssets
+2026-05-27T19:18:26.1757190Z > Task :capacitor-android:generateReleaseLintModel
+2026-05-27T19:18:28.3718239Z > Task :capacitor-android:prepareLintJarForPublish
+2026-05-27T19:18:28.3724396Z > Task :capacitor-cordova-android-plugins:createFullJarRelease
+2026-05-27T19:18:28.3771882Z > Task :capacitor-cordova-android-plugins:extractProguardFiles
+2026-05-27T19:18:31.3723757Z > Task :capacitor-cordova-android-plugins:generateReleaseLintModel
+2026-05-27T19:18:31.3764339Z > Task :capacitor-cordova-android-plugins:prepareLintJarForPublish
+2026-05-27T19:18:31.3812723Z > Task :capacitor-screen-orientation:createFullJarRelease
+2026-05-27T19:18:31.3837765Z > Task :capacitor-screen-orientation:extractProguardFiles
+2026-05-27T19:18:31.4704669Z > Task :capacitor-screen-orientation:generateReleaseLintModel
+2026-05-27T19:18:31.4728770Z > Task :capacitor-screen-orientation:prepareLintJarForPublish
+2026-05-27T19:18:31.4762478Z > Task :capacitor-status-bar:createFullJarRelease
+2026-05-27T19:18:31.4792725Z > Task :capacitor-status-bar:extractProguardFiles
+2026-05-27T19:18:31.5752912Z > Task :capacitor-status-bar:generateReleaseLintModel
+2026-05-27T19:18:31.5763541Z > Task :capacitor-status-bar:prepareLintJarForPublish
+2026-05-27T19:18:31.5803099Z > Task :capacitor-screen-orientation:stripReleaseDebugSymbols NO-SOURCE
+2026-05-27T19:18:31.5862855Z > Task :capacitor-screen-orientation:extractDeepLinksForAarRelease
+2026-05-27T19:18:31.5892834Z > Task :capacitor-screen-orientation:copyReleaseJniLibsProjectAndLocalJars
+2026-05-27T19:18:31.5922694Z > Task :capacitor-screen-orientation:checkReleaseAarMetadata
+2026-05-27T19:18:33.2733296Z > Task :capacitor-screen-orientation:extractReleaseAnnotations
+2026-05-27T19:18:33.2762743Z > Task :capacitor-screen-orientation:mergeReleaseConsumerProguardFiles
+2026-05-27T19:18:33.2792498Z > Task :capacitor-screen-orientation:mergeReleaseJavaResource
+2026-05-27T19:18:33.2852969Z > Task :capacitor-status-bar:checkReleaseAarMetadata
+2026-05-27T19:18:33.2909452Z > Task :capacitor-screen-orientation:syncReleaseLibJars
+2026-05-27T19:18:33.2958003Z > Task :capacitor-screen-orientation:bundleReleaseLocalLintAar
+2026-05-27T19:18:33.2982520Z > Task :capacitor-status-bar:stripReleaseDebugSymbols NO-SOURCE
+2026-05-27T19:18:33.3044536Z > Task :capacitor-status-bar:extractDeepLinksForAarRelease
+2026-05-27T19:18:33.3084961Z > Task :capacitor-status-bar:copyReleaseJniLibsProjectAndLocalJars
+2026-05-27T19:18:33.3753270Z > Task :capacitor-status-bar:extractReleaseAnnotations
+2026-05-27T19:18:33.3786791Z > Task :capacitor-status-bar:mergeReleaseConsumerProguardFiles
+2026-05-27T19:18:33.3842603Z > Task :capacitor-status-bar:mergeReleaseJavaResource
+2026-05-27T19:18:33.3843895Z > Task :capacitor-android:checkReleaseAarMetadata
+2026-05-27T19:18:33.3844709Z > Task :capacitor-status-bar:syncReleaseLibJars
+2026-05-27T19:18:33.3845570Z > Task :capacitor-status-bar:bundleReleaseLocalLintAar
+2026-05-27T19:18:33.3846519Z > Task :capacitor-android:stripReleaseDebugSymbols NO-SOURCE
+2026-05-27T19:18:33.3847559Z > Task :capacitor-android:copyReleaseJniLibsProjectAndLocalJars
+2026-05-27T19:18:33.3848524Z > Task :capacitor-android:extractDeepLinksForAarRelease
+2026-05-27T19:18:33.4704775Z > Task :capacitor-android:extractReleaseAnnotations
+2026-05-27T19:18:33.4737240Z > Task :capacitor-android:mergeReleaseConsumerProguardFiles
+2026-05-27T19:18:33.4753004Z > Task :capacitor-android:mergeReleaseJavaResource
+2026-05-27T19:18:33.4762757Z > Task :capacitor-cordova-android-plugins:checkReleaseAarMetadata
+2026-05-27T19:18:33.5732697Z > Task :capacitor-android:syncReleaseLibJars
+2026-05-27T19:18:33.6723179Z > Task :capacitor-android:bundleReleaseLocalLintAar
+2026-05-27T19:18:33.6772843Z > Task :capacitor-cordova-android-plugins:stripReleaseDebugSymbols NO-SOURCE
+2026-05-27T19:18:33.6848904Z > Task :capacitor-cordova-android-plugins:copyReleaseJniLibsProjectAndLocalJars
+2026-05-27T19:18:33.6850394Z > Task :capacitor-cordova-android-plugins:extractDeepLinksForAarRelease
+2026-05-27T19:18:33.9753725Z > Task :capacitor-cordova-android-plugins:extractReleaseAnnotations
+2026-05-27T19:18:33.9787950Z > Task :capacitor-cordova-android-plugins:mergeReleaseConsumerProguardFiles
+2026-05-27T19:18:33.9826139Z > Task :capacitor-cordova-android-plugins:mergeReleaseJavaResource
+2026-05-27T19:18:33.9827330Z > Task :capacitor-cordova-android-plugins:syncReleaseLibJars
+2026-05-27T19:18:34.0729582Z > Task :capacitor-cordova-android-plugins:bundleReleaseLocalLintAar
+2026-05-27T19:18:34.0752735Z > Task :capacitor-android:writeReleaseLintModelMetadata
+2026-05-27T19:18:34.0792822Z > Task :capacitor-cordova-android-plugins:writeReleaseLintModelMetadata
+2026-05-27T19:18:38.0702118Z 
+2026-05-27T19:18:38.0732598Z > Task :app:compileReleaseKotlin
+2026-05-27T19:18:38.0764034Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/java/com/encvgo/app/EncvGoService.kt:93:55 Unnecessary safe call on a non-null receiver of type 'Intent'.
+2026-05-27T19:18:38.0782515Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt:396:72 'static field ACTION_INSTALL_PACKAGE: String' is deprecated. Deprecated in Java.
+2026-05-27T19:18:38.0809111Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt:422:22 'fun startActivityForResult(intent: Intent, requestCode: Int): Unit' is deprecated. This method has been deprecated in favor of using the Activity Result API
+2026-05-27T19:18:38.0822987Z       which brings increased type safety via an {@link ActivityResultContract} and the prebuilt
+2026-05-27T19:18:38.0852385Z       contracts for common intents available in
+2026-05-27T19:18:38.0872977Z       {@link androidx.activity.result.contract.ActivityResultContracts}, provides hooks for
+2026-05-27T19:18:38.0904907Z       testing, and allow receiving results in separate, testable classes independent from your
+2026-05-27T19:18:38.0958069Z       activity. Use
+2026-05-27T19:18:38.0982975Z       {@link #registerForActivityResult(ActivityResultContract, ActivityResultCallback)}
+2026-05-27T19:18:38.1024309Z       passing in a {@link StartActivityForResult} object for the {@link ActivityResultContract}.
+2026-05-27T19:18:38.1027967Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt:501:18 This declaration overrides a deprecated member but is not marked as deprecated itself. Add the '@Deprecated' annotation or suppress the diagnostic.
+2026-05-27T19:18:38.1032478Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt:502:15 'fun handleOnActivityResult(p0: Int, p1: Int, p2: Intent!): Unit' is deprecated. Deprecated in Java.
+2026-05-27T19:18:38.1036751Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt:567:40 'static field ACTION_INSTALL_PACKAGE: String' is deprecated. Deprecated in Java.
+2026-05-27T19:18:38.1040258Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt:597:59 Unnecessary non-null assertion (!!) on a non-null receiver of type 'String'.
+2026-05-27T19:18:38.1044724Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/java/com/encvgo/app/MainActivity.kt:71:18 This declaration overrides a deprecated member but is not marked as deprecated itself. Add the '@Deprecated' annotation or suppress the diagnostic.
+2026-05-27T19:18:38.1048662Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerActivityCapacitor.kt:79:74 Unnecessary safe call on a non-null receiver of type 'WebViewClient'.
+2026-05-27T19:18:38.1083308Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerActivityCapacitor.kt:83:35 Unnecessary safe call on a non-null receiver of type 'WebViewClient'.
+2026-05-27T19:18:38.1086978Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerActivityCapacitor.kt:87:35 Unnecessary safe call on a non-null receiver of type 'WebViewClient'.
+2026-05-27T19:18:38.1090478Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerActivityCapacitor.kt:91:35 Unnecessary safe call on a non-null receiver of type 'WebViewClient'.
+2026-05-27T19:18:38.1094311Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerActivityCapacitor.kt:95:35 Unnecessary safe call on a non-null receiver of type 'WebViewClient'.
+2026-05-27T19:18:38.1097881Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerActivityCapacitor.kt:104:39 Unnecessary safe call on a non-null receiver of type 'WebViewClient'.
+2026-05-27T19:18:38.1101027Z w: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/app/src/main/java/com/encvgo/app/PlayerActivityCapacitor.kt:108:33 No cast needed.
+2026-05-27T19:18:41.5712306Z 
+2026-05-27T19:18:41.5724459Z > Task :capacitor-screen-orientation:lintVitalAnalyzeRelease
+2026-05-27T19:18:42.6700321Z > Task :capacitor-cordova-android-plugins:lintVitalAnalyzeRelease
+2026-05-27T19:18:42.8700411Z > Task :app:compileReleaseJavaWithJavac
+2026-05-27T19:18:43.2713029Z > Task :app:mergeReleaseGeneratedProguardFiles
+2026-05-27T19:18:43.2762326Z > Task :app:processReleaseJavaRes
+2026-05-27T19:18:44.5700329Z > Task :app:expandReleaseArtProfileWildcards
+2026-05-27T19:18:45.0699960Z > Task :app:mergeReleaseJavaResource
+2026-05-27T19:18:45.1700284Z > Task :capacitor-android:lintVitalAnalyzeRelease
+2026-05-27T19:18:49.5703586Z > Task :app:generateReleaseLintVitalReportModel
+2026-05-27T19:18:49.5732736Z > Task :capacitor-screen-orientation:writeReleaseLintModelMetadata
+2026-05-27T19:18:49.6712892Z > Task :capacitor-status-bar:writeReleaseLintModelMetadata
+2026-05-27T19:18:49.6742921Z > Task :capacitor-android:generateReleaseLintVitalModel
+2026-05-27T19:18:49.6772817Z > Task :capacitor-cordova-android-plugins:generateReleaseLintVitalModel
+2026-05-27T19:18:49.7723145Z > Task :capacitor-screen-orientation:generateReleaseLintVitalModel
+2026-05-27T19:18:49.7763946Z > Task :capacitor-status-bar:generateReleaseLintVitalModel
+2026-05-27T19:18:49.9722947Z > Task :app:collectReleaseDependencies
+2026-05-27T19:18:50.3742750Z > Task :app:sdkReleaseDependencyData
+2026-05-27T19:18:50.3822694Z > Task :app:validateSigningRelease
+2026-05-27T19:18:50.3912677Z > Task :app:writeReleaseAppMetadata
+2026-05-27T19:18:50.4742865Z > Task :app:writeReleaseSigningConfigVersions
+2026-05-27T19:18:50.4783449Z > Task :capacitor-android:bundleReleaseAar
+2026-05-27T19:18:50.4855941Z > Task :capacitor-android:mapReleaseSourceSetPaths
+2026-05-27T19:18:50.8722894Z > Task :capacitor-status-bar:lintVitalAnalyzeRelease
+2026-05-27T19:18:51.6722705Z > Task :app:produceReleaseComposeMapping
+2026-05-27T19:18:51.6752443Z > Task :capacitor-android:mergeReleaseResources
+2026-05-27T19:18:51.7699572Z > Task :app:reportReleaseComposeMappingErrors
+2026-05-27T19:18:52.7725283Z > Task :capacitor-cordova-android-plugins:bundleReleaseAar
+2026-05-27T19:18:53.3723134Z > Task :capacitor-cordova-android-plugins:mapReleaseSourceSetPaths
+2026-05-27T19:18:54.3713012Z > Task :capacitor-android:verifyReleaseResources
+2026-05-27T19:18:54.4731342Z > Task :capacitor-cordova-android-plugins:mergeReleaseResources
+2026-05-27T19:18:54.4763745Z > Task :capacitor-android:assembleRelease
+2026-05-27T19:18:54.7725659Z > Task :capacitor-screen-orientation:bundleReleaseAar
+2026-05-27T19:18:55.1704385Z > Task :capacitor-android:compileReleaseLibraryResources
+2026-05-27T19:18:55.1729537Z > Task :capacitor-screen-orientation:mapReleaseSourceSetPaths
+2026-05-27T19:18:55.8723212Z > Task :capacitor-screen-orientation:mergeReleaseResources
+2026-05-27T19:18:55.9713278Z > Task :capacitor-cordova-android-plugins:verifyReleaseResources
+2026-05-27T19:18:55.9752834Z > Task :capacitor-cordova-android-plugins:assembleRelease
+2026-05-27T19:18:55.9782568Z > Task :capacitor-status-bar:bundleReleaseAar
+2026-05-27T19:18:55.9852624Z > Task :capacitor-status-bar:mapReleaseSourceSetPaths
+2026-05-27T19:18:56.7723129Z > Task :capacitor-status-bar:mergeReleaseResources
+2026-05-27T19:18:57.8743273Z > Task :capacitor-screen-orientation:verifyReleaseResources
+2026-05-27T19:18:57.8744471Z > Task :capacitor-screen-orientation:assembleRelease
+2026-05-27T19:18:57.8763655Z > Task :plugin-mpv-player:preBuild UP-TO-DATE
+2026-05-27T19:18:57.8814513Z > Task :plugin-mpv-player:preReleaseBuild UP-TO-DATE
+2026-05-27T19:18:57.9752932Z > Task :plugin-mpv-player:checkReleaseAarMetadata UP-TO-DATE
+2026-05-27T19:18:57.9812925Z > Task :plugin-mpv-player:mergeReleaseJniLibFolders UP-TO-DATE
+2026-05-27T19:18:57.9842518Z > Task :plugin-mpv-player:mergeReleaseNativeLibs UP-TO-DATE
+2026-05-27T19:18:57.9902636Z > Task :plugin-mpv-player:stripReleaseDebugSymbols UP-TO-DATE
+2026-05-27T19:18:57.9993142Z > Task :plugin-mpv-player:copyReleaseJniLibsProjectAndLocalJars UP-TO-DATE
+2026-05-27T19:18:58.0052692Z > Task :plugin-mpv-player:generateReleaseResValues UP-TO-DATE
+2026-05-27T19:18:58.0053921Z > Task :plugin-mpv-player:extractDeepLinksForAarRelease UP-TO-DATE
+2026-05-27T19:18:58.0055263Z > Task :plugin-mpv-player:checkKotlinGradlePluginConfigurationErrors SKIPPED
+2026-05-27T19:18:58.0056469Z > Task :plugin-mpv-player:generateReleaseResources UP-TO-DATE
+2026-05-27T19:18:58.0057427Z > Task :plugin-mpv-player:packageReleaseResources UP-TO-DATE
+2026-05-27T19:18:58.0058533Z > Task :plugin-mpv-player:processReleaseNavigationResources UP-TO-DATE
+2026-05-27T19:18:58.0059681Z > Task :plugin-mpv-player:parseReleaseLocalResources UP-TO-DATE
+2026-05-27T19:18:58.0060906Z > Task :plugin-mpv-player:generateReleaseRFile UP-TO-DATE
+2026-05-27T19:18:58.0716449Z > Task :plugin-mpv-player:compileReleaseKotlin UP-TO-DATE
+2026-05-27T19:18:58.0752687Z > Task :plugin-mpv-player:extractReleaseAnnotations UP-TO-DATE
+2026-05-27T19:18:58.0812574Z > Task :plugin-mpv-player:mergeReleaseShaders UP-TO-DATE
+2026-05-27T19:18:58.0872581Z > Task :plugin-mpv-player:compileReleaseShaders NO-SOURCE
+2026-05-27T19:18:58.0902491Z > Task :plugin-mpv-player:generateReleaseAssets UP-TO-DATE
+2026-05-27T19:18:58.0932498Z > Task :plugin-mpv-player:mergeReleaseAssets UP-TO-DATE
+2026-05-27T19:18:58.1750900Z > Task :plugin-mpv-player:javaPreCompileRelease UP-TO-DATE
+2026-05-27T19:18:58.1782948Z > Task :plugin-mpv-player:compileReleaseJavaWithJavac NO-SOURCE
+2026-05-27T19:18:58.1822825Z > Task :plugin-mpv-player:mergeReleaseGeneratedProguardFiles UP-TO-DATE
+2026-05-27T19:18:58.1844897Z > Task :plugin-mpv-player:mergeReleaseConsumerProguardFiles UP-TO-DATE
+2026-05-27T19:18:58.1872763Z > Task :plugin-mpv-player:prepareLintJarForPublish UP-TO-DATE
+2026-05-27T19:18:58.1902494Z > Task :plugin-mpv-player:prepareReleaseArtProfile UP-TO-DATE
+2026-05-27T19:18:58.1932649Z > Task :plugin-mpv-player:processReleaseManifest UP-TO-DATE
+2026-05-27T19:18:58.1933793Z > Task :plugin-mpv-player:extractProguardFiles UP-TO-DATE
+2026-05-27T19:18:58.1961162Z > Task :plugin-mpv-player:generateReleaseLibraryProguardRules UP-TO-DATE
+2026-05-27T19:18:58.1992762Z > Task :plugin-mpv-player:processReleaseJavaRes UP-TO-DATE
+2026-05-27T19:18:58.2022674Z > Task :plugin-mpv-player:mergeReleaseJavaResource UP-TO-DATE
+2026-05-27T19:18:58.2023880Z > Task :plugin-mpv-player:writeReleaseAarMetadata UP-TO-DATE
+2026-05-27T19:18:58.2052641Z > Task :plugin-mpv-player:mapReleaseSourceSetPaths UP-TO-DATE
+2026-05-27T19:18:58.2082641Z > Task :plugin-mpv-player:mergeReleaseResources UP-TO-DATE
+2026-05-27T19:18:58.2092486Z > Task :plugin-mpv-player:verifyReleaseResources UP-TO-DATE
+2026-05-27T19:18:58.4712880Z > Task :capacitor-status-bar:verifyReleaseResources
+2026-05-27T19:18:58.4727481Z > Task :capacitor-status-bar:assembleRelease
+2026-05-27T19:19:09.5702206Z 
+2026-05-27T19:19:09.5732745Z > Task :app:minifyReleaseWithR8
+2026-05-27T19:19:09.5765271Z WARNING: R8: An error occurred when parsing kotlin metadata. This normally happens when using a newer version of kotlin than the kotlin version released when this version of R8 was created. To find compatible kotlin versions, please see: https://developer.android.com/studio/build/kotlin-d8-r8-versions
+2026-05-27T19:19:09.6702744Z WARNING: R8: An error occurred when parsing kotlin metadata. This normally happens when using a newer version of kotlin than the kotlin version released when this version of R8 was created. To find compatible kotlin versions, please see: https://developer.android.com/studio/build/kotlin-d8-r8-versions
+2026-05-27T19:19:09.7702667Z WARNING: R8: An error occurred when parsing kotlin metadata. This normally happens when using a newer version of kotlin than the kotlin version released when this version of R8 was created. To find compatible kotlin versions, please see: https://developer.android.com/studio/build/kotlin-d8-r8-versions
+2026-05-27T19:19:09.9725568Z WARNING: R8: An error occurred when parsing kotlin metadata. This normally happens when using a newer version of kotlin than the kotlin version released when this version of R8 was created. To find compatible kotlin versions, please see: https://developer.android.com/studio/build/kotlin-d8-r8-versions
+2026-05-27T19:19:09.9784712Z WARNING: R8: An error occurred when parsing kotlin metadata. This normally happens when using a newer version of kotlin than the kotlin version released when this version of R8 was created. To find compatible kotlin versions, please see: https://developer.android.com/studio/build/kotlin-d8-r8-versions
+2026-05-27T19:19:10.2702614Z WARNING: R8: An error occurred when parsing kotlin metadata. This normally happens when using a newer version of kotlin than the kotlin version released when this version of R8 was created. To find compatible kotlin versions, please see: https://developer.android.com/studio/build/kotlin-d8-r8-versions
+2026-05-27T19:19:21.7701419Z 
+2026-05-27T19:19:21.7732710Z > Task :app:lintVitalAnalyzeRelease
+2026-05-27T19:19:25.1712191Z > Task :app:lintVitalReportRelease
+2026-05-27T19:19:25.1712938Z > Task :app:lintVitalRelease
+2026-05-27T19:20:17.4713020Z > Task :app:mergeReleaseComposeMapping
+2026-05-27T19:20:17.5714336Z > Task :plugin-mpv-player:minifyReleaseWithR8 UP-TO-DATE
+2026-05-27T19:20:17.5728165Z > Task :plugin-mpv-player:syncReleaseLibJars UP-TO-DATE
+2026-05-27T19:20:17.5729711Z > Task :plugin-mpv-player:bundleReleaseAar UP-TO-DATE
+2026-05-27T19:20:17.5730831Z > Task :plugin-mpv-player:assembleRelease UP-TO-DATE
+2026-05-27T19:20:17.5732053Z > Task :app:convertShrunkResourcesToBinaryRelease
+2026-05-27T19:20:17.7700077Z > Task :app:optimizeReleaseResources
+2026-05-27T19:20:17.9699675Z > Task :app:compileReleaseArtProfile
+2026-05-27T19:20:19.5700908Z > Task :app:packageRelease
+2026-05-27T19:20:19.5702601Z > Task :app:createReleaseApkListingFileRedirect
+2026-05-27T19:20:19.5704024Z > Task :app:assembleRelease
+2026-05-27T19:20:19.5704484Z 
+2026-05-27T19:20:19.5706203Z [Incubating] Problems report is available at: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/reports/problems/problems-report.html
+2026-05-27T19:20:19.5707234Z 
+2026-05-27T19:20:19.5707475Z BUILD SUCCESSFUL in 3m 5s
+2026-05-27T19:20:19.5708091Z 243 actionable tasks: 210 executed, 33 up-to-date
+2026-05-27T19:20:19.5709091Z Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.0.0/userguide/configuration_cache_enabling.html
+2026-05-27T19:20:19.6023621Z === Locating signed APK ===
+2026-05-27T19:20:19.6049061Z total 33884
+2026-05-27T19:20:19.6049843Z drwxr-xr-x 3 runner runner     4096 May 27 19:20 .
+2026-05-27T19:20:19.6050734Z drwxr-xr-x 3 runner runner     4096 May 27 19:20 ..
+2026-05-27T19:20:19.6052819Z -rw-r--r-- 1 runner runner 34677400 May 27 19:20 app-release.apk
+2026-05-27T19:20:19.6054437Z drwxr-xr-x 4 runner runner     4096 May 27 19:20 baselineProfiles
+2026-05-27T19:20:19.6055538Z -rw-r--r-- 1 runner runner      702 May 27 19:20 output-metadata.json
+2026-05-27T19:20:19.6078580Z Selected APK: app/build/outputs/apk/release/app-release.apk
+2026-05-27T19:20:19.6079435Z Verifying signature...
+2026-05-27T19:20:20.0516028Z V2 Signer: certificate DN: CN=ENCV-go, OU=Personal, O=ENCV, L=Unknown, ST=Unknown, C=CN
+2026-05-27T19:20:20.0520125Z V2 Signer: certificate SHA-256 digest: 8056fea3f94f09626a6a89a52453ffd49f58d2a2b4ee8f1ac39c8b1904645398
+2026-05-27T19:20:20.0524274Z V2 Signer: certificate SHA-1 digest: ff6bb9ee913fa3baac8506cea3006f9062e1a174
+2026-05-27T19:20:20.0528983Z V2 Signer: certificate MD5 digest: f890b31372161d5ea9de7d42f6013be8
+2026-05-27T19:20:20.0627034Z ✅ Signed OK: 34M
