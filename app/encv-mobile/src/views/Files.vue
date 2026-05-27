@@ -158,7 +158,9 @@
                     :value="sizeFilterMax !== null ? String(sizeFilterMax) : ''"
                     @ionInput="sizeFilterMax = $event.detail.value ? Number($event.detail.value) : null">
                   </ion-input>
-                  <ion-button fill="clear" size="small" @click="sizeFilterMin=null;sizeFilterMax=null">清除</ion-button>
+                  <ion-button fill="clear" size="small" @click="sizeFilterMin=null;sizeFilterMax=null">
+                    <ion-icon :icon="closeCircleOutline" slot="icon-only"></ion-icon>
+                  </ion-button>
                 </div>
                 <div class="filter-chips">
                   <ion-chip v-for="p in SIZE_PRESETS" :key="p.label" :button="true" outline @click.stop="applySizePreset(p)">{{ p.label }}</ion-chip>
@@ -176,7 +178,9 @@
                     :value="timeFilterTo || ''"
                     @ionInput="timeFilterTo = ($event.detail.value as string) || null">
                   </ion-input>
-                  <ion-button fill="clear" size="small" @click="timeFilterFrom=null;timeFilterTo=null">清除</ion-button>
+                  <ion-button fill="clear" size="small" @click="timeFilterFrom=null;timeFilterTo=null">
+                    <ion-icon :icon="closeCircleOutline" slot="icon-only"></ion-icon>
+                  </ion-button>
                 </div>
                 <div class="filter-chips">
                   <ion-chip v-for="p in TIME_PRESETS" :key="p.label" :button="true" outline @click.stop="applyTimePreset(p)">{{ p.label }}</ion-chip>
@@ -1091,12 +1095,19 @@ function applyTimePreset(preset: typeof TIME_PRESETS[number]) {
   const from = new Date(now)
   from.setDate(from.getDate() - preset.days)
   from.setHours(0, 0, 0, 0)
-  timeFilterFrom.value = from.toISOString()
+  timeFilterFrom.value = formatDateInput(from)
   if (preset.days === 0) {
-    timeFilterTo.value = now.toISOString()
+    timeFilterTo.value = formatDateInput(now)
   } else {
     timeFilterTo.value = null
   }
+}
+
+function formatDateInput(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 function clearAllPluginFilters() {
   sizeFilterMin.value = null
