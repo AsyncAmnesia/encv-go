@@ -29,8 +29,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.VolumeMute
-import androidx.compose.material.icons.outlined.Subtitles
-import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.Icons.Outlined.Subtitles
+import androidx.compose.material.icons.Icons.Outlined.MusicNote
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,6 +43,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -263,14 +264,14 @@ private fun BottomBar(
             VolumeIcon(volume = volume, onClick = { onVolumeChange(if (volume > 0f) 0f else 1f) })
             IconButton(onClick = onToggleSubtitle, modifier = Modifier.size(36.dp)) {
                 Icon(
-                    imageVector = Icons.outlined.Subtitles,
+                    imageVector = Icons.Outlined.Subtitles,
                     contentDescription = "Subtitle",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             IconButton(onClick = onCycleAudio, modifier = Modifier.size(36.dp)) {
                 Icon(
-                    imageVector = Icons.outlined.MusicNote,
+                    imageVector = Icons.Outlined.MusicNote,
                     contentDescription = "Audio Track",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )

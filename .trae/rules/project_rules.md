@@ -51,3 +51,48 @@
 - **禁止**只给 stub 文件加 tag 而主文件留空（会导致 GOOS 交叉编译时重复声明错误）
 - 正确示例参考：`internal/utils/ffmpeg_dlopen.go` (android) ↔ `internal/utils/ffmpeg_dlopen_stub.go` (!android)
 - 每次新增平台 stub 文件对时，**必须**同时验证 `GOOS=android` 和默认平台的编译通过
+
+## GitHub 项目搜索规范（重要！）
+
+- **搜索 GitHub 项目时**：优先使用 `WebFetch` 访问 `https://github.com/search?q=关键词&type=repositories`（GitHub 官方搜索 API），而非通用搜索引擎
+- **搜索技巧**：用 `site:github.com` 限定 + 精确引号包裹项目名，如 `"Sillot-KMP" site:github.com`
+- **已知优质参考项目**：
+  - [Hi-Sillot/Sillot-KMP](https://github.com/Hi-Sillot/Sillot-KMP) — Kotlin Multiplatform + Compose 模板，含完整的阿里云/腾讯 Maven 镜像配置
+  - [K-Sillot](https://github.com/K-Sillot)（汐洛套件）— 上游依赖镜像集合
+  - [Tencent-TDS/KuiklyUI-AI](https://github.com/Tencent-TDS/KuiklyUI-AI) — Kuikly Compose DSL 编码规范（rules/kuiklyComposeDSL.mdc）
+- **拉取源码参考**：优先 `raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}` 获取原始文件内容
+- **Gradle/Maven 镜像（国内网络）**：当沙箱无法访问 `maven.google.com` / `repo.maven.org` 时，使用以下镜像（来自 Sillot-KMP settings.gradle.kts）：
+
+### pluginManagement.repositories 镜像顺序
+```kotlin
+maven { url = uri("https://maven.aliyun.com/repository/google") }
+maven { url = uri("https://maven.aliyun.com/repository/central") }
+maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+maven { url = uri("https://maven.aliyun.com/repository/public") }
+maven { url = uri("https://mirrors.tencent.com/nexus/repository/maven-tencent/") }
+google()
+gradlePluginPortal()
+mavenCentral()
+```
+
+### dependencyResolutionManagement.repositories 镜像顺序
+```kotlin
+maven { url = uri("https://maven.aliyun.com/repository/google") }
+if (System.getenv("CI") == null) {
+    maven { url = uri("https://mirrors.tencent.com/nexus/repository/maven-public/") }
+}
+maven { url = uri("https://mirrors.tencent.com/repository/maven-tencent/") }
+maven { url = uri("https://maven.aliyun.com/repository/public") }
+google()
+mavenCentral()
+```
+
+## Jetpack Compose 编码规范
+
+- **权威参照文件**：[compose-reference.md](.trae/rules/compose-reference.md)（Android 官方文档摘录 + 本项目已验证代码）
+- **State `by` 委托必须同时 import**：`androidx.compose.runtime.getValue` + `androidx.compose.runtime.setValue`（缺一不可）
+- **Material Icons Extended 包路径**：`Icons.Outlined.XXX`（**大写 O**），不是小写 `outlined`
+- **本项目"金标准"文件**（已在 CI 编译通过，写新代码前必须参照其 import 风格和 API 用法）：
+  - `plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvPlayerScreen.kt`
+  - `plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvProgressBar.kt`
+- **写完任何 .kt Compose 文件后**：对照 compose-reference.md 逐条检查 import 完整性和 API 正确性
