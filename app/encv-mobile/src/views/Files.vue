@@ -651,6 +651,7 @@ function handleSearchToggle() {
 async function performSearch() {
   const query = searchQuery.value.trim()
   if (!query) return
+  if (selectedPlugin.value) return
 
   if (isSearching.value) {
     searchGeneration++
@@ -1048,6 +1049,10 @@ const filteredPluginFiles = computed(() => {
     list = pluginFiles.value.filter(f => f.isEncrypted || selectedPlugin.value?.containerExtension && f.name.endsWith(selectedPlugin.value.containerExtension))
   } else {
     list = pluginFiles.value.filter(f => !f.isEncrypted)
+  }
+  const query = searchQuery.value.trim().toLowerCase()
+  if (query) {
+    list = list.filter(f => f.name.toLowerCase().includes(query))
   }
   list.sort((a, b) => {
     if (a.isDirectory && !b.isDirectory) return -1
