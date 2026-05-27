@@ -124,7 +124,7 @@ import {
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { Capacitor } from '@capacitor/core'
-import { GoProcess, isNative } from '@/plugins/GoProcess'
+import { isNative } from '@/plugins/GoProcess'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const { t } = useI18n()
