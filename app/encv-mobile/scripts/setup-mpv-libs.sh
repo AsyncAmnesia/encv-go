@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ "${CI:-}" = "true" ]; then
+    echo "::warning::In CI, mpv libs should come from 'build-mpv-lib' workflow Release."
+    echo "::warning::This script is intended for local development only."
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 JNI_DIR="$PROJECT_DIR/plugin-mpv-player/src/main/jniLibs"
@@ -10,7 +15,7 @@ AAR_URL="https://repo1.maven.org/maven2/io/github/abdallahmehiz/mpv-android-lib/
 AAR_TMP="$(mktemp -d)/mpv-android-lib.aar"
 
 echo "setup-mpv-libs: downloading mpv-android-lib ${MPV_LIB_VERSION} AAR..."
-curl -fSL -o "$AAR_TMP" "$AAR_URL"
+curl -fSL --retry 3 --retry-delay 5 -A "Mozilla/5.0 (compatible; encv-ci/1.0)" -o "$AAR_TMP" "$AAR_URL"
 
 echo "setup-mpv-libs: Phase 1 — extracting prebuilt native libraries (mpv + ffmpeg)..."
 mkdir -p "$JNI_DIR"
@@ -23,7 +28,6 @@ for abi in arm64-v8a; do
         echo "  ✗ $abi: libmpv.so not found in AAR!"
         exit 1
     fi
-    # Remove pre-built libplayer.so (we build our own from source to match MPVLib.kt)
     rm -f "$JNI_DIR/$abi/libplayer.so"
     count=$(find "$JNI_DIR/$abi" -name "*.so" | wc -l)
     echo "  ✓ $abi: ${count} .so files extracted (libplayer.so excluded, will be built from source)"

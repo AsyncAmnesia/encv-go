@@ -13,6 +13,11 @@ on:
         required: false
         default: ''
         type: string
+      skip_plugin:
+        description: 'Skip MPV plugin build (only build host app)'
+        required: false
+        default: 'false'
+        type: boolean
 
 env:
   NDK_VERSION: "26.1.10909125"
@@ -113,8 +118,22 @@ jobs:
       - name: Build Lynx player bundle
         run: cd app/encv-mobile/lynx-player && npm install && npm run build
 
-      - name: Setup mpv native libraries
-        run: cd app/encv-mobile && bash scripts/setup-mpv-libs.sh
+      - name: Download MPV native libraries from Release
+        run: |
+          cd app/encv-mobile/plugin-mpv-player/src/main
+          mkdir -p jniLibs/arm64-v8a
+          ASSET_URL=$(curl -sf \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/mpv-native-libs" \
+            | jq -r '.assets[] | select(.name | startswith("mpv-jniLibs-arm64")) | .browser_download_url')
+          if [ -z "$ASSET_URL" ]; then
+            echo "::error::No MPV lib asset found in release 'mpv-native-libs'. Run 'Build MPV Native Libraries' workflow first."
+            exit 1
+          fi
+          echo "Downloading: $ASSET_URL"
+          curl -fSL -o /tmp/mpv-jniLibs.zip "$ASSET_URL"
+          unzip -o /tmp/mpv-jniLibs.zip -d jniLibs/
+          echo "✅ MPV libs extracted:"
+          ls -lhR jniLibs/
 
       - name: Build ffmpeg shared libraries for Android
         run: cd app/encv-mobile && bash scripts/build-ffmpeg-android.sh
@@ -226,6 +245,7 @@ jobs:
 
       # === Build MPV Player Plugin ===
       - name: Build MPV player plugin (JNI + Kotlin)
+        if: inputs.skip_plugin != true
         run: |
           cd app/encv-mobile/android
 
@@ -241,6 +261,7 @@ jobs:
           echo "=== Plugin compile done (${BUILD_TYPE}) ==="
 
       - name: Package MPV plugin as APK
+        if: inputs.skip_plugin != true
         run: |
           cd app/encv-mobile/android
           BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
@@ -261,7 +282,7 @@ jobs:
           fi
 
       - name: Verify plugin APK contents
-        if: always()
+        if: always() && inputs.skip_plugin != true
         continue-on-error: true
         run: |
           PLUGIN_APK=$(find app/encv-mobile/android/build -name "plugin-mpv-player-debug.apk" -type f 2>/dev/null | head -1)
@@ -349,7 +370,9 @@ jobs:
             echo "=== Lynx bundle in APK ==="
             unzip -l "$APK_PATH" | grep "player.lynx.bundle" || echo "❌ player.lynx.bundle NOT in APK!"
             echo "=== Plugin APK in assets ==="
-            if unzip -l "$APK_PATH" | grep -q "mpv-player.apk"; then
+            if [ "${{ inputs.skip_plugin }}" = "true" ]; then
+              echo "⏭️ Skipped (skip_plugin=true)"
+            elif unzip -l "$APK_PATH" | grep -q "mpv-player.apk"; then
               echo "✅ PASS: Plugin APK found in host assets"
               unzip -l "$APK_PATH" | grep "mpv-player.apk"
             else
@@ -366,7 +389,7 @@ jobs:
           path: |
             app/encv-mobile/android/app/build/outputs/apk/**/*.apk
             app/encv-mobile/android/build/outputs/plugin-apks/**/*.apk
-          retention-days: 30
+          retention-days: 3
 
       - name: Build summary
         if: always()
