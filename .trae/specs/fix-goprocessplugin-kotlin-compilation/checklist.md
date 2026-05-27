@@ -1,6 +1,8 @@
-- [ ] GoProcessPlugin.kt 包含 `import android.content.BroadcastReceiver`
-- [ ] GoProcessPlugin.kt 包含 `import android.content.Context`
-- [ ] GoProcessPlugin.kt 只有一个 `companion object`（包含 TAG 和 REQUEST_CODE_PLUGIN_PICK）
-- [ ] `REQUEST_CODE_PLUGIN_PICK` 可在类内所有引用处访问
-- [ ] `String?` 类型的 nullable 安全调用正确
+- [ ] GoProcessPlugin.kt 包含 `import android.content.BroadcastReceiver`（在 `android.content.IntentFilter` 之后）
+- [ ] GoProcessPlugin.kt 包含 `import android.content.Context`（在 `BroadcastReceiver` 之后）
+- [ ] GoProcessPlugin.kt 只有一个 `companion object`（包含 `TAG` 和 `REQUEST_CODE_PLUGIN_PICK`）
+- [ ] `REQUEST_CODE_PLUGIN_PICK` 可在 `pickAndInstallPlugin()` 和 `handleOnActivityResult()` 中正常访问
+- [ ] `String?` 类型的 `path` 使用 `isNullOrEmpty()` 而非 `isEmpty()`
+- [ ] `String?` 类型的 `path.removePrefix()` 使用安全调用 `path!!.removePrefix()` 或 `path?.removePrefix() ?: ""`
+- [ ] import 排序遵循项目范式：android.* → androidx.* → 第三方 → java.*
 - [ ] Kotlin 编译无错误（需 CI 验证）
