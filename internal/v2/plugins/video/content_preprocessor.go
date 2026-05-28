@@ -132,7 +132,14 @@ func (p *VideoContentPreprocessor) ensureOutputDir() error {
 	return fmt.Errorf("outputDir exists but is not a directory: %s", p.outputDir)
 }
 
-func (p *VideoContentPreprocessor) Preprocess(inputPath string) (io.ReadCloser, error) {
+func (p *VideoContentPreprocessor) Preprocess(inputPath string) (result io.ReadCloser, resultErr error) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("Preprocess panicked", "file", filepath.Base(inputPath), "panic", r)
+			resultErr = fmt.Errorf("preprocessing failed: internal error: %v", r)
+		}
+	}()
+
 	slog.Info("Analyzing for optimal processing", "component", "CONTENT_PREPROCESSOR", "file", filepath.Base(inputPath))
 
 	if p.ctx != nil {
@@ -338,7 +345,9 @@ func (p *VideoContentPreprocessor) remapWithMKVMerge(inputPath string) (io.ReadC
 	if err := p.ensureOutputDir(); err != nil {
 		return nil, "", fmt.Errorf("failed to ensure output dir: %w", err)
 	}
-	tempFile, err := os.CreateTemp(p.outputDir, "encv-pre-*.mkv")
+	tmpDir := filepath.Join(p.outputDir, ".encv_tmp")
+	os.MkdirAll(tmpDir, 0755)
+	tempFile, err := os.CreateTemp(tmpDir, "encv-pre-*.mkv")
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create temp file for MKV remuxing: %w", err)
 	}
@@ -390,7 +399,9 @@ func (p *VideoContentPreprocessor) remapMKVWithFFmpeg(inputPath string) (io.Read
 	if err := p.ensureOutputDir(); err != nil {
 		return nil, "", fmt.Errorf("failed to ensure output dir: %w", err)
 	}
-	tempFile, err := os.CreateTemp(p.outputDir, "encv-pre-*.mkv")
+	tmpDir := filepath.Join(p.outputDir, ".encv_tmp")
+	os.MkdirAll(tmpDir, 0755)
+	tempFile, err := os.CreateTemp(tmpDir, "encv-pre-*.mkv")
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create temp file for MKV remuxing: %w", err)
 	}
@@ -413,7 +424,9 @@ func (p *VideoContentPreprocessor) remapMP4ForFastStart(inputPath string) (io.Re
 	if err := p.ensureOutputDir(); err != nil {
 		return nil, "", fmt.Errorf("failed to ensure output dir: %w", err)
 	}
-	tempFile, err := os.CreateTemp(p.outputDir, "encv-pre-*.mp4")
+	tmpDir := filepath.Join(p.outputDir, ".encv_tmp")
+	os.MkdirAll(tmpDir, 0755)
+	tempFile, err := os.CreateTemp(tmpDir, "encv-pre-*.mp4")
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create temp file for MP4 remuxing: %w", err)
 	}
@@ -436,7 +449,9 @@ func (p *VideoContentPreprocessor) transcodeToFastStartMP4(inputPath string) (io
 	if err := p.ensureOutputDir(); err != nil {
 		return nil, "", fmt.Errorf("failed to ensure output dir: %w", err)
 	}
-	tempFile, err := os.CreateTemp(p.outputDir, "encv-pre-*.mp4")
+	tmpDir := filepath.Join(p.outputDir, ".encv_tmp")
+	os.MkdirAll(tmpDir, 0755)
+	tempFile, err := os.CreateTemp(tmpDir, "encv-pre-*.mp4")
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create temp file for transcoding: %w", err)
 	}
@@ -469,7 +484,9 @@ func (p *VideoContentPreprocessor) transcodeToFastStartMP4(inputPath string) (io
 			if err := p.ensureOutputDir(); err != nil {
 				return nil, "", fmt.Errorf("failed to ensure output dir: %w", err)
 			}
-			tempFile2, err2 := os.CreateTemp(p.outputDir, "encv-pre-*.mp4")
+			tmpDir := filepath.Join(p.outputDir, ".encv_tmp")
+			os.MkdirAll(tmpDir, 0755)
+			tempFile2, err2 := os.CreateTemp(tmpDir, "encv-pre-*.mp4")
 			if err2 != nil {
 				return nil, "", fmt.Errorf("failed to create temp file for fallback transcoding: %w", err2)
 			}

@@ -383,6 +383,27 @@ func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
 			containerID = "(auto)"
 		}
 		result.Container["container_id"] = containerID
+		if cidStr, ok := result.Container["container_id"].(string); ok {
+			if !utf8.ValidString(cidStr) || !isPrintableJSONString(cidStr) {
+				result.Container["container_id"] = "(non-printable data)"
+			}
+		}
+		if v, ok := result.Container["version"]; ok {
+			switch val := v.(type) {
+			case int:
+				if val < 0 || val > 999 {
+					result.Container["version"] = "?"
+				}
+			case float64:
+				if val < 0 || val > 999 {
+					result.Container["version"] = "?"
+				}
+			case string:
+				if !utf8.ValidString(val) || !isPrintableJSONString(val) {
+					result.Container["version"] = "?"
+				}
+			}
+		}
 		result.Container["original_duration"] = mf.OriginalDuration
 		result.Container["segment_count"] = len(mf.Segments)
 		result.Container["manifest_size"] = hdr.ManifestLength

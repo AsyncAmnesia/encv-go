@@ -396,10 +396,17 @@ func ProcessFileWithPlugin(p Plugin, inputPath string) (types.Index, io.ReadClos
 }
 
 // EncryptFileWithPlugin 是一个新的辅助函数，封装了完整的加密流程
-func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputRootDir, outputDir string) error {
+func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputRootDir, outputDir string) (err error) {
 	if vp, ok := plugin.(*video.VideoPlugin); ok {
 		vp.SetOutputDir(outputDir)
 	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("EncryptFileWithPlugin panicked", "path", inputPath, "panic", r)
+			err = fmt.Errorf("encryption preprocessing failed: internal error: %v", r)
+		}
+	}()
 
 	index, dataReader, err := ProcessFileWithPlugin(plugin, inputPath)
 	if err != nil {

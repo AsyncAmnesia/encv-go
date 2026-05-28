@@ -270,7 +270,7 @@ export async function deleteFile(path: string): Promise<void> {
 
 export async function createDirectory(parentPath: string, name: string): Promise<void> {
   console.info('[API] createDirectory:', parentPath, name)
-  const response = await fetch(`${getApiBaseUrl()}/files/mkdir`, {
+  const response = await fetch(`${getApiBaseUrl()}/api/files/mkdir`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ parent_path: parentPath, name }),

@@ -30,7 +30,25 @@ func (s *Server) handleGetConfigGin(c *gin.Context) {
 		return
 	}
 
-	c.Data(http.StatusOK, "application/json", data)
+	var cfg config.Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		slog.Error("Failed to parse config file", "path", s.configPath, "error", err)
+		c.Data(http.StatusOK, "application/json", data)
+		return
+	}
+
+	if os.Getenv("ENCV_MOBILE") == "1" && cfg.Mobile != nil {
+		config.ApplyMobileOverrides(&cfg)
+	}
+
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		slog.Error("Failed to marshal processed config", "error", err)
+		c.Data(http.StatusOK, "application/json", data)
+		return
+	}
+
+	c.Data(http.StatusOK, "application/json", out)
 }
 
 func (s *Server) handlePutConfigGin(c *gin.Context) {
