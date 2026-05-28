@@ -1,6 +1,6 @@
 <template>
   <div class="mpv-player-prototype">
-    <div class="player-screen" :class="{ fullscreen: isFullscreen }" @click="handleTap">
+    <div class="player-screen" :class="{ landscape: isLandscape }" @click="handleTap">
       <div class="video-area">
         <div class="video-placeholder">
           <svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -33,7 +33,7 @@
           </div>
 
           <div class="side-lock" @click.stop>
-            <button class="lock-btn" :class="{ locked: isLocked }" @click.stop="isLocked = true">
+            <button class="lock-btn" @click.stop="isLocked = true">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM15.1 8H8.9V6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2z"/></svg>
             </button>
           </div>
@@ -56,9 +56,14 @@
                       <span>{{ s.label }}</span>
                       <svg v-if="selectedSubtitle === s.id" viewBox="0 0 24 24" width="16" height="16" fill="#BB86FC"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
                     </button>
+                    <div class="popup-divider"></div>
+                    <button class="popup-item file-pick-item" @click="pickSubtitleFile">
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px;flex-shrink:0"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                      <span>{{ externalSubtitleName || 'Choose subtitle file…' }}</span>
+                    </button>
                   </div>
                 </transition>
-                <button class="icon-btn sm" :class="{ active: activePanel === 'subtitles' }" @click.stop="togglePanel('subtitles')" title="Subtitles">
+                <button class="icon-btn sm" :class="{ active: activePanel === 'subtitles' || selectedSubtitle !== 'none' }" @click.stop="togglePanel('subtitles')" title="Subtitles">
                   <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 12h2m4 0h4M7 16h10"/></svg>
                 </button>
               </div>
@@ -91,8 +96,8 @@
                   <svg v-else viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
                 </button>
               </div>
-              <button class="icon-btn sm" @click.stop="toggleFullscreen" title="Fullscreen">
-                <svg v-if="!isFullscreen" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+              <button class="icon-btn sm" @click.stop="toggleLandscape" :title="isLandscape ? 'Portrait' : 'Landscape'">
+                <svg v-if="!isLandscape" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
                 <svg v-else viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>
               </button>
             </div>
@@ -144,7 +149,43 @@
                 <button class="delay-btn" @click="audioDelay += 0.5">+0.5s</button>
               </div>
             </div>
+            <div class="settings-group">
+              <div class="toggle-row">
+                <div class="toggle-info">
+                  <span class="toggle-label">Background Playback</span>
+                  <span class="toggle-desc">Audio only in background, resume position on return</span>
+                </div>
+                <button class="toggle-switch" :class="{ on: bgPlayback }" @click="bgPlayback = !bgPlayback">
+                  <span class="toggle-knob"></span>
+                </button>
+              </div>
+            </div>
+            <div class="settings-group">
+              <button class="pip-btn" @click="enterPip">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:8px;flex-shrink:0"><rect x="2" y="3" width="20" height="14" rx="2"/><rect x="11" y="9" width="10" height="7" rx="1.5" fill="rgba(187,134,252,0.2)" stroke="currentColor"/></svg>
+                <span>Picture-in-Picture</span>
+              </button>
+            </div>
           </div>
+        </div>
+      </transition>
+
+      <transition name="pip-fade">
+        <div v-if="isPipMode" class="pip-window" @click.stop="exitPip">
+          <div class="pip-video-mini">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><polygon points="10,8 16,12 10,16"/></svg>
+          </div>
+          <div class="pip-info">
+            <span class="pip-title">{{ fileName }}</span>
+            <span class="pip-time">{{ formatTime(currentPosition) }} / {{ formatTime(duration) }}</span>
+          </div>
+          <button class="pip-play-btn" @click.stop="togglePlay">
+            <svg v-if="isPlaying" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            <svg v-else viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </button>
+          <button class="pip-close-btn" @click.stop="exitPip">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
         </div>
       </transition>
     </div>
@@ -180,7 +221,7 @@ const duration = computed(() => durationInput.value)
 const progress = computed(() => duration.value > 0 ? currentPosition.value / duration.value : 0)
 const showControls = ref(true)
 const isLocked = ref(false)
-const isFullscreen = ref(false)
+const isLandscape = ref(false)
 const playbackSpeed = ref(1.0)
 const volume = ref(0.8)
 const showVolumeSlider = ref(false)
@@ -192,6 +233,9 @@ const selectedSubtitle = ref('none')
 const selectedAudio = ref('1')
 const subtitleDelay = ref(0)
 const audioDelay = ref(0)
+const bgPlayback = ref(false)
+const isPipMode = ref(false)
+const externalSubtitleName = ref('')
 
 const subtitleTracks = [
   { id: 'none', label: 'None' },
@@ -206,6 +250,15 @@ const audioTracks = [
   { id: '2', label: 'English (Stereo)' },
   { id: '3', label: 'Chinese (Stereo)' },
 ]
+
+function formatTime(ms: number): string {
+  const totalSec = Math.floor(ms / 1000)
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const s = totalSec % 60
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  return `${m}:${String(s).padStart(2, '0')}`
+}
 
 function togglePanel(panel: typeof activePanel.value) {
   if (activePanel.value === panel) {
@@ -273,8 +326,34 @@ function stopDrag() {
   isDragging.value = false
 }
 
-function toggleFullscreen() {
-  isFullscreen.value = !isFullscreen.value
+function toggleLandscape() {
+  isLandscape.value = !isLandscape.value
+}
+
+function pickSubtitleFile() {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = '.srt,.ass,.ssa,.vtt,.lrc,.sub'
+  input.onchange = () => {
+    const file = input.files?.[0]
+    if (file) {
+      externalSubtitleName.value = file.name
+      selectedSubtitle.value = 'external'
+      activePanel.value = ''
+    }
+  }
+  input.click()
+}
+
+function enterPip() {
+  isPipMode.value = true
+  activePanel.value = ''
+  showControls.value = false
+}
+
+function exitPip() {
+  isPipMode.value = false
+  showControls.value = true
 }
 
 function onBack() {
@@ -314,13 +393,12 @@ watch(isPlaying, (val) => {
   overflow: hidden;
   user-select: none;
   cursor: pointer;
+  transition: aspect-ratio 0.35s ease, max-height 0.35s ease;
 }
 
-.player-screen.fullscreen {
-  aspect-ratio: unset;
-  max-height: none;
-  border-radius: 0;
-  flex: 1;
+.player-screen.landscape {
+  aspect-ratio: 21/9;
+  max-height: 220px;
 }
 
 .video-area {
@@ -480,7 +558,7 @@ watch(isPlaying, (val) => {
   position: absolute;
   bottom: 44px;
   right: 0;
-  min-width: 180px;
+  min-width: 200px;
   background: rgba(24, 24, 30, 0.96);
   border-radius: 12px;
   padding: 6px 0;
@@ -521,6 +599,20 @@ watch(isPlaying, (val) => {
   color: #BB86FC;
 }
 
+.popup-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.08);
+  margin: 4px 0;
+}
+
+.file-pick-item {
+  color: rgba(187,134,252,0.9);
+}
+
+.file-pick-item:hover {
+  background: rgba(187,134,252,0.08);
+}
+
 .settings-overlay {
   position: absolute;
   inset: 0;
@@ -532,7 +624,9 @@ watch(isPlaying, (val) => {
 }
 
 .settings-panel {
-  width: 280px;
+  width: 300px;
+  max-height: 90%;
+  overflow-y: auto;
   background: rgba(24, 24, 30, 0.97);
   border-radius: 16px;
   padding: 16px;
@@ -601,6 +695,164 @@ watch(isPlaying, (val) => {
   font-family: 'SF Mono', 'Fira Code', monospace;
   font-size: 13px;
   color: #BB86FC;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.toggle-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.toggle-label {
+  font-size: 14px;
+  color: rgba(255,255,255,0.9);
+}
+
+.toggle-desc {
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+  line-height: 1.3;
+}
+
+.toggle-switch {
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  border: none;
+  background: rgba(255,255,255,0.15);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.toggle-switch.on {
+  background: #BB86FC;
+}
+
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+}
+
+.toggle-switch.on .toggle-knob {
+  transform: translateX(20px);
+}
+
+.pip-btn {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 8px 0;
+  border: none;
+  background: none;
+  color: rgba(255,255,255,0.85);
+  font-size: 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s;
+}
+
+.pip-btn:hover {
+  color: #BB86FC;
+}
+
+.pip-window {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  width: 200px;
+  background: rgba(18, 18, 22, 0.96);
+  border-radius: 12px;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+  backdrop-filter: blur(12px);
+  z-index: 40;
+  cursor: pointer;
+}
+
+.pip-video-mini {
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255,255,255,0.4);
+  flex-shrink: 0;
+}
+
+.pip-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+}
+
+.pip-title {
+  font-size: 11px;
+  color: rgba(255,255,255,0.85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pip-time {
+  font-size: 10px;
+  color: rgba(255,255,255,0.4);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.pip-play-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pip-close-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.5);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pip-close-btn:hover {
+  background: rgba(255,82,82,0.3);
+  color: #ff5252;
 }
 
 .volume-popover-wrap {
@@ -761,5 +1013,15 @@ watch(isPlaying, (val) => {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+.pip-fade-enter-active,
+.pip-fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.pip-fade-enter-from,
+.pip-fade-leave-to {
+  opacity: 0;
+  transform: translateY(8px) scale(0.95);
 }
 </style>
