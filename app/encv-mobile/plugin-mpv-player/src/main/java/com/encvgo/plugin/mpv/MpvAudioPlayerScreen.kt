@@ -30,8 +30,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material.icons.filled.VolumeMute
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeMute
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -296,7 +296,7 @@ fun MpvAudioPlayerScreen(
                 modifier = Modifier.size(32.dp)
             ) {
                 Icon(
-                    imageVector = if (volume > 0f) Icons.Default.VolumeUp else Icons.Default.VolumeMute,
+                    imageVector = if (volume > 0f) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeMute,
                     contentDescription = "Volume",
                     tint = Color.White.copy(alpha = 0.7f),
                     modifier = Modifier.size(20.dp)

@@ -39,12 +39,12 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material.icons.filled.VolumeMute
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.automirrored.filled.VolumeMute
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Subtitles
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -113,13 +113,16 @@ fun MpvControls(
     val isError = state is PlayerState.Error
 
     when {
-        isError -> ErrorLayout(
-            fileName = fileName,
-            errorType = (state as PlayerState.Error).errorType,
-            detail = state.detail,
-            onRetry = onRetry,
-            onBack = onBack
-        )
+        isError -> {
+            val errorState = state as PlayerState.Error
+            ErrorLayout(
+                fileName = fileName,
+                errorType = errorState.errorType,
+                detail = errorState.detail,
+                onRetry = onRetry,
+                onBack = onBack
+            )
+        }
         isLoading -> LoadingLayout(fileName = fileName, onBack = onBack)
         isLocked -> LockedLayout(
             progress = progress,
@@ -138,7 +141,7 @@ fun MpvControls(
             volume = volume,
             showControls = showControls,
             onPlayPause = onPlayPause,
-            onSeek = { onSeek(it.toLong()) },
+            onSeek = onSeek,
             onSeekDelta = onSeekDelta,
             onChangeSpeed = onChangeSpeed,
             onVolumeChange = onVolumeChange,
@@ -161,7 +164,7 @@ fun MpvControls(
             currentAudioId = currentAudioId,
             bgPlaybackEnabled = bgPlaybackEnabled,
             onPlayPause = onPlayPause,
-            onSeek = { onSeek(it.toLong()) },
+            onSeek = onSeek,
             onSeekDelta = onSeekDelta,
             onToggleLock = onToggleLock,
             onChangeSpeed = onChangeSpeed,
@@ -345,7 +348,7 @@ private fun BottomBar(
                 modifier = Modifier.size(36.dp)
             ) {
                 Icon(
-                    imageVector = if (volume > 0f) Icons.Default.VolumeUp else Icons.Default.VolumeMute,
+                    imageVector = if (volume > 0f) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeMute,
                     contentDescription = "Volume",
                     tint = Color.White.copy(alpha = 0.7f)
                 )
@@ -468,7 +471,7 @@ private fun SettingsPanel(
                 }
 
                 Spacer(Modifier.height(16.dp))
-                Divider(color = Color.White.copy(alpha = 0.06f))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.06f))
                 Spacer(Modifier.height(12.dp))
 
                 Row(
@@ -544,7 +547,7 @@ private fun TrackSelectionPopup(
                 )
             }
             if (includeFilePicker && onAddFile != null) {
-                Divider(color = Color.White.copy(alpha = 0.08f), modifier = Modifier.padding(vertical = 4.dp))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f), modifier = Modifier.padding(vertical = 4.dp))
                 TrackItem(
                     label = "Choose subtitle file…",
                     selected = false,
@@ -746,7 +749,7 @@ private fun AudioOnlyLayout(
                 SpeedChip(speed = playbackSpeed, onClick = { onChangeSpeed(playbackSpeed) })
                 Spacer(Modifier.width(24.dp))
                 IconButton(onClick = { onVolumeChange(if (volume > 0f) 0f else 1f) }, modifier = Modifier.size(36.dp)) {
-                    Icon(imageVector = if (volume > 0f) Icons.Default.VolumeUp else Icons.Default.VolumeMute, contentDescription = "Volume", tint = Color.White.copy(alpha = 0.7f))
+                    Icon(imageVector = if (volume > 0f) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeMute, contentDescription = "Volume", tint = Color.White.copy(alpha = 0.7f))
                 }
             }
             Spacer(Modifier.windowInsetsPadding(WindowInsets.navigationBars))

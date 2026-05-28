@@ -203,13 +203,13 @@ class GoProcessPlugin : Plugin() {
 
     @PluginMethod
     fun openPlayer(call: PluginCall) {
-        val filePath = call.getString("filePath", "")
-        val name = call.getString("name", "")
-        val mimeType = call.getString("mimeType", "")
-        val mode = call.getString("mode", "")
+        val filePath = call.getString("filePath", "") ?: ""
+        val name = call.getString("name", "") ?: ""
+        val mimeType = call.getString("mimeType", "") ?: ""
+        val mode = call.getString("mode", "") ?: ""
         try {
             Log.d(TAG, "openPlayer: filePath=$filePath, name=$name, mimeType=$mimeType, mode=$mode")
-            PlayerEntry.play(context ?: activity!!, filePath!!, name!!, mimeType!!, isExternal = false, mode = mode)
+            PlayerEntry.play(context ?: activity!!, filePath, name, mimeType, isExternal = false, mode = mode)
             call.resolve()
         } catch (e: Exception) {
             Log.e(TAG, "openPlayer failed", e)
