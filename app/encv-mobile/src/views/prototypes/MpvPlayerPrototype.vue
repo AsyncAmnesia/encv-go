@@ -18,22 +18,24 @@
               <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
             </button>
             <span class="top-title">{{ fileName }}</span>
-            <button class="icon-btn" @click.stop>
+            <button class="icon-btn" @click.stop="togglePanel('settings')">
               <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 00-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
             </button>
           </div>
 
           <div class="center-controls">
-            <button class="lock-btn" :class="{ locked: isLocked }" @click.stop="isLocked = !isLocked">
-              <svg v-if="isLocked" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
-              <svg v-else viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM15.1 8H8.9V6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2z"/></svg>
-            </button>
             <button class="seek-delta-btn" @click.stop="seekDelta(-10000)">-10s</button>
             <button class="play-btn" @click.stop="togglePlay">
               <svg v-if="isPlaying" viewBox="0 0 24 24" width="40" height="40" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
               <svg v-else viewBox="0 0 24 24" width="40" height="40" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
             </button>
             <button class="seek-delta-btn" @click.stop="seekDelta(10000)">+10s</button>
+          </div>
+
+          <div class="side-lock" @click.stop>
+            <button class="lock-btn" :class="{ locked: isLocked }" @click.stop="isLocked = true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM15.1 8H8.9V6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2z"/></svg>
+            </button>
           </div>
 
           <div class="bottom-bar">
@@ -46,12 +48,34 @@
             <div class="bottom-actions">
               <button class="speed-chip" @click.stop="cycleSpeed">{{ playbackSpeed }}x</button>
               <div class="spacer"></div>
-              <button class="icon-btn sm" @click.stop title="Subtitles">
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 12h2m4 0h4M7 16h10"/></svg>
-              </button>
-              <button class="icon-btn sm" @click.stop title="Audio track">
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 12h8"/></svg>
-              </button>
+              <div class="popover-wrap">
+                <transition name="pop">
+                  <div v-if="activePanel === 'subtitles'" class="popup-panel" @click.stop>
+                    <div class="popup-title">Subtitles</div>
+                    <button v-for="s in subtitleTracks" :key="s.id" class="popup-item" :class="{ active: selectedSubtitle === s.id }" @click="selectedSubtitle = s.id; activePanel = ''">
+                      <span>{{ s.label }}</span>
+                      <svg v-if="selectedSubtitle === s.id" viewBox="0 0 24 24" width="16" height="16" fill="#BB86FC"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                    </button>
+                  </div>
+                </transition>
+                <button class="icon-btn sm" :class="{ active: activePanel === 'subtitles' }" @click.stop="togglePanel('subtitles')" title="Subtitles">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 12h2m4 0h4M7 16h10"/></svg>
+                </button>
+              </div>
+              <div class="popover-wrap">
+                <transition name="pop">
+                  <div v-if="activePanel === 'audio'" class="popup-panel" @click.stop>
+                    <div class="popup-title">Audio Track</div>
+                    <button v-for="a in audioTracks" :key="a.id" class="popup-item" :class="{ active: selectedAudio === a.id }" @click="selectedAudio = a.id; activePanel = ''">
+                      <span>{{ a.label }}</span>
+                      <svg v-if="selectedAudio === a.id" viewBox="0 0 24 24" width="16" height="16" fill="#BB86FC"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                    </button>
+                  </div>
+                </transition>
+                <button class="icon-btn sm" :class="{ active: activePanel === 'audio' }" @click.stop="togglePanel('audio')" title="Audio track">
+                  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 12h8"/></svg>
+                </button>
+              </div>
               <div class="volume-popover-wrap">
                 <transition name="vol-pop">
                   <div v-if="showVolumeSlider" class="volume-popover" @click.stop>
@@ -78,7 +102,7 @@
 
       <transition name="fade">
         <div v-if="isLocked && showControls" class="locked-overlay">
-          <div class="locked-center">
+          <div class="side-lock locked" @click.stop>
             <button class="lock-btn locked" @click.stop="isLocked = false">
               <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
             </button>
@@ -90,6 +114,36 @@
               :duration="duration"
               @seek="handleSeek"
             />
+          </div>
+        </div>
+      </transition>
+
+      <transition name="fade">
+        <div v-if="activePanel === 'settings' && showControls" class="settings-overlay" @click.stop="activePanel = ''">
+          <div class="settings-panel" @click.stop>
+            <div class="popup-title">Settings</div>
+            <div class="settings-group">
+              <span class="settings-label">Playback Speed</span>
+              <div class="speed-options">
+                <button v-for="s in SPEED_OPTIONS" :key="s" class="speed-opt" :class="{ active: playbackSpeed === s }" @click="playbackSpeed = s">{{ s }}x</button>
+              </div>
+            </div>
+            <div class="settings-group">
+              <span class="settings-label">Subtitle Delay</span>
+              <div class="delay-row">
+                <button class="delay-btn" @click="subtitleDelay -= 0.5">-0.5s</button>
+                <span class="delay-val">{{ subtitleDelay >= 0 ? '+' : '' }}{{ subtitleDelay.toFixed(1) }}s</span>
+                <button class="delay-btn" @click="subtitleDelay += 0.5">+0.5s</button>
+              </div>
+            </div>
+            <div class="settings-group">
+              <span class="settings-label">Audio Delay</span>
+              <div class="delay-row">
+                <button class="delay-btn" @click="audioDelay -= 0.5">-0.5s</button>
+                <span class="delay-val">{{ audioDelay >= 0 ? '+' : '' }}{{ audioDelay.toFixed(1) }}s</span>
+                <button class="delay-btn" @click="audioDelay += 0.5">+0.5s</button>
+              </div>
+            </div>
           </div>
         </div>
       </transition>
@@ -133,12 +187,42 @@ const showVolumeSlider = ref(false)
 const isDragging = ref(false)
 const volumeTrackRef = ref<HTMLElement>()
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2]
+const activePanel = ref<'' | 'settings' | 'subtitles' | 'audio'>('')
+const selectedSubtitle = ref('none')
+const selectedAudio = ref('1')
+const subtitleDelay = ref(0)
+const audioDelay = ref(0)
+
+const subtitleTracks = [
+  { id: 'none', label: 'None' },
+  { id: '1', label: 'English' },
+  { id: '2', label: 'Chinese (Simplified)' },
+  { id: '3', label: 'Chinese (Traditional)' },
+  { id: '4', label: 'Japanese' },
+]
+
+const audioTracks = [
+  { id: '1', label: 'Japanese (5.1)' },
+  { id: '2', label: 'English (Stereo)' },
+  { id: '3', label: 'Chinese (Stereo)' },
+]
+
+function togglePanel(panel: typeof activePanel.value) {
+  if (activePanel.value === panel) {
+    activePanel.value = ''
+  } else {
+    activePanel.value = panel
+    showVolumeSlider.value = false
+  }
+}
 
 function handleTap() {
   if (isLocked.value) {
     isLocked.value = false
   } else {
     showControls.value = !showControls.value
+    activePanel.value = ''
+    showVolumeSlider.value = false
   }
 }
 
@@ -165,6 +249,7 @@ function cycleSpeed() {
 
 function toggleVolumeSlider() {
   showVolumeSlider.value = !showVolumeSlider.value
+  if (showVolumeSlider.value) activePanel.value = ''
 }
 
 function onVolumeTrackClick(e: MouseEvent) {
@@ -297,7 +382,15 @@ watch(isPlaying, (val) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 24px;
+  gap: 32px;
+}
+
+.side-lock {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
 }
 
 .lock-btn {
@@ -379,6 +472,137 @@ watch(isPlaying, (val) => {
   cursor: pointer;
 }
 
+.popover-wrap {
+  position: relative;
+}
+
+.popup-panel {
+  position: absolute;
+  bottom: 44px;
+  right: 0;
+  min-width: 180px;
+  background: rgba(24, 24, 30, 0.96);
+  border-radius: 12px;
+  padding: 6px 0;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  backdrop-filter: blur(12px);
+  z-index: 20;
+}
+
+.popup-title {
+  padding: 8px 14px 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255,255,255,0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.popup-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  color: rgba(255,255,255,0.85);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.popup-item:hover {
+  background: rgba(255,255,255,0.08);
+}
+
+.popup-item.active {
+  color: #BB86FC;
+}
+
+.settings-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.4);
+  z-index: 30;
+}
+
+.settings-panel {
+  width: 280px;
+  background: rgba(24, 24, 30, 0.97);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  backdrop-filter: blur(16px);
+}
+
+.settings-group {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.settings-group:last-child {
+  border-bottom: none;
+}
+
+.settings-label {
+  display: block;
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+  margin-bottom: 8px;
+}
+
+.speed-options {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.speed-opt {
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: transparent;
+  color: rgba(255,255,255,0.7);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.speed-opt.active {
+  border-color: rgba(187,134,252,0.5);
+  background: rgba(187,134,252,0.15);
+  color: #BB86FC;
+}
+
+.delay-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.delay-btn {
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: transparent;
+  color: rgba(255,255,255,0.7);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.delay-val {
+  flex: 1;
+  text-align: center;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  color: #BB86FC;
+}
+
 .volume-popover-wrap {
   position: relative;
 }
@@ -456,6 +680,16 @@ watch(isPlaying, (val) => {
   transform: translateX(-50%) translateY(4px);
 }
 
+.pop-enter-active,
+.pop-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.pop-enter-from,
+.pop-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
 .icon-btn {
   width: 40px;
   height: 40px;
@@ -480,12 +714,8 @@ watch(isPlaying, (val) => {
   color: rgba(191,191,191,0.9);
 }
 
-.locked-center {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  padding-left: 20px;
+.icon-btn.sm.active {
+  color: #BB86FC;
 }
 
 .locked-bottom {
