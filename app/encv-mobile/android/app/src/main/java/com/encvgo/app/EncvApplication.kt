@@ -2,12 +2,35 @@ package com.encvgo.app
 
 import android.app.Application
 import com.tencent.bugly.crashreport.CrashReport
+import com.combo.core.runtime.PluginManager
+import com.combo.core.runtime.ValidationStrategy
+import com.combo.core.runtime.app.BaseHostApplication
+import com.combo.core.security.crash.PluginCrashHandler
 import android.util.Log
 
-class EncvApplication : Application() {
+class EncvApplication : BaseHostApplication() {
+    companion object {
+        private const val TAG = "ENCV-App"
+    }
+
     override fun onCreate() {
         super.onCreate()
         initBugly()
+    }
+
+    override fun onFrameworkSetup(): suspend () -> Unit {
+        return {
+            try {
+                PluginManager.setValidationStrategy(ValidationStrategy.Insecure)
+            } catch (e: Exception) {
+                Log.w(TAG, "setValidationStrategy not available, skipping", e)
+            }
+            try {
+                PluginCrashHandler.setGlobalClashCallback(null)
+            } catch (e: Exception) {
+                Log.w(TAG, "setGlobalClashCallback not available, skipping", e)
+            }
+        }
     }
 
     private fun initBugly() {

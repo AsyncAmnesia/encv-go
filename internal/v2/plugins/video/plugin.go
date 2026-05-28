@@ -25,6 +25,12 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
+var lastVerifyWarnings []*pluginInterfaces.VerifyWarning
+
+func LastVerifyWarnings() []*pluginInterfaces.VerifyWarning {
+	return lastVerifyWarnings
+}
+
 type VideoPlugin struct {
 	ctx          context.Context
 	cfg          *config.Config
@@ -464,10 +470,12 @@ func (p *VideoPlugin) Encrypt(dataReader io.Reader) (*crypto.EncryptionResult, e
 	err := utils.Do(guardKey, func() error {
 		// 【关键修复】尝试捕获实际的源文件路径
 		// 框架传递的 dataReader 可能是 os.Open(original)，
-		// 也可能是 Preprocess 生成的 os.Open(temp_remuxed)。
+		// 也可能是 Preprocess 生成的 os.Open(temp_remuxed) 或 TempFileReadCloser。
 		// 通过类型断言，我们可以获取底层文件句柄，从而获取真实路径。
 		if file, ok := dataReader.(*os.File); ok {
 			p.encryptedSourcePath = file.Name()
+		} else if tempFile, ok := dataReader.(*reader.TempFileReadCloser); ok {
+			p.encryptedSourcePath = tempFile.Name()
 		} else {
 			// 如果不是文件（如内存 Reader），回退到 inputPath
 			p.encryptedSourcePath = p.inputPath
@@ -721,16 +729,39 @@ func (p *VideoPlugin) verifyContainer() error {
 		sourcePath = p.inputPath
 	}
 
-	if err := verifier.Verify(sourcePath, decrypedFilePath); err != nil {
+	var verifyOpts *pluginInterfaces.VerifyOptions
+	if sourcePath != p.inputPath {
+		slog.Info("Detected preprocessed/re-encoded source, using lenient verification",
+			"source_path", sourcePath, "original_input", p.inputPath)
+		verifyOpts = &pluginInterfaces.VerifyOptions{SkipSizeCheck: true, SkipStructCheck: true, CollectWarnings: true}
+	} else {
+		verifyOpts = &pluginInterfaces.VerifyOptions{CollectWarnings: true}
+	}
+
+	err, warnings := verifier.Verify(sourcePath, decrypedFilePath, verifyOpts)
+	lastVerifyWarnings = warnings
+	if err != nil {
 		os.RemoveAll(verifyTempDir)
 		return fmt.Errorf("container verification failed: %w", err)
 	}
+
+	if len(warnings) > 0 {
+		slog.Warn("Verification completed with warnings",
+			"warnings_count", len(warnings),
+			"warnings", warnings)
+	}
+
 	os.RemoveAll(verifyTempDir)
 	slog.Info("Container verified successfully", "plugin", p.Name())
 	return nil
 }
 
 // --- 解密逻辑 ---
+
+// SetOutputDir 设置输出目录（供 EncryptFileWithPlugin 在预处理前调用）
+func (p *VideoPlugin) SetOutputDir(dir string) {
+	p.outputDir = dir
+}
 
 // Plugin 接口实现
 func (p *VideoPlugin) PreDecryptProcessor(containerPath, outputDir string) error {

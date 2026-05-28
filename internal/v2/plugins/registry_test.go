@@ -126,3 +126,48 @@ func TestTextPlugin_Initialize_NoSettings(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no settings found for plugin 'text'")
 }
+
+func TestRegistry_NoAutoInstallBehavior(t *testing.T) {
+	forbiddenSymbols := []string{
+		"install", "Install", "Installer",
+		"loadEnabled", "PluginManager",
+		"download", "Download",
+		"fetchPlugin", "FetchPlugin",
+	}
+
+	srcBytes, err := os.ReadFile("registry.go")
+	require.NoError(t, err, "should be able to read registry.go source")
+	src := string(srcBytes)
+
+	publicFuncs := []string{
+		"EncryptFileWithPlugin",
+		"ProcessFileWithPlugin",
+		"DecryptContainerWithPlugin",
+		"WalkAndEncrypt",
+		"FindEncryptingPlugin",
+		"FindDecryptingPlugin",
+	}
+
+	for _, fnName := range publicFuncs {
+		t.Run(fnName+"_no_install_refs", func(t *testing.T) {
+			for _, sym := range forbiddenSymbols {
+				if contains(src, sym) {
+					t.Errorf("registry.go contains forbidden symbol %q which implies auto-install behavior; %s should be a pure file-processing function", sym, fnName)
+				}
+			}
+		})
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && searchString(s, substr)
+}
+
+func searchString(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

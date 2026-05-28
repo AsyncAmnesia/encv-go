@@ -13,6 +13,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/utils"
@@ -190,6 +191,40 @@ func (s *MobileService) DeleteFile(queryPath string) error {
 	return nil
 }
 
+func (s *MobileService) CreateDirectory(parentPath, name string) error {
+	if name == "" {
+		return &BadRequestError{Err: errors.New("directory name cannot be empty")}
+	}
+	if len(name) > 255 {
+		return &BadRequestError{Err: errors.New("directory name too long (max 255 characters)")}
+	}
+	if strings.ContainsAny(name, "\000/") {
+		return &BadRequestError{Err: errors.New("directory name contains illegal characters")}
+	}
+	if strings.Contains(name, "..") {
+		return &ForbiddenError{Err: errors.New("directory name contains path traversal sequence")}
+	}
+
+	fullPath := filepath.Join(s.servingDir, parentPath, name)
+
+	absServing, _ := filepath.Abs(s.servingDir)
+	absFull, _ := filepath.Abs(fullPath)
+	if !strings.HasPrefix(absFull, absServing) {
+		return &ForbiddenError{Err: errors.New("path traversal detected")}
+	}
+
+	if err := os.Mkdir(fullPath, 0755); err != nil {
+		if os.IsExist(err) {
+			return &BadRequestError{Err: fmt.Errorf("directory already exists: %s", name)}
+		}
+		slog.Error("Mkdir failed", "path", fullPath, "error", err)
+		return err
+	}
+
+	slog.Info("Directory created", "path", fullPath)
+	return nil
+}
+
 func (s *MobileService) ReadFileContent(queryPath string) (*FileContentResult, error) {
 	if queryPath == "" {
 		return nil, &BadRequestError{Err: errors.New("'path' query parameter is required")}
@@ -348,9 +383,29 @@ func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
 			containerID = "(auto)"
 		}
 		result.Container["container_id"] = containerID
+		if cidStr, ok := result.Container["container_id"].(string); ok {
+			if !utf8.ValidString(cidStr) || !isPrintableJSONString(cidStr) {
+				result.Container["container_id"] = "(non-printable data)"
+			}
+		}
+		if v, ok := result.Container["version"]; ok {
+			switch val := v.(type) {
+			case int:
+				if val < 0 || val > 999 {
+					result.Container["version"] = "?"
+				}
+			case float64:
+				if val < 0 || val > 999 {
+					result.Container["version"] = "?"
+				}
+			case string:
+				if !utf8.ValidString(val) || !isPrintableJSONString(val) {
+					result.Container["version"] = "?"
+				}
+			}
+		}
 		result.Container["original_duration"] = mf.OriginalDuration
 		result.Container["segment_count"] = len(mf.Segments)
-		result.Container["segments"] = mf.Segments
 		result.Container["manifest_size"] = hdr.ManifestLength
 		result.Container["header"] = map[string]interface{}{
 			"flags":           hdr.Flags,
@@ -362,6 +417,9 @@ func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
 		if err != nil {
 			slog.Warn("GetFileInfo: failed to marshal manifest v4", "path", queryPath, "error", err)
 			result.Container["manifest"] = nil
+		} else if !utf8.Valid(mfBytes) {
+			slog.Warn("GetFileInfo: manifest v4 produced invalid UTF-8", "path", queryPath)
+			result.Container["manifest"] = "(contains invalid utf-8 data)"
 		} else {
 			var mfMap map[string]interface{}
 			if err := json.Unmarshal(mfBytes, &mfMap); err != nil {
@@ -369,6 +427,7 @@ func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
 				result.Container["manifest"] = nil
 			} else {
 				delete(mfMap, "kvi")
+				sanitizeManifestMap(mfMap)
 				result.Container["manifest"] = mfMap
 			}
 		}
@@ -378,6 +437,42 @@ func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
 	}
 
 	return result, nil
+}
+
+func sanitizeManifestMap(m map[string]interface{}) {
+	for k, v := range m {
+		switch val := v.(type) {
+		case string:
+			if !utf8.ValidString(val) || !isPrintableJSONString(val) {
+				m[k] = "(non-printable data)"
+			}
+		case []interface{}:
+			for i, item := range val {
+				if sub, ok := item.(map[string]interface{}); ok {
+					sanitizeManifestMap(sub)
+					val[i] = sub
+				} else if s, ok := item.(string); ok {
+					if !utf8.ValidString(s) || !isPrintableJSONString(s) {
+						val[i] = "(non-printable data)"
+					}
+				}
+			}
+		case map[string]interface{}:
+			sanitizeManifestMap(val)
+		}
+	}
+}
+
+func isPrintableJSONString(s string) bool {
+	for _, r := range s {
+		if r < 0x20 && r != '\t' && r != '\n' && r != '\r' {
+			return false
+		}
+		if r >= 0x7F && r <= 0x9F {
+			return false
+		}
+	}
+	return true
 }
 
 type WebDAVTestResult struct {

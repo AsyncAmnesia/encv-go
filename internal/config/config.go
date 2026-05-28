@@ -140,24 +140,30 @@ func Load(configPath string) (*Config, error) {
 	}
 
 	if os.Getenv("ENCV_MOBILE") == "1" && cfg.Mobile != nil {
-		home := os.Getenv("HOME")
-		if cfg.Mobile.ServerDir != "" {
-			cfg.Server.Dir = cfg.Mobile.ServerDir
-		} else if cfg.Server.Dir == "/" || cfg.Server.Dir == "." {
-			cfg.Server.Dir = home
-		}
-		if cfg.Mobile.OutputPath != "" {
-			cfg.OutputPath = cfg.Mobile.OutputPath
-		} else if cfg.OutputPath == "" || cfg.OutputPath == "./encrypted" {
-			cfg.OutputPath = filepath.Join(home, "encv-output")
-		}
-		if cfg.Mobile.WebdavDir != "" {
-			cfg.Webdav.Dir = cfg.Mobile.WebdavDir
-		}
+		ApplyMobileOverrides(cfg)
 	}
 
 	slog.Info("Configuration loaded successfully", "path", configPath, "log_level", cfg.Log.Level)
 	return cfg, nil
+}
+
+// ApplyMobileOverrides 在 ENCV_MOBILE=1 环境下将 mobile 段的配置合并到顶层字段。
+// 供 config.Load() 和 API handler 共用，确保 GET /api/config 返回的也是生效后的值。
+func ApplyMobileOverrides(cfg *Config) {
+	home := os.Getenv("HOME")
+	if cfg.Mobile.ServerDir != "" {
+		cfg.Server.Dir = cfg.Mobile.ServerDir
+	} else if cfg.Server.Dir == "/" || cfg.Server.Dir == "." {
+		cfg.Server.Dir = home
+	}
+	if cfg.Mobile.OutputPath != "" {
+		cfg.OutputPath = cfg.Mobile.OutputPath
+	} else if cfg.OutputPath == "" || cfg.OutputPath == "./encrypted" {
+		cfg.OutputPath = filepath.Join(home, "encv-output")
+	}
+	if cfg.Mobile.WebdavDir != "" {
+		cfg.Webdav.Dir = cfg.Mobile.WebdavDir
+	}
 }
 
 // GetPluginSettingsFor 是一个泛型辅助函数，用于安全地获取并解析特定插件的配置。

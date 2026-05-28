@@ -265,9 +265,7 @@ jobs:
           if [ -n "$PLUGIN_APK" ] && [ -f "$PLUGIN_APK" ]; then
             echo "✅ Plugin APK generated:"
             ls -lh "$PLUGIN_APK"
-            mkdir -p app/src/main/assets/plugins
-            cp "$PLUGIN_APK" app/src/main/assets/plugins/mpv-player.apk
-            echo "✅ Copied to host assets/plugins/"
+            echo "📁 Plugin will be loaded from disk at runtime (filesDir/plugins/)"
           else
             echo "::error::Plugin APK not found after successful build"
             find build/outputs -name "*.apk" 2>/dev/null | head -5 || echo "No APKs found"
@@ -386,14 +384,14 @@ jobs:
             else
               echo "✅ PASS: Host APK excludes MPV .so"
             fi
-            echo "=== Plugin APK in assets ==="
+            echo "=== Plugin loading strategy ==="
             if [ "${{ inputs.skip_plugin }}" = "true" ]; then
               echo "⏭️ Skipped (skip_plugin=true)"
             elif unzip -l "$APK_PATH" | grep -q "mpv-player.apk"; then
-              echo "✅ PASS: Plugin APK found in host assets"
-              unzip -l "$APK_PATH" | grep "mpv-player.apk"
+              echo "❌ FAIL: Plugin APK should NOT be bundled in host assets (disk-based loading)"
+              exit 1
             else
-              echo "::warning::Plugin APK not found in host assets (may be expected for local dev builds)"
+              echo "✅ PASS: Plugin not bundled (loaded from filesDir/plugins/ at runtime)"
             fi
           else
             echo "No APK found to verify"

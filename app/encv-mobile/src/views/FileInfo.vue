@@ -198,7 +198,8 @@ async function loadInfo() {
     containerData.value = data.container || null
     if (data.container?.manifest) {
       try {
-        manifestJson.value = JSON.stringify(data.container.manifest, null, 2)
+        const str = JSON.stringify(data.container.manifest, null, 2)
+        manifestJson.value = /^[\x20-\x7E\t\n\r]*$/.test(str) ? str : '(contains non-printable characters)'
       } catch {
         manifestJson.value = '(invalid)'
       }

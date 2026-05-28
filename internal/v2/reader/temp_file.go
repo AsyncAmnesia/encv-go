@@ -29,7 +29,7 @@ func (t *TempFileReadCloser) Read(p []byte) (n int, err error) {
 	return t.file.Read(p)
 }
 
-// Close 实现了 io.Closer 接口。
+// Close 实现 io.Closer 接口。
 // 它会关闭文件，并尝试删除文件。删除失败时只会打印警告，不会返回错误，以避免中断主流程。
 func (t *TempFileReadCloser) Close() error {
 	err := t.file.Close()
@@ -39,4 +39,9 @@ func (t *TempFileReadCloser) Close() error {
 		log.Printf("Warning: failed to remove temp file '%s': %v\n", t.path, rmErr)
 	}
 	return err
+}
+
+// Name 返回底层文件的路径
+func (t *TempFileReadCloser) Name() string {
+	return t.path
 }

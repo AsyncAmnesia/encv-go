@@ -9,6 +9,9 @@
         </ion-buttons>
         <ion-title>{{ mode === 'folder' ? t('files.selectFolder') : t('files.selectFile') }}</ion-title>
         <ion-buttons slot="end">
+          <ion-button v-if="mode === 'folder'" @click="showNewFolderInput">
+            <ion-icon :icon="add" slot="icon-only"></ion-icon>
+          </ion-button>
           <ion-button @click="cancel">{{ t('files.cancelSelect') }}</ion-button>
         </ion-buttons>
       </ion-toolbar>
@@ -43,7 +46,16 @@
         <p>{{ t('files.emptyDirDesc') }}</p>
       </div>
 
-      <ion-list v-else>
+      <div v-if="showNewFolder" class="overlay-backdrop" @click="cancelNewFolder"></div>
+
+      <div v-if="showNewFolder" class="new-folder-input-overlay">
+        <ion-input v-model="newFolderName" :placeholder="t('files.newFolderName')" enterkeyhint="done"
+                   @keydown.enter="confirmNewFolder"></ion-input>
+        <ion-button size="small" @click="confirmNewFolder">{{ t('common.confirm') }}</ion-button>
+        <ion-button size="small" fill="clear" @click="cancelNewFolder">{{ t('common.cancel') }}</ion-button>
+      </div>
+
+      <ion-list>
         <ion-item
           v-for="file in displayFiles"
           :key="file.path"
@@ -92,11 +104,14 @@ import {
   IonIcon,
   IonLabel,
   IonSpinner,
+  IonInput,
   modalController,
+  alertController,
 } from '@ionic/vue'
 import {
   arrowBack,
   chevronForward,
+  add,
   folder,
   folderOpen,
   videocam,
@@ -110,6 +125,7 @@ import {
   listFiles,
   formatFileSize,
   getFileCategory,
+  createDirectory,
   PermissionDeniedError,
 } from '@/api/encv'
 import type { FileItem } from '@/api/encv'
@@ -128,6 +144,8 @@ const files = ref<FileItem[]>([])
 const currentPath = ref(props.initialPath || '/')
 const loading = ref(false)
 const noPermission = ref(false)
+const showNewFolder = ref(false)
+const newFolderName = ref('')
 
 const pathSegments = computed(() => {
   if (currentPath.value === '/') return []
@@ -225,6 +243,36 @@ function selectCurrentFolder() {
 
 function cancel() {
   modalController.dismiss(null, 'cancel')
+}
+
+function showNewFolderInput() {
+  showNewFolder.value = true
+  newFolderName.value = ''
+}
+
+async function confirmNewFolder() {
+  const name = newFolderName.value.trim()
+  if (!name) return
+  try {
+    await createDirectory(currentPath.value, name)
+    const newPath = currentPath.value === '/' ? `/${name}` : `${currentPath.value}/${name}`
+    showNewFolder.value = false
+    newFolderName.value = ''
+    navigateTo(newPath)
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    const alert = await alertController.create({
+      header: t('files.createFolderFailed'),
+      message: msg,
+      buttons: [t('common.confirm')],
+    })
+    await alert.present()
+  }
+}
+
+function cancelNewFolder() {
+  showNewFolder.value = false
+  newFolderName.value = ''
 }
 
 onMounted(() => {
@@ -327,5 +375,30 @@ onMounted(() => {
   white-space: nowrap;
   flex: 1;
   margin-right: 12px;
+}
+
+.overlay-backdrop {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 19;
+}
+
+.new-folder-input-overlay {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--ion-background-color, #fff);
+  border-top: 1px solid var(--ion-color-light, #f4f5f8);
+  z-index: 20;
+}
+
+.new-folder-input-overlay ion-input {
+  flex: 1;
 }
 </style>

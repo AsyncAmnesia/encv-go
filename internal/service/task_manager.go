@@ -15,6 +15,7 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
+	"github.com/Soltus/encv-go/internal/v2/plugins/video"
 	"github.com/Soltus/encv-go/internal/v2/types"
 	"github.com/google/uuid"
 )
@@ -32,6 +33,8 @@ type MobileTask struct {
 	Eta              string     `json:"eta,omitempty"`
 	Error            string     `json:"error,omitempty"`
 	ErrorDetail      string     `json:"errorDetail,omitempty"`
+	Warning          string     `json:"warning,omitempty"`
+	WarningDetail    string     `json:"warningDetail,omitempty"`
 	ContainerVersion int        `json:"containerVersion,omitempty"`
 	CreatedAt        time.Time  `json:"createdAt"`
 	CompletedAt      *time.Time `json:"completedAt,omitempty"`
@@ -260,6 +263,27 @@ func formatDuration(seconds float64) string {
 	return fmt.Sprintf("%dh%dm", int(d.Hours()), int(d.Minutes())%60)
 }
 
+func (tm *TaskManager) RemoveTask(id string) error {
+	tm.mu.Lock()
+	if _, ok := tm.tasks[id]; !ok {
+		tm.mu.Unlock()
+		return errors.New("task not found")
+	}
+
+	delete(tm.tasks, id)
+	tm.mu.Unlock()
+
+	tm.saveTasks()
+
+	slog.Info("Task removed", "id", id)
+	if tm.broadcaster != nil {
+		tm.broadcaster.Broadcast("task:removed", map[string]interface{}{
+			"id": id,
+		})
+	}
+	return nil
+}
+
 func (tm *TaskManager) Retry(id string) (*MobileTask, error) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
@@ -459,6 +483,12 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 		baseNameWithoutExt := strings.TrimSuffix(sourceBaseName, ext)
 		if outputFile := findEncryptedOutputFile(outputDir, baseNameWithoutExt); outputFile != "" {
 			task.ContainerVersion = detectContainerVersion(outputFile)
+		}
+
+		if warnings := video.LastVerifyWarnings(); len(warnings) > 0 {
+			task.Warning = fmt.Sprintf("%d verification warning(s)", len(warnings))
+			detailBytes, _ := json.Marshal(warnings)
+			task.WarningDetail = string(detailBytes)
 		}
 	}
 	tm.mu.Unlock()

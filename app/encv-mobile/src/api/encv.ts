@@ -268,6 +268,19 @@ export async function deleteFile(path: string): Promise<void> {
   }
 }
 
+export async function createDirectory(parentPath: string, name: string): Promise<void> {
+  console.info('[API] createDirectory:', parentPath, name)
+  const response = await fetch(`${getApiBaseUrl()}/api/files/mkdir`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ parent_path: parentPath, name }),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    throw new Error(data.error || `Failed to create directory (${response.status})`)
+  }
+}
+
 export interface FileContentResponse {
   name: string
   path: string
@@ -303,6 +316,8 @@ export interface EncvTask {
   eta?: string
   error?: string
   errorDetail?: string
+  warning?: string
+  warningDetail?: string
   containerVersion?: number
   createdAt: string
   completedAt?: string
@@ -350,6 +365,17 @@ export async function retryTask(id: string): Promise<void> {
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/tasks/${id}/retry`, {
     method: 'POST',
+  })
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+}
+
+export async function removeTask(id: string): Promise<void> {
+  console.info('[API] removeTask:', id)
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/tasks/${id}`, {
+    method: 'DELETE',
   })
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`)

@@ -66,6 +66,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'files.searching': '搜索中...',
     'files.noSearchResults': '无搜索结果',
     'files.noSearchResultsDesc': '未找到匹配的文件，尝试切换递归搜索。',
+    'files.newFolderName': '文件夹名称',
+    'files.createFolderFailed': '创建文件夹失败',
 
     'player.title': '播放器',
     'player.loading': '正在加载...',
@@ -130,6 +132,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'tasks.usingGlobalPassword': '使用全局配置中的密码',
 
     'tasks.passwordErrorHint': '密码可能错误，请检查后重试',
+    'tasks.warning': '警告',
+    'tasks.warningDetail': '验证警告详情',
 
     'webdav.title': 'WebDAV',
     'webdav.noServers': '暂无 WebDAV 服务器',
@@ -526,6 +530,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'files.searching': 'Searching...',
     'files.noSearchResults': 'No results',
     'files.noSearchResultsDesc': 'No matching files found. Try enabling recursive search.',
+    'files.newFolderName': 'Folder name',
+    'files.createFolderFailed': 'Failed to create folder',
 
     'player.title': 'Player',
     'player.loading': 'Loading...',
@@ -590,6 +596,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'tasks.usingGlobalPassword': 'Using password from global config',
 
     'tasks.passwordErrorHint': 'Password may be wrong, please check and retry',
+    'tasks.warning': 'Warning',
+    'tasks.warningDetail': 'Verification Warnings',
 
     'webdav.title': 'WebDAV',
     'webdav.noServers': 'No WebDAV Servers',

@@ -11,12 +11,15 @@ import android.os.PowerManager
 import android.util.Log
 import android.webkit.WebSettings
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.getcapacitor.BridgeActivity
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 class MainActivity : BridgeActivity() {
     companion object {
         private const val TAG = "ENCV-go"
+        private const val MPV_PLUGIN_ID = "com.encvgo.plugin.mpv"
     }
 
     private var backendReceiverRegistered = false
@@ -52,12 +55,19 @@ class MainActivity : BridgeActivity() {
         if (!handled) {
             startBackendService(EncvGoService.ACTION_START, "app", null)
         }
+        loadPlugins()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIntent(intent)
+    }
+
+    private fun loadPlugins() {
+        lifecycleScope.launch {
+            Log.i(TAG, "Plugin loading deferred to frontend-driven flow")
+        }
     }
 
     override fun onDestroy() {

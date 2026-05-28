@@ -486,7 +486,7 @@ class GoProcessPlugin : Plugin() {
         val pluginDirs = listOf(
             File(context.applicationInfo.dataDir, "app_plugins"),
             File(context.filesDir, "assets/plugins"),
-            File(context.applicationInfo.dataDir, "app_plugins")
+            File(context.cacheDir, "plugin_install")
         )
         for (dir in pluginDirs) {
             if (dir.exists() && dir.isDirectory) {
@@ -574,8 +574,8 @@ class GoProcessPlugin : Plugin() {
                 }
             }
             context.startActivity(intent)
-            Log.i(TAG, "Install intent fired from picker: $name")
-            call.resolve(JSObject().put("success", true).put("method", "intent").put("fileName", name))
+            Log.i(TAG, "System installer launched (async), user must complete installation manually: $name")
+            call.resolve(JSObject().put("success", true).put("method", "system").put("fileName", name).put("pending", true))
         } catch (e: Exception) {
             Log.e(TAG, "installFromPath failed", e)
             call.reject("Failed to install plugin: ${e.message}")
