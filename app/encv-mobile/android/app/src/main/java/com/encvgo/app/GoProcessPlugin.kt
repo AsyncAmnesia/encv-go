@@ -41,6 +41,35 @@ class GoProcessPlugin : Plugin() {
     private val pendingCalls = ConcurrentHashMap<String, PluginCall>()
     private var receiverRegistered = false
 
+    private val installConfirmReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent == null) return
+            val requestId = intent.getStringExtra("request_id") ?: ""
+            val resultCode = intent.getIntExtra("result_code", Activity.RESULT_CANCELED)
+
+            val callKey = when {
+                requestId == "installConfirm" -> "installConfirm"
+                else -> return
+            }
+
+            val call = pendingCalls.remove(callKey) ?: run {
+                Log.w(TAG, "No pending call for broadcast result: $callKey")
+                return
+            }
+
+            val apkPath = call.getString("apkPath") ?: ""
+            val apkFile = java.io.File(apkPath)
+
+            if (resultCode == Activity.RESULT_OK) {
+                Log.i(TAG, "Install confirmed via broadcast for: ${apkFile.name}")
+                executeComboLiteInstall(call, apkFile)
+            } else {
+                Log.i(TAG, "Install cancelled via broadcast")
+                call.reject("用户取消安装")
+            }
+        }
+    }
+
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent == null) return
@@ -54,11 +83,13 @@ class GoProcessPlugin : Plugin() {
     override fun load() {
         super.load()
         registerStatusReceiver()
+        registerInstallConfirmReceiver()
     }
 
     override fun handleOnDestroy() {
         if (receiverRegistered) {
             context.unregisterReceiver(statusReceiver)
+            try { context.unregisterReceiver(installConfirmReceiver) } catch (_: Exception) {}
             receiverRegistered = false
         }
         pendingCalls.clear()
@@ -320,6 +351,16 @@ class GoProcessPlugin : Plugin() {
         receiverRegistered = true
     }
 
+    private fun registerInstallConfirmReceiver() {
+        val installResultFilter = IntentFilter("com.encvgo.app.INSTALL_RESULT")
+        if (Build.VERSION.SDK_INT >= 33) {
+            context.registerReceiver(installConfirmReceiver, installResultFilter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            context.registerReceiver(installConfirmReceiver, installResultFilter)
+        }
+    }
+
     private fun startService(action: String, source: String, command: String) {
         val serviceIntent = EncvGoService.createIntent(context, action, source).apply {
             putExtra(EncvGoService.EXTRA_COMMAND, command)
@@ -379,10 +420,12 @@ class GoProcessPlugin : Plugin() {
             if (PluginManager.isInitialized) {
                 pendingCalls["installConfirm"] = call
                 val intent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java).apply {
+                    action = "com.encvgo.app.INSTALL_RESULT"
                     putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, apkPath)
                     putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_FILE_NAME, apkFile.name)
+                    putExtra("request_id", "installConfirm")
                 }
-                activity.startActivityForResult(intent, REQUEST_CODE_INSTALL_CONFIRM)
+                context.startActivity(intent)
                 return
             }
             val uri = androidx.core.content.FileProvider.getUriForFile(
@@ -466,21 +509,6 @@ class GoProcessPlugin : Plugin() {
     override fun handleOnActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.handleOnActivityResult(requestCode, resultCode, data)
 
-        if (requestCode == REQUEST_CODE_INSTALL_CONFIRM) {
-            val call = pendingCalls.remove("installConfirm") ?: run {
-                Log.w(TAG, "No pending call for install confirm")
-                return
-            }
-            if (resultCode == Activity.RESULT_OK) {
-                val apkPath = call.getString("apkPath") ?: ""
-                val apkFile = java.io.File(apkPath)
-                executeComboLiteInstall(call, apkFile)
-            } else {
-                call.reject("用户取消安装")
-            }
-            return
-        }
-
         if (requestCode != REQUEST_CODE_PLUGIN_PICK) return
         val call = pendingCalls.remove("pickPlugin") ?: return
         if (resultCode != Activity.RESULT_OK || data?.data == null) {
@@ -526,10 +554,12 @@ class GoProcessPlugin : Plugin() {
             if (PluginManager.isInitialized) {
                 pendingCalls["installConfirm"] = call
                 val intent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java).apply {
+                    action = "com.encvgo.app.INSTALL_RESULT"
                     putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, apkPath)
                     putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_FILE_NAME, name)
+                    putExtra("request_id", "installConfirm")
                 }
-                activity.startActivityForResult(intent, REQUEST_CODE_INSTALL_CONFIRM)
+                context.startActivity(intent)
                 return
             }
             val providerUri = androidx.core.content.FileProvider.getUriForFile(

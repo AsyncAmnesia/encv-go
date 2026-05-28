@@ -52,10 +52,15 @@ type VideoPlugin struct {
 	splitSets [][]string
 	// 【新增】存储分片文件路径集合，用于快速查找
 	splitPartPaths map[string]bool
+	isPostEncryptVerify bool
 }
 
 func (p *VideoPlugin) Name() string {
 	return "video" // 这个字符串必须与配置文件中的键对应
+}
+
+func (p *VideoPlugin) SetPostEncryptVerify(v bool) {
+	p.isPostEncryptVerify = v
 }
 
 // Plugin 接口实现
@@ -464,6 +469,7 @@ func (p *VideoPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRoo
 // Plugin 接口实现
 // 执行核心的加密工作，并调用 Packer
 func (p *VideoPlugin) Encrypt(dataReader io.Reader) (*crypto.EncryptionResult, error) {
+	p.isPostEncryptVerify = false
 	guardKey := fmt.Sprintf("%s|%s", p.inputPath, p.outputDir)
 
 	var result *crypto.EncryptionResult
@@ -736,8 +742,8 @@ func (p *VideoPlugin) verifyContainer() error {
 		"is_preprocessed", sourcePath != p.inputPath)
 
 	var verifyOpts *pluginInterfaces.VerifyOptions
-	if sourcePath != p.inputPath {
-		slog.Info("Detected preprocessed/re-encoded source, using lenient verification",
+	if sourcePath != p.inputPath || p.isPostEncryptVerify {
+		slog.Info("Detected preprocessed/re-encoded source or post-encrypt verification, using lenient verification",
 			"source_path", sourcePath, "original_input", p.inputPath)
 		verifyOpts = &pluginInterfaces.VerifyOptions{SkipSizeCheck: true, SkipStructCheck: true, CollectWarnings: true}
 	} else {

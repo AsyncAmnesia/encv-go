@@ -429,7 +429,10 @@ func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputR
 	slog.Debug("Encrypt completed", "path", inputPath)
 
 	//4. 执行后处理器
-	// 传入 EncryptionResult
+	// 标记后续 verifyContainer 为后加密验证场景（v4 容器级加密会改变 MP4 原子结构）
+	if vp, ok := plugin.(*video.VideoPlugin); ok {
+		vp.SetPostEncryptVerify(true)
+	}
 	if err := plugin.PostEncryptProcessor(result); err != nil {
 		return fmt.Errorf("post-encryption failed for '%s': %w", inputPath, err)
 	}

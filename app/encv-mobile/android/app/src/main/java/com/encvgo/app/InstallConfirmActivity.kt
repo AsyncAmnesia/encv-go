@@ -78,16 +78,28 @@ class InstallConfirmActivity : ComponentActivity() {
                     fileName = fileName,
                     onConfirm = {
                         Log.i(TAG, "User confirmed installation: $fileName")
-                        setResult(RESULT_OK)
+                        val resultIntent = Intent("com.encvgo.app.INSTALL_RESULT").apply {
+                            putExtra("request_id", intent.getStringExtra("request_id") ?: "")
+                            putExtra("result_code", RESULT_OK)
+                        }
+                        sendBroadcast(resultIntent)
                         finish()
                     },
                     onCancel = {
                         Log.i(TAG, "User cancelled installation: $fileName")
-                        setResult(RESULT_CANCELED)
+                        val resultIntent = Intent("com.encvgo.app.INSTALL_RESULT").apply {
+                            putExtra("request_id", intent.getStringExtra("request_id") ?: "")
+                            putExtra("result_code", RESULT_CANCELED)
+                        }
+                        sendBroadcast(resultIntent)
                         finish()
                     },
                     onBack = {
-                        setResult(RESULT_CANCELED)
+                        val resultIntent = Intent("com.encvgo.app.INSTALL_RESULT").apply {
+                            putExtra("request_id", intent.getStringExtra("request_id") ?: "")
+                            putExtra("result_code", RESULT_CANCELED)
+                        }
+                        sendBroadcast(resultIntent)
                         finish()
                     }
                 )
