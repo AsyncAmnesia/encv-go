@@ -1,0 +1,8 @@
+- [ ] 文本预览：`.text-preview` 不再设置 `overflow: auto`（由 iframe 内部处理滚动）
+- [ ] 文本预览：PDF 预览不受影响
+- [ ] 安装确认：GoProcessPlugin 在 activity=null 时有 fallback 路径
+- [ ] 安装确认：InstallConfirmActivity onCreate 有 try-catch 防护
+- [ ] 安装确认：用户能在设备上看到 InstallConfirmActivity 界面
+- [ ] v4 加密：verifyContainer 对 PostEncryptProcessor 场景使用 SkipStructCheck=true
+- [ ] v3 加密：ffprobe JSON 解析失败时有容错处理（不阻塞整个加密流程）
+- [ ] 无编译错误（Vue/TS/Kotlin/Go）
