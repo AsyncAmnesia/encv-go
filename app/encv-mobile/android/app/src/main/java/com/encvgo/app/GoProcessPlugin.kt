@@ -419,13 +419,24 @@ class GoProcessPlugin : Plugin() {
             }
             if (PluginManager.isInitialized) {
                 pendingCalls["installConfirm"] = call
-                val intent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java).apply {
-                    action = "com.encvgo.app.INSTALL_RESULT"
-                    putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, apkPath)
-                    putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_FILE_NAME, apkFile.name)
-                    putExtra("request_id", "installConfirm")
+                Log.i(TAG, "SATURATION-DEBUG installPlugin: context type=${context.javaClass.simpleName}, isActivity=${context is Activity}, apkPath=$apkPath")
+                try {
+                    val intent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java).apply {
+                        putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, apkPath)
+                        putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_FILE_NAME, apkFile.name)
+                        putExtra("request_id", "installConfirm")
+                        if (context !is Activity) {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                    }
+                    Log.i(TAG, "SATURATION-DEBUG installPlugin: starting InstallConfirmActivity, flags=${intent.flags}, extras=${intent.extras}")
+                    context.startActivity(intent)
+                    Log.i(TAG, "SATURATION-DEBUG installPlugin: startActivity succeeded")
+                } catch (e: Exception) {
+                    Log.e(TAG, "SATURATION-DEBUG installPlugin: startActivity FAILED", e)
+                    pendingCalls.remove("installConfirm")
+                    call.reject("Failed to show install confirmation: ${e.message}")
                 }
-                context.startActivity(intent)
                 return
             }
             val uri = androidx.core.content.FileProvider.getUriForFile(
@@ -553,13 +564,24 @@ class GoProcessPlugin : Plugin() {
             }
             if (PluginManager.isInitialized) {
                 pendingCalls["installConfirm"] = call
-                val intent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java).apply {
-                    action = "com.encvgo.app.INSTALL_RESULT"
-                    putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, apkPath)
-                    putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_FILE_NAME, name)
-                    putExtra("request_id", "installConfirm")
+                Log.i(TAG, "SATURATION-DEBUG installFromPath: context type=${context.javaClass.simpleName}, isActivity=${context is Activity}, apkPath=$apkPath")
+                try {
+                    val intent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java).apply {
+                        putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, apkPath)
+                        putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_FILE_NAME, name)
+                        putExtra("request_id", "installConfirm")
+                        if (context !is Activity) {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                    }
+                    Log.i(TAG, "SATURATION-DEBUG installFromPath: starting InstallConfirmActivity, flags=${intent.flags}")
+                    context.startActivity(intent)
+                    Log.i(TAG, "SATURATION-DEBUG installFromPath: startActivity succeeded")
+                } catch (e: Exception) {
+                    Log.e(TAG, "SATURATION-DEBUG installFromPath: startActivity FAILED", e)
+                    pendingCalls.remove("installConfirm")
+                    call.reject("Failed to show install confirmation: ${e.message}")
                 }
-                context.startActivity(intent)
                 return
             }
             val providerUri = androidx.core.content.FileProvider.getUriForFile(
