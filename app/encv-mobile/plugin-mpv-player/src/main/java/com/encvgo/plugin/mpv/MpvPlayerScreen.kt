@@ -269,7 +269,7 @@ fun MpvPlayerScreen(
     }
 }
 
-private suspend fun startPlayback(
+internal suspend fun startPlayback(
     filePath: String,
     fileName: String,
     isExternal: Boolean,
@@ -304,7 +304,7 @@ private suspend fun startPlayback(
     }
 }
 
-private suspend fun resolveStreamUrl(filePath: String, isExternal: Boolean, backendUrl: String): String {
+internal suspend fun resolveStreamUrl(filePath: String, isExternal: Boolean, backendUrl: String): String {
     return try {
         if (isExternal && filePath.startsWith("/")) {
             if (java.io.File(filePath).exists()) {

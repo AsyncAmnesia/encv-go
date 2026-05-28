@@ -264,6 +264,18 @@ class MpvEngine(private val context: Context) {
         }
     }
 
+    fun playAudioOnly(filePath: String): Boolean {
+        return try {
+            if (!initialize()) return false
+            MPVLib.setPropertyString("vo", "null")
+            MPVLib.command(arrayOf("loadfile", filePath))
+            true
+        } catch (e: Exception) {
+            notifyState(State.Error("Audio play failed: ${e.message}"))
+            false
+        }
+    }
+
     fun pause() {
         try {
             if (!initialized) return

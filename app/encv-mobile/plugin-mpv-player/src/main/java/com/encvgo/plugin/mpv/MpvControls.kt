@@ -4,8 +4,10 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -68,6 +70,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import com.encvgo.plugin.mpv.MpvEngine.TrackInfo
 
 enum class ActivePanel { None, Settings, Subtitles, Audio, Volume }
@@ -270,7 +273,7 @@ private fun SideLockButton(isLocked: Boolean, onClick: () -> Unit) {
         modifier = Modifier.size(40.dp),
         shape = CircleShape,
         color = if (isLocked) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else Color.White.copy(alpha = 0.08f),
-        border = androidx.compose.foundation.BorderStroke(
+        border = BorderStroke(
             1.dp,
             if (isLocked) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.15f)
         )
@@ -592,20 +595,17 @@ private fun VolumePopover(volume: Float, onVolumeChange: (Float) -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             var sliderVolume by remember { mutableStateOf(volume) }
-            Slider(
+            VerticalSlider(
                 value = sliderVolume,
                 onValueChange = { sliderVolume = it },
-                onValueChangeFinished = { onVolumeChange(sliderVolume) },
-                modifier = Modifier.height(100.dp),
-                valueRange = 0f..1f,
-                colors = SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.primary,
-                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                    inactiveTrackColor = Color.White.copy(alpha = 0.2f)
-                )
+                modifier = Modifier.width(24.dp).height(100.dp),
+                trackWidth = 4f,
+                trackHeight = 100f,
+                thumbRadius = 6f
             )
+            Spacer(Modifier.height(6.dp))
             Text(
-                text = "${(volume * 100).toInt()}",
+                text = "${(sliderVolume * 100).roundToInt()}",
                 fontFamily = FontFamily.Monospace,
                 fontSize = 10.sp,
                 color = Color.White.copy(alpha = 0.7f)
@@ -715,7 +715,7 @@ private fun AudioOnlyLayout(
     onVolumeChange: (Float) -> Unit,
     onBack: () -> Unit
 ) {
-    val alpha by androidx.compose.animation.core.animateFloatAsState(targetValue = if (showControls) 1f else 0.3f, label = "audioAlpha")
+    val alpha by animateFloatAsState(targetValue = if (showControls) 1f else 0.3f, label = "audioAlpha")
 
     Column(
         modifier = Modifier.fillMaxSize().alpha(alpha).background(MaterialTheme.colorScheme.background).padding(horizontal = 20.dp)
