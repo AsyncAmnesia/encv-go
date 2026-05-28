@@ -699,6 +699,7 @@ class GoProcessPlugin : Plugin() {
 
     private fun executeComboLiteInstall(call: PluginCall, apkFile: File) {
         val apkPath = apkFile.absolutePath
+        appLog("I", TAG, "executeComboLiteInstall: starting for ${apkFile.name} (${apkFile.length()} bytes)")
         GlobalScope.launch(Dispatchers.IO) {
             try {
                 val result = PluginManager.installerManager.installPlugin(apkFile, true)
@@ -713,18 +714,20 @@ class GoProcessPlugin : Plugin() {
                         })
                     }
                     is com.combo.core.runtime.installer.InstallerManager.InstallResult.Failure -> {
-                        Log.e(TAG, "ComboLite install failed: ${result.reason}", result.exception)
-                        appLog("E", TAG, "ComboLite install FAILED: ${result.reason}")
-                        call.reject("ComboLite install failed: ${result.reason}")
+                        val reason = result.reason
+                        val excDetail = result.exception?.stackTraceToString()?.take(500) ?: ""
+                        Log.e(TAG, "ComboLite install failed: $reason", result.exception)
+                        appLog("E", TAG, "ComboLite install FAILED: $reason\n$excDetail")
+                        call.reject("ComboLite install failed: $reason")
                     }
                 }
             } catch (e: Error) {
                 Log.e(TAG, "ComboLite installPlugin Error: ${e.javaClass.simpleName}: ${e.message}", e)
-                appLog("E", TAG, "ComboLite install ERROR: ${e.javaClass.simpleName}: ${e.message}")
+                appLog("E", TAG, "ComboLite install ERROR: ${e.javaClass.simpleName}: ${e.message}\n${e.stackTraceToString().take(500)}")
                 call.reject("ComboLite install error: ${e.javaClass.simpleName}: ${e.message}")
             } catch (e: Exception) {
                 Log.e(TAG, "ComboLite installPlugin exception", e)
-                appLog("E", TAG, "ComboLite install EXCEPTION: ${e.message}")
+                appLog("E", TAG, "ComboLite install EXCEPTION: ${e.message}\n${e.stackTraceToString().take(500)}")
                 call.reject("ComboLite install error: ${e.message}")
             }
         }

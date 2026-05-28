@@ -154,14 +154,16 @@ export interface PickAndInstallResult {
   success: boolean
   method?: string
   fileName?: string
+  error?: string
 }
 
 export async function pickAndInstallPlugin(): Promise<PickAndInstallResult> {
   try {
     return await GoProcess.pickAndInstallPlugin()
-  } catch (e) {
-    console.error('[ENCV] GoProcess.pickAndInstallPlugin() failed:', e)
-    return { success: false }
+  } catch (e: any) {
+    const msg = e?.message || e?.code || String(e)
+    console.error('[ENCV] GoProcess.pickAndInstallPlugin() failed:', msg)
+    return { success: false, error: msg }
   }
 }
 

@@ -198,7 +198,7 @@ async function handleInstallFromFile() {
       await alert.present()
       await loadExtensions()
     } else {
-      installError.value = t('extensions.installFailed')
+      installError.value = result.error || t('extensions.installFailed')
     }
   } catch (e: any) {
     installError.value = e.message || t('extensions.installFailed')
