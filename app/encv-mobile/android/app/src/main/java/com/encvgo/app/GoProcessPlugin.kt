@@ -606,6 +606,56 @@ class GoProcessPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun debugInstallFlow(call: PluginCall) {
+        val results = JSObject()
+        val steps = mutableListOf<String>()
+
+        steps.add("1. PluginManager.isInitialized = ${PluginManager.isInitialized}")
+        results.put("pluginManagerInitialized", PluginManager.isInitialized)
+
+        steps.add("2. context type = ${context.javaClass.simpleName}")
+        results.put("contextType", context.javaClass.simpleName)
+
+        steps.add("3. context is Activity = ${context is Activity}")
+        results.put("contextIsActivity", context is Activity)
+
+        steps.add("4. activity type = ${activity.javaClass.simpleName}")
+        results.put("activityType", activity.javaClass.simpleName)
+
+        steps.add("5. receiverRegistered = $receiverRegistered")
+        results.put("receiverRegistered", receiverRegistered)
+
+        val pendingKeys = pendingCalls.keys().toList()
+        steps.add("6. pendingCalls keys = $pendingKeys")
+        results.put("pendingCallsKeys", pendingKeys.toString())
+
+        try {
+            val testIntent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java).apply {
+                putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, "/data/data/${context.packageName}/cache/plugin_install/test-debug.apk")
+                putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_FILE_NAME, "test-debug.apk")
+                putExtra("request_id", "debugTest")
+                if (context !is Activity) {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+            steps.add("7. testIntent created: component=${testIntent.component}, flags=${testIntent.flags}")
+            results.put("intentComponent", testIntent.component?.flattenToString() ?: "null")
+            results.put("intentFlags", testIntent.flags)
+
+            context.startActivity(testIntent)
+            steps.add("8. startActivity SUCCESS")
+            results.put("startActivityResult", "SUCCESS")
+        } catch (e: Exception) {
+            steps.add("8. startActivity FAILED: ${e.javaClass.simpleName}: ${e.message}")
+            results.put("startActivityResult", "FAILED: ${e.javaClass.simpleName}: ${e.message}")
+        }
+
+        Log.i(TAG, "SATURATION-DEBUG debugInstallFlow:\n${steps.joinToString("\n")}")
+        results.put("debugLog", steps.joinToString("\n"))
+        call.resolve(results)
+    }
+
+    @PluginMethod
     fun getLocalFilePath(call: PluginCall) {
         val path = call.getString("path", "")
         val result = JSObject()
