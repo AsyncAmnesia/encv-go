@@ -46,16 +46,17 @@
         </div>
 
         <div class="tab-content">
-          <div v-show="activeTab === 'preview'" class="preview-panel" :class="{ landscape: isLandscape }">
-            <div
-              class="preview-frame"
-              :class="{ landscape: isLandscape }"
-              ref="frameRef"
-              :style="frameStyle"
-            >
-              <component :is="loadedComponent" v-if="loadedComponent" />
-              <div v-else class="loading-state">
-                <ion-spinner name="crescent"></ion-spinner>
+          <div v-show="activeTab === 'preview'" class="preview-panel">
+            <div class="preview-frame-wrapper" :style="wrapperStyle">
+              <div
+                class="preview-frame"
+                ref="frameRef"
+                :style="frameStyle"
+              >
+                <component :is="loadedComponent" v-if="loadedComponent" />
+                <div v-else class="loading-state">
+                  <ion-spinner name="crescent"></ion-spinner>
+                </div>
               </div>
             </div>
           </div>
@@ -88,7 +89,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, provide } from 'vue'
+import { ref, computed, watch, provide } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
@@ -112,8 +113,8 @@ const composeSource = ref('')
 
 const isLandscape = ref(false)
 const frameRef = ref<HTMLElement>()
-const savedWidth = ref(0)
-const savedHeight = ref(0)
+const portraitWidth = ref(0)
+const portraitHeight = ref(0)
 
 const tabs = [
   { id: 'preview' as const, label: 'Preview', icon: eyeOutline },
@@ -121,12 +122,23 @@ const tabs = [
   { id: 'compose' as const, label: 'Compose', icon: codeSlashOutline },
 ]
 
+const wrapperStyle = computed(() => {
+  if (!isLandscape.value) return {}
+  return {
+    height: `${portraitWidth.value}px`,
+  }
+})
+
 const frameStyle = computed(() => {
   if (!isLandscape.value) return {}
   return {
-    width: `${savedHeight.value}px`,
-    height: `${savedWidth.value}px`,
+    width: `${portraitHeight.value}px`,
+    height: `${portraitWidth.value}px`,
     transform: 'rotate(90deg)',
+    transformOrigin: 'top left',
+    position: 'absolute' as const,
+    top: '0',
+    left: `calc(50% - ${portraitHeight.value / 2}px)`,
   }
 })
 
@@ -134,16 +146,11 @@ async function toggleLandscape() {
   if (!frameRef.value) return
   if (!isLandscape.value) {
     const rect = frameRef.value.getBoundingClientRect()
-    savedWidth.value = rect.width
-    savedHeight.value = rect.height
+    portraitWidth.value = rect.width
+    portraitHeight.value = rect.height
     isLandscape.value = true
   } else {
     isLandscape.value = false
-    await nextTick()
-    if (frameRef.value) {
-      frameRef.value.style.width = ''
-      frameRef.value.style.height = ''
-    }
   }
 }
 
@@ -297,18 +304,21 @@ async function copySource(text: string) {
   padding: 16px;
   display: flex;
   justify-content: center;
-  align-items: center;
-  transition: min-height 0.35s ease;
+  align-items: flex-start;
 }
 
-.preview-panel.landscape {
-  min-height: 85vw;
+.preview-frame-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  transition: height 0.35s ease;
 }
 
 .preview-frame {
   position: relative;
   width: 100%;
-  border-radius: 12px;
+  aspect-ratio: 9/16;
+  border-radius: 16px;
   overflow: hidden;
   background: #121212;
   box-shadow: 0 2px 12px rgba(0,0,0,0.3);
