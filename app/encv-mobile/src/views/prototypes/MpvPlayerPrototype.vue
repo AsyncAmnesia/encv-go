@@ -46,7 +46,7 @@
               @seek="handleSeek"
             />
             <div class="bottom-actions">
-              <button class="speed-chip" @click.stop="cycleSpeed">{{ playbackSpeed }}x</button>
+              <button class="speed-chip" @click.stop="cycleSpeed">{{ playbackSpeed.toFixed(playbackSpeed === Math.round(playbackSpeed) ? 1 : 2) }}x</button>
               <div class="spacer"></div>
               <div class="popover-wrap">
                 <transition name="pop">
@@ -128,9 +128,27 @@
           <div class="settings-panel" @click.stop>
             <div class="popup-title">Settings</div>
             <div class="settings-group">
-              <span class="settings-label">Playback Speed</span>
-              <div class="speed-options">
-                <button v-for="s in SPEED_OPTIONS" :key="s" class="speed-opt" :class="{ active: playbackSpeed === s }" @click="playbackSpeed = s">{{ s }}x</button>
+              <div class="speed-slider-header">
+                <span class="settings-label">Playback Speed</span>
+                <span class="speed-value">{{ playbackSpeed.toFixed(playbackSpeed === Math.round(playbackSpeed) ? 1 : 2) }}x</span>
+              </div>
+              <div class="speed-slider-wrap" ref="speedSliderRef" @mousedown="onSpeedSliderDown" @click="onSpeedSliderClick">
+                <div class="speed-track">
+                  <div class="speed-track-fill" :style="{ width: speedSliderPercent + '%' }"></div>
+                  <div
+                    v-for="pt in SPEED_ANCHORS"
+                    :key="pt"
+                    class="speed-anchor"
+                    :class="{ active: Math.abs(playbackSpeed - pt) < 0.05 }"
+                    :style="{ left: ((pt - SPEED_MIN) / (SPEED_MAX - SPEED_MIN) * 100) + '%' }"
+                  ></div>
+                  <div class="speed-thumb" :style="{ left: speedSliderPercent + '%' }"></div>
+                </div>
+                <div class="speed-labels">
+                  <span v-for="pt in SPEED_ANCHORS" :key="pt" class="speed-label" :class="{ active: Math.abs(playbackSpeed - pt) < 0.05 }" :style="{ left: ((pt - SPEED_MIN) / (SPEED_MAX - SPEED_MIN) * 100) + '%' }">
+                    {{ pt }}x
+                  </span>
+                </div>
               </div>
             </div>
             <div class="settings-group">
@@ -172,20 +190,23 @@
 
       <transition name="pip-fade">
         <div v-if="isPipMode" class="pip-window" @click.stop="exitPip">
-          <div class="pip-video-mini">
-            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/><polygon points="10,8 16,12 10,16"/></svg>
+          <div class="pip-video">
+            <div class="video-placeholder pip-placeholder">
+              <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="2" y="4" width="20" height="16" rx="2"/>
+                <polygon points="10,8 16,12 10,16"/>
+              </svg>
+            </div>
+            <div class="pip-controls">
+              <button class="pip-ctrl-btn" @click.stop="togglePlay">
+                <svg v-if="isPlaying" viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                <svg v-else viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              </button>
+              <button class="pip-ctrl-btn pip-close-ctrl" @click.stop="exitPip">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+              </button>
+            </div>
           </div>
-          <div class="pip-info">
-            <span class="pip-title">{{ fileName }}</span>
-            <span class="pip-time">{{ formatTime(currentPosition) }} / {{ formatTime(duration) }}</span>
-          </div>
-          <button class="pip-play-btn" @click.stop="togglePlay">
-            <svg v-if="isPlaying" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-            <svg v-else viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-          </button>
-          <button class="pip-close-btn" @click.stop="exitPip">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-          </button>
         </div>
       </transition>
     </div>
@@ -212,6 +233,11 @@
 import { ref, computed, watch } from 'vue'
 import MpvProgressBar from './MpvProgressBarWeb.vue'
 
+const SPEED_MIN = 0.5
+const SPEED_MAX = 3.0
+const SPEED_ANCHORS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]
+const SNAP_THRESHOLD = 0.08
+
 const playerState = ref<'idle' | 'loading' | 'playing' | 'paused' | 'audioOnly' | 'error'>('paused')
 const fileName = ref('Big.Buck.Bunny.1080p.mkv')
 const durationInput = ref(596000)
@@ -227,7 +253,8 @@ const volume = ref(0.8)
 const showVolumeSlider = ref(false)
 const isDragging = ref(false)
 const volumeTrackRef = ref<HTMLElement>()
-const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2]
+const isSpeedDragging = ref(false)
+const speedSliderRef = ref<HTMLElement>()
 const activePanel = ref<'' | 'settings' | 'subtitles' | 'audio'>('')
 const selectedSubtitle = ref('none')
 const selectedAudio = ref('1')
@@ -236,6 +263,10 @@ const audioDelay = ref(0)
 const bgPlayback = ref(false)
 const isPipMode = ref(false)
 const externalSubtitleName = ref('')
+
+const speedSliderPercent = computed(() => {
+  return ((playbackSpeed.value - SPEED_MIN) / (SPEED_MAX - SPEED_MIN)) * 100
+})
 
 const subtitleTracks = [
   { id: 'none', label: 'None' },
@@ -251,13 +282,38 @@ const audioTracks = [
   { id: '3', label: 'Chinese (Stereo)' },
 ]
 
-function formatTime(ms: number): string {
-  const totalSec = Math.floor(ms / 1000)
-  const h = Math.floor(totalSec / 3600)
-  const m = Math.floor((totalSec % 3600) / 60)
-  const s = totalSec % 60
-  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-  return `${m}:${String(s).padStart(2, '0')}`
+function snapSpeed(val: number): number {
+  for (const anchor of SPEED_ANCHORS) {
+    if (Math.abs(val - anchor) < SNAP_THRESHOLD) return anchor
+  }
+  return val
+}
+
+function speedFromX(clientX: number) {
+  if (!speedSliderRef.value) return
+  const rect = speedSliderRef.value.getBoundingClientRect()
+  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+  let raw = SPEED_MIN + ratio * (SPEED_MAX - SPEED_MIN)
+  raw = Math.round(raw * 10) / 10
+  playbackSpeed.value = snapSpeed(raw)
+}
+
+function onSpeedSliderClick(e: MouseEvent) {
+  if (isSpeedDragging.value) return
+  speedFromX(e.clientX)
+}
+
+function onSpeedSliderDown(e: MouseEvent) {
+  isSpeedDragging.value = true
+  speedFromX(e.clientX)
+  const onMove = (ev: MouseEvent) => speedFromX(ev.clientX)
+  const onUp = () => {
+    isSpeedDragging.value = false
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
 }
 
 function togglePanel(panel: typeof activePanel.value) {
@@ -296,8 +352,13 @@ function seekDelta(ms: number) {
 }
 
 function cycleSpeed() {
-  const idx = SPEED_OPTIONS.indexOf(playbackSpeed.value)
-  playbackSpeed.value = SPEED_OPTIONS[(idx + 1) % SPEED_OPTIONS.length]
+  const current = playbackSpeed.value
+  let best = SPEED_ANCHORS[0]
+  for (const a of SPEED_ANCHORS) {
+    if (a > current + 0.01) { best = a; break }
+    best = a
+  }
+  playbackSpeed.value = best
 }
 
 function toggleVolumeSlider() {
@@ -650,27 +711,103 @@ watch(isPlaying, (val) => {
   margin-bottom: 8px;
 }
 
-.speed-options {
+.speed-slider-header {
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
 }
 
-.speed-opt {
-  padding: 4px 10px;
-  border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: transparent;
-  color: rgba(255,255,255,0.7);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.15s;
+.speed-slider-header .settings-label {
+  margin-bottom: 0;
 }
 
-.speed-opt.active {
-  border-color: rgba(187,134,252,0.5);
-  background: rgba(187,134,252,0.15);
+.speed-value {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 14px;
+  font-weight: 600;
   color: #BB86FC;
+}
+
+.speed-slider-wrap {
+  position: relative;
+  padding: 8px 0 24px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.speed-track {
+  position: relative;
+  height: 4px;
+  background: rgba(255,255,255,0.12);
+  border-radius: 2px;
+}
+
+.speed-track-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: #BB86FC;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.speed-anchor {
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.2);
+  transform: translate(-50%, -50%);
+  transition: all 0.15s;
+  pointer-events: none;
+}
+
+.speed-anchor.active {
+  background: #BB86FC;
+  width: 10px;
+  height: 10px;
+  box-shadow: 0 0 6px rgba(187,134,252,0.5);
+}
+
+.speed-thumb {
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #BB86FC;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  pointer-events: none;
+  transition: box-shadow 0.15s;
+}
+
+.speed-slider-wrap:hover .speed-thumb,
+.speed-slider-wrap:active .speed-thumb {
+  box-shadow: 0 0 0 6px rgba(187,134,252,0.15), 0 1px 4px rgba(0,0,0,0.3);
+}
+
+.speed-labels {
+  position: relative;
+  height: 16px;
+  margin-top: 6px;
+}
+
+.speed-label {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: rgba(255,255,255,0.3);
+  transition: color 0.15s;
+  white-space: nowrap;
+}
+
+.speed-label.active {
+  color: #BB86FC;
+  font-weight: 600;
 }
 
 .delay-row {
@@ -775,84 +912,77 @@ watch(isPlaying, (val) => {
   position: absolute;
   bottom: 12px;
   right: 12px;
-  width: 200px;
-  background: rgba(18, 18, 22, 0.96);
-  border-radius: 12px;
-  padding: 8px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  width: 180px;
+  border-radius: 10px;
+  overflow: hidden;
   box-shadow: 0 4px 24px rgba(0,0,0,0.6);
-  backdrop-filter: blur(12px);
   z-index: 40;
   cursor: pointer;
+  background: #000;
 }
 
-.pip-video-mini {
-  width: 36px;
-  height: 36px;
-  border-radius: 6px;
-  background: rgba(255,255,255,0.06);
+.pip-video {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16/9;
+  background: #121212;
+}
+
+.pip-placeholder {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255,255,255,0.4);
-  flex-shrink: 0;
+  color: rgba(255,255,255,0.2);
 }
 
-.pip-info {
-  flex: 1;
+.pip-controls {
+  position: absolute;
+  inset: 0;
   display: flex;
-  flex-direction: column;
-  gap: 1px;
-  overflow: hidden;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(0,0,0,0.3);
+  opacity: 0;
+  transition: opacity 0.15s;
 }
 
-.pip-title {
-  font-size: 11px;
-  color: rgba(255,255,255,0.85);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.pip-window:hover .pip-controls {
+  opacity: 1;
 }
 
-.pip-time {
-  font-size: 10px;
-  color: rgba(255,255,255,0.4);
-  font-family: 'SF Mono', 'Fira Code', monospace;
-}
-
-.pip-play-btn {
-  width: 28px;
-  height: 28px;
+.pip-ctrl-btn {
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   border: none;
-  background: rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.2);
   color: #fff;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
+  backdrop-filter: blur(4px);
+  transition: background 0.15s;
 }
 
-.pip-close-btn {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(255,255,255,0.08);
-  color: rgba(255,255,255,0.5);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+.pip-ctrl-btn:hover {
+  background: rgba(255,255,255,0.35);
 }
 
-.pip-close-btn:hover {
-  background: rgba(255,82,82,0.3);
-  color: #ff5252;
+.pip-close-ctrl {
+  width: 28px;
+  height: 28px;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(0,0,0,0.5);
+}
+
+.pip-close-ctrl:hover {
+  background: rgba(255,82,82,0.6);
 }
 
 .volume-popover-wrap {
@@ -1022,6 +1152,6 @@ watch(isPlaying, (val) => {
 .pip-fade-enter-from,
 .pip-fade-leave-to {
   opacity: 0;
-  transform: translateY(8px) scale(0.95);
+  transform: scale(0.85);
 }
 </style>
