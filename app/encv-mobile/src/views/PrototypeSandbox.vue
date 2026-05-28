@@ -47,16 +47,10 @@
 
         <div class="tab-content">
           <div v-show="activeTab === 'preview'" class="preview-panel">
-            <div class="preview-frame-wrapper" :style="wrapperStyle">
-              <div
-                class="preview-frame"
-                ref="frameRef"
-                :style="frameStyle"
-              >
-                <component :is="loadedComponent" v-if="loadedComponent" />
-                <div v-else class="loading-state">
-                  <ion-spinner name="crescent"></ion-spinner>
-                </div>
+            <div class="preview-frame" :class="{ landscape: isLandscape }" ref="frameRef">
+              <component :is="loadedComponent" v-if="loadedComponent" />
+              <div v-else class="loading-state">
+                <ion-spinner name="crescent"></ion-spinner>
               </div>
             </div>
           </div>
@@ -113,8 +107,6 @@ const composeSource = ref('')
 
 const isLandscape = ref(false)
 const frameRef = ref<HTMLElement>()
-const portraitWidth = ref(0)
-const portraitHeight = ref(0)
 
 const tabs = [
   { id: 'preview' as const, label: 'Preview', icon: eyeOutline },
@@ -122,36 +114,8 @@ const tabs = [
   { id: 'compose' as const, label: 'Compose', icon: codeSlashOutline },
 ]
 
-const wrapperStyle = computed(() => {
-  if (!isLandscape.value) return {}
-  return {
-    height: `${portraitWidth.value}px`,
-  }
-})
-
-const frameStyle = computed(() => {
-  if (!isLandscape.value) return {}
-  return {
-    width: `${portraitHeight.value}px`,
-    height: `${portraitWidth.value}px`,
-    transform: 'rotate(90deg)',
-    transformOrigin: 'top left',
-    position: 'absolute' as const,
-    top: '0',
-    left: `calc(50% - ${portraitHeight.value / 2}px)`,
-  }
-})
-
-async function toggleLandscape() {
-  if (!frameRef.value) return
-  if (!isLandscape.value) {
-    const rect = frameRef.value.getBoundingClientRect()
-    portraitWidth.value = rect.width
-    portraitHeight.value = rect.height
-    isLandscape.value = true
-  } else {
-    isLandscape.value = false
-  }
+function toggleLandscape() {
+  isLandscape.value = !isLandscape.value
 }
 
 provide('sandboxLandscape', {
@@ -230,7 +194,7 @@ async function copySource(text: string) {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--ion-color-primary, #BB86FC);
-  flex-shrink: 0;
+  flex-shrink:0;
   width: 64px;
 }
 
@@ -307,22 +271,21 @@ async function copySource(text: string) {
   align-items: flex-start;
 }
 
-.preview-frame-wrapper {
-  position: relative;
-  width: 100%;
-  max-width: 400px;
-  transition: height 0.35s ease;
-}
-
 .preview-frame {
   position: relative;
   width: 100%;
+  max-width: 400px;
   aspect-ratio: 9/16;
   border-radius: 16px;
   overflow: hidden;
   background: #121212;
   box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-  transition: transform 0.35s ease, width 0.35s ease, height 0.35s ease;
+  transition: aspect-ratio 0.4s ease, max-width 0.4s ease;
+}
+
+.preview-frame.landscape {
+  aspect-ratio: 16/9;
+  max-width: 700px;
 }
 
 .loading-state {

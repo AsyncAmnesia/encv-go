@@ -1,5 +1,6 @@
 <template>
-  <div class="player-screen" @click="handleTap">
+  <div class="mpv-prototype-root">
+    <div class="player-screen" @click="handleTap">
     <div class="video-area">
       <div class="video-placeholder">
         <svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -208,6 +209,22 @@
         </div>
       </div>
     </transition>
+    </div>
+    <div class="prototype-toolbar">
+      <label>State:</label>
+      <select v-model="playerState">
+        <option value="idle">Idle</option>
+        <option value="loading">Loading</option>
+        <option value="playing">Playing</option>
+        <option value="paused">Paused</option>
+        <option value="audioOnly">Audio Only</option>
+        <option value="error">Error</option>
+      </select>
+      <label>File:</label>
+      <input v-model="fileName" class="file-input" />
+      <label>Duration:</label>
+      <input v-model.number="durationInput" type="number" class="dur-input" />
+    </div>
   </div>
 </template>
 
@@ -419,10 +436,17 @@ watch(isPlaying, (val) => {
 </script>
 
 <style scoped>
-.player-screen {
-  position: relative;
+.mpv-prototype-root {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
+}
+
+.player-screen {
+  position: relative;
+  flex: 1;
+  min-height: 0;
   background: #121212;
   overflow: hidden;
   user-select: none;
@@ -1092,4 +1116,35 @@ watch(isPlaying, (val) => {
   opacity: 0;
   transform: scale(0.85);
 }
+
+.prototype-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.04);
+  border-top: 1px solid rgba(255,255,255,0.08);
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.prototype-toolbar label {
+  font-weight: 600;
+  color: rgba(255,255,255,0.7);
+}
+
+.prototype-toolbar select,
+.prototype-toolbar input {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: rgba(255,255,255,0.8);
+  font-size: 11px;
+}
+
+.file-input { width: 140px; }
+.dur-input { width: 64px; }
 </style>
