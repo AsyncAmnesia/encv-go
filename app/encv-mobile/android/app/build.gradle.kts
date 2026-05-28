@@ -91,6 +91,8 @@ android {
 
 packagePlugins {
     enabled.set(true)
+    buildType.set(PackageBuildType.DEBUG)
+    pluginsDir.set("debug_plugins")
 }
 
 dependencies {

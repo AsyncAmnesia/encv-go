@@ -15,5 +15,13 @@ class MpvPluginEntry : IPluginEntryClass {
 
     @Composable
     override fun Content() {
+        MpvPlayerScreen(
+            filePath = "",
+            fileName = "",
+            mimeType = "",
+            isExternal = false,
+            engine = null,
+            onBack = {}
+        )
     }
 }
