@@ -82,6 +82,9 @@
             {{ isInstalling ? t('extensions.installing') : t('extensions.selectApk') }}
           </ion-button>
           <p class="install-hint">{{ t('extensions.installFromLocalHint') }}</p>
+          <ion-button expand="block" fill="outline" color="warning" @click="handleDebugInstall" v-if="isNativePlatform()" size="small" style="margin-top: 12px;">
+            🔧 饱和调试：测试安装流程
+          </ion-button>
         </div>
       </template>
 
@@ -123,7 +126,7 @@ import {
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { Capacitor } from '@capacitor/core'
-import { isNative, pickAndInstallPlugin, checkInstalledPlugins } from '@/plugins/GoProcess'
+import { isNative, pickAndInstallPlugin, checkInstalledPlugins, debugInstallFlow } from '@/plugins/GoProcess'
 
 const { t } = useI18n()
 
@@ -233,6 +236,28 @@ async function handleUninstall(id: string) {
     ],
   })
   await alert.present()
+}
+
+async function handleDebugInstall() {
+  try {
+    const result = await debugInstallFlow()
+    const debugLines = Object.entries(result)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('\n')
+    const alert = await alertController.create({
+      header: '🔧 安装流程诊断',
+      message: `<pre style="font-size:12px;white-space:pre-wrap;max-height:60vh;overflow:auto;">${debugLines}</pre>`,
+      buttons: ['OK'],
+    })
+    await alert.present()
+  } catch (e: any) {
+    const alert = await alertController.create({
+      header: '🔧 诊断失败',
+      message: e?.message || String(e),
+      buttons: ['OK'],
+    })
+    await alert.present()
+  }
 }
 </script>
 

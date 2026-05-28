@@ -745,7 +745,7 @@ func (p *VideoPlugin) verifyContainer() error {
 	if sourcePath != p.inputPath || p.isPostEncryptVerify {
 		slog.Info("Detected preprocessed/re-encoded source or post-encrypt verification, using lenient verification",
 			"source_path", sourcePath, "original_input", p.inputPath)
-		verifyOpts = &pluginInterfaces.VerifyOptions{SkipSizeCheck: true, SkipStructCheck: true, CollectWarnings: true}
+		verifyOpts = &pluginInterfaces.VerifyOptions{SkipSizeCheck: true, SkipStructCheck: true, SkipDeepCheck: true, CollectWarnings: true}
 	} else {
 		verifyOpts = &pluginInterfaces.VerifyOptions{CollectWarnings: true}
 	}

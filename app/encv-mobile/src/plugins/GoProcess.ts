@@ -185,3 +185,12 @@ export async function getLocalFilePath(path: string): Promise<string> {
     return ''
   }
 }
+
+export async function debugInstallFlow(): Promise<Record<string, any>> {
+  try {
+    return await GoProcess.debugInstallFlow()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.debugInstallFlow() failed:', e)
+    return { error: e instanceof Error ? e.message : String(e) }
+  }
+}

@@ -31,6 +31,7 @@ type VerifyWarning struct {
 type VerifyOptions struct {
 	SkipSizeCheck   bool // 跳过精确文件大小比对（用于重编码/转码模式，此时原始文件与解密文件大小天然不同）
 	SkipStructCheck bool // 跳过结构完整性检查（用于重编码输出，此时 MP4 结构可能完全不同）
+	SkipDeepCheck   bool // 跳过深度完整性检查 L4（用于 PostEncryptProcessor，v4 容器加密后 MP4 结构必然改变）
 	CollectWarnings bool // 收集 warnings 而非忽略（默认为 false，warnings 被丢弃）
 }
 
