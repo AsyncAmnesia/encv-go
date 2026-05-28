@@ -196,6 +196,33 @@ export async function debugInstallFlow(): Promise<Record<string, any>> {
   }
 }
 
+export async function debugKotlinReflect(): Promise<Record<string, any>> {
+  try {
+    return await GoProcess.debugKotlinReflect()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.debugKotlinReflect() failed:', e)
+    return { error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+export async function debugApkValidation(): Promise<Record<string, any>> {
+  try {
+    return await GoProcess.debugApkValidation()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.debugApkValidation() failed:', e)
+    return { error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+export async function debugValidationStrategy(): Promise<Record<string, any>> {
+  try {
+    return await GoProcess.debugValidationStrategy()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.debugValidationStrategy() failed:', e)
+    return { error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 export async function exportLogs(): Promise<{ success: boolean; path?: string }> {
   try {
     return await GoProcess.exportLogs()

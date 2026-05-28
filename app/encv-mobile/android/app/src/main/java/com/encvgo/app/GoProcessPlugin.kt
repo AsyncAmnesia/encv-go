@@ -28,6 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlin.reflect.jvm.javaMethod
 
 private const val REQUEST_CODE_PLUGIN_PICK = 9001
 private const val REQUEST_CODE_INSTALL_CONFIRM = 9002
@@ -629,6 +630,331 @@ class GoProcessPlugin : Plugin() {
         }
 
         Log.i(TAG, "SATURATION-DEBUG debugInstallFlow:\n${steps.joinToString("\n")}")
+        val results = JSObject()
+        results.put("debugLog", steps.joinToString("\n"))
+        call.resolve(results)
+    }
+
+    @PluginMethod
+    fun debugKotlinReflect(call: PluginCall) {
+        val steps = mutableListOf<String>()
+
+        steps.add("=== kotlin-reflect Health Check ===")
+
+        steps.add("1. Testing ::function.javaMethod on PluginManager...")
+        try {
+            val method = PluginManager::setValidationStrategy.javaMethod
+            steps.add("   setValidationStrategy.javaMethod = $method")
+            steps.add("   declaringClass = ${method?.declaringClass?.name}")
+            steps.add("   annotations = ${method?.annotations?.map { it.annotationClass.simpleName }}")
+        } catch (e: Error) {
+            steps.add("   FAILED with Error: ${e.javaClass.simpleName}: ${e.message}")
+            steps.add("   stack = ${e.stackTraceToString().take(500)}")
+        } catch (e: Exception) {
+            steps.add("   FAILED with Exception: ${e.javaClass.simpleName}: ${e.message}")
+        }
+
+        try {
+            val method = PluginManager::loadEnabledPlugins.javaMethod
+            steps.add("   loadEnabledPlugins.javaMethod = $method")
+        } catch (e: Error) {
+            steps.add("   loadEnabledPlugins FAILED: ${e.javaClass.simpleName}: ${e.message}")
+        } catch (e: Exception) {
+            steps.add("   loadEnabledPlugins FAILED: ${e.javaClass.simpleName}: ${e.message}")
+        }
+
+        try {
+            val method = PluginManager::launchPlugin.javaMethod
+            steps.add("   launchPlugin.javaMethod = $method")
+        } catch (e: Error) {
+            steps.add("   launchPlugin FAILED: ${e.javaClass.simpleName}: ${e.message}")
+        } catch (e: Exception) {
+            steps.add("   launchPlugin FAILED: ${e.javaClass.simpleName}: ${e.message}")
+        }
+
+        steps.add("2. Testing ::function.javaMethod on InstallerManager...")
+        try {
+            if (PluginManager.isInitialized) {
+                val im = PluginManager.installerManager
+                val method = im::installPlugin.javaMethod
+                steps.add("   installPlugin.javaMethod = $method")
+                steps.add("   declaringClass = ${method?.declaringClass?.name}")
+            } else {
+                steps.add("   SKIPPED: PluginManager not initialized")
+            }
+        } catch (e: Error) {
+            steps.add("   FAILED with Error: ${e.javaClass.simpleName}: ${e.message}")
+            steps.add("   stack = ${e.stackTraceToString().take(500)}")
+        } catch (e: Exception) {
+            steps.add("   FAILED with Exception: ${e.javaClass.simpleName}: ${e.message}")
+        }
+
+        steps.add("3. Testing ::function.javaMethod on PluginCrashHandler...")
+        try {
+            val method = com.combo.core.security.crash.PluginCrashHandler::setGlobalClashCallback.javaMethod
+            steps.add("   setGlobalClashCallback.javaMethod = $method")
+        } catch (e: Error) {
+            steps.add("   FAILED with Error: ${e.javaClass.simpleName}: ${e.message}")
+            steps.add("   stack = ${e.stackTraceToString().take(500)}")
+        } catch (e: Exception) {
+            steps.add("   FAILED with Exception: ${e.javaClass.simpleName}: ${e.message}")
+        }
+
+        steps.add("4. Testing ::function.javaMethod on AuthorizationManager...")
+        try {
+            if (PluginManager.isInitialized) {
+                val am = PluginManager.authorizationManager
+                val method = am::setAuthorizationHandler.javaMethod
+                steps.add("   setAuthorizationHandler.javaMethod = $method")
+            } else {
+                steps.add("   SKIPPED: PluginManager not initialized")
+            }
+        } catch (e: Error) {
+            steps.add("   FAILED with Error: ${e.javaClass.simpleName}: ${e.message}")
+            steps.add("   stack = ${e.stackTraceToString().take(500)}")
+        } catch (e: Exception) {
+            steps.add("   FAILED with Exception: ${e.javaClass.simpleName}: ${e.message}")
+        }
+
+        steps.add("5. Checking @Metadata on ComboLite classes...")
+        try {
+            val pmClass = PluginManager::class.java
+            val meta = pmClass.getAnnotation(kotlin.Metadata::class.java)
+            steps.add("   PluginManager @Metadata = ${meta != null}")
+            if (meta != null) {
+                steps.add("   mv = ${meta.metadataVersion.toList()}")
+                steps.add("   k = ${meta.kind}")
+            }
+        } catch (e: Exception) {
+            steps.add("   @Metadata check FAILED: ${e.message}")
+        }
+        try {
+            val imClass = Class.forName("com.combo.core.runtime.installer.InstallerManager")
+            val meta = imClass.getAnnotation(kotlin.Metadata::class.java)
+            steps.add("   InstallerManager @Metadata = ${meta != null}")
+            if (meta != null) {
+                steps.add("   mv = ${meta.metadataVersion.toList()}")
+                steps.add("   k = ${meta.kind}")
+            }
+        } catch (e: Exception) {
+            steps.add("   InstallerManager @Metadata check FAILED: ${e.message}")
+        }
+
+        steps.add("6. Checking R8 mapping on ComboLite classes...")
+        try {
+            val pmMethods = PluginManager::class.java.declaredMethods.map { "${it.name}(${it.parameterTypes.map { t -> t.simpleName }})" }
+            steps.add("   PluginManager methods (first 10) = ${pmMethods.take(10)}")
+        } catch (e: Exception) {
+            steps.add("   PluginManager method list FAILED: ${e.message}")
+        }
+        try {
+            val imClass = Class.forName("com.combo.core.runtime.installer.InstallerManager")
+            val imMethods = imClass.declaredMethods.map { "${it.name}(${it.parameterTypes.map { t -> t.simpleName }})" }
+            steps.add("   InstallerManager methods (first 10) = ${imMethods.take(10)}")
+        } catch (e: Exception) {
+            steps.add("   InstallerManager method list FAILED: ${e.message}")
+        }
+
+        Log.i(TAG, "SATURATION-DEBUG debugKotlinReflect:\n${steps.joinToString("\n")}")
+        val results = JSObject()
+        results.put("debugLog", steps.joinToString("\n"))
+        call.resolve(results)
+    }
+
+    @PluginMethod
+    fun debugApkValidation(call: PluginCall) {
+        val steps = mutableListOf<String>()
+
+        steps.add("=== APK Validation ===")
+        val pluginInstallDir = File(context.cacheDir, "plugin_install")
+        val apkFiles = pluginInstallDir.listFiles()?.filter { it.extension == "apk" }
+        val testApk = apkFiles?.firstOrNull()
+
+        if (testApk == null) {
+            steps.add("1. No APK file found in plugin_install")
+            val results = JSObject()
+            results.put("debugLog", steps.joinToString("\n"))
+            call.resolve(results)
+            return
+        }
+
+        steps.add("1. APK file = ${testApk.name} (${testApk.length()}B)")
+        steps.add("   exists = ${testApk.exists()}")
+        steps.add("   canRead = ${testApk.canRead()}")
+
+        steps.add("2. PackageManager.getPackageArchiveInfo...")
+        try {
+            val pkgInfo = context.packageManager.getPackageArchiveInfo(
+                testApk.absolutePath,
+                PackageManager.GET_META_DATA or PackageManager.GET_SIGNATURES or PackageManager.GET_ACTIVITIES
+            )
+            if (pkgInfo == null) {
+                steps.add("   FAILED: getPackageArchiveInfo returned null (invalid APK?)")
+            } else {
+                steps.add("   packageName = ${pkgInfo.packageName}")
+                steps.add("   versionCode = ${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) pkgInfo.longVersionCode else pkgInfo.versionCode}")
+                steps.add("   versionName = ${pkgInfo.versionName}")
+
+                val appInfo = pkgInfo.applicationInfo
+                if (appInfo != null) {
+                    appInfo.publicSourceDir = testApk.absolutePath
+                    val label = context.packageManager.getApplicationLabel(appInfo)
+                    steps.add("   appLabel = $label")
+                    steps.add("   iconResId = ${appInfo.icon}")
+
+                    val metaData = appInfo.metaData
+                    if (metaData != null) {
+                        steps.add("   metaData keys = ${metaData.keySet().toList()}")
+                        val entryClass = metaData.getString("plugin.entryClass")
+                        steps.add("   plugin.entryClass = $entryClass")
+                        val desc = metaData.getString("plugin.description")
+                        steps.add("   plugin.description = $desc")
+                    } else {
+                        steps.add("   metaData = NULL ← CRITICAL: plugin must have meta-data")
+                    }
+                }
+
+                val activities = pkgInfo.activities
+                steps.add("   activities = ${activities?.map { it.name } ?: "none"}")
+
+                val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    val pkgInfoSign = context.packageManager.getPackageArchiveInfo(
+                        testApk.absolutePath,
+                        PackageManager.GET_SIGNING_CERTIFICATES
+                    )
+                    pkgInfoSign?.signingInfo?.apkContentsSigners?.map { it.toCharsString().take(16) + "..." } ?: listOf("(none)")
+                } else {
+                    @Suppress("DEPRECATION")
+                    pkgInfo.signatures?.map { it.toCharsString().take(16) + "..." } ?: listOf("(none)")
+                }
+                steps.add("   signatures = $signatures")
+            }
+        } catch (e: Exception) {
+            steps.add("   FAILED: ${e.javaClass.simpleName}: ${e.message}")
+        }
+
+        steps.add("3. Host app signatures...")
+        try {
+            val hostPkgInfo = context.packageManager.getPackageInfo(
+                context.packageName,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+            )
+            val hostSigs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                @Suppress("DEPRECATION")
+                hostPkgInfo.signingInfo?.apkContentsSigners?.map { it.toCharsString().take(16) + "..." }
+                    ?: @Suppress("DEPRECATION") hostPkgInfo.signatures?.map { it.toCharsString().take(16) + "..." }
+                    ?: listOf("(none)")
+            } else {
+                @Suppress("DEPRECATION")
+                hostPkgInfo.signatures?.map { it.toCharsString().take(16) + "..." } ?: listOf("(none)")
+            }
+            steps.add("   host signatures = $hostSigs")
+        } catch (e: Exception) {
+            steps.add("   FAILED: ${e.message}")
+        }
+
+        steps.add("4. APK ZIP integrity...")
+        try {
+            val zipFile = java.util.zip.ZipFile(testApk)
+            val entries = zipFile.entries().toList().map { it.name }
+            steps.add("   entry count = ${entries.size}")
+            steps.add("   has AndroidManifest.xml = ${entries.contains("AndroidManifest.xml")}")
+            steps.add("   has classes.dex = ${entries.any { it.startsWith("classes") && it.endsWith(".dex") }}")
+            steps.add("   has resources.arsc = ${entries.contains("resources.arsc")}")
+            val soFiles = entries.filter { it.endsWith(".so") }
+            steps.add("   .so files = $soFiles")
+            zipFile.close()
+        } catch (e: Exception) {
+            steps.add("   FAILED: ${e.message}")
+        }
+
+        Log.i(TAG, "SATURATION-DEBUG debugApkValidation:\n${steps.joinToString("\n")}")
+        val results = JSObject()
+        results.put("debugLog", steps.joinToString("\n"))
+        call.resolve(results)
+    }
+
+    @PluginMethod
+    fun debugValidationStrategy(call: PluginCall) {
+        val steps = mutableListOf<String>()
+
+        steps.add("=== ValidationStrategy State ===")
+
+        steps.add("1. PluginManager.isInitialized = ${PluginManager.isInitialized}")
+        if (!PluginManager.isInitialized) {
+            steps.add("2. SKIPPED: PluginManager not initialized")
+        } else {
+            try {
+                val currentStrategy = PluginManager.validationStrategy
+                steps.add("2. current validationStrategy = $currentStrategy")
+            } catch (e: Exception) {
+                steps.add("2. reading validationStrategy FAILED: ${e.javaClass.simpleName}: ${e.message}")
+            }
+
+            steps.add("3. Testing setValidationStrategy(Insecure)...")
+            try {
+                runBlocking(Dispatchers.IO) {
+                    PluginManager.setValidationStrategy(com.combo.core.runtime.ValidationStrategy.Insecure)
+                }
+                steps.add("   SUCCESS: no error thrown")
+                val afterStrategy = PluginManager.validationStrategy
+                steps.add("   validationStrategy after = $afterStrategy")
+                if (afterStrategy != com.combo.core.runtime.ValidationStrategy.Insecure) {
+                    steps.add("   ← PROBLEM: strategy not actually changed! setValidationStrategy silently failed")
+                }
+            } catch (e: Error) {
+                steps.add("   FAILED with Error: ${e.javaClass.simpleName}: ${e.message}")
+                steps.add("   stack = ${e.stackTraceToString().take(500)}")
+            } catch (e: Exception) {
+                steps.add("   FAILED with Exception: ${e.javaClass.simpleName}: ${e.message}")
+            }
+
+            steps.add("4. Testing loadEnabledPlugins.javaMethod...")
+            try {
+                val method = PluginManager::loadEnabledPlugins.javaMethod
+                steps.add("   loadEnabledPlugins.javaMethod = $method")
+                if (method != null) {
+                    val hasAnnotation = method.isAnnotationPresent(com.combo.core.security.permission.RequiresPermission::class.java)
+                    steps.add("   has @RequiresPermission = $hasAnnotation")
+                    if (hasAnnotation) {
+                        val ann = method.getAnnotation(com.combo.core.security.permission.RequiresPermission::class.java)
+                        steps.add("   permissionLevel = ${ann?.level}")
+                    }
+                }
+            } catch (e: Error) {
+                steps.add("   FAILED with Error: ${e.javaClass.simpleName}: ${e.message}")
+            } catch (e: Exception) {
+                steps.add("   FAILED with Exception: ${e.javaClass.simpleName}: ${e.message}")
+            }
+
+            steps.add("5. Testing loadEnabledPlugins() call...")
+            try {
+                val count = runBlocking(Dispatchers.IO) {
+                    PluginManager.loadEnabledPlugins()
+                }
+                steps.add("   loadEnabledPlugins() returned $count")
+            } catch (e: Error) {
+                steps.add("   FAILED with Error: ${e.javaClass.simpleName}: ${e.message}")
+                steps.add("   stack = ${e.stackTraceToString().take(500)}")
+            } catch (e: Exception) {
+                steps.add("   FAILED with Exception: ${e.javaClass.simpleName}: ${e.message}")
+            }
+        }
+
+        steps.add("6. EncvApplication onFrameworkSetup log...")
+        try {
+            val logFile = File(context.filesDir, "encv.log")
+            if (logFile.exists()) {
+                val lines = logFile.readLines().filter { it.contains("onFrameworkSetup") || it.contains("setValidationStrategy") || it.contains("ValidationStrategy") }
+                steps.add("   relevant log lines = ${lines.take(10)}")
+            } else {
+                steps.add("   encv.log not found")
+            }
+        } catch (e: Exception) {
+            steps.add("   FAILED: ${e.message}")
+        }
+
+        Log.i(TAG, "SATURATION-DEBUG debugValidationStrategy:\n${steps.joinToString("\n")}")
         val results = JSObject()
         results.put("debugLog", steps.joinToString("\n"))
         call.resolve(results)

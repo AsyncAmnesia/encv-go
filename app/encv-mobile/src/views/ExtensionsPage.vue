@@ -82,9 +82,20 @@
             {{ isInstalling ? t('extensions.installing') : t('extensions.selectApk') }}
           </ion-button>
           <p class="install-hint">{{ t('extensions.installFromLocalHint') }}</p>
-          <ion-button expand="block" fill="outline" color="warning" @click="handleDebugInstall" v-if="isNativePlatform()" size="small" style="margin-top: 12px;">
-            🔧 饱和调试：实际调用installPlugin
-          </ion-button>
+          <div v-if="isNativePlatform()" style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
+            <ion-button expand="block" fill="outline" color="warning" @click="handleDebugInstall" size="small">
+              🔧 installPlugin实际调用
+            </ion-button>
+            <ion-button expand="block" fill="outline" color="warning" @click="handleDebugKotlinReflect" size="small">
+              🔧 kotlin-reflect健康检查
+            </ion-button>
+            <ion-button expand="block" fill="outline" color="warning" @click="handleDebugApkValidation" size="small">
+              🔧 APK元数据+签名校验
+            </ion-button>
+            <ion-button expand="block" fill="outline" color="warning" @click="handleDebugValidationStrategy" size="small">
+              🔧 ValidationStrategy状态
+            </ion-button>
+          </div>
         </div>
       </template>
 
@@ -126,7 +137,7 @@ import {
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { Capacitor } from '@capacitor/core'
-import { isNative, pickAndInstallPlugin, checkInstalledPlugins, debugInstallFlow } from '@/plugins/GoProcess'
+import { isNative, pickAndInstallPlugin, checkInstalledPlugins, debugInstallFlow, debugKotlinReflect, debugApkValidation, debugValidationStrategy } from '@/plugins/GoProcess'
 import { showToast } from '@/composables/useToast'
 
 const { t } = useI18n()
@@ -234,39 +245,65 @@ async function handleUninstall(id: string) {
   await alert.present()
 }
 
+async function showDebugResult(header: string, result: Record<string, any>) {
+  const debugText = result.debugLog || Object.entries(result)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join('\n')
+  const alert = await alertController.create({
+    header,
+    message: `<pre style="font-size:12px;white-space:pre-wrap;max-height:60vh;overflow:auto;">${debugText}</pre>`,
+    buttons: [
+      {
+        text: '复制',
+        handler: async () => {
+          try {
+            await navigator.clipboard.writeText(debugText)
+            showToast({ message: '已复制诊断信息', duration: 1500, color: 'success' })
+          } catch {
+            showToast({ message: '复制失败', duration: 1500, color: 'danger' })
+          }
+          return false
+        },
+      },
+      'OK',
+    ],
+  })
+  await alert.present()
+}
+
 async function handleDebugInstall() {
   try {
     const result = await debugInstallFlow()
-    const debugText = result.debugLog || Object.entries(result)
-      .map(([k, v]) => `${k}: ${v}`)
-      .join('\n')
-    const alert = await alertController.create({
-      header: '🔧 安装流程诊断',
-      message: `<pre style="font-size:12px;white-space:pre-wrap;max-height:60vh;overflow:auto;">${debugText}</pre>`,
-      buttons: [
-        {
-          text: '复制',
-          handler: async () => {
-            try {
-              await navigator.clipboard.writeText(debugText)
-              showToast({ message: '已复制诊断信息', duration: 1500, color: 'success' })
-            } catch {
-              showToast({ message: '复制失败', duration: 1500, color: 'danger' })
-            }
-            return false
-          },
-        },
-        'OK',
-      ],
-    })
-    await alert.present()
+    await showDebugResult('🔧 installPlugin诊断', result)
   } catch (e: any) {
-    const alert = await alertController.create({
-      header: '🔧 诊断失败',
-      message: e?.message || String(e),
-      buttons: ['OK'],
-    })
-    await alert.present()
+    await showDebugResult('🔧 诊断失败', { debugLog: e?.message || String(e) })
+  }
+}
+
+async function handleDebugKotlinReflect() {
+  try {
+    const result = await debugKotlinReflect()
+    await showDebugResult('🔧 kotlin-reflect诊断', result)
+  } catch (e: any) {
+    await showDebugResult('🔧 诊断失败', { debugLog: e?.message || String(e) })
+  }
+}
+
+async function handleDebugApkValidation() {
+  try {
+    const result = await debugApkValidation()
+    await showDebugResult('🔧 APK校验诊断', result)
+  } catch (e: any) {
+    await showDebugResult('🔧 诊断失败', { debugLog: e?.message || String(e) })
+  }
+}
+
+async function handleDebugValidationStrategy() {
+  try {
+    const result = await debugValidationStrategy()
+    await showDebugResult('🔧 ValidationStrategy诊断', result)
+  } catch (e: any) {
+    await showDebugResult('🔧 诊断失败', { debugLog: e?.message || String(e) })
   }
 }
 </script>
