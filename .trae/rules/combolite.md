@@ -115,8 +115,8 @@ plugins {
     alias(libs.plugins.combolite.aar2apk)    // aar2apk 打包插件
 }
 
-packagePlugins {                                // 开发时自动集成
-    enabled.set(true)
+packagePlugins {                                // CI 构建时应禁用（插件由单独步骤构建）
+    enabled.set(false)                         // 开发调试时可设为 true
     buildType.set(PackageBuildType.DEBUG)
     pluginsDir.set("debug_plugins")
 }
@@ -191,9 +191,47 @@ class MyPluginEntry : IPluginEntryClass {
 > **根因**：把 `suspend fun` 当 `void` 用
 > **修复**：`when (result) { is Success -> ...; is Failure -> ... }`
 
+### 错误 E：「用系统安装器安装插件 APK」
+
+> **症状**：`PluginManager.isInitialized == false` 时走 `Intent.ACTION_INSTALL_PACKAGE` 兜底
+> **根因**：把 ComboLite 插件 APK 当作普通 Android 应用
+> **后果**：系统安装器要么失败（插件无 launcher Activity），要么装出一个无法运行的独立应用
+> **修复**：`PluginManager.isInitialized == false` 时直接 reject，绝不走系统安装兜底
+
+### 错误 F：「文件扫描代替 PluginManager 查询」
+
+> **症状**：`PluginManager.isInitialized == false` 时扫描文件系统查找 APK 文件
+> **根因**：认为"文件存在 = 插件已安装"
+> **后果**：假阳性——文件存在不代表插件已通过 ComboLite 正确安装（需要签名校验、类索引创建、组件解析、XML 持久化）
+> **修复**：`PluginManager.isInitialized == false` 时返回空结果，不使用文件扫描兜底
+
 ---
 
-## 五、源码参考（克隆至 `/tmp/ComboLite`）
+## 五、插件文件格式
+
+### 5.1 扩展名：.apk（不可更改）
+
+ComboLite 插件文件使用 `.apk` 扩展名，原因：
+
+1. **文件本质就是 APK**：标准 ZIP 容器 + AndroidManifest.xml + DEX + resources.arsc + so 库，有合法的 Android 签名
+2. **`InstallerManager.installPlugin(File)` 不检查扩展名**：内部通过 `PackageManager.getPackageArchiveInfo()` 和 `ZipFile` 解析文件内容
+3. **安装后源文件被重命名为 `base.apk`**：`copyPluginApk()` 将源文件复制到 `plugins/{pluginId}/base.apk`，原始文件名无关
+4. **aar2apk 构建工具硬编码输出 `.apk`**：`ConvertAarToApkTask.kt` 输出 `${pluginName}-${buildType}.apk`
+5. **ComboLite 官方示例全部使用 `.apk`**：`updates/plugins/` 目录下所有插件文件
+
+**禁止**将插件文件扩展名改为 `.plugin`、`.cpk` 等——这不会改变文件内容，只会破坏与 ComboLite 工具链的兼容性。
+
+### 5.2 插件不是普通应用
+
+虽然插件文件扩展名是 `.apk`，但它**不是普通 Android 应用**：
+- 不能用 `Intent.ACTION_INSTALL_PACKAGE` 系统安装器安装
+- 不能通过 `adb install` 安装
+- 只能通过 `PluginManager.installerManager.installPlugin()` 安装
+- 安装后存储在 `filesDir/plugins/{pluginId}/base.apk`，不在系统应用目录
+
+---
+
+## 六、源码参考（克隆至 `/tmp/ComboLite`）
 
 关键文件速查：
 
@@ -211,7 +249,7 @@ class MyPluginEntry : IPluginEntryClass {
 
 ---
 
-## 六、调试技巧
+## 七、调试技巧
 
 1. **`PluginManager.isInitialized`** — 第一步检查这个，未初始化时所有操作无效
 2. **Logcat 过滤**：`TAG="ENCV-go"` 或 `TAG="PluginLifecycleManager"`
