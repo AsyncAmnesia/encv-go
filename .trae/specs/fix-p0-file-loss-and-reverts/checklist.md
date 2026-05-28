@@ -1,11 +1,10 @@
-- [ ] FilePreview.vue 文本预览使用 iframe 渲染（非 pre/code）
-- [ ] FilePreview.vue textPreviewUrl ref 变量存在且正确赋值
-- [ ] FilePreview.vue 无 textContent/textLoading/textError 残留变量
-- [ ] TempFileReadCloser.Close() 不再调用 os.Remove()（仅关闭文件句柄）
-- [ ] registry.go EncryptFileWithPlugin 中临时文件在验证完成后才被清理
-- [ ] stsz box missing 验证错误得到合理解释或修复（remux 后文件结构变化 vs 验证器期望）
-- [ ] 加密过程中用户原始视频文件不被删除
-- [ ] encv-pre-*.mp4 临时文件在 .encv_tmp/ 隐藏目录中（用户不可见）
-- [ ] 插件安装成功后 ExtensionsPage badge 显示「已安装」
-- [ ] 插件安装失败时显示具体错误信息（非永久卡在「安装中」）
-- [ ] GoProcessPlugin.kt installFromPath 有详细的反射调用日志
+- [ ] FilePreview.vue 文本预览使用 `<iframe :src="textPreviewUrl">` 渲染（已回退 fetch+pre）
+- [ ] FilePreview.vue textPreviewUrl ref 存在且正确赋值
+- [ ] FilePreview.vue 无 textContent/textLoading/textError 残留
+- [ ] TempFileReadCloser.Close() 仅关闭文件句柄，不执行 os.Remove()
+- [ ] registry.go 在 PostEncryptProcessor + verifyContainer 完成后才清理 encv-pre 临时文件
+- [ ] stsz box missing 验证错误根因确认（remux 后结构变化 vs SkipStructCheck 覆盖范围）
+- [ ] 加密过程中用户原始视频文件不被删除或覆盖
+- [ ] GoProcessPlugin.kt 反射找到 ComboLite installPlugin(File, Boolean) 方法（parameterCount==2）
+- [ ] installMethod.invoke(pm, apkFile, true) 正确调用并返回成功
+- [ ] ExtensionsPage 安装完成后 badge 显示「已安装」
