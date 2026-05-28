@@ -9,6 +9,10 @@ import com.combo.core.security.crash.PluginCrashHandler
 import android.util.Log
 
 class EncvApplication : BaseHostApplication() {
+    companion object {
+        private const val TAG = "ENCV-App"
+    }
+
     override fun onCreate() {
         super.onCreate()
         initBugly()
@@ -16,8 +20,16 @@ class EncvApplication : BaseHostApplication() {
 
     override fun onFrameworkSetup(): suspend () -> Unit {
         return {
-            PluginManager.setValidationStrategy(ValidationStrategy.Insecure)
-            PluginCrashHandler.setGlobalClashCallback(null)
+            try {
+                PluginManager.setValidationStrategy(ValidationStrategy.Insecure)
+            } catch (e: Exception) {
+                Log.w(TAG, "setValidationStrategy not available, skipping", e)
+            }
+            try {
+                PluginCrashHandler.setGlobalClashCallback(null)
+            } catch (e: Exception) {
+                Log.w(TAG, "setGlobalClashCallback not available, skipping", e)
+            }
         }
     }
 
