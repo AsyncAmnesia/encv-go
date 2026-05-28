@@ -109,6 +109,7 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     implementation(project(":capacitor-cordova-android-plugins"))
     implementation(libs.kotlin.stdlib)
+    implementation(libs.kotlin.reflect)
     debugImplementation(libs.logcat)
     implementation(libs.okhttp)
     implementation(libs.bugly.crashreport)
