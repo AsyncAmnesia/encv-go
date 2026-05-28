@@ -142,11 +142,17 @@ jobs:
 
       - name: Run Go unit tests
         run: |
-          echo "═══ Go Unit Tests ═══"
+          echo "═══ Go Unit Tests (service layer) ═══"
           go test ./internal/service/ -count=1 -timeout 120s -v 2>&1 | tail -30
           echo ""
+          echo "═══ Go Unit Tests (video plugin) ═══"
+          go test ./internal/v2/plugins/video/ -count=1 -timeout 120s -v 2>&1 | tail -30
+          echo ""
+          echo "═══ ComboLite Static Check ═══"
+          go test ./internal/service/ -count=1 -timeout 60s -run TestComboLite -v 2>&1 | tail -20
+          echo ""
           echo "═══ Go Test Summary ═══"
-          go test ./internal/service/ -count=1 -timeout 120s 2>&1 | tail -5
+          go test ./internal/service/ ./internal/v2/plugins/video/ -count=1 -timeout 120s 2>&1 | tail -5
 
       - name: Build Go binary for Android arm64 (with CGO for ffmpeg dlopen)
         env:
