@@ -83,7 +83,7 @@
           </ion-button>
           <p class="install-hint">{{ t('extensions.installFromLocalHint') }}</p>
           <ion-button expand="block" fill="outline" color="warning" @click="handleDebugInstall" v-if="isNativePlatform()" size="small" style="margin-top: 12px;">
-            🔧 饱和调试：测试安装流程
+            🔧 饱和调试：实际调用installPlugin
           </ion-button>
         </div>
       </template>

@@ -27,6 +27,7 @@ import com.combo.core.runtime.PluginManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 private const val REQUEST_CODE_PLUGIN_PICK = 9001
 private const val REQUEST_CODE_INSTALL_CONFIRM = 9002
@@ -545,125 +546,90 @@ class GoProcessPlugin : Plugin() {
 
     @PluginMethod
     fun debugInstallFlow(call: PluginCall) {
-        val results = JSObject()
         val steps = mutableListOf<String>()
 
-        steps.add("=== PluginManager ===")
+        steps.add("=== PluginManager State ===")
         val pmInit = PluginManager.isInitialized
         steps.add("1. PluginManager.isInitialized = $pmInit")
-        results.put("pmInitialized", pmInit)
-
         if (pmInit) {
             try {
                 val allPlugins = PluginManager.getAllInstallPlugins()
-                val pluginIds = allPlugins.map { it.id }
-                steps.add("2. installedPlugins = $pluginIds")
-                results.put("installedPlugins", pluginIds.toString())
+                steps.add("2. installedPlugins = ${allPlugins.map { "${it.id}(v${it.versionName},enabled=${it.enabled})" }}")
             } catch (e: Exception) {
                 steps.add("2. getAllInstallPlugins FAILED: ${e.message}")
-                results.put("installedPlugins", "ERROR: ${e.message}")
             }
             try {
-                val proxy = PluginManager.proxyManager
-                steps.add("3. proxyManager = ${proxy.javaClass.simpleName}")
-                results.put("proxyManagerClass", proxy.javaClass.simpleName)
+                steps.add("3. validationStrategy = ${PluginManager.validationStrategy}")
             } catch (e: Exception) {
-                steps.add("3. proxyManager FAILED: ${e.message}")
-                results.put("proxyManagerClass", "ERROR: ${e.message}")
+                steps.add("3. validationStrategy FAILED: ${e.javaClass.simpleName}: ${e.message}")
             }
-        } else {
-            steps.add("2. installedPlugins = SKIPPED (PM not init)")
-            steps.add("3. proxyManager = SKIPPED (PM not init)")
         }
-
-        steps.add("=== Context ===")
-        steps.add("4. context type = ${context.javaClass.name}")
-        results.put("contextType", context.javaClass.name)
-        steps.add("5. context is Activity = ${context is Activity}")
-        results.put("contextIsActivity", context is Activity)
-        steps.add("6. activity type = ${activity.javaClass.name}")
-        results.put("activityType", activity.javaClass.name)
-
-        steps.add("=== CapacitorPlugin requestCodes ===")
-        val pluginAnnotation = this.javaClass.getAnnotation(com.getcapacitor.annotation.CapacitorPlugin::class.java)
-        val requestCodes = pluginAnnotation?.requestCodes?.toList() ?: emptyList()
-        steps.add("7. @CapacitorPlugin.requestCodes = $requestCodes")
-        results.put("requestCodes", requestCodes.toString())
-        steps.add("8. REQUEST_CODE_PLUGIN_PICK = $REQUEST_CODE_PLUGIN_PICK")
-        steps.add("9. REQUEST_CODE_INSTALL_CONFIRM = $REQUEST_CODE_INSTALL_CONFIRM")
-        val hasPickCode = requestCodes.contains(REQUEST_CODE_PLUGIN_PICK)
-        val hasConfirmCode = requestCodes.contains(REQUEST_CODE_INSTALL_CONFIRM)
-        steps.add("10. pickCodeRegistered = $hasPickCode ← CRITICAL: must be true for handleOnActivityResult to work")
-        steps.add("11. confirmCodeRegistered = $hasConfirmCode ← CRITICAL: must be true for install confirm result")
-        results.put("pickCodeRegistered", hasPickCode)
-        results.put("confirmCodeRegistered", hasConfirmCode)
-
-        steps.add("=== Pending Calls ===")
-        val pendingKeys = pendingCalls.keys().toList()
-        steps.add("12. pendingCalls = $pendingKeys")
-        results.put("pendingCallsKeys", pendingKeys.toString())
-
-        steps.add("=== Activity Resolve ===")
-        try {
-            val resolveIntent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java)
-            val resolveInfo = context.packageManager.resolveActivity(resolveIntent, 0)
-            if (resolveInfo != null) {
-                steps.add("13. InstallConfirmActivity resolved: ${resolveInfo.activityInfo?.name}")
-                results.put("confirmActivityResolved", true)
-            } else {
-                steps.add("13. InstallConfirmActivity NOT RESOLVED")
-                results.put("confirmActivityResolved", false)
-            }
-        } catch (e: Exception) {
-            steps.add("13. resolveActivity FAILED: ${e.message}")
-            results.put("confirmActivityResolved", false)
-        }
-
-        steps.add("=== Application ===")
-        val app = context.applicationContext
-        steps.add("14. application class = ${app.javaClass.name}")
-        results.put("appClass", app.javaClass.name)
-        val isBaseHostApp = app is com.combo.core.runtime.app.BaseHostApplication
-        steps.add("15. isBaseHostApplication = $isBaseHostApp")
-        results.put("isBaseHostApplication", isBaseHostApp)
 
         steps.add("=== APK Files ===")
         val pluginInstallDir = File(context.cacheDir, "plugin_install")
-        steps.add("16. plugin_install dir exists = ${pluginInstallDir.exists()}")
         if (pluginInstallDir.exists()) {
-            val apkFiles = pluginInstallDir.listFiles()?.filter { it.extension == "apk" }?.map { "${it.name}(${it.length()}B)" }
-            steps.add("17. APK files = $apkFiles")
+            val apkFiles = pluginInstallDir.listFiles()?.filter { it.extension == "apk" }
+            steps.add("4. APK files in cache = ${apkFiles?.map { "${it.name}(${it.length()}B)" }}")
+        } else {
+            steps.add("4. plugin_install dir not found")
         }
 
-        steps.add("=== Permissions ===")
-        val hasStorage = Environment.isExternalStorageManager()
-        steps.add("18. MANAGE_EXTERNAL_STORAGE = $hasStorage")
-        results.put("hasStoragePermission", hasStorage)
-
-        steps.add("=== Go Backend ===")
-        steps.add("19. EncvGoService.isRunning = ${EncvGoService.isRunning}")
-        steps.add("20. EncvGoService.lastKnownPort = ${EncvGoService.lastKnownPort}")
-        results.put("goBackendRunning", EncvGoService.isRunning)
-
-        steps.add("=== Data Directories ===")
-        steps.add("21. filesDir = ${context.filesDir.absolutePath}")
-        steps.add("22. filesDir exists = ${context.filesDir.exists()}")
-        val filesDirContents = context.filesDir.listFiles()?.map { "${it.name}(${if (it.isDirectory) "DIR" else "${it.length()}B"})" }
-        steps.add("23. filesDir contents = $filesDirContents")
-        val externalFilesDir = context.getExternalFilesDir(null)
-        steps.add("24. externalFilesDir = ${externalFilesDir?.absolutePath ?: "null"}")
-        steps.add("25. externalFilesDir exists = ${externalFilesDir?.exists() ?: false}")
-        val encvOutputDir = File("/storage/emulated/0/encv-output")
-        steps.add("26. /storage/emulated/0/encv-output exists = ${encvOutputDir.exists()}")
-        if (encvOutputDir.exists()) {
-            val outputContents = encvOutputDir.listFiles()?.map { it.name }
-            steps.add("27. encv-output contents = $outputContents")
+        steps.add("=== Actual installPlugin Test ===")
+        if (!pmInit) {
+            steps.add("5. SKIPPED: PluginManager not initialized")
+        } else {
+            val apkFiles = pluginInstallDir.listFiles()?.filter { it.extension == "apk" }
+            val testApk = apkFiles?.firstOrNull()
+            if (testApk == null) {
+                steps.add("5. SKIPPED: no APK file found in plugin_install")
+            } else {
+                steps.add("5. testApk = ${testApk.name} (${testApk.length()}B)")
+                steps.add("6. calling installPlugin(testApk, forceOverwrite=true)...")
+                try {
+                    val installResult = runBlocking(Dispatchers.IO) {
+                        PluginManager.installerManager.installPlugin(testApk, true)
+                    }
+                    when (installResult) {
+                        is com.combo.core.runtime.installer.InstallerManager.InstallResult.Success -> {
+                            steps.add("7. installPlugin result = SUCCESS")
+                            steps.add("   pluginId = ${installResult.pluginInfo.id}")
+                            steps.add("   versionName = ${installResult.pluginInfo.versionName}")
+                            steps.add("   entryClass = ${installResult.pluginInfo.entryClass}")
+                        }
+                        is com.combo.core.runtime.installer.InstallerManager.InstallResult.Failure -> {
+                            steps.add("7. installPlugin result = FAILURE")
+                            steps.add("   reason = ${installResult.reason}")
+                            val excStack = installResult.exception?.stackTraceToString()?.take(800) ?: "(no exception)"
+                            steps.add("   exception = $excStack")
+                        }
+                    }
+                } catch (e: Error) {
+                    steps.add("7. installPlugin threw Error: ${e.javaClass.simpleName}: ${e.message}")
+                    steps.add("   stack = ${e.stackTraceToString().take(800)}")
+                } catch (e: Exception) {
+                    steps.add("7. installPlugin threw Exception: ${e.javaClass.simpleName}: ${e.message}")
+                    steps.add("   stack = ${e.stackTraceToString().take(800)}")
+                }
+            }
         }
-        val prefs = context.getSharedPreferences("encv_player_prefs", Context.MODE_PRIVATE)
-        steps.add("28. encv_player_prefs.video_player = ${prefs.getString("video_player", "(not set)")}")
-        steps.add("29. PlayerEntry.isMpvAvailable = ${PlayerEntry.isMpvAvailable(context)}")
+
+        steps.add("=== Post-Install State ===")
+        if (pmInit) {
+            try {
+                val allPlugins = PluginManager.getAllInstallPlugins()
+                steps.add("8. installedPlugins after = ${allPlugins.map { "${it.id}(enabled=${it.enabled})" }}")
+            } catch (e: Exception) {
+                steps.add("8. getAllInstallPlugins FAILED: ${e.message}")
+            }
+            val pluginsDir = File(context.filesDir, "plugins")
+            steps.add("9. plugins dir exists = ${pluginsDir.exists()}")
+            if (pluginsDir.exists()) {
+                steps.add("   contents = ${pluginsDir.listFiles()?.map { it.name }}")
+            }
+        }
 
         Log.i(TAG, "SATURATION-DEBUG debugInstallFlow:\n${steps.joinToString("\n")}")
+        val results = JSObject()
         results.put("debugLog", steps.joinToString("\n"))
         call.resolve(results)
     }
