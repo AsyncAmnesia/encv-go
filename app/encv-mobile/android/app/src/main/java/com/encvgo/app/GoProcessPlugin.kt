@@ -22,6 +22,10 @@ import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import com.combo.core.runtime.PluginManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 
 @CapacitorPlugin(
     name = "GoProcess"
@@ -366,29 +370,35 @@ class GoProcessPlugin : Plugin() {
             return
         }
         try {
-            val apkFile = java.io.File(apkPath)
+            val apkFile = File(apkPath)
             if (!apkFile.exists()) {
                 call.reject("APK file not found: $apkPath")
                 return
             }
-            val pm = try {
-                Class.forName("com.combo.core.runtime.PluginManager")
-                    .getMethod("getInstance", Context::class.java)
-                    .invoke(null, context)
-            } catch (e: Exception) {
-                Log.w(TAG, "ComboLite PluginManager not available on this device", e)
-                call.reject("ComboLite PluginManager not available on this device")
-                return
-            }
-            if (pm != null) {
-                val installMethod = pm.javaClass.methods.find { it.name == "installPlugin" && it.parameterCount == 2 }
-                if (installMethod != null) {
-                    installMethod.invoke(pm, apkFile, true)
-                    Log.i(TAG, "Plugin installed via ComboLite: $apkPath")
-                    call.resolve(JSObject().put("success", true).put("method", "combolite"))
-                    return
+            if (PluginManager.isInitialized) {
+                GlobalScope.launch(Dispatchers.IO) {
+                    try {
+                        val result = PluginManager.installerManager.installPlugin(apkFile, true)
+                        when (result) {
+                            is com.combo.core.runtime.installer.InstallerManager.InstallResult.Success -> {
+                                Log.i(TAG, "Plugin installed via ComboLite: ${apkPath} -> ${result.pluginInfo.id}")
+                                call.resolve(JSObject().apply {
+                                    put("success", true)
+                                    put("method", "combolite")
+                                    put("pluginId", result.pluginInfo.id)
+                                })
+                            }
+                            is com.combo.core.runtime.installer.InstallerManager.InstallResult.Failure -> {
+                                Log.e(TAG, "ComboLite install failed: ${result.reason}", result.exception)
+                                call.reject("ComboLite install failed: ${result.reason}")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "ComboLite installPlugin exception", e)
+                        call.reject("ComboLite install error: ${e.message}")
+                    }
                 }
-                Log.w(TAG, "ComboLite PluginManager found but installPlugin method not available, using fallback")
+                return
             }
             val uri = androidx.core.content.FileProvider.getUriForFile(
                 context,
@@ -433,46 +443,14 @@ class GoProcessPlugin : Plugin() {
         Log.d(TAG, "checkInstalledPlugins() called")
         val result = JSObject()
         try {
-            val pm = try {
-                Class.forName("com.combo.core.runtime.PluginManager")
-                    .getMethod("getInstance", Context::class.java)
-                    .invoke(null, context)
-            } catch (e: Exception) {
-                Log.w(TAG, "ComboLite PluginManager not available for check", e)
-                null
-            }
-            if (pm != null) {
-                val getPluginsMethod = pm.javaClass.methods.find { method ->
-                    method.name == "getInstalledPlugins" || method.name == "getLoadedPlugins"
-                        || method.name == "getAllPlugins" || method.name == "getPluginList"
+            if (PluginManager.isInitialized) {
+                val plugins = PluginManager.getAllInstallPlugins()
+                for (plugin in plugins) {
+                    result.put(plugin.id, true)
                 }
-                if (getPluginsMethod != null) {
-                    val plugins = getPluginsMethod.invoke(pm)
-                    if (plugins is Collection<*>) {
-                        plugins.forEach { p ->
-                            if (p != null) {
-                                val id = try {
-                                    p.javaClass.getMethod("getPluginId").invoke(p)?.toString()
-                                        ?: p.javaClass.getField("pluginId").get(p)?.toString()
-                                } catch (_: Exception) { null }
-                                if (!id.isNullOrEmpty()) result.put(id, true)
-                            }
-                        }
-                    } else if (plugins is Array<*>) {
-                        plugins.forEach { p ->
-                            if (p != null) {
-                                val id = try {
-                                    p.javaClass.getMethod("getPluginId").invoke(p)?.toString()
-                                        ?: p.javaClass.getField("pluginId").get(p)?.toString()
-                                } catch (_: Exception) { null }
-                                if (!id.isNullOrEmpty()) result.put(id, true)
-                            }
-                        }
-                    }
-                    Log.i(TAG, "checkInstalledPlugins via ComboLite: $result")
-                    call.resolve(result)
-                    return
-                }
+                Log.i(TAG, "checkInstalledPlugins via ComboLite: $result")
+                call.resolve(result)
+                return
             }
             fallbackCheckInstalled(result)
             call.resolve(result)
@@ -544,22 +522,31 @@ class GoProcessPlugin : Plugin() {
                 call.reject("APK file not found after copy: $apkPath")
                 return
             }
-            val pm = try {
-                Class.forName("com.combo.core.runtime.PluginManager")
-                    .getMethod("getInstance", Context::class.java)
-                    .invoke(null, context)
-            } catch (e: Exception) {
-                Log.w(TAG, "ComboLite PluginManager not available for install from path", e)
-                null
-            }
-            if (pm != null) {
-                val installMethod = pm.javaClass.methods.find { it.name == "installPlugin" && it.parameterCount == 2 }
-                if (installMethod != null) {
-                    installMethod.invoke(pm, apkFile, true)
-                    Log.i(TAG, "Plugin installed via ComboLite from picker: $name")
-                    call.resolve(JSObject().put("success", true).put("method", "combolite").put("fileName", name))
-                    return
+            if (PluginManager.isInitialized) {
+                GlobalScope.launch(Dispatchers.IO) {
+                    try {
+                        val result = PluginManager.installerManager.installPlugin(apkFile, true)
+                        when (result) {
+                            is com.combo.core.runtime.installer.InstallerManager.InstallResult.Success -> {
+                                Log.i(TAG, "Plugin installed via ComboLite from picker: $name -> ${result.pluginInfo.id}")
+                                call.resolve(JSObject().apply {
+                                    put("success", true)
+                                    put("method", "combolite")
+                                    put("fileName", name)
+                                    put("pluginId", result.pluginInfo.id)
+                                })
+                            }
+                            is com.combo.core.runtime.installer.InstallerManager.InstallResult.Failure -> {
+                                Log.e(TAG, "ComboLite install failed: ${result.reason}", result.exception)
+                                call.reject("ComboLite install failed: ${result.reason}")
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "ComboLite installPlugin exception", e)
+                        call.reject("ComboLite install error: ${e.message}")
+                    }
                 }
+                return
             }
             val providerUri = androidx.core.content.FileProvider.getUriForFile(
                 context,

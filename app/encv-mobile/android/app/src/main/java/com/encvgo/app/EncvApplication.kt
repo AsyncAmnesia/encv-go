@@ -30,6 +30,12 @@ class EncvApplication : BaseHostApplication() {
             } catch (e: Exception) {
                 Log.w(TAG, "setGlobalClashCallback not available, skipping", e)
             }
+            try {
+                PluginManager.proxyManager.setHostActivity(com.encvgo.app.EncvHostActivity::class.java)
+                Log.i(TAG, "ProxyManager configured: HostActivity = EncvHostActivity")
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to configure ProxyManager setHostActivity", e)
+            }
         }
     }
 
