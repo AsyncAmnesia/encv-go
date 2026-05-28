@@ -718,6 +718,10 @@ class GoProcessPlugin : Plugin() {
                         call.reject("ComboLite install failed: ${result.reason}")
                     }
                 }
+            } catch (e: Error) {
+                Log.e(TAG, "ComboLite installPlugin Error: ${e.javaClass.simpleName}: ${e.message}", e)
+                appLog("E", TAG, "ComboLite install ERROR: ${e.javaClass.simpleName}: ${e.message}")
+                call.reject("ComboLite install error: ${e.javaClass.simpleName}: ${e.message}")
             } catch (e: Exception) {
                 Log.e(TAG, "ComboLite installPlugin exception", e)
                 appLog("E", TAG, "ComboLite install EXCEPTION: ${e.message}")
