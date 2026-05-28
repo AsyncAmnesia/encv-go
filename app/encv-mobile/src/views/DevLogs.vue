@@ -284,16 +284,21 @@ async function handleClear() {
 function onWsMessage(data: any) {
   if (data && data.type === 'log' && data.data) {
     const logData = data.data
+    const level = ['debug', 'info', 'warn', 'error'].includes(logData.level) ? logData.level : 'info'
+    const message = String(logData.message || logData.msg || '')
+    if (!message && !logData.message) return
     backendLogs.value.push({
       id: ++nextId,
       timestamp: logData.timestamp || new Date().toLocaleTimeString('zh-CN', { hour12: false }),
-      level: ['debug', 'info', 'warn', 'error'].includes(logData.level) ? logData.level : 'info',
-      message: logData.message || '',
+      level,
+      message,
     })
     return
   }
-  const msg = typeof data === 'string' ? data : JSON.stringify(data)
-  backendLogs.value.push({ id: ++nextId, timestamp: new Date().toLocaleTimeString('zh-CN', { hour12: false }), level: 'info', message: msg })
+  if (data && data.type && data.type !== 'log' && data.type !== 'pong' && data.type !== 'server:status') {
+    const msg = typeof data === 'string' ? data : JSON.stringify(data)
+    backendLogs.value.push({ id: ++nextId, timestamp: new Date().toLocaleTimeString('zh-CN', { hour12: false }), level: 'debug', message: msg })
+  }
 }
 
 function onServerStatus(data: any) {
@@ -302,6 +307,10 @@ function onServerStatus(data: any) {
 
 onMounted(async () => {
   await nextTick()
+
+  if (ws.connectionState.value !== 'connected') {
+    ws.connect()
+  }
 
   eventBus.on('ws:message', onWsMessage)
   eventBus.on('server:status', onServerStatus)
