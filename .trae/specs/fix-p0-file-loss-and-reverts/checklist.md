@@ -1,0 +1,11 @@
+- [ ] FilePreview.vue 文本预览使用 iframe 渲染（非 pre/code）
+- [ ] FilePreview.vue textPreviewUrl ref 变量存在且正确赋值
+- [ ] FilePreview.vue 无 textContent/textLoading/textError 残留变量
+- [ ] TempFileReadCloser.Close() 不再调用 os.Remove()（仅关闭文件句柄）
+- [ ] registry.go EncryptFileWithPlugin 中临时文件在验证完成后才被清理
+- [ ] stsz box missing 验证错误得到合理解释或修复（remux 后文件结构变化 vs 验证器期望）
+- [ ] 加密过程中用户原始视频文件不被删除
+- [ ] encv-pre-*.mp4 临时文件在 .encv_tmp/ 隐藏目录中（用户不可见）
+- [ ] 插件安装成功后 ExtensionsPage badge 显示「已安装」
+- [ ] 插件安装失败时显示具体错误信息（非永久卡在「安装中」）
+- [ ] GoProcessPlugin.kt installFromPath 有详细的反射调用日志
