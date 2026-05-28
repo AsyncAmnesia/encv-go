@@ -101,9 +101,9 @@ export async function getIntentFileInfo(): Promise<{ path: string; name: string;
   }
 }
 
-export async function openPlayer(filePath: string, name: string, mimeType: string): Promise<void> {
+export async function openPlayer(filePath: string, name: string, mimeType: string, mode?: string): Promise<void> {
   try {
-    await GoProcess.openPlayer({ filePath, name, mimeType })
+    await GoProcess.openPlayer({ filePath, name, mimeType, mode: mode || '' })
   } catch (e) {
     console.error('[ENCV] GoProcess.openPlayer() failed:', e)
   }
@@ -125,9 +125,9 @@ export async function openExternal(url: string, mimeType: string): Promise<void>
   }
 }
 
-export async function openInPlayer(path: string, name: string, mimeType: string): Promise<void> {
+export async function openInPlayer(path: string, name: string, mimeType: string, mode?: string): Promise<void> {
   try {
-    await GoProcess.openInPlayer({ path, name, mimeType })
+    await GoProcess.openInPlayer({ path, name, mimeType, mode: mode || '' })
   } catch (e) {
     console.error('[ENCV] GoProcess.openInPlayer() failed:', e)
   }

@@ -3,34 +3,41 @@ package com.encvgo.app
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import java.io.File
 
 object PlayerEntry {
     private const val TAG = "PlayerEntry"
-    private const val PLUGIN_ID = "mpv-player"
+    private const val PLUGIN_ID = "com.encvgo.plugin.mpv"
     private const val PREFS_NAME = "encv_player_prefs"
     private const val PREF_KEY_VIDEO_PLAYER = "video_player"
-    private const val EXTRA_FILE_PATH = "file_path"
-    private const val EXTRA_FILE_NAME = "file_name"
-    private const val EXTRA_MIME_TYPE = "mime_type"
-    private const val EXTRA_IS_EXTERNAL = "is_external"
-    private const val EXTRA_BACKEND_URL = "backend_url"
+    const val EXTRA_FILE_PATH = "file_path"
+    const val EXTRA_FILE_NAME = "file_name"
+    const val EXTRA_MIME_TYPE = "mime_type"
+    const val EXTRA_IS_EXTERNAL = "is_external"
+    const val EXTRA_BACKEND_URL = "backend_url"
+    const val EXTRA_MODE = "player_mode"
 
     fun play(
         context: Context,
         filePath: String,
         fileName: String,
         mimeType: String = "",
-        isExternal: Boolean = false
+        isExternal: Boolean = false,
+        mode: String = ""
     ) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val rawMode = prefs.getString(PREF_KEY_VIDEO_PLAYER, "artplayer") ?: "artplayer"
-        val mode = if (rawMode == "mpv") "mpv-plugin" else rawMode
+        val effectiveMode = if (mode.isNotEmpty()) {
+            if (mode == "mpv") "mpv-plugin" else mode
+        } else {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val rawMode = prefs.getString(PREF_KEY_VIDEO_PLAYER, "artplayer") ?: "artplayer"
+            if (rawMode == "mpv") "mpv-plugin" else rawMode
+        }
 
-        Log.i(TAG, "play() mode=$mode filePath=$filePath")
+        Log.i(TAG, "play() mode=$effectiveMode (param=$mode) filePath=$filePath")
 
-        when (mode) {
+        when (effectiveMode) {
             "mpv-plugin" -> {
                 startMpvPlayer(context, filePath, fileName, mimeType, isExternal)
             }
@@ -71,8 +78,8 @@ object PlayerEntry {
             }
             context.startActivity(intent)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start MPV player, falling back to ArtPlayer", e)
-            startArtPlayer(context, filePath, fileName)
+            Log.e(TAG, "Failed to start MPV player plugin", e)
+            Toast.makeText(context, "MPV 插件启动失败: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -111,10 +118,10 @@ object PlayerEntry {
             if (intent.resolveActivity(context.packageManager) != null) {
                 context.startActivity(intent)
             } else {
-                android.widget.Toast.makeText(
+                Toast.makeText(
                     context,
                     "No app can open this file",
-                    android.widget.Toast.LENGTH_SHORT
+                    Toast.LENGTH_SHORT
                 ).show()
             }
         } else {

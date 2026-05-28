@@ -33,10 +33,10 @@ export interface GoProcessPlugin {
   checkPermissions(): Promise<PermissionCheckResult>
   isStandaloneMode(): Promise<{ standalone: boolean }>
   getIntentFileInfo(): Promise<{ path: string; name: string; mimeType: string }>
-  openPlayer(options: { filePath: string; name: string; mimeType: string }): Promise<void>
+  openPlayer(options: { filePath: string; name: string; mimeType: string; mode?: string }): Promise<void>
   closePlayer(): Promise<void>
   openExternal(options: { url: string; mimeType: string }): Promise<void>
-  openInPlayer(options: { path: string; name: string; mimeType: string }): Promise<void>
+  openInPlayer(options: { path: string; name: string; mimeType: string; mode?: string }): Promise<void>
   openPlayerHome(): Promise<void>
   setScreenOrientation(options: { orientation: string }): Promise<void>
   installPlugin(options: { apkPath: string }): Promise<{ success: boolean; method?: string }>
@@ -87,7 +87,7 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
     return { path: '', name: '', mimeType: '' }
   }
 
-  async openPlayer(_options: { filePath: string; name: string; mimeType: string }): Promise<void> {
+  async openPlayer(_options: { filePath: string; name: string; mimeType: string; mode?: string }): Promise<void> {
   }
 
   async closePlayer(): Promise<void> {
@@ -96,7 +96,7 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
   async openExternal(_options: { url: string; mimeType: string }): Promise<void> {
   }
 
-  async openInPlayer(_options: { path: string; name: string; mimeType: string }): Promise<void> {
+  async openInPlayer(_options: { path: string; name: string; mimeType: string; mode?: string }): Promise<void> {
   }
 
   async openPlayerHome(): Promise<void> {

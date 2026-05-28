@@ -156,13 +156,17 @@ onMounted(async () => {
 async function loadExtensions() {
   isLoading.value = true
   try {
+    const COMBOLITE_PLUGIN_ID_MAP: Record<string, string> = {
+      'mpv-player': 'com.encvgo.plugin.mpv',
+    }
+
     const installedMap = Capacitor.isNativePlatform() ? await checkInstalledPlugins() : {}
     extensions.value = [
       {
         id: 'mpv-player',
         name: t('extensions.mpvPlayer'),
         description: t('extensions.mpvPlayerDesc'),
-        installed: !!installedMap['mpv-player'],
+        installed: !!installedMap[COMBOLITE_PLUGIN_ID_MAP['mpv-player'] || 'mpv-player'],
         enabled: true,
         sizeDisplay: '~35 MB',
       },

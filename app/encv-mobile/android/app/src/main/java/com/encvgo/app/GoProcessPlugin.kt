@@ -206,9 +206,10 @@ class GoProcessPlugin : Plugin() {
         val filePath = call.getString("filePath", "")
         val name = call.getString("name", "")
         val mimeType = call.getString("mimeType", "")
+        val mode = call.getString("mode", "")
         try {
-            Log.d(TAG, "openPlayer: filePath=$filePath, name=$name, mimeType=$mimeType")
-            PlayerEntry.play(context ?: activity!!, filePath!!, name!!, mimeType!!)
+            Log.d(TAG, "openPlayer: filePath=$filePath, name=$name, mimeType=$mimeType, mode=$mode")
+            PlayerEntry.play(context ?: activity!!, filePath!!, name!!, mimeType!!, isExternal = false, mode = mode)
             call.resolve()
         } catch (e: Exception) {
             Log.e(TAG, "openPlayer failed", e)
@@ -254,13 +255,14 @@ class GoProcessPlugin : Plugin() {
         val path = call.getString("path", "")
         val name = call.getString("name", "")
         val mimeType = call.getString("mimeType", "")
+        val mode = call.getString("mode", "")
         if (path.isNullOrEmpty()) {
             Log.w(TAG, "openInPlayer rejected: path is empty")
             call.reject("path is required")
             return
         }
         try {
-            Log.d(TAG, "openInPlayer: path=$path, name=$name, mimeType=$mimeType")
+            Log.d(TAG, "openInPlayer: path=$path, name=$name, mimeType=$mimeType, mode=$mode")
             val uniqueId = System.currentTimeMillis().toString()
             val intent = Intent(activity, PlayerActivity::class.java).apply {
                 addFlags(
@@ -272,6 +274,7 @@ class GoProcessPlugin : Plugin() {
                 putExtra("file_path", path)
                 putExtra("file_name", name)
                 putExtra("file_mime_type", mimeType)
+                putExtra(PlayerEntry.EXTRA_MODE, mode)
             }
             Log.d(TAG, "openInPlayer: launching with NEW_DOCUMENT+MULTIPLE_TASK+RETAIN_IN_RECENTS, data=${intent.data}")
             activity.startActivity(intent)
@@ -641,6 +644,24 @@ class GoProcessPlugin : Plugin() {
         steps.add("19. EncvGoService.isRunning = ${EncvGoService.isRunning}")
         steps.add("20. EncvGoService.lastKnownPort = ${EncvGoService.lastKnownPort}")
         results.put("goBackendRunning", EncvGoService.isRunning)
+
+        steps.add("=== Data Directories ===")
+        steps.add("21. filesDir = ${context.filesDir.absolutePath}")
+        steps.add("22. filesDir exists = ${context.filesDir.exists()}")
+        val filesDirContents = context.filesDir.listFiles()?.map { "${it.name}(${if (it.isDirectory) "DIR" else "${it.length()}B"})" }
+        steps.add("23. filesDir contents = $filesDirContents")
+        val externalFilesDir = context.getExternalFilesDir(null)
+        steps.add("24. externalFilesDir = ${externalFilesDir?.absolutePath ?: "null"}")
+        steps.add("25. externalFilesDir exists = ${externalFilesDir?.exists() ?: false}")
+        val encvOutputDir = File("/storage/emulated/0/encv-output")
+        steps.add("26. /storage/emulated/0/encv-output exists = ${encvOutputDir.exists()}")
+        if (encvOutputDir.exists()) {
+            val outputContents = encvOutputDir.listFiles()?.map { it.name }
+            steps.add("27. encv-output contents = $outputContents")
+        }
+        val prefs = context.getSharedPreferences("encv_player_prefs", Context.MODE_PRIVATE)
+        steps.add("28. encv_player_prefs.video_player = ${prefs.getString("video_player", "(not set)")}")
+        steps.add("29. PlayerEntry.isMpvAvailable = ${PlayerEntry.isMpvAvailable(context)}")
 
         Log.i(TAG, "SATURATION-DEBUG debugInstallFlow:\n${steps.joinToString("\n")}")
         results.put("debugLog", steps.joinToString("\n"))
