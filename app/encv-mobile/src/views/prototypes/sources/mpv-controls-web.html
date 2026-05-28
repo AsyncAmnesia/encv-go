@@ -1,0 +1,421 @@
+<template>
+  <div class="mpv-player-prototype">
+    <div class="player-screen" :class="{ fullscreen: isFullscreen }" @click="handleTap">
+      <div class="video-area">
+        <div class="video-placeholder">
+          <svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="2" y="4" width="20" height="16" rx="2"/>
+            <polygon points="10,8 16,12 10,16"/>
+          </svg>
+          <span class="placeholder-text">Video Surface</span>
+        </div>
+      </div>
+
+      <transition name="fade">
+        <div v-if="showControls && !isLocked" class="controls-overlay">
+          <div class="top-bar">
+            <button class="icon-btn" @click.stop="onBack">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
+            </button>
+            <span class="top-title">{{ fileName }}</span>
+            <button class="icon-btn" @click.stop="isLocked = !isLocked">
+              <svg v-if="!isLocked" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM15.1 8H8.9V6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2z"/></svg>
+              <svg v-else viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6h1.9c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
+            </button>
+          </div>
+
+          <div class="center-controls">
+            <button class="seek-delta-btn" @click.stop="seekDelta(-10000)">-10s</button>
+            <button class="play-btn" @click.stop="togglePlay">
+              <svg v-if="isPlaying" viewBox="0 0 24 24" width="40" height="40" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+              <svg v-else viewBox="0 0 24 24" width="40" height="40" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <button class="seek-delta-btn" @click.stop="seekDelta(10000)">+10s</button>
+          </div>
+
+          <div class="bottom-bar">
+            <mpv-progress-bar
+              :progress="progress"
+              :current-position="currentPosition"
+              :duration="duration"
+              @seek="handleSeek"
+            />
+            <div class="bottom-actions">
+              <button class="speed-chip" @click.stop="cycleSpeed">{{ playbackSpeed }}x</button>
+              <div class="spacer"></div>
+              <button class="icon-btn sm" @click.stop="toggleMute">
+                <svg v-if="volume > 0" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+                <svg v-else viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
+              </button>
+              <button class="icon-btn sm" @click.stop>
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 12h8"/></svg>
+              </button>
+              <button class="icon-btn sm" @click.stop>
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M9 18h6"/></svg>
+              </button>
+              <button class="icon-btn sm" @click.stop="toggleFullscreen">
+                <svg v-if="!isFullscreen" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+                <svg v-else viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>
+              </button>
+            </div>
+            <div class="volume-row">
+              <svg v-if="volume > 0" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="opacity:.7"><path d="M3 9v6h4l5 5V4L7 9H3z"/></svg>
+              <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="opacity:.7"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63z"/></svg>
+              <input type="range" class="volume-slider" min="0" max="100" :value="volume * 100" @input="volume = $event.target.value / 100" />
+              <span class="volume-pct">{{ Math.round(volume * 100) }}%</span>
+            </div>
+          </div>
+        </div>
+      </transition>
+
+      <transition name="fade">
+        <div v-if="isLocked && showControls" class="locked-overlay">
+          <div class="locked-top">
+            <button class="icon-btn" @click.stop="isLocked = false">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
+            </button>
+          </div>
+          <div class="locked-bottom">
+            <mpv-progress-bar
+              :progress="progress"
+              :current-position="currentPosition"
+              :duration="duration"
+              @seek="handleSeek"
+            />
+          </div>
+        </div>
+      </transition>
+    </div>
+
+    <div class="prototype-toolbar">
+      <label>State:</label>
+      <select v-model="playerState">
+        <option value="idle">Idle</option>
+        <option value="loading">Loading</option>
+        <option value="playing">Playing</option>
+        <option value="paused">Paused</option>
+        <option value="audioOnly">Audio Only</option>
+        <option value="error">Error</option>
+      </select>
+      <label>File:</label>
+      <input v-model="fileName" class="file-input" />
+      <label>Duration:</label>
+      <input v-model.number="durationInput" type="number" class="dur-input" />
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, watch } from 'vue'
+import MpvProgressBar from './MpvProgressBarWeb.vue'
+
+const playerState = ref<'idle' | 'loading' | 'playing' | 'paused' | 'audioOnly' | 'error'>('paused')
+const fileName = ref('Big.Buck.Bunny.1080p.mkv')
+const durationInput = ref(596000)
+const currentPosition = ref(142000)
+const isPlaying = computed(() => playerState.value === 'playing' || playerState.value === 'audioOnly')
+const duration = computed(() => durationInput.value)
+const progress = computed(() => duration.value > 0 ? currentPosition.value / duration.value : 0)
+const showControls = ref(true)
+const isLocked = ref(false)
+const isFullscreen = ref(false)
+const playbackSpeed = ref(1.0)
+const volume = ref(0.8)
+const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2]
+
+function handleTap() {
+  if (isLocked.value) {
+    isLocked.value = false
+  } else {
+    showControls.value = !showControls.value
+  }
+}
+
+function togglePlay() {
+  if (playerState.value === 'playing') playerState.value = 'paused'
+  else if (playerState.value === 'paused') playerState.value = 'playing'
+  else playerState.value = 'playing'
+  showControls.value = true
+}
+
+function handleSeek(ratio: number) {
+  currentPosition.value = Math.round(ratio * duration.value)
+}
+
+function seekDelta(ms: number) {
+  currentPosition.value = Math.max(0, Math.min(duration.value, currentPosition.value + ms))
+  showControls.value = true
+}
+
+function cycleSpeed() {
+  const idx = SPEED_OPTIONS.indexOf(playbackSpeed.value)
+  playbackSpeed.value = SPEED_OPTIONS[(idx + 1) % SPEED_OPTIONS.length]
+}
+
+function toggleMute() {
+  volume.value = volume.value > 0 ? 0 : 0.8
+}
+
+function toggleFullscreen() {
+  isFullscreen.value = !isFullscreen.value
+}
+
+function onBack() {
+  showControls.value = true
+}
+
+watch(isPlaying, (val) => {
+  if (val) {
+    const interval = setInterval(() => {
+      if (!isPlaying.value) { clearInterval(interval); return }
+      if (currentPosition.value < duration.value) {
+        currentPosition.value += 1000
+      } else {
+        playerState.value = 'paused'
+        clearInterval(interval)
+      }
+    }, 1000)
+  }
+})
+</script>
+
+<style scoped>
+.mpv-player-prototype {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  height: 100%;
+}
+
+.player-screen {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16/9;
+  max-height: 360px;
+  background: #121212;
+  border-radius: 12px;
+  overflow: hidden;
+  user-select: none;
+  cursor: pointer;
+}
+
+.player-screen.fullscreen {
+  aspect-ratio: unset;
+  max-height: none;
+  border-radius: 0;
+  flex: 1;
+}
+
+.video-area {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255,255,255,0.2);
+}
+
+.placeholder-text {
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.controls-overlay,
+.locked-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.controls-overlay > *,
+.locked-overlay > * {
+  pointer-events: auto;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  padding: 8px 8px 16px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+}
+
+.top-title {
+  flex: 1;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 4px;
+}
+
+.center-controls {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+}
+
+.play-btn {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.15);
+  color: rgba(255,255,255,0.9);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.play-btn:hover {
+  background: rgba(255,255,255,0.25);
+}
+
+.seek-delta-btn {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.7);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.bottom-bar {
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(to top, rgba(0,0,0,0.6), transparent);
+  padding-top: 16px;
+}
+
+.bottom-actions {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  gap: 4px;
+}
+
+.spacer { flex: 1; }
+
+.speed-chip {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(187,134,252,0.5);
+  background: transparent;
+  color: #BB86FC;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.volume-row {
+  display: flex;
+  align-items: center;
+  padding: 2px 20px 8px;
+  gap: 8px;
+  color: rgba(191,191,191,0.7);
+}
+
+.volume-slider {
+  flex: 1;
+  height: 4px;
+  accent-color: #BB86FC;
+}
+
+.volume-pct {
+  width: 32px;
+  font-size: 11px;
+  text-align: right;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: none;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background 0.15s;
+}
+
+.icon-btn:hover {
+  background: rgba(255,255,255,0.1);
+}
+
+.icon-btn.sm {
+  width: 36px;
+  height: 36px;
+  color: rgba(191,191,191,0.9);
+}
+
+.locked-top {
+  display: flex;
+  padding: 8px 8px 16px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent);
+}
+
+.locked-bottom {
+  margin-top: auto;
+  background: linear-gradient(to top, rgba(0,0,0,0.5), transparent);
+  padding-top: 16px;
+}
+
+.prototype-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: var(--ion-card-background, #1e1e1e);
+  border-radius: 0 0 12px 12px;
+  font-size: 12px;
+  color: var(--encv-text-secondary, #999);
+  flex-wrap: wrap;
+}
+
+.prototype-toolbar label {
+  font-weight: 600;
+  color: var(--ion-text-color, #fff);
+}
+
+.prototype-toolbar select,
+.prototype-toolbar input {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: var(--ion-text-color, #fff);
+  font-size: 12px;
+}
+
+.file-input { width: 180px; }
+.dur-input { width: 80px; }
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.25s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>

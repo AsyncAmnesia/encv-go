@@ -377,6 +377,9 @@ const messages: Record<Locale, Record<string, string>> = {
     'devtools.protoMpvProgressDesc': '可拖拽进度条组件，含时间显示和缓冲指示',
     'devtools.protoMpvThemeDesc': 'EncvMpVPlayerTheme 主题配色系统，定义暗色播放器色彩方案',
     'devtools.prototypeNativeOnly': '原型预览仅支持原生平台',
+    'devtools.copyCode': '复制代码',
+    'devtools.copiedCode': '代码已复制',
+    'devtools.copyFailed': '复制失败',
 
     'filePreview.loading': '正在加载文件...',
     'filePreview.loadError': '加载失败',
@@ -862,6 +865,9 @@ const messages: Record<Locale, Record<string, string>> = {
     'devtools.protoMpvProgressDesc': 'Draggable progress bar with time display and buffer indicator',
     'devtools.protoMpvThemeDesc': 'EncvMpVPlayerTheme color system defining dark player color scheme',
     'devtools.prototypeNativeOnly': 'Prototype preview is only available on native platforms',
+    'devtools.copyCode': 'Copy Code',
+    'devtools.copiedCode': 'Code copied',
+    'devtools.copyFailed': 'Copy failed',
 
     'filePreview.loading': 'Loading file...',
     'filePreview.loadError': 'Load Error',

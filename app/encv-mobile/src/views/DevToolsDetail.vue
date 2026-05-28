@@ -56,7 +56,7 @@
           >
             <div class="proto-header">
               <div class="proto-icon-wrap" :style="{ background: proto.accentColor }">
-                <ion-icon :icon="proto.icon" class="proto-icon"></ion-icon>
+                <ion-icon :icon="iconMap[proto.icon]" class="proto-icon"></ion-icon>
               </div>
               <div class="proto-title-area">
                 <h3 class="proto-title">{{ proto.name }}</h3>
@@ -77,7 +77,6 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonIcon, IonLabel, IonToggle,
@@ -88,93 +87,29 @@ import {
   chevronForward, playCircleOutline, musicalNotesOutline,
   colorPaletteOutline, settingsOutline,
 } from 'ionicons/icons'
+import { useRouter } from 'vue-router'
 import { useI18n } from '@/composables/useI18n'
 import { useDevTools } from '@/composables/useDevTools'
 import { showToast } from '@/composables/useToast'
 import { isNative, exportLogs, clearLogs, openLogViewer, saveDevLogs } from '@/plugins/GoProcess'
 import { getFrontendLogsJson } from '@/composables/useFrontendLogs'
-import { Capacitor } from '@capacitor/core'
-import { openPlayer } from '@/plugins/GoProcess'
+import { getAllPrototypes } from './prototypes/registry'
 
 const { t } = useI18n()
+const router = useRouter()
 const { vconsoleEnabled, toggleVConsole } = useDevTools()
 
-interface ComposePrototype {
-  id: string
-  name: string
-  route: string
-  composePath: string
-  description: string
-  icon: string
-  accentColor: string
-  action: () => void
+const prototypes = getAllPrototypes()
+
+const iconMap: Record<string, string> = {
+  'play-circle': playCircleOutline,
+  'settings': settingsOutline,
+  'musical-notes': musicalNotesOutline,
+  'color-palette': colorPaletteOutline,
 }
 
-const prototypes = ref<ComposePrototype[]>([
-  {
-    id: 'mpv-player-screen',
-    name: 'MPV Player Screen',
-    route: 'com.encvgo.plugin.mpv.MpvPlayerActivity',
-    composePath: 'com.encvgo.plugin.mpv.MpvPlayerScreen',
-    description: t('devtools.protoMpvPlayerDesc'),
-    icon: playCircleOutline,
-    accentColor: 'rgba(139, 92, 246, 0.15)',
-    action: () => {
-      if (isNative()) {
-        openPlayer('', 'MPV UI Preview', 'video/*', 'mpv-plugin')
-      }
-    },
-  },
-  {
-    id: 'mpv-controls',
-    name: 'MPV Controls Overlay',
-    route: 'com.encvgo.plugin.mpv.MpvPlayerActivity',
-    composePath: 'com.encvgo.plugin.mpv.MpvControls',
-    description: t('devtools.protoMpvControlsDesc'),
-    icon: settingsOutline,
-    accentColor: 'rgba(56, 128, 255, 0.15)',
-    action: () => {
-      if (isNative()) {
-        openPlayer('', 'MPV Controls Preview', 'video/*', 'mpv-plugin')
-      }
-    },
-  },
-  {
-    id: 'mpv-progress-bar',
-    name: 'MPV Progress Bar',
-    route: 'com.encvgo.plugin.mpv.MpvPlayerActivity',
-    composePath: 'com.encvgo.plugin.mpv.MpvProgressBar',
-    description: t('devtools.protoMpvProgressDesc'),
-    icon: musicalNotesOutline,
-    accentColor: 'rgba(45, 211, 111, 0.15)',
-    action: () => {
-      if (isNative()) {
-        openPlayer('', 'MPV Progress Preview', 'video/*', 'mpv-plugin')
-      }
-    },
-  },
-  {
-    id: 'mpv-theme',
-    name: 'MPV Theme (EncvMpVPlayerTheme)',
-    route: 'com.encvgo.plugin.mpv.MpvPlayerActivity',
-    composePath: 'com.encvgo.plugin.mpv.theme.EncvMpVPlayerTheme',
-    description: t('devtools.protoMpvThemeDesc'),
-    icon: colorPaletteOutline,
-    accentColor: 'rgba(235, 68, 90, 0.15)',
-    action: () => {
-      if (isNative()) {
-        openPlayer('', 'MPV Theme Preview', 'video/*', 'mpv-plugin')
-      }
-    },
-  },
-])
-
-function handlePrototypeClick(proto: ComposePrototype) {
-  if (!Capacitor.isNativePlatform()) {
-    showToast({ message: t('devtools.prototypeNativeOnly'), duration: 2000, color: 'warning' })
-    return
-  }
-  proto.action()
+function handlePrototypeClick(proto: typeof prototypes[0]) {
+  router.push(`/tabs/settings/devtools/prototype/${proto.id}`)
 }
 
 function handleVConsoleToggle(event: CustomEvent) {
