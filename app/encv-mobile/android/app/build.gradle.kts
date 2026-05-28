@@ -90,7 +90,7 @@ android {
 }
 
 packagePlugins {
-    enabled.set(true)
+    enabled.set(false)
     buildType.set(PackageBuildType.DEBUG)
     pluginsDir.set("debug_plugins")
 }

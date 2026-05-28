@@ -28,6 +28,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 
+private const val REQUEST_CODE_PLUGIN_PICK = 9001
+private const val REQUEST_CODE_INSTALL_CONFIRM = 9002
+
 @CapacitorPlugin(
     name = "GoProcess",
     requestCodes = [REQUEST_CODE_PLUGIN_PICK, REQUEST_CODE_INSTALL_CONFIRM]
@@ -36,8 +39,6 @@ class GoProcessPlugin : Plugin() {
 
     companion object {
         private const val TAG = "ENCV-go"
-        const val REQUEST_CODE_PLUGIN_PICK = 9001
-        const val REQUEST_CODE_INSTALL_CONFIRM = 9002
 
         private val appLogBuffer = ConcurrentLinkedQueue<String>()
         private const val APP_LOG_MAX = 3000
@@ -394,25 +395,11 @@ class GoProcessPlugin : Plugin() {
                 call.reject("APK file not found: $apkPath")
                 return
             }
-            if (PluginManager.isInitialized) {
-                startInstallConfirm(call, apkPath, apkFile.name)
+            if (!PluginManager.isInitialized) {
+                call.reject("PluginManager not initialized, cannot install plugin")
                 return
             }
-            val uri = androidx.core.content.FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                apkFile
-            )
-            val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                if (context !is Activity) {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-            }
-            context.startActivity(intent)
-            Log.i(TAG, "Install intent fired for: $apkPath")
-            call.resolve(JSObject().put("success", true).put("method", "intent"))
+            startInstallConfirm(call, apkPath, apkFile.name)
         } catch (e: Exception) {
             Log.e(TAG, "installPlugin failed", e)
             call.reject("Failed to install plugin: ${e.message}")
@@ -453,30 +440,12 @@ class GoProcessPlugin : Plugin() {
                 call.resolve(result)
                 return
             }
-            fallbackCheckInstalled(result)
+            Log.w(TAG, "checkInstalledPlugins: PluginManager not initialized, returning empty")
             call.resolve(result)
         } catch (e: Exception) {
             Log.e(TAG, "checkInstalledPlugins failed", e)
             call.reject("Failed to check installed plugins: ${e.message}")
         }
-    }
-
-    private fun fallbackCheckInstalled(result: JSObject) {
-        val pluginDirs = listOf(
-            File(context.applicationInfo.dataDir, "app_plugins"),
-            File(context.filesDir, "assets/plugins"),
-            File(context.cacheDir, "plugin_install")
-        )
-        for (dir in pluginDirs) {
-            if (dir.exists() && dir.isDirectory) {
-                dir.listFiles()
-                    ?.filter { it.extension == "apk" && it.isFile }
-                    ?.forEach { apk ->
-                        result.put(apk.nameWithoutExtension.replace(Regex("[^a-z0-9_-]"), "-"), true)
-                    }
-            }
-        }
-        Log.i(TAG, "fallbackCheckInstalled: $result")
     }
 
     override fun handleOnActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

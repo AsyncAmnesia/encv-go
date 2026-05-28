@@ -1,4 +1,4 @@
-# CI 构建报错修复计划
+# CI 构建报错 + 扩展安装流程修复计划
 
 ## 问题分析
 
@@ -10,7 +10,7 @@ e: GoProcessPlugin.kt:33:21 Unresolved reference 'REQUEST_CODE_PLUGIN_PICK'.
 e: GoProcessPlugin.kt:33:47 Unresolved reference 'REQUEST_CODE_INSTALL_CONFIRM'.
 ```
 
-**根因**：在 Kotlin 中，类注解（`@CapacitorPlugin`）不能引用同一类的 `companion object` 中定义的常量。因为注解在类定义之前求值，此时 `companion object` 尚不存在。
+**根因**：Kotlin 类注解不能引用同类 `companion object` 中的常量——注解在类定义之前求值，此时 companion object 尚不存在。
 
 **修复**：将 `REQUEST_CODE_PLUGIN_PICK` 和 `REQUEST_CODE_INSTALL_CONFIRM` 从 `companion object` 移到文件顶层（top-level `const val`）。
 
@@ -20,48 +20,68 @@ e: GoProcessPlugin.kt:33:47 Unresolved reference 'REQUEST_CODE_INSTALL_CONFIRM'.
 
 **现象**：`./gradlew assembleDebug` 触发了 `:plugin-mpv-player:assembleDebug` 和 `:convert_plugin-mpv-player_debug` 任务。
 
-**根因**：`app/build.gradle.kts` 中的 `packagePlugins { enabled.set(true) }` 配置让 ComboLite aar2apk 插件在主应用构建时自动执行插件 AAR→APK 转换，并将插件 APK 放入 `debug_plugins/` 目录（最终打包进主 APK 的 assets）。
+**根因**：`app/build.gradle.kts` 的 `packagePlugins { enabled.set(true) }` 让 aar2apk 插件在主应用构建时自动执行插件打包。
 
-**为什么这是错误的**：
-1. CI 中已有**单独的步骤**（Step 25-26）构建和打包插件 APK
-2. 插件 APK **不应打包到主应用中**——ComboLite 的插件是运行时动态加载的（从 `filesDir/plugins/` 安装），不应嵌入主 APK
-3. 重复构建浪费时间，且可能导致构建冲突
+**为什么错误**：
+1. CI 中已有单独步骤（Step 25-26）构建和打包插件 APK
+2. 插件 APK 不应打包到主应用中——ComboLite 插件是运行时动态加载的
+3. 重复构建浪费时间
 
-**修复**：将 `packagePlugins { enabled.set(true) }` 改为 `enabled.set(false)`，禁用主应用构建时的自动插件打包。CI 中通过单独的 Gradle 任务（`convert_plugin-mpv-player_debug`）构建插件 APK。
+**修复**：`packagePlugins { enabled.set(false) }`
 
 ---
 
-### 问题 3：installPlugin() 的系统安装兜底逻辑是错误的
+### 问题 3：installPlugin() 的系统安装兜底逻辑（最严重）
 
-**当前代码**（`GoProcessPlugin.kt` L386-420）：
-```kotlin
-@PluginMethod
-fun installPlugin(call: PluginCall) {
-    val apkPath = call.getString("apkPath") ?: ...
-    val apkFile = File(apkPath)
-    if (PluginManager.isInitialized) {
-        startInstallConfirm(call, apkPath, apkFile.name)  // ✅ 正确：走 ComboLite 安装
-        return
-    }
-    // ❌ 错误：系统安装兜底！
-    val uri = FileProvider.getUriForFile(context, ..., apkFile)
-    val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply { ... }
-    context.startActivity(intent)
-    call.resolve(JSObject().put("success", true).put("method", "intent"))
+**位置**：`GoProcessPlugin.kt` L397-415
+
+**当前逻辑**：
+```
+PluginManager.isInitialized?
+  ├─ true  → startInstallConfirm() → ComboLite 安装 ✅
+  └─ false → Intent.ACTION_INSTALL_PACKAGE → 系统安装器 ❌
+```
+
+**为什么错误**：
+1. ComboLite 插件 APK **不是普通 Android 应用**，不能用系统安装器安装
+2. 系统安装器会把插件当独立应用安装，要么失败，要么装出一个无法运行的空壳
+3. `PluginManager.isInitialized == false` 说明框架未初始化，此时根本不应该安装插件
+
+**修复**：当 `PluginManager.isInitialized == false` 时直接 reject，不走系统安装兜底。
+
+---
+
+### 问题 4：checkInstalledPlugins() 的文件扫描兜底
+
+**位置**：`GoProcessPlugin.kt` L456-480
+
+**当前逻辑**：
+```
+PluginManager.isInitialized?
+  ├─ true  → PluginManager.getAllInstallPlugins() ✅
+  └─ false → fallbackCheckInstalled() 扫描文件系统 ❌
+```
+
+**为什么错误**：文件存在 ≠ 插件已通过 ComboLite 正确安装（需要签名校验、类索引创建、组件解析、XML 持久化等步骤）。文件扫描会产生假阳性。
+
+**修复**：当 `PluginManager.isInitialized == false` 时返回空结果，删除 `fallbackCheckInstalled()` 方法。
+
+---
+
+### 问题 5：前端系统安装提示残留
+
+**位置**：`ExtensionsPage.vue` L189-193
+
+**当前逻辑**：
+```typescript
+if (result.pending) {
+    // 显示 systemInstallerHint 提示
 }
 ```
 
-**为什么这是错误的**：
-1. ComboLite 插件 APK **不是普通 Android 应用**，不能用系统安装器（`ACTION_INSTALL_PACKAGE`）安装
-2. 系统安装器会尝试将插件 APK 作为独立应用安装到系统，这会失败（插件 APK 没有 launcher Activity 等）
-3. 即使系统安装器"成功"了，安装的也不是 ComboLite 插件，而是一个无法运行的独立应用
-4. `PluginManager.isInitialized` 为 `false` 说明 ComboLite 框架未初始化，此时根本不应该尝试安装插件
+**为什么错误**：`result.pending` 和 `systemInstallerHint` 是为系统安装兜底设计的 UI 提示，ComboLite 安装流程不需要这些。
 
-**同样的问题**也存在于 `checkInstalledPlugins()` 的 `fallbackCheckInstalled()` 方法（L464-480），它在 PluginManager 未初始化时通过文件系统扫描查找插件 APK，但这只是检查文件是否存在，不代表插件已正确安装。
-
-**修复**：
-1. `installPlugin()`：当 `PluginManager.isInitialized` 为 `false` 时，直接返回错误，不使用系统安装兜底
-2. `checkInstalledPlugins()`：当 `PluginManager.isInitialized` 为 `false` 时，返回空结果，不使用文件扫描兜底
+**修复**：移除 `result.pending` 分支，统一走成功提示。
 
 ---
 
@@ -72,7 +92,6 @@ fun installPlugin(call: PluginCall) {
 将 `REQUEST_CODE_PLUGIN_PICK` 和 `REQUEST_CODE_INSTALL_CONFIRM` 从 `companion object` 移到文件顶层：
 
 ```kotlin
-// 文件顶层（类外部）
 private const val REQUEST_CODE_PLUGIN_PICK = 9001
 private const val REQUEST_CODE_INSTALL_CONFIRM = 9002
 
@@ -83,15 +102,14 @@ private const val REQUEST_CODE_INSTALL_CONFIRM = 9002
 class GoProcessPlugin : Plugin() {
     companion object {
         private const val TAG = "ENCV-go"
-        // ... 其他 companion 常量不变
+        // appLogBuffer, APP_LOG_MAX, appLog, getAppLogs, clearAppLogs 不变
     }
-    // ... 类体中引用 REQUEST_CODE_* 的地方不需要改，Kotlin 顶层常量在同一文件内可见
 }
 ```
 
-### Step 2：移除 installPlugin() 的系统安装兜底逻辑
+### Step 2：移除 installPlugin() 的系统安装兜底
 
-修改 `installPlugin()` 方法，当 PluginManager 未初始化时直接返回错误：
+修改 `installPlugin()` 方法（L386-420），当 PluginManager 未初始化时直接返回错误：
 
 ```kotlin
 @PluginMethod
@@ -120,7 +138,7 @@ fun installPlugin(call: PluginCall) {
 
 ### Step 3：移除 checkInstalledPlugins() 的文件扫描兜底
 
-修改 `checkInstalledPlugins()` 方法，当 PluginManager 未初始化时返回空结果：
+修改 `checkInstalledPlugins()` 方法（L443-462），删除 `fallbackCheckInstalled()` 方法（L464-480）：
 
 ```kotlin
 @PluginMethod
@@ -144,29 +162,43 @@ fun checkInstalledPlugins(call: PluginCall) {
         call.reject("Failed to check installed plugins: ${e.message}")
     }
 }
+
+// 删除 fallbackCheckInstalled() 方法
 ```
 
-同时删除 `fallbackCheckInstalled()` 方法。
+### Step 4：移除前端系统安装提示残留
 
-### Step 4：禁用主应用构建时的自动插件打包
+修改 `ExtensionsPage.vue`（L184-203），移除 `result.pending` 分支：
+
+```typescript
+const result = await Promise.race([
+    pickAndInstallPlugin(),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Installation timeout')), 120000)),
+])
+if (result.success) {
+    const alert = await alertController.create({
+        header: t('extensions.installSuccess'),
+        message: `${result.fileName || ''}\n${t('extensions.installHint')}`,
+        buttons: [t('common.confirm')],
+    })
+    await alert.present()
+    await loadExtensions()
+} else {
+    installError.value = t('extensions.installFailed')
+}
+```
+
+### Step 5：禁用主应用构建时的自动插件打包
 
 修改 `app/build.gradle.kts`：
 
 ```kotlin
 packagePlugins {
-    enabled.set(false)  // 禁用：插件 APK 由 CI 单独构建，不应打包到主 APK
+    enabled.set(false)
     buildType.set(PackageBuildType.DEBUG)
     pluginsDir.set("debug_plugins")
 }
 ```
-
-### Step 5：验证
-
-- 确认 `GoProcessPlugin.kt` 编译通过
-- 确认 `assembleDebug` 不再触发 `:plugin-mpv-player` 任务
-- 确认 CI 中单独的插件构建步骤仍正常工作
-- 确认 `installPlugin()` 在 PluginManager 未初始化时返回错误而非走系统安装
-- 确认 `checkInstalledPlugins()` 在 PluginManager 未初始化时返回空结果
 
 ### Step 6：清理日志文件
 

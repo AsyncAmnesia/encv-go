@@ -186,21 +186,12 @@ async function handleInstallFromFile() {
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Installation timeout')), 120000)),
     ])
     if (result.success) {
-      if (result.pending) {
-        const alert = await alertController.create({
-          header: t('extensions.installSuccess'),
-          message: `${result.fileName || ''}\n${t('extensions.installHint')}\n${t('extensions.systemInstallerHint') || 'Please complete installation in the system dialog, then return here.'}`,
-          buttons: [t('common.confirm')],
-        })
-        await alert.present()
-      } else {
-        const alert = await alertController.create({
-          header: t('extensions.installSuccess'),
-          message: `${result.fileName || ''}\n${t('extensions.installHint')}`,
-          buttons: [t('common.confirm')],
-        })
-        await alert.present()
-      }
+      const alert = await alertController.create({
+        header: t('extensions.installSuccess'),
+        message: `${result.fileName || ''}\n${t('extensions.installHint')}`,
+        buttons: [t('common.confirm')],
+      })
+      await alert.present()
       await loadExtensions()
     } else {
       installError.value = t('extensions.installFailed')

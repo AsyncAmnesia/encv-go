@@ -154,7 +154,6 @@ export interface PickAndInstallResult {
   success: boolean
   method?: string
   fileName?: string
-  pending?: boolean
 }
 
 export async function pickAndInstallPlugin(): Promise<PickAndInstallResult> {
