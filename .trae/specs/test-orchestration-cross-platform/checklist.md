@@ -15,5 +15,10 @@
 - [ ] T7b: MPV 未加载时 fallback 到 ArtPlayer
 - [ ] TC1: CI Layer 1 测试矩阵包含所有快速测试（<5min）
 - [ ] TC2: Makefile test-quick / test-full / test-e2e 目标可用
+- [ ] TC3a: `.github/workflows/test.yml` 文件存在且语法正确
+- [ ] TC3b: test.yml 包含 4 种触发方式（workflow_dispatch / pull_request / push / schedule）
+- [ ] TC3c: test.yml 包含 3 层 job 结构（layer1/layer2/layer3 + summary）
+- [ ] TC3d: test.yml 缓存策略与 android.yml 共享 key 前缀
+- [ ] TC3e: test.yml 超时和失败策略配置合理
 - [ ] 所有新测试 `go test ./...` 编译通过
 - [ ] 所有新测试 `vitest run` 编译通过

@@ -47,6 +47,16 @@
   - [ ] 7.4 添加加密 E2E 测试步骤（可选：仅在 nightly 运行，标记 `[e2e]`）
   - [ ] 7.5 确保 Layer 1 总耗时 <5min（快速反馈）
 
+- [ ] Task 8: 创建专用测试 CI 工作流文件 test.yml（TC3）
+  - [ ] 8.1 创建 `.github/workflows/test.yml` 完整工作流文件
+  - [ ] 8.2 实现 workflow_dispatch + pull_request + push + schedule 四种触发
+  - [ ] 8.3 实现 layer1-quick-tests job（frontend-vitest + go-core-test + combolite-static matrix）
+  - [ ] 8.4 实现 layer2-full-regression job（go-full+coverage + frontend-coverage + api-contract，needs layer1）
+  - [ ] 8.5 实现 layer3-e2e-integration job（encryption-e2e + android-instrumented + config-consistency，needs layer2）
+  - [ ] 8.6 实现 test-summary job（聚合结果 + 生成报告 + PR comment）
+  - [ ] 8.7 配置缓存策略（Go/npm/Gradle/FFmpeg 与 android.yml 共享 key 前缀）
+  - [ ] 8.8 配置超时控制和失败策略
+
 # Task Dependencies
 - [Task 1] 可独立并行
 - [Task 2] 可独立并行

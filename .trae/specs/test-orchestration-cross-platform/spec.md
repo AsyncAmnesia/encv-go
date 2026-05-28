@@ -172,6 +172,85 @@ CI workflow SHALL 从当前的 2 步扩展为分层矩阵：
 └─────────────────────────────────┘
 ```
 
+### Requirement TC3: 专用测试 CI 工作流文件
+
+系统 SHALL 创建 `.github/workflows/test.yml` 作为**专门的完整测试工作流**（区别于 `android.yml` 的构建导向），包含以下特性：
+
+#### TC3.1: 触发条件
+- **手动触发**：`workflow_dispatch`（可指定 branch / 跳过特定层）
+- **PR 触发**：`pull_request`（仅运行 Layer 1 快速测试）
+- **Push 触发**：`push` to main（运行 Layer 1 + Layer 2）
+- **定时触发**：`schedule` nightly（UTC 04:00 = 北京时间中午，运行全量 Layer 1-3）
+
+#### TC3.2: 工作流结构
+
+```
+test.yml
+├── jobs:
+│   ├── layer1-quick-tests        # Matrix: [frontend, go-core, combolite-check]
+│   │   ├── frontend-vitest       # npx vitest run --reporter=verbose
+│   │   ├── go-core-test          # go test ./internal/v2/... -count=1 -timeout 120s
+│   │   └── combolite-static      # go test ./internal/service/ -run TestComboLite -v
+│   │   └── outputs: layer1-result # 汇总 pass/fail + 耗时
+│   │
+│   ├── layer2-full-regression    # needs: layer1
+│   │   ├── go-full-test         # go test ./internal/... -count=1 -timeout 300s
+│   │   │   ├── -coverprofile=cover.out
+│   │   │   └── coverage report upload
+│   │   ├── frontend-coverage    # npx vitest run --coverage
+│   │   ├── api-contract-test    # go test ./internal/server/... -run TestAPIContract
+│   │   └── outputs: layer2-result
+│   │
+│   ├── layer3-e2e-integration   # needs: layer2
+│   │   ├── encryption-e2e       # go test ./internal/v2/plugins/video/... -run TestEncryptionE2E
+│   │   │   ├── v3-roundtrip
+│   │   │   ├── v4-roundtrip
+│   │   │   ├── file-retention-check
+│   │   │   └── ffprobe-tolerance
+│   │   ├── android-instrumented  # ./gradlew connectedAndroidTest (if emulator available)
+│   │   └── config-consistency    # 双端 config.user.json 解析一致性
+│   │   └── outputs: layer3-result
+│   │
+│   └── test-summary             # needs: all layers
+│       ├── aggregate all layer results
+│       ├── generate test report markdown
+│       └── comment on PR / upload artifact
+```
+
+#### TC3.3: 关键实现细节
+
+**缓存策略**：
+- Go module cache (`go.sum`)
+- npm cache (`package-lock.json`)
+- Gradle cache
+- FFmpeg build intermediates
+
+**条件跳过**：
+```yaml
+# 可通过 workflow_dispatch input 跳过特定层
+skip-layer1: ${{ github.event.inputs.skip_layer1 || 'false' }}
+skip-e2e: ${{ github.event.inputs.skip_e2e || 'false' }}
+```
+
+**超时控制**：
+- Layer 1 每个 job timeout-minutes: 10
+- Layer 2 每个 job timeout-minutes: 20
+- Layer 3 每个 job timeout-minutes: 30
+
+**产物上传**：
+- Layer 2: coverage report（HTML + lcov）
+- Layer 3: E2E test logs（加密 roundtrip 详细输出）
+- 全部层: test-results JUnit XML 格式（GitHub PR checks 集成）
+
+**失败策略**：
+- Layer 1 失败 → 阻断后续层（`if: always()` 但 summary 标记 fail）
+- Layer 2/3 失败 → 不阻断（`continue-on-error: true`），但 summary 中标记
+
+#### TC3.4: 与现有 android.yml 的关系
+- `android.yml` **保持不变**（构建导向，保留现有测试步骤作为构建前检查）
+- `test.yml` **独立存在**（纯测试导向，更完整的矩阵和报告）
+- 两者共享缓存 key 前缀避免重复下载
+
 ### Requirement TC2: Makefile 测试目标
 
 Makefile SHALL 定义清晰的测试入口：
