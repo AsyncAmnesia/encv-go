@@ -237,6 +237,17 @@ func (s *Server) handleRetryTaskGin(c *gin.Context) {
 	c.JSON(http.StatusOK, task)
 }
 
+func (s *Server) handleRemoveTaskGin(c *gin.Context) {
+	id := c.Param("id")
+
+	if err := s.mobileSvc.GetTaskManager().RemoveTask(id); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
 func (s *Server) handleTestWebDAVGin(c *gin.Context) {
 	var req struct {
 		URL      string `json:"url"`

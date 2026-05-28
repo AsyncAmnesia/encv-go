@@ -79,3 +79,31 @@ func TestEnsureOutputDir_CreateTempAfterEnsure(t *testing.T) {
 	tempFile.Close()
 	os.Remove(tempFile.Name())
 }
+
+func TestOutputDirSetBeforePreprocess(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	plugin := &VideoPlugin{}
+	plugin.SetOutputDir(tmpDir)
+
+	preprocessor := plugin.GetContentPreprocessor()
+	if preprocessor == nil {
+		t.Fatal("GetContentPreprocessor returned nil")
+	}
+
+	vcp, ok := preprocessor.(*VideoContentPreprocessor)
+	if !ok {
+		t.Fatalf("expected *VideoContentPreprocessor, got %T", preprocessor)
+	}
+
+	if vcp.outputDir == "" {
+		t.Fatal("outputDir is empty after SetOutputDir + GetContentPreprocessor")
+	}
+	if vcp.outputDir != tmpDir {
+		t.Errorf("outputDir mismatch: got %q, want %q", vcp.outputDir, tmpDir)
+	}
+
+	if err := vcp.ensureOutputDir(); err != nil {
+		t.Fatalf("ensureOutputDir should succeed after SetOutputDir: %v", err)
+	}
+}

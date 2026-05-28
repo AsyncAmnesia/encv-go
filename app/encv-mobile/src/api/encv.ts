@@ -371,6 +371,17 @@ export async function retryTask(id: string): Promise<void> {
   }
 }
 
+export async function removeTask(id: string): Promise<void> {
+  console.info('[API] removeTask:', id)
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/tasks/${id}`, {
+    method: 'DELETE',
+  })
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+}
+
 export interface WebDAVConfig {
   id: string
   name: string

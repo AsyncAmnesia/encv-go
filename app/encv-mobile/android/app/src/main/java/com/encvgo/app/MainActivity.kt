@@ -12,7 +12,6 @@ import android.util.Log
 import android.webkit.WebSettings
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.combo.core.runtime.PluginManager
 import com.getcapacitor.BridgeActivity
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -67,34 +66,7 @@ class MainActivity : BridgeActivity() {
 
     private fun loadPlugins() {
         lifecycleScope.launch {
-            try {
-                val pluginsDir = java.io.File(filesDir, "plugins")
-                if (pluginsDir.exists() && pluginsDir.isDirectory) {
-                    val apkFiles = pluginsDir.listFiles { file -> file.extension == "apk" } ?: emptyArray()
-                    for (apkFile in apkFiles) {
-                        Log.i(TAG, "Found plugin APK: ${apkFile.name}")
-                        val result = PluginManager.installerManager.installPlugin(apkFile, forceOverwrite = true)
-                        when (result) {
-                            is com.combo.core.runtime.installer.InstallerManager.InstallResult.Success -> {
-                                Log.i(TAG, "Plugin installed: ${result.pluginInfo.id} (${result.pluginInfo.versionName})")
-                            }
-                            is com.combo.core.runtime.installer.InstallerManager.InstallResult.Failure -> {
-                                Log.w(TAG, "Plugin install failed [${apkFile.name}]: ${result.reason}")
-                            }
-                        }
-                    }
-                } else {
-                    Log.i(TAG, "Plugins directory not found: ${pluginsDir.absolutePath}, skipping auto-install")
-                }
-                Log.i(TAG, "Loading enabled plugins...")
-                PluginManager.loadEnabledPlugins()
-                Log.i(TAG, "Launching MPV plugin...")
-                PluginManager.launchPlugin(MPV_PLUGIN_ID)
-                val instance = PluginManager.getPluginInstance(MPV_PLUGIN_ID)
-                Log.i(TAG, "MPV plugin instance: ${if (instance != null) "loaded" else "null"}")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to load plugins", e)
-            }
+            Log.i(TAG, "Plugin loading deferred to frontend-driven flow")
         }
     }
 

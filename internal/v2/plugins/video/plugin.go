@@ -758,6 +758,11 @@ func (p *VideoPlugin) verifyContainer() error {
 
 // --- 解密逻辑 ---
 
+// SetOutputDir 设置输出目录（供 EncryptFileWithPlugin 在预处理前调用）
+func (p *VideoPlugin) SetOutputDir(dir string) {
+	p.outputDir = dir
+}
+
 // Plugin 接口实现
 func (p *VideoPlugin) PreDecryptProcessor(containerPath, outputDir string) error {
 	p.outputDir = outputDir

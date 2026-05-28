@@ -263,6 +263,27 @@ func formatDuration(seconds float64) string {
 	return fmt.Sprintf("%dh%dm", int(d.Hours()), int(d.Minutes())%60)
 }
 
+func (tm *TaskManager) RemoveTask(id string) error {
+	tm.mu.Lock()
+	if _, ok := tm.tasks[id]; !ok {
+		tm.mu.Unlock()
+		return errors.New("task not found")
+	}
+
+	delete(tm.tasks, id)
+	tm.mu.Unlock()
+
+	tm.saveTasks()
+
+	slog.Info("Task removed", "id", id)
+	if tm.broadcaster != nil {
+		tm.broadcaster.Broadcast("task:removed", map[string]interface{}{
+			"id": id,
+		})
+	}
+	return nil
+}
+
 func (tm *TaskManager) Retry(id string) (*MobileTask, error) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()

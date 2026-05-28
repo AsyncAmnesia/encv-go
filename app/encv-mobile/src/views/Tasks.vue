@@ -261,6 +261,7 @@ import {
   createTask,
   cancelTask,
   retryTask,
+  removeTask,
   listFiles,
   isWrongPasswordError,
 } from '@/api/encv'
@@ -569,8 +570,13 @@ async function handleRetryTask(id: string) {
   }
 }
 
-function handleRemoveTask(id: string) {
-  tasks.value = tasks.value.filter(t => t.id !== id)
+async function handleRemoveTask(id: string) {
+  try {
+    await removeTask(id)
+    await loadTasks()
+  } catch {
+    showToast({ message: t('tasks.taskRemoveFailed'), duration: 2000, color: 'danger' })
+  }
 }
 
 function onTaskUpdate(data: { id: string; type: string; status: string; progress: number }) {
