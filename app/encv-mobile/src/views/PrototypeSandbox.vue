@@ -6,6 +6,12 @@
           <ion-back-button default-href="/tabs/settings/devtools"></ion-back-button>
         </ion-buttons>
         <ion-title>{{ proto?.name || 'Prototype' }}</ion-title>
+        <ion-buttons slot="end">
+          <button class="landscape-toggle" :class="{ active: isLandscape }" @click="toggleLandscape" :title="isLandscape ? 'Portrait' : 'Landscape'">
+            <svg v-if="!isLandscape" viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+            <svg v-else viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>
+          </button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -40,8 +46,13 @@
         </div>
 
         <div class="tab-content">
-          <div v-show="activeTab === 'preview'" class="preview-panel">
-            <div class="preview-frame">
+          <div v-show="activeTab === 'preview'" class="preview-panel" :class="{ landscape: isLandscape }">
+            <div
+              class="preview-frame"
+              :class="{ landscape: isLandscape }"
+              ref="frameRef"
+              :style="frameStyle"
+            >
               <component :is="loadedComponent" v-if="loadedComponent" />
               <div v-else class="loading-state">
                 <ion-spinner name="crescent"></ion-spinner>
@@ -77,7 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, type Component as VueComponent } from 'vue'
+import { ref, computed, watch, nextTick, provide } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
@@ -95,9 +106,14 @@ const protoId = computed(() => route.params.id as string || '')
 const proto = computed(() => getPrototype(protoId.value))
 
 const activeTab = ref<'preview' | 'web' | 'compose'>('preview')
-const loadedComponent = ref<VueComponent | null>(null)
+const loadedComponent = ref<any>(null)
 const webSource = ref('')
 const composeSource = ref('')
+
+const isLandscape = ref(false)
+const frameRef = ref<HTMLElement>()
+const savedWidth = ref(0)
+const savedHeight = ref(0)
 
 const tabs = [
   { id: 'preview' as const, label: 'Preview', icon: eyeOutline },
@@ -105,11 +121,43 @@ const tabs = [
   { id: 'compose' as const, label: 'Compose', icon: codeSlashOutline },
 ]
 
+const frameStyle = computed(() => {
+  if (!isLandscape.value) return {}
+  return {
+    width: `${savedHeight.value}px`,
+    height: `${savedWidth.value}px`,
+    transform: 'rotate(90deg)',
+  }
+})
+
+async function toggleLandscape() {
+  if (!frameRef.value) return
+  if (!isLandscape.value) {
+    const rect = frameRef.value.getBoundingClientRect()
+    savedWidth.value = rect.width
+    savedHeight.value = rect.height
+    isLandscape.value = true
+  } else {
+    isLandscape.value = false
+    await nextTick()
+    if (frameRef.value) {
+      frameRef.value.style.width = ''
+      frameRef.value.style.height = ''
+    }
+  }
+}
+
+provide('sandboxLandscape', {
+  isLandscape,
+  toggleLandscape,
+})
+
 watch(proto, async (p) => {
   if (!p) return
   loadedComponent.value = null
   webSource.value = ''
   composeSource.value = ''
+  isLandscape.value = false
   try {
     const mod = await p.component()
     loadedComponent.value = mod.default
@@ -191,6 +239,26 @@ async function copySource(text: string) {
   text-overflow: ellipsis;
 }
 
+.landscape-toggle {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid rgba(var(--ion-color-medium-rgb, 128,128,128), 0.2);
+  background: transparent;
+  color: var(--ion-text-color, #ccc);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.landscape-toggle.active {
+  border-color: var(--ion-color-primary, #BB86FC);
+  color: var(--ion-color-primary, #BB86FC);
+  background: rgba(187,134,252,0.1);
+}
+
 .tab-bar {
   display: flex;
   border-bottom: 1px solid rgba(var(--ion-color-medium-rgb, 128,128,128), 0.12);
@@ -227,13 +295,24 @@ async function copySource(text: string) {
 
 .preview-panel {
   padding: 16px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: min-height 0.35s ease;
+}
+
+.preview-panel.landscape {
+  min-height: 85vw;
 }
 
 .preview-frame {
+  position: relative;
+  width: 100%;
   border-radius: 12px;
   overflow: hidden;
   background: #121212;
   box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+  transition: transform 0.35s ease, width 0.35s ease, height 0.35s ease;
 }
 
 .loading-state {

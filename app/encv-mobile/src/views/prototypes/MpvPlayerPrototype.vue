@@ -1,6 +1,6 @@
 <template>
   <div class="mpv-player-prototype">
-    <div class="player-screen" :class="{ landscape: isLandscape }" @click="handleTap">
+    <div class="player-screen" @click="handleTap">
       <div class="video-area">
         <div class="video-placeholder">
           <svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -96,8 +96,8 @@
                   <svg v-else viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
                 </button>
               </div>
-              <button class="icon-btn sm" @click.stop="toggleLandscape" :title="isLandscape ? 'Portrait' : 'Landscape'">
-                <svg v-if="!isLandscape" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+              <button class="icon-btn sm" @click.stop="sandbox.toggleLandscape()" :title="sandbox.isLandscape.value ? 'Portrait' : 'Landscape'">
+                <svg v-if="!sandbox.isLandscape.value" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
                 <svg v-else viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>
               </button>
             </div>
@@ -230,8 +230,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, inject, type Ref } from 'vue'
 import MpvProgressBar from './MpvProgressBarWeb.vue'
+
+const sandbox = inject<{ isLandscape: Ref<boolean>; toggleLandscape: () => void }>('sandboxLandscape', {
+  isLandscape: ref(false),
+  toggleLandscape: () => {},
+})
 
 const SPEED_MIN = 0.5
 const SPEED_MAX = 3.0
@@ -247,7 +252,6 @@ const duration = computed(() => durationInput.value)
 const progress = computed(() => duration.value > 0 ? currentPosition.value / duration.value : 0)
 const showControls = ref(true)
 const isLocked = ref(false)
-const isLandscape = ref(false)
 const playbackSpeed = ref(1.0)
 const volume = ref(0.8)
 const showVolumeSlider = ref(false)
@@ -387,10 +391,6 @@ function stopDrag() {
   isDragging.value = false
 }
 
-function toggleLandscape() {
-  isLandscape.value = !isLandscape.value
-}
-
 function pickSubtitleFile() {
   const input = document.createElement('input')
   input.type = 'file'
@@ -454,12 +454,6 @@ watch(isPlaying, (val) => {
   overflow: hidden;
   user-select: none;
   cursor: pointer;
-  transition: aspect-ratio 0.35s ease, max-height 0.35s ease;
-}
-
-.player-screen.landscape {
-  aspect-ratio: 21/9;
-  max-height: 220px;
 }
 
 .video-area {
