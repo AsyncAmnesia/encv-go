@@ -232,7 +232,12 @@ async function loadFile() {
       if (info.is_encv_container && info.container) {
         const containerType = info.container.container_type
         containerInfo.value = info.container
-        manifestJson.value = JSON.stringify(info.container.manifest || info.container, null, 2)
+        try {
+          const str = JSON.stringify(info.container.manifest || info.container, null, 2)
+          manifestJson.value = /^[\x20-\x7E\t\n\r]*$/.test(str) ? str : '(contains non-printable characters)'
+        } catch {
+          manifestJson.value = '(invalid)'
+        }
 
         switch (containerType) {
           case 'image':

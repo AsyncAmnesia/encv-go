@@ -46,14 +46,16 @@
         <p>{{ t('files.emptyDirDesc') }}</p>
       </div>
 
-      <div v-if="showNewFolder" class="new-folder-input">
+      <div v-if="showNewFolder" class="overlay-backdrop" @click="cancelNewFolder"></div>
+
+      <div v-if="showNewFolder" class="new-folder-input-overlay">
         <ion-input v-model="newFolderName" :placeholder="t('files.newFolderName')" enterkeyhint="done"
                    @keydown.enter="confirmNewFolder"></ion-input>
         <ion-button size="small" @click="confirmNewFolder">{{ t('common.confirm') }}</ion-button>
         <ion-button size="small" fill="clear" @click="cancelNewFolder">{{ t('common.cancel') }}</ion-button>
       </div>
 
-      <ion-list v-else>
+      <ion-list>
         <ion-item
           v-for="file in displayFiles"
           :key="file.path"
@@ -375,7 +377,14 @@ onMounted(() => {
   margin-right: 12px;
 }
 
-.new-folder-input {
+.overlay-backdrop {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 19;
+}
+
+.new-folder-input-overlay {
   position: fixed;
   bottom: 0;
   left: 0;
@@ -386,10 +395,10 @@ onMounted(() => {
   padding: 10px 16px;
   background: var(--ion-background-color, #fff);
   border-top: 1px solid var(--ion-color-light, #f4f5f8);
-  z-index: 10;
+  z-index: 20;
 }
 
-.new-folder-input ion-input {
+.new-folder-input-overlay ion-input {
   flex: 1;
 }
 </style>

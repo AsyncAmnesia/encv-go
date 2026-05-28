@@ -25,6 +25,12 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
+var lastVerifyWarnings []*pluginInterfaces.VerifyWarning
+
+func LastVerifyWarnings() []*pluginInterfaces.VerifyWarning {
+	return lastVerifyWarnings
+}
+
 type VideoPlugin struct {
 	ctx          context.Context
 	cfg          *config.Config
@@ -727,13 +733,24 @@ func (p *VideoPlugin) verifyContainer() error {
 	if sourcePath != p.inputPath {
 		slog.Info("Detected preprocessed/re-encoded source, using lenient verification",
 			"source_path", sourcePath, "original_input", p.inputPath)
-		verifyOpts = &pluginInterfaces.VerifyOptions{SkipSizeCheck: true}
+		verifyOpts = &pluginInterfaces.VerifyOptions{SkipSizeCheck: true, SkipStructCheck: true, CollectWarnings: true}
+	} else {
+		verifyOpts = &pluginInterfaces.VerifyOptions{CollectWarnings: true}
 	}
 
-	if err := verifier.Verify(sourcePath, decrypedFilePath, verifyOpts); err != nil {
+	err, warnings := verifier.Verify(sourcePath, decrypedFilePath, verifyOpts)
+	lastVerifyWarnings = warnings
+	if err != nil {
 		os.RemoveAll(verifyTempDir)
 		return fmt.Errorf("container verification failed: %w", err)
 	}
+
+	if len(warnings) > 0 {
+		slog.Warn("Verification completed with warnings",
+			"warnings_count", len(warnings),
+			"warnings", warnings)
+	}
+
 	os.RemoveAll(verifyTempDir)
 	slog.Info("Container verified successfully", "plugin", p.Name())
 	return nil

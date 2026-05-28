@@ -316,6 +316,8 @@ export interface EncvTask {
   eta?: string
   error?: string
   errorDetail?: string
+  warning?: string
+  warningDetail?: string
   containerVersion?: number
   createdAt: string
   completedAt?: string

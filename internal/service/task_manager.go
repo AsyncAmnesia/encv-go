@@ -15,6 +15,7 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
+	"github.com/Soltus/encv-go/internal/v2/plugins/video"
 	"github.com/Soltus/encv-go/internal/v2/types"
 	"github.com/google/uuid"
 )
@@ -32,6 +33,8 @@ type MobileTask struct {
 	Eta              string     `json:"eta,omitempty"`
 	Error            string     `json:"error,omitempty"`
 	ErrorDetail      string     `json:"errorDetail,omitempty"`
+	Warning          string     `json:"warning,omitempty"`
+	WarningDetail    string     `json:"warningDetail,omitempty"`
 	ContainerVersion int        `json:"containerVersion,omitempty"`
 	CreatedAt        time.Time  `json:"createdAt"`
 	CompletedAt      *time.Time `json:"completedAt,omitempty"`
@@ -459,6 +462,12 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 		baseNameWithoutExt := strings.TrimSuffix(sourceBaseName, ext)
 		if outputFile := findEncryptedOutputFile(outputDir, baseNameWithoutExt); outputFile != "" {
 			task.ContainerVersion = detectContainerVersion(outputFile)
+		}
+
+		if warnings := video.LastVerifyWarnings(); len(warnings) > 0 {
+			task.Warning = fmt.Sprintf("%d verification warning(s)", len(warnings))
+			detailBytes, _ := json.Marshal(warnings)
+			task.WarningDetail = string(detailBytes)
 		}
 	}
 	tm.mu.Unlock()

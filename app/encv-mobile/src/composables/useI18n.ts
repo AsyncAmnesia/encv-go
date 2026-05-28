@@ -132,6 +132,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'tasks.usingGlobalPassword': '使用全局配置中的密码',
 
     'tasks.passwordErrorHint': '密码可能错误，请检查后重试',
+    'tasks.warning': '警告',
+    'tasks.warningDetail': '验证警告详情',
 
     'webdav.title': 'WebDAV',
     'webdav.noServers': '暂无 WebDAV 服务器',
@@ -594,6 +596,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'tasks.usingGlobalPassword': 'Using password from global config',
 
     'tasks.passwordErrorHint': 'Password may be wrong, please check and retry',
+    'tasks.warning': 'Warning',
+    'tasks.warningDetail': 'Verification Warnings',
 
     'webdav.title': 'WebDAV',
     'webdav.noServers': 'No WebDAV Servers',

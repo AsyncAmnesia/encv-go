@@ -26,24 +26,27 @@ import (
 type VideoContentVerifier struct{}
 
 // Verify 实现 ContentVerifier 接口
-func (p *VideoContentVerifier) Verify(originalPath, decryptedPath string, opts ...*interfaces.VerifyOptions) error {
-	var skipSizeCheck bool
+func (p *VideoContentVerifier) Verify(originalPath, decryptedPath string, opts ...*interfaces.VerifyOptions) (error, []*interfaces.VerifyWarning) {
+	opt := &interfaces.VerifyOptions{}
 	if len(opts) > 0 && opts[0] != nil {
-		skipSizeCheck = opts[0].SkipSizeCheck
+		opt = opts[0]
 	}
 
 	slog.Info("VIDEO INTEGRITY CHECKER v5.0 (Stratified Opt)")
-	slog.Info("Verification started", "original_path", originalPath, "decrypted_path", decryptedPath, "skip_size_check", skipSizeCheck)
+	slog.Info("Verification started", "original_path", originalPath, "decrypted_path", decryptedPath,
+		"skip_size_check", opt.SkipSizeCheck, "skip_struct_check", opt.SkipStructCheck)
+
+	var allWarnings []*interfaces.VerifyWarning
 
 	origFile, err := os.Open(originalPath)
 	if err != nil {
-		return fmt.Errorf("failed to open original file: %w", err)
+		return fmt.Errorf("failed to open original file: %w", err), nil
 	}
 	defer origFile.Close()
 
 	decFile, err := os.Open(decryptedPath)
 	if err != nil {
-		return fmt.Errorf("failed to open decrypted file: %w", err)
+		return fmt.Errorf("failed to open decrypted file: %w", err), nil
 	}
 	defer decFile.Close()
 
@@ -51,24 +54,31 @@ func (p *VideoContentVerifier) Verify(originalPath, decryptedPath string, opts .
 	decInfo, _ := decFile.Stat()
 	totalSize := origInfo.Size()
 
-	if !skipSizeCheck && totalSize != decInfo.Size() {
-		return fmt.Errorf("size mismatch")
+	if !opt.SkipSizeCheck && totalSize != decInfo.Size() {
+		return fmt.Errorf("size mismatch"), nil
 	}
-	if skipSizeCheck && totalSize != decInfo.Size() {
+	if opt.SkipSizeCheck && totalSize != decInfo.Size() {
 		slog.Warn("Size mismatch detected but skipped (re-encode mode)",
 			"original_size", totalSize, "decrypted_size", decInfo.Size())
+		allWarnings = append(allWarnings, &interfaces.VerifyWarning{
+			CheckName: "size_check",
+			Message:   fmt.Sprintf("skipped (re-encoded output): original=%d, decrypted=%d", totalSize, decInfo.Size()),
+			Severity:  "warning",
+		})
 	}
 
 	var verificationError error
 
 	// === 第一级防线：结构完整性检查 (< 1秒) ===
-	if err := p.QuickStructCheck(decryptedPath); err != nil {
+	warnings, err := p.QuickStructCheck(decryptedPath, opt)
+	if err != nil {
 		slog.Error("L1 structure check failed", "error", err)
 		verificationError = err
 	}
+	allWarnings = append(allWarnings, warnings...)
 
 	// === 第二级防线：采样完整性抽检 (< 2秒) ===
-	if err := p.QuickSampleHashCheck(originalPath, decryptedPath, skipSizeCheck); err != nil {
+	if err := p.QuickSampleHashCheck(originalPath, decryptedPath, opt.SkipSizeCheck); err != nil {
 		slog.Error("L2 sample hash check failed", "error", err)
 		verificationError = err
 	}
@@ -82,7 +92,7 @@ func (p *VideoContentVerifier) Verify(originalPath, decryptedPath string, opts .
 		p.diagnoseFragmentation(originalPath, decryptedPath)
 
 		// 诊断完成后，依然返回验证错误，阻止后续的全盘扫描
-		return verificationError
+		return verificationError, nil
 	}
 
 	// === 第三级防线：全盘字节级验证 (耗时操作，仅在 L1/L2 通过后执行) ===
@@ -121,7 +131,7 @@ func (p *VideoContentVerifier) Verify(originalPath, decryptedPath string, opts .
 		if !bytes.Equal(hasher1.Sum(nil), hasher2.Sum(nil)) {
 			duration := time.Since(startTime)
 			slog.Error("L3 hash mismatch, aborting", "chunk", offset/chunkSize, "elapsed", duration.Round(time.Millisecond))
-			return fmt.Errorf("hash mismatch at chunk %d (diff detected quickly)", offset/chunkSize)
+			return fmt.Errorf("hash mismatch at chunk %d (diff detected quickly)", offset/chunkSize), nil
 		}
 	}
 
@@ -130,26 +140,43 @@ func (p *VideoContentVerifier) Verify(originalPath, decryptedPath string, opts .
 
 	// === 深度诊断 (仅在 L3 成功后执行) ===
 	if err := p.runDeepVideoIntegrityCheck(originalPath, decryptedPath, err); err != nil {
-		return fmt.Errorf("deep integrity check failed: %w", err)
+		return fmt.Errorf("deep integrity check failed: %w", err), nil
 	}
 
 	slog.Info("Verification passed (100%)")
-	return nil
+
+	// 根据 CollectWarnings 决定是否返回 warnings
+	if opt.CollectWarnings {
+		return nil, allWarnings
+	}
+	return nil, nil
 }
 
 // QuickStructCheck 快速结构检查（第一级防线）
 // 利用 go-mp4 仅读取必要的 Box 头部，不解析媒体数据
-func (p *VideoContentVerifier) QuickStructCheck(filePath string) error {
+// 当 SkipStructCheck=true 时返回 warning 而非 error
+func (p *VideoContentVerifier) QuickStructCheck(filePath string, opts *interfaces.VerifyOptions) ([]*interfaces.VerifyWarning, error) {
+	if opts != nil && opts.SkipStructCheck {
+		slog.Warn("QuickStructCheck skipped", "path", filePath)
+		return []*interfaces.VerifyWarning{
+			{
+				CheckName: "quick_struct_check",
+				Message:   "skipped (re-encoded output)",
+				Severity:  "warning",
+			},
+		}, nil
+	}
+
 	f, err := os.Open(filePath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer f.Close()
 
 	// 1. 检查 moov (Movie Box) 是否存在
 	moovBoxes, err := mp4.ExtractBoxWithPayload(f, nil, mp4.BoxPath{mp4.BoxTypeMoov()})
 	if err != nil || len(moovBoxes) == 0 {
-		return fmt.Errorf("quick check: moov box missing or unreadable")
+		return nil, fmt.Errorf("quick check: moov box missing or unreadable")
 	}
 
 	// 2. 检查 stsz (Sample Size Box) 是否存在且可读
@@ -157,18 +184,18 @@ func (p *VideoContentVerifier) QuickStructCheck(filePath string) error {
 	stszBoxes, err := mp4.ExtractBoxesWithPayload(f, &moovBoxes[0].Info, []mp4.BoxPath{mp4.BoxPath{mp4.BoxTypeTrak(), mp4.BoxTypeMdia(), mp4.BoxTypeStbl(), mp4.BoxTypeStsz()}})
 
 	if err != nil || len(stszBoxes) == 0 {
-		return fmt.Errorf("quick check: stsz box missing")
+		return nil, fmt.Errorf("quick check: stsz box missing")
 	}
 
 	// 3. 仅仅验证 Payload 是否能断言为 Stsz 类型，确保数据未完全乱码
 	_, ok := stszBoxes[0].Payload.(*mp4.Stsz)
 	if !ok {
 		// 类型断言失败，说明数据结构有问题
-		return fmt.Errorf("quick check: stsz payload type assertion failed (data corrupt)")
+		return nil, fmt.Errorf("quick check: stsz payload type assertion failed (data corrupt)")
 	}
 
 	slog.Info("L1 quick structure check passed (valid moov/stsz)")
-	return nil
+	return nil, nil
 }
 
 // QuickSampleHashCheck 采样完整性抽检（第二级防线）

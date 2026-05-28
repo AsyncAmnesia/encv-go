@@ -60,6 +60,13 @@
                 <span class="completed-text">{{ t('tasks.phaseCompleted') }}</span>
                 <span v-if="task.containerVersion" class="container-version">V{{ task.containerVersion }}</span>
               </div>
+              <div v-if="task.warning" class="task-warning" @click="toggleWarningDetail(task)">
+                <ion-icon :icon="warningOutline" class="warning-icon"></ion-icon>
+                <span class="task-warning-text">{{ task.warning }}</span>
+              </div>
+              <div v-if="expandedWarningDetail === task.id && task.warningDetail" class="task-warning-detail">
+                <pre>{{ formatWarningDetail(task.warningDetail) }}</pre>
+              </div>
               <p v-if="isPasswordError(task)" class="task-error password-error">
                 <ion-icon :icon="lockClosed"></ion-icon>
                 {{ t('tasks.passwordErrorHint') }}
@@ -245,6 +252,7 @@ import {
   sync,
   folderOpen,
   copyOutline,
+  warningOutline,
 } from 'ionicons/icons'
 import { useRoute, useRouter } from 'vue-router'
 import ContainerVersionSelector from '@/components/ContainerVersionSelector.vue'
@@ -273,6 +281,7 @@ const tasks = ref<EncvTask[]>([])
 const loading = ref(false)
 const showErrorDetail = ref<Record<string, boolean>>({})
 const copiedTaskId = ref<string | null>(null)
+const expandedWarningDetail = ref<string | null>(null)
 const showNewTaskModal = ref(false)
 const newTaskType = ref<TaskType>('encrypt')
 const newTaskPath = ref('')
@@ -400,6 +409,15 @@ async function loadTasks() {
 
 function toggleErrorDetail(taskId: string) {
   showErrorDetail.value[taskId] = !showErrorDetail.value[taskId]
+}
+
+function toggleWarningDetail(task: EncvTask) {
+  expandedWarningDetail.value = expandedWarningDetail.value === task.id ? null : task.id
+}
+
+function formatWarningDetail(detail: string): string {
+  try { return JSON.stringify(JSON.parse(detail), null, 2) }
+  catch { return detail }
 }
 
 async function copyErrorDetail(task: EncvTask) {
@@ -589,7 +607,7 @@ function onTaskCreated(data: { id: string; type: string; sourcePath: string }) {
   }
 }
 
-function onTaskCompleted(data: { id: string; status?: string; error?: string; errorDetail?: string }) {
+function onTaskCompleted(data: { id: string; status?: string; error?: string; errorDetail?: string; warning?: string; warningDetail?: string }) {
   const idx = tasks.value.findIndex(t => t.id === data.id)
   if (idx !== -1) {
     tasks.value[idx] = {
@@ -601,6 +619,8 @@ function onTaskCompleted(data: { id: string; status?: string; error?: string; er
       eta: '',
       error: data.error,
       errorDetail: data.errorDetail,
+      warning: data.warning,
+      warningDetail: data.warningDetail,
       completedAt: new Date().toISOString(),
     }
   }
@@ -819,6 +839,47 @@ onUnmounted(() => {
   max-height: 200px;
   overflow-y: auto;
   line-height: 1.5;
+}
+
+.task-warning {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  margin-top: 4px;
+  background: rgba(255, 152, 0, 0.1);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #e65100;
+}
+
+.warning-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.task-warning-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-warning-detail {
+  padding: 8px 12px;
+  margin-top: 4px;
+  background: var(--ion-color-step-50, #f0f0f0);
+  border-radius: 4px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.task-warning-detail pre {
+  margin: 0;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #666;
 }
 
 .cancelling-spinner {

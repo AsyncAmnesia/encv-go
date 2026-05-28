@@ -57,7 +57,7 @@ func TestVerify_TamperedHeaderMagic(t *testing.T) {
 		tampered[3] = 'E'
 
 		pair := setupVerifyPair(t, fixture.OriginalData, tampered)
-		err = verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ = verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Error("expected Verify to detect tampered header magic (ENVC->FAKE), got nil")
 		}
@@ -78,7 +78,7 @@ func TestVerify_TamperedHeaderMagic(t *testing.T) {
 		tampered[3] = 'E'
 
 		pair := setupVerifyPair(t, fixture.OriginalData, tampered)
-		err = verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ = verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Error("expected Verify to detect tampered V4 header magic, got nil")
 		}
@@ -94,7 +94,7 @@ func TestVerify_TamperedHeaderMagic(t *testing.T) {
 		decData[3] ^= 0xFF
 
 		pair := setupVerifyPair(t, origData, decData)
-		err := verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ := verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Error("expected Verify to detect corrupted first 4 bytes of decrypted output, got nil")
 		}
@@ -129,7 +129,7 @@ func TestVerify_TamperedDataSegment(t *testing.T) {
 		tampered[flipOffset] ^= 0xFF
 
 		pair := setupVerifyPair(t, fixture.OriginalData, tampered)
-		err = verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ = verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Errorf("expected Verify to detect tampered data segment at offset %d, got nil", flipOffset)
 		}
@@ -160,7 +160,7 @@ func TestVerify_TamperedDataSegment(t *testing.T) {
 		tampered[flipOffset] ^= 0xFF
 
 		pair := setupVerifyPair(t, fixture.OriginalData, tampered)
-		err = verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ = verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Errorf("expected Verify to detect tampered V4 segment data at offset %d, got nil", flipOffset)
 		}
@@ -179,7 +179,7 @@ func TestVerify_TamperedDataSegment(t *testing.T) {
 		}
 
 		pair := setupVerifyPair(t, origData, decData)
-		err := verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ := verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Error("expected Verify to detect multiple byte flips in decrypted output, got nil")
 		}
@@ -222,7 +222,7 @@ func TestVerify_TamperedManifest(t *testing.T) {
 		tampered[manifestOffset] ^= 0x01
 
 		pair := setupVerifyPair(t, fixture.OriginalData, tampered)
-		err = verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ = verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Errorf("expected Verify to detect tampered manifest region near offset %d, got nil", manifestOffset)
 		}
@@ -238,7 +238,7 @@ func TestVerify_TamperedManifest(t *testing.T) {
 		}
 
 		pair := setupVerifyPair(t, origData, decData)
-		err := verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ := verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Error("expected Verify to detect tampered JSON manifest content, got nil")
 		}
@@ -260,7 +260,7 @@ func TestVerify_AppendedGarbageData(t *testing.T) {
 		appended := append(containerData, garbage...)
 
 		pair := setupVerifyPair(t, fixture.OriginalData, appended)
-		err = verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ = verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Error("expected Verify to detect 1024 bytes of appended garbage data, got nil")
 		}
@@ -278,7 +278,7 @@ func TestVerify_AppendedGarbageData(t *testing.T) {
 		appended := append(containerData, garbage...)
 
 		pair := setupVerifyPair(t, fixture.OriginalData, appended)
-		err = verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ = verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Error("expected Verify to detect appended garbage on V4 container, got nil")
 		}
@@ -291,7 +291,7 @@ func TestVerify_AppendedGarbageData(t *testing.T) {
 		decData := append(origData, garbage...)
 
 		pair := setupVerifyPair(t, origData, decData)
-		err := verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ := verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Error("expected Verify to fail with size mismatch due to appended garbage, got nil")
 		}
@@ -329,7 +329,7 @@ func TestVerify_TamperedCRC32(t *testing.T) {
 				tampered[tamperPos] ^= 0xFF
 
 				pair := setupVerifyPair(t, fixture.OriginalData, tampered)
-				err = verifier.Verify(pair.originalPath, pair.decryptedPath)
+				err, _ = verifier.Verify(pair.originalPath, pair.decryptedPath)
 				if err == nil {
 					t.Errorf("expected Verify to detect CRC32 mismatch after data tampering at offset %d, got nil", tamperPos)
 				}
@@ -372,7 +372,7 @@ func TestVerify_TamperedCRC32(t *testing.T) {
 		tampered[crc32FieldOffset+3] ^= 0xFF
 
 		pair := setupVerifyPair(t, fixture.OriginalData, tampered)
-		err = verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ = verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Error("expected Verify to detect tampered V4 segment header CRC32 field, got nil")
 		}
@@ -385,7 +385,7 @@ func TestVerify_TamperedCRC32(t *testing.T) {
 		decData[len(decData)-1] ^= 0x01
 
 		pair := setupVerifyPair(t, origData, decData)
-		err := verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ := verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Error("expected Verify to detect single-byte change via hash mismatch, got nil")
 		}
@@ -406,7 +406,7 @@ func TestVerify_TruncatedFile(t *testing.T) {
 		truncated := containerData[:cutoff]
 
 		pair := setupVerifyPair(t, fixture.OriginalData, truncated)
-		err = verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ = verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Errorf("expected Verify to detect truncated V3 container (cutoff=%d), got nil", cutoff)
 		}
@@ -423,7 +423,7 @@ func TestVerify_TruncatedFile(t *testing.T) {
 		truncated := containerData[:cutoff]
 
 		pair := setupVerifyPair(t, fixture.OriginalData, truncated)
-		err = verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ = verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Errorf("expected Verify to detect truncated V4 container (cutoff=%d), got nil", cutoff)
 		}
@@ -434,7 +434,7 @@ func TestVerify_TruncatedFile(t *testing.T) {
 		truncated := origData[:len(origData)-1]
 
 		pair := setupVerifyPair(t, origData, truncated)
-		err := verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ := verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Error("expected Verify to detect single-byte truncation, got nil")
 		}
@@ -445,7 +445,7 @@ func TestVerify_TruncatedFile(t *testing.T) {
 		truncated := []byte{}
 
 		pair := setupVerifyPair(t, origData, truncated)
-		err := verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ := verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Error("expected Verify to detect zero-length truncated file, got nil")
 		}
@@ -465,7 +465,7 @@ func TestVerify_TruncatedFile(t *testing.T) {
 		truncated := containerData[:cutoff]
 
 		pair := setupVerifyPair(t, fixture.OriginalData, truncated)
-		err = verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ = verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Errorf("expected Verify to detect missing V3 footer (cutoff=%d), got nil", cutoff)
 		}
@@ -485,7 +485,7 @@ func TestVerify_TruncatedFile(t *testing.T) {
 		truncated := containerData[:cutoff]
 
 		pair := setupVerifyPair(t, fixture.OriginalData, truncated)
-		err = verifier.Verify(pair.originalPath, pair.decryptedPath)
+		err, _ = verifier.Verify(pair.originalPath, pair.decryptedPath)
 		if err == nil {
 			t.Errorf("expected Verify to detect missing V4 footer (cutoff=%d), got nil", cutoff)
 		}
