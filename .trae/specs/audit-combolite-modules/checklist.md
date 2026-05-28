@@ -5,3 +5,4 @@
 - [x] ProxyManager 审计完成：App 完全未集成，HostActivity/ServicePool 未配置，插件组件无法启动
 - [x] DependencyManager 审计完成：`internal class`，单插件场景不需要直接使用
 - [x] 完整对比矩阵已输出至 spec.md（含严重程度评级和修复建议）
+- [x] 安装确认界面 ASCII 布局对比已完成（ComboLite InstallPermissionScreen vs 当前 ExtensionsPage.vue）

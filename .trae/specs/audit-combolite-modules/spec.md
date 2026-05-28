@@ -236,3 +236,132 @@ val im = PluginManager::class.java.getDeclaredField("installerManager")
 2. **P0-立即**：配置 ProxyManager（`setHostActivity` + `setServicePool` + Manifest 声明代理组件）
 3. **P1-短期**：确保 ResourceManager 在插件加载后被自动调用（ComboLite 内部 lifecycleManager 应该会处理）
 4. **P2-中期**：移除所有反射代码，改为直接 import ComboLite API
+
+---
+
+## 附录 A：安装确认界面布局对比
+
+### A.1 ComboLite 官方 `InstallPermissionScreen`（Compose Material3）
+
+源码位置：[InstallPermissionScreen.kt](/tmp/ComboLite/comboLite-core/src/main/kotlin/com/combo/core/ui/InstallPermissionScreen.kt)
+
+触发条件：`InstallerManager.checkSignatureAndAuthorize()` → 签名不匹配 + `ValidationStrategy.UserGrant` → 启动 `AuthorizationActivity`
+
+```
+┌──────────────────────────────────────────────┐
+│  ←  (TopAppBar, navigationIcon=ArrowBack)   │
+├──────────────────────────────────────────────┤
+│                                              │
+│  ┌──────┐  ┌─────────────────────────────┐  │
+│  │ ICON │  │ Plugin Name                  │  │
+│  │ 56dp │  │ 版本 x.x.x                   │  │
+│  │圆角12│  └─────────────────────────────┘  │
+│  └──────┘                                    │
+│                                              │
+│         (Spacer 24dp)                         │
+│  ┌── ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┐   │
+│  │ ⚠️ 该插件的数字签名与本应用不一致    │   │ ← tertiaryContainer 圆角10
+│  │   可能存在未知风险，是否继续安装？  │   │   着色 tertiary
+│  ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┘   │
+│                                              │
+│         (Spacer 24dp)                         │
+│  ┌ InfoRow: 插件 ID    com.example.plugin ─┐ │
+│  ├ InfoRow: 描述       这是MPV播放器插件  ─┤ │
+│  └ InfoRow: 数字签名   a1b2c3d4e5...     ─┘ │
+│                                              │
+│              (Spacer flex=1)                 │
+│  ┌──────────────────────────────────────┐   │
+│  │           [ 仍然安装  ]               │   │ ← PrimaryButton fillMaxWidth
+│  └──────────────────────────────────────┘   │
+│            [ 取消 ]                        │   ← TextButton
+│                                              │
+└──────────────────────────────────────────────┘
+
+组件清单：
+- Scaffold + TopAppBar（透明背景）
+- Image（插件图标，56dp 圆角12）+ Text 列（名称 + 版本）
+- 警告横幅（tertiaryContainer 背景 + Info 图标 + 警告文字）
+- InfoRowStyled × 3（键值对信息行）
+- PrimaryButton「仍然安装」（fillMaxWidth）
+- TextButton「取消」
+```
+
+### A.2 当前应用 `ExtensionsPage.vue` 安装流程（Ionic Vue）
+
+源码位置：[ExtensionsPage.vue](app/encv-mobile/src/views/ExtensionsPage.vue)
+
+当前实际安装路径：`handleInstallFromFile()` → `pickAndInstallPlugin()` → **GoProcessPlugin 反射失败** → fallback 到系统 `ACTION_INSTALL_PACKAGE`
+
+```
+═══ ExtensionsPage（扩展管理页）═══════════════
+
+┌──────────────────────────────────────────────┐
+│  ←  Extensions          (ion-toolbar)      │
+├──────────────────────────────────────────────┤
+│                                              │
+│  ┌──────────────────────────────────────┐   │
+│  │ 🎬 MPV Player        [未安装] badge │   │ ← ion-card
+│  │                                        │   │
+│  │ 高性能原生播放器，支持MKV/ASS/FLV    │   │
+│  │ 大小: ~35 MB                          │   │
+│  │                                        │   │
+│  │ [+ 从本地安装]  (primary button)     │   │
+│  └──────────────────────────────────────┘   │
+│                                              │
+│  ┌──────────────────────────────────────┐   │
+│  │     [ ☁ 选择 APK 文件 ]             │   │ ← outline block button
+│  └──────────────────────────────────────┘   │
+│     选择本地 APK 文件以安装扩展           │   ← install-hint
+│                                              │
+└──────────────────────────────────────────────┘
+
+点击"选择APK"后：
+
+  pickAndInstallPlugin()
+    ↓
+  ACTION_GET_CONTENT (application/vnd.android.package-archive)
+    ↓
+  用户选择文件 → 复制到 cache/plugin_install/
+    ↓
+  installFromPath() → 反射找 installPlugin...
+    ↓ ❌ 找不到（方法在 InstallerManager 上）
+  fallback: ACTION_INSTALL_PACKAGE (系统安装器)
+    ↓
+  系统弹出 Google Play 风格的"是否安装应用?"对话框
+    ↓
+  回调: result = { success:true, method:"system", pending:true }
+    ↓
+┌──────────────────────┐
+│ ⚠️ alertController   │
+│                      │
+│ 安装成功!            │
+│ plugin-name.apk      │
+│ 请在系统对话框中完成  │
+│ 安装，然后返回此处。  │
+│                      │
+│        [ 确定 ]      │
+└──────────────────────┘
+```
+
+### A.3 差距对比表
+
+| 维度 | ComboLite 官方 | 当前应用 |
+|------|---------------|---------|
+| **界面框架** | Compose Material3 Scaffold | Ionic Vue ion-page |
+| **图标展示** | ✅ 从 APK 内提取 56dp 圆角图标 | ❌ 无（只有 filmOutline 通用图标） |
+| **版本显示** | ✅ 从 APK 读取 versionName | ❌ 硬编码 "~35 MB" |
+| **描述信息** | ✅ 从 APK meta-data 读取 | ✅ 有（但硬编码在代码中） |
+| **签名验证** | ✅ 显示 SHA-256 + 风险警告 | ❌ 完全没有 |
+| **插件 ID** | ✅ 显示 packageName | ❌ 没有显示 |
+| **确认按钮** | 「仍然安装」主按钮 + 取消链接 | ❌ 无确认步骤（直接调系统安装器） |
+| **交互时机** | 安装前确认（可拦截/拒绝） | 安装后提示（已无法撤销） |
+| **视觉风格** | Material3 原生 Compose | Ionic 卡片 + alert 弹窗 |
+
+### A.4 结论
+
+当前应用的"安装确认"本质上是 **安装后通知弹窗**（alertController），而非真正的 **安装前确认界面**。用户从未看到 ComboLite 的 `InstallPermissionScreen`，原因是：
+
+1. GoProcessPlugin 反射获取 PluginManager 实例失败（`getInstance` 不存在）
+2. 即使获取成功，`installPlugin` 方法在 `InstallerManager` 上不在 `PluginManager` 上
+3. 因此永远 fallback 到系统 `ACTION_INSTALL_PACKAGE`
+4. 系统安装器有自己的简单确认对话框，但那是 Android 系统级的，不是 ComboLite 框架提供的
