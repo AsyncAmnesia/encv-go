@@ -3,7 +3,6 @@ package com.encvgo.app
 import android.app.Application
 import com.tencent.bugly.crashreport.CrashReport
 import com.combo.core.runtime.PluginManager
-import com.combo.core.runtime.ValidationStrategy
 import com.combo.core.runtime.app.BaseHostApplication
 import com.combo.core.security.crash.PluginCrashHandler
 import android.util.Log
@@ -20,11 +19,13 @@ class EncvApplication : BaseHostApplication() {
 
     override fun onFrameworkSetup(): suspend () -> Unit {
         return {
-            safeSetValidationStrategy()
+            trySetValidationStrategy()
             try {
                 PluginCrashHandler.setGlobalClashCallback(null)
             } catch (e: Exception) {
                 Log.w(TAG, "onFrameworkSetup: setGlobalClashCallback FAILED", e)
+            } catch (e: Error) {
+                Log.w(TAG, "onFrameworkSetup: setGlobalClashCallback Error: ${e.javaClass.simpleName}")
             }
             try {
                 PluginManager.proxyManager.setHostActivity(com.encvgo.app.EncvHostActivity::class.java)
@@ -36,25 +37,14 @@ class EncvApplication : BaseHostApplication() {
         }
     }
 
-    private suspend fun safeSetValidationStrategy() {
+    private suspend fun trySetValidationStrategy() {
         try {
-            val method = PluginManager::class.java.methods.find {
-                it.name == "setValidationStrategy"
-            }
-            if (method != null) {
-                PluginManager.setValidationStrategy(ValidationStrategy.Insecure)
-                Log.i(TAG, "onFrameworkSetup: setValidationStrategy(Insecure) OK")
-            } else {
-                Log.w(TAG, "onFrameworkSetup: setValidationStrategy not found in runtime PluginManager, skipping")
-            }
-        } catch (e: NoSuchMethodError) {
-            Log.w(TAG, "onFrameworkSetup: setValidationStrategy NoSuchMethodError (SDK/runtime mismatch), skipping")
-        } catch (e: NoClassDefFoundError) {
-            Log.w(TAG, "onFrameworkSetup: setValidationStrategy NoClassDefFoundError (SDK/runtime mismatch), skipping")
+            PluginManager.setValidationStrategy(com.combo.core.runtime.ValidationStrategy.Insecure)
+            Log.i(TAG, "onFrameworkSetup: setValidationStrategy(Insecure) OK")
+        } catch (e: Error) {
+            Log.w(TAG, "onFrameworkSetup: setValidationStrategy failed (HOST permission not granted for host-app caller; default UserGrant will apply). Error: ${e.javaClass.simpleName}: ${e.message}")
         } catch (e: Exception) {
             Log.w(TAG, "onFrameworkSetup: setValidationStrategy FAILED", e)
-        } catch (e: Error) {
-            Log.w(TAG, "onFrameworkSetup: setValidationStrategy Error (SDK/runtime mismatch), skipping: ${e.javaClass.simpleName}")
         }
     }
 
