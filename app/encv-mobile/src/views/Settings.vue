@@ -395,7 +395,8 @@ import { useConfig } from '@/composables/useConfig'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { useDevTools } from '@/composables/useDevTools'
-import { isNative, exportLogs, clearLogs, openLogViewer } from '@/plugins/GoProcess'
+import { isNative, exportLogs, clearLogs, openLogViewer, saveDevLogs } from '@/plugins/GoProcess'
+import { getFrontendLogsJson } from '@/composables/useFrontendLogs'
 import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus, fetchTextPreviewExts, invalidateTextExtsCache } from '@/api/encv'
 import type { IndexStats, FFmpegStatus } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
@@ -495,6 +496,7 @@ function handleVConsoleToggle(event: CustomEvent) {
 async function handleExportLogs() {
   if (!isNative()) return
   try {
+    await saveDevLogs(getFrontendLogsJson())
     const result = await exportLogs()
     if (result.success) {
       showToast({ message: t('devtools.exportSuccess'), duration: 1500, color: 'success' })

@@ -63,7 +63,7 @@ class InstallConfirmActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        Log.i(TAG, "SATURATION-DEBUG onCreate: intent=$intent, extras=${intent.extras}, action=${intent.action}")
+        Log.i(TAG, "SATURATION-DEBUG onCreate: intent=$intent, extras=${intent.extras}")
 
         val apkPath = intent.getStringExtra(EXTRA_APK_PATH) ?: run {
             Log.w(TAG, "SATURATION-DEBUG onCreate: No APK path provided, finishing")
@@ -74,7 +74,7 @@ class InstallConfirmActivity : ComponentActivity() {
         val fileName = intent.getStringExtra(EXTRA_FILE_NAME) ?: File(apkPath).name
 
         val apkFile = File(apkPath)
-        Log.i(TAG, "SATURATION-DEBUG onCreate: apkPath=$apkPath, exists=${apkFile.exists()}, size=${if (apkFile.exists()) apkFile.length() else -1}, readable=${apkFile.canRead()}")
+        Log.i(TAG, "SATURATION-DEBUG onCreate: apkPath=$apkPath, exists=${apkFile.exists()}, size=${if (apkFile.exists()) apkFile.length() else -1}")
 
         setContent {
             MaterialTheme {
@@ -83,28 +83,19 @@ class InstallConfirmActivity : ComponentActivity() {
                     fileName = fileName,
                     onConfirm = {
                         Log.i(TAG, "User confirmed installation: $fileName")
-                        val resultIntent = Intent("com.encvgo.app.INSTALL_RESULT").apply {
-                            putExtra("request_id", intent.getStringExtra("request_id") ?: "")
-                            putExtra("result_code", RESULT_OK)
+                        val resultIntent = Intent().apply {
+                            putExtra(EXTRA_APK_PATH, apkPath)
                         }
-                        sendBroadcast(resultIntent)
+                        setResult(RESULT_OK, resultIntent)
                         finish()
                     },
                     onCancel = {
                         Log.i(TAG, "User cancelled installation: $fileName")
-                        val resultIntent = Intent("com.encvgo.app.INSTALL_RESULT").apply {
-                            putExtra("request_id", intent.getStringExtra("request_id") ?: "")
-                            putExtra("result_code", RESULT_CANCELED)
-                        }
-                        sendBroadcast(resultIntent)
+                        setResult(RESULT_CANCELED)
                         finish()
                     },
                     onBack = {
-                        val resultIntent = Intent("com.encvgo.app.INSTALL_RESULT").apply {
-                            putExtra("request_id", intent.getStringExtra("request_id") ?: "")
-                            putExtra("result_code", RESULT_CANCELED)
-                        }
-                        sendBroadcast(resultIntent)
+                        setResult(RESULT_CANCELED)
                         finish()
                     }
                 )

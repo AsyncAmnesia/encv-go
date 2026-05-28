@@ -22,13 +22,15 @@ import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
 import com.combo.core.runtime.PluginManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 
 @CapacitorPlugin(
-    name = "GoProcess"
+    name = "GoProcess",
+    requestCodes = [REQUEST_CODE_PLUGIN_PICK, REQUEST_CODE_INSTALL_CONFIRM]
 )
 class GoProcessPlugin : Plugin() {
 
@@ -36,41 +38,25 @@ class GoProcessPlugin : Plugin() {
         private const val TAG = "ENCV-go"
         const val REQUEST_CODE_PLUGIN_PICK = 9001
         const val REQUEST_CODE_INSTALL_CONFIRM = 9002
+
+        private val appLogBuffer = ConcurrentLinkedQueue<String>()
+        private const val APP_LOG_MAX = 3000
+
+        fun appLog(level: String, tag: String, msg: String) {
+            val entry = "${System.currentTimeMillis()} $level/$tag: $msg"
+            appLogBuffer.add(entry)
+            while (appLogBuffer.size > APP_LOG_MAX) {
+                appLogBuffer.poll()
+            }
+        }
+
+        fun getAppLogs(): String = appLogBuffer.joinToString("\n")
+
+        fun clearAppLogs() = appLogBuffer.clear()
     }
 
     private val pendingCalls = ConcurrentHashMap<String, PluginCall>()
     private var receiverRegistered = false
-
-    private val installConfirmReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            Log.i(TAG, "SATURATION-DEBUG installConfirmReceiver.onReceive: action=${intent?.action}, extras=${intent?.extras}")
-            if (intent == null) return
-            val requestId = intent.getStringExtra("request_id") ?: ""
-            val resultCode = intent.getIntExtra("result_code", Activity.RESULT_CANCELED)
-            Log.i(TAG, "SATURATION-DEBUG installConfirmReceiver: requestId=$requestId, resultCode=$resultCode")
-
-            val callKey = when {
-                requestId == "installConfirm" -> "installConfirm"
-                else -> return
-            }
-
-            val call = pendingCalls.remove(callKey) ?: run {
-                Log.w(TAG, "No pending call for broadcast result: $callKey")
-                return
-            }
-
-            val apkPath = call.getString("apkPath") ?: ""
-            val apkFile = java.io.File(apkPath)
-
-            if (resultCode == Activity.RESULT_OK) {
-                Log.i(TAG, "Install confirmed via broadcast for: ${apkFile.name}")
-                executeComboLiteInstall(call, apkFile)
-            } else {
-                Log.i(TAG, "Install cancelled via broadcast")
-                call.reject("用户取消安装")
-            }
-        }
-    }
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -85,13 +71,12 @@ class GoProcessPlugin : Plugin() {
     override fun load() {
         super.load()
         registerStatusReceiver()
-        registerInstallConfirmReceiver()
+        appLog("I", TAG, "GoProcessPlugin.load: requestCodes declared in @CapacitorPlugin, handleOnActivityResult will work")
     }
 
     override fun handleOnDestroy() {
         if (receiverRegistered) {
             context.unregisterReceiver(statusReceiver)
-            try { context.unregisterReceiver(installConfirmReceiver) } catch (_: Exception) {}
             receiverRegistered = false
         }
         pendingCalls.clear()
@@ -353,21 +338,6 @@ class GoProcessPlugin : Plugin() {
         receiverRegistered = true
     }
 
-    private fun registerInstallConfirmReceiver() {
-        val installResultFilter = IntentFilter("com.encvgo.app.INSTALL_RESULT")
-        try {
-            if (Build.VERSION.SDK_INT >= 33) {
-                context.registerReceiver(installConfirmReceiver, installResultFilter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
-                @Suppress("DEPRECATION")
-                context.registerReceiver(installConfirmReceiver, installResultFilter)
-            }
-            Log.i(TAG, "SATURATION-DEBUG registerInstallConfirmReceiver: SUCCESS, action=com.encvgo.app.INSTALL_RESULT")
-        } catch (e: Exception) {
-            Log.e(TAG, "SATURATION-DEBUG registerInstallConfirmReceiver: FAILED", e)
-        }
-    }
-
     private fun startService(action: String, source: String, command: String) {
         val serviceIntent = EncvGoService.createIntent(context, action, source).apply {
             putExtra(EncvGoService.EXTRA_COMMAND, command)
@@ -425,25 +395,7 @@ class GoProcessPlugin : Plugin() {
                 return
             }
             if (PluginManager.isInitialized) {
-                pendingCalls["installConfirm"] = call
-                Log.i(TAG, "SATURATION-DEBUG installPlugin: context type=${context.javaClass.simpleName}, isActivity=${context is Activity}, apkPath=$apkPath")
-                try {
-                    val intent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java).apply {
-                        putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, apkPath)
-                        putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_FILE_NAME, apkFile.name)
-                        putExtra("request_id", "installConfirm")
-                        if (context !is Activity) {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                    }
-                    Log.i(TAG, "SATURATION-DEBUG installPlugin: starting InstallConfirmActivity, flags=${intent.flags}, extras=${intent.extras}")
-                    context.startActivity(intent)
-                    Log.i(TAG, "SATURATION-DEBUG installPlugin: startActivity succeeded")
-                } catch (e: Exception) {
-                    Log.e(TAG, "SATURATION-DEBUG installPlugin: startActivity FAILED", e)
-                    pendingCalls.remove("installConfirm")
-                    call.reject("Failed to show install confirmation: ${e.message}")
-                }
+                startInstallConfirm(call, apkPath, apkFile.name)
                 return
             }
             val uri = androidx.core.content.FileProvider.getUriForFile(
@@ -451,11 +403,11 @@ class GoProcessPlugin : Plugin() {
                 "${context.packageName}.fileprovider",
                 apkFile
             )
-            val intent = android.content.Intent(android.content.Intent.ACTION_INSTALL_PACKAGE).apply {
+            val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
                 setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                if (context !is android.app.Activity) {
-                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                if (context !is Activity) {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
             }
             context.startActivity(intent)
@@ -470,6 +422,7 @@ class GoProcessPlugin : Plugin() {
     @PluginMethod
     fun pickAndInstallPlugin(call: PluginCall) {
         Log.d(TAG, "pickAndInstallPlugin() called")
+        appLog("I", TAG, "pickAndInstallPlugin: starting file picker")
         pendingCalls["pickPlugin"] = call
         try {
             val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
@@ -478,8 +431,10 @@ class GoProcessPlugin : Plugin() {
                 putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/vnd.android.package-archive"))
             }
             activity.startActivityForResult(intent, REQUEST_CODE_PLUGIN_PICK)
+            appLog("I", TAG, "pickAndInstallPlugin: startActivityForResult launched with requestCode=$REQUEST_CODE_PLUGIN_PICK")
         } catch (e: Exception) {
             Log.e(TAG, "pickAndInstallPlugin failed", e)
+            appLog("E", TAG, "pickAndInstallPlugin: FAILED ${e.message}")
             pendingCalls.remove("pickPlugin")?.reject("Failed to open file picker: ${e.message}")
         }
     }
@@ -526,14 +481,26 @@ class GoProcessPlugin : Plugin() {
 
     override fun handleOnActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.handleOnActivityResult(requestCode, resultCode, data)
+        appLog("I", TAG, "handleOnActivityResult: requestCode=$requestCode, resultCode=$resultCode, hasData=${data != null}")
 
-        if (requestCode != REQUEST_CODE_PLUGIN_PICK) return
-        val call = pendingCalls.remove("pickPlugin") ?: return
+        when (requestCode) {
+            REQUEST_CODE_PLUGIN_PICK -> handlePickResult(resultCode, data)
+            REQUEST_CODE_INSTALL_CONFIRM -> handleInstallConfirmResult(resultCode, data)
+        }
+    }
+
+    private fun handlePickResult(resultCode: Int, data: Intent?) {
+        val call = pendingCalls.remove("pickPlugin") ?: run {
+            appLog("W", TAG, "handlePickResult: no pending call for pickPlugin")
+            return
+        }
         if (resultCode != Activity.RESULT_OK || data?.data == null) {
+            appLog("I", TAG, "handlePickResult: picker cancelled or no file selected")
             call.reject("File picker cancelled or no file selected")
             return
         }
         val uri = data.data!!
+        appLog("I", TAG, "handlePickResult: picked URI=$uri")
         Log.d(TAG, "handleOnActivityResult: picked URI=$uri")
         try {
             val contentResolver = context.contentResolver
@@ -555,60 +522,52 @@ class GoProcessPlugin : Plugin() {
             val tempApk = File(tempDir, displayName)
             tempApk.outputStream().use { output -> inputStream.copyTo(output) }
             inputStream.close()
-            installFromPath(call, tempApk.absolutePath, displayName)
+            appLog("I", TAG, "handlePickResult: APK copied to ${tempApk.absolutePath} (${tempApk.length()} bytes)")
+            startInstallConfirm(call, tempApk.absolutePath, displayName)
         } catch (e: Exception) {
-            Log.e(TAG, "handleOnActivityResult failed", e)
+            Log.e(TAG, "handlePickResult failed", e)
+            appLog("E", TAG, "handlePickResult: FAILED ${e.message}")
             call.reject("Failed to process selected file: ${e.message}")
         }
     }
 
-    private fun installFromPath(call: PluginCall, apkPath: String, name: String) {
+    private fun handleInstallConfirmResult(resultCode: Int, data: Intent?) {
+        val call = pendingCalls.remove("installConfirm") ?: run {
+            appLog("W", TAG, "handleInstallConfirmResult: no pending call for installConfirm")
+            return
+        }
+        val apkPath = data?.getStringExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH)
+            ?: call.getString("apkPath") ?: ""
+        val apkFile = File(apkPath)
+
+        if (resultCode == Activity.RESULT_OK) {
+            appLog("I", TAG, "handleInstallConfirmResult: user confirmed, installing ${apkFile.name}")
+            Log.i(TAG, "Install confirmed via onActivityResult for: ${apkFile.name}")
+            executeComboLiteInstall(call, apkFile)
+        } else {
+            appLog("I", TAG, "handleInstallConfirmResult: user cancelled")
+            Log.i(TAG, "Install cancelled via onActivityResult")
+            call.reject("用户取消安装")
+        }
+    }
+
+    private fun startInstallConfirm(call: PluginCall, apkPath: String, name: String) {
+        pendingCalls["installConfirm"] = call
+        call.getData().put("apkPath", apkPath)
+        call.save()
+        appLog("I", TAG, "startInstallConfirm: apkPath=$apkPath, name=$name")
         try {
-            val apkFile = File(apkPath)
-            if (!apkFile.exists()) {
-                call.reject("APK file not found after copy: $apkPath")
-                return
+            val intent = Intent(activity, com.encvgo.app.InstallConfirmActivity::class.java).apply {
+                putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, apkPath)
+                putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_FILE_NAME, name)
             }
-            if (PluginManager.isInitialized) {
-                pendingCalls["installConfirm"] = call
-                Log.i(TAG, "SATURATION-DEBUG installFromPath: context type=${context.javaClass.simpleName}, isActivity=${context is Activity}, apkPath=$apkPath")
-                try {
-                    val intent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java).apply {
-                        putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, apkPath)
-                        putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_FILE_NAME, name)
-                        putExtra("request_id", "installConfirm")
-                        if (context !is Activity) {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                    }
-                    Log.i(TAG, "SATURATION-DEBUG installFromPath: starting InstallConfirmActivity, flags=${intent.flags}")
-                    context.startActivity(intent)
-                    Log.i(TAG, "SATURATION-DEBUG installFromPath: startActivity succeeded")
-                } catch (e: Exception) {
-                    Log.e(TAG, "SATURATION-DEBUG installFromPath: startActivity FAILED", e)
-                    pendingCalls.remove("installConfirm")
-                    call.reject("Failed to show install confirmation: ${e.message}")
-                }
-                return
-            }
-            val providerUri = androidx.core.content.FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                apkFile
-            )
-            val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
-                setDataAndType(providerUri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                if (context !is Activity) {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-            }
-            context.startActivity(intent)
-            Log.i(TAG, "System installer launched (async), user must complete installation manually: $name")
-            call.resolve(JSObject().put("success", true).put("method", "system").put("fileName", name).put("pending", true))
+            activity.startActivityForResult(intent, REQUEST_CODE_INSTALL_CONFIRM)
+            appLog("I", TAG, "startInstallConfirm: startActivityForResult SUCCESS with requestCode=$REQUEST_CODE_INSTALL_CONFIRM")
         } catch (e: Exception) {
-            Log.e(TAG, "installFromPath failed", e)
-            call.reject("Failed to install plugin: ${e.message}")
+            appLog("E", TAG, "startInstallConfirm: startActivityForResult FAILED: ${e.javaClass.name}: ${e.message}")
+            Log.e(TAG, "SATURATION-DEBUG startInstallConfirm: FAILED", e)
+            pendingCalls.remove("installConfirm")
+            call.reject("Failed to show install confirmation: ${e.message}")
         }
     }
 
@@ -617,7 +576,6 @@ class GoProcessPlugin : Plugin() {
         val results = JSObject()
         val steps = mutableListOf<String>()
 
-        // === 1. PluginManager 状态 ===
         steps.add("=== PluginManager ===")
         val pmInit = PluginManager.isInitialized
         steps.add("1. PluginManager.isInitialized = $pmInit")
@@ -646,7 +604,6 @@ class GoProcessPlugin : Plugin() {
             steps.add("3. proxyManager = SKIPPED (PM not init)")
         }
 
-        // === 4. Context 诊断 ===
         steps.add("=== Context ===")
         steps.add("4. context type = ${context.javaClass.name}")
         results.put("contextType", context.javaClass.name)
@@ -654,135 +611,67 @@ class GoProcessPlugin : Plugin() {
         results.put("contextIsActivity", context is Activity)
         steps.add("6. activity type = ${activity.javaClass.name}")
         results.put("activityType", activity.javaClass.name)
-        steps.add("7. applicationContext = ${context.applicationContext.javaClass.name}")
-        results.put("appContextType", context.applicationContext.javaClass.name)
 
-        // === 8. BroadcastReceiver 状态 ===
-        steps.add("=== BroadcastReceiver ===")
-        steps.add("8. receiverRegistered = $receiverRegistered")
-        results.put("receiverRegistered", receiverRegistered)
+        steps.add("=== CapacitorPlugin requestCodes ===")
+        val pluginAnnotation = this.javaClass.getAnnotation(com.getcapacitor.annotation.CapacitorPlugin::class.java)
+        val requestCodes = pluginAnnotation?.requestCodes?.toList() ?: emptyList()
+        steps.add("7. @CapacitorPlugin.requestCodes = $requestCodes")
+        results.put("requestCodes", requestCodes.toString())
+        steps.add("8. REQUEST_CODE_PLUGIN_PICK = $REQUEST_CODE_PLUGIN_PICK")
+        steps.add("9. REQUEST_CODE_INSTALL_CONFIRM = $REQUEST_CODE_INSTALL_CONFIRM")
+        val hasPickCode = requestCodes.contains(REQUEST_CODE_PLUGIN_PICK)
+        val hasConfirmCode = requestCodes.contains(REQUEST_CODE_INSTALL_CONFIRM)
+        steps.add("10. pickCodeRegistered = $hasPickCode ← CRITICAL: must be true for handleOnActivityResult to work")
+        steps.add("11. confirmCodeRegistered = $hasConfirmCode ← CRITICAL: must be true for install confirm result")
+        results.put("pickCodeRegistered", hasPickCode)
+        results.put("confirmCodeRegistered", hasConfirmCode)
+
+        steps.add("=== Pending Calls ===")
         val pendingKeys = pendingCalls.keys().toList()
-        steps.add("9. pendingCalls = $pendingKeys")
+        steps.add("12. pendingCalls = $pendingKeys")
         results.put("pendingCallsKeys", pendingKeys.toString())
 
-        // === 10. InstallConfirmActivity 检查 ===
         steps.add("=== Activity Resolve ===")
         try {
             val resolveIntent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java)
             val resolveInfo = context.packageManager.resolveActivity(resolveIntent, 0)
             if (resolveInfo != null) {
-                steps.add("10. InstallConfirmActivity resolved: ${resolveInfo.activityInfo?.name}")
+                steps.add("13. InstallConfirmActivity resolved: ${resolveInfo.activityInfo?.name}")
                 results.put("confirmActivityResolved", true)
-                results.put("confirmActivityClass", resolveInfo.activityInfo?.name ?: "null")
             } else {
-                steps.add("10. InstallConfirmActivity NOT RESOLVED (resolveActivity=null)")
+                steps.add("13. InstallConfirmActivity NOT RESOLVED")
                 results.put("confirmActivityResolved", false)
             }
         } catch (e: Exception) {
-            steps.add("10. resolveActivity FAILED: ${e.message}")
+            steps.add("13. resolveActivity FAILED: ${e.message}")
             results.put("confirmActivityResolved", false)
-            results.put("confirmActivityError", e.message)
         }
 
-        // === 11. EncvHostActivity 检查 ===
-        try {
-            val hostIntent = Intent(context, com.encvgo.app.EncvHostActivity::class.java)
-            val hostResolve = context.packageManager.resolveActivity(hostIntent, 0)
-            if (hostResolve != null) {
-                steps.add("11. EncvHostActivity resolved: ${hostResolve.activityInfo?.name}")
-                results.put("hostActivityResolved", true)
-            } else {
-                steps.add("11. EncvHostActivity NOT RESOLVED")
-                results.put("hostActivityResolved", false)
-            }
-        } catch (e: Exception) {
-            steps.add("11. EncvHostActivity check FAILED: ${e.message}")
-            results.put("hostActivityResolved", false)
-        }
-
-        // === 12. EncvApplication 检查 ===
         steps.add("=== Application ===")
         val app = context.applicationContext
-        steps.add("12. application class = ${app.javaClass.name}")
+        steps.add("14. application class = ${app.javaClass.name}")
         results.put("appClass", app.javaClass.name)
         val isBaseHostApp = app is com.combo.core.runtime.app.BaseHostApplication
-        steps.add("13. isBaseHostApplication = $isBaseHostApp")
+        steps.add("15. isBaseHostApplication = $isBaseHostApp")
         results.put("isBaseHostApplication", isBaseHostApp)
 
-        // === 14. APK 文件检查 ===
         steps.add("=== APK Files ===")
         val pluginInstallDir = File(context.cacheDir, "plugin_install")
-        steps.add("14. plugin_install dir exists = ${pluginInstallDir.exists()}")
-        results.put("pluginInstallDirExists", pluginInstallDir.exists())
+        steps.add("16. plugin_install dir exists = ${pluginInstallDir.exists()}")
         if (pluginInstallDir.exists()) {
             val apkFiles = pluginInstallDir.listFiles()?.filter { it.extension == "apk" }?.map { "${it.name}(${it.length()}B)" }
-            steps.add("15. APK files = $apkFiles")
-            results.put("apkFiles", apkFiles.toString())
+            steps.add("17. APK files = $apkFiles")
         }
 
-        // === 16. 权限检查 ===
         steps.add("=== Permissions ===")
         val hasStorage = Environment.isExternalStorageManager()
-        steps.add("16. MANAGE_EXTERNAL_STORAGE = $hasStorage")
+        steps.add("18. MANAGE_EXTERNAL_STORAGE = $hasStorage")
         results.put("hasStoragePermission", hasStorage)
 
-        // === 17. 实际启动测试 ===
-        steps.add("=== StartActivity Test ===")
-        try {
-            val testIntent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java).apply {
-                putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, "/data/data/${context.packageName}/cache/plugin_install/test-debug.apk")
-                putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_FILE_NAME, "test-debug.apk")
-                putExtra("request_id", "debugTest")
-                if (context !is Activity) {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-            }
-            steps.add("17. intent: component=${testIntent.component}, flags=${testIntent.flags}, action=${testIntent.action}")
-            results.put("intentComponent", testIntent.component?.flattenToString() ?: "null")
-            results.put("intentFlags", testIntent.flags)
-            results.put("intentAction", testIntent.action ?: "null")
-
-            context.startActivity(testIntent)
-            steps.add("18. startActivity SUCCESS ← InstallConfirmActivity should be visible now")
-            results.put("startActivityResult", "SUCCESS")
-        } catch (e: Exception) {
-            steps.add("18. startActivity FAILED: ${e.javaClass.name}: ${e.message}")
-            results.put("startActivityResult", "FAILED")
-            results.put("startActivityError", "${e.javaClass.name}: ${e.message}")
-
-            // fallback: 尝试用 activity.startActivity
-            try {
-                val fallbackIntent = Intent(activity, com.encvgo.app.InstallConfirmActivity::class.java).apply {
-                    putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, "/data/data/${context.packageName}/cache/plugin_install/test-debug.apk")
-                    putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_FILE_NAME, "test-debug.apk")
-                    putExtra("request_id", "debugTest")
-                }
-                activity.startActivity(fallbackIntent)
-                steps.add("19. FALLBACK activity.startActivity SUCCESS")
-                results.put("fallbackResult", "SUCCESS")
-            } catch (e2: Exception) {
-                steps.add("19. FALLBACK activity.startActivity ALSO FAILED: ${e2.javaClass.name}: ${e2.message}")
-                results.put("fallbackResult", "FAILED: ${e2.message}")
-            }
-        }
-
-        // === 20. 系统安装 Intent 测试 ===
-        steps.add("=== System Install Intent ===")
-        try {
-            val testApk = File(context.cacheDir, "plugin_install/test-debug.apk")
-            if (testApk.exists()) {
-                val uri = androidx.core.content.FileProvider.getUriForFile(
-                    context, "${context.packageName}.fileprovider", testApk)
-                steps.add("20. FileProvider URI = $uri")
-                results.put("fileProviderUri", uri.toString())
-            } else {
-                steps.add("20. test APK not found, skipping FileProvider test")
-                results.put("fileProviderUri", "SKIPPED: no test APK")
-            }
-        } catch (e: Exception) {
-            steps.add("20. FileProvider FAILED: ${e.message}")
-            results.put("fileProviderUri", "ERROR: ${e.message}")
-        }
+        steps.add("=== Go Backend ===")
+        steps.add("19. EncvGoService.isRunning = ${EncvGoService.isRunning}")
+        steps.add("20. EncvGoService.lastKnownPort = ${EncvGoService.lastKnownPort}")
+        results.put("goBackendRunning", EncvGoService.isRunning)
 
         Log.i(TAG, "SATURATION-DEBUG debugInstallFlow:\n${steps.joinToString("\n")}")
         results.put("debugLog", steps.joinToString("\n"))
@@ -826,6 +715,7 @@ class GoProcessPlugin : Plugin() {
                 when (result) {
                     is com.combo.core.runtime.installer.InstallerManager.InstallResult.Success -> {
                         Log.i(TAG, "Plugin installed via ComboLite: $apkPath -> ${result.pluginInfo.id}")
+                        appLog("I", TAG, "ComboLite install SUCCESS: ${result.pluginInfo.id}")
                         call.resolve(JSObject().apply {
                             put("success", true)
                             put("method", "combolite")
@@ -834,11 +724,13 @@ class GoProcessPlugin : Plugin() {
                     }
                     is com.combo.core.runtime.installer.InstallerManager.InstallResult.Failure -> {
                         Log.e(TAG, "ComboLite install failed: ${result.reason}", result.exception)
+                        appLog("E", TAG, "ComboLite install FAILED: ${result.reason}")
                         call.reject("ComboLite install failed: ${result.reason}")
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "ComboLite installPlugin exception", e)
+                appLog("E", TAG, "ComboLite install EXCEPTION: ${e.message}")
                 call.reject("ComboLite install error: ${e.message}")
             }
         }
@@ -851,40 +743,72 @@ class GoProcessPlugin : Plugin() {
             logDir.mkdirs()
             val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())
 
+            val appLogFile = File(logDir, "app_log_${timestamp}.txt")
+            val appLogs = getAppLogs()
+            appLogFile.writeText(if (appLogs.isNotEmpty()) appLogs else "(no app log entries)")
+
             val logcatFile = File(logDir, "logcat_${timestamp}.txt")
-            val process = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-t", "5000", "-v", "time"))
-            process.inputStream.bufferedReader().use { reader ->
-                logcatFile.outputStream().bufferedWriter().use { writer ->
-                    var line: String?
-                    while (reader.readLine().also { line = it } != null) {
-                        writer.write(line)
-                        writer.newLine()
+            try {
+                val pid = android.os.Process.myPid()
+                val process = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "--pid=$pid", "-t", "5000", "-v", "threadtime"))
+                process.inputStream.bufferedReader().use { reader ->
+                    logcatFile.outputStream().bufferedWriter().use { writer ->
+                        var line: String?
+                        while (reader.readLine().also { line = it } != null) {
+                            writer.write(line)
+                            writer.newLine()
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                Log.w(TAG, "exportLogs: logcat exec failed", e)
+            }
+            if (!logcatFile.exists() || logcatFile.length() == 0L) {
+                logcatFile.writeText("(logcat empty — app may lack READ_LOGS permission on Android 14+, use app_log instead)\n")
             }
 
-            val goLogDir = File(context.filesDir, "logs")
-            val goFiles = if (goLogDir.exists()) goLogDir.listFiles()?.toList() ?: emptyList() else emptyList()
+            val goBackendLogFile = File(logDir, "go_backend_${timestamp}.txt")
+            val goOutput = EncvGoService.getOutputSnapshot()
+            goBackendLogFile.writeText(if (goOutput.isNotEmpty()) goOutput else "(Go backend not running or no output)")
 
             val zipFile = File(context.cacheDir, "encv_logs_${timestamp}.zip")
             java.util.zip.ZipOutputStream(zipFile.outputStream()).use { zos ->
                 fun addToZip(file: File, entryName: String) {
                     if (!file.exists()) return
-                    zos.putNextEntry(java.util.zip.ZipEntry(entryName))
-                    file.inputStream().use { it.copyTo(zos) }
-                    zos.closeEntry()
+                    try {
+                        zos.putNextEntry(java.util.zip.ZipEntry(entryName))
+                        file.inputStream().use { it.copyTo(zos) }
+                        zos.closeEntry()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "exportLogs: failed to add $entryName", e)
+                    }
                 }
+                addToZip(appLogFile, "app_log_${timestamp}.txt")
                 addToZip(logcatFile, "logcat_${timestamp}.txt")
-                for (f in goFiles.filter { it.isFile }) {
-                    addToZip(f, "go_backend/${f.name}")
-                }
-                val goStderrLog = File(context.filesDir, "encv-go-stderr.log")
-                if (goStderrLog.exists()) addToZip(goStderrLog, "go_backend/encv-go-stderr.log")
-                val goStdoutLog = File(context.filesDir, "encv-go-stdout.log")
-                if (goStdoutLog.exists()) addToZip(goStdoutLog, "go_backend/encv-go-stdout.log")
+                addToZip(goBackendLogFile, "go_backend/go_backend_${timestamp}.txt")
+
+                val devLogsJson = File(context.cacheDir, "devlogs_export.json")
+                if (devLogsJson.exists()) addToZip(devLogsJson, "frontend/devlogs.json")
+
+                val infoFile = File(logDir, "device_info_${timestamp}.txt")
+                infoFile.writeText(buildString {
+                    appendLine("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+                    appendLine("Android: ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
+                    appendLine("App: ${context.packageName}")
+                    appendLine("PluginManager.isInitialized: ${PluginManager.isInitialized}")
+                    appendLine("GoBackend running: ${EncvGoService.isRunning}")
+                    appendLine("GoBackend port: ${EncvGoService.lastKnownPort}")
+                    appendLine("Timestamp: $timestamp")
+                    appendLine("AppLog size: ${appLogFile.length()} bytes")
+                    appendLine("Logcat size: ${logcatFile.length()} bytes")
+                    appendLine("GoBackendLog size: ${goBackendLogFile.length()} bytes")
+                })
+                addToZip(infoFile, "device_info_${timestamp}.txt")
             }
 
+            appLogFile.delete()
             logcatFile.delete()
+            goBackendLogFile.delete()
 
             val uri = androidx.core.content.FileProvider.getUriForFile(
                 context, "${context.packageName}.fileprovider", zipFile)
@@ -910,16 +834,11 @@ class GoProcessPlugin : Plugin() {
     @PluginMethod
     fun clearLogs(call: PluginCall) {
         try {
-            Runtime.getRuntime().exec(arrayOf("logcat", "-c"))
-
-            val goLogDir = File(context.filesDir, "logs")
-            if (goLogDir.exists()) {
-                goLogDir.listFiles()?.forEach { it.delete() }
-            }
-            val goStderr = File(context.filesDir, "encv-go-stderr.log")
-            if (goStderr.exists()) goStderr.delete()
-            val goStdout = File(context.filesDir, "encv-go-stdout.log")
-            if (goStdout.exists()) goStdout.delete()
+            clearAppLogs()
+            try {
+                Runtime.getRuntime().exec(arrayOf("logcat", "-c"))
+            } catch (_: Exception) {}
+            EncvGoService.clearOutputSnapshot()
 
             val exportDir = File(context.cacheDir, "encv_logs_export")
             if (exportDir.exists()) {
@@ -936,21 +855,13 @@ class GoProcessPlugin : Plugin() {
     @PluginMethod
     fun openLogViewer(call: PluginCall) {
         try {
-            val logcatFile = File(context.cacheDir, "encv_logs_export/logcat_latest.txt")
-            val process = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-t", "3000", "-v", "time"))
-            logcatFile.parentFile?.mkdirs()
-            process.inputStream.bufferedReader().use { reader ->
-                logcatFile.outputStream().bufferedWriter().use { writer ->
-                    var line: String?
-                    while (reader.readLine().also { line = it } != null) {
-                        writer.write(line)
-                        writer.newLine()
-                    }
-                }
-            }
+            val logFile = File(context.cacheDir, "encv_logs_export/app_log_latest.txt")
+            logFile.parentFile?.mkdirs()
+            val appLogs = getAppLogs()
+            logFile.writeText(if (appLogs.isNotEmpty()) appLogs else "(no app log entries)")
 
             val uri = androidx.core.content.FileProvider.getUriForFile(
-                context, "${context.packageName}.fileprovider", logcatFile)
+                context, "${context.packageName}.fileprovider", logFile)
             val viewIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "text/plain")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -963,6 +874,22 @@ class GoProcessPlugin : Plugin() {
         } catch (e: Exception) {
             Log.e(TAG, "openLogViewer failed", e)
             call.reject("Failed to open log viewer: ${e.message}")
+        }
+    }
+
+    @PluginMethod
+    fun saveDevLogs(call: PluginCall) {
+        try {
+            val logsJson = call.getString("logs") ?: run {
+                call.reject("logs parameter required")
+                return
+            }
+            val devLogsFile = File(context.cacheDir, "devlogs_export.json")
+            devLogsFile.writeText(logsJson)
+            call.resolve(JSObject().put("success", true).put("path", devLogsFile.absolutePath))
+        } catch (e: Exception) {
+            Log.e(TAG, "saveDevLogs failed", e)
+            call.reject("Failed to save dev logs: ${e.message}")
         }
     }
 }

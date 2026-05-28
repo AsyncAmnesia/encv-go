@@ -221,3 +221,12 @@ export async function openLogViewer(): Promise<{ success: boolean }> {
     return { success: false }
   }
 }
+
+export async function saveDevLogs(logs: string): Promise<{ success: boolean; path?: string }> {
+  try {
+    return await GoProcess.saveDevLogs({ logs })
+  } catch (e) {
+    console.error('[ENCV] GoProcess.saveDevLogs() failed:', e)
+    return { success: false }
+  }
+}

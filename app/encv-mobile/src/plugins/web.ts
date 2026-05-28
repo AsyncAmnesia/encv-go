@@ -47,6 +47,7 @@ export interface GoProcessPlugin {
   exportLogs(): Promise<{ success: boolean; path?: string }>
   clearLogs(): Promise<{ success: boolean }>
   openLogViewer(): Promise<{ success: boolean }>
+  saveDevLogs(options: { logs: string }): Promise<{ success: boolean; path?: string }>
 }
 
 export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
@@ -133,6 +134,10 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
   }
 
   async openLogViewer(): Promise<{ success: boolean }> {
+    return { success: false }
+  }
+
+  async saveDevLogs(_options: { logs: string }): Promise<{ success: boolean; path?: string }> {
     return { success: false }
   }
 }

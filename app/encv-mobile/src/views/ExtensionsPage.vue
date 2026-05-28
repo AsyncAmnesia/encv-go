@@ -127,6 +127,7 @@ import {
 import { useI18n } from '@/composables/useI18n'
 import { Capacitor } from '@capacitor/core'
 import { isNative, pickAndInstallPlugin, checkInstalledPlugins, debugInstallFlow } from '@/plugins/GoProcess'
+import { showToast } from '@/composables/useToast'
 
 const { t } = useI18n()
 
@@ -241,13 +242,27 @@ async function handleUninstall(id: string) {
 async function handleDebugInstall() {
   try {
     const result = await debugInstallFlow()
-    const debugLines = Object.entries(result)
+    const debugText = result.debugLog || Object.entries(result)
       .map(([k, v]) => `${k}: ${v}`)
       .join('\n')
     const alert = await alertController.create({
       header: '🔧 安装流程诊断',
-      message: `<pre style="font-size:12px;white-space:pre-wrap;max-height:60vh;overflow:auto;">${debugLines}</pre>`,
-      buttons: ['OK'],
+      message: `<pre style="font-size:12px;white-space:pre-wrap;max-height:60vh;overflow:auto;">${debugText}</pre>`,
+      buttons: [
+        {
+          text: '复制',
+          handler: async () => {
+            try {
+              await navigator.clipboard.writeText(debugText)
+              showToast({ message: '已复制诊断信息', duration: 1500, color: 'success' })
+            } catch {
+              showToast({ message: '复制失败', duration: 1500, color: 'danger' })
+            }
+            return false
+          },
+        },
+        'OK',
+      ],
     })
     await alert.present()
   } catch (e: any) {
