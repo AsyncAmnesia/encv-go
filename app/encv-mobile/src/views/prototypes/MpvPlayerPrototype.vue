@@ -61,7 +61,10 @@
             <div class="volume-row">
               <svg v-if="volume > 0" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="opacity:.7"><path d="M3 9v6h4l5 5V4L7 9H3z"/></svg>
               <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="opacity:.7"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63z"/></svg>
-              <input type="range" class="volume-slider" min="0" max="100" :value="volume * 100" @input="onVolumeInput" />
+              <div class="volume-track" ref="volumeTrackRef" @click="onVolumeTrackClick">
+                <div class="volume-fill" :style="{ width: (volume * 100) + '%' }"></div>
+                <div class="volume-thumb" :style="{ left: (volume * 100) + '%' }"></div>
+              </div>
               <span class="volume-pct">{{ Math.round(volume * 100) }}%</span>
             </div>
           </div>
@@ -121,6 +124,7 @@ const isLocked = ref(false)
 const isFullscreen = ref(false)
 const playbackSpeed = ref(1.0)
 const volume = ref(0.8)
+const volumeTrackRef = ref<HTMLElement>()
 const SPEED_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2]
 
 function handleTap() {
@@ -160,9 +164,10 @@ function toggleFullscreen() {
   isFullscreen.value = !isFullscreen.value
 }
 
-function onVolumeInput(e: Event) {
-  const target = e.target as HTMLInputElement
-  volume.value = Number(target.value) / 100
+function onVolumeTrackClick(e: MouseEvent) {
+  if (!volumeTrackRef.value) return
+  const rect = volumeTrackRef.value.getBoundingClientRect()
+  volume.value = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
 }
 
 function onBack() {
@@ -336,10 +341,46 @@ watch(isPlaying, (val) => {
   color: rgba(191,191,191,0.7);
 }
 
-.volume-slider {
+.volume-track {
   flex: 1;
   height: 4px;
-  accent-color: #BB86FC;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  position: relative;
+  cursor: pointer;
+}
+
+.volume-track:hover {
+  height: 6px;
+  margin-top: -1px;
+  margin-bottom: -1px;
+}
+
+.volume-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: #BB86FC;
+  border-radius: 2px;
+  pointer-events: none;
+}
+
+.volume-thumb {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #BB86FC;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.volume-track:hover .volume-thumb {
+  opacity: 1;
 }
 
 .volume-pct {

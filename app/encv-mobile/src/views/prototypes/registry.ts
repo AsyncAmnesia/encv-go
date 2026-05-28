@@ -51,6 +51,18 @@ const prototypes: PrototypeDefinition[] = [
     webSource: () => import('./sources/mpv-progress-bar-web.html?raw').then(m => m.default),
   },
   {
+    id: 'mpv-audio-only',
+    name: 'MPV Audio Player',
+    route: 'com.encvgo.plugin.mpv.MpvPlayerActivity',
+    composePath: 'com.encvgo.plugin.mpv.MpvControls (AudioOnlyLayout)',
+    description: '独立音乐播放器界面：唱片旋转动画、曲目信息、播放控制',
+    icon: 'musical-notes',
+    accentColor: 'rgba(187, 134, 252, 0.15)',
+    component: () => import('./MpvAudioOnlyPrototype.vue'),
+    composeSource: () => import('./sources/mpv-controls-compose.txt?raw').then(m => m.default),
+    webSource: () => import('./sources/mpv-audio-only-web.html?raw').then(m => m.default),
+  },
+  {
     id: 'mpv-theme',
     name: 'MPV Theme (EncvMpVPlayerTheme)',
     route: 'com.encvgo.plugin.mpv.MpvPlayerActivity',
