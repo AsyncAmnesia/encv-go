@@ -164,7 +164,7 @@ jobs:
           go build \
             -ldflags="-s -w -X main.version=${{ inputs.version || 'dev' }}" \
             -o app/encv-mobile/encv-go-arm64 \
-            ./cmd/encv
+            ./cmd/encv-mobile
           echo "Go binary size:"
           ls -lh app/encv-mobile/encv-go-arm64
 
