@@ -29,9 +29,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 
-private val SPEED_OPTIONS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
+private val SPEED_ANCHORS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f, 3f)
 private const val CONTROLS_HIDE_DELAY_MS = 3000L
-private const val LOADING_TIMEOUT_MS = 15_000L
 private const val POSITION_UPDATE_INTERVAL_MS = 1000L
 
 @Composable
@@ -51,6 +50,11 @@ fun MpvPlayerScreen(
     var isFullscreen by remember { mutableStateOf(false) }
     var playbackSpeed by remember { mutableStateOf(1f) }
     var volume by remember { mutableStateOf(1f) }
+    var subtitleTracks by remember { mutableStateOf<List<MpvEngine.TrackInfo>>(emptyList()) }
+    var audioTracks by remember { mutableStateOf<List<MpvEngine.TrackInfo>>(emptyList()) }
+    var currentSubtitleId by remember { mutableStateOf(-1) }
+    var currentAudioId by remember { mutableStateOf(-1) }
+    var bgPlaybackEnabled by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val backendUrl = (context as? Activity)?.intent?.getStringExtra("backend_url") ?: ""
@@ -71,6 +75,8 @@ fun MpvPlayerScreen(
     LaunchedEffect(playerState) {
         if (playerState == PlayerState.Playing || playerState == PlayerState.Paused || playerState == PlayerState.AudioOnly) {
             showControls = true
+            subtitleTracks = engine.getTrackList("sub")
+            audioTracks = engine.getTrackList("audio")
         }
     }
 
@@ -137,6 +143,11 @@ fun MpvPlayerScreen(
                 playbackSpeed = playbackSpeed,
                 volume = volume,
                 showControls = showControls,
+                subtitleTracks = subtitleTracks,
+                audioTracks = audioTracks,
+                currentSubtitleId = currentSubtitleId,
+                currentAudioId = currentAudioId,
+                bgPlaybackEnabled = bgPlaybackEnabled,
                 onPlayPause = {
                     when (playerState) {
                         is PlayerState.Playing -> {
@@ -148,11 +159,7 @@ fun MpvPlayerScreen(
                             playerState = PlayerState.Playing
                         }
                         is PlayerState.AudioOnly -> {
-                            if (engine.isPlaying()) {
-                                engine.pause()
-                            } else {
-                                engine.resume()
-                            }
+                            if (engine.isPlaying()) engine.pause() else engine.resume()
                         }
                         else -> {
                             scope.launch {
@@ -186,16 +193,14 @@ fun MpvPlayerScreen(
                     isLocked = !isLocked
                     showControls = true
                 },
-                onChangeSpeed = {
-                    val currentIdx = SPEED_OPTIONS.indexOf(playbackSpeed).coerceAtLeast(0)
-                    playbackSpeed = SPEED_OPTIONS[(currentIdx + 1) % SPEED_OPTIONS.size]
+                onChangeSpeed = { newSpeed ->
+                    playbackSpeed = newSpeed
                     engine.setProperty("speed", playbackSpeed.toString())
                     showControls = true
                 },
                 onToggleFullscreen = {
                     isFullscreen = !isFullscreen
                     val activity = context as? Activity ?: return@MpvControls
-
                     if (isFullscreen) {
                         activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                         hideSystemUi(activity)
@@ -208,6 +213,29 @@ fun MpvPlayerScreen(
                 onVolumeChange = { vol ->
                     volume = vol
                     engine.setVolume(vol)
+                    showControls = true
+                },
+                onSelectSubtitle = { id ->
+                    if (id <= 0) {
+                        engine.setTrack("sid", 0)
+                    } else {
+                        engine.setTrack("sid", id)
+                    }
+                    currentSubtitleId = id
+                    showControls = true
+                },
+                onSelectAudio = { id ->
+                    engine.setTrack("aid", id)
+                    currentAudioId = id
+                    showControls = true
+                },
+                onAddSubtitleFile = { path ->
+                    engine.addSubtitleFile(path)
+                    subtitleTracks = engine.getTrackList("sub")
+                    showControls = true
+                },
+                onToggleBgPlayback = { enabled ->
+                    bgPlaybackEnabled = enabled
                     showControls = true
                 },
                 onToggleSubtitle = {
