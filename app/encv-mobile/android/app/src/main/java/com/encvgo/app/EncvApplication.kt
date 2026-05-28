@@ -22,20 +22,22 @@ class EncvApplication : BaseHostApplication() {
         return {
             try {
                 PluginManager.setValidationStrategy(ValidationStrategy.Insecure)
+                Log.i(TAG, "SATURATION-DEBUG onFrameworkSetup: setValidationStrategy(Insecure) OK")
             } catch (e: Exception) {
-                Log.w(TAG, "setValidationStrategy not available, skipping", e)
+                Log.w(TAG, "SATURATION-DEBUG onFrameworkSetup: setValidationStrategy FAILED", e)
             }
             try {
                 PluginCrashHandler.setGlobalClashCallback(null)
             } catch (e: Exception) {
-                Log.w(TAG, "setGlobalClashCallback not available, skipping", e)
+                Log.w(TAG, "SATURATION-DEBUG onFrameworkSetup: setGlobalClashCallback FAILED", e)
             }
             try {
                 PluginManager.proxyManager.setHostActivity(com.encvgo.app.EncvHostActivity::class.java)
-                Log.i(TAG, "ProxyManager configured: HostActivity = EncvHostActivity")
+                Log.i(TAG, "SATURATION-DEBUG onFrameworkSetup: setHostActivity(EncvHostActivity) OK")
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to configure ProxyManager setHostActivity", e)
+                Log.e(TAG, "SATURATION-DEBUG onFrameworkSetup: setHostActivity FAILED", e)
             }
+            Log.i(TAG, "SATURATION-DEBUG onFrameworkSetup: complete, PluginManager.isInitialized=${PluginManager.isInitialized}")
         }
     }
 

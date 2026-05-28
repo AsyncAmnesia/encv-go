@@ -63,13 +63,18 @@ class InstallConfirmActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        Log.i(TAG, "SATURATION-DEBUG onCreate: intent=$intent, extras=${intent.extras}, action=${intent.action}")
+
         val apkPath = intent.getStringExtra(EXTRA_APK_PATH) ?: run {
-            Log.w(TAG, "No APK path provided, finishing")
+            Log.w(TAG, "SATURATION-DEBUG onCreate: No APK path provided, finishing")
             setResult(RESULT_CANCELED)
             finish()
             return
         }
         val fileName = intent.getStringExtra(EXTRA_FILE_NAME) ?: File(apkPath).name
+
+        val apkFile = File(apkPath)
+        Log.i(TAG, "SATURATION-DEBUG onCreate: apkPath=$apkPath, exists=${apkFile.exists()}, size=${if (apkFile.exists()) apkFile.length() else -1}, readable=${apkFile.canRead()}")
 
         setContent {
             MaterialTheme {

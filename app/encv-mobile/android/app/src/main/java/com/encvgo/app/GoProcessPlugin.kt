@@ -43,9 +43,11 @@ class GoProcessPlugin : Plugin() {
 
     private val installConfirmReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            Log.i(TAG, "SATURATION-DEBUG installConfirmReceiver.onReceive: action=${intent?.action}, extras=${intent?.extras}")
             if (intent == null) return
             val requestId = intent.getStringExtra("request_id") ?: ""
             val resultCode = intent.getIntExtra("result_code", Activity.RESULT_CANCELED)
+            Log.i(TAG, "SATURATION-DEBUG installConfirmReceiver: requestId=$requestId, resultCode=$resultCode")
 
             val callKey = when {
                 requestId == "installConfirm" -> "installConfirm"
@@ -353,11 +355,16 @@ class GoProcessPlugin : Plugin() {
 
     private fun registerInstallConfirmReceiver() {
         val installResultFilter = IntentFilter("com.encvgo.app.INSTALL_RESULT")
-        if (Build.VERSION.SDK_INT >= 33) {
-            context.registerReceiver(installConfirmReceiver, installResultFilter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("DEPRECATION")
-            context.registerReceiver(installConfirmReceiver, installResultFilter)
+        try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                context.registerReceiver(installConfirmReceiver, installResultFilter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                context.registerReceiver(installConfirmReceiver, installResultFilter)
+            }
+            Log.i(TAG, "SATURATION-DEBUG registerInstallConfirmReceiver: SUCCESS, action=com.encvgo.app.INSTALL_RESULT")
+        } catch (e: Exception) {
+            Log.e(TAG, "SATURATION-DEBUG registerInstallConfirmReceiver: FAILED", e)
         }
     }
 
@@ -610,25 +617,117 @@ class GoProcessPlugin : Plugin() {
         val results = JSObject()
         val steps = mutableListOf<String>()
 
-        steps.add("1. PluginManager.isInitialized = ${PluginManager.isInitialized}")
-        results.put("pluginManagerInitialized", PluginManager.isInitialized)
+        // === 1. PluginManager 状态 ===
+        steps.add("=== PluginManager ===")
+        val pmInit = PluginManager.isInitialized
+        steps.add("1. PluginManager.isInitialized = $pmInit")
+        results.put("pmInitialized", pmInit)
 
-        steps.add("2. context type = ${context.javaClass.simpleName}")
-        results.put("contextType", context.javaClass.simpleName)
+        if (pmInit) {
+            try {
+                val allPlugins = PluginManager.getAllInstallPlugins()
+                val pluginIds = allPlugins.map { it.id }
+                steps.add("2. installedPlugins = $pluginIds")
+                results.put("installedPlugins", pluginIds.toString())
+            } catch (e: Exception) {
+                steps.add("2. getAllInstallPlugins FAILED: ${e.message}")
+                results.put("installedPlugins", "ERROR: ${e.message}")
+            }
+            try {
+                val proxy = PluginManager.proxyManager
+                steps.add("3. proxyManager = ${proxy.javaClass.simpleName}")
+                results.put("proxyManagerClass", proxy.javaClass.simpleName)
+            } catch (e: Exception) {
+                steps.add("3. proxyManager FAILED: ${e.message}")
+                results.put("proxyManagerClass", "ERROR: ${e.message}")
+            }
+        } else {
+            steps.add("2. installedPlugins = SKIPPED (PM not init)")
+            steps.add("3. proxyManager = SKIPPED (PM not init)")
+        }
 
-        steps.add("3. context is Activity = ${context is Activity}")
+        // === 4. Context 诊断 ===
+        steps.add("=== Context ===")
+        steps.add("4. context type = ${context.javaClass.name}")
+        results.put("contextType", context.javaClass.name)
+        steps.add("5. context is Activity = ${context is Activity}")
         results.put("contextIsActivity", context is Activity)
+        steps.add("6. activity type = ${activity.javaClass.name}")
+        results.put("activityType", activity.javaClass.name)
+        steps.add("7. applicationContext = ${context.applicationContext.javaClass.name}")
+        results.put("appContextType", context.applicationContext.javaClass.name)
 
-        steps.add("4. activity type = ${activity.javaClass.simpleName}")
-        results.put("activityType", activity.javaClass.simpleName)
-
-        steps.add("5. receiverRegistered = $receiverRegistered")
+        // === 8. BroadcastReceiver 状态 ===
+        steps.add("=== BroadcastReceiver ===")
+        steps.add("8. receiverRegistered = $receiverRegistered")
         results.put("receiverRegistered", receiverRegistered)
-
         val pendingKeys = pendingCalls.keys().toList()
-        steps.add("6. pendingCalls keys = $pendingKeys")
+        steps.add("9. pendingCalls = $pendingKeys")
         results.put("pendingCallsKeys", pendingKeys.toString())
 
+        // === 10. InstallConfirmActivity 检查 ===
+        steps.add("=== Activity Resolve ===")
+        try {
+            val resolveIntent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java)
+            val resolveInfo = context.packageManager.resolveActivity(resolveIntent, 0)
+            if (resolveInfo != null) {
+                steps.add("10. InstallConfirmActivity resolved: ${resolveInfo.activityInfo?.name}")
+                results.put("confirmActivityResolved", true)
+                results.put("confirmActivityClass", resolveInfo.activityInfo?.name ?: "null")
+            } else {
+                steps.add("10. InstallConfirmActivity NOT RESOLVED (resolveActivity=null)")
+                results.put("confirmActivityResolved", false)
+            }
+        } catch (e: Exception) {
+            steps.add("10. resolveActivity FAILED: ${e.message}")
+            results.put("confirmActivityResolved", false)
+            results.put("confirmActivityError", e.message)
+        }
+
+        // === 11. EncvHostActivity 检查 ===
+        try {
+            val hostIntent = Intent(context, com.encvgo.app.EncvHostActivity::class.java)
+            val hostResolve = context.packageManager.resolveActivity(hostIntent, 0)
+            if (hostResolve != null) {
+                steps.add("11. EncvHostActivity resolved: ${hostResolve.activityInfo?.name}")
+                results.put("hostActivityResolved", true)
+            } else {
+                steps.add("11. EncvHostActivity NOT RESOLVED")
+                results.put("hostActivityResolved", false)
+            }
+        } catch (e: Exception) {
+            steps.add("11. EncvHostActivity check FAILED: ${e.message}")
+            results.put("hostActivityResolved", false)
+        }
+
+        // === 12. EncvApplication 检查 ===
+        steps.add("=== Application ===")
+        val app = context.applicationContext
+        steps.add("12. application class = ${app.javaClass.name}")
+        results.put("appClass", app.javaClass.name)
+        val isBaseHostApp = app is com.combo.core.runtime.app.BaseHostApplication
+        steps.add("13. isBaseHostApplication = $isBaseHostApp")
+        results.put("isBaseHostApplication", isBaseHostApp)
+
+        // === 14. APK 文件检查 ===
+        steps.add("=== APK Files ===")
+        val pluginInstallDir = File(context.cacheDir, "plugin_install")
+        steps.add("14. plugin_install dir exists = ${pluginInstallDir.exists()}")
+        results.put("pluginInstallDirExists", pluginInstallDir.exists())
+        if (pluginInstallDir.exists()) {
+            val apkFiles = pluginInstallDir.listFiles()?.filter { it.extension == "apk" }?.map { "${it.name}(${it.length()}B)" }
+            steps.add("15. APK files = $apkFiles")
+            results.put("apkFiles", apkFiles.toString())
+        }
+
+        // === 16. 权限检查 ===
+        steps.add("=== Permissions ===")
+        val hasStorage = Environment.isExternalStorageManager()
+        steps.add("16. MANAGE_EXTERNAL_STORAGE = $hasStorage")
+        results.put("hasStoragePermission", hasStorage)
+
+        // === 17. 实际启动测试 ===
+        steps.add("=== StartActivity Test ===")
         try {
             val testIntent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java).apply {
                 putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, "/data/data/${context.packageName}/cache/plugin_install/test-debug.apk")
@@ -638,16 +737,51 @@ class GoProcessPlugin : Plugin() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
             }
-            steps.add("7. testIntent created: component=${testIntent.component}, flags=${testIntent.flags}")
+            steps.add("17. intent: component=${testIntent.component}, flags=${testIntent.flags}, action=${testIntent.action}")
             results.put("intentComponent", testIntent.component?.flattenToString() ?: "null")
             results.put("intentFlags", testIntent.flags)
+            results.put("intentAction", testIntent.action ?: "null")
 
             context.startActivity(testIntent)
-            steps.add("8. startActivity SUCCESS")
+            steps.add("18. startActivity SUCCESS ← InstallConfirmActivity should be visible now")
             results.put("startActivityResult", "SUCCESS")
         } catch (e: Exception) {
-            steps.add("8. startActivity FAILED: ${e.javaClass.simpleName}: ${e.message}")
-            results.put("startActivityResult", "FAILED: ${e.javaClass.simpleName}: ${e.message}")
+            steps.add("18. startActivity FAILED: ${e.javaClass.name}: ${e.message}")
+            results.put("startActivityResult", "FAILED")
+            results.put("startActivityError", "${e.javaClass.name}: ${e.message}")
+
+            // fallback: 尝试用 activity.startActivity
+            try {
+                val fallbackIntent = Intent(activity, com.encvgo.app.InstallConfirmActivity::class.java).apply {
+                    putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, "/data/data/${context.packageName}/cache/plugin_install/test-debug.apk")
+                    putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_FILE_NAME, "test-debug.apk")
+                    putExtra("request_id", "debugTest")
+                }
+                activity.startActivity(fallbackIntent)
+                steps.add("19. FALLBACK activity.startActivity SUCCESS")
+                results.put("fallbackResult", "SUCCESS")
+            } catch (e2: Exception) {
+                steps.add("19. FALLBACK activity.startActivity ALSO FAILED: ${e2.javaClass.name}: ${e2.message}")
+                results.put("fallbackResult", "FAILED: ${e2.message}")
+            }
+        }
+
+        // === 20. 系统安装 Intent 测试 ===
+        steps.add("=== System Install Intent ===")
+        try {
+            val testApk = File(context.cacheDir, "plugin_install/test-debug.apk")
+            if (testApk.exists()) {
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context, "${context.packageName}.fileprovider", testApk)
+                steps.add("20. FileProvider URI = $uri")
+                results.put("fileProviderUri", uri.toString())
+            } else {
+                steps.add("20. test APK not found, skipping FileProvider test")
+                results.put("fileProviderUri", "SKIPPED: no test APK")
+            }
+        } catch (e: Exception) {
+            steps.add("20. FileProvider FAILED: ${e.message}")
+            results.put("fileProviderUri", "ERROR: ${e.message}")
         }
 
         Log.i(TAG, "SATURATION-DEBUG debugInstallFlow:\n${steps.joinToString("\n")}")
