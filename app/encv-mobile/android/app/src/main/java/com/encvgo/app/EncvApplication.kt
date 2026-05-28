@@ -20,24 +20,41 @@ class EncvApplication : BaseHostApplication() {
 
     override fun onFrameworkSetup(): suspend () -> Unit {
         return {
-            try {
-                PluginManager.setValidationStrategy(ValidationStrategy.Insecure)
-                Log.i(TAG, "SATURATION-DEBUG onFrameworkSetup: setValidationStrategy(Insecure) OK")
-            } catch (e: Exception) {
-                Log.w(TAG, "SATURATION-DEBUG onFrameworkSetup: setValidationStrategy FAILED", e)
-            }
+            safeSetValidationStrategy()
             try {
                 PluginCrashHandler.setGlobalClashCallback(null)
             } catch (e: Exception) {
-                Log.w(TAG, "SATURATION-DEBUG onFrameworkSetup: setGlobalClashCallback FAILED", e)
+                Log.w(TAG, "onFrameworkSetup: setGlobalClashCallback FAILED", e)
             }
             try {
                 PluginManager.proxyManager.setHostActivity(com.encvgo.app.EncvHostActivity::class.java)
-                Log.i(TAG, "SATURATION-DEBUG onFrameworkSetup: setHostActivity(EncvHostActivity) OK")
+                Log.i(TAG, "onFrameworkSetup: setHostActivity(EncvHostActivity) OK")
             } catch (e: Exception) {
-                Log.e(TAG, "SATURATION-DEBUG onFrameworkSetup: setHostActivity FAILED", e)
+                Log.e(TAG, "onFrameworkSetup: setHostActivity FAILED", e)
             }
-            Log.i(TAG, "SATURATION-DEBUG onFrameworkSetup: complete, PluginManager.isInitialized=${PluginManager.isInitialized}")
+            Log.i(TAG, "onFrameworkSetup: complete, PluginManager.isInitialized=${PluginManager.isInitialized}")
+        }
+    }
+
+    private suspend fun safeSetValidationStrategy() {
+        try {
+            val method = PluginManager::class.java.methods.find {
+                it.name == "setValidationStrategy"
+            }
+            if (method != null) {
+                PluginManager.setValidationStrategy(ValidationStrategy.Insecure)
+                Log.i(TAG, "onFrameworkSetup: setValidationStrategy(Insecure) OK")
+            } else {
+                Log.w(TAG, "onFrameworkSetup: setValidationStrategy not found in runtime PluginManager, skipping")
+            }
+        } catch (e: NoSuchMethodError) {
+            Log.w(TAG, "onFrameworkSetup: setValidationStrategy NoSuchMethodError (SDK/runtime mismatch), skipping")
+        } catch (e: NoClassDefFoundError) {
+            Log.w(TAG, "onFrameworkSetup: setValidationStrategy NoClassDefFoundError (SDK/runtime mismatch), skipping")
+        } catch (e: Exception) {
+            Log.w(TAG, "onFrameworkSetup: setValidationStrategy FAILED", e)
+        } catch (e: Error) {
+            Log.w(TAG, "onFrameworkSetup: setValidationStrategy Error (SDK/runtime mismatch), skipping: ${e.javaClass.simpleName}")
         }
     }
 
