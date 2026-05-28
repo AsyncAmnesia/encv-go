@@ -729,6 +729,12 @@ func (p *VideoPlugin) verifyContainer() error {
 		sourcePath = p.inputPath
 	}
 
+	slog.Info("verifyContainer path resolution",
+		"encrypted_source_path", p.encryptedSourcePath,
+		"resolved_source_path", sourcePath,
+		"input_path", p.inputPath,
+		"is_preprocessed", sourcePath != p.inputPath)
+
 	var verifyOpts *pluginInterfaces.VerifyOptions
 	if sourcePath != p.inputPath {
 		slog.Info("Detected preprocessed/re-encoded source, using lenient verification",
@@ -761,6 +767,12 @@ func (p *VideoPlugin) verifyContainer() error {
 // SetOutputDir 设置输出目录（供 EncryptFileWithPlugin 在预处理前调用）
 func (p *VideoPlugin) SetOutputDir(dir string) {
 	p.outputDir = dir
+}
+
+// EncryptedSourcePath 返回实际被加密的源文件路径
+// 可能是原始 inputPath，也可能是预处理后的临时文件路径（remux/transcode 场景）
+func (p *VideoPlugin) EncryptedSourcePath() string {
+	return p.encryptedSourcePath
 }
 
 // Plugin 接口实现

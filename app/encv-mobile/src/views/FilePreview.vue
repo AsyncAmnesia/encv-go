@@ -63,16 +63,7 @@
         </div>
 
         <div v-else-if="previewType === 'text'" class="preview-wrapper text-preview">
-          <div v-if="textLoading" class="loading-container">
-            <ion-spinner name="crescent"></ion-spinner>
-            <p>{{ t('filePreview.loading') }}</p>
-          </div>
-          <div v-else-if="textError" class="error-state">
-            <ion-icon :icon="alertCircle" class="error-icon"></ion-icon>
-            <p>{{ textError }}</p>
-            <ion-button @click="loadTextContent" fill="clear" size="small">{{ t('filePreview.retry') }}</ion-button>
-          </div>
-          <pre v-else class="text-content"><code>{{ textContent }}</code></pre>
+          <iframe :src="textPreviewUrl" class="preview-iframe"></iframe>
         </div>
 
         <div v-else-if="previewType === 'container'" class="preview-wrapper container-info">
@@ -178,9 +169,7 @@ const loading = ref(true)
 const error = ref('')
 const previewType = ref<PreviewType>('unsupported')
 const streamUrl = ref('')
-const textContent = ref('')
-const textLoading = ref(false)
-const textError = ref('')
+const textPreviewUrl = ref('')
 const pdfPreviewUrl = ref('')
 const showManifest = ref(false)
 const containerInfo = ref<ContainerInfo | null>(null)
@@ -195,26 +184,6 @@ function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = Math.floor(seconds % 60)
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-}
-
-async function loadTextContent() {
-  textLoading.value = true
-  textError.value = ''
-  try {
-    const baseUrl = getApiBaseUrl()
-    const resp = await fetch(`${baseUrl}/api/files/stream?path=${encodeURIComponent(filePath.value)}`)
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    const text = await resp.text()
-    const MAX_CHARS = 500000
-    textContent.value = text.length > MAX_CHARS
-      ? text.slice(0, MAX_CHARS) + `\n\n--- [TRUNCATED: ${text.length.toLocaleString()} chars total, showing first ${MAX_CHARS}] ---`
-      : text
-  } catch (e: any) {
-    textError.value = e?.message || String(e)
-    textContent.value = ''
-  } finally {
-    textLoading.value = false
-  }
 }
 
 async function determinePreviewType(name: string, isEncrypted?: boolean): Promise<PreviewType> {
@@ -288,7 +257,7 @@ async function loadFile() {
               pdfPreviewUrl.value = getFilePreviewUrl('pdf.html', path)
             } else {
               previewType.value = 'text'
-              await loadTextContent()
+              textPreviewUrl.value = getFilePreviewUrl('text.html', path)
             }
             break
           default:
@@ -317,7 +286,7 @@ async function loadFile() {
       pdfPreviewUrl.value = getFilePreviewUrl('pdf.html', path)
     } else if (previewType.value === 'text') {
       console.info('Loading text preview:', fileName.value)
-      await loadTextContent()
+      textPreviewUrl.value = getFilePreviewUrl('text.html', path)
     } else {
       console.info('Unsupported file type:', fileName.value)
       fileSize.value = 0
@@ -366,27 +335,6 @@ onMounted(() => loadFile())
   height: 100%;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
-}
-
-.text-content {
-  margin: 12px;
-  padding: 16px;
-  background: var(--ion-color-light, #f4f5f8);
-  border-radius: 8px;
-  font-size: 13px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
-  color: var(--ion-text-color);
-  overflow: auto;
-  max-height: calc(100vh - 200px);
-}
-
-.text-content code {
-  background: none;
-  padding: 0;
-  font-size: inherit;
 }
 
 .preview-iframe {

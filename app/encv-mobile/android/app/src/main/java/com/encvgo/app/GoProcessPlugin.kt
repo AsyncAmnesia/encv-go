@@ -381,9 +381,9 @@ class GoProcessPlugin : Plugin() {
                 return
             }
             if (pm != null) {
-                val installMethod = pm.javaClass.methods.find { it.name == "installPlugin" && it.parameterCount == 1 }
+                val installMethod = pm.javaClass.methods.find { it.name == "installPlugin" && it.parameterCount == 2 }
                 if (installMethod != null) {
-                    installMethod.invoke(pm, apkFile)
+                    installMethod.invoke(pm, apkFile, true)
                     Log.i(TAG, "Plugin installed via ComboLite: $apkPath")
                     call.resolve(JSObject().put("success", true).put("method", "combolite"))
                     return
@@ -553,9 +553,9 @@ class GoProcessPlugin : Plugin() {
                 null
             }
             if (pm != null) {
-                val installMethod = pm.javaClass.methods.find { it.name == "installPlugin" && it.parameterCount == 1 }
+                val installMethod = pm.javaClass.methods.find { it.name == "installPlugin" && it.parameterCount == 2 }
                 if (installMethod != null) {
-                    installMethod.invoke(pm, apkFile)
+                    installMethod.invoke(pm, apkFile, true)
                     Log.i(TAG, "Plugin installed via ComboLite from picker: $name")
                     call.resolve(JSObject().put("success", true).put("method", "combolite").put("fileName", name))
                     return

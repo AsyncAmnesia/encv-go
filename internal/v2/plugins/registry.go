@@ -435,6 +435,21 @@ func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputR
 	}
 	slog.Debug("PostEncryptProcessor completed", "path", inputPath)
 
+	// 清理预处理生成的临时文件（encv-pre-*）
+	// 必须在 verifyContainer (PostEncryptProcessor 内部) 完成之后清理，因为验证需要对比原始文件
+	if vp, ok := plugin.(*video.VideoPlugin); ok {
+		sourcePath := vp.EncryptedSourcePath()
+		if sourcePath != "" && sourcePath != inputPath {
+			tempDir := filepath.Dir(sourcePath)
+			if strings.Contains(filepath.Base(tempDir), ".encv_tmp") {
+				slog.Info("Cleaning up preprocessed temp file", "path", sourcePath)
+				if rmErr := os.Remove(sourcePath); rmErr != nil {
+					slog.Warn("Failed to clean up preprocessed temp file", "path", sourcePath, "error", rmErr)
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
