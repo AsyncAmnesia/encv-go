@@ -1,0 +1,29 @@
+// Compose source: com.encvgo.plugin.mpv.MpvPlayerScreen
+// This is a placeholder — the actual Compose implementation will be generated
+// from the web prototype during the prototype-to-Compose conversion process.
+
+@Composable
+fun MpvPlayerScreen(
+    viewModel: MpvPlayerViewModel = viewModel(),
+    onBack: () -> Unit,
+) {
+    // TODO: Generate from web prototype
+    // Web prototype: MpvPlayerPrototype.vue
+    //
+    // Features to implement:
+    // - Video surface with controls overlay
+    // - Top bar: back button, file name, settings gear
+    // - Center: -10s / play-pause / +10s
+    // - Side lock (left, vertical center): lock/unlock icon
+    // - Bottom: progress bar, speed chip, subtitle/audio/volume/fullscreen buttons
+    // - Settings panel: speed slider (0.5-3.0x with snap anchors), subtitle delay, audio delay,
+    //   background playback toggle, picture-in-picture
+    // - Subtitle popup: track list + file picker
+    // - Audio popup: track list
+    // - Volume: vertical popover slider
+    // - PiP: 16:9 mini video window with hover controls
+    // - Landscape: aspect-ratio switch 9:16 → 16:9
+    Box(modifier = Modifier.fillMaxSize()) {
+        Text("MpvPlayerScreen — placeholder", color = Color.White)
+    }
+}
