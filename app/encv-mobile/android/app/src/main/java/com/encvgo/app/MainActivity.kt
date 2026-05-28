@@ -68,9 +68,23 @@ class MainActivity : BridgeActivity() {
     private fun loadPlugins() {
         lifecycleScope.launch {
             try {
-                if (BuildConfig.DEBUG) {
-                    Log.i(TAG, "Debug mode: installing plugins from assets...")
-                    installPluginFromAssets("plugins/mpv-player.apk")
+                val pluginsDir = java.io.File(filesDir, "plugins")
+                if (pluginsDir.exists() && pluginsDir.isDirectory) {
+                    val apkFiles = pluginsDir.listFiles { file -> file.extension == "apk" } ?: emptyArray()
+                    for (apkFile in apkFiles) {
+                        Log.i(TAG, "Found plugin APK: ${apkFile.name}")
+                        val result = PluginManager.installerManager.installPlugin(apkFile, forceOverwrite = true)
+                        when (result) {
+                            is com.combo.core.runtime.installer.InstallerManager.InstallResult.Success -> {
+                                Log.i(TAG, "Plugin installed: ${result.pluginInfo.id} (${result.pluginInfo.versionName})")
+                            }
+                            is com.combo.core.runtime.installer.InstallerManager.InstallResult.Failure -> {
+                                Log.w(TAG, "Plugin install failed [${apkFile.name}]: ${result.reason}")
+                            }
+                        }
+                    }
+                } else {
+                    Log.i(TAG, "Plugins directory not found: ${pluginsDir.absolutePath}, skipping auto-install")
                 }
                 Log.i(TAG, "Loading enabled plugins...")
                 PluginManager.loadEnabledPlugins()
@@ -81,27 +95,6 @@ class MainActivity : BridgeActivity() {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load plugins", e)
             }
-        }
-    }
-
-    private suspend fun installPluginFromAssets(assetPath: String) {
-        try {
-            val tmpFile = java.io.File.createTempFile("plugin_", ".apk", cacheDir)
-            assets.open(assetPath).use { input ->
-                tmpFile.outputStream().use { output -> input.copyTo(output) }
-            }
-            val result = PluginManager.installerManager.installPlugin(tmpFile, forceOverwrite = true)
-            when (result) {
-                is com.combo.core.runtime.installer.InstallerManager.InstallResult.Success -> {
-                    Log.i(TAG, "Plugin installed: ${result.pluginInfo.id}")
-                }
-                is com.combo.core.runtime.installer.InstallerManager.InstallResult.Failure -> {
-                    Log.w(TAG, "Plugin install failed: ${result.reason}")
-                }
-            }
-            tmpFile.delete()
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to install plugin from assets: $assetPath", e)
         }
     }
 
