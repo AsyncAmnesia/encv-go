@@ -1,0 +1,98 @@
+﻿2026-05-28T17:39:48.6252513Z ##[group]Run echo "═══ Go Unit Tests (service layer) ═══"
+2026-05-28T17:39:48.6253001Z [36;1mecho "═══ Go Unit Tests (service layer) ═══"[0m
+2026-05-28T17:39:48.6253507Z [36;1mgo test ./internal/service/ -count=1 -timeout 120s -v 2>&1 | tail -30[0m
+2026-05-28T17:39:48.6253963Z [36;1mecho ""[0m
+2026-05-28T17:39:48.6254273Z [36;1mecho "═══ Go Unit Tests (video plugin) ═══"[0m
+2026-05-28T17:39:48.6254766Z [36;1mgo test ./internal/v2/plugins/video/ -count=1 -timeout 120s -v 2>&1 | tail -30[0m
+2026-05-28T17:39:48.6255244Z [36;1mecho ""[0m
+2026-05-28T17:39:48.6255553Z [36;1mecho "═══ ComboLite Static Check ═══"[0m
+2026-05-28T17:39:48.6256100Z [36;1mgo test ./internal/service/ -count=1 -timeout 60s -run TestComboLite -v 2>&1 | tail -20[0m
+2026-05-28T17:39:48.6256588Z [36;1mecho ""[0m
+2026-05-28T17:39:48.6256857Z [36;1mecho "═══ Go Test Summary ═══"[0m
+2026-05-28T17:39:48.6257424Z [36;1mgo test ./internal/service/ ./internal/v2/plugins/video/ -count=1 -timeout 120s 2>&1 | tail -5[0m
+2026-05-28T17:39:48.6285960Z shell: /usr/bin/bash -e {0}
+2026-05-28T17:39:48.6286278Z env:
+2026-05-28T17:39:48.6286527Z   NDK_VERSION: 26.1.10909125
+2026-05-28T17:39:48.6286949Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-28T17:39:48.6287513Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-28T17:39:48.6287973Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-28T17:39:48.6288330Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-28T17:39:48.6288927Z ##[endgroup]
+2026-05-28T17:39:48.6342263Z ═══ Go Unit Tests (service layer) ═══
+2026-05-28T17:39:51.9636646Z === RUN   TestTask_WarningFields_Optional
+2026-05-28T17:39:51.9637773Z === RUN   TestTask_WarningFields_Optional/no_warnings_-_clean_completion
+2026-05-28T17:39:51.9639032Z === RUN   TestTask_WarningFields_Optional/with_warning_only
+2026-05-28T17:39:51.9640094Z === RUN   TestTask_WarningFields_Optional/with_warning_detail_only
+2026-05-28T17:39:51.9641278Z === RUN   TestTask_WarningFields_Optional/empty_warning_string_should_be_omitted
+2026-05-28T17:39:51.9642352Z === RUN   TestTask_WarningFields_Optional/empty_warning_detail_slice_should_be_omitted
+2026-05-28T17:39:51.9643021Z --- PASS: TestTask_WarningFields_Optional (0.00s)
+2026-05-28T17:39:51.9643774Z     --- PASS: TestTask_WarningFields_Optional/no_warnings_-_clean_completion (0.00s)
+2026-05-28T17:39:51.9644844Z     --- PASS: TestTask_WarningFields_Optional/with_warning_only (0.00s)
+2026-05-28T17:39:51.9646095Z     --- PASS: TestTask_WarningFields_Optional/with_warning_detail_only (0.00s)
+2026-05-28T17:39:51.9647651Z     --- PASS: TestTask_WarningFields_Optional/empty_warning_string_should_be_omitted (0.00s)
+2026-05-28T17:39:51.9649374Z     --- PASS: TestTask_WarningFields_Optional/empty_warning_detail_slice_should_be_omitted (0.00s)
+2026-05-28T17:39:51.9650471Z === RUN   TestTask_CompletedWithWarning_DisplayLogic
+2026-05-28T17:39:51.9651656Z === RUN   TestTask_CompletedWithWarning_DisplayLogic/completed_with_single_warning_is_valid
+2026-05-28T17:39:51.9653121Z === RUN   TestTask_CompletedWithWarning_DisplayLogic/completed_with_multiple_warnings_is_valid
+2026-05-28T17:39:51.9654439Z === RUN   TestTask_CompletedWithWarning_DisplayLogic/completed_without_warning_is_valid
+2026-05-28T17:39:51.9655549Z === RUN   TestTask_CompletedWithWarning_DisplayLogic/running_status_with_warning_is_valid_(early_detection)
+2026-05-28T17:39:51.9656882Z     task_warning_test.go:307: Note: warning text 'potential issue detected at 50%' does not explicitly mention count 1 (may be intentional)
+2026-05-28T17:39:51.9658018Z === RUN   TestTask_CompletedWithWarning_DisplayLogic/failed_status_with_warning_is_valid_(contextual_info)
+2026-05-28T17:39:51.9659233Z === RUN   TestTask_CompletedWithWarning_DisplayLogic/queued_status_should_not_have_warnings
+2026-05-28T17:39:51.9659968Z --- PASS: TestTask_CompletedWithWarning_DisplayLogic (0.00s)
+2026-05-28T17:39:51.9660872Z     --- PASS: TestTask_CompletedWithWarning_DisplayLogic/completed_with_single_warning_is_valid (0.00s)
+2026-05-28T17:39:51.9662253Z     --- PASS: TestTask_CompletedWithWarning_DisplayLogic/completed_with_multiple_warnings_is_valid (0.00s)
+2026-05-28T17:39:51.9663404Z     --- PASS: TestTask_CompletedWithWarning_DisplayLogic/completed_without_warning_is_valid (0.00s)
+2026-05-28T17:39:51.9664700Z     --- PASS: TestTask_CompletedWithWarning_DisplayLogic/running_status_with_warning_is_valid_(early_detection) (0.00s)
+2026-05-28T17:39:51.9665884Z     --- PASS: TestTask_CompletedWithWarning_DisplayLogic/failed_status_with_warning_is_valid_(contextual_info) (0.00s)
+2026-05-28T17:39:51.9666960Z     --- PASS: TestTask_CompletedWithWarning_DisplayLogic/queued_status_should_not_have_warnings (0.00s)
+2026-05-28T17:39:51.9667492Z FAIL
+2026-05-28T17:39:51.9667943Z FAIL	github.com/Soltus/encv-go/internal/service	2.130s
+2026-05-28T17:39:51.9668313Z FAIL
+2026-05-28T17:39:51.9668442Z 
+2026-05-28T17:39:51.9669097Z ═══ Go Unit Tests (video plugin) ═══
+2026-05-28T17:39:53.1090551Z 🦢 2026-05-28 17:39:53 [32m[INFO][0m [90m[content_verifier.go:638][0m [36mframes=[0m0 Decrypted frames
+2026-05-28T17:39:53.1092033Z 🦢 2026-05-28 17:39:53 [33m[WARN][0m [90m[content_verifier.go:639][0m [36mloss_percent=[0mNaN Data loss percentage
+2026-05-28T17:39:53.1093531Z     verify_options_test.go:128: correctly detected corruption: read orig error at 0: EOF
+2026-05-28T17:39:53.1094925Z === RUN   TestVerify_SkipSizeCheck_StillChecksStructure/nil_options_backward_compatible
+2026-05-28T17:39:53.1096557Z 🦢 2026-05-28 17:39:53 [32m[INFO][0m [90m[content_verifier.go:35][0m VIDEO INTEGRITY CHECKER v5.0 (Stratified Opt)
+2026-05-28T17:39:53.1101944Z 🦢 2026-05-28 17:39:53 [32m[INFO][0m [90m[content_verifier.go:36][0m [36moriginal_path=[0m/tmp/TestVerify_SkipSizeCheck_StillChecksStructurenil_options_backwa452796168/001/original.bin [36mdecrypted_path=[0m/tmp/TestVerify_SkipSizeCheck_StillChecksStructurenil_options_backwa452796168/001/decrypted.bin [36mskip_size_check=[0mfalse [36mskip_struct_check=[0mfalse Verification started
+2026-05-28T17:39:53.1105223Z === RUN   TestVerify_SkipSizeCheck_StillChecksStructure/empty_opts_slice_backward_compatible
+2026-05-28T17:39:53.1107027Z 🦢 2026-05-28 17:39:53 [32m[INFO][0m [90m[content_verifier.go:35][0m VIDEO INTEGRITY CHECKER v5.0 (Stratified Opt)
+2026-05-28T17:39:53.1111904Z 🦢 2026-05-28 17:39:53 [32m[INFO][0m [90m[content_verifier.go:36][0m [36moriginal_path=[0m/tmp/TestVerify_SkipSizeCheck_StillChecksStructureempty_opts_slice_b2125650467/001/original.bin [36mdecrypted_path=[0m/tmp/TestVerify_SkipSizeCheck_StillChecksStructureempty_opts_slice_b2125650467/001/decrypted.bin [36mskip_size_check=[0mfalse [36mskip_struct_check=[0mfalse Verification started
+2026-05-28T17:39:53.1114694Z --- PASS: TestVerify_SkipSizeCheck_StillChecksStructure (0.00s)
+2026-05-28T17:39:53.1116234Z     --- PASS: TestVerify_SkipSizeCheck_StillChecksStructure/corrupted_data_still_detected_with_skip (0.00s)
+2026-05-28T17:39:53.1117916Z     --- PASS: TestVerify_SkipSizeCheck_StillChecksStructure/nil_options_backward_compatible (0.00s)
+2026-05-28T17:39:53.1119979Z     --- PASS: TestVerify_SkipSizeCheck_StillChecksStructure/empty_opts_slice_backward_compatible (0.00s)
+2026-05-28T17:39:53.1121126Z === RUN   TestQuickStructCheck_SkipStructCheck
+2026-05-28T17:39:53.1122231Z === RUN   TestQuickStructCheck_SkipStructCheck/skip_struct_check_returns_warning
+2026-05-28T17:39:53.1139164Z 🦢 2026-05-28 17:39:53 [33m[WARN][0m [90m[content_verifier.go:164][0m [36mpath=[0m/tmp/TestQuickStructCheck_SkipStructCheckskip_struct_check_returns_w4003074761/001/test.bin QuickStructCheck skipped
+2026-05-28T17:39:53.1140486Z === RUN   TestQuickStructCheck_SkipStructCheck/no_skip_executes_check
+2026-05-28T17:39:53.1141374Z === RUN   TestQuickStructCheck_SkipStructCheck/nil_opts_defaults_to_no_skip
+2026-05-28T17:39:53.1142218Z --- PASS: TestQuickStructCheck_SkipStructCheck (0.00s)
+2026-05-28T17:39:53.1143551Z     --- PASS: TestQuickStructCheck_SkipStructCheck/skip_struct_check_returns_warning (0.00s)
+2026-05-28T17:39:53.1144938Z     --- PASS: TestQuickStructCheck_SkipStructCheck/no_skip_executes_check (0.00s)
+2026-05-28T17:39:53.1146215Z     --- PASS: TestQuickStructCheck_SkipStructCheck/nil_opts_defaults_to_no_skip (0.00s)
+2026-05-28T17:39:53.1146896Z === RUN   TestVerify_SkipStructCheck_ReturnsWarnings
+2026-05-28T17:39:53.1148187Z     verify_options_test.go:261: Skipping integration test: requires valid video files for full Verify pipeline. Use TestQuickStructCheck_SkipStructCheck for unit testing.
+2026-05-28T17:39:53.1149484Z --- SKIP: TestVerify_SkipStructCheck_ReturnsWarnings (0.00s)
+2026-05-28T17:39:53.1150093Z === RUN   TestVerify_CollectWarningsFalse_DiscardsWarnings
+2026-05-28T17:39:53.1151479Z     verify_options_test.go:265: Skipping integration test: requires valid video files for full Verify pipeline. CollectWarnings mechanism is verified in TestQuickStructCheck_SkipStructCheck.
+2026-05-28T17:39:53.1152550Z --- SKIP: TestVerify_CollectWarningsFalse_DiscardsWarnings (0.00s)
+2026-05-28T17:39:53.1152970Z PASS
+2026-05-28T17:39:53.1153477Z ok  	github.com/Soltus/encv-go/internal/v2/plugins/video	0.521s
+2026-05-28T17:39:53.1153787Z 
+2026-05-28T17:39:53.1154103Z ═══ ComboLite Static Check ═══
+2026-05-28T17:39:53.5635510Z === RUN   TestComboLiteStaticCheck_ZeroReflection
+2026-05-28T17:39:53.5636305Z --- PASS: TestComboLiteStaticCheck_ZeroReflection (0.00s)
+2026-05-28T17:39:53.5637062Z === RUN   TestComboLiteStaticCheck_InstallerManagerPath
+2026-05-28T17:39:53.5637702Z --- PASS: TestComboLiteStaticCheck_InstallerManagerPath (0.00s)
+2026-05-28T17:39:53.5638328Z PASS
+2026-05-28T17:39:53.5639644Z ok  	github.com/Soltus/encv-go/internal/service	0.005s
+2026-05-28T17:39:53.5640326Z 
+2026-05-28T17:39:53.5641009Z ═══ Go Test Summary ═══
+2026-05-28T17:39:55.2611195Z 🦢 2026-05-28 17:39:54 [32m[INFO][0m [90m[task_manager.go:135][0m [36mcount=[0m2 Loaded persisted tasks
+2026-05-28T17:39:55.2612072Z FAIL
+2026-05-28T17:39:55.2612780Z FAIL	github.com/Soltus/encv-go/internal/service	1.140s
+2026-05-28T17:39:55.2613869Z ok  	github.com/Soltus/encv-go/internal/v2/plugins/video	0.516s
+2026-05-28T17:39:55.2614536Z FAIL

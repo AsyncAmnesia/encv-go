@@ -1,0 +1,12 @@
+﻿2026-05-28T17:38:51.8800312Z ##[group]Run yes | sdkmanager --install "platforms;android-35" "build-tools;35.0.0" > /dev/null 2>&1 && echo "✅ Platform & build tools installed"
+2026-05-28T17:38:51.8801400Z [36;1myes | sdkmanager --install "platforms;android-35" "build-tools;35.0.0" > /dev/null 2>&1 && echo "✅ Platform & build tools installed"[0m
+2026-05-28T17:38:51.9020628Z shell: /usr/bin/bash -e {0}
+2026-05-28T17:38:51.9020966Z env:
+2026-05-28T17:38:51.9021200Z   NDK_VERSION: 26.1.10909125
+2026-05-28T17:38:51.9021617Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-28T17:38:51.9022168Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-28T17:38:51.9022605Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-28T17:38:51.9022963Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-28T17:38:51.9023285Z ##[endgroup]
+2026-05-28T17:38:53.4098107Z yes: standard output: Broken pipe
+2026-05-28T17:38:53.4102534Z ✅ Platform & build tools installed

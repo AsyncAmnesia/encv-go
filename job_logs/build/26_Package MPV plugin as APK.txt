@@ -1,0 +1,102 @@
+﻿2026-05-28T17:40:47.3034596Z ##[group]Run cd app/encv-mobile/android
+2026-05-28T17:40:47.3035014Z [36;1mcd app/encv-mobile/android[0m
+2026-05-28T17:40:47.3035350Z [36;1mBUILD_TYPE="debug"[0m
+2026-05-28T17:40:47.3035775Z [36;1m[0m
+2026-05-28T17:40:47.3036231Z [36;1m./gradlew "convert_plugin-mpv-player_${BUILD_TYPE}" --stacktrace[0m
+2026-05-28T17:40:47.3036683Z [36;1m[0m
+2026-05-28T17:40:47.3037240Z [36;1mPLUGIN_APK=$(find build -name "plugin-mpv-player-${BUILD_TYPE}.apk" -type f 2>/dev/null | head -1)[0m
+2026-05-28T17:40:47.3037871Z [36;1mif [ -n "$PLUGIN_APK" ] && [ -f "$PLUGIN_APK" ]; then[0m
+2026-05-28T17:40:47.3038284Z [36;1m  echo "✅ Plugin APK generated:"[0m
+2026-05-28T17:40:47.3038911Z [36;1m  ls -lh "$PLUGIN_APK"[0m
+2026-05-28T17:40:47.3039442Z [36;1m  echo "📁 Plugin will be loaded from disk at runtime (filesDir/plugins/)"[0m
+2026-05-28T17:40:47.3039913Z [36;1melse[0m
+2026-05-28T17:40:47.3040277Z [36;1m  echo "::error::Plugin APK not found after successful build"[0m
+2026-05-28T17:40:47.3040843Z [36;1m  find build/outputs -name "*.apk" 2>/dev/null | head -5 || echo "No APKs found"[0m
+2026-05-28T17:40:47.3041335Z [36;1m  exit 1[0m
+2026-05-28T17:40:47.3041600Z [36;1mfi[0m
+2026-05-28T17:40:47.3069992Z shell: /usr/bin/bash -e {0}
+2026-05-28T17:40:47.3070311Z env:
+2026-05-28T17:40:47.3070569Z   NDK_VERSION: 26.1.10909125
+2026-05-28T17:40:47.3071004Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-28T17:40:47.3071592Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-28T17:40:47.3072060Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-28T17:40:47.3072430Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-28T17:40:47.3072773Z ##[endgroup]
+2026-05-28T17:40:48.6333780Z 
+2026-05-28T17:40:48.6344889Z > Configure project :capacitor-cordova-android-plugins
+2026-05-28T17:40:48.6346826Z WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
+2026-05-28T17:40:48.9307787Z 
+2026-05-28T17:40:48.9318835Z > Task :plugin-mpv-player:preBuild UP-TO-DATE
+2026-05-28T17:40:48.9320241Z > Task :plugin-mpv-player:preDebugBuild UP-TO-DATE
+2026-05-28T17:40:49.3320078Z > Task :plugin-mpv-player:checkDebugAarMetadata
+2026-05-28T17:40:49.5320402Z > Task :plugin-mpv-player:mergeDebugJniLibFolders
+2026-05-28T17:40:49.5330104Z > Task :plugin-mpv-player:checkKotlinGradlePluginConfigurationErrors SKIPPED
+2026-05-28T17:40:49.5359988Z > Task :plugin-mpv-player:generateDebugResValues UP-TO-DATE
+2026-05-28T17:40:49.5383570Z > Task :plugin-mpv-player:generateDebugResources UP-TO-DATE
+2026-05-28T17:40:49.5409648Z > Task :plugin-mpv-player:packageDebugResources UP-TO-DATE
+2026-05-28T17:40:49.5439714Z > Task :plugin-mpv-player:processDebugNavigationResources UP-TO-DATE
+2026-05-28T17:40:49.5460573Z > Task :plugin-mpv-player:parseDebugLocalResources UP-TO-DATE
+2026-05-28T17:40:49.5469498Z > Task :plugin-mpv-player:generateDebugRFile UP-TO-DATE
+2026-05-28T17:40:49.6330466Z > Task :plugin-mpv-player:mergeDebugNativeLibs
+2026-05-28T17:40:49.6360178Z > Task :plugin-mpv-player:compileDebugKotlin UP-TO-DATE
+2026-05-28T17:40:49.9309293Z 
+2026-05-28T17:40:49.9330046Z > Task :plugin-mpv-player:stripDebugDebugSymbols
+2026-05-28T17:40:49.9337682Z Unable to strip the following libraries, packaging them as they are: libavcodec.so, libavdevice.so, libavfilter.so, libavformat.so, libavutil.so, libc++_shared.so, libmpv.so, libplayer.so, libswresample.so, libswscale.so, libxml2.so. Run with --info option to learn more.
+2026-05-28T17:40:50.4329291Z 
+2026-05-28T17:40:50.4370138Z > Task :plugin-mpv-player:extractDebugAnnotations
+2026-05-28T17:40:50.4385310Z > Task :plugin-mpv-player:extractDeepLinksForAarDebug
+2026-05-28T17:40:50.5310774Z > Task :plugin-mpv-player:mergeDebugShaders
+2026-05-28T17:40:50.5339953Z > Task :plugin-mpv-player:compileDebugShaders NO-SOURCE
+2026-05-28T17:40:50.5369782Z > Task :plugin-mpv-player:generateDebugAssets UP-TO-DATE
+2026-05-28T17:40:50.5377095Z > Task :plugin-mpv-player:mergeDebugAssets
+2026-05-28T17:40:50.5413273Z > Task :plugin-mpv-player:javaPreCompileDebug
+2026-05-28T17:40:50.5420066Z > Task :plugin-mpv-player:copyDebugJniLibsProjectAndLocalJars
+2026-05-28T17:40:50.6330388Z > Task :plugin-mpv-player:prepareDebugArtProfile
+2026-05-28T17:40:50.6390353Z > Task :plugin-mpv-player:compileDebugJavaWithJavac NO-SOURCE
+2026-05-28T17:40:50.6419982Z > Task :plugin-mpv-player:mergeDebugGeneratedProguardFiles
+2026-05-28T17:40:50.6433323Z > Task :plugin-mpv-player:mergeDebugConsumerProguardFiles
+2026-05-28T17:40:50.6445170Z > Task :plugin-mpv-player:prepareLintJarForPublish
+2026-05-28T17:40:50.6446347Z > Task :plugin-mpv-player:processDebugJavaRes
+2026-05-28T17:40:50.6447427Z > Task :plugin-mpv-player:writeDebugAarMetadata
+2026-05-28T17:40:50.7331651Z > Task :plugin-mpv-player:processDebugManifest
+2026-05-28T17:40:50.7333088Z > Task :plugin-mpv-player:mergeDebugJavaResource
+2026-05-28T17:40:50.8308968Z > Task :plugin-mpv-player:syncDebugLibJars
+2026-05-28T17:40:52.6308475Z > Task :plugin-mpv-player:bundleDebugAar
+2026-05-28T17:40:52.6309473Z > Task :plugin-mpv-player:assembleDebug
+2026-05-28T17:40:54.5342720Z 
+2026-05-28T17:40:54.5344034Z > Task :convert_plugin-mpv-player_debug
+2026-05-28T17:40:54.5345917Z [17:40:52.585] 打包选项: com.combo.aar2apk.PackagingOptions_Decorated@16d52161
+2026-05-28T17:40:54.5350567Z [17:40:52.875] 主模块无资源文件，跳过aapt2 compile。
+2026-05-28T17:40:54.5351560Z [17:40:52.875] 步骤3: 使用 aapt2 link 链接所有资源并生成R.java
+2026-05-28T17:40:54.5356670Z [17:40:52.876]   EXEC: /usr/local/lib/android/sdk/build-tools/37.0.0/aapt2 link -o /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/tmp/convert_plugin-mpv-player_debug/build/unsigned.apk -I /usr/local/lib/android/sdk/platforms/android-36/android.jar --manifest /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/tmp/convert_plugin-mpv-player_debug/main_aar/extracted/AndroidManifest.xml --java /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/tmp/convert_plugin-mpv-player_debug/build/gen_java --package-id 0x80 --auto-add-overlay --no-version-vectors --no-static-lib-packages -R @/home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/tmp/convert_plugin-mpv-player_debug/build/aapt2-R-files
+2026-05-28T17:40:54.5360356Z [17:40:53.888] DEX打包: 仅包含主模块代码。
+2026-05-28T17:40:54.5360889Z [17:40:53.889] 步骤4: 编译Java/Kotlin代码并转换为DEX
+2026-05-28T17:40:54.5361392Z [17:40:53.890]   编译R.java文件...
+2026-05-28T17:40:54.5363574Z [17:40:53.891]   EXEC: javac -cp /usr/local/lib/android/sdk/platforms/android-36/android.jar -d /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/tmp/convert_plugin-mpv-player_debug/build/r_classes /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/tmp/convert_plugin-mpv-player_debug/build/gen_java/com/encvgo/plugin/mpv/R.java
+2026-05-28T17:40:54.8310748Z [17:40:54.800]   EXEC: jar cf /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/tmp/convert_plugin-mpv-player_debug/build/r_classes.jar -C /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/tmp/convert_plugin-mpv-player_debug/build/r_classes .
+2026-05-28T17:40:55.0309468Z [17:40:54.987]   使用 D8 将 2 个 JAR 文件转换为 DEX...
+2026-05-28T17:40:55.0321682Z [17:40:54.987]   EXEC: /usr/local/lib/android/sdk/build-tools/37.0.0/d8 --min-api 21 --output /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/tmp/convert_plugin-mpv-player_debug/build/dex_output /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/tmp/convert_plugin-mpv-player_debug/main_aar/extracted/classes.jar /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/tmp/convert_plugin-mpv-player_debug/build/r_classes.jar
+2026-05-28T17:41:03.5330400Z [17:41:03.450] Assets打包: 仅包含主模块Assets。
+2026-05-28T17:41:03.5331488Z [17:41:03.450] JNI打包: 仅包含主模块so库。
+2026-05-28T17:41:03.5332352Z [17:41:03.451] 步骤4.1: 添加DEX文件到APK
+2026-05-28T17:41:03.5335525Z [17:41:03.451]   EXEC: jar uf /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/tmp/convert_plugin-mpv-player_debug/build/unsigned.apk -C /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/tmp/convert_plugin-mpv-player_debug/build/dex_output classes.dex
+2026-05-28T17:41:03.6309141Z [17:41:03.594] 步骤4.2: 添加Native库到APK
+2026-05-28T17:41:03.6311104Z [17:41:03.628]   EXEC: jar uf /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/tmp/convert_plugin-mpv-player_debug/build/unsigned.apk -C /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/tmp/convert_plugin-mpv-player_debug/build/temp_jni_staging lib
+2026-05-28T17:41:05.5308930Z [17:41:05.457] 步骤6: 签名APK
+2026-05-28T17:41:05.5312709Z [17:41:05.458]   EXEC: /usr/local/lib/android/sdk/build-tools/37.0.0/apksigner sign --ks /home/runner/work/encv-go/encv-go/app/encv-mobile/keystore/release.jks --ks-pass pass:encv2025 --ks-key-alias encvrelease --key-pass pass:encv2025 --min-sdk-version 21 --v4-signing-enabled false --out /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/outputs/plugin-apks/debug/plugin-mpv-player-debug.apk /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/tmp/convert_plugin-mpv-player_debug/build/unsigned.apk
+2026-05-28T17:41:06.6309254Z [17:41:06.567] ✅ 转换成功! APK 大小: 15565 KB
+2026-05-28T17:41:06.6310568Z ✅ 日志已保存到: /home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/logs/aar2apk/plugin-mpv-player-debug-debug-20260528-174052.log
+2026-05-28T17:41:06.9324985Z 
+2026-05-28T17:41:06.9351057Z [Incubating] Problems report is available at: file:///home/runner/work/encv-go/encv-go/app/encv-mobile/android/build/reports/problems/problems-report.html
+2026-05-28T17:41:06.9353185Z 
+2026-05-28T17:41:06.9391924Z Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+2026-05-28T17:41:06.9398444Z 
+2026-05-28T17:41:06.9400144Z You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+2026-05-28T17:41:06.9401143Z 
+2026-05-28T17:41:06.9402758Z For more on this, please refer to https://docs.gradle.org/9.0.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+2026-05-28T17:41:06.9403872Z 
+2026-05-28T17:41:06.9404175Z BUILD SUCCESSFUL in 19s
+2026-05-28T17:41:06.9404934Z 28 actionable tasks: 21 executed, 7 up-to-date
+2026-05-28T17:41:06.9650300Z ✅ Plugin APK generated:
+2026-05-28T17:41:06.9666165Z -rw-r--r-- 1 runner runner 16M May 28 17:41 build/outputs/plugin-apks/debug/plugin-mpv-player-debug.apk
+2026-05-28T17:41:06.9667984Z 📁 Plugin will be loaded from disk at runtime (filesDir/plugins/)

@@ -1,0 +1,26 @@
+﻿2026-05-28T17:38:01.0034159Z ##[group]Run actions/setup-node@v4
+2026-05-28T17:38:01.0034473Z with:
+2026-05-28T17:38:01.0034696Z   node-version: 22
+2026-05-28T17:38:01.0034939Z   cache: npm
+2026-05-28T17:38:01.0035231Z   cache-dependency-path: app/encv-mobile/package-lock.json
+2026-05-28T17:38:01.0035586Z   always-auth: false
+2026-05-28T17:38:01.0035814Z   check-latest: false
+2026-05-28T17:38:01.0039059Z   token: ***
+2026-05-28T17:38:01.0039274Z env:
+2026-05-28T17:38:01.0039499Z   NDK_VERSION: 26.1.10909125
+2026-05-28T17:38:01.0039754Z ##[endgroup]
+2026-05-28T17:38:01.2061304Z Found in cache @ /opt/hostedtoolcache/node/22.22.3/x64
+2026-05-28T17:38:01.2069742Z ##[group]Environment details
+2026-05-28T17:38:03.9537024Z node: v22.22.3
+2026-05-28T17:38:03.9537537Z npm: 10.9.8
+2026-05-28T17:38:03.9537761Z yarn: 1.22.22
+2026-05-28T17:38:03.9539099Z ##[endgroup]
+2026-05-28T17:38:03.9572700Z [command]/opt/hostedtoolcache/node/22.22.3/x64/bin/npm config get cache
+2026-05-28T17:38:04.2471415Z /home/runner/.npm
+2026-05-28T17:38:04.4868285Z Cache hit for: node-cache-Linux-x64-npm-a84cd8a94fccf1989eb0424fa73c608df8a244b46fa0fefb59232e0439244718
+2026-05-28T17:38:05.7004212Z Received 37748736 of 60427318 (62.5%), 36.0 MBs/sec
+2026-05-28T17:38:05.8353954Z Received 60427318 of 60427318 (100.0%), 50.7 MBs/sec
+2026-05-28T17:38:05.8354630Z Cache Size: ~58 MB (60427318 B)
+2026-05-28T17:38:05.8396266Z [command]/usr/bin/tar -xf /home/runner/work/_temp/839bfd95-c95c-498d-b7cd-9fca55e3b50c/cache.tzst -P -C /home/runner/work/encv-go/encv-go --use-compress-program unzstd
+2026-05-28T17:38:05.9596630Z Cache restored successfully
+2026-05-28T17:38:05.9633639Z Cache restored from key: node-cache-Linux-x64-npm-a84cd8a94fccf1989eb0424fa73c608df8a244b46fa0fefb59232e0439244718

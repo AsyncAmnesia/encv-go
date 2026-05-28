@@ -1,0 +1,28 @@
+﻿2026-05-28T17:38:39.6768079Z ##[group]Run actions/cache@v4
+2026-05-28T17:38:39.6768379Z with:
+2026-05-28T17:38:39.6769037Z   path: /usr/local/lib/android/sdk/ndk/26.1.10909125
+2026-05-28T17:38:39.6769415Z   key: ndk-26.1.10909125
+2026-05-28T17:38:39.6769683Z   enableCrossOsArchive: false
+2026-05-28T17:38:39.6769969Z   fail-on-cache-miss: false
+2026-05-28T17:38:39.6770228Z   lookup-only: false
+2026-05-28T17:38:39.6770474Z   save-always: false
+2026-05-28T17:38:39.6770691Z env:
+2026-05-28T17:38:39.6770903Z   NDK_VERSION: 26.1.10909125
+2026-05-28T17:38:39.6771281Z   JAVA_HOME: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-28T17:38:39.6771795Z   JAVA_HOME_21_X64: /opt/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.11-10/x64
+2026-05-28T17:38:39.6772226Z   ANDROID_HOME: /usr/local/lib/android/sdk
+2026-05-28T17:38:39.6772567Z   ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+2026-05-28T17:38:39.6772876Z ##[endgroup]
+2026-05-28T17:38:40.0314158Z Cache hit for: ndk-26.1.10909125
+2026-05-28T17:38:41.2911309Z Received 25165824 of 628118054 (4.0%), 23.9 MBs/sec
+2026-05-28T17:38:42.2911100Z Received 130023424 of 628118054 (20.7%), 61.8 MBs/sec
+2026-05-28T17:38:43.2931911Z Received 247463936 of 628118054 (39.4%), 78.5 MBs/sec
+2026-05-28T17:38:44.2941187Z Received 268435456 of 628118054 (42.7%), 63.9 MBs/sec
+2026-05-28T17:38:45.2962719Z Received 398458880 of 628118054 (63.4%), 75.8 MBs/sec
+2026-05-28T17:38:46.2960519Z Received 511705088 of 628118054 (81.5%), 81.2 MBs/sec
+2026-05-28T17:38:47.2965541Z Received 612368384 of 628118054 (97.5%), 83.3 MBs/sec
+2026-05-28T17:38:47.8561593Z Received 628118054 of 628118054 (100.0%), 79.1 MBs/sec
+2026-05-28T17:38:47.8563756Z Cache Size: ~599 MB (628118054 B)
+2026-05-28T17:38:47.8675821Z [command]/usr/bin/tar -xf /home/runner/work/_temp/665beac8-09a4-4a25-895b-87d368bf3a6c/cache.tzst -P -C /home/runner/work/encv-go/encv-go --use-compress-program unzstd
+2026-05-28T17:38:51.8282217Z Cache restored successfully
+2026-05-28T17:38:51.8646491Z Cache restored from key: ndk-26.1.10909125
