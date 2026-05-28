@@ -35,6 +35,7 @@ class GoProcessPlugin : Plugin() {
     companion object {
         private const val TAG = "ENCV-go"
         const val REQUEST_CODE_PLUGIN_PICK = 9001
+        const val REQUEST_CODE_INSTALL_CONFIRM = 9002
     }
 
     private val pendingCalls = ConcurrentHashMap<String, PluginCall>()
@@ -376,28 +377,12 @@ class GoProcessPlugin : Plugin() {
                 return
             }
             if (PluginManager.isInitialized) {
-                GlobalScope.launch(Dispatchers.IO) {
-                    try {
-                        val result = PluginManager.installerManager.installPlugin(apkFile, true)
-                        when (result) {
-                            is com.combo.core.runtime.installer.InstallerManager.InstallResult.Success -> {
-                                Log.i(TAG, "Plugin installed via ComboLite: ${apkPath} -> ${result.pluginInfo.id}")
-                                call.resolve(JSObject().apply {
-                                    put("success", true)
-                                    put("method", "combolite")
-                                    put("pluginId", result.pluginInfo.id)
-                                })
-                            }
-                            is com.combo.core.runtime.installer.InstallerManager.InstallResult.Failure -> {
-                                Log.e(TAG, "ComboLite install failed: ${result.reason}", result.exception)
-                                call.reject("ComboLite install failed: ${result.reason}")
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "ComboLite installPlugin exception", e)
-                        call.reject("ComboLite install error: ${e.message}")
-                    }
+                pendingCalls["installConfirm"] = call
+                val intent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java).apply {
+                    putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, apkPath)
+                    putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_FILE_NAME, apkFile.name)
                 }
+                activity.startActivityForResult(intent, REQUEST_CODE_INSTALL_CONFIRM)
                 return
             }
             val uri = androidx.core.content.FileProvider.getUriForFile(
@@ -480,6 +465,22 @@ class GoProcessPlugin : Plugin() {
 
     override fun handleOnActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.handleOnActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == REQUEST_CODE_INSTALL_CONFIRM) {
+            val call = pendingCalls.remove("installConfirm") ?: run {
+                Log.w(TAG, "No pending call for install confirm")
+                return
+            }
+            if (resultCode == Activity.RESULT_OK) {
+                val apkPath = call.getString("apkPath") ?: ""
+                val apkFile = java.io.File(apkPath)
+                executeComboLiteInstall(call, apkFile)
+            } else {
+                call.reject("用户取消安装")
+            }
+            return
+        }
+
         if (requestCode != REQUEST_CODE_PLUGIN_PICK) return
         val call = pendingCalls.remove("pickPlugin") ?: return
         if (resultCode != Activity.RESULT_OK || data?.data == null) {
@@ -523,29 +524,12 @@ class GoProcessPlugin : Plugin() {
                 return
             }
             if (PluginManager.isInitialized) {
-                GlobalScope.launch(Dispatchers.IO) {
-                    try {
-                        val result = PluginManager.installerManager.installPlugin(apkFile, true)
-                        when (result) {
-                            is com.combo.core.runtime.installer.InstallerManager.InstallResult.Success -> {
-                                Log.i(TAG, "Plugin installed via ComboLite from picker: $name -> ${result.pluginInfo.id}")
-                                call.resolve(JSObject().apply {
-                                    put("success", true)
-                                    put("method", "combolite")
-                                    put("fileName", name)
-                                    put("pluginId", result.pluginInfo.id)
-                                })
-                            }
-                            is com.combo.core.runtime.installer.InstallerManager.InstallResult.Failure -> {
-                                Log.e(TAG, "ComboLite install failed: ${result.reason}", result.exception)
-                                call.reject("ComboLite install failed: ${result.reason}")
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "ComboLite installPlugin exception", e)
-                        call.reject("ComboLite install error: ${e.message}")
-                    }
+                pendingCalls["installConfirm"] = call
+                val intent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java).apply {
+                    putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, apkPath)
+                    putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_FILE_NAME, name)
                 }
+                activity.startActivityForResult(intent, REQUEST_CODE_INSTALL_CONFIRM)
                 return
             }
             val providerUri = androidx.core.content.FileProvider.getUriForFile(
@@ -595,6 +579,32 @@ class GoProcessPlugin : Plugin() {
             Log.e(TAG, "getLocalFilePath failed", e)
             result.put("path", "")
             call.resolve(result)
+        }
+    }
+
+    private fun executeComboLiteInstall(call: PluginCall, apkFile: File) {
+        val apkPath = apkFile.absolutePath
+        GlobalScope.launch(Dispatchers.IO) {
+            try {
+                val result = PluginManager.installerManager.installPlugin(apkFile, true)
+                when (result) {
+                    is com.combo.core.runtime.installer.InstallerManager.InstallResult.Success -> {
+                        Log.i(TAG, "Plugin installed via ComboLite: $apkPath -> ${result.pluginInfo.id}")
+                        call.resolve(JSObject().apply {
+                            put("success", true)
+                            put("method", "combolite")
+                            put("pluginId", result.pluginInfo.id)
+                        })
+                    }
+                    is com.combo.core.runtime.installer.InstallerManager.InstallResult.Failure -> {
+                        Log.e(TAG, "ComboLite install failed: ${result.reason}", result.exception)
+                        call.reject("ComboLite install failed: ${result.reason}")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "ComboLite installPlugin exception", e)
+                call.reject("ComboLite install error: ${e.message}")
+            }
         }
     }
 }

@@ -134,5 +134,11 @@
             android:exported="false"
             android:theme="@style/AppTheme.NoActionBar"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode" />
+
+        <activity
+            android:name=".InstallConfirmActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode" />
     </application>
 </manifest>
