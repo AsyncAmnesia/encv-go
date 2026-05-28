@@ -70,7 +70,7 @@ class MainActivity : BridgeActivity() {
             try {
                 if (BuildConfig.DEBUG) {
                     Log.i(TAG, "Debug mode: installing plugins from assets...")
-                    installPluginsFromAssetsForDebug("debug_plugins")
+                    installPluginFromAssets("plugins/mpv-player.apk")
                 }
                 Log.i(TAG, "Loading enabled plugins...")
                 PluginManager.loadEnabledPlugins()
@@ -81,6 +81,27 @@ class MainActivity : BridgeActivity() {
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load plugins", e)
             }
+        }
+    }
+
+    private suspend fun installPluginFromAssets(assetPath: String) {
+        try {
+            val tmpFile = java.io.File.createTempFile("plugin_", ".apk", cacheDir)
+            assets.open(assetPath).use { input ->
+                tmpFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            val result = PluginManager.installerManager.installPlugin(tmpFile, forceOverwrite = true)
+            when (result) {
+                is com.combo.core.runtime.installer.InstallerManager.InstallResult.Success -> {
+                    Log.i(TAG, "Plugin installed: ${result.pluginInfo.id}")
+                }
+                is com.combo.core.runtime.installer.InstallerManager.InstallResult.Failure -> {
+                    Log.w(TAG, "Plugin install failed: ${result.reason}")
+                }
+            }
+            tmpFile.delete()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to install plugin from assets: $assetPath", e)
         }
     }
 

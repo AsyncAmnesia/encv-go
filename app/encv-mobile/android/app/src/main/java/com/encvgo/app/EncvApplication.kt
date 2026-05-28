@@ -16,9 +16,6 @@ class EncvApplication : BaseHostApplication() {
 
     override fun onFrameworkSetup(): suspend () -> Unit {
         return {
-            PluginManager.proxyManager.apply {
-                setHostActivity(com.encvgo.app.MainActivity::class.java)
-            }
             PluginManager.setValidationStrategy(ValidationStrategy.Insecure)
             PluginCrashHandler.setGlobalClashCallback(null)
         }
