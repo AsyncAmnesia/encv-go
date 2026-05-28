@@ -194,3 +194,30 @@ export async function debugInstallFlow(): Promise<Record<string, any>> {
     return { error: e instanceof Error ? e.message : String(e) }
   }
 }
+
+export async function exportLogs(): Promise<{ success: boolean; path?: string }> {
+  try {
+    return await GoProcess.exportLogs()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.exportLogs() failed:', e)
+    return { success: false }
+  }
+}
+
+export async function clearLogs(): Promise<{ success: boolean }> {
+  try {
+    return await GoProcess.clearLogs()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.clearLogs() failed:', e)
+    return { success: false }
+  }
+}
+
+export async function openLogViewer(): Promise<{ success: boolean }> {
+  try {
+    return await GoProcess.openLogViewer()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.openLogViewer() failed:', e)
+    return { success: false }
+  }
+}

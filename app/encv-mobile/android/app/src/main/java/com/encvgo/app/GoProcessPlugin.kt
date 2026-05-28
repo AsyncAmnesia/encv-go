@@ -843,4 +843,126 @@ class GoProcessPlugin : Plugin() {
             }
         }
     }
+
+    @PluginMethod
+    fun exportLogs(call: PluginCall) {
+        try {
+            val logDir = File(context.cacheDir, "encv_logs_export")
+            logDir.mkdirs()
+            val timestamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())
+
+            val logcatFile = File(logDir, "logcat_${timestamp}.txt")
+            val process = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-t", "5000", "-v", "time"))
+            process.inputStream.bufferedReader().use { reader ->
+                logcatFile.outputStream().bufferedWriter().use { writer ->
+                    var line: String?
+                    while (reader.readLine().also { line = it } != null) {
+                        writer.write(line)
+                        writer.newLine()
+                    }
+                }
+            }
+
+            val goLogDir = File(context.filesDir, "logs")
+            val goFiles = if (goLogDir.exists()) goLogDir.listFiles()?.toList() ?: emptyList() else emptyList()
+
+            val zipFile = File(context.cacheDir, "encv_logs_${timestamp}.zip")
+            java.util.zip.ZipOutputStream(zipFile.outputStream()).use { zos ->
+                fun addToZip(file: File, entryName: String) {
+                    if (!file.exists()) return
+                    zos.putNextEntry(java.util.zip.ZipEntry(entryName))
+                    file.inputStream().use { it.copyTo(zos) }
+                    zos.closeEntry()
+                }
+                addToZip(logcatFile, "logcat_${timestamp}.txt")
+                for (f in goFiles.filter { it.isFile }) {
+                    addToZip(f, "go_backend/${f.name}")
+                }
+                val goStderrLog = File(context.filesDir, "encv-go-stderr.log")
+                if (goStderrLog.exists()) addToZip(goStderrLog, "go_backend/encv-go-stderr.log")
+                val goStdoutLog = File(context.filesDir, "encv-go-stdout.log")
+                if (goStdoutLog.exists()) addToZip(goStdoutLog, "go_backend/encv-go-stdout.log")
+            }
+
+            logcatFile.delete()
+
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context, "${context.packageName}.fileprovider", zipFile)
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/zip"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                putExtra(Intent.EXTRA_SUBJECT, "ENCV Logs ${timestamp}")
+            }
+            val chooser = Intent.createChooser(shareIntent, "导出日志")
+            if (context !is Activity) {
+                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(chooser)
+
+            call.resolve(JSObject().put("success", true).put("path", zipFile.absolutePath))
+        } catch (e: Exception) {
+            Log.e(TAG, "exportLogs failed", e)
+            call.reject("Failed to export logs: ${e.message}")
+        }
+    }
+
+    @PluginMethod
+    fun clearLogs(call: PluginCall) {
+        try {
+            Runtime.getRuntime().exec(arrayOf("logcat", "-c"))
+
+            val goLogDir = File(context.filesDir, "logs")
+            if (goLogDir.exists()) {
+                goLogDir.listFiles()?.forEach { it.delete() }
+            }
+            val goStderr = File(context.filesDir, "encv-go-stderr.log")
+            if (goStderr.exists()) goStderr.delete()
+            val goStdout = File(context.filesDir, "encv-go-stdout.log")
+            if (goStdout.exists()) goStdout.delete()
+
+            val exportDir = File(context.cacheDir, "encv_logs_export")
+            if (exportDir.exists()) {
+                exportDir.listFiles()?.forEach { it.delete() }
+            }
+
+            call.resolve(JSObject().put("success", true))
+        } catch (e: Exception) {
+            Log.e(TAG, "clearLogs failed", e)
+            call.reject("Failed to clear logs: ${e.message}")
+        }
+    }
+
+    @PluginMethod
+    fun openLogViewer(call: PluginCall) {
+        try {
+            val logcatFile = File(context.cacheDir, "encv_logs_export/logcat_latest.txt")
+            val process = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-t", "3000", "-v", "time"))
+            logcatFile.parentFile?.mkdirs()
+            process.inputStream.bufferedReader().use { reader ->
+                logcatFile.outputStream().bufferedWriter().use { writer ->
+                    var line: String?
+                    while (reader.readLine().also { line = it } != null) {
+                        writer.write(line)
+                        writer.newLine()
+                    }
+                }
+            }
+
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context, "${context.packageName}.fileprovider", logcatFile)
+            val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "text/plain")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                if (context !is Activity) {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+            context.startActivity(viewIntent)
+            call.resolve(JSObject().put("success", true))
+        } catch (e: Exception) {
+            Log.e(TAG, "openLogViewer failed", e)
+            call.reject("Failed to open log viewer: ${e.message}")
+        }
+    }
 }

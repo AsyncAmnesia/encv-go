@@ -286,6 +286,27 @@
           <ion-icon :icon="bugOutline" slot="start"></ion-icon>
           <ion-toggle :checked="vconsoleEnabled" @ionChange="handleVConsoleToggle">{{ t('devtools.vconsole') }}</ion-toggle>
         </ion-item>
+        <ion-item button @click="handleExportLogs" detail>
+          <ion-icon :icon="downloadOutline" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('devtools.exportLogs') }}</h3>
+            <p>{{ t('devtools.exportLogsDesc') }}</p>
+          </ion-label>
+        </ion-item>
+        <ion-item button @click="handleOpenLogViewer" detail>
+          <ion-icon :icon="readerOutline" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('devtools.openLog') }}</h3>
+            <p>{{ t('devtools.openLogDesc') }}</p>
+          </ion-label>
+        </ion-item>
+        <ion-item button @click="handleClearLogs" detail>
+          <ion-icon :icon="trashOutline" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('devtools.clearLogs') }}</h3>
+            <p>{{ t('devtools.clearLogsDesc') }}</p>
+          </ion-label>
+        </ion-item>
       </ion-list>
 
       <ion-list>
@@ -351,7 +372,7 @@ import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonContent, IonList, IonListHeader, IonItem, IonItemDivider,
   IonIcon, IonLabel, IonToggle, IonInput, IonBadge, IonSpinner,
-  IonSelect, IonSelectOption, modalController,
+  IonSelect, IonSelectOption, modalController, alertController,
 } from '@ionic/vue'
 import {
   moon, globeOutline, server as serverIcon, save as saveIcon,
@@ -362,6 +383,8 @@ import {
   newspaperOutline, gitNetworkOutline, toggleOutline,
   textOutline, personOutline, folderOpen, refreshCircle,
   bugOutline,
+  downloadOutline,
+  trashOutline,
   phonePortraitOutline,
   colorPaletteOutline, layersOutline,
   fileTrayFull as databaseIcon,
@@ -372,7 +395,7 @@ import { useConfig } from '@/composables/useConfig'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { useDevTools } from '@/composables/useDevTools'
-import { isNative } from '@/plugins/GoProcess'
+import { isNative, exportLogs, clearLogs, openLogViewer } from '@/plugins/GoProcess'
 import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus, fetchTextPreviewExts, invalidateTextExtsCache } from '@/api/encv'
 import type { IndexStats, FFmpegStatus } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
@@ -467,6 +490,52 @@ function handleCustomTextExtsChange(event: CustomEvent) {
 
 function handleVConsoleToggle(event: CustomEvent) {
   toggleVConsole(event.detail.checked)
+}
+
+async function handleExportLogs() {
+  if (!isNative()) return
+  try {
+    const result = await exportLogs()
+    if (result.success) {
+      showToast({ message: t('devtools.exportSuccess'), duration: 1500, color: 'success' })
+    } else {
+      showToast({ message: t('devtools.exportFailed'), duration: 2000, color: 'danger' })
+    }
+  } catch {
+    showToast({ message: t('devtools.exportFailed'), duration: 2000, color: 'danger' })
+  }
+}
+
+async function handleOpenLogViewer() {
+  if (!isNative()) return
+  try {
+    await openLogViewer()
+  } catch {
+    showToast({ message: t('devtools.openLogFailed'), duration: 2000, color: 'danger' })
+  }
+}
+
+async function handleClearLogs() {
+  if (!isNative()) return
+  const alert = await alertController.create({
+    header: t('devtools.clearLogsConfirm'),
+    buttons: [
+      { text: t('common.cancel'), role: 'cancel' },
+      {
+        text: t('common.confirm'),
+        role: 'confirm',
+        handler: async () => {
+          const result = await clearLogs()
+          if (result.success) {
+            showToast({ message: t('devtools.clearSuccess'), duration: 1500, color: 'success' })
+          } else {
+            showToast({ message: t('devtools.clearFailed'), duration: 2000, color: 'danger' })
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
 }
 
 const showJsonEditor = ref(false)

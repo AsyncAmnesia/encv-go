@@ -44,6 +44,9 @@ export interface GoProcessPlugin {
   checkInstalledPlugins(): Promise<Record<string, boolean>>
   getLocalFilePath(options: { path: string }): Promise<{ path: string }>
   debugInstallFlow(): Promise<Record<string, any>>
+  exportLogs(): Promise<{ success: boolean; path?: string }>
+  clearLogs(): Promise<{ success: boolean }>
+  openLogViewer(): Promise<{ success: boolean }>
 }
 
 export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
@@ -119,5 +122,17 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
 
   async debugInstallFlow(): Promise<Record<string, any>> {
     return { debugLog: 'web stub' }
+  }
+
+  async exportLogs(): Promise<{ success: boolean; path?: string }> {
+    return { success: false }
+  }
+
+  async clearLogs(): Promise<{ success: boolean }> {
+    return { success: false }
+  }
+
+  async openLogViewer(): Promise<{ success: boolean }> {
+    return { success: false }
   }
 }
