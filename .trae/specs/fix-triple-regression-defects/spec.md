@@ -1,144 +1,223 @@
-# 修复三重回归缺陷 Spec
+# 修复三重回归缺陷 Spec（修订版）
 
 ## Why
 
-用户报告三个严重回归问题，表明之前的修复未能生效或被覆盖：
+用户报告三个严重回归问题，需要饱和式调试找出真正的根因：
 
-| # | 问题 | 根因分析 |
-|---|------|----------|
-| 0 | **文本预览卡顿 + 换行不生效** | text.html 的换行逻辑依赖 `isWrapping` 状态与按钮 `active` 类同步，但初始状态可能不一致；或 iframe 加载时机问题导致 `classList.toggle('no-wrap')` 未生效 |
-| 1 | **安装扩展超时 + 确认界面不显示** | GoProcessPlugin 启动 InstallConfirmActivity 时设置了错误的 `action="com.encvgo.app.INSTALL_RESULT"`（这是 BroadcastReceiver 的 action，不是 Activity 启动用的），导致 Activity 启动失败或被系统拒绝；且缺少 `FLAG_ACTIVITY_NEW_TASK` 标志 |
-| 2 | **加密视频 v3/v4 均报 deep integrity check failed** | `SkipStructCheck=true` 只跳过了 QuickStructCheck（L1），但 **deep integrity check（L4）不受此参数控制**，仍在 L3 成功后强制执行 MP4 结构比对/FFmpeg 解码/帧数一致性检查，而 v4 容器加密后 MP4 结构必然改变，导致验证失败 |
+### 问题 0：文本预览卡顿 + 换行不生效
 
-## What Changes
+**对比 OpenList 正常工作 vs 移动端失效**：
 
-### 问题 0：文本预览换行失效
+| 环境 | Preview URL | text.html baseUrl 计算 | decryptUrl |
+|------|-------------|------------------------|------------|
+| OpenList | `/_preview/text.html?file=...` | 检测 `/_preview` → 返回 basePath | `${basePath}/decrypt?file=...` ✅ |
+| 移动端 | `/preview/text.html?file=...` | 无 `/_preview` → 返回 `''` | `/decrypt?file=...` ✅ |
 
-**根因**：text.html 的 `isWrapping=true` 初始状态与 CSS `white-space: pre-wrap` 默认一致，但按钮有 `class="active"`。问题在于：
-1. 文本加载后 `textContent.classList.add('no-wrap')` 条件判断错误（L274-276：`if (!isWrapping)` 但此时 isWrapping=true）
-2. iframe 内部 JS 执行时机可能晚于父页面状态同步
+URL 计算逻辑正确，问题不在 baseUrl。
 
-**修复**：
-- 确保 text.html 初始化时 `isWrapping` 与按钮 `active` 类和 CSS 默认状态三者一致
-- 文本加载完成后，根据当前 `isWrapping` 状态正确设置 `no-wrap` 类
+**真正根因**：text.html 的 CSS 与 iframe 父容器高度约束冲突。
+
+text.html L88-105：
+```css
+#textContent {
+    display: none;
+    height: 100vh;      /* ← 问题：100vh 在 iframe 内可能不等于 iframe 高度 */
+    overflow-y: auto;
+    overflow-x: auto;
+    white-space: pre-wrap;
+}
+```
+
+FilePreview.vue L333-343：
+```css
+.text-preview {
+  width: 100%;
+  height: 100%;        /* ← 问题：没有约束 iframe 的实际渲染高度 */
+}
+.preview-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  flex: 1;             /* ← flex: 1 依赖父容器有明确高度 */
+}
+```
+
+**OpenList 为什么正常**：OpenList 的 iframe 是直接嵌入页面，父容器有明确高度。移动端的 `ion-content` 高度是动态计算的，可能导致 iframe 的 `100vh` 计算不正确。
+
+**换行不生效根因**：用户点击换行按钮后，`isWrapping` 状态切换，但 `#textContent` 的 `no-wrap` 类可能因为滚动冲突导致视觉上看起来没生效（实际上是滚动区域变了）。
 
 ### 问题 1：安装确认界面不显示
 
-**根因**：GoProcessPlugin.kt L422-428 和 L556-562 中启动 InstallConfirmActivity 的 Intent 设置了错误的 `action`：
+**饱和式调试结果**：
 
+GoProcessPlugin.kt L422-428：
 ```kotlin
 val intent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java).apply {
-    action = "com.encvgo.app.INSTALL_RESULT"  // ❌ 这是 BroadcastReceiver 的 action！
+    action = "com.encvgo.app.INSTALL_RESULT"  // ❌ 错误的 action
+    putExtra(...)
+}
+context.startActivity(intent)  // ❌ 缺少 FLAG_ACTIVITY_NEW_TASK
+```
+
+**两个致命错误**：
+1. `action="com.encvgo.app.INSTALL_RESULT"` — 这是 BroadcastReceiver 的 action，不是 Activity 启动用的。虽然 `setClass` 会优先匹配，但设置错误的 action 可能导致系统拒绝启动。
+2. **缺少 `FLAG_ACTIVITY_NEW_TASK`** — 当 `context` 不是 Activity 时（GoProcessPlugin 的 context 是 Capacitor Plugin 的 context，可能是 Application 或 bridge context），**必须**添加此标志。
+
+对比同文件 L436-442（系统安装 Intent，正确实现）：
+```kotlin
+if (context !is android.app.Activity) {
+    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)  // ✅ 有检查
+}
+```
+
+**根因**：L422-428 和 L556-562 两处启动 InstallConfirmActivity 的代码都缺少 `FLAG_ACTIVITY_NEW_TASK` 检查。
+
+### 问题 2：加密验证 deep integrity check 失败
+
+**分层验证架构分析**：
+
+```
+Verify() 方法执行顺序：
+L1: QuickStructCheck (moov/stsz) ← SkipStructCheck=true 可跳过 ✅
+L2: QuickSampleHashCheck (采样 Hash)
+L3: FullHashCheck (全量 Hash)
+L4: runDeepVideoIntegrityCheck ← 无条件执行！❌
+    ├── checkMP4Structure (go-mp4.Probe 比对)
+    ├── checkFFmpegDecoding (解码压力测试)
+    └── checkFrameConsistency (帧数/时长比对)
+```
+
+content_verifier.go L141-144：
+```go
+// === 深度诊断 (仅在 L3 成功后执行) ===
+if err := p.runDeepVideoIntegrityCheck(originalPath, decryptedPath, err); err != nil {
+    return fmt.Errorf("deep integrity check failed: %w", err), nil  // ← 无条件执行
+}
+```
+
+**根因**：`SkipStructCheck=true` 只跳过 L1，但 L4 的 `runDeepVideoIntegrityCheck` **不受任何参数控制**，在 L3 成功后强制执行。
+
+v4 容器加密会改变 MP4 atom 结构（重新打包），导致 L4 的 `checkMP4Structure` 失败。
+
+---
+
+## What Changes
+
+### 修复 0：文本预览 iframe 高度约束
+
+**方案**：让 iframe 内部的 `#textContent` 高度适应 iframe 实际高度，而不是 `100vh`。
+
+修改 text.html：
+```css
+#textContent {
+    display: none;
+    height: 100%;      /* 改为 100%，适应 iframe 实际高度 */
+    overflow-y: auto;
+    overflow-x: auto;
     ...
+}
+```
+
+同时确保 FilePreview.vue 的 `.text-preview` 有明确高度约束。
+
+### 修复 1：InstallConfirmActivity 启动
+
+**方案**：移除错误的 action，添加 FLAG_ACTIVITY_NEW_TASK。
+
+修改 GoProcessPlugin.kt L422-428 和 L556-562：
+```kotlin
+val intent = Intent(context, com.encvgo.app.InstallConfirmActivity::class.java).apply {
+    // 移除错误的 action 设置
+    putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, apkPath)
+    putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_FILE_NAME, apkFile.name)
+    putExtra("request_id", "installConfirm")
+    if (context !is Activity) {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
 }
 context.startActivity(intent)
 ```
 
-**问题**：
-1. `action` 属性用于 Intent 匹配，设置 `"com.encvgo.app.INSTALL_RESULT"` 会让系统尝试匹配能处理此 action 的组件，而不是直接启动指定的 Activity 类
-2. 当 context 不是 Activity 时（如 Service 或 Application），缺少 `FLAG_ACTIVITY_NEW_TASK` 会导致启动失败
+### 修复 2：SkipDeepCheck 参数
 
-**修复**：
-- 移除错误的 `action` 设置，或改为 `Intent.ACTION_VIEW`
-- 添加 `FLAG_ACTIVITY_NEW_TASK` 标志（当 context 不是 Activity 时）
+**方案**：新增 `SkipDeepCheck` 参数，控制 L4 是否执行。
 
-### 问题 2：加密验证 deep integrity check 失败
-
-**根因**：content_verifier.go 的验证分层架构：
-
-```
-L1: QuickStructCheck (moov/stsz) ← SkipStructCheck=true 可跳过 ✅
-L2: QuickSampleHashCheck (采样 Hash)
-L3: FullHashCheck (全量 Hash)
-L4: runDeepVideoIntegrityCheck ← 不受任何参数控制！❌
+1. interfaces.go 新增字段：
+```go
+type VerifyOptions struct {
+    SkipSizeCheck   bool
+    SkipStructCheck bool // 跳过 L1
+    SkipDeepCheck   bool // 跳过 L4 【新增】
+    CollectWarnings bool
+}
 ```
 
-当 `SkipStructCheck=true` 时，L1 被跳过返回 warning，但 L4 仍会执行：
-- `checkMP4Structure`：使用 go-mp4.Probe 比对原始和解密文件的 MP4 结构
-- `checkFFmpegDecoding`：FFmpeg 解码压力测试
-- `checkFrameConsistency`：帧数与时长比对
+2. content_verifier.go L141-144：
+```go
+if !opt.SkipDeepCheck {
+    if err := p.runDeepVideoIntegrityCheck(originalPath, decryptedPath, err); err != nil {
+        return fmt.Errorf("deep integrity check failed: %w", err), nil
+    }
+}
+```
 
-v4 容器加密会改变 MP4 atom 结构（重新打包），导致 L4 的 `checkMP4Structure` 失败。
-
-**修复**：
-- 在 `VerifyOptions` 中新增 `SkipDeepCheck` 参数
-- 当 `isPostEncryptVerify=true` 时，设置 `SkipDeepCheck=true`
-- 在 `Verify()` 中，当 `SkipDeepCheck=true` 时跳过 `runDeepVideoIntegrityCheck`
+3. plugin.go verifyContainer()：
+```go
+verifyOpts = &pluginInterfaces.VerifyOptions{
+    SkipSizeCheck:   true,
+    SkipStructCheck: true,
+    SkipDeepCheck:   true,  // 【新增】
+    CollectWarnings: true,
+}
+```
 
 ---
 
 ## ADDED Requirements
 
-### Requirement D0: 文本预览换行状态一致性
+### Requirement F0: 文本预览 iframe 高度适配
 
-系统 SHALL 确保文本预览的换行状态在以下三者间保持一致：
-- JS 变量 `isWrapping` 初始值
-- 换行按钮的 `active` CSS 类
-- `#textContent` 的 `white-space` CSS 属性
+系统 SHALL 确保文本预览 iframe 内部的滚动区域高度正确适配 iframe 实际高度。
 
-#### Scenario D0.1: 初始状态为自动换行
-- **WHEN** text.html 加载完成
-- **THEN** `isWrapping=true`，按钮有 `active` 类，`#textContent` 无 `no-wrap` 类（使用 `pre-wrap`）
+#### Scenario F0.1: iframe 内部高度 100%
+- **WHEN** text.html 在 iframe 中加载
+- **THEN** `#textContent` 的 `height: 100%` 正确适配 iframe 实际渲染高度
+- **AND** 滚动区域覆盖整个 iframe 可视区域
 
-#### Scenario D0.2: 文本加载后状态正确
-- **WHEN** 文本内容加载完成并显示
-- **THEN** `#textContent` 的 CSS 类正确反映当前 `isWrapping` 状态（不额外添加/移除类）
+### Requirement F1: InstallConfirmActivity 正确启动
 
-### Requirement D1: InstallConfirmActivity 正确启动
+系统 SHALL 确保 InstallConfirmActivity 能从非 Activity context 正确启动。
 
-系统 SHALL 确保 InstallConfirmActivity 能被正确启动并显示给用户。
+#### Scenario F1.1: FLAG_ACTIVITY_NEW_TASK 检查
+- **WHEN** GoProcessPlugin 从 context（非 Activity）启动 InstallConfirmActivity
+- **THEN** Intent 包含 `FLAG_ACTIVITY_NEW_TASK` 标志
+- **AND** 不设置错误的 action 属性
 
-#### Scenario D1.1: Intent 构造正确
-- **WHEN** GoProcessPlugin 构造启动 InstallConfirmActivity 的 Intent
-- **THEN** Intent 明确指定目标组件（`setClass(context, InstallConfirmActivity::class.java)`）
-- **AND** 不设置错误的 `action` 属性（或使用 `Intent.ACTION_MAIN`）
-- **AND** 当 context 不是 Activity 时添加 `FLAG_ACTIVITY_NEW_TASK`
-
-#### Scenario D1.2: Activity 启动成功
+#### Scenario F1.2: Activity 显示
 - **WHEN** `context.startActivity(intent)` 执行
-- **THEN** InstallConfirmActivity 显示在屏幕上
-- **AND** 用户能看到 APK 信息和确认/取消按钮
+- **THEN** InstallConfirmActivity 立即显示在屏幕上
 
-### Requirement D2: PostEncryptProcessor 验证跳过深度检查
+### Requirement F2: PostEncryptProcessor 跳过深度检查
 
-系统 SHALL 在 PostEncryptProcessor 场景下跳过 deep integrity check。
+系统 SHALL 在 PostEncryptProcessor 场景下跳过 L4 deep integrity check。
 
-#### Scenario D2.1: SkipDeepCheck 参数生效
+#### Scenario F2.1: SkipDeepCheck 参数
 - **WHEN** `VerifyOptions.SkipDeepCheck=true`
-- **THEN** `Verify()` 方法在 L3 (FullHashCheck) 成功后直接返回
+- **THEN** `Verify()` 方法在 L3 成功后直接返回成功
 - **AND** 不执行 `runDeepVideoIntegrityCheck`
 
-#### Scenario D2.2: PostEncryptProcessor 设置 SkipDeepCheck
+#### Scenario F2.2: isPostEncryptVerify 设置 SkipDeepCheck
 - **WHEN** `verifyContainer()` 在 `isPostEncryptVerify=true` 时执行
-- **THEN** `verifyOpts.SkipDeepCheck=true` 与 `SkipStructCheck=true` 同时设置
-
----
-
-## MODIFIED Requirements
-
-### Requirement: VerifyOptions 结构扩展
-
-`VerifyOptions` 结构体 SHALL 新增 `SkipDeepCheck` 字段：
-
-```go
-type VerifyOptions struct {
-    SkipSizeCheck   bool // 跳过精确文件大小比对
-    SkipStructCheck bool // 跳过结构完整性检查（L1）
-    SkipDeepCheck   bool // 跳过深度完整性检查（L4）【新增】
-    CollectWarnings bool // 收集 warnings
-}
-```
+- **THEN** `verifyOpts.SkipDeepCheck=true`
 
 ---
 
 ## Impact
 
 - Affected code:
-  - `internal/openlist/web/static/preview/text.html` — 换行状态初始化逻辑
-  - `app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt` — Intent 构造修复
-  - `internal/v2/plugins/interfaces/interfaces.go` — VerifyOptions 新增字段
-  - `internal/v2/plugins/video/content_verifier.go` — Verify() 方法跳过 L4 逻辑
-  - `internal/v2/plugins/video/plugin.go` — verifyContainer() 设置 SkipDeepCheck
-- Affected specs:
-  - `fix-three-runtime-defects` — 原修复不完整，需要补充 L4 跳过逻辑
-  - `test-orchestration-cross-platform` — encryption_roundtrip_e2e_test.go 需验证 SkipDeepCheck 生效
+  - `internal/openlist/web/static/preview/text.html` — CSS height 改为 100%
+  - `app/encv-mobile/src/views/FilePreview.vue` — 确保 .text-preview 高度约束
+  - `app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt` — 两处 Intent 修复
+  - `internal/v2/plugins/interfaces/interfaces.go` — VerifyOptions 新增 SkipDeepCheck
+  - `internal/v2/plugins/video/content_verifier.go` — Verify() 方法条件跳过 L4
+  - `internal/v2/plugins/video/plugin.go` — verifyContainer() 设置 SkipDeepCheck=true

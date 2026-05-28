@@ -1,11 +1,12 @@
-- [ ] D0.1: text.html 初始状态 `isWrapping=true` 与按钮 `active` 类和 CSS `pre-wrap` 一致
-- [ ] D0.2: 文本加载完成后 `#textContent` 的 CSS 类正确反映 `isWrapping` 状态
-- [ ] D0.3: 换行按钮点击后 `no-wrap` 类正确切换
-- [ ] D1.1: GoProcessPlugin.kt 中 Intent 不设置错误的 `action="com.encvgo.app.INSTALL_RESULT"`
-- [ ] D1.2: Intent 添加 `FLAG_ACTIVITY_NEW_TASK` 标志（context 不是 Activity 时）
-- [ ] D1.3: InstallConfirmActivity 能正常启动并显示
-- [ ] D2.1: `VerifyOptions` 结构体新增 `SkipDeepCheck bool` 字段
-- [ ] D2.2: `Verify()` 方法当 `SkipDeepCheck=true` 时跳过 `runDeepVideoIntegrityCheck`
-- [ ] D2.3: `verifyContainer()` 当 `isPostEncryptVerify=true` 时设置 `SkipDeepCheck=true`
-- [ ] D2.4: v4 容器加密验证不再报 deep integrity check failed
+- [ ] F0.1: text.html `#textContent` height 为 `100%`（而非 `100vh`）
+- [ ] F0.2: FilePreview.vue `.text-preview` 有明确高度约束
+- [ ] F0.3: 文本预览 iframe 滚动区域覆盖整个可视区域
+- [ ] F1.1: GoProcessPlugin.kt L422-428 移除错误的 `action` 设置
+- [ ] F1.2: GoProcessPlugin.kt L422-428 添加 `FLAG_ACTIVITY_NEW_TASK` 检查
+- [ ] F1.3: GoProcessPlugin.kt L556-562 同上修复
+- [ ] F1.4: InstallConfirmActivity 能正常启动并显示
+- [ ] F2.1: interfaces.go VerifyOptions 新增 `SkipDeepCheck bool` 字段
+- [ ] F2.2: content_verifier.go Verify() 当 `SkipDeepCheck=true` 时跳过 `runDeepVideoIntegrityCheck`
+- [ ] F2.3: plugin.go verifyContainer() 设置 `SkipDeepCheck=true`
+- [ ] F2.4: v4 容器加密验证不再报 deep integrity check failed
 - [ ] 所有修改文件编译通过（Go/Kotlin/HTML）
