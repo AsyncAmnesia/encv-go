@@ -1,0 +1,19 @@
+- [ ] T1: GoProcessPlugin API 契约测试存在且通过（@PluginMethod 签名 + pendingCalls 一致性 + BroadcastReceiver 生命周期）
+- [ ] T2: ComboLite 静态检查通过（零反射残留 + InstallerManager 路径正确 + setHostActivity 配置存在）
+- [ ] T3a: v3 容器加密 E2E roundtrip 通过（encrypt→decrypt→MD5 一致）
+- [ ] T3b: v4 容器加密 E2E roundtrip 通过（encrypt→decrypt+verify SkipStructCheck 生效）
+- [ ] T3c: 加密后原始文件存在性验证通过（P0 防护回归）
+- [ ] T3d: ffprobe 异常格式容错验证通过（frames 格式降级不阻塞）
+- [ ] T4a: file list API 响应格式符合前端期望
+- [ ] T4b: encrypt API 参数/响应格式正确
+- [ ] T4c: preview URL 生成逻辑正确（text.html/pdf.html/renderer）
+- [ ] T5: Android Native↔Web Bridge 链路测试存在（instrumented test）
+- [ ] T6a: 安装状态机转换正确（idle→picking→confirming→installing→success/error）
+- [ ] T6b: 120s 超时不再触发（BroadcastReceiver 即时回调）
+- [ ] T6c: InstallConfirmActivity Intent 数据传递正确（EXTRA_APK_PATH + EXTRA_FILE_NAME + request_id）
+- [ ] T7a: MPV 已加载时 Intent 指向 MpvPlayerActivity
+- [ ] T7b: MPV 未加载时 fallback 到 ArtPlayer
+- [ ] TC1: CI Layer 1 测试矩阵包含所有快速测试（<5min）
+- [ ] TC2: Makefile test-quick / test-full / test-e2e 目标可用
+- [ ] 所有新测试 `go test ./...` 编译通过
+- [ ] 所有新测试 `vitest run` 编译通过
