@@ -231,7 +231,63 @@ ComboLite 插件文件使用 `.apk` 扩展名，原因：
 
 ---
 
-## 六、源码参考（克隆至 `/tmp/ComboLite`）
+## 六、CI 构建中的插件分离原则
+
+### 6.1 核心原则：插件 APK 不打包进主 APK
+
+ComboLite 插件是运行时动态加载的，不应嵌入主 APK 的 assets 中。CI 构建必须将主应用和插件作为**独立的构建步骤**分离。
+
+### 6.2 `packagePlugins` 必须禁用
+
+```kotlin
+// app/build.gradle.kts
+packagePlugins {
+    enabled.set(false)   // CI 构建时必须禁用！
+    buildType.set(PackageBuildType.DEBUG)
+    pluginsDir.set("debug_plugins")
+}
+```
+
+**为什么必须禁用**：
+- `enabled.set(true)` 会让 aar2apk 在 `assembleDebug`/`assembleRelease` 时自动构建插件并将 APK 放入 `debug_plugins/`（最终打包进主 APK 的 assets）
+- 这导致：① 主 APK 体积膨胀 ② 插件被重复构建 ③ 插件 APK 不应随主 APK 分发
+- 仅在本地开发调试时可以临时设为 `true`
+
+### 6.3 CI 构建步骤分离
+
+正确的 CI 构建顺序：
+
+```
+Step 1: 构建 JNI 库（如 libplayer.so）
+Step 2: 构建主应用 APK（assembleDebug / assembleRelease）
+         → 不触发插件构建（packagePlugins disabled）
+Step 3: 编译插件 Kotlin 代码（:plugin-mpv-player:compileDebugKotlin）
+Step 4: 转换插件 AAR→APK（convert_plugin-mpv-player_debug）
+Step 5: 验证插件 APK 内容
+```
+
+**关键 Gradle 任务**：
+- `:plugin-mpv-player:compile${BuildType}Kotlin` — 编译插件代码
+- `convert_plugin-mpv-player_${buildType}` — AAR→APK 转换（aar2apk 提供）
+- 插件 APK 输出路径：`build/` 目录下搜索 `plugin-mpv-player-${buildType}.apk`
+
+### 6.4 插件分发方式
+
+插件 APK 通过以下方式分发到用户设备：
+1. **CI 产物**：插件 APK 作为独立构建产物上传
+2. **运行时安装**：用户通过应用内文件选择器选择插件 APK → `PluginManager.installerManager.installPlugin()` 安装
+3. **安装位置**：`filesDir/plugins/{pluginId}/base.apk`（应用私有目录，非系统应用目录）
+
+### 6.5 错误 G：「主应用构建时自动打包插件」
+
+> **症状**：`assembleDebug` 触发了 `:plugin-mpv-player:assembleDebug` 和 `:convert_plugin-mpv-player_debug`
+> **根因**：`packagePlugins { enabled.set(true) }` 让 aar2apk 在主应用构建时自动执行插件打包
+> **后果**：插件 APK 被嵌入主 APK 的 assets，体积膨胀 + 重复构建
+> **修复**：`packagePlugins { enabled.set(false) }`，插件由 CI 单独步骤构建
+
+---
+
+## 七、源码参考（克隆至 `/tmp/ComboLite`）
 
 关键文件速查：
 
@@ -249,7 +305,7 @@ ComboLite 插件文件使用 `.apk` 扩展名，原因：
 
 ---
 
-## 七、调试技巧
+## 八、调试技巧
 
 1. **`PluginManager.isInitialized`** — 第一步检查这个，未初始化时所有操作无效
 2. **Logcat 过滤**：`TAG="ENCV-go"` 或 `TAG="PluginLifecycleManager"`
