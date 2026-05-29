@@ -48,10 +48,10 @@
             <ion-select-option value="mpv-plugin" :disabled="mpvPluginStatus !== 'ready'">{{ t('settings.mpvPluginExtension') }}</ion-select-option>
             <ion-select-option value="external">{{ t('settings.openExternal') }}</ion-select-option>
           </ion-select>
-          <ion-badge v-if="isNative() && mpvPluginStatus !== 'unknown' && mpvPluginStatus !== 'ready'" slot="end" :color="mpvPluginStatus === 'load_failed' || mpvPluginStatus === 'error' ? 'danger' : 'warning'">
+          <ion-badge v-if="isNative() && videoPlayerMode === 'mpv-plugin' && mpvPluginStatus !== 'unknown' && mpvPluginStatus !== 'ready'" slot="end" :color="mpvPluginStatus === 'load_failed' || mpvPluginStatus === 'error' ? 'danger' : 'warning'">
             {{ t(mpvStatusI18nKey) }}
           </ion-badge>
-          <ion-badge v-if="isNative() && mpvPluginStatus === 'ready'" slot="end" color="success">✓</ion-badge>
+          <ion-badge v-if="isNative() && videoPlayerMode === 'mpv-plugin' && mpvPluginStatus === 'ready'" slot="end" color="success">✓</ion-badge>
         </ion-item>
         <ion-item>
           <ion-icon :icon="musicalNotesOutline" slot="start"></ion-icon>
