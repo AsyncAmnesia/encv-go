@@ -21,8 +21,11 @@ object EncvComboLiteHost {
         if (!PluginLifecycleEngine.isInitialized()) {
             return PluginFullState(id = pluginId, status = "framework_not_ready")
         }
-        val installed = getInstalledPlugins().find { it.id == pluginId }
+        val allInstalled = getInstalledPlugins()
+        android.util.Log.i("EncvComboLiteHost", "getPluginFullState($pluginId): allInstalled.size=${allInstalled.size} ids=${allInstalled.map { it.id }}")
+        val installed = allInstalled.find { it.id == pluginId }
         if (installed == null) {
+            android.util.Log.w("EncvComboLiteHost", "getPluginFullState($pluginId): NOT FOUND in installed list → not_installed")
             return PluginFullState(id = pluginId, status = "not_installed")
         }
         if (!installed.enabled) {

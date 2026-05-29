@@ -736,32 +736,44 @@ onMounted(async () => {
     try { indexStats.value = await getIndexStats() } catch {}
     if (isNative()) { 
       try { engineStatus.value = await fetchFFmpegStatus() } catch {}
-      try {
-        const state = await getPluginFullState('com.encvgo.plugin.mpv')
-        mpvPluginStatus.value = state.status
-        mpvPluginError.value = ''
-        console.info('[Settings] MPV plugin status:', state.status)
-        if (state.status === 'not_loaded') {
-          console.info('[Settings] MPV plugin enabled but not loaded, attempting to load...')
-          const loaded = await ensurePluginLoaded('com.encvgo.plugin.mpv')
-          if (loaded) {
-            mpvPluginStatus.value = 'ready'
-            console.info('[Settings] MPV plugin loaded successfully')
-          } else {
-            mpvPluginStatus.value = 'load_failed'
-            mpvPluginError.value = '插件加载失败，请重启应用'
-            console.warn('[Settings] MPV plugin load failed')
-          }
-        }
-      } catch (e: any) {
-        console.error('[Settings] getPluginFullState failed:', e)
-        mpvPluginStatus.value = 'error'
-        mpvPluginError.value = e.message || '查询插件状态失败'
-      }
+      await refreshMpvPluginStatus()
     }
     loadPreviewConfig()
   }
 })
+
+async function refreshMpvPluginStatus() {
+  try {
+    const state = await getPluginFullState('com.encvgo.plugin.mpv')
+    console.info('[Settings] MPV plugin raw state:', JSON.stringify(state))
+    mpvPluginError.value = ''
+    
+    if (state.status === 'ready') {
+      mpvPluginStatus.value = 'ready'
+      return
+    }
+    
+    if (state.status === 'not_loaded' || state.status === 'not_installed') {
+      console.info('[Settings] MPV plugin status=${state.status}, attempting to load...')
+      const loaded = await ensurePluginLoaded('com.encvgo.plugin.mpv')
+      if (loaded) {
+        mpvPluginStatus.value = 'ready'
+        console.info('[Settings] MPV plugin loaded successfully')
+      } else {
+        mpvPluginStatus.value = 'load_failed'
+        mpvPluginError.value = '插件加载失败'
+        console.warn('[Settings] MPV plugin load failed')
+      }
+    } else {
+      mpvPluginStatus.value = state.status
+      console.warn('[Settings] MPV plugin status:', state.status)
+    }
+  } catch (e: any) {
+    console.error('[Settings] refreshMpvPluginStatus failed:', e)
+    mpvPluginStatus.value = 'error'
+    mpvPluginError.value = e.message || '查询失败'
+  }
+}
 
 watch(serverOnline, async (online) => {
   if (online) {
