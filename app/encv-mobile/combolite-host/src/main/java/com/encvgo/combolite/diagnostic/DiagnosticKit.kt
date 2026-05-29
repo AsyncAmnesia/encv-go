@@ -1,9 +1,12 @@
 package com.encvgo.combolite.diagnostic
 
 import android.content.Context
+import android.os.Build
+import android.content.pm.PackageManager
 import com.combo.core.runtime.PluginManager
 import com.combo.core.security.crash.PluginCrashHandler
 import com.combo.core.security.auth.AuthorizationManager
+import com.encvgo.combolite.EncvComboLiteHost
 import java.io.File
 import kotlin.reflect.jvm.javaMethod
 
@@ -131,6 +134,47 @@ object DiagnosticKit {
             steps.add("   FAILED with Error: ${e.javaClass.simpleName}: ${e.message}")
         }
 
+        steps.add("")
+        steps.add("5. Checking @Metadata on ComboLite classes...")
+        try {
+            val pmClass = PluginManager::class.java
+            val meta = pmClass.getAnnotation(kotlin.Metadata::class.java)
+            steps.add("   PluginManager @Metadata = ${meta != null}")
+            if (meta != null) {
+                steps.add("   mv = ${meta.metadataVersion.toList()}")
+                steps.add("   k = ${meta.kind}")
+            }
+        } catch (e: Exception) {
+            steps.add("   @Metadata check FAILED: ${e.message}")
+        }
+        try {
+            val imClass = Class.forName("com.combo.core.runtime.installer.InstallerManager")
+            val meta = imClass.getAnnotation(kotlin.Metadata::class.java)
+            steps.add("   InstallerManager @Metadata = ${meta != null}")
+            if (meta != null) {
+                steps.add("   mv = ${meta.metadataVersion.toList()}")
+                steps.add("   k = ${meta.kind}")
+            }
+        } catch (e: Exception) {
+            steps.add("   InstallerManager @Metadata check FAILED: ${e.message}")
+        }
+
+        steps.add("")
+        steps.add("6. Checking R8 mapping on ComboLite classes...")
+        try {
+            val pmMethods = PluginManager::class.java.declaredMethods.map { "${it.name}(${it.parameterTypes.map { t -> t.simpleName }})" }
+            steps.add("   PluginManager methods (first 10) = ${pmMethods.take(10)}")
+        } catch (e: Exception) {
+            steps.add("   PluginManager method list FAILED: ${e.message}")
+        }
+        try {
+            val imClass = Class.forName("com.combo.core.runtime.installer.InstallerManager")
+            val imMethods = imClass.declaredMethods.map { "${it.name}(${it.parameterTypes.map { t -> t.simpleName }})" }
+            steps.add("   InstallerManager methods (first 10) = ${imMethods.take(10)}")
+        } catch (e: Exception) {
+            steps.add("   InstallerManager method list FAILED: ${e.message}")
+        }
+
         return steps
     }
 
@@ -149,12 +193,13 @@ object DiagnosticKit {
 
         steps.add("2. PackageManager.getPackageArchiveInfo...")
         try {
-            val pkgInfo = context.packageManager.getPackageArchiveInfo(
-                apkFile.absolutePath,
-                android.content.pm.PackageManager.GET_META_DATA or
-                    android.content.pm.PackageManager.GET_SIGNATURES or
-                    android.content.pm.PackageManager.GET_ACTIVITIES
-            )
+            val flags = PackageManager.GET_META_DATA or PackageManager.GET_ACTIVITIES
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                flags = flags or PackageManager.GET_SIGNING_CERTIFICATES
+            } else {
+                @Suppress("DEPRECATION") flags = flags or PackageManager.GET_SIGNATURES
+            }
+            val pkgInfo = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, flags)
             if (pkgInfo == null) {
                 steps.add("   FAILED: getPackageArchiveInfo returned null (invalid APK?)")
             } else {
@@ -193,10 +238,25 @@ object DiagnosticKit {
             steps.add("   FAILED: ${e.message}")
         }
 
+        steps.add("")
+        steps.add("4. Host app signatures...")
+        try {
+            val sigFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES else @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES
+            val hostPkgInfo = context.packageManager.getPackageInfo(context.packageName, sigFlags)
+            val hostSigs = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                hostPkgInfo.signingInfo?.apkContentsSigners?.map { it.toCharsString().take(16) + "..." } ?: listOf("(none)")
+            } else {
+                @Suppress("DEPRECATION") hostPkgInfo.signatures?.map { it.toCharsString().take(16) + "..." } ?: listOf("(none)")
+            }
+            steps.add("   host signatures = $hostSigs")
+        } catch (e: Exception) {
+            steps.add("   FAILED: ${e.message}")
+        }
+
         return steps
     }
 
-    fun validationStrategyStatus(): List<String> {
+    fun validationStrategyStatus(context: Context): List<String> {
         val steps = mutableListOf<String>()
         steps.add("=== ValidationStrategy State ===")
         steps.add("1. PluginManager.isInitialized = ${PluginManager.isInitialized}")
@@ -221,10 +281,51 @@ object DiagnosticKit {
             steps.add("   FAILED with Error: ${e.javaClass.simpleName}: ${e.message}")
         }
 
+        steps.add("")
+        steps.add("4. Testing setValidationStrategy(Insecure)...")
+        try {
+            kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                PluginManager.setValidationStrategy(com.combo.core.runtime.ValidationStrategy.Insecure)
+                com.combo.core.security.crash.PluginCrashHandler.setGlobalClashCallback(null)
+            }
+            steps.add("   SUCCESS: no error thrown")
+        } catch (e: Error) {
+            steps.add("   FAILED with Error: ${e.javaClass.simpleName}: ${e.message}")
+            steps.add("   stack = ${e.stackTraceToString().take(500)}")
+        } catch (e: Exception) {
+            steps.add("   FAILED with Exception: ${e.javaClass.simpleName}: ${e.message}")
+        }
+
+        steps.add("5. Testing loadEnabledPlugins() call...")
+        try {
+            val count = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                EncvComboLiteHost.loadAllEnabledPlugins()
+            }
+            steps.add("   loadEnabledPlugins() returned $count")
+        } catch (e: Error) {
+            steps.add("   FAILED with Error: ${e.javaClass.simpleName}: ${e.message}")
+            steps.add("   stack = ${e.stackTraceToString().take(500)}")
+        } catch (e: Exception) {
+            steps.add("   FAILED with Exception: ${e.javaClass.simpleName}: ${e.message}")
+        }
+
+        steps.add("6. EncvApplication onFrameworkSetup log...")
+        try {
+            val logFile = File(context.filesDir, "encv.log")
+            if (logFile.exists()) {
+                val lines = logFile.readLines().filter { it.contains("onFrameworkSetup") || it.contains("setValidationStrategy") || it.contains("ValidationStrategy") }
+                steps.add("   relevant log lines = ${lines.take(10)}")
+            } else {
+                steps.add("   encv.log not found")
+            }
+        } catch (e: Exception) {
+            steps.add("   FAILED: ${e.message}")
+        }
+
         return steps
     }
 
-    fun installTest(apkFile: File): List<String> {
+    fun installTest(apkFile: File, context: Context): List<String> {
         val steps = mutableListOf<String>()
         steps.add("=== Actual installPlugin Test ===")
 
@@ -262,6 +363,22 @@ object DiagnosticKit {
             steps.add("3. installPlugin threw Error: ${e.javaClass.simpleName}: ${e.message}")
         } catch (e: Exception) {
             steps.add("3. installPlugin threw Exception: ${e.javaClass.simpleName}: ${e.message}")
+        }
+
+        steps.add("")
+        steps.add("4. Post-Install State...")
+        if (EncvComboLiteHost.isInitialized) {
+            try {
+                val allPlugins = EncvComboLiteHost.getInstalledPlugins()
+                steps.add("installedPlugins after = ${allPlugins.map { "${it.id}(enabled=${it.enabled})" }}")
+            } catch (e: Exception) {
+                steps.add("getInstalledPlugins FAILED: ${e.message}")
+            }
+            val pluginsDir = File(context.filesDir, "plugins")
+            steps.add("plugins dir exists = ${pluginsDir.exists()}")
+            if (pluginsDir.exists()) {
+                steps.add("   contents = ${pluginsDir.listFiles()?.map { it.name }}")
+            }
         }
 
         return steps
