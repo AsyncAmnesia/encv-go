@@ -8,6 +8,7 @@ import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
+import android.content.pm.ActivityInfo
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.getcapacitor.JSObject
@@ -169,7 +170,7 @@ class GoProcessPlugin : Plugin() {
     }
 
     @PluginMethod
-    fun checkPermissions(call: PluginCall) {
+    override fun checkPermissions(call: PluginCall) {
         val s = PermissionHelper.checkAll(context)
         call.resolve(JSObject().apply { put("notifications", s.notifications); put("storage", s.storage); put("batteryOptimization", s.batteryOptimization) })
     }

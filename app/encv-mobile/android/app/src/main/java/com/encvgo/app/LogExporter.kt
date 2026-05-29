@@ -39,7 +39,7 @@ object LogExporter {
             java.util.zip.ZipOutputStream(zipFile.outputStream()).use { zos ->
                 fun addToZip(file: File, entryName: String) {
                     if (!file.exists()) return
-                    try { zos.putNextEntry(java.util.zip.ZipEntry(entryName)); file.inputStream.use { it.copyTo(zos) }; zos.closeEntry() } catch (_: Exception) {}
+                    try { zos.putNextEntry(java.util.zip.ZipEntry(entryName)); file.inputStream().use { it.copyTo(zos) }; zos.closeEntry() } catch (_: Exception) {}
                 }
                 addToZip(appLogFile, "app_log_${timestamp}.txt")
                 addToZip(logcatFile, "logcat_${timestamp}.txt")
