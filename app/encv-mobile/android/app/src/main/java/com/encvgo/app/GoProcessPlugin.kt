@@ -405,7 +405,7 @@ class GoProcessPlugin : Plugin() {
         try {
             val result = MpvEmbedService.startEmbed(
                 activity = activity,
-                containerId = call.getString("containerId", "mpv-container"),
+                containerId = call.getString("containerId") ?: "mpv-container",
                 filePath = call.getString("filePath") ?: "",
                 fileName = call.getString("name") ?: "",
                 mimeType = call.getString("mimeType") ?: "",

@@ -146,21 +146,9 @@ object PlayerEntry {
             Log.e(TAG, "[ModeC-Activity] getLoadedPluginInfo returned null after successful load!")
             return PlayResult(false, "MPV 插件信息异常", "已加载但 getLoadedPluginInfo 返回 null")
         }
-        Log.i(TAG, "[ModeC-Activity] loadedInfo id=${loadedInfo.id} name=${loadedInfo.pluginName}")
+        Log.i(TAG, "[ModeC-Activity] loadedInfo id=${loadedInfo.pluginInfo.id} name=${loadedInfo.pluginInfo.name}")
 
-        // 4. 检查插件是否注册了 Activity（ProxyManager 能否找到）
-        val activities = loadedInfo.activities
-        Log.i(TAG, "[ModeC-Activity] plugin activities=$activities target=$TARGET_ACTIVITY")
-        if (activities.isEmpty()) {
-            Log.e(TAG, "[ModeC-Activity] plugin has NO registered activities!")
-            return PlayResult(false, "MPV 插件无 Activity", "插件未声明任何 Activity，APK 可能损坏")
-        }
-        if (!activities.any { it.contains("MpvPlayerActivity", ignoreCase = true) }) {
-            Log.w(TAG, "[ModeC-Activity] target $TARGET_ACTIVITY not found in plugin activities: $activities")
-            return PlayResult(false, "MPV Activity 未注册", "目标 Activity 不在插件清单中: $TARGET_ACTIVITY")
-        }
-
-        // 5. 启动播放 — 此时才真正 startActivity
+        // 4. 启动播放 — 此时才真正 startActivity（ProxyManager 内部会验证 Activity 是否存在）
         return try {
             val extras = mapOf<String, Any>(
                 EXTRA_FILE_PATH to filePath,
@@ -213,12 +201,6 @@ object PlayerEntry {
 
         val loadedInfo = EncvComboLiteHost.getLoadedPluginInfo(PLUGIN_ID)
         if (loadedInfo == null) return Pair(null, PlayResult(false, "MPV 插件信息异常", "getLoadedPluginInfo 返回 null"))
-
-        val activities = loadedInfo.activities
-        if (activities.isEmpty()) return Pair(null, PlayResult(false, "MPV 插件无 Activity", "插件未声明任何 Activity"))
-        if (!activities.any { it.contains("MpvPlayerActivity", ignoreCase = true) }) {
-            return Pair(null, PlayResult(false, "MPV Activity 未注册", "目标 Activity 不在插件清单中"))
-        }
 
         return try {
             val extras = mapOf<String, Any>(

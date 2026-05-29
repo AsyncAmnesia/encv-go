@@ -6,13 +6,12 @@ import android.util.Log
 import com.combo.core.component.activity.BaseHostActivity
 
 class EncvHostActivity : BaseHostActivity() {
-    private const val TAG = "EncvHostActivity"
     private var proxyStarted = false
     private var resultSet = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         Log.i(TAG, "onCreate: intent=$intent")
-        val pluginId = intent.getStringExtra("plugin_id") ?: intent.getStringExtra(PLAYER_ENTRY.EXTRA_MODE)
+        val pluginId = intent.getStringExtra("plugin_id") ?: intent.getStringExtra(PlayerEntry.EXTRA_MODE)
         val targetActivity = intent.getStringExtra("target_activity")
         Log.i(TAG, "onCreate: pluginId=$pluginId targetActivity=$targetActivity")
 
@@ -68,6 +67,7 @@ class EncvHostActivity : BaseHostActivity() {
     }
 
     companion object {
+        const val TAG = "EncvHostActivity"
         const val RESULT_EXTRA_SUCCESS = "player_success"
         const val RESULT_EXTRA_ERROR = "player_error"
         const val RESULT_EXTRA_ERROR_DETAIL = "player_error_detail"

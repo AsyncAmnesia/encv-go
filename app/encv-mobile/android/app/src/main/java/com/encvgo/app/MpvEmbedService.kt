@@ -3,13 +3,16 @@ package com.encvgo.app
 import android.app.Activity
 import android.content.Context
 import android.util.Log
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import com.encvgo.combolite.EncvComboLiteHost
 import java.io.File
 
 object MpvEmbedService {
     private const val TAG = "MpvEmbed"
+    private const val MPV_PLUGIN_ID = "com.encvgo.plugin.mpv"
     private var composeView: ComposeView? = null
     private var isEmbedActive = false
 
@@ -33,7 +36,7 @@ object MpvEmbedService {
             return PlayResult(false, "播放器框架未初始化", "PluginManager.isInitialized=false")
         }
 
-        val state = EncvComboLiteHost.getPluginFullState(PlayerEntry.PLUGIN_ID)
+        val state = EncvComboLiteHost.getPluginFullState(MPV_PLUGIN_ID)
         if (state.status == "not_installed") {
             return PlayResult(false, "MPV 播放器未安装", "请前往扩展管理安装")
         }
@@ -41,7 +44,7 @@ object MpvEmbedService {
             return PlayResult(false, "MPV 播放器已禁用", "请前往扩展管理启用")
         }
         if (state.status == "not_loaded" || state.status == "load_failed") {
-            val loaded = EncvComboLiteHost.ensurePluginLoaded(PlayerEntry.PLUGIN_ID)
+            val loaded = EncvComboLiteHost.ensurePluginLoaded(MPV_PLUGIN_ID)
             if (!loaded) return PlayResult(false, "MPV 加载失败", "请重启应用或重新启用扩展")
         }
 
@@ -87,7 +90,7 @@ object MpvEmbedService {
 @Composable
 private fun MpvEmbedPlaceholder(filePath: String, fileName: String) {
     androidx.compose.foundation.layout.Box(
-        modifier = androidx.compose.foundation.layout.fillMaxSize(),
+        modifier = Modifier.fillMaxSize(),
         contentAlignment = androidx.compose.ui.Alignment.Center
     ) {
         androidx.compose.material3.Text(

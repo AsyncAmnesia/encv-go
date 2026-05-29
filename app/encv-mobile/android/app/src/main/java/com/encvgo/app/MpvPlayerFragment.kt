@@ -8,10 +8,8 @@ import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 
 class MpvPlayerFragment : Fragment() {
-    private const val TAG = "MpvPlayerFragment"
-
     companion object {
-        const val TAG = "MpvPlayerFragment"
+        private const val TAG = "MpvPlayerFragment"
 
         fun newInstance(filePath: String, fileName: String): MpvPlayerFragment {
             return MpvPlayerFragment().apply {
