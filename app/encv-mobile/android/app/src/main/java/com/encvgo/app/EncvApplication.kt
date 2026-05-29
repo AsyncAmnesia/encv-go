@@ -2,10 +2,8 @@ package com.encvgo.app
 
 import android.app.Application
 import com.tencent.bugly.crashreport.CrashReport
-import com.combo.core.runtime.PluginManager
-import com.combo.core.runtime.ValidationStrategy
 import com.combo.core.runtime.app.BaseHostApplication
-import com.combo.core.security.crash.PluginCrashHandler
+import com.encvgo.combolite.EncvComboLiteHost
 import android.util.Log
 
 class EncvApplication : BaseHostApplication() {
@@ -18,31 +16,9 @@ class EncvApplication : BaseHostApplication() {
         initBugly()
     }
 
-    override fun onFrameworkSetup(): suspend () -> Unit {
-        return {
-            try {
-                PluginManager.setValidationStrategy(ValidationStrategy.Insecure)
-                Log.i(TAG, "onFrameworkSetup: setValidationStrategy(Insecure) OK")
-            } catch (e: Error) {
-                Log.w(TAG, "onFrameworkSetup: setValidationStrategy failed: ${e.javaClass.simpleName}: ${e.message}")
-            } catch (e: Exception) {
-                Log.w(TAG, "onFrameworkSetup: setValidationStrategy FAILED", e)
-            }
-            try {
-                PluginCrashHandler.setGlobalClashCallback(null)
-            } catch (e: Error) {
-                Log.w(TAG, "onFrameworkSetup: setGlobalClashCallback Error: ${e.javaClass.simpleName}")
-            } catch (e: Exception) {
-                Log.w(TAG, "onFrameworkSetup: setGlobalClashCallback FAILED", e)
-            }
-            try {
-                PluginManager.proxyManager.setHostActivity(com.encvgo.app.EncvHostActivity::class.java)
-                Log.i(TAG, "onFrameworkSetup: setHostActivity(EncvHostActivity) OK")
-            } catch (e: Exception) {
-                Log.e(TAG, "onFrameworkSetup: setHostActivity FAILED", e)
-            }
-            Log.i(TAG, "onFrameworkSetup: complete, PluginManager.isInitialized=${PluginManager.isInitialized}")
-        }
+    override fun onFrameworkSetup(): suspend () -> Unit = {
+        EncvComboLiteHost.setupFramework(EncvHostActivity::class.java)
+        Log.i(TAG, "onFrameworkSetup: complete via EncvComboLiteHost, PluginManager.isInitialized=${com.combo.core.runtime.PluginManager.isInitialized}")
     }
 
     private fun initBugly() {

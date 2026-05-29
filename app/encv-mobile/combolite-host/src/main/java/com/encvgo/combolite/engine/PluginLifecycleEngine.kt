@@ -1,0 +1,194 @@
+package com.encvgo.combolite.engine
+
+import android.content.Context
+import android.content.Intent
+import com.combo.core.runtime.PluginManager
+import com.combo.core.runtime.ValidationStrategy
+import com.combo.core.security.crash.PluginCrashHandler
+import com.encvgo.combolite.model.OperationResult
+import com.encvgo.combolite.model.PluginState
+import kotlinx.coroutines.runBlocking
+import java.io.File
+
+internal object PluginLifecycleEngine {
+
+    private const val TAG = "ComboLiteEngine"
+
+    fun isInitialized(): Boolean = PluginManager.isInitialized
+
+    fun getInstalledPlugins(): List<PluginState> {
+        if (!PluginManager.isInitialized) return emptyList()
+        return try {
+            PluginManager.getAllInstallPlugins().map { plugin ->
+                PluginState(
+                    id = plugin.id,
+                    name = plugin.name,
+                    versionName = plugin.versionName,
+                    versionCode = plugin.versionCode,
+                    enabled = plugin.enabled,
+                    installed = true,
+                    entryClass = plugin.entryClass,
+                    description = plugin.description
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun getPluginInfo(pluginId: String): PluginState? {
+        if (!PluginManager.isInitialized) return null
+        return try {
+            val loadedInfo = PluginManager.getPluginInfo(pluginId)
+            if (loadedInfo != null) {
+                val p = loadedInfo.pluginInfo
+                PluginState(
+                    id = p.id, name = p.name, versionName = p.versionName,
+                    versionCode = p.versionCode, enabled = p.enabled,
+                    installed = true, entryClass = p.entryClass, description = p.description
+                )
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    suspend fun installPlugin(apkFile: File): OperationResult<PluginState> {
+        if (!PluginManager.isInitialized) {
+            return OperationResult.Failure("PluginManager not initialized")
+        }
+        if (!apkFile.exists()) {
+            return OperationResult.Failure("APK file not found: ${apkFile.absolutePath}")
+        }
+        return try {
+            val result = PluginManager.installerManager.installPlugin(apkFile, true)
+            when (result) {
+                is com.combo.core.runtime.installer.InstallerManager.InstallResult.Success -> {
+                    try {
+                        PluginManager.loadEnabledPlugins()
+                    } catch (_: Exception) {}
+                    val pi = result.pluginInfo
+                    OperationResult.Success(
+                        PluginState(
+                            id = pi.id, name = pi.name, versionName = pi.versionName,
+                            versionCode = pi.versionCode, enabled = pi.enabled,
+                            installed = true, entryClass = pi.entryClass, description = pi.description
+                        )
+                    )
+                }
+                is com.combo.core.runtime.installer.InstallerManager.InstallResult.Failure -> {
+                    OperationResult.Failure(result.reason, result.exception)
+                }
+            }
+        } catch (e: Error) {
+            OperationResult.Failure("${e.javaClass.simpleName}: ${e.message}", e)
+        } catch (e: Exception) {
+            OperationResult.Failure(e.message ?: "Unknown install error", e)
+        }
+    }
+
+    suspend fun uninstallPlugin(pluginId: String): OperationResult<Unit> {
+        if (!PluginManager.isInitialized) {
+            return OperationResult.Failure("PluginManager not initialized")
+        }
+        return try {
+            val success = PluginManager.installerManager.uninstallPlugin(pluginId)
+            if (success == true) {
+                OperationResult.Success(Unit)
+            } else {
+                OperationResult.Failure("uninstallPlugin returned false (permission denied or plugin not found)")
+            }
+        } catch (e: Error) {
+            OperationResult.Failure("${e.javaClass.simpleName}: ${e.message}", e)
+        } catch (e: Exception) {
+            OperationResult.Failure(e.message ?: "Unknown uninstall error", e)
+        }
+    }
+
+    suspend fun setPluginEnabled(pluginId: String, enabled: Boolean): OperationResult<Unit> {
+        if (!PluginManager.isInitialized) {
+            return OperationResult.Failure("PluginManager not initialized")
+        }
+        return try {
+            PluginManager.setPluginEnabled(pluginId, enabled)
+            OperationResult.Success(Unit)
+        } catch (e: Error) {
+            OperationResult.Failure("${e.javaClass.simpleName}: ${e.message}", e)
+        } catch (e: Exception) {
+            OperationResult.Failure(e.message ?: "Unknown error", e)
+        }
+    }
+
+    suspend fun loadAllEnabledPlugins(): Int {
+        if (!PluginManager.isInitialized) return 0
+        return try {
+            PluginManager.loadEnabledPlugins()
+        } catch (e: Exception) {
+            0
+        }
+    }
+
+    suspend fun launchPlugin(pluginId: String): Boolean {
+        if (!PluginManager.isInitialized) return false
+        return try {
+            PluginManager.launchPlugin(pluginId) ?: false
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun ensurePluginLoaded(pluginId: String) {
+        if (!PluginManager.isInitialized) return
+        try {
+            if (PluginManager.getPluginInfo(pluginId) == null) {
+                runBlocking { launchPlugin(pluginId) }
+            }
+        } catch (e: Exception) {
+        }
+    }
+
+    fun createProxyIntent(
+        context: Context,
+        pluginId: String,
+        targetActivity: String,
+        hostActivityClass: Class<*>,
+        extras: Map<String, Any> = emptyMap()
+    ): Intent {
+        return Intent(context, hostActivityClass).apply {
+            putExtra("_combo_plugin_id", pluginId)
+            putExtra("_combo_target_activity", targetActivity)
+            for ((key, value) in extras) {
+                when (value) {
+                    is String -> putExtra(key, value)
+                    is Int -> putExtra(key, value)
+                    is Long -> putExtra(key, value)
+                    is Float -> putExtra(key, value)
+                    is Double -> putExtra(key, value)
+                    is Boolean -> putExtra(key, value)
+                }
+            }
+            if (context !is android.app.Activity) {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        }
+    }
+
+    fun setupFramework(hostActivityClass: Class<*>) {
+        try {
+            PluginManager.setValidationStrategy(ValidationStrategy.Insecure)
+        } catch (e: Error) {
+        } catch (e: Exception) {
+        }
+        try {
+            PluginCrashHandler.setGlobalClashCallback(null)
+        } catch (e: Error) {
+        } catch (e: Exception) {
+        }
+        try {
+            PluginManager.proxyManager.setHostActivity(hostActivityClass)
+        } catch (e: Exception) {
+        }
+    }
+}

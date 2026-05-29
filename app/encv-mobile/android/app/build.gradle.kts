@@ -115,6 +115,7 @@ dependencies {
     implementation(libs.bugly.crashreport)
 
     implementation(libs.combolite.core)
+    implementation(project(":combolite-host"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)

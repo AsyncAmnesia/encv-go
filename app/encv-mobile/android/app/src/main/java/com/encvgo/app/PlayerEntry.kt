@@ -5,12 +5,13 @@ import android.content.Intent
 import android.util.Log
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import com.encvgo.combolite.EncvComboLiteHost
 import java.io.File
-import kotlinx.coroutines.runBlocking
 
 object PlayerEntry {
     private const val TAG = "PlayerEntry"
     private const val PLUGIN_ID = "com.encvgo.plugin.mpv"
+    private const val TARGET_ACTIVITY = "com.encvgo.plugin.mpv.MpvPlayerActivity"
     private const val PREFS_NAME = "encv_player_prefs"
     private const val PREF_KEY_VIDEO_PLAYER = "video_player"
     const val EXTRA_FILE_PATH = "file_path"
@@ -48,14 +49,7 @@ object PlayerEntry {
     }
 
     fun isMpvAvailable(context: Context): Boolean {
-        return try {
-            val pm = com.combo.core.runtime.PluginManager
-            if (!pm.isInitialized) return false
-            pm.getAllInstallPlugins().any { it.id == PLUGIN_ID && it.enabled }
-        } catch (e: Exception) {
-            Log.w(TAG, "isMpvAvailable check failed", e)
-            false
-        }
+        return EncvComboLiteHost.isPluginAvailable(PLUGIN_ID)
     }
 
     private fun startMpvPlayer(
@@ -66,25 +60,22 @@ object PlayerEntry {
         isExternal: Boolean
     ) {
         try {
-            val pm = com.combo.core.runtime.PluginManager
-            if (pm.getPluginInfo(PLUGIN_ID) == null) {
-                Log.i(TAG, "MPV plugin not yet loaded, launching plugin first...")
-                runBlocking { pm.launchPlugin(PLUGIN_ID) }
-                Log.i(TAG, "MPV plugin launched successfully")
-            }
-            val intent = Intent(context, EncvHostActivity::class.java).apply {
-                putExtra(EXTRA_FILE_PATH, filePath)
-                putExtra(EXTRA_FILE_NAME, fileName)
-                putExtra(EXTRA_MIME_TYPE, mimeType)
-                putExtra(EXTRA_IS_EXTERNAL, isExternal)
-                putExtra(EXTRA_BACKEND_URL, getBackendBaseUrl(context))
-                putExtra(EXTRA_MODE, "mpv-plugin")
-                putExtra("_combo_plugin_id", PLUGIN_ID)
-                putExtra("_combo_target_activity", "com.encvgo.plugin.mpv.MpvPlayerActivity")
-                if (context !is android.app.Activity) {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-            }
+            EncvComboLiteHost.ensurePluginLoaded(PLUGIN_ID)
+            val extras = mapOf<String, Any>(
+                EXTRA_FILE_PATH to filePath,
+                EXTRA_FILE_NAME to fileName,
+                EXTRA_MIME_TYPE to mimeType,
+                EXTRA_IS_EXTERNAL to isExternal,
+                EXTRA_BACKEND_URL to getBackendBaseUrl(context),
+                EXTRA_MODE to "mpv-plugin",
+            )
+            val intent = EncvComboLiteHost.createProxyIntent(
+                context = context,
+                pluginId = PLUGIN_ID,
+                targetActivity = TARGET_ACTIVITY,
+                hostActivityClass = EncvHostActivity::class.java,
+                extras = extras
+            )
             context.startActivity(intent)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start MPV player plugin", e)

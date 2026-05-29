@@ -2,9 +2,9 @@ package com.encvgo.app
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
@@ -20,16 +20,16 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
+import com.encvgo.combolite.EncvComboLiteHost
+import com.encvgo.combolite.diagnostic.DiagnosticKit
+import com.encvgo.combolite.model.OperationResult
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
-import com.combo.core.runtime.PluginManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import kotlin.reflect.jvm.javaMethod
 
 private const val REQUEST_CODE_PLUGIN_PICK = 9001
 private const val REQUEST_CODE_INSTALL_CONFIRM = 9002
@@ -401,7 +401,7 @@ class GoProcessPlugin : Plugin() {
                 call.reject("APK file not found: $apkPath")
                 return
             }
-            if (!PluginManager.isInitialized) {
+            if (!EncvComboLiteHost.isInitialized) {
                 call.reject("PluginManager not initialized, cannot install plugin")
                 return
             }
@@ -437,21 +437,16 @@ class GoProcessPlugin : Plugin() {
         Log.d(TAG, "checkInstalledPlugins() called")
         val result = JSObject()
         try {
-            if (PluginManager.isInitialized) {
-                val plugins = PluginManager.getAllInstallPlugins()
-                for (plugin in plugins) {
-                    val info = JSObject().apply {
-                        put("installed", true)
-                        put("enabled", plugin.enabled)
-                        put("versionName", plugin.versionName)
-                    }
-                    result.put(plugin.id, info)
+            val plugins = EncvComboLiteHost.getInstalledPlugins()
+            for (plugin in plugins) {
+                val info = JSObject().apply {
+                    put("installed", true)
+                    put("enabled", plugin.enabled)
+                    put("versionName", plugin.versionName)
                 }
-                Log.i(TAG, "checkInstalledPlugins via ComboLite: $result")
-                call.resolve(result)
-                return
+                result.put(plugin.id, info)
             }
-            Log.w(TAG, "checkInstalledPlugins: PluginManager not initialized, returning empty")
+            Log.i(TAG, "checkInstalledPlugins via EncvComboLiteHost: $result")
             call.resolve(result)
         } catch (e: Exception) {
             Log.e(TAG, "checkInstalledPlugins failed", e)
@@ -461,163 +456,62 @@ class GoProcessPlugin : Plugin() {
 
     @PluginMethod
     fun togglePluginEnabled(call: PluginCall) {
-        val pluginId = call.getString("pluginId") ?: run {
-            call.reject("pluginId is required")
-            return
-        }
+        val pluginId = call.getString("pluginId") ?: run { call.reject("pluginId is required"); return }
         val enabled = call.getBoolean("enabled", true) ?: true
         Log.d(TAG, "togglePluginEnabled() called: pluginId=$pluginId, enabled=$enabled")
         appLog("I", TAG, "togglePluginEnabled: pluginId=$pluginId, enabled=$enabled")
 
-        if (!PluginManager.isInitialized) {
-            call.reject("PluginManager not initialized")
-            return
-        }
-
         GlobalScope.launch(Dispatchers.IO) {
-            try {
-                PluginManager.setPluginEnabled(pluginId, enabled)
-                val state = if (enabled) "ENABLED" else "DISABLED"
-                Log.i(TAG, "togglePluginEnabled SUCCESS: $pluginId -> $state")
-                appLog("I", TAG, "togglePluginEnabled SUCCESS: $pluginId -> $state")
-
-                val result = JSObject().apply {
-                    put("success", true)
-                    put("pluginId", pluginId)
-                    put("enabled", enabled)
+            val result = EncvComboLiteHost.setPluginEnabled(pluginId, enabled)
+            when (result) {
+                is OperationResult.Success -> {
+                    val state = if (enabled) "ENABLED" else "DISABLED"
+                    Log.i(TAG, "togglePluginEnabled SUCCESS: $pluginId -> $state")
+                    appLog("I", TAG, "togglePluginEnabled SUCCESS: $pluginId -> $state")
+                    withContext(Dispatchers.Main) {
+                        call.resolve(JSObject().apply {
+                            put("success", true); put("pluginId", pluginId); put("enabled", enabled)
+                        })
+                    }
                 }
-                withContext(Dispatchers.Main) { call.resolve(result) }
-            } catch (e: Error) {
-                Log.e(TAG, "togglePluginEnabled Error: ${e.javaClass.simpleName}: ${e.message}", e)
-                appLog("E", TAG, "togglePluginEnabled ERROR: ${e.javaClass.simpleName}: ${e.message}")
-                withContext(Dispatchers.Main) { call.reject("togglePluginEnabled error: ${e.javaClass.simpleName}: ${e.message}") }
-            } catch (e: Exception) {
-                Log.e(TAG, "togglePluginEnabled FAILED", e)
-                appLog("E", TAG, "togglePluginEnabled FAILED: ${e.message}\n${e.stackTraceToString().take(500)}")
-                withContext(Dispatchers.Main) { call.reject("togglePluginEnabled failed: ${e.message}") }
+                is OperationResult.Failure -> {
+                    Log.e(TAG, "togglePluginEnabled FAILED: ${result.reason}", result.exception)
+                    appLog("E", TAG, "togglePluginEnabled FAILED: ${result.reason}")
+                    withContext(Dispatchers.Main) { call.reject("togglePluginEnabled failed: ${result.reason}") }
+                }
             }
         }
     }
 
     @PluginMethod
     fun uninstallPlugin(call: PluginCall) {
-        val pluginId = call.getString("pluginId") ?: run {
-            call.reject("pluginId is required")
-            return
-        }
+        val pluginId = call.getString("pluginId") ?: run { call.reject("pluginId is required"); return }
         Log.d(TAG, "uninstallPlugin() called: pluginId=$pluginId")
         appLog("I", TAG, "uninstallPlugin: pluginId=$pluginId")
 
-        if (!PluginManager.isInitialized) {
-            call.reject("PluginManager not initialized")
-            return
-        }
-
         GlobalScope.launch(Dispatchers.IO) {
-            try {
-                val success = PluginManager.installerManager.uninstallPlugin(pluginId)
-                if (success == true) {
+            val result = EncvComboLiteHost.uninstallPlugin(pluginId)
+            when (result) {
+                is OperationResult.Success -> {
                     Log.i(TAG, "uninstallPlugin SUCCESS: $pluginId")
                     appLog("I", TAG, "uninstallPlugin SUCCESS: $pluginId")
-                    val res = JSObject().apply {
-                        put("success", true)
-                        put("pluginId", pluginId)
+                    withContext(Dispatchers.Main) {
+                        call.resolve(JSObject().apply { put("success", true); put("pluginId", pluginId) })
                     }
-                    withContext(Dispatchers.Main) { call.resolve(res) }
-                } else {
-                    val msg = "uninstallPlugin returned false (permission denied or plugin not found)"
-                    Log.w(TAG, "uninstallPlugin FAILED: $pluginId — $msg")
-                    appLog("W", TAG, "uninstallPlugin FAILED: $msg")
-                    withContext(Dispatchers.Main) { call.reject(msg) }
                 }
-            } catch (e: Error) {
-                val msg = "${e.javaClass.simpleName}: ${e.message}"
-                Log.e(TAG, "uninstallPlugin Error: $msg", e)
-                appLog("E", TAG, "uninstallPlugin ERROR: $msg")
-                withContext(Dispatchers.Main) { call.reject("Uninstall error: $msg") }
-            } catch (e: Exception) {
-                val msg = e.message ?: "unknown error"
-                Log.e(TAG, "uninstallPlugin FAILED: $msg", e)
-                appLog("E", TAG, "uninstallPlugin FAILED: $msg\n${e.stackTraceToString().take(500)}")
-                withContext(Dispatchers.Main) { call.reject("Uninstall failed: $msg") }
+                is OperationResult.Failure -> {
+                    Log.e(TAG, "uninstallPlugin FAILED: ${result.reason}", result.exception)
+                    appLog("E", TAG, "uninstallPlugin FAILED: ${result.reason}")
+                    withContext(Dispatchers.Main) { call.reject("Uninstall failed: ${result.reason}") }
+                }
             }
         }
     }
 
     @PluginMethod
     fun debugLifecycleFlow(call: PluginCall) {
-        val steps = mutableListOf<String>()
         val pluginId = call.getString("pluginId", "com.encvgo.plugin.mpv") ?: "com.encvgo.plugin.mpv"
-
-        steps.add("=== Plugin Lifecycle Diagnostic ===")
-
-        steps.add("1. PluginManager State:")
-        steps.add("   isInitialized = ${PluginManager.isInitialized}")
-
-        if (PluginManager.isInitialized) {
-            try {
-                val plugins = PluginManager.getAllInstallPlugins()
-                steps.add("   installedPlugins(${plugins.size}) = ${plugins.joinToString { "${it.id}(v${it.versionName},enabled=${it.enabled})" }}")
-                val target = plugins.find { it.id == pluginId }
-                if (target != null) {
-                    steps.add("   ✅ target '$pluginId' FOUND: v${target.versionName}, enabled=${target.enabled}")
-                } else {
-                    steps.add("   ❌ target '$pluginId' NOT found in installed list")
-                }
-            } catch (e: Exception) {
-                steps.add("   getAllInstallPlugins FAILED: ${e.message}")
-            }
-
-            steps.add("")
-            steps.add("2. ProxyManager State:")
-            try {
-                val pm = PluginManager.proxyManager
-                steps.add("   proxyManager = $pm")
-                steps.add("   hostActivity configured = ${pm != null}")
-            } catch (e: Exception) {
-                steps.add("   proxyManager check FAILED: ${e.message}")
-            }
-
-            steps.add("")
-            steps.add("3. Activity Resolution Test:")
-            try {
-                val hostActivityClass = com.encvgo.app.EncvHostActivity::class.java
-                steps.add("   EncvHostActivity.resolved = ✅ ($hostActivityClass)")
-            } catch (e: Exception) {
-                steps.add("   EncvHostActivity.resolved = ❌ (${e.message})")
-            }
-            try {
-                val ctx = context ?: activity!!
-                val pm = ctx.packageManager
-                val hostInfo = pm.getActivityInfo(
-                    android.content.ComponentName(ctx, com.encvgo.app.EncvHostActivity::class.java), 0
-                )
-                steps.add("   EncvHostActivity in Manifest = ✅ (name=${hostInfo.name})")
-            } catch (e: Exception) {
-                steps.add("   EncvHostActivity in Manifest = ❌ (${e.message})")
-            }
-
-            steps.add("")
-            steps.add("4. setPluginEnabled test (dry run):")
-            try {
-                val info = PluginManager.getPluginInfo(pluginId)
-                if (info != null) {
-                    val p = info.pluginInfo
-                    steps.add("   getPluginInfo('$pluginId') = ✅ (id=${p.id}, versionName=${p.versionName}, enabled=${p.enabled})")
-                } else {
-                    steps.add("   getPluginInfo('$pluginId') = ❌ null (not installed?)")
-                }
-            } catch (e: Exception) {
-                steps.add("   getPluginInfo FAILED: ${e.javaClass.simpleName}: ${e.message}")
-            } catch (e: Error) {
-                steps.add("   getPluginInfo ERROR: ${e.javaClass.simpleName}: ${e.message}")
-            }
-
-            steps.add("")
-            steps.add("5. uninstallPlugin test (dry run — will NOT execute):")
-            steps.add("   installerManager.available = ${try { PluginManager.installerManager != null } catch (e: Exception) { "ERROR: ${e.message}" }}")
-        }
-
+        val steps = DiagnosticKit.lifecycleDiagnostic(pluginId, context)
         val result = JSObject()
         result.put("debugLog", steps.joinToString("\n"))
         call.resolve(result)
@@ -717,83 +611,27 @@ class GoProcessPlugin : Plugin() {
 
     @PluginMethod
     fun debugInstallFlow(call: PluginCall) {
-        val steps = mutableListOf<String>()
-
-        steps.add("=== PluginManager State ===")
-        val pmInit = PluginManager.isInitialized
-        steps.add("1. PluginManager.isInitialized = $pmInit")
-        if (pmInit) {
-            try {
-                val allPlugins = PluginManager.getAllInstallPlugins()
-                steps.add("2. installedPlugins = ${allPlugins.map { "${it.id}(v${it.versionName},enabled=${it.enabled})" }}")
-            } catch (e: Exception) {
-                steps.add("2. getAllInstallPlugins FAILED: ${e.message}")
-            }
-            try {
-                steps.add("3. validationStrategy = ${PluginManager.validationStrategy}")
-            } catch (e: Exception) {
-                steps.add("3. validationStrategy FAILED: ${e.javaClass.simpleName}: ${e.message}")
-            }
-        }
-
-        steps.add("=== APK Files ===")
         val pluginInstallDir = File(context.cacheDir, "plugin_install")
-        if (pluginInstallDir.exists()) {
-            val apkFiles = pluginInstallDir.listFiles()?.filter { it.extension == "apk" }
-            steps.add("4. APK files in cache = ${apkFiles?.map { "${it.name}(${it.length()}B)" }}")
+        val apkFiles = pluginInstallDir.listFiles()?.filter { it.extension == "apk" }
+        val testApk = apkFiles?.firstOrNull()
+
+        val steps = if (testApk != null) {
+            DiagnosticKit.installTest(testApk)
         } else {
-            steps.add("4. plugin_install dir not found")
+            listOf("=== Actual installPlugin Test ===", "SKIPPED: no APK file found in plugin_install")
         }
 
-        steps.add("=== Actual installPlugin Test ===")
-        if (!pmInit) {
-            steps.add("5. SKIPPED: PluginManager not initialized")
-        } else {
-            val apkFiles = pluginInstallDir.listFiles()?.filter { it.extension == "apk" }
-            val testApk = apkFiles?.firstOrNull()
-            if (testApk == null) {
-                steps.add("5. SKIPPED: no APK file found in plugin_install")
-            } else {
-                steps.add("5. testApk = ${testApk.name} (${testApk.length()}B)")
-                steps.add("6. calling installPlugin(testApk, forceOverwrite=true)...")
-                try {
-                    val installResult = runBlocking(Dispatchers.IO) {
-                        PluginManager.installerManager.installPlugin(testApk, true)
-                    }
-                    when (installResult) {
-                        is com.combo.core.runtime.installer.InstallerManager.InstallResult.Success -> {
-                            steps.add("7. installPlugin result = SUCCESS")
-                            steps.add("   pluginId = ${installResult.pluginInfo.id}")
-                            steps.add("   versionName = ${installResult.pluginInfo.versionName}")
-                            steps.add("   entryClass = ${installResult.pluginInfo.entryClass}")
-                        }
-                        is com.combo.core.runtime.installer.InstallerManager.InstallResult.Failure -> {
-                            steps.add("7. installPlugin result = FAILURE")
-                            steps.add("   reason = ${installResult.reason}")
-                            val excStack = installResult.exception?.stackTraceToString()?.take(800) ?: "(no exception)"
-                            steps.add("   exception = $excStack")
-                        }
-                    }
-                } catch (e: Error) {
-                    steps.add("7. installPlugin threw Error: ${e.javaClass.simpleName}: ${e.message}")
-                    steps.add("   stack = ${e.stackTraceToString().take(800)}")
-                } catch (e: Exception) {
-                    steps.add("7. installPlugin threw Exception: ${e.javaClass.simpleName}: ${e.message}")
-                    steps.add("   stack = ${e.stackTraceToString().take(800)}")
-                }
-            }
-        }
-
+        steps.add("")
         steps.add("=== Post-Install State ===")
-        if (pmInit) {
+        if (EncvComboLiteHost.isInitialized) {
             try {
-                val allPlugins = PluginManager.getAllInstallPlugins()
-                steps.add("8. installedPlugins after = ${allPlugins.map { "${it.id}(enabled=${it.enabled})" }}")
+                val allPlugins = EncvComboLiteHost.getInstalledPlugins()
+                steps.add("installedPlugins after = ${allPlugins.map { "${it.id}(enabled=${it.enabled})" }}")
             } catch (e: Exception) {
-                steps.add("8. getAllInstallPlugins FAILED: ${e.message}")
+                steps.add("getInstalledPlugins FAILED: ${e.message}")
             }
             val pluginsDir = File(context.filesDir, "plugins")
-            steps.add("9. plugins dir exists = ${pluginsDir.exists()}")
+            steps.add("plugins dir exists = ${pluginsDir.exists()}")
             if (pluginsDir.exists()) {
                 steps.add("   contents = ${pluginsDir.listFiles()?.map { it.name }}")
             }
@@ -807,88 +645,12 @@ class GoProcessPlugin : Plugin() {
 
     @PluginMethod
     fun debugKotlinReflect(call: PluginCall) {
-        val steps = mutableListOf<String>()
+        val steps = DiagnosticKit.kotlinReflectHealthCheck()
 
-        steps.add("=== kotlin-reflect Health Check ===")
-
-        steps.add("1. Testing ::function.javaMethod on PluginManager...")
-        try {
-            val method = PluginManager::setValidationStrategy.javaMethod
-            steps.add("   setValidationStrategy.javaMethod = $method")
-            steps.add("   declaringClass = ${method?.declaringClass?.name}")
-            steps.add("   annotations = ${method?.annotations?.map { it.annotationClass.simpleName }}")
-        } catch (e: Error) {
-            steps.add("   FAILED with Error: ${e.javaClass.simpleName}: ${e.message}")
-            steps.add("   stack = ${e.stackTraceToString().take(500)}")
-        } catch (e: Exception) {
-            steps.add("   FAILED with Exception: ${e.javaClass.simpleName}: ${e.message}")
-        }
-
-        try {
-            val method = PluginManager::loadEnabledPlugins.javaMethod
-            steps.add("   loadEnabledPlugins.javaMethod = $method")
-        } catch (e: Error) {
-            steps.add("   loadEnabledPlugins FAILED: ${e.javaClass.simpleName}: ${e.message}")
-        } catch (e: Exception) {
-            steps.add("   loadEnabledPlugins FAILED: ${e.javaClass.simpleName}: ${e.message}")
-        }
-
-        try {
-            val method = PluginManager::launchPlugin.javaMethod
-            steps.add("   launchPlugin.javaMethod = $method")
-        } catch (e: Error) {
-            steps.add("   launchPlugin FAILED: ${e.javaClass.simpleName}: ${e.message}")
-        } catch (e: Exception) {
-            steps.add("   launchPlugin FAILED: ${e.javaClass.simpleName}: ${e.message}")
-        }
-
-        steps.add("2. Testing ::function.javaMethod on InstallerManager...")
-        try {
-            if (PluginManager.isInitialized) {
-                val im = PluginManager.installerManager
-                val method = im::installPlugin.javaMethod
-                steps.add("   installPlugin.javaMethod = $method")
-                steps.add("   declaringClass = ${method?.declaringClass?.name}")
-            } else {
-                steps.add("   SKIPPED: PluginManager not initialized")
-            }
-        } catch (e: Error) {
-            steps.add("   FAILED with Error: ${e.javaClass.simpleName}: ${e.message}")
-            steps.add("   stack = ${e.stackTraceToString().take(500)}")
-        } catch (e: Exception) {
-            steps.add("   FAILED with Exception: ${e.javaClass.simpleName}: ${e.message}")
-        }
-
-        steps.add("3. Testing ::function.javaMethod on PluginCrashHandler...")
-        try {
-            val method = com.combo.core.security.crash.PluginCrashHandler::setGlobalClashCallback.javaMethod
-            steps.add("   setGlobalClashCallback.javaMethod = $method")
-        } catch (e: Error) {
-            steps.add("   FAILED with Error: ${e.javaClass.simpleName}: ${e.message}")
-            steps.add("   stack = ${e.stackTraceToString().take(500)}")
-        } catch (e: Exception) {
-            steps.add("   FAILED with Exception: ${e.javaClass.simpleName}: ${e.message}")
-        }
-
-        steps.add("4. Testing ::function.javaMethod on AuthorizationManager...")
-        try {
-            if (PluginManager.isInitialized) {
-                val am = PluginManager.authorizationManager
-                val method = am::setAuthorizationHandler.javaMethod
-                steps.add("   setAuthorizationHandler.javaMethod = $method")
-            } else {
-                steps.add("   SKIPPED: PluginManager not initialized")
-            }
-        } catch (e: Error) {
-            steps.add("   FAILED with Error: ${e.javaClass.simpleName}: ${e.message}")
-            steps.add("   stack = ${e.stackTraceToString().take(500)}")
-        } catch (e: Exception) {
-            steps.add("   FAILED with Exception: ${e.javaClass.simpleName}: ${e.message}")
-        }
-
+        steps.add("")
         steps.add("5. Checking @Metadata on ComboLite classes...")
         try {
-            val pmClass = PluginManager::class.java
+            val pmClass = com.combo.core.runtime.PluginManager::class.java
             val meta = pmClass.getAnnotation(kotlin.Metadata::class.java)
             steps.add("   PluginManager @Metadata = ${meta != null}")
             if (meta != null) {
@@ -912,7 +674,7 @@ class GoProcessPlugin : Plugin() {
 
         steps.add("6. Checking R8 mapping on ComboLite classes...")
         try {
-            val pmMethods = PluginManager::class.java.declaredMethods.map { "${it.name}(${it.parameterTypes.map { t -> t.simpleName }})" }
+            val pmMethods = com.combo.core.runtime.PluginManager::class.java.declaredMethods.map { "${it.name}(${it.parameterTypes.map { t -> t.simpleName }})" }
             steps.add("   PluginManager methods (first 10) = ${pmMethods.take(10)}")
         } catch (e: Exception) {
             steps.add("   PluginManager method list FAILED: ${e.message}")
@@ -933,76 +695,21 @@ class GoProcessPlugin : Plugin() {
 
     @PluginMethod
     fun debugApkValidation(call: PluginCall) {
-        val steps = mutableListOf<String>()
-
-        steps.add("=== APK Validation ===")
         val pluginInstallDir = File(context.cacheDir, "plugin_install")
         val apkFiles = pluginInstallDir.listFiles()?.filter { it.extension == "apk" }
         val testApk = apkFiles?.firstOrNull()
 
         if (testApk == null) {
-            steps.add("1. No APK file found in plugin_install")
             val results = JSObject()
-            results.put("debugLog", steps.joinToString("\n"))
+            results.put("debugLog", "No APK file found in plugin_install")
             call.resolve(results)
             return
         }
 
-        steps.add("1. APK file = ${testApk.name} (${testApk.length()}B)")
-        steps.add("   exists = ${testApk.exists()}")
-        steps.add("   canRead = ${testApk.canRead()}")
+        val kitSteps = DiagnosticKit.apkValidation(testApk, context)
+        val steps = mutableListOf<String>().apply { addAll(kitSteps) }
 
-        steps.add("2. PackageManager.getPackageArchiveInfo...")
-        try {
-            val pkgInfo = context.packageManager.getPackageArchiveInfo(
-                testApk.absolutePath,
-                PackageManager.GET_META_DATA or PackageManager.GET_SIGNATURES or PackageManager.GET_ACTIVITIES
-            )
-            if (pkgInfo == null) {
-                steps.add("   FAILED: getPackageArchiveInfo returned null (invalid APK?)")
-            } else {
-                steps.add("   packageName = ${pkgInfo.packageName}")
-                steps.add("   versionCode = ${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) pkgInfo.longVersionCode else pkgInfo.versionCode}")
-                steps.add("   versionName = ${pkgInfo.versionName}")
-
-                val appInfo = pkgInfo.applicationInfo
-                if (appInfo != null) {
-                    appInfo.publicSourceDir = testApk.absolutePath
-                    val label = context.packageManager.getApplicationLabel(appInfo)
-                    steps.add("   appLabel = $label")
-                    steps.add("   iconResId = ${appInfo.icon}")
-
-                    val metaData = appInfo.metaData
-                    if (metaData != null) {
-                        steps.add("   metaData keys = ${metaData.keySet().toList()}")
-                        val entryClass = metaData.getString("plugin.entryClass")
-                        steps.add("   plugin.entryClass = $entryClass")
-                        val desc = metaData.getString("plugin.description")
-                        steps.add("   plugin.description = $desc")
-                    } else {
-                        steps.add("   metaData = NULL ← CRITICAL: plugin must have meta-data")
-                    }
-                }
-
-                val activities = pkgInfo.activities
-                steps.add("   activities = ${activities?.map { it.name } ?: "none"}")
-
-                val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    val pkgInfoSign = context.packageManager.getPackageArchiveInfo(
-                        testApk.absolutePath,
-                        PackageManager.GET_SIGNING_CERTIFICATES
-                    )
-                    pkgInfoSign?.signingInfo?.apkContentsSigners?.map { it.toCharsString().take(16) + "..." } ?: listOf("(none)")
-                } else {
-                    @Suppress("DEPRECATION")
-                    pkgInfo.signatures?.map { it.toCharsString().take(16) + "..." } ?: listOf("(none)")
-                }
-                steps.add("   signatures = $signatures")
-            }
-        } catch (e: Exception) {
-            steps.add("   FAILED: ${e.javaClass.simpleName}: ${e.message}")
-        }
-
+        steps.add("")
         steps.add("3. Host app signatures...")
         try {
             val hostPkgInfo = context.packageManager.getPackageInfo(
@@ -1023,21 +730,6 @@ class GoProcessPlugin : Plugin() {
             steps.add("   FAILED: ${e.message}")
         }
 
-        steps.add("4. APK ZIP integrity...")
-        try {
-            val zipFile = java.util.zip.ZipFile(testApk)
-            val entries = zipFile.entries().toList().map { it.name }
-            steps.add("   entry count = ${entries.size}")
-            steps.add("   has AndroidManifest.xml = ${entries.contains("AndroidManifest.xml")}")
-            steps.add("   has classes.dex = ${entries.any { it.startsWith("classes") && it.endsWith(".dex") }}")
-            steps.add("   has resources.arsc = ${entries.contains("resources.arsc")}")
-            val soFiles = entries.filter { it.endsWith(".so") }
-            steps.add("   .so files = $soFiles")
-            zipFile.close()
-        } catch (e: Exception) {
-            steps.add("   FAILED: ${e.message}")
-        }
-
         Log.i(TAG, "SATURATION-DEBUG debugApkValidation:\n${steps.joinToString("\n")}")
         val results = JSObject()
         results.put("debugLog", steps.joinToString("\n"))
@@ -1046,32 +738,16 @@ class GoProcessPlugin : Plugin() {
 
     @PluginMethod
     fun debugValidationStrategy(call: PluginCall) {
-        val steps = mutableListOf<String>()
+        val kitSteps = DiagnosticKit.validationStrategyStatus()
+        val steps = mutableListOf<String>().apply { addAll(kitSteps) }
 
-        steps.add("=== ValidationStrategy State ===")
-
-        steps.add("1. PluginManager.isInitialized = ${PluginManager.isInitialized}")
-        if (!PluginManager.isInitialized) {
-            steps.add("2. SKIPPED: PluginManager not initialized")
-        } else {
-            try {
-                val currentStrategy = PluginManager.validationStrategy
-                steps.add("2. current validationStrategy = $currentStrategy")
-            } catch (e: Exception) {
-                steps.add("2. reading validationStrategy FAILED: ${e.javaClass.simpleName}: ${e.message}")
-            }
-
+        if (EncvComboLiteHost.isInitialized) {
             steps.add("3. Testing setValidationStrategy(Insecure)...")
             try {
-                runBlocking(Dispatchers.IO) {
-                    PluginManager.setValidationStrategy(com.combo.core.runtime.ValidationStrategy.Insecure)
+                kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                    EncvComboLiteHost.setupFramework(com.encvgo.app.EncvHostActivity::class.java)
                 }
                 steps.add("   SUCCESS: no error thrown")
-                val afterStrategy = PluginManager.validationStrategy
-                steps.add("   validationStrategy after = $afterStrategy")
-                if (afterStrategy != com.combo.core.runtime.ValidationStrategy.Insecure) {
-                    steps.add("   ← PROBLEM: strategy not actually changed! setValidationStrategy silently failed")
-                }
             } catch (e: Error) {
                 steps.add("   FAILED with Error: ${e.javaClass.simpleName}: ${e.message}")
                 steps.add("   stack = ${e.stackTraceToString().take(500)}")
@@ -1079,28 +755,10 @@ class GoProcessPlugin : Plugin() {
                 steps.add("   FAILED with Exception: ${e.javaClass.simpleName}: ${e.message}")
             }
 
-            steps.add("4. Testing loadEnabledPlugins.javaMethod...")
+            steps.add("4. Testing loadEnabledPlugins() call...")
             try {
-                val method = PluginManager::loadEnabledPlugins.javaMethod
-                steps.add("   loadEnabledPlugins.javaMethod = $method")
-                if (method != null) {
-                    val hasAnnotation = method.isAnnotationPresent(com.combo.core.security.permission.RequiresPermission::class.java)
-                    steps.add("   has @RequiresPermission = $hasAnnotation")
-                    if (hasAnnotation) {
-                        val ann = method.getAnnotation(com.combo.core.security.permission.RequiresPermission::class.java)
-                        steps.add("   permissionLevel = ${ann?.level}")
-                    }
-                }
-            } catch (e: Error) {
-                steps.add("   FAILED with Error: ${e.javaClass.simpleName}: ${e.message}")
-            } catch (e: Exception) {
-                steps.add("   FAILED with Exception: ${e.javaClass.simpleName}: ${e.message}")
-            }
-
-            steps.add("5. Testing loadEnabledPlugins() call...")
-            try {
-                val count = runBlocking(Dispatchers.IO) {
-                    PluginManager.loadEnabledPlugins()
+                val count = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                    EncvComboLiteHost.loadAllEnabledPlugins()
                 }
                 steps.add("   loadEnabledPlugins() returned $count")
             } catch (e: Error) {
@@ -1111,7 +769,7 @@ class GoProcessPlugin : Plugin() {
             }
         }
 
-        steps.add("6. EncvApplication onFrameworkSetup log...")
+        steps.add("5. EncvApplication onFrameworkSetup log...")
         try {
             val logFile = File(context.filesDir, "encv.log")
             if (logFile.exists()) {
@@ -1163,42 +821,26 @@ class GoProcessPlugin : Plugin() {
         val apkPath = apkFile.absolutePath
         appLog("I", TAG, "executeComboLiteInstall: starting for ${apkFile.name} (${apkFile.length()} bytes)")
         GlobalScope.launch(Dispatchers.IO) {
-            try {
-                val result = PluginManager.installerManager.installPlugin(apkFile, true)
-                when (result) {
-                    is com.combo.core.runtime.installer.InstallerManager.InstallResult.Success -> {
-                        Log.i(TAG, "Plugin installed via ComboLite: $apkPath -> ${result.pluginInfo.id}")
-                        appLog("I", TAG, "ComboLite install SUCCESS: ${result.pluginInfo.id}")
-                        try {
-                            val loadedCount = PluginManager.loadEnabledPlugins()
-                            Log.i(TAG, "Post-install loadEnabledPlugins: $loadedCount plugins loaded")
-                            appLog("I", TAG, "Post-install loadEnabledPlugins: $loadedCount plugins loaded")
-                        } catch (loadErr: Exception) {
-                            Log.w(TAG, "Post-install loadEnabledPlugins failed (non-fatal)", loadErr)
-                            appLog("W", TAG, "Post-install loadEnabledPlugins failed: ${loadErr.message}")
-                        }
+            val result = EncvComboLiteHost.installPlugin(apkFile)
+            when (result) {
+                is OperationResult.Success -> {
+                    Log.i(TAG, "Plugin installed via EncvComboLiteHost: $apkPath -> ${result.data.id}")
+                    appLog("I", TAG, "ComboLite install SUCCESS: ${result.data.id}")
+                    withContext(Dispatchers.Main) {
                         call.resolve(JSObject().apply {
                             put("success", true)
                             put("method", "combolite")
-                            put("pluginId", result.pluginInfo.id)
+                            put("pluginId", result.data.id)
                         })
                     }
-                    is com.combo.core.runtime.installer.InstallerManager.InstallResult.Failure -> {
-                        val reason = result.reason
-                        val excDetail = result.exception?.stackTraceToString()?.take(500) ?: ""
-                        Log.e(TAG, "ComboLite install failed: $reason", result.exception)
-                        appLog("E", TAG, "ComboLite install FAILED: $reason\n$excDetail")
-                        call.reject("ComboLite install failed: $reason")
-                    }
                 }
-            } catch (e: Error) {
-                Log.e(TAG, "ComboLite installPlugin Error: ${e.javaClass.simpleName}: ${e.message}", e)
-                appLog("E", TAG, "ComboLite install ERROR: ${e.javaClass.simpleName}: ${e.message}\n${e.stackTraceToString().take(500)}")
-                call.reject("ComboLite install error: ${e.javaClass.simpleName}: ${e.message}")
-            } catch (e: Exception) {
-                Log.e(TAG, "ComboLite installPlugin exception", e)
-                appLog("E", TAG, "ComboLite install EXCEPTION: ${e.message}\n${e.stackTraceToString().take(500)}")
-                call.reject("ComboLite install error: ${e.message}")
+                is OperationResult.Failure -> {
+                    val reason = result.reason
+                    val excDetail = result.exception?.stackTraceToString()?.take(500) ?: ""
+                    Log.e(TAG, "ComboLite install failed: $reason", result.exception)
+                    appLog("E", TAG, "ComboLite install FAILED: $reason\n$excDetail")
+                    withContext(Dispatchers.Main) { call.reject("ComboLite install failed: $reason") }
+                }
             }
         }
     }
@@ -1262,7 +904,7 @@ class GoProcessPlugin : Plugin() {
                     appendLine("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
                     appendLine("Android: ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
                     appendLine("App: ${context.packageName}")
-                    appendLine("PluginManager.isInitialized: ${PluginManager.isInitialized}")
+                    appendLine("PluginManager.isInitialized: ${EncvComboLiteHost.isInitialized}")
                     appendLine("GoBackend running: ${EncvGoService.isRunning}")
                     appendLine("GoBackend port: ${EncvGoService.lastKnownPort}")
                     appendLine("Timestamp: $timestamp")
