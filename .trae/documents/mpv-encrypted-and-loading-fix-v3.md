@@ -1,30 +1,19 @@
-# 修复：加密视频回滚 ArtPlayer + MPV 加载状态转圈圈（v3）
+# 修复：加密视频回滚 ArtPlayer + MPV 加载状态转圈圈（v4）
 
 ## 设计原则
 
-**加密是独立状态，不是文件类型。加密视频就是视频，加密文本就是文本。**
+1. **加密是独立状态，不是文件类型**：`getFileCategory()` 只返回内容类型，`isEncrypted` 是独立 boolean
+2. **加密视频就是视频，加密文本就是文本**：内容类型决定路由，加密状态不影响分类
+3. **加密容器必须走预览页**：扩展名无法判断内容类型的加密容器文件（如 `.encv`），必须通过预览页查询后端 `container.container_type` 后再决定路由
+4. **预览页是加密文件的权威路由器**：基于插件运行时声明（`container.container_type`），不是前端猜测
 
-- `getFileCategory()` 只根据文件名/扩展名返回内容类型：`'video' | 'audio' | 'image' | 'document' | 'other'`
-- `isEncrypted` 是独立的 boolean 维度，不影响分类
-- 加密视频 = `category === 'video'` + `isEncrypted === true` → 走视频播放
-- 加密文本 = `category === 'document'` + `isEncrypted === true` → 走文本预览
-- 对于扩展名无法判断内容类型的加密容器文件（如 `.encv`），路由到预览页由后端 `container.container_type` 决定
+## 两种加密文件的路由策略
 
-## 问题分析
-
-### 问题 1：加密视频回滚到 ArtPlayer
-
-**根因**：`getFileCategory()` 把加密状态混入文件类型，返回 `'encrypted-video'`/`'encrypted-audio'` 等混合类型。路由逻辑不识别这些混合类型，导致加密视频落入预览分支 → ArtPlayer。
-
-**修复**：
-1. `getFileCategory()` 移除 `isEncrypted` 参数和所有 `'encrypted*'` 类型，只返回纯内容类型
-2. 路由逻辑使用 `category`（内容类型）+ `file.isEncrypted`（加密状态）两个独立维度
-3. `category === 'video' || category === 'audio'` → `playMedia()`（无论是否加密）
-4. 其他类型 → 预览页（预览页已有基于 `container.container_type` 的正确路由）
-
-### 问题 2：加载状态一直转圈圈
-
-根因不变：`stateListener` 时序 + Compose 不监听 engine 状态。
+| 加密文件类型 | 示例 | `getFileCategory()` | 路由 |
+|---|---|---|---|
+| 扩展名可识别的加密媒体 | `video.mp4` (isEncrypted) | `'video'` | `playMedia()` → MPV |
+| 扩展名可识别的加密文档 | `doc.pdf` (isEncrypted) | `'document'` | 预览页 |
+| 加密容器（不可识别扩展名） | `file.encv` (isEncrypted) | `'other'` | 预览页 → 后端 `container_type` 决定 |
 
 ---
 
@@ -33,6 +22,10 @@
 ### Step 1：重构 getFileCategory — 加密与类型分离
 
 文件：`src/api/encv.ts`
+
+- 移除 `isEncrypted` 参数
+- 移除 `'encrypted'`、`'encrypted-video'`、`'encrypted-audio'`、`'encrypted-image'` 类型
+- 函数只关注内容类型
 
 ```typescript
 export type FileCategory = 'video' | 'audio' | 'image' | 'document' | 'other'
@@ -51,11 +44,6 @@ export function getFileCategory(name: string): FileCategory {
   return 'other'
 }
 ```
-
-关键变化：
-- 移除 `isEncrypted` 参数
-- 移除 `'encrypted'`、`'encrypted-video'`、`'encrypted-audio'`、`'encrypted-image'` 类型
-- 函数只关注内容类型，加密状态由调用方通过 `file.isEncrypted` 单独判断
 
 ### Step 2：handleFileClick — 基于内容类型路由
 
@@ -84,14 +72,18 @@ async function handleFileClick(file: FileItem) {
 }
 ```
 
-关键变化：
-- `getFileCategory(file.name)` 不再传 `isEncrypted`
-- 加密视频（`category === 'video'` + `isEncrypted === true`）直接走 `playMedia()` → MPV
-- 非媒体类型（包括加密文档/图片等）走预览页
+路由逻辑：
+- `video.mp4` (加密) → `category='video'` → `playMedia()` → MPV ✓
+- `song.mp3` (加密) → `category='audio'` → `playMedia()` → MPV ✓
+- `file.encv` (加密容器) → `category='other'` → 预览页 → 后端 `container_type` 决定 ✓
+- `doc.pdf` (加密) → `category='document'` → 预览页 ✓
+- `photo.jpg` (加密) → `category='image'` → 预览页 ✓
 
-### Step 3：handleLongPress — 基于内容类型路由
+### Step 3：handleLongPress — 加密文件分支重构
 
 文件：`src/views/Files.vue`
+
+将 `else if (category.startsWith('encrypted'))` 改为 `else if (file.isEncrypted)`，使用 `getFileCategory(file.name)` 获取内容类型：
 
 ```typescript
 } else if (file.isEncrypted) {
@@ -111,16 +103,24 @@ async function handleFileClick(file: FileItem) {
       }
     },
   })
-  buttons.push({ text: t('files.decrypt'), ... })
-  buttons.push({ text: t('files.delete'), ... })
+  buttons.push({
+    text: t('files.decrypt'),
+    icon: lockClosed,
+    handler: () => { handleDecryptFile(file) },
+  })
+  buttons.push({
+    text: t('files.delete'),
+    icon: trash,
+    role: 'destructive',
+    handler: () => { handleDeleteFile(file) },
+  })
 } else {
 ```
 
 关键变化：
-- 加密文件分支使用 `getFileCategory(file.name)` 获取内容类型（不传 `isEncrypted`）
-- 加密视频/音频 → "播放"按钮 → `playMedia()`
-- 加密图片/文档/其他 → "预览"按钮 → 预览页
-- 保留"解密"和"删除"按钮
+- 加密视频/音频（`category='video'|'audio'`）→ "播放"按钮 → `playMedia()`
+- 加密容器/文档/图片（`category='other'|'document'|'image'`）→ "预览"按钮 → 预览页
+- 预览页查询后端 `container.container_type` 后决定实际路由
 
 ### Step 4：加密徽章判断简化
 
@@ -130,7 +130,7 @@ async function handleFileClick(file: FileItem) {
 <ion-badge v-if="file.isEncrypted" color="warning" slot="end">
 ```
 
-简化：`file.isEncrypted` 已经是独立的 boolean，不需要 `getFileCategory` 辅助判断。
+`file.isEncrypted` 已经是独立的 boolean，不需要 `getFileCategory` 辅助判断。
 
 ### Step 5：useFileList.ts — 图标和颜色适配
 
@@ -163,20 +163,19 @@ export function getFileIconColor(file: FileItem): string {
 }
 ```
 
-关键变化：
-- 加密文件优先显示锁图标 + warning 颜色（不管内容类型）
-- `getFileCategory(file.name)` 不再传 `isEncrypted`
-- 移除 `case 'encrypted'` 分支
-
 ### Step 6：FilePickerModal.vue — 同步适配
 
 文件：`src/components/FilePickerModal.vue`
 
-同 Step 5 的逻辑：加密文件显示锁图标，`getFileCategory` 不传 `isEncrypted`。
+同 Step 5 逻辑：加密文件优先显示锁图标，`getFileCategory` 不传 `isEncrypted`。
 
 ### Step 7：FilePreview.vue — 已正确（无需修改）
 
-`FilePreview.vue` 已经基于后端 `container.container_type` 路由，无需修改。
+`FilePreview.vue` 已经基于后端 `container.container_type` 路由：
+- `video`/`audio` → `openPlayer()` → MPV
+- `image` → 显示图片
+- `document`/`text` → 显示文本
+- 其他 → 显示容器信息
 
 ### Step 8：MpvPlayerActivity Surface 直接挂载
 
