@@ -510,14 +510,21 @@ class GoProcessPlugin : Plugin() {
 
         GlobalScope.launch(Dispatchers.IO) {
             try {
-                PluginManager.installerManager.uninstallPlugin(pluginId)
-                Log.i(TAG, "uninstallPlugin SUCCESS: $pluginId")
-                appLog("I", TAG, "uninstallPlugin SUCCESS: $pluginId")
-                val res = JSObject().apply {
-                    put("success", true)
-                    put("pluginId", pluginId)
+                val success = PluginManager.installerManager.uninstallPlugin(pluginId)
+                if (success == true) {
+                    Log.i(TAG, "uninstallPlugin SUCCESS: $pluginId")
+                    appLog("I", TAG, "uninstallPlugin SUCCESS: $pluginId")
+                    val res = JSObject().apply {
+                        put("success", true)
+                        put("pluginId", pluginId)
+                    }
+                    withContext(Dispatchers.Main) { call.resolve(res) }
+                } else {
+                    val msg = "uninstallPlugin returned false (permission denied or plugin not found)"
+                    Log.w(TAG, "uninstallPlugin FAILED: $pluginId — $msg")
+                    appLog("W", TAG, "uninstallPlugin FAILED: $msg")
+                    withContext(Dispatchers.Main) { call.reject(msg) }
                 }
-                withContext(Dispatchers.Main) { call.resolve(res) }
             } catch (e: Error) {
                 val msg = "${e.javaClass.simpleName}: ${e.message}"
                 Log.e(TAG, "uninstallPlugin Error: $msg", e)
@@ -590,12 +597,8 @@ class GoProcessPlugin : Plugin() {
             try {
                 val info = PluginManager.getPluginInfo(pluginId)
                 if (info != null) {
-                    val infoStr = buildString {
-                        append("id=${info.id}, versionName=")
-                        append(info.versionName ?: "null")
-                        try { append(", enabled=${info.enabled}") } catch (_: Exception) {}
-                    }
-                    steps.add("   getPluginInfo('$pluginId') = ✅ ($infoStr)")
+                    val p = info.pluginInfo
+                    steps.add("   getPluginInfo('$pluginId') = ✅ (id=${p.id}, versionName=${p.versionName}, enabled=${p.enabled})")
                 } else {
                     steps.add("   getPluginInfo('$pluginId') = ❌ null (not installed?)")
                 }
