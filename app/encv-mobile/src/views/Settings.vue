@@ -45,7 +45,16 @@
             mode="ios"
           >
             <ion-select-option value="artplayer">{{ t('settings.builtInArtplayer') }}</ion-select-option>
-            <ion-select-option value="mpv-plugin">{{ t('settings.mpvPluginExtension') }}</ion-select-option>
+            <ion-select-option value="mpv-plugin" :disabled="mpvPluginStatus !== 'ready'">
+              {{ t('settings.mpvPluginExtension') }}
+              <span v-if="mpvPluginStatus === 'not_installed'" style="color: var(--ion-color-warning)">(未安装)</span>
+              <span v-if="mpvPluginStatus === 'disabled'" style="color: var(--ion-color-warning)">(已禁用)</span>
+              <span v-if="mpvPluginStatus === 'not_loaded'" style="color: var(--ion-color-medium)">(未加载)</span>
+              <span v-if="mpvPluginStatus === 'load_failed'" style="color: var(--ion-color-danger)">(加载失败)</span>
+              <span v-if="mpvPluginStatus === 'ready'" style="color: var(--ion-color-success)"> ✓</span>
+              <span v-if="mpvPluginStatus === 'error'" style="color: var(--ion-color-danger)">(查询失败)</span>
+              <span v-if="mpvPluginStatus === 'framework_not_ready'" style="color: var(--ion-color-warning)">(框架未初始化)</span>
+            </ion-select-option>
             <ion-select-option value="external">{{ t('settings.openExternal') }}</ion-select-option>
           </ion-select>
         </ion-item>
@@ -374,7 +383,7 @@ import { useServerStatus } from '@/composables/useServerStatus'
 import { useConfig } from '@/composables/useConfig'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
-import { isNative } from '@/plugins/GoProcess'
+import { isNative, getPluginFullState, ensurePluginLoaded } from '@/plugins/GoProcess'
 import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus, fetchTextPreviewExts, invalidateTextExtsCache } from '@/api/encv'
 import type { IndexStats, FFmpegStatus } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
@@ -397,6 +406,8 @@ const audioPlayerMode = ref(localStorage.getItem('encv_player_audio') || PLAY_MO
 const screenOrientation = ref(localStorage.getItem('encv_screen_orientation') || 'auto')
 const customTextExts = ref('')
 const builtInTextExtsCount = ref(0)
+const mpvPluginStatus = ref<string>('unknown')
+const mpvPluginError = ref<string>('')
 
 function handleVideoPlayerChange(event: CustomEvent) {
   const value = event.detail.value
@@ -716,7 +727,31 @@ onMounted(async () => {
     await loadConfig()
     configLoaded.value = true
     try { indexStats.value = await getIndexStats() } catch {}
-    if (isNative()) { try { engineStatus.value = await fetchFFmpegStatus() } catch {} }
+    if (isNative()) { 
+      try { engineStatus.value = await fetchFFmpegStatus() } catch {}
+      try {
+        const state = await getPluginFullState('com.encvgo.plugin.mpv')
+        mpvPluginStatus.value = state.status
+        mpvPluginError.value = ''
+        console.info('[Settings] MPV plugin status:', state.status)
+        if (state.status === 'not_loaded') {
+          console.info('[Settings] MPV plugin enabled but not loaded, attempting to load...')
+          const loaded = await ensurePluginLoaded('com.encvgo.plugin.mpv')
+          if (loaded) {
+            mpvPluginStatus.value = 'ready'
+            console.info('[Settings] MPV plugin loaded successfully')
+          } else {
+            mpvPluginStatus.value = 'load_failed'
+            mpvPluginError.value = '插件加载失败，请重启应用'
+            console.warn('[Settings] MPV plugin load failed')
+          }
+        }
+      } catch (e: any) {
+        console.error('[Settings] getPluginFullState failed:', e)
+        mpvPluginStatus.value = 'error'
+        mpvPluginError.value = e.message || '查询插件状态失败'
+      }
+    }
     loadPreviewConfig()
   }
 })
