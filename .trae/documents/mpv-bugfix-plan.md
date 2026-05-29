@@ -22,22 +22,39 @@
 | `switch(mode)` 分发 | [Files.vue L497](app/encv-mobile/src/views/Files.vue#L497) | 只有 `case MPV_PLUGIN`，缺少 3 个新 sub-mode 的 case |
 | `openPlayer()` 参数 | [Files.vue L499](app/encv-mobile/src/views/Files.vue#L499) | 硬编码传 `PLAY_MODE.MPV_PLUGIN`，应传实际 `mode` 变量 |
 
-### Bug 2: 插件状态变更后 Settings 不自动刷新
+---
 
-**根因分析**：
+### Bug 2: 安装后启用不正确 + 切换选项不刷新
 
-Settings.vue 的 MPV 状态徽章仅在以下时机刷新：
-- `onMounted`（页面首次加载）
-- `ionChange`（用户手动切换播放器选项时）
+**双重根因**：
 
-当用户在 ExtensionsPage 执行以下操作后，Settings 的 MPV 徽章不会自动更新：
-- **安装插件** (`pickAndInstallPlugin` 成功)
-- **启用/禁用插件** (`togglePluginEnabled`)
-- **卸载插件** (`uninstallPlugin`)
+#### 根因 2a：Kotlin 安装流程缺少 enable 步骤
 
-这些操作都会改变 PluginManager 内部状态（XML 持久化 / ClassLoader 加载），但 Settings 页面完全不知情。
+```
+PluginLifecycleEngine.installPlugin():
+  installPlugin(apkFile, true)     → APK 安装到文件系统 + XML 持久化 ✅
+  loadEnabledPlugins()             → 只加载 enabled=true 的插件 ⚠️
+  返回 pi.enabled                  → ComboLite 安装后默认 disabled → false ❌
 
-**修复方向**：所有插件状态变更操作完成后，广播通用事件 `'plugin-state-changed'`，Settings 监听后自动刷新。
+缺失步骤：从未调用 setPluginEnabled(pluginId, true) ！
+```
+
+结果：安装完成后插件处于 **disabled** 状态，`loadEnabledPlugins()` 跳过它，`getPluginInfo()` 返回 null。
+
+#### 根因 2b：Settings 切换播放器选项时不刷新 MPV 徽章
+
+```
+Settings.vue handleVideoPlayerChange() (L425):
+  videoPlayerMode.value = value        ← 更新 UI 选中项
+  localStorage.setItem(...)              ← 持久化
+  ❌ 缺少 refreshMpvPluginStatus() 调用！
+
+用户切换到 "MPV (Activity)" → 徽章仍显示旧状态（或无状态）→ 不知道 MPV 实际是否可用
+```
+
+#### 根因 2c：ExtensionsPage 操作后 Settings 不感知
+
+安装/启用/卸载成功后 ExtensionsPage 只刷新自身列表，未通知 Settings。
 
 ---
 
@@ -57,7 +74,7 @@ if (isValidPlayMode(stored))
 
 新增工具函数：
 ```typescript
-import { PLAY_MODE, isMpvSubMode } from '@/constants/player'
+import { PLAY_MODE } from '@/constants/player'
 
 function isValidPlayMode(value: string): value is PlayMode {
   const allModes = [
@@ -85,16 +102,16 @@ switch (mode) {
   case PLAY_MODE.MPV_FRAGMENT:
   case PLAY_MODE.MPV_COMPOSE:
     if (isNative()) {
-      const result = await openPlayer(file.path, file.name, mimeType, mode)  // ← 传实际 mode!
+      const result = await openPlayer(file.path, file.name, mimeType, mode)
       if (!result.success) { /* 显示错误 banner */ }
-    } else { /* fallback */ }
+    } else { router.push({ path: '/player', query: { path: file.path, name: file.name } }) }
     break
   case PLAY_MODE.EXTERNAL:
-    /* ... */
+    // ... 保持不变 ...
     break
   default:
-    // 未知 mode → 不应发生，显示警告
-    console.warn('[Files] Unknown play mode:', mode)
+    console.warn('[Files] Unknown play mode:', mode, '— falling back to artplayer')
+    router.push({ path: '/player', query: { path: file.path, name: file.name } })
     break
 }
 ```
@@ -111,38 +128,65 @@ const result = await openPlayer(file.path, file.name, mimeType, mode)
 
 ---
 
-### Task 2: 修复 GoProcessPlugin.openPlayer — mode 分发完整性检查
+### Task 2: 修复 Kotlin 安装流程 — 安装后自动 enable（Bug 2a 核心修复）
 
-当前 `openPlayer` 已有 `effectiveMode` 归一化逻辑（L128），确认 `"mpv-plugin"` / `"mpv"` 会映射到 `"mpv-activity"`。但需确保非 mpv-* 模式不走 mpv 分支。
+**修改文件**: [PluginLifecycleEngine.kt](app/encv-mobile/android/combolite-host/src/main/java/com/encvgo/combolite/engine/PluginLifecycleEngine.kt) L80-91
 
-**验证点**：当 mode 为 `"mpv-activity"` 时，进入 startActivityForResult 分支 ✅（已正确）
+```kotlin
+is InstallResult.Success -> {
+    try { PluginManager.loadEnabledPlugins() } catch (_: Exception) {}
+    val pluginId = pi.id
+    if (!pi.enabled) {
+        Log.i(TAG, "installPlugin: plugin $pluginId installed but disabled, enabling...")
+        try { PluginManager.setPluginEnabled(pluginId, true) } catch (_: Exception) {}
+        try { PluginManager.loadEnabledPlugins() } catch (_: Exception) {}
+    }
+    OperationResult.Success(PluginState(
+        id = pi.id, name = pi.name, versionName = pi.versionName,
+        versionCode = pi.versionCode, enabled = true,   // ← 安装后保证 enabled=true
+        installed = true, entryClass = pi.entryClass, description = pi.description
+    ))
+}
+```
+
+**关键逻辑**：检查 `pi.enabled`，如果为 false 则自动调用 `setPluginEnabled(pluginId, true)` + 重新 `loadEnabledPlugins()`。
 
 ---
 
-### Task 3: 插件状态变更后自动刷新 MPV 状态（Bug 2 修复）
+### Task 3: 修复 Settings — 切换选项时刷新 + 监听事件（Bug 2b + 2c）
 
-#### SubTask 3.1: ExtensionsPage 所有状态变更操作后广播事件
-
-以下 3 个操作成功后均 dispatch 事件：
+#### SubTask 3.1: `handleVideoPlayerChange` / `handleAudioPlayerChange` 触发刷新
 
 ```typescript
-// 安装成功后 (L208-209)
-if (result.success) {
-  showToast({ message: t('extensions.installSuccess'), ... })
-  window.dispatchEvent(new CustomEvent('plugin-state-changed'))
-  await loadExtensions()
+async function handleVideoPlayerChange(event: CustomEvent) {
+  const value = event.detail.value
+  videoPlayerMode.value = value
+  localStorage.setItem('encv_player_video', value)
+  if (isMpvMode(value)) await refreshMpvPluginStatus()  // ← 新增！
 }
 
-// 启用/禁用成功后 (L244)
-await loadExtensions()
+async function handleAudioPlayerChange(event: CustomEvent) {
+  const value = event.detail.value
+  audioPlayerMode.value = value
+  localStorage.setItem('encv_player_audio', value)
+  if (isMpvMode(value)) await refreshMpvPluginStatus()  // ← 新增！
+}
+```
+
+#### SubTask 3.2: ExtensionsPage 所有状态变更操作后广播事件
+
+```typescript
+// 安装成功后 (L208-209 之后)
 window.dispatchEvent(new CustomEvent('plugin-state-changed'))
 
-// 卸载成功后 (L273)
-await loadExtensions()
+// 启用/禁用成功后 (L244 之后)
+window.dispatchEvent(new CustomEvent('plugin-state-changed'))
+
+// 卸载成功后 (L273 之后)
 window.dispatchEvent(new CustomEvent('plugin-state-changed'))
 ```
 
-#### SubTask 3.2: Settings.vue 监听插件状态变更事件
+#### SubTask 3.3: Settings.vue 监听事件
 
 ```typescript
 onMounted(() => {
@@ -159,26 +203,23 @@ onUnmounted(() => {
 
 | 文件 | 改动内容 |
 |------|---------|
-| [Files.vue](app/encv-mobile/src/views/Files.vue) | `getPlayMode()` 白名单扩展 + switch 覆盖全部子模式 + openPlayer 传实际 mode |
-| [Settings.vue](app/encv-mobile/src/views/Settings.vue) | 监听 `plugin-state-changed` 事件自动刷新 MPV 状态 |
-| [ExtensionsPage.vue](app/encv-mobile/src/views/ExtensionsPage.vue) | 安装/启用/卸载成功后 dispatch `plugin-state-changed` 事件 |
+| [Files.vue](app/encv-mobile/src/views/Files.vue) | `isValidPlayMode()` + switch 覆盖子模式 + openPlayer 传实际 mode |
+| [PluginLifecycleEngine.kt](app/encv-mobile/android/combolite-host/src/main/java/com/encvgo/combolite/engine/PluginLifecycleEngine.kt) | 安装后自动 `setPluginEnabled(true)` + 重载 |
+| [Settings.vue](app/encv-mobile/src/views/Settings.vue) | ionChange 触发 refresh + 监听 `plugin-state-changed` |
+| [ExtensionsPage.vue](app/encv-mobile/src/views/ExtensionsPage.vue) | 安装/启用/卸载后 dispatch 事件 |
 
 ## 铁律合规检查
 
 | 铁律 | 合规方式 |
 |------|---------|
-| **严禁自动 fallback** | 未知 mode 进 default 分支打 warning 日志，不再静默切换到 Artplayer |
+| **严禁自动 fallback** | unknown mode 进 default 分支打 warning 日志，不再静默切 Artplayer |
 | **严禁 Toast** | 错误通过现有 error banner 展示 |
-| **饱和调试** | `console.info('[Files] playMedia: ... mode=...')` 已有，增加 unknown mode warning |
+| **饱和调试** | `[Files] Unknown play mode:` warning + Kotlin `installPlugin: plugin X installed but disabled, enabling...` |
 
 ## 验证清单
 
-- [ ] Settings 选 "MPV (Activity)" → localStorage 存 `'mpv-activity'`
-- [ ] Files.vue 打开视频 → `getPlayMode('video')` 返回 `'mpv-activity'`（不是 artplayer）
-- [ ] `openPlayer(..., 'mpv-activity')` 被正确调用
-- [ ] Kotlin 端 `[ModeC-Activity]` 日志出现
-- [ ] Settings 选 "MPV (Fragment)" → 同上流程，Kotlin 端 `[ModeB-Fragment]` 日志出现
-- [ ] Settings 选 "MPV (Compose)" → 同上流程，Kotlin 端 `[ModeA-Compose]` 日志出现
-- [ ] 安装 MPV 后 Settings 自动刷新状态（无需手动切选项）
-- [ ] 启用/禁用 MPV 后 Settings 徽章自动更新
-- [ ] 卸载 MPV 后 Settings 徽章自动变为"未安装"
+- [ ] **Bug 1**: Settings 选 "MPV (Activity)" → Files 打开视频 → Kotlin 端 `[ModeC-Activity]` 日志出现（非 Artplayer）
+- [ ] **Bug 1**: 选 Fragment/Compose 同理，对应 `[ModeB-Fragment]` / `[ModeA-Compose]` 日志
+- [ ] **Bug 2a**: 安装 MPV 插件 → 无需手动启用 → Settings 直接显示 ✓ ready
+- [ ] **Bug 2b**: 切换播放器选项到任一 MPV 子模式 → 徽章立即刷新显示当前状态
+- [ ] **Bug 2c**: 在 ExtensionsPage 启用/禁用/卸载 MPV → 切回 Settings → 徽章已自动更新
