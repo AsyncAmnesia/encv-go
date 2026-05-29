@@ -7,6 +7,7 @@ import com.combo.core.runtime.PluginManager
 import com.combo.core.security.crash.PluginCrashHandler
 import com.combo.core.security.auth.AuthorizationManager
 import com.encvgo.combolite.EncvComboLiteHost
+import com.encvgo.combolite.engine.PluginLifecycleEngine
 import java.io.File
 import kotlin.reflect.jvm.javaMethod
 
@@ -299,7 +300,7 @@ object DiagnosticKit {
         steps.add("5. Testing loadEnabledPlugins() call...")
         try {
             val count: Int = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                com.encvgo.combolite.engine.PluginLifecycleEngine.loadAllEnabledPlugins()
+                PluginLifecycleEngine.loadAllEnabledPlugins()
             }
             steps.add("   loadEnabledPlugins() returned $count")
         } catch (e: Error) {

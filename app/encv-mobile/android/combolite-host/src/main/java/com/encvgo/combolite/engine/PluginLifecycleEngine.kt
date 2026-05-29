@@ -5,6 +5,7 @@ import android.content.Intent
 import com.combo.core.runtime.PluginManager
 import com.combo.core.runtime.ValidationStrategy
 import com.combo.core.security.crash.PluginCrashHandler
+import com.combo.core.component.activity.BaseHostActivity
 import com.encvgo.combolite.model.OperationResult
 import com.encvgo.combolite.model.PluginState
 import kotlinx.coroutines.runBlocking
@@ -187,7 +188,7 @@ internal object PluginLifecycleEngine {
         } catch (e: Exception) {
         }
         try {
-            PluginManager.proxyManager.setHostActivity(hostActivityClass as Class<com.combo.core.component.activity.BaseHostActivity>)
+            PluginManager.proxyManager.setHostActivity(hostActivityClass as Class<BaseHostActivity>)
         } catch (e: Exception) {
         }
     }

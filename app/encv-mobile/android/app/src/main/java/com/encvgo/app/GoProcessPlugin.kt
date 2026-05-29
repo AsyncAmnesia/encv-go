@@ -275,16 +275,16 @@ class GoProcessPlugin : Plugin() {
 
     private fun handleInstallConfirmResult(resultCode: Int, data: Intent?) {
         val call = pendingCalls.remove("installConfirm") ?: return
-        val apkPath = data?.getStringExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH) ?: call.getString("apkPath") ?: ""
+        val apkPath = data?.getStringExtra(InstallConfirmActivity.EXTRA_APK_PATH) ?: call.getString("apkPath") ?: ""
         if (resultCode == Activity.RESULT_OK) executeComboLiteInstall(call, File(apkPath)) else call.reject("\u7528\u6237\u53d6\u6d88\u5b89\u88c5")
     }
 
     private fun startInstallConfirm(call: PluginCall, apkPath: String, name: String) {
         pendingCalls["installConfirm"] = call; call.getData().put("apkPath", apkPath); call.save()
         try {
-            activity.startActivityForResult(Intent(activity, com.encvgo.app.InstallConfirmActivity::class.java).apply {
-                putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH, apkPath)
-                putExtra(com.encvgo.app.InstallConfirmActivity.EXTRA_FILE_NAME, name)
+            activity.startActivityForResult(Intent(activity, InstallConfirmActivity::class.java).apply {
+                putExtra(InstallConfirmActivity.EXTRA_APK_PATH, apkPath)
+                putExtra(InstallConfirmActivity.EXTRA_FILE_NAME, name)
             }, REQUEST_CODE_INSTALL_CONFIRM)
         } catch (e: Exception) { pendingCalls.remove("installConfirm"); call.reject(e.message) }
     }
