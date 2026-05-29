@@ -45,18 +45,13 @@
             mode="ios"
           >
             <ion-select-option value="artplayer">{{ t('settings.builtInArtplayer') }}</ion-select-option>
-            <ion-select-option value="mpv-plugin" :disabled="mpvPluginStatus !== 'ready'">
-              {{ t('settings.mpvPluginExtension') }}
-              <span v-if="mpvPluginStatus === 'not_installed'" style="color: var(--ion-color-warning)">(未安装)</span>
-              <span v-if="mpvPluginStatus === 'disabled'" style="color: var(--ion-color-warning)">(已禁用)</span>
-              <span v-if="mpvPluginStatus === 'not_loaded'" style="color: var(--ion-color-medium)">(未加载)</span>
-              <span v-if="mpvPluginStatus === 'load_failed'" style="color: var(--ion-color-danger)">(加载失败)</span>
-              <span v-if="mpvPluginStatus === 'ready'" style="color: var(--ion-color-success)"> ✓</span>
-              <span v-if="mpvPluginStatus === 'error'" style="color: var(--ion-color-danger)">(查询失败)</span>
-              <span v-if="mpvPluginStatus === 'framework_not_ready'" style="color: var(--ion-color-warning)">(框架未初始化)</span>
-            </ion-select-option>
+            <ion-select-option value="mpv-plugin" :disabled="mpvPluginStatus !== 'ready'">{{ t('settings.mpvPluginExtension') }}</ion-select-option>
             <ion-select-option value="external">{{ t('settings.openExternal') }}</ion-select-option>
           </ion-select>
+          <ion-badge v-if="isNative() && mpvPluginStatus !== 'unknown' && mpvPluginStatus !== 'ready'" slot="end" :color="mpvPluginStatus === 'load_failed' || mpvPluginStatus === 'error' ? 'danger' : 'warning'">
+            {{ mpvPluginStatus === 'not_installed' ? '未安装' : mpvPluginStatus === 'disabled' ? '已禁用' : mpvPluginStatus === 'not_loaded' ? '未加载' : mpvPluginStatus === 'load_failed' ? '加载失败' : mpvPluginStatus === 'error' ? '查询失败' : '框架未初始化' }}
+          </ion-badge>
+          <ion-badge v-if="isNative() && mpvPluginStatus === 'ready'" slot="end" color="success">✓</ion-badge>
         </ion-item>
         <ion-item>
           <ion-icon :icon="musicalNotesOutline" slot="start"></ion-icon>
