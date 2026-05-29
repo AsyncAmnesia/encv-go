@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.core.content.FileProvider
+import com.combo.core.model.LoadedPluginInfo
 import com.encvgo.combolite.EncvComboLiteHost
 import java.io.File
 
@@ -62,35 +63,62 @@ object PlayerEntry {
     ): PlayResult {
         Log.i(TAG, "startMpvPlayer: filePath=$filePath fileName=$fileName mimeType=$mimeType")
 
+        // 1. 检查框架初始化
         if (!EncvComboLiteHost.isInitialized) {
             Log.w(TAG, "startMpvPlayer: ComboLite not initialized")
             return PlayResult(false, "播放器框架未初始化", "PluginManager.isInitialized=false")
         }
         Log.i(TAG, "startMpvPlayer: ComboLite initialized ✓")
 
+        // 2. 检查插件完整状态
         val state = EncvComboLiteHost.getPluginFullState(PLUGIN_ID)
         Log.i(TAG, "startMpvPlayer: plugin state=$state.status name=${state.name} version=${state.version}")
 
-        if (state.status == "not_installed") {
-            Log.w(TAG, "startMpvPlayer: MPV plugin not installed")
-            return PlayResult(false, "MPV 播放器插件未安装", "请前往扩展管理安装插件")
-        }
-        if (state.status == "disabled") {
-            Log.w(TAG, "startMpvPlayer: MPV plugin disabled")
-            return PlayResult(false, "MPV 播放器插件已禁用", "请前往扩展管理启用插件")
-        }
-        if (state.status == "framework_not_ready") {
-            Log.w(TAG, "startMpvPlayer: framework not ready")
-            return PlayResult(false, "播放器框架未就绪", "请重启应用")
+        when (state.status) {
+            "not_installed" -> {
+                Log.w(TAG, "startMpvPlayer: MPV plugin not installed")
+                return PlayResult(false, "MPV 播放器未安装", "请前往扩展管理安装")
+            }
+            "disabled" -> {
+                Log.w(TAG, "startMpvPlayer: MPV plugin disabled")
+                return PlayResult(false, "MPV 播放器已禁用", "请前往扩展管理启用")
+            }
+            "framework_not_ready" -> {
+                Log.w(TAG, "startMpvPlayer: framework not ready")
+                return PlayResult(false, "播放器框架未就绪", "请重启应用")
+            }
+            "not_loaded", "load_failed" -> {
+                Log.w(TAG, "startMpvPlayer: plugin state=${state.status}, attempting load...")
+                val loaded = EncvComboLiteHost.ensurePluginLoaded(PLUGIN_ID)
+                Log.i(TAG, "startMpvPlayer: ensurePluginLoaded result=$loaded")
+                if (!loaded) {
+                    return PlayResult(false, "MPV 加载失败", "请重启应用或重新启用扩展")
+                }
+            }
         }
 
-        val loaded = EncvComboLiteHost.ensurePluginLoaded(PLUGIN_ID)
-        Log.i(TAG, "startMpvPlayer: ensurePluginLoaded result=$loaded")
-        if (!loaded) {
-            Log.w(TAG, "startMpvPlayer: MPV plugin load failed")
-            return PlayResult(false, "MPV 播放器插件加载失败", "请重启应用或检查插件状态")
+        // 3. 关键：检查 LoadedPluginInfo 是否包含目标 Activity
+        // startActivity() 成功 ≠ 播放成功！EncvHostActivity 启动后可能白屏
+        val loadedInfo = EncvComboLiteHost.getLoadedPluginInfo(PLUGIN_ID)
+        if (loadedInfo == null) {
+            Log.e(TAG, "startMpvPlayer: getLoadedPluginInfo returned null after successful load!")
+            return PlayResult(false, "MPV 插件信息异常", "已加载但 getLoadedPluginInfo 返回 null")
+        }
+        Log.i(TAG, "startMpvPlayer: loadedInfo id=${loadedInfo.id} name=${loadedInfo.pluginName}")
+
+        // 4. 检查插件是否注册了 Activity（ProxyManager 能否找到）
+        val activities = loadedInfo.activities
+        Log.i(TAG, "startMpvPlayer: plugin activities=$activities target=$TARGET_ACTIVITY")
+        if (activities.isEmpty()) {
+            Log.e(TAG, "startMpvPlayer: plugin has NO registered activities!")
+            return PlayResult(false, "MPV 插件无 Activity", "插件未声明任何 Activity，APK 可能损坏")
+        }
+        if (!activities.any { it.contains("MpvPlayerActivity", ignoreCase = true) }) {
+            Log.w(TAG, "startMpvPlayer: target $TARGET_ACTIVITY not found in plugin activities: $activities")
+            return PlayResult(false, "MPV Activity 未注册", "目标 Activity 不在插件清单中: $TARGET_ACTIVITY")
         }
 
+        // 5. 启动播放 — 此时才真正 startActivity
         return try {
             val extras = mapOf<String, Any>(
                 EXTRA_FILE_PATH to filePath,
@@ -108,7 +136,7 @@ object PlayerEntry {
                 extras = extras
             )
             context.startActivity(intent)
-            Log.i(TAG, "startMpvPlayer: startActivity success ✓")
+            Log.i(TAG, "startMpvPlayer: startActivity dispatched ✓ (result=pending, verify in EncvHostActivity)")
             PlayResult(true)
         } catch (e: Exception) {
             Log.e(TAG, "startMpvPlayer: startActivity failed: ${e.message}", e)

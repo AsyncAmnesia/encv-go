@@ -57,6 +57,16 @@ internal object PluginLifecycleEngine {
         }
     }
 
+    fun getLoadedPluginInfo(pluginId: String): com.combo.core.model.LoadedPluginInfo? {
+        if (!PluginManager.isInitialized) return null
+        return try {
+            PluginManager.getPluginInfo(pluginId)
+        } catch (e: Exception) {
+            Log.e(TAG, "getLoadedPluginInfo($pluginId) failed: ${e.message}", e)
+            null
+        }
+    }
+
     suspend fun installPlugin(apkFile: File): OperationResult<PluginState> {
         if (!PluginManager.isInitialized) {
             return OperationResult.Failure("PluginManager not initialized")

@@ -15,6 +15,8 @@ object EncvComboLiteHost {
 
     fun getPluginInfo(pluginId: String): PluginState? = PluginLifecycleEngine.getPluginInfo(pluginId)
 
+    fun getLoadedPluginInfo(pluginId: String): com.combo.core.model.LoadedPluginInfo? = PluginLifecycleEngine.getLoadedPluginInfo(pluginId)
+
     fun getPluginFullState(pluginId: String): PluginFullState {
         if (!PluginLifecycleEngine.isInitialized()) {
             return PluginFullState(id = pluginId, status = "framework_not_ready")

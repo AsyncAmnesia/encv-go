@@ -49,7 +49,7 @@
             <ion-select-option value="external">{{ t('settings.openExternal') }}</ion-select-option>
           </ion-select>
           <ion-badge v-if="isNative() && mpvPluginStatus !== 'unknown' && mpvPluginStatus !== 'ready'" slot="end" :color="mpvPluginStatus === 'load_failed' || mpvPluginStatus === 'error' ? 'danger' : 'warning'">
-            {{ mpvPluginStatus === 'not_installed' ? '未安装' : mpvPluginStatus === 'disabled' ? '已禁用' : mpvPluginStatus === 'not_loaded' ? '未加载' : mpvPluginStatus === 'load_failed' ? '加载失败' : mpvPluginStatus === 'error' ? '查询失败' : '框架未初始化' }}
+            {{ t(mpvStatusI18nKey) }}
           </ion-badge>
           <ion-badge v-if="isNative() && mpvPluginStatus === 'ready'" slot="end" color="success">✓</ion-badge>
         </ion-item>
@@ -352,7 +352,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
@@ -403,6 +403,18 @@ const customTextExts = ref('')
 const builtInTextExtsCount = ref(0)
 const mpvPluginStatus = ref<string>('unknown')
 const mpvPluginError = ref<string>('')
+
+const mpvStatusI18nKey = computed(() => {
+  const keyMap: Record<string, string> = {
+    not_installed: 'settings.pluginNotInstalled',
+    disabled: 'settings.pluginDisabled',
+    not_loaded: 'settings.pluginNotLoaded',
+    load_failed: 'settings.pluginLoadFailed',
+    error: 'settings.pluginQueryFailed',
+    framework_not_ready: 'settings.pluginFrameworkNotReady',
+  }
+  return keyMap[mpvPluginStatus.value] || 'settings.pluginQueryFailed'
+})
 
 function handleVideoPlayerChange(event: CustomEvent) {
   const value = event.detail.value
