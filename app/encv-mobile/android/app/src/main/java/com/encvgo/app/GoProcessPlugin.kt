@@ -454,18 +454,6 @@ class GoProcessPlugin : Plugin() {
     }
 
     @PluginMethod
-    fun launchLogcatActivity(call: PluginCall) {
-        try {
-            val intent = Intent(activity, Class.forName("com.hjq.logcat.LogcatActivity"))
-            activity.startActivity(intent)
-            call.resolve(JSObject().put("success", true))
-        } catch (e: Exception) {
-            LogBridge.w(TAG, "launchLogcatActivity: LogcatActivity not available (release build?)", e)
-            call.resolve(JSObject().put("success", false).put("error", "LogcatActivity not available"))
-        }
-    }
-
-    @PluginMethod
     fun exportLogs(call: PluginCall) {
         try {
             val r = LogExporter.export(context)

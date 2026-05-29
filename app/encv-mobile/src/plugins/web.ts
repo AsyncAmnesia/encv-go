@@ -67,7 +67,6 @@ export interface GoProcessPlugin {
   debugKotlinReflect(): Promise<Record<string, any>>
   debugApkValidation(): Promise<Record<string, any>>
   debugValidationStrategy(): Promise<Record<string, any>>
-  launchLogcatActivity(): Promise<{ success: boolean; error?: string }>
   exportLogs(): Promise<{ success: boolean; path?: string }>
   clearLogs(): Promise<{ success: boolean }>
   openLogViewer(): Promise<{ success: boolean }>
@@ -188,10 +187,6 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
 
   async debugValidationStrategy(): Promise<Record<string, any>> {
     return { debugLog: 'web stub' }
-  }
-
-  async launchLogcatActivity(): Promise<{ success: boolean; error?: string }> {
-    return { success: false, error: 'Native only' }
   }
 
   async exportLogs(): Promise<{ success: boolean; path?: string }> {

@@ -263,15 +263,6 @@ export async function debugValidationStrategy(): Promise<Record<string, any>> {
   }
 }
 
-export async function launchLogcatActivity(): Promise<{ success: boolean; error?: string }> {
-  try {
-    return await GoProcess.launchLogcatActivity()
-  } catch (e) {
-    console.error('[GoProcess] launchLogcatActivity failed:', e)
-    return { success: false, error: String(e) }
-  }
-}
-
 export async function exportLogs(): Promise<{ success: boolean; path?: string }> {
   try {
     return await GoProcess.exportLogs()
