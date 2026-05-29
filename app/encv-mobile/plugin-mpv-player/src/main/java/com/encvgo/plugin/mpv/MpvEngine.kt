@@ -264,6 +264,18 @@ class MpvEngine(private val context: Context) {
         }
     }
 
+    fun playAudioOnly(filePath: String): Boolean {
+        return try {
+            if (!initialize()) return false
+            MPVLib.setPropertyString("vo", "null")
+            MPVLib.command(arrayOf("loadfile", filePath))
+            true
+        } catch (e: Exception) {
+            notifyState(State.Error("Audio play failed: ${e.message}"))
+            false
+        }
+    }
+
     fun pause() {
         try {
             if (!initialized) return
@@ -384,6 +396,41 @@ class MpvEngine(private val context: Context) {
             if (!initialized) null
             else MPVLib.grabThumbnail(dimension)
         } catch (_: Exception) { null }
+    }
+
+    data class TrackInfo(val id: Int, val type: String, val lang: String?, val title: String?, val codec: String?, val default: Boolean)
+
+    fun getTrackList(type: String): List<TrackInfo> {
+        if (!initialized) return emptyList()
+        return try {
+            val count = MPVLib.getPropertyInt("track-list/count") ?: 0
+            (0 until count).mapNotNull { i ->
+                val trackType = MPVLib.getPropertyString("track-list/$i/type") ?: return@mapNotNull null
+                if (trackType != type) return@mapNotNull null
+                val id = MPVLib.getPropertyInt("track-list/$i/id") ?: return@mapNotNull null
+                val lang = MPVLib.getPropertyString("track-list/$i/lang")
+                val title = MPVLib.getPropertyString("track-list/$i/title")
+                val codec = MPVLib.getPropertyString("track-list/$i/codec")
+                val default = MPVLib.getPropertyBoolean("track-list/$i/default") ?: false
+                TrackInfo(id, trackType, lang, title, codec, default)
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun setTrack(type: String, id: Int) {
+        try {
+            if (!initialized) return
+            MPVLib.setPropertyString(type, id.toString())
+        } catch (_: Exception) {}
+    }
+
+    fun addSubtitleFile(path: String): Boolean {
+        return try {
+            if (!initialized) false
+            else { MPVLib.command(arrayOf("sub-add", path)); true }
+        } catch (_: Exception) { false }
     }
 
     fun setProperty(key: String, value: String): Boolean {

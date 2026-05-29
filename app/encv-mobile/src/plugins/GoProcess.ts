@@ -101,9 +101,9 @@ export async function getIntentFileInfo(): Promise<{ path: string; name: string;
   }
 }
 
-export async function openPlayer(filePath: string, name: string, mimeType: string): Promise<void> {
+export async function openPlayer(filePath: string, name: string, mimeType: string, mode?: string): Promise<void> {
   try {
-    await GoProcess.openPlayer({ filePath, name, mimeType })
+    await GoProcess.openPlayer({ filePath, name, mimeType, mode: mode || '' })
   } catch (e) {
     console.error('[ENCV] GoProcess.openPlayer() failed:', e)
   }
@@ -125,9 +125,9 @@ export async function openExternal(url: string, mimeType: string): Promise<void>
   }
 }
 
-export async function openInPlayer(path: string, name: string, mimeType: string): Promise<void> {
+export async function openInPlayer(path: string, name: string, mimeType: string, mode?: string): Promise<void> {
   try {
-    await GoProcess.openInPlayer({ path, name, mimeType })
+    await GoProcess.openInPlayer({ path, name, mimeType, mode: mode || '' })
   } catch (e) {
     console.error('[ENCV] GoProcess.openInPlayer() failed:', e)
   }
@@ -154,15 +154,16 @@ export interface PickAndInstallResult {
   success: boolean
   method?: string
   fileName?: string
-  pending?: boolean
+  error?: string
 }
 
 export async function pickAndInstallPlugin(): Promise<PickAndInstallResult> {
   try {
     return await GoProcess.pickAndInstallPlugin()
-  } catch (e) {
-    console.error('[ENCV] GoProcess.pickAndInstallPlugin() failed:', e)
-    return { success: false }
+  } catch (e: any) {
+    const msg = e?.message || e?.code || String(e)
+    console.error('[ENCV] GoProcess.pickAndInstallPlugin() failed:', msg)
+    return { success: false, error: msg }
   }
 }
 
@@ -183,5 +184,77 @@ export async function getLocalFilePath(path: string): Promise<string> {
   } catch (e) {
     console.error('[ENCV] GoProcess.getLocalFilePath() failed:', e)
     return ''
+  }
+}
+
+export async function debugInstallFlow(): Promise<Record<string, any>> {
+  try {
+    return await GoProcess.debugInstallFlow()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.debugInstallFlow() failed:', e)
+    return { error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+export async function debugKotlinReflect(): Promise<Record<string, any>> {
+  try {
+    return await GoProcess.debugKotlinReflect()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.debugKotlinReflect() failed:', e)
+    return { error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+export async function debugApkValidation(): Promise<Record<string, any>> {
+  try {
+    return await GoProcess.debugApkValidation()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.debugApkValidation() failed:', e)
+    return { error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+export async function debugValidationStrategy(): Promise<Record<string, any>> {
+  try {
+    return await GoProcess.debugValidationStrategy()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.debugValidationStrategy() failed:', e)
+    return { error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+export async function exportLogs(): Promise<{ success: boolean; path?: string }> {
+  try {
+    return await GoProcess.exportLogs()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.exportLogs() failed:', e)
+    return { success: false }
+  }
+}
+
+export async function clearLogs(): Promise<{ success: boolean }> {
+  try {
+    return await GoProcess.clearLogs()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.clearLogs() failed:', e)
+    return { success: false }
+  }
+}
+
+export async function openLogViewer(): Promise<{ success: boolean }> {
+  try {
+    return await GoProcess.openLogViewer()
+  } catch (e) {
+    console.error('[ENCV] GoProcess.openLogViewer() failed:', e)
+    return { success: false }
+  }
+}
+
+export async function saveDevLogs(logs: string): Promise<{ success: boolean; path?: string }> {
+  try {
+    return await GoProcess.saveDevLogs({ logs })
+  } catch (e) {
+    console.error('[ENCV] GoProcess.saveDevLogs() failed:', e)
+    return { success: false }
   }
 }

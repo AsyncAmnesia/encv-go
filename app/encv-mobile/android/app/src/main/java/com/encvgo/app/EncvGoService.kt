@@ -65,6 +65,23 @@ class EncvGoService : Service() {
                 putExtra(EXTRA_SOURCE, source)
             }
         }
+
+        @Volatile
+        private var instance: EncvGoService? = null
+
+        fun getOutputSnapshot(): String {
+            val svc = instance ?: return ""
+            return synchronized(svc.outputBuffer) {
+                svc.outputBuffer.toString()
+            }
+        }
+
+        fun clearOutputSnapshot() {
+            val svc = instance ?: return
+            synchronized(svc.outputBuffer) {
+                svc.outputBuffer.clear()
+            }
+        }
     }
 
     private val worker = Executors.newSingleThreadExecutor()
@@ -82,6 +99,7 @@ class EncvGoService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         createNotificationChannel()
     }
 
@@ -103,6 +121,7 @@ class EncvGoService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        instance = null
         stopGoProcess("service_destroyed", stopService = false)
         worker.shutdownNow()
         super.onDestroy()

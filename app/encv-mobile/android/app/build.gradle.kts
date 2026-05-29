@@ -52,11 +52,11 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = false
+            isShrinkResources = false
             signingConfig = signingConfigs.findByName("release")
             proguardFiles(
-                getDefaultProguardFile("proguard-android.txt"),
+                getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
@@ -90,7 +90,7 @@ android {
 }
 
 packagePlugins {
-    enabled.set(true)
+    enabled.set(false)
     buildType.set(PackageBuildType.DEBUG)
     pluginsDir.set("debug_plugins")
 }
@@ -109,6 +109,7 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     implementation(project(":capacitor-cordova-android-plugins"))
     implementation(libs.kotlin.stdlib)
+    implementation(libs.kotlin.reflect)
     debugImplementation(libs.logcat)
     implementation(libs.okhttp)
     implementation(libs.bugly.crashreport)

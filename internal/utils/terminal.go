@@ -1,3 +1,5 @@
+//go:build !android
+
 // Package utils 提供终端美化输出功能（基于 pterm）
 package utils
 

@@ -468,7 +468,7 @@ function playMedia(file: FileItem, category: string) {
       break
     case PLAY_MODE.MPV_PLUGIN:
       if (isNative()) {
-        openPlayer(file.path, file.name, mimeType)
+        openPlayer(file.path, file.name, mimeType, PLAY_MODE.MPV_PLUGIN)
       } else {
         router.push({ path: '/player', query: { path: file.path, name: file.name } })
       }

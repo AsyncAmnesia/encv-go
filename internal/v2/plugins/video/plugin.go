@@ -52,10 +52,15 @@ type VideoPlugin struct {
 	splitSets [][]string
 	// 【新增】存储分片文件路径集合，用于快速查找
 	splitPartPaths map[string]bool
+	isPostEncryptVerify bool
 }
 
 func (p *VideoPlugin) Name() string {
 	return "video" // 这个字符串必须与配置文件中的键对应
+}
+
+func (p *VideoPlugin) SetPostEncryptVerify(v bool) {
+	p.isPostEncryptVerify = v
 }
 
 // Plugin 接口实现
@@ -464,6 +469,7 @@ func (p *VideoPlugin) PreEncryptProcessor(index types.Index, inputPath, inputRoo
 // Plugin 接口实现
 // 执行核心的加密工作，并调用 Packer
 func (p *VideoPlugin) Encrypt(dataReader io.Reader) (*crypto.EncryptionResult, error) {
+	p.isPostEncryptVerify = false
 	guardKey := fmt.Sprintf("%s|%s", p.inputPath, p.outputDir)
 
 	var result *crypto.EncryptionResult
@@ -729,11 +735,17 @@ func (p *VideoPlugin) verifyContainer() error {
 		sourcePath = p.inputPath
 	}
 
+	slog.Info("verifyContainer path resolution",
+		"encrypted_source_path", p.encryptedSourcePath,
+		"resolved_source_path", sourcePath,
+		"input_path", p.inputPath,
+		"is_preprocessed", sourcePath != p.inputPath)
+
 	var verifyOpts *pluginInterfaces.VerifyOptions
-	if sourcePath != p.inputPath {
-		slog.Info("Detected preprocessed/re-encoded source, using lenient verification",
+	if sourcePath != p.inputPath || p.isPostEncryptVerify {
+		slog.Info("Detected preprocessed/re-encoded source or post-encrypt verification, using lenient verification",
 			"source_path", sourcePath, "original_input", p.inputPath)
-		verifyOpts = &pluginInterfaces.VerifyOptions{SkipSizeCheck: true, SkipStructCheck: true, CollectWarnings: true}
+		verifyOpts = &pluginInterfaces.VerifyOptions{SkipSizeCheck: true, SkipStructCheck: true, SkipDeepCheck: true, CollectWarnings: true}
 	} else {
 		verifyOpts = &pluginInterfaces.VerifyOptions{CollectWarnings: true}
 	}
@@ -761,6 +773,12 @@ func (p *VideoPlugin) verifyContainer() error {
 // SetOutputDir 设置输出目录（供 EncryptFileWithPlugin 在预处理前调用）
 func (p *VideoPlugin) SetOutputDir(dir string) {
 	p.outputDir = dir
+}
+
+// EncryptedSourcePath 返回实际被加密的源文件路径
+// 可能是原始 inputPath，也可能是预处理后的临时文件路径（remux/transcode 场景）
+func (p *VideoPlugin) EncryptedSourcePath() string {
+	return p.encryptedSourcePath
 }
 
 // Plugin 接口实现

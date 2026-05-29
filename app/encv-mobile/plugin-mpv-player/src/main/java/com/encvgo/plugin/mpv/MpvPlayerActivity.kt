@@ -11,6 +11,16 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import com.encvgo.plugin.mpv.theme.EncvMpVPlayerTheme
 
+private val AUDIO_EXTENSIONS = setOf(
+    "mp3", "flac", "wav", "ogg", "aac", "m4a", "wma", "opus", "alac", "ape", "aiff", "mid", "midi"
+)
+
+private fun isAudioFile(mimeType: String, fileName: String): Boolean {
+    if (mimeType.startsWith("audio/", ignoreCase = true)) return true
+    val ext = fileName.substringAfterLast('.', "").lowercase()
+    return ext in AUDIO_EXTENSIONS
+}
+
 class MpvPlayerActivity : AppCompatActivity() {
 
     private lateinit var engine: MpvEngine
@@ -23,6 +33,7 @@ class MpvPlayerActivity : AppCompatActivity() {
         val fileName = intent.getStringExtra("file_name") ?: ""
         val mimeType = intent.getStringExtra("mime_type") ?: ""
         val isExternal = intent.getBooleanExtra("is_external", false)
+        val audioMode = isAudioFile(mimeType, fileName)
 
         engine = createMpvEngine()
         engine.initialize()
@@ -33,29 +44,42 @@ class MpvPlayerActivity : AppCompatActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    MpvPlayerScreen(
-                        filePath = filePath,
-                        fileName = fileName,
-                        mimeType = mimeType,
-                        isExternal = isExternal,
-                        engine = engine,
-                        onBack = { finish() }
-                    )
+                    if (audioMode) {
+                        MpvAudioPlayerScreen(
+                            filePath = filePath,
+                            fileName = fileName,
+                            mimeType = mimeType,
+                            isExternal = isExternal,
+                            engine = engine,
+                            onBack = { finish() }
+                        )
+                    } else {
+                        MpvPlayerScreen(
+                            filePath = filePath,
+                            fileName = fileName,
+                            mimeType = mimeType,
+                            isExternal = isExternal,
+                            engine = engine,
+                            onBack = { finish() }
+                        )
+                    }
                 }
             }
         }
 
-        val decorView = window.decorView as? ViewGroup
-        if (decorView != null) {
-            engine.stateListener = { state ->
-                when (state) {
-                    is MpvEngine.State.MpvReady -> {
-                        val contentRoot = decorView.findViewById<ViewGroup>(android.R.id.content)
-                        if (contentRoot != null) {
-                            engine.attachSurfaceView(contentRoot)
+        if (!audioMode) {
+            val decorView = window.decorView as? ViewGroup
+            if (decorView != null) {
+                engine.stateListener = { state ->
+                    when (state) {
+                        is MpvEngine.State.MpvReady -> {
+                            val contentRoot = decorView.findViewById<ViewGroup>(android.R.id.content)
+                            if (contentRoot != null) {
+                                engine.attachSurfaceView(contentRoot)
+                            }
                         }
+                        else -> {}
                     }
-                    else -> {}
                 }
             }
         }
@@ -64,8 +88,8 @@ class MpvPlayerActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         try {
-                engine.destroy()
-            } catch (_: Exception) {}
+            engine.destroy()
+        } catch (_: Exception) {}
     }
 
     private fun createMpvEngine(): MpvEngine {

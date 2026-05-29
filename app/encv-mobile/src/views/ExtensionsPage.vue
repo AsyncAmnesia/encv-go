@@ -82,6 +82,20 @@
             {{ isInstalling ? t('extensions.installing') : t('extensions.selectApk') }}
           </ion-button>
           <p class="install-hint">{{ t('extensions.installFromLocalHint') }}</p>
+          <div v-if="isNativePlatform()" style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px;">
+            <ion-button expand="block" fill="outline" color="warning" @click="handleDebugInstall" size="small">
+              🔧 installPlugin实际调用
+            </ion-button>
+            <ion-button expand="block" fill="outline" color="warning" @click="handleDebugKotlinReflect" size="small">
+              🔧 kotlin-reflect健康检查
+            </ion-button>
+            <ion-button expand="block" fill="outline" color="warning" @click="handleDebugApkValidation" size="small">
+              🔧 APK元数据+签名校验
+            </ion-button>
+            <ion-button expand="block" fill="outline" color="warning" @click="handleDebugValidationStrategy" size="small">
+              🔧 ValidationStrategy状态
+            </ion-button>
+          </div>
         </div>
       </template>
 
@@ -123,7 +137,8 @@ import {
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { Capacitor } from '@capacitor/core'
-import { isNative, pickAndInstallPlugin, checkInstalledPlugins } from '@/plugins/GoProcess'
+import { isNative, pickAndInstallPlugin, checkInstalledPlugins, debugInstallFlow, debugKotlinReflect, debugApkValidation, debugValidationStrategy } from '@/plugins/GoProcess'
+import { showToast } from '@/composables/useToast'
 
 const { t } = useI18n()
 
@@ -152,13 +167,17 @@ onMounted(async () => {
 async function loadExtensions() {
   isLoading.value = true
   try {
+    const COMBOLITE_PLUGIN_ID_MAP: Record<string, string> = {
+      'mpv-player': 'com.encvgo.plugin.mpv',
+    }
+
     const installedMap = Capacitor.isNativePlatform() ? await checkInstalledPlugins() : {}
     extensions.value = [
       {
         id: 'mpv-player',
         name: t('extensions.mpvPlayer'),
         description: t('extensions.mpvPlayerDesc'),
-        installed: !!installedMap['mpv-player'],
+        installed: !!installedMap[COMBOLITE_PLUGIN_ID_MAP['mpv-player'] || 'mpv-player'],
         enabled: true,
         sizeDisplay: '~35 MB',
       },
@@ -182,24 +201,15 @@ async function handleInstallFromFile() {
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Installation timeout')), 120000)),
     ])
     if (result.success) {
-      if (result.pending) {
-        const alert = await alertController.create({
-          header: t('extensions.installSuccess'),
-          message: `${result.fileName || ''}\n${t('extensions.installHint')}\n${t('extensions.systemInstallerHint') || 'Please complete installation in the system dialog, then return here.'}`,
-          buttons: [t('common.confirm')],
-        })
-        await alert.present()
-      } else {
-        const alert = await alertController.create({
-          header: t('extensions.installSuccess'),
-          message: `${result.fileName || ''}\n${t('extensions.installHint')}`,
-          buttons: [t('common.confirm')],
-        })
-        await alert.present()
-      }
+      const alert = await alertController.create({
+        header: t('extensions.installSuccess'),
+        message: `${result.fileName || ''}\n${t('extensions.installHint')}`,
+        buttons: [t('common.confirm')],
+      })
+      await alert.present()
       await loadExtensions()
     } else {
-      installError.value = t('extensions.installFailed')
+      installError.value = result.error || t('extensions.installFailed')
     }
   } catch (e: any) {
     installError.value = e.message || t('extensions.installFailed')
@@ -233,6 +243,68 @@ async function handleUninstall(id: string) {
     ],
   })
   await alert.present()
+}
+
+async function showDebugResult(header: string, result: Record<string, any>) {
+  const debugText = result.debugLog || Object.entries(result)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join('\n')
+  const alert = await alertController.create({
+    header,
+    message: `<pre style="font-size:12px;white-space:pre-wrap;max-height:60vh;overflow:auto;">${debugText}</pre>`,
+    buttons: [
+      {
+        text: '复制',
+        handler: async () => {
+          try {
+            await navigator.clipboard.writeText(debugText)
+            showToast({ message: '已复制诊断信息', duration: 1500, color: 'success' })
+          } catch {
+            showToast({ message: '复制失败', duration: 1500, color: 'danger' })
+          }
+          return false
+        },
+      },
+      'OK',
+    ],
+  })
+  await alert.present()
+}
+
+async function handleDebugInstall() {
+  try {
+    const result = await debugInstallFlow()
+    await showDebugResult('🔧 installPlugin诊断', result)
+  } catch (e: any) {
+    await showDebugResult('🔧 诊断失败', { debugLog: e?.message || String(e) })
+  }
+}
+
+async function handleDebugKotlinReflect() {
+  try {
+    const result = await debugKotlinReflect()
+    await showDebugResult('🔧 kotlin-reflect诊断', result)
+  } catch (e: any) {
+    await showDebugResult('🔧 诊断失败', { debugLog: e?.message || String(e) })
+  }
+}
+
+async function handleDebugApkValidation() {
+  try {
+    const result = await debugApkValidation()
+    await showDebugResult('🔧 APK校验诊断', result)
+  } catch (e: any) {
+    await showDebugResult('🔧 诊断失败', { debugLog: e?.message || String(e) })
+  }
+}
+
+async function handleDebugValidationStrategy() {
+  try {
+    const result = await debugValidationStrategy()
+    await showDebugResult('🔧 ValidationStrategy诊断', result)
+  } catch (e: any) {
+    await showDebugResult('🔧 诊断失败', { debugLog: e?.message || String(e) })
+  }
 }
 </script>
 

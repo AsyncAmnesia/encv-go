@@ -24,26 +24,22 @@ func (h *WSLogHandler) SetMinLevel(level slog.Level) {
 }
 
 func (h *WSLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	if level < h.minLevel {
+		return false
+	}
 	return h.inner.Enabled(ctx, level)
 }
 
 func (h *WSLogHandler) Handle(ctx context.Context, r slog.Record) error {
-	err := h.inner.Handle(ctx, r)
-	if err != nil {
-		return err
-	}
-
-	if r.Level < h.minLevel {
-		return nil
-	}
-
-	if h.hub != nil {
+	if r.Level >= h.minLevel && h.hub != nil {
 		levelStr := "info"
 		switch {
 		case r.Level >= slog.LevelError:
 			levelStr = "error"
 		case r.Level >= slog.LevelWarn:
 			levelStr = "warn"
+		case r.Level >= slog.LevelDebug:
+			levelStr = "debug"
 		default:
 			levelStr = "info"
 		}
@@ -59,7 +55,7 @@ func (h *WSLogHandler) Handle(ctx context.Context, r slog.Record) error {
 		h.hub.BroadcastRaw(msg)
 	}
 
-	return nil
+	return h.inner.Handle(ctx, r)
 }
 
 func (h *WSLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {

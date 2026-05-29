@@ -67,3 +67,7 @@ export function useFrontendLogs() {
     clearLogs: clearFrontendLogs,
   }
 }
+
+export function getFrontendLogsJson(): string {
+  return JSON.stringify(logs.value, null, 2)
+}

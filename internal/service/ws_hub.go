@@ -45,7 +45,7 @@ func (h *WSHub) Upgrade(w http.ResponseWriter, r *http.Request) (*websocket.Conn
 func (h *WSHub) RegisterClient(conn *websocket.Conn) *wsClient {
 	client := &wsClient{
 		conn: conn,
-		send: make(chan []byte, 256),
+		send: make(chan []byte, 1024),
 	}
 
 	h.mu.Lock()
@@ -98,12 +98,16 @@ func (h *WSHub) Broadcast(msgType string, data interface{}) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
+	dropped := 0
 	for client := range h.clients {
 		select {
 		case client.send <- msg:
 		default:
-			slog.Warn("WebSocket client send buffer full, skipping")
+			dropped++
 		}
+	}
+	if dropped > 0 {
+		slog.Warn("WebSocket Broadcast: messages dropped", "type", msgType, "dropped", dropped)
 	}
 }
 
@@ -111,11 +115,16 @@ func (h *WSHub) BroadcastRaw(msg []byte) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
+	dropped := 0
 	for client := range h.clients {
 		select {
 		case client.send <- msg:
 		default:
+			dropped++
 		}
+	}
+	if dropped > 0 {
+		slog.Warn("WebSocket BroadcastRaw: messages dropped", "dropped", dropped, "clients", len(h.clients))
 	}
 }
 

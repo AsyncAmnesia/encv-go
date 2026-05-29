@@ -19,10 +19,11 @@ class PlayerActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         val (filePath, fileName, mimeType, isExternal) = resolveFileInfo(intent)
-        Log.i(TAG, "onCreate: path=$filePath, name=$fileName, mimeType=$mimeType, external=$isExternal")
+        val mode = intent.getStringExtra(PlayerEntry.EXTRA_MODE) ?: ""
+        Log.i(TAG, "onCreate: path=$filePath, name=$fileName, mimeType=$mimeType, external=$isExternal, mode=$mode")
 
         if (filePath.isNotEmpty()) {
-            PlayerEntry.play(this, filePath, fileName, mimeType, isExternal)
+            PlayerEntry.play(this, filePath, fileName, mimeType, isExternal, mode)
         } else {
             Log.w(TAG, "No valid file path resolved from intent")
         }
@@ -35,10 +36,11 @@ class PlayerActivity : AppCompatActivity() {
         setIntent(intent)
 
         val (filePath, fileName, mimeType, isExternal) = resolveFileInfo(intent)
-        Log.i(TAG, "onNewIntent: path=$filePath, name=$fileName, mimeType=$mimeType, external=$isExternal")
+        val mode = intent.getStringExtra(PlayerEntry.EXTRA_MODE) ?: ""
+        Log.i(TAG, "onNewIntent: path=$filePath, name=$fileName, mimeType=$mimeType, external=$isExternal, mode=$mode")
 
         if (filePath.isNotEmpty()) {
-            PlayerEntry.play(this, filePath, fileName, mimeType, isExternal)
+            PlayerEntry.play(this, filePath, fileName, mimeType, isExternal, mode)
         }
 
         finish()

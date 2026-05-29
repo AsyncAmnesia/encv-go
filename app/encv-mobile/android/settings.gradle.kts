@@ -1,5 +1,6 @@
 pluginManagement {
     repositories {
+        mavenCentral()
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
@@ -7,13 +8,13 @@ pluginManagement {
         maven { url = uri("https://mirrors.tencent.com/nexus/repository/maven-tencent/") }
         google()
         gradlePluginPortal()
-        mavenCentral()
     }
 }
 
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
     repositories {
+        mavenCentral()
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         if (System.getenv("CI") == null) {
             maven { url = uri("https://mirrors.tencent.com/nexus/repository/maven-public/") }
@@ -21,7 +22,6 @@ dependencyResolutionManagement {
         maven { url = uri("https://mirrors.tencent.com/repository/maven-tencent/") }
         maven { url = uri("https://maven.aliyun.com/repository/public") }
         google()
-        mavenCentral()
         maven { url = uri("https://jitpack.io") }
         flatDir {
             dirs("${rootProject.projectDir}/capacitor-cordova-android-plugins/src/main/libs", "${rootProject.projectDir}/app/libs")

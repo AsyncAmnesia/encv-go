@@ -142,11 +142,17 @@ jobs:
 
       - name: Run Go unit tests
         run: |
-          echo "═══ Go Unit Tests ═══"
+          echo "═══ Go Unit Tests (service layer) ═══"
           go test ./internal/service/ -count=1 -timeout 120s -v 2>&1 | tail -30
           echo ""
+          echo "═══ Go Unit Tests (video plugin) ═══"
+          go test ./internal/v2/plugins/video/ -count=1 -timeout 120s -v 2>&1 | tail -30
+          echo ""
+          echo "═══ ComboLite Static Check ═══"
+          go test ./internal/service/ -count=1 -timeout 60s -run TestComboLite -v 2>&1 | tail -20
+          echo ""
           echo "═══ Go Test Summary ═══"
-          go test ./internal/service/ -count=1 -timeout 120s 2>&1 | tail -5
+          go test ./internal/service/ ./internal/v2/plugins/video/ -count=1 -timeout 120s 2>&1 | tail -5
 
       - name: Build Go binary for Android arm64 (with CGO for ffmpeg dlopen)
         env:
@@ -158,7 +164,7 @@ jobs:
           go build \
             -ldflags="-s -w -X main.version=${{ inputs.version || 'dev' }}" \
             -o app/encv-mobile/encv-go-arm64 \
-            ./cmd/encv
+            ./cmd/encv-mobile
           echo "Go binary size:"
           ls -lh app/encv-mobile/encv-go-arm64
 
@@ -197,6 +203,48 @@ jobs:
           ls -la android/*.gradle android/app/*.gradle
 
       # === Non-Gradle customizations ===
+      - name: Check R8/ProGuard is disabled for ALL build variants
+        run: |
+          echo "═══ R8/ProGuard Obfuscation Guard ═══"
+          VIOLATIONS=0
+          for f in $(find app/encv-mobile/android -name "*.gradle.kts" -not -path "*build/*"); do
+            # Check isMinifyEnabled = true
+            MINIFY=$(grep -n 'isMinifyEnabled\s*=\s*true' "$f" 2>/dev/null)
+            if [ -n "$MINIFY" ]; then
+              echo "::error file=$f::R8/ProGuard minification ENABLED in $f:"
+              echo "$MINIFY" | while read line; do echo "  $line"; done
+              VIOLATIONS=$((VIOLATIONS + 1))
+            fi
+            # Check isShrinkResources = true
+            SHRINK=$(grep -n 'isShrinkResources\s*=\s*true' "$f" 2>/dev/null)
+            if [ -n "$SHRINK" ]; then
+              echo "::error file=$f::Resource shrinking ENABLED in $f:"
+              echo "$SHRINK" | while read line; do echo "  $line"; done
+              VIOLATIONS=$((VIOLATIONS + 1))
+            fi
+            # Also check legacy proguardFiles usage with enabled flag
+            LEGACY_MINIFY=$(grep -n 'minifyEnabled\s*=\s*true' "$f" 2>/dev/null)
+            if [ -n "$LEGACY_MINIFY" ]; then
+              echo "::error file=$f::Legacy minifyEnabled=true found in $f:"
+              echo "$LEGACY_MINIFY" | while read line; do echo "  $line"; done
+              VIOLATIONS=$((VIOLATIONS + 1))
+            fi
+          done
+
+          if [ "$VIOLATIONS" -gt 0 ]; then
+            echo ""
+            echo "::error::Found $VIOLATIONS R8/ProGuard violation(s) above."
+            echo "REASON: ComboLite framework uses ::function.javaMethod (kotlin-reflect)"
+            echo "for @RequiresPermission permission checks on ALL build variants."
+            echo "R8 breaks @Metadata ↔ bytecode consistency, causing KotlinReflectionInternalError."
+            echo ""
+            echo "Fix: Set isMinifyEnabled=false AND isShrinkResources=false for ALL buildTypes."
+            echo "See: .trae/rules/combolite.md §1.3 (铁律: 禁止在 release 构建中启用 R8)"
+            exit 1
+          else
+            echo "✅ PASS: No R8/ProGuard obfuscation found in any build variant"
+          fi
+
       - name: Copy Go binary to jniLibs
         run: |
           mkdir -p app/encv-mobile/android/app/src/main/jniLibs/arm64-v8a

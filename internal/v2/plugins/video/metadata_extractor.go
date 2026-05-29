@@ -201,10 +201,43 @@ func extractMetadataFromOriginalFile(path string) (*VideoIndex, error) {
 
 	var rawMeta types.FFProbeRawMetadata
 	if err := json.Unmarshal(sanitized, &rawMeta); err != nil {
-		hexLen := len(sanitized)
-		if hexLen > 128 {
-			hexLen = 128
+		hexLen := 256
+		if len(sanitized) < hexLen {
+			hexLen = len(sanitized)
 		}
+		videoLogger.Warn("ffprobe JSON unmarshal failed",
+			slog.Any("error", err),
+			slog.Int("hex_dump_bytes", hexLen),
+			slog.String("hex_dump", hex.EncodeToString(sanitized[:hexLen])),
+		)
+
+		sanitizedStr := string(sanitized)
+		if strings.Contains(sanitizedStr, `"frames"`) {
+			videoLogger.Warn("ffprobe output uses 'frames' format instead of expected 'streams/format', building minimal index from file info",
+				slog.String("file", filepath.Base(path)),
+			)
+			fileInfo, statErr := os.Stat(path)
+			fileSize := int64(0)
+			if statErr == nil {
+				fileSize = fileInfo.Size()
+			}
+			fileName := filepath.Base(path)
+			minimalIndex := &VideoIndex{
+				Width:            0,
+				Height:           0,
+				OriginalFileSize: fileSize,
+				OriginalFilename: fileName,
+				DurationSeconds:  0,
+				Resolution:       "unknown",
+				Format:           "unknown",
+			}
+			videoLogger.Info("built minimal VideoIndex from file info as fallback",
+				slog.Int64("size", fileSize),
+				slog.String("name", fileName),
+			)
+			return minimalIndex, nil
+		}
+
 		return nil, fmt.Errorf("failed to unmarshal ffprobe data: %w (hex dump first %d bytes: %s)",
 			err, hexLen, hex.EncodeToString(sanitized[:hexLen]))
 	}

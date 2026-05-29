@@ -33,16 +33,24 @@ export interface GoProcessPlugin {
   checkPermissions(): Promise<PermissionCheckResult>
   isStandaloneMode(): Promise<{ standalone: boolean }>
   getIntentFileInfo(): Promise<{ path: string; name: string; mimeType: string }>
-  openPlayer(options: { filePath: string; name: string; mimeType: string }): Promise<void>
+  openPlayer(options: { filePath: string; name: string; mimeType: string; mode?: string }): Promise<void>
   closePlayer(): Promise<void>
   openExternal(options: { url: string; mimeType: string }): Promise<void>
-  openInPlayer(options: { path: string; name: string; mimeType: string }): Promise<void>
+  openInPlayer(options: { path: string; name: string; mimeType: string; mode?: string }): Promise<void>
   openPlayerHome(): Promise<void>
   setScreenOrientation(options: { orientation: string }): Promise<void>
   installPlugin(options: { apkPath: string }): Promise<{ success: boolean; method?: string }>
   pickAndInstallPlugin(): Promise<{ success: boolean; method?: string; fileName?: string }>
   checkInstalledPlugins(): Promise<Record<string, boolean>>
   getLocalFilePath(options: { path: string }): Promise<{ path: string }>
+  debugInstallFlow(): Promise<Record<string, any>>
+  debugKotlinReflect(): Promise<Record<string, any>>
+  debugApkValidation(): Promise<Record<string, any>>
+  debugValidationStrategy(): Promise<Record<string, any>>
+  exportLogs(): Promise<{ success: boolean; path?: string }>
+  clearLogs(): Promise<{ success: boolean }>
+  openLogViewer(): Promise<{ success: boolean }>
+  saveDevLogs(options: { logs: string }): Promise<{ success: boolean; path?: string }>
 }
 
 export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
@@ -82,7 +90,7 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
     return { path: '', name: '', mimeType: '' }
   }
 
-  async openPlayer(_options: { filePath: string; name: string; mimeType: string }): Promise<void> {
+  async openPlayer(_options: { filePath: string; name: string; mimeType: string; mode?: string }): Promise<void> {
   }
 
   async closePlayer(): Promise<void> {
@@ -91,7 +99,7 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
   async openExternal(_options: { url: string; mimeType: string }): Promise<void> {
   }
 
-  async openInPlayer(_options: { path: string; name: string; mimeType: string }): Promise<void> {
+  async openInPlayer(_options: { path: string; name: string; mimeType: string; mode?: string }): Promise<void> {
   }
 
   async openPlayerHome(): Promise<void> {
@@ -114,5 +122,37 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
 
   async getLocalFilePath(_options: { path: string }): Promise<{ path: string }> {
     return { path: '' }
+  }
+
+  async debugInstallFlow(): Promise<Record<string, any>> {
+    return { debugLog: 'web stub' }
+  }
+
+  async debugKotlinReflect(): Promise<Record<string, any>> {
+    return { debugLog: 'web stub' }
+  }
+
+  async debugApkValidation(): Promise<Record<string, any>> {
+    return { debugLog: 'web stub' }
+  }
+
+  async debugValidationStrategy(): Promise<Record<string, any>> {
+    return { debugLog: 'web stub' }
+  }
+
+  async exportLogs(): Promise<{ success: boolean; path?: string }> {
+    return { success: false }
+  }
+
+  async clearLogs(): Promise<{ success: boolean }> {
+    return { success: false }
+  }
+
+  async openLogViewer(): Promise<{ success: boolean }> {
+    return { success: false }
+  }
+
+  async saveDevLogs(_options: { logs: string }): Promise<{ success: boolean; path?: string }> {
+    return { success: false }
   }
 }

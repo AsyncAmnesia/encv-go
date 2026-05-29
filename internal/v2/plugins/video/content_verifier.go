@@ -138,9 +138,13 @@ func (p *VideoContentVerifier) Verify(originalPath, decryptedPath string, opts .
 	duration := time.Since(startTime)
 	slog.Info("L3 verification passed, integrity 100%", "chunks", totalChunks, "elapsed", duration)
 
-	// === 深度诊断 (仅在 L3 成功后执行) ===
-	if err := p.runDeepVideoIntegrityCheck(originalPath, decryptedPath, err); err != nil {
-		return fmt.Errorf("deep integrity check failed: %w", err), nil
+	// === 深度诊断 (仅在 L3 成功后执行，SkipDeepCheck 时跳过) ===
+	if !opt.SkipDeepCheck {
+		if err := p.runDeepVideoIntegrityCheck(originalPath, decryptedPath, err); err != nil {
+			return fmt.Errorf("deep integrity check failed: %w", err), nil
+		}
+	} else {
+		slog.Warn("L4 deep integrity check skipped (SkipDeepCheck=true)")
 	}
 
 	slog.Info("Verification passed (100%)")

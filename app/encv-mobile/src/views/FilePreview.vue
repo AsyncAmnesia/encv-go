@@ -8,6 +8,11 @@
           </ion-button>
         </ion-buttons>
         <ion-title>{{ fileName }}</ion-title>
+        <ion-buttons slot="end" v-if="previewType === 'text'">
+          <ion-button @click="toggleWrap" fill="clear">
+            <ion-icon :icon="textWrap ? returnDownBackOutline : returnDownForwardOutline" slot="icon-only"></ion-icon>
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -62,17 +67,16 @@
           <iframe :src="pdfPreviewUrl" class="preview-iframe"></iframe>
         </div>
 
-        <div v-else-if="previewType === 'text'" class="preview-wrapper text-preview">
-          <div v-if="textLoading" class="loading-container">
+        <div v-else-if="previewType === 'text'" class="text-content-wrapper">
+          <div v-if="textLoading" class="text-loading">
             <ion-spinner name="crescent"></ion-spinner>
-            <p>{{ t('filePreview.loading') }}</p>
+            <p>Loading text...</p>
           </div>
-          <div v-else-if="textError" class="error-state">
-            <ion-icon :icon="alertCircle" class="error-icon"></ion-icon>
+          <div v-else-if="textError" class="text-error">
             <p>{{ textError }}</p>
-            <ion-button @click="loadTextContent" fill="clear" size="small">{{ t('filePreview.retry') }}</ion-button>
+            <ion-button size="small" @click="loadTextContent">Retry</ion-button>
           </div>
-          <pre v-else class="text-content"><code>{{ textContent }}</code></pre>
+          <pre v-else class="text-content" :class="{ 'no-wrap': !textWrap }">{{ textContent }}</pre>
         </div>
 
         <div v-else-if="previewType === 'container'" class="preview-wrapper container-info">
@@ -150,6 +154,7 @@ import {
   alertCircle, informationCircle,
   helpCircleOutline, lockClosed,
   chevronDown, chevronForward,
+  returnDownBackOutline, returnDownForwardOutline,
 } from 'ionicons/icons'
 import { getFileStreamUrl, getFileCategory, getFileExtension, formatFileSize, fetchTextPreviewExts, getApiBaseUrl, getFilePreviewUrl } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
@@ -178,9 +183,6 @@ const loading = ref(true)
 const error = ref('')
 const previewType = ref<PreviewType>('unsupported')
 const streamUrl = ref('')
-const textContent = ref('')
-const textLoading = ref(false)
-const textError = ref('')
 const pdfPreviewUrl = ref('')
 const showManifest = ref(false)
 const containerInfo = ref<ContainerInfo | null>(null)
@@ -189,32 +191,21 @@ const fileModified = ref('')
 const fileMimeType = ref('')
 const fileCategory = ref('')
 
+const textContent = ref('')
+const textLoading = ref(false)
+const textError = ref('')
+const textWrap = ref(true)
+
 const isEncryptedPreview = computed(() => route.query.isEncrypted === 'true')
+
+function toggleWrap() {
+  textWrap.value = !textWrap.value
+}
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
   const s = Math.floor(seconds % 60)
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-}
-
-async function loadTextContent() {
-  textLoading.value = true
-  textError.value = ''
-  try {
-    const baseUrl = getApiBaseUrl()
-    const resp = await fetch(`${baseUrl}/api/files/stream?path=${encodeURIComponent(filePath.value)}`)
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-    const text = await resp.text()
-    const MAX_CHARS = 500000
-    textContent.value = text.length > MAX_CHARS
-      ? text.slice(0, MAX_CHARS) + `\n\n--- [TRUNCATED: ${text.length.toLocaleString()} chars total, showing first ${MAX_CHARS}] ---`
-      : text
-  } catch (e: any) {
-    textError.value = e?.message || String(e)
-    textContent.value = ''
-  } finally {
-    textLoading.value = false
-  }
 }
 
 async function determinePreviewType(name: string, isEncrypted?: boolean): Promise<PreviewType> {
@@ -229,6 +220,38 @@ async function determinePreviewType(name: string, isEncrypted?: boolean): Promis
   if (textExts.has(ext)) return 'text'
   if (category === 'document' || category === 'other') return 'text'
   return 'unsupported'
+}
+
+async function loadTextContent() {
+  const path = filePath.value
+  if (!path) return
+
+  textLoading.value = true
+  textError.value = ''
+  textContent.value = ''
+
+  try {
+    const baseUrl = getApiBaseUrl()
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000)
+
+    const resp = await fetch(`${baseUrl}/decrypt?file=${encodeURIComponent(path)}`, {
+      signal: controller.signal,
+    })
+    clearTimeout(timeoutId)
+
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`)
+
+    textContent.value = await resp.text()
+  } catch (e: any) {
+    if (e.name === 'AbortError') {
+      textError.value = 'Request timed out after 30 seconds'
+    } else {
+      textError.value = e?.message || String(e)
+    }
+  } finally {
+    textLoading.value = false
+  }
 }
 
 async function loadFile() {
@@ -288,7 +311,6 @@ async function loadFile() {
               pdfPreviewUrl.value = getFilePreviewUrl('pdf.html', path)
             } else {
               previewType.value = 'text'
-              await loadTextContent()
             }
             break
           default:
@@ -302,6 +324,9 @@ async function loadFile() {
       error.value = e?.message || String(e)
     } finally {
       loading.value = false
+    }
+    if (previewType.value === 'text') {
+      loadTextContent()
     }
     return
   }
@@ -317,7 +342,6 @@ async function loadFile() {
       pdfPreviewUrl.value = getFilePreviewUrl('pdf.html', path)
     } else if (previewType.value === 'text') {
       console.info('Loading text preview:', fileName.value)
-      await loadTextContent()
     } else {
       console.info('Unsupported file type:', fileName.value)
       fileSize.value = 0
@@ -327,6 +351,10 @@ async function loadFile() {
     error.value = e?.message || String(e)
   } finally {
     loading.value = false
+  }
+
+  if (previewType.value === 'text') {
+    loadTextContent()
   }
 }
 
@@ -361,39 +389,56 @@ onMounted(() => loadFile())
   flex: 1;
 }
 
-.text-preview {
-  width: 100%;
-  height: 100%;
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.text-content {
-  margin: 12px;
-  padding: 16px;
-  background: var(--ion-color-light, #f4f5f8);
-  border-radius: 8px;
-  font-size: 13px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
-  color: var(--ion-text-color);
-  overflow: auto;
-  max-height: calc(100vh - 200px);
-}
-
-.text-content code {
-  background: none;
-  padding: 0;
-  font-size: inherit;
-}
-
 .preview-iframe {
   width: 100%;
   height: 100%;
   border: none;
   flex: 1;
+}
+
+.text-content-wrapper {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.text-content {
+  flex: 1;
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #e6edf3;
+  white-space: pre-wrap;
+  word-break: break-word;
+  tab-size: 4;
+  -webkit-overflow-scrolling: touch;
+}
+
+.text-content.no-wrap {
+  white-space: pre;
+  word-break: normal;
+}
+
+.text-loading,
+.text-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: #888;
+  gap: 12px;
+  text-align: center;
+}
+
+.text-error p {
+  color: #e74c3c;
+  font-size: 13px;
+  margin: 0;
 }
 
 .container-info {

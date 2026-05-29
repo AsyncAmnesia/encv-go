@@ -22,14 +22,26 @@ class EncvApplication : BaseHostApplication() {
         return {
             try {
                 PluginManager.setValidationStrategy(ValidationStrategy.Insecure)
+                Log.i(TAG, "onFrameworkSetup: setValidationStrategy(Insecure) OK")
+            } catch (e: Error) {
+                Log.w(TAG, "onFrameworkSetup: setValidationStrategy failed: ${e.javaClass.simpleName}: ${e.message}")
             } catch (e: Exception) {
-                Log.w(TAG, "setValidationStrategy not available, skipping", e)
+                Log.w(TAG, "onFrameworkSetup: setValidationStrategy FAILED", e)
             }
             try {
                 PluginCrashHandler.setGlobalClashCallback(null)
+            } catch (e: Error) {
+                Log.w(TAG, "onFrameworkSetup: setGlobalClashCallback Error: ${e.javaClass.simpleName}")
             } catch (e: Exception) {
-                Log.w(TAG, "setGlobalClashCallback not available, skipping", e)
+                Log.w(TAG, "onFrameworkSetup: setGlobalClashCallback FAILED", e)
             }
+            try {
+                PluginManager.proxyManager.setHostActivity(com.encvgo.app.EncvHostActivity::class.java)
+                Log.i(TAG, "onFrameworkSetup: setHostActivity(EncvHostActivity) OK")
+            } catch (e: Exception) {
+                Log.e(TAG, "onFrameworkSetup: setHostActivity FAILED", e)
+            }
+            Log.i(TAG, "onFrameworkSetup: complete, PluginManager.isInitialized=${PluginManager.isInitialized}")
         }
     }
 

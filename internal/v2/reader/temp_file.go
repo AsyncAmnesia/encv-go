@@ -3,12 +3,11 @@ package reader
 import (
 	"fmt"
 	"io"
-	"log"
 	"os"
 )
 
-// TempFileReadCloser 包装了 *os.File，在 Close 时会同时关闭文件并删除底层文件。
-// 这是一个通用的工具，适用于任何需要返回一个可自动清理的临时文件读取器的场景。
+// TempFileReadCloser 包装了 *os.File，在 Close 时仅关闭文件句柄。
+// 底层文件的生命周期由调用方管理，支持显式清理。
 type TempFileReadCloser struct {
 	file *os.File
 	path string
@@ -29,16 +28,8 @@ func (t *TempFileReadCloser) Read(p []byte) (n int, err error) {
 	return t.file.Read(p)
 }
 
-// Close 实现 io.Closer 接口。
-// 它会关闭文件，并尝试删除文件。删除失败时只会打印警告，不会返回错误，以避免中断主流程。
 func (t *TempFileReadCloser) Close() error {
-	err := t.file.Close()
-	// 尝试删除临时文件，即使失败也不应中断主流程
-	if rmErr := os.Remove(t.path); rmErr != nil {
-		// 使用 log.Printf 以避免在库代码中强制引入日志格式
-		log.Printf("Warning: failed to remove temp file '%s': %v\n", t.path, rmErr)
-	}
-	return err
+	return t.file.Close()
 }
 
 // Name 返回底层文件的路径

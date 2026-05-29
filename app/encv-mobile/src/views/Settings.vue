@@ -282,9 +282,12 @@
         <ion-list-header>
           <ion-label>{{ t('devtools.title') }}</ion-label>
         </ion-list-header>
-        <ion-item>
+        <ion-item button @click="goDevTools" detail>
           <ion-icon :icon="bugOutline" slot="start"></ion-icon>
-          <ion-toggle :checked="vconsoleEnabled" @ionChange="handleVConsoleToggle">{{ t('devtools.vconsole') }}</ion-toggle>
+          <ion-label>
+            <h3>{{ t('devtools.title') }}</h3>
+            <p>{{ t('devtools.devtoolsDesc') }}</p>
+          </ion-label>
         </ion-item>
       </ion-list>
 
@@ -371,7 +374,6 @@ import { useServerStatus } from '@/composables/useServerStatus'
 import { useConfig } from '@/composables/useConfig'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
-import { useDevTools } from '@/composables/useDevTools'
 import { isNative } from '@/plugins/GoProcess'
 import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus, fetchTextPreviewExts, invalidateTextExtsCache } from '@/api/encv'
 import type { IndexStats, FFmpegStatus } from '@/api/encv'
@@ -385,7 +387,6 @@ const { isDark, toggleDark } = useTheme()
 const { isOnline: serverOnline, lastError: connectionError, checkStatus, backendPort } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, restartNeeded, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
 const { t, tField, tSectionTitle, setLocale, locale } = useI18n()
-const { vconsoleEnabled, toggleVConsole } = useDevTools()
 
 const configLoaded = ref(false)
 const indexStats = ref<IndexStats | null>(null)
@@ -465,8 +466,8 @@ function handleCustomTextExtsChange(event: CustomEvent) {
   })()
 }
 
-function handleVConsoleToggle(event: CustomEvent) {
-  toggleVConsole(event.detail.checked)
+function goDevTools() {
+  router.push('/tabs/settings/devtools')
 }
 
 const showJsonEditor = ref(false)
