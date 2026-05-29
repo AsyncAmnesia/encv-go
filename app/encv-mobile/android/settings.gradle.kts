@@ -1,13 +1,14 @@
 pluginManagement {
     repositories {
         mavenCentral()
+        google()
+        gradlePluginPortal()
+        maven { url = uri("https://plugins.gradle.org/m2/") }
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
         maven { url = uri("https://maven.aliyun.com/repository/public") }
         maven { url = uri("https://mirrors.tencent.com/nexus/repository/maven-tencent/") }
-        google()
-        gradlePluginPortal()
     }
 }
 
