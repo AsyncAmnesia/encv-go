@@ -167,7 +167,7 @@ export async function pickAndInstallPlugin(): Promise<PickAndInstallResult> {
   }
 }
 
-export async function checkInstalledPlugins(): Promise<Record<string, boolean>> {
+export async function checkInstalledPlugins(): Promise<Record<string, { installed: boolean; enabled: boolean; versionName: string }>> {
   try {
     const result = await GoProcess.checkInstalledPlugins()
     return result as Record<string, boolean>

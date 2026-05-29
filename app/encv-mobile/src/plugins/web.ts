@@ -41,7 +41,7 @@ export interface GoProcessPlugin {
   setScreenOrientation(options: { orientation: string }): Promise<void>
   installPlugin(options: { apkPath: string }): Promise<{ success: boolean; method?: string }>
   pickAndInstallPlugin(): Promise<{ success: boolean; method?: string; fileName?: string }>
-  checkInstalledPlugins(): Promise<Record<string, boolean>>
+  checkInstalledPlugins(): Promise<Record<string, { installed: boolean; enabled: boolean; versionName: string }>>
   togglePluginEnabled(options: { pluginId: string; enabled: boolean }): Promise<{ success: boolean; pluginId: string; enabled: boolean }>
   uninstallPlugin(options: { pluginId: string }): Promise<{ success: boolean; pluginId: string }>
   debugLifecycleFlow(options?: { pluginId?: string }): Promise<Record<string, any>>
@@ -119,7 +119,7 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
     return { success: false }
   }
 
-  async checkInstalledPlugins(): Promise<Record<string, boolean>> {
+  async checkInstalledPlugins(): Promise<Record<string, { installed: boolean; enabled: boolean; versionName: string }>> {
     return {}
   }
 

@@ -440,7 +440,12 @@ class GoProcessPlugin : Plugin() {
             if (PluginManager.isInitialized) {
                 val plugins = PluginManager.getAllInstallPlugins()
                 for (plugin in plugins) {
-                    result.put(plugin.id, true)
+                    val info = JSObject().apply {
+                        put("installed", true)
+                        put("enabled", plugin.enabled)
+                        put("versionName", plugin.versionName)
+                    }
+                    result.put(plugin.id, info)
                 }
                 Log.i(TAG, "checkInstalledPlugins via ComboLite: $result")
                 call.resolve(result)
@@ -1164,6 +1169,14 @@ class GoProcessPlugin : Plugin() {
                     is com.combo.core.runtime.installer.InstallerManager.InstallResult.Success -> {
                         Log.i(TAG, "Plugin installed via ComboLite: $apkPath -> ${result.pluginInfo.id}")
                         appLog("I", TAG, "ComboLite install SUCCESS: ${result.pluginInfo.id}")
+                        try {
+                            val loadedCount = PluginManager.loadEnabledPlugins()
+                            Log.i(TAG, "Post-install loadEnabledPlugins: $loadedCount plugins loaded")
+                            appLog("I", TAG, "Post-install loadEnabledPlugins: $loadedCount plugins loaded")
+                        } catch (loadErr: Exception) {
+                            Log.w(TAG, "Post-install loadEnabledPlugins failed (non-fatal)", loadErr)
+                            appLog("W", TAG, "Post-install loadEnabledPlugins failed: ${loadErr.message}")
+                        }
                         call.resolve(JSObject().apply {
                             put("success", true)
                             put("method", "combolite")

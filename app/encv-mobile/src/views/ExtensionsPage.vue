@@ -174,14 +174,16 @@ async function loadExtensions() {
       'mpv-player': 'com.encvgo.plugin.mpv',
     }
 
-    const installedMap = Capacitor.isNativePlatform() ? await checkInstalledPlugins() : {}
+    interface PluginStatus { installed: boolean; enabled: boolean; versionName: string }
+    const installedMap: Record<string, PluginStatus> = Capacitor.isNativePlatform() ? await checkInstalledPlugins() : {}
+    const mpvInfo = installedMap[COMBOLITE_PLUGIN_ID_MAP['mpv-player']]
     extensions.value = [
       {
         id: 'mpv-player',
         name: t('extensions.mpvPlayer'),
         description: t('extensions.mpvPlayerDesc'),
-        installed: !!installedMap[COMBOLITE_PLUGIN_ID_MAP['mpv-player'] || 'mpv-player'],
-        enabled: true,
+        installed: !!mpvInfo?.installed,
+        enabled: mpvInfo?.enabled ?? false,
         sizeDisplay: '~35 MB',
       },
     ]
@@ -204,12 +206,7 @@ async function handleInstallFromFile() {
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Installation timeout')), 120000)),
     ])
     if (result.success) {
-      const alert = await alertController.create({
-        header: t('extensions.installSuccess'),
-        message: `${result.fileName || ''}\n${t('extensions.installHint')}`,
-        buttons: [t('common.confirm')],
-      })
-      await alert.present()
+      showToast({ message: t('extensions.installSuccess'), duration: 2000, color: 'success' })
       await loadExtensions()
     } else {
       installError.value = result.error || t('extensions.installFailed')

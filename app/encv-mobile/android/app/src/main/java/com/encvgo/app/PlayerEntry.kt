@@ -6,6 +6,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import java.io.File
+import kotlinx.coroutines.runBlocking
 
 object PlayerEntry {
     private const val TAG = "PlayerEntry"
@@ -50,7 +51,7 @@ object PlayerEntry {
         return try {
             val pm = com.combo.core.runtime.PluginManager
             if (!pm.isInitialized) return false
-            pm.getPluginInfo(PLUGIN_ID) != null
+            pm.getAllInstallPlugins().any { it.id == PLUGIN_ID && it.enabled }
         } catch (e: Exception) {
             Log.w(TAG, "isMpvAvailable check failed", e)
             false
@@ -65,6 +66,12 @@ object PlayerEntry {
         isExternal: Boolean
     ) {
         try {
+            val pm = com.combo.core.runtime.PluginManager
+            if (pm.getPluginInfo(PLUGIN_ID) == null) {
+                Log.i(TAG, "MPV plugin not yet loaded, launching plugin first...")
+                runBlocking { pm.launchPlugin(PLUGIN_ID) }
+                Log.i(TAG, "MPV plugin launched successfully")
+            }
             val intent = Intent(context, EncvHostActivity::class.java).apply {
                 putExtra(EXTRA_FILE_PATH, filePath)
                 putExtra(EXTRA_FILE_NAME, fileName)
