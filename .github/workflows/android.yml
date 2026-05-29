@@ -259,13 +259,13 @@ jobs:
               echo "   ✅ isMinifyEnabled ≠ true (OK)"
             fi
 
-            # Check 2: isShrinkResources = true → WARNING (safe)
+            # Check 2: isShrinkResources = true → FATAL (AGP hard-coupling with minifyEnabled)
             SHRINK_MATCH=$(grep -n 'isShrinkResources\s*=\s*true' "$f" 2>/dev/null)
             if [ -n "$SHRINK_MATCH" ]; then
-              echo "   ⚠️  WARNING: isShrinkResources = true found:"
+              echo "   ❌ FATAL: isShrinkResources = true found:"
               echo "$SHRINK_MATCH" | while read line; do echo "      $line"; done
-              echo "::warning file=$f,line=$(echo "$SHRINK_MATCH" | head -1 | cut -d: -f1)::Resource shrinking enabled (SAFE with ComboLite, reduces APK size)"
-              WARNINGS=$((WARNINGS + 1))
+              echo "::error file=$f,line=$(echo "$SHRINK_MATCH" | head -1 | cut -d: -f1)::Resource shrinking ENABLED — AGP requires isMinifyEnabled=true (ComboLite incompatible)!"
+              VIOLATIONS=$((VIOLATIONS + 1))
             else
               echo "   isShrinkResources ≠ true (not set)"
             fi
@@ -311,9 +311,9 @@ jobs:
             echo "  @Metadata ↔ bytecode consistency, causing runtime crashes."
             echo ""
             echo "HOW TO FIX:"
-            echo "  Set isMinifyEnabled=false in ALL buildTypes blocks."
-            echo "  isShrinkResources=true is SAFE and recommended (reduces APK size)."
-            echo "  See: .trae/rules/combolite.md §1.3"
+            echo "  Set isMinifyEnabled=false AND isShrinkResources=false in ALL buildTypes."
+            echo "  AGP hard-couples these two: shrinkResources requires minifyEnabled=true."
+            echo "  See: .trae/rules/combolite.md §1.3 + .trae/rules/android.md §3.1"
             echo ""
 
             # Write detailed report to summary
