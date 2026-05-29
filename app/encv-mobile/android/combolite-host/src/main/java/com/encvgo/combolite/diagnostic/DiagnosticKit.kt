@@ -298,8 +298,8 @@ object DiagnosticKit {
 
         steps.add("5. Testing loadEnabledPlugins() call...")
         try {
-            val count = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                EncvComboLiteHost.loadAllEnabledPlugins()
+            val count: Int = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
+                com.encvgo.combolite.engine.PluginLifecycleEngine.loadAllEnabledPlugins()
             }
             steps.add("   loadEnabledPlugins() returned $count")
         } catch (e: Error) {
