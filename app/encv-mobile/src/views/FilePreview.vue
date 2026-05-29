@@ -210,12 +210,13 @@ function formatDuration(seconds: number): string {
 }
 
 async function determinePreviewType(name: string, isEncrypted?: boolean): Promise<PreviewType> {
-  const category = getFileCategory(name, isEncrypted)
+  if (isEncrypted) return 'container'
+
+  const category = getFileCategory(name)
   const ext = getFileExtension(name)
 
   if (category === 'image') return 'image'
   if (ext === 'pdf') return 'pdf'
-  if (category === 'encrypted') return 'container'
 
   const textExts = await fetchTextPreviewExts()
   if (textExts.has(ext)) return 'text'
