@@ -56,6 +56,19 @@ ComboLite 的核心价值就是 **0 Hook**。如果发现代码中有：
 > **R8 会破坏 ComboLite 类的字节码与 `@Metadata` 注解之间的一致性，导致 kotlin-reflect 无法解析函数签名。**
 > **ComboLite 官方 demo (`app/build.gradle.kts`) 明确设置 `isMinifyEnabled = false`。**
 
+#### ⚠️ isMinifyEnabled vs isShrinkResources — 两者机制完全不同！
+
+| 选项 | 作用对象 | 对 ComboLite 的风险 | 约束 |
+|------|---------|-------------------|------|
+| `isMinifyEnabled` | **DEX 字节码**（重命名方法、删除未用代码、内联） | **致命**：破坏 `@Metadata ↔ 字节码` 一致性 | **必须 `false`** |
+| `isShrinkResources` | **resources.arsc + 资源文件**（删除未引用的 drawable/layout/string 等） | **安全**：只读 DEX 不改 DEX，不触碰 `@Metadata` | **推荐 `true`**（减少 APK 体积 5%~20%） |
+
+**为什么 `isShrinkResources=true` 安全**：
+- ResourceShrinker 只扫描 DEX 中的 `R.xxx.yyy` 静态引用来判断资源是否被使用
+- 它**只读不改** DEX — 不重命名、不删除方法、不修改 `@Metadata`
+- 当 `isMinifyEnabled=false` 时，ResourceShrinker 工作在保守模式，功能正常
+- 唯一注意点：如果有代码通过 `getIdentifier()` 动态按名称查找资源，需在 `res/raw/keep.xml` 中用 `tools:keep` 保护
+
 **受影响的类（4个，全部使用 `::function.javaMethod`）：**
 
 | 类 | 使用 javaMethod 的方法 |
@@ -87,8 +100,8 @@ ComboLite 的核心价值就是 **0 Hook**。如果发现代码中有：
 // app/build.gradle.kts — release 构建
 buildTypes {
     release {
-        isMinifyEnabled = false          // ← 必须 false！
-        isShrinkResources = false         // ← 同步 false
+        isMinifyEnabled = false          // ← 必须 false！R8 破坏 @Metadata
+        isShrinkResources = true         // ← 推荐 true！安全且减少 APK 体积
         signingConfig = signingConfigs.getByName("release")
         proguardFiles(...)
     }
@@ -233,8 +246,8 @@ plugins {
 android {
     buildTypes {
         release {
-            isMinifyEnabled = false             // ⚠️ 必须 false！ComboLite 不兼容 R8
-            isShrinkResources = false          // ⚠️ 同步 false
+            isMinifyEnabled = false             // ⚠️ 必须 false！R8 破坏 @Metadata
+            isShrinkResources = true            // ✅ 推荐 true！安全且减少 APK 体积
             // ... signing config
         }
     }
@@ -338,7 +351,7 @@ class MyPluginEntry : IPluginEntryClass {
 > **错误信息**：`KotlinReflectionInternalError: Function 'xxx' not resolved in class ...`
 > **根因**：R8 即使 keep 了类名和方法名，仍可能修改 suspend 函数的合成方法名（`$default`）、continuation 参数类型（`g6/e` → `d6.j0`）、lambda 类名，破坏 `@Metadata` 与实际字节码的一致性
 > **证据**：饱和调试日志显示部分方法保留原名（`getInterfaceFromHost`）、部分被混淆（`a()`、`e()`），`@Metadata` 仍描述原始名称
-> **修复**：**禁用 R8**（`isMinifyEnabled = false`），与 ComboLite 官方 demo 保持一致
+> **修复**：**禁用 R8**（`isMinifyEnabled = false`），与 ComboLite 官方 demo 保持一致。注意：`isShrinkResources=true` 不受此限制，可安全开启以减小 APK 体积
 
 ### 错误 H：「遗漏 kotlin-reflect 依赖」（⚠️ 新增！）
 
