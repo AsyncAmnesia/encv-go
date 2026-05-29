@@ -8,6 +8,8 @@ import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.content.pm.ActivityInfo
 import android.util.Log
 import androidx.core.content.ContextCompat
@@ -145,6 +147,17 @@ class GoProcessPlugin : Plugin() {
                     call.save()
                     activity.startActivityForResult(intent, REQUEST_CODE_MPV_PLAYER)
                     Log.i(TAG, "openPlayer: startActivityForResult dispatched for mpv-activity")
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        if (pendingCalls.containsKey("mpvPlayer")) {
+                            Log.w(TAG, "openPlayer: mpv-activity result timeout (15s), resolving with warning")
+                            val staleCall = pendingCalls.remove("mpvPlayer")
+                            try { staleCall?.resolve(JSObject().apply {
+                                put("success", false)
+                                put("error", "播放器响应超时")
+                                put("errorDetail", "startActivityForResult dispatched but no result within 15s")
+                            }) } catch (_: Exception) {}
+                        }
+                    }, 15000)
                 }
             } else {
                 val result = PlayerEntry.play(context ?: activity!!,

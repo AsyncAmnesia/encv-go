@@ -152,6 +152,74 @@ dependencies {
 }
 ```
 
+### 1.5 EncvHostActivity 透明主题陷阱（⚠️ 实战踩坑！）
+
+> **使用透明主题的 HostActivity 如果 ProxyManager 代理失败，
+> 用户会看到一个不可见的 Activity 覆盖在 WebView 上，表现为"卡住"。**
+
+**症状**：`startActivity` 成功、无崩溃日志、无错误回调、触摸无响应
+
+**根因链**：
+```
+EncvHostActivity(Theme.Translucent.NoTitleBar)
+  → BaseHostActivity.onCreate() 执行完成（proxyStarted=true）✅
+  → ProxyManager 代理启动目标插件 Activity 失败
+  → BaseHostActivity 显示空白布局（全透明 → 用户看不到任何东西）
+  → Activity 仍在栈顶拦截触摸事件 → "卡住"
+  → startActivityForResult 的 pending call 永远不 resolve → 前端 await 永久挂起
+```
+
+**必须的防御措施（4 层）**：
+
+| 层级 | 措施 | 文件 | 效果 |
+|------|------|------|------|
+| L1 可见性 | 半透明主题 `#CC000000` 而非全透明 | `styles.xml` | 用户能看到 Activity 存在 |
+| L2 超时检测 | `onPostCreate` + Handler.postDelayed(5s) | `EncvHostActivity.kt` | proxy 未启动自动 finish+setResult |
+| L3 onResume 诊断 | 时间戳差值 + proxyStarted 检查 | `EncvHostActivity.kt` | 日志暴露卡在哪个阶段 |
+| L4 Promise 兜底 | GoProcessPlugin 端 15s 超时 resolve | `GoProcessPlugin.kt` | 前端不会永久挂起 |
+
+**正确配置**：
+```xml
+<!-- styles.xml -->
+<style name="Theme.EncvHostTranslucent" parent="@android:style/Theme.Translucent.NoTitleBar">
+    <item name="android:windowBackground">#CC000000</item>
+    <item name="android:windowIsTranslucent">true</item>
+    <item name="android:windowContentOverlay">@null</item>
+</style>
+```
+
+```kotlin
+// EncvHostActivity.kt — 必须包含的超时机制
+companion object {
+    const val PROXY_TIMEOUT_MS = 5000L
+}
+
+override fun onPostCreate(savedInstanceState: Bundle?) {
+    super.onPostCreate(savedInstanceState)
+    if (!proxyStarted) {
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (!proxyStarted && !isFinishing && !resultSet) {
+                finishWithResult(pluginId, false, "播放器启动超时", "...")
+            }
+        }, PROXY_TIMEOUT_MS)
+    }
+}
+```
+
+```kotlin
+// GoProcessPlugin.kt — Promise 超时兜底
+Handler(Looper.getMainLooper()).postDelayed({
+    if (pendingCalls.containsKey("mpvPlayer")) {
+        pendingCalls.remove("mpvPlayer")?.resolve(timeoutErrorJSObject)
+    }
+}, 15000)
+```
+
+**反模式（禁止）**：
+- ❌ 全透明主题 + 无超时检测 = 用户以为 app 死了
+- ❌ 依赖 onActivityResult 回调而不做超时兜底 = Promise 永远 pending
+- ❌ 不记录 onCreate→onResume 时间戳 = 无法诊断卡在哪一步
+
 ---
 
 ## 二、架构认知（必须理解）
