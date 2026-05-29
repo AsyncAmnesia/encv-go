@@ -25,11 +25,11 @@
             <p>{{ t('devtools.exportLogsDesc') }}</p>
           </ion-label>
         </ion-item>
-        <ion-item button @click="handleOpenLogViewer" detail>
+        <ion-item button @click="handleLaunchLogcat" detail>
           <ion-icon :icon="readerOutline" slot="start"></ion-icon>
           <ion-label>
-            <h3>{{ t('devtools.openLog') }}</h3>
-            <p>{{ t('devtools.openLogDesc') }}</p>
+            <h3>{{ t('devtools.openLogcat') }}</h3>
+            <p>{{ t('devtools.openLogcatDesc') }}</p>
           </ion-label>
         </ion-item>
         <ion-item button @click="handleClearLogs" detail>
@@ -91,7 +91,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from '@/composables/useI18n'
 import { useDevTools } from '@/composables/useDevTools'
 import { showToast } from '@/composables/useToast'
-import { isNative, exportLogs, clearLogs, openLogViewer, saveDevLogs } from '@/plugins/GoProcess'
+import { isNative, exportLogs, clearLogs, saveDevLogs, launchLogcatActivity } from '@/plugins/GoProcess'
 import { getFrontendLogsJson } from '@/composables/useFrontendLogs'
 import { getAllPrototypes } from './prototypes/registry'
 
@@ -131,12 +131,15 @@ async function handleExportLogs() {
   }
 }
 
-async function handleOpenLogViewer() {
+async function handleLaunchLogcat() {
   if (!isNative()) return
   try {
-    await openLogViewer()
+    const result = await launchLogcatActivity()
+    if (!result.success && result.error) {
+      showToast({ message: t('devtools.openLogcatFailed'), duration: 2000, color: 'danger' })
+    }
   } catch {
-    showToast({ message: t('devtools.openLogFailed'), duration: 2000, color: 'danger' })
+    showToast({ message: t('devtools.openLogcatFailed'), duration: 2000, color: 'danger' })
   }
 }
 

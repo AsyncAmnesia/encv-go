@@ -11,7 +11,6 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.content.pm.ActivityInfo
-import android.util.Log
 import androidx.core.content.ContextCompat
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
@@ -130,7 +129,7 @@ class GoProcessPlugin : Plugin() {
             val effectiveMode = if (mode.isEmpty() || mode == "mpv" || mode == "mpv-plugin") "mpv-activity" else mode
 
             if (effectiveMode == "mpv-activity") {
-                Log.i(TAG, "openPlayer: using startActivityForResult for mpv-activity mode")
+                LogBridge.i(TAG, "openPlayer: using startActivityForResult for mpv-activity mode")
                 val (intent, result) = PlayerEntry.buildMpvIntent(context ?: activity!!,
                     call.getString("filePath") ?: "",
                     call.getString("name") ?: "",
@@ -146,10 +145,10 @@ class GoProcessPlugin : Plugin() {
                     pendingCalls["mpvPlayer"] = call
                     call.save()
                     activity.startActivityForResult(intent, REQUEST_CODE_MPV_PLAYER)
-                    Log.i(TAG, "openPlayer: startActivityForResult dispatched for mpv-activity")
+                    LogBridge.i(TAG, "openPlayer: startActivityForResult dispatched for mpv-activity")
                     Handler(Looper.getMainLooper()).postDelayed({
                         if (pendingCalls.containsKey("mpvPlayer")) {
-                            Log.w(TAG, "openPlayer: mpv-activity result timeout (15s), resolving with warning")
+                            LogBridge.w(TAG, "openPlayer: mpv-activity result timeout (15s), resolving with warning")
                             val staleCall = pendingCalls.remove("mpvPlayer")
                             try { staleCall?.resolve(JSObject().apply {
                                 put("success", false)
@@ -333,19 +332,19 @@ class GoProcessPlugin : Plugin() {
 
     private fun handleMpvPlayerResult(resultCode: Int, data: Intent?) {
         val call = pendingCalls.remove("mpvPlayer") ?: return
-        Log.i(TAG, "handleMpvPlayerResult: resultCode=$resultCode data=$data")
+        LogBridge.i(TAG, "handleMpvPlayerResult: resultCode=$resultCode data=$data")
         if (data != null) {
             val success = data.getBooleanExtra("player_success", true)
             val error = data.getStringExtra("player_error") ?: ""
             val errorDetail = data.getStringExtra("player_error_detail") ?: ""
-            Log.i(TAG, "handleMpvPlayerResult: success=$success error=$error detail=$errorDetail")
+            LogBridge.i(TAG, "handleMpvPlayerResult: success=$success error=$error detail=$errorDetail")
             call.resolve(JSObject().apply {
                 put("success", success)
                 put("error", error)
                 put("errorDetail", errorDetail)
             })
         } else {
-            Log.w(TAG, "handleMpvPlayerResult: no intent data, assuming user back-pressed (success)")
+            LogBridge.w(TAG, "handleMpvPlayerResult: no intent data, assuming user back-pressed (success)")
             call.resolve(JSObject().apply { put("success", true) })
         }
     }
@@ -451,6 +450,18 @@ class GoProcessPlugin : Plugin() {
                     call.reject(r.reason)
                 }
             }
+        }
+    }
+
+    @PluginMethod
+    fun launchLogcatActivity(call: PluginCall) {
+        try {
+            val intent = Intent(activity, Class.forName("com.hjq.logcat.LogcatActivity"))
+            activity.startActivity(intent)
+            call.resolve(JSObject().put("success", true))
+        } catch (e: Exception) {
+            LogBridge.w(TAG, "launchLogcatActivity: LogcatActivity not available (release build?)", e)
+            call.resolve(JSObject().put("success", false).put("error", "LogcatActivity not available"))
         }
     }
 

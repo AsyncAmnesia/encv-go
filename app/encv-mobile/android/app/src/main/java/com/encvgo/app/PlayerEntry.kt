@@ -2,7 +2,6 @@ package com.encvgo.app
 
 import android.content.Context
 import android.content.Intent
-import android.util.Log
 import androidx.core.content.FileProvider
 import com.combo.core.model.LoadedPluginInfo
 import com.encvgo.combolite.EncvComboLiteHost
@@ -40,7 +39,7 @@ object PlayerEntry {
         mode: String = ""
     ): PlayResult {
         val effectiveMode = resolveMode(mode, context)
-        Log.i(TAG, "play() mode=$effectiveMode (param=$mode) filePath=$filePath fileName=$fileName")
+        LogBridge.i(TAG, "play() mode=$effectiveMode (param=$mode) filePath=$filePath fileName=$fileName")
 
         return when {
             effectiveMode.startsWith("mpv-") -> startMpvPlayer(context, filePath, fileName, mimeType, isExternal, effectiveMode)
@@ -75,23 +74,23 @@ object PlayerEntry {
         isExternal: Boolean,
         mode: String
     ): PlayResult {
-        Log.i(TAG, "[ModeDispatch] startMpvPlayer mode=$mode filePath=$filePath fileName=$fileName")
+        LogBridge.i(TAG, "[ModeDispatch] startMpvPlayer mode=$mode filePath=$filePath fileName=$fileName")
 
         return when (mode) {
             MODE_MPV_ACTIVITY -> {
-                Log.i(TAG, "[ModeC-Activity] dispatching to startMpvViaActivity")
+                LogBridge.i(TAG, "[ModeC-Activity] dispatching to startMpvViaActivity")
                 startMpvViaActivity(context, filePath, fileName, mimeType, isExternal)
             }
             MODE_MPV_FRAGMENT -> {
-                Log.i(TAG, "[ModeB-Fragment] not yet implemented, falling back to ModeC")
+                LogBridge.i(TAG, "[ModeB-Fragment] not yet implemented, falling back to ModeC")
                 startMpvViaActivity(context, filePath, fileName, mimeType, isExternal)
             }
             MODE_MPV_COMPOSE -> {
-                Log.i(TAG, "[ModeA-Compose] not yet implemented, falling back to ModeC")
+                LogBridge.i(TAG, "[ModeA-Compose] not yet implemented, falling back to ModeC")
                 startMpvViaActivity(context, filePath, fileName, mimeType, isExternal)
             }
             else -> {
-                Log.i(TAG, "[ModeC-Activity] fallback for unknown mode=$mode")
+                LogBridge.i(TAG, "[ModeC-Activity] fallback for unknown mode=$mode")
                 startMpvViaActivity(context, filePath, fileName, mimeType, isExternal)
             }
         }
@@ -104,36 +103,36 @@ object PlayerEntry {
         mimeType: String,
         isExternal: Boolean
     ): PlayResult {
-        Log.i(TAG, "[ModeC-Activity] startMpvViaActivity: filePath=$filePath fileName=$fileName mimeType=$mimeType")
+        LogBridge.i(TAG, "[ModeC-Activity] startMpvViaActivity: filePath=$filePath fileName=$fileName mimeType=$mimeType")
 
         // 1. 检查框架初始化
         if (!EncvComboLiteHost.isInitialized) {
-            Log.w(TAG, "[ModeC-Activity] ComboLite not initialized")
+            LogBridge.w(TAG, "[ModeC-Activity] ComboLite not initialized")
             return PlayResult(false, "播放器框架未初始化", "PluginManager.isInitialized=false")
         }
-        Log.i(TAG, "[ModeC-Activity] ComboLite initialized ✓")
+        LogBridge.i(TAG, "[ModeC-Activity] ComboLite initialized ✓")
 
         // 2. 检查插件完整状态
         val state = EncvComboLiteHost.getPluginFullState(PLUGIN_ID)
-        Log.i(TAG, "[ModeC-Activity] plugin state=$state.status name=${state.name} version=${state.version}")
+        LogBridge.i(TAG, "[ModeC-Activity] plugin state=$state.status name=${state.name} version=${state.version}")
 
         when (state.status) {
             "not_installed" -> {
-                Log.w(TAG, "[ModeC-Activity] MPV plugin not installed")
+                LogBridge.w(TAG, "[ModeC-Activity] MPV plugin not installed")
                 return PlayResult(false, "MPV 播放器未安装", "请前往扩展管理安装")
             }
             "disabled" -> {
-                Log.w(TAG, "[ModeC-Activity] MPV plugin disabled")
+                LogBridge.w(TAG, "[ModeC-Activity] MPV plugin disabled")
                 return PlayResult(false, "MPV 播放器已禁用", "请前往扩展管理启用")
             }
             "framework_not_ready" -> {
-                Log.w(TAG, "[ModeC-Activity] framework not ready")
+                LogBridge.w(TAG, "[ModeC-Activity] framework not ready")
                 return PlayResult(false, "播放器框架未就绪", "请重启应用")
             }
             "not_loaded", "load_failed" -> {
-                Log.w(TAG, "[ModeC-Activity] plugin state=${state.status}, attempting load...")
+                LogBridge.w(TAG, "[ModeC-Activity] plugin state=${state.status}, attempting load...")
                 val loaded = EncvComboLiteHost.ensurePluginLoaded(PLUGIN_ID)
-                Log.i(TAG, "[ModeC-Activity] ensurePluginLoaded result=$loaded")
+                LogBridge.i(TAG, "[ModeC-Activity] ensurePluginLoaded result=$loaded")
                 if (!loaded) {
                     return PlayResult(false, "MPV 加载失败", "请重启应用或重新启用扩展")
                 }
@@ -143,10 +142,10 @@ object PlayerEntry {
         // 3. 关键：检查 LoadedPluginInfo 是否包含目标 Activity
         val loadedInfo = EncvComboLiteHost.getLoadedPluginInfo(PLUGIN_ID)
         if (loadedInfo == null) {
-            Log.e(TAG, "[ModeC-Activity] getLoadedPluginInfo returned null after successful load!")
+            LogBridge.e(TAG, "[ModeC-Activity] getLoadedPluginInfo returned null after successful load!")
             return PlayResult(false, "MPV 插件信息异常", "已加载但 getLoadedPluginInfo 返回 null")
         }
-        Log.i(TAG, "[ModeC-Activity] loadedInfo id=${loadedInfo.pluginInfo.id} name=${loadedInfo.pluginInfo.name}")
+        LogBridge.i(TAG, "[ModeC-Activity] loadedInfo id=${loadedInfo.pluginInfo.id} name=${loadedInfo.pluginInfo.name}")
 
         // 4. 启动播放 — 此时才真正 startActivity（ProxyManager 内部会验证 Activity 是否存在）
         return try {
@@ -166,10 +165,10 @@ object PlayerEntry {
                 extras = extras
             )
             context.startActivity(intent)
-            Log.i(TAG, "[ModeC-Activity] startActivity dispatched ✓ (result=pending, verify in EncvHostActivity)")
+            LogBridge.i(TAG, "[ModeC-Activity] startActivity dispatched ✓ (result=pending, verify in EncvHostActivity)")
             PlayResult(true)
         } catch (e: Exception) {
-            Log.e(TAG, "[ModeC-Activity] startActivity failed: ${e.message}", e)
+            LogBridge.e(TAG, "[ModeC-Activity] startActivity failed: ${e.message}", e)
             PlayResult(false, "播放器启动失败", e.message ?: "Unknown error")
         }
     }
@@ -181,10 +180,10 @@ object PlayerEntry {
         mimeType: String,
         isExternal: Boolean
     ): Pair<Intent?, PlayResult> {
-        Log.i(TAG, "[ModeC-Activity] buildMpvIntent: filePath=$filePath fileName=$fileName")
+        LogBridge.i(TAG, "[ModeC-Activity] buildMpvIntent: filePath=$filePath fileName=$fileName")
 
         if (!EncvComboLiteHost.isInitialized) {
-            Log.w(TAG, "[ModeC-Activity] ComboLite not initialized")
+            LogBridge.w(TAG, "[ModeC-Activity] ComboLite not initialized")
             return Pair(null, PlayResult(false, "播放器框架未初始化", "PluginManager.isInitialized=false"))
         }
 
@@ -218,16 +217,16 @@ object PlayerEntry {
                 hostActivityClass = EncvHostActivity::class.java,
                 extras = extras
             )
-            Log.i(TAG, "[ModeC-Activity] buildMpvIntent ✓ intent built successfully")
+            LogBridge.i(TAG, "[ModeC-Activity] buildMpvIntent ✓ intent built successfully")
             Pair(intent, PlayResult(true))
         } catch (e: Exception) {
-            Log.e(TAG, "[ModeC-Activity] buildMpvIntent failed: ${e.message}", e)
+            LogBridge.e(TAG, "[ModeC-Activity] buildMpvIntent failed: ${e.message}", e)
             Pair(null, PlayResult(false, "播放器 Intent 构建失败", e.message ?: "Unknown error"))
         }
     }
 
     private fun startArtPlayer(context: Context, filePath: String, fileName: String): PlayResult {
-        Log.i(TAG, "startArtPlayer: filePath=$filePath fileName=$fileName")
+        LogBridge.i(TAG, "startArtPlayer: filePath=$filePath fileName=$fileName")
         return try {
             val intent = Intent(context, PlayerActivityCapacitor::class.java).apply {
                 putExtra(EXTRA_FILE_PATH, filePath)
@@ -235,19 +234,19 @@ object PlayerEntry {
                 if (context !is android.app.Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
-            Log.i(TAG, "startArtPlayer: success ✓")
+            LogBridge.i(TAG, "startArtPlayer: success ✓")
             PlayResult(true)
         } catch (e: Exception) {
-            Log.e(TAG, "startArtPlayer: failed: ${e.message}", e)
+            LogBridge.e(TAG, "startArtPlayer: failed: ${e.message}", e)
             PlayResult(false, "内置播放器启动失败", e.message ?: "Unknown error")
         }
     }
 
     private fun openExternal(context: Context, filePath: String): PlayResult {
-        Log.i(TAG, "openExternal: filePath=$filePath")
+        LogBridge.i(TAG, "openExternal: filePath=$filePath")
         val file = File(filePath)
         if (!file.exists()) {
-            Log.w(TAG, "openExternal: file does not exist: $filePath")
+            LogBridge.w(TAG, "openExternal: file does not exist: $filePath")
             return PlayResult(false, "文件不存在", "path=$filePath")
         }
         return try {
@@ -258,14 +257,14 @@ object PlayerEntry {
             }
             if (intent.resolveActivity(context.packageManager) != null) {
                 context.startActivity(intent)
-                Log.i(TAG, "openExternal: success ✓")
+                LogBridge.i(TAG, "openExternal: success ✓")
                 PlayResult(true)
             } else {
-                Log.w(TAG, "openExternal: no app can open this file")
+                LogBridge.w(TAG, "openExternal: no app can open this file")
                 PlayResult(false, "没有应用可以打开此文件", "resolveActivity=null")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "openExternal: failed: ${e.message}", e)
+            LogBridge.e(TAG, "openExternal: failed: ${e.message}", e)
             PlayResult(false, "外部打开失败", e.message ?: "Unknown error")
         }
     }

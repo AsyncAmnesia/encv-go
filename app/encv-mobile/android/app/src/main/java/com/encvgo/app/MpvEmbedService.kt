@@ -2,7 +2,6 @@ package com.encvgo.app
 
 import android.app.Activity
 import android.content.Context
-import android.util.Log
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -24,15 +23,15 @@ object MpvEmbedService {
         mimeType: String = "",
         isExternal: Boolean = false
     ): PlayResult {
-        Log.i(TAG, "[ModeA-Compose] startEmbed: filePath=$filePath fileName=$fileName containerId=$containerId")
+        LogBridge.i(TAG, "[ModeA-Compose] startEmbed: filePath=$filePath fileName=$fileName containerId=$containerId")
 
         if (isEmbedActive) {
-            Log.w(TAG, "[ModeA-Compose] embed already active, stopping first")
+            LogBridge.w(TAG, "[ModeA-Compose] embed already active, stopping first")
             stopEmbed()
         }
 
         if (!EncvComboLiteHost.isInitialized) {
-            Log.w(TAG, "[ModeA-Compose] ComboLite not initialized")
+            LogBridge.w(TAG, "[ModeA-Compose] ComboLite not initialized")
             return PlayResult(false, "播放器框架未初始化", "PluginManager.isInitialized=false")
         }
 
@@ -49,23 +48,23 @@ object MpvEmbedService {
         }
 
         try {
-            Log.i(TAG, "[ModeA-Compose] creating ComposeView and attaching to container")
+            LogBridge.i(TAG, "[ModeA-Compose] creating ComposeView and attaching to container")
             composeView = ComposeView(activity).apply {
                 setContent {
                     MpvEmbedPlaceholder(filePath = filePath, fileName = fileName)
                 }
             }
             isEmbedActive = true
-            Log.i(TAG, "[ModeA-Compose] embed started ✓ (placeholder mode)")
+            LogBridge.i(TAG, "[ModeA-Compose] embed started ✓ (placeholder mode)")
             return PlayResult(true)
         } catch (e: Exception) {
-            Log.e(TAG, "[ModeA-Compose] startEmbed failed: ${e.message}", e)
+            LogBridge.e(TAG, "[ModeA-Compose] startEmbed failed: ${e.message}", e)
             return PlayResult(false, "嵌入播放器启动失败", e.message ?: "Unknown error")
         }
     }
 
     fun stopEmbed(): Boolean {
-        Log.i(TAG, "[ModeA-Compose] stopEmbed: isEmbedActive=$isEmbedActive")
+        LogBridge.i(TAG, "[ModeA-Compose] stopEmbed: isEmbedActive=$isEmbedActive")
         if (!isEmbedActive) return true
         try {
             composeView?.let { view ->
@@ -73,10 +72,10 @@ object MpvEmbedService {
                 composeView = null
             }
             isEmbedActive = false
-            Log.i(TAG, "[ModeA-Compose] stopped ✓")
+            LogBridge.i(TAG, "[ModeA-Compose] stopped ✓")
             return true
         } catch (e: Exception) {
-            Log.e(TAG, "[ModeA-Compose] stopEmbed failed: ${e.message}", e)
+            LogBridge.e(TAG, "[ModeA-Compose] stopEmbed failed: ${e.message}", e)
             isEmbedActive = false
             return false
         }
