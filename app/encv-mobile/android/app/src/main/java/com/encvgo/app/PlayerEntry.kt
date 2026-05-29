@@ -3,7 +3,6 @@ package com.encvgo.app
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import android.widget.Toast
 import androidx.core.content.FileProvider
 import com.encvgo.combolite.EncvComboLiteHost
 import java.io.File
@@ -40,17 +39,13 @@ object PlayerEntry {
         Log.i(TAG, "play() mode=$effectiveMode (param=$mode) filePath=$filePath")
 
         when (effectiveMode) {
-            "mpv-plugin" -> {
-                startMpvPlayer(context, filePath, fileName, mimeType, isExternal)
-            }
+            "mpv-plugin" -> startMpvPlayer(context, filePath, fileName, mimeType, isExternal)
             "external" -> openExternal(context, filePath)
             else -> startArtPlayer(context, filePath, fileName)
         }
     }
 
-    fun isMpvAvailable(context: Context): Boolean {
-        return EncvComboLiteHost.isPluginAvailable(PLUGIN_ID)
-    }
+    fun isMpvAvailable(context: Context): Boolean = EncvComboLiteHost.isPluginAvailable(PLUGIN_ID)
 
     private fun startMpvPlayer(
         context: Context,
@@ -58,9 +53,43 @@ object PlayerEntry {
         fileName: String,
         mimeType: String,
         isExternal: Boolean
-    ) {
-        try {
-            EncvComboLiteHost.ensurePluginLoaded(PLUGIN_ID)
+    ): Boolean {
+        Log.i(TAG, "startMpvPlayer: filePath=$filePath fileName=$fileName")
+
+        // 1. 检查框架初始化
+        if (!EncvComboLiteHost.isInitialized) {
+            Log.w(TAG, "startMpvPlayer: ComboLite not initialized")
+            return false
+        }
+        Log.i(TAG, "startMpvPlayer: ComboLite initialized ✓")
+
+        // 2. 检查插件完整状态
+        val state = EncvComboLiteHost.getPluginFullState(PLUGIN_ID)
+        Log.i(TAG, "startMpvPlayer: plugin state=$state.status name=${state.name} version=${state.version}")
+
+        if (state.status == "not_installed") {
+            Log.w(TAG, "startMpvPlayer: MPV plugin not installed")
+            return false
+        }
+        if (state.status == "disabled") {
+            Log.w(TAG, "startMpvPlayer: MPV plugin disabled")
+            return false
+        }
+        if (state.status == "framework_not_ready") {
+            Log.w(TAG, "startMpvPlayer: framework not ready")
+            return false
+        }
+
+        // 3. 确保插件加载
+        val loaded = EncvComboLiteHost.ensurePluginLoaded(PLUGIN_ID)
+        Log.i(TAG, "startMpvPlayer: ensurePluginLoaded result=$loaded")
+        if (!loaded) {
+            Log.w(TAG, "startMpvPlayer: MPV plugin load failed")
+            return false
+        }
+
+        // 4. 启动播放
+        return try {
             val extras = mapOf<String, Any>(
                 EXTRA_FILE_PATH to filePath,
                 EXTRA_FILE_NAME to fileName,
@@ -77,59 +106,48 @@ object PlayerEntry {
                 extras = extras
             )
             context.startActivity(intent)
+            Log.i(TAG, "startMpvPlayer: startActivity success ✓")
+            true
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start MPV player plugin", e)
-            Toast.makeText(context, "MPV 插件启动失败: ${e.message}", Toast.LENGTH_LONG).show()
+            Log.e(TAG, "startMpvPlayer: startActivity failed: ${e.message}", e)
+            false
         }
     }
 
-    private fun startArtPlayer(
-        context: Context,
-        filePath: String,
-        fileName: String
-    ) {
+    private fun startArtPlayer(context: Context, filePath: String, fileName: String) {
+        Log.i(TAG, "startArtPlayer: filePath=$filePath fileName=$fileName")
         try {
             val intent = Intent(context, PlayerActivityCapacitor::class.java).apply {
                 putExtra(EXTRA_FILE_PATH, filePath)
                 putExtra(EXTRA_FILE_NAME, fileName)
-
-                if (context !is android.app.Activity) {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
+                if (context !is android.app.Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
+            Log.i(TAG, "startArtPlayer: success ✓")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start ArtPlayer", e)
+            Log.e(TAG, "startArtPlayer: failed: ${e.message}", e)
         }
     }
 
     private fun openExternal(context: Context, filePath: String) {
+        Log.i(TAG, "openExternal: filePath=$filePath")
         val file = File(filePath)
-        if (file.exists()) {
-            val uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                file
-            )
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "*/*")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            if (intent.resolveActivity(context.packageManager) != null) {
-                context.startActivity(intent)
-            } else {
-                Toast.makeText(
-                    context,
-                    "No app can open this file",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        } else {
+        if (!file.exists()) {
             Log.w(TAG, "openExternal: file does not exist: $filePath")
+            return
+        }
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "*/*")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        if (intent.resolveActivity(context.packageManager) != null) {
+            context.startActivity(intent)
+            Log.i(TAG, "openExternal: success ✓")
+        } else {
+            Log.w(TAG, "openExternal: no app can open this file")
         }
     }
 
-    private fun getBackendBaseUrl(context: Context): String {
-        return "http://127.0.0.1:8899"
-    }
+    private fun getBackendBaseUrl(context: Context): String = "http://127.0.0.1:8899"
 }
