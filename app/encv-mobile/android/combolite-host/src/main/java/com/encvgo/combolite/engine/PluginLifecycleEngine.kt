@@ -177,17 +177,17 @@ internal object PluginLifecycleEngine {
 
     fun setupFramework(hostActivityClass: Class<*>) {
         try {
-            PluginManager.setValidationStrategy(ValidationStrategy.Insecure)
+            kotlinx.coroutines.runBlocking { PluginManager.setValidationStrategy(ValidationStrategy.Insecure) }
         } catch (e: Error) {
         } catch (e: Exception) {
         }
         try {
-            PluginCrashHandler.setGlobalClashCallback(null)
+            kotlinx.coroutines.runBlocking { PluginCrashHandler.setGlobalClashCallback(null) }
         } catch (e: Error) {
         } catch (e: Exception) {
         }
         try {
-            PluginManager.proxyManager.setHostActivity(hostActivityClass)
+            PluginManager.proxyManager.setHostActivity(hostActivityClass as Class<com.combo.core.component.activity.BaseHostActivity>)
         } catch (e: Exception) {
         }
     }

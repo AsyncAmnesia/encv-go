@@ -193,7 +193,7 @@ object DiagnosticKit {
 
         steps.add("2. PackageManager.getPackageArchiveInfo...")
         try {
-            val flags = PackageManager.GET_META_DATA or PackageManager.GET_ACTIVITIES
+            var flags = PackageManager.GET_META_DATA or PackageManager.GET_ACTIVITIES
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 flags = flags or PackageManager.GET_SIGNING_CERTIFICATES
             } else {
@@ -299,7 +299,7 @@ object DiagnosticKit {
         steps.add("5. Testing loadEnabledPlugins() call...")
         try {
             val count = kotlinx.coroutines.runBlocking(kotlinx.coroutines.Dispatchers.IO) {
-                EncvComboLiteHost.loadAllEnabledPlugins()
+                PluginLifecycleEngine.loadAllEnabledPlugins()
             }
             steps.add("   loadEnabledPlugins() returned $count")
         } catch (e: Error) {
