@@ -34,6 +34,44 @@ Android 14+ 应用没有 `READ_LOGS` 权限，`logcat` 命令可能返回空。�
 - `GoProcessPlugin.appLog(level, tag, msg)`：同时写 Log.x() 和缓冲
 - `exportLogs()` 优先使用 appLogBuffer，logcat 作为补充
 
+### 1.5 并行调试原则（Parallel Debugging）
+
+> **当有多种技术方案可选时，应并行实施所有可行方案，通过前端配置/选项切换来选择方案，
+> 而非逐一尝试。这样 CI 一次构建即可验证所有方案的编译正确性和基本功能，
+> 避免反复提交浪费 CI 资源和上下文切换成本。**
+
+**适用场景**：
+1. 多种 UI 实现方案（Activity / Fragment / ComposeView）
+2. 多种数据源方案（本地 / 网络 / 缓存）
+3. 多种渲染方案（Canvas / SVG / WebGL）
+
+**实施规范**：
+- 每个方案**独立代码路径**，不互相依赖（一个方案崩溃不影响其他方案）
+- **前端提供统一切换入口**（Settings.vue select），选项旁显示方案状态标签
+- 后端根据 mode 参数分发到不同实现
+- 日志中**必须打印当前使用的方案名**（如 `[ModeC-Activity]`），便于 logcat 过滤定位
+- experimental 方案标记为默认不启用，但代码必须编译通过
+
+**反模式（禁止）**：
+- ❌ 先做 A → CI → 发现不行 → 改 B → 再 CI → 再改 C（浪费 N 次 CI）
+- ❌ 只实现一种"最优方案"，其他方案等出问题再考虑
+- ✅ 一次提交包含全部方案代码，CI 通过后用户自由切换测试
+
+**实战案例 — MPV 播放器三轨并行**：
+```
+Settings.vue 选项:
+├── Artplayer (内置)              ← 现有方案
+├── MPV-Activity (透明 Activity)   ← 方案 C ⚡ 最快落地
+├── MPV-Fragment (Fragment嵌入)    ← 方案 B 备选 [实验]
+├── MPV-Compose (ComposeView原生)  ← 方案 A ⭐ 最终目标 [实验]
+└── 外部打开                        ← 现有方案
+
+PlayerEntry.startMpvPlayer() 按 mode 分发:
+  "mpv-activity" → [ModeC-Activity] startMpvViaActivity()
+  "mpv-fragment" → [ModeB-Fragment] startMpvViaFragment()  // 兜底到 C
+  "mpv-compose"  → [ModeA-Compose]  startMpvViaCompose()
+```
+
 ---
 
 ## 二、诊断流程

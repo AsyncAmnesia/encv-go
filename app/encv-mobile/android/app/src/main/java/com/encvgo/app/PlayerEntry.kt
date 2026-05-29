@@ -27,6 +27,10 @@ object PlayerEntry {
     const val EXTRA_BACKEND_URL = "backend_url"
     const val EXTRA_MODE = "player_mode"
 
+    private const val MODE_MPV_ACTIVITY = "mpv-activity"
+    private const val MODE_MPV_FRAGMENT = "mpv-fragment"
+    private const val MODE_MPV_COMPOSE = "mpv-compose"
+
     fun play(
         context: Context,
         filePath: String,
@@ -35,20 +39,29 @@ object PlayerEntry {
         isExternal: Boolean = false,
         mode: String = ""
     ): PlayResult {
-        val effectiveMode = if (mode.isNotEmpty()) {
-            if (mode == "mpv") "mpv-plugin" else mode
-        } else {
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val rawMode = prefs.getString(PREF_KEY_VIDEO_PLAYER, "artplayer") ?: "artplayer"
-            if (rawMode == "mpv") "mpv-plugin" else rawMode
-        }
-
+        val effectiveMode = resolveMode(mode, context)
         Log.i(TAG, "play() mode=$effectiveMode (param=$mode) filePath=$filePath fileName=$fileName")
 
-        return when (effectiveMode) {
-            "mpv-plugin" -> startMpvPlayer(context, filePath, fileName, mimeType, isExternal)
-            "external" -> openExternal(context, filePath)
+        return when {
+            effectiveMode.startsWith("mpv-") -> startMpvPlayer(context, filePath, fileName, mimeType, isExternal, effectiveMode)
+            effectiveMode == "external" -> openExternal(context, filePath)
             else -> startArtPlayer(context, filePath, fileName)
+        }
+    }
+
+    private fun resolveMode(paramMode: String, context: Context): String {
+        if (paramMode.isNotEmpty()) {
+            return when (paramMode) {
+                "mpv", "mpv-plugin" -> MODE_MPV_ACTIVITY
+                MODE_MPV_ACTIVITY, MODE_MPV_FRAGMENT, MODE_MPV_COMPOSE -> paramMode
+                else -> paramMode
+            }
+        }
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val rawMode = prefs.getString(PREF_KEY_VIDEO_PLAYER, "artplayer") ?: "artplayer"
+        return when (rawMode) {
+            "mpv", "mpv-plugin" -> MODE_MPV_ACTIVITY
+            else -> rawMode
         }
     }
 
@@ -59,38 +72,68 @@ object PlayerEntry {
         filePath: String,
         fileName: String,
         mimeType: String,
+        isExternal: Boolean,
+        mode: String
+    ): PlayResult {
+        Log.i(TAG, "[ModeDispatch] startMpvPlayer mode=$mode filePath=$filePath fileName=$fileName")
+
+        return when (mode) {
+            MODE_MPV_ACTIVITY -> {
+                Log.i(TAG, "[ModeC-Activity] dispatching to startMpvViaActivity")
+                startMpvViaActivity(context, filePath, fileName, mimeType, isExternal)
+            }
+            MODE_MPV_FRAGMENT -> {
+                Log.i(TAG, "[ModeB-Fragment] not yet implemented, falling back to ModeC")
+                startMpvViaActivity(context, filePath, fileName, mimeType, isExternal)
+            }
+            MODE_MPV_COMPOSE -> {
+                Log.i(TAG, "[ModeA-Compose] not yet implemented, falling back to ModeC")
+                startMpvViaActivity(context, filePath, fileName, mimeType, isExternal)
+            }
+            else -> {
+                Log.i(TAG, "[ModeC-Activity] fallback for unknown mode=$mode")
+                startMpvViaActivity(context, filePath, fileName, mimeType, isExternal)
+            }
+        }
+    }
+
+    private fun startMpvViaActivity(
+        context: Context,
+        filePath: String,
+        fileName: String,
+        mimeType: String,
         isExternal: Boolean
     ): PlayResult {
-        Log.i(TAG, "startMpvPlayer: filePath=$filePath fileName=$fileName mimeType=$mimeType")
+        Log.i(TAG, "[ModeC-Activity] startMpvViaActivity: filePath=$filePath fileName=$fileName mimeType=$mimeType")
 
         // 1. 检查框架初始化
         if (!EncvComboLiteHost.isInitialized) {
-            Log.w(TAG, "startMpvPlayer: ComboLite not initialized")
+            Log.w(TAG, "[ModeC-Activity] ComboLite not initialized")
             return PlayResult(false, "播放器框架未初始化", "PluginManager.isInitialized=false")
         }
-        Log.i(TAG, "startMpvPlayer: ComboLite initialized ✓")
+        Log.i(TAG, "[ModeC-Activity] ComboLite initialized ✓")
 
         // 2. 检查插件完整状态
         val state = EncvComboLiteHost.getPluginFullState(PLUGIN_ID)
-        Log.i(TAG, "startMpvPlayer: plugin state=$state.status name=${state.name} version=${state.version}")
+        Log.i(TAG, "[ModeC-Activity] plugin state=$state.status name=${state.name} version=${state.version}")
 
         when (state.status) {
             "not_installed" -> {
-                Log.w(TAG, "startMpvPlayer: MPV plugin not installed")
+                Log.w(TAG, "[ModeC-Activity] MPV plugin not installed")
                 return PlayResult(false, "MPV 播放器未安装", "请前往扩展管理安装")
             }
             "disabled" -> {
-                Log.w(TAG, "startMpvPlayer: MPV plugin disabled")
+                Log.w(TAG, "[ModeC-Activity] MPV plugin disabled")
                 return PlayResult(false, "MPV 播放器已禁用", "请前往扩展管理启用")
             }
             "framework_not_ready" -> {
-                Log.w(TAG, "startMpvPlayer: framework not ready")
+                Log.w(TAG, "[ModeC-Activity] framework not ready")
                 return PlayResult(false, "播放器框架未就绪", "请重启应用")
             }
             "not_loaded", "load_failed" -> {
-                Log.w(TAG, "startMpvPlayer: plugin state=${state.status}, attempting load...")
+                Log.w(TAG, "[ModeC-Activity] plugin state=${state.status}, attempting load...")
                 val loaded = EncvComboLiteHost.ensurePluginLoaded(PLUGIN_ID)
-                Log.i(TAG, "startMpvPlayer: ensurePluginLoaded result=$loaded")
+                Log.i(TAG, "[ModeC-Activity] ensurePluginLoaded result=$loaded")
                 if (!loaded) {
                     return PlayResult(false, "MPV 加载失败", "请重启应用或重新启用扩展")
                 }
@@ -98,23 +141,22 @@ object PlayerEntry {
         }
 
         // 3. 关键：检查 LoadedPluginInfo 是否包含目标 Activity
-        // startActivity() 成功 ≠ 播放成功！EncvHostActivity 启动后可能白屏
         val loadedInfo = EncvComboLiteHost.getLoadedPluginInfo(PLUGIN_ID)
         if (loadedInfo == null) {
-            Log.e(TAG, "startMpvPlayer: getLoadedPluginInfo returned null after successful load!")
+            Log.e(TAG, "[ModeC-Activity] getLoadedPluginInfo returned null after successful load!")
             return PlayResult(false, "MPV 插件信息异常", "已加载但 getLoadedPluginInfo 返回 null")
         }
-        Log.i(TAG, "startMpvPlayer: loadedInfo id=${loadedInfo.id} name=${loadedInfo.pluginName}")
+        Log.i(TAG, "[ModeC-Activity] loadedInfo id=${loadedInfo.id} name=${loadedInfo.pluginName}")
 
         // 4. 检查插件是否注册了 Activity（ProxyManager 能否找到）
         val activities = loadedInfo.activities
-        Log.i(TAG, "startMpvPlayer: plugin activities=$activities target=$TARGET_ACTIVITY")
+        Log.i(TAG, "[ModeC-Activity] plugin activities=$activities target=$TARGET_ACTIVITY")
         if (activities.isEmpty()) {
-            Log.e(TAG, "startMpvPlayer: plugin has NO registered activities!")
+            Log.e(TAG, "[ModeC-Activity] plugin has NO registered activities!")
             return PlayResult(false, "MPV 插件无 Activity", "插件未声明任何 Activity，APK 可能损坏")
         }
         if (!activities.any { it.contains("MpvPlayerActivity", ignoreCase = true) }) {
-            Log.w(TAG, "startMpvPlayer: target $TARGET_ACTIVITY not found in plugin activities: $activities")
+            Log.w(TAG, "[ModeC-Activity] target $TARGET_ACTIVITY not found in plugin activities: $activities")
             return PlayResult(false, "MPV Activity 未注册", "目标 Activity 不在插件清单中: $TARGET_ACTIVITY")
         }
 
@@ -136,11 +178,69 @@ object PlayerEntry {
                 extras = extras
             )
             context.startActivity(intent)
-            Log.i(TAG, "startMpvPlayer: startActivity dispatched ✓ (result=pending, verify in EncvHostActivity)")
+            Log.i(TAG, "[ModeC-Activity] startActivity dispatched ✓ (result=pending, verify in EncvHostActivity)")
             PlayResult(true)
         } catch (e: Exception) {
-            Log.e(TAG, "startMpvPlayer: startActivity failed: ${e.message}", e)
+            Log.e(TAG, "[ModeC-Activity] startActivity failed: ${e.message}", e)
             PlayResult(false, "播放器启动失败", e.message ?: "Unknown error")
+        }
+    }
+
+    fun buildMpvIntent(
+        context: Context,
+        filePath: String,
+        fileName: String,
+        mimeType: String,
+        isExternal: Boolean
+    ): Pair<Intent?, PlayResult> {
+        Log.i(TAG, "[ModeC-Activity] buildMpvIntent: filePath=$filePath fileName=$fileName")
+
+        if (!EncvComboLiteHost.isInitialized) {
+            Log.w(TAG, "[ModeC-Activity] ComboLite not initialized")
+            return Pair(null, PlayResult(false, "播放器框架未初始化", "PluginManager.isInitialized=false"))
+        }
+
+        val state = EncvComboLiteHost.getPluginFullState(PLUGIN_ID)
+        when (state.status) {
+            "not_installed" -> return Pair(null, PlayResult(false, "MPV 播放器未安装", "请前往扩展管理安装"))
+            "disabled" -> return Pair(null, PlayResult(false, "MPV 播放器已禁用", "请前往扩展管理启用"))
+            "framework_not_ready" -> return Pair(null, PlayResult(false, "播放器框架未就绪", "请重启应用"))
+            "not_loaded", "load_failed" -> {
+                val loaded = EncvComboLiteHost.ensurePluginLoaded(PLUGIN_ID)
+                if (!loaded) return Pair(null, PlayResult(false, "MPV 加载失败", "请重启应用或重新启用扩展"))
+            }
+        }
+
+        val loadedInfo = EncvComboLiteHost.getLoadedPluginInfo(PLUGIN_ID)
+        if (loadedInfo == null) return Pair(null, PlayResult(false, "MPV 插件信息异常", "getLoadedPluginInfo 返回 null"))
+
+        val activities = loadedInfo.activities
+        if (activities.isEmpty()) return Pair(null, PlayResult(false, "MPV 插件无 Activity", "插件未声明任何 Activity"))
+        if (!activities.any { it.contains("MpvPlayerActivity", ignoreCase = true) }) {
+            return Pair(null, PlayResult(false, "MPV Activity 未注册", "目标 Activity 不在插件清单中"))
+        }
+
+        return try {
+            val extras = mapOf<String, Any>(
+                EXTRA_FILE_PATH to filePath,
+                EXTRA_FILE_NAME to fileName,
+                EXTRA_MIME_TYPE to mimeType,
+                EXTRA_IS_EXTERNAL to isExternal,
+                EXTRA_BACKEND_URL to getBackendBaseUrl(context),
+                EXTRA_MODE to "mpv-plugin",
+            )
+            val intent = EncvComboLiteHost.createProxyIntent(
+                context = context,
+                pluginId = PLUGIN_ID,
+                targetActivity = TARGET_ACTIVITY,
+                hostActivityClass = EncvHostActivity::class.java,
+                extras = extras
+            )
+            Log.i(TAG, "[ModeC-Activity] buildMpvIntent ✓ intent built successfully")
+            Pair(intent, PlayResult(true))
+        } catch (e: Exception) {
+            Log.e(TAG, "[ModeC-Activity] buildMpvIntent failed: ${e.message}", e)
+            Pair(null, PlayResult(false, "播放器 Intent 构建失败", e.message ?: "Unknown error"))
         }
     }
 

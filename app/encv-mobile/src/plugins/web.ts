@@ -61,6 +61,8 @@ export interface GoProcessPlugin {
   uninstallPlugin(options: { pluginId: string }): Promise<{ success: boolean; pluginId: string }>
   debugLifecycleFlow(options?: { pluginId?: string }): Promise<Record<string, any>>
   getLocalFilePath(options: { path: string }): Promise<{ path: string }>
+  startMpvInPlace(options: { filePath: string; name: string; mimeType?: string; containerId?: string }): Promise<PlayResult>
+  stopMpvInPlace(): Promise<{ success: boolean; embedded?: boolean }>
   debugInstallFlow(): Promise<Record<string, any>>
   debugKotlinReflect(): Promise<Record<string, any>>
   debugApkValidation(): Promise<Record<string, any>>
@@ -161,6 +163,14 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
 
   async getLocalFilePath(_options: { path: string }): Promise<{ path: string }> {
     return { path: '' }
+  }
+
+  async startMpvInPlace(_options: { filePath: string; name: string; mimeType?: string; containerId?: string }): Promise<PlayResult> {
+    return { success: false, error: 'Native only' }
+  }
+
+  async stopMpvInPlace(): Promise<{ success: boolean; embedded?: boolean }> {
+    return { success: false, embedded: false }
   }
 
   async debugInstallFlow(): Promise<Record<string, any>> {

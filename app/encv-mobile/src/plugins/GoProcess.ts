@@ -318,3 +318,26 @@ export async function ensurePluginLoaded(pluginId: string): Promise<boolean> {
     return false
   }
 }
+
+export async function startMpvInPlace(filePath: string, fileName: string, mimeType?: string): Promise<PlayResult> {
+  try {
+    const result = await GoProcess.startMpvInPlace({ filePath, name: fileName, mimeType: mimeType || '' })
+    if (result.success === false) {
+      return { success: false, error: result.error, errorDetail: result.errorDetail }
+    }
+    return { success: true }
+  } catch (e) {
+    console.error('[GoProcess] startMpvInPlace failed:', e)
+    return { success: false, error: '嵌入播放器启动失败', errorDetail: String(e) }
+  }
+}
+
+export async function stopMpvInPlace(): Promise<{ success: boolean }> {
+  try {
+    const result = await GoProcess.stopMpvInPlace()
+    return { success: result.success === true }
+  } catch (e) {
+    console.error('[GoProcess] stopMpvInPlace failed:', e)
+    return { success: false }
+  }
+}

@@ -8,6 +8,7 @@ import com.combo.core.component.activity.BaseHostActivity
 class EncvHostActivity : BaseHostActivity() {
     private const val TAG = "EncvHostActivity"
     private var proxyStarted = false
+    private var resultSet = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         Log.i(TAG, "onCreate: intent=$intent")
@@ -35,8 +36,18 @@ class EncvHostActivity : BaseHostActivity() {
     }
 
     override fun onDestroy() {
+        if (!resultSet) {
+            Log.w(TAG, "onDestroy: result never set (user pressed back or activity killed), setting success=true as default")
+            setResult(RESULT_OK, Intent().apply {
+                putExtra(EncvHostActivity.RESULT_EXTRA_SUCCESS, true)
+                putExtra(EncvHostActivity.RESULT_EXTRA_ERROR, "")
+                putExtra(EncvHostActivity.RESULT_EXTRA_ERROR_DETAIL, "")
+                putExtra(EncvHostActivity.RESULT_EXTRA_PLUGIN_ID, intent.getStringExtra("plugin_id") ?: "")
+            })
+            resultSet = true
+        }
+        Log.i(TAG, "onDestroy: proxyStarted=$proxyStarted resultSet=$resultSet")
         super.onDestroy()
-        Log.i(TAG, "onDestroy: proxyStarted=$proxyStarted")
     }
 
     private fun finishWithResult(
@@ -52,6 +63,7 @@ class EncvHostActivity : BaseHostActivity() {
             putExtra("player_error_detail", detail ?: "")
             putExtra("player_plugin_id", pluginId ?: "")
         })
+        resultSet = true
         finish()
     }
 

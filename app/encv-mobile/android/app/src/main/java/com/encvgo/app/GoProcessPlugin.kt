@@ -29,10 +29,11 @@ import kotlinx.coroutines.withContext
 
 private const val REQUEST_CODE_PLUGIN_PICK = 9001
 private const val REQUEST_CODE_INSTALL_CONFIRM = 9002
+private const val REQUEST_CODE_MPV_PLAYER = 9003
 
 @CapacitorPlugin(
     name = "GoProcess",
-    requestCodes = [REQUEST_CODE_PLUGIN_PICK, REQUEST_CODE_INSTALL_CONFIRM]
+    requestCodes = [REQUEST_CODE_PLUGIN_PICK, REQUEST_CODE_INSTALL_CONFIRM, REQUEST_CODE_MPV_PLAYER]
 )
 class GoProcessPlugin : Plugin() {
 
@@ -123,17 +124,44 @@ class GoProcessPlugin : Plugin() {
     @PluginMethod
     fun openPlayer(call: PluginCall) {
         try {
-            val result = PlayerEntry.play(context ?: activity!!, call.getString("filePath") ?: "",
-                call.getString("name") ?: "", call.getString("mimeType") ?: "",
-                isExternal = false, mode = call.getString("mode") ?: "")
-            if (result.success) {
-                call.resolve()
+            val mode = call.getString("mode") ?: ""
+            val effectiveMode = if (mode.isEmpty() || mode == "mpv" || mode == "mpv-plugin") "mpv-activity" else mode
+
+            if (effectiveMode == "mpv-activity") {
+                Log.i(TAG, "openPlayer: using startActivityForResult for mpv-activity mode")
+                val (intent, result) = PlayerEntry.buildMpvIntent(context ?: activity!!,
+                    call.getString("filePath") ?: "",
+                    call.getString("name") ?: "",
+                    call.getString("mimeType") ?: "",
+                    isExternal = false)
+                if (intent == null || !result.success) {
+                    call.resolve(JSObject().apply {
+                        put("success", false)
+                        put("error", result.error)
+                        put("errorDetail", result.errorDetail)
+                    })
+                } else {
+                    pendingCalls["mpvPlayer"] = call
+                    call.save()
+                    activity.startActivityForResult(intent, REQUEST_CODE_MPV_PLAYER)
+                    Log.i(TAG, "openPlayer: startActivityForResult dispatched for mpv-activity")
+                }
             } else {
-                call.resolve(JSObject().apply {
-                    put("success", false)
-                    put("error", result.error)
-                    put("errorDetail", result.errorDetail)
-                })
+                val result = PlayerEntry.play(context ?: activity!!,
+                    call.getString("filePath") ?: "",
+                    call.getString("name") ?: "",
+                    call.getString("mimeType") ?: "",
+                    isExternal = false,
+                    mode = mode)
+                if (result.success) {
+                    call.resolve()
+                } else {
+                    call.resolve(JSObject().apply {
+                        put("success", false)
+                        put("error", result.error)
+                        put("errorDetail", result.errorDetail)
+                    })
+                }
             }
         } catch (e: Exception) { call.reject(e.message) }
     }
@@ -286,6 +314,26 @@ class GoProcessPlugin : Plugin() {
         when (requestCode) {
             REQUEST_CODE_PLUGIN_PICK -> handlePickResult(resultCode, data)
             REQUEST_CODE_INSTALL_CONFIRM -> handleInstallConfirmResult(resultCode, data)
+            REQUEST_CODE_MPV_PLAYER -> handleMpvPlayerResult(resultCode, data)
+        }
+    }
+
+    private fun handleMpvPlayerResult(resultCode: Int, data: Intent?) {
+        val call = pendingCalls.remove("mpvPlayer") ?: return
+        Log.i(TAG, "handleMpvPlayerResult: resultCode=$resultCode data=$data")
+        if (data != null) {
+            val success = data.getBooleanExtra("player_success", true)
+            val error = data.getStringExtra("player_error") ?: ""
+            val errorDetail = data.getStringExtra("player_error_detail") ?: ""
+            Log.i(TAG, "handleMpvPlayerResult: success=$success error=$error detail=$errorDetail")
+            call.resolve(JSObject().apply {
+                put("success", success)
+                put("error", error)
+                put("errorDetail", errorDetail)
+            })
+        } else {
+            Log.w(TAG, "handleMpvPlayerResult: no intent data, assuming user back-pressed (success)")
+            call.resolve(JSObject().apply { put("success", true) })
         }
     }
 
@@ -350,6 +398,31 @@ class GoProcessPlugin : Plugin() {
                 else -> ""
             })
         })
+    }
+
+    @PluginMethod
+    fun startMpvInPlace(call: PluginCall) {
+        try {
+            val result = MpvEmbedService.startEmbed(
+                activity = activity,
+                containerId = call.getString("containerId", "mpv-container"),
+                filePath = call.getString("filePath") ?: "",
+                fileName = call.getString("name") ?: "",
+                mimeType = call.getString("mimeType") ?: "",
+                isExternal = false
+            )
+            call.resolve(JSObject().apply {
+                put("success", result.success)
+                put("error", result.error)
+                put("errorDetail", result.errorDetail)
+            })
+        } catch (e: Exception) { call.reject(e.message) }
+    }
+
+    @PluginMethod
+    fun stopMpvInPlace(call: PluginCall) {
+        val success = MpvEmbedService.stopEmbed()
+        call.resolve(JSObject().apply { put("success", success); put("embedded", MpvEmbedService.isEmbedded()) })
     }
 
     private fun executeComboLiteInstall(call: PluginCall, apkFile: File) {

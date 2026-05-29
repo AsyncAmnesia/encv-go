@@ -1,218 +1,275 @@
-# MPV 播放器嵌入式播放方案
+# MPV 播放器并行调试方案（A/B/C 三轨并行）
 
-## 现状问题
+## 核心调试策略
 
-### 当前播放方式对比
-
-| 播放器 | 技术实现 | 用户体验 | 异常处理 |
-|--------|---------|---------|---------|
-| **Artplayer (内置)** | Vue 组件嵌入 `/player` 路由页面 | ✅ 无跳转，嵌入当前页面 | ✅ 错误直接在页面内展示 |
-| **MPV Plugin (外部)** | `startActivity(EncvHostActivity)` → 新 Activity → ProxyManager 代理 | ❌ 页面跳转 + 白屏 | ❌ 白屏无反馈 |
-| **External** | `Intent.ACTION_VIEW` 外部应用 | ❌ 跳转出应用 | N/A |
-
-### 用户期望
-
-> "之前就实现过直接嵌入页面播放，用户没有跳转感觉"
-
-MPV 应该像 Artplayer 一样：**点击视频 → 在当前页面/WebView 内显示播放器**，不启动新 Activity。
-
-## 方案对比
-
-### 方案 A: ComposeView 原生嵌入（推荐 ⭐）
-
-**原理**：在 Capacitor BridgeActivity 的 WebView 上层叠加一个原生 ComposeView，渲染 MPV 播放器 UI。
+**并行实施 + 前端切换 = CI 一次验证全部**
 
 ```
-BridgeActivity (Capacitor)
-├── WebView (Ionic/Vue 文件列表)
-│   └── Files.vue
-│       └── 点击视频 → 调用 startMpvInPlace()
-└── [新增] ComposeView (MPV 播放器) ← 叠加在 WebView 上层
-    └── MpvPlayerScreen (Compose UI)
+设置页面播放器选项：
+├── Artplayer (内置)              ← 现有，不变
+├── MPV-Activity (透明 Activity)   ← 方案 C ⚡ 最快落地
+├── MPV-Fragment (Fragment嵌入)    ← 方案 B 备选 experimental
+├── MPV-Compose (ComposeView原生)  ← 方案 A ⭐ 最终目标
+└── 外部打开                        ← 现有，不变
+
+用户切换选项 → 同一 CI 构建可测试三种 MPV 播放方式
 ```
-
-**优点**：
-- ✅ 完全无跳转，用户体验与 Artplayer 一致
-- ✅ 错误可直接回传给前端（通过 JS bridge callback）
-- ✅ 不依赖 ProxyManager Activity 代理机制
-- ✅ 失败时可立即显示错误 banner（不白屏）
-
-**缺点**：
-- 需要修改 EncvApplication 或 GoProcessPlugin 暴露新 API
-- 需要处理 ComposeView 与 WebView 的层级关系（触摸事件、返回键）
-- MPV 插件的 Compose UI 需要脱离 ComboLite 的 Activity 生命周期独立运行
-- 复杂度较高
-
-**改动范围**：
-- Kotlin: 新增 `MpvEmbedService` / 在 `GoProcessPlugin` 暴露 `startMpvInPlace()` @PluginMethod
-- Kotlin: 创建 ComposeView 并附加到当前 Activity
-- 前端: Files.vue 调用新 API，接收回调结果
 
 ---
 
-### 方案 B: Fragment 嵌入
+## 调试铁律（新增）：并行调试原则
 
-**原理**：把 EncvHostActivity 改为 Fragment，在当前页面的容器中加载。
+> **当有多种技术方案可选时，应并行实施所有可行方案，通过前端配置/选项切换来选择方案，
+> 而非逐一尝试。这样 CI 一次构建即可验证所有方案的编译正确性和基本功能，
+> 避免反复提交浪费 CI 资源和上下文切换成本。**
 
-```
-Files.vue
-├── <div ref="mpvContainer" v-if="showMpvPlayer">
-│   └── [FragmentContainerView] ← Android 原生 Fragment 容器
-│       └── MpvPlayerFragment (继承 BaseHostActivity 改造)
-│           └── ProxyManager 代理 MpvPlayerActivity
-```
+### 适用场景
+1. 多种 UI 实现方案（如本例的 Activity/Fragment/ComposeView）
+2. 多种数据源方案（本地/网络/缓存）
+3. 多种渲染方案（Canvas/SVG/WebGL）
 
-**优点**：
-- ✅ 视觉上嵌入页面
-- ✅ 复用现有 ProxyManager 机制
+### 实施规范
+- **每个方案独立代码路径**，不互相依赖（一个方案崩溃不影响其他方案）
+- **前端提供统一切换入口**（Settings.vue select），选项旁显示方案状态标签
+- **Kotlin 后端根据 mode 参数分发到不同实现**
+- **日志中必须打印当前使用的方案名**（如 `[ModeC-Activity]`），便于定位问题
+- **experimental 方案标记为默认不启用**，但代码必须编译通过
 
-**缺点**：
-- ❌ ComboLite 的 `BaseHostActivity` 是 **Activity** 不是 Fragment，改造风险大
-- ❌ ProxyManager 设计为 Activity 代理，不支持 Fragment 场景
-- ❌ 需要 AndroidManifest 大改（声明 Fragment 容器 Activity）
-- ❌ ComboLite 升级可能破坏兼容性
+### 反模式（禁止）
+- ❌ 先做 A → CI → 发现不行 → 改 B → 再 CI → 再改 C（浪费 3 次 CI）
+- ❌ 只实现一种"最优方案"，其他方案等出问题再考虑
+- ✅ 一次提交包含 A+B+C 全部代码，CI 通过后用户自由切换测试
 
-**结论**：不推荐，ComboLite 架构不支持。
-
----
-
-### 方案 C: 透明 Activity + startActivityForResult（快速修复 ⚡）
-
-**原理**：EncvHostActivity 使用透明主题，视觉上无跳转。失败时 setResult 回传错误。
-
-```
-Files.vue (WebView)
-    ↓ 点击视频
-    ↓ startActivityForResult(EncvHostActivity, REQUEST_MPV)
-    ↓
-[透明] EncvHostActivity (用户看不到跳转)
-    ├── 成功: 显示 MPV 播放器全屏
-    └── 失败: setResult(error) + finish()
-        ↓
-Files.vue.onActivityResult()
-    ↓
-playError.value = error  ← 显示红色 banner
-```
-
-**优点**：
-- ✅ 改动最小（只改 PlayerEntry + GoProcessPlugin + Files.vue）
-- ✅ 不白屏（失败时有明确错误反馈）
-- ✅ 视觉上接近"嵌入"（透明 Activity 无感知）
-
-**缺点**：
-- ⚠️ 仍然是 Activity 跳转（只是透明的）
-- ⚠️ 用户按返回键会回到 EncvHostActivity 而非 Files.vue
-- ⚠️ 生命周期管理复杂（Activity 栈多一层）
-
-**改动范围**：
-- Kotlin: PlayerEntry.startMpvPlayer() 改为 `activity.startActivityForResult()`
-- Kotlin: EncvHostActivity 失败时 `setResult()` 返回错误
-- Kotlin: GoProcessPlugin.openPlayer() 用 `startActivityForResult` 包装
-- 前端: Files.vue 用 `@capacitor/android` 的 result 监听
+> **此铁律需同步写入 `saturation-debugging.md` §1.5**
 
 ---
 
-### 方案 D: WebView 内 iframe 嵌入
+## 方案对比总览
 
-**原理**：MPV 插件提供 Web 接口（类似 Artplayer），在 WebView 内用 iframe 加载。
+| 维度 | 方案 C: 透明 Activity | 方案 B: Fragment 嵌入 | 方案 A: ComposeView 原生 |
+|------|---------------------|---------------------|------------------------|
+| **用户体验** | ⚠️ 无视觉跳转(透明主题)，但仍是独立 Activity | ✅ 视觉嵌入页面 | ✅ 完全无跳转，与 Artplayer 一致 |
+| **白屏风险** | ✅ setResult 可回传错误到 Files.vue | ⚠️ 需改造 BaseHostActivity | ✅ 直接回传 JS callback |
+| **复杂度** | **低**（改动最小） | **高**（ComboLite 不支持 Fragment） | **中**（需新建 Service） |
+| **CI 验证可行性** | ✅ 本次可验证 | ⚠️ 框架代码，标记 experimental | ✅ 本次可验证 |
+| **推荐优先级** | **Phase 1 先做** | 备选（风险大） | Phase 2 目标 |
 
-**缺点**：
-- ❌ MPV 是原生 Compose UI，不是 Web 组件
-- ❌ 无法提供 Web 接口（除非重写整个播放器）
-- ❌ 性能差（视频解码不能在 WebView 内完成）
+---
 
-**结论**：不可行。
+## Task 清单
 
-## 推荐：方案 A (ComposeView 嵌入) 作为目标，方案 C (透明 Activity) 作为过渡
+### Task 1: 基础架构 — mode 分发机制
 
-### 分阶段实施
+**目标**：PlayerEntry.kt 支持 `mpv-*` 子模式分发，Settings.vue 扩展为 5 个选项。
 
-#### Phase 1（本次）：方案 C — 透明 Activity + 错误回传
+- [ ] **SubTask 1.1**: PlayerEntry.kt `play()` — mode 归一化处理
+  - `"mpv"` / `"mpv-plugin"` → 统一映射到默认 MPV 子模式（初始用 `mpv-activity` 即方案 C）
+  - 新增 `mpv-activity` / `mpv-fragment` / `mpv-compose` 三个子模式常量
+  - 日志输出 `[ModeX]` 前缀标识当前方案
 
-**目标**：解决白屏问题，确保异常时有明确错误展示。
+- [ ] **SubTask 1.2**: PlayerEntry.kt `startMpvPlayer()` — 按 mode 分发
+  ```kotlin
+  private fun startMpvPlayer(..., mode: String): PlayResult {
+      return when (mode) {
+          "mpv-activity"  -> { Log.i(TAG, "[ModeC-Activity] starting..."); startMpvViaActivity(...) }
+          "mpv-fragment"  -> { Log.i(TAG, "[ModeB-Fragment] starting..."); startMpvViaFragment(...) }
+          "mpv-compose"   -> { Log.i(TAG, "[ModeA-Compose] starting..."); startMpvViaCompose(...) }
+          else            -> { Log.i(TAG, "[ModeC-Activity] fallback"); startMpvViaActivity(...) }
+      }
+  }
+  ```
 
-**步骤**：
-1. EncvHostActivity 设置透明主题 (`android:theme="@style/Theme.AppCompat.Translucent.NoTitleBar"`)
-2. PlayerEntry.startMpvPlayer() 改用 `startActivityForResult()`
-3. EncvHostActivity 失败时 `setResult(RESULT_OK, Intent with error)`
-4. GoProcessPlugin.openPlayer() 用 `registerActivityResultHandler()` 接收结果
-5. GoProcess.ts openPlayer() 返回 Promise<PlayResult>（包含 Activity 结果）
-6. Files.vue playMedia() 处理失败结果，显示错误 banner
+- [ ] **SubTask 1.3**: Settings.vue — 扩展播放器选项列表
+  ```vue
+  <ion-select-option value="artplayer">{{ t('settings.builtInArtplayer') }}</ion-select-option>
+  <ion-select-option value="mpv-activity">MPV (Activity)</ion-select-option>
+  <ion-select-option value="mpv-fragment" :disabled="true">MPV (Fragment) [实验]</ion-select-option>
+  <ion-select-option value="mpv-compose" :disabled="true">MPV (Compose) [实验]</ion-select-option>
+  <ion-select-option value="external">{{ t('settings.openExternal') }}</ion-select-option>
+  ```
+  - mpv-fragment 和 mpv-compose 初始 disabled（实验性方案）
+  - 所有 MPV 子选项共享同一个 MPV 插件状态徽章逻辑
 
-**验收标准**：
-- MPV 未安装/未加载/ProxyManager 失败 → Files.vue 顶部显示红色错误 banner
-- 不再出现白屏
-- 日志输出完整（EncvHostActivity onCreate/onResume/onDestroy）
+- [ ] **SubTask 1.4**: useI18n.ts — 添加新选项翻译 key
+  - `settings.mpvPlayerActivity` / `settings.mpvPlayerFragment` / `settings.mpvPlayerCompose`
 
-#### Phase 2（后续）：方案 A — ComposeView 原生嵌入
+---
 
-**目标**：彻底消除 Activity 跳转，实现真正的嵌入式播放。
+### Task 2: 方案 C 实现 — 透明 Activity + 错误回传（⚡ 最快落地）
 
-**前提**：
-- Phase 1 已验证 EncvHostActivity 内部的所有失败场景可被捕获
-- ComboLite API 确认支持非 Activity 方式使用插件 UI
+**目标**：EncvHostActivity 透明启动，失败时通过 setResult 回传错误到 Files.vue 显示 banner。
 
-**步骤**：
-1. 新建 `MpvEmbedService.kt` — 管理 ComposeView 生命周期
-2. GoProcessPlugin 新增 `startMpvInPlace()` @PluginMethod
-3. 在当前 BridgeActivity 上创建 ComposeView 并渲染 MpvPlayerScreen
-4. 处理触摸事件穿透（ComposeView ↔ WebView）
-5. 处理返回键（关闭 MPV 播放器回到文件列表）
-6. 前端调用新 API，传入 container 元素位置
+- [ ] **SubTask 2.1**: AndroidManifest.xml — EncvHostActivity 设置透明主题
+  ```xml
+  <activity android:name=".EncvHostActivity"
+      android:theme="@android:style/Theme.Translucent.NoTitleBar"
+      android:exported="false" />
+  ```
 
-## Phase 1 详细实施计划
+- [ ] **SubTask 2.2**: EncvHostActivity.kt — 所有失败路径确保 setResult + finish()
+  - 当前已有 `finishWithResult()` 实现 ✅
+  - 补充：成功播放完成时的 setResult（用户按返回键退出时）
+  - 补充：onDestroy 中未 setResult 的兜底（防止泄漏）
 
-### Task 1: EncvHostActivity 透明主题 + setResult
+- [ ] **SubTask 2.3**: GoProcessPlugin.kt — 新增 `REQUEST_CODE_MPV_PLAYER` + onActivityResult 处理
+  ```kotlin
+  private const val REQUEST_CODE_MPV_PLAYER = 9003
 
-**文件**: `android/app/src/main/java/com/encvgo/app/EncvHostActivity.kt`
+  @CapacitorPlugin(
+      name = "GoProcess",
+      requestCodes = [REQUEST_CODE_PLUGIN_PICK, REQUEST_CODE_INSTALL_CONFIRM, REQUEST_CODE_MPV_PLAYER]
+  )
+  ```
+  - `openPlayer()` 当 mode 为 `mpv-*` 时使用 `startActivityForResult()` 而非 `startActivity()`
+  - `onActivityResult()` 中提取 `player_success` / `player_error` / `player_error_detail`
+  - 将结果存入 pendingCall 或通过 Promise 返回
 
-```kotlin
-// 当前已有饱和调试日志，需补充：
-// 1. 透明主题（AndroidManifest 中设置或代码中动态设置）
-// 2. ProxyManager 启动失败时 finishWithResult
-// 3. onResume 中检测到白屏时 finishWithResult
-```
+- [ ] **SubTask 2.4**: GoProcess.ts — openPlayer() 支持 Promise 返回 PlayResult
+  - 当 mode 包含 `mpv-activity` 时，使用 `{ callback: Promise }` 模式等待 ActivityResult
+  - 其他 mode 保持现有同步返回行为
 
-### Task 2: PlayerEntry.startMpvPlayer() 改用 startActivityForResult
+- [ ] **SubTask 2.5**: Files.vue — playMedia() 处理 ActivityResult 错误
+  - `openPlayer()` 返回 `PlayResult { success: false }` 时显示红色 error banner（已有机制 ✅）
+  - 确保 banner 可关闭、可展开详情
 
-**文件**: `android/app/src/main/java/com/encvgo/app/PlayerEntry.kt`
+---
 
-```kotlin
-// 问题：context.startActivity() 无法接收结果
-// 解决：需要 Activity context 才能调用 startActivityForResult
-// 方案：PlayerEntry.play() 接收 Activity 参数，或使用 GlobalScope + ResultReceiver
-```
+### Task 3: 方案 A 实现 — ComposeView 原生嵌入（⭐ 最终目标）
 
-### Task 3: GoProcessPlugin.openPlayer() 用 registerActivityResultHandler
+**目标**：MPV 播放器以 ComposeView 形式嵌入 WebView 页面，用户无跳转感。
 
-**文件**: `android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt`
+- [ ] **SubTask 3.1**: MpvEmbedService.kt（新建）— ComposeView 生命周期管理
+  ```kotlin
+  object MpvEmbedService {
+      fun startEmbed(activity: Activity, containerId: String, filePath: String, fileName: String): PlayResult
+      fun stopEmbed(): Boolean
+      fun isEmbedded(): Boolean
+  }
+  ```
+  - 内部管理 ComposeView 实例和 MpvPlayerScreen Composable
+  - 处理 Compose 生命周期（start/stop/dispose）
 
-```kotlin
-// Capacitor 提供 registerActivityResultHandler() API
-// 可以在不改变前端调用方式的情况下接收 Activity 结果
-```
+- [ ] **SubTask 3.2**: GoProcessPlugin.kt — 新增 `startMpvInPlace()` / `stopMpvInPlace()`
+  - `startMpvInPlace()`: 在当前 Activity 中创建 ComposeView 并附加到指定 View ID
+  - `stopMpvInPlace()`: 移除 ComposeView，恢复 WebView 正常布局
+  - 需要 BridgeActivity 引用或 View 定位能力
 
-### Task 4: Files.vue 处理 MPV 播放结果
+- [ ] **SubTask 3.3**: GoProcess.ts — 对应函数封装
+  ```typescript
+  export async function startMpvInPlace(filePath: string, fileName: string): Promise<PlayResult>
+  export async function stopMpvInPlace(): Promise<{ success: boolean }>
+  ```
 
-**文件**: `src/views/Files.vue`
+- [ ] **SubTask 3.4**: Files.vue — mpv-container 管理
+  ```vue
+  <div id="mpv-container" v-if="showMpvPlayer" class="mpv-overlay"></div>
+  ```
+  - 播放时隐藏文件列表、显示容器
+  - 返回/关闭时恢复文件列表
 
-```typescript
-// openPlayer() 返回 PlayResult
-// 如果 success=false 且来自 ActivityResult（而非预检），显示错误 banner
-// 区分"预检失败"和"运行时失败"
-```
+- [ ] **SubTask 3.5**: 触摸事件穿透处理
+  - ComposeView 覆盖在 WebView 上方时，需要处理触摸事件冲突
+  - MPV 全屏播放时可消费所有触摸事件
+  - 非全屏状态需要考虑返回键优先级
 
-### Task 5: 验证
+---
 
-- [ ] MPV 未安装 → 显示 "MPV 未安装" banner
-- [ ] MPV 已安装但未加载 → 尝试加载 → 成功则播放，失败则显示 banner
-- [ ] MPV 加载成功但 ProxyManager 失败 → 显示 "播放器内部错误" banner
-- [ ] MPV 正常播放 → 全屏显示（透明 Activity 无感知）
-- [ ] Logcat 过滤 EncvHostActivity 输出完整诊断信息
+### Task 4: 方案 B 框架 — Fragment 嵌入（experimental）
 
-## 铁律合规
+**目标**：保留 Fragment 方案的框架代码，标记为 experimental。
 
-1. **严禁 Toast** → 所有错误通过 banner 显示 ✓
-2. **严禁 fallback** → 失败后不自动切换到 Artplayer ✓
-3. **严禁白屏** → 所有失败路径都有明确的 UI 反馈 ✓（Phase 1 目标）
-4. **饱和调试** → EncvHostActivity + PlayerEntry 完整日志输出 ✓
+- [ ] **SubTask 4.1**: MpvPlayerFragment.kt（新建）— 框架占位代码
+  ```kotlin
+  class MpvPlayerFragment : Fragment() {
+      // TODO: ComboLite 不原生支持 Fragment 代理
+      // 需要等待 ComboLite 提供 BaseHostFragment 或自行封装 ProxyManager
+      companion object {
+          const val TAG = "MpvPlayerFragment"
+      }
+  }
+  ```
+
+- [ ] **SubTask 4.2**: PlayerEntry.kt `startMpvViaFragment()` — 占位实现
+  ```kotlin
+  private fun startMpvViaFragment(...): PlayResult {
+      Log.w(TAG, "[ModeB-Fragment] not yet implemented, falling back to ModeC")
+      return startMpvViaActivity(...)  // 兜底到方案 C
+  }
+  ```
+
+- [ ] **SubTask 4.3**: 标记为 experimental
+  - Settings.vue 中选项显示 `[实验]` 且 disabled
+  - 代码编译通过但不启用功能路径
+
+---
+
+### Task 5: 饱和调试日志
+
+**目标**：每个方案有独立的日志前缀，便于在 logcat 中快速过滤。
+
+- [ ] **SubTask 5.1**: 每个 mode 分发点输出方案名标识
+  - `[ModeC-Activity]` / `[ModeB-Fragment]` / `[ModeA-Compose]`
+  - 包含 filePath、fileName、mode 参数
+
+- [ ] **SubTask 5.2**: 每个方案的成功/失败路径完整日志
+  - 成功：`[ModeX] success ✓ cost=XXXms`
+  - 失败：`[ModeX] failed ✗ reason=... detail=...`
+
+- [ ] **SubTask 5.3**: EncvHostActivity 诊断增强
+  - onCreate/onResume/onDestroy 时间戳
+  - Intent extras 完整 dump
+  - proxyStarted 状态转换日志
+
+---
+
+### Task 6: 验证
+
+- [ ] **SubTask 6.1**: 前端构建验证
+  - `cd app/encv-mobile && npx vue-tsc --noEmit && npx vite build` 通过
+
+- [ ] **SubTask 6.2**: Kotlin 编译验证
+  - Gradle build 编译无错误（CI 环境）
+
+- [ ] **SubTask 6.3**: 功能验证清单
+  - Artplayer 模式不受影响
+  - MPV-Activity 模式可选择且能触发 startActivity
+  - MPV-Fragment/Compose 模式显示为 disabled 但不崩溃
+  - 外部打开模式不受影响
+  - MPV 状态徽章对所有 MPV 子模式正确显示
+
+---
+
+## 改动文件总览
+
+| 文件 | Task 1 | Task 2 | Task 3 | Task 4 | Task 5 |
+|------|--------|--------|--------|--------|--------|
+| `PlayerEntry.kt` | ✅ mode 分发重写 | — | — | 占位实现 | ✅ 日志 |
+| `EncvHostActivity.kt` | — | ✅ setResult 完善 | — | — | ✅ 诊断 |
+| `AndroidManifest.xml` | — | ✅ 透明主题 | — | — | — |
+| `GoProcessPlugin.kt` | — | ✅ startActivityForResult | ✅ inPlace API | — | — |
+| `GoProcess.ts` | — | ✅ Promise 返回 | ✅ 封装 | — | — |
+| `Files.vue` | — | ✅ 错误处理 | ✅ container | — | — |
+| `Settings.vue` | ✅ 5 个选项 | — | — | — | — |
+| `useI18n.ts` | ✅ 新 key | — | — | — | — |
+| `MpvEmbedService.kt` (新建) | — | — | ✅ 核心 | — | — |
+| `MpvPlayerFragment.kt` (新建) | — | — | — | ✅ 框架 | — |
+
+---
+
+## 铁律合规检查
+
+| 铁律 | 合规方式 |
+|------|---------|
+| **严禁 Toast** | 所有错误通过 Files.vue error banner 显示 |
+| **严禁 fallback** | 失败后不自动切换方案，显示错误让用户主动选择 |
+| **严禁白屏** | 方案 C: setResult 回传；方案 A: JS callback；方案 B: 兜底到 C |
+| **饱和调试** | `[ModeX]` 前缀日志，每个方案独立诊断 |
+| **并行调试** | A/B/C 三轨并行，前端 Settings 切换 |
+
+---
+
+## 后续动作（计划批准后）
+
+1. **立即更新** `saturation-debugging.md` 新增 §1.5 并行调试原则
+2. 按 Task 1→2→5→6 顺序实施（先落地方案 C，再做饱和调试，最后验证）
+3. Task 3（方案 A）和 Task 4（方案 B）在同一批次编写代码，但 Task 3/4 初始 disabled

@@ -45,13 +45,15 @@
             mode="ios"
           >
             <ion-select-option value="artplayer">{{ t('settings.builtInArtplayer') }}</ion-select-option>
-            <ion-select-option value="mpv-plugin" :disabled="mpvPluginStatus !== 'ready'">{{ t('settings.mpvPluginExtension') }}</ion-select-option>
+            <ion-select-option value="mpv-activity">MPV (Activity)</ion-select-option>
+            <ion-select-option value="mpv-fragment" :disabled="true">MPV (Fragment) [实验]</ion-select-option>
+            <ion-select-option value="mpv-compose" :disabled="true">MPV (Compose) [实验]</ion-select-option>
             <ion-select-option value="external">{{ t('settings.openExternal') }}</ion-select-option>
           </ion-select>
-          <ion-badge v-if="isNative() && videoPlayerMode === 'mpv-plugin' && mpvPluginStatus !== 'unknown' && mpvPluginStatus !== 'ready'" slot="end" :color="mpvPluginStatus === 'load_failed' || mpvPluginStatus === 'error' ? 'danger' : 'warning'">
+          <ion-badge v-if="isNative() && isMpvMode(videoPlayerMode) && mpvPluginStatus !== 'unknown' && mpvPluginStatus !== 'ready'" slot="end" :color="mpvPluginStatus === 'load_failed' || mpvPluginStatus === 'error' ? 'danger' : 'warning'">
             {{ t(mpvStatusI18nKey) }}
           </ion-badge>
-          <ion-badge v-if="isNative() && videoPlayerMode === 'mpv-plugin' && mpvPluginStatus === 'ready'" slot="end" color="success">✓</ion-badge>
+          <ion-badge v-if="isNative() && isMpvMode(videoPlayerMode) && mpvPluginStatus === 'ready'" slot="end" color="success">✓</ion-badge>
         </ion-item>
         <ion-item>
           <ion-icon :icon="musicalNotesOutline" slot="start"></ion-icon>
@@ -382,7 +384,7 @@ import { isNative, getPluginFullState, ensurePluginLoaded } from '@/plugins/GoPr
 import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus, fetchTextPreviewExts, invalidateTextExtsCache } from '@/api/encv'
 import type { IndexStats, FFmpegStatus } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
-import { PLAY_MODE } from '@/constants/player'
+import { PLAY_MODE, isMpvSubMode } from '@/constants/player'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 import ConfigFieldItem from '@/components/ConfigFieldItem.vue'
 
@@ -415,6 +417,10 @@ const mpvStatusI18nKey = computed(() => {
   }
   return keyMap[mpvPluginStatus.value] || 'settings.pluginQueryFailed'
 })
+
+function isMpvMode(mode: string): boolean {
+  return isMpvSubMode(mode) || mode === 'mpv-plugin' || mode === 'mpv'
+}
 
 function handleVideoPlayerChange(event: CustomEvent) {
   const value = event.detail.value
