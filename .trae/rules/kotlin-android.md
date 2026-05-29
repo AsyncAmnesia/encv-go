@@ -180,6 +180,29 @@ import com.encvgo.app.UriUtils                          // URI
 - `com.combo.core.security.*` （同上）
 - `com.combo.core.model.*` （使用 `com.encvgo.combolite.model.*` 包装）
 
+### 5.2 禁止硬编码项目包名
+
+**铁律：代码中不允许出现任何项目绝对包名字符串（`com.encvgo.xxx`）作为调用目标。**
+
+```kotlin
+// ❌ 硬编码全限定名（包名变更时全部失效）
+com.encvgo.combolite.engine.PluginLifecycleEngine.loadAllEnabledPlugins()
+com.encvgo.app.InstallConfirmActivity.EXTRA_APK_PATH
+Class<com.encvgo.combolite.SomeClass>
+
+// ✅ 通过 import 引用，包名变更只需改一处
+import com.encvgo.combolite.engine.PluginLifecycleEngine
+PluginLifecycleEngine.loadAllEnabledPlugins()
+
+import com.encvgo.app.InstallConfirmActivity
+InstallConfirmActivity.EXTRA_APK_PATH
+
+import com.encvgo.combolite.SomeClass
+Class<SomeClass>()
+```
+
+**例外**：第三方 AAR 的包名（如 `com.combo.core.*`）在 import 中出现是正常的，但同样应通过文件顶部 import 声明，不在调用处内联。
+
 ---
 
 ## 六、"金标准"文件参照
