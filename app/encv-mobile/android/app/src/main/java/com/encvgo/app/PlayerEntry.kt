@@ -269,5 +269,8 @@ object PlayerEntry {
         }
     }
 
-    private fun getBackendBaseUrl(context: Context): String = "http://127.0.0.1:8899"
+    private fun getBackendBaseUrl(context: Context): String {
+        val port = EncvGoService.lastKnownPort
+        return if (port > 0) "http://127.0.0.1:$port" else "http://127.0.0.1:2025"
+    }
 }

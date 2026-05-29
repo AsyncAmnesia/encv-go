@@ -38,16 +38,13 @@ class MpvPlayerActivity : BasePluginActivity() {
         val fileName = hostIntent.getStringExtra("file_name") ?: ""
         val mimeType = hostIntent.getStringExtra("mime_type") ?: ""
         val isExternal = hostIntent.getBooleanExtra("is_external", false)
+        val backendUrl = hostIntent.getStringExtra("backend_url") ?: ""
         val audioMode = isAudioFile(mimeType, fileName)
 
-        val selfCl = this.javaClass.classLoader
-        android.util.Log.i(TAG, "onCreate: this ClassLoader=${selfCl?.javaClass?.name}")
+        android.util.Log.i(TAG, "onCreate: filePath=$filePath backendUrl=$backendUrl audioMode=$audioMode")
 
         engine = createMpvEngine(host)
         engine.initialize()
-
-        val mpvLibCl = `is`.xyz.mpv.MPVLib::class.java.classLoader
-        android.util.Log.i(TAG, "onCreate: MPVLib ClassLoader=${mpvLibCl?.javaClass?.name}")
 
         host.setContent {
             EncvMpVPlayerTheme {
@@ -61,6 +58,7 @@ class MpvPlayerActivity : BasePluginActivity() {
                             fileName = fileName,
                             mimeType = mimeType,
                             isExternal = isExternal,
+                            backendUrl = backendUrl,
                             engine = engine,
                             onBack = { host.finish() }
                         )
@@ -70,6 +68,7 @@ class MpvPlayerActivity : BasePluginActivity() {
                             fileName = fileName,
                             mimeType = mimeType,
                             isExternal = isExternal,
+                            backendUrl = backendUrl,
                             engine = engine,
                             onBack = { host.finish() }
                         )

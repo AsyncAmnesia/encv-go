@@ -57,7 +57,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,6 +73,7 @@ fun MpvAudioPlayerScreen(
     fileName: String,
     mimeType: String,
     isExternal: Boolean,
+    backendUrl: String,
     engine: MpvEngine,
     onBack: () -> Unit
 ) {
@@ -84,8 +84,6 @@ fun MpvAudioPlayerScreen(
     var volume by remember { mutableFloatStateOf(1f) }
     val isPlaying = playerState == PlayerState.AudioOnly || playerState == PlayerState.Playing
     val progress = if (duration > 0) currentPosition.toFloat() / duration else 0f
-    val context = LocalContext.current
-    val backendUrl = (context as? android.app.Activity)?.intent?.getStringExtra("backend_url") ?: ""
 
     val gradientBg = Brush.linearGradient(
         colors = listOf(Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460)),
