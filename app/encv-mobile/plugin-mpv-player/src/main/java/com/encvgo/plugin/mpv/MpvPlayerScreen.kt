@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -198,7 +199,7 @@ fun MpvPlayerScreen(
                 },
                 onToggleFullscreen = {
                     isFullscreen = !isFullscreen
-                    val activity = context as? Activity ?: return@MpvControls
+                    val activity = LocalContext.current as? Activity ?: return@MpvControls
                     if (isFullscreen) {
                         activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                         hideSystemUi(activity)
