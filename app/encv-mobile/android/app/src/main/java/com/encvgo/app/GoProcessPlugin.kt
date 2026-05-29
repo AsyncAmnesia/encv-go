@@ -28,6 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlin.reflect.jvm.javaMethod
 
 private const val REQUEST_CODE_PLUGIN_PICK = 9001
@@ -451,6 +452,170 @@ class GoProcessPlugin : Plugin() {
             Log.e(TAG, "checkInstalledPlugins failed", e)
             call.reject("Failed to check installed plugins: ${e.message}")
         }
+    }
+
+    @PluginMethod
+    fun togglePluginEnabled(call: PluginCall) {
+        val pluginId = call.getString("pluginId") ?: run {
+            call.reject("pluginId is required")
+            return
+        }
+        val enabled = call.getBoolean("enabled", true)
+        Log.d(TAG, "togglePluginEnabled() called: pluginId=$pluginId, enabled=$enabled")
+        appLog("I", TAG, "togglePluginEnabled: pluginId=$pluginId, enabled=$enabled")
+
+        if (!PluginManager.isInitialized) {
+            call.reject("PluginManager not initialized")
+            return
+        }
+
+        GlobalScope.launch(Dispatchers.IO) {
+            try {
+                PluginManager.setPluginEnabled(pluginId, enabled)
+                val state = if (enabled) "ENABLED" else "DISABLED"
+                Log.i(TAG, "togglePluginEnabled SUCCESS: $pluginId -> $state")
+                appLog("I", TAG, "togglePluginEnabled SUCCESS: $pluginId -> $state")
+
+                val result = JSObject().apply {
+                    put("success", true)
+                    put("pluginId", pluginId)
+                    put("enabled", enabled)
+                }
+                withContext(Dispatchers.Main) { call.resolve(result) }
+            } catch (e: Error) {
+                Log.e(TAG, "togglePluginEnabled Error: ${e.javaClass.simpleName}: ${e.message}", e)
+                appLog("E", TAG, "togglePluginEnabled ERROR: ${e.javaClass.simpleName}: ${e.message}")
+                withContext(Dispatchers.Main) { call.reject("togglePluginEnabled error: ${e.javaClass.simpleName}: ${e.message}") }
+            } catch (e: Exception) {
+                Log.e(TAG, "togglePluginEnabled FAILED", e)
+                appLog("E", TAG, "togglePluginEnabled FAILED: ${e.message}\n${e.stackTraceToString().take(500)}")
+                withContext(Dispatchers.Main) { call.reject("togglePluginEnabled failed: ${e.message}") }
+            }
+        }
+    }
+
+    @PluginMethod
+    fun uninstallPlugin(call: PluginCall) {
+        val pluginId = call.getString("pluginId") ?: run {
+            call.reject("pluginId is required")
+            return
+        }
+        Log.d(TAG, "uninstallPlugin() called: pluginId=$pluginId")
+        appLog("I", TAG, "uninstallPlugin: pluginId=$pluginId")
+
+        if (!PluginManager.isInitialized) {
+            call.reject("PluginManager not initialized")
+            return
+        }
+
+        GlobalScope.launch(Dispatchers.IO) {
+            try {
+                val result = PluginManager.installerManager.uninstallPlugin(pluginId)
+                when (result) {
+                    is com.combo.core.runtime.installer.InstallerManager.UninstallResult.Success -> {
+                        Log.i(TAG, "uninstallPlugin SUCCESS: $pluginId")
+                        appLog("I", TAG, "uninstallPlugin SUCCESS: $pluginId")
+                        val res = JSObject().apply {
+                            put("success", true)
+                            put("pluginId", pluginId)
+                        }
+                        withContext(Dispatchers.Main) { call.resolve(res) }
+                    }
+                    is com.combo.core.runtime.installer.InstallerManager.UninstallResult.Failure -> {
+                        val reason = result.reason
+                        Log.e(TAG, "uninstallPlugin FAILED: $reason")
+                        appLog("E", TAG, "uninstallPlugin FAILED: $reason")
+                        withContext(Dispatchers.Main) { call.reject("Uninstall failed: $reason") }
+                    }
+                }
+            } catch (e: Error) {
+                Log.e(TAG, "uninstallPlugin Error: ${e.javaClass.simpleName}: ${e.message}", e)
+                appLog("E", TAG, "uninstallPlugin ERROR: ${e.javaClass.simpleName}: ${e.message}")
+                withContext(Dispatchers.Main) { call.reject("Uninstall error: ${e.javaClass.simpleName}: ${e.message}") }
+            } catch (e: Exception) {
+                Log.e(TAG, "uninstallPlugin FAILED", e)
+                appLog("E", TAG, "uninstallPlugin FAILED: ${e.message}\n${e.stackTraceToString().take(500)}")
+                withContext(Dispatchers.Main) { call.reject("Uninstall failed: ${e.message}") }
+            }
+        }
+    }
+
+    @PluginMethod
+    fun debugLifecycleFlow(call: PluginCall) {
+        val steps = mutableListOf<String>()
+        val pluginId = call.getString("pluginId", "com.encvgo.plugin.mpv")
+
+        steps.add("=== Plugin Lifecycle Diagnostic ===")
+
+        steps.add("1. PluginManager State:")
+        steps.add("   isInitialized = ${PluginManager.isInitialized}")
+
+        if (PluginManager.isInitialized) {
+            try {
+                val plugins = PluginManager.getAllInstallPlugins()
+                steps.add("   installedPlugins(${plugins.size}) = ${plugins.joinToString { "${it.id}(v${it.versionName},enabled=${it.enabled})" }}")
+                val target = plugins.find { it.id == pluginId }
+                if (target != null) {
+                    steps.add("   ✅ target '$pluginId' FOUND: v${target.versionName}, enabled=${target.enabled}")
+                } else {
+                    steps.add("   ❌ target '$pluginId' NOT found in installed list")
+                }
+            } catch (e: Exception) {
+                steps.add("   getAllInstallPlugins FAILED: ${e.message}")
+            }
+
+            steps.add("")
+            steps.add("2. ProxyManager State:")
+            try {
+                val pm = PluginManager.proxyManager
+                steps.add("   proxyManager = $pm")
+                steps.add("   hostActivity configured = ${pm != null}")
+            } catch (e: Exception) {
+                steps.add("   proxyManager check FAILED: ${e.message}")
+            }
+
+            steps.add("")
+            steps.add("3. Activity Resolution Test:")
+            try {
+                val hostActivityClass = com.encvgo.app.EncvHostActivity::class.java
+                steps.add("   EncvHostActivity.resolved = ✅ ($hostActivityClass)")
+            } catch (e: Exception) {
+                steps.add("   EncvHostActivity.resolved = ❌ (${e.message})")
+            }
+            try {
+                val ctx = context ?: activity!!
+                val pm = ctx.packageManager
+                val hostInfo = pm.getActivityInfo(
+                    android.content.ComponentName(ctx, com.encvgo.app.EncvHostActivity::class.java), 0
+                )
+                steps.add("   EncvHostActivity in Manifest = ✅ (name=${hostInfo.name})")
+            } catch (e: Exception) {
+                steps.add("   EncvHostActivity in Manifest = ❌ (${e.message})")
+            }
+
+            steps.add("")
+            steps.add("4. setPluginEnabled test (dry run):")
+            try {
+                val info = PluginManager.getPluginInfo(pluginId)
+                if (info != null) {
+                    steps.add("   getPluginInfo('$pluginId') = ✅ (enabled=${info.enabled})")
+                } else {
+                    steps.add("   getPluginInfo('$pluginId') = ❌ null (not installed?)")
+                }
+            } catch (e: Exception) {
+                steps.add("   getPluginInfo FAILED: ${e.javaClass.simpleName}: ${e.message}")
+            } catch (e: Error) {
+                steps.add("   getPluginInfo ERROR: ${e.javaClass.simpleName}: ${e.message}")
+            }
+
+            steps.add("")
+            steps.add("5. uninstallPlugin test (dry run — will NOT execute):")
+            steps.add("   installerManager.available = ${try { PluginManager.installerManager != null } catch (e: Exception) { "ERROR: ${e.message}" }}")
+        }
+
+        val result = JSObject()
+        result.put("debugLog", steps.joinToString("\n"))
+        call.resolve(result)
     }
 
     override fun handleOnActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

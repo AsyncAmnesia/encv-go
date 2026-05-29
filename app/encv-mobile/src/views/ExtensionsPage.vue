@@ -95,6 +95,9 @@
             <ion-button expand="block" fill="outline" color="warning" @click="handleDebugValidationStrategy" size="small">
               🔧 ValidationStrategy状态
             </ion-button>
+            <ion-button expand="block" fill="outline" color="warning" @click="handleDebugLifecycle" size="small">
+              🔧 插件生命周期诊断(禁用/卸载/Activity)
+            </ion-button>
           </div>
         </div>
       </template>
@@ -137,7 +140,7 @@ import {
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { Capacitor } from '@capacitor/core'
-import { isNative, pickAndInstallPlugin, checkInstalledPlugins, debugInstallFlow, debugKotlinReflect, debugApkValidation, debugValidationStrategy } from '@/plugins/GoProcess'
+import { isNative, pickAndInstallPlugin, checkInstalledPlugins, debugInstallFlow, debugKotlinReflect, debugApkValidation, debugValidationStrategy, togglePluginEnabled, uninstallPlugin, debugLifecycleFlow } from '@/plugins/GoProcess'
 import { showToast } from '@/composables/useToast'
 
 const { t } = useI18n()
@@ -223,11 +226,32 @@ async function handleInstall(_id: string) {
 }
 
 async function handleToggleEnabled(id: string, currentEnabled: boolean) {
-  console.log('Toggle extension:', id, '→', !currentEnabled)
+  if (!isNativePlatform()) return
+  const COMBO_LITE_ID: Record<string, string> = {
+    'mpv-player': 'com.encvgo.plugin.mpv',
+  }
+  const pluginId = COMBO_LITE_ID[id] || id
+  const newEnabled = !currentEnabled
+  console.log('Toggle extension:', id, '→', newEnabled ? 'ENABLED' : 'DISABLED')
+  try {
+    const result = await togglePluginEnabled(pluginId, newEnabled)
+    if (result.success) {
+      showToast({ message: newEnabled ? t('extensions.enabled') : t('extensions.disabled'), duration: 1500, color: 'success' })
+    } else {
+      showToast({ message: t('extensions.toggleFailed'), duration: 2000, color: 'danger' })
+    }
+  } catch (e: any) {
+    console.error('togglePluginEnabled failed:', e)
+    showToast({ message: e?.message || t('extensions.toggleFailed'), duration: 2000, color: 'danger' })
+  }
   await loadExtensions()
 }
 
 async function handleUninstall(id: string) {
+  const COMBO_LITE_ID: Record<string, string> = {
+    'mpv-player': 'com.encvgo.plugin.mpv',
+  }
+  const pluginId = COMBO_LITE_ID[id] || id
   const alert = await alertController.create({
     header: t('extensions.uninstallConfirm'),
     buttons: [
@@ -236,7 +260,19 @@ async function handleUninstall(id: string) {
         text: t('common.confirm'),
         role: 'confirm',
         handler: async () => {
-          console.log('Uninstall extension:', id)
+          if (!isNativePlatform()) return
+          console.log('Uninstall extension:', pluginId)
+          try {
+            const result = await uninstallPlugin(pluginId)
+            if (result.success) {
+              showToast({ message: t('extensions.uninstalled'), duration: 1500, color: 'success' })
+            } else {
+              showToast({ message: t('extensions.uninstallFailed'), duration: 2000, color: 'danger' })
+            }
+          } catch (e: any) {
+            console.error('uninstallPlugin failed:', e)
+            showToast({ message: e?.message || t('extensions.uninstallFailed'), duration: 2000, color: 'danger' })
+          }
           await loadExtensions()
         },
       },
@@ -302,6 +338,15 @@ async function handleDebugValidationStrategy() {
   try {
     const result = await debugValidationStrategy()
     await showDebugResult('🔧 ValidationStrategy诊断', result)
+  } catch (e: any) {
+    await showDebugResult('🔧 诊断失败', { debugLog: e?.message || String(e) })
+  }
+}
+
+async function handleDebugLifecycle() {
+  try {
+    const result = await debugLifecycleFlow('com.encvgo.plugin.mpv')
+    await showDebugResult('🔧 插件生命周期诊断', result)
   } catch (e: any) {
     await showDebugResult('🔧 诊断失败', { debugLog: e?.message || String(e) })
   }

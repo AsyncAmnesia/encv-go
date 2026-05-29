@@ -177,6 +177,33 @@ export async function checkInstalledPlugins(): Promise<Record<string, boolean>> 
   }
 }
 
+export async function togglePluginEnabled(pluginId: string, enabled: boolean): Promise<{ success: boolean; pluginId: string; enabled: boolean }> {
+  try {
+    return await GoProcess.togglePluginEnabled({ pluginId, enabled })
+  } catch (e: any) {
+    console.error('[ENCV] GoProcess.togglePluginEnabled() failed:', e?.message || e)
+    return { success: false, pluginId, enabled }
+  }
+}
+
+export async function uninstallPlugin(pluginId: string): Promise<{ success: boolean; pluginId: string }> {
+  try {
+    return await GoProcess.uninstallPlugin({ pluginId })
+  } catch (e: any) {
+    console.error('[ENCV] GoProcess.uninstallPlugin() failed:', e?.message || e)
+    return { success: false, pluginId }
+  }
+}
+
+export async function debugLifecycleFlow(pluginId?: string): Promise<Record<string, any>> {
+  try {
+    return await GoProcess.debugLifecycleFlow({ pluginId })
+  } catch (e) {
+    console.error('[ENCV] GoProcess.debugLifecycleFlow() failed:', e)
+    return { error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 export async function getLocalFilePath(path: string): Promise<string> {
   try {
     const result = await GoProcess.getLocalFilePath({ path })

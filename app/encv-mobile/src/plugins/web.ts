@@ -42,6 +42,9 @@ export interface GoProcessPlugin {
   installPlugin(options: { apkPath: string }): Promise<{ success: boolean; method?: string }>
   pickAndInstallPlugin(): Promise<{ success: boolean; method?: string; fileName?: string }>
   checkInstalledPlugins(): Promise<Record<string, boolean>>
+  togglePluginEnabled(options: { pluginId: string; enabled: boolean }): Promise<{ success: boolean; pluginId: string; enabled: boolean }>
+  uninstallPlugin(options: { pluginId: string }): Promise<{ success: boolean; pluginId: string }>
+  debugLifecycleFlow(options?: { pluginId?: string }): Promise<Record<string, any>>
   getLocalFilePath(options: { path: string }): Promise<{ path: string }>
   debugInstallFlow(): Promise<Record<string, any>>
   debugKotlinReflect(): Promise<Record<string, any>>
@@ -118,6 +121,18 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
 
   async checkInstalledPlugins(): Promise<Record<string, boolean>> {
     return {}
+  }
+
+  async togglePluginEnabled(_options: { pluginId: string; enabled: boolean }): Promise<{ success: boolean; pluginId: string; enabled: boolean }> {
+    return { success: false, pluginId: '', enabled: false }
+  }
+
+  async uninstallPlugin(_options: { pluginId: string }): Promise<{ success: boolean; pluginId: string }> {
+    return { success: false, pluginId: '' }
+  }
+
+  async debugLifecycleFlow(_options?: { pluginId?: string }): Promise<Record<string, any>> {
+    return { debugLog: 'web stub' }
   }
 
   async getLocalFilePath(_options: { path: string }): Promise<{ path: string }> {

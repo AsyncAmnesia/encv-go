@@ -65,13 +65,15 @@ object PlayerEntry {
         isExternal: Boolean
     ) {
         try {
-            val intent = Intent().apply {
-                setClassName(context, "com.encvgo.plugin.mpv.MpvPlayerActivity")
+            val intent = Intent(context, EncvHostActivity::class.java).apply {
                 putExtra(EXTRA_FILE_PATH, filePath)
                 putExtra(EXTRA_FILE_NAME, fileName)
                 putExtra(EXTRA_MIME_TYPE, mimeType)
                 putExtra(EXTRA_IS_EXTERNAL, isExternal)
                 putExtra(EXTRA_BACKEND_URL, getBackendBaseUrl(context))
+                putExtra(EXTRA_MODE, "mpv-plugin")
+                putExtra("_combo_plugin_id", PLUGIN_ID)
+                putExtra("_combo_target_activity", "com.encvgo.plugin.mpv.MpvPlayerActivity")
                 if (context !is android.app.Activity) {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
