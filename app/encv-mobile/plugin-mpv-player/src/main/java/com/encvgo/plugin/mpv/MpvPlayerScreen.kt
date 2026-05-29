@@ -72,6 +72,25 @@ fun MpvPlayerScreen(
         )
     }
 
+    DisposableEffect(engine) {
+        val listener: (MpvEngine.State) -> Unit = { state ->
+            when (state) {
+                is MpvEngine.State.Playing -> playerState = PlayerState.Playing
+                is MpvEngine.State.Paused -> playerState = PlayerState.Paused
+                is MpvEngine.State.AudioOnly -> playerState = PlayerState.AudioOnly
+                is MpvEngine.State.Ended -> playerState = PlayerState.Ended
+                is MpvEngine.State.Error -> playerState = PlayerState.Error(classifyError(state.message), state.message)
+                is MpvEngine.State.SurfaceReady -> { }
+                is MpvEngine.State.WaitingSurface -> { }
+                is MpvEngine.State.MpvReady -> { }
+            }
+        }
+        engine.stateListener = listener
+        onDispose {
+            engine.stateListener = null
+        }
+    }
+
     LaunchedEffect(playerState) {
         if (playerState == PlayerState.Playing || playerState == PlayerState.Paused || playerState == PlayerState.AudioOnly) {
             showControls = true
@@ -295,7 +314,6 @@ internal suspend fun startPlayback(
         }
 
         engine.play(streamUrl)
-        onStateChange(PlayerState.Loading)
     } catch (e: Exception) {
         val msg = e.message ?: e.toString()
         onError("Playback error: $msg")

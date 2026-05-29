@@ -80,16 +80,9 @@ class MpvPlayerActivity : BasePluginActivity() {
         if (!audioMode) {
             val decorView = host.window?.decorView as? ViewGroup
             if (decorView != null) {
-                engine.stateListener = { state ->
-                    when (state) {
-                        is MpvEngine.State.MpvReady -> {
-                            val contentRoot = decorView.findViewById<ViewGroup>(android.R.id.content)
-                            if (contentRoot != null) {
-                                engine.attachSurfaceView(contentRoot)
-                            }
-                        }
-                        else -> {}
-                    }
+                val contentRoot = decorView.findViewById<ViewGroup>(android.R.id.content)
+                if (contentRoot != null) {
+                    engine.attachSurfaceView(contentRoot)
                 }
             }
         }

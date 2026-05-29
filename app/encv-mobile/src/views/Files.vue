@@ -314,7 +314,7 @@
                 <ion-chip v-for="tag in file._tags" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
               </div>
             </ion-label>
-            <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
+            <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted).startsWith('encrypted')" color="warning" slot="end">
               ENCV
             </ion-badge>
             <ion-button v-if="searchQuery" slot="end" fill="clear" class="open-folder-btn" @click.stop="openContainingFolder(file)">
@@ -838,15 +838,21 @@ async function handleLongPress(file: FileItem) {
         handleEncryptFile(file)
       },
     })
-  } else if (category === 'encrypted') {
+  } else if (category.startsWith('encrypted')) {
+    const isEncryptedMedia = category === 'encrypted-video' || category === 'encrypted-audio'
     buttons.push({
-      text: t('files.preview'),
-      icon: image,
+      text: isEncryptedMedia ? t('files.play') : t('files.preview'),
+      icon: isEncryptedMedia ? videocam : image,
       handler: () => {
-        router.push({
-          path: '/tabs/preview',
-          query: { path: file.path, name: file.name, isEncrypted: 'true' },
-        })
+        if (isEncryptedMedia) {
+          const playCategory = category.replace('encrypted-', '')
+          playMedia(file, playCategory)
+        } else {
+          router.push({
+            path: '/tabs/preview',
+            query: { path: file.path, name: file.name, isEncrypted: 'true' },
+          })
+        }
       },
     })
     buttons.push({
