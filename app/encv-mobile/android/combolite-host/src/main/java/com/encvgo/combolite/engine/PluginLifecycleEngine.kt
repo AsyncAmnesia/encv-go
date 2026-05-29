@@ -78,14 +78,18 @@ internal object PluginLifecycleEngine {
             val result = PluginManager.installerManager.installPlugin(apkFile, true)
             when (result) {
                 is com.combo.core.runtime.installer.InstallerManager.InstallResult.Success -> {
-                    try {
-                        PluginManager.loadEnabledPlugins()
-                    } catch (_: Exception) {}
+                    try { PluginManager.loadEnabledPlugins() } catch (_: Exception) {}
                     val pi = result.pluginInfo
+                    val pluginId = pi.id
+                    if (!pi.enabled) {
+                        Log.i(TAG, "installPlugin: plugin $pluginId installed but disabled, enabling...")
+                        try { PluginManager.setPluginEnabled(pluginId, true) } catch (_: Exception) {}
+                        try { PluginManager.loadEnabledPlugins() } catch (_: Exception) {}
+                    }
                     OperationResult.Success(
                         PluginState(
                             id = pi.id, name = pi.name, versionName = pi.versionName,
-                            versionCode = pi.versionCode, enabled = pi.enabled,
+                            versionCode = pi.versionCode, enabled = true,
                             installed = true, entryClass = pi.entryClass, description = pi.description
                         )
                     )

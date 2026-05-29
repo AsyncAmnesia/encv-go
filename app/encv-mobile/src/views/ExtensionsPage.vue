@@ -207,6 +207,7 @@ async function handleInstallFromFile() {
     ])
     if (result.success) {
       showToast({ message: t('extensions.installSuccess'), duration: 2000, color: 'success' })
+      window.dispatchEvent(new CustomEvent('plugin-state-changed'))
       await loadExtensions()
     } else {
       installError.value = result.error || t('extensions.installFailed')
@@ -234,6 +235,7 @@ async function handleToggleEnabled(id: string, currentEnabled: boolean) {
     const result = await togglePluginEnabled(pluginId, newEnabled)
     if (result.success) {
       showToast({ message: newEnabled ? t('extensions.enabled') : t('extensions.disabled'), duration: 1500, color: 'success' })
+      window.dispatchEvent(new CustomEvent('plugin-state-changed'))
     } else {
       showToast({ message: t('extensions.toggleFailed'), duration: 2000, color: 'danger' })
     }
@@ -263,6 +265,7 @@ async function handleUninstall(id: string) {
             const result = await uninstallPlugin(pluginId)
             if (result.success) {
               showToast({ message: t('extensions.uninstalled'), duration: 1500, color: 'success' })
+              window.dispatchEvent(new CustomEvent('plugin-state-changed'))
             } else {
               showToast({ message: t('extensions.uninstallFailed'), duration: 2000, color: 'danger' })
             }

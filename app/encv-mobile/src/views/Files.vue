@@ -468,10 +468,23 @@ import { showToast } from '@/composables/useToast'
 import { Share } from '@capacitor/share'
 import { PLAY_MODE, type PlayMode, VIDEO_DEFAULT, AUDIO_DEFAULT } from '@/constants/player'
 
+const ALL_VALID_MODES: PlayMode[] = [
+  PLAY_MODE.ARTPLAYER,
+  PLAY_MODE.MPV_PLUGIN,
+  PLAY_MODE.MPV_ACTIVITY,
+  PLAY_MODE.MPV_FRAGMENT,
+  PLAY_MODE.MPV_COMPOSE,
+  PLAY_MODE.EXTERNAL,
+]
+
+function isValidPlayMode(value: string): value is PlayMode {
+  return (ALL_VALID_MODES as readonly string[]).includes(value)
+}
+
 function getPlayMode(mediaType: 'video' | 'audio'): PlayMode {
   const key = mediaType === 'video' ? 'encv_player_video' : 'encv_player_audio'
   const stored = localStorage.getItem(key)
-  if (stored === PLAY_MODE.ARTPLAYER || stored === PLAY_MODE.MPV_PLUGIN || stored === PLAY_MODE.EXTERNAL) return stored as PlayMode
+  if (stored && isValidPlayMode(stored)) return stored
   return mediaType === 'video' ? VIDEO_DEFAULT : AUDIO_DEFAULT
 }
 
@@ -495,8 +508,11 @@ async function playMedia(file: FileItem, category: string) {
       router.push({ path: '/player', query: { path: file.path, name: file.name } })
       break
     case PLAY_MODE.MPV_PLUGIN:
+    case PLAY_MODE.MPV_ACTIVITY:
+    case PLAY_MODE.MPV_FRAGMENT:
+    case PLAY_MODE.MPV_COMPOSE:
       if (isNative()) {
-        const result = await openPlayer(file.path, file.name, mimeType, PLAY_MODE.MPV_PLUGIN)
+        const result = await openPlayer(file.path, file.name, mimeType, mode)
         if (!result.success) {
           console.error('[Files] playMedia failed:', result.error, result.errorDetail)
           playError.value = result.error || '播放失败'
@@ -514,6 +530,10 @@ async function playMedia(file: FileItem, category: string) {
       } else {
         router.push({ path: '/player', query: { path: file.path, name: file.name } })
       }
+      break
+    default:
+      console.warn('[Files] Unknown play mode:', mode, '— falling back to artplayer')
+      router.push({ path: '/player', query: { path: file.path, name: file.name } })
       break
   }
 }

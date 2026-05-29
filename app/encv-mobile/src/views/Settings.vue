@@ -354,7 +354,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
@@ -422,16 +422,18 @@ function isMpvMode(mode: string): boolean {
   return isMpvSubMode(mode) || mode === 'mpv-plugin' || mode === 'mpv'
 }
 
-function handleVideoPlayerChange(event: CustomEvent) {
+async function handleVideoPlayerChange(event: CustomEvent) {
   const value = event.detail.value
   videoPlayerMode.value = value
   localStorage.setItem('encv_player_video', value)
+  if (isMpvMode(value)) await refreshMpvPluginStatus()
 }
 
-function handleAudioPlayerChange(event: CustomEvent) {
+async function handleAudioPlayerChange(event: CustomEvent) {
   const value = event.detail.value
   audioPlayerMode.value = value
   localStorage.setItem('encv_player_audio', value)
+  if (isMpvMode(value)) await refreshMpvPluginStatus()
 }
 
 function handleScreenOrientationChange(event: CustomEvent) {
@@ -746,6 +748,11 @@ onMounted(async () => {
     }
     loadPreviewConfig()
   }
+  window.addEventListener('plugin-state-changed', refreshMpvPluginStatus)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('plugin-state-changed', refreshMpvPluginStatus)
 })
 
 async function refreshMpvPluginStatus() {
