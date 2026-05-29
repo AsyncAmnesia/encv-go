@@ -22,15 +22,22 @@
 | `switch(mode)` 分发 | [Files.vue L497](app/encv-mobile/src/views/Files.vue#L497) | 只有 `case MPV_PLUGIN`，缺少 3 个新 sub-mode 的 case |
 | `openPlayer()` 参数 | [Files.vue L499](app/encv-mobile/src/views/Files.vue#L499) | 硬编码传 `PLAY_MODE.MPV_PLUGIN`，应传实际 `mode` 变量 |
 
-### Bug 2: 安装扩展后需重启才能识别
+### Bug 2: 插件状态变更后 Settings 不自动刷新
 
 **根因分析**：
 
-`installPlugin()` 成功后调用 `PluginManager.loadEnabledPlugins()`（[PluginLifecycleEngine.kt L82](app/encv-mobile/android/combolite-host/src/main/java/com/encvgo/combolite/engine/PluginLifecycleEngine.kt#L82)），但 Settings.vue 的 `refreshMpvPluginStatus()` 使用的是 `getPluginFullState()` → `isPluginLoaded()` → `PluginManager.getPluginInfo()`。
+Settings.vue 的 MPV 状态徽章仅在以下时机刷新：
+- `onMounted`（页面首次加载）
+- `ionChange`（用户手动切换播放器选项时）
 
-问题在于：`loadEnabledPlugins()` 是异步加载所有已启用插件到 ClassLoader，但 **Settings 页面不会自动刷新状态**。用户安装后需要手动切走再切回来触发 `ionChange` 才会重新查询。如果 `loadEnabledPlugins` 在安装流程中已经执行了但 `getPluginInfo` 仍返回 null，说明加载是异步的或者有延迟。
+当用户在 ExtensionsPage 执行以下操作后，Settings 的 MPV 徽章不会自动更新：
+- **安装插件** (`pickAndInstallPlugin` 成功)
+- **启用/禁用插件** (`togglePluginEnabled`)
+- **卸载插件** (`uninstallPlugin`)
 
-**修复方向**：安装成功后自动刷新 Settings 状态 + `ensurePluginLoaded` 作为兜底（已有）。
+这些操作都会改变 PluginManager 内部状态（XML 持久化 / ClassLoader 加载），但 Settings 页面完全不知情。
+
+**修复方向**：所有插件状态变更操作完成后，广播通用事件 `'plugin-state-changed'`，Settings 监听后自动刷新。
 
 ---
 
@@ -112,22 +119,37 @@ const result = await openPlayer(file.path, file.name, mimeType, mode)
 
 ---
 
-### Task 3: 安装后自动刷新（Bug 2 改善）
+### Task 3: 插件状态变更后自动刷新 MPV 状态（Bug 2 修复）
 
-#### SubTask 3.1: ExtensionsPage 安装成功后广播刷新事件
+#### SubTask 3.1: ExtensionsPage 所有状态变更操作后广播事件
 
-安装 MPV 插件成功后，通过 Capacitor 自定义事件或 Vue provide/inject 通知 Settings 刷新。
+以下 3 个操作成功后均 dispatch 事件：
 
-最简方案：使用 `window.dispatchEvent(new CustomEvent('plugin-installed'))`
+```typescript
+// 安装成功后 (L208-209)
+if (result.success) {
+  showToast({ message: t('extensions.installSuccess'), ... })
+  window.dispatchEvent(new CustomEvent('plugin-state-changed'))
+  await loadExtensions()
+}
 
-#### SubTask 3.2: Settings.vue 监听插件安装事件
+// 启用/禁用成功后 (L244)
+await loadExtensions()
+window.dispatchEvent(new CustomEvent('plugin-state-changed'))
+
+// 卸载成功后 (L273)
+await loadExtensions()
+window.dispatchEvent(new CustomEvent('plugin-state-changed'))
+```
+
+#### SubTask 3.2: Settings.vue 监听插件状态变更事件
 
 ```typescript
 onMounted(() => {
-  window.addEventListener('plugin-installed', refreshMpvPluginStatus)
+  window.addEventListener('plugin-state-changed', refreshMpvPluginStatus)
 })
 onUnmounted(() => {
-  window.removeEventListener('plugin-installed', refreshMpvPluginStatus)
+  window.removeEventListener('plugin-state-changed', refreshMpvPluginStatus)
 })
 ```
 
@@ -138,8 +160,8 @@ onUnmounted(() => {
 | 文件 | 改动内容 |
 |------|---------|
 | [Files.vue](app/encv-mobile/src/views/Files.vue) | `getPlayMode()` 白名单扩展 + switch 覆盖全部子模式 + openPlayer 传实际 mode |
-| [Settings.vue](app/encv-mobile/src/views/Settings.vue) | 监听 `plugin-installed` 事件自动刷新 MPV 状态 |
-| [ExtensionsPage.vue](app/encv-mobile/src/views/ExtensionsPage.vue) | 安装成功后 dispatch `plugin-installed` 事件 |
+| [Settings.vue](app/encv-mobile/src/views/Settings.vue) | 监听 `plugin-state-changed` 事件自动刷新 MPV 状态 |
+| [ExtensionsPage.vue](app/encv-mobile/src/views/ExtensionsPage.vue) | 安装/启用/卸载成功后 dispatch `plugin-state-changed` 事件 |
 
 ## 铁律合规检查
 
@@ -158,3 +180,5 @@ onUnmounted(() => {
 - [ ] Settings 选 "MPV (Fragment)" → 同上流程，Kotlin 端 `[ModeB-Fragment]` 日志出现
 - [ ] Settings 选 "MPV (Compose)" → 同上流程，Kotlin 端 `[ModeA-Compose]` 日志出现
 - [ ] 安装 MPV 后 Settings 自动刷新状态（无需手动切选项）
+- [ ] 启用/禁用 MPV 后 Settings 徽章自动更新
+- [ ] 卸载 MPV 后 Settings 徽章自动变为"未安装"
