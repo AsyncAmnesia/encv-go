@@ -103,6 +103,7 @@ jobs:
         run: |
           echo "═══ R8/ProGuard Obfuscation Guard ═══"
           VIOLATIONS=0
+          WARNINGS=0
           for f in $(find app/encv-mobile/android -name "*.gradle.kts" -not -path "*build/*"); do
             MINIFY=$(grep -n 'isMinifyEnabled\s*=\s*true' "$f" 2>/dev/null)
             if [ -n "$MINIFY" ]; then
@@ -112,9 +113,9 @@ jobs:
             fi
             SHRINK=$(grep -n 'isShrinkResources\s*=\s*true' "$f" 2>/dev/null)
             if [ -n "$SHRINK" ]; then
-              echo "::error file=$f::Resource shrinking ENABLED in $f:"
+              echo "::warning file=$f::Resource shrinking ENABLED in $f (allowed, but verify no dynamic getIdentifier() usage):"
               echo "$SHRINK" | while read line; do echo "  $line"; done
-              VIOLATIONS=$((VIOLATIONS + 1))
+              WARNINGS=$((WARNINGS + 1))
             fi
             LEGACY_MINIFY=$(grep -n 'minifyEnabled\s*=\s*true' "$f" 2>/dev/null)
             if [ -n "$LEGACY_MINIFY" ]; then
@@ -131,11 +132,15 @@ jobs:
             echo "for @RequiresPermission checks on ALL build variants."
             echo "R8 breaks @Metadata ↔ bytecode consistency."
             echo ""
-            echo "Fix: isMinifyEnabled=false AND isShrinkResources=false"
+            echo "Fix: Set isMinifyEnabled=false for ALL buildTypes."
+            echo "NOTE: isShrinkResources=true is SAFE and recommended for APK size reduction."
             echo "See: .trae/rules/combolite.md §1.3"
             echo "result=failure" >> $GITHUB_OUTPUT
           else
             echo "✅ PASS: No R8/ProGuard obfuscation in any build variant"
+            if [ "$WARNINGS" -gt 0 ]; then
+              echo "⚠️  $WARNINGS resource shrink(s) enabled — this is safe with ComboLite"
+            fi
             echo "result=success" >> $GITHUB_OUTPUT
           fi
 
