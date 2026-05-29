@@ -5,10 +5,11 @@ export type {
   GoProcessResult,
   PermissionResult,
   PermissionCheckResult,
-  GoProcessPlugin
+  GoProcessPlugin,
+  PluginFullState
 } from './web'
 
-import type { GoProcessPlugin, GoProcessResult, GoProcessStatus, PermissionResult, PermissionCheckResult } from './web'
+import type { GoProcessPlugin, GoProcessResult, GoProcessStatus, PermissionResult, PermissionCheckResult, PluginFullState } from './web'
 
 const GoProcess = registerPlugin<GoProcessPlugin>('GoProcess', {
   web: () => import('./web').then(m => new m.GoProcessWeb()),
@@ -283,5 +284,25 @@ export async function saveDevLogs(logs: string): Promise<{ success: boolean; pat
   } catch (e) {
     console.error('[ENCV] GoProcess.saveDevLogs() failed:', e)
     return { success: false }
+  }
+}
+
+export async function getPluginFullState(pluginId: string): Promise<PluginFullState> {
+  try {
+    const result = await GoProcess.getPluginFullState({ pluginId })
+    return result
+  } catch (e) {
+    console.error('[GoProcess] getPluginFullState failed:', e)
+    return { id: pluginId, status: 'error', name: '', version: '' }
+  }
+}
+
+export async function ensurePluginLoaded(pluginId: string): Promise<boolean> {
+  try {
+    const result = await GoProcess.ensurePluginLoaded({ pluginId })
+    return result.success === true
+  } catch (e) {
+    console.error('[GoProcess] ensurePluginLoaded failed:', e)
+    return false
   }
 }

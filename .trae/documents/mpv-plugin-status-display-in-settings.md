@@ -128,7 +128,7 @@ export async function getPluginFullState(pluginId: string): Promise<PluginFullSt
 }
 ```
 
-#### Step 5: Settings.vue — 显示 MPV 插件状态 + 禁用未就绪选项
+#### Step 5: Settings.vue — 显示 MPV 插件状态 + 禁用未就绪选项 + 错误显示
 
 ```vue
 <ion-item>
@@ -158,6 +158,12 @@ export async function getPluginFullState(pluginId: string): Promise<PluginFullSt
             <span v-if="mpvPluginStatus === 'ready'" style="color: var(--ion-color-success)">
                 ✓
             </span>
+            <span v-if="mpvPluginStatus === 'error'" style="color: var(--ion-color-danger)">
+                (查询失败)
+            </span>
+            <span v-if="mpvPluginStatus === 'framework_not_ready'" style="color: var(--ion-color-warning)">
+                (框架未初始化)
+            </span>
         </ion-select-option>
         <ion-select-option value="external">{{ t('settings.openExternal') }}</ion-select-option>
     </ion-select>
@@ -166,14 +172,61 @@ export async function getPluginFullState(pluginId: string): Promise<PluginFullSt
 
 ```typescript
 const mpvPluginStatus = ref<string>('unknown')
+const mpvPluginError = ref<string>('')
 
 onMounted(async () => {
     if (isNative()) {
-        const state = await getPluginFullState('com.encvgo.plugin.mpv')
-        mpvPluginStatus.value = state.status
-        console.info('[Settings] MPV plugin status:', state.status)
+        try {
+            const state = await getPluginFullState('com.encvgo.plugin.mpv')
+            mpvPluginStatus.value = state.status
+            mpvPluginError.value = ''
+            console.info('[Settings] MPV plugin status:', state.status)
+            
+            // 扩展已启用但未加载 → 自动尝试加载
+            if (state.status === 'not_loaded') {
+                console.info('[Settings] MPV plugin enabled but not loaded, attempting to load...')
+                const loaded = await ensurePluginLoaded('com.encvgo.plugin.mpv')
+                if (loaded) {
+                    mpvPluginStatus.value = 'ready'
+                    console.info('[Settings] MPV plugin loaded successfully')
+                } else {
+                    mpvPluginStatus.value = 'load_failed'
+                    mpvPluginError.value = '插件加载失败，请重启应用'
+                    console.warn('[Settings] MPV plugin load failed')
+                }
+            }
+        } catch (e: any) {
+            console.error('[Settings] getPluginFullState failed:', e)
+            mpvPluginStatus.value = 'error'
+            mpvPluginError.value = e.message || '查询插件状态失败'
+        }
     }
 })
+```
+
+#### Step 6: GoProcess.ts — 补充 ensurePluginLoaded 函数
+
+```typescript
+export async function ensurePluginLoaded(pluginId: string): Promise<boolean> {
+    try {
+        const result = await GoProcess.ensurePluginLoaded({ pluginId })
+        return result.success === true
+    } catch (e) {
+        console.error('[GoProcess] ensurePluginLoaded failed:', e)
+        return false
+    }
+}
+```
+
+#### Step 7: GoProcessPlugin.kt — 补充 ensurePluginLoaded @PluginMethod
+
+```kotlin
+@PluginMethod
+fun ensurePluginLoaded(call: PluginCall) {
+    val pluginId = call.getString("pluginId") ?: run { call.reject("pluginId required"); return }
+    val success = EncvComboLiteHost.ensurePluginLoaded(pluginId)
+    call.resolve(JSObject().apply { put("success", success) })
+}
 ```
 
 ## 任务清单
@@ -182,28 +235,61 @@ onMounted(async () => {
   - [ ] SubTask 1.1: 新增 `getPluginFullState()` 方法
   - [ ] SubTask 1.2: 新增 `PluginFullState` 数据类
   - [ ] SubTask 1.3: 修复 `isPluginAvailable()` 检查完整状态
+  - [ ] SubTask 1.4: 新增 `ensurePluginLoaded()` 公开方法（返回 Boolean）
 - [ ] Task 2: PluginLifecycleEngine.kt — ensurePluginLoaded 返回布尔值 + 日志
   - [ ] SubTask 2.1: `ensurePluginLoaded()` 返回 Boolean
   - [ ] SubTask 2.2: 添加 Log.i 日志输出
   - [ ] SubTask 2.3: 新增 `isPluginLoaded()` 方法
 - [ ] Task 3: GoProcessPlugin.kt — 新增状态查询 API
   - [ ] SubTask 3.1: 新增 `getPluginFullState()` @PluginMethod
+  - [ ] SubTask 3.2: 新增 `ensurePluginLoaded()` @PluginMethod
 - [ ] Task 4: GoProcess.ts — 前端 API 封装
-  - [ ] SubTask 4.1: 新增 `PluginFullState` 类型定义
-  - [ ] SubTask 4.2: 新增 `getPluginFullState()` 函数
-- [ ] Task 5: Settings.vue — 显示 MPV 插件状态 + 禁用未就绪选项
-  - [ ] SubTask 5.1: 新增 `mpvPluginStatus` ref
-  - [ ] SubTask 5.2: onMounted 时查询插件状态
-  - [ ] SubTask 5.3: MPV 选项显示状态标签
+  - [ ] SubTask 4.1: 新增 `PluginFullState` 类型定义（含 error/load_failed 状态）
+  - [ ] SubTask 4.2: 新增 `getPluginFullState()` 函数（含错误处理）
+  - [ ] SubTask 4.3: 新增 `ensurePluginLoaded()` 函数
+- [ ] Task 5: Settings.vue — 显示 MPV 插件状态 + 禁用未就绪选项 + 错误显示 + 自动加载
+  - [ ] SubTask 5.1: 新增 `mpvPluginStatus` ref + `mpvPluginError` ref
+  - [ ] SubTask 5.2: onMounted 时查询插件状态（try-catch 错误处理）
+  - [ ] SubTask 5.3: MPV 选项显示所有状态标签（error/framework_not_ready/load_failed）
   - [ ] SubTask 5.4: MPV 未就绪时禁用选项
+  - [ ] SubTask 5.5: 扩展已启用但未加载时自动尝试加载
 
 ## 验证标准
 
-1. **设置页面**：MPV 播放器选项旁显示状态（未安装/已禁用/已加载）
+1. **设置页面**：MPV 播放器选项旁显示所有状态（未安装/已禁用/未加载/查询失败/框架未初始化/加载失败）
 2. **选项禁用**：MPV 未就绪时选项禁用，用户无法选择
 3. **状态准确**：状态与实际插件状态一致
-4. **日志输出**：关键路径有 Log.i 输出，便于调试
-5. **无白屏**：用户选择 MPV 时若未就绪，选项已禁用不会触发
+4. **错误显示**：调用失败时显示错误状态标签，不隐藏错误
+5. **自动加载**：插件已启用但未加载时，自动尝试加载（这是正常流程，不是 fallback）
+6. **日志输出**：关键路径有 Log.i 输出，便于调试
+7. **无白屏**：用户选择 MPV 时若未就绪，选项已禁用不会触发
+
+## 状态流转图
+
+```
+用户打开设置页面
+    ↓
+查询 getPluginFullState('com.encvgo.plugin.mpv')
+    ↓
+┌─────────────────────────────────────────────────────┐
+│ 返回状态                                             │
+├─────────────────────────────────────────────────────┤
+│ framework_not_ready → 禁用选项 + 显示"(框架未初始化)" │
+│ not_installed       → 禁用选项 + 显示"(未安装)"      │
+│ disabled            → 禁用选项 + 显示"(已禁用)"      │
+│ not_loaded          → 自动尝试加载                   │
+│     ├─ 成功 → ready → 启用选项 + 显示"✓"            │
+│     └─ 失败 → load_failed → 禁用 + 显示"(加载失败)" │
+│ ready               → 启用选项 + 显示"✓"            │
+│ error (调用失败)    → 禁用选项 + 显示"(查询失败)"    │
+└─────────────────────────────────────────────────────┘
+```
+
+## 铁律合规说明
+
+1. **严禁 fallback**：插件不可用时禁用选项，用户必须主动选择其他播放器
+2. **严禁 Toast**：所有状态通过选项旁的标签显示，持久可见
+3. **自动加载不是 fallback**：插件已启用但未加载时自动加载，是正常初始化流程，不是切换播放器
 
 ## 风险评估
 

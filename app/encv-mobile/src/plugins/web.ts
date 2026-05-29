@@ -23,6 +23,13 @@ export interface PermissionCheckResult {
   batteryOptimization: boolean
 }
 
+export interface PluginFullState {
+  id: string
+  status: 'ready' | 'not_installed' | 'disabled' | 'not_loaded' | 'framework_not_ready' | 'error' | 'load_failed'
+  name: string
+  version: string
+}
+
 export interface GoProcessPlugin {
   restart(): Promise<GoProcessResult>
   stop(): Promise<GoProcessResult>
@@ -42,6 +49,8 @@ export interface GoProcessPlugin {
   installPlugin(options: { apkPath: string }): Promise<{ success: boolean; method?: string }>
   pickAndInstallPlugin(): Promise<{ success: boolean; method?: string; fileName?: string }>
   checkInstalledPlugins(): Promise<Record<string, { installed: boolean; enabled: boolean; versionName: string }>>
+  getPluginFullState(options: { pluginId: string }): Promise<PluginFullState>
+  ensurePluginLoaded(options: { pluginId: string }): Promise<{ success: boolean }>
   togglePluginEnabled(options: { pluginId: string; enabled: boolean }): Promise<{ success: boolean; pluginId: string; enabled: boolean }>
   uninstallPlugin(options: { pluginId: string }): Promise<{ success: boolean; pluginId: string }>
   debugLifecycleFlow(options?: { pluginId?: string }): Promise<Record<string, any>>
@@ -121,6 +130,14 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
 
   async checkInstalledPlugins(): Promise<Record<string, { installed: boolean; enabled: boolean; versionName: string }>> {
     return {}
+  }
+
+  async getPluginFullState(_options: { pluginId: string }): Promise<PluginFullState> {
+    return { id: _options.pluginId, status: 'not_installed', name: '', version: '' }
+  }
+
+  async ensurePluginLoaded(_options: { pluginId: string }): Promise<{ success: boolean }> {
+    return { success: false }
   }
 
   async togglePluginEnabled(_options: { pluginId: string; enabled: boolean }): Promise<{ success: boolean; pluginId: string; enabled: boolean }> {

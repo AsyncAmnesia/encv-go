@@ -2,6 +2,7 @@ package com.encvgo.combolite.engine
 
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import com.combo.core.runtime.PluginManager
 import com.combo.core.runtime.ValidationStrategy
 import com.combo.core.security.crash.PluginCrashHandler
@@ -140,13 +141,32 @@ internal object PluginLifecycleEngine {
         }
     }
 
-    fun ensurePluginLoaded(pluginId: String) {
-        if (!PluginManager.isInitialized) return
-        try {
-            if (PluginManager.getPluginInfo(pluginId) == null) {
-                runBlocking { launchPlugin(pluginId) }
+    fun isPluginLoaded(pluginId: String): Boolean {
+        if (!PluginManager.isInitialized) {
+            Log.w(TAG, "isPluginLoaded($pluginId): PluginManager not initialized")
+            return false
+        }
+        return PluginManager.getPluginInfo(pluginId) != null
+    }
+
+    fun ensurePluginLoaded(pluginId: String): Boolean {
+        if (!PluginManager.isInitialized) {
+            Log.w(TAG, "ensurePluginLoaded($pluginId): PluginManager not initialized")
+            return false
+        }
+        return try {
+            if (PluginManager.getPluginInfo(pluginId) != null) {
+                Log.i(TAG, "ensurePluginLoaded($pluginId): already loaded")
+                true
+            } else {
+                Log.i(TAG, "ensurePluginLoaded($pluginId): loading...")
+                val success = runBlocking { launchPlugin(pluginId) }
+                Log.i(TAG, "ensurePluginLoaded($pluginId): load result=$success")
+                success
             }
         } catch (e: Exception) {
+            Log.e(TAG, "ensurePluginLoaded($pluginId): failed", e)
+            false
         }
     }
 

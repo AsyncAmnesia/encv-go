@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import com.encvgo.combolite.engine.PluginLifecycleEngine
 import com.encvgo.combolite.model.OperationResult
+import com.encvgo.combolite.model.PluginFullState
 import com.encvgo.combolite.model.PluginState
 
 object EncvComboLiteHost {
@@ -14,8 +15,33 @@ object EncvComboLiteHost {
 
     fun getPluginInfo(pluginId: String): PluginState? = PluginLifecycleEngine.getPluginInfo(pluginId)
 
-    fun isPluginAvailable(pluginId: String): Boolean =
-        getInstalledPlugins().any { it.id == pluginId && it.enabled }
+    fun getPluginFullState(pluginId: String): PluginFullState {
+        if (!PluginLifecycleEngine.isInitialized()) {
+            return PluginFullState(id = pluginId, status = "framework_not_ready")
+        }
+        val state = getPluginInfo(pluginId)
+        if (state == null) {
+            return PluginFullState(id = pluginId, status = "not_installed")
+        }
+        if (!state.enabled) {
+            return PluginFullState(id = pluginId, status = "disabled", name = state.name)
+        }
+        val loaded = PluginLifecycleEngine.isPluginLoaded(pluginId)
+        return PluginFullState(
+            id = pluginId,
+            status = if (loaded) "ready" else "not_loaded",
+            name = state.name,
+            version = state.versionName
+        )
+    }
+
+    fun isPluginAvailable(pluginId: String): Boolean {
+        if (!PluginLifecycleEngine.isInitialized()) return false
+        val state = getPluginInfo(pluginId)
+        return state != null && state.installed && state.enabled && PluginLifecycleEngine.isPluginLoaded(pluginId)
+    }
+
+    fun ensurePluginLoaded(pluginId: String): Boolean = PluginLifecycleEngine.ensurePluginLoaded(pluginId)
 
     suspend fun installPlugin(apkFile: java.io.File): OperationResult<PluginState> =
         PluginLifecycleEngine.installPlugin(apkFile)
@@ -28,8 +54,6 @@ object EncvComboLiteHost {
 
     suspend fun launchPlugin(pluginId: String): Boolean =
         PluginLifecycleEngine.launchPlugin(pluginId)
-
-    fun ensurePluginLoaded(pluginId: String) = PluginLifecycleEngine.ensurePluginLoaded(pluginId)
 
     fun createProxyIntent(
         context: Context,

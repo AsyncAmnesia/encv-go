@@ -19,6 +19,7 @@ import com.getcapacitor.annotation.CapacitorPlugin
 import com.encvgo.combolite.EncvComboLiteHost
 import com.encvgo.combolite.diagnostic.DiagnosticKit
 import com.encvgo.combolite.model.OperationResult
+import com.encvgo.combolite.model.PluginFullState
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
@@ -215,6 +216,20 @@ class GoProcessPlugin : Plugin() {
             result.put(plugin.id, JSObject().apply { put("installed", true); put("enabled", plugin.enabled); put("versionName", plugin.versionName) })
         }
         call.resolve(result)
+    }
+
+    @PluginMethod
+    fun getPluginFullState(call: PluginCall) {
+        val pluginId = call.getString("pluginId") ?: run { call.reject("pluginId required"); return }
+        val state = EncvComboLiteHost.getPluginFullState(pluginId)
+        call.resolve(JSObject().apply { put("id", state.id); put("status", state.status); put("name", state.name ?: ""); put("version", state.version ?: "") })
+    }
+
+    @PluginMethod
+    fun ensurePluginLoaded(call: PluginCall) {
+        val pluginId = call.getString("pluginId") ?: run { call.reject("pluginId required"); return }
+        val success = EncvComboLiteHost.ensurePluginLoaded(pluginId)
+        call.resolve(JSObject().apply { put("success", success) })
     }
 
     @PluginMethod
