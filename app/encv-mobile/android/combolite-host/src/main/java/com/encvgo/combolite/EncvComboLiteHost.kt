@@ -21,26 +21,26 @@ object EncvComboLiteHost {
         if (!PluginLifecycleEngine.isInitialized()) {
             return PluginFullState(id = pluginId, status = "framework_not_ready")
         }
-        val state = getPluginInfo(pluginId)
-        if (state == null) {
+        val installed = getInstalledPlugins().find { it.id == pluginId }
+        if (installed == null) {
             return PluginFullState(id = pluginId, status = "not_installed")
         }
-        if (!state.enabled) {
-            return PluginFullState(id = pluginId, status = "disabled", name = state.name)
+        if (!installed.enabled) {
+            return PluginFullState(id = pluginId, status = "disabled", name = installed.name, version = installed.versionName)
         }
         val loaded = PluginLifecycleEngine.isPluginLoaded(pluginId)
         return PluginFullState(
             id = pluginId,
             status = if (loaded) "ready" else "not_loaded",
-            name = state.name,
-            version = state.versionName
+            name = installed.name,
+            version = installed.versionName
         )
     }
 
     fun isPluginAvailable(pluginId: String): Boolean {
         if (!PluginLifecycleEngine.isInitialized()) return false
-        val state = getPluginInfo(pluginId)
-        return state != null && state.installed && state.enabled && PluginLifecycleEngine.isPluginLoaded(pluginId)
+        val installed = getInstalledPlugins().find { it.id == pluginId }
+        return installed != null && installed.enabled && PluginLifecycleEngine.isPluginLoaded(pluginId)
     }
 
     fun ensurePluginLoaded(pluginId: String): Boolean = PluginLifecycleEngine.ensurePluginLoaded(pluginId)
