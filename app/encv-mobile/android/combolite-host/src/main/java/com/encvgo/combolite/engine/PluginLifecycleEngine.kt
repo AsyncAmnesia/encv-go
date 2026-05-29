@@ -192,8 +192,7 @@ internal object PluginLifecycleEngine {
         extras: Map<String, Any> = emptyMap()
     ): Intent {
         return Intent(context, hostActivityClass).apply {
-            putExtra("_combo_plugin_id", pluginId)
-            putExtra("_combo_target_activity", targetActivity)
+            putExtra("plugin_activity_class_name", targetActivity)
             for ((key, value) in extras) {
                 when (value) {
                     is String -> putExtra(key, value)

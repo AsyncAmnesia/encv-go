@@ -128,8 +128,8 @@ class GoProcessPlugin : Plugin() {
             val mode = call.getString("mode") ?: ""
             val effectiveMode = if (mode.isEmpty() || mode == "mpv" || mode == "mpv-plugin") "mpv-activity" else mode
 
-            if (effectiveMode == "mpv-activity") {
-                LogBridge.i(TAG, "openPlayer: using startActivityForResult for mpv-activity mode")
+            if (effectiveMode.startsWith("mpv-")) {
+                LogBridge.i(TAG, "openPlayer: using startActivityForResult for mode=$effectiveMode")
                 val (intent, result) = PlayerEntry.buildMpvIntent(context ?: activity!!,
                     call.getString("filePath") ?: "",
                     call.getString("name") ?: "",
@@ -145,10 +145,10 @@ class GoProcessPlugin : Plugin() {
                     pendingCalls["mpvPlayer"] = call
                     call.save()
                     activity.startActivityForResult(intent, REQUEST_CODE_MPV_PLAYER)
-                    LogBridge.i(TAG, "openPlayer: startActivityForResult dispatched for mpv-activity")
+                    LogBridge.i(TAG, "openPlayer: startActivityForResult dispatched for $effectiveMode")
                     Handler(Looper.getMainLooper()).postDelayed({
                         if (pendingCalls.containsKey("mpvPlayer")) {
-                            LogBridge.w(TAG, "openPlayer: mpv-activity result timeout (15s), resolving with warning")
+                            LogBridge.w(TAG, "openPlayer: mpv result timeout (15s), resolving with warning")
                             val staleCall = pendingCalls.remove("mpvPlayer")
                             try { staleCall?.resolve(JSObject().apply {
                                 put("success", false)
@@ -166,7 +166,7 @@ class GoProcessPlugin : Plugin() {
                     isExternal = false,
                     mode = mode)
                 if (result.success) {
-                    call.resolve()
+                    call.resolve(JSObject().apply { put("success", true) })
                 } else {
                     call.resolve(JSObject().apply {
                         put("success", false)
