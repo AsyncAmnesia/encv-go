@@ -536,15 +536,21 @@ export function getFileExtension(name: string): string {
   return name.substring(lastDot + 1).toLowerCase()
 }
 
-export type FileCategory = 'video' | 'audio' | 'image' | 'document' | 'encrypted' | 'other'
+export type FileCategory = 'video' | 'audio' | 'image' | 'document' | 'encrypted' | 'encrypted-video' | 'encrypted-audio' | 'encrypted-image' | 'other'
 
 export function getFileCategory(name: string, isEncrypted?: boolean): FileCategory {
-  if (isEncrypted) return 'encrypted'
   const ext = getFileExtension(name)
   const videoExts = ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm', 'm4v']
   const audioExts = ['mp3', 'flac', 'wav', 'aac', 'ogg', 'wma', 'm4a']
   const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg']
   const docExts = ['pdf', 'doc', 'docx', 'txt', 'xls', 'xlsx', 'ppt', 'pptx']
+
+  if (isEncrypted) {
+    if (videoExts.includes(ext)) return 'encrypted-video'
+    if (audioExts.includes(ext)) return 'encrypted-audio'
+    if (imageExts.includes(ext)) return 'encrypted-image'
+    return 'encrypted'
+  }
 
   if (videoExts.includes(ext)) return 'video'
   if (audioExts.includes(ext)) return 'audio'

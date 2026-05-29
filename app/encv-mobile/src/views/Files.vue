@@ -247,7 +247,7 @@
                   <ion-chip v-for="tag in file._tags" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
                 </div>
               </ion-label>
-              <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
+              <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted).startsWith('encrypted')" color="warning" slot="end">
                 ENCV
               </ion-badge>
             </ion-item>
@@ -742,8 +742,9 @@ async function handleFileClick(file: FileItem) {
 
   const category = getFileCategory(file.name, file.isEncrypted)
   console.info('[Files] Click:', file.name, 'category:', category)
-  if (category === 'video' || category === 'audio') {
-    playMedia(file, category)
+  if (category === 'video' || category === 'audio' || category === 'encrypted-video' || category === 'encrypted-audio') {
+    const playCategory = category.startsWith('encrypted-') ? category.replace('encrypted-', '') : category
+    playMedia(file, playCategory)
   } else {
     router.push({
       path: '/tabs/preview',
