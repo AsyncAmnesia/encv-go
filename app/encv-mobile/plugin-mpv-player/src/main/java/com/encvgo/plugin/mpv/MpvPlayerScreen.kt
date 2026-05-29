@@ -57,6 +57,7 @@ fun MpvPlayerScreen(
     var currentAudioId by remember { mutableStateOf(-1) }
     var bgPlaybackEnabled by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     LaunchedEffect(filePath) {
         startPlayback(
@@ -199,7 +200,7 @@ fun MpvPlayerScreen(
                 },
                 onToggleFullscreen = {
                     isFullscreen = !isFullscreen
-                    val activity = LocalContext.current as? Activity ?: return@MpvControls
+                    val activity = context as? Activity ?: return@MpvControls
                     if (isFullscreen) {
                         activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                         hideSystemUi(activity)
