@@ -1,225 +1,197 @@
-# Kotlin 2.3.21 + Android 编译铁律（来自 CI 实战踩坑）
+# Kotlin 2.3.21 + Android 编码参考（本项目金标准）
 
-> **核心原则：Kotlin 编译器不会骗你，报错就是真的。不要猜 API，不要假设类型。**
+> 来源：CI 编译通过代码 + AAR 反编译证据 + Kotlin 官方文档
+> 本文件作为本项目所有 .kt 文件的编写校验标准。
 
 ---
 
-## 一、变量声明（反复出错点）
+## 一、变量声明
 
-### 1.1 `val` vs `var` — 编译器报 `'val' cannot be reassigned` 就是字面意思
+### 1.1 val vs var 的选择规则
 
-**❌ 错误**：
 ```kotlin
-val flags = PackageManager.GET_META_DATA or PackageManager.GET_ACTIVITIES
-if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-    flags = flags or PackageManager.GET_SIGNING_CERTIFICATES  // ← 编译错误！
-}
-```
+// ✅ 值确定后不再改变 → val
+val pluginId = call.getString("pluginId") ?: return
+val result = JSObject()
 
-**✅ 正确**：
-```kotlin
-var flags = PackageManager.GET_META_DATA or PackageManager.GET_ACTIVITIES  // ← var！
+// ✅ 后续有重新赋值 → var
+var flags = PackageManager.GET_META_DATA or PackageManager.GET_ACTIVITIES
 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
     flags = flags or PackageManager.GET_SIGNING_CERTIFICATES
 }
+
+// ✅ by 委托的 state（Compose）
+var volume by remember { mutableStateOf(1f) }
 ```
 
-**规则**：只要后续有重新赋值（`=`），必须用 `var`。没有例外。
+### 1.2 类型推断失败时的处理
 
-### 1.2 类型推断与泛型
-
-**当 `Cannot infer type for type parameter 'T'` 时**：
-- 检查是否在 lambda/泛型上下文中，编译器无法推断返回类型
-- **显式指定类型参数**或**给变量加类型注解**
 ```kotlin
-// 错误：runBlocking 内部推断失败
-val count = runBlocking { someGenericMethod() }
-
-// 正确：显式指定
-val count: Int = runBlocking { someGenericMethod() }
+// 泛型 lambda 中编译器无法推断 → 显式指定类型参数
+val count: Int = runBlocking { engine.loadAllEnabledPlugins() }
 // 或
-val count = runBlocking<Int> { someGenericMethod() }
+val count = runBlocking<Int> { engine.loadAllEnabledPlugins() }
 ```
 
 ---
 
-## 二、Suspend 函数调用（反复出错点）
+## 二、协程与 Suspend 函数
 
-### 2.1 Suspend 函数只能在协程内调用
+### 2.1 三种调用 suspend 函数的方式
 
-**错误信息模板**：`Suspend function 'suspend fun xxx()' can only be called from a coroutine or another suspend function.`
+| 场景 | 写法 | 阻塞？ |
+|------|------|--------|
+| 已在 `suspend` 函数/协程内 | 直接调用 `foo()` | 否 |
+| 从普通函数启动异步任务 | `GlobalScope.launch(Dispatchers.IO) { foo() }` | 否 |
+| 从普通函数同步等待结果 | `runBlocking { foo() }` | **是** |
 
-**根因**：ComboLite 的 `setValidationStrategy()`、`setGlobalClashCallback()`、`loadEnabledPlugins()` 等都是 `suspend fun`。
+### 2.2 Capacitor @PluginMethod 中的标准模式
 
-**✅ 在非 suspend 函数中调用 suspend 函数的唯一正确方式**：
-```kotlin
-import kotlinx.coroutines.runBlocking
+**本项目已验证通过的唯一正确写法**：
 
-fun setupFramework(hostActivityClass: Class<*>) {
-    try {
-        runBlocking { PluginManager.setValidationStrategy(ValidationStrategy.Insecure) }
-    } catch (e: Error) {
-        // 防御 kotlin-reflect 失败
-    } catch (e: Exception) {
-        // 防御其他异常
-    }
-
-    try {
-        runBlocking { PluginCrashHandler.setGlobalClashCallback(null) }
-    } catch (e: Error) {}
-    catch (e: Exception) {}
-}
-```
-
-**⚠️ 注意**：`runBlocking` 会阻塞当前线程。只在初始化等一次性场景使用，**禁止在 UI 线程/主线程调用**。
-
-### 2.2 GlobalScope.launch vs runBlocking
-
-| 场景 | 用法 |
-|------|------|
-| 从非协程代码启动异步任务（不阻塞） | `GlobalScope.launch(Dispatchers.IO) { ... }` |
-| 从同步函数中调用 suspend 函数（阻塞等待结果） | `runBlocking { ... }` 或 `runBlocking(Dispatchers.IO) { ... }` |
-| 已在协程内部 | 直接调用，无需包装 |
-
----
-
-## 三、可见性修饰符（反复出错点）
-
-### 3.1 `internal` 的含义
-
-`internal object` / `internal class` / `internal fun` — **仅在同一个模块（Gradle module）内可见**。
-
-**本项目中的关键实例**：
-
-| 声明位置 | 可见性 | 谁能调用 |
-|---------|--------|---------|
-| `PluginLifecycleEngine` (`engine/` 包, `internal object`) | 仅 `:combolite-host` 模块内 | ✅ EncvComboLiteHost.kt（同模块）<br>❌ DiagnosticKit.kt（不同包但同模块）— 实际上同模块的不同包可以访问 internal<br>⚠️ 但如果 DiagnosticKit 在独立模块则不行 |
-| `EncvComboLiteHost` (`public object`) | 所有依赖 `:combolite-host` 的模块 | ✅ GoProcessPlugin、DiagnosticKit |
-
-**规则**：
-- 跨包调用时，优先用 **public 门面** (`EncvComboLiteHost`)
-- 同模块跨包调用 `internal` 对象 → **可以**（`internal` 是模块级不是包级）
-- 但如果将来拆分模块会出问题 → **始终通过 public 门面调用**
-
-### 3.2 本项目的可见性层次
-
-```
-:combolite-host 模块
-├── public   EncvComboLiteHost          ← 外部唯一入口
-├── internal PluginLifecycleEngine     ← 仅本模块内部
-└── public   model/*                   ← 数据类需要外部可读
-
-:app 模块
-├── public   GoProcessPlugin           ← Capacitor 入口
-├── public   AppLogger / LogExporter   ← 工具类
-└── public   PlayerEntry / EncvApplication
-```
-
----
-
-## 四、类型系统（反复出错点）
-
-### 4.1 Class<*> 类型转换
-
-**错误信息**：`Argument type mismatch: actual type is 'Class<CapturedType(*)>', but 'Class<out BaseHostActivity>' was expected.`
-
-**根因**：Java 泛型擦除后 `Class<?>` 与 `Class<SpecificType>` 不兼容。
-
-**✅ 正确做法**：
-```kotlin
-fun setupFramework(hostActivityClass: Class<*>) {
-    // ❌ PluginManager.proxyManager.setHostActivity(hostActivityClass)
-    // ✅ 显式 cast
-    PluginManager.proxyManager.setHostActivity(
-        hostActivityClass as Class<com.combo.core.component.activity.BaseHostActivity>
-    )
-}
-```
-
-### 4.2 nullable vs non-null
-
-**AAR 反编译确认的规则**（combolite-core 2.0.2）：
-
-| 属性 | AAR 返回类型 | Kotlin 中使用 |
-|------|------------|---------------|
-| `PluginInfo.enabled` | `boolean` (primitive) | 非 null，直接用 |
-| `PluginInfo.id` | `String` | 非 null |
-| `getPluginInfo(String)` | `LoadedPluginInfo?` | 可能为 null |
-| `uninstallPlugin(String)` | `Boolean` (boxed) | 可能是 null → 用 `== true` 判断 |
-| `installPlugin(File, Boolean)` | `InstallResult` (sealed class) | 非 null |
-
----
-
-## 五、import 规范
-
-### 5.1 必须显式 import 的常见遗漏
-
-| import | 使用场景 |
-|-------|---------|
-| `kotlinx.coroutines.runBlocking` | 在非 suspend 函数中调用 suspend 函数 |
-| `kotlinx.coroutines.GlobalScope` | 启动后台协程 |
-| `kotlinx.coroutines.Dispatchers.IO` | IO 线程池 |
-| `kotlinx.coroutines.launch` | 协程构建器 |
-| `kotlinx.coroutines.withContext` | 切换调度器并返回结果 |
-| `android.content.Intent` | Intent 构造 |
-| `android.net.Uri` | URI 处理 |
-| `java.io.File` | 文件操作 |
-| `java.util.concurrent.ConcurrentLinkedQueue` | 线程安全队列 |
-| `java.util.concurrent.ConcurrentHashMap` | 线程安全 Map |
-
-### 5.2 禁止使用的 import
-
-| import | 原因 |
-|-------|------|
-| `com.combo.core.runtime.PluginManager` (在 :app 中) | 应通过 EncvComboLiteHost 访问 |
-| `com.combo.core.runtime.installer.InstallerManager` (在 :app 中) | 同上 |
-| `kotlin.reflect.jvm.javaMethod` (在 :app 中) | 已迁移到 DiagnosticKit |
-
----
-
-## 六、CI 编译前自检清单
-
-写完任何 .kt 文件后，**提交前**必须逐条检查：
-
-- [ ] 所有 `val` 变量确实没有被重新赋值（否则改为 `var`）
-- [ ] 所有 `suspend fun` 调用都在协程/runBlocking 内部
-- [ ] 没有 `internal` 对象被跨模块引用（改用 public 门面）
-- [ ] `Class<*>` 参数处做了必要的 `as Class<ConcreteType>` 转换
-- [ ] 泛型方法调用处没有 `Cannot infer type` 错误（加显式类型参数）
-- [ ] 没有 `Unresolved reference` 错误（检查 import 和可见性）
-- [ ] ComboLite API 调用全部经过 AAR `javap -p` 验证
-
----
-
-## 七、已验证通过的"金标准"代码模式
-
-以下模式已在 CI 中编译通过，作为新代码的权威参照：
-
-### suspend 函数在非协程中的调用
-```kotlin
-// EncvApplication.onFrameworkSetup (suspend 返回值)
-override fun onFrameworkSetup(): suspend () -> Unit = {
-    EncvComboLiteHost.setupFramework(EncvHostActivity::class.java)
-}
-
-// Engine.setupFramework (普通函数内调用 suspend)
-fun setupFramework(hostActivityClass: Class<*>) {
-    try { runBlocking { PluginManager.setValidationStrategy(...) } }
-    catch (e: Error) {} catch (e: Exception) {}
-}
-```
-
-### Capacitor @PluginMethod 中的协程模式
 ```kotlin
 @PluginMethod
-fun togglePluginEnabled(call: PluginCall) {
-    val pluginId = call.getString("pluginId") ?: run { call.reject("..."); return }
+fun someAction(call: PluginCall) {
+    val param = call.getString("key") ?: run { call.reject("key required"); return }
     GlobalScope.launch(Dispatchers.IO) {
-        val result = EncvComboLiteHost.setPluginEnabled(pluginId, enabled)
+        val result = SomeLibrary.suspendMethod(param)
         when (result) {
-            is OperationResult.Success -> withContext(Dispatchers.Main) { call.resolve(...) }
-            is OperationResult.Failure -> withContext(Dispatchers.Main) { call.reject(...) }
+            is OperationResult.Success -> withContext(Dispatchers.Main) {
+                call.resolve(JSObject().apply { put("data", result.data) })
+            }
+            is OperationResult.Failure -> withContext(Dispatchers.Main) {
+                call.reject(result.reason)
+            }
         }
     }
 }
 ```
+
+**关键点**：
+- 参数提取在 launch **外部**（同步）
+- 业务逻辑在 `Dispatchers.IO`（不阻塞主线程）
+- 结果回调在 `Dispatchers.Main`（Capacitor 要求）
+- `call.resolve/reject` 必须在主线程
+
+### 2.3 初始化代码中调用 suspend 函数
+
+```kotlin
+// Application.onCreate / Framework setup — 一次性阻塞可接受
+fun setupFramework(hostActivityClass: Class<*>) {
+    try {
+        runBlocking { PluginManager.setValidationStrategy(ValidationStrategy.Insecure) }
+    } catch (e: Error) { } catch (e: Exception) { }
+    // ...
+}
+```
+
+---
+
+## 三、模块可见性架构
+
+```
+:combolite-host (Android Library)
+├── public   EncvComboLiteHost          ← 外部唯一入口 (object)
+├── internal PluginLifecycleEngine     ← 引擎实现 (object, 同模块可访问)
+├── public   DiagnosticKit              ← 诊断工具 (object)
+└── public   model/*                   ← 数据类 (data class)
+
+:app (Android Application)
+├── public   GoProcessPlugin           ← Capacitor 插件入口
+├── public   AppLogger                 ← 日志工具 (object)
+├── public   LogExporter               ← 导出工具 (object)
+├── public   PermissionHelper          ← 权限工具 (object)
+├── public   UriUtils                  ← URI 工具 (object)
+├── public   PlayerEntry               ← 播放器路由 (object)
+└── public   EncvApplication           ← Application 类
+```
+
+**跨模块调用规则**：
+- `:app` → `:combolite-host`：只能调用 **public** API (`EncvComboLiteHost`, `DiagnosticKit`, `model.*`)
+- `:app` 中禁止 `import com.combo.core.runtime.PluginManager` 等直接 ComboLite API
+- `:combolite-host` 内部：`internal` 对象在同模块不同包**可以**访问，但建议仍走门面
+
+---
+
+## 四、类型系统要点
+
+### 4.1 Class<*> 转换
+
+Java 泛型擦除导致 `Class<*>` 不能直接赋值给 `Class<ConcreteType>`：
+
+```kotlin
+// ❌ 类型不匹配
+proxyManager.setHostActivity(hostActivityClass)  // hostActivityClass: Class<*>
+
+// ✅ 显式转换
+proxyManager.setHostActivity(
+    hostActivityClass as Class<com.combo.core.component.activity.BaseHostActivity>
+)
+```
+
+### 4.2 nullable 处理（AAR 反编译证实）
+
+| API | 返回类型 | 安全用法 |
+|-----|---------|---------|
+| `getPluginInfo(id)` | `LoadedPluginInfo?` | `if (info != null) { ... }` |
+| `uninstallPlugin(id)` | `Boolean` (boxed) | `if (success == true) { ... }` |
+| `installPlugin(file, bool)` | `InstallResult` (sealed) | `when (result) { is Success -> ... is Failure -> ... }` |
+| `getAllInstallPlugins()` | `List<PluginInfo>` (non-null) | 直接用，无需 null 检查 |
+| `PluginInfo.enabled` | `boolean` (primitive) | 直接用 `.enabled`，无需 `?.` |
+
+---
+
+## 五、import 清单（按需选择）
+
+```kotlin
+// 协程（几乎所有异步代码需要）
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+
+// Android 核心
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import java.io.File
+
+// 并发容器
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ConcurrentLinkedQueue
+
+// JSON（Capacitor Bridge）
+import com.getcapacitor.JSObject
+import com.getcapacitor.PluginCall
+
+// 项目内部（:app 模块）
+import com.encvgo.combolite.EncvComboLiteHost       // 唯一 ComboLite 入口
+import com.encvgo.combolite.diagnostic.DiagnosticKit  // 诊断工具
+import com.encvgo.combolite.model.OperationResult      // 统一结果类型
+import com.encvgo.app.AppLogger                        // 日志
+import com.encvgo.app.LogExporter                      // 导出
+import com.encvgo.app.PermissionHelper                 // 权限
+import com.encvgo.app.UriUtils                          // URI
+```
+
+**禁止在 :app 模块中 import**：
+- `com.combo.core.runtime.*` （应通过 EncvComboLiteHost）
+- `com.combo.core.security.*` （同上）
+- `com.combo.core.model.*` （使用 `com.encvgo.combolite.model.*` 包装）
+
+---
+
+## 六、"金标准"文件参照
+
+以下文件已在 CI 中通过 Kotlin 编译，新代码必须参照其风格：
+
+| 文件 | 验证过的模式 |
+|------|------------|
+| [EncvComboLiteHost.kt](combolite-host/src/main/java/com/encvgo/combolite/EncvComboLiteHost.kt) | public 门面 object，纯委托 |
+| [PluginLifecycleEngine.kt](combolite-host/src/main/java/com/encvgo/combolite/engine/PluginLifecycleEngine.kt) | internal 引擎，suspend + runBlocking |
+| [GoProcessPlugin.kt](android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt) | Capacitor @PluginMethod 标准模板 |
+| [AppLogger.kt](android/app/src/main/java/com/encvgo/app/AppLogger.kt) | ConcurrentLinkedQueue 日志缓冲 |
+| [LogExporter.kt](android/app/src/main/java/com/encvgo/app/LogExporter.kt) | ZipOutputStream 导出 |
+| [PermissionHelper.kt](android/app/src/main/java/com/encvgo/app/PermissionHelper.kt) | Android 权限查询封装 |
+| [UriUtils.kt](android/app/src/main/java/com/encvgo/app/UriUtils.kt) | ContentResolver URI→File |
