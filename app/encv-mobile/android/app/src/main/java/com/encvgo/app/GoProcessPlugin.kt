@@ -460,7 +460,7 @@ class GoProcessPlugin : Plugin() {
             call.reject("pluginId is required")
             return
         }
-        val enabled = call.getBoolean("enabled", true)
+        val enabled = call.getBoolean("enabled", true) ?: true
         Log.d(TAG, "togglePluginEnabled() called: pluginId=$pluginId, enabled=$enabled")
         appLog("I", TAG, "togglePluginEnabled: pluginId=$pluginId, enabled=$enabled")
 
@@ -510,32 +510,24 @@ class GoProcessPlugin : Plugin() {
 
         GlobalScope.launch(Dispatchers.IO) {
             try {
-                val result = PluginManager.installerManager.uninstallPlugin(pluginId)
-                when (result) {
-                    is com.combo.core.runtime.installer.InstallerManager.UninstallResult.Success -> {
-                        Log.i(TAG, "uninstallPlugin SUCCESS: $pluginId")
-                        appLog("I", TAG, "uninstallPlugin SUCCESS: $pluginId")
-                        val res = JSObject().apply {
-                            put("success", true)
-                            put("pluginId", pluginId)
-                        }
-                        withContext(Dispatchers.Main) { call.resolve(res) }
-                    }
-                    is com.combo.core.runtime.installer.InstallerManager.UninstallResult.Failure -> {
-                        val reason = result.reason
-                        Log.e(TAG, "uninstallPlugin FAILED: $reason")
-                        appLog("E", TAG, "uninstallPlugin FAILED: $reason")
-                        withContext(Dispatchers.Main) { call.reject("Uninstall failed: $reason") }
-                    }
+                PluginManager.installerManager.uninstallPlugin(pluginId)
+                Log.i(TAG, "uninstallPlugin SUCCESS: $pluginId")
+                appLog("I", TAG, "uninstallPlugin SUCCESS: $pluginId")
+                val res = JSObject().apply {
+                    put("success", true)
+                    put("pluginId", pluginId)
                 }
+                withContext(Dispatchers.Main) { call.resolve(res) }
             } catch (e: Error) {
-                Log.e(TAG, "uninstallPlugin Error: ${e.javaClass.simpleName}: ${e.message}", e)
-                appLog("E", TAG, "uninstallPlugin ERROR: ${e.javaClass.simpleName}: ${e.message}")
-                withContext(Dispatchers.Main) { call.reject("Uninstall error: ${e.javaClass.simpleName}: ${e.message}") }
+                val msg = "${e.javaClass.simpleName}: ${e.message}"
+                Log.e(TAG, "uninstallPlugin Error: $msg", e)
+                appLog("E", TAG, "uninstallPlugin ERROR: $msg")
+                withContext(Dispatchers.Main) { call.reject("Uninstall error: $msg") }
             } catch (e: Exception) {
-                Log.e(TAG, "uninstallPlugin FAILED", e)
-                appLog("E", TAG, "uninstallPlugin FAILED: ${e.message}\n${e.stackTraceToString().take(500)}")
-                withContext(Dispatchers.Main) { call.reject("Uninstall failed: ${e.message}") }
+                val msg = e.message ?: "unknown error"
+                Log.e(TAG, "uninstallPlugin FAILED: $msg", e)
+                appLog("E", TAG, "uninstallPlugin FAILED: $msg\n${e.stackTraceToString().take(500)}")
+                withContext(Dispatchers.Main) { call.reject("Uninstall failed: $msg") }
             }
         }
     }
@@ -543,7 +535,7 @@ class GoProcessPlugin : Plugin() {
     @PluginMethod
     fun debugLifecycleFlow(call: PluginCall) {
         val steps = mutableListOf<String>()
-        val pluginId = call.getString("pluginId", "com.encvgo.plugin.mpv")
+        val pluginId = call.getString("pluginId", "com.encvgo.plugin.mpv") ?: "com.encvgo.plugin.mpv"
 
         steps.add("=== Plugin Lifecycle Diagnostic ===")
 
@@ -598,7 +590,12 @@ class GoProcessPlugin : Plugin() {
             try {
                 val info = PluginManager.getPluginInfo(pluginId)
                 if (info != null) {
-                    steps.add("   getPluginInfo('$pluginId') = ✅ (enabled=${info.enabled})")
+                    val infoStr = buildString {
+                        append("id=${info.id}, versionName=")
+                        append(info.versionName ?: "null")
+                        try { append(", enabled=${info.enabled}") } catch (_: Exception) {}
+                    }
+                    steps.add("   getPluginInfo('$pluginId') = ✅ ($infoStr)")
                 } else {
                     steps.add("   getPluginInfo('$pluginId') = ❌ null (not installed?)")
                 }
