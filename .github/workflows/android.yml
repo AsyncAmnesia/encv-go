@@ -208,7 +208,7 @@ jobs:
           echo "═══ R8/ProGuard Obfuscation Guard ═══"
           VIOLATIONS=0
           WARNINGS=0
-          for f in $(find app/encv-mobile/android -name "*.gradle.kts" -not -path "*build/*"); do
+          for f in $(find app/encv-mobile/android -name "*.gradle.kts" -not -path "*/build/*"); do
             # Check isMinifyEnabled = true  → FATAL (R8 breaks @Metadata ↔ bytecode)
             MINIFY=$(grep -n 'isMinifyEnabled\s*=\s*true' "$f" 2>/dev/null)
             if [ -n "$MINIFY" ]; then
