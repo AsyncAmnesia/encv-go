@@ -123,10 +123,18 @@ class GoProcessPlugin : Plugin() {
     @PluginMethod
     fun openPlayer(call: PluginCall) {
         try {
-            PlayerEntry.play(context ?: activity!!, call.getString("filePath") ?: "",
+            val result = PlayerEntry.play(context ?: activity!!, call.getString("filePath") ?: "",
                 call.getString("name") ?: "", call.getString("mimeType") ?: "",
                 isExternal = false, mode = call.getString("mode") ?: "")
-            call.resolve()
+            if (result.success) {
+                call.resolve()
+            } else {
+                call.resolve(JSObject().apply {
+                    put("success", false)
+                    put("error", result.error)
+                    put("errorDetail", result.errorDetail)
+                })
+            }
         } catch (e: Exception) { call.reject(e.message) }
     }
 

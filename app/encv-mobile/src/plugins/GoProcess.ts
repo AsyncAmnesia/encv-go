@@ -102,11 +102,23 @@ export async function getIntentFileInfo(): Promise<{ path: string; name: string;
   }
 }
 
-export async function openPlayer(filePath: string, name: string, mimeType: string, mode?: string): Promise<void> {
+export interface PlayResult {
+  success: boolean
+  error?: string
+  errorDetail?: string
+}
+
+export async function openPlayer(filePath: string, name: string, mimeType: string, mode?: string): Promise<PlayResult> {
   try {
-    await GoProcess.openPlayer({ filePath, name, mimeType, mode: mode || '' })
+    const result = await GoProcess.openPlayer({ filePath, name, mimeType, mode: mode || '' })
+    if (result.success === false) {
+      console.error('[ENCV] openPlayer failed:', result.error, result.errorDetail)
+      return { success: false, error: result.error, errorDetail: result.errorDetail }
+    }
+    return { success: true }
   } catch (e) {
     console.error('[ENCV] GoProcess.openPlayer() failed:', e)
+    return { success: false, error: '调用播放器失败', errorDetail: String(e) }
   }
 }
 
