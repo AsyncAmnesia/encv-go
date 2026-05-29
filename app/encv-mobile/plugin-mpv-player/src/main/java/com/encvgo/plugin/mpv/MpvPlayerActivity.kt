@@ -22,6 +22,10 @@ private fun isAudioFile(mimeType: String, fileName: String): Boolean {
 
 class MpvPlayerActivity : BasePluginActivity() {
 
+    companion object {
+        private const val TAG = "MpvPlayerActivity"
+    }
+
     private lateinit var engine: MpvEngine
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,8 +40,14 @@ class MpvPlayerActivity : BasePluginActivity() {
         val isExternal = hostIntent.getBooleanExtra("is_external", false)
         val audioMode = isAudioFile(mimeType, fileName)
 
+        val selfCl = this.javaClass.classLoader
+        android.util.Log.i(TAG, "onCreate: this ClassLoader=${selfCl?.javaClass?.name}")
+
         engine = createMpvEngine(host)
         engine.initialize()
+
+        val mpvLibCl = `is`.xyz.mpv.MPVLib::class.java.classLoader
+        android.util.Log.i(TAG, "onCreate: MPVLib ClassLoader=${mpvLibCl?.javaClass?.name}")
 
         host.setContent {
             EncvMpVPlayerTheme {
