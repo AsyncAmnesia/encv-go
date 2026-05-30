@@ -1,5 +1,6 @@
 import { decodeAlistFilename, getAlistEncryptStreamUrl } from '@/api/encv'
 import type { FileItem } from '@/api/encv'
+import { getFieldValue } from '@/composables/useConfig'
 
 const MAX_CACHE_SIZE = 500
 const sessionPasswords = new Map<string, string>()
@@ -24,7 +25,8 @@ function lruPush(keys: string[], key: string, map: Map<string, any>, value: any)
 
 export function isAlistEncrypted(file: FileItem): boolean {
   if (file.isDirectory || file.isEncrypted) return false
-  return file.name.endsWith('.bin')
+  const suffix = (getFieldValue(['plugin_settings', 'alist_encrypt', 'suffix']) as string) || '.bin'
+  return file.name.endsWith(suffix)
 }
 
 export function getSessionPassword(path: string): string | undefined {

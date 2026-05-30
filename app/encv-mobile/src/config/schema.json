@@ -74,6 +74,35 @@
               "$schema": "https://json-schema.org/draft/2020-12/schema",
               "$id": "https://github.com/Soltus/encv-go/internal/v2/plugins/text/text-plugin-config",
               "$ref": "#/$defs/TextPluginConfig"
+            },
+            "alist_encrypt": {
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "启用 Alist-Encrypt 文件检测与解密功能"
+                },
+                "suffix": {
+                  "type": "string",
+                  "default": ".bin",
+                  "description": "Alist-Encrypt 加密文件的后缀名（需以 . 开头）"
+                },
+                "default_password": {
+                  "type": "string",
+                  "default": "",
+                  "description": "默认解密密码，留空则每次需要手动输入"
+                },
+                "algorithm": {
+                  "type": "string",
+                  "enum": ["AES-128-CTR"],
+                  "default": "AES-128-CTR",
+                  "description": "加密算法（当前仅支持 AES-128-CTR）"
+                }
+              },
+              "additionalProperties": false,
+              "type": "object",
+              "required": ["enabled", "suffix"],
+              "description": "--- Alist-Encrypt 配置 ---\nAlist 文件加密格式的客户端检测与流式解密配置。"
             }
           },
           "additionalProperties": false,

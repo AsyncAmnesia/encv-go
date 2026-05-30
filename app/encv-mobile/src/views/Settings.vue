@@ -284,57 +284,6 @@
         </ion-item>
       </ion-list>
 
-      <ion-list>
-        <ion-list-header>
-          <ion-label>{{ t('settings.alistEncryptConfig') }}</ion-label>
-        </ion-list-header>
-        <ion-item>
-          <ion-icon :icon="lockClosed" slot="start"></ion-icon>
-          <ion-toggle :checked="alistEncryptEnabled" @ionChange="handleAlistEncryptToggle">{{ t('settings.alistEncryptEnable') }}</ion-toggle>
-        </ion-item>
-        <template v-if="alistEncryptEnabled">
-          <ion-item>
-            <ion-icon :icon="documentText" slot="start"></ion-icon>
-            <ion-input
-              :value="alistEncryptSuffix"
-              :label="t('settings.alistEncryptSuffix')"
-              label-placement="stacked"
-              placeholder=".bin"
-              @ionInput="handleAlistSuffixInput"
-            ></ion-input>
-          </ion-item>
-          <ion-item v-if="alistSuffixConflict" lines="none">
-            <ion-label class="ion-text-wrap" style="color: var(--ion-color-danger); font-size: 13px;">
-              <p>{{ t('settings.alistSuffixConflictHint') }}</p>
-            </ion-label>
-          </ion-item>
-          <ion-item>
-            <ion-icon :icon="key" slot="start"></ion-icon>
-            <ion-input
-              :value="alistEncryptPassword"
-              type="password"
-              :label="t('settings.alistEncryptDefaultPassword')"
-              label-placement="stacked"
-              :placeholder="t('settings.alistEncryptDefaultPasswordHint')"
-              @ionInput="handleAlistPasswordInput"
-            ></ion-input>
-          </ion-item>
-          <ion-item>
-            <ion-icon :icon="shieldCheckmark" slot="start"></ion-icon>
-            <ion-select
-              :value="alistEncryptAlgorithm"
-              :label="t('settings.alistEncryptAlgorithm')"
-              label-placement="stacked"
-              interface="action-sheet"
-              mode="ios"
-              disabled
-            >
-              <ion-select-option value="AES-128-CTR">AES-128-CTR</ion-select-option>
-            </ion-select>
-          </ion-item>
-        </template>
-      </ion-list>
-
       <ion-list v-if="isNative()">
         <ion-list-header>
           <ion-label>{{ t('devtools.title') }}</ion-label>
@@ -457,13 +406,7 @@ const screenOrientation = ref(localStorage.getItem('encv_screen_orientation') ||
 const customTextExts = ref('')
 const builtInTextExtsCount = ref(0)
 const mpvPluginStatus = ref<string>('unknown')
-const mpvPluginError = ref<string>('')
-
-const alistEncryptEnabled = ref(true)
-const alistEncryptSuffix = ref('.bin')
-const alistEncryptPassword = ref('')
-const alistEncryptAlgorithm = ref('AES-128-CTR')
-const alistSuffixConflict = ref(false)
+const mpvPluginError = ref('')
 
 const mpvStatusI18nKey = computed(() => {
   const keyMap: Record<string, string> = {
@@ -795,54 +738,13 @@ function handleResetConfig() {
   resetConfig()
 }
 
-const CONFLICT_SUFFIXES = ['.sccgv', '.encv']
-
-function handleAlistEncryptToggle(event: CustomEvent) {
-  const enabled = event.detail.checked
-  alistEncryptEnabled.value = enabled
-  if (enabled) {
+function syncAlistEncryptFeature() {
+  const enabled = getFieldValue(['plugin_settings', 'alist_encrypt', 'enabled']) as boolean | undefined
+  if (enabled === true) {
     registerFileFeature(createAlistEncryptFeature())
   } else {
     unregisterFileFeature('alist-encrypt')
   }
-  saveAlistEncryptConfig()
-}
-
-function handleAlistSuffixInput(event: CustomEvent) {
-  let val = (event.target as HTMLInputElement).value.trim()
-  if (val && !val.startsWith('.')) {
-    val = '.' + val
-  }
-  alistEncryptSuffix.value = val
-  alistSuffixConflict.value = CONFLICT_SUFFIXES.includes(val.toLowerCase())
-  saveAlistEncryptConfig()
-}
-
-function handleAlistPasswordInput(event: CustomEvent) {
-  alistEncryptPassword.value = (event.target as HTMLInputElement).value
-  saveAlistEncryptConfig()
-}
-
-function saveAlistEncryptConfig() {
-  const cfg = { enabled: alistEncryptEnabled.value, suffix: alistEncryptSuffix.value, defaultPassword: alistEncryptPassword.value }
-  try {
-    localStorage.setItem('encv_alist_encrypt_config', JSON.stringify(cfg))
-  } catch (e) {
-    console.error('Failed to save alist-encrypt config:', e)
-  }
-}
-
-function loadAlistEncryptConfig() {
-  try {
-    const raw = localStorage.getItem('encv_alist_encrypt_config')
-    if (raw) {
-      const cfg = JSON.parse(raw)
-      if (typeof cfg.enabled === 'boolean') alistEncryptEnabled.value = cfg.enabled
-      if (typeof cfg.suffix === 'string' && cfg.suffix) alistEncryptSuffix.value = cfg.suffix
-      if (typeof cfg.defaultPassword === 'string') alistEncryptPassword.value = cfg.defaultPassword
-      alistSuffixConflict.value = CONFLICT_SUFFIXES.includes(alistEncryptSuffix.value.toLowerCase())
-    }
-  } catch {}
 }
 
 onMounted(async () => {
@@ -856,7 +758,7 @@ onMounted(async () => {
       await refreshMpvPluginStatus()
     }
     loadPreviewConfig()
-    loadAlistEncryptConfig()
+    syncAlistEncryptFeature()
   }
   window.addEventListener('plugin-state-changed', refreshMpvPluginStatus)
 })
@@ -906,6 +808,14 @@ watch(serverOnline, async (online) => {
     }
     try { indexStats.value = await getIndexStats() } catch {}
     if (isNative()) { try { engineStatus.value = await fetchFFmpegStatus() } catch {} }
+  }
+})
+
+watch(() => getFieldValue(['plugin_settings', 'alist_encrypt', 'enabled']), (enabled) => {
+  if (enabled === true) {
+    registerFileFeature(createAlistEncryptFeature())
+  } else {
+    unregisterFileFeature('alist-encrypt')
   }
 })
 </script>
