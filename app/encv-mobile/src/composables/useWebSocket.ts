@@ -19,6 +19,12 @@ const MAX_RECONNECT_DELAY = 30000
 const HEARTBEAT_INTERVAL = 30000
 const PONG_TIMEOUT = 10000
 
+const KNOWN_WS_EVENTS = new Set([
+  'task:update', 'task:progress', 'task:created', 'task:completed',
+  'file:change', 'server:status', 'server:connection-error',
+  'log:message',
+])
+
 function resetTimers() {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
@@ -40,7 +46,7 @@ function startHeartbeat() {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'ping' }))
       pongTimeoutTimer = setTimeout(() => {
-        console.warn('[ENCV-WS] Pong timeout, reconnecting...')
+        console.debug('[ENCV-WS] Pong timeout, reconnecting...')
         forceReconnect()
       }, PONG_TIMEOUT)
     }
@@ -70,7 +76,9 @@ function handleMessage(event: MessageEvent) {
       return
     }
 
-    eventBus.emit(msg.type as any, msg.data)
+    if (KNOWN_WS_EVENTS.has(msg.type)) {
+      eventBus.emit(msg.type as any, msg.data)
+    }
     eventBus.emit('ws:message', { type: msg.type, data: msg.data })
   } catch (e) {
     console.error('[ENCV-WS] Failed to parse message:', e)
@@ -153,7 +161,7 @@ function send(type: string, data: any) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type, data }))
   } else {
-    console.warn('[ENCV-WS] Cannot send, connection not open')
+    console.debug('[ENCV-WS] Cannot send, connection not open')
   }
 }
 

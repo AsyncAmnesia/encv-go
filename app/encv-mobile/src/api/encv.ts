@@ -66,13 +66,13 @@ export async function listFiles(path = '/'): Promise<FileItem[]> {
     if (response.status === 403) {
       const data: FileListResponse = await response.json().catch(() => ({}))
       if (data.code === 'PERMISSION_DENIED') {
-        console.warn('[API] listFiles permission denied:', path)
+        console.debug('[API] listFiles permission denied:', path)
         throw new PermissionDeniedError(data.error || 'Permission denied')
       }
     }
     if (response.status === 404) {
       const data: FileListResponse = await response.json().catch(() => ({}))
-      console.warn('[API] listFiles not found:', path)
+      console.debug('[API] listFiles not found:', path)
       throw new NotFoundError(data.error || 'Path not found')
     }
     console.error('[API] listFiles failed:', response.status)
@@ -208,7 +208,7 @@ export async function checkBackendPermissions(): Promise<BackendPermissions> {
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/permissions`)
   if (!response.ok) {
-    console.warn('[API] checkPermissions failed:', response.status)
+    console.debug('[API] checkPermissions failed:', response.status)
     return { storage: false }
   }
   const result = await response.json()
@@ -251,13 +251,13 @@ export async function checkServerStatus(): Promise<{ online: boolean; error?: st
     return { online: false, error: `HTTP ${response.status}` }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
-    console.warn('[API] server offline:', msg)
+    console.debug('[API] server offline:', msg)
     return { online: false, error: msg }
   }
 }
 
 export async function deleteFile(path: string): Promise<void> {
-  console.warn('[API] deleteFile:', path)
+  console.debug('[API] deleteFile:', path)
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/files?path=${encodeURIComponent(path)}`, {
     method: 'DELETE',
@@ -524,7 +524,7 @@ export async function fetchTextPreviewExts(): Promise<Set<string>> {
     return all
   } catch (err: any) {
     if (err?.name === 'AbortError') {
-      console.warn('[API] fetchTextPreviewExts timed out after 5s')
+      console.debug('[API] fetchTextPreviewExts timed out after 5s')
     } else {
       console.error('[API] fetchTextPreviewExts error:', err)
     }
@@ -718,7 +718,7 @@ export async function checkFileExists(path: string): Promise<boolean> {
   const baseUrl = getApiBaseUrl()
   const response = await fetch(`${baseUrl}/api/files/exists?path=${encodeURIComponent(path)}`)
   if (!response.ok) {
-    console.warn('[API] checkFileExists failed:', response.status)
+    console.debug('[API] checkFileExists failed:', response.status)
     return false
   }
   const data = await response.json()
@@ -731,7 +731,7 @@ export async function checkEncryptOutputExists(sourcePath: string, targetDir?: s
   if (targetDir) params.set('targetDir', targetDir)
   const response = await fetch(`${baseUrl}/api/files/encrypt-output-exists?${params}`)
   if (!response.ok) {
-    console.warn('[API] checkEncryptOutputExists failed:', response.status)
+    console.debug('[API] checkEncryptOutputExists failed:', response.status)
     return { exists: false, outputPath: '' }
   }
   const data = await response.json()

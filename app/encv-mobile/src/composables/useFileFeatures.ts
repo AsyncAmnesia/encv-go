@@ -7,7 +7,7 @@ const version = shallowRef(0)
 
 export function registerFileFeature(feature: FileFeature): void {
   if (registry.has(feature.id)) {
-    console.warn(`[useFileFeatures] Feature "${feature.id}" already registered, skipping`)
+    console.debug(`[useFileFeatures] Feature "${feature.id}" already registered, skipping`)
     return
   }
   registry.set(feature.id, feature)
@@ -37,7 +37,7 @@ async function collectBadges(file: FileItem): Promise<FileBadge[]> {
       const badge = await resolve(feature.getBadge(file))
       if (badge != null) results.push(badge)
     } catch (e) {
-      console.warn(`[useFileFeatures] getBadge failed for ${feature.id}:`, e)
+      console.debug(`[useFileFeatures] getBadge failed for ${feature.id}:`, e)
     }
   }
   return results
@@ -51,7 +51,7 @@ async function collectSubtitles(file: FileItem): Promise<FileSubtitle[]> {
       const sub = await resolve(feature.getSubtitle(file))
       if (sub != null) results.push(sub)
     } catch (e) {
-      console.warn(`[useFileFeatures] getSubtitle failed for ${feature.id}:`, e)
+      console.debug(`[useFileFeatures] getSubtitle failed for ${feature.id}:`, e)
     }
   }
   return results
@@ -69,7 +69,7 @@ async function collectActions(file: FileItem): Promise<FileAction[]> {
         }
       }
     } catch (e) {
-      console.warn(`[useFileFeatures] getFileActions failed for ${feature.id}:`, e)
+      console.debug(`[useFileFeatures] getFileActions failed for ${feature.id}:`, e)
     }
   }
   return results
