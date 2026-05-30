@@ -1,240 +1,279 @@
-# Plan：后端服务设置从一级界面移动到三级界面
+# Plan：将 server/admin/webdav 配置从一级页面移到三级子页面
 
 ## 一、现状分析
 
-### 当前层级结构（2 级）
+### 当前配置层级
 
 ```
 Level 1 (/tabs/settings — Settings.vue)
-├── 外观（暗色模式、语言）
-├── 播放器（视频/音频播放器、屏幕方向）
-├── 连接 ← ⚠️ 后端服务设置在一级直接展示
-│   ├── 🔴 后端服务  [在线/离线 badge + 端口]  ← goServer() → Level 2
-│   └── 引擎状态    [FFmpeg/FFprobe badge]     ← goEngine() → Level 2 [native]
-├── 缓存
-├── 插件设置
-├── 预览
-├── DevTools
-├── 关于
-└── 编辑原始配置
+├── 外观 / 播放器 / 连接（入口） / 缓存
+├── 🔴 Schema 驱动的配置字段（直接平铺展示）：
+│   ├── password          ← 全局密码
+│   ├── recover           ← 恢复模式
+│   ├── output_path      ← 输出目录
+│   ├── server           ← HTTP Server: port, dir    ⚠️ 应在三级
+│   ├── admin            ← Admin Server: password     ⚠️ 应在三级
+│   ├── webdav           ← WebDAV Server: root, dir, username, password  ⚠️ 应在三级
+│   ├── proxy            ← Openlist 代理
+│   └── log              ← 日志级别/文件
+├── 插件设置 → goPlugins() (Level 2)
+├── DevTools / 关于 / 编辑原始配置
 
 Level 2 (/tabs/settings/server — ServerDetail.vue)
-├── 连接
-│   ├── 服务器地址（只读 + 复制）
-│   └── 状态（在线/离线 + 刷新/停止/重启按钮）
-├── 服务地址
-│   ├── HTTP Server
-│   ├── Admin Server
-│   └── WebDAV Server
+├── 连接：服务器地址(只读) + 状态控制(刷新/停止/重启)
+└── 服务地址（只读 URL 展示，不可点击深入）：
+    ├── HTTP Server     → baseUrl              ⚠️ 应该可点击→三级
+    ├── Admin Server    → baseUrl/admin         ⚠️ 应该可点击→三级
+    └── WebDAV Server   → baseUrl + webdav.root  ⚠️ 应该可点击→三级
 └── 权限 [native only]
-    ├── 通知权限
-    ├── 存储权限
-    └── 电池优化
 ```
 
 ### 问题
 
-Settings.vue 的「连接」区域（L89-L120）直接展示了：
-- 服务器的在线/离线状态 badge
-- 后端端口号
-- 连接错误信息
-- 引擎 FFmpeg/FFprobe 状态
+`server`、`admin`、`webdav` 三个配置段作为**服务端基础设施配置**，却和 `password`、`log` 等全局配置**混在同一个平面**上展示。用户需要进入「后端服务」详情页后，却发现三个服务的配置项散落在主页面上——认知断裂。
 
-这些属于**运维细节**，对普通用户是噪音。应该下沉到更深层级。
+### 目标
+
+将 `server` / `admin` / `webdav` 三个配置段的编辑能力从 Settings.vue (L1) 移到 ServerDetail.vue 内部的三个独立子页 (L3)，使配置层级与物理层级对齐：
+
+| 服务 | 配置键 | 字段 | 目标位置 |
+|------|--------|------|---------|
+| HTTP Server | `server` | port, dir | Level 3: `/tabs/settings/server/http` |
+| Admin Server | `admin` | password | Level 3: `/tabs/settings/server/admin` |
+| WebDAV Server | `webdav` | root, dir, username, password | Level 3: `/tabs/settings/server/webdav` |
 
 ---
 
-## 二、目标层级结构（3 级）
+## 二、目标结构
 
 ```
-Level 1 (/tabs/settings — Settings.vue)  ← 精简后的主页
-├── 外观（不变）
-├── 播放器（不变）
-├── 连接  ← 改为纯入口，无状态详情
-│   └── 📡 连接设置  [一行入口，无 badge]  → goConnection() → Level 2
-├── 缓存（不变）
-├── 插件设置（不变）
-├── 预览（不变）
-├── DevTools（不变）
-├── 关于（不变）
-└── 编辑原始配置（不变）
+Level 1 (/tabs/settings — Settings.vue)
+├── 外观 / 播放器 / 连接（入口） / 缓存
+├── Schema 配置（已移除 server/admin/webdav）：
+│   ├── password / recover / output_path
+│   ├── proxy（Openlist 代理）
+│   └── log（日志）
+├── 插件设置 / DevTools / 关于 / 编辑原始配置
 
-Level 2 (/tabs/settings/connection — ConnectionDetail.vue)  ← 新建
-├── 后端服务     [在线/离线 badge + 端口]  → goServer() → Level 3
-├── 引擎状态     [FFmpeg/FFprobe badge]     → goEngine() → Level 3 [native]
-└── （未来可扩展：代理设置、WebSocket 状态等）
+Level 2 (/tabs/settings/server — ServerDetail.vue) [修改]
+├── 连接：服务器地址 + 状态控制（不变）
+├── 服务地址（改为可点击入口）：
+│   ├── 🌐 HTTP Server     [port: 2025]  → 点击 → Level 3
+│   ├── 🔐 Admin Server    [已配置]       → 点击 → Level 3
+│   ├── 📁 WebDAV Server   [/webdav/]     → 点击 → Level 3
+└── 权限 [native only]（不变）
 
-Level 3 (/tabs/settings/server — ServerDetail.vue)  ← 不变
-├── 连接（服务器地址、状态控制）
-├── 服务地址（HTTP/Admin/WebDAV）
-└── 权限（通知/存储/电池）[native]
+Level 3 (新建 × 3)
+├── /tabs/settings/server/http    → HttpServerDetail.vue   (server.port, server.dir)
+├── /tabs/settings/server/admin   → AdminServerDetail.vue  (admin.password)
+└── /tabs/settings/server/webdav  → WebdavServerDetail.vue (webdav.* 全部字段)
 ```
 
 ---
 
 ## 三、实施步骤
 
-### Step 1：新建 ConnectionDetail.vue（Level 2 连接设置页）
+### Step 1：新建 HttpServerDetail.vue（HTTP Server 三级页面）
 
-**文件**：`src/views/ConnectionDetail.vue`
+**文件**：`src/views/HttpServerDetail.vue`
 
-**内容**：
-- 从 Settings.vue L89-L120 提取「连接」区域的完整逻辑
-- 包含 `useServerStatus` + `useEngineStatus`（或对应 composable）
-- 两个入口项：
-  1. **后端服务** → `router.push('/tabs/settings/server')`
-  2. **引擎状态** → `router.push('/tabs/settings/engine')` [native only]
-- 每项显示：名称 + 状态 badge（在线/离线 / FFmpeg 可用/不可用）
+**功能**：编辑 `server.port` 和 `server.dir`
 
-**模板结构**：
+**关键点**：
+- 复用 Settings.vue 的 ConfigFieldItem 组件和 useConfig composable
+- 通过 `getFieldValue(['server', 'port'])` / `setFieldValue(['server', 'port'], value)` 读写
+- 保存时调用 `saveConfig()` （与 Settings 共享同一份 config state）
+- 标题栏显示「HTTP 服务器」+ 返回按钮 → `/tabs/settings/server`
+
+**模板骨架**：
 ```vue
 <ion-page>
   <ion-header>
     <ion-toolbar>
       <ion-buttons slot="start">
-        <ion-back-button default-href="/tabs/settings"></ion-back-button>
+        <ion-back-button default-href="/tabs/settings/server"></ion-back-button>
       </ion-buttons>
-      <ion-title>{{ t('settings.connection') }}</ion-title>
+      <ion-title>{{ t('settings.httpServer') }}</ion-title>
     </ion-toolbar>
   </ion-header>
   <ion-content>
     <ion-list>
-      <!-- 后端服务入口 -->
-      <ion-item button @click="goServer" detail>
-        <ion-icon :icon="serverIcon" slot="start"></ion-icon>
-        <ion-label>
-          <h3>{{ t('settings.serverTitle') }}</h3>
-          <p>
-            <ion-badge :color="serverOnline ? 'success' : 'danger'">
-              {{ serverOnline ? t('settings.online') : t('settings.offline') }}
-            </ion-badge>
-            <span v-if="serverOnline && backendPort">:{{ backendPort }}</span>
-            <span v-if="!serverOnline && connectionError"> - {{ connectionError }}</span>
-          </p>
-        </ion-label>
-      </ion-item>
-
-      <!-- 引擎状态入口 [native only] -->
-      <ion-item v-if="isNative()" button @click="goEngine" detail>
-        <ion-icon :icon="filmOutline" slot="start"></ion-icon>
-        <ion-label>
-          <h3>{{ t('settings.engineStatus') }}</h3>
-          <p>
-            <ion-badge :color="engineStatus?.ffmpeg_available ? 'success' : 'danger'">
-              {{ t('settings.ffmpegAvail') }}
-            </ion-badge>
-            <ion-badge :color="engineStatus?.ffprobe_available ? 'success' : 'danger'">
-              {{ t('settings.ffprobeAvail') }}
-            </ion-badge>
-          </p>
-        </ion-label>
-      </ion-item>
+      <ion-list-header><ion-label>{{ t('settings.httpServerSettings') }}</ion-label></ion-header>
+      <ConfigFieldItem :field="portField" :model-value="getFieldValue(['server', 'port'])" @update:model-value="setFieldValue(['server', 'port'], $event)" ... />
+      <ConfigFieldItem :field="dirField" :model-value="getFieldValue(['server', 'dir'])" @update:model-value="setFieldValue(['server', 'dir'], $event)" @browse="handleBrowseDir" ... />
     </ion-list>
+    <ion-button expand="block" @click="handleSave" :disabled="!dirty">{{ t('settings.saveConfig') }}</ion-button>
   </ion-content>
 </ion-page>
 ```
 
-### Step 2：注册路由
+### Step 2：新建 AdminServerDetail.vue（Admin Server 三级页面）
+
+**文件**：`src/views/AdminServerDetail.vue`
+
+**功能**：编辑 `admin.password`
+
+**字段**：
+- `admin.password` — 密码输入框（type=password）
+
+**与 Step 1 结构相同**，只是字段不同。
+
+### Step 3：新建 WebdavServerDetail.vue（WebDAV Server 三级页面）
+
+**文件**：`src/views/WebdavServerDetail.vue`
+
+**功能**：编辑 `webdav` 全部 4 个字段
+
+**字段**：
+- `webdav.root` — 路由前缀（如 `/webdav/`）
+- `webdav.dir` — 文件系统根目录
+- `webdav.username` — 基础认证用户名
+- `webdav.password` — 基础认证密码
+
+**额外功能**：
+- 复用 ServerDetail.vue 的 `testLocalWebDAV()` 逻辑，提供「测试连接」按钮
+- 显示 WebDAV 测试结果
+
+### Step 4：注册 3 条新路由
 
 **文件**：`src/router/index.ts`
 
-在 `settings/server` 路由之前添加：
+在现有 `settings/server` 路由之后添加：
 
 ```typescript
-{
-  path: 'settings/connection',
-  component: () => import('@/views/ConnectionDetail.vue'),
-},
+{ path: 'settings/server/http',   component: () => import('@/views/HttpServerDetail.vue') },
+{ path: 'settings/server/admin',  component: () => import('@/views/AdminServerDetail.vue') },
+{ path: 'settings/server/webdav', component: () => import('@/views/WebdavServerDetail.vue') },
 ```
 
-**路由顺序**（保持现有顺序，插入到 server 之前）：
+完整顺序：
 ```
-settings              → Settings.vue (Level 1)
-settings/connection   → ConnectionDetail.vue (Level 2)  ← NEW
-settings/server       → ServerDetail.vue (Level 3)
-settings/engine       → EngineDetail.vue (Level 3)
+settings              → Settings.vue (L1)
+settings/server       → ServerDetail.vue (L2)
+settings/server/http   → HttpServerDetail.vue (L3)   ← NEW
+settings/server/admin  → AdminServerDetail.vue (L3)  ← NEW
+settings/server/webdav → WebdavServerDetail.vue (L3) ← NEW
+settings/engine       → EngineDetail.vue (L2)
 ...
 ```
 
-### Step 3：精简 Settings.vue 的「连接」区域（Level 1）
+### Step 5：修改 ServerDetail.vue — 服务地址变为可点击入口
+
+**文件**：`src/views/ServerDetail.vue`
+
+**改动 L59-L77**（服务地址 `<ion-list>` 区域）：
+
+将当前的只读 URL 展示项改为**可点击的导航入口**：
+
+```vue
+<!-- Before: 只读 URL 列表 -->
+<ion-item v-for="svc in serviceUrls" :key="svc.label">
+  <ion-label><h3>{{ svc.label }}</h3><p class="readonly-url">{{ svc.url }}</p></ion-label>
+  <ion-button slot="end" ...>复制/测试</ion-button>
+</ion-item>
+
+<!-- After: 可点击入口 + 当前值摘要 -->
+<ion-item button @click="goHttpServer" detail>
+  <ion-icon :icon="cloudOutline" slot="start"></ion-icon>
+  <ion-label>
+    <h3>{{ t('settings.httpServer') }}</h3>
+    <p>:{{ httpPort }} {{ rootDir }}</p>
+  </ion-label>
+</ion-item>
+
+<ion-item button @click="goAdminServer" detail>
+  <ion-icon :icon="shieldCheckmark" slot="start"></ion-icon>
+  <ion-label>
+    <h3>{{ t('settings.adminServer') }}</h3>
+    <p>{{ adminConfigured ? t('settings.configured') : t('settings.notConfigured') }}</p>
+  </ion-label>
+</ion-item>
+
+<ion-item button @click="goWebdavServer" detail>
+  <ion-icon :icon="globeOutline" slot="start"></ion-icon>
+  <ion-label>
+    <h3>{{ t('settings.webdavServer') }}</h3>
+    <p>{{ webdavRoot }} {{ webdavUsername ? '@' + webdavUsername : '' }}</p>
+  </ion-label>
+</ion-item>
+```
+
+**新增导航函数**：
+```typescript
+function goHttpServer() { router.push('/tabs/settings/server/http') }
+function goAdminServer() { router.push('/tabs/settings/server/admin') }
+function goWebdavServer() { router.push('/tabs/settings/server/webdav') }
+```
+
+**新增 computed**（从 configData 中提取摘要信息）：
+```typescript
+const httpPort = computed(() => (configData.value?.server as any)?.port ?? '-')
+const rootDir = computed(() => (configData.value?.server as any)?.dir ?? '/')
+const adminConfigured = computed(!!(configData.value?.admin as any)?.password)
+const webdavRoot = computed(() => (configData.value?.webdav as any)?.root ?? '/')
+const webdavUsername = computed(() => (configData.value?.webdav as any)?.username ?? '')
+```
+
+### Step 6：修改 Settings.vue — 排除 server/admin/webdav 段
 
 **文件**：`src/views/Settings.vue`
 
-**改动 L89-L120**：将整个 `<ion-list>`（连接区域）替换为一行入口：
+**改动位置**：L140-L264 的 `<template v-for="section in schemaFields">` 循环
+
+在循环内部添加过滤条件，跳过 `server`、`admin`、`webdav` 三个 key：
 
 ```vue
-<!-- Before (Level 1 直接展示状态) -->
-<ion-list>
-  <ion-list-header><ion-label>{{ t('settings.connection') }}</ion-label></ion-list-header>
-  <ion-item button @click="goServer" detail>  ...  </ion-item>   <!-- 含 badge + 端口 + 错误信息 -->
-  <ion-item v-if="isNative()" button @click="goEngine" detail>  ...  </ion-item>  <!-- 含 FFmpeg badge -->
-</ion-list>
+<!-- Before: 渲染所有 schema 段 -->
+<template v-for="section in schemaFields" :key="section.key">
 
-<!-- After (Level 1 纯入口) -->
-<ion-list>
-  <ion-list-header><ion-label>{{ t('settings.connection') }}</ion-label></ion-list-header>
-  <ion-item button @click="goConnection" detail>
-    <ion-icon :icon="serverIcon" slot="start"></ion-icon>
-    <ion-label>
-      <h3>{{ t('settings.connectionSettings') }}</h3>
-      <p>{{ t('settings.connectionSettingsDesc') }}</p>
-    </ion-label>
-  </ion-item>
-</ion-list>
+<!-- After: 跳过已迁移到三级页面的段 -->
+<template v-for="section in schemaFields" :key="section.key">
+  <!-- server/admin/webdav 已移至 ServerDetail 的三级子页 -->
+  <template v-if="!['server', 'admin', 'webdav'].includes(section.key)">
+    <!-- 原有渲染逻辑不变 -->
+  </template>
+</template>
 ```
 
-**script 变更**：
-- 新增 `goConnection()` 函数：`router.push('/tabs/settings/connection')`
-- 可以移除 `goServer()` 和 `goEngine()` 从 Settings.vue（它们移到了 ConnectionDetail.vue），或者保留作为 fallback
-- `serverOnline`、`connectionError`、`backendPort`、`engineStatus` 等 **响应式变量可以移除**（不再在 Level 1 展示），减少 Settings.vue 的数据依赖
+或者更优雅地在 computed 中过滤（推荐在 `useConfig.ts` 或 Settings.vue 的 computed 中加一个 filteredSchemaFields）。
 
-### Step 4：添加 i18n 键
+### Step 7：添加 i18n 键
 
 **文件**：`src/composables/useI18n.ts`
 
-新增两个键（中英文）：
+新增键（中英文）：
 
 ```typescript
 // 中文
-'settings.connectionSettings': '连接设置',
-'settings.connectionSettingsDesc': '后端服务、引擎状态、网络配置',
+'settings.httpServer': 'HTTP 服务器',
+'settings.httpServerSettings': '内置 HTTP 服务器设置',
+'settings.adminServer': '管理后台',
+'settings.webdavServer': 'WebDAV 服务器',
+'settings.configured': '已配置',
+'settings.notConfigured': '未配置',
+'settings.saveConfig': '保存',
 
 // English
-'settings.connectionSettings': 'Connection',
-'settings.connectionSettingsDesc': 'Backend service, engine status, network config',
+'settings.httpServer': 'HTTP Server',
+'settings.httpServerSettings': 'Built-in HTTP Server Settings',
+'settings.adminServer': 'Admin Panel',
+'settings.webdavServer': 'WebDAV Server',
+'settings.configured': 'Configured',
+'settings.notConfigured': 'Not configured',
+'settings.saveConfig': 'Save',
 ```
 
-### Step 5：调整 Settings.vue 的 script（保留必要逻辑）
-
-**文件**：`src/views/Settings.vue`
-
-**关键发现**：以下变量**不能移除**，因为被 `onMounted` 和 `watch` 使用：
-
-| 变量 | 使用位置 | 作用 |
-|------|---------|------|
-| `serverOnline` | L756(onMounted), L807(watch) | 控制配置加载时机 |
-| `engineStatus` | L761(onMounted), L814(watch) | 引擎状态缓存 |
-| `connectionError` | useServerStatus 返回值 | 间接使用 |
-| `backendPort` | useServerStatus 返回值 | 仅模板使用 |
-
-**实际变更**：
-1. ✅ **新增** `goConnection()` 函数 → `router.push('/tabs/settings/connection')`
-2. ✅ **可移除** `goServer()` 函数（移至 ConnectionDetail.vue）
-3. ✅ **可移除** `goEngine()` 函数（移至 ConnectionDetail.vue）
-4. ❌ **保留** `useServerStatus` import 及其返回值（`serverOnline`, `connectionError`, `backendPort`）
-5. ❌ **保留** `engineStatus` ref 和 `fetchFFmpegStatus` 调用
-6. ⚠️ **模板中不再引用** `serverOnline`/`connectionError`/`backendPort`/`engineStatus`（它们仍存在于 script 中供 onMounted/watch 使用，只是不在 Level 1 展示）
-
-### Step 6：验证
+### Step 8：验证
 
 1. **vue-tsc** 零错误
 2. **vitest** 全部通过（208/208）
 3. **vite build** 成功
 4. **手动验证路径**：
-   - Settings → 点击「连接设置」→ 进入 ConnectionDetail（Level 2）
-   - ConnectionDetail → 点击「后端服务」→ 进入 ServerDetail（Level 3）
-   - ConnectionDetail → 点击「引擎状态」→ 进入 EngineDetail（Level 3）
-   - 所有返回按钮正确回退
+   - Settings → 后端服务 → HTTP Server → 编辑 port/dir → 保存 → 返回可见值更新
+   - Settings → 后端服务 → Admin Server → 编辑 password → 保存
+   - Settings → 后端服务 → WebDAV Server → 编辑全部字段 → 测试连接 → 保存
+   - Settings 主页确认 `server`/`admin`/`webdav` 段不再出现
+   - 其他配置段（proxy/log/password 等）不受影响
 
 ---
 
@@ -242,18 +281,18 @@ settings/engine       → EngineDetail.vue (Level 3)
 
 | 文件 | 改动类型 | 说明 |
 |------|---------|------|
-| `src/views/ConnectionDetail.vue` | **新建** | Level 2 连接设置聚合页 |
-| `src/router/index.ts` | **修改** | 新增 `settings/connection` 路由 |
-| `src/views/Settings.vue` | **修改** | 精简连接区域为单行入口 |
-| `src/composables/useI18n.ts` | **修改** | 新增 2 个 i18n 键 |
-| `src/views/ServerDetail.vue` | **不变** | 保持 Level 3 |
-| `src/views/EngineDetail.vue` | **不变** | 保持 Level 3 |
+| `src/views/HttpServerDetail.vue` | **新建** | L3 HTTP Server 配置页 |
+| `src/views/AdminServerDetail.vue` | **新建** | L3 Admin Server 配置页 |
+| `src/views/WebdavServerDetail.vue` | **新建** | L3 WebDAV Server 配置页 |
+| `src/router/index.ts` | **修改** | 新增 3 条路由 |
+| `src/views/ServerDetail.vue` | **修改** | 服务地址区改为可点击入口 |
+| `src/views/Settings.vue` | **修改** | schema 渲染排除 server/admin/webdav |
+| `src/composables/useI18n.ts` | **修改** | 新增 ~7 个 i18n 键 |
 
----
-
-## 五、不涉及的内容
-
-- ❌ 不修改 ServerDetail.vue 内部逻辑
-- ❌ 不修改 EngineDetail.vue 内部逻辑
-- ❌ 不改变路由的嵌套结构（仍在 Tabs children 下）
-- ❌ 不影响其他设置项（外观/播放器/缓存等保持原位）
+**不涉及的文件**：
+- ❌ EngineDetail.vue
+- ❌ CacheDetail.vue
+- ❌ PluginSettings.vue
+- ❌ AboutDetail.vue
+- ❌ DevToolsDetail.vue
+- ❌ config/schema.json（不改 schema，只改渲染过滤）
