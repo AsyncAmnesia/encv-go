@@ -414,8 +414,8 @@ import {
   chevronForward,
   folder,
   folderOpen,
-  videocam,
-  image,
+  eyeOutline,
+  playCircle,
   lockClosed,
   cloudOffline,
   refresh,
@@ -834,9 +834,11 @@ async function handleLongPress(file: FileItem) {
 
   const buttons: any[] = []
 
+  // ===== Section 1: 查看 / 打开 =====
   buttons.push({
     text: t('files.info'),
     icon: informationCircle,
+    cssClass: 'action-section-view',
     handler: () => {
       router.push({ path: '/tabs/file-info', query: { path: file.path, name: file.name } })
     },
@@ -846,6 +848,7 @@ async function handleLongPress(file: FileItem) {
     buttons.push({
       text: t('files.open'),
       icon: folderOpen,
+      cssClass: 'action-section-view',
       handler: () => {
         const newPath = currentPath.value === '/'
           ? '/' + file.name
@@ -853,37 +856,16 @@ async function handleLongPress(file: FileItem) {
         navigateTo(newPath)
       },
     })
-    buttons.push({
-      text: t('files.encrypt'),
-      icon: lockClosed,
-      handler: () => {
-        handleEncryptFile(file)
-      },
-    })
   } else if (file.isEncrypted) {
     buttons.push({
       text: t('files.preview'),
-      icon: image,
+      icon: eyeOutline,
+      cssClass: 'action-section-view',
       handler: () => {
         router.push({
           path: '/tabs/preview',
           query: { path: file.path, name: file.name, isEncrypted: 'true' },
         })
-      },
-    })
-    buttons.push({
-      text: t('files.decrypt'),
-      icon: lockClosed,
-      handler: () => {
-        handleDecryptFile(file)
-      },
-    })
-    buttons.push({
-      text: t('files.delete'),
-      icon: trash,
-      role: 'destructive',
-      handler: () => {
-        handleDeleteFile(file)
       },
     })
   } else {
@@ -894,7 +876,8 @@ async function handleLongPress(file: FileItem) {
       buttons.push({
         text: fa.text(),
         icon: fa.icon,
-        ...(fa.color ? { role: undefined, cssClass: `action-${fa.color}` } : {}),
+        cssClass: 'action-section-view',
+        ...(fa.color ? { role: undefined, cssClass: `action-section-view action-color-${fa.color}` } : {}),
         handler: () => {
           fa.handler(file)
         },
@@ -903,7 +886,8 @@ async function handleLongPress(file: FileItem) {
 
     buttons.push({
       text: isMedia ? t('files.play') : t('files.preview'),
-      icon: isMedia ? videocam : image,
+      icon: isMedia ? playCircle : eyeOutline,
+      cssClass: 'action-section-view',
       handler: () => {
         if (isMedia) {
           playMedia(file, category)
@@ -915,26 +899,45 @@ async function handleLongPress(file: FileItem) {
         }
       },
     })
+  }
+
+  // ===== Section 2: 加密 / 解密 =====
+  if (!file.isDirectory) {
+    if (file.isEncrypted) {
+      buttons.push({
+        text: t('files.decrypt'),
+        icon: lockClosed,
+        cssClass: 'action-section-crypto',
+        handler: () => {
+          handleDecryptFile(file)
+        },
+      })
+    } else {
+      buttons.push({
+        text: t('files.encrypt'),
+        icon: lockClosed,
+        cssClass: 'action-section-crypto',
+        handler: () => {
+          handleEncryptFile(file)
+        },
+      })
+    }
+  } else {
     buttons.push({
       text: t('files.encrypt'),
       icon: lockClosed,
+      cssClass: 'action-section-crypto',
       handler: () => {
         handleEncryptFile(file)
       },
     })
-    buttons.push({
-      text: t('files.delete'),
-      icon: trash,
-      role: 'destructive',
-      handler: () => {
-        handleDeleteFile(file)
-      },
-    })
   }
 
+  // ===== Section 3: 文件管理 =====
   buttons.push({
     text: '重命名',
     icon: createOutline,
+    cssClass: 'action-section-manage',
     handler: () => {
       selectedFile.value = file
       renameValue.value = file.name
@@ -944,6 +947,7 @@ async function handleLongPress(file: FileItem) {
   buttons.push({
     text: '复制',
     icon: copyOutline,
+    cssClass: 'action-section-manage',
     handler: () => {
       handleCopy(file)
     },
@@ -951,6 +955,7 @@ async function handleLongPress(file: FileItem) {
   buttons.push({
     text: '移动',
     icon: arrowForwardOutline,
+    cssClass: 'action-section-manage',
     handler: () => {
       selectedFile.value = file
       moveTargetPath.value = currentPath.value
@@ -960,6 +965,7 @@ async function handleLongPress(file: FileItem) {
   buttons.push({
     text: '分享',
     icon: shareOutline,
+    cssClass: 'action-section-manage',
     handler: () => {
       handleShare(file)
     },
@@ -967,6 +973,7 @@ async function handleLongPress(file: FileItem) {
   buttons.push({
     text: '标签管理',
     icon: pricetagOutline,
+    cssClass: 'action-section-manage',
     handler: async () => {
       selectedFile.value = file
       newTagInput.value = ''
@@ -982,6 +989,19 @@ async function handleLongPress(file: FileItem) {
     },
   })
 
+  // ===== Section 4: 危险操作 =====
+  if (!file.isDirectory) {
+    buttons.push({
+      text: t('files.delete'),
+      icon: trash,
+      role: 'destructive',
+      cssClass: 'action-section-danger',
+      handler: () => {
+        handleDeleteFile(file)
+      },
+    })
+  }
+
   buttons.push({
     text: t('files.cancelSelect'),
     role: 'cancel',
@@ -990,6 +1010,7 @@ async function handleLongPress(file: FileItem) {
   const actionSheet = await actionSheetController.create({
     header: file.name,
     buttons,
+    cssClass: 'file-action-sheet',
   })
   await actionSheet.present()
 }
@@ -1599,4 +1620,38 @@ ion-item {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ===== 长按菜单分区样式 (action-sheet overlay，需 :global) ===== */
+:global(.file-action-sheet .action-button) {
+  padding: 12px 16px;
+  font-size: 15px;
+}
+
+:global(.file-action-sheet .action-section-view) {
+  --color: var(--ion-color-primary);
+}
+:global(.file-action-sheet .action-section-view .action-button-icon) {
+  color: var(--ion-color-primary) !important;
+}
+
+:global(.file-action-sheet .action-section-crypto) {
+  --color: var(--ion-color-warning);
+}
+:global(.file-action-sheet .action-section-crypto .action-button-icon) {
+  color: #e6a000 !important;
+}
+
+:global(.file-action-sheet .action-section-manage) {
+  --color: var(--ion-color-medium);
+}
+:global(.file-action-sheet .action-section-manage .action-button-icon) {
+  color: var(--ion-color-medium-shade) !important;
+}
+
+:global(.file-action-sheet .action-section-danger) {
+  --color: var(--ion-color-danger);
+}
+:global(.file-action-sheet .action-section-danger .action-button-icon) {
+  color: var(--ion-color-danger) !important;
 }</style>

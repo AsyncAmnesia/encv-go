@@ -246,6 +246,7 @@ const props = withDefaults(defineProps<{
 
 const src = computed(() => props.state?.sourcePath ?? props.sourcePath ?? '')
 const tgt = computed(() => props.state?.targetPath ?? props.targetPath ?? '')
+const taskType = computed(() => props.state?.taskType ?? props.taskType ?? 'encrypt')
 const cands = computed(() => {
   const arr = props.state?.candidates ?? props.candidates
   return Array.isArray(arr) ? arr : []

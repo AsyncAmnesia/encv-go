@@ -3,6 +3,11 @@
     <ion-header>
       <ion-toolbar>
         <ion-title>{{ t('tasks.title') }}</ion-title>
+        <ion-buttons slot="end">
+          <ion-button fill="clear" size="small" @click="toggleSort" class="sort-toggle-btn">
+            <ion-icon :icon="sortBy === 'activity' ? sync : timer" slot="icon-only"></ion-icon>
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -23,7 +28,7 @@
       </div>
 
       <ion-list v-else>
-        <ion-item-sliding v-for="task in tasks" :key="task.id">
+        <ion-item-sliding v-for="task in sortedTasks" :key="task.id">
           <ion-item @click="openTaskDetail(task)" button detail>
             <ion-icon
               :icon="getTaskIcon(task)"
@@ -140,7 +145,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import {
   IonPage,
   IonHeader,
@@ -198,6 +203,7 @@ const loading = ref(false)
 const showErrorDetail = ref<Record<string, boolean>>({})
 const copiedTaskId = ref<string | null>(null)
 const expandedWarningDetail = ref<string | null>(null)
+const sortBy = ref<'activity' | 'created'>('activity')
 
 function getTaskIcon(task: EncvTask) {
   switch (task.status) {
@@ -273,6 +279,25 @@ function getTaskDuration(task: EncvTask): string {
     return formatDuration(Date.now() - created)
   }
   return ''
+}
+
+const sortedTasks = computed(() => {
+  const arr = [...tasks.value]
+  if (sortBy.value === 'activity') {
+    arr.sort((a, b) => {
+      const timeA = a.completedAt ? new Date(a.completedAt).getTime() : new Date(a.createdAt).getTime()
+      const timeB = b.completedAt ? new Date(b.completedAt).getTime() : new Date(b.createdAt).getTime()
+      if (timeB !== timeA) return timeB - timeA
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    })
+  } else {
+    arr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  }
+  return arr
+})
+
+function toggleSort() {
+  sortBy.value = sortBy.value === 'activity' ? 'created' : 'activity'
 }
 
 async function openTaskDetail(task: EncvTask) {
@@ -731,5 +756,12 @@ onUnmounted(() => {
 .hint-icon {
   font-size: 16px;
   flex-shrink: 0;
+}
+
+.sort-toggle-btn {
+  --color: var(--ion-color-medium);
+  --padding-start: 8px;
+  --padding-end: 8px;
+  font-size: 20px;
 }
 </style>
