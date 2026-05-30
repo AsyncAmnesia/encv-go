@@ -456,6 +456,7 @@ import {
 import type { FileItem, PluginMeta, TagInfo } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
+import { usePathResolver } from '@/composables/usePathResolver'
 import { formatDateTime } from '@/composables/useDateFormat'
 import { useThumbnailCache } from '@/composables/useThumbnailCache'
 import { useFileFeatures } from '@/composables/useFileFeatures'
@@ -559,6 +560,7 @@ function togglePlayErrorDetail() {
 }
 
 const { t } = useI18n()
+const { resolveFileItem } = usePathResolver()
 const { thumbnailUrls, setupLazyThumbnails, onThumbError } = useThumbnailCache()
 const { sortBy, sortDesc } = useFileListSort()
 const showMainSort = ref(false)
@@ -1089,14 +1091,14 @@ async function loadFileTagsForCurrentDir() {
 function handleEncryptFile(file: FileItem) {
   router.push({
     path: '/tabs/tasks',
-    query: { action: 'new', type: 'encrypt', source: file.path },
+    query: { action: 'new', type: 'encrypt', source: resolveFileItem(file) },
   })
 }
 
 function handleDecryptFile(file: FileItem) {
   router.push({
     path: '/tabs/tasks',
-    query: { action: 'new', type: 'decrypt', source: file.path },
+    query: { action: 'new', type: 'decrypt', source: resolveFileItem(file) },
   })
 }
 

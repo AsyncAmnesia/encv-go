@@ -1,5 +1,8 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { predictPlugin, type TaskOptions, type TaskField, type PluginCandidate } from '@/api/encv'
+import { usePathResolver } from '@/composables/usePathResolver'
+
+const { normalize } = usePathResolver()
 
 export interface QueryInitParams {
   sourcePath: string
@@ -37,8 +40,14 @@ export function useTaskForm() {
   function doPredict(sourcePath: string, taskType: 'encrypt' | 'decrypt') {
     if (predictTimer) clearTimeout(predictTimer)
     predictTimer = setTimeout(async () => {
+      const normalized = normalize(sourcePath)
+      if (!normalized) {
+        candidates.value = []
+        return
+      }
+
       try {
-        const result = await predictPlugin(sourcePath, taskType)
+        const result = await predictPlugin(normalized, taskType)
         candidates.value = result.candidates ?? []
         selectedPluginIndex.value = 0
         const defaults: Record<string, string> = {}

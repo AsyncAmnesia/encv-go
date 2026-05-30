@@ -185,9 +185,11 @@ import { useI18n } from '@/composables/useI18n'
 import { useTaskForm } from '@/composables/useTaskForm'
 import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
 import { showToast } from '@/composables/useToast'
+import { usePathResolver } from '@/composables/usePathResolver'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const { t } = useI18n()
+const { normalize } = usePathResolver()
 const route = useRoute()
 const router = useRouter()
 
@@ -544,7 +546,7 @@ function onTaskCompleted(data: { id: string; status?: string; error?: string; er
 
 function processQueryAction() {
   if (route.query.action === 'new') {
-    const sourcePath = route.query.source as string
+    const rawSource = route.query.source as string | undefined
     const taskType = (route.query.type === 'encrypt' || route.query.type === 'decrypt')
       ? route.query.type as TaskType
       : 'encrypt'
@@ -553,7 +555,8 @@ function processQueryAction() {
 
     nextTick(() => {
       newTaskType.value = taskType
-      openNewTaskModal(sourcePath)
+      const sourcePath = rawSource ? normalize(rawSource) : ''
+      openNewTaskModal(sourcePath || undefined)
     })
   }
 }
