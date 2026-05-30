@@ -456,6 +456,7 @@ import {
 } from '@/api/encv'
 import type { FileItem, PluginMeta, TagInfo } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
+import { useNewTaskModal } from '@/composables/useNewTaskModal'
 import { useI18n } from '@/composables/useI18n'
 import { usePathResolver } from '@/composables/usePathResolver'
 import { formatDateTime } from '@/composables/useDateFormat'
@@ -562,6 +563,7 @@ function togglePlayErrorDetail() {
 
 const { t } = useI18n()
 const { resolveFileItem } = usePathResolver()
+const { openNewTask } = useNewTaskModal()
 const { thumbnailUrls, setupLazyThumbnails, onThumbError } = useThumbnailCache()
 const { sortBy, sortDesc } = useFileListSort()
 const showMainSort = ref(false)
@@ -1091,12 +1093,12 @@ async function loadFileTagsForCurrentDir() {
 
 function handleEncryptFile(file: FileItem) {
   const resolvedPath = resolveFileItem(file)
-  eventBus.emit('open-new-task', { sourcePath: resolvedPath, taskType: 'encrypt' as const })
+  openNewTask(resolvedPath, 'encrypt')
 }
 
 function handleDecryptFile(file: FileItem) {
   const resolvedPath = resolveFileItem(file)
-  eventBus.emit('open-new-task', { sourcePath: resolvedPath, taskType: 'decrypt' as const })
+  openNewTask(resolvedPath, 'decrypt')
 }
 
 async function handleDeleteFile(file: FileItem) {

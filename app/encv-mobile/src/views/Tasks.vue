@@ -189,8 +189,6 @@ const route = useRoute()
 const router = useRouter()
 const { openNewTask } = useNewTaskModal()
 
-const openNewTaskHandler = (data: { sourcePath: string; taskType: 'encrypt' | 'decrypt' }) => openNewTask(data.sourcePath, data.taskType)
-
 const tasks = ref<EncvTask[]>([])
 const loading = ref(false)
 const showErrorDetail = ref<Record<string, boolean>>({})
@@ -418,7 +416,6 @@ onMounted(() => {
   eventBus.on('task:progress', onTaskProgress)
   eventBus.on('task:created', onTaskCreated)
   eventBus.on('task:completed', onTaskCompleted)
-  eventBus.on('open-new-task', openNewTaskHandler)
   eventBus.on('task:refresh', loadTasks)
 
   if (route.query.action === 'new') {
@@ -438,7 +435,6 @@ onUnmounted(() => {
   eventBus.off('task:progress', onTaskProgress)
   eventBus.off('task:created', onTaskCreated)
   eventBus.off('task:completed', onTaskCompleted)
-  eventBus.off('open-new-task', openNewTaskHandler)
   eventBus.off('task:refresh', loadTasks)
 })
 </script>

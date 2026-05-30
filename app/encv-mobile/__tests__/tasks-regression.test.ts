@@ -23,18 +23,24 @@ describe('Tasks.vue 防护性回归测试', () => {
       expect(hasInlineIonModal).toBe(false)
     })
 
-    it('eventBus open-new-task 必须正确桥接到 openNewTask', () => {
+    it('Files.vue 必须直接调用 useNewTaskModal（不依赖 eventBus 跨 tab）', () => {
       const fs = require('fs')
-      const source = fs.readFileSync(
-        require('path').resolve(__dirname, '../src/views/Tasks.vue'),
+      const filesSource = fs.readFileSync(
+        require('path').resolve(__dirname, '../src/views/Files.vue'),
         'utf-8'
       )
 
-      // 必须监听 open-new-task 事件
-      expect(source).toMatch(/eventBus\.on\('open-new-task'/)
-      
-      // handler 必须调用 openNewTask 并传递 sourcePath 和 taskType
-      expect(source).toMatch(/openNewTask\(data\.sourcePath.*data\.taskType\)/)
+      // Files.vue 必须导入 useNewTaskModal
+      expect(filesSource).toMatch(/useNewTaskModal/)
+      expect(filesSource).toMatch(/const \{ openNewTask \} = useNewTaskModal\(\)/)
+
+      // handleEncryptFile/handleDecryptFile 必须直接调用 openNewTask
+      expect(filesSource).toMatch(/openNewTask\(resolvedPath,\s*'encrypt'\)/)
+      expect(filesSource).toMatch(/openNewTask\(resolvedPath,\s*'decrypt'\)/)
+
+      // 绝不能通过 eventBus 中转（跨 tab 依赖会导致未挂载时丢失事件）
+      const hasEventBusBridge = /handleEncryptFile.*eventBus\.emit\('open-new-task'/s.test(filesSource)
+      expect(hasEventBusBridge).toBe(false)
     })
 
     it('processQueryAction (直链访问) 必须在 onMounted 中处理', () => {
@@ -48,7 +54,10 @@ describe('Tasks.vue 防护性回归测试', () => {
       expect(source).toMatch(/route\.query\.action === 'new'/)
 
       // 必须在 query 处理后调用 openNewTask
-      const mountedBlock = source.substring(source.indexOf('onMounted(() =>'), source.indexOf('onUnmounted'))
+      const mountedBlock = source.substring(
+        source.indexOf('onMounted(() =>'),
+        source.indexOf('onUnmounted(() =>')
+      )
       expect(mountedBlock).toContain('openNewTask(')
     })
   })
