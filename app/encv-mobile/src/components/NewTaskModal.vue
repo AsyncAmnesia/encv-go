@@ -9,6 +9,7 @@
       </ion-toolbar>
     </ion-header>
     <ion-content class="ion-padding">
+      <p style="color:red;font-weight:bold">✅ ion-content OK | taskType={{ val(taskType) }} | sourcePath={{ val(sourcePath) }} | candidates={{ arrLen(candidates) }}</p>
       <ion-list>
         <ion-item>
           <ion-select
