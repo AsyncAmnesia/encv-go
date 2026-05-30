@@ -1,6 +1,7 @@
-import { ref } from 'vue'
+import { reactive } from 'vue'
 import { modalController } from '@ionic/vue'
 import type { TaskType } from '@/api/encv'
+import type { PluginCandidate, ContainerVersionInfo, TaskField, TaskOptions } from '@/api/encv'
 import { createTask } from '@/api/encv'
 import { useTaskForm } from '@/composables/useTaskForm'
 import { usePathResolver } from '@/composables/usePathResolver'
@@ -10,6 +11,24 @@ import { eventBus } from '@/composables/useEventBus'
 import NewTaskModal from '@/components/NewTaskModal.vue'
 
 const { normalize } = usePathResolver()
+
+// modalController.create() 的 componentProps 是静态快照
+// 必须用 reactive 对象包装所有状态，让子组件能读取到回调更新后的最新值
+interface NewTaskState {
+  taskType: string
+  sourcePath: string
+  targetPath: string
+  candidates: PluginCandidate[]
+  predictedPlugin: string | null
+  taskOptions: TaskOptions | null
+  primaryOverride: string
+  secondaryPassword: string
+  version: number
+  versionOptions: ContainerVersionInfo[]
+  extraValues: Record<string, string>
+  filteredExtraFields: TaskField[]
+  selectedPluginIndex: number
+}
 
 export function useNewTaskModal() {
   const { t } = useI18n()
@@ -24,67 +43,82 @@ export function useNewTaskModal() {
     reset: resetTaskForm,
   } = useTaskForm()
 
-  const taskType = ref<TaskType>('encrypt')
-  const sourcePath = ref('')
-  const targetPath = ref('')
-  const primaryOverride = ref('')
-  const secondaryPassword = ref('')
-  const version = ref(4)
-
   async function openNewTask(initialSourcePath?: string, initialTaskType?: 'encrypt' | 'decrypt') {
-    taskType.value = initialTaskType || 'encrypt'
-    sourcePath.value = initialSourcePath || ''
-    targetPath.value = ''
-    primaryOverride.value = ''
-    secondaryPassword.value = ''
-    version.value = 4
+    const state = reactive<NewTaskState>({
+      taskType: initialTaskType || 'encrypt',
+      sourcePath: initialSourcePath || '',
+      targetPath: '',
+      candidates: [],
+      predictedPlugin: null,
+      taskOptions: null,
+      primaryOverride: '',
+      secondaryPassword: '',
+      version: 4,
+      versionOptions: [],
+      extraValues: {},
+      filteredExtraFields: [],
+      selectedPluginIndex: 0,
+    })
+
     resetTaskForm()
 
     if (initialSourcePath) {
       const normalized = normalize(initialSourcePath)
       if (normalized) {
-        doPredict(normalized, taskType.value as 'encrypt' | 'decrypt')
-        await new Promise(resolve => setTimeout(resolve, 600))
+        await doPredict(normalized, state.taskType as 'encrypt' | 'decrypt')
+        syncState()
       }
     }
+
+    // 同步内部 reactive 状态到 state 对象（供 NewTaskModal 读取）
+    function syncState() {
+      state.candidates = candidates.value
+      state.predictedPlugin = predictedPlugin.value
+      state.selectedPluginIndex = selectedPluginIndex.value
+      state.versionOptions = versionOptions.value ?? []
+      state.extraValues = { ...extraValues.value }
+      state.filteredExtraFields = visibleExtraFields.value
+      if (candidates.value.length > 0) {
+        state.taskOptions = candidates.value[selectedPluginIndex.value]?.taskOptions ?? null
+      }
+    }
+
+    // 初始同步
+    syncState()
 
     const modal = await modalController.create({
       component: NewTaskModal,
       componentProps: {
-        taskType: taskType.value,
-        sourcePath: sourcePath.value,
-        targetPath: targetPath.value,
-        candidates: candidates.value,
-        predictedPlugin: predictedPlugin.value,
-        taskOptions: candidates.value.length > 0 ? candidates.value[selectedPluginIndex.value]?.taskOptions ?? null : null,
-        primaryOverride: primaryOverride.value,
-        secondaryPassword: secondaryPassword.value,
-        version: version.value,
-        versionOptions: versionOptions.value ?? [],
-        extraValues: extraValues.value,
-        filteredExtraFields: visibleExtraFields.value,
-        selectedPluginIndex: selectedPluginIndex.value,
-        onUpdateTaskType: (v: string) => { taskType.value = v as TaskType },
-        onUpdateSourcePath: (v: string) => {
-          sourcePath.value = v
+        state,
+        onUpdateTaskType: (v: string) => { state.taskType = v },
+        onUpdateSourcePath: async (v: string) => {
+          state.sourcePath = v
           const norm = normalize(v)
-          if (norm) doPredict(norm, taskType.value as 'encrypt' | 'decrypt')
+          if (norm) {
+            await doPredict(norm, state.taskType as 'encrypt' | 'decrypt')
+            syncState()
+          }
         },
-        onUpdateTargetPath: (v: string) => { targetPath.value = v },
-        onUpdateVersion: (v: number) => { version.value = v },
-        onUpdatePrimaryOverride: (v: string) => { primaryOverride.value = v },
-        onUpdateSecondaryPassword: (v: string) => { secondaryPassword.value = v },
-        onUpdateExtraValue: ({ key, value }: { key: string; value: string }) => { extraValues.value[key] = value },
-        onSelectPlugin: (idx: number) => { selectedPluginIndex.value = idx },
+        onUpdateTargetPath: (v: string) => { state.targetPath = v },
+        onUpdateVersion: (v: number) => { state.version = v },
+        onUpdatePrimaryOverride: (v: string) => { state.primaryOverride = v },
+        onUpdateSecondaryPassword: (v: string) => { state.secondaryPassword = v },
+        onUpdateExtraValue: ({ key, value }: { key: string; value: string }) => { state.extraValues[key] = value },
+        onSelectPlugin: (idx: number) => {
+          state.selectedPluginIndex = idx
+          if (candidates.value.length > 0) {
+            state.taskOptions = candidates.value[idx]?.taskOptions ?? null
+          }
+        },
         onSubmit: async () => {
-          if (!sourcePath.value) return
+          if (!state.sourcePath) return
           try {
             await createTask(
-              taskType.value,
-              sourcePath.value,
-              targetPath.value || undefined,
+              state.taskType as TaskType,
+              state.sourcePath,
+              state.targetPath || undefined,
               undefined,
-              taskType.value === 'encrypt' ? version.value : undefined
+              state.taskType === 'encrypt' ? state.version : undefined
             )
             await modal.dismiss()
             showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })

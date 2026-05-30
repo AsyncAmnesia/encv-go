@@ -54,10 +54,10 @@
       </div>
 
       <!-- 密码策略提示 -->
-      <div v-if="taskOptions?.passwordStrategy === 'independent'" class="plugin-hint password-strategy-hint">
+      <div v-if="taskOpts?.passwordStrategy === 'independent'" class="plugin-hint password-strategy-hint">
         {{ t('tasks.usesIndependentPassword') }}
       </div>
-      <div v-else-if="cands.length > 0 && taskOptions" class="plugin-hint">
+      <div v-else-if="cands.length > 0 && taskOpts" class="plugin-hint">
         {{ t('tasks.usesGlobalPassword') }}
       </div>
 
@@ -114,7 +114,24 @@ import { folderOpen, lockClosed, checkmarkCircle } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import ContainerVersionSelector from '@/components/ContainerVersionSelector.vue'
 import FilePickerModal from '@/components/FilePickerModal.vue'
-import type { PluginCandidate, TaskOptions, TaskField, ContainerVersionInfo } from '@/api/encv'
+import type { PluginCandidate, ContainerVersionInfo, TaskField, TaskOptions } from '@/api/encv'
+
+// modalController.create() 场景传入的响应式状态对象（替代扁平 props 的静态快照）
+interface NewTaskState {
+  taskType: string
+  sourcePath: string
+  targetPath: string
+  candidates: PluginCandidate[]
+  predictedPlugin: string | null
+  taskOptions: TaskOptions | null
+  primaryOverride: string
+  secondaryPassword: string
+  version: number
+  versionOptions: ContainerVersionInfo[]
+  extraValues: Record<string, string>
+  filteredExtraFields: TaskField[]
+  selectedPluginIndex: number
+}
 
 const { t } = useI18n()
 
@@ -131,6 +148,7 @@ const emit = defineEmits<{
 }>()
 
 const props = withDefaults(defineProps<{
+  state?: NewTaskState
   taskType: string
   sourcePath: string
   targetPath: string
@@ -144,7 +162,6 @@ const props = withDefaults(defineProps<{
   extraValues: Record<string, string>
   filteredExtraFields: TaskField[]
   selectedPluginIndex: number
-  // 回调 props（modalController.create() 场景使用，与 emit 并行触发）
   onUpdateTaskType?: (v: string) => void
   onUpdateSourcePath?: (v: string) => void
   onUpdateTargetPath?: (v: string) => void
@@ -155,6 +172,7 @@ const props = withDefaults(defineProps<{
   onSelectPlugin?: (index: number) => void
   onSubmit?: () => void
 }>(), {
+  state: undefined,
   onUpdateTaskType: undefined,
   onUpdateSourcePath: undefined,
   onUpdateTargetPath: undefined,
@@ -166,20 +184,36 @@ const props = withDefaults(defineProps<{
   onSubmit: undefined,
 })
 
-const src = computed(() => props.sourcePath || '')
-const tgt = computed(() => props.targetPath || '')
-const cands = computed(() => Array.isArray(props.candidates) ? props.candidates : [])
-const pluginName = computed(() => props.predictedPlugin || '')
-const pwdPrimary = computed(() => props.primaryOverride || '')
-const pwdSecondary = computed(() => props.secondaryPassword || '')
-const ver = computed(() => typeof props.version === 'number' ? props.version : 4)
-const vers = computed(() => Array.isArray(props.versionOptions) ? props.versionOptions : [])
-const extraFlds = computed(() => Array.isArray(props.filteredExtraFields) ? props.filteredExtraFields : [])
-const selectedIdx = computed(() => typeof props.selectedPluginIndex === 'number' ? props.selectedPluginIndex : 0)
+// 优先从响应式 state 对象读取（modalController.create() 场景），fallback 到扁平 props
+const src = computed(() => props.state?.sourcePath ?? props.sourcePath ?? '')
+const tgt = computed(() => props.state?.targetPath ?? props.targetPath ?? '')
+const cands = computed(() => {
+  const arr = props.state?.candidates ?? props.candidates
+  return Array.isArray(arr) ? arr : []
+})
+const pluginName = computed(() => props.state?.predictedPlugin ?? props.predictedPlugin ?? '')
+const pwdPrimary = computed(() => props.state?.primaryOverride ?? props.primaryOverride ?? '')
+const pwdSecondary = computed(() => props.state?.secondaryPassword ?? props.secondaryPassword ?? '')
+const ver = computed(() => props.state?.version ?? (typeof props.version === 'number' ? props.version : 4))
+const vers = computed(() => {
+  const arr = props.state?.versionOptions ?? props.versionOptions
+  return Array.isArray(arr) ? arr : []
+})
+const extraFlds = computed(() => {
+  const arr = props.state?.filteredExtraFields ?? props.filteredExtraFields
+  return Array.isArray(arr) ? arr : []
+})
+const selectedIdx = computed(() =>
+  typeof (props.state?.selectedPluginIndex ?? props.selectedPluginIndex) === 'number'
+    ? (props.state!.selectedPluginIndex)
+    : 0
+)
+const taskOpts = computed(() => props.state?.taskOptions ?? props.taskOptions ?? null)
 
 function getExtra(key: string): string {
-  if (!props.extraValues || typeof props.extraValues !== 'object') return ''
-  return props.extraValues[key] || ''
+  const ev = props.state?.extraValues ?? props.extraValues
+  if (!ev || typeof ev !== 'object') return ''
+  return ev[key] || ''
 }
 
 async function handleBrowseSource() {

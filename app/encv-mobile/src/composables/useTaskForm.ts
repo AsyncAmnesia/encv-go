@@ -37,28 +37,32 @@ export function useTaskForm() {
 
   let predictTimer: ReturnType<typeof setTimeout> | null = null
 
-  function doPredict(sourcePath: string, taskType: 'encrypt' | 'decrypt') {
-    if (predictTimer) clearTimeout(predictTimer)
-    predictTimer = setTimeout(async () => {
-      const normalized = normalize(sourcePath)
-      if (!normalized) {
-        candidates.value = []
-        return
-      }
+  function doPredict(sourcePath: string, taskType: 'encrypt' | 'decrypt'): Promise<void> {
+    return new Promise((resolve) => {
+      if (predictTimer) clearTimeout(predictTimer)
+      predictTimer = setTimeout(async () => {
+        const normalized = normalize(sourcePath)
+        if (!normalized) {
+          candidates.value = []
+          resolve()
+          return
+        }
 
-      try {
-        const result = await predictPlugin(normalized, taskType)
-        candidates.value = result.candidates ?? []
-        selectedPluginIndex.value = 0
-        const defaults: Record<string, string> = {}
-        candidates.value[0]?.taskOptions?.extraFields?.forEach((f) => {
-          if (f.defaultValue) defaults[f.key] = f.defaultValue
-        })
-        extraValues.value = defaults
-      } catch {
-        candidates.value = []
-      }
-    }, 500)
+        try {
+          const result = await predictPlugin(normalized, taskType)
+          candidates.value = result.candidates ?? []
+          selectedPluginIndex.value = 0
+          const defaults: Record<string, string> = {}
+          candidates.value[0]?.taskOptions?.extraFields?.forEach((f) => {
+            if (f.defaultValue) defaults[f.key] = f.defaultValue
+          })
+          extraValues.value = defaults
+        } catch {
+          candidates.value = []
+        }
+        resolve()
+      }, 500)
+    })
   }
 
   function getExtraPayload(): Record<string, string> {
