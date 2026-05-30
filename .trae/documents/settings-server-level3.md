@@ -214,28 +214,81 @@ const webdavRoot = computed(() => (configData.value?.webdav as any)?.root ?? '/'
 const webdavUsername = computed(() => (configData.value?.webdav as any)?.username ?? '')
 ```
 
-### Step 6：修改 Settings.vue — 排除 server/admin/webdav 段
+### Step 6：修改 Settings.vue — 排除 server/admin/webdav 段（仅模板层过滤）
 
 **文件**：`src/views/Settings.vue`
 
-**改动位置**：L140-L264 的 `<template v-for="section in schemaFields">` 循环
+**核心原则：不修改 Schema 生产链路，仅在消费层过滤。**
 
-在循环内部添加过滤条件，跳过 `server`、`admin`、`webdav` 三个 key：
+#### 6.1 Schema 驱动链路完整性保证
+
+```
+schema.json ──→ schemaParser.parseSchema() ──→ useConfig.schemaFields ──→ 消费者
+   ✅ 不改           ✅ 不改                    ✅ 不改              ⚠️ 仅此处过滤
+```
+
+| 层 | 文件 | 改动？ | 原因 |
+|---|------|--------|------|
+| Schema 定义 | `config/schema.json` | ❌ 不改 | 数据源不变 |
+| Schema 解析 | `config/schemaParser.ts` | ❌ 不改 | `parseSchema()` 返回完整 FieldDef[] |
+| Config 状态 | `composables/useConfig.ts` | ❌ 不改 | `schemaFields` computed 保持原样 |
+| 插件设置页 | `views/PluginSettings.vue` | ❌ 不受影响 | 用 `.find(s => s.key === 'plugin_settings')` 取值，不过滤 |
+| **设置主页** | **`views/Settings.vue`** | **⚠️ 模板 v-if 过滤** | **消费层跳过 3 个 key** |
+| L3 子页面 | 新建 × 3 | ✅ 新增 | 各自调用 `parseSchema().find(s => s.key === target)` 获取 |
+
+#### 6.2 具体改动
+
+**方式 A（推荐）：模板层 v-if 包裹**
+
+改动位置：L140-L264 的 `<template v-for="section in schemaFields">` 循环
 
 ```vue
 <!-- Before: 渲染所有 schema 段 -->
 <template v-for="section in schemaFields" :key="section.key">
+  <!-- 原有渲染逻辑全部保留在内部 -->
+</template>
 
-<!-- After: 跳过已迁移到三级页面的段 -->
+<!-- After: 消费层过滤，生产层不动 -->
 <template v-for="section in schemaFields" :key="section.key">
-  <!-- server/admin/webdav 已移至 ServerDetail 的三级子页 -->
+  <!-- server/admin/webdav 已迁移到 ServerDetail 的三级子页 -->
   <template v-if="!['server', 'admin', 'webdav'].includes(section.key)">
-    <!-- 原有渲染逻辑不变 -->
+    <!-- 原有渲染逻辑一字不改 -->
+    <ion-list v-if="section.key === 'plugin_settings'">...</ion-list>
+    <ion-list v-else-if="section.type !== 'object' || !section.properties">...</ion-list>
+    <ion-list v-else>...</ion-list>
   </template>
 </template>
 ```
 
-或者更优雅地在 computed 中过滤（推荐在 `useConfig.ts` 或 Settings.vue 的 computed 中加一个 filteredSchemaFields）。
+**为什么不用 computed 过滤 schemaFields？**
+- `schemaFields` 是 useConfig 导出的共享 computed
+- PluginSettings.vue 也导入同一个 `schemaFields`
+- 如果在 useConfig 中过滤，PluginSettings 会受影响
+- **最安全：每个消费者自行决定渲染哪些字段**
+
+#### 6.3 L3 页面如何获取 Schema 定义
+
+L3 页面不依赖 Settings.vue 传递 props，而是**独立从 Schema 源获取**：
+
+```typescript
+// HttpServerDetail.vue / AdminServerDetail.vue / WebdavServerDetail.vue
+import { parseSchema } from '@/config/schemaParser'
+import { useConfig } from '@/composables/useConfig'
+import type { FieldDef } from '@/config/schemaParser'
+
+const { getFieldValue, setFieldValue, dirty, saveConfig } = useConfig()
+
+// 独立解析 schema，获取目标段的 FieldDef（含 properties 子字段）
+const sectionKey = 'server'  // | 'admin' | 'webdav'
+const sectionDef = parseSchema().find(s => s.key === sectionKey)
+const childFields = computed(() => sectionDef?.properties ?? [])
+```
+
+这样：
+- ✅ 与 Settings.vue 使用**同一份 Schema 数据源**
+- ✅ 通过**同一份 useConfig state** 读写值
+- ✅ 保存时 `dirty` 标记正确传播
+- ✅ 返回 Settings/ServerDetail 时能看到最新值
 
 ### Step 7：添加 i18n 键
 
