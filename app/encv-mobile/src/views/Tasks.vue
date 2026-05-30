@@ -127,16 +127,111 @@
       </ion-list>
 
       <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-        <ion-fab-button @click="() => openNewTaskModal()">
+        <ion-fab-button @click="showNewTaskSheet">
           <ion-icon :icon="add"></ion-icon>
         </ion-fab-button>
       </ion-fab>
+
+      <ion-modal :is-open="showNewTaskModal" @didDismiss="showNewTaskModal = false">
+        <ion-header>
+          <ion-toolbar>
+            <ion-title>{{ t('tasks.newTask') }}</ion-title>
+            <ion-buttons slot="end">
+              <ion-button @click="showNewTaskModal = false">{{ t('tasks.close') }}</ion-button>
+            </ion-buttons>
+          </ion-toolbar>
+        </ion-header>
+        <ion-content class="ion-padding">
+          <ion-list>
+            <ion-item>
+              <ion-select
+                v-model="newTaskType"
+                interface="action-sheet"
+                :label="t('tasks.taskType')"
+                label-placement="stacked"
+              >
+                <ion-select-option value="encrypt">{{ t('tasks.encrypt') }}</ion-select-option>
+                <ion-select-option value="decrypt">{{ t('tasks.decrypt') }}</ion-select-option>
+              </ion-select>
+            </ion-item>
+            <ion-item>
+              <ion-input
+                v-model="newTaskPath"
+                :label="t('tasks.sourcePath')"
+                label-placement="stacked"
+                placeholder="/path/to/file"
+                :error-text="sourcePathError"
+                :class="{ 'ion-invalid': !!sourcePathError, 'ion-touched': !!sourcePathError }"
+                @ionInput="validateSourcePath"
+              ></ion-input>
+              <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseSource">
+                <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+              </ion-button>
+            </ion-item>
+            <ion-item>
+              <ion-input
+                v-model="newTaskTargetPath"
+                :label="t('tasks.targetPath')"
+                label-placement="stacked"
+                :placeholder="t('tasks.targetPathPlaceholder')"
+                :error-text="targetPathError"
+                :class="{ 'ion-invalid': !!targetPathError, 'ion-touched': !!targetPathError }"
+                @ionInput="validateTargetPath"
+              ></ion-input>
+              <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseTarget">
+                <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+              </ion-button>
+            </ion-item>
+          </ion-list>
+
+          <!-- 容器版本选择（仅加密时显示） -->
+          <ion-item v-if="newTaskType === 'encrypt'">
+            <ContainerVersionSelector v-model="newTaskVersion" />
+          </ion-item>
+
+          <!-- 插件预测结果 -->
+          <div v-if="candidates.length > 1" class="plugin-selector">
+            <ion-list>
+              <ion-item>
+                <ion-label>{{ t('tasks.selectPlugin') }}</ion-label>
+                <ion-select :model-value="selectedPluginIndex" @ionChange="(e: any) => selectedPluginIndex = e.detail.value" interface="action-sheet" placement="bottom" style="width: 100%; max-width: 200px;">
+                  <ion-select-option v-for="(c, idx) in candidates" :key="idx" :value="idx">{{ c.name }}</ion-select-option>
+                </ion-select>
+              </ion-item>
+            </ion-list>
+          </div>
+
+          <div v-else-if="candidates.length === 1 && predictedPlugin" class="plugin-hint">
+            <ion-icon :icon="checkmarkCircle" color="success" class="hint-icon"></ion-icon>
+            <span>{{ t('tasks.willBeHandledBy', { plugin: predictedPlugin }) }}</span>
+          </div>
+
+          <!-- 二级密码（占位，计划中） -->
+          <ion-item>
+            <ion-input
+              v-model="newTaskSecondaryPassword"
+              :label="t('tasks.secondaryPassword')"
+              label-placement="stacked"
+              type="password"
+              disabled
+              placeholder=""
+            >
+              <ion-badge color="medium" slot="end">{{ t('tasks.comingSoon') }}</ion-badge>
+            </ion-input>
+          </ion-item>
+
+          <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath || !!sourcePathError || !!targetPathError">
+            <ion-icon :icon="lockClosed" slot="start"></ion-icon>
+            {{ t('tasks.createTask') }}
+          </ion-button>
+        </ion-content>
+      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import {
   IonPage,
   IonHeader,
@@ -156,6 +251,12 @@ import {
   IonProgressBar,
   IonFab,
   IonFabButton,
+  IonModal,
+  IonButtons,
+  IonButton,
+  IonSelect,
+  IonSelectOption,
+  IonInput,
   IonSpinner,
   modalController,
 } from '@ionic/vue'
@@ -166,46 +267,41 @@ import {
   closeCircle,
   timer,
   sync,
+  folderOpen,
   copyOutline,
   warningOutline,
 } from 'ionicons/icons'
 import { useRoute, useRouter } from 'vue-router'
-import NewTaskModal from '@/components/NewTaskModal.vue'
+import ContainerVersionSelector from '@/components/ContainerVersionSelector.vue'
 import {
   getTasks,
   createTask,
   cancelTask,
   retryTask,
   removeTask,
+  listFiles,
   isWrongPasswordError,
 } from '@/api/encv'
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
-import { useTaskForm } from '@/composables/useTaskForm'
+import { useConfig } from '@/composables/useConfig'
 import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
 import { showToast } from '@/composables/useToast'
+import FilePickerModal from '@/components/FilePickerModal.vue'
+import { useTaskForm } from '@/composables/useTaskForm'
 import { usePathResolver } from '@/composables/usePathResolver'
 
-
 const { t } = useI18n()
-const { normalize } = usePathResolver()
 const route = useRoute()
 const router = useRouter()
+const { config } = useConfig()
+const { normalize } = usePathResolver()
 
 const {
   candidates,
   predictedPlugin,
-  taskOptions,
-  primaryOverride,
-  secondaryPassword,
-  versionOptions,
-  extraValues,
-  getExtraPayload,
-  reset: resetTaskForm,
-  initFromQuery,
   selectedPluginIndex,
-  visibleExtraFields,
   predictPlugin: doPredict,
 } = useTaskForm()
 
@@ -214,12 +310,39 @@ const loading = ref(false)
 const showErrorDetail = ref<Record<string, boolean>>({})
 const copiedTaskId = ref<string | null>(null)
 const expandedWarningDetail = ref<string | null>(null)
+const showNewTaskModal = ref(false)
 const newTaskType = ref<TaskType>('encrypt')
 const newTaskPath = ref('')
 const newTaskTargetPath = ref('')
 const sourcePathError = ref('')
 const targetPathError = ref('')
+const newTaskPassword = ref('')
 const newTaskVersion = ref(4)
+const newTaskSecondaryPassword = ref('')
+let sourceValidateTimer: ReturnType<typeof setTimeout> | null = null
+let targetValidateTimer: ReturnType<typeof setTimeout> | null = null
+let sourceValidateGeneration = 0
+let targetValidateGeneration = 0
+
+async function validatePathExists(path: string): Promise<boolean> {
+  try {
+    const parentDir = path.substring(0, path.lastIndexOf('/')) || '/'
+    const fileName = path.substring(path.lastIndexOf('/') + 1)
+    const files = await listFiles(parentDir)
+    return files.some(f => f.name === fileName)
+  } catch {
+    return false
+  }
+}
+
+async function validateDirExists(path: string): Promise<boolean> {
+  try {
+    await listFiles(path)
+    return true
+  } catch {
+    return false
+  }
+}
 
 function getTaskIcon(task: EncvTask) {
   switch (task.status) {
@@ -356,92 +479,100 @@ async function handleRefresh(event: CustomEvent) {
   ;(event.target as any)?.complete?.()
 }
 
-async function openNewTaskModal(initialSourcePath?: string) {
-  const safeSource = typeof initialSourcePath === 'string' ? initialSourcePath : ''
+function showNewTaskSheet() {
   newTaskType.value = 'encrypt'
-  newTaskPath.value = safeSource
+  newTaskPath.value = ''
   newTaskTargetPath.value = ''
-  newTaskVersion.value = 4
   sourcePathError.value = ''
   targetPathError.value = ''
-  resetTaskForm()
-
-  if (safeSource) {
-    await initFromQuery({ sourcePath: safeSource, taskType: 'encrypt' })
-    await new Promise(resolve => setTimeout(resolve, 600))
-  }
-
-  const modal = await modalController.create({
-    component: NewTaskModal,
-    componentProps: {
-      taskType: newTaskType.value,
-      sourcePath: newTaskPath.value,
-      targetPath: newTaskTargetPath.value,
-      candidates: candidates.value || [],
-      predictedPlugin: predictedPlugin.value || null,
-      taskOptions: taskOptions.value || null,
-      primaryOverride: primaryOverride.value || '',
-      secondaryPassword: secondaryPassword.value || '',
-      version: newTaskVersion.value || 4,
-      versionOptions: versionOptions.value || [],
-      extraValues: extraValues.value || {},
-      filteredExtraFields: visibleExtraFields.value,
-      selectedPluginIndex: selectedPluginIndex.value || 0,
-    },
-  })
-
-  modal.onDidDismiss().then(() => {})
-
-  modal.addEventListener('updateTaskType', (e: any) => {
-    if (e.detail) newTaskType.value = e.detail
-  })
-  modal.addEventListener('updateSourcePath', (e: any) => {
-    if (e.detail) {
-      newTaskPath.value = e.detail
-      doPredict(e.detail, newTaskType.value as 'encrypt' | 'decrypt')
-    }
-  })
-  modal.addEventListener('updateTargetPath', (e: any) => {
-    if (e.detail) newTaskTargetPath.value = e.detail
-  })
-  modal.addEventListener('updateVersion', (e: any) => {
-    if (typeof e.detail === 'number') newTaskVersion.value = e.detail
-  })
-  modal.addEventListener('updatePrimaryOverride', (e: any) => {
-    if (e.detail) primaryOverride.value = e.detail
-  })
-  modal.addEventListener('updateSecondaryPassword', (e: any) => {
-    if (e.detail) secondaryPassword.value = e.detail
-  })
-  modal.addEventListener('updateExtraValue', (e: any) => {
-    if (e.detail?.key) extraValues.value[e.detail.key] = e.detail.value
-  })
-  modal.addEventListener('selectPlugin', (e: any) => {
-    if (typeof e.detail === 'number') selectedPluginIndex.value = e.detail
-  })
-  modal.addEventListener('submit', () => {
-    handleCreateTask()
-    modal.dismiss()
-  })
-
-  await modal.present()
+  showNewTaskModal.value = true
 }
+
+function validateSourcePath() {
+  if (sourceValidateTimer) clearTimeout(sourceValidateTimer)
+  sourceValidateTimer = setTimeout(async () => {
+    const gen = ++sourceValidateGeneration
+    const path = newTaskPath.value.trim()
+    if (!path) {
+      sourcePathError.value = t('tasks.pathRequired')
+    } else if (!path.startsWith('/')) {
+      sourcePathError.value = t('tasks.pathMustBeAbsolute')
+    } else {
+      sourcePathError.value = ''
+      const normalized = normalize(path)
+      if (normalized) {
+        doPredict(normalized, newTaskType.value as 'encrypt' | 'decrypt')
+      }
+      const exists = await validatePathExists(path)
+      if (gen !== sourceValidateGeneration) return
+      if (!exists) {
+        sourcePathError.value = t('tasks.pathNotFound')
+      }
+    }
+  }, 500)
+}
+
+function validateTargetPath() {
+  if (targetValidateTimer) clearTimeout(targetValidateTimer)
+  targetValidateTimer = setTimeout(async () => {
+    const gen = ++targetValidateGeneration
+    const path = newTaskTargetPath.value.trim()
+    if (!path) {
+      targetPathError.value = ''
+    } else if (!path.startsWith('/')) {
+      targetPathError.value = t('tasks.pathMustBeAbsolute')
+    } else {
+      targetPathError.value = ''
+      const exists = await validateDirExists(path)
+      if (gen !== targetValidateGeneration) return
+      if (!exists) {
+        targetPathError.value = t('tasks.pathNotFound')
+      }
+    }
+  }, 500)
+}
+
+async function handleBrowseSource() {
+  showNewTaskModal.value = false
+  const modal = await modalController.create({
+    component: FilePickerModal,
+    componentProps: { mode: 'file' as const },
+  })
+  await modal.present()
+  const { data, role } = await modal.onDidDismiss()
+  if (role === 'select' && data) {
+    newTaskPath.value = data.path
+    sourcePathError.value = ''
+  }
+  showNewTaskModal.value = true
+}
+
+async function handleBrowseTarget() {
+  showNewTaskModal.value = false
+  const modal = await modalController.create({
+    component: FilePickerModal,
+    componentProps: { mode: 'folder' as const },
+  })
+  await modal.present()
+  const { data, role } = await modal.onDidDismiss()
+  if (role === 'select' && data) {
+    newTaskTargetPath.value = data.path
+    targetPathError.value = ''
+  }
+  showNewTaskModal.value = true
+}
+
 async function handleCreateTask() {
   if (!newTaskPath.value) return
   try {
-    const extra = getExtraPayload()
-    const passwordArg = taskOptions.value?.passwordStrategy === 'independent'
-      ? undefined
-      : primaryOverride.value || undefined
     await createTask(
       newTaskType.value,
       newTaskPath.value,
       newTaskTargetPath.value || undefined,
-      passwordArg,
-      taskOptions.value?.supportVersionSelect ? newTaskVersion.value : undefined,
-      extra,
-      secondaryPassword.value || undefined,
+      undefined,
+      newTaskType.value === 'encrypt' ? newTaskVersion.value : undefined
     )
+    showNewTaskModal.value = false
     if (route.query.action) {
       router.replace({ query: {} as Record<string, undefined> })
     }
@@ -533,48 +664,33 @@ function onTaskCompleted(data: { id: string; status?: string; error?: string; er
 }
 
 function processQueryAction() {
-  try {
-    if (route.query.action === 'new') {
-      const rawSource = route.query.source as string | undefined
-      const taskType = (route.query.type === 'encrypt' || route.query.type === 'decrypt')
-        ? route.query.type as TaskType
-        : 'encrypt'
-
-      if (route.query.type) {
-        newTaskType.value = taskType
-      }
-      if (rawSource) {
-        newTaskPath.value = rawSource
-        sourcePathError.value = ''
-      }
-
-      nextTick(() => {
-        const sourcePath = newTaskPath.value ? normalize(newTaskPath.value) : ''
-        openNewTaskModal(sourcePath || undefined).catch((err) => {
-          console.error('[Tasks] openNewTaskModal failed:', err)
-        })
-      })
-
-      nextTick(() => {
-        router.replace({ path: '/tabs/tasks', query: {} }).catch(() => {})
-      })
+  if (route.query.action === 'new') {
+    if (route.query.type === 'encrypt' || route.query.type === 'decrypt') {
+      newTaskType.value = route.query.type as TaskType
     }
-  } catch (err) {
-    console.error('[Tasks] processQueryAction error:', err)
+    if (route.query.source) {
+      newTaskPath.value = route.query.source as string
+      sourcePathError.value = ''
+      const normalized = normalize(newTaskPath.value)
+      if (normalized) {
+        doPredict(normalized, newTaskType.value as 'encrypt' | 'decrypt')
+      }
+    }
+    showNewTaskModal.value = true
+    router.replace({ path: '/tabs/tasks', query: {} })
   }
 }
 
 onMounted(() => {
-  try {
-    processQueryAction()
-    loadTasks().catch(() => {})
-    eventBus.on('task:update', onTaskUpdate)
-    eventBus.on('task:progress', onTaskProgress)
-    eventBus.on('task:created', onTaskCreated)
-    eventBus.on('task:completed', onTaskCompleted)
-  } catch (err) {
-    console.error('[Tasks] onMounted error:', err)
+  if (config.value?.password) {
+    newTaskPassword.value = config.value.password as string
   }
+  processQueryAction()
+  loadTasks()
+  eventBus.on('task:update', onTaskUpdate)
+  eventBus.on('task:progress', onTaskProgress)
+  eventBus.on('task:created', onTaskCreated)
+  eventBus.on('task:completed', onTaskCompleted)
 })
 
 watch(() => route.query, processQueryAction, { immediate: false })
@@ -596,24 +712,7 @@ onUnmounted(() => {
   height: 50%;
   color: var(--encv-text-secondary);
 }
-.plugin-selector {
-  margin-bottom: 8px;
-}
-.plugin-hint {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  font-size: 12px;
-  color: var(--ion-color-medium);
-  background: var(--ion-color-step-50, #f8f8f8);
-  border-radius: 6px;
-  margin: 4px 16px;
-}
-.password-strategy-hint {
-  color: var(--ion-color-primary);
-  font-weight: 500;
-}
+
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -834,5 +933,26 @@ onUnmounted(() => {
   --padding-end: 8px;
   min-width: 44px;
   min-height: 44px;
+}
+
+.plugin-selector {
+  margin: 8px 0;
+}
+
+.plugin-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--ion-color-medium);
+  background: var(--ion-color-step-50, #f8f8f8);
+  border-radius: 6px;
+  margin: 4px 16px;
+}
+
+.hint-icon {
+  font-size: 16px;
+  flex-shrink: 0;
 }
 </style>
