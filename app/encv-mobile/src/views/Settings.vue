@@ -267,27 +267,6 @@
 
       <ion-list>
         <ion-list-header>
-          <ion-label>{{ t('settings.preview') }}</ion-label>
-        </ion-list-header>
-        <ion-item>
-          <ion-icon :icon="textOutline" slot="start"></ion-icon>
-          <ion-input
-            :value="customTextExts"
-            :label="t('settings.customTextExts')"
-            label-placement="stacked"
-            :placeholder="t('settings.customTextExtsHint')"
-            @ionInput="handleCustomTextExtsChange"
-          ></ion-input>
-        </ion-item>
-        <ion-item v-if="builtInTextExtsCount > 0" lines="none">
-          <ion-label class="ion-text-wrap hint-text">
-            <p>{{ t('settings.builtInTextExts', { count: String(builtInTextExtsCount) }) }}</p>
-          </ion-label>
-        </ion-item>
-      </ion-list>
-
-      <ion-list>
-        <ion-list-header>
           <ion-label>{{ t('devtools.title') }}</ion-label>
         </ion-list-header>
         <ion-item button @click="goDevTools" detail>
@@ -296,6 +275,20 @@
             <h3>{{ t('devtools.title') }}</h3>
             <p>{{ t('devtools.devtoolsDesc') }}</p>
           </ion-label>
+        </ion-item>
+      </ion-list>
+
+      <ion-list>
+        <ion-list-header>
+          <ion-label color="danger">{{ t('settings.dangerZone') }}</ion-label>
+        </ion-list-header>
+        <ion-item button @click="handleClearCache">
+          <ion-icon :icon="trash" color="danger" slot="start"></ion-icon>
+          <ion-label color="danger">{{ t('settings.clearCache') }}</ion-label>
+        </ion-item>
+        <ion-item button @click="handleResetSettings">
+          <ion-icon :icon="refreshCircle" color="danger" slot="start"></ion-icon>
+          <ion-label color="danger">{{ t('settings.resetSettings') }}</ion-label>
         </ion-item>
       </ion-list>
 
@@ -361,8 +354,8 @@ import { useRouter } from 'vue-router'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonContent, IonList, IonListHeader, IonItem, IonItemDivider,
-  IonIcon, IonLabel, IonToggle, IonInput, IonBadge, IonSpinner,
-  IonSelect, IonSelectOption, modalController,
+  IonIcon, IonLabel, IonToggle, IonBadge, IonSpinner,
+  IonSelect, IonSelectOption, modalController, alertController,
 } from '@ionic/vue'
 import {
   moon, globeOutline, server as serverIcon, save as saveIcon,
@@ -372,7 +365,7 @@ import {
   filmOutline, musicalNotesOutline, imagesOutline, readerOutline,
   newspaperOutline, gitNetworkOutline, toggleOutline,
   textOutline, personOutline, folderOpen, refreshCircle,
-  bugOutline,
+  trash, bugOutline,
   phonePortraitOutline,
   colorPaletteOutline, layersOutline,
   fileTrayFull as databaseIcon,
@@ -385,7 +378,7 @@ import { showToast } from '@/composables/useToast'
 import { isNative, getPluginFullState, ensurePluginLoaded } from '@/plugins/GoProcess'
 import { registerFileFeature, unregisterFileFeature } from '@/composables/useFileFeatures'
 import { createAlistEncryptFeature } from '@/features/alist-encrypt'
-import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus, fetchTextPreviewExts, invalidateTextExtsCache } from '@/api/encv'
+import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus } from '@/api/encv'
 import type { IndexStats, FFmpegStatus } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
 import { PLAY_MODE, isMpvSubMode } from '@/constants/player'
@@ -405,8 +398,6 @@ const engineStatus = ref<FFmpegStatus | null>(null)
 const videoPlayerMode = ref(localStorage.getItem('encv_player_video') || PLAY_MODE.ARTPLAYER)
 const audioPlayerMode = ref(localStorage.getItem('encv_player_audio') || PLAY_MODE.MPV_PLUGIN)
 const screenOrientation = ref(localStorage.getItem('encv_screen_orientation') || 'auto')
-const customTextExts = ref('')
-const builtInTextExtsCount = ref(0)
 const mpvPluginStatus = ref<string>('unknown')
 const mpvPluginError = ref('')
 
@@ -461,39 +452,6 @@ async function applyScreenOrientation(orientation: string) {
   } catch (e) {
     console.debug('Failed to apply screen orientation:', e)
   }
-}
-
-async function loadPreviewConfig() {
-  try {
-    const cfg = await fetchConfig()
-    const preview = cfg.preview as Record<string, unknown> | undefined
-    if (preview?.text_extensions && Array.isArray(preview.text_extensions)) {
-      customTextExts.value = (preview.text_extensions as string[]).join(',')
-    }
-  } catch {}
-  try {
-    const exts = await fetchTextPreviewExts()
-    builtInTextExtsCount.value = exts.size
-  } catch {}
-}
-
-function handleCustomTextExtsChange(event: CustomEvent) {
-  const raw = (event.target as HTMLInputElement).value || ''
-  customTextExts.value = raw
-  const parsed = raw.split(',')
-    .map(s => s.trim().toLowerCase())
-    .filter(s => s.length > 0)
-  ;(async () => {
-    try {
-      const cfg = await fetchConfig()
-      if (!cfg.preview) cfg.preview = {}
-      ;(cfg.preview as Record<string, unknown>).text_extensions = parsed
-      await updateConfig(cfg)
-      invalidateTextExtsCache()
-    } catch (e) {
-      console.error('Failed to save preview config:', e)
-    }
-  })()
 }
 
 function goDevTools() {
@@ -710,6 +668,61 @@ function handleLocaleChange(event: CustomEvent) {
   setLocale(event.detail.value as 'zh-CN' | 'en')
 }
 
+async function handleClearCache() {
+  const alert = await alertController.create({
+    header: t('settings.clearCache'),
+    message: t('settings.clearCacheConfirm'),
+    buttons: [
+      { text: t('settings.cancel'), role: 'cancel' },
+      {
+        text: t('settings.clear'),
+        role: 'destructive',
+        handler: () => {
+          const themePref = localStorage.getItem('encv-theme-preference')
+          const serverPref = localStorage.getItem('encv-server-url')
+          const webdavPref = localStorage.getItem('encv-webdav-configs')
+          const localePref = localStorage.getItem('encv-locale')
+          localStorage.clear()
+          if (themePref) localStorage.setItem('encv-theme-preference', themePref)
+          if (serverPref) localStorage.setItem('encv-server-url', serverPref)
+          if (webdavPref) localStorage.setItem('encv-webdav-configs', webdavPref)
+          if (localePref) localStorage.setItem('encv-locale', localePref)
+          showToast({
+            message: t('settings.cacheCleared'),
+            duration: 1500,
+            color: 'success',
+          })
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
+async function handleResetSettings() {
+  const alert = await alertController.create({
+    header: t('settings.resetSettings'),
+    message: t('settings.resetConfirm'),
+    buttons: [
+      { text: t('settings.cancel'), role: 'cancel' },
+      {
+        text: t('settings.reset'),
+        role: 'destructive',
+        handler: () => {
+          localStorage.clear()
+          if (isDark.value) toggleDark()
+          showToast({
+            message: t('settings.settingsReset'),
+            duration: 1500,
+            color: 'success',
+          })
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
 async function handleSaveConfig() {
   try {
     await saveConfig()
@@ -763,7 +776,6 @@ onMounted(async () => {
       try { engineStatus.value = await fetchFFmpegStatus() } catch {}
       await refreshMpvPluginStatus()
     }
-    loadPreviewConfig()
     syncAlistEncryptFeature()
   }
   window.addEventListener('plugin-state-changed', refreshMpvPluginStatus)

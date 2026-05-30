@@ -255,6 +255,11 @@
       "properties": {
         "ext": {
           "type": "string"
+        },
+        "custom_text_extensions": {
+          "type": "string",
+          "default": "",
+          "description": "自定义文本预览扩展名，逗号分隔（如 log,ini,cfg,toml）。将追加到内置文本扩展名列表中用于文件预览。"
         }
       },
       "additionalProperties": false,

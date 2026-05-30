@@ -349,6 +349,9 @@ const messages: Record<Locale, Record<string, string>> = {
     'settings.customTextExts': '自定义文本预览扩展名',
     'settings.customTextExtsHint': '追加可预览的文件扩展名，逗号分隔（如 log,ini,cfg,toml）',
     'settings.builtInTextExts': '内置支持 {count} 种文本格式',
+    'settings.textExtsFormatError': '格式错误：扩展名只能包含小写字母、数字、连字符和点，逗号分隔',
+    'settings.textExtsDuplicateError': '重复的扩展名：{ext}',
+    'settings.textExtsConflictWarning': '以下扩展名与其他插件的容器格式冲突：{extensions}，可能导致预览异常',
     'settings.cache': '缓存',
     'settings.cacheAndIndex': '缓存与索引',
     'settings.indexReady': '索引就绪',
@@ -898,6 +901,9 @@ const messages: Record<Locale, Record<string, string>> = {
     'settings.customTextExts': 'Custom Text Preview Extensions',
     'settings.customTextExtsHint': 'Additional extensions for text preview, comma-separated (e.g. log,ini,cfg,toml)',
     'settings.builtInTextExts': '{count} built-in text formats supported',
+    'settings.textExtsFormatError': 'Invalid format: extensions can only contain lowercase letters, digits, hyphens and dots, separated by commas',
+    'settings.textExtsDuplicateError': 'Duplicate extension: {ext}',
+    'settings.textExtsConflictWarning': 'These extensions conflict with container formats of other plugins: {extensions}',
     'settings.cache': 'Cache',
     'settings.cacheAndIndex': 'Cache & Index',
     'settings.indexReady': 'Index ready',
@@ -1145,6 +1151,7 @@ const fieldKeyMap: Record<string, string> = {
   'wps': 'settings.wps',
   'pdf': 'settings.pdf',
   'text': 'settings.text',
+  'custom_text_extensions': 'settings.customTextExts',
 }
 
 const sectionTitleMap: Record<string, string> = {

@@ -8,7 +8,7 @@
         <ion-title>{{ t('settings.pluginSettings') }}</ion-title>
         <ion-buttons slot="end" v-if="dirty">
           <ion-button @click="handleResetConfig" color="medium">{{ t('settings.undo') }}</ion-button>
-          <ion-button @click="handleSaveConfig" :disabled="configLoading || suffixConflict.length > 0">
+          <ion-button @click="handleSaveConfig" :disabled="configLoading || suffixConflict.length > 0 || !!textExtsError">
             <ion-icon :icon="saveIcon" slot="icon-only"></ion-icon>
           </ion-button>
         </ion-buttons>
@@ -34,7 +34,34 @@
               </ion-item-divider>
               <template v-for="grandchild in child.properties" :key="grandchild.key">
                 <template v-if="isFieldVisible(grandchild)">
-                  <ion-item v-if="grandchild.type === 'boolean'">
+                  <template v-if="child.key === 'text' && grandchild.key === 'custom_text_extensions'">
+                    <ion-item>
+                      <ion-icon :icon="textOutline" slot="start"></ion-icon>
+                      <ion-input
+                        :value="String(getValue([pluginSection.key, child.key, grandchild.key]) ?? '')"
+                        :label="tField(grandchild.key)"
+                        label-placement="stacked"
+                        :placeholder="t('settings.customTextExtsHint')"
+                        @ionInput="handleCustomTextExtsInput($event)"
+                      ></ion-input>
+                    </ion-item>
+                    <ion-item v-if="textExtsError" lines="none">
+                      <ion-label class="ion-text-wrap error-text">
+                        <p>{{ textExtsError }}</p>
+                      </ion-label>
+                    </ion-item>
+                    <ion-item v-if="textExtsConflicts.length > 0" lines="none">
+                      <ion-label class="ion-text-wrap conflict-text">
+                        <p>{{ t('settings.textExtsConflictWarning', { extensions: textExtsConflicts.join(', ') }) }}</p>
+                      </ion-label>
+                    </ion-item>
+                    <ion-item v-if="builtInTextExtsCount > 0" lines="none">
+                      <ion-label class="ion-text-wrap hint-text">
+                        <p>{{ t('settings.builtInTextExts', { count: String(builtInTextExtsCount) }) }}</p>
+                      </ion-label>
+                    </ion-item>
+                  </template>
+                  <ion-item v-else-if="grandchild.type === 'boolean'">
                     <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
                     <ion-toggle
                       :checked="!!getValue([pluginSection.key, child.key, grandchild.key])"
@@ -226,18 +253,21 @@ import { usePluginExtensions } from '@/composables/usePluginExtensions'
 import { useServerStatus } from '@/composables/useServerStatus'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
-import { fetchConfig, updateConfig } from '@/api/encv'
+import { fetchConfig, updateConfig, fetchTextPreviewExts, invalidateTextExtsCache } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
 import { isNative } from '@/plugins/GoProcess'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const { isOnline: serverOnline } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
-const { getConflictingPlugins, load: loadExtensions, UNAVAILABLE } = usePluginExtensions()
+const { getConflictingPlugins, load: loadExtensions, UNAVAILABLE, data: pluginExtData } = usePluginExtensions()
 const { t, tField, tSectionTitle } = useI18n()
 
 const configLoaded = ref(false)
 const suffixConflict = ref<string[]>([])
+const textExtsError = ref('')
+const textExtsConflicts = ref<string[]>([])
+const builtInTextExtsCount = ref(0)
 
 const showJsonEditor = ref(false)
 const jsonText = ref('')
@@ -347,6 +377,46 @@ function checkSuffixConflict(suffix: string) {
   suffixConflict.value = conflicts
 }
 
+const TEXT_EXT_PATTERN = /^[a-z0-9](?:[a-z0-9\-\.]*[a-z0-9])?(?:\s*,\s*[a-z0-9](?:[a-z0-9\-\.]*[a-z0-9])?)*$/
+
+function parseAndValidateTextExts(raw: string): { valid: boolean; error: string; extensions: string[] } {
+  const trimmed = raw.trim()
+  if (!trimmed) return { valid: true, error: '', extensions: [] }
+
+  if (!TEXT_EXT_PATTERN.test(trimmed)) {
+    return { valid: false, error: t('settings.textExtsFormatError'), extensions: [] }
+  }
+
+  const extensions = trimmed.split(',').map(s => s.trim().toLowerCase()).filter(s => s.length > 0)
+  const dupes = extensions.filter((ext, i) => extensions.indexOf(ext) !== i)
+  if (dupes.length > 0) {
+    return { valid: false, error: t('settings.textExtsDuplicateError', { ext: dupes[0] }), extensions: [] }
+  }
+
+  return { valid: true, error: '', extensions }
+}
+
+function checkTextExtsConflicts(extensions: string[]): string[] {
+  if (!extensions.length || !pluginExtData.value) return []
+  const allExts = Object.keys(pluginExtData.value.extensions)
+  const conflicts = extensions.filter(ext => allExts.includes('.' + ext.toLowerCase()))
+  return conflicts
+}
+
+async function handleCustomTextExtsInput(event: CustomEvent) {
+  const raw = (event.target as HTMLInputElement).value || ''
+  setValue(['plugin_settings', 'text', 'custom_text_extensions'], raw)
+
+  const result = parseAndValidateTextExts(raw)
+  textExtsError.value = result.error
+
+  if (result.valid && result.extensions.length > 0) {
+    textExtsConflicts.value = checkTextExtsConflicts(result.extensions)
+  } else {
+    textExtsConflicts.value = []
+  }
+}
+
 async function handleBrowsePath(path: string[], field: FieldDef) {
   const isFolder = field.key !== 'file'
   const currentVal = String(getFieldValue(path) || '/')
@@ -409,6 +479,16 @@ function shouldShowBadge(field: FieldDef): boolean {
 
 async function handleSaveConfig() {
   try {
+    const textExtsVal = String(getValue(['plugin_settings', 'text', 'custom_text_extensions']) ?? '')
+    if (textExtsVal) {
+      const parsed = parseAndValidateTextExts(textExtsVal)
+      if (!parsed.valid) return
+      const cfg = await fetchConfig()
+      if (!cfg.preview) cfg.preview = {}
+      ;(cfg.preview as Record<string, unknown>).text_extensions = parsed.extensions
+      await updateConfig(cfg)
+      invalidateTextExtsCache()
+    }
     await saveConfig()
     showToast({ message: t('settings.configSaved'), duration: 1500, color: 'success' })
   } catch (e) {
@@ -426,6 +506,10 @@ onMounted(async () => {
     await loadConfig()
     configLoaded.value = true
     try { await loadExtensions() } catch {}
+    try {
+      const exts = await fetchTextPreviewExts()
+      builtInTextExtsCount.value = exts.size
+    } catch {}
   }
 })
 
@@ -582,5 +666,20 @@ watch(serverOnline, async (online) => {
 .suffix-conflict-warning ion-icon {
   font-size: 20px;
   flex-shrink: 0;
+}
+.error-text p {
+  font-size: 13px;
+  color: var(--ion-color-danger);
+  margin: 0;
+}
+.conflict-text p {
+  font-size: 13px;
+  color: #e65100;
+  margin: 0;
+}
+.hint-text p {
+  font-size: 13px;
+  color: var(--ion-text-secondary);
+  margin: 0;
 }
 </style>

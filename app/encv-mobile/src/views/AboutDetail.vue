@@ -230,19 +230,6 @@
         </ion-list>
       </template>
 
-      <ion-list>
-        <ion-list-header>
-          <ion-label color="danger">{{ t('settings.dangerZone') }}</ion-label>
-        </ion-list-header>
-        <ion-item button @click="handleClearCache">
-          <ion-icon :icon="trash" color="danger" slot="start"></ion-icon>
-          <ion-label color="danger">{{ t('settings.clearCache') }}</ion-label>
-        </ion-item>
-        <ion-item button @click="handleResetSettings">
-          <ion-icon :icon="refreshCircle" color="danger" slot="start"></ion-icon>
-          <ion-label color="danger">{{ t('settings.resetSettings') }}</ion-label>
-        </ion-item>
-      </ion-list>
     </ion-content>
   </ion-page>
 </template>
@@ -251,28 +238,24 @@
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonIcon, IonLabel,
-  IonBadge, IonSpinner, alertController,
+  IonBadge, IonSpinner,
 } from '@ionic/vue'
 import {
   informationCircle, codeSlash, logoGithub, openOutline,
-  trash, refreshCircle, videocamOutline, hardwareChipOutline,
+  videocamOutline, hardwareChipOutline,
   serverOutline, warningOutline, globeOutline, terminalOutline,
   filmOutline, imagesOutline, eyeOutline, swapHorizontalOutline,
   speedometerOutline, playCircleOutline, gitBranchOutline,
   logoVimeo,
 } from 'ionicons/icons'
-import { useTheme } from '@/composables/useTheme'
 import { useI18n } from '@/composables/useI18n'
-import { showToast } from '@/composables/useToast'
 import { fetchBuildInfo, type BuildInfo } from '@/api/encv'
 import { ref, onMounted } from 'vue'
 
 const capacitorIcon = terminalOutline
 const logoIonic = globeOutline
 
-const { isDark, toggleDark } = useTheme()
 const { t } = useI18n()
-const serverUrl = ref('http://127.0.0.1:2025')
 
 const buildInfo = ref<BuildInfo | null>(null)
 const buildInfoLoading = ref(true)
@@ -296,62 +279,6 @@ onMounted(async () => {
 
 function openGitHub() {
   window.open('https://github.com/Soltus/encv-go', '_blank')
-}
-
-async function handleClearCache() {
-  const alert = await alertController.create({
-    header: t('settings.clearCache'),
-    message: t('settings.clearCacheConfirm'),
-    buttons: [
-      { text: t('settings.cancel'), role: 'cancel' },
-      {
-        text: t('settings.clear'),
-        role: 'destructive',
-        handler: () => {
-          const themePref = localStorage.getItem('encv-theme-preference')
-          const serverPref = localStorage.getItem('encv-server-url')
-          const webdavPref = localStorage.getItem('encv-webdav-configs')
-          const localePref = localStorage.getItem('encv-locale')
-          localStorage.clear()
-          if (themePref) localStorage.setItem('encv-theme-preference', themePref)
-          if (serverPref) localStorage.setItem('encv-server-url', serverPref)
-          if (webdavPref) localStorage.setItem('encv-webdav-configs', webdavPref)
-          if (localePref) localStorage.setItem('encv-locale', localePref)
-          showToast({
-            message: t('settings.cacheCleared'),
-            duration: 1500,
-            color: 'success',
-          })
-        },
-      },
-    ],
-  })
-  await alert.present()
-}
-
-async function handleResetSettings() {
-  const alert = await alertController.create({
-    header: t('settings.resetSettings'),
-    message: t('settings.resetConfirm'),
-    buttons: [
-      { text: t('settings.cancel'), role: 'cancel' },
-      {
-        text: t('settings.reset'),
-        role: 'destructive',
-        handler: () => {
-          localStorage.clear()
-          serverUrl.value = 'http://127.0.0.1:2025'
-          if (isDark.value) toggleDark()
-          showToast({
-            message: t('settings.settingsReset'),
-            duration: 1500,
-            color: 'success',
-          })
-        },
-      },
-    ],
-  })
-  await alert.present()
 }
 </script>
 
