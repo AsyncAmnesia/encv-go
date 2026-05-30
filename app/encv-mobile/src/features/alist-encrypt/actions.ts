@@ -2,6 +2,7 @@ import type { FileAction } from '@/types/file-feature'
 import type { FileItem } from '@/api/encv'
 import { videocam, lockClosed } from 'ionicons/icons'
 import router from '@/router'
+import { useNewTaskModal } from '@/composables/useNewTaskModal'
 import { isAlistEncrypted, getStreamUrl, getDecodedName, loadDecodedName, setSessionPassword } from './useAlistEncrypt'
 import { promptPassword } from './password-dialog'
 import { useI18n } from '@/composables/useI18n'
@@ -33,10 +34,8 @@ export function getAlistActions(file: FileItem): FileAction[] {
       icon: lockClosed,
       color: 'warning',
       handler: async (f: FileItem) => {
-        router.push({
-          path: '/tabs/tasks',
-          query: { action: 'new', type: 'decrypt', source: f.path },
-        })
+        const { openNewTask } = useNewTaskModal()
+        openNewTask(f.path, 'decrypt')
       },
     },
   ]

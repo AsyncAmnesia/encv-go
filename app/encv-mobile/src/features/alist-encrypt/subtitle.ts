@@ -5,7 +5,7 @@ import { useI18n } from '@/composables/useI18n'
 const { t } = useI18n()
 
 const DEBOUNCE_MS = 300
-const pendingRequests = new Map<string, ReturnType<typeof setTimeout>>()
+const pendingRequests = new Map<string, Promise<FileSubtitle | null>>()
 
 export async function getAlistSubtitle(file: any): Promise<FileSubtitle | null> {
   if (!isAlistEncrypted(file)) return null
@@ -19,10 +19,10 @@ export async function getAlistSubtitle(file: any): Promise<FileSubtitle | null> 
   }
 
   const existing = pendingRequests.get(file.path)
-  if (existing) return null
+  if (existing) return existing
 
-  return new Promise((resolve) => {
-    const timer = setTimeout(async () => {
+  const promise = new Promise<FileSubtitle | null>((resolve) => {
+    setTimeout(async () => {
       pendingRequests.delete(file.path)
       const plainName = await loadDecodedName(file)
       if (plainName) {
@@ -34,9 +34,10 @@ export async function getAlistSubtitle(file: any): Promise<FileSubtitle | null> 
         resolve(null)
       }
     }, DEBOUNCE_MS)
-
-    pendingRequests.set(file.path, timer)
   })
+
+  pendingRequests.set(file.path, promise)
+  return promise
 }
 
 export function preloadSubtitles(files: any[]): void {
@@ -46,11 +47,14 @@ export function preloadSubtitles(files: any[]): void {
     const existing = pendingRequests.get(file.path)
     if (existing) continue
 
-    const timer = setTimeout(async () => {
-      pendingRequests.delete(file.path)
-      await loadDecodedName(file)
-    }, DEBOUNCE_MS)
+    const promise = new Promise<FileSubtitle | null>((resolve) => {
+      setTimeout(async () => {
+        pendingRequests.delete(file.path)
+        await loadDecodedName(file)
+        resolve(null)
+      }, DEBOUNCE_MS)
+    })
 
-    pendingRequests.set(file.path, timer)
+    pendingRequests.set(file.path, promise)
   }
 }

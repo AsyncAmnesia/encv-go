@@ -462,9 +462,7 @@ import {
 } from '@/api/encv'
 import type { FileItem, PluginMeta, TagInfo } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
-import { useNewTaskModal } from '@/composables/useNewTaskModal'
 import { useI18n } from '@/composables/useI18n'
-import { usePathResolver } from '@/composables/usePathResolver'
 import { formatDateTime } from '@/composables/useDateFormat'
 import { useThumbnailCache } from '@/composables/useThumbnailCache'
 import { useFileFeatures } from '@/composables/useFileFeatures'
@@ -568,8 +566,6 @@ function togglePlayErrorDetail() {
 }
 
 const { t } = useI18n()
-const { resolveFileItem } = usePathResolver()
-const { openNewTask } = useNewTaskModal()
 const { thumbnailUrls, setupLazyThumbnails, onThumbError } = useThumbnailCache()
 const { sortBy, sortDesc } = useFileListSort()
 const showMainSort = ref(false)
@@ -907,38 +903,6 @@ async function handleLongPress(file: FileItem) {
     })
   }
 
-  // ===== Section 2: 加密 / 解密 =====
-  if (!file.isDirectory) {
-    if (file.isEncrypted) {
-      buttons.push({
-        text: t('files.decrypt'),
-        icon: lockClosed,
-        cssClass: 'action-section-crypto',
-        handler: () => {
-          handleDecryptFile(file)
-        },
-      })
-    } else {
-      buttons.push({
-        text: t('files.encrypt'),
-        icon: lockClosed,
-        cssClass: 'action-section-crypto',
-        handler: () => {
-          handleEncryptFile(file)
-        },
-      })
-    }
-  } else {
-    buttons.push({
-      text: t('files.encrypt'),
-      icon: lockClosed,
-      cssClass: 'action-section-crypto',
-      handler: () => {
-        handleEncryptFile(file)
-      },
-    })
-  }
-
   // ===== Section 3: 文件管理 =====
   buttons.push({
     text: '重命名',
@@ -1116,16 +1080,6 @@ async function loadFileTagsForCurrentDir() {
 
   preloadSubtitles(files.value)
   setupLazyThumbnails()
-}
-
-function handleEncryptFile(file: FileItem) {
-  const resolvedPath = resolveFileItem(file)
-  openNewTask(resolvedPath, 'encrypt')
-}
-
-function handleDecryptFile(file: FileItem) {
-  const resolvedPath = resolveFileItem(file)
-  openNewTask(resolvedPath, 'decrypt')
 }
 
 async function handleDeleteFile(file: FileItem) {

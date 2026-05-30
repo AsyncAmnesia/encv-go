@@ -23,24 +23,31 @@ describe('Tasks.vue 防护性回归测试', () => {
       expect(hasInlineIonModal).toBe(false)
     })
 
-    it('Files.vue 必须直接调用 useNewTaskModal（不依赖 eventBus 跨 tab）', () => {
+    it('Files.vue 必须通过 FileFeature 架构委托操作（不内联插件逻辑）', () => {
       const fs = require('fs')
       const filesSource = fs.readFileSync(
         require('path').resolve(__dirname, '../src/views/Files.vue'),
         'utf-8'
       )
 
-      // Files.vue 必须导入 useNewTaskModal
-      expect(filesSource).toMatch(/useNewTaskModal/)
-      expect(filesSource).toMatch(/const \{ openNewTask \} = useNewTaskModal\(\)/)
+      // Files.vue 必须使用 getAllActions() 从 Feature 系统获取扩展操作
+      expect(filesSource).toMatch(/getAllActions/)
+      expect(filesSource).toMatch(/useFileFeatures/)
 
-      // handleEncryptFile/handleDecryptFile 必须直接调用 openNewTask
-      expect(filesSource).toMatch(/openNewTask\(resolvedPath,\s*'encrypt'\)/)
-      expect(filesSource).toMatch(/openNewTask\(resolvedPath,\s*'decrypt'\)/)
+      // 绝不能有内联的 handleEncryptFile/handleDecryptFile（已委托给 Feature actions）
+      const hasInlineEncryptHandler = /function handleEncryptFile/.test(filesSource)
+      expect(hasInlineEncryptHandler).toBe(false)
 
       // 绝不能通过 eventBus 中转（跨 tab 依赖会导致未挂载时丢失事件）
       const hasEventBusBridge = /handleEncryptFile.*eventBus\.emit\('open-new-task'/s.test(filesSource)
       expect(hasEventBusBridge).toBe(false)
+
+      // Feature action 实现层（actions.ts）必须使用 useNewTaskModal
+      const actionsSource = fs.readFileSync(
+        require('path').resolve(__dirname, '../src/features/alist-encrypt/actions.ts'),
+        'utf-8'
+      )
+      expect(actionsSource).toMatch(/useNewTaskModal/)
     })
 
     it('processQueryAction (直链访问) 必须在 onMounted 中处理', () => {

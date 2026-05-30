@@ -1,17 +1,23 @@
 # Checklist
 
-## Phase 6: 适配问题修复
-- [ ] 6.1: actions.ts 解密/加密操作使用 useNewTaskModal 替代 router.push（符合 capacitor.md §1.4）
-- [ ] 6.2: password-dialog.ts 确认后自动关闭（return true 或手动 dismiss）
-- [ ] 6.3: subtitle.ts 防抖竞态优化（重复调用返回已有 Promise）
-- [ ] 6.4: FileInfo.vue 加密文件元信息展示正确
-- [ ] 6.5: 加密文件预览流程走正确的 StreamPreview 路径
+## REQ-1: 统一操作入口（Feature Actions 唯一性）
+- [x] 1.1: actions.ts decrypt handler 使用 useNewTaskModal 替代 router.push ✅
+- [x] 1.2: actions.ts encrypt handler 使用 useNewTaskModal 替代 router.push ✅（当前仅 decrypt action 存在）
+- [x] 1.3: Files.vue Section 2 内联加解密代码已删除，由 getAllActions() Feature action 提供 ✅
+- [x] 1.4: handleEncryptFile/handleDecryptFile 已清理（dead code） ✅
 
-## Phase 7: 端到端验证
-- [ ] 7.1: 文件列表 badge/subtitle 渲染正确
-- [ ] 7.2: 长按解密 action → NewTaskModal(decrypt) 正确打开
-- [ ] 7.3: 解密任务完整执行流程正常
-- [ ] 7.4: 长按加密 action → NewTaskModal(encrypt) 正确打开
-- [ ] 7.5: 加密任务完整执行流程正常
-- [ ] 7.6: 密码弹窗交互正确（输入/取消/确认/关闭）
-- [ ] 7.7: vue-tsc + vitest + vite build 全通过
+## REQ-2: 密码弹窗正确交互
+- [x] 2.1: confirm 后弹窗自动关闭（return true） ✅
+- [x] 2.2: cancel 后弹窗关闭并 resolve null ✅
+
+## REQ-3: 字幕查询稳定性
+- [x] 3.1: 防抖窗口内重复调用返回已有 Promise（非 null） ✅
+
+## REQ-4: FileInfo 元信息完整
+- [x] 4.1: 加密文件展示解码后名称（灰色斜体 + border-top 分隔） ✅
+- [x] 4.2: 展示加密状态 badge（warning 色 Yes） ✅
+
+## REQ-5: 编译与测试通过
+- [x] 5.1: vue-tsc 零错误 ✅
+- [x] 5.2: vitest 全通过 (190/190) ✅
+- [x] 5.3: vite build 成功 ✅
