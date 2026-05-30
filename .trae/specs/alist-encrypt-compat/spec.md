@@ -1,109 +1,169 @@
-# 移动端插件系统适配修复 Spec（Round 2 — 4 Bug 修复）
+# 移动端插件系统适配修复 Spec（Round 3 — 深度适配）
 
 ## Why
 
-上一轮（REQ 1-5）完成了 FileFeature 架构统一、密码弹窗修复、字幕防抖、FileInfo 增强。实测发现 4 个新 bug：
-1. **新建加密任务选择 alist-encrypt 插件没生效** — `useNewTaskModal.onSubmit` 调用 `createTask()` 时**完全没有传递用户选择的 pluginName**
-2. **重复创建两个任务** — onSubmit 无防重入保护 + doPredict 双重调用路径
-3. **文件长按菜单没有加密操作** — `getAlistActions()` 只对 `.enc` 文件返回 actions（decrypt/preview），普通文件返回空数组；上轮 Task 4 删除了 Files.vue 内联加密代码后，Feature 系统未提供 encrypt 入口
-4. **插件类型文件列表空状态时下滑刷新导致空状态下方出现文件列表** — `handleRefresh` 刷新了主 `files` 数组而非 `pluginFiles`，导致主列表渲染在 plugin-view 下方
+Round 2 完成了 pluginName 传递、防重入锁、普通文件 encrypt action、plugin mode 刷新修复。实测发现 **插件系统适配远未完成**，存在 3 个深层次架构问题：
+
+1. **.bin 解密任务卡在"插件分析"** — 新建解密任务时 doPredict 对 .bin 文件的 decrypt 类型可能返回空 candidates，导致 UI 永远显示"分析中" spinner；且 .bin 文件预览走普通文件路径（不被识别为加密文件），显示 "unsupported"
+2. **其他插件的加密后缀文件无解密入口** — `isAlistEncrypted()` 硬编码 `.bin` 后缀 + `file.isEncrypted === true` 时直接返回 false，导致其他容器插件（如用 `.enc`, `.encv` 等后缀）的加密文件无法获得 decrypt action
+3. **.bin 硬编码违反插件系统原则** — 加密后缀应该从 `PluginMeta.containerExtension` 动态获取，而非硬编码 `.bin`
 
 ## What Changes
 
-### 核心原则：从插件系统本质上解决问题，非打补丁
+### 核心原则：消除硬编码，从 PluginMeta 动态推导加密文件识别
 
-- **Bug 1 修复（本质）**：`createTask()` API 需要支持 `pluginName` 参数；`useNewTaskModal.onSubmit` 必须将用户选择的插件名传递到后端
-- **Bug 2 修复（本质）**：onSubmit 添加 submitting 锁防止双击重复提交
-- **Bug 3 修复（本质）**：`getAlistActions()` 对可加密的普通文件也返回 encrypt action；Feature 的 `isActive` 判定需要扩展（或增加独立的 encrypt action 来源）
-- **Bug 4 修复（本质）**：插件模式下 `handleRefresh` 应刷新 `pluginFiles` 而非主 `files` 数组
+- **Bug 1 修复（本质）**：`.bin` 文件预览需要识别为 alist-encrypt 加密文件并走流式解密预览路径；解密任务的 doPredict 需要正确处理或跳过
+- **Bug 2 修复（本质）**：`isAlistEncrypted()` 需要支持所有已注册插件的 containerExtension，不限于 `.bin`
+- **Bug 3 修复（本质）**：加密后缀从 `PluginMeta.containerExtension` 配置驱动，Feature 系统动态感知
 
 ## Impact
 
-- Affected specs: REQ-1（统一操作入口）需扩展为双向（encrypt + decrypt）
 - Affected code:
-  - `src/api/encv.ts` — `createTask()` 增加 `pluginName` 参数
-  - `src/composables/useNewTaskModal.ts` — onSubmit 传递 pluginName + 防重入锁
-  - `src/features/alist-encrypt/actions.ts` — 增加普通文件的 encrypt action
-  - `src/features/alist-encrypt/index.ts` — isActive 或 getFileActions 逻辑调整
-  - `src/views/Files.vue` — handleRefresh 区分 plugin mode / normal mode
-  - `__tests__/` — 补充 useNewTaskModal / actions / Files refresh 的 mock 测试
+  - `src/features/alist-encrypt/useAlistEncrypt.ts` — `isAlistEncrypted()` 消除 `.bin` 硬编码，改为多后缀支持
+  - `src/features/alist-encrypt/actions.ts` — getAlistActions 的 decrypt 分支需要覆盖所有加密后缀
+  - `src/views/Files.vue` — handleFileClick 中对 .bin 的预览路径修正
+  - `src/views/FilePreview.vue` — 可能需要对 alist-encrypt 类型文件特殊处理
+  - `src/composables/useNewTaskModal.ts` — 解密任务 doPredict 超时/空结果降级处理
+  - `__tests__/` — 更新测试反映新的 isAlistEncrypted 行为
 
 ---
 
-## ADDED Requirements
+## ADDED Requirements (Round 3)
 
-### REQ-6: 新建任务必须传递 pluginName 到后端
+### REQ-11: isAlistEncrypted 消除 .bin 硬编码，支持多后缀
 
-系统 SHALL 将用户新建任务时选择的插件名称传递给后端 `createTask` API。
+系统 SHALL 从已注册插件的 `containerExtension` 动态获取加密文件后缀列表。
 
-#### 场景 6.1: 用户选择特定插件后提交
-- **WHEN** 用户在 NewTaskModal 中从下拉框选择了 `alist-encrypt` 插件并点击「创建任务」
-- **THEN** `createTask()` API 请求 body SHALL 包含 `pluginName: 'alist-encrypt'`
-- **AND** 后端 SHALL 使用指定插件执行加密任务
+#### 架构现状（问题）
 
-#### 场景 6.2: 自动预测的单插件场景
-- **WHEN** 后端只返回 1 个候选插件（无需用户手动选择）
-- **THEN** `createTask()` SHALL 自动使用该预测插件的 name 作为 `pluginName`
+当前 [useAlistEncrypt.ts L26-L30](file:///workspace/app/encv-mobile/src/features/alist-encrypt/useAlistEncrypt.ts#L26-L30)：
+```typescript
+export function isAlistEncrypted(file: FileItem): boolean {
+  if (file.isDirectory || file.isEncrypted) return false
+  const suffix = (getFieldValue(['plugin_settings', 'alist_encrypt', 'suffix']) as string) || '.bin'
+  return file.name.endsWith(suffix)  // ← 只认单一后缀！
+}
+```
 
-#### 场景 6.3: 多插件候选时用户切换选择
-- **WHEN** 用户在下拉框中切换了插件选择（如从 plugin-a 切到 plugin-b）
-- **THEN** 最终提交 SHALL 使用最后选中的 `candidates[selectedPluginIndex].name`
+**三重问题**：
+1. 默认硬编码 `.bin`
+2. `file.isEncrypted === true` 时直接返回 false → **其他容器的加密文件被排除**
+3. 不感知其他插件的 containerExtension
 
-### REQ-7: 任务创建防重复提交
+#### 修复方案
 
-系统 SHALL 防止用户新建任务时的重复提交。
+`isAlistEncrypted` 改为：
+1. 如果 `file.isEncrypted === true` → 返回 true（这是任何容器加密文件的通用标记）
+2. 否则检查文件名是否以 **任意已注册插件的 containerExtension** 结尾（从 PluginMeta 列表动态获取）
+3. 兼容配置项 suffix 作为 fallback
 
-#### 场景 7.1: 快速双击提交按钮
-- **WHEN** 用户快速连续点击两次「创建任务」按钮
-- **THEN** 系统 SHALL 只创建 1 个任务（第一次点击触发，第二次被忽略）
+#### 场景 11.1: .bin 文件（alist-encrypt 默认后缀）
+- **WHEN** 文件名为 `video.bin` 且 `isEncrypted !== true`
+- **THEN** `isAlistEncrypted` SHALL 返回 true（通过默认后缀匹配）
 
-### REQ-8: 普通文件长按菜单显示加密操作（插件系统架构内解决）
+#### 场景 11.2: 其他后缀的加密文件（如 .enc, .encv）
+- **WHEN** 文件名为 `doc.enc` 且某插件的 `containerExtension === '.enc'`
+- **THEN** `isAlistEncrypted` SHALL 返回 true（通过动态后缀匹配）
 
-系统 SHALL 通过调整 alist-encrypt Feature 的 `isActive` 范围，让其对所有非目录文件激活，在 `getFileActions` 内部按文件加密状态分支返回不同 actions。**不得脱离 Feature 架构在 Files.vue 或其他位置硬编码加密入口。**
+#### 场景 11.3: 已标记 isEncrypted=true 的文件
+- **WHEN** 后端返回 `file.isEncrypted === true`（ENCV 容器标记）
+- **THEN** `isAlistEncrypted` SHALL 返回 true（不再错误地排除）
 
-#### 架构约束
+#### 场景 11.4: 目录文件
+- **WHEN** 文件是目录
+- **THEN** `isAlistEncrypted` SHALL 返回 false
 
-`useFileFeatures.collectActions()` 在 L63 有 gatekeeper：`if (!feature.isActive(file) || !feature.getFileActions) continue`。
-这意味着 **`isActive` 返回 false 时 `getFileActions` 根本不会被调用**。因此：
-- ❌ 错误做法：保持 `isActive = isAlistEncrypted`，在 `getAlistActions` 里给普通文件返回 encrypt action（死代码，永远不会执行）
-- ✅ 正确做法：扩大 `isActive` 范围 → 让 `getAlistActions` 内部分支
+### REQ-12: .bin 文件预览走流式解密路径
 
-#### 场景 8.1: 非 .bin 普通文件长按
-- **WHEN** 用户长按一个非加密的普通文件（如 `.mp4`, `.pdf` 等非目录文件）
-- **THEN** alist-encrypt Feature 的 `isActive` SHALL 返回 true
-- **AND** `getAlistActions(file)` SHALL 返回「加密」action（调用 `openNewTask(path, 'encrypt')`）
-- **AND** 长按菜单通过 `getAllActions()` 收集到该 action 并展示
+系统 SHALL 对 alist-encrypt 加密的 .bin 文件提供正确的预览能力。
 
-#### 场景 8.2: .bin 加密文件长按（回归保护）
-- **WHEN** 用户长按一个 `.bin` 加密文件
-- **THEN** `isActive` SHALL 返回 true
-- **AND** `getAlistActions(file)` SHALL 返回「解密」+「流预览」（行为不变）
+#### 根因链路
 
-#### 场景 8.3: 目录文件不显示加密相关 action
-- **WHEN** 用户长按一个目录
-- **THEN** `isActive` SHALL 返回 false
-- **AND** 不返回任何 alist-encrypt 相关 action
+```
+用户点击 video.bin → Files.vue handleFileClick()
+  → file.isEncrypted === false （.bin 不是 ENCV 容器！是原始加密文件）
+  → getFileCategory('video.bin') → 'other'（.bin 不在 video/audio/image 列表）
+  → router.push('/tabs/preview', { isEncrypted: 'false' })
+    → FilePreview.vue determinePreviewType() → 'unsupported'
+    → 用户看到 "Unsupported file type"
+```
 
-### REQ-9: 插件模式空状态下拉刷新不泄漏主列表
+**关键发现**：`.bin` 文件在后端眼中**不是 ENCV 容器**（`isEncrypted=false`），而是 **alist-encrypt 原始加密文件**。它需要的是 **流式解密预览**（输入密码 → 解码 → 播放原始视频），而非 ENCV 容器信息展示。
 
-系统 SHALL 在插件模式下正确刷新插件文件列表。
+#### 修复方案
 
-#### 场景 9.1: 插件视图空状态 + 下拉刷新
-- **WHEN** 用户进入某插件类型视图且该类型下无文件（显示空状态），然后下拉刷新
-- **THEN** 刷新完成后 SHALL 仍显示插件视图空状态（或刷新后的插件文件列表）
-- **AND** 主文件列表 SHALL NOT 出现在插件空状态下方
+Files.vue `handleFileClick` 中增加判断：如果 `isAlistEncrypted(file) === true`（即使 `file.isEncrypted !== true`），走 alist-encrypt 流式预览路径（promptPassword → getStreamUrl → player）。
 
-#### 场景 9.2: 插件视图有文件 + 下拉刷新
-- **WHEN** 用户在插件文件列表中下拉刷新
-- **THEN** 刷新后 SHALL 更新插件文件列表（而非主文件列表）
+#### 场景 12.1: 点击 .bin 文件
+- **WHEN** 用户点击一个 `.bin` 文件（`isAlistEncrypted === true`）
+- **THEN** 系统 SHALL 弹出密码输入框 → 获取密码后打开播放器（传入 stream URL）
 
-### REQ-10: Mock 测试覆盖新增场景
+#### 场景 12.2: ENCV 容器文件预览不变（回归保护）
+- **WHEN** 用户点击一个 `isEncrypted === true` 的 ENCV 容器文件
+- **THEN** 仍走现有 FilePreview.vue 容器信息展示路径
 
-测试套件 SHALL 覆盖以上 4 个 bug 的修复场景。
+### REQ-13: 其他插件加密文件的解密入口
 
-- [ ] useNewTaskModal: onSubmit 传递正确的 pluginName
-- [ ] useNewTaskModal: 双击提交只创建 1 个任务
-- [ ] getAlistActions: 普通文件（isActive=true）返回 encrypt action
-- [ ] getAlistActions: .bin 文件仍返回 decrypt + preview（回归保护）
-- [ ] isActive: 目录文件返回 false，非目录文件返回 true
-- [ ] Files.vue: plugin mode 下 handleRefresh 刷新 pluginFiles
+系统 SHALL 为所有已注册插件的加密文件提供解密 action（通过 Feature 架构）。
+
+#### 根因链路
+
+```
+用户长按 doc.enc（其他插件加密，isEncrypted=true）
+  → Files.vue handleLongPress()
+    → getAllActions(doc.enc)
+      → useFileFeatures.collectActions()
+        → alist-encrypt Feature.isActive(doc.enc)
+          → !doc.enc.isDirectory → true ✅ （Round 2 已扩大范围）
+        → getAlistActions(doc.enc)
+          → isAlistEncrypted(doc.enc)
+            → doc.enc.isEncrypted === true → return false ❌ （被错误排除！）
+          → else 分支 → 返回 encrypt action（但用户需要的是 decrypt！）
+```
+
+**核心矛盾**：`isAlistEncrypted` 在 REQ-11 修复后会正确识别这些文件为"加密"，但 `getAlistActions` 的分支逻辑需要调整——**已加密的文件应返回 decrypt action，未加密的才返回 encrypt action**。
+
+#### 修复方案
+
+REQ-11 修复后 `isAlistEncrypted` 对 `isEncrypted=true` 的文件也返回 true，因此 `getAlistActions` 的分支 A 会命中（`isAlistEncrypted(file) === true`），自然返回 decrypt + stream-preview。**此 bug 随 REQ-11 修复自动解决。**
+
+#### 场景 13.1: .enc 文件长按显示解密
+- **WHEN** 用户长按一个 `.enc` 文件（某插件的 containerExtension，`isEncrypted=true`）
+- **THEN** `isAlistEncrypted` 返回 true → `getAlistActions` 返回 decrypt action
+
+#### 场景 13.2: .bin 文件长按仍显示解密+预览（回归保护）
+- **WHEN** 用户长按一个 `.bin` 文件
+- **THEN** 行为不变（decrypt + stream-preview）
+
+### REQ-14: 解密任务 doPredict 降级处理
+
+系统 SHALL 在解密任务中当 doPredict 返回空结果时优雅降级。
+
+#### 根因
+
+新建解密任务时 `openNewTask(sourcePath, 'decrypt')` 触发：
+1. modal.present() — 秒开 ✅
+2. present() 后 doPredict(sourcePath, 'decrypt') — 调用后端 predictPlugin API
+3. 如果后端对 decrypt 类型返回空 candidates → `cands = []` + `predictedPlugin = null`
+4. NewTaskModal UI: `isPredicting = src.length > 0 && cands.length === 0 && !pluginName` → **永远显示"分析中"！**
+
+#### 修复方案
+
+在 `useNewTaskModal.ts` 的 onSubmit 或 doPredict 回调中：
+- 当 taskType === 'decrypt' 且 doPredict 返回空 candidates 时 → 自动设置一个默认的 pluginName（如从 sourcePath 反推，或允许无 pluginName 提交）
+- 或者更根本地：**解密任务不需要 predictPlugin**，因为解密时插件信息可以从文件本身的容器元数据获取
+
+最小化改动方案：doPredict 返回空且 taskType==='decrypt' 时，将 state.predictedPlugin 设为一个降级值（如 `'auto-detect'`），让 isPredicting 变 false 并允许提交。
+
+#### 场景 14.1: 解密任务 predictPlugin 返回空
+- **WHEN** 创建解密任务且后端 predictPlugin 返回空 candidates
+- **THEN** UI SHALL 不再卡在"分析中"，而是显示可用表单（允许用户手动填写或使用 auto-detect 模式）
+
+### REQ-15: Mock 测试更新
+
+测试套件 SHALL 反映 Round 3 的行为变更。
+
+- [ ] isAlistEncrypted: isEncrypted=true 文件返回 true
+- [ ] isAlistEncrypted: 多种 containerExtension 后缀均能识别
+- [ ] getAlistActions: 非 .bin 加密文件也能返回 decrypt action
+- [ ] 解密任务 doPredict 空结果降级测试
