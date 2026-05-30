@@ -127,164 +127,10 @@
       </ion-list>
 
       <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-        <ion-fab-button @click="showNewTaskSheet">
+        <ion-fab-button @click="openNewTaskModal">
           <ion-icon :icon="add"></ion-icon>
         </ion-fab-button>
       </ion-fab>
-
-      <ion-modal :is-open="showNewTaskModal" @didDismiss="showNewTaskModal = false">
-        <ion-header>
-          <ion-toolbar>
-            <ion-title>{{ t('tasks.newTask') }}</ion-title>
-            <ion-buttons slot="end">
-              <ion-button @click="showNewTaskModal = false">{{ t('tasks.close') }}</ion-button>
-            </ion-buttons>
-          </ion-toolbar>
-        </ion-header>
-        <ion-content class="ion-padding">
-          <ion-list>
-            <ion-item>
-              <ion-select
-                v-model="newTaskType"
-                interface="action-sheet"
-                :label="t('tasks.taskType')"
-                label-placement="stacked"
-              >
-                <ion-select-option value="encrypt">{{ t('tasks.encrypt') }}</ion-select-option>
-                <ion-select-option value="decrypt">{{ t('tasks.decrypt') }}</ion-select-option>
-              </ion-select>
-            </ion-item>
-            <ion-item>
-              <ion-input
-                v-model="newTaskPath"
-                :label="t('tasks.sourcePath')"
-                label-placement="stacked"
-                placeholder="/path/to/file"
-                :error-text="sourcePathError"
-                :class="{ 'ion-invalid': !!sourcePathError, 'ion-touched': !!sourcePathError }"
-                @ionInput="validateSourcePath"
-              ></ion-input>
-              <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseSource">
-                <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-              </ion-button>
-            </ion-item>
-            <ion-item>
-              <ion-input
-                v-model="newTaskTargetPath"
-                :label="t('tasks.targetPath')"
-                label-placement="stacked"
-                :placeholder="t('tasks.targetPathPlaceholder')"
-                :error-text="targetPathError"
-                :class="{ 'ion-invalid': !!targetPathError, 'ion-touched': !!targetPathError }"
-                @ionInput="validateTargetPath"
-              ></ion-input>
-              <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseTarget">
-                <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-              </ion-button>
-            </ion-item>
-          </ion-list>
-
-          <!-- 场景 A: 单一候选 → 简洁只读提示 -->
-          <ion-note v-if="candidates.length === 1 && predictedPlugin && !sourcePathError"
-                     class="plugin-hint">
-            <ion-icon :icon="informationCircle"></ion-icon>
-            <template v-if="predictedPlugin">
-              {{ t('tasks.willBeHandledBy', { plugin: predictedPlugin }) }}
-            </template>
-            <span v-if="taskOptions" class="password-strategy-hint">
-              <template v-if="taskOptions.passwordStrategy === 'global'">
-                · {{ t('tasks.usesGlobalPassword') }}
-              </template>
-              <template v-else-if="taskOptions.passwordStrategy === 'independent'">
-                · {{ t('tasks.usesIndependentPassword') }}
-              </template>
-            </span>
-          </ion-note>
-
-          <!-- 场景 B: 多候选 → 插件选择器 -->
-          <div v-else-if="candidates.length > 1 && !sourcePathError" class="plugin-selector">
-            <ion-item>
-              <ion-select
-                :value="selectedPluginIndex"
-                @ionChange="(e: Event) => selectedPluginIndex = (e as CustomEvent).detail.value"
-                label-placement="stacked"
-                :label="t('tasks.selectPlugin')"
-                interface="action-sheet"
-              >
-                <ion-select-option
-                  v-for="(cand, idx) in candidates"
-                  :key="cand.name"
-                  :value="idx"
-                >
-                  {{ formatPluginLabel(cand) }}
-                </ion-select-option>
-              </ion-select>
-            </ion-item>
-            <ion-note class="plugin-hint">
-              <ion-icon :icon="informationCircle"></ion-icon>
-              <template v-if="predictedPlugin">
-                {{ t('tasks.willBeHandledBy', { plugin: predictedPlugin }) }}
-              </template>
-              <span v-if="taskOptions" class="password-strategy-hint">
-                <template v-if="taskOptions.passwordStrategy === 'global'">
-                  · {{ t('tasks.usesGlobalPassword') }}
-                </template>
-                <template v-else-if="taskOptions.passwordStrategy === 'independent'">
-                  · {{ t('tasks.usesIndependentPassword') }}
-                </template>
-              </span>
-            </ion-note>
-          </div>
-
-          <!-- 容器版本选择（仅当目标插件支持且为加密模式） -->
-          <ion-item v-if="taskOptions?.supportVersionSelect && newTaskType === 'encrypt'">
-            <ContainerVersionSelector v-model="newTaskVersion" :versions="versionOptions" />
-          </ion-item>
-
-          <!-- 插件声明的额外字段（动态渲染，如 Independent 插件的 plugin_password） -->
-          <template v-for="field in filteredExtraFields" :key="field.key">
-            <ion-item v-if="!field.condition || field.condition === newTaskType">
-              <ion-input
-                v-model="extraValues[field.key]"
-                :label="t(field.label)"
-                :type="field.type as 'text' | 'password' | 'email' | 'number' | 'tel' | 'url'"
-                :placeholder="t(field.help)"
-              ></ion-input>
-            </ion-item>
-          </template>
-
-          <!-- 密码覆盖（Global 插件的 L0 覆盖值） -->
-          <ion-item v-if="!taskOptions || taskOptions.passwordStrategy === 'global'">
-            <ion-input
-              v-model="primaryOverride"
-              :label="t('tasks.passwordOverride')"
-              label-placement="stacked"
-              type="password"
-              :placeholder="t('tasks.passwordOverrideHelp')"
-            >
-            </ion-input>
-            <ion-badge color="medium" slot="end">{{ t('tasks.optional') }}</ion-badge>
-          </ion-item>
-
-          <!-- 二级密码（L2 叠加验证，预留） -->
-          <ion-item>
-            <ion-input
-              v-model="secondaryPassword"
-              :label="t('tasks.secondaryPassword')"
-              label-placement="stacked"
-              type="password"
-              :placeholder="t('tasks.secondaryPasswordHelp')"
-            >
-            </ion-input>
-            <ion-badge color="medium" slot="end">{{ t('tasks.optional') }}</ion-badge>
-          </ion-item>
-
-          <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath || !!sourcePathError || !!targetPathError">
-            <ion-icon :icon="lockClosed" slot="start"></ion-icon>
-            {{ t('tasks.createTask') }}
-          </ion-button>
-        </ion-content>
-      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
@@ -310,14 +156,7 @@ import {
   IonProgressBar,
   IonFab,
   IonFabButton,
-  IonModal,
-  IonButtons,
-  IonButton,
-  IonSelect,
-  IonSelectOption,
-  IonInput,
   IonSpinner,
-  IonNote,
   modalController,
 } from '@ionic/vue'
 import {
@@ -327,20 +166,17 @@ import {
   closeCircle,
   timer,
   sync,
-  folderOpen,
   copyOutline,
   warningOutline,
-  informationCircle,
 } from 'ionicons/icons'
 import { useRoute, useRouter } from 'vue-router'
-import ContainerVersionSelector from '@/components/ContainerVersionSelector.vue'
+import NewTaskModal from '@/components/NewTaskModal.vue'
 import {
   getTasks,
   createTask,
   cancelTask,
   retryTask,
   removeTask,
-  listFiles,
   isWrongPasswordError,
 } from '@/api/encv'
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
@@ -365,7 +201,6 @@ const {
   secondaryPassword,
   visibleExtraFields,
   versionOptions,
-  predictPlugin,
   getExtraPayload,
   reset: resetTaskForm,
   initFromQuery,
@@ -376,37 +211,12 @@ const loading = ref(false)
 const showErrorDetail = ref<Record<string, boolean>>({})
 const copiedTaskId = ref<string | null>(null)
 const expandedWarningDetail = ref<string | null>(null)
-const showNewTaskModal = ref(false)
 const newTaskType = ref<TaskType>('encrypt')
 const newTaskPath = ref('')
 const newTaskTargetPath = ref('')
 const sourcePathError = ref('')
 const targetPathError = ref('')
 const newTaskVersion = ref(4)
-let sourceValidateTimer: ReturnType<typeof setTimeout> | null = null
-let targetValidateTimer: ReturnType<typeof setTimeout> | null = null
-let sourceValidateGeneration = 0
-let targetValidateGeneration = 0
-
-async function validatePathExists(path: string): Promise<boolean> {
-  try {
-    const parentDir = path.substring(0, path.lastIndexOf('/')) || '/'
-    const fileName = path.substring(path.lastIndexOf('/') + 1)
-    const files = await listFiles(parentDir)
-    return files.some(f => f.name === fileName)
-  } catch {
-    return false
-  }
-}
-
-async function validateDirExists(path: string): Promise<boolean> {
-  try {
-    await listFiles(path)
-    return true
-  } catch {
-    return false
-  }
-}
 
 const filteredExtraFields = computed(() => {
   if (!visibleExtraFields.value.length) return []
@@ -553,77 +363,54 @@ async function handleRefresh(event: CustomEvent) {
   ;(event.target as any)?.complete?.()
 }
 
-function formatPluginLabel(cand: { name: string; matchType: string }): string {
-  const nameMap: Record<string, string> = {
-    video: 'Video 插件',
-    text: 'Text 插件',
-    audio: 'Audio 插件',
-    image: 'Image 插件',
-    pdf: 'PDF 插件',
-    wps: 'WPS 插件',
-    alist_encrypt: 'Alist-Encrypt',
-  }
-  const baseName = nameMap[cand.name] ?? cand.name
-  return cand.matchType === 'general' ? `${baseName}（通用）` : baseName
-}
-
-function showNewTaskSheet() {
+async function openNewTaskModal(initialSourcePath?: string) {
   newTaskType.value = 'encrypt'
-  newTaskPath.value = ''
+  newTaskPath.value = initialSourcePath ?? ''
   newTaskTargetPath.value = ''
   newTaskVersion.value = 4
   sourcePathError.value = ''
   targetPathError.value = ''
   resetTaskForm()
-  showNewTaskModal.value = true
-}
-function validateSourcePath() {
-  if (sourceValidateTimer) clearTimeout(sourceValidateTimer)
-  sourceValidateTimer = setTimeout(async () => {
-    const gen = ++sourceValidateGeneration
-    const path = newTaskPath.value.trim()
-    if (!path) {
-      sourcePathError.value = t('tasks.pathRequired')
-      candidates.value = []
-    } else if (!path.startsWith('/')) {
-      sourcePathError.value = t('tasks.pathMustBeAbsolute')
-      candidates.value = []
-    } else {
-      sourcePathError.value = ''
-      const exists = await validatePathExists(path)
-      if (gen !== sourceValidateGeneration) return
-      if (!exists) {
-        sourcePathError.value = t('tasks.pathNotFound')
-        candidates.value = []
-      } else {
-        predictPlugin(path, newTaskType.value)
-      }
-    }
-  }, 500)
-}
 
-function validateTargetPath() {
-  if (targetValidateTimer) clearTimeout(targetValidateTimer)
-  targetValidateTimer = setTimeout(async () => {
-    const gen = ++targetValidateGeneration
-    const path = newTaskTargetPath.value.trim()
-    if (!path) {
-      targetPathError.value = ''
-    } else if (!path.startsWith('/')) {
-      targetPathError.value = t('tasks.pathMustBeAbsolute')
-    } else {
-      targetPathError.value = ''
-      const exists = await validateDirExists(path)
-      if (gen !== targetValidateGeneration) return
-      if (!exists) {
-        targetPathError.value = t('tasks.pathNotFound')
-      }
-    }
-  }, 500)
-}
+  if (initialSourcePath) {
+    await initFromQuery({ sourcePath: initialSourcePath, taskType: 'encrypt' })
+  }
 
+  const modal = await modalController.create({
+    component: NewTaskModal,
+    componentProps: {
+      taskType: newTaskType,
+      sourcePath: newTaskPath,
+      targetPath: newTaskTargetPath,
+      sourcePathError,
+      targetPathError,
+      candidates,
+      selectedPluginIndex,
+      predictedPlugin,
+      taskOptions,
+      extraValues,
+      primaryOverride,
+      secondaryPassword,
+      version: newTaskVersion,
+      versionOptions,
+      filteredExtraFields,
+      onUpdateTaskType: (v: string) => { newTaskType.value = v as TaskType },
+      onUpdateSourcePath: (v: string) => { newTaskPath.value = v },
+      onUpdateTargetPath: (v: string) => { newTaskTargetPath.value = v },
+      onUpdateSelectedIndex: (v: number) => { selectedPluginIndex.value = v },
+      onUpdateVersion: (v: number) => { newTaskVersion.value = v },
+      onUpdateExtraValue: ({ key, value }: { key: string; value: string }) => { extraValues.value[key] = value },
+      onUpdatePrimaryOverride: (v: string) => { primaryOverride.value = v },
+      onUpdateSecondaryPassword: (v: string) => { secondaryPassword.value = v },
+      onBrowseSource: () => handleBrowseSource(),
+      onBrowseTarget: () => handleBrowseTarget(),
+      onSubmit: () => { handleCreateTask(); modal.dismiss() },
+    },
+  })
+
+  await modal.present()
+}
 async function handleBrowseSource() {
-  showNewTaskModal.value = false
   const modal = await modalController.create({
     component: FilePickerModal,
     componentProps: { mode: 'file' as const },
@@ -634,11 +421,9 @@ async function handleBrowseSource() {
     newTaskPath.value = data.path
     sourcePathError.value = ''
   }
-  showNewTaskModal.value = true
 }
 
 async function handleBrowseTarget() {
-  showNewTaskModal.value = false
   const modal = await modalController.create({
     component: FilePickerModal,
     componentProps: { mode: 'folder' as const },
@@ -649,7 +434,6 @@ async function handleBrowseTarget() {
     newTaskTargetPath.value = data.path
     targetPathError.value = ''
   }
-  showNewTaskModal.value = true
 }
 
 async function handleCreateTask() {
@@ -668,7 +452,6 @@ async function handleCreateTask() {
       extra,
       secondaryPassword.value || undefined,
     )
-    showNewTaskModal.value = false
     if (route.query.action) {
       router.replace({ query: {} as Record<string, undefined> })
     }
@@ -768,14 +551,9 @@ function processQueryAction() {
 
     router.replace({ path: '/tabs/tasks', query: {} })
 
-    nextTick(async () => {
+    nextTick(() => {
       newTaskType.value = taskType
-      if (sourcePath) {
-        newTaskPath.value = sourcePath
-        sourcePathError.value = ''
-        await initFromQuery({ sourcePath, taskType })
-      }
-      showNewTaskModal.value = true
+      openNewTaskModal(sourcePath)
     })
   }
 }
