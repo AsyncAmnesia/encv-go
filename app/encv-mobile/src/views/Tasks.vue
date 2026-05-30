@@ -764,8 +764,11 @@ function processQueryAction() {
       newTaskType.value = route.query.type as TaskType
     }
     if (route.query.source) {
-      newTaskPath.value = route.query.source as string
+      const sourcePath = route.query.source as string
+      newTaskPath.value = sourcePath
       sourcePathError.value = ''
+      resetTaskForm()
+      predictPlugin(sourcePath, newTaskType.value)
     }
     showNewTaskModal.value = true
     router.replace({ path: '/tabs/tasks', query: {} })
