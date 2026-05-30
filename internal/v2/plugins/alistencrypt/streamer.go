@@ -96,7 +96,19 @@ func (p *AlistEncryptPlugin) ServeStream(w http.ResponseWriter, r *http.Request,
 	var start, end int64
 	_, err = fmt.Sscanf(rangeHeader, "bytes=%d-%d", &start, &end)
 	if err != nil {
-		start, end = 0, size - 1
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, "invalid range format")
+		return nil
+	}
+	if start < 0 || end < 0 {
+		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		fmt.Fprintf(w, "range must be non-negative")
+		return nil
+	}
+	if start > size {
+		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		fmt.Fprintf(w, "range start exceeds content length")
+		return nil
 	}
 	if end >= size {
 		end = size - 1

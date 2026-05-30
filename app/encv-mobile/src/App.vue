@@ -12,6 +12,8 @@ import { useWebSocket } from '@/composables/useWebSocket'
 import { isNative, requestNotificationPermission, requestStoragePermission } from '@/plugins/GoProcess'
 import { hijackConsole } from '@/composables/useFrontendLogs'
 import { autoInitVConsole } from '@/composables/useDevTools'
+import { registerFileFeature } from '@/composables/useFileFeatures'
+import { createAlistEncryptFeature } from '@/features/alist-encrypt'
 
 const { initTheme } = useTheme()
 const { connect, disconnect } = useWebSocket()
@@ -37,6 +39,7 @@ onMounted(async () => {
   initTheme()
   autoInitVConsole()
   connect()
+  registerFileFeature(createAlistEncryptFeature())
   await requestEssentialPermissions()
   applyScreenOrientation()
 })

@@ -254,6 +254,111 @@ ExtensionsPage 显示 alist-decrypt 卡片，COMBO_LITE_ID_MAP 增加 mapping。
 
 ---
 
+## ADDED Requirements（本次新增 — 性能约束与边界异常处理）
+
+### Requirement: 文件列表渲染性能保证
+
+FileFeature 查询 SHALL NOT 阻塞文件列表的首次渲染（Time to First Paint）。
+
+#### 性能约束
+
+| 指标 | 目标值 | 说明 |
+|------|--------|------|
+| `isActive(file)` 调用耗时 | **< 0.01ms** / 文件 | 纯字符串操作，禁止 I/O |
+| `getBadge(file)` 调用耗时 | **< 0.05ms** / 文件 | 同步返回，禁止异步 |
+| `getSubtitle(file)` 首次调用 | **异步，不阻塞渲染** | 返回 null 占位，后台加载后 reactive 更新 |
+| 1000 个文件列表初始化 | **< 100ms** | 所有 Feature 的 isActive + getBadge 累计 |
+| 文件名解码批量请求 | **合并为单次 API 调用** | 批量 decode-filename endpoint 或防抖 300ms |
+
+#### 实现策略
+
+1. **getBadge 必须同步返回** — 徽章是同步视觉元素，不允许 await
+2. **getSubtitle 允许返回 Promise** — Files.vue 先渲染空副标题位置，数据到达后填充（Vue reactive 自动更新 DOM）
+3. **批量解码** — `features/alist-encrypt/subtitle.ts` 实现请求合并：在 300ms 窗口内收集所有需要解码的文件路径 → 单次 POST 批量 API → 分发结果到各 file 的缓存
+4. **LRU 缓存上限** — decodedNames 和 sessionPasswords Map 设置 **最大容量 500 条**，超出时淘汰最旧条目（防止内存泄漏）
+5. **虚拟列表兼容** — 如果 Files.vue 使用 ion-virtual-scroll，getBadge/getSubtitle 仅对可见行调用
+
+#### Scenario: 大目录性能
+- **WHEN** 用户进入包含 2000 个 .bin 文件的目录
+- **THEN** 文件列表在 < 200ms 内显示（带 AE 徽章），真实文件名在后续 1-2s 内逐步填充
+
+### Requirement: 流式预览内存安全
+
+Go 后端 stream endpoint SHALL 对超大文件有内存上界保护。
+
+#### 内存约束
+
+| 指标 | 约束 |
+|------|------|
+| 单次 Range 读取缓冲区 | **≤ 1 MB**（使用 io.LimitedReader 或 bufio.ReaderSize） |
+| 并发 stream 连接数 | **≤ 3**（超过返回 429 Too Many Requests） |
+| 总内存占用（stream） | **≤ 5 MB**（3 连接 × 1MB buffer） |
+| 超大文件支持 | **≥ 4 GB**（纯流式，不全量加载到内存） |
+
+#### 边界异常处理
+
+| 异常场景 | 处理方式 |
+|---------|---------|
+| Range start > fileSize | 返回 **416 Range Not Satisfiable**，Content-Range: bytes */fileSize |
+| Range end > fileSize | 截断到 fileSize-1，返回实际可用范围 |
+| 负数 Range | 返回 **400 Bad Request** |
+| 文件在读取过程中被删除 | 返回 **500 Internal Server Error**，日志记录 ENOENT |
+| 密码错误（首次读取时才发现） | 中断流，返回 **400 Bad Request** + 错误 JSON `{error:"password_mismatch"}` |
+| 客户端断开连接 | goroutine cleanup < 1s，不泄漏 |
+
+### Requirement: 解密/加密任务异常边界
+
+#### 文件系统异常
+
+| 场景 | 行为 |
+|------|------|
+| 源文件不存在 | TaskManager 记录 failed + error=`"source file not found: ..."` |
+| 目标目录不存在 | 自动创建（mkdir -p）；创建失败 → failed + error=`"cannot create output directory"` |
+| 磁盘空间不足 | 在写入前检查可用空间；不足 → failed + error=`"insufficient disk space: need X MB, available Y MB"` |
+| 源文件权限不足 | failed + error=`"permission denied reading source file"` |
+| 目标路径已存在同名文件 | **覆盖确认**（TaskManager 层或前端二次确认）；MVP 阶段直接覆盖并记录 warn 日志 |
+
+#### 数据完整性异常
+
+| 场景 | 检测时机 | 行为 |
+|------|---------|------|
+| 加密文件大小 = 0 字节 | Decrypt() 入口 | 返回 ErrInvalidFormat `"empty encrypted file"` |
+| 加密文件 < 32 bytes (V2) 或 < 16 bytes (V1) | CanDecrypt() 或 Decrypt() 入口 | 返回 ErrInvalidFormat `"file too small to be valid"` |
+| 解密后数据与预期 PlainSize 不匹配 (V2) | Decrypt() 读取完成后 | 返回 DecryptionError `"decrypted size mismatch: expected X, got Y"` |
+| 密码错误导致解密出大量非 UTF-8/非二进制垃圾数据 | Decrypt() 前 1KB 采样检查 | 返回 ErrInvalidPassword（启发式检测：如果解密后前 1KB 全部是不可打印字节且无已知 magic，高概率密码错误） |
+| V2 头中 PlainSize = 0 | Decrypt() 入口 | 返回 ErrInvalidFormat `"V2 header declares zero plain size"` |
+
+#### 并发安全
+
+| 场景 | 保证 |
+|------|------|
+| 同一文件同时被解密和流式预览 | ✅ 允许（DecryptReader 无状态，每次创建新实例） |
+| 同时注册/注销 FileFeature | ✅ RWMutex 保护 registry Map（useFileFeatures 内部） |
+| sessionPasswords 并发读写 | ✅ 使用 Map 原子操作或 shallow ref 封装 |
+| Go Cipher.SetPosition 并发调用 | ⚠️ **未定义行为** — CTR cipher 的 SetPosition 不是线程安全的。调用方应确保同一 Cipher 实例不被并发调用。Stream endpoint 每个 connection 创建独立 Cipher 实例（天然隔离）。 |
+
+### Requirement: 前端网络异常恢复
+
+| 场景 | 用户可见行为 | 技术实现 |
+|------|------------|---------|
+| decode-filename API 超时 (>5s) | 副标题显示「...」+ 重试按钮 | Promise catch → 显示重试 UI → 用户点击重新调用 |
+| decode-filename API 返回 500 | 同上 | 同上 |
+| stream URL 播放中断（网络波动） | MPV/ArtPlayer 自身重试机制 | HTTP handler 幂等性保证（Range 请求可重复） |
+| 提交解密任务时网络断开 | toast 提示「网络错误，请检查连接」+ 保留输入内容 | Capacitor Http.request catch → showToast 不 clear 表单 |
+
+### Requirement: Feature 注册状态一致性
+
+#### 边界场景
+
+| 场景 | 行为 |
+|------|------|
+| registerFileFeature 在 getBadges 执行期间被调用 | 当前批次查询不受影响，下一批次包含新 Feature |
+| unregisterFileFeature 导致正在显示的 badge 消失 | Vue reactive 自动移除 DOM，无闪烁（badge v-for key 绑定 feature.id） |
+| 同一 id 重复注册 | console.warn + 忽略（不替换已有实例） |
+| 注销一个从未注册的 id | console.warn + 安全返回（不抛异常） |
+
+---
+
 ## Mock 测试需求（按测试层级组织）
 
 ### Layer 1: FileFeature 架构测试

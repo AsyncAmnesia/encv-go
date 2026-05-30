@@ -86,10 +86,20 @@
   - [ ] 7.1.3 TestEncryptDecryptRoundtrip（V1/V2 往返一致性）
   - [ ] 7.1.4 TestEncryptWithV2Header（头结构正确/解密自动跳过）
   - [ ] 7.1.5 TestStreamRange（206/200/416/边界 offset）
+  - [ ] 7.1.6 **🆕 TestBoundaryEmptyFile**: 加密文件=0字节 → ErrInvalidFormat
+  - [ ] 7.1.7 **🆕 TestBoundaryTooSmallFile**: <32 bytes (V2) / <16 bytes (V1) → ErrInvalidFormat
+  - [ ] 7.1.8 **🆕 TestBoundaryV2ZeroPlainSize**: PlainSize=0 → ErrInvalidFormat
+  - [ ] 7.1.9 **🆕 TestBoundarySizeMismatch**: 解密后大小≠V2 PlainSize → DecryptionError
+  - [ ] 7.1.10 **🆕 TestBoundaryPasswordHeuristic**: 错误密码解密出全垃圾数据 → ErrInvalidPassword
 
 - [ ] **Task 7.2**: API Handler 测试 (`mobile_api_alistencrypt_test.go`)
   - [ ] 7.2.1 handleAlistDecodeFilenameGin 正常/异常/特殊字符
   - [ ] 7.2.2 handleAlistEncryptStreamGin 正常/Range/404/400
+  - [ ] 7.2.3 **🆕 TestStreamRangeOverflow**: Range end > fileSize → 截断返回 206 + 正确 Content-Range
+  - [ ] 7.2.4 **🆕 TestStreamRangeNegative**: 负数 start/end → 400 Bad Request
+  - [ ] 7.2.5 **🆕 TestStreamRangeExceeds**: start > fileSize → 416 Range Not Satisfiable
+  - [ ] 7.2.6 **🆕 TestStreamPasswordWrong**: 密码错误时返回 400 + error JSON
+  - [ ] 7.2.7 **🆕 TestConcurrencyLimit**: 第 4 个并发 stream 连接 → 429 Too Many Requests
 
 ### 前端 Vitest 测试
 
@@ -105,15 +115,20 @@
   - [ ] 7.4.3 getSubtitle mock API 成功/失败/缓存
   - [ ] 7.4.4 getFileActions 返回正确的 action 数组
   - [ ] 7.4.5 promptPassword 缓存/取消/二次调用
+  - [ ] 7.4.6 **🆕 getSubtitle 超时 (>5s) → 返回 null + 重试状态**
+  - [ ] 7.4.7 **🆕 LRU 缓存淘汰: 写入 501 条 → 第 1 条被淘汰**
 
 - [ ] **Task 7.5**: API 函数 mock 测试 (`encv.alistencrypt.spec.ts`)
   - [ ] 7.5.1 getAlistEncryptStreamUrl URL 构造
   - [ ] 7.5.2 decodeAlistFilename 成功/失败路径
+  - [ ] 7.5.3 **🆕 网络超时 (AbortError) → 返回 {plainName:'', success:false} 不抛异常**
+  - [ ] 7.5.4 **🆕 网络断开 (NetworkError) → 同上，可重试标记**
 
 - [ ] **Task 7.6**: useAlistEncrypt composable 测试 (`useAlistEncrypt.spec.ts`)
   - [ ] 7.6.1 密码缓存生命周期
   - [ ] 7.6.2 文件名解码缓存
   - [ ] 7.6.3 Stream URL 构造
+  - [ ] 7.6.4 **🆕 并发 promptPassword (2 个文件同时调用) → 各自独立缓存不冲突**
 
 ## Phase 8: CI 与覆盖率 🆕
 

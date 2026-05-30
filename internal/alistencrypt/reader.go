@@ -7,10 +7,12 @@ import (
 )
 
 type DecryptReader struct {
-	reader    io.Reader
-	cipher    Cipher
-	pos       int64
-	v2Header  *ContentHeader
+	reader        io.Reader
+	seeker        io.Seeker
+	cipher        Cipher
+	pos           int64
+	readerPos     int64
+	v2Header      *ContentHeader
 	headerSkipped bool
 }
 
@@ -44,12 +46,21 @@ func NewDecryptReader(r io.Reader, password string, fileSize int64) (*DecryptRea
 	}
 
 	return &DecryptReader{
-		reader:    source,
-		cipher:    cipher,
-		pos:       0,
-		v2Header:  header,
+		reader:        source,
+		seeker:        extractSeeker(r),
+		cipher:        cipher,
+		pos:           0,
+		readerPos:     0,
+		v2Header:      header,
 		headerSkipped: header == nil,
 	}, nil
+}
+
+func extractSeeker(r io.Reader) io.Seeker {
+	if s, ok := r.(io.Seeker); ok {
+		return s
+	}
+	return nil
 }
 
 func (dr *DecryptReader) Read(p []byte) (int, error) {
@@ -61,6 +72,7 @@ func (dr *DecryptReader) Read(p []byte) (int, error) {
 	if n > 0 {
 		dr.cipher.Decrypt(p[:n])
 		dr.pos += int64(n)
+		dr.readerPos += int64(n)
 	}
 	return n, err
 }
@@ -90,6 +102,20 @@ func (dr *DecryptReader) Seek(offset int64, whence int) (int64, error) {
 		return 0, err
 	}
 	dr.pos = newPos
+
+	if dr.seeker != nil {
+		var seekTarget int64
+		if dr.v2Header != nil {
+			seekTarget = newPos + contentHeaderSize
+		} else {
+			seekTarget = newPos
+		}
+		if _, err := dr.seeker.Seek(seekTarget, io.SeekStart); err != nil {
+			return 0, fmt.Errorf("failed to seek underlying reader: %w", err)
+		}
+		dr.readerPos = seekTarget
+	}
+
 	return newPos, nil
 }
 

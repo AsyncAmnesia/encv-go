@@ -707,6 +707,156 @@ func TestDecryptReader(t *testing.T) {
 			t.Errorf("expected 0 bytes from empty read, got %d", n)
 		}
 	})
+
+	t.Run("V2_seek_updates_reader_position", func(t *testing.T) {
+		plaintext := []byte("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789")
+		plainSize := int64(len(plaintext))
+
+		v2Header := buildV2Header(plainSize, nil)
+		encCipher, _ := NewAesCtr(password, plainSize)
+		encrypted := make([]byte, len(plaintext))
+		copy(encrypted, plaintext)
+		encCipher.Encrypt(encrypted)
+
+		fullData := append(v2Header, encrypted...)
+
+		reader := bytes.NewReader(fullData)
+		dr, err := NewDecryptReader(reader, password, 0)
+		if err != nil {
+			t.Fatalf("NewDecryptReader V2 failed: %v", err)
+		}
+
+		pos, err := dr.Seek(20, io.SeekStart)
+		if err != nil {
+			t.Fatalf("Seek to 20 failed: %v", err)
+		}
+		if pos != 20 {
+			t.Errorf("Seek returned %d, want 20", pos)
+		}
+		if dr.pos != 20 {
+			t.Errorf("dr.pos = %d, want 20", dr.pos)
+		}
+		if dr.readerPos != 20+contentHeaderSize {
+			t.Errorf("dr.readerPos = %d, want %d (pos + headerSize)", dr.readerPos, 20+contentHeaderSize)
+		}
+
+		buf := make([]byte, 10)
+		n, _ := dr.Read(buf)
+		expected := plaintext[20 : 20+10]
+		if !bytes.Equal(buf[:n], expected) {
+			t.Errorf("after seek+read: got %q, want %q", buf[:n], expected)
+		}
+		if dr.pos != 30 {
+			t.Errorf("dr.pos after read = %d, want 30", dr.pos)
+		}
+		if dr.readerPos != 30+contentHeaderSize {
+			t.Errorf("dr.readerPos after read = %d, want %d", dr.readerPos, 30+contentHeaderSize)
+		}
+	})
+
+	t.Run("V2_seek_mid_stream_then_read_remaining", func(t *testing.T) {
+		plaintext := make([]byte, 256)
+		for i := range plaintext {
+			plaintext[i] = byte(i)
+		}
+		plainSize := int64(len(plaintext))
+
+		v2Header := buildV2Header(plainSize, nil)
+		encCipher, _ := NewAesCtr(password, plainSize)
+		encrypted := make([]byte, len(plaintext))
+		copy(encrypted, plaintext)
+		encCipher.Encrypt(encrypted)
+
+		fullData := append(v2Header, encrypted...)
+		reader := bytes.NewReader(fullData)
+		dr, _ := NewDecryptReader(reader, password, 0)
+
+		dr.Seek(100, io.SeekStart)
+		buf := make([]byte, 156)
+		n, _ := readAll(dr, buf)
+
+		expected := plaintext[100:]
+		if !bytes.Equal(buf[:n], expected) {
+			t.Errorf("mid-stream seek+read remaining mismatch at first diff")
+		}
+	})
+
+	t.Run("V2_seek_from_end", func(t *testing.T) {
+		plaintext := []byte("end-seek-test-data!!")
+		plainSize := int64(len(plaintext))
+
+		v2Header := buildV2Header(plainSize, nil)
+		encCipher, _ := NewAesCtr(password, plainSize)
+		encrypted := make([]byte, len(plaintext))
+		copy(encrypted, plaintext)
+		encCipher.Encrypt(encrypted)
+
+		fullData := append(v2Header, encrypted...)
+		reader := bytes.NewReader(fullData)
+		dr, _ := NewDecryptReader(reader, password, 0)
+
+		pos, err := dr.Seek(-5, io.SeekEnd)
+		if err != nil {
+			t.Fatalf("Seek from end failed: %v", err)
+		}
+		wantPos := plainSize - 5
+		if pos != wantPos {
+			t.Errorf("seek from end -5: got %d, want %d", pos, wantPos)
+		}
+
+		buf := make([]byte, 10)
+		n, _ := dr.Read(buf)
+		expected := plaintext[plainSize-5:]
+		if !bytes.Equal(buf[:n], expected) {
+			t.Errorf("seek from end read: got %q, want %q", buf[:n], expected)
+		}
+	})
+
+	t.Run("V1_non_seekable_source_seek_only_cipher", func(t *testing.T) {
+		plaintext := []byte("non-seekable-source-test")
+		fileSize := int64(len(plaintext))
+
+		encCipher, _ := NewAesCtr(password, fileSize)
+		encrypted := make([]byte, len(plaintext))
+		copy(encrypted, plaintext)
+		encCipher.Encrypt(encrypted)
+
+		pipeReader, pipeWriter := io.Pipe()
+		go func() {
+			pipeWriter.Write(encrypted)
+			pipeWriter.Close()
+		}()
+
+		dr, err := NewDecryptReader(pipeReader, password, fileSize)
+		if err != nil {
+			t.Fatalf("NewDecryptReader V1 pipe failed: %v", err)
+		}
+		if dr.seeker != nil {
+			t.Error("Pipe reader should not be seekable, seeker should be nil")
+		}
+
+		pos, err := dr.Seek(5, io.SeekStart)
+		if err != nil {
+			t.Fatalf("Seek on non-seekable source should still update cipher: %v", err)
+		}
+		if pos != 5 {
+			t.Errorf("Seek returned %d, want 5", pos)
+		}
+		if dr.pos != 5 {
+			t.Errorf("dr.pos = %d after seek, want 5", dr.pos)
+		}
+	})
+
+	t.Run("seek_negative_rejected", func(t *testing.T) {
+		plaintext := []byte("test")
+		reader := bytes.NewReader([]byte{})
+		dr, _ := NewDecryptReader(reader, "pwd", int64(len(plaintext)))
+
+		_, err := dr.Seek(-1, io.SeekStart)
+		if err == nil {
+			t.Error("negative Seek should return error")
+		}
+	})
 }
 
 type readCloser struct {

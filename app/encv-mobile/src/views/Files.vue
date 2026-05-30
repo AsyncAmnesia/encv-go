@@ -310,7 +310,7 @@
               <p v-if="searchQuery && !file.isDirectory" class="search-path">{{ file.path }}</p>
               <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified && !searchQuery"> · {{ formatDateTime(file.modified) }}</span></p>
               <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
-              <p v-if="isAlistEncrypted(file) && decodedNames[file.path]" class="alist-real-name">{{ t('alistEncrypt.realFilename') }}: {{ decodedNames[file.path] }}</p>
+              <p v-for="sub in fileSubtitles[file.path]" :key="'sub-' + sub.text" class="real-name" :style="{ color: sub.color || 'var(--ion-color-danger)' }">{{ sub.text }}</p>
               <div v-if="!file.isDirectory && !searchQuery && file._tags && file._tags.length > 0" class="file-tag-chips">
                 <ion-chip v-for="tag in file._tags" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
               </div>
@@ -318,8 +318,8 @@
             <ion-badge v-if="file.isEncrypted" color="warning" slot="end">
               ENCV
             </ion-badge>
-            <ion-badge v-if="isAlistEncrypted(file)" color="danger" slot="end">
-              AE
+            <ion-badge v-for="badge in fileBadges[file.path]" :key="'badge-' + badge.text" :color="badge.color" slot="end">
+              {{ badge.text }}
             </ion-badge>
             <ion-button v-if="searchQuery" slot="end" fill="clear" class="open-folder-btn" @click.stop="openContainingFolder(file)">
               <ion-icon :icon="folderOpen" class="open-folder-icon" slot="icon-only"></ion-icon>
@@ -452,14 +452,14 @@ import {
   addTag,
   removeTag,
   listFilesByTag,
-  getAlistEncryptStreamUrl,
-  decodeAlistFilename,
 } from '@/api/encv'
 import type { FileItem, PluginMeta, TagInfo } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
 import { formatDateTime } from '@/composables/useDateFormat'
 import { useThumbnailCache } from '@/composables/useThumbnailCache'
+import { useFileFeatures } from '@/composables/useFileFeatures'
+import { preloadSubtitles } from '@/features/alist-encrypt'
 import {
   isImageFile,
   getFileIcon,
@@ -583,23 +583,10 @@ const moveTargetPath = ref('')
 const editingFileTags = ref<string[]>([])
 const newTagInput = ref('')
 const fileTagMap = ref<Record<string, string[]>>({})
-const decodedNames = ref<Record<string, string>>({})
+const fileBadges = ref<Record<string, any[]>>({})
+const fileSubtitles = ref<Record<string, any[]>>({})
 
-function isAlistEncrypted(file: FileItem): boolean {
-  if (file.isDirectory || file.isEncrypted) return false
-  return file.name.endsWith('.bin')
-}
-
-async function loadDecodedName(file: FileItem) {
-  if (!isAlistEncrypted(file) || decodedNames.value[file.path]) return
-  const baseName = file.name.replace(/\.bin$/i, '')
-  try {
-    const result = await decodeAlistFilename({ encodedName: baseName, password: '' })
-    if (result.success && result.plain_name) {
-      decodedNames.value[file.path] = result.plain_name
-    }
-  } catch {}
-}
+const { getBadges, getSubtitles, getAllActions } = useFileFeatures()
 
 const currentPath = ref('/')
 const loading = ref(false)
@@ -896,22 +883,15 @@ async function handleLongPress(file: FileItem) {
     })
   } else {
     const isMedia = category === 'video' || category === 'audio'
-    const isAE = isAlistEncrypted(file)
 
-    if (isAE) {
-      loadDecodedName(file)
+    const featureActions = await getAllActions(file)
+    for (const fa of featureActions) {
       buttons.push({
-        text: t('alistEncrypt.streamPreview'),
-        icon: videocam,
+        text: fa.text(),
+        icon: fa.icon,
+        ...(fa.color ? { role: undefined, cssClass: `action-${fa.color}` } : {}),
         handler: () => {
-          handleAlistStreamPreview(file)
-        },
-      })
-      buttons.push({
-        text: t('alistEncrypt.decrypt'),
-        icon: lockClosed,
-        handler: () => {
-          handleAlistDecrypt(file)
+          fa.handler(file)
         },
       })
     }
@@ -1090,9 +1070,19 @@ async function loadFileTagsForCurrentDir() {
     }
     fileTagMap.value = map
   } catch {}
+
+  const badgesMap: Record<string, any[]> = {}
+  const subtitlesMap: Record<string, any[]> = {}
   for (const f of files.value) {
-    if (isAlistEncrypted(f)) loadDecodedName(f)
+    const badges = await getBadges(f)
+    if (badges.length > 0) badgesMap[f.path] = badges
+    const subs = await getSubtitles(f)
+    if (subs.length > 0) subtitlesMap[f.path] = subs
   }
+  fileBadges.value = badgesMap
+  fileSubtitles.value = subtitlesMap
+
+  preloadSubtitles(files.value)
   setupLazyThumbnails()
 }
 
@@ -1104,19 +1094,6 @@ function handleEncryptFile(file: FileItem) {
 }
 
 function handleDecryptFile(file: FileItem) {
-  router.push({
-    path: '/tabs/tasks',
-    query: { action: 'new', type: 'decrypt', source: file.path },
-  })
-}
-
-function handleAlistStreamPreview(file: FileItem) {
-  const streamUrl = getAlistEncryptStreamUrl({ path: file.path, password: '' })
-  const decodedName = decodedNames.value[file.path] || file.name
-  router.push({ path: '/player', query: { streamUrl, name: decodedName } })
-}
-
-function handleAlistDecrypt(file: FileItem) {
   router.push({
     path: '/tabs/tasks',
     query: { action: 'new', type: 'decrypt', source: file.path },
@@ -1615,7 +1592,7 @@ ion-item {
   padding: 0 4px;
 }
 
-.alist-real-name {
+.real-name {
   color: var(--ion-color-danger);
   font-size: 12px;
   white-space: nowrap;
