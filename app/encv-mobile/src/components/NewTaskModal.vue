@@ -12,7 +12,7 @@
       <!-- 任务类型 -->
       <ion-list>
         <ion-item>
-          <ion-select :model-value="taskType" @ionChange="(e: any) => emit('updateTaskType', e.detail.value)" interface="action-sheet" :label="t('tasks.taskType')" label-placement="stacked">
+          <ion-select :model-value="taskType" @ionChange="(e: any) => { emit('updateTaskType', e.detail.value); props.onUpdateTaskType?.(e.detail.value) }" interface="action-sheet" :label="t('tasks.taskType')" label-placement="stacked">
             <ion-select-option value="encrypt">{{ t('tasks.encrypt') }}</ion-select-option>
             <ion-select-option value="decrypt">{{ t('tasks.decrypt') }}</ion-select-option>
           </ion-select>
@@ -20,7 +20,7 @@
 
         <!-- 源路径（带浏览按钮） -->
         <ion-item>
-          <ion-input :model-value="src" @ionInput="(e: any) => emit('updateSourcePath', e.detail.value)" :label="t('tasks.sourcePath')" label-placement="stacked" placeholder="/path/to/file"></ion-input>
+          <ion-input :model-value="src" @ionInput="(e: any) => { emit('updateSourcePath', e.detail.value); props.onUpdateSourcePath?.(e.detail.value) }" :label="t('tasks.sourcePath')" label-placement="stacked" placeholder="/path/to/file"></ion-input>
           <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseSource">
             <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
           </ion-button>
@@ -28,7 +28,7 @@
 
         <!-- 目标路径（带浏览按钮） -->
         <ion-item>
-          <ion-input :model-value="tgt" @ionInput="(e: any) => emit('updateTargetPath', e.detail.value)" :label="t('tasks.targetPath')" label-placement="stacked" :placeholder="t('tasks.targetPathPlaceholder')"></ion-input>
+          <ion-input :model-value="tgt" @ionInput="(e: any) => { emit('updateTargetPath', e.detail.value); props.onUpdateTargetPath?.(e.detail.value) }" :label="t('tasks.targetPath')" label-placement="stacked" :placeholder="t('tasks.targetPathPlaceholder')"></ion-input>
           <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseTarget">
             <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
           </ion-button>
@@ -40,7 +40,7 @@
         <ion-list>
           <ion-item>
             <ion-label>{{ t('tasks.selectPlugin') }}</ion-label>
-            <ion-select :model-value="selectedIdx" @ionChange="(e: any) => emit('selectPlugin', e.detail.value)" interface="action-sheet" placement="bottom" style="width: 100%; max-width: 200px;">
+            <ion-select :model-value="selectedIdx" @ionChange="(e: any) => { emit('selectPlugin', e.detail.value); props.onSelectPlugin?.(e.detail.value) }" interface="action-sheet" placement="bottom" style="width: 100%; max-width: 200px;">
               <ion-select-option v-for="(c, idx) in cands" :key="idx" :value="idx">{{ c.name }}</ion-select-option>
             </ion-select>
           </ion-item>
@@ -63,27 +63,27 @@
 
       <!-- 容器版本选择（仅在 taskType='encrypt' 且有版本选项时显示）-->
       <div v-if="taskType === 'encrypt' && vers && vers.length > 0">
-        <ContainerVersionSelector :model-value="ver" @update:model-value="(v: number) => emit('updateVersion', v)" :versions="vers" />
+        <ContainerVersionSelector :model-value="ver" @update:model-value="(v: number) => { emit('updateVersion', v); props.onUpdateVersion?.(v) }" :versions="vers" />
       </div>
 
       <!-- 密码字段 -->
       <ion-item>
-        <ion-input :model-value="pwdPrimary" @ionInput="(e: any) => emit('updatePrimaryOverride', e.detail.value)" :label="t('tasks.passwordOverride')" label-placement="stacked" type="password" :placeholder="t('tasks.passwordOverrideHelp')"></ion-input>
+        <ion-input :model-value="pwdPrimary" @ionInput="(e: any) => { emit('updatePrimaryOverride', e.detail.value); props.onUpdatePrimaryOverride?.(e.detail.value) }" :label="t('tasks.passwordOverride')" label-placement="stacked" type="password" :placeholder="t('tasks.passwordOverrideHelp')"></ion-input>
       </ion-item>
 
       <ion-item>
-        <ion-input :model-value="pwdSecondary" @ionInput="(e: any) => emit('updateSecondaryPassword', e.detail.value)" :label="t('tasks.secondaryPassword')" label-placement="stacked" type="password" :placeholder="t('tasks.secondaryPasswordHelp')"></ion-input>
+        <ion-input :model-value="pwdSecondary" @ionInput="(e: any) => { emit('updateSecondaryPassword', e.detail.value); props.onUpdateSecondaryPassword?.(e.detail.value) }" :label="t('tasks.secondaryPassword')" label-placement="stacked" type="password" :placeholder="t('tasks.secondaryPasswordHelp')"></ion-input>
       </ion-item>
 
       <!-- 额外字段 -->
       <template v-for="field in extraFlds" :key="field.key">
         <ion-item v-if="!field.condition || field.condition === taskType">
-          <ion-input :model-value="getExtra(field.key)" @ionInput="(e: any) => emit('updateExtraValue', { key: field.key, value: e.detail.value })" :label="field.label" type="text" :placeholder="field.help"></ion-input>
+          <ion-input :model-value="getExtra(field.key)" @ionInput="(e: any) => { emit('updateExtraValue', { key: field.key, value: e.detail.value }); props.onUpdateExtraValue?.({ key: field.key, value: e.detail.value }) }" :label="field.label" type="text" :placeholder="field.help"></ion-input>
         </ion-item>
       </template>
 
       <!-- 提交按钮 -->
-      <ion-button expand="block" @click="emit('submit')" :disabled="!src">
+      <ion-button expand="block" @click="() => { emit('submit'); props.onSubmit?.() }" :disabled="!src">
         <ion-icon :icon="lockClosed" slot="start"></ion-icon>
         {{ t('tasks.createTask') }}
       </ion-button>
@@ -118,7 +118,19 @@ import type { PluginCandidate, TaskOptions, TaskField, ContainerVersionInfo } fr
 
 const { t } = useI18n()
 
-const props = defineProps<{
+const emit = defineEmits<{
+  (e: 'updateTaskType', v: string): void
+  (e: 'updateSourcePath', v: string): void
+  (e: 'updateTargetPath', v: string): void
+  (e: 'updateVersion', v: number): void
+  (e: 'updatePrimaryOverride', v: string): void
+  (e: 'updateSecondaryPassword', v: string): void
+  (e: 'updateExtraValue', payload: { key: string; value: string }): void
+  (e: 'selectPlugin', index: number): void
+  (e: 'submit'): void
+}>()
+
+const props = withDefaults(defineProps<{
   taskType: string
   sourcePath: string
   targetPath: string
@@ -132,19 +144,27 @@ const props = defineProps<{
   extraValues: Record<string, string>
   filteredExtraFields: TaskField[]
   selectedPluginIndex: number
-}>()
-
-const emit = defineEmits<{
-  (e: 'updateTaskType', v: string): void
-  (e: 'updateSourcePath', v: string): void
-  (e: 'updateTargetPath', v: string): void
-  (e: 'updateVersion', v: number): void
-  (e: 'updatePrimaryOverride', v: string): void
-  (e: 'updateSecondaryPassword', v: string): void
-  (e: 'updateExtraValue', payload: { key: string; value: string }): void
-  (e: 'selectPlugin', index: number): void
-  (e: 'submit'): void
-}>()
+  // 回调 props（modalController.create() 场景使用，与 emit 并行触发）
+  onUpdateTaskType?: (v: string) => void
+  onUpdateSourcePath?: (v: string) => void
+  onUpdateTargetPath?: (v: string) => void
+  onUpdateVersion?: (v: number) => void
+  onUpdatePrimaryOverride?: (v: string) => void
+  onUpdateSecondaryPassword?: (v: string) => void
+  onUpdateExtraValue?: (payload: { key: string; value: string }) => void
+  onSelectPlugin?: (index: number) => void
+  onSubmit?: () => void
+}>(), {
+  onUpdateTaskType: undefined,
+  onUpdateSourcePath: undefined,
+  onUpdateTargetPath: undefined,
+  onUpdateVersion: undefined,
+  onUpdatePrimaryOverride: undefined,
+  onUpdateSecondaryPassword: undefined,
+  onUpdateExtraValue: undefined,
+  onSelectPlugin: undefined,
+  onSubmit: undefined,
+})
 
 const src = computed(() => props.sourcePath || '')
 const tgt = computed(() => props.targetPath || '')
@@ -171,6 +191,7 @@ async function handleBrowseSource() {
   const { data, role } = await modal.onDidDismiss()
   if (role === 'select' && data) {
     emit('updateSourcePath', data.path)
+    props.onUpdateSourcePath?.(data.path)
   }
 }
 
@@ -183,6 +204,7 @@ async function handleBrowseTarget() {
   const { data, role } = await modal.onDidDismiss()
   if (role === 'select' && data) {
     emit('updateTargetPath', data.path)
+    props.onUpdateTargetPath?.(data.path)
   }
 }
 

@@ -251,7 +251,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated } from 'vue'
 import {
   IonPage,
   IonHeader,
@@ -309,6 +309,7 @@ import { useConfig } from '@/composables/useConfig'
 import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
 import { showToast } from '@/composables/useToast'
 import FilePickerModal from '@/components/FilePickerModal.vue'
+import NewTaskModal from '@/components/NewTaskModal.vue'
 import { useTaskForm } from '@/composables/useTaskForm'
 import { usePathResolver } from '@/composables/usePathResolver'
 
@@ -322,11 +323,14 @@ const {
   candidates,
   predictedPlugin,
   selectedPluginIndex,
+  versionOptions,
+  extraValues,
+  visibleExtraFields,
   predictPlugin: doPredict,
   reset: resetTaskForm,
 } = useTaskForm()
 
-// 插件候选排序：非 general 优先，按 priority 降序
+// 插件候选排序：general 排最后，其余按 priority 降序
 const sortedCandidates = computed(() => {
   return candidates.value
     .map((c, idx) => ({ candidate: c, _idx: idx }))
@@ -337,24 +341,24 @@ const sortedCandidates = computed(() => {
     })
 })
 
-// 过滤后的候选列表：只保留相关匹配（非 general）+ 通用（general）
-// 隐藏既不相关也不是通用的无效候选
-const filteredCandidates = computed(() => {
-  const relevant = sortedCandidates.value.filter(c => c.candidate.matchType !== 'general')
-  const generals = sortedCandidates.value.filter(c => c.candidate.matchType === 'general')
-  // 取最佳相关匹配（最多1个）+ 所有通用
-  const bestRelevant = relevant.length > 0 ? [relevant[0]] : []
-  return [...bestRelevant, ...generals]
-})
+// 过滤后的候选：只保留有效匹配类型（mime/extension/container 为相关匹配，general 为通用兜底）
+// 不匹配的候选不展示，避免干扰用户选择
+const RELEVANT_MATCH_TYPES = new Set(['mime', 'extension', 'container', 'general'])
+const filteredCandidates = computed(() =>
+  sortedCandidates.value.filter((c) => RELEVANT_MATCH_TYPES.has(c.candidate.matchType))
+)
 
-// 是否需要显示选择器（多个有效候选时）
-const showPluginSelector = computed(() => filteredCandidates.value.length > 1)
+// 是否需要显示选择器（多个候选时）
+const showPluginSelector = computed(() => candidates.value.length > 1)
 
-// 当前选中插件的 taskOptions（用于显示密码策略）
+// 当前选中插件的 taskOptions
 const taskOptionsForDisplay = computed(() => {
   if (candidates.value.length === 0) return null
   return candidates.value[selectedPluginIndex.value]?.taskOptions ?? null
 })
+
+// 待处理的新建任务请求（从 Files.vue eventBus 来，延迟到 tab 激活时打开）
+const pendingNewTask = ref<{ sourcePath: string; taskType: 'encrypt' | 'decrypt' } | null>(null)
 
 const tasks = ref<EncvTask[]>([])
 const loading = ref(false)
@@ -594,6 +598,7 @@ async function handleBrowseSource() {
   if (role === 'select' && data) {
     newTaskPath.value = data.path
     sourcePathError.value = ''
+    validateSourcePath()
   }
   showNewTaskModal.value = true
 }
@@ -732,21 +737,84 @@ function processQueryAction() {
   }
 }
 
-// eventBus 直传：Files.vue 长按加密/解密触发（不依赖 router.query）
+// eventBus 直传：Files.vue 长按加密/解密触发
+// 关键：只存参数，不立即打开 modal（此时组件可能不在活跃 tab）
 function handleOpenNewTask(data: { sourcePath: string; taskType: 'encrypt' | 'decrypt' }) {
-  newTaskType.value = data.taskType
-  newTaskPath.value = data.sourcePath
+  pendingNewTask.value = data
+}
+
+// 跨 tab 新建任务：使用 modalController.create() 在 document root 层级创建 overlay
+// 根因：inline <ion-modal :is-open> 在组件非活跃 tab 时无法正确创建 Ionic overlay（已知 Vue 8 bug）
+// modalController.create() 由 Ionic 在全局层级管理 overlay，不依赖父组件 tab 状态
+async function openPendingNewTaskViaController() {
+  const pending = pendingNewTask.value
+  if (!pending) return
+
+  pendingNewTask.value = null
+  newTaskType.value = pending.taskType
+  newTaskPath.value = pending.sourcePath
   newTaskTargetPath.value = ''
   sourcePathError.value = ''
   targetPathError.value = ''
   resetTaskForm()
 
-  const normalized = normalize(data.sourcePath)
+  const normalized = normalize(pending.sourcePath)
   if (normalized) {
-    doPredict(normalized, data.taskType)
+    doPredict(normalized, pending.taskType)
+    // 等待预测完成（doPredict 内部有 500ms debounce）
+    await new Promise(resolve => setTimeout(resolve, 600))
   }
 
-  showNewTaskModal.value = true
+  const modal = await modalController.create({
+    component: NewTaskModal,
+    componentProps: {
+      taskType: newTaskType.value,
+      sourcePath: newTaskPath.value,
+      targetPath: newTaskTargetPath.value,
+      candidates: candidates.value,
+      predictedPlugin: predictedPlugin.value,
+      taskOptions: taskOptionsForDisplay.value ?? null,
+      primaryOverride: newTaskPassword.value,
+      secondaryPassword: newTaskSecondaryPassword.value,
+      version: newTaskVersion.value,
+      versionOptions: versionOptions.value ?? [],
+      extraValues: extraValues.value,
+      filteredExtraFields: visibleExtraFields.value,
+      selectedPluginIndex: selectedPluginIndex.value,
+      // 回调桥接：modal 内交互 → 更新 Tasks.vue 状态
+      onUpdateTaskType: (v: string) => { newTaskType.value = v as TaskType },
+      onUpdateSourcePath: (v: string) => {
+        newTaskPath.value = v
+        const norm = normalize(v)
+        if (norm) doPredict(norm, newTaskType.value as 'encrypt' | 'decrypt')
+      },
+      onUpdateTargetPath: (v: string) => { newTaskTargetPath.value = v },
+      onUpdateVersion: (v: number) => { newTaskVersion.value = v },
+      onUpdatePrimaryOverride: (v: string) => { newTaskPassword.value = v },
+      onUpdateSecondaryPassword: (v: string) => { newTaskSecondaryPassword.value = v },
+      onUpdateExtraValue: ({ key, value }: { key: string; value: string }) => { extraValues.value[key] = value },
+      onSelectPlugin: (idx: number) => { selectedPluginIndex.value = idx },
+      onSubmit: async () => {
+        if (!newTaskPath.value) return
+        try {
+          await createTask(
+            newTaskType.value,
+            newTaskPath.value,
+            newTaskTargetPath.value || undefined,
+            undefined,
+            newTaskType.value === 'encrypt' ? newTaskVersion.value : undefined
+          )
+          await modal.dismiss()
+          showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
+          await loadTasks()
+        } catch {
+          showToast({ message: t('tasks.taskCreateFailed'), duration: 2000, color: 'danger' })
+        }
+      },
+    },
+  })
+
+  await modal.present()
 }
 
 onMounted(() => {
@@ -761,8 +829,16 @@ onMounted(() => {
   eventBus.on('task:created', onTaskCreated)
   eventBus.on('task:completed', onTaskCompleted)
 
-  // 关键：监听 Files.vue 发来的打开新建任务请求
+  // 监听 Files.vue 发来的打开新建任务请求（只存参数，延迟到激活时打开）
   eventBus.on('open-new-task', handleOpenNewTask)
+})
+
+// 关键修复：Ionic tabs 激活此组件时，检查是否有待处理的新建任务请求
+// 使用 modalController.create() 而非 inline modal，彻底绕过 tab 缓存导致的 overlay 创建失败
+onActivated(() => {
+  if (pendingNewTask.value) {
+    openPendingNewTaskViaController()
+  }
 })
 
 onUnmounted(() => {
