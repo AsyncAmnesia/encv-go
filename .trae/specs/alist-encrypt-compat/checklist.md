@@ -32,6 +32,9 @@
 
 ### 配置
 - [ ] Config.AlistEncrypt 段可正确加载（enabled/suffix/enc_type/default_password）
+- [ ] **默认 suffix 为 `.bin`**（不是 `.sccgv`）
+- [ ] **冲突校验**：suffix = ".sccgv" 或 ".encv" 时 → ERROR 日志 + 功能禁用或回退到 ".bin"
+- [ ] **格式校验**：suffix 不以 "." 开头或长度 > 16 时 → WARNING + 回退到 ".bin"
 - [ ] enc_type = "rc4md5" 时配置加载产生警告日志
 - [ ] config.schema.json 包含 alist_encrypt 字段定义
 
@@ -46,6 +49,8 @@
 - [ ] 加密流程端到端：原始文件 → AesCtrCipher → 加密输出+suffix
 - [ ] stream 端到端：Range 请求 → DecryptReader → 正确解密数据段
 - [ ] decode-filename 端到端：encodedName + password → plainName
+- [ ] **运行时类型校验**：操作前检查文件扩展名匹配 config.suffix（不匹配→拒绝）
+- [ ] **运行时容器碰撞校验**：解密前检测 ENCV 容器头→拒绝+明确提示「请使用主应用解密」
 
 ### TaskManager 集成
 - [ ] alist-decrypt / alist-encrypt 任务状态流转正确（queued→running→completed/failed）

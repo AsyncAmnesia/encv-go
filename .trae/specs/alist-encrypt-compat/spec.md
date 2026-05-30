@@ -186,21 +186,62 @@ SetPosition(position):
 - **WHEN** MPV 请求 `GET /api/alist-encrypt/stream?path=/sdcard/video.sccgv&Range: bytes=0-`
 - **THEN** 返回 206 Partial Content，body 为解密后的视频流
 
-### Requirement: 配置管理
+### Requirement: 配置管理与后缀安全校验
 
 ```jsonc
 {
   "alist_encrypt": {
     "enabled": true,
-    "suffix": ".sccgv",
+    "suffix": ".bin",
     "default_password": "",
     "enc_type": "aesctr"
   }
 }
 ```
 
-- `enc_type` MVP 仅支持 `"aesctr"`；其他值返回 `ErrExtensionRequired`
-- `suffix`: 用户可自定义加密文件识别后缀
+- `suffix`: 默认 **`.bin`**（**禁止使用 `.sccgv`**——与 ENCV 容器格式冲突），用户可自定义
+- `enc_type`: MVP 仅支持 `"aesctr"`；其他值返回 `ErrExtensionRequired`
+
+#### 后缀冲突 + 无效双重校验
+
+为避免用户误操作（对 ENCV 容器执行 alist 解密导致数据损坏），配置加载和运行时必须执行 **双重校验**：
+
+**第一层：配置加载时校验（启动阶段拦截）**
+
+```
+Config 加载流程:
+  1. 读取 suffix 值
+  2. 冲突检查：suffix 是否在黑名单中？
+     ├─ 黑名单: [".sccgv", ".encv"]   ← ENCV 容器专用扩展名
+     └─ 匹配 → 日志 ERROR + 配置加载失败/降级警告 + 禁用 alist_encrypt 功能
+  3. 格式检查：suffix 是否以 "." 开头且长度 ≤ 16？
+     ├─ 不合法 → 日志 WARNING + 回退到默认值 ".bin"
+     └─ 合法 → 使用用户自定义值
+```
+
+**第二层：运行时操作前校验（每次操作拦截）**
+
+```
+解密/加密/预览 操作前:
+  1. 检查目标文件扩展名 == config.alist_encrypt.suffix？
+     ├─ 不匹配 → 返回错误「非 alist-encrypt 加密文件」
+     └─ 匹配 → 继续
+  2. 文件头 magic 校验（可选，性能允许时）：
+     ├─ peek 前 32 bytes
+     │   ├─ AECTR2 magic 匹配 → V2 格式 ✓
+     │   ├─ 非 AECTR2 但扩展名匹配 → V1/Legacy 格式（可能正确）⚠️ 记录日志
+     │   └─ 检测到 ENCV 容器 magic → **拒绝操作**，返回错误「检测到 ENCV 容器格式，请使用主应用解密」
+     └─ 无法读取 → 继续执行（用户明确选择）
+```
+
+#### 校验规则汇总
+
+| 校验层级 | 触发时机 | 拦截行为 |
+|---------|---------|---------|
+| **冲突校验** | Config 加载 / 用户修改配置时 | suffix 为 `.sccgv`/`.encv` → ERROR + 功能禁用或回退 |
+| **格式校验** | Config 加载 / 用户修改配置时 | suffix 不以 `.` 开头或过长 → WARNING + 回退 `.bin` |
+| **类型校验** | 每次解密/加密操作前 | 扩展名不匹配 → 拒绝操作 |
+| **容器碰撞校验** | 每次解密操作前（可选） | 检测到 ENCV 容器头 → 拒绝操作 + 明确提示 |
 
 ### Requirement: ComboLite 插件 — 业务编排层（纯 UI + 调度）
 

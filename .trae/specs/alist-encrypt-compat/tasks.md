@@ -31,8 +31,9 @@
 
 - [ ] **Task 2.1**: 扩展 Config 结构体
   - [ ] 2.1.1 在 `internal/config/config.go` 新增 AlistEncrypt 配置段（enabled/suffix/default_password/enc_type）
-  - [ ] 2.1.2 enc_type 非 aesctr 时配置加载警告
-  - [ ] 2.1.3 更新 config.schema.json + config.user.json 示例
+  - [ ] 2.1.2 **后缀冲突校验**：suffix 为 `.sccgv`/`.encv` 时 ERROR + 功能禁用或回退到 `.bin`
+  - [ ] 2.1.3 **后缀格式校验**：suffix 不以 `.` 开头或长度 >16 时 WARNING + 回退 `.bin`
+  - [ ] 2.1.4 更新 config.schema.json + config.user.json 示例（默认 suffix 为 `.bin`）
 
 - [ ] **Task 2.2**: 新增移动端 API endpoint
   - [ ] 2.2.1 `POST /api/alist-encrypt/decrypt` — 发起解密任务（sourcePath+password → targetDir）
@@ -45,6 +46,9 @@
   - [ ] 2.3.2 新增加密方法：读取原始文件 → AesCtrCipher.EncryptWriter → 写入目标路径+suffix（可选V2头）
   - [ ] 2.3.3 新增 stream 方法：DecryptReader → HTTP Range 响应（206 Partial Content）
   - [ ] 2.3.4 新增 decode-filename 方法：DecodeName 同步返回
+  - [ ] 2.3.5 **运行时双重校验**：
+    - 操作前检查文件扩展名是否匹配 config.suffix（不匹配→拒绝）
+    - 解密前可选容器碰撞校验（检测 ENCV 容器头→拒绝+明确提示）
 
 - [ ] **Task 2.4**: 扩展 TaskManager 支持新任务类型
   - [ ] 2.4.1 注册 alist-decrypt / alist-encrypt 任务处理器
