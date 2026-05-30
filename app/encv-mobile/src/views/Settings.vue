@@ -139,6 +139,7 @@
 
       <template v-else-if="configLoaded">
         <template v-for="section in schemaFields" :key="section.key">
+          <template v-if="!['server', 'admin', 'webdav'].includes(section.key)">
           <ion-list v-if="section.key === 'plugin_settings'">
             <ion-list-header>
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
@@ -260,6 +261,7 @@
               </ion-label>
             </ion-item>
           </ion-list>
+          </template>
         </template>
       </template>
 

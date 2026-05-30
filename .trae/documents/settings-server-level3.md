@@ -79,13 +79,23 @@ Level 3 (新建 × 3)
 
 **功能**：编辑 `server.port` 和 `server.dir`
 
-**关键点**：
-- 复用 Settings.vue 的 ConfigFieldItem 组件和 useConfig composable
-- 通过 `getFieldValue(['server', 'port'])` / `setFieldValue(['server', 'port'], value)` 读写
-- 保存时调用 `saveConfig()` （与 Settings 共享同一份 config state）
-- 标题栏显示「HTTP 服务器」+ 返回按钮 → `/tabs/settings/server`
+**Schema 驱动模式（100% 复用 PluginSettings.vue 已验证模式）**：
 
-**模板骨架**：
+```typescript
+// ✅ 导入与 PluginSettings.vue:230,235 完全一致
+import type { FieldDef } from '@/config/schemaParser'
+import { parseSchema } from '@/config/schemaParser'
+import { useConfig } from '@/composables/useConfig'
+import ConfigFieldItem from '@/components/ConfigFieldItem.vue'
+
+const { getFieldValue, setFieldValue, dirty, saveConfig, configLoading } = useConfig()
+
+// ✅ 与 PluginSettings.vue:311 同样的 .find() 模式
+const sectionDef = computed(() => parseSchema().find(s => s.key === 'server')!)
+const childFields = computed(() => sectionDef.value?.properties ?? [])
+```
+
+**模板（复用 ConfigFieldItem，Schema 驱动渲染）**：
 ```vue
 <ion-page>
   <ion-header>
@@ -98,11 +108,18 @@ Level 3 (新建 × 3)
   </ion-header>
   <ion-content>
     <ion-list>
-      <ion-list-header><ion-label>{{ t('settings.httpServerSettings') }}</ion-label></ion-header>
-      <ConfigFieldItem :field="portField" :model-value="getFieldValue(['server', 'port'])" @update:model-value="setFieldValue(['server', 'port'], $event)" ... />
-      <ConfigFieldItem :field="dirField" :model-value="getFieldValue(['server', 'dir'])" @update:model-value="setFieldValue(['server', 'dir'], $event)" @browse="handleBrowseDir" ... />
+      <ion-list-header><ion-label>{{ t('settings.httpServerSettings') }}</ion-label></ion-list-header>
+      <!-- ✅ 与 Settings.vue L195-L262 相同的 ConfigFieldItem 循环模式 -->
+      <template v-for="field in childFields" :key="field.key">
+        <ConfigFieldItem :field="field"
+          :model-value="getFieldValue(['server', field.key])"
+          @update:model-value="setFieldValue(['server', field.key], $event)"
+          ... />
+      </template>
     </ion-list>
-    <ion-button expand="block" @click="handleSave" :disabled="!dirty">{{ t('settings.saveConfig') }}</ion-button>
+    <ion-button expand="block" @click="handleSave" :disabled="!dirty || configLoading">
+      {{ t('settings.saveConfig') }}
+    </ion-button>
   </ion-content>
 </ion-page>
 ```
@@ -113,10 +130,13 @@ Level 3 (新建 × 3)
 
 **功能**：编辑 `admin.password`
 
-**字段**：
-- `admin.password` — 密码输入框（type=password）
+**字段**：`admin.password` — 密码输入框
 
-**与 Step 1 结构相同**，只是字段不同。
+**与 Step 1 结构完全相同**，仅 `sectionKey` 改为 `'admin'`：
+```typescript
+const sectionDef = computed(() => parseSchema().find(s => s.key === 'admin')!)
+// 模板中: getFieldValue(['admin', field.key]) / setFieldValue(['admin', field.key], $event)
+```
 
 ### Step 3：新建 WebdavServerDetail.vue（WebDAV Server 三级页面）
 
@@ -124,11 +144,13 @@ Level 3 (新建 × 3)
 
 **功能**：编辑 `webdav` 全部 4 个字段
 
-**字段**：
-- `webdav.root` — 路由前缀（如 `/webdav/`）
-- `webdav.dir` — 文件系统根目录
-- `webdav.username` — 基础认证用户名
-- `webdav.password` — 基础认证密码
+**字段**：`webdav.root`, `webdav.dir`, `webdav.username`, `webdav.password`
+
+**与 Step 1 结构完全相同**，仅 `sectionKey` 改为 `'webdav'`：
+```typescript
+const sectionDef = computed(() => parseSchema().find(s => s.key === 'webdav')!)
+// 模板中: getFieldValue(['webdav', field.key]) / setFieldValue(['webdav', field.key], $event)
+```
 
 **额外功能**：
 - 复用 ServerDetail.vue 的 `testLocalWebDAV()` 逻辑，提供「测试连接」按钮
@@ -349,3 +371,43 @@ const childFields = computed(() => sectionDef?.properties ?? [])
 - ❌ AboutDetail.vue
 - ❌ DevToolsDetail.vue
 - ❌ config/schema.json（不改 schema，只改渲染过滤）
+
+---
+
+## 五、Schema 驱动兼容性证明
+
+### 5.1 L3 页面 vs PluginSettings.vue 对照表
+
+| 行为 | PluginSettings.vue (已验证) | L3 新页面 (Http/Admin/Webdav) |
+|------|---------------------------|------------------------------|
+| 获取 Schema 段 | `parseSchema().find(s => s.key === 'plugin_settings')` | `parseSchema().find(s => s.key === 'server'\|'admin'\|'webdav')` ✅ 同模式 |
+| 读取字段值 | `getFieldValue(['plugin_settings', field.key])` | `getFieldValue(['server', field.key])` ✅ 同模式 |
+| 写入字段值 | `setFieldValue(['plugin_settings', field.key], val)` | `setFieldValue(['server', field.key], val)` ✅ 同模式 |
+| 渲染组件 | `<ConfigFieldItem :field="field" ...>` | `<ConfigFieldItem :field="field" ...>` ✅ 同组件 |
+| 保存状态 | `dirty` / `saveConfig()` from useConfig | `dirty` / `saveConfig()` from useConfig ✅ 同 state |
+| 导入来源 | schemaParser + useConfig + ConfigFieldItem | schemaParser + useConfig + ConfigFieldItem ✅ 完全一致 |
+
+### 5.2 Schema 变更自动传播路径
+
+```
+schema.json 改动（如 server 新增字段）
+    ↓
+schemaParser.parseSchema() 自动解析新字段     ← 不改此文件
+    ↓
+useConfig.schemaFields 自动包含新字段          ← 不改此文件
+    ↓
+├── Settings.vue: v-if 过滤 server → 不显示   ← 消费层过滤，不影响其他消费者
+├── PluginSettings.vue: .find('plugin_settings') → 不受影响 ← 独立取值
+└── HttpServerDetail.vue: .find('server') → 自动获取新字段 ✅ L3 页面零改动即可渲染
+```
+
+### 5.3 验证清单
+
+| 验证项 | 方法 | 通过条件 |
+|--------|------|---------|
+| Schema 解析不变 | grep `parseSchema` — 无改动 | ✅ 原样保留 |
+| useConfig 不变 | diff useConfig.ts — 零改动 | ✅ 原样保留 |
+| PluginSettings 不受影响 | 访问插件设置页 — 字段正常渲染 | ✅ 独立 find 取值 |
+| L3 页面 Schema 驱动 | 修改 schema.json 中 server 段 → L3 页面自动反映 | ✅ 复用 parseSchema |
+| ConfigState 共享 | L3 页面修改值 → Settings 页可见变更 | ✅ 同一 reactive 对象 |
+| dirty 标记传播 | L3 页面编辑后未保存 → 返回时提示未保存 | ✅ 共享 dirty ref |

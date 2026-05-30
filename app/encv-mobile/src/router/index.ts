@@ -49,6 +49,18 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/ServerDetail.vue'),
       },
       {
+        path: 'settings/server/http',
+        component: () => import('@/views/HttpServerDetail.vue'),
+      },
+      {
+        path: 'settings/server/admin',
+        component: () => import('@/views/AdminServerDetail.vue'),
+      },
+      {
+        path: 'settings/server/webdav',
+        component: () => import('@/views/WebdavServerDetail.vue'),
+      },
+      {
         path: 'settings/engine',
         component: () => import('@/views/EngineDetail.vue'),
       },
