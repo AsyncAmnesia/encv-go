@@ -216,7 +216,7 @@ describe('usePluginExtensions', () => {
       mockedFetch.mockResolvedValueOnce(firstData)
       const { load, getExtensions, invalidate } = usePluginExtensions()
       await load()
-      expect(getExtensions()).toHaveProperty('.old')
+      expect(getExtensions()).toEqual(expect.objectContaining({ '.old': 'plugin1' }))
 
       invalidate()
       vi.clearAllMocks()
@@ -224,6 +224,21 @@ describe('usePluginExtensions', () => {
       mockedFetch.mockResolvedValueOnce(secondData)
       await load()
       expect(getExtensions()).toHaveProperty('.new')
+    })
+
+    it('API 未加载时（data=null）应使用 fallback 检测已知冲突', () => {
+      const { getConflictingPlugins } = usePluginExtensions()
+
+      // 不调用 load()，模拟 API 不可用场景
+      // fallback 包含 .sccgv -> video
+      expect(getConflictingPlugins('.sccgv')).toEqual(['video'])
+      expect(getConflictingPlugins('.sccga')).toEqual(['audio'])
+      expect(getConflictingPlugins('.sccgi')).toEqual(['image'])
+      expect(getConflictingPlugins('.sccgt')).toEqual(['text'])
+
+      // 不在 fallback 中的后缀返回空
+      expect(getConflictingPlugins('.myenc')).toEqual([])
+      expect(getConflictingPlugins('.unknown')).toEqual([])
     })
   })
 })

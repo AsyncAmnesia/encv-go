@@ -7,6 +7,15 @@ const error = ref<string | null>(null)
 
 let fetchPromise: Promise<ContainerExtensionsResponse> | null = null
 
+const FALLBACK_EXTENSIONS: Record<string, string> = {
+  '.sccgv': 'video',
+  '.sccga': 'audio',
+  '.sccgi': 'image',
+  '.sccgt': 'text',
+  '.sccgpdf': 'pdf',
+  '.sccgwps': 'wps',
+}
+
 async function load(): Promise<ContainerExtensionsResponse> {
   if (data.value && !error.value) return data.value
   if (fetchPromise) return fetchPromise
@@ -36,13 +45,20 @@ function invalidate() {
   fetchPromise = null
 }
 
+function getEffectiveExtensions(): ContainerExtensionsResponse['extensions'] {
+  return data.value?.extensions ?? FALLBACK_EXTENSIONS
+}
+
 function getConflictingPlugins(suffix: string): string[] {
-  if (!data.value) return []
   const normalized = suffix.startsWith('.') ? suffix : '.' + suffix.toLowerCase()
-  const conflict = data.value.conflicts.find((c) => c.extension === normalized)
+  if (!normalized || normalized === '.') return []
+
+  const extMap = getEffectiveExtensions()
+
+  const conflict = data.value?.conflicts?.find((c) => c.extension === normalized)
   if (conflict) return conflict.pluginNames
 
-  for (const [ext, plugin] of Object.entries(data.value.extensions)) {
+  for (const [ext, plugin] of Object.entries(extMap)) {
     if (ext.toLowerCase() === normalized) {
       return [plugin]
     }
