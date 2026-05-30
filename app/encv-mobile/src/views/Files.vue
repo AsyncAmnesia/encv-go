@@ -1091,17 +1091,14 @@ async function loadFileTagsForCurrentDir() {
 
 function handleEncryptFile(file: FileItem) {
   const resolvedPath = resolveFileItem(file)
-  router.push({
-    path: '/tabs/tasks',
-    query: { action: 'new', type: 'encrypt', source: resolvedPath },
-  })
+  eventBus.emit('open-new-task', { sourcePath: resolvedPath, taskType: 'encrypt' as const })
+  router.push({ path: '/tabs/tasks' })
 }
 
 function handleDecryptFile(file: FileItem) {
-  router.push({
-    path: '/tabs/tasks',
-    query: { action: 'new', type: 'decrypt', source: resolveFileItem(file) },
-  })
+  const resolvedPath = resolveFileItem(file)
+  eventBus.emit('open-new-task', { sourcePath: resolvedPath, taskType: 'decrypt' as const })
+  router.push({ path: '/tabs/tasks' })
 }
 
 async function handleDeleteFile(file: FileItem) {

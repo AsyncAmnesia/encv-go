@@ -109,12 +109,13 @@ describe('Tasks.vue 防护性回归测试', () => {
         'utf-8'
       )
 
-      // 必须有插件提示或多候选选择器
-      const hasPluginUI = 
-        source.includes('candidates.length > 1') &&
+      // 必须有插件提示或选择器（使用 candidates + predictedPlugin）
+      const hasPluginUI =
+        source.includes('candidates.length') &&
         source.includes('predictedPlugin') &&
-        (source.includes('plugin-hint') || source.includes('plugin-selector'))
-      
+        (source.includes('plugin-hint') || source.includes('plugin-selector') ||
+         source.includes('filteredCandidates') || source.includes('showPluginSelector'))
+
       expect(hasPluginUI).toBe(true)
     })
   })

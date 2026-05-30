@@ -191,28 +191,29 @@
 
           <!-- 插件预测结果 -->
           <div v-if="candidates.length > 0" class="plugin-section">
-            <!-- 多候选时显示选择器 -->
-            <div v-if="candidates.length > 1" class="plugin-selector">
+            <!-- 多候选时显示选择器（仅当有多个有效候选时）-->
+            <div v-if="showPluginSelector && filteredCandidates.length > 1" class="plugin-selector">
               <ion-list>
                 <ion-item>
                   <ion-label>{{ t('tasks.selectPlugin') }}</ion-label>
                   <ion-select :model-value="selectedPluginIndex" @ionChange="(e: any) => selectedPluginIndex = e.detail.value" interface="action-sheet" placement="bottom" style="width: 100%; max-width: 220px;">
-                    <ion-select-option v-for="(c, idx) in sortedCandidates" :key="idx" :value="c._idx">
+                    <ion-select-option v-for="(c, idx) in filteredCandidates" :key="idx" :value="c._idx">
                       {{ c.candidate.name }}
                       <span v-if="c.candidate.matchType === 'general'" style="color:var(--ion-color-medium);font-size:11px;margin-left:4px;">({{ t('tasks.generic') }})</span>
-                      <span v-else-if="c.candidate.priority >= 80" style="color:var(--ion-color-success);font-size:11px;margin-left:4px;">★</span>
+                      <span v-else style="color:var(--ion-color-success);font-size:11px;margin-left:4px;">★</span>
                     </ion-select-option>
                   </ion-select>
                 </ion-item>
               </ion-list>
             </div>
 
-            <!-- 单候选提示 -->
+            <!-- 单候选或自动选中时显示提示 -->
             <div v-else class="plugin-hint">
               <ion-icon :icon="checkmarkCircle" color="success" class="hint-icon"></ion-icon>
               <span>
                 {{ t('tasks.willBeHandledBy', { plugin: predictedPlugin ?? '' }) }}
-                <span v-if="candidates[0]?.matchType === 'general'" style="color:var(--ion-color-medium);font-size:11px;margin-left:4px;">({{ t('tasks.generic') }})</span>
+                <span v-if="candidates[selectedPluginIndex]?.matchType === 'general'" style="color:var(--ion-color-medium);font-size:11px;margin-left:4px;">({{ t('tasks.generic') }})</span>
+                <span v-else style="color:var(--ion-color-success);font-size:11px;margin-left:4px;">★</span>
               </span>
             </div>
 
@@ -220,7 +221,7 @@
             <div v-if="taskOptionsForDisplay?.passwordStrategy === 'independent'" class="plugin-hint password-strategy-hint">
               {{ t('tasks.usesIndependentPassword') }}
             </div>
-            <div v-else-if="candidates.length > 0 && taskOptionsForDisplay" class="plugin-hint">
+            <div v-else-if="taskOptionsForDisplay" class="plugin-hint">
               {{ t('tasks.usesGlobalPassword') }}
             </div>
           </div>
@@ -250,7 +251,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, onActivated, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import {
   IonPage,
   IonHeader,
@@ -322,6 +323,7 @@ const {
   predictedPlugin,
   selectedPluginIndex,
   predictPlugin: doPredict,
+  reset: resetTaskForm,
 } = useTaskForm()
 
 // 插件候选排序：非 general 优先，按 priority 降序
@@ -329,13 +331,24 @@ const sortedCandidates = computed(() => {
   return candidates.value
     .map((c, idx) => ({ candidate: c, _idx: idx }))
     .sort((a, b) => {
-      // general 类型排最后
       if (a.candidate.matchType === 'general' && b.candidate.matchType !== 'general') return 1
       if (b.candidate.matchType === 'general' && a.candidate.matchType !== 'general') return -1
-      // 同类型按 priority 降序
       return b.candidate.priority - a.candidate.priority
     })
 })
+
+// 过滤后的候选列表：只保留相关匹配（非 general）+ 通用（general）
+// 隐藏既不相关也不是通用的无效候选
+const filteredCandidates = computed(() => {
+  const relevant = sortedCandidates.value.filter(c => c.candidate.matchType !== 'general')
+  const generals = sortedCandidates.value.filter(c => c.candidate.matchType === 'general')
+  // 取最佳相关匹配（最多1个）+ 所有通用
+  const bestRelevant = relevant.length > 0 ? [relevant[0]] : []
+  return [...bestRelevant, ...generals]
+})
+
+// 是否需要显示选择器（多个有效候选时）
+const showPluginSelector = computed(() => filteredCandidates.value.length > 1)
 
 // 当前选中插件的 taskOptions（用于显示密码策略）
 const taskOptionsForDisplay = computed(() => {
@@ -719,37 +732,45 @@ function processQueryAction() {
   }
 }
 
+// eventBus 直传：Files.vue 长按加密/解密触发（不依赖 router.query）
+function handleOpenNewTask(data: { sourcePath: string; taskType: 'encrypt' | 'decrypt' }) {
+  newTaskType.value = data.taskType
+  newTaskPath.value = data.sourcePath
+  newTaskTargetPath.value = ''
+  sourcePathError.value = ''
+  targetPathError.value = ''
+  resetTaskForm()
+
+  const normalized = normalize(data.sourcePath)
+  if (normalized) {
+    doPredict(normalized, data.taskType)
+  }
+
+  showNewTaskModal.value = true
+}
+
 onMounted(() => {
   if (config.value?.password) {
     newTaskPassword.value = config.value.password as string
   }
+
   processQueryAction()
   loadTasks()
   eventBus.on('task:update', onTaskUpdate)
   eventBus.on('task:progress', onTaskProgress)
   eventBus.on('task:created', onTaskCreated)
   eventBus.on('task:completed', onTaskCompleted)
-})
 
-// 关键修复：Ionic tabs 缓存组件时，切换回来会触发 onActivated 而非 onMounted
-onActivated(() => {
-  processQueryAction()
+  // 关键：监听 Files.vue 发来的打开新建任务请求
+  eventBus.on('open-new-task', handleOpenNewTask)
 })
-
-// 监听路由变化（包括从其他 tab 通过 router.push 切换过来）
-watch(() => route.fullPath, (newPath) => {
-  if (newPath.includes('/tabs/tasks')) {
-    nextTick(() => processQueryAction())
-  }
-})
-
-watch(() => route.query, processQueryAction, { immediate: false })
 
 onUnmounted(() => {
   eventBus.off('task:update', onTaskUpdate)
   eventBus.off('task:progress', onTaskProgress)
   eventBus.off('task:created', onTaskCreated)
   eventBus.off('task:completed', onTaskCompleted)
+  eventBus.off('open-new-task', handleOpenNewTask)
 })
 </script>
 
