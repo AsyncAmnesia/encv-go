@@ -3,6 +3,7 @@ package com.encvgo.plugin.mpv
 import android.os.Bundle
 import android.view.ViewGroup
 import androidx.activity.compose.setContent
+import androidx.compose.ui.graphics.Color
 import com.combo.core.component.activity.BasePluginActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -50,7 +51,7 @@ class MpvPlayerActivity : BasePluginActivity() {
             EncvMpVPlayerTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                    color = if (audioMode) MaterialTheme.colorScheme.background else Color.Transparent
                 ) {
                     if (audioMode) {
                         MpvAudioPlayerScreen(

@@ -444,6 +444,67 @@ class MyPluginEntry : IPluginEntryClass {
 > **根因**：ComboLite POM 声明 `kotlin-reflect:2.2.0` (runtime)，Gradle align 到项目版本 2.3.21，但未显式声明依赖
 > **修复**：`implementation(libs.kotlin.reflect)` + 确保 mavenCentral() 在仓库列表首位
 
+### 错误 I：「插件 implementation 共享依赖导致 PluginDependencyException」（⚠️ 新增！实战踩坑）
+
+> **症状**：`com.combo.core.exception.PluginDependencyException: 插件 [xxx] 依赖的类 [androidx.compose.material.icons.filled.PauseKt] 未找到`
+> **根因**：ComboLite 的 `PluginClassLoader` 继承 `DexClassLoader`，对插件自行 `implementation` 打包的某些库类解析不稳定。当宿主和插件都包含同一库的不同版本或解析路径时，插件的 ClassLoader 无法正确找到该类。
+> **修复原则**：**宿主提供运行时（implementation）+ 插件仅编译时引用（compileOnly，不指定版本）**
+
+#### 正确配置模式
+
+```kotlin
+// ===== 插件模块 build.gradle.kts =====
+dependencies {
+    compileOnly(libs.combolite.core)                    // ComboLite 核心：compileOnly
+    compileOnly("androidx.core:core-ktx")               // 不指定版本！让 Gradle 从已有 implementation 传递解析
+    compileOnly("androidx.activity:activity-ktx")       // 同上
+    compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-android")  // 同上
+    compileOnly("androidx.compose.material:material-icons-extended") // 同上
+    // ... 其他由宿主提供的共享依赖同理
+}
+
+// ===== 宿主 :app build.gradle.kts =====
+dependencies {
+    implementation("androidx.core:core-ktx:1.17.0")           // 宿主提供运行时
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("androidx.activity:activity-ktx:1.11.0")
+    implementation("androidx.compose.material:material-icons-extended")
+    // ...
+}
+```
+
+#### 关键规则
+
+| 规则 | 说明 |
+|------|------|
+| **插件用 `compileOnly` 不带版本号** | 让 Gradle 从模块内已有的 `implementation` 依赖传递链自动解析版本，避免 `{strictly ...}` 版本冲突 |
+| **宿主用 `implementation` 带具体版本** | 宿主 PathClassLoader 加载这些类，AndroidX 向后兼容 |
+| **禁止插件对同一库同时使用 `implementation` 和 `compileOnly`** | `implementation` 已传递拉入该库，再 `compileOnly` 声明不同版本必冲突 |
+| **`compileOnly` 不代表"不参与版本解析"** | Gradle 仍需在 compileClasspath 解析，必须与传递依赖图一致 |
+
+#### 已确认需要此模式的依赖清单
+
+| 依赖 | 触发错误的类示例 |
+|------|-----------------|
+| `material-icons-extended` | `PauseKt`, `PlayArrowKt`, `VolumeUpKt` 等 Icon 对象单例 |
+| `core-ktx` | `WindowCompat`, `WindowInsetsCompat`, `WindowInsetsControllerCompat` |
+| `activity-ktx` | Activity 扩展函数 |
+| `coroutines-android` | `delay`, `launch`, `flow.*` 协程 API |
+
+#### 反模式（禁止）
+
+```kotlin
+// ❌ 插件用 implementation 打包共享依赖 → PluginDependencyException
+implementation("androidx.compose.material:material-icons-extended")
+
+// ❌ compileOnly 指定版本 → 与 implementation 传递链冲突
+//    错误: Cannot find a version satisfying {strictly 1.13.0} vs declared 1.17.0
+compileOnly("androidx.core:core-ktx:1.17.0")
+
+// ✅ 正确：compileOnly 不指定版本
+compileOnly("androidx.core:core-ktx")
+```
+
 ---
 
 ## 五、插件文件格式
