@@ -2,8 +2,20 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
 
+const isDev = process.env.NODE_ENV !== 'production' || process.env.DEV === 'true'
+
+let mockPlugin: any
+if (isDev) {
+  try {
+    const { createMockPlugin } = require('./mock')
+    mockPlugin = createMockPlugin()
+  } catch (e) {
+    console.warn('[vite] Mock plugin not available, skipping')
+  }
+}
+
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue(), ...(mockPlugin ? [mockPlugin] : [])],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

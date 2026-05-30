@@ -1355,6 +1355,21 @@ onMounted(() => {
   loadTags()
   eventBus.on('file:change', onFileChange)
   window.addEventListener('encv:backend-ready', onBackendReadyWindow as EventListener)
+  if (import.meta.env.DEV) {
+    import('@/composables/useTestBackdoor').then(({ useTestBackdoor }) => {
+      import('@/composables/useNewTaskModal').then(({ useNewTaskModal: createNewTaskModal }) => {
+        const { openNewTask } = createNewTaskModal()
+        useTestBackdoor(files, {
+          onLongPress: handleLongPress,
+          onClick: handleFileClick,
+          navigateTo: navigateTo,
+          openNewTask: (sourcePath?: string, taskType?: 'encrypt' | 'decrypt') => {
+            return openNewTask(sourcePath, taskType)
+          },
+        })
+      })
+    })
+  }
 })
 
 onIonViewWillEnter(() => {
