@@ -309,6 +309,7 @@ export interface EncvTask {
   type: TaskType
   sourcePath: string
   targetPath?: string
+  pluginName?: string
   status: TaskStatus
   progress: number
   phase?: string

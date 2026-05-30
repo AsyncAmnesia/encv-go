@@ -62,15 +62,6 @@ export function useNewTaskModal() {
 
     resetTaskForm()
 
-    if (initialSourcePath) {
-      const normalized = normalize(initialSourcePath)
-      if (normalized) {
-        await doPredict(normalized, state.taskType as 'encrypt' | 'decrypt')
-        syncState()
-      }
-    }
-
-    // 同步内部 reactive 状态到 state 对象（供 NewTaskModal 读取）
     function syncState() {
       state.candidates = candidates.value
       state.predictedPlugin = predictedPlugin.value
@@ -83,7 +74,6 @@ export function useNewTaskModal() {
       }
     }
 
-    // 初始同步
     syncState()
 
     const modal = await modalController.create({
@@ -95,6 +85,9 @@ export function useNewTaskModal() {
           state.sourcePath = v
           const norm = normalize(v)
           if (norm) {
+            state.predictedPlugin = null
+            state.candidates = []
+            state.taskOptions = null
             await doPredict(norm, state.taskType as 'encrypt' | 'decrypt')
             syncState()
           }
@@ -131,6 +124,14 @@ export function useNewTaskModal() {
     })
 
     await modal.present()
+
+    if (initialSourcePath) {
+      const normalized = normalize(initialSourcePath)
+      if (normalized) {
+        await doPredict(normalized, state.taskType as 'encrypt' | 'decrypt')
+        syncState()
+      }
+    }
   }
 
   return { openNewTask }

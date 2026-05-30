@@ -22,26 +22,27 @@ import (
 )
 
 type MobileTask struct {
-	ID               string            `json:"id"`
-	Type             string            `json:"type"`
-	SourcePath       string            `json:"sourcePath"`
-	TargetPath       string            `json:"targetPath,omitempty"`
-	Password         string            `json:"password,omitempty"`
-	SecondaryPassword string           `json:"secondaryPassword,omitempty"`
-	ExtraFields      map[string]string `json:"extraFields,omitempty"`
-	Status           string            `json:"status"`
-	Progress         int               `json:"progress"`
-	Phase            string            `json:"phase,omitempty"`
-	Speed            string            `json:"speed,omitempty"`
-	Eta              string            `json:"eta,omitempty"`
-	Error            string            `json:"error,omitempty"`
-	ErrorDetail      string            `json:"errorDetail,omitempty"`
-	Warning          string            `json:"warning,omitempty"`
-	WarningDetail    string            `json:"warningDetail,omitempty"`
-	ContainerVersion int               `json:"containerVersion,omitempty"`
-	CreatedAt        time.Time         `json:"createdAt"`
-	CompletedAt      *time.Time        `json:"completedAt,omitempty"`
-	cancelFn         context.CancelFunc
+	ID                string            `json:"id"`
+	Type              string            `json:"type"`
+	SourcePath        string            `json:"sourcePath"`
+	TargetPath        string            `json:"targetPath,omitempty"`
+	Password          string            `json:"password,omitempty"`
+	SecondaryPassword string            `json:"secondaryPassword,omitempty"`
+	ExtraFields       map[string]string `json:"extraFields,omitempty"`
+	PluginName        string            `json:"pluginName,omitempty"`
+	Status            string            `json:"status"`
+	Progress          int               `json:"progress"`
+	Phase             string            `json:"phase,omitempty"`
+	Speed             string            `json:"speed,omitempty"`
+	Eta               string            `json:"eta,omitempty"`
+	Error             string            `json:"error,omitempty"`
+	ErrorDetail       string            `json:"errorDetail,omitempty"`
+	Warning           string            `json:"warning,omitempty"`
+	WarningDetail     string            `json:"warningDetail,omitempty"`
+	ContainerVersion  int               `json:"containerVersion,omitempty"`
+	CreatedAt         time.Time         `json:"createdAt"`
+	CompletedAt       *time.Time        `json:"completedAt,omitempty"`
+	cancelFn          context.CancelFunc
 }
 
 type TaskManager struct {
@@ -448,6 +449,7 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 		tm.failTask(taskID, fmt.Sprintf("no encrypting plugin found: %v", err))
 		return
 	}
+	task.PluginName = plugin.Name()
 
 	var primaryPassword string
 	if resolver, ok := plugin.(pluginInterfaces.TaskPasswordResolver); ok {
@@ -658,6 +660,7 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 		tm.failTask(taskID, fmt.Sprintf("no decrypting plugin found: %v", err))
 		return
 	}
+	task.PluginName = plugin.Name()
 
 	var primaryPassword string
 	if resolver, ok := plugin.(pluginInterfaces.TaskPasswordResolver); ok {

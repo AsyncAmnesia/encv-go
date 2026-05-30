@@ -24,7 +24,7 @@
 
       <ion-list v-else>
         <ion-item-sliding v-for="task in tasks" :key="task.id">
-          <ion-item>
+          <ion-item @click="openTaskDetail(task)" button detail>
             <ion-icon
               :icon="getTaskIcon(task)"
               :color="getTaskColor(task)"
@@ -32,11 +32,14 @@
             ></ion-icon>
             <ion-label>
               <h2>{{ getTaskName(task) }}</h2>
-              <p>
+              <p class="card-meta-row">
                 <ion-badge :color="getStatusColor(task.status)" class="status-badge">
                   {{ getStatusLabel(task.status) }}
                 </ion-badge>
                 <span class="task-type">{{ task.type === 'encrypt' ? t('tasks.encrypt') : t('tasks.decrypt') }}</span>
+                <ion-badge v-if="task.pluginName" color="primary" class="plugin-badge">
+                  {{ task.pluginName }}
+                </ion-badge>
               </p>
               <p class="task-time-info">
                 <span class="time-created">{{ formatDateTime(task.createdAt) }}</span>
@@ -158,6 +161,7 @@ import {
   IonFab,
   IonFabButton,
   IonSpinner,
+  modalController,
 } from '@ionic/vue'
 import {
   add,
@@ -269,6 +273,22 @@ function getTaskDuration(task: EncvTask): string {
     return formatDuration(Date.now() - created)
   }
   return ''
+}
+
+async function openTaskDetail(task: EncvTask) {
+  const { default: TaskDetailModal } = await import('@/components/TaskDetailModal.vue')
+  const modal = await modalController.create({
+    component: TaskDetailModal,
+    componentProps: { task },
+    cssClass: 'task-detail-modal',
+  })
+  await modal.present()
+  const { data, role } = await modal.onDidDismiss()
+  if (role === 'dismiss' && data) {
+    if (data.action === 'cancel') await handleCancelTask(data.id)
+    else if (data.action === 'retry') await handleRetryTask(data.id)
+    else if (data.action === 'remove') await handleRemoveTask(data.id)
+  }
 }
 
 function isPasswordError(task: EncvTask): boolean {
@@ -474,6 +494,23 @@ onUnmounted(() => {
 .task-type {
   font-size: 12px;
   color: var(--encv-text-secondary);
+  margin-left: 6px;
+}
+
+.card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.plugin-badge {
+  font-size: 10px;
+  --padding-start: 6px;
+  --padding-end: 6px;
+  --padding-top: 2px;
+  --padding-bottom: 2px;
+  font-weight: 500;
 }
 
 .task-time-info {

@@ -1,89 +1,152 @@
 <template>
   <ion-page>
-    <ion-header>
+    <ion-header class="modal-header">
       <ion-toolbar>
         <ion-title>{{ t('tasks.newTask') }}</ion-title>
         <ion-buttons slot="end">
-          <ion-button @click="handleClose">{{ t('tasks.close') }}</ion-button>
+          <ion-button @click="handleClose" fill="clear" size="small" color="medium">
+            {{ t('tasks.close') }}
+          </ion-button>
         </ion-buttons>
       </ion-toolbar>
     </ion-header>
+
     <ion-content class="ion-padding">
-      <!-- 任务类型 -->
-      <ion-list>
-        <ion-item>
-          <ion-select :model-value="taskType" @ionChange="(e: any) => { emit('updateTaskType', e.detail.value); props.onUpdateTaskType?.(e.detail.value) }" interface="action-sheet" :label="t('tasks.taskType')" label-placement="stacked">
+      <div class="form-section">
+        <!-- 任务类型 -->
+        <div class="field-group">
+          <ion-select
+            :model-value="taskType"
+            @ionChange="(e: any) => { emit('updateTaskType', e.detail.value); props.onUpdateTaskType?.(e.detail.value) }"
+            interface="action-sheet"
+            :label="t('tasks.taskType')"
+            label-placement="stacked"
+            class="task-type-select"
+          >
             <ion-select-option value="encrypt">{{ t('tasks.encrypt') }}</ion-select-option>
             <ion-select-option value="decrypt">{{ t('tasks.decrypt') }}</ion-select-option>
           </ion-select>
-        </ion-item>
+        </div>
 
         <!-- 源路径（带浏览按钮） -->
-        <ion-item>
-          <ion-input :model-value="src" @ionInput="(e: any) => { emit('updateSourcePath', e.detail.value); props.onUpdateSourcePath?.(e.detail.value) }" :label="t('tasks.sourcePath')" label-placement="stacked" placeholder="/path/to/file"></ion-input>
+        <div class="field-group path-field">
+          <ion-input
+            :model-value="src"
+            @ionInput="(e: any) => { emit('updateSourcePath', e.detail.value); props.onUpdateSourcePath?.(e.detail.value) }"
+            :label="t('tasks.sourcePath')"
+            label-placement="stacked"
+            placeholder="/path/to/file"
+            class="path-input"
+          ></ion-input>
           <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseSource">
             <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
           </ion-button>
-        </ion-item>
+        </div>
 
         <!-- 目标路径（带浏览按钮） -->
-        <ion-item>
-          <ion-input :model-value="tgt" @ionInput="(e: any) => { emit('updateTargetPath', e.detail.value); props.onUpdateTargetPath?.(e.detail.value) }" :label="t('tasks.targetPath')" label-placement="stacked" :placeholder="t('tasks.targetPathPlaceholder')"></ion-input>
+        <div class="field-group path-field">
+          <ion-input
+            :model-value="tgt"
+            @ionInput="(e: any) => { emit('updateTargetPath', e.detail.value); props.onUpdateTargetPath?.(e.detail.value) }"
+            :label="t('tasks.targetPath')"
+            label-placement="stacked"
+            :placeholder="t('tasks.targetPathPlaceholder')"
+            class="path-input"
+          ></ion-input>
           <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseTarget">
             <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
           </ion-button>
-        </ion-item>
-      </ion-list>
-
-      <!-- 插件选择（当有多个候选时显示） -->
-      <div v-if="cands.length > 1" class="plugin-selector">
-        <ion-list>
-          <ion-item>
-            <ion-label>{{ t('tasks.selectPlugin') }}</ion-label>
-            <ion-select :model-value="selectedIdx" @ionChange="(e: any) => { emit('selectPlugin', e.detail.value); props.onSelectPlugin?.(e.detail.value) }" interface="action-sheet" placement="bottom" style="width: 100%; max-width: 200px;">
-              <ion-select-option v-for="(c, idx) in cands" :key="idx" :value="idx">{{ c.name }}</ion-select-option>
-            </ion-select>
-          </ion-item>
-        </ion-list>
+        </div>
       </div>
 
-      <!-- 插件提示 -->
-      <div v-if="cands.length === 1 && pluginName" class="plugin-hint">
-        <ion-icon :icon="checkmarkCircle" color="success" class="hint-icon"></ion-icon>
-        <span>{{ t('tasks.willBeHandledBy', { plugin: pluginName }) }}</span>
+      <!-- 插件信息区域 -->
+      <div v-if="isPredicting" class="plugin-section predicting">
+        <ion-spinner name="crescent" class="predict-spinner"></ion-spinner>
+        <span class="predict-text">{{ t('tasks.analyzingFile') }}</span>
+      </div>
+
+      <div v-else-if="cands.length > 1" class="plugin-section multi-plugin">
+        <div class="section-label">{{ t('tasks.selectPlugin') }}</div>
+        <ion-select
+          :model-value="selectedIdx"
+          @ionChange="(e: any) => { emit('selectPlugin', e.detail.value); props.onSelectPlugin?.(e.detail.value) }"
+          interface="action-sheet"
+          placement="bottom"
+          class="plugin-select"
+        >
+          <ion-select-option v-for="(c, idx) in cands" :key="idx" :value="idx">
+            {{ c.name }}
+            <span class="match-type-badge" :class="'mt-' + c.matchType">{{ c.matchType }}</span>
+          </ion-select-option>
+        </ion-select>
+      </div>
+
+      <div v-else-if="cands.length === 1 && pluginName" class="plugin-section single-plugin">
+        <ion-icon :icon="checkmarkCircle" color="success" class="plugin-check"></ion-icon>
+        <div class="plugin-info">
+          <span class="plugin-name">{{ pluginName }}</span>
+          <span class="plugin-match-type">{{ getMatchTypeLabel(cands[0].matchType) }}</span>
+        </div>
       </div>
 
       <!-- 密码策略提示 -->
-      <div v-if="taskOpts?.passwordStrategy === 'independent'" class="plugin-hint password-strategy-hint">
-        {{ t('tasks.usesIndependentPassword') }}
-      </div>
-      <div v-else-if="cands.length > 0 && taskOpts" class="plugin-hint">
-        {{ t('tasks.usesGlobalPassword') }}
+      <div v-if="!isPredicting && taskOpts" class="plugin-hint" :class="{ 'strategy-independent': taskOpts.passwordStrategy === 'independent' }">
+        {{ taskOpts.passwordStrategy === 'independent' ? t('tasks.usesIndependentPassword') : t('tasks.usesGlobalPassword') }}
       </div>
 
-      <!-- 容器版本选择（仅在 taskType='encrypt' 且有版本选项时显示）-->
-      <div v-if="taskType === 'encrypt' && vers && vers.length > 0">
-        <ContainerVersionSelector :model-value="ver" @update:model-value="(v: number) => { emit('updateVersion', v); props.onUpdateVersion?.(v) }" :versions="vers" />
+      <!-- 容器版本选择 -->
+      <div v-if="taskType === 'encrypt' && vers && vers.length > 0" class="version-section">
+        <ContainerVersionSelector
+          :model-value="ver"
+          @update:model-value="(v: number) => { emit('updateVersion', v); props.onUpdateVersion?.(v) }"
+          :versions="vers"
+        />
       </div>
 
       <!-- 密码字段 -->
-      <ion-item>
-        <ion-input :model-value="pwdPrimary" @ionInput="(e: any) => { emit('updatePrimaryOverride', e.detail.value); props.onUpdatePrimaryOverride?.(e.detail.value) }" :label="t('tasks.passwordOverride')" label-placement="stacked" type="password" :placeholder="t('tasks.passwordOverrideHelp')"></ion-input>
-      </ion-item>
-
-      <ion-item>
-        <ion-input :model-value="pwdSecondary" @ionInput="(e: any) => { emit('updateSecondaryPassword', e.detail.value); props.onUpdateSecondaryPassword?.(e.detail.value) }" :label="t('tasks.secondaryPassword')" label-placement="stacked" type="password" :placeholder="t('tasks.secondaryPasswordHelp')"></ion-input>
-      </ion-item>
+      <div class="form-section password-section">
+        <ion-item lines="none" class="password-item">
+          <ion-input
+            :model-value="pwdPrimary"
+            @ionInput="(e: any) => { emit('updatePrimaryOverride', e.detail.value); props.onUpdatePrimaryOverride?.(e.detail.value) }"
+            :label="t('tasks.passwordOverride')"
+            label-placement="stacked"
+            type="password"
+            :placeholder="t('tasks.passwordOverrideHelp')"
+          ></ion-input>
+        </ion-item>
+        <ion-item lines="none" class="password-item">
+          <ion-input
+            :model-value="pwdSecondary"
+            @ionInput="(e: any) => { emit('updateSecondaryPassword', e.detail.value); props.onUpdateSecondaryPassword?.(e.detail.value) }"
+            :label="t('tasks.secondaryPassword')"
+            label-placement="stacked"
+            type="password"
+            :placeholder="t('tasks.secondaryPasswordHelp')"
+          ></ion-input>
+        </ion-item>
+      </div>
 
       <!-- 额外字段 -->
       <template v-for="field in extraFlds" :key="field.key">
-        <ion-item v-if="!field.condition || field.condition === taskType">
-          <ion-input :model-value="getExtra(field.key)" @ionInput="(e: any) => { emit('updateExtraValue', { key: field.key, value: e.detail.value }); props.onUpdateExtraValue?.({ key: field.key, value: e.detail.value }) }" :label="field.label" type="text" :placeholder="field.help"></ion-input>
+        <ion-item v-if="!field.condition || field.condition === taskType" lines="none" class="extra-field-item">
+          <ion-input
+            :model-value="getExtra(field.key)"
+            @ionInput="(e: any) => { emit('updateExtraValue', { key: field.key, value: e.detail.value }); props.onUpdateExtraValue?.({ key: field.key, value: e.detail.value }) }"
+            :label="field.label"
+            type="text"
+            :placeholder="field.help"
+          ></ion-input>
         </ion-item>
       </template>
 
       <!-- 提交按钮 -->
-      <ion-button expand="block" @click="() => { emit('submit'); props.onSubmit?.() }" :disabled="!src">
+      <ion-button
+        expand="block"
+        class="submit-btn"
+        :disabled="!src || isPredicting"
+        @click="() => { emit('submit'); props.onSubmit?.() }"
+      >
         <ion-icon :icon="lockClosed" slot="start"></ion-icon>
         {{ t('tasks.createTask') }}
       </ion-button>
@@ -101,13 +164,11 @@ import {
   IonTitle,
   IonButtons,
   IonButton,
-  IonList,
-  IonItem,
   IonSelect,
   IonSelectOption,
   IonInput,
   IonIcon,
-  IonLabel,
+  IonSpinner,
   modalController,
 } from '@ionic/vue'
 import { folderOpen, lockClosed, checkmarkCircle } from 'ionicons/icons'
@@ -116,7 +177,6 @@ import ContainerVersionSelector from '@/components/ContainerVersionSelector.vue'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 import type { PluginCandidate, ContainerVersionInfo, TaskField, TaskOptions } from '@/api/encv'
 
-// modalController.create() 场景传入的响应式状态对象（替代扁平 props 的静态快照）
 interface NewTaskState {
   taskType: string
   sourcePath: string
@@ -184,7 +244,6 @@ const props = withDefaults(defineProps<{
   onSubmit: undefined,
 })
 
-// 优先从响应式 state 对象读取（modalController.create() 场景），fallback 到扁平 props
 const src = computed(() => props.state?.sourcePath ?? props.sourcePath ?? '')
 const tgt = computed(() => props.state?.targetPath ?? props.targetPath ?? '')
 const cands = computed(() => {
@@ -209,6 +268,20 @@ const selectedIdx = computed(() =>
     : 0
 )
 const taskOpts = computed(() => props.state?.taskOptions ?? props.taskOptions ?? null)
+
+const isPredicting = computed(() => {
+  return src.value.length > 0 && cands.value.length === 0 && !pluginName.value
+})
+
+function getMatchTypeLabel(matchType: string): string {
+  switch (matchType) {
+    case 'mime': return 'MIME'
+    case 'extension': return 'Extension'
+    case 'general': return 'General'
+    case 'container': return 'Container'
+    default: return matchType
+  }
+}
 
 function getExtra(key: string): string {
   const ev = props.state?.extraValues ?? props.extraValues
@@ -248,36 +321,180 @@ async function handleClose() {
 </script>
 
 <style scoped>
-.plugin-selector {
-  margin: 8px 0;
+.modal-header ion-toolbar {
+  --padding-start: 8px;
+  --padding-end: 4px;
 }
 
-.plugin-hint {
+.form-section {
+  margin-bottom: 12px;
+}
+
+.field-group {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.path-field {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+}
+
+.path-field .path-input {
+  flex: 1;
+}
+
+.browse-btn {
+  --padding-start: 6px;
+  --padding-end: 6px;
+  min-width: 40px;
+  min-height: 40px;
+  margin-bottom: 2px;
+  --color: var(--ion-color-medium);
+}
+
+/* 插件区域 */
+.plugin-section {
+  margin: 10px 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--ion-color-step-50, #f8f9fa);
+}
+
+.plugin-section.predicting {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  font-size: 12px;
-  color: var(--ion-color-medium);
-  background: var(--ion-color-step-50, #f8f8f8);
-  border-radius: 6px;
-  margin: 4px 16px;
+  gap: 10px;
+  padding: 16px;
+  justify-content: center;
 }
 
-.hint-icon {
-  font-size: 16px;
+.predict-spinner {
+  width: 20px;
+  height: 20px;
+  --color: var(--ion-color-primary);
+}
+
+.predict-text {
+  font-size: 13px;
+  color: var(--ion-color-medium);
+}
+
+.plugin-section.multi-plugin {
+  padding: 10px 14px;
+}
+
+.section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ion-color-medium-shade);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.plugin-select {
+  width: 100%;
+  --padding-start: 0;
+  max-width: none;
+}
+
+.plugin-section.single-plugin {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.plugin-check {
+  font-size: 20px;
   flex-shrink: 0;
 }
 
-.password-strategy-hint {
+.plugin-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plugin-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ion-text-color);
+}
+
+.plugin-match-type {
+  font-size: 11px;
+  color: var(--ion-color-primary);
+  background: rgba(var(--ion-color-primary-rgb), 0.1);
+  padding: 1px 8px;
+  border-radius: 10px;
+  align-self: flex-start;
+}
+
+.match-type-badge {
+  font-size: 10px;
+  opacity: 0.7;
+  margin-left: 6px;
+}
+
+.mt-mime { color: #3880ff; }
+.mt-extension { color: #2dd36f; }
+.mt-general { color: #ffc409; }
+.mt-container { color: #eb445a; }
+
+/* 密码策略提示 */
+.plugin-hint {
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--ion-color-medium);
+  background: rgba(var(--ion-color-primary-rgb), 0.06);
+  border-radius: 8px;
+  margin: 8px 0;
+  border-left: 3px solid var(--ion-color-medium);
+}
+
+.plugin-hint.strategy-independent {
+  border-left-color: var(--ion-color-primary);
   color: var(--ion-color-primary);
   font-weight: 500;
 }
 
-.browse-btn {
-  --padding-start: 8px;
-  --padding-end: 8px;
-  min-width: 44px;
-  min-height: 44px;
+/* 版本选择 */
+.version-section {
+  margin: 10px 0;
+}
+
+/* 密码字段 */
+.password-section {
+  margin-top: 8px;
+}
+
+.password-item {
+  --background: transparent;
+  --padding-start: 0;
+  --padding-end: 0;
+  --inner-padding-end: 0;
+}
+
+.extra-field-item {
+  --background: transparent;
+  --padding-start: 0;
+  --padding-end: 0;
+  --inner-padding-end: 0;
+  margin-top: 4px;
+}
+
+/* 提交按钮 */
+.submit-btn {
+  margin-top: 20px;
+  --border-radius: 10px;
+  height: 48px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.submit-btn:disabled {
+  opacity: 0.5;
 }
 </style>
