@@ -18,23 +18,47 @@
           </ion-select>
         </ion-item>
 
-        <!-- 源路径 -->
+        <!-- 源路径（带浏览按钮） -->
         <ion-item>
           <ion-input :model-value="src" @ionInput="(e: any) => emit('updateSourcePath', e.detail.value)" :label="t('tasks.sourcePath')" label-placement="stacked" placeholder="/path/to/file"></ion-input>
+          <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseSource">
+            <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+          </ion-button>
         </ion-item>
 
-        <!-- 目标路径 -->
+        <!-- 目标路径（带浏览按钮） -->
         <ion-item>
           <ion-input :model-value="tgt" @ionInput="(e: any) => emit('updateTargetPath', e.detail.value)" :label="t('tasks.targetPath')" label-placement="stacked" :placeholder="t('tasks.targetPathPlaceholder')"></ion-input>
+          <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseTarget">
+            <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
+          </ion-button>
         </ion-item>
       </ion-list>
 
-      <!-- 插件提示 -->
-      <div v-if="cands.length === 1 && pluginName" style="padding:8px 16px;font-size:12px;color:#666;background:#f8f8f8;border-radius:6px;margin:4px 16px">
-        {{ t('tasks.willBeHandledBy', { plugin: pluginName }) }}
+      <!-- 插件选择（当有多个候选时显示） -->
+      <div v-if="cands.length > 1" class="plugin-selector">
+        <ion-list>
+          <ion-item>
+            <ion-label>{{ t('tasks.selectPlugin') }}</ion-label>
+            <ion-select :model-value="selectedIdx" @ionChange="(e: any) => emit('selectPlugin', e.detail.value)" interface="action-sheet" placement="bottom" style="width: 100%; max-width: 200px;">
+              <ion-select-option v-for="(c, idx) in cands" :key="idx" :value="idx">{{ c.name }}</ion-select-option>
+            </ion-select>
+          </ion-item>
+        </ion-list>
       </div>
-      <div v-else-if="cands.length > 1" style="padding:8px 16px;font-size:12px;color:#666;background:#f8f8f8;border-radius:6px;margin:4px 16px">
-        {{ cands.length }} candidates · {{ t('tasks.willBeHandledBy', { plugin: pluginName || '?' }) }}
+
+      <!-- 插件提示 -->
+      <div v-if="cands.length === 1 && pluginName" class="plugin-hint">
+        <ion-icon :icon="checkmarkCircle" color="success" class="hint-icon"></ion-icon>
+        <span>{{ t('tasks.willBeHandledBy', { plugin: pluginName }) }}</span>
+      </div>
+
+      <!-- 密码策略提示 -->
+      <div v-if="taskOptions?.passwordStrategy === 'independent'" class="plugin-hint password-strategy-hint">
+        {{ t('tasks.usesIndependentPassword') }}
+      </div>
+      <div v-else-if="cands.length > 0 && taskOptions" class="plugin-hint">
+        {{ t('tasks.usesGlobalPassword') }}
       </div>
 
       <!-- 容器版本选择（仅在 taskType='encrypt' 且有版本选项时显示）-->
@@ -60,6 +84,7 @@
 
       <!-- 提交按钮 -->
       <ion-button expand="block" @click="emit('submit')" :disabled="!src">
+        <ion-icon :icon="lockClosed" slot="start"></ion-icon>
         {{ t('tasks.createTask') }}
       </ion-button>
     </ion-content>
@@ -81,10 +106,14 @@ import {
   IonSelect,
   IonSelectOption,
   IonInput,
+  IonIcon,
+  IonLabel,
   modalController,
 } from '@ionic/vue'
+import { folderOpen, lockClosed, checkmarkCircle } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import ContainerVersionSelector from '@/components/ContainerVersionSelector.vue'
+import FilePickerModal from '@/components/FilePickerModal.vue'
 import type { PluginCandidate, TaskOptions, TaskField, ContainerVersionInfo } from '@/api/encv'
 
 const { t } = useI18n()
@@ -102,6 +131,7 @@ const props = defineProps<{
   versionOptions: ContainerVersionInfo[]
   extraValues: Record<string, string>
   filteredExtraFields: TaskField[]
+  selectedPluginIndex: number
 }>()
 
 const emit = defineEmits<{
@@ -112,10 +142,10 @@ const emit = defineEmits<{
   (e: 'updatePrimaryOverride', v: string): void
   (e: 'updateSecondaryPassword', v: string): void
   (e: 'updateExtraValue', payload: { key: string; value: string }): void
+  (e: 'selectPlugin', index: number): void
   (e: 'submit'): void
 }>()
 
-// 安全访问 props（防止 undefined）
 const src = computed(() => props.sourcePath || '')
 const tgt = computed(() => props.targetPath || '')
 const cands = computed(() => Array.isArray(props.candidates) ? props.candidates : [])
@@ -125,13 +155,73 @@ const pwdSecondary = computed(() => props.secondaryPassword || '')
 const ver = computed(() => typeof props.version === 'number' ? props.version : 4)
 const vers = computed(() => Array.isArray(props.versionOptions) ? props.versionOptions : [])
 const extraFlds = computed(() => Array.isArray(props.filteredExtraFields) ? props.filteredExtraFields : [])
+const selectedIdx = computed(() => typeof props.selectedPluginIndex === 'number' ? props.selectedPluginIndex : 0)
 
 function getExtra(key: string): string {
   if (!props.extraValues || typeof props.extraValues !== 'object') return ''
   return props.extraValues[key] || ''
 }
 
+async function handleBrowseSource() {
+  const modal = await modalController.create({
+    component: FilePickerModal,
+    componentProps: { mode: 'file' as const },
+  })
+  await modal.present()
+  const { data, role } = await modal.onDidDismiss()
+  if (role === 'select' && data) {
+    emit('updateSourcePath', data.path)
+  }
+}
+
+async function handleBrowseTarget() {
+  const modal = await modalController.create({
+    component: FilePickerModal,
+    componentProps: { mode: 'folder' as const },
+  })
+  await modal.present()
+  const { data, role } = await modal.onDidDismiss()
+  if (role === 'select' && data) {
+    emit('updateTargetPath', data.path)
+  }
+}
+
 async function handleClose() {
   await modalController.dismiss()
 }
 </script>
+
+<style scoped>
+.plugin-selector {
+  margin: 8px 0;
+}
+
+.plugin-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--ion-color-medium);
+  background: var(--ion-color-step-50, #f8f8f8);
+  border-radius: 6px;
+  margin: 4px 16px;
+}
+
+.hint-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.password-strategy-hint {
+  color: var(--ion-color-primary);
+  font-weight: 500;
+}
+
+.browse-btn {
+  --padding-start: 8px;
+  --padding-end: 8px;
+  min-width: 44px;
+  min-height: 44px;
+}
+</style>

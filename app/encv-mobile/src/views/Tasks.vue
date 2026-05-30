@@ -204,6 +204,9 @@ const {
   getExtraPayload,
   reset: resetTaskForm,
   initFromQuery,
+  selectedPluginIndex,
+  visibleExtraFields,
+  predictPlugin: doPredict,
 } = useTaskForm()
 
 const tasks = ref<EncvTask[]>([])
@@ -365,6 +368,7 @@ async function openNewTaskModal(initialSourcePath?: string) {
 
   if (safeSource) {
     await initFromQuery({ sourcePath: safeSource, taskType: 'encrypt' })
+    await new Promise(resolve => setTimeout(resolve, 600))
   }
 
   const modal = await modalController.create({
@@ -381,7 +385,8 @@ async function openNewTaskModal(initialSourcePath?: string) {
       version: newTaskVersion.value || 4,
       versionOptions: versionOptions.value || [],
       extraValues: extraValues.value || {},
-      filteredExtraFields: [],
+      filteredExtraFields: visibleExtraFields.value,
+      selectedPluginIndex: selectedPluginIndex.value || 0,
     },
   })
 
@@ -391,7 +396,10 @@ async function openNewTaskModal(initialSourcePath?: string) {
     if (e.detail) newTaskType.value = e.detail
   })
   modal.addEventListener('updateSourcePath', (e: any) => {
-    if (e.detail) newTaskPath.value = e.detail
+    if (e.detail) {
+      newTaskPath.value = e.detail
+      doPredict(e.detail, newTaskType.value as 'encrypt' | 'decrypt')
+    }
   })
   modal.addEventListener('updateTargetPath', (e: any) => {
     if (e.detail) newTaskTargetPath.value = e.detail
@@ -407,6 +415,9 @@ async function openNewTaskModal(initialSourcePath?: string) {
   })
   modal.addEventListener('updateExtraValue', (e: any) => {
     if (e.detail?.key) extraValues.value[e.detail.key] = e.detail.value
+  })
+  modal.addEventListener('selectPlugin', (e: any) => {
+    if (typeof e.detail === 'number') selectedPluginIndex.value = e.detail
   })
   modal.addEventListener('submit', () => {
     handleCreateTask()
@@ -529,14 +540,23 @@ function processQueryAction() {
         ? route.query.type as TaskType
         : 'encrypt'
 
-      router.replace({ path: '/tabs/tasks', query: {} }).catch(() => {})
+      if (route.query.type) {
+        newTaskType.value = taskType
+      }
+      if (rawSource) {
+        newTaskPath.value = rawSource
+        sourcePathError.value = ''
+      }
 
       nextTick(() => {
-        newTaskType.value = taskType
-        const sourcePath = rawSource ? normalize(rawSource) : ''
+        const sourcePath = newTaskPath.value ? normalize(newTaskPath.value) : ''
         openNewTaskModal(sourcePath || undefined).catch((err) => {
           console.error('[Tasks] openNewTaskModal failed:', err)
         })
+      })
+
+      nextTick(() => {
+        router.replace({ path: '/tabs/tasks', query: {} }).catch(() => {})
       })
     }
   } catch (err) {
