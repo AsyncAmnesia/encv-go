@@ -290,7 +290,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import {
   IonPage,
   IonHeader,
@@ -760,18 +760,23 @@ function onTaskCompleted(data: { id: string; status?: string; error?: string; er
 
 function processQueryAction() {
   if (route.query.action === 'new') {
-    if (route.query.type === 'encrypt' || route.query.type === 'decrypt') {
-      newTaskType.value = route.query.type as TaskType
-    }
-    if (route.query.source) {
-      const sourcePath = route.query.source as string
-      newTaskPath.value = sourcePath
-      sourcePathError.value = ''
-      resetTaskForm()
-      predictPlugin(sourcePath, newTaskType.value)
-    }
-    showNewTaskModal.value = true
+    const sourcePath = route.query.source as string
+    const taskType = (route.query.type === 'encrypt' || route.query.type === 'decrypt')
+      ? route.query.type as TaskType
+      : 'encrypt'
+
     router.replace({ path: '/tabs/tasks', query: {} })
+
+    nextTick(() => {
+      newTaskType.value = taskType
+      if (sourcePath) {
+        newTaskPath.value = sourcePath
+        sourcePathError.value = ''
+        resetTaskForm()
+        predictPlugin(sourcePath, taskType)
+      }
+      showNewTaskModal.value = true
+    })
   }
 }
 
