@@ -78,7 +78,7 @@
       </div>
 
       <!-- 错误信息 -->
-      <div class="detail-section" v-if="task.error" class="error-section">
+      <div class="detail-section error-section" v-if="task.error">
         <div class="section-title error-section-title">
           <ion-icon :icon="closeCircle" color="danger"></ion-icon>
           {{ t('tasks.error') }}
@@ -88,7 +88,7 @@
       </div>
 
       <!-- 警告信息 -->
-      <div class="detail-section" v-if="task.warning" class="warning-section">
+      <div class="detail-section warning-section" v-if="task.warning">
         <div class="section-title warning-section-title">
           <ion-icon :icon="warningOutline" color="warning"></ion-icon>
           {{ t('tasks.warnings') }}
