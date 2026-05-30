@@ -956,3 +956,23 @@ export async function decodeAlistFilename(params: { encodedName: string; passwor
   }
   return response.json()
 }
+
+export interface ContainerExtensionConflict {
+  extension: string
+  pluginNames: string[]
+}
+
+export interface ContainerExtensionsResponse {
+  extensions: Record<string, string>
+  conflicts: ContainerExtensionConflict[]
+}
+
+export async function fetchContainerExtensions(): Promise<ContainerExtensionsResponse> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/plugins/container-extensions`)
+  if (!response.ok) {
+    console.error('[API] fetchContainerExtensions failed:', response.status)
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return response.json()
+}

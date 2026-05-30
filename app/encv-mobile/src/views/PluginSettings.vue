@@ -8,7 +8,7 @@
         <ion-title>{{ t('settings.pluginSettings') }}</ion-title>
         <ion-buttons slot="end" v-if="dirty">
           <ion-button @click="handleResetConfig" color="medium">{{ t('settings.undo') }}</ion-button>
-          <ion-button @click="handleSaveConfig" :disabled="configLoading">
+          <ion-button @click="handleSaveConfig" :disabled="configLoading || suffixConflict.length > 0">
             <ion-icon :icon="saveIcon" slot="icon-only"></ion-icon>
           </ion-button>
         </ion-buttons>
@@ -150,6 +150,11 @@
           </ion-item>
         </ion-list>
 
+        <div v-if="suffixConflict.length > 0" class="suffix-conflict-warning">
+          <ion-icon :icon="warningOutline"></ion-icon>
+          <span>{{ t('settings.suffixConflictWarning', { suffix: String(getFieldValue(['plugin_settings', 'alist_encrypt', 'suffix']) ?? ''), plugins: suffixConflict.join(', ') }) }}</span>
+        </div>
+
         <ion-list v-if="isNative()">
         </ion-list>
       </template>
@@ -213,9 +218,10 @@ import {
   filmOutline, musicalNotesOutline, imagesOutline, readerOutline,
   newspaperOutline, eyeOutline, folderOpen,
   documentText, toggleOutline, lockClosed, textOutline,
-  colorPaletteOutline, layersOutline,
+  colorPaletteOutline, layersOutline, warningOutline,
 } from 'ionicons/icons'
 import { useConfig } from '@/composables/useConfig'
+import { usePluginExtensions } from '@/composables/usePluginExtensions'
 import { useServerStatus } from '@/composables/useServerStatus'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
@@ -226,9 +232,11 @@ import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const { isOnline: serverOnline } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
+const { getConflictingPlugins, load: loadExtensions } = usePluginExtensions()
 const { t, tField, tSectionTitle } = useI18n()
 
 const configLoaded = ref(false)
+const suffixConflict = ref<string[]>([])
 
 const showJsonEditor = ref(false)
 const jsonText = ref('')
@@ -323,6 +331,19 @@ function handleInput(path: string[], field: FieldDef, event: CustomEvent) {
   } else {
     setFieldValue(path, val)
   }
+
+  if (path.length === 3 && path[0] === 'plugin_settings' && path[1] === 'alist_encrypt' && path[2] === 'suffix') {
+    checkSuffixConflict(val)
+  }
+}
+
+function checkSuffixConflict(suffix: string) {
+  if (!suffix || suffix === '.') {
+    suffixConflict.value = []
+    return
+  }
+  const conflicts = getConflictingPlugins(suffix)
+  suffixConflict.value = conflicts
 }
 
 async function handleBrowsePath(path: string[], field: FieldDef) {
@@ -403,6 +424,7 @@ onMounted(async () => {
   if (serverOnline.value) {
     await loadConfig()
     configLoaded.value = true
+    try { await loadExtensions() } catch {}
   }
 })
 
@@ -538,5 +560,21 @@ watch(serverOnline, async (online) => {
   color: var(--ion-color-danger);
   font-size: 12px;
   font-family: monospace;
+}
+.suffix-conflict-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 16px;
+  padding: 10px 14px;
+  background: rgba(255, 152, 0, 0.1);
+  border-radius: 8px;
+  border-left: 3px solid #e65100;
+  color: #e65100;
+  font-size: 13px;
+}
+.suffix-conflict-warning ion-icon {
+  font-size: 20px;
+  flex-shrink: 0;
 }
 </style>

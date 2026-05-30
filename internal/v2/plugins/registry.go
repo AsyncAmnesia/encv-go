@@ -114,6 +114,46 @@ type Plugin interface {
 	ValidateVersion(version int) error
 }
 
+// ExtensionConflict 表示插件容器扩展名冲突记录
+type ExtensionConflict struct {
+	Extension   string   // 冲突的扩展名（如 ".sccgv"）
+	PluginNames []string // 声明此扩展名的插件列表（通常 ≥2 个）
+}
+
+// ValidateExtensionUniqueness 检查所有插件容器扩展名是否唯一
+// 纯检测函数，不做策略决策，由调用方决定处理方式
+func ValidateExtensionUniqueness() []ExtensionConflict {
+	extToPlugins := make(map[string][]string)
+	for _, p := range Plugins {
+		ext := normalizeExtension(p.GetContainerExtension())
+		if ext != "" {
+			extToPlugins[ext] = append(extToPlugins[ext], p.Name())
+		}
+	}
+	var conflicts []ExtensionConflict
+	for ext, names := range extToPlugins {
+		if len(names) > 1 {
+			conflicts = append(conflicts, ExtensionConflict{
+				Extension:   ext,
+				PluginNames: names,
+			})
+		}
+	}
+	return conflicts
+}
+
+// GetContainerExtensionsMap 返回所有插件的 容器扩展名→插件名 映射
+func GetContainerExtensionsMap() map[string]string {
+	result := make(map[string]string)
+	for _, p := range Plugins {
+		ext := normalizeExtension(p.GetContainerExtension())
+		if ext != "" && result[ext] == "" {
+			result[ext] = p.Name()
+		}
+	}
+	return result
+}
+
 // DefaultPluginVersionMethods 提供版本方法的默认实现
 func DefaultSupportedVersions() []int {
 	return types.SupportedVersions
@@ -280,11 +320,20 @@ func InitializePlugins(ctx context.Context) error {
 		pluginName := p.Name()
 		slog.Info("Initializing plugin", "name", pluginName)
 
-		// 3. 调用插件的初始化方法
 		if err := p.Initialize(ctx); err != nil {
 			return fmt.Errorf("failed to initialize plugin %s: %w", pluginName, err)
 		}
 	}
+
+	if conflicts := ValidateExtensionUniqueness(); len(conflicts) > 0 {
+		for _, c := range conflicts {
+			slog.Error("container extension conflict detected",
+				"extension", c.Extension,
+				"conflicting_plugins", strings.Join(c.PluginNames, ", "),
+			)
+		}
+	}
+
 	return nil
 }
 

@@ -54,7 +54,7 @@ func (p *AlistEncryptPlugin) GetSettingFields() []pluginInterfaces.SettingField 
 			Key:          "suffix",
 			Type:         "string",
 			DefaultValue: ".bin",
-			Help:         "Encrypted file suffix (e.g., '.bin'). Cannot be '.sccgv' or '.encv'.",
+			Help:         "Encrypted file suffix (e.g., '.bin'). Must be unique across all plugins.",
 		},
 		{
 			Key:          "default_password",
@@ -72,8 +72,6 @@ func (p *AlistEncryptPlugin) GetSettingFields() []pluginInterfaces.SettingField 
 	}
 }
 
-var reservedSuffixes = map[string]bool{".sccgv": true, ".encv": true}
-
 func (p *AlistEncryptPlugin) Initialize(ctx context.Context) error {
 	if ctx == p.ctx {
 		return nil
@@ -88,11 +86,7 @@ func (p *AlistEncryptPlugin) Initialize(ctx context.Context) error {
 	p.settings = *settings
 
 	suffix := p.settings.Suffix
-	if reservedSuffixes[strings.ToLower(suffix)] {
-		slog.Error("alist_encrypt: suffix conflicts with ENCV container format, falling back to .bin",
-			"suffix", suffix)
-		p.settings.Suffix = ".bin"
-	} else if !strings.HasPrefix(suffix, ".") {
+	if !strings.HasPrefix(suffix, ".") {
 		slog.Warn("alist_encrypt: suffix does not start with '.', falling back to .bin",
 			"suffix", suffix)
 		p.settings.Suffix = ".bin"

@@ -778,6 +778,24 @@ func (s *Server) handlePluginsGin(c *gin.Context) {
 	c.JSON(200, gin.H{"plugins": metas})
 }
 
+func (s *Server) handleContainerExtensionsGin(c *gin.Context) {
+	extMap := plugins.GetContainerExtensionsMap()
+	conflicts := plugins.ValidateExtensionUniqueness()
+
+	var conflictList []gin.H
+	for _, c := range conflicts {
+		conflictList = append(conflictList, gin.H{
+			"extension":   c.Extension,
+			"pluginNames": c.PluginNames,
+		})
+	}
+
+	c.JSON(200, gin.H{
+		"extensions": extMap,
+		"conflicts":  conflictList,
+	})
+}
+
 func (s *Server) writeSSEEvent(c *gin.Context, flusher http.Flusher, data string) {
 	c.Writer.Write([]byte("data: " + data + "\n\n"))
 	if flusher != nil {

@@ -245,6 +245,7 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/api/ffmpeg-status", s.handleFFmpegStatusGin)
 	r.GET("/api/container/versions", s.handleGetContainerVersionsGin)
 	r.GET("/api/plugins", s.handlePluginsGin)
+	r.GET("/api/plugins/container-extensions", s.handleContainerExtensionsGin)
 	r.GET("/api/alist-encrypt/stream", s.handleAlistEncryptStreamGin)
 	r.GET("/api/alist-encrypt/decode-filename", s.handleAlistDecodeFilenameGin)
 	r.POST("/api/logs", s.handleAPILogsGin)
