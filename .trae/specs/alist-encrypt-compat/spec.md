@@ -39,7 +39,7 @@ Round 3 完成了 isAlistEncrypted 排除移除、getAlistActions 三分支、�
 
 ## ADDED Requirements (Round 4)
 
-### REQ-16: 插件视图 container tab 正确显示所有加密文件（P0）
+### REQ-16: 插件视图 container/origin tab 过滤委托给插件系统（P0）
 
 #### 当前代码问题
 
@@ -49,40 +49,86 @@ const filteredPluginFiles = computed(() => {
   if (!selectedPlugin.value) return []
   let list: FileItem[]
   if (pluginTab.value === 'container') {
-    // ❌ 只匹配 ENCV 容器！alist-encrypt 加密文件被排除
+    // ❌ 硬编码 ENCV 容器判断！不经过插件系统
     list = pluginFiles.value.filter(f =>
       f.isEncrypted ||
       selectedPlugin.value?.containerExtension && f.name.endsWith(selectedPlugin.value.containerExtension)
     )
   } else {
-    // origin tab: !isEncrypted → alist-encrypt 文件会出现在这里（因为它们 isEncrypted=false）
-    // 但这语义不对——加密后的文件不应该算"原始文件"
+    // ❌ 同样硬编码
     list = pluginFiles.value.filter(f => !f.isEncrypted)
   }
 })
 ```
 
-**问题分析**：
-- alist-encrypt 加密文件：`isEncrypted=false`，不以 `containerExtension` 结尾（那是 ENCV 容器的后缀），以**配置的 alist-encrypt 后缀**结尾
-- **container tab**：两个条件都不满足 → **不显示** ❌
-- **origin tab**：`!isEncrypted = true` → **显示了** ⚠️ 但语义错误（加密文件不应归类为"原始文件"）
+**问题本质**：Files.vue 直接硬编码了「什么是容器文件」的判断逻辑。这违反了插件系统架构原则——**文件分类判定应由 Feature 模块提供，Files.vue 只负责调用**。
+
+#### 架构约束
+
+Files.vue **不得包含任何插件特定的文件分类逻辑**。当前代码中的 `isEncrypted`、`containerExtension`、`endsWith` 都是 ENCV 容器模型的具体实现细节泄漏到了视图层。
 
 #### 修复方案
 
-将 container / origin 的过滤条件改为：
+在 FileFeature 接口中增加 `isContainerFile(file)` 方法（或复用现有接口组合），由各 Feature 自行定义"什么算该插件的容器文件"。Files.vue 的 `filteredPluginFiles` 通过 Feature 系统查询。
 
-| Tab | 条件 | 含义 |
-|-----|------|------|
-| **container** | `f.isEncrypted \|\| isAlistEncrypted(f) \|\| (containerExtension && endsWith)` | 所有加密/容器化文件 |
-| **origin** | `!f.isEncrypted && !isAlistEncrypted(f)` | 未加密的原始文件 |
+##### 方案 A（推荐）：扩展 FileFeature 接口
+
+在 [file-feature.ts](file:///workspace/app/encv-mobile/src/types/file-feature.ts) 的 `FileFeature` 接口中新增可选方法：
+
+```typescript
+isContainerFile?(file: FileItem): boolean  // 该文件是否为此插件的"容器/加密后"文件
+```
+
+在 [useFileFeatures.ts](file:///workspace/app/encv-mobile/src/composables/useFileFeatures.ts) 中新增聚合函数：
+
+```typescript
+export function isAnyContainerFile(file: FileItem): boolean {
+  for (const feature of registry.values()) {
+    if (feature.isActive(file) && feature.isContainerFile?.(file)) return true
+  }
+  return false
+}
+```
+
+alist-encrypt Feature 实现：
+```typescript
+isContainerFile: (file) => isAlistEncrypted(file),  // 配置后缀匹配即为容器文件
+```
+
+Files.vue 改为：
+```typescript
+if (pluginTab.value === 'container') {
+  list = pluginFiles.value.filter(f => isAnyContainerFile(f))
+} else {
+  list = pluginFiles.value.filter(f => !isAnyContainerFile(f))
+}
+```
+
+##### 方案 B（最小改动）：直接调用 isAlistEncrypted 作为过渡
+
+如果不想改接口定义，可以在 Files.vue 中通过已导入的 `isAlistEncrypted` 函数 + `isEncrypted` 组合判断：
+
+```typescript
+import { isAlistEncrypted } from '@/features/alist-encrypt/useAlistEncrypt'
+
+function isContainerFile(file: FileItem): boolean {
+  return file.isEncrypted || isAlistEncrypted(file)
+}
+```
+
+> 方案 B 是临时方案——当有第二个 Feature 实现时必须迁移到方案 A。本次采用方案 B 并预留方案 A 的迁移路径。
 
 #### 场景 16.1: alist-encrypt 加密文件在 container tab 可见
-- **WHEN** 插件视图中有 `video.ae`（alist-encrypt 加密文件，`isEncrypted=false`）
-- **THEN** container tab SHALL 显示该文件
+- **WHEN** 插件视图中有 alist-encrypt 加密文件（`isAlistEncrypted=true`, `isEncrypted=false`）
+- **THEN** container tab SHALL 显示该文件（通过 Feature 系统的 `isContainerFile` 判定）
 
-#### 场景 16.2: origin tab 不包含加密文件
+#### 场景 16.2: origin tab 不包含任何加密文件
 - **WHEN** 切换到 origin tab
-- **THEN** alist-encrypt 加密文件和 ENCV 容器文件均不出现
+- **THEN** ENCV 容器文件和 alist-encrypt 加密文件均不出现
+
+#### 场景 16.3: 新增插件时无需修改 Files.vue
+- **WHEN** 未来新增一个 Feature（如 encv-container），实现了自己的 `isContainerFile`
+- **THEN** Files.vue 的过滤逻辑自动覆盖新插件（无需修改）
 
 ### REQ-17: getPluginIcon 消除硬编码映射（P1）
 

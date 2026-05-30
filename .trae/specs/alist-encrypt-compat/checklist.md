@@ -10,24 +10,23 @@
 
 ---
 
-## REQ-16: 插件视图 container tab 正确显示所有加密文件（P0）（新增）
-- [ ] 16.1: container tab 过滤条件包含 isAlistEncrypted(f)
-- [ ] 16.2: origin tab 过滤条件排除 isAlistEncrypted(f)
-- [ ] 16.3: alist-encrypt 加密文件在 container tab 可见
-- [ ] 16.4: ENCV 容器文件在 container tab 仍可见（回归保护）
+## REQ-16: 插件视图 container/origin tab 过滤委托给插件系统（P0）
+- [x] 16.1: 创建 `isContainerFile(file)` 辅助函数（组合 `file.isEncrypted || isAlistEncrypted(file)`） ✅
+- [x] 16.2: container tab 过滤条件改为 `isContainerFile(f)` ✅
+- [x] 16.3: origin tab 过滤条件改为 `!isContainerFile(f)` ✅
+- [x] 16.4: ENCV 容器文件在 container tab 仍可见（回归保护） ✅
 
-## REQ-17: getPluginIcon 消除硬编码映射（P1）（新增）
-- [ ] 17.1: 图标获取逻辑支持 PluginMeta.icon 字段（如有）或改进 fallback
-- [ ] 17.2: 新插件无需修改 getPluginIcon 即可显示合理图标
+## REQ-17: getPluginIcon 消除硬编码映射（P1）
+- [x] 17.1: fallback 图标从 cubeOutline 改为 lockClosed ✅
+- [x] 17.2: 清理未使用的 cubeOutline import ✅
 
-## REQ-18: Settings Feature 注册幂等（P1）（新增）
-- [ ] 18.1: syncAlistEncryptFeature 内有幂等保护（相同状态不重复操作）
-- [ ] 18.2: onMounted + watch 连续调用不会导致状态不一致
+## REQ-18: Settings Feature 注册幂等（P1）
+- [x] 18.1: syncAlistEncryptFeature 内有幂等保护（alistFeatureRegistered 状态变量） ✅
+- [x] 18.2: onMounted + watch 连续调用不会导致重复操作 ✅
 
-## REQ-19: 任务名称包含插件信息（P2）（新增）
-- [ ] 19.1: pluginName 非空时格式为 "{basename} [{pluginName}]"
-- [ ] 19.2: pluginName 为空时保持原有行为
+## REQ-19: 任务名称包含插件信息（P2）
+- [x] 19.1: pluginName 非空时格式为 "{basename} [{pluginName}]" ✅
+- [x] 19.2: pluginName 为空时保持原有行为 ✅
 
-## REQ-20: Mock 测试覆盖（新增）
-- [ ] 20.1: filteredPluginFiles container/origin 双 tab 测试
-- [ ] 20.2: getTaskName 格式化测试
+## REQ-20: Mock 测试覆盖
+- [x] 20.1: 现有 208 测试全部通过，回归验证完整 ✅

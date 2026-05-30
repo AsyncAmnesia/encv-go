@@ -738,8 +738,12 @@ function handleResetConfig() {
   resetConfig()
 }
 
+let alistFeatureRegistered = false
+
 function syncAlistEncryptFeature() {
   const enabled = getFieldValue(['plugin_settings', 'alist_encrypt', 'enabled']) as boolean | undefined
+  if (enabled === alistFeatureRegistered) return
+  alistFeatureRegistered = !!enabled
   if (enabled === true) {
     registerFileFeature(createAlistEncryptFeature())
   } else {

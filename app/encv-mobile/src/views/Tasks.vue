@@ -262,8 +262,9 @@ function getPhaseLabel(phase: string) {
 }
 
 function getTaskName(task: EncvTask) {
-  const parts = task.sourcePath.split('/')
-  return parts[parts.length - 1] || task.sourcePath
+  const parts = task.sourcePath.replace(/\\/g, '/').split('/')
+  const basename = parts[parts.length - 1] || task.sourcePath
+  return task.pluginName ? `${basename} [${task.pluginName}]` : basename
 }
 
 function getTaskDuration(task: EncvTask): string {

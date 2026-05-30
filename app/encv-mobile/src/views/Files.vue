@@ -439,7 +439,6 @@ import {
   imageOutline,
   documentTextOutline,
   documentOutline,
-  cubeOutline,
 } from 'ionicons/icons'
 import {
   listFiles,
@@ -1163,9 +1162,13 @@ async function openSideDrawer() {
   await menuController.open('plugin-menu')
 }
 
+function isContainerFile(file: FileItem): boolean {
+  return file.isEncrypted || isAlistEncrypted(file)
+}
+
 function getPluginIcon(name: string): string {
   const icons: Record<string, string> = { video: filmOutline, audio: musicalNotesOutline, image: imageOutline, pdf: documentTextOutline, text: documentOutline, wps: documentOutline }
-  return icons[name] || cubeOutline
+  return icons[name] || lockClosed
 }
 
 async function searchPluginFiles(
@@ -1269,9 +1272,9 @@ const filteredPluginFiles = computed(() => {
   if (!selectedPlugin.value) return []
   let list: FileItem[]
   if (pluginTab.value === 'container') {
-    list = pluginFiles.value.filter(f => f.isEncrypted || selectedPlugin.value?.containerExtension && f.name.endsWith(selectedPlugin.value.containerExtension))
+    list = pluginFiles.value.filter(f => isContainerFile(f))
   } else {
-    list = pluginFiles.value.filter(f => !f.isEncrypted)
+    list = pluginFiles.value.filter(f => !isContainerFile(f))
   }
   const query = searchQuery.value.trim().toLowerCase()
   if (query) {
