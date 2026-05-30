@@ -748,12 +748,13 @@ function syncAlistEncryptFeature() {
 }
 
 onMounted(async () => {
+  console.error('[SAT-DBG][Settings] onMounted | ts=', Date.now())
   await checkStatus()
   if (serverOnline.value) {
     await loadConfig()
     configLoaded.value = true
     try { indexStats.value = await getIndexStats() } catch {}
-    if (isNative()) { 
+    if (isNative()) {
       try { engineStatus.value = await fetchFFmpegStatus() } catch {}
       await refreshMpvPluginStatus()
     }
@@ -764,6 +765,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  console.error('[SAT-DBG][Settings] onUnmounted | ts=', Date.now())
   window.removeEventListener('plugin-state-changed', refreshMpvPluginStatus)
 })
 

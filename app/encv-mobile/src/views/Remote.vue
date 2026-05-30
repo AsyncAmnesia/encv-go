@@ -493,6 +493,7 @@ async function copyProxyUrl(url: string) {
 }
 
 onMounted(() => {
+  console.error('[SAT-DBG][Remote] onMounted | ts=', Date.now())
   loadConfigs()
   loadRemoteInfo()
 })

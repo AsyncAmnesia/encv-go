@@ -301,14 +301,17 @@ function toggleSort() {
 }
 
 async function openTaskDetail(task: EncvTask) {
+  console.error('[SAT-DBG][Modal] modalController.create(TaskDetailModal) | taskId=', task.id, 'status=', task.status, '| ts=', Date.now())
   const { default: TaskDetailModal } = await import('@/components/TaskDetailModal.vue')
   const modal = await modalController.create({
     component: TaskDetailModal,
     componentProps: { task },
     cssClass: 'task-detail-modal',
   })
+  console.error('[SAT-DBG][Modal] TaskDetailModal.present() | ts=', Date.now())
   await modal.present()
   const { data, role } = await modal.onDidDismiss()
+  console.error('[SAT-DBG][Modal] TaskDetailModal.didDismiss() | role=', role, '| ts=', Date.now())
   if (role === 'dismiss' && data) {
     if (data.action === 'cancel') await handleCancelTask(data.id)
     else if (data.action === 'retry') await handleRetryTask(data.id)
@@ -456,7 +459,9 @@ function onTaskCompleted(data: { id: string; status?: string; error?: string; er
 }
 
 onMounted(() => {
+  console.error('[SAT-DBG][Tasks] onMounted | ts=', Date.now())
   loadTasks()
+  console.error('[SAT-DBG][Tasks] eventBus.on ×5 (task:update,task:progress,task:created,task:completed,task:refresh) | ts=', Date.now())
   eventBus.on('task:update', onTaskUpdate)
   eventBus.on('task:progress', onTaskProgress)
   eventBus.on('task:created', onTaskCreated)
@@ -476,6 +481,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  console.error('[SAT-DBG][Tasks] onUnmounted | ts=', Date.now())
+  console.error('[SAT-DBG][Tasks] eventBus.off ×5 | ts=', Date.now())
   eventBus.off('task:update', onTaskUpdate)
   eventBus.off('task:progress', onTaskProgress)
   eventBus.off('task:created', onTaskCreated)

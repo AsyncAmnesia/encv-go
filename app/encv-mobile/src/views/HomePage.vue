@@ -68,6 +68,8 @@ import {
 import { playCircle, folder, lockClosed, globe, layersOutline } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { useRouter } from 'vue-router'
+import { onMounted } from 'vue'
+import { onIonViewWillEnter } from '@ionic/vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -91,6 +93,14 @@ function handleOpenRemote() {
 function handleOpenExtensions() {
   router.push('/tabs/extensions')
 }
+
+onMounted(() => {
+  console.error('[SAT-DBG][Home] onMounted | ts=', Date.now())
+})
+
+onIonViewWillEnter(() => {
+  console.error('[SAT-DBG][Home] onIonViewWillEnter | ts=', Date.now())
+})
 </script>
 
 <style scoped>

@@ -36,16 +36,6 @@ async function requestEssentialPermissions() {
   localStorage.setItem(FIRST_LAUNCH_KEY, '1')
 }
 
-onMounted(async () => {
-  hijackConsole()
-  initTheme()
-  autoInitVConsole()
-  connect()
-  registerFileFeature(createAlistEncryptFeature())
-  await requestEssentialPermissions()
-  applyScreenOrientation()
-})
-
 async function applyScreenOrientation() {
   if (!isNative()) return
   const orientation = localStorage.getItem('encv_screen_orientation') || 'auto'
@@ -63,7 +53,20 @@ async function applyScreenOrientation() {
   }
 }
 
+onMounted(async () => {
+  console.error('[SAT-DBG][App] onMounted | ts=', Date.now())
+  hijackConsole()
+  initTheme()
+  autoInitVConsole()
+  console.error('[SAT-DBG][App] ws.connect() | ts=', Date.now())
+  connect()
+  registerFileFeature(createAlistEncryptFeature())
+  await requestEssentialPermissions()
+  applyScreenOrientation()
+})
+
 onUnmounted(() => {
+  console.error('[SAT-DBG][App] onUnmounted → ws.disconnect() | ts=', Date.now())
   disconnect()
 })
 </script>

@@ -76,6 +76,7 @@ export function useNewTaskModal() {
 
     syncState()
 
+    console.error('[SAT-DBG][Modal] modalController.create(NewTaskModal) | sourcePath=', initialSourcePath || '(none)', 'taskType=', initialTaskType || 'encrypt', '| ts=', Date.now())
     const modal = await modalController.create({
       component: NewTaskModal,
       componentProps: {
@@ -123,7 +124,12 @@ export function useNewTaskModal() {
       },
     })
 
+    console.error('[SAT-DBG][Modal] NewTaskModal.present() | ts=', Date.now())
     await modal.present()
+
+    modal.onDidDismiss().then(() => {
+      console.error('[SAT-DBG][Modal] NewTaskModal.didDismiss() | ts=', Date.now())
+    })
 
     if (initialSourcePath) {
       const normalized = normalize(initialSourcePath)
