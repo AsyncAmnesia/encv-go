@@ -1,67 +1,93 @@
-# 移动端插件系统适配修复 Spec
+# 移动端插件系统适配修复 Spec（Round 2 — 4 Bug 修复）
 
 ## Why
 
-移动端 alist-encrypt 插件存在 4 大适配问题：加密/解密操作路径不一致（Feature actions 用 router.push 反模式 vs Files.vue 内联用 openNewTask）、预览流程绕过插件系统、密码弹窗交互缺陷、FileInfo 缺少元信息展示。根因是 FileFeature 架构骨架已搭建但未真正接管核心操作路径，导致 Files.vue 内联代码与 Feature 模块功能重叠且行为不一致。
+上一轮（REQ 1-5）完成了 FileFeature 架构统一、密码弹窗修复、字幕防抖、FileInfo 增强。实测发现 4 个新 bug：
+1. **新建加密任务选择 alist-encrypt 插件没生效** — `useNewTaskModal.onSubmit` 调用 `createTask()` 时**完全没有传递用户选择的 pluginName**
+2. **重复创建两个任务** — onSubmit 无防重入保护 + doPredict 双重调用路径
+3. **文件长按菜单没有加密操作** — `getAlistActions()` 只对 `.enc` 文件返回 actions（decrypt/preview），普通文件返回空数组；上轮 Task 4 删除了 Files.vue 内联加密代码后，Feature 系统未提供 encrypt 入口
+4. **插件类型文件列表空状态时下滑刷新导致空状态下方出现文件列表** — `handleRefresh` 刷新了主 `files` 数组而非 `pluginFiles`，导致主列表渲染在 plugin-view 下方
 
 ## What Changes
 
-### 核心原则：Files.vue 不再内联任何插件特定逻辑，全部委托给 FileFeature 架构
+### 核心原则：从插件系统本质上解决问题，非打补丁
 
-- **统一解密/加密操作路径**：删除 Files.vue Section 2 的内联 encrypt/decrypt 按钮，改由 `getAllActions()` 返回的 Feature Action 提供
-- **修复 actions.ts 反模式**：`createDecryptAction` / `createEncryptAction` 从 `router.push` 改为调用 `useNewTaskModal().openNewTask()`
-- **修复密码弹窗**：confirm handler 正确关闭
-- **修复字幕防抖竞态**：重复调用返回已有 Promise
-- **增强 FileInfo**：展示加密文件解码后名称和元信息
+- **Bug 1 修复（本质）**：`createTask()` API 需要支持 `pluginName` 参数；`useNewTaskModal.onSubmit` 必须将用户选择的插件名传递到后端
+- **Bug 2 修复（本质）**：onSubmit 添加 submitting 锁防止双击重复提交
+- **Bug 3 修复（本质）**：`getAlistActions()` 对可加密的普通文件也返回 encrypt action；Feature 的 `isActive` 判定需要扩展（或增加独立的 encrypt action 来源）
+- **Bug 4 修复（本质）**：插件模式下 `handleRefresh` 应刷新 `pluginFiles` 而非主 `files` 数组
 
 ## Impact
 
+- Affected specs: REQ-1（统一操作入口）需扩展为双向（encrypt + decrypt）
 - Affected code:
-  - `src/features/alist-encrypt/actions.ts` — 重写 handler 为 useNewTaskModal 调用
-  - `src/features/alist-encrypt/password-dialog.ts` — 修复 confirm 关闭
-  - `src/features/alist-encrypt/subtitle.ts` — 修复防抖竞态
-  - `src/views/Files.vue` — 删除 Section 2 内联加解密代码，依赖 getAllActions()
-  - `src/views/FileInfo.vue` — 增强加密文件信息展示
-  - `src/views/Preview.vue` — 确认加密文件预览路径正确
+  - `src/api/encv.ts` — `createTask()` 增加 `pluginName` 参数
+  - `src/composables/useNewTaskModal.ts` — onSubmit 传递 pluginName + 防重入锁
+  - `src/features/alist-encrypt/actions.ts` — 增加普通文件的 encrypt action
+  - `src/features/alist-encrypt/index.ts` — isActive 或 getFileActions 逻辑调整
+  - `src/views/Files.vue` — handleRefresh 区分 plugin mode / normal mode
+  - `__tests__/` — 补充 useNewTaskModal / actions / Files refresh 的 mock 测试
 
-## Requirements
+---
 
-### REQ-1: 统一操作入口（Feature Actions 唯一性）
+## ADDED Requirements
 
-系统 SHALL 通过 `useFileFeatures().getAllActions(file)` 作为文件操作的唯一扩展点。Files.vue SHALL NOT 包含任何插件特定的加密/解密/预览逻辑。
+### REQ-6: 新建任务必须传递 pluginName 到后端
 
-#### 场景 1.1: 加密文件长按菜单
-- **WHEN** 用户长按一个 .enc 文件
-- **THEN** 菜单中 SHALL 显示「解密」action（来自 alist-encrypt Feature），点击后调用 `openNewTask(path, 'decrypt')`
-- **AND** 菜单中 SHALL NOT 显示 Files.vue Section 2 的重复「解密」按钮
+系统 SHALL 将用户新建任务时选择的插件名称传递给后端 `createTask` API。
 
-#### 场景 1.2: 普通文件长按菜单
-- **WHEN** 用户长按一个非加密文件
-- **THEN** 菜单中 SHALL 显示「加密」action（来自 alist-encrypt Feature），点击后调用 `openNewTask(path, 'encrypt')`
+#### 场景 6.1: 用户选择特定插件后提交
+- **WHEN** 用户在 NewTaskModal 中从下拉框选择了 `alist-encrypt` 插件并点击「创建任务」
+- **THEN** `createTask()` API 请求 body SHALL 包含 `pluginName: 'alist-encrypt'`
+- **AND** 后端 SHALL 使用指定插件执行加密任务
 
-#### 场景 1.3: 操作路径一致性
-- **WHEN** 无论从哪个 tab 触发加密/解密操作
-- **THEN** 所有路径 SHALL 统一通过 `modalController.create(NewTaskModal)` 打开全局 overlay
+#### 场景 6.2: 自动预测的单插件场景
+- **WHEN** 后端只返回 1 个候选插件（无需用户手动选择）
+- **THEN** `createTask()` SHALL 自动使用该预测插件的 name 作为 `pluginName`
 
-### REQ-2: 密码弹窗正确交互
+#### 场景 6.3: 多插件候选时用户切换选择
+- **WHEN** 用户在下拉框中切换了插件选择（如从 plugin-a 切到 plugin-b）
+- **THEN** 最终提交 SHALL 使用最后选中的 `candidates[selectedPluginIndex].name`
 
-- **WHEN** 用户在密码输入框输入密码并点击确认
-- **THEN** 弹窗 SHALL 自动关闭并 resolve 密码字符串
-- **WHEN** 用户点击取消
-- **THEN** 弹窗 SHALL 关闭并 resolve null
+### REQ-7: 任务创建防重复提交
 
-### REQ-3: 字幕查询稳定性
+系统 SHALL 防止用户新建任务时的重复提交。
 
-- **WHEN** 同一加密文件的 getAlistSubtitle 在防抖窗口内被多次调用
-- **THEN** SHALL 返回已有 Promise（而非 null），确保最终回调触发一次
+#### 场景 7.1: 快速双击提交按钮
+- **WHEN** 用户快速连续点击两次「创建任务」按钮
+- **THEN** 系统 SHALL 只创建 1 个任务（第一次点击触发，第二次被忽略）
 
-### REQ-4: FileInfo 元信息完整
+### REQ-8: 普通文件长按菜单显示加密操作
 
-- **WHEN** 用户查看加密文件的 FileInfo 页面
-- **THEN** SHALL 显示：原始文件名（解码后）、加密状态 badge、文件大小
+系统 SHALL 对可加密的普通文件提供加密入口。
 
-### REQ-5: 编译与测试通过
+#### 场景 8.1: 非 .bin 普通文件长按
+- **WHEN** 用户长按一个非加密的普通文件（如 `.mp4`, `.pdf` 等）
+- **THEN** 长按菜单 SHALL 显示「加密」action（来自 alist-encrypt Feature），点击后调用 `openNewTask(path, 'encrypt')`
 
-- vue-tsc 零错误
-- vitest 全部通过
-- vite build 成功
+#### 场景 8.2: .bin 加密文件长按（回归保护）
+- **WHEN** 用户长按一个 `.bin` 加密文件
+- **THEN** 菜单 SHALL 显示「解密」+「流预览」（行为不变）
+
+### REQ-9: 插件模式空状态下拉刷新不泄漏主列表
+
+系统 SHALL 在插件模式下正确刷新插件文件列表。
+
+#### 场景 9.1: 插件视图空状态 + 下拉刷新
+- **WHEN** 用户进入某插件类型视图且该类型下无文件（显示空状态），然后下拉刷新
+- **THEN** 刷新完成后 SHALL 仍显示插件视图空状态（或刷新后的插件文件列表）
+- **AND** 主文件列表 SHALL NOT 出现在插件空状态下方
+
+#### 场景 9.2: 插件视图有文件 + 下拉刷新
+- **WHEN** 用户在插件文件列表中下拉刷新
+- **THEN** 刷新后 SHALL 更新插件文件列表（而非主文件列表）
+
+### REQ-10: Mock 测试覆盖新增场景
+
+测试套件 SHALL 覆盖以上 4 个 bug 的修复场景。
+
+- [ ] useNewTaskModal: onSubmit 传递正确的 pluginName
+- [ ] useNewTaskModal: 双击提交只创建 1 个任务
+- [ ] getAlistActions: 普通文件返回 encrypt action
+- [ ] getAlistActions: .bin 文件仍返回 decrypt + preview
+- [ ] Files.vue: plugin mode 下 handleRefresh 刷新 pluginFiles

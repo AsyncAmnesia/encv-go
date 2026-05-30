@@ -11,17 +11,6 @@
     "completedAt": "2026-05-25T16:46:35.949260078Z"
   },
   {
-    "id": "04c80e5f-8061-42c5-91c7-86c9ff324dc3",
-    "type": "encrypt",
-    "sourcePath": "/logcat.txt",
-    "targetPath": "/",
-    "status": "completed",
-    "progress": 100,
-    "phase": "completed",
-    "createdAt": "2026-05-25T16:47:31.138774453Z",
-    "completedAt": "2026-05-25T16:47:31.984494083Z"
-  },
-  {
     "id": "b9c3577b-6500-4163-8d74-e1e684266342",
     "type": "encrypt",
     "sourcePath": "/logcat.txt",
@@ -30,18 +19,6 @@
     "phase": "completed",
     "createdAt": "2026-05-25T16:47:51.431097192Z",
     "completedAt": "2026-05-25T16:47:52.010731106Z"
-  },
-  {
-    "id": "73f385b4-7343-4c23-8c9e-532953ca83e8",
-    "type": "encrypt",
-    "sourcePath": "/tmp/test_v4.txt",
-    "status": "failed",
-    "progress": 5,
-    "phase": "analyzing",
-    "error": "source file not found, it may have been moved or deleted",
-    "errorDetail": "source file not found: stat /workspace/tmp/test_v4.txt: no such file or directory",
-    "createdAt": "2026-05-25T16:52:43.417137909Z",
-    "completedAt": "2026-05-25T16:52:44.078132514Z"
   },
   {
     "id": "915b1c48-acde-4125-9fc7-46490350deb7",
@@ -77,17 +54,6 @@
     "completedAt": "2026-05-25T16:33:39.545154055Z"
   },
   {
-    "id": "a48936c9-a90a-48ab-929f-fe7ddfbc6dd2",
-    "type": "encrypt",
-    "sourcePath": "/logcat.txt",
-    "targetPath": "/",
-    "status": "completed",
-    "progress": 100,
-    "phase": "completed",
-    "createdAt": "2026-05-25T16:35:28.013984824Z",
-    "completedAt": "2026-05-25T16:35:28.937081048Z"
-  },
-  {
     "id": "d9ac5199-6d12-4267-89d6-ac4f544bc822",
     "type": "encrypt",
     "sourcePath": "test_v4.txt",
@@ -106,5 +72,61 @@
     "phase": "completed",
     "createdAt": "2026-05-25T17:17:02.103155097Z",
     "completedAt": "2026-05-25T17:17:02.554397647Z"
+  },
+  {
+    "id": "04c80e5f-8061-42c5-91c7-86c9ff324dc3",
+    "type": "encrypt",
+    "sourcePath": "/logcat.txt",
+    "targetPath": "/",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "createdAt": "2026-05-25T16:47:31.138774453Z",
+    "completedAt": "2026-05-25T16:47:31.984494083Z"
+  },
+  {
+    "id": "73f385b4-7343-4c23-8c9e-532953ca83e8",
+    "type": "encrypt",
+    "sourcePath": "/tmp/test_v4.txt",
+    "status": "failed",
+    "progress": 5,
+    "phase": "analyzing",
+    "error": "source file not found, it may have been moved or deleted",
+    "errorDetail": "source file not found: stat /workspace/tmp/test_v4.txt: no such file or directory",
+    "createdAt": "2026-05-25T16:52:43.417137909Z",
+    "completedAt": "2026-05-25T16:52:44.078132514Z"
+  },
+  {
+    "id": "a48936c9-a90a-48ab-929f-fe7ddfbc6dd2",
+    "type": "encrypt",
+    "sourcePath": "/logcat.txt",
+    "targetPath": "/",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "createdAt": "2026-05-25T16:35:28.013984824Z",
+    "completedAt": "2026-05-25T16:35:28.937081048Z"
+  },
+  {
+    "id": "e9ec60c6-6d2e-4a36-8a5f-9cc84b449405",
+    "type": "encrypt",
+    "sourcePath": "/logcat.txt",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "containerVersion": 4,
+    "createdAt": "2026-05-30T16:52:52.104787871Z",
+    "completedAt": "2026-05-30T16:52:52.99013835Z"
+  },
+  {
+    "id": "10ba00c3-6b91-4202-8490-310219114070",
+    "type": "encrypt",
+    "sourcePath": "/logcat.txt",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "containerVersion": 4,
+    "createdAt": "2026-05-30T16:52:52.104830751Z",
+    "completedAt": "2026-05-30T16:52:53.012042811Z"
   }
 ]
