@@ -173,25 +173,25 @@ const displayFiles = computed(() => {
 
 function getFileIcon(file: FileItem) {
   if (file.isDirectory) return folder
+  if (file.isEncrypted) return lockClosed
   const category = getFileCategory(file.name)
   switch (category) {
     case 'video': return videocam
     case 'audio': return musicalNotes
     case 'image': return image
     case 'document': return document
-    case 'encrypted': return lockClosed
     default: return documentText
   }
 }
 
 function getFileIconColor(file: FileItem) {
   if (file.isDirectory) return 'primary'
+  if (file.isEncrypted) return 'warning'
   const category = getFileCategory(file.name)
   switch (category) {
     case 'video': return 'danger'
     case 'audio': return 'tertiary'
     case 'image': return 'success'
-    case 'encrypted': return 'warning'
     default: return 'medium'
   }
 }

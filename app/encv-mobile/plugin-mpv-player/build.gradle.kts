@@ -15,11 +15,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 
@@ -49,9 +46,9 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.appcompat)
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.core:core-ktx:1.17.0")
-    implementation("androidx.activity:activity-ktx:1.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    compileOnly("androidx.compose.material:material-icons-extended")
+    compileOnly("androidx.core:core-ktx")
+    compileOnly("androidx.activity:activity-ktx")
+    compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-android")
     compileOnly("io.insert-koin:koin-core:4.1.0")
 }

@@ -84,6 +84,23 @@
         <ion-refresher-content></ion-refresher-content>
       </ion-refresher>
 
+      <!-- 播放错误展示区域 -->
+      <div v-if="playError" class="play-error-banner">
+        <div class="play-error-header">
+          <ion-icon :icon="alertCircle" color="danger"></ion-icon>
+          <span class="play-error-file">{{ playErrorFile }}</span>
+          <ion-button fill="clear" size="small" color="medium" @click="clearPlayError">
+            <ion-icon :icon="close" slot="icon-only"></ion-icon>
+          </ion-button>
+        </div>
+        <p class="play-error-message">{{ playError }}</p>
+        <div v-if="playErrorDetail" class="play-error-detail-row">
+          <ion-button fill="clear" size="small" color="medium" @click="togglePlayErrorDetail">
+            {{ t('common.showDetail') }}
+          </ion-button>
+        </div>
+      </div>
+
       <template v-if="(loading || isSearching || noPermission || !serverOnline || displayFiles.length === 0) && !selectedPlugin">
         <div v-if="loading || isSearching" class="loading-container">
           <ion-spinner name="crescent"></ion-spinner>
@@ -230,7 +247,7 @@
                   <ion-chip v-for="tag in file._tags" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
                 </div>
               </ion-label>
-              <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
+              <ion-badge v-if="file.isEncrypted" color="warning" slot="end">
                 ENCV
               </ion-badge>
             </ion-item>
@@ -297,7 +314,7 @@
                 <ion-chip v-for="tag in file._tags" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
               </div>
             </ion-label>
-            <ion-badge v-if="file.isEncrypted || getFileCategory(file.name, file.isEncrypted) === 'encrypted'" color="warning" slot="end">
+            <ion-badge v-if="file.isEncrypted" color="warning" slot="end">
               ENCV
             </ion-badge>
             <ion-button v-if="searchQuery" slot="end" fill="clear" class="open-folder-btn" @click.stop="openContainingFolder(file)">
@@ -410,6 +427,8 @@ import {
   closeCircleOutline,
   filterOutline,
   swapVerticalOutline,
+  alertCircle,
+  close,
 } from 'ionicons/icons'
 import {
   listFiles,
@@ -449,26 +468,57 @@ import { showToast } from '@/composables/useToast'
 import { Share } from '@capacitor/share'
 import { PLAY_MODE, type PlayMode, VIDEO_DEFAULT, AUDIO_DEFAULT } from '@/constants/player'
 
+const ALL_VALID_MODES: PlayMode[] = [
+  PLAY_MODE.ARTPLAYER,
+  PLAY_MODE.MPV_PLUGIN,
+  PLAY_MODE.MPV_ACTIVITY,
+  PLAY_MODE.MPV_FRAGMENT,
+  PLAY_MODE.MPV_COMPOSE,
+  PLAY_MODE.EXTERNAL,
+]
+
+function isValidPlayMode(value: string): value is PlayMode {
+  return (ALL_VALID_MODES as readonly string[]).includes(value)
+}
+
 function getPlayMode(mediaType: 'video' | 'audio'): PlayMode {
   const key = mediaType === 'video' ? 'encv_player_video' : 'encv_player_audio'
   const stored = localStorage.getItem(key)
-  if (stored === PLAY_MODE.ARTPLAYER || stored === PLAY_MODE.MPV_PLUGIN || stored === PLAY_MODE.EXTERNAL) return stored as PlayMode
+  if (stored && isValidPlayMode(stored)) return stored
   return mediaType === 'video' ? VIDEO_DEFAULT : AUDIO_DEFAULT
 }
 
-function playMedia(file: FileItem, category: string) {
+const playError = ref<string>('')
+const playErrorDetail = ref<string>('')
+const playErrorFile = ref<string>('')
+
+async function playMedia(file: FileItem, category: string) {
   const isVideo = category === 'video'
   const mediaType = isVideo ? 'video' : 'audio'
   const mimeType = isVideo ? 'video/*' : 'audio/*'
   const mode = getPlayMode(mediaType)
+
+  console.info('[Files] playMedia: file=', file.path, 'mode=', mode, 'category=', category)
+  playError.value = ''
+  playErrorDetail.value = ''
+  playErrorFile.value = ''
 
   switch (mode) {
     case PLAY_MODE.ARTPLAYER:
       router.push({ path: '/player', query: { path: file.path, name: file.name } })
       break
     case PLAY_MODE.MPV_PLUGIN:
+    case PLAY_MODE.MPV_ACTIVITY:
+    case PLAY_MODE.MPV_FRAGMENT:
+    case PLAY_MODE.MPV_COMPOSE:
       if (isNative()) {
-        openPlayer(file.path, file.name, mimeType, PLAY_MODE.MPV_PLUGIN)
+        const result = await openPlayer(file.path, file.name, mimeType, mode)
+        if (!result.success) {
+          console.error('[Files] playMedia failed:', result.error, result.errorDetail)
+          playError.value = result.error || '播放失败'
+          playErrorDetail.value = result.errorDetail || ''
+          playErrorFile.value = file.name
+        }
       } else {
         router.push({ path: '/player', query: { path: file.path, name: file.name } })
       }
@@ -481,6 +531,24 @@ function playMedia(file: FileItem, category: string) {
         router.push({ path: '/player', query: { path: file.path, name: file.name } })
       }
       break
+    default:
+      console.warn('[Files] Unknown play mode:', mode, '— falling back to artplayer')
+      router.push({ path: '/player', query: { path: file.path, name: file.name } })
+      break
+  }
+}
+
+function clearPlayError() {
+  playError.value = ''
+  playErrorDetail.value = ''
+  playErrorFile.value = ''
+}
+
+function togglePlayErrorDetail() {
+  if (playErrorDetail.value) {
+    const expanded = playErrorDetail.value
+    playErrorDetail.value = ''
+    playError.value = playError.value + '\n' + expanded
   }
 }
 
@@ -672,14 +740,22 @@ async function handleFileClick(file: FileItem) {
     return
   }
 
-  const category = getFileCategory(file.name, file.isEncrypted)
+  if (file.isEncrypted) {
+    router.push({
+      path: '/tabs/preview',
+      query: { path: file.path, name: file.name, isEncrypted: 'true' },
+    })
+    return
+  }
+
+  const category = getFileCategory(file.name)
   console.info('[Files] Click:', file.name, 'category:', category)
   if (category === 'video' || category === 'audio') {
     playMedia(file, category)
   } else {
     router.push({
       path: '/tabs/preview',
-      query: { path: file.path, name: file.name, isEncrypted: String(!!file.isEncrypted) },
+      query: { path: file.path, name: file.name, isEncrypted: 'false' },
     })
   }
 }
@@ -739,7 +815,7 @@ async function performSearch() {
 }
 
 async function handleLongPress(file: FileItem) {
-  const category = file.isDirectory ? 'directory' : getFileCategory(file.name, file.isEncrypted)
+  const category = file.isDirectory ? 'directory' : getFileCategory(file.name)
 
   const buttons: any[] = []
 
@@ -769,7 +845,7 @@ async function handleLongPress(file: FileItem) {
         handleEncryptFile(file)
       },
     })
-  } else if (category === 'encrypted') {
+  } else if (file.isEncrypted) {
     buttons.push({
       text: t('files.preview'),
       icon: image,
@@ -806,7 +882,7 @@ async function handleLongPress(file: FileItem) {
         } else {
           router.push({
             path: '/tabs/preview',
-            query: { path: file.path, name: file.name, isEncrypted: String(!!file.isEncrypted) },
+            query: { path: file.path, name: file.name, isEncrypted: 'false' },
           })
         }
       },
@@ -1249,6 +1325,38 @@ function onBackendReadyWindow(event: Event) {
 </script>
 
 <style scoped>
+/* 播放错误展示区域 */
+.play-error-banner {
+  background: rgba(var(--ion-color-danger-rgb), 0.08);
+  border-left: 3px solid var(--ion-color-danger);
+  border-radius: 6px;
+  margin: 8px 12px;
+  padding: 10px 12px;
+}
+
+.play-error-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.play-error-file {
+  font-weight: 500;
+  color: var(--ion-color-danger);
+  font-size: 14px;
+}
+
+.play-error-message {
+  color: var(--ion-color-danger);
+  font-size: 12px;
+  margin-top: 4px;
+  margin-bottom: 0;
+}
+
+.play-error-detail-row {
+  margin-top: 6px;
+}
+
 .loading-container {
   display: flex;
   flex-direction: column;

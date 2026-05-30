@@ -46,25 +46,25 @@ export function isImageFile(file: FileItem): boolean {
 
 export function getFileIcon(file: FileItem) {
   if (file.isDirectory) return folder
-  const category = getFileCategory(file.name, file.isEncrypted)
+  if (file.isEncrypted) return lockClosed
+  const category = getFileCategory(file.name)
   switch (category) {
     case 'video': return videocam
     case 'audio': return musicalNotes
     case 'image': return image
     case 'document': return documentIcon
-    case 'encrypted': return lockClosed
     default: return documentText
   }
 }
 
 export function getFileIconColor(file: FileItem): string {
   if (file.isDirectory) return 'primary'
-  const category = getFileCategory(file.name, file.isEncrypted)
+  if (file.isEncrypted) return 'warning'
+  const category = getFileCategory(file.name)
   switch (category) {
     case 'video': return 'danger'
     case 'audio': return 'tertiary'
     case 'image': return 'success'
-    case 'encrypted': return 'warning'
     default: return 'medium'
   }
 }

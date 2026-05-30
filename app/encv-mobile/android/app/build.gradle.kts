@@ -115,11 +115,16 @@ dependencies {
     implementation(libs.bugly.crashreport)
 
     implementation(libs.combolite.core)
+    implementation(project(":combolite-host"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
     implementation(libs.androidx.activity.compose)
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.core:core-ktx:1.17.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("androidx.activity:activity-ktx:1.11.0")
 }
 
 apply(from = "capacitor.build.gradle")

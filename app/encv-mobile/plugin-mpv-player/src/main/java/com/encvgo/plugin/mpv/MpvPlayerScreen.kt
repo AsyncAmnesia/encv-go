@@ -2,7 +2,6 @@ package com.encvgo.plugin.mpv
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,6 +18,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.view.WindowCompat
@@ -39,6 +39,7 @@ fun MpvPlayerScreen(
     fileName: String,
     mimeType: String,
     isExternal: Boolean,
+    backendUrl: String,
     engine: MpvEngine,
     onBack: () -> Unit
 ) {
@@ -57,7 +58,6 @@ fun MpvPlayerScreen(
     var bgPlaybackEnabled by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val backendUrl = (context as? Activity)?.intent?.getStringExtra("backend_url") ?: ""
 
     LaunchedEffect(filePath) {
         startPlayback(
@@ -70,6 +70,25 @@ fun MpvPlayerScreen(
             onStateChange = { playerState = it },
             onError = { msg -> playerState = PlayerState.Error(classifyError(msg), msg) }
         )
+    }
+
+    DisposableEffect(engine) {
+        val listener: (MpvEngine.State) -> Unit = { state ->
+            when (state) {
+                is MpvEngine.State.Playing -> playerState = PlayerState.Playing
+                is MpvEngine.State.Paused -> playerState = PlayerState.Paused
+                is MpvEngine.State.AudioOnly -> playerState = PlayerState.AudioOnly
+                is MpvEngine.State.Ended -> playerState = PlayerState.Ended
+                is MpvEngine.State.Error -> playerState = PlayerState.Error(classifyError(state.message), state.message)
+                is MpvEngine.State.SurfaceReady -> { }
+                is MpvEngine.State.WaitingSurface -> { }
+                is MpvEngine.State.MpvReady -> { }
+            }
+        }
+        engine.stateListener = listener
+        onDispose {
+            engine.stateListener = null
+        }
     }
 
     LaunchedEffect(playerState) {
@@ -115,12 +134,11 @@ fun MpvPlayerScreen(
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = Color.Transparent
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = {
@@ -289,15 +307,12 @@ internal suspend fun startPlayback(
     try {
         val streamUrl = resolveStreamUrl(filePath, isExternal, backendUrl)
 
-        if (streamUrl.isEmpty() || !streamUrl.startsWith("http")) {
-            if (streamUrl.isEmpty()) {
-                onError("Unable to get stream URL")
-                return
-            }
+        if (streamUrl.isEmpty()) {
+            onError("Unable to get stream URL")
+            return
         }
 
         engine.play(streamUrl)
-        onStateChange(PlayerState.Loading)
     } catch (e: Exception) {
         val msg = e.message ?: e.toString()
         onError("Playback error: $msg")
@@ -305,37 +320,18 @@ internal suspend fun startPlayback(
 }
 
 internal suspend fun resolveStreamUrl(filePath: String, isExternal: Boolean, backendUrl: String): String {
-    return try {
-        if (isExternal && filePath.startsWith("/")) {
-            if (java.io.File(filePath).exists()) {
-                return filePath
-            }
-        }
-
-        if (backendUrl.isEmpty()) {
-            if (java.io.File(filePath).exists()) return filePath
-            return ""
-        }
-
-        val encodedPath = java.net.URLEncoder.encode(filePath, "UTF-8")
-        val url = if (isExternal) {
-            "$backendUrl/api/stream/external?path=$encodedPath"
-        } else {
-            "$backendUrl/stream?path=$encodedPath"
-        }
-
-        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-        conn.requestMethod = "HEAD"
-        conn.connectTimeout = 5000
-        conn.readTimeout = 5000
-        val responseCode = conn.responseCode
-        conn.disconnect()
-
-        if (responseCode in 200..299) url else ""
-    } catch (e: Exception) {
-        android.util.Log.w("MpvPlayer", "resolveStreamUrl failed: ${e.message}")
-        ""
+    if (backendUrl.isEmpty()) {
+        android.util.Log.w("MpvPlayer", "resolveStreamUrl: backendUrl is empty")
+        return ""
     }
+    val encodedPath = java.net.URLEncoder.encode(filePath, "UTF-8")
+    val url = if (isExternal) {
+        "$backendUrl/api/stream/external?path=$encodedPath"
+    } else {
+        "$backendUrl/stream?path=$encodedPath"
+    }
+    android.util.Log.i("MpvPlayer", "resolveStreamUrl: $url")
+    return url
 }
 
 private fun hideSystemUi(activity: Activity) {

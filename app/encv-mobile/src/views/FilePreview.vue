@@ -157,6 +157,7 @@ import {
   returnDownBackOutline, returnDownForwardOutline,
 } from 'ionicons/icons'
 import { getFileStreamUrl, getFileCategory, getFileExtension, formatFileSize, fetchTextPreviewExts, getApiBaseUrl, getFilePreviewUrl } from '@/api/encv'
+import { openPlayer, isNative } from '@/plugins/GoProcess'
 import { useI18n } from '@/composables/useI18n'
 
 type PreviewType = 'image' | 'pdf' | 'text' | 'container' | 'unsupported'
@@ -209,12 +210,13 @@ function formatDuration(seconds: number): string {
 }
 
 async function determinePreviewType(name: string, isEncrypted?: boolean): Promise<PreviewType> {
-  const category = getFileCategory(name, isEncrypted)
+  if (isEncrypted) return 'container'
+
+  const category = getFileCategory(name)
   const ext = getFileExtension(name)
 
   if (category === 'image') return 'image'
   if (ext === 'pdf') return 'pdf'
-  if (category === 'encrypted') return 'container'
 
   const textExts = await fetchTextPreviewExts()
   if (textExts.has(ext)) return 'text'
@@ -300,7 +302,12 @@ async function loadFile() {
             break
           case 'video':
           case 'audio':
-            router.push({ path: '/player', query: { path, name: fileName.value } })
+            if (isNative()) {
+              const mimeType = containerType === 'video' ? 'video/*' : 'audio/*'
+              openPlayer(path, fileName.value, mimeType)
+            } else {
+              router.push({ path: '/player', query: { path, name: fileName.value } })
+            }
             loading.value = false
             return
           case 'document':

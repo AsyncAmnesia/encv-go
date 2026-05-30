@@ -3,8 +3,8 @@ package com.encvgo.plugin.mpv
 import android.os.Bundle
 import android.view.ViewGroup
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.ui.graphics.Color
+import com.combo.core.component.activity.BasePluginActivity
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -21,28 +21,37 @@ private fun isAudioFile(mimeType: String, fileName: String): Boolean {
     return ext in AUDIO_EXTENSIONS
 }
 
-class MpvPlayerActivity : AppCompatActivity() {
+class MpvPlayerActivity : BasePluginActivity() {
+
+    companion object {
+        private const val TAG = "MpvPlayerActivity"
+    }
 
     private lateinit var engine: MpvEngine
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
 
-        val filePath = intent.getStringExtra("file_path") ?: ""
-        val fileName = intent.getStringExtra("file_name") ?: ""
-        val mimeType = intent.getStringExtra("mime_type") ?: ""
-        val isExternal = intent.getBooleanExtra("is_external", false)
+        val host = proxyActivity ?: return
+        val hostIntent = host.intent ?: return
+
+        val filePath = hostIntent.getStringExtra("file_path") ?: ""
+        val fileName = hostIntent.getStringExtra("file_name") ?: ""
+        val mimeType = hostIntent.getStringExtra("mime_type") ?: ""
+        val isExternal = hostIntent.getBooleanExtra("is_external", false)
+        val backendUrl = hostIntent.getStringExtra("backend_url") ?: ""
         val audioMode = isAudioFile(mimeType, fileName)
 
-        engine = createMpvEngine()
+        android.util.Log.i(TAG, "onCreate: filePath=$filePath backendUrl=$backendUrl audioMode=$audioMode")
+
+        engine = createMpvEngine(host)
         engine.initialize()
 
-        setContent {
+        host.setContent {
             EncvMpVPlayerTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                    color = if (audioMode) MaterialTheme.colorScheme.background else Color.Transparent
                 ) {
                     if (audioMode) {
                         MpvAudioPlayerScreen(
@@ -50,8 +59,9 @@ class MpvPlayerActivity : AppCompatActivity() {
                             fileName = fileName,
                             mimeType = mimeType,
                             isExternal = isExternal,
+                            backendUrl = backendUrl,
                             engine = engine,
-                            onBack = { finish() }
+                            onBack = { host.finish() }
                         )
                     } else {
                         MpvPlayerScreen(
@@ -59,8 +69,9 @@ class MpvPlayerActivity : AppCompatActivity() {
                             fileName = fileName,
                             mimeType = mimeType,
                             isExternal = isExternal,
+                            backendUrl = backendUrl,
                             engine = engine,
-                            onBack = { finish() }
+                            onBack = { host.finish() }
                         )
                     }
                 }
@@ -68,18 +79,11 @@ class MpvPlayerActivity : AppCompatActivity() {
         }
 
         if (!audioMode) {
-            val decorView = window.decorView as? ViewGroup
+            val decorView = host.window?.decorView as? ViewGroup
             if (decorView != null) {
-                engine.stateListener = { state ->
-                    when (state) {
-                        is MpvEngine.State.MpvReady -> {
-                            val contentRoot = decorView.findViewById<ViewGroup>(android.R.id.content)
-                            if (contentRoot != null) {
-                                engine.attachSurfaceView(contentRoot)
-                            }
-                        }
-                        else -> {}
-                    }
+                val contentRoot = decorView.findViewById<ViewGroup>(android.R.id.content)
+                if (contentRoot != null) {
+                    engine.attachSurfaceView(contentRoot)
                 }
             }
         }
@@ -92,14 +96,14 @@ class MpvPlayerActivity : AppCompatActivity() {
         } catch (_: Exception) {}
     }
 
-    private fun createMpvEngine(): MpvEngine {
-        return MpvEngine(this).also { engine ->
+    private fun createMpvEngine(host: androidx.activity.ComponentActivity): MpvEngine {
+        return MpvEngine(host).also { engine ->
             engine.eventListener = { event ->
                 when (event) {
                     is MpvEngine.Event.Pause -> { }
                     is MpvEngine.Event.Unpause -> { }
-                    is MpvEngine.Event.EndFile -> finish()
-                    is MpvEngine.Event.Shutdown -> finish()
+                    is MpvEngine.Event.EndFile -> host.finish()
+                    is MpvEngine.Event.Shutdown -> host.finish()
                     is MpvEngine.Event.PlaybackRestart -> { }
                     else -> { }
                 }

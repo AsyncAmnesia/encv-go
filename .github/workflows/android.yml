@@ -205,44 +205,146 @@ jobs:
       # === Non-Gradle customizations ===
       - name: Check R8/ProGuard is disabled for ALL build variants
         run: |
-          echo "═══ R8/ProGuard Obfuscation Guard ═══"
+          set +e  # Don't let sub-command failures kill the script before we print diagnostics
+          exec 2>&1  # Merge stderr into stdout so everything shows in one stream
+
+          echo "╔══════════════════════════════════════════════════╗"
+          echo "║     R8 / ProGuard Obfuscation Guard (v2)        ║"
+          echo "╚══════════════════════════════════════════════════╝"
+          echo ""
+
           VIOLATIONS=0
-          for f in $(find app/encv-mobile/android -name "*.gradle.kts" -not -path "*build/*"); do
-            # Check isMinifyEnabled = true
-            MINIFY=$(grep -n 'isMinifyEnabled\s*=\s*true' "$f" 2>/dev/null)
-            if [ -n "$MINIFY" ]; then
-              echo "::error file=$f::R8/ProGuard minification ENABLED in $f:"
-              echo "$MINIFY" | while read line; do echo "  $line"; done
+          WARNINGS=0
+          FILES_CHECKED=0
+          FILES_SKIPPED=0
+
+          # Phase 1: List ALL .gradle.kts files found
+          echo "📋 Phase 1: Scanning for *.gradle.kts files..."
+          echo "   Search path: app/encv-mobile/android"
+          echo "   Exclude pattern: */build/*"
+          echo ""
+          ALL_FILES=$(find app/encv-mobile/android -name "*.gradle.kts" -not -path "*/build/*" -type f | sort)
+          FILE_COUNT=$(echo "$ALL_FILES" | grep -c .)
+
+          if [ "$FILE_COUNT" -eq 0 ]; then
+            echo "::error::No .gradle.kts files found! Search path may be wrong."
+            echo "   This means the guard cannot check anything."
+            exit 1
+          fi
+
+          echo "   Found $FILE_COUNT file(s):"
+          while IFS= read -r line || [ -n "$line" ]; do
+            echo "     ✦ $line"
+          done < <(echo "$ALL_FILES")
+          echo ""
+
+          # Phase 2: Check each file (use process substitution to avoid subshell variable loss)
+          echo "🔍 Phase 2: Checking each file..."
+          echo ""
+
+          while IFS= read -r f || [ -n "$f" ]; do
+            FILES_CHECKED=$((FILES_CHECKED + 1))
+            BASENAME=$(basename "$f")
+            RELPATH=${f#app/encv-mobile/android/}
+            echo "--- [$FILES_CHECKED/$FILE_COUNT] $RELPATH ---"
+
+            # Check 1: isMinifyEnabled = true → FATAL
+            MINIFY_MATCH=$(grep -n 'isMinifyEnabled\s*=\s*true' "$f" 2>/dev/null)
+            if [ -n "$MINIFY_MATCH" ]; then
+              echo "   ❌ FATAL: isMinifyEnabled = true found:"
+              echo "$MINIFY_MATCH" | while read line; do echo "      $line"; done
+              echo "::error file=$f,line=$(echo "$MINIFY_MATCH" | head -1 | cut -d: -f1)::R8 minification ENABLED (isMinifyEnabled=true) — ComboLite incompatible!"
               VIOLATIONS=$((VIOLATIONS + 1))
+            else
+              echo "   ✅ isMinifyEnabled ≠ true (OK)"
             fi
-            # Check isShrinkResources = true
-            SHRINK=$(grep -n 'isShrinkResources\s*=\s*true' "$f" 2>/dev/null)
-            if [ -n "$SHRINK" ]; then
-              echo "::error file=$f::Resource shrinking ENABLED in $f:"
-              echo "$SHRINK" | while read line; do echo "  $line"; done
+
+            # Check 2: isShrinkResources = true → FATAL (AGP hard-coupling with minifyEnabled)
+            SHRINK_MATCH=$(grep -n 'isShrinkResources\s*=\s*true' "$f" 2>/dev/null)
+            if [ -n "$SHRINK_MATCH" ]; then
+              echo "   ❌ FATAL: isShrinkResources = true found:"
+              echo "$SHRINK_MATCH" | while read line; do echo "      $line"; done
+              echo "::error file=$f,line=$(echo "$SHRINK_MATCH" | head -1 | cut -d: -f1)::Resource shrinking ENABLED — AGP requires isMinifyEnabled=true (ComboLite incompatible)!"
               VIOLATIONS=$((VIOLATIONS + 1))
+            else
+              echo "   isShrinkResources ≠ true (not set)"
             fi
-            # Also check legacy proguardFiles usage with enabled flag
-            LEGACY_MINIFY=$(grep -n 'minifyEnabled\s*=\s*true' "$f" 2>/dev/null)
-            if [ -n "$LEGACY_MINIFY" ]; then
-              echo "::error file=$f::Legacy minifyEnabled=true found in $f:"
-              echo "$LEGACY_MINIFY" | while read line; do echo "  $line"; done
+
+            # Check 3: legacy minifyEnabled = true → FATAL
+            LEGACY_MATCH=$(grep -n 'minifyEnabled\s*=\s*true' "$f" 2>/dev/null)
+            if [ -n "$LEGACY_MATCH" ]; then
+              echo "   ❌ FATAL: Legacy minifyEnabled=true found:"
+              echo "$LEGACY_MATCH" | while read line; do echo "      $line"; done
+              echo "::error file=$f,line=$(echo "$LEGACY_MATCH" | head -1 | cut -d: -f1)::Legacy R8 minification enabled (minifyEnabled=true)"
               VIOLATIONS=$((VIOLATIONS + 1))
+            else
+              echo "   Legacy minifyEnabled ≠ true (OK)"
             fi
-          done
+
+            # Bonus: Show actual values if buildTypes block exists
+            ACTUAL_MINIFY=$(grep 'isMinifyEnabled' "$f" 2>/dev/null | head -1)
+            ACTUAL_SHRINK=$(grep 'isShrinkResources' "$f" 2>/dev/null | head -1)
+            if [ -n "$ACTUAL_MINIFY" ] || [ -n "$ACTUAL_SHRINK" ]; then
+              echo "   📝 Actual config:"
+              [ -n "$ACTUAL_MINIFY" ] && echo "      $ACTUAL_MINIFY"
+              [ -n "$ACTUAL_SHRINK" ] && echo "      $ACTUAL_SHRINK"
+            fi
+            echo ""
+          done < <(echo "$ALL_FILES")
+
+          # Phase 3: Verdict
+          echo "╔══════════════════════════════════════════════════╗"
+          echo "║           GUARD VERDICT                        ║"
+          echo "╠══════════════════════════════════════════════════╣"
+          echo "║ Files scanned : $FILE_COUNT                        ║"
+          echo "║ Violations    : $VIOLATIONS (FATAL → blocks build)    ║"
+          echo "║ Warnings      : $WARNINGS (info only)                ║"
+          echo "╚══════════════════════════════════════════════════╝"
+          echo ""
 
           if [ "$VIOLATIONS" -gt 0 ]; then
+            echo "::error::❌ GUARD FAILED: $VIOLATIONS R8/ProGuard violation(s) detected."
             echo ""
-            echo "::error::Found $VIOLATIONS R8/ProGuard violation(s) above."
-            echo "REASON: ComboLite framework uses ::function.javaMethod (kotlin-reflect)"
-            echo "for @RequiresPermission permission checks on ALL build variants."
-            echo "R8 breaks @Metadata ↔ bytecode consistency, causing KotlinReflectionInternalError."
+            echo "WHAT THIS MEANS:"
+            echo "  ComboLite framework uses kotlin-reflect (::function.javaMethod)"
+            echo "  for @RequiresPermission permission checks. R8 obfuscation breaks"
+            echo "  @Metadata ↔ bytecode consistency, causing runtime crashes."
             echo ""
-            echo "Fix: Set isMinifyEnabled=false AND isShrinkResources=false for ALL buildTypes."
-            echo "See: .trae/rules/combolite.md §1.3 (铁律: 禁止在 release 构建中启用 R8)"
+            echo "HOW TO FIX:"
+            echo "  Set isMinifyEnabled=false AND isShrinkResources=false in ALL buildTypes."
+            echo "  AGP hard-couples these two: shrinkResources requires minifyEnabled=true."
+            echo "  See: .trae/rules/combolite.md §1.3 + .trae/rules/android.md §3.1"
+            echo ""
+
+            # Write detailed report to summary
+            echo "## ❌ R8/ProGuard Guard FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Files scanned | $FILE_COUNT |" >> $GITHUB_STEP_SUMMARY
+            echo "| Fatal violations | \`$VIOLATIONS\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| Warnings | \`$WARNINGS\` |" >> $GITHUB_STEP_SUMMARY
+            echo "| Root cause | R8 breaks kotlin-reflect @Metadata consistency |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Fix:** Set \`isMinifyEnabled=false\`. See [.trae/rules/combolite.md](.trae/rules/combolite.md#13)" >> $GITHUB_STEP_SUMMARY
+
             exit 1
           else
-            echo "✅ PASS: No R8/ProGuard obfuscation found in any build variant"
+            echo "✅ GUARD PASSED: No R8/ProGuard obfuscation found."
+            if [ "$WARNINGS" -gt 0 ]; then
+              echo "⚠️  $WARNINGS resource shrink warning(s) above (safe with ComboLite)."
+            fi
+            echo ""
+
+            echo "## ✅ R8/ProGuard Guard PASSED" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Files scanned | $FILE_COUNT |" >> $GITHUB_STEP_SUMMARY
+            echo "| Violations | 0 |" >> $GITHUB_STEP_SUMMARY
+            if [ "$WARNINGS" -gt 0 ]; then
+              echo "| Warnings | $WARNINGS (resource shrink, safe) |" >> $GITHUB_STEP_SUMMARY
+            fi
           fi
 
       - name: Copy Go binary to jniLibs
