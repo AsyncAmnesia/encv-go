@@ -1,8 +1,6 @@
 <template>
   <ion-app>
     <ion-router-outlet />
-    <ion-alert-controller></ion-alert-controller>
-    <ion-modal-controller></ion-modal-controller>
   </ion-app>
 </template>
 
@@ -54,8 +52,8 @@ async function applyScreenOrientation() {
 }
 
 onMounted(async () => {
-  console.error('[SAT-DBG][App] onMounted | ts=', Date.now())
   hijackConsole()
+  console.error('[SAT-DBG][App] onMounted | ts=', Date.now())
   initTheme()
   autoInitVConsole()
   console.error('[SAT-DBG][App] ws.connect() | ts=', Date.now())

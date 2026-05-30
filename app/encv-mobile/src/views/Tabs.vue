@@ -53,12 +53,12 @@ import { useI18n } from '@/composables/useI18n'
 const { t } = useI18n()
 
 function onTabsWillChange(event: CustomEvent) {
-  const tab = event.detail.tab
+  const tab = event?.detail?.tab ?? '(unknown)'
   console.error('[SAT-DBG][Tabs] ionTabsWillChange →', tab, '| ts=', Date.now())
 }
 
 function onTabsDidChange(event: CustomEvent) {
-  const tab = event.detail.tab
+  const tab = event?.detail?.tab ?? '(unknown)'
   console.error('[SAT-DBG][Tabs] ionTabsDidChange  →', tab, '| ts=', Date.now())
 }
 </script>
