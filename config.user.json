@@ -18,7 +18,7 @@
   "plugin_settings": {
     "alist_encrypt": {
       "enabled": true,
-      "suffix": ".sccgv"
+      "suffix": ".bin"
     },
     "audio": {
       "ext": ".sccga"
