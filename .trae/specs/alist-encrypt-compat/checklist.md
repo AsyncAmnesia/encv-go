@@ -1,146 +1,123 @@
 # Checklist
 
-## Phase 1: Go 后端算法基础设施 ✅ 已完成
+## Phase 1-3: 已完成 ✅
+（见 tasks.md Phase 1-3 全部 [x]）
 
-- [x] Cipher 接口定义完整（5 个方法）
-- [x] CipherRegistry 使用 RWMutex 并发安全
-- [x] Registry init() **仅注册 aesctr**
-- [x] 查询 rc4md5/chacha20 → ErrExtensionRequired
-- [x] `go vet ./internal/alistencrypt/...` 无 RC4/ChaCha20 import
-- [x] AES-128-CTR 密钥派生链与参考实现一致
-- [x] incrementIV 与参考实现完全一致
-- [x] SetPosition seek 后数据解密正确
-- [x] MixBase64 Encode/Decode 往返无损（中文/特殊字符）
-- [x] CRC6 校验位计算正确
-- [x] V2 AECTR2 magic 检测 + AutoDetectV2 分支正确
-- [x] DecryptReader 可流式读取 + seek
-- [x] `go test ./internal/alistencrypt/...` 52/52 PASS
+## Phase 4: FileFeature 架构（UI 隔离骨架）🆕
 
-## Phase 2: ENCV Plugin 实现 ✅ 已完成
+### 类型定义
+- [ ] `src/types/file-feature.ts` 存在
+- [ ] FileAction 接口定义完整（id/text/icon/color/visible/handler）
+- [ ] FileBadge 接口定义完整（text/color/icon）
+- [ ] FileSubtitle 接口定义完整（text/color）
+- [ ] FileFeature 接口定义完整（id/isActive/getBadge/getSubtitle/getFileActions/onActivate/onDeactivate）
+- [ ] 所有接口字段有 JSDoc 注释
 
-- [x] AlistEncryptPlugin struct 存在，Name()="alist_encrypt"
-- [x] GetContainerExtension() 返回 settings.Suffix（默认 ".bin"）
-- [x] Initialize() 后缀双重校验（冲突+格式）
-- [x] Encrypt() 端到端：原始→AES-CTR→输出+suffix
-- [x] CanDecrypt() 扩展名匹配 + AECTR2 magic 增强
-- [x] Decrypt() 端到端：加密文件→AutoDetectV2→AES-CTR→明文
-- [x] 运行时双重校验（类型+容器碰撞）
-- [x] Stream() HTTP Range → 206 Partial Content
-- [x] Plugin 其余接口方法有合理默认实现
-- [x] 注册到 Plugins 列表，编译通过
+### useFileFeatures 注册表
+- [ ] `src/composables/useFileFeatures.ts` 存在
+- [ ] registerFileFeature() 正确写入 Map，重复注册 console.warn 不覆盖
+- [ ] unregisterFileFeature() 正确删除 + 调用 onDeactivate
+- [ ] useFileFeatures() 返回 allFeatures computed ref
+- [ ] getBadges(file) 并行调用所有 Feature.getBadge?() → 过滤 null → 返回数组
+- [ ] getSubtitles(file) 同上模式
+- [ ] getAllActions(file) 同上模式，保持注册顺序
+- [ ] 查询方法支持同步和异步返回值
 
-## Phase 3: API 层与前端基础集成 ✅ 已完成
+## Phase 5: AlistEncrypt Feature Module 🆕
 
-- [x] GET /api/alist-encrypt/stream endpoint 存在
-- [x] GET /api/alist-encrypt/decode-filename endpoint 存在
-- [x] encv.ts streamAlistFile() / decodeAlistFilename() 存在
-- [x] Files.vue .bin 文件显示 AE 徽章 + 真实文件名
-- [x] Files.vue 长按菜单出现「解密」和「流式预览」
-- [x] i18n 中英文翻译 key 已定义
+### 目录结构
+- [ ] `features/alist-encrypt/` 目录存在
+- [ ] index.ts 导出 createAlistEncryptFeature()
+- [ ] useAlistEncrypt.ts 存在（密码管理/解码缓存/API 封装）
+- [ ] actions.ts 存在（streamPreview + decrypt action 定义）
+- [ ] badge.ts 存在
+- [ ] subtitle.ts 存在（异步解码+缓存）
+- [ ] password-dialog.ts 存在（IonAlert 弹窗）
 
-## Phase 4: 移动端 UI 完善 🆕 本次新增
+### FileFeature 实现
+- [ ] id === 'alist-encrypt'
+- [ ] isActive('.bin') === true
+- [ ] isActive('.BIN') === true（大小写不敏感）
+- [ ] isActive('.mp4') === false
+- [ ] isActive('.sccgv') === false（ENCV 容器排除）
+- [ ] isActive('.encv') === false（ENCV 容器排除）
+- [ ] getBadge 返回 {text:'AE', color:'var(--ion-color-danger)'}
+- [ ] getSubtitle 调用 API 成功时返回解码名称
+- [ ] getSubtitle API 失败时返回 null
+- [ ] getSubtitle 结果被缓存（二次调用不重复请求）
+- [ ] getFileActions(.bin 文件) 返回 2 个 action
+- [ ] getFileActions(.mp4 文件) 返回空数组
+- [ ] action handler 中先调 promptPassword 再执行操作
+- [ ] onActivate 读取后端配置
+- [ ] onDeactivate 清空缓存
 
-### useAlistEncrypt Composable
-- [ ] composables/useAlistEncrypt.ts 文件存在
-- [ ] sessionPasswords ref 存在（path→password 映射）
-- [ ] decodedNames ref 存在（path→plainName 映射）
-- [ ] promptPassword(file) 弹出 IonAlert 密码输入框
-- [ ] IonAlert 包含 password 类型 input + 「记住会话」toggle
-- [ ] 用户确认后密码存入 sessionPasswords；取消返回 null
-- [ ] decodeFilename(file) 调用 API 并缓存结果到 decodedNames
-- [ ] getStreamUrl(file) 使用缓存密码构造 stream URL
-- [ ] isAlistEncrypted(file) 正确检测 .bin 后缀（大小写不敏感）
-- [ ] isAlistEncrypted 对 .sccgv/.encv 返回 false（ENCV 容器排除）
-- [ ] 密码不持久化到 localStorage（仅内存）
+### Files.vue 重构
+- [ ] Files.vue 中无 isAlistEncrypted / handleAlistDecrypt / handleAlistStreamPreview / decodedNames 内联代码
+- [ ] Files.vue 仅 import { useFileFeatures }
+- [ ] 文件列表中徽章通过 v-for fileBadges 渲染
+- [ ] 文件列表中副标题通过 v-for fileSubtitles 渲染
+- [ ] handleLongPress 通过 getAllActions 追加按钮
+- [ ] 文件加载时批量填充副标题
 
-### Files.vue 交互完善
-- [ ] handleAlistStreamPreview 先调 promptPassword 再执行
-- [ ] handleAlistDecrypt 先调 promptPassword 再执行
-- [ ] 流 URL 构建中显示 loading indicator
-- [ ] 流加载失败显示错误信息 + 重试按钮
-- [ ] 解密提交时显示 loading toast
-- [ ] 密码错误显示特殊样式（红色背景 + lock 图标）
-- [ ] 数据损坏/格式无效显示通用 task-error 样式
-- [ ] ErrExtensionRequired 显示 task-warning 样式
-- [ ] 内联逻辑已迁移至 composable
+### 应用启动注册
+- [ ] App.vue 或 main.ts 中有 registerFileFeature(createAlistEncryptFeature())
+- [ ] 条件注册逻辑存在（enabled 判断）
 
-### 设置页集成
-- [ ] 设置页存在「Alist-Encrypt 配置」区域（条件渲染）
-- [ ] enabled ion-toggle 控件存在
-- [ ] suffix ion-input 存在
-- [ ] 输入 .sccgv/.encv 时显示红色警告提示
-- [ ] suffix 不以 "." 开头时自动补全
-- [ ] default_password ion-input(type=password) 存在
-- [ ] enc_type ion-select 存在（MVP 仅 aesctr）
+## Phase 6: 设置页与 ExtensionsPage 🆕
+- [ ] 设置页 alist_encrypt 配置区域存在
+- [ ] suffix 输入框 + 冲突校验提示
+- [ ] default_password (type=password)
+- [ ] enc_type ion-select
+- [ ] enabled 切换触发 register/unregister
+- [ ] ExtensionsPage alist-decrypt 卡片存在
+- [ ] COMBO_LITE_ID_MAP 包含 mapping
 
-### ExtensionsPage 集成
-- [ ] alist-decrypt 扩展卡片显示正确
-- [ ] COMBO_LITE_ID_MAP 包含 'alist-decrypt' → 'com.encvgo.plugin.alistdecrypt'
-- [ ] 安装/启用/禁用状态展示正确
+## Phase 7: Mock 测试 🆕
 
-## Phase 5: Mock 测试 🆕
+### Go Plugin 层
+- [ ] plugin_test.go 编译通过
+- [ ] TestPluginInitialization 全部场景通过
+- [ ] TestCanDecrypt 全部场景通过
+- [ ] TestEncryptDecryptRoundtrip V1/V2 通过
+- [ ] TestEncryptWithV2Header 通过
+- [ ] TestStreamRange 通过
 
-### Go Plugin 层测试
-- [ ] plugin_test.go 文件存在且编译通过
-- [ ] TestPluginInitialization: 成功场景通过
-- [ ] TestPluginInitialization: .sccgv 冲突回退 .bin 通过
-- [ ] TestPluginInitialization: .encv 冲突回退 .bin 通过
-- [ ] TestPluginInitialization: 无点 suffix 自动补全通过
-- [ ] TestPluginInitialize: >16 长度 suffix 回退通过
-- [ ] TestPluginInitialize: 非 aesctr enc_type Warn 通过
-- [ ] TestCanDecrypt: .bin 匹配返回 true
-- [ ] TestCanDecrypt: .mp4 不匹配返回 false
-- [ ] TestCanDecrypt: AECTR2 magic 增强置信度
-- [ ] TestCanDecrypt: ENCV 容器碰撞拒绝
-- [ ] TestEncryptDecryptRoundtrip: V1 裸流往返一致
-- [ ] TestEncryptDecryptRoundtrip: V2 带 AECTR2 头往返一致
-- [ ] TestEncryptWithV2Header: 头 32 bytes 结构正确
-- [ ] TestEncryptWithV2Header: 解密自动跳过头
-- [ ] TestStreamRange: Range=bytes=0- → 206
-- [ ] TestStreamRange: Range=bytes=100-200 → 正确段
-- [ ] TestStreamRange: Range 超出范围 → 416
-- [ ] TestStreamRange: 无 Range → 200
-
-### Go API Handler 测试
+### Go Handler 层
 - [ ] mobile_api_alistencrypt_test.go 编译通过
-- [ ] handleAlistDecodeFilenameGin: 正常解码返回 plain_name
-- [ ] handleAlistDecodeFilenameGin: 空/缺失参数返回 400
-- [ ] handleAlistDecodeFilenameGin: 特殊字符编码正确
-- [ ] handleAlistEncryptStreamGin: 正常流返回 200+解密数据
-- [ ] handleAlistEncryptStreamGin: Range → 206
-- [ ] handleAlistEncryptStreamGin: 文件不存在 → 404
-- [ ] handleAlistEncryptStreamGin: 密码错误 → 400
+- [ ] decodeFilename 测试全部通过
+- [ ] stream handler 测试全部通过
 
-### 前端 Vitest 测试
-- [ ] __tests__/ 目录存在
-- [ ] encv.alistencrypt.spec.ts: getAlistEncryptStreamUrl URL 构造正确
-- [ ] encv.alistencrypt.spec.ts: DEV 模式 base URL 正确
-- [ ] encv.alistencrypt.spec.ts: decodeAlistFilename 成功路径
-- [ ] encv.alistencrypt.spec.ts: decodeAlistFilename 失败路径
-- [ ] encv.alistencrypt.spec.ts: 网络错误降级
-- [ ] Files.alistencrypt.spec.ts: .bin → true
-- [ ] Files.alistencrypt.spec.ts: .BIN → true（大小写）
-- [ ] Files.alistencrypt.spec.ts: .sccgv → false（ENCV 排除）
-- [ ] Files.alistencrypt.spec.ts: .mp4 → false
-- [ ] Files.alistencrypt.spec.ts: '' (无扩展名) → false
-- [ ] useAlistEncrypt.spec.ts: promptPassword 缓存成功
-- [ ] useAlistEncrypt.spec.ts: promptPassword 取消无缓存
-- [ ] useAlistEncrypt.spec.ts: 二次调用跳过弹窗用缓存
-- [ ] useAlistEncrypt.spec.ts: decodeFilename 缓存结果
-- [ ] useAlistEncrypt.spec.ts: getStreamUrl 用缓存密码
-- [ ] npm run test:run 全部通过
+### 前端 FileFeature 架构测试
+- [ ] file-feature.registry.spec.ts 存在且通过
+- [ ] register/unregister 生命周期正确
+- [ ] 重复注册保护有效
+- [ ] 多 Feature 聚合查询正确
+- [ ] 空 registry 安全
 
-## Phase 6: CI 与覆盖率 🆕
+### 前端 AlistEncrypt Feature 测试
+- [ ] features.alist-encrypt.spec.ts 存在且通过
+- [ ] isActive 所有边界 case 通过
+- [ ] getBadge / getSubtitle / getFileActions 正确
+- [ ] promptPassword 缓存行为正确
 
-- [ ] CI workflow 包含 go test plugin 层 -cover
-- [ ] CI workflow 包含 go test handler 层 -cover
-- [ ] CI workflow 包含 npm run test:run --coverage
-- [ ] CI workflow 包含隔离性 grep 验证
-- [ ] internal/alistencrypt 覆盖率 ≥ 90%
-- [ ] internal/v2/plugins/alistencrypt 覆盖率 ≥ 80%
-- [ ] mobile_api handler 覆盖率 ≥ 80%
-- [ ] 前端 alistencrypt 函数覆盖率 ≥ 85%
+### 前端 API 测试
+- [ ] encv.alistencrypt.spec.ts 存在且通过
+- [ ] getAlistEncryptStreamUrl URL 构造正确
+- [ ] decodeAlistFilename 成功/失败路径正确
 
-## 隔离性验证
-- [x] `go build ./internal/alistencrypt/` 成功
-- [x] ComboLite 插件目录不存在（本方案不需要）
+### 前端 Composable 测试
+- [ ] useAlistEncrypt.spec.ts 存在且通过
+- [ ] 密码/文件名缓存生命周期正确
+
+## Phase 8: CI 与覆盖率 🆕
+- [ ] CI workflow 包含所有新增测试步骤
+- [ ] useFileFeatures 覆盖率 ≥ 95%
+- [ ] AlistEncrypt Feature 覆盖率 ≥ 90%
+- [ ] encv.ts API 覆盖率 ≥ 90%
+- [ ] Go Plugin 覆盖率 ≥ 80%
+- [ ] Go Handler 覆盖率 ≥ 80%
+
+## 架构隔离性验证
+- [x] internal/alistencrypt/ 无 RC4/ChaCha20 实现
+- [ ] Files.vue 无业务特性直接 import（仅 useFileFeatures）
+- [ ] features/alist-encrypt/ 是自包含模块（不依赖 Files.vue 内部状态）
