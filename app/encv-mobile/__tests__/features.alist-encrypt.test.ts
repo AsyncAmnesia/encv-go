@@ -25,10 +25,19 @@ vi.mock('@ionic/vue', () => ({
   },
 }))
 
+const mockOpenNewTask = vi.fn()
+
+vi.mock('@/composables/useNewTaskModal', () => ({
+  useNewTaskModal: () => ({
+    openNewTask: mockOpenNewTask,
+  }),
+}))
+
 import { isAlistEncrypted, getSessionPassword, setSessionPassword, clearPasswordCache, getDecodedName, loadDecodedName, getStreamUrl, clearDecodeCache } from '@/features/alist-encrypt/useAlistEncrypt'
 import { getAlistBadge } from '@/features/alist-encrypt/badge'
 import { getAlistActions } from '@/features/alist-encrypt/actions'
 import { createAlistEncryptFeature } from '@/features/alist-encrypt/index'
+import { useNewTaskModal } from '@/composables/useNewTaskModal'
 import { decodeAlistFilename } from '@/api/encv'
 import type { FileItem } from '@/api/encv'
 
@@ -156,8 +165,10 @@ describe('getAlistActions', () => {
     expect(actions.map((a) => a.id)).toEqual(['alist-stream-preview', 'alist-decrypt'])
   })
 
-  it('non-AE file returns empty array', () => {
-    expect(getAlistActions(normalFile)).toEqual([])
+  it('non-AE file returns encrypt action (isActive expanded)', () => {
+    const actions = getAlistActions(normalFile)
+    expect(actions).toHaveLength(1)
+    expect(actions[0].id).toBe('alist-encrypt')
   })
 
   it('actions have correct structure', () => {
@@ -181,10 +192,11 @@ describe('createAlistEncryptFeature factory', () => {
     expect(typeof feat.onDeactivate).toBe('function')
   })
 
-  it('isActive delegates to isAlistEncrypted', () => {
+  it('isActive scope expanded: AE file true, normal file true, dir false', () => {
     const feat = createAlistEncryptFeature()
     expect(feat.isActive(aeFile)).toBe(true)
-    expect(feat.isActive(normalFile)).toBe(false)
+    expect(feat.isActive(normalFile)).toBe(true)
+    expect(feat.isActive(dirFile)).toBe(false)
   })
 
   it('onDeactivate clears caches', () => {
@@ -201,5 +213,44 @@ describe('getStreamUrl', () => {
     expect(url).toContain('/api/alist-encrypt/stream')
     expect(url).toContain('path=')
     expect(url).toContain('password=secret')
+  })
+})
+
+describe('isActive (expanded scope)', () => {
+  it('非目录普通文件返回 true', () => {
+    const feat = createAlistEncryptFeature()
+    expect(feat.isActive(normalFile)).toBe(true)
+  })
+
+  it('.bin 加密文件返回 true', () => {
+    const feat = createAlistEncryptFeature()
+    expect(feat.isActive(aeFile)).toBe(true)
+  })
+
+  it('目录文件返回 false', () => {
+    const feat = createAlistEncryptFeature()
+    expect(feat.isActive(dirFile)).toBe(false)
+  })
+})
+
+describe('getAlistActions - encrypt action for normal files', () => {
+  it('普通文件返回 1 个 encrypt action', () => {
+    const actions = getAlistActions(normalFile)
+    expect(actions).toHaveLength(1)
+    expect(actions[0].id).toBe('alist-encrypt')
+  })
+
+  it('encrypt action 有正确的属性', () => {
+    const actions = getAlistActions(normalFile)
+    const encrypt = actions.find((a) => a.id === 'alist-encrypt')!
+    expect(encrypt.color).toBe('warning')
+    expect(encrypt.text()).toBe('alistEncrypt.encrypt')
+  })
+
+  it('encrypt action handler 调用 openNewTask with encrypt type', async () => {
+    const actions = getAlistActions(normalFile)
+    const encrypt = actions.find((a) => a.id === 'alist-encrypt')!
+    await encrypt.handler(normalFile)
+    expect(mockOpenNewTask).toHaveBeenCalledWith(normalFile.path, 'encrypt')
   })
 })

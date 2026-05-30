@@ -1,4 +1,4 @@
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import { modalController } from '@ionic/vue'
 import type { TaskType } from '@/api/encv'
 import type { PluginCandidate, ContainerVersionInfo, TaskField, TaskOptions } from '@/api/encv'
@@ -76,6 +76,8 @@ export function useNewTaskModal() {
 
     syncState()
 
+    const submitting = ref(false)
+
     const modal = await modalController.create({
       component: NewTaskModal,
       componentProps: {
@@ -105,19 +107,25 @@ export function useNewTaskModal() {
         },
         onSubmit: async () => {
           if (!state.sourcePath) return
+          if (submitting.value) return
+          submitting.value = true
           try {
+            const pluginName = state.candidates[state.selectedPluginIndex]?.name || state.predictedPlugin || undefined
             await createTask(
               state.taskType as TaskType,
               state.sourcePath,
               state.targetPath || undefined,
               undefined,
-              state.taskType === 'encrypt' ? state.version : undefined
+              state.taskType === 'encrypt' ? state.version : undefined,
+              pluginName
             )
             await modal.dismiss()
             showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
             eventBus.emit('task:refresh', {})
           } catch {
             showToast({ message: t('tasks.taskCreateFailed'), duration: 2000, color: 'danger' })
+          } finally {
+            submitting.value = false
           }
         },
       },

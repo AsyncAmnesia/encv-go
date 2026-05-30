@@ -57,17 +57,32 @@
 - **WHEN** 用户快速连续点击两次「创建任务」按钮
 - **THEN** 系统 SHALL 只创建 1 个任务（第一次点击触发，第二次被忽略）
 
-### REQ-8: 普通文件长按菜单显示加密操作
+### REQ-8: 普通文件长按菜单显示加密操作（插件系统架构内解决）
 
-系统 SHALL 对可加密的普通文件提供加密入口。
+系统 SHALL 通过调整 alist-encrypt Feature 的 `isActive` 范围，让其对所有非目录文件激活，在 `getFileActions` 内部按文件加密状态分支返回不同 actions。**不得脱离 Feature 架构在 Files.vue 或其他位置硬编码加密入口。**
+
+#### 架构约束
+
+`useFileFeatures.collectActions()` 在 L63 有 gatekeeper：`if (!feature.isActive(file) || !feature.getFileActions) continue`。
+这意味着 **`isActive` 返回 false 时 `getFileActions` 根本不会被调用**。因此：
+- ❌ 错误做法：保持 `isActive = isAlistEncrypted`，在 `getAlistActions` 里给普通文件返回 encrypt action（死代码，永远不会执行）
+- ✅ 正确做法：扩大 `isActive` 范围 → 让 `getAlistActions` 内部分支
 
 #### 场景 8.1: 非 .bin 普通文件长按
-- **WHEN** 用户长按一个非加密的普通文件（如 `.mp4`, `.pdf` 等）
-- **THEN** 长按菜单 SHALL 显示「加密」action（来自 alist-encrypt Feature），点击后调用 `openNewTask(path, 'encrypt')`
+- **WHEN** 用户长按一个非加密的普通文件（如 `.mp4`, `.pdf` 等非目录文件）
+- **THEN** alist-encrypt Feature 的 `isActive` SHALL 返回 true
+- **AND** `getAlistActions(file)` SHALL 返回「加密」action（调用 `openNewTask(path, 'encrypt')`）
+- **AND** 长按菜单通过 `getAllActions()` 收集到该 action 并展示
 
 #### 场景 8.2: .bin 加密文件长按（回归保护）
 - **WHEN** 用户长按一个 `.bin` 加密文件
-- **THEN** 菜单 SHALL 显示「解密」+「流预览」（行为不变）
+- **THEN** `isActive` SHALL 返回 true
+- **AND** `getAlistActions(file)` SHALL 返回「解密」+「流预览」（行为不变）
+
+#### 场景 8.3: 目录文件不显示加密相关 action
+- **WHEN** 用户长按一个目录
+- **THEN** `isActive` SHALL 返回 false
+- **AND** 不返回任何 alist-encrypt 相关 action
 
 ### REQ-9: 插件模式空状态下拉刷新不泄漏主列表
 
@@ -88,6 +103,7 @@
 
 - [ ] useNewTaskModal: onSubmit 传递正确的 pluginName
 - [ ] useNewTaskModal: 双击提交只创建 1 个任务
-- [ ] getAlistActions: 普通文件返回 encrypt action
-- [ ] getAlistActions: .bin 文件仍返回 decrypt + preview
+- [ ] getAlistActions: 普通文件（isActive=true）返回 encrypt action
+- [ ] getAlistActions: .bin 文件仍返回 decrypt + preview（回归保护）
+- [ ] isActive: 目录文件返回 false，非目录文件返回 true
 - [ ] Files.vue: plugin mode 下 handleRefresh 刷新 pluginFiles

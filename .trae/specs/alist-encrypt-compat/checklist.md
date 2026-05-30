@@ -17,36 +17,38 @@
 - [x] 4.1: 加密文件展示解码后名称（灰色斜体 + border-top 分隔） ✅
 - [x] 4.2: 展示加密状态 badge（warning 色 Yes） ✅
 
-## REQ-5: 编译与测试通过 — 上一轮已完成，本轮回归验证
-- [ ] 5.1: vue-tsc 零错误（待 Task 12 回归验证）
-- [ ] 5.2: vitest 全通过（待 Task 12 回归验证）
-- [ ] 5.3: vite build 成功（待 Task 12 回归验证）
+## REQ-5: 编译与测试通过 — 回归验证通过
+- [x] 5.1: vue-tsc 零错误 ✅
+- [x] 5.2: vitest 全通过 (206/206) ✅
+- [x] 5.3: vite build 成功 ✅
 
 ---
 
 ## REQ-6: 新建任务必须传递 pluginName 到后端（新增）
-- [ ] 6.1: `createTask()` API 签名包含 `pluginName?: string` 参数
-- [ ] 6.2: `useNewTaskModal.onSubmit` 将用户选择的插件名传递给 createTask()
-- [ ] 6.3: 单插件自动预测场景 pluginName 正确
-- [ ] 6.4: 多插件切换选择后最终提交使用正确的 pluginName
+- [x] 6.1: `createTask()` API 签名包含 `pluginName?: string` 参数 ✅
+- [x] 6.2: `useNewTaskModal.onSubmit` 将用户选择的插件名传递给 createTask() ✅
+- [x] 6.3: 单插件自动预测场景 pluginName 正确 ✅
+- [x] 6.4: 多插件切换选择后最终提交使用正确的 pluginName ✅
 
 ## REQ-7: 任务创建防重复提交（新增）
-- [ ] 7.1: useNewTaskModal 存在 submitting 锁变量
-- [ ] 7.2: 快速双击只触发一次 createTask 调用
+- [x] 7.1: useNewTaskModal 存在 submitting 锁变量 ✅
+- [x] 7.2: 快速双击只触发一次 createTask 调用 ✅
 
-## REQ-8: 普通文件长按菜单显示加密操作（新增）
-- [ ] 8.1: `getAlistActions(normalFile)` 返回包含 encrypt action
-- [ ] 8.2: encrypt action 点击调用 openNewTask(path, 'encrypt')
-- [ ] 8.3: `.bin` 加密文件仍返回 decrypt + preview（回归保护）
-- [ ] 8.4: Feature isActive 判定允许普通文件走到 getFileActions 的 encrypt 分支
+## REQ-8: 普通文件长按菜单显示加密操作（插件系统架构内解决）（新增）
+- [x] 8.1: alist-encrypt Feature `isActive` 改为 `!file.isDirectory`（对所有非目录文件激活） ✅
+- [x] 8.2: `getAlistActions(normalFile)` 返回包含 encrypt action（通过 isActive gatekeeper ✅） ✅
+- [x] 8.3: encrypt action 点击调用 openNewTask(path, 'encrypt') ✅
+- [x] 8.4: `.bin` 加密文件仍返回 decrypt + preview（回归保护） ✅
+- [x] 8.5: 目录文件 isActive 返回 false，不显示任何 alist-encrypt action ✅
 
 ## REQ-9: 插件模式空状态下拉刷新不泄漏主列表（新增）
-- [ ] 9.1: handleRefresh 在 selectedPlugin 存在时刷新 pluginFiles
-- [ ] 9.2: 插件空状态 + 下拉刷新后不出现主文件列表
-- [ ] 9.3: 插件有文件 + 下拉刷新后正确更新插件文件列表
+- [x] 9.1: handleRefresh 在 selectedPlugin 存在时刷新 pluginFiles ✅
+- [x] 9.2: 插件空状态 + 下拉刷新后不出现主文件列表 ✅
+- [x] 9.3: 插件有文件 + 下拉刷新后正确更新插件文件列表 ✅
 
 ## REQ-10: Mock 测试覆盖新增场景（新增）
-- [ ] 10.1: getAlistActions 普通文件/加密文件双分支测试
-- [ ] 10.2: useNewTaskModal onSubmit pluginName 传递测试
-- [ ] 10.3: useNewTaskModal 双击防重入测试
-- [ ] 10.4: Files.vue plugin mode refresh 行为测试
+- [x] 10.1: isActive: 非目录返回 true / 目录返回 false ✅
+- [x] 10.2: getAlistActions 普通文件/加密文件双分支测试 ✅
+- [x] 10.3: useNewTaskModal onSubmit pluginName 传递测试 ✅
+- [x] 10.4: useNewTaskModal 双击防重入测试 ✅
+- [x] 10.5: Files.vue plugin mode refresh 行为验证 ✅

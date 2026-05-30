@@ -694,20 +694,33 @@ async function loadFiles() {
 }
 
 async function handleRefresh(event: CustomEvent) {
-  try {
-    files.value = await listFiles(currentPath.value)
-    serverOnline.value = true
-    noPermission.value = false
-    loadFileTagsForCurrentDir()
-  } catch (error) {
-    if (error instanceof PermissionDeniedError) {
-      serverOnline.value = true
-      noPermission.value = true
+  if (selectedPlugin.value) {
+    pluginFiles.value = []
+    pluginLoaded.value = false
+    try {
+      const results = await searchPluginFiles(selectedPlugin.value)
+      pluginFiles.value = results
+    } catch (e) {
+      console.error('[Files] Plugin refresh failed:', e)
+    } finally {
+      pluginLoaded.value = true
     }
-    if (error instanceof NotFoundError) {
+  } else {
+    try {
+      files.value = await listFiles(currentPath.value)
       serverOnline.value = true
-      if (currentPath.value !== '/') {
-        goUp()
+      noPermission.value = false
+      loadFileTagsForCurrentDir()
+    } catch (error) {
+      if (error instanceof PermissionDeniedError) {
+        serverOnline.value = true
+        noPermission.value = true
+      }
+      if (error instanceof NotFoundError) {
+        serverOnline.value = true
+        if (currentPath.value !== '/') {
+          goUp()
+        }
       }
     }
   }

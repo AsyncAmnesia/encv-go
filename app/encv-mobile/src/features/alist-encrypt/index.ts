@@ -7,7 +7,7 @@ import { getAlistActions } from './actions'
 export function createAlistEncryptFeature(): FileFeature {
   return {
     id: 'alist-encrypt',
-    isActive: isAlistEncrypted,
+    isActive: (file) => !file.isDirectory,
     getBadge: (file) => getAlistBadge(file),
     getSubtitle: (file) => getAlistSubtitle(file),
     getFileActions: (file) => getAlistActions(file),

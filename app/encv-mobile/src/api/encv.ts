@@ -340,11 +340,13 @@ export async function createTask(
   targetPath?: string,
   password?: string,
   version?: number,
+  pluginName?: string,
   extraFields?: Record<string, string>,
   secondaryPassword?: string,
 ): Promise<EncvTask> {
   console.info('[API] createTask:', type, sourcePath, targetPath || '',
     'hasPassword:', !!password, 'version:', version ?? 'default',
+    'pluginName:', pluginName ?? 'auto',
     'hasExtraFields:', extraFields && Object.keys(extraFields).length > 0,
     'hasSecondaryPassword:', !!secondaryPassword)
   const baseUrl = getApiBaseUrl()
@@ -352,6 +354,7 @@ export async function createTask(
   if (targetPath) body.targetPath = targetPath
   if (password) body.password = password
   if (version) body.version = version
+  if (pluginName) body.pluginName = pluginName
   if (extraFields && Object.keys(extraFields).length > 0) body.extraFields = extraFields
   if (secondaryPassword) body.secondaryPassword = secondaryPassword
   const response = await fetch(`${baseUrl}/api/tasks`, {
