@@ -368,6 +368,7 @@ const {
   predictPlugin,
   getExtraPayload,
   reset: resetTaskForm,
+  initFromQuery,
 } = useTaskForm()
 
 const tasks = ref<EncvTask[]>([])
@@ -767,13 +768,12 @@ function processQueryAction() {
 
     router.replace({ path: '/tabs/tasks', query: {} })
 
-    nextTick(() => {
+    nextTick(async () => {
       newTaskType.value = taskType
       if (sourcePath) {
         newTaskPath.value = sourcePath
         sourcePathError.value = ''
-        resetTaskForm()
-        predictPlugin(sourcePath, taskType)
+        await initFromQuery({ sourcePath, taskType })
       }
       showNewTaskModal.value = true
     })

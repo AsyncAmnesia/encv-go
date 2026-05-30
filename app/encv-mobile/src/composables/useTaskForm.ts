@@ -1,5 +1,10 @@
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { predictPlugin, type TaskOptions, type TaskField, type PluginCandidate } from '@/api/encv'
+
+export interface QueryInitParams {
+  sourcePath: string
+  taskType: 'encrypt' | 'decrypt'
+}
 
 export function useTaskForm() {
   const candidates = ref<PluginCandidate[]>([])
@@ -86,6 +91,12 @@ export function useTaskForm() {
     secondaryPassword.value = ''
   }
 
+  async function initFromQuery(params: QueryInitParams): Promise<void> {
+    reset()
+    await nextTick()
+    doPredict(params.sourcePath, params.taskType)
+  }
+
   return {
     candidates,
     selectedPluginIndex,
@@ -99,5 +110,6 @@ export function useTaskForm() {
     predictPlugin: doPredict,
     getExtraPayload,
     reset,
+    initFromQuery,
   }
 }

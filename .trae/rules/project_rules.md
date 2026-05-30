@@ -176,3 +176,60 @@ function getConflictingPlugins(suffix): string[] {
 | L3 启动 | `InitializePlugins()` | slog.Error 日志 + 继续启动不 abort |
 
 **关键约束**：L2 和 L3 不得依赖 L1 的存在。用户可能通过第三方编辑器直接修改 config JSON 绕过前端。
+
+## Trae Web 沙箱前端访问规则（重要！）
+
+> **铁律：云端沙箱只能通过 agent-tool-host 代理访问前端，严禁混淆端口身份**
+
+### 端口身份（不可混淆）
+
+| 端口 | 进程 | 身份 |
+|------|------|------|
+| **5173** (或动态分配) | `agent-tool-host` (`/app/bin/agent-tool-host`) | **前端 HTTP 代理** — 用户浏览器实际访问的入口，等价于 vite dev server |
+| **5174/5175/...** (vite 动态分配) | `node .../vite` | Vite dev server 原始端口 — agent-tool-host 反向代理到此 |
+
+### 关键认知
+
+1. **agent-tool-host 就是前端服务**：用户通过 OpenPreview 或浏览器访问的 URL 指向的端口就是 agent-tool-host，它代理了 Vite HMR
+2. **Vite 端口可能漂移**：当 5173 被占用时 vite 会尝试 5174、5175… 但用户始终通过 agent-tool-host 访问
+3. **`lsof -i :5173` 看到 agent-tool-host 是正常的**，不代表"vite 没在运行"
+4. **禁止将 agent-tool-host 进程误判为非前端服务**：这会导致错误结论如"你访问的不是新代码"
+
+### 验证代码是否生效的正确方法
+
+```bash
+# 1. 确认 vite 在运行（可能在 5174+）
+lsof -i :5173 -i :5174 -i :5175 -t | xargs ps -p -o command= 2>/dev/null
+
+# 2. 通过 agent-tool-host 端口验证源码内容
+curl -s http://localhost:5173/src/views/Tasks.vue | grep "predictPlugin"
+
+# 3. 如果 agent-tool-host 不在 5173，用 OpenPreview 获取的实际 URL
+```
+
+### 禁止行为
+
+- ❌ 看到 `agent-tool-host` 就断言"这不是 vite / 这不是前端"
+- ❌ 杀掉 agent-tool-host 进程（这是沙箱基础设施）
+- ❌ 让用户访问 vite 原始端口而非 agent-tool-host 代理端口
+
+## 测试覆盖铁律（重要！违反 = 严重失职）
+
+> **任何涉及 UI 状态变更的逻辑必须有对应测试覆盖，不允许依赖手动浏览器验证**
+
+### 必须测试的场景
+
+| 场景类型 | 示例 | 测试方式 |
+|---------|------|---------|
+| 路由跳转 + Modal 打开 | Files → Tasks 新建任务 | 单元测试 mock router + 断言 modal state |
+| API 调用触发时机 | processQueryAction 中 predictPlugin 是否被调用 | spy/predictPlugin mock + 断言调用次数 |
+| computed 派生状态 | candidates 变化 → predictedPlugin 自动更新 | 设置 candidates → 断言 predictedPlugin 值 |
+| 表单重置逻辑 | validateSourcePath 错误路径清空状态 | 触发错误条件 → 断言所有相关 ref 已重置 |
+| 条件渲染 | passwordStrategy=independent 时字段显隐 | 设置不同 strategy → 断言 DOM 元素存在性 |
+
+### 测试优先级
+
+1. **路由/导航逻辑** — 最高优先级（modal 不打开 = 功能完全不可用）
+2. **API 调用链** — 高优先级（数据不加载 = UI 为空）
+3. **computed 派生** — 中优先级（显示错误但可排查）
+4. **样式/CSS** — 低优先级（视觉问题不影响功能）
