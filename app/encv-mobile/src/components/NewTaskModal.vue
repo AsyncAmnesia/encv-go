@@ -222,16 +222,18 @@ function arr(v: any[] | Ref<any[]>): any[] {
 function arrLen(v: any[] | Ref<any[]>): number {
   return arr(v).length
 }
-function objVal(obj: Record<string, string> | Ref<Record<string, string>>, key: string): string {
-  const o = isRef(obj) ? obj.value : obj
-  return (o as Record<string, string>)[key] ?? ''
+function objVal(obj: Record<string, string> | Ref<Record<string, string> | null>, key: string): string {
+  const raw = isRef(obj) ? obj.value : obj
+  if (!raw) return ''
+  return raw[key] ?? ''
 }
-function optsVal(opts: TaskOptions | null | Ref<TaskOptions>, key: keyof TaskOptions): TaskOptions[keyof TaskOptions] | undefined {
+function optsVal(opts: TaskOptions | null | Ref<TaskOptions | null>, key: keyof TaskOptions): TaskOptions[keyof TaskOptions] | undefined {
   if (!opts) return undefined
-  const o = isRef(opts) ? opts.value : opts
-  return o[key]
+  const raw = isRef(opts) ? opts.value : opts
+  if (!raw) return undefined
+  return raw[key]
 }
-function optsBool(opts: TaskOptions | null | Ref<TaskOptions>, key: keyof TaskOptions): boolean {
+function optsBool(opts: TaskOptions | null | Ref<TaskOptions | null>, key: keyof TaskOptions): boolean {
   return !!optsVal(opts, key)
 }
 
