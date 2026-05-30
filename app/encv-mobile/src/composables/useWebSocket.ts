@@ -46,7 +46,6 @@ function startHeartbeat() {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'ping' }))
       pongTimeoutTimer = setTimeout(() => {
-        console.error('[SAT-DBG][WS] Pong timeout → forceReconnect | ts=', Date.now())
         forceReconnect()
       }, PONG_TIMEOUT)
     }
@@ -91,13 +90,11 @@ function connect() {
   }
 
   const url = getWebSocketUrl()
-  console.error('[SAT-DBG][WS] connect() → connecting | url=', url, '| ts=', Date.now())
   connectionState.value = 'connecting'
 
   try {
     ws = new WebSocket(url)
   } catch (e) {
-    console.error('[SAT-DBG][WS] connect() FAILED →', String(e), '| ts=', Date.now())
     console.error('[ENCV-WS] Failed to create WebSocket:', e)
     connectionState.value = 'disconnected'
     scheduleReconnect()
@@ -105,7 +102,6 @@ function connect() {
   }
 
   ws.onopen = () => {
-    console.error('[SAT-DBG][WS] onopen → connected | reconnectDelay reset=1000 | ts=', Date.now())
     connectionState.value = 'connected'
     reconnectDelay = 1000
     startHeartbeat()
@@ -115,7 +111,6 @@ function connect() {
   ws.onmessage = handleMessage
 
   ws.onclose = (event) => {
-    console.error('[SAT-DBG][WS] onclose | code=', event.code, 'wasClean=', event.wasClean, '| ts=', Date.now())
     connectionState.value = 'disconnected'
     stopHeartbeat()
     eventBus.emit('server:status', { online: false })
@@ -126,14 +121,12 @@ function connect() {
   }
 
   ws.onerror = () => {
-    console.error('[SAT-DBG][WS] onerror | ts=', Date.now())
     connectionState.value = 'disconnected'
     eventBus.emit('server:connection-error', { error: 'Failed to connect to server' })
   }
 }
 
 function disconnect() {
-  console.error('[SAT-DBG][WS] disconnect() | ts=', Date.now())
   resetTimers()
   if (ws) {
     ws.onclose = null
@@ -150,7 +143,6 @@ function disconnect() {
 
 function scheduleReconnect() {
   if (reconnectTimer) return
-  console.error('[SAT-DBG][WS] scheduleReconnect() | delay=', reconnectDelay, 'ms | ts=', Date.now())
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
     connect()
@@ -159,7 +151,6 @@ function scheduleReconnect() {
 }
 
 function forceReconnect() {
-  console.error('[SAT-DBG][WS] forceReconnect() | ts=', Date.now())
   disconnect()
   reconnectDelay = 1000
   connect()

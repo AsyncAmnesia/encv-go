@@ -93,16 +93,4 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to, from) => {
-  console.error('[SAT-DBG][Router] beforeEach |', from.path, '→', to.path, '| ts=', Date.now())
-})
-
-router.afterEach((to, from) => {
-  console.error('[SAT-DBG][Router] afterEach  |', from.path, '→', to.path, '| ts=', Date.now())
-})
-
-router.onError((error) => {
-  console.error('[SAT-DBG][Router] onError |', error, '| ts=', Date.now())
-})
-
 export default router

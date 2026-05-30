@@ -304,14 +304,12 @@ function onServerStatus(data: any) {
 }
 
 onMounted(async () => {
-  console.error('[SAT-DBG][DevLogs] onMounted | ts=', Date.now())
   await nextTick()
 
   if (ws.connectionState.value !== 'connected') {
     ws.connect()
   }
 
-  console.error('[SAT-DBG][DevLogs] eventBus.on(ws:message, server:status) | ts=', Date.now())
   eventBus.on('ws:message', onWsMessage)
   eventBus.on('server:status', onServerStatus)
 
@@ -330,8 +328,6 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  console.error('[SAT-DBG][DevLogs] onUnmounted | ts=', Date.now())
-  console.error('[SAT-DBG][DevLogs] eventBus.off(ws:message, server:status) | ts=', Date.now())
   eventBus.off('ws:message', onWsMessage)
   eventBus.off('server:status', onServerStatus)
   if (userScrollTimer) clearTimeout(userScrollTimer)

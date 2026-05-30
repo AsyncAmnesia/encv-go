@@ -22,18 +22,13 @@ function on<K extends EventKey>(event: K, handler: Handler<EncvEvents[K]>) {
     listeners.set(event, new Set())
   }
   listeners.get(event)!.add(handler)
-  console.error('[SAT-DBG][eventBus] on(', event, ') | totalListeners=', listeners.get(event)!.size, '| ts=', Date.now())
 }
 
 function off<K extends EventKey>(event: K, handler: Handler<EncvEvents[K]>) {
-  const removed = listeners.get(event)?.delete(handler)
-  const remaining = listeners.get(event)?.size ?? 0
-  console.error('[SAT-DBG][eventBus] off(', event, ') | removed=', !!removed, 'remaining=', remaining, '| ts=', Date.now())
+  listeners.get(event)?.delete(handler)
 }
 
 function emit<K extends EventKey>(event: K, data: EncvEvents[K]) {
-  const handlerCount = listeners.get(event)?.size ?? 0
-  console.error('[SAT-DBG][eventBus] emit(', event, ') →', handlerCount, 'listeners | ts=', Date.now())
   listeners.get(event)?.forEach(handler => {
     try {
       handler(data)
@@ -44,7 +39,6 @@ function emit<K extends EventKey>(event: K, data: EncvEvents[K]) {
 }
 
 function clear() {
-  console.error('[SAT-DBG][eventBus] clear() | ts=', Date.now())
   listeners.clear()
 }
 

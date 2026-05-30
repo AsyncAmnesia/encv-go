@@ -1363,25 +1363,20 @@ function onBackendReady(data: { port?: number; running?: boolean }) {
 }
 
 onMounted(() => {
-  console.error('[SAT-DBG][Files] onMounted | ts=', Date.now())
   loadFiles()
   loadPlugins()
   loadTags()
-  console.error('[SAT-DBG][Files] eventBus.on(file:change) | ts=', Date.now())
   eventBus.on('file:change', onFileChange)
   window.addEventListener('encv:backend-ready', onBackendReadyWindow as EventListener)
 })
 
 onIonViewWillEnter(() => {
-  console.error('[SAT-DBG][Files] onIonViewWillEnter | files.length=', files.value.length, 'loading=', loading.value, 'ts=', Date.now())
   if (files.value.length === 0 && !loading.value && !connecting.value) {
     loadFiles()
   }
 })
 
 onUnmounted(() => {
-  console.error('[SAT-DBG][Files] onUnmounted | ts=', Date.now())
-  console.error('[SAT-DBG][Files] eventBus.off(file:change) | ts=', Date.now())
   eventBus.off('file:change', onFileChange)
   window.removeEventListener('encv:backend-ready', onBackendReadyWindow as EventListener)
   if (searchTimer) clearTimeout(searchTimer)

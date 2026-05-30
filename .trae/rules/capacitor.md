@@ -293,3 +293,217 @@ t=500ms+X: API 返回 → resolve()
 5. **eventBus 是否跨 tab？** 改为直接 import composable 调用
 6. **doPredict 是否被正确 await？** 检查 Promise 链完整性
 7. **syncState() 是否在 API 返回后调用？** 检查时序
+
+---
+
+## 六、Tab 切换异常：RouterOutlet 冻结（⚠️ 实战踩坑！）
+
+> **核心原则：Vue render function 崩溃会阻塞 Ionic RouterOutlet 的组件切换流程。**
+> **任何子组件的未捕获渲染异常都可能导致整个 tab 切换机制瘫痪。**
+
+### 6.1 症状
+
+```
+用户操作序列：
+  首页 → Files（✅ 正常显示文件列表）
+       → Tasks（❌ 内容仍显示文件列表，TabBar 高亮已切换到 Tasks）
+       → Remote（❌ 内容仍显示文件列表）
+       → Settings（❌ 内容仍显示文件列表）
+       → DevLogs（❌ 内容仍显示文件列表）
+       → Files（✅ 切回正常）
+
+关键特征：
+- URL 路由正确变化（/tabs/files → /tabs/tasks ...）
+- TabBar 高亮正确切换
+- 但 <ion-router-outlet> 内容区域「冻结」在离开前的组件视图
+- 无白屏、无闪烁、无卡顿 —— 不是渲染慢而是**根本没切换**
+```
+
+### 6.2 根因链路
+
+```
+Files.vue 的 <IonMenu menu-id="plugin-menu"> 内：
+  <IonItem v-for="plugin in plugins">
+    {{ plugin.supportedExtensions.length }}   ← API 返回 null
+                    ↓
+         💥 Cannot read properties of null (reading 'length')
+                    ↓
+    Vue render function 异常（未捕获）
+                    ↓
+Ionic RouterOutlet 组件切换流程中断
+                    ↓
+目标组件(Tasks/Remote/Settings/DevLogs) 
+的 onMounted/onIonViewWillEnter 永远不触发
+                    ↓
+内容区域「冻结」在 Files 视图
+```
+
+### 6.3 为什么只影响从 Files 切出？
+
+因为崩溃发生在 **Files 组件的 IonMenu 子树渲染中**。当 RouterOutlet 尝试从 Files 切换到其他组件时：
+1. Vue 开始卸载/更新 Files 组件树
+2. IonMenu 内的 `v-for` 触发重新渲染
+3. 访问 `null.length` 抛出异常
+4. 异常中断了 RouterOutlet 的切换事务
+5. 目标组件永远不会挂载
+
+切**回** Files 时正常，因为 Files 已经是当前组件，不需要切换。
+
+### 6.4 触发崩溃的三类代码模式
+
+| 模式 | 示例 | 修复 |
+|------|------|------|
+| **模板中直接访问可能为 null 的属性** | `{{ plugin.supportedExtensions.length }}` | 使用可选链 + 默认值：`{{ plugin.supportedExtensions?.length ?? 0 }}` |
+| **脚本中无防御访问 API 返回值** | `if (plugin.supportedExtensions.length === 0)` | 前置 null 检查：`if (!plugin.supportedExtensions \|\| plugin.supportedExtensions.length === 0)` |
+| **使用字符串字面量引用未导入的图标** | `return 'film-outline'`（但未 import filmOutline） | 导入图标变量并使用引用：`return filmOutline` |
+
+### 6.5 排查此类问题的诊断方法：饱和调试攻击
+
+#### 步骤 1：确认症状层级
+
+```
+Layer 1: URL 变了但内容没变？
+  → 检查 Router beforeEach/afterEach 是否配对
+  → 如果有 beforeEach 无 afterEach → 路由守卫卡住
+
+Layer 2: URL 变了 + 路由正常但组件没挂载？
+  → 检查目标组件 onMounted/onIonViewWillEnter 是否触发
+  → 如果没触发 → RouterOutlet 切换被中断
+
+Layer 3: 有 JS 错误？
+  → 检查控制台是否有 "Cannot read properties of null/undefined"
+  → 检查是否有 "Unhandled error during render function"
+```
+
+#### 步骤 2：注入全链路 error 日志（饱和调试）
+
+将所有关键路径临时升格为 `console.error('[SAT-DBG]...')`，使其在 DevLogs 中以红色高亮显示：
+
+```typescript
+// Layer A: Tabs 核心
+// Tabs.vue — ionTabsWillChange + ionTabsDidChange
+function onTabsWillChange(event: CustomEvent) {
+  const tab = event?.detail?.tab ?? '(unknown)'
+  console.error('[SAT-DBG][Tabs] ionTabsWillChange →', tab, '| ts=', Date.now())
+}
+
+// Layer B: 页面生命周期（每个 tab 组件）
+// Files/Tasks/Home/Remote/Settings/DevLogs.vue
+onMounted(() => {
+  console.error('[SAT-DBG][ComponentName] onMounted | ts=', Date.now())
+})
+onIonViewWillEnter(() => {
+  console.error('[SAT-DBG][ComponentName] onIonViewWillEnter | ts=', Date.now())
+})
+
+// Layer C: 通信总线
+// useEventBus.ts — on/off/emit 全部拦截
+function on(event, handler) {
+  // ...原有逻辑...
+  console.error('[SAT-DBG][eventBus] on(', event, ') | totalListeners=', count, '| ts=', Date.now())
+}
+function emit(event, data) {
+  console.error('[SAT-DBG][eventBus] emit(', event, ') →', listenerCount, 'listeners | ts=', Date.now())
+  // ...原有逻辑...
+}
+
+// Layer D: WebSocket
+// useWebSocket.ts — connect/disconnect/onopen/onclose/onerror
+function connect() {
+  console.error('[SAT-DBG][WS] connect() → connecting | url=', url, '| ts=', Date.now())
+  // ...
+}
+ws.onopen = () => {
+  console.error('[SAT-DBG][WS] onopen → connected | ts=', Date.now())
+}
+
+// Layer E: 路由导航守卫
+// router/index.ts
+router.beforeEach((to, from) => {
+  console.error('[SAT-DBG][Router] beforeEach |', from.path, '→', to.path, '| ts=', Date.now())
+})
+router.afterEach((to, from) => {
+  console.error('[SAT-DBG][Router] afterEach  |', from.path, '→', to.path, '| ts=', Date.now())
+})
+
+// Layer F: Overlay 系统
+// useNewTaskModal.ts / Tasks.vue
+console.error('[SAT-DBG][Modal] create(ComponentName) | ts=', Date.now())
+await modal.present()
+modal.onDidDismiss().then(() => {
+  console.error('[SAT-DBG][Modal] didDismiss() | ts=', Date.now())
+})
+```
+
+#### 步骤 3：分析日志时序定位卡点
+
+**正常的 tab 切换日志时序**（以 Home → Files 为例）：
+```
+[Router] beforeEach  | /tabs/home → /tabs/files     ← 路由开始切换
+[Tabs]   ionTabsWillChange → files            ← Ionic tabs 感知
+[Files]  onIonViewWillEnter                 ← 目标组件准备进入
+[Files]  onMounted                          ← 目标组件首次挂载
+[Files]  eventBus.on(file:change)           ← 事件监听注册
+[Tabs]   ionTabsDidChange  → files           ← Ionic tabs 确认完成
+[Router] afterEach  | /tabs/home → /tabs/files ← 路由切换完成
+```
+
+**异常信号（本案例实际日志）**：
+```
+[Router] beforeEach  | /tabs/files → /tabs/tasks   ✅ 正常
+[Tabs]   ionTabsWillChange → (unknown)        ✅ 正常
+[Tabs]   ionTabsDidChange  → (unknown)        ✅ 正常
+[Router] afterEach  | /tabs/files → /tabs/tasks   ✅ 正常
+    ⚠️ [Tasks] onMounted                      ❌ 缺失！
+    ⚠️ [Tasks] eventBus.on ×5                ❌ 缺失！
+    💥 Cannot read properties of null (reading 'length')  ← 崩溃点！
+```
+
+#### 步骤 4：根据缺失的日志段定位根因
+
+| 缺失的日志段 | 含义 | 下一步 |
+|-------------|------|--------|
+| `[Tabs]` WillChange/DidChange 缺失 | Tabs 事件未发射或 handler 崩溃 | 检查 Tabs.vue 事件处理器是否防御了 `event.detail` 为 undefined |
+| `[Component]` onMounted 缺失 | 组件从未挂载 | 检查前一个组件是否有 render function error |
+| `[eventBus]` on 缺失 | 事件监听器未注册 | 检查组件 onMounted 是否执行 |
+| beforeEach 后无 afterEach | 路由导航卡死 | 检查路由守卫是否有异常抛出 |
+| `null reading 'length'` 错误 | **本案例的直接原因** | 定位到具体行号，添加 null 安全访问 |
+
+### 6.6 预防规则
+
+1. **所有 API 返回值的属性访问必须使用可选链**：`data?.field?.subField ?? fallback`
+2. **图标名称必须使用导入的变量引用**，禁止字符串字面量（除非是动态计算的）
+3. **v-for 渲染的数据源必须有空值保护**：`v-if="Array.isArray(items)"` 或 computed 中过滤
+4. **Ionicons 图标必须先 import 再使用**——Vue 编译期无法检测运行时的图标解析失败
+5. **子组件的 render error 会向上传播影响父级**（包括 RouterOutlet），不是局部问题
+
+---
+
+## 七、控制台日志降噪规范
+
+### 7.1 日志级别使用铁律
+
+| 级别 | 使用场景 | 用户可见性 | DevLogs 显示 |
+|------|---------|-----------|-------------|
+| `console.error` | **真正的错误**（API 失败、不可恢复的异常） | 🔴 红色高亮 | 始终显示 |
+| `console.warn` | **可忽略的预期内情况**（fallback 路径、非关键功能降级） | 🟡 黄色 | 可过滤 |
+| `console.debug` | **开发调试信息**（API 请求/响应、状态变更） | ⚪ 灰色 | 默认隐藏 |
+| `console.info` | **业务关键节点**（任务创建、权限结果） | ⚪ 灰色 | 默认显示 |
+| `console.log` | 兼容性输出（hijackConsole 重定向为 info） | ⚪ 灰色 | 默认显示 |
+
+### 7.2 本项目已降噪的模式
+
+| 原始代码 | 降级后 | 原因 |
+|---------|--------|------|
+| `console.warn('[Files] Unknown play mode')` | `console.debug(...)` | 有 artplayer fallback，非错误 |
+| `console.warn('Failed to apply screen orientation')` | `console.debug(...)` | 非 native 平台预期行为 |
+| `console.warn('[Settings] MPV plugin load failed')` | `console.debug(...)` | 插件未安装的正常状态 |
+| `console.warn('[ArtPlayer] handleFullscreenEnter error')` | `console.debug(...)` | StatusBar API 在 web 端不可用 |
+| API 层全部 `console.debug` | 保持不变 | 请求/响应详情仅在开发时需要 |
+| `console.error('[API] xxx failed')` | **保持 error** | 真正的网络/服务端错误 |
+
+### 7.3 禁止的模式
+
+- ❌ 用 `console.error` 输出调试信息（会污染生产环境错误日志）
+- ❌ 用 `console.warn` 输出可通过代码逻辑处理的路径（应使用 debug）
+- ❌ 在循环/高频回调中使用任何级别的 console（性能杀手）

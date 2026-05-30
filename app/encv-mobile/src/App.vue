@@ -53,10 +53,8 @@ async function applyScreenOrientation() {
 
 onMounted(async () => {
   hijackConsole()
-  console.error('[SAT-DBG][App] onMounted | ts=', Date.now())
   initTheme()
   autoInitVConsole()
-  console.error('[SAT-DBG][App] ws.connect() | ts=', Date.now())
   connect()
   registerFileFeature(createAlistEncryptFeature())
   await requestEssentialPermissions()
@@ -64,7 +62,6 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  console.error('[SAT-DBG][App] onUnmounted → ws.disconnect() | ts=', Date.now())
   disconnect()
 })
 </script>
