@@ -11,19 +11,19 @@
 ---
 
 ## REQ-11: isAlistEncrypted 移除 isEncrypted 排除（新增）
-- [ ] 11.1: 移除 `|| file.isEncrypted` 条件
-- [ ] 11.2: .bin 文件仍返回 true（回归保护）
-- [ ] 11.3: isEncrypted=true 的非 .bin 文件返回 false（正确行为）
+- [ ] 11.1: 移除 `|| file.isEncrypted` 条件，只保留目录检查 + 配置后缀匹配
+- [ ] 11.2: 默认/自定义后缀的加密文件均返回 true
+- [ ] 11.3: isEncrypted=true 的非 alist-encrypt 后缀文件返回 false（正确行为 — 走分支 B）
 - [ ] 11.4: 目录文件返回 false
 
-## REQ-12: .bin 文件预览走流式解密路径（新增）
-- [ ] 12.1: Files.vue handleFileClick 增加 isAlistEncrypted 分支
+## REQ-12: alist-encrypt 加密文件预览走流式解密路径（新增）
+- [ ] 12.1: Files.vue handleFileClick 增加 isAlistEncrypted 分支（在 isEncrypted 判断之前）
 - [ ] 12.2: promptPassword → getStreamUrl → player 流程
 - [ ] 12.3: ENCV 容器预览路径不受影响
 
 ## REQ-13: getAlistActions 三分支扩展（新增）
-- [ ] 13.1: 分支 A — isAlistEncrypted(.bin) → decrypt + preview（不变）
-- [ ] 13.2: 分支 B — isEncrypted=true → decrypt action（新增）
+- [ ] 13.1: 分支 A — isAlistEncrypted=true → decrypt + preview（不变）
+- [ ] 13.2: 分支 B — isEncrypted=true → decrypt action（新增 ENCV 容器模式）
 - [ ] 13.3: 分支 C — 普通文件 → encrypt action（不变）
 
 ## REQ-14: 解密任务 doPredict 降级（新增）
@@ -31,6 +31,6 @@
 - [ ] 14.2: UI 允许正常提交
 
 ## REQ-15: Mock 测试更新（新增）
-- [ ] 15.1: isAlistEncrypted 移除排除后的行为验证
+- [ ] 15.1: isAlistEncrypted 移除排除后的行为验证（使用动态后缀常量）
 - [ ] 15.2: getAlistActions 三分支全覆盖测试
 - [ ] 15.3: doPredict 降级测试
