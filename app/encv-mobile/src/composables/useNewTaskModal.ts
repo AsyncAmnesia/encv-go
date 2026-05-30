@@ -91,6 +91,9 @@ export function useNewTaskModal() {
             state.candidates = []
             state.taskOptions = null
             await doPredict(norm, state.taskType as 'encrypt' | 'decrypt')
+            if (state.taskType === 'decrypt' && candidates.value.length === 0 && !predictedPlugin.value) {
+              state.predictedPlugin = 'auto-detect'
+            }
             syncState()
           }
         },
@@ -137,6 +140,9 @@ export function useNewTaskModal() {
       const normalized = normalize(initialSourcePath)
       if (normalized) {
         await doPredict(normalized, state.taskType as 'encrypt' | 'decrypt')
+        if (state.taskType === 'decrypt' && candidates.value.length === 0 && !predictedPlugin.value) {
+          state.predictedPlugin = 'auto-detect'
+        }
         syncState()
       }
     }

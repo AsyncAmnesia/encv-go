@@ -24,9 +24,9 @@ function lruPush(keys: string[], key: string, map: Map<string, any>, value: any)
 }
 
 export function isAlistEncrypted(file: FileItem): boolean {
-  if (file.isDirectory || file.isEncrypted) return false
-  const suffix = (getFieldValue(['plugin_settings', 'alist_encrypt', 'suffix']) as string) || '.bin'
-  return file.name.endsWith(suffix)
+  if (file.isDirectory) return false
+  const suffix = getFieldValue(['plugin_settings', 'alist_encrypt', 'suffix']) as string
+  return !!suffix && file.name.endsWith(suffix)
 }
 
 export function getSessionPassword(path: string): string | undefined {

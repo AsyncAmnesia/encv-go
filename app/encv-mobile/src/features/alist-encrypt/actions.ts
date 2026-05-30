@@ -1,6 +1,6 @@
 import type { FileAction } from '@/types/file-feature'
 import type { FileItem } from '@/api/encv'
-import { videocam, lockClosed } from 'ionicons/icons'
+import { videocam, lockClosed, lockOpen } from 'ionicons/icons'
 import router from '@/router'
 import { useNewTaskModal } from '@/composables/useNewTaskModal'
 import { isAlistEncrypted, getStreamUrl, getDecodedName, loadDecodedName, setSessionPassword } from './useAlistEncrypt'
@@ -32,6 +32,21 @@ export function getAlistActions(file: FileItem): FileAction[] {
         text: () => t('alistEncrypt.decrypt'),
         icon: lockClosed,
         color: 'warning',
+        handler: async (f: FileItem) => {
+          const { openNewTask } = useNewTaskModal()
+          openNewTask(f.path, 'decrypt')
+        },
+      },
+    ]
+  }
+
+  if (file.isEncrypted === true) {
+    return [
+      {
+        id: 'alist-decrypt-container',
+        text: () => t('alistEncrypt.decrypt'),
+        icon: lockOpen,
+        color: 'primary',
         handler: async (f: FileItem) => {
           const { openNewTask } = useNewTaskModal()
           openNewTask(f.path, 'decrypt')

@@ -467,6 +467,8 @@ import { formatDateTime } from '@/composables/useDateFormat'
 import { useThumbnailCache } from '@/composables/useThumbnailCache'
 import { useFileFeatures } from '@/composables/useFileFeatures'
 import { preloadSubtitles } from '@/features/alist-encrypt'
+import { isAlistEncrypted, getStreamUrl } from '@/features/alist-encrypt/useAlistEncrypt'
+import { promptPassword } from '@/features/alist-encrypt/password-dialog'
 import {
   isImageFile,
   getFileIcon,
@@ -767,6 +769,14 @@ async function handleFileClick(file: FileItem) {
       ? '/' + file.name
       : currentPath.value + '/' + file.name
     navigateTo(newPath)
+    return
+  }
+
+  if (isAlistEncrypted(file)) {
+    const password = await promptPassword(file.name)
+    if (!password) return
+    const streamUrl = getStreamUrl(file, password)
+    router.push({ path: '/player', query: { path: file.path, name: file.name, streamUrl } })
     return
   }
 
