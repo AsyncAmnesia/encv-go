@@ -6,9 +6,35 @@ encv-go 已有完整的 ENCV 容器加密体系（AES-256-CTR），但无法处�
 
 ## What Changes
 
+### 架构约束：算法隔离
+
+**核心原则：主应用仅包含 AES-128-CTR，其他算法必须隔离在扩展实现中，不得污染主应用代码。**
+
+```
+internal/alistencrypt/           ← 主应用包（仅 AES-128-CTR）
+├── cipher.go                    ← Cipher 接口定义（扩展点）
+├── aesctr.go                    ← AES-128-CTR 唯一内置实现
+├── filename.go                  ← MixBase64 文件名加解密（所有算法共用）
+├── content_header.go            ← V2/V1 内容头检测与解析（所有算法共用）
+├── flow.go                      ← FlowEnc 调度器（根据 encType 选择 cipher）
+└── registry.go                  ← 内置注册表（仅注册 aesctr）
+
+# 扩展实现（未来，不在 MVP 中）
+# internal/alistencrypt/ext/
+# ├── rc4md5.go                  ← RC4-MD5 扩展（需用户主动引入）
+# └── chacha20.go                ← ChaCha20 扩展（需用户主动引入）
+```
+
+**具体规则**：
+1. `internal/alistencrypt/` 包的 `import` 中不得出现 RC4 或 ChaCha20 相关的实现代码
+2. `Cipher` 接口作为扩展点开放，扩展包自行实现并调用 `Register()`
+3. Config 中 `enc_type` 非 `aesctr` 时，MVP 阶段返回明确错误「该算法需要扩展支持」
+4. MixBase64 / CRC6 / ContentHeader 是所有算法共用的基础设施，放在主包中
+
 ### 最小可行范围（MVP）
 
-- **新增 Go 包** `internal/alistencrypt/`：实现 AES-128-CTR 核心算法 + 文件名 MixBase64 加解密
+- **新增 Go 包** `internal/alistencrypt/`：**仅包含 AES-128-CTR** 核心算法 + 共享基础设施（文件名 MixBase64、V2 头检测）
+- **Cipher 接口**：定义可扩展的密码器接口，为未来 RC4MD5/ChaCha20 扩展预留
 - **扩展 Config**：在 `config.Config` 中新增 `AlistEncrypt` 配置段（密码、后缀名、encType）
 - **新增移动端 API**：`/api/alist-encrypt/decrypt`、`/api/alist-encrypt/encrypt`、`/api/alist-encrypt/stream`（流式预览）
 - **扩展 TaskManager**：支持 `type=alist-decrypt` / `type=alist-encrypt` 任务类型
@@ -16,8 +42,9 @@ encv-go 已有完整的 ENCV 容器加密体系（AES-256-CTR），但无法处�
 
 ### 不在 MVP 范围内（标记为 TODO）
 
-- **OpenList 代理集成**：将 alist-encrypt 兼容层接入 `internal/openlist/` 代理链（类似 proxy.go 的 redirect 解密）
-- **内部容器集成**：将 alist-encrypt 作为 ENCV 插件体系的 Plugin 注册到 registry（需评估接口兼容性）
+- **RC4MD5 / ChaCha20 算法实现**：必须通过扩展机制引入，禁止进入主应用包
+- **OpenList 代理集成**：将 alist-encrypt 兼容层接入 `internal/openlist/` 代理链
+- **内部容器集成**：将 alist-encrypt 作为 ENCV 插件体系的 Plugin 注册到 registry
 - **桌面端 UI**：当前仅 Android 移动端
 
 ### 关键细节要求
@@ -26,6 +53,7 @@ encv-go 已有完整的 ENCV 容器加密体系（AES-256-CTR），但无法处�
 2. **文件名加解密**：完整移植 MixBase64（KSA shuffle alphabet + CRC6 校验）的 EncodeName/DecodeName
 3. **V2 内容头兼容**：解析 `AECTR2` magic 头（16 bytes nonce + 8 bytes plainSize），自动区分 V1（裸流）和 V2（带头）格式
 4. **Seek 支持**：128-bit CTR counter increment 算法必须与 Node.js aesCTR.js 完全一致
+5. **算法隔离**：主应用仅编译链接 AES-128-CTR 实现；enc_type 为 rc4md5/chacha20 时返回「需要扩展支持」错误
 
 ## Impact
 
@@ -43,7 +71,33 @@ encv-go 已有完整的 ENCV 容器加密体系（AES-256-CTR），但无法处�
 
 ### Requirement: AES-128-CTR 核心算法
 
-系统 SHALL 提供 AES-128-CTR 流密码实现，与 alist-encrypt-go / Node.js alist-encrypt 完全兼容。
+系统 SHALL 提供 AES-128-CTR 流密码实现，与 alist-encrypt-go / Node.js alist-encrypt 完全兼容。**这是主应用内置的唯一算法实现。**
+
+#### Cipher 扩展接口（算法隔离契约）
+
+```go
+// Cipher 定义可扩展的密码器接口
+// 主应用仅提供 AesCtrCipher 实现
+// 其他算法（RC4MD5、ChaCha20）必须由扩展包实现此接口并调用 Register()
+type Cipher interface {
+    SetPosition(position int64) error
+    Encrypt(data []byte)
+    Decrypt(data []byte)
+    Algorithm() string          // 返回 "AES-128-CTR" / "RC4-MD5" / "ChaCha20" 等
+    BlockSize() int
+}
+
+// CipherFactory 创建 Cipher 实例的工厂函数
+type CipherFactory func(password string, fileSize int64) (Cipher, error)
+
+// Register 向注册表注册新的 cipher 工厂（扩展点）
+func Register(encType string, factory CipherFactory)
+```
+
+**隔离规则**：
+- `internal/alistencrypt/` 包内 **禁止 import 或实现 RC4 / ChaCha20 相关代码**
+- `registry.go` 的 `init()` 中 **仅注册 aesctr**
+- 非 aesctr 的 enc_type 在 MVP 阶段由 `flow.go` 返回 `ErrExtensionRequired` 错误
 
 #### 密钥派生链（必须逐字节兼容）
 
@@ -147,7 +201,9 @@ Step 3: IV (16 bytes)
 ```
 
 - `suffix`: 默认 `.sccgv`，可为空（表示不依赖扩展名识别）
-- `enc_type`: 当前仅支持 `aesctr`（预留 rc4md5、chacha20）
+- `enc_type`: MVP 阶段 **仅接受 `"aesctr"`**；传入其他值（`"rc4md5"` / `"chacha20"`）时：
+  - 配置加载阶段：**警告日志**「enc_type 'xxx' 需要扩展支持，MVP 阶段将回退到 aesctr 或拒绝操作」
+  - 运行时调用：返回错误 `ErrExtensionRequired{EncType: "rc4md5", Message: "该算法需要扩展包支持，当前仅内置 AES-128-CTR"}`
 
 ### Requirement: 移动端解密/加密任务
 
