@@ -763,19 +763,62 @@ type PluginMeta struct {
 	SupportedExtensions   []string `json:"supportedExtensions"`
 	SupportedMimePrefixes []string `json:"supportedMimePrefixes"`
 	ContainerExtension    string   `json:"containerExtension"`
+	TaskOptions           gin.H    `json:"taskOptions"`
 }
 
 func (s *Server) handlePluginsGin(c *gin.Context) {
 	var metas []PluginMeta
 	for _, p := range plugins.Plugins {
+		opts := p.GetTaskOptions()
 		metas = append(metas, PluginMeta{
 			Name:                  p.Name(),
 			SupportedExtensions:   p.SupportedExtensions(),
 			SupportedMimePrefixes: p.SupportedMimePrefixes(),
 			ContainerExtension:    p.GetContainerExtension(),
+			TaskOptions: gin.H{
+				"passwordStrategy":     string(opts.PasswordStrategy),
+				"supportVersionSelect": opts.SupportVersionSelect,
+				"supportedVersions":    opts.SupportedVersions,
+				"defaultVersion":       opts.DefaultVersion,
+				"extraFields":          opts.ExtraFields,
+			},
 		})
 	}
 	c.JSON(200, gin.H{"plugins": metas})
+}
+
+func (s *Server) handlePredictPluginGin(c *gin.Context) {
+	var req struct {
+		SourcePath string `json:"sourcePath"`
+		Type       string `json:"type"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	var targetPlugin plugins.Plugin
+	var err error
+	if req.Type == "encrypt" {
+		targetPlugin, err = plugins.FindEncryptingPlugin(req.SourcePath)
+	} else {
+		targetPlugin, err = plugins.FindDecryptingPlugin(req.SourcePath)
+	}
+
+	if err != nil || targetPlugin == nil {
+		c.JSON(200, gin.H{
+			"pluginName":  nil,
+			"error":       err.Error(),
+			"taskOptions": nil,
+		})
+		return
+	}
+
+	opts := targetPlugin.GetTaskOptions()
+	c.JSON(200, gin.H{
+		"pluginName":  targetPlugin.Name(),
+		"taskOptions": opts,
+	})
 }
 
 func (s *Server) handleContainerExtensionsGin(c *gin.Context) {

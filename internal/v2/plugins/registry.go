@@ -20,7 +20,7 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/plugins/audio"
 	"github.com/Soltus/encv-go/internal/v2/plugins/alistencrypt"
 	"github.com/Soltus/encv-go/internal/v2/plugins/image"
-	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
+		pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	"github.com/Soltus/encv-go/internal/v2/plugins/pdf"
 	"github.com/Soltus/encv-go/internal/v2/plugins/text"
 	"github.com/Soltus/encv-go/internal/v2/plugins/video"
@@ -112,6 +112,9 @@ type Plugin interface {
 	SupportedContainerVersions() []int
 	DefaultContainerVersion() int
 	ValidateVersion(version int) error
+
+	// === 任务创建选项声明 ===
+	GetTaskOptions() pluginInterfaces.TaskOptions
 }
 
 // ExtensionConflict 表示插件容器扩展名冲突记录

@@ -231,6 +231,23 @@ func (p *AlistEncryptPlugin) ValidateVersion(version int) error {
 	return fmt.Errorf("alist_encrypt plugin does not use ENCV container versions")
 }
 
+func (p *AlistEncryptPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
+	return pluginInterfaces.TaskOptions{
+		PasswordStrategy:     pluginInterfaces.PasswordIndependent,
+		SupportVersionSelect: false,
+		ExtraFields: []pluginInterfaces.TaskField{
+			{
+				Key:       "plugin_password",
+				Label:     "task.pluginPassword",
+				Type:      "password",
+				Required:  false,
+				Help:      "task.pluginPasswordHelp",
+				Condition: "",
+			},
+		},
+	}
+}
+
 func (p *AlistEncryptPlugin) resolvePassword() string {
 	if p.settings.DefaultPassword != "" {
 		return p.settings.DefaultPassword

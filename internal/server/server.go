@@ -220,6 +220,7 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/api/file/info", s.handleFileInfoGin)
 	r.GET("/api/tasks", s.handleGetTasksGin)
 	r.POST("/api/tasks", s.handleCreateTaskGin)
+	r.POST("/api/tasks/predict-plugin", s.handlePredictPluginGin)
 	r.POST("/api/tasks/:id/cancel", s.handleCancelTaskGin)
 	r.POST("/api/tasks/:id/retry", s.handleRetryTaskGin)
 	r.DELETE("/api/tasks/:id", s.handleRemoveTaskGin)

@@ -206,6 +206,13 @@ func (p *WPSPlugin) ValidateVersion(version int) error {
 	return nil
 }
 
+func (p *WPSPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
+	return pluginInterfaces.TaskOptions{
+		PasswordStrategy:     pluginInterfaces.PasswordGlobal,
+		SupportVersionSelect: false,
+	}
+}
+
 // --- 加密逻辑 ---
 
 // Plugin 接口实现

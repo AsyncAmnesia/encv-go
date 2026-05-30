@@ -248,6 +248,13 @@ func (p *TextPlugin) ValidateVersion(version int) error {
 	return nil
 }
 
+func (p *TextPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
+	return pluginInterfaces.TaskOptions{
+		PasswordStrategy:     pluginInterfaces.PasswordGlobal,
+		SupportVersionSelect: false,
+	}
+}
+
 // --- 加密逻辑 ---
 
 // Plugin 接口实现

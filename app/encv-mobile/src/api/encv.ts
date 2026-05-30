@@ -854,6 +854,34 @@ export interface PluginMeta {
   supportedExtensions: string[]
   supportedMimePrefixes: string[]
   containerExtension: string
+  taskOptions: TaskOptions
+}
+
+export type PasswordStrategy = 'global' | 'independent' | 'none'
+
+export interface TaskField {
+  key: string
+  label: string
+  type: 'string' | 'password' | 'select' | 'bool'
+  required: boolean
+  defaultValue: string
+  help: string
+  options?: string[]
+  condition?: '' | 'encrypt' | 'decrypt'
+}
+
+export interface TaskOptions {
+  passwordStrategy: PasswordStrategy
+  supportVersionSelect: boolean
+  supportedVersions: number[] | null
+  defaultVersion: number
+  extraFields: TaskField[]
+}
+
+export interface PredictPluginResponse {
+  pluginName: string | null
+  error?: string
+  taskOptions: TaskOptions | null
 }
 
 export async function fetchPlugins(): Promise<PluginMeta[]> {
@@ -972,6 +1000,23 @@ export async function fetchContainerExtensions(): Promise<ContainerExtensionsRes
   const response = await fetch(`${baseUrl}/api/plugins/container-extensions`)
   if (!response.ok) {
     console.error('[API] fetchContainerExtensions failed:', response.status)
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return response.json()
+}
+
+export async function predictPlugin(
+  sourcePath: string,
+  type: TaskType
+): Promise<PredictPluginResponse> {
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/tasks/predict-plugin`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sourcePath, type }),
+  })
+  if (!response.ok) {
+    console.error('[API] predictPlugin failed:', response.status)
     throw new Error(`HTTP error! status: ${response.status}`)
   }
   return response.json()

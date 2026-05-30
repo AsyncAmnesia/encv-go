@@ -184,23 +184,48 @@
             </ion-item>
           </ion-list>
 
-          <!-- 容器版本选择（仅加密时显示） -->
-          <ion-item v-if="newTaskType === 'encrypt'">
-            <ContainerVersionSelector v-model="newTaskVersion" />
+          <!-- 插件预测结果提示 -->
+          <ion-note v-if="predictedPlugin && !sourcePathError" class="plugin-hint">
+            <ion-icon :icon="informationCircle"></ion-icon>
+            {{ t('tasks.willBeHandledBy', { plugin: predictedPlugin }) }}
+            <span v-if="taskOptions" class="password-strategy-hint">
+              <template v-if="taskOptions.passwordStrategy === 'global'">
+                · {{ t('tasks.usesGlobalPassword') }}
+              </template>
+              <template v-else-if="taskOptions.passwordStrategy === 'independent'">
+                · {{ t('tasks.usesIndependentPassword') }}
+              </template>
+            </span>
+          </ion-note>
+
+          <!-- 容器版本选择（仅当目标插件支持且为加密模式） -->
+          <ion-item v-if="taskOptions?.supportVersionSelect && newTaskType === 'encrypt'">
+            <ContainerVersionSelector v-model="newTaskVersion" :versions="versionOptions" />
           </ion-item>
 
-          <!-- 二级密码（占位，计划中） -->
+          <!-- 插件声明的额外字段（动态渲染） -->
+          <template v-for="field in filteredExtraFields" :key="field.key">
+            <ion-item v-if="!field.condition || field.condition === newTaskType">
+              <ion-input
+                v-model="extraValues[field.key]"
+                :label="t(field.label)"
+                :type="field.type as 'text' | 'password' | 'email' | 'number' | 'tel' | 'url'"
+                :placeholder="t(field.help)"
+              ></ion-input>
+            </ion-item>
+          </template>
+
+          <!-- 二级密码（任务级覆盖，始终可选显示） -->
           <ion-item>
             <ion-input
-              v-model="newTaskSecondaryPassword"
+              v-model="secondaryPassword"
               :label="t('tasks.secondaryPassword')"
               label-placement="stacked"
               type="password"
-              disabled
-              placeholder=""
+              :placeholder="t('tasks.secondaryPasswordHelp')"
             >
-              <ion-badge color="medium" slot="end">{{ t('tasks.comingSoon') }}</ion-badge>
             </ion-input>
+            <ion-badge color="medium" slot="end">{{ t('tasks.optional') }}</ion-badge>
           </ion-item>
 
           <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath || !!sourcePathError || !!targetPathError">
@@ -214,7 +239,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import {
   IonPage,
   IonHeader,
@@ -241,6 +266,7 @@ import {
   IonSelectOption,
   IonInput,
   IonSpinner,
+  IonNote,
   modalController,
 } from '@ionic/vue'
 import {
@@ -253,6 +279,7 @@ import {
   folderOpen,
   copyOutline,
   warningOutline,
+  informationCircle,
 } from 'ionicons/icons'
 import { useRoute, useRouter } from 'vue-router'
 import ContainerVersionSelector from '@/components/ContainerVersionSelector.vue'
@@ -268,15 +295,25 @@ import {
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
-import { useConfig } from '@/composables/useConfig'
+import { useTaskForm } from '@/composables/useTaskForm'
 import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
 import { showToast } from '@/composables/useToast'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const { t } = useI18n()
 const route = useRoute()
-const router = useRouter()
-const { config } = useConfig()
+
+const {
+  predictedPlugin,
+  taskOptions,
+  extraValues,
+  secondaryPassword,
+  visibleExtraFields,
+  versionOptions,
+  predictPlugin,
+  getExtraPayload,
+  reset: resetTaskForm,
+} = useTaskForm()
 
 const tasks = ref<EncvTask[]>([])
 const loading = ref(false)
@@ -289,9 +326,7 @@ const newTaskPath = ref('')
 const newTaskTargetPath = ref('')
 const sourcePathError = ref('')
 const targetPathError = ref('')
-const newTaskPassword = ref('')
 const newTaskVersion = ref(4)
-const newTaskSecondaryPassword = ref('')
 let sourceValidateTimer: ReturnType<typeof setTimeout> | null = null
 let targetValidateTimer: ReturnType<typeof setTimeout> | null = null
 let sourceValidateGeneration = 0
@@ -316,6 +351,16 @@ async function validateDirExists(path: string): Promise<boolean> {
     return false
   }
 }
+
+const filteredExtraFields = computed(() => {
+  if (!visibleExtraFields.value.length) return []
+  return visibleExtraFields.value.filter((f) => {
+    if (!f.condition) return true
+    if (f.condition === 'encrypt') return newTaskType.value === 'encrypt'
+    if (f.condition === 'decrypt') return newTaskType.value === 'decrypt'
+    return true
+  })
+})
 
 function getTaskIcon(task: EncvTask) {
   switch (task.status) {
@@ -456,11 +501,12 @@ function showNewTaskSheet() {
   newTaskType.value = 'encrypt'
   newTaskPath.value = ''
   newTaskTargetPath.value = ''
+  newTaskVersion.value = 4
   sourcePathError.value = ''
   targetPathError.value = ''
+  resetTaskForm()
   showNewTaskModal.value = true
 }
-
 function validateSourcePath() {
   if (sourceValidateTimer) clearTimeout(sourceValidateTimer)
   sourceValidateTimer = setTimeout(async () => {
@@ -468,14 +514,22 @@ function validateSourcePath() {
     const path = newTaskPath.value.trim()
     if (!path) {
       sourcePathError.value = t('tasks.pathRequired')
+      predictedPlugin.value = null
+      taskOptions.value = null
     } else if (!path.startsWith('/')) {
       sourcePathError.value = t('tasks.pathMustBeAbsolute')
+      predictedPlugin.value = null
+      taskOptions.value = null
     } else {
       sourcePathError.value = ''
       const exists = await validatePathExists(path)
       if (gen !== sourceValidateGeneration) return
       if (!exists) {
         sourcePathError.value = t('tasks.pathNotFound')
+        predictedPlugin.value = null
+        taskOptions.value = null
+      } else {
+        predictPlugin(path, newTaskType.value)
       }
     }
   }, 500)
@@ -534,12 +588,13 @@ async function handleBrowseTarget() {
 async function handleCreateTask() {
   if (!newTaskPath.value) return
   try {
+    const extra = getExtraPayload()
     await createTask(
       newTaskType.value,
       newTaskPath.value,
       newTaskTargetPath.value || undefined,
-      undefined,
-      newTaskType.value === 'encrypt' ? newTaskVersion.value : undefined
+      (extra.plugin_password || extra.secondary_password) as string | undefined,
+      taskOptions.value?.supportVersionSelect ? newTaskVersion.value : undefined
     )
     showNewTaskModal.value = false
     if (route.query.action) {
@@ -647,9 +702,6 @@ function processQueryAction() {
 }
 
 onMounted(() => {
-  if (config.value?.password) {
-    newTaskPassword.value = config.value.password as string
-  }
   processQueryAction()
   loadTasks()
   eventBus.on('task:update', onTaskUpdate)
@@ -677,7 +729,22 @@ onUnmounted(() => {
   height: 50%;
   color: var(--encv-text-secondary);
 }
-
+.plugin-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--ion-color-medium);
+  background: var(--ion-color-step-50, #f8f8f8);
+  border-radius: 6px;
+  margin: 4px 16px;
+}
+.password-strategy-hint {
+  color: var(--ion-color-primary);
+  font-weight: 500;
+}
+</style>
 .empty-state {
   display: flex;
   flex-direction: column;
