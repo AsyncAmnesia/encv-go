@@ -216,8 +216,16 @@ func validateContainerExtensionsInConfig(raw map[string]interface{}) string {
 		return ""
 	}
 
+	configuredPlugins := make(map[string]bool, len(ps))
+	for name := range ps {
+		configuredPlugins[name] = true
+	}
+
 	extToPlugin := make(map[string]string)
 	for _, p := range plugins.Plugins {
+		if configuredPlugins[p.Name()] {
+			continue
+		}
 		ext := p.GetContainerExtension()
 		if ext != "" && ext != "." {
 			extToPlugin[ext] = p.Name()
@@ -241,6 +249,9 @@ func validateContainerExtensionsInConfig(raw map[string]interface{}) string {
 
 		if existing, exists := extToPlugin[suffix]; exists && existing != pluginName {
 			return fmt.Sprintf("container extension '%s' conflicts between plugin '%s' and '%s'; container extensions must be unique", suffix, existing, pluginName)
+		}
+		if prev, dup := extToPlugin[suffix]; dup && prev != pluginName {
+			return fmt.Sprintf("container extension '%s' used by multiple configured plugins; container extensions must be unique", suffix)
 		}
 		extToPlugin[suffix] = pluginName
 	}

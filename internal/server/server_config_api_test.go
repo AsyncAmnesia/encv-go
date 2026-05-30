@@ -142,7 +142,7 @@ func TestValidateContainerExtensionsInConfig_SamePluginNoConflict(t *testing.T) 
 		},
 	}
 	result := validateContainerExtensionsInConfig(raw)
-	assert.Empty(t, result, "same plugin declaring its own extension is not a conflict")
+	assert.Empty(t, result, "same plugin declaring its own extension is not a conflict (excluded from baseline)")
 }
 
 func TestValidateContainerExtensionsInConfig_TSSourceDelegatesToText(t *testing.T) {
@@ -169,4 +169,56 @@ func TestValidateContainerExtensionsInConfig_TSSourceDelegatesToVideo(t *testing
 	assert.Contains(t, result, "conflict")
 	assert.Contains(t, result, ".sccgt")
 	assert.Contains(t, result, "text")
+}
+
+func TestValidateContainerExtensionsInConfig_ChangingToNonConflictingSuffixPasses(t *testing.T) {
+	initPluginsWithSettings(t, map[string]json.RawMessage{
+		"alist_encrypt": json.RawMessage(`{"enabled":true,"suffix":".sccgv"}`),
+	})
+
+	raw := map[string]interface{}{
+		"plugin_settings": map[string]interface{}{
+			"alist_encrypt": map[string]interface{}{
+				"enabled": true,
+				"suffix":  ".myenc",
+			},
+		},
+	}
+	result := validateContainerExtensionsInConfig(raw)
+	assert.Empty(t, result, "changing from conflicting .sccgv to unique .myenc must pass validation")
+}
+
+func TestValidateContainerExtensionsInConfig_MultipleConfiguredPluginsSameSuffix(t *testing.T) {
+	initPluginsWithSettings(t, nil)
+
+	raw := map[string]interface{}{
+		"plugin_settings": map[string]interface{}{
+			"custom_plugin_a": map[string]interface{}{
+				"suffix": ".custom",
+			},
+			"custom_plugin_b": map[string]interface{}{
+				"suffix": ".custom",
+			},
+		},
+	}
+	result := validateContainerExtensionsInConfig(raw)
+	assert.Contains(t, result, "conflict")
+	assert.Contains(t, result, ".custom")
+}
+
+func TestValidateContainerExtensionsInConfig_BaselineExcludesAllConfiguredPlugins(t *testing.T) {
+	initPluginsWithSettings(t, nil)
+
+	raw := map[string]interface{}{
+		"plugin_settings": map[string]interface{}{
+			"video": map[string]interface{}{
+				"ext": ".sccgv",
+			},
+			"audio": map[string]interface{}{
+				"ext": ".sccga",
+			},
+		},
+	}
+	result := validateContainerExtensionsInConfig(raw)
+	assert.Empty(t, result, "each configured plugin declares its own extension; no cross-plugin conflict")
 }
