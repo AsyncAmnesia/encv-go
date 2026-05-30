@@ -1,39 +1,32 @@
-# Tasks (Round 3 — 深度适配)
+# Tasks (Round 4 — 全面排查补漏)
 
-## Task 13: isAlistEncrypted 移除 isEncrypted 排除（REQ-11）
-- [x] 13.1: `useAlistEncrypt.ts` L27 — 移除 `|| file.isEncrypted` 条件，只保留 `file.isDirectory` 检查 + **配置后缀**匹配
-- [x] 13.2: 更新测试：测试用例中后缀值通过 mock `getFieldValue` 注入，不得硬编码任何具体后缀字符串
+## Task 19: filteredPluginFiles container/origin tab 修复（REQ-16, P0）
+- [ ] 19.1: `Files.vue` L1272 — container tab 过滤条件增加 `isAlistEncrypted(f)`
+- [ ] 19.2: `Files.vue` L1274 — origin tab 过滤条件增加 `&& !isAlistEncrypted(f)` 排除加密文件
 
-## Task 14: getAlistActions 扩展三分支（REQ-13）
-- [x] 14.1: `actions.ts` — 重构为三分支：
-  - **A** `isAlistEncrypted(file)` → decrypt + stream-preview（覆盖 alist-encrypt 加密文件，无论后缀为何值）
-  - **B** `file.isEncrypted === true` → decrypt action（openNewTask(path, 'decrypt')）← 新增 ENCV 容器模式
-  - **C** else（非目录）→ encrypt action（普通文件加密）
+## Task 20: getPluginIcon 改进（REQ-17, P1）
+- [ ] 20.1: 检查 PluginMeta 类型定义是否包含 icon 字段
+- [ ] 20.2: 如有 icon 字段 → 方案 A（优先使用 PluginMeta.icon）；如无 → 方案 B（改 fallback 图标 + 预留接口）
 
-## Task 15: Files.vue alist-encrypt 加密文件点击预览路径（REQ-12）
-- [x] 15.1: `Files.vue` — 在 handleFileClick() 中、`if (file.isEncrypted)` 分支之前，增加 `if (isAlistEncrypted(file))` 分支
-- [x] 15.2: 该分支调用 promptPassword → getStreamUrl → 打开播放器
+## Task 21: Settings Feature 注册幂等（REQ-18, P1）
+- [ ] 21.1: `Settings.vue` — 在 `syncAlistEncryptFeature()` 内添加已注册状态记录和幂等检查
 
-## Task 16: 解密任务 doPredict 降级（REQ-14）
-- [x] 16.1: `useNewTaskModal.ts` — present() 后的 doPredict 回调中（两处），增加判断：
-  - `if (state.taskType === 'decrypt' && state.candidates.length === 0 && !state.predictedPlugin)`
-  - → 设置 `state.predictedPlugin = 'auto-detect'`
+## Task 22: getTaskName 增加插件信息（REQ-19, P2）
+- [ ] 22.1: `Tasks.vue` L264-L268 — 当 task.pluginName 存在时，格式化为 `"{basename} [{pluginName}]"`
 
-## Task 17: Mock 测试更新（REQ-15）
-- [x] 17.1: 扩展 `__tests__/features.alist-encrypt.test.ts`：
-  - isAlistEncrypted 对 isEncrypted=true 匹配后缀文件返回 true（行为变更验证）
-  - getAlistActions 对 isEncrypted=true 不匹配后缀文件返回 decrypt action（新增分支 B 验证）
-  - getAlistActions 三分支全覆盖（使用动态后缀常量 TEST_SUFFIX）
+## Task 23: Mock 测试覆盖（REQ-20）
+- [ ] 23.1: filteredPluginFiles 双 tab 过滤逻辑测试（container 含 / origin 排除 isAlistEncrypted 文件）
+- [ ] 23.2: getTaskName 格式化测试
 
-## Task 18: 编译与全量测试回归验证
-- [x] 18.1: vue-tsc --noEmit 零错误 ✅
-- [x] 18.2: vitest run 全部通过 — **208/208** ✅（+2 新测试）
-- [x] 18.3: vite build 成功 ✅
+## Task 24: 编译与全量测试回归验证
+- [ ] 24.1: vue-tsc --noEmit 零错误
+- [ ] 24.2: vitest run 全部通过
+- [ ] 24.3: vite build 成功
 
 # Dependencies
-- [Task 13] 无依赖，最高优先级（核心重构基础） ✅
-- [Task 14] 可与 Task 13 并行（actions.ts 独立修改） ✅
-- [Task 15] 依赖 Task 13（handleFileClick 需要 isAlistEncrypted 正确识别加密文件） ✅
-- [Task 16] 可与 Task 13 并行（useNewTaskModal 独立修改） ✅
-- [Task 17] 依赖 Task 13-16 完成 ✅
-- [Task 18] 依赖 Task 13-17 全部完成 ✅
+- [Task 19] 无依赖，P0 最高优先级
+- [Task 20] 可与 Task 19 并行
+- [Task 21] 可与 Task 19 并行
+- [Task 22] 可与 Task 19 并行
+- [Task 23] 依赖 Task 19-22 完成
+- [Task 24] 依赖 Task 19-23 全部完成

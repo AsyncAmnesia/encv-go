@@ -1,180 +1,161 @@
-# 移动端插件系统适配修复 Spec（Round 3 — 深度适配）
+# 移动端插件系统适配修复 Spec（Round 4 — 全面排查补漏）
 
 ## Why
 
-Round 2 完成了 pluginName 传递、防重入锁、普通文件 encrypt action、plugin mode 刷新修复。实测发现 **插件系统适配远未完成**，存在 3 个深层次架构问题：
+Round 3 完成了 isAlistEncrypted 排除移除、getAlistActions 三分支、加密文件预览路径、doPredict 降级。对整个插件系统做全面代码审计后，发现以下遗留问题：
 
-1. **alist-encrypt 加密文件解密任务卡在"插件分析"** — 新建解密任务时 doPredict 对加密文件的 decrypt 类型可能返回空 candidates，UI 永久显示"分析中"；且加密文件预览走普通文件路径显示 "unsupported"
-2. **其他插件的加密后缀文件无解密入口** — `isAlistEncrypted()` 在 `file.isEncrypted===true` 时直接 return false，导致 ENCV 容器加密文件无法获得 decrypt action
-3. **isAlistEncrypted 排除 isEncrypted=true 文件** — 加密文件识别逻辑错误排除了一类本应提供解密操作的文件
+### P0（阻塞）
 
-## 架构认知（关键前提）
+1. **插件视图 container tab 过滤遗漏 alist-encrypt 加密文件** — `filteredPluginFiles` 的 container 分支只匹配 `isEncrypted=true` 或 `containerExtension` 后缀，alist-encrypt 加密文件（`isEncrypted=false` + 配置后缀）在两个 tab 中分布错误或不可见
 
-### 两种加密文件模型
+### P1（重要）
 
-| 模型 | 插件示例 | 文件标记 | 后缀来源 | 预期处理 |
-|------|---------|---------|---------|---------|
-| **ENCV 容器模式** | encv-container 等 | `isEncrypted=true` | 各插件自行定义 | 容器信息展示 / 解密 |
-| **alist-encrypt 模式** | alist-encrypt | `isEncrypted=false/undefined` | 用户可配置（`plugin_settings.alist_encrypt.suffix`） | 流式解密预览 / 解密 |
+2. **`getPluginIcon` 硬编码图标映射表** — 违反配置驱动原则，新插件无法获得专属图标
+3. **Settings.vue Feature 注册逻辑重复调用风险** — onMounted + watch 可能触发重复 register/unregister
+4. **任务名称不含插件类型信息** — 同名文件的不同插件任务无法从名称区分
 
-**现状**：插件系统主要针对 **ENCV 容器模式** 设计（`isEncrypted=true` 分支）。alist-encrypt 作为**单后缀非容器模式**插件（后缀由配置项决定），在多个入口点未被正确适配。
+### P2（优化）
 
-### alist-encrypt 的特殊性
-
-- **单一可配置后缀**：所有加密文件统一变为配置的后缀，原始类型被隐藏
-- **非 ENCV 容器**：后端不设置 `isEncrypted=true`
-- **流式解密**：预览时需输入密码 → 获取 stream URL → 播放原始内容
-- **后缀来源**：`getFieldValue(['plugin_settings', 'alist_encrypt', 'suffix'])`，前端不预设任何默认值概念
-
-### 前端职责边界
-
-**前端判断端不关心后缀具体值是什么**。`isAlistEncrypted()` 内部读取配置项获取后缀，调用方只关心布尔结果。Spec/代码/测试均不得硬编码任何具体后缀字符串。
+5. **Feature 系统仅 1 个实现** — 整个 features/ 目录只有 alist-encrypt，其他插件无前端适配层（按需扩展，非阻塞）
 
 ## What Changes
 
-### 核心原则：双模式兼容 + 配置驱动后缀，不破坏现有 ENCV 容器流程
+### 核心原则：每个发现的问题都从插件系统架构本质上解决，不局部打补丁
 
-- **isAlistEncrypted 基于配置后缀判断**（单一可配置后缀插件），但**移除对 `isEncrypted=true` 文件的错误排除**
-- **getAlistActions 扩展为三分支处理器**：同时覆盖 alist-encrypt 加密文件、ENCV 容器文件、普通文件
-- **Files.vue 入口增加 alist-encrypt 加密文件感知**：handleFileClick / handleLongPress 中通过 `isAlistEncrypted()` 识别
+- **container tab 过滤**：增加 `isAlistEncrypted(file)` 作为第三种匹配条件
+- **图标映射**：改为从 PluginMeta 动态获取或使用 fallback 策略
+- **Feature 注册去重**：合并 onMounted + watch 的注册逻辑
+- **任务命名**：在 getTaskName 中纳入 pluginName 信息
 
 ## Impact
 
 - Affected code:
-  - `src/features/alist-encrypt/useAlistEncrypt.ts` — `isAlistEncrypted()` 移除 `isEncrypted` 排除逻辑
-  - `src/features/alist-encrypt/actions.ts` — `getAlistActions` 扩展三分支
-  - `src/views/Files.vue` — handleFileClick 增加 alist-encrypt 加密文件流式预览路径
-  - `src/composables/useNewTaskModal.ts` — 解密任务 doPredict 降级
-  - `__tests__/` — 测试更新（后缀值从 mock 配置注入，不得硬编码）
+  - `src/views/Files.vue` — `filteredPluginFiles` computed + `getPluginIcon` 函数
+  - `src/views/Settings.vue` — Feature 注册逻辑去重
+  - `src/views/Tasks.vue` — `getTaskName` 函数增强
+  - `__tests__/` — 新增测试覆盖
 
 ---
 
-## ADDED Requirements (Round 3)
+## ADDED Requirements (Round 4)
 
-### REQ-11: isAlistEncrypted 移除 isEncrypted 排除（保持配置后缀匹配）
+### REQ-16: 插件视图 container tab 正确显示所有加密文件（P0）
 
 #### 当前代码问题
 
-[useAlistEncrypt.ts L27](file:///workspace/app/encv-mobile/src/features/alist-encrypt/useAlistEncrypt.ts#L27):
+[Files.vue L1268-L1275](file:///workspace/app/encv-mobile/src/views/Files.vue#L1268-L1275):
 ```typescript
-if (file.isDirectory || file.isEncrypted) return false  // ← isEncrypted=true 时排除！
+const filteredPluginFiles = computed(() => {
+  if (!selectedPlugin.value) return []
+  let list: FileItem[]
+  if (pluginTab.value === 'container') {
+    // ❌ 只匹配 ENCV 容器！alist-encrypt 加密文件被排除
+    list = pluginFiles.value.filter(f =>
+      f.isEncrypted ||
+      selectedPlugin.value?.containerExtension && f.name.endsWith(selectedPlugin.value.containerExtension)
+    )
+  } else {
+    // origin tab: !isEncrypted → alist-encrypt 文件会出现在这里（因为它们 isEncrypted=false）
+    // 但这语义不对——加密后的文件不应该算"原始文件"
+    list = pluginFiles.value.filter(f => !f.isEncrypted)
+  }
+})
 ```
 
-这行导致：
-- ENCV 容器加密文件（`isEncrypted=true`）被错误排除 → 无法获得 decrypt action
-- 但这些文件确实需要解密操作入口
+**问题分析**：
+- alist-encrypt 加密文件：`isEncrypted=false`，不以 `containerExtension` 结尾（那是 ENCV 容器的后缀），以**配置的 alist-encrypt 后缀**结尾
+- **container tab**：两个条件都不满足 → **不显示** ❌
+- **origin tab**：`!isEncrypted = true` → **显示了** ⚠️ 但语义错误（加密文件不应归类为"原始文件"）
 
 #### 修复方案
 
-移除 `|| file.isEncrypted` 条件。`isAlistEncrypted` 只做一件事：**判断文件名是否以配置的 alist-encrypt 加密后缀结尾**。
+将 container / origin 的过滤条件改为：
 
-对于 ENCV 容器文件（`isEncrypted=true`）的解密需求，由 `getAlistActions` 的扩展分支处理（见 REQ-13）。
+| Tab | 条件 | 含义 |
+|-----|------|------|
+| **container** | `f.isEncrypted \|\| isAlistEncrypted(f) \|\| (containerExtension && endsWith)` | 所有加密/容器化文件 |
+| **origin** | `!f.isEncrypted && !isAlistEncrypted(f)` | 未加密的原始文件 |
 
+#### 场景 16.1: alist-encrypt 加密文件在 container tab 可见
+- **WHEN** 插件视图中有 `video.ae`（alist-encrypt 加密文件，`isEncrypted=false`）
+- **THEN** container tab SHALL 显示该文件
+
+#### 场景 16.2: origin tab 不包含加密文件
+- **WHEN** 切换到 origin tab
+- **THEN** alist-encrypt 加密文件和 ENCV 容器文件均不出现
+
+### REQ-17: getPluginIcon 消除硬编码映射（P1）
+
+#### 当前代码问题
+
+[Files.vue L1166-L1169](file:///workspace/app/encv-mobile/src/views/Files.vue#L1166-L1169):
 ```typescript
-export function isAlistEncrypted(file: FileItem): boolean {
-  if (file.isDirectory) return false
-  const suffix = getFieldValue(['plugin_settings', 'alist_encrypt', 'suffix']) as string
-  return !!suffix && file.name.endsWith(suffix)
+function getPluginIcon(name: string): string {
+  const icons: Record<string, string> = { video: filmOutline, audio: musicalNotesOutline, image: imageOutline, pdf: documentTextOutline, text: documentOutline, wps: documentOutline }
+  return icons[name] || cubeOutline  // ← 其他所有插件都是通用方块图标
 }
 ```
 
-> 注：**不设 fallback**。配置项为空则 `suffix` 为空字符串/undefined → `!!suffix` 为 false → 所有文件返回 false。这是正确行为：未配置后缀时 alist-encrypt 加密文件识别功能不可用。
-
-#### 场景 11.1: 匹配配置后缀的文件
-- **WHEN** 文件名以当前配置的 alist-encrypt 加密后缀结尾
-- **THEN** 返回 true
-
-#### 场景 11.2: 不匹配的文件
-- **WHEN** 文件名不以配置后缀结尾（无论是否 `isEncrypted=true`）
-- **THEN** 返回 false（`isEncrypted=true` 的文件由 REQ-13 分支 B 覆盖）
-
-#### 场景 11.3: 目录
-- **WHEN** 文件是目录
-- **THEN** 返回 false
-
-### REQ-12: alist-encrypt 加密文件预览走流式解密路径
-
-#### 根因链路
-
-```
-用户点击 alist-encrypt 加密文件 → Files.vue handleFileClick()
-  → file.isEncrypted === false （不是 ENCV 容器）
-  → getFileCategory → 'other'（加密后缀不在已知类型列表）
-  → router.push('/tabs/preview', isEncrypted='false')
-    → FilePreview.vue → determinePreviewType() → 'unsupported' ❌
-```
+**问题**：
+- 只有 6 种插件类型有特定图标
+- `alist-encrypt` 及任何未来插件都返回 `cubeOutline`
+- 新增插件必须手动修改此函数——违反插件系统可扩展原则
 
 #### 修复方案
 
-[Files.vue handleFileClick](file:///workspace/app/encv-mobile/src/views/Files.vue#L764-L780) 中，在现有 `if (file.isEncrypted)` 判断**之前**，增加：
+方案 A（推荐）：保留现有映射作为**内置默认值**，但允许 PluginMeta 携带自定义图标信息。如果 PluginMeta 有 icon 字段则优先使用，否则 fallback 到映射表，最终 fallback 到 `cubeOutline`。
 
+方案 B（最小改动）：将 `cubeOutline` 改为更有意义的通用图标（如 `lockClosed` 表示加密相关插件），并添加注释说明扩展方式。
+
+> 具体采用哪种方案取决于 PluginMeta 是否已有 icon 字段。如果后端 API 的 PluginMeta 不含 icon 字段，先采用方案 B 并预留方案 A 的接口位置。
+
+### REQ-18: Settings.vue Feature 注册去重（P1）
+
+#### 当前代码问题
+
+[Settings.vue](file:///workspace/app/encv-mobile/src/views/Settings.vue) 中存在两处 Feature 注册触发点：
+1. **onMounted** (约 L741): 调用 `syncAlistEncryptFeature()`
+2. **watch 回调** (约 L814): 设置变更时也调用 `syncAlistEncryptFeature()`
+
+`syncAlistEncryptFeature()` 内部执行 `registerFileFeature(createAlistEncryptFeature())` 或 `unregisterFileFeature('alist-encrypt')`。
+
+**风险**：onMounted 触发时如果 watch 也因初始值变化触发 → 短时间内连续 register/unregister → 可能导致 Feature 状态不一致。
+
+#### 修复方案
+
+在 `syncAlistEncryptFeature()` 内部添加**幂等保护**：
+- 记录当前已注册状态（模块级变量或 ref）
+- 如果请求的状态与当前状态相同 → 直接返回（no-op）
+- 只在实际需要切换时才执行 register/unregister
+
+### REQ-19: 任务名称包含插件信息（P2）
+
+#### 当前代码问题
+
+[Tasks.vue L264-268](file:///workspace/app/encv-mobile/src/views/Tasks.vue#L264-L268):
 ```typescript
-if (isAlistEncrypted(file)) {
-  await handleAlistPreview(file)
-  return
+function getTaskName(task: EncvTask): string {
+  const parts = task.sourcePath.replace(/\\/g, '/').split('/')
+  return parts[parts.length - 1] || task.sourcePath
 }
 ```
 
-其中 `handleAlistPreview` 封装 promptPassword → getStreamUrl → player 打开流程。
-
-#### 场景 12.1: 点击 alist-encrypt 加密文件
-- **WHEN** 用户点击一个 `isAlistEncrypted(file)` 为 true 的文件
-- **THEN** 弹出密码框 → 输入后打开播放器（stream URL）
-
-#### 场景 12.2: ENCV 容器预览不受影响（回归保护）
-- **WHEN** 点击 `isEncrypted=true` 的文件
-- **THEN** 仍走现有 FilePreview.vue 路径
-
-### REQ-13: getAlistActions 扩展为三分支处理器
-
-#### 问题
-
-当前 [actions.ts](file:///workspace/app/encv-mobile/src/features/alist-encrypt/actions.ts#L12-L55) 的双分支：
-- A: `isAlistEncrypted(file)` → decrypt + preview（只覆盖 alist-encrypt 加密文件）
-- B: else → encrypt（普通文件加密）
-
-**缺失第三种情况**：`isEncrypted=true` 的 ENCV 容器文件既不是 alist-encrypt 加密文件也不是普通文件，它们需要 **decrypt action**。
+只取 sourcePath 最后一段，如 `video.mp4`。用户有多个插件时无法区分「video.mp4 的 alist-encrypt 加密」和「video.mp4 的 encv-container 加密」。
 
 #### 修复方案
 
-将 `getAlistActions` 改为三分支：
+当 task.pluginName 存在时，在文件名后追加插件标识：
 
-| 分支 | 条件 | 返回 |
-|------|------|------|
-| **A（alist-encrypt 模式）** | `isAlistEncrypted(file) === true` | decrypt + stream-preview |
-| **B（ENCV 容器模式）** | `file.isEncrypted === true` | decrypt action（openNewTask(path, 'decrypt')） |
-| **C（普通文件）** | else（非目录） | encrypt action |
+```
+格式："{basename} [{pluginName}]"
+示例："video.mp4 [alist-encrypt]"
+```
 
-#### 场景 13.1: ENCV 容器文件长按显示解密
-- **WHEN** 长按 `isEncrypted=true` 的文件
-- **THEN** 返回 decrypt action
+当 pluginName 为空时保持原有行为（向后兼容）。
 
-#### 场景 13.2: alist-encrypt 加密文件行为不变（回归保护）
-- **WHEN** 长按 `isAlistEncrypted === true` 的文件
-- **THEN** 返回 decrypt + stream-preview
+### REQ-20: Mock 测试覆盖新增场景
 
-### REQ-14: 解密任务 doPredict 降级处理
-
-#### 根因
-
-新建解密任务触发：
-1. modal.present() ✅
-2. present() 后 doPredict(sourcePath, 'decrypt')
-3. 后端对 decrypt 类型可能返回空 candidates
-4. NewTaskModal: `isPredicting = src.length > 0 && cands.length === 0 && !pluginName` → **永久"分析中"**
-
-#### 修复方案
-
-[useNewTaskModal.ts](file:///workspace/app/encv-mobile/src/composables/useNewTaskModal.ts#L128-L134) doPredict 回调中：
-- 当 taskType === 'decrypt' 且 cands 为空时 → 设置 `state.predictedPlugin = 'auto-detect'`
-- 让 `isPredicting` 变 false，允许用户提交
-
-#### 场景 14.1: 解密任务 predictPlugin 空
-- **WHEN** 创建解密任务且 predictPlugin 返回空
-- **THEN** UI 不卡"分析中"，可正常提交
-
-### REQ-15: Mock 测试更新
-
-- [ ] isAlistEncrypted: 移除 isEncrypted 排除后的行为验证（后缀值通过 mock `getFieldValue` 注入）
-- [ ] getAlistActions: 三分支全覆盖（alist-encrypt 加密文件 / isEncrypted=true / 普通文件）
-- [ ] 解密任务 doPredict 降级测试
+- [ ] filteredPluginFiles container tab 包含 isAlistEncrypted 文件
+- [ ] filteredPluginFiles origin tab 排除 isAlistEncrypted 文件
+- [ ] getTaskName 含 pluginName 时格式正确
+- [ ] syncAlistEncryptFeature 幂等性测试

@@ -1,36 +1,33 @@
-# Checklist (Round 3 — 深度适配)
+# Checklist (Round 4 — 全面排查补漏)
 
-## REQ 1-10 (Round 1-2) — 已完成 ✅
-- [x] REQ 1-5: Feature 架构统一、密码弹窗、字幕防抖、FileInfo 增强
-- [x] REQ 6: createTask pluginName 传递
-- [x] REQ 7: 防重复提交锁
-- [x] REQ 8: 普通文件 encrypt action（isActive 扩大 + 双分支）
-- [x] REQ 9: 插件模式 handleRefresh 分叉
-- [x] REQ 10: Mock 测试覆盖
+## REQ 1-15 (Round 1-3) — 已完成 ✅
+- [x] REQ 1-10: Round 1-2 全部完成
+- [x] REQ 11: isAlistEncrypted 移除 isEncrypted 排除
+- [x] REQ 12: 加密文件预览走流式解密路径
+- [x] REQ 13: getAlistActions 三分支扩展
+- [x] REQ 14: 解密任务 doPredict 降级
+- [x] REQ 15: Mock 测试更新
 
 ---
 
-## REQ-11: isAlistEncrypted 移除 isEncrypted 排除（新增）
-- [x] 11.1: 移除 `|| file.isEncrypted` 条件，只保留目录检查 + 配置后缀匹配
-- [x] 11.2: 配置后缀匹配的加密文件返回 true（不设 fallback）
-- [x] 11.3: isEncrypted=true 但匹配配置后缀的文件也返回 true（不再错误排除）
-- [x] 11.4: 目录文件返回 false
+## REQ-16: 插件视图 container tab 正确显示所有加密文件（P0）（新增）
+- [ ] 16.1: container tab 过滤条件包含 isAlistEncrypted(f)
+- [ ] 16.2: origin tab 过滤条件排除 isAlistEncrypted(f)
+- [ ] 16.3: alist-encrypt 加密文件在 container tab 可见
+- [ ] 16.4: ENCV 容器文件在 container tab 仍可见（回归保护）
 
-## REQ-12: alist-encrypt 加密文件预览走流式解密路径（新增）
-- [x] 12.1: Files.vue handleFileClick 增加 isAlistEncrypted 分支（在 isEncrypted 判断之前）
-- [x] 12.2: promptPassword → getStreamUrl → player 流程
-- [x] 12.3: ENCV 容器预览路径不受影响
+## REQ-17: getPluginIcon 消除硬编码映射（P1）（新增）
+- [ ] 17.1: 图标获取逻辑支持 PluginMeta.icon 字段（如有）或改进 fallback
+- [ ] 17.2: 新插件无需修改 getPluginIcon 即可显示合理图标
 
-## REQ-13: getAlistActions 三分支扩展（新增）
-- [x] 13.1: 分支 A — isAlistEncrypted=true → decrypt + preview（不变）
-- [x] 13.2: 分支 B — isEncrypted=true → decrypt action（新增 ENCV 容器模式）
-- [x] 13.3: 分支 C — 普通文件 → encrypt action（不变）
+## REQ-18: Settings Feature 注册幂等（P1）（新增）
+- [ ] 18.1: syncAlistEncryptFeature 内有幂等保护（相同状态不重复操作）
+- [ ] 18.2: onMounted + watch 连续调用不会导致状态不一致
 
-## REQ-14: 解密任务 doPredict 降级（新增）
-- [x] 14.1: 解密任务 predictPlugin 空结果时不卡"分析中"
-- [x] 14.2: UI 允许正常提交
+## REQ-19: 任务名称包含插件信息（P2）（新增）
+- [ ] 19.1: pluginName 非空时格式为 "{basename} [{pluginName}]"
+- [ ] 19.2: pluginName 为空时保持原有行为
 
-## REQ-15: Mock 测试更新（新增）
-- [x] 15.1: isAlistEncrypted 移除排除后的行为验证（使用动态后缀常量 TEST_SUFFIX，零硬编码）
-- [x] 15.2: getAlistActions 三分支全覆盖测试
-- [x] 15.3: doPredict 降级测试
+## REQ-20: Mock 测试覆盖（新增）
+- [ ] 20.1: filteredPluginFiles container/origin 双 tab 测试
+- [ ] 20.2: getTaskName 格式化测试
