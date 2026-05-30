@@ -132,6 +132,11 @@
         </ion-fab-button>
       </ion-fab>
 
+      <!-- 诊断指示器：显示 modal 状态 -->
+      <div v-if="showNewTaskModal" style="position:fixed;top:10px;right:10px;z-index:99999;background:red;color:white;padding:4px 8px;border-radius:4px;font-size:12px;">
+        MODAL-OPEN ({{ newTaskPath }})
+      </div>
+
       <ion-modal :is-open="showNewTaskModal" @didDismiss="showNewTaskModal = false">
         <ion-header>
           <ion-toolbar>
@@ -664,24 +669,33 @@ function onTaskCompleted(data: { id: string; status?: string; error?: string; er
 }
 
 function processQueryAction() {
+  console.log('[Tasks] processQueryAction called, query=', JSON.stringify(route.query), 'action=', route.query.action)
   if (route.query.action === 'new') {
+    console.log('[Tasks] ✅ action=new matched, type=', route.query.type, 'source=', route.query.source)
     if (route.query.type === 'encrypt' || route.query.type === 'decrypt') {
       newTaskType.value = route.query.type as TaskType
+      console.log('[Tasks] newTaskType set to', newTaskType.value)
     }
     if (route.query.source) {
       newTaskPath.value = route.query.source as string
       sourcePathError.value = ''
       const normalized = normalize(newTaskPath.value)
+      console.log('[Tasks] newTaskPath set to', newTaskPath.value, 'normalized=', normalized)
       if (normalized) {
         doPredict(normalized, newTaskType.value as 'encrypt' | 'decrypt')
       }
     }
     showNewTaskModal.value = true
+    console.log('[Tasks] 🔥 showNewTaskModal set to TRUE')
     router.replace({ path: '/tabs/tasks', query: {} })
+    console.log('[Tasks] router.replace executed to clear query')
+  } else {
+    console.log('[Tasks] ❌ action!=new, skipping')
   }
 }
 
 onMounted(() => {
+  console.log('[Tasks] onMounted called, current route=', route.path, 'query=', JSON.stringify(route.query))
   if (config.value?.password) {
     newTaskPassword.value = config.value.password as string
   }
@@ -693,7 +707,10 @@ onMounted(() => {
   eventBus.on('task:completed', onTaskCompleted)
 })
 
-watch(() => route.query, processQueryAction, { immediate: false })
+watch(() => route.query, (newQuery, oldQuery) => {
+  console.log('[Tasks] watch route.query triggered, old=', JSON.stringify(oldQuery), 'new=', JSON.stringify(newQuery))
+  processQueryAction()
+}, { immediate: false })
 
 onUnmounted(() => {
   eventBus.off('task:update', onTaskUpdate)

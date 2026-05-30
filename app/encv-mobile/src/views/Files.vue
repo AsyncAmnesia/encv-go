@@ -1089,9 +1089,11 @@ async function loadFileTagsForCurrentDir() {
 }
 
 function handleEncryptFile(file: FileItem) {
+  const resolvedPath = resolveFileItem(file)
+  console.log('[Files] handleEncryptFile resolvedPath=', resolvedPath, 'file.path=', file?.path)
   router.push({
     path: '/tabs/tasks',
-    query: { action: 'new', type: 'encrypt', source: resolveFileItem(file) },
+    query: { action: 'new', type: 'encrypt', source: resolvedPath },
   })
 }
 
