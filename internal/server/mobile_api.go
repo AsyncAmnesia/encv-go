@@ -20,6 +20,7 @@ import (
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
+	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	alistencryptplugin "github.com/Soltus/encv-go/internal/v2/plugins/alistencrypt"
 	"github.com/Soltus/encv-go/internal/alistencrypt"
 	"github.com/Soltus/encv-go/internal/v2/types"
@@ -806,27 +807,49 @@ func (s *Server) handlePredictPluginGin(c *gin.Context) {
 		return
 	}
 
-	var targetPlugin plugins.Plugin
-	var err error
+	var candidates []plugins.PluginCandidate
 	if req.Type == "encrypt" {
-		targetPlugin, err = plugins.FindEncryptingPlugin(req.SourcePath)
+		candidates = plugins.FindAllEncryptingPlugins(req.SourcePath)
 	} else {
-		targetPlugin, err = plugins.FindDecryptingPlugin(req.SourcePath)
-	}
-
-	if err != nil || targetPlugin == nil {
+		targetPlugin, err := plugins.FindDecryptingPlugin(req.SourcePath)
+		if err != nil || targetPlugin == nil {
+			c.JSON(200, gin.H{"candidates": []gin.H{}, "pluginName": nil, "taskOptions": nil, "error": err.Error()})
+			return
+		}
+		opts := targetPlugin.GetTaskOptions()
+		candidates = []plugins.PluginCandidate{{
+			Plugin: targetPlugin, Name: targetPlugin.Name(), MatchType: "container", Priority: 0,
+		}}
 		c.JSON(200, gin.H{
-			"pluginName":  nil,
-			"error":       err.Error(),
-			"taskOptions": nil,
+			"candidates": []gin.H{{"name": targetPlugin.Name(), "matchType": "container", "priority": 0, "taskOptions": opts}},
+			"pluginName":  targetPlugin.Name(),
+			"taskOptions": opts,
 		})
 		return
 	}
 
-	opts := targetPlugin.GetTaskOptions()
+	candidateList := make([]gin.H, 0, len(candidates))
+	for _, cand := range candidates {
+		opts := cand.Plugin.GetTaskOptions()
+		candidateList = append(candidateList, gin.H{
+			"name":        cand.Name,
+			"matchType":   cand.MatchType,
+			"priority":    cand.Priority,
+			"taskOptions": opts,
+		})
+	}
+
+	firstName := ""
+	var firstOpts pluginInterfaces.TaskOptions
+	if len(candidateList) > 0 {
+		firstName = candidateList[0]["name"].(string)
+		firstOpts = candidateList[0]["taskOptions"].(pluginInterfaces.TaskOptions)
+	}
+
 	c.JSON(200, gin.H{
-		"pluginName":  targetPlugin.Name(),
-		"taskOptions": opts,
+		"candidates": candidateList,
+		"pluginName":  firstName,
+		"taskOptions": firstOpts,
 	})
 }
 

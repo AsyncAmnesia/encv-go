@@ -1,12 +1,31 @@
-import { ref, computed } from 'vue'
-import { predictPlugin, type TaskOptions, type TaskField } from '@/api/encv'
+import { ref, computed, watch } from 'vue'
+import { predictPlugin, type TaskOptions, type TaskField, type PluginCandidate } from '@/api/encv'
 
 export function useTaskForm() {
-  const predictedPlugin = ref<string | null>(null)
-  const taskOptions = ref<TaskOptions | null>(null)
+  const candidates = ref<PluginCandidate[]>([])
+  const selectedPluginIndex = ref(0)
   const extraValues = ref<Record<string, string>>({})
   const primaryOverride = ref('')
   const secondaryPassword = ref('')
+
+  const predictedPlugin = computed(() => {
+    if (candidates.value.length === 0) return null
+    return candidates.value[selectedPluginIndex.value]?.name ?? null
+  })
+
+  const taskOptions = computed<TaskOptions | null>(() => {
+    if (candidates.value.length === 0) return null
+    return candidates.value[selectedPluginIndex.value]?.taskOptions ?? null
+  })
+
+  watch(selectedPluginIndex, () => {
+    const opts = taskOptions.value
+    const defaults: Record<string, string> = {}
+    opts?.extraFields?.forEach((f) => {
+      if (f.defaultValue) defaults[f.key] = f.defaultValue
+    })
+    extraValues.value = defaults
+  })
 
   let predictTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -15,16 +34,15 @@ export function useTaskForm() {
     predictTimer = setTimeout(async () => {
       try {
         const result = await predictPlugin(sourcePath, taskType)
-        predictedPlugin.value = result.pluginName
-        taskOptions.value = result.taskOptions
+        candidates.value = result.candidates ?? []
+        selectedPluginIndex.value = 0
         const defaults: Record<string, string> = {}
-        result.taskOptions?.extraFields?.forEach((f) => {
+        candidates.value[0]?.taskOptions?.extraFields?.forEach((f) => {
           if (f.defaultValue) defaults[f.key] = f.defaultValue
         })
         extraValues.value = defaults
       } catch {
-        predictedPlugin.value = null
-        taskOptions.value = null
+        candidates.value = []
       }
     }, 500)
   }
@@ -61,14 +79,16 @@ export function useTaskForm() {
       clearTimeout(predictTimer)
       predictTimer = null
     }
-    predictedPlugin.value = null
-    taskOptions.value = null
+    candidates.value = []
+    selectedPluginIndex.value = 0
     extraValues.value = {}
     primaryOverride.value = ''
     secondaryPassword.value = ''
   }
 
   return {
+    candidates,
+    selectedPluginIndex,
     predictedPlugin,
     taskOptions,
     extraValues,

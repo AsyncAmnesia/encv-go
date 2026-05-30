@@ -891,7 +891,15 @@ export interface TaskOptions {
   extraFields: TaskField[]
 }
 
+export interface PluginCandidate {
+  name: string
+  matchType: 'mime' | 'extension' | 'general' | 'container'
+  priority: number
+  taskOptions: TaskOptions | null
+}
+
 export interface PredictPluginResponse {
+  candidates: PluginCandidate[]
   pluginName: string | null
   error?: string
   taskOptions: TaskOptions | null

@@ -184,10 +184,13 @@
             </ion-item>
           </ion-list>
 
-          <!-- 插件预测结果提示 -->
-          <ion-note v-if="predictedPlugin && !sourcePathError" class="plugin-hint">
+          <!-- 场景 A: 单一候选 → 简洁只读提示 -->
+          <ion-note v-if="candidates.length === 1 && predictedPlugin && !sourcePathError"
+                     class="plugin-hint">
             <ion-icon :icon="informationCircle"></ion-icon>
-            {{ t('tasks.willBeHandledBy', { plugin: predictedPlugin }) }}
+            <template v-if="predictedPlugin">
+              {{ t('tasks.willBeHandledBy', { plugin: predictedPlugin }) }}
+            </template>
             <span v-if="taskOptions" class="password-strategy-hint">
               <template v-if="taskOptions.passwordStrategy === 'global'">
                 · {{ t('tasks.usesGlobalPassword') }}
@@ -197,6 +200,41 @@
               </template>
             </span>
           </ion-note>
+
+          <!-- 场景 B: 多候选 → 插件选择器 -->
+          <div v-else-if="candidates.length > 1 && !sourcePathError" class="plugin-selector">
+            <ion-item>
+              <ion-select
+                :value="selectedPluginIndex"
+                @ionChange="(e: Event) => selectedPluginIndex = (e as CustomEvent).detail.value"
+                label-placement="stacked"
+                :label="t('tasks.selectPlugin')"
+                interface="action-sheet"
+              >
+                <ion-select-option
+                  v-for="(cand, idx) in candidates"
+                  :key="cand.name"
+                  :value="idx"
+                >
+                  {{ formatPluginLabel(cand) }}
+                </ion-select-option>
+              </ion-select>
+            </ion-item>
+            <ion-note class="plugin-hint">
+              <ion-icon :icon="informationCircle"></ion-icon>
+              <template v-if="predictedPlugin">
+                {{ t('tasks.willBeHandledBy', { plugin: predictedPlugin }) }}
+              </template>
+              <span v-if="taskOptions" class="password-strategy-hint">
+                <template v-if="taskOptions.passwordStrategy === 'global'">
+                  · {{ t('tasks.usesGlobalPassword') }}
+                </template>
+                <template v-else-if="taskOptions.passwordStrategy === 'independent'">
+                  · {{ t('tasks.usesIndependentPassword') }}
+                </template>
+              </span>
+            </ion-note>
+          </div>
 
           <!-- 容器版本选择（仅当目标插件支持且为加密模式） -->
           <ion-item v-if="taskOptions?.supportVersionSelect && newTaskType === 'encrypt'">
@@ -318,6 +356,8 @@ const route = useRoute()
 const router = useRouter()
 
 const {
+  candidates,
+  selectedPluginIndex,
   predictedPlugin,
   taskOptions,
   extraValues,
@@ -512,6 +552,20 @@ async function handleRefresh(event: CustomEvent) {
   ;(event.target as any)?.complete?.()
 }
 
+function formatPluginLabel(cand: { name: string; matchType: string }): string {
+  const nameMap: Record<string, string> = {
+    video: 'Video 插件',
+    text: 'Text 插件',
+    audio: 'Audio 插件',
+    image: 'Image 插件',
+    pdf: 'PDF 插件',
+    wps: 'WPS 插件',
+    alist_encrypt: 'Alist-Encrypt',
+  }
+  const baseName = nameMap[cand.name] ?? cand.name
+  return cand.matchType === 'general' ? `${baseName}（通用）` : baseName
+}
+
 function showNewTaskSheet() {
   newTaskType.value = 'encrypt'
   newTaskPath.value = ''
@@ -529,20 +583,17 @@ function validateSourcePath() {
     const path = newTaskPath.value.trim()
     if (!path) {
       sourcePathError.value = t('tasks.pathRequired')
-      predictedPlugin.value = null
-      taskOptions.value = null
+      candidates.value = []
     } else if (!path.startsWith('/')) {
       sourcePathError.value = t('tasks.pathMustBeAbsolute')
-      predictedPlugin.value = null
-      taskOptions.value = null
+      candidates.value = []
     } else {
       sourcePathError.value = ''
       const exists = await validatePathExists(path)
       if (gen !== sourceValidateGeneration) return
       if (!exists) {
         sourcePathError.value = t('tasks.pathNotFound')
-        predictedPlugin.value = null
-        taskOptions.value = null
+        candidates.value = []
       } else {
         predictPlugin(path, newTaskType.value)
       }
@@ -748,6 +799,9 @@ onUnmounted(() => {
   justify-content: center;
   height: 50%;
   color: var(--encv-text-secondary);
+}
+.plugin-selector {
+  margin-bottom: 8px;
 }
 .plugin-hint {
   display: flex;

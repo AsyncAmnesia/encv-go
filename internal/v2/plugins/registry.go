@@ -117,6 +117,15 @@ type Plugin interface {
 	GetTaskOptions() pluginInterfaces.TaskOptions
 }
 
+// PluginCandidate 表示一个能处理给定文件的插件候选
+// 用于多候选选择场景（与 FindEncryptingPlugin 返回单一结果不同）
+type PluginCandidate struct {
+	Plugin    Plugin `json:"-"`
+	Name      string `json:"name"`
+	MatchType string `json:"matchType"`
+	Priority  int    `json:"priority"`
+}
+
 // ExtensionConflict 表示插件容器扩展名冲突记录
 type ExtensionConflict struct {
 	Extension   string   // 冲突的扩展名（如 ".sccgv"）
@@ -407,6 +416,76 @@ func FindEncryptingPlugin(inputPath string) (Plugin, error) {
 
 	// --- 阶段 4: 失败 ---
 	return nil, fmt.Errorf("all candidate plugins for file '%s' were rejected by ShouldProcess", inputPath)
+}
+
+// FindAllEncryptingPlugins 返回所有能加密指定文件的插件候选（按优先级排序）
+// 与 FindEncryptingPlugin 不同，此函数返回所有候选而非单一最佳匹配
+// 优先级：P0(精确 MIME/扩展名) > P1(通用 ShouldProcess=true)
+func FindAllEncryptingPlugins(inputPath string) []PluginCandidate {
+	ext := strings.ToLower(filepath.Ext(inputPath))
+	mimeType, _ := utils.DetectFileMIMEType(inputPath)
+
+	var candidates []PluginCandidate
+
+	// --- 阶段 1: MIME 精确匹配 (P0) ---
+	if mimeType != "" {
+		for _, p := range Plugins {
+			for _, prefix := range p.SupportedMimePrefixes() {
+				if strings.HasPrefix(mimeType, prefix) {
+					if p.ShouldProcess(inputPath) {
+						candidates = append(candidates, PluginCandidate{
+							Plugin: p, Name: p.Name(), MatchType: "mime", Priority: 0,
+						})
+					}
+					break
+				}
+			}
+		}
+	}
+
+	// --- 阶段 2: 扩展名精确匹配 (P0, 仅当阶段1无结果时) ---
+	if len(candidates) == 0 {
+		extWithoutDot := ext
+		if len(extWithoutDot) > 0 {
+			extWithoutDot = extWithoutDot[1:]
+		}
+		if extWithoutDot != "" {
+			for _, p := range Plugins {
+				for _, supportedExt := range p.SupportedExtensions() {
+					if strings.ToLower(supportedExt) == extWithoutDot {
+						if p.ShouldProcess(inputPath) {
+							candidates = append(candidates, PluginCandidate{
+								Plugin: p, Name: p.Name(), MatchType: "extension", Priority: 0,
+							})
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// --- 阶段 3: 通用插件 (P1) ---
+	// 收集 ShouldProcess=true 但未在阶段1-2中匹配的"通用插件"
+	for _, p := range Plugins {
+		if !p.ShouldProcess(inputPath) {
+			continue
+		}
+		alreadyIncluded := false
+		for _, c := range candidates {
+			if c.Name == p.Name() {
+				alreadyIncluded = true
+				break
+			}
+		}
+		if !alreadyIncluded {
+			candidates = append(candidates, PluginCandidate{
+				Plugin: p, Name: p.Name(), MatchType: "general", Priority: 1,
+			})
+		}
+	}
+
+	return candidates
 }
 
 // FindDecryptingPlugin 为给定的容器文件查找合适的解密插件
