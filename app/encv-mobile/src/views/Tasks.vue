@@ -669,33 +669,24 @@ function onTaskCompleted(data: { id: string; status?: string; error?: string; er
 }
 
 function processQueryAction() {
-  console.log('[Tasks] processQueryAction called, query=', JSON.stringify(route.query), 'action=', route.query.action)
   if (route.query.action === 'new') {
-    console.log('[Tasks] ✅ action=new matched, type=', route.query.type, 'source=', route.query.source)
     if (route.query.type === 'encrypt' || route.query.type === 'decrypt') {
       newTaskType.value = route.query.type as TaskType
-      console.log('[Tasks] newTaskType set to', newTaskType.value)
     }
     if (route.query.source) {
       newTaskPath.value = route.query.source as string
       sourcePathError.value = ''
       const normalized = normalize(newTaskPath.value)
-      console.log('[Tasks] newTaskPath set to', newTaskPath.value, 'normalized=', normalized)
       if (normalized) {
         doPredict(normalized, newTaskType.value as 'encrypt' | 'decrypt')
       }
     }
     showNewTaskModal.value = true
-    console.log('[Tasks] 🔥 showNewTaskModal set to TRUE')
     router.replace({ path: '/tabs/tasks', query: {} })
-    console.log('[Tasks] router.replace executed to clear query')
-  } else {
-    console.log('[Tasks] ❌ action!=new, skipping')
   }
 }
 
 onMounted(() => {
-  console.log('[Tasks] onMounted called, current route=', route.path, 'query=', JSON.stringify(route.query))
   if (config.value?.password) {
     newTaskPassword.value = config.value.password as string
   }
@@ -707,10 +698,7 @@ onMounted(() => {
   eventBus.on('task:completed', onTaskCompleted)
 })
 
-watch(() => route.query, (newQuery, oldQuery) => {
-  console.log('[Tasks] watch route.query triggered, old=', JSON.stringify(oldQuery), 'new=', JSON.stringify(newQuery))
-  processQueryAction()
-}, { immediate: false })
+watch(() => route.query, processQueryAction, { immediate: false })
 
 onUnmounted(() => {
   eventBus.off('task:update', onTaskUpdate)

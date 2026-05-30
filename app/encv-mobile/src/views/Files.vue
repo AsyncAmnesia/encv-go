@@ -371,6 +371,12 @@
         @didDismiss="showMoveDialog = false" />
 
     </ion-content>
+    
+    <!-- 诊断指示器 -->
+    <div v-if="diagnosticState" style="position:fixed;top:10px;left:10px;z-index:99999;background:blue;color:white;padding:6px 10px;border-radius:4px;font-size:12px;max-width:80vw;word-break:break-all;">
+      {{ diagnosticState }}
+    </div>
+
   </ion-page>
 </template>
 
@@ -570,6 +576,7 @@ const mainSortLabel = computed(() => {
   return (map[sortBy.value] || '名称') + (sortDesc.value ? '↓' : '↑')
 })
 const router = useRouter()
+const diagnosticState = ref('')
 const serverOnline = ref(false)
 const noPermission = ref(false)
 const files = ref<FileItem[]>([])
@@ -1090,11 +1097,14 @@ async function loadFileTagsForCurrentDir() {
 
 function handleEncryptFile(file: FileItem) {
   const resolvedPath = resolveFileItem(file)
-  console.log('[Files] handleEncryptFile resolvedPath=', resolvedPath, 'file.path=', file?.path)
-  router.push({
-    path: '/tabs/tasks',
-    query: { action: 'new', type: 'encrypt', source: resolvedPath },
-  })
+  diagnosticState.value = `ENCRYPT-CLICK path=${resolvedPath} file=${file?.path}`
+  setTimeout(() => {
+    diagnosticState.value = `ROUTER-PUSH to /tabs/tasks source=${resolvedPath}`
+    router.push({
+      path: '/tabs/tasks',
+      query: { action: 'new', type: 'encrypt', source: resolvedPath },
+    })
+  }, 100)
 }
 
 function handleDecryptFile(file: FileItem) {
