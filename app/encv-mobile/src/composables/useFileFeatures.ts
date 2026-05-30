@@ -1,6 +1,6 @@
 import { computed, shallowRef } from 'vue'
 import type { FileItem } from '@/api/encv'
-import type { FileFeature, FileBadge, FileSubtitle, FileAction } from '@/types/file-feature'
+import type { FileFeature, FileBadge, FileSubtitle, FileAction, ClickResult } from '@/types/file-feature'
 
 const registry = new Map<string, FileFeature>()
 const version = shallowRef(0)
@@ -97,4 +97,26 @@ export function useFileFeatures() {
     getAllActions,
     version,
   }
+}
+
+export async function findClickHandler(file: FileItem): Promise<ClickResult | null> {
+  for (const feature of registry.values()) {
+    if (feature.isActive(file) && feature.handleClick) {
+      const result = await feature.handleClick(file)
+      if (result?.handled) return result
+    }
+  }
+  return null
+}
+
+export function isAnyContainerFile(file: FileItem): boolean {
+  for (const feature of registry.values()) {
+    if (feature.isActive(file) && feature.isContainerFile?.(file)) return true
+  }
+  return false
+}
+
+export function getFeatureIcon(featureId: string): any {
+  const feature = registry.get(featureId)
+  return feature?.icon
 }

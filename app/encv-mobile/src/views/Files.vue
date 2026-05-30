@@ -58,7 +58,7 @@
           </ion-item>
           <ion-list-header>文件类型</ion-list-header>
           <ion-item v-for="plugin in plugins" :key="plugin.name" button detail @click="openPluginView(plugin)">
-            <ion-icon :icon="getPluginIcon(plugin.name)" slot="start" color="primary" />
+            <ion-icon :icon="getPluginIcon(plugin)" slot="start" color="primary" />
             <ion-label>
               <h2>{{ plugin.name }}</h2>
               <p>{{ plugin.supportedExtensions?.length ?? 0 }} 种格式 · 容器 {{ plugin.containerExtension }}</p>
@@ -464,7 +464,7 @@ import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
 import { formatDateTime } from '@/composables/useDateFormat'
 import { useThumbnailCache } from '@/composables/useThumbnailCache'
-import { useFileFeatures } from '@/composables/useFileFeatures'
+import { useFileFeatures, findClickHandler, isAnyContainerFile, getFeatureIcon } from '@/composables/useFileFeatures'
 import { preloadSubtitles } from '@/features/alist-encrypt'
 import { isAlistEncrypted, getStreamUrl } from '@/features/alist-encrypt/useAlistEncrypt'
 import { promptPassword } from '@/features/alist-encrypt/password-dialog'
@@ -763,6 +763,15 @@ function goUp() {
 }
 
 async function handleFileClick(file: FileItem) {
+  const clickResult = await findClickHandler(file)
+  if (clickResult?.handled) {
+    const password = await promptPassword(file.name)
+    if (!password) return
+    const streamUrl = getStreamUrl(file, password)
+    router.push({ path: '/player', query: { path: file.path, name: file.name, streamUrl } })
+    return
+  }
+
   if (file.isDirectory) {
     const newPath = currentPath.value === '/'
       ? '/' + file.name
@@ -1162,13 +1171,11 @@ async function openSideDrawer() {
   await menuController.open('plugin-menu')
 }
 
-function isContainerFile(file: FileItem): boolean {
-  return file.isEncrypted || isAlistEncrypted(file)
-}
-
-function getPluginIcon(name: string): string {
+function getPluginIcon(plugin: PluginMeta): any {
+  const featureIcon = getFeatureIcon(plugin.name)
+  if (featureIcon) return featureIcon
   const icons: Record<string, string> = { video: filmOutline, audio: musicalNotesOutline, image: imageOutline, pdf: documentTextOutline, text: documentOutline, wps: documentOutline }
-  return icons[name] || lockClosed
+  return icons[plugin.name] || lockClosed
 }
 
 async function searchPluginFiles(
@@ -1272,9 +1279,9 @@ const filteredPluginFiles = computed(() => {
   if (!selectedPlugin.value) return []
   let list: FileItem[]
   if (pluginTab.value === 'container') {
-    list = pluginFiles.value.filter(f => isContainerFile(f))
+    list = pluginFiles.value.filter(f => isAnyContainerFile(f))
   } else {
-    list = pluginFiles.value.filter(f => !isContainerFile(f))
+    list = pluginFiles.value.filter(f => !isAnyContainerFile(f))
   }
   const query = searchQuery.value.trim().toLowerCase()
   if (query) {

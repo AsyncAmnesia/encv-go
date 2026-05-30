@@ -1,207 +1,231 @@
-# 移动端插件系统适配修复 Spec（Round 4 — 全面排查补漏）
+# 移动端插件系统适配修复 Spec（Round 5 — 架构委托彻底化）
 
 ## Why
 
-Round 3 完成了 isAlistEncrypted 排除移除、getAlistActions 三分支、加密文件预览路径、doPredict 降级。对整个插件系统做全面代码审计后，发现以下遗留问题：
+Round 4 虽然修复了 container tab 过滤、图标、幂等、任务命名等表面问题，但审计发现 **Files.vue 仍然是插件系统的"上帝组件"**——它直接硬编码了大量本应由 Feature 模块决定的逻辑。Feature 接口太薄，Files.vue 承担了远超"文件浏览视图"职责的插件特定代码。
 
-### P0（阻塞）
+### 核心问题：Files.vue 中的插件逻辑泄漏清单
 
-1. **插件视图 container tab 过滤遗漏 alist-encrypt 加密文件** — `filteredPluginFiles` 的 container 分支只匹配 `isEncrypted=true` 或 `containerExtension` 后缀，alist-encrypt 加密文件（`isEncrypted=false` + 配置后缀）在两个 tab 中分布错误或不可见
+| # | 位置 | 泄漏内容 | 应由谁决定 |
+|---|------|---------|-----------|
+| A1 | [L250, L318](file:///workspace/app/encv-mobile/src/views/Files.vue#L250) | `file.isEncrypted` badge 渲染 | Feature.getBadge() |
+| A2 | [L774-780](file:///workspace/app/encv-mobile/src/views/Files.vue#L774) | `isAlistEncrypted(file)` 点击分支 | Feature.handleClick?() |
+| A3 | [L782-788](file:///workspace/app/encv-mobile/src/views/Files.vue#L782) | `file.isEncrypted` 点击路由分支 | Feature.handleClick?() |
+| A4 | [L883](file:///workspace/app/encv-mobile/src/views/Files.vue#L883) | `file.isEncrypted` 长按操作分支 | 已通过 getFileActions() 委托 ✅ |
+| B1 | [L63](file:///workspace/app/encv-mobile/src/views/Files.vue#L63) | `plugin.containerExtension`, `plugin.supportedExtensions` 展示 | 可接受（UI 组装层职责） |
+| B2 | [L1178](file:///workspace/app/encv-mobile/src/views/Files.vue#L1178) | `plugin.supportedExtensions` 文件搜索 | Feature.shouldListFile?(ext) |
+| C1 | [L1165-1166](file:///workspace/app/encv-mobile/src/views/Files.vue#L1165) | `isContainerFile()` 定义在 Files.vue 内部 | FileFeature.isContainerFile?() |
+| C2 | [L1169-1173](file:///workspace/app/encv-mobile/src/views/Files.vue#L1169) | `getPluginIcon()` 定义在 Files.vue 内部 | FileFeature.getIcon?() 或 PluginMeta |
 
-### P1（重要）
+### 问题本质
 
-2. **`getPluginIcon` 硬编码图标映射表** — 违反配置驱动原则，新插件无法获得专属图标
-3. **Settings.vue Feature 注册逻辑重复调用风险** — onMounted + watch 可能触发重复 register/unregister
-4. **任务名称不含插件类型信息** — 同名文件的不同插件任务无法从名称区分
+**FileFeature 接口只覆盖了"操作入口"(actions)、"徽章"(badge)、"字幕"(subtitle)**，但缺少以下关键能力：
 
-### P2（优化）
+1. **文件点击行为判定** — "这个文件被点击后应该怎么处理？"（流式预览？容器信息页？播放器？）
+2. **文件分类判定** — "这个文件是容器/加密后的还是原始文件？"（container/origin tab 过滤）
+3. **文件列表资格判定** — "这个扩展名的文件是否应该出现在该插件的文件列表中？"
 
-5. **Feature 系统仅 1 个实现** — 整个 features/ 目录只有 alist-encrypt，其他插件无前端适配层（按需扩展，非阻塞）
+Files.vue 因为接口缺失，被迫自己实现这些判断，导致插件特定逻辑泄漏到视图层。
 
 ## What Changes
 
-### 核心原则：每个发现的问题都从插件系统架构本质上解决，不局部打补丁
+### 核心原则：扩展 FileFeature 接口，将 Files.vue 中的插件判定逻辑收归 Feature 系统
 
-- **container tab 过滤**：增加 `isAlistEncrypted(file)` 作为第三种匹配条件
-- **图标映射**：改为从 PluginMeta 动态获取或使用 fallback 策略
-- **Feature 注册去重**：合并 onMounted + watch 的注册逻辑
-- **任务命名**：在 getTaskName 中纳入 pluginName 信息
+- **新增 `isContainerFile?`** — 文件分类判定（container vs origin）
+- **新增 `handleClick?`** — 文件点击行为（返回 ClickResult 或 null 表示不拦截）
+- **Files.vue 中 `file.isEncrypted` badge 改为使用 Feature.getBadge()**
+- **Files.vue handleFileClick 改为优先查询 Feature.handleClick()**
 
 ## Impact
 
 - Affected code:
-  - `src/views/Files.vue` — `filteredPluginFiles` computed + `getPluginIcon` 函数
-  - `src/views/Settings.vue` — Feature 注册逻辑去重
-  - `src/views/Tasks.vue` — `getTaskName` 函数增强
-  - `__tests__/` — 新增测试覆盖
+  - `src/types/file-feature.ts` — FileFeature 接口扩展
+  - `src/features/alist-encrypt/index.ts` — 实现新接口方法
+  - `src/composables/useFileFeatures.ts` — 新增聚合查询函数
+  - `src/views/Files.vue` — 删除内联的插件判定逻辑，改为调用 Feature 系统
+  - `__tests__/` — 测试更新
 
 ---
 
-## ADDED Requirements (Round 4)
+## ADDED Requirements (Round 5)
 
-### REQ-16: 插件视图 container/origin tab 过滤委托给插件系统（P0）
+### REQ-21: FileFeature 接口扩展（P0）
 
-#### 当前代码问题
+#### 当前接口（[file-feature.ts L23-L31](file:///workspace/app/encv-mobile/src/types/file-feature.ts#L23-L31)）
 
-[Files.vue L1268-L1275](file:///workspace/app/encv-mobile/src/views/Files.vue#L1268-L1275):
 ```typescript
-const filteredPluginFiles = computed(() => {
-  if (!selectedPlugin.value) return []
-  let list: FileItem[]
-  if (pluginTab.value === 'container') {
-    // ❌ 硬编码 ENCV 容器判断！不经过插件系统
-    list = pluginFiles.value.filter(f =>
-      f.isEncrypted ||
-      selectedPlugin.value?.containerExtension && f.name.endsWith(selectedPlugin.value.containerExtension)
-    )
-  } else {
-    // ❌ 同样硬编码
-    list = pluginFiles.value.filter(f => !f.isEncrypted)
+export interface FileFeature {
+  id: string
+  isActive(file: FileItem): boolean
+  getBadge?(file: FileItem): FileBadge | null | Promise<FileBadge | null>
+  getSubtitle?(file: FileItem): FileSubtitle | null | Promise<FileSubtitle | null>
+  getFileActions?(file: FileItem): FileAction[] | Promise<FileAction[]>
+  onActivate?(): void
+  onDeactivate?(): void
+}
+```
+
+#### 新增接口方法
+
+```typescript
+export interface ClickResult {
+  handled: boolean        // true = Feature 已处理此点击，Files.vue 不再执行默认逻辑
+  action?: 'preview' | 'player' | 'custom'
+  route?: string         // 如 action='preview' 或 'custom'，目标路由路径
+  query?: Record<string, string>  // 路由 query 参数
+  streamUrl?: string     // 如 action='player'，播放 URL
+}
+
+export interface FileFeature {
+  // ... 现有方法 ...
+
+  /** 该文件是否为此插件的"容器/加密后"文件 */
+  isContainerFile?(file: FileItem): boolean
+
+  /**
+   * 处理文件点击事件。
+   * 返回 null/undefined 表示此 Feature 不处理该文件（交给下一个 Feature 或默认逻辑）。
+   * 返回 ClickResult { handled: true } 表示已拦截。
+   */
+  handleClick?(file: FileItem): ClickResult | null | Promise<ClickResult | null>
+
+  /** 插件在插件列表中显示的图标（可选，覆盖默认图标） */
+  icon?: any
+}
+```
+
+### REQ-22: alist-encrypt 实现新接口（P0）
+
+[alist-encrypt/index.ts](file:///workspace/app/encv-mobile/src/features/alist-encrypt/index.ts) 扩展实现：
+
+```typescript
+export function createAlistEncryptFeature(): FileFeature {
+  return {
+    id: 'alist-encrypt',
+    isActive: (file) => !file.isDirectory,
+    // ... 现有方法 ...
+
+    // 新增：
+    isContainerFile: (file) => isAlistEncrypted(file),
+
+    handleClick: (file): ClickResult | null => {
+      if (!isAlistEncrypted(file)) return null  // 不处理非加密文件
+      return {
+        handled: true,
+        action: 'player',
+        route: '/player',
+        query: { path: file.path, name: file.name },
+      }
+      },
+
+    icon: lockClosed,
   }
-})
+}
 ```
 
-**问题本质**：Files.vue 直接硬编码了「什么是容器文件」的判断逻辑。这违反了插件系统架构原则——**文件分类判定应由 Feature 模块提供，Files.vue 只负责调用**。
+> 注：`streamUrl` 不在 handleClick 中返回（需要密码），而是在 handleClick 中返回一个标记让 Files.vue 知道需要先弹密码框。或者更简单地：handleClick 返回 `{ handled: true, action: 'custom' }`，Files.vue 检测到 custom 后调用已有的 `isAlistEncrypted` 分支。
 
-#### 架构约束
+**简化方案**：handleClick 只返回 `{ handled: true }`，Files.vue 检测到后走现有的 isAlistEncrypted 分支（promptPassword → player）。这样不改变现有密码流程。
 
-Files.vue **不得包含任何插件特定的文件分类逻辑**。当前代码中的 `isEncrypted`、`containerExtension`、`endsWith` 都是 ENCV 容器模型的具体实现细节泄漏到了视图层。
+### REQ-23: useFileFeatures 新增聚合函数（P0）
 
-#### 修复方案
-
-在 FileFeature 接口中增加 `isContainerFile(file)` 方法（或复用现有接口组合），由各 Feature 自行定义"什么算该插件的容器文件"。Files.vue 的 `filteredPluginFiles` 通过 Feature 系统查询。
-
-##### 方案 A（推荐）：扩展 FileFeature 接口
-
-在 [file-feature.ts](file:///workspace/app/encv-mobile/src/types/file-feature.ts) 的 `FileFeature` 接口中新增可选方法：
+[useFileFeatures.ts](file:///workspace/app/encv-mobile/src/composables/useFileFeatures.ts) 新增：
 
 ```typescript
-isContainerFile?(file: FileItem): boolean  // 该文件是否为此插件的"容器/加密后"文件
-```
+export function findClickHandler(file: FileItem): ClickResult | null {
+  for (const feature of registry.values()) {
+    if (feature.isActive(file) && feature.handleClick) {
+      const result = feature.handleClick(file)
+      if (result?.handled) return result
+    }
+  }
+  return null
+}
 
-在 [useFileFeatures.ts](file:///workspace/app/encv-mobile/src/composables/useFileFeatures.ts) 中新增聚合函数：
-
-```typescript
 export function isAnyContainerFile(file: FileItem): boolean {
   for (const feature of registry.values()) {
     if (feature.isActive(file) && feature.isContainerFile?.(file)) return true
   }
   return false
 }
-```
 
-alist-encrypt Feature 实现：
-```typescript
-isContainerFile: (file) => isAlistEncrypted(file),  // 配置后缀匹配即为容器文件
-```
-
-Files.vue 改为：
-```typescript
-if (pluginTab.value === 'container') {
-  list = pluginFiles.value.filter(f => isAnyContainerFile(f))
-} else {
-  list = pluginFiles.value.filter(f => !isAnyContainerFile(f))
+export function getFeatureIcon(featureId: string): any | undefined {
+  const feature = registry.get(featureId)
+  return feature?.icon
 }
 ```
 
-##### 方案 B（最小改动）：直接调用 isAlistEncrypted 作为过渡
+### REQ-24: Files.vue 删除内联插件逻辑（P0）
 
-如果不想改接口定义，可以在 Files.vue 中通过已导入的 `isAlistEncrypted` 函数 + `isEncrypted` 组合判断：
+#### 24.1: handleFileClick 委托给 Feature.handleClick
 
 ```typescript
-import { isAlistEncrypted } from '@/features/alist-encrypt/useAlistEncrypt'
+async function handleFileClick(file: FileItem) {
+  // ① 优先询问 Feature 系统是否有自定义点击处理
+  const clickResult = findClickHandler(file)
+  if (clickResult?.handled) {
+    // Feature 已处理 —— 走 Feature 指定的路径
+    if (clickResult.action === 'player') {
+      // alist-encrypt 流式解密预览（密码框 + 播放器）
+      const password = await promptPassword(file.name)
+      if (!password) return
+      const streamUrl = getStreamUrl(file, password)
+      router.push({ path: '/player', query: { path: file.path, name: file.name, streamUrl } })
+      return
+    }
+    if (clickResult.route) {
+      router.push({ path: clickResult.route, query: clickResult.query ?? {} })
+      return
+    }
+    return
+  }
 
-function isContainerFile(file: FileItem): boolean {
-  return file.isEncrypted || isAlistEncrypted(file)
+  // ② Feature 未处理 —— 走默认逻辑（原有 isEncrypted + getFileCategory 分支保持不变）
+  if (file.isEncrypted) { /* ... */ }
+  const category = getFileCategory(file.name)
+  /* ... */
 }
 ```
 
-> 方案 B 是临时方案——当有第二个 Feature 实现时必须迁移到方案 A。本次采用方案 B 并预留方案 A 的迁移路径。
+#### 24.2: 文件项 badge 使用 Feature.getBadge()
 
-#### 场景 16.1: alist-encrypt 加密文件在 container tab 可见
-- **WHEN** 插件视图中有 alist-encrypt 加密文件（`isAlistEncrypted=true`, `isEncrypted=false`）
-- **THEN** container tab SHALL 显示该文件（通过 Feature 系统的 `isContainerFile` 判定）
+当前 L250/L318 直接检查 `file.isEncrypted` 来渲染 badge。改为通过 Feature 系统获取 badge：
 
-#### 场景 16.2: origin tab 不包含任何加密文件
-- **WHEN** 切换到 origin tab
-- **THEN** ENCV 容器文件和 alist-encrypt 加密文件均不出现
+```html
+<!-- 当前 -->
+<ion-badge v-if="file.isEncrypted" color="warning" slot="end">Enc</ion-badge>
 
-#### 场景 16.3: 新增插件时无需修改 Files.vue
-- **WHEN** 未来新增一个 Feature（如 encv-container），实现了自己的 `isContainerFile`
-- **THEN** Files.vue 的过滤逻辑自动覆盖新插件（无需修改）
+<!-- 改为 -->
+<ion-badge v-if="getFileBadge(file)" :color="getFileBadge(file).color" slot="end">{{ getFileBadge(file).text }}</ion-badge>
+```
 
-### REQ-17: getPluginIcon 消除硬编码映射（P1）
+其中 `getFileBadge` 从 `useFileFeatures` 导入（已存在的 `collectBadges` 返回单个 badge 或 null）。
 
-#### 当前代码问题
+#### 24.3: isContainerFile 改为使用 isAnyContainerFile
 
-[Files.vue L1166-L1169](file:///workspace/app/encv-mobile/src/views/Files.vue#L1166-L1169):
+删除 Files.vue 中的 `isContainerFile` 函数定义（L1165-1166），改为从 `useFileFeatures` 导入 `isAnyContainerFile`。
+
+#### 24.4: getPluginIcon 改为使用 getFeatureIcon
+
 ```typescript
-function getPluginIcon(name: string): string {
+// 当前
+function getPluginIcon(name: string): string { ... }
+
+// 改为
+function getPluginIcon(plugin: PluginMeta): any {
+  const featureIcon = getFeatureIcon(plugin.name)
+  if (featureIcon) return featureIcon
+  // fallback 映射表保留用于非 Feature 插件
   const icons: Record<string, string> = { video: filmOutline, audio: musicalNotesOutline, image: imageOutline, pdf: documentTextOutline, text: documentOutline, wps: documentOutline }
-  return icons[name] || cubeOutline  // ← 其他所有插件都是通用方块图标
+  return icons[plugin.name] || lockClosed
 }
 ```
 
-**问题**：
-- 只有 6 种插件类型有特定图标
-- `alist-encrypt` 及任何未来插件都返回 `cubeOutline`
-- 新增插件必须手动修改此函数——违反插件系统可扩展原则
+### REQ-25: Mock 测试覆盖
 
-#### 修复方案
-
-方案 A（推荐）：保留现有映射作为**内置默认值**，但允许 PluginMeta 携带自定义图标信息。如果 PluginMeta 有 icon 字段则优先使用，否则 fallback 到映射表，最终 fallback 到 `cubeOutline`。
-
-方案 B（最小改动）：将 `cubeOutline` 改为更有意义的通用图标（如 `lockClosed` 表示加密相关插件），并添加注释说明扩展方式。
-
-> 具体采用哪种方案取决于 PluginMeta 是否已有 icon 字段。如果后端 API 的 PluginMeta 不含 icon 字段，先采用方案 B 并预留方案 A 的接口位置。
-
-### REQ-18: Settings.vue Feature 注册去重（P1）
-
-#### 当前代码问题
-
-[Settings.vue](file:///workspace/app/encv-mobile/src/views/Settings.vue) 中存在两处 Feature 注册触发点：
-1. **onMounted** (约 L741): 调用 `syncAlistEncryptFeature()`
-2. **watch 回调** (约 L814): 设置变更时也调用 `syncAlistEncryptFeature()`
-
-`syncAlistEncryptFeature()` 内部执行 `registerFileFeature(createAlistEncryptFeature())` 或 `unregisterFileFeature('alist-encrypt')`。
-
-**风险**：onMounted 触发时如果 watch 也因初始值变化触发 → 短时间内连续 register/unregister → 可能导致 Feature 状态不一致。
-
-#### 修复方案
-
-在 `syncAlistEncryptFeature()` 内部添加**幂等保护**：
-- 记录当前已注册状态（模块级变量或 ref）
-- 如果请求的状态与当前状态相同 → 直接返回（no-op）
-- 只在实际需要切换时才执行 register/unregister
-
-### REQ-19: 任务名称包含插件信息（P2）
-
-#### 当前代码问题
-
-[Tasks.vue L264-268](file:///workspace/app/encv-mobile/src/views/Tasks.vue#L264-L268):
-```typescript
-function getTaskName(task: EncvTask): string {
-  const parts = task.sourcePath.replace(/\\/g, '/').split('/')
-  return parts[parts.length - 1] || task.sourcePath
-}
-```
-
-只取 sourcePath 最后一段，如 `video.mp4`。用户有多个插件时无法区分「video.mp4 的 alist-encrypt 加密」和「video.mp4 的 encv-container 加密」。
-
-#### 修复方案
-
-当 task.pluginName 存在时，在文件名后追加插件标识：
-
-```
-格式："{basename} [{pluginName}]"
-示例："video.mp4 [alist-encrypt]"
-```
-
-当 pluginName 为空时保持原有行为（向后兼容）。
-
-### REQ-20: Mock 测试覆盖新增场景
-
-- [ ] filteredPluginFiles container tab 包含 isAlistEncrypted 文件
-- [ ] filteredPluginFiles origin tab 排除 isAlistEncrypted 文件
-- [ ] getTaskName 含 pluginName 时格式正确
-- [ ] syncAlistEncryptFeature 幂等性测试
+- [ ] FileFeature 接口包含 isContainerFile, handleClick, icon 方法
+- [ ] createAlistEncryptFeature 实现了新方法
+- [ ] findClickHandler 对 isAlistEncrypted 文件返回 handled=true
+- [ ] findClickHandler 对普通文件返回 null
+- [ ] isAnyContainerFile 对加密文件返回 true
+- [ ] getFeatureIcon 返回 Feature 定义的 icon

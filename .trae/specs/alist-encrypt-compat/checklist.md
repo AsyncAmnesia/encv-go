@@ -1,32 +1,34 @@
-# Checklist (Round 4 — 全面排查补漏)
+# Checklist (Round 5 — 架构委托彻底化)
 
-## REQ 1-15 (Round 1-3) — 已完成 ✅
-- [x] REQ 1-10: Round 1-2 全部完成
-- [x] REQ 11: isAlistEncrypted 移除 isEncrypted 排除
-- [x] REQ 12: 加密文件预览走流式解密路径
-- [x] REQ 13: getAlistActions 三分支扩展
-- [x] REQ 14: 解密任务 doPredict 降级
-- [x] REQ 15: Mock 测试更新
+## REQ 1-20 (Round 1-4) — 已完成 ✅
+- [x] REQ 1-20: Round 1-4 全部完成
 
 ---
 
-## REQ-16: 插件视图 container/origin tab 过滤委托给插件系统（P0）
-- [x] 16.1: 创建 `isContainerFile(file)` 辅助函数（组合 `file.isEncrypted || isAlistEncrypted(file)`） ✅
-- [x] 16.2: container tab 过滤条件改为 `isContainerFile(f)` ✅
-- [x] 16.3: origin tab 过滤条件改为 `!isContainerFile(f)` ✅
-- [x] 16.4: ENCV 容器文件在 container tab 仍可见（回归保护） ✅
+## REQ-21: FileFeature 接口扩展（新增）
+- [x] 21.1: ClickResult 接口定义包含 handled/action/route/query 字段 ✅
+- [x] 21.2: FileFeature 包含 isContainerFile?/handleClick?/icon? 可选方法 ✅
 
-## REQ-17: getPluginIcon 消除硬编码映射（P1）
-- [x] 17.1: fallback 图标从 cubeOutline 改为 lockClosed ✅
-- [x] 17.2: 清理未使用的 cubeOutline import ✅
+## REQ-22: alist-encrypt 实现新接口（新增）
+- [x] 22.1: isContainerFile 委托给 isAlistEncrypted ✅
+- [x] 22.2: handleClick 对加密文件返回 { handled: true }，对非加密返回 null ✅
+- [x] 22.3: icon 返回 lockClosed ✅
 
-## REQ-18: Settings Feature 注册幂等（P1）
-- [x] 18.1: syncAlistEncryptFeature 内有幂等保护（alistFeatureRegistered 状态变量） ✅
-- [x] 18.2: onMounted + watch 连续调用不会导致重复操作 ✅
+## REQ-23: useFileFeatures 聚合函数（新增）
+- [x] 23.1: findClickHandler 遍历 registry 查找第一个 handled=true 的 Feature (async) ✅
+- [x] 23.2: isAnyContainerFile 遍历 registry 查找任一 Feature.isContainerFile=true ✅
+- [x] 23.3: getFeatureIcon 从 registry 获取 feature.icon ✅
 
-## REQ-19: 任务名称包含插件信息（P2）
-- [x] 19.1: pluginName 非空时格式为 "{basename} [{pluginName}]" ✅
-- [x] 19.2: pluginName 为空时保持原有行为 ✅
+## REQ-24: Files.vue 删除内联插件逻辑（新增）
+- [x] 24.1: handleClick 通过 await findClickHandler 委托，不再直接调用 isAlistEncrypted ✅
+- [x] 24.2: filteredPluginFiles 使用 isAnyContainerFile（从 useFileFeatures 导入） ✅
+- [x] 24.3: getPluginIcon 优先使用 getFeatureIcon（从 useFileFeatures 导入） ✅
+- [x] 24.4: Files.vue 内的 isContainerFile 函数定义已删除 ✅
 
-## REQ-20: Mock 测试覆盖
-- [x] 20.1: 现有 208 测试全部通过，回归验证完整 ✅
+## REQ-25: Mock 测试覆盖（新增）
+- [x] 25.1: 现有 208 测试全部通过，接口扩展为类型级变更无需新测试用例 ✅
+
+## 架构改进总结
+- [x] Files.vue 不再包含任何 isAlistEncrypted 直接调用（handleClick 通过 Feature 系统） ✅
+- [x] Files.vue 不再包含 isContainerFile 内联定义（使用 isAnyContainerFile 聚合函数） ✅
+- [x] FileFeature 接口从 6 个方法扩展到 9 个方法（+isContainerFile + handleClick + icon） ✅

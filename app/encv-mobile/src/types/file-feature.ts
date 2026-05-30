@@ -20,12 +20,22 @@ export interface FileSubtitle {
   color?: string
 }
 
+export interface ClickResult {
+  handled: boolean
+  action?: 'preview' | 'player' | 'custom'
+  route?: string
+  query?: Record<string, string>
+}
+
 export interface FileFeature {
   id: string
   isActive(file: FileItem): boolean
   getBadge?(file: FileItem): FileBadge | null | Promise<FileBadge | null>
   getSubtitle?(file: FileItem): FileSubtitle | null | Promise<FileSubtitle | null>
   getFileActions?(file: FileItem): FileAction[] | Promise<FileAction[]>
+  isContainerFile?(file: FileItem): boolean
+  handleClick?(file: FileItem): ClickResult | null | Promise<ClickResult | null>
   onActivate?(): void
   onDeactivate?(): void
+  icon?: any
 }
