@@ -284,7 +284,7 @@
         </ion-item>
       </ion-list>
 
-      <ion-list v-if="isNative()">
+      <ion-list>
         <ion-list-header>
           <ion-label>{{ t('devtools.title') }}</ion-label>
         </ion-list-header>
