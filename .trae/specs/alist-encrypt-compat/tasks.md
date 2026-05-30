@@ -1,121 +1,121 @@
 # Tasks
 
-## Phase 1: 插件模块骨架（Android Library）
+## Phase 1: Go 后端 — 算法基础设施包 `internal/alistencrypt/`
 
-- [ ] **Task 1.1**: 创建 `plugin-alist-decrypt` Android Library 模块
-  - [ ] 1.1.1 创建 `app/encv-mobile/plugin-alist-decrypt/` 目录及 `build.gradle.kts`
-  - [ ] 1.1.2 配置 aar2apk 插件（复用 plugin-mpv-player 的配置模板）
-  - [ ] 1.1.3 配置 `compileOnly(libs.combolite.core)` + Kotlin stdlib/reflect（遵循 compileOnly 共享依赖模式）
-  - [ ] 1.1.4 创建 `AndroidManifest.xml`，声明 AlistDecryptActivity（exported=false）+ AlistDecryptService
-  - [ ] 1.1.5 创建 `AlistDecryptPluginEntry.kt` 实现 `IPluginEntryClass`
+- [ ] **Task 1.0**: 定义 Cipher 扩展接口与注册表（算法隔离骨架）
+  - [ ] 1.0.1 创建 `cipher.go`：定义 Cipher 接口（SetPosition/Encrypt/Decrypt/Algorithm/BlockSize）+ CipherFactory 类型 + Register/Create 函数
+  - [ ] 1.0.2 创建 `registry.go`：实现注册表（map + RWMutex）+ init() 仅注册 aesctr
+  - [ ] 1.0.3 创建 `errors.go`：定义 ErrExtensionRequired 等错误类型
+  - [ ] 1.0.4 编写隔离边界测试：确认 RC4MD5/ChaCha20 未注册，调用返回 ErrExtensionRequired
+  - [ ] 1.0.5 `go vet ./internal/alistencrypt/...` 无 RC4/ChaCha20 相关 import
 
-- [ ] **Task 1.2**: 实现算法隔离骨架
-  - [ ] 1.2.1 创建 `Cipher.kt` 接口（setPosition/encrypt/decrypt/algorithm/blockSize）
-  - [ ] 1.2.2 创建 `CipherRegistry.kt` 单例（init 仅注册 aesctr + register 扩展点 + ErrExtensionRequired 错误类）
-  - [ ] 1.2.3 编写隔离边界测试：确认 RC4MD5/ChaCha20 未注册且调用返回 ErrExtensionRequired
+- [ ] **Task 1.1**: 实现 AES-128-CTR 核心密码器（唯一内置实现）
+  - [ ] 1.1.1 创建 `aesctr.go`：NewAesCtr(password, fileSize) 密钥派生链（PBKDF2→hex→MD5 key + MD5 iv）
+  - [ ] 1.1.2 实现 incrementIV（128-bit 大端分段进位，4×uint32）
+  - [ ] 1.1.3 实现 SetPosition(position) seek 方法（恢复IV→increment→重建CTR→discard offset）
+  - [ ] 1.1.4 实现 Encrypt/Decrypt（crypto/cipher NewCTR XORKeyStream）
+  - [ ] 1.1.5 在 registry 中注册为 "aesctr"
+  - [ ] 1.1.6 单元测试：使用 alist-encrypt-go 参考向量验证密钥派生 + seek 解密正确性
 
-## Phase 2: 核心算法实现
+- [ ] **Task 1.2**: 实现文件名 MixBase64 加解密
+  - [ ] 1.2.1 创建 `filename.go`：KSA shuffle（passwdOutward → 64字符字母表）+ MixBase64 Encode/Decode
+  - [ ] 1.2.2 实现 CRC6 校验（多项式 x^6+x+1, 反射模式, 6-bit → sourceChars 映射）
+  - [ ] 1.2.3 实现 EncodeName / DecodeName / ConvertShowName / ConvertRealName
+  - [ ] 1.2.4 单元测试：中文文件名往返、特殊字符、长文件名、CRC6 校验
 
-- [ ] **Task 2.1**: AES-128-CTR 密码器
-  - [ ] 2.1.1 创建 `AesCtrCipher.kt`：PBKDF2 密钥派生链（passwdOutward → MD5 key + MD5 iv）
-  - [ ] 2.1.2 创建 `CounterIncrement.kt`：128-bit 大端分段进位算法（4×uint32）
-  - [ ] 2.1.3 实现 `setPosition(position)` seek 方法（恢复IV→incrementIV→重建Cipher→discard offset）
-  - [ ] 2.1.4 实现 encrypt/decrypt（javax.crypto.Cipher AES/CTR/NoPadding）
-  - [ ] 2.1.5 在 CipherRegistry 中注册为 "aesctr"
-  - [ ] 2.1.6 单元测试：使用 alist-encrypt-go 参考向量验证密钥派生 + seek 解密正确性
+- [ ] **Task 1.3**: 实现 V2 内容头检测与流式包装器
+  - [ ] 1.3.1 创建 `content_header.go`：AECTR2 magic 检测 + NonceField/PlainSize 解析 + AutoDetectV2 分支逻辑
+  - [ ] 1.3.2 创建 `reader.go`：DecryptReader（io.Reader 包装器，支持自动 V1/V2 分流 + seek）
 
-- [ ] **Task 2.2**: 文件名 MixBase64 加解密
-  - [ ] 2.2.1 创建 `MixBase64.kt`：KSA shuffle（passwdOutward → 64字符字母表）+ Encode/Decode
-  - [ ] 2.2.2 创建 `CRC6.kt`：6-bit CRC 校验（多项式 x^6+x+1, 反射模式）
-  - [ ] 2.2.3 实现 EncodeName / DecodeName / ConvertShowName / ConvertRealName
-  - [ ] 2.2.4 单元测试：中文文件名往返、特殊字符、长文件名
+## Phase 2: Go 后端 — API 与服务层
 
-- [ ] **Task 2.3**: V2 内容头检测
-  - [ ] 2.3.1 创建 `ContentHeader.kt`：AECTR2 magic 检测 + NonceField/PlainSize 解析
-  - [ ] 2.3.2 实现 AutoDetectV2（前缀 peek → 分支 V1/V2 路径）
-  - [ ] 2.3.3 单元测试：V1 裸流和 V2 带头格式均能正确识别
+- [ ] **Task 2.1**: 扩展 Config 结构体
+  - [ ] 2.1.1 在 `internal/config/config.go` 新增 AlistEncrypt 配置段（enabled/suffix/default_password/enc_type）
+  - [ ] 2.1.2 enc_type 非 aesctr 时配置加载警告
+  - [ ] 2.1.3 更新 config.schema.json + config.user.json 示例
 
-- [ ] **Task 2.4**: 流式解密包装器
-  - [ ] 2.4.1 创建 `DecryptInputStream.kt`：InputStream 包装器（支持 skip/seek + 自动 V1/V2 分流）
-  - [ ] 2.4.2 单元测试：读取完整文件 + 从中间位置 seek 后继续读取
+- [ ] **Task 2.2**: 新增移动端 API endpoint
+  - [ ] 2.2.1 `POST /api/alist-encrypt/decrypt` — 发起解密任务（sourcePath+password → targetDir）
+  - [ ] 2.2.2 `POST /api/alist-encrypt/encrypt` — 发起加密任务（sourcePath+password → targetDir+suffix）
+  - [ ] 2.2.3 `GET /api/alist-encrypt/stream` — 流式解密预览（HTTP Range 支持）
+  - [ ] 2.2.4 `GET /api/alist-encrypt/decode-filename` — 文件名在线解码
 
-## Phase 3: 插件功能层
+- [ ] **Task 2.3**: 实现业务 Service 层
+  - [ ] 2.3.1 在 `mobile_service.go` 新增解密方法：读取加密文件 → AutoDetectV2 → AesCtrCipher.DecryptReader → 写入目标路径
+  - [ ] 2.3.2 新增加密方法：读取原始文件 → AesCtrCipher.EncryptWriter → 写入目标路径+suffix（可选V2头）
+  - [ ] 2.3.3 新增 stream 方法：DecryptReader → HTTP Range 响应（206 Partial Content）
+  - [ ] 2.3.4 新增 decode-filename 方法：DecodeName 同步返回
 
-- [ ] **Task 3.1**: AlistDecryptActivity（插件 UI 入口）
-  - [ ] 3.1.1 从 Intent extras 读取 action（decrypt/encrypt/stream/decode-filename）+ filePath + password
-  - [ ] 3.1.2 decrypt action：启动 AlistDecryptService 执行解密任务，显示进度
-  - [ ] 3.1.3 encrypt action：启动 AlistDecryptService 执行加密任务，显示进度
-  - [ ] 3.1.4 stream action：启动 LocalStreamServer → 通过 setResult 返回 localhost URL 给宿主
-  - [ ] 3.1.5 decode-filename action：同步解码文件名 → setResult 返回给宿主
-  - [ ] 3.1.6 遵循 EncvHostActivity 透明主题防御规范（L1-L4 四层超时机制）
+- [ ] **Task 2.4**: 扩展 TaskManager 支持新任务类型
+  - [ ] 2.4.1 注册 alist-decrypt / alist-encrypt 任务处理器
+  - [ ] 2.4.2 异步执行解密/加密，进度通过 WebSocket 推送
+  - [ ] 2.4.3 错误分类：密码错误（特殊码）、数据损坏、ErrExtensionRequired
 
-- [ ] **Task 3.2**: AlistDecryptService（后台任务执行）
-  - [ ] 3.2.1 继承 IntentService，处理 decrypt/encrypt action
-  - [ ] 3.2.2 解密流程：打开文件 → AutoDetectV2 → AesCtrCipher.DecryptReader → 写入目标路径
-  - [ ] 3.2.3 加密流程：打开原始文件 → AesCtrCipher.EncryptWriter → 写入目标路径+suffix（可选 V2 头）
-  - [ ] 3.2.4 进度报告：通过 LocalBroadcast 发送进度百分比到 Activity
-  - [ ] 3.2.5 错误处理：密码错误（特殊错误码）、数据损坏、磁盘空间不足等
+## Phase 3: ComboLite 插件 — 业务编排层 `plugin-alist-decrypt`
 
-- [ ] **Task 3.3**: LocalStreamServer（本地 HTTP 代理）
-  - [ ] 3.3.1 基于NanoHTTPD或自实现简易 HTTP server（单连接，随机端口）
-  - [ ] 3.3.2 GET /stream 端点：解析 path+password 参数 → DecryptInputStream → HTTP Range 支持
-  - [ ] 3.3.3 返回 206 Partial Content + 正确 Content-Type + Content-Length
-  - [ ] 3.3.4 生命周期绑定到 Activity（onDestroy 时停止 server）
+- [ ] **Task 3.1**: 创建插件模块骨架
+  - [ ] 3.1.1 创建 `app/encv-mobile/plugin-alist-decrypt/` 目录及 build.gradle.kts（复用 mpv-player 模板）
+  - [ ] 3.1.2 配置 compileOnly(libs.combolite.core) + Kotlin stdlib/reflect（遵循 compileOnly 共享依赖模式）
+  - [ ] 3.1.3 AndroidManifest.xml 声明 AlistDecryptActivity（exported=false）
+  - [ ] 3.1.4 创建 AlistDecryptPluginEntry.kt（IPluginEntryClass 入口）
 
-## Phase 4: 宿主端集成
+- [ ] **Task 3.2**: 实现 AlistDecryptActivity（纯 UI + API 调度，不含算法）
+  - [ ] 3.2.1 从 Intent extras 读取 action + filePath + password + suffix
+  - [ ] 3.2.2 decrypt action: 调用 Go 后端 POST /api/alist-encrypt/decrypt → 订阅 WebSocket 进度 → 显示进度 UI
+  - [ ] 3.2.3 encrypt action: 调用 Go 后端 POST /api/alist-encrypt/encrypt → 进度展示
+  - [ ] 3.2.4 stream action: 构造 Go 后端 stream URL → setResult 返回给宿主传给 MPV
+  - [ ] 3.2.5 decode-filename action: 调用 Go 后端 GET decode-filename API → setResult 返回
+  - [ ] 3.2.6 遵循 EncvHostActivity 四层超时防御规范
+
+## Phase 4: 宿主端集成（Android + 前端）
 
 - [ ] **Task 4.1**: GoProcessPlugin 新增方法
-  - [ ] 4.1.1 新增 `@PluginMethod decryptAlistFile(call)` — 构建代理 Intent 启动解密
-  - [ ] 4.1.2 新增 `@PluginMethod encryptAlistFile(call)` — 构建代理 Intent 启动加密
-  - [ ] 4.1.3 新增 `@PluginMethod streamAlistFile(call)` — 构建 Intent 启动流式预览，返回 localhost URL
-  - [ ] 4.1.4 新增 `@PluginMethod decodeAlistFilename(call)` — 同步调用插件解码文件名
-  - [ ] 4.1.5 所有方法先检查 `EncvComboLiteHost.isPluginAvailable("com.encvgo.plugin.alistdecrypt")`，未安装时返回友好提示
+  - [ ] 4.1.1 decryptAlistFile: 直接调 Go 后端 API（或启动插件 Activity）
+  - [ ] 4.1.2 encryptAlistFile: 同上
+  - [ ] 4.1.3 streamAlistFile: 返回 Go 后端 stream URL 或启动插件 Activity
+  - [ ] 4.1.4 decodeAlistFilename: 直接调 Go 后端 API（同步，无需插件参与）
+  - [ ] 4.1.5 未安装后端服务时返回友好提示
 
-- [ ] **Task 4.2**: PlayerEntry 新增路由
-  - [ ] 4.2.1 新增 `buildAlistDecryptIntent()` 方法（参照 buildMpvIntent 模式）
-  - [ ] 4.2.2 定义 REQUEST_CODE_ALIST_DECRYPT 常量
-  - [ ] 4.2.3 onActivityResult 处理解密/加密结果回调
+- [ ] **Task 4.2**: PlayerEntry + 前端 API
+  - [ ] 4.2.1 PlayerEntry 新增 buildAlistDecryptIntent()（如需启动插件 Activity 时用）
+  - [ ] 4.2.2 encv.ts 新增 decryptAlistFile/encryptAlistFile/streamAlistFile/decodeAlistFilename 函数
 
-- [ ] **Task 4.3**: 前端 API 层（encv.ts）
-  - [ ] 4.3.1 新增 `decryptAlistFile()`, `encryptAlistFile()`, `streamAlistFile()`, `decodeAlistFilename()` 函数
-  - [ ] 4.3.2 在 GoProcess 插件定义中注册新方法
+- [ ] **Task 4.3**: Files.vue 文件识别与操作
+  - [ ] 4.3.1 检测 suffix 匹配 → 加密标记 + decodeAlistFilename 显示真实名称
+  - [ ] 4.3.2 长按菜单增加「解密」和「流式预览」
+  - [ ] 4.3.3 流式预览 URL 传给 MPV/ArtPlayer 播放
 
-- [ ] **Task 4.4**: Files.vue 文件识别与操作
-  - [ ] 4.4.1 检测文件扩展名匹配 suffix 时显示加密标记 + 调用 decodeAlistFilename 显示真实名称
-  - [ ] 4.4.2 长按菜单增加「解密」和「流式预览」选项（条件显示：插件已安装时）
-  - [ ] 4.4.3 流式预览返回的 localhost URL 传给 MPV/ArtPlayer 播放
+- [ ] **Task 4.4**: ExtensionsPage.vue + Tasks.vue + i18n
+  - [ ] 4.4.1 ExtensionsPage 新增 alist-decrypt 卡片
+  - [ ] 4.4.2 COMBO_LITE_ID_MAP 增加 'alist-decrypt' → 'com.encvgo.plugin.alistdecrypt'
+  - [ ] 4.4.3 Tasks.vue 支持 alist-decrypt/alist-encrypt 任务状态展示
+  - [ ] 4.4.4 i18n 新增翻译 key（中英文）
 
-- [ ] **Task 4.5**: ExtensionsPage.vue + Tasks.vue + i18n
-  - [ ] 4.5.1 ExtensionsPage 新增 alist-decrypt 扩展卡片（id/name/description/sizeDisplay）
-  - [ ] 4.5.2 COMBO_LITE_ID_MAP 增加 `'alist-decrypt' → 'com.encvgo.plugin.alistdecrypt'`
-  - [ ] 4.5.3 Tasks.vue 支持 type=alist-decrypt/alist-encrypt 的状态展示
-  - [ ] 4.5.4 i18n 新增相关翻译 key（中英文）
+## Phase 5: CI 构建
 
-## Phase 5: CI 构建集成
+- [ ] **Task 5.1**: settings.gradle.kts 包含 :plugin-alist-decrypt
+- [ ] **Task 5.2**: CI workflow 新增 plugin-alist-decrypt 的 aar2apk 构建
+- [ ] **Task 5.3**: Go 测试 `go test ./internal/alistencrypt/...` 加入 CI
 
-- [ ] **Task 5.1**: settings.gradle.kts 包含新模块
-- [ ] **Task 5.2**: CI workflow 新增 plugin-alist-decrypt 的 aar2apk 构建步骤
-- [ ] **Task 5.3**: 验证插件 APK 可正常安装/加载/卸载
-
-## Phase 6: TODO（后续迭代，不在 MVP）
+## Phase 6: TODO（后续迭代）
 
 - [ ] **[TODO] Task 6.1**: OpenList 代理集成 — 接入 internal/openlist/ 代理链
 - [ ] **[TODO] Task 6.2**: ENCV Plugin 注册 — 注册到 ENCV v2 plugins.Registry
 - [ ] **[TODO] Task 6.3**: 桌面端 UI — openlist 桌面客户端适配
-- [ ] **[TODO] Task 6.4**: RC4MD5 / ChaCha20 **扩展包** — 独立包实现 Cipher 接口，通过 Register() 注册。**禁止引入主包**
+- [ ] **[TODO] Task 6.4**: RC4MD5 / ChaCha20 **扩展包** — 独立包实现 Cipher 接口。**禁止引入 internal/alistencrypt/**
 
 # Task Dependencies
-- [Task 1.2] depends on [Task 1.1] （骨架需要模块先创建）
-- [Task 2.1] depends on [Task 1.2] （AES-CTR 需要 Cipher 接口和 Registry）
-- [Task 2.2] depends on [Task 2.1] （MixBase64 复用 passwdOutward 派生逻辑）
-- [Task 2.3] depends on [Task 2.1] （V2 头解析依赖 AesCtrCipher 初始化）
-- [Task 2.4] depends on [Task 2.1], [Task 2.3] （DecryptInputStream 依赖 cipher 和头检测）
-- [Task 3.1] depends on [Task 2.1], [Task 2.2], [Task 2.3], [Task 2.4] （Activity 依赖全部核心算法）
-- [Task 3.2] depends on [Task 2.4] （Service 依赖 DecryptInputStream）
-- [Task 3.3] depends on [Task 2.4] （LocalStreamServer 依赖 DecryptInputStream）
-- [Task 4.1] depends on [Task 3.1] （GoProcessPlugin 依赖 Activity 就绪）
-- [Task 4.2] depends on [Task 4.1] （PlayerEntry 依赖 GoProcessPlugin 方法）
-- [Task 4.3] depends on [Task 4.1] （前端 API 依赖原生方法注册）
-- [Task 4.4] depends on [Task 4.3] （Files.vue 依赖前端 API）
-- [Task 4.5] depends on [Task 4.3] （UI 组件依赖前端 API）
-- [Task 5.1] depends on [Task 1.1] （CI 依赖模块存在）
+- [Task 1.1] depends on [Task 1.0] （AES-CTR 需要 Cipher 接口和 Registry）
+- [Task 1.2] depends on [Task 1.1] （MixBase64 复用 passwdOutward 派生逻辑）
+- [Task 1.3] depends on [Task 1.1] （V2 头解析依赖 AesCtrCipher 初始化）
+- [Task 2.2] depends on [Task 1.1], [Task 1.2], [Task 1.3] （API 依赖核心算法完成）
+- [Task 2.3] depends on [Task 2.1], [Task 2.2] （Service 依赖配置和 API）
+- [Task 2.4] depends on [Task 2.3] （TaskManager 依赖 Service 就绪）
+- [Task 3.1] depends on [Task 2.2] （插件骨架依赖后端 API 存在）
+- [Task 3.2] depends on [Task 3.1] （Activity 依赖骨架就绪）
+- [Task 4.1] depends on [Task 3.2], [Task 2.2] （GoProcessPlugin 依赖插件和 API 都就绪）
+- [Task 4.2] depends on [Task 4.1]
+- [Task 4.3] depends on [Task 4.2]
+- [Task 4.4] depends on [Task 4.2]
+- [Task 5.1] depends on [Task 3.1]
+- [Task 5.3] depends on [Task 1.1] （Go 测试仅依赖算法层）

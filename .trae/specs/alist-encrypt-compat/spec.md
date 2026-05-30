@@ -1,58 +1,79 @@
-# Alist-Encrypt 兼容层 Spec（ComboLite 扩展）
+# Alist-Encrypt 兼容层 Spec（Go 基础设施 + ComboLite 业务扩展）
 
 ## Why
 
-encv-go 移动端已有 **MPV 播放器** 作为 ComboLite 插件（`plugin-mpv-player`），通过 aar2apk 构建为独立 APK、由用户安装、通过 ProxyManager 代理启动 Activity。现在需要以同样的架构新增一个 **alist-encrypt 解密扩展插件**，使用户能够：
-- 解密 alist-encrypt 格式（AES-128-CTR）的加密文件
-- 加密文件为 alist-encrypt 格式
-- 流式预览加密视频（支持 seek，传给 MPV 播放）
-- 在线解码显示真实文件名
+encv-go 移动端已有 **MPV 播放器** 作为 ComboLite 插件。现在需要新增 **alist-encrypt 解密能力**，使移动端能解密/加密/流式预览 alist-encrypt 格式（AES-128-CTR）文件。
 
-## What Changes — 新增 ComboLite 插件 `plugin-alist-decrypt`
+**关键架构决策：算法与业务分离**
+- **AES-128-CTR 核心算法 + MixBase64 文件名加解密** → **Go 后端公共包**（`internal/alistencrypt/`），业务无关的基础设施
+- **具体业务逻辑**（UI 交互、任务调度、进度展示、播放器集成）→ **ComboLite 插件**（`plugin-alist-decrypt`），通过 Go 后端 API 调用算法
 
-### 新增模块结构
+这样做的好处：
+1. **单份实现**：Go 后端 + 桌面端 + 移动端共享同一套算法，消除双语言维护风险
+2. **测试效率**：Go 单元测试比 Android instrumentation test 快一个数量级
+3. **项目惯例**：与 `pkg/encv/`（ENCV 加密公共库）和 `internal/v2/crypto/`（容器加密）的分层模式一致
+4. **未来扩展**：OpenList 代理集成、桌面端 UI 可直接复用 Go 包
+
+---
+
+## What Changes — 两层架构
+
+### Layer 1: Go 后端 — 算法基础设施包（新增）
 
 ```
-app/encv-mobile/plugin-alist-decrypt/          ← 新增：Android Library 模块（与 plugin-mpv-player 同级）
-├── build.gradle.kts                           ← id("com.android.library") + aar2apk
+internal/alistencrypt/                  ← 新增：业务无关的纯算法包
+├── cipher.go                           ← Cipher 接口定义（扩展点）
+├── aesctr.go                           ← AES-128-CTR 唯一内置实现（密钥派生+seek+加解密）
+├── registry.go                         ← Cipher 注册表（init 仅注册 aesctr）
+├── filename.go                         ← MixBase64 文件名加解密（KSA+CRC6）
+├── content_header.go                   ← V2 内容头检测与解析（AECTR2 magic）
+├── reader.go                           ← DecryptReader io.Reader 包装器（seek 支持）
+└── errors.go                           ← ErrExtensionRequired 等
+```
+
+**消费方式**：
+- **移动端**：通过 `mobile_api.go` 新增 HTTP endpoint → `mobile_service.go` 调用算法包
+- **桌面端**：直接 import `internal/alistencrypt` 使用
+- **未来 OpenList**：`internal/openlist/handler/` 中引入此包做代理解密
+
+### Layer 2: ComboLite 插件 — 业务编排层（新增）
+
+```
+app/encv-mobile/plugin-alist-decrypt/   ← 新增：Android Library 模块
+├── build.gradle.kts                    ← id("com.android.library") + aar2apk
 ├── src/main/
-│   ├── AndroidManifest.xml                    ← 声明 AlistDecryptActivity / AlistDecryptService
+│   ├── AndroidManifest.xml             ← AlistDecryptActivity (exported=false)
 │   └── java/com/encvgo/plugin/alistdecrypt/
-│       ├── AlistDecryptPluginEntry.kt         ← IPluginEntryClass 入口（ComboLite 加载点）
-│       ├── cipher/
-│       │   ├── Cipher.kt                     ← Cipher 接口（扩展点，算法隔离契约）
-│       │   ├── AesCtrCipher.kt               ← AES-128-CTR 唯一内置实现
-│       │   └── CounterIncrement.kt           ← 128-bit CTR counter 进位算法
-│       ├── filename/
-│       │   ├── MixBase64.kt                  ← KSA shuffle + Base64 编解码
-│       │   └── CRC6.kt                       ← 6-bit CRC 校验
-│       ├── content/
-│       │   └── ContentHeader.kt              ← V2 头检测与解析（AECTR2 magic）
-│       ├── stream/
-│       │   └── DecryptInputStream.kt         ← InputStream 包装器（seek 支持）
-│       ├── service/
-│       │   └── AlistDecryptService.kt        ← 后台解密/加密任务 Service
-│       ├── proxy/
-│       │   └── LocalStreamServer.kt          ← 本地 HTTP 代理（解密流→MPV）
+│       ├── AlistDecryptPluginEntry.kt  ← IPluginEntryClass 入口
 │       └── ui/
-│           └── AlistDecryptActivity.kt       ← 插件 Activity（ProxyManager 代理启动）
+│           └── AlistDecryptActivity.kt ← Activity（ProxyManager 代理启动）
+                                          （UI 层：进度展示、密码输入、操作结果反馈）
 ```
+
+**插件职责（仅业务，不含算法）**：
+1. 接收宿主 Intent extras（action/filePath/password/suffix）
+2. 通过 Capacitor bridge 调用 Go 后端 API 执行实际加解密
+3. 展示进度条和状态
+4. 流式预览时启动 LocalStreamServer 代理 Go 后端的 stream endpoint
+5. setResult 返回给宿主
 
 ### 已有代码修改清单
 
 | 文件 | 改动 |
 |------|------|
-| `ExtensionsPage.vue` | 新增 `alist-decrypt` 扩展卡片（id/name/description/size） |
-| `GoProcessPlugin.kt` | 新增 `decryptAlistFile` / `encryptAlistFile` / `streamAlistFile` / `decodeAlistFilename` 方法 |
-| `PlayerEntry.kt` | 新增 `buildAlistDecryptIntent()` 路由方法 |
+| `internal/server/mobile_api.go` | 新增 4 个 alist-encrypt API endpoint |
+| `internal/service/mobile_service.go` | 新增解密/加密/流式预览/文件名解码服务方法 |
+| `internal/config/config.go` | 新增 AlistEncrypt 配置段 |
+| `ExtensionsPage.vue` | 新增 alist-decrypt 扩展卡片 |
+| `GoProcessPlugin.kt` | 新增 4 个 @PluginMethod（委托给插件或直接调 API） |
+| `PlayerEntry.kt` | 新增 buildAlistDecryptIntent() 路由 |
 | `encv.ts`（前端 API） | 新增对应的 Capacitor 调用函数 |
-| `Files.vue` | 识别 suffix 匹配文件 → 显示解密/预览操作入口 |
-| `Tasks.vue` | 展示 alist-decrypt/alist-encrypt 任务状态 |
-| `settings.ts`（i18n） | 新增 alist-encrypt 相关翻译 key |
+| `Files.vue` | 识别 suffix 匹配文件 → 解密/预览入口 |
+| `Tasks.vue` | 展示 alist 任务状态 |
 
 ### 不在 MVP 范围内（TODO）
 
-- **OpenList 代理集成**：将解密能力接入 `internal/openlist/` 代理链
+- **OpenList 代理集成**：接入 internal/openlist/ 代理链
 - **内部容器集成**：注册到 ENCV v2 plugins.Registry
 - **桌面端 UI**：openlist 桌面客户端适配
 - **RC4MD5 / ChaCha20 扩展包**：必须通过 Cipher 接口 + Register() 引入，禁止进入主包
@@ -61,87 +82,80 @@ app/encv-mobile/plugin-alist-decrypt/          ← 新增：Android Library 模�
 
 ## ADDED Requirements
 
-### Requirement: 算法隔离架构（铁律）
+### Requirement: Go 后端算法隔离架构（铁律）
 
-主应用（plugin-alist-decrypt）**仅包含 AES-128-CTR 实现**，其他算法必须通过 Cipher 接口隔离。
+`internal/alistencrypt/` 包 **仅包含 AES-128-CTR 实现**，其他算法必须通过 Cipher 接口隔离。
 
-```kotlin
+```go
 // Cipher 接口 — 所有密码器的统一抽象
-interface Cipher {
-    fun setPosition(position: Long)
-    fun encrypt(data: ByteArray)
-    fun decrypt(data: ByteArray)
-    fun algorithm(): String          // "AES-128-CTR" / "RC4-MD5" / "ChaCha20"
-    fun blockSize(): Int
+type Cipher interface {
+    SetPosition(position int64) error
+    Encrypt(data []byte)
+    Decrypt(data []byte)
+    Algorithm() string          // "AES-128-CTR" / "RC4-MD5" / "ChaCha20"
+    BlockSize() int
 }
 
-// Registry — 全局单例，仅注册内置算法
-object CipherRegistry {
-    private val factories = mutableMapOf<String, (password: String, fileSize: Long) -> Cipher>()
+// CipherFactory 创建 Cipher 实例
+type CipherFactory func(password string, fileSize int64) (Cipher, error)
 
-    init { register("aesctr", ::AesCtrCipher) }  // ← 仅此一个！
+// Register 向注册表注册新的 cipher 工厂（扩展点）
+func Register(encType string, factory CipherFactory)
 
-    fun register(encType: String, factory: ...)   // 扩展点
-    fun create(password: String, encType: String, fileSize: Long): Cipher
-}
+// Create 根据 encType 创建 Cipher 实例
+func Create(password string, encType string, fileSize int64) (Cipher, error)
 ```
 
 **隔离规则**：
-1. `plugin-alist-decrypt` 包内 **禁止出现 RC4 / ChaCha20 实现代码**
-2. `CipherRegistry.init()` 中 **仅注册 aesctr**
-3. enc_type 非 aesctr 时返回 `ErrExtensionRequired`
-4. MixBase64 / CRC6 / ContentHeader 是所有算法共用的基础设施，放在主包中
+1. `internal/alistencrypt/` 包内 **禁止出现 RC4 / ChaCha20 实现代码**
+2. `registry.go` 的 `init()` 中 **仅注册 aesctr**
+3. 非 aesctr 的 enc_type 返回 `ErrExtensionRequired`
+4. MixBase64 / CRC6 / ContentHeader / DecryptReader 是所有算法共用的基础设施，放在主包中
 
-### Requirement: AES-128-CTR 核心算法（唯一内置实现）
+### Requirement: AES-128-CTR 核心算法（Go 实现，唯一内置）
 
 #### 密钥派生链（必须逐字节兼容 alist-encrypt-go）
 
 ```
-输入: password (String), fileSize (Long)
+输入: password (string), fileSize (int64)
 
 Step 1: passwdOutward
   ├─ len == 32 → 直接用（已是 hex）
   └─ else → PBKDF2(pwd="AES-CTR", salt=password, iter=1000, dkLen=16, HmacSHA256)
-         → hexEncode(key) → 32字符 hex 字符串
+         → hex.EncodeToString(key) → 32字符 hex 字符串
 
-Step 2: Key (16 bytes) = MD5(passwdOutward + fileSize.toString())[:16]
-Step 3: IV  (16 bytes) = MD5(fileSize.toString())[:16]
+Step 2: Key (16 bytes) = MD5(passwdOutward + strconv.FormatInt(fileSize, 10))[:16]
+Step 3: IV  (16 bytes) = MD5(strconv.FormatInt(fileSize, 10))[:16]
 
-输出: AES/CTR/NoPadding(Key, IV)
+输出: AES-128-CTR(Key, IV) via crypto/cipher NewCTR
 ```
 
-#### Seek 支持（视频播放必需）
+#### Seek 支持（视频流必需）
 
 ```
-setPosition(position):
+SetPosition(position):
   1. iv = copy(originalIv)
   2. blockCount = position / 16
-  3. incrementIV(blockCount)    // 128-bit 大端分段进位
-  4. cipher.init(Cipher.DECRYPT_MODE, key, IvParameterSpec(iv))
-  5. discard offset = position % 16 bytes
+  3. incrementIV(blockCount)     // 128-bit 大端分段进位（4×uint32）
+  4. stream = cipher.NewCTR(block, iv)
+  5. stream.XORKeyStream(discard[:offset], discard[:offset])  // offset = position % 16
 ```
 
-`incrementIV`: 将 IV 视为 4 个 uint32 大端整数，从最低段开始进位。
+#### Scenario: 视频文件 seek
+- **WHEN** SetPosition(1048576) 后读取数据
+- **THEN** 数据在该偏移处正确解密（与 Node.js aesCTR.js 输出逐字节一致）
 
-#### Scenario: 视频文件 seek 播放
-- **WHEN** 用户在播放器拖动进度条到 position=1048576
-- **THEN** setPosition 正确重建 CTR 流，后续读取在该偏移处正确解密
-
-### Requirement: 文件名 MixBase64 加解密
+### Requirement: 文件名 MixBase64 加解密（Go 实现）
 
 完整移植 alist-encrypt-go 的 `filename.go`：
 
-- **KSA shuffle**: passwdOutward → 64 字符自定义字母表（Fisher-Yates 变体）
+- **KSA shuffle**: passwdOutward → 64字符自定义字母表
 - **MixBase64 Encode/Decode**: 基于自定义 alphabet 的 Base64 变种
 - **CRC6 校验**: 多项式 x^6+x+1, 反射输入输出, 6-bit 结果映射到 sourceChars
 - **EncodeName**: plainName → KSA→Encode→CRC6→encoded+crcChar
 - **DecodeName**: encodedName → stripCRC6→Verify→Decode→plainName（验证失败返回空串）
 
-#### Scenario: 文件名往返
-- **WHEN** EncodeName("测试视频.mp4", "mypassword") 后 DecodeName 回来
-- **THEN** 得到 "测试视频.mp4"
-
-### Requirement: V2 内容头自动检测
+### Requirement: V2 内容头自动检测（Go 实现）
 
 | Offset | Len | Content |
 |--------|-----|---------|
@@ -151,85 +165,86 @@ setPosition(position):
 | 8 | 16 | NonceField |
 | 24 | 8 | PlainSize (BE uint64) |
 
-- Magic 匹配 → V2 模式（跳过 32 字节头，用 NonceField 初始化）
-- Magic 不匹配 → V1/Legacy 模式（裸流，fileSize 即 plainSize）
+- AutoDetectV2: peek 前 32 bytes → magic 匹配则 V2（跳过头+用 NonceField），否则 V1（裸流）
 
-### Requirement: 可配置后缀名
+### Requirement: 移动端 API（Go 后端提供）
 
-插件接收宿主传入的配置（通过 Intent extras 或共享 SharedPreferences）：
+通过 `mobile_api.go` 新增以下 endpoint，供 ComboLite 插件和前端直接调用：
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `suffix` | `.sccgv` | 加密文件识别后缀 |
-| `defaultPassword` | `""` | 默认密码（空=每次输入） |
-| `encType` | `aesctr` | 加密算法（MVP 仅支持此值） |
+| Method | Path | 用途 |
+|--------|------|------|
+| POST | `/api/alist-encrypt/decrypt` | 发起异步解密任务（sourcePath+password → targetDir） |
+| POST | `/api/alist-encrypt/encrypt` | 发起异步加密任务（sourcePath+password → targetDir+suffix） |
+| GET | `/api/alist-encrypt/stream` | 流式解密预览（HTTP Range 支持，返回解密数据） |
+| GET | `/api/alist-encrypt/decode-filename` | 同步解码文件名（encodedName+password → plainName） |
 
-enc_type 非 aesctr 时：配置加载警告 + 运行时返回 `ErrExtensionRequired`
+#### Scenario: 完整解密流程
+- **WHEN** 前端 POST `/api/alist-encrypt/decrypt` body=`{sourcePath:"/sdcard/video.sccgv", password:"xxx"}`
+- **THEN** Go 后端创建 TaskManager 任务 → 异步执行 AES-CTR 解密 → WebSocket 推送进度 → 完成后输出到目标目录
 
-### Requirement: 解密/加密任务（后台 Service）
+#### Scenario: MPV 流式播放
+- **WHEN** MPV 请求 `GET /api/alist-encrypt/stream?path=/sdcard/video.sccgv&Range: bytes=0-`
+- **THEN** 返回 206 Partial Content，body 为解密后的视频流
 
-通过 `AlistDecryptService`（IntentService）执行异步任务：
+### Requirement: 配置管理
 
-- **解密**: 读取加密文件 → DetectV2 → AesCtrCipher.DecryptReader → 写入目标路径
-- **加密**: 读取原始文件 → AesCtrCipher.EncryptWriter → 写入目标路径+suffix（可选 V2 头）
-- **进度报告**: 已处理字节/总字节 → 通过 LocalBroadcast / ResultReceiver 回调宿主
-- **状态**: queued → running → completed / failed（复用宿主 TaskManager 展示模式）
-
-### Requirement: 流式预览（LocalStreamServer）
-
-解密后的流通过本地 HTTP server 提供给 MPV 播放：
-
+```jsonc
+{
+  "alist_encrypt": {
+    "enabled": true,
+    "suffix": ".sccgv",
+    "default_password": "",
+    "enc_type": "aesctr"
+  }
+}
 ```
-[加密文件] → DecryptInputStream(支持 Range seek)
-  → LocalHttpServer(localhost:随机端口, 单连接)
-    → MPV 播放 localhost URL
-```
 
-- **Endpoint**: `GET /stream?path=<uri>&password=<pwd>`
-- **HTTP Range**: 完整支持（206 Partial Content）
-- **Content-Type**: 根据原始扩展名推断
-- **生命周期**: 随 Activity 销毁而停止
+- `enc_type` MVP 仅支持 `"aesctr"`；其他值返回 `ErrExtensionRequired`
+- `suffix`: 用户可自定义加密文件识别后缀
 
-#### Scenario: MPV 播放加密视频
-- **WHEN** 用户选择「流式预览」加密视频
-- **THEN** 启动 LocalStreamServer → 返回 localhost URL → MPV 加载并正常播放/seek
+### Requirement: ComboLite 插件 — 业务编排层（纯 UI + 调度）
 
-### Requirement: 宿主集成路径（GoProcessPlugin → 插件）
+插件 **不包含任何算法代码**，职责为：
 
-前端调用链：
+1. **AlistDecryptActivity**:
+   - 从 Intent extras 读取 action（decrypt/encrypt/stream/decode-filename）+ filePath + password
+   - decrypt/encrypt action: 调用 Go 后端 API 启动任务 → 订阅 WebSocket 进度 → 显示进度 UI
+   - stream action: 将 Go 后端 stream URL 透传给 MPV（或通过 LocalStreamServer 二次代理）
+   - decode-filename action: 同步调用 Go 后端 API → setResult 返回
+   - 遵循 EncvHostActivity 四层超时防御规范
+
+2. **AlistDecryptPluginEntry**: IPluginEntryClass 入口（onLoad/onUnload）
+
+### Requirement: 宿主集成路径
 
 ```
 Files.vue (长按→解密/预览)
-  → encv.ts: decryptAlistFile({path, password, mode})
+  → encv.ts: decryptAlistFile({path, password})
     → GoProcessPlugin.decryptAlistFile(call)
-      → EncvComboLiteHost.isPluginAvailable("com.encvgo.plugin.alistdecrypt")
-      → EncvComboLiteHost.createProxyIntent(context,
-            "com.encvgo.plugin.alistdecrypt",
-            "com.encvgo.plugin.alistdecrypt.ui.AlistDecryptActivity",
-            EncvHostActivity::class.java,
-            mapOf("action" to "decrypt", "filePath" to path, "password" to password))
-      → startActivityForResult(intent, REQUEST_CODE_ALIST_DECRYPT)
-        → EncvHostActivity → ProxyManager → AlistDecryptActivity
-          → 执行解密/加密/流式预览 → setResult → finish
-            → onActivityResult → call.resolve(result)
+      ├─ 方案A（推荐）：直接调用 Go 后端 POST /api/alist-encrypt/decrypt
+      │   → 复用现有 mobile_api 通道，无需启动插件 Activity
+      │   → TaskManager 管理 → WebSocket 推进 → Tasks.vue 展示
+      └─ 方案B（流式预览）：启动 plugin-alist-decrypt Activity
+          → Activity 内部调用 Go 后端 stream API → 返回 URL 给 MPV
 ```
+
+> **注意**：解密/加密任务可以直接走 Go 后端 API（不需要经过插件），因为它们是纯后端计算。
+> **流式预览**可能需要插件参与（如果需要 LocalStreamServer 做 URL 转换），也可能直接走 Go 后端 stream endpoint。
 
 ### Requirement: 扩展管理页集成
 
-ExtensionsPage.vue 新增扩展卡片：
-
+ExtensionsPage.vue:
 ```typescript
 {
   id: 'alist-decrypt',
   name: 'Alist-Encrypt 解密',
   description: '支持 AES-128-CTR 加密文件的解密、加密和流式预览',
-  installed: boolean,     // checkInstalledPlugins["com.encvgo.plugin.alistdecrypt"]
+  installed: boolean,
   enabled: boolean,
-  sizeDisplay: '~200 KB', // 纯 Kotlin，无 native 库
+  sizeDisplay: '~150 KB', // 纯 Kotlin UI 层，无 native 库
 }
 ```
-
-COMBO_LITE_ID 映射: `'alist-decrypt' → 'com.encvgo.plugin.alistdecrypt'`
+COMBO_LITE_ID: `'alist-decrypt' → 'com.encvgo.plugin.alistdecrypt'`
 
 ---
 
