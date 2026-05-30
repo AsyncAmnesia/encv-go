@@ -127,131 +127,17 @@
       </ion-list>
 
       <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-        <ion-fab-button @click="showNewTaskSheet">
+        <ion-fab-button @click="openNewTask()">
           <ion-icon :icon="add"></ion-icon>
         </ion-fab-button>
       </ion-fab>
 
-      <ion-modal :is-open="showNewTaskModal" @didDismiss="showNewTaskModal = false">
-        <ion-header>
-          <ion-toolbar>
-            <ion-title>{{ t('tasks.newTask') }}</ion-title>
-            <ion-buttons slot="end">
-              <ion-button @click="showNewTaskModal = false">{{ t('tasks.close') }}</ion-button>
-            </ion-buttons>
-          </ion-toolbar>
-        </ion-header>
-        <ion-content class="ion-padding">
-          <ion-list>
-            <ion-item>
-              <ion-select
-                v-model="newTaskType"
-                interface="action-sheet"
-                :label="t('tasks.taskType')"
-                label-placement="stacked"
-              >
-                <ion-select-option value="encrypt">{{ t('tasks.encrypt') }}</ion-select-option>
-                <ion-select-option value="decrypt">{{ t('tasks.decrypt') }}</ion-select-option>
-              </ion-select>
-            </ion-item>
-            <ion-item>
-              <ion-input
-                v-model="newTaskPath"
-                :label="t('tasks.sourcePath')"
-                label-placement="stacked"
-                placeholder="/path/to/file"
-                :error-text="sourcePathError"
-                :class="{ 'ion-invalid': !!sourcePathError, 'ion-touched': !!sourcePathError }"
-                @ionInput="validateSourcePath"
-              ></ion-input>
-              <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseSource">
-                <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-              </ion-button>
-            </ion-item>
-            <ion-item>
-              <ion-input
-                v-model="newTaskTargetPath"
-                :label="t('tasks.targetPath')"
-                label-placement="stacked"
-                :placeholder="t('tasks.targetPathPlaceholder')"
-                :error-text="targetPathError"
-                :class="{ 'ion-invalid': !!targetPathError, 'ion-touched': !!targetPathError }"
-                @ionInput="validateTargetPath"
-              ></ion-input>
-              <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseTarget">
-                <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-              </ion-button>
-            </ion-item>
-          </ion-list>
-
-          <!-- 容器版本选择（仅加密时显示） -->
-          <ion-item v-if="newTaskType === 'encrypt'">
-            <ContainerVersionSelector v-model="newTaskVersion" />
-          </ion-item>
-
-          <!-- 插件预测结果 -->
-          <div v-if="candidates.length > 0" class="plugin-section">
-            <!-- 多候选时显示选择器（仅当有多个有效候选时）-->
-            <div v-if="showPluginSelector && filteredCandidates.length > 1" class="plugin-selector">
-              <ion-list>
-                <ion-item>
-                  <ion-label>{{ t('tasks.selectPlugin') }}</ion-label>
-                  <ion-select :model-value="selectedPluginIndex" @ionChange="(e: any) => selectedPluginIndex = e.detail.value" interface="action-sheet" placement="bottom" style="width: 100%; max-width: 220px;">
-                    <ion-select-option v-for="(c, idx) in filteredCandidates" :key="idx" :value="c._idx">
-                      {{ c.candidate.name }}
-                      <span v-if="c.candidate.matchType === 'general'" style="color:var(--ion-color-medium);font-size:11px;margin-left:4px;">({{ t('tasks.generic') }})</span>
-                      <span v-else style="color:var(--ion-color-success);font-size:11px;margin-left:4px;">★</span>
-                    </ion-select-option>
-                  </ion-select>
-                </ion-item>
-              </ion-list>
-            </div>
-
-            <!-- 单候选或自动选中时显示提示 -->
-            <div v-else class="plugin-hint">
-              <ion-icon :icon="checkmarkCircle" color="success" class="hint-icon"></ion-icon>
-              <span>
-                {{ t('tasks.willBeHandledBy', { plugin: predictedPlugin ?? '' }) }}
-                <span v-if="candidates[selectedPluginIndex]?.matchType === 'general'" style="color:var(--ion-color-medium);font-size:11px;margin-left:4px;">({{ t('tasks.generic') }})</span>
-                <span v-else style="color:var(--ion-color-success);font-size:11px;margin-left:4px;">★</span>
-              </span>
-            </div>
-
-            <!-- 密码策略提示 -->
-            <div v-if="taskOptionsForDisplay?.passwordStrategy === 'independent'" class="plugin-hint password-strategy-hint">
-              {{ t('tasks.usesIndependentPassword') }}
-            </div>
-            <div v-else-if="taskOptionsForDisplay" class="plugin-hint">
-              {{ t('tasks.usesGlobalPassword') }}
-            </div>
-          </div>
-
-          <!-- 二级密码（占位，计划中） -->
-          <ion-item>
-            <ion-input
-              v-model="newTaskSecondaryPassword"
-              :label="t('tasks.secondaryPassword')"
-              label-placement="stacked"
-              type="password"
-              disabled
-              placeholder=""
-            >
-              <ion-badge color="medium" slot="end">{{ t('tasks.comingSoon') }}</ion-badge>
-            </ion-input>
-          </ion-item>
-
-          <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath || !!sourcePathError || !!targetPathError">
-            <ion-icon :icon="lockClosed" slot="start"></ion-icon>
-            {{ t('tasks.createTask') }}
-          </ion-button>
-        </ion-content>
-      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, onActivated } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import {
   IonPage,
   IonHeader,
@@ -271,133 +157,45 @@ import {
   IonProgressBar,
   IonFab,
   IonFabButton,
-  IonModal,
-  IonButtons,
-  IonButton,
-  IonSelect,
-  IonSelectOption,
-  IonInput,
   IonSpinner,
-  modalController,
 } from '@ionic/vue'
 import {
   add,
-  lockClosed,
-  checkmarkCircle,
   closeCircle,
+  checkmarkCircle,
   timer,
   sync,
-  folderOpen,
   copyOutline,
   warningOutline,
+  lockClosed,
 } from 'ionicons/icons'
 import { useRoute, useRouter } from 'vue-router'
-import ContainerVersionSelector from '@/components/ContainerVersionSelector.vue'
 import {
   getTasks,
-  createTask,
   cancelTask,
   retryTask,
   removeTask,
-  listFiles,
   isWrongPasswordError,
 } from '@/api/encv'
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
-import { useConfig } from '@/composables/useConfig'
 import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
 import { showToast } from '@/composables/useToast'
-import FilePickerModal from '@/components/FilePickerModal.vue'
-import NewTaskModal from '@/components/NewTaskModal.vue'
-import { useTaskForm } from '@/composables/useTaskForm'
-import { usePathResolver } from '@/composables/usePathResolver'
+import { useNewTaskModal } from '@/composables/useNewTaskModal'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
-const { config } = useConfig()
-const { normalize } = usePathResolver()
+const { openNewTask } = useNewTaskModal()
 
-const {
-  candidates,
-  predictedPlugin,
-  selectedPluginIndex,
-  versionOptions,
-  extraValues,
-  visibleExtraFields,
-  predictPlugin: doPredict,
-  reset: resetTaskForm,
-} = useTaskForm()
-
-// 插件候选排序：general 排最后，其余按 priority 降序
-const sortedCandidates = computed(() => {
-  return candidates.value
-    .map((c, idx) => ({ candidate: c, _idx: idx }))
-    .sort((a, b) => {
-      if (a.candidate.matchType === 'general' && b.candidate.matchType !== 'general') return 1
-      if (b.candidate.matchType === 'general' && a.candidate.matchType !== 'general') return -1
-      return b.candidate.priority - a.candidate.priority
-    })
-})
-
-// 过滤后的候选：只保留有效匹配类型（mime/extension/container 为相关匹配，general 为通用兜底）
-// 不匹配的候选不展示，避免干扰用户选择
-const RELEVANT_MATCH_TYPES = new Set(['mime', 'extension', 'container', 'general'])
-const filteredCandidates = computed(() =>
-  sortedCandidates.value.filter((c) => RELEVANT_MATCH_TYPES.has(c.candidate.matchType))
-)
-
-// 是否需要显示选择器（多个候选时）
-const showPluginSelector = computed(() => candidates.value.length > 1)
-
-// 当前选中插件的 taskOptions
-const taskOptionsForDisplay = computed(() => {
-  if (candidates.value.length === 0) return null
-  return candidates.value[selectedPluginIndex.value]?.taskOptions ?? null
-})
-
-// 待处理的新建任务请求（从 Files.vue eventBus 来，延迟到 tab 激活时打开）
-const pendingNewTask = ref<{ sourcePath: string; taskType: 'encrypt' | 'decrypt' } | null>(null)
+const openNewTaskHandler = (data: { sourcePath: string; taskType: 'encrypt' | 'decrypt' }) => openNewTask(data.sourcePath, data.taskType)
 
 const tasks = ref<EncvTask[]>([])
 const loading = ref(false)
 const showErrorDetail = ref<Record<string, boolean>>({})
 const copiedTaskId = ref<string | null>(null)
 const expandedWarningDetail = ref<string | null>(null)
-const showNewTaskModal = ref(false)
-const newTaskType = ref<TaskType>('encrypt')
-const newTaskPath = ref('')
-const newTaskTargetPath = ref('')
-const sourcePathError = ref('')
-const targetPathError = ref('')
-const newTaskPassword = ref('')
-const newTaskVersion = ref(4)
-const newTaskSecondaryPassword = ref('')
-let sourceValidateTimer: ReturnType<typeof setTimeout> | null = null
-let targetValidateTimer: ReturnType<typeof setTimeout> | null = null
-let sourceValidateGeneration = 0
-let targetValidateGeneration = 0
-
-async function validatePathExists(path: string): Promise<boolean> {
-  try {
-    const parentDir = path.substring(0, path.lastIndexOf('/')) || '/'
-    const fileName = path.substring(path.lastIndexOf('/') + 1)
-    const files = await listFiles(parentDir)
-    return files.some(f => f.name === fileName)
-  } catch {
-    return false
-  }
-}
-
-async function validateDirExists(path: string): Promise<boolean> {
-  try {
-    await listFiles(path)
-    return true
-  } catch {
-    return false
-  }
-}
 
 function getTaskIcon(task: EncvTask) {
   switch (task.status) {
@@ -437,7 +235,7 @@ function getStatusLabel(status: TaskStatus) {
     case 'failed': return t('tasks.failed')
     case 'cancelled': return t('tasks.cancelled')
     case 'cancelling': return t('tasks.cancelling')
-    default: return status
+    default: status
   }
 }
 
@@ -451,7 +249,7 @@ function getPhaseLabel(phase: string) {
     case 'packing': return t('tasks.phasePacking')
     case 'verifying': return t('tasks.phaseVerifying')
     case 'completed': return t('tasks.phaseCompleted')
-    default: return phase
+    default: phase
   }
 }
 
@@ -534,111 +332,6 @@ async function handleRefresh(event: CustomEvent) {
   ;(event.target as any)?.complete?.()
 }
 
-function showNewTaskSheet() {
-  newTaskType.value = 'encrypt'
-  newTaskPath.value = ''
-  newTaskTargetPath.value = ''
-  sourcePathError.value = ''
-  targetPathError.value = ''
-  showNewTaskModal.value = true
-}
-
-function validateSourcePath() {
-  if (sourceValidateTimer) clearTimeout(sourceValidateTimer)
-  sourceValidateTimer = setTimeout(async () => {
-    const gen = ++sourceValidateGeneration
-    const path = newTaskPath.value.trim()
-    if (!path) {
-      sourcePathError.value = t('tasks.pathRequired')
-    } else if (!path.startsWith('/')) {
-      sourcePathError.value = t('tasks.pathMustBeAbsolute')
-    } else {
-      sourcePathError.value = ''
-      const normalized = normalize(path)
-      if (normalized) {
-        doPredict(normalized, newTaskType.value as 'encrypt' | 'decrypt')
-      }
-      const exists = await validatePathExists(path)
-      if (gen !== sourceValidateGeneration) return
-      if (!exists) {
-        sourcePathError.value = t('tasks.pathNotFound')
-      }
-    }
-  }, 500)
-}
-
-function validateTargetPath() {
-  if (targetValidateTimer) clearTimeout(targetValidateTimer)
-  targetValidateTimer = setTimeout(async () => {
-    const gen = ++targetValidateGeneration
-    const path = newTaskTargetPath.value.trim()
-    if (!path) {
-      targetPathError.value = ''
-    } else if (!path.startsWith('/')) {
-      targetPathError.value = t('tasks.pathMustBeAbsolute')
-    } else {
-      targetPathError.value = ''
-      const exists = await validateDirExists(path)
-      if (gen !== targetValidateGeneration) return
-      if (!exists) {
-        targetPathError.value = t('tasks.pathNotFound')
-      }
-    }
-  }, 500)
-}
-
-async function handleBrowseSource() {
-  showNewTaskModal.value = false
-  const modal = await modalController.create({
-    component: FilePickerModal,
-    componentProps: { mode: 'file' as const },
-  })
-  await modal.present()
-  const { data, role } = await modal.onDidDismiss()
-  if (role === 'select' && data) {
-    newTaskPath.value = data.path
-    sourcePathError.value = ''
-    validateSourcePath()
-  }
-  showNewTaskModal.value = true
-}
-
-async function handleBrowseTarget() {
-  showNewTaskModal.value = false
-  const modal = await modalController.create({
-    component: FilePickerModal,
-    componentProps: { mode: 'folder' as const },
-  })
-  await modal.present()
-  const { data, role } = await modal.onDidDismiss()
-  if (role === 'select' && data) {
-    newTaskTargetPath.value = data.path
-    targetPathError.value = ''
-  }
-  showNewTaskModal.value = true
-}
-
-async function handleCreateTask() {
-  if (!newTaskPath.value) return
-  try {
-    await createTask(
-      newTaskType.value,
-      newTaskPath.value,
-      newTaskTargetPath.value || undefined,
-      undefined,
-      newTaskType.value === 'encrypt' ? newTaskVersion.value : undefined
-    )
-    showNewTaskModal.value = false
-    if (route.query.action) {
-      router.replace({ query: {} as Record<string, undefined> })
-    }
-    showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
-    await loadTasks()
-  } catch {
-    showToast({ message: t('tasks.taskCreateFailed'), duration: 2000, color: 'danger' })
-  }
-}
-
 async function handleCancelTask(id: string) {
   try {
     await cancelTask(id)
@@ -719,125 +412,24 @@ function onTaskCompleted(data: { id: string; status?: string; error?: string; er
   }
 }
 
-function processQueryAction() {
-  if (route.query.action === 'new') {
-    if (route.query.type === 'encrypt' || route.query.type === 'decrypt') {
-      newTaskType.value = route.query.type as TaskType
-    }
-    if (route.query.source) {
-      newTaskPath.value = route.query.source as string
-      sourcePathError.value = ''
-      const normalized = normalize(newTaskPath.value)
-      if (normalized) {
-        doPredict(normalized, newTaskType.value as 'encrypt' | 'decrypt')
-      }
-    }
-    showNewTaskModal.value = true
-    router.replace({ path: '/tabs/tasks', query: {} })
-  }
-}
-
-// eventBus 直传：Files.vue 长按加密/解密触发
-// 关键：只存参数，不立即打开 modal（此时组件可能不在活跃 tab）
-function handleOpenNewTask(data: { sourcePath: string; taskType: 'encrypt' | 'decrypt' }) {
-  pendingNewTask.value = data
-}
-
-// 跨 tab 新建任务：使用 modalController.create() 在 document root 层级创建 overlay
-// 根因：inline <ion-modal :is-open> 在组件非活跃 tab 时无法正确创建 Ionic overlay（已知 Vue 8 bug）
-// modalController.create() 由 Ionic 在全局层级管理 overlay，不依赖父组件 tab 状态
-async function openPendingNewTaskViaController() {
-  const pending = pendingNewTask.value
-  if (!pending) return
-
-  pendingNewTask.value = null
-  newTaskType.value = pending.taskType
-  newTaskPath.value = pending.sourcePath
-  newTaskTargetPath.value = ''
-  sourcePathError.value = ''
-  targetPathError.value = ''
-  resetTaskForm()
-
-  const normalized = normalize(pending.sourcePath)
-  if (normalized) {
-    doPredict(normalized, pending.taskType)
-    // 等待预测完成（doPredict 内部有 500ms debounce）
-    await new Promise(resolve => setTimeout(resolve, 600))
-  }
-
-  const modal = await modalController.create({
-    component: NewTaskModal,
-    componentProps: {
-      taskType: newTaskType.value,
-      sourcePath: newTaskPath.value,
-      targetPath: newTaskTargetPath.value,
-      candidates: candidates.value,
-      predictedPlugin: predictedPlugin.value,
-      taskOptions: taskOptionsForDisplay.value ?? null,
-      primaryOverride: newTaskPassword.value,
-      secondaryPassword: newTaskSecondaryPassword.value,
-      version: newTaskVersion.value,
-      versionOptions: versionOptions.value ?? [],
-      extraValues: extraValues.value,
-      filteredExtraFields: visibleExtraFields.value,
-      selectedPluginIndex: selectedPluginIndex.value,
-      // 回调桥接：modal 内交互 → 更新 Tasks.vue 状态
-      onUpdateTaskType: (v: string) => { newTaskType.value = v as TaskType },
-      onUpdateSourcePath: (v: string) => {
-        newTaskPath.value = v
-        const norm = normalize(v)
-        if (norm) doPredict(norm, newTaskType.value as 'encrypt' | 'decrypt')
-      },
-      onUpdateTargetPath: (v: string) => { newTaskTargetPath.value = v },
-      onUpdateVersion: (v: number) => { newTaskVersion.value = v },
-      onUpdatePrimaryOverride: (v: string) => { newTaskPassword.value = v },
-      onUpdateSecondaryPassword: (v: string) => { newTaskSecondaryPassword.value = v },
-      onUpdateExtraValue: ({ key, value }: { key: string; value: string }) => { extraValues.value[key] = value },
-      onSelectPlugin: (idx: number) => { selectedPluginIndex.value = idx },
-      onSubmit: async () => {
-        if (!newTaskPath.value) return
-        try {
-          await createTask(
-            newTaskType.value,
-            newTaskPath.value,
-            newTaskTargetPath.value || undefined,
-            undefined,
-            newTaskType.value === 'encrypt' ? newTaskVersion.value : undefined
-          )
-          await modal.dismiss()
-          showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
-          await loadTasks()
-        } catch {
-          showToast({ message: t('tasks.taskCreateFailed'), duration: 2000, color: 'danger' })
-        }
-      },
-    },
-  })
-
-  await modal.present()
-}
-
 onMounted(() => {
-  if (config.value?.password) {
-    newTaskPassword.value = config.value.password as string
-  }
-
-  processQueryAction()
   loadTasks()
   eventBus.on('task:update', onTaskUpdate)
   eventBus.on('task:progress', onTaskProgress)
   eventBus.on('task:created', onTaskCreated)
   eventBus.on('task:completed', onTaskCompleted)
+  eventBus.on('open-new-task', openNewTaskHandler)
+  eventBus.on('task:refresh', loadTasks)
 
-  // 监听 Files.vue 发来的打开新建任务请求（只存参数，延迟到激活时打开）
-  eventBus.on('open-new-task', handleOpenNewTask)
-})
-
-// 关键修复：Ionic tabs 激活此组件时，检查是否有待处理的新建任务请求
-// 使用 modalController.create() 而非 inline modal，彻底绕过 tab 缓存导致的 overlay 创建失败
-onActivated(() => {
-  if (pendingNewTask.value) {
-    openPendingNewTaskViaController()
+  if (route.query.action === 'new') {
+    const sourcePath = route.query.source as string
+    const taskType = (route.query.type || 'encrypt') as TaskType
+    router.replace({ path: '/tabs/tasks', query: {} })
+    if (sourcePath) {
+      openNewTask(sourcePath, taskType)
+    } else {
+      openNewTask()
+    }
   }
 })
 
@@ -846,7 +438,8 @@ onUnmounted(() => {
   eventBus.off('task:progress', onTaskProgress)
   eventBus.off('task:created', onTaskCreated)
   eventBus.off('task:completed', onTaskCompleted)
-  eventBus.off('open-new-task', handleOpenNewTask)
+  eventBus.off('open-new-task', openNewTaskHandler)
+  eventBus.off('task:refresh', loadTasks)
 })
 </script>
 

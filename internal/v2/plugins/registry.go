@@ -465,10 +465,17 @@ func FindAllEncryptingPlugins(inputPath string) []PluginCandidate {
 		}
 	}
 
-	// --- 阶段 3: 通用插件 (P1) ---
-	// 收集 ShouldProcess=true 但未在阶段1-2中匹配的"通用插件"
+	// --- 阶段 3: 仅限真正的通用插件 (P1) ---
+	// 条件：ShouldProcess=true 且 未声明任何 MIME 前缀 且 未声明任何扩展名
+	// 声明了特定类型（MIME/扩展名）的插件如果没在阶段1-2匹配到，
+	// 说明这个文件不是它们能处理的类型，不应作为候选返回
 	for _, p := range Plugins {
 		if !p.ShouldProcess(inputPath) {
+			continue
+		}
+		hasMimePrefixes := len(p.SupportedMimePrefixes()) > 0
+		hasExtensions := len(p.SupportedExtensions()) > 0
+		if hasMimePrefixes || hasExtensions {
 			continue
 		}
 		alreadyIncluded := false
