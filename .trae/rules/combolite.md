@@ -56,6 +56,31 @@ ComboLite 的核心价值就是 **0 Hook**。如果发现代码中有：
 > **R8 会破坏 ComboLite 类的字节码与 `@Metadata` 注解之间的一致性，导致 kotlin-reflect 无法解析函数签名。**
 > **ComboLite 官方 demo (`app/build.gradle.kts`) 明确设置 `isMinifyEnabled = false`。**
 
+#### ⚠️ isMinifyEnabled 与 isShrinkResources — AGP 硬耦合！
+
+**重要：AGP（Android Gradle Plugin）强制要求两者必须同时开启或同时关闭！**
+
+| 选项 | 作用对象 | 对 ComboLite 的风险 | 约束 |
+|------|---------|-------------------|------|
+| `isMinifyEnabled` | **DEX 字节码**（重命名方法、删除未用代码、内联） | **致命**：破坏 `@Metadata ↔ 字节码` 一致性 | **必须 `false`** |
+| `isShrinkResources` | **resources.arsc + 资源文件**（删除未引用资源） | 理论上安全（只读 DEX 不改字节码），但... | **必须 `false`**（见下文） |
+
+**为什么 `isShrinkResources=true` 不能单独使用（CI 实测确认）：**
+
+AGP 源码级硬约束（`AndroidResourcesCreationConfigImpl.kt:91`）：
+```kotlin
+// AGP internal check — 无法绕过
+if (!buildType.isMinifyEnabled && androidResources.shrink) {
+    issueReporter.reportError(
+        "Removing unused resources requires unused code shrinking to be turned on."
+    )
+}
+```
+
+ResourceShrinker 的依赖图分析需要 R8/ProGuard 先生成完整的类→资源映射文件才能工作。当 `isMinifyEnabled=false` 时，AGP 在配置阶段直接抛出 `EvalIssueException`，构建无法继续。
+
+**结论：由于 ComboLite 要求 `isMinifyEnabled=false`，`isShrinkResources` 也必须为 `false`。两者是 AGP 强耦合的。**
+
 **受影响的类（4个，全部使用 `::function.javaMethod`）：**
 
 | 类 | 使用 javaMethod 的方法 |
@@ -87,8 +112,8 @@ ComboLite 的核心价值就是 **0 Hook**。如果发现代码中有：
 // app/build.gradle.kts — release 构建
 buildTypes {
     release {
-        isMinifyEnabled = false          // ← 必须 false！
-        isShrinkResources = false         // ← 同步 false
+        isMinifyEnabled = false          // ← 必须 false！R8 破坏 @Metadata
+        isShrinkResources = false         // ← 必须 false！AGP 硬耦合要求
         signingConfig = signingConfigs.getByName("release")
         proguardFiles(...)
     }
@@ -100,6 +125,10 @@ buildTypes {
 // 即使加了 keep 规则也不够！R8 对 suspend 函数的合成方法、
 // continuation 参数类型、lambda 类的处理会破坏 @Metadata 一致性
 isMinifyEnabled = true   // ← 会导致所有 ::function.javaMethod 失败
+
+// 同样错误！AGP 强制要求 shrinkResources 必须配合 minifyEnabled
+isMinifyEnabled = false
+isShrinkResources = true  // ← EvalIssueException: requires code shrinking!
 ```
 
 ### 1.4 必须显式依赖 kotlin-reflect 且版本匹配项目 Kotlin 版本
@@ -122,6 +151,74 @@ dependencies {
     implementation(libs.combolite.core)
 }
 ```
+
+### 1.5 EncvHostActivity 透明主题陷阱（⚠️ 实战踩坑！）
+
+> **使用透明主题的 HostActivity 如果 ProxyManager 代理失败，
+> 用户会看到一个不可见的 Activity 覆盖在 WebView 上，表现为"卡住"。**
+
+**症状**：`startActivity` 成功、无崩溃日志、无错误回调、触摸无响应
+
+**根因链**：
+```
+EncvHostActivity(Theme.Translucent.NoTitleBar)
+  → BaseHostActivity.onCreate() 执行完成（proxyStarted=true）✅
+  → ProxyManager 代理启动目标插件 Activity 失败
+  → BaseHostActivity 显示空白布局（全透明 → 用户看不到任何东西）
+  → Activity 仍在栈顶拦截触摸事件 → "卡住"
+  → startActivityForResult 的 pending call 永远不 resolve → 前端 await 永久挂起
+```
+
+**必须的防御措施（4 层）**：
+
+| 层级 | 措施 | 文件 | 效果 |
+|------|------|------|------|
+| L1 可见性 | 半透明主题 `#CC000000` 而非全透明 | `styles.xml` | 用户能看到 Activity 存在 |
+| L2 超时检测 | `onPostCreate` + Handler.postDelayed(5s) | `EncvHostActivity.kt` | proxy 未启动自动 finish+setResult |
+| L3 onResume 诊断 | 时间戳差值 + proxyStarted 检查 | `EncvHostActivity.kt` | 日志暴露卡在哪个阶段 |
+| L4 Promise 兜底 | GoProcessPlugin 端 15s 超时 resolve | `GoProcessPlugin.kt` | 前端不会永久挂起 |
+
+**正确配置**：
+```xml
+<!-- styles.xml -->
+<style name="Theme.EncvHostTranslucent" parent="@android:style/Theme.Translucent.NoTitleBar">
+    <item name="android:windowBackground">#CC000000</item>
+    <item name="android:windowIsTranslucent">true</item>
+    <item name="android:windowContentOverlay">@null</item>
+</style>
+```
+
+```kotlin
+// EncvHostActivity.kt — 必须包含的超时机制
+companion object {
+    const val PROXY_TIMEOUT_MS = 5000L
+}
+
+override fun onPostCreate(savedInstanceState: Bundle?) {
+    super.onPostCreate(savedInstanceState)
+    if (!proxyStarted) {
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (!proxyStarted && !isFinishing && !resultSet) {
+                finishWithResult(pluginId, false, "播放器启动超时", "...")
+            }
+        }, PROXY_TIMEOUT_MS)
+    }
+}
+```
+
+```kotlin
+// GoProcessPlugin.kt — Promise 超时兜底
+Handler(Looper.getMainLooper()).postDelayed({
+    if (pendingCalls.containsKey("mpvPlayer")) {
+        pendingCalls.remove("mpvPlayer")?.resolve(timeoutErrorJSObject)
+    }
+}, 15000)
+```
+
+**反模式（禁止）**：
+- ❌ 全透明主题 + 无超时检测 = 用户以为 app 死了
+- ❌ 依赖 onActivityResult 回调而不做超时兜底 = Promise 永远 pending
+- ❌ 不记录 onCreate→onResume 时间戳 = 无法诊断卡在哪一步
 
 ---
 
@@ -233,8 +330,8 @@ plugins {
 android {
     buildTypes {
         release {
-            isMinifyEnabled = false             // ⚠️ 必须 false！ComboLite 不兼容 R8
-            isShrinkResources = false          // ⚠️ 同步 false
+            isMinifyEnabled = false             // ⚠️ 必须 false！R8 破坏 @Metadata
+            isShrinkResources = false            // ⚠️ 必须 false！AGP 硬耦合
             // ... signing config
         }
     }
@@ -338,7 +435,7 @@ class MyPluginEntry : IPluginEntryClass {
 > **错误信息**：`KotlinReflectionInternalError: Function 'xxx' not resolved in class ...`
 > **根因**：R8 即使 keep 了类名和方法名，仍可能修改 suspend 函数的合成方法名（`$default`）、continuation 参数类型（`g6/e` → `d6.j0`）、lambda 类名，破坏 `@Metadata` 与实际字节码的一致性
 > **证据**：饱和调试日志显示部分方法保留原名（`getInterfaceFromHost`）、部分被混淆（`a()`、`e()`），`@Metadata` 仍描述原始名称
-> **修复**：**禁用 R8**（`isMinifyEnabled = false`），与 ComboLite 官方 demo 保持一致
+> **修复**：**禁用 R8**（`isMinifyEnabled = false`），与 ComboLite 官方 demo 保持一致。注意 `isShrinkResources` 也必须为 `false`（AGP 硬耦合，见 §1.3）
 
 ### 错误 H：「遗漏 kotlin-reflect 依赖」（⚠️ 新增！）
 
@@ -346,6 +443,67 @@ class MyPluginEntry : IPluginEntryClass {
 > **或运行时**：`NoClassDefFoundError: kotlin/reflect/jvm/KFunction` 或 `KotlinReflectionInternalError`
 > **根因**：ComboLite POM 声明 `kotlin-reflect:2.2.0` (runtime)，Gradle align 到项目版本 2.3.21，但未显式声明依赖
 > **修复**：`implementation(libs.kotlin.reflect)` + 确保 mavenCentral() 在仓库列表首位
+
+### 错误 I：「插件 implementation 共享依赖导致 PluginDependencyException」（⚠️ 新增！实战踩坑）
+
+> **症状**：`com.combo.core.exception.PluginDependencyException: 插件 [xxx] 依赖的类 [androidx.compose.material.icons.filled.PauseKt] 未找到`
+> **根因**：ComboLite 的 `PluginClassLoader` 继承 `DexClassLoader`，对插件自行 `implementation` 打包的某些库类解析不稳定。当宿主和插件都包含同一库的不同版本或解析路径时，插件的 ClassLoader 无法正确找到该类。
+> **修复原则**：**宿主提供运行时（implementation）+ 插件仅编译时引用（compileOnly，不指定版本）**
+
+#### 正确配置模式
+
+```kotlin
+// ===== 插件模块 build.gradle.kts =====
+dependencies {
+    compileOnly(libs.combolite.core)                    // ComboLite 核心：compileOnly
+    compileOnly("androidx.core:core-ktx")               // 不指定版本！让 Gradle 从已有 implementation 传递解析
+    compileOnly("androidx.activity:activity-ktx")       // 同上
+    compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-android")  // 同上
+    compileOnly("androidx.compose.material:material-icons-extended") // 同上
+    // ... 其他由宿主提供的共享依赖同理
+}
+
+// ===== 宿主 :app build.gradle.kts =====
+dependencies {
+    implementation("androidx.core:core-ktx:1.17.0")           // 宿主提供运行时
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("androidx.activity:activity-ktx:1.11.0")
+    implementation("androidx.compose.material:material-icons-extended")
+    // ...
+}
+```
+
+#### 关键规则
+
+| 规则 | 说明 |
+|------|------|
+| **插件用 `compileOnly` 不带版本号** | 让 Gradle 从模块内已有的 `implementation` 依赖传递链自动解析版本，避免 `{strictly ...}` 版本冲突 |
+| **宿主用 `implementation` 带具体版本** | 宿主 PathClassLoader 加载这些类，AndroidX 向后兼容 |
+| **禁止插件对同一库同时使用 `implementation` 和 `compileOnly`** | `implementation` 已传递拉入该库，再 `compileOnly` 声明不同版本必冲突 |
+| **`compileOnly` 不代表"不参与版本解析"** | Gradle 仍需在 compileClasspath 解析，必须与传递依赖图一致 |
+
+#### 已确认需要此模式的依赖清单
+
+| 依赖 | 触发错误的类示例 |
+|------|-----------------|
+| `material-icons-extended` | `PauseKt`, `PlayArrowKt`, `VolumeUpKt` 等 Icon 对象单例 |
+| `core-ktx` | `WindowCompat`, `WindowInsetsCompat`, `WindowInsetsControllerCompat` |
+| `activity-ktx` | Activity 扩展函数 |
+| `coroutines-android` | `delay`, `launch`, `flow.*` 协程 API |
+
+#### 反模式（禁止）
+
+```kotlin
+// ❌ 插件用 implementation 打包共享依赖 → PluginDependencyException
+implementation("androidx.compose.material:material-icons-extended")
+
+// ❌ compileOnly 指定版本 → 与 implementation 传递链冲突
+//    错误: Cannot find a version satisfying {strictly 1.13.0} vs declared 1.17.0
+compileOnly("androidx.core:core-ktx:1.17.0")
+
+// ✅ 正确：compileOnly 不指定版本
+compileOnly("androidx.core:core-ktx")
+```
 
 ---
 

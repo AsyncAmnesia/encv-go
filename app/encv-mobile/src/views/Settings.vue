@@ -45,9 +45,15 @@
             mode="ios"
           >
             <ion-select-option value="artplayer">{{ t('settings.builtInArtplayer') }}</ion-select-option>
-            <ion-select-option value="mpv-plugin">{{ t('settings.mpvPluginExtension') }}</ion-select-option>
+            <ion-select-option value="mpv-activity">MPV (Activity)</ion-select-option>
+            <ion-select-option value="mpv-fragment" :disabled="true">MPV (Fragment) [实验]</ion-select-option>
+            <ion-select-option value="mpv-compose" :disabled="true">MPV (Compose) [实验]</ion-select-option>
             <ion-select-option value="external">{{ t('settings.openExternal') }}</ion-select-option>
           </ion-select>
+          <ion-badge v-if="isNative() && isMpvMode(videoPlayerMode) && mpvPluginStatus !== 'unknown' && mpvPluginStatus !== 'ready'" slot="end" :color="mpvPluginStatus === 'load_failed' || mpvPluginStatus === 'error' ? 'danger' : 'warning'">
+            {{ t(mpvStatusI18nKey) }}
+          </ion-badge>
+          <ion-badge v-if="isNative() && isMpvMode(videoPlayerMode) && mpvPluginStatus === 'ready'" slot="end" color="success">✓</ion-badge>
         </ion-item>
         <ion-item>
           <ion-icon :icon="musicalNotesOutline" slot="start"></ion-icon>
@@ -278,7 +284,7 @@
         </ion-item>
       </ion-list>
 
-      <ion-list>
+      <ion-list v-if="isNative()">
         <ion-list-header>
           <ion-label>{{ t('devtools.title') }}</ion-label>
         </ion-list-header>
@@ -348,7 +354,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
@@ -374,11 +380,11 @@ import { useServerStatus } from '@/composables/useServerStatus'
 import { useConfig } from '@/composables/useConfig'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
-import { isNative } from '@/plugins/GoProcess'
+import { isNative, getPluginFullState, ensurePluginLoaded } from '@/plugins/GoProcess'
 import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus, fetchTextPreviewExts, invalidateTextExtsCache } from '@/api/encv'
 import type { IndexStats, FFmpegStatus } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
-import { PLAY_MODE } from '@/constants/player'
+import { PLAY_MODE, isMpvSubMode } from '@/constants/player'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 import ConfigFieldItem from '@/components/ConfigFieldItem.vue'
 
@@ -397,17 +403,37 @@ const audioPlayerMode = ref(localStorage.getItem('encv_player_audio') || PLAY_MO
 const screenOrientation = ref(localStorage.getItem('encv_screen_orientation') || 'auto')
 const customTextExts = ref('')
 const builtInTextExtsCount = ref(0)
+const mpvPluginStatus = ref<string>('unknown')
+const mpvPluginError = ref<string>('')
 
-function handleVideoPlayerChange(event: CustomEvent) {
+const mpvStatusI18nKey = computed(() => {
+  const keyMap: Record<string, string> = {
+    not_installed: 'settings.pluginNotInstalled',
+    disabled: 'settings.pluginDisabled',
+    not_loaded: 'settings.pluginNotLoaded',
+    load_failed: 'settings.pluginLoadFailed',
+    error: 'settings.pluginQueryFailed',
+    framework_not_ready: 'settings.pluginFrameworkNotReady',
+  }
+  return keyMap[mpvPluginStatus.value] || 'settings.pluginQueryFailed'
+})
+
+function isMpvMode(mode: string): boolean {
+  return isMpvSubMode(mode) || mode === 'mpv-plugin' || mode === 'mpv'
+}
+
+async function handleVideoPlayerChange(event: CustomEvent) {
   const value = event.detail.value
   videoPlayerMode.value = value
   localStorage.setItem('encv_player_video', value)
+  if (isMpvMode(value)) await refreshMpvPluginStatus()
 }
 
-function handleAudioPlayerChange(event: CustomEvent) {
+async function handleAudioPlayerChange(event: CustomEvent) {
   const value = event.detail.value
   audioPlayerMode.value = value
   localStorage.setItem('encv_player_audio', value)
+  if (isMpvMode(value)) await refreshMpvPluginStatus()
 }
 
 function handleScreenOrientationChange(event: CustomEvent) {
@@ -716,10 +742,51 @@ onMounted(async () => {
     await loadConfig()
     configLoaded.value = true
     try { indexStats.value = await getIndexStats() } catch {}
-    if (isNative()) { try { engineStatus.value = await fetchFFmpegStatus() } catch {} }
+    if (isNative()) { 
+      try { engineStatus.value = await fetchFFmpegStatus() } catch {}
+      await refreshMpvPluginStatus()
+    }
     loadPreviewConfig()
   }
+  window.addEventListener('plugin-state-changed', refreshMpvPluginStatus)
 })
+
+onUnmounted(() => {
+  window.removeEventListener('plugin-state-changed', refreshMpvPluginStatus)
+})
+
+async function refreshMpvPluginStatus() {
+  try {
+    const state = await getPluginFullState('com.encvgo.plugin.mpv')
+    console.info('[Settings] MPV plugin raw state:', JSON.stringify(state))
+    mpvPluginError.value = ''
+    
+    if (state.status === 'ready') {
+      mpvPluginStatus.value = 'ready'
+      return
+    }
+    
+    if (state.status === 'not_loaded' || state.status === 'not_installed') {
+      console.info('[Settings] MPV plugin status=${state.status}, attempting to load...')
+      const loaded = await ensurePluginLoaded('com.encvgo.plugin.mpv')
+      if (loaded) {
+        mpvPluginStatus.value = 'ready'
+        console.info('[Settings] MPV plugin loaded successfully')
+      } else {
+        mpvPluginStatus.value = 'load_failed'
+        mpvPluginError.value = '插件加载失败'
+        console.warn('[Settings] MPV plugin load failed')
+      }
+    } else {
+      mpvPluginStatus.value = state.status
+      console.warn('[Settings] MPV plugin status:', state.status)
+    }
+  } catch (e: any) {
+    console.error('[Settings] refreshMpvPluginStatus failed:', e)
+    mpvPluginStatus.value = 'error'
+    mpvPluginError.value = e.message || '查询失败'
+  }
+}
 
 watch(serverOnline, async (online) => {
   if (online) {

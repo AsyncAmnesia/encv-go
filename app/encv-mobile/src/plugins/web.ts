@@ -23,6 +23,19 @@ export interface PermissionCheckResult {
   batteryOptimization: boolean
 }
 
+export interface PluginFullState {
+  id: string
+  status: 'ready' | 'not_installed' | 'disabled' | 'not_loaded' | 'framework_not_ready' | 'error' | 'load_failed'
+  name: string
+  version: string
+}
+
+export interface PlayResult {
+  success: boolean
+  error?: string
+  errorDetail?: string
+}
+
 export interface GoProcessPlugin {
   restart(): Promise<GoProcessResult>
   stop(): Promise<GoProcessResult>
@@ -33,7 +46,7 @@ export interface GoProcessPlugin {
   checkPermissions(): Promise<PermissionCheckResult>
   isStandaloneMode(): Promise<{ standalone: boolean }>
   getIntentFileInfo(): Promise<{ path: string; name: string; mimeType: string }>
-  openPlayer(options: { filePath: string; name: string; mimeType: string; mode?: string }): Promise<void>
+  openPlayer(options: { filePath: string; name: string; mimeType: string; mode?: string }): Promise<PlayResult>
   closePlayer(): Promise<void>
   openExternal(options: { url: string; mimeType: string }): Promise<void>
   openInPlayer(options: { path: string; name: string; mimeType: string; mode?: string }): Promise<void>
@@ -41,8 +54,15 @@ export interface GoProcessPlugin {
   setScreenOrientation(options: { orientation: string }): Promise<void>
   installPlugin(options: { apkPath: string }): Promise<{ success: boolean; method?: string }>
   pickAndInstallPlugin(): Promise<{ success: boolean; method?: string; fileName?: string }>
-  checkInstalledPlugins(): Promise<Record<string, boolean>>
+  checkInstalledPlugins(): Promise<Record<string, { installed: boolean; enabled: boolean; versionName: string }>>
+  getPluginFullState(options: { pluginId: string }): Promise<PluginFullState>
+  ensurePluginLoaded(options: { pluginId: string }): Promise<{ success: boolean }>
+  togglePluginEnabled(options: { pluginId: string; enabled: boolean }): Promise<{ success: boolean; pluginId: string; enabled: boolean }>
+  uninstallPlugin(options: { pluginId: string }): Promise<{ success: boolean; pluginId: string }>
+  debugLifecycleFlow(options?: { pluginId?: string }): Promise<Record<string, any>>
   getLocalFilePath(options: { path: string }): Promise<{ path: string }>
+  startMpvInPlace(options: { filePath: string; name: string; mimeType?: string; containerId?: string }): Promise<PlayResult>
+  stopMpvInPlace(): Promise<{ success: boolean; embedded?: boolean }>
   debugInstallFlow(): Promise<Record<string, any>>
   debugKotlinReflect(): Promise<Record<string, any>>
   debugApkValidation(): Promise<Record<string, any>>
@@ -90,7 +110,8 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
     return { path: '', name: '', mimeType: '' }
   }
 
-  async openPlayer(_options: { filePath: string; name: string; mimeType: string; mode?: string }): Promise<void> {
+  async openPlayer(_options: { filePath: string; name: string; mimeType: string; mode?: string }): Promise<PlayResult> {
+    return { success: true }
   }
 
   async closePlayer(): Promise<void> {
@@ -116,12 +137,40 @@ export class GoProcessWeb extends WebPlugin implements GoProcessPlugin {
     return { success: false }
   }
 
-  async checkInstalledPlugins(): Promise<Record<string, boolean>> {
+  async checkInstalledPlugins(): Promise<Record<string, { installed: boolean; enabled: boolean; versionName: string }>> {
     return {}
+  }
+
+  async getPluginFullState(_options: { pluginId: string }): Promise<PluginFullState> {
+    return { id: _options.pluginId, status: 'not_installed', name: '', version: '' }
+  }
+
+  async ensurePluginLoaded(_options: { pluginId: string }): Promise<{ success: boolean }> {
+    return { success: false }
+  }
+
+  async togglePluginEnabled(_options: { pluginId: string; enabled: boolean }): Promise<{ success: boolean; pluginId: string; enabled: boolean }> {
+    return { success: false, pluginId: '', enabled: false }
+  }
+
+  async uninstallPlugin(_options: { pluginId: string }): Promise<{ success: boolean; pluginId: string }> {
+    return { success: false, pluginId: '' }
+  }
+
+  async debugLifecycleFlow(_options?: { pluginId?: string }): Promise<Record<string, any>> {
+    return { debugLog: 'web stub' }
   }
 
   async getLocalFilePath(_options: { path: string }): Promise<{ path: string }> {
     return { path: '' }
+  }
+
+  async startMpvInPlace(_options: { filePath: string; name: string; mimeType?: string; containerId?: string }): Promise<PlayResult> {
+    return { success: false, error: 'Native only' }
+  }
+
+  async stopMpvInPlace(): Promise<{ success: boolean; embedded?: boolean }> {
+    return { success: false, embedded: false }
   }
 
   async debugInstallFlow(): Promise<Record<string, any>> {

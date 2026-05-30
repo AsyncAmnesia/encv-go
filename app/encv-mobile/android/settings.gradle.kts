@@ -1,13 +1,14 @@
 pluginManagement {
     repositories {
         mavenCentral()
+        google()
+        gradlePluginPortal()
+        maven { url = uri("https://plugins.gradle.org/m2/") }
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
         maven { url = uri("https://maven.aliyun.com/repository/public") }
         maven { url = uri("https://mirrors.tencent.com/nexus/repository/maven-tencent/") }
-        google()
-        gradlePluginPortal()
     }
 }
 
@@ -34,6 +35,7 @@ rootProject.name = "encv-mobile"
 include(":app")
 include(":capacitor-cordova-android-plugins")
 include(":plugin-mpv-player")
+include(":combolite-host")
 
 project(":capacitor-cordova-android-plugins").projectDir = file("./capacitor-cordova-android-plugins/")
 project(":plugin-mpv-player").projectDir = file("../plugin-mpv-player")

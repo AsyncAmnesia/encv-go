@@ -25,6 +25,7 @@ class MpvPluginEntry : IPluginEntryClass {
             fileName = "",
             mimeType = "",
             isExternal = false,
+            backendUrl = "",
             engine = engine,
             onBack = {}
         )

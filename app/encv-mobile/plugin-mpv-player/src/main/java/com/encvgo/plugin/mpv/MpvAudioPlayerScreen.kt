@@ -57,7 +57,6 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,6 +73,7 @@ fun MpvAudioPlayerScreen(
     fileName: String,
     mimeType: String,
     isExternal: Boolean,
+    backendUrl: String,
     engine: MpvEngine,
     onBack: () -> Unit
 ) {
@@ -84,8 +84,6 @@ fun MpvAudioPlayerScreen(
     var volume by remember { mutableFloatStateOf(1f) }
     val isPlaying = playerState == PlayerState.AudioOnly || playerState == PlayerState.Playing
     val progress = if (duration > 0) currentPosition.toFloat() / duration else 0f
-    val context = LocalContext.current
-    val backendUrl = (context as? android.app.Activity)?.intent?.getStringExtra("backend_url") ?: ""
 
     val gradientBg = Brush.linearGradient(
         colors = listOf(Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460)),
@@ -98,12 +96,30 @@ fun MpvAudioPlayerScreen(
             val streamUrl = resolveStreamUrl(filePath, isExternal, backendUrl)
             if (streamUrl.isNotEmpty()) {
                 engine.playAudioOnly(streamUrl)
-                playerState = PlayerState.AudioOnly
             } else {
                 playerState = PlayerState.Error(MpvError.FILE_NOT_FOUND, "Empty stream URL")
             }
         } catch (e: Exception) {
             playerState = PlayerState.Error(classifyError(e.message ?: ""), e.message ?: "")
+        }
+    }
+
+    DisposableEffect(engine) {
+        val listener: (MpvEngine.State) -> Unit = { state ->
+            when (state) {
+                is MpvEngine.State.Playing -> playerState = PlayerState.Playing
+                is MpvEngine.State.Paused -> playerState = PlayerState.Paused
+                is MpvEngine.State.AudioOnly -> playerState = PlayerState.AudioOnly
+                is MpvEngine.State.Ended -> playerState = PlayerState.Ended
+                is MpvEngine.State.Error -> playerState = PlayerState.Error(classifyError(state.message), state.message)
+                is MpvEngine.State.SurfaceReady -> { }
+                is MpvEngine.State.WaitingSurface -> { }
+                is MpvEngine.State.MpvReady -> { }
+            }
+        }
+        engine.stateListener = listener
+        onDispose {
+            engine.stateListener = null
         }
     }
 
