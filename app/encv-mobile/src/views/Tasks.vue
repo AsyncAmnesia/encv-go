@@ -127,7 +127,7 @@
       </ion-list>
 
       <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-        <ion-fab-button @click="openNewTaskModal">
+        <ion-fab-button @click="() => openNewTaskModal()">
           <ion-icon :icon="add"></ion-icon>
         </ion-fab-button>
       </ion-fab>
@@ -366,16 +366,17 @@ async function handleRefresh(event: CustomEvent) {
 }
 
 async function openNewTaskModal(initialSourcePath?: string) {
+  const safeSource = typeof initialSourcePath === 'string' ? initialSourcePath : ''
   newTaskType.value = 'encrypt'
-  newTaskPath.value = initialSourcePath ?? ''
+  newTaskPath.value = safeSource
   newTaskTargetPath.value = ''
   newTaskVersion.value = 4
   sourcePathError.value = ''
   targetPathError.value = ''
   resetTaskForm()
 
-  if (initialSourcePath) {
-    await initFromQuery({ sourcePath: initialSourcePath, taskType: 'encrypt' })
+  if (safeSource) {
+      await initFromQuery({ sourcePath: safeSource, taskType: 'encrypt' })
   }
 
   const modal = await modalController.create({
