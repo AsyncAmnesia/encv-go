@@ -93,8 +93,6 @@
         </div>
       </ion-toolbar>
     </ion-footer>
-
-    <ion-alert-controller></ion-alert-controller>
   </ion-page>
 </template>
 

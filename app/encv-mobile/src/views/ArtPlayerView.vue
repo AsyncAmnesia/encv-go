@@ -139,7 +139,7 @@ async function handleFullscreenEnter() {
       await ScreenOrientation.lock({ orientation: 'landscape' })
     }
   } catch (e) {
-    console.warn(TAG, 'handleFullscreenEnter error:', e)
+    console.debug(TAG, 'handleFullscreenEnter error:', e)
   }
 }
 
@@ -151,7 +151,7 @@ async function handleFullscreenExit() {
     await StatusBar.show()
     await StatusBar.setStyle({ style: Style.Default })
   } catch (e) {
-    console.warn(TAG, 'handleFullscreenExit error:', e)
+    console.debug(TAG, 'handleFullscreenExit error:', e)
   }
 }
 

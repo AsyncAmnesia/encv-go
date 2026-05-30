@@ -1,6 +1,8 @@
 <template>
   <ion-app>
     <ion-router-outlet />
+    <ion-alert-controller></ion-alert-controller>
+    <ion-modal-controller></ion-modal-controller>
   </ion-app>
 </template>
 
@@ -57,7 +59,7 @@ async function applyScreenOrientation() {
       await ScreenOrientation.unlock()
     }
   } catch (e) {
-    console.warn('[App] Failed to apply screen orientation:', e)
+    console.debug('[App] Failed to apply screen orientation:', e)
   }
 }
 

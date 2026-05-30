@@ -541,7 +541,7 @@ async function playMedia(file: FileItem, category: string) {
       }
       break
     default:
-      console.warn('[Files] Unknown play mode:', mode, '— falling back to artplayer')
+      console.debug('[Files] Unknown play mode:', mode, '— falling back to artplayer')
       router.push({ path: '/player', query: { path: file.path, name: file.name } })
       break
   }

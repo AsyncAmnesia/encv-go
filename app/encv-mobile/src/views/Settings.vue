@@ -457,7 +457,7 @@ async function applyScreenOrientation(orientation: string) {
       await ScreenOrientation.unlock()
     }
   } catch (e) {
-    console.warn('Failed to apply screen orientation:', e)
+    console.debug('Failed to apply screen orientation:', e)
   }
 }
 
@@ -787,11 +787,11 @@ async function refreshMpvPluginStatus() {
       } else {
         mpvPluginStatus.value = 'load_failed'
         mpvPluginError.value = '插件加载失败'
-        console.warn('[Settings] MPV plugin load failed')
+        console.debug('[Settings] MPV plugin load failed')
       }
     } else {
       mpvPluginStatus.value = state.status
-      console.warn('[Settings] MPV plugin status:', state.status)
+      console.debug('[Settings] MPV plugin status:', state.status)
     }
   } catch (e: any) {
     console.error('[Settings] refreshMpvPluginStatus failed:', e)
