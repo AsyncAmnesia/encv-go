@@ -364,7 +364,7 @@ async function openNewTaskModal(initialSourcePath?: string) {
   resetTaskForm()
 
   if (safeSource) {
-      await initFromQuery({ sourcePath: safeSource, taskType: 'encrypt' })
+    await initFromQuery({ sourcePath: safeSource, taskType: 'encrypt' })
   }
 
   const modal = await modalController.create({
@@ -373,27 +373,45 @@ async function openNewTaskModal(initialSourcePath?: string) {
       taskType: newTaskType.value,
       sourcePath: newTaskPath.value,
       targetPath: newTaskTargetPath.value,
-      candidates: candidates.value,
-      predictedPlugin: predictedPlugin.value,
-      taskOptions: taskOptions.value,
-      primaryOverride: primaryOverride.value,
-      secondaryPassword: secondaryPassword.value,
-      version: newTaskVersion.value,
-      versionOptions: versionOptions.value,
-      extraValues: extraValues.value,
+      candidates: candidates.value || [],
+      predictedPlugin: predictedPlugin.value || null,
+      taskOptions: taskOptions.value || null,
+      primaryOverride: primaryOverride.value || '',
+      secondaryPassword: secondaryPassword.value || '',
+      version: newTaskVersion.value || 4,
+      versionOptions: versionOptions.value || [],
+      extraValues: extraValues.value || {},
       filteredExtraFields: [],
     },
   })
 
   modal.onDidDismiss().then(() => {})
-  modal.addEventListener('updateTaskType', (e: any) => { newTaskType.value = e.detail })
-  modal.addEventListener('updateSourcePath', (e: any) => { newTaskPath.value = e.detail })
-  modal.addEventListener('updateTargetPath', (e: any) => { newTaskTargetPath.value = e.detail })
-  modal.addEventListener('updateVersion', (e: any) => { newTaskVersion.value = e.detail })
-  modal.addEventListener('updatePrimaryOverride', (e: any) => { primaryOverride.value = e.detail })
-  modal.addEventListener('updateSecondaryPassword', (e: any) => { secondaryPassword.value = e.detail })
-  modal.addEventListener('updateExtraValue', (e: any) => { if (e.detail?.key) extraValues.value[e.detail.key] = e.detail.value })
-  modal.addEventListener('submit', () => { handleCreateTask(); modal.dismiss() })
+
+  modal.addEventListener('updateTaskType', (e: any) => {
+    if (e.detail) newTaskType.value = e.detail
+  })
+  modal.addEventListener('updateSourcePath', (e: any) => {
+    if (e.detail) newTaskPath.value = e.detail
+  })
+  modal.addEventListener('updateTargetPath', (e: any) => {
+    if (e.detail) newTaskTargetPath.value = e.detail
+  })
+  modal.addEventListener('updateVersion', (e: any) => {
+    if (typeof e.detail === 'number') newTaskVersion.value = e.detail
+  })
+  modal.addEventListener('updatePrimaryOverride', (e: any) => {
+    if (e.detail) primaryOverride.value = e.detail
+  })
+  modal.addEventListener('updateSecondaryPassword', (e: any) => {
+    if (e.detail) secondaryPassword.value = e.detail
+  })
+  modal.addEventListener('updateExtraValue', (e: any) => {
+    if (e.detail?.key) extraValues.value[e.detail.key] = e.detail.value
+  })
+  modal.addEventListener('submit', () => {
+    handleCreateTask()
+    modal.dismiss()
+  })
 
   await modal.present()
 }
@@ -504,29 +522,39 @@ function onTaskCompleted(data: { id: string; status?: string; error?: string; er
 }
 
 function processQueryAction() {
-  if (route.query.action === 'new') {
-    const rawSource = route.query.source as string | undefined
-    const taskType = (route.query.type === 'encrypt' || route.query.type === 'decrypt')
-      ? route.query.type as TaskType
-      : 'encrypt'
+  try {
+    if (route.query.action === 'new') {
+      const rawSource = route.query.source as string | undefined
+      const taskType = (route.query.type === 'encrypt' || route.query.type === 'decrypt')
+        ? route.query.type as TaskType
+        : 'encrypt'
 
-    router.replace({ path: '/tabs/tasks', query: {} })
+      router.replace({ path: '/tabs/tasks', query: {} }).catch(() => {})
 
-    nextTick(() => {
-      newTaskType.value = taskType
-      const sourcePath = rawSource ? normalize(rawSource) : ''
-      openNewTaskModal(sourcePath || undefined)
-    })
+      nextTick(() => {
+        newTaskType.value = taskType
+        const sourcePath = rawSource ? normalize(rawSource) : ''
+        openNewTaskModal(sourcePath || undefined).catch((err) => {
+          console.error('[Tasks] openNewTaskModal failed:', err)
+        })
+      })
+    }
+  } catch (err) {
+    console.error('[Tasks] processQueryAction error:', err)
   }
 }
 
 onMounted(() => {
-  processQueryAction()
-  loadTasks()
-  eventBus.on('task:update', onTaskUpdate)
-  eventBus.on('task:progress', onTaskProgress)
-  eventBus.on('task:created', onTaskCreated)
-  eventBus.on('task:completed', onTaskCompleted)
+  try {
+    processQueryAction()
+    loadTasks().catch(() => {})
+    eventBus.on('task:update', onTaskUpdate)
+    eventBus.on('task:progress', onTaskProgress)
+    eventBus.on('task:created', onTaskCreated)
+    eventBus.on('task:completed', onTaskCompleted)
+  } catch (err) {
+    console.error('[Tasks] onMounted error:', err)
+  }
 })
 
 watch(() => route.query, processQueryAction, { immediate: false })
