@@ -333,13 +333,26 @@ export async function getTasks(): Promise<EncvTask[]> {
   return data.tasks || []
 }
 
-export async function createTask(type: TaskType, sourcePath: string, targetPath?: string, password?: string, containerVersion?: number): Promise<EncvTask> {
-  console.info('[API] createTask:', type, sourcePath, targetPath || '', 'version:', containerVersion ?? 'default')
+export async function createTask(
+  type: TaskType,
+  sourcePath: string,
+  targetPath?: string,
+  password?: string,
+  version?: number,
+  extraFields?: Record<string, string>,
+  secondaryPassword?: string,
+): Promise<EncvTask> {
+  console.info('[API] createTask:', type, sourcePath, targetPath || '',
+    'hasPassword:', !!password, 'version:', version ?? 'default',
+    'hasExtraFields:', extraFields && Object.keys(extraFields).length > 0,
+    'hasSecondaryPassword:', !!secondaryPassword)
   const baseUrl = getApiBaseUrl()
   const body: Record<string, unknown> = { type, sourcePath }
   if (targetPath) body.targetPath = targetPath
   if (password) body.password = password
-  if (containerVersion) body.containerVersion = containerVersion
+  if (version) body.version = version
+  if (extraFields && Object.keys(extraFields).length > 0) body.extraFields = extraFields
+  if (secondaryPassword) body.secondaryPassword = secondaryPassword
   const response = await fetch(`${baseUrl}/api/tasks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

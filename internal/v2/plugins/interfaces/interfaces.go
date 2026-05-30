@@ -82,3 +82,10 @@ type TaskField struct {
 	Options      []string // Type="select" 时的可选项
 	Condition    string   // 显示条件: "encrypt" | "decrypt" | ""(始终显示)
 }
+
+// TaskPasswordResolver 定义插件自定义主密码解析能力
+// 插件根据 ExtraFields 和策略返回主密码（L0 或 L1）
+// L2 二级密码不在此接口处理，由 TaskManager 单独传递
+type TaskPasswordResolver interface {
+	ResolveTaskPassword(taskPassword string, extraFields map[string]string) string
+}

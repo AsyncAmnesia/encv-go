@@ -5,6 +5,7 @@ export function useTaskForm() {
   const predictedPlugin = ref<string | null>(null)
   const taskOptions = ref<TaskOptions | null>(null)
   const extraValues = ref<Record<string, string>>({})
+  const primaryOverride = ref('')
   const secondaryPassword = ref('')
 
   let predictTimer: ReturnType<typeof setTimeout> | null = null
@@ -28,12 +29,11 @@ export function useTaskForm() {
     }, 500)
   }
 
-  function getExtraPayload(): Record<string, unknown> {
-    const payload: Record<string, unknown> = {}
+  function getExtraPayload(): Record<string, string> {
+    const payload: Record<string, string> = {}
     for (const [k, v] of Object.entries(extraValues.value)) {
       if (v !== undefined && v !== '') payload[k] = v
     }
-    if (secondaryPassword.value) payload['secondary_password'] = secondaryPassword.value
     return payload
   }
 
@@ -64,6 +64,7 @@ export function useTaskForm() {
     predictedPlugin.value = null
     taskOptions.value = null
     extraValues.value = {}
+    primaryOverride.value = ''
     secondaryPassword.value = ''
   }
 
@@ -71,6 +72,7 @@ export function useTaskForm() {
     predictedPlugin,
     taskOptions,
     extraValues,
+    primaryOverride,
     secondaryPassword,
     visibleExtraFields,
     versionOptions,

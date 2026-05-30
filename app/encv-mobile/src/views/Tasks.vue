@@ -203,7 +203,7 @@
             <ContainerVersionSelector v-model="newTaskVersion" :versions="versionOptions" />
           </ion-item>
 
-          <!-- 插件声明的额外字段（动态渲染） -->
+          <!-- 插件声明的额外字段（动态渲染，如 Independent 插件的 plugin_password） -->
           <template v-for="field in filteredExtraFields" :key="field.key">
             <ion-item v-if="!field.condition || field.condition === newTaskType">
               <ion-input
@@ -215,7 +215,20 @@
             </ion-item>
           </template>
 
-          <!-- 二级密码（任务级覆盖，始终可选显示） -->
+          <!-- 密码覆盖（Global 插件的 L0 覆盖值） -->
+          <ion-item v-if="!taskOptions || taskOptions.passwordStrategy === 'global'">
+            <ion-input
+              v-model="primaryOverride"
+              :label="t('tasks.passwordOverride')"
+              label-placement="stacked"
+              type="password"
+              :placeholder="t('tasks.passwordOverrideHelp')"
+            >
+            </ion-input>
+            <ion-badge color="medium" slot="end">{{ t('tasks.optional') }}</ion-badge>
+          </ion-item>
+
+          <!-- 二级密码（L2 叠加验证，预留） -->
           <ion-item>
             <ion-input
               v-model="secondaryPassword"
@@ -302,11 +315,13 @@ import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 
 const {
   predictedPlugin,
   taskOptions,
   extraValues,
+  primaryOverride,
   secondaryPassword,
   visibleExtraFields,
   versionOptions,
@@ -589,12 +604,17 @@ async function handleCreateTask() {
   if (!newTaskPath.value) return
   try {
     const extra = getExtraPayload()
+    const passwordArg = taskOptions.value?.passwordStrategy === 'independent'
+      ? undefined
+      : primaryOverride.value || undefined
     await createTask(
       newTaskType.value,
       newTaskPath.value,
       newTaskTargetPath.value || undefined,
-      (extra.plugin_password || extra.secondary_password) as string | undefined,
-      taskOptions.value?.supportVersionSelect ? newTaskVersion.value : undefined
+      passwordArg,
+      taskOptions.value?.supportVersionSelect ? newTaskVersion.value : undefined,
+      extra,
+      secondaryPassword.value || undefined,
     )
     showNewTaskModal.value = false
     if (route.query.action) {
@@ -744,7 +764,6 @@ onUnmounted(() => {
   color: var(--ion-color-primary);
   font-weight: 500;
 }
-</style>
 .empty-state {
   display: flex;
   flex-direction: column;

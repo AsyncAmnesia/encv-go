@@ -101,10 +101,6 @@ func (p *AlistEncryptPlugin) Initialize(ctx context.Context) error {
 			"enc_type", p.settings.EncType)
 	}
 
-	if p.settings.DefaultPassword == "" && p.cfg.Password != "" {
-		p.settings.DefaultPassword = p.cfg.Password
-	}
-
 	return nil
 }
 
@@ -252,8 +248,16 @@ func (p *AlistEncryptPlugin) resolvePassword() string {
 	if p.settings.DefaultPassword != "" {
 		return p.settings.DefaultPassword
 	}
-	if p.cfg != nil && p.cfg.Password != "" {
-		return p.cfg.Password
-	}
 	return ""
+}
+
+func (p *AlistEncryptPlugin) resolvePasswordWithTaskExtras(extraFields map[string]string) string {
+	if pw := extraFields["plugin_password"]; pw != "" {
+		return pw
+	}
+	return p.resolvePassword()
+}
+
+func (p *AlistEncryptPlugin) ResolveTaskPassword(taskPassword string, extraFields map[string]string) string {
+	return p.resolvePasswordWithTaskExtras(extraFields)
 }

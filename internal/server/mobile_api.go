@@ -198,19 +198,28 @@ func (s *Server) handleGetTasksGin(c *gin.Context) {
 
 func (s *Server) handleCreateTaskGin(c *gin.Context) {
 	var req struct {
-		Type       string `json:"type"`
-		SourcePath string `json:"sourcePath"`
-		TargetPath string `json:"targetPath,omitempty"`
-		Password   string `json:"password,omitempty"`
-		Version    int    `json:"version,omitempty"`
+		Type             string            `json:"type"`
+		SourcePath       string            `json:"sourcePath"`
+		TargetPath       string            `json:"targetPath,omitempty"`
+		Password         string            `json:"password,omitempty"`
+		SecondaryPassword string           `json:"secondaryPassword,omitempty"`
+		Version          int               `json:"version,omitempty"`
+		ExtraFields      map[string]string `json:"extraFields,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
 		return
 	}
 
-	slog.Info("API: create task", "type", req.Type, "source", req.SourcePath, "target", req.TargetPath, "version", req.Version)
-	task := s.mobileSvc.GetTaskManager().Create(req.Type, req.SourcePath, req.TargetPath, req.Password, req.Version)
+	slog.Info("API: create task", "type", req.Type, "source", req.SourcePath,
+		"target", req.TargetPath, "version", req.Version,
+		"hasPassword", req.Password != "",
+		"hasSecondaryPassword", req.SecondaryPassword != "",
+		"hasExtraFields", len(req.ExtraFields) > 0)
+	task := s.mobileSvc.GetTaskManager().CreateWithExtras(
+		req.Type, req.SourcePath, req.TargetPath,
+		req.Password, req.SecondaryPassword, req.Version, req.ExtraFields,
+	)
 
 	c.JSON(http.StatusCreated, task)
 }

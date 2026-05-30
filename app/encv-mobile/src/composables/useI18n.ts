@@ -133,8 +133,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'tasks.eta': '剩余',
 
     'tasks.globalPassword': '全局密码',
+    'tasks.passwordOverride': '密码',
+    'tasks.passwordOverrideHelp': '留空则使用全局默认密码',
     'tasks.secondaryPassword': '二级密码（可选）',
-    'tasks.secondaryPasswordHelp': '留空则使用插件/全局默认密码',
+    'tasks.secondaryPasswordHelp': '可选的额外验证密码（预留）',
     'tasks.optional': '可选',
     'tasks.willBeHandledBy': '此文件将由 {plugin} 插件处理',
     'tasks.usesGlobalPassword': '将使用全局密码进行加解密',
@@ -658,8 +660,10 @@ const messages: Record<Locale, Record<string, string>> = {
     'tasks.eta': 'ETA',
 
     'tasks.globalPassword': 'Global Password',
+    'tasks.passwordOverride': 'Password',
+    'tasks.passwordOverrideHelp': 'Leave empty to use global default password',
     'tasks.secondaryPassword': 'Secondary Password (Optional)',
-    'tasks.secondaryPasswordHelp': 'Leave empty to use plugin/global default password',
+    'tasks.secondaryPasswordHelp': 'Optional extra verification password (reserved)',
     'tasks.optional': 'Optional',
     'tasks.willBeHandledBy': 'This file will be handled by {plugin} plugin',
     'tasks.usesGlobalPassword': 'Will use global password for encryption/decryption',
