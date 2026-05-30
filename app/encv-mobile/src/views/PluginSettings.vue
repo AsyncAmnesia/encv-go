@@ -150,9 +150,10 @@
           </ion-item>
         </ion-list>
 
-        <div v-if="suffixConflict.length > 0" class="suffix-conflict-warning">
+        <div v-if="suffixConflict.length > 0" class="suffix-conflict-warning" :class="{ 'api-unavailable': suffixConflict.includes(UNAVAILABLE) }">
           <ion-icon :icon="warningOutline"></ion-icon>
-          <span>{{ t('settings.suffixConflictWarning', { suffix: String(getFieldValue(['plugin_settings', 'alist_encrypt', 'suffix']) ?? ''), plugins: suffixConflict.join(', ') }) }}</span>
+          <span v-if="suffixConflict.includes(UNAVAILABLE)">{{ t('settings.suffixCheckUnavailable') }}</span>
+          <span v-else>{{ t('settings.suffixConflictWarning', { suffix: String(getFieldValue(['plugin_settings', 'alist_encrypt', 'suffix']) ?? ''), plugins: suffixConflict.join(', ') }) }}</span>
         </div>
 
         <ion-list v-if="isNative()">
@@ -232,7 +233,7 @@ import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const { isOnline: serverOnline } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
-const { getConflictingPlugins, load: loadExtensions } = usePluginExtensions()
+const { getConflictingPlugins, load: loadExtensions, isExtensionCheckAvailable, UNAVAILABLE } = usePluginExtensions()
 const { t, tField, tSectionTitle } = useI18n()
 
 const configLoaded = ref(false)
@@ -572,6 +573,11 @@ watch(serverOnline, async (online) => {
   border-left: 3px solid #e65100;
   color: #e65100;
   font-size: 13px;
+}
+.suffix-conflict-warning.api-unavailable {
+  background: rgba(var(--ion-color-danger-rgb), 0.08);
+  border-left-color: var(--ion-color-danger);
+  color: var(--ion-color-danger);
 }
 .suffix-conflict-warning ion-icon {
   font-size: 20px;

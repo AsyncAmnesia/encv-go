@@ -87,7 +87,6 @@ describe('usePluginExtensions', () => {
       const { load, getConflictingPlugins } = usePluginExtensions()
       await load()
 
-      // 模拟用户输入 alist_encrypt.suffix = ".sccgv"
       const result = getConflictingPlugins('.sccgv')
       expect(result).toContain('video')
       expect(result.length).toBeGreaterThanOrEqual(1)
@@ -153,7 +152,6 @@ describe('usePluginExtensions', () => {
       const { load, getConflictingPlugins } = usePluginExtensions()
       await load()
 
-      // .myenc 不在任何已注册插件的容器扩展名中
       const result = getConflictingPlugins('.myenc')
       expect(result).toEqual([])
     })
@@ -169,7 +167,6 @@ describe('usePluginExtensions', () => {
       const { load, getConflictingPlugins } = usePluginExtensions()
       await load()
 
-      // 大写输入应同样检测到冲突
       expect(getConflictingPlugins('SCCGV')).toEqual(['video'])
       expect(getConflictingPlugins('SccGv')).toEqual(['video'])
     })
@@ -193,6 +190,71 @@ describe('usePluginExtensions', () => {
       expect(result).toContain('video')
       expect(result).toContain('audio')
       expect(result.length).toBe(2)
+    })
+  })
+
+  describe('API 不可用时的阻断行为（防御深度）', () => {
+    it('未调用 load() 时 getConflictingPlugins 应返回 [UNAVAILABLE] 阻断保存', () => {
+      const { getConflictingPlugins, UNAVAILABLE } = usePluginExtensions()
+
+      // 不调用 load()，模拟 API 不可用
+      // 必须返回 UNAVAILABLE 标记，触发 disabled 保存按钮
+      const result = getConflictingPlugins('.sccgv')
+      expect(result).toEqual([UNAVAILABLE])
+      expect(result.length).toBe(1)
+    })
+
+    it('UNAVAILABLE 标记使 suffixConflict.length > 0 成立，禁用保存', () => {
+      const { getConflictingPlugins, UNAVAILABLE } = usePluginExtensions()
+
+      const suffixConflict = getConflictingPlugins('.any-value')
+      expect(suffixConflict.length).toBeGreaterThan(0)
+      expect(suffixConflict).toContain(UNAVAILABLE)
+
+      // 这对应 PluginSettings.vue 的 :disabled 条件
+      const shouldDisableSave = suffixConflict.length > 0
+      expect(shouldDisableSave).toBe(true)
+    })
+
+    it('isExtensionCheckAvailable 在未加载时应返回 false', () => {
+      const { isExtensionCheckAvailable } = usePluginExtensions()
+
+      expect(isExtensionCheckAvailable()).toBe(false)
+    })
+
+    it('isExtensionCheckAvailable 在加载成功后应返回 true', async () => {
+      const mockData = setupMockData()
+      mockedFetch.mockResolvedValueOnce(mockData)
+
+      const { load, isExtensionCheckAvailable } = usePluginExtensions()
+      await load()
+
+      expect(isExtensionCheckAvailable()).toBe(true)
+    })
+
+    it('load() 失败后 isExtensionCheckAvailable 仍为 false（data 未设置）', async () => {
+      mockedFetch.mockRejectedValueOnce(new Error('404 Not Found'))
+
+      const { load, isExtensionCheckAvailable, getConflictingPlugins, UNAVAILABLE } = usePluginExtensions()
+      await expect(load()).rejects.toThrow()
+
+      expect(isExtensionCheckAvailable()).toBe(false)
+      expect(getConflictingPlugins('.sccgv')).toEqual([UNAVAILABLE])
+    })
+
+    it('invalidate() 后恢复为不可用状态', async () => {
+      const mockData = setupMockData()
+      mockedFetch.mockResolvedValueOnce(mockData)
+
+      const { load, invalidate, isExtensionCheckAvailable, getConflictingPlugins, UNAVAILABLE } = usePluginExtensions()
+      await load()
+      expect(isExtensionCheckAvailable()).toBe(true)
+      expect(getConflictingPlugins('.sccgv')).toEqual(['video'])
+
+      invalidate()
+
+      expect(isExtensionCheckAvailable()).toBe(false)
+      expect(getConflictingPlugins('.sccgv')).toEqual([UNAVAILABLE])
     })
   })
 
@@ -224,21 +286,6 @@ describe('usePluginExtensions', () => {
       mockedFetch.mockResolvedValueOnce(secondData)
       await load()
       expect(getExtensions()).toHaveProperty('.new')
-    })
-
-    it('API 未加载时（data=null）应使用 fallback 检测已知冲突', () => {
-      const { getConflictingPlugins } = usePluginExtensions()
-
-      // 不调用 load()，模拟 API 不可用场景
-      // fallback 包含 .sccgv -> video
-      expect(getConflictingPlugins('.sccgv')).toEqual(['video'])
-      expect(getConflictingPlugins('.sccga')).toEqual(['audio'])
-      expect(getConflictingPlugins('.sccgi')).toEqual(['image'])
-      expect(getConflictingPlugins('.sccgt')).toEqual(['text'])
-
-      // 不在 fallback 中的后缀返回空
-      expect(getConflictingPlugins('.myenc')).toEqual([])
-      expect(getConflictingPlugins('.unknown')).toEqual([])
     })
   })
 })

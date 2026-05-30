@@ -7,14 +7,7 @@ const error = ref<string | null>(null)
 
 let fetchPromise: Promise<ContainerExtensionsResponse> | null = null
 
-const FALLBACK_EXTENSIONS: Record<string, string> = {
-  '.sccgv': 'video',
-  '.sccga': 'audio',
-  '.sccgi': 'image',
-  '.sccgt': 'text',
-  '.sccgpdf': 'pdf',
-  '.sccgwps': 'wps',
-}
+const UNAVAILABLE = '__unavailable__'
 
 async function load(): Promise<ContainerExtensionsResponse> {
   if (data.value && !error.value) return data.value
@@ -45,25 +38,24 @@ function invalidate() {
   fetchPromise = null
 }
 
-function getEffectiveExtensions(): ContainerExtensionsResponse['extensions'] {
-  return data.value?.extensions ?? FALLBACK_EXTENSIONS
-}
-
 function getConflictingPlugins(suffix: string): string[] {
   const normalized = suffix.startsWith('.') ? suffix : '.' + suffix.toLowerCase()
   if (!normalized || normalized === '.') return []
+  if (!data.value) return [UNAVAILABLE]
 
-  const extMap = getEffectiveExtensions()
-
-  const conflict = data.value?.conflicts?.find((c) => c.extension === normalized)
+  const conflict = data.value.conflicts.find((c) => c.extension === normalized)
   if (conflict) return conflict.pluginNames
 
-  for (const [ext, plugin] of Object.entries(extMap)) {
+  for (const [ext, plugin] of Object.entries(data.value.extensions)) {
     if (ext.toLowerCase() === normalized) {
       return [plugin]
     }
   }
   return []
+}
+
+function isExtensionCheckAvailable(): boolean {
+  return data.value !== null
 }
 
 function getExtensions(): ContainerExtensionsResponse['extensions'] | null {
@@ -78,6 +70,8 @@ export function usePluginExtensions() {
     load,
     invalidate,
     getConflictingPlugins,
+    isExtensionCheckAvailable,
     getExtensions,
+    UNAVAILABLE,
   }
 }
