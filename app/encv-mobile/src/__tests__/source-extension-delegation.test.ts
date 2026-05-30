@@ -188,7 +188,7 @@ describe('源文件扩展名委托逻辑（核心设计验证）', () => {
       expect(getConflictingPlugins('.sccgv')).toEqual(['video'])
 
       const existingExtensions = Object.keys(data.extensions)
-      function tryRegister(newExt: string, newPlugin: string): { ok: boolean; conflictWith?: string } {
+      function tryRegister(newExt: string, _newPlugin: string): { ok: boolean; conflictWith?: string } {
         const normalized = newExt.startsWith('.') ? newExt : '.' + newExt.toLowerCase()
         const existing = existingExtensions.find((e) => e.toLowerCase() === normalized)
         if (existing) {

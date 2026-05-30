@@ -233,7 +233,7 @@ import FilePickerModal from '@/components/FilePickerModal.vue'
 
 const { isOnline: serverOnline } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
-const { getConflictingPlugins, load: loadExtensions, isExtensionCheckAvailable, UNAVAILABLE } = usePluginExtensions()
+const { getConflictingPlugins, load: loadExtensions, UNAVAILABLE } = usePluginExtensions()
 const { t, tField, tSectionTitle } = useI18n()
 
 const configLoaded = ref(false)
