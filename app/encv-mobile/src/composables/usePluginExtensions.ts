@@ -50,6 +50,10 @@ function getConflictingPlugins(suffix: string): string[] {
   return []
 }
 
+function getExtensions(): ContainerExtensionsResponse['extensions'] | null {
+  return data.value?.extensions ?? null
+}
+
 export function usePluginExtensions() {
   return {
     data,
@@ -58,5 +62,6 @@ export function usePluginExtensions() {
     load,
     invalidate,
     getConflictingPlugins,
+    getExtensions,
   }
 }

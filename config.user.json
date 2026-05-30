@@ -6,7 +6,7 @@
   "default_container_version": 0,
   "log": {
     "file": "encv.log",
-    "level": "info"
+    "level": "debug"
   },
   "mobile": {
     "output_path": "/storage/emulated/0/encv-output",
