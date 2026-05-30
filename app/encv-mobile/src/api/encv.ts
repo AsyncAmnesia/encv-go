@@ -928,3 +928,31 @@ export async function listFilesByTag(tag: string, path?: string): Promise<FileIt
   console.info('[API] listFilesByTag:', tag, '→', data.files?.length || 0, 'files')
   return data.files || []
 }
+
+export function getAlistEncryptStreamUrl(params: { path: string; password: string }): string {
+  if (import.meta.env.DEV) {
+    return `/api/alist-encrypt/stream?path=${encodeURIComponent(params.path)}&password=${encodeURIComponent(params.password)}`
+  }
+  const baseUrl = getApiBaseUrl()
+  return `${baseUrl}/api/alist-encrypt/stream?path=${encodeURIComponent(params.path)}&password=${encodeURIComponent(params.password)}`
+}
+
+export interface AlistDecodeResult {
+  plain_name: string
+  success: boolean
+}
+
+export async function decodeAlistFilename(params: { encodedName: string; password: string; encType?: string }): Promise<AlistDecodeResult> {
+  const baseUrl = getApiBaseUrl()
+  const urlParams = new URLSearchParams({
+    encoded: params.encodedName,
+    password: params.password,
+  })
+  if (params.encType) urlParams.set('enc_type', params.encType)
+  const response = await fetch(`${baseUrl}/api/alist-encrypt/decode-filename?${urlParams}`)
+  if (!response.ok) {
+    console.error('[API] decodeAlistFilename failed:', response.status)
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return response.json()
+}

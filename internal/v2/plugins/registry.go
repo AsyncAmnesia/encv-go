@@ -18,6 +18,7 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/crypto"
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/plugins/audio"
+	"github.com/Soltus/encv-go/internal/v2/plugins/alistencrypt"
 	"github.com/Soltus/encv-go/internal/v2/plugins/image"
 	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	"github.com/Soltus/encv-go/internal/v2/plugins/pdf"
@@ -35,6 +36,7 @@ var Plugins = []Plugin{
 	&wps.WPSPlugin{},
 	&pdf.PDFPlugin{},
 	&text.TextPlugin{},
+	&alistencrypt.AlistEncryptPlugin{},
 }
 
 // Plugin 定义了加解密插件的完整接口

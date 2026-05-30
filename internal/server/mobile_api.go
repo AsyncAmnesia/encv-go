@@ -20,6 +20,8 @@ import (
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
+	alistencryptplugin "github.com/Soltus/encv-go/internal/v2/plugins/alistencrypt"
+	"github.com/Soltus/encv-go/internal/alistencrypt"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -861,6 +863,46 @@ func (s *Server) handleListFilesStreamGin(c *gin.Context) {
 	}
 
 	s.writeSSEEvent(c, flusher, `[DONE]`)
+}
+
+func (s *Server) handleAlistEncryptStreamGin(c *gin.Context) {
+	queryPath := c.Query("path")
+	password := c.Query("password")
+	if queryPath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "'path' query parameter is required"})
+		return
+	}
+
+	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid path"})
+		return
+	}
+
+	slog.Info("API: alist-encrypt stream", "path", absPath)
+
+	var plugin alistencryptplugin.AlistEncryptPlugin
+	if err := plugin.ServeStream(c.Writer, c.Request, absPath, password); err != nil {
+		slog.Error("API: alist-encrypt stream failed", "error", err)
+		writeServiceErrorGin(c, err)
+	}
+}
+
+func (s *Server) handleAlistDecodeFilenameGin(c *gin.Context) {
+	encoded := c.Query("encoded")
+	password := c.Query("password")
+	encType := c.DefaultQuery("enc_type", "aesctr")
+
+	if encoded == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "'encoded' query parameter is required"})
+		return
+	}
+
+	plainName := alistencrypt.DecodeName(encoded, password, encType)
+	c.JSON(http.StatusOK, gin.H{
+		"plain_name": plainName,
+		"success":    plainName != "",
+	})
 }
 
 func (s *Server) handlePluginFilesStreamGin(c *gin.Context) {
