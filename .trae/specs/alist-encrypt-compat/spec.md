@@ -1,226 +1,241 @@
-# Alist-Encrypt 兼容层 Spec
+# Alist-Encrypt 兼容层 Spec（ComboLite 扩展）
 
 ## Why
 
-encv-go 已有完整的 ENCV 容器加密体系（AES-256-CTR），但无法处理由 **alist-encrypt（Node.js/Go）** 加密的文件。这类文件广泛存在于使用 Alist 网盘 + alist-encrypt 加密方案的场景中。需要在 encv-go 中新增对 **alist-encrypt AES-128-CTR** 格式的兼容支持，使移动端（Android）能够解密、加密和流式预览此类文件。
+encv-go 移动端已有 **MPV 播放器** 作为 ComboLite 插件（`plugin-mpv-player`），通过 aar2apk 构建为独立 APK、由用户安装、通过 ProxyManager 代理启动 Activity。现在需要以同样的架构新增一个 **alist-encrypt 解密扩展插件**，使用户能够：
+- 解密 alist-encrypt 格式（AES-128-CTR）的加密文件
+- 加密文件为 alist-encrypt 格式
+- 流式预览加密视频（支持 seek，传给 MPV 播放）
+- 在线解码显示真实文件名
 
-## What Changes
+## What Changes — 新增 ComboLite 插件 `plugin-alist-decrypt`
 
-### 架构约束：算法隔离
-
-**核心原则：主应用仅包含 AES-128-CTR，其他算法必须隔离在扩展实现中，不得污染主应用代码。**
+### 新增模块结构
 
 ```
-internal/alistencrypt/           ← 主应用包（仅 AES-128-CTR）
-├── cipher.go                    ← Cipher 接口定义（扩展点）
-├── aesctr.go                    ← AES-128-CTR 唯一内置实现
-├── filename.go                  ← MixBase64 文件名加解密（所有算法共用）
-├── content_header.go            ← V2/V1 内容头检测与解析（所有算法共用）
-├── flow.go                      ← FlowEnc 调度器（根据 encType 选择 cipher）
-└── registry.go                  ← 内置注册表（仅注册 aesctr）
-
-# 扩展实现（未来，不在 MVP 中）
-# internal/alistencrypt/ext/
-# ├── rc4md5.go                  ← RC4-MD5 扩展（需用户主动引入）
-# └── chacha20.go                ← ChaCha20 扩展（需用户主动引入）
+app/encv-mobile/plugin-alist-decrypt/          ← 新增：Android Library 模块（与 plugin-mpv-player 同级）
+├── build.gradle.kts                           ← id("com.android.library") + aar2apk
+├── src/main/
+│   ├── AndroidManifest.xml                    ← 声明 AlistDecryptActivity / AlistDecryptService
+│   └── java/com/encvgo/plugin/alistdecrypt/
+│       ├── AlistDecryptPluginEntry.kt         ← IPluginEntryClass 入口（ComboLite 加载点）
+│       ├── cipher/
+│       │   ├── Cipher.kt                     ← Cipher 接口（扩展点，算法隔离契约）
+│       │   ├── AesCtrCipher.kt               ← AES-128-CTR 唯一内置实现
+│       │   └── CounterIncrement.kt           ← 128-bit CTR counter 进位算法
+│       ├── filename/
+│       │   ├── MixBase64.kt                  ← KSA shuffle + Base64 编解码
+│       │   └── CRC6.kt                       ← 6-bit CRC 校验
+│       ├── content/
+│       │   └── ContentHeader.kt              ← V2 头检测与解析（AECTR2 magic）
+│       ├── stream/
+│       │   └── DecryptInputStream.kt         ← InputStream 包装器（seek 支持）
+│       ├── service/
+│       │   └── AlistDecryptService.kt        ← 后台解密/加密任务 Service
+│       ├── proxy/
+│       │   └── LocalStreamServer.kt          ← 本地 HTTP 代理（解密流→MPV）
+│       └── ui/
+│           └── AlistDecryptActivity.kt       ← 插件 Activity（ProxyManager 代理启动）
 ```
 
-**具体规则**：
-1. `internal/alistencrypt/` 包的 `import` 中不得出现 RC4 或 ChaCha20 相关的实现代码
-2. `Cipher` 接口作为扩展点开放，扩展包自行实现并调用 `Register()`
-3. Config 中 `enc_type` 非 `aesctr` 时，MVP 阶段返回明确错误「该算法需要扩展支持」
-4. MixBase64 / CRC6 / ContentHeader 是所有算法共用的基础设施，放在主包中
+### 已有代码修改清单
 
-### 最小可行范围（MVP）
+| 文件 | 改动 |
+|------|------|
+| `ExtensionsPage.vue` | 新增 `alist-decrypt` 扩展卡片（id/name/description/size） |
+| `GoProcessPlugin.kt` | 新增 `decryptAlistFile` / `encryptAlistFile` / `streamAlistFile` / `decodeAlistFilename` 方法 |
+| `PlayerEntry.kt` | 新增 `buildAlistDecryptIntent()` 路由方法 |
+| `encv.ts`（前端 API） | 新增对应的 Capacitor 调用函数 |
+| `Files.vue` | 识别 suffix 匹配文件 → 显示解密/预览操作入口 |
+| `Tasks.vue` | 展示 alist-decrypt/alist-encrypt 任务状态 |
+| `settings.ts`（i18n） | 新增 alist-encrypt 相关翻译 key |
 
-- **新增 Go 包** `internal/alistencrypt/`：**仅包含 AES-128-CTR** 核心算法 + 共享基础设施（文件名 MixBase64、V2 头检测）
-- **Cipher 接口**：定义可扩展的密码器接口，为未来 RC4MD5/ChaCha20 扩展预留
-- **扩展 Config**：在 `config.Config` 中新增 `AlistEncrypt` 配置段（密码、后缀名、encType）
-- **新增移动端 API**：`/api/alist-encrypt/decrypt`、`/api/alist-encrypt/encrypt`、`/api/alist-encrypt/stream`（流式预览）
-- **扩展 TaskManager**：支持 `type=alist-decrypt` / `type=alist-encrypt` 任务类型
-- **前端适配**：Files.vue 中识别 alist-encrypt 文件 → 调用新 API 解密/预览
+### 不在 MVP 范围内（TODO）
 
-### 不在 MVP 范围内（标记为 TODO）
+- **OpenList 代理集成**：将解密能力接入 `internal/openlist/` 代理链
+- **内部容器集成**：注册到 ENCV v2 plugins.Registry
+- **桌面端 UI**：openlist 桌面客户端适配
+- **RC4MD5 / ChaCha20 扩展包**：必须通过 Cipher 接口 + Register() 引入，禁止进入主包
 
-- **RC4MD5 / ChaCha20 算法实现**：必须通过扩展机制引入，禁止进入主应用包
-- **OpenList 代理集成**：将 alist-encrypt 兼容层接入 `internal/openlist/` 代理链
-- **内部容器集成**：将 alist-encrypt 作为 ENCV 插件体系的 Plugin 注册到 registry
-- **桌面端 UI**：当前仅 Android 移动端
-
-### 关键细节要求
-
-1. **自定义后缀名**：用户可配置 alist-encrypt 加密文件的扩展名（如 `.sccgv`、`.enc`、自定义），用于文件识别
-2. **文件名加解密**：完整移植 MixBase64（KSA shuffle alphabet + CRC6 校验）的 EncodeName/DecodeName
-3. **V2 内容头兼容**：解析 `AECTR2` magic 头（16 bytes nonce + 8 bytes plainSize），自动区分 V1（裸流）和 V2（带头）格式
-4. **Seek 支持**：128-bit CTR counter increment 算法必须与 Node.js aesCTR.js 完全一致
-5. **算法隔离**：主应用仅编译链接 AES-128-CTR 实现；enc_type 为 rc4md5/chacha20 时返回「需要扩展支持」错误
-
-## Impact
-
-- Affected specs: 无直接依赖现有 spec
-- Affected code:
-  - `internal/config/config.go` — 新增 AlistEncrypt 配置段
-  - `internal/server/mobile_api.go` — 新增 3 个 API endpoint
-  - `internal/service/mobile_service.go` — 新增解密/加密/流式逻辑
-  - `internal/service/task_manager.go` — 新增任务类型
-  - `app/encv-mobile/src/api/encv.ts` — 新增前端 API 调用
-  - `app/encv-mobile/src/views/Files.vue` — 文件识别与操作入口
-  - **新增** `internal/alistencrypt/` — 核心算法包
+---
 
 ## ADDED Requirements
 
-### Requirement: AES-128-CTR 核心算法
+### Requirement: 算法隔离架构（铁律）
 
-系统 SHALL 提供 AES-128-CTR 流密码实现，与 alist-encrypt-go / Node.js alist-encrypt 完全兼容。**这是主应用内置的唯一算法实现。**
+主应用（plugin-alist-decrypt）**仅包含 AES-128-CTR 实现**，其他算法必须通过 Cipher 接口隔离。
 
-#### Cipher 扩展接口（算法隔离契约）
-
-```go
-// Cipher 定义可扩展的密码器接口
-// 主应用仅提供 AesCtrCipher 实现
-// 其他算法（RC4MD5、ChaCha20）必须由扩展包实现此接口并调用 Register()
-type Cipher interface {
-    SetPosition(position int64) error
-    Encrypt(data []byte)
-    Decrypt(data []byte)
-    Algorithm() string          // 返回 "AES-128-CTR" / "RC4-MD5" / "ChaCha20" 等
-    BlockSize() int
+```kotlin
+// Cipher 接口 — 所有密码器的统一抽象
+interface Cipher {
+    fun setPosition(position: Long)
+    fun encrypt(data: ByteArray)
+    fun decrypt(data: ByteArray)
+    fun algorithm(): String          // "AES-128-CTR" / "RC4-MD5" / "ChaCha20"
+    fun blockSize(): Int
 }
 
-// CipherFactory 创建 Cipher 实例的工厂函数
-type CipherFactory func(password string, fileSize int64) (Cipher, error)
+// Registry — 全局单例，仅注册内置算法
+object CipherRegistry {
+    private val factories = mutableMapOf<String, (password: String, fileSize: Long) -> Cipher>()
 
-// Register 向注册表注册新的 cipher 工厂（扩展点）
-func Register(encType string, factory CipherFactory)
+    init { register("aesctr", ::AesCtrCipher) }  // ← 仅此一个！
+
+    fun register(encType: String, factory: ...)   // 扩展点
+    fun create(password: String, encType: String, fileSize: Long): Cipher
+}
 ```
 
 **隔离规则**：
-- `internal/alistencrypt/` 包内 **禁止 import 或实现 RC4 / ChaCha20 相关代码**
-- `registry.go` 的 `init()` 中 **仅注册 aesctr**
-- 非 aesctr 的 enc_type 在 MVP 阶段由 `flow.go` 返回 `ErrExtensionRequired` 错误
+1. `plugin-alist-decrypt` 包内 **禁止出现 RC4 / ChaCha20 实现代码**
+2. `CipherRegistry.init()` 中 **仅注册 aesctr**
+3. enc_type 非 aesctr 时返回 `ErrExtensionRequired`
+4. MixBase64 / CRC6 / ContentHeader 是所有算法共用的基础设施，放在主包中
 
-#### 密钥派生链（必须逐字节兼容）
+### Requirement: AES-128-CTR 核心算法（唯一内置实现）
+
+#### 密钥派生链（必须逐字节兼容 alist-encrypt-go）
 
 ```
-输入: password (string), fileSize (int64)
+输入: password (String), fileSize (Long)
 
-Step 1: passwdOutward 派生
-  └─ if len(password) == 32 → 直接用（已是 hex）
-  └─ else → PBKDF2(password, salt="AES-CTR", iter=1000, dkLen=16, hash=SHA256)
-         → hex.EncodeToString(key) → 32字符 hex 字符串
+Step 1: passwdOutward
+  ├─ len == 32 → 直接用（已是 hex）
+  └─ else → PBKDF2(pwd="AES-CTR", salt=password, iter=1000, dkLen=16, HmacSHA256)
+         → hexEncode(key) → 32字符 hex 字符串
 
-Step 2: 密钥 (16 bytes)
-  └─ passwdSalt = passwdOutward + strconv.FormatInt(fileSize, 10)
-  └─ key = MD5(passwdSalt)[:16]
+Step 2: Key (16 bytes) = MD5(passwdOutward + fileSize.toString())[:16]
+Step 3: IV  (16 bytes) = MD5(fileSize.toString())[:16]
 
-Step 3: IV (16 bytes)
-  └─ iv = MD5(strconv.FormatInt(fileSize, 10))[:16]
+输出: AES/CTR/NoPadding(Key, IV)
 ```
 
 #### Seek 支持（视频播放必需）
 
-- SetPosition(position) 必须恢复原始 IV → 按 blockCount 递增 128-bit counter → 重建 CTR stream → discard offset bytes
-- incrementIV 使用 4 段 32-bit 大端分段进位算法（与 Node.js aesCTR.js 一致）
+```
+setPosition(position):
+  1. iv = copy(originalIv)
+  2. blockCount = position / 16
+  3. incrementIV(blockCount)    // 128-bit 大端分段进位
+  4. cipher.init(Cipher.DECRYPT_MODE, key, IvParameterSpec(iv))
+  5. discard offset = position % 16 bytes
+```
+
+`incrementIV`: 将 IV 视为 4 个 uint32 大端整数，从最低段开始进位。
 
 #### Scenario: 视频文件 seek 播放
-- **WHEN** 用户在播放器中拖动进度条到 position=1048576 (1MB)
-- **THEN** SetPosition(1048576) 正确计算新 IV，后续读取的数据在该偏移处正确解密
+- **WHEN** 用户在播放器拖动进度条到 position=1048576
+- **THEN** setPosition 正确重建 CTR 流，后续读取在该偏移处正确解密
 
 ### Requirement: 文件名 MixBase64 加解密
 
-系统 SHALL 提供 MixBase64 文件名编解码，与 alist-encrypt 的 filename.go 完全兼容。
+完整移植 alist-encrypt-go 的 `filename.go`：
 
-#### 编码流程
-1. passwdOutward ← GetPasswdOutward(password, encType) （PBKDF2 或直接使用）
-2. mix64 ← NewMixBase64(passwdOutward) （KSA shuffle 生成 64 字符字母表）
-3. encoded ← mix64.EncodeString(plainName)
-4. crc6Check ← CRC6(encoded + passwdOutward) 取 sourceChars[crc6Bit]
-5. result ← encoded + crc6Check （末尾追加 1 字符校验位）
+- **KSA shuffle**: passwdOutward → 64 字符自定义字母表（Fisher-Yates 变体）
+- **MixBase64 Encode/Decode**: 基于自定义 alphabet 的 Base64 变种
+- **CRC6 校验**: 多项式 x^6+x+1, 反射输入输出, 6-bit 结果映射到 sourceChars
+- **EncodeName**: plainName → KSA→Encode→CRC6→encoded+crcChar
+- **DecodeName**: encodedName → stripCRC6→Verify→Decode→plainName（验证失败返回空串）
 
-#### 解码流程
-1. 从 encodedName 末尾剥离 CRC6 校验字符
-2. CRC6 验证（encoded + passwdOutward）
-3. mix64.DecodeString(subEncName) → 原始文件名
-4. 验证失败时返回空字符串（非异常）
+#### Scenario: 文件名往返
+- **WHEN** EncodeName("测试视频.mp4", "mypassword") 后 DecodeName 回来
+- **THEN** 得到 "测试视频.mp4"
 
-#### Scenario: 文件名正确往返
-- **WHEN** EncodeName("测试视频.mp4", "mypassword", "aesctr") 后 DecodeName 回来
-- **THEN** 得到 "测试视频.mp4"（完全一致）
+### Requirement: V2 内容头自动检测
 
-### Requirement: V2 内容头检测与解析
-
-系统 SHALL 自动检测并解析 alist-encrypt V2 格式的内容头（magic `AECTR2`）。
-
-#### V2 头结构（32 bytes）
-| Offset | Length | Content |
-|--------|--------|---------|
+| Offset | Len | Content |
+|--------|-----|---------|
 | 0 | 6 | Magic `"AECTR2"` |
 | 6 | 1 | Version (`0x02`) |
 | 7 | 1 | Reserved |
 | 8 | 16 | NonceField |
-| 24 | 8 | PlainSize (big-endian uint64) |
+| 24 | 8 | PlainSize (BE uint64) |
 
-#### AutoDetect 行为
-1. 读取前 32 bytes
-2. 如果 magic 匹配 → V2 模式（使用 NonceField 初始化 cipher）
-3. 如果 magic 不匹配 → V1/Legacy 模式（裸流，fileSize 即 plainSize）
-
-#### Scenario: 混合格式处理
-- **WHEN** 打开一个 V2 格式的加密文件（带 AECTR2 头）
-- **THEN** 自动跳过 32 字节头，使用头内 NonceField + PlainSize 进行解密
-
-### Requirement: 流式解密预览（HTTP Range 支持）
-
-系统 SHALL 提供 HTTP 流式端点，支持 Range 请求，使 MPV 等播放器可以直接播放解密后的流。
-
-- **Endpoint**: `GET /api/alist-encrypt/stream?path=<path>&password=<pwd>`
-- **行为**:
-  1. 打开加密文件，检测 V1/V2 格式
-  2. 根据 Range header 计算上游偏移（V2 时 +32 bytes header）
-  3. SetPosition(rangeStart) → 读取 rangeLength 字节 → XORKeyStream 解密
-  4. 返回 `Content-Type` 基于原始文件扩展名推断
-  5. 支持 `Content-Length: plainSize`
-
-#### Scenario: MPV 通过 URL 播放加密视频
-- **WHEN** MPV 请求 `GET /api/alist-encrypt/stream?path=/sdcard/video.sccgv&Range: bytes=0-`
-- **THEN** 返回 206 Partial Content，body 为解密后的视频数据
+- Magic 匹配 → V2 模式（跳过 32 字节头，用 NonceField 初始化）
+- Magic 不匹配 → V1/Legacy 模式（裸流，fileSize 即 plainSize）
 
 ### Requirement: 可配置后缀名
 
-用户 SHALL 能够通过配置指定 alist-encrypt 加密文件的扩展名，用于文件识别。
+插件接收宿主传入的配置（通过 Intent extras 或共享 SharedPreferences）：
 
-```jsonc
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `suffix` | `.sccgv` | 加密文件识别后缀 |
+| `defaultPassword` | `""` | 默认密码（空=每次输入） |
+| `encType` | `aesctr` | 加密算法（MVP 仅支持此值） |
+
+enc_type 非 aesctr 时：配置加载警告 + 运行时返回 `ErrExtensionRequired`
+
+### Requirement: 解密/加密任务（后台 Service）
+
+通过 `AlistDecryptService`（IntentService）执行异步任务：
+
+- **解密**: 读取加密文件 → DetectV2 → AesCtrCipher.DecryptReader → 写入目标路径
+- **加密**: 读取原始文件 → AesCtrCipher.EncryptWriter → 写入目标路径+suffix（可选 V2 头）
+- **进度报告**: 已处理字节/总字节 → 通过 LocalBroadcast / ResultReceiver 回调宿主
+- **状态**: queued → running → completed / failed（复用宿主 TaskManager 展示模式）
+
+### Requirement: 流式预览（LocalStreamServer）
+
+解密后的流通过本地 HTTP server 提供给 MPV 播放：
+
+```
+[加密文件] → DecryptInputStream(支持 Range seek)
+  → LocalHttpServer(localhost:随机端口, 单连接)
+    → MPV 播放 localhost URL
+```
+
+- **Endpoint**: `GET /stream?path=<uri>&password=<pwd>`
+- **HTTP Range**: 完整支持（206 Partial Content）
+- **Content-Type**: 根据原始扩展名推断
+- **生命周期**: 随 Activity 销毁而停止
+
+#### Scenario: MPV 播放加密视频
+- **WHEN** 用户选择「流式预览」加密视频
+- **THEN** 启动 LocalStreamServer → 返回 localhost URL → MPV 加载并正常播放/seek
+
+### Requirement: 宿主集成路径（GoProcessPlugin → 插件）
+
+前端调用链：
+
+```
+Files.vue (长按→解密/预览)
+  → encv.ts: decryptAlistFile({path, password, mode})
+    → GoProcessPlugin.decryptAlistFile(call)
+      → EncvComboLiteHost.isPluginAvailable("com.encvgo.plugin.alistdecrypt")
+      → EncvComboLiteHost.createProxyIntent(context,
+            "com.encvgo.plugin.alistdecrypt",
+            "com.encvgo.plugin.alistdecrypt.ui.AlistDecryptActivity",
+            EncvHostActivity::class.java,
+            mapOf("action" to "decrypt", "filePath" to path, "password" to password))
+      → startActivityForResult(intent, REQUEST_CODE_ALIST_DECRYPT)
+        → EncvHostActivity → ProxyManager → AlistDecryptActivity
+          → 执行解密/加密/流式预览 → setResult → finish
+            → onActivityResult → call.resolve(result)
+```
+
+### Requirement: 扩展管理页集成
+
+ExtensionsPage.vue 新增扩展卡片：
+
+```typescript
 {
-  "alist_encrypt": {
-    "enabled": true,
-    "suffix": ".sccgv",
-    "default_password": "",
-    "enc_type": "aesctr"
-  }
+  id: 'alist-decrypt',
+  name: 'Alist-Encrypt 解密',
+  description: '支持 AES-128-CTR 加密文件的解密、加密和流式预览',
+  installed: boolean,     // checkInstalledPlugins["com.encvgo.plugin.alistdecrypt"]
+  enabled: boolean,
+  sizeDisplay: '~200 KB', // 纯 Kotlin，无 native 库
 }
 ```
 
-- `suffix`: 默认 `.sccgv`，可为空（表示不依赖扩展名识别）
-- `enc_type`: MVP 阶段 **仅接受 `"aesctr"`**；传入其他值（`"rc4md5"` / `"chacha20"`）时：
-  - 配置加载阶段：**警告日志**「enc_type 'xxx' 需要扩展支持，MVP 阶段将回退到 aesctr 或拒绝操作」
-  - 运行时调用：返回错误 `ErrExtensionRequired{EncType: "rc4md5", Message: "该算法需要扩展包支持，当前仅内置 AES-128-CTR"}`
+COMBO_LITE_ID 映射: `'alist-decrypt' → 'com.encvgo.plugin.alistdecrypt'`
 
-### Requirement: 移动端解密/加密任务
-
-系统 SHALL 在现有 TaskManager 框架下支持 alist-encrypt 类型的解密和加密任务。
-
-- **任务类型**: `alist-decrypt`、`alist-encrypt`
-- **状态流转**: queued → running → completed / failed（复用现有状态机）
-- **进度报告**: 基于已处理字节数 / 总字节数
-- **WebSocket 推送**: 复用现有 WSBroadcaster 推送进度更新
-
-#### Scenario: 移动端发起解密任务
-- **WHEN** 前端 POST `/api/tasks` body=`{type:"alist-decrypt", sourcePath:"/sdcard/video.sccgv", password:"xxx"}`
-- **THEN** 创建任务 → 异步执行解密 → WebSocket 推送进度 → 完成后输出到目标目录
+---
 
 ## MODIFIED Requirements
 
-无（纯新增功能，不修改现有 ENCV 容器逻辑）。
+无（纯新增功能）。
 
 ## REMOVED Requirements
 

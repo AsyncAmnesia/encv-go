@@ -1,67 +1,92 @@
 # Checklist
 
-## Phase 1: 核心算法层
+## Phase 1: 插件模块骨架
 
-### 算法隔离骨架
-- [ ] Cipher 接口定义完整（SetPosition/Encrypt/Decrypt/Algorithm/BlockSize 5 个方法）
-- [ ] CipherFactory 类型 + Register() 函数可用
-- [ ] Registry 使用 RWMutex 保护并发安全
-- [ ] Registry init() 中 **仅注册 aesctr** 一个工厂
-- [ ] 查询 rc4md5 / chacha20 时返回 ErrExtensionRequired（非 panic、非 fallback）
-- [ ] `go vet ./internal/alistencrypt/` 无 RC4/ChaCha20 相关 import
+- [ ] `plugin-alist-decrypt/build.gradle.kts` 存在且配置正确（android-library + aar2apk + compileOnly combolite.core）
+- [ ] `AndroidManifest.xml` 声明 AlistDecryptActivity（exported=false）和 AlistDecryptService
+- [ ] `AlistDecryptPluginEntry.kt` 实现 IPluginEntryClass 接口（onLoad/onUnload/pluginModule）
+- [ ] Cipher 接口定义完整（5 个方法：setPosition/encrypt/decrypt/algorithm/blockSize）
+- [ ] CipherRegistry 单例 init() 仅注册 aesctr
+- [ ] `grep -r "rc4\|RC4\|chacha\|ChaCha" plugin-alist-decrypt/` **无匹配结果**（隔离验证）
 
-### AES-128-CTR 核心实现
-- [ ] AesCtrCipher 密钥派生链与 alist-encrypt-go 参考实现输出一致（PBKDF2 → hex → MD5 key + MD5 iv）
-- [ ] AesCtrCipher.SetPosition() seek 后数据解密正确（使用测试向量验证偏移 0 / 中间位置 / 接近末尾）
-- [ ] incrementIV 128-bit counter 进位与 Node.js aesCTR.js 完全一致（包括大数溢出场景）
-- [ ] AesCtrCipher 满足 Cipher 接口编译通过
+## Phase 2: 核心算法实现
 
-### 共享基础设施
-- [ ] MixBase64 KSA shuffle 输出与参考实现一致（相同 password → 相同 64 字符字母表）
-- [ ] MixBase64 Encode/Decode 往返编解码无损（UTF-8 中文文件名、特殊字符、长文件名）
-- [ ] CRC6 校验位计算正确（encoded + passwdOutward → 6-bit CRC → sourceChars 映射）
-- [ ] EncodeName → DecodeName 往返得到原始文件名（含中文、扩展名、空格等边界情况）
-- [ ] V2 内容头 magic `AECTR2` 正确检测，NonceField 和 PlainSize 正确提取
-- [ ] AutoDetectV2 在 V1（裸流）和 V2（带头）格式下均能正确选择解密路径
-- [ ] DecryptReader 作为 io.Reader 包装器可正确流式读取和解密完整文件
+### AES-128-CTR
+- [ ] AesCtrCipher 密钥派生链与 alist-encrypt-go 参考实现输出一致
+- [ ] incrementIV 128-bit counter 进位与 Node.js aesCTR.js 完全一致（含大数溢出场景）
+- [ ] setPosition(0) / setPosition(mid) / setPosition(nearEnd) 后数据解密均正确
+- [ ] AesCtrCipher 满足 Cipher 接口编译通过并在 Registry 中注册为 "aesctr"
 
-### FlowEnc 调度器
-- [ ] NewFlowEnc("aesctr") 成功创建 AesCtrCipher 实例
-- [ ] NewFlowEnc("rc4md5") 返回 ErrExtensionRequired（不 fallback）
-- [ ] FlowEnc.EncryptReader / DecryptReader 正确委托给底层 Cipher
+### MixBase64 文件名
+- [ ] KSA shuffle 输出与参考实现一致（相同 password → 相同 64 字符字母表）
+- [ ] Encode/Decode 往返无损（UTF-8 中文、特殊字符、长文件名）
+- [ ] CRC6 校验位计算正确
+- [ ] EncodeName → DecodeName 往返得到原始文件名
 
-## Phase 2: 配置与 API 层
+### V2 内容头
+- [ ] AECTR2 magic 正确检测，NonceField 和 PlainSize 正确提取
+- [ ] AutoDetectV2 在 V1 裸流和 V2 带头格式下均能正确分支
 
-- [ ] Config.AlistEncrypt 段可从 config.user.json 正确加载（enabled/suffix/enc_type/default_password）
-- [ ] enc_type = "rc4md5" 时配置加载产生警告日志
-- [ ] enc_type = "chacha20" 时 API 调用返回 ErrExtensionRequired 错误信息
-- [ ] config.schema.json 包含 alist_encrypt 字段定义且前端可正确渲染配置 UI
-- [ ] POST /api/alist-encrypt/decrypt 返回任务 ID，异步执行解密
-- [ ] POST /api/alist-encrypt/encrypt 返回任务 ID，异步执行加密并附加后缀名
-- [ ] GET /api/alist-encrypt/stream 支持 Range 请求，返回 206 Partial Content 和正确解密的数据
-- [ ] GET /api/alist-encode/decode-filename 返回解码后的真实文件名
-- [ ] TaskManager 正确处理 alist-decrypt / alist-encrypt 任务类型的状态流转
-- [ ] WebSocket 推送包含进度百分比、速度、ETA 等信息
-- [ ] 解密任务密码错误时返回明确的错误码（非 panic / 非通用错误）
+### DecryptInputStream
+- [ ] 作为 InputStream 包装器可完整读取和解密文件
+- [ ] skip()/seek 到中间位置后继续读取数据正确
 
-## Phase 3: 移动端集成
+## Phase 3: 插件功能层
 
-- [ ] encv.ts API 函数可正确调用后端 endpoint 并解析响应
-- [ ] Files.vue 中匹配 suffix 的文件显示加密标记和真实文件名
-- [ ] 长按菜单出现「解密」和「流式预览」选项
-- [ ] 流式预览 URL 可被 MPV/ArtPlayer 正确加载和播放
-- [ ] Tasks.vue 中 alist-decrypt / alist-encrypt 任务正确展示状态、进度、错误信息
-- [ ] 密码错误时前端显示特殊提示（区别于数据损坏等错误）
-- [ ] ErrExtensionRequired 错误在前端有友好提示（「该加密算法需要扩展包支持」）
+### AlistDecryptActivity
+- [ ] 从 Intent extras 正确读取 action + filePath + password
+- [ ] decrypt action 启动 Service 并显示进度
+- [ ] encrypt action 启动 Service 并显示进度
+- [ ] stream action 启动 LocalStreamServer 并通过 setResult 返回 URL
+- [ ] decode-filename action 同步返回解码后文件名
+- [ ] 遵循 EncvHostActivity 四层超时防御机制（L1 半透明主题 / L2 5s 超时 finish / L3 onResume 诊断 / L4 Promise 兜底）
 
-## 隔离性验证（CI 必须通过）
+### AlistDecryptService
+- [ ] 解密流程端到端正确：加密文件 → AutoDetectV2 → AesCtrCipher → 明文输出
+- [ ] 加密流程端到端正确：原始文件 → AesCtrCipher → 加密输出+suffix
+- [ ] 进度通过 LocalBroadcast 正确报告给 Activity
+- [ ] 密码错误时返回特殊错误码（非通用异常）
 
-- [ ] `go build ./internal/alistencrypt/` 编译成功且产物中 **不包含** RC4/ChaCha20 符号
-- [ ] `go test ./internal/alistencrypt/...` 全部通过（含隔离边界测试用例）
-- [ ] `grep -r "rc4\|RC4\|chacha\|ChaCha" internal/alistencrypt/` **无匹配结果**
+### LocalStreamServer
+- [ ] GET /stream 返回解密后的视频数据
+- [ ] HTTP Range 请求返回 206 Partial Content
+- [ ] Content-Type 根据扩展名正确推断
+- [ ] Server 在 Activity onDestroy 时正确停止
 
-## 跨平台兼容性
+## Phase 4: 宿主端集成
 
-- [ ] 算法实现在 Linux (CI) 和 Android (移动端) 上运行结果一致
-- [ ] PBKDF2 使用标准库实现（Go: golang.org/x/crypto/pbkdf2），跨平台确定性输出
-- [ ] MD5 使用 crypto/md5 标准库，跨平台一致性保证
+### GoProcessPlugin
+- [ ] decryptAlistFile / encryptAlistFile / streamAlistFile / decodeAlistFilename 四个 @PluginMethod 存在
+- [ ] 未安装插件时返回友好错误提示（非 crash）
+- [ ] 插件已安装时正确构建代理 Intent 并 startActivityForResult
+
+### PlayerEntry
+- [ ] buildAlistDecryptIntent() 方法存在且逻辑正确
+- [ ] onActivityResult 正确处理 REQUEST_CODE_ALIST_DECRYPT 结果回调
+
+### 前端 API (encv.ts)
+- [ ] 四个新函数可正确调用并解析响应
+
+### Files.vue
+- [ ] 匹配 suffix 的文件显示加密标记
+- [ ] 真实文件名通过 decodeAlistFilename 显示
+- [ ] 长按菜单出现「解密」和「流式预览」（插件已安装时）
+- [ ] 流式预览 URL 可被播放器加载
+
+### ExtensionsPage.vue
+- [ ] alist-decrypt 扩展卡片显示正确（name/description/installed/enabled/sizeDisplay）
+- [ ] 安装/启用/禁用/卸载操作正常工作
+- [ ] COMBO_LITE_ID_MAP 包含 'alist-decrypt' → 'com.encvgo.plugin.alistdecrypt'
+
+### Tasks.vue + i18n
+- [ ] alist-decrypt/alist-encrypt 任务状态正确展示
+- [ ] 错误信息包含密码错误特殊提示
+- [ ] 中英文翻译 key 均已定义
+
+## Phase 5: CI 构建
+
+- [ ] settings.gradle.kts 包含 `:plugin-alist-decrypt` 模块引用
+- [ ] CI workflow 中 plugin-alist-decrypt 的 aar2apk 构建步骤存在
+- [ ] 构建产物为有效的 .apk 文件
+- [ ] 插件 APK 可通过 EncvComboLiteHost.installPlugin() 成功安装
+- [ ] 安装后 EncvComboLiteHost.isPluginAvailable("com.encvgo.plugin.alistdecrypt") 返回 true
