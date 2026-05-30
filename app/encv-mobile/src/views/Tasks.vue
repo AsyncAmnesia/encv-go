@@ -199,6 +199,8 @@ const {
   taskOptions,
   primaryOverride,
   secondaryPassword,
+  versionOptions,
+  extraValues,
   getExtraPayload,
   reset: resetTaskForm,
   initFromQuery,
@@ -373,6 +375,13 @@ async function openNewTaskModal(initialSourcePath?: string) {
       targetPath: newTaskTargetPath.value,
       candidates: candidates.value,
       predictedPlugin: predictedPlugin.value,
+      taskOptions: taskOptions.value,
+      primaryOverride: primaryOverride.value,
+      secondaryPassword: secondaryPassword.value,
+      version: newTaskVersion.value,
+      versionOptions: versionOptions.value,
+      extraValues: extraValues.value,
+      filteredExtraFields: [],
     },
   })
 
@@ -380,6 +389,10 @@ async function openNewTaskModal(initialSourcePath?: string) {
   modal.addEventListener('updateTaskType', (e: any) => { newTaskType.value = e.detail })
   modal.addEventListener('updateSourcePath', (e: any) => { newTaskPath.value = e.detail })
   modal.addEventListener('updateTargetPath', (e: any) => { newTaskTargetPath.value = e.detail })
+  modal.addEventListener('updateVersion', (e: any) => { newTaskVersion.value = e.detail })
+  modal.addEventListener('updatePrimaryOverride', (e: any) => { primaryOverride.value = e.detail })
+  modal.addEventListener('updateSecondaryPassword', (e: any) => { secondaryPassword.value = e.detail })
+  modal.addEventListener('updateExtraValue', (e: any) => { if (e.detail?.key) extraValues.value[e.detail.key] = e.detail.value })
   modal.addEventListener('submit', () => { handleCreateTask(); modal.dismiss() })
 
   await modal.present()
