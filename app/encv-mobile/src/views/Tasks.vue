@@ -136,7 +136,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import {
   IonPage,
   IonHeader,
@@ -186,7 +186,7 @@ import { useTaskForm } from '@/composables/useTaskForm'
 import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
 import { showToast } from '@/composables/useToast'
 import { usePathResolver } from '@/composables/usePathResolver'
-import FilePickerModal from '@/components/FilePickerModal.vue'
+
 
 const { t } = useI18n()
 const { normalize } = usePathResolver()
@@ -195,14 +195,10 @@ const router = useRouter()
 
 const {
   candidates,
-  selectedPluginIndex,
   predictedPlugin,
   taskOptions,
-  extraValues,
   primaryOverride,
   secondaryPassword,
-  visibleExtraFields,
-  versionOptions,
   getExtraPayload,
   reset: resetTaskForm,
   initFromQuery,
@@ -219,16 +215,6 @@ const newTaskTargetPath = ref('')
 const sourcePathError = ref('')
 const targetPathError = ref('')
 const newTaskVersion = ref(4)
-
-const filteredExtraFields = computed(() => {
-  if (!visibleExtraFields.value.length) return []
-  return visibleExtraFields.value.filter((f) => {
-    if (!f.condition) return true
-    if (f.condition === 'encrypt') return newTaskType.value === 'encrypt'
-    if (f.condition === 'decrypt') return newTaskType.value === 'decrypt'
-    return true
-  })
-})
 
 function getTaskIcon(task: EncvTask) {
   switch (task.status) {
@@ -382,63 +368,22 @@ async function openNewTaskModal(initialSourcePath?: string) {
   const modal = await modalController.create({
     component: NewTaskModal,
     componentProps: {
-      taskType: newTaskType,
-      sourcePath: newTaskPath,
-      targetPath: newTaskTargetPath,
-      sourcePathError,
-      targetPathError,
-      candidates,
-      selectedPluginIndex,
-      predictedPlugin,
-      taskOptions,
-      extraValues,
-      primaryOverride,
-      secondaryPassword,
-      version: newTaskVersion,
-      versionOptions,
-      filteredExtraFields,
-      onUpdateTaskType: (v: string) => { newTaskType.value = v as TaskType },
-      onUpdateSourcePath: (v: string) => { newTaskPath.value = v },
-      onUpdateTargetPath: (v: string) => { newTaskTargetPath.value = v },
-      onUpdateSelectedIndex: (v: number) => { selectedPluginIndex.value = v },
-      onUpdateVersion: (v: number) => { newTaskVersion.value = v },
-      onUpdateExtraValue: ({ key, value }: { key: string; value: string }) => { extraValues.value[key] = value },
-      onUpdatePrimaryOverride: (v: string) => { primaryOverride.value = v },
-      onUpdateSecondaryPassword: (v: string) => { secondaryPassword.value = v },
-      onBrowseSource: () => handleBrowseSource(),
-      onBrowseTarget: () => handleBrowseTarget(),
-      onSubmit: () => { handleCreateTask(); modal.dismiss() },
+      taskType: newTaskType.value,
+      sourcePath: newTaskPath.value,
+      targetPath: newTaskTargetPath.value,
+      candidates: candidates.value,
+      predictedPlugin: predictedPlugin.value,
     },
   })
 
-  await modal.present()
-}
-async function handleBrowseSource() {
-  const modal = await modalController.create({
-    component: FilePickerModal,
-    componentProps: { mode: 'file' as const },
-  })
-  await modal.present()
-  const { data, role } = await modal.onDidDismiss()
-  if (role === 'select' && data) {
-    newTaskPath.value = data.path
-    sourcePathError.value = ''
-  }
-}
+  modal.onDidDismiss().then(() => {})
+  modal.addEventListener('updateTaskType', (e: any) => { newTaskType.value = e.detail })
+  modal.addEventListener('updateSourcePath', (e: any) => { newTaskPath.value = e.detail })
+  modal.addEventListener('updateTargetPath', (e: any) => { newTaskTargetPath.value = e.detail })
+  modal.addEventListener('submit', () => { handleCreateTask(); modal.dismiss() })
 
-async function handleBrowseTarget() {
-  const modal = await modalController.create({
-    component: FilePickerModal,
-    componentProps: { mode: 'folder' as const },
-  })
   await modal.present()
-  const { data, role } = await modal.onDidDismiss()
-  if (role === 'select' && data) {
-    newTaskTargetPath.value = data.path
-    targetPathError.value = ''
-  }
 }
-
 async function handleCreateTask() {
   if (!newTaskPath.value) return
   try {
