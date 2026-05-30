@@ -108,4 +108,71 @@ mavenCentral()
 - **本项目"金标准"文件**（已在 CI 编译通过，写新代码前必须参照其 import 风格和 API 用法）：
   - `plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvPlayerScreen.kt`
   - `plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvProgressBar.kt`
-- **写完任何 .kt Compose 文件后**：对照 compose-reference.md 逐条检查 import 完整性和 API 正确性
+  - **写完任何 .kt Compose 文件后**：对照 compose-reference.md 逐条检查 import 完整性和 API 正确性
+
+## 防御性编程铁律（重要！违反 = 严重错误）
+
+> 来自实战踩坑：硬编码 fallback 导致 API 失效时放行危险操作。
+
+### 一、禁止硬编码动态数据
+
+**任何由后端 API 返回的运行时数据，前端不得维护本地副本或 fallback 默认值。**
+
+| 数据类型 | 示例 | 正确做法 |
+|---------|------|---------|
+| 容器扩展名映射 | `.sccgv → video` | 始终从 `/api/plugins/container-extensions` 获取 |
+| 插件配置 schema | 字段名/类型/默认值 | 从 `/api/config/schema` 动态加载 |
+| 文件类型 → 插件路由 | `.ts → text/video` | 由后端 `SupportedExtensions()` + MIME 检测决定 |
+| 加密算法列表 | AES/ChaCha20 等 | 后端注册表驱动 |
+
+**错误模式（禁止）**：
+```typescript
+// ❌ 硬编码 fallback — 新增插件后此处过时
+const FALLBACK: Record<string, string> = { '.sccgv': 'video', '.sccga': 'audio' }
+return data?.extensions ?? FALLBACK
+```
+
+**正确做法**：API 未就绪时返回特殊标记值，触发阻断行为（见下文）。
+
+### 二、不确定时阻断，不猜测（Fail-Safe 原则）
+
+当验证逻辑依赖的数据源不可用时（API 404/超时/未初始化），**必须阻断危险操作而非放行**。
+
+```
+数据源状态        验证结果          操作允许？
+─────────       ────────         ───────
+✅ API 正常      返回 ["video"]    按 conflict 判断
+⚠️ API 未加载   返回 [UNAVAILABLE]  🚫 禁用保存
+❌ API 失败     返回 [UNAVAILABLE]  🚫 禁用保存
+```
+
+**实现模式**：
+
+```typescript
+const UNAVAILABLE = '__unavailable__'
+
+function getConflictingPlugins(suffix): string[] {
+  if (!data.value) return [UNAVAILABLE]  // data=null 时返回标记值
+  // ... 正常检测逻辑
+}
+
+// PluginSettings.vue 保存按钮
+:disabled="configLoading || suffixConflict.length > 0"
+// UNAVAILABLE.length === 1 > 0 → 自动禁用 ✅
+```
+
+**UI 区分两种阻断原因**：
+- **已知冲突**（橙色）：`.sccgv 与 video 冲突`
+- **验证不可用**（红色）：无法验证唯一性（API 不可用），为防止冲突暂不允许保存
+
+### 三、三层防御架构
+
+本项目的输入校验遵循「前端实时提示 → API 层拦截(400) → 启动时检测(Error日志)」三层防御。每一层都必须独立完整，不得假设上层已拦截：
+
+| 层级 | 触发时机 | 行为 |
+|------|---------|------|
+| L1 前端 | 用户输入即时 | disabled 保存按钮 + 警告文案 |
+| L2 API | PUT /api/config | `validateContainerExtensionsInConfig()` 返回 400 + 错误信息 |
+| L3 启动 | `InitializePlugins()` | slog.Error 日志 + 继续启动不 abort |
+
+**关键约束**：L2 和 L3 不得依赖 L1 的存在。用户可能通过第三方编辑器直接修改 config JSON 绕过前端。
