@@ -10,27 +10,27 @@
 
 ---
 
-## REQ-11: isAlistEncrypted 消除 .bin 硬编码，支持多后缀（新增）
-- [ ] 11.1: `file.isEncrypted === true` → 返回 true
-- [ ] 11.2: 文件名以任意已注册 containerExtension 结尾 → 返回 true
-- [ ] 11.3: 配置项 suffix 作为 fallback 仍有效（.bin 默认后缀）
+## REQ-11: isAlistEncrypted 移除 isEncrypted 排除（新增）
+- [ ] 11.1: 移除 `|| file.isEncrypted` 条件
+- [ ] 11.2: .bin 文件仍返回 true（回归保护）
+- [ ] 11.3: isEncrypted=true 的非 .bin 文件返回 false（正确行为）
 - [ ] 11.4: 目录文件返回 false
 
 ## REQ-12: .bin 文件预览走流式解密路径（新增）
 - [ ] 12.1: Files.vue handleFileClick 增加 isAlistEncrypted 分支
-- [ ] 12.2: 该分支调用 promptPassword → getStreamUrl → player
-- [ ] 12.3: ENCV 容器预览路径不受影响（回归保护）
+- [ ] 12.2: promptPassword → getStreamUrl → player 流程
+- [ ] 12.3: ENCV 容器预览路径不受影响
 
-## REQ-13: 其他插件加密文件的解密入口（新增，随 REQ-11 自动解决）
-- [ ] 13.1: 非 .bin 加密文件长按显示 decrypt action
-- [ ] 13.2: .bin 长按仍显示 decrypt+preview（回归保护）
+## REQ-13: getAlistActions 三分支扩展（新增）
+- [ ] 13.1: 分支 A — isAlistEncrypted(.bin) → decrypt + preview（不变）
+- [ ] 13.2: 分支 B — isEncrypted=true → decrypt action（新增）
+- [ ] 13.3: 分支 C — 普通文件 → encrypt action（不变）
 
-## REQ-14: 解密任务 doPredict 降级处理（新增）
-- [ ] 14.1: 解密任务 predictPlugin 返回空时不卡"分析中"
-- [ ] 14.2: UI 允许提交或显示降级提示
+## REQ-14: 解密任务 doPredict 降级（新增）
+- [ ] 14.1: 解密任务 predictPlugin 空结果时不卡"分析中"
+- [ ] 14.2: UI 允许正常提交
 
 ## REQ-15: Mock 测试更新（新增）
-- [ ] 15.1: isAlistEncrypted(isEncrypted=true) 返回 true
-- [ ] 15.2: isAlistEncrypted(多后缀) 返回 true
-- [ ] 15.3: getAlistActions(非 .bin 加密文件) 返回 decrypt action
-- [ ] 15.4: doPredict 空结果降级测试
+- [ ] 15.1: isAlistEncrypted 移除排除后的行为验证
+- [ ] 15.2: getAlistActions 三分支全覆盖测试
+- [ ] 15.3: doPredict 降级测试
