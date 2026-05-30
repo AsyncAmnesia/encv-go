@@ -69,6 +69,12 @@ const messages: Record<Locale, Record<string, string>> = {
     'files.newFolderName': '文件夹名称',
     'files.createFolderFailed': '创建文件夹失败',
 
+    'alistEncrypt.decrypt': '解密',
+    'alistEncrypt.streamPreview': '流式预览',
+    'alistEncrypt.encryptedFile': '加密文件',
+    'alistEncrypt.realFilename': '原始名称',
+    'alistEncrypt.pluginNotAvailable': 'Alist-Encrypt 解密插件未安装',
+
     'player.title': '播放器',
     'player.loading': '正在加载...',
     'player.noMedia': '未选择媒体',
@@ -571,6 +577,12 @@ const messages: Record<Locale, Record<string, string>> = {
     'files.noSearchResultsDesc': 'No matching files found. Try enabling recursive search.',
     'files.newFolderName': 'Folder name',
     'files.createFolderFailed': 'Failed to create folder',
+
+    'alistEncrypt.decrypt': 'Decrypt',
+    'alistEncrypt.streamPreview': 'Stream Preview',
+    'alistEncrypt.encryptedFile': 'Encrypted File',
+    'alistEncrypt.realFilename': 'Original Name',
+    'alistEncrypt.pluginNotAvailable': 'Alist-Encrypt plugin not available',
 
     'player.title': 'Player',
     'player.loading': 'Loading...',

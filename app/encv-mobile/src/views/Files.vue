@@ -304,18 +304,22 @@
                   :color="getFileIconColor(file)"
                   :class="{ 'thumb-fallback': isImageFile(file) }"
                 ></ion-icon>
-              </div>
+            </div>
             <ion-label>
               <h2>{{ file.name }}</h2>
               <p v-if="searchQuery && !file.isDirectory" class="search-path">{{ file.path }}</p>
               <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified && !searchQuery"> · {{ formatDateTime(file.modified) }}</span></p>
               <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
+              <p v-if="isAlistEncrypted(file) && decodedNames[file.path]" class="alist-real-name">{{ t('alistEncrypt.realFilename') }}: {{ decodedNames[file.path] }}</p>
               <div v-if="!file.isDirectory && !searchQuery && file._tags && file._tags.length > 0" class="file-tag-chips">
                 <ion-chip v-for="tag in file._tags" :key="tag" size="small" color="tertiary" outline>{{ tag }}</ion-chip>
               </div>
             </ion-label>
             <ion-badge v-if="file.isEncrypted" color="warning" slot="end">
               ENCV
+            </ion-badge>
+            <ion-badge v-if="isAlistEncrypted(file)" color="danger" slot="end">
+              AE
             </ion-badge>
             <ion-button v-if="searchQuery" slot="end" fill="clear" class="open-folder-btn" @click.stop="openContainingFolder(file)">
               <ion-icon :icon="folderOpen" class="open-folder-icon" slot="icon-only"></ion-icon>
@@ -448,6 +452,8 @@ import {
   addTag,
   removeTag,
   listFilesByTag,
+  getAlistEncryptStreamUrl,
+  decodeAlistFilename,
 } from '@/api/encv'
 import type { FileItem, PluginMeta, TagInfo } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
@@ -577,6 +583,23 @@ const moveTargetPath = ref('')
 const editingFileTags = ref<string[]>([])
 const newTagInput = ref('')
 const fileTagMap = ref<Record<string, string[]>>({})
+const decodedNames = ref<Record<string, string>>({})
+
+function isAlistEncrypted(file: FileItem): boolean {
+  if (file.isDirectory || file.isEncrypted) return false
+  return file.name.endsWith('.bin')
+}
+
+async function loadDecodedName(file: FileItem) {
+  if (!isAlistEncrypted(file) || decodedNames.value[file.path]) return
+  const baseName = file.name.replace(/\.bin$/i, '')
+  try {
+    const result = await decodeAlistFilename({ encodedName: baseName, password: '' })
+    if (result.success && result.plain_name) {
+      decodedNames.value[file.path] = result.plain_name
+    }
+  } catch {}
+}
 
 const currentPath = ref('/')
 const loading = ref(false)
@@ -873,6 +896,26 @@ async function handleLongPress(file: FileItem) {
     })
   } else {
     const isMedia = category === 'video' || category === 'audio'
+    const isAE = isAlistEncrypted(file)
+
+    if (isAE) {
+      loadDecodedName(file)
+      buttons.push({
+        text: t('alistEncrypt.streamPreview'),
+        icon: videocam,
+        handler: () => {
+          handleAlistStreamPreview(file)
+        },
+      })
+      buttons.push({
+        text: t('alistEncrypt.decrypt'),
+        icon: lockClosed,
+        handler: () => {
+          handleAlistDecrypt(file)
+        },
+      })
+    }
+
     buttons.push({
       text: isMedia ? t('files.play') : t('files.preview'),
       icon: isMedia ? videocam : image,
@@ -1047,6 +1090,9 @@ async function loadFileTagsForCurrentDir() {
     }
     fileTagMap.value = map
   } catch {}
+  for (const f of files.value) {
+    if (isAlistEncrypted(f)) loadDecodedName(f)
+  }
   setupLazyThumbnails()
 }
 
@@ -1058,6 +1104,19 @@ function handleEncryptFile(file: FileItem) {
 }
 
 function handleDecryptFile(file: FileItem) {
+  router.push({
+    path: '/tabs/tasks',
+    query: { action: 'new', type: 'decrypt', source: file.path },
+  })
+}
+
+function handleAlistStreamPreview(file: FileItem) {
+  const streamUrl = getAlistEncryptStreamUrl({ path: file.path, password: '' })
+  const decodedName = decodedNames.value[file.path] || file.name
+  router.push({ path: '/player', query: { streamUrl, name: decodedName } })
+}
+
+function handleAlistDecrypt(file: FileItem) {
   router.push({
     path: '/tabs/tasks',
     query: { action: 'new', type: 'decrypt', source: file.path },
@@ -1554,4 +1613,12 @@ ion-item {
 }
 .main-sort-bar {
   padding: 0 4px;
+}
+
+.alist-real-name {
+  color: var(--ion-color-danger);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }</style>
