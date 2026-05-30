@@ -61,7 +61,7 @@
             <ion-icon :icon="getPluginIcon(plugin.name)" slot="start" color="primary" />
             <ion-label>
               <h2>{{ plugin.name }}</h2>
-              <p>{{ plugin.supportedExtensions.length }} 种格式 · 容器 {{ plugin.containerExtension }}</p>
+              <p>{{ plugin.supportedExtensions?.length ?? 0 }} 种格式 · 容器 {{ plugin.containerExtension }}</p>
             </ion-label>
           </ion-item>
         </ion-list>
@@ -434,6 +434,12 @@ import {
   swapVerticalOutline,
   alertCircle,
   close,
+  filmOutline,
+  musicalNotesOutline,
+  imageOutline,
+  documentTextOutline,
+  documentOutline,
+  cubeOutline,
 } from 'ionicons/icons'
 import {
   listFiles,
@@ -1181,15 +1187,15 @@ async function openSideDrawer() {
 }
 
 function getPluginIcon(name: string): string {
-  const icons: Record<string, string> = { video: 'film-outline', audio: 'musical-notes-outline', image: 'image-outline', pdf: 'document-text-outline', text: 'document-outline', wps: 'document-outline' }
-  return icons[name] || 'cube-outline'
+  const icons: Record<string, string> = { video: filmOutline, audio: musicalNotesOutline, image: imageOutline, pdf: documentTextOutline, text: documentOutline, wps: documentOutline }
+  return icons[name] || cubeOutline
 }
 
 async function searchPluginFiles(
   plugin: PluginMeta,
   onItem?: (file: FileItem) => void
 ): Promise<FileItem[]> {
-  if (plugin.supportedExtensions.length === 0) return []
+  if (!plugin.supportedExtensions || plugin.supportedExtensions.length === 0) return []
   const result = await listPluginFilesStream(
     currentPath.value,
     plugin.supportedExtensions,
