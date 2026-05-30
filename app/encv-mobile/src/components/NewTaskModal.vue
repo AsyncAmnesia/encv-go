@@ -1,13 +1,14 @@
 <template>
-  <ion-header>
-    <ion-toolbar>
-      <ion-title>{{ t('tasks.newTask') }}</ion-title>
-      <ion-buttons slot="end">
-        <ion-button @click="close">{{ t('tasks.close') }}</ion-button>
-      </ion-buttons>
-    </ion-toolbar>
-  </ion-header>
-  <ion-content class="ion-padding">
+  <ion-page>
+    <ion-header>
+      <ion-toolbar>
+        <ion-title>{{ t('tasks.newTask') }}</ion-title>
+        <ion-buttons slot="end">
+          <ion-button @click="handleClose">{{ t('tasks.close') }}</ion-button>
+        </ion-buttons>
+      </ion-toolbar>
+    </ion-header>
+    <ion-content class="ion-padding">
     <ion-list>
       <ion-item>
         <ion-select
@@ -147,13 +148,15 @@
       <ion-icon :icon="lockClosed" slot="start"></ion-icon>
       {{ t('tasks.createTask') }}
     </ion-button>
-  </ion-content>
+    </ion-content>
+  </ion-page>
 </template>
 
 <script setup lang="ts">
 import {
   IonContent,
   IonHeader,
+  IonPage,
   IonToolbar,
   IonTitle,
   IonButtons,
@@ -166,6 +169,7 @@ import {
   IonInput,
   IonNote,
   IonBadge,
+  modalController,
 } from '@ionic/vue'
 import { folderOpen, lockClosed, informationCircle } from 'ionicons/icons'
 import ContainerVersionSelector from '@/components/ContainerVersionSelector.vue'
@@ -249,5 +253,7 @@ function formatPluginLabel(cand: { name: string; matchType: string }): string {
   return cand.matchType === 'general' ? `${baseName}（通用）` : baseName
 }
 
-function close() {}
+async function handleClose() {
+  await modalController.dismiss()
+}
 </script>
