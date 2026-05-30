@@ -47,8 +47,8 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.appcompat)
     compileOnly("androidx.compose.material:material-icons-extended")
-    implementation("androidx.core:core-ktx:1.17.0")
-    implementation("androidx.activity:activity-ktx:1.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    compileOnly("androidx.core:core-ktx:1.17.0")
+    compileOnly("androidx.activity:activity-ktx:1.11.0")
+    compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     compileOnly("io.insert-koin:koin-core:4.1.0")
 }
