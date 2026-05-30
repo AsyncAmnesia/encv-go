@@ -1,5 +1,5 @@
 import type { FileSubtitle } from '@/types/file-feature'
-import { isAlistEncrypted, loadDecodedName, getDecodedName, setSessionPassword } from './useAlistEncrypt'
+import { isAlistEncrypted, loadDecodedName, getDecodedName } from './useAlistEncrypt'
 import { useI18n } from '@/composables/useI18n'
 
 const { t } = useI18n()

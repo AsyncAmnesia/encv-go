@@ -32,7 +32,7 @@ export function getAlistActions(file: FileItem): FileAction[] {
       text: () => t('alistEncrypt.decrypt'),
       icon: lockClosed,
       color: 'warning',
-      handler: (f: FileItem) => {
+      handler: async (f: FileItem) => {
         router.push({
           path: '/tabs/tasks',
           query: { action: 'new', type: 'decrypt', source: f.path },

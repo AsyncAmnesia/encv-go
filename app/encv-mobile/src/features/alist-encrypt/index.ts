@@ -1,5 +1,5 @@
 import type { FileFeature } from '@/types/file-feature'
-import { isAlistEncrypted, clearPasswordCache, clearDecodeCache } from './useAlistEncrypt'
+import { isAlistEncrypted, clearPasswordCache, clearDecodeCache, loadDecodedName, getDecodedName, setSessionPassword, getSessionPassword, getStreamUrl } from './useAlistEncrypt'
 import { getAlistBadge } from './badge'
 import { getAlistSubtitle, preloadSubtitles } from './subtitle'
 import { getAlistActions } from './actions'
