@@ -1211,8 +1211,14 @@ func (s *MobileService) CheckEncryptOutputExists(sourcePath, targetDir string) (
 	}
 
 	outputDir := targetDir
+	if outputDir != "" {
+		decoded, err := utils.SafeURLToAbsPath(s.servingDir, outputDir)
+		if err == nil {
+			outputDir = decoded
+		}
+	}
 	if outputDir == "" {
-		outputDir = filepath.Dir(sourcePath)
+		outputDir = filepath.Dir(sourceAbs)
 		if outputDir == "" {
 			outputDir = "/"
 		}

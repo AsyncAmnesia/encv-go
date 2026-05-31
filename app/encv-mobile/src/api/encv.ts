@@ -621,12 +621,7 @@ export async function fetchConfigSchema(): Promise<Record<string, unknown>> {
 
 export async function searchFiles(path: string, keyword: string, recursive = false): Promise<FileItem[]> {
   const baseUrl = getApiBaseUrl()
-  const params = new URLSearchParams({
-    path,
-    keyword,
-    recursive: String(recursive),
-  })
-  const response = await fetch(`${baseUrl}/api/files/search?${params}`)
+  const response = await fetch(`${baseUrl}/api/files/search?path=${proxySafeEncode(path)}&keyword=${encodeURIComponent(keyword)}&recursive=${recursive}`)
   if (!response.ok) {
     if (response.status === 403) {
       const data = await response.json().catch(() => ({}))
@@ -735,9 +730,9 @@ export async function checkFileExists(path: string): Promise<boolean> {
 
 export async function checkEncryptOutputExists(sourcePath: string, targetDir?: string): Promise<{ exists: boolean; outputPath: string }> {
   const baseUrl = getApiBaseUrl()
-  const params = new URLSearchParams({ sourcePath })
-  if (targetDir) params.set('targetDir', targetDir)
-  const response = await fetch(`${baseUrl}/api/files/encrypt-output-exists?${params}`)
+  let url = `${baseUrl}/api/files/encrypt-output-exists?sourcePath=${proxySafeEncode(sourcePath)}`
+  if (targetDir) url += `&targetDir=${proxySafeEncode(targetDir)}`
+  const response = await fetch(url)
   if (!response.ok) {
     console.debug('[API] checkEncryptOutputExists failed:', response.status)
     return { exists: false, outputPath: '' }
@@ -995,11 +990,7 @@ export async function removeTag(path: string, tag: string): Promise<void> {
 
 export async function listFilesByTag(tag: string, path?: string): Promise<FileItem[]> {
   const baseUrl = getApiBaseUrl()
-  const params = new URLSearchParams({
-    path: proxySafeEncode(path || '/'),
-    tag: encodeURIComponent(tag),
-  })
-  const response = await fetch(`${baseUrl}/api/files?${params}`)
+  const response = await fetch(`${baseUrl}/api/files?path=${proxySafeEncode(path || '/')}&tag=${encodeURIComponent(tag)}`)
   if (!response.ok) {
     console.error('[API] listFilesByTag failed:', response.status)
     throw new Error(`HTTP error! status: ${response.status}`)
