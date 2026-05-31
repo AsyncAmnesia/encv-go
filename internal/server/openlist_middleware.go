@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Soltus/encv-go/internal/openlist"
+	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/gin-gonic/gin"
 )
 
@@ -39,7 +40,7 @@ func OpenlistSiteMiddleware(mss *openlist.MultiSiteServer) gin.HandlerFunc {
 		c.Set("pathPrefix", pathPrefix)
 
 		if strings.HasSuffix(c.Request.URL.Path, "/decrypt") {
-			fileURL := c.Request.URL.Query().Get("file")
+			fileURL := utils.DecodePathParam(c.Request.URL.Query().Get("file"))
 			if fileURL != "" {
 				if parsedURL, err := url.Parse(fileURL); err == nil {
 					if strings.HasPrefix(parsedURL.Path, pathPrefix) {

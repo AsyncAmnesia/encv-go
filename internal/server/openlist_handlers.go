@@ -128,7 +128,7 @@ func (p *ProxyGin) handleDecrypt(c *gin.Context, siteHost, siteToken string) {
 	routePath, _ := routePathVal.(string)
 
 	if routePath == "" {
-		durl := c.Request.URL.Query().Get("file")
+		durl := utils.DecodePathParam(c.Request.URL.Query().Get("file"))
 		if durl == "" {
 			c.Status(http.StatusBadRequest)
 			c.Writer.Write([]byte("Bad Request: 'file' query parameter is missing"))

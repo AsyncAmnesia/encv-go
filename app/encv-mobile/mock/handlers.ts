@@ -20,7 +20,8 @@ export function createHandlers(base: string): { dispatchRequest: Connect.NextHan
     }
 
     if (pathname === '/decrypt') {
-      const filePath = url.searchParams.get('file') || url.searchParams.get('path') || ''
+      let filePath = url.searchParams.get('file') || url.searchParams.get('path') || ''
+      try { filePath = decodeURIComponent(filePath) } catch {}
       console.error('[MOCK-DECRYPT] raw filePath query param:', JSON.stringify(filePath))
       console.error('[MOCK-DECRYPT] full URL:', req.url)
 

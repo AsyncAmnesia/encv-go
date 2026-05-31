@@ -30,6 +30,10 @@ export function getWebSocketUrl(): string {
   return `${wsUrl}/ws`
 }
 
+export function proxySafeEncode(value: string): string {
+  return encodeURIComponent(encodeURIComponent(value))
+}
+
 export interface FileItem {
   name: string
   display_name?: string
@@ -62,7 +66,7 @@ export class NotFoundError extends Error {
 
 export async function listFiles(path = '/'): Promise<FileItem[]> {
   const baseUrl = getApiBaseUrl()
-  const response = await fetch(`${baseUrl}/api/files?path=${encodeURIComponent(path)}`)
+  const response = await fetch(`${baseUrl}/api/files?path=${proxySafeEncode(path)}`)
   if (!response.ok) {
     if (response.status === 403) {
       const data: FileListResponse = await response.json().catch(() => ({}))
@@ -90,7 +94,7 @@ export async function listFilesStream(
   signal?: AbortSignal
 ): Promise<{ files: FileItem[]; error?: string }> {
   const baseUrl = getApiBaseUrl()
-  const response = await fetch(`${baseUrl}/api/files/stream?path=${encodeURIComponent(path)}`, {
+  const response = await fetch(`${baseUrl}/api/files/stream?path=${proxySafeEncode(path)}`, {
     signal,
   })
 
@@ -151,7 +155,7 @@ export async function listPluginFilesStream(
 ): Promise<{ files: FileItem[]; error?: string }> {
   const baseUrl = getApiBaseUrl()
   const extParam = extensions.map(e => `.${e.toLowerCase()}`).join(',')
-  const response = await fetch(`${baseUrl}/api/files/plugin-stream?path=${encodeURIComponent(path)}&extensions=${encodeURIComponent(extParam)}`, {
+  const response = await fetch(`${baseUrl}/api/files/plugin-stream?path=${proxySafeEncode(path)}&extensions=${encodeURIComponent(extParam)}`, {
     signal,
   })
 
@@ -219,26 +223,26 @@ export async function checkBackendPermissions(): Promise<BackendPermissions> {
 
 export function getFileStreamUrl(path: string): string {
   if (import.meta.env.DEV) {
-    return `/stream?path=${encodeURIComponent(path)}`
+    return `/stream?path=${proxySafeEncode(path)}`
   }
   const baseUrl = getApiBaseUrl()
-  return `${baseUrl}/stream?path=${encodeURIComponent(path)}`
+  return `${baseUrl}/stream?path=${proxySafeEncode(path)}`
 }
 
 export function getFilePreviewUrl(previewPage: string, filePath: string): string {
   if (import.meta.env.DEV) {
-    return `/preview/${previewPage}?file=${encodeURIComponent(filePath)}`
+    return `/preview/${previewPage}?file=${proxySafeEncode(filePath)}`
   }
   const baseUrl = getApiBaseUrl()
-  return `${baseUrl}/preview/${previewPage}?file=${encodeURIComponent(filePath)}`
+  return `${baseUrl}/preview/${previewPage}?file=${proxySafeEncode(filePath)}`
 }
 
 export function getExternalStreamUrl(path: string): string {
   if (import.meta.env.DEV) {
-    return `/api/stream/external?path=${encodeURIComponent(path)}`
+    return `/api/stream/external?path=${proxySafeEncode(path)}`
   }
   const baseUrl = getApiBaseUrl()
-  return `${baseUrl}/api/stream/external?path=${encodeURIComponent(path)}`
+  return `${baseUrl}/api/stream/external?path=${proxySafeEncode(path)}`
 }
 
 export async function checkServerStatus(): Promise<{ online: boolean; error?: string }> {
@@ -260,7 +264,7 @@ export async function checkServerStatus(): Promise<{ online: boolean; error?: st
 export async function deleteFile(path: string): Promise<void> {
   console.debug('[API] deleteFile:', path)
   const baseUrl = getApiBaseUrl()
-  const response = await fetch(`${baseUrl}/api/files?path=${encodeURIComponent(path)}`, {
+  const response = await fetch(`${baseUrl}/api/files?path=${proxySafeEncode(path)}`, {
     method: 'DELETE',
   })
   if (!response.ok) {
@@ -292,7 +296,7 @@ export interface FileContentResponse {
 
 export async function readFileContent(path: string): Promise<FileContentResponse> {
   const baseUrl = getApiBaseUrl()
-  const response = await fetch(`${baseUrl}/api/file?path=${encodeURIComponent(path)}`)
+  const response = await fetch(`${baseUrl}/api/file?path=${proxySafeEncode(path)}`)
   if (!response.ok) {
     console.error('[API] readFileContent failed:', response.status)
     throw new Error(`HTTP error! status: ${response.status}`)
@@ -720,7 +724,7 @@ export async function deleteOpenlistSite(siteId: string): Promise<void> {
 
 export async function checkFileExists(path: string): Promise<boolean> {
   const baseUrl = getApiBaseUrl()
-  const response = await fetch(`${baseUrl}/api/files/exists?path=${encodeURIComponent(path)}`)
+  const response = await fetch(`${baseUrl}/api/files/exists?path=${proxySafeEncode(path)}`)
   if (!response.ok) {
     console.debug('[API] checkFileExists failed:', response.status)
     return false
@@ -992,7 +996,7 @@ export async function removeTag(path: string, tag: string): Promise<void> {
 export async function listFilesByTag(tag: string, path?: string): Promise<FileItem[]> {
   const baseUrl = getApiBaseUrl()
   const params = new URLSearchParams({
-    path: encodeURIComponent(path || '/'),
+    path: proxySafeEncode(path || '/'),
     tag: encodeURIComponent(tag),
   })
   const response = await fetch(`${baseUrl}/api/files?${params}`)
@@ -1007,10 +1011,10 @@ export async function listFilesByTag(tag: string, path?: string): Promise<FileIt
 
 export function getAlistEncryptStreamUrl(params: { path: string; password: string }): string {
   if (import.meta.env.DEV) {
-    return `/api/alist-encrypt/stream?path=${encodeURIComponent(params.path)}&password=${encodeURIComponent(params.password)}`
+    return `/api/alist-encrypt/stream?path=${proxySafeEncode(params.path)}&password=${encodeURIComponent(params.password)}`
   }
   const baseUrl = getApiBaseUrl()
-  return `${baseUrl}/api/alist-encrypt/stream?path=${encodeURIComponent(params.path)}&password=${encodeURIComponent(params.password)}`
+  return `${baseUrl}/api/alist-encrypt/stream?path=${proxySafeEncode(params.path)}&password=${encodeURIComponent(params.password)}`
 }
 
 export interface AlistDecodeResult {

@@ -2,10 +2,23 @@ package utils
 
 import (
 	"fmt"
+	"net/url"
 	"path"
 	"path/filepath"
 	"strings"
 )
+
+func DecodePathParam(raw string) string {
+	s, err := url.QueryUnescape(raw)
+	if err != nil {
+		return raw
+	}
+	s2, err := url.QueryUnescape(s)
+	if err != nil {
+		return s
+	}
+	return s2
+}
 
 // SafeResolveToAbsPath 将用户提供的本地路径安全地解析为位于基础目录内的绝对路径。
 // 这个函数专门处理文件系统路径，不处理URL编码，适用于内部调用。

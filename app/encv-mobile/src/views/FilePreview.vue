@@ -75,6 +75,10 @@
           <div v-else-if="textError" class="text-error">
             <p>{{ textError }}</p>
             <ion-button size="small" @click="loadTextContent">Retry</ion-button>
+            <ion-button v-if="textErrorDetail" size="small" fill="outline" color="medium" @click="showTextErrorDetail = !showTextErrorDetail">
+              {{ showTextErrorDetail ? 'Hide' : 'Show' }} Details
+            </ion-button>
+            <pre v-if="showTextErrorDetail && textErrorDetail" class="error-detail">{{ textErrorDetail }}</pre>
           </div>
           <pre v-else class="text-content" :class="{ 'no-wrap': !textWrap }">{{ textContent }}</pre>
         </div>
@@ -156,7 +160,7 @@ import {
   chevronDown, chevronForward,
   returnDownBackOutline, returnDownForwardOutline,
 } from 'ionicons/icons'
-import { getFileStreamUrl, getFileCategory, getFileExtension, formatFileSize, fetchTextPreviewExts, getApiBaseUrl, getFilePreviewUrl } from '@/api/encv'
+import { getFileStreamUrl, getFileCategory, getFileExtension, formatFileSize, fetchTextPreviewExts, getApiBaseUrl, getFilePreviewUrl, proxySafeEncode } from '@/api/encv'
 import { openPlayer, isNative } from '@/plugins/GoProcess'
 import { useI18n } from '@/composables/useI18n'
 
@@ -195,6 +199,8 @@ const fileCategory = ref('')
 const textContent = ref('')
 const textLoading = ref(false)
 const textError = ref('')
+const textErrorDetail = ref<string>('')
+const showTextErrorDetail = ref(false)
 const textWrap = ref(true)
 
 const isEncryptedPreview = computed(() => route.query.isEncrypted === 'true')
@@ -237,13 +243,19 @@ async function loadTextContent() {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 30000)
 
-    const resp = await fetch(`${baseUrl}/decrypt?file=${encodeURIComponent(path)}`, {
+    const resp = await fetch(`${baseUrl}/decrypt?file=${proxySafeEncode(path)}`, {
       signal: controller.signal,
     })
     clearTimeout(timeoutId)
 
     if (!resp.ok) {
       const body = await resp.text().catch(() => '')
+      let detail = ''
+      try {
+        const j = JSON.parse(body)
+        if (j.debug) detail = JSON.stringify(j.debug, null, 2)
+      } catch { /* not json */ }
+      textErrorDetail.value = detail
       throw new Error(`HTTP ${resp.status}: ${resp.statusText}${body ? ' | ' + body : ''}`)
     }
 
@@ -279,7 +291,7 @@ async function loadFile() {
   if (isEncrypted) {
     try {
       const baseUrl = getApiBaseUrl()
-      const resp = await fetch(`${baseUrl}/api/file/info?path=${encodeURIComponent(path)}`)
+      const resp = await fetch(`${baseUrl}/api/file/info?path=${proxySafeEncode(path)}`)
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
       const info = await resp.json()
 
@@ -449,6 +461,22 @@ onMounted(() => loadFile())
   color: #e74c3c;
   font-size: 13px;
   margin: 0;
+}
+
+.error-detail {
+  width: 100%;
+  max-height: 200px;
+  overflow: auto;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  padding: 10px;
+  margin-top: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #f0c674;
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 .container-info {
