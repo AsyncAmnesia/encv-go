@@ -354,6 +354,15 @@ func InitializePlugins(ctx context.Context) error {
 // 1. 通过 MIME 类型前缀匹配
 // 2. 如果没有匹配到，则通过文件扩展名匹配
 // 3. 最后通过 ShouldProcess 进行最终确认
+func FindPluginByName(name string) (Plugin, error) {
+	for _, p := range Plugins {
+		if p.Name() == name {
+			return p, nil
+		}
+	}
+	return nil, fmt.Errorf("plugin not found: %s", name)
+}
+
 func FindEncryptingPlugin(inputPath string) (Plugin, error) {
 	ext := strings.ToLower(filepath.Ext(inputPath))
 	mimeType, err := utils.DetectFileMIMEType(inputPath)

@@ -144,7 +144,7 @@ func (tm *TaskManager) Stop() {
 	tm.wg.Wait()
 }
 
-func (tm *TaskManager) Create(taskType, sourcePath, targetPath, password string, version int) *MobileTask {
+func (tm *TaskManager) Create(taskType, sourcePath, targetPath, password string, version int, pluginName string) *MobileTask {
 	task := &MobileTask{
 		ID:               uuid.New().String(),
 		Type:             taskType,
@@ -154,6 +154,7 @@ func (tm *TaskManager) Create(taskType, sourcePath, targetPath, password string,
 		Status:           "queued",
 		Progress:         0,
 		ContainerVersion: version,
+		PluginName:       pluginName,
 		CreatedAt:        time.Now(),
 	}
 
@@ -170,8 +171,8 @@ func (tm *TaskManager) Create(taskType, sourcePath, targetPath, password string,
 	return task
 }
 
-func (tm *TaskManager) CreateWithExtras(taskType, sourcePath, targetPath, password, secondaryPassword string, version int, extras map[string]string) *MobileTask {
-	task := tm.Create(taskType, sourcePath, targetPath, password, version)
+func (tm *TaskManager) CreateWithExtras(taskType, sourcePath, targetPath, password, secondaryPassword string, version int, pluginName string, extras map[string]string) *MobileTask {
+	task := tm.Create(taskType, sourcePath, targetPath, password, version, pluginName)
 	task.SecondaryPassword = secondaryPassword
 	task.ExtraFields = extras
 	return task
@@ -444,12 +445,21 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 
 	tm.updateProgress(taskID, 10, "initializing", "", "")
 
-	plugin, err := plugins.FindEncryptingPlugin(absPath)
-	if err != nil {
-		tm.failTask(taskID, fmt.Sprintf("no encrypting plugin found: %v", err))
-		return
+	var plugin plugins.Plugin
+	if task.PluginName != "" {
+		plugin, err = plugins.FindPluginByName(task.PluginName)
+		if err != nil {
+			tm.failTask(taskID, fmt.Sprintf("specified plugin not found: %v", err))
+			return
+		}
+	} else {
+		plugin, err = plugins.FindEncryptingPlugin(absPath)
+		if err != nil {
+			tm.failTask(taskID, fmt.Sprintf("no encrypting plugin found: %v", err))
+			return
+		}
+		task.PluginName = plugin.Name()
 	}
-	task.PluginName = plugin.Name()
 
 	var primaryPassword string
 	if resolver, ok := plugin.(pluginInterfaces.TaskPasswordResolver); ok {
