@@ -1,0 +1,15 @@
+- [ ] alist-encrypt 插件 EncryptedName 格式与 alist-encrypt-go 参考实现二进制兼容（mixBase64 编码 + CRC6 校验 + AES-CTR 加密）
+- [ ] filename.go 的 EncryptName/DecryptName 函数通过往返一致性测试（加密→解密==原文）
+- [ ] CRC6 校验逻辑与参考实现一致（多项式、初始值、反射处理）
+- [ ] 前端 decodeAlistFilename 正确解析 EncryptedName 格式并还原明文
+- [ ] Manifest_v4 新增 OriginalName 和 FilenameAlgorithm 字段，JSON 序列化/反序列化正确
+- [ ] FlagFilenameEncrypted (0x0010) 常量已定义并在 Header 读写中正确处理
+- [ ] FilenameObfuscator 接口定义清晰，AES-GCM-SIV 默认实现可用
+- [ ] v4 容器创建时可选地加密原始文件名写入 Manifest
+- [ ] v4 容器读取时能从 Manifest 还原原始文件名
+- [ ] API 端点 GET /api/v1/file/original-name 可返回解密后的原始文件名
+- [ ] Files.vue 能根据 FlagFilenameEncrypted 标志自动显示 v4 容器的原始文件名
+- [ ] PluginSettings 中有 filename_obfuscation_strategy 配置项（none / aes-gcm）
+- [ ] vue-tsc 零错误
+- [ ] vitest 全部通过
+- [ ] vite build 成功
