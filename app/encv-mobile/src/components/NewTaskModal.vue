@@ -539,6 +539,10 @@ async function handleClose() {
 
 .extra-field-toggle {
   --padding-start: 0;
+  --background: #424242;
+  --background-checked: #3880ff;
+  --handle-background: #3880ff;
+  --handle-background-checked: #ffffff;
 }
 
 .extra-field-item ion-note[slot=helper] {
