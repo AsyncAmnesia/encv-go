@@ -168,3 +168,11 @@ body.dark ion-action-sheet {
   --button-color-hover: #e0e0e0;
   --title-color: #aaaaaa;
 }
+
+/* 通用 ion-toggle 暗黑模式适配 — 全局非 scoped */
+ion-toggle {
+  --track-background: #424242;
+  --track-background-checked: var(--ion-color-primary);
+  --handle-background: var(--ion-color-primary);
+  --handle-background-checked: #ffffff;
+}

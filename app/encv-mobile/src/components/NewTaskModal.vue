@@ -539,10 +539,6 @@ async function handleClose() {
 
 .extra-field-toggle {
   --padding-start: 0;
-  --track-background: #424242;
-  --track-background-checked: #3880ff;
-  --handle-background: #3880ff;
-  --handle-background-checked: #ffffff;
 }
 
 .extra-field-item ion-note[slot=helper] {
@@ -567,12 +563,5 @@ async function handleClose() {
 
 .submit-btn:disabled {
   opacity: 0.5;
-}
-</style>
-
-<style>
-/* Ionic 8 toggle ON 状态手柄颜色 — ::part() 需要 非 scoped */
-.extra-field-toggle.toggle-checked::part(handle) {
-  background: #ffffff !important;
 }
 </style>
