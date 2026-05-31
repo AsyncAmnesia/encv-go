@@ -553,6 +553,9 @@ const messages: Record<Locale, Record<string, string>> = {
     'extensions.installFromLocalHint': '选择 .apk 文件进行本地安装',
     'extensions.alistDecrypt': 'Alist-Encrypt 解密',
     'extensions.alistDecryptDesc': '支持 AES-128-CTR 加密文件的解密、加密和流式预览',
+    'app.serviceGuardTitle': '服务目录未就绪',
+    'app.serviceGuardMessage': '后端服务目录未指向 mock 数据，应用无法启动。请确保 server.dir 配置正确。',
+    'app.serviceGuardRetry': '重试检测',
   },
   'en': {
     'common.confirm': 'Confirm',
@@ -1104,6 +1107,9 @@ const messages: Record<Locale, Record<string, string>> = {
     'extensions.installFromLocalHint': 'Select .apk file for local installation',
     'extensions.alistDecrypt': 'Alist-Encrypt Decrypt',
     'extensions.alistDecryptDesc': 'Support decryption, encryption and streaming preview of AES-128-CTR encrypted files',
+    'app.serviceGuardTitle': 'Service Directory Not Ready',
+    'app.serviceGuardMessage': 'Backend service directory does not point to mock data. App cannot start. Ensure server.dir is configured correctly.',
+    'app.serviceGuardRetry': 'Retry',
   },
 }
 
