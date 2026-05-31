@@ -332,7 +332,7 @@
         :inputs="renameAlertInputs"
         :buttons="[
           { text: '取消', role: 'cancel' },
-          { text: '确定', handler: (d: any) => { renameValue = d.name ?? renameValue.value; renamePassword = d.password ?? ''; handleRename(selectedFile!); } }
+          { text: '确定', handler: onRenameConfirm }
         ]"
         @didDismiss="showRenameDialog = false" />
       <ion-modal :is-open="showTagDialog" @didDismiss="showTagDialog = false">
@@ -1036,6 +1036,12 @@ async function handleCopy(file: FileItem) {
     await copyFile(file.path, destPath)
     await loadFiles()
   } catch (e) { showToast({ message: `复制失败: ${e}` }) }
+}
+
+function onRenameConfirm(d: any) {
+  renameValue.value = d.name ?? renameValue.value
+  renamePassword.value = d.password ?? ''
+  if (selectedFile.value) handleRename(selectedFile.value)
 }
 
 async function handleRename(file: FileItem) {
