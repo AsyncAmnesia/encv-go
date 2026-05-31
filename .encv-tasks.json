@@ -1,14 +1,37 @@
 [
   {
-    "id": "34e091b2-42f4-40c4-b451-4102092c4bee",
+    "id": "10ba00c3-6b91-4202-8490-310219114070",
     "type": "encrypt",
     "sourcePath": "/logcat.txt",
-    "targetPath": "/",
     "status": "completed",
     "progress": 100,
     "phase": "completed",
-    "createdAt": "2026-05-25T16:46:35.374198356Z",
-    "completedAt": "2026-05-25T16:46:35.949260078Z"
+    "containerVersion": 4,
+    "createdAt": "2026-05-30T16:52:52.104830751Z",
+    "completedAt": "2026-05-30T16:52:53.012042811Z"
+  },
+  {
+    "id": "dc6d270b-a500-4531-8010-69e886ebbf9f",
+    "type": "encrypt",
+    "sourcePath": "/01-plain-media/video/comedy.mkv",
+    "pluginName": "video",
+    "status": "failed",
+    "progress": 15,
+    "phase": "preprocessing",
+    "error": "encryption processing failed",
+    "errorDetail": "encryption failed: plugin failed to process file '/storage/emulated/0/01-plain-media/video/comedy.mkv': content preprocessing failed for '/storage/emulated/0/01-plain-media/video/comedy.mkv': failed to remux MKV: mkvmerge remuxing failed: exec: \"mkvmerge\": executable file not found in $PATH",
+    "containerVersion": 4,
+    "createdAt": "2026-05-31T17:31:16.983860113Z",
+    "completedAt": "2026-05-31T17:31:17.622099071Z"
+  },
+  {
+    "id": "545600cb-c52e-4ee2-bdaf-81b37003b77b",
+    "type": "encrypt",
+    "sourcePath": "/01-plain-media/video/sample.mp4",
+    "status": "queued",
+    "progress": 0,
+    "containerVersion": 4,
+    "createdAt": "2026-05-31T17:32:02.090887871Z"
   },
   {
     "id": "b9c3577b-6500-4163-8d74-e1e684266342",
@@ -54,16 +77,6 @@
     "completedAt": "2026-05-25T16:33:39.545154055Z"
   },
   {
-    "id": "d9ac5199-6d12-4267-89d6-ac4f544bc822",
-    "type": "encrypt",
-    "sourcePath": "test_v4.txt",
-    "status": "completed",
-    "progress": 100,
-    "phase": "completed",
-    "createdAt": "2026-05-25T16:52:59.825589449Z",
-    "completedAt": "2026-05-25T16:53:00.102116408Z"
-  },
-  {
     "id": "d96af486-f0cc-4ee3-b014-77f3c2a98071",
     "type": "encrypt",
     "sourcePath": "/logcat.txt",
@@ -83,18 +96,6 @@
     "phase": "completed",
     "createdAt": "2026-05-25T16:47:31.138774453Z",
     "completedAt": "2026-05-25T16:47:31.984494083Z"
-  },
-  {
-    "id": "73f385b4-7343-4c23-8c9e-532953ca83e8",
-    "type": "encrypt",
-    "sourcePath": "/tmp/test_v4.txt",
-    "status": "failed",
-    "progress": 5,
-    "phase": "analyzing",
-    "error": "source file not found, it may have been moved or deleted",
-    "errorDetail": "source file not found: stat /workspace/tmp/test_v4.txt: no such file or directory",
-    "createdAt": "2026-05-25T16:52:43.417137909Z",
-    "completedAt": "2026-05-25T16:52:44.078132514Z"
   },
   {
     "id": "a48936c9-a90a-48ab-929f-fe7ddfbc6dd2",
@@ -119,14 +120,36 @@
     "completedAt": "2026-05-30T16:52:52.99013835Z"
   },
   {
-    "id": "10ba00c3-6b91-4202-8490-310219114070",
+    "id": "34e091b2-42f4-40c4-b451-4102092c4bee",
     "type": "encrypt",
     "sourcePath": "/logcat.txt",
+    "targetPath": "/",
     "status": "completed",
     "progress": 100,
     "phase": "completed",
-    "containerVersion": 4,
-    "createdAt": "2026-05-30T16:52:52.104830751Z",
-    "completedAt": "2026-05-30T16:52:53.012042811Z"
+    "createdAt": "2026-05-25T16:46:35.374198356Z",
+    "completedAt": "2026-05-25T16:46:35.949260078Z"
+  },
+  {
+    "id": "d9ac5199-6d12-4267-89d6-ac4f544bc822",
+    "type": "encrypt",
+    "sourcePath": "test_v4.txt",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "createdAt": "2026-05-25T16:52:59.825589449Z",
+    "completedAt": "2026-05-25T16:53:00.102116408Z"
+  },
+  {
+    "id": "73f385b4-7343-4c23-8c9e-532953ca83e8",
+    "type": "encrypt",
+    "sourcePath": "/tmp/test_v4.txt",
+    "status": "failed",
+    "progress": 5,
+    "phase": "analyzing",
+    "error": "source file not found, it may have been moved or deleted",
+    "errorDetail": "source file not found: stat /workspace/tmp/test_v4.txt: no such file or directory",
+    "createdAt": "2026-05-25T16:52:43.417137909Z",
+    "completedAt": "2026-05-25T16:52:44.078132514Z"
   }
 ]
