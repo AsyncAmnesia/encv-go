@@ -30,6 +30,9 @@ dev-backend:
 
 # 启动后端（移动端预览模式，自动将 mobile.server_dir 覆盖到 server.dir）
 # 等价于真机 Android 端 EncvGoService.kt 的行为
+# mock 文件生成到 mobile.server_dir 指向的路径，后端直接读取无需路径转换
 dev-mobile:
+	@echo "Generating mock data to mobile server_dir..."
+	@cd app/encv-mobile && npx tsx scripts/generate-mock-files.ts --dir /storage/emulated/0
 	@echo "Starting backend (mobile preview mode)..."
 	ENCV_MOBILE=1 go run ./cmd/encv start
