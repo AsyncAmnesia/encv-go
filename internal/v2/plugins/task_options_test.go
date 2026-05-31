@@ -116,10 +116,22 @@ func TestAlistEncryptPlugin_GetTaskOptions(t *testing.T) {
 
 func TestOtherPlugins_DefaultToGlobal(t *testing.T) {
 	initPluginsForTaskOptions(t)
-	for _, name := range []string{"text", "audio", "image", "pdf"} {
+	for _, name := range []string{"text", "audio", "image", "pdf", "wps"} {
 		p := getPluginByName(name)
 		require.NotNil(t, p, "%s plugin should exist", name)
 		assert.Equal(t, pluginInterfaces.PasswordGlobal, p.GetTaskOptions().PasswordStrategy,
 			"plugin %s should default to global password strategy", name)
+		assert.False(t, p.GetTaskOptions().SupportVersionSelect,
+			"plugin %s should NOT support version select", name)
+		extraFields := p.GetTaskOptions().ExtraFields
+		require.Len(t, extraFields, 5, "%s should have 5 extra fields (FNConfig filename encryption)", name)
+		assert.Equal(t, "encrypt_filename", extraFields[0].Key, "%s[0]", name)
+		assert.Equal(t, "fn_rounds", extraFields[1].Key, "%s[1]", name)
+		assert.Equal(t, "fn_charset", extraFields[2].Key, "%s[2]", name)
+		assert.Equal(t, "fn_deconfuse", extraFields[3].Key, "%s[3]", name)
+		assert.Equal(t, "fn_structured", extraFields[4].Key, "%s[4]", name)
+		for i, f := range extraFields {
+			assert.Equal(t, "encrypt", f.Condition, "%s[%d] condition should be 'encrypt'", name, i)
+		}
 	}
 }

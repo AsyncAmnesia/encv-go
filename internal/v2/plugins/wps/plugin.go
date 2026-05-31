@@ -210,6 +210,57 @@ func (p *WPSPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 	return pluginInterfaces.TaskOptions{
 		PasswordStrategy:     pluginInterfaces.PasswordGlobal,
 		SupportVersionSelect: false,
+		ExtraFields: []pluginInterfaces.TaskField{
+			{
+				Key:          "encrypt_filename",
+				Label:        "tasks.encryptFilename",
+				Type:         "bool",
+				Required:     false,
+				DefaultValue: "false",
+				Help:         "tasks.encryptFilenameHelp",
+				Condition:     "encrypt",
+			},
+			{
+				Key:          "fn_rounds",
+				Label:        "tasks.fnRounds",
+				Type:         "select",
+				Required:     false,
+				DefaultValue: "8",
+				Help:         "tasks.fnRoundsHelp",
+				Options:      []string{"4", "8", "12", "16"},
+				OptionLabels: map[string]string{"4": "4", "8": "8 (Recommended)", "12": "12", "16": "16"},
+				Condition:     "encrypt",
+			},
+			{
+				Key:          "fn_charset",
+				Label:        "tasks.fnCharset",
+				Type:         "select",
+				Required:     false,
+				DefaultValue: "alnum",
+				Help:         "tasks.fnCharsetHelp",
+				Options:      []string{"alnum", "alnum_symbols", "full"},
+				OptionLabels: map[string]string{"alnum": "Alphanumeric", "alnum_symbols": "Alnum + Symbols", "full": "Full (Alnum+Symbols+Hanzi+Emoji)"},
+				Condition:     "encrypt",
+			},
+			{
+				Key:          "fn_deconfuse",
+				Label:        "tasks.fnDeconfuse",
+				Type:         "bool",
+				Required:     false,
+				DefaultValue: "false",
+				Help:         "tasks.fnDeconfuseHelp",
+				Condition:     "encrypt",
+			},
+			{
+				Key:          "fn_structured",
+				Label:        "tasks.fnStructured",
+				Type:         "bool",
+				Required:     false,
+				DefaultValue: "false",
+				Help:         "tasks.fnStructuredHelp",
+				Condition:     "encrypt",
+			},
+		},
 	}
 }
 
