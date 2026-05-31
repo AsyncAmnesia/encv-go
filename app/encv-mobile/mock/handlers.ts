@@ -1,4 +1,6 @@
 import type { Connect } from 'vite'
+import * as fs from 'fs'
+import * as path from 'path'
 import {
   getFiles,
   setMockSuffix,
@@ -11,13 +13,48 @@ import {
   type MockFileItem,
 } from './file-system'
 
+const MOCK_DATA_ROOT = path.resolve(__dirname, '../__mock_data__')
+
+function scanRealFiles(dirPath: string): MockFileItem[] {
+  const results: MockFileItem[] = []
+  if (!fs.existsSync(dirPath)) return results
+
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true })
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name)
+    const relPath = '/' + path.relative(MOCK_DATA_ROOT, fullPath).replace(/\\/g, '/')
+
+    if (entry.isDirectory()) {
+      if (entry.name === '.' || entry.name === '..') continue
+      results.push({
+        name: entry.name,
+        path: relPath + '/',
+        isDirectory: true,
+        size: undefined,
+      })
+    } else if (entry.isFile()) {
+      try {
+        const stat = fs.statSync(fullPath)
+        results.push({
+          name: entry.name,
+          path: relPath,
+          isDirectory: false,
+          size: stat.size,
+          modified: stat.mtime.toISOString(),
+        })
+      } catch {}
+    }
+  }
+  return results
+}
+
 let taskIdCounter = 1000
 
 export function createHandlers(base: string): Record<string, Connect.NextHandleFunction> {
   return {
     '/api/files': async (req, res, next) => {
       const url = new URL(req.url || '', `http://localhost${base}`)
-      const path = url.searchParams.get('path') || '/'
+      const queryPath = url.searchParams.get('path') || '/'
       const tag = url.searchParams.get('tag')
 
       if (tag) {
@@ -26,15 +63,30 @@ export function createHandlers(base: string): Record<string, Connect.NextHandleF
         return
       }
 
-      const files = getFiles(path)
+      const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
+      let files: MockFileItem[]
+
+      if (fs.existsSync(resolvedPath)) {
+        files = scanRealFiles(resolvedPath)
+      } else {
+        files = getFiles(queryPath)
+      }
+
       res.setHeader('Content-Type', 'application/json')
       res.end(JSON.stringify({ files }))
     },
 
     '/api/files/stream': async (req, res, next) => {
       const url = new URL(req.url || '', `http://localhost${base}`)
-      const path = url.searchParams.get('path') || '/'
-      const files = getFiles(path)
+      const queryPath = url.searchParams.get('path') || '/'
+      const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
+      let files: MockFileItem[]
+
+      if (fs.existsSync(resolvedPath)) {
+        files = scanRealFiles(resolvedPath)
+      } else {
+        files = getFiles(queryPath)
+      }
 
       res.setHeader('Content-Type', 'text/event-stream')
       res.setHeader('Cache-Control', 'no-cache')
@@ -49,11 +101,19 @@ export function createHandlers(base: string): Record<string, Connect.NextHandleF
 
     '/api/files/plugin-stream': async (req, res, next) => {
       const url = new URL(req.url || '', `http://localhost${base}`)
-      const path = url.searchParams.get('path') || '/'
+      const queryPath = url.searchParams.get('path') || '/'
       const extParam = url.searchParams.get('extensions') || ''
       const extensions = extParam.split(',').map(e => e.replace('.', '')).filter(Boolean)
 
-      const allFiles = getFiles(path)
+      const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
+      let allFiles: MockFileItem[]
+
+      if (fs.existsSync(resolvedPath)) {
+        allFiles = scanRealFiles(resolvedPath)
+      } else {
+        allFiles = getFiles(queryPath)
+      }
+
       const filtered = allFiles.filter(f => {
         if (f.isDirectory) return false
         const ext = f.name.includes('.') ? f.name.split('.').pop()?.toLowerCase() : ''

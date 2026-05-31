@@ -1,12 +1,35 @@
 import type { Plugin, Connect } from 'vite'
+import * as fs from 'fs'
+import * as path from 'path'
+import { execSync } from 'child_process'
 import { createHandlers } from './handlers'
 import { setMockSuffix, getMockSuffix } from './file-system'
+
+const MOCK_DATA_ROOT = path.resolve(__dirname, '../__mock_data__')
+const SCRIPT_PATH = path.resolve(__dirname, '../scripts/generate-mock-files.ts')
 
 function isMockEnabled(): boolean {
   if (typeof window !== 'undefined') {
     return false
   }
   return true
+}
+
+function ensureMockDataExists(): void {
+  if (!fs.existsSync(MOCK_DATA_ROOT)) {
+    console.log('[MOCK] Generating mock data files...')
+    try {
+      execSync(`npx tsx "${SCRIPT_PATH}"`, {
+        cwd: path.resolve(__dirname, '..'),
+        stdio: 'pipe',
+        timeout: 30000,
+      })
+      console.log(`[MOCK] ✅ Mock data generated at ${MOCK_DATA_ROOT}`)
+    } catch (e: any) {
+      console.warn(`[MOCK] ⚠️ Failed to generate mock data: ${e.message}`)
+      console.warn('[MOCK] Run manually: npm run generate:mock')
+    }
+  }
 }
 
 function parseMockParams(url: string): { enabled: boolean; suffix: string } {
@@ -32,6 +55,7 @@ export function createMockPlugin(): Plugin {
   return {
     name: 'encv-mock-api',
     configureServer(server) {
+      ensureMockDataExists()
       handlers = createHandlers(server.config.base)
 
       server.middlewares.use((req, res, next) => {
