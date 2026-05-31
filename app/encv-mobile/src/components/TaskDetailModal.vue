@@ -88,6 +88,10 @@
         </div>
         <p class="error-msg">{{ task.error }}</p>
         <pre v-if="task.errorDetail && task.errorDetail !== task.error" class="error-detail-pre">{{ task.errorDetail }}</pre>
+        <div v-if="showManualCopy" class="manual-copy-area">
+          <textarea ref="manualCopyRef" class="manual-copy-textarea" :value="task.errorDetail || task.error" readonly @click="onManualCopyFocus"></textarea>
+          <p class="manual-copy-hint">{{ t('tasks.manualCopyHint') }}</p>
+        </div>
       </div>
 
       <!-- 警告信息 -->
@@ -161,13 +165,15 @@ import {
 import { useI18n } from '@/composables/useI18n'
 import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
 import { showToast } from '@/composables/useToast'
-import { copyToClipboard } from '@/composables/useClipboard'
+import { copyToClipboard, selectAllText } from '@/composables/useClipboard'
 import type { EncvTask } from '@/api/encv'
 
 const props = defineProps<{ task: EncvTask }>()
 const { t } = useI18n()
 
 const copied = ref(false)
+const showManualCopy = ref(false)
+const manualCopyRef = ref<HTMLTextAreaElement | null>(null)
 
 const fileName = computed(() => {
   const parts = props.task.sourcePath.split('/')
@@ -268,10 +274,18 @@ async function copyErrorDetail() {
   const ok = await copyToClipboard(text)
   if (ok) {
     copied.value = true
+    showManualCopy.value = false
     showToast({ message: t('tasks.copied'), duration: 1200, color: 'success' })
     setTimeout(() => { copied.value = false }, 2000)
   } else {
+    showManualCopy.value = true
     showToast({ message: t('tasks.copyFailed'), duration: 1500, color: 'warning' })
+  }
+}
+
+function onManualCopyFocus() {
+  if (manualCopyRef.value) {
+    selectAllText(manualCopyRef.value)
   }
 }
 
@@ -464,6 +478,32 @@ async function handleRemove() {
   max-height: 150px;
   overflow-y: auto;
   line-height: 1.5;
+}
+
+.manual-copy-area {
+  margin-top: 8px;
+}
+
+.manual-copy-textarea {
+  width: 100%;
+  min-height: 60px;
+  max-height: 120px;
+  font-size: 11px;
+  font-family: monospace;
+  background: var(--ion-color-step-50);
+  border: 1px solid var(--ion-color-step-200);
+  border-radius: 6px;
+  padding: 8px;
+  color: var(--ion-text-color);
+  resize: none;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.manual-copy-hint {
+  font-size: 11px;
+  color: var(--ion-color-medium);
+  margin-top: 4px;
 }
 
 /* Warning */

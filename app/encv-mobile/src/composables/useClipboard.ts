@@ -1,7 +1,16 @@
 import { Capacitor } from '@capacitor/core'
 
 export async function copyToClipboard(text: string): Promise<boolean> {
-  if (!Capacitor.isNativePlatform() && navigator.clipboard?.writeText) {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text)
+        return true
+      }
+    } catch {}
+  }
+
+  if (window.isSecureContext && navigator.clipboard?.writeText) {
     try {
       await navigator.clipboard.writeText(text)
       return true
@@ -11,19 +20,22 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   try {
     const textarea = document.createElement('textarea')
     textarea.value = text
-    textarea.style.cssText = 'position:fixed;opacity:0;left:-9999px;top:-9999px'
-    textarea.setAttribute('readonly', '')
+    textarea.style.cssText = 'position:fixed;left:0;top:0;width:2em;height:2em;padding:0;border:none;outline:none;box-shadow:none;background:transparent;opacity:0.01'
     document.body.appendChild(textarea)
-    const range = document.createRange()
-    range.selectNodeContents(textarea)
-    const sel = window.getSelection()
-    sel?.removeAllRanges()
-    sel?.addRange(range)
-    textarea.setSelectionRange(0, text.length)
+    textarea.focus()
+    textarea.select()
     const ok = document.execCommand('copy')
     document.body.removeChild(textarea)
-    return ok
+    if (ok) return true
   } catch {}
 
   return false
+}
+
+export function selectAllText(el: HTMLTextAreaElement | HTMLInputElement) {
+  el.focus()
+  el.select()
+  if (el instanceof HTMLTextAreaElement) {
+    el.setSelectionRange(0, el.value.length)
+  }
 }
