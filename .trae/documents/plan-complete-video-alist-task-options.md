@@ -16,63 +16,58 @@
 
 前端 `NewTaskModal.vue` 根据 `TaskOptions.ExtraFields[]` 动态渲染表单字段（见 L131-141），支持 `string`/`password`/`select`/`bool` 四种类型。
 
-### 1.2 文件名加密机制差异（⚠️ 核心认知）
+### 1.2 文件名编码机制（⚠️ 核心认知：均为可选，默认不启用）
 
-两个插件都支持加密文件名，但使用完全不同的加密系统：
-
-#### Video 插件 — 容器级文件名加密
+#### Video 插件 — 容器级文件名加密（可选）
 
 ```
-原始文件名: movie_2025.mp4
-    ↓ baseNamer.GenerateEncryptedBaseName("movie_2025.mp4")
-加密后基础名: a1b2c3d4
-    ↓ 拼接容器扩展名
-最终文件名: a1b2c3d4.sccgv
+当前行为 (plugin.go:571):
+  finalFilename = chunkNamer.GenerateMainChunkName(baseNamer.GenerateEncryptedBaseName(originalFilename))
+  → 无条件生成哈希式名称: movie_2025.mp4 → a1b2c3d4.sccgv
 
-加密原理:
-  - 原始文件名存储在 VideoIndex.OriginalFilename 中（KVI 元数据的一部分）
-  - 整个 KVI（含 OriginalFilename）+ 加密数据块一起被 AES 加密
-  - 密钥来源：全局密码（PasswordStrategy = global）
-  - 解密时从 KVI 中恢复原始文件名
-  - 文件名加密是 ENCV 容器格式的固有行为，不可关闭
+期望行为:
+  encrypt_filename=false (默认): 保留原始文件名或使用可读命名
+  encrypt_filename=true (用户勾选): 使用 GenerateEncryptedBaseName() 编码
 ```
 
 **关键代码路径**：
-- [container_namer.go:16](/workspace/internal/v2/namer/container_namer.go#L16) — `GenerateEncryptedBaseName()` 生成哈希式名称
-- [video.go:276](/workspace/internal/v2/plugins/video/plugin.go#L276) — `OriginalFilename` 写入 VideoIndex
-- [video.go:298](/workspace/internal/v2/plugins/video/plugin.go#L298) — KVI 被整体加密
+- [video.go:472](/workspace/internal/v2/plugins/video/plugin.go#L472) — PreEncryptProcessor 中无条件调用 `GenerateEncryptedBaseName()`
+- [video.go:571](/workspace/internal/v2/plugins/video/plugin.go#L571) — PostEncryptProcessor 中再次调用
+- [container_namer.go:16](/workspace/internal/v2/namer/container_namer.go#L16) — `GenerateEncryptedBaseName()` 哈希实现
 
-#### AlistEncrypt 插件 — 独立文件名编码
+#### AlistEncrypt 插件 — 独立文件名编码（可选）
 
 ```
-原始文件名: secret_data.txt
-    ↓ EncodeName("secret_data.txt", password, "aesctr")
-编码后文件名: (Base64变体+CRC6校验).bin
-    ↓ 存储到磁盘
-磁盘文件名: xYzAbCdE123.bin
+当前行为 (plugin.go:164-175):
+  PostEncryptProcessor → RenameToFinalEncrypted(tempPath, originalFilename, outputDir, suffix)
+    → 仅改扩展名: secret.txt → secret.bin
+    → ❌ 不调用 EncodeName()
 
-加密原理:
-  - 使用 MixBase64（自定义 Base64 变体）+ CRC6 校验位
-  - 密钥来源：独立密码 plugin_password（PasswordStrategy = independent）
-  - 通过 PBKDF2(密码, salt=算法名, 1000轮) 派生 MixBase64 字母表
-  - 编码后的名字直接作为磁盘文件名（非隐藏元数据）
-  - 文件名编码是 Alist 格式的核心行为，不可关闭
+  EncodeName()/DecodeName() 仅用于:
+    - /api/alist-encode/encode-filename API（前端手动触发）
+    - /api/alist-encrypt/decode-filename API（前端显示转换）
+
+期望行为:
+  encode_filename=false (默认): 只改扩展名 .xxx → .bin（当前行为）
+  encode_filename=true (用户勾选): 调用 EncodeName() 编码文件名 → xYzAbCdE123.bin
 ```
 
 **关键代码路径**：
-- [filename.go:229](/workspace/internal/v2/plugins/alistencrypt/filename.go#L229) — `EncodeName()` 编码函数
+- [plugin.go:167](/workspace/internal/v2/plugins/alistencrypt/plugin.go#L167) — `RenameToFinalEncrypted()` 只改扩展名
+- [filename.go:229](/workspace/internal/v2/plugins/alistencrypt/filename.go#L229) — `EncodeName()` 编码函数（MixBase64 + CRC6）
 - [filename.go:242](/workspace/internal/v2/plugins/alistencrypt/filename.go#L242) — `DecodeName()` 解码函数
-- [filename.go:225](/workspace/internal/v2/plugins/alistencrypt/filename.go#L225) — `GetPasswdOutward()` PBKDF2 密钥派生
+- [encryptor.go:67](/workspace/internal/v2/plugins/alistencrypt/encryptor.go#L67) — `RenameToFinalEncrypted()` 实现
 
 #### 差异对比表
 
 | 维度 | Video 插件 | AlistEncrypt 插件 |
 |------|-----------|-------------------|
-| **加密方式** | 随 ENCV 容器 KVI 一起 AES 加密 | 独立 MixBase64 + CRC6 编码 |
-| **密钥来源** | 全局密码（global） | 独立密码（plugin_password） |
-| **存储位置** | KVI 元数据内部（解密后恢复） | 直接作为磁盘文件名 |
-| **可配置性** | 固有行为，无选项 | 固有行为，但 enc_type 可选 |
-| **密码策略** | `PasswordGlobal` | `PasswordIndependent` |
+| **编码方式** | SHA 哈希式 (`GenerateEncryptedBaseName`) | MixBase64 变体 + CRC6 校验 (`EncodeName`) |
+| **当前默认行为** | ⚠️ 无条件编码（需改为可选） | ✅ 不编码（只改扩展名） |
+| **目标默认行为** | 不编码（`encrypt_filename=false`） | 不编码（`encode_filename=false`） |
+| **启用后效果** | 文件名变为哈希值 + 容器扩展名 | 文件名变为 Base64 编码 + `.bin` |
+| **密钥来源** | 全局密码（PasswordGlobal） | 独立密码 plugin_password |
+| **算法参数** | 无额外参数 | 需指定 `enc_type`（aesctr/rc4md5/chacha20） |
 
 ### 1.3 当前各插件的 TaskOptions 完整度
 
@@ -89,9 +84,9 @@ func (p *VideoPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 }
 ```
 
-**❌ 缺失项**：
-1. **`ExtraFields` 为空（nil）** — `VideoPluginConfig` 有 `default_stream_preset` 字段（balanced/quality/high_quality），用户无法在创建任务时逐任务选择编码预设
-2. 无文件名相关选项（文件名加密是固有行为，但可在 Help 中说明）
+**❌ 缺失 ExtraFields**：
+1. `stream_preset`（`type: select`）— 编码预设选择：balanced/quality/high_quality
+2. `encrypt_filename`（`type: bool`）— 是否编码文件名，默认 false
 
 #### AlistEncrypt 插件 — `[internal/v2/plugins/alistencrypt/plugin.go:235-250](/workspace/internal/v2/plugins/alistencrypt/plugin.go#L235-L250)`
 
@@ -101,22 +96,15 @@ func (p *AlistEncryptPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
         PasswordStrategy:     pluginInterfaces.PasswordIndependent,
         SupportVersionSelect: false,
         ExtraFields: []pluginInterfaces.TaskField{
-            {
-                Key:       "plugin_password",
-                Label:     "tasks.pluginPassword",
-                Type:      "password",
-                Required:  false,
-                Help:      "tasks.pluginPasswordHelp",
-                Condition: "",
-            },
+            { Key: "plugin_password", Label: "tasks.pluginPassword", Type: "password", ... },
         },
     }
 }
 ```
 
-**❌ 缺失项**：
-1. **缺少 `enc_type` ExtraField** — 后端配置有 `enc_type`（aesctr/rc4md5/chacha20），但任务创建时不可选
-2. Schema 中有 `algorithm` 字段但 Go 结构体用的是 `enc_type`，命名不一致（需统一为 `enc_type`）
+**❌ 缺失 ExtraFields**：
+1. `encode_filename`（`type: bool`）— 是否编码文件名，默认 false
+2. `enc_type`（`type: select`）— 文件名编码算法（仅在 `encode_filename=true` 时有意义）：aesctr/rc4md5/chacha20
 
 ### 1.4 前端渲染链路（已就绪，无需修改核心逻辑）
 
@@ -125,15 +113,10 @@ func (p *AlistEncryptPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
   → predict-plugin API 返回 candidates[].taskOptions
     → useTaskForm.ts 存储到 taskOptions computed
       → useNewTaskModal.ts 同步到 state.filteredExtraFields
-        → NewTaskModal.vue v-for 渲染 ion-input / ion-select（L131-141）
+        → NewTaskModal.vue v-for 渲染 ion-input / ion-select / ion-toggle（L131-141）
 ```
 
-前端已完整支持 ExtraFields 的动态渲染，包括：
-- `type: 'password'` → 密码输入框 ✅
-- `type: 'string'` → 文本输入框 ✅
-- `type: 'select'` + `options` → 下拉选择（**需补充 `<ion-select>` 渲染分支**）
-- `condition` → 按 encrypt/decrypt 条件显示 ✅
-- i18n `t(label)` / `t(help)` 翻译 ✅
+前端已支持 ExtraFields 动态渲染的 `string`/`password` 类型，**需补充** `select` 和 `bool` 类型的渲染分支。
 
 ---
 
@@ -141,37 +124,34 @@ func (p *AlistEncryptPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 
 ### 2.1 后端修改
 
-| # | 文件路径 | 修改内容 |
-|---|---------|---------|
-| B1 | `internal/v2/plugins/video/plugin.go` — `GetTaskOptions()` L431-438 | 补充 `ExtraFields`：添加 `stream_preset`（编码预设选择）+ `filename_note`（文件名加密说明） |
-| B2 | `internal/v2/plugins/alistencrypt/plugin.go` — `GetTaskOptions()` L235-250 | 补充 `ExtraFields`：追加 `enc_type`（加密算法选择）+ 更新 `plugin_password` 的 Help 说明文件名编码 |
-| B3 | `internal/v2/plugins/task_options_test.go` | 更新测试断言以覆盖新增的 ExtraFields |
+| # | 文件 | 修改内容 |
+|---|------|---------|
+| B1 | `internal/v2/plugins/video/plugin.go` — `GetTaskOptions()` L431-438 | 补充 ExtraFields：`stream_preset`(select) + `encrypt_filename`(bool) |
+| B2 | `internal/v2/plugins/alistencrypt/plugin.go` — `GetTaskOptions()` L235-250 | 补充 ExtraFields：`encode_filename`(bool) + `enc_type`(select) |
+| B3 | `internal/v2/plugins/task_options_test.go` | 更新测试断言覆盖新增 ExtraFields |
 
 ### 2.2 前端修改
 
-| # | 文件路径 | 修改内容 |
-|---|---------|---------|
-| F1 | `src/composables/useI18n.ts` | 补充新增的 i18n translation key（streamPreset、encType、filenameNote 等） |
-| F2 | `src/components/NewTaskModal.vue` | 补充 `type='select'` 的 `<ion-select>` 渲染分支；import IonSelect/IonSelectOption |
+| # | 文件 | 修改内容 |
+|---|------|---------|
+| F1 | `src/composables/useI18n.ts` | 补充 i18n key：streamPreset、encryptFilename、encType、encTypeHelp 等 |
+| F2 | `src/components/NewTaskModal.vue` | 补充 `type='select'` 的 `<ion-select>` 渲染 + `type='bool'` 的 `<ion-toggle>` 渲染 |
 
 ### 2.3 不需要修改的文件
 
-- `src/api/encv.ts` — 类型定义已包含 `options?: string[]` 和 `type: 'select'` ✅
+- `src/api/encv.ts` — 类型定义已包含 `options?: string[]` 和 `type: 'select'/'bool'` ✅
 - `src/composables/useTaskForm.ts` — ExtraFields 透传逻辑与字段数量无关 ✅
 - `src/composables/useNewTaskModal.ts` — 同上 ✅
-- `internal/v2/plugins/interfaces/interfaces.go` — `TaskField` 结构体已支持 `options []string` ✅
+- `internal/v2/plugins/interfaces/interfaces.go` — `TaskField` 结构体已支持所有类型 ✅
 - `internal/server/mobile_api.go` — `taskOptionsToGinH()` 已透传 ExtraFields ✅
-- `config.schema.json` — 前端 schema 是设置页用的，不影响任务创建表单 ✅
 
 ---
 
 ## 三、详细实现步骤
 
-### Step B1: Video 插件 — 补充 stream_preset + filename_note ExtraFields
+### Step B1: Video 插件 — 补全 ExtraFields
 
-**文件**: `/workspace/internal/v2/plugins/video/plugin.go` 的 `GetTaskOptions()` 方法（L431-438）
-
-将当前实现改为：
+**文件**: `/workspace/internal/v2/plugins/video/plugin.go` — `GetTaskOptions()` (L431-438)
 
 ```go
 func (p *VideoPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
@@ -191,24 +171,27 @@ func (p *VideoPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
                 Options:      []string{"balanced", "quality", "high_quality"},
                 Condition:     "encrypt",
             },
+            {
+                Key:          "encrypt_filename",
+                Label:        "tasks.encryptFilename",
+                Type:         "bool",
+                Required:     false,
+                DefaultValue: "false",
+                Help:         "tasks.encryptFilenameVideoHelp",
+                Condition:     "encrypt",
+            },
         },
     }
 }
 ```
 
 设计决策：
-- **`stream_preset`**（`type: select`, `condition: encrypt`）：
-  - 流式预设仅在加密时需要选择，解密时自动检测容器格式
-  - 用户从预设列表中选择，覆盖 `VideoPluginConfig.DefaultStreamPreset` 全局默认值
-  - 选项与后端 `StreamPreset` 类型一致：`balanced` / `quality` / `high_quality`
-  - Key 名 `stream_preset` 与后端配置字段对应，TaskManager 执行时可读取此值
-- **文件名加密不需要单独字段**：Video 的文件名加密是 ENCV 容器的固有行为（原始文件名存入 KVI 并随容器整体 AES 加密），用户无法也不需要控制。在 `stream_preset.Help` 和全局密码提示中已隐含说明。
+- **`stream_preset`**（select, condition=encrypt）：仅加密时需要，覆盖全局 `default_stream_preset`
+- **`encrypt_filename`**（bool, default=false, condition=encrypt）：用户主动勾选才编码文件名，默认保留原始文件名的可读形式
 
-### Step B2: AlistEncrypt 插件 — 补充 enc_type ExtraField + 更新 Help 文案
+### Step B2: AlistEncrypt 插件 — 补全 ExtraFields
 
-**文件**: `/workspace/internal/v2/plugins/alistencrypt/plugin.go` 的 `GetTaskOptions()` 方法（L235-250）
-
-将当前实现改为：
+**文件**: `/workspace/internal/v2/plugins/alistencrypt/plugin.go` — `GetTaskOptions()` (L235-250)
 
 ```go
 func (p *AlistEncryptPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
@@ -225,6 +208,15 @@ func (p *AlistEncryptPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
                 Condition: "",
             },
             {
+                Key:          "encode_filename",
+                Label:        "tasks.encodeFilename",
+                Type:         "bool",
+                Required:     false,
+                DefaultValue: "false",
+                Help:         "tasks.encodeFilenameHelp",
+                Condition:     "encrypt",
+            },
+            {
                 Key:          "enc_type",
                 Label:        "tasks.encType",
                 Type:         "select",
@@ -232,7 +224,7 @@ func (p *AlistEncryptPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
                 DefaultValue: "aesctr",
                 Help:         "tasks.encTypeHelp",
                 Options:      []string{"aesctr", "rc4md5", "chacha20"},
-                Condition:     "",
+                Condition:     "encrypt",
             },
         },
     }
@@ -240,131 +232,116 @@ func (p *AlistEncryptPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 ```
 
 设计决策：
-- **`plugin_password` Help 更新**：从 `"tasks.pluginPasswordHelp"` 改为 `"tasks.alistPasswordHelp"`，文案应体现「此密码同时用于文件名编码」这一 Alist 特性
-- **`enc_type`**（`type: select`, 无 condition）：
-  - 加密和解码都需要知道算法类型（解码时用相同算法反向操作）
-  - 暴露全部 3 个选项（`aesctr`/`rc4md5`/`chacha20`），而非仅 `aesctr`
-  - `DefaultValue: "aesctr"` 与 `AlistEncryptPluginConfig.EncType` 默认值一致
-  - Options 列表来自 `supportedEncTypes` 常量或硬编码已知值
-- **文件名编码不需要单独字段**：AlistEncrypt 的文件名编码是其核心固有行为（`EncodeName()` 自动执行），使用 `plugin_password` + `enc_type` 作为参数。在 `enc_type.Help` 和 `plugin_password.Help` 中说明即可。
+- **`encode_filename`**（bool, default=false, condition=encrypt）：默认不编码文件名（当前行为），勾选后才调用 `EncodeName()`
+- **`enc_type`**（select, condition=encrypt）：仅当 `encode_filename=true` 时有意义，选择 MixBase64 编码算法。暴露全部 3 个选项为扩展预留
+- **`plugin_password` Help 更新**：改用 `tasks.alistPasswordHelp`，说明密码用途（内容加密始终需要，文件名编码仅在勾选时使用）
 
 ### Step B3: 更新后端测试
 
 **文件**: `/workspace/internal/v2/plugins/task_options_test.go`
 
-更新 `TestVideoPlugin_GetTaskOptions` 断言，增加 ExtraFields 验证：
+Video 断言更新（ExtraFields 从 0 → 2）：
 
 ```go
-func TestVideoPlugin_GetTaskOptions(t *testing.T) {
-    // ...existing setup code...
-    assert.Equal(t, pluginInterfaces.PasswordGlobal, opts.PasswordStrategy)
-    assert.True(t, opts.SupportVersionSelect)
-    assert.NotEmpty(t, opts.SupportedVersions)
-
-    // 新增: 验证 ExtraFields
-    require.Len(t, opts.ExtraFields, 1, "video plugin should have 1 extra field")
-    assert.Equal(t, "stream_preset", opts.ExtraFields[0].Key)
-    assert.Equal(t, "select", opts.ExtraFields[0].Type)
-    assert.False(t, opts.ExtraFields[0].Required)
-    assert.Equal(t, "balanced", opts.ExtraFields[0].DefaultValue)
-    assert.Contains(t, opts.ExtraFields[0].Options, "balanced")
-    assert.Contains(t, opts.ExtraFields[0].Options, "high_quality")
-    assert.Equal(t, "encrypt", opts.ExtraFields[0].Condition)
-}
+require.Len(t, opts.ExtraFields, 2)
+assert.Equal(t, "stream_preset", opts.ExtraFields[0].Key)
+assert.Equal(t, "select", opts.ExtraFields[0].Type)
+assert.Equal(t, "encrypt", opts.ExtraFields[0].Condition)
+assert.Equal(t, "encrypt_filename", opts.ExtraFields[1].Key)
+assert.Equal(t, "bool", opts.ExtraFields[1].Type)
+assert.Equal(t, "false", opts.ExtraFields[1].DefaultValue)
 ```
 
-更新 `TestAlistEncryptPlugin_GetTaskOptions` 断言：
+AlistEncrypt 断言更新（ExtraFields 从 1 → 3）：
 
 ```go
-func TestAlistEncryptPlugin_GetTaskOptions(t *testing.T) {
-    // ...existing setup code...
-    assert.Equal(t, pluginInterfaces.PasswordIndependent, opts.PasswordStrategy)
-    assert.False(t, opts.SupportVersionSelect)
-
-    // 更新: 验证 ExtraFields 从 1 个增加到 2 个
-    require.Len(t, opts.ExtraFields, 2, "alist_encrypt should have 2 extra fields")
-
-    // 第一个字段: plugin_password
-    assert.Equal(t, "plugin_password", opts.ExtraFields[0].Key)
-    assert.Equal(t, "password", opts.ExtraFields[0].Type)
-
-    // 第二个字段: enc_type (新增)
-    assert.Equal(t, "enc_type", opts.ExtraFields[1].Key)
-    assert.Equal(t, "select", opts.ExtraFields[1].Type)
-    assert.Equal(t, "aesctr", opts.ExtraFields[1].DefaultValue)
-    assert.Contains(t, opts.ExtraFields[1].Options, "aesctr")
-    assert.Contains(t, opts.ExtraFields[1].Options, "chacha20")
-}
+require.Len(t, opts.ExtraFields, 3)
+assert.Equal(t, "plugin_password", opts.ExtraFields[0].Key)
+assert.Equal(t, "encode_filename", opts.ExtraFields[1].Key)
+assert.Equal(t, "bool", opts.ExtraFields[1].Type)
+assert.Equal(t, "false", opts.ExtraFields[1].DefaultValue)
+assert.Equal(t, "enc_type", opts.ExtraFields[2].Key)
+assert.Equal(t, "select", opts.ExtraFields[2].Type)
+assert.Equal(t, "encrypt", opts.ExtraFields[2].Condition)
 ```
 
-### Step F1: 补充前端 i18n key
+### Step F1: 补充 i18n key
 
 **文件**: `/workspace/app/encv-mobile/src/composables/useI18n.ts`
 
-在 tasks 命名空间下添加以下 key：
+在 tasks 命名空间添加：
 
 ```typescript
-// Video 插件 - 编码预设
+// Video - 编码预设
 'tasks.streamPreset': '编码预设',
-'tasks.streamPresetHelp': '选择视频流式编码预设。文件名将随容器一起加密存储',
+'tasks.streamPresetHelp': '选择视频流式编码预设',
 
-// AlistEncrypt 插件 - 独立密码和算法
-'tasks.alistPasswordHelp': '此密码同时用于内容加密和文件名编码',
+// Video - 文件名加密开关
+'tasks.encryptFilename': '加密文件名',
+'tasks.encryptFilenameVideoHelp': '将原始文件名编码为不可读的哈希值，随 ENCV 容器一起存储',
+
+// AlistEncrypt - 密码
+'tasks.alistPasswordHelp': '用于内容加密；勾选编码文件名时同时用于文件名编码',
+
+// AlistEncrypt - 文件名编码开关
+'tasks.encodeFilename': '编码文件名',
+'tasks.encodeFilenameHelp': '使用 MixBase64 算法对文件名进行编码，隐藏原始文件名',
+
+// AlistEncrypt - 编码算法
 'tasks.encType': '编码算法',
-'tasks.encTypeHelp': '选择文件名编码算法。不同算法产生不同的编码结果',
+'tasks.encTypeHelp': '文件名编码使用的算法类型',
 ```
 
-注意：
-- `tasks.pluginPassword` 保持不变（label 复用已有 key）
-- `tasks.pluginPasswordHelp` 替换为新的 `tasks.alistPasswordHelp`（更具体地描述 Alist 的双用途密码特性）
-- Help 文案中明确提及「文件名」二字，让用户理解两套系统的差异
-
-### Step F2: NewTaskModal.vue 补充 ion-select 渲染
+### Step F2: NewTaskModal.vue 补充 select + bool 渲染
 
 **文件**: `/workspace/app/encv-mobile/src/components/NewTaskModal.vue`
 
 #### F2.1: import 补充
 
-在 `<script setup>` 的 import 区域增加：
-
 ```typescript
-import { IonSelect, IonSelectOption } from '@ionic/vue'
+import { IonSelect, IonSelectOption, IonToggle } from '@ionic/vue'
 ```
 
-并在 components 注册中添加（如使用 options API 则在 components 对象中添加）。
-
-#### F2.2: 模板修改（L131-141 区域）
-
-将当前的单一 `ion-input` 渲染替换为按 type 分支的条件渲染：
+#### F2.2: 模板修改（替换 L131-141 区域的 ExtraFields 渲染）
 
 ```html
-<!-- ExtraFields 动态渲染 -->
 <template v-for="field in extraFlds" :key="field.key">
+  <!-- === bool 类型: 开关 === -->
+  <ion-item
+    v-if="(!field.condition || field.condition === taskType) && field.type === 'bool'"
+    lines="none" class="extra-field-item"
+  >
+    <ion-toggle
+      :checked="getExtra(field.key) === 'true' || getExtra(field.key) === true"
+      @ionChange="(e: any) => { const v = e.detail.checked ? 'true' : 'false'; emit('updateExtraValue', { key: field.key, value: v }); props.onUpdateExtraValue?.({ key: field.key, value: v }) }"
+      :label="t(field.label)"
+      justify="space-between"
+      class="extra-field-toggle"
+    />
+    <ion-note v-if="field.help" slot="helper">{{ t(field.help) }}</ion-note>
+  </ion-item>
+
   <!-- === select 类型: 下拉选择 === -->
   <ion-item
-    v-if="(!field.condition || field.condition === taskType) && field.type === 'select'"
+    v-else-if="(!field.condition || field.condition === taskType) && field.type === 'select'"
     lines="none" class="extra-field-item"
   >
     <ion-select
       :model-value="getExtra(field.key)"
-      @ionChange="onExtraSelectChange(field, $event)"
+      @ionChange="(e: any) => { emit('updateExtraValue', { key: field.key, value: e.detail.value }); props.onUpdateExtraValue?.({ key: field.key, value: e.detail.value }) }"
       :label="t(field.label)"
       interface="action-sheet"
       placement="bottom"
       class="extra-field-select"
     >
-      <ion-select-option
-        v-for="opt in field.options || []"
-        :key="opt"
-        :value="opt"
-      >
+      <ion-select-option v-for="opt in field.options || []" :key="opt" :value="opt">
         {{ opt }}
       </ion-select-option>
     </ion-select>
     <ion-note v-if="field.help" slot="helper">{{ t(field.help) }}</ion-note>
   </ion-item>
 
-  <!-- === string/password 类型: 文本/密码输入（原有逻辑）=== -->
+  <!-- === string/password 类型: 文本输入（原有逻辑）=== -->
   <ion-item
     v-else-if="!field.condition || field.condition === taskType"
     lines="none" class="extra-field-item"
@@ -380,16 +357,6 @@ import { IonSelect, IonSelectOption } from '@ionic/vue'
 </template>
 ```
 
-#### F2.3: script 补充 onExtraSelectChange handler
-
-```typescript
-function onExtraSelectChange(field: any, event: CustomEvent) {
-  const value = event.detail.value
-  emit('updateExtraValue', { key: field.key, value })
-  props.onUpdateExtraValue?.({ key: field.key, value })
-}
-```
-
 ---
 
 ## 四、验证方案
@@ -400,56 +367,47 @@ function onExtraSelectChange(field: any, event: CustomEvent) {
 cd /workspace && go test ./internal/v2/plugins/ -run "TestVideoPlugin_GetTaskOptions|TestAlistEncryptPlugin_GetTaskOptions" -v
 ```
 
-预期：所有新断言通过（ExtraFields 数量、Key/Type/Options/Condition/DefaultValue 全部匹配）。
-
 ### 4.2 前端单元测试
 
 ```bash
 cd /workspace/app/encv-mobile && npx vitest run --reporter=verbose
 ```
 
-### 4.3 集成验证（手动检查 predict-plugin API 响应）
-
-启动前后端后调用：
+### 4.3 API 集成验证
 
 ```bash
-# Video 插件预测
-curl 'http://localhost:2025/api/predict-plugin?path=/storage/emulated/0/test.mp4&taskType=encrypt' | jq '.candidates[] | select(.id=="video") | .taskOptions'
+# Video: 应返回 2 个 extraFields
+curl 'http://localhost:2025/api/predict-plugin?path=/storage/emulated/0/test.mp4&taskType=encrypt' \
+  | jq '.candidates[] | select(.id=="video") | .taskOptions.extraFields'
 
-# 期望输出包含:
-#   extraFields: [{ key:"stream_preset", type:"select", options:["balanced","quality","high_quality"], condition:"encrypt" }]
+# 期望:
+# [{key:"stream_preset",type:"select",...}, {key:"encrypt_filename",type:"bool",defaultValue:"false",...}]
 
-# AlistEncrypt 插件预测
-curl 'http://localhost:2025/api/predict-plugin?path=/storage/emulated/0/test.bin&taskType=encrypt' | jq '.candidates[] | select(.id=="alist_encrypt") | .taskOptions'
+# AlistEncrypt: 应返回 3 个 extraFields
+curl 'http://localhost:2025/api/predict-plugin?path=/storage/emulated/0/test.bin&taskType=encrypt' \
+  | jq '.candidates[] | select(.id=="alist_encrypt") | .taskOptions.extraFields'
 
-# 期望输出包含:
-#   extraFields: [
-#     { key:"plugin_password", type:"password" },
-#     { key:"enc_type", type:"select", options:["aesctr","rc4md5","chacha20"] }
-#   ]
+# 期望:
+# [{key:"plugin_password",type:"password"}, {key:"encode_filename",type:"bool",defaultValue:"false"}, {key:"enc_type",type:"select",...}]
 ```
 
 ### 4.4 UI 手动验证
 
-1. 打开新建任务弹窗
-2. 输入 `.mp4` 视频文件路径 → 预测到 video 插件：
-   - ✅ 看到「编码预设」下拉框（仅 encrypt 模式显示）
-   - ✅ 选项：balanced / quality / high_quality
-   - ✅ 默认选中 balanced
-   - ✅ 切换到 decrypt → 编码预设消失
-3. 输入任意文件路径 → 预测到 alist_encrypt 插件：
-   - ✅ 看到「插件密码」密码框
-   - ✅ 看到「编码算法」下拉框（选项：aesctr / rc4md5 / chacha20）
-   - ✅ 默认选中 aesctr
-   - ✅ 密码策略提示：「此插件使用独立密码」
-   - ✅ Help 文案提及文件名编码
+1. 新建任务 → 输入 `.mp4` 文件 → video 插件：
+   - ✅ 「编码预设」下拉框显示（仅 encrypt 模式）
+   - ✅ 「加密文件名」开关显示（默认关闭/unchecked）
+   - ✅ 切换 decrypt → 两者都消失
+2. 新建任务 → 输入任意文件 → alist_encrypt 插件：
+   - ✅ 「插件密码」密码框
+   - ✅ 「编码文件名」开关（默认关闭）
+   - ✅ 「编码算法」下拉框（aesctr/rc4md5/chacha20）
+   - ✅ 切换 decrypt → encode_filename 和 enc_type 消失，plugin_password 保留
 
 ---
 
 ## 五、风险和注意事项
 
-1. **`stream_preset` 是 UI 声明侧补全**：后端 `TaskManager` 在执行加密任务时需读取 `extraFields["stream_preset"]` 并注入 `VideoPlugin` 实例。本次只补全**声明侧**（`GetTaskOptions`），执行侧透传如未实现需后续跟进。
-2. **`enc_type` 三选一**：暴露 `aesctr`/`rc4md5`/`chacha20` 三个选项。虽然当前默认只有 aesctr 经过充分测试，但 select 类型可防止非法输入并为扩展预留。
-3. **i18n key 统一使用 `tasks.` 前缀**：所有 label/help 都走 i18n，不硬编码中文。
-4. **文件名加密差异已在 Help 文案中体现**：Video 的 Help 说「文件名将随容器一起加密存储」，AlistEncrypt 的 Help 说「密码同时用于内容加密和文件名编码」，用户能直观感知两套系统的区别。
-5. **`condition: "encrypt"` 仅用于 `stream_preset`**：因为解密时编码预设无意义（容器格式自描述）。`enc_type` 和 `plugin_password` 无 condition（加解密都需要）。
+1. **声明侧 vs 执行侧**：本次只补全 `GetTaskOptions()` **声明侧**。执行侧（`PostEncryptProcessor` 中读取 `extraFields["encrypt_filename"]` 并决定是否调用 `GenerateEncryptedBaseName`/`EncodeName`）是后续工作。
+2. **`enc_type` 与 `encode_filename` 的依赖关系**：`enc_type` 仅在 `encode_filename=true` 时有实际意义。UI 上两者都显示（condition 都是 encrypt），但执行侧应在 `encode_filename=false` 时忽略 `enc_type`。
+3. **bool 值序列化**：ExtraFields 的 value 以 `map[string]string` 传输，bool 用 `"true"`/`"false"` 字符串表示，前端 toggle 的 `@ionChange` 输出需转为字符串。
+4. **Video 插件当前无条件编码文件名**是既有行为变更风险点——声明 `encrypt_filename` 默认 false 意味着未来执行侧实现后，默认行为从「编码」变为「不编码」，属于 breaking change，需确认是否接受。
