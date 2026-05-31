@@ -139,11 +139,15 @@ func Load(configPath string) (*Config, error) {
 	return finalize(cfg), nil
 }
 
-// ApplyMobileOverrides 在 ENCV_MOBILE=1 环境下将 mobile 段的配置合并到顶层字段。
+// ApplyMobileOverrides 在 ENCV_DEV_PREVIEW=1 环境下将 mobile 段的配置合并到顶层字段。
 // 供 config.Load() finalize() 和 API handler 共用，确保 GET /api/config 返回的也是生效后的值。
-// 触发方式：
-//   - 真机 Android 端：EncvGoService.kt 启动 Go 进程时设置 ENCV_MOBILE=1
-//   - 移动端 dev 预览：通过 scripts/dev-mobile.sh 或手动 export ENCV_MOBILE=1 启动后端
+//
+// 触发方式（必须显式设置 ENCV_DEV_PREVIEW=1）：
+//   - 移动端 dev 预览：通过 Makefile make dev-mobile 或手动 export ENCV_DEV_PREVIEW=1 启动后端
+//
+// 不触发的场景：
+//   - 安卓真机：EncvGoService.kt 只设置 ENCV_MOBILE=1，不设置 ENCV_DEV_PREVIEW
+//   - 桌面端开发：不设置任何 mobile 相关环境变量
 func ApplyMobileOverrides(cfg *Config) {
 	home := os.Getenv("HOME")
 	if cfg.Mobile.ServerDir != "" {
@@ -285,7 +289,7 @@ func finalize(cfg *Config) *Config {
 	if cfg.Server.Dir == "/" {
 		cfg.Server.Dir, _ = os.Getwd()
 	}
-	if os.Getenv("ENCV_MOBILE") == "1" && cfg.Mobile != nil {
+	if os.Getenv("ENCV_DEV_PREVIEW") == "1" && cfg.Mobile != nil {
 		ApplyMobileOverrides(cfg)
 	}
 	slog.Info("Configuration loaded", "log_level", cfg.Log.Level)

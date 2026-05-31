@@ -29,10 +29,10 @@ dev-backend:
 	go run ./cmd/encv start
 
 # 启动后端（移动端预览模式，自动将 mobile.server_dir 覆盖到 server.dir）
-# 等价于真机 Android 端 EncvGoService.kt 的行为
-# mock 文件生成到 mobile.server_dir 指向的路径，后端直接读取无需路径转换
+# 必须设置 ENCV_DEV_PREVIEW=1 才会触发 ApplyMobileOverrides
+# 安卓真机只设置 ENCV_MOBILE=1，不设置此变量，因此不会被影响
 dev-mobile:
 	@echo "Generating mock data to mobile server_dir..."
 	@cd app/encv-mobile && npx tsx scripts/generate-mock-files.ts --dir /storage/emulated/0
 	@echo "Starting backend (mobile preview mode)..."
-	ENCV_MOBILE=1 go run ./cmd/encv start
+	ENCV_MOBILE=1 ENCV_DEV_PREVIEW=1 go run ./cmd/encv start

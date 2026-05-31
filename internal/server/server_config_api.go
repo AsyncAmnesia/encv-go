@@ -39,7 +39,7 @@ func (s *Server) handleGetConfigGin(c *gin.Context) {
 		return
 	}
 
-	if os.Getenv("ENCV_MOBILE") == "1" && cfg.Mobile != nil {
+	if os.Getenv("ENCV_DEV_PREVIEW") == "1" && cfg.Mobile != nil {
 		config.ApplyMobileOverrides(&cfg)
 	}
 
