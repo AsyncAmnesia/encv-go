@@ -167,8 +167,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'tasks.encryptFilenameHelp': '将原始文件名加密后存入容器元数据',
     'tasks.encodeFilename': '编码文件名',
     'tasks.encodeFilenameHelp': '使用 MixBase64 算法编码文件名，解密时自动恢复',
-    'tasks.encType': '编码算法',
-    'tasks.encTypeHelp': '文件名编码使用的算法类型',
+    'tasks.encType': 'AES-CTR-128',
+    'tasks.encTypeHelp': '文件名编码使用的算法（目前仅支持 AES-CTR-128）',
 
     'tasks.passwordErrorHint': '密码可能错误，请检查后重试',
     'tasks.warning': '警告',
@@ -747,8 +747,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'tasks.encryptFilenameHelp': 'Encrypt original filename and store in container metadata',
     'tasks.encodeFilename': 'Encode Filename',
     'tasks.encodeFilenameHelp': 'Encode filename using MixBase64 algorithm, auto-restore on decrypt',
-    'tasks.encType': 'Encoding Algorithm',
-    'tasks.encTypeHelp': 'Algorithm type for filename encoding',
+    'tasks.encType': 'AES-CTR-128',
+    'tasks.encTypeHelp': 'Filename encoding algorithm (only AES-CTR-128 is currently supported)',
 
     'tasks.passwordErrorHint': 'Password may be wrong, please check and retry',
     'tasks.warning': 'Warning',

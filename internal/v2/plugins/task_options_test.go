@@ -80,8 +80,7 @@ func TestAlistEncryptPlugin_GetTaskOptions(t *testing.T) {
 	assert.Equal(t, "enc_type", opts.ExtraFields[2].Key)
 	assert.Equal(t, "select", opts.ExtraFields[2].Type)
 	assert.Equal(t, "aesctr", opts.ExtraFields[2].DefaultValue)
-	assert.Contains(t, opts.ExtraFields[2].Options, "aesctr")
-	assert.Contains(t, opts.ExtraFields[2].Options, "chacha20")
+	assert.Equal(t, []string{"aesctr"}, opts.ExtraFields[2].Options)
 	assert.Equal(t, "encrypt", opts.ExtraFields[2].Condition)
 }
 

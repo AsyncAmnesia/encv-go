@@ -261,7 +261,7 @@ func (p *AlistEncryptPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 				Required:     false,
 				DefaultValue: "aesctr",
 				Help:         "tasks.encTypeHelp",
-				Options:      []string{"aesctr", "rc4md5", "chacha20"},
+				Options:      []string{"aesctr"},
 				Condition:     "encrypt",
 			},
 		},
