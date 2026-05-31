@@ -1,0 +1,10 @@
+{
+  "mobile": {
+    "output": {
+      "path": "/workspace/output"
+    },
+    "server": {
+      "dir": "/workspace/app/encv-mobile/__mock_data__"
+    }
+  }
+}
