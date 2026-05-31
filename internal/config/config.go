@@ -136,10 +136,17 @@ func Load(configPath string) (*Config, error) {
 		cfg = loadAndMerge(cfg, candidates.Dev)
 	}
 
+	if candidates.Dev != "" && cfg.Mobile != nil {
+		ApplyMobileOverrides(cfg)
+	}
+
 	return finalize(cfg), nil
 }
 
-// ApplyMobileOverrides 在 ENCV_MOBILE=1 环境下将 mobile 段的配置合并到顶层字段。
+// ApplyMobileOverrides 将 mobile 段的配置合并到顶层字段。
+// 触发条件（任一）：
+//   - ENCV_MOBILE=1 环境变量（真机 Android 端，由 EncvGoService 设置）
+//   - config.dev.json 存在且含 mobile 段（移动端开发预览模式，由 Load() 检测）
 // 供 config.Load() 和 API handler 共用，确保 GET /api/config 返回的也是生效后的值。
 func ApplyMobileOverrides(cfg *Config) {
 	home := os.Getenv("HOME")
