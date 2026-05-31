@@ -148,6 +148,7 @@ func (p *AlistEncryptPlugin) PreEncryptProcessor(index types.Index, inputPath, i
 
 func (p *AlistEncryptPlugin) Encrypt(dataReader io.Reader) (*crypto.EncryptionResult, error) {
 	password := p.resolvePasswordFromTask()
+	slog.Info("alist_encrypt: Encrypt called", "hasPassword", password != "", "hasOutputDir", p.outputDir != "", "outputDir", p.outputDir, "hasSettings", p.settings.Suffix != "")
 
 	result, err := EncryptToFile(dataReader, password, p.outputDir, &p.settings)
 	if err != nil {

@@ -567,6 +567,7 @@ func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputR
 	}()
 
 	needsPreprocessing := plugin.GetMetadataExtractor() != nil || plugin.GetContentPreprocessor() != nil
+	slog.Info("EncryptFileWithPlugin", "plugin", plugin.Name(), "needsPreprocessing", needsPreprocessing, "path", inputPath)
 
 	var index types.Index
 	var dataReader io.ReadCloser
