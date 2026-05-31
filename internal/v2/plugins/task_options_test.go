@@ -48,7 +48,7 @@ func TestVideoPlugin_GetTaskOptions(t *testing.T) {
 	assert.Equal(t, pluginInterfaces.PasswordGlobal, opts.PasswordStrategy, "video should use global password")
 	assert.True(t, opts.SupportVersionSelect, "video should support version select")
 	assert.NotEmpty(t, opts.SupportedVersions, "video should have supported versions")
-	require.Len(t, opts.ExtraFields, 2, "video should have 2 extra fields")
+	require.Len(t, opts.ExtraFields, 6, "video should have 6 extra fields")
 	assert.Equal(t, "stream_preset", opts.ExtraFields[0].Key)
 	assert.Equal(t, "select", opts.ExtraFields[0].Type)
 	assert.False(t, opts.ExtraFields[0].Required)
@@ -58,10 +58,37 @@ func TestVideoPlugin_GetTaskOptions(t *testing.T) {
 	assert.Equal(t, "Balanced", opts.ExtraFields[0].OptionLabels["balanced"])
 	assert.Equal(t, "High Quality", opts.ExtraFields[0].OptionLabels["high_quality"])
 	assert.Equal(t, "encrypt", opts.ExtraFields[0].Condition)
+
 	assert.Equal(t, "encrypt_filename", opts.ExtraFields[1].Key)
 	assert.Equal(t, "bool", opts.ExtraFields[1].Type)
 	assert.Equal(t, "false", opts.ExtraFields[1].DefaultValue)
 	assert.Equal(t, "encrypt", opts.ExtraFields[1].Condition)
+
+	assert.Equal(t, "fn_rounds", opts.ExtraFields[2].Key)
+	assert.Equal(t, "select", opts.ExtraFields[2].Type)
+	assert.Equal(t, "8", opts.ExtraFields[2].DefaultValue)
+	assert.Equal(t, []string{"4", "8", "12", "16"}, opts.ExtraFields[2].Options)
+	assert.Equal(t, "8 (Recommended)", opts.ExtraFields[2].OptionLabels["8"])
+	assert.Equal(t, "encrypt", opts.ExtraFields[2].Condition)
+
+	assert.Equal(t, "fn_charset", opts.ExtraFields[3].Key)
+	assert.Equal(t, "select", opts.ExtraFields[3].Type)
+	assert.Equal(t, "alnum", opts.ExtraFields[3].DefaultValue)
+	assert.Contains(t, opts.ExtraFields[3].Options, "alnum")
+	assert.Contains(t, opts.ExtraFields[3].Options, "full")
+	assert.Equal(t, "Alphanumeric", opts.ExtraFields[3].OptionLabels["alnum"])
+	assert.Equal(t, "Full (Alnum+Symbols+Hanzi+Emoji)", opts.ExtraFields[3].OptionLabels["full"])
+	assert.Equal(t, "encrypt", opts.ExtraFields[3].Condition)
+
+	assert.Equal(t, "fn_deconfuse", opts.ExtraFields[4].Key)
+	assert.Equal(t, "bool", opts.ExtraFields[4].Type)
+	assert.Equal(t, "false", opts.ExtraFields[4].DefaultValue)
+	assert.Equal(t, "encrypt", opts.ExtraFields[4].Condition)
+
+	assert.Equal(t, "fn_structured", opts.ExtraFields[5].Key)
+	assert.Equal(t, "bool", opts.ExtraFields[5].Type)
+	assert.Equal(t, "false", opts.ExtraFields[5].DefaultValue)
+	assert.Equal(t, "encrypt", opts.ExtraFields[5].Condition)
 }
 
 func TestAlistEncryptPlugin_GetTaskOptions(t *testing.T) {

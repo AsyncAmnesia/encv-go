@@ -510,7 +510,123 @@ modal.onDidDismiss().then(() => {
 
 ---
 
-## 八、跨层参考
+## 八、ion-toggle 暗黑模式 label 可见性（⚠️ 实战踩坑！）
+
+> **核心原则：`ion-toggle` 的 `label` prop 在 Shadow DOM 内渲染，`::part(label)` 穿透在 `<style scoped>` 中不可靠。**
+> **必须使用 `<ion-label>` + `slot="end"` 模式，让 label 文字在 light DOM 中完全可控。**
+
+### 8.1 禁止 `:label` prop 用于 ion-toggle
+
+**❌ 错误（label 在 Shadow DOM 内，暗黑模式不可见）**：
+```vue
+<ion-toggle
+  :label="t(field.label)"
+  justify="space-between"
+/>
+```
+
+**症状**：
+- 亮色模式下勉强可见（label 继承 Ionic 默认样式）
+- **暗黑模式下 label 文字完全不可见或极难辨认**——用户只看到一个光秃秃的开关，不知道它是干什么的
+- `::part(label)` CSS 穿透在 Vue `<style scoped>` 中与 `[data-v-xxx]` 属性选择器冲突，规则可能完全不生效
+
+**根因链路**：
+```
+<ion-toggle :label="'编码文件名'">
+  → #shadow-root (open)
+    → <label class="toggle-label">编码文件名</label>  ← 在 Shadow DOM 内部！
+    → <div class="track">...</div>                    ← 开关轨道
+
+CSS .extra-field-toggle::part(label) { color: ... }
+  → Vue scoped 编译为 .extra-field-toggle[data-v-xxx]::part(label)
+  → ::part() 是伪元素选择器，不能与属性选择器组合
+  → 浏览器直接忽略这条规则 → label 颜色不受控
+```
+
+**✅ 正确（light DOM 模式）**：
+```vue
+<ion-item lines="none" class="extra-field-item">
+  <ion-label>{{ t(field.label) }}</ion-label>
+  <ion-toggle slot="end" :checked="..." @ionChange="..." />
+  <ion-note v-if="field.help" slot="helper">{{ t(field.help) }}</ion-note>
+</ion-item>
+```
+
+| 对比项 | ❌ `:label` prop | ✅ `<ion-label>` + `slot="end"` |
+|--------|------------------|-------------------------------|
+| label DOM 位置 | Shadow DOM 内部 | Light DOM（ion-item 子元素） |
+| CSS 可控性 | 需要 `::part()` 穿透 | 普通 CSS 即可控制 |
+| scoped 兼容性 | ❌ 冲突 | ✅ 完全兼容 |
+| 暗黑模式文字色 | 不可控 | 继承 `var(--ion-text-color)` |
+| helper 文字 | 正常（slot="helper"） | 正常（slot="helper"） |
+
+### 8.2 必须导入的组件清单
+
+ExtraFields 渲染用到的所有 Ionic 组件**必须显式导入**，缺少任何一个都会导致 `[Vue warn]: Failed to resolve component`：
+
+```typescript
+// NewTaskModal.vue — 必须导入的完整列表
+import {
+  IonContent,
+  IonHeader,
+  IonPage,
+  IonToolbar,
+  IonTitle,
+  IonButtons,
+  IonButton,
+  IonItem,          // ← ExtraFields 容器，缺少则 label+helper 全丢失
+  IonLabel,         // ← toggle 的 label 文字，缺少则不渲染
+  IonSelect,        // ← select 类型字段
+  IonSelectOption,  // ← select 选项
+  IonInput,         // ← string/password 类型字段
+  IonIcon,
+  IonSpinner,
+  IonToggle,        // ← bool 类型开关
+  IonNote,          // ← helper 描述文字
+  modalController,
+} from '@ionic/vue'
+```
+
+**常见遗漏后果**：
+
+| 缺失组件 | 症状 |
+|---------|------|
+| `IonItem` | ExtraFields 的 label 和 helper 全部消失，只剩裸控件 |
+| `IonLabel` | toggle 左侧无文字说明 |
+| `IonToggle` | `[Vue warn]: Failed to resolve component: ion-toggle` |
+| `IonNote` | 字段下方无帮助描述 |
+
+### 8.3 ExtraField 类型分支渲染的正确模式
+
+```vue
+<!-- bool: 使用 ion-label + toggle slot="end" -->
+<ion-item v-if="field.type === 'bool'" lines="none">
+  <ion-label>{{ t(field.label) }}</ion-label>
+  <ion-toggle slot="end" :checked="..." @ionChange="..." />
+  <ion-note slot="helper">{{ t(field.help) }}</ion-note>
+</ion-item>
+
+<!-- select: 使用 ion-select 的 label prop（select 无 Shadow DOM 问题） -->
+<ion-item v-else-if="field.type === 'select'" lines="none">
+  <ion-select :label="t(field.label)" interface="action-sheet">
+    <ion-select-option v-for="opt in field.options" :key="opt" :value="opt">
+      {{ field.optionLabels?.[opt] ?? opt }}
+    </ion-select-option>
+  </ion-select>
+  <ion-note slot="helper">{{ t(field.help) }}</ion-note>
+</ion-item>
+
+<!-- string/password: 使用 ion-input 的 label prop -->
+<ion-item v-else lines="none">
+  <ion-input :label="t(field.label)" :type="field.type" />
+</ion-item>
+```
+
+**关键区别**：只有 `ion-toggle` 需要 `<ion-label>` 分离模式。`ion-select` 和 `ion-input` 的 `label` prop 不存在 Shadow DOM 问题。
+
+---
+
+## 九、跨层参考
 
 | 主题 | 文档位置 |
 |------|---------|
