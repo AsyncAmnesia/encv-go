@@ -80,15 +80,6 @@
                 {{ t('tasks.passwordErrorHint') }}
               </p>
               <p v-else-if="task.error" class="task-error">{{ task.error }}</p>
-              <div v-if="task.errorDetail && task.errorDetail !== task.error" class="error-detail-row">
-                <p class="task-error-detail" @click="toggleErrorDetail(task.id)">
-                  {{ showErrorDetail[task.id] ? t('tasks.hideDetail') : t('tasks.showDetail') }}
-                </p>
-                <ion-button fill="clear" size="small" color="medium" class="copy-btn" @click="copyErrorDetail(task)">
-                  <ion-icon :icon="copiedTaskId === task.id ? checkmarkCircle : copyOutline" slot="icon-only"></ion-icon>
-                </ion-button>
-              </div>
-              <pre v-if="showErrorDetail[task.id] && task.errorDetail" class="error-detail-pre">{{ task.errorDetail }}</pre>
             </ion-label>
             <ion-button
               v-if="task.status === 'running'"
@@ -174,7 +165,6 @@ import {
   checkmarkCircle,
   timer,
   sync,
-  copyOutline,
   warningOutline,
   lockClosed,
 } from 'ionicons/icons'
@@ -200,8 +190,6 @@ const { openNewTask } = useNewTaskModal()
 
 const tasks = ref<EncvTask[]>([])
 const loading = ref(false)
-const showErrorDetail = ref<Record<string, boolean>>({})
-const copiedTaskId = ref<string | null>(null)
 const expandedWarningDetail = ref<string | null>(null)
 const sortBy = ref<'activity' | 'created'>('activity')
 
@@ -332,10 +320,6 @@ async function loadTasks() {
   loading.value = false
 }
 
-function toggleErrorDetail(taskId: string) {
-  showErrorDetail.value[taskId] = !showErrorDetail.value[taskId]
-}
-
 function toggleWarningDetail(task: EncvTask) {
   expandedWarningDetail.value = expandedWarningDetail.value === task.id ? null : task.id
 }
@@ -343,28 +327,6 @@ function toggleWarningDetail(task: EncvTask) {
 function formatWarningDetail(detail: string): string {
   try { return JSON.stringify(JSON.parse(detail), null, 2) }
   catch { return detail }
-}
-
-async function copyErrorDetail(task: EncvTask) {
-  const text = task.errorDetail || task.error || ''
-  try {
-    await navigator.clipboard.writeText(text)
-    copiedTaskId.value = task.id
-    showToast({ message: t('tasks.copied'), duration: 1200, color: 'success' })
-    setTimeout(() => { if (copiedTaskId.value === task.id) copiedTaskId.value = null }, 2000)
-  } catch {
-    const textarea = document.createElement('textarea')
-    textarea.value = text
-    textarea.style.position = 'fixed'
-    textarea.style.opacity = '0'
-    document.body.appendChild(textarea)
-    textarea.select()
-    document.execCommand('copy')
-    document.body.removeChild(textarea)
-    copiedTaskId.value = task.id
-    showToast({ message: t('tasks.copied'), duration: 1200, color: 'success' })
-    setTimeout(() => { if (copiedTaskId.value === task.id) copiedTaskId.value = null }, 2000)
-  }
 }
 
 async function handleRefresh(event: CustomEvent) {
@@ -642,43 +604,6 @@ onUnmounted(() => {
 .password-error ion-icon {
   font-size: 14px;
   flex-shrink: 0;
-}
-
-.task-error-detail {
-  color: var(--ion-color-medium);
-  font-size: 11px;
-  margin-top: 2px;
-  cursor: pointer;
-  word-break: break-all;
-}
-
-.error-detail-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 2px;
-}
-
-.copy-btn {
-  --padding-start: 4px;
-  --padding-end: 4px;
-  min-width: 28px;
-  min-height: 28px;
-  font-size: 16px;
-}
-
-.error-detail-pre {
-  background: var(--ion-color-light);
-  border-radius: 6px;
-  padding: 8px 10px;
-  margin: 4px 0 0;
-  font-size: 11px;
-  color: var(--ion-text-color);
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 200px;
-  overflow-y: auto;
-  line-height: 1.5;
 }
 
 .task-warning {

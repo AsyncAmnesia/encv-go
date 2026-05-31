@@ -82,6 +82,9 @@
         <div class="section-title error-section-title">
           <ion-icon :icon="closeCircle" color="danger"></ion-icon>
           {{ t('tasks.error') }}
+          <ion-button fill="clear" size="small" color="medium" class="copy-error-btn" @click="copyErrorDetail">
+            <ion-icon :icon="copied ? checkmarkCircle : copyOutline" slot="icon-only"></ion-icon>
+          </ion-button>
         </div>
         <p class="error-msg">{{ task.error }}</p>
         <pre v-if="task.errorDetail && task.errorDetail !== task.error" class="error-detail-pre">{{ task.errorDetail }}</pre>
@@ -133,7 +136,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import {
   IonPage,
   IonHeader,
@@ -150,16 +153,20 @@ import {
 import {
   checkmarkCircle,
   closeCircle,
+  copyOutline,
   warningOutline,
   refresh,
   trash,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
+import { showToast } from '@/composables/useToast'
 import type { EncvTask } from '@/api/encv'
 
 const props = defineProps<{ task: EncvTask }>()
 const { t } = useI18n()
+
+const copied = ref(false)
 
 const fileName = computed(() => {
   const parts = props.task.sourcePath.split('/')
@@ -253,6 +260,25 @@ function getPhaseLabel(phase: string): string {
 function formatWarningDetail(detail: string): string {
   try { return JSON.stringify(JSON.parse(detail), null, 2) }
   catch { return detail }
+}
+
+async function copyErrorDetail() {
+  const text = props.task.errorDetail || props.task.error || ''
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+  }
+  copied.value = true
+  showToast({ message: t('tasks.copied'), duration: 1200, color: 'success' })
+  setTimeout(() => { copied.value = false }, 2000)
 }
 
 async function handleClose() {
@@ -426,6 +452,13 @@ async function handleRemove() {
 /* Error */
 .error-section { background: rgba(var(--ion-color-danger-rgb), 0.04); border-radius: 8px; padding: 12px; }
 .error-msg { font-size: 13px; color: var(--ion-color-danger); margin-top: 4px; word-break: break-word; }
+.copy-error-btn {
+  --padding-start: 4px;
+  --padding-end: 4px;
+  margin-left: auto;
+  min-width: 28px;
+  min-height: 28px;
+}
 .error-detail-pre {
   background: var(--ion-color-step-50);
   border-radius: 6px;
