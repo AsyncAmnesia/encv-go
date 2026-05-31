@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"net/url"
 	"testing"
 )
 
@@ -25,6 +26,122 @@ func TestSafeURLPathToRelative_NormalPaths(t *testing.T) {
 			}
 			if got != tc.expected {
 				t.Errorf("got %q, want %q", got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestDecodePathParam_DoubleEncoding(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "double-encoded @ symbol (root cause of truncation bug)",
+			input:    "%2540",
+			expected: "@",
+		},
+		{
+			name:     "double-encoded full path with @",
+			input:    "%2F04-boundary-test%2Fspecial-chars-!%2540%2523%2524%2525%255E%2526*()_%252B.txt",
+			expected: "/04-boundary-test/special-chars-!@#$%^&*()_+.txt",
+		},
+		{
+			name:     "single-encoded @ (no double encoding)",
+			input:    "%40",
+			expected: "@",
+		},
+		{
+			name:     "plain text passthrough",
+			input:    "/01-plain-media/document/notes.txt",
+			expected: "/01-plain-media/document/notes.txt",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "double-encoded unicode filename",
+			input:    "%25E4%25B8%25AD%25E6%2596%2587",
+			expected: "\u4e2d\u6587",
+		},
+		{
+			name:     "emoji in double encoding",
+			input:    "%25F0%259F%2598%2580",
+			expected: "\U0001f600",
+		},
+		{
+			name:     "malformed percent sequence returns raw",
+			input:    "%ZZ",
+			expected: "%ZZ",
+		},
+		{
+			name:     "incomplete percent sequence returns raw",
+			input:    "%2",
+			expected: "%2",
+		},
+		{
+			name:     "path with spaces (single encoded)",
+			input:    "%20dir%20%2Ffile.txt",
+			expected: " dir /file.txt",
+		},
+		{
+			name:     "path with spaces (double encoded)",
+			input:    "%2520dir%2520%252Ffile.txt",
+			expected: " dir /file.txt",
+		},
+		{
+			name:     "triple encoded should still work (decode twice only)",
+			input:    "%252540",
+			expected: "%40",
+		},
+		{
+			name:     "mixed special chars - hash, caret, ampersand, asterisk, plus",
+			input:    "%2523%2524%2525%255E%2526*%252B",
+			expected: "#$%^&*+",
+		},
+		{
+			name:     "parentheses are safe (not reserved by WAF)",
+			input:    "()",
+			expected: "()",
+		},
+		{
+			name:     "exclamation mark is safe",
+			input:    "!",
+			expected: "!",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := DecodePathParam(tc.input)
+			if got != tc.expected {
+				t.Errorf("DecodePathParam(%q) = %q, want %q", tc.input, got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestDecodePathParam_RoundTripWithProxySafeEncode(t *testing.T) {
+	testPaths := []string{
+		"/04-boundary-test/special-chars-!@#$%^&*()_+.txt",
+		"/01-plain-media/document/notes.txt",
+		"/03-encv-containers/container.sccgv",
+		"/02-alist-encrypt/secret.ae",
+		"中文文件名.txt",
+		"emoji-test-😀🎉.txt",
+		"spaces   in   name.txt",
+		".hidden-file",
+	}
+	for _, originalPath := range testPaths {
+		t.Run(originalPath, func(t *testing.T) {
+			singleEnc := url.QueryEscape(originalPath)
+			doubleEnc := url.QueryEscape(singleEnc)
+			decoded := DecodePathParam(doubleEnc)
+			if decoded != originalPath {
+				t.Errorf("round-trip failed:\n  original: %q\n  single:  %q\n  double:  %q\n  decoded: %q",
+					originalPath, singleEnc, doubleEnc, decoded)
 			}
 		})
 	}

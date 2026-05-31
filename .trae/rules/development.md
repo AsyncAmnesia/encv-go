@@ -386,3 +386,168 @@ echo ""
 echo "All ports:"
 lsof -i :2025 -i :5173 2>/dev/null || echo "  (no processes found)"
 ```
+
+---
+
+## 六、WAF/代理截断路径参数（⚠️ 实战踩坑！）
+
+> **核心原则：经过 WAF/反向代理的请求中，`@` 字符会被当作 URL authority 分隔符截断。**
+> **所有路径参数必须使用双重编码（double encoding）穿越代理层。**
+
+### 6.1 症状
+
+```
+用户操作：点击文件 `special-chars-!@#$%^&*()_+.txt` 预览
+预期行为：前端 fetch /decrypt?file=... → 后端返回文件内容
+实际行为：HTTP 404 — file not found
+
+关键矛盾：
+  curl 同样请求 → 200 OK ✅
+  浏览器同样请求 → 404 ❌
+```
+
+### 6.2 根因链路
+
+```
+前端: encodeURIComponent("special-chars-!@#$%^&*()_+.txt")
+  → "special-chars-!%40%23%24%25%5E%26*()_%2B.txt"
+    ↓ 发送到 Vite dev server
+
+Vite proxy 转发到后端（正常）
+  ↓
+
+用户浏览器环境: Android WebView / com.xunlei.browser（迅雷浏览器）
+  带有大量 WAF/proxy header:
+    x-alb-waf-requestid, x-clb-cluster, x-envoy-external-address, ...
+  ↓
+
+WAF/中间代理处理 query string:
+  发现 %40 → 解码为 @ → 当作 URL authority 分隔符
+  → 截断 @ 之后的所有字符
+  → 实际到达后端的 filePath = "special-chars-!" （不完整！）
+    ↓
+
+后端: 在 mock_data 目录查找 "special-chars-!.txt" → 404 Not Found
+```
+
+**证据**（mock 层 404 响应体中的 debug 信息）：
+
+```json
+{
+  "error": "file not found",
+  "debug": {
+    "receivedFilePath": "/04-boundary-test/special-chars-!@",
+    "resolvedAbsPath": "/workspace/app/encv-mobile/__mock_data__/04-boundary-test/special-chars-!@",
+    "siblings": ["special-chars-!@#$%^&*()_+.txt", ...]
+  }
+}
+```
+
+`siblings` 列表中存在完整文件名，但 `receivedFilePath` 在 `@` 处被截断。
+
+### 6.3 修复方案：双重编码（Double Encoding）
+
+**原理**：编码两次，WAF 只解码外层一次，内层 `%40` 安全通过。
+
+```
+原始路径: special-chars-!@#$%^&*()_+.txt
+  ↓ 第 1 次 encodeURIComponent
+单层编码: special-chars-!%40%23%24%25%5E%26*()_%2B.txt
+  ↓ 第 2 次 encodeURIComponent（proxySafeEncode）
+双重编码: special-chars-!%2540%2523%2524%25255E%2526*()_%252B.txt
+  ↓ WAF/代理解码外层
+WAF 输出: special-chars-!%40%23%24%25%5E%26*()_%2B.txt  (@ 仍是 %40！)
+  ↓ 后端 decodeURIComponent（第二次解码）
+最终结果: special-chars-!@#$%^&*()_+.txt  ✅ 完整恢复
+```
+
+### 6.4 实现细节
+
+#### 前端（TypeScript）— `proxySafeEncode()`
+
+```typescript
+// src/api/encv.ts
+export function proxySafeEncode(value: string): string {
+  return encodeURIComponent(encodeURIComponent(value))
+}
+```
+
+**应用范围**（19 处替换）：所有将路径放入 query parameter 的 API 调用。
+
+| 文件 | 替换数 | 涉及端点 |
+|------|--------|---------|
+| [api/encv.ts](app/encv-mobile/src/api/encv.ts) | 14 | listFiles, stream, plugin-stream, deleteFile, readFileContent, checkFileExists, getFileStreamUrl, getFilePreviewUrl, getExternalStreamUrl, listFilesByTag, getAlistEncryptStreamUrl |
+| [views/FilePreview.vue](app/encv-mobile/src/views/FilePreview.vue) | 2 | decrypt, api/file/info |
+| [views/FileInfo.vue](app/encv-mobile/src/views/FileInfo.vue) | 1 | api/file/info |
+
+#### Go 后端 — `DecodePathParam()`
+
+```go
+// internal/utils/path.go
+func DecodePathParam(raw string) string {
+    s, err := url.QueryUnescape(raw)
+    if err != nil { return raw }
+    s2, err := url.QueryUnescape(s)
+    if err != nil { return s }
+    return s2
+}
+```
+
+**应用范围**（4 处）：
+
+| 文件 | 函数 | 端点 |
+|------|------|------|
+| [server_handle.go](internal/server/server_handle.go) | handleStreamRequest | /stream?path= /stream?file= |
+| [openlist_handlers.go](internal/server/openlist_handlers.go) | handler | /openlist/sites/:siteId/decrypt?file= |
+| [openlist_middleware.go](internal/server/openlist_middleware.go) | OpenlistSiteMiddleware | /openlist/sites/:siteId/decrypt?file= |
+
+#### Mock 层同步更新
+
+```typescript
+// app/encv-mobile/mock/handlers.ts
+let filePath = url.searchParams.get('file') || url.searchParams.get('path') || ''
+try { filePath = decodeURIComponent(filePath) } catch {}
+```
+
+### 6.5 为什么只对 path 参数双重编码
+
+| 参数类型 | 是否需要双重编码 | 原因 |
+|---------|-----------------|------|
+| **path / file**（文件路径） | **✅ 必须** | 用户可控，可能包含 `@#` 等特殊字符 |
+| password（加密密码） | 可选 | 通常不含特殊字符，但建议保持一致 |
+| tag（标签名） | 可选 | 通常为 ASCII 字母数字 |
+| extensions（扩展名列表） | 不需要 | 固定格式 `.ext1,.ext2` |
+
+### 6.6 测试覆盖
+
+| 测试文件 | 用例数 | 覆盖场景 |
+|---------|--------|---------|
+| [path_test.go](internal/utils/path_test.go) | 24 (15+8+1) | DecodePathParam 双重解码 + RoundTrip 编码往返验证 |
+| [proxy-safe-encode.test.ts](app/encv-mobile/__tests__/proxy-safe-encode.test.ts) | 8 | proxySafeEncode 双重编码 + Unicode + 特殊字符 + 空值 |
+
+### 6.7 排查此类问题的诊断方法
+
+当出现「curl 正常但浏览器失败」的矛盾时：
+
+1. **Mock 层拦截**：在 Vite middleware 中直接处理请求，打印 `req.url` 和解析后的参数
+2. **响应体带 debug 信息**：404 时返回 `{ error, debug: { receivedFilePath, resolvedAbsPath, siblings } }`
+3. **前端错误详情按钮**：FilePreview.vue 的 Show Details 展开响应体 JSON
+4. **对比法**：同一 URL 用 curl 和浏览器分别测试，对比差异
+
+### 6.8 已知受影响的特殊字符
+
+以下字符在 URL query string 中有特殊含义，必须被正确编码：
+
+| 字符 | URL 含义 | 单层编码 | 双重编码后 WAF 解码结果 |
+|------|---------|----------|---------------------|
+| `@` | **authority 分隔符** ⚠️ | `%40` | `%40`（安全） |
+| `#` | fragment 分隔符 | `%23` | `%23`（安全） |
+| `$` | 无特殊含义 | `%24` | `%24`（安全） |
+| `%` | 编码前缀 | `%25` | `%25`（安全） |
+| `^` | 无特殊含义 | `%5E` | `%5E`（安全） |
+| `&` | query 分隔符 | `%26` | `%26`（安全） |
+| `+` | 空格替代 | `%2B` | `%2B`（安全） |
+| `()` | 无特殊含义 | 不编码 | `()`（安全） |
+| `!` | 无特殊含义 | 不编码 | `!`（安全） |
+
+**其中 `@` 是唯一确认会被迅雷浏览器/WAF 截断的字符。** 其他字符虽然理论上也可能被某些代理误处理，但双重编码方案统一保护了所有特殊字符。
