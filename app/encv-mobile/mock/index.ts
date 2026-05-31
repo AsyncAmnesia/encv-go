@@ -70,6 +70,12 @@ export function createMockPlugin(): Plugin {
 
       server.middlewares.use((req, res, next) => {
         const url = req.url || ''
+
+        if (url.startsWith('/decrypt')) {
+          console.error('[DECRYPT-REQ] method=' + req.method + ' url=' + url)
+          console.error('[DECRYPT-REQ] headers=' + JSON.stringify(req.headers))
+        }
+
         const params = parseMockParams(url)
 
         if (!params.enabled || !shouldMockIntercept(url)) {
