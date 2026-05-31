@@ -109,7 +109,6 @@ func (s *MobileService) ListFiles(queryPath string) ([]FileInfo, error) {
 
 	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
 	if err != nil {
-		slog.Error("SafeURLToAbsPath failed", "path", queryPath, "error", err)
 		return nil, &ForbiddenError{Err: err}
 	}
 

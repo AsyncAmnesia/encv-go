@@ -77,6 +77,12 @@ func SafeURLPathToRelative(urlPath string) (string, error) {
 		decodedPath = "/"
 	}
 
+	decodedPath = DecodePathParam(decodedPath)
+
+	if decodedPath == "" {
+		decodedPath = "/"
+	}
+
 	// 使用path包处理URL路径（注意：path包使用正斜杠）
 	cleanPath := path.Clean(decodedPath)
 
