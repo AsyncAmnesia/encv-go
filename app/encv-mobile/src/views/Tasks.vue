@@ -27,20 +27,86 @@
 
       <ion-toolbar v-if="showFilters" class="filter-toolbar">
         <div class="filter-chips">
-          <ion-chip :outline="filterPlugin !== null" :color="filterPlugin ? 'primary' : 'medium'" @click="cyclePluginFilter">
+          <ion-chip :color="filterPlugins.length > 0 ? 'primary' : 'medium'" @click="openPluginPopover($event)">
             <ion-icon :icon="extensionPuzzle" size="small"></ion-icon>
-            <ion-label>{{ filterPlugin || t('tasks.allPlugins') }}</ion-label>
+            <ion-label>{{ getPluginChipLabel() }}</ion-label>
+            <ion-icon :icon="chevronDown" size="small"></ion-icon>
           </ion-chip>
-          <ion-chip :outline="filterType !== null" :color="filterType ? 'primary' : 'medium'" @click="cycleTypeFilter">
-            <ion-icon :icon="filterType === 'encrypt' ? lockClosed : filterType === 'decrypt' ? lockOpen : swapVertical" size="small"></ion-icon>
-            <ion-label>{{ filterType ? t(filterType === 'encrypt' ? 'tasks.encrypt' : 'tasks.decrypt') : t('tasks.allTypes') }}</ion-label>
+          <ion-chip :color="filterTypes.length > 0 ? 'primary' : 'medium'" @click="openTypePopover($event)">
+            <ion-icon :icon="swapVertical" size="small"></ion-icon>
+            <ion-label>{{ getTypeChipLabel() }}</ion-label>
+            <ion-icon :icon="chevronDown" size="small"></ion-icon>
           </ion-chip>
-          <ion-chip :outline="filterStatus !== null" :color="filterStatus ? 'primary' : 'medium'" @click="cycleStatusFilter">
+          <ion-chip :color="filterStatuses.length > 0 ? 'primary' : 'medium'" @click="openStatusPopover($event)">
             <ion-icon :icon="funnel" size="small"></ion-icon>
-            <ion-label>{{ filterStatus ? getStatusLabel(filterStatus) : t('tasks.allStatuses') }}</ion-label>
+            <ion-label>{{ getStatusChipLabel() }}</ion-label>
+            <ion-icon :icon="chevronDown" size="small"></ion-icon>
           </ion-chip>
         </div>
       </ion-toolbar>
+
+      <ion-popover
+        :is-open="pluginPopoverOpen"
+        :event="pluginPopoverEvent"
+        @didDismiss="pluginPopoverOpen = false"
+        side="bottom"
+        alignment="start"
+      >
+        <div class="popover-filter-content">
+          <div class="popover-filter-title">{{ t('tasks.filterByPlugin') }}</div>
+          <ion-item
+            v-for="plugin in availablePlugins"
+            :key="plugin"
+            lines="none"
+            class="popover-filter-item"
+            @click="togglePluginFilter(plugin)"
+          >
+            <ion-checkbox
+              :checked="filterPlugins.includes(plugin)"
+              slot="start"
+              @ionChange="togglePluginFilter(plugin)"
+            ></ion-checkbox>
+            <ion-label>{{ plugin }}</ion-label>
+          </ion-item>
+          <div v-if="availablePlugins.length === 0" class="popover-empty">{{ t('tasks.noPluginsFound') }}</div>
+        </div>
+      </ion-popover>
+
+      <ion-popover
+        :is-open="typePopoverOpen"
+        :event="typePopoverEvent"
+        @didDismiss="typePopoverOpen = false"
+        side="bottom"
+        alignment="start"
+      >
+        <div class="popover-filter-content">
+          <div class="popover-filter-title">{{ t('tasks.filterByType') }}</div>
+          <ion-item lines="none" class="popover-filter-item" @click="toggleTypeFilter('encrypt')">
+            <ion-checkbox :checked="filterTypes.includes('encrypt')" slot="start" @ionChange="toggleTypeFilter('encrypt')"></ion-checkbox>
+            <ion-label>{{ t('tasks.encrypt') }}</ion-label>
+          </ion-item>
+          <ion-item lines="none" class="popover-filter-item" @click="toggleTypeFilter('decrypt')">
+            <ion-checkbox :checked="filterTypes.includes('decrypt')" slot="start" @ionChange="toggleTypeFilter('decrypt')"></ion-checkbox>
+            <ion-label>{{ t('tasks.decrypt') }}</ion-label>
+          </ion-item>
+        </div>
+      </ion-popover>
+
+      <ion-popover
+        :is-open="statusPopoverOpen"
+        :event="statusPopoverEvent"
+        @didDismiss="statusPopoverOpen = false"
+        side="bottom"
+        alignment="start"
+      >
+        <div class="popover-filter-content">
+          <div class="popover-filter-title">{{ t('tasks.filterByStatus') }}</div>
+          <ion-item v-for="s in statusOptions" :key="s" lines="none" class="popover-filter-item" @click="toggleStatusFilter(s)">
+            <ion-checkbox :checked="filterStatuses.includes(s)" slot="start" @ionChange="toggleStatusFilter(s)"></ion-checkbox>
+            <ion-label>{{ getStatusLabel(s) }}</ion-label>
+          </ion-item>
+        </div>
+      </ion-popover>
     </ion-header>
 
     <ion-content>
@@ -208,6 +274,8 @@ import {
   IonButtons,
   IonSearchbar,
   IonChip,
+  IonPopover,
+  IonCheckbox,
   alertController,
   modalController,
 } from '@ionic/vue'
@@ -219,12 +287,12 @@ import {
   sync,
   warningOutline,
   lockClosed,
-  lockOpen,
   search,
   funnel,
   trashBin,
   extensionPuzzle,
   swapVertical,
+  chevronDown,
 } from 'ionicons/icons'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -255,9 +323,18 @@ const sortBy = ref<'activity' | 'created'>('activity')
 const showSearch = ref(false)
 const searchQuery = ref('')
 const showFilters = ref(false)
-const filterPlugin = ref<string | null>(null)
-const filterType = ref<TaskType | null>(null)
-const filterStatus = ref<TaskStatus | null>(null)
+const filterPlugins = ref<string[]>([])
+const filterTypes = ref<TaskType[]>([])
+const filterStatuses = ref<TaskStatus[]>([])
+
+const statusOptions: TaskStatus[] = ['queued', 'running', 'completed', 'failed', 'cancelled']
+
+const pluginPopoverOpen = ref(false)
+const typePopoverOpen = ref(false)
+const statusPopoverOpen = ref(false)
+const pluginPopoverEvent = ref<Event | null>(null)
+const typePopoverEvent = ref<Event | null>(null)
+const statusPopoverEvent = ref<Event | null>(null)
 
 const availablePlugins = computed(() => {
   const plugins = new Set<string>()
@@ -268,50 +345,66 @@ const availablePlugins = computed(() => {
 })
 
 const hasActiveFilters = computed(() =>
-  filterPlugin.value !== null || filterType.value !== null || filterStatus.value !== null
+  filterPlugins.value.length > 0 || filterTypes.value.length > 0 || filterStatuses.value.length > 0
 )
 
 const hasCompletedTasks = computed(() =>
   tasks.value.some(t => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled')
 )
 
-function cyclePluginFilter() {
-  if (filterPlugin.value === null) {
-    filterPlugin.value = availablePlugins.value[0] || null
-  } else {
-    const idx = availablePlugins.value.indexOf(filterPlugin.value)
-    if (idx < availablePlugins.value.length - 1) {
-      filterPlugin.value = availablePlugins.value[idx + 1]
-    } else {
-      filterPlugin.value = null
-    }
-  }
+function openPluginPopover(event: Event) {
+  pluginPopoverEvent.value = event
+  pluginPopoverOpen.value = true
 }
 
-function cycleTypeFilter() {
-  if (filterType.value === null) filterType.value = 'encrypt'
-  else if (filterType.value === 'encrypt') filterType.value = 'decrypt'
-  else filterType.value = null
+function openTypePopover(event: Event) {
+  typePopoverEvent.value = event
+  typePopoverOpen.value = true
 }
 
-const statusCycle: TaskStatus[] = ['completed', 'failed', 'running', 'queued', 'cancelled']
-function cycleStatusFilter() {
-  if (filterStatus.value === null) {
-    filterStatus.value = statusCycle[0]
-  } else {
-    const idx = statusCycle.indexOf(filterStatus.value)
-    if (idx < statusCycle.length - 1) {
-      filterStatus.value = statusCycle[idx + 1]
-    } else {
-      filterStatus.value = null
-    }
-  }
+function openStatusPopover(event: Event) {
+  statusPopoverEvent.value = event
+  statusPopoverOpen.value = true
+}
+
+function togglePluginFilter(plugin: string) {
+  const idx = filterPlugins.value.indexOf(plugin)
+  if (idx === -1) filterPlugins.value.push(plugin)
+  else filterPlugins.value.splice(idx, 1)
+}
+
+function toggleTypeFilter(type: TaskType) {
+  const idx = filterTypes.value.indexOf(type)
+  if (idx === -1) filterTypes.value.push(type)
+  else filterTypes.value.splice(idx, 1)
+}
+
+function toggleStatusFilter(status: TaskStatus) {
+  const idx = filterStatuses.value.indexOf(status)
+  if (idx === -1) filterStatuses.value.push(status)
+  else filterStatuses.value.splice(idx, 1)
+}
+
+function getPluginChipLabel(): string {
+  if (filterPlugins.value.length === 0) return t('tasks.allPlugins')
+  if (filterPlugins.value.length === 1) return filterPlugins.value[0]
+  return `${t('tasks.allPlugins')} (${filterPlugins.value.length})`
+}
+
+function getTypeChipLabel(): string {
+  if (filterTypes.value.length === 0) return t('tasks.allTypes')
+  return filterTypes.value.map(ty => ty === 'encrypt' ? t('tasks.encrypt') : t('tasks.decrypt')).join(', ')
+}
+
+function getStatusChipLabel(): string {
+  if (filterStatuses.value.length === 0) return t('tasks.allStatuses')
+  return filterStatuses.value.map(s => getStatusLabel(s)).join(', ')
 }
 
 function clearFilters() {
-  filterPlugin.value = null
-  filterType.value = null
-  filterStatus.value = null
+  filterPlugins.value = []
+  filterTypes.value = []
+  filterStatuses.value = []
   searchQuery.value = ''
 }
 
@@ -424,16 +517,16 @@ const filteredTasks = computed(() => {
     })
   }
 
-  if (filterPlugin.value !== null) {
-    result = result.filter(task => task.pluginName === filterPlugin.value)
+  if (filterPlugins.value.length > 0) {
+    result = result.filter(task => task.pluginName && filterPlugins.value.includes(task.pluginName))
   }
 
-  if (filterType.value !== null) {
-    result = result.filter(task => task.type === filterType.value)
+  if (filterTypes.value.length > 0) {
+    result = result.filter(task => filterTypes.value.includes(task.type))
   }
 
-  if (filterStatus.value !== null) {
-    result = result.filter(task => task.status === filterStatus.value)
+  if (filterStatuses.value.length > 0) {
+    result = result.filter(task => filterStatuses.value.includes(task.status))
   }
 
   return result
@@ -882,5 +975,36 @@ onUnmounted(() => {
 .cancelling-spinner {
   width: 20px;
   height: 20px;
+}
+
+.popover-filter-content {
+  padding: 8px 0;
+  min-width: 180px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.popover-filter-title {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 16px 8px;
+  color: var(--encv-text-secondary);
+}
+
+.popover-filter-item {
+  --min-height: 40px;
+  --padding-start: 12px;
+  --padding-end: 12px;
+  cursor: pointer;
+}
+
+.popover-filter-item ion-checkbox {
+  margin-right: 8px;
+}
+
+.popover-empty {
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--encv-text-secondary);
 }
 </style>
