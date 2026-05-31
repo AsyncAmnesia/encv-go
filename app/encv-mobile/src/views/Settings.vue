@@ -21,6 +21,38 @@
           <ion-icon :icon="moon" slot="start"></ion-icon>
           <ion-toggle :checked="isDark" @ionChange="handleDarkToggle">{{ t('settings.darkMode') }}</ion-toggle>
         </ion-item>
+
+        <ion-item lines="full">
+          <ion-icon :icon="colorPaletteOutline" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.themeColor') }}</h3>
+            <p>{{ t('settings.themeColorHelp') }}</p>
+          </ion-label>
+        </ion-item>
+        <div class="theme-color-picker">
+          <div class="preset-colors">
+            <button
+              v-for="preset in THEME_PRESETS"
+              :key="preset.value"
+              class="color-dot"
+              :class="{ active: currentColor === preset.value }"
+              :style="{ backgroundColor: preset.value }"
+              :title="preset.name"
+              @click="setThemeColor(preset.value)"
+            ></button>
+          </div>
+          <div class="custom-color-row">
+            <label class="custom-color-label">{{ t('settings.customColor') }}</label>
+            <input
+              type="color"
+              class="color-input"
+              :value="currentColor"
+              @input="setThemeColor(($event.target as HTMLInputElement).value)"
+            />
+            <span class="color-hex">{{ currentColor.toUpperCase() }}</span>
+          </div>
+        </div>
+
         <ion-item>
           <ion-icon :icon="globeOutline" slot="start"></ion-icon>
           <ion-select :value="locale" @ionChange="handleLocaleChange" interface="action-sheet" mode="ios">
@@ -387,7 +419,7 @@ import FilePickerModal from '@/components/FilePickerModal.vue'
 import ConfigFieldItem from '@/components/ConfigFieldItem.vue'
 
 const router = useRouter()
-const { isDark, toggleDark } = useTheme()
+const { isDark, currentColor, toggleDark, setThemeColor, THEME_PRESETS } = useTheme()
 const { isOnline: serverOnline, lastError: connectionError, checkStatus, backendPort } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, restartNeeded, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
 const { t, tField, tSectionTitle, setLocale, locale } = useI18n()
@@ -947,5 +979,63 @@ watch(() => getFieldValue(['plugin_settings', 'alist_encrypt', 'enabled']), (ena
   color: var(--ion-color-danger);
   font-size: 12px;
   font-family: monospace;
+}
+.theme-color-picker {
+  padding: 8px 16px 16px;
+}
+.preset-colors {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.color-dot {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2.5px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.color-dot.active {
+  border-color: var(--ion-text-color, #333);
+  transform: scale(1.15);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.08);
+}
+.custom-color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.custom-color-label {
+  font-size: 13px;
+  color: var(--ion-text-secondary);
+  white-space: nowrap;
+}
+.color-input {
+  width: 40px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--ion-color-medium, #ccc);
+  border-radius: 6px;
+  cursor: pointer;
+  background: none;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.color-input::-webkit-color-swatch-wrapper {
+  padding: 2px;
+}
+.color-input::-webkit-color-swatch {
+  border: none;
+  border-radius: 4px;
+}
+.color-hex {
+  font-size: 13px;
+  font-family: monospace;
+  color: var(--ion-text-secondary);
 }
 </style>
