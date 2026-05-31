@@ -539,12 +539,6 @@ async function handleClose() {
 
 .extra-field-toggle {
   --padding-start: 0;
-  --color: var(--ion-color-primary);
-  --background: var(--ion-toggle-background-off, var(--ion-color-step-200));
-  --background-checked: var(--ion-color-primary, #3880ff);
-  --handle-background: var(--ion-color-step-50, #fff);
-  --handle-background-checked: #fff;
-  --handle-box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .extra-field-item ion-note[slot=helper] {
@@ -569,27 +563,5 @@ async function handleClose() {
 
 .submit-btn:disabled {
   opacity: 0.5;
-}
-</style>
-
-<style>
-/* ion-toggle 暗黑模式修复 — 非 scoped，::part() 需要 */
-.extra-field-toggle::part(track) {
-  background-color: var(--ion-color-step-200, #2c2c2c) !important;
-}
-
-.extra-field-toggle.toggle-checked::part(track),
-.extra-field-toggle[aria-checked="true"]::part(track) {
-  background-color: var(--ion-color-primary, #3880ff) !important;
-}
-
-.extra-field-toggle::part(handle) {
-  background-color: var(--ion-color-primary, #3880ff) !important;
-  border-radius: 50% !important;
-}
-
-.extra-field-toggle.toggle-checked::part(handle),
-.extra-field-toggle[aria-checked="true"]::part(handle) {
-  background-color: #fff !important;
 }
 </style>
