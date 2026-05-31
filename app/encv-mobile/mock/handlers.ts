@@ -32,8 +32,14 @@ export function createHandlers(base: string): { dispatchRequest: Connect.NextHan
       }
 
       if (!fs.existsSync(absPath)) {
+        const parentDir = path.dirname(absPath)
+        let siblings: string[] = []
+        try { siblings = fs.readdirSync(parentDir) } catch {}
         console.error('[MOCK-DECRYPT] file NOT FOUND on disk')
-        return json(res, { error: 'file not found', path: absPath }, 404)
+        return json(res, {
+          error: 'file not found',
+          debug: { receivedFilePath: filePath, resolvedAbsPath: absPath, siblings },
+        }, 404)
       }
 
       const content = fs.readFileSync(absPath)

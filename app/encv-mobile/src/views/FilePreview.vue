@@ -242,7 +242,10 @@ async function loadTextContent() {
     })
     clearTimeout(timeoutId)
 
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`)
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '')
+      throw new Error(`HTTP ${resp.status}: ${resp.statusText}${body ? ' | ' + body : ''}`)
+    }
 
     textContent.value = await resp.text()
   } catch (e: any) {
