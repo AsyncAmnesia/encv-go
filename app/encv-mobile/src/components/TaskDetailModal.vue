@@ -82,6 +82,10 @@
         <div class="section-title error-section-title">
           <ion-icon :icon="closeCircle" color="danger"></ion-icon>
           {{ t('tasks.error') }}
+          <ion-button fill="clear" size="small" class="copy-error-btn" @click="copyErrorDetail">
+            <ion-icon :icon="copyOutline" slot="icon-only" size="small"></ion-icon>
+            {{ copied ? t('tasks.copied') : t('tasks.copyError') }}
+          </ion-button>
         </div>
         <p class="error-msg selectable-text">{{ task.error }}</p>
         <pre v-if="task.errorDetail && task.errorDetail !== task.error" class="error-detail-pre selectable-text">{{ task.errorDetail }}</pre>
@@ -133,7 +137,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import {
   IonPage,
   IonHeader,
@@ -153,13 +157,17 @@ import {
   warningOutline,
   refresh,
   trash,
+  copyOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
+import { copyToClipboard } from '@/composables/useClipboard'
+import { showToast } from '@/composables/useToast'
 import type { EncvTask } from '@/api/encv'
 
 const props = defineProps<{ task: EncvTask }>()
 const { t } = useI18n()
+const copied = ref(false)
 
 const fileName = computed(() => {
   const parts = props.task.sourcePath.split('/')
@@ -247,6 +255,18 @@ function getPhaseLabel(phase: string): string {
     case 'packing': return t('tasks.phasePacking')
     case 'verifying': return t('tasks.phaseVerifying')
     default: return phase
+  }
+}
+
+async function copyErrorDetail() {
+  const text = props.task.errorDetail || props.task.error || ''
+  if (!text) return
+  const ok = await copyToClipboard(text)
+  if (ok) {
+    copied.value = true
+    setTimeout(() => { copied.value = false }, 2000)
+  } else {
+    showToast({ message: t('tasks.copyFailed'), duration: 2000, color: 'danger' })
   }
 }
 
@@ -441,6 +461,15 @@ async function handleRemove() {
 .selectable-text {
   -webkit-user-select: text;
   user-select: text;
+}
+
+.copy-error-btn {
+  margin-left: auto;
+  --color: var(--ion-color-medium);
+  --padding-start: 6px;
+  --padding-end: 6px;
+  font-size: 12px;
+  font-weight: 400;
 }
 
 /* Warning */

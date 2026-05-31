@@ -147,6 +147,9 @@ func (p *AlistEncryptPlugin) PreEncryptProcessor(index types.Index, inputPath, i
 
 func (p *AlistEncryptPlugin) Encrypt(dataReader io.Reader) (*crypto.EncryptionResult, error) {
 	password := p.resolvePassword()
+	if password == "" && p.cfg != nil {
+		password = p.cfg.Password
+	}
 
 	result, err := EncryptToFile(dataReader, password, p.outputDir, &p.settings)
 	if err != nil {
@@ -188,6 +191,9 @@ func (p *AlistEncryptPlugin) Decrypt(containerPath, outputDir string) error {
 	}
 
 	password := p.resolvePassword()
+	if password == "" && p.cfg != nil {
+		password = p.cfg.Password
+	}
 
 	if err := DecryptFile(containerPath, outputDir, password, p.settings.EncType); err != nil {
 		return fmt.Errorf("alist_encrypt decryption failed for '%s': %w", containerPath, err)
@@ -259,5 +265,11 @@ func (p *AlistEncryptPlugin) resolvePasswordWithTaskExtras(extraFields map[strin
 }
 
 func (p *AlistEncryptPlugin) ResolveTaskPassword(taskPassword string, extraFields map[string]string) string {
-	return p.resolvePasswordWithTaskExtras(extraFields)
+	if pw := extraFields["plugin_password"]; pw != "" {
+		return pw
+	}
+	if taskPassword != "" {
+		return taskPassword
+	}
+	return p.resolvePassword()
 }

@@ -131,7 +131,7 @@ export function useNewTaskModal() {
               state.taskType as TaskType,
               state.sourcePath,
               state.targetPath || undefined,
-              undefined,
+              state.primaryOverride || undefined,
               shouldSendVersion ? state.version : undefined,
               pluginName,
               extraPayload,

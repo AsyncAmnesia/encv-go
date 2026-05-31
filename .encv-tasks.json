@@ -5,8 +5,45 @@
     "sourcePath": "/nonexistent/file.mp4",
     "password": "test",
     "pluginName": "alist_encrypt",
+    "status": "failed",
+    "progress": 0,
+    "error": "interrupted by restart",
+    "createdAt": "2026-05-31T19:23:24.529324313Z",
+    "completedAt": "2026-05-31T19:28:28.683016894Z"
+  },
+  {
+    "id": "fc0b3a04-32f8-4196-9593-1b5c40a88ad1",
+    "type": "encrypt",
+    "sourcePath": "/01-plain-media/video/sample.mp4",
+    "pluginName": "alist_encrypt",
+    "status": "failed",
+    "progress": 10,
+    "phase": "initializing",
+    "error": "encryption requires a password",
+    "errorDetail": "encryption requires a password",
+    "createdAt": "2026-05-31T19:34:57.393672845Z",
+    "completedAt": "2026-05-31T19:34:57.749957463Z"
+  },
+  {
+    "id": "d718b74e-bfd5-4c58-a17e-e5b144ea47eb",
+    "type": "encrypt",
+    "sourcePath": "/01-plain-media/video/sample.mp4",
+    "pluginName": "alist_encrypt",
+    "status": "failed",
+    "progress": 10,
+    "phase": "initializing",
+    "error": "encryption requires a password",
+    "errorDetail": "encryption requires a password",
+    "createdAt": "2026-05-31T19:35:43.467370339Z",
+    "completedAt": "2026-05-31T19:35:43.757617919Z"
+  },
+  {
+    "id": "2a97e1d5-5c61-4caa-b04d-e1c0465df597",
+    "type": "encrypt",
+    "sourcePath": "/01-plain-media/video/sample.mp4",
+    "pluginName": "alist_encrypt",
     "status": "queued",
     "progress": 0,
-    "createdAt": "2026-05-31T19:23:24.529324313Z"
+    "createdAt": "2026-05-31T19:36:07.850023531Z"
   }
 ]
