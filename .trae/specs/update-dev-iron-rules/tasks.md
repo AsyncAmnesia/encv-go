@@ -1,62 +1,57 @@
 # Tasks
 
-## Phase 1: 规则文档更新
+## Phase 1: 清理 Mock Handler 代码（核心任务）
 
-- [ ] Task 1: 创建/更新开发铁律规则文档
-  - [ ] SubTask 1.1: 在 `/workspace/.trae/rules/` 下创建或更新开发规范文件
-  - [ ] SubTask 1.2: 添加"严禁 mock 大量 handle"铁律（含正确/错误示例）
-  - [ ] SubTask 1.3: 添加"严禁阻塞式服务启动"铁律（含后台运行示例）
-  - [ ] SubTask 1.4: 添加"Go 程序直接运行"规范（go run vs go build）
-  - [ ] SubTask 1.5: 添加"端口必须正确"铁律（标准端口表 + 冲突检测）
+- [ ] Task 1: 重写 `mock/handlers.ts` 为最小化实现
+  - [ ] SubTask 1.1: 删除 `fileSystemHandler` 函数（94-193 行，10 个文件系统 API）
+  - [ ] SubTask 1.2: 删除 `fileContentHandler` 函数（195-267 行，7 个文件内容 API）
+  - [ ] SubTask 1.3: 精简 `staticJsonHandler` 函数：仅保留 `/health`, `/api/config`, `/api/plugins` 三个端点
+  - [ ] SubTask 1.4: 删除 `taskMockHandler` 函数（358-427 行，4 个任务 API）
+  - [ ] SubTask 1.5: 删除 `staticFileHandler`, `debugControlHandler` 及特殊路由（/decrypt, /preview/*, /api/file/info）
+  - [ ] SubTask 1.6: 替换为最小化实现（≤50 行，3 个端点 + 501 fallback）
 
-- [ ] Task 2: 更新 Capacitor 预览启动文档
-  - [ ] SubTask 2.1: 编写标准化的前后端启动步骤（后端 + Vite + Capacitor）
-  - [ ] SubTask 2.2: 明确端口配置要求（2025 / 5173 / 8100）
-  - [ ] SubTask 2.3: 提供一键启动/停止脚本模板（可选）
+- [ ] Task 2: 更新 mock 模块引用链
+  - [ ] SubTask 2.1: 更新 `mock/index.ts`，移除对已删除函数的 import
+  - [ ] SubTask 2.2: 审计 `mock/file-system.ts` 的使用者，如仅被 handlers 使用则标记 deprecated
+  - [ ] SubTask 2.3: 验证 `vite.config.ts` 无需修改（proxy fallback 已正确）
 
-## Phase 2: 清理错误的 Mock 代码
+## Phase 2: 规范化开发流程文档
 
-- [ ] Task 3: 审计现有 mock 目录
-  - [ ] SubTask 3.1: 列出 `mock/` 目录下所有文件及其 handle mock 数量
-  - [ ] SubTask 3.2: 识别批量 mock 生成逻辑（超过 5 个的批量创建）
-  - [ ] SubTask 3.3: 标记可删除的 mock 代码段
+- [ ] Task 3: 创建/更新开发铁律规则
+  - [ ] SubTask 3.1: 在 `.trae/rules/` 下创建或追加开发规范章节
+  - [ ] SubTask 3.2: 添加"严禁 mock 大量 handle"铁律（含当前 620 行 vs 目标 50 行对比）
+  - [ ] SubTask 3.3: 添加"严禁阻塞式服务启动"铁律（含后台运行示例）
+  - [ ] SubTask 3.4: 添加"Go 程序直接运行"规范（go run vs go build 对比）
+  - [ ] SubTask 3.5: 添加"端口必须正确"铁律（标准端口表 + 错误端口 2026 修正指引）
 
-- [ ] Task 4: 移除多余的 handle mock
-  - [ ] SubTask 4.1: 删除 `mock/handlers.ts`（或类似文件）中的批量 mock 生成器
-  - [ ] SubTask 4.2: 保留 2-3 个核心场景的真实数据 mock
-  - [ ] SubTask 4.3: 更新 `mock/index.ts` 及相关引用，移除对已删除 mock 的依赖
-  - [ ] SubTask 4.4: 确保删除后测试仍能通过（或标记为待修复的集成测试）
+- [ ] Task 4: 编写 Capacitor 预览标准化启动文档
+  - [ ] SubTask 4.1: 基于 `vite.config.ts` 审计结果编写 3 步启动流程
+  - [ ] SubTask 4.2: 明确端口依赖关系（Go 2025 → Vite 5173 → Proxy 转发）
+  - [ ] SubTask 4.3: 提供后台运行命令模板（& / nohup / tmux 三种方式）
 
-## Phase 3: 验证端口和服务配置
+## Phase 3: 验证与测试
 
-- [ ] Task 5: 检查并修正端口配置
-  - [ ] SubTask 5.1: 审计 Go 后端默认端口（应为 2025）
-  - [ ] SubTask 5.2: 审计 Vite proxy 配置（应转发到 localhost:2025）
-  - [ ] SubTask 5.3: 检查是否有硬编码端口号散落在源码中
-  - [ ] SubTask 5.4: 统一端口配置到单一配置文件或环境变量
+- [ ] Task 5: 验证清理后的代码质量
+  - [ ] SubTask 5.1: 统计 `mock/handlers.ts` 行数（目标 < 100 行）
+  - [ ] SubTask 5.2: 统计 Mock API 端点数量（目标 ≤ 3 个）
+  - [ ] SubTask 5.3: 运行 TypeScript 编译检查（`npx vue-tsc --noEmit`）
+  - [ ] SubTask 5.4: 运行现有单元测试（`npm test` 或 `npx vitest run`）
 
-- [ ] Task 6: 验证正确的启动方式
-  - [ ] SubTask 6.1: 测试 `go run ./cmd/encv/ serve --port 2025` 能正常启动
-  - [ ] SubTask 6.2: 测试 `npx vite --port 5173` 能正常启动并代理 API
-  - [ ] SubTask 6.3: 确认服务可在后台运行不阻塞终端
-  - [ ] SubTask 6.4: 编写端口冲突检测逻辑或文档说明
-
-## Phase 4: 文档和脚本（可选增强）
-
-- [ ] Task 7: 创建便捷开发脚本（可选）
-  - [ ] SubTask 7.1: 创建 `scripts/dev-start.sh` 一键启动前后端
-  - [ ] SubTask 7.2: 创建 `scripts/dev-stop.sh` 一键停止所有相关进程
-  - [ ] SubTask 7.3: 脚本中包含端口冲突检查和错误提示
+- [ ] Task 6: 验证正确的服务启动流程
+  - [ ] SubTask 6.1: 测试 `go run ./cmd/encv/ serve --port 2025` 后台启动成功
+  - [ ] SubTask 6.2: 测试 `npx vite --port 5173 --host` 启动并代理到 2025
+  - [ ] SubTask 6.3: 验证前端页面能通过真实后端加载 API 数据
+  - [ ] SubTask 6.4: 检查无硬编码错误端口号（搜索 2026, 8080, 3000 等非标准端口）
 
 # Task Dependencies
 
-- Task 2 depends on Task 1（启动文档依赖规则定义）✅
-- Task 4 depends on Task 3（清理代码依赖审计结果）✅
-- Task 5 depends on Task 1（端口配置依赖规则定义）✅
-- Task 6 depends on Task 5（验证启动方式依赖端口配置正确）✅
-- Task 7 depends on Task 1, Task 5, Task 6（脚本依赖所有配置就绪）✅
+- Task 2 depends on Task 1（引用链更新依赖代码清理完成）✅
+- Task 3 depends on Task 1（规则文档需引用实际代码变更）✅
+- Task 4 depends on Task 1（启动文档需基于清理后的配置）✅
+- Task 5 depends on Task 1, Task 2（验证需在代码清理和引用更新后）✅
+- Task 6 depends on Task 5（服务验证需在代码质量检查通过后）✅
 
 # Parallelizable Work
 
-- Task 1 + Task 3 可并行（规则编写和代码审计独立）✅
-- Task 2 + Task 4 可并行（文档更新和代码清理独立，但需保持一致）⚠️ 建议顺序执行
+- Task 1 可独立执行（核心代码重构）✅
+- Task 3 + Task 4 可并行（文档编写独立于代码验证）⚠️ 建议在 Task 1 后执行以保持一致性
