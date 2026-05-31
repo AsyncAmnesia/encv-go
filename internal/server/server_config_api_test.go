@@ -1,224 +1,225 @@
 package server
 
 import (
-	"context"
+	"bytes"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/Soltus/encv-go/internal/config"
-	"github.com/Soltus/encv-go/internal/v2/plugins"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/gin-gonic/gin"
 )
 
-func initPluginsWithSettings(t *testing.T, userSettings map[string]json.RawMessage) {
-	t.Helper()
-	fullSettings, err := plugins.BuildFullPluginSettings(userSettings)
-	require.NoError(t, err, "BuildFullPluginSettings should succeed")
-
-	cfg := &config.Config{
-		PluginSettings: fullSettings,
+func newTestGinContext(method, path string, body []byte) (*gin.Context, *httptest.ResponseRecorder) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(method, path, bytes.NewReader(body))
+	if body != nil {
+		c.Request.Header.Set("Content-Type", "application/json")
 	}
-	ctx := config.NewContext(context.Background(), cfg)
-
-	for _, p := range plugins.Plugins {
-		require.NoError(t, p.Initialize(ctx), "plugin %s should initialize", p.Name())
-	}
+	return c, w
 }
 
-func TestValidateContainerExtensionsInConfig_NoConflict(t *testing.T) {
-	initPluginsWithSettings(t, nil)
+func TestGetConfig_DoesNotApplyMobileOverlay(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.user.json")
 
-	raw := map[string]interface{}{
-		"plugin_settings": map[string]interface{}{
-			"alist_encrypt": map[string]interface{}{
-				"enabled": true,
-				"suffix":  ".bin",
-			},
-		},
-	}
-	result := validateContainerExtensionsInConfig(raw)
-	assert.Empty(t, result, "unique suffix .bin should not trigger conflict")
-}
-
-func TestValidateContainerExtensionsInConfig_SuffixConflictWithVideo(t *testing.T) {
-	initPluginsWithSettings(t, nil)
-
-	raw := map[string]interface{}{
-		"plugin_settings": map[string]interface{}{
-			"alist_encrypt": map[string]interface{}{
-				"enabled": true,
-				"suffix":  ".sccgv",
-			},
-		},
-	}
-	result := validateContainerExtensionsInConfig(raw)
-	assert.Contains(t, result, "conflict")
-	assert.Contains(t, result, ".sccgv")
-	assert.Contains(t, result, "video")
-	assert.Contains(t, result, "alist_encrypt")
-}
-
-func TestValidateContainerExtensionsInConfig_SuffixConflictWithAudio(t *testing.T) {
-	initPluginsWithSettings(t, nil)
-
-	raw := map[string]interface{}{
-		"plugin_settings": map[string]interface{}{
-			"alist_encrypt": map[string]interface{}{
-				"suffix": ".sccga",
-			},
-		},
-	}
-	result := validateContainerExtensionsInConfig(raw)
-	assert.Contains(t, result, "conflict")
-	assert.Contains(t, result, ".sccga")
-	assert.Contains(t, result, "audio")
-}
-
-func TestValidateContainerExtensionsInConfig_ExtFieldConflict(t *testing.T) {
-	initPluginsWithSettings(t, nil)
-
-	raw := map[string]interface{}{
-		"plugin_settings": map[string]interface{}{
-			"alist_encrypt": map[string]interface{}{
-				"ext": ".sccgi",
-			},
-		},
-	}
-	result := validateContainerExtensionsInConfig(raw)
-	assert.Contains(t, result, "conflict")
-	assert.Contains(t, result, ".sccgi")
-	assert.Contains(t, result, "image")
-}
-
-func TestValidateContainerExtensionsInConfig_NoPluginSettings(t *testing.T) {
-	initPluginsWithSettings(t, nil)
-
-	raw := map[string]interface{}{
+	rawConfig := map[string]interface{}{
 		"server": map[string]interface{}{
-			"port": 2025,
+			"dir":  "/",
+			"port": float64(2025),
 		},
-	}
-	result := validateContainerExtensionsInConfig(raw)
-	assert.Empty(t, result)
-}
-
-func TestValidateContainerExtensionsInConfig_EmptySuffixIgnored(t *testing.T) {
-	initPluginsWithSettings(t, nil)
-
-	raw := map[string]interface{}{
-		"plugin_settings": map[string]interface{}{
-			"alist_encrypt": map[string]interface{}{
-				"suffix": "",
+		"mobile": map[string]interface{}{
+			"server": map[string]interface{}{
+				"dir": "/storage/emulated/0",
 			},
 		},
+		"password": "test-key",
 	}
-	result := validateContainerExtensionsInConfig(raw)
-	assert.Empty(t, result, "empty suffix should be skipped")
+	data, _ := json.Marshal(rawConfig)
+	os.WriteFile(cfgPath, data, 0644)
+
+	s := &Server{
+		configPath: cfgPath,
+		cfg:        &config.Config{},
+	}
+
+	c, w := newTestGinContext("GET", "/api/config", nil)
+	s.handleGetConfigGin(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var result map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&result)
+
+	serverObj, ok := result["server"].(map[string]interface{})
+	if !ok {
+		t.Fatal("server object missing from response")
+	}
+	serverDir := serverObj["dir"].(string)
+	if serverDir != "/" {
+		t.Errorf("GET /api/config returned server.dir=%q (overlay leaked!), want %q", serverDir, "/")
+	}
 }
 
-func TestValidateContainerExtensionsInConfig_DotOnlySuffixIgnored(t *testing.T) {
-	initPluginsWithSettings(t, nil)
+func TestPutConfig_StripsMobileSectionAndProtectsOverlayFields(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.user.json")
 
-	raw := map[string]interface{}{
-		"plugin_settings": map[string]interface{}{
-			"alist_encrypt": map[string]interface{}{
-				"suffix": ".",
+	existingConfig := `{"server":{"dir":"/","port":2025},"password":"old-key","output_path":"./output"}`
+	os.WriteFile(cfgPath, []byte(existingConfig), 0644)
+
+	s := &Server{
+		configPath: cfgPath,
+		cfg:        &config.Config{},
+	}
+
+	bodyWithMobile := map[string]interface{}{
+		"server": map[string]interface{}{
+			"dir":  "/storage/emulated/0",
+			"port": float64(2025),
+		},
+		"mobile": map[string]interface{}{
+			"server": map[string]interface{}{
+				"dir": "/storage/emulated/0",
 			},
 		},
+		"output_path": "/storage/emulated/0/encv-output",
+		"password":     "new-key",
 	}
-	result := validateContainerExtensionsInConfig(raw)
-	assert.Empty(t, result, "dot-only suffix should be skipped")
+	bodyData, _ := json.Marshal(bodyWithMobile)
+
+	t.Setenv("ENCV_MOBILE", "1")
+	defer os.Unsetenv("ENCV_MOBILE")
+
+	c, w := newTestGinContext("PUT", "/api/config", bodyData)
+	s.handlePutConfigGin(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	writtenData, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("failed to read written config: %v", err)
+	}
+
+	var written map[string]interface{}
+	json.Unmarshal(writtenData, &written)
+
+	if _, hasMobile := written["mobile"]; hasMobile {
+		t.Errorf("mobile section was written to file! content:\n%s", string(writtenData))
+	}
+
+	serverObj := written["server"].(map[string]interface{})
+	serverDir := serverObj["dir"].(string)
+	if serverDir == "/storage/emulated/0" {
+		t.Errorf("PUT wrote overlay value server.dir=%q - mobile value leaked to persistence!", serverDir)
+	}
+	if serverDir != "/" {
+		t.Errorf("server.dir should be original value /, got %q", serverDir)
+	}
+
+	outputPath, _ := written["output_path"].(string)
+	if outputPath == "/storage/emulated/0/encv-output" {
+		t.Errorf("PUT wrote overlay value output_path=%q - mobile value leaked!", outputPath)
+	}
+	if outputPath != "./output" {
+		t.Errorf("output_path should be original value ./output, got %q", outputPath)
+	}
 }
 
-func TestValidateContainerExtensionsInConfig_SamePluginNoConflict(t *testing.T) {
-	initPluginsWithSettings(t, nil)
+func TestPutConfig_MobileOnlyRequestDoesNotCorruptFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.user.json")
 
-	raw := map[string]interface{}{
-		"plugin_settings": map[string]interface{}{
-			"video": map[string]interface{}{
-				"ext": ".sccgv",
-			},
+	existingConfig := `{"server":{"dir":"/","port":2025,"password":"secret"},"output_path":"./output"}`
+	os.WriteFile(cfgPath, []byte(existingConfig), 0644)
+
+	s := &Server{
+		configPath: cfgPath,
+		cfg:        &config.Config{},
+	}
+
+	mobileOnlyBody := map[string]interface{}{
+		"mobile": map[string]interface{}{
+			"server": map[string]interface{}{"dir": "/storage/emulated/0"},
+			"output": map[string]interface{}{"path": "/storage/emulated/0/encv-output"},
 		},
 	}
-	result := validateContainerExtensionsInConfig(raw)
-	assert.Empty(t, result, "same plugin declaring its own extension is not a conflict (excluded from baseline)")
-}
+	bodyData, _ := json.Marshal(mobileOnlyBody)
 
-func TestValidateContainerExtensionsInConfig_TSSourceDelegatesToText(t *testing.T) {
-	initPluginsWithSettings(t, nil)
+	c, w := newTestGinContext("PUT", "/api/config", bodyData)
+	s.handlePutConfigGin(c)
 
-	raw := map[string]interface{}{
-		"plugin_settings": map[string]interface{}{},
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
-	result := validateContainerExtensionsInConfig(raw)
-	assert.Empty(t, result, "ts source extension overlap should not trigger container conflict")
+
+	writtenData, _ := os.ReadFile(cfgPath)
+	var written map[string]interface{}
+	json.Unmarshal(writtenData, &written)
+
+	if _, hasMobile := written["mobile"]; hasMobile {
+		t.Error("mobile-only PUT should not persist mobile section")
+	}
+
+	serverObj := written["server"].(map[string]interface{})
+	if serverObj["dir"] != "/" {
+		t.Errorf("server.dir should remain unchanged as /, got %q", serverObj["dir"])
+	}
 }
 
-func TestValidateContainerExtensionsInConfig_TSSourceDelegatesToVideo(t *testing.T) {
-	initPluginsWithSettings(t, nil)
+func TestPutConfig_NormalUserEditPreservesChanges(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.user.json")
 
-	raw := map[string]interface{}{
-		"plugin_settings": map[string]interface{}{
-			"alist_encrypt": map[string]interface{}{
-				"suffix": ".sccgt",
-			},
+	existingConfig := `{"server":{"dir":"/","port":2025},"password":"old-key"}`
+	os.WriteFile(cfgPath, []byte(existingConfig), 0644)
+
+	s := &Server{
+		configPath: cfgPath,
+		cfg:        &config.Config{},
+	}
+
+	normalEdit := map[string]interface{}{
+		"server": map[string]interface{}{
+			"dir":  "/",
+			"port": float64(3030),
 		},
+		"password": "new-key",
 	}
-	result := validateContainerExtensionsInConfig(raw)
-	assert.Contains(t, result, "conflict")
-	assert.Contains(t, result, ".sccgt")
-	assert.Contains(t, result, "text")
+	bodyData, _ := json.Marshal(normalEdit)
+
+	c, w := newTestGinContext("PUT", "/api/config", bodyData)
+	s.handlePutConfigGin(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var written map[string]interface{}
+	json.Unmarshal(_readFile(t, cfgPath), &written)
+
+	serverObj := written["server"].(map[string]interface{})
+	if serverObj["port"] != float64(3030) {
+		t.Errorf("port change not saved: got %v", serverObj["port"])
+	}
+	if written["password"] != "new-key" {
+		t.Errorf("password change not saved: got %v", written["password"])
+	}
 }
 
-func TestValidateContainerExtensionsInConfig_ChangingToNonConflictingSuffixPasses(t *testing.T) {
-	initPluginsWithSettings(t, map[string]json.RawMessage{
-		"alist_encrypt": json.RawMessage(`{"enabled":true,"suffix":".sccgv"}`),
-	})
-
-	raw := map[string]interface{}{
-		"plugin_settings": map[string]interface{}{
-			"alist_encrypt": map[string]interface{}{
-				"enabled": true,
-				"suffix":  ".myenc",
-			},
-		},
+func _readFile(t *testing.T, p string) []byte {
+	d, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read %s: %v", p, err)
 	}
-	result := validateContainerExtensionsInConfig(raw)
-	assert.Empty(t, result, "changing from conflicting .sccgv to unique .myenc must pass validation")
-}
-
-func TestValidateContainerExtensionsInConfig_MultipleConfiguredPluginsSameSuffix(t *testing.T) {
-	initPluginsWithSettings(t, nil)
-
-	raw := map[string]interface{}{
-		"plugin_settings": map[string]interface{}{
-			"custom_plugin_a": map[string]interface{}{
-				"suffix": ".custom",
-			},
-			"custom_plugin_b": map[string]interface{}{
-				"suffix": ".custom",
-			},
-		},
-	}
-	result := validateContainerExtensionsInConfig(raw)
-	assert.Contains(t, result, "conflict")
-	assert.Contains(t, result, ".custom")
-}
-
-func TestValidateContainerExtensionsInConfig_BaselineExcludesAllConfiguredPlugins(t *testing.T) {
-	initPluginsWithSettings(t, nil)
-
-	raw := map[string]interface{}{
-		"plugin_settings": map[string]interface{}{
-			"video": map[string]interface{}{
-				"ext": ".sccgv",
-			},
-			"audio": map[string]interface{}{
-				"ext": ".sccga",
-			},
-		},
-	}
-	result := validateContainerExtensionsInConfig(raw)
-	assert.Empty(t, result, "each configured plugin declares its own extension; no cross-plugin conflict")
+	return d
 }

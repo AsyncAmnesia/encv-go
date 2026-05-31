@@ -31,6 +31,77 @@ func TestSafeURLPathToRelative_NormalPaths(t *testing.T) {
 	}
 }
 
+func TestSafeURLPathToRelative_DoubleEncodedFromGinQuery(t *testing.T) {
+	tests := []struct {
+		name          string
+		ginQueryParam string
+		expectedRel   string
+	}{
+		{
+			name:          "root path double-encoded - the actual mobile bug",
+			ginQueryParam: "%2F",
+			expectedRel:   "",
+		},
+		{
+			name:          "subdir double-encoded",
+			ginQueryParam: "%2FDCIM%2F",
+			expectedRel:   "DCIM",
+		},
+		{
+			name:          "deep path with @ double-encoded (Gin decoded once)",
+			ginQueryParam: "%2F04-boundary-test%2Fspecial-chars-!%40%23%24%25%5E%26*()_%2B.txt",
+			expectedRel:   "04-boundary-test/special-chars-!@#$%^&*()_+.txt",
+		},
+		{
+			name:          "Chinese path double-encoded via Gin",
+			ginQueryParam: "%2F%E4%B8%AD%E6%96%87%E7%9B%AE%E5%BD%95%2F",
+			expectedRel:   "中文目录",
+		},
+		{
+			name:          "path with spaces single-encoded by Gin",
+			ginQueryParam: "/dir/my%20file.txt",
+			expectedRel:   "dir/my file.txt",
+		},
+		{
+			name:          "path with percent literal in filename (triple encoded original)",
+			ginQueryParam: "/dir/file%25name.txt",
+			expectedRel:   "dir/file%name.txt",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := SafeURLPathToRelative(tc.ginQueryParam)
+			if err != nil {
+				t.Fatalf("unexpected error for Gin query param %q: %v", tc.ginQueryParam, err)
+			}
+			if got != tc.expectedRel {
+				t.Errorf("SafeURLPathToRelative(%q) = %q, want %q", tc.ginQueryParam, got, tc.expectedRel)
+			}
+		})
+	}
+}
+
+func TestSafeURLToAbsPath_DoubleEncodedRootBug(t *testing.T) {
+	baseDir := "/storage/emulated/0"
+
+	absPath, err := SafeURLToAbsPath(baseDir, "%2F")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if absPath != baseDir {
+		t.Errorf("double-encoded root resolved to %q, want %q (baseDir)", absPath, baseDir)
+	}
+
+	absPath, err = SafeURLToAbsPath(baseDir, "%2FDCIM%2F")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := baseDir + "/DCIM"
+	if absPath != want {
+		t.Errorf("double-encoded DCIM resolved to %q, want %q", absPath, want)
+	}
+}
+
 func TestDecodePathParam_DoubleEncoding(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -39,13 +39,9 @@ func (s *Server) handleGetConfigGin(c *gin.Context) {
 		return
 	}
 
-	if os.Getenv("ENCV_MOBILE") == "1" || os.Getenv("ENCV_DEV_PREVIEW") == "1" {
-		config.ApplyMobileOverlay(&cfg)
-	}
-
 	out, err := json.Marshal(cfg)
 	if err != nil {
-		slog.Error("Failed to marshal processed config", "error", err)
+		slog.Error("Failed to marshal config", "error", err)
 		c.Data(http.StatusOK, "application/json", data)
 		return
 	}
@@ -82,6 +78,12 @@ func (s *Server) handlePutConfigGin(c *gin.Context) {
 	if errMsg := validateContainerExtensionsInConfig(raw); errMsg != "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
 		return
+	}
+
+	delete(raw, "mobile")
+
+	if os.Getenv("ENCV_MOBILE") == "1" || os.Getenv("ENCV_DEV_PREVIEW") == "1" {
+		sanitizeOverlayTargetFields(raw, s.configPath)
 	}
 
 	existingData, readErr := os.ReadFile(s.configPath)
@@ -208,6 +210,58 @@ func validateWebdavRouteInConfig(raw map[string]interface{}) string {
 		return "webdav root must start with '/'"
 	}
 	return ""
+}
+
+func sanitizeOverlayTargetFields(raw map[string]interface{}, configPath string) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return
+	}
+	var existing map[string]interface{}
+	if json.Unmarshal(data, &existing) != nil {
+		return
+	}
+
+	overlayTargets := []struct {
+		section string
+		field   string
+	}{
+		{"server", "dir"},
+		{"output_path", ""},
+	}
+
+	for _, target := range overlayTargets {
+		if target.section == "output_path" {
+			if incoming, ok := raw["output_path"].(string); ok {
+				if original, hasOrig := existing["output_path"].(string); hasOrig && incoming != original {
+					raw["output_path"] = original
+				}
+			}
+			continue
+		}
+
+		sec, ok := raw[target.section].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		incomingVal, hasIncoming := sec[target.field].(string)
+		if !hasIncoming || incomingVal == "" {
+			continue
+		}
+
+		existingSec, hasExistingSec := existing[target.section].(map[string]interface{})
+		if !hasExistingSec {
+			continue
+		}
+		originalVal, hasOriginal := existingSec[target.field].(string)
+		if !hasOriginal {
+			continue
+		}
+
+		if incomingVal != originalVal {
+			sec[target.field] = originalVal
+		}
+	}
 }
 
 func validateContainerExtensionsInConfig(raw map[string]interface{}) string {
