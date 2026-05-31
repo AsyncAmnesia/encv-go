@@ -571,3 +571,23 @@ async function handleClose() {
   opacity: 0.5;
 }
 </style>
+
+<style>
+/* ion-toggle 暗黑模式修复 — 非 scoped，::part() 需要 */
+.extra-field-toggle::part(track) {
+  background-color: var(--ion-color-step-200, #2c2c2c);
+}
+
+.extra-field-toggle.toggle-checked::part(track) {
+  background-color: var(--ion-color-primary, #3880ff);
+}
+
+.extra-field-toggle::part(handle) {
+  background-color: var(--ion-color-step-50, #fff);
+  border-radius: 50%;
+}
+
+.extra-field-toggle.toggle-checked::part(handle) {
+  background-color: #fff;
+}
+</style>
