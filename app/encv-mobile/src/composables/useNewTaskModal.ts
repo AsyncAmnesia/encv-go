@@ -71,6 +71,10 @@ export function useNewTaskModal() {
       state.filteredExtraFields = visibleExtraFields.value
       if (candidates.value.length > 0) {
         state.taskOptions = candidates.value[selectedPluginIndex.value]?.taskOptions ?? null
+        const defaultVer = candidates.value[selectedPluginIndex.value]?.taskOptions?.defaultVersion
+        if (defaultVer && defaultVer > 0) {
+          state.version = defaultVer
+        }
       }
     }
 
@@ -106,6 +110,12 @@ export function useNewTaskModal() {
           state.selectedPluginIndex = idx
           if (candidates.value.length > 0) {
             state.taskOptions = candidates.value[idx]?.taskOptions ?? null
+            const defaultVer = candidates.value[idx]?.taskOptions?.defaultVersion
+            if (defaultVer && defaultVer > 0) {
+              state.version = defaultVer
+            } else if (!candidates.value[idx]?.taskOptions?.supportVersionSelect) {
+              state.version = 0
+            }
           }
         },
         onSubmit: async () => {
@@ -114,13 +124,17 @@ export function useNewTaskModal() {
           submitting.value = true
           try {
             const pluginName = state.candidates[state.selectedPluginIndex]?.name || state.predictedPlugin || undefined
+            const shouldSendVersion = state.taskType === 'encrypt' && state.taskOptions?.supportVersionSelect
+            const extraPayload = Object.keys(state.extraValues).length > 0 ? state.extraValues : undefined
             await createTask(
               state.taskType as TaskType,
               state.sourcePath,
               state.targetPath || undefined,
               undefined,
-              state.taskType === 'encrypt' ? state.version : undefined,
-              pluginName
+              shouldSendVersion ? state.version : undefined,
+              pluginName,
+              extraPayload,
+              state.secondaryPassword || undefined,
             )
             await modal.dismiss()
             showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })

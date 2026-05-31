@@ -64,23 +64,23 @@ const (
 // TaskOptions 返回该插件在创建加解密任务时需要的选项声明
 // 前端根据此声明动态渲染表单字段，无需硬编码插件特定逻辑
 type TaskOptions struct {
-	PasswordStrategy     PasswordStrategy
-	SupportVersionSelect bool
-	SupportedVersions    []int
-	DefaultVersion       int
-	ExtraFields          []TaskField
+	PasswordStrategy     PasswordStrategy `json:"passwordStrategy"`
+	SupportVersionSelect bool             `json:"supportVersionSelect"`
+	SupportedVersions    []int            `json:"supportedVersions,omitempty"`
+	DefaultVersion       int              `json:"defaultVersion"`
+	ExtraFields          []TaskField      `json:"extraFields,omitempty"`
 }
 
 // TaskField 声明任务创建时的额外输入字段
 type TaskField struct {
-	Key          string   // 字段名，如 "password"
-	Label        string   // 显示标签（i18n key 或直接文本）
-	Type         string   // "string" | "password" | "select" | "bool"
-	Required     bool     // 是否必填
-	DefaultValue string   // 默认值
-	Help         string   // 帮助文本（i18n key）
-	Options      []string // Type="select" 时的可选项
-	Condition    string   // 显示条件: "encrypt" | "decrypt" | ""(始终显示)
+	Key          string   `json:"key"`
+	Label        string   `json:"label"`
+	Type         string   `json:"type"`
+	Required     bool     `json:"required"`
+	DefaultValue string   `json:"defaultValue"`
+	Help         string   `json:"help"`
+	Options      []string `json:"options,omitempty"`
+	Condition    string   `json:"condition,omitempty"`
 }
 
 // TaskPasswordResolver 定义插件自定义主密码解析能力

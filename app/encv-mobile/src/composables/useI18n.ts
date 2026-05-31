@@ -69,7 +69,6 @@ const messages: Record<Locale, Record<string, string>> = {
     'files.newFolderName': '文件夹名称',
     'files.createFolderFailed': '创建文件夹失败',
 
-    'alistEncrypt.decrypt': '解密',
     'alistEncrypt.streamPreview': '流式预览',
     'alistEncrypt.encryptedFile': '加密文件',
     'alistEncrypt.realFilename': '原始名称',
@@ -621,7 +620,6 @@ const messages: Record<Locale, Record<string, string>> = {
     'files.newFolderName': 'Folder name',
     'files.createFolderFailed': 'Failed to create folder',
 
-    'alistEncrypt.decrypt': 'Decrypt',
     'alistEncrypt.streamPreview': 'Stream Preview',
     'alistEncrypt.encryptedFile': 'Encrypted File',
     'alistEncrypt.realFilename': 'Original Name',

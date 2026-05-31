@@ -799,16 +799,20 @@ func (s *Server) handlePluginsGin(c *gin.Context) {
 			SupportedExtensions:   p.SupportedExtensions(),
 			SupportedMimePrefixes: p.SupportedMimePrefixes(),
 			ContainerExtension:    p.GetContainerExtension(),
-			TaskOptions: gin.H{
-				"passwordStrategy":     string(opts.PasswordStrategy),
-				"supportVersionSelect": opts.SupportVersionSelect,
-				"supportedVersions":    opts.SupportedVersions,
-				"defaultVersion":       opts.DefaultVersion,
-				"extraFields":          opts.ExtraFields,
-			},
+			TaskOptions:           taskOptionsToGinH(opts),
 		})
 	}
 	c.JSON(200, gin.H{"plugins": metas})
+}
+
+func taskOptionsToGinH(opts pluginInterfaces.TaskOptions) gin.H {
+	return gin.H{
+		"passwordStrategy":     string(opts.PasswordStrategy),
+		"supportVersionSelect": opts.SupportVersionSelect,
+		"supportedVersions":    opts.SupportedVersions,
+		"defaultVersion":       opts.DefaultVersion,
+		"extraFields":          opts.ExtraFields,
+	}
 }
 
 func (s *Server) handlePredictPluginGin(c *gin.Context) {
@@ -835,9 +839,9 @@ func (s *Server) handlePredictPluginGin(c *gin.Context) {
 			Plugin: targetPlugin, Name: targetPlugin.Name(), MatchType: "container", Priority: 0,
 		}}
 		c.JSON(200, gin.H{
-			"candidates": []gin.H{{"name": targetPlugin.Name(), "matchType": "container", "priority": 0, "taskOptions": opts}},
+			"candidates": []gin.H{{"name": targetPlugin.Name(), "matchType": "container", "priority": 0, "taskOptions": taskOptionsToGinH(opts)}},
 			"pluginName":  targetPlugin.Name(),
-			"taskOptions": opts,
+			"taskOptions": taskOptionsToGinH(opts),
 		})
 		return
 	}
@@ -849,21 +853,21 @@ func (s *Server) handlePredictPluginGin(c *gin.Context) {
 			"name":        cand.Name,
 			"matchType":   cand.MatchType,
 			"priority":    cand.Priority,
-			"taskOptions": opts,
+			"taskOptions": taskOptionsToGinH(opts),
 		})
 	}
 
 	firstName := ""
-	var firstOpts pluginInterfaces.TaskOptions
+	var firstOptsH gin.H
 	if len(candidateList) > 0 {
 		firstName = candidateList[0]["name"].(string)
-		firstOpts = candidateList[0]["taskOptions"].(pluginInterfaces.TaskOptions)
+		firstOptsH = candidateList[0]["taskOptions"].(gin.H)
 	}
 
 	c.JSON(200, gin.H{
 		"candidates": candidateList,
 		"pluginName":  firstName,
-		"taskOptions": firstOpts,
+		"taskOptions": firstOptsH,
 	})
 }
 
