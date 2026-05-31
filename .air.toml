@@ -1,0 +1,30 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  entrypoint = "./.air-run.sh"
+  cmd = "go build -o ./tmp/encv ./cmd/encv"
+  delay = 1000
+  grace_delay = 2000
+  exclude_regex = ["_test\\.go$"]
+  exclude_dir = [
+    "node_modules",
+    ".git",
+    "dist",
+    "output",
+    "tmp",
+    "app/encv-mobile/dist",
+    "app/encv-mobile/node_modules",
+    "plugin-mpv-player",
+    ".trae",
+  ]
+  include_ext = ["go", "mod", "sum"]
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true
+
+[screen]
+  clear_on_rebuild = true
