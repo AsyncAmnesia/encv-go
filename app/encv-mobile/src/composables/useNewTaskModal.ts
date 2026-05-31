@@ -109,6 +109,7 @@ export function useNewTaskModal() {
         onSelectPlugin: (idx: number) => {
           state.selectedPluginIndex = idx
           if (candidates.value.length > 0) {
+            state.predictedPlugin = candidates.value[idx]?.name ?? null
             state.taskOptions = candidates.value[idx]?.taskOptions ?? null
             const defaultVer = candidates.value[idx]?.taskOptions?.defaultVersion
             if (defaultVer && defaultVer > 0) {

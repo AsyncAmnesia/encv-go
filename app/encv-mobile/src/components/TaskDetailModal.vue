@@ -161,6 +161,7 @@ import {
 import { useI18n } from '@/composables/useI18n'
 import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
 import { showToast } from '@/composables/useToast'
+import { copyToClipboard } from '@/composables/useClipboard'
 import type { EncvTask } from '@/api/encv'
 
 const props = defineProps<{ task: EncvTask }>()
@@ -264,21 +265,14 @@ function formatWarningDetail(detail: string): string {
 
 async function copyErrorDetail() {
   const text = props.task.errorDetail || props.task.error || ''
-  try {
-    await navigator.clipboard.writeText(text)
-  } catch {
-    const textarea = document.createElement('textarea')
-    textarea.value = text
-    textarea.style.position = 'fixed'
-    textarea.style.opacity = '0'
-    document.body.appendChild(textarea)
-    textarea.select()
-    document.execCommand('copy')
-    document.body.removeChild(textarea)
+  const ok = await copyToClipboard(text)
+  if (ok) {
+    copied.value = true
+    showToast({ message: t('tasks.copied'), duration: 1200, color: 'success' })
+    setTimeout(() => { copied.value = false }, 2000)
+  } else {
+    showToast({ message: t('tasks.copyFailed'), duration: 1500, color: 'warning' })
   }
-  copied.value = true
-  showToast({ message: t('tasks.copied'), duration: 1200, color: 'success' })
-  setTimeout(() => { copied.value = false }, 2000)
 }
 
 async function handleClose() {

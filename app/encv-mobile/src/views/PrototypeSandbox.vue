@@ -92,6 +92,7 @@ import {
 import { eyeOutline, logoVue, codeSlashOutline, copyOutline } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
+import { copyToClipboard } from '@/composables/useClipboard'
 import { getPrototype } from './prototypes/registry'
 
 const { t } = useI18n()
@@ -156,12 +157,8 @@ watch(activeTab, async (tab) => {
 })
 
 async function copySource(text: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    showToast({ message: t('devtools.copiedCode'), duration: 1500, color: 'success' })
-  } catch {
-    showToast({ message: t('devtools.copyFailed'), duration: 1500, color: 'danger' })
-  }
+  const ok = await copyToClipboard(text)
+  showToast({ message: ok ? t('devtools.copiedCode') : t('devtools.copyFailed'), duration: 1500, color: ok ? 'success' : 'danger' })
 }
 </script>
 

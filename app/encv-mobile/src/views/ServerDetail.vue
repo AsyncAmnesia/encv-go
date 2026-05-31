@@ -142,6 +142,7 @@ import {
 import { useServerStatus } from '@/composables/useServerStatus'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
+import { copyToClipboard as clipboardWrite } from '@/composables/useClipboard'
 import { getServerUrl, fetchConfig } from '@/api/encv'
 import { isNative, requestNotificationPermission, requestStoragePermission, requestBatteryOptimization, checkPermissions } from '@/plugins/GoProcess'
 
@@ -181,12 +182,8 @@ function goAdminServer() { router.push('/tabs/settings/server/admin') }
 function goWebdavServer() { router.push('/tabs/settings/server/webdav') }
 
 async function copyToClipboard(text: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    showToast({ message: t('remote.copied'), duration: 1000, color: 'success' })
-  } catch {
-    showToast({ message: t('devlogs.copyFailed'), duration: 1500, color: 'danger' })
-  }
+  const ok = await clipboardWrite(text)
+  showToast({ message: ok ? t('remote.copied') : t('devlogs.copyFailed'), duration: 1000, color: ok ? 'success' : 'danger' })
 }
 
 async function refreshPermissions() {

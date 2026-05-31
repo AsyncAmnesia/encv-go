@@ -479,6 +479,7 @@ import {
 import { vLongpress } from '@/directives/longpress'
 import { isNative, requestStoragePermission, openPlayer, openExternal, getLocalFilePath } from '@/plugins/GoProcess'
 import { getExternalStreamUrl } from '@/api/encv'
+import { copyToClipboard } from '@/composables/useClipboard'
 import { showToast } from '@/composables/useToast'
 import { Share } from '@capacitor/share'
 import { PLAY_MODE, type PlayMode, VIDEO_DEFAULT, AUDIO_DEFAULT } from '@/constants/player'
@@ -1082,7 +1083,7 @@ async function handleShare(file: FileItem) {
       }
     } catch (e) { showToast({ message: '分享失败或已取消' }) }
   } else {
-    navigator.clipboard.writeText(getExternalStreamUrl(file.path)).then(() => showToast({ message: '链接已复制到剪贴板' })).catch(() => showToast({ message: '复制失败' }))
+    copyToClipboard(getExternalStreamUrl(file.path)).then(ok => showToast({ message: ok ? '链接已复制到剪贴板' : '复制失败', color: ok ? 'success' : 'danger' }))
   }
 }
 

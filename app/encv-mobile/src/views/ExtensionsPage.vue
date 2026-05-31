@@ -142,6 +142,7 @@ import { useI18n } from '@/composables/useI18n'
 import { Capacitor } from '@capacitor/core'
 import { isNative, pickAndInstallPlugin, checkInstalledPlugins, debugInstallFlow, debugKotlinReflect, debugApkValidation, debugValidationStrategy, togglePluginEnabled, uninstallPlugin, debugLifecycleFlow } from '@/plugins/GoProcess'
 import { showToast } from '@/composables/useToast'
+import { copyToClipboard } from '@/composables/useClipboard'
 
 const { t } = useI18n()
 
@@ -292,12 +293,8 @@ async function showDebugResult(header: string, result: Record<string, any>) {
       {
         text: '复制',
         handler: async () => {
-          try {
-            await navigator.clipboard.writeText(debugText)
-            showToast({ message: '已复制诊断信息', duration: 1500, color: 'success' })
-          } catch {
-            showToast({ message: '复制失败', duration: 1500, color: 'danger' })
-          }
+          const ok = await copyToClipboard(debugText)
+          showToast({ message: ok ? '已复制诊断信息' : '复制失败', duration: 1500, color: ok ? 'success' : 'danger' })
           return false
         },
       },
