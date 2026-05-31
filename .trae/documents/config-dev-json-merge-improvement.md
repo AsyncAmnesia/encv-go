@@ -3,107 +3,70 @@
 ## 一、现状分析
 
 ### 当前问题
-1. **无团队共享的 dev 配置模板**：开发者各自维护完整的 `config.user.json`，新成员接入成本高
-2. **配置文件是全量副本**：`config.user.json` 包含所有字段（~76 行），任何变更需要同步两处
-3. **无分层合并机制**：`FindConfigPath()` 只查找单一 `config.user.json`，不支持 base + override 模式
-
-### 当前配置加载流程
-```
-FindConfigPath() → 只查找 config.user.json → Load() → json.Unmarshal 覆盖默认值
-```
+1. **无团队共享的 dev 配置**：新开发者接入时需要从零配置 `config.user.json`
+2. **`config.user.json` 是全量副本**：76 行完整配置，维护成本高
+3. **无分层合并机制**：`FindConfigPath()` 只查找单一 `config.user.json`
 
 ### 关键文件
-| 文件 | 作用 |
-|------|------|
-| [config.go](internal/config/config.go) | 配置结构体定义、`Load()`、`FindConfigPath()`、`DefaultConfig()` |
-| [config.user.json](config.user.json) | 当前开发者个人全量配置（含密码等敏感信息） |
-| [.gitignore](.gitignore) | 未显式忽略 `config.dev.json`（但 `config.user.json` 也未忽略，存在风险） |
+| 文件 | 作用 | Git 状态 |
+|------|------|----------|
+| [config.go](internal/config/config.go) | 配置加载逻辑 | 已提交 |
+| [config.user.json](config.user.json) | 开发者全量配置 | **保持提交（不忽略）** |
+| [.gitignore](.gitignore) | 忽略规则 | **不添加 config 相关规则** |
 
 ---
 
 ## 二、改进目标
 
-1. **新增 `config.dev.json`**：提交到 Git，作为团队共享的开发基准配置（仅包含与默认值不同的开发环境必要字段）
-2. **实现两层合并加载**：`config.base.json`(可选) / `config.dev.json` → `config.user.json`(个人覆盖)
-3. **最小化 dev 配置体积**：dev 文件只保留差异化字段（预计 ~20 行 vs 当前 76 行）
+1. **新增 `config.dev.json`**：提交到 Git，**仅包含 `mobile.server_dir`**（极简 ~5 行）
+2. **实现合并覆盖**：`config.dev.json` → `config.user.json`（user 覆盖 dev）
+3. **两个文件都提交 Git**：接力开发复用，都不加入 `.gitignore`
 
 ---
 
 ## 三、详细实现步骤
 
-### Step 1: 创建 `config.dev.json`（团队共享）
+### Step 1: 创建 `config.dev.json`（极简）
 
 **文件路径**: `/workspace/config.dev.json`
-**加入 Git**: 不加入 `.gitignore`（这是核心需求）
-**内容原则**: 仅包含开发环境必要的**差异字段**，其余继承 `DefaultConfig()`
+**Git 状态**: 提交（不加入 `.gitignore`）
+**内容**: 仅包含移动端开发必需的 `server_dir` 字段
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/Soltus/encv-go/main/config.schema.json",
-  "password": "dev-password",
-  "log": {
-    "level": "debug"
-  },
-  "server": {
-    "port": 2025,
-    "dir": "./"
-  },
-  "admin": {
-    "password": "123456"
-  },
-  "proxy": {
-    "sites": {
-      "pc": { "host": "http://localhost:5244", "description": "本地 OpenList" }
-    }
-  },
-  "plugin_settings": {
-    "video": { "ext": ".sccgv" },
-    "audio": { "ext": ".sccga" },
-    "image": { "ext": ".sccgi" },
-    "text": { "ext": ".sccgt" },
-    "wps": { "ext": ".sccgwps" },
-    "pdf": { "ext": ".sccgpdf" }
+  "mobile": {
+    "server_dir": "/storage/emulated/0"
   }
 }
 ```
 
 **设计决策**：
-- `output_path` 使用默认值 `"./encrypted"`，不覆盖
-- `webdav` 使用默认空值（开发时可能不需要）
-- `mobile` 段不在此文件中（纯后端开发不需要）
-- `recover`、`strict_deprecated_version` 等使用 Go 默认零值
+- 只有 `mobile.server_dir` 一个差异化字段
+- 其余全部继承 `DefaultConfig()` 或被 `config.user.json` 覆盖
+- 新开发者 clone 后直接可用（移动端开发场景）
 
-### Step 2: 更新 `.gitignore` — 保护敏感配置
+### Step 2: `.gitignore` 无需修改
 
-**修改文件**: `/workspace/.gitignore`
+确认 `.gitignore` 中**不出现**以下任何条目：
+- ~~`config.user.json`~~ ❌ 不添加
+- ~~`config.dev.json`~~ ❌ 不添加
 
-在末尾添加：
-```gitignore
-# 用户个人配置（含真实密码/路径），不提交
-config.user.json
-```
+两个配置文件都作为项目的一部分提交到版本控制。
 
-**同时确认**：`config.dev.json` **不出现**在 `.gitignore` 中（满足需求 #1）
-
-### Step 3: 实现配置合并加载逻辑
+### Step 3: 实现合并加载逻辑
 
 **修改文件**: `/workspace/internal/config/config.go`
 
-#### 3.1 新增 `mergeConfig()` 函数
+#### 3.1 新增 `mergeConfig()` — JSON Merge Patch（RFC 7386 简化版）
 
 ```go
-// mergeConfig 将 overlay 中的非零值字段合并到 base 上
-// 遵循 JSON merge patch 语义（RFC 7386 简化版）：
-//   - nil/zero 值不覆盖（保留 base 的值）
-//   - object 类型递归合并
-//   - 数组/标量类型直接替换
+// mergeConfig 将 overlay 中的字段递归合并到 base 上
+// 语义：
+//   - null 值不覆盖（保留 base）
+//   - object 递归合并
+//   - 标量/数组直接替换
 func mergeConfig(base, overlay *Config) *Config {
     if overlay == nil {
-        return base
-    }
-
-    overlayData, err := json.Marshal(overlay)
-    if err != nil {
         return base
     }
 
@@ -111,277 +74,196 @@ func mergeConfig(base, overlay *Config) *Config {
     if err != nil {
         return base
     }
-
-    merged := make(map[string]interface{})
-    if err := json.Unmarshal(baseData, &merged); err != nil {
-        return base
-    }
-
-    var overlayMap map[string]interface{}
-    if err := json.Unmarshal(overlayData, &overlayMap); err != nil {
-        return base
-    }
-
-    deepMerge(merged, overlayMap)
-
-    resultData, err := json.Marshal(merged)
+    overlayData, err := json.Marshal(overlay)
     if err != nil {
         return base
     }
 
-    var result Config
-    if err := json.Unmarshal(resultData, &result); err != nil {
+    var baseMap, overlayMap map[string]interface{}
+    if json.Unmarshal(baseData, &baseMap) != nil || json.Unmarshal(overlayData, &overlayMap) != nil {
         return base
     }
 
-    // 保持 Provider 引用（json:"-" 字段不会被序列化）
-    result.Provider = base.Provider
+    deepMerge(baseMap, overlayMap)
 
+    resultData, _ := json.Marshal(baseMap)
+    var result Config
+    if json.Unmarshal(resultData, &result) != nil {
+        return base
+    }
+    result.Provider = base.Provider // json:"-" 字段保护
     return &result
 }
 
-// deepMerge 递归合并两个 map，overlay 中的非 nil 值覆盖 base
 func deepMerge(base, overlay map[string]interface{}) {
-    for key, ov := range overlay {
+    for k, ov := range overlay {
         if ov == nil {
-            continue // nil 值不覆盖（JSON merge patch 语义）
-        }
-
-        bv, exists := base[key]
-        if !exists {
-            base[key] = ov
             continue
         }
-
-        bvMap, bIsMap := bv.(map[string]interface{})
-        ovMap, oIsMap := ov.(map[string]interface{})
-
-        if bIsMap && oIsMap {
-            deepMerge(bvMap, ovMap) // 递归合并嵌套对象
+        bv, ok := base[k]
+        if !ok {
+            base[k] = ov
+            continue
+        }
+        bm, bo := bv.(map[string]interface{})
+        om, oo := ov.(map[string]interface{})
+        if bo && oo {
+            deepMerge(bm, om)
         } else {
-            base[key] = ov // 标量/数组直接替换
+            base[k] = ov
         }
     }
 }
 ```
 
-#### 3.2 新增 `loadWithMerge()` 函数
+#### 3.2 修改 `Load()` — 支持自动查找 + 合并
 
 ```go
-// loadWithMerge 按优先级加载并合并多层配置文件
-// 加载顺序（低→高优先级）：
-//   1. DefaultConfig()                    — Go 代码硬编码默认值
-//   2. config.dev.json（如果存在）         — 团队共享的开发基准
-//   3. config.user.json（如果存在）       — 个人覆盖（最高优先级）
-//
-// 返回最终合并后的配置
-func loadWithMerge(devPath, userPath string) (*Config, error) {
+// Load 加载配置。优先级（低→高）：
+//   DefaultConfig() → config.dev.json → config.user.json
+// 显式指定路径时走单文件模式（向后兼容）
+func Load(configPath string) (*Config, error) {
     cfg := DefaultConfig()
 
-    // Layer 1: 合并 config.dev.json
-    if devData, err := os.ReadFile(devPath); err == nil {
-        var devCfg Config
-        if err := json.Unmarshal(devData, &devCfg); err == nil {
-            cfg = mergeConfig(cfg, &devCfg)
-            slog.Info("Merged config.dev.json", "path", devPath)
-        }
+    if configPath != "" {
+        return loadSingleFile(cfg, configPath)
     }
 
-    // Layer 2: 合并 config.user.json（个人覆盖）
-    if userData, err := os.ReadFile(userPath); err == nil {
-        var userCfg Config
-        if err := json.Unmarshal(userData, &userCfg); err == nil {
-            cfg = mergeConfig(cfg, &userCfg)
-            slog.Info("Merged config.user.json (personal override)", "path", userPath)
-        }
+    candidates := findMergeCandidates()
+    if candidates == nil {
+        slog.Info("No config files found, using defaults")
+        return finalize(cfg), nil
     }
 
-    // 后处理（保持现有逻辑不变）
-    if cfg.Server.Dir == "/" {
-        if wd, err := os.Getwd(); err == nil {
-            cfg.Server.Dir = wd
-        }
+    if candidates.Dev != "" {
+        cfg = loadAndMerge(cfg, candidates.Dev)
+    }
+    if candidates.User != "" {
+        cfg = loadAndMerge(cfg, candidates.User)
     }
 
-    if os.Getenv("ENCV_MOBILE") == "1" && cfg.Mobile != nil {
-        ApplyMobileOverrides(cfg)
-    }
-
-    slog.Info("Configuration loaded with merge strategy",
-        "dev_config", fileExists(devPath),
-        "user_config", fileExists(userPath),
-        "log_level", cfg.Log.Level)
-
-    return cfg, nil
+    return finalize(cfg), nil
 }
 
-func fileExists(path string) bool {
-    _, err := os.Stat(path)
-    return err == nil
-}
-```
-
-#### 3.3 修改 `FindConfigPath()` — 返回多个候选路径
-
-```go
-// ConfigCandidates 表示找到的配置文件候选列表
-type ConfigCandidates struct {
-    DevPath  string // config.dev.json 路径（可能为空）
-    UserPath string // config.user.json 路径（可能为空）
+type mergeCandidates struct {
+    Dev  string
+    User string
 }
 
-// FindConfigPaths 查找所有可用的配置文件（dev + user）
-// 替代原 FindConfigPath 的单文件查找逻辑
-func FindConfigPaths(flagPath string) (*ConfigCandidates, error) {
-    candidates := &ConfigCandidates{}
-
-    // 确定搜索目录（从 flag/env/cwd/exe 中选）
-    searchDirs := resolveSearchDirs(flagPath)
-
-    for _, dir := range searchDirs {
-        // 同时查找 dev 和 user 配置
-        devPath := filepath.Join(dir, "config.dev.json")
-        userPath := filepath.Join(dir, "config.user.json")
-
-        if candidates.UserPath == "" && fileExists(userPath) {
-            candidates.UserPath = userPath
+func findMergeCandidates() *mergeCandidates {
+    dirs := searchDirs()
+    var c mergeCandidates
+    for _, dir := range dirs {
+        if c.Dev == "" && exists(filepath.Join(dir, "config.dev.json")) {
+            c.Dev = filepath.Join(dir, "config.dev.json")
         }
-        if candidates.DevPath == "" && fileExists(devPath) {
-            candidates.DevPath = devPath
+        if c.User == "" && exists(filepath.Join(dir, "config.user.json")) {
+            c.User = filepath.Join(dir, "config.user.json")
         }
-
-        // 如果都找到了，提前退出
-        if candidates.DevPath != "" && candidates.UserPath != "" {
+        if c.Dev != "" && c.User != "" {
             break
         }
     }
-
-    // 至少要找到一个配置源
-    if candidates.DevPath == "" && candidates.UserPath == "" {
-        return nil, fmt.Errorf("no config file found (tried config.dev.json and config.user.json)")
+    if c.Dev == "" && c.User == "" {
+        return nil
     }
-
-    return candidates, nil
+    return &c
 }
 
-// resolveSearchDirs 解析配置文件搜索目录列表（复用原有逻辑）
-func resolveSearchDirs(flagPath string) []string {
-    var dirs []string
-
-    // 1. 命令行标志
-    if flagPath != "" {
-        dirs = append(dirs, filepath.Dir(flagPath))
-        return dirs
-    }
-
-    // 2. 环境变量
-    if envPath := os.Getenv("ENCV_CONFIG_PATH"); envPath != "" {
-        dirs = append(dirs, filepath.Dir(envPath))
-        return dirs
-    }
-
-    // 3. 当前工作目录
-    if wd, err := os.Getwd(); err == nil {
-        dirs = append(dirs, wd)
-    }
-
-    // 4. 可执行文件目录
-    if exePath, err := os.Executable(); err == nil {
-        dirs = append(dirs, filepath.Dir(exePath))
-    }
-
-    return dirs
-}
-```
-
-#### 3.4 修改 `Load()` 函数入口
-
-保持向后兼容，`Load(configPath)` 仍然支持单文件模式（用于生产环境）：
-
-```go
-// Load 从指定的文件路径加载配置（向后兼容的单文件模式）
-// 如果传入空字符串，自动走新的多文件合并流程
-func Load(configPath string) (*Config, error) {
-    // 向后兼容：显式指定了路径 → 单文件模式（生产环境）
-    if configPath != "" {
-        return loadSingleFile(configPath)
-    }
-
-    // 新流程：自动查找并合并多层配置
-    candidates, err := FindConfigPaths("")
+func loadAndMerge(base *Config, path string) *Config {
+    data, err := os.ReadFile(path)
     if err != nil {
-        slog.Warn("No config files found, using defaults")
-        cfg := DefaultConfig()
-        if os.Getenv("ENCV_MOBILE") == "1" && cfg.Mobile != nil {
-            ApplyMobileOverrides(cfg)
-        }
-        return cfg, nil
+        return base
     }
-
-    return loadWithMerge(candidates.DevPath, candidates.UserPath)
+    var overlay Config
+    if json.Unmarshal(data, &overlay) != nil {
+        return base
+    }
+    return mergeConfig(base, &overlay)
 }
 
-// loadSingleFile 原有的单文件加载逻辑（生产环境使用）
-func loadSingleFile(configPath string) (*Config, error) {
-    cfg := DefaultConfig()
-
-    data, err := os.ReadFile(configPath)
+func loadSingleFile(cfg *Config, path string) (*Config, error) {
+    data, err := os.ReadFile(path)
+    if os.IsNotExist(err) {
+        return finalize(cfg), nil
+    }
     if err != nil {
-        if os.IsNotExist(err) {
-            return cfg, nil
-        }
-        return nil, fmt.Errorf("failed to read config file '%s': %w", configPath, err)
+        return nil, fmt.Errorf("failed to read '%s': %w", path, err)
     }
-
-    if err := json.Unmarshal(data, cfg); err != nil {
-        return nil, fmt.Errorf("failed to parse config file '%s': %w", configPath, err)
+    if json.Unmarshal(data, cfg) != nil {
+        return nil, fmt.Errorf("failed to parse '%s': %w", path, err)
     }
+    return finalize(cfg), nil
+}
 
+// finalize 执行 Load 的后处理逻辑（Server.Dir 规整 + MobileOverrides）
+func finalize(cfg *Config) *Config {
     if cfg.Server.Dir == "/" {
         cfg.Server.Dir, _ = os.Getwd()
     }
-
     if os.Getenv("ENCV_MOBILE") == "1" && cfg.Mobile != nil {
         ApplyMobileOverrides(cfg)
     }
-
-    return cfg, nil
+    return cfg
 }
+
+func searchDirs() []string {
+    var dirs []string
+    if wd, _ := os.Getwd(); wd != "" {
+        dirs = append(dirs, wd)
+    }
+    if exe, _ := os.Executable(); exe != "" {
+        dirs = append(dirs, filepath.Dir(exe))
+    }
+    return dirs
+}
+
+func exists(p string) bool { _, err := os.Stat(p); return err == nil }
 ```
 
-### Step 4: 更新调用方
+#### 3.3 保持向后兼容的 API
 
-**需检查的调用点**（通过 grep 确认）：
+原有调用方式无需改动：
 
-```bash
-grep -r "config\.Load\|config\.FindConfigPath\|FindConfigPath" --include="*.go"
+```go
+// 生产环境：显式指定路径 → 单文件模式（不变）
+cfg, err := config.Load("/etc/encv/config.json")
+
+// 开发环境：自动查找 → 合并模式（新增能力）
+cfg, err := config.Load("")  // 自动查找 dev + user 并合并
 ```
-
-预期修改点：
-- `cmd/encv/start.go` 或类似入口文件中的 `config.Load("")` 调用
-- 无需改动调用签名（`Load("")` 自动走新流程）
-
-### Step 5: 更新移动端 assets 中的配置
-
-**文件**: `/workspace/app/encv-mobile/android/app/src/main/assets/config.user.json`
-
-当前此文件是压缩格式的完整配置。考虑是否也需要支持 dev 合并：
-- 移动端场景特殊（assets 打包），暂维持现状
-- 或将 `config.dev.json` 也打入 assets 作为 baseline
-
-**建议**：移动端暂不变，后续单独评估。
 
 ---
 
-## 四、合并策略语义表
+## 四、合并效果示例
 
-| overlay 值 | base 值 | 结果 | 说明 |
-|-----------|---------|------|------|
-| `{ "port": 3000 }` | `{ "port": 1999 }` | `3000` | 标量替换 |
-| `{ "level": "debug" }` | `{ "level": "info" }` | `"debug"` | 字符串替换 |
-| `{ "sites": { "pc": {...} } }` | `{ "sites": {} }` | `{ "sites": { "pc": {...} } }` | 对象递归合并 |
-| `{}` (空对象) | `{ "dir": "/tmp" }` | `{ "dir": "/tmp" }` | 空对象不删除已有 key |
-| `null` | `{ "port": 1999 }` | `{ "port": 1999 }` | null 不覆盖（RFC 7386） |
+### 场景：新开发者 clone 后直接运行
+
+```
+DefaultConfig():
+  server.port=1999, server.dir="./", output_path="./encrypted", log.level="info"
+  mobile=nil, plugin_settings={}
+
+↓ 合并 config.dev.json (仅 mobile.server_dir):
+  server.port=1999, server.dir="./", output_path="./encrypted", log.level="info"
+  mobile.server_dir="/storage/emulated/0"
+
+↓ 再合并 config.user.json (如果存在):
+  ... user 文件中的字段覆盖上面的值 ...
+```
+
+### 场景：只有 dev 没有 user
+
+```
+DefaultConfig() → config.dev.json → 最终配置
+(省略的字段保持默认值)
+```
+
+### 场景：生产环境显式指定路径
+
+```
+Load("/etc/encv/config.json") → 单文件模式，不走合并（完全不变）
+```
 
 ---
 
@@ -389,22 +271,20 @@ grep -r "config\.Load\|config\.FindConfigPath\|FindConfigPath" --include="*.go"
 
 | 操作 | 文件 | 说明 |
 |------|------|------|
-| **新建** | `config.dev.json` | 团队共享 dev 配置（~20 行，仅差异字段） |
-| **修改** | `.gitignore` | 添加 `config.user.json` 忽略规则 |
-| **修改** | `internal/config/config.go` | 新增 `mergeConfig()`、`deepMerge()`、`loadWithMerge()`、`FindConfigPaths()`；重构 `Load()` 入口 |
+| **新建** | `config.dev.json` | 极简 dev 配置（仅 `mobile.server_dir`，~5 行） |
+| **不修改** | `.gitignore` | 两个 config 文件都提交 Git |
+| **修改** | `internal/config/config.go` | 新增 `mergeConfig()`、`deepMerge()`、`loadAndMerge()`、`findMergeCandidates()`；重构 `Load()` 入口 |
 
 ---
 
 ## 六、验证清单
 
-- [ ] `config.dev.json` 可被 `git status` 显示为 untracked/new（未被忽略）
-- [ ] `config.user.json` 被 `.gitignore` 忽略
+- [ ] `config.dev.json` 和 `config.user.json` 都不被 `.gitignore` 忽略
 - [ ] 无 `config.dev.json` 时行为与原来完全一致（向后兼容）
-- [ ] 只有 `config.dev.json` 无 `config.user.json` 时正确加载 dev 配置
-- [ ] 两者都存在时 `config.user.json` 的同名字段覆盖 dev
-- [ ] `config.dev.json` 中省略的字段使用 `DefaultConfig()` 默认值
-- [ ] 生产环境显式指定 `Load("/etc/encv/config.json")` 走单文件模式不受影响
-- [ ] `ApplyMobileOverrides()` 在合并之后仍正确执行
-- [ ] `Provider` 字段（`json:"-"`）在合并过程中不丢失
+- [ ] 只有 `config.dev.json` 时正确合并（mobile.server_dir 生效，其余用默认值）
+- [ ] `config.dev.json` + `config.user.json` 都存在时 user 覆盖 dev
+- [ ] `Load("/explicit/path.json")` 走单文件模式不受影响
+- [ ] `ApplyMobileOverrides()` 在合并后仍正确执行
+- [ ] `Provider`（`json:"-"`）在合并中不丢失
 - [ ] `go build ./...` 编译通过
-- [ ] `go test ./internal/config/...` 测试通过（如有）
+- [ ] `go test ./internal/config/...` 测试通过
