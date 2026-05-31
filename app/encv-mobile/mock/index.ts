@@ -69,7 +69,8 @@ export function createMockPlugin(): Plugin {
 
         mockActive = true
 
-        for (const [pattern, handler] of Object.entries(handlers)) {
+        const sorted = Object.entries(handlers).sort((a, b) => b[0].length - a[0].length)
+        for (const [pattern, handler] of sorted) {
           if (url.startsWith(pattern) || url.startsWith(`${server.config.base}${pattern.slice(1)}`)) {
             handler(req, res, next)
             return
