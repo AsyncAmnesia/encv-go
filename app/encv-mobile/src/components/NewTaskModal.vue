@@ -103,8 +103,8 @@
         />
       </div>
 
-      <!-- 密码字段 -->
-      <div class="form-section password-section">
+      <!-- 密码字段（仅 PasswordGlobal 策略显示） -->
+      <div v-if="!taskOpts || taskOpts.passwordStrategy === 'global'" class="form-section password-section">
         <ion-item lines="none" class="password-item">
           <ion-input
             :model-value="pwdPrimary"
@@ -127,14 +127,14 @@
         </ion-item>
       </div>
 
-      <!-- 额外字段 -->
+      <!-- 额外字段（声明式渲染，包括插件独立密码等） -->
       <template v-for="field in extraFlds" :key="field.key">
         <ion-item v-if="!field.condition || field.condition === taskType" lines="none" class="extra-field-item">
           <ion-input
             :model-value="getExtra(field.key)"
             @ionInput="(e: any) => { emit('updateExtraValue', { key: field.key, value: e.detail.value }); props.onUpdateExtraValue?.({ key: field.key, value: e.detail.value }) }"
             :label="field.label"
-            type="text"
+            :type="field.type === 'password' ? 'password' : 'text'"
             :placeholder="field.help"
           ></ion-input>
         </ion-item>

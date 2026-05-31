@@ -550,10 +550,6 @@ func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputR
 		vp.SetOutputDir(outputDir)
 	}
 
-	if err := plugin.Initialize(ctx); err != nil {
-		return fmt.Errorf("failed to initialize plugin for encryption: %w", err)
-	}
-
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("EncryptFileWithPlugin panicked", "path", inputPath, "panic", r)
@@ -611,9 +607,6 @@ func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputR
 
 // DecryptContainerWithPlugin 是一个新的辅助函数，封装了完整的解密流程
 func DecryptContainerWithPlugin(ctx context.Context, plugin Plugin, containerPath, outputDir string) error {
-	if err := plugin.Initialize(ctx); err != nil {
-		return fmt.Errorf("failed to initialize plugin for decryption: %w", err)
-	}
 	if err := plugin.PreDecryptProcessor(containerPath, outputDir); err != nil {
 		return fmt.Errorf("pre-decryption failed for '%s': %w", containerPath, err)
 	}

@@ -127,15 +127,17 @@ export function useNewTaskModal() {
             const pluginName = state.candidates[state.selectedPluginIndex]?.name || state.predictedPlugin || undefined
             const shouldSendVersion = state.taskType === 'encrypt' && state.taskOptions?.supportVersionSelect
             const extraPayload = Object.keys(state.extraValues).length > 0 ? state.extraValues : undefined
+            const passwordStrategy = state.taskOptions?.passwordStrategy
+            const shouldSendPassword = !passwordStrategy || passwordStrategy === 'global'
             await createTask(
               state.taskType as TaskType,
               state.sourcePath,
               state.targetPath || undefined,
-              state.primaryOverride || undefined,
+              shouldSendPassword ? (state.primaryOverride || undefined) : undefined,
               shouldSendVersion ? state.version : undefined,
               pluginName,
               extraPayload,
-              state.secondaryPassword || undefined,
+              shouldSendPassword ? (state.secondaryPassword || undefined) : undefined,
             )
             await modal.dismiss()
             showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })

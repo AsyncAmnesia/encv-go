@@ -19,11 +19,12 @@ import (
 )
 
 type AlistEncryptPlugin struct {
-	ctx        context.Context
-	cfg        *config.Config
-	settings   AlistEncryptPluginConfig
-	outputDir  string
-	inputPath  string
+	ctx            context.Context
+	cfg            *config.Config
+	settings       AlistEncryptPluginConfig
+	outputDir      string
+	inputPath      string
+	taskExtraFields map[string]string
 }
 
 func (p *AlistEncryptPlugin) Name() string {
@@ -146,10 +147,7 @@ func (p *AlistEncryptPlugin) PreEncryptProcessor(index types.Index, inputPath, i
 }
 
 func (p *AlistEncryptPlugin) Encrypt(dataReader io.Reader) (*crypto.EncryptionResult, error) {
-	password := p.resolvePassword()
-	if password == "" && p.cfg != nil {
-		password = p.cfg.Password
-	}
+	password := p.resolvePasswordFromTask()
 
 	result, err := EncryptToFile(dataReader, password, p.outputDir, &p.settings)
 	if err != nil {
@@ -190,10 +188,7 @@ func (p *AlistEncryptPlugin) Decrypt(containerPath, outputDir string) error {
 		return &alistencrypt.DecryptionError{Reason: "invalid format: extension mismatch", Err: alistencrypt.ErrInvalidFormat}
 	}
 
-	password := p.resolvePassword()
-	if password == "" && p.cfg != nil {
-		password = p.cfg.Password
-	}
+	password := p.resolvePasswordFromTask()
 
 	if err := DecryptFile(containerPath, outputDir, password, p.settings.EncType); err != nil {
 		return fmt.Errorf("alist_encrypt decryption failed for '%s': %w", containerPath, err)
@@ -257,6 +252,19 @@ func (p *AlistEncryptPlugin) resolvePassword() string {
 	return ""
 }
 
+func (p *AlistEncryptPlugin) resolvePasswordFromTask() string {
+	if p.taskExtraFields != nil {
+		if pw := p.taskExtraFields["plugin_password"]; pw != "" {
+			return pw
+		}
+	}
+	return p.resolvePassword()
+}
+
+func (p *AlistEncryptPlugin) ResolveTaskPassword(taskPassword string, extraFields map[string]string) string {
+	return p.resolvePasswordWithTaskExtras(extraFields)
+}
+
 func (p *AlistEncryptPlugin) resolvePasswordWithTaskExtras(extraFields map[string]string) string {
 	if pw := extraFields["plugin_password"]; pw != "" {
 		return pw
@@ -264,12 +272,6 @@ func (p *AlistEncryptPlugin) resolvePasswordWithTaskExtras(extraFields map[strin
 	return p.resolvePassword()
 }
 
-func (p *AlistEncryptPlugin) ResolveTaskPassword(taskPassword string, extraFields map[string]string) string {
-	if pw := extraFields["plugin_password"]; pw != "" {
-		return pw
-	}
-	if taskPassword != "" {
-		return taskPassword
-	}
-	return p.resolvePassword()
+func (p *AlistEncryptPlugin) SetTaskExtraFields(fields map[string]string) {
+	p.taskExtraFields = fields
 }

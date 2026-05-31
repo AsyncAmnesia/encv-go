@@ -500,6 +500,10 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 
 	passwordCtx := tm.getPasswordContext(ctx, primaryPassword)
 
+	if setter, ok := plugin.(pluginInterfaces.TaskExtraFieldsSetter); ok {
+		setter.SetTaskExtraFields(task.ExtraFields)
+	}
+
 	if task.SecondaryPassword != "" {
 		slog.Debug("task has secondary password (L2) — reserved for future dual-password crypto support",
 			"taskId", taskID)
@@ -707,9 +711,13 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 
 	passwordCtx := tm.getPasswordContext(ctx, primaryPassword)
 
+	if setter, ok := plugin.(pluginInterfaces.TaskExtraFieldsSetter); ok {
+		setter.SetTaskExtraFields(task.ExtraFields)
+	}
+
 	if task.SecondaryPassword != "" {
 		slog.Debug("task has secondary password (L2) — reserved for future dual-password crypto support",
-			"taskId", taskID)
+			"taskId", taskID, "context", "decrypt")
 	}
 
 	tm.updateProgress(taskID, 15, "preprocessing", "", "")

@@ -89,3 +89,10 @@ type TaskField struct {
 type TaskPasswordResolver interface {
 	ResolveTaskPassword(taskPassword string, extraFields map[string]string) string
 }
+
+// TaskExtraFieldsSetter 定义插件接收任务级别 ExtraFields 的能力
+// 声明式架构：插件通过 GetTaskOptions() 声明 ExtraFields，
+// 前端渲染对应输入，后端在执行前通过此接口将用户输入注入插件实例
+type TaskExtraFieldsSetter interface {
+	SetTaskExtraFields(fields map[string]string)
+}
