@@ -94,8 +94,8 @@
         {{ taskOpts.passwordStrategy === 'independent' ? t('tasks.usesIndependentPassword') : t('tasks.usesGlobalPassword') }}
       </div>
 
-      <!-- 容器版本选择 -->
-      <div v-if="taskType === 'encrypt' && vers && vers.length > 0" class="version-section">
+      <!-- 容器版本选择（仅插件声明 SupportVersionSelect 时显示） -->
+      <div v-if="taskType === 'encrypt' && taskOpts?.supportVersionSelect && vers && vers.length > 0" class="version-section">
         <ContainerVersionSelector
           :model-value="ver"
           @update:model-value="(v: number) => { emit('updateVersion', v); props.onUpdateVersion?.(v) }"
