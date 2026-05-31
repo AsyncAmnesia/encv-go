@@ -524,7 +524,8 @@ func FindDecryptingPluginByContainerType(containerType uint16) (Plugin, error) {
 }
 
 // ProcessFileWithPlugin 是一个通用的辅助函数，它使用插件提供的策略来处理文件。
-// 这个函数封装了打开文件、提取元数据和预处理内容的通用流程。
+// ProcessFileWithPlugin 封装了需要元数据提取和内容预处理的插件的文件处理流程。
+// 仅当插件声明了 MetadataExtractor 或 ContentPreprocessor 时使用。
 func ProcessFileWithPlugin(p Plugin, inputPath string) (types.Index, io.ReadCloser, error) {
 	var index types.Index
 
@@ -553,7 +554,6 @@ func ProcessFileWithPlugin(p Plugin, inputPath string) (types.Index, io.ReadClos
 	return index, file, nil
 }
 
-// EncryptFileWithPlugin 是一个新的辅助函数，封装了完整的加密流程
 func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputRootDir, outputDir string) (err error) {
 	if vp, ok := plugin.(*video.VideoPlugin); ok {
 		vp.SetOutputDir(outputDir)
@@ -566,28 +566,40 @@ func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputR
 		}
 	}()
 
-	index, dataReader, err := ProcessFileWithPlugin(plugin, inputPath)
-	if err != nil {
-		return fmt.Errorf("plugin failed to process file '%s': %w", inputPath, err)
-	}
-	defer dataReader.Close()
+	needsPreprocessing := plugin.GetMetadataExtractor() != nil || plugin.GetContentPreprocessor() != nil
 
-	//2. 执行预处理器
+	var index types.Index
+	var dataReader io.ReadCloser
+
+	if needsPreprocessing {
+		index, dataReader, err = ProcessFileWithPlugin(plugin, inputPath)
+		if err != nil {
+			return fmt.Errorf("plugin failed to process file '%s': %w", inputPath, err)
+		}
+		defer dataReader.Close()
+	}
+
 	if err := plugin.PreEncryptProcessor(index, inputPath, inputRootDir, outputDir); err != nil {
 		return fmt.Errorf("pre-encryption failed for '%s': %w", inputPath, err)
 	}
 	slog.Debug("PreEncryptProcessor completed", "path", inputPath)
 
-	//3. 执行核心加密
-	// 修改为接收 EncryptionResult
-	result, err := plugin.Encrypt(dataReader)
+	var result *crypto.EncryptionResult
+	if needsPreprocessing {
+		result, err = plugin.Encrypt(dataReader)
+	} else {
+		file, ferr := os.Open(inputPath)
+		if ferr != nil {
+			return fmt.Errorf("failed to open file '%s': %w", inputPath, ferr)
+		}
+		defer file.Close()
+		result, err = plugin.Encrypt(file)
+	}
 	if err != nil {
 		return fmt.Errorf("encryption failed for '%s': %w", inputPath, err)
 	}
 	slog.Debug("Encrypt completed", "path", inputPath)
 
-	//4. 执行后处理器
-	// 标记后续 verifyContainer 为后加密验证场景（v4 容器级加密会改变 MP4 原子结构）
 	if vp, ok := plugin.(*video.VideoPlugin); ok {
 		vp.SetPostEncryptVerify(true)
 	}
@@ -596,8 +608,6 @@ func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputR
 	}
 	slog.Debug("PostEncryptProcessor completed", "path", inputPath)
 
-	// 清理预处理生成的临时文件（encv-pre-*）
-	// 必须在 verifyContainer (PostEncryptProcessor 内部) 完成之后清理，因为验证需要对比原始文件
 	if vp, ok := plugin.(*video.VideoPlugin); ok {
 		sourcePath := vp.EncryptedSourcePath()
 		if sourcePath != "" && sourcePath != inputPath {
