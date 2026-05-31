@@ -135,11 +135,11 @@
           lines="none"
           class="extra-field-item"
         >
+          <ion-label>{{ t(field.label) }}</ion-label>
           <ion-toggle
+            slot="end"
             :checked="getExtra(field.key) === 'true' || getExtra(field.key) === true"
             @ionChange="(e: any) => { const v = e.detail.checked ? 'true' : 'false'; emit('updateExtraValue', { key: field.key, value: v }); props.onUpdateExtraValue?.({ key: field.key, value: v }) }"
-            :label="t(field.label)"
-            justify="space-between"
             class="extra-field-toggle"
           />
           <ion-note v-if="field.help" slot="helper">{{ t(field.help) }}</ion-note>
@@ -211,6 +211,7 @@ import {
   IonButtons,
   IonButton,
   IonItem,
+  IonLabel,
   IonSelect,
   IonSelectOption,
   IonInput,
@@ -565,11 +566,5 @@ async function handleClose() {
 
 .submit-btn:disabled {
   opacity: 0.5;
-}
-</style>
-
-<style>
-.extra-field-toggle::part(label) {
-  color: var(--ion-text-color);
 }
 </style>
