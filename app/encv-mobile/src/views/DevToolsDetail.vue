@@ -43,6 +43,28 @@
 
       <ion-list>
         <ion-list-header>
+          <ion-label>{{ t('settings.logSettings') }}</ion-label>
+        </ion-list-header>
+        <ion-item>
+          <ion-icon :icon="terminal" slot="start"></ion-icon>
+          <ion-select
+            :value="logLevel"
+            label="日志级别"
+            label-placement="stacked"
+            interface="action-sheet"
+            mode="ios"
+            @ionChange="handleLogLevelChange($event.detail.value)"
+          >
+            <ion-select-option value="debug">DEBUG</ion-select-option>
+            <ion-select-option value="info">INFO</ion-select-option>
+            <ion-select-option value="warn">WARN</ion-select-option>
+            <ion-select-option value="error">ERROR</ion-select-option>
+          </ion-select>
+        </ion-item>
+      </ion-list>
+
+      <ion-list>
+        <ion-list-header>
           <ion-label>{{ t('devtools.composePrototypes') }}</ion-label>
         </ion-list-header>
         <p class="section-hint">{{ t('devtools.composePrototypesHint') }}</p>
@@ -77,19 +99,22 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonIcon, IonLabel, IonToggle,
+  IonSelect, IonSelectOption,
   alertController,
 } from '@ionic/vue'
 import {
   bugOutline, downloadOutline, readerOutline, trashOutline,
   chevronForward, playCircleOutline, musicalNotesOutline,
-  colorPaletteOutline, settingsOutline,
+  colorPaletteOutline, settingsOutline, terminal,
 } from 'ionicons/icons'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/composables/useI18n'
 import { useDevTools } from '@/composables/useDevTools'
+import { useConfig } from '@/composables/useConfig'
 import { showToast } from '@/composables/useToast'
 import { isNative, exportLogs, clearLogs, openLogViewer, saveDevLogs } from '@/plugins/GoProcess'
 import { getFrontendLogsJson } from '@/composables/useFrontendLogs'
@@ -98,6 +123,20 @@ import { getAllPrototypes } from './prototypes/registry'
 const { t } = useI18n()
 const router = useRouter()
 const { vconsoleEnabled, toggleVConsole } = useDevTools()
+const { getFieldValue, setFieldValue, saveConfig } = useConfig()
+
+const logLevel = computed(() => String(getFieldValue(['log', 'level']) ?? 'info'))
+
+async function handleLogLevelChange(value: string) {
+  setFieldValue(['log', 'level'], value)
+  try {
+    await saveConfig()
+    showToast({ message: t('settings.configSaved'), duration: 1500, color: 'success' })
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    showToast({ message: t('settings.configSaveFailed') + ': ' + detail, duration: 3000, color: 'danger' })
+  }
+}
 
 const prototypes = getAllPrototypes()
 
