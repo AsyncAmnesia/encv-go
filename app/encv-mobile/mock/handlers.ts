@@ -43,6 +43,9 @@ function proxyAndRewriteServerDir(req: Connect.IncomingMessage, res: Connect.Ser
       const body = Buffer.concat(chunks).toString('utf-8')
       try {
         const cfg = JSON.parse(body)
+        if (cfg.server && typeof cfg.server.dir === 'string') {
+          cfg.server.dir = MOCK_DATA_DIR
+        }
         if (cfg.mobile && typeof cfg.mobile.server_dir === 'string') {
           cfg.mobile.server_dir = MOCK_DATA_DIR
         }
