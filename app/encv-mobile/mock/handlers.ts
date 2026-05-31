@@ -39,6 +39,58 @@ function loadMergedConfig(): Record<string, unknown> {
   return deepMerge(userCfg, devCfg)
 }
 
+const MOCK_PLUGINS = [
+  {
+    name: 'video',
+    supportedExtensions: ['mp4', 'mkv', 'avi', 'mov', 'webm', 'flv'],
+    supportedMimePrefixes: ['video/'],
+    containerExtension: '.sccgv',
+    taskOptions: { passwordStrategy: 'global' as const, supportVersionSelect: true, supportedVersions: [3, 4], defaultVersion: 4, extraFields: [] }
+  },
+  {
+    name: 'audio',
+    supportedExtensions: ['mp3', 'flac', 'wav', 'ogg', 'm4a', 'wma', 'opus'],
+    supportedMimePrefixes: ['audio/'],
+    containerExtension: '.sccga',
+    taskOptions: { passwordStrategy: 'global' as const, supportVersionSelect: false, supportedVersions: null, defaultVersion: 0, extraFields: [] }
+  },
+  {
+    name: 'image',
+    supportedExtensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'],
+    supportedMimePrefixes: ['image/'],
+    containerExtension: '.sccgi',
+    taskOptions: { passwordStrategy: 'global' as const, supportVersionSelect: false, supportedVersions: null, defaultVersion: 0, extraFields: [] }
+  },
+  {
+    name: 'text',
+    supportedExtensions: ['txt', 'md', 'csv', 'json', 'xml', 'log', 'ini', 'yaml', 'yml'],
+    supportedMimePrefixes: ['text/'],
+    containerExtension: '.sccgt',
+    taskOptions: { passwordStrategy: 'global' as const, supportVersionSelect: false, supportedVersions: null, defaultVersion: 0, extraFields: [] }
+  },
+  {
+    name: 'pdf',
+    supportedExtensions: ['pdf'],
+    supportedMimePrefixes: ['application/pdf'],
+    containerExtension: '.sccgpdf',
+    taskOptions: { passwordStrategy: 'global' as const, supportVersionSelect: false, supportedVersions: null, defaultVersion: 0, extraFields: [] }
+  },
+  {
+    name: 'wps',
+    supportedExtensions: ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'],
+    supportedMimePrefixes: ['application/vnd.ms-', 'application/vnd.openxmlformats-'],
+    containerExtension: '.sccgwps',
+    taskOptions: { passwordStrategy: 'global' as const, supportVersionSelect: false, supportedVersions: null, defaultVersion: 0, extraFields: [] }
+  },
+  {
+    name: 'alist_encrypt',
+    supportedExtensions: ['ae'],
+    supportedMimePrefixes: [],
+    containerExtension: '',
+    taskOptions: { passwordStrategy: 'independent' as const, supportVersionSelect: false, supportedVersions: null, defaultVersion: 0, extraFields: [] }
+  }
+]
+
 export function createHandlers(base: string): { dispatchRequest: Connect.NextHandleFunction } {
   let cachedConfig: Record<string, unknown> | null = null
 
@@ -55,6 +107,22 @@ export function createHandlers(base: string): { dispatchRequest: Connect.NextHan
         cachedConfig = loadMergedConfig()
       }
       return json(res, cachedConfig)
+    }
+
+    if (pathname === '/api/plugins') {
+      return json(res, { plugins: MOCK_PLUGINS })
+    }
+
+    if (pathname === '/api/files/tags') {
+      return json(res, { tags: [] })
+    }
+
+    if (pathname === '/api/permissions') {
+      return json(res, { storage: true })
+    }
+
+    if (pathname === '/api/file/text-preview-exts') {
+      return json(res, { extensions: [], custom_extensions: '' })
     }
 
     res.statusCode = 501
