@@ -111,10 +111,17 @@ export function useNewTaskModal() {
           if (candidates.value.length > 0) {
             state.predictedPlugin = candidates.value[idx]?.name ?? null
             state.taskOptions = candidates.value[idx]?.taskOptions ?? null
-            const defaultVer = candidates.value[idx]?.taskOptions?.defaultVersion
+            const opts = candidates.value[idx]?.taskOptions
+            state.filteredExtraFields = opts?.extraFields ?? []
+            const defaults: Record<string, string> = {}
+            opts?.extraFields?.forEach((f) => {
+              if (f.defaultValue) defaults[f.key] = f.defaultValue
+            })
+            state.extraValues = defaults
+            const defaultVer = opts?.defaultVersion
             if (defaultVer && defaultVer > 0) {
               state.version = defaultVer
-            } else if (!candidates.value[idx]?.taskOptions?.supportVersionSelect) {
+            } else if (!opts?.supportVersionSelect) {
               state.version = 0
             }
           }
