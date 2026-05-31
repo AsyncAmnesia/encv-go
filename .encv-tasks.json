@@ -1,1 +1,16 @@
-[]
+[
+  {
+    "id": "148f7ac6-fa69-42a5-8b68-6403dea3e731",
+    "type": "encrypt",
+    "sourcePath": "/01-plain-media/video/sample.mp4",
+    "extraFields": {
+      "plugin_password": "123456"
+    },
+    "pluginName": "alist_encrypt",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "createdAt": "2026-05-31T21:03:24.572054632Z",
+    "completedAt": "2026-05-31T21:03:25.037575002Z"
+  }
+]
