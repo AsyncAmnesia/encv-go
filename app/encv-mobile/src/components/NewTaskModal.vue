@@ -575,19 +575,21 @@ async function handleClose() {
 <style>
 /* ion-toggle 暗黑模式修复 — 非 scoped，::part() 需要 */
 .extra-field-toggle::part(track) {
-  background-color: var(--ion-color-step-200, #2c2c2c);
+  background-color: var(--ion-color-step-200, #2c2c2c) !important;
 }
 
-.extra-field-toggle.toggle-checked::part(track) {
-  background-color: var(--ion-color-primary, #3880ff);
+.extra-field-toggle.toggle-checked::part(track),
+.extra-field-toggle[aria-checked="true"]::part(track) {
+  background-color: var(--ion-color-primary, #3880ff) !important;
 }
 
 .extra-field-toggle::part(handle) {
-  background-color: var(--ion-color-primary, #3880ff);
-  border-radius: 50%;
+  background-color: var(--ion-color-primary, #3880ff) !important;
+  border-radius: 50% !important;
 }
 
-.extra-field-toggle.toggle-checked::part(handle) {
-  background-color: #fff;
+.extra-field-toggle.toggle-checked::part(handle),
+.extra-field-toggle[aria-checked="true"]::part(handle) {
+  background-color: #fff !important;
 }
 </style>
