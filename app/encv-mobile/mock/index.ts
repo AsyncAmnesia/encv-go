@@ -50,6 +50,7 @@ function parseMockParams(url: string): { enabled: boolean; suffix: string } {
 
 const MOCK_API_PREFIXES = [
   '/health',
+  '/decrypt',
 ]
 
 function shouldMockIntercept(url: string): boolean {
