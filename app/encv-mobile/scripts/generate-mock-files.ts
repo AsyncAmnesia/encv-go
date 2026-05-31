@@ -5,7 +5,7 @@ import * as crypto from 'crypto'
 import * as os from 'os'
 import { execSync, spawnSync } from 'child_process'
 
-const MOCK_ROOT = path.resolve(process.cwd(), '__mock_data__')
+const MOCK_ROOT = '/storage/emulated/0'
 
 let root = MOCK_ROOT
 let genType = 'all' as string
@@ -696,6 +696,7 @@ function parseArgs(): void {
 
 async function main(): Promise<void> {
   parseArgs()
+  ensureDir(root)
 
   console.log('📦 ENCV Mock File Generator')
   console.log('   Output: ' + root)

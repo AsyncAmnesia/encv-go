@@ -2,7 +2,7 @@ import type { Connect } from 'vite'
 import * as fs from 'fs'
 import * as path from 'path'
 
-const MOCK_DATA_DIR = path.resolve(__dirname, '../__mock_data__')
+const MOCK_DATA_DIR = '/storage/emulated/0'
 
 function json(res: Connect.ServerResponse, data: unknown, status = 200): void {
   res.statusCode = status

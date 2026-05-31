@@ -13,16 +13,17 @@ i18n 服务守卫消息已正确写明 `--dir /storage/emulated/0`，但以下�
 
 ### Step 1: 修改 `scripts/generate-mock-files.ts`
 
-将第 8 行：
-```ts
-const MOCK_ROOT = path.resolve(process.cwd(), '__mock_data__')
-```
-改为：
+1. 将第 8 行默认路径改为 `/storage/emulated/0`：
 ```ts
 const MOCK_ROOT = '/storage/emulated/0'
 ```
 
-这样默认输出路径就是 `/storage/emulated/0`，`--dir` 参数仍可覆盖。
+2. 在 `main()` 函数开头（`parseArgs()` 之后），添加自动创建根目录逻辑：
+```ts
+ensureDir(root)
+```
+
+这样脚本自身负责创建目标目录，无需外部 `sudo mkdir`。
 
 ### Step 2: 修改 `mock/index.ts`
 
@@ -52,13 +53,13 @@ const MOCK_DATA_DIR = '/storage/emulated/0'
 rm -rf /workspace/app/encv-mobile/__mock_data__
 ```
 
-### Step 5: 创建 `/storage/emulated/0` 目录并生成 mock 数据
+### Step 5: 运行生成脚本
 
 ```bash
-sudo mkdir -p /storage/emulated/0
-sudo chown $(whoami) /storage/emulated/0
 cd /workspace/app/encv-mobile && npx tsx scripts/generate-mock-files.ts
 ```
+
+脚本会自动创建 `/storage/emulated/0` 及其子目录。
 
 ### Step 6: 验证
 
@@ -69,7 +70,7 @@ cd /workspace/app/encv-mobile && npx tsx scripts/generate-mock-files.ts
 
 ## 影响范围
 
-- `generate-mock-files.ts` — 默认输出路径变更
+- `generate-mock-files.ts` — 默认输出路径变更 + 自动创建目录
 - `mock/index.ts` — Vite mock 插件数据源路径变更
 - `mock/handlers.ts` — Mock API handler 数据源路径变更
 - `__mock_data__/` — 删除旧数据目录

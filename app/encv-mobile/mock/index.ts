@@ -4,7 +4,7 @@ import * as path from 'path'
 import { execSync } from 'child_process'
 import { createHandlers } from './handlers'
 
-const MOCK_DATA_ROOT = path.resolve(__dirname, '../__mock_data__')
+const MOCK_DATA_ROOT = '/storage/emulated/0'
 const SCRIPT_PATH = path.resolve(__dirname, '../scripts/generate-mock-files.ts')
 
 function isMockEnabled(): boolean {
