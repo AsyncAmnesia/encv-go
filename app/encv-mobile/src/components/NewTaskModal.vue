@@ -127,9 +127,55 @@
         </ion-item>
       </div>
 
-      <!-- 额外字段（声明式渲染，包括插件独立密码等） -->
+      <!-- 额外字段（声明式渲染，按 type 分支） -->
       <template v-for="field in extraFlds" :key="field.key">
-        <ion-item v-if="!field.condition || field.condition === taskType" lines="none" class="extra-field-item">
+        <!-- bool 类型: 开关 -->
+        <ion-item
+          v-if="(!field.condition || field.condition === taskType) && field.type === 'bool'"
+          lines="none"
+          class="extra-field-item"
+        >
+          <ion-toggle
+            :checked="getExtra(field.key) === 'true' || getExtra(field.key) === true"
+            @ionChange="(e: any) => { const v = e.detail.checked ? 'true' : 'false'; emit('updateExtraValue', { key: field.key, value: v }); props.onUpdateExtraValue?.({ key: field.key, value: v }) }"
+            :label="t(field.label)"
+            justify="space-between"
+            class="extra-field-toggle"
+          />
+          <ion-note v-if="field.help" slot="helper">{{ t(field.help) }}</ion-note>
+        </ion-item>
+
+        <!-- select 类型: 下拉选择 -->
+        <ion-item
+          v-else-if="(!field.condition || field.condition === taskType) && field.type === 'select'"
+          lines="none"
+          class="extra-field-item"
+        >
+          <ion-select
+            :model-value="getExtra(field.key)"
+            @ionChange="(e: any) => { emit('updateExtraValue', { key: field.key, value: e.detail.value }); props.onUpdateExtraValue?.({ key: field.key, value: e.detail.value }) }"
+            :label="t(field.label)"
+            interface="action-sheet"
+            placement="bottom"
+            class="extra-field-select"
+          >
+            <ion-select-option
+              v-for="opt in (field.options || [])"
+              :key="opt"
+              :value="opt"
+            >
+              {{ opt }}
+            </ion-select-option>
+          </ion-select>
+          <ion-note v-if="field.help" slot="helper">{{ t(field.help) }}</ion-note>
+        </ion-item>
+
+        <!-- string / password 类型: 文本输入（原有逻辑） -->
+        <ion-item
+          v-else-if="!field.condition || field.condition === taskType"
+          lines="none"
+          class="extra-field-item"
+        >
           <ion-input
             :model-value="getExtra(field.key)"
             @ionInput="(e: any) => { emit('updateExtraValue', { key: field.key, value: e.detail.value }); props.onUpdateExtraValue?.({ key: field.key, value: e.detail.value }) }"
@@ -169,6 +215,8 @@ import {
   IonInput,
   IonIcon,
   IonSpinner,
+  IonToggle,
+  IonNote,
   modalController,
 } from '@ionic/vue'
 import { folderOpen, lockClosed, checkmarkCircle } from 'ionicons/icons'
@@ -484,6 +532,15 @@ async function handleClose() {
   --padding-end: 0;
   --inner-padding-end: 0;
   margin-top: 4px;
+}
+
+.extra-field-toggle {
+  --padding-start: 0;
+}
+
+.extra-field-select {
+  width: 100%;
+  --padding-start: 0;
 }
 
 /* 提交按钮 */

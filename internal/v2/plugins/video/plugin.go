@@ -434,6 +434,27 @@ func (p *VideoPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 		SupportVersionSelect: true,
 		SupportedVersions:    p.SupportedContainerVersions(),
 		DefaultVersion:       p.DefaultContainerVersion(),
+		ExtraFields: []pluginInterfaces.TaskField{
+			{
+				Key:          "stream_preset",
+				Label:        "tasks.streamPreset",
+				Type:         "select",
+				Required:     false,
+				DefaultValue: "balanced",
+				Help:         "tasks.streamPresetHelp",
+				Options:      []string{"balanced", "quality", "high_quality"},
+				Condition:     "encrypt",
+			},
+			{
+				Key:          "encrypt_filename",
+				Label:        "tasks.encryptFilename",
+				Type:         "bool",
+				Required:     false,
+				DefaultValue: "false",
+				Help:         "tasks.encryptFilenameHelp",
+				Condition:     "encrypt",
+			},
+		},
 	}
 }
 

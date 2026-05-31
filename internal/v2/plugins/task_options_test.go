@@ -48,7 +48,18 @@ func TestVideoPlugin_GetTaskOptions(t *testing.T) {
 	assert.Equal(t, pluginInterfaces.PasswordGlobal, opts.PasswordStrategy, "video should use global password")
 	assert.True(t, opts.SupportVersionSelect, "video should support version select")
 	assert.NotEmpty(t, opts.SupportedVersions, "video should have supported versions")
-	assert.Empty(t, opts.ExtraFields, "video should not have extra fields")
+	require.Len(t, opts.ExtraFields, 2, "video should have 2 extra fields")
+	assert.Equal(t, "stream_preset", opts.ExtraFields[0].Key)
+	assert.Equal(t, "select", opts.ExtraFields[0].Type)
+	assert.False(t, opts.ExtraFields[0].Required)
+	assert.Equal(t, "balanced", opts.ExtraFields[0].DefaultValue)
+	assert.Contains(t, opts.ExtraFields[0].Options, "balanced")
+	assert.Contains(t, opts.ExtraFields[0].Options, "high_quality")
+	assert.Equal(t, "encrypt", opts.ExtraFields[0].Condition)
+	assert.Equal(t, "encrypt_filename", opts.ExtraFields[1].Key)
+	assert.Equal(t, "bool", opts.ExtraFields[1].Type)
+	assert.Equal(t, "false", opts.ExtraFields[1].DefaultValue)
+	assert.Equal(t, "encrypt", opts.ExtraFields[1].Condition)
 }
 
 func TestAlistEncryptPlugin_GetTaskOptions(t *testing.T) {
@@ -58,10 +69,20 @@ func TestAlistEncryptPlugin_GetTaskOptions(t *testing.T) {
 	opts := p.GetTaskOptions()
 	assert.Equal(t, pluginInterfaces.PasswordIndependent, opts.PasswordStrategy, "alist_encrypt should use independent password")
 	assert.False(t, opts.SupportVersionSelect, "alist_encrypt should NOT support version select")
-	assert.Len(t, opts.ExtraFields, 1, "alist_encrypt should have 1 extra field")
+	require.Len(t, opts.ExtraFields, 3, "alist_encrypt should have 3 extra fields")
 	assert.Equal(t, "plugin_password", opts.ExtraFields[0].Key)
 	assert.Equal(t, "password", opts.ExtraFields[0].Type)
 	assert.False(t, opts.ExtraFields[0].Required, "plugin_password should not be required")
+	assert.Equal(t, "encode_filename", opts.ExtraFields[1].Key)
+	assert.Equal(t, "bool", opts.ExtraFields[1].Type)
+	assert.Equal(t, "false", opts.ExtraFields[1].DefaultValue)
+	assert.Equal(t, "encrypt", opts.ExtraFields[1].Condition)
+	assert.Equal(t, "enc_type", opts.ExtraFields[2].Key)
+	assert.Equal(t, "select", opts.ExtraFields[2].Type)
+	assert.Equal(t, "aesctr", opts.ExtraFields[2].DefaultValue)
+	assert.Contains(t, opts.ExtraFields[2].Options, "aesctr")
+	assert.Contains(t, opts.ExtraFields[2].Options, "chacha20")
+	assert.Equal(t, "encrypt", opts.ExtraFields[2].Condition)
 }
 
 func TestOtherPlugins_DefaultToGlobal(t *testing.T) {

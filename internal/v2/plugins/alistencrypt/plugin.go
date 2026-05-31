@@ -245,6 +245,25 @@ func (p *AlistEncryptPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 				Help:      "tasks.pluginPasswordHelp",
 				Condition: "",
 			},
+			{
+				Key:          "encode_filename",
+				Label:        "tasks.encodeFilename",
+				Type:         "bool",
+				Required:     false,
+				DefaultValue: "false",
+				Help:         "tasks.encodeFilenameHelp",
+				Condition:     "encrypt",
+			},
+			{
+				Key:          "enc_type",
+				Label:        "tasks.encType",
+				Type:         "select",
+				Required:     false,
+				DefaultValue: "aesctr",
+				Help:         "tasks.encTypeHelp",
+				Options:      []string{"aesctr", "rc4md5", "chacha20"},
+				Condition:     "encrypt",
+			},
 		},
 	}
 }
