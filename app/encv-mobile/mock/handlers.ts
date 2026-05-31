@@ -194,41 +194,74 @@ function fileSystemHandler(req: Connect.IncomingMessage, res: Connect.ServerResp
 
 function fileContentHandler(req: Connect.IncomingMessage, res: Connect.ServerResponse, base: string): boolean {
   const url = new URL(req.url || '', `http://localhost${base}`)
-  const queryPath = resolveQueryPath(url)
+  const pathname = url.pathname
 
-  if (req.method === 'GET') {
-    const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
-    if (!fs.existsSync(resolvedPath)) return json(res, { error: 'File not found' }, 404)
-    try {
-      const stat = fs.statSync(resolvedPath)
-      const buf = fs.readFileSync(resolvedPath)
-      const ext = path.extname(resolvedPath).toLowerCase()
-      const textExts = ['.txt', '.csv', '.json', '.md', '.xml', '.html', '.css', '.js', '.ts', '.log']
-      const encoding = textExts.includes(ext) ? 'utf-8' : 'binary'
-      const content = textExts.includes(ext) ? buf.toString('utf-8') : buf.toString('base64')
-      return json(res, { name: path.basename(resolvedPath), path: queryPath, size: stat.size, content, encoding })
-    } catch (e: any) {
-      return json(res, { error: e.message }, 500)
+  if (pathname === '/api/file' || pathname.startsWith('/api/file?')) {
+    const queryPath = resolveQueryPath(url)
+
+    if (req.method === 'GET') {
+      const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
+      if (!fs.existsSync(resolvedPath)) return json(res, { error: 'File not found' }, 404)
+      try {
+        const stat = fs.statSync(resolvedPath)
+        const buf = fs.readFileSync(resolvedPath)
+        const ext = path.extname(resolvedPath).toLowerCase()
+        const textExts = ['.txt', '.csv', '.json', '.md', '.xml', '.html', '.css', '.js', '.ts', '.log']
+        const encoding = textExts.includes(ext) ? 'utf-8' : 'binary'
+        const content = textExts.includes(ext) ? buf.toString('utf-8') : buf.toString('base64')
+        return json(res, { name: path.basename(resolvedPath), path: queryPath, size: stat.size, content, encoding })
+      } catch (e: any) {
+        return json(res, { error: e.message }, 500)
+      }
     }
+
+    if (req.method === 'POST' || req.method === 'PATCH') {
+      readBody(req).then((body) => {
+        try {
+          const parsed = JSON.parse(body || '{}')
+          if (req.method === 'PATCH' && parsed.path && parsed.new_name) {
+            return json(res, { success: true, display_name: parsed.new_name })
+          }
+          if (parsed.oldPath && parsed.newName) return json(res, { ok: true })
+          return json(res, { error: 'invalid request' }, 400)
+        } catch {
+          return json(res, { error: 'invalid json' }, 400)
+        }
+      })
+      return true
+    }
+
+    if (req.method === 'DELETE') return json(res, { ok: true })
+
+    return false
   }
 
-  if (req.method === 'POST' || req.method === 'PATCH') {
-    readBody(req).then((body) => {
-      try {
-        const parsed = JSON.parse(body || '{}')
-        if (req.method === 'PATCH' && parsed.path && parsed.new_name) {
-          return json(res, { success: true, display_name: parsed.new_name })
-        }
-        if (parsed.oldPath && parsed.newName) return json(res, { ok: true })
-        return json(res, { error: 'invalid request' }, 400)
-      } catch {
-        return json(res, { error: 'invalid json' }, 400)
-      }
-    })
+  if (pathname === '/api/file/rename') {
+    if (req.method === 'POST') {
+      readBody(req).then(() => json(res, { ok: true }))
+      return true
+    }
+    if (req.method === 'PATCH') {
+      readBody(req).then((body) => {
+        try {
+          const parsed = JSON.parse(body || '{}')
+          json(res, { success: true, display_name: parsed.new_name || '' })
+        } catch { json(res, { error: 'invalid json' }, 400) }
+      })
+      return true
+    }
+    return false
+  }
+
+  if (pathname === '/api/file/copy' && req.method === 'POST') {
+    readBody(req).then(() => json(res, { ok: true }))
     return true
   }
 
-  if (req.method === 'DELETE') return json(res, { ok: true })
+  if (pathname === '/api/file/move' && req.method === 'POST') {
+    readBody(req).then(() => json(res, { ok: true }))
+    return true
+  }
 
   return false
 }
@@ -308,7 +341,16 @@ function staticJsonHandler(pathname: string, _method: string, url: URL, res: Con
       res.setHeader('Content-Type', 'application/octet-stream')
       res.end(Buffer.alloc(0))
       return true
+    case '/api/index/rebuild':
+      return json(res, { ok: true, message: 'index rebuilt' })
+    case '/api/index/clear':
+      return json(res, { ok: true, message: 'index cleared' })
     default:
+      if (pathname === '/api/webdav/test' && _method === 'POST') return json(res, { success: false, reachable: false, error: 'mock mode' })
+      if (pathname === '/api/remote/openlist' && _method === 'POST') return json(res, { ok: true })
+      if (pathname.startsWith('/api/remote/openlist/') && _method === 'PUT') return json(res, { ok: true })
+      if (pathname.startsWith('/api/remote/openlist/') && _method === 'DELETE') return json(res, { ok: true })
+      if (pathname === '/api/config' && _method === 'PUT') return json(res, { message: 'config updated', needsRestart: false })
       return false
   }
 }
@@ -372,6 +414,13 @@ function taskMockHandler(req: Connect.IncomingMessage, res: Connect.ServerRespon
     const id = pathname.split('/').pop() || ''
     if (tasks[id]) { delete tasks[id]; return json(res, { ok: true }) }
     return json(res, { error: 'task not found' }, 404)
+  }
+
+  if (pathname.startsWith('/api/tasks/') && req.method === 'POST') {
+    const id = pathname.split('/').slice(-2)[0] || ''
+    if (pathname.endsWith('/cancel')) return json(res, { ok: true })
+    if (pathname.endsWith('/retry')) return json(res, { ok: true })
+    return false
   }
 
   return false
@@ -447,7 +496,7 @@ export function createHandlers(base: string): { dispatchRequest: Connect.NextHan
       if (fileSystemHandler(req, res, base)) return
     }
 
-    if (pathname === '/api/file' || pathname.startsWith('/api/file?')) {
+    if (pathname === '/api/file' || pathname.startsWith('/api/file?') || pathname.startsWith('/api/file/')) {
       if (fileContentHandler(req, res, base)) return
     }
 
