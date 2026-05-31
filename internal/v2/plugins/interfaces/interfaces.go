@@ -96,3 +96,7 @@ type TaskPasswordResolver interface {
 type TaskExtraFieldsSetter interface {
 	SetTaskExtraFields(fields map[string]string)
 }
+
+type TaskStateResetter interface {
+	ResetTaskState()
+}

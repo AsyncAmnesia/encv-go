@@ -484,6 +484,10 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 		task.PluginName = plugin.Name()
 	}
 
+	if resetter, ok := plugin.(pluginInterfaces.TaskStateResetter); ok {
+		defer resetter.ResetTaskState()
+	}
+
 	var primaryPassword string
 	isPasswordIndependent := false
 	if resolver, ok := plugin.(pluginInterfaces.TaskPasswordResolver); ok {
@@ -701,6 +705,10 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 		return
 	}
 	task.PluginName = plugin.Name()
+
+	if resetter, ok := plugin.(pluginInterfaces.TaskStateResetter); ok {
+		defer resetter.ResetTaskState()
+	}
 
 	var primaryPassword string
 	if resolver, ok := plugin.(pluginInterfaces.TaskPasswordResolver); ok {

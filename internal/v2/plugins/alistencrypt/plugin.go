@@ -151,7 +151,7 @@ func (p *AlistEncryptPlugin) PreEncryptProcessor(index types.Index, inputPath, i
 
 func (p *AlistEncryptPlugin) Encrypt(dataReader io.Reader) (*crypto.EncryptionResult, error) {
 	password := p.resolvePasswordFromTask()
-	slog.Info("alist_encrypt: Encrypt called", "hasPassword", password != "", "hasOutputDir", p.outputDir != "", "outputDir", p.outputDir, "hasSettings", p.settings.Suffix != "")
+	slog.Debug("alist_encrypt: Encrypt called", "hasPassword", password != "", "hasOutputDir", p.outputDir != "", "outputDir", p.outputDir, "hasSettings", p.settings.Suffix != "")
 
 	result, err := EncryptToFile(dataReader, password, p.outputDir, &p.settings)
 	if err != nil {
@@ -278,6 +278,12 @@ func (p *AlistEncryptPlugin) resolvePasswordWithTaskExtras(extraFields map[strin
 
 func (p *AlistEncryptPlugin) SetTaskExtraFields(fields map[string]string) {
 	p.taskExtraFields = fields
+}
+
+func (p *AlistEncryptPlugin) ResetTaskState() {
+	p.taskExtraFields = nil
+	p.outputDir = ""
+	p.inputPath = ""
 }
 
 var reservedSuffixes = map[string]bool{

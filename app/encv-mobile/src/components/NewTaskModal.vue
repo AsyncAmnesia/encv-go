@@ -133,9 +133,9 @@
           <ion-input
             :model-value="getExtra(field.key)"
             @ionInput="(e: any) => { emit('updateExtraValue', { key: field.key, value: e.detail.value }); props.onUpdateExtraValue?.({ key: field.key, value: e.detail.value }) }"
-            :label="field.label"
+            :label="t(field.label)"
             :type="field.type === 'password' ? 'password' : 'text'"
-            :placeholder="field.help"
+            :placeholder="t(field.help)"
           ></ion-input>
         </ion-item>
       </template>

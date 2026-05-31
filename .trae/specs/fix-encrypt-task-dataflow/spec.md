@@ -2,9 +2,19 @@
 
 ## Why
 
-alist_encrypt 加密任务从创建到执行存在多处数据流断点，导致用户填写密码后仍然报错 "encryption requires a password" 或 nil pointer dereference。核心原因是：插件单例复用导致 taskExtraFields 状态泄漏、前端 ExtraField label 未走 i18n 翻译、以及 `EncryptFileWithPlugin` 对不需要预处理的插件路径缺少 `Initialize` 调用保障。
+alist_encrypt 加密任务从创建到执行存在多处数据流断点，导致用户填写密码后仍然报错 "encryption requires a password" 或 nil pointer dereference。核心原因是：插件单例复用导致 taskExtraFields 状态泄漏、前端 ExtraField label 未走 i18n 翻译。
 
-## 问题根因分析
+## 已确认兼容的部分
+
+插件系统**已经兼容** alist_encrypt 的独立加密流程：
+
+1. **`EncryptFileWithPlugin` 双路径**（[registry.go:569-598](file:///workspace/internal/v2/plugins/registry.go#L569-L598)）：`needsPreprocessing` 判断正确，alist_encrypt 的 `GetMetadataExtractor()` 和 `GetContentPreprocessor()` 都返回 `nil`，走 `else` 分支直接 `os.Open` + `Encrypt(file)` ✅
+2. **`FindAllEncryptingPlugins` 通用匹配**（[registry.go:477-502](file:///workspace/internal/v2/plugins/registry.go#L477-L502)）：阶段 3 把没有声明 MIME/扩展名的通用插件作为 P1 候选返回 ✅
+3. **`PasswordIndependent` 策略**：`processEncrypt` 中 `isPasswordIndependent` 检查正确跳过全局密码空检查 ✅
+4. **`SetTaskExtraFields` 调用时机**：在 `EncryptFileWithPlugin` 之前调用 ✅
+5. **`PreEncryptProcessor` → `Encrypt` 数据流**：`outputDir` 和 `inputPath` 在 `PreEncryptProcessor` 中设置，`Encrypt` 中使用 ✅
+
+## 仍需修复的断点
 
 ### 断点 1：插件单例 + taskExtraFields 状态泄漏（P0）
 
@@ -28,13 +38,7 @@ alist_encrypt 加密任务从创建到执行存在多处数据流断点，导致
 
 **问题**：后端 `GetTaskOptions()` 返回的 label 是 i18n key（如 `"tasks.pluginPassword"`），但前端没有调用 `t()` 翻译。用户看到的是原始 key 而不是翻译后的文字。
 
-### 断点 3：EncryptFileWithPlugin 未调用 Initialize（P2 — 当前无实际影响但设计缺陷）
-
-**现状**：`EncryptFileWithPlugin`（[registry.go:557](file:///workspace/internal/v2/plugins/registry.go#L557)）没有调用 `plugin.Initialize(ctx)`。插件在应用启动时通过 `InitializePlugins` 初始化一次，后续任务复用同一个实例。
-
-**当前影响**：`AlistEncryptPlugin.Initialize` 有幂等保护（`if ctx == p.ctx { return nil }`），所以重复调用不会出错。但如果配置在运行时变更，插件不会重新加载配置。
-
-### 断点 4：调试日志残留（P3）
+### 断点 3：调试日志残留（P3）
 
 **现状**：[plugin.go:154](file:///workspace/internal/v2/plugins/alistencrypt/plugin.go#L154) 和 [registry.go:570](file:///workspace/internal/v2/plugins/registry.go#L570) 有 `slog.Info` 调试日志，应在生产环境中降级为 `slog.Debug`。
 
