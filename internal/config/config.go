@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
@@ -197,9 +198,30 @@ func deepMerge(base, overlay map[string]interface{}) {
 		om, oo := ov.(map[string]interface{})
 		if bo && oo {
 			deepMerge(bm, om)
-		} else {
+		} else if !isZeroValue(ov) {
 			base[k] = ov
 		}
+	}
+}
+
+func isZeroValue(v interface{}) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return rv.Int() == 0
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return rv.Uint() == 0
+	case reflect.Float32, reflect.Float64:
+		return rv.Float() == 0
+	case reflect.String:
+		return rv.String() == ""
+	case reflect.Bool:
+		return !rv.Bool()
+	default:
+		return false
 	}
 }
 

@@ -1,1 +1,1 @@
-{"server": {"dir": "/workspace/app/encv-mobile/__mock_data__", "port": 2025}, "mobile": {"server_dir": "/workspace/app/encv-mobile/__mock_data__"}}
+{"mobile": {"server_dir": "/storage/emulated/0"}}
