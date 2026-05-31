@@ -1,32 +1,35 @@
-- [ ] alist-encrypt 插件 EncryptedName 格式与 alist-encrypt-go 二进制兼容（mixBase64 + CRC6 + AES-CTR）
-- [ ] filename.go EncryptName/DecryptName 往返一致性通过（加密→解密==原文）
-- [ ] CRC6 校验逻辑与参考实现一致（多项式、初始值、反射处理）
+- [ ] alist-encrypt 插件 EncryptedName 与 alist-encrypt-go 二进制兼容
+- [ ] filename.go EncryptName/DecryptName 往返一致性通过
+- [ ] CRC6 校验逻辑与参考实现一致
 - [ ] 前端 decodeAlistFilename 正确解析 EncryptedName 并还原 UTF-8 明文
-- [ ] ENC-FN charset.go：4 种字符集定义完整（alnum 62 / safe 56 / hex 16 / alpha 52），EncodeToCharset/DecodeFromCharset 正确
-- [ ] ENC-FN kdf.go：HKDF-SHA256 密钥派生正确，password → 主密钥 → S-box 种子 + N 个轮密钥
-- [ ] ENC-FN sbox.go：从种子确定性生成 256 字节 S-box + 逆 S-box，Fisher-Yates shuffle 可复现
-- [ ] ENC-FN feistel.go：Feistel 网络正向/逆向变换正确，支持可配置轮数（4-12）
-- [ ] ENC-FN encfn.go：完整 Encode/Decode 流程正确，支持 compact 和 structured 两种模式
-- [ ] ENC-FN compact 模式输出无前缀纯编码体，长度合理（~ceil(8*len(plaintext)/log2(charset_size))）
-- [ ] ENC-FN structured 模式输出带 `[S]` 前缀 + 长度标记 + 编码体 + 校验后缀
-- [ ] ENC-FN 同一输入+同一密码→相同输出（确定性）
-- [ ] ENC-FN 不同密码→完全不同输出（密码敏感性）
-- [ ] ENC-FN 改变明文 1 bit → 输出 ~50% 位变化（雪崩效应）
-- [ ] ENC-FN 篡改检测返回明确错误（ErrFNInvalidFormat / ErrFNChecksumMismatch / ErrFNCorrupt）
-- [ ] Manifest_v4 新增 OriginalName + FilenameAlgorithm 字段，JSON 序列化/反序列化正确
+
+- [ ] charset.go：12 个字符池定义完整（alnum 62 / lowercase 26 / uppercase 26 / digits 10 / hex_lower 16 / hex_upper 16 / symbols_basic 4 / symbols_ext 26 / hanzi_common ~3000 / hanzi_rare ~1000+ / emoji ~100）
+- [ ] BuildCharsetTable 多选并集正确：[alnum, hanzi_rare] → 62 + ~1000 = ~1062 个 rune
+- [ ] 去混淆开关正确：Deconfuse=true 时从并集中移除 `0Oo1lI`（仅当字符存在时）；Deconfuse=false 保留全部
+- [ ] 纯汉字字符集（无 alnum）时 Deconfuse 开关无效果（无易混淆字符可移除）
+- [ ] EncodeToCharset / DecodeFromCharset 正确映射字节序列到目标字符表并集
+- [ ] kdf.go：HKDF-SHA256 派生正确，password → 主密钥 → S-box 种子 + N 轮密钥
+- [ ] sbox.go：种子确定性生成 S-box + 逆 S-box，Fisher-Yates 可复现
+- [ ] feistel.go：Feistel 正向/逆向变换正确，4-12 轮可配置
+- [ ] encfn.go：Encode/Decode 完整流程正确，compact + structured 双模式
+- [ ] ENC-FN 确定性：同输入+同密码+同配置→相同输出
+- [ ] ENC-FN 密码敏感性：不同密码→完全不同输出
+- [ ] ENC-FN 雪崩效应：1 bit 明文变化 → ~50% 输出位变化
+- [ ] ENC-FN 篡改检测返回明确错误（不返回部分乱码）
+
+- [ ] Manifest_v4 新增 OriginalName + FilenameAlgorithm，JSON 序列化正确
 - [ ] FlagFilenameEncrypted (0x0010) 已定义，Header 读写正确处理
-- [ ] 后端文件列表 API 对 v4 容器返回 original_name 元数据
-- [ ] ResolveDisplayName 按优先级正确返回显示名（Manifest 解码 > 物理文件名）
-- [ ] Files.vue 使用 display_name 渲染，优先显示 Manifest 原始文件名
-- [ ] v4 容器创建时可选择 ENC-FN 编码原始文件名写入 Manifest
-- [ ] v4 容器打开时 ENC-FN.Decode 还原 original_name
-- [ ] 解码失败时有明确 fallback（物理文件名/占位符），不显示乱码
-- [ ] PATCH /api/v1/file/rename 可修改 Manifest 中的 original_name
-- [ ] rename 后文件列表立即反映新文件名
-- [ ] 超长文件名（>255 字节）：Manifest 完整存储 ENC-FN 结果，物理文件名自动缩短
-- [ ] 空/空白文件名：ENC-FN 接受并返回空，展示层有回退策略
-- [ ] Unicode 全量支持：emoji/CJK/RTL/控制字符均正确编码解码和渲染
-- [ ] ENC-FN 基于 UTF-8 字节操作，不依赖 Unicode 语义
+- [ ] ResolveDisplayName 优先级正确：Manifest 解码 > 物理文件名
+- [ ] Files.vue 使用 display_name 渲染
+- [ ] v4 创建时 ENC-FN.Encode 写入 Manifest.original_name
+- [ ] v4 打开时 ENC-FN.Decode 还原 original_name
+- [ ] 解码失败 fallback 明确（物理文件名或占位符）
+- [ ] PATCH /api/v1/file/rename 可修改 Manifest original_name
+- [ ] rename 后列表立即反映新文件名
+- [ ] 超长文件名：Manifest 完整存储，物理文件名自动缩短
+- [ ] 空/空白文件名：ENC-FN 接受空，展示层回退
+- [ ] Unicode 全量支持（emoji/CJK/生僻汉字/RTL/control char）
+- [ ] 基于 UTF-8 字节操作
 - [ ] vue-tsc 零错误
 - [ ] vitest 全部通过
 - [ ] vite build 成功

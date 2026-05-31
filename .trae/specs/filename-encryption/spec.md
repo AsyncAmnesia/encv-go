@@ -10,7 +10,8 @@
 > - **人类可读性**：输出是结构化的编码串而非纯乱码
 > - **规律性**：确定性算法，同输入+同密钥→相同输出；编码结构可分析
 > - **长短双方案**：短模式（紧凑）和长模式（结构化丰富）两种输出策略
-> - **字符集可选**：支持多种输出字符集配置
+> - **字符集多选合集**：用户从多种字符池中自由组合，输出字符集为所选集合的并集
+> - **去混淆全局开关**：独立于字符集选择，可选移除 `0Oo1lI` 等易混淆字符
 
 ## What Changes
 
@@ -35,7 +36,7 @@
 - Affected code:
   - `internal/alistencrypt/filename.go` — alist-encrypt 插件 EncryptedName 加解密
   - `internal/v2/filename/encfn.go` — **新增** ENC-FN 深度定制编码器
-  - `internal/v2/filename/charset.go` — **新增** 可选字符集定义
+  - `internal/v2/filename/charset.go` — **新增** 字符集定义（多选合集 + 去混淆开关）
   - `internal/v2/types/segment_v4.go` — Manifest_v4 新增 original_name / filename_alg 字段
   - `internal/v2/types/header_v4.go` — FlagFilenameEncrypted 标志位
   - `app/encv-mobile/src/features/alist-encrypt/useAlistEncrypt.ts` — 前端解码函数
@@ -60,7 +61,7 @@
 
 ### Requirement: ENC-FN 深度定制文件名编码方案
 
-系统 SHALL 为 v4 容器提供一套**深度定制的确定性文件名编码方案**（代号 ENC-FN），具备人类可读性、规律性、长短双模式和可选字符集。此方案**不直接复用任何现成的通用加密或编码库**，而是从零设计的专用算法。
+系统 SHALL 为 v4 容器提供一套**深度定制的确定性文件名编码方案**（代号 ENC-FN），具备人类可读性、规律性、长短双模式、**多选字符集合集**和**独立去混淆开关**。此方案**不直接复用任何现成的通用加密或编码库**，而是从零设计的专用算法。
 
 #### ENC-FN 算法概要
 
@@ -78,49 +79,75 @@
 |------|------|---------|
 | **KDF** | 密钥派生函数 | 基于 HKDF-SHA256 从密码派生主密钥，再派生 S-box 种子和轮密钥 |
 | **S-box** | 256 字节置换表 | 由 KDF 输出的种子确定性生成，每次编码/解码重建相同的 S-box |
-| **Feistel 网络** | 多轮混淆变换 | 4-8 轮（可配置），每轮使用不同轮密钥，保证雪崩效应 |
-| **字符集映射器** | 将字节序列映射到目标字符集 | 支持多种字符集，决定输出的视觉特征 |
+| **Feistel 网络** | 多轮混淆变换 | 4-12 轮（可配置），每轮使用不同轮密钥，保证雪崩效应 |
+| **字符集引擎** | 多选合集 → 并集映射 | 用户从多个字符池中选择，最终字符表为并集，再经去混淆过滤 |
 
 #### ENC-FN 长短双方案
 
 | 模式 | 标识 | 输出特征 | 适用场景 |
 |------|------|---------|---------|
-| **短模式 (compact)** | `C` | 无前缀，纯编码体，最大压缩率 | 文件名较短（<50 字节）、需要最小长度 |
-| **长模式 (structured)** | `S` | 带 `[S]` 前缀 + 长度标记 + 编码体 + 校验后缀 | 文件名较长、需要自描述和完整性校验 |
+| **短模式 (compact)** | `C` | 无前缀，纯编码体，最大压缩率 | 需要最小长度 |
+| **长模式 (structured)** | `S` | 带 `[S]` 前缀 + 长度标记 + 编码体 + 校验后缀 | 需要自描述和完整性校验 |
 
 **短模式输出示例**：
 ```
-原始文件名: "report.pdf"
-ENC-FN(compact, alnum): "xK7mPq2RnWv"
-ENC-FN(compact, hex):    "a3f7b2c91e04d5"
+原始: "report.pdf"
+ENC-FN(compact, [alnum]):           "xK7mPq2RnWv"
+ENC-FN(compact, [alnum, hanzi_rare]): "xK7mPq2龘Wv"
+ENC-FN(compact, [alnum, symbols]):   "xK7mPq2®Wv"
 ```
 
 **长模式输出示例**：
 ```
-原始文件名: "2024年度财务报表_Q3_final_version.pdf"
-ENC-FN(structured, alnum): "[S]44:xK7mPq2RnWvLsT9uYzAbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMn:p3"
+原始: "2024年度财务报表_Q3_final_version.pdf"
+ENC-FN(structured, [alnum, hanzi_common]):
+  "[S]44:xK7mPq2RnWvLsT9uYzAbCdEfGhIjKlMnOpQrStUv财年报Q3:p3"
 ```
 
-其中 `[S]` = 结构化模式前缀，`44` = 原始字节长度（十进制），`:p3` = 截断校验（若启用）
+其中 `[S]` = 结构化前缀，`44` = 原始字节长度，`:p3` = 截断校验
 
-#### ENC-FN 字符集选项
+#### ENC-FN 字符集池（多选）
 
-| 字符集 ID | 字符 | 大小 | 特征 |
-|-----------|------|------|------|
-| `alnum` | `a-z A-Z 0-9` | 62 | 全字母数字，最大信息密度 |
-| `safe` | 去掉 `0Oo1lI` 的 alnum | 56 | 排除易混淆字符，适合人工抄写 |
-| `hex` | `0-9 a-f` | 16 | 最安全但最长，适合技术环境 |
-| `alpha` | `a-z A-Z` | 52 | 纯字母，避免数字混淆 |
-| `custom` | 用户自定义字符串 | 可变 | 最大灵活性 |
+每个字符池是一个预定义的 Unicode 字符子集。用户可**同时选择多个**，最终输出字符表为所有选中字符池的**并集**。
+
+| 字符集 ID | 示例字符 | 大小 | 特征 |
+|-----------|----------|------|------|
+| `alnum` | `a-z A-Z 0-9` | 62 | 全字母数字，最大信息密度基础 |
+| `lowercase` | `a-z` | 26 | 纯小写字母 |
+| `uppercase` | `A-Z` | 26 | 纯大写字母 |
+| `digits` | `0-9` | 10 | 纯数字 |
+| `hex_lower` | `0-9 a-f` | 16 | 小写十六进制 |
+| `hex_upper` | `0-9 A-F` | 16 | 大写十六进制 |
+| `symbols_basic` | `_-.~` | 4 | URL 安全基本符号 |
+| `symbols_extended` | `!@#$%^&*()+=[]{}|;:,.<>?/` | 26 | 扩展符号集 |
+| `hanzi_common` | `的一是不了在人有我他这个们中来上大为和国到...` | ~3000 | 常用汉字（GB2312 一级字） |
+| `hanzi_rare` | `龘靁齉爨麤毊...` | ~1000+ | 生僻汉字（Unicode CJK 扩展区精选） |
+| `emoji` | `🎉🔐📁💾🔒...` | ~100 | 表情符号（精选适合文件名的非控制类 emoji） |
+
+#### 去混淆全局开关
+
+去混淆是**独立于字符集选择的布尔选项**。启用后，从最终并集字符表中移除以下易混淆字符：
+
+| 移除字符 | 替代说明 |
+|----------|---------|
+| `0` (零) | 与 `O`(大写o) 和 `D` 易混 |
+| `O` (大写o) | 与 `0`(零) 和 `Q` 易混 |
+| `o` (小写o) | 与 `0`(零) 和 `c` 易混 |
+| `1` (一) | 与 `l`(小写L) 和 `I`(大写i) 易混 |
+| `l` (小写L) | 与 `1`(一) 和 `I`(大写i) 易混 |
+| `I` (大写i) | 与 `1`(一) 和 `l`(小写L) 易混 |
+
+> **设计理由**：去混淆不是某个特定字符集的内置属性，因为用户可能组合任意字符集（如 `hanzi_rare + alnum + symbols`），每种组合都需要同样的去混淆保护。
 
 #### ENC-FN 配置接口
 
 ```go
 type FNConfig struct {
-    Mode     FNMode     // FNCompact | FNStructured
-    Charset FNCharset  // FNAlnum | FNSafe | FNHex | FNAlpha | FNCustom(...)
-    Rounds   int        // Feistel 轮数 (默认 6, 范围 4-12)
-    Truncate bool       // 是否在长模式下截断并附加校验 (默认 true)
+    Mode        FNMode      // FNCompact | FNStructured
+    Charsets    []FNCharset // 多选字符集合集（至少选 1 个）
+    Deconfuse   bool        // 是否移除易混淆字符 0Oo1lI (默认 true)
+    Rounds      int         // Feistel 轮数 (默认 6, 范围 4-12)
+    Truncate    bool        // 是否在长模式下截断并附加校验 (默认 true)
 }
 
 type FNMode string
@@ -131,34 +158,57 @@ const (
 
 type FNCharset string
 const (
-    FNAlnum   FNCharset = "alnum"
-    FNSafe    FNCharset = "safe"
-    FNHex     FNCharset = "hex"
-    FNAlpha   FNCharset = "alpha"
+    FNAlnum          FNCharset = "alnum"            // a-zA-Z0-9
+    FNLowercase      FNCharset = "lowercase"        // a-z
+    FNUppercase      FNCharset = "uppercase"        // A-Z
+    FNDigits         FNCharset = "digits"           // 0-9
+    FNHexLower       FNCharset = "hex_lower"        // 0-9 a-f
+    FNHexUpper       FNCharset = "hex_upper"        // 0-9 A-F
+    FNSymbolsBasic   FNCharset = "symbols_basic"    // _-.~
+    FNSymbolsExt     FNCharset = "symbols_extended" // !@#$%^&*()+=[]{}|;:,.<>?/
+    FNHanziCommon    FNCharset = "hanzi_common"     // 常用汉字 ~3000
+    FNHanziRare      FNCharset = "hanzi_rare"       // 生僻汉字 ~1000+
+    FNEmoji          FNCharset = "emoji"            // 文件名安全 emoji ~100
 )
+
+// FilenameAlgorithm 序列化格式:
+// "enc-fn:{mode}:{charset1,charset2,...}:deconfuse={true|false}"
+// 例: "enc-fn:compact:alnum,hanzi_rare,symbols_extended:deconfuse=true"
+// 例: "enc-fn:structured:hanzi_common,emoji:deconfuse=false"
 ```
 
+#### Scenario: 多选字符集编码
+- **WHEN** 用户选择字符集为 `[alnum, hanzi_rare]`，去混淆开启
+- **THEN** 最终字符表 = alnum(62) ∪ hanzi_rare(~1000) - 去混淆(6) ≈ 1056 个字符
+- **AND** 输出编码串中同时包含拉丁字母/数字和生僻汉字
+- **AND** 信息密度高（log2(1056) ≈ 10.04 bits/字符）
+
+#### Scenario: 纯汉字编码
+- **WHEN** 用户仅选择 `[hanzi_common]`
+- **THEN** 输出完全由常用汉字组成，视觉上类似正常中文文本
+- **AND** 对不知情观察者具有极强隐蔽性（看起来像普通中文文件名）
+
+#### Scenario: 去混淆开关行为
+- **WHEN** Deconfuse=true 且字符集包含 alnum
+- **THEN** 从最终字符表中移除 `0 O o 1 l I` 共 6 个字符
+- **WHEN** Deconfuse=false
+- **THEN** 保留所有原始字符不做任何移除
+- **WHEN** 字符集不含 alnum/digits（如纯 hanzi_common）
+- **THEN** Deconfuse 开关无效果（无易混淆字符可移除）
+
 #### Scenario: ENC-FN 短模式编码
-- **WHEN** 使用 ENC-FN compact 模式编码文件名 "video.mp4"，密码 "pass123"，字符集 almun
-- **THEN** 输出一个 ~10-16 字符的 alnum 编码串（无前缀无后缀）
-- **AND** 同一输入+同一密码始终产生相同输出（确定性）
-- **AND** 不同密码产生完全不同的输出（密钥敏感性）
+- **WHEN** 使用 compact 模式，字符集 `[alnum, hanzi_rare]`，Deconfuse=true
+- **THEN** 输出一个紧凑的混合编码串（无前缀无后缀）
+- **AND** 同一输入+同一密码→相同输出（确定性）
 
 #### Scenario: ENC-FN 长模式编码
-- **WHEN** 使用 ENC-FN structured 模式编码文件名 "非常长的中文文件名_包含emoji🎉.txt"
-- **THEN** 输出以 `[S]` 开头，包含原始字节长度、编码体、可选校验后缀
-- **AND** 解码时可验证完整性和正确性
+- **WHEN** 使用 structured 模式编码含 emoji 的文件名
+- **THEN** 输出以 `[S]` 开头，包含长度标记、编码体、校验后缀
+- **AND** 解码时可验证完整性
 
 #### Scenario: ENC-FN 解码失败处理
-- **WHEN** 编码串被篡改（字符缺失/多余/错误字符集）
-- **THEN** Decode 返回明确的错误（ErrFNInvalidFormat / ErrFNCorrupt / ErrFNChecksumMismatch）
-- **AND** 不返回部分乱码结果
-
-#### Scenario: 不同字符集的输出对比
-- **WHEN** 同一文件名分别用 alnum / safe / hex 字符集编码
-- **THEN** hex 输出约是 alnum 的 1.55 倍长度（log(62)/log(16) ≈ 1.55）
-- **AND** safe 输出比 alnum 略长（因基数更小）
-- **AND** 三种输出均可被各自的 Decode 正确还原
+- **WHEN** 编码串被篡改或使用错误配置（字符集不匹配/密码错误）
+- **THEN** Decode 返回明确错误（ErrFNInvalidFormat / ErrFNCorrupt / ErrFNChecksumMismatch / ErrFNCharsetMismatch）
 
 ---
 
@@ -190,7 +240,7 @@ const (
 - **AND** 展示层始终显示完整的原始文件名
 
 #### Scenario: 空/Unicode 文件名处理
-- **WHEN** 原始文件名为空或含 emoji/CJK/控制字符
+- **WHEN** 原始文件名为空或含 emoji/CJK/生僻汉字/控制字符
 - **THEN** UTF-8 字节全量传入 ENC-FN 编码，不做过滤
 - **AND** 展示层正确渲染
 
@@ -202,11 +252,9 @@ const (
 type Manifest_v4 struct {
     // ... 已有字段 ...
     OriginalName      string `json:"original_name,omitempty"`       // 原始文件名（明文或 ENC-FN 编码）
-    FilenameAlgorithm string `json:"filename_alg,omitempty"`        // "none" | "enc-fn:compact:alnum" | "enc-fn:structured:safe" | ...
+    FilenameAlgorithm string `json:"filename_alg,omitempty"`        // "none" | "enc-fn:{mode}:{cs1,cs2,...}:dc={bool}"
 }
 ```
-
-`FilenameAlgorithm` 格式：`enc-fn:{mode}:{charset}`，例如 `"enc-fn:compact:alnum"` 或 `"enc-fn:structured:safe"`
 
 ### Requirement: Header Flags 位域
 
@@ -219,9 +267,11 @@ const FlagFilenameEncrypted uint16 = 0x0010 // Manifest.original_name 是 ENC-FN
 ```
 1. 若 v4 容器 Manifest.original_name 非空：
    a. FlagFilenameEncrypted 未设置 → 直接作为显示名
-   b. FlagFilenameEncrypted 已设置 → ENC-FN.Decode(original_name, password) → 显示（失败 fallback 到步骤 2）
+   b. FlagFilenameEncrypted 已设置 → ENC-FN.Decode(original_name, password, fnConfig) → 显示（失败 fallback 到步骤 2）
 2. 否则 → 物理文件名
 ```
+
+> **注意**：Decode 时需要的 fnConfig（字符集列表、去混淆开关等）从容器创建时的配置持久化而来，可通过 API 获取或在 Manifest.FilenameAlgorithm 中解析重建。
 
 ### Requirement: 前端 decodeAlistFilename
 
