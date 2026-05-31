@@ -485,15 +485,18 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 	}
 
 	var primaryPassword string
+	isPasswordIndependent := false
 	if resolver, ok := plugin.(pluginInterfaces.TaskPasswordResolver); ok {
 		primaryPassword = resolver.ResolveTaskPassword(task.Password, task.ExtraFields)
+		opts := plugin.GetTaskOptions()
+		isPasswordIndependent = opts.PasswordStrategy == pluginInterfaces.PasswordIndependent
 	} else {
 		primaryPassword = task.Password
 		if primaryPassword == "" {
 			primaryPassword = tm.cfg.Password
 		}
 	}
-	if primaryPassword == "" {
+	if primaryPassword == "" && !isPasswordIndependent {
 		tm.failTask(taskID, "encryption requires a password")
 		return
 	}

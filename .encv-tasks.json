@@ -1,5 +1,14 @@
 [
   {
+    "id": "952aa24b-9655-4187-8a89-146c3e0cbf9d",
+    "type": "encrypt",
+    "sourcePath": "/01-plain-media/video/sample.mp4",
+    "pluginName": "alist_encrypt",
+    "status": "queued",
+    "progress": 0,
+    "createdAt": "2026-05-31T19:56:50.860382851Z"
+  },
+  {
     "id": "630faafe-0edc-47fa-8738-5665ab950525",
     "type": "encrypt",
     "sourcePath": "/nonexistent/file.mp4",
@@ -41,9 +50,14 @@
     "id": "2a97e1d5-5c61-4caa-b04d-e1c0465df597",
     "type": "encrypt",
     "sourcePath": "/01-plain-media/video/sample.mp4",
+    "secondaryPassword": "1234",
     "pluginName": "alist_encrypt",
-    "status": "queued",
-    "progress": 0,
-    "createdAt": "2026-05-31T19:36:07.850023531Z"
+    "status": "failed",
+    "progress": 10,
+    "phase": "initializing",
+    "error": "encryption requires a password",
+    "errorDetail": "encryption requires a password",
+    "createdAt": "2026-05-31T19:36:07.850023531Z",
+    "completedAt": "2026-05-31T19:36:08.761532789Z"
   }
 ]
