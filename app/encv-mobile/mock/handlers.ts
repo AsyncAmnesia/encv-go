@@ -511,6 +511,106 @@ export function createHandlers(base: string): { dispatchRequest: Connect.NextHan
       return
     }
 
+    if (pathname === '/decrypt' || pathname.startsWith('/decrypt?')) {
+      const url = new URL(req.url || '', `http://localhost${base}`)
+      const queryPath = url.searchParams.get('file') || ''
+      const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
+      if (!fs.existsSync(resolvedPath)) return json(res, { error: 'File not found' }, 404)
+      try {
+        const buf = fs.readFileSync(resolvedPath)
+        const ext = path.extname(resolvedPath).toLowerCase()
+        const textExts = ['.txt', '.csv', '.json', '.md', '.xml', '.html', '.css', '.js', '.ts', '.log']
+        if (textExts.includes(ext)) {
+          res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+          res.end(buf.toString('utf-8'))
+        } else {
+          res.setHeader('Content-Type', 'application/octet-stream')
+          res.end(buf)
+        }
+      } catch (e: any) {
+        json(res, { error: e.message }, 500)
+      }
+      return
+    }
+
+    if (pathname === '/api/file/info' || pathname.startsWith('/api/file/info?')) {
+      const url = new URL(req.url || '', `http://localhost${base}`)
+      const queryPath = url.searchParams.get('path') || ''
+      const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
+      if (!fs.existsSync(resolvedPath)) return json(res, { error: 'File not found' }, 404)
+      try {
+        const stat = fs.statSync(resolvedPath)
+        const ext = path.extname(resolvedPath).toLowerCase()
+        const name = path.basename(resolvedPath)
+        const categoryMap: Record<string, string> = {
+          jpg: 'image', jpeg: 'image', png: 'image', gif: 'image', webp: 'image',
+          mp4: 'video', mkv: 'video', avi: 'video', mov: 'video',
+          mp3: 'audio', flac: 'audio', wav: 'audio', ogg: 'audio',
+          pdf: 'document', doc: 'document', docx: 'document',
+          txt: 'text', csv: 'text', md: 'text', json: 'text', xml: 'text', log: 'text',
+        }
+        const containerExtMap: Record<string, string> = {
+          '.sccgv': 'video', '.sccgi': 'image', '.sccga': 'audio',
+          '.sccgt': 'text', '.sccgwps': 'document', '.sccgpdf': 'pdf',
+        }
+        const isContainer = !!containerExtMap[ext]
+        const containerType = containerExtMap[ext] || ''
+
+        const info: Record<string, any> = {
+          name,
+          path: queryPath,
+          size: stat.size,
+          modified: stat.mtime.toISOString(),
+          mime_type: MIME_MAP[ext] || 'application/octet-stream',
+          category: categoryMap[ext.replace('.', '')] || 'unknown',
+          is_encv_container: isContainer,
+        }
+
+        if (isContainer) {
+          info.container = {
+            container_type: containerType,
+            container_id: `mock-container-${name}`,
+            version: 4,
+            original_name: name.replace(new RegExp(`\\${ext}$`), ''),
+            filename_algorithm: 'enc-fn',
+            manifest: {
+              version: 4,
+              original_name: name.replace(new RegExp(`\\${ext}$`), ''),
+              created_at: stat.mtime.toISOString(),
+            },
+          }
+        }
+
+        return json(res, info)
+      } catch (e: any) {
+        return json(res, { error: e.message }, 500)
+      }
+    }
+
+    if (pathname.startsWith('/preview/')) {
+      const previewPage = pathname.replace(/^\/preview\//, '')
+      const url = new URL(req.url || '', `http://localhost${base}`)
+      const queryPath = url.searchParams.get('file') || ''
+      const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
+
+      if (previewPage === 'pdf.html') {
+        if (!fs.existsSync(resolvedPath)) {
+          res.setHeader('Content-Type', 'text/html')
+          res.end('<html><body><h1>PDF not found</h1></body></html>')
+          return true
+        }
+        const buf = fs.readFileSync(resolvedPath)
+        const b64 = buf.toString('base64')
+        res.setHeader('Content-Type', 'text/html; charset=utf-8')
+        res.end(`<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;display:flex;justify-content:center;align-items:center;height:100vh;background:#1e1e2e;color:#fff}iframe{width:100%;height:100%;border:none}</style></head><body><iframe src="data:application/pdf;base64,${b64}"></iframe></body></html>`)
+        return true
+      }
+
+      res.setHeader('Content-Type', 'text/html')
+      res.end(`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><h1>Preview: ${previewPage}</h1><p>File: ${queryPath}</p></body></html>`)
+      return true
+    }
+
     res.statusCode = 501
     res.setHeader('Content-Type', 'application/json')
     res.end(JSON.stringify({ error: 'not implemented in mock', path: rawUrl }))
