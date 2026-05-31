@@ -175,11 +175,3 @@ ion-toggle {
   --track-background-checked: var(--ion-color-primary);
   --handle-background: var(--ion-color-primary);
 }
-
-ion-toggle::part(handle) {
-  background: var(--ion-color-primary);
-}
-
-ion-toggle.toggle-checked::part(handle) {
-  background: #ffffff;
-}

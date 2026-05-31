@@ -185,3 +185,18 @@ onUnmounted(() => {
   --border-radius: 8px;
 }
 </style>
+
+<style>
+/* 通用 ion-toggle 暗黑模式适配 — 非 scoped，作用于所有 toggle */
+ion-toggle {
+  --track-background: #424242;
+  --track-background-checked: var(--ion-color-primary);
+  --handle-background: var(--ion-color-primary);
+  --handle-background-checked: #ffffff;
+}
+
+/* 覆盖 ion-item 内部 .ion-color 上下文导致的 ON 状态手柄变黑 */
+ion-toggle.toggle-checked::part(handle) {
+  background: #ffffff;
+}
+</style>
