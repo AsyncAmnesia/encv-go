@@ -19,7 +19,7 @@
 ## 二、改进目标
 
 1. **新增 `config.dev.json`**：提交到 Git，**仅包含 `mobile.server_dir`**（极简 ~5 行）
-2. **实现合并覆盖**：`config.dev.json` → `config.user.json`（user 覆盖 dev）
+2. **实现合并覆盖**：`config.user.json` → `config.dev.json`（**dev 覆盖 user，dev 优先级最高**）
 3. **两个文件都提交 Git**：接力开发复用，都不加入 `.gitignore`
 
 ---
@@ -120,7 +120,7 @@ func deepMerge(base, overlay map[string]interface{}) {
 
 ```go
 // Load 加载配置。优先级（低→高）：
-//   DefaultConfig() → config.dev.json → config.user.json
+//   DefaultConfig() → config.user.json → config.dev.json（dev 最高优先级）
 // 显式指定路径时走单文件模式（向后兼容）
 func Load(configPath string) (*Config, error) {
     cfg := DefaultConfig()
@@ -135,11 +135,11 @@ func Load(configPath string) (*Config, error) {
         return finalize(cfg), nil
     }
 
-    if candidates.Dev != "" {
-        cfg = loadAndMerge(cfg, candidates.Dev)
-    }
     if candidates.User != "" {
         cfg = loadAndMerge(cfg, candidates.User)
+    }
+    if candidates.Dev != "" {
+        cfg = loadAndMerge(cfg, candidates.Dev)  // dev 后合并，覆盖 user
     }
 
     return finalize(cfg), nil
@@ -244,12 +244,11 @@ DefaultConfig():
   server.port=1999, server.dir="./", output_path="./encrypted", log.level="info"
   mobile=nil, plugin_settings={}
 
-↓ 合并 config.dev.json (仅 mobile.server_dir):
-  server.port=1999, server.dir="./", output_path="./encrypted", log.level="info"
-  mobile.server_dir="/storage/emulated/0"
+↓ 合并 config.user.json (如果存在):
+  ... user 文件中的字段覆盖默认值 ...
 
-↓ 再合并 config.user.json (如果存在):
-  ... user 文件中的字段覆盖上面的值 ...
+↓ 再合并 config.dev.json (仅 mobile.server_dir，最高优先级):
+  mobile.server_dir="/storage/emulated/0"  (覆盖 user 中的同名字段)
 ```
 
 ### 场景：只有 dev 没有 user
@@ -282,7 +281,7 @@ Load("/etc/encv/config.json") → 单文件模式，不走合并（完全不变�
 - [ ] `config.dev.json` 和 `config.user.json` 都不被 `.gitignore` 忽略
 - [ ] 无 `config.dev.json` 时行为与原来完全一致（向后兼容）
 - [ ] 只有 `config.dev.json` 时正确合并（mobile.server_dir 生效，其余用默认值）
-- [ ] `config.dev.json` + `config.user.json` 都存在时 user 覆盖 dev
+- [ ] `config.dev.json` + `config.user.json` 都存在时 **dev 覆盖 user**（dev 优先级最高）
 - [ ] `Load("/explicit/path.json")` 走单文件模式不受影响
 - [ ] `ApplyMobileOverrides()` 在合并后仍正确执行
 - [ ] `Provider`（`json:"-"`）在合并中不丢失
