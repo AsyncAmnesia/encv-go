@@ -82,16 +82,9 @@
         <div class="section-title error-section-title">
           <ion-icon :icon="closeCircle" color="danger"></ion-icon>
           {{ t('tasks.error') }}
-          <ion-button fill="clear" size="small" color="medium" class="copy-error-btn" @click="copyErrorDetail">
-            <ion-icon :icon="copied ? checkmarkCircle : copyOutline" slot="icon-only"></ion-icon>
-          </ion-button>
         </div>
-        <p class="error-msg">{{ task.error }}</p>
-        <pre v-if="task.errorDetail && task.errorDetail !== task.error" class="error-detail-pre">{{ task.errorDetail }}</pre>
-        <div v-if="showManualCopy" class="manual-copy-area">
-          <textarea ref="manualCopyRef" class="manual-copy-textarea" :value="task.errorDetail || task.error" readonly @click="onManualCopyFocus"></textarea>
-          <p class="manual-copy-hint">{{ t('tasks.manualCopyHint') }}</p>
-        </div>
+        <p class="error-msg selectable-text">{{ task.error }}</p>
+        <pre v-if="task.errorDetail && task.errorDetail !== task.error" class="error-detail-pre selectable-text">{{ task.errorDetail }}</pre>
       </div>
 
       <!-- 警告信息 -->
@@ -140,7 +133,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import {
   IonPage,
   IonHeader,
@@ -157,23 +150,16 @@ import {
 import {
   checkmarkCircle,
   closeCircle,
-  copyOutline,
   warningOutline,
   refresh,
   trash,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
-import { showToast } from '@/composables/useToast'
-import { copyToClipboard, selectAllText } from '@/composables/useClipboard'
 import type { EncvTask } from '@/api/encv'
 
 const props = defineProps<{ task: EncvTask }>()
 const { t } = useI18n()
-
-const copied = ref(false)
-const showManualCopy = ref(false)
-const manualCopyRef = ref<HTMLTextAreaElement | null>(null)
 
 const fileName = computed(() => {
   const parts = props.task.sourcePath.split('/')
@@ -267,26 +253,6 @@ function getPhaseLabel(phase: string): string {
 function formatWarningDetail(detail: string): string {
   try { return JSON.stringify(JSON.parse(detail), null, 2) }
   catch { return detail }
-}
-
-async function copyErrorDetail() {
-  const text = props.task.errorDetail || props.task.error || ''
-  const ok = await copyToClipboard(text)
-  if (ok) {
-    copied.value = true
-    showManualCopy.value = false
-    showToast({ message: t('tasks.copied'), duration: 1200, color: 'success' })
-    setTimeout(() => { copied.value = false }, 2000)
-  } else {
-    showManualCopy.value = true
-    showToast({ message: t('tasks.copyFailed'), duration: 1500, color: 'warning' })
-  }
-}
-
-function onManualCopyFocus() {
-  if (manualCopyRef.value) {
-    selectAllText(manualCopyRef.value)
-  }
 }
 
 async function handleClose() {
@@ -460,13 +426,6 @@ async function handleRemove() {
 /* Error */
 .error-section { background: rgba(var(--ion-color-danger-rgb), 0.04); border-radius: 8px; padding: 12px; }
 .error-msg { font-size: 13px; color: var(--ion-color-danger); margin-top: 4px; word-break: break-word; }
-.copy-error-btn {
-  --padding-start: 4px;
-  --padding-end: 4px;
-  margin-left: auto;
-  min-width: 28px;
-  min-height: 28px;
-}
 .error-detail-pre {
   background: var(--ion-color-step-50);
   border-radius: 6px;
@@ -479,31 +438,9 @@ async function handleRemove() {
   overflow-y: auto;
   line-height: 1.5;
 }
-
-.manual-copy-area {
-  margin-top: 8px;
-}
-
-.manual-copy-textarea {
-  width: 100%;
-  min-height: 60px;
-  max-height: 120px;
-  font-size: 11px;
-  font-family: monospace;
-  background: var(--ion-color-step-50);
-  border: 1px solid var(--ion-color-step-200);
-  border-radius: 6px;
-  padding: 8px;
-  color: var(--ion-text-color);
-  resize: none;
-  line-height: 1.5;
-  word-break: break-all;
-}
-
-.manual-copy-hint {
-  font-size: 11px;
-  color: var(--ion-color-medium);
-  margin-top: 4px;
+.selectable-text {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* Warning */

@@ -404,6 +404,19 @@ export async function removeTask(id: string): Promise<void> {
   }
 }
 
+export async function clearCompletedTasks(): Promise<{ removed: number }> {
+  console.info('[API] clearCompletedTasks')
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/tasks`, {
+    method: 'DELETE',
+  })
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  const data = await response.json()
+  return { removed: data.removed ?? 0 }
+}
+
 export interface WebDAVConfig {
   id: string
   name: string

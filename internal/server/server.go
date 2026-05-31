@@ -225,6 +225,7 @@ func (s *Server) Start(version string) (string, error) {
 	r.POST("/api/tasks/:id/cancel", s.handleCancelTaskGin)
 	r.POST("/api/tasks/:id/retry", s.handleRetryTaskGin)
 	r.DELETE("/api/tasks/:id", s.handleRemoveTaskGin)
+	r.DELETE("/api/tasks", s.handleClearCompletedTasksGin)
 	r.POST("/api/webdav/test", s.handleTestWebDAVGin)
 	r.GET("/api/webdav/test-local", s.handleTestLocalWebDAVGin)
 	r.GET("/api/remote/info", s.handleRemoteInfoGin)

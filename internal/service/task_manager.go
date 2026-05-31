@@ -296,6 +296,29 @@ func (tm *TaskManager) RemoveTask(id string) error {
 	return nil
 }
 
+func (tm *TaskManager) ClearCompleted() int {
+	tm.mu.Lock()
+	removed := 0
+	for id, task := range tm.tasks {
+		if task.Status == "completed" || task.Status == "failed" || task.Status == "cancelled" {
+			delete(tm.tasks, id)
+			removed++
+		}
+	}
+	tm.mu.Unlock()
+
+	if removed > 0 {
+		tm.saveTasks()
+		slog.Info("Cleared completed tasks", "count", removed)
+		if tm.broadcaster != nil {
+			tm.broadcaster.Broadcast("task:cleared", map[string]interface{}{
+				"count": removed,
+			})
+		}
+	}
+	return removed
+}
+
 func (tm *TaskManager) Retry(id string) (*MobileTask, error) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()

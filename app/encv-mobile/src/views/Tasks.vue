@@ -4,10 +4,42 @@
       <ion-toolbar>
         <ion-title>{{ t('tasks.title') }}</ion-title>
         <ion-buttons slot="end">
-          <ion-button fill="clear" size="small" @click="toggleSort" class="sort-toggle-btn">
+          <ion-button fill="clear" size="small" @click="toggleSort" class="toolbar-btn">
             <ion-icon :icon="sortBy === 'activity' ? sync : timer" slot="icon-only"></ion-icon>
           </ion-button>
+          <ion-button fill="clear" size="small" @click="handleClearCompleted" class="toolbar-btn" :disabled="!hasCompletedTasks">
+            <ion-icon :icon="trashBin" slot="icon-only" color="danger"></ion-icon>
+          </ion-button>
         </ion-buttons>
+      </ion-toolbar>
+
+      <ion-toolbar v-if="showSearch">
+        <ion-searchbar
+          :value="searchQuery"
+          @ionInput="onSearchInput"
+          :placeholder="t('tasks.searchPlaceholder')"
+          show-cancel-button="focus"
+          @ionCancel="showSearch = false; searchQuery = ''"
+          :debounce="200"
+          class="task-searchbar"
+        ></ion-searchbar>
+      </ion-toolbar>
+
+      <ion-toolbar v-if="showFilters" class="filter-toolbar">
+        <div class="filter-chips">
+          <ion-chip :outline="filterPlugin !== null" :color="filterPlugin ? 'primary' : 'medium'" @click="cyclePluginFilter">
+            <ion-icon :icon="extensionPuzzle" size="small"></ion-icon>
+            <ion-label>{{ filterPlugin || t('tasks.allPlugins') }}</ion-label>
+          </ion-chip>
+          <ion-chip :outline="filterType !== null" :color="filterType ? 'primary' : 'medium'" @click="cycleTypeFilter">
+            <ion-icon :icon="filterType === 'encrypt' ? lockClosed : filterType === 'decrypt' ? lockOpen : swapVertical" size="small"></ion-icon>
+            <ion-label>{{ filterType ? t(filterType === 'encrypt' ? 'tasks.encrypt' : 'tasks.decrypt') : t('tasks.allTypes') }}</ion-label>
+          </ion-chip>
+          <ion-chip :outline="filterStatus !== null" :color="filterStatus ? 'primary' : 'medium'" @click="cycleStatusFilter">
+            <ion-icon :icon="funnel" size="small"></ion-icon>
+            <ion-label>{{ filterStatus ? getStatusLabel(filterStatus) : t('tasks.allStatuses') }}</ion-label>
+          </ion-chip>
+        </div>
       </ion-toolbar>
     </ion-header>
 
@@ -16,9 +48,25 @@
         <ion-refresher-content></ion-refresher-content>
       </ion-refresher>
 
+      <div class="toolbar-actions">
+        <ion-button fill="clear" size="small" @click="showSearch = !showSearch" class="action-btn">
+          <ion-icon :icon="search" slot="icon-only"></ion-icon>
+        </ion-button>
+        <ion-button fill="clear" size="small" @click="showFilters = !showFilters" class="action-btn">
+          <ion-icon :icon="funnel" slot="icon-only" :color="hasActiveFilters ? 'primary' : undefined"></ion-icon>
+        </ion-button>
+      </div>
+
       <div v-if="loading" class="loading-container">
         <ion-spinner name="crescent"></ion-spinner>
         <p>{{ t('tasks.loading') }}</p>
+      </div>
+
+      <div v-else-if="filteredTasks.length === 0 && tasks.length > 0" class="empty-state">
+        <ion-icon :icon="search" class="empty-icon"></ion-icon>
+        <h3>{{ t('tasks.noMatchingTasks') }}</h3>
+        <p>{{ t('tasks.noMatchingTasksDesc') }}</p>
+        <ion-button fill="clear" size="small" @click="clearFilters">{{ t('tasks.clearFilters') }}</ion-button>
       </div>
 
       <div v-else-if="tasks.length === 0" class="empty-state">
@@ -28,7 +76,7 @@
       </div>
 
       <ion-list v-else>
-        <ion-item-sliding v-for="task in sortedTasks" :key="task.id">
+        <ion-item-sliding v-for="task in filteredTasks" :key="task.id">
           <ion-item @click="openTaskDetail(task)" button detail>
             <ion-icon
               :icon="getTaskIcon(task)"
@@ -53,7 +101,6 @@
               <div v-if="task.status === 'running' || task.status === 'cancelling'" class="progress-section">
                 <ion-progress-bar
                   :value="task.progress / 100"
-                  :buffer="task.status === 'cancelling' ? undefined : undefined"
                   :class="['task-progress', { 'progress-cancelling': task.status === 'cancelling' }]"
                 ></ion-progress-bar>
                 <div class="progress-detail">
@@ -157,6 +204,11 @@ import {
   IonFab,
   IonFabButton,
   IonSpinner,
+  IonButton,
+  IonButtons,
+  IonSearchbar,
+  IonChip,
+  alertController,
   modalController,
 } from '@ionic/vue'
 import {
@@ -167,6 +219,12 @@ import {
   sync,
   warningOutline,
   lockClosed,
+  lockOpen,
+  search,
+  funnel,
+  trashBin,
+  extensionPuzzle,
+  swapVertical,
 } from 'ionicons/icons'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -174,6 +232,7 @@ import {
   cancelTask,
   retryTask,
   removeTask,
+  clearCompletedTasks,
   isWrongPasswordError,
 } from '@/api/encv'
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
@@ -192,6 +251,73 @@ const tasks = ref<EncvTask[]>([])
 const loading = ref(false)
 const expandedWarningDetail = ref<string | null>(null)
 const sortBy = ref<'activity' | 'created'>('activity')
+
+const showSearch = ref(false)
+const searchQuery = ref('')
+const showFilters = ref(false)
+const filterPlugin = ref<string | null>(null)
+const filterType = ref<TaskType | null>(null)
+const filterStatus = ref<TaskStatus | null>(null)
+
+const availablePlugins = computed(() => {
+  const plugins = new Set<string>()
+  for (const task of tasks.value) {
+    if (task.pluginName) plugins.add(task.pluginName)
+  }
+  return Array.from(plugins).sort()
+})
+
+const hasActiveFilters = computed(() =>
+  filterPlugin.value !== null || filterType.value !== null || filterStatus.value !== null
+)
+
+const hasCompletedTasks = computed(() =>
+  tasks.value.some(t => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled')
+)
+
+function cyclePluginFilter() {
+  if (filterPlugin.value === null) {
+    filterPlugin.value = availablePlugins.value[0] || null
+  } else {
+    const idx = availablePlugins.value.indexOf(filterPlugin.value)
+    if (idx < availablePlugins.value.length - 1) {
+      filterPlugin.value = availablePlugins.value[idx + 1]
+    } else {
+      filterPlugin.value = null
+    }
+  }
+}
+
+function cycleTypeFilter() {
+  if (filterType.value === null) filterType.value = 'encrypt'
+  else if (filterType.value === 'encrypt') filterType.value = 'decrypt'
+  else filterType.value = null
+}
+
+const statusCycle: TaskStatus[] = ['completed', 'failed', 'running', 'queued', 'cancelled']
+function cycleStatusFilter() {
+  if (filterStatus.value === null) {
+    filterStatus.value = statusCycle[0]
+  } else {
+    const idx = statusCycle.indexOf(filterStatus.value)
+    if (idx < statusCycle.length - 1) {
+      filterStatus.value = statusCycle[idx + 1]
+    } else {
+      filterStatus.value = null
+    }
+  }
+}
+
+function clearFilters() {
+  filterPlugin.value = null
+  filterType.value = null
+  filterStatus.value = null
+  searchQuery.value = ''
+}
+
+function onSearchInput(event: CustomEvent) {
+  searchQuery.value = event.detail.value ?? ''
+}
 
 function getTaskIcon(task: EncvTask) {
   switch (task.status) {
@@ -285,6 +411,34 @@ const sortedTasks = computed(() => {
   return arr
 })
 
+const filteredTasks = computed(() => {
+  let result = sortedTasks.value
+
+  if (searchQuery.value.trim()) {
+    const q = searchQuery.value.trim().toLowerCase()
+    result = result.filter(task => {
+      const name = getTaskName(task).toLowerCase()
+      const plugin = (task.pluginName || '').toLowerCase()
+      const error = (task.error || '').toLowerCase()
+      return name.includes(q) || plugin.includes(q) || error.includes(q)
+    })
+  }
+
+  if (filterPlugin.value !== null) {
+    result = result.filter(task => task.pluginName === filterPlugin.value)
+  }
+
+  if (filterType.value !== null) {
+    result = result.filter(task => task.type === filterType.value)
+  }
+
+  if (filterStatus.value !== null) {
+    result = result.filter(task => task.status === filterStatus.value)
+  }
+
+  return result
+})
+
 function toggleSort() {
   sortBy.value = sortBy.value === 'activity' ? 'created' : 'activity'
 }
@@ -363,6 +517,35 @@ async function handleRemoveTask(id: string) {
   } catch {
     showToast({ message: t('tasks.taskRemoveFailed'), duration: 2000, color: 'danger' })
   }
+}
+
+async function handleClearCompleted() {
+  const completedCount = tasks.value.filter(
+    t => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled'
+  ).length
+  if (completedCount === 0) return
+
+  const alert = await alertController.create({
+    header: t('tasks.clearConfirmTitle'),
+    message: t('tasks.clearConfirmMessage', { count: String(completedCount) }),
+    buttons: [
+      { text: t('tasks.cancel'), role: 'cancel' },
+      {
+        text: t('tasks.clearConfirm'),
+        role: 'destructive',
+        handler: async () => {
+          try {
+            const result = await clearCompletedTasks()
+            showToast({ message: t('tasks.cleared', { count: String(result.removed) }), duration: 2000, color: 'success' })
+            await loadTasks()
+          } catch {
+            showToast({ message: t('tasks.clearFailed'), duration: 2000, color: 'danger' })
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
 }
 
 function onTaskUpdate(data: { id: string; type: string; status: string; progress: number }) {
@@ -472,6 +655,55 @@ onUnmounted(() => {
   font-size: 64px;
   margin-bottom: 16px;
   opacity: 0.5;
+}
+
+.toolbar-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 4px 16px 0;
+}
+
+.action-btn {
+  --color: var(--ion-color-medium);
+  --padding-start: 8px;
+  --padding-end: 8px;
+  font-size: 18px;
+}
+
+.toolbar-btn {
+  --color: var(--ion-color-medium);
+  --padding-start: 8px;
+  --padding-end: 8px;
+  font-size: 20px;
+}
+
+.task-searchbar {
+  --padding-start: 12px;
+  --padding-end: 12px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.filter-toolbar {
+  --padding-start: 8px;
+  --padding-end: 8px;
+  --min-height: 44px;
+}
+
+.filter-chips {
+  display: flex;
+  gap: 6px;
+  padding: 4px 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.filter-chips ion-chip {
+  flex-shrink: 0;
+  font-size: 12px;
+  --padding-start: 8px;
+  --padding-end: 10px;
 }
 
 .status-badge {
@@ -650,44 +882,5 @@ onUnmounted(() => {
 .cancelling-spinner {
   width: 20px;
   height: 20px;
-}
-
-.browse-btn {
-  --padding-start: 8px;
-  --padding-end: 8px;
-  min-width: 44px;
-  min-height: 44px;
-}
-
-.plugin-selector {
-  margin: 8px 0;
-}
-
-.plugin-section {
-  margin: 4px 0;
-}
-
-.plugin-hint {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  font-size: 12px;
-  color: var(--ion-color-medium);
-  background: var(--ion-color-step-50, #f8f8f8);
-  border-radius: 6px;
-  margin: 4px 16px;
-}
-
-.hint-icon {
-  font-size: 16px;
-  flex-shrink: 0;
-}
-
-.sort-toggle-btn {
-  --color: var(--ion-color-medium);
-  --padding-start: 8px;
-  --padding-end: 8px;
-  font-size: 20px;
 }
 </style>

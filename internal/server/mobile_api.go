@@ -280,6 +280,11 @@ func (s *Server) handleRemoveTaskGin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+func (s *Server) handleClearCompletedTasksGin(c *gin.Context) {
+	count := s.mobileSvc.GetTaskManager().ClearCompleted()
+	c.JSON(http.StatusOK, gin.H{"ok": true, "removed": count})
+}
+
 func (s *Server) handleTestWebDAVGin(c *gin.Context) {
 	var req struct {
 		URL      string `json:"url"`
