@@ -262,6 +262,7 @@ func (p *AlistEncryptPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 				DefaultValue: "aesctr",
 				Help:         "tasks.encTypeHelp",
 				Options:      []string{"aesctr"},
+				OptionLabels: map[string]string{"aesctr": "AES-CTR-128"},
 				Condition:     "encrypt",
 			},
 		},

@@ -443,6 +443,7 @@ func (p *VideoPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 				DefaultValue: "balanced",
 				Help:         "tasks.streamPresetHelp",
 				Options:      []string{"balanced", "quality", "high_quality"},
+				OptionLabels: map[string]string{"balanced": "Balanced", "quality": "Quality", "high_quality": "High Quality"},
 				Condition:     "encrypt",
 			},
 			{

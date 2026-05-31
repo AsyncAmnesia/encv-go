@@ -55,6 +55,8 @@ func TestVideoPlugin_GetTaskOptions(t *testing.T) {
 	assert.Equal(t, "balanced", opts.ExtraFields[0].DefaultValue)
 	assert.Contains(t, opts.ExtraFields[0].Options, "balanced")
 	assert.Contains(t, opts.ExtraFields[0].Options, "high_quality")
+	assert.Equal(t, "Balanced", opts.ExtraFields[0].OptionLabels["balanced"])
+	assert.Equal(t, "High Quality", opts.ExtraFields[0].OptionLabels["high_quality"])
 	assert.Equal(t, "encrypt", opts.ExtraFields[0].Condition)
 	assert.Equal(t, "encrypt_filename", opts.ExtraFields[1].Key)
 	assert.Equal(t, "bool", opts.ExtraFields[1].Type)
@@ -81,6 +83,7 @@ func TestAlistEncryptPlugin_GetTaskOptions(t *testing.T) {
 	assert.Equal(t, "select", opts.ExtraFields[2].Type)
 	assert.Equal(t, "aesctr", opts.ExtraFields[2].DefaultValue)
 	assert.Equal(t, []string{"aesctr"}, opts.ExtraFields[2].Options)
+	assert.Equal(t, "AES-CTR-128", opts.ExtraFields[2].OptionLabels["aesctr"])
 	assert.Equal(t, "encrypt", opts.ExtraFields[2].Condition)
 }
 

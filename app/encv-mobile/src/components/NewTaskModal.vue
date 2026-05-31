@@ -164,7 +164,7 @@
               :key="opt"
               :value="opt"
             >
-              {{ opt }}
+              {{ field.optionLabels?.[opt] ?? opt }}
             </ion-select-option>
           </ion-select>
           <ion-note v-if="field.help" slot="helper">{{ t(field.help) }}</ion-note>
