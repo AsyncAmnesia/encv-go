@@ -142,6 +142,7 @@ import { useI18n } from '@/composables/useI18n'
 import { Capacitor } from '@capacitor/core'
 import { isNative, pickAndInstallPlugin, checkInstalledPlugins, debugInstallFlow, debugKotlinReflect, debugApkValidation, debugValidationStrategy, togglePluginEnabled, uninstallPlugin, debugLifecycleFlow } from '@/plugins/GoProcess'
 import { showToast } from '@/composables/useToast'
+import { copyToClipboard } from '@/composables/useClipboard'
 
 const { t } = useI18n()
 
@@ -172,13 +173,11 @@ async function loadExtensions() {
   try {
     const COMBOLITE_PLUGIN_ID_MAP: Record<string, string> = {
       'mpv-player': 'com.encvgo.plugin.mpv',
-      'alist-decrypt': 'com.encvgo.plugin.alistdecrypt',
     }
 
     interface PluginStatus { installed: boolean; enabled: boolean; versionName: string }
     const installedMap: Record<string, PluginStatus> = Capacitor.isNativePlatform() ? await checkInstalledPlugins() : {}
     const mpvInfo = installedMap[COMBOLITE_PLUGIN_ID_MAP['mpv-player']]
-    const alistDecryptInfo = installedMap[COMBOLITE_PLUGIN_ID_MAP['alist-decrypt']]
     extensions.value = [
       {
         id: 'mpv-player',
@@ -187,14 +186,6 @@ async function loadExtensions() {
         installed: !!mpvInfo?.installed,
         enabled: mpvInfo?.enabled ?? false,
         sizeDisplay: '~35 MB',
-      },
-      {
-        id: 'alist-decrypt',
-        name: t('extensions.alistDecrypt'),
-        description: t('extensions.alistDecryptDesc'),
-        installed: !!alistDecryptInfo?.installed,
-        enabled: alistDecryptInfo?.enabled ?? true,
-        sizeDisplay: '~150 KB',
       },
     ]
   } catch (e) {
@@ -237,7 +228,6 @@ async function handleToggleEnabled(id: string, currentEnabled: boolean) {
   if (!isNativePlatform()) return
   const COMBO_LITE_ID: Record<string, string> = {
     'mpv-player': 'com.encvgo.plugin.mpv',
-    'alist-decrypt': 'com.encvgo.plugin.alistdecrypt',
   }
   const pluginId = COMBO_LITE_ID[id] || id
   const newEnabled = !currentEnabled
@@ -260,7 +250,6 @@ async function handleToggleEnabled(id: string, currentEnabled: boolean) {
 async function handleUninstall(id: string) {
   const COMBO_LITE_ID: Record<string, string> = {
     'mpv-player': 'com.encvgo.plugin.mpv',
-    'alist-decrypt': 'com.encvgo.plugin.alistdecrypt',
   }
   const pluginId = COMBO_LITE_ID[id] || id
   const alert = await alertController.create({
@@ -304,12 +293,8 @@ async function showDebugResult(header: string, result: Record<string, any>) {
       {
         text: '复制',
         handler: async () => {
-          try {
-            await navigator.clipboard.writeText(debugText)
-            showToast({ message: '已复制诊断信息', duration: 1500, color: 'success' })
-          } catch {
-            showToast({ message: '复制失败', duration: 1500, color: 'danger' })
-          }
+          const ok = await copyToClipboard(debugText)
+          showToast({ message: ok ? '已复制诊断信息' : '复制失败', duration: 1500, color: ok ? 'success' : 'danger' })
           return false
         },
       },

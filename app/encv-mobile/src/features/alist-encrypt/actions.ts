@@ -29,7 +29,7 @@ export function getAlistActions(file: FileItem): FileAction[] {
       },
       {
         id: 'alist-decrypt',
-        text: () => t('alistEncrypt.decrypt'),
+        text: () => t('files.decrypt'),
         icon: lockClosed,
         color: 'warning',
         handler: async (f: FileItem) => {
@@ -44,7 +44,7 @@ export function getAlistActions(file: FileItem): FileAction[] {
     return [
       {
         id: 'alist-decrypt-container',
-        text: () => t('alistEncrypt.decrypt'),
+        text: () => t('files.decrypt'),
         icon: lockOpen,
         color: 'primary',
         handler: async (f: FileItem) => {
@@ -58,7 +58,7 @@ export function getAlistActions(file: FileItem): FileAction[] {
   return [
     {
       id: 'alist-encrypt',
-      text: () => t('alistEncrypt.encrypt'),
+      text: () => t('files.encrypt'),
       icon: lockClosed,
       color: 'warning',
       handler: async (f: FileItem) => {

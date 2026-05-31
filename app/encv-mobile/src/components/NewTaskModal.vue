@@ -94,8 +94,8 @@
         {{ taskOpts.passwordStrategy === 'independent' ? t('tasks.usesIndependentPassword') : t('tasks.usesGlobalPassword') }}
       </div>
 
-      <!-- 容器版本选择 -->
-      <div v-if="taskType === 'encrypt' && vers && vers.length > 0" class="version-section">
+      <!-- 容器版本选择（仅插件声明 SupportVersionSelect 时显示） -->
+      <div v-if="taskType === 'encrypt' && taskOpts?.supportVersionSelect && vers && vers.length > 0" class="version-section">
         <ContainerVersionSelector
           :model-value="ver"
           @update:model-value="(v: number) => { emit('updateVersion', v); props.onUpdateVersion?.(v) }"
@@ -103,8 +103,8 @@
         />
       </div>
 
-      <!-- 密码字段 -->
-      <div class="form-section password-section">
+      <!-- 密码字段（仅 PasswordGlobal 策略显示） -->
+      <div v-if="!taskOpts || taskOpts.passwordStrategy === 'global'" class="form-section password-section">
         <ion-item lines="none" class="password-item">
           <ion-input
             :model-value="pwdPrimary"
@@ -127,15 +127,15 @@
         </ion-item>
       </div>
 
-      <!-- 额外字段 -->
+      <!-- 额外字段（声明式渲染，包括插件独立密码等） -->
       <template v-for="field in extraFlds" :key="field.key">
         <ion-item v-if="!field.condition || field.condition === taskType" lines="none" class="extra-field-item">
           <ion-input
             :model-value="getExtra(field.key)"
             @ionInput="(e: any) => { emit('updateExtraValue', { key: field.key, value: e.detail.value }); props.onUpdateExtraValue?.({ key: field.key, value: e.detail.value }) }"
-            :label="field.label"
-            type="text"
-            :placeholder="field.help"
+            :label="t(field.label)"
+            :type="field.type === 'password' ? 'password' : 'text'"
+            :placeholder="t(field.help)"
           ></ion-input>
         </ion-item>
       </template>

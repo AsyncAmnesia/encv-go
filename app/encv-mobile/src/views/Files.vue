@@ -332,7 +332,7 @@
         :inputs="renameAlertInputs"
         :buttons="[
           { text: '取消', role: 'cancel' },
-          { text: '确定', handler: (d: any) => { renameValue = d.name ?? renameValue.value; renamePassword = d.password ?? ''; handleRename(selectedFile!); } }
+          { text: '确定', handler: onRenameConfirm }
         ]"
         @didDismiss="showRenameDialog = false" />
       <ion-modal :is-open="showTagDialog" @didDismiss="showTagDialog = false">
@@ -479,6 +479,7 @@ import {
 import { vLongpress } from '@/directives/longpress'
 import { isNative, requestStoragePermission, openPlayer, openExternal, getLocalFilePath } from '@/plugins/GoProcess'
 import { getExternalStreamUrl } from '@/api/encv'
+import { copyToClipboard } from '@/composables/useClipboard'
 import { showToast } from '@/composables/useToast'
 import { Share } from '@capacitor/share'
 import { PLAY_MODE, type PlayMode, VIDEO_DEFAULT, AUDIO_DEFAULT } from '@/constants/player'
@@ -1038,6 +1039,12 @@ async function handleCopy(file: FileItem) {
   } catch (e) { showToast({ message: `复制失败: ${e}` }) }
 }
 
+function onRenameConfirm(d: any) {
+  renameValue.value = d.name ?? renameValue.value
+  renamePassword.value = d.password ?? ''
+  if (selectedFile.value) handleRename(selectedFile.value)
+}
+
 async function handleRename(file: FileItem) {
   if (!renameValue.value.trim() || renameValue.value === file.name) return
   try {
@@ -1076,7 +1083,7 @@ async function handleShare(file: FileItem) {
       }
     } catch (e) { showToast({ message: '分享失败或已取消' }) }
   } else {
-    navigator.clipboard.writeText(getExternalStreamUrl(file.path)).then(() => showToast({ message: '链接已复制到剪贴板' })).catch(() => showToast({ message: '复制失败' }))
+    copyToClipboard(getExternalStreamUrl(file.path)).then(ok => showToast({ message: ok ? '链接已复制到剪贴板' : '复制失败', color: ok ? 'success' : 'danger' }))
   }
 }
 

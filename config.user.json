@@ -9,14 +9,21 @@
     "level": "debug"
   },
   "mobile": {
-    "output_path": "/storage/emulated/0/encv-output",
-    "server_dir": "/storage/emulated/0",
-    "webdav_dir": ""
+    "output": {
+      "path": "/storage/emulated/0/encv-output"
+    },
+    "server": {
+      "dir": "/storage/emulated/0"
+    },
+    "webdav": {
+      "dir": ""
+    }
   },
   "output_path": "./output",
   "password": "my-encv_key，可以使用中文和标点符号✔",
   "plugin_settings": {
     "alist_encrypt": {
+      "default_password": "123456",
       "enabled": true,
       "suffix": ".bin"
     },

@@ -203,11 +203,29 @@ type LogConfig struct {
 }
 
 // MobileConfig 移动端专用配置段，桌面端忽略。
-// 用于覆盖 server.dir / output_path / webdav.dir 等平台敏感路径。
+// 字段命名镜像目标配置路径，实现无歧义映射：
+//   mobile.server.dir   → server.dir
+//   mobile.output.path  → output_path
+//   mobile.webdav.dir   → webdav.dir
+//
+// 此配置段是运行时 overlay（覆盖层），不修改持久化的 config.user.json。
+// Go 端 Load() finalize() 阶段自动应用，Android 端通过 ENCV_MOBILE=1 触发。
 type MobileConfig struct {
-	ServerDir  string `json:"server_dir"`  // 覆盖 server.dir
-	OutputPath string `json:"output_path"` // 覆盖 output_path
-	WebdavDir  string `json:"webdav_dir"` // 覆盖 webdav.dir
+	Server *MobileServerConfig `json:"server,omitempty"`
+	Output *MobileOutputConfig `json:"output,omitempty"`
+	Webdav *MobileWebdavConfig `json:"webdav,omitempty"`
+}
+
+type MobileServerConfig struct {
+	Dir string `json:"dir"` // 覆盖 server.dir
+}
+
+type MobileOutputConfig struct {
+	Path string `json:"path"` // 覆盖 output_path
+}
+
+type MobileWebdavConfig struct {
+	Dir string `json:"dir"` // 覆盖 webdav.dir
 }
 
 // DecryptedContent 包含解密后的所有内容

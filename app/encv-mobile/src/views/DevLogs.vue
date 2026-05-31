@@ -109,6 +109,7 @@ import { useI18n } from '@/composables/useI18n'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useFrontendLogs, type LogEntry } from '@/composables/useFrontendLogs'
 import { showToast } from '@/composables/useToast'
+import { copyToClipboard } from '@/composables/useClipboard'
 import { checkServerStatus } from '@/api/encv'
 
 const { t } = useI18n()
@@ -249,19 +250,15 @@ watch([filteredFrontend, filteredBackend], () => {
 async function handleCopy() {
   const logs = activeTab.value === 'frontend' ? filteredFrontend.value : filteredBackend.value
   const text = logs.map((l) => `[${l.timestamp}] ${l.level.toUpperCase()} ${l.message}`).join('\n')
-  try {
-    await navigator.clipboard.writeText(text)
+  const ok = await copyToClipboard(text)
+  if (ok) {
     showToast({
       message: t('devlogs.copied', { count: String(logs.length) }),
       duration: 1500,
       color: 'success',
     })
-  } catch {
-    showToast({
-      message: t('devlogs.copyFailed'),
-      duration: 1500,
-      color: 'danger',
-    })
+  } else {
+    showToast({ message: t('devlogs.copyFailed'), duration: 1500, color: 'danger' })
   }
 }
 

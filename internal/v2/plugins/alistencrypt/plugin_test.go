@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Soltus/encv-go/internal/alistencrypt"
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -180,7 +179,7 @@ func TestEncryptDecryptRoundtrip(t *testing.T) {
 			plaintext[i] = byte(i % 256)
 		}
 
-		cipher, err := alistencrypt.Create(testPassword, "aesctr", int64(len(plaintext)))
+		cipher, err := Create(testPassword, "aesctr", int64(len(plaintext)))
 		require.NoError(t, err)
 
 		encrypted := make([]byte, len(plaintext))
@@ -188,7 +187,7 @@ func TestEncryptDecryptRoundtrip(t *testing.T) {
 		cipher.Encrypt(encrypted)
 
 		reader := bytes.NewReader(encrypted)
-		dr, err := alistencrypt.NewDecryptReader(reader, testPassword, int64(len(plaintext)))
+		dr, err := NewDecryptReader(reader, testPassword, int64(len(plaintext)))
 		require.NoError(t, err)
 
 		decrypted, err := io.ReadAll(dr)
@@ -212,7 +211,7 @@ func TestEncryptDecryptRoundtrip(t *testing.T) {
 		info, err := f.Stat()
 		require.NoError(t, err)
 
-		dr, err := alistencrypt.NewDecryptReader(f, testPassword, info.Size())
+		dr, err := NewDecryptReader(f, testPassword, info.Size())
 		require.NoError(t, err)
 
 		decrypted, err := io.ReadAll(dr)
@@ -233,7 +232,7 @@ func TestEncryptDecryptRoundtrip(t *testing.T) {
 		info, err := f.Stat()
 		require.NoError(t, err)
 
-		_, err = alistencrypt.NewDecryptReader(f, testPassword, info.Size())
+		_, err = NewDecryptReader(f, testPassword, info.Size())
 		require.Error(t, err, "V2 header with PlainSize=0 must be rejected by DetectContentHeader")
 		assert.Contains(t, err.Error(), "invalid plaintext size")
 	})
@@ -251,7 +250,7 @@ func TestEncryptWithV2Header(t *testing.T) {
 
 		header := data[:32]
 		magic := string(header[:6])
-		assert.Equal(t, alistencrypt.AECTR2Magic, magic, "header magic should be AECTR2")
+		assert.Equal(t, AECTR2Magic, magic, "header magic should be AECTR2")
 
 		version := header[6]
 		assert.Equal(t, byte(0x02), version, "header version should be 0x02")
@@ -282,7 +281,7 @@ func TestEncryptWithV2Header(t *testing.T) {
 		info, err := f.Stat()
 		require.NoError(t, err)
 
-		dr, err := alistencrypt.NewDecryptReader(f, testPassword, info.Size())
+		dr, err := NewDecryptReader(f, testPassword, info.Size())
 		require.NoError(t, err)
 
 		decrypted, err := io.ReadAll(dr)
@@ -379,7 +378,7 @@ func TestBoundaryEmptyFile(t *testing.T) {
 func TestBoundaryTooSmallFile(t *testing.T) {
 	t.Run("V2_magic_but_falls_back_to_V1", func(t *testing.T) {
 		shortData := make([]byte, 16)
-		copy(shortData[:], []byte(alistencrypt.AECTR2Magic))
+		copy(shortData[:], []byte(AECTR2Magic))
 		tmpDir := t.TempDir()
 		shortPath := filepath.Join(tmpDir, "short.bin")
 		require.NoError(t, os.WriteFile(shortPath, shortData, 0644))
@@ -391,7 +390,7 @@ func TestBoundaryTooSmallFile(t *testing.T) {
 		info, err := f.Stat()
 		require.NoError(t, err)
 
-		dr, err := alistencrypt.NewDecryptReader(f, testPassword, info.Size())
+		dr, err := NewDecryptReader(f, testPassword, info.Size())
 		require.NoError(t, err,
 			"actual behavior: n=16 < contentHeaderSize(32), skips V2 detection, falls through to V1 path")
 
@@ -407,7 +406,7 @@ func TestBoundaryTooSmallFile(t *testing.T) {
 		tinyData := []byte{0x01, 0x02, 0x03}
 		reader := bytes.NewReader(tinyData)
 
-		dr, err := alistencrypt.NewDecryptReader(reader, testPassword, int64(len(tinyData)))
+		dr, err := NewDecryptReader(reader, testPassword, int64(len(tinyData)))
 		if err != nil {
 			return
 		}
@@ -423,12 +422,12 @@ func TestBoundaryTooSmallFile(t *testing.T) {
 
 func TestBoundaryV2ZeroPlainSize(t *testing.T) {
 	header := make([]byte, 32)
-	copy(header[:6], []byte(alistencrypt.AECTR2Magic))
+	copy(header[:6], []byte(AECTR2Magic))
 	header[6] = 0x02
 	header[7] = 0x00
 	binary.BigEndian.PutUint64(header[24:32], 0)
 
-	_, err := alistencrypt.DetectContentHeader(header)
+	_, err := DetectContentHeader(header)
 	require.Error(t, err, "V2 header with PlainSize=0 should be rejected")
 	assert.Contains(t, err.Error(), "invalid plaintext size")
 }
@@ -438,7 +437,7 @@ func TestBoundarySizeMismatch(t *testing.T) {
 	actualCiphertext := make([]byte, 50)
 
 	header := make([]byte, 32)
-	copy(header[:6], []byte(alistencrypt.AECTR2Magic))
+	copy(header[:6], []byte(AECTR2Magic))
 	header[6] = 0x02
 	header[7] = 0x00
 	binary.BigEndian.PutUint64(header[24:32], uint64(declaredPlainSize))
@@ -446,7 +445,7 @@ func TestBoundarySizeMismatch(t *testing.T) {
 	fullData := append(header, actualCiphertext...)
 	reader := bytes.NewReader(fullData)
 
-	dr, err := alistencrypt.NewDecryptReader(reader, testPassword, 0)
+	dr, err := NewDecryptReader(reader, testPassword, 0)
 	require.NoError(t, err, "NewDecryptReader should succeed (size mismatch detected at Read time)")
 
 	buf := make([]byte, 1024)
@@ -461,7 +460,7 @@ func TestBoundarySizeMismatch(t *testing.T) {
 func TestBoundaryPasswordHeuristic(t *testing.T) {
 	plaintext := []byte("Hello World AES-CTR test data!!! This is known plaintext for heuristic checking!!!")
 
-	cipher, err := alistencrypt.Create(testPassword, "aesctr", int64(len(plaintext)))
+	cipher, err := Create(testPassword, "aesctr", int64(len(plaintext)))
 	require.NoError(t, err)
 
 	encrypted := make([]byte, len(plaintext))
@@ -469,7 +468,7 @@ func TestBoundaryPasswordHeuristic(t *testing.T) {
 	cipher.Encrypt(encrypted)
 
 	header := make([]byte, 32)
-	copy(header[:6], []byte(alistencrypt.AECTR2Magic))
+	copy(header[:6], []byte(AECTR2Magic))
 	header[6] = 0x02
 	header[7] = 0x00
 	binary.BigEndian.PutUint64(header[24:32], uint64(len(plaintext)))
@@ -478,11 +477,11 @@ func TestBoundaryPasswordHeuristic(t *testing.T) {
 	reader := bytes.NewReader(fullData)
 
 	wrongPassword := "completely-wrong-password-99999"
-	dr, err := alistencrypt.NewDecryptReader(reader, wrongPassword, 0)
+	dr, err := NewDecryptReader(reader, wrongPassword, 0)
 	if err != nil {
-		var decErr *alistencrypt.DecryptionError
+		var decErr *DecryptionError
 		if errors.As(err, &decErr) {
-			assert.True(t, errors.Is(decErr.Err, alistencrypt.ErrInvalidPassword),
+			assert.True(t, errors.Is(decErr.Err, ErrInvalidPassword),
 				"wrong password should produce ErrInvalidPassword")
 		}
 		return

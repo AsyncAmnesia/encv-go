@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,8 +20,7 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
-	alistencryptplugin "github.com/Soltus/encv-go/internal/v2/plugins/alistencrypt"
-	"github.com/Soltus/encv-go/internal/alistencrypt"
+	alistencrypt "github.com/Soltus/encv-go/internal/v2/plugins/alistencrypt"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -218,13 +216,14 @@ func (s *Server) handleGetTasksGin(c *gin.Context) {
 
 func (s *Server) handleCreateTaskGin(c *gin.Context) {
 	var req struct {
-		Type             string            `json:"type"`
-		SourcePath       string            `json:"sourcePath"`
-		TargetPath       string            `json:"targetPath,omitempty"`
-		Password         string            `json:"password,omitempty"`
-		SecondaryPassword string           `json:"secondaryPassword,omitempty"`
-		Version          int               `json:"version,omitempty"`
-		ExtraFields      map[string]string `json:"extraFields,omitempty"`
+		Type              string            `json:"type"`
+		SourcePath        string            `json:"sourcePath"`
+		TargetPath        string            `json:"targetPath,omitempty"`
+		Password          string            `json:"password,omitempty"`
+		SecondaryPassword string            `json:"secondaryPassword,omitempty"`
+		Version           int               `json:"version,omitempty"`
+		PluginName        string            `json:"pluginName,omitempty"`
+		ExtraFields       map[string]string `json:"extraFields,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
@@ -233,12 +232,13 @@ func (s *Server) handleCreateTaskGin(c *gin.Context) {
 
 	slog.Info("API: create task", "type", req.Type, "source", req.SourcePath,
 		"target", req.TargetPath, "version", req.Version,
+		"pluginName", req.PluginName,
 		"hasPassword", req.Password != "",
 		"hasSecondaryPassword", req.SecondaryPassword != "",
 		"hasExtraFields", len(req.ExtraFields) > 0)
 	task := s.mobileSvc.GetTaskManager().CreateWithExtras(
 		req.Type, req.SourcePath, req.TargetPath,
-		req.Password, req.SecondaryPassword, req.Version, req.ExtraFields,
+		req.Password, req.SecondaryPassword, req.Version, req.PluginName, req.ExtraFields,
 	)
 
 	c.JSON(http.StatusCreated, task)
@@ -277,6 +277,11 @@ func (s *Server) handleRemoveTaskGin(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (s *Server) handleClearCompletedTasksGin(c *gin.Context) {
+	count := s.mobileSvc.GetTaskManager().ClearCompleted()
+	c.JSON(http.StatusOK, gin.H{"ok": true, "removed": count})
 }
 
 func (s *Server) handleTestWebDAVGin(c *gin.Context) {
@@ -471,14 +476,10 @@ func (s *Server) handleIndexClearGin(c *gin.Context) {
 
 func (s *Server) handleStreamExternalFileGin(c *gin.Context) {
 	queryPath := c.Query("path")
-	decodedPath, err := url.QueryUnescape(queryPath)
-	if err != nil {
-		decodedPath = queryPath
-	}
 
-	slog.Info("API: stream external file", "path", decodedPath)
+	slog.Info("API: stream external file", "path", queryPath)
 
-	err = s.mobileSvc.StreamExternalFile(c.Writer, c.Request, decodedPath)
+	err := s.mobileSvc.StreamExternalFile(c.Writer, c.Request, queryPath)
 	if err != nil {
 		writeServiceErrorGin(c, err)
 		return
@@ -804,16 +805,20 @@ func (s *Server) handlePluginsGin(c *gin.Context) {
 			SupportedExtensions:   p.SupportedExtensions(),
 			SupportedMimePrefixes: p.SupportedMimePrefixes(),
 			ContainerExtension:    p.GetContainerExtension(),
-			TaskOptions: gin.H{
-				"passwordStrategy":     string(opts.PasswordStrategy),
-				"supportVersionSelect": opts.SupportVersionSelect,
-				"supportedVersions":    opts.SupportedVersions,
-				"defaultVersion":       opts.DefaultVersion,
-				"extraFields":          opts.ExtraFields,
-			},
+			TaskOptions:           taskOptionsToGinH(opts),
 		})
 	}
 	c.JSON(200, gin.H{"plugins": metas})
+}
+
+func taskOptionsToGinH(opts pluginInterfaces.TaskOptions) gin.H {
+	return gin.H{
+		"passwordStrategy":     string(opts.PasswordStrategy),
+		"supportVersionSelect": opts.SupportVersionSelect,
+		"supportedVersions":    opts.SupportedVersions,
+		"defaultVersion":       opts.DefaultVersion,
+		"extraFields":          opts.ExtraFields,
+	}
 }
 
 func (s *Server) handlePredictPluginGin(c *gin.Context) {
@@ -840,9 +845,9 @@ func (s *Server) handlePredictPluginGin(c *gin.Context) {
 			Plugin: targetPlugin, Name: targetPlugin.Name(), MatchType: "container", Priority: 0,
 		}}
 		c.JSON(200, gin.H{
-			"candidates": []gin.H{{"name": targetPlugin.Name(), "matchType": "container", "priority": 0, "taskOptions": opts}},
+			"candidates": []gin.H{{"name": targetPlugin.Name(), "matchType": "container", "priority": 0, "taskOptions": taskOptionsToGinH(opts)}},
 			"pluginName":  targetPlugin.Name(),
-			"taskOptions": opts,
+			"taskOptions": taskOptionsToGinH(opts),
 		})
 		return
 	}
@@ -854,21 +859,21 @@ func (s *Server) handlePredictPluginGin(c *gin.Context) {
 			"name":        cand.Name,
 			"matchType":   cand.MatchType,
 			"priority":    cand.Priority,
-			"taskOptions": opts,
+			"taskOptions": taskOptionsToGinH(opts),
 		})
 	}
 
 	firstName := ""
-	var firstOpts pluginInterfaces.TaskOptions
+	var firstOptsH gin.H
 	if len(candidateList) > 0 {
 		firstName = candidateList[0]["name"].(string)
-		firstOpts = candidateList[0]["taskOptions"].(pluginInterfaces.TaskOptions)
+		firstOptsH = candidateList[0]["taskOptions"].(gin.H)
 	}
 
 	c.JSON(200, gin.H{
 		"candidates": candidateList,
 		"pluginName":  firstName,
-		"taskOptions": firstOpts,
+		"taskOptions": firstOptsH,
 	})
 }
 
@@ -993,7 +998,7 @@ func (s *Server) handleAlistEncryptStreamGin(c *gin.Context) {
 
 	slog.Info("API: alist-encrypt stream", "path", absPath)
 
-	var plugin alistencryptplugin.AlistEncryptPlugin
+	var plugin alistencrypt.AlistEncryptPlugin
 	if err := plugin.ServeStream(c.Writer, c.Request, absPath, password); err != nil {
 		slog.Error("API: alist-encrypt stream failed", "error", err)
 		writeServiceErrorGin(c, err)

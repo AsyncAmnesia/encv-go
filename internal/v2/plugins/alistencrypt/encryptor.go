@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Soltus/encv-go/internal/alistencrypt"
 	"github.com/Soltus/encv-go/internal/v2/crypto"
 )
 
@@ -20,7 +19,7 @@ func EncryptToFile(dataReader io.Reader, password string, outputDir string, sett
 
 	fileSize := int64(len(data))
 
-	cipher, err := alistencrypt.Create(password, settings.EncType, fileSize)
+	cipher, err := Create(password, settings.EncType, fileSize)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +33,7 @@ func EncryptToFile(dataReader io.Reader, password string, outputDir string, sett
 	tempPath := tempFile.Name()
 
 	headerBuf := make([]byte, 32)
-	copy(headerBuf[:6], []byte(alistencrypt.AECTR2Magic))
+	copy(headerBuf[:6], []byte(AECTR2Magic))
 	headerBuf[6] = 0x02
 	headerBuf[7] = 0x00
 	binary.BigEndian.PutUint64(headerBuf[24:32], uint64(fileSize))
@@ -86,5 +85,5 @@ func PeekIsAECTR2(path string) bool {
 
 	peekBuf := make([]byte, 6)
 	n, _ := io.ReadFull(f, peekBuf)
-	return n == 6 && bytes.Equal(peekBuf[:6], []byte(alistencrypt.AECTR2Magic))
+	return n == 6 && bytes.Equal(peekBuf[:6], []byte(AECTR2Magic))
 }

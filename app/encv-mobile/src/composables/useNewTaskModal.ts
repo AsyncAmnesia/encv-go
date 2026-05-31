@@ -71,6 +71,10 @@ export function useNewTaskModal() {
       state.filteredExtraFields = visibleExtraFields.value
       if (candidates.value.length > 0) {
         state.taskOptions = candidates.value[selectedPluginIndex.value]?.taskOptions ?? null
+        const defaultVer = candidates.value[selectedPluginIndex.value]?.taskOptions?.defaultVersion
+        if (defaultVer && defaultVer > 0) {
+          state.version = defaultVer
+        }
       }
     }
 
@@ -105,7 +109,21 @@ export function useNewTaskModal() {
         onSelectPlugin: (idx: number) => {
           state.selectedPluginIndex = idx
           if (candidates.value.length > 0) {
+            state.predictedPlugin = candidates.value[idx]?.name ?? null
             state.taskOptions = candidates.value[idx]?.taskOptions ?? null
+            const opts = candidates.value[idx]?.taskOptions
+            state.filteredExtraFields = opts?.extraFields ?? []
+            const defaults: Record<string, string> = {}
+            opts?.extraFields?.forEach((f) => {
+              if (f.defaultValue) defaults[f.key] = f.defaultValue
+            })
+            state.extraValues = defaults
+            const defaultVer = opts?.defaultVersion
+            if (defaultVer && defaultVer > 0) {
+              state.version = defaultVer
+            } else if (!opts?.supportVersionSelect) {
+              state.version = 0
+            }
           }
         },
         onSubmit: async () => {
@@ -114,13 +132,19 @@ export function useNewTaskModal() {
           submitting.value = true
           try {
             const pluginName = state.candidates[state.selectedPluginIndex]?.name || state.predictedPlugin || undefined
+            const shouldSendVersion = state.taskType === 'encrypt' && state.taskOptions?.supportVersionSelect
+            const extraPayload = Object.keys(state.extraValues).length > 0 ? state.extraValues : undefined
+            const passwordStrategy = state.taskOptions?.passwordStrategy
+            const shouldSendPassword = !passwordStrategy || passwordStrategy === 'global'
             await createTask(
               state.taskType as TaskType,
               state.sourcePath,
               state.targetPath || undefined,
-              undefined,
-              state.taskType === 'encrypt' ? state.version : undefined,
-              pluginName
+              shouldSendPassword ? (state.primaryOverride || undefined) : undefined,
+              shouldSendVersion ? state.version : undefined,
+              pluginName,
+              extraPayload,
+              shouldSendPassword ? (state.secondaryPassword || undefined) : undefined,
             )
             await modal.dismiss()
             showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })

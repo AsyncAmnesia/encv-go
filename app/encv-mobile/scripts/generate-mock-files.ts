@@ -2,8 +2,10 @@ import * as fs from 'fs'
 import * as path from 'path'
 import * as zlib from 'zlib'
 import * as crypto from 'crypto'
+import * as os from 'os'
+import { execSync, spawnSync } from 'child_process'
 
-const MOCK_ROOT = path.resolve(process.cwd(), '__mock_data__')
+const MOCK_ROOT = '/storage/emulated/0'
 
 let root = MOCK_ROOT
 let genType = 'all' as string
@@ -493,6 +495,75 @@ function createFLAC(): Uint8Array {
   return result
 }
 
+// ==================== FFmpeg-based playable media ====================
+
+const hasFFmpeg = (() => {
+  try {
+    execSync('which ffmpeg', { stdio: 'ignore', timeout: 3000 })
+    return true
+  } catch {
+    return false
+  }
+})()
+
+function ffmpegGenerate(args: string[], label: string, ext: string): Buffer {
+  const tmpFile = path.join(os.tmpdir(), `encv-mock-${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`)
+  try {
+    spawnSync('ffmpeg', [...args, '-y', '-loglevel', 'error', tmpFile], {
+      stdio: ['pipe', 'pipe', 'pipe'] as never,
+      timeout: 15000,
+    })
+    if (!fs.existsSync(tmpFile)) throw new Error(`ffmpeg ${label} produced no output`)
+    return fs.readFileSync(tmpFile)
+  } finally {
+    try { fs.unlinkSync(tmpFile) } catch {}
+  }
+}
+
+function createValidMP4(): Buffer {
+  if (!hasFFmpeg) { console.warn('[WARN] ffmpeg not found, using legacy unplayable MP4'); return Buffer.from(createMP4()) }
+  return ffmpegGenerate([
+    '-f', 'lavfi',
+    '-i', 'sine=frequency=440:duration=2',
+    '-f', 'lavfi',
+    '-i', "color=c=0x3B82F6:s=320x240:d=2:r=15,drawtext=text='ENCV Mock':fontsize=20:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2",
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'stillimage', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '64k',
+    '-shortest'
+  ], 'MP4', 'mp4')
+}
+
+function createValidMKV(): Buffer {
+  if (!hasFFmpeg) { console.warn('[WARN] ffmpeg not found, using legacy unplayable MKV'); return Buffer.from(createMKV()) }
+  return ffmpegGenerate([
+    '-f', 'lavfi',
+    '-i', 'sine=frequency=660:duration=2',
+    '-f', 'lavfi',
+    '-i', "color=c=0x10B981:s=160x120:d=2:r=10,drawtext=text='ENCV MKV':fontsize=16:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2",
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'stillimage', '-pix_fmt', 'yuv420p',
+    '-c:a', 'libvorbis',
+    '-shortest'
+  ], 'MKV', 'mkv')
+}
+
+function createValidMP3(): Buffer {
+  if (!hasFFmpeg) { console.warn('[WARN] ffmpeg not found, using legacy unplayable MP3'); return Buffer.from(createMP3()) }
+  return ffmpegGenerate([
+    '-f', 'lavfi',
+    '-i', 'sine=frequency=440:duration=2',
+    '-c:a', 'libmp3lame', '-b:a', '128k'
+  ], 'MP3', 'mp3')
+}
+
+function createValidFLAC(): Buffer {
+  if (!hasFFmpeg) { console.warn('[WARN] ffmpeg not found, using legacy unplayable FLAC'); return Buffer.from(createFLAC()) }
+  return ffmpegGenerate([
+    '-f', 'lavfi',
+    '-i', 'sine=frequency=440:duration=2',
+    '-c:a', 'flac', '-sample_fmt', 's16'
+  ], 'FLAC', 'flac')
+}
+
 // ==================== PDF ====================
 function createPDF(): Uint8Array {
   const pdf = `%PDF-1.4
@@ -625,10 +696,12 @@ function parseArgs(): void {
 
 async function main(): Promise<void> {
   parseArgs()
+  ensureDir(root)
 
   console.log('📦 ENCV Mock File Generator')
   console.log('   Output: ' + root)
-  console.log('   Type: ' + genType + '\n')
+  console.log('   Type: ' + genType)
+  console.log('   FFmpeg: ' + (hasFFmpeg ? '✅ (playable media)' : '❌ (legacy binary)') + '\n')
 
   const shouldGenPlain = genType === 'all' || genType === 'plain'
   const shouldGenAE = genType === 'all' || genType === 'ae'
@@ -644,10 +717,10 @@ async function main(): Promise<void> {
 
     writeBuffer(join(root, '01-plain-media/image/photo.jpg'), createJPEG())
     writeBuffer(join(root, '01-plain-media/image/screenshot.png'), createPNG())
-    writeBuffer(join(root, '01-plain-media/video/sample.mp4'), createMP4())
-    writeBuffer(join(root, '01-plain-media/video/comedy.mkv'), createMKV())
-    writeBuffer(join(root, '01-plain-media/audio/music.mp3'), createMP3())
-    writeBuffer(join(root, '01-plain-media/audio/podcast.flac'), createFLAC())
+    writeBuffer(join(root, '01-plain-media/video/sample.mp4'), createValidMP4())
+    writeBuffer(join(root, '01-plain-media/video/comedy.mkv'), createValidMKV())
+    writeBuffer(join(root, '01-plain-media/audio/music.mp3'), createValidMP3())
+    writeBuffer(join(root, '01-plain-media/audio/podcast.flac'), createValidFLAC())
     writeBuffer(join(root, '01-plain-media/document/report.pdf'), createPDF())
 
     writeString(join(root, '01-plain-media/document/notes.txt'), `ENCV Mock Data Notes

@@ -139,7 +139,8 @@
 
       <template v-else-if="configLoaded">
         <template v-for="section in schemaFields" :key="section.key">
-          <template v-if="!['server', 'admin', 'webdav'].includes(section.key)">
+          <!-- 过滤掉 server、admin、webdav 配置项，这些配置项有独立的设置页面 -->
+        <template v-if="!['server', 'admin', 'webdav', 'log'].includes(section.key)">
           <ion-list v-if="section.key === 'plugin_settings'">
             <ion-list-header>
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
@@ -375,7 +376,7 @@ import { useServerStatus } from '@/composables/useServerStatus'
 import { useConfig } from '@/composables/useConfig'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
-import { isNative, getPluginFullState, ensurePluginLoaded } from '@/plugins/GoProcess'
+import { isNative, pickFolder, getPluginFullState, ensurePluginLoaded } from '@/plugins/GoProcess'
 import { registerFileFeature, unregisterFileFeature } from '@/composables/useFileFeatures'
 import { createAlistEncryptFeature } from '@/features/alist-encrypt'
 import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus } from '@/api/encv'
@@ -585,6 +586,13 @@ function validateWebdavRoute(val: string): string | null {
 }
 
 async function handleBrowsePath(path: string[], field: FieldDef) {
+  if (isNative()) {
+    const result = await pickFolder()
+    if (result.path) {
+      setFieldValue(path, result.path)
+    }
+    return
+  }
   const isFolder = field.key !== 'file'
   const currentVal = String(getFieldValue(path) || '/')
   const modal = await modalController.create({

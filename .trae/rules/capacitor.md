@@ -507,3 +507,13 @@ modal.onDidDismiss().then(() => {
 - ❌ 用 `console.error` 输出调试信息（会污染生产环境错误日志）
 - ❌ 用 `console.warn` 输出可通过代码逻辑处理的路径（应使用 debug）
 - ❌ 在循环/高频回调中使用任何级别的 console（性能杀手）
+
+---
+
+## 八、跨层参考
+
+| 主题 | 文档位置 |
+|------|---------|
+| **WAF/代理截断 `@` 字符 → 双重编码方案** | [development.md §六](development.md#六waf代理截断路径参数实战踩坑) |
+| 配置合并加载（Default → user → dev） | [config.go](internal/config/config.go) |
+| **Mobile Overlay 机制（mobile→顶层映射）** | [project_rules.md §Mobile Overlay 机制](project_rules.md#mobile-overlay-机制核心架构) |

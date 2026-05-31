@@ -3,9 +3,8 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { execSync } from 'child_process'
 import { createHandlers } from './handlers'
-import { setMockSuffix, getMockSuffix } from './file-system'
 
-const MOCK_DATA_ROOT = path.resolve(__dirname, '../__mock_data__')
+const MOCK_DATA_ROOT = '/storage/emulated/0'
 const SCRIPT_PATH = path.resolve(__dirname, '../scripts/generate-mock-files.ts')
 
 function isMockEnabled(): boolean {
@@ -32,25 +31,19 @@ function ensureMockDataExists(): void {
   }
 }
 
-function parseMockParams(url: string): { enabled: boolean; suffix: string } {
+function parseMockEnabled(url: string): boolean {
   try {
     const u = new URL(url)
     const mockParam = u.searchParams.get('__mock')
-    const suffixParam = u.searchParams.get('__mock_suffix')
-
-    if (mockParam === '0') return { enabled: false, suffix: getMockSuffix() }
-    if (mockParam === '1' || mockParam !== null) {
-      if (suffixParam) setMockSuffix(suffixParam)
-      return { enabled: true, suffix: suffixParam || getMockSuffix() }
-    }
+    if (mockParam === '0') return false
+    if (mockParam === '1' || mockParam !== null) return true
   } catch {}
-
-  return { enabled: isMockEnabled(), suffix: getMockSuffix() }
+  return isMockEnabled()
 }
 
 const MOCK_API_PREFIXES = [
   '/health',
-  '/api/config',
+  '/decrypt',
 ]
 
 function shouldMockIntercept(url: string): boolean {
@@ -60,7 +53,6 @@ function shouldMockIntercept(url: string): boolean {
 
 export function createMockPlugin(): Plugin {
   let dispatchRequest: Connect.NextHandleFunction | null = null
-  let mockActive = false
 
   return {
     name: 'encv-mock-api',
@@ -71,14 +63,18 @@ export function createMockPlugin(): Plugin {
 
       server.middlewares.use((req, res, next) => {
         const url = req.url || ''
-        const params = parseMockParams(url)
 
-        if (!params.enabled || !shouldMockIntercept(url)) {
+        if (url.startsWith('/decrypt')) {
+          console.error('[DECRYPT-REQ] method=' + req.method + ' url=' + url)
+          console.error('[DECRYPT-REQ] headers=' + JSON.stringify(req.headers))
+        }
+
+        const enabled = parseMockEnabled(url)
+
+        if (!enabled || !shouldMockIntercept(url)) {
           next()
           return
         }
-
-        mockActive = true
 
         if (dispatchRequest) {
           try {
@@ -97,8 +93,7 @@ export function createMockPlugin(): Plugin {
       })
 
       console.log('[MOCK] API mock middleware registered')
-      console.log(`[MOCK] Default alist-encrypt suffix: "${getMockSuffix()}"`)
-      console.log('[MOCK] Activate with: ?__mock=1&__mock_suffix=.ae')
+      console.log('[MOCK] Activate with: ?__mock=1')
       console.log('[MOCK] Disable with: ?__mock=0')
     },
   }

@@ -31,10 +31,11 @@ import kotlinx.coroutines.withContext
 private const val REQUEST_CODE_PLUGIN_PICK = 9001
 private const val REQUEST_CODE_INSTALL_CONFIRM = 9002
 private const val REQUEST_CODE_MPV_PLAYER = 9003
+private const val REQUEST_CODE_PICK_FOLDER = 9010
 
 @CapacitorPlugin(
     name = "GoProcess",
-    requestCodes = [REQUEST_CODE_PLUGIN_PICK, REQUEST_CODE_INSTALL_CONFIRM, REQUEST_CODE_MPV_PLAYER]
+    requestCodes = [REQUEST_CODE_PLUGIN_PICK, REQUEST_CODE_INSTALL_CONFIRM, REQUEST_CODE_MPV_PLAYER, REQUEST_CODE_PICK_FOLDER]
 )
 class GoProcessPlugin : Plugin() {
 
@@ -258,6 +259,19 @@ class GoProcessPlugin : Plugin() {
     }
 
     @PluginMethod
+    fun pickFolder(call: PluginCall) {
+        pendingCalls["pickFolder"] = call
+        try {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+            }
+            activity.startActivityForResult(intent, REQUEST_CODE_PICK_FOLDER)
+        } catch (e: Exception) {
+            pendingCalls.remove("pickFolder")?.reject(e.message)
+        }
+    }
+
+    @PluginMethod
     fun checkInstalledPlugins(call: PluginCall) {
         val result = JSObject()
         for (plugin in EncvComboLiteHost.getInstalledPlugins()) {
@@ -327,6 +341,7 @@ class GoProcessPlugin : Plugin() {
             REQUEST_CODE_PLUGIN_PICK -> handlePickResult(resultCode, data)
             REQUEST_CODE_INSTALL_CONFIRM -> handleInstallConfirmResult(resultCode, data)
             REQUEST_CODE_MPV_PLAYER -> handleMpvPlayerResult(resultCode, data)
+            REQUEST_CODE_PICK_FOLDER -> handlePickFolderResult(resultCode, data)
         }
     }
 
@@ -355,6 +370,45 @@ class GoProcessPlugin : Plugin() {
         val tempFile = UriUtils.copyUriToFile(context, data.data!!, File(context.cacheDir, "plugin_install"))
             ?: run { call.reject("Cannot read selected file"); return }
         startInstallConfirm(call, tempFile.absolutePath, tempFile.name)
+    }
+
+    private fun handlePickFolderResult(resultCode: Int, data: Intent?) {
+        val call = pendingCalls.remove("pickFolder") ?: return
+        if (resultCode != Activity.RESULT_OK || data?.data == null) { call.reject("Folder picker cancelled"); return }
+        val uri = data.data!!
+        val path = resolveTreeUriToPath(uri)
+        LogBridge.i(TAG, "pickFolder: uri=$uri → path=$path")
+        call.resolve(JSObject().apply { put("path", path) })
+    }
+
+    private fun resolveTreeUriToPath(uri: Uri): String {
+        if (uri.scheme == "file") return uri.path ?: "/"
+        if (uri.authority == "com.android.externalstorage.documents") {
+            val docId = uri.path?.removePrefix("/tree/") ?: return "/"
+            val parts = docId.split(":", limit = 2)
+            val storagePath = when (parts[0]) {
+                "primary" -> "/storage/emulated/0"
+                else -> "/storage/${parts[0]}"
+            }
+            return if (parts.size > 1 && parts[1].isNotEmpty()) "$storagePath/${parts[1]}" else storagePath
+        }
+        try {
+            val docFile = android.provider.DocumentsContract.buildDocumentUriUsingTree(uri, android.provider.DocumentsContract.getTreeDocumentId(uri))
+            val cursor = context.contentResolver.query(docFile, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val name = it.getString(0)
+                    val treeId = android.provider.DocumentsContract.getTreeDocumentId(uri)
+                    val treeParts = treeId.split(":", limit = 2)
+                    val basePath = when (treeParts[0]) {
+                        "primary" -> "/storage/emulated/0"
+                        else -> "/storage/${treeParts[0]}"
+                    }
+                    return if (treeParts.size > 1 && treeParts[1].isNotEmpty()) "$basePath/${treeParts[1]}" else basePath
+                }
+            }
+        } catch (_: Exception) {}
+        return uri.toString()
     }
 
     private fun handleInstallConfirmResult(resultCode: Int, data: Intent?) {

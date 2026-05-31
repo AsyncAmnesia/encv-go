@@ -278,6 +278,7 @@ import {
 import type { WebDAVConfig, RemoteWebDAVInfo, OpenlistSiteInfo, WebDAVTestResult } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
+import { copyToClipboard as clipboardWrite } from '@/composables/useClipboard'
 
 const { t } = useI18n()
 
@@ -482,12 +483,10 @@ async function handleDeleteSite(key: string) {
 }
 
 async function copyProxyUrl(url: string) {
-  try {
-    if (navigator.clipboard) {
-      await navigator.clipboard.writeText(url)
-    }
+  const ok = await clipboardWrite(url)
+  if (ok) {
     showToast({ message: t('remote.copied'), duration: 1500, color: 'success' })
-  } catch {
+  } else {
     showToast({ message: url, duration: 3000, color: 'medium' })
   }
 }

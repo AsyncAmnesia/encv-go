@@ -144,7 +144,7 @@ func (tm *TaskManager) Stop() {
 	tm.wg.Wait()
 }
 
-func (tm *TaskManager) Create(taskType, sourcePath, targetPath, password string, version int) *MobileTask {
+func (tm *TaskManager) Create(taskType, sourcePath, targetPath, password string, version int, pluginName string) *MobileTask {
 	task := &MobileTask{
 		ID:               uuid.New().String(),
 		Type:             taskType,
@@ -154,6 +154,7 @@ func (tm *TaskManager) Create(taskType, sourcePath, targetPath, password string,
 		Status:           "queued",
 		Progress:         0,
 		ContainerVersion: version,
+		PluginName:       pluginName,
 		CreatedAt:        time.Now(),
 	}
 
@@ -170,8 +171,8 @@ func (tm *TaskManager) Create(taskType, sourcePath, targetPath, password string,
 	return task
 }
 
-func (tm *TaskManager) CreateWithExtras(taskType, sourcePath, targetPath, password, secondaryPassword string, version int, extras map[string]string) *MobileTask {
-	task := tm.Create(taskType, sourcePath, targetPath, password, version)
+func (tm *TaskManager) CreateWithExtras(taskType, sourcePath, targetPath, password, secondaryPassword string, version int, pluginName string, extras map[string]string) *MobileTask {
+	task := tm.Create(taskType, sourcePath, targetPath, password, version, pluginName)
 	task.SecondaryPassword = secondaryPassword
 	task.ExtraFields = extras
 	return task
@@ -293,6 +294,29 @@ func (tm *TaskManager) RemoveTask(id string) error {
 		})
 	}
 	return nil
+}
+
+func (tm *TaskManager) ClearCompleted() int {
+	tm.mu.Lock()
+	removed := 0
+	for id, task := range tm.tasks {
+		if task.Status == "completed" || task.Status == "failed" || task.Status == "cancelled" {
+			delete(tm.tasks, id)
+			removed++
+		}
+	}
+	tm.mu.Unlock()
+
+	if removed > 0 {
+		tm.saveTasks()
+		slog.Info("Cleared completed tasks", "count", removed)
+		if tm.broadcaster != nil {
+			tm.broadcaster.Broadcast("task:cleared", map[string]interface{}{
+				"count": removed,
+			})
+		}
+	}
+	return removed
 }
 
 func (tm *TaskManager) Retry(id string) (*MobileTask, error) {
@@ -444,28 +468,48 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 
 	tm.updateProgress(taskID, 10, "initializing", "", "")
 
-	plugin, err := plugins.FindEncryptingPlugin(absPath)
-	if err != nil {
-		tm.failTask(taskID, fmt.Sprintf("no encrypting plugin found: %v", err))
-		return
+	var plugin plugins.Plugin
+	if task.PluginName != "" {
+		plugin, err = plugins.FindPluginByName(task.PluginName)
+		if err != nil {
+			tm.failTask(taskID, fmt.Sprintf("specified plugin not found: %v", err))
+			return
+		}
+	} else {
+		plugin, err = plugins.FindEncryptingPlugin(absPath)
+		if err != nil {
+			tm.failTask(taskID, fmt.Sprintf("no encrypting plugin found: %v", err))
+			return
+		}
+		task.PluginName = plugin.Name()
 	}
-	task.PluginName = plugin.Name()
+
+	if resetter, ok := plugin.(pluginInterfaces.TaskStateResetter); ok {
+		defer resetter.ResetTaskState()
+	}
 
 	var primaryPassword string
+	isPasswordIndependent := false
 	if resolver, ok := plugin.(pluginInterfaces.TaskPasswordResolver); ok {
 		primaryPassword = resolver.ResolveTaskPassword(task.Password, task.ExtraFields)
+		opts := plugin.GetTaskOptions()
+		isPasswordIndependent = opts.PasswordStrategy == pluginInterfaces.PasswordIndependent
 	} else {
 		primaryPassword = task.Password
 		if primaryPassword == "" {
 			primaryPassword = tm.cfg.Password
 		}
 	}
-	if primaryPassword == "" {
+	if primaryPassword == "" && !isPasswordIndependent {
 		tm.failTask(taskID, "encryption requires a password")
 		return
 	}
 
 	passwordCtx := tm.getPasswordContext(ctx, primaryPassword)
+
+	if setter, ok := plugin.(pluginInterfaces.TaskExtraFieldsSetter); ok {
+		setter.SetTaskExtraFields(task.ExtraFields)
+	}
 
 	if task.SecondaryPassword != "" {
 		slog.Debug("task has secondary password (L2) — reserved for future dual-password crypto support",
@@ -662,6 +706,10 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 	}
 	task.PluginName = plugin.Name()
 
+	if resetter, ok := plugin.(pluginInterfaces.TaskStateResetter); ok {
+		defer resetter.ResetTaskState()
+	}
+
 	var primaryPassword string
 	if resolver, ok := plugin.(pluginInterfaces.TaskPasswordResolver); ok {
 		primaryPassword = resolver.ResolveTaskPassword(task.Password, task.ExtraFields)
@@ -674,9 +722,13 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 
 	passwordCtx := tm.getPasswordContext(ctx, primaryPassword)
 
+	if setter, ok := plugin.(pluginInterfaces.TaskExtraFieldsSetter); ok {
+		setter.SetTaskExtraFields(task.ExtraFields)
+	}
+
 	if task.SecondaryPassword != "" {
 		slog.Debug("task has secondary password (L2) — reserved for future dual-password crypto support",
-			"taskId", taskID)
+			"taskId", taskID, "context", "decrypt")
 	}
 
 	tm.updateProgress(taskID, 15, "preprocessing", "", "")

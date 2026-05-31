@@ -4,11 +4,109 @@
       <ion-toolbar>
         <ion-title>{{ t('tasks.title') }}</ion-title>
         <ion-buttons slot="end">
-          <ion-button fill="clear" size="small" @click="toggleSort" class="sort-toggle-btn">
+          <ion-button fill="clear" size="small" @click="toggleSort" class="toolbar-btn">
             <ion-icon :icon="sortBy === 'activity' ? sync : timer" slot="icon-only"></ion-icon>
+          </ion-button>
+          <ion-button fill="clear" size="small" @click="handleClearCompleted" class="toolbar-btn" :disabled="!hasCompletedTasks">
+            <ion-icon :icon="trashBin" slot="icon-only" color="danger"></ion-icon>
           </ion-button>
         </ion-buttons>
       </ion-toolbar>
+
+      <ion-toolbar v-if="showSearch">
+        <ion-searchbar
+          :value="searchQuery"
+          @ionInput="onSearchInput"
+          :placeholder="t('tasks.searchPlaceholder')"
+          show-cancel-button="focus"
+          @ionCancel="showSearch = false; searchQuery = ''"
+          :debounce="200"
+          class="task-searchbar"
+        ></ion-searchbar>
+      </ion-toolbar>
+
+      <ion-toolbar v-if="showFilters" class="filter-toolbar">
+        <div class="filter-chips">
+          <ion-chip :color="filterPlugins.length > 0 ? 'primary' : 'medium'" @click="openPluginPopover($event)">
+            <ion-icon :icon="extensionPuzzle" size="small"></ion-icon>
+            <ion-label>{{ getPluginChipLabel() }}</ion-label>
+            <ion-icon :icon="chevronDown" size="small"></ion-icon>
+          </ion-chip>
+          <ion-chip :color="filterTypes.length > 0 ? 'primary' : 'medium'" @click="openTypePopover($event)">
+            <ion-icon :icon="swapVertical" size="small"></ion-icon>
+            <ion-label>{{ getTypeChipLabel() }}</ion-label>
+            <ion-icon :icon="chevronDown" size="small"></ion-icon>
+          </ion-chip>
+          <ion-chip :color="filterStatuses.length > 0 ? 'primary' : 'medium'" @click="openStatusPopover($event)">
+            <ion-icon :icon="funnel" size="small"></ion-icon>
+            <ion-label>{{ getStatusChipLabel() }}</ion-label>
+            <ion-icon :icon="chevronDown" size="small"></ion-icon>
+          </ion-chip>
+        </div>
+      </ion-toolbar>
+
+      <ion-popover
+        :is-open="pluginPopoverOpen"
+        :event="pluginPopoverEvent"
+        @didDismiss="pluginPopoverOpen = false"
+        side="bottom"
+        alignment="start"
+      >
+        <div class="popover-filter-content">
+          <div class="popover-filter-title">{{ t('tasks.filterByPlugin') }}</div>
+          <ion-item
+            v-for="plugin in availablePlugins"
+            :key="plugin"
+            lines="none"
+            class="popover-filter-item"
+            @click="togglePluginFilter(plugin)"
+          >
+            <ion-checkbox
+              :checked="filterPlugins.includes(plugin)"
+              slot="start"
+              @ionChange="togglePluginFilter(plugin)"
+            ></ion-checkbox>
+            <ion-label>{{ plugin }}</ion-label>
+          </ion-item>
+          <div v-if="availablePlugins.length === 0" class="popover-empty">{{ t('tasks.noPluginsFound') }}</div>
+        </div>
+      </ion-popover>
+
+      <ion-popover
+        :is-open="typePopoverOpen"
+        :event="typePopoverEvent"
+        @didDismiss="typePopoverOpen = false"
+        side="bottom"
+        alignment="start"
+      >
+        <div class="popover-filter-content">
+          <div class="popover-filter-title">{{ t('tasks.filterByType') }}</div>
+          <ion-item lines="none" class="popover-filter-item" @click="toggleTypeFilter('encrypt')">
+            <ion-checkbox :checked="filterTypes.includes('encrypt')" slot="start" @ionChange="toggleTypeFilter('encrypt')"></ion-checkbox>
+            <ion-label>{{ t('tasks.encrypt') }}</ion-label>
+          </ion-item>
+          <ion-item lines="none" class="popover-filter-item" @click="toggleTypeFilter('decrypt')">
+            <ion-checkbox :checked="filterTypes.includes('decrypt')" slot="start" @ionChange="toggleTypeFilter('decrypt')"></ion-checkbox>
+            <ion-label>{{ t('tasks.decrypt') }}</ion-label>
+          </ion-item>
+        </div>
+      </ion-popover>
+
+      <ion-popover
+        :is-open="statusPopoverOpen"
+        :event="statusPopoverEvent"
+        @didDismiss="statusPopoverOpen = false"
+        side="bottom"
+        alignment="start"
+      >
+        <div class="popover-filter-content">
+          <div class="popover-filter-title">{{ t('tasks.filterByStatus') }}</div>
+          <ion-item v-for="s in statusOptions" :key="s" lines="none" class="popover-filter-item" @click="toggleStatusFilter(s)">
+            <ion-checkbox :checked="filterStatuses.includes(s)" slot="start" @ionChange="toggleStatusFilter(s)"></ion-checkbox>
+            <ion-label>{{ getStatusLabel(s) }}</ion-label>
+          </ion-item>
+        </div>
+      </ion-popover>
     </ion-header>
 
     <ion-content>
@@ -16,9 +114,25 @@
         <ion-refresher-content></ion-refresher-content>
       </ion-refresher>
 
+      <div class="toolbar-actions">
+        <ion-button fill="clear" size="small" @click="showSearch = !showSearch" class="action-btn">
+          <ion-icon :icon="search" slot="icon-only"></ion-icon>
+        </ion-button>
+        <ion-button fill="clear" size="small" @click="showFilters = !showFilters" class="action-btn">
+          <ion-icon :icon="funnel" slot="icon-only" :color="hasActiveFilters ? 'primary' : undefined"></ion-icon>
+        </ion-button>
+      </div>
+
       <div v-if="loading" class="loading-container">
         <ion-spinner name="crescent"></ion-spinner>
         <p>{{ t('tasks.loading') }}</p>
+      </div>
+
+      <div v-else-if="filteredTasks.length === 0 && tasks.length > 0" class="empty-state">
+        <ion-icon :icon="search" class="empty-icon"></ion-icon>
+        <h3>{{ t('tasks.noMatchingTasks') }}</h3>
+        <p>{{ t('tasks.noMatchingTasksDesc') }}</p>
+        <ion-button fill="clear" size="small" @click="clearFilters">{{ t('tasks.clearFilters') }}</ion-button>
       </div>
 
       <div v-else-if="tasks.length === 0" class="empty-state">
@@ -28,7 +142,7 @@
       </div>
 
       <ion-list v-else>
-        <ion-item-sliding v-for="task in sortedTasks" :key="task.id">
+        <ion-item-sliding v-for="task in filteredTasks" :key="task.id">
           <ion-item @click="openTaskDetail(task)" button detail>
             <ion-icon
               :icon="getTaskIcon(task)"
@@ -53,7 +167,6 @@
               <div v-if="task.status === 'running' || task.status === 'cancelling'" class="progress-section">
                 <ion-progress-bar
                   :value="task.progress / 100"
-                  :buffer="task.status === 'cancelling' ? undefined : undefined"
                   :class="['task-progress', { 'progress-cancelling': task.status === 'cancelling' }]"
                 ></ion-progress-bar>
                 <div class="progress-detail">
@@ -80,15 +193,6 @@
                 {{ t('tasks.passwordErrorHint') }}
               </p>
               <p v-else-if="task.error" class="task-error">{{ task.error }}</p>
-              <div v-if="task.errorDetail && task.errorDetail !== task.error" class="error-detail-row">
-                <p class="task-error-detail" @click="toggleErrorDetail(task.id)">
-                  {{ showErrorDetail[task.id] ? t('tasks.hideDetail') : t('tasks.showDetail') }}
-                </p>
-                <ion-button fill="clear" size="small" color="medium" class="copy-btn" @click="copyErrorDetail(task)">
-                  <ion-icon :icon="copiedTaskId === task.id ? checkmarkCircle : copyOutline" slot="icon-only"></ion-icon>
-                </ion-button>
-              </div>
-              <pre v-if="showErrorDetail[task.id] && task.errorDetail" class="error-detail-pre">{{ task.errorDetail }}</pre>
             </ion-label>
             <ion-button
               v-if="task.status === 'running'"
@@ -166,6 +270,13 @@ import {
   IonFab,
   IonFabButton,
   IonSpinner,
+  IonButton,
+  IonButtons,
+  IonSearchbar,
+  IonChip,
+  IonPopover,
+  IonCheckbox,
+  alertController,
   modalController,
 } from '@ionic/vue'
 import {
@@ -174,9 +285,14 @@ import {
   checkmarkCircle,
   timer,
   sync,
-  copyOutline,
   warningOutline,
   lockClosed,
+  search,
+  funnel,
+  trashBin,
+  extensionPuzzle,
+  swapVertical,
+  chevronDown,
 } from 'ionicons/icons'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -184,6 +300,7 @@ import {
   cancelTask,
   retryTask,
   removeTask,
+  clearCompletedTasks,
   isWrongPasswordError,
 } from '@/api/encv'
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
@@ -200,10 +317,100 @@ const { openNewTask } = useNewTaskModal()
 
 const tasks = ref<EncvTask[]>([])
 const loading = ref(false)
-const showErrorDetail = ref<Record<string, boolean>>({})
-const copiedTaskId = ref<string | null>(null)
 const expandedWarningDetail = ref<string | null>(null)
 const sortBy = ref<'activity' | 'created'>('activity')
+
+const showSearch = ref(false)
+const searchQuery = ref('')
+const showFilters = ref(false)
+const filterPlugins = ref<string[]>([])
+const filterTypes = ref<TaskType[]>([])
+const filterStatuses = ref<TaskStatus[]>([])
+
+const statusOptions: TaskStatus[] = ['queued', 'running', 'completed', 'failed', 'cancelled']
+
+const pluginPopoverOpen = ref(false)
+const typePopoverOpen = ref(false)
+const statusPopoverOpen = ref(false)
+const pluginPopoverEvent = ref<Event | null>(null)
+const typePopoverEvent = ref<Event | null>(null)
+const statusPopoverEvent = ref<Event | null>(null)
+
+const availablePlugins = computed(() => {
+  const plugins = new Set<string>()
+  for (const task of tasks.value) {
+    if (task.pluginName) plugins.add(task.pluginName)
+  }
+  return Array.from(plugins).sort()
+})
+
+const hasActiveFilters = computed(() =>
+  filterPlugins.value.length > 0 || filterTypes.value.length > 0 || filterStatuses.value.length > 0
+)
+
+const hasCompletedTasks = computed(() =>
+  tasks.value.some(t => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled')
+)
+
+function openPluginPopover(event: Event) {
+  pluginPopoverEvent.value = event
+  pluginPopoverOpen.value = true
+}
+
+function openTypePopover(event: Event) {
+  typePopoverEvent.value = event
+  typePopoverOpen.value = true
+}
+
+function openStatusPopover(event: Event) {
+  statusPopoverEvent.value = event
+  statusPopoverOpen.value = true
+}
+
+function togglePluginFilter(plugin: string) {
+  const idx = filterPlugins.value.indexOf(plugin)
+  if (idx === -1) filterPlugins.value.push(plugin)
+  else filterPlugins.value.splice(idx, 1)
+}
+
+function toggleTypeFilter(type: TaskType) {
+  const idx = filterTypes.value.indexOf(type)
+  if (idx === -1) filterTypes.value.push(type)
+  else filterTypes.value.splice(idx, 1)
+}
+
+function toggleStatusFilter(status: TaskStatus) {
+  const idx = filterStatuses.value.indexOf(status)
+  if (idx === -1) filterStatuses.value.push(status)
+  else filterStatuses.value.splice(idx, 1)
+}
+
+function getPluginChipLabel(): string {
+  if (filterPlugins.value.length === 0) return t('tasks.allPlugins')
+  if (filterPlugins.value.length === 1) return filterPlugins.value[0]
+  return `${t('tasks.allPlugins')} (${filterPlugins.value.length})`
+}
+
+function getTypeChipLabel(): string {
+  if (filterTypes.value.length === 0) return t('tasks.allTypes')
+  return filterTypes.value.map(ty => ty === 'encrypt' ? t('tasks.encrypt') : t('tasks.decrypt')).join(', ')
+}
+
+function getStatusChipLabel(): string {
+  if (filterStatuses.value.length === 0) return t('tasks.allStatuses')
+  return filterStatuses.value.map(s => getStatusLabel(s)).join(', ')
+}
+
+function clearFilters() {
+  filterPlugins.value = []
+  filterTypes.value = []
+  filterStatuses.value = []
+  searchQuery.value = ''
+}
+
+function onSearchInput(event: CustomEvent) {
+  searchQuery.value = event.detail.value ?? ''
+}
 
 function getTaskIcon(task: EncvTask) {
   switch (task.status) {
@@ -297,6 +504,34 @@ const sortedTasks = computed(() => {
   return arr
 })
 
+const filteredTasks = computed(() => {
+  let result = sortedTasks.value
+
+  if (searchQuery.value.trim()) {
+    const q = searchQuery.value.trim().toLowerCase()
+    result = result.filter(task => {
+      const name = getTaskName(task).toLowerCase()
+      const plugin = (task.pluginName || '').toLowerCase()
+      const error = (task.error || '').toLowerCase()
+      return name.includes(q) || plugin.includes(q) || error.includes(q)
+    })
+  }
+
+  if (filterPlugins.value.length > 0) {
+    result = result.filter(task => task.pluginName && filterPlugins.value.includes(task.pluginName))
+  }
+
+  if (filterTypes.value.length > 0) {
+    result = result.filter(task => filterTypes.value.includes(task.type))
+  }
+
+  if (filterStatuses.value.length > 0) {
+    result = result.filter(task => filterStatuses.value.includes(task.status))
+  }
+
+  return result
+})
+
 function toggleSort() {
   sortBy.value = sortBy.value === 'activity' ? 'created' : 'activity'
 }
@@ -332,10 +567,6 @@ async function loadTasks() {
   loading.value = false
 }
 
-function toggleErrorDetail(taskId: string) {
-  showErrorDetail.value[taskId] = !showErrorDetail.value[taskId]
-}
-
 function toggleWarningDetail(task: EncvTask) {
   expandedWarningDetail.value = expandedWarningDetail.value === task.id ? null : task.id
 }
@@ -343,28 +574,6 @@ function toggleWarningDetail(task: EncvTask) {
 function formatWarningDetail(detail: string): string {
   try { return JSON.stringify(JSON.parse(detail), null, 2) }
   catch { return detail }
-}
-
-async function copyErrorDetail(task: EncvTask) {
-  const text = task.errorDetail || task.error || ''
-  try {
-    await navigator.clipboard.writeText(text)
-    copiedTaskId.value = task.id
-    showToast({ message: t('tasks.copied'), duration: 1200, color: 'success' })
-    setTimeout(() => { if (copiedTaskId.value === task.id) copiedTaskId.value = null }, 2000)
-  } catch {
-    const textarea = document.createElement('textarea')
-    textarea.value = text
-    textarea.style.position = 'fixed'
-    textarea.style.opacity = '0'
-    document.body.appendChild(textarea)
-    textarea.select()
-    document.execCommand('copy')
-    document.body.removeChild(textarea)
-    copiedTaskId.value = task.id
-    showToast({ message: t('tasks.copied'), duration: 1200, color: 'success' })
-    setTimeout(() => { if (copiedTaskId.value === task.id) copiedTaskId.value = null }, 2000)
-  }
 }
 
 async function handleRefresh(event: CustomEvent) {
@@ -401,6 +610,35 @@ async function handleRemoveTask(id: string) {
   } catch {
     showToast({ message: t('tasks.taskRemoveFailed'), duration: 2000, color: 'danger' })
   }
+}
+
+async function handleClearCompleted() {
+  const completedCount = tasks.value.filter(
+    t => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled'
+  ).length
+  if (completedCount === 0) return
+
+  const alert = await alertController.create({
+    header: t('tasks.clearConfirmTitle'),
+    message: t('tasks.clearConfirmMessage', { count: String(completedCount) }),
+    buttons: [
+      { text: t('tasks.cancel'), role: 'cancel' },
+      {
+        text: t('tasks.clearConfirm'),
+        role: 'destructive',
+        handler: async () => {
+          try {
+            const result = await clearCompletedTasks()
+            showToast({ message: t('tasks.cleared', { count: String(result.removed) }), duration: 2000, color: 'success' })
+            await loadTasks()
+          } catch {
+            showToast({ message: t('tasks.clearFailed'), duration: 2000, color: 'danger' })
+          }
+        },
+      },
+    ],
+  })
+  await alert.present()
 }
 
 function onTaskUpdate(data: { id: string; type: string; status: string; progress: number }) {
@@ -510,6 +748,55 @@ onUnmounted(() => {
   font-size: 64px;
   margin-bottom: 16px;
   opacity: 0.5;
+}
+
+.toolbar-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 4px 16px 0;
+}
+
+.action-btn {
+  --color: var(--ion-color-medium);
+  --padding-start: 8px;
+  --padding-end: 8px;
+  font-size: 18px;
+}
+
+.toolbar-btn {
+  --color: var(--ion-color-medium);
+  --padding-start: 8px;
+  --padding-end: 8px;
+  font-size: 20px;
+}
+
+.task-searchbar {
+  --padding-start: 12px;
+  --padding-end: 12px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.filter-toolbar {
+  --padding-start: 8px;
+  --padding-end: 8px;
+  --min-height: 44px;
+}
+
+.filter-chips {
+  display: flex;
+  gap: 6px;
+  padding: 4px 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.filter-chips ion-chip {
+  flex-shrink: 0;
+  font-size: 12px;
+  --padding-start: 8px;
+  --padding-end: 10px;
 }
 
 .status-badge {
@@ -644,43 +931,6 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.task-error-detail {
-  color: var(--ion-color-medium);
-  font-size: 11px;
-  margin-top: 2px;
-  cursor: pointer;
-  word-break: break-all;
-}
-
-.error-detail-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 2px;
-}
-
-.copy-btn {
-  --padding-start: 4px;
-  --padding-end: 4px;
-  min-width: 28px;
-  min-height: 28px;
-  font-size: 16px;
-}
-
-.error-detail-pre {
-  background: var(--ion-color-light);
-  border-radius: 6px;
-  padding: 8px 10px;
-  margin: 4px 0 0;
-  font-size: 11px;
-  color: var(--ion-text-color);
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 200px;
-  overflow-y: auto;
-  line-height: 1.5;
-}
-
 .task-warning {
   display: flex;
   align-items: center;
@@ -727,42 +977,34 @@ onUnmounted(() => {
   height: 20px;
 }
 
-.browse-btn {
-  --padding-start: 8px;
-  --padding-end: 8px;
-  min-width: 44px;
-  min-height: 44px;
+.popover-filter-content {
+  padding: 8px 0;
+  min-width: 180px;
+  max-height: 320px;
+  overflow-y: auto;
 }
 
-.plugin-selector {
-  margin: 8px 0;
+.popover-filter-title {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 16px 8px;
+  color: var(--encv-text-secondary);
 }
 
-.plugin-section {
-  margin: 4px 0;
+.popover-filter-item {
+  --min-height: 40px;
+  --padding-start: 12px;
+  --padding-end: 12px;
+  cursor: pointer;
 }
 
-.plugin-hint {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  font-size: 12px;
-  color: var(--ion-color-medium);
-  background: var(--ion-color-step-50, #f8f8f8);
-  border-radius: 6px;
-  margin: 4px 16px;
+.popover-filter-item ion-checkbox {
+  margin-right: 8px;
 }
 
-.hint-icon {
-  font-size: 16px;
-  flex-shrink: 0;
-}
-
-.sort-toggle-btn {
-  --color: var(--ion-color-medium);
-  --padding-start: 8px;
-  --padding-end: 8px;
-  font-size: 20px;
+.popover-empty {
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--encv-text-secondary);
 }
 </style>

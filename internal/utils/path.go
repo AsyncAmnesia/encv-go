@@ -8,6 +8,18 @@ import (
 	"strings"
 )
 
+func DecodePathParam(raw string) string {
+	s, err := url.QueryUnescape(raw)
+	if err != nil {
+		return raw
+	}
+	s2, err := url.QueryUnescape(s)
+	if err != nil {
+		return s
+	}
+	return s2
+}
+
 // SafeResolveToAbsPath 将用户提供的本地路径安全地解析为位于基础目录内的绝对路径。
 // 这个函数专门处理文件系统路径，不处理URL编码，适用于内部调用。
 //
@@ -60,14 +72,13 @@ func SafeResolveToAbsPath(baseDir, userPath string) (string, error) {
 //   - string: 解码并清理后的相对路径，例如 "folder/中文.txt"
 //   - error: 如果URL无效或包含危险内容，则返回错误
 func SafeURLPathToRelative(urlPath string) (string, error) {
-	// 解析URL测试是否有效
-	u, err := url.Parse(urlPath)
-	if err != nil {
-		return "", fmt.Errorf("invalid URL: %w", err)
+	decodedPath := urlPath
+	if decodedPath == "" {
+		decodedPath = "/"
 	}
 
-	// 恢复解码后的路径
-	decodedPath := u.Path
+	decodedPath = DecodePathParam(decodedPath)
+
 	if decodedPath == "" {
 		decodedPath = "/"
 	}

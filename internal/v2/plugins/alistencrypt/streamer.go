@@ -10,11 +10,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Soltus/encv-go/internal/alistencrypt"
 )
 
 type seekableDecryptReader struct {
-	*alistencrypt.DecryptReader
+	*DecryptReader
 	closeFunc func() error
 }
 
@@ -42,8 +41,8 @@ func (p *AlistEncryptPlugin) Stream(path string, password string) (io.ReadCloser
 	if fileSize >= 32 {
 		peekBuf := make([]byte, 32)
 		n, _ := io.ReadFull(f, peekBuf)
-		if n == 32 && bytes.Equal(peekBuf[:6], []byte(alistencrypt.AECTR2Magic)) {
-			header, headerErr := alistencrypt.DetectContentHeader(peekBuf)
+		if n == 32 && bytes.Equal(peekBuf[:6], []byte(AECTR2Magic)) {
+			header, headerErr := DetectContentHeader(peekBuf)
 			if headerErr == nil && header != nil {
 				plainSize = header.PlainSize
 			} else {
@@ -60,7 +59,7 @@ func (p *AlistEncryptPlugin) Stream(path string, password string) (io.ReadCloser
 		plainSize = fileSize
 	}
 
-	dr, err := alistencrypt.NewDecryptReader(f, password, fileSize)
+	dr, err := NewDecryptReader(f, password, fileSize)
 	if err != nil {
 		f.Close()
 		return nil, 0, "", fmt.Errorf("failed to create decrypt reader: %w", err)

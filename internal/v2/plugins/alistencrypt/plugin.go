@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Soltus/encv-go/internal/alistencrypt"
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/v2/crypto"
 	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
@@ -19,11 +18,12 @@ import (
 )
 
 type AlistEncryptPlugin struct {
-	ctx        context.Context
-	cfg        *config.Config
-	settings   AlistEncryptPluginConfig
-	outputDir  string
-	inputPath  string
+	ctx            context.Context
+	cfg            *config.Config
+	settings       AlistEncryptPluginConfig
+	outputDir      string
+	inputPath      string
+	taskExtraFields map[string]string
 }
 
 func (p *AlistEncryptPlugin) Name() string {
@@ -94,6 +94,10 @@ func (p *AlistEncryptPlugin) Initialize(ctx context.Context) error {
 		slog.Warn("alist_encrypt: suffix exceeds 16 chars, falling back to .bin",
 			"suffix", suffix)
 		p.settings.Suffix = ".bin"
+	} else if isReservedSuffix(suffix) {
+		slog.Warn("alist_encrypt: suffix conflicts with reserved extension, falling back to .bin",
+			"suffix", suffix)
+		p.settings.Suffix = ".bin"
 	}
 
 	if p.settings.EncType != "aesctr" {
@@ -146,7 +150,8 @@ func (p *AlistEncryptPlugin) PreEncryptProcessor(index types.Index, inputPath, i
 }
 
 func (p *AlistEncryptPlugin) Encrypt(dataReader io.Reader) (*crypto.EncryptionResult, error) {
-	password := p.resolvePassword()
+	password := p.resolvePasswordFromTask()
+	slog.Debug("alist_encrypt: Encrypt called", "hasPassword", password != "", "hasOutputDir", p.outputDir != "", "outputDir", p.outputDir, "hasSettings", p.settings.Suffix != "")
 
 	result, err := EncryptToFile(dataReader, password, p.outputDir, &p.settings)
 	if err != nil {
@@ -184,10 +189,10 @@ func (p *AlistEncryptPlugin) PreDecryptProcessor(containerPath, outputDir string
 func (p *AlistEncryptPlugin) Decrypt(containerPath, outputDir string) error {
 	ext := strings.ToLower(filepath.Ext(containerPath))
 	if ext != p.settings.Suffix {
-		return &alistencrypt.DecryptionError{Reason: "invalid format: extension mismatch", Err: alistencrypt.ErrInvalidFormat}
+		return &DecryptionError{Reason: "invalid format: extension mismatch", Err: ErrInvalidFormat}
 	}
 
-	password := p.resolvePassword()
+	password := p.resolvePasswordFromTask()
 
 	if err := DecryptFile(containerPath, outputDir, password, p.settings.EncType); err != nil {
 		return fmt.Errorf("alist_encrypt decryption failed for '%s': %w", containerPath, err)
@@ -234,10 +239,10 @@ func (p *AlistEncryptPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 		ExtraFields: []pluginInterfaces.TaskField{
 			{
 				Key:       "plugin_password",
-				Label:     "task.pluginPassword",
+				Label:     "tasks.pluginPassword",
 				Type:      "password",
 				Required:  false,
-				Help:      "task.pluginPasswordHelp",
+				Help:      "tasks.pluginPasswordHelp",
 				Condition: "",
 			},
 		},
@@ -251,6 +256,19 @@ func (p *AlistEncryptPlugin) resolvePassword() string {
 	return ""
 }
 
+func (p *AlistEncryptPlugin) resolvePasswordFromTask() string {
+	if p.taskExtraFields != nil {
+		if pw := p.taskExtraFields["plugin_password"]; pw != "" {
+			return pw
+		}
+	}
+	return p.resolvePassword()
+}
+
+func (p *AlistEncryptPlugin) ResolveTaskPassword(taskPassword string, extraFields map[string]string) string {
+	return p.resolvePasswordWithTaskExtras(extraFields)
+}
+
 func (p *AlistEncryptPlugin) resolvePasswordWithTaskExtras(extraFields map[string]string) string {
 	if pw := extraFields["plugin_password"]; pw != "" {
 		return pw
@@ -258,6 +276,21 @@ func (p *AlistEncryptPlugin) resolvePasswordWithTaskExtras(extraFields map[strin
 	return p.resolvePassword()
 }
 
-func (p *AlistEncryptPlugin) ResolveTaskPassword(taskPassword string, extraFields map[string]string) string {
-	return p.resolvePasswordWithTaskExtras(extraFields)
+func (p *AlistEncryptPlugin) SetTaskExtraFields(fields map[string]string) {
+	p.taskExtraFields = fields
+}
+
+func (p *AlistEncryptPlugin) ResetTaskState() {
+	p.taskExtraFields = nil
+	p.outputDir = ""
+	p.inputPath = ""
+}
+
+var reservedSuffixes = map[string]bool{
+	".sccgv": true,
+	".encv":  true,
+}
+
+func isReservedSuffix(suffix string) bool {
+	return reservedSuffixes[strings.ToLower(suffix)]
 }

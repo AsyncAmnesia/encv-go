@@ -7,13 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Soltus/encv-go/internal/alistencrypt"
 )
 
 func DecryptFile(containerPath, outputDir, password, encType string) error {
 	ext := strings.ToLower(filepath.Ext(containerPath))
 	if ext != "" && ext != ".bin" && ext != ".alist" && ext != ".enc" {
-		return &alistencrypt.DecryptionError{Reason: "invalid format", Err: alistencrypt.ErrInvalidFormat}
+		return &DecryptionError{Reason: "invalid format", Err: ErrInvalidFormat}
 	}
 
 	f, err := os.Open(containerPath)
@@ -28,10 +27,10 @@ func DecryptFile(containerPath, outputDir, password, encType string) error {
 	}
 	fileSize := info.Size()
 
-	dr, err := alistencrypt.NewDecryptReader(f, password, fileSize)
+	dr, err := NewDecryptReader(f, password, fileSize)
 	if err != nil {
 		if strings.Contains(err.Error(), "failed to parse V2 header") || strings.Contains(err.Error(), "failed to create cipher") {
-			return &alistencrypt.DecryptionError{Reason: "password mismatch", Err: alistencrypt.ErrInvalidPassword}
+			return &DecryptionError{Reason: "password mismatch", Err: ErrInvalidPassword}
 		}
 		return fmt.Errorf("failed to create decrypt reader: %w", err)
 	}
@@ -71,7 +70,7 @@ func tryDecodeFilename(encodedName, password, encType string) string {
 	ext := filepath.Ext(fileName)
 	encPart := strings.TrimSuffix(fileName, ext)
 
-	decoded := alistencrypt.DecodeName(encPart, password, encType)
+	decoded := DecodeName(encPart, password, encType)
 	if decoded == "" {
 		return ""
 	}

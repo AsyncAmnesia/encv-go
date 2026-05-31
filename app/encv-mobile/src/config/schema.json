@@ -186,18 +186,13 @@
         "file": {
           "type": "string",
           "description": "日志文件路径，为空则只输出到控制台\n如果指定了文件路径，控制台输出带颜色的文本格式，文件输出 JSON 格式。\n支持相对路径（相对于可执行文件）和绝对路径。\n示例: \"encv.log\" 或 \"D:/logs/encv.log\""
-        },
-        "console": {
-          "type": "boolean",
-          "description": "是否输出到控制台。当前仅做标记，控制台输出始终开启。"
         }
       },
       "additionalProperties": false,
       "type": "object",
       "required": [
         "level",
-        "file",
-        "console"
+        "file"
       ],
       "description": "--- 日志配置 ---"
     },

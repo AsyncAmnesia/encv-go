@@ -1,4 +1,8 @@
 import type { Connect } from 'vite'
+import * as fs from 'fs'
+import * as path from 'path'
+
+const MOCK_DATA_DIR = '/storage/emulated/0'
 
 function json(res: Connect.ServerResponse, data: unknown, status = 200): void {
   res.statusCode = status
@@ -15,8 +19,42 @@ export function createHandlers(base: string): { dispatchRequest: Connect.NextHan
       return json(res, { status: 'ok' })
     }
 
-    if (pathname === '/api/config') {
-      return json(res, {})
+    if (pathname === '/decrypt') {
+      let filePath = url.searchParams.get('file') || url.searchParams.get('path') || ''
+      try { filePath = decodeURIComponent(filePath) } catch {}
+      console.error('[MOCK-DECRYPT] raw filePath query param:', JSON.stringify(filePath))
+      console.error('[MOCK-DECRYPT] full URL:', req.url)
+
+      const absPath = path.join(MOCK_DATA_DIR, filePath)
+      console.error('[MOCK-DECRYPT] resolved absPath:', absPath)
+
+      if (!filePath || filePath.includes('..')) {
+        return json(res, { error: 'invalid file path' }, 400)
+      }
+
+      if (!fs.existsSync(absPath)) {
+        const parentDir = path.dirname(absPath)
+        let siblings: string[] = []
+        try { siblings = fs.readdirSync(parentDir) } catch {}
+        console.error('[MOCK-DECRYPT] file NOT FOUND on disk')
+        return json(res, {
+          error: 'file not found',
+          debug: { receivedFilePath: filePath, resolvedAbsPath: absPath, siblings },
+        }, 404)
+      }
+
+      const content = fs.readFileSync(absPath)
+      const ext = path.extname(filePath).toLowerCase()
+      const contentType = ext === '.txt' ? 'text/plain; charset=utf-8'
+        : ext === '.pdf' ? 'application/pdf'
+        : 'application/octet-stream'
+
+      res.statusCode = 200
+      res.setHeader('Content-Type', contentType)
+      res.setHeader('Content-Length', content.length)
+      res.end(content)
+      console.error('[MOCK-DECRYPT] served file, size=', content.length, 'type=', contentType)
+      return
     }
 
     res.statusCode = 501

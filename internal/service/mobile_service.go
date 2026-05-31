@@ -109,7 +109,6 @@ func (s *MobileService) ListFiles(queryPath string) ([]FileInfo, error) {
 
 	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
 	if err != nil {
-		slog.Error("SafeURLToAbsPath failed", "path", queryPath, "error", err)
 		return nil, &ForbiddenError{Err: err}
 	}
 
@@ -1212,8 +1211,14 @@ func (s *MobileService) CheckEncryptOutputExists(sourcePath, targetDir string) (
 	}
 
 	outputDir := targetDir
+	if outputDir != "" {
+		decoded, err := utils.SafeURLToAbsPath(s.servingDir, outputDir)
+		if err == nil {
+			outputDir = decoded
+		}
+	}
 	if outputDir == "" {
-		outputDir = filepath.Dir(sourcePath)
+		outputDir = filepath.Dir(sourceAbs)
 		if outputDir == "" {
 			outputDir = "/"
 		}
@@ -1246,16 +1251,9 @@ func (s *MobileService) StreamExternalFile(w http.ResponseWriter, r *http.Reques
 		return &BadRequestError{Err: errors.New("'path' query parameter is required")}
 	}
 
-	absPath := filepath.Clean(filePath)
-
-	if !filepath.IsAbs(absPath) {
-		resolved, err := utils.SafeURLToAbsPath(s.servingDir, filePath)
-		if err == nil {
-			slog.Info("StreamExternalFile: resolved relative path via servingDir", "input", filePath, "resolved", resolved)
-			absPath = resolved
-		} else {
-			return &BadRequestError{Err: fmt.Errorf("path is not absolute and cannot be resolved via servingDir: %s", filePath)}
-		}
+	absPath, err := utils.SafeURLToAbsPath(s.servingDir, filePath)
+	if err != nil {
+		return &BadRequestError{Err: fmt.Errorf("failed to resolve path: %w", err)}
 	}
 
 	info, err := os.Stat(absPath)

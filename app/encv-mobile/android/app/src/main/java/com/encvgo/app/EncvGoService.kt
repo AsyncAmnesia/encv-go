@@ -459,7 +459,7 @@ class EncvGoService : Service() {
                     changed = true
                 }
                 if (!serverObj.has("dir")) {
-                    serverObj.put("dir", defaultServer.optString("dir", "/storage/emulated/0"))
+                    serverObj.put("dir", defaultServer.optString("dir", ""))
                     changed = true
                 }
             }
@@ -488,16 +488,16 @@ class EncvGoService : Service() {
                     existing.put("mobile", it)
                     changed = true
                 }
-                if (!targetMobile.has("server_dir")) {
-                    targetMobile.put("server_dir", defaultMobile.optString("server_dir", ""))
+                if (!targetMobile.has("server")) {
+                    targetMobile.put("server", defaultMobile.optJSONObject("server") ?: JSONObject())
                     changed = true
                 }
-                if (!targetMobile.has("output_path")) {
-                    targetMobile.put("output_path", defaultMobile.optString("output_path", ""))
+                if (!targetMobile.has("output")) {
+                    targetMobile.put("output", defaultMobile.optJSONObject("output") ?: JSONObject())
                     changed = true
                 }
-                if (!targetMobile.has("webdav_dir")) {
-                    targetMobile.put("webdav_dir", defaultMobile.optString("webdav_dir", ""))
+                if (!targetMobile.has("webdav")) {
+                    targetMobile.put("webdav", defaultMobile.optJSONObject("webdav") ?: JSONObject())
                     changed = true
                 }
             }
@@ -547,9 +547,9 @@ class EncvGoService : Service() {
             put("plugin_settings", JSONObject())
             put("log", JSONObject().put("level", "info").put("file", "").put("console", true))
             put("mobile", JSONObject().apply {
-                put("server_dir", "/storage/emulated/0")
-                put("output_path", "/storage/emulated/0/encv-output")
-                put("webdav_dir", "")
+                put("server", JSONObject().put("dir", "/storage/emulated/0"))
+                put("output", JSONObject().put("path", "/storage/emulated/0/encv-output"))
+                put("webdav", JSONObject().put("dir", ""))
             })
         }
         dest.writeText(fallback.toString(2))

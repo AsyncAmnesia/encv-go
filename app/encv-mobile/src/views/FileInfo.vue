@@ -127,7 +127,7 @@ import {
   arrowBack, documentTextOutline, alertCircle,
   lockClosed, listOutline, chevronDown, chevronForward,
 } from 'ionicons/icons'
-import { getApiBaseUrl, formatFileSize } from '@/api/encv'
+import { getApiBaseUrl, formatFileSize, proxySafeEncode } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 import { isAlistEncrypted, loadDecodedName } from '@/features/alist-encrypt/useAlistEncrypt'
 import type { FileItem } from '@/api/encv'
@@ -198,7 +198,7 @@ async function loadInfo() {
 
   try {
     const baseUrl = getApiBaseUrl()
-    const resp = await fetch(`${baseUrl}/api/file/info?path=${encodeURIComponent(path)}`)
+    const resp = await fetch(`${baseUrl}/api/file/info?path=${proxySafeEncode(path)}`)
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     const data = await resp.json() as FileInfo
     info.value = data

@@ -180,6 +180,16 @@ export async function pickAndInstallPlugin(): Promise<PickAndInstallResult> {
   }
 }
 
+export async function pickFolder(): Promise<{ path: string }> {
+  try {
+    return await GoProcess.pickFolder()
+  } catch (e: any) {
+    const msg = e?.message || e?.code || String(e)
+    console.error('[ENCV] GoProcess.pickFolder() failed:', msg)
+    return { path: '' }
+  }
+}
+
 export async function checkInstalledPlugins(): Promise<Record<string, { installed: boolean; enabled: boolean; versionName: string }>> {
   try {
     const result = await GoProcess.checkInstalledPlugins()
