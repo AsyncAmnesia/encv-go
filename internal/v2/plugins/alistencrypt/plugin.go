@@ -235,10 +235,10 @@ func (p *AlistEncryptPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 		ExtraFields: []pluginInterfaces.TaskField{
 			{
 				Key:       "plugin_password",
-				Label:     "task.pluginPassword",
+				Label:     "tasks.pluginPassword",
 				Type:      "password",
 				Required:  false,
-				Help:      "task.pluginPasswordHelp",
+				Help:      "tasks.pluginPasswordHelp",
 				Condition: "",
 			},
 		},

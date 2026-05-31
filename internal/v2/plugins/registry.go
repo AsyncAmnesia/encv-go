@@ -526,22 +526,31 @@ func FindDecryptingPluginByContainerType(containerType uint16) (Plugin, error) {
 // ProcessFileWithPlugin 是一个通用的辅助函数，它使用插件提供的策略来处理文件。
 // 这个函数封装了打开文件、提取元数据和预处理内容的通用流程。
 func ProcessFileWithPlugin(p Plugin, inputPath string) (types.Index, io.ReadCloser, error) {
-	// 1. 使用插件提供的元数据提取器获取索引
+	var index types.Index
+
 	extractor := p.GetMetadataExtractor()
-	index, err := extractor.ExtractMetadata(inputPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("metadata extraction failed for '%s': %w", inputPath, err)
+	if extractor != nil {
+		var err error
+		index, err = extractor.ExtractMetadata(inputPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("metadata extraction failed for '%s': %w", inputPath, err)
+		}
 	}
 
-	// 2. 使用插件提供的内容预处理器获取处理后的数据流
 	preprocessor := p.GetContentPreprocessor()
-	dataReader, err := preprocessor.Preprocess(inputPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("content preprocessing failed for '%s': %w", inputPath, err)
+	if preprocessor != nil {
+		dataReader, err := preprocessor.Preprocess(inputPath)
+		if err != nil {
+			return nil, nil, fmt.Errorf("content preprocessing failed for '%s': %w", inputPath, err)
+		}
+		return index, dataReader, nil
 	}
 
-	// 3. 返回索引和数据流
-	return index, dataReader, nil
+	file, err := os.Open(inputPath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open file '%s': %w", inputPath, err)
+	}
+	return index, file, nil
 }
 
 // EncryptFileWithPlugin 是一个新的辅助函数，封装了完整的加密流程

@@ -4,9 +4,22 @@
     "type": "encrypt",
     "sourcePath": "/01-plain-media/video/sample.mp4",
     "pluginName": "alist_encrypt",
+    "status": "failed",
+    "progress": 10,
+    "phase": "initializing",
+    "error": "encryption requires a password",
+    "errorDetail": "encryption requires a password",
+    "createdAt": "2026-05-31T19:56:50.860382851Z",
+    "completedAt": "2026-05-31T19:56:50.950326658Z"
+  },
+  {
+    "id": "fbe1cec2-bf65-4c64-91bf-efb97132c1e0",
+    "type": "encrypt",
+    "sourcePath": "/01-plain-media/video/sample.mp4",
+    "pluginName": "alist_encrypt",
     "status": "queued",
     "progress": 0,
-    "createdAt": "2026-05-31T19:56:50.860382851Z"
+    "createdAt": "2026-05-31T20:02:55.11368997Z"
   },
   {
     "id": "630faafe-0edc-47fa-8738-5665ab950525",
