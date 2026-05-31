@@ -24,6 +24,7 @@ const (
 	IDType_Reserved       IDType = 2         // 预留给 JSON、Protobuf 等
 	FlagIsMainContainer   uint16 = 1 << iota // Bit 0: 这是一个主容器文件
 	FlagIsPhysicalChunk                      // Bit 1: 这是一个物理数据分片
+	FlagFilenameEncrypted                    // Bit 4: Manifest.original_name 是 ENC-FN 编码存储的
 )
 
 var ErrInvalidHeader = errors.New("invalid header")

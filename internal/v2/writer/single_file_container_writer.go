@@ -12,6 +12,7 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/container/block"
 	"github.com/Soltus/encv-go/internal/v2/container/manifest"
 	"github.com/Soltus/encv-go/internal/v2/crypto"
+	"github.com/Soltus/encv-go/internal/v2/filename"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -27,6 +28,11 @@ type SingleFileContainerWriter struct {
 	manifestCRC             uint32      // 缓存 Manifest CRC 以免重复计算
 	headerVersion           int         // 3 or 4
 	v4Header                *types.EnvelopeHeaderV4
+
+	originalName    string
+	fnPassword      string
+	fnConfig        filename.FNConfig
+	encryptFilename bool
 }
 
 // 创建一个新的文件容器写入器，他会在关闭的时候自动写入 Footer
@@ -84,6 +90,13 @@ func NewSingleFileContainerWriterV4(outputPath string, header *types.EnvelopeHea
 	}
 
 	return &SingleFileContainerWriter{file: file, globalHasher: globalHasher, manifestCRC: 0, headerVersion: 4, v4Header: header}, nil
+}
+
+func (w *SingleFileContainerWriter) SetFilenameEncoding(originalName string, password string, cfg filename.FNConfig) {
+	w.originalName = originalName
+	w.fnPassword = password
+	w.fnConfig = cfg
+	w.encryptFilename = originalName != "" && password != ""
 }
 
 func (w *SingleFileContainerWriter) WriteKVI(kviData []byte) error {
@@ -174,6 +187,20 @@ func (w *SingleFileContainerWriter) writeManifestV4(manifestObj *types.Manifest)
 		IsSeekable:    w.v4Header.IsSeekable != 0,
 		Segments:      segments,
 		KVI:           manifestObj.KVI,
+	}
+
+	if w.encryptFilename && w.originalName != "" {
+		w.fnConfig.Password = []byte(w.fnPassword)
+		encoded, err := w.fnConfig.Encode([]byte(w.originalName))
+		if err == nil {
+			mf.OriginalName = encoded
+			mf.FilenameAlgorithm = "enc-fn:v1"
+			w.v4Header.Flags |= types.FlagFilenameEncrypted
+		} else {
+			mf.OriginalName = w.originalName
+		}
+	} else if w.originalName != "" {
+		mf.OriginalName = w.originalName
 	}
 
 	manifestJSON, err := mf.SerializeToJSON_v4()

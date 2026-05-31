@@ -8,7 +8,7 @@ const decodedNames = new Map<string, string>()
 const sessionKeys: string[] = []
 const decodedKeys: string[] = []
 
-function lruPush(keys: string[], key: string, map: Map<string, any>, value: any) {
+function lruPush(keys: string[], key: string, map: Map<string, unknown>, value: unknown) {
   if (map.has(key)) {
     const i = keys.indexOf(key)
     if (i > -1) keys.splice(i, 1)
@@ -41,6 +41,10 @@ export function getDecodedName(path: string): string | undefined {
   return decodedNames.get(path)
 }
 
+function getEncType(): string {
+  return (getFieldValue(['plugin_settings', 'alist_encrypt', 'enc_type']) as string) || 'aesctr'
+}
+
 export async function loadDecodedName(file: FileItem, password = ''): Promise<string | null> {
   if (!isAlistEncrypted(file)) return null
   const cached = decodedNames.get(file.path)
@@ -48,12 +52,14 @@ export async function loadDecodedName(file: FileItem, password = ''): Promise<st
 
   const baseName = file.name.replace(/\.bin$/i, '')
   try {
-    const result = await decodeAlistFilename({ encodedName: baseName, password })
+    const result = await decodeAlistFilename({ encodedName: baseName, password, encType: getEncType() })
     if (result.success && result.plain_name) {
       lruPush(decodedKeys, file.path, decodedNames, result.plain_name)
       return result.plain_name
     }
-  } catch {}
+  } catch {
+    // API call failed - return null to show original encrypted name
+  }
   return null
 }
 

@@ -142,6 +142,10 @@ func WriteV4Container(params *V4WriteParams) error {
 	header.ManifestOffset = uint32(manifestOffset)
 	header.ManifestLength = uint32(manifestLength)
 
+	if params.Manifest.OriginalName != "" && params.Manifest.FilenameAlgorithm != "" {
+		header.Flags |= types.FlagFilenameEncrypted
+	}
+
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("failed to seek to header: %w", err)
 	}

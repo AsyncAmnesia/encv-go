@@ -9,10 +9,10 @@
 
 - [ ] Task 2: ENC-FN 核心算法实现 — 深度定制文件名编码器
   - [ ] 2.1 新建 `internal/v2/filename/charset.go`：
-    - 定义 12 个 FNCharset 常量（alnum/lowercase/uppercase/digits/hex_lower/hex_upper/symbols_basic/symbols_ext/hanzi_common/hanzi_rare/emoji）
+    - 定义 5 个 FNCharset 常量（alnum[必选隐含] / symbols_basic / symbols_extended / hanzi_rare / emoji）
     - 每个常量对应一个 rune 切片字符池
-    - **hanzi_common 字符池内置敏感字过滤**：预定义排除集（~50 个高风险汉字），编译时确定，运行时不可绕过。排除范围：政治敏感字、色情/暴力字、违禁品字、高风险组合字
-    - 实现 `BuildCharsetTable(charsets []FNCharset, deconfuse bool) ([]rune, error)` ：多选并集 → 去混淆过滤 → 最终字符表
+    - alnum 始终作为基础池自动包含，Charsets 数组仅包含扩展池
+    - 实现 `BuildCharsetTable(charsets []FNCharset, deconfuse bool) ([]rune, error)` ：alnum(必选) ∪ 扩展池并集 → 去混淆过滤 → 最终字符表
     - 实现 `EncodeToCharset(bytes []byte, table []rune) string` 和 `DecodeFromCharset(s string, table []rune) ([]byte, error)`
   - [ ] 2.2 新建 `internal/v2/filename/kdf.go`：HKDF-SHA256 密钥派生，password → 主密钥 → S-box 种子(32B) + N 个轮密钥(每轮16B)
   - [ ] 2.3 新建 `internal/v2/filename/sbox.go`：从种子确定性生成 256 字节 S-box + 逆 S-box
@@ -49,9 +49,9 @@
 - [ ] Task 8: 验证与测试
   - [ ] 8.1 Go 单元测试：ENC-FN 往返一致性（覆盖多种 Mode × 多种 Charset 组合）
   - [ ] 8.2 Go 单元测试：ENC-FN 密码敏感性 + 确定性 + 雪崩效应
-  - [ ] 8.3 Go 单元测试：多选字符集并集正确性（[alnum,hanzi_rare] 并集大小、去混淆后大小）
-  - [ ] 8.4 Go 单元测试：去混淆开关（开启/关闭/纯汉字无效果）
-  - [ ] 8.4b Go 单元测试：hanzi_common 敏感字过滤（确认排除集中每个字都不在最终字符表中；确认编码输出不含任何敏感字）
+  - [ ] 8.3 Go 单元测试：多选字符集并集正确性（[hanzi_rare, emoji] 扩展池 + alnum 必选基础，去混淆后大小）
+  - [ ] 8.4 Go 单元测试：去混淆开关（开启/关闭/纯扩展池无 alnum 字符可移除时效果）
+  - [ ] 8.4b Go 单元测试：空扩展池（Charsets=nil）→ 仅 alnum ± 去混淆
   - [ ] 8.5 Go 单元测试：ENC-FN 错误处理（篡改、非法字符集、空输入、超长输入）
   - [ ] 8.6 Go 单元测试：alist-encrypt EncryptedName 往返一致性
   - [ ] 8.7 E2E 测试：创建→物理重命名乱码→列表显示原名→rename→立即反映

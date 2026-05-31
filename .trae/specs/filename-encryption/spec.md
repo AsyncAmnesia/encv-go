@@ -110,27 +110,20 @@ ENC-FN(structured, [alnum, hanzi_common]):
 
 每个字符池是一个预定义的 Unicode 字符子集。用户可**同时选择多个**，最终输出字符表为所有选中字符池的**并集**。
 
-| 字符集 ID | 示例字符 | 大小 | 特征 |
-|-----------|----------|------|------|
-| `alnum` | `a-z A-Z 0-9` | 62 | 全字母数字，最大信息密度基础 |
-| `lowercase` | `a-z` | 26 | 纯小写字母 |
-| `uppercase` | `A-Z` | 26 | 纯大写字母 |
-| `digits` | `0-9` | 10 | 纯数字 |
-| `hex_lower` | `0-9 a-f` | 16 | 小写十六进制 |
-| `hex_upper` | `0-9 A-F` | 16 | 大写十六进制 |
-| `symbols_basic` | `_-.~` | 4 | URL 安全基本符号 |
-| `symbols_extended` | `!@#$%^&*()+=[]{}|;:,.<>?/` | 26 | 扩展符号集 |
-| `hanzi_common` | `的一是不了在人有我他这个们中来上大为和国到...` | ~2950 | 常用汉字（GB2312 一级字，**已内置排除敏感字**） |
-| `hanzi_rare` | `龘靁齉爨麤毊...` | ~1000+ | 生僻汉字（Unicode CJK 扩展区精选） |
-| `emoji` | `🎉🔐📁💾🔒...` | ~100 | 表情符号（精选适合文件名的非控制类 emoji） |
+`alnum` 是**必选基础池**（始终包含），其余为可选扩展池。
 
-> **hanzi_common 内置敏感字过滤**：常用汉字池预排除了可能触发云存储/文件系统内容审核的敏感字。排除范围包括但不限于：
-> - 政治/意识形态敏感字（如涉及特定人物名、事件关键词的单字）
-> - 色情/暴力相关字
-> - 违禁品相关字
-> - 高风险组合字（单独无害但组合易触发误判的字）
->
-> 过滤是**字符集池的内置属性**（编译时确定），不是运行时可配置的选项。这确保了无论用户如何配置，hanzi_common 的输出都不会包含高风险字符。用户若需更大字符集可用 hanzi_rare（生僻字天然规避了绝大多数敏感词匹配）。
+| 字符集 ID | 必选 | 示例字符 | 大小 | 特征 |
+|-----------|------|----------|------|------|
+| `alnum` | ✅ 是 | `a-z A-Z 0-9` | 62 | 全字母数字，信息密度基础 |
+| `symbols_basic` | 可选 | `_-.~` | 4 | URL 安全基本符号 |
+| `symbols_extended` | 可选 | `!@#$%^&*()+=[]{}|;:,.<>?/` | 26 | 扩展符号集 |
+| `hanzi_rare` | 可选 | `龘靁齉爨麤毊...` | ~1000+ | 生僻汉字（Unicode CJK 扩展区精选，天然规避敏感词审核） |
+| `emoji` | 可选 | `🎉🔐📁💾🔒...` | ~100 | 表情符号（精选适合文件名的非控制类 emoji） |
+
+> **设计决策**：
+> - **alnum 必选**：保证输出至少包含字母数字，避免纯符号/纯汉字等极端组合导致文件系统兼容性问题
+> - **无 hanzi_common**：常用汉字需复杂的敏感字过滤来避免内容审核误判；生僻汉字（hanzi_rare）天然不在任何常见敏感词库中，零过滤成本
+> - **无 alnum 子集**：lowercase/uppercase/digits/hex_* 均为 alnum 的真子集，用户可通过去混淆开关控制是否保留数字或大小写，无需独立字符池
 
 #### 去混淆全局开关
 
@@ -152,7 +145,7 @@ ENC-FN(structured, [alnum, hanzi_common]):
 ```go
 type FNConfig struct {
     Mode        FNMode      // FNCompact | FNStructured
-    Charsets    []FNCharset // 多选字符集合集（至少选 1 个）
+    Charsets    []FNCharset // 多选字符集扩展池（alnum 始终隐含包含）
     Deconfuse   bool        // 是否移除易混淆字符 0Oo1lI (默认 true)
     Rounds      int         // Feistel 轮数 (默认 6, 范围 4-12)
     Truncate    bool        // 是否在长模式下截断并附加校验 (默认 true)
@@ -166,35 +159,31 @@ const (
 
 type FNCharset string
 const (
-    FNAlnum          FNCharset = "alnum"            // a-zA-Z0-9
-    FNLowercase      FNCharset = "lowercase"        // a-z
-    FNUppercase      FNCharset = "uppercase"        // A-Z
-    FNDigits         FNCharset = "digits"           // 0-9
-    FNHexLower       FNCharset = "hex_lower"        // 0-9 a-f
-    FNHexUpper       FNCharset = "hex_upper"        // 0-9 A-F
-    FNSymbolsBasic   FNCharset = "symbols_basic"    // _-.~
-    FNSymbolsExt     FNCharset = "symbols_extended" // !@#$%^&*()+=[]{}|;:,.<>?/
-    FNHanziCommon    FNCharset = "hanzi_common"     // 常用汉字 ~3000
-    FNHanziRare      FNCharset = "hanzi_rare"       // 生僻汉字 ~1000+
-    FNEmoji          FNCharset = "emoji"            // 文件名安全 emoji ~100
+    FNAlnum        FNCharset = "alnum"            // 必选（隐含），a-zA-Z0-9
+    FNSymbolsBasic FNCharset = "symbols_basic"    // _-.~
+    FNSymbolsExt   FNCharset = "symbols_extended" // !@#$%^&*()+=[]{}|;:,.<>?/
+    FNHanziRare    FNCharset = "hanzi_rare"       // 生僻汉字 ~1000+
+    FNEmoji        FNCharset = "emoji"            // 文件名安全 emoji ~100
 )
 
 // FilenameAlgorithm 序列化格式:
 // "enc-fn:{mode}:{charset1,charset2,...}:deconfuse={true|false}"
-// 例: "enc-fn:compact:alnum,hanzi_rare,symbols_extended:deconfuse=true"
-// 例: "enc-fn:structured:hanzi_common,emoji:deconfuse=false"
+// alnum 不在序列化中显式出现（始终隐含）
+// 例: "enc-fn:compact:hanzi_rare,emoji:deconfuse=true"
+// 例: "enc-fn:structured:symbols_extended:deconfuse=false"
+// 例: "enc-fn:compact::deconfuse=true"  （仅 alnum，无扩展池）
 ```
 
 #### Scenario: 多选字符集编码
-- **WHEN** 用户选择字符集为 `[alnum, hanzi_rare]`，去混淆开启
-- **THEN** 最终字符表 = alnum(62) ∪ hanzi_rare(~1000) - 去混淆(6) ≈ 1056 个字符
-- **AND** 输出编码串中同时包含拉丁字母/数字和生僻汉字
-- **AND** 信息密度高（log2(1056) ≈ 10.04 bits/字符）
+- **WHEN** 用户选择扩展字符集为 `[hanzi_rare, emoji]`，去混淆开启
+- **THEN** 最终字符表 = alnum(62-6去混淆) ∪ hanzi_rare(~1000) ∪ emoji(~100) ≈ 1156 个字符
+- **AND** 输出编码串中同时包含拉丁字母/数字、生僻汉字和表情符号
+- **AND** 信息密度高（log2(1156) ≈ 10.18 bits/字符）
 
-#### Scenario: 纯汉字编码
-- **WHEN** 用户仅选择 `[hanzi_common]`
-- **THEN** 输出完全由常用汉字组成，视觉上类似正常中文文本
-- **AND** 对不知情观察者具有极强隐蔽性（看起来像普通中文文件名）
+#### Scenario: 纯 alnum 编码（无扩展池）
+- **WHEN** 用户不选择任何扩展字符集（Charsets 为空）
+- **THEN** 最终字符表 = alnum(62) - 去混淆(6) = 56 个字符（若 Deconfuse=true）
+- **AND** 输出为纯字母数字编码串，最简配置
 
 #### Scenario: 去混淆开关行为
 - **WHEN** Deconfuse=true 且字符集包含 alnum
@@ -203,14 +192,6 @@ const (
 - **THEN** 保留所有原始字符不做任何移除
 - **WHEN** 字符集不含 alnum/digits（如纯 hanzi_common）
 - **THEN** Deconfuse 开关无效果（无易混淆字符可移除）
-
-#### Scenario: hanzi_common 敏感字内置过滤
-- **WHEN** 用户选择 hanzi_common 字符集
-- **THEN** 最终字符表不包含任何预定义的敏感汉字（政治/色情/暴力/违禁品相关）
-- **AND** 此过滤是编译时内置的，用户无法通过配置绕过
-- **AND** 使用 hanzi_common 编码的输出文件名不会触发云存储或文件系统的内容审核误判
-- **WHEN** 用户需要更大字符集且不介意敏感字风险
-- **THEN** 可选择 hanzi_rare 替代（生僻字天然不在常见敏感词库中）
 
 #### Scenario: ENC-FN 短模式编码
 - **WHEN** 使用 compact 模式，字符集 `[alnum, hanzi_rare]`，Deconfuse=true

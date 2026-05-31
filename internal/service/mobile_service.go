@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"github.com/Soltus/encv-go/internal/utils"
 	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
+	"github.com/Soltus/encv-go/internal/v2/filename"
 	"github.com/Soltus/encv-go/internal/v2/handler"
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
@@ -57,6 +59,7 @@ func (e *UnsupportedMediaTypeError) Error() string { return e.Err.Error() }
 
 type FileInfo struct {
 	Name        string `json:"name"`
+	DisplayName string `json:"display_name,omitempty"`
 	Path        string `json:"path"`
 	IsDirectory bool   `json:"isDirectory"`
 	IsEncrypted bool   `json:"isEncrypted"`
@@ -281,6 +284,7 @@ func (s *MobileService) ReadFileContent(queryPath string) (*FileContentResult, e
 
 type FileInfoResult struct {
 	Name            string                 `json:"name"`
+	DisplayName     string                 `json:"display_name,omitempty"`
 	Path            string                 `json:"path"`
 	Size            int64                  `json:"size"`
 	Modified        string                 `json:"modified"`
@@ -412,6 +416,15 @@ func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
 			"manifest_offset": hdr.ManifestOffset,
 			"manifest_length": hdr.ManifestLength,
 		}
+
+		displayName, _ := filename.ResolveDisplayName(
+			context.Background(), result.Name, mf, hdr.Flags, "", filename.FNConfig{},
+		)
+		if displayName != result.Name {
+			result.DisplayName = displayName
+		}
+		result.Container["original_name"] = mf.OriginalName
+		result.Container["filename_alg"] = mf.FilenameAlgorithm
 
 		mfBytes, err := json.Marshal(mf)
 		if err != nil {
