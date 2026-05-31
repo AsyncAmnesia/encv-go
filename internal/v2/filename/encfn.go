@@ -2,6 +2,7 @@ package filename
 
 import (
 	"bytes"
+	"encoding/binary"
 	"strconv"
 )
 

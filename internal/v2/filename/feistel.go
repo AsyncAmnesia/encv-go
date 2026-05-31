@@ -25,8 +25,8 @@ func FeistelEncrypt(data []byte, sbox *SBox, roundKeys [][]byte) []byte {
 		}
 	}
 
-	result := make([]byte, n)
-	copy(result, padded[:n])
+	result := make([]byte, len(padded))
+	copy(result, padded)
 	return result
 }
 
@@ -57,8 +57,8 @@ func FeistelDecrypt(data []byte, sbox *SBox, roundKeys [][]byte) []byte {
 		}
 	}
 
-	result := make([]byte, n)
-	copy(result, padded[:n])
+	result := make([]byte, len(padded))
+	copy(result, padded)
 	return result
 }
 

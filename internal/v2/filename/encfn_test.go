@@ -1,6 +1,7 @@
 package filename
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"strings"
@@ -671,5 +672,260 @@ func TestSBoxDeterminism(t *testing.T) {
 		} else if sbox.Forward != firstForward {
 			t.Errorf("SBox non-deterministic at run %d", i)
 		}
+	}
+}
+
+func TestEncodeDecodeRoundtripBothModes(t *testing.T) {
+	tests := []struct {
+		name string
+		input string
+	}{
+		{"short ascii", "video.mp4"},
+		{"long ascii + underscores", "2024年度财务报表_Q3_final_version.pdf"},
+		{"with emoji", "照片🎉2024.jpg"},
+		{"chinese", "中文文件名测试.txt"},
+		{"rare hanzi", "龘靁齉爨麤毊.docx"},
+		{"empty string", ""},
+		{"whitespace only", "   "},
+		{"special chars", "file-with_spaces.and-dots.tar.gz"},
+		{"single char", "a"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Run("compact", func(t *testing.T) {
+				cfg := defaultCompactCfg()
+				if tt.input == "" {
+					_, err := cfg.Encode([]byte(tt.input))
+					if err != ErrFNEmptyInput {
+						t.Errorf("empty input: got err=%v, want ErrFNEmptyInput", err)
+					}
+					return
+				}
+				encoded, err := cfg.Encode([]byte(tt.input))
+				if err != nil {
+					t.Fatalf("Encode failed: %v", err)
+				}
+				decoded, err := cfg.Decode(encoded)
+				if err != nil {
+					t.Fatalf("Decode failed: %v", err)
+				}
+				if string(decoded) != tt.input {
+					t.Errorf("roundtrip mismatch: got %q want %q", string(decoded), tt.input)
+				}
+			})
+
+			t.Run("structured", func(t *testing.T) {
+				cfg := defaultStructuredCfg()
+				if tt.input == "" {
+					_, err := cfg.Encode([]byte(tt.input))
+					if err != ErrFNEmptyInput {
+						t.Errorf("empty input: got err=%v, want ErrFNEmptyInput", err)
+					}
+					return
+				}
+				encoded, err := cfg.Encode([]byte(tt.input))
+				if err != nil {
+					t.Fatalf("Encode failed: %v", err)
+				}
+				decoded, err := cfg.Decode(encoded)
+				if err != nil {
+					t.Fatalf("Decode failed: %v", err)
+				}
+				if string(decoded) != tt.input {
+					t.Errorf("roundtrip mismatch: got %q want %q", string(decoded), tt.input)
+				}
+			})
+		})
+	}
+}
+
+func TestLongRandomInputRoundtrip(t *testing.T) {
+	cfgCompact := defaultCompactCfg()
+	cfgStructured := defaultStructuredCfg()
+
+	longInput := make([]byte, 500)
+	for i := range longInput {
+		longInput[i] = byte(i*7 + 13*i*i%251)
+	}
+
+	for name, cfg := range map[string]FNConfig{"compact": cfgCompact, "structured": cfgStructured} {
+		t.Run(name, func(t *testing.T) {
+			encoded, err := cfg.Encode(longInput)
+			if err != nil {
+				t.Fatalf("Encode 500-byte input failed: %v", err)
+			}
+			if len(encoded) == 0 {
+				t.Fatal("encoded output is empty")
+			}
+			decoded, err := cfg.Decode(encoded)
+			if err != nil {
+				t.Fatalf("Decode failed: %v", err)
+			}
+			if len(decoded) != len(longInput) {
+				t.Errorf("length mismatch: got %d want %d", len(decoded), len(longInput))
+			}
+			for i := range longInput {
+				if decoded[i] != longInput[i] {
+					t.Errorf("byte[%d] mismatch: got 0x%02X want 0x%02X", i, decoded[i], longInput[i])
+					break
+				}
+			}
+		})
+	}
+}
+
+func TestBuildCharsetTableExtended(t *testing.T) {
+	t.Run("symbols_extended+emoji with deconfuse", func(t *testing.T) {
+		table, err := BuildCharsetTable([]FNCharset{FNSymbolsExt, FNEmoji}, true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(table) <= 62 {
+			t.Errorf("table with symbols_extended+emoji should be > 62, got %d", len(table))
+		}
+		hasSymbol := false
+		hasEmoji := false
+		for _, r := range table {
+			if strings.ContainsRune(string(SymbolsExtChars), r) {
+				hasSymbol = true
+			}
+			if strings.ContainsRune(string(EmojiChars), r) {
+				hasEmoji = true
+			}
+		}
+		if !hasSymbol {
+			t.Error("table should contain at least one symbol_extended character")
+		}
+		if !hasEmoji {
+			t.Error("table should contain at least one emoji character")
+		}
+		for _, confusable := range "0Oo1lI" {
+			for _, tr := range table {
+				if tr == confusable {
+					t.Errorf("deconfused table should not contain %q", confusable)
+				}
+			}
+		}
+	})
+
+	t.Run("hanzi_rare deconfuse size > 1000", func(t *testing.T) {
+		table, err := BuildCharsetTable([]FNCharset{FNHanziRare}, true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(table) <= 1000 {
+			t.Errorf("hanzi_rare table should have > 1000 chars, got %d", len(table))
+		}
+	})
+}
+
+func TestBoundaryCases(t *testing.T) {
+	cfgCompact := defaultCompactCfg()
+	cfgStructured := defaultStructuredCfg()
+
+	boundaryTests := []struct {
+		name  string
+		input []byte
+	}{
+		{"single null byte", []byte{0x00}},
+		{"64 zero bytes", bytes.Repeat([]byte{0x00}, 64)},
+		{"64 0xFF bytes", bytes.Repeat([]byte{0xFF}, 64)},
+		{"4-byte emoji UTF8", []byte{0xF0, 0x9F, 0x8E, 0x99}},
+		{"mixed UTF8 sequences", []byte{
+			0x41,                                           // 'A' (1 byte)
+			0xC3, 0xA9,                                     // é (2 bytes)
+			0xE4, 0xB8, 0xAD,                               // 文 (3 bytes)
+			0xF0, 0x9F, 0x98, 0x81,                         // 😁 (4 bytes)
+			0x00,                                           // null
+			0xFF,                                           // max byte
+		}},
+	}
+
+	for _, bt := range boundaryTests {
+		for modeName, cfg := range map[string]FNConfig{"compact": cfgCompact, "structured": cfgStructured} {
+			t.Run(bt.name+"/"+modeName, func(t *testing.T) {
+				encoded, err := cfg.Encode(bt.input)
+				if err != nil {
+					t.Fatalf("Encode failed: %v", err)
+				}
+				decoded, err := cfg.Decode(encoded)
+				if err != nil {
+					t.Fatalf("Decode failed: %v", err)
+				}
+				if len(decoded) != len(bt.input) {
+					t.Errorf("length mismatch: got %d want %d", len(decoded), len(bt.input))
+					return
+				}
+				for i := range bt.input {
+					if decoded[i] != bt.input[i] {
+						t.Errorf("byte[%d] mismatch: got 0x%02X want 0x%02X", i, decoded[i], bt.input[i])
+						return
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestStructuredTamperChecksumMismatch(t *testing.T) {
+	cfg := defaultStructuredCfg()
+	input := []byte("checksum_test.txt")
+
+	valid, err := cfg.Encode(input)
+	if err != nil {
+		t.Fatalf("Encode failed: %v", err)
+	}
+
+	t.Run("tamper last char body", func(t *testing.T) {
+		if len(valid) < 5 {
+			t.Skip("encoded too short")
+		}
+		runes := []rune(valid)
+		lastBodyIdx := len(runes) - 3
+		if lastBodyIdx < 2 {
+			t.Skip("too short to tamper body")
+		}
+		runes[lastBodyIdx] = 'Z'
+		tampered := string(runes)
+		_, err := cfg.Decode(tampered)
+		if err == nil {
+			t.Error("tampered body should produce checksum mismatch error")
+		}
+		if err != ErrFNChecksumMismatch && err != ErrFNInvalidFormat && err != ErrFNCharsetMismatch {
+			t.Logf("got error type: %T: %v", err, err)
+		}
+	})
+
+	t.Run("tamper crc portion", func(t *testing.T) {
+		tampered := valid[:len(valid)-1] + "X"
+		_, err := cfg.Decode(tampered)
+		if err == nil {
+			t.Error("tampered CRC should produce error")
+		}
+	})
+
+	t.Run("wrong prefix", func(t *testing.T) {
+		_, err := cfg.Decode("X" + valid[1:])
+		if err == nil {
+			t.Error("wrong prefix S->X should produce ErrFNInvalidFormat")
+		}
+		if err != ErrFNInvalidFormat {
+			t.Logf("got err=%v (want ErrFNInvalidFormat)", err)
+		}
+	})
+}
+
+func TestDecodeEmptyStringBehavior(t *testing.T) {
+	cfg := defaultCompactCfg()
+	_, err := cfg.Decode("")
+	if err != ErrFNEmptyInput {
+		t.Errorf("Decode empty string: got err=%v (%T), want ErrFNEmptyInput", err, err)
+	}
+
+	cfgStruct := defaultStructuredCfg()
+	_, err = cfgStruct.Decode("")
+	if err != ErrFNEmptyInput {
+		t.Errorf("Decode empty string structured: got err=%v (%T), want ErrFNEmptyInput", err, err)
 	}
 }
