@@ -929,3 +929,198 @@ func TestDecodeEmptyStringBehavior(t *testing.T) {
 		t.Errorf("Decode empty string structured: got err=%v (%T), want ErrFNEmptyInput", err, err)
 	}
 }
+
+func TestStructuredFormat(t *testing.T) {
+	cfg := defaultStructuredCfg()
+
+	tests := []string{
+		"test.txt",
+		"a",
+		"video.mp4",
+		"\x00\x01\x02",
+		strings.Repeat("X", 100),
+	}
+
+	for _, input := range tests {
+		t.Run(strings.Map(func(r rune) rune {
+			if r == '.' { return 'D' }
+			return r
+		}, fmt.Sprintf("input_len_%d", len(input))), func(t *testing.T) {
+			encoded, err := cfg.Encode([]byte(input))
+			if err != nil {
+				t.Fatalf("Encode failed: %v", err)
+			}
+
+			runes := []rune(encoded)
+
+			if runes[0] != 'S' {
+				t.Errorf("structured output must start with 'S', got %q", string(runes[0]))
+			}
+
+			hasColonAfterLen := false
+			digitCount := 0
+			for i := 1; i < len(runes); i++ {
+				if runes[i] == ':' {
+					hasColonAfterLen = true
+					break
+				}
+				if runes[i] >= '0' && runes[i] <= '9' {
+					digitCount++
+				}
+			}
+			if !hasColonAfterLen || digitCount == 0 {
+				t.Error("structured output must contain length marker (digits followed by ':')")
+			}
+
+			lastColonIdx := -1
+			commaIdx := -1
+			for i := len(runes) - 1; i >= 0; i-- {
+				if runes[i] == ':' && lastColonIdx < 0 {
+					lastColonIdx = i
+				}
+				if runes[i] == ',' && commaIdx < 0 {
+					commaIdx = i
+				}
+			}
+			if lastColonIdx < 0 || commaIdx <= lastColonIdx {
+				t.Error("structured output must contain checksum suffix with format :tableCRC,dataCRC")
+			}
+
+			crcPart := string(runes[lastColonIdx+1:])
+			crcDigits := 0
+			for _, r := range crcPart {
+				if r >= '0' && r <= '9' {
+					crcDigits++
+				}
+			}
+			if crcDigits < 2 {
+				t.Errorf("checksum suffix should have numeric CRC values, got %q", crcPart)
+			}
+		})
+	}
+}
+
+func TestCharsetEdgeCases(t *testing.T) {
+	t.Run("unknown charset returns error", func(t *testing.T) {
+		_, err := BuildCharsetTable([]FNCharset{"totally_unknown_charset_xyz"}, false)
+		if err == nil {
+			t.Error("expected error for unknown charset")
+		}
+	})
+
+	t.Run("alnum deconfuse excludes exact 6 chars", func(t *testing.T) {
+		table, _ := BuildCharsetTable([]FNCharset{}, true)
+		excluded := "0Oo1lI"
+		for _, ch := range excluded {
+			found := false
+			for _, r := range table {
+				if r == ch {
+					found = true
+					break
+				}
+			}
+			if found {
+				t.Errorf("deconfused alnum should exclude %q but it was found", ch)
+			}
+		}
+	})
+
+	t.Run("alnum no deconfuse includes all 62 chars", func(t *testing.T) {
+		table, _ := BuildCharsetTable([]FNCharset{}, false)
+		expected := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+		if len(table) != 62 {
+			t.Errorf("full alnum size: got %d, want 62", len(table))
+		}
+		for _, ch := range expected {
+			found := false
+			for _, r := range table {
+				if r == ch {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("full alnum should include %q", ch)
+			}
+		}
+	})
+
+	t.Run("empty charsets defaults to alnum via Validate", func(t *testing.T) {
+		cfg := FNConfig{
+			Password: []byte("pass"),
+			Rounds:   8,
+			Charsets: nil,
+		}
+		cfg.Validate()
+		if len(cfg.Charsets) == 0 || cfg.Charsets[0] != FNAlnum {
+			t.Errorf("Validate should default Charsets to [FNAlnum], got %v", cfg.Charsets)
+		}
+	})
+
+	t.Run("rounds less than 1 gets defaulted to 8", func(t *testing.T) {
+		cfg := FNConfig{Rounds: 0, Password: []byte("p")}
+		cfg.Validate()
+		if cfg.Rounds != 8 {
+			t.Errorf("Validate should default Rounds to 8, got %d", cfg.Rounds)
+		}
+	})
+
+	t.Run("rounds negative gets defaulted to 8", func(t *testing.T) {
+		cfg := FNConfig{Rounds: -5, Password: []byte("p")}
+		cfg.Validate()
+		if cfg.Rounds != 8 {
+			t.Errorf("Validate should default Rounds to 8 for negative, got %d", cfg.Rounds)
+		}
+	})
+}
+
+func TestCrossModeDecodeMismatch(t *testing.T) {
+	cfgCompact := defaultCompactCfg()
+	cfgStructured := defaultStructuredCfg()
+	input := []byte("cross_mode_test.txt")
+
+	encCompact, _ := cfgCompact.Encode(input)
+	encStructured, _ := cfgStructured.Encode(input)
+
+	_, err := cfgStructured.Decode(encCompact)
+	if err == nil {
+		t.Error("decoding compact-encoded data as structured should fail")
+	}
+
+	_, err = cfgCompact.Decode(encStructured)
+	if err == nil {
+		t.Error("decoding structured-encoded data as compact should fail")
+	}
+}
+
+func TestVeryLongFilenameRoundtrip(t *testing.T) {
+	cfgCompact := defaultCompactCfg()
+	cfgStructured := defaultStructuredCfg()
+
+	longInput := make([]byte, 2000)
+	for i := range longInput {
+		longInput[i] = byte(i % 256)
+	}
+
+	for name, cfg := range map[string]FNConfig{"compact": cfgCompact, "structured": cfgStructured} {
+		t.Run(name, func(t *testing.T) {
+			encoded, err := cfg.Encode(longInput)
+			if err != nil {
+				t.Fatalf("Encode 2000-byte input failed: %v", err)
+			}
+			decoded, err := cfg.Decode(encoded)
+			if err != nil {
+				t.Fatalf("Decode failed: %v", err)
+			}
+			if len(decoded) != len(longInput) {
+				t.Fatalf("length mismatch: got %d want %d", len(decoded), len(longInput))
+			}
+			for i := range longInput {
+				if decoded[i] != longInput[i] {
+					t.Errorf("byte[%d] mismatch: got 0x%02X want 0x%02X", i, decoded[i], longInput[i])
+					return
+				}
+			}
+		})
+	}
+}

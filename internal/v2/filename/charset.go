@@ -228,10 +228,12 @@ func EncodeToCharset(data []byte, table []rune) string {
 	result := make([]rune, 0, len(data)*charWidth)
 	for _, b := range data {
 		val := uint64(b)
+		digits := make([]rune, charWidth)
 		for i := 0; i < charWidth; i++ {
-			result = append(result, table[val%base])
+			digits[charWidth-1-i] = table[val%base]
 			val /= base
 		}
+		result = append(result, digits...)
 	}
 	return string(result)
 }
@@ -243,7 +245,8 @@ func DecodeFromCharset(s string, table []rune) ([]byte, error) {
 	base := uint64(len(table))
 	charWidth := charsetCharWidth(base)
 
-	if len(s)%charWidth != 0 {
+	runes := []rune(s)
+	if len(runes)%charWidth != 0 {
 		return nil, ErrFNInvalidFormat
 	}
 
@@ -252,11 +255,11 @@ func DecodeFromCharset(s string, table []rune) ([]byte, error) {
 		revMap[r] = uint64(i)
 	}
 
-	data := make([]byte, 0, len(s)/charWidth)
-	for i := 0; i < len(s); i += charWidth {
+	data := make([]byte, 0, len(runes)/charWidth)
+	for i := 0; i < len(runes); i += charWidth {
 		var val uint64
 		for j := 0; j < charWidth; j++ {
-			ch := rune(s[i+j])
+			ch := runes[i+j]
 			v, ok := revMap[ch]
 			if !ok {
 				return nil, ErrFNCharsetMismatch

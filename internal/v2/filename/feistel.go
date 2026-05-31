@@ -15,14 +15,12 @@ func FeistelEncrypt(data []byte, sbox *SBox, roundKeys [][]byte) []byte {
 	left := padded[:mid]
 	right := padded[mid:]
 
-	for i, key := range roundKeys {
+	for _, key := range roundKeys {
 		f := roundFunc(right, key, sbox)
 		for j := 0; j < len(left) && j < len(f); j++ {
 			left[j] ^= f[j]
 		}
-		if i < len(roundKeys)-1 {
-			left, right = right, left
-		}
+		left, right = right, left
 	}
 
 	result := make([]byte, len(padded))

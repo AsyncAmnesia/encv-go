@@ -2,7 +2,6 @@ package filename
 
 import (
 	"bytes"
-	"encoding/binary"
 	"strconv"
 )
 
@@ -39,12 +38,19 @@ func (c *FNConfig) Encode(plaintext []byte) (string, error) {
 	keys := DeriveKeys(c.Password, c.Salt, c.Rounds)
 	sbox := GenerateSBox(keys.SboxSeed)
 
-	encrypted := FeistelEncrypt(plaintext, sbox, keys.RoundKeys)
+	padded := make([]byte, len(plaintext))
+	copy(padded, plaintext)
+	originalLen := len(padded)
+	if len(padded)%2 != 0 {
+		padded = append(padded, 0)
+	}
+
+	encrypted := FeistelEncrypt(padded, sbox, keys.RoundKeys)
 
 	if c.Structured {
-		return encodeStructured(encrypted, table)
+		return encodeStructuredWithLen(encrypted, table, originalLen)
 	}
-	return EncodeToCharset(encrypted, table), nil
+	return encodeCompactWithLen(encrypted, table, originalLen), nil
 }
 
 func (c *FNConfig) Decode(encoded string) ([]byte, error) {
@@ -59,13 +65,14 @@ func (c *FNConfig) Decode(encoded string) ([]byte, error) {
 	}
 
 	var encrypted []byte
+	var originalLen int
 	if c.Structured {
-		encrypted, err = decodeStructured(encoded, table)
+		encrypted, originalLen, err = decodeStructuredWithLen(encoded, table)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		encrypted, err = DecodeFromCharset(encoded, table)
+		encrypted, originalLen, err = decodeCompactWithLen(encoded, table)
 		if err != nil {
 			return nil, err
 		}
@@ -75,6 +82,9 @@ func (c *FNConfig) Decode(encoded string) ([]byte, error) {
 	sbox := GenerateSBox(keys.SboxSeed)
 
 	decrypted := FeistelDecrypt(encrypted, sbox, keys.RoundKeys)
+	if originalLen > 0 && originalLen < len(decrypted) {
+		decrypted = decrypted[:originalLen]
+	}
 	return decrypted, nil
 }
 
@@ -218,4 +228,161 @@ func encodeRuneToUTF8(buf []byte, r rune) int {
 		buf[3] = byte(0x80 | (r & 0x3F))
 		return 4
 	}
+}
+
+const compactLenPrefixChars = 2
+
+func encodeCompactWithLen(data []byte, table []rune, originalLen int) string {
+	base := uint64(len(table))
+	body := EncodeToCharset(data, table)
+
+	lenDigits := make([]rune, compactLenPrefixChars)
+	val := uint64(originalLen)
+	for i := 0; i < compactLenPrefixChars; i++ {
+		lenDigits[compactLenPrefixChars-1-i] = table[val%base]
+		val /= base
+	}
+
+	prefix := string(lenDigits)
+	return prefix + body
+}
+
+func decodeCompactWithLen(encoded string, table []rune) ([]byte, int, error) {
+	base := uint64(len(table))
+
+	runes := []rune(encoded)
+	if len(runes) < compactLenPrefixChars {
+		return nil, 0, ErrFNInvalidFormat
+	}
+
+	var originalLen uint64
+	for i := 0; i < compactLenPrefixChars; i++ {
+		ch := runes[i]
+		idx := -1
+		for j, r := range table {
+			if r == ch {
+				idx = j
+				break
+			}
+		}
+		if idx < 0 {
+			return nil, 0, ErrFNCharsetMismatch
+		}
+		originalLen = originalLen*base + uint64(idx)
+	}
+
+	body := string(runes[compactLenPrefixChars:])
+	data, err := DecodeFromCharset(body, table)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return data, int(originalLen), nil
+}
+
+func encodeStructuredWithLen(data []byte, table []rune, originalLen int) (string, error) {
+	body := EncodeToCharset(data, table)
+	tableHash := crc8IEEE(runesToBytes(table))
+	crcData := crc8IEEE(data)
+
+	var buf bytes.Buffer
+	buf.WriteRune('S')
+	buf.WriteString(strconv.FormatUint(uint64(len(body)), 10))
+	buf.WriteRune(':')
+	buf.WriteString(body)
+	buf.WriteRune(':')
+	buf.WriteString(strconv.FormatUint(uint64(tableHash), 10))
+	buf.WriteRune(',')
+	buf.WriteString(strconv.FormatUint(uint64(crcData), 10))
+	buf.WriteRune(',')
+	buf.WriteString(strconv.FormatUint(uint64(originalLen), 10))
+
+	return buf.String(), nil
+}
+
+func decodeStructuredWithLen(s string, table []rune) ([]byte, int, error) {
+	if len(s) < 2 || s[0] != 'S' {
+		return nil, 0, ErrFNInvalidFormat
+	}
+
+	colon1 := -1
+	for i := 1; i < len(s); i++ {
+		if s[i] == ':' {
+			colon1 = i
+			break
+		}
+	}
+	if colon1 <= 1 {
+		return nil, 0, ErrFNInvalidFormat
+	}
+
+	bodyLen, err := strconv.ParseUint(s[1:colon1], 10, 64)
+	if err != nil {
+		return nil, 0, ErrFNInvalidFormat
+	}
+
+	rest := s[colon1+1:]
+	lastColon := -1
+	for i := len(rest) - 1; i >= 0; i-- {
+		if rest[i] == ':' {
+			lastColon = i
+			break
+		}
+	}
+	if lastColon < 0 {
+		return nil, 0, ErrFNInvalidFormat
+	}
+
+	body := rest[:lastColon]
+	checkPart := rest[lastColon+1:]
+
+	commaIdx := -1
+	commaIdx2 := -1
+	for i := 0; i < len(checkPart); i++ {
+		if checkPart[i] == ',' {
+			if commaIdx < 0 {
+				commaIdx = i
+			} else if commaIdx2 < 0 {
+				commaIdx2 = i
+			}
+		}
+	}
+	if commaIdx < 0 || commaIdx2 < 0 {
+		data, err := decodeStructured(s, table)
+		return data, 0, err
+	}
+
+	expectedTableCRC, err := strconv.ParseUint(checkPart[:commaIdx], 10, 64)
+	if err != nil {
+		return nil, 0, ErrFNInvalidFormat
+	}
+	expectedDataCRC, err := strconv.ParseUint(checkPart[commaIdx+1:commaIdx2], 10, 64)
+	if err != nil {
+		return nil, 0, ErrFNInvalidFormat
+	}
+	originalLen, err := strconv.ParseUint(checkPart[commaIdx2+1:], 10, 64)
+	if err != nil {
+		return nil, 0, ErrFNInvalidFormat
+	}
+
+	actualTableCRC := uint64(crc8IEEE(runesToBytes(table)))
+	if expectedTableCRC != actualTableCRC {
+		return nil, int(originalLen), ErrFNChecksumMismatch
+	}
+
+	if uint64(bodyLen) != uint64(len(body)) {
+		return nil, int(originalLen), ErrFNInvalidFormat
+	}
+
+	data, err := DecodeFromCharset(body, table)
+	if err != nil {
+		return nil, int(originalLen), err
+	}
+
+	actualDataCRC := uint64(crc8IEEE(data))
+	if expectedDataCRC != actualDataCRC {
+		return nil, int(originalLen), ErrFNChecksumMismatch
+	}
+
+	return data, int(originalLen), nil
 }
