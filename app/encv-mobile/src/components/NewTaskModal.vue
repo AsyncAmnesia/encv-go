@@ -569,3 +569,10 @@ async function handleClose() {
   opacity: 0.5;
 }
 </style>
+
+<style>
+/* Ionic 8 toggle ON 状态手柄颜色 — ::part() 需要 非 scoped */
+.extra-field-toggle.toggle-checked::part(handle) {
+  background: #ffffff !important;
+}
+</style>
