@@ -1,8 +1,4 @@
 import type { Connect } from 'vite'
-import * as fs from 'fs'
-import * as path from 'path'
-
-const MOCK_DATA_ROOT = path.resolve(__dirname, '../__mock_data__')
 
 function json(res: Connect.ServerResponse, data: unknown, status = 200): void {
   res.statusCode = status
@@ -21,15 +17,6 @@ export function createHandlers(base: string): { dispatchRequest: Connect.NextHan
 
     if (pathname === '/api/config') {
       return json(res, {})
-    }
-
-    if (pathname === '/api/plugins') {
-      const pluginsPath = path.join(MOCK_DATA_ROOT, 'plugins.json')
-      if (fs.existsSync(pluginsPath)) {
-        const plugins = JSON.parse(fs.readFileSync(pluginsPath, 'utf-8'))
-        return json(res, { plugins })
-      }
-      return json(res, { plugins: [] })
     }
 
     res.statusCode = 501
