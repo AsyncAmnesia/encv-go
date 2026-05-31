@@ -488,6 +488,7 @@ class EncvGoService : Service() {
                     existing.put("mobile", it)
                     changed = true
                 }
+                migrateMobileFormat(targetMobile, defaultMobile)
                 if (!targetMobile.has("server")) {
                     targetMobile.put("server", defaultMobile.optJSONObject("server") ?: JSONObject())
                     changed = true
@@ -531,6 +532,33 @@ class EncvGoService : Service() {
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to merge config defaults", e)
+        }
+    }
+
+    private fun migrateMobileFormat(target: JSONObject, defaults: JSONObject) {
+        val hasOldFlatFormat = target.has("server_dir") || target.has("output_path") || target.has("webdav_dir")
+        if (!hasOldFlatFormat) return
+        Log.i(TAG, "Migrating mobile config from flat to nested format")
+        if (target.has("server_dir") && !target.has("server")) {
+            val serverDir = target.optString("server_dir", "")
+            target.remove("server_dir")
+            target.put("server", JSONObject().put("dir", serverDir))
+        } else if (!target.has("server")) {
+            defaults.optJSONObject("server")?.let { target.put("server", it) }
+        }
+        if (target.has("output_path") && !target.has("output")) {
+            val outputPath = target.optString("output_path", "")
+            target.remove("output_path")
+            target.put("output", JSONObject().put("path", outputPath))
+        } else if (!target.has("output")) {
+            defaults.optJSONObject("output")?.let { target.put("output", it) }
+        }
+        if (target.has("webdav_dir") && !target.has("webdav")) {
+            val webdavDir = target.optString("webdav_dir", "")
+            target.remove("webdav_dir")
+            target.put("webdav", JSONObject().put("dir", webdavDir))
+        } else if (!target.has("webdav")) {
+            defaults.optJSONObject("webdav")?.let { target.put("webdav", it) }
         }
     }
 
