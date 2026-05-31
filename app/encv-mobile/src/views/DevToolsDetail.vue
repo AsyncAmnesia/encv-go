@@ -71,11 +71,7 @@
             @ionChange="handleLogFileChange($event.detail.value ?? '')"
           ></ion-input>
         </ion-item>
-        <ion-item>
-          <ion-icon :icon="terminal" slot="start"></ion-icon>
-          <ion-toggle :checked="logConsole" @ionChange="handleLogConsoleToggle($event.detail.checked)">输出到控制台</ion-toggle>
-        </ion-item>
-      </ion-list>
+        </ion-list>
 
       <ion-list>
         <ion-list-header>
@@ -141,7 +137,6 @@ const { getFieldValue, setFieldValue, saveConfig } = useConfig()
 
 const logLevel = computed(() => String(getFieldValue(['log', 'level']) ?? 'info'))
 const logFile = computed(() => String(getFieldValue(['log', 'file']) ?? ''))
-const logConsole = computed(() => Boolean(getFieldValue(['log', 'console']) ?? true))
 
 async function handleLogLevelChange(value: string) {
   setFieldValue(['log', 'level'], value)
@@ -150,11 +145,6 @@ async function handleLogLevelChange(value: string) {
 
 async function handleLogFileChange(value: string) {
   setFieldValue(['log', 'file'], value)
-  await saveLogConfig()
-}
-
-async function handleLogConsoleToggle(checked: boolean) {
-  setFieldValue(['log', 'console'], checked)
   await saveLogConfig()
 }
 
