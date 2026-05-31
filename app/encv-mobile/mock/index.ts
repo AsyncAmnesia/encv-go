@@ -49,14 +49,15 @@ function parseMockParams(url: string): { enabled: boolean; suffix: string } {
 }
 
 export function createMockPlugin(): Plugin {
-  let handlers: Record<string, Connect.NextHandleFunction> = {}
+  let dispatchRequest: Connect.NextHandleFunction | null = null
   let mockActive = false
 
   return {
     name: 'encv-mock-api',
     configureServer(server) {
       ensureMockDataExists()
-      handlers = createHandlers(server.config.base)
+      const { dispatchRequest: dispatcher } = createHandlers(server.config.base)
+      dispatchRequest = dispatcher
 
       server.middlewares.use((req, res, next) => {
         const url = req.url || ''
@@ -69,12 +70,17 @@ export function createMockPlugin(): Plugin {
 
         mockActive = true
 
-        const sorted = Object.entries(handlers).sort((a, b) => b[0].length - a[0].length)
-        for (const [pattern, handler] of sorted) {
-          if (url.startsWith(pattern) || url.startsWith(`${server.config.base}${pattern.slice(1)}`)) {
-            handler(req, res, next)
-            return
+        if (dispatchRequest) {
+          try {
+            dispatchRequest(req, res, next)
+          } catch (e: any) {
+            if (!res.headersSent) {
+              res.statusCode = 500
+              res.setHeader('Content-Type', 'application/json')
+              res.end(JSON.stringify({ error: e.message || 'mock error' }))
+            }
           }
+          return
         }
 
         next()

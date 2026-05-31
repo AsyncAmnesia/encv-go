@@ -2,13 +2,12 @@ import type { Connect } from 'vite'
 import * as fs from 'fs'
 import * as path from 'path'
 import {
-  getFiles,
   setMockSuffix,
   getMockSuffix,
   MOCK_PLUGINS,
   setMockFiles as fsSetMockFiles,
   addMockFile as fsAddMockFile,
-  removeMockFile as fsRemoveMockFile,
+  removeMockFile as fsRemoveFile,
   resetMockFiles,
   type MockFileItem,
 } from './file-system'
@@ -41,104 +40,206 @@ function scanRealFiles(dirPath: string): MockFileItem[] {
           isDirectory: false,
           size: stat.size,
           modified: stat.mtime.toISOString(),
-        })
+        }) as MockFileItem
       } catch {}
     }
   }
   return results
 }
 
+const MIME_MAP: Record<string, string> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.mp4': 'video/mp4',
+  '.mkv': 'video/x-matroska',
+  '.mp3': 'audio/mpeg',
+  '.flac': 'audio/flac',
+  '.pdf': 'application/pdf',
+  '.txt': 'text/plain; charset=utf-8',
+  '.csv': 'text/csv; charset=utf-8',
+  '.ae': 'application/octet-stream',
+  '.sccgv': 'application/octet-stream',
+  '.scext': 'application/octet-stream',
+  '.scepkg': 'application/octet-stream',
+}
+
+function readBody(req: Connect.IncomingMessage): Promise<string> {
+  return new Promise((resolve) => {
+    let body = ''
+    req.on('data', (chunk) => { body += chunk })
+    req.on('end', () => resolve(body))
+  })
+}
+
+function resolveQueryPath(url: URL): string {
+  return url.searchParams.get('path') || '/'
+}
+
+function resolveFiles(queryPath: string): MockFileItem[] {
+  const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
+  if (fs.existsSync(resolvedPath)) return scanRealFiles(resolvedPath)
+  return []
+}
+
+function json(res: Connect.ServerResponse, data: unknown, status = 200): void {
+  res.statusCode = status
+  res.setHeader('Content-Type', 'application/json')
+  res.end(JSON.stringify(data))
+}
+
 let taskIdCounter = 1000
+const tasks: Record<string, any> = {}
 
-export function createHandlers(base: string): Record<string, Connect.NextHandleFunction> {
-  return {
-    '/api/files': async (req, res, next) => {
-      const url = new URL(req.url || '', `http://localhost${base}`)
-      const queryPath = url.searchParams.get('path') || '/'
-      const tag = url.searchParams.get('tag')
+function fileSystemHandler(req: Connect.IncomingMessage, res: Connect.ServerResponse, base: string): boolean {
+  const url = new URL(req.url || '', `http://localhost${base}`)
+  const pathname = url.pathname
 
-      if (tag) {
-        res.setHeader('Content-Type', 'application/json')
-        res.end(JSON.stringify({ files: [], error: 'tag filter not implemented in mock' }))
-        return
+  if (pathname === '/api/files' || pathname.startsWith('/api/files?')) {
+    const queryPath = resolveQueryPath(url)
+    const tag = url.searchParams.get('tag')
+    if (tag) return json(res, { files: [], error: 'tag filter not implemented in mock' })
+    const files = resolveFiles(queryPath)
+    return json(res, { files })
+  }
+
+  if (pathname === '/api/files/stream') {
+    const queryPath = resolveQueryPath(url)
+    const files = resolveFiles(queryPath)
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.flushHeaders()
+    for (const f of files) res.write(`data: ${JSON.stringify(f)}\n\n`)
+    res.write('data: [DONE]\n\n')
+    res.end()
+    return true
+  }
+
+  if (pathname === '/api/files/plugin-stream') {
+    const queryPath = resolveQueryPath(url)
+    const extParam = url.searchParams.get('extensions') || ''
+    const extensions = extParam.split(',').map((e) => e.replace('.', '')).filter(Boolean)
+    const allFiles = resolveFiles(queryPath)
+    const filtered = allFiles.filter((f) => {
+      if (f.isDirectory) return false
+      const ext = f.name.includes('.') ? f.name.split('.').pop()?.toLowerCase() : ''
+      return !!ext && extensions.includes(ext)
+    })
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.flushHeaders()
+    for (const f of filtered) res.write(`data: ${JSON.stringify(f)}\n\n`)
+    res.write('data: [DONE]\n\n')
+    res.end()
+    return true
+  }
+
+  if (pathname === '/api/files/mkdir' && req.method === 'POST') {
+    readBody(req).then(() => json(res, { ok: true }))
+    return true
+  }
+
+  if (pathname === '/api/files/search') {
+    const dirPath = url.searchParams.get('path') || '/'
+    const keyword = (url.searchParams.get('keyword') || '').toLowerCase()
+    const resolvedPath = path.join(MOCK_DATA_ROOT, dirPath.replace(/^\//, ''))
+    if (!keyword || !fs.existsSync(resolvedPath)) return json(res, { files: [] })
+
+    const results: MockFileItem[] = []
+    function searchDir(dir: string): void {
+      if (!fs.existsSync(dir)) return
+      const entries = fs.readdirSync(dir, { withFileTypes: true })
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name)
+        const rel = '/' + path.relative(MOCK_DATA_ROOT, full).replace(/\\/g, '/')
+        if (entry.name.toLowerCase().includes(keyword)) {
+          results.push({ name: entry.name, path: rel, isDirectory: entry.isDirectory() } as MockFileItem)
+        }
+        if (entry.isDirectory()) searchDir(full)
       }
+    }
+    searchDir(resolvedPath)
+    return json(res, { files: results })
+  }
 
-      const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
-      let files: MockFileItem[]
+  if (pathname === '/api/files/exists') {
+    const queryPath = resolveQueryPath(url)
+    const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
+    const exists = fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isFile()
+    return json(res, { exists })
+  }
 
-      if (fs.existsSync(resolvedPath)) {
-        files = scanRealFiles(resolvedPath)
-      } else {
-        files = getFiles(queryPath)
+  if (pathname === '/api/files/encrypt-output-exists') {
+    return json(res, { exists: false, outputPath: '' })
+  }
+
+  if (pathname === '/api/files/tags') {
+    if (req.method === 'GET') return json(res, { tags: [] })
+    if (req.method === 'POST') return json(res, { ok: true })
+    if (req.method === 'DELETE') return json(res, { ok: true })
+    return false
+  }
+
+  if ((pathname === '/api/files' || pathname.startsWith('/api/files?')) && req.method === 'DELETE') {
+    return json(res, { ok: true })
+  }
+
+  if ((pathname === '/api/files' || pathname.startsWith('/api/files?')) && (req.method === 'POST' || req.method === 'PATCH')) {
+    readBody(req).then(() => json(res, { ok: true }))
+    return true
+  }
+
+  return false
+}
+
+function fileContentHandler(req: Connect.IncomingMessage, res: Connect.ServerResponse, base: string): boolean {
+  const url = new URL(req.url || '', `http://localhost${base}`)
+  const queryPath = resolveQueryPath(url)
+
+  if (req.method === 'GET') {
+    const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
+    if (!fs.existsSync(resolvedPath)) return json(res, { error: 'File not found' }, 404)
+    try {
+      const stat = fs.statSync(resolvedPath)
+      const buf = fs.readFileSync(resolvedPath)
+      const ext = path.extname(resolvedPath).toLowerCase()
+      const textExts = ['.txt', '.csv', '.json', '.md', '.xml', '.html', '.css', '.js', '.ts', '.log']
+      const encoding = textExts.includes(ext) ? 'utf-8' : 'binary'
+      const content = textExts.includes(ext) ? buf.toString('utf-8') : buf.toString('base64')
+      return json(res, { name: path.basename(resolvedPath), path: queryPath, size: stat.size, content, encoding })
+    } catch (e: any) {
+      return json(res, { error: e.message }, 500)
+    }
+  }
+
+  if (req.method === 'POST' || req.method === 'PATCH') {
+    readBody(req).then((body) => {
+      try {
+        const parsed = JSON.parse(body || '{}')
+        if (req.method === 'PATCH' && parsed.path && parsed.new_name) {
+          return json(res, { success: true, display_name: parsed.new_name })
+        }
+        if (parsed.oldPath && parsed.newName) return json(res, { ok: true })
+        return json(res, { error: 'invalid request' }, 400)
+      } catch {
+        return json(res, { error: 'invalid json' }, 400)
       }
+    })
+    return true
+  }
 
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ files }))
-    },
+  if (req.method === 'DELETE') return json(res, { ok: true })
 
-    '/api/files/stream': async (req, res, next) => {
-      const url = new URL(req.url || '', `http://localhost${base}`)
-      const queryPath = url.searchParams.get('path') || '/'
-      const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
-      let files: MockFileItem[]
+  return false
+}
 
-      if (fs.existsSync(resolvedPath)) {
-        files = scanRealFiles(resolvedPath)
-      } else {
-        files = getFiles(queryPath)
-      }
-
-      res.setHeader('Content-Type', 'text/event-stream')
-      res.setHeader('Cache-Control', 'no-cache')
-      res.flushHeaders()
-
-      for (const file of files) {
-        res.write(`data: ${JSON.stringify(file)}\n\n`)
-      }
-      res.write('data: [DONE]\n\n')
-      res.end()
-    },
-
-    '/api/files/plugin-stream': async (req, res, next) => {
-      const url = new URL(req.url || '', `http://localhost${base}`)
-      const queryPath = url.searchParams.get('path') || '/'
-      const extParam = url.searchParams.get('extensions') || ''
-      const extensions = extParam.split(',').map(e => e.replace('.', '')).filter(Boolean)
-
-      const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
-      let allFiles: MockFileItem[]
-
-      if (fs.existsSync(resolvedPath)) {
-        allFiles = scanRealFiles(resolvedPath)
-      } else {
-        allFiles = getFiles(queryPath)
-      }
-
-      const filtered = allFiles.filter(f => {
-        if (f.isDirectory) return false
-        const ext = f.name.includes('.') ? f.name.split('.').pop()?.toLowerCase() : ''
-        return ext && extensions.includes(ext)
-      })
-
-      res.setHeader('Content-Type', 'text/event-stream')
-      res.setHeader('Cache-Control', 'no-cache')
-      res.flushHeaders()
-
-      for (const file of filtered) {
-        res.write(`data: ${JSON.stringify(file)}\n\n`)
-      }
-      res.write('data: [DONE]\n\n')
-      res.end()
-    },
-
-    '/api/plugins': async (req, res, next) => {
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ plugins: MOCK_PLUGINS }))
-    },
-
-    '/api/config': async (req, res, next) => {
+function staticJsonHandler(pathname: string, _method: string, url: URL, res: Connect.ServerResponse): boolean {
+  switch (pathname) {
+    case '/health':
+      return json(res, { status: 'ok' })
+    case '/api/config': {
       const suffix = getMockSuffix()
-      const config = {
+      return json(res, {
         password: 'mock-password-for-testing',
         output_path: './output',
         server: { port: 2026, dir: '/' },
@@ -155,420 +256,216 @@ export function createHandlers(base: string): Record<string, Connect.NextHandleF
           server_dir: '/storage/emulated/0',
           output_path: '/storage/emulated/0/encv-output',
         },
-      }
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify(config))
-    },
-
-    '/api/tasks': async (req, res, next) => {
-      if (req.method === 'POST') {
-        taskIdCounter++
-        const task = {
-          id: `mock-task-${taskIdCounter}`,
-          type: 'encrypt',
-          sourcePath: '/test.txt',
-          status: 'queued' as const,
-          progress: 0,
-          createdAt: new Date().toISOString(),
-        }
-        res.setHeader('Content-Type', 'application/json')
-        res.end(JSON.stringify(task))
-        return
-      }
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ tasks: [] }))
-    },
-
-    '/health': async (req, res, next) => {
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ status: 'ok' }))
-    },
-
-    '/api/permissions': async (req, res, next) => {
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ storage: true }))
-    },
-
-    '/api/files/tags': async (req, res, next) => {
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ tags: [] }))
-    },
-
-    '/api/alist-encrypt/stream': async (req, res, next) => {
-      res.setHeader('Content-Type', 'application/octet-stream')
-      res.end(Buffer.alloc(0))
-    },
-
-    '/api/container/versions': async (req, res, next) => {
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({
+      })
+    }
+    case '/api/plugins':
+      return json(res, { plugins: MOCK_PLUGINS })
+    case '/api/permissions':
+      return json(res, { storage: true })
+    case '/api/container/versions':
+      return json(res, {
         versions: [
           { version: 1, status: 'deprecated', label: 'v1 (legacy)' },
           { version: 2, status: 'stable', label: 'v2 (current)' },
           { version: 3, status: 'recommended', label: 'v3 (latest)' },
         ],
         default: 2,
-      }))
-    },
-
-    '/api/tasks/predict-plugin': async (req, res, next) => {
-      let body = ''
-      req.on('data', chunk => body += chunk)
-      req.on('end', () => {
-        try {
-          const parsed = JSON.parse(body || '{}')
-          const sourcePath = parsed.sourcePath || ''
-          const candidates = []
-
-          for (const plugin of MOCK_PLUGINS) {
-            if (sourcePath.endsWith(plugin.containerExtension)) {
-              candidates.push({
-                name: plugin.name,
-                matchType: 'container' as const,
-                priority: 10,
-                taskOptions: plugin.taskOptions,
-              })
-            }
-            for (const ext of plugin.supportedExtensions) {
-              if (sourcePath.endsWith(`.${ext}`)) {
-                candidates.push({
-                  name: plugin.name,
-                  matchType: 'extension' as const,
-                  priority: 5,
-                  taskOptions: plugin.taskOptions,
-                })
-              }
-            }
-          }
-
-          const suffix = getMockSuffix()
-          if (suffix && sourcePath.endsWith(suffix)) {
-            candidates.push({
-              name: 'alist-encrypt',
-              matchType: 'extension' as const,
-              priority: 8,
-              taskOptions: {
-                passwordStrategy: 'independent' as const,
-                supportVersionSelect: false,
-                supportedVersions: null,
-                defaultVersion: 1,
-                extraFields: [],
-              },
-            })
-          }
-
-          res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({
-            candidates,
-            pluginName: candidates.length > 0 ? candidates[0].name : null,
-            taskOptions: candidates.length > 0 ? candidates[0].taskOptions : null,
-          }))
-        } catch {
-          res.statusCode = 400
-          res.end(JSON.stringify({ error: 'invalid request' }))
-        }
       })
-    },
-
-    '/__mock_control': async (req, res, next) => {
-      const url = new URL(req.url || '', `http://localhost${base}`)
-      const action = url.searchParams.get('action')
-
-      try {
-        if (action === 'set_suffix') {
-          const suffix = url.searchParams.get('suffix') || '.ae'
-          setMockSuffix(suffix)
-          res.end(JSON.stringify({ ok: true, suffix }))
-        } else if (action === 'get_files') {
-          const path = url.searchParams.get('path') || '/'
-          res.end(JSON.stringify(getFiles(path)))
-        } else if (action === 'add_file') {
-          const path = url.searchParams.get('path') || '/'
-          const raw = url.searchParams.get('file')
-          if (raw) {
-            const file = JSON.parse(raw) as MockFileItem
-            fsAddMockFile(path, file)
-            res.end(JSON.stringify({ ok: true }))
-          } else {
-            res.statusCode = 400
-            res.end(JSON.stringify({ error: 'missing file param' }))
-          }
-        } else if (action === 'remove_file') {
-          const path = url.searchParams.get('path') || '/'
-          const name = url.searchParams.get('name') || ''
-          fsRemoveMockFile(path, name)
-          res.end(JSON.stringify({ ok: true }))
-        } else if (action === 'reset') {
-          resetMockFiles()
-          res.end(JSON.stringify({ ok: true }))
-        } else if (action === 'status') {
-          res.end(JSON.stringify({
-            enabled: true,
-            suffix: getMockSuffix(),
-            paths: Array.from(new Set(['/', ...Object.keys({})])),
-          }))
-        } else {
-          res.statusCode = 404
-          res.end(JSON.stringify({ error: 'unknown action' }))
-        }
-      } catch (e: any) {
-        res.statusCode = 500
-        res.end(JSON.stringify({ error: e.message }))
-      }
-    },
-
-    '/api/file': async (req, res, next) => {
-      const url = new URL(req.url || '', `http://localhost${base}`)
-      const queryPath = url.searchParams.get('path') || ''
-
-      if (req.method === 'GET') {
-        const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
-        if (!fs.existsSync(resolvedPath)) {
-          res.statusCode = 404
-          res.end(JSON.stringify({ error: 'File not found' }))
-          return
-        }
-        try {
-          const stat = fs.statSync(resolvedPath)
-          const buf = fs.readFileSync(resolvedPath)
-          const ext = path.extname(resolvedPath).toLowerCase()
-          const textExts = ['.txt', '.csv', '.json', '.md', '.xml', '.html', '.css', '.js', '.ts', '.log']
-          const encoding = textExts.includes(ext) ? 'utf-8' : 'binary'
-          const content = textExts.includes(ext) ? buf.toString('utf-8') : buf.toString('base64')
-          res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({
-            name: path.basename(resolvedPath),
-            path: queryPath,
-            size: stat.size,
-            content,
-            encoding,
-          }))
-        } catch (e: any) {
-          res.statusCode = 500
-          res.end(JSON.stringify({ error: e.message }))
-        }
-      } else if (req.method === 'POST' || req.method === 'PATCH') {
-        let body = ''
-        req.on('data', chunk => body += chunk)
-        req.on('end', () => {
-          try {
-            const parsed = JSON.parse(body || '{}')
-            if (req.method === 'PATCH' && parsed.path && parsed.new_name) {
-              res.setHeader('Content-Type', 'application/json')
-              res.end(JSON.stringify({ success: true, display_name: parsed.new_name }))
-            } else if (parsed.oldPath && parsed.newName) {
-              res.setHeader('Content-Type', 'application/json')
-              res.end(JSON.stringify({ ok: true }))
-            } else {
-              res.statusCode = 400
-              res.end(JSON.stringify({ error: 'invalid request' }))
-            }
-          } catch {
-            res.statusCode = 400
-            res.end(JSON.stringify({ error: 'invalid json' }))
-          }
-        })
-      } else if (req.method === 'DELETE') {
-        res.setHeader('Content-Type', 'application/json')
-        res.end(JSON.stringify({ ok: true }))
-      } else {
-        next()
-      }
-    },
-
-    '/api/files/mkdir': async (req, res, next) => {
-      let body = ''
-      req.on('data', chunk => body += chunk)
-      req.on('end', () => {
-        try {
-          JSON.parse(body || '{}')
-          res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ ok: true }))
-        } catch {
-          res.statusCode = 400
-          res.end(JSON.stringify({ error: 'invalid json' }))
-        }
-      })
-    },
-
-    '/api/file/copy': async (req, res, next) => {
-      let body = ''
-      req.on('data', chunk => body += chunk)
-      req.on('end', () => {
-        res.setHeader('Content-Type', 'application/json')
-        res.end(JSON.stringify({ ok: true }))
-      })
-    },
-
-    '/api/file/move': async (req, res, next) => {
-      let body = ''
-      req.on('data', chunk => body += chunk)
-      req.on('end', () => {
-        res.setHeader('Content-Type', 'application/json')
-        res.end(JSON.stringify({ ok: true }))
-      })
-    },
-
-    '/api/files/search': async (req, res, next) => {
-      const url = new URL(req.url || '', `http://localhost${base}`)
-      const dirPath = url.searchParams.get('path') || '/'
-      const keyword = (url.searchParams.get('keyword') || '').toLowerCase()
-      const resolvedPath = path.join(MOCK_DATA_ROOT, dirPath.replace(/^\//, ''))
-
-      if (!keyword || !fs.existsSync(resolvedPath)) {
-        res.setHeader('Content-Type', 'application/json')
-        res.end(JSON.stringify({ files: [] }))
-        return
-      }
-
-      const results: MockFileItem[] = []
-      function searchDir(dir: string): void {
-        if (!fs.existsSync(dir)) return
-        const entries = fs.readdirSync(dir, { withFileTypes: true })
-        for (const entry of entries) {
-          const full = path.join(dir, entry.name)
-          const rel = '/' + path.relative(MOCK_DATA_ROOT, full).replace(/\\/g, '/')
-          if (entry.name.toLowerCase().includes(keyword)) {
-            results.push({
-              name: entry.name,
-              path: rel,
-              isDirectory: entry.isDirectory(),
-            })
-          }
-          if (entry.isDirectory()) searchDir(full)
-        }
-      }
-      searchDir(resolvedPath)
-
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ files: results }))
-    },
-
-    '/api/files/exists': async (req, res, next) => {
-      const url = new URL(req.url || '', `http://localhost${base}`)
-      const queryPath = url.searchParams.get('path') || '/'
-      const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ exists: fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isFile() }))
-    },
-
-    '/api/files/encrypt-output-exists': async (req, res, next) => {
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ exists: false, outputPath: '' }))
-    },
-
-    '/api/config/schema': async (req, res, next) => {
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({}))
-    },
-
-    '/api/index/stats': async (req, res, next) => {
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({
+    case '/api/config/schema':
+      return json(res, {})
+    case '/api/index/stats':
+      return json(res, {
         totalFiles: 30,
         totalDirs: 12,
         totalSize: 200000,
         indexedAt: new Date().toISOString(),
         isIndexing: false,
         lastBuildMs: 50,
-      }))
-    },
-
-    '/api/remote/info': async (req, res, next) => {
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({
-        webdav: { enabled: false, url: '', username: '', root: '' },
-        openlistSites: {},
-      }))
-    },
-
-    '/api/webdav/test-local': async (req, res, next) => {
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ available: false, error: 'not configured in mock' }))
-    },
-
-    '/api/webdav/test': async (req, res, next) => {
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ success: false, reachable: false, error: 'mock mode' }))
-    },
-
-    '/api/ffmpeg-status': async (req, res, next) => {
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({
-        ffmpeg_available: false,
-        ffprobe_available: false,
-        error: 'mock mode',
-      }))
-    },
-
-    '/api/build-info': async (req, res, next) => {
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({
-        app_version: '0.0.1-mock',
-        ffmpeg_version: '',
-        ffmpeg_codename: '',
-      }))
-    },
-
-    '/api/plugins/container-extensions': async (req, res, next) => {
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({
-        extensions: { video: '.sccgv', image: '.sccgi', audio: '.sccga', text: '.sccgt', pdf: '.sccgpdf' },
-        conflicts: [],
-      }))
-    },
-
-    '/api/alist-encrypt/decode-filename': async (req, res, next) => {
-      const url = new URL(req.url || '', `http://localhost${base}`)
+      })
+    case '/api/remote/info':
+      return json(res, { webdav: { enabled: false, url: '', username: '', root: '' }, openlistSites: {} })
+    case '/api/webdav/test-local':
+      return json(res, { available: false, error: 'not configured in mock' })
+    case '/api/webdav/test':
+      return json(res, { success: false, reachable: false, error: 'mock mode' })
+    case '/api/ffmpeg-status':
+      return json(res, { ffmpeg_available: false, ffprobe_available: false, error: 'mock mode' })
+    case '/api/build-info':
+      return json(res, { app_version: '0.0.1-mock', ffmpeg_version: '', ffmpeg_codename: '' })
+    case '/api/plugins/container-extensions':
+      return json(res, { extensions: { video: '.sccgv', image: '.sccgi', audio: '.sccga', text: '.sccgt', pdf: '.sccgpdf' }, conflicts: [] })
+    case '/api/file/text-preview-exts':
+      return json(res, { extensions: ['txt', 'csv', 'json', 'md', 'xml', 'log', 'ini', 'yaml', 'yml', 'toml', 'env', 'sh', 'bat', 'ps1'], custom_extensions: [] })
+    case '/api/alist-encrypt/decode-filename': {
       const encoded = url.searchParams.get('encoded') || ''
-      res.setHeader('Content-Type', 'application/json')
       if (encoded.endsWith('.ae')) {
         const name = encoded.replace(/\.ae$/, '').split('/').pop() || encoded
-        res.end(JSON.stringify({ plain_name: name, success: true }))
-      } else {
-        res.end(JSON.stringify({ plain_name: encoded, success: false }))
+        return json(res, { plain_name: name, success: true })
       }
-    },
-
-    '/api/file/text-preview-exts': async (req, res, next) => {
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({
-        extensions: ['txt', 'csv', 'json', 'md', 'xml', 'log', 'ini', 'yaml', 'yml', 'toml', 'env', 'sh', 'bat', 'ps1'],
-        custom_extensions: [],
-      }))
-    },
-
-    '/api/stream/external': async (req, res, next) => {
-      const url = new URL(req.url || '', `http://localhost${base}`)
-      const queryPath = url.searchParams.get('path') || '/'
-      const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
-      if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isFile()) {
-        const buf = fs.readFileSync(resolvedPath)
-        res.setHeader('Content-Type', 'application/octet-stream')
-        res.setHeader('Content-Length', buf.length)
-        res.end(buf)
-      } else {
-        res.statusCode = 404
-        res.end('Not found')
-      }
-    },
-
-    '/stream': async (req, res, next) => {
-      const url = new URL(req.url || '', `http://localhost${base}`)
-      const queryPath = url.searchParams.get('path') || '/'
-      const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
-      if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isFile()) {
-        const buf = fs.readFileSync(resolvedPath)
-        const ext = path.extname(resolvedPath).toLowerCase()
-        const mimeMap: Record<string, string> = { '.jpg': 'image/jpeg', '.png': 'image/png', '.mp4': 'video/mp4', '.mkv': 'video/x-matroska', '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.pdf': 'application/pdf', '.txt': 'text/plain; charset=utf-8', '.csv': 'text/csv; charset=utf-8' }
-        res.setHeader('Content-Type', mimeMap[ext] || 'application/octet-stream')
-        res.setHeader('Content-Length', buf.length)
-        res.setHeader('Accept-Ranges', 'bytes')
-        res.end(buf)
-      } else {
-        res.statusCode = 404
-        res.end('Not found')
-      }
-    },
+      return json(res, { plain_name: encoded, success: false })
+    }
+    case '/api/alist-encrypt/stream':
+      res.setHeader('Content-Type', 'application/octet-stream')
+      res.end(Buffer.alloc(0))
+      return true
+    default:
+      return false
   }
+}
+
+function taskMockHandler(req: Connect.IncomingMessage, res: Connect.ServerResponse, base: string): boolean {
+  const url = new URL(req.url || '', `http://localhost${base}`)
+  const pathname = url.pathname
+
+  if (pathname === '/api/tasks/predict-plugin' && req.method === 'POST') {
+    readBody(req).then((body) => {
+      try {
+        const parsed = JSON.parse(body || '{}')
+        const sourcePath = parsed.sourcePath || ''
+        const candidates: any[] = []
+
+        for (const plugin of MOCK_PLUGINS) {
+          if (sourcePath.endsWith(plugin.containerExtension)) {
+            candidates.push({ name: plugin.name, matchType: 'container' as const, priority: 10, taskOptions: plugin.taskOptions })
+          }
+          for (const ext of plugin.supportedExtensions) {
+            if (sourcePath.endsWith(`.${ext}`)) {
+              candidates.push({ name: plugin.name, matchType: 'extension' as const, priority: 5, taskOptions: plugin.taskOptions })
+            }
+          }
+        }
+
+        const suffix = getMockSuffix()
+        if (suffix && sourcePath.endsWith(suffix)) {
+          candidates.push({
+            name: 'alist-encrypt',
+            matchType: 'extension' as const,
+            priority: 8,
+            taskOptions: { passwordStrategy: 'independent' as const, supportVersionSelect: false, supportedVersions: null, defaultVersion: 1, extraFields: [] },
+          })
+        }
+
+        json(res, {
+          candidates,
+          pluginName: candidates.length > 0 ? candidates[0].name : null,
+          taskOptions: candidates.length > 0 ? candidates[0].taskOptions : null,
+        })
+      } catch {
+        json(res, { error: 'invalid request' }, 400)
+      }
+    })
+    return true
+  }
+
+  if (pathname === '/api/tasks') {
+    if (req.method === 'POST') {
+      taskIdCounter++
+      const task = { id: `mock-task-${taskIdCounter}`, type: 'encrypt', sourcePath: '/test.txt', status: 'queued' as const, progress: 0, createdAt: new Date().toISOString() }
+      tasks[task.id] = task
+      return json(res, task)
+    }
+    if (req.method === 'GET') return json(res, { tasks: Object.values(tasks) })
+    return false
+  }
+
+  if (pathname.startsWith('/api/tasks/') && req.method === 'DELETE') {
+    const id = pathname.split('/').pop() || ''
+    if (tasks[id]) { delete tasks[id]; return json(res, { ok: true }) }
+    return json(res, { error: 'task not found' }, 404)
+  }
+
+  return false
+}
+
+function staticFileHandler(req: Connect.IncomingMessage, res: Connect.ServerResponse, base: string): boolean {
+  const url = new URL(req.url || '', `http://localhost${base}`)
+  const queryPath = resolveQueryPath(url)
+  const resolvedPath = path.join(MOCK_DATA_ROOT, queryPath.replace(/^\//, ''))
+
+  if (!fs.existsSync(resolvedPath) || !fs.statSync(resolvedPath).isFile()) {
+    res.statusCode = 404
+    res.end('Not found')
+    return true
+  }
+
+  const buf = fs.readFileSync(resolvedPath)
+  const ext = path.extname(resolvedPath).toLowerCase()
+  res.setHeader('Content-Type', MIME_MAP[ext] || 'application/octet-stream')
+  res.setHeader('Content-Length', buf.length)
+  res.setHeader('Accept-Ranges', 'bytes')
+  res.end(buf)
+  return true
+}
+
+function debugControlHandler(req: Connect.IncomingMessage, res: Connect.ServerResponse, base: string): boolean {
+  const url = new URL(req.url || '', `http://localhost${base}`)
+  const action = url.searchParams.get('action')
+
+  try {
+    if (action === 'set_suffix') {
+      const suffix = url.searchParams.get('suffix') || '.ae'
+      setMockSuffix(suffix)
+      return json(res, { ok: true, suffix })
+    }
+    if (action === 'get_files') {
+      const p = url.searchParams.get('path') || '/'
+      return json(res, resolveFiles(p))
+    }
+    if (action === 'add_file') {
+      const p = url.searchParams.get('path') || '/'
+      const raw = url.searchParams.get('file')
+      if (raw) { fsAddMockFile(p, JSON.parse(raw) as MockFileItem); return json(res, { ok: true }) }
+      return json(res, { error: 'missing file param' }, 400)
+    }
+    if (action === 'remove_file') {
+      const p = url.searchParams.get('path') || '/'
+      const name = url.searchParams.get('name') || ''
+      fsRemoveMockFile(p, name)
+      return json(res, { ok: true })
+    }
+    if (action === 'reset') { resetMockFiles(); return json(res, { ok: true }) }
+    if (action === 'status') return json(res, { enabled: true, suffix: getMockSuffix(), paths: Array.from(new Set(['/'])) })
+    return json(res, { error: 'unknown action' }, 404)
+  } catch (e: any) {
+    return json(res, { error: e.message }, 500)
+  }
+}
+
+export function createHandlers(base: string): { dispatchRequest: Connect.NextHandleFunction } {
+  const dispatchRequest: Connect.NextHandleFunction = (req, res) => {
+    const rawUrl = req.url || ''
+    const url = new URL(rawUrl, `http://localhost${base}`)
+    const pathname = url.pathname
+    const method = req.method || 'GET'
+
+    if (pathname === '/__mock_control') {
+      debugControlHandler(req, res, base)
+      return
+    }
+
+    if (pathname.startsWith('/api/files') && pathname !== '/api/file') {
+      if (fileSystemHandler(req, res, base)) return
+    }
+
+    if (pathname === '/api/file' || pathname.startsWith('/api/file?')) {
+      if (fileContentHandler(req, res, base)) return
+    }
+
+    if (pathname.startsWith('/api/tasks')) {
+      if (taskMockHandler(req, res, base)) return
+    }
+
+    if (staticJsonHandler(pathname, method, url, res)) return
+
+    if (pathname === '/stream' || pathname.startsWith('/stream?') || pathname === '/api/stream/external') {
+      staticFileHandler(req, res, base)
+      return
+    }
+
+    res.statusCode = 501
+    res.setHeader('Content-Type', 'application/json')
+    res.end(JSON.stringify({ error: 'not implemented in mock', path: rawUrl }))
+  }
+
+  return { dispatchRequest }
 }
