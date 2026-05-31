@@ -1,15 +1,7 @@
 import { Capacitor } from '@capacitor/core'
 
 export async function copyToClipboard(text: string): Promise<boolean> {
-  if (Capacitor.isNativePlatform()) {
-    try {
-      const { Clipboard } = await import(/* @vite-ignore */ '@capacitor/clipboard')
-      await Clipboard.write({ string: text })
-      return true
-    } catch {}
-  }
-
-  if (navigator.clipboard?.writeText) {
+  if (!Capacitor.isNativePlatform() && navigator.clipboard?.writeText) {
     try {
       await navigator.clipboard.writeText(text)
       return true
