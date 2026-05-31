@@ -533,20 +533,19 @@ async function handleClose() {
   --padding-end: 0;
   --inner-padding-end: 0;
   margin-top: 4px;
+  color: var(--ion-text-color);
 }
 
 .extra-field-toggle {
   --padding-start: 0;
   --color: var(--ion-color-primary);
-}
-
-.extra-field-toggle::part(label) {
-  color: var(--ion-text-color, #fff);
-  font-size: 0.95rem;
+  --background: var(--ion-color-step-100);
+  --handle-background: #fff;
+  --handle-background-checked: #fff;
 }
 
 .extra-field-item ion-note[slot=helper] {
-  color: var(--ion-color-medium, #b0b0b0);
+  color: var(--ion-color-medium-shade);
   font-size: 0.8rem;
 }
 
@@ -566,5 +565,11 @@ async function handleClose() {
 
 .submit-btn:disabled {
   opacity: 0.5;
+}
+</style>
+
+<style>
+.extra-field-toggle::part(label) {
+  color: var(--ion-text-color);
 }
 </style>
