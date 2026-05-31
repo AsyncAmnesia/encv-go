@@ -61,6 +61,20 @@
             <ion-select-option value="error">ERROR</ion-select-option>
           </ion-select>
         </ion-item>
+        <ion-item>
+          <ion-icon :icon="documentText" slot="start"></ion-icon>
+          <ion-input
+            :value="logFile"
+            label="日志文件路径"
+            label-placement="stacked"
+            placeholder="留空则只输出到控制台"
+            @ionChange="handleLogFileChange($event.detail.value ?? '')"
+          ></ion-input>
+        </ion-item>
+        <ion-item>
+          <ion-icon :icon="terminal" slot="start"></ion-icon>
+          <ion-toggle :checked="logConsole" @ionChange="handleLogConsoleToggle($event.detail.checked)">输出到控制台</ion-toggle>
+        </ion-item>
       </ion-list>
 
       <ion-list>
@@ -103,13 +117,13 @@ import { computed } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonIcon, IonLabel, IonToggle,
-  IonSelect, IonSelectOption,
+  IonSelect, IonSelectOption, IonInput,
   alertController,
 } from '@ionic/vue'
 import {
   bugOutline, downloadOutline, readerOutline, trashOutline,
   chevronForward, playCircleOutline, musicalNotesOutline,
-  colorPaletteOutline, settingsOutline, terminal,
+  colorPaletteOutline, settingsOutline, terminal, documentText,
 } from 'ionicons/icons'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/composables/useI18n'
@@ -126,9 +140,25 @@ const { vconsoleEnabled, toggleVConsole } = useDevTools()
 const { getFieldValue, setFieldValue, saveConfig } = useConfig()
 
 const logLevel = computed(() => String(getFieldValue(['log', 'level']) ?? 'info'))
+const logFile = computed(() => String(getFieldValue(['log', 'file']) ?? ''))
+const logConsole = computed(() => Boolean(getFieldValue(['log', 'console']) ?? true))
 
 async function handleLogLevelChange(value: string) {
   setFieldValue(['log', 'level'], value)
+  await saveLogConfig()
+}
+
+async function handleLogFileChange(value: string) {
+  setFieldValue(['log', 'file'], value)
+  await saveLogConfig()
+}
+
+async function handleLogConsoleToggle(checked: boolean) {
+  setFieldValue(['log', 'console'], checked)
+  await saveLogConfig()
+}
+
+async function saveLogConfig() {
   try {
     await saveConfig()
     showToast({ message: t('settings.configSaved'), duration: 1500, color: 'success' })
