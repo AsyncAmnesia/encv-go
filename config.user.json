@@ -63,7 +63,7 @@
   },
   "recover": false,
   "server": {
-    "dir": "/",
+    "dir": "/workspace/app/encv-mobile",
     "port": 2025
   },
   "strict_deprecated_version": false,
