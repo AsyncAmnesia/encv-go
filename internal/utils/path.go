@@ -2,7 +2,6 @@ package utils
 
 import (
 	"fmt"
-	"net/url"
 	"path"
 	"path/filepath"
 	"strings"
@@ -60,14 +59,7 @@ func SafeResolveToAbsPath(baseDir, userPath string) (string, error) {
 //   - string: 解码并清理后的相对路径，例如 "folder/中文.txt"
 //   - error: 如果URL无效或包含危险内容，则返回错误
 func SafeURLPathToRelative(urlPath string) (string, error) {
-	// 解析URL测试是否有效
-	u, err := url.Parse(urlPath)
-	if err != nil {
-		return "", fmt.Errorf("invalid URL: %w", err)
-	}
-
-	// 恢复解码后的路径
-	decodedPath := u.Path
+	decodedPath := urlPath
 	if decodedPath == "" {
 		decodedPath = "/"
 	}
