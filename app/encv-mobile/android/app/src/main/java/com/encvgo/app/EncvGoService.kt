@@ -458,8 +458,12 @@ class EncvGoService : Service() {
                     serverObj.put("port", defaultServer.optInt("port", DEFAULT_PORT))
                     changed = true
                 }
-                if (!serverObj.has("dir")) {
-                    serverObj.put("dir", defaultServer.optString("dir", "/storage/emulated/0"))
+                val currentDir = serverObj.optString("dir", "")
+                if (currentDir.isEmpty() || currentDir == "/") {
+                    val mobileDir = existing.optJSONObject("mobile")?.optString("server_dir", "")
+                        ?: defaults.optJSONObject("mobile")?.optString("server_dir", "")
+                        ?: "/storage/emulated/0"
+                    serverObj.put("dir", mobileDir)
                     changed = true
                 }
             }

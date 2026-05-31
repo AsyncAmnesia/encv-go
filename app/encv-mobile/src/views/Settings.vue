@@ -376,7 +376,7 @@ import { useServerStatus } from '@/composables/useServerStatus'
 import { useConfig } from '@/composables/useConfig'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
-import { isNative, getPluginFullState, ensurePluginLoaded } from '@/plugins/GoProcess'
+import { isNative, pickFolder, getPluginFullState, ensurePluginLoaded } from '@/plugins/GoProcess'
 import { registerFileFeature, unregisterFileFeature } from '@/composables/useFileFeatures'
 import { createAlistEncryptFeature } from '@/features/alist-encrypt'
 import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus } from '@/api/encv'
@@ -586,6 +586,13 @@ function validateWebdavRoute(val: string): string | null {
 }
 
 async function handleBrowsePath(path: string[], field: FieldDef) {
+  if (isNative()) {
+    const result = await pickFolder()
+    if (result.path) {
+      setFieldValue(path, result.path)
+    }
+    return
+  }
   const isFolder = field.key !== 'file'
   const currentVal = String(getFieldValue(path) || '/')
   const modal = await modalController.create({
