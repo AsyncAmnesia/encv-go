@@ -49,14 +49,8 @@ function parseMockParams(url: string): { enabled: boolean; suffix: string } {
 }
 
 const MOCK_API_PREFIXES = [
-  '/api/',
   '/health',
-  '/stream',
-  '/preview',
-  '/decrypt',
-  '/ping',
-  '/ws',
-  '/__mock_control',
+  '/api/config',
 ]
 
 function shouldMockIntercept(url: string): boolean {
