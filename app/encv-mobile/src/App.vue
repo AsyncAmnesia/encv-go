@@ -39,25 +39,25 @@ const serviceGuardDetail = ref('')
 
 const MOCK_DIR_MARKER = '01-plain-media'
 
-async function checkServiceDirectory(): Promise<boolean> {
+async function checkServiceDirectory(): Promise<'ok' | 'missing' | 'error'> {
   try {
     const files = await listFiles('/')
     const hasMarker = files.some(f => f.name === MOCK_DIR_MARKER && f.isDirectory)
     if (!hasMarker) {
       const dirNames = files.slice(0, 10).map(f => f.name).join(', ')
       serviceGuardDetail.value = `server.dir missing "${MOCK_DIR_MARKER}", got: [${dirNames}]`
-      return false
+      return 'missing'
     }
-    return true
+    return 'ok'
   } catch (e: any) {
     serviceGuardDetail.value = e?.message || String(e)
-    return false
+    return 'error'
   }
 }
 
 async function retryServiceGuard() {
-  const ok = await checkServiceDirectory()
-  if (ok) {
+  const result = await checkServiceDirectory()
+  if (result === 'ok') {
     serviceGuardBlocked.value = false
     connect()
   }
@@ -103,11 +103,14 @@ onMounted(async () => {
   registerFileFeature(createAlistEncryptFeature())
 
   if (!isNative()) {
-    const ok = await checkServiceDirectory()
-    if (!ok) {
+    const result = await checkServiceDirectory()
+    if (result === 'missing') {
       serviceGuardBlocked.value = true
       console.error('[App] Service guard: blocked — mock service directory not detected')
       return
+    }
+    if (result === 'error') {
+      console.warn('[App] Service guard: API error, allowing entry —', serviceGuardDetail.value)
     }
   }
 
