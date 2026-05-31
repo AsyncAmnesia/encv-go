@@ -3,7 +3,9 @@
 - [ ] CRC6 校验逻辑与参考实现一致
 - [ ] 前端 decodeAlistFilename 正确解析 EncryptedName 并还原 UTF-8 明文
 
-- [ ] charset.go：12 个字符池定义完整（alnum 62 / lowercase 26 / uppercase 26 / digits 10 / hex_lower 16 / hex_upper 16 / symbols_basic 4 / symbols_ext 26 / hanzi_common ~3000 / hanzi_rare ~1000+ / emoji ~100）
+- [ ] charset.go：12 个字符池定义完整（alnum 62 / lowercase 26 / uppercase 26 / digits 10 / hex_lower 16 / hex_upper 16 / symbols_basic 4 / symbols_ext 26 / hanzi_common ~2950 / hanzi_rare ~1000+ / emoji ~100）
+- [ ] hanzi_common 内置敏感字过滤：预排除 ~50 个高风险汉字（政治/色情/暴力/违禁品），编译时确定不可绕过
+- [ ] 敏感字排除后编码输出不含任何触发审核的高风险字符
 - [ ] BuildCharsetTable 多选并集正确：[alnum, hanzi_rare] → 62 + ~1000 = ~1062 个 rune
 - [ ] 去混淆开关正确：Deconfuse=true 时从并集中移除 `0Oo1lI`（仅当字符存在时）；Deconfuse=false 保留全部
 - [ ] 纯汉字字符集（无 alnum）时 Deconfuse 开关无效果（无易混淆字符可移除）

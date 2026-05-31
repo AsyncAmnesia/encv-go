@@ -11,6 +11,7 @@
   - [ ] 2.1 新建 `internal/v2/filename/charset.go`：
     - 定义 12 个 FNCharset 常量（alnum/lowercase/uppercase/digits/hex_lower/hex_upper/symbols_basic/symbols_ext/hanzi_common/hanzi_rare/emoji）
     - 每个常量对应一个 rune 切片字符池
+    - **hanzi_common 字符池内置敏感字过滤**：预定义排除集（~50 个高风险汉字），编译时确定，运行时不可绕过。排除范围：政治敏感字、色情/暴力字、违禁品字、高风险组合字
     - 实现 `BuildCharsetTable(charsets []FNCharset, deconfuse bool) ([]rune, error)` ：多选并集 → 去混淆过滤 → 最终字符表
     - 实现 `EncodeToCharset(bytes []byte, table []rune) string` 和 `DecodeFromCharset(s string, table []rune) ([]byte, error)`
   - [ ] 2.2 新建 `internal/v2/filename/kdf.go`：HKDF-SHA256 密钥派生，password → 主密钥 → S-box 种子(32B) + N 个轮密钥(每轮16B)
@@ -50,6 +51,7 @@
   - [ ] 8.2 Go 单元测试：ENC-FN 密码敏感性 + 确定性 + 雪崩效应
   - [ ] 8.3 Go 单元测试：多选字符集并集正确性（[alnum,hanzi_rare] 并集大小、去混淆后大小）
   - [ ] 8.4 Go 单元测试：去混淆开关（开启/关闭/纯汉字无效果）
+  - [ ] 8.4b Go 单元测试：hanzi_common 敏感字过滤（确认排除集中每个字都不在最终字符表中；确认编码输出不含任何敏感字）
   - [ ] 8.5 Go 单元测试：ENC-FN 错误处理（篡改、非法字符集、空输入、超长输入）
   - [ ] 8.6 Go 单元测试：alist-encrypt EncryptedName 往返一致性
   - [ ] 8.7 E2E 测试：创建→物理重命名乱码→列表显示原名→rename→立即反映
