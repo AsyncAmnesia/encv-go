@@ -12,7 +12,8 @@
     "rebuild:android": "echo 'To rebuild android/ from scratch: rm -rf android && npx cap add android && npx cap sync android && npx @trapezedev/configure run trapeze.yaml --android-project android'",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "generate:mock": "tsx scripts/generate-mock-files.ts"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.4",

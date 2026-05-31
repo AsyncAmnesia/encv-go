@@ -53,3 +53,6 @@ Thumbs.db
 *.tmp
 *.temp
 /tests
+
+# Mock data (generated, not committed)
+__mock_data__/
