@@ -2,20 +2,31 @@
 - [ ] filename.go EncryptName/DecryptName 往返一致性通过（加密→解密==原文）
 - [ ] CRC6 校验逻辑与参考实现一致（多项式、初始值、反射处理）
 - [ ] 前端 decodeAlistFilename 正确解析 EncryptedName 并还原 UTF-8 明文
+- [ ] ENC-FN charset.go：4 种字符集定义完整（alnum 62 / safe 56 / hex 16 / alpha 52），EncodeToCharset/DecodeFromCharset 正确
+- [ ] ENC-FN kdf.go：HKDF-SHA256 密钥派生正确，password → 主密钥 → S-box 种子 + N 个轮密钥
+- [ ] ENC-FN sbox.go：从种子确定性生成 256 字节 S-box + 逆 S-box，Fisher-Yates shuffle 可复现
+- [ ] ENC-FN feistel.go：Feistel 网络正向/逆向变换正确，支持可配置轮数（4-12）
+- [ ] ENC-FN encfn.go：完整 Encode/Decode 流程正确，支持 compact 和 structured 两种模式
+- [ ] ENC-FN compact 模式输出无前缀纯编码体，长度合理（~ceil(8*len(plaintext)/log2(charset_size))）
+- [ ] ENC-FN structured 模式输出带 `[S]` 前缀 + 长度标记 + 编码体 + 校验后缀
+- [ ] ENC-FN 同一输入+同一密码→相同输出（确定性）
+- [ ] ENC-FN 不同密码→完全不同输出（密码敏感性）
+- [ ] ENC-FN 改变明文 1 bit → 输出 ~50% 位变化（雪崩效应）
+- [ ] ENC-FN 篡改检测返回明确错误（ErrFNInvalidFormat / ErrFNChecksumMismatch / ErrFNCorrupt）
 - [ ] Manifest_v4 新增 OriginalName + FilenameAlgorithm 字段，JSON 序列化/反序列化正确
 - [ ] FlagFilenameEncrypted (0x0010) 已定义，Header 读写正确处理
 - [ ] 后端文件列表 API 对 v4 容器返回 original_name 元数据
-- [ ] 文件名解析优先级正确实现：Manifest.original_name（解密后）> 物理文件名
-- [ ] Files.vue 使用 display_name 渲染，优先显示 Manifest 中的原始文件名
-- [ ] v4 容器创建时可选择将原始文件名（明文或密文）写入 Manifest
-- [ ] v4 容器打开时从 Manifest 读取并解密 original_name
-- [ ] 解密失败时有明确 fallback（物理文件名/占位符），不显示乱码
+- [ ] ResolveDisplayName 按优先级正确返回显示名（Manifest 解码 > 物理文件名）
+- [ ] Files.vue 使用 display_name 渲染，优先显示 Manifest 原始文件名
+- [ ] v4 容器创建时可选择 ENC-FN 编码原始文件名写入 Manifest
+- [ ] v4 容器打开时 ENC-FN.Decode 还原 original_name
+- [ ] 解码失败时有明确 fallback（物理文件名/占位符），不显示乱码
 - [ ] PATCH /api/v1/file/rename 可修改 Manifest 中的 original_name
-- [ ] rename 后文件列表立即反映新文件名，无需手动刷新
-- [ ] 超长文件名（>255 字节）：Manifest 完整存储，物理文件名自动缩短
-- [ ] 空/空白文件名：不拒绝存储，展示层有回退策略
-- [ ] Unicode 全量支持：emoji/CJK/RTL/控制字符均正确存储和渲染
-- [ ] 加密操作基于 UTF-8 字节序列，不依赖字符语义
+- [ ] rename 后文件列表立即反映新文件名
+- [ ] 超长文件名（>255 字节）：Manifest 完整存储 ENC-FN 结果，物理文件名自动缩短
+- [ ] 空/空白文件名：ENC-FN 接受并返回空，展示层有回退策略
+- [ ] Unicode 全量支持：emoji/CJK/RTL/控制字符均正确编码解码和渲染
+- [ ] ENC-FN 基于 UTF-8 字节操作，不依赖 Unicode 语义
 - [ ] vue-tsc 零错误
 - [ ] vitest 全部通过
 - [ ] vite build 成功
