@@ -540,13 +540,16 @@ async function handleClose() {
 .extra-field-toggle {
   --padding-start: 0;
   --color: var(--ion-color-primary);
-  --background: var(--ion-color-step-100);
-  --handle-background: #fff;
+  --background: var(--ion-toggle-background-off, var(--ion-color-step-200));
+  --background-checked: var(--ion-color-primary, #3880ff);
+  --handle-background: var(--ion-color-step-50, #fff);
   --handle-background-checked: #fff;
+  --handle-box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .extra-field-item ion-note[slot=helper] {
-  color: var(--ion-color-medium-shade);
+  color: var(--ion-text-color, inherit);
+  opacity: 0.6;
   font-size: 0.8rem;
 }
 
