@@ -5,14 +5,19 @@ func FeistelEncrypt(data []byte, sbox *SBox, roundKeys [][]byte) []byte {
 		return data
 	}
 	n := len(data)
-	padded := padToEven(data)
+	padded := make([]byte, n)
+	copy(padded, data)
+	if n%2 != 0 {
+		padded = append(padded, 0)
+	}
 
-	left := padded[:n/2]
-	right := padded[n/2:]
+	mid := len(padded) / 2
+	left := padded[:mid]
+	right := padded[mid:]
 
 	for i, key := range roundKeys {
 		f := roundFunc(right, key, sbox)
-		for j := range left {
+		for j := 0; j < len(left) && j < len(f); j++ {
 			left[j] ^= f[j]
 		}
 		if i < len(roundKeys)-1 {
@@ -21,8 +26,7 @@ func FeistelEncrypt(data []byte, sbox *SBox, roundKeys [][]byte) []byte {
 	}
 
 	result := make([]byte, n)
-	copy(result, left)
-	copy(result[len(left):], right)
+	copy(result, padded[:n])
 	return result
 }
 
@@ -31,14 +35,21 @@ func FeistelDecrypt(data []byte, sbox *SBox, roundKeys [][]byte) []byte {
 		return data
 	}
 	n := len(data)
-	padded := padToEven(data)
+	padded := make([]byte, n)
+	copy(padded, data)
+	if n%2 != 0 {
+		padded = append(padded, 0)
+	}
 
-	left := padded[:n/2]
-	right := padded[n/2:]
+	mid := len(padded) / 2
+	left := padded[:mid]
+	right := padded[mid:]
+
+	left, right = right, left
 
 	for i := len(roundKeys) - 1; i >= 0; i-- {
 		f := roundFunc(right, roundKeys[i], sbox)
-		for j := range left {
+		for j := 0; j < len(left) && j < len(f); j++ {
 			left[j] ^= f[j]
 		}
 		if i > 0 {
@@ -47,8 +58,7 @@ func FeistelDecrypt(data []byte, sbox *SBox, roundKeys [][]byte) []byte {
 	}
 
 	result := make([]byte, n)
-	copy(result, left)
-	copy(result[len(left):], right)
+	copy(result, padded[:n])
 	return result
 }
 
@@ -65,11 +75,4 @@ func roundFunc(half, key []byte, sbox *SBox) []byte {
 		out[i] = sbox.Forward[half[i]]
 	}
 	return out
-}
-
-func padToEven(data []byte) []byte {
-	if len(data)%2 == 0 {
-		return data
-	}
-	return append(data, 0)
 }

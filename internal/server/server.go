@@ -218,6 +218,7 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/api/file", s.handleReadFileContentGin)
 	r.GET("/api/file/text-preview-exts", s.handleTextPreviewExtsGin)
 	r.GET("/api/file/info", s.handleFileInfoGin)
+	r.PATCH("/api/file/rename", s.handleRenameFileGin)
 	r.GET("/api/tasks", s.handleGetTasksGin)
 	r.POST("/api/tasks", s.handleCreateTaskGin)
 	r.POST("/api/tasks/predict-plugin", s.handlePredictPluginGin)

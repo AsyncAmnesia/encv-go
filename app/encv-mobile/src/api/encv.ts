@@ -838,6 +838,28 @@ export async function renameFile(oldPath: string, newName: string): Promise<void
   }
 }
 
+export interface RenameOriginalNameResponse {
+  success: boolean
+  display_name: string
+  error?: string
+}
+
+export async function renameOriginalName(path: string, newName: string, password?: string): Promise<RenameOriginalNameResponse> {
+  console.info('[API] renameOriginalName:', path, '→', newName, 'hasPassword:', !!password)
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/file/rename`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, new_name: newName, ...(password ? { password } : {}) }),
+  })
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}))
+    console.error('[API] renameOriginalName failed:', response.status, data.error)
+    throw new Error(data.error || `HTTP error! status: ${response.status}`)
+  }
+  return response.json()
+}
+
 export async function copyFile(srcPath: string, destPath: string): Promise<void> {
   console.info('[API] copyFile:', srcPath, '→', destPath)
   const baseUrl = getApiBaseUrl()

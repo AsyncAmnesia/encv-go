@@ -224,14 +224,11 @@ func EncodeToCharset(data []byte, table []rune) string {
 		return ""
 	}
 	base := uint64(len(table))
-	capEst := len(data) * 2
-	if capEst < 4 {
-		capEst = 4
-	}
-	result := make([]rune, 0, capEst)
-	for i, b := range data {
+	charWidth := charsetCharWidth(base)
+	result := make([]rune, 0, len(data)*charWidth)
+	for _, b := range data {
 		val := uint64(b)
-		for val > 0 || len(result) <= i {
+		for i := 0; i < charWidth; i++ {
 			result = append(result, table[val%base])
 			val /= base
 		}
@@ -244,29 +241,41 @@ func DecodeFromCharset(s string, table []rune) ([]byte, error) {
 		return nil, nil
 	}
 	base := uint64(len(table))
-	revMap := make(map[rune]uint64)
+	charWidth := charsetCharWidth(base)
+
+	if len(s)%charWidth != 0 {
+		return nil, ErrFNInvalidFormat
+	}
+
+	revMap := make(map[rune]uint64, len(table))
 	for i, r := range table {
-			revMap[r] = uint64(i)
+		revMap[r] = uint64(i)
 	}
-	data := make([]byte, 0, len(s)/2+1)
-	idx := 0
-	val := uint64(0)
-	for _, ch := range s {
-		if v, ok := revMap[ch]; ok {
-			val = val*base + v
-		} else {
-			return nil, ErrFNCharsetMismatch
+
+	data := make([]byte, 0, len(s)/charWidth)
+	for i := 0; i < len(s); i += charWidth {
+		var val uint64
+		for j := 0; j < charWidth; j++ {
+			ch := rune(s[i+j])
+			v, ok := revMap[ch]
+			if !ok {
+				return nil, ErrFNCharsetMismatch
 			}
-		for val >= base {
-			data[idx] = byte(val % base)
-			val /= base
-			idx++
+			val = val*base + v
 		}
-	}
-	if idx == 0 && len(data) > 0 {
 		data = append(data, byte(val))
 	}
-	return data[:idx], nil
+	return data, nil
+}
+
+func charsetCharWidth(base uint64) int {
+	width := 1
+	pow := base
+	for pow < 256 {
+		pow *= base
+		width++
+	}
+	return width
 }
 
 var (

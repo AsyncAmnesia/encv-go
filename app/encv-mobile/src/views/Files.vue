@@ -329,10 +329,10 @@
       </template>
 
       <ion-alert :is-open="showRenameDialog" header="重命名"
-        :inputs="[{ name: 'name', type: 'text', placeholder: '新文件名', value: renameValue }]"
+        :inputs="renameAlertInputs"
         :buttons="[
           { text: '取消', role: 'cancel' },
-          { text: '确定', handler: (d: any) => { renameValue = d.name; handleRename(selectedFile!); } }
+          { text: '确定', handler: (d: any) => { renameValue = d.name ?? renameValue.value; renamePassword = d.password ?? ''; handleRename(selectedFile!); } }
         ]"
         @didDismiss="showRenameDialog = false" />
       <ion-modal :is-open="showTagDialog" @didDismiss="showTagDialog = false">
@@ -451,6 +451,7 @@ import {
   NotFoundError,
   deleteFile,
   renameFile,
+  renameOriginalName,
   copyFile,
   moveFile,
   fetchPlugins,
@@ -587,6 +588,7 @@ const showMoveDialog = ref(false)
 const selectedPlugin = ref<PluginMeta | null>(null)
 const selectedFile = ref<FileItem | null>(null)
 const renameValue = ref('')
+const renamePassword = ref('')
 const moveTargetPath = ref('')
 const editingFileTags = ref<string[]>([])
 const newTagInput = ref('')
@@ -595,6 +597,14 @@ const fileBadges = ref<Record<string, any[]>>({})
 const fileSubtitles = ref<Record<string, any[]>>({})
 
 const { getBadges, getSubtitles, getAllActions } = useFileFeatures()
+
+const renameAlertInputs = computed(() => {
+  const inputs: any[] = [{ name: 'name', type: 'text', placeholder: '新文件名', value: renameValue.value }]
+  if (selectedFile.value?.isEncrypted) {
+    inputs.push({ name: 'password', type: 'text', placeholder: '文件名加密密码（如需要）' })
+  }
+  return inputs
+})
 
 const currentPath = ref('/')
 const loading = ref(false)
@@ -942,6 +952,7 @@ async function handleLongPress(file: FileItem) {
     handler: () => {
       selectedFile.value = file
       renameValue.value = file.name
+      renamePassword.value = ''
       showRenameDialog.value = true
     },
   })
@@ -1030,8 +1041,16 @@ async function handleCopy(file: FileItem) {
 async function handleRename(file: FileItem) {
   if (!renameValue.value.trim() || renameValue.value === file.name) return
   try {
-    await renameFile(file.path, renameValue.value.trim())
+    if (file.isEncrypted) {
+      const result = await renameOriginalName(file.path, renameValue.value.trim(), renamePassword.value.trim() || undefined)
+      if (result.success) {
+        showToast({ message: '原始文件名已更新' })
+      }
+    } else {
+      await renameFile(file.path, renameValue.value.trim())
+    }
     showRenameDialog.value = false
+    renamePassword.value = ''
     await loadFiles()
   } catch (e) { showToast({ message: `重命名失败: ${e}` }) }
 }

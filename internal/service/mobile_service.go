@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"github.com/Soltus/encv-go/internal/utils"
 	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
+	"github.com/Soltus/encv-go/internal/v2/crypto"
 	"github.com/Soltus/encv-go/internal/v2/filename"
 	"github.com/Soltus/encv-go/internal/v2/handler"
 	"github.com/Soltus/encv-go/internal/v2/namer"
@@ -450,6 +452,139 @@ func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
 	}
 
 	return result, nil
+}
+
+type RenameFileRequest struct {
+	Path     string `json:"path"`
+	NewName  string `json:"new_name"`
+	Password string `json:"password,omitempty"`
+}
+
+type RenameFileResponse struct {
+	Success      bool   `json:"success"`
+	DisplayName string `json:"display_name"`
+	Error        string `json:"error,omitempty"`
+}
+
+func (s *MobileService) RenameFile(req *RenameFileRequest) (*RenameFileResponse, error) {
+	if req.Path == "" {
+		return nil, &BadRequestError{Err: errors.New("'path' is required")}
+	}
+	if req.NewName == "" {
+		return nil, &BadRequestError{Err: errors.New("'new_name' is required")}
+	}
+
+	absPath, err := utils.SafeURLToAbsPath(s.servingDir, req.Path)
+	if err != nil {
+		return nil, &ForbiddenError{Err: err}
+	}
+
+	info, err := os.Stat(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, &NotFoundError{Err: err}
+		}
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, &BadRequestError{Err: errors.New("path is a directory, not an ENCV container")}
+	}
+
+	src, srcErr := containerhandle.NewFileSource(absPath)
+	if srcErr != nil {
+		return nil, &BadRequestError{Err: fmt.Errorf("cannot open container file: %w", srcErr)}
+	}
+	defer src.Close()
+
+	h, openErr := containerhandle.Open(src)
+	if openErr != nil {
+		return nil, &BadRequestError{Err: fmt.Errorf("cannot read container metadata: %w", openErr)}
+	}
+	defer h.Close()
+
+	if h.Version() != 4 || h.ManifestV4() == nil {
+		return nil, &BadRequestError{Err: errors.New("only v4 containers support original_name rename")}
+	}
+
+	mf := h.ManifestV4()
+	hdr := h.HeaderV4()
+
+	isEncrypted := hdr.Flags&types.FlagFilenameEncrypted != 0
+
+	var storedName string
+	if isEncrypted {
+		if req.Password == "" {
+			return nil, &BadRequestError{Err: errors.New("password is required for encrypted filename")}
+		}
+		fnCfg := filename.FNConfig{}
+		encoded, encErr := fnCfg.Encode([]byte(req.NewName))
+		if encErr != nil {
+			slog.Warn("RenameFile: FNConfig.Encode failed", "path", req.Path, "error", encErr)
+			return nil, fmt.Errorf("failed to encode filename: %w", encErr)
+		}
+		storedName = encoded
+	} else {
+		storedName = req.NewName
+	}
+
+	mf.OriginalName = storedName
+	if isEncrypted {
+		mf.FilenameAlgorithm = "enc-fn:v1"
+	}
+
+	manifestJSON, serErr := mf.SerializeToJSON_v4()
+	if serErr != nil {
+		return nil, fmt.Errorf("failed to serialize manifest: %w", serErr)
+	}
+
+	obfuscated, obfErr := crypto.ObfuscateManifest(manifestJSON)
+	if obfErr != nil {
+		return nil, fmt.Errorf("failed to obfuscate manifest: %w", obfErr)
+	}
+
+	oldManifestLen := int(hdr.ManifestLength)
+	newManifestLen := len(obfuscated)
+
+	file, fileErr := os.OpenFile(absPath, os.O_RDWR, 0644)
+	if fileErr != nil {
+		return nil, fmt.Errorf("cannot open file for writing: %w", fileErr)
+	}
+	defer file.Close()
+
+	_, writeErr := file.WriteAt(obfuscated, int64(hdr.ManifestOffset))
+	if writeErr != nil {
+		return nil, fmt.Errorf("failed to write manifest: %w", writeErr)
+	}
+
+	if newManifestLen < oldManifestLen {
+		pad := make([]byte, oldManifestLen-newManifestLen)
+		file.WriteAt(pad, int64(hdr.ManifestOffset)+int64(newManifestLen))
+	}
+
+	if newManifestLen != oldManifestLen {
+		hdr.ManifestLength = uint32(newManifestLen)
+		if storedName != "" && mf.FilenameAlgorithm != "" {
+			hdr.Flags |= types.FlagFilenameEncrypted
+		}
+		if _, seekErr := file.Seek(0, io.SeekStart); seekErr != nil {
+			slog.Warn("RenameFile: failed to seek to header for update", "error", seekErr)
+		} else if wErr := types.WriteHeaderV4(file, hdr); wErr != nil {
+			slog.Warn("RenameFile: failed to update header ManifestLength", "error", wErr)
+		}
+	}
+
+	displayName := req.NewName
+	if isEncrypted {
+		displayName = req.NewName
+	}
+
+	slog.Info("RenameFile success", "path", req.Path, "newName", req.NewName,
+		"encrypted", isEncrypted, "oldManifestLen", oldManifestLen, "newManifestLen", newManifestLen)
+
+	return &RenameFileResponse{
+		Success:      true,
+		DisplayName: displayName,
+	}, nil
 }
 
 func sanitizeManifestMap(m map[string]interface{}) {

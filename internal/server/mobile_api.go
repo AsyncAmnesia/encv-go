@@ -192,6 +192,25 @@ func (s *Server) handleFileInfoGin(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+func (s *Server) handleRenameFileGin(c *gin.Context) {
+	var req mobileservice.RenameFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body", "details": err.Error()})
+		return
+	}
+
+	slog.Info("API: rename file original_name", "path", req.Path, "newName", req.NewName,
+		"hasPassword", req.Password != "")
+
+	result, err := s.mobileSvc.RenameFile(&req)
+	if err != nil {
+		writeServiceErrorGin(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 func (s *Server) handleGetTasksGin(c *gin.Context) {
 	taskList := s.mobileSvc.GetTaskManager().List()
 	c.JSON(http.StatusOK, gin.H{"tasks": taskList})
