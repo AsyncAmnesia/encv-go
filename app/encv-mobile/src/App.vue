@@ -4,7 +4,7 @@
       <div class="guard-content">
         <ion-icon :icon="warningOutline" class="guard-icon"></ion-icon>
         <h2>{{ t('app.serviceGuardTitle') }}</h2>
-        <p>{{ t('app.serviceGuardMessage') }}</p>
+        <p class="guard-message">{{ t('app.serviceGuardMessage') }}</p>
         <code class="guard-detail">{{ serviceGuardDetail }}</code>
         <ion-button @click="retryServiceGuard" class="guard-retry-btn">
           <ion-icon :icon="refreshOutline" slot="start"></ion-icon>
@@ -155,6 +155,14 @@ onUnmounted(() => {
   color: var(--encv-text-secondary);
   margin: 0 0 16px;
   line-height: 1.5;
+}
+
+.guard-message {
+  white-space: pre-line;
+  text-align: left;
+  font-size: 13px;
+  max-height: 50vh;
+  overflow-y: auto;
 }
 
 .guard-detail {

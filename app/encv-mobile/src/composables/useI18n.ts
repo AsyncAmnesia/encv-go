@@ -553,8 +553,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'extensions.installFromLocalHint': '选择 .apk 文件进行本地安装',
     'extensions.alistDecrypt': 'Alist-Encrypt 解密',
     'extensions.alistDecryptDesc': '支持 AES-128-CTR 加密文件的解密、加密和流式预览',
-    'app.serviceGuardTitle': '服务目录未就绪',
-    'app.serviceGuardMessage': '后端服务目录未指向 mock 数据，应用无法启动。请确保 server.dir 配置正确。',
+    'app.serviceGuardTitle': 'Capacitor 预览启动失败',
+    'app.serviceGuardMessage': '后端服务目录未包含 mock 数据（缺少 01-plain-media）。Capacitor 预览需要后端 server.dir 指向 mock 数据目录。正确启动步骤：\n\n1. 生成 mock 数据：\ncd app/encv-mobile && npx tsx scripts/generate-mock-files.ts --dir /storage/emulated/0\n\n2. 启动后端（mobile overlay 自动生效）：\nENCV_DEV_PREVIEW=1 go run ./cmd/encv-mobile/\n\n3. 启动 Vite 前端：\nnpx vite --host 0.0.0.0\n\n注意：不要用 ENCV_CONFIG_PATH，不要改 config.user.json，不要用 npx cap serve。',
     'app.serviceGuardRetry': '重试检测',
   },
   'en': {
@@ -1107,8 +1107,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'extensions.installFromLocalHint': 'Select .apk file for local installation',
     'extensions.alistDecrypt': 'Alist-Encrypt Decrypt',
     'extensions.alistDecryptDesc': 'Support decryption, encryption and streaming preview of AES-128-CTR encrypted files',
-    'app.serviceGuardTitle': 'Service Directory Not Ready',
-    'app.serviceGuardMessage': 'Backend service directory does not point to mock data. App cannot start. Ensure server.dir is configured correctly.',
+    'app.serviceGuardTitle': 'Capacitor Preview Failed to Start',
+    'app.serviceGuardMessage': 'Backend service directory does not contain mock data (missing 01-plain-media). Capacitor preview requires server.dir to point to mock data. Correct startup steps:\n\n1. Generate mock data:\ncd app/encv-mobile && npx tsx scripts/generate-mock-files.ts --dir /storage/emulated/0\n\n2. Start backend (mobile overlay auto-applies):\nENCV_DEV_PREVIEW=1 go run ./cmd/encv-mobile/\n\n3. Start Vite frontend:\nnpx vite --host 0.0.0.0\n\nNote: Do NOT use ENCV_CONFIG_PATH, do NOT modify config.user.json, do NOT use npx cap serve.',
     'app.serviceGuardRetry': 'Retry',
   },
 }
