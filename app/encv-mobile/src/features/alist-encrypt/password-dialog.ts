@@ -26,12 +26,8 @@ export async function promptPassword(fileDisplayName: string): Promise<string | 
             text: t('common.confirm'),
             handler: (data: any) => {
               const pwd = data?.password || ''
-              if (pwd) {
-                resolve(pwd)
-              } else {
-                resolve(null)
-              }
-              return false
+              resolve(pwd || null)
+              return true
             },
           },
         ],

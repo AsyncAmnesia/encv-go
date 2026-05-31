@@ -5,6 +5,7 @@ export interface EncvEvents {
   'task:progress': { id: string; progress: number; phase: string; speed: string; eta: string }
   'task:created': { id: string; type: string; sourcePath: string }
   'task:completed': { id: string; error?: string }
+  'task:refresh': Record<string, never>
   'file:change': { path: string; action: 'create' | 'delete' | 'modify' }
   'server:status': { online: boolean }
   'server:connection-error': { error: string }

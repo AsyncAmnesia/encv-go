@@ -61,6 +61,8 @@ type Manifest_v4 struct {
 	DisasterZones    []DisasterZone      `json:"disaster_zones,omitempty"`
 	KVI              json.RawMessage     `json:"kvi"`
 	EDLHistory       []EDLEntry          `json:"edl_history,omitempty"`
+	OriginalName     string              `json:"original_name,omitempty"`
+	FilenameAlgorithm string             `json:"filename_alg,omitempty"`
 }
 
 var manifestV4BufferPool = sync.Pool{
@@ -133,6 +135,9 @@ func (m *Manifest_v4) ResolvePlaylist(name string) ([]Segment_v4, error) {
 	}
 	return segments, nil
 }
+
+func (m *Manifest_v4) GetOriginalName() string       { return m.OriginalName }
+func (m *Manifest_v4) GetFilenameAlgorithm() string   { return m.FilenameAlgorithm }
 
 func (h *SegmentHeader) MarshalBinary() ([]byte, error) {
 	buf := make([]byte, SegmentHeaderSize)

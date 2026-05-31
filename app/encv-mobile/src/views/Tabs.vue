@@ -1,6 +1,6 @@
 <template>
   <ion-page>
-    <ion-tabs>
+    <ion-tabs @ionTabsWillChange="onTabsWillChange" @ionTabsDidChange="onTabsDidChange">
       <ion-router-outlet></ion-router-outlet>
       <ion-tab-bar slot="bottom">
         <ion-tab-button tab="home" href="/tabs/home">
@@ -51,4 +51,12 @@ import { home, folder, list, globe, settings, bug } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 
 const { t } = useI18n()
+
+function onTabsWillChange(event: CustomEvent) {
+  void event?.detail?.tab
+}
+
+function onTabsDidChange(event: CustomEvent) {
+  void event?.detail?.tab
+}
 </script>

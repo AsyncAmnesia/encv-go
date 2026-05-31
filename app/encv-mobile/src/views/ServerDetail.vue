@@ -56,23 +56,32 @@
         </ion-item>
       </ion-list>
 
-      <ion-list v-if="serviceUrls.length > 0">
+      <ion-list>
         <ion-list-header>
           <ion-label>{{ t('settings.serviceAddresses') }}</ion-label>
         </ion-list-header>
-        <ion-item v-for="svc in serviceUrls" :key="svc.label">
-          <ion-icon :icon="svc.icon" slot="start"></ion-icon>
-          <ion-label class="ion-text-wrap">
-            <h3>{{ svc.label }}</h3>
-            <p class="readonly-url" @click="copyToClipboard(svc.url)">{{ svc.url }}</p>
+        <ion-item button @click="goHttpServer" detail>
+          <ion-icon :icon="cloudOutline" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.httpServer') }}</h3>
+            <p>:{{ httpPort }} {{ rootDir }}</p>
           </ion-label>
-          <ion-button v-if="svc.isWebdav" slot="end" fill="clear" size="small" @click="handleTestWebdav" :disabled="webdavTesting">
-            <ion-spinner v-if="webdavTesting" slot="icon-only" name="crescent"></ion-spinner>
-            <ion-icon v-else :icon="pulseIcon" slot="icon-only"></ion-icon>
-          </ion-button>
-          <ion-button v-else slot="end" fill="clear" size="small" @click="copyToClipboard(svc.url)">
-            <ion-icon :icon="copyIcon" slot="icon-only"></ion-icon>
-          </ion-button>
+        </ion-item>
+
+        <ion-item button @click="goAdminServer" detail>
+          <ion-icon :icon="shieldCheckmark" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.adminServer') }}</h3>
+            <p>{{ adminConfigured ? t('settings.configured') : t('settings.notConfigured') }}</p>
+          </ion-label>
+        </ion-item>
+
+        <ion-item button @click="goWebdavServer" detail>
+          <ion-icon :icon="globeOutline" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.webdavServer') }}</h3>
+            <p>{{ webdavRoot }}{{ webdavUsername ? ' @' + webdavUsername : '' }}</p>
+          </ion-label>
         </ion-item>
       </ion-list>
 
@@ -117,6 +126,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonIcon, IonLabel,
@@ -128,21 +138,14 @@ import {
   notifications as notificationsIcon, folderOpen,
   copy as copyIcon, shieldCheckmark, cloudOutline, globeOutline,
   batteryCharging as batteryOptimizationIcon,
-  pulse as pulseIcon,
 } from 'ionicons/icons'
 import { useServerStatus } from '@/composables/useServerStatus'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
-import { getServerUrl, fetchConfig, testLocalWebDAV } from '@/api/encv'
+import { getServerUrl, fetchConfig } from '@/api/encv'
 import { isNative, requestNotificationPermission, requestStoragePermission, requestBatteryOptimization, checkPermissions } from '@/plugins/GoProcess'
 
-interface ServiceUrl {
-  label: string
-  url: string
-  icon: string
-  isWebdav?: boolean
-}
-
+const configData = ref<Record<string, unknown> | null>(null)
 const {
   isOnline: serverOnline,
   lastError: connectionError,
@@ -160,44 +163,22 @@ const isNativePlatform = ref(isNative())
 const permNotifications = ref(false)
 const permStorage = ref(false)
 const permBatteryOpt = ref(false)
-const configData = ref<Record<string, unknown> | null>(null)
-const webdavTesting = ref(false)
 let permissionCheckTimer: number | null = null
 
-const serviceUrls = computed<ServiceUrl[]>(() => {
-  if (!configData.value || !serverOnline.value) return []
-  const result: ServiceUrl[] = []
-  const cfg = configData.value
-  const baseUrl = serverUrl.value
+const router = useRouter()
 
-  result.push({
-    label: t('settings.httpServerSettings'),
-    url: baseUrl,
-    icon: cloudOutline,
-  })
-
-  const adminCfg = cfg.admin as Record<string, unknown> | undefined
-  if (adminCfg) {
-    result.push({
-      label: t('settings.adminServerSettings'),
-      url: `${baseUrl}/admin`,
-      icon: shieldCheckmark,
-    })
-  }
-
-  const webdavCfg = cfg.webdav as Record<string, unknown> | undefined
-  if (webdavCfg && typeof webdavCfg.root === 'string' && webdavCfg.root) {
-    const root = webdavCfg.root.startsWith('/') ? webdavCfg.root : '/' + webdavCfg.root
-    result.push({
-      label: t('settings.webdavServerSettings'),
-      url: `${baseUrl}${root}`,
-      icon: globeOutline,
-      isWebdav: true,
-    })
-  }
-
-  return result
+const httpPort = computed(() => (configData.value?.server as Record<string, unknown>)?.port ?? '-')
+const rootDir = computed(() => (configData.value?.server as Record<string, unknown>)?.dir ?? '/')
+const adminConfigured = computed(() => !!(configData.value?.admin as Record<string, unknown>)?.password)
+const webdavRoot = computed(() => {
+  const val = (configData.value?.webdav as Record<string, unknown>)?.root
+  return typeof val === 'string' ? val : '/'
 })
+const webdavUsername = computed(() => (configData.value?.webdav as Record<string, unknown>)?.username ?? '')
+
+function goHttpServer() { router.push('/tabs/settings/server/http') }
+function goAdminServer() { router.push('/tabs/settings/server/admin') }
+function goWebdavServer() { router.push('/tabs/settings/server/webdav') }
 
 async function copyToClipboard(text: string) {
   try {
@@ -237,53 +218,6 @@ async function handleRequestBatteryOpt() {
   permissionCheckTimer = window.setTimeout(() => refreshPermissions(), 1000)
   setTimeout(() => refreshPermissions(), 3000)
   setTimeout(() => refreshPermissions(), 5000)
-}
-
-async function handleTestWebdav() {
-  webdavTesting.value = true
-  try {
-    const result = await testLocalWebDAV()
-    if (!result.available) {
-      showToast({
-        message: t('settings.webdavTestFailed') + ': ' + (result.error || 'WebDAV not enabled'),
-        duration: 4000,
-        color: 'danger',
-      })
-      return
-    }
-    const details = result.details
-    if (details && details.propfindRoot === 'ok' && details.dirReadable === 'ok') {
-      const authInfo = result.authRequired
-        ? (details.authWorks === 'ok' ? ' ✅' : ' ❌')
-        : ''
-      showToast({
-        message: t('settings.webdavTestSuccess') + authInfo,
-        duration: 3000,
-        color: 'success',
-      })
-    } else {
-      const parts: string[] = []
-      if (details) {
-        if (details.propfindRoot !== 'ok') parts.push('PROPFIND: ❌')
-        if (details.authWorks === 'fail') parts.push('Auth: ❌')
-        if (details.dirReadable !== 'ok') parts.push('Dir: ❌')
-      }
-      showToast({
-        message: t('settings.webdavTestFailed') + (parts.length ? ' ' + parts.join(' ') : ''),
-        duration: 5000,
-        color: 'warning',
-      })
-    }
-  } catch (e) {
-    const detail = e instanceof Error ? e.message : String(e)
-    showToast({
-      message: t('settings.webdavTestFailed') + ': ' + detail,
-      duration: 4000,
-      color: 'danger',
-    })
-  } finally {
-    webdavTesting.value = false
-  }
 }
 
 async function checkServer() {

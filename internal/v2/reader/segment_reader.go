@@ -1,6 +1,7 @@
 package reader
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 
 	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/crypto"
+	"github.com/Soltus/encv-go/internal/v2/filename"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -18,6 +20,12 @@ type V4ContainerInfo struct {
 	Manifest *types.Manifest_v4
 	FilePath string
 	Key      []byte
+}
+
+func (info *V4ContainerInfo) ResolveDisplayName(physicalName string, password string) (string, error) {
+	return filename.ResolveDisplayName(
+		context.Background(), physicalName, info.Manifest, info.Header.Flags, password, filename.FNConfig{},
+	)
 }
 
 func OpenV4Container(filePath string, password string) (*V4ContainerInfo, error) {

@@ -428,6 +428,15 @@ func (p *VideoPlugin) ValidateVersion(version int) error {
 	return nil
 }
 
+func (p *VideoPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
+	return pluginInterfaces.TaskOptions{
+		PasswordStrategy:     pluginInterfaces.PasswordGlobal,
+		SupportVersionSelect: true,
+		SupportedVersions:    p.SupportedContainerVersions(),
+		DefaultVersion:       p.DefaultContainerVersion(),
+	}
+}
+
 // --- 加密逻辑 ---
 
 // Plugin 接口实现

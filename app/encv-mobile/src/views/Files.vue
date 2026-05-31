@@ -58,10 +58,10 @@
           </ion-item>
           <ion-list-header>文件类型</ion-list-header>
           <ion-item v-for="plugin in plugins" :key="plugin.name" button detail @click="openPluginView(plugin)">
-            <ion-icon :icon="getPluginIcon(plugin.name)" slot="start" color="primary" />
+            <ion-icon :icon="getPluginIcon(plugin)" slot="start" color="primary" />
             <ion-label>
               <h2>{{ plugin.name }}</h2>
-              <p>{{ plugin.supportedExtensions.length }} 种格式 · 容器 {{ plugin.containerExtension }}</p>
+              <p>{{ plugin.supportedExtensions?.length ?? 0 }} 种格式 · 容器 {{ plugin.containerExtension }}</p>
             </ion-label>
           </ion-item>
         </ion-list>
@@ -240,7 +240,7 @@
                 ></ion-icon>
               </div>
               <ion-label>
-                <h2>{{ file.name }}</h2>
+                <h2>{{ file.display_name || file.name }}</h2>
                 <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified"> · {{ formatDateTime(file.modified) }}</span></p>
                 <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
                 <div v-if="!file.isDirectory && file._tags && file._tags.length > 0" class="file-tag-chips">
@@ -306,7 +306,7 @@
                 ></ion-icon>
             </div>
             <ion-label>
-              <h2>{{ file.name }}</h2>
+              <h2>{{ file.display_name || file.name }}</h2>
               <p v-if="searchQuery && !file.isDirectory" class="search-path">{{ file.path }}</p>
               <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified && !searchQuery"> · {{ formatDateTime(file.modified) }}</span></p>
               <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
@@ -329,10 +329,10 @@
       </template>
 
       <ion-alert :is-open="showRenameDialog" header="重命名"
-        :inputs="[{ name: 'name', type: 'text', placeholder: '新文件名', value: renameValue }]"
+        :inputs="renameAlertInputs"
         :buttons="[
           { text: '取消', role: 'cancel' },
-          { text: '确定', handler: (d: any) => { renameValue = d.name; handleRename(selectedFile!); } }
+          { text: '确定', handler: (d: any) => { renameValue = d.name ?? renameValue.value; renamePassword = d.password ?? ''; handleRename(selectedFile!); } }
         ]"
         @didDismiss="showRenameDialog = false" />
       <ion-modal :is-open="showTagDialog" @didDismiss="showTagDialog = false">
@@ -371,6 +371,7 @@
         @didDismiss="showMoveDialog = false" />
 
     </ion-content>
+
   </ion-page>
 </template>
 
@@ -413,8 +414,8 @@ import {
   chevronForward,
   folder,
   folderOpen,
-  videocam,
-  image,
+  eyeOutline,
+  playCircle,
   lockClosed,
   cloudOffline,
   refresh,
@@ -433,6 +434,11 @@ import {
   swapVerticalOutline,
   alertCircle,
   close,
+  filmOutline,
+  musicalNotesOutline,
+  imageOutline,
+  documentTextOutline,
+  documentOutline,
 } from 'ionicons/icons'
 import {
   listFiles,
@@ -445,6 +451,7 @@ import {
   NotFoundError,
   deleteFile,
   renameFile,
+  renameOriginalName,
   copyFile,
   moveFile,
   fetchPlugins,
@@ -458,8 +465,10 @@ import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
 import { formatDateTime } from '@/composables/useDateFormat'
 import { useThumbnailCache } from '@/composables/useThumbnailCache'
-import { useFileFeatures } from '@/composables/useFileFeatures'
+import { useFileFeatures, findClickHandler, isAnyContainerFile, getFeatureIcon } from '@/composables/useFileFeatures'
 import { preloadSubtitles } from '@/features/alist-encrypt'
+import { isAlistEncrypted, getStreamUrl } from '@/features/alist-encrypt/useAlistEncrypt'
+import { promptPassword } from '@/features/alist-encrypt/password-dialog'
 import {
   isImageFile,
   getFileIcon,
@@ -538,7 +547,7 @@ async function playMedia(file: FileItem, category: string) {
       }
       break
     default:
-      console.warn('[Files] Unknown play mode:', mode, '— falling back to artplayer')
+      console.debug('[Files] Unknown play mode:', mode, '— falling back to artplayer')
       router.push({ path: '/player', query: { path: file.path, name: file.name } })
       break
   }
@@ -579,6 +588,7 @@ const showMoveDialog = ref(false)
 const selectedPlugin = ref<PluginMeta | null>(null)
 const selectedFile = ref<FileItem | null>(null)
 const renameValue = ref('')
+const renamePassword = ref('')
 const moveTargetPath = ref('')
 const editingFileTags = ref<string[]>([])
 const newTagInput = ref('')
@@ -587,6 +597,14 @@ const fileBadges = ref<Record<string, any[]>>({})
 const fileSubtitles = ref<Record<string, any[]>>({})
 
 const { getBadges, getSubtitles, getAllActions } = useFileFeatures()
+
+const renameAlertInputs = computed(() => {
+  const inputs: any[] = [{ name: 'name', type: 'text', placeholder: '新文件名', value: renameValue.value }]
+  if (selectedFile.value?.isEncrypted) {
+    inputs.push({ name: 'password', type: 'text', placeholder: '文件名加密密码（如需要）' })
+  }
+  return inputs
+})
 
 const currentPath = ref('/')
 const loading = ref(false)
@@ -687,20 +705,33 @@ async function loadFiles() {
 }
 
 async function handleRefresh(event: CustomEvent) {
-  try {
-    files.value = await listFiles(currentPath.value)
-    serverOnline.value = true
-    noPermission.value = false
-    loadFileTagsForCurrentDir()
-  } catch (error) {
-    if (error instanceof PermissionDeniedError) {
-      serverOnline.value = true
-      noPermission.value = true
+  if (selectedPlugin.value) {
+    pluginFiles.value = []
+    pluginLoaded.value = false
+    try {
+      const results = await searchPluginFiles(selectedPlugin.value)
+      pluginFiles.value = results
+    } catch (e) {
+      console.error('[Files] Plugin refresh failed:', e)
+    } finally {
+      pluginLoaded.value = true
     }
-    if (error instanceof NotFoundError) {
+  } else {
+    try {
+      files.value = await listFiles(currentPath.value)
       serverOnline.value = true
-      if (currentPath.value !== '/') {
-        goUp()
+      noPermission.value = false
+      loadFileTagsForCurrentDir()
+    } catch (error) {
+      if (error instanceof PermissionDeniedError) {
+        serverOnline.value = true
+        noPermission.value = true
+      }
+      if (error instanceof NotFoundError) {
+        serverOnline.value = true
+        if (currentPath.value !== '/') {
+          goUp()
+        }
       }
     }
   }
@@ -742,11 +773,28 @@ function goUp() {
 }
 
 async function handleFileClick(file: FileItem) {
+  const clickResult = await findClickHandler(file)
+  if (clickResult?.handled) {
+    const password = await promptPassword(file.name)
+    if (!password) return
+    const streamUrl = getStreamUrl(file, password)
+    router.push({ path: '/player', query: { path: file.path, name: file.name, streamUrl } })
+    return
+  }
+
   if (file.isDirectory) {
     const newPath = currentPath.value === '/'
       ? '/' + file.name
       : currentPath.value + '/' + file.name
     navigateTo(newPath)
+    return
+  }
+
+  if (isAlistEncrypted(file)) {
+    const password = await promptPassword(file.name)
+    if (!password) return
+    const streamUrl = getStreamUrl(file, password)
+    router.push({ path: '/player', query: { path: file.path, name: file.name, streamUrl } })
     return
   }
 
@@ -829,9 +877,11 @@ async function handleLongPress(file: FileItem) {
 
   const buttons: any[] = []
 
+  // ===== Section 1: 查看 / 打开 =====
   buttons.push({
     text: t('files.info'),
     icon: informationCircle,
+    cssClass: 'action-section-view',
     handler: () => {
       router.push({ path: '/tabs/file-info', query: { path: file.path, name: file.name } })
     },
@@ -841,6 +891,7 @@ async function handleLongPress(file: FileItem) {
     buttons.push({
       text: t('files.open'),
       icon: folderOpen,
+      cssClass: 'action-section-view',
       handler: () => {
         const newPath = currentPath.value === '/'
           ? '/' + file.name
@@ -848,37 +899,16 @@ async function handleLongPress(file: FileItem) {
         navigateTo(newPath)
       },
     })
-    buttons.push({
-      text: t('files.encrypt'),
-      icon: lockClosed,
-      handler: () => {
-        handleEncryptFile(file)
-      },
-    })
   } else if (file.isEncrypted) {
     buttons.push({
       text: t('files.preview'),
-      icon: image,
+      icon: eyeOutline,
+      cssClass: 'action-section-view',
       handler: () => {
         router.push({
           path: '/tabs/preview',
           query: { path: file.path, name: file.name, isEncrypted: 'true' },
         })
-      },
-    })
-    buttons.push({
-      text: t('files.decrypt'),
-      icon: lockClosed,
-      handler: () => {
-        handleDecryptFile(file)
-      },
-    })
-    buttons.push({
-      text: t('files.delete'),
-      icon: trash,
-      role: 'destructive',
-      handler: () => {
-        handleDeleteFile(file)
       },
     })
   } else {
@@ -889,7 +919,8 @@ async function handleLongPress(file: FileItem) {
       buttons.push({
         text: fa.text(),
         icon: fa.icon,
-        ...(fa.color ? { role: undefined, cssClass: `action-${fa.color}` } : {}),
+        cssClass: 'action-section-view',
+        ...(fa.color ? { role: undefined, cssClass: `action-section-view action-color-${fa.color}` } : {}),
         handler: () => {
           fa.handler(file)
         },
@@ -898,7 +929,8 @@ async function handleLongPress(file: FileItem) {
 
     buttons.push({
       text: isMedia ? t('files.play') : t('files.preview'),
-      icon: isMedia ? videocam : image,
+      icon: isMedia ? playCircle : eyeOutline,
+      cssClass: 'action-section-view',
       handler: () => {
         if (isMedia) {
           playMedia(file, category)
@@ -910,35 +942,24 @@ async function handleLongPress(file: FileItem) {
         }
       },
     })
-    buttons.push({
-      text: t('files.encrypt'),
-      icon: lockClosed,
-      handler: () => {
-        handleEncryptFile(file)
-      },
-    })
-    buttons.push({
-      text: t('files.delete'),
-      icon: trash,
-      role: 'destructive',
-      handler: () => {
-        handleDeleteFile(file)
-      },
-    })
   }
 
+  // ===== Section 3: 文件管理 =====
   buttons.push({
     text: '重命名',
     icon: createOutline,
+    cssClass: 'action-section-manage',
     handler: () => {
       selectedFile.value = file
       renameValue.value = file.name
+      renamePassword.value = ''
       showRenameDialog.value = true
     },
   })
   buttons.push({
     text: '复制',
     icon: copyOutline,
+    cssClass: 'action-section-manage',
     handler: () => {
       handleCopy(file)
     },
@@ -946,6 +967,7 @@ async function handleLongPress(file: FileItem) {
   buttons.push({
     text: '移动',
     icon: arrowForwardOutline,
+    cssClass: 'action-section-manage',
     handler: () => {
       selectedFile.value = file
       moveTargetPath.value = currentPath.value
@@ -955,6 +977,7 @@ async function handleLongPress(file: FileItem) {
   buttons.push({
     text: '分享',
     icon: shareOutline,
+    cssClass: 'action-section-manage',
     handler: () => {
       handleShare(file)
     },
@@ -962,6 +985,7 @@ async function handleLongPress(file: FileItem) {
   buttons.push({
     text: '标签管理',
     icon: pricetagOutline,
+    cssClass: 'action-section-manage',
     handler: async () => {
       selectedFile.value = file
       newTagInput.value = ''
@@ -977,6 +1001,19 @@ async function handleLongPress(file: FileItem) {
     },
   })
 
+  // ===== Section 4: 危险操作 =====
+  if (!file.isDirectory) {
+    buttons.push({
+      text: t('files.delete'),
+      icon: trash,
+      role: 'destructive',
+      cssClass: 'action-section-danger',
+      handler: () => {
+        handleDeleteFile(file)
+      },
+    })
+  }
+
   buttons.push({
     text: t('files.cancelSelect'),
     role: 'cancel',
@@ -985,6 +1022,7 @@ async function handleLongPress(file: FileItem) {
   const actionSheet = await actionSheetController.create({
     header: file.name,
     buttons,
+    cssClass: 'file-action-sheet',
   })
   await actionSheet.present()
 }
@@ -1003,8 +1041,16 @@ async function handleCopy(file: FileItem) {
 async function handleRename(file: FileItem) {
   if (!renameValue.value.trim() || renameValue.value === file.name) return
   try {
-    await renameFile(file.path, renameValue.value.trim())
+    if (file.isEncrypted) {
+      const result = await renameOriginalName(file.path, renameValue.value.trim(), renamePassword.value.trim() || undefined)
+      if (result.success) {
+        showToast({ message: '原始文件名已更新' })
+      }
+    } else {
+      await renameFile(file.path, renameValue.value.trim())
+    }
     showRenameDialog.value = false
+    renamePassword.value = ''
     await loadFiles()
   } catch (e) { showToast({ message: `重命名失败: ${e}` }) }
 }
@@ -1086,20 +1132,6 @@ async function loadFileTagsForCurrentDir() {
   setupLazyThumbnails()
 }
 
-function handleEncryptFile(file: FileItem) {
-  router.push({
-    path: '/tabs/tasks',
-    query: { action: 'new', type: 'encrypt', source: file.path },
-  })
-}
-
-function handleDecryptFile(file: FileItem) {
-  router.push({
-    path: '/tabs/tasks',
-    query: { action: 'new', type: 'decrypt', source: file.path },
-  })
-}
-
 async function handleDeleteFile(file: FileItem) {
   const alert = await alertController.create({
     header: t('files.delete'),
@@ -1158,16 +1190,18 @@ async function openSideDrawer() {
   await menuController.open('plugin-menu')
 }
 
-function getPluginIcon(name: string): string {
-  const icons: Record<string, string> = { video: 'film-outline', audio: 'musical-notes-outline', image: 'image-outline', pdf: 'document-text-outline', text: 'document-outline', wps: 'document-outline' }
-  return icons[name] || 'cube-outline'
+function getPluginIcon(plugin: PluginMeta): any {
+  const featureIcon = getFeatureIcon(plugin.name)
+  if (featureIcon) return featureIcon
+  const icons: Record<string, string> = { video: filmOutline, audio: musicalNotesOutline, image: imageOutline, pdf: documentTextOutline, text: documentOutline, wps: documentOutline }
+  return icons[plugin.name] || lockClosed
 }
 
 async function searchPluginFiles(
   plugin: PluginMeta,
   onItem?: (file: FileItem) => void
 ): Promise<FileItem[]> {
-  if (plugin.supportedExtensions.length === 0) return []
+  if (!plugin.supportedExtensions || plugin.supportedExtensions.length === 0) return []
   const result = await listPluginFilesStream(
     currentPath.value,
     plugin.supportedExtensions,
@@ -1264,9 +1298,9 @@ const filteredPluginFiles = computed(() => {
   if (!selectedPlugin.value) return []
   let list: FileItem[]
   if (pluginTab.value === 'container') {
-    list = pluginFiles.value.filter(f => f.isEncrypted || selectedPlugin.value?.containerExtension && f.name.endsWith(selectedPlugin.value.containerExtension))
+    list = pluginFiles.value.filter(f => isAnyContainerFile(f))
   } else {
-    list = pluginFiles.value.filter(f => !f.isEncrypted)
+    list = pluginFiles.value.filter(f => !isAnyContainerFile(f))
   }
   const query = searchQuery.value.trim().toLowerCase()
   if (query) {
@@ -1340,6 +1374,21 @@ onMounted(() => {
   loadTags()
   eventBus.on('file:change', onFileChange)
   window.addEventListener('encv:backend-ready', onBackendReadyWindow as EventListener)
+  if (import.meta.env.DEV) {
+    import('@/composables/useTestBackdoor').then(({ useTestBackdoor }) => {
+      import('@/composables/useNewTaskModal').then(({ useNewTaskModal: createNewTaskModal }) => {
+        const { openNewTask } = createNewTaskModal()
+        useTestBackdoor(files, {
+          onLongPress: handleLongPress,
+          onClick: handleFileClick,
+          navigateTo: navigateTo,
+          openNewTask: (sourcePath?: string, taskType?: 'encrypt' | 'decrypt') => {
+            return openNewTask(sourcePath, taskType)
+          },
+        })
+      })
+    })
+  }
 })
 
 onIonViewWillEnter(() => {
@@ -1598,4 +1647,38 @@ ion-item {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ===== 长按菜单分区样式 (action-sheet overlay，需 :global) ===== */
+:global(.file-action-sheet .action-button) {
+  padding: 12px 16px;
+  font-size: 15px;
+}
+
+:global(.file-action-sheet .action-section-view) {
+  --color: var(--ion-color-primary);
+}
+:global(.file-action-sheet .action-section-view .action-button-icon) {
+  color: var(--ion-color-primary) !important;
+}
+
+:global(.file-action-sheet .action-section-crypto) {
+  --color: var(--ion-color-warning);
+}
+:global(.file-action-sheet .action-section-crypto .action-button-icon) {
+  color: #e6a000 !important;
+}
+
+:global(.file-action-sheet .action-section-manage) {
+  --color: var(--ion-color-medium);
+}
+:global(.file-action-sheet .action-section-manage .action-button-icon) {
+  color: var(--ion-color-medium-shade) !important;
+}
+
+:global(.file-action-sheet .action-section-danger) {
+  --color: var(--ion-color-danger);
+}
+:global(.file-action-sheet .action-section-danger .action-button-icon) {
+  color: var(--ion-color-danger) !important;
 }</style>

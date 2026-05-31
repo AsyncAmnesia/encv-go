@@ -68,6 +68,7 @@ import {
 import { playCircle, folder, lockClosed, globe, layersOutline } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { useRouter } from 'vue-router'
+import { onIonViewWillEnter } from '@ionic/vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -91,6 +92,8 @@ function handleOpenRemote() {
 function handleOpenExtensions() {
   router.push('/tabs/extensions')
 }
+
+onIonViewWillEnter(() => {})
 </script>
 
 <style scoped>

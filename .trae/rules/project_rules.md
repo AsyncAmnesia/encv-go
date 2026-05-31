@@ -108,4 +108,128 @@ mavenCentral()
 - **本项目"金标准"文件**（已在 CI 编译通过，写新代码前必须参照其 import 风格和 API 用法）：
   - `plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvPlayerScreen.kt`
   - `plugin-mpv-player/src/main/java/com/encvgo/plugin/mpv/MpvProgressBar.kt`
-- **写完任何 .kt Compose 文件后**：对照 compose-reference.md 逐条检查 import 完整性和 API 正确性
+  - **写完任何 .kt Compose 文件后**：对照 compose-reference.md 逐条检查 import 完整性和 API 正确性
+
+## 防御性编程铁律（重要！违反 = 严重错误）
+
+> 来自实战踩坑：硬编码 fallback 导致 API 失效时放行危险操作。
+
+### 一、禁止硬编码动态数据
+
+**任何由后端 API 返回的运行时数据，前端不得维护本地副本或 fallback 默认值。**
+
+| 数据类型 | 示例 | 正确做法 |
+|---------|------|---------|
+| 容器扩展名映射 | `.sccgv → video` | 始终从 `/api/plugins/container-extensions` 获取 |
+| 插件配置 schema | 字段名/类型/默认值 | 从 `/api/config/schema` 动态加载 |
+| 文件类型 → 插件路由 | `.ts → text/video` | 由后端 `SupportedExtensions()` + MIME 检测决定 |
+| 加密算法列表 | AES/ChaCha20 等 | 后端注册表驱动 |
+
+**错误模式（禁止）**：
+```typescript
+// ❌ 硬编码 fallback — 新增插件后此处过时
+const FALLBACK: Record<string, string> = { '.sccgv': 'video', '.sccga': 'audio' }
+return data?.extensions ?? FALLBACK
+```
+
+**正确做法**：API 未就绪时返回特殊标记值，触发阻断行为（见下文）。
+
+### 二、不确定时阻断，不猜测（Fail-Safe 原则）
+
+当验证逻辑依赖的数据源不可用时（API 404/超时/未初始化），**必须阻断危险操作而非放行**。
+
+```
+数据源状态        验证结果          操作允许？
+─────────       ────────         ───────
+✅ API 正常      返回 ["video"]    按 conflict 判断
+⚠️ API 未加载   返回 [UNAVAILABLE]  🚫 禁用保存
+❌ API 失败     返回 [UNAVAILABLE]  🚫 禁用保存
+```
+
+**实现模式**：
+
+```typescript
+const UNAVAILABLE = '__unavailable__'
+
+function getConflictingPlugins(suffix): string[] {
+  if (!data.value) return [UNAVAILABLE]  // data=null 时返回标记值
+  // ... 正常检测逻辑
+}
+
+// PluginSettings.vue 保存按钮
+:disabled="configLoading || suffixConflict.length > 0"
+// UNAVAILABLE.length === 1 > 0 → 自动禁用 ✅
+```
+
+**UI 区分两种阻断原因**：
+- **已知冲突**（橙色）：`.sccgv 与 video 冲突`
+- **验证不可用**（红色）：无法验证唯一性（API 不可用），为防止冲突暂不允许保存
+
+### 三、三层防御架构
+
+本项目的输入校验遵循「前端实时提示 → API 层拦截(400) → 启动时检测(Error日志)」三层防御。每一层都必须独立完整，不得假设上层已拦截：
+
+| 层级 | 触发时机 | 行为 |
+|------|---------|------|
+| L1 前端 | 用户输入即时 | disabled 保存按钮 + 警告文案 |
+| L2 API | PUT /api/config | `validateContainerExtensionsInConfig()` 返回 400 + 错误信息 |
+| L3 启动 | `InitializePlugins()` | slog.Error 日志 + 继续启动不 abort |
+
+**关键约束**：L2 和 L3 不得依赖 L1 的存在。用户可能通过第三方编辑器直接修改 config JSON 绕过前端。
+
+## Trae Web 沙箱前端访问规则（重要！）
+
+> **铁律：云端沙箱只能通过 agent-tool-host 代理访问前端，严禁混淆端口身份**
+
+### 端口身份（不可混淆）
+
+| 端口 | 进程 | 身份 |
+|------|------|------|
+| **5173** (或动态分配) | `agent-tool-host` (`/app/bin/agent-tool-host`) | **前端 HTTP 代理** — 用户浏览器实际访问的入口，等价于 vite dev server |
+| **5174/5175/...** (vite 动态分配) | `node .../vite` | Vite dev server 原始端口 — agent-tool-host 反向代理到此 |
+
+### 关键认知
+
+1. **agent-tool-host 就是前端服务**：用户通过 OpenPreview 或浏览器访问的 URL 指向的端口就是 agent-tool-host，它代理了 Vite HMR
+2. **Vite 端口可能漂移**：当 5173 被占用时 vite 会尝试 5174、5175… 但用户始终通过 agent-tool-host 访问
+3. **`lsof -i :5173` 看到 agent-tool-host 是正常的**，不代表"vite 没在运行"
+4. **禁止将 agent-tool-host 进程误判为非前端服务**：这会导致错误结论如"你访问的不是新代码"
+
+### 验证代码是否生效的正确方法
+
+```bash
+# 1. 确认 vite 在运行（可能在 5174+）
+lsof -i :5173 -i :5174 -i :5175 -t | xargs ps -p -o command= 2>/dev/null
+
+# 2. 通过 agent-tool-host 端口验证源码内容
+curl -s http://localhost:5173/src/views/Tasks.vue | grep "predictPlugin"
+
+# 3. 如果 agent-tool-host 不在 5173，用 OpenPreview 获取的实际 URL
+```
+
+### 禁止行为
+
+- ❌ 看到 `agent-tool-host` 就断言"这不是 vite / 这不是前端"
+- ❌ 杀掉 agent-tool-host 进程（这是沙箱基础设施）
+- ❌ 让用户访问 vite 原始端口而非 agent-tool-host 代理端口
+
+## 测试覆盖铁律（重要！违反 = 严重失职）
+
+> **任何涉及 UI 状态变更的逻辑必须有对应测试覆盖，不允许依赖手动浏览器验证**
+
+### 必须测试的场景
+
+| 场景类型 | 示例 | 测试方式 |
+|---------|------|---------|
+| 路由跳转 + Modal 打开 | Files → Tasks 新建任务 | 单元测试 mock router + 断言 modal state |
+| API 调用触发时机 | processQueryAction 中 predictPlugin 是否被调用 | spy/predictPlugin mock + 断言调用次数 |
+| computed 派生状态 | candidates 变化 → predictedPlugin 自动更新 | 设置 candidates → 断言 predictedPlugin 值 |
+| 表单重置逻辑 | validateSourcePath 错误路径清空状态 | 触发错误条件 → 断言所有相关 ref 已重置 |
+| 条件渲染 | passwordStrategy=independent 时字段显隐 | 设置不同 strategy → 断言 DOM 元素存在性 |
+
+### 测试优先级
+
+1. **路由/导航逻辑** — 最高优先级（modal 不打开 = 功能完全不可用）
+2. **API 调用链** — 高优先级（数据不加载 = UI 为空）
+3. **computed 派生** — 中优先级（显示错误但可排查）
+4. **样式/CSS** — 低优先级（视觉问题不影响功能）

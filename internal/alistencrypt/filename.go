@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	sourceChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+	sourceChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-~+"
 	OrigPrefix   = "orig_"
 )
 
@@ -274,7 +274,7 @@ func ConvertShowName(encodedName string, password string, encType string) string
 	ext := path.Ext(fileName)
 	encName := strings.TrimSuffix(fileName, ext)
 
-	showName := DecodeName(password, encType, encName)
+	showName := DecodeName(encName, password, encType)
 	if showName == "" {
 		return OrigPrefix + fileName
 	}
@@ -296,7 +296,7 @@ func ConvertRealName(showName string, password string, encType string) string {
 
 	ext := path.Ext(decoded)
 
-	encName := EncodeName(password, encType, decoded)
+	encName := EncodeName(decoded, password, encType)
 
 	return encName + ext
 }

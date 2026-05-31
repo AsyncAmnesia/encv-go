@@ -51,3 +51,41 @@ type FragmentBuilder interface {
 	// BuildFragments 根据逻辑文件大小生成分片元数据
 	BuildFragments(logicalFileSize int64) ([]types.Fragment, error)
 }
+
+// PasswordStrategy 声明插件的密码使用策略
+type PasswordStrategy string
+
+const (
+	PasswordGlobal      PasswordStrategy = "global"      // 使用全局密码（video 等大多数插件）
+	PasswordIndependent PasswordStrategy = "independent"  // 使用插件独立密码，不用全局密码（alist_encrypt）
+	PasswordNone         PasswordStrategy = "none"         // 不需要密码
+)
+
+// TaskOptions 返回该插件在创建加解密任务时需要的选项声明
+// 前端根据此声明动态渲染表单字段，无需硬编码插件特定逻辑
+type TaskOptions struct {
+	PasswordStrategy     PasswordStrategy
+	SupportVersionSelect bool
+	SupportedVersions    []int
+	DefaultVersion       int
+	ExtraFields          []TaskField
+}
+
+// TaskField 声明任务创建时的额外输入字段
+type TaskField struct {
+	Key          string   // 字段名，如 "password"
+	Label        string   // 显示标签（i18n key 或直接文本）
+	Type         string   // "string" | "password" | "select" | "bool"
+	Required     bool     // 是否必填
+	DefaultValue string   // 默认值
+	Help         string   // 帮助文本（i18n key）
+	Options      []string // Type="select" 时的可选项
+	Condition    string   // 显示条件: "encrypt" | "decrypt" | ""(始终显示)
+}
+
+// TaskPasswordResolver 定义插件自定义主密码解析能力
+// 插件根据 ExtraFields 和策略返回主密码（L0 或 L1）
+// L2 二级密码不在此接口处理，由 TaskManager 单独传递
+type TaskPasswordResolver interface {
+	ResolveTaskPassword(taskPassword string, extraFields map[string]string) string
+}

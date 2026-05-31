@@ -34,16 +34,6 @@ async function requestEssentialPermissions() {
   localStorage.setItem(FIRST_LAUNCH_KEY, '1')
 }
 
-onMounted(async () => {
-  hijackConsole()
-  initTheme()
-  autoInitVConsole()
-  connect()
-  registerFileFeature(createAlistEncryptFeature())
-  await requestEssentialPermissions()
-  applyScreenOrientation()
-})
-
 async function applyScreenOrientation() {
   if (!isNative()) return
   const orientation = localStorage.getItem('encv_screen_orientation') || 'auto'
@@ -57,9 +47,19 @@ async function applyScreenOrientation() {
       await ScreenOrientation.unlock()
     }
   } catch (e) {
-    console.warn('[App] Failed to apply screen orientation:', e)
+    console.debug('[App] Failed to apply screen orientation:', e)
   }
 }
+
+onMounted(async () => {
+  hijackConsole()
+  initTheme()
+  autoInitVConsole()
+  connect()
+  registerFileFeature(createAlistEncryptFeature())
+  await requestEssentialPermissions()
+  applyScreenOrientation()
+})
 
 onUnmounted(() => {
   disconnect()

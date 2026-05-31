@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/Soltus/encv-go/internal/auth"
 	"github.com/Soltus/encv-go/internal/config"
+	"github.com/Soltus/encv-go/internal/v2/plugins"
 	"github.com/gin-gonic/gin"
 )
 
@@ -73,6 +75,11 @@ func (s *Server) handlePutConfigGin(c *gin.Context) {
 	}
 
 	if errMsg := validateWebdavRouteInConfig(raw); errMsg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
+		return
+	}
+
+	if errMsg := validateContainerExtensionsInConfig(raw); errMsg != "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": errMsg})
 		return
 	}
@@ -200,5 +207,54 @@ func validateWebdavRouteInConfig(raw map[string]interface{}) string {
 	if !strings.HasPrefix(cleaned, "/") {
 		return "webdav root must start with '/'"
 	}
+	return ""
+}
+
+func validateContainerExtensionsInConfig(raw map[string]interface{}) string {
+	ps, ok := raw["plugin_settings"].(map[string]interface{})
+	if !ok {
+		return ""
+	}
+
+	configuredPlugins := make(map[string]bool, len(ps))
+	for name := range ps {
+		configuredPlugins[name] = true
+	}
+
+	extToPlugin := make(map[string]string)
+	for _, p := range plugins.Plugins {
+		if configuredPlugins[p.Name()] {
+			continue
+		}
+		ext := p.GetContainerExtension()
+		if ext != "" && ext != "." {
+			extToPlugin[ext] = p.Name()
+		}
+	}
+
+	for pluginName, settingsRaw := range ps {
+		settings, ok := settingsRaw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		var suffix string
+		if s, ok := settings["suffix"].(string); ok && s != "" {
+			suffix = s
+		} else if ext, ok := settings["ext"].(string); ok && ext != "" {
+			suffix = ext
+		} else {
+			continue
+		}
+
+		if existing, exists := extToPlugin[suffix]; exists && existing != pluginName {
+			return fmt.Sprintf("container extension '%s' conflicts between plugin '%s' and '%s'; container extensions must be unique", suffix, existing, pluginName)
+		}
+		if prev, dup := extToPlugin[suffix]; dup && prev != pluginName {
+			return fmt.Sprintf("container extension '%s' used by multiple configured plugins; container extensions must be unique", suffix)
+		}
+		extToPlugin[suffix] = pluginName
+	}
+
 	return ""
 }

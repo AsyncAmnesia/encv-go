@@ -25,38 +25,54 @@ vi.mock('@ionic/vue', () => ({
   },
 }))
 
+const mockOpenNewTask = vi.fn()
+
+vi.mock('@/composables/useNewTaskModal', () => ({
+  useNewTaskModal: () => ({
+    openNewTask: mockOpenNewTask,
+  }),
+}))
+
+const TEST_SUFFIX = '.ae'
+
+vi.mock('@/composables/useConfig', () => ({
+  getFieldValue: (_keys: string[]) => TEST_SUFFIX,
+}))
+
 import { isAlistEncrypted, getSessionPassword, setSessionPassword, clearPasswordCache, getDecodedName, loadDecodedName, getStreamUrl, clearDecodeCache } from '@/features/alist-encrypt/useAlistEncrypt'
 import { getAlistBadge } from '@/features/alist-encrypt/badge'
 import { getAlistActions } from '@/features/alist-encrypt/actions'
 import { createAlistEncryptFeature } from '@/features/alist-encrypt/index'
+import { useNewTaskModal } from '@/composables/useNewTaskModal'
 import { decodeAlistFilename } from '@/api/encv'
 import type { FileItem } from '@/api/encv'
 
-const aeFile: FileItem = { name: 'video.bin', path: '/media/video.bin', isDirectory: false }
+const aeFile: FileItem = { name: `video${TEST_SUFFIX}`, path: `/media/video${TEST_SUFFIX}`, isDirectory: false }
 const normalFile: FileItem = { name: 'doc.pdf', path: '/docs/doc.pdf', isDirectory: false }
 const dirFile: FileItem = { name: 'folder', path: '/folder', isDirectory: true }
-const encryptedFile: FileItem = { name: 'secret.bin', path: '/secret.bin', isDirectory: false, isEncrypted: true }
-const upperBinFile: FileItem = { name: 'video.BIN', path: '/video.BIN', isDirectory: false }
+const encryptedFile: FileItem = { name: `secret${TEST_SUFFIX}`, path: `/secret${TEST_SUFFIX}`, isDirectory: false, isEncrypted: true }
+const upperSuffixFile: FileItem = { name: `video${TEST_SUFFIX.toUpperCase()}`, path: `/video${TEST_SUFFIX.toUpperCase()}`, isDirectory: false }
+const encContainerFile: FileItem = { name: 'data.enc', path: '/data.enc', isDirectory: false, isEncrypted: true }
 
 describe('isAlistEncrypted', () => {
-  it('.bin file + not directory + not encrypted → true', () => {
+  it('匹配配置后缀的文件 → true', () => {
     expect(isAlistEncrypted(aeFile)).toBe(true)
   })
 
-  it('directory → false', () => {
+  it('目录 → false', () => {
     expect(isAlistEncrypted(dirFile)).toBe(false)
   })
 
-  it('isEncrypted=true → false (already handled by other container)', () => {
-    expect(isAlistEncrypted(encryptedFile)).toBe(false)
+  it('isEncrypted=true 但匹配配置后缀 → true（不再排除）', () => {
+    expect(isAlistEncrypted(encryptedFile)).toBe(true)
   })
 
-  it('.mp4 file → false', () => {
+  it('不匹配后缀的普通文件 → false', () => {
     expect(isAlistEncrypted(normalFile)).toBe(false)
   })
 
-  it('.BIN uppercase → false (endsWith is case-sensitive)', () => {
-    expect(isAlistEncrypted(upperBinFile)).toBe(false)
+  it('大小写不匹配 → false', () => {
+    expect(isAlistEncrypted(upperSuffixFile)).toBe(false)
   })
 })
 
@@ -66,8 +82,8 @@ describe('LRU Password Cache', () => {
   })
 
   it('setSessionPassword + getSessionPassword round-trip', () => {
-    setSessionPassword('/a.bin', 'pass123')
-    expect(getSessionPassword('/a.bin')).toBe('pass123')
+    setSessionPassword(`/a${TEST_SUFFIX}`, 'pass123')
+    expect(getSessionPassword(`/a${TEST_SUFFIX}`)).toBe('pass123')
   })
 
   it('unset path returns undefined', () => {
@@ -75,11 +91,11 @@ describe('LRU Password Cache', () => {
   })
 
   it('clearPasswordCache removes everything', () => {
-    setSessionPassword('/a.bin', 'p1')
-    setSessionPassword('/b.bin', 'p2')
+    setSessionPassword(`/a${TEST_SUFFIX}`, 'p1')
+    setSessionPassword(`/b${TEST_SUFFIX}`, 'p2')
     clearPasswordCache()
-    expect(getSessionPassword('/a.bin')).toBeUndefined()
-    expect(getSessionPassword('/b.bin')).toBeUndefined()
+    expect(getSessionPassword(`/a${TEST_SUFFIX}`)).toBeUndefined()
+    expect(getSessionPassword(`/b${TEST_SUFFIX}`)).toBeUndefined()
   })
 })
 
@@ -156,8 +172,10 @@ describe('getAlistActions', () => {
     expect(actions.map((a) => a.id)).toEqual(['alist-stream-preview', 'alist-decrypt'])
   })
 
-  it('non-AE file returns empty array', () => {
-    expect(getAlistActions(normalFile)).toEqual([])
+  it('non-AE file returns encrypt action (isActive expanded)', () => {
+    const actions = getAlistActions(normalFile)
+    expect(actions).toHaveLength(1)
+    expect(actions[0].id).toBe('alist-encrypt')
   })
 
   it('actions have correct structure', () => {
@@ -181,17 +199,18 @@ describe('createAlistEncryptFeature factory', () => {
     expect(typeof feat.onDeactivate).toBe('function')
   })
 
-  it('isActive delegates to isAlistEncrypted', () => {
+  it('isActive scope expanded: AE file true, normal file true, dir false', () => {
     const feat = createAlistEncryptFeature()
     expect(feat.isActive(aeFile)).toBe(true)
-    expect(feat.isActive(normalFile)).toBe(false)
+    expect(feat.isActive(normalFile)).toBe(true)
+    expect(feat.isActive(dirFile)).toBe(false)
   })
 
   it('onDeactivate clears caches', () => {
-    setSessionPassword('/x.bin', 'p')
+    setSessionPassword(`/x${TEST_SUFFIX}`, 'p')
     const feat = createAlistEncryptFeature()
     feat.onDeactivate?.()
-    expect(getSessionPassword('/x.bin')).toBeUndefined()
+    expect(getSessionPassword(`/x${TEST_SUFFIX}`)).toBeUndefined()
   })
 })
 
@@ -201,5 +220,59 @@ describe('getStreamUrl', () => {
     expect(url).toContain('/api/alist-encrypt/stream')
     expect(url).toContain('path=')
     expect(url).toContain('password=secret')
+  })
+})
+
+describe('isActive (expanded scope)', () => {
+  it('非目录普通文件返回 true', () => {
+    const feat = createAlistEncryptFeature()
+    expect(feat.isActive(normalFile)).toBe(true)
+  })
+
+  it('AE 后缀加密文件返回 true', () => {
+    const feat = createAlistEncryptFeature()
+    expect(feat.isActive(aeFile)).toBe(true)
+  })
+
+  it('目录文件返回 false', () => {
+    const feat = createAlistEncryptFeature()
+    expect(feat.isActive(dirFile)).toBe(false)
+  })
+})
+
+describe('getAlistActions - encrypt action for normal files', () => {
+  it('普通文件返回 1 个 encrypt action', () => {
+    const actions = getAlistActions(normalFile)
+    expect(actions).toHaveLength(1)
+    expect(actions[0].id).toBe('alist-encrypt')
+  })
+
+  it('encrypt action 有正确的属性', () => {
+    const actions = getAlistActions(normalFile)
+    const encrypt = actions.find((a) => a.id === 'alist-encrypt')!
+    expect(encrypt.color).toBe('warning')
+    expect(encrypt.text()).toBe('alistEncrypt.encrypt')
+  })
+
+  it('encrypt action handler 调用 openNewTask with encrypt type', async () => {
+    const actions = getAlistActions(normalFile)
+    const encrypt = actions.find((a) => a.id === 'alist-encrypt')!
+    await encrypt.handler(normalFile)
+    expect(mockOpenNewTask).toHaveBeenCalledWith(normalFile.path, 'encrypt')
+  })
+})
+
+describe('getAlistActions - ENCV container decrypt (branch B)', () => {
+  it('isEncrypted=true 且非 alist-encrypt 后缀返回 decrypt action', () => {
+    const actions = getAlistActions(encContainerFile)
+    expect(actions).toHaveLength(1)
+    expect(actions[0].id).toBe('alist-decrypt-container')
+  })
+
+  it('container decrypt action 调用 openNewTask with decrypt type', async () => {
+    const actions = getAlistActions(encContainerFile)
+    const decrypt = actions.find((a) => a.id === 'alist-decrypt-container')!
+    await decrypt.handler(encContainerFile)
+    expect(mockOpenNewTask).toHaveBeenCalledWith(encContainerFile.path, 'decrypt')
   })
 })

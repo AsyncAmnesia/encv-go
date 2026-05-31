@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Soltus/encv-go/internal/config"
@@ -170,4 +171,121 @@ func searchString(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func initPluginsWithSettings(t *testing.T, userSettings map[string]json.RawMessage) {
+	t.Helper()
+	fullSettings, err := BuildFullPluginSettings(userSettings)
+	require.NoError(t, err, "BuildFullPluginSettings should succeed")
+
+	cfg := &config.Config{
+		PluginSettings: fullSettings,
+	}
+	ctx := config.NewContext(context.Background(), cfg)
+
+	for _, p := range Plugins {
+		require.NoError(t, p.Initialize(ctx), "plugin %s should initialize", p.Name())
+	}
+}
+
+func defaultPluginSettings() map[string]json.RawMessage {
+	return nil
+}
+
+func TestValidateExtensionUniqueness_NoConflict(t *testing.T) {
+	initPluginsWithSettings(t, defaultPluginSettings())
+
+	conflicts := ValidateExtensionUniqueness()
+	assert.Empty(t, conflicts, "默认配置下所有容器扩展名应唯一，无冲突")
+}
+
+func TestValidateExtensionUniqueness_RealConflict(t *testing.T) {
+	conflictingSettings := map[string]json.RawMessage{
+		"video":        json.RawMessage(`{"ext":".sccgv"}`),
+		"alist_encrypt": json.RawMessage(`{"suffix":".sccgv"}`),
+	}
+	initPluginsWithSettings(t, conflictingSettings)
+
+	conflicts := ValidateExtensionUniqueness()
+	assert.GreaterOrEqual(t, len(conflicts), 1, "应检测到至少 1 个冲突")
+
+	var sccgvConflict *ExtensionConflict
+	for i := range conflicts {
+		if conflicts[i].Extension == ".sccgv" {
+			sccgvConflict = &conflicts[i]
+			break
+		}
+	}
+	require.NotNil(t, sccgvConflict, "应存在 .sccgv 扩展名冲突记录")
+
+	assert.Contains(t, sccgvConflict.PluginNames, "video", "冲突应包含 video 插件")
+	assert.Contains(t, sccgvConflict.PluginNames, "alist_encrypt", "冲突应包含 alist_encrypt 插件")
+}
+
+func TestGetContainerExtensionsMap_AllExtensions(t *testing.T) {
+	initPluginsWithSettings(t, defaultPluginSettings())
+
+	extMap := GetContainerExtensionsMap()
+
+	assert.Contains(t, extMap, ".sccgv", "应包含 video 的容器扩展名 .sccgv")
+	assert.Equal(t, "video", extMap[".sccgv"])
+
+	assert.Contains(t, extMap, ".sccga", "应包含 audio 的容器扩展名 .sccga")
+	assert.Equal(t, "audio", extMap[".sccga"])
+
+	assert.GreaterOrEqual(t, len(extMap), 6, "应包含至少 6 个插件的容器扩展名映射")
+}
+
+func TestSourceExtensions_OverlapAllowed(t *testing.T) {
+	var textPlugin, videoPlugin Plugin
+	for _, p := range Plugins {
+		if p.Name() == "text" {
+			textPlugin = p
+		}
+		if p.Name() == "video" {
+			videoPlugin = p
+		}
+	}
+	require.NotNil(t, textPlugin)
+	require.NotNil(t, videoPlugin)
+
+	textExts := textPlugin.SupportedExtensions()
+	videoExts := videoPlugin.SupportedExtensions()
+
+	assert.Contains(t, textExts, "tsx", "text 插件应支持 tsx 源文件扩展名")
+
+	assert.IsType(t, []string{}, textExts, "SupportedExtensions 应返回字符串切片")
+	assert.IsType(t, []string{}, videoExts, "SupportedExtensions 应返回字符串切片")
+
+	conflicts := ValidateExtensionUniqueness()
+	assert.Empty(t, conflicts, "源文件扩展名的重叠不应触发容器扩展名冲突检测")
+}
+
+func TestContainerExtVsSourceExt_DifferentConcepts(t *testing.T) {
+	initPluginsWithSettings(t, defaultPluginSettings())
+
+	for _, p := range Plugins {
+		containerExt := p.GetContainerExtension()
+		sourceExts := p.SupportedExtensions()
+
+		assert.True(t, strings.HasPrefix(containerExt, "."),
+			"插件 %s 的 GetContainerExtension()应以点开头，实际值: %q", p.Name(), containerExt)
+
+		for _, srcExt := range sourceExts {
+			assert.False(t, strings.HasPrefix(srcExt, "."),
+				"插件 %s 的 SupportedExtensions()应不带点前缀，发现违规值: %q", p.Name(), srcExt)
+		}
+
+		if len(sourceExts) > 0 {
+			allDotPrefixed := true
+			for _, srcExt := range sourceExts {
+				if !strings.HasPrefix(srcExt, ".") {
+					allDotPrefixed = false
+					break
+				}
+			}
+			assert.False(t, allDotPrefixed,
+				"插件 %s: 容器扩展名(%q)带点、源文件扩展名不带点 — 格式应不同", p.Name(), containerExt)
+		}
+	}
 }

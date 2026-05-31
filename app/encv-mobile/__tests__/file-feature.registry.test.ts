@@ -48,7 +48,7 @@ describe('useFileFeatures - registry lifecycle', () => {
   })
 
   it('duplicate registration is skipped with warning', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const warnSpy = vi.spyOn(console, 'debug').mockImplementation(() => {})
     const feature: FileFeature = { id: 'dup', isActive: () => true }
     registerFileFeature(feature)
     registerFileFeature(feature)
@@ -100,7 +100,7 @@ describe('useFileFeatures - getBadges', () => {
   })
 
   it('isolates errors from individual features', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const warnSpy = vi.spyOn(console, 'debug').mockImplementation(() => {})
     registerFileFeature({
       id: 'exploding',
       isActive: () => true,
@@ -174,7 +174,7 @@ describe('useFileFeatures - getAllActions', () => {
   })
 
   it('handles getFileActions throwing error gracefully', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const warnSpy = vi.spyOn(console, 'debug').mockImplementation(() => {})
     registerFileFeature({
       id: 'action-error',
       isActive: () => true,

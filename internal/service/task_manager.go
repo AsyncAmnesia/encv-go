@@ -15,30 +15,34 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
+	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	"github.com/Soltus/encv-go/internal/v2/plugins/video"
 	"github.com/Soltus/encv-go/internal/v2/types"
 	"github.com/google/uuid"
 )
 
 type MobileTask struct {
-	ID               string     `json:"id"`
-	Type             string     `json:"type"`
-	SourcePath       string     `json:"sourcePath"`
-	TargetPath       string     `json:"targetPath,omitempty"`
-	Password         string     `json:"password,omitempty"`
-	Status           string     `json:"status"`
-	Progress         int        `json:"progress"`
-	Phase            string     `json:"phase,omitempty"`
-	Speed            string     `json:"speed,omitempty"`
-	Eta              string     `json:"eta,omitempty"`
-	Error            string     `json:"error,omitempty"`
-	ErrorDetail      string     `json:"errorDetail,omitempty"`
-	Warning          string     `json:"warning,omitempty"`
-	WarningDetail    string     `json:"warningDetail,omitempty"`
-	ContainerVersion int        `json:"containerVersion,omitempty"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	CompletedAt      *time.Time `json:"completedAt,omitempty"`
-	cancelFn         context.CancelFunc
+	ID                string            `json:"id"`
+	Type              string            `json:"type"`
+	SourcePath        string            `json:"sourcePath"`
+	TargetPath        string            `json:"targetPath,omitempty"`
+	Password          string            `json:"password,omitempty"`
+	SecondaryPassword string            `json:"secondaryPassword,omitempty"`
+	ExtraFields       map[string]string `json:"extraFields,omitempty"`
+	PluginName        string            `json:"pluginName,omitempty"`
+	Status            string            `json:"status"`
+	Progress          int               `json:"progress"`
+	Phase             string            `json:"phase,omitempty"`
+	Speed             string            `json:"speed,omitempty"`
+	Eta               string            `json:"eta,omitempty"`
+	Error             string            `json:"error,omitempty"`
+	ErrorDetail       string            `json:"errorDetail,omitempty"`
+	Warning           string            `json:"warning,omitempty"`
+	WarningDetail     string            `json:"warningDetail,omitempty"`
+	ContainerVersion  int               `json:"containerVersion,omitempty"`
+	CreatedAt         time.Time         `json:"createdAt"`
+	CompletedAt       *time.Time        `json:"completedAt,omitempty"`
+	cancelFn          context.CancelFunc
 }
 
 type TaskManager struct {
@@ -163,6 +167,13 @@ func (tm *TaskManager) Create(taskType, sourcePath, targetPath, password string,
 	if tm.broadcaster != nil {
 		tm.broadcaster.Broadcast("task:created", task)
 	}
+	return task
+}
+
+func (tm *TaskManager) CreateWithExtras(taskType, sourcePath, targetPath, password, secondaryPassword string, version int, extras map[string]string) *MobileTask {
+	task := tm.Create(taskType, sourcePath, targetPath, password, version)
+	task.SecondaryPassword = secondaryPassword
+	task.ExtraFields = extras
 	return task
 }
 
@@ -371,10 +382,10 @@ func (tm *TaskManager) processTask(task *MobileTask) {
 	}
 }
 
-func (tm *TaskManager) getConfigForTask(task *MobileTask, ctx context.Context) context.Context {
-	if task.Password != "" {
+func (tm *TaskManager) getPasswordContext(ctx context.Context, primaryPassword string) context.Context {
+	if primaryPassword != "" {
 		cfgCopy := *tm.cfg
-		cfgCopy.Password = task.Password
+		cfgCopy.Password = primaryPassword
 		return config.NewContext(ctx, &cfgCopy)
 	}
 	return config.NewContext(ctx, tm.cfg)
@@ -382,28 +393,6 @@ func (tm *TaskManager) getConfigForTask(task *MobileTask, ctx context.Context) c
 
 func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 	taskID := task.ID
-
-	password := tm.cfg.Password
-	if task.Password != "" {
-		password = task.Password
-	}
-	if password == "" {
-		tm.failTask(taskID, "encryption requires a password: global password is empty")
-		return
-	}
-
-	effectiveVersion := task.ContainerVersion
-	if effectiveVersion == 0 {
-		effectiveVersion = tm.cfg.GetEffectiveDefaultVersion()
-	}
-	if !types.IsValidVersion(effectiveVersion) {
-		tm.failTask(taskID, fmt.Sprintf("invalid container version: %d", effectiveVersion))
-		return
-	}
-	if types.IsDeprecatedVersion(effectiveVersion) && tm.cfg.IsStrictMode() {
-		tm.failTask(taskID, fmt.Sprintf("container version %d is deprecated and strict mode is enabled", effectiveVersion))
-		return
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	task.cancelFn = cancel
@@ -419,6 +408,19 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 
 	if info.IsDir() {
 		tm.failTask(taskID, "directory encryption is not supported yet")
+		return
+	}
+
+	effectiveVersion := task.ContainerVersion
+	if effectiveVersion == 0 {
+		effectiveVersion = tm.cfg.GetEffectiveDefaultVersion()
+	}
+	if !types.IsValidVersion(effectiveVersion) {
+		tm.failTask(taskID, fmt.Sprintf("invalid container version: %d", effectiveVersion))
+		return
+	}
+	if types.IsDeprecatedVersion(effectiveVersion) && tm.cfg.IsStrictMode() {
+		tm.failTask(taskID, fmt.Sprintf("container version %d is deprecated and strict mode is enabled", effectiveVersion))
 		return
 	}
 
@@ -441,12 +443,33 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 	}
 
 	tm.updateProgress(taskID, 10, "initializing", "", "")
-	cfgCtx := tm.getConfigForTask(task, ctx)
 
 	plugin, err := plugins.FindEncryptingPlugin(absPath)
 	if err != nil {
 		tm.failTask(taskID, fmt.Sprintf("no encrypting plugin found: %v", err))
 		return
+	}
+	task.PluginName = plugin.Name()
+
+	var primaryPassword string
+	if resolver, ok := plugin.(pluginInterfaces.TaskPasswordResolver); ok {
+		primaryPassword = resolver.ResolveTaskPassword(task.Password, task.ExtraFields)
+	} else {
+		primaryPassword = task.Password
+		if primaryPassword == "" {
+			primaryPassword = tm.cfg.Password
+		}
+	}
+	if primaryPassword == "" {
+		tm.failTask(taskID, "encryption requires a password")
+		return
+	}
+
+	passwordCtx := tm.getPasswordContext(ctx, primaryPassword)
+
+	if task.SecondaryPassword != "" {
+		slog.Debug("task has secondary password (L2) — reserved for future dual-password crypto support",
+			"taskId", taskID)
 	}
 
 	tm.updateProgress(taskID, 15, "preprocessing", "", "")
@@ -455,7 +478,7 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 	stopMonitor := make(chan struct{})
 	go tm.monitorFileProgress(taskID, outputDir, fileSize, stopMonitor)
 
-	err = plugins.EncryptFileWithPlugin(cfgCtx, plugin, absPath, tm.servingDir, outputDir)
+	err = plugins.EncryptFileWithPlugin(passwordCtx, plugin, absPath, tm.servingDir, outputDir)
 	close(stopMonitor)
 
 	if err != nil {
@@ -631,12 +654,29 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 	}
 
 	tm.updateProgress(taskID, 10, "initializing", "", "")
-	cfgCtx := tm.getConfigForTask(task, ctx)
 
 	plugin, err := plugins.FindDecryptingPlugin(absPath)
 	if err != nil {
 		tm.failTask(taskID, fmt.Sprintf("no decrypting plugin found: %v", err))
 		return
+	}
+	task.PluginName = plugin.Name()
+
+	var primaryPassword string
+	if resolver, ok := plugin.(pluginInterfaces.TaskPasswordResolver); ok {
+		primaryPassword = resolver.ResolveTaskPassword(task.Password, task.ExtraFields)
+	} else {
+		primaryPassword = task.Password
+		if primaryPassword == "" {
+			primaryPassword = tm.cfg.Password
+		}
+	}
+
+	passwordCtx := tm.getPasswordContext(ctx, primaryPassword)
+
+	if task.SecondaryPassword != "" {
+		slog.Debug("task has secondary password (L2) — reserved for future dual-password crypto support",
+			"taskId", taskID)
 	}
 
 	tm.updateProgress(taskID, 15, "preprocessing", "", "")
@@ -645,7 +685,7 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 	stopMonitor := make(chan struct{})
 	go tm.monitorFileProgress(taskID, outputDir, fileSize, stopMonitor)
 
-	err = plugins.DecryptContainerWithPlugin(cfgCtx, plugin, absPath, outputDir)
+	err = plugins.DecryptContainerWithPlugin(passwordCtx, plugin, absPath, outputDir)
 	close(stopMonitor)
 
 	if err != nil {

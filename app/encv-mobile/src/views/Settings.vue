@@ -139,6 +139,7 @@
 
       <template v-else-if="configLoaded">
         <template v-for="section in schemaFields" :key="section.key">
+          <template v-if="!['server', 'admin', 'webdav'].includes(section.key)">
           <ion-list v-if="section.key === 'plugin_settings'">
             <ion-list-header>
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
@@ -260,82 +261,11 @@
               </ion-label>
             </ion-item>
           </ion-list>
+          </template>
         </template>
       </template>
 
       <ion-list>
-        <ion-list-header>
-          <ion-label>{{ t('settings.preview') }}</ion-label>
-        </ion-list-header>
-        <ion-item>
-          <ion-icon :icon="textOutline" slot="start"></ion-icon>
-          <ion-input
-            :value="customTextExts"
-            :label="t('settings.customTextExts')"
-            label-placement="stacked"
-            :placeholder="t('settings.customTextExtsHint')"
-            @ionInput="handleCustomTextExtsChange"
-          ></ion-input>
-        </ion-item>
-        <ion-item v-if="builtInTextExtsCount > 0" lines="none">
-          <ion-label class="ion-text-wrap hint-text">
-            <p>{{ t('settings.builtInTextExts', { count: String(builtInTextExtsCount) }) }}</p>
-          </ion-label>
-        </ion-item>
-      </ion-list>
-
-      <ion-list>
-        <ion-list-header>
-          <ion-label>{{ t('settings.alistEncryptConfig') }}</ion-label>
-        </ion-list-header>
-        <ion-item>
-          <ion-icon :icon="lockClosed" slot="start"></ion-icon>
-          <ion-toggle :checked="alistEncryptEnabled" @ionChange="handleAlistEncryptToggle">{{ t('settings.alistEncryptEnable') }}</ion-toggle>
-        </ion-item>
-        <template v-if="alistEncryptEnabled">
-          <ion-item>
-            <ion-icon :icon="documentText" slot="start"></ion-icon>
-            <ion-input
-              :value="alistEncryptSuffix"
-              :label="t('settings.alistEncryptSuffix')"
-              label-placement="stacked"
-              placeholder=".bin"
-              @ionInput="handleAlistSuffixInput"
-            ></ion-input>
-          </ion-item>
-          <ion-item v-if="alistSuffixConflict" lines="none">
-            <ion-label class="ion-text-wrap" style="color: var(--ion-color-danger); font-size: 13px;">
-              <p>{{ t('settings.alistSuffixConflictHint') }}</p>
-            </ion-label>
-          </ion-item>
-          <ion-item>
-            <ion-icon :icon="key" slot="start"></ion-icon>
-            <ion-input
-              :value="alistEncryptPassword"
-              type="password"
-              :label="t('settings.alistEncryptDefaultPassword')"
-              label-placement="stacked"
-              :placeholder="t('settings.alistEncryptDefaultPasswordHint')"
-              @ionInput="handleAlistPasswordInput"
-            ></ion-input>
-          </ion-item>
-          <ion-item>
-            <ion-icon :icon="shieldCheckmark" slot="start"></ion-icon>
-            <ion-select
-              :value="alistEncryptAlgorithm"
-              :label="t('settings.alistEncryptAlgorithm')"
-              label-placement="stacked"
-              interface="action-sheet"
-              mode="ios"
-              disabled
-            >
-              <ion-select-option value="AES-128-CTR">AES-128-CTR</ion-select-option>
-            </ion-select>
-          </ion-item>
-        </template>
-      </ion-list>
-
-      <ion-list v-if="isNative()">
         <ion-list-header>
           <ion-label>{{ t('devtools.title') }}</ion-label>
         </ion-list-header>
@@ -345,6 +275,20 @@
             <h3>{{ t('devtools.title') }}</h3>
             <p>{{ t('devtools.devtoolsDesc') }}</p>
           </ion-label>
+        </ion-item>
+      </ion-list>
+
+      <ion-list>
+        <ion-list-header>
+          <ion-label color="danger">{{ t('settings.dangerZone') }}</ion-label>
+        </ion-list-header>
+        <ion-item button @click="handleClearCache">
+          <ion-icon :icon="trash" color="danger" slot="start"></ion-icon>
+          <ion-label color="danger">{{ t('settings.clearCache') }}</ion-label>
+        </ion-item>
+        <ion-item button @click="handleResetSettings">
+          <ion-icon :icon="refreshCircle" color="danger" slot="start"></ion-icon>
+          <ion-label color="danger">{{ t('settings.resetSettings') }}</ion-label>
         </ion-item>
       </ion-list>
 
@@ -410,8 +354,8 @@ import { useRouter } from 'vue-router'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonContent, IonList, IonListHeader, IonItem, IonItemDivider,
-  IonIcon, IonLabel, IonToggle, IonInput, IonBadge, IonSpinner,
-  IonSelect, IonSelectOption, modalController,
+  IonIcon, IonLabel, IonToggle, IonBadge, IonSpinner,
+  IonSelect, IonSelectOption, modalController, alertController,
 } from '@ionic/vue'
 import {
   moon, globeOutline, server as serverIcon, save as saveIcon,
@@ -421,7 +365,7 @@ import {
   filmOutline, musicalNotesOutline, imagesOutline, readerOutline,
   newspaperOutline, gitNetworkOutline, toggleOutline,
   textOutline, personOutline, folderOpen, refreshCircle,
-  bugOutline,
+  trash, bugOutline,
   phonePortraitOutline,
   colorPaletteOutline, layersOutline,
   fileTrayFull as databaseIcon,
@@ -434,7 +378,7 @@ import { showToast } from '@/composables/useToast'
 import { isNative, getPluginFullState, ensurePluginLoaded } from '@/plugins/GoProcess'
 import { registerFileFeature, unregisterFileFeature } from '@/composables/useFileFeatures'
 import { createAlistEncryptFeature } from '@/features/alist-encrypt'
-import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus, fetchTextPreviewExts, invalidateTextExtsCache } from '@/api/encv'
+import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus } from '@/api/encv'
 import type { IndexStats, FFmpegStatus } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
 import { PLAY_MODE, isMpvSubMode } from '@/constants/player'
@@ -454,16 +398,8 @@ const engineStatus = ref<FFmpegStatus | null>(null)
 const videoPlayerMode = ref(localStorage.getItem('encv_player_video') || PLAY_MODE.ARTPLAYER)
 const audioPlayerMode = ref(localStorage.getItem('encv_player_audio') || PLAY_MODE.MPV_PLUGIN)
 const screenOrientation = ref(localStorage.getItem('encv_screen_orientation') || 'auto')
-const customTextExts = ref('')
-const builtInTextExtsCount = ref(0)
 const mpvPluginStatus = ref<string>('unknown')
-const mpvPluginError = ref<string>('')
-
-const alistEncryptEnabled = ref(true)
-const alistEncryptSuffix = ref('.bin')
-const alistEncryptPassword = ref('')
-const alistEncryptAlgorithm = ref('AES-128-CTR')
-const alistSuffixConflict = ref(false)
+const mpvPluginError = ref('')
 
 const mpvStatusI18nKey = computed(() => {
   const keyMap: Record<string, string> = {
@@ -514,41 +450,8 @@ async function applyScreenOrientation(orientation: string) {
       await ScreenOrientation.unlock()
     }
   } catch (e) {
-    console.warn('Failed to apply screen orientation:', e)
+    console.debug('Failed to apply screen orientation:', e)
   }
-}
-
-async function loadPreviewConfig() {
-  try {
-    const cfg = await fetchConfig()
-    const preview = cfg.preview as Record<string, unknown> | undefined
-    if (preview?.text_extensions && Array.isArray(preview.text_extensions)) {
-      customTextExts.value = (preview.text_extensions as string[]).join(',')
-    }
-  } catch {}
-  try {
-    const exts = await fetchTextPreviewExts()
-    builtInTextExtsCount.value = exts.size
-  } catch {}
-}
-
-function handleCustomTextExtsChange(event: CustomEvent) {
-  const raw = (event.target as HTMLInputElement).value || ''
-  customTextExts.value = raw
-  const parsed = raw.split(',')
-    .map(s => s.trim().toLowerCase())
-    .filter(s => s.length > 0)
-  ;(async () => {
-    try {
-      const cfg = await fetchConfig()
-      if (!cfg.preview) cfg.preview = {}
-      ;(cfg.preview as Record<string, unknown>).text_extensions = parsed
-      await updateConfig(cfg)
-      invalidateTextExtsCache()
-    } catch (e) {
-      console.error('Failed to save preview config:', e)
-    }
-  })()
 }
 
 function goDevTools() {
@@ -765,6 +668,61 @@ function handleLocaleChange(event: CustomEvent) {
   setLocale(event.detail.value as 'zh-CN' | 'en')
 }
 
+async function handleClearCache() {
+  const alert = await alertController.create({
+    header: t('settings.clearCache'),
+    message: t('settings.clearCacheConfirm'),
+    buttons: [
+      { text: t('settings.cancel'), role: 'cancel' },
+      {
+        text: t('settings.clear'),
+        role: 'destructive',
+        handler: () => {
+          const themePref = localStorage.getItem('encv-theme-preference')
+          const serverPref = localStorage.getItem('encv-server-url')
+          const webdavPref = localStorage.getItem('encv-webdav-configs')
+          const localePref = localStorage.getItem('encv-locale')
+          localStorage.clear()
+          if (themePref) localStorage.setItem('encv-theme-preference', themePref)
+          if (serverPref) localStorage.setItem('encv-server-url', serverPref)
+          if (webdavPref) localStorage.setItem('encv-webdav-configs', webdavPref)
+          if (localePref) localStorage.setItem('encv-locale', localePref)
+          showToast({
+            message: t('settings.cacheCleared'),
+            duration: 1500,
+            color: 'success',
+          })
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
+async function handleResetSettings() {
+  const alert = await alertController.create({
+    header: t('settings.resetSettings'),
+    message: t('settings.resetConfirm'),
+    buttons: [
+      { text: t('settings.cancel'), role: 'cancel' },
+      {
+        text: t('settings.reset'),
+        role: 'destructive',
+        handler: () => {
+          localStorage.clear()
+          if (isDark.value) toggleDark()
+          showToast({
+            message: t('settings.settingsReset'),
+            duration: 1500,
+            color: 'success',
+          })
+        },
+      },
+    ],
+  })
+  await alert.present()
+}
+
 async function handleSaveConfig() {
   try {
     await saveConfig()
@@ -795,54 +753,17 @@ function handleResetConfig() {
   resetConfig()
 }
 
-const CONFLICT_SUFFIXES = ['.sccgv', '.encv']
+let alistFeatureRegistered = false
 
-function handleAlistEncryptToggle(event: CustomEvent) {
-  const enabled = event.detail.checked
-  alistEncryptEnabled.value = enabled
-  if (enabled) {
+function syncAlistEncryptFeature() {
+  const enabled = getFieldValue(['plugin_settings', 'alist_encrypt', 'enabled']) as boolean | undefined
+  if (enabled === alistFeatureRegistered) return
+  alistFeatureRegistered = !!enabled
+  if (enabled === true) {
     registerFileFeature(createAlistEncryptFeature())
   } else {
     unregisterFileFeature('alist-encrypt')
   }
-  saveAlistEncryptConfig()
-}
-
-function handleAlistSuffixInput(event: CustomEvent) {
-  let val = (event.target as HTMLInputElement).value.trim()
-  if (val && !val.startsWith('.')) {
-    val = '.' + val
-  }
-  alistEncryptSuffix.value = val
-  alistSuffixConflict.value = CONFLICT_SUFFIXES.includes(val.toLowerCase())
-  saveAlistEncryptConfig()
-}
-
-function handleAlistPasswordInput(event: CustomEvent) {
-  alistEncryptPassword.value = (event.target as HTMLInputElement).value
-  saveAlistEncryptConfig()
-}
-
-function saveAlistEncryptConfig() {
-  const cfg = { enabled: alistEncryptEnabled.value, suffix: alistEncryptSuffix.value, defaultPassword: alistEncryptPassword.value }
-  try {
-    localStorage.setItem('encv_alist_encrypt_config', JSON.stringify(cfg))
-  } catch (e) {
-    console.error('Failed to save alist-encrypt config:', e)
-  }
-}
-
-function loadAlistEncryptConfig() {
-  try {
-    const raw = localStorage.getItem('encv_alist_encrypt_config')
-    if (raw) {
-      const cfg = JSON.parse(raw)
-      if (typeof cfg.enabled === 'boolean') alistEncryptEnabled.value = cfg.enabled
-      if (typeof cfg.suffix === 'string' && cfg.suffix) alistEncryptSuffix.value = cfg.suffix
-      if (typeof cfg.defaultPassword === 'string') alistEncryptPassword.value = cfg.defaultPassword
-      alistSuffixConflict.value = CONFLICT_SUFFIXES.includes(alistEncryptSuffix.value.toLowerCase())
-    }
-  } catch {}
 }
 
 onMounted(async () => {
@@ -855,8 +776,7 @@ onMounted(async () => {
       try { engineStatus.value = await fetchFFmpegStatus() } catch {}
       await refreshMpvPluginStatus()
     }
-    loadPreviewConfig()
-    loadAlistEncryptConfig()
+    syncAlistEncryptFeature()
   }
   window.addEventListener('plugin-state-changed', refreshMpvPluginStatus)
 })
@@ -885,11 +805,11 @@ async function refreshMpvPluginStatus() {
       } else {
         mpvPluginStatus.value = 'load_failed'
         mpvPluginError.value = '插件加载失败'
-        console.warn('[Settings] MPV plugin load failed')
+        console.debug('[Settings] MPV plugin load failed')
       }
     } else {
       mpvPluginStatus.value = state.status
-      console.warn('[Settings] MPV plugin status:', state.status)
+      console.debug('[Settings] MPV plugin status:', state.status)
     }
   } catch (e: any) {
     console.error('[Settings] refreshMpvPluginStatus failed:', e)
@@ -906,6 +826,14 @@ watch(serverOnline, async (online) => {
     }
     try { indexStats.value = await getIndexStats() } catch {}
     if (isNative()) { try { engineStatus.value = await fetchFFmpegStatus() } catch {} }
+  }
+})
+
+watch(() => getFieldValue(['plugin_settings', 'alist_encrypt', 'enabled']), (enabled) => {
+  if (enabled === true) {
+    registerFileFeature(createAlistEncryptFeature())
+  } else {
+    unregisterFileFeature('alist-encrypt')
   }
 })
 </script>

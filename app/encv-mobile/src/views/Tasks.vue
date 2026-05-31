@@ -3,6 +3,11 @@
     <ion-header>
       <ion-toolbar>
         <ion-title>{{ t('tasks.title') }}</ion-title>
+        <ion-buttons slot="end">
+          <ion-button fill="clear" size="small" @click="toggleSort" class="sort-toggle-btn">
+            <ion-icon :icon="sortBy === 'activity' ? sync : timer" slot="icon-only"></ion-icon>
+          </ion-button>
+        </ion-buttons>
       </ion-toolbar>
     </ion-header>
 
@@ -23,8 +28,8 @@
       </div>
 
       <ion-list v-else>
-        <ion-item-sliding v-for="task in tasks" :key="task.id">
-          <ion-item>
+        <ion-item-sliding v-for="task in sortedTasks" :key="task.id">
+          <ion-item @click="openTaskDetail(task)" button detail>
             <ion-icon
               :icon="getTaskIcon(task)"
               :color="getTaskColor(task)"
@@ -32,11 +37,14 @@
             ></ion-icon>
             <ion-label>
               <h2>{{ getTaskName(task) }}</h2>
-              <p>
+              <p class="card-meta-row">
                 <ion-badge :color="getStatusColor(task.status)" class="status-badge">
                   {{ getStatusLabel(task.status) }}
                 </ion-badge>
                 <span class="task-type">{{ task.type === 'encrypt' ? t('tasks.encrypt') : t('tasks.decrypt') }}</span>
+                <ion-badge v-if="task.pluginName" color="primary" class="plugin-badge">
+                  {{ task.pluginName }}
+                </ion-badge>
               </p>
               <p class="task-time-info">
                 <span class="time-created">{{ formatDateTime(task.createdAt) }}</span>
@@ -127,94 +135,17 @@
       </ion-list>
 
       <ion-fab vertical="bottom" horizontal="end" slot="fixed">
-        <ion-fab-button @click="showNewTaskSheet">
+        <ion-fab-button @click="openNewTask()">
           <ion-icon :icon="add"></ion-icon>
         </ion-fab-button>
       </ion-fab>
 
-      <ion-modal :is-open="showNewTaskModal" @didDismiss="showNewTaskModal = false">
-        <ion-header>
-          <ion-toolbar>
-            <ion-title>{{ t('tasks.newTask') }}</ion-title>
-            <ion-buttons slot="end">
-              <ion-button @click="showNewTaskModal = false">{{ t('tasks.close') }}</ion-button>
-            </ion-buttons>
-          </ion-toolbar>
-        </ion-header>
-        <ion-content class="ion-padding">
-          <ion-list>
-            <ion-item>
-              <ion-select
-                v-model="newTaskType"
-                interface="action-sheet"
-                :label="t('tasks.taskType')"
-                label-placement="stacked"
-              >
-                <ion-select-option value="encrypt">{{ t('tasks.encrypt') }}</ion-select-option>
-                <ion-select-option value="decrypt">{{ t('tasks.decrypt') }}</ion-select-option>
-              </ion-select>
-            </ion-item>
-            <ion-item>
-              <ion-input
-                v-model="newTaskPath"
-                :label="t('tasks.sourcePath')"
-                label-placement="stacked"
-                placeholder="/path/to/file"
-                :error-text="sourcePathError"
-                :class="{ 'ion-invalid': !!sourcePathError, 'ion-touched': !!sourcePathError }"
-                @ionInput="validateSourcePath"
-              ></ion-input>
-              <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseSource">
-                <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-              </ion-button>
-            </ion-item>
-            <ion-item>
-              <ion-input
-                v-model="newTaskTargetPath"
-                :label="t('tasks.targetPath')"
-                label-placement="stacked"
-                :placeholder="t('tasks.targetPathPlaceholder')"
-                :error-text="targetPathError"
-                :class="{ 'ion-invalid': !!targetPathError, 'ion-touched': !!targetPathError }"
-                @ionInput="validateTargetPath"
-              ></ion-input>
-              <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseTarget">
-                <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-              </ion-button>
-            </ion-item>
-          </ion-list>
-
-          <!-- 容器版本选择（仅加密时显示） -->
-          <ion-item v-if="newTaskType === 'encrypt'">
-            <ContainerVersionSelector v-model="newTaskVersion" />
-          </ion-item>
-
-          <!-- 二级密码（占位，计划中） -->
-          <ion-item>
-            <ion-input
-              v-model="newTaskSecondaryPassword"
-              :label="t('tasks.secondaryPassword')"
-              label-placement="stacked"
-              type="password"
-              disabled
-              placeholder=""
-            >
-              <ion-badge color="medium" slot="end">{{ t('tasks.comingSoon') }}</ion-badge>
-            </ion-input>
-          </ion-item>
-
-          <ion-button expand="block" @click="handleCreateTask" :disabled="!newTaskPath || !!sourcePathError || !!targetPathError">
-            <ion-icon :icon="lockClosed" slot="start"></ion-icon>
-            {{ t('tasks.createTask') }}
-          </ion-button>
-        </ion-content>
-      </ion-modal>
     </ion-content>
   </ion-page>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import {
   IonPage,
   IonHeader,
@@ -234,88 +165,45 @@ import {
   IonProgressBar,
   IonFab,
   IonFabButton,
-  IonModal,
-  IonButtons,
-  IonButton,
-  IonSelect,
-  IonSelectOption,
-  IonInput,
   IonSpinner,
   modalController,
 } from '@ionic/vue'
 import {
   add,
-  lockClosed,
-  checkmarkCircle,
   closeCircle,
+  checkmarkCircle,
   timer,
   sync,
-  folderOpen,
   copyOutline,
   warningOutline,
+  lockClosed,
 } from 'ionicons/icons'
 import { useRoute, useRouter } from 'vue-router'
-import ContainerVersionSelector from '@/components/ContainerVersionSelector.vue'
 import {
   getTasks,
-  createTask,
   cancelTask,
   retryTask,
   removeTask,
-  listFiles,
   isWrongPasswordError,
 } from '@/api/encv'
 import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
 import { eventBus } from '@/composables/useEventBus'
 import { useI18n } from '@/composables/useI18n'
-import { useConfig } from '@/composables/useConfig'
 import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
 import { showToast } from '@/composables/useToast'
-import FilePickerModal from '@/components/FilePickerModal.vue'
+import { useNewTaskModal } from '@/composables/useNewTaskModal'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
-const { config } = useConfig()
+const { openNewTask } = useNewTaskModal()
 
 const tasks = ref<EncvTask[]>([])
 const loading = ref(false)
 const showErrorDetail = ref<Record<string, boolean>>({})
 const copiedTaskId = ref<string | null>(null)
 const expandedWarningDetail = ref<string | null>(null)
-const showNewTaskModal = ref(false)
-const newTaskType = ref<TaskType>('encrypt')
-const newTaskPath = ref('')
-const newTaskTargetPath = ref('')
-const sourcePathError = ref('')
-const targetPathError = ref('')
-const newTaskPassword = ref('')
-const newTaskVersion = ref(4)
-const newTaskSecondaryPassword = ref('')
-let sourceValidateTimer: ReturnType<typeof setTimeout> | null = null
-let targetValidateTimer: ReturnType<typeof setTimeout> | null = null
-let sourceValidateGeneration = 0
-let targetValidateGeneration = 0
-
-async function validatePathExists(path: string): Promise<boolean> {
-  try {
-    const parentDir = path.substring(0, path.lastIndexOf('/')) || '/'
-    const fileName = path.substring(path.lastIndexOf('/') + 1)
-    const files = await listFiles(parentDir)
-    return files.some(f => f.name === fileName)
-  } catch {
-    return false
-  }
-}
-
-async function validateDirExists(path: string): Promise<boolean> {
-  try {
-    await listFiles(path)
-    return true
-  } catch {
-    return false
-  }
-}
+const sortBy = ref<'activity' | 'created'>('activity')
 
 function getTaskIcon(task: EncvTask) {
   switch (task.status) {
@@ -355,7 +243,7 @@ function getStatusLabel(status: TaskStatus) {
     case 'failed': return t('tasks.failed')
     case 'cancelled': return t('tasks.cancelled')
     case 'cancelling': return t('tasks.cancelling')
-    default: return status
+    default: status
   }
 }
 
@@ -369,13 +257,14 @@ function getPhaseLabel(phase: string) {
     case 'packing': return t('tasks.phasePacking')
     case 'verifying': return t('tasks.phaseVerifying')
     case 'completed': return t('tasks.phaseCompleted')
-    default: return phase
+    default: phase
   }
 }
 
 function getTaskName(task: EncvTask) {
-  const parts = task.sourcePath.split('/')
-  return parts[parts.length - 1] || task.sourcePath
+  const parts = task.sourcePath.replace(/\\/g, '/').split('/')
+  const basename = parts[parts.length - 1] || task.sourcePath
+  return task.pluginName ? `${basename} [${task.pluginName}]` : basename
 }
 
 function getTaskDuration(task: EncvTask): string {
@@ -391,6 +280,41 @@ function getTaskDuration(task: EncvTask): string {
     return formatDuration(Date.now() - created)
   }
   return ''
+}
+
+const sortedTasks = computed(() => {
+  const arr = [...tasks.value]
+  if (sortBy.value === 'activity') {
+    arr.sort((a, b) => {
+      const timeA = a.completedAt ? new Date(a.completedAt).getTime() : new Date(a.createdAt).getTime()
+      const timeB = b.completedAt ? new Date(b.completedAt).getTime() : new Date(b.createdAt).getTime()
+      if (timeB !== timeA) return timeB - timeA
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    })
+  } else {
+    arr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  }
+  return arr
+})
+
+function toggleSort() {
+  sortBy.value = sortBy.value === 'activity' ? 'created' : 'activity'
+}
+
+async function openTaskDetail(task: EncvTask) {
+  const { default: TaskDetailModal } = await import('@/components/TaskDetailModal.vue')
+  const modal = await modalController.create({
+    component: TaskDetailModal,
+    componentProps: { task },
+    cssClass: 'task-detail-modal',
+  })
+  await modal.present()
+  const { data, role } = await modal.onDidDismiss()
+  if (role === 'dismiss' && data) {
+    if (data.action === 'cancel') await handleCancelTask(data.id)
+    else if (data.action === 'retry') await handleRetryTask(data.id)
+    else if (data.action === 'remove') await handleRemoveTask(data.id)
+  }
 }
 
 function isPasswordError(task: EncvTask): boolean {
@@ -450,106 +374,6 @@ async function handleRefresh(event: CustomEvent) {
     // silent
   }
   ;(event.target as any)?.complete?.()
-}
-
-function showNewTaskSheet() {
-  newTaskType.value = 'encrypt'
-  newTaskPath.value = ''
-  newTaskTargetPath.value = ''
-  sourcePathError.value = ''
-  targetPathError.value = ''
-  showNewTaskModal.value = true
-}
-
-function validateSourcePath() {
-  if (sourceValidateTimer) clearTimeout(sourceValidateTimer)
-  sourceValidateTimer = setTimeout(async () => {
-    const gen = ++sourceValidateGeneration
-    const path = newTaskPath.value.trim()
-    if (!path) {
-      sourcePathError.value = t('tasks.pathRequired')
-    } else if (!path.startsWith('/')) {
-      sourcePathError.value = t('tasks.pathMustBeAbsolute')
-    } else {
-      sourcePathError.value = ''
-      const exists = await validatePathExists(path)
-      if (gen !== sourceValidateGeneration) return
-      if (!exists) {
-        sourcePathError.value = t('tasks.pathNotFound')
-      }
-    }
-  }, 500)
-}
-
-function validateTargetPath() {
-  if (targetValidateTimer) clearTimeout(targetValidateTimer)
-  targetValidateTimer = setTimeout(async () => {
-    const gen = ++targetValidateGeneration
-    const path = newTaskTargetPath.value.trim()
-    if (!path) {
-      targetPathError.value = ''
-    } else if (!path.startsWith('/')) {
-      targetPathError.value = t('tasks.pathMustBeAbsolute')
-    } else {
-      targetPathError.value = ''
-      const exists = await validateDirExists(path)
-      if (gen !== targetValidateGeneration) return
-      if (!exists) {
-        targetPathError.value = t('tasks.pathNotFound')
-      }
-    }
-  }, 500)
-}
-
-async function handleBrowseSource() {
-  showNewTaskModal.value = false
-  const modal = await modalController.create({
-    component: FilePickerModal,
-    componentProps: { mode: 'file' as const },
-  })
-  await modal.present()
-  const { data, role } = await modal.onDidDismiss()
-  if (role === 'select' && data) {
-    newTaskPath.value = data.path
-    sourcePathError.value = ''
-  }
-  showNewTaskModal.value = true
-}
-
-async function handleBrowseTarget() {
-  showNewTaskModal.value = false
-  const modal = await modalController.create({
-    component: FilePickerModal,
-    componentProps: { mode: 'folder' as const },
-  })
-  await modal.present()
-  const { data, role } = await modal.onDidDismiss()
-  if (role === 'select' && data) {
-    newTaskTargetPath.value = data.path
-    targetPathError.value = ''
-  }
-  showNewTaskModal.value = true
-}
-
-async function handleCreateTask() {
-  if (!newTaskPath.value) return
-  try {
-    await createTask(
-      newTaskType.value,
-      newTaskPath.value,
-      newTaskTargetPath.value || undefined,
-      undefined,
-      newTaskType.value === 'encrypt' ? newTaskVersion.value : undefined
-    )
-    showNewTaskModal.value = false
-    if (route.query.action) {
-      router.replace({ query: {} as Record<string, undefined> })
-    }
-    showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
-    await loadTasks()
-  } catch {
-    showToast({ message: t('tasks.taskCreateFailed'), duration: 2000, color: 'danger' })
-  }
 }
 
 async function handleCancelTask(id: string) {
@@ -632,39 +456,32 @@ function onTaskCompleted(data: { id: string; status?: string; error?: string; er
   }
 }
 
-function processQueryAction() {
-  if (route.query.action === 'new') {
-    if (route.query.type === 'encrypt' || route.query.type === 'decrypt') {
-      newTaskType.value = route.query.type as TaskType
-    }
-    if (route.query.source) {
-      newTaskPath.value = route.query.source as string
-      sourcePathError.value = ''
-    }
-    showNewTaskModal.value = true
-    router.replace({ path: '/tabs/tasks', query: {} })
-  }
-}
-
 onMounted(() => {
-  if (config.value?.password) {
-    newTaskPassword.value = config.value.password as string
-  }
-  processQueryAction()
   loadTasks()
   eventBus.on('task:update', onTaskUpdate)
   eventBus.on('task:progress', onTaskProgress)
   eventBus.on('task:created', onTaskCreated)
   eventBus.on('task:completed', onTaskCompleted)
-})
+  eventBus.on('task:refresh', loadTasks)
 
-watch(() => route.query, processQueryAction, { immediate: false })
+  if (route.query.action === 'new') {
+    const sourcePath = route.query.source as string
+    const taskType = (route.query.type || 'encrypt') as TaskType
+    router.replace({ path: '/tabs/tasks', query: {} })
+    if (sourcePath) {
+      openNewTask(sourcePath, taskType)
+    } else {
+      openNewTask()
+    }
+  }
+})
 
 onUnmounted(() => {
   eventBus.off('task:update', onTaskUpdate)
   eventBus.off('task:progress', onTaskProgress)
   eventBus.off('task:created', onTaskCreated)
   eventBus.off('task:completed', onTaskCompleted)
+  eventBus.off('task:refresh', loadTasks)
 })
 </script>
 
@@ -703,6 +520,23 @@ onUnmounted(() => {
 .task-type {
   font-size: 12px;
   color: var(--encv-text-secondary);
+  margin-left: 6px;
+}
+
+.card-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.plugin-badge {
+  font-size: 10px;
+  --padding-start: 6px;
+  --padding-end: 6px;
+  --padding-top: 2px;
+  --padding-bottom: 2px;
+  font-weight: 500;
 }
 
 .task-time-info {
@@ -898,5 +732,37 @@ onUnmounted(() => {
   --padding-end: 8px;
   min-width: 44px;
   min-height: 44px;
+}
+
+.plugin-selector {
+  margin: 8px 0;
+}
+
+.plugin-section {
+  margin: 4px 0;
+}
+
+.plugin-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--ion-color-medium);
+  background: var(--ion-color-step-50, #f8f8f8);
+  border-radius: 6px;
+  margin: 4px 16px;
+}
+
+.hint-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.sort-toggle-btn {
+  --color: var(--ion-color-medium);
+  --padding-start: 8px;
+  --padding-end: 8px;
+  font-size: 20px;
 }
 </style>

@@ -59,6 +59,10 @@
               <span class="info-label">{{ t('files.encrypted') }}</span>
               <ion-badge color="warning">Yes</ion-badge>
             </div>
+            <div class="info-row decoded-name-row" v-if="decodedName">
+              <span class="info-label decoded-label">原始文件名</span>
+              <span class="info-value decoded-value">{{ decodedName }}</span>
+            </div>
           </div>
         </div>
 
@@ -125,6 +129,8 @@ import {
 } from 'ionicons/icons'
 import { getApiBaseUrl, formatFileSize } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
+import { isAlistEncrypted, loadDecodedName } from '@/features/alist-encrypt/useAlistEncrypt'
+import type { FileItem } from '@/api/encv'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -162,6 +168,7 @@ const info = ref<FileInfo | null>(null)
 const containerData = ref<ContainerData | null>(null)
 const showManifest = ref(false)
 const manifestJson = ref('')
+const decodedName = ref<string | null>(null)
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -196,6 +203,7 @@ async function loadInfo() {
     const data = await resp.json() as FileInfo
     info.value = data
     containerData.value = data.container || null
+
     if (data.container?.manifest) {
       try {
         const str = JSON.stringify(data.container.manifest, null, 2)
@@ -205,6 +213,21 @@ async function loadInfo() {
       }
     } else {
       manifestJson.value = '(none)'
+    }
+
+    const fileItem: FileItem = {
+      name: data.name,
+      path: data.path,
+      isDirectory: data.is_directory,
+      isEncrypted: data.is_encrypted,
+      size: data.size,
+    }
+    if (isAlistEncrypted(fileItem)) {
+      loadDecodedName(fileItem).then((name) => {
+        decodedName.value = name
+      }).catch(() => {})
+    } else {
+      decodedName.value = null
     }
   } catch (e: any) {
     console.error('[FileInfo] failed:', e)
@@ -321,4 +344,19 @@ onMounted(() => loadInfo())
   gap: 12px;
 }
 .error-icon { font-size: 48px; opacity: 0.5; color: #e74c3c; }
+
+.decoded-name-row {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.decoded-label {
+  color: var(--ion-color-medium-shade, #999);
+  font-style: italic;
+}
+.decoded-value {
+  color: var(--ion-color-medium-shade, #999);
+  font-style: italic;
+  font-size: 12px;
+}
 </style>

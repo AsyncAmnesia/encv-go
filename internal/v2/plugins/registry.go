@@ -20,7 +20,7 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/plugins/audio"
 	"github.com/Soltus/encv-go/internal/v2/plugins/alistencrypt"
 	"github.com/Soltus/encv-go/internal/v2/plugins/image"
-	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
+		pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	"github.com/Soltus/encv-go/internal/v2/plugins/pdf"
 	"github.com/Soltus/encv-go/internal/v2/plugins/text"
 	"github.com/Soltus/encv-go/internal/v2/plugins/video"
@@ -112,6 +112,58 @@ type Plugin interface {
 	SupportedContainerVersions() []int
 	DefaultContainerVersion() int
 	ValidateVersion(version int) error
+
+	// === 任务创建选项声明 ===
+	GetTaskOptions() pluginInterfaces.TaskOptions
+}
+
+// PluginCandidate 表示一个能处理给定文件的插件候选
+// 用于多候选选择场景（与 FindEncryptingPlugin 返回单一结果不同）
+type PluginCandidate struct {
+	Plugin    Plugin `json:"-"`
+	Name      string `json:"name"`
+	MatchType string `json:"matchType"`
+	Priority  int    `json:"priority"`
+}
+
+// ExtensionConflict 表示插件容器扩展名冲突记录
+type ExtensionConflict struct {
+	Extension   string   // 冲突的扩展名（如 ".sccgv"）
+	PluginNames []string // 声明此扩展名的插件列表（通常 ≥2 个）
+}
+
+// ValidateExtensionUniqueness 检查所有插件容器扩展名是否唯一
+// 纯检测函数，不做策略决策，由调用方决定处理方式
+func ValidateExtensionUniqueness() []ExtensionConflict {
+	extToPlugins := make(map[string][]string)
+	for _, p := range Plugins {
+		ext := normalizeExtension(p.GetContainerExtension())
+		if ext != "" {
+			extToPlugins[ext] = append(extToPlugins[ext], p.Name())
+		}
+	}
+	var conflicts []ExtensionConflict
+	for ext, names := range extToPlugins {
+		if len(names) > 1 {
+			conflicts = append(conflicts, ExtensionConflict{
+				Extension:   ext,
+				PluginNames: names,
+			})
+		}
+	}
+	return conflicts
+}
+
+// GetContainerExtensionsMap 返回所有插件的 容器扩展名→插件名 映射
+func GetContainerExtensionsMap() map[string]string {
+	result := make(map[string]string)
+	for _, p := range Plugins {
+		ext := normalizeExtension(p.GetContainerExtension())
+		if ext != "" && result[ext] == "" {
+			result[ext] = p.Name()
+		}
+	}
+	return result
 }
 
 // DefaultPluginVersionMethods 提供版本方法的默认实现
@@ -280,11 +332,20 @@ func InitializePlugins(ctx context.Context) error {
 		pluginName := p.Name()
 		slog.Info("Initializing plugin", "name", pluginName)
 
-		// 3. 调用插件的初始化方法
 		if err := p.Initialize(ctx); err != nil {
 			return fmt.Errorf("failed to initialize plugin %s: %w", pluginName, err)
 		}
 	}
+
+	if conflicts := ValidateExtensionUniqueness(); len(conflicts) > 0 {
+		for _, c := range conflicts {
+			slog.Error("container extension conflict detected",
+				"extension", c.Extension,
+				"conflicting_plugins", strings.Join(c.PluginNames, ", "),
+			)
+		}
+	}
+
 	return nil
 }
 
@@ -355,6 +416,83 @@ func FindEncryptingPlugin(inputPath string) (Plugin, error) {
 
 	// --- 阶段 4: 失败 ---
 	return nil, fmt.Errorf("all candidate plugins for file '%s' were rejected by ShouldProcess", inputPath)
+}
+
+// FindAllEncryptingPlugins 返回所有能加密指定文件的插件候选（按优先级排序）
+// 与 FindEncryptingPlugin 不同，此函数返回所有候选而非单一最佳匹配
+// 优先级：P0(精确 MIME/扩展名) > P1(通用 ShouldProcess=true)
+func FindAllEncryptingPlugins(inputPath string) []PluginCandidate {
+	ext := strings.ToLower(filepath.Ext(inputPath))
+	mimeType, _ := utils.DetectFileMIMEType(inputPath)
+
+	var candidates []PluginCandidate
+
+	// --- 阶段 1: MIME 精确匹配 (P0) ---
+	if mimeType != "" {
+		for _, p := range Plugins {
+			for _, prefix := range p.SupportedMimePrefixes() {
+				if strings.HasPrefix(mimeType, prefix) {
+					if p.ShouldProcess(inputPath) {
+						candidates = append(candidates, PluginCandidate{
+							Plugin: p, Name: p.Name(), MatchType: "mime", Priority: 0,
+						})
+					}
+					break
+				}
+			}
+		}
+	}
+
+	// --- 阶段 2: 扩展名精确匹配 (P0, 仅当阶段1无结果时) ---
+	if len(candidates) == 0 {
+		extWithoutDot := ext
+		if len(extWithoutDot) > 0 {
+			extWithoutDot = extWithoutDot[1:]
+		}
+		if extWithoutDot != "" {
+			for _, p := range Plugins {
+				for _, supportedExt := range p.SupportedExtensions() {
+					if strings.ToLower(supportedExt) == extWithoutDot {
+						if p.ShouldProcess(inputPath) {
+							candidates = append(candidates, PluginCandidate{
+								Plugin: p, Name: p.Name(), MatchType: "extension", Priority: 0,
+							})
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// --- 阶段 3: 仅限真正的通用插件 (P1) ---
+	// 条件：ShouldProcess=true 且 未声明任何 MIME 前缀 且 未声明任何扩展名
+	// 声明了特定类型（MIME/扩展名）的插件如果没在阶段1-2匹配到，
+	// 说明这个文件不是它们能处理的类型，不应作为候选返回
+	for _, p := range Plugins {
+		if !p.ShouldProcess(inputPath) {
+			continue
+		}
+		hasMimePrefixes := len(p.SupportedMimePrefixes()) > 0
+		hasExtensions := len(p.SupportedExtensions()) > 0
+		if hasMimePrefixes || hasExtensions {
+			continue
+		}
+		alreadyIncluded := false
+		for _, c := range candidates {
+			if c.Name == p.Name() {
+				alreadyIncluded = true
+				break
+			}
+		}
+		if !alreadyIncluded {
+			candidates = append(candidates, PluginCandidate{
+				Plugin: p, Name: p.Name(), MatchType: "general", Priority: 1,
+			})
+		}
+	}
+
+	return candidates
 }
 
 // FindDecryptingPlugin 为给定的容器文件查找合适的解密插件

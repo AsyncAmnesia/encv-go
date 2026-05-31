@@ -20,6 +20,7 @@ import (
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
+	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	alistencryptplugin "github.com/Soltus/encv-go/internal/v2/plugins/alistencrypt"
 	"github.com/Soltus/encv-go/internal/alistencrypt"
 	"github.com/Soltus/encv-go/internal/v2/types"
@@ -191,6 +192,25 @@ func (s *Server) handleFileInfoGin(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+func (s *Server) handleRenameFileGin(c *gin.Context) {
+	var req mobileservice.RenameFileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body", "details": err.Error()})
+		return
+	}
+
+	slog.Info("API: rename file original_name", "path", req.Path, "newName", req.NewName,
+		"hasPassword", req.Password != "")
+
+	result, err := s.mobileSvc.RenameFile(&req)
+	if err != nil {
+		writeServiceErrorGin(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 func (s *Server) handleGetTasksGin(c *gin.Context) {
 	taskList := s.mobileSvc.GetTaskManager().List()
 	c.JSON(http.StatusOK, gin.H{"tasks": taskList})
@@ -198,19 +218,28 @@ func (s *Server) handleGetTasksGin(c *gin.Context) {
 
 func (s *Server) handleCreateTaskGin(c *gin.Context) {
 	var req struct {
-		Type       string `json:"type"`
-		SourcePath string `json:"sourcePath"`
-		TargetPath string `json:"targetPath,omitempty"`
-		Password   string `json:"password,omitempty"`
-		Version    int    `json:"version,omitempty"`
+		Type             string            `json:"type"`
+		SourcePath       string            `json:"sourcePath"`
+		TargetPath       string            `json:"targetPath,omitempty"`
+		Password         string            `json:"password,omitempty"`
+		SecondaryPassword string           `json:"secondaryPassword,omitempty"`
+		Version          int               `json:"version,omitempty"`
+		ExtraFields      map[string]string `json:"extraFields,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
 		return
 	}
 
-	slog.Info("API: create task", "type", req.Type, "source", req.SourcePath, "target", req.TargetPath, "version", req.Version)
-	task := s.mobileSvc.GetTaskManager().Create(req.Type, req.SourcePath, req.TargetPath, req.Password, req.Version)
+	slog.Info("API: create task", "type", req.Type, "source", req.SourcePath,
+		"target", req.TargetPath, "version", req.Version,
+		"hasPassword", req.Password != "",
+		"hasSecondaryPassword", req.SecondaryPassword != "",
+		"hasExtraFields", len(req.ExtraFields) > 0)
+	task := s.mobileSvc.GetTaskManager().CreateWithExtras(
+		req.Type, req.SourcePath, req.TargetPath,
+		req.Password, req.SecondaryPassword, req.Version, req.ExtraFields,
+	)
 
 	c.JSON(http.StatusCreated, task)
 }
@@ -763,19 +792,102 @@ type PluginMeta struct {
 	SupportedExtensions   []string `json:"supportedExtensions"`
 	SupportedMimePrefixes []string `json:"supportedMimePrefixes"`
 	ContainerExtension    string   `json:"containerExtension"`
+	TaskOptions           gin.H    `json:"taskOptions"`
 }
 
 func (s *Server) handlePluginsGin(c *gin.Context) {
 	var metas []PluginMeta
 	for _, p := range plugins.Plugins {
+		opts := p.GetTaskOptions()
 		metas = append(metas, PluginMeta{
 			Name:                  p.Name(),
 			SupportedExtensions:   p.SupportedExtensions(),
 			SupportedMimePrefixes: p.SupportedMimePrefixes(),
 			ContainerExtension:    p.GetContainerExtension(),
+			TaskOptions: gin.H{
+				"passwordStrategy":     string(opts.PasswordStrategy),
+				"supportVersionSelect": opts.SupportVersionSelect,
+				"supportedVersions":    opts.SupportedVersions,
+				"defaultVersion":       opts.DefaultVersion,
+				"extraFields":          opts.ExtraFields,
+			},
 		})
 	}
 	c.JSON(200, gin.H{"plugins": metas})
+}
+
+func (s *Server) handlePredictPluginGin(c *gin.Context) {
+	var req struct {
+		SourcePath string `json:"sourcePath"`
+		Type       string `json:"type"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	var candidates []plugins.PluginCandidate
+	if req.Type == "encrypt" {
+		candidates = plugins.FindAllEncryptingPlugins(req.SourcePath)
+	} else {
+		targetPlugin, err := plugins.FindDecryptingPlugin(req.SourcePath)
+		if err != nil || targetPlugin == nil {
+			c.JSON(200, gin.H{"candidates": []gin.H{}, "pluginName": nil, "taskOptions": nil, "error": err.Error()})
+			return
+		}
+		opts := targetPlugin.GetTaskOptions()
+		candidates = []plugins.PluginCandidate{{
+			Plugin: targetPlugin, Name: targetPlugin.Name(), MatchType: "container", Priority: 0,
+		}}
+		c.JSON(200, gin.H{
+			"candidates": []gin.H{{"name": targetPlugin.Name(), "matchType": "container", "priority": 0, "taskOptions": opts}},
+			"pluginName":  targetPlugin.Name(),
+			"taskOptions": opts,
+		})
+		return
+	}
+
+	candidateList := make([]gin.H, 0, len(candidates))
+	for _, cand := range candidates {
+		opts := cand.Plugin.GetTaskOptions()
+		candidateList = append(candidateList, gin.H{
+			"name":        cand.Name,
+			"matchType":   cand.MatchType,
+			"priority":    cand.Priority,
+			"taskOptions": opts,
+		})
+	}
+
+	firstName := ""
+	var firstOpts pluginInterfaces.TaskOptions
+	if len(candidateList) > 0 {
+		firstName = candidateList[0]["name"].(string)
+		firstOpts = candidateList[0]["taskOptions"].(pluginInterfaces.TaskOptions)
+	}
+
+	c.JSON(200, gin.H{
+		"candidates": candidateList,
+		"pluginName":  firstName,
+		"taskOptions": firstOpts,
+	})
+}
+
+func (s *Server) handleContainerExtensionsGin(c *gin.Context) {
+	extMap := plugins.GetContainerExtensionsMap()
+	conflicts := plugins.ValidateExtensionUniqueness()
+
+	var conflictList []gin.H
+	for _, c := range conflicts {
+		conflictList = append(conflictList, gin.H{
+			"extension":   c.Extension,
+			"pluginNames": c.PluginNames,
+		})
+	}
+
+	c.JSON(200, gin.H{
+		"extensions": extMap,
+		"conflicts":  conflictList,
+	})
 }
 
 func (s *Server) writeSSEEvent(c *gin.Context, flusher http.Flusher, data string) {
