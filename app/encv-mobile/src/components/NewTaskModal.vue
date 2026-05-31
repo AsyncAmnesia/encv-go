@@ -210,6 +210,7 @@ import {
   IonTitle,
   IonButtons,
   IonButton,
+  IonItem,
   IonSelect,
   IonSelectOption,
   IonInput,
@@ -536,6 +537,17 @@ async function handleClose() {
 
 .extra-field-toggle {
   --padding-start: 0;
+  --color: var(--ion-color-primary);
+}
+
+.extra-field-toggle::part(label) {
+  color: var(--ion-text-color, #fff);
+  font-size: 0.95rem;
+}
+
+.extra-field-item ion-note[slot=helper] {
+  color: var(--ion-color-medium, #b0b0b0);
+  font-size: 0.8rem;
 }
 
 .extra-field-select {
