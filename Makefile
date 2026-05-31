@@ -28,11 +28,10 @@ dev-backend:
 	@echo "Starting backend (desktop mode)..."
 	go run ./cmd/encv start
 
-# 启动后端（移动端预览模式，自动将 mobile.server_dir 覆盖到 server.dir）
-# 必须设置 ENCV_DEV_PREVIEW=1 才会触发 ApplyMobileOverrides
-# 安卓真机只设置 ENCV_MOBILE=1，不设置此变量，因此不会被影响
+# 启动后端（移动端预览模式，mobile 配置段作为 overlay 自动生效）
+# ENCV_MOBILE=1 或 ENCV_DEV_PREVIEW=1 均可触发 ApplyMobileOverlay
 dev-mobile:
-	@echo "Generating mock data to mobile server_dir..."
+	@echo "Generating mock data to mobile server.dir..."
 	@cd app/encv-mobile && npx tsx scripts/generate-mock-files.ts --dir /storage/emulated/0
 	@echo "Starting backend (mobile preview mode)..."
 	ENCV_MOBILE=1 ENCV_DEV_PREVIEW=1 go run ./cmd/encv start

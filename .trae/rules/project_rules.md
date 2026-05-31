@@ -47,8 +47,66 @@
 
 - **严禁擅自修改 `config.user.json`**：该文件是唯一用户配置模板（桌面端+移动端共用），任何端口/路径/密码等值的修改必须通过用户明确指令执行
 - 如需临时改变开发端口等参数，应使用环境变量 `ENCV_CONFIG_PATH` 指向临时配置文件，或命令行 `--config` 标志
-- **不得创建独立的 `config.mobile.json` 或其他平台特定配置模板**：移动端适配通过 Go 端 `Load()` 中的 `ENCV_MOBILE` 路径自动修正实现
+- **不得创建独立的 `config.mobile.json` 或其他平台特定配置模板**：移动端适配通过 `mobile` 配置段的 overlay 机制实现
+- **严禁在合并/初始化阶段隐式替换配置值**：`mergeConfigDefaults()` 等函数只负责填补缺失字段，**绝不能**根据 mobile 段的值去修改 server.dir 等顶层字段。mobile→顶层的映射只能通过 `ApplyMobileOverlay()` 在运行时完成
 - 违反此规则导致的配置模板破坏将被视为严重错误
+
+## Mobile Overlay 机制（核心架构）
+
+> **原则：`mobile` 段是运行时 overlay（覆盖层），不修改持久化的 config.user.json。**
+
+### 字段命名规则
+
+`mobile` 段的字段命名**必须镜像目标配置路径**，实现无歧义映射：
+
+```json
+{
+  "mobile": {
+    "server": { "dir": "/storage/emulated/0" },
+    "output": { "path": "/storage/emulated/0/encv-output" },
+    "webdav": { "dir": "" }
+  }
+}
+```
+
+| mobile 路径 | 映射到顶层 | Go 类型 |
+|------------|-----------|---------|
+| `mobile.server.dir` | `server.dir` | `MobileServerConfig.Dir` |
+| `mobile.output.path` | `output_path` | `MobileOutputConfig.Path` |
+| `mobile.webdav.dir` | `webdav.dir` | `MobileWebdavConfig.Dir` |
+
+**禁止使用扁平命名**如 `server_dir`、`output_path`、`webdav_dir`——这类命名无法从 JSON 结构推断映射关系。
+
+### 触发条件
+
+`ApplyMobileOverlay(cfg)` 在 `config.Load()` 的 `finalize()` 阶段调用，触发条件：
+
+| 环境变量 | 场景 | 效果 |
+|---------|------|------|
+| `ENCV_MOBILE=1` | Android 真机（EncvGoService.kt 设置） | ✅ overlay 生效 |
+| `ENCV_DEV_PREVIEW=1` | 桌面端移动预览（Makefile dev-mobile） | ✅ overlay 生效 |
+| 均未设置 | 桌面端正常启动 | ❌ mobile 段被忽略 |
+
+### 数据流
+
+```
+config.user.json (持久化, 不被修改)
+  ├── server: { dir: "/", port: 2025 }     ← 桌面端值
+  └── mobile:
+      └── server: { dir: "/storage/emulated/0" }
+              ↓
+   Load() → finalize() → ApplyMobileOverlay()  ← 仅内存中生效
+              ↓
+   运行时 Config: server.dir = "/storage/emulated/0"
+   (config.user.json 文件内容不变)
+```
+
+### 禁止的反模式
+
+1. ❌ **在 mergeConfigDefaults() 中用 mobile 值替换 server.dir** — 这是隐式覆盖，违反配置透明性
+2. ❌ **扁平命名 `server_dir`** — 无法从 JSON 结构自描述映射关系
+3. ❌ **只在 ENCV_DEV_PREVIEW 下生效** — 导致 Android 真机的 mobile 配置永远不被应用
+4. ❌ **在 finalize() 中对 "/" 做 os.Getwd() fallback 后再 overlay** — 顺序错误，overlay 应在最后
 
 ## Go Build Tag 平台约束规则（重要！）
 

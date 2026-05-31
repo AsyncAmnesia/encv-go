@@ -139,29 +139,27 @@ func Load(configPath string) (*Config, error) {
 	return finalize(cfg), nil
 }
 
-// ApplyMobileOverrides 在 ENCV_DEV_PREVIEW=1 环境下将 mobile 段的配置合并到顶层字段。
-// 供 config.Load() finalize() 和 API handler 共用，确保 GET /api/config 返回的也是生效后的值。
+// ApplyMobileOverlay 将 mobile 配置段作为运行时 overlay 应用到顶层字段。
+// 这是唯一的 mobile→顶层 映射入口，不修改持久化的配置文件。
 //
-// 触发方式（必须显式设置 ENCV_DEV_PREVIEW=1）：
-//   - 移动端 dev 预览：通过 Makefile make dev-mobile 或手动 export ENCV_DEV_PREVIEW=1 启动后端
+// 触发条件（满足任一即生效）：
+//   - 环境变量 ENCV_MOBILE=1（Android 真机，由 EncvGoService.kt 设置）
+//   - 环境变量 ENCV_DEV_PREVIEW=1（桌面端移动预览，由 Makefile dev-mobile 设置）
 //
 // 不触发的场景：
-//   - 安卓真机：EncvGoService.kt 只设置 ENCV_MOBILE=1，不设置 ENCV_DEV_PREVIEW
-//   - 桌面端开发：不设置任何 mobile 相关环境变量
-func ApplyMobileOverrides(cfg *Config) {
-	home := os.Getenv("HOME")
-	if cfg.Mobile.ServerDir != "" {
-		cfg.Server.Dir = cfg.Mobile.ServerDir
-	} else if cfg.Server.Dir == "/" || cfg.Server.Dir == "." {
-		cfg.Server.Dir = home
+//   - 桌面端正常启动（无任何 mobile 相关环境变量）— mobile 段被忽略
+func ApplyMobileOverlay(cfg *Config) {
+	if cfg.Mobile == nil {
+		return
 	}
-	if cfg.Mobile.OutputPath != "" {
-		cfg.OutputPath = cfg.Mobile.OutputPath
-	} else if cfg.OutputPath == "" || cfg.OutputPath == "./encrypted" {
-		cfg.OutputPath = filepath.Join(home, "encv-output")
+	if cfg.Mobile.Server != nil && cfg.Mobile.Server.Dir != "" {
+		cfg.Server.Dir = cfg.Mobile.Server.Dir
 	}
-	if cfg.Mobile.WebdavDir != "" {
-		cfg.Webdav.Dir = cfg.Mobile.WebdavDir
+	if cfg.Mobile.Output != nil && cfg.Mobile.Output.Path != "" {
+		cfg.OutputPath = cfg.Mobile.Output.Path
+	}
+	if cfg.Mobile.Webdav != nil && cfg.Mobile.Webdav.Dir != "" {
+		cfg.Webdav.Dir = cfg.Mobile.Webdav.Dir
 	}
 }
 
@@ -289,8 +287,8 @@ func finalize(cfg *Config) *Config {
 	if cfg.Server.Dir == "/" {
 		cfg.Server.Dir, _ = os.Getwd()
 	}
-	if os.Getenv("ENCV_DEV_PREVIEW") == "1" && cfg.Mobile != nil {
-		ApplyMobileOverrides(cfg)
+	if os.Getenv("ENCV_MOBILE") == "1" || os.Getenv("ENCV_DEV_PREVIEW") == "1" {
+		ApplyMobileOverlay(cfg)
 	}
 	slog.Info("Configuration loaded", "log_level", cfg.Log.Level)
 	return cfg

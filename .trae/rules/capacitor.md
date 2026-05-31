@@ -516,3 +516,4 @@ modal.onDidDismiss().then(() => {
 |------|---------|
 | **WAF/代理截断 `@` 字符 → 双重编码方案** | [development.md §六](development.md#六waf代理截断路径参数实战踩坑) |
 | 配置合并加载（Default → user → dev） | [config.go](internal/config/config.go) |
+| **Mobile Overlay 机制（mobile→顶层映射）** | [project_rules.md §Mobile Overlay 机制](project_rules.md#mobile-overlay-机制核心架构) |

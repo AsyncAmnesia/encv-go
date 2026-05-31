@@ -9,9 +9,9 @@
     "level": "debug"
   },
   "mobile": {
-    "output_path": "/storage/emulated/0/encv-output",
-    "server_dir": "/storage/emulated/0",
-    "webdav_dir": ""
+    "server": { "dir": "/storage/emulated/0" },
+    "output": { "path": "/storage/emulated/0/encv-output" },
+    "webdav": { "dir": "" }
   },
   "output_path": "./output",
   "password": "my-encv_key，可以使用中文和标点符号✔",
