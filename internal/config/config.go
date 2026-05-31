@@ -112,39 +112,30 @@ func (c *Config) IsStrictMode() bool {
 	return c.StrictDeprecatedVersion
 }
 
-// Load 从指定的文件路径加载配置。
-// 它会先用默认值初始化，然后用配置文件内容进行覆盖。
-// 如果文件不存在，则返回默认配置。
+// Load 加载配置。优先级（低→高）：
+//   DefaultConfig() → config.user.json → config.dev.json（dev 最高优先级）
+// 显式指定路径时走单文件模式（向后兼容）
 func Load(configPath string) (*Config, error) {
 	cfg := DefaultConfig()
 
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		slog.Info("Config file not found, using default settings", "path", configPath)
-		return cfg, nil
+	if configPath != "" {
+		return loadSingleFile(cfg, configPath)
 	}
 
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file '%s': %w", configPath, err)
+	candidates := findMergeCandidates()
+	if candidates == nil {
+		slog.Info("No config files found, using default settings")
+		return finalize(cfg), nil
 	}
 
-	// json.Unmarshal 会将文件中的非零值字段覆盖到 cfg 上
-	if err := json.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config file '%s': %w", configPath, err)
+	if candidates.User != "" {
+		cfg = loadAndMerge(cfg, candidates.User)
 	}
-	if cfg.Server.Dir == "/" {
-		cfg.Server.Dir, err = os.Getwd()
-		if err != nil {
-			return cfg, fmt.Errorf("failed to get current working directory: %w", err)
-		}
+	if candidates.Dev != "" {
+		cfg = loadAndMerge(cfg, candidates.Dev)
 	}
 
-	if os.Getenv("ENCV_MOBILE") == "1" && cfg.Mobile != nil {
-		ApplyMobileOverrides(cfg)
-	}
-
-	slog.Info("Configuration loaded successfully", "path", configPath, "log_level", cfg.Log.Level)
-	return cfg, nil
+	return finalize(cfg), nil
 }
 
 // ApplyMobileOverrides 在 ENCV_MOBILE=1 环境下将 mobile 段的配置合并到顶层字段。
@@ -164,6 +155,132 @@ func ApplyMobileOverrides(cfg *Config) {
 	if cfg.Mobile.WebdavDir != "" {
 		cfg.Webdav.Dir = cfg.Mobile.WebdavDir
 	}
+}
+
+func mergeConfig(base, overlay *Config) *Config {
+	if overlay == nil {
+		return base
+	}
+	baseData, err := json.Marshal(base)
+	if err != nil {
+		return base
+	}
+	overlayData, err := json.Marshal(overlay)
+	if err != nil {
+		return base
+	}
+	var baseMap, overlayMap map[string]interface{}
+	if json.Unmarshal(baseData, &baseMap) != nil || json.Unmarshal(overlayData, &overlayMap) != nil {
+		return base
+	}
+	deepMerge(baseMap, overlayMap)
+	resultData, _ := json.Marshal(baseMap)
+	var result Config
+	if json.Unmarshal(resultData, &result) != nil {
+		return base
+	}
+	result.Provider = base.Provider
+	return &result
+}
+
+func deepMerge(base, overlay map[string]interface{}) {
+	for k, ov := range overlay {
+		if ov == nil {
+			continue
+		}
+		bv, ok := base[k]
+		if !ok {
+			base[k] = ov
+			continue
+		}
+		bm, bo := bv.(map[string]interface{})
+		om, oo := ov.(map[string]interface{})
+		if bo && oo {
+			deepMerge(bm, om)
+		} else {
+			base[k] = ov
+		}
+	}
+}
+
+type mergeCandidates struct {
+	Dev  string
+	User string
+}
+
+func findMergeCandidates() *mergeCandidates {
+	dirs := searchDirs()
+	var c mergeCandidates
+	for _, dir := range dirs {
+		if c.Dev == "" && exists(filepath.Join(dir, "config.dev.json")) {
+			c.Dev = filepath.Join(dir, "config.dev.json")
+		}
+		if c.User == "" && exists(filepath.Join(dir, "config.user.json")) {
+			c.User = filepath.Join(dir, "config.user.json")
+		}
+		if c.Dev != "" && c.User != "" {
+			break
+		}
+	}
+	if c.Dev == "" && c.User == "" {
+		return nil
+	}
+	return &c
+}
+
+func loadAndMerge(base *Config, path string) *Config {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return base
+	}
+	var overlay Config
+	if json.Unmarshal(data, &overlay) != nil {
+		return base
+	}
+	slog.Info("Merged config file", "path", path)
+	return mergeConfig(base, &overlay)
+}
+
+func loadSingleFile(cfg *Config, path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		slog.Info("Config file not found, using default settings", "path", path)
+		return finalize(cfg), nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file '%s': %w", path, err)
+	}
+	if err := json.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse config file '%s': %w", path, err)
+	}
+	return finalize(cfg), nil
+}
+
+func finalize(cfg *Config) *Config {
+	if cfg.Server.Dir == "/" {
+		cfg.Server.Dir, _ = os.Getwd()
+	}
+	if os.Getenv("ENCV_MOBILE") == "1" && cfg.Mobile != nil {
+		ApplyMobileOverrides(cfg)
+	}
+	slog.Info("Configuration loaded", "log_level", cfg.Log.Level)
+	return cfg
+}
+
+func searchDirs() []string {
+	var dirs []string
+	if wd, err := os.Getwd(); err == nil {
+		dirs = append(dirs, wd)
+	}
+	if exePath, err := os.Executable(); err == nil {
+		dirs = append(dirs, filepath.Dir(exePath))
+	}
+	return dirs
+}
+
+func exists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
 }
 
 // GetPluginSettingsFor 是一个泛型辅助函数，用于安全地获取并解析特定插件的配置。
