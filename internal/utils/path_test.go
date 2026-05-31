@@ -31,6 +31,159 @@ func TestSafeURLPathToRelative_NormalPaths(t *testing.T) {
 	}
 }
 
+func simulateProxySafeEncode(value string) string {
+	return url.QueryEscape(url.QueryEscape(value))
+}
+
+func simulateGinQueryDecode(encoded string) string {
+	decoded, _ := url.QueryUnescape(encoded)
+	return decoded
+}
+
+func TestSafeURLToAbsPath_ProxySafeEncodeRoundTrip(t *testing.T) {
+	baseDir := "/storage/emulated/0"
+
+	tests := []struct {
+		name      string
+		original  string
+		wantAbs   string
+	}{
+		{
+			name:     "root path",
+			original: "/",
+			wantAbs:  "/storage/emulated/0",
+		},
+		{
+			name:     "subdirectory",
+			original: "/DCIM",
+			wantAbs:  "/storage/emulated/0/DCIM",
+		},
+		{
+			name:     "path with @ (WAF trigger char)",
+			original: "/视频@合集",
+			wantAbs:  "/storage/emulated/0/视频@合集",
+		},
+		{
+			name:     "path with # and ?",
+			original: "/file#1?v2",
+			wantAbs:  "/storage/emulated/0/file#1?v2",
+		},
+		{
+			name:     "Chinese path",
+			original: "/中文目录/文件.txt",
+			wantAbs:  "/storage/emulated/0/中文目录/文件.txt",
+		},
+		{
+			name:     "emoji path",
+			original: "/😀🎉/test.mp4",
+			wantAbs:  "/storage/emulated/0/😀🎉/test.mp4",
+		},
+		{
+			name:     "special chars !@#$%^&*()",
+			original: "/04-boundary-test/special-chars-!@#$%^&*()_+.txt",
+			wantAbs:  "/storage/emulated/0/04-boundary-test/special-chars-!@#$%^&*()_+.txt",
+		},
+		{
+			name:     "percent literal in filename",
+			original: "/reports/report%Q1.txt",
+			wantAbs:  "/storage/emulated/0/reports/report%Q1.txt",
+		},
+		{
+			name:     "space in path",
+			original: "/My Documents/file.txt",
+			wantAbs:  "/storage/emulated/0/My Documents/file.txt",
+		},
+		{
+			name:     "deep nested path",
+			original: "/a/b/c/d/e/f.txt",
+			wantAbs:  "/storage/emulated/0/a/b/c/d/e/f.txt",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			doubleEncoded := simulateProxySafeEncode(tc.original)
+			ginDecoded := simulateGinQueryDecode(doubleEncoded)
+
+			got, err := SafeURLToAbsPath(baseDir, ginDecoded)
+			if err != nil {
+				t.Fatalf("SafeURLToAbsPath(%q) error: %v (original=%q, doubleEncoded=%q)", ginDecoded, err, tc.original, doubleEncoded)
+			}
+			if got != tc.wantAbs {
+				t.Errorf("roundtrip mismatch:\n  original:      %q\n  doubleEncoded: %q\n  ginDecoded:    %q\n  got:           %q\n  want:          %q",
+					tc.original, doubleEncoded, ginDecoded, got, tc.wantAbs)
+			}
+		})
+	}
+}
+
+func TestDecodePathParam_Idempotent(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "plain path unchanged",
+			input: "/DCIM/video.mp4",
+			want:  "/DCIM/video.mp4",
+		},
+		{
+			name:  "already decoded Chinese",
+			input: "/中文目录/文件.txt",
+			want:  "/中文目录/文件.txt",
+		},
+		{
+			name:  "single encoded value decoded once",
+			input: "%2FDCIM%2Fvideo.mp4",
+			want:  "/DCIM/video.mp4",
+		},
+		{
+			name:  "double encoded value decoded fully",
+			input: "%252FDCIM%252Fvideo.mp4",
+			want:  "/DCIM/video.mp4",
+		},
+		{
+			name:  "percent literal in filename (encoded as %25)",
+			input: "/reports/report%25Q1.txt",
+			want:  "/reports/report%Q1.txt",
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := DecodePathParam(tc.input)
+			if got != tc.want {
+				t.Errorf("DecodePathParam(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNoTripleDecode_AfterRemovingManualCalls(t *testing.T) {
+	baseDir := "/storage/emulated/0"
+
+	original := "/reports/report%Q1.txt"
+	doubleEncoded := simulateProxySafeEncode(original)
+	ginDecoded := simulateGinQueryDecode(doubleEncoded)
+
+	got, err := SafeURLToAbsPath(baseDir, ginDecoded)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := "/storage/emulated/0/reports/report%Q1.txt"
+	if got != want {
+		t.Errorf("triple decode detected!\n  original:      %q\n  doubleEncoded: %q\n  ginDecoded:    %q\n  got:           %q\n  want:          %q",
+			original, doubleEncoded, ginDecoded, got, want)
+	}
+}
+
 func TestSafeURLPathToRelative_DoubleEncodedFromGinQuery(t *testing.T) {
 	tests := []struct {
 		name          string

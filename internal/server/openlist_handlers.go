@@ -128,7 +128,8 @@ func (p *ProxyGin) handleDecrypt(c *gin.Context, siteHost, siteToken string) {
 	routePath, _ := routePathVal.(string)
 
 	if routePath == "" {
-		durl := utils.DecodePathParam(c.Request.URL.Query().Get("file"))
+		// durl 是完整 URL，不经过 SafeURLPathToRelative，由 url.Parse 处理
+		durl := c.Request.URL.Query().Get("file")
 		if durl == "" {
 			c.Status(http.StatusBadRequest)
 			c.Writer.Write([]byte("Bad Request: 'file' query parameter is missing"))

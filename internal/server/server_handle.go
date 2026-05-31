@@ -83,9 +83,9 @@ func (c *compositeChunkNamer) GetFirstDataChunkIndex() int {
 // handleStreamRequest 处理 /stream?file=... 格式的请求
 func (s *Server) handleStreamRequest(w http.ResponseWriter, r *http.Request) {
 	// 1. 从查询参数中获取文件的绝对路径
-	filePath := utils.DecodePathParam(r.URL.Query().Get("path"))
+	filePath := r.URL.Query().Get("path")
 	if filePath == "" {
-		filePath = utils.DecodePathParam(r.URL.Query().Get("file"))
+		filePath = r.URL.Query().Get("file")
 	}
 	if filePath == "" {
 		http.Error(w, "Bad Request: 'path' or 'file' query parameter is missing", http.StatusBadRequest)

@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -471,14 +470,10 @@ func (s *Server) handleIndexClearGin(c *gin.Context) {
 
 func (s *Server) handleStreamExternalFileGin(c *gin.Context) {
 	queryPath := c.Query("path")
-	decodedPath, err := url.QueryUnescape(queryPath)
-	if err != nil {
-		decodedPath = queryPath
-	}
 
-	slog.Info("API: stream external file", "path", decodedPath)
+	slog.Info("API: stream external file", "path", queryPath)
 
-	err = s.mobileSvc.StreamExternalFile(c.Writer, c.Request, decodedPath)
+	err := s.mobileSvc.StreamExternalFile(c.Writer, c.Request, queryPath)
 	if err != nil {
 		writeServiceErrorGin(c, err)
 		return

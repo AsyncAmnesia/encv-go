@@ -1245,16 +1245,9 @@ func (s *MobileService) StreamExternalFile(w http.ResponseWriter, r *http.Reques
 		return &BadRequestError{Err: errors.New("'path' query parameter is required")}
 	}
 
-	absPath := filepath.Clean(filePath)
-
-	if !filepath.IsAbs(absPath) {
-		resolved, err := utils.SafeURLToAbsPath(s.servingDir, filePath)
-		if err == nil {
-			slog.Info("StreamExternalFile: resolved relative path via servingDir", "input", filePath, "resolved", resolved)
-			absPath = resolved
-		} else {
-			return &BadRequestError{Err: fmt.Errorf("path is not absolute and cannot be resolved via servingDir: %s", filePath)}
-		}
+	absPath, err := utils.SafeURLToAbsPath(s.servingDir, filePath)
+	if err != nil {
+		return &BadRequestError{Err: fmt.Errorf("failed to resolve path: %w", err)}
 	}
 
 	info, err := os.Stat(absPath)
