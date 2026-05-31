@@ -20,8 +20,7 @@ import (
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
-	alistencryptplugin "github.com/Soltus/encv-go/internal/v2/plugins/alistencrypt"
-	"github.com/Soltus/encv-go/internal/alistencrypt"
+	alistencrypt "github.com/Soltus/encv-go/internal/v2/plugins/alistencrypt"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -999,7 +998,7 @@ func (s *Server) handleAlistEncryptStreamGin(c *gin.Context) {
 
 	slog.Info("API: alist-encrypt stream", "path", absPath)
 
-	var plugin alistencryptplugin.AlistEncryptPlugin
+	var plugin alistencrypt.AlistEncryptPlugin
 	if err := plugin.ServeStream(c.Writer, c.Request, absPath, password); err != nil {
 		slog.Error("API: alist-encrypt stream failed", "error", err)
 		writeServiceErrorGin(c, err)

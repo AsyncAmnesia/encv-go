@@ -13,7 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/Soltus/encv-go/internal/alistencrypt"
+	"github.com/Soltus/encv-go/internal/v2/plugins/alistencrypt"
 )
 
 const testPassword = "test_password_123"

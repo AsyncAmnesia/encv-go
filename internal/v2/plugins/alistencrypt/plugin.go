@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Soltus/encv-go/internal/alistencrypt"
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/v2/crypto"
 	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
@@ -93,6 +92,10 @@ func (p *AlistEncryptPlugin) Initialize(ctx context.Context) error {
 		p.settings.Suffix = ".bin"
 	} else if len(suffix) > 16 {
 		slog.Warn("alist_encrypt: suffix exceeds 16 chars, falling back to .bin",
+			"suffix", suffix)
+		p.settings.Suffix = ".bin"
+	} else if isReservedSuffix(suffix) {
+		slog.Warn("alist_encrypt: suffix conflicts with reserved extension, falling back to .bin",
 			"suffix", suffix)
 		p.settings.Suffix = ".bin"
 	}
@@ -186,7 +189,7 @@ func (p *AlistEncryptPlugin) PreDecryptProcessor(containerPath, outputDir string
 func (p *AlistEncryptPlugin) Decrypt(containerPath, outputDir string) error {
 	ext := strings.ToLower(filepath.Ext(containerPath))
 	if ext != p.settings.Suffix {
-		return &alistencrypt.DecryptionError{Reason: "invalid format: extension mismatch", Err: alistencrypt.ErrInvalidFormat}
+		return &DecryptionError{Reason: "invalid format: extension mismatch", Err: ErrInvalidFormat}
 	}
 
 	password := p.resolvePasswordFromTask()
@@ -275,4 +278,13 @@ func (p *AlistEncryptPlugin) resolvePasswordWithTaskExtras(extraFields map[strin
 
 func (p *AlistEncryptPlugin) SetTaskExtraFields(fields map[string]string) {
 	p.taskExtraFields = fields
+}
+
+var reservedSuffixes = map[string]bool{
+	".sccgv": true,
+	".encv":  true,
+}
+
+func isReservedSuffix(suffix string) bool {
+	return reservedSuffixes[strings.ToLower(suffix)]
 }
