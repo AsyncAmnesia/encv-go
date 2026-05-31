@@ -13,5 +13,6 @@
 - [x] curl /stream?path=...photo.jpg 返回 image/jpeg Content-Type + 二进制数据（446B）
 - [x] curl /api/config 返回合理 JSON（含 password/plugin_settings）
 - [x] curl /health 返回 { status: ok }
-- [ ] 前端 Files 页面显示 4 个真实目录（非"空目录"）
-- [ ] 前端点击 notes.txt 可预览文本内容
+- [x] 首页 `/` 不被 mock 拦截（shouldMockIntercept 路径前缀白名单）
+- [x] 前端 JS/CSS 静态资源不被拦截
+- [x] 前端完整调用链 8 步全部通过（health→config→plugins→SSE stream→txt preview→image stream→predict-plugin→task create）

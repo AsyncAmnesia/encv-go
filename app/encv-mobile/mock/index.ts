@@ -48,6 +48,22 @@ function parseMockParams(url: string): { enabled: boolean; suffix: string } {
   return { enabled: isMockEnabled(), suffix: getMockSuffix() }
 }
 
+const MOCK_API_PREFIXES = [
+  '/api/',
+  '/health',
+  '/stream',
+  '/preview',
+  '/decrypt',
+  '/ping',
+  '/ws',
+  '/__mock_control',
+]
+
+function shouldMockIntercept(url: string): boolean {
+  const pathname = url.split('?')[0]
+  return MOCK_API_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(prefix))
+}
+
 export function createMockPlugin(): Plugin {
   let dispatchRequest: Connect.NextHandleFunction | null = null
   let mockActive = false
@@ -63,7 +79,7 @@ export function createMockPlugin(): Plugin {
         const url = req.url || ''
         const params = parseMockParams(url)
 
-        if (!params.enabled) {
+        if (!params.enabled || !shouldMockIntercept(url)) {
           next()
           return
         }
