@@ -77,13 +77,13 @@ var rootCmd = &cobra.Command{
 		// 2. 从 flag 获取可能的配置路径
 		configFlag, _ := cmd.Flags().GetString("config")
 		var err error
-		configPath, err = config.FindConfigPath(configFlag)
-		if err != nil {
-			slog.Warn("Config file not found, using defaults", "error", err)
+		if configFlag != "" {
+			configPath = configFlag
+		} else {
+			configPath, _ = config.FindConfigPath("")
 		}
 
-		// 3. 加载基础配置（默认值 + 配置文件）
-		cfg, err = config.Load(configPath)
+		cfg, err = config.Load("")
 		if err != nil {
 			log.Fatalf("Failed to load base config: %v", err)
 		}
