@@ -32,6 +32,7 @@ export function getWebSocketUrl(): string {
 
 export interface FileItem {
   name: string
+  display_name?: string
   path: string
   isDirectory: boolean
   isEncrypted?: boolean

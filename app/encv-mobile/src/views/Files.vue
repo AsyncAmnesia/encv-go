@@ -240,7 +240,7 @@
                 ></ion-icon>
               </div>
               <ion-label>
-                <h2>{{ file.name }}</h2>
+                <h2>{{ file.display_name || file.name }}</h2>
                 <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified"> · {{ formatDateTime(file.modified) }}</span></p>
                 <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
                 <div v-if="!file.isDirectory && file._tags && file._tags.length > 0" class="file-tag-chips">
@@ -306,7 +306,7 @@
                 ></ion-icon>
             </div>
             <ion-label>
-              <h2>{{ file.name }}</h2>
+              <h2>{{ file.display_name || file.name }}</h2>
               <p v-if="searchQuery && !file.isDirectory" class="search-path">{{ file.path }}</p>
               <p v-if="!file.isDirectory && file.size">{{ formatFileSize(file.size) }}<span v-if="file.modified && !searchQuery"> · {{ formatDateTime(file.modified) }}</span></p>
               <p v-else-if="file.isDirectory">{{ t('files.directory') }}</p>
