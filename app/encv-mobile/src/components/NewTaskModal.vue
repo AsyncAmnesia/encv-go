@@ -583,7 +583,7 @@ async function handleClose() {
 }
 
 .extra-field-toggle::part(handle) {
-  background-color: var(--ion-color-step-50, #fff);
+  background-color: var(--ion-color-primary, #3880ff);
   border-radius: 50%;
 }
 
