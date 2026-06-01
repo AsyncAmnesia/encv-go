@@ -485,7 +485,7 @@ import { formatDateTime } from '@/composables/useDateFormat'
 import { useThumbnailCache } from '@/composables/useThumbnailCache'
 import { useFileFeatures, findClickHandler, isAnyContainerFile, getFeatureIcon } from '@/composables/useFileFeatures'
 import { preloadSubtitles } from '@/features/alist-encrypt'
-import { isAlistEncrypted, getStreamUrl } from '@/features/alist-encrypt/useAlistEncrypt'
+import { isAlistEncrypted, getStreamUrl, getSessionPassword, setSessionPassword, loadDecodedName, getDecodedName } from '@/features/alist-encrypt/useAlistEncrypt'
 import { promptPassword } from '@/features/alist-encrypt/password-dialog'
 import {
   isImageFile,
@@ -794,10 +794,21 @@ function goUp() {
 async function handleFileClick(file: FileItem) {
   const clickResult = await findClickHandler(file)
   if (clickResult?.handled) {
-    const password = await promptPassword(file.name)
-    if (!password) return
+    const cached = getSessionPassword(file.path)
+    let password = cached
+    if (!password) {
+      password = await promptPassword(file.name)
+      if (!password) return
+    }
+    setSessionPassword(file.path, password)
+    if (isAlistEncrypted(file)) {
+      await loadDecodedName(file, password)
+    }
+    const displayName = isAlistEncrypted(file)
+      ? (getDecodedName(file.path) || file.name)
+      : file.name
     const streamUrl = getStreamUrl(file, password)
-    router.push({ path: '/player', query: { path: file.path, name: file.name, streamUrl } })
+    router.push({ path: '/player', query: { path: file.path, name: displayName, streamUrl } })
     return
   }
 
