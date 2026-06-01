@@ -71,13 +71,6 @@
 }
 
 body.dark {
-  --ion-color-primary: #6a9eff;
-  --ion-color-primary-rgb: 106, 158, 255;
-  --ion-color-primary-contrast: #000000;
-  --ion-color-primary-contrast-rgb: 0, 0, 0;
-  --ion-color-primary-shade: #5d8be0;
-  --ion-color-primary-tint: #79a8ff;
-
   --ion-color-secondary: #50c8ff;
   --ion-color-secondary-rgb: 80, 200, 255;
   --ion-color-secondary-contrast: #000000;

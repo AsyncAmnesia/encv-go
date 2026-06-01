@@ -62,15 +62,29 @@ function resetConfig() {
 }
 
 function getFieldValue(path: string[]): unknown {
-  let current: unknown = config.value
-  for (const key of path) {
-    if (current && typeof current === 'object' && current !== null) {
-      current = (current as Record<string, unknown>)[key]
-    } else {
-      return undefined
-    }
-  }
-  return current
+	let current: unknown = config.value
+	for (const key of path) {
+		if (current && typeof current === 'object' && current !== null) {
+			current = (current as Record<string, unknown>)[key]
+		} else {
+			return findSchemaDefault(path)
+		}
+	}
+	if (current === undefined || current === null || current === '') {
+		const schemaDefault = findSchemaDefault(path)
+		if (schemaDefault !== undefined) return schemaDefault
+	}
+	return current
+}
+
+function findSchemaDefault(path: string[]): unknown {
+	let fields: FieldDef[] | undefined = schemaFields.value
+	for (let i = 0; i < path.length - 1 && fields; i++) {
+		const child = fields.find(f => f.key === path[i])
+		fields = child?.properties
+	}
+	const leaf = fields?.find(f => f.key === path[path.length - 1])
+	return leaf ? getDefaultValue(leaf) : undefined
 }
 
 function setFieldValue(path: string[], value: unknown) {
@@ -79,10 +93,14 @@ function setFieldValue(path: string[], value: unknown) {
   let current: Record<string, unknown> = config.value
   for (let i = 0; i < path.length - 1; i++) {
     const key = path[i]
-    if (!current[key] || typeof current[key] !== 'object') {
-      current[key] = {}
+    const child = current[key]
+    if (!child || typeof child !== 'object') {
+      const fresh: Record<string, unknown> = {}
+      current[key] = fresh
+      current = fresh
+    } else {
+      current = child as Record<string, unknown>
     }
-    current = current[key] as Record<string, unknown>
   }
 
   current[path[path.length - 1]] = value

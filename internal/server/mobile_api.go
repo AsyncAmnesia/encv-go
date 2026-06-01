@@ -146,6 +146,84 @@ func (s *Server) handleCreateDirectoryGin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "created"})
 }
 
+func (s *Server) handleUploadFileGin(c *gin.Context) {
+	targetPath := utils.DecodeGinQueryParam(c.Query("path"))
+	if targetPath == "" {
+		targetPath = "/"
+	}
+	slog.Info("API: upload file", "target_path", targetPath)
+
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing or invalid 'file' form field"})
+		return
+	}
+	defer file.Close()
+
+	if header.Filename == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "filename is empty"})
+		return
+	}
+
+	result, err := s.mobileSvc.UploadFile(targetPath, header.Filename, file, 0)
+	if err != nil {
+		writeServiceErrorGin(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+func (s *Server) handleServiceGuardGin(c *gin.Context) {
+	files, err := s.mobileSvc.ListFiles("/")
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"ready":      false,
+			"servingDir": s.servingDir,
+			"error":      err.Error(),
+			"detail":     "failed to list root directory",
+		})
+		return
+	}
+
+	const marker = "01-plain-media"
+	hasMarker := false
+	var dirNames []string
+	for _, f := range files {
+		dirNames = append(dirNames, f.Name)
+		if f.Name == marker && f.IsDirectory {
+			hasMarker = true
+		}
+	}
+
+	if !hasMarker {
+		preview := len(dirNames) > 10
+		if !preview {
+			preview = len(dirNames) == len(files)
+		}
+		displayNames := dirNames
+		if preview && len(displayNames) > 10 {
+			displayNames = displayNames[:10]
+		}
+
+		c.JSON(http.StatusForbidden, gin.H{
+			"ready":       false,
+			"servingDir":  s.servingDir,
+			"marker":      marker,
+			"found":       displayNames,
+			"detail":      fmt.Sprintf("server.dir missing %q, got: [%s]", marker, strings.Join(displayNames, ", ")),
+			"hint":        "Run: cd app/encv-mobile && npx tsx scripts/generate-mock-files.ts --dir /storage/emulated/0",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"ready":      true,
+		"servingDir": s.servingDir,
+		"marker":     marker,
+	})
+}
+
 func (s *Server) handleReadFileContentGin(c *gin.Context) {
 	queryPath := utils.DecodeGinQueryParam(c.Query("path"))
 	slog.Info("API: read file content", "path", queryPath)
@@ -1006,7 +1084,7 @@ func (s *Server) handleAlistEncryptStreamGin(c *gin.Context) {
 }
 
 func (s *Server) handleAlistDecodeFilenameGin(c *gin.Context) {
-	encoded := c.Query("encoded")
+	encoded := utils.DecodeGinQueryParam(c.Query("encoded"))
 	password := c.Query("password")
 	encType := c.DefaultQuery("enc_type", "aesctr")
 

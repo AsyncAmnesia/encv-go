@@ -286,6 +286,57 @@ export async function createDirectory(parentPath: string, name: string): Promise
   }
 }
 
+export async function uploadFile(targetPath: string, file: File): Promise<FileItem> {
+  console.info('[API] uploadFile:', targetPath, file.name, 'size:', file.size)
+  const baseUrl = getApiBaseUrl()
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await fetch(`${baseUrl}/api/files/upload?path=${proxySafeEncode(targetPath)}`, {
+    method: 'POST',
+    body: formData,
+  })
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`
+    try {
+      const body = await response.text()
+      if (body) detail += `: ${body}`
+    } catch {}
+    throw new Error(detail)
+  }
+  const result: FileItem = await response.json()
+  console.info('[API] uploadFile success:', result.path, 'size:', result.size)
+  return result
+}
+
+export interface ServiceGuardResult {
+  ready: boolean
+  servingDir: string
+  marker?: string
+  found?: string[]
+  detail?: string
+  hint?: string
+  error?: string
+}
+
+export async function checkServiceGuard(): Promise<ServiceGuardResult> {
+  console.info('[API] checkServiceGuard')
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/service-guard`)
+  const data: ServiceGuardResult = await response.json()
+
+  if (!data.ready) {
+    const err = new Error(`ServiceGuard: ${data.detail}`) as Error & { code: string; payload: ServiceGuardResult }
+    err.code = 'SERVICE_GUARD_BLOCKED'
+    err.payload = data
+    console.error('[API] checkServiceGuard BLOCKED —', data.detail)
+    throw err
+  }
+
+  console.info('[API] checkServiceGuard OK — servingDir:', data.servingDir)
+  return data
+}
+
 export interface FileContentResponse {
   name: string
   path: string

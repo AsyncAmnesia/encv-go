@@ -215,6 +215,8 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/api/files/plugin-stream", s.handlePluginFilesStreamGin)
 	r.DELETE("/api/files", s.handleDeleteFileGin)
 	r.POST("/api/files/mkdir", s.handleCreateDirectoryGin)
+	r.POST("/api/files/upload", s.handleUploadFileGin)
+	r.GET("/api/service-guard", s.handleServiceGuardGin)
 	r.GET("/api/file", s.handleReadFileContentGin)
 	r.GET("/api/file/text-preview-exts", s.handleTextPreviewExtsGin)
 	r.GET("/api/file/info", s.handleFileInfoGin)

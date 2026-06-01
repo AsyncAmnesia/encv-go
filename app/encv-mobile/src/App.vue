@@ -6,6 +6,7 @@
         <h2>{{ t('app.serviceGuardTitle') }}</h2>
         <p class="guard-message">{{ t('app.serviceGuardMessage') }}</p>
         <code class="guard-detail">{{ serviceGuardDetail }}</code>
+        <pre v-if="serviceGuardHint" class="guard-hint">{{ serviceGuardHint }}</pre>
         <ion-button @click="retryServiceGuard" class="guard-retry-btn">
           <ion-icon :icon="refreshOutline" slot="start"></ion-icon>
           {{ t('app.serviceGuardRetry') }}
@@ -27,7 +28,8 @@ import { hijackConsole } from '@/composables/useFrontendLogs'
 import { autoInitVConsole } from '@/composables/useDevTools'
 import { registerFileFeature } from '@/composables/useFileFeatures'
 import { createAlistEncryptFeature } from '@/features/alist-encrypt'
-import { listFiles } from '@/api/encv'
+import { checkServiceGuard } from '@/api/encv'
+import type { ServiceGuardResult } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 
 const { initTheme } = useTheme()
@@ -36,30 +38,41 @@ const { connect, disconnect } = useWebSocket()
 
 const serviceGuardBlocked = ref(false)
 const serviceGuardDetail = ref('')
+const serviceGuardHint = ref('')
 
-const MOCK_DIR_MARKER = '01-plain-media'
+class ServiceGuardError extends Error {
+  code: string
+  payload: ServiceGuardResult
 
-async function checkServiceDirectory(): Promise<'ok' | 'missing' | 'error'> {
+  constructor(message: string, code: string, payload: ServiceGuardResult) {
+    super(message)
+    this.name = 'ServiceGuardError'
+    this.code = code
+    this.payload = payload
+  }
+}
+
+async function runServiceGuard(): Promise<void> {
   try {
-    const files = await listFiles('/')
-    const hasMarker = files.some(f => f.name === MOCK_DIR_MARKER && f.isDirectory)
-    if (!hasMarker) {
-      const dirNames = files.slice(0, 10).map(f => f.name).join(', ')
-      serviceGuardDetail.value = `server.dir missing "${MOCK_DIR_MARKER}", got: [${dirNames}]`
-      return 'missing'
-    }
-    return 'ok'
+    await checkServiceGuard()
   } catch (e: any) {
-    serviceGuardDetail.value = e?.message || String(e)
-    return 'error'
+    if (e?.code === 'SERVICE_GUARD_BLOCKED' || e instanceof ServiceGuardError) {
+      const payload: ServiceGuardResult = e.payload || {}
+      serviceGuardDetail.value = payload.detail || e.message || 'Unknown guard error'
+      serviceGuardHint.value = payload.hint || ''
+      serviceGuardBlocked.value = true
+      throw e
+    }
+    console.warn('[App] Service guard: API error, allowing entry —', e?.message)
   }
 }
 
 async function retryServiceGuard() {
-  const result = await checkServiceDirectory()
-  if (result === 'ok') {
+  try {
+    await runServiceGuard()
     serviceGuardBlocked.value = false
     connect()
+  } catch {
   }
 }
 
@@ -103,14 +116,10 @@ onMounted(async () => {
   registerFileFeature(createAlistEncryptFeature())
 
   if (!isNative()) {
-    const result = await checkServiceDirectory()
-    if (result === 'missing') {
-      serviceGuardBlocked.value = true
-      console.error('[App] Service guard: blocked — mock service directory not detected')
+    try {
+      await runServiceGuard()
+    } catch {
       return
-    }
-    if (result === 'error') {
-      console.warn('[App] Service guard: API error, allowing entry —', serviceGuardDetail.value)
     }
   }
 
@@ -175,10 +184,23 @@ onUnmounted(() => {
   background: rgba(var(--ion-color-danger-rgb), 0.08);
   border-radius: 8px;
   padding: 10px 14px;
-  margin: 0 0 20px;
+  margin: 0 0 12px;
   text-align: left;
   word-break: break-all;
   white-space: pre-wrap;
+}
+
+.guard-hint {
+  display: block;
+  font-size: 11px;
+  color: var(--ion-color-medium);
+  background: rgba(var(--ion-color-medium-rgb), 0.06);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 0 0 20px;
+  text-align: left;
+  white-space: pre-wrap;
+  font-family: monospace;
 }
 
 .guard-retry-btn {

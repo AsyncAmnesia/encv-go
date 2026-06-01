@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -20,8 +21,19 @@ func DecodePathParam(raw string) string {
 	return s2
 }
 
+// DecodeGinQueryParam 解码 Gin query 参数中的路径。
+//
+// 编码契约（前端 proxySafeEncode = 双重 encodeURIComponent）：
+//   1. 前端: encodeURIComponent(encodeURIComponent(raw_path))
+//   2. Gin c.Query() 自动反向解码一层（%252B → %2B）
+//   3. 本函数用 url.PathUnescape 反向解码第二层（%2B → +）
+//   4. 结果 = 原始路径 ✅
+//
+// 注意：必须使用 PathUnescape 而非 QueryUnescape，
+// 因为 QueryUnescape 会将 '+' 解码为空格（HTML form 规范），
+// 但文件名中的 '+' 是合法字符（如 hyYGPCwJPQ3+xrdAvfnn2.bin）。
 func DecodeGinQueryParam(raw string) string {
-	s, err := url.QueryUnescape(raw)
+	s, err := url.PathUnescape(raw)
 	if err != nil {
 		return raw
 	}
@@ -49,8 +61,11 @@ func SafeResolveToAbsPath(baseDir, userPath string) (string, error) {
 		}
 	}
 
-	// 清理用户路径（处理多余的./等）
-	cleanUserPath := filepath.Clean(userPath)
+	// 清理用户路径（处理多余的./等），并去除前导/防止 filepath.Join 将其视为绝对路径
+	cleanUserPath := strings.TrimPrefix(filepath.Clean(userPath), string(os.PathSeparator))
+	if cleanUserPath == "" {
+		cleanUserPath = "."
+	}
 
 	// 构建完整路径
 	fullPath := filepath.Join(absBaseDir, cleanUserPath)

@@ -59,9 +59,22 @@
               <span class="info-label">{{ t('files.encrypted') }}</span>
               <ion-badge color="warning">Yes</ion-badge>
             </div>
-            <div class="info-row decoded-name-row" v-if="decodedName">
-              <span class="info-label decoded-label">原始文件名</span>
-              <span class="info-value decoded-value">{{ decodedName }}</span>
+          </div>
+        </div>
+
+        <div v-if="isAlistEnc" class="section-card alist-enc-card">
+          <h4 class="card-title">
+            <ion-icon :icon="lockClosed" class="title-icon danger"></ion-icon>
+            Alist-Encrypt
+          </h4>
+          <div class="info-grid">
+            <div class="info-row">
+              <span class="info-label">{{ t('files.encrypted') || '加密状态' }}</span>
+              <ion-badge color="danger">{{ t('files.yes') || '是' }}</ion-badge>
+            </div>
+            <div v-if="decodedName" class="info-row alist-decoded-row">
+              <span class="info-label">{{ t('fileInfo.originalName') || '原始文件名' }}</span>
+              <span class="info-value alist-decoded-value">{{ decodedName }}</span>
             </div>
           </div>
         </div>
@@ -129,7 +142,7 @@ import {
 } from 'ionicons/icons'
 import { getApiBaseUrl, formatFileSize, proxySafeEncode } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
-import { isAlistEncrypted, loadDecodedName } from '@/features/alist-encrypt/useAlistEncrypt'
+import { isAlistEncrypted, loadDecodedName, getDecodedName } from '@/features/alist-encrypt/useAlistEncrypt'
 import type { FileItem } from '@/api/encv'
 
 const { t } = useI18n()
@@ -169,6 +182,7 @@ const containerData = ref<ContainerData | null>(null)
 const showManifest = ref(false)
 const manifestJson = ref('')
 const decodedName = ref<string | null>(null)
+const isAlistEnc = ref(false)
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -222,9 +236,10 @@ async function loadInfo() {
       isEncrypted: data.is_encrypted,
       size: data.size,
     }
-    if (isAlistEncrypted(fileItem)) {
+    isAlistEnc.value = isAlistEncrypted(fileItem)
+    if (isAlistEnc.value) {
       loadDecodedName(fileItem).then((name) => {
-        decodedName.value = name
+        decodedName.value = name || getDecodedName(data.path) || null
       }).catch(() => {})
     } else {
       decodedName.value = null
@@ -259,6 +274,7 @@ onMounted(() => loadInfo())
   border-left: 3px solid var(--ion-color-medium);
 }
 .section-card.container-card { border-left-color: var(--ion-color-primary); }
+.section-card.alist-enc-card { border-left-color: var(--ion-color-danger); }
 .section-card.manifest-card { border-left-color: var(--ion-color-tertiary); }
 
 .card-title {
@@ -273,6 +289,7 @@ onMounted(() => loadInfo())
 .inline-title { margin: 0; }
 .title-icon { color: var(--ion-color-medium); }
 .title-icon.primary { color: var(--ion-color-primary); }
+.title-icon.danger { color: var(--ion-color-danger); }
 
 .info-grid {
   display: flex;
@@ -345,18 +362,14 @@ onMounted(() => loadInfo())
 }
 .error-icon { font-size: 48px; opacity: 0.5; color: #e74c3c; }
 
-.decoded-name-row {
+.alist-decoded-row {
   margin-top: 4px;
   padding-top: 8px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
-.decoded-label {
-  color: var(--ion-color-medium-shade, #999);
-  font-style: italic;
-}
-.decoded-value {
-  color: var(--ion-color-medium-shade, #999);
-  font-style: italic;
-  font-size: 12px;
+.alist-decoded-value {
+  color: var(--ion-color-primary);
+  font-weight: 600;
+  font-size: 13px;
 }
 </style>

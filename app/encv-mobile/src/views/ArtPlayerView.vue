@@ -85,6 +85,7 @@ const loading = ref(true)
 const error = ref('')
 const filePath = ref('')
 const fileName = ref('')
+const overrideStreamUrl = ref('')
 const playerError = ref(false)
 const playerErrorMsg = ref('')
 const isFullscreen = ref(false)
@@ -93,6 +94,7 @@ const artContainer = ref<HTMLDivElement | null>(null)
 let art: Artplayer | null = null
 
 const streamUrl = computed(() => {
+  if (overrideStreamUrl.value) return overrideStreamUrl.value
   if (!filePath.value) return ''
   return getFileStreamUrl(filePath.value)
 })
@@ -331,9 +333,13 @@ async function startPlayback() {
 onMounted(() => {
   filePath.value = (route.query.path as string) || ''
   fileName.value = (route.query.name as string) || ''
-  console.info(TAG, 'onMounted: filePath=', filePath.value, 'fileName=', fileName.value)
 
-  if (!filePath.value) {
+  const qsu = route.query.streamUrl as string
+  if (qsu) overrideStreamUrl.value = qsu
+
+  console.info(TAG, 'onMounted: filePath=', filePath.value, 'fileName=', fileName.value, 'overrideStreamUrl=', overrideStreamUrl.value)
+
+  if (!filePath.value && !overrideStreamUrl.value) {
     error.value = 'No file provided'
     loading.value = false
     return
