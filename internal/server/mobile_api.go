@@ -1084,7 +1084,7 @@ func (s *Server) handleAlistEncryptStreamGin(c *gin.Context) {
 }
 
 func (s *Server) handleAlistDecodeFilenameGin(c *gin.Context) {
-	encoded := c.Query("encoded")
+	encoded := utils.DecodeGinQueryParam(c.Query("encoded"))
 	password := c.Query("password")
 	encType := c.DefaultQuery("enc_type", "aesctr")
 

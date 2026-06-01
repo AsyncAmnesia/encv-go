@@ -934,6 +934,7 @@ async function handleLongPress(file: FileItem) {
     const isMedia = category === 'video' || category === 'audio'
 
     const featureActions = await getAllActions(file)
+    console.error('[ALIST-DBG] handleLongPress: file=', file.name, 'featureActions=', featureActions.map(a => a.id), 'count=', featureActions.length)
     for (const fa of featureActions) {
       buttons.push({
         text: fa.text(),
