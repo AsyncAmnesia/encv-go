@@ -129,7 +129,7 @@ import {
 } from 'ionicons/icons'
 import { getApiBaseUrl, formatFileSize, proxySafeEncode } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
-import { isAlistEncrypted, loadDecodedName } from '@/features/alist-encrypt/useAlistEncrypt'
+import { isAlistEncrypted, loadDecodedName, getDecodedName } from '@/features/alist-encrypt/useAlistEncrypt'
 import type { FileItem } from '@/api/encv'
 
 const { t } = useI18n()
@@ -169,6 +169,7 @@ const containerData = ref<ContainerData | null>(null)
 const showManifest = ref(false)
 const manifestJson = ref('')
 const decodedName = ref<string | null>(null)
+const isAlistEnc = ref(false)
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -222,9 +223,10 @@ async function loadInfo() {
       isEncrypted: data.is_encrypted,
       size: data.size,
     }
-    if (isAlistEncrypted(fileItem)) {
+    isAlistEnc.value = isAlistEncrypted(fileItem)
+    if (isAlistEnc.value) {
       loadDecodedName(fileItem).then((name) => {
-        decodedName.value = name
+        decodedName.value = name || getDecodedName(data.path) || null
       }).catch(() => {})
     } else {
       decodedName.value = null

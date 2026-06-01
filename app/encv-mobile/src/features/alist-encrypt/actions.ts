@@ -24,7 +24,7 @@ export function getAlistActions(file: FileItem): FileAction[] {
           await loadDecodedName(f, password)
           const decodedName = getDecodedName(f.path) || f.name
           const url = getStreamUrl(f, password)
-          router.push({ path: '/player', query: { streamUrl: url, name: decodedName } })
+          router.push({ path: '/player', query: { path: f.path, name: decodedName, streamUrl: url } })
         },
       },
       {
