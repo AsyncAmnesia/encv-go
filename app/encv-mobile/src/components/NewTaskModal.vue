@@ -410,7 +410,7 @@ async function handleClose() {
   margin: 10px 0;
   padding: 10px 14px;
   border-radius: 10px;
-  background: var(--ion-color-step-50, #f8f9fa);
+  background: var(--ion-color-step-100, #f0f0f0);
 }
 
 .plugin-section.predicting {
