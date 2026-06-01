@@ -83,17 +83,18 @@ func (c *compositeChunkNamer) GetFirstDataChunkIndex() int {
 // handleStreamRequest 处理 /stream?file=... 格式的请求
 func (s *Server) handleStreamRequest(w http.ResponseWriter, r *http.Request) {
 	// 1. 从查询参数中获取文件的绝对路径
-	filePath := r.URL.Query().Get("path")
-	if filePath == "" {
-		filePath = r.URL.Query().Get("file")
+	rawPath := r.URL.Query().Get("path")
+	if rawPath == "" {
+		rawPath = r.URL.Query().Get("file")
 	}
-	if filePath == "" {
+	if rawPath == "" {
 		http.Error(w, "Bad Request: 'path' or 'file' query parameter is missing", http.StatusBadRequest)
 		return
 	}
 
-	// 使用通用工具函数进行安全解析
-	cleanedFilePath, err := utils.SafeURLToAbsPath(s.servingDir, filePath)
+	filePath := utils.DecodeGinQueryParam(rawPath)
+
+	cleanedFilePath, err := utils.SafeResolveToAbsPath(s.servingDir, filePath)
 	if err != nil {
 		// 根据错误类型返回不同的 HTTP 状态码
 		if strings.Contains(err.Error(), "forbidden") {

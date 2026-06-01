@@ -84,7 +84,7 @@ func (s *Server) handleServerShutdownGin(c *gin.Context) {
 }
 
 func (s *Server) handleListFilesGin(c *gin.Context) {
-	queryPath := c.Query("path")
+	queryPath := utils.DecodeGinQueryParam(c.Query("path"))
 	slog.Info("API: list files", "path", queryPath)
 
 	files, err := s.mobileSvc.ListFiles(queryPath)
@@ -113,7 +113,7 @@ func (s *Server) handleListFilesGin(c *gin.Context) {
 }
 
 func (s *Server) handleDeleteFileGin(c *gin.Context) {
-	queryPath := c.Query("path")
+	queryPath := utils.DecodeGinQueryParam(c.Query("path"))
 	slog.Warn("API: delete file", "path", queryPath)
 
 	err := s.mobileSvc.DeleteFile(queryPath)
@@ -147,7 +147,7 @@ func (s *Server) handleCreateDirectoryGin(c *gin.Context) {
 }
 
 func (s *Server) handleReadFileContentGin(c *gin.Context) {
-	queryPath := c.Query("path")
+	queryPath := utils.DecodeGinQueryParam(c.Query("path"))
 	slog.Info("API: read file content", "path", queryPath)
 
 	result, err := s.mobileSvc.ReadFileContent(queryPath)
@@ -172,7 +172,7 @@ func (s *Server) handleTextPreviewExtsGin(c *gin.Context) {
 }
 
 func (s *Server) handleFileInfoGin(c *gin.Context) {
-	queryPath := c.Query("path")
+	queryPath := utils.DecodeGinQueryParam(c.Query("path"))
 	if queryPath == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "'path' query parameter is required"})
 		return
@@ -315,7 +315,7 @@ func (s *Server) canUseWebdavIndex() bool {
 }
 
 func (s *Server) handleSearchFilesGin(c *gin.Context) {
-	queryPath := c.Query("path")
+	queryPath := utils.DecodeGinQueryParam(c.Query("path"))
 	keyword := c.Query("keyword")
 	recursive := c.Query("recursive") == "true"
 
@@ -475,7 +475,7 @@ func (s *Server) handleIndexClearGin(c *gin.Context) {
 }
 
 func (s *Server) handleStreamExternalFileGin(c *gin.Context) {
-	queryPath := c.Query("path")
+	queryPath := utils.DecodeGinQueryParam(c.Query("path"))
 
 	slog.Info("API: stream external file", "path", queryPath)
 
@@ -653,7 +653,7 @@ func (s *Server) handleDeleteOpenlistSiteGin(c *gin.Context) {
 }
 
 func (s *Server) handleFileExistsGin(c *gin.Context) {
-	queryPath := c.Query("path")
+	queryPath := utils.DecodeGinQueryParam(c.Query("path"))
 	exists, err := s.mobileSvc.FileExists(queryPath)
 	if err != nil {
 		writeServiceErrorGin(c, err)
@@ -663,8 +663,8 @@ func (s *Server) handleFileExistsGin(c *gin.Context) {
 }
 
 func (s *Server) handleEncryptOutputExistsGin(c *gin.Context) {
-	sourcePath := c.Query("sourcePath")
-	targetDir := c.Query("targetDir")
+	sourcePath := utils.DecodeGinQueryParam(c.Query("sourcePath"))
+	targetDir := utils.DecodeGinQueryParam(c.Query("targetDir"))
 	if sourcePath == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "sourcePath is required"})
 		return
@@ -903,7 +903,7 @@ func (s *Server) writeSSEEvent(c *gin.Context, flusher http.Flusher, data string
 }
 
 func (s *Server) handleListFilesStreamGin(c *gin.Context) {
-	queryPath := c.Query("path")
+	queryPath := utils.DecodeGinQueryParam(c.Query("path"))
 	if queryPath == "" {
 		queryPath = "/"
 	}
@@ -920,7 +920,7 @@ func (s *Server) handleListFilesStreamGin(c *gin.Context) {
 		flusher = nil
 	}
 
-	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	absPath, err := utils.SafeResolveToAbsPath(s.servingDir, queryPath)
 	if err != nil {
 		s.writeSSEEvent(c, flusher, `{"error":"invalid path"}`)
 		s.writeSSEEvent(c, flusher, `[DONE]`)
@@ -983,14 +983,14 @@ func (s *Server) handleListFilesStreamGin(c *gin.Context) {
 }
 
 func (s *Server) handleAlistEncryptStreamGin(c *gin.Context) {
-	queryPath := c.Query("path")
+	queryPath := utils.DecodeGinQueryParam(c.Query("path"))
 	password := c.Query("password")
 	if queryPath == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "'path' query parameter is required"})
 		return
 	}
 
-	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	absPath, err := utils.SafeResolveToAbsPath(s.servingDir, queryPath)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid path"})
 		return
@@ -1023,7 +1023,7 @@ func (s *Server) handleAlistDecodeFilenameGin(c *gin.Context) {
 }
 
 func (s *Server) handlePluginFilesStreamGin(c *gin.Context) {
-	queryPath := c.Query("path")
+	queryPath := utils.DecodeGinQueryParam(c.Query("path"))
 	if queryPath == "" {
 		queryPath = "/"
 	}
@@ -1045,7 +1045,7 @@ func (s *Server) handlePluginFilesStreamGin(c *gin.Context) {
 		flusher = nil
 	}
 
-	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	absPath, err := utils.SafeResolveToAbsPath(s.servingDir, queryPath)
 	if err != nil {
 		s.writeSSEEvent(c, flusher, `{"error":"invalid path"}`)
 		s.writeSSEEvent(c, flusher, `[DONE]`)

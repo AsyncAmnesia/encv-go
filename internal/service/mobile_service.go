@@ -107,7 +107,7 @@ func (s *MobileService) ListFiles(queryPath string) ([]FileInfo, error) {
 		queryPath = "/"
 	}
 
-	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	absPath, err := utils.SafeResolveToAbsPath(s.servingDir, queryPath)
 	if err != nil {
 		return nil, &ForbiddenError{Err: err}
 	}
@@ -125,16 +125,14 @@ func (s *MobileService) ListFiles(queryPath string) ([]FileInfo, error) {
 		return nil, err
 	}
 
-	decodedPath := utils.DecodePathParam(queryPath)
-
 	var files []FileInfo
 	for _, entry := range entries {
 		if strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
 
-		filePath := decodedPath + "/" + entry.Name()
-		if decodedPath == "/" {
+		filePath := queryPath + "/" + entry.Name()
+		if queryPath == "/" {
 			filePath = "/" + entry.Name()
 		}
 
@@ -178,9 +176,9 @@ func (s *MobileService) DeleteFile(queryPath string) error {
 		return &BadRequestError{Err: errors.New("'path' query parameter is required")}
 	}
 
-	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	absPath, err := utils.SafeResolveToAbsPath(s.servingDir, queryPath)
 	if err != nil {
-		slog.Error("SafeURLToAbsPath failed", "path", queryPath, "error", err)
+		slog.Error("SafeResolveToAbsPath failed", "path", queryPath, "error", err)
 		return &ForbiddenError{Err: err}
 	}
 
@@ -236,7 +234,7 @@ func (s *MobileService) ReadFileContent(queryPath string) (*FileContentResult, e
 		return nil, &BadRequestError{Err: errors.New("'path' query parameter is required")}
 	}
 
-	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	absPath, err := utils.SafeResolveToAbsPath(s.servingDir, queryPath)
 	if err != nil {
 		return nil, &ForbiddenError{Err: err}
 	}
@@ -304,7 +302,7 @@ func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
 		return nil, &BadRequestError{Err: errors.New("'path' query parameter is required")}
 	}
 
-	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	absPath, err := utils.SafeResolveToAbsPath(s.servingDir, queryPath)
 	if err != nil {
 		return nil, &ForbiddenError{Err: err}
 	}
@@ -475,7 +473,7 @@ func (s *MobileService) RenameFile(req *RenameFileRequest) (*RenameFileResponse,
 		return nil, &BadRequestError{Err: errors.New("'new_name' is required")}
 	}
 
-	absPath, err := utils.SafeURLToAbsPath(s.servingDir, req.Path)
+	absPath, err := utils.SafeResolveToAbsPath(s.servingDir, req.Path)
 	if err != nil {
 		return nil, &ForbiddenError{Err: err}
 	}
@@ -896,7 +894,7 @@ func (s *MobileService) SearchFiles(queryPath string, keyword string, recursive 
 		return s.ListFiles(queryPath)
 	}
 
-	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	absPath, err := utils.SafeResolveToAbsPath(s.servingDir, queryPath)
 	if err != nil {
 		return nil, &ForbiddenError{Err: err}
 	}
@@ -994,14 +992,13 @@ func (s *MobileService) SearchFiles(queryPath string, keyword string, recursive 
 			}
 			return nil, err
 		}
-		searchDecodedPath := utils.DecodePathParam(queryPath)
-		for _, entry := range entries {
+	for _, entry := range entries {
 			if strings.HasPrefix(entry.Name(), ".") {
 				continue
 			}
 			if strings.Contains(strings.ToLower(entry.Name()), keyword) {
-				filePath := searchDecodedPath + "/" + entry.Name()
-				if searchDecodedPath == "/" {
+				filePath := queryPath + "/" + entry.Name()
+				if queryPath == "/" {
 					filePath = "/" + entry.Name()
 				}
 				info, infoErr := entry.Info()
@@ -1182,7 +1179,7 @@ func (a *chunkNamerAdapter) IsDataChunk(filename string) bool {
 }
 
 func (s *MobileService) FileExists(queryPath string) (bool, error) {
-	absPath, err := utils.SafeURLToAbsPath(s.servingDir, queryPath)
+	absPath, err := utils.SafeResolveToAbsPath(s.servingDir, queryPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) || errors.Is(err, fs.ErrNotExist) {
 			return false, nil
@@ -1203,7 +1200,7 @@ func (s *MobileService) FileExists(queryPath string) (bool, error) {
 }
 
 func (s *MobileService) CheckEncryptOutputExists(sourcePath, targetDir string) (bool, string, error) {
-	sourceAbs, err := utils.SafeURLToAbsPath(s.servingDir, sourcePath)
+	sourceAbs, err := utils.SafeResolveToAbsPath(s.servingDir, sourcePath)
 	if err != nil {
 		return false, "", &ForbiddenError{Err: err}
 	}
@@ -1215,7 +1212,7 @@ func (s *MobileService) CheckEncryptOutputExists(sourcePath, targetDir string) (
 
 	outputDir := targetDir
 	if outputDir != "" {
-		decoded, err := utils.SafeURLToAbsPath(s.servingDir, outputDir)
+		decoded, err := utils.SafeResolveToAbsPath(s.servingDir, outputDir)
 		if err == nil {
 			outputDir = decoded
 		}
@@ -1234,7 +1231,7 @@ func (s *MobileService) CheckEncryptOutputExists(sourcePath, targetDir string) (
 		outputPath = strings.TrimRight(outputPath, "/") + "/" + outputName
 	}
 
-	outputAbs, err := utils.SafeURLToAbsPath(s.servingDir, outputPath)
+	outputAbs, err := utils.SafeResolveToAbsPath(s.servingDir, outputPath)
 	if err != nil {
 		return false, outputPath, nil
 	}
@@ -1254,7 +1251,7 @@ func (s *MobileService) StreamExternalFile(w http.ResponseWriter, r *http.Reques
 		return &BadRequestError{Err: errors.New("'path' query parameter is required")}
 	}
 
-	absPath, err := utils.SafeURLToAbsPath(s.servingDir, filePath)
+	absPath, err := utils.SafeResolveToAbsPath(s.servingDir, filePath)
 	if err != nil {
 		return &BadRequestError{Err: fmt.Errorf("failed to resolve path: %w", err)}
 	}
@@ -1262,7 +1259,7 @@ func (s *MobileService) StreamExternalFile(w http.ResponseWriter, r *http.Reques
 	info, err := os.Stat(absPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			resolved, resolveErr := utils.SafeURLToAbsPath(s.servingDir, filePath)
+			resolved, resolveErr := utils.SafeResolveToAbsPath(s.servingDir, filePath)
 			if resolveErr == nil {
 				if resolvedInfo, statErr := os.Stat(resolved); statErr == nil {
 					slog.Info("StreamExternalFile: absolute path not found, resolved via servingDir", "input", absPath, "resolved", resolved)
