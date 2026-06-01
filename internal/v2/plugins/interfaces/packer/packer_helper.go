@@ -47,11 +47,11 @@ type PackParams struct {
 // 1. 根据 TempEncPath 和 SaltIVHeaderSize 生成 EncryptedDataReader
 // 2. 将 PackParams 中的配置组装成 physical.PackRequest
 // 3. 调用 PhysicalPacker
-func StandardPostEncrypt(params *PackParams) error {
+func StandardPostEncrypt(params *PackParams) (string, error) {
 	// 1. 打开加密文件
 	f, err := os.Open(params.TempEncPath)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer f.Close()
 
@@ -66,7 +66,7 @@ func StandardPostEncrypt(params *PackParams) error {
 		// 【回退模式】兼容旧逻辑，如果没有传入显式大小，则进行智能判断
 		fileInfo, err := f.Stat()
 		if err != nil {
-			return err
+			return "", err
 		}
 		totalSize := fileInfo.Size()
 
@@ -119,7 +119,9 @@ func StandardPostEncrypt(params *PackParams) error {
 		PasswordHint:          params.PasswordHint,
 	}
 
-	// 4. 调用 PhysicalPacker 完成打包
-	_, err = params.PhysicalPacker.Pack(params.Manifest, packReq)
-	return err
+	outputPath, err := params.PhysicalPacker.Pack(params.Manifest, packReq)
+	if err != nil {
+		return "", err
+	}
+	return outputPath, nil
 }

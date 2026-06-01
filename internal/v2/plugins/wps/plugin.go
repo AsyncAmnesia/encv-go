@@ -308,18 +308,15 @@ func (p *WPSPlugin) Encrypt(dataReader io.Reader) (*crypto.EncryptionResult, err
 
 // Plugin 接口实现
 // 加密后处理器
-func (p *WPSPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) error {
-	// 1. 【性能优化】使用传入的 result 中的精确大小
+func (p *WPSPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) (string, error) {
 	logicalDataSize := result.EncryptedPayloadSize
 
-	// 2. 生成逻辑分片
 	logicalFragments, err := fragment.CreateLogicalFragmentsFromSize(logicalDataSize, logicalDataSize, types.FragmentType_AtomicFile)
 	if err != nil {
-		return fmt.Errorf("failed to create logical fragments from size: %w", err)
+		return "", fmt.Errorf("failed to create logical fragments from size: %w", err)
 	}
 	log.Printf("-> [%s] Generated %d logical fragments.\n", p.Name(), len(logicalFragments))
 
-	// 3. 构造 Manifest (使用 result 中的 Salt 和 IV)
 	kvi := WPSKVI_v2{
 		KVI: types.KVI{
 			SaltBase64: crypto.Base64Encode_v2(result.Salt),
@@ -329,28 +326,23 @@ func (p *WPSPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) error 
 	}
 	manifest, err := types.NewManifest(kvi, logicalFragments)
 	if err != nil {
-		return fmt.Errorf("failed to create manifest: %w", err)
+		return "", fmt.Errorf("failed to create manifest: %w", err)
 	}
 
-	// 4. 准备通用 PackParams
 	encryptedBaseName := p.baseNamer.GenerateEncryptedBaseName(p.index.OriginalFilename)
 	finalFilename := encryptedBaseName + p.settings.Ext
 	finalBaseName := strings.TrimSuffix(finalFilename, p.settings.Ext)
 
-	// 5. 【重构】直接构造 PackParams
 	packParams := &packer.PackParams{
-		// --- 核心数据 ---
 		Manifest:       manifest,
 		PhysicalPacker: p.physicalPacker,
 		TempEncPath:    result.TempPath,
 
-		// --- 加密参数 ---
 		Salt:                 result.Salt,
 		IV:                   result.IV,
 		SaltIVHeaderSize:     result.SaltIVHeaderSize,
 		EncryptedPayloadSize: result.EncryptedPayloadSize,
 
-		// --- Packer 配置字段 ---
 		BaseName:      finalBaseName,
 		OutputDir:     p.outputDir,
 		Index:         &p.index,
@@ -360,22 +352,18 @@ func (p *WPSPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) error 
 		SpecialIDType: types.IDType_Raw,
 		SpecialID:     nil,
 		FinalFileName: finalFilename,
-		// Namer, StartIdx, LightMainChunkEnabled 等在 Single 模式下不需要，
-		// Helper 会处理零值，Packer 也会处理零值
 	}
 
-	// 6. 调用 Helper
-	if err := packer.StandardPostEncrypt(packParams); err != nil {
-		// 清理临时文件
+	outputPath, err := packer.StandardPostEncrypt(packParams)
+	if err != nil {
 		os.Remove(result.TempPath)
-		return fmt.Errorf("packing failed: %w", err)
+		return "", fmt.Errorf("packing failed: %w", err)
 	}
 
-	// 7. 清理临时文件
 	os.Remove(result.TempPath)
 
 	log.Printf("✅ [%s] packed successfully.\n", p.Name())
-	return nil
+	return outputPath, nil
 }
 
 // --- 解密逻辑 ---
@@ -387,30 +375,26 @@ func (p *WPSPlugin) PreDecryptProcessor(containerPath, outputDir string) error {
 }
 
 // Plugin 接口实现
-func (p *WPSPlugin) Decrypt(containerPath, outputDir string) error {
+func (p *WPSPlugin) Decrypt(containerPath, outputDir string) (string, error) {
 	log.Printf("DEBUG: [%s] Starting decryption for: %s\n", p.Name(), containerPath)
 	p.outputDir = outputDir
 
-	// --- 1. 【关键】通过 ContainerManager 获取一个可读的容器路径 ---
-	// ContainerManager 会智能地决定是使用原始文件还是重建文件
 	readablePath, err := p.containerManager.GetReadablePath(containerPath, nil)
 	if err != nil {
-		return fmt.Errorf("failed to get readable path from container manager: %w", err)
+		return "", fmt.Errorf("failed to get readable path from container manager: %w", err)
 	}
 	log.Printf("DEBUG: [%s] Using readable path: %s\n", p.Name(), readablePath)
 
-	// --- 2. 使用统一路径创建 reader 工厂 ---
 	factory, err := reader.NewDecryptReaderFactory(readablePath, p.cfg.Password)
 	if err != nil {
-		return fmt.Errorf("failed to create reader factory for '%s': %w", readablePath, err)
+		return "", fmt.Errorf("failed to create reader factory for '%s': %w", readablePath, err)
 	}
-	defer factory.Close() // 【关键】这个 Close 会同时清理物理临时文件（如果存在）
+	defer factory.Close()
 	log.Printf("DEBUG: [%s] Reader factory created successfully.\n", p.Name())
 
-	// --- 3. 使用工厂创建解密流并写入文件 ---
 	decryptedReader, err := factory.NewDecryptReader()
 	if err != nil {
-		return fmt.Errorf("[%s] failed to create decrypt reader: %w", p.Name(), err)
+		return "", fmt.Errorf("[%s] failed to create decrypt reader: %w", p.Name(), err)
 	}
 	defer decryptedReader.Close()
 	_, isSeekable := decryptedReader.(io.Seeker)
@@ -420,28 +404,27 @@ func (p *WPSPlugin) Decrypt(containerPath, outputDir string) error {
 		log.Printf("INFO: [%s] Container is ATOMIC. Decrypting full content.\n", p.Name())
 	}
 
-	// 从 KVI 获取原始文件名
 	index := factory.GetIndex()
 	vIndex, ok := index.(*WPSIndex)
 	if !ok {
-		return fmt.Errorf("container is not a imgae container")
+		return "", fmt.Errorf("container is not a imgae container")
 	}
 
 	outputPath := filepath.Join(outputDir, vIndex.GetOriginalFilename())
 	outputFile, err := os.Create(outputPath)
 	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
+		return "", fmt.Errorf("failed to create output file: %w", err)
 	}
 	defer outputFile.Close()
 
 	if _, err := io.Copy(outputFile, decryptedReader); err != nil {
-		return fmt.Errorf("failed to write decrypted imgae stream: %w", err)
+		return "", fmt.Errorf("failed to write decrypted imgae stream: %w", err)
 	}
 
 	p.index = *vIndex
 
 	log.Printf("✅ [%s] Decrypted to: %s\n", p.Name(), outputPath)
-	return nil
+	return outputPath, nil
 }
 
 // Plugin 接口实现

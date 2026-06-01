@@ -22,6 +22,13 @@ import (
 	"github.com/google/uuid"
 )
 
+type TaskStep struct {
+	Phase       string     `json:"phase"`
+	StartedAt   time.Time  `json:"startedAt"`
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+	Detail      string     `json:"detail,omitempty"`
+}
+
 type MobileTask struct {
 	ID                string            `json:"id"`
 	Type              string            `json:"type"`
@@ -42,6 +49,7 @@ type MobileTask struct {
 	WarningDetail     string            `json:"warningDetail,omitempty"`
 	ContainerVersion  int               `json:"containerVersion,omitempty"`
 	OutputPath        string            `json:"outputPath,omitempty"`
+	Steps             []TaskStep        `json:"steps,omitempty"`
 	CreatedAt         time.Time         `json:"createdAt"`
 	CompletedAt       *time.Time        `json:"completedAt,omitempty"`
 	cancelFn          context.CancelFunc
@@ -233,6 +241,19 @@ func (tm *TaskManager) Cancel(id string) (*MobileTask, error) {
 func (tm *TaskManager) updateProgress(id string, progress int, phase, speed, eta string) {
 	tm.mu.Lock()
 	if task, ok := tm.tasks[id]; ok {
+		if task.Phase != phase {
+			now := time.Now()
+			for i := len(task.Steps) - 1; i >= 0; i-- {
+				if task.Steps[i].CompletedAt == nil {
+					task.Steps[i].CompletedAt = &now
+					break
+				}
+			}
+			task.Steps = append(task.Steps, TaskStep{
+				Phase:     phase,
+				StartedAt: now,
+			})
+		}
 		task.Progress = progress
 		task.Phase = phase
 		task.Speed = speed
@@ -523,7 +544,7 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 	stopMonitor := make(chan struct{})
 	go tm.monitorFileProgress(taskID, outputDir, fileSize, stopMonitor)
 
-	err = plugins.EncryptFileWithPlugin(passwordCtx, plugin, absPath, tm.servingDir, outputDir)
+	outputPath, err := plugins.EncryptFileWithPlugin(passwordCtx, plugin, absPath, tm.servingDir, outputDir)
 	close(stopMonitor)
 
 	if err != nil {
@@ -546,13 +567,19 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 		now := time.Now()
 		task.CompletedAt = &now
 
-		sourceBaseName := filepath.Base(absPath)
-		ext := filepath.Ext(sourceBaseName)
-		baseNameWithoutExt := strings.TrimSuffix(sourceBaseName, ext)
-		if outputFile := findEncryptedOutputFile(outputDir, baseNameWithoutExt); outputFile != "" {
-			task.ContainerVersion = detectContainerVersion(outputFile)
-			// ★ 关键: 记录产物绝对路径，前端可跳转
-			task.OutputPath = outputFile
+		for i := len(task.Steps) - 1; i >= 0; i-- {
+			if task.Steps[i].CompletedAt == nil {
+				task.Steps[i].CompletedAt = &now
+				if outputPath != "" {
+					task.Steps[i].Detail = outputPath
+				}
+				break
+			}
+		}
+
+		if outputPath != "" {
+			task.ContainerVersion = detectContainerVersion(outputPath)
+			task.OutputPath = outputPath
 		}
 
 		if warnings := video.LastVerifyWarnings(); len(warnings) > 0 {
@@ -740,7 +767,7 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 	stopMonitor := make(chan struct{})
 	go tm.monitorFileProgress(taskID, outputDir, fileSize, stopMonitor)
 
-	err = plugins.DecryptContainerWithPlugin(passwordCtx, plugin, absPath, outputDir)
+	outputPath, err := plugins.DecryptContainerWithPlugin(passwordCtx, plugin, absPath, outputDir)
 	close(stopMonitor)
 
 	if err != nil {
@@ -763,17 +790,18 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 		now := time.Now()
 		task.CompletedAt = &now
 
-		// ★ 关键: 记录解密产物绝对路径。优先用源 base + 明文扩展名，
-		// 找不到则 fallback 到 outputDir 中修改时间最近、与源不同的文件。
-		sourceBaseName := filepath.Base(absPath)
-		ext := filepath.Ext(sourceBaseName)
-		baseNameNoExt := strings.TrimSuffix(sourceBaseName, ext)
-		candidate := filepath.Join(outputDir, baseNameNoExt)
-		if outputFile := findDecryptedOutputFile(outputDir, absPath, candidate); outputFile != "" {
-			task.OutputPath = outputFile
-		} else {
-			// 最后的 fallback: 直接试 baseNameNoExt（无 ext）作为明文
-			task.OutputPath = candidate
+		for i := len(task.Steps) - 1; i >= 0; i-- {
+			if task.Steps[i].CompletedAt == nil {
+				task.Steps[i].CompletedAt = &now
+				if outputPath != "" {
+					task.Steps[i].Detail = outputPath
+				}
+				break
+			}
+		}
+
+		if outputPath != "" {
+			task.OutputPath = outputPath
 		}
 	}
 	tm.mu.Unlock()
@@ -884,73 +912,4 @@ func detectContainerVersion(filePath string) int {
 		return 0
 	}
 	return version
-}
-
-func findEncryptedOutputFile(outputDir string, sourceBaseName string) string {
-	for _, ext := range plugins.GetAllRegisteredContainerExtensions() {
-		candidate := filepath.Join(outputDir, sourceBaseName+ext)
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
-	}
-	entries, err := os.ReadDir(outputDir)
-	if err != nil {
-		return ""
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if strings.HasPrefix(name, sourceBaseName) && plugins.IsContainer(name) {
-			return filepath.Join(outputDir, name)
-		}
-	}
-	return ""
-}
-
-// findDecryptedOutputFile 查找解密任务的产物路径。
-// 优先用源文件 base name + 解密后的明文名匹配；找不到则 fallback 到 outputDir 中
-// 修改时间最近且大小与源不同的文件。
-func findDecryptedOutputFile(outputDir, sourcePath, decryptedName string) string {
-	// ① 精确匹配：outputDir/decryptedName
-	if decryptedName != "" {
-		candidate := filepath.Join(outputDir, decryptedName)
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			// 防止产物路径就是源文件
-			if candidate != sourcePath {
-				return candidate
-			}
-		}
-	}
-
-	// ② Fallback: outputDir 里修改时间最近、与源文件不同大小/不同扩展名的文件
-	entries, err := os.ReadDir(outputDir)
-	if err != nil {
-		return ""
-	}
-	srcInfo, _ := os.Stat(sourcePath)
-	var bestPath string
-	var bestModTime int64
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-		fullPath := filepath.Join(outputDir, info.Name())
-		if fullPath == sourcePath {
-			continue
-		}
-		if srcInfo != nil && info.Size() == srcInfo.Size() && info.ModTime().Equal(srcInfo.ModTime()) {
-			continue
-		}
-		if info.ModTime().Unix() > bestModTime {
-			bestModTime = info.ModTime().Unix()
-			bestPath = fullPath
-		}
-	}
-	return bestPath
 }

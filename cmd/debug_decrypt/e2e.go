@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	aenc "github.com/Soltus/encv-go/internal/v2/plugins/alistencrypt"
 )
@@ -14,7 +13,7 @@ func main() {
 	outputDir := "/tmp"
 
 	fmt.Println("=== Using Project's DecryptFile ===")
-	err := aenc.DecryptFile(filePath, outputDir, password, "aes-ctr")
+	outputPath, err := aenc.DecryptFile(filePath, outputDir, password, "aes-ctr")
 	if err != nil {
 		fmt.Printf("❌ DecryptFile error: %v\n", err)
 		if de, ok := err.(*aenc.DecryptionError); ok {
@@ -26,7 +25,6 @@ func main() {
 		return
 	}
 
-	outputPath := filepath.Join(outputDir, "CAD放样.mp4")
 	fi, statErr := os.Stat(outputPath)
 	if statErr != nil {
 		fmt.Printf("⚠️ Output file not found at %s\n", outputPath)

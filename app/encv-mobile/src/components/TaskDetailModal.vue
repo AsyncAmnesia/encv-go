@@ -12,7 +12,6 @@
     </ion-header>
 
     <ion-content class="ion-padding">
-      <!-- 任务基本信息 -->
       <div class="detail-section">
         <div class="section-title">{{ t('tasks.basicInfo') }}</div>
         <div class="info-grid">
@@ -35,7 +34,6 @@
         </div>
       </div>
 
-      <!-- 时间线 -->
       <div class="detail-section">
         <div class="section-title">{{ t('tasks.timeline') }}</div>
         <div class="timeline">
@@ -43,21 +41,50 @@
             v-for="(event, idx) in timelineEvents"
             :key="idx"
             class="timeline-event"
-            :class="{ 'event-current': event.isCurrent, 'event-completed': event.completed, 'event-error': event.error }"
+            :class="{
+              'event-current': event.isCurrent,
+              'event-completed': event.completed,
+              'event-error': event.error,
+              'event-expandable': event.hasExpandableDetail,
+            }"
+            @click="toggleStep(idx)"
           >
             <div class="timeline-dot"></div>
             <div class="timeline-content">
               <div class="event-header">
                 <span class="event-phase">{{ event.phaseLabel }}</span>
                 <span class="event-time">{{ event.time }}</span>
+                <ion-icon
+                  v-if="event.hasExpandableDetail"
+                  :icon="expandedSteps.has(idx) ? chevronDown : chevronForward"
+                  class="expand-icon"
+                  color="medium"
+                />
               </div>
-              <p v-if="event.detail" class="event-detail">{{ event.detail }}</p>
+              <p v-if="event.summary" class="event-detail">{{ event.summary }}</p>
+              <div v-if="expandedSteps.has(idx) && event.expandDetail" class="event-expand">
+                <div v-if="event.expandDetail.duration" class="expand-row">
+                  <span class="expand-label">{{ t('tasks.duration') }}</span>
+                  <span class="expand-value">{{ event.expandDetail.duration }}</span>
+                </div>
+                <div v-if="event.expandDetail.startedAt" class="expand-row">
+                  <span class="expand-label">{{ t('tasks.startedAt') }}</span>
+                  <span class="expand-value">{{ event.expandDetail.startedAt }}</span>
+                </div>
+                <div v-if="event.expandDetail.completedAt" class="expand-row">
+                  <span class="expand-label">{{ t('tasks.completedAt') }}</span>
+                  <span class="expand-value">{{ event.expandDetail.completedAt }}</span>
+                </div>
+                <div v-if="event.expandDetail.outputPath" class="expand-row">
+                  <span class="expand-label">{{ t('tasks.outputFile') }}</span>
+                  <span class="expand-value expand-path">{{ event.expandDetail.outputPath }}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- 状态与进度 -->
       <div class="detail-section" v-if="task.status === 'running' || task.status === 'cancelling'">
         <div class="section-title">{{ t('tasks.progress') }}</div>
         <ion-progress-bar :value="task.progress / 100"></ion-progress-bar>
@@ -68,7 +95,6 @@
         </div>
       </div>
 
-      <!-- 完成信息 -->
       <div class="detail-section" v-if="task.status === 'completed'">
         <div class="section-title completed-section-title">
           <ion-icon :icon="checkmarkCircle" color="success"></ion-icon>
@@ -76,7 +102,6 @@
         </div>
         <p class="completed-duration" v-if="durationStr">{{ t('tasks.duration') }}: {{ durationStr }}</p>
 
-        <!-- 产物展示与跳转 -->
         <div v-if="outputInfo" class="output-block">
           <div class="output-header">
             <ion-icon :icon="documentTextOutline" color="primary"></ion-icon>
@@ -111,7 +136,6 @@
         </div>
       </div>
 
-      <!-- 错误信息 -->
       <div class="detail-section error-section" v-if="task.error">
         <div class="section-title error-section-title">
           <ion-icon :icon="closeCircle" color="danger"></ion-icon>
@@ -125,7 +149,6 @@
         <pre v-if="task.errorDetail && task.errorDetail !== task.error" class="error-detail-pre selectable-text">{{ task.errorDetail }}</pre>
       </div>
 
-      <!-- 警告信息 -->
       <div class="detail-section warning-section" v-if="task.warning">
         <div class="section-title warning-section-title">
           <ion-icon :icon="warningOutline" color="warning"></ion-icon>
@@ -135,7 +158,6 @@
         <pre v-if="task.warningDetail" class="warning-detail-pre">{{ formatWarningDetail(task.warningDetail) }}</pre>
       </div>
 
-      <!-- 操作按钮 -->
       <div class="action-buttons">
         <ion-button
           v-if="task.status === 'running'"
@@ -196,6 +218,8 @@ import {
   documentTextOutline,
   playCircleOutline,
   folderOpenOutline,
+  chevronDown,
+  chevronForward,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
@@ -207,6 +231,7 @@ const props = defineProps<{ task: EncvTask }>()
 const { t } = useI18n()
 const router = useRouter()
 const copied = ref(false)
+const expandedSteps = ref(new Set<number>())
 
 const PREVIEWABLE_VIDEO = new Set(['mp4', 'webm', 'mov', 'm4v', 'mkv'])
 
@@ -215,7 +240,6 @@ const fileName = computed(() => {
   return parts[parts.length - 1] || props.task.sourcePath
 })
 
-// 产物信息
 const outputInfo = computed(() => {
   const op = props.task.outputPath
   if (!op) return null
@@ -224,7 +248,7 @@ const outputInfo = computed(() => {
     fullPath: op,
     name,
     dirLabel: dirOf(op),
-    sizeLabel: '', // 暂不主动 stat 大小，避免阻塞 UI
+    sizeLabel: '',
   }
 })
 
@@ -238,6 +262,14 @@ function dirOf(p: string): string {
   const idx = p.lastIndexOf('/')
   if (idx < 0) return '/'
   return p.slice(0, idx) || '/'
+}
+
+function toggleStep(idx: number) {
+  if (expandedSteps.value.has(idx)) {
+    expandedSteps.value.delete(idx)
+  } else {
+    expandedSteps.value.add(idx)
+  }
 }
 
 function handleOpenOutput() {
@@ -273,16 +305,28 @@ const durationStr = computed(() => {
   return ''
 })
 
+interface TimelineExpandDetail {
+  startedAt?: string
+  completedAt?: string
+  duration?: string
+  outputPath?: string
+}
+
+interface TimelineEvent {
+  phase: string
+  phaseLabel: string
+  time: string
+  summary?: string
+  isCurrent: boolean
+  completed: boolean
+  error?: boolean
+  hasExpandableDetail: boolean
+  expandDetail?: TimelineExpandDetail
+}
+
 const timelineEvents = computed(() => {
-  const events: Array<{
-    phase: string
-    phaseLabel: string
-    time: string
-    detail?: string
-    isCurrent: boolean
-    completed: boolean
-    error?: boolean
-  }> = []
+  const events: TimelineEvent[] = []
+  const steps = props.task.steps ?? []
 
   events.push({
     phase: 'created',
@@ -290,27 +334,54 @@ const timelineEvents = computed(() => {
     time: formatDateTime(props.task.createdAt),
     isCurrent: false,
     completed: true,
+    hasExpandableDetail: false,
   })
 
-  const phases = ['analyzing', 'initializing', 'preprocessing', 'encrypting', 'decrypting', 'packing', 'verifying', 'completed']
-  const phaseOrder = phases.indexOf(props.task.phase ?? '')
+  if (steps.length > 0) {
+    for (const step of steps) {
+      const isCurrent = step.phase === props.task.phase && !step.completedAt
+      const completed = !!step.completedAt
+      const startedMs = new Date(step.startedAt).getTime()
+      const completedMs = step.completedAt ? new Date(step.completedAt).getTime() : 0
+      const stepDuration = completed && completedMs > startedMs ? formatDuration(completedMs - startedMs) : undefined
 
-  for (let i = 0; i < phases.length; i++) {
-    const p = phases[i]
-    if (p === 'completed') continue
+      const expandDetail: TimelineExpandDetail = {}
+      let hasExpand = false
+      if (step.startedAt) { expandDetail.startedAt = formatDateTime(step.startedAt); hasExpand = true }
+      if (step.completedAt) { expandDetail.completedAt = formatDateTime(step.completedAt); hasExpand = true }
+      if (stepDuration) { expandDetail.duration = stepDuration; hasExpand = true }
+      if (step.detail) { expandDetail.outputPath = step.detail; hasExpand = true }
 
-    const isCurrent = p === props.task.phase
-    const isPast = !isCurrent && (phaseOrder > i || ['completed', 'failed', 'cancelled'].includes(props.task.status))
+      events.push({
+        phase: step.phase,
+        phaseLabel: getPhaseLabel(step.phase),
+        time: isCurrent ? t('tasks.timelineInProgress') : (completed ? stepDuration ?? t('tasks.timelineDone') : ''),
+        summary: isCurrent && props.task.speed ? `${props.task.progress}% · ${props.task.speed}` + (props.task.eta ? ` · ETA ${props.task.eta}` : '') : undefined,
+        isCurrent,
+        completed,
+        hasExpandableDetail: hasExpand,
+        expandDetail: hasExpand ? expandDetail : undefined,
+      })
+    }
+  } else {
+    const phases = ['analyzing', 'initializing', 'preprocessing', 'encrypting', 'decrypting', 'packing', 'verifying']
+    const phaseOrder = phases.indexOf(props.task.phase ?? '')
 
-    events.push({
-      phase: p,
-      phaseLabel: getPhaseLabel(p),
-      time: isCurrent ? t('tasks.timelineInProgress') : (isPast ? t('tasks.timelineDone') : ''),
-      detail: isCurrent && props.task.speed ? `${props.task.progress}% · ${props.task.speed}` + (props.task.eta ? ` · ETA ${props.task.eta}` : '') : undefined,
-      isCurrent,
-      completed: isPast,
-      error: false,
-    })
+    for (let i = 0; i < phases.length; i++) {
+      const p = phases[i]
+      const isCurrent = p === props.task.phase
+      const isPast = !isCurrent && (phaseOrder > i || ['completed', 'failed', 'cancelled'].includes(props.task.status))
+
+      events.push({
+        phase: p,
+        phaseLabel: getPhaseLabel(p),
+        time: isCurrent ? t('tasks.timelineInProgress') : (isPast ? t('tasks.timelineDone') : ''),
+        summary: isCurrent && props.task.speed ? `${props.task.progress}% · ${props.task.speed}` + (props.task.eta ? ` · ETA ${props.task.eta}` : '') : undefined,
+        isCurrent,
+        completed: isPast,
+        hasExpandableDetail: false,
+      })
+    }
   }
 
   if (props.task.status === 'completed') {
@@ -320,13 +391,15 @@ const timelineEvents = computed(() => {
       time: props.task.completedAt ? formatDateTime(props.task.completedAt) : '',
       isCurrent: false,
       completed: true,
+      hasExpandableDetail: false,
     })
   }
 
   if (props.task.status === 'failed' || props.task.status === 'cancelled') {
-    events[events.length - 1].error = true
-    events[events.length - 1].phaseLabel = props.task.status === 'failed' ? t('tasks.failed') : t('tasks.cancelled')
-    events[events.length - 1].detail = props.task.error
+    const last = events[events.length - 1]
+    last.error = true
+    last.phaseLabel = props.task.status === 'failed' ? t('tasks.failed') : t('tasks.cancelled')
+    last.summary = props.task.error
   }
 
   return events
@@ -341,6 +414,7 @@ function getPhaseLabel(phase: string): string {
     case 'decrypting': return t('tasks.phaseDecrypting')
     case 'packing': return t('tasks.phasePacking')
     case 'verifying': return t('tasks.phaseVerifying')
+    case 'completed': return t('tasks.phaseCompleted')
     default: return phase
   }
 }
@@ -425,7 +499,6 @@ async function handleRemove() {
   max-width: 220px;
 }
 
-/* Timeline */
 .timeline {
   position: relative;
   padding-left: 24px;
@@ -448,6 +521,10 @@ async function handleRemove() {
 
 .timeline-event:last-child {
   padding-bottom: 4px;
+}
+
+.timeline-event.event-expandable {
+  cursor: pointer;
 }
 
 .timeline-dot {
@@ -491,7 +568,7 @@ async function handleRemove() {
 .event-header {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
 }
 
@@ -507,13 +584,54 @@ async function handleRemove() {
   white-space: nowrap;
 }
 
+.expand-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
 .event-detail {
   font-size: 12px;
   color: var(--ion-color-medium);
   margin-top: 2px;
 }
 
-/* Progress */
+.event-expand {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: var(--ion-color-step-100, #f0f0f0);
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.expand-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.expand-row + .expand-row {
+  margin-top: 2px;
+}
+
+.expand-label {
+  color: var(--ion-color-medium);
+  flex-shrink: 0;
+}
+
+.expand-value {
+  color: var(--ion-text-color);
+  font-weight: 500;
+  text-align: right;
+  word-break: break-all;
+}
+
+.expand-path {
+  font-family: monospace;
+  font-size: 10px;
+}
+
 .progress-stats {
   display: flex;
   gap: 12px;
@@ -523,7 +641,6 @@ async function handleRemove() {
   font-weight: 500;
 }
 
-/* Completed */
 .completed-duration {
   font-size: 13px;
   color: var(--ion-color-medium);
@@ -579,7 +696,6 @@ async function handleRemove() {
   font-weight: 500;
 }
 
-/* Error */
 .error-section { background: rgba(var(--ion-color-danger-rgb), 0.04); border-radius: 8px; padding: 12px; }
 .error-msg { font-size: 13px; color: var(--ion-color-danger); margin-top: 4px; word-break: break-word; }
 .error-detail-pre {
@@ -608,7 +724,6 @@ async function handleRemove() {
   font-weight: 400;
 }
 
-/* Warning */
 .warning-section { background: rgba(255, 152, 0, 0.06); border-radius: 8px; padding: 12px; }
 .warning-detail-pre {
   background: var(--ion-color-step-100, #f0f0f0);
@@ -624,7 +739,6 @@ async function handleRemove() {
   color: #666;
 }
 
-/* Actions */
 .action-buttons {
   margin-top: 24px;
   display: flex;

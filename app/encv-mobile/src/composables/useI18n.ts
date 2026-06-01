@@ -193,6 +193,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'tasks.timelineDone': '已完成',
     'tasks.progress': '进度',
     'tasks.duration': '耗时',
+    'tasks.startedAt': '开始',
+    'tasks.completedAt': '完成',
     'tasks.warnings': '警告',
 
     'tasks.outputFile': '产物文件',
@@ -789,6 +791,8 @@ const messages: Record<Locale, Record<string, string>> = {
     'tasks.timelineDone': 'Done',
     'tasks.progress': 'Progress',
     'tasks.duration': 'Duration',
+    'tasks.startedAt': 'Started',
+    'tasks.completedAt': 'Completed',
     'tasks.warnings': 'Warnings',
 
     'tasks.outputFile': 'Output File',

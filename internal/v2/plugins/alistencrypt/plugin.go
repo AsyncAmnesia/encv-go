@@ -162,17 +162,17 @@ func (p *AlistEncryptPlugin) Encrypt(dataReader io.Reader) (*crypto.EncryptionRe
 	return result, nil
 }
 
-func (p *AlistEncryptPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) error {
+func (p *AlistEncryptPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) (string, error) {
 	originalFilename := filepath.Base(p.inputPath)
 
 	finalPath, err := RenameToFinalEncrypted(result.TempPath, originalFilename, p.outputDir, p.settings.Suffix)
 	if err != nil {
 		os.Remove(result.TempPath)
-		return fmt.Errorf("failed to rename encrypted file: %w", err)
+		return "", fmt.Errorf("failed to rename encrypted file: %w", err)
 	}
 
 	slog.Info("alist_encrypt: encryption complete", "output", finalPath)
-	return nil
+	return finalPath, nil
 }
 
 func (p *AlistEncryptPlugin) CanDecrypt(containerPath string) bool {
@@ -240,20 +240,21 @@ func (p *AlistEncryptPlugin) PreDecryptProcessor(containerPath, outputDir string
 	return nil
 }
 
-func (p *AlistEncryptPlugin) Decrypt(containerPath, outputDir string) error {
+func (p *AlistEncryptPlugin) Decrypt(containerPath, outputDir string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(containerPath))
 	if ext != p.settings.Suffix {
-		return &DecryptionError{Reason: "invalid format: extension mismatch", Err: ErrInvalidFormat}
+		return "", &DecryptionError{Reason: "invalid format: extension mismatch", Err: ErrInvalidFormat}
 	}
 
 	password := p.resolvePasswordFromTask()
 
-	if err := DecryptFile(containerPath, outputDir, password, p.settings.EncType); err != nil {
-		return fmt.Errorf("alist_encrypt decryption failed for '%s': %w", containerPath, err)
+	outputPath, err := DecryptFile(containerPath, outputDir, password, p.settings.EncType)
+	if err != nil {
+		return "", fmt.Errorf("alist_encrypt decryption failed for '%s': %w", containerPath, err)
 	}
 
-	slog.Info("alist_encrypt: decryption complete", "source", containerPath, "output_dir", outputDir)
-	return nil
+	slog.Info("alist_encrypt: decryption complete", "source", containerPath, "output_path", outputPath)
+	return outputPath, nil
 }
 
 func (p *AlistEncryptPlugin) PostDecryptProcessor(containerPath string) error {

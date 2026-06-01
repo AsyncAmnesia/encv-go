@@ -31,7 +31,7 @@ func DecryptPathV2(ctx context.Context, inputDir, outputDir string) error {
 		}
 
 		log.Printf("--> Found container: %s", path)
-		if err := plugins.DecryptContainerWithPlugin(ctx, p, path, outputDir); err != nil {
+		if _, err := plugins.DecryptContainerWithPlugin(ctx, p, path, outputDir); err != nil {
 			log.Printf("WARN: [DecryptPathV2] Failed to decrypt '%s': %v. Continuing...", path, err)
 		}
 		return nil

@@ -9,35 +9,35 @@ import (
 
 )
 
-func DecryptFile(containerPath, outputDir, password, encType string) error {
+func DecryptFile(containerPath, outputDir, password, encType string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(containerPath))
 	if ext != "" && ext != ".bin" && ext != ".alist" && ext != ".enc" {
-		return &DecryptionError{Reason: "invalid format", Err: ErrInvalidFormat}
+		return "", &DecryptionError{Reason: "invalid format", Err: ErrInvalidFormat}
 	}
 
 	f, err := os.Open(containerPath)
 	if err != nil {
-		return fmt.Errorf("failed to open container file: %w", err)
+		return "", fmt.Errorf("failed to open container file: %w", err)
 	}
 	defer f.Close()
 
 	info, err := f.Stat()
 	if err != nil {
-		return fmt.Errorf("failed to stat container file: %w", err)
+		return "", fmt.Errorf("failed to stat container file: %w", err)
 	}
 	fileSize := info.Size()
 
 	dr, err := NewDecryptReader(f, password, fileSize)
 	if err != nil {
 		if strings.Contains(err.Error(), "failed to parse V2 header") || strings.Contains(err.Error(), "failed to create cipher") {
-			return &DecryptionError{Reason: "password mismatch", Err: ErrInvalidPassword}
+			return "", &DecryptionError{Reason: "password mismatch", Err: ErrInvalidPassword}
 		}
-		return fmt.Errorf("failed to create decrypt reader: %w", err)
+		return "", fmt.Errorf("failed to create decrypt reader: %w", err)
 	}
 
 	decryptedData, err := io.ReadAll(dr)
 	if err != nil {
-		return fmt.Errorf("failed to read decrypted data: %w", err)
+		return "", fmt.Errorf("failed to read decrypted data: %w", err)
 	}
 
 	baseName := filepath.Base(containerPath)
@@ -50,15 +50,15 @@ func DecryptFile(containerPath, outputDir, password, encType string) error {
 
 	outFile, err := os.Create(outputPath)
 	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
+		return "", fmt.Errorf("failed to create output file: %w", err)
 	}
 	defer outFile.Close()
 
 	if _, err := outFile.Write(decryptedData); err != nil {
-		return fmt.Errorf("failed to write decrypted data: %w", err)
+		return "", fmt.Errorf("failed to write decrypted data: %w", err)
 	}
 
-	return nil
+	return outputPath, nil
 }
 
 func tryDecodeFilename(encodedName, password, encType string) string {
