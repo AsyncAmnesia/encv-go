@@ -45,7 +45,8 @@ func DecodeGinQueryParam(raw string) string {
 //
 // 参数:
 //   - baseDir: 安全的根目录（已确保是绝对路径）
-//   - userPath: 用户提供的相对路径（不应以/开头）
+//   - userPath: 用户提供的路径（可以是相对路径如 "/foo/bar.bin"，
+//     也可以是绝对路径如 "/storage/emulated/0/foo/bar.bin"——只要它在 baseDir 下）
 //
 // 返回值:
 //   - string: 解析后的安全绝对路径
@@ -61,8 +62,35 @@ func SafeResolveToAbsPath(baseDir, userPath string) (string, error) {
 		}
 	}
 
-	// 清理用户路径（处理多余的./等），并去除前导/防止 filepath.Join 将其视为绝对路径
-	cleanUserPath := strings.TrimPrefix(filepath.Clean(userPath), string(os.PathSeparator))
+	// ★ 关键修复 ★: 防止路径双重拼接
+	//
+	// 当用户传入的路径以 / 开头时，Go 的 filepath.Join 会把它当作绝对路径
+	// 直接使用，导致 servingDir + userPath = 双前缀：
+	//   servingDir=/storage/emulated/0
+	//   userPath=/storage/emulated/0/hyYGPCwJPQ3+xrdAvfnn2.bin
+	//   → filepath.Join → /storage/emulated/0/storage/emulated/0/...  ❌
+	//
+	// 修复策略（在 Clean 之前检查，避免丢失前缀信息）：
+	//   - 如果 userPath == absBaseDir：原样返回
+	//   - 如果 userPath 以 absBaseDir + separator 开头：剥掉前缀再 join（消除双前缀）
+	//   - 其他情况：当作相对路径处理
+	//
+	// 安全说明: filepath.Clean 之后的最终安全检查（rel 必须不以 .. 开头）
+	// 仍然保留，能阻止路径穿越。
+	if userPath == absBaseDir {
+		return absBaseDir, nil
+	}
+	baseWithSep := absBaseDir + string(os.PathSeparator)
+	if strings.HasPrefix(userPath, baseWithSep) {
+		// ★ 在 baseDir 下的绝对路径：剥掉前缀规范化
+		userPath = strings.TrimPrefix(userPath, baseWithSep)
+	}
+
+	// 清理用户路径（处理多余的./等）
+	cleanUserPath := filepath.Clean(userPath)
+
+	// 去除前导/防止 filepath.Join 将其视为绝对路径
+	cleanUserPath = strings.TrimPrefix(cleanUserPath, string(os.PathSeparator))
 	if cleanUserPath == "" {
 		cleanUserPath = "."
 	}

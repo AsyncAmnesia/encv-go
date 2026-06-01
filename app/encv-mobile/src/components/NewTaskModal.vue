@@ -62,7 +62,7 @@
       <!-- 插件信息区域 -->
       <div v-if="isPredicting" class="plugin-section predicting">
         <ion-spinner name="crescent" class="predict-spinner"></ion-spinner>
-        <span class="predict-text">{{ t('tasks.analyzingFile') }}</span>
+        <span class="predict-text">{{ t('tasks.phaseAnalyzing') }}</span>
       </div>
 
       <div v-else-if="cands.length > 1" class="plugin-section multi-plugin">

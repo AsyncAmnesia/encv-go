@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Soltus/encv-go/internal/config"
+	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	"github.com/Soltus/encv-go/internal/v2/plugins/video"
@@ -375,12 +376,11 @@ func (tm *TaskManager) dequeue() *MobileTask {
 }
 
 func (tm *TaskManager) resolveAbsPath(sourcePath string) string {
-	cleaned := filepath.Clean(sourcePath)
-	if strings.HasPrefix(cleaned, "..") {
-		return ""
+	abs, err := utils.SafeResolveToAbsPath(tm.servingDir, sourcePath)
+	if err != nil {
+		return filepath.Clean(sourcePath)
 	}
-	relPath := strings.TrimPrefix(cleaned, "/")
-	return filepath.Join(tm.servingDir, relPath)
+	return abs
 }
 
 func (tm *TaskManager) processTask(task *MobileTask) {

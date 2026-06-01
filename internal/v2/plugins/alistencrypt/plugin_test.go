@@ -170,6 +170,46 @@ func TestCanDecrypt(t *testing.T) {
 
 		assert.False(t, p.CanDecrypt(encvPath), ".encv should return false (ENCV container excluded)")
 	})
+
+	t.Run("V1_legacy_no_magic_returns_true", func(t *testing.T) {
+		// Legacy / v1 alist-encrypt ciphertexts have no AECTR2 magic header;
+		// the plugin should still claim ownership so that predict-plugin
+		// returns the alist_encrypt candidate and the modal can render.
+		p, ctx := newPluginWithSettings(t, ".bin", testPassword, "aesctr")
+		require.NoError(t, p.Initialize(ctx))
+
+		plaintext := make([]byte, 256)
+		for i := range plaintext {
+			plaintext[i] = byte((i * 7) ^ 0xA5)
+		}
+
+		cipher, err := Create(testPassword, "aesctr", int64(len(plaintext)))
+		require.NoError(t, err)
+		cipher.Encrypt(plaintext)
+
+		tmpDir := t.TempDir()
+		v1Path := filepath.Join(tmpDir, "legacy_no_magic.bin")
+		require.NoError(t, os.WriteFile(v1Path, plaintext, 0644))
+
+		assert.True(t, p.CanDecrypt(v1Path),
+			"V1 (no AECTR2 magic) .bin should still be claimed by alist_encrypt")
+	})
+
+	t.Run("renamed_mp4_with_bin_ext_returns_false", func(t *testing.T) {
+		// A user-renamed MP4 (e.g. uploaded as .bin) must not be claimed
+		// by the alist_encrypt plugin so the regular file flow handles it.
+		p, ctx := newPluginWithSettings(t, ".bin", testPassword, "aesctr")
+		require.NoError(t, p.Initialize(ctx))
+
+		tmpDir := t.TempDir()
+		mp4Bytes := append([]byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p', 'm', 'p', '4', '2'},
+			make([]byte, 100)...)
+		renamed := filepath.Join(tmpDir, "fake.bin")
+		require.NoError(t, os.WriteFile(renamed, mp4Bytes, 0644))
+
+		assert.False(t, p.CanDecrypt(renamed),
+			"plain MP4 magic should be detected and excluded from alist_encrypt")
+	})
 }
 
 func TestEncryptDecryptRoundtrip(t *testing.T) {
