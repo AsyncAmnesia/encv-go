@@ -1,71 +1,73 @@
-# 分层重构分析 Spec
+# 分层重构分析 Spec（前端重点）
 
 ## Why
 
-经过本轮管线自洽性重构（产物路径从文件系统遍历改为管线返回值），以及时间线可展开详情的实现，暴露出项目在多个层累积的「架构债」。本 spec 旨在**分层梳理需要重构的部位**，为后续每个 PR 提供明确的范围和验收标准，避免一次性大规模改动导致风险不可控。
+经过本轮管线自洽性重构（产物路径从文件系统遍历改为管线返回值）和时间线可展开详情实现，前端层累积的架构债尤为突出：
 
-核心矛盾：
-- **后端管线已经自洽**（产品路径由管线返回值），但其他层仍残留「老式遍历/拼接」的反模式
-- **前端时间线已可展开**（TaskStep 后端化），但 `Tasks.vue` 仍承担过多职责（725 行 + eventBus 多重订阅）
-- **插件接口已统一返回值**（PostEncryptProcessor/Decrypt），但 7 个插件实现仍有大量样板代码
-- **phase 名称硬编码**（`analyzing`/`initializing`/`encrypting` 等字符串散落多处），无类型保护
-- **CI/Makefile 脚本重复**（test.yml + android.yml 有重叠的 setup 步骤）
+- **`Tasks.vue` 725 行**：列表渲染、过滤/搜索/排序、刷新、eventBus 多重订阅、modal 触发全部糅在一个组件
+- **`TaskDetailModal.vue` 440+ 行**：基本信息、时间线、产物、错误、警告、按钮全部在单文件
+- **phase 字符串散落**：后端/前端通过裸字符串耦合（`"encrypting"`/`"completed"` 等），无类型保护
+- **inline modal / 跨 tab eventBus**：曾修复一处，仍需全局复查
+- **eventBus 监听器在 Tasks.vue 中多达 5+ 个**，部分可能违反 §2.1 铁律
+
+后端部分本轮已通过**管线自洽性重构**（`findEncryptedOutputFile`/`findDecryptedOutputFile` 消除、Plugin 接口统一返回产物路径）解决了核心矛盾，**其他后端重构本 spec 暂不纳入**，按"小改"或"延后"处理。
 
 ## What Changes
 
-新增本 spec 作为**后续多个原子重构任务的入口文档**：
-- 不一次性提交所有改动
-- 列出每一层的高优先级重构项（含严重程度、范围、影响）
-- 每个 Phase 在子任务 spec 中再独立细化（本 spec 不展开具体实现）
+新增本 spec 作为**前端重构元索引**：
+- 列出前端各层的高优先级重构项（含严重程度、范围、影响）
+- 后端部分只列出**小改清单**（如统一 phase 常量）
+- 重大后端重构（Plugin 实现去重、TaskManager mutation API 化、CI 去重等）**明确延后到后续 spec**
 - **不改变**任何运行时行为
 
 ## Impact
 
 - Affected specs: 无（纯重构元 spec）
-- Affected code（按层列出**全部候选**清单，本 spec 不强制全部完成）：
+- Affected code（按层列出**全部候选**清单）：
 
-### 后端 (Go) 层
+### 前端 (Vue/Ionic) 层 — **本 spec 重点**
 
-| 层级 | 候选文件 | 现状 |
-|------|---------|------|
-| Plugin 接口 | `internal/v2/plugins/registry.go` | Plugin 接口的 `PreEncryptProcessor/PreDecryptProcessor/PostDecryptProcessor` 仍是 `error` 返回，产物/状态信息丢失 |
-| Plugin 接口 | `internal/v2/plugins/registry.go` | 插件返回值元数据散落：manifest、footer、header 各有不同返回方式 |
-| 插件实现 | `internal/v2/plugins/{video,audio,image,pdf,text,wps}/plugin.go` | 6 个 V4 容器插件的 `PostEncryptProcessor` 几乎完全相同：都是 `packParams, err := buildPackParams(...); outputPath, err := packer.StandardPostEncrypt(packParams); return outputPath, nil` |
-| Plugin 实现 | `internal/v2/plugins/{video,audio,image,pdf,text,wps}/plugin.go` | 6 个插件的 `Decrypt` 完全相同：构造 `vIndex` → 读 manifest → 调用 `processDecryption` → 返回 `filepath.Join(outputDir, vIndex.GetOriginalFilename())` |
-| Task Manager | `internal/service/task_manager.go` | `processEncrypt` / `processDecrypt` 中 phase 字符串硬编码（`"encrypting"`/`"completed"` 等），无类型保护 |
-| Task Manager | `internal/service/task_manager.go` | `monitorFileProgress` 还在用裸 `slog` 输出 phase，但 phase 字符串与 `updateProgress` 不同步 |
-| Task Manager | `internal/service/task_manager.go` | 大量 `tm.mu.Lock()` + 直接修改 `task.XXX` 字段，缺少结构化的 mutation API（如 `tm.completeTask(id, outputPath)`） |
-| HTTP Handler | `internal/server/mobile_api.go` | 多个 `handleAlistXxxGin` 函数有重复的 query param 解码、ServeFile 包装、错误处理模式 |
-| HTTP Handler | `internal/server/mobile_api.go` | 路径解析（`utils.DecodeGinQueryParam` + `SafeResolveToAbsPath`）模式重复 |
-| Service | `internal/service/mobile_service.go` | `GetFileInfo` 内部可能还有散落的 version==4 分支 |
-| Physical 打包 | `internal/v2/physical/file_single.go` vs `file_multi.go` | 两者 `Pack()` 实现有重复 manifest 写盘逻辑 |
+| 层级 | 候选文件 | 现状 | 严重程度 |
+|------|---------|------|---------|
+| View | `app/encv-mobile/src/views/Tasks.vue` | 725 行，承担：列表渲染、过滤/搜索/排序、刷新、eventBus 多重订阅、modal 触发、UI 状态机 | **P1** |
+| View | `app/encv-mobile/src/views/Tasks.vue` | `onMounted` 中注册 5+ 个 eventBus 监听器，部分可能在跨 tab 场景下违反 §2.1 铁律 | **P1** |
+| View | `app/encv-mobile/src/views/Files.vue` | 仍然使用 `eventBus.emit` 触发跨组件操作（之前修复了 modal 跨 tab，但其他事件流是否还有反模式？） | P2 |
+| Component | `app/encv-mobile/src/components/TaskDetailModal.vue` | 440+ 行，承担：基本信息、时间线、产物展示、错误展示、警告展示、操作按钮 | **P1** |
+| Component | `app/encv-mobile/src/components/TaskDetailModal.vue` | `phaseLabel` 映射函数 7 行 case 散落在 script 块中，可独立为 `usePhaseLabel.ts` composable | P2 |
+| Component | `app/encv-mobile/src/components/NewTaskModal.vue` | 加密/解密双模式 if-else 大量重复，可考虑拆为 `<EncryptBody>` + `<DecryptBody>` 子组件 | P2 |
+| Composable | `app/encv-mobile/src/composables/useTaskDetail.ts` | 文件存在但只暴露几个简单函数，可能未被使用或职责不清 | P2 |
+| Composable | `app/encv-mobile/src/composables/useTaskForm.ts` | `doPredict` 内部有 500ms 防抖 + API 调用，但外层 `useNewTaskModal` 不知道这个时序（依赖外层 await），存在时序耦合 | P2 |
+| Feature/action | `app/encv-mobile/src/features/alist-encrypt/actions.ts` | actions.ts 还在用 `router.push` 做导航（与 §1.4 modal 铁律相关） | P2 |
+| API client | `app/encv-mobile/src/api/encv.ts` | 仍有 `fetch` 直接调用，未统一走 axios/ofetch | P2 |
+| Type | `app/encv-mobile/src/types/task.ts` + `api/encv.ts` | `EncvTask` 类型与 `MobileTask` 后端类型分散两处 | P2 |
 
-### 前端 (Vue/Ionic) 层
+### 后端 (Go) 层 — **小改清单（已纳入本 spec）**
 
-| 层级 | 候选文件 | 现状 |
-|------|---------|------|
-| View | `app/encv-mobile/src/views/Tasks.vue` | 725 行，承担：列表渲染、过滤/搜索/排序、刷新、eventBus 多重订阅、modal 触发、UI 状态机 |
-| View | `app/encv-mobile/src/views/Tasks.vue` | `onMounted` 中注册 5+ 个 eventBus 监听器，部分可能在跨 tab 场景下违反 §2.1 铁律 |
-| View | `app/encv-mobile/src/views/Files.vue` | 仍然使用 `eventBus.emit` 触发跨组件操作（之前修复了 modal 跨 tab，但其他事件流是否还有反模式？） |
-| Component | `app/encv-mobile/src/components/TaskDetailModal.vue` | 440+ 行，承担：基本信息、时间线、产物展示、错误展示、警告展示、操作按钮。**已完成的 steps 展开逻辑**埋藏在 computed 中 |
-| Component | `app/encv-mobile/src/components/TaskDetailModal.vue` | `phaseLabel` 映射函数 7 行 case 散落在 script 块中，可独立为 `usePhaseLabel.ts` composable |
-| Component | `app/encv-mobile/src/components/NewTaskModal.vue` | 加密/解密双模式 if-else 大量重复，可考虑拆为 `<EncryptBody>` + `<DecryptBody>` 子组件 |
-| Composable | `app/encv-mobile/src/composables/useTaskDetail.ts` | 文件存在但 30 行内只暴露几个简单函数，可能未被使用或职责不清 |
-| Composable | `app/encv-mobile/src/composables/useTaskForm.ts` | `doPredict` 内部有 500ms 防抖 + API 调用，但外层 `useNewTaskModal` 不知道这个时序（依赖外层 await），存在时序耦合 |
-| Feature/action | `app/encv-mobile/src/features/alist-encrypt/actions.ts` | actions.ts 还在用 `router.push` 做导航（与 §1.4 modal 铁律相关） |
-| API client | `app/encv-mobile/src/api/encv.ts` | 仍有 `fetch` 直接调用，未统一走 axios/ofetch |
+| 层级 | 候选文件 | 现状 | 处理方式 |
+|------|---------|------|---------|
+| 类型 | `internal/service/task_manager.go` 中的 phase 字符串 | `"encrypting"`/`"completed"`/`"failed"` 等裸字符串散落 | **小改**：新增 `internal/service/phase.go` 集中常量定义 |
+| 阶段时间 | `task_manager.go` 的 `updateProgress` | 已记录 Steps 字段，但 phase 仍为字符串 | **小改**：复用上方 Phase 常量 |
+
+### 后端 (Go) 层 — **延后清单（不纳入本 spec）**
+
+| 候选 | 原因 |
+|------|------|
+| 6 个 V4 容器插件 PostEncryptProcessor 公共 helper | 改动面大，风险中，延后到独立 spec |
+| 6 个 V4 容器插件 Decrypt 公共 helper | 同上 |
+| TaskManager mutation API 化 | 改动面大，依赖业务方全部迁移 |
+| HTTP Handler 模板化 | 改动面大，收益暂不明确 |
+| Physical 打包层去重 | 性能影响需评估 |
+| Service 层 `GetFileInfo` 简化 | ContainerHandle 已统一，分支已少 |
+| CI 去重 | 独立工作流 |
+| Makefile 入口统一 | 工具链重构 |
 
 ### 横切关注点
 
-| 层级 | 候选文件 | 现状 |
-|------|---------|------|
-| Plugin 元数据 | `internal/v2/plugins/registry.go` | `GetAllRegisteredContainerExtensions()` 和 `IsContainer(name)` 还有别的硬编码 fallback？ |
-| Phase 类型 | 后端 + 前端双份 | 后端字符串 → 前端字符串，无共享枚举/常量 |
-| CI | `.github/workflows/test.yml` + `android.yml` | 都有 `setup-go`/`setup-node`/`mise` 步骤，重复 |
-| CI | `Makefile` + `hack/hack.mk` + `hack/hack-cli.mk` | 三处都有 `test`/`build` 入口，定义分散 |
-| Test | `internal/*/mock_broadcaster_test.go` | 仅 broadcaster 有独立 mock，task_manager 内部 mock 散落在多个测试文件 |
-| i18n | `app/encv-mobile/src/composables/useI18n.ts` | 1299 行，所有翻译键集中在一个文件，查找/修改代价大 |
-| Error code | 整个项目 | 后端用字符串 error，前端用 `t('error.xxx')` 字符串映射，无共享 schema |
+| 层级 | 候选 | 处理方式 |
+|------|------|---------|
+| Phase 字符串 | 后端 + 前端双份硬编码 | **小改**：后端常量 + 前端枚举 |
+| i18n | 1299 行单文件 | **延后**：评估拆分价值低，暂不重构 |
+| Error code | 字符串 + 字符串映射 | **延后**：需要独立 spec 设计 schema |
 
 ---
 
@@ -73,7 +75,7 @@
 
 ### Requirement: 分层重构 spec 入口
 
-本 spec SHALL 作为后续每个原子重构任务的**索引入口**，每个 Phase 完成后**勾选 checklist 对应项**。
+本 spec SHALL 作为后续前端重构任务的**索引入口**，每个 Phase 完成后**勾选 checklist 对应项**。
 
 #### Scenario: 用户批准 Phase 1 后开始
 - **WHEN** 用户批准本 spec 并指定"开始 Phase 1"
@@ -86,127 +88,103 @@
 - **THEN** 才允许开始 Phase N+1
 - **AND** Phase 1 完成后，必须先在 test 环境验证再进入 Phase 2
 
-### Requirement: 重构优先级评估准则
+### Requirement: 优先级评估准则
 
-每个原子重构任务 SHALL 包含以下字段（在具体子 spec 中填写）：
+每个原子重构任务 SHALL 包含以下字段：
 
 | 字段 | 含义 |
 |------|------|
 | **严重程度** | P0 (崩溃/数据丢失) / P1 (重复代码 >200行) / P2 (可读性/可测试性) |
 | **改动行数预估** | 净增/净减行数 |
-| **影响面** | 修改的包/文件数 + 公共 API 变更数 |
-| **验证方式** | 编译 + 单元测试 + 集成测试 + 端到端测试 |
-| **回滚成本** | git revert 即可 / 涉及数据迁移 |
+| **影响面** | 修改的文件数 + 公共 API 变更数 |
+| **验证方式** | vue-tsc + 端到端测试 + 视觉回归 |
 
 #### Scenario: 优先级判定
 - **WHEN** 一个候选重构项被评估
-- **THEN** P0 项必须立即处理
+- **THEN** P0 项立即处理
 - **AND** P1 项列入下个 Phase
-- **AND** P2 项可累积到季度重构窗口
+- **AND** P2 项累积到后续 Phase
 
 ---
 
 ## MODIFIED Requirements
 
-### Requirement: Plugin 接口返回值一致性
+### Requirement: TaskManager phase 字符串使用常量
 
-`Plugin` 接口的所有处理器方法 SHALL 返回**结构化结果**而非纯 `error`：
-- `PreEncryptProcessor(index, inputPath, inputRootDir, outputDir) error` — 暂不变（pre 阶段无产物）
-- `PreDecryptProcessor(containerPath, outputDir) error` — 暂不变
-- `PostEncryptProcessor(result) (string, error)` — **已修改** ✅
-- `Decrypt(containerPath, outputDir) (string, error)` — **已修改** ✅
-- `PostDecryptProcessor(containerPath) error` — 暂不变（post 阶段无产物）
-
-> **本次 spec 不强制**继续修改 `Pre*` 处理器，因它们不产生产物；但应在下个 Phase 评估是否需要返回结构化状态。
-
-### Requirement: Task Manager mutation API
-
-`TaskManager` SHALL 提供结构化的 mutation 方法，避免在外部直接 `tm.mu.Lock()` 后修改字段：
-
-| 当前直接修改 | 建议封装方法 |
-|-------------|------------|
-| `task.Status = "completed"; task.Progress = 100; ...; task.CompletedAt = &now` | `tm.completeTask(id, outputPath)` |
-| `task.Status = "cancelling"` | `tm.markCancelling(id)` |
-| `task.Status = "failed"; task.Error = msg` | `tm.failTaskWithDetail(id, errMsg, errDetail)` |
-| `task.Steps = append(...)` | `tm.appendStep(id, phase, detail)` |
-| `tm.mu.Unlock(); tm.saveTasks()` | 封装在 mutation 方法内部 |
-
-#### Scenario: 调用方使用结构化 API
-- **WHEN** 业务代码需要更新任务状态
-- **THEN** 调用 `tm.completeTask(id, outputPath)` 等方法
-- **AND** 内部统一加锁 + 持久化 + 广播
-- **AND** 调用方不再持有 `task` 指针（避免锁外修改）
-
-### Requirement: 插件实现去重
-
-6 个 V4 容器插件的 `PostEncryptProcessor` 和 `Decrypt` SHALL 提取为**基类/组合 helper**，消除样板代码。
-
-#### Scenario: 视频/音频/图片/PDF/Text/WPS 插件
-- **WHEN** 6 个 V4 插件实现 `PostEncryptProcessor`
-- **THEN** 全部委托给一个公共函数 `plugins.StandardPostEncryptForContainer(plugin, params)`
-- **AND** 6 个插件的 `Decrypt` 全部委托给 `plugins.StandardDecryptForContainer(plugin, containerPath, outputDir)`
-
-#### Scenario: 插件间差异
-- **WHEN** 某插件需要特化处理（如 `video` 的 verify、`image` 的 EXIF 保留）
-- **THEN** 通过 plugin 自己的 hook 函数扩展，**不**改基类函数签名
-- **AND** 公共代码逻辑保持一致
-
-### Requirement: Phase 名称类型化
-
-后端和前端的 phase 字符串 SHALL 由**共享类型**约束：
-
-#### Scenario: 后端 Go
-- **WHEN** 代码中引用 phase 字符串（`"encrypting"`/`"completed"` 等）
-- **THEN** 使用 `const` 块或 `iota` 类型化（如 `type Phase int; const PhaseEncrypting Phase = iota + 1`）
-- **AND** JSON 序列化时仍输出小写字符串以保持 API 兼容
-
-#### Scenario: 前端 TS
-- **WHEN** 前端组件引用 phase 字符串
-- **THEN** 使用 `import { Phase } from '@/types/phase'` 枚举类型
-- **AND** `i18n` 键名也由 phase 类型派生，避免散落字符串
-
-### Requirement: 任务步骤类型化
-
-后端 `TaskStep` 和前端 `TaskStep` SHALL 字段保持完全一致：
-
-| 字段 | Go | TS | 用途 |
-|------|-----|-----|------|
-| `phase` | `string` | `string` | 阶段名（来自 Phase 枚举） |
-| `startedAt` | `time.Time` | `string` (ISO) | 开始时间 |
-| `completedAt` | `*time.Time` | `string?` | 完成时间（可空表示进行中） |
-| `detail` | `string` | `string?` | 阶段详情（如产物路径） |
-
-> **本轮已添加 Steps 字段** ✅，本 spec 不重复实现，只确保后续修改保持类型一致。
-
-### Requirement: HTTP Handler 模板化
-
-`internal/server/mobile_api.go` 中所有 `handleXxxGin` 函数 SHALL 使用统一模板：
+后端 `task_manager.go` SHALL 使用 `internal/service/phase.go` 中定义的常量：
 
 ```go
-func (s *Server) handleGinTemplate(c *gin.Context, opts HandlerOpts) {
-    // 1. 解析 path/password/extra
-    // 2. SafeResolveToAbsPath
-    // 3. 委托给 service 层
-    // 4. 包装 ServeFile/JSON
-    // 5. 统一错误处理
-}
+// internal/service/phase.go
+package service
 
-type HandlerOpts struct {
-    RequirePassword bool
-    PathParam       string
-    ExtraParamKeys  []string
-    Handler         func(absPath string, opts ResolvedOpts) (provider.FileContentProvider, error)
-}
+const (
+    PhaseCreated       = "created"
+    PhaseAnalyzing     = "analyzing"
+    PhaseInitializing  = "initializing"
+    PhasePreprocessing = "preprocessing"
+    PhaseEncrypting    = "encrypting"
+    PhaseDecrypting    = "decrypting"
+    PhasePacking       = "packing"
+    PhaseVerifying     = "verifying"
+    PhaseCompleted     = "completed"
+    PhaseFailed        = "failed"
+    PhaseCancelled     = "cancelled"
+)
 ```
 
-#### Scenario: 现有 handler 迁移
+#### Scenario: 调用方
+- **WHEN** task_manager.go 中出现裸字符串 `"encrypting"` / `"completed"` 等
+- **THEN** 替换为 `service.PhaseEncrypting` / `service.PhaseCompleted`
+- **AND** JSON 序列化值保持不变（仍是小写字符串）
+
+### Requirement: 前端 Phase 枚举化
+
+前端 SHALL 通过 `app/encv-mobile/src/types/phase.ts` 集中 phase 名称：
+
+```typescript
+export const Phase = {
+  Created: 'created',
+  Analyzing: 'analyzing',
+  Initializing: 'initializing',
+  Preprocessing: 'preprocessing',
+  Encrypting: 'encrypting',
+  Decrypting: 'decrypting',
+  Packing: 'packing',
+  Verifying: 'verifying',
+  Completed: 'completed',
+  Failed: 'failed',
+  Cancelled: 'cancelled',
+} as const
+
+export type PhaseValue = typeof Phase[keyof typeof Phase]
+```
+
+#### Scenario: 引用方
+- **WHEN** Tasks.vue / TaskDetailModal.vue 中出现裸字符串 `'encrypting'` / `'completed'`
+- **THEN** 替换为 `Phase.Encrypting` / `Phase.Completed`
+- **AND** 与后端 `service.Phase*` 常量值保持一一对应
+
+### Requirement: i18n 键名派生自 Phase
+
+`useI18n.ts` 中 `tasks.phaseEncrypting` / `tasks.phaseCompleted` 等键 SHALL 由 Phase 枚举派生：
+
+```typescript
+// 派生方式（示意）
+const phaseLabelKey = (phase: PhaseValue) => `tasks.phase${phase[0].toUpperCase()}${phase.slice(1)}`
+```
+
+#### Scenario: 派生后
 - **WHEN** 重构时
-- **THEN** `handleAlistEncryptStreamGin` 等作为模板参考
-- **AND** 逐个迁移到统一模板
+- **THEN** `getPhaseLabel(phase)` 函数从 `if-else 链` 改为 `phaseLabelKey + t()` 派生
+- **AND** 减少 7+ 行 case 散落
+
+---
+
+## MODIFIED Requirements（前端重点）
 
 ### Requirement: Tasks.vue 拆分为 store + 视图
 
-`Tasks.vue` 725 行的状态管理逻辑 SHALL 迁移到 Pinia store（如果项目还未引入）/ composable：
+`Tasks.vue` 725 行的状态管理逻辑 SHALL 迁移到 Pinia store（如项目已引入）或 `useTasksStore` composable。
 
 #### Scenario: 拆分目标
 - **WHEN** 重构时
@@ -219,6 +197,7 @@ type HandlerOpts struct {
 - **THEN** 重新审查 `Tasks.vue` 中注册的 5+ 个 eventBus 监听
 - **AND** 跨 tab 的迁移到 composable 调用（同 §1.4 铁律）
 - **AND** 同 tab 自消费的保留在 store 内
+- **AND** 文档化每个监听器的"是否跨 tab"决策
 
 ### Requirement: TaskDetailModal 子组件化
 
@@ -236,20 +215,64 @@ type HandlerOpts struct {
 - **AND** 每个子组件独立可测
 - **AND** i18n 键名仍统一在 `useI18n.ts`
 
-### Requirement: CI/Makefile 去重
+### Requirement: NewTaskModal 加密/解密模式拆分
 
-`.github/workflows/test.yml` 和 `android.yml` 的公共步骤 SHALL 抽取为 composite action 或 reusable workflow。
+`NewTaskModal.vue` SHALL 评估拆分为：
+- `<EncryptBody>` — 加密表单（密码 + 插件选项）
+- `<DecryptBody>` — 解密表单（密码 + 输出路径）
 
-#### Scenario: 复用步骤
-- `actions/checkout` + `setup-go` + `mise install` 抽取为 `/.github/actions/setup-env`
-- `npm ci` + `vue-tsc --noEmit` 抽取为 `/.github/actions/frontend-check`
+#### Scenario: 拆分条件
+- **WHEN** 加密/解密分支各自 > 100 行模板代码
+- **AND** 分支间 prop 不同
+- **THEN** 拆分为子组件
+- **ELSE** 保留单文件但提取公共部分为 composable
 
-#### Scenario: Makefile 入口统一
-- `Makefile` 主入口覆盖所有场景
-- `hack/hack.mk` 和 `hack/hack-cli.mk` 简化为工具函数库
+### Requirement: Composable 时序解耦
+
+`useTaskForm.ts` 的 `doPredict` 防抖时序 SHALL 与 `useNewTaskModal` 的打开逻辑解耦：
+
+#### Scenario: 当前耦合
+- **WHEN** `useNewTaskModal.openNewTask()` 内部 `await doPredict()`
+- **AND** `doPredict` 内部有 500ms setTimeout 防抖
+- **THEN** 调用方需要 `await`，但不知道内部有 500ms 防抖
+- **AND** 时序依赖隐式、不易测试
+
+#### Scenario: 解耦后
+- **WHEN** 重构时
+- **THEN** `doPredict` 返回 `Promise<PredictResult>`，调用方选择 await 或不 await
+- **AND** 防抖时序作为实现细节隐藏在 `useTaskForm` 内部
+- **AND** 单元测试可 mock `doPredict` 返回固定结果
+
+### Requirement: API client 统一
+
+`app/encv-mobile/src/api/encv.ts` 中散落的 `fetch` 调用 SHALL 统一为单一 HTTP 客户端：
+
+#### Scenario: 统一前
+- **WHEN** 出现 `await fetch(url, { ... })` 直调
+- **THEN** 改为 `await httpClient.get<T>(url)` 或 `await apiGet('/path', params)`
+
+#### Scenario: 统一后
+- **WHEN** 引入 ofetch/axios 统一实例
+- **THEN** 集中处理：baseURL、auth header、错误格式、retry 策略
+- **AND** 测试可 mock httpClient 拦截请求
+
+### Requirement: 事件总线全局复查
+
+项目 SHALL 全面审查 eventBus 使用，识别所有跨 tab 反模式：
+
+| 事件名 | 发射者 | 监听者 | 跨 tab? | 决策 |
+|--------|--------|--------|---------|------|
+| （待审查填充） | | | | |
+
+#### Scenario: 审查流程
+- **WHEN** 审查时
+- **THEN** 列出所有 `eventBus.emit/on` 调用
+- **AND** 对每条标注"同组件/同 tab 跨组件/跨 tab"
+- **AND** 跨 tab 的迁移到 composable 直接调用（§2.1 铁律）
+- **AND** 审查结果写入 `checklist.md` Phase 0 表格
 
 ---
 
 ## REMOVED Requirements
 
-无。本 spec 是元 spec，不删除任何功能，只是规划后续原子重构任务。
+无。本 spec 是元 spec，不删除任何功能，只是规划后续前端原子重构任务。
