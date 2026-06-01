@@ -911,9 +911,22 @@ func (s *Server) handlePredictPluginGin(c *gin.Context) {
 
 	var candidates []plugins.PluginCandidate
 	if req.Type == "encrypt" {
-		candidates = plugins.FindAllEncryptingPlugins(req.SourcePath)
+		// ★ 关键修复: 先用 SafeResolveToAbsPath 把前端传来的路径解析为绝对路径，
+		// 防止 mobile 模式下 servingDir=/storage/emulated/0 时，插件拿不到真实文件
+		absSourcePath, err := utils.SafeResolveToAbsPath(s.servingDir, req.SourcePath)
+		if err != nil {
+			c.JSON(200, gin.H{"candidates": []gin.H{}, "pluginName": nil, "taskOptions": nil, "error": fmt.Sprintf("invalid path: %v", err)})
+			return
+		}
+		candidates = plugins.FindAllEncryptingPlugins(absSourcePath)
 	} else {
-		targetPlugin, err := plugins.FindDecryptingPlugin(req.SourcePath)
+		// ★ 关键修复: 同上，解密前必须先 resolve 绝对路径
+		absSourcePath, err := utils.SafeResolveToAbsPath(s.servingDir, req.SourcePath)
+		if err != nil {
+			c.JSON(200, gin.H{"candidates": []gin.H{}, "pluginName": nil, "taskOptions": nil, "error": fmt.Sprintf("invalid path: %v", err)})
+			return
+		}
+		targetPlugin, err := plugins.FindDecryptingPlugin(absSourcePath)
 		if err != nil || targetPlugin == nil {
 			c.JSON(200, gin.H{"candidates": []gin.H{}, "pluginName": nil, "taskOptions": nil, "error": err.Error()})
 			return
