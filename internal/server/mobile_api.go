@@ -174,6 +174,56 @@ func (s *Server) handleUploadFileGin(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+func (s *Server) handleServiceGuardGin(c *gin.Context) {
+	files, err := s.mobileSvc.ListFiles("/")
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"ready":      false,
+			"servingDir": s.servingDir,
+			"error":      err.Error(),
+			"detail":     "failed to list root directory",
+		})
+		return
+	}
+
+	const marker = "01-plain-media"
+	hasMarker := false
+	var dirNames []string
+	for _, f := range files {
+		dirNames = append(dirNames, f.Name)
+		if f.Name == marker && f.IsDirectory {
+			hasMarker = true
+		}
+	}
+
+	if !hasMarker {
+		preview := len(dirNames) > 10
+		if !preview {
+			preview = len(dirNames) == len(files)
+		}
+		displayNames := dirNames
+		if preview && len(displayNames) > 10 {
+			displayNames = displayNames[:10]
+		}
+
+		c.JSON(http.StatusForbidden, gin.H{
+			"ready":       false,
+			"servingDir":  s.servingDir,
+			"marker":      marker,
+			"found":       displayNames,
+			"detail":      fmt.Sprintf("server.dir missing %q, got: [%s]", marker, strings.Join(displayNames, ", ")),
+			"hint":        "Run: cd app/encv-mobile && npx tsx scripts/generate-mock-files.ts --dir /storage/emulated/0",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"ready":      true,
+		"servingDir": s.servingDir,
+		"marker":     marker,
+	})
+}
+
 func (s *Server) handleReadFileContentGin(c *gin.Context) {
 	queryPath := utils.DecodeGinQueryParam(c.Query("path"))
 	slog.Info("API: read file content", "path", queryPath)

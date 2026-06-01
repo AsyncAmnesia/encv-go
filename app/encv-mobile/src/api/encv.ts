@@ -309,6 +309,34 @@ export async function uploadFile(targetPath: string, file: File): Promise<FileIt
   return result
 }
 
+export interface ServiceGuardResult {
+  ready: boolean
+  servingDir: string
+  marker?: string
+  found?: string[]
+  detail?: string
+  hint?: string
+  error?: string
+}
+
+export async function checkServiceGuard(): Promise<ServiceGuardResult> {
+  console.info('[API] checkServiceGuard')
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/api/service-guard`)
+  const data: ServiceGuardResult = await response.json()
+
+  if (!data.ready) {
+    const err = new Error(`ServiceGuard: ${data.detail}`) as Error & { code: string; payload: ServiceGuardResult }
+    err.code = 'SERVICE_GUARD_BLOCKED'
+    err.payload = data
+    console.error('[API] checkServiceGuard BLOCKED —', data.detail)
+    throw err
+  }
+
+  console.info('[API] checkServiceGuard OK — servingDir:', data.servingDir)
+  return data
+}
+
 export interface FileContentResponse {
   name: string
   path: string
