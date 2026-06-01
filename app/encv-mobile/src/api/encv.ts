@@ -919,6 +919,7 @@ export interface TaskField {
   defaultValue: string
   help: string
   options?: string[]
+  optionLabels?: Record<string, string>
   condition?: '' | 'encrypt' | 'decrypt'
 }
 

@@ -73,14 +73,15 @@ type TaskOptions struct {
 
 // TaskField 声明任务创建时的额外输入字段
 type TaskField struct {
-	Key          string   `json:"key"`
-	Label        string   `json:"label"`
-	Type         string   `json:"type"`
-	Required     bool     `json:"required"`
-	DefaultValue string   `json:"defaultValue"`
-	Help         string   `json:"help"`
-	Options      []string `json:"options,omitempty"`
-	Condition    string   `json:"condition,omitempty"`
+	Key          string            `json:"key"`
+	Label        string            `json:"label"`
+	Type         string            `json:"type"`
+	Required     bool              `json:"required"`
+	DefaultValue string           `json:"defaultValue"`
+	Help         string            `json:"help"`
+	Options      []string          `json:"options,omitempty"`
+	OptionLabels map[string]string `json:"optionLabels,omitempty"`
+	Condition    string            `json:"condition,omitempty"`
 }
 
 // TaskPasswordResolver 定义插件自定义主密码解析能力

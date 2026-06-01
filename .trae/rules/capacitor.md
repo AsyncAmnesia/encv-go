@@ -510,10 +510,243 @@ modal.onDidDismiss().then(() => {
 
 ---
 
-## 八、跨层参考
+## 八、ion-toggle 暗黑模式完整适配（⚠️ 实战踩坑！）
+
+> **核心原则：`ion-toggle` 在暗黑模式下有两大问题——label 文字不可见 + 轨道/手柄颜色异常。**
+> **两者根因不同，需要分别解决。**
+
+### 8.1 问题一：label 文字在暗黑模式下不可见
+
+**根因**：`:label` prop 渲染在 Shadow DOM 内部，`::part(label)` 穿透在 `<style scoped>` 中不可靠。
+
+**❌ 错误（label 在 Shadow DOM 内）**：
+```vue
+<ion-toggle :label="t(field.label)" justify="space-between" />
+```
+
+**✅ 正确（light DOM 模式）**：
+```vue
+<ion-item lines="none">
+  <ion-label>{{ t(field.label) }}</ion-label>
+  <ion-toggle slot="end" :checked="..." @ionChange="..." />
+  <ion-note slot="helper">{{ t(field.help) }}</ion-note>
+</ion-item>
+```
+
+### 8.2 问题二：ON 状态手柄在暗黑模式下变黑
+
+**根因链路**：
+```
+toggle 在 ion-item 内部 → 获得 .ion-color 类
+→ Ionic 8 内部规则：:host(.ion-color.toggle-checked) .toggle-inner{background:var(--ion-color-base)}
+→ 暗黑模式下 --ion-color-base = #121212（深色）
+→ ON 状态手柄被覆盖为黑色，--handle-background-checked CSS 变量失效
+```
+
+**关键认知**：
+1. **Ionic 8 的 CSS 变量名与 v5 不同**——用错变量名等于没设置
+2. **CSS 变量对 ON 状态手柄可能不生效**——被 `.ion-color.toggle-checked` 内部规则覆盖
+3. **`::part(handle)` 必须在非 scoped 样式中使用**
+4. **样式必须放在 App.vue 的非 scoped `<style>` 块中**
+
+### 8.3 Ionic 版本差异（v5 vs v8 变量名）
+
+| 功能 | Ionic v5（❌ 过时） | Ionic 8 ✅ |
+|------|---------------------|-------------|
+| 轨道背景 (OFF) | `--background` | **`--track-background`** |
+| 轨道背景 (ON) | `--background-checked` | **`--track-background-checked`** |
+| 手柄背景 (OFF) | `--handle-background` | `--handle-background`（相同） |
+| 手柄背景 (ON) | `--handle-background-checked` | **`--handle-background-checked`**（相同） |
+
+### 8.4 ✅ 最终解决方案（已验证有效）
+
+**文件位置**：App.vue — 非 scoped `<style>` 块
+
+```css
+/* 方案 A: CSS 变量控制轨道 + OFF 手柄 */
+ion-toggle {
+  --track-background: #424242;
+  --track-background-checked: var(--ion-color-primary);
+  --handle-background: var(--ion-color-primary);
+}
+
+/* 方案 B: ::part() 穿透控制 ON 手柄（覆盖 .ion-color 上下文变黑） */
+ion-toggle.toggle-checked::part(handle) {
+  background: #ffffff;
+}
+```
+
+| 状态 | 轨道 | 手柄 |
+|------|------|------|
+| **OFF** | `#424242` 灰色 | 主题蓝色 |
+| **ON** | 主题蓝色 | **白色** |
+
+### 8.5 禁止的做法
+
+| 做法 | 原因 |
+|------|------|
+| 用 v5 变量名 (`--background`) | Ionic 8 不识别，静默忽略 |
+| 在 `<style scoped>` 中用 `::part()` | 与 `[data-v-xxx]` 冲突，浏览器忽略 |
+| 在 `variables.css` 中用 `::part()` | Vite 可能不正确处理 |
+| 用 `!important` | 违反规范，且可能被 `contain: strict` 阻断 |
+
+### 8.6 必须导入的组件清单
+
+```typescript
+import {
+  IonContent, IonHeader, IonPage, IonToolbar, IonTitle,
+  IonButtons, IonButton,
+  IonItem, IonLabel, IonSelect, IonSelectOption,
+  IonInput, IonIcon, IonSpinner,
+  IonToggle, IonNote, modalController,
+} from '@ionic/vue'
+```
+
+### 8.7 ExtraField 类型分支渲染
+
+```vue
+<!-- bool: ion-label + toggle slot="end" -->
+<ion-item v-if="field.type === 'bool'" lines="none">
+  <ion-label>{{ t(field.label) }}</ion-label>
+  <ion-toggle slot="end" :checked="..." @ionChange="..." />
+  <ion-note slot="helper">{{ t(field.help) }}</ion-note>
+</ion-item>
+
+<!-- select: ion-select label prop（无 Shadow DOM 问题） -->
+<ion-item v-else-if="field.type === 'select'" lines="none">
+  <ion-select :label="t(field.label)" interface="action-sheet">...</ion-select>
+</ion-item>
+
+<!-- string/password: ion-input label prop -->
+<ion-item v-else lines="none">
+  <ion-input :label="t(field.label)" :type="field.type" />
+</ion-item>
+```
+
+## 九、跨层参考
 
 | 主题 | 文档位置 |
 |------|---------|
 | **WAF/代理截断 `@` 字符 → 双重编码方案** | [development.md §六](development.md#六waf代理截断路径参数实战踩坑) |
 | 配置合并加载（Default → user → dev） | [config.go](internal/config/config.go) |
 | **Mobile Overlay 机制（mobile→顶层映射）** | [project_rules.md §Mobile Overlay 机制](project_rules.md#mobile-overlay-机制核心架构) |
+| **主题色系统** | [useTheme.ts](app/encv-mobile/src/composables/useTheme.ts) |
+
+---
+
+## 十、主题色系统
+
+> **核心原则：通过 JS 动态设置 `--ion-color-primary-*` CSS 变量实现运行时切换 primary 色。**
+> **不依赖 Ionic 的 CSS 自定义属性文件生成，完全运行时驱动。**
+
+### 10.1 架构概览
+
+```
+useTheme.ts (composable)
+├── THEME_PRESETS: ThemePreset[]     ← 7 个预设颜色
+├── currentColor: Ref<string>        ← 当前激活颜色响应式引用
+├── applyColor(color)                ← 核心：动态设置所有 --ion-color-primary-* 变量
+├── setThemeColor(color)             ← 公开 API：调用 applyColor
+├── initTheme()                      ← 初始化：读取 localStorage + prefers-color-scheme
+└── localStorage('encv-theme-color') ← 持久化存储
+
+Settings.vue (UI)
+├── 预设圆点选择器 (.color-dot × 7)   ← 点击即切换
+├── 自定义颜色输入 (<input type="color">)  ← 取色器 + HEX 显示
+└── 实时预览 (.color-hex)             ← 显示当前 HEX 值
+```
+
+### 10.2 预设色板
+
+| 名称 | 色值 | 视觉 |
+|------|------|------|
+| Blue | `#4f8cff` | 🔵 默认 |
+| Purple | `#8b5cf6` | 🟣 |
+| Green | `#22c55e` | 🟢 |
+| Orange | `#f97316` | 🟠 |
+| Red | `#ef4444` | 🔴 |
+| Pink | `#ec4899` | 💗 |
+| Teal | `#14b8a6` | 🔵 |
+
+### 10.3 核心算法：applyColor()
+
+```typescript
+function applyColor(color: string) {
+  const root = document.documentElement
+  const rgb = hexToRgb(color)
+  const contrast = getContrastColor(color)
+
+  root.style.setProperty('--ion-color-primary', color)
+  root.style.setProperty('--ion-color-primary-rgb', rgb)
+  root.style.setProperty('--ion-color-primary-contrast', contrast)
+  root.style.setProperty('--ion-color-primary-contrast-rgb', hexToRgb(contrast))
+  root.style.setProperty('--ion-color-primary-shade', darker(color, 10))
+  root.style.setProperty('--ion-color-primary-tint', lighter(color, 10))
+}
+```
+
+**自动生成的衍生变量**：
+
+| 变量 | 算法 | 用途 |
+|------|------|------|
+| `--ion-color-primary` | 原始色值 | 按钮、FAB、链接、toggle ON 轨道 |
+| `--ion-color-primary-rgb` | `r, g, b` 格式 | rgba() 内联使用 |
+| `--ion-color-primary-contrast` | 基于亮度反色 | 按钮文字（白底黑字/黑底白字） |
+| `--ion-color-primary-shade` | 暗 10% | 按压态 |
+| `--ion-color-primary-tint` | 亮 10% | hover 态 |
+
+### 10.4 对比色算法
+
+```typescript
+function getContrastColor(hex: string): string {
+  const luminance = (0.299 * R + 0.587 * G + 0.114 * B) / 255
+  return luminance > 0.5 ? '#000000' : '#ffffff'
+}
+```
+
+使用 ITU-R BT.601 亮度公式判断，确保按钮文字在任意背景色上可读。
+
+### 10.5 localStorage 键名规范
+
+| 键名 | 类型 | 值示例 | 用途 |
+|------|------|--------|------|
+| `encv-theme-preference` | string | `'dark'` / `'light'` | 暗黑模式偏好 |
+| `encv-theme-color` | string | `'#8b5cf6'` | 自定义主题色 |
+| `encv-locale` | string | `'zh-CN'` / `'en'` | 语言偏好 |
+
+### 10.6 Settings.vue UI 结构
+
+```vue
+<ion-item lines="full">
+  <ion-icon :icon="colorPaletteOutline" slot="start"></ion-icon>
+  <ion-label>
+    <h3>{{ t('settings.themeColor') }}</h3>
+    <p>{{ t('settings.themeColorHelp') }}</p>
+  </ion-label>
+</ion-item>
+<div class="theme-color-picker">
+  <div class="preset-colors">
+    <button v-for="preset in THEME_PRESETS"
+      class="color-dot" :class="{ active: currentColor === preset.value }"
+      :style="{ backgroundColor: preset.value }"
+      @click="setThemeColor(preset.value)" />
+  </div>
+  <div class="custom-color-row">
+    <label>{{ t('settings.customColor') }}</label>
+    <input type="color" :value="currentColor" @input="setThemeColor(...)" />
+    <span class="color-hex">{{ currentColor.toUpperCase() }}</span>
+  </div>
+</div>
+```
+
+**交互行为**：
+- 点击预设圆点 → 即时切换，选中项放大 1.15x + 加深边框
+- 使用取色器选择自定义色 → 即时应用 + HEX 实时显示
+- 刷新页面后从 localStorage 恢复上次选择的颜色
+
+### 10.7 注意事项
+
+1. **`applyColor()` 设置在 `document.documentElement` 上**——全局生效，影响所有组件
+2. **与 ion-toggle 联动**——toggle 的 `--track-background-checked` 和 `--handle-background` 引用 `var(--ion-color-primary)`，换色后自动跟随
+3. **暗黑/亮色模式下均有效**——颜色变量独立于 dark mode class
+4. **不支持 CSS 变量的组件需单独处理**——如原生 `<input type="color">` 的样式需要手动覆盖 webkit 伪元素

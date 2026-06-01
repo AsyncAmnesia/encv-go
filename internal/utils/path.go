@@ -20,6 +20,14 @@ func DecodePathParam(raw string) string {
 	return s2
 }
 
+func DecodeGinQueryParam(raw string) string {
+	s, err := url.QueryUnescape(raw)
+	if err != nil {
+		return raw
+	}
+	return s
+}
+
 // SafeResolveToAbsPath 将用户提供的本地路径安全地解析为位于基础目录内的绝对路径。
 // 这个函数专门处理文件系统路径，不处理URL编码，适用于内部调用。
 //

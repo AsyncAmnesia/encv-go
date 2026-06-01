@@ -34,7 +34,7 @@ func TestHandlePluginsGin_ReturnsAllPlugins(t *testing.T) {
 
 	plugins, ok := response["plugins"].([]interface{})
 	require.True(t, ok, "response should contain 'plugins' array")
-	assert.Len(t, plugins, 6, "plugins array length should match plugins.Plugins slice length")
+	assert.Len(t, plugins, 7, "plugins array length should match plugins.Plugins slice length")
 }
 
 func TestHandlePluginsGin_ContainsVideoPlugin(t *testing.T) {

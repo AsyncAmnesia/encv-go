@@ -31,6 +31,170 @@ func TestSafeURLPathToRelative_NormalPaths(t *testing.T) {
 	}
 }
 
+func TestDecodeGinQueryParam_PreciseSingleDecode(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Chinese path (Gin-decoded once from double-encoded)",
+			input:    "%2F123%E4%BA%91%E7%9B%98%2Fbookmarks.html",
+			expected: "/123云盘/bookmarks.html",
+		},
+		{
+			name:     "path with @ symbol",
+			input:    "%2F%E8%A7%86%E9%A2%91%40%E5%90%88%E9%9B%86%2Ftest.mp4",
+			expected: "/视频@合集/test.mp4",
+		},
+		{
+			name:     "path with # and ?",
+			input:    "%2Ffile%231%3Fv2",
+			expected: "/file#1?v2",
+		},
+		{
+			name:     "spaces in path (Gin decodes + to space)",
+			input:    "%2FMy+Documents%2Ffile.txt",
+			expected: "/My Documents/file.txt",
+		},
+		{
+			name:     "emoji path",
+			input:    "%2F%F0%9F%98%80%F0%9F%8E%89%2Ftest.mp4",
+			expected: "/😀🎉/test.mp4",
+		},
+		{
+			name:     "percent followed by non-hex char (literal % preserved)",
+			input:    "%2Freport%25Q1.txt",
+			expected: "/report%Q1.txt",
+		},
+		{
+			name:     "percent followed by valid hex ba (literal %ba preserved - KEY FIX)",
+			input:    "%2Ftest%25ba.txt",
+			expected: "/test%ba.txt",
+		},
+		{
+			name:     "percent 20 as literal filename (space encoding preserved)",
+			input:    "%2Ffoo%2520bar.txt",
+			expected: "/foo%20bar.txt",
+		},
+		{
+			name:     "percent 41 as literal filename (A encoding preserved)",
+			input:    "%2Ffoo%2541bar.txt",
+			expected: "/foo%41bar.txt",
+		},
+		{
+			name:     "root path",
+			input:    "%2F",
+			expected: "/",
+		},
+		{
+			name:     "deep nested path",
+			input:    "%2Fa%2Fb%2Fc%2Fd%2Fe%2Ff.txt",
+			expected: "/a/b/c/d/e/f.txt",
+		},
+		{
+			name:     "null byte encoded (preserved as literal)",
+			input:    "%2F%2500%2Fnull.txt",
+			expected: "/%00/null.txt",
+		},
+		{
+			name:     "double percent sign",
+			input:    "%2F%25%25double%25.txt",
+			expected: "/%%double%.txt",
+		},
+		{
+			name:     "literal %2F in filename (slash encoding preserved)",
+			input:    "%2F%252F%2Fslash-encoded.txt",
+			expected: "/%2F/slash-encoded.txt",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "already decoded plain text (idempotent)",
+			input:    "/DCIM/video.mp4",
+			expected: "/DCIM/video.mp4",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := DecodeGinQueryParam(tc.input)
+			if got != tc.expected {
+				t.Errorf("DecodeGinQueryParam(%q) = %q, want %q", tc.input, got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestDecodeGinQueryParam_FullRoundtrip(t *testing.T) {
+	testPaths := []string{
+		"/123云盘/bookmarks.html",
+		"/视频@合集/test.mp4",
+		"/file#1?v2",
+		"/My Documents/file.txt",
+		"/😀🎉/test.mp4",
+		"/report%Q1.txt",
+		"/test%ba.txt",
+		"/foo%20bar.txt",
+		"/foo%41bar.txt",
+		"/%00/null.txt",
+		"/%%double%.txt",
+		"/%2F/slash-encoded.txt",
+		"/a/b/c/d/e/f.txt",
+	}
+	for _, originalPath := range testPaths {
+		t.Run(originalPath, func(t *testing.T) {
+			doubleEnc := url.QueryEscape(url.QueryEscape(originalPath))
+			ginDecoded, _ := url.ParseQuery("p=" + doubleEnc)
+			rawQuery := ginDecoded.Get("p")
+
+			decoded := DecodeGinQueryParam(rawQuery)
+
+			if decoded != originalPath {
+				t.Errorf("roundtrip mismatch:\n  original:   %q\n  doubleEnc:  %s\n  ginDecoded: %q\n  decoded:    %q",
+					originalPath, doubleEnc, rawQuery, decoded)
+			}
+		})
+	}
+}
+
+func TestDecodeGinQueryParam_vs_DecodePathParam_DifferenceOnPercentHexHex(t *testing.T) {
+
+	trickyPaths := []struct {
+		name     string
+		filename string
+	}{
+		{"%ba (valid hex)", "/test%ba.txt"},
+		{"%20 (space)", "/foo%20bar.txt"},
+		{"%41 (letter A)", "/foo%41bar.txt"},
+		{"%00 (null)", "/%00/null.txt"},
+		{"%2F (slash)", "/%2F/slash-encoded.txt"},
+	}
+	for _, tc := range trickyPaths {
+		t.Run(tc.name, func(t *testing.T) {
+			doubleEnc := url.QueryEscape(url.QueryEscape(tc.filename))
+			ginDecoded, _ := url.ParseQuery("p=" + doubleEnc)
+			rawQuery := ginDecoded.Get("p")
+
+			singleDecode := DecodeGinQueryParam(rawQuery)
+			doubleDecode := DecodePathParam(rawQuery)
+
+			if singleDecode != tc.filename {
+				t.Errorf("DecodeGinQueryParam failed: got %q, want %q", singleDecode, tc.filename)
+			}
+
+			if doubleDecode == tc.filename {
+				t.Logf("DecodePathParam also matched (coincidence for this input)")
+			} else {
+				t.Logf("DecodeGinQueryParam=%q (correct) vs DecodePathParam=%q (over-decoded) — this is the bug we fixed",
+					singleDecode, doubleDecode)
+			}
+		})
+	}
+}
+
 func simulateProxySafeEncode(value string) string {
 	return url.QueryEscape(url.QueryEscape(value))
 }
