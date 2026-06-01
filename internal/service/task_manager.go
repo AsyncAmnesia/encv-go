@@ -887,8 +887,7 @@ func detectContainerVersion(filePath string) int {
 }
 
 func findEncryptedOutputFile(outputDir string, sourceBaseName string) string {
-	extensions := []string{".sccgt", ".sccgv", ".sccgi", ".sccga", ".sccgpdf", ".sccgwps", ".bin"}
-	for _, ext := range extensions {
+	for _, ext := range plugins.GetAllRegisteredContainerExtensions() {
 		candidate := filepath.Join(outputDir, sourceBaseName+ext)
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
@@ -903,7 +902,7 @@ func findEncryptedOutputFile(outputDir string, sourceBaseName string) string {
 			continue
 		}
 		name := entry.Name()
-		if strings.HasPrefix(name, sourceBaseName) && (plugins.IsContainer(name) || strings.HasSuffix(name, ".bin")) {
+		if strings.HasPrefix(name, sourceBaseName) && plugins.IsContainer(name) {
 			return filepath.Join(outputDir, name)
 		}
 	}

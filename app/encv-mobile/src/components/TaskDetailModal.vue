@@ -583,7 +583,7 @@ async function handleRemove() {
 .error-section { background: rgba(var(--ion-color-danger-rgb), 0.04); border-radius: 8px; padding: 12px; }
 .error-msg { font-size: 13px; color: var(--ion-color-danger); margin-top: 4px; word-break: break-word; }
 .error-detail-pre {
-  background: var(--ion-color-step-50);
+  background: var(--ion-color-step-100);
   border-radius: 6px;
   padding: 8px 10px;
   margin-top: 6px;
@@ -611,7 +611,7 @@ async function handleRemove() {
 /* Warning */
 .warning-section { background: rgba(255, 152, 0, 0.06); border-radius: 8px; padding: 12px; }
 .warning-detail-pre {
-  background: var(--ion-color-step-50, #f0f0f0);
+  background: var(--ion-color-step-100, #f0f0f0);
   border-radius: 6px;
   padding: 8px 10px;
   margin-top: 6px;

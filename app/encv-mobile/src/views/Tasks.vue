@@ -958,7 +958,7 @@ onUnmounted(() => {
 .task-warning-detail {
   padding: 8px 12px;
   margin-top: 4px;
-  background: var(--ion-color-step-50, #f0f0f0);
+  background: var(--ion-color-step-100, #f0f0f0);
   border-radius: 4px;
   max-height: 150px;
   overflow-y: auto;
