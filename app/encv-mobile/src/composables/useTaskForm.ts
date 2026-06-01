@@ -37,9 +37,10 @@ export function useTaskForm() {
 
   let predictTimer: ReturnType<typeof setTimeout> | null = null
 
-  function doPredict(sourcePath: string, taskType: 'encrypt' | 'decrypt'): Promise<void> {
+  function doPredict(sourcePath: string, taskType: 'encrypt' | 'decrypt', options?: { immediate?: boolean }): Promise<void> {
     return new Promise((resolve) => {
       if (predictTimer) clearTimeout(predictTimer)
+      const delay = options?.immediate ? 0 : 500
       predictTimer = setTimeout(async () => {
         const normalized = normalize(sourcePath)
         if (!normalized) {
@@ -61,7 +62,7 @@ export function useTaskForm() {
           candidates.value = []
         }
         resolve()
-      }, 500)
+      }, delay)
     })
   }
 

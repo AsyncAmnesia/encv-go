@@ -84,5 +84,33 @@
     "phase": "completed",
     "createdAt": "2026-06-01T18:54:41.401075089Z",
     "completedAt": "2026-06-01T18:54:42.604868431Z"
+  },
+  {
+    "id": "c1f81df2-17e8-46f8-bc77-0aa378d03474",
+    "type": "decrypt",
+    "sourcePath": "/hyYGPCwJPQ3+xrdAvfnn2.bin",
+    "extraFields": {
+      "plugin_password": "8682268"
+    },
+    "pluginName": "alist_encrypt",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "createdAt": "2026-06-01T19:12:28.983479184Z",
+    "completedAt": "2026-06-01T19:12:29.95019059Z"
+  },
+  {
+    "id": "04a0e869-3705-432f-936a-3947ecd8fef5",
+    "type": "decrypt",
+    "sourcePath": "/hyYGPCwJPQ3+xrdAvfnn2.bin",
+    "extraFields": {
+      "plugin_password": "8682268"
+    },
+    "pluginName": "alist_encrypt",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "createdAt": "2026-06-01T19:22:08.883568335Z",
+    "completedAt": "2026-06-01T19:22:09.229963575Z"
   }
 ]
