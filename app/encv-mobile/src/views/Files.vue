@@ -372,6 +372,20 @@
 
     </ion-content>
 
+    <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+      <ion-fab-button @click="handleUpload">
+        <ion-icon :icon="add" />
+      </ion-fab-button>
+    </ion-fab>
+
+    <input
+      ref="fileInputRef"
+      type="file"
+      multiple
+      style="display: none"
+      @change="handleFileSelected"
+    />
+
   </ion-page>
 </template>
 
@@ -408,6 +422,8 @@ import {
   IonChip,
   IonModal,
   IonInput,
+  IonFab,
+  IonFabButton,
 } from '@ionic/vue'
 import {
   arrowBack,
@@ -435,6 +451,7 @@ import {
   alertCircle,
   close,
   filmOutline,
+  add,
   musicalNotesOutline,
   imageOutline,
   documentTextOutline,
@@ -454,6 +471,7 @@ import {
   renameOriginalName,
   copyFile,
   moveFile,
+  uploadFile,
   fetchPlugins,
   fetchTags,
   addTag,
@@ -1085,6 +1103,43 @@ async function handleShare(file: FileItem) {
   } else {
     copyToClipboard(getExternalStreamUrl(file.path)).then(ok => showToast({ message: ok ? '链接已复制到剪贴板' : '复制失败', color: ok ? 'success' : 'danger' }))
   }
+}
+
+const fileInputRef = ref<HTMLInputElement>()
+
+function handleUpload() {
+  fileInputRef.value?.click()
+}
+
+async function handleFileSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+
+  const files = Array.from(input.files)
+  let successCount = 0
+  let failCount = 0
+
+  for (const file of files) {
+    try {
+      showToast({ message: `正在上传: ${file.name}...`, color: 'primary', duration: 2000 })
+      await uploadFile(currentPath.value, file)
+      successCount++
+    } catch (e) {
+      console.error('[Files] upload failed:', file.name, e)
+      failCount++
+    }
+  }
+
+  if (successCount > 0) {
+    showToast({
+      message: `成功上传 ${successCount} 个文件${failCount > 0 ? `，${failCount} 个失败` : ''}`,
+      color: failCount > 0 ? 'warning' : 'success',
+      duration: 3000,
+    })
+    await loadFiles()
+  }
+
+  input.value = ''
 }
 
 async function handleAddNewTag() {

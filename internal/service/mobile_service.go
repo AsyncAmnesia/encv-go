@@ -229,6 +229,104 @@ func (s *MobileService) CreateDirectory(parentPath, name string) error {
 	return nil
 }
 
+const defaultMaxUploadSize int64 = 500 * 1024 * 1024
+
+func (s *MobileService) UploadFile(targetPath string, fileName string, content io.Reader, maxSize int64) (*FileInfo, error) {
+	if targetPath == "" {
+		return nil, &BadRequestError{Err: errors.New("'path' query parameter is required")}
+	}
+	if fileName == "" {
+		return nil, &BadRequestError{Err: errors.New("'filename' is required")}
+	}
+	if strings.ContainsAny(fileName, "\000/") {
+		return nil, &BadRequestError{Err: errors.New("filename contains illegal characters")}
+	}
+	if strings.Contains(fileName, "..") {
+		return nil, &ForbiddenError{Err: errors.New("filename contains path traversal sequence")}
+	}
+
+	absDir, err := utils.SafeResolveToAbsPath(s.servingDir, targetPath)
+	if err != nil {
+		return nil, &ForbiddenError{Err: fmt.Errorf("invalid target path: %w", err)}
+	}
+
+	dirInfo, err := os.Stat(absDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, &NotFoundError{Err: fmt.Errorf("target directory does not exist: %s", targetPath)}
+		}
+		return nil, err
+	}
+	if !dirInfo.IsDir() {
+		return nil, &BadRequestError{Err: errors.New("target path is not a directory")}
+	}
+
+	if maxSize <= 0 {
+		maxSize = defaultMaxUploadSize
+	}
+
+	destPath := filepath.Join(absDir, fileName)
+	destAbs, _ := filepath.Abs(destPath)
+	absServing, _ := filepath.Abs(s.servingDir)
+	if !strings.HasPrefix(destAbs, absServing+string(os.PathSeparator)) && destAbs != absServing {
+		return nil, &ForbiddenError{Err: errors.New("resolved file path escapes serving directory")}
+	}
+
+	outFile, err := os.Create(destPath)
+	if err != nil {
+		slog.Error("UploadFile: failed to create file", "path", destPath, "error", err)
+		return nil, err
+	}
+	defer outFile.Close()
+
+	written, err := io.Copy(outFile, content)
+	if err != nil {
+		os.Remove(destPath)
+		slog.Error("UploadFile: failed to write file", "path", destPath, "error", err)
+		return nil, err
+	}
+	if written > maxSize {
+		os.Remove(destPath)
+		return nil, &BadRequestError{Err: fmt.Errorf("file size (%d bytes) exceeds maximum allowed (%d bytes)", written, maxSize)}
+	}
+
+	info, statErr := os.Stat(destPath)
+	if statErr != nil {
+		slog.Warn("UploadFile: failed to stat created file", "path", destPath, "error", statErr)
+		info = &fileInfoFallback{name: fileName, size: written}
+	}
+
+	urlPath := targetPath
+	if !strings.HasSuffix(urlPath, "/") {
+		urlPath += "/"
+	}
+	if urlPath == "/" {
+		urlPath = ""
+	}
+	urlPath += fileName
+
+	slog.Info("UploadFile success", "name", fileName, "size", info.Size(), "path", urlPath)
+
+	return &FileInfo{
+		Name:        fileName,
+		Path:        urlPath,
+		IsDirectory: false,
+		Size:        info.Size(),
+		Modified:    info.ModTime().Format(time.RFC3339),
+	}, nil
+}
+
+type fileInfoFallback struct {
+	name string
+	size int64
+}
+
+func (f *fileInfoFallback) Name() string       { return f.name }
+func (f *fileInfoFallback) Size() int64        { return f.size }
+func (f *fileInfoFallback) ModTime() time.Time { return time.Now() }
+func (f *fileInfoFallback) IsDir() bool        { return false }
+func (f *fileInfoFallback) Sys() interface{}   { return nil }
+
 func (s *MobileService) ReadFileContent(queryPath string) (*FileContentResult, error) {
 	if queryPath == "" {
 		return nil, &BadRequestError{Err: errors.New("'path' query parameter is required")}

@@ -146,6 +146,34 @@ func (s *Server) handleCreateDirectoryGin(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "created"})
 }
 
+func (s *Server) handleUploadFileGin(c *gin.Context) {
+	targetPath := utils.DecodeGinQueryParam(c.Query("path"))
+	if targetPath == "" {
+		targetPath = "/"
+	}
+	slog.Info("API: upload file", "target_path", targetPath)
+
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "missing or invalid 'file' form field"})
+		return
+	}
+	defer file.Close()
+
+	if header.Filename == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "filename is empty"})
+		return
+	}
+
+	result, err := s.mobileSvc.UploadFile(targetPath, header.Filename, file, 0)
+	if err != nil {
+		writeServiceErrorGin(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
 func (s *Server) handleReadFileContentGin(c *gin.Context) {
 	queryPath := utils.DecodeGinQueryParam(c.Query("path"))
 	slog.Info("API: read file content", "path", queryPath)

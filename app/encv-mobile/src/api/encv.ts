@@ -286,6 +286,29 @@ export async function createDirectory(parentPath: string, name: string): Promise
   }
 }
 
+export async function uploadFile(targetPath: string, file: File): Promise<FileItem> {
+  console.info('[API] uploadFile:', targetPath, file.name, 'size:', file.size)
+  const baseUrl = getApiBaseUrl()
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await fetch(`${baseUrl}/api/files/upload?path=${proxySafeEncode(targetPath)}`, {
+    method: 'POST',
+    body: formData,
+  })
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`
+    try {
+      const body = await response.text()
+      if (body) detail += `: ${body}`
+    } catch {}
+    throw new Error(detail)
+  }
+  const result: FileItem = await response.json()
+  console.info('[API] uploadFile success:', result.path, 'size:', result.size)
+  return result
+}
+
 export interface FileContentResponse {
   name: string
   path: string
