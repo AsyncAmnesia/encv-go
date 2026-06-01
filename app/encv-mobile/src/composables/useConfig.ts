@@ -79,10 +79,14 @@ function setFieldValue(path: string[], value: unknown) {
   let current: Record<string, unknown> = config.value
   for (let i = 0; i < path.length - 1; i++) {
     const key = path[i]
-    if (!current[key] || typeof current[key] !== 'object') {
-      current[key] = {}
+    const child = current[key]
+    if (!child || typeof child !== 'object') {
+      const fresh: Record<string, unknown> = {}
+      current[key] = fresh
+      current = fresh
+    } else {
+      current = child as Record<string, unknown>
     }
-    current = current[key] as Record<string, unknown>
   }
 
   current[path[path.length - 1]] = value

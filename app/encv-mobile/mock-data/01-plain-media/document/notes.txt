@@ -1,0 +1,29 @@
+ENCV Mock Data Notes
+======================
+
+This is a multi-language UTF-8 test file.
+中文测试文件 — 包含中文内容
+日本語テスト — 日本語の内容
+한국어 테스트 — 한국어 내용
+العربية اختبار — محتوى عربي
+עברית בדיקה — תוכן עברי
+ไทยทดสอบ — เนื้อหาภาษาไทย
+Ελληνικά δοκιμή — περιεχόμενο ελληνικά
+Русский тест — содержание на русском
+Deutsch Test — deutscher Inhalt
+Français test — contenu français
+Española prueba — contenido en español
+Português teste — conteúdo em português
+Italiano prova — contenuto italiano
+Nederlands test — Nederlandse inhoud
+Polski test — treść polska
+Český test — český obsah
+Magyar teszt — magyar tartalom
+Türkçe deneme — Türkçe içerik
+Việt Nam kiểm tra — nội dung tiếng Việt
+Tiếng Việt kiểm tra — nội dung tiếng Việt
+ไทยทดสอบ — เนื้อหาภาษาไทย
+
+Special characters: !@#$%^&*()_+-=[]{}|;':",./<>?~`
+Numbers: 0123456789
+Emoji: 😀🎉🚀🔥💯✨🎵📝🔒

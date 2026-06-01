@@ -10,10 +10,10 @@
   },
   "mobile": {
     "output": {
-      "path": "/storage/emulated/0/encv-output"
+      "path": "./output"
     },
     "server": {
-      "dir": "/storage/emulated/0"
+      "dir": "./app/encv-mobile/mock-data"
     },
     "webdav": {
       "dir": ""

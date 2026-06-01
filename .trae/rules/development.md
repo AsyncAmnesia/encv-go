@@ -340,6 +340,43 @@ echo "  Logs:     tail -f /tmp/encv-backend.log"
 echo "  Stop:     kill $(lsof -i :2025 -t) $(lsof -i :5173 -t)"
 ```
 
+### 5.2.1 Capacitor 预览专用一键启动（`scripts/start-preview.sh`）
+
+**适用场景**：浏览器沙箱预览、Capacitor 开发模式。**铁律：禁用任何符号链接**，servingDir 直接使用项目内 `app/encv-mobile/mock-data` 真实目录。
+
+**前置条件**：
+- 后端二进制已构建：`go build -o /tmp/encv-mobile ./cmd/encv-mobile/`
+- 前端依赖已安装：`cd app/encv-mobile && npm install`
+
+**使用方式**：
+```bash
+cd /workspace
+bash app/encv-mobile/scripts/start-preview.sh
+```
+
+**脚本行为**：
+1. 杀掉残留的后端/Vite 进程
+2. 运行 `npx tsx scripts/generate-mock-files.ts` 生成 mock 数据到 `app/encv-mobile/mock-data/`
+3. 验证 `mock-data/01-plain-media` 标记文件存在（service guard 必需）
+4. 用 `ENCV_DEV_PREVIEW=1` 启动后端二进制 → 自动应用 mobile overlay
+5. 启动 Vite（`--host 0.0.0.0`）
+
+**配置文件要求**（`config.user.json`）：
+```json
+{
+  "mobile": {
+    "server": { "dir": "./app/encv-mobile/mock-data" },
+    "output": { "path": "./output" },
+    "webdav": { "dir": "" }
+  }
+}
+```
+
+**禁止做法**：
+- ❌ `ln -sfn` 任何路径以"桥接" mock-data 到 `/storage/emulated/0`
+- ❌ 手动改 `mobile.server.dir` 为绝对 Android 路径
+- ❌ 跳过 mock 生成直接启动（会触发 service guard）
+
 ### 5.3 常见问题排查
 
 | 症状 | 可能原因 | 排查命令 |

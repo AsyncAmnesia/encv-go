@@ -5,7 +5,8 @@ import * as crypto from 'crypto'
 import * as os from 'os'
 import { execSync, spawnSync } from 'child_process'
 
-const MOCK_ROOT = '/storage/emulated/0'
+const DEFAULT_MOCK_ROOT = path.resolve(__dirname, '..', 'mock-data')
+const MOCK_ROOT = process.env.ENCV_MOCK_ROOT || DEFAULT_MOCK_ROOT
 
 let root = MOCK_ROOT
 let genType = 'all' as string
