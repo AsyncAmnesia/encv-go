@@ -129,6 +129,7 @@
 
       <!-- 额外字段（声明式渲染，按 type 分支） -->
       <template v-for="field in extraFlds" :key="field.key">
+<<<<<<< HEAD
         <!-- bool 类型: 开关 -->
         <ion-item
           v-if="(!field.condition || field.condition === taskType) && field.type === 'bool'"
@@ -183,6 +184,30 @@
             :type="field.type === 'password' ? 'password' : 'text'"
             :placeholder="t(field.help)"
           ></ion-input>
+=======
+        <ion-item v-if="!field.condition || field.condition === taskType" lines="none" class="extra-field-item">
+          <template v-if="field.type === 'bool'">
+            <ion-label>{{ t(field.label) }}</ion-label>
+            <ion-toggle slot="end" :checked="getExtra(field.key) === 'true'" @ionChange="(e: any) => { emit('updateExtraValue', { key: field.key, value: String(e.detail.checked) }); props.onUpdateExtraValue?.({ key: field.key, value: String(e.detail.checked) }) }" />
+            <ion-note v-if="field.help" slot="helper">{{ t(field.help) }}</ion-note>
+          </template>
+          <template v-else-if="field.type === 'select'">
+            <ion-select :label="t(field.label)" interface="action-sheet" :value="getExtra(field.key)" @ionChange="(e: any) => { emit('updateExtraValue', { key: field.key, value: e.detail.value }); props.onUpdateExtraValue?.({ key: field.key, value: e.detail.value }) }">
+              <ion-select-option v-for="opt in (field.options ?? [])" :key="opt" :value="opt">
+                {{ field.optionLabels?.[opt] ?? opt }}
+              </ion-select-option>
+            </ion-select>
+          </template>
+          <template v-else>
+            <ion-input
+              :model-value="getExtra(field.key)"
+              @ionInput="(e: any) => { emit('updateExtraValue', { key: field.key, value: e.detail.value }); props.onUpdateExtraValue?.({ key: field.key, value: e.detail.value }) }"
+              :label="t(field.label)"
+              :type="field.type === 'password' ? 'password' : 'text'"
+              :placeholder="t(field.help)"
+            ></ion-input>
+          </template>
+>>>>>>> a607e52 (feat: Capacitor前后端预览与Go运行)
         </ion-item>
       </template>
 
@@ -217,6 +242,11 @@ import {
   IonInput,
   IonIcon,
   IonSpinner,
+<<<<<<< HEAD
+=======
+  IonItem,
+  IonLabel,
+>>>>>>> a607e52 (feat: Capacitor前后端预览与Go运行)
   IonToggle,
   IonNote,
   modalController,
