@@ -17,7 +17,7 @@ func TestCreateWithExtras_PreservesAllFields(t *testing.T) {
 		"plugin_password": "test123",
 		"custom_field":    "value",
 	}
-	task := tm.CreateWithExtras("encrypt", "/test/file.mp4", "", "override-pw", "secondary-pw", 4, extras)
+	task := tm.CreateWithExtras("encrypt", "/test/file.mp4", "", "override-pw", "secondary-pw", 4, "", extras)
 
 	require.NotNil(t, task)
 	assert.Equal(t, "encrypt", task.Type)
@@ -34,7 +34,7 @@ func TestCreateWithExtras_NilExtras(t *testing.T) {
 	mb.On("Broadcast", "task:created", mock.Anything).Return()
 	tm := newTestTaskManager(mb)
 
-	task := tm.CreateWithExtras("decrypt", "/test/file.bin", "", "", "", 0, nil)
+	task := tm.CreateWithExtras("decrypt", "/test/file.bin", "", "", "", 0, "", nil)
 
 	require.NotNil(t, task)
 	assert.Nil(t, task.ExtraFields, "nil extras should remain nil for backward compat")
@@ -46,9 +46,9 @@ func TestCreateWithExtras_CompatWithCreate(t *testing.T) {
 	mb.On("Broadcast", "task:created", mock.Anything).Return()
 	tm := newTestTaskManager(mb)
 
-	taskViaCreate := tm.Create("encrypt", "/test/file.mp4", "", "pw", 3)
+	taskViaCreate := tm.Create("encrypt", "/test/file.mp4", "", "pw", 3, "")
 	mb.On("Broadcast", "task:created", mock.Anything).Return()
-	taskViaExtras := tm.CreateWithExtras("encrypt", "/test/file2.mp4", "", "pw", "", 3, nil)
+	taskViaExtras := tm.CreateWithExtras("encrypt", "/test/file2.mp4", "", "pw", "", 3, "", nil)
 
 	assert.Equal(t, taskViaCreate.Password, taskViaExtras.Password, "password should match")
 	assert.Equal(t, taskViaCreate.ContainerVersion, taskViaExtras.ContainerVersion, "version should match")
