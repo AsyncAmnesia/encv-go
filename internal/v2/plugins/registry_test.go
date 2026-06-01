@@ -201,25 +201,25 @@ func TestValidateExtensionUniqueness_NoConflict(t *testing.T) {
 
 func TestValidateExtensionUniqueness_RealConflict(t *testing.T) {
 	conflictingSettings := map[string]json.RawMessage{
-		"video":        json.RawMessage(`{"ext":".sccgx"}`),
-		"alist_encrypt": json.RawMessage(`{"suffix":".sccgx"}`),
+		"video":        json.RawMessage(`{"ext":".sccgv"}`),
+		"alist_encrypt": json.RawMessage(`{"suffix":".sccgv"}`),
 	}
 	initPluginsWithSettings(t, conflictingSettings)
 
 	conflicts := ValidateExtensionUniqueness()
 	assert.GreaterOrEqual(t, len(conflicts), 1, "应检测到至少 1 个冲突")
 
-	var sccgxConflict *ExtensionConflict
+	var sccgvConflict *ExtensionConflict
 	for i := range conflicts {
-		if conflicts[i].Extension == ".sccgx" {
-			sccgxConflict = &conflicts[i]
+		if conflicts[i].Extension == ".sccgv" {
+			sccgvConflict = &conflicts[i]
 			break
 		}
 	}
-	require.NotNil(t, sccgxConflict, "应存在 .sccgx 扩展名冲突记录")
+	require.NotNil(t, sccgvConflict, "应存在 .sccgv 扩展名冲突记录")
 
-	assert.Contains(t, sccgxConflict.PluginNames, "video", "冲突应包含 video 插件")
-	assert.Contains(t, sccgxConflict.PluginNames, "alist_encrypt", "冲突应包含 alist_encrypt 插件")
+	assert.Contains(t, sccgvConflict.PluginNames, "video", "冲突应包含 video 插件")
+	assert.Contains(t, sccgvConflict.PluginNames, "alist_encrypt", "冲突应包含 alist_encrypt 插件")
 }
 
 func TestGetContainerExtensionsMap_AllExtensions(t *testing.T) {

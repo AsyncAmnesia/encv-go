@@ -125,14 +125,16 @@ func (s *MobileService) ListFiles(queryPath string) ([]FileInfo, error) {
 		return nil, err
 	}
 
+	decodedPath := utils.DecodePathParam(queryPath)
+
 	var files []FileInfo
 	for _, entry := range entries {
 		if strings.HasPrefix(entry.Name(), ".") {
 			continue
 		}
 
-		filePath := queryPath + "/" + entry.Name()
-		if queryPath == "/" {
+		filePath := decodedPath + "/" + entry.Name()
+		if decodedPath == "/" {
 			filePath = "/" + entry.Name()
 		}
 
@@ -992,13 +994,14 @@ func (s *MobileService) SearchFiles(queryPath string, keyword string, recursive 
 			}
 			return nil, err
 		}
+		searchDecodedPath := utils.DecodePathParam(queryPath)
 		for _, entry := range entries {
 			if strings.HasPrefix(entry.Name(), ".") {
 				continue
 			}
 			if strings.Contains(strings.ToLower(entry.Name()), keyword) {
-				filePath := queryPath + "/" + entry.Name()
-				if queryPath == "/" {
+				filePath := searchDecodedPath + "/" + entry.Name()
+				if searchDecodedPath == "/" {
 					filePath = "/" + entry.Name()
 				}
 				info, infoErr := entry.Info()
