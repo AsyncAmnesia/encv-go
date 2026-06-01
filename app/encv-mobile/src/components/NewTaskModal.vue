@@ -138,7 +138,7 @@
           <ion-label>{{ t(field.label) }}</ion-label>
           <ion-toggle
             slot="end"
-            :checked="getExtra(field.key) === 'true' || getExtra(field.key) === true"
+            :checked="getExtra(field.key) === 'true'"
             @ionChange="(e: any) => { const v = e.detail.checked ? 'true' : 'false'; emit('updateExtraValue', { key: field.key, value: v }); props.onUpdateExtraValue?.({ key: field.key, value: v }) }"
             class="extra-field-toggle"
           />
