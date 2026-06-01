@@ -26,9 +26,10 @@ export function getAlistActions(file: FileItem): FileAction[] {
             setSessionPassword(f.path, password)
             await loadDecodedName(f, password)
             const decodedName = getDecodedName(f.path) || f.name
-            const url = getStreamUrl(f, password)
-            console.error('[ALIST-DBG] navigating to player: name=', decodedName, 'hasStreamUrl=', !!url)
-            router.push({ path: '/player', query: { path: f.path, name: decodedName, streamUrl: url } })
+            // ★ 修复：不要把整个 streamUrl 塞到 router query 里（会被 Vue Router 二次 URL 编码）
+            // 改传 alistPath + password，让 ArtPlayerView 自己用 getAlistEncryptStreamUrl 构造 URL
+            console.error('[ALIST-DBG] navigating to player: name=', decodedName, 'alistPath=', f.path)
+            router.push({ path: '/player', query: { path: f.path, name: decodedName, alistPath: f.path, alistPassword: password } })
           } catch (e) {
             console.error('[ALIST-DBG] stream-preview handler ERROR:', e)
           }

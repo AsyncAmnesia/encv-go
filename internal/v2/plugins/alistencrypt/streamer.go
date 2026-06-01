@@ -141,9 +141,11 @@ func (p *AlistEncryptPlugin) ServeStream(w http.ResponseWriter, r *http.Request,
 	}
 
 	w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, size))
+	partialLen := end - start + 1
+	w.Header().Set("Content-Length", strconv.FormatInt(partialLen, 10))
 	w.WriteHeader(http.StatusPartialContent)
 
-	remaining := end - start + 1
+	remaining := partialLen
 	buf := make([]byte, 32*1024)
 	for remaining > 0 {
 		readN := len(buf)

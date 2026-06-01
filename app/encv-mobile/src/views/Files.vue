@@ -807,8 +807,7 @@ async function handleFileClick(file: FileItem) {
     const displayName = isAlistEncrypted(file)
       ? (getDecodedName(file.path) || file.name)
       : file.name
-    const streamUrl = getStreamUrl(file, password)
-    router.push({ path: '/player', query: { path: file.path, name: displayName, streamUrl } })
+    router.push({ path: '/player', query: { path: file.path, name: displayName, alistPath: file.path, alistPassword: password } })
     return
   }
 
@@ -823,8 +822,7 @@ async function handleFileClick(file: FileItem) {
   if (isAlistEncrypted(file)) {
     const password = await promptPassword(file.name)
     if (!password) return
-    const streamUrl = getStreamUrl(file, password)
-    router.push({ path: '/player', query: { path: file.path, name: file.name, streamUrl } })
+    router.push({ path: '/player', query: { path: file.path, name: file.name, alistPath: file.path, alistPassword: password } })
     return
   }
 

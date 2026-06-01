@@ -70,7 +70,7 @@ import {
   IonIcon, IonContent, IonChip, IonSpinner,
 } from '@ionic/vue'
 import { arrowBack, alertCircle, refresh, resize, time } from 'ionicons/icons'
-import { getFileStreamUrl } from '@/api/encv'
+import { getFileStreamUrl, getAlistEncryptStreamUrl } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { isNative } from '@/plugins/GoProcess'
@@ -86,6 +86,8 @@ const error = ref('')
 const filePath = ref('')
 const fileName = ref('')
 const overrideStreamUrl = ref('')
+const alistPath = ref('')
+const alistPassword = ref('')
 const playerError = ref(false)
 const playerErrorMsg = ref('')
 const isFullscreen = ref(false)
@@ -95,6 +97,10 @@ let art: Artplayer | null = null
 
 const streamUrl = computed(() => {
   if (overrideStreamUrl.value) return overrideStreamUrl.value
+  // ★ alist-encrypt 流式预览：直接从 path + password 构造 URL，避免 query 二次编码
+  if (alistPath.value && alistPassword.value) {
+    return getAlistEncryptStreamUrl({ path: alistPath.value, password: alistPassword.value })
+  }
   if (!filePath.value) return ''
   return getFileStreamUrl(filePath.value)
 })
@@ -337,9 +343,12 @@ onMounted(() => {
   const qsu = route.query.streamUrl as string
   if (qsu) overrideStreamUrl.value = qsu
 
-  console.info(TAG, 'onMounted: filePath=', filePath.value, 'fileName=', fileName.value, 'overrideStreamUrl=', overrideStreamUrl.value)
+  alistPath.value = (route.query.alistPath as string) || ''
+  alistPassword.value = (route.query.alistPassword as string) || ''
 
-  if (!filePath.value && !overrideStreamUrl.value) {
+  console.info(TAG, 'onMounted: filePath=', filePath.value, 'fileName=', fileName.value, 'overrideStreamUrl=', overrideStreamUrl.value, 'alistPath=', alistPath.value, 'hasPassword=', !!alistPassword.value)
+
+  if (!filePath.value && !overrideStreamUrl.value && !alistPath.value) {
     error.value = 'No file provided'
     loading.value = false
     return
