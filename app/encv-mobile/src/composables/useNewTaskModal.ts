@@ -80,6 +80,14 @@ export function useNewTaskModal() {
 
     syncState()
 
+    if (state.taskType === 'decrypt' && state.sourcePath) {
+      try {
+        const { getSessionPassword: getCachedPwd } = await import('@/features/alist-encrypt/useAlistEncrypt')
+        const cached = getCachedPwd(state.sourcePath)
+        if (cached) state.secondaryPassword = cached
+      } catch { /* alist-encrypt 未注册时静默忽略 */ }
+    }
+
     const submitting = ref(false)
 
     const modal = await modalController.create({

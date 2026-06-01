@@ -33,6 +33,12 @@ export function getAlistActions(file: FileItem): FileAction[] {
         icon: lockClosed,
         color: 'warning',
         handler: async (f: FileItem) => {
+          let password = getSessionPassword(f.path)
+          if (!password) {
+            password = await promptPassword(f.name)
+            if (password == null) return
+            setSessionPassword(f.path, password)
+          }
           const { openNewTask } = useNewTaskModal()
           openNewTask(f.path, 'decrypt')
         },
