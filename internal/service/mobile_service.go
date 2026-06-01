@@ -326,6 +326,7 @@ func (f *fileInfoFallback) Size() int64        { return f.size }
 func (f *fileInfoFallback) ModTime() time.Time { return time.Now() }
 func (f *fileInfoFallback) IsDir() bool        { return false }
 func (f *fileInfoFallback) Sys() interface{}   { return nil }
+func (f *fileInfoFallback) Mode() fs.FileMode  { return 0644 }
 
 func (s *MobileService) ReadFileContent(queryPath string) (*FileContentResult, error) {
 	if queryPath == "" {
