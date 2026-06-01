@@ -376,6 +376,7 @@ export interface EncvTask {
   warning?: string
   warningDetail?: string
   containerVersion?: number
+  outputPath?: string
   createdAt: string
   completedAt?: string
 }

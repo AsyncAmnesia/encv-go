@@ -75,5 +75,7 @@ func tryDecodeFilename(encodedName, password, encType string) string {
 		return ""
 	}
 
-	return decoded + ext
+	// ★ 关键修复: DecodeName 已经返回带扩展名的明文文件名（如 "CAD放样.mp4"），
+	// 不再追加原 .bin 后缀（之前 bug 会变成 "CAD放样.mp4.bin"）
+	return decoded
 }

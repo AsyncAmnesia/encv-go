@@ -41,6 +41,7 @@ type MobileTask struct {
 	Warning           string            `json:"warning,omitempty"`
 	WarningDetail     string            `json:"warningDetail,omitempty"`
 	ContainerVersion  int               `json:"containerVersion,omitempty"`
+	OutputPath        string            `json:"outputPath,omitempty"`
 	CreatedAt         time.Time         `json:"createdAt"`
 	CompletedAt       *time.Time        `json:"completedAt,omitempty"`
 	cancelFn          context.CancelFunc
@@ -550,6 +551,8 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 		baseNameWithoutExt := strings.TrimSuffix(sourceBaseName, ext)
 		if outputFile := findEncryptedOutputFile(outputDir, baseNameWithoutExt); outputFile != "" {
 			task.ContainerVersion = detectContainerVersion(outputFile)
+			// ★ 关键: 记录产物绝对路径，前端可跳转
+			task.OutputPath = outputFile
 		}
 
 		if warnings := video.LastVerifyWarnings(); len(warnings) > 0 {
@@ -759,12 +762,25 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 		task.Eta = ""
 		now := time.Now()
 		task.CompletedAt = &now
+
+		// ★ 关键: 记录解密产物绝对路径。优先用源 base + 明文扩展名，
+		// 找不到则 fallback 到 outputDir 中修改时间最近、与源不同的文件。
+		sourceBaseName := filepath.Base(absPath)
+		ext := filepath.Ext(sourceBaseName)
+		baseNameNoExt := strings.TrimSuffix(sourceBaseName, ext)
+		candidate := filepath.Join(outputDir, baseNameNoExt)
+		if outputFile := findDecryptedOutputFile(outputDir, absPath, candidate); outputFile != "" {
+			task.OutputPath = outputFile
+		} else {
+			// 最后的 fallback: 直接试 baseNameNoExt（无 ext）作为明文
+			task.OutputPath = candidate
+		}
 	}
 	tm.mu.Unlock()
 
 	tm.saveTasks()
 
-	slog.Info("Task completed", "id", task.ID, "type", task.Type)
+	slog.Info("Task completed", "id", task.ID, "type", task.Type, "output", task.OutputPath)
 	if tm.broadcaster != nil {
 		tm.broadcaster.Broadcast("task:completed", map[string]interface{}{
 			"id":     task.ID,
@@ -892,4 +908,50 @@ func findEncryptedOutputFile(outputDir string, sourceBaseName string) string {
 		}
 	}
 	return ""
+}
+
+// findDecryptedOutputFile 查找解密任务的产物路径。
+// 优先用源文件 base name + 解密后的明文名匹配；找不到则 fallback 到 outputDir 中
+// 修改时间最近且大小与源不同的文件。
+func findDecryptedOutputFile(outputDir, sourcePath, decryptedName string) string {
+	// ① 精确匹配：outputDir/decryptedName
+	if decryptedName != "" {
+		candidate := filepath.Join(outputDir, decryptedName)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			// 防止产物路径就是源文件
+			if candidate != sourcePath {
+				return candidate
+			}
+		}
+	}
+
+	// ② Fallback: outputDir 里修改时间最近、与源文件不同大小/不同扩展名的文件
+	entries, err := os.ReadDir(outputDir)
+	if err != nil {
+		return ""
+	}
+	srcInfo, _ := os.Stat(sourcePath)
+	var bestPath string
+	var bestModTime int64
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		fullPath := filepath.Join(outputDir, info.Name())
+		if fullPath == sourcePath {
+			continue
+		}
+		if srcInfo != nil && info.Size() == srcInfo.Size() && info.ModTime().Equal(srcInfo.ModTime()) {
+			continue
+		}
+		if info.ModTime().Unix() > bestModTime {
+			bestModTime = info.ModTime().Unix()
+			bestPath = fullPath
+		}
+	}
+	return bestPath
 }
