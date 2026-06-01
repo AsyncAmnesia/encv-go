@@ -3,7 +3,7 @@ import type { FileItem } from '@/api/encv'
 import { videocam, lockClosed, lockOpen } from 'ionicons/icons'
 import router from '@/router'
 import { useNewTaskModal } from '@/composables/useNewTaskModal'
-import { isAlistEncrypted, getStreamUrl, getDecodedName, loadDecodedName, setSessionPassword, getSessionPassword } from './useAlistEncrypt'
+import { isAlistEncrypted, getDecodedName, loadDecodedName, setSessionPassword, getSessionPassword } from './useAlistEncrypt'
 import { promptPassword } from './password-dialog'
 import { useI18n } from '@/composables/useI18n'
 

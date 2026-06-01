@@ -485,7 +485,7 @@ import { formatDateTime } from '@/composables/useDateFormat'
 import { useThumbnailCache } from '@/composables/useThumbnailCache'
 import { useFileFeatures, findClickHandler, isAnyContainerFile, getFeatureIcon } from '@/composables/useFileFeatures'
 import { preloadSubtitles } from '@/features/alist-encrypt'
-import { isAlistEncrypted, getStreamUrl, getSessionPassword, setSessionPassword, loadDecodedName, getDecodedName } from '@/features/alist-encrypt/useAlistEncrypt'
+import { isAlistEncrypted, getSessionPassword, setSessionPassword, loadDecodedName, getDecodedName } from '@/features/alist-encrypt/useAlistEncrypt'
 import { promptPassword } from '@/features/alist-encrypt/password-dialog'
 import {
   isImageFile,
@@ -795,7 +795,7 @@ async function handleFileClick(file: FileItem) {
   const clickResult = await findClickHandler(file)
   if (clickResult?.handled) {
     const cached = getSessionPassword(file.path)
-    let password = cached
+    let password: string | undefined | null = cached
     if (!password) {
       password = await promptPassword(file.name)
       if (!password) return

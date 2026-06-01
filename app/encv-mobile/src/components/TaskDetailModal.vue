@@ -198,10 +198,9 @@ import {
   folderOpenOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
-import { formatDateTime, formatDuration, formatFileSize } from '@/composables/useDateFormat'
+import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
 import { copyToClipboard } from '@/composables/useClipboard'
 import { showToast } from '@/composables/useToast'
-import { isPreviewable, getFilePreviewUrl, getFileStreamUrl } from '@/api/encv'
 import type { EncvTask } from '@/api/encv'
 
 const props = defineProps<{ task: EncvTask }>()
