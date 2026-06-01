@@ -195,6 +195,11 @@ const messages: Record<Locale, Record<string, string>> = {
     'tasks.duration': '耗时',
     'tasks.warnings': '警告',
 
+    'tasks.outputFile': '产物文件',
+    'tasks.openOutput': '打开产物',
+    'tasks.locateInFiles': '在 Files 中定位',
+    'tasks.previewUnsupportedExt': '该扩展名暂不支持直接预览',
+
     'webdav.title': 'WebDAV',
     'webdav.noServers': '暂无 WebDAV 服务器',
     'webdav.noServersDesc': '添加 WebDAV 服务器以同步加密文件。',
@@ -785,6 +790,11 @@ const messages: Record<Locale, Record<string, string>> = {
     'tasks.progress': 'Progress',
     'tasks.duration': 'Duration',
     'tasks.warnings': 'Warnings',
+
+    'tasks.outputFile': 'Output File',
+    'tasks.openOutput': 'Open Output',
+    'tasks.locateInFiles': 'Locate in Files',
+    'tasks.previewUnsupportedExt': 'This extension is not directly previewable',
 
     'webdav.title': 'WebDAV',
     'webdav.noServers': 'No WebDAV Servers',
