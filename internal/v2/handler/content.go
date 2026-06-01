@@ -6,8 +6,8 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
-	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/provider"
@@ -108,8 +108,20 @@ func (h *ContentHandler) ServeFile(w http.ResponseWriter, r *http.Request, prov 
 	}
 }
 
-// parseRangeHeader 解析 HTTP Range 请求头。
+// parseRangeHeader 解析 HTTP Range 请求头（符合 RFC 7233）。
 // 它返回起始字节、结束字节和应该使用的 HTTP 状态码。
+//
+// 支持的格式（参考 RFC 7233 §2.1）：
+//   - "bytes=start-end"     闭区间 [start, end]
+//   - "bytes=start-"        从 start 到文件末尾
+//   - "bytes=-suffix"      文件最后 suffix 个字节
+//   - "bytes=0-"           整个文件（等价于不带 Range）
+//
+// 边界处理：
+//   - end > totalSize-1     → 截断为 totalSize-1，状态码 206（合法截断）
+//   - start > totalSize-1   → 状态码 416
+//   - start > end（用户显式）→ 状态码 416
+//   - 格式无法解析         → 忽略 Range 头，按全量 200 返回
 func parseRangeHeader(rangeHeader string, totalSize int64) (start, end int64, statusCode int) {
 	start = 0
 	end = totalSize - 1
@@ -119,41 +131,74 @@ func parseRangeHeader(rangeHeader string, totalSize int64) (start, end int64, st
 		return
 	}
 
-	// 使用正则表达式解析 "bytes=start-end" 格式
-	re := regexp.MustCompile(`bytes=(\d+)-(\d*)`)
-	matches := re.FindStringSubmatch(rangeHeader)
-	if len(matches) < 3 {
-		// Range 头格式不正确，忽略它
+	// 严格只接受 bytes= 前缀
+	if !strings.HasPrefix(rangeHeader, "bytes=") {
 		return
 	}
+	spec := strings.TrimPrefix(rangeHeader, "bytes=")
 
-	var err error
-	start, err = strconv.ParseInt(matches[1], 10, 64)
-	if err != nil {
-		// 起始字节无效，忽略 Range 头
-		return
-	}
-
-	if matches[2] != "" {
-		end, err = strconv.ParseInt(matches[2], 10, 64)
-		if err != nil {
-			// 结束字节无效，默认到文件末尾
+	// suffix range: "-N" （最后 N 个字节）
+	if strings.HasPrefix(spec, "-") {
+		suffixStr := strings.TrimPrefix(spec, "-")
+		suffix, err := strconv.ParseInt(suffixStr, 10, 64)
+		if err != nil || suffix <= 0 {
+			start = 0
 			end = totalSize - 1
+			statusCode = http.StatusRequestedRangeNotSatisfiable
+			return
 		}
-	} else {
-		// 如果没有指定结束字节，默认到文件末尾
+		if suffix > totalSize {
+			suffix = totalSize
+		}
+		start = totalSize - suffix
 		end = totalSize - 1
+		statusCode = http.StatusPartialContent
+		return
 	}
 
-	// 验证范围的有效性
-	if start >= totalSize || end >= totalSize || start > end {
-		// 范围无效，返回 416 错误码，让客户端知道
+	// "start-end" 或 "start-"
+	dashIdx := strings.Index(spec, "-")
+	if dashIdx < 0 {
+		// 格式无效，忽略 Range
+		return
+	}
+	startStr := spec[:dashIdx]
+	endStr := spec[dashIdx+1:]
+
+	s, err := strconv.ParseInt(startStr, 10, 64)
+	if err != nil || s < 0 {
+		return
+	}
+	start = s
+
+	if endStr == "" {
+		// "start-" → 从 start 到文件末尾
+		end = totalSize - 1
+	} else {
+		e, err := strconv.ParseInt(endStr, 10, 64)
+		if err != nil || e < 0 {
+			return
+		}
+		if e > totalSize-1 {
+			// 合法截断（RFC 7233 §2.1：end 大于文件大小时，截断为最后一字节）
+			end = totalSize - 1
+		} else {
+			end = e
+		}
+	}
+
+	if start > end {
 		start = 0
 		end = totalSize - 1
 		statusCode = http.StatusRequestedRangeNotSatisfiable
 		return
 	}
-
+	if start >= totalSize {
+		start = 0
+		end = totalSize - 1
+		statusCode = http.StatusRequestedRangeNotSatisfiable
+		return
+	}
 	statusCode = http.StatusPartialContent
 	return
 }

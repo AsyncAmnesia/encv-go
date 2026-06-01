@@ -4,20 +4,19 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
-type seekableDecryptReader struct {
+// SeekableDecryptReader 包装 DecryptReader 并提供 io.ReadCloser 语义
+// 同时复用 DecryptReader 自身的 io.Seeker（reader.go:80）
+type SeekableDecryptReader struct {
 	*DecryptReader
 	closeFunc func() error
 }
 
-func (s *seekableDecryptReader) Close() error {
+func (s *SeekableDecryptReader) Close() error {
 	if s.closeFunc != nil {
 		return s.closeFunc()
 	}
@@ -79,92 +78,12 @@ func (p *AlistEncryptPlugin) Stream(path string, password string) (io.ReadCloser
 	showName := p.resolveShowName(path, password)
 	contentType := detectContentTypeByName(showName, path)
 
-	sr := &seekableDecryptReader{
+	sr := &SeekableDecryptReader{
 		DecryptReader: dr,
 		closeFunc:     f.Close,
 	}
 
 	return sr, plainSize, contentType, showName, nil
-}
-
-func (p *AlistEncryptPlugin) ServeStream(w http.ResponseWriter, r *http.Request, path string, password string) error {
-	rc, size, contentType, showName, err := p.Stream(path, password)
-	if err != nil {
-		return err
-	}
-	defer rc.Close()
-
-	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
-	w.Header().Set("Accept-Ranges", "bytes")
-	if showName != "" {
-		// Sanitize: HTTP filename* uses RFC 5987; ASCII fallback for compatibility.
-		safe := strings.NewReplacer("\\", "_", "/", "_", "\"", "_", "\r", "", "\n", "").Replace(showName)
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"; filename*=UTF-8''%s`,
-			safe, url.QueryEscape(showName)))
-		w.Header().Set("X-AlistEncrypt-Original-Name", showName)
-	}
-
-	rangeHeader := r.Header.Get("Range")
-	if rangeHeader == "" {
-		_, err = io.Copy(w, rc)
-		return err
-	}
-
-	var start, end int64
-	_, err = fmt.Sscanf(rangeHeader, "bytes=%d-%d", &start, &end)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(w, "invalid range format")
-		return nil
-	}
-	if start < 0 || end < 0 {
-		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
-		fmt.Fprintf(w, "range must be non-negative")
-		return nil
-	}
-	if start > size {
-		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
-		fmt.Fprintf(w, "range start exceeds content length")
-		return nil
-	}
-	if end >= size {
-		end = size - 1
-	}
-
-	if seeker, ok := rc.(io.Seeker); ok {
-		if _, err := seeker.Seek(start, io.SeekStart); err != nil {
-			return err
-		}
-	} else {
-		return fmt.Errorf("stream does not support seeking")
-	}
-
-	w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, size))
-	partialLen := end - start + 1
-	w.Header().Set("Content-Length", strconv.FormatInt(partialLen, 10))
-	w.WriteHeader(http.StatusPartialContent)
-
-	remaining := partialLen
-	buf := make([]byte, 32*1024)
-	for remaining > 0 {
-		readN := len(buf)
-		if int64(readN) > remaining {
-			readN = int(remaining)
-		}
-		n, err := rc.Read(buf[:readN])
-		if n > 0 {
-			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
-				return writeErr
-			}
-			remaining -= int64(n)
-		}
-		if err != nil {
-			break
-		}
-	}
-
-	return nil
 }
 
 // contentTypeByExt returns the canonical MIME type for the given file extension.
