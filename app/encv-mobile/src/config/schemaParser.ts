@@ -160,6 +160,9 @@ export function parseSchema(): FieldDef[] {
 }
 
 export function getDefaultValue(field: FieldDef): unknown {
+  if (field.default !== undefined) {
+    return field.default
+  }
   switch (field.type) {
     case 'boolean':
       return false

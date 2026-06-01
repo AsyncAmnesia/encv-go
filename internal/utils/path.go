@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"path"
 	"path/filepath"
 	"strings"
@@ -21,7 +22,7 @@ func DecodePathParam(raw string) string {
 }
 
 func DecodeGinQueryParam(raw string) string {
-	s, err := url.QueryUnescape(raw)
+	s, err := url.PathUnescape(raw)
 	if err != nil {
 		return raw
 	}
@@ -49,8 +50,11 @@ func SafeResolveToAbsPath(baseDir, userPath string) (string, error) {
 		}
 	}
 
-	// 清理用户路径（处理多余的./等）
-	cleanUserPath := filepath.Clean(userPath)
+	// 清理用户路径（处理多余的./等），并去除前导/防止 filepath.Join 将其视为绝对路径
+	cleanUserPath := strings.TrimPrefix(filepath.Clean(userPath), string(os.PathSeparator))
+	if cleanUserPath == "" {
+		cleanUserPath = "."
+	}
 
 	// 构建完整路径
 	fullPath := filepath.Join(absBaseDir, cleanUserPath)
