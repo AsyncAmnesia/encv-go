@@ -1,198 +1,333 @@
-# 4 个用户反馈问题 + agent-browser 调试规范
+# 范式优化：alist_encrypt 预览流走统一 ContentHandler
 
-> **本计划整合**：① 用户 4 个问题的修复进度；② agent-browser 调试规范（避免异常打断）
-> **进入 Plan 模式原因**：用户在调试过程中两次被打断，意识到 agent-browser 没有被适配，会异常中断
-> 当前是 **READ-ONLY 状态**，写完本计划后必须等用户批准才能继续
+> **核心问题**：alist_encrypt 的 `ServeStream` 自己实现 Range/206/Content-Length/Content-Range，**重复造轮子**且易出 bug。
+> **范式真理之源**：v4 容器走 `LocalFileProvider` → `ContentHandler.ServeFile`，Range/206/Content-Length 都已正确实现。
+> **目标**：让 alist_encrypt 也走这条统一路径，撤销之前在 streamer.go 加的局部 fix，避免走偏。
 
 ---
 
-## 一、当前进度（实测验证后的真实状态）
+## 一、当前状态盘点
 
-### 1.1 4 个用户问题的修复状态
+### 1.1 4 个用户反馈的修复进度
 
-| # | 问题 | 状态 | 证据 |
+| # | 问题 | 状态 | 说明 |
 |---|------|------|------|
-| 1 | 解密任务不该有前置 promptPassword（NewTaskModal 已有密码字段） | ✅ **已修复** | `actions.ts:42-53` — `alist-decrypt` handler 直接 `openNewTask`，不再弹 promptPassword |
-| 2a | 解密输出文件名多 `.bin` 后缀 | ✅ **已修复** | `decryptor.go tryDecodeFilename` 不再追加 `ext`；实测产物 `CAD放样.mp4` (51958979 bytes) |
-| 2b | 重命名 404 | ✅ **已修复** | `server.go:223` 添加 `r.POST("/api/file/rename", s.handleFileRenameGin)`；实测 API 返回 200 |
-| 2c | **还原文件名**为 `CAD放样.mp4`（不是 -renamed） | ✅ **已完成** | `ls /storage/emulated/0/CAD放样.mp4` 存在，51958979 bytes |
-| 3 | 任务详情缺产物展示 | ✅ **已修复** | `TaskDetailModal.vue` + `task_manager.go` 新增 `OutputPath` 字段 + i18n key |
-| 4 | `hyYGPCwJPQ3+xrdAvfnn2.bin` 预览失败 | ⚠️ **修了 2 个根因，第 3 个未明** | 见下表 |
+| 1 | alist-decrypt 不该有前置 promptPassword | ✅ 已修 | `actions.ts:42-53` 直接 `openNewTask` |
+| 2a | 解密输出文件名多 `.bin` 后缀 | ✅ 已修 | `decryptor.go` `tryDecodeFilename` |
+| 2b | 重命名 404 | ✅ 已修 | `server.go:223` `/api/file/rename` |
+| 2c | 文件名还原成 `CAD放样.mp4` | ✅ 已完成 | 用 `rename` API 还原 |
+| 3 | 任务详情缺产物展示 | ✅ 已修 | `TaskDetailModal.vue` + `task_manager.go` OutputPath + i18n key |
+| 4 | alist_encrypt 预览失败 | ⚠️ 修了局部，全局范式未统一 | 详见 §1.2 |
 
-### 1.2 问题 4（预览失败）已修复的两个根因
+### 1.2 问题 4 现状：已 2 个修复，1 个范式不统一
 
-**根因 A：`Content-Length` 在 206 Partial Content 响应中必须是部分大小（之前错填为全文件大小）**
-- 修复：`streamer.go:144-145` 添加 `partialLen := end - start + 1; w.Header().Set("Content-Length", ...)` 覆盖默认值
-- 验证：curl 验证 `Range: bytes=0-99` → `HTTP 206, Content-Length: 100, Content-Range: bytes 0-99/51958979` ✅
-- 验证：curl 验证 `Range: bytes=0-524287` → `Content-Length: 524288` ✅
+**已修 ①**：`streamer.go:144-145` 补了 `Content-Length` 在 206 时的部分大小（curl 验证通过）
+**已修 ②**：`actions.ts` + `Files.vue` + `ArtPlayerView.vue` 用 `alistPath+password` 替代整体 `streamUrl` 传 query
 
-**根因 B：streamUrl 整体作为 router query → Vue Router 二次 URL 编码 → 后端收到的 path 是双编码**
-- 修复：3 处调用方（`actions.ts`、`Files.vue` × 2）从 `streamUrl` 改为 `alistPath + alistPassword`
-- 修复：`ArtPlayerView.vue` 新增 `alistPath/alistPassword` ref + `getAlistEncryptStreamUrl` 自己构造 URL
-- 验证：浏览器测试新 URL `/api/alist-encrypt/stream?path=%252F...&password=8682268`（仍是双编码，但 **curl 后端 200 OK**）
+**❌ 范式不统一**：
+- v4 容器走 `LocalFileProvider` → `ContentHandler.ServeFile`（统一抽象）
+- alist_encrypt 走 `plugin.ServeStream` → **自己实现 HTTP 协议**（重复造轮子）
+- **后果**：任何 HTTP 协议 bug（如 Content-Length）都要在两处修一次
+- **风险**：未来加 v5/v6 容器或改 HTTP 协议（如增加 `If-Range`），alist_encrypt 永远滞后
 
-### 1.3 ⚠️ 问题 4 仍未解决的第三个症状
+### 1.3 用户的明确反馈（plan 被拒原因）
 
-**浏览器实际行为（即使 1.2 修复后）**：
-```
-network log:
-  GET /api/alist-encrypt/stream?path=%252F...&password=8682268 (Media) 400  ← ArtPlayer 拿到 400
-  GET /api/alist-encrypt/stream?path=%252F...&password=8682268 (Media) 400  ← (10+ 次重试)
-```
+> "流式预览需要统筹整个项目范式优化，避免过于差异。预览服务提供委托到插件系统后，alist_encrypt 插件不应该过度关心如何处理流式预览细节。插件系统应当优先考虑 video 插件（v4 容器）预览稳定，alist_encrypt 不一定是视频也需要注意，不要修迷路了"
 
-**curl 同时刻同样 URL** → **200 OK**（完整 MP4 数据）
-
-**关键差异**：
-- curl `Range: bytes=0-99` → 206 + 100 bytes
-- Chrome Media request 拿到 **400**
-
-**可能原因**（未定位，需要在浏览器 DevTools 看具体响应体）：
-1. **CORS / Origin 头**导致后端 400
-2. **Range 格式不同**（Chrome 可能发 `bytes=0-` 而非 `bytes=0-99`）
-3. **Sec-Fetch-Mode: no-cors** 让 Gin 走不同分支
-4. **vite 代理**对 Media request 的特殊处理
-5. **`streamer.go` 在 Range header 解析失败时返回 400**（line 116-120 `invalid range format`），但我们看到正常解析路径不会触发
-
-需要在浏览器 DevTools 看 Network → request/response headers + body 才能定位 400 的真正原因。
-
-### 1.4 agent-browser 适配问题（⚠️ 用户原话）
-
-> "你没有适配 agent-browser 会导致异常打断"
-
-实测发现的真实问题：
-1. **`agent-browser` 库缺失系统库**（libatk1.0 等）→ 需 apt-get install `libatk1.0-0t64 libatk-bridge2.0-0t64 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2t64` 修复
-2. **`--cdp 9222` 模式**：沙箱里 Chrome 跑在 9222，agent-browser 通过 CDP 连接成功；但默认 `open` 模式（拉新 Chrome）连不上 `localhost:5173`（网络命名空间不同）
-3. **eval 不支持 `await`**：必须用 `.then()` 链式调用
-4. **密码 alertdialog 文本框引用**：必须用 `snapshot -i` 重取 ref（每次弹窗都是新 DOM）
-5. **直接 dispatch input 事件**：设置 `pwdInput.value = 'xxx'` + `dispatchEvent('input')` 才能让 Vue 响应
-
-**两次"意外破坏会话"的可能根因**：
-- 第一次："长按菜单"调试时，agent-browser 的 `open` 命令导致新 Chrome 拉起失败、连接被 reset
-- 第二次：可能在改 streamer.go 后，air 重启 encv 进程时端口被短暂占用导致 agent-browser 的 fetch 失败
+**翻译成行动要求**：
+1. **不要在 alist_encrypt 内部塞 HTTP 协议特例**（我的 streamer.go 局部 fix 走偏了）
+2. **统一接口是真理之源**（v4 走 `ContentHandler.ServeFile` → alist_encrypt 也走）
+3. **v4 容器（video 插件）预览是主战场**，任何范式变更必须先保证 v4 不退化
+4. **alist_encrypt 是异类**（不一定是视频），统一接口要支持任意 content-type
+5. **不要修迷路了** —— 不要在某个具体插件里塞特例
 
 ---
 
-## 二、agent-browser 调试铁律（**写进 plan 防止再踩**）
+## 二、统一范式
 
-### 2.1 启动顺序
+### 2.1 真理之源：`provider.FileContentProvider` + `ContentHandler.ServeFile`
+
+**接口契约**（`internal/v2/provider/provider.go:15-34`）：
+```go
+type FileContentProvider interface {
+    GetReader() io.ReadCloser       // 读流
+    GetSeeker() (io.Seeker, bool)   // 随机访问
+    GetSeekerTo() (SeekerTo, bool)  // 快速定位（远程）
+    GetSize() int64                 // 明文总大小
+    GetName() string                // 明文文件名
+    Close() error
+}
+```
+
+**HTTP 协议层**（`internal/v2/handler/content.go:32-109`）—— `ContentHandler.ServeFile`：
+- 自动解析 `Range` header
+- 自动 Seek 到 `start`
+- 自动设置 `Content-Type`（按 `filepath.Ext(name)`）
+- 自动设置 `Content-Disposition: inline; filename="<name>"`
+- 自动设置 `Accept-Ranges: bytes`
+- 自动设置 `Content-Range: bytes start-end/total`（206 时）
+- 自动设置 `Content-Length: end-start+1`（**部分大小**）
+- 自动写 `200 / 206 / 416` 状态码
+- 自动 `io.LimitReader(reader, contentLength)` 防止越界
+
+### 2.2 v4 容器走法（已稳定，不动）
+
+```
+server.go:466 detect ENCV container
+  → server_handle.go:113 serveEncryptedFile(w, r, path)
+  → readerService.GetDecryptReader(...) → factory + decryptReader
+  → provider.NewLocalFileProvider(ctx, factory, decryptReader) → FileContentProvider
+  → contentHandler.ServeFile(w, r, prov)   ← 统一 HTTP 协议
+```
+
+### 2.3 alist_encrypt 走法（**本次目标**）
+
+**当前（走偏）**：
+```
+mobile_api.go:1076 handleAlistEncryptStreamGin
+  → plugin.ServeStream(c.Writer, c.Request, path, password)   ← 自己实现 Range/206/Content-Length
+```
+
+**目标（统一）**：
+```
+mobile_api.go:1076 handleAlistEncryptStreamGin
+  → alistencrypt.NewAlistEncryptFileProvider(...) → FileContentProvider
+  → contentHandler.ServeFile(c.Writer, c.Request, prov)   ← 与 v4 走同一路径
+```
+
+---
+
+## 三、实施步骤
+
+### Step 1: 新增 `AlistEncryptFileProvider`（不破坏现有代码）
+
+**文件**：`internal/v2/plugins/alistencrypt/provider.go`（新建）
+
+```go
+package alistencrypt
+
+import (
+    "io"
+
+    "github.com/Soltus/encv-go/internal/v2/provider"
+)
+
+// AlistEncryptFileProvider 实现 provider.FileContentProvider 接口
+// 包装 seekableDecryptReader，让 alist_encrypt 走统一的 ContentHandler.ServeFile
+type AlistEncryptFileProvider struct {
+    reader *seekableDecryptReader  // 已实现 Read + Seek + Close
+    size   int64                   // 明文大小（来自 Stream() 返回）
+    name   string                  // 解码后的明文文件名（来自 ConvertShowName）
+}
+
+func NewAlistEncryptFileProvider(reader *seekableDecryptReader, size int64, name string) *AlistEncryptFileProvider {
+    return &AlistEncryptFileProvider{reader: reader, size: size, name: name}
+}
+
+func (p *AlistEncryptFileProvider) GetReader() io.ReadCloser {
+    return p.reader
+}
+
+func (p *AlistEncryptFileProvider) GetSeeker() (io.Seeker, bool) {
+    // seekableDecryptReader 内嵌 DecryptReader，DecryptReader 实现了 Seek
+    return p.reader.DecryptReader, true
+}
+
+func (p *AlistEncryptFileProvider) GetSeekerTo() (provider.SeekerTo, bool) {
+    return nil, false
+}
+
+func (p *AlistEncryptFileProvider) GetSize() int64 {
+    return p.size
+}
+
+func (p *AlistEncryptFileProvider) GetName() string {
+    return p.name
+}
+
+func (p *AlistEncryptFileProvider) Close() error {
+    return p.reader.Close()
+}
+```
+
+**已有基础**：
+- `seekableDecryptReader`（`streamer.go:15-25`）—— 包装了 `DecryptReader`，`DecryptReader` 已实现 `Read` + `Seek`
+- `Stream()`（`streamer.go:38-88`）—— 返回 `(*seekableDecryptReader, plainSize, contentType, showName, error)`
+- `ShowName` 来自 `ConvertShowName` —— alist-encrypt-go 兼容解码，**已经是明文**（如 `CAD放样.mp4`）
+
+### Step 2: 改写 `handleAlistEncryptStreamGin` 走统一范式
+
+**文件**：`internal/server/mobile_api.go:1076-1097`
+
+```go
+func (s *Server) handleAlistEncryptStreamGin(c *gin.Context) {
+    queryPath := utils.DecodeGinQueryParam(c.Query("path"))
+    password := c.Query("password")
+    if queryPath == "" {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "'path' query parameter is required"})
+        return
+    }
+    absPath, err := utils.SafeResolveToAbsPath(s.servingDir, queryPath)
+    if err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "invalid path"})
+        return
+    }
+    slog.Info("API: alist-encrypt stream", "path", absPath)
+
+    // 走统一范式：构造 FileContentProvider，调 ContentHandler.ServeFile
+    var plugin alistencrypt.AlistEncryptPlugin
+    rc, size, _, showName, err := plugin.Stream(absPath, password)
+    if err != nil {
+        slog.Error("API: alist-encrypt stream open failed", "error", err)
+        writeServiceErrorGin(c, err)
+        return
+    }
+    // rc 是 *seekableDecryptReader，需要做 type assertion
+    sr, ok := rc.(*alistencrypt.SeekableDecryptReader)  // 暴露给外部用
+    if !ok {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "internal: unexpected reader type"})
+        return
+    }
+    prov := alistencrypt.NewAlistEncryptFileProvider(sr, size, showName)
+    defer prov.Close()
+    s.contentHandler.ServeFile(c.Writer, c.Request, prov)
+}
+```
+
+**注**：`seekableDecryptReader` 当前是 unexported，需要在 `streamer.go` 把它 export 为 `SeekableDecryptReader`（或加一个公开包装接口）。
+
+### Step 3: 删除/废弃 `ServeStream`（让 plugin 回归数据提供方职责）
+
+**文件**：`internal/v2/plugins/alistencrypt/streamer.go:90-165`
+
+**操作**：删除 `func (p *AlistEncryptPlugin) ServeStream(...)` 整个函数。
+
+**理由**：
+- HTTP 协议处理已经委托给 `ContentHandler.ServeFile`
+- plugin 只需要负责"打开文件、解密、返回 reader + size + name"
+- 与 v4 容器一致：plugin 不直接处理 HTTP
+
+**注**：如果其他代码（cmd 端、test）调过 `ServeStream`，需要一并改用 `ContentHandler.ServeFile + Provider` 模式。本次先 grep 确认没有其他调用方再删。
+
+### Step 4: 撤销 `streamer.go:144-145` 的局部 Content-Length fix
+
+**原因**：范式统一后，Content-Length 由 `ContentHandler.ServeFile` 统一处理。
+
+**操作**：
+- 删除 `partialLen := end - start + 1`
+- 删除 `w.Header().Set("Content-Length", strconv.FormatInt(partialLen, 10))` （Range 分支里）
+- 删除 `remaining := partialLen`（改回 `end - start + 1`）
+
+**注**：如果发现 streamer.go 在删除 ServeStream 时一并被精简，可以整文件重写。
+
+### Step 5: content-type 检测
+
+**问题**：`ContentHandler.ServeFile` 用 `utils.GetContentType(filepath.Ext(name))`，而 alist_encrypt 之前用 `detectContentTypeByName(showName, path)`。
+
+**需要确认**：
+- `utils.GetContentType` 是否覆盖 alist_encrypt 常见扩展名（mp4, mkv, mov, jpg, png, pdf 等）
+- 如果不够，alist_encrypt 的 FileContentProvider 包装 `showName` 时附加正确的 content-type 字段（需要扩展 `FileContentProvider` 接口加 `GetContentType() string`，但这破坏了与 LocalFileProvider 一致性）
+
+**fallback**：先看 `utils.GetContentType` 覆盖度。如果够了，streamer.go 的 `detectContentTypeByName` 可以删除。如果不够，先临时用 `filepath.Ext(name)` 推导，后续扩展 `FileContentProvider` 接口。
+
+### Step 6: 验证 v4 容器预览不退化
+
+**重要**：范式变更后必须保证 v4 容器预览不受影响。
+
+**验证步骤**：
+- curl `/stream?path=<v4 容器文件>` → 200 + 视频数据
+- curl `/stream?path=<v4 容器文件>` 带 Range → 206 + 部分大小
+- 浏览器：长按 v4 容器 → 选"预览" → ArtPlayer 播放
+
+**如果 v4 退化**：立刻回滚（不要回头修 alist_encrypt，先恢复 v4 稳定）。
+
+---
+
+## 四、agent-browser 调试铁律（防止再打断会话）
+
+> 来自上一轮调试的踩坑经验
+
+### 4.1 启动顺序（不要颠倒）
 
 ```bash
 # 1. 确认 preview 服务在跑（不要重启）
 ps -ef | grep -E "(start-preview|air|encv|vite)" | grep -v grep
 # 期待：6 个进程
 
-# 2. 确认 Chrome 9222 在跑（agent-tool-host 启动的）
+# 2. 确认 Chrome 9222 在跑
 curl -s http://localhost:9222/json/version | head -3
-# 期待：返回 webSocketDebuggerUrl
 
 # 3. 用 --cdp 9222 连接（不要默认 open）
 agent-browser --cdp 9222 open "http://localhost:5174/tabs/files"
 ```
 
-### 2.2 禁止操作
+### 4.2 绝对禁止操作
 
 | 禁止 | 原因 |
 |------|------|
-| ❌ `pkill -f air` 或 `pkill -f vite` | 会杀掉 preview server，破坏会话 |
-| ❌ `pkill -f agent-tool-host` | 沙箱基础设施，反代 vite |
-| ❌ 重命名/删除 mock 文件 | 用户已经验过的产物，丢失会破坏回归测试 |
+| ❌ `pkill -f air` / `pkill -f vite` / `pkill -f encv` | 会破坏 preview server |
+| ❌ `pkill -f agent-tool-host` | 沙箱基础设施 |
+| ❌ 重命名/删除 `/storage/emulated/0/` 下的产物 | 已验过的产物，丢失破坏回归 |
 | ❌ 改 `config.user.json` | 脚本铁律 |
-| ❌ 用默认 `open` 命令 | 拉新 Chrome 失败，连不上 5173 |
-| ❌ `eval 'await ...'` | eval 不支持 await 顶层 |
+| ❌ 用默认 `open` 命令（无 `--cdp`） | 拉新 Chrome 失败，连不上 5173 |
+| ❌ `eval 'await ...'` 顶层 | eval 不支持 await |
 
-### 2.3 推荐操作
+### 4.3 推荐操作
 
 | 场景 | 操作 |
 |------|------|
 | 调试长按菜单 | `window.__ENCV_TEST.simulateLongPress(fileName).then(()=>1)` |
-| 看 console 日志 | `agent-browser --cdp 9222 eval` 读 `document.querySelector` 或注入 `console.log` 拦截 |
-| 设置 input 值 | `el.value = 'x'; el.dispatchEvent(new Event('input', {bubbles:true}))` |
-| 看 Network 请求 | `agent-browser --cdp 9222 network requests --type xhr,fetch,media` |
+| 设 input 值（Vue 响应式） | `el.value='x'; el.dispatchEvent(new Event('input',{bubbles:true}))` |
 | 重置页面 | `agent-browser --cdp 9222 open http://localhost:5174/tabs/files` |
-| 不要关闭 Chrome | 用 `agent-browser --cdp 9222 close` 而不是 `agent-browser close` |
+| 看 Network | `agent-browser --cdp 9222 network requests --type xhr,fetch,media` |
+| 关闭 | `agent-browser --cdp 9222 close`（不是 `close`） |
 
-### 2.4 调试问题的正确步骤
+### 4.4 每次重测前的快照
 
-```
-1. 先 curl 验证后端行为（独立于浏览器）
-2. 再用 agent-browser --cdp 9222 触发前端流程
-3. 用 network requests 看实际请求是否和 curl 一致
-4. 用 eval 读 page 状态（playerError, videoState, etc.）
-5. 修复代码 → 等 Vite HMR / air 重载 → 重测
-6. **绝不**为清状态杀掉 preview server
+```bash
+# 进程快照
+ps -ef | grep -E "(start-preview|air|encv|vite)" | grep -v grep > /tmp/preview-pids.txt
+
+# 文件快照
+ls -la /storage/emulated/0/CAD放样* > /tmp/filestate.txt
+ls -la /storage/emulated/0/hyYGPCwJPQ3* >> /tmp/filestate.txt
 ```
 
 ---
 
-## 三、问题 4 第三个根因的排查计划
+## 五、端到端验证清单
 
-### 3.1 假设验证顺序
+实施完成后必须跑过：
 
-| 假设 | 验证方式 |
-|------|---------|
-| A. 浏览器 Origin 头导致后端 400 | 在 Chrome DevTools Network 看 Request Headers + Response Body；用 curl 模拟加 `-H "Origin: http://localhost:5174"` 看是否也 400 |
-| B. Range 格式不同导致 `invalid range format` | 看 Chrome DevTools 的 Range header，对比 curl |
-| C. vite proxy 对 Media 类型特殊处理 | 看 Chrome DevTools Network 实际请求的 host 是 `localhost:5174` 还是 `127.0.0.1:2025` |
-| D. 后端 encv log 有具体错误 | `slog.Info("API: alist-encrypt stream", "path", absPath)` 应该在 encv 进程 stdout；air 重载会覆盖日志 |
-
-### 3.2 修复方案（按假设逐个尝试）
-
-**方案 1：在 `getAlistEncryptStreamUrl` 中去掉双重编码**
-```ts
-// 改为单层 encodeURIComponent，让后端只需要一次 PathUnescape
-return `/api/alist-encrypt/stream?path=${encodeURIComponent(params.path)}&password=${encodeURIComponent(params.password)}`
-```
-但这会破坏 `proxySafeEncode` 在其他地方的兼容契约。
-
-**方案 2：让 ArtPlayerView 构造 URL 时不经过 `getAlistEncryptStreamUrl`**
-```ts
-// 在 ArtPlayerView.vue 直接构造单层编码 URL
-const streamUrl = computed(() => {
-  if (alistPath.value && alistPassword.value) {
-    return `/api/alist-encrypt/stream?path=${encodeURIComponent(alistPath.value)}&password=${encodeURIComponent(alistPassword.value)}`
-  }
-  ...
-})
-```
-
-**方案 3：让后端兼容 1/2/3 层编码**（增加 `DecodeGinQueryParam` 的循环 decode）
-
-### 3.3 优先方案 2（最小改动 + 干净 URL）
-
-实施步骤：
-1. 改 `ArtPlayerView.vue` 构造 URL 时不调用 `getAlistEncryptStreamUrl`，改用单层 `encodeURIComponent`
-2. 验证：curl + 浏览器测试，确认 Range 200/206 且能播放
+- [ ] 编译通过：air 重载 encv，stderr 无 error
+- [ ] curl `/api/alist-encrypt/stream?path=...&password=8682268` → 200 + 51958979 bytes + Content-Type: video/mp4
+- [ ] curl `/api/alist-encrypt/stream?path=...&password=8682268` 带 `Range: bytes=0-99` → 206 + 100 bytes + Content-Range: bytes 0-99/51958979 + Content-Length: 100
+- [ ] 浏览器（agent-browser --cdp 9222）：长按 `hyYGPCwJPQ3+xrdAvfnn2.bin` → 菜单有「流式预览」「解密」两项
+- [ ] 浏览器：流式预览 → 弹 promptPassword → 输 8682268 → 跳 /player → ArtPlayer 加载 → 视频可见可播
+- [ ] v4 容器不退化：长按 v4 容器 → 选"预览" → ArtPlayer 播放（必须）
+- [ ] 解密流程：长按 → 解密 → NewTaskModal（无前置 promptPassword）→ 输密码 → 任务完成 → TaskDetailModal 显示产物 → 跳转链接
 
 ---
 
-## 四、端到端验证清单
-
-修复完成后必须跑过：
-
-- [ ] 后端 curl：`/api/alist-encrypt/stream?path=...&password=8682268` 带 Range → 206 + 部分大小
-- [ ] 浏览器：长按 `hyYGPCwJPQ3+xrdAvfnn2.bin` → 菜单有 2 项（流式预览 + 解密）
-- [ ] 浏览器：流式预览 → 输密码 → ArtPlayer 播放 `CAD放样.mp4`
-- [ ] 浏览器：解密 → NewTaskModal 弹出 → 输密码 → 任务完成 → 详情显示产物
-- [ ] 浏览器：产物详情 → "打开产物" 跳 player → "在 Files 中定位" 跳 Files
-
----
-
-## 五、不能动的资产
+## 六、不能动的资产（重复强调）
 
 | 资产 | 原因 |
 |------|------|
 | `air` (pid 101849) | preview server 后端监视器 |
 | `vite` (pid 101912) | preview server 前端 |
-| `encv` (pid 130047) | air 重载后的最新后端实例（已含 Content-Length fix） |
+| `encv` (最新 pid) | 唯一后端实例 |
 | `agent-tool-host` (pid 821) | 沙箱基础设施 |
-| `Chrome @ 9222` | 已有页面 `http://localhost:5174/tabs/files` + agent-browser 通过它调试 |
-| `/storage/emulated/0/CAD放样.mp4` | 已还原的解密产物（用户明确要的不是 -renamed） |
+| `Chrome @ 9222` | 已有 ENCV 页面 |
+| `/storage/emulated/0/CAD放样.mp4` | 已还原的解密产物 |
 | `/storage/emulated/0/hyYGPCwJPQ3+xrdAvfnn2.bin` | 原始加密测试文件 |
 | `config.user.json` | 脚本铁律禁止改 |
 
 ---
 
-## 六、待用户决定
+## 七、等待用户批准
 
-1. **是否批准 plan 进入实施？** 批准后我会先验证问题 4 第 3 个根因的假设 A-D，然后实施修复方案 2。
-2. **是否需要我先做一次完整的"备份快照"**（记录当前所有进程 PID、文件状态、preview URL），防止后续调试再被破坏？
+实施本 plan 前需要你确认：
+1. **范式方向**：同意让 alist_encrypt 走统一 `ContentHandler.ServeFile`（与 v4 同路）
+2. **删除 ServeStream**：同意 plugin 回归"数据提供方"职责，HTTP 协议由 ContentHandler 统一处理
+3. **content-type 检测**：先验证 `utils.GetContentType` 覆盖度，不够再扩展接口
+4. **v4 不退化**：同意把 v4 容器预览验证作为范式变更的硬性 gate
