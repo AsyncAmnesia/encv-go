@@ -340,6 +340,55 @@ echo "  Logs:     tail -f /tmp/encv-backend.log"
 echo "  Stop:     kill $(lsof -i :2025 -t) $(lsof -i :5173 -t)"
 ```
 
+### 5.2.1 Capacitor 预览专用一键启动（`scripts/start-preview.sh`）
+
+**适用场景**：浏览器沙箱预览、Capacitor 开发模式。脚本整合 mock 数据生成 + 后端 air 监视 + Vite 前端为一条命令。
+
+**铁律**：
+- servingDir 永远为 `/storage/emulated/0` 绝对路径（设计预期，脚本自建真实目录）
+- **严禁任何符号链接**（mock-data 真实目录就在 `/storage/emulated/0`）
+- **严禁修改 `config.user.json`**（保持 `mobile.server.dir` 为绝对 Android 路径）
+- **后端必须用 air 监视重载**（禁止 `go build` / `go run`）
+- **严禁误杀 agent-tool-host**（沙箱基础设施在 16000 端口，反向代理到 Vite）
+- 脚本保持前台运行（便于 OpenPreview 激活），脚本退出时优雅停止所有子进程
+
+**前置条件**：
+- `air` 在 PATH 中（mise 安装的 Go 1.25.1 自带：`/root/.local/share/mise/installs/go/1.25.1/bin/air`）
+- 前端依赖已安装：`cd app/encv-mobile && npm install`（脚本会自动检测并安装）
+
+**使用方式**：
+```bash
+cd /workspace
+bash app/encv-mobile/scripts/start-preview.sh
+```
+
+**脚本行为**：
+1. 杀掉残留的 air / encv / vite 进程（精确按进程名匹配，绝不杀 agent-tool-host）
+2. 确保 `node_modules` 就绪（缺失则自动 `npm install --prefer-offline`）
+3. 运行 `npx tsx scripts/generate-mock-files.ts` 生成 mock 数据到 `/storage/emulated/0/01-plain-media/...`
+4. 启动 `ENCV_DEV_PREVIEW=1 air` 监视 `./cmd/encv/`（air 自动重建并重启后端）
+5. 启动 Vite（`--host 0.0.0.0 --port 5174 --strictPort`）
+6. 脚本前台 `wait`，任一子进程退出则清理全部
+
+**激活外部访问**：
+- 脚本返回 `command_id` 后，**必须调用 `OpenPreview(command_id="<id>", preview_url="http://localhost:5174/")`**
+- **预览 URL 用 Vite 实际端口（5174）**，不是 5173（5173 在沙箱中无服务监听，agent-tool-host 实际占 16000）
+
+**沙箱端口身份**（铁律）：
+
+| 端口 | 进程 | 身份 |
+|------|------|------|
+| 16000 | agent-tool-host | 公网反向代理入口（`PREVIEW_PROXY_PUBLIC_PORT`） |
+| 5174/5175/... | Vite | 实际 dev server（端口漂移，agent-tool-host 反代到此） |
+| 2025 | encv（air 监视） | Go Backend |
+
+**禁止做法**：
+- ❌ `ln -sfn` 任何路径"桥接" mock-data（mock-data 实际位置就是 `/storage/emulated/0`）
+- ❌ 修改 `config.user.json` 的 `mobile.server.dir`
+- ❌ 使用 `go build` / `go run`（必须用 air 监视）
+- ❌ `lsof -i :5173 | xargs kill`（会误杀 agent-tool-host 沙箱基础设施）
+- ❌ 跳过 mock 生成直接启动（会触发 service guard）
+
 ### 5.3 常见问题排查
 
 | 症状 | 可能原因 | 排查命令 |
