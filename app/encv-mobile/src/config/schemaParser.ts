@@ -78,15 +78,16 @@ function parseProperty(
   const { sectionTitle, cleanDesc } = extractSectionTitle(description)
 
   const field: FieldDef = {
-    key,
-    label: formatLabel(key),
-    description: cleanDesc,
-    type: (resolved.type || 'string') as FieldType,
-    required: isRequired,
-    sectionTitle: sectionTitle || undefined,
-    isPassword: isPasswordField(key),
-    isPath: isPathField(key),
-  }
+		key,
+		label: formatLabel(key),
+		description: cleanDesc,
+		type: (resolved.type || 'string') as FieldType,
+		required: isRequired,
+		sectionTitle: sectionTitle || undefined,
+		isPassword: isPasswordField(key),
+		isPath: isPathField(key),
+		default: resolved.default,
+	}
 
   if (resolved.enum) {
     field.enum = resolved.enum
