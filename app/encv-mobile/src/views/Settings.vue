@@ -179,8 +179,8 @@
 
       <template v-else-if="configLoaded">
         <template v-for="section in schemaFields" :key="section.key">
-          <!-- 过滤掉 server、admin、webdav 配置项，这些配置项有独立的设置页面 -->
-        <template v-if="!['server', 'admin', 'webdav'].includes(section.key)">
+          <!-- 过滤掉 server、admin、webdav、log 配置项，这些配置项有独立的设置页面（log 在 DevToolsDetail） -->
+        <template v-if="!['server', 'admin', 'webdav', 'log'].includes(section.key)">
           <ion-list v-if="section.key === 'plugin_settings'">
             <ion-list-header>
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
@@ -640,8 +640,8 @@ async function handleBrowsePath(path: string[], field: FieldDef) {
   }
 }
 
-function fieldLabel(key: string, required?: boolean): string {
-  return tField(key) + (required ? ' *' : '')
+function fieldLabel(key: string, _required?: boolean): string {
+  return tField(key)
 }
 
 const fieldIconMap: Record<string, string> = {

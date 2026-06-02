@@ -386,8 +386,8 @@ async function handleBrowsePath(path: string[], field: FieldDef) {
   }
 }
 
-function fieldLabel(key: string, required?: boolean): string {
-  return tField(key) + (required ? ' *' : '')
+function fieldLabel(key: string, _required?: boolean): string {
+  return tField(key)
 }
 
 const fieldIconMap: Record<string, string> = {

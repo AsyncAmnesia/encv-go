@@ -2,34 +2,28 @@
   <div class="encrypt-body">
     <!-- 源文件 -->
     <div class="form-section">
-      <div class="field-group path-field">
-        <ion-input
-          :model-value="state.sourcePath"
-          @ionInput="(e: any) => props.onUpdateSourcePath?.(e.detail.value)"
-          :label="t('tasks.sourcePath')"
-          label-placement="stacked"
-          placeholder="/path/to/file"
-          class="path-input"
-        ></ion-input>
-        <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseSource">
-          <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-        </ion-button>
-      </div>
+      <InputWithHistory
+        :model-value="state.sourcePath"
+        :label="t('tasks.sourcePath')"
+        placeholder="/path/to/file"
+        :icon="documentText"
+        history-key="task.encrypt.sourcePath"
+        browsable
+        @update:model-value="(v: string) => props.onUpdateSourcePath?.(v)"
+        @browse="handleBrowseSource"
+      />
 
       <!-- 目标路径 -->
-      <div class="field-group path-field">
-        <ion-input
-          :model-value="state.targetPath"
-          @ionInput="(e: any) => props.onUpdateTargetPath?.(e.detail.value)"
-          :label="t('tasks.targetPath')"
-          label-placement="stacked"
-          :placeholder="t('tasks.targetPathPlaceholder')"
-          class="path-input"
-        ></ion-input>
-        <ion-button slot="end" fill="clear" class="browse-btn" @click="handleBrowseTarget">
-          <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-        </ion-button>
-      </div>
+      <InputWithHistory
+        :model-value="state.targetPath"
+        :label="t('tasks.targetPath')"
+        :placeholder="t('tasks.targetPathPlaceholder')"
+        :icon="folderOpen"
+        history-key="task.encrypt.targetPath"
+        browsable
+        @update:model-value="(v: string) => props.onUpdateTargetPath?.(v)"
+        @browse="handleBrowseTarget"
+      />
     </div>
 
     <!-- 容器版本选择（仅插件声明 SupportVersionSelect 时显示） -->
@@ -43,26 +37,24 @@
 
     <!-- 密码字段（仅 PasswordGlobal 策略显示） -->
     <div v-if="!state.taskOptions || state.taskOptions.passwordStrategy === 'global'" class="form-section password-section">
-      <ion-item lines="none" class="password-item">
-        <ion-input
-          :model-value="state.primaryOverride"
-          @ionInput="(e: any) => props.onUpdatePrimaryOverride?.(e.detail.value)"
-          :label="t('tasks.passwordOverride')"
-          label-placement="stacked"
-          type="password"
-          :placeholder="t('tasks.passwordOverrideHelp')"
-        ></ion-input>
-      </ion-item>
-      <ion-item lines="none" class="password-item">
-        <ion-input
-          :model-value="state.secondaryPassword"
-          @ionInput="(e: any) => props.onUpdateSecondaryPassword?.(e.detail.value)"
-          :label="t('tasks.secondaryPassword')"
-          label-placement="stacked"
-          type="password"
-          :placeholder="t('tasks.secondaryPasswordHelp')"
-        ></ion-input>
-      </ion-item>
+      <InputWithHistory
+        :model-value="state.primaryOverride"
+        :label="t('tasks.passwordOverride')"
+        :placeholder="t('tasks.passwordOverrideHelp')"
+        :icon="lockClosed"
+        input-type="password"
+        history-key="task.encrypt.primaryOverride"
+        @update:model-value="(v: string) => props.onUpdatePrimaryOverride?.(v)"
+      />
+      <InputWithHistory
+        :model-value="state.secondaryPassword"
+        :label="t('tasks.secondaryPassword')"
+        :placeholder="t('tasks.secondaryPasswordHelp')"
+        :icon="lockClosed"
+        input-type="password"
+        history-key="task.encrypt.secondaryPassword"
+        @update:model-value="(v: string) => props.onUpdateSecondaryPassword?.(v)"
+      />
     </div>
 
     <!-- 加密模式专属 extraFields（condition === 'encrypt' 或无 condition） -->
@@ -106,19 +98,16 @@
         <ion-note v-if="field.help" slot="helper">{{ t(field.help) }}</ion-note>
       </ion-item>
 
-      <ion-item
+      <InputWithHistory
         v-else
-        lines="none"
-        class="extra-field-item"
-      >
-        <ion-input
-          :model-value="getExtra(field.key)"
-          @ionInput="(e: any) => props.onUpdateExtraValue?.({ key: field.key, value: e.detail.value })"
-          :label="t(field.label)"
-          :type="field.type === 'password' ? 'password' : 'text'"
-          :placeholder="t(field.help)"
-        ></ion-input>
-      </ion-item>
+        :model-value="getExtra(field.key)"
+        :label="t(field.label)"
+        :placeholder="t(field.help || '')"
+        :icon="field.type === 'password' ? lockClosed : documentText"
+        :input-type="field.type === 'password' ? 'password' : 'text'"
+        :history-key="`task.encrypt.extra.${field.key}`"
+        @update:model-value="(v: string) => props.onUpdateExtraValue?.({ key: field.key, value: v })"
+      />
     </template>
   </div>
 </template>
@@ -130,17 +119,15 @@ import {
   IonLabel,
   IonSelect,
   IonSelectOption,
-  IonInput,
-  IonIcon,
   IonToggle,
   IonNote,
-  IonButton,
   modalController,
 } from '@ionic/vue'
-import { folderOpen } from 'ionicons/icons'
+import { folderOpen, documentText, lockClosed } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import ContainerVersionSelector from '@/components/ContainerVersionSelector.vue'
 import FilePickerModal from '@/components/FilePickerModal.vue'
+import InputWithHistory from '@/components/InputWithHistory.vue'
 import type { ContainerVersionInfo, TaskField } from '@/api/encv'
 import type { NewTaskState } from '@/components/NewTaskState'
 
@@ -208,43 +195,12 @@ async function handleBrowseTarget() {
   margin-bottom: 12px;
 }
 
-.field-group {
-  position: relative;
-  margin-bottom: 8px;
-}
-
-.path-field {
-  display: flex;
-  align-items: flex-end;
-  gap: 0;
-}
-
-.path-field .path-input {
-  flex: 1;
-}
-
-.browse-btn {
-  --padding-start: 6px;
-  --padding-end: 6px;
-  min-width: 40px;
-  min-height: 40px;
-  margin-bottom: 2px;
-  --color: var(--ion-color-medium);
-}
-
 .version-section {
   margin: 10px 0;
 }
 
 .password-section {
   margin-top: 8px;
-}
-
-.password-item {
-  --background: transparent;
-  --padding-start: 0;
-  --padding-end: 0;
-  --inner-padding-end: 0;
 }
 
 .extra-field-item {

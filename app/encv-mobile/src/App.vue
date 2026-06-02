@@ -32,7 +32,7 @@ import { checkServiceGuard } from '@/api/encv'
 import type { ServiceGuardResult } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 
-const { initTheme } = useTheme()
+const { initTheme, detectP3Support } = useTheme()
 const { t } = useI18n()
 const { connect, disconnect } = useWebSocket()
 
@@ -112,6 +112,7 @@ async function applyScreenOrientation() {
 onMounted(async () => {
   hijackConsole()
   initTheme()
+  detectP3Support()
   autoInitVConsole()
   registerFileFeature(createAlistEncryptFeature())
 
@@ -220,5 +221,58 @@ ion-toggle {
 /* 覆盖 ion-item 内部 .ion-color 上下文导致的 ON 状态手柄变黑 */
 ion-toggle.toggle-checked::part(handle) {
   background: #ffffff;
+}
+
+/* 背景高斯模糊：ion-content/ion-header/ion-toolbar/卡片 */
+ion-content,
+ion-header,
+ion-toolbar,
+.encv-blur-surface {
+  --backdrop-filter: blur(var(--encv-bg-blur, 0px));
+  backdrop-filter: blur(var(--encv-bg-blur, 0px));
+  -webkit-backdrop-filter: blur(var(--encv-bg-blur, 0px));
+}
+
+ion-content {
+  --background: var(--ion-background-color);
+  background: var(--ion-background-color);
+}
+
+ion-toolbar {
+  --background: rgba(var(--ion-background-color-rgb, 255, 255, 255), 0.85);
+  background: rgba(var(--ion-background-color-rgb, 255, 255, 255), 0.85);
+}
+
+body.dark ion-toolbar {
+  --background: rgba(26, 26, 26, 0.85);
+  background: rgba(26, 26, 26, 0.85);
+}
+
+/* P3 瑰彩显示：增强颜色饱和度与对比度 */
+@media (color-gamut: p3) {
+  :root {
+    color-scheme: light dark;
+  }
+  ion-card,
+  .preset-card,
+  .config-field,
+  .task-card,
+  .theme-color-picker {
+    --encv-color-gamut: p3;
+  }
+  .p3-enhanced ion-icon {
+    color: color(display-p3 1 0 0);
+  }
+  .p3-enhanced .preset-card-active {
+    background: color(display-p3 var(--ion-color-primary-rgb) / 0.08);
+  }
+}
+
+/* 强制 P3 模式时使用 display-p3 色空间 */
+:root {
+  --encv-color-gamut: srgb;
+}
+:root[style*="--encv-color-gamut: display-p3"] {
+  --encv-color-gamut: display-p3;
 }
 </style>

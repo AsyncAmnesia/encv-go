@@ -41,36 +41,45 @@
         </ion-item>
       </ion-list>
 
-      <ion-list>
+      <ion-list v-if="configLoaded">
         <ion-list-header>
           <ion-label>{{ t('settings.logSettings') }}</ion-label>
+          <ion-badge slot="end" color="primary" class="scope-badge scope-synced">
+            <ion-icon :icon="cloudOutline" class="scope-badge-icon"></ion-icon>
+            <span class="scope-text">{{ t('settings.synced') }}</span>
+          </ion-badge>
         </ion-list-header>
-        <ion-item>
-          <ion-icon :icon="terminal" slot="start"></ion-icon>
-          <ion-select
-            :value="logLevel"
-            label="日志级别"
-            label-placement="stacked"
-            interface="action-sheet"
-            mode="ios"
-            @ionChange="handleLogLevelChange($event.detail.value)"
-          >
-            <ion-select-option value="debug">DEBUG</ion-select-option>
-            <ion-select-option value="info">INFO</ion-select-option>
-            <ion-select-option value="warn">WARN</ion-select-option>
-            <ion-select-option value="error">ERROR</ion-select-option>
-          </ion-select>
-        </ion-item>
-        <ion-item>
-          <ion-icon :icon="documentText" slot="start"></ion-icon>
-          <ion-input
-            :value="logFile"
-            label="日志文件路径"
-            label-placement="stacked"
-            placeholder="留空则只输出到控制台"
-            @ionChange="handleLogFileChange($event.detail.value ?? '')"
-          ></ion-input>
-        </ion-item>
+        <div v-if="logLevelField && logLevelField.selectOptions && logLevelField.selectOptions.length > 2" class="log-level-card">
+          <div class="field-label-row">
+            <ion-icon :icon="terminal" class="field-icon"></ion-icon>
+            <span class="field-label-text">{{ tField('level') }}</span>
+            <span class="required-mark">*</span>
+            <ion-icon :icon="cloudOutline" class="sync-indicator" :title="t('settings.synced')"></ion-icon>
+            <ion-button v-if="isLogLevelCustomized" fill="clear" size="small" class="reset-btn" @click="resetLogLevelToDefault">
+              <ion-icon :icon="refreshOutline" slot="icon-only"></ion-icon>
+            </ion-button>
+          </div>
+          <div class="preset-cards">
+            <div
+              v-for="opt in logLevelField.selectOptions"
+              :key="opt.value"
+              class="preset-card"
+              :class="{ 'preset-card-active': logLevel === opt.value }"
+              @click="handleLogLevelChange(opt.value)"
+            >
+              <div class="preset-card-title">{{ opt.label }}</div>
+              <div v-if="opt.description" class="preset-card-desc">{{ opt.description }}</div>
+            </div>
+          </div>
+        </div>
+        <InputWithHistory
+          :model-value="logFile"
+          :label="tField('file')"
+          :placeholder="t('devtools.logFilePlaceholder')"
+          :icon="documentText"
+          history-key="config.log.file"
+          @update:model-value="handleLogFileChange"
+        />
         </ion-list>
 
       <ion-list>
@@ -113,30 +122,53 @@ import { computed } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonIcon, IonLabel, IonToggle,
-  IonSelect, IonSelectOption, IonInput,
-  alertController,
+  IonButton, alertController,
 } from '@ionic/vue'
 import {
   bugOutline, downloadOutline, readerOutline, trashOutline,
   chevronForward, playCircleOutline, musicalNotesOutline,
   colorPaletteOutline, settingsOutline, terminal, documentText,
+  cloudOutline, refreshOutline,
 } from 'ionicons/icons'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/composables/useI18n'
 import { useDevTools } from '@/composables/useDevTools'
 import { useConfig } from '@/composables/useConfig'
+import { getDefaultValue } from '@/config/schemaParser'
 import { showToast } from '@/composables/useToast'
 import { isNative, exportLogs, clearLogs, openLogViewer, saveDevLogs } from '@/plugins/GoProcess'
 import { getFrontendLogsJson } from '@/composables/useFrontendLogs'
 import { getAllPrototypes } from './prototypes/registry'
+import InputWithHistory from '@/components/InputWithHistory.vue'
 
-const { t } = useI18n()
+const { t, tField } = useI18n()
 const router = useRouter()
 const { vconsoleEnabled, toggleVConsole } = useDevTools()
-const { getFieldValue, setFieldValue, saveConfig } = useConfig()
+const { schemaFields, getFieldValue, setFieldValue, saveConfig, resetFieldToDefault } = useConfig()
+
+const configLoaded = computed(() => schemaFields.value.length > 0)
 
 const logLevel = computed(() => String(getFieldValue(['log', 'level']) ?? 'info'))
 const logFile = computed(() => String(getFieldValue(['log', 'file']) ?? ''))
+
+const logLevelField = computed(() => {
+  const logSection = schemaFields.value.find((s) => s.key === 'log')
+  if (!logSection || !logSection.properties) return null
+  return logSection.properties.find((p) => p.key === 'level') || null
+})
+
+const logDefault = computed(() => {
+  if (!logLevelField.value) return 'info'
+  return String(getDefaultValue(logLevelField.value))
+})
+
+const isLogLevelCustomized = computed(() => logLevel.value !== logDefault.value)
+
+function resetLogLevelToDefault() {
+  if (!logLevelField.value) return
+  resetFieldToDefault(['log', 'level'], logLevelField.value)
+  saveLogConfig()
+}
 
 async function handleLogLevelChange(value: string) {
   setFieldValue(['log', 'level'], value)

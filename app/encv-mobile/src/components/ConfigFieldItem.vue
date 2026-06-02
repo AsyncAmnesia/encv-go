@@ -23,21 +23,22 @@
     </ion-note>
   </ion-item>
 
-  <ion-item v-else-if="field.isSelect && field.selectOptions && field.selectOptions.length > 2" class="config-field select-card-field" :class="{ 'field-modified': isCustomized }">
-    <ion-icon :icon="icon" slot="start"></ion-icon>
-    <ion-label class="ion-text-wrap">
-      <div class="field-label-row">
-        <span class="field-label-text">
-          {{ label }}
-          <span v-if="field.required" class="required-mark">*</span>
-        </span>
-        <span v-if="field.isV4" class="config-badge badge-v4">v4</span>
-        <span v-else-if="field.platform === 'mobile'" class="config-badge badge-mobile">{{ t('settings.mobileOnly') }}</span>
-        <ion-icon :icon="cloudOutline" class="sync-indicator" :title="t('settings.synced')"></ion-icon>
-      </div>
-      <p v-if="field.description" class="field-description-text">{{ field.description }}</p>
-    </ion-label>
-    <div class="preset-cards" slot="end">
+  <div v-else-if="field.isSelect && field.selectOptions && field.selectOptions.length > 2" class="config-field config-field-card" :class="{ 'field-modified': isCustomized }">
+    <div class="field-label-row">
+      <ion-icon :icon="icon" class="field-icon"></ion-icon>
+      <span class="field-label-text">
+        {{ label }}
+        <span v-if="field.required" class="required-mark">*</span>
+      </span>
+      <span v-if="field.isV4" class="config-badge badge-v4">v4</span>
+      <span v-else-if="field.platform === 'mobile'" class="config-badge badge-mobile">{{ t('settings.mobileOnly') }}</span>
+      <ion-icon :icon="cloudOutline" class="sync-indicator" :title="t('settings.synced')"></ion-icon>
+      <ion-button v-if="isCustomized" fill="clear" size="small" class="reset-btn" @click="$emit('reset')">
+        <ion-icon :icon="refreshOutline" slot="icon-only"></ion-icon>
+      </ion-button>
+    </div>
+    <p v-if="field.description" class="field-description-text">{{ field.description }}</p>
+    <div class="preset-cards">
       <div
         v-for="opt in field.selectOptions"
         :key="opt.value"
@@ -49,13 +50,10 @@
         <div v-if="opt.description" class="preset-card-desc">{{ opt.description }}</div>
       </div>
     </div>
-    <ion-button v-if="isCustomized" slot="end" fill="clear" size="small" class="reset-btn" @click="$emit('reset')">
-      <ion-icon :icon="refreshOutline" slot="icon-only"></ion-icon>
-    </ion-button>
-    <ion-note v-if="hasDefault" slot="helper" class="default-hint">
+    <div v-if="hasDefault" class="default-hint-row">
       {{ t('settings.default') }}: {{ defaultOptionLabel }}
-    </ion-note>
-  </ion-item>
+    </div>
+  </div>
 
   <ion-item v-else-if="field.isSelect" class="config-field" :class="{ 'field-modified': isCustomized }">
     <ion-icon :icon="icon" slot="start"></ion-icon>
@@ -85,45 +83,31 @@
     </ion-note>
   </ion-item>
 
-  <ion-item v-else class="config-field" :class="{ 'field-modified': isCustomized }">
-    <ion-icon :icon="icon" slot="start"></ion-icon>
-    <ion-input
-      :value="String(modelValue ?? '')"
-      :type="inputType"
-      :label="labelWithRequired"
-      label-placement="stacked"
-      :placeholder="placeholder"
-      @ionInput="$emit('input', $event)"
-    ></ion-input>
-    <ion-button v-if="field.isPassword" slot="end" fill="clear" class="browse-btn" @click="showPassword = !showPassword">
-      <ion-icon :icon="showPassword ? eyeOffOutline : eyeOutline" slot="icon-only"></ion-icon>
-    </ion-button>
-    <ion-button v-else-if="field.isPath" slot="end" fill="clear" class="browse-btn" @click="$emit('browse')">
-      <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-    </ion-button>
-    <ion-button v-if="isCustomized" slot="end" fill="clear" size="small" class="reset-btn" @click="$emit('reset')">
-      <ion-icon :icon="refreshOutline" slot="icon-only"></ion-icon>
-    </ion-button>
-    <ion-note v-if="field.description || hasDefault || isTaskOverridable" slot="helper" class="field-description">
-      <span class="meta-row">
-        <ion-icon :icon="cloudOutline" class="sync-indicator-inline" :title="t('settings.synced')"></ion-icon>
-        <span v-if="field.isV4" class="config-badge badge-v4">v4</span>
-        <span v-else-if="field.platform === 'mobile'" class="config-badge badge-mobile">{{ t('settings.mobileOnly') }}</span>
-        <template v-if="field.description">{{ field.description }}</template>
-      </span>
-      <span v-if="hasDefault" class="default-hint"> ({{ t('settings.default') }}: {{ formatDefault(defaultVal) }})</span>
-      <span v-if="isTaskOverridable" class="override-hint"> · {{ t('settings.taskOverridable') }}</span>
-    </ion-note>
-  </ion-item>
+  <InputWithHistory
+    v-else
+    :model-value="String(modelValue ?? '')"
+    :label="labelWithRequired"
+    :placeholder="placeholder"
+    :icon="icon"
+    :input-type="field.isPassword ? 'password' : field.type === 'integer' ? 'number' : 'text'"
+    :history-key="`config.${field.key}`"
+    :browsable="!!field.isPath"
+    :is-customized="isCustomized"
+    :clear-input="true"
+    @update:model-value="$emit('update:modelValue', $event)"
+    @browse="$emit('browse')"
+    @reset="$emit('reset')"
+  />
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { IonIcon, IonItem, IonInput, IonToggle, IonButton, IonNote, IonLabel, IonSelect, IonSelectOption } from '@ionic/vue'
-import { eyeOutline, eyeOffOutline, folderOpen, cloudOutline, refreshOutline } from 'ionicons/icons'
+import { computed } from 'vue'
+import { IonIcon, IonItem, IonToggle, IonButton, IonNote, IonLabel, IonSelect, IonSelectOption } from '@ionic/vue'
+import { cloudOutline, refreshOutline } from 'ionicons/icons'
 import type { FieldDef } from '@/config/schemaParser'
 import { getDefaultValue } from '@/config/schemaParser'
 import { useI18n } from '@/composables/useI18n'
+import InputWithHistory from '@/components/InputWithHistory.vue'
 
 const TASK_OVERRIDABLE = new Set(['password', 'output_path', 'recover'])
 
@@ -143,7 +127,6 @@ defineEmits<{
 }>()
 
 const { t } = useI18n()
-const showPassword = ref(false)
 
 const defaultVal = computed(() => getDefaultValue(props.field))
 
@@ -174,16 +157,39 @@ function formatDefault(val: unknown): string {
   if (typeof val === 'boolean') return val ? 'true' : 'false'
   return String(val)
 }
-
-const inputType = computed(() => {
-  if (!props.field.isPassword) return props.field.type === 'integer' ? 'number' : 'text'
-  return showPassword.value ? 'text' : 'password'
-})
 </script>
 
 <style scoped>
 .config-field {
   --min-height: 56px;
+}
+
+.config-field-card {
+  display: block;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--ion-color-light-shade, #e0e0e0);
+  background: transparent;
+}
+
+body.dark .config-field-card {
+  border-bottom-color: #2a2a2c;
+}
+
+.config-field-card.field-modified {
+  border-left: 3px solid var(--ion-color-primary);
+  padding-left: 13px;
+}
+
+.field-icon {
+  font-size: 18px;
+  color: var(--ion-color-medium);
+  flex-shrink: 0;
+}
+
+.default-hint-row {
+  font-size: 11px;
+  color: var(--ion-color-medium);
+  margin-top: 6px;
 }
 
 .config-field.field-modified {
@@ -295,22 +301,21 @@ const inputType = computed(() => {
 }
 
 .preset-cards {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 10px;
   width: 100%;
-  flex-wrap: wrap;
 }
 
 .preset-card {
-  flex: 1 1 0;
-  min-width: 80px;
   padding: 10px 8px;
   border: 2px solid var(--ion-color-light-shade, #e0e0e0);
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s;
   text-align: center;
+  background: var(--ion-background-color, transparent);
 }
 
 .preset-card-active {
@@ -330,30 +335,24 @@ const inputType = computed(() => {
   line-height: 1.3;
 }
 
-/* 移动端：preset-card 垂直堆叠 */
+/* 移动端：badge 缩小 */
 @media (max-width: 599px) {
-  .preset-cards {
-    flex-direction: column;
-    gap: 6px;
-  }
-  .preset-card {
-    flex: 1 1 auto;
-    width: 100%;
-    padding: 10px 12px;
-    text-align: left;
-  }
-  .preset-card-title {
-    font-size: 14px;
-  }
-  .preset-card-desc {
-    font-size: 12px;
-  }
   .config-badge {
     font-size: 9px;
     padding: 1px 5px;
   }
   .sync-indicator {
     font-size: 11px;
+  }
+  .preset-card-title {
+    font-size: 12px;
+  }
+  .preset-card-desc {
+    font-size: 10px;
+  }
+  .preset-cards {
+    grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+    gap: 6px;
   }
 }
 </style>

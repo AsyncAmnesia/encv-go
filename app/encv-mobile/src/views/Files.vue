@@ -354,7 +354,14 @@
             </div>
             <p v-else class="no-tags-hint">暂无标签</p>
             <div class="tag-input-row">
-              <ion-input v-model="newTagInput" placeholder="输入新标签名" enterkeyhint="go" @keyup.enter="handleAddNewTag()"></ion-input>
+              <InputWithHistory
+                v-model="newTagInput"
+                :label="t('files.newTag')"
+                placeholder="输入新标签名"
+                :icon="pricetagOutline"
+                history-key="files.newTag"
+                @keyup-enter="handleAddNewTag()"
+              />
               <ion-button fill="solid" color="primary" @click="handleAddNewTag()" :disabled="!newTagInput.trim()">
                 添加
               </ion-button>
@@ -501,6 +508,7 @@ import { copyToClipboard } from '@/composables/useClipboard'
 import { showToast } from '@/composables/useToast'
 import { Share } from '@capacitor/share'
 import { PLAY_MODE, type PlayMode, VIDEO_DEFAULT, AUDIO_DEFAULT } from '@/constants/player'
+import InputWithHistory from '@/components/InputWithHistory.vue'
 
 const ALL_VALID_MODES: PlayMode[] = [
   PLAY_MODE.ARTPLAYER,
@@ -1616,9 +1624,11 @@ function onBackendReadyWindow(event: Event) {
   gap: 8px;
   align-items: center;
 }
-.tag-input-row ion-input {
-  --padding-start: 12px;
+.tag-input-row .input-with-history {
   flex: 1;
+}
+.tag-input-row .input-with-history ion-input {
+  --padding-start: 12px;
 }
 .file-tag-chips {
   display: flex;
