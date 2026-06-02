@@ -2,27 +2,20 @@ package com.encvgo.plugin.openlist
 
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import openlistlib.Event
+import openlistlib.LogCallback
+import openlistlib.Openlistlib
 
-// TODO: replace with real interfaces from openlist.aar (gomobile bind output) once available.
-//   AAR ships as a 0-byte placeholder; run scripts/build-openlist-aar.sh to produce the real artifact.
-//   These stubs mirror openlistlib.Event / openlistlib.LogCallback shape so call sites stay stable.
-interface OpenListEvent {
-    fun onShutdown(type: String)
-    fun onStartError(type: String, msg: String)
-    fun onProcessExit(code: Long)
-}
-
-interface OpenListLogCallback {
-    fun onLog(level: Short, time: Long, log: String)
-}
-
-// TODO: when real openlist.aar lands, switch imports to openlistlib.Openlistlib / Event / LogCallback
-//   and delete the local OpenListEvent / OpenListLogCallback stubs above.
-object OpenListBridge : OpenListEvent, OpenListLogCallback {
+object OpenListBridge : Event, LogCallback {
 
     private const val TAG = "OpenList"
+
+    private val openlistlib = Openlistlib()
+    private val handler = Handler(Looper.getMainLooper())
 
     @Volatile
     private var dataDir: String = ""
@@ -34,33 +27,61 @@ object OpenListBridge : OpenListEvent, OpenListLogCallback {
     private var appContext: Context? = null
 
     fun init(context: Context) {
+        Log.e(TAG, "[SAT-DBG][OpenList] init() entry | dataDir=$dataDir port=$port | thread=${Thread.currentThread().name}")
         appContext = context.applicationContext
+        openlistlib.setConfigData(dataDir)
+        openlistlib.setPort(port.toLong())
+        Log.e(TAG, "[SAT-DBG][OpenList] init() done | setConfigData + setPort applied")
     }
 
     fun start() {
-        if (running) return
-        // TODO: call Openlistlib.setConfigData(dataDir) then Openlistlib.start()
+        Log.e(TAG, "[SAT-DBG][OpenList] start() entry | running=$running | thread=${Thread.currentThread().name}")
+        if (running) {
+            Log.e(TAG, "[SAT-DBG][OpenList] start() skipped (already running)")
+            return
+        }
+        Thread {
+            Log.e(TAG, "[SAT-DBG][OpenList] start() background thread | thread=${Thread.currentThread().name}")
+            openlistlib.start()
+        }.start()
         running = true
-        Log.i(TAG, "OpenList started (placeholder), dataDir=$dataDir port=$port")
+        broadcastStatus(port, true)
+        Log.e(TAG, "[SAT-DBG][OpenList] start() done | running=$running")
     }
 
     fun shutdown(timeoutMs: Long) {
-        if (!running) return
-        // TODO: call Openlistlib.shutdown(timeoutMs.toInt())
-        running = false
-        Log.i(TAG, "OpenList shutdown requested (placeholder), timeout=${timeoutMs}ms")
+        Log.e(TAG, "[SAT-DBG][OpenList] shutdown() entry | timeoutMs=$timeoutMs | running=$running | thread=${Thread.currentThread().name}")
+        if (!running) {
+            Log.e(TAG, "[SAT-DBG][OpenList] shutdown() skipped (not running)")
+            return
+        }
+        openlistlib.shutdown(timeoutMs.toInt())
+        Log.e(TAG, "[SAT-DBG][OpenList] shutdown() native call returned | starting 500ms grace timer")
+        handler.postDelayed({
+            if (running) {
+                Log.e(TAG, "[SAT-DBG][OpenList] shutdown() grace timer expired | force-setting running=false")
+                running = false
+                broadcastStatus(0, false)
+            }
+        }, 500)
     }
 
     fun isRunning(): Boolean = running
 
     fun setAdminPassword(pwd: String) {
-        // TODO: Openlistlib.setAdminPassword(pwd)
-        Log.i(TAG, "setAdminPassword (placeholder), length=${pwd.length}")
+        Log.e(TAG, "[SAT-DBG][OpenList] setAdminPassword() entry | length=${pwd.length} | thread=${Thread.currentThread().name}")
+        openlistlib.setAdminPassword(pwd)
+        Log.e(TAG, "[SAT-DBG][OpenList] setAdminPassword() done")
     }
 
     fun forceDbSync() {
-        // TODO: Openlistlib.forceDBSync()
-        Log.d(TAG, "forceDbSync (placeholder)")
+        Log.e(TAG, "[SAT-DBG][OpenList] forceDbSync() entry | thread=${Thread.currentThread().name}")
+        try {
+            openlistlib.forceDBSync()
+            Log.e(TAG, "[SAT-DBG][OpenList] forceDbSync() done")
+        } catch (e: Exception) {
+            Log.e(TAG, "[SAT-DBG][OpenList] forceDbSync() failed", e)
+        }
     }
 
     fun setDataDir(path: String) {
@@ -72,7 +93,11 @@ object OpenListBridge : OpenListEvent, OpenListLogCallback {
     }
 
     fun broadcastStatus(port: Int, running: Boolean) {
-        val ctx = appContext ?: return
+        Log.e(TAG, "[SAT-DBG][OpenList] broadcastStatus() | port=$port running=$running")
+        val ctx = appContext ?: run {
+            Log.e(TAG, "[SAT-DBG][OpenList] broadcastStatus() skipped (no appContext)")
+            return
+        }
         LocalBroadcastManager.getInstance(ctx).sendBroadcast(
             Intent(OpenListService.BROADCAST_STATUS_CHANGED)
                 .putExtra(OpenListService.EXTRA_PORT, port)
@@ -81,7 +106,7 @@ object OpenListBridge : OpenListEvent, OpenListLogCallback {
     }
 
     override fun onShutdown(type: String) {
-        Log.d(TAG, "onShutdown: $type")
+        Log.e(TAG, "[SAT-DBG][OpenList] onShutdown() | type=$type | thread=${Thread.currentThread().name}")
         running = false
         broadcastStatus(0, false)
         val ctx = appContext ?: return
@@ -91,12 +116,12 @@ object OpenListBridge : OpenListEvent, OpenListLogCallback {
     }
 
     override fun onStartError(type: String, msg: String) {
-        Log.e(TAG, "onStartError: $type, $msg")
+        Log.e(TAG, "[SAT-DBG][OpenList] onStartError() | type=$type msg=$msg | thread=${Thread.currentThread().name}")
         running = false
     }
 
     override fun onProcessExit(code: Long) {
-        Log.w(TAG, "onProcessExit: $code")
+        Log.e(TAG, "[SAT-DBG][OpenList] onProcessExit() | code=$code | thread=${Thread.currentThread().name}")
         running = false
         val ctx = appContext ?: return
         LocalBroadcastManager.getInstance(ctx).sendBroadcast(
@@ -105,7 +130,7 @@ object OpenListBridge : OpenListEvent, OpenListLogCallback {
     }
 
     override fun onLog(level: Short, time: Long, log: String) {
-        Log.i(TAG, "[$level @ $time] $log")
+        Log.e(TAG, "[SAT-DBG][OpenList] onLog() | level=$level time=$time log=$log")
         val ctx = appContext ?: return
         LocalBroadcastManager.getInstance(ctx).sendBroadcast(
             Intent(OpenListService.BROADCAST_LOG)

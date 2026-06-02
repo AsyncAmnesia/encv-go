@@ -11,6 +11,9 @@ export interface EncvEvents {
   'server:connection-error': { error: string }
   'log:message': { level: string; message: string }
   'ws:message': { type: string; data: any }
+  'openlist:status': { running: boolean; port: number; pid: number; dataSizeBytes: number }
+  'openlist:log': { level: number; message: string; timestamp: number }
+  'openlist:error': { type: string; message: string; code?: number }
 }
 
 type EventKey = keyof EncvEvents

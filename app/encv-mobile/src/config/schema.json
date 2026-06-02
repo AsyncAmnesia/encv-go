@@ -109,6 +109,30 @@
               "type": "object",
               "required": ["enabled", "suffix"],
               "description": "--- Alist-Encrypt 配置 ---\nAlist 文件加密格式的客户端检测与流式解密配置。"
+            },
+            "openlist": {
+              "type": "object",
+              "description": "OpenList 本地文件管理服务配置",
+              "properties": {
+                "port": {
+                  "type": "integer",
+                  "description": "OpenList HTTP 服务端口",
+                  "default": 5244,
+                  "minimum": 1024,
+                  "maximum": 65535
+                },
+                "data_dir": {
+                  "type": "string",
+                  "description": "数据存储目录，留空使用默认路径",
+                  "default": ""
+                },
+                "admin_password": {
+                  "type": "string",
+                  "description": "管理员密码（留空不启用密码保护）",
+                  "default": ""
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false,

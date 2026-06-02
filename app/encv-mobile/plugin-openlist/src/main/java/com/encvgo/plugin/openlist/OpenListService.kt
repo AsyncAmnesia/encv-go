@@ -71,12 +71,15 @@ class OpenListService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
+        Log.e(TAG, "[SAT-DBG][OpenList] onCreate() | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         super.onCreate()
         instance = this
         createNotificationChannel()
+        Log.e(TAG, "[SAT-DBG][OpenList] onCreate() done | notification channel created")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.e(TAG, "[SAT-DBG][OpenList] onStartCommand() | action=${intent?.action} flags=$flags startId=$startId | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         startForeground(FOREGROUND_ID, buildNotification("OpenList 启动中"))
         acquireWakeLock()
         if (started.compareAndSet(false, true)) {
@@ -89,38 +92,67 @@ class OpenListService : Service() {
     }
 
     override fun onDestroy() {
+        Log.e(TAG, "[SAT-DBG][OpenList] onDestroy() | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         instance = null
         handler.removeCallbacks(dbSyncRunnable)
         releaseWakeLock()
         worker.shutdownNow()
         super.onDestroy()
+        Log.e(TAG, "[SAT-DBG][OpenList] onDestroy() done")
     }
 
     private fun startupSequence() {
+        Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() begin | thread=${Thread.currentThread().name}")
+
+        // Step 1: load config
+        val t0 = System.currentTimeMillis()
+        Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step1: loading config...")
         val cfg = OpenListConfig.load(this)
         val port = cfg.port
         currentPort = port
+        Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step1 done: config loaded | port=$port dataDir=${cfg.dataDir} | elapsed=${System.currentTimeMillis() - t0}ms")
 
+        // Step 2: port check
+        val t1 = System.currentTimeMillis()
+        Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step2: checking port $port...")
         if (isPortOccupied(port)) {
             Log.w(TAG, "Port $port already in use, broadcasting PORT_CONFLICT")
             LocalBroadcastManager.getInstance(this).sendBroadcast(
                 Intent(BROADCAST_PORT_CONFLICT).putExtra(EXTRA_CONFLICT_PORT, port)
             )
+            Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step2 failed: PORT_CONFLICT at $port | elapsed=${System.currentTimeMillis() - t1}ms")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return
         }
+        Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step2 done: port $port is free | elapsed=${System.currentTimeMillis() - t1}ms")
 
+        // Step 3: apply config to bridge
+        val t2 = System.currentTimeMillis()
+        Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step3: applying config to bridge...")
         try {
             cfg.applyToBridge(OpenListBridge)
+            Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step3 done: config applied | elapsed=${System.currentTimeMillis() - t2}ms")
+
+            // Step 4: bridge init
+            val t3 = System.currentTimeMillis()
+            Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step4: initializing bridge...")
             OpenListBridge.init(this)
+            Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step4 done: bridge initialized | elapsed=${System.currentTimeMillis() - t3}ms")
+
+            // Step 5: bridge start
+            val t4 = System.currentTimeMillis()
+            Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step5: starting bridge...")
             OpenListBridge.start()
+            Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step5 done: bridge started | elapsed=${System.currentTimeMillis() - t4}ms")
+
             isRunning = true
             publishStatus(port, true)
             updateNotification("OpenList 运行中 :$port")
             handler.postDelayed(dbSyncRunnable, DB_SYNC_INTERVAL_MS)
+            Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() complete | total=${System.currentTimeMillis() - t0}ms")
         } catch (e: Exception) {
-            Log.e(TAG, "OpenList startup failed", e)
+            Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() FAILED | elapsed=${System.currentTimeMillis() - t0}ms", e)
             publishStatus(0, false)
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
@@ -128,23 +160,31 @@ class OpenListService : Service() {
     }
 
     private fun shutdownSequence() {
+        Log.e(TAG, "[SAT-DBG][OpenList] shutdownSequence() begin | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         handler.removeCallbacks(dbSyncRunnable)
         try {
+            Log.e(TAG, "[SAT-DBG][OpenList] shutdownSequence() calling bridge shutdown...")
             OpenListBridge.shutdown(5_000L)
+            Log.e(TAG, "[SAT-DBG][OpenList] shutdownSequence() bridge shutdown returned")
         } catch (e: Exception) {
             Log.w(TAG, "OpenList shutdown error", e)
+            Log.e(TAG, "[SAT-DBG][OpenList] shutdownSequence() bridge shutdown error", e)
         }
         isRunning = false
         currentPort = 0
         publishStatus(0, false)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+        Log.e(TAG, "[SAT-DBG][OpenList] shutdownSequence() done")
     }
 
     private fun isPortOccupied(port: Int): Boolean {
+        val t0 = System.currentTimeMillis()
         return try {
             Socket().use { socket ->
                 socket.connect(InetSocketAddress("127.0.0.1", port), PORT_CONFLICT_TIMEOUT_MS)
+                val elapsed = System.currentTimeMillis() - t0
+                Log.e(TAG, "[SAT-DBG][OpenList] isPortOccupied() true | port=$port | connectElapsed=${elapsed}ms")
                 true
             }
         } catch (_: Exception) {

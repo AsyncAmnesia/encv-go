@@ -319,6 +319,30 @@ export async function getPluginFullState(pluginId: string): Promise<PluginFullSt
   }
 }
 
+export interface OpenListFullState {
+  running: boolean
+  port: number
+  pid: number
+  dataSizeBytes: number
+  lastStartError: string | null
+}
+
+export async function getOpenListFullState(): Promise<OpenListFullState> {
+  try {
+    const result = await GoProcess.getPluginFullState({ pluginId: 'com.encvgo.plugin.openlist' })
+    return {
+      running: result.status === 'running',
+      port: (result as any).port ?? 0,
+      pid: (result as any).pid ?? 0,
+      dataSizeBytes: (result as any).dataSizeBytes ?? 0,
+      lastStartError: (result as any).lastStartError ?? null,
+    }
+  } catch (e) {
+    console.error('[SAT-DBG][OpenList][Bridge] getOpenListFullState failed:', e)
+    return { running: false, port: 0, pid: 0, dataSizeBytes: 0, lastStartError: String(e) }
+  }
+}
+
 export async function ensurePluginLoaded(pluginId: string): Promise<boolean> {
   try {
     const result = await GoProcess.ensurePluginLoaded({ pluginId })
