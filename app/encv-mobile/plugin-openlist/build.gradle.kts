@@ -1,6 +1,7 @@
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
     alias(libs.plugins.combolite.aar2apk)
 }
 
@@ -9,7 +10,6 @@ android {
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "com.encvgo.plugin.openlist"
         minSdk = libs.versions.minSdk.get().toInt()
     }
 
@@ -23,6 +23,10 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
+    }
+
+    buildFeatures {
+        compose = true
     }
 }
 
@@ -38,5 +42,8 @@ dependencies {
     implementation(files("libs/openlist.aar"))
     implementation("androidx.core:core-ktx")
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
-    compileOnly("androidx.compose.runtime:runtime")
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.runtime)
+    implementation(libs.compose.material3)
 }
