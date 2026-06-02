@@ -131,6 +131,29 @@ import sirv from 'sirv'  // 顶部同步导入
 
 ---
 
+## Phase 2.5 — Clone Hi-Sillot-OpenList-Frontend (dev 模式前置)
+
+> **目标**：dev 模式从"下载 release tarball"升级到"用本地构建的 dist"，支持真实热更新。
+
+### 2.5.1 克隆 frontend 源
+
+- [x] `cd /workspace/app/openlist`
+- [x] `git clone --depth 1 https://github.com/Hi-Sillot/OpenList-Frontend.git Hi-Sillot-OpenList-Frontend`
+- [x] `ls Hi-Sillot-OpenList-Frontend/` 看到 `package.json` / `src/` / `build.sh` / `README_Sillot.md`
+- [x] `cat Hi-Sillot-OpenList-Frontend/package.json | grep version` = `4.1.8`
+- [x] `cat Hi-Sillot-OpenList-Frontend/README_Sillot.md` 看到 i18n 说明
+
+### 2.5.2 dev-openlist.sh 优先用本地 dist
+
+- [x] [dev-openlist.sh:106-118](file:///workspace/app/encv-mobile/scripts/dev-openlist.sh#L106-L118) 检测 `Hi-Sillot-OpenList-Frontend/dist/index.html`
+- [x] 存在时 cp -a 到 public/dist/ + 写 VERSION 标记
+- [x] 不存在时 fallback 到 GitHub release tarball 下载
+- [x] `bash -n scripts/dev-openlist.sh` 语法 OK
+
+**Phase 2.5 完成判据**：2.5.1 + 2.5.2 全勾 ✅
+
+---
+
 ## Phase 3 — 沙箱 dev 启动脚本 (C4)
 
 > **目标**：让用户一键启 OpenList(5244)。不依赖 fork 改动（Hi-Sillot 已有 cobra + `conf.Conf.DistDir`）。
@@ -220,7 +243,49 @@ $ cat /tmp/openlist-data3/config.json | grep dist_dir
 
 ## Phase 4 — build script + plugin runtime (C5)
 
+> **目标**：production 路径下，frontend dist 从 build script 复制到 `plugin-openlist/src/main/assets/dist/`，由 `OpenListBridge.init()` 首次启动时解压到 `filesDir/openlist/dist/`，并写入 `config.json` 让 OpenList runtime 走 `os.DirFS`。
+>
+> **状态**：✅ **代码完成** / ⏳ **设备验证需 Android 设备**（沙箱无 Android SDK）
+
 ### 4.1 build-openlist-aar.sh
+
+- [x] 脚本末尾新增 "Copy frontend dist to plugin assets (production path)" 块
+- [x] `PLUGIN_ASSETS_DIR="${ENCV_GO_ROOT}/app/encv-mobile/plugin-openlist/src/main/assets"`
+- [x] 检测 `${DIST_DIR}/index.html` 存在
+- [x] `rm -rf "${PLUGIN_DIST}" && mkdir -p` + `cp -a "${DIST_DIR}/." "${PLUGIN_DIST}/"`
+- [x] 缺失 dist 时打印 warning 而不是失败（不阻塞 gomobile bind）
+- [x] `bash -n scripts/build-openlist-aar.sh` 语法 OK
+
+### 4.2 OpenListBridge.kt (C5 changes)
+
+- [x] 新增常量 `ASSETS_PREFS = "openlist_assets"` + `ASSETS_KEY_VERSION = "extracted_version"`
+- [x] 新增 `ensureAssetsExtracted(context)` 方法（在 `init()` 第一步调）
+- [x] 逻辑：读 `assets/dist/VERSION` → 比对 SharedPreferences → 不一致则递归 copy
+- [x] 递归 copy 函数 `copyAssetDir(context, source, target)`：处理嵌套子目录
+- [x] `writeRuntimeConfig(dataDir, distDir, prefs)`：用 `org.json.JSONObject` 写 dist_dir，**保留其他字段**
+- [x] `init()` 流程：`ensureAssetsExtracted` → `SetConfigData` → `Init`（已实现 idempotent 锁）
+
+### 4.3 runtime 数据布局
+
+- `filesDir/openlist/dist/` ← 拷贝自 APK `assets/dist/`
+- `filesDir/openlist/data/config.json` ← bridge 写，含 `dist_dir` 绝对路径
+- `filesDir/openlist/data/data.db` ← OpenList SQLite（自动创建）
+
+### 4.4 沙箱内可验证项
+
+- [x] `bash -n scripts/build-openlist-aar.sh` 语法 OK
+- [x] OpenList 0.4+ 已经在用 `os.DirFS(conf.Conf.DistDir)`，无需 fork 改 Go 代码
+- [x] 复用 dev-openlist.sh 验证了 `dist_dir` + 绝对路径正确（F2 修复路径）
+
+### 4.5 需设备验证（沙箱无 Android SDK）
+
+- [ ] Android 真机/模拟器跑 plugin-openlist → 启动后 `filesDir/openlist/dist/` 出现
+- [ ] `config.json` 包含 `dist_dir` 绝对路径
+- [ ] 浏览器访问 OpenList(5244) 看到 dist 的内容（来自 filesDir）
+- [ ] 第二次启动跳过 extraction（VERSION 已记录）
+- [ ] 修改 dist 后用 `adb push` 覆盖 → 重启 → 自动重新提取
+
+**Phase 4 完成判据**：4.1-4.4 全勾 ✅ / 4.5 待设备验证 ⏳
 
 - [ ] `grep -A 5 "P4" scripts/build-openlist-aar.sh` 看到 dist 复制块
 - [ ] `DEST` 路径：`app/encv-mobile/plugin-openlist/src/main/assets/dist`
@@ -339,6 +404,8 @@ $ cat /tmp/openlist-data3/config.json | grep dist_dir
 |-------|------|----------|------------|------|
 | P2 | F1 | sirv SPA fallback 把所有 asset 404 错误地返回 index.html（v1 测试 6/6 假阳性） | strip /openlist-ui prefix + 同步 import sirv | ✅ 已修 |
 | P3 | F2 | dev-openlist.sh 写 config 到 fork cwd 但 OpenList 从 ${DATA_DIR}/config.json 读 | 改写绝对路径到 data dir | ✅ 已修 |
+| P2.5 | F3 | Hi-Sillot-OpenList-Frontend 此前未克隆，dev 模式只能用下载的 release dist | 补克隆 + dev-openlist.sh 优先用本地 dist | ✅ 已修 |
+| P2 | F4 | 测试用 `/api/ping` 假象，OpenList 没有此 endpoint | 改用 `/api/public/settings` | ✅ 已修 |
 
 每发现一个失败 → 写 `failures/failure-N.md` → 修 → 在此表登记。
 

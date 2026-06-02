@@ -102,8 +102,22 @@ mkdir -p "${DATA_DIR}"
 log "Data dir: ${DATA_DIR}"
 
 # ---- Step 3: 确保 public/dist 存在（dev 模式的核心资产） ----
+# 优先使用本地构建的 dist（来自 Hi-Sillot-OpenList-Frontend）→ 真正的热更新工作流
+# fallback：下载 OpenListTeam/OpenList-Frontend release tarball
 NEED_DOWNLOAD=0
-if [[ ! -f "public/dist/index.html" ]]; then
+LOCAL_FRONTEND_DIR="${REPO_ROOT}/app/openlist/Hi-Sillot-OpenList-Frontend"
+
+if [[ -d "${LOCAL_FRONTEND_DIR}/dist" && -f "${LOCAL_FRONTEND_DIR}/dist/index.html" ]]; then
+  log "使用本地构建的 dist（来自 Hi-Sillot-OpenList-Frontend）"
+  log "  source: ${LOCAL_FRONTEND_DIR}/dist"
+  rm -rf public/dist
+  mkdir -p public/dist
+  cp -a "${LOCAL_FRONTEND_DIR}/dist/." public/dist/
+  # 用 Hi-Sillot-OpenList-Frontend 的 package.json 版本作为 VERSION 标记
+  LOCAL_VERSION="v$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]+"' "${LOCAL_FRONTEND_DIR}/package.json" | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+  echo "${LOCAL_VERSION:-local}-encv" > public/dist/VERSION
+  log "  done: $(du -sh public/dist/ | cut -f1) ($(cat public/dist/VERSION))"
+elif [[ ! -f "public/dist/index.html" ]]; then
   log "public/dist/ 不存在，准备下载 OpenList-Frontend ${WEB_VERSION} ..."
   NEED_DOWNLOAD=1
 elif [[ "${OPENLIST_VERSION}" != "4.1.8" ]] && [[ -n "${OPENLIST_VERSION:-}" ]]; then
@@ -114,6 +128,7 @@ fi
 if [[ "${NEED_DOWNLOAD}" -eq 1 ]]; then
   if ! command -v curl >/dev/null 2>&1; then
     err "curl 未找到，无法下载 frontend dist"
+    err "提示：也可以手动从 ${LOCAL_FRONTEND_DIR} 跑 'bun run build' 后重跑"
     exit 1
   fi
   if ! command -v tar >/dev/null 2>&1; then

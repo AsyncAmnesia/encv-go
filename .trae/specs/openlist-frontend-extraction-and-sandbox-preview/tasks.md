@@ -4,15 +4,16 @@
 
 ## 阶段总览
 
-| Phase | 目标 | 关键命令 | 预期时长 |
-|-------|------|----------|----------|
-| **P0** | 修 gomobile Kotlin 编译错误 | `./gradlew :plugin-openlist:compileReleaseKotlin` | 已完成 |
-| **P1** | 写 spec + tasks + checklist | 本文件 | 已完成 |
-| **P2** | Vite sub-route middleware (C3) — 沙箱可独立验证 | `pnpm install sirv && ionic serve` | 1-2h |
-| **P3** | 沙箱 dev 启动脚本 (C4) | `bash scripts/dev-openlist.sh` | 30min |
-| **P4** | build script + plugin runtime (C5) | `bash scripts/build-openlist-aar.sh` + `OpenListBridge.kt` | 1-2h |
-| **P5** | 端到端沙箱验证 | curl + 浏览器手动 | 1-2h |
-| **P6** | Capacitor live-reload 适配（可选） | `npx cap run android --livereload` | 2-3h |
+| Phase | 目标 | 关键命令 | 预期时长 | 状态 |
+|-------|------|----------|----------|------|
+| **P0** | 修 gomobile Kotlin 编译错误 | `./gradlew :plugin-openlist:compileReleaseKotlin` | 已完成 | ✅ |
+| **P1** | 写 spec + tasks + checklist | 本文件 | 已完成 | ✅ |
+| **P2** | Vite sub-route middleware (C3) — 沙箱可独立验证 | `pnpm install sirv && ionic serve` | 1-2h | ✅ |
+| **P2.5** | clone Hi-Sillot-OpenList-Frontend + dev-openlist.sh 优先用本地 dist | `git clone https://github.com/Hi-Sillot/OpenList-Frontend.git` | 10min | ✅ |
+| **P3** | 沙箱 dev 启动脚本 (C4) | `bash scripts/dev-openlist.sh` | 30min | ✅ |
+| **P4** | build script + plugin runtime (C5) | `bash scripts/build-openlist-aar.sh` + `OpenListBridge.kt` | 1-2h | ✅ 代码完成 / ⏳ 设备验证 |
+| **P5** | 端到端沙箱验证（浏览器手动） | curl + 浏览器手动 | 1-2h | ⏳ 沙箱无浏览器，跳过 |
+| **P6** | Capacitor live-reload 适配（可选） | `npx cap run android --livereload` | 2-3h | ⏳ P5 后 |
 
 > **沙箱发现后的简化**：原 P3「fork PR」取消（Hi-Sillot 已有 `conf.Conf.DistDir` 等全部能力），原 P4 拆为 P3 (C4 dev 脚本) + P4 (C5 prod 路径)。spec 整体复杂度从「fork + encv-mobile 双侧」简化为「encv-mobile 仓库内单侧」。
 

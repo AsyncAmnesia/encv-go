@@ -45,9 +45,13 @@ function openlistUiProxy(): Plugin {
       }
 
       // 1. /openlist-ui/api/* → upstream /api/*   (registered FIRST so it wins over static)
+      //    Vite's middleware DOES strip the prefix → req.url = /ping, not /openlist-ui/api/ping
       server.middlewares.use('/openlist-ui/api', async (req, res, next) => {
         try {
-          const target = `${OPENLIST_UPSTREAM}/api${(req.url || '/').replace(/^\//, '/')}`
+          // req.url inside this middleware is the path AFTER /openlist-ui/api
+          // e.g. /openlist-ui/api/ping → req.url = /ping → upstream = /api/ping
+          const path = req.url || '/'
+          const target = `${OPENLIST_UPSTREAM}/api${path.startsWith('/') ? path : '/' + path}`
           const headers: Record<string, string> = {}
           for (const [k, v] of Object.entries(req.headers)) {
             if (typeof v === 'string') headers[k] = v

@@ -43,9 +43,20 @@ check "J1 content-type" "$HEAD" "Content-Type: text/html"
 BODY=$(curl -s "${VITE_URL}/openlist-ui/" | head -3)
 check "J1 body is OpenList HTML" "$BODY" "<!doctype html>"
 
-# J2: /openlist-ui/api/ping - expect proxy to forward (502 since no upstream in sandbox)
-HEAD=$(curl -sI "${VITE_URL}/openlist-ui/api/ping")
-check "J2 proxy responds" "$HEAD" "HTTP/1.1 (200|502|504)"
+# J2: /openlist-ui/api/public/settings - real OpenList endpoint, returns JSON
+# (Vite's prefix middleware strips /openlist-ui/api → req.url = /public/settings → upstream = /api/public/settings)
+HEAD=$(curl -sI "${VITE_URL}/openlist-ui/api/public/settings")
+check "J2 status" "$HEAD" "HTTP/1.1 200"
+check "J2 content-type" "$HEAD" "Content-Type: application/json"
+# Also verify body is JSON, not HTML
+BODY=$(curl -s "${VITE_URL}/openlist-ui/api/public/settings" | head -1)
+if [[ "$BODY" == "{"* ]]; then
+  echo "[PASS] J2 GET returns JSON"
+  PASS=$((PASS+1))
+else
+  echo "[FAIL] J2 GET body is not JSON: $BODY"
+  FAIL=$((FAIL+1))
+fi
 
 # J3: SPA fallback for unknown paths - returns index.html
 BODY=$(curl -s "${VITE_URL}/openlist-ui/some/random/path" | head -3)
