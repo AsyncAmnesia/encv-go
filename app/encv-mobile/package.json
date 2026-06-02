@@ -16,6 +16,7 @@
     "generate:mock": "tsx scripts/generate-mock-files.ts"
   },
   "dependencies": {
+    "@ajuarezso/capacitor-high-refresh-rate": "^0.6.0",
     "@capacitor/android": "^8.3.4",
     "@capacitor/core": "^8.3.4",
     "@capacitor/screen-orientation": "^8.0.1",

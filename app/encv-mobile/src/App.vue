@@ -31,6 +31,7 @@ import { createAlistEncryptFeature } from '@/features/alist-encrypt'
 import { checkServiceGuard } from '@/api/encv'
 import type { ServiceGuardResult } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
+import { initHighRefreshRate } from '@/composables/useHighRefreshRate'
 
 const { initTheme, detectP3Support } = useTheme()
 const { t } = useI18n()
@@ -114,6 +115,7 @@ onMounted(async () => {
   initTheme()
   detectP3Support()
   autoInitVConsole()
+  initHighRefreshRate()
   registerFileFeature(createAlistEncryptFeature())
 
   if (!isNative()) {
