@@ -328,6 +328,9 @@ ion-tab-button.tab-selected ion-icon {
 ion-list {
   --background: transparent;
   background: transparent;
+  --border-color: transparent;
+  border: none;
+  padding: 0;
 }
 
 ion-item {
@@ -335,11 +338,14 @@ ion-item {
   background: rgba(var(--ion-background-color-rgb, 255, 255, 255), 0.55);
   backdrop-filter: blur(var(--encv-bg-blur, 8px));
   -webkit-backdrop-filter: blur(var(--encv-bg-blur, 8px));
+  --border-color: rgba(var(--ion-text-color-rgb), 0.06);
+  --inner-border-width: 0;
 }
 
 body.dark ion-item {
   --background: rgba(30, 30, 30, 0.6);
   background: rgba(30, 30, 30, 0.6);
+  --border-color: rgba(255, 255, 255, 0.04);
 }
 
 ion-list-header {
@@ -359,6 +365,21 @@ body.dark ion-list-header {
 
 body.dark .home-card {
   background: rgba(30, 30, 30, 0.65) !important;
+}
+
+/* 输入框清空按钮：圆边框 + 半透明背景 */
+ion-input .input-clear-icon {
+  background: rgba(var(--ion-text-color-rgb), 0.08);
+  border: 1.5px solid rgba(var(--ion-text-color-rgb), 0.15);
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  font-size: 12px;
+  color: var(--ion-color-medium);
+}
+ion-input .input-clear-icon:hover {
+  background: rgba(var(--ion-text-color-rgb), 0.14);
+  border-color: rgba(var(--ion-text-color-rgb), 0.25);
 }
 
 .player-card {
