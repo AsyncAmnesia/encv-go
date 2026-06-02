@@ -167,7 +167,7 @@ git clone --depth 1 --branch "${BRANCH}" "${CLONE_URL}" "${SRC_DIR}"
 GOMOD="${SRC_DIR}/go.mod"
 [[ -f "${GOMOD}" ]] || die "go.mod not found in ${SRC_DIR}"
 
-log "== Patch go.mod replace directive =="
+log "== Patch go.mod (replace + gomobile mobile require) =="
 if grep -qE '^replace[[:space:]]+github\.com/Soltus/encv-go[[:space:]]+=>' "${GOMOD}"; then
     sed -i.bak -E "s|^replace[[:space:]]+github\\.com/Soltus/encv-go[[:space:]]+=>[[:space:]]+[^[:space:]]+|replace github.com/Soltus/encv-go => ${ENCV_GO_ROOT}|" "${GOMOD}"
     grep -E '^replace[[:space:]]+github\.com/Soltus/encv-go' "${GOMOD}" || die "go.mod replace patch failed"
@@ -176,6 +176,35 @@ else
     printf '\nreplace github.com/Soltus/encv-go => %s\n' "${ENCV_GO_ROOT}" >> "${GOMOD}"
 fi
 rm -f "${GOMOD}.bak"
+
+# Patch 2: gomobile bind's pre-flight `build.Import("golang.org/x/mobile", ...)`
+# walks the module's *package graph* and fails when the package is only
+# declared via a Go 1.24 `tool` directive. The `tool` directive only
+# registers the gobind binary; it does NOT make golang.org/x/mobile
+# importable from module code, so the bind check still misses it.
+#
+# The gomobile error message suggests `go get -tool`, but that adds a
+# `tool` directive — which is precisely the line the fork already has and
+# which the bind check ignores. The actual fix is a regular `require`
+# directive (go.dev/issue/77183; cmd/gomobile/bind.go in golang.org/x/mobile).
+#
+# This patch is idempotent: if the fork (or a future version of it) already
+# ships a `require golang.org/x/mobile v...` line, the `go get` is a no-op.
+if grep -qE 'golang\.org/x/mobile[[:space:]]+v[0-9]' "${GOMOD}"; then
+    log "  (require golang.org/x/mobile already present in go.mod, no patch needed)"
+else
+    # Pin to the same pseudo-version gomobile itself downloads, so the
+    # module graph matches the gobind binary we install a few lines below.
+    PINNED_MOBILE_VERSION="v0.0.0-20260529142300-ecb4cd65260a"
+    log "  adding require golang.org/x/mobile ${PINNED_MOBILE_VERSION}"
+    log "  reason: gomobile bind needs the package in the module graph, not just the tool directive"
+    ( cd "${SRC_DIR}" && go get "golang.org/x/mobile@${PINNED_MOBILE_VERSION}" ) \
+        || die "go get golang.org/x/mobile@${PINNED_MOBILE_VERSION} failed"
+    log "  current golang.org/x/mobile entries in go.mod:"
+    grep -E 'golang\.org/x/mobile' "${GOMOD}" | while IFS= read -r line; do
+        log "    ${line}"
+    done
+fi
 
 log "== Resolve frontend version =="
 DIST_DIR="${SRC_DIR}/public/dist"
@@ -305,8 +334,12 @@ else
     die "Hi-Sillot fork is missing openlistlib/ (see spec §一) and no fallback exists"
 fi
 
-# Sanity-check: fork must declare tool directive for gomobile (commit e3cd5b3+).
-# See go.dev/issue/77183.
+# Sanity-check: fork must declare the gomobile tool directive (commit e3cd5b3+).
+# This is what makes the `gobind` binary invocable from `go generate` and similar
+# flows. The actual gomobile bind *package* dependency is added by the earlier
+# `Patch 2` block (a regular `require golang.org/x/mobile ...` directive),
+# because the bind pre-flight only consults the package graph, not the tool
+# graph. See go.dev/issue/77183.
 if ! grep -qE '^tool[[:space:]]+golang\.org/x/mobile/cmd/gobind' go.mod 2>/dev/null; then
     die "fork go.mod missing 'tool golang.org/x/mobile/cmd/gobind' directive (see go.dev/issue/77183)"
 fi
