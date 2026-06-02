@@ -144,7 +144,24 @@ rm -rf "${SRC_DIR}"
 mkdir -p "${WORK_DIR}"
 
 log "== Clone Hi-Sillot fork (--depth 1) =="
-git clone --depth 1 --branch "${BRANCH}" "${FORK}" "${SRC_DIR}"
+# Build an auth-aware git clone when GITHUB_TOKEN is exported in the sandbox.
+# Sandboxed shells do NOT auto-route env vars as git credentials, so a bare
+# `git clone` would fail with "could not read Username for 'https://github.com':
+# terminal prompts disabled". The reliable fix is to inject the token into the
+# URL (`x-access-token` triggers HTTP Basic Auth, which GitHub PATs accept).
+# `git -c http.extraHeader=Authorization: Bearer ...` works for clone in some
+# Git versions but is rejected as "invalid credentials" on push, so we use the
+# URL-injection form uniformly. See app/openlist/README.md §10 for the full
+# rationale and the same pattern applied manually to `git push`.
+CLONE_URL="${FORK}"
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    CLONE_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${FORK#https://github.com/}"
+    TOKEN_PREFIX="${GITHUB_TOKEN:0:4}"
+    log "  [INFO] using GITHUB_TOKEN for fork auth (${TOKEN_PREFIX}****)"
+else
+    log "  [WARN] GITHUB_TOKEN not set, falling back to anonymous clone (will fail on private repos)"
+fi
+git clone --depth 1 --branch "${BRANCH}" "${CLONE_URL}" "${SRC_DIR}"
 
 GOMOD="${SRC_DIR}/go.mod"
 [[ -f "${GOMOD}" ]] || die "go.mod not found in ${SRC_DIR}"

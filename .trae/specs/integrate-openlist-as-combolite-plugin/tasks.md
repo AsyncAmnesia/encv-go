@@ -14,11 +14,11 @@
 
 ### 0.1·B Hi-Sillot fork 维护 dev 分支 + frontend-pinned.txt + i18n-overlay/
 
-- [ ] 0.1·B.1 在 Hi-Sillot/OpenList fork 创建 `dev` 分支（用户操作，token 已就位）
-- [ ] 0.1·B.2 在 fork `dev` 分支根目录新建 `frontend-pinned.txt`，写入当前匹配的 OpenList-Frontend 版本（如 `v4.0.0`）
-- [ ] 0.1·B.3 （可选）创建 `public/dist/i18n-overlay/zh-CN/translation.json` 含 ENCV 专用 key 翻译
-- [ ] 0.1·B.4 （可选）创建 `public/dist/i18n-overlay/en/translation.json`
-- [ ] 0.1·B.5 在 fork `dev` 分支提交 + 推送
+- [x] 0.1·B.1 在 Hi-Sillot/OpenList fork 创建 `dev` 分支（用户操作，token 已就位）
+- [x] 0.1·B.2 在 fork `dev` 分支根目录新建 `frontend-pinned.txt`，写入当前匹配的 OpenList-Frontend 版本（如 `v4.0.0`）
+- [x] 0.1·B.3 （可选）创建 `public/dist/i18n-overlay/zh-CN/translation.json` 含 ENCV 专用 key 翻译
+- [x] 0.1·B.4 （可选）创建 `public/dist/i18n-overlay/en/translation.json`
+- [x] 0.1·B.5 在 fork `dev` 分支提交 + 推送（URL 注入：`https://x-access-token:${GITHUB_TOKEN}@github.com/...`）
 
 ### 0.1·C encv-mobile 侧 fork 配置
 

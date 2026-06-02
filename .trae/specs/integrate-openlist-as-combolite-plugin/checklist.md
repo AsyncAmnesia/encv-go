@@ -128,10 +128,11 @@
 
 ### Hi-Sillot fork 侧（**用户操作**，本地沙箱无法代为推送）
 
-- [ ] `dev` 分支创建并推送（用户操作，token 已就位）
-- [ ] `frontend-pinned.txt` 创建在 fork 根目录（`v4.0.0`）
-- [ ] （可选）`public/dist/i18n-overlay/zh-CN/translation.json` 含 ENCV 翻译
-- [ ] （可选）`public/dist/i18n-overlay/en/translation.json`
+- [x] `dev` 分支创建并推送（`1928d72` on `refs/heads/dev`）
+- [x] `frontend-pinned.txt` 创建在 fork 根目录（`v4.0.0`）
+- [x] （可选）创建 `public/dist/i18n-overlay/zh-CN/translation.json` 含 ENCV 翻译
+- [x] （可选）创建 `public/dist/i18n-overlay/en/translation.json`
+- [x] `openlistlib/` 5 个文件随 dev 分支一同提交推送
 
 ### 验证
 
@@ -156,6 +157,7 @@
 - [x] `multi_openlist.go` 顶部注释说明 `BuiltIn: true` 含义
 - [x] `scripts/build-openlist-aar.sh` 顶部注释：环境要求 + 完整入参
 - [x] `scripts/README.md` 描述使用
+- [x] `app/openlist/README.md` 改写为 12 章节新会话自助手册（含 fork 关系图、gomobile bind 架构、frontend pin、§10 沙箱 GITHUB_TOKEN 推送 4 方案、10 条故障表）
 
 ## 验证最终检查
 

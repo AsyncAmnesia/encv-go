@@ -2,6 +2,8 @@
 
 ComboLite 插件：在 Android 设备上以本地服务形式运行 OpenList，端口 5244，数据目录位于 App 沙箱内。
 
+> **本模块属于 OpenList fork 集成的客户端；fork 侧工作流（clone / push / frontend pin / i18n overlay / 沙箱 GITHUB_TOKEN 推送）见 [`app/openlist/README.md`](../../openlist/README.md)。**
+
 ## 模块结构
 
 ```

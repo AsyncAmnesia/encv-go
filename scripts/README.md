@@ -174,3 +174,15 @@ fork 没提供 `i18n-overlay/` 目录时，脚本直接跳过该步骤，原 fro
 - Reference fork: [Hi-Sillot/OpenList](https://github.com/Hi-Sillot/OpenList)
 - 参考实现脚本（K-Sillot 仓库，仅参考）：
   - `init_openlist.sh` / `init_web.sh` / `init_gomobile.sh` / `gobind.sh`
+
+## 沙箱 GITHUB_TOKEN 推送工作流
+
+`build-openlist-aar.sh` 在 `git clone` 阶段会**自动**检测 `GITHUB_TOKEN` 是否在 env 中；若已 export，则把 fork URL 改写为 `https://x-access-token:${GITHUB_TOKEN}@github.com/...` 形式（URL 注入走 HTTP Basic Auth，GitHub 接受 PAT 作为 password）。**不**用 `git -c http.extraHeader=Authorization: Bearer ...`——clone 可用但 push 时 GitHub 返回 `invalid credentials`。
+
+手动 push 时的推荐命令：
+
+```bash
+git push https://x-access-token:${GITHUB_TOKEN}@github.com/Hi-Sillot/OpenList.git dev
+```
+
+完整 4 方案对比 + 失败/成功命令块 + shell history 防护见 [app/openlist/README.md §10](../app/openlist/README.md#10-沙箱-github_token-推送工作流)。
