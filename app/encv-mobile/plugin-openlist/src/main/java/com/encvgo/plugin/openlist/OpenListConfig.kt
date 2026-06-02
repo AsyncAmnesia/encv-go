@@ -46,11 +46,23 @@ data class OpenListConfig(
         }
     }
 
+    /**
+     * Push the local config to OpenListBridge so it can be applied during init().
+     *
+     * IMPORTANT: do NOT call bridge.setAdminPassword() here — that delegates to
+     * Openlistlib.SetAdminPassword which queries the user DB; the DB isn't
+     * initialized until Openlistlib.Init() (and even then, not until Start()
+     * triggers bootstrap). Admin password reset must be deferred to AFTER
+     * the server has fully started (see OpenListService.startupSequence step6).
+     *
+     * The actual port that openlistlib binds to is read from the on-disk
+     * conf.Conf.Scheme.HttpPort at Start() time; this Kotlin-side port is
+     * only the snapshot the UI/StatusProvider report.
+     */
     fun applyToBridge(bridge: OpenListBridge) {
+        Log.e(TAG, "[SAT-DBG][OpenList] applyToBridge() | port=$port dataDir=$dataDir (adminPassword deferred to post-Start)")
         bridge.setPort(port)
         bridge.setDataDir(dataDir)
-        if (adminPassword.isNotEmpty()) {
-            bridge.setAdminPassword(adminPassword)
-        }
+        // Intentionally NOT calling bridge.setAdminPassword(adminPassword) here.
     }
 }

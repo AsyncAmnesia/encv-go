@@ -7,7 +7,6 @@ import android.database.Cursor
 import android.database.MatrixCursor
 import android.net.Uri
 import android.util.Log
-import com.encvgo.plugin.openlist.OpenListBridge
 
 /**
  * Cross-process ContentProvider that exposes OpenList runtime status to the
@@ -20,6 +19,13 @@ import com.encvgo.plugin.openlist.OpenListBridge
  *
  * The host process reads status every 3s (see useOpenListBridge.ts).
  * The control URI accepts action=start|stop|force_db_sync|set_admin_password.
+ *
+ * Implementation notes:
+ *   - MatrixCursor.addRow needs Array<Any?> (NOT reified Array<Comparable<*> & Serializable>).
+ *     Mixing Int/Long/String/Boolean in arrayOf() infers a noisy intersection type
+ *     that breaks Kotlin's Array<out Any?> variance. We pass an explicit Any? array.
+ *   - The bridge returns Map<String, Any?> (not Bundle), so we use direct map access
+ *     with safe `as` casts (default fallback baked in).
  */
 class OpenListStatusProvider : ContentProvider() {
 
@@ -46,6 +52,10 @@ class OpenListStatusProvider : ContentProvider() {
         private const val ACTION_STOP = "stop"
         private const val ACTION_FORCE_DB_SYNC = "force_db_sync"
         private const val ACTION_SET_ADMIN_PASSWORD = "set_admin_password"
+
+        private val STATUS_COLUMNS = arrayOf(
+            COL_RUNNING, COL_PORT, COL_PID, COL_DATA_SIZE, COL_LAST_ERROR, COL_LAST_UPDATE
+        )
     }
 
     private val uriMatcher = UriMatcher(UriMatcher.NO_MATCH).apply {
@@ -78,19 +88,29 @@ class OpenListStatusProvider : ContentProvider() {
         return when (uriMatcher.match(uri)) {
             CODE_STATUS -> {
                 val snap = OpenListBridge.snapshot()
-                val cursor = MatrixCursor(
-                    arrayOf(COL_RUNNING, COL_PORT, COL_PID, COL_DATA_SIZE, COL_LAST_ERROR, COL_LAST_UPDATE),
-                    1
+                // Defensive reads: snapshot is Map<String, Any?>; coerce with safe defaults
+                // so a missing field never NPEs the cross-process boundary.
+                val running: Boolean = (snap["running"] as? Boolean) ?: false
+                val port: Int = (snap["port"] as? Int) ?: 0
+                val pid: Int = (snap["pid"] as? Int) ?: 0
+                val dataSize: Long = (snap["data_size_bytes"] as? Long) ?: 0L
+                val lastError: String = (snap["last_error"] as? String) ?: ""
+                val lastUpdate: Long = (snap["last_update_ts"] as? Long) ?: 0L
+
+                val cursor = MatrixCursor(STATUS_COLUMNS, 1)
+                // Explicit Array<Any?> avoids the reified-type intersection issue
+                // (Int + Long + String + Boolean → Array<Comparable<*> & Serializable>).
+                cursor.addRow(
+                    arrayOf<Any?>(
+                        if (running) 1 else 0,
+                        port,
+                        pid,
+                        dataSize,
+                        lastError,
+                        lastUpdate,
+                    )
                 )
-                cursor.addRow(arrayOf(
-                    if (snap.getBoolean("running", false)) 1 else 0,
-                    snap.getInt("port", 0),
-                    snap.getInt("pid", 0),
-                    snap.getLong("data_size_bytes", 0L),
-                    snap.getString("last_error", "") ?: "",
-                    snap.getLong("last_update_ts", 0L),
-                ))
-                Log.e(TAG, "[SAT-DBG][OpenList][Provider] query(status) returned: running=${snap.getBoolean("running")} port=${snap.getInt("port")} pid=${snap.getInt("pid")}")
+                Log.e(TAG, "[SAT-DBG][OpenList][Provider] query(status) returned: running=$running port=$port pid=$pid dataSize=$dataSize")
                 cursor
             }
             else -> {
@@ -112,7 +132,7 @@ class OpenListStatusProvider : ContentProvider() {
                         try { OpenListBridge.start() } catch (e: Throwable) { Log.e(TAG, "[SAT-DBG][OpenList][Provider] start() FAILED", e) }
                     }
                     ACTION_STOP -> {
-                        try { OpenListBridge.shutdown(3000) } catch (e: Throwable) { Log.e(TAG, "[SAT-DBG][OpenList][Provider] stop() FAILED", e) }
+                        try { OpenListBridge.shutdown(3000L) } catch (e: Throwable) { Log.e(TAG, "[SAT-DBG][OpenList][Provider] stop() FAILED", e) }
                     }
                     ACTION_FORCE_DB_SYNC -> {
                         try { OpenListBridge.forceDbSync() } catch (e: Throwable) { Log.e(TAG, "[SAT-DBG][OpenList][Provider] forceDbSync() FAILED", e) }
