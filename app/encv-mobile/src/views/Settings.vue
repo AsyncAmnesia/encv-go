@@ -21,48 +21,12 @@
             <span class="scope-text">{{ t('settings.localOnly') }}</span>
           </ion-badge>
         </ion-list-header>
-        <ion-item>
-          <ion-icon :icon="moon" slot="start"></ion-icon>
-          <ion-toggle :checked="isDark" @ionChange="handleDarkToggle">{{ t('settings.darkMode') }}</ion-toggle>
-        </ion-item>
-
-        <ion-item lines="full">
+        <ion-item button @click="goAppearance" detail>
           <ion-icon :icon="colorPaletteOutline" slot="start"></ion-icon>
           <ion-label>
-            <h3>{{ t('settings.themeColor') }}</h3>
-            <p>{{ t('settings.themeColorHelp') }}</p>
+            <h3>{{ t('settings.appearance') }}</h3>
+            <p>{{ t('settings.appearanceHelp') }}</p>
           </ion-label>
-        </ion-item>
-        <div class="theme-color-picker">
-          <div class="preset-colors">
-            <button
-              v-for="preset in THEME_PRESETS"
-              :key="preset.value"
-              class="color-dot"
-              :class="{ active: currentColor === preset.value }"
-              :style="{ backgroundColor: preset.value }"
-              :title="preset.name"
-              @click="setThemeColor(preset.value)"
-            ></button>
-          </div>
-          <div class="custom-color-row">
-            <label class="custom-color-label">{{ t('settings.customColor') }}</label>
-            <input
-              type="color"
-              class="color-input"
-              :value="currentColor"
-              @input="setThemeColor(($event.target as HTMLInputElement).value)"
-            />
-            <span class="color-hex">{{ currentColor.toUpperCase() }}</span>
-          </div>
-        </div>
-
-        <ion-item>
-          <ion-icon :icon="globeOutline" slot="start"></ion-icon>
-          <ion-select :value="locale" @ionChange="handleLocaleChange" interface="action-sheet" mode="ios">
-            <ion-select-option value="zh-CN">简体中文</ion-select-option>
-            <ion-select-option value="en">English</ion-select-option>
-          </ion-select>
         </ion-item>
       </ion-list>
 
@@ -386,11 +350,11 @@ import { useRouter } from 'vue-router'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonContent, IonList, IonListHeader, IonItem, IonItemDivider,
-  IonIcon, IonLabel, IonToggle, IonBadge, IonSpinner,
+  IonIcon, IonLabel, IonBadge, IonSpinner,
   IonSelect, IonSelectOption, modalController, alertController,
 } from '@ionic/vue'
 import {
-  moon, globeOutline, server as serverIcon, save as saveIcon,
+  server as serverIcon, save as saveIcon,
   informationCircle,
   key, lockClosed, documentText, terminal, settingsOutline,
   cloudOutline, shieldCheckmark, eyeOutline, speedometerOutline,
@@ -399,10 +363,9 @@ import {
   textOutline, personOutline, folderOpen, refreshCircle,
   trash, bugOutline,
   phonePortraitOutline,
-  colorPaletteOutline, layersOutline,
+  colorPaletteOutline, layersOutline, globeOutline,
   fileTrayFull as databaseIcon,
 } from 'ionicons/icons'
-import { useTheme } from '@/composables/useTheme'
 import { useServerStatus } from '@/composables/useServerStatus'
 import { useConfig } from '@/composables/useConfig'
 import type { FieldDef } from '@/config/schemaParser'
@@ -418,10 +381,9 @@ import FilePickerModal from '@/components/FilePickerModal.vue'
 import ConfigFieldItem from '@/components/ConfigFieldItem.vue'
 
 const router = useRouter()
-const { isDark, currentColor, toggleDark, setThemeColor, THEME_PRESETS } = useTheme()
 const { isOnline: serverOnline, lastError: connectionError, checkStatus, backendPort } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, restartNeeded, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue, resetFieldToDefault } = useConfig()
-const { t, tField, tSectionTitle, setLocale, locale } = useI18n()
+const { t, tField, tSectionTitle } = useI18n()
 
 const configLoaded = ref(false)
 const indexStats = ref<IndexStats | null>(null)
@@ -484,6 +446,10 @@ async function applyScreenOrientation(orientation: string) {
   } catch (e) {
     console.debug('Failed to apply screen orientation:', e)
   }
+}
+
+function goAppearance() {
+  router.push('/tabs/settings/appearance')
 }
 
 function goDevTools() {
@@ -699,14 +665,6 @@ function isFieldVisible(field: FieldDef): boolean {
   return true
 }
 
-function handleDarkToggle() {
-  toggleDark()
-}
-
-function handleLocaleChange(event: CustomEvent) {
-  setLocale(event.detail.value as 'zh-CN' | 'en')
-}
-
 async function handleClearCache() {
   const alert = await alertController.create({
     header: t('settings.clearCache'),
@@ -749,7 +707,6 @@ async function handleResetSettings() {
         role: 'destructive',
         handler: () => {
           localStorage.clear()
-          if (isDark.value) toggleDark()
           showToast({
             message: t('settings.settingsReset'),
             duration: 1500,
@@ -1008,63 +965,5 @@ watch(() => getFieldValue(['plugin_settings', 'alist_encrypt', 'enabled']), (ena
   color: var(--ion-color-danger);
   font-size: 12px;
   font-family: monospace;
-}
-.theme-color-picker {
-  padding: 8px 16px 16px;
-}
-.preset-colors {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 14px;
-}
-.color-dot {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 2.5px solid transparent;
-  cursor: pointer;
-  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
-  outline: none;
-  -webkit-tap-highlight-color: transparent;
-}
-.color-dot.active {
-  border-color: var(--ion-text-color, #333);
-  transform: scale(1.15);
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.08);
-}
-.custom-color-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.custom-color-label {
-  font-size: 13px;
-  color: var(--ion-text-secondary);
-  white-space: nowrap;
-}
-.color-input {
-  width: 40px;
-  height: 32px;
-  padding: 0;
-  border: 1px solid var(--ion-color-medium, #ccc);
-  border-radius: 6px;
-  cursor: pointer;
-  background: none;
-  outline: none;
-  appearance: none;
-  -webkit-appearance: none;
-}
-.color-input::-webkit-color-swatch-wrapper {
-  padding: 2px;
-}
-.color-input::-webkit-color-swatch {
-  border: none;
-  border-radius: 4px;
-}
-.color-hex {
-  font-size: 13px;
-  font-family: monospace;
-  color: var(--ion-text-secondary);
 }
 </style>

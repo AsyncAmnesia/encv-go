@@ -85,6 +85,10 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/PrototypeSandbox.vue'),
       },
       {
+        path: 'settings/appearance',
+        component: () => import('@/views/AppearanceDetail.vue'),
+      },
+      {
         path: 'devlogs',
         component: () => import('@/views/DevLogs.vue'),
       },

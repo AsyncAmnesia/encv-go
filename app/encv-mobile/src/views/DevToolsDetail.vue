@@ -263,6 +263,120 @@ async function handleClearLogs() {
   line-height: 1.5;
 }
 
+.log-level-card {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--ion-color-light-shade, #e0e0e0);
+}
+
+body.dark .log-level-card {
+  border-bottom-color: #2a2a2c;
+}
+
+.field-icon {
+  font-size: 18px;
+  color: var(--ion-color-medium);
+  flex-shrink: 0;
+}
+
+.field-label-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.field-label-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 500;
+  font-size: 15px;
+}
+
+.required-mark {
+  color: var(--ion-color-danger);
+  margin-left: 2px;
+}
+
+.sync-indicator {
+  font-size: 12px;
+  color: var(--ion-color-primary);
+  opacity: 0.4;
+  flex-shrink: 0;
+}
+
+.reset-btn {
+  --padding-start: 4px;
+  --padding-end: 4px;
+  min-width: 28px;
+  min-height: 28px;
+  margin: 0;
+}
+
+.reset-btn ion-icon {
+  font-size: 16px;
+}
+
+.preset-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.preset-card {
+  padding: 10px 8px;
+  border: 2px solid var(--ion-color-light-shade, #e0e0e0);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+  background: var(--ion-background-color, transparent);
+}
+
+.preset-card-active {
+  border-color: var(--ion-color-primary);
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
+}
+
+.preset-card-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.preset-card-desc {
+  font-size: 11px;
+  color: var(--ion-color-medium);
+  margin-top: 3px;
+  line-height: 1.3;
+}
+
+@media (max-width: 599px) {
+  .preset-cards {
+    grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+    gap: 6px;
+  }
+  .preset-card-title {
+    font-size: 12px;
+  }
+  .preset-card-desc {
+    font-size: 10px;
+  }
+}
+</style>
+
+<style>
+body.dark .preset-card {
+  border-color: #3a3a3c;
+}
+
+body.dark .preset-card-active {
+  border-color: var(--ion-color-primary);
+  background: rgba(var(--ion-color-primary-rgb), 0.12);
+}
+</style>
+
+<style scoped>
 .prototype-cards {
   padding: 0 12px 16px;
   display: flex;
