@@ -112,7 +112,7 @@ class OpenListService : Service() {
         }
 
         try {
-            OpenListConfig.applyToBridge(cfg)
+            cfg.applyToBridge(OpenListBridge)
             OpenListBridge.init(this)
             OpenListBridge.start()
             isRunning = true

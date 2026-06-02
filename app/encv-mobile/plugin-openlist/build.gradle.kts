@@ -46,4 +46,5 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.runtime)
     implementation(libs.compose.material3)
+    compileOnly("io.insert-koin:koin-core:4.1.0")
 }
