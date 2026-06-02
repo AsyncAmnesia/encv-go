@@ -233,6 +233,11 @@ ion-toolbar,
   -webkit-backdrop-filter: blur(var(--encv-bg-blur, 0px));
 }
 
+/* 瑰彩显示：CSS 滤镜增强对比度与饱和度（网页端也生效） */
+ion-page {
+  filter: var(--encv-vivid-filter, none);
+}
+
 ion-content {
   --background: var(--ion-background-color);
   background: var(--ion-background-color);

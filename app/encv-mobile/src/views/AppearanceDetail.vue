@@ -10,62 +10,13 @@
     </ion-header>
 
     <ion-content>
-      <!-- 暗黑模式 -->
-      <ion-list>
-        <ion-list-header>
-          <ion-label>{{ t('settings.themeMode') }}</ion-label>
-          <ion-badge slot="end" color="medium" class="scope-badge">
-            <ion-icon :icon="phonePortraitOutline" class="scope-badge-icon"></ion-icon>
-            <span class="scope-text">{{ t('settings.localOnly') }}</span>
-          </ion-badge>
-        </ion-list-header>
-        <ion-item>
-          <ion-icon :icon="moon" slot="start"></ion-icon>
-          <ion-toggle :checked="isDark" @ionChange="handleDarkToggle">{{ t('settings.darkMode') }}</ion-toggle>
-        </ion-item>
-      </ion-list>
-
-      <!-- 主题色 -->
-      <ion-list>
-        <ion-list-header>
-          <ion-label>{{ t('settings.themeColor') }}</ion-label>
-        </ion-list-header>
-        <ion-item lines="full">
-          <ion-icon :icon="colorPaletteOutline" slot="start"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.themeColor') }}</h3>
-            <p>{{ t('settings.themeColorHelp') }}</p>
-          </ion-label>
-        </ion-item>
-        <div class="theme-color-picker">
-          <div class="preset-colors">
-            <button
-              v-for="preset in THEME_PRESETS"
-              :key="preset.value"
-              class="color-dot"
-              :class="{ active: currentColor === preset.value }"
-              :style="{ backgroundColor: preset.value }"
-              :title="preset.name"
-              @click="setThemeColor(preset.value)"
-            ></button>
-          </div>
-          <div class="custom-color-row">
-            <label class="custom-color-label">{{ t('settings.customColor') }}</label>
-            <input
-              type="color"
-              class="color-input"
-              :value="currentColor"
-              @input="setThemeColor(($event.target as HTMLInputElement).value)"
-            />
-            <span class="color-hex">{{ currentColor.toUpperCase() }}</span>
-          </div>
-        </div>
-      </ion-list>
-
-      <!-- 背景色 -->
+      <!-- 背景色（驱动暗黑/亮色模式） -->
       <ion-list>
         <ion-list-header>
           <ion-label>{{ t('settings.bgColor') }}</ion-label>
+          <ion-badge slot="end" :color="isDark ? 'dark' : 'light'" class="scope-badge">
+            {{ isDark ? 'Dark' : 'Light' }}
+          </ion-badge>
         </ion-list-header>
         <ion-item lines="full">
           <ion-icon :icon="layersOutline" slot="start"></ion-icon>
@@ -109,6 +60,43 @@
         </div>
       </ion-list>
 
+      <!-- 主题色 -->
+      <ion-list>
+        <ion-list-header>
+          <ion-label>{{ t('settings.themeColor') }}</ion-label>
+        </ion-list-header>
+        <ion-item lines="full">
+          <ion-icon :icon="colorPaletteOutline" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.themeColor') }}</h3>
+            <p>{{ t('settings.themeColorHelp') }}</p>
+          </ion-label>
+        </ion-item>
+        <div class="theme-color-picker">
+          <div class="preset-colors">
+            <button
+              v-for="preset in THEME_PRESETS"
+              :key="preset.value"
+              class="color-dot"
+              :class="{ active: currentColor === preset.value }"
+              :style="{ backgroundColor: preset.value }"
+              :title="preset.name"
+              @click="setThemeColor(preset.value)"
+            ></button>
+          </div>
+          <div class="custom-color-row">
+            <label class="custom-color-label">{{ t('settings.customColor') }}</label>
+            <input
+              type="color"
+              class="color-input"
+              :value="currentColor"
+              @input="setThemeColor(($event.target as HTMLInputElement).value)"
+            />
+            <span class="color-hex">{{ currentColor.toUpperCase() }}</span>
+          </div>
+        </div>
+      </ion-list>
+
       <!-- 背景模糊 -->
       <ion-list>
         <ion-list-header>
@@ -137,7 +125,7 @@
         </div>
       </ion-list>
 
-      <!-- 瑰彩显示 -->
+      <!-- 瑰彩显示（CSS 滤镜 + P3 色域） -->
       <ion-list>
         <ion-list-header>
           <ion-label>{{ t('settings.p3Mode') }}</ion-label>
@@ -148,6 +136,43 @@
             {{ t('settings.p3Unsupported') }}
           </ion-badge>
         </ion-list-header>
+
+        <!-- 瑰彩开关 -->
+        <ion-item lines="none">
+          <ion-icon :icon="sparklesOutline" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('settings.vividMode') }}</h3>
+            <p>{{ t('settings.vividModeHelp') }}</p>
+          </ion-label>
+          <ion-toggle slot="end" :checked="vividMode === 'on'" @ionChange="handleVividToggle"></ion-toggle>
+        </ion-item>
+
+        <!-- 滤镜强度 -->
+        <div v-if="vividMode === 'on'" class="vivid-controls">
+          <ion-item>
+            <ion-icon :icon="trendingUpOutline" slot="start"></ion-icon>
+            <ion-label>
+              <h3>{{ t('settings.vividIntensity') }}</h3>
+              <p>{{ t('settings.vividIntensityHelp') }}</p>
+            </ion-label>
+            <ion-badge slot="end" color="primary" class="blur-value-badge">{{ vividIntensity }}%</ion-badge>
+          </ion-item>
+          <div class="blur-slider-row">
+            <span class="blur-label-off">50</span>
+            <input
+              type="range"
+              class="blur-slider"
+              min="50"
+              max="200"
+              step="5"
+              :value="vividIntensity"
+              @input="handleVividIntensityChange($event)"
+            />
+            <span class="blur-label-max">200</span>
+          </div>
+        </div>
+
+        <!-- P3 色域 -->
         <div class="p3-cards">
           <div
             v-for="mode in p3Modes"
@@ -187,16 +212,19 @@ import {
   IonBadge, IonButton, IonSelect, IonSelectOption,
 } from '@ionic/vue'
 import {
-  moon, globeOutline, phonePortraitOutline, colorPaletteOutline,
+  globeOutline, colorPaletteOutline,
   layersOutline, eyeOutline, closeCircleOutline,
+  sparklesOutline, trendingUpOutline,
 } from 'ionicons/icons'
 import { useTheme } from '@/composables/useTheme'
 import { useI18n } from '@/composables/useI18n'
 
 const {
-  isDark, currentColor, currentBgColor, bgBlur, p3Mode, isP3Supported,
+  isDark, currentColor, currentBgColor, bgBlur, p3Mode,
+  vividMode, vividIntensity, isP3Supported,
   THEME_PRESETS, BG_PRESETS,
-  toggleDark, setThemeColor, setBgColor, setBgBlur, setP3Mode,
+  setThemeColor, setBgColor, setBgBlur, setP3Mode,
+  setVividMode, setVividIntensity,
 } = useTheme()
 const { t, locale, setLocale } = useI18n()
 
@@ -224,10 +252,6 @@ const p3Modes = [
   { value: 'off', label: 'settings.p3Off', description: '' },
 ]
 
-function handleDarkToggle() {
-  toggleDark()
-}
-
 function handleLocaleChange(event: CustomEvent) {
   setLocale(event.detail.value as 'zh-CN' | 'en')
 }
@@ -243,6 +267,15 @@ function handleBgBlurChange(event: Event) {
 
 function handleP3ModeChange(value: string) {
   setP3Mode(value as 'off' | 'on' | 'auto')
+}
+
+function handleVividToggle(event: CustomEvent) {
+  setVividMode(event.detail.checked ? 'on' : 'off')
+}
+
+function handleVividIntensityChange(event: Event) {
+  const target = event.target as HTMLInputElement
+  setVividIntensity(parseInt(target.value, 10))
 }
 </script>
 
@@ -377,7 +410,7 @@ body.dark .custom-bg-row {
 .blur-label-off, .blur-label-max {
   font-size: 11px;
   color: var(--ion-color-medium);
-  width: 16px;
+  width: 20px;
   text-align: center;
   flex-shrink: 0;
 }
@@ -385,6 +418,10 @@ body.dark .custom-bg-row {
   font-size: 11px;
   --padding-start: 6px;
   --padding-end: 6px;
+}
+
+.vivid-controls {
+  margin-top: 4px;
 }
 
 .p3-cards {

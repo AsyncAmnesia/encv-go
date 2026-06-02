@@ -25,6 +25,27 @@
       </div>
 
       <div v-else-if="info" class="info-scroll">
+        <!-- 缩略图预览 -->
+        <div v-if="isImageOrVideo" class="section-card thumbnail-section">
+          <div class="thumbnail-wrapper" @click="handlePreviewClick">
+            <img
+              v-if="thumbnailUrl"
+              :src="thumbnailUrl"
+              class="thumbnail-image"
+              loading="lazy"
+              @error="thumbnailError = true"
+            />
+            <div v-else class="thumbnail-placeholder">
+              <ion-icon :icon="isImageFile ? imageOutline : filmOutline" class="placeholder-icon"></ion-icon>
+              <span class="placeholder-text">{{ isImageFile ? t('fileInfo.imagePreview') : t('fileInfo.videoPreview') }}</span>
+            </div>
+          </div>
+          <div v-if="info.is_encv_container && containerData?.original_duration" class="duration-badge">
+            {{ formatDuration(containerData.original_duration) }}
+          </div>
+        </div>
+
+        <!-- 文件基本信息 -->
         <div class="section-card">
           <h4 class="card-title">
             <ion-icon :icon="documentTextOutline" class="title-icon"></ion-icon>
@@ -62,6 +83,34 @@
           </div>
         </div>
 
+        <!-- 插件聚合索引 -->
+        <div v-if="pluginPrediction" class="section-card plugin-index-card">
+          <h4 class="card-title">
+            <ion-icon :icon="settingsOutline" class="title-icon primary"></ion-icon>
+            {{ t('fileInfo.pluginIndex') }}
+          </h4>
+          <div v-if="pluginPrediction.pluginName" class="plugin-matched">
+            <div class="matched-plugin-header">
+              <ion-badge color="primary">{{ pluginPrediction.pluginName }}</ion-badge>
+              <span class="match-type-badge">{{ matchTypeLabel(pluginPrediction.candidates?.[0]?.matchType) }}</span>
+            </div>
+            <p class="plugin-desc">{{ pluginMatchDesc }}</p>
+          </div>
+          <div v-else class="no-plugin-match">
+            <ion-icon :icon="helpCircleOutline" class="no-match-icon"></ion-icon>
+            <span>{{ t('fileInfo.noPluginMatch') }}</span>
+          </div>
+          <div v-if="pluginPrediction.candidates?.length > 1" class="candidate-list">
+            <div class="candidate-item" v-for="c in pluginPrediction.candidates" :key="c.name">
+              <span class="candidate-name">{{ c.name }}</span>
+              <ion-badge :color="c.name === pluginPrediction.pluginName ? 'primary' : 'medium'" size="small">
+                {{ c.priority }}
+              </ion-badge>
+            </div>
+          </div>
+        </div>
+
+        <!-- Alist-Encrypt -->
         <div v-if="isAlistEnc" class="section-card alist-enc-card">
           <h4 class="card-title">
             <ion-icon :icon="lockClosed" class="title-icon danger"></ion-icon>
@@ -79,6 +128,7 @@
           </div>
         </div>
 
+        <!-- ENCV Container -->
         <div v-if="info.is_encv_container && containerData" class="section-card container-card">
           <h4 class="card-title">
             <ion-icon :icon="lockClosed" class="title-icon primary"></ion-icon>
@@ -114,6 +164,7 @@
           </div>
         </div>
 
+        <!-- Manifest -->
         <div v-if="info.is_encv_container && containerData" class="section-card manifest-card">
           <div class="manifest-header" @click="showManifest = !showManifest">
             <h4 class="card-title inline-title">
@@ -130,7 +181,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons,
@@ -139,8 +190,11 @@ import {
 import {
   arrowBack, documentTextOutline, alertCircle,
   lockClosed, listOutline, chevronDown, chevronForward,
+  settingsOutline, helpCircleOutline, imageOutline, filmOutline,
 } from 'ionicons/icons'
-import { getApiBaseUrl, formatFileSize, proxySafeEncode } from '@/api/encv'
+import { getApiBaseUrl, formatFileSize, proxySafeEncode, getExternalStreamUrl } from '@/api/encv'
+import { predictPlugin } from '@/api/encv'
+import type { PredictPluginResponse } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 import { isAlistEncrypted, loadDecodedName, getDecodedName } from '@/features/alist-encrypt/useAlistEncrypt'
 import type { FileItem } from '@/api/encv'
@@ -183,6 +237,27 @@ const showManifest = ref(false)
 const manifestJson = ref('')
 const decodedName = ref<string | null>(null)
 const isAlistEnc = ref(false)
+const thumbnailError = ref(false)
+const pluginPrediction = ref<PredictPluginResponse | null>(null)
+
+const thumbnailUrl = computed(() => {
+  if (!info.value || thumbnailError.value) return ''
+  const path = info.value.path
+  if (!path) return ''
+  return getExternalStreamUrl(path)
+})
+
+const isImageFile = computed(() => {
+  const mime = info.value?.mime_type || ''
+  return mime.startsWith('image/')
+})
+
+const isVideoFile = computed(() => {
+  const mime = info.value?.mime_type || ''
+  return mime.startsWith('video/')
+})
+
+const isImageOrVideo = computed(() => isImageFile.value || isVideoFile.value)
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -198,6 +273,28 @@ function formatTime(isoStr: string): string {
   }
 }
 
+function matchTypeLabel(type?: string): string {
+  const map: Record<string, string> = {
+    mime: 'MIME',
+    extension: '扩展名',
+    general: '通用',
+    container: '容器',
+  }
+  return type ? (map[type] || type) : '-'
+}
+
+const pluginMatchDesc = computed(() => {
+  const p = pluginPrediction.value
+  if (!p?.pluginName) return ''
+  const candidates = p.candidates || []
+  if (candidates.length <= 1) return t('fileInfo.pluginExactMatch') || '精确匹配'
+  return `${t('fileInfo.pluginCandidateCount') || '候选'} ${candidates.length}`
+})
+
+function handlePreviewClick() {
+  router.push({ path: '/tabs/files', query: { action: 'preview', path: info.value?.path } })
+}
+
 async function loadInfo() {
   const path = (route.query.path as string) || ''
   if (!path) {
@@ -209,6 +306,7 @@ async function loadInfo() {
   loading.value = true
   error.value = ''
   showManifest.value = false
+  thumbnailError.value = false
 
   try {
     const baseUrl = getApiBaseUrl()
@@ -244,6 +342,13 @@ async function loadInfo() {
     } else {
       decodedName.value = null
     }
+
+    try {
+      const taskType = data.is_encv_container ? 'decrypt' as const : 'encrypt' as const
+      pluginPrediction.value = await predictPlugin(path, taskType)
+    } catch {
+      pluginPrediction.value = null
+    }
   } catch (e: any) {
     console.error('[FileInfo] failed:', e)
     error.value = e?.message || String(e)
@@ -276,6 +381,54 @@ onMounted(() => loadInfo())
 .section-card.container-card { border-left-color: var(--ion-color-primary); }
 .section-card.alist-enc-card { border-left-color: var(--ion-color-danger); }
 .section-card.manifest-card { border-left-color: var(--ion-color-tertiary); }
+.section-card.plugin-index-card { border-left-color: var(--ion-color-warning); }
+
+.thumbnail-section {
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.thumbnail-wrapper {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.thumbnail-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.thumbnail-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--ion-color-medium);
+}
+.placeholder-icon { font-size: 40px; opacity: 0.5; }
+.placeholder-text { font-size: 13px; }
+
+.duration-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  backdrop-filter: blur(4px);
+}
 
 .card-title {
   margin: 0 0 12px;
@@ -322,6 +475,55 @@ onMounted(() => loadInfo())
 .code-text {
   font-family: monospace;
   font-size: 11px;
+}
+
+/* 插件聚合索引 */
+.plugin-matched {
+  margin-bottom: 10px;
+}
+.matched-plugin-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.match-type-badge {
+  font-size: 10px;
+  color: var(--ion-color-medium);
+  background: rgba(var(--ion-color-medium-rgb), 0.12);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.plugin-desc {
+  font-size: 12px;
+  color: var(--ion-text-secondary);
+  margin: 0;
+  line-height: 1.4;
+}
+.no-plugin-match {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ion-color-medium);
+}
+.no-match-icon { font-size: 18px; opacity: 0.5; }
+.candidate-list {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.candidate-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+.candidate-name {
+  color: var(--ion-text-secondary);
 }
 
 .manifest-header {

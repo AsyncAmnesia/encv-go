@@ -1,16 +1,19 @@
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 
 const THEME_KEY = 'encv-theme-preference'
 const COLOR_KEY = 'encv-theme-color'
 const BG_COLOR_KEY = 'encv-bg-color'
 const BG_BLUR_KEY = 'encv-bg-blur'
 const P3_KEY = 'encv-p3-mode'
+const VIVID_KEY = 'encv-vivid-mode'
 
-const isDark = ref(false)
+const _isDarkForced = ref<boolean | null>(null)
 const currentColor = ref('#4f8cff')
 const currentBgColor = ref<string | null>(null)
 const bgBlur = ref(0)
 const p3Mode = ref<'off' | 'on' | 'auto'>('auto')
+const vividMode = ref<'off' | 'on'>('off')
+const vividIntensity = ref(100)
 
 export interface ThemePreset {
   name: string
@@ -71,9 +74,14 @@ function isColorDark(hex: string): boolean {
   return luminance <= 0.5
 }
 
-function applyTheme(dark: boolean) {
-  isDark.value = dark
-  if (dark) {
+export const isDark = computed(() => {
+  if (_isDarkForced.value !== null) return _isDarkForced.value
+  if (currentBgColor.value) return isColorDark(currentBgColor.value)
+  return false
+})
+
+function syncDarkClass() {
+  if (isDark.value) {
     document.body.classList.add('dark')
   } else {
     document.body.classList.remove('dark')
@@ -88,17 +96,13 @@ function applyBgColor(bgColor: string | null) {
     root.style.setProperty('--ion-background-color-rgb', hexToRgb(bgColor))
     root.style.setProperty('--encv-bg-text-color', getContrastColor(bgColor))
     document.body.style.backgroundColor = bgColor
-    if (isColorDark(bgColor)) {
-      document.body.classList.add('dark')
-    } else {
-      document.body.classList.remove('dark')
-    }
   } else {
     root.style.removeProperty('--ion-background-color')
     root.style.removeProperty('--ion-background-color-rgb')
     root.style.removeProperty('--encv-bg-text-color')
     document.body.style.backgroundColor = ''
   }
+  syncDarkClass()
 }
 
 function applyColor(color: string) {
@@ -159,6 +163,30 @@ function applyP3Mode(mode: 'off' | 'on' | 'auto') {
   localStorage.setItem(P3_KEY, mode)
 }
 
+function applyVividMode(mode: 'off' | 'on') {
+  vividMode.value = mode
+  syncVividFilter()
+  localStorage.setItem(VIVID_KEY, mode)
+}
+
+function applyVividIntensity(value: number) {
+  vividIntensity.value = Math.max(50, Math.min(200, value))
+  syncVividFilter()
+  localStorage.setItem(`${VIVID_KEY}-intensity`, String(vividIntensity.value))
+}
+
+function syncVividFilter() {
+  const root = document.documentElement
+  if (vividMode.value === 'off') {
+    root.style.removeProperty('--encv-vivid-filter')
+  } else {
+    const s = vividIntensity.value / 100
+    const contrast = 1 + (s - 1) * 0.25
+    const saturate = 1 + (s - 1) * 0.5
+    root.style.setProperty('--encv-vivid-filter', `contrast(${contrast.toFixed(2)}) saturate(${saturate.toFixed(2)})`)
+  }
+}
+
 function supportsP3(): boolean {
   if (typeof window === 'undefined') return false
   return window.matchMedia('(color-gamut: p3)').matches
@@ -167,14 +195,14 @@ function supportsP3(): boolean {
 function initTheme() {
   const stored = localStorage.getItem(THEME_KEY)
   if (stored !== null) {
-    applyTheme(stored === 'dark')
+    _isDarkForced.value = stored === 'dark'
   } else {
+    _isDarkForced.value = null
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)')
-    applyTheme(prefersDark.matches)
     prefersDark.addEventListener('change', (e) => {
-      const current = localStorage.getItem(THEME_KEY)
-      if (current === null) {
-        applyTheme(e.matches)
+      if (_isDarkForced.value === null && !currentBgColor.value) {
+        _isDarkForced.value = e.matches
+        syncDarkClass()
       }
     })
   }
@@ -187,6 +215,8 @@ function initTheme() {
   const storedBg = localStorage.getItem(BG_COLOR_KEY)
   if (storedBg && /^#[0-9a-fA-F]{6}$/.test(storedBg)) {
     applyBgColor(storedBg)
+  } else {
+    syncDarkClass()
   }
 
   const storedBlur = localStorage.getItem(BG_BLUR_KEY)
@@ -199,12 +229,17 @@ function initTheme() {
   if (storedP3 && ['off', 'on', 'auto'].includes(storedP3)) {
     applyP3Mode(storedP3)
   }
-}
 
-function toggleDark() {
-  const newDark = !isDark.value
-  applyTheme(newDark)
-  localStorage.setItem(THEME_KEY, newDark ? 'dark' : 'light')
+  const storedVivid = localStorage.getItem(VIVID_KEY) as 'off' | 'on' | null
+  if (storedVivid && ['off', 'on'].includes(storedVivid)) {
+    vividMode.value = storedVivid
+  }
+  const storedIntensity = localStorage.getItem(`${VIVID_KEY}-intensity`)
+  if (storedIntensity !== null) {
+    const v = parseInt(storedIntensity, 10)
+    if (!isNaN(v)) vividIntensity.value = v
+  }
+  syncVividFilter()
 }
 
 function setThemeColor(color: string) {
@@ -228,6 +263,14 @@ function setP3Mode(mode: 'off' | 'on' | 'auto') {
   applyP3Mode(mode)
 }
 
+function setVividMode(mode: 'off' | 'on') {
+  applyVividMode(mode)
+}
+
+function setVividIntensity(value: number) {
+  applyVividIntensity(value)
+}
+
 const isP3Supported = ref(false)
 
 function detectP3Support() {
@@ -241,14 +284,17 @@ export function useTheme() {
     currentBgColor,
     bgBlur,
     p3Mode,
+    vividMode,
+    vividIntensity,
     isP3Supported,
     initTheme,
     detectP3Support,
-    toggleDark,
     setThemeColor,
     setBgColor,
     setBgBlur,
     setP3Mode,
+    setVividMode,
+    setVividIntensity,
     THEME_PRESETS,
     BG_PRESETS,
   }
