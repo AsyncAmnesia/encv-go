@@ -31,6 +31,7 @@ val ksKeyPassword = localProps.getProperty("aar2apk.keyPassword")
 aar2apk {
     modules {
         module(":plugin-mpv-player")
+        module(":plugin-openlist")
     }
     signing {
         keystorePath.set(ksPath)
