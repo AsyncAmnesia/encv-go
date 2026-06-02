@@ -200,7 +200,7 @@
               fill="clear"
               color="warning"
               size="small"
-              @click="handleCancelTask(task.id)"
+              @click="cancelTaskById(task.id)"
             >
               <ion-icon :icon="closeCircle" slot="icon-only"></ion-icon>
             </ion-button>
@@ -216,21 +216,21 @@
             <ion-item-option
               v-if="task.status === 'queued'"
               color="warning"
-              @click="handleCancelTask(task.id)"
+              @click="cancelTaskById(task.id)"
             >
               {{ t('tasks.cancel') }}
             </ion-item-option>
             <ion-item-option
               v-if="task.status === 'failed'"
               color="primary"
-              @click="handleRetryTask(task.id)"
+              @click="retryTaskById(task.id)"
             >
               {{ t('tasks.retry') }}
             </ion-item-option>
             <ion-item-option
               v-if="task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'"
               color="danger"
-              @click="handleRemoveTask(task.id)"
+              @click="removeTaskById(task.id)"
             >
               {{ t('tasks.remove') }}
             </ion-item-option>
@@ -249,292 +249,61 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { onMounted } from 'vue'
 import {
-  IonPage,
-  IonHeader,
-  IonToolbar,
-  IonTitle,
-  IonContent,
-  IonRefresher,
-  IonRefresherContent,
-  IonList,
-  IonItem,
-  IonItemSliding,
-  IonItemOptions,
-  IonItemOption,
-  IonIcon,
-  IonLabel,
-  IonBadge,
-  IonProgressBar,
-  IonFab,
-  IonFabButton,
-  IonSpinner,
-  IonButton,
-  IonButtons,
-  IonSearchbar,
-  IonChip,
-  IonPopover,
-  IonCheckbox,
-  alertController,
-  modalController,
+  IonPage, IonHeader, IonToolbar, IonTitle, IonContent,
+  IonRefresher, IonRefresherContent, IonList, IonItem,
+  IonItemSliding, IonItemOptions, IonItemOption, IonIcon,
+  IonLabel, IonBadge, IonProgressBar, IonFab, IonFabButton,
+  IonSpinner, IonButton, IonButtons, IonSearchbar, IonChip,
+  IonPopover, IonCheckbox, alertController, modalController,
 } from '@ionic/vue'
 import {
-  add,
-  closeCircle,
-  checkmarkCircle,
-  timer,
-  sync,
-  warningOutline,
-  lockClosed,
-  search,
-  funnel,
-  trashBin,
-  extensionPuzzle,
-  swapVertical,
-  chevronDown,
+  add, closeCircle, checkmarkCircle, timer, sync,
+  warningOutline, lockClosed, search, funnel, trashBin,
+  extensionPuzzle, swapVertical, chevronDown,
 } from 'ionicons/icons'
 import { useRoute, useRouter } from 'vue-router'
-import {
-  getTasks,
-  cancelTask,
-  retryTask,
-  removeTask,
-  clearCompletedTasks,
-  isWrongPasswordError,
-} from '@/api/encv'
-import type { EncvTask, TaskType, TaskStatus } from '@/api/encv'
-import { eventBus } from '@/composables/useEventBus'
+import type { EncvTask, TaskType } from '@/api/encv'
+import { clearCompletedTasks } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
-import { formatDateTime, formatDuration } from '@/composables/useDateFormat'
+import { formatDateTime } from '@/composables/useDateFormat'
 import { showToast } from '@/composables/useToast'
 import { useNewTaskModal } from '@/composables/useNewTaskModal'
+import { useTasksList } from '@/composables/useTasksList'
+import { useTaskEventBridge } from '@/composables/useTaskEventBridge'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const { openNewTask } = useNewTaskModal()
 
-const tasks = ref<EncvTask[]>([])
-const loading = ref(false)
-const expandedWarningDetail = ref<string | null>(null)
-const sortBy = ref<'activity' | 'created'>('activity')
+const {
+  tasks, loading, expandedWarningDetail, sortBy,
+  showSearch, searchQuery, showFilters,
+  filterPlugins, filterTypes, filterStatuses, statusOptions,
+  pluginPopoverOpen, typePopoverOpen, statusPopoverOpen,
+  pluginPopoverEvent, typePopoverEvent, statusPopoverEvent,
+  availablePlugins, hasActiveFilters, hasCompletedTasks, filteredTasks,
+  fetchTasks, refresh,
+  openPluginPopover, openTypePopover, openStatusPopover,
+  togglePluginFilter, toggleTypeFilter, toggleStatusFilter, clearFilters,
+  onSearchInput, toggleSort,
+  applyTaskUpdate, applyTaskProgress, applyTaskCreated, applyTaskCompleted,
+  cancelTaskById, retryTaskById, removeTaskById, clearCompletedWithConfirm,
+  getTaskName, getTaskDuration,
+  getPluginChipLabel, getTypeChipLabel, getStatusChipLabel, getStatusLabel,
+  isPasswordError, toggleWarningDetail, formatWarningDetail,
+  getTaskIcon, getTaskColor, getStatusColor, getPhaseLabel,
+} = useTasksList()
 
-const showSearch = ref(false)
-const searchQuery = ref('')
-const showFilters = ref(false)
-const filterPlugins = ref<string[]>([])
-const filterTypes = ref<TaskType[]>([])
-const filterStatuses = ref<TaskStatus[]>([])
-
-const statusOptions: TaskStatus[] = ['queued', 'running', 'completed', 'failed', 'cancelled']
-
-const pluginPopoverOpen = ref(false)
-const typePopoverOpen = ref(false)
-const statusPopoverOpen = ref(false)
-const pluginPopoverEvent = ref<Event | null>(null)
-const typePopoverEvent = ref<Event | null>(null)
-const statusPopoverEvent = ref<Event | null>(null)
-
-const availablePlugins = computed(() => {
-  const plugins = new Set<string>()
-  for (const task of tasks.value) {
-    if (task.pluginName) plugins.add(task.pluginName)
-  }
-  return Array.from(plugins).sort()
+useTaskEventBridge({
+  onUpdate: applyTaskUpdate,
+  onProgress: applyTaskProgress,
+  onCreate: applyTaskCreated,
+  onComplete: applyTaskCompleted,
+  onRefresh: fetchTasks,
 })
-
-const hasActiveFilters = computed(() =>
-  filterPlugins.value.length > 0 || filterTypes.value.length > 0 || filterStatuses.value.length > 0
-)
-
-const hasCompletedTasks = computed(() =>
-  tasks.value.some(t => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled')
-)
-
-function openPluginPopover(event: Event) {
-  pluginPopoverEvent.value = event
-  pluginPopoverOpen.value = true
-}
-
-function openTypePopover(event: Event) {
-  typePopoverEvent.value = event
-  typePopoverOpen.value = true
-}
-
-function openStatusPopover(event: Event) {
-  statusPopoverEvent.value = event
-  statusPopoverOpen.value = true
-}
-
-function togglePluginFilter(plugin: string) {
-  const idx = filterPlugins.value.indexOf(plugin)
-  if (idx === -1) filterPlugins.value.push(plugin)
-  else filterPlugins.value.splice(idx, 1)
-}
-
-function toggleTypeFilter(type: TaskType) {
-  const idx = filterTypes.value.indexOf(type)
-  if (idx === -1) filterTypes.value.push(type)
-  else filterTypes.value.splice(idx, 1)
-}
-
-function toggleStatusFilter(status: TaskStatus) {
-  const idx = filterStatuses.value.indexOf(status)
-  if (idx === -1) filterStatuses.value.push(status)
-  else filterStatuses.value.splice(idx, 1)
-}
-
-function getPluginChipLabel(): string {
-  if (filterPlugins.value.length === 0) return t('tasks.allPlugins')
-  if (filterPlugins.value.length === 1) return filterPlugins.value[0]
-  return `${t('tasks.allPlugins')} (${filterPlugins.value.length})`
-}
-
-function getTypeChipLabel(): string {
-  if (filterTypes.value.length === 0) return t('tasks.allTypes')
-  return filterTypes.value.map(ty => ty === 'encrypt' ? t('tasks.encrypt') : t('tasks.decrypt')).join(', ')
-}
-
-function getStatusChipLabel(): string {
-  if (filterStatuses.value.length === 0) return t('tasks.allStatuses')
-  return filterStatuses.value.map(s => getStatusLabel(s)).join(', ')
-}
-
-function clearFilters() {
-  filterPlugins.value = []
-  filterTypes.value = []
-  filterStatuses.value = []
-  searchQuery.value = ''
-}
-
-function onSearchInput(event: CustomEvent) {
-  searchQuery.value = event.detail.value ?? ''
-}
-
-function getTaskIcon(task: EncvTask) {
-  switch (task.status) {
-    case 'queued': return timer
-    case 'running': return sync
-    case 'completed': return checkmarkCircle
-    case 'failed': return closeCircle
-    default: return timer
-  }
-}
-
-function getTaskColor(task: EncvTask) {
-  switch (task.status) {
-    case 'queued': return 'medium'
-    case 'running': return 'primary'
-    case 'completed': return 'success'
-    case 'failed': return 'danger'
-    default: return 'medium'
-  }
-}
-
-function getStatusColor(status: TaskStatus) {
-  switch (status) {
-    case 'queued': return 'medium'
-    case 'running': return 'primary'
-    case 'completed': return 'success'
-    case 'failed': return 'danger'
-    default: return 'medium'
-  }
-}
-
-function getStatusLabel(status: TaskStatus) {
-  switch (status) {
-    case 'queued': return t('tasks.queued')
-    case 'running': return t('tasks.running')
-    case 'completed': return t('tasks.completed')
-    case 'failed': return t('tasks.failed')
-    case 'cancelled': return t('tasks.cancelled')
-    case 'cancelling': return t('tasks.cancelling')
-    default: status
-  }
-}
-
-function getPhaseLabel(phase: string) {
-  switch (phase) {
-    case 'analyzing': return t('tasks.phaseAnalyzing')
-    case 'initializing': return t('tasks.phaseInitializing')
-    case 'preprocessing': return t('tasks.phasePreprocessing')
-    case 'encrypting': return t('tasks.phaseEncrypting')
-    case 'decrypting': return t('tasks.phaseDecrypting')
-    case 'packing': return t('tasks.phasePacking')
-    case 'verifying': return t('tasks.phaseVerifying')
-    case 'completed': return t('tasks.phaseCompleted')
-    default: phase
-  }
-}
-
-function getTaskName(task: EncvTask) {
-  const parts = task.sourcePath.replace(/\\/g, '/').split('/')
-  const basename = parts[parts.length - 1] || task.sourcePath
-  return task.pluginName ? `${basename} [${task.pluginName}]` : basename
-}
-
-function getTaskDuration(task: EncvTask): string {
-  if (!task.createdAt) return ''
-  const created = new Date(task.createdAt).getTime()
-  if (isNaN(created)) return ''
-  if (task.completedAt) {
-    const completed = new Date(task.completedAt).getTime()
-    if (isNaN(completed)) return ''
-    return formatDuration(completed - created)
-  }
-  if (task.status === 'running' || task.status === 'cancelling') {
-    return formatDuration(Date.now() - created)
-  }
-  return ''
-}
-
-const sortedTasks = computed(() => {
-  const arr = [...tasks.value]
-  if (sortBy.value === 'activity') {
-    arr.sort((a, b) => {
-      const timeA = a.completedAt ? new Date(a.completedAt).getTime() : new Date(a.createdAt).getTime()
-      const timeB = b.completedAt ? new Date(b.completedAt).getTime() : new Date(b.createdAt).getTime()
-      if (timeB !== timeA) return timeB - timeA
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    })
-  } else {
-    arr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-  }
-  return arr
-})
-
-const filteredTasks = computed(() => {
-  let result = sortedTasks.value
-
-  if (searchQuery.value.trim()) {
-    const q = searchQuery.value.trim().toLowerCase()
-    result = result.filter(task => {
-      const name = getTaskName(task).toLowerCase()
-      const plugin = (task.pluginName || '').toLowerCase()
-      const error = (task.error || '').toLowerCase()
-      return name.includes(q) || plugin.includes(q) || error.includes(q)
-    })
-  }
-
-  if (filterPlugins.value.length > 0) {
-    result = result.filter(task => task.pluginName && filterPlugins.value.includes(task.pluginName))
-  }
-
-  if (filterTypes.value.length > 0) {
-    result = result.filter(task => filterTypes.value.includes(task.type))
-  }
-
-  if (filterStatuses.value.length > 0) {
-    result = result.filter(task => filterStatuses.value.includes(task.status))
-  }
-
-  return result
-})
-
-function toggleSort() {
-  sortBy.value = sortBy.value === 'activity' ? 'created' : 'activity'
-}
 
 async function openTaskDetail(task: EncvTask) {
   const { default: TaskDetailModal } = await import('@/components/TaskDetailModal.vue')
@@ -546,78 +315,20 @@ async function openTaskDetail(task: EncvTask) {
   await modal.present()
   const { data, role } = await modal.onDidDismiss()
   if (role === 'dismiss' && data) {
-    if (data.action === 'cancel') await handleCancelTask(data.id)
-    else if (data.action === 'retry') await handleRetryTask(data.id)
-    else if (data.action === 'remove') await handleRemoveTask(data.id)
+    if (data.action === 'cancel') await cancelTaskById(data.id)
+    else if (data.action === 'retry') await retryTaskById(data.id)
+    else if (data.action === 'remove') await removeTaskById(data.id)
   }
-}
-
-function isPasswordError(task: EncvTask): boolean {
-  if (!task.error) return false
-  return isWrongPasswordError(task.error)
-}
-
-async function loadTasks() {
-  loading.value = true
-  try {
-    tasks.value = await getTasks()
-  } catch {
-    tasks.value = []
-  }
-  loading.value = false
-}
-
-function toggleWarningDetail(task: EncvTask) {
-  expandedWarningDetail.value = expandedWarningDetail.value === task.id ? null : task.id
-}
-
-function formatWarningDetail(detail: string): string {
-  try { return JSON.stringify(JSON.parse(detail), null, 2) }
-  catch { return detail }
 }
 
 async function handleRefresh(event: CustomEvent) {
-  try {
-    tasks.value = await getTasks()
-  } catch {
-    // silent
-  }
+  await refresh()
   ;(event.target as any)?.complete?.()
 }
 
-async function handleCancelTask(id: string) {
-  try {
-    await cancelTask(id)
-    await loadTasks()
-  } catch {
-    showToast({ message: t('tasks.taskCancelFailed'), duration: 2000, color: 'danger' })
-  }
-}
-
-async function handleRetryTask(id: string) {
-  try {
-    await retryTask(id)
-    await loadTasks()
-  } catch {
-    showToast({ message: t('tasks.taskRetryFailed'), duration: 2000, color: 'danger' })
-  }
-}
-
-async function handleRemoveTask(id: string) {
-  try {
-    await removeTask(id)
-    await loadTasks()
-  } catch {
-    showToast({ message: t('tasks.taskRemoveFailed'), duration: 2000, color: 'danger' })
-  }
-}
-
 async function handleClearCompleted() {
-  const completedCount = tasks.value.filter(
-    t => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled'
-  ).length
-  if (completedCount === 0) return
-
+  const completedCount = await clearCompletedWithConfirm()
+  if (!completedCount) return
   const alert = await alertController.create({
     header: t('tasks.clearConfirmTitle'),
     message: t('tasks.clearConfirmMessage', { count: String(completedCount) }),
@@ -630,7 +341,7 @@ async function handleClearCompleted() {
           try {
             const result = await clearCompletedTasks()
             showToast({ message: t('tasks.cleared', { count: String(result.removed) }), duration: 2000, color: 'success' })
-            await loadTasks()
+            await fetchTasks()
           } catch {
             showToast({ message: t('tasks.clearFailed'), duration: 2000, color: 'danger' })
           }
@@ -641,66 +352,8 @@ async function handleClearCompleted() {
   await alert.present()
 }
 
-function onTaskUpdate(data: { id: string; type: string; status: string; progress: number }) {
-  const idx = tasks.value.findIndex(t => t.id === data.id)
-  if (idx !== -1) {
-    tasks.value[idx] = { ...tasks.value[idx], status: data.status as TaskStatus, progress: data.progress }
-  }
-}
-
-function onTaskProgress(data: { id: string; progress: number; phase: string; speed: string; eta: string }) {
-  const idx = tasks.value.findIndex(t => t.id === data.id)
-  if (idx !== -1) {
-    tasks.value[idx] = {
-      ...tasks.value[idx],
-      progress: data.progress,
-      phase: data.phase,
-      speed: data.speed,
-      eta: data.eta,
-    }
-  }
-}
-
-function onTaskCreated(data: { id: string; type: string; sourcePath: string }) {
-  const exists = tasks.value.some(t => t.id === data.id)
-  if (!exists) {
-    tasks.value.unshift({
-      id: data.id,
-      type: data.type as TaskType,
-      sourcePath: data.sourcePath,
-      status: 'queued',
-      progress: 0,
-      createdAt: new Date().toISOString(),
-    })
-  }
-}
-
-function onTaskCompleted(data: { id: string; status?: string; error?: string; errorDetail?: string; warning?: string; warningDetail?: string }) {
-  const idx = tasks.value.findIndex(t => t.id === data.id)
-  if (idx !== -1) {
-    tasks.value[idx] = {
-      ...tasks.value[idx],
-      status: data.error ? 'failed' : 'completed',
-      progress: data.error ? tasks.value[idx].progress : 100,
-      phase: data.error ? tasks.value[idx].phase : 'completed',
-      speed: '',
-      eta: '',
-      error: data.error,
-      errorDetail: data.errorDetail,
-      warning: data.warning,
-      warningDetail: data.warningDetail,
-      completedAt: new Date().toISOString(),
-    }
-  }
-}
-
 onMounted(() => {
-  loadTasks()
-  eventBus.on('task:update', onTaskUpdate)
-  eventBus.on('task:progress', onTaskProgress)
-  eventBus.on('task:created', onTaskCreated)
-  eventBus.on('task:completed', onTaskCompleted)
-  eventBus.on('task:refresh', loadTasks)
+  fetchTasks()
 
   if (route.query.action === 'new') {
     const sourcePath = route.query.source as string
@@ -712,14 +365,6 @@ onMounted(() => {
       openNewTask()
     }
   }
-})
-
-onUnmounted(() => {
-  eventBus.off('task:update', onTaskUpdate)
-  eventBus.off('task:progress', onTaskProgress)
-  eventBus.off('task:created', onTaskCreated)
-  eventBus.off('task:completed', onTaskCompleted)
-  eventBus.off('task:refresh', loadTasks)
 })
 </script>
 

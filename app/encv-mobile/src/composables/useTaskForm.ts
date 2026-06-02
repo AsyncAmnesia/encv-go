@@ -1,3 +1,12 @@
+/**
+ * doPredict 时序契约：
+ * 1. 设置 500ms 防抖 timer（immediate=true 可跳过防抖）
+ * 2. timer 触发后调用 plugin.predict() API（predictPlugin）
+ * 3. resolve(true) 表示有推荐插件
+ *
+ * 调用方必须 await 这个 Promise，否则 syncState() 拿到空数据。
+ * 总延迟 = 500ms(防抖) + API耗时(~100-300ms) = 600-800ms
+ */
 import { ref, computed, watch, nextTick } from 'vue'
 import { predictPlugin, type TaskOptions, type TaskField, type PluginCandidate } from '@/api/encv'
 import { usePathResolver } from '@/composables/usePathResolver'

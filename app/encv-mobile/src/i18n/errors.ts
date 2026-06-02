@@ -1,1 +1,4 @@
-export default {}
+export default {
+  'zh-CN': {},
+  en: {},
+}
