@@ -457,12 +457,13 @@ jobs:
         run: |
           cd app/encv-mobile/android
           BUILD_TYPE="${{ inputs.version && 'Release' || 'Debug' }}"
+          APK_BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
           echo "=== Compiling OpenList plugin (${BUILD_TYPE}) ==="
           ./gradlew ":plugin-openlist:compile${BUILD_TYPE}Kotlin" --stacktrace 2>&1
           echo "=== Converting to plugin APK ==="
-          ./gradlew "convert_plugin-openlist_${BUILD_TYPE}" --stacktrace 2>&1
+          ./gradlew "convert_plugin-openlist_${APK_BUILD_TYPE}" --stacktrace 2>&1
           echo "=== Locating output ==="
-          OPENLIST_APK=$(find build -name "plugin-openlist-${BUILD_TYPE}.apk" -type f 2>/dev/null | head -1)
+          OPENLIST_APK=$(find build -name "plugin-openlist-${APK_BUILD_TYPE}.apk" -type f 2>/dev/null | head -1)
           if [ -n "$OPENLIST_APK" ] && [ -f "$OPENLIST_APK" ]; then
             echo "✅ OpenList Plugin APK:"
             ls -lh "$OPENLIST_APK"
