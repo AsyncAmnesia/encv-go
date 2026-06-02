@@ -5,14 +5,25 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
-
 )
 
+// DecryptFile 解密容器文件，按插件命名范式还原原始文件名：
+//   - 容器文件 = EncodeName(完整原始名) + 容器后缀（如 .bin）
+//   - 通过 DecodeName 的 CRC6 校验判断密码是否正确（密码错会 CRC 失败）
+//   - 还原失败时使用 orig_<baseName-no-suffix> 兜底（避免用户误以为"丢后缀名"）
 func DecryptFile(containerPath, outputDir, password, encType string) (string, error) {
-	ext := strings.ToLower(filepath.Ext(containerPath))
-	if ext != "" && ext != ".bin" && ext != ".alist" && ext != ".enc" {
+	baseName := filepath.Base(containerPath)
+	containerExt := filepath.Ext(baseName)
+	if containerExt != "" && containerExt != ".bin" && containerExt != ".alist" && containerExt != ".enc" {
 		return "", &DecryptionError{Reason: "invalid format", Err: ErrInvalidFormat}
+	}
+
+	// 范式：从 baseName 去掉容器后缀后调 DecodeName 还原原始完整文件名
+	encPart := TrimContainerExt(baseName)
+	originalName := DecodeName(encPart, password, encType)
+	if originalName == "" {
+		// CRC6 校验失败 = 密码错 或 文件非本插件编码。绝不静默写出 "丢 ext" 的文件名
+		return "", &DecryptionError{Reason: "password mismatch or unsupported container", Err: ErrInvalidPassword}
 	}
 
 	f, err := os.Open(containerPath)
@@ -29,21 +40,12 @@ func DecryptFile(containerPath, outputDir, password, encType string) (string, er
 
 	dr, err := NewDecryptReader(f, password, fileSize)
 	if err != nil {
-		if strings.Contains(err.Error(), "failed to parse V2 header") || strings.Contains(err.Error(), "failed to create cipher") {
-			return "", &DecryptionError{Reason: "password mismatch", Err: ErrInvalidPassword}
-		}
 		return "", fmt.Errorf("failed to create decrypt reader: %w", err)
 	}
 
 	decryptedData, err := io.ReadAll(dr)
 	if err != nil {
 		return "", fmt.Errorf("failed to read decrypted data: %w", err)
-	}
-
-	baseName := filepath.Base(containerPath)
-	originalName := tryDecodeFilename(baseName, password, encType)
-	if originalName == "" {
-		originalName = strings.TrimSuffix(baseName, ext)
 	}
 
 	outputPath := filepath.Join(outputDir, originalName)
@@ -61,21 +63,12 @@ func DecryptFile(containerPath, outputDir, password, encType string) (string, er
 	return outputPath, nil
 }
 
-func tryDecodeFilename(encodedName, password, encType string) string {
-	if len(encodedName) < 2 {
-		return ""
+// TrimContainerExt 剥去插件容器后缀（默认 .bin），用于解码失败时的兜底文件名
+func TrimContainerExt(name string) string {
+	for _, ext := range []string{".bin", ".alist", ".enc"} {
+		if len(name) > len(ext) && name[len(name)-len(ext):] == ext {
+			return name[:len(name)-len(ext)]
+		}
 	}
-
-	fileName := filepath.Base(encodedName)
-	ext := filepath.Ext(fileName)
-	encPart := strings.TrimSuffix(fileName, ext)
-
-	decoded := DecodeName(encPart, password, encType)
-	if decoded == "" {
-		return ""
-	}
-
-	// ★ 关键修复: DecodeName 已经返回带扩展名的明文文件名（如 "CAD放样.mp4"），
-	// 不再追加原 .bin 后缀（之前 bug 会变成 "CAD放样.mp4.bin"）
-	return decoded
+	return name
 }

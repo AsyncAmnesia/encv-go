@@ -282,6 +282,10 @@ func ConvertShowName(encodedName string, password string, encType string) string
 	return showName
 }
 
+// ConvertRealName 把用户可见的原文件名转换为上传用的容器文件名。
+// 范式：EncodeName(完整原名) + 容器后缀（如 .bin）。
+// 本函数把 ext 从原名剥出再编码（而非编码整个含 ext 的名），保证容器文件名 = "encoded<ext>.bin"。
+// 这样既不重复 ext，又让 EncodeName 只处理 baseName 字符。
 func ConvertRealName(showName string, password string, encType string) string {
 	fileName := path.Base(showName)
 
@@ -295,8 +299,9 @@ func ConvertRealName(showName string, password string, encType string) string {
 	}
 
 	ext := path.Ext(decoded)
+	baseName := strings.TrimSuffix(decoded, ext)
 
-	encName := EncodeName(decoded, password, encType)
+	encName := EncodeName(baseName, password, encType)
 
 	return encName + ext
 }

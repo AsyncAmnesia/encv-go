@@ -396,32 +396,17 @@ body.dark .home-card {
 }
 
 /* ============================================
-   ENCV Toast 系统 — 顶部展示 + 堆叠 + Ionic Animation API
+   ENCV Toast 系统 — 顶部展示 + 堆叠 + Ionic 官方动画
+   完全不覆盖 Ionic overlay 布局，只调整视觉外观
    ============================================ */
 .encv-toast {
   --background: transparent;
   --box-shadow: none;
   --color: var(--ion-text-color);
-  --min-height: auto;
-  --height: auto;
-  border-radius: 0;
-  position: fixed;
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: auto;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  justify-content: center;
-  pointer-events: none;
-  transform: none;
-  contain: layout style;
+  --border-radius: 14px;
 }
 
 .encv-toast .toast-wrapper {
-  position: relative;
-  margin-top: var(--encv-toast-stack-offset, 16px);
   border-radius: 14px;
   padding: 12px 16px;
   display: flex;
@@ -430,10 +415,8 @@ body.dark .home-card {
   box-shadow:
     0 4px 24px rgba(0, 0, 0, 0.12),
     0 1px 4px rgba(0, 0, 0, 0.06);
-  pointer-events: auto;
+  margin: 6px 16px 0;
   max-width: 380px;
-  width: calc(100% - 32px);
-  transform-origin: top center;
 }
 
 .encv-toast .toast-message {

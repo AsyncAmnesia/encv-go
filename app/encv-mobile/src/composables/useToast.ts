@@ -1,5 +1,4 @@
-import { createAnimation } from '@ionic/vue'
-import { toastController } from '@ionic/vue'
+import { createAnimation, toastController } from '@ionic/vue'
 
 interface ToastOptions {
   message: string
@@ -11,23 +10,22 @@ const MAX_STACK = 5
 const activeToasts: Array<{ id: number; element: HTMLElement }> = []
 let toastIdCounter = 0
 
-const enterAnim = (baseEl: HTMLElement) => {
-  void baseEl
+const enterAnimationBuilder = (baseEl: HTMLElement) => {
   return createAnimation()
-    .addElement(baseEl)
+    .addElement(baseEl.querySelector('.toast-wrapper') || baseEl)
     .duration(360)
     .easing('cubic-bezier(0.34, 1.56, 0.64, 1)')
-    .fromTo('transform', 'translateY(-32px) scale(0.92)', 'translateY(0) scale(1)')
+    .fromTo('transform', 'translateY(-28px) scale(0.94)', 'translateY(0) scale(1)')
     .fromTo('opacity', '0', '1')
 }
 
-const leaveAnim = (baseEl: HTMLElement) => {
+const leaveAnimationBuilder = (baseEl: HTMLElement) => {
   return createAnimation()
-    .addElement(baseEl)
-    .duration(240)
+    .addElement(baseEl.querySelector('.toast-wrapper') || baseEl)
+    .duration(220)
     .easing('ease-in')
     .fromTo('opacity', '1', '0')
-    .fromTo('transform', 'translateY(0) scale(1)', 'translateY(-16px) scale(0.96)')
+    .fromTo('transform', 'translateY(0) scale(1)', 'translateY(-12px) scale(0.96)')
 }
 
 export async function showToast(options: ToastOptions) {
@@ -44,8 +42,8 @@ export async function showToast(options: ToastOptions) {
     duration: 0,
     position: 'top',
     cssClass: `encv-toast encv-toast--${color}`,
-    enterAnimation: enterAnim,
-    leaveAnimation: leaveAnim,
+    enterAnimation: enterAnimationBuilder,
+    leaveAnimation: leaveAnimationBuilder,
     buttons: [
       {
         icon: 'close-outline',
@@ -63,14 +61,14 @@ export async function showToast(options: ToastOptions) {
   if (!toastEl) return
 
   activeToasts.push({ id, element: toastEl })
-  repositionStack()
+  applyStackOffset()
 
   if (duration > 0) {
     setTimeout(async () => {
       const idx = activeToasts.findIndex((t) => t.id === id)
       if (idx !== -1) {
         activeToasts.splice(idx, 1)
-        repositionStack()
+        applyStackOffset()
       }
       try { await toast.dismiss({ role: 'timeout' }) } catch {}
     }, duration)
@@ -80,16 +78,14 @@ export async function showToast(options: ToastOptions) {
     const idx = activeToasts.findIndex((t) => t.id === id)
     if (idx !== -1) {
       activeToasts.splice(idx, 1)
-      repositionStack()
+      applyStackOffset()
     }
   })
 
   return toast
 }
 
-function repositionStack() {
-  if (activeToasts.length === 0) return
-
+function applyStackOffset() {
   while (activeToasts.length > MAX_STACK) {
     const removed = activeToasts.shift()
     if (removed?.element) {
@@ -97,16 +93,14 @@ function repositionStack() {
     }
   }
 
-  const safeTop = getSafeTop()
-
   activeToasts.forEach((t, idx) => {
     const el = t.element
     if (!el) return
     const wrapper = el.querySelector('.toast-wrapper') as HTMLElement | null
-    if (wrapper) {
-      const offset = safeTop + idx * 8
-      el.style.setProperty('--encv-toast-stack-offset', `${offset}px`)
-    }
+    if (!wrapper) return
+    const baseTop = getSafeTop()
+    const offset = baseTop + idx * 8
+    wrapper.style.setProperty('top', `${offset}px`, 'important')
   })
 }
 

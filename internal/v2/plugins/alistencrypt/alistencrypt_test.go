@@ -361,7 +361,7 @@ func TestMixBase64FilenameRoundtrip(t *testing.T) {
 	}{
 		{"simple_ascii", "test.txt", "password", "aesctr"},
 		{"chinese_filename", "测试视频.mp4", "密码123", "aesctr"},
-		{"long_filename", strings.Repeat("a", 200)+".dat", "longpass", "aesctr"},
+		{"long_filename", strings.Repeat("a", 200) + ".dat", "longpass", "aesctr"},
 		{"unicode_mixed", "ファイル名.dat", "パスワード", "aesctr"},
 		{"numeric_name", "12345.txt", "12345", "aesctr"},
 	}
@@ -424,6 +424,45 @@ func TestMixBase64FilenameRoundtrip(t *testing.T) {
 		enc2 := EncodeName("file.txt", "pass_b", "aesctr")
 		if enc1 == enc2 {
 			t.Error("different passwords should produce different encoded names")
+		}
+	})
+}
+
+// TestConvertRealNameParity 验证 ConvertRealName 不再产生 "ext 重复" 的容器文件名
+// 范式：EncodeName(baseName) + ext（ext 是用户原 ext，不是 .bin）
+func TestConvertRealNameParity(t *testing.T) {
+	cases := []struct {
+		showName  string
+		password  string
+		wantExt   string
+	}{
+		{"CAD放样.mp4", "8682268", ".mp4"},
+		{"test.txt", "pw", ".txt"},
+		{"noext", "pw", ""}, // 无 ext
+		{"a.b.c.d", "pw", ".d"},
+	}
+	for _, c := range cases {
+		t.Run(c.showName, func(t *testing.T) {
+			got := ConvertRealName(c.showName, c.password, "aesctr")
+			if got == "" {
+				t.Fatalf("ConvertRealName returned empty for %q", c.showName)
+			}
+			if !strings.HasSuffix(got, c.wantExt) {
+				t.Errorf("ConvertRealName(%q) = %q, want suffix %q", c.showName, got, c.wantExt)
+			}
+			// 不应出现 ".ext.ext" 的双重 ext
+			// （仅当 ext 非空时检查）
+			if c.wantExt != "" && strings.HasSuffix(got, c.wantExt+c.wantExt) {
+				t.Errorf("ConvertRealName(%q) = %q has doubled ext %q", c.showName, got, c.wantExt)
+			}
+		})
+	}
+
+	t.Run("orig_prefix_short_circuits", func(t *testing.T) {
+		origName := OrigPrefix + "user_file.txt"
+		got := ConvertRealName(origName, "pw", "aesctr")
+		if got != "user_file.txt" {
+			t.Errorf("orig_ prefix should be stripped, got %q", got)
 		}
 	})
 }
