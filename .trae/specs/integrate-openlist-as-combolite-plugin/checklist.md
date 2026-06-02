@@ -105,13 +105,33 @@
 
 ### build-openlist-aar.sh
 
-- [x] 入参 `--output/--fork/--branch/--ndk/--encv-go-root` 全部接受
+- [x] 入参 `--output/--fork/--branch/--ndk/--encv-go-root/--frontend-version/--local-frontend-dist` 全部接受
+- [x] 入口 `source scripts/openlist-fork.env` 加载默认配置
 - [x] fork 克隆到 `$WORK_DIR/openlist` 幂等
 - [x] `go.mod` 的 `replace` 路径用 sed 修正
-- [x] OpenList-Frontend dist 下载 → `public/dist/`
-- [x] `gomobile bind` 命令组装
+- [x] **frontend-pinned.txt 读取**（优先级 1）→ `--frontend-version`（2）→ env var（3）→ `releases/latest` + warning（4）
+- [x] **OpenList-Frontend dist 从 `releases/tags/${WEB_VERSION}` 拉**（非 latest）
+- [x] SHA256 验证下载的 frontend tar
+- [x] i18n overlay 应用：jq 合并 `public/dist/i18n-overlay/<lang>/translation.json` → `public/dist/assets/<lang>.json`
+- [x] `public/dist/VERSION` 文件写入：内容 `${WEB_VERSION}-encv`
+- [x] gomobile bind 注入 `-X ...WebVersion=${WEB_VERSION}`（非 rolling）
 - [x] AAR 拷到 `--output`
 - [x] SHA256 打印
+
+### scripts/openlist-fork.env
+
+- [x] 仓库 `/workspace/scripts/openlist-fork.env` 创建
+- [x] 含 `OPENLIST_FORK_URL=https://github.com/Hi-Sillot/OpenList.git`
+- [x] 含 `OPENLIST_FORK_BRANCH=dev`
+- [x] 含 `OPENLIST_FRONTEND_VERSION=`（空，由 fork 内 `frontend-pinned.txt` 提供）
+- [x] `.gitignore` 排除 `scripts/openlist-fork.env.local`
+
+### Hi-Sillot fork 侧（**用户操作**，本地沙箱无法代为推送）
+
+- [ ] `dev` 分支创建并推送（用户操作，token 已就位）
+- [ ] `frontend-pinned.txt` 创建在 fork 根目录（`v4.0.0`）
+- [ ] （可选）`public/dist/i18n-overlay/zh-CN/translation.json` 含 ENCV 翻译
+- [ ] （可选）`public/dist/i18n-overlay/en/translation.json`
 
 ### 验证
 

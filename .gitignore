@@ -56,3 +56,6 @@ Thumbs.db
 
 # Mock data (generated, not committed)
 __mock_data__/
+
+# Local overrides for tracked env-style config files
+scripts/openlist-fork.env.local

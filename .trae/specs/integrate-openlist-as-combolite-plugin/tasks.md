@@ -12,6 +12,19 @@
 - [x] 0.1.6 确认 fork 的 `cmd/server.go` 在 `Start()` 开头调用 `encv.GenerateENCVSettingItems()` + `encv.LoadENCVPluginSettings()`（与 Hi-Sillot 当前实现一致）
 - [x] 0.1.7 `cd openlistlib && go build .` 在 fork 根目录可编译（受 fork 现有 go.mod replace 路径阻塞，需在 build script 中修正）
 
+### 0.1·B Hi-Sillot fork 维护 dev 分支 + frontend-pinned.txt + i18n-overlay/
+
+- [ ] 0.1·B.1 在 Hi-Sillot/OpenList fork 创建 `dev` 分支（用户操作，token 已就位）
+- [ ] 0.1·B.2 在 fork `dev` 分支根目录新建 `frontend-pinned.txt`，写入当前匹配的 OpenList-Frontend 版本（如 `v4.0.0`）
+- [ ] 0.1·B.3 （可选）创建 `public/dist/i18n-overlay/zh-CN/translation.json` 含 ENCV 专用 key 翻译
+- [ ] 0.1·B.4 （可选）创建 `public/dist/i18n-overlay/en/translation.json`
+- [ ] 0.1·B.5 在 fork `dev` 分支提交 + 推送
+
+### 0.1·C encv-mobile 侧 fork 配置
+
+- [x] 0.1·C.1 创建 `/workspace/scripts/openlist-fork.env`，含 `OPENLIST_FORK_URL=https://github.com/Hi-Sillot/OpenList.git`、`OPENLIST_FORK_BRANCH=dev`、`OPENLIST_FRONTEND_VERSION=`
+- [x] 0.1·C.2 `.gitignore` 把 `scripts/openlist-fork.env.local` 加入（个人 override 不入仓）
+
 ### 0.2 验证 gomobile bind CGO 可行性
 
 - [x] 0.2.1 准备 NDK r25c（仿 K-Sillot）or r26b（与 encv-mobile 一致）—— **CI 环境执行**（沙箱内未装 NDK）
@@ -114,16 +127,20 @@
 
 ## Phase 4: 构建 & CI（1-2 天）
 
-### 4.1 `scripts/build-openlist-aar.sh`（仿 K-Sillot 4 件套合一）
+### 4.1 `scripts/build-openlist-aar.sh`（仿 K-Sillot 4 件套合一 + frontend pin 修复）
 
-- [x] 4.1.1 入参：`--output <aar>` `--fork <git-url>` `--branch <branch>` `--ndk <path>` `--encv-go-root <path>`
-- [x] 4.1.2 clone fork 到 `$WORK_DIR/openlist`（删除旧副本）
-- [x] 4.1.3 修复 `go.mod` 的 `replace` 路径：把 `../../../` 替换为传入的 `--encv-go-root`
-- [x] 4.1.4 下载 OpenList-Frontend dist → `public/dist/`
-- [x] 4.1.5 `go install gomobile@latest && gomobile init`
-- [x] 4.1.6 `cd openlistlib && gomobile bind -ldflags "-s -w -X ...Version=..." -v -androidapi 19 -target="android/arm64"`
-- [x] 4.1.7 把 `openlist.aar` 拷到 `--output`
-- [x] 4.1.8 chmod 755、生成 SHA256
+- [x] 4.1.1 入参：`--output <aar>` `--fork <git-url>` `--branch <branch>` `--ndk <path>` `--encv-go-root <path>` `--frontend-version <vX.Y.Z>` `--local-frontend-dist <path>`
+- [x] 4.1.2 入口 `source scripts/openlist-fork.env` 加载默认配置
+- [x] 4.1.3 clone fork 到 `$WORK_DIR/openlist`（删除旧副本）
+- [x] 4.1.4 修复 `go.mod` 的 `replace` 路径：把 `../../../` 替换为传入的 `--encv-go-root`
+- [x] 4.1.5 **读 frontend pin**：先 `${SRC_DIR}/frontend-pinned.txt`、再 `--frontend-version`、再 `OPENLIST_FRONTEND_VERSION`、再 fallback `releases/latest` + warning
+- [x] 4.1.6 下载 OpenList-Frontend dist：从 `releases/tags/${WEB_VERSION}` 拉（**不**用 `latest`）
+- [x] 4.1.7 （可选）应用 i18n overlay：若 `public/dist/i18n-overlay/<lang>/translation.json` 存在 → jq 合并到 `public/dist/assets/<lang>.json`
+- [x] 4.1.8 写 `public/dist/VERSION` 文件：`${WEB_VERSION}-encv`
+- [x] 4.1.9 `go install gomobile@latest && gomobile init`
+- [x] 4.1.10 `cd openlistlib && gomobile bind -ldflags "-s -w -X ...Version=... -X ...WebVersion=${WEB_VERSION} -X ...BuiltAt=... -X ...GitCommit=..." -v -androidapi 19 -target="android/arm64"`
+- [x] 4.1.11 把 `openlist.aar` 拷到 `--output`
+- [x] 4.1.12 chmod 755、生成 SHA256
 
 ### 4.2 `scripts/build-openlist-aar.ps1`（Windows 镜像）
 

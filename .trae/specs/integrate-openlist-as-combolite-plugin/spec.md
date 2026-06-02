@@ -107,20 +107,98 @@ class OpenListPluginEntry : IPluginEntry {
 
 ### 三、构建脚本 `scripts/build-openlist-aar.sh`
 
-仿 K-Sillot 的 `openlist-lib/scripts/{init_openlist,init_web,init_gomobile,gobind}.sh`：
+仿 K-Sillot 的 `openlist-lib/scripts/{init_openlist,init_web,init_gomobile,gobind}.sh`，但**修正两处 K-Sillot 方案不适用 Hi-Sillot fork 的 bug**：
 
-1. 接受 `--output <aar-path>` `--fork <git-url>` `--branch <branch>` `--ndk <path>` 入参
+1. 接受 `--output <aar-path>` `--fork <git-url>` `--branch <branch>` `--ndk <path>` `--encv-go-root <path>` `--frontend-version <vX.Y.Z>` `--local-frontend-dist <path>` 入参
 2. 临时克隆 Hi-Sillot/OpenList 到 `$WORK_DIR/openlist`
-3. 准备 `public/dist/` 静态资源（OpenList-Frontend dist tar）
+3. **前端 dist 版本对齐**（关键修复，见下方"前端 i18n 版本对齐"段）：
+   - 优先读 fork 根目录的 `frontend-pinned.txt` → 取得 `vX.Y.Z`
+   - 否则读 `--frontend-version` 入参
+   - 否则回退 `https://api.github.com/repos/OpenListTeam/OpenList-Frontend/releases/tags/vX.Y.Z`（**不**用 `releases/latest`）
+   - 否则打 warning 并回退 `releases/latest`（CI 应在 lint 阶段 fail，不应在 build 阶段 fail）
 4. `go install golang.org/x/mobile/cmd/gomobile@latest && gomobile init`
 5. 修复 fork 的 `replace github.com/Soltus/encv-go => ../../../` 指向 `encv-go` 真实路径（用 sed 改成 `replace github.com/Soltus/encv-go => /workspace` 或绝对路径参数化）
-6. `gomobile bind -ldflags "$ldflags" -v -androidapi 19 -target="android/arm64"`
-7. 把产出的 `openlist.aar` 拷贝到 `--output` 指定路径
+6. **ldflags 中 `WebVersion` 用读出的版本号**（**不**再硬编码 `rolling`）
+7. `gomobile bind -ldflags "$ldflags" -v -androidapi 19 -target="android/arm64"`
+8. 把产出的 `openlist.aar` 拷贝到 `--output` 指定路径
 
 环境要求：
 - Go 1.25.x（与 fork go.mod 一致）
 - NDK r25c 或 r26b
 - Java 17
+
+### 三·B、Fork 依赖管理（submodule vs subtree vs 外部依赖）
+
+**结论：不使用 submodule、不使用 subtree，采用"外部构建时依赖"模式。**
+
+| 维度 | submodule | subtree | 外部依赖（推荐） |
+|------|-----------|---------|-----------------|
+| Git 关系 | 强耦合 | 软耦合 | 无 git 关系 |
+| fork push 后 | 必须手动 bump 指针 | `git subtree pull` | CI 改 `--branch` |
+| 仓库体积 | 正常 | 含完整 fork 历史 | 正常 |
+| 适合 | 长期稳定的第三方库 | 想保留完整历史 | **活跃维护的个人 fork** |
+
+**理由**：
+- Hi-Sillot/OpenList 是用户**个人维护**的 fork，**持续集成 ENCV 补丁**
+- 用 submodule → 推 fork 后忘了 bump 指针，构建会破
+- 用 subtree → encv-mobile 仓库体积膨胀 + 历史重复
+- 外部依赖 + `--branch dev` → 用户推 fork → CI 自动用最新 dev → 零摩擦
+
+**Dev 分支工作流**（用户建议）：
+1. 用户在 Hi-Sillot/OpenList 创建 `dev` 分支（推送权限已就位）
+2. `scripts/build-openlist-aar.sh` 默认 `--branch dev`
+3. 发布稳定版本时在 fork 上打 tag：`git tag encv-v0.1.0` → encv-mobile CI 改 `--branch encv-v0.1.0`
+4. `scripts/openlist-fork.env`（新增配置文件）集中管理 fork URL / 默认 branch
+
+**配套：在 fork 仓库根新增 `scripts/openlist-fork.env`**（被 `build-openlist-aar.sh` source）：
+```bash
+OPENLIST_FORK_URL=https://github.com/Hi-Sillot/OpenList.git
+OPENLIST_FORK_BRANCH=dev
+OPENLIST_FORK_PINNED_TAG=
+OPENLIST_FRONTEND_VERSION=
+```
+
+### 三·C、前端 i18n 版本对齐（关键修复）
+
+**Bug**：K-Sillot 的 `init_web.sh` 用 `releases/latest`，对 Hi-Sillot 的自定义 fork 是错的。
+
+**后果**：
+- Hi-Sillot fork 增加了 ENCV 设置项（`EncvDecryptPassword`、`EncvTextExt`、`EncvAudioExt`、`EncvVideoExt`、`EncvImageExt`，见 [internal/conf/const.go](file:///tmp/openlist-hisillot/internal/conf/const.go)）→ 上游最新版 frontend 可能没这些 key → OpenList Web UI 显示空白
+- 上游新版 frontend 可能加了路由 → fork backend 没实现 → 跳 404
+- i18n 翻译条目版本不匹配 → 切语言后部分页面回退英文
+
+**解决方案（推荐组合 A + D）**：
+
+#### A. fork 仓库根加 `frontend-pinned.txt`
+
+```
+# Hi-Sillot/OpenList 根目录
+# 锁定的 OpenList-Frontend 版本（必须与 internal/conf.WebVersion 默认值一致）
+# 当 fork 升级或加新 ENCV 设置项时，下载匹配的前端 i18n → 在此文件更新版本号
+v4.0.0
+```
+
+`build-openlist-aar.sh` 读取顺序：
+1. `${SRC_DIR}/frontend-pinned.txt` 优先
+2. `--frontend-version` CLI 入参覆盖
+3. `OPENLIST_FRONTEND_VERSION` env var
+4. fallback `releases/latest` + warning（不 fail）
+
+#### D. i18n overlay 应用机制
+
+fork 在 `public/dist/i18n-overlay/`（可选目录）放 ENCV 专用翻译补丁，结构：
+```
+public/dist/i18n-overlay/
+├── zh-CN/
+│   └── translation.json   # ENCV 专用 key 翻译
+└── en/
+    └── translation.json
+```
+
+`build-openlist-aar.sh` 在下载官方 dist 后 + 写入 VERSION 前：
+- 若 `i18n-overlay/` 存在 → 用 jq 合并到 `public/dist/assets/*.json` 对应语言包
+- 冲突时 overlay 优先
+- 应用后写 `public/dist/VERSION`（值 = pin 的版本号 + `-encv` 后缀，例如 `v4.0.0-encv`）
 
 ### 四、encv-go 端最小适配
 
@@ -170,6 +248,82 @@ class OpenListPluginEntry : IPluginEntry {
 - Capacitor WebView 本身
 
 ## ADDED Requirements
+
+### Requirement: Fork 通过外部构建时依赖管理（非 git submodule/subtree）
+
+Hi-Sillot/OpenList SHALL **不**通过 `git submodule` 或 `git subtree` 引入 encv-mobile；`scripts/build-openlist-aar.sh` SHALL 通过 `--fork`/`--branch` 参数按需克隆到 `$WORK_DIR` 临时目录。
+
+#### Scenario: 默认从 dev 分支拉取
+- **WHEN** 在 encv-mobile 仓库根运行 `bash scripts/build-openlist-aar.sh --output ./plugin-openlist/libs`
+- **THEN** 脚本 `source scripts/openlist-fork.env` → 取得 `OPENLIST_FORK_URL=https://github.com/Hi-Sillot/OpenList.git`、`OPENLIST_FORK_BRANCH=dev`；git clone 到 `$WORK_DIR/openlist`
+
+#### Scenario: 切到指定 tag 构建
+- **WHEN** 用户跑 `bash scripts/build-openlist-aar.sh --branch encv-v0.1.0`
+- **THEN** 脚本 clone tag `encv-v0.1.0`（git tag 形式，非 commit SHA）
+
+#### Scenario: 本地 fork 调试
+- **WHEN** 开发者跑 `bash scripts/build-openlist-aar.sh --fork /Users/me/openlist-fork --branch feature/my-encv-patch`
+- **THEN** 脚本从本地路径 clone + checkout `feature/my-encv-patch`
+
+### Requirement: scripts/openlist-fork.env 集中管理 fork 配置
+
+`scripts/openlist-fork.env` SHALL 集中存储 fork URL、默认 branch、tag pin、frontend version pin 等可调参数；`build-openlist-aar.sh` SHALL 在每个运行入口 source 该文件。
+
+#### Scenario: env 文件被自动加载
+- **WHEN** 执行 `bash scripts/build-openlist-aar.sh`
+- **THEN** 输出第一行日志 `fork env: OPENLIST_FORK_BRANCH=dev OPENLIST_FRONTEND_VERSION=4.0.0`
+
+### Requirement: fork 仓库 frontend-pinned.txt 显式锁定前端版本
+
+Hi-Sillot/OpenList fork 根目录 SHALL 维护 `frontend-pinned.txt`，内容为单一版本号字符串（如 `v4.0.0`）。
+
+#### Scenario: 读 pinned 版本
+- **WHEN** `build-openlist-aar.sh` clone fork 后
+- **THEN** `WEB_VERSION=$(cat ${SRC_DIR}/frontend-pinned.txt 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?' | head -n 1)` 非空
+
+#### Scenario: pinned 文件缺失
+- **WHEN** fork 根目录无 `frontend-pinned.txt`
+- **THEN** 脚本 fallback 到 `--frontend-version` CLI 入参；再缺失则 env var `OPENLIST_FRONTEND_VERSION`；再缺失则 `releases/latest` + stderr warning `[WARN] no frontend pin, using latest`（CI lint 阶段应 fail 此情况，build 阶段仍可继续）
+
+### Requirement: 前端 dist 下载按 pinned 版本而非 latest
+
+`build-openlist-aar.sh` SHALL 从 `https://api.github.com/repos/OpenListTeam/OpenList-Frontend/releases/tags/${WEB_VERSION}` 下载匹配版本，**不**使用 `releases/latest`。
+
+#### Scenario: 正常下载 pinned 版本
+- **WHEN** `WEB_VERSION=v4.0.0`
+- **THEN** curl `https://api.github.com/repos/OpenListTeam/OpenList-Frontend/releases/tags/v4.0.0`，找到含 `openlist-frontend-dist-*.tar.gz` 的 asset；下载到 `$WORK_DIR/openlist-frontend-dist.tar.gz`；extract 到 `${SRC_DIR}/public/dist/`；sha256sum 验证
+
+#### Scenario: pinned 版本不存在
+- **WHEN** `WEB_VERSION=v9.9.9`（不存在）
+- **THEN** API 返回 404；脚本 exit 1 + 报错 `[ERROR] OpenList-Frontend v9.9.9 not found`
+
+### Requirement: ldflags 中 WebVersion 注入 pinned 版本
+
+`gomobile bind` SHALL 注入 `-X 'github.com/OpenListTeam/OpenList/v4/internal/conf.WebVersion=${WEB_VERSION}'`，**不**再硬编码 `rolling`。
+
+#### Scenario: WebVersion 反映 pinned 版本
+- **WHEN** 构建完成
+- **THEN** OpenList 启动后访问 `/api/admin/settings` → `web_version` 字段返回 `${WEB_VERSION}`（如 `v4.0.0`）
+
+### Requirement: i18n overlay 应用机制（可选）
+
+若 fork 在 `public/dist/i18n-overlay/<lang>/translation.json` 放置 ENCV 专用翻译补丁，`build-openlist-aar.sh` SHALL 用 jq 合并到对应语言包（overlay key 覆盖原 key）。
+
+#### Scenario: overlay 存在并被应用
+- **WHEN** fork 包含 `public/dist/i18n-overlay/zh-CN/translation.json` 含 `{"encv": {"decryptPassword": "解密密码"}}`
+- **THEN** 脚本 `jq -s '.[0] * .[1]' ${SRC_DIR}/public/dist/assets/zh-CN.json ${SRC_DIR}/public/dist/i18n-overlay/zh-CN/translation.json > ${SRC_DIR}/public/dist/assets/zh-CN.json.tmp && mv ...tmp ...`；OpenList Web UI 切换到 zh-CN 后 ENCV 设置面板正确显示"解密密码"而非 key 字面量
+
+#### Scenario: overlay 不存在
+- **WHEN** fork 无 `i18n-overlay/` 目录
+- **THEN** 脚本跳过 overlay 步骤，原 frontend dist 直接使用
+
+### Requirement: 写入 public/dist/VERSION 文件
+
+`build-openlist-aar.sh` 在 frontend dist 解压 + i18n overlay 合并后 SHALL 写 `${SRC_DIR}/public/dist/VERSION`，内容为 `${WEB_VERSION}-encv`。
+
+#### Scenario: VERSION 文件被写入
+- **WHEN** 构建完成
+- **THEN** `${SRC_DIR}/public/dist/VERSION` 存在且内容如 `v4.0.0-encv`；OpenList 后端在 `Bootstrap()` 中读此文件并存储为 `conf.FrontendVersion`
 
 ### Requirement: Hi-Sillot fork 提供 `openlistlib/` Go 库入口
 
