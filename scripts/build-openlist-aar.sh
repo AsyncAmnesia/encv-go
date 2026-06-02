@@ -54,7 +54,7 @@ Options:
   --output                 <dir>    Output directory for openlist.aar (required)
   --fork                   <url>    Hi-Sillot fork URL       (default: ${FORK})
   --branch                 <name>   Git branch / tag          (default: ${BRANCH})
-  --ndk                    <path>   Android NDK install path  (default: ${NDK_DEFAULT})
+  --ndk                    <path>   Android NDK install path  (env: ANDROID_NDK_HOME)  (default: ${NDK_DEFAULT})
   --encv-go-root           <dir>    Local encv-go checkout    (default: ${ENCV_GO_ROOT_DEFAULT})
   --frontend-version       <vX.Y.Z> Pin OpenList-Frontend version (overrides env and frontend-pinned.txt)
   --local-frontend-dist    <dir>    Skip download, copy local frontend dist directly into public/dist/
@@ -293,7 +293,7 @@ mkdir -p "${GOPATH_BIN}"
 export PATH="${GOPATH_BIN}:${PATH}"
 go install golang.org/x/mobile/cmd/gomobile@latest
 go install golang.org/x/mobile/cmd/gobind@latest
-gomobile init -ndk "${NDK}"
+gomobile init
 
 cd "${SRC_DIR}"
 BIND_PKG=""
@@ -313,11 +313,17 @@ LDFLAGS="${LDFLAGS} -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.BuiltA
 LDFLAGS="${LDFLAGS} -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.GitAuthor=The OpenList Projects Contributors <noreply@openlist.team>'"
 LDFLAGS="${LDFLAGS} -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.GitCommit=$(git -C "${SRC_DIR}" rev-parse --short HEAD)'"
 
+# 16KB page size alignment (NDK 28+ requirement, also future-proofs older NDKs).
+# See: https://developer.android.com/guide/practices/page-sizes
+export CGO_CFLAGS="-O2"
+export CGO_CXXFLAGS="-O2"
+export CGO_LDFLAGS="-O2 -s -w -Wl,-z,max-page-size=16384"
+
 cd "${SRC_DIR}"
 gomobile bind \
     -ldflags "${LDFLAGS}" \
     -v \
-    -androidapi 19 \
+    -androidapi 21 \
     -target="android/arm64" \
     -o "${OUTPUT}/openlist.aar" \
     "${BIND_PKG}"
