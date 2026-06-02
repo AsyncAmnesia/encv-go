@@ -27,7 +27,7 @@
             <ion-card-header>
               <div class="ext-header-row">
                 <div class="ext-title-area">
-                  <ion-icon :icon="filmOutline" class="ext-icon"></ion-icon>
+                  <ion-icon :icon="ext.id === 'openlist' ? serverOutline : filmOutline" class="ext-icon"></ion-icon>
                   <ion-card-title>{{ ext.name }}</ion-card-title>
                 </div>
                 <ion-badge :color="ext.installed ? 'success' : 'medium'">
@@ -131,6 +131,7 @@ import {
 } from '@ionic/vue'
 import {
   filmOutline,
+  serverOutline,
   addOutline,
   informationCircle,
   checkmarkCircle,
@@ -173,11 +174,18 @@ async function loadExtensions() {
   try {
     const COMBOLITE_PLUGIN_ID_MAP: Record<string, string> = {
       'mpv-player': 'com.encvgo.plugin.mpv',
+      'openlist': 'com.encvgo.plugin.openlist',
     }
 
     interface PluginStatus { installed: boolean; enabled: boolean; versionName: string }
+    console.error('[SAT-DBG][Extensions] loadExtensions() start | isNative=', Capacitor.isNativePlatform())
     const installedMap: Record<string, PluginStatus> = Capacitor.isNativePlatform() ? await checkInstalledPlugins() : {}
+    console.error('[SAT-DBG][Extensions] installedMap keys=', Object.keys(installedMap), '| mpv=', !!installedMap['com.encvgo.plugin.mpv'], '| openlist=', !!installedMap['com.encvgo.plugin.openlist'])
+
     const mpvInfo = installedMap[COMBOLITE_PLUGIN_ID_MAP['mpv-player']]
+    const openlistInfo = installedMap[COMBOLITE_PLUGIN_ID_MAP['openlist']]
+    console.error('[SAT-DBG][Extensions] mpvInfo=', JSON.stringify(mpvInfo), '| openlistInfo=', JSON.stringify(openlistInfo))
+
     extensions.value = [
       {
         id: 'mpv-player',
@@ -187,9 +195,18 @@ async function loadExtensions() {
         enabled: mpvInfo?.enabled ?? false,
         sizeDisplay: '~35 MB',
       },
+      {
+        id: 'openlist',
+        name: t('extensions.openlist'),
+        description: t('extensions.openlistDesc'),
+        installed: !!openlistInfo?.installed,
+        enabled: openlistInfo?.enabled ?? false,
+        sizeDisplay: '~40 MB',
+      },
     ]
+    console.error('[SAT-DBG][Extensions] extensions.value.length=', extensions.value.length)
   } catch (e) {
-    console.error('Failed to load extensions:', e)
+    console.error('[SAT-DBG][Extensions] loadExtensions ERROR:', e)
   } finally {
     isLoading.value = false
   }
@@ -228,6 +245,7 @@ async function handleToggleEnabled(id: string, currentEnabled: boolean) {
   if (!isNativePlatform()) return
   const COMBO_LITE_ID: Record<string, string> = {
     'mpv-player': 'com.encvgo.plugin.mpv',
+    'openlist': 'com.encvgo.plugin.openlist',
   }
   const pluginId = COMBO_LITE_ID[id] || id
   const newEnabled = !currentEnabled
@@ -250,6 +268,7 @@ async function handleToggleEnabled(id: string, currentEnabled: boolean) {
 async function handleUninstall(id: string) {
   const COMBO_LITE_ID: Record<string, string> = {
     'mpv-player': 'com.encvgo.plugin.mpv',
+    'openlist': 'com.encvgo.plugin.openlist',
   }
   const pluginId = COMBO_LITE_ID[id] || id
   const alert = await alertController.create({
