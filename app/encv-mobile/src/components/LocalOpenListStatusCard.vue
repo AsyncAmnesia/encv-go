@@ -4,7 +4,7 @@
       <div class="card-title-row">
         <ion-icon :icon="serverIcon" class="card-icon"></ion-icon>
         <span class="card-title">{{ t('remote.localOpenListTitle') }}</span>
-        <ion-badge :color="badgeColor" class="status-badge">{{ statusLabel }}</span>
+        <span :class="['status-badge', 'badge-' + badgeColor]">{{ statusLabel }}</span>
       </div>
     </div>
 
@@ -62,7 +62,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { IonIcon, IonButton, IonBadge } from '@ionic/vue'
+import { IonIcon, IonButton } from '@ionic/vue'
 import { server as serverIcon, settings as settingsIcon, open as openIcon } from 'ionicons/icons'
 import { fetchLocalOpenListStatus, formatFileSize } from '@/api/encv'
 import type { LocalOpenListState } from '@/api/encv'
@@ -217,6 +217,24 @@ body.dark .local-openlist-card {
 .status-badge {
   font-size: 11px;
   flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.badge-success {
+  background: var(--ion-color-success, #2dd36f);
+  color: #fff;
+}
+
+.badge-danger {
+  background: var(--ion-color-danger, #eb445a);
+  color: #fff;
+}
+
+.badge-medium {
+  background: var(--ion-color-medium, #92949c);
+  color: #fff;
 }
 
 .card-body {
