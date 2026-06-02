@@ -3,6 +3,13 @@
     <div class="section-title">{{ t('tasks.basicInfo') }}</div>
     <div class="info-grid">
       <div class="info-item">
+        <span class="info-label">{{ t('tasks.taskId') }}</span>
+        <span class="info-value task-id-value" @click="copyTaskId" title="Click to copy">
+          {{ task.id }}
+          <ion-icon :icon="copyOutline" class="copy-icon"></ion-icon>
+        </span>
+      </div>
+      <div class="info-item">
         <span class="info-label">{{ t('tasks.fileName') }}</span>
         <span class="info-value file-name">{{ fileName }}</span>
       </div>
@@ -26,12 +33,23 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { IonBadge } from '@ionic/vue'
+import { IonBadge, IonIcon } from '@ionic/vue'
+import { copyOutline } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
+import { showToast } from '@/composables/useToast'
 import type { EncvTask } from '@/api/encv'
 
 const props = defineProps<{ task: EncvTask }>()
 const { t } = useI18n()
+
+async function copyTaskId() {
+  try {
+    await navigator.clipboard.writeText(props.task.id)
+    showToast({ message: t('tasks.idCopied'), duration: 1500, color: 'success' })
+  } catch {
+    showToast({ message: t('tasks.idCopyFailed'), duration: 1500, color: 'danger' })
+  }
+}
 
 const fileName = computed(() => {
   const parts = props.task.sourcePath.split('/')
@@ -79,5 +97,30 @@ const fileName = computed(() => {
 .file-name {
   word-break: break-all;
   max-width: 220px;
+}
+
+.task-id-value {
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--encv-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  word-break: break-all;
+}
+
+.task-id-value:hover {
+  color: var(--ion-color-primary);
+}
+
+.copy-icon {
+  font-size: 14px;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.task-id-value:hover .copy-icon {
+  opacity: 1;
 }
 </style>

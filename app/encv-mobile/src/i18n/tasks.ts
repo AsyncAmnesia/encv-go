@@ -99,6 +99,9 @@ export default {
 
     'tasks.taskDetail': '任务详情',
     'tasks.basicInfo': '基本信息',
+    'tasks.taskId': '任务 ID',
+    'tasks.idCopied': '任务 ID 已复制',
+    'tasks.idCopyFailed': '复制失败',
     'tasks.fileName': '文件名',
     'tasks.handledBy': '处理插件',
     'tasks.containerVersion': '容器版本',
@@ -217,6 +220,9 @@ export default {
 
     'tasks.taskDetail': 'Task Detail',
     'tasks.basicInfo': 'Basic Info',
+    'tasks.taskId': 'Task ID',
+    'tasks.idCopied': 'Task ID copied',
+    'tasks.idCopyFailed': 'Copy failed',
     'tasks.fileName': 'File Name',
     'tasks.handledBy': 'Plugin',
     'tasks.containerVersion': 'Container Version',

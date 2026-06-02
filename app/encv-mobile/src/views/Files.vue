@@ -731,7 +731,7 @@ async function handleRefresh(event: CustomEvent) {
       const results = await searchPluginFiles(selectedPlugin.value)
       pluginFiles.value = results
     } catch (e) {
-      console.error('[Files] Plugin refresh failed:', e)
+      console.debug('[Files] Plugin refresh failed:', e)
     } finally {
       pluginLoaded.value = true
     }
@@ -1424,7 +1424,7 @@ watch(selectedPlugin, async (plugin) => {
       if (gen !== pluginLoadGeneration) return
       pluginFiles.value = results
     } catch (e) {
-      console.error('[Files] Plugin stream load failed:', e)
+      console.debug('[Files] Plugin stream load failed:', e)
     }
     if (gen === pluginLoadGeneration) {
       pluginLoaded.value = true

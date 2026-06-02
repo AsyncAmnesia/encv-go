@@ -152,6 +152,7 @@
             <ion-label>
               <h2>{{ getTaskName(task) }}</h2>
               <p class="card-meta-row">
+                <span class="task-id">#{{ task.id.slice(0, 6) }}</span>
                 <ion-badge :color="getStatusColor(task.status)" class="status-badge">
                   {{ getStatusLabel(task.status) }}
                 </ion-badge>
@@ -442,6 +443,14 @@ onMounted(() => {
   font-size: 12px;
   --padding-start: 8px;
   --padding-end: 10px;
+}
+
+.task-id {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--encv-text-secondary);
+  opacity: 0.7;
+  margin-right: 2px;
 }
 
 .status-badge {

@@ -1,224 +1,88 @@
 [
   {
-    "id": "148f7ac6-fa69-42a5-8b68-6403dea3e731",
+    "id": "07f8ef34-cc46-449f-8b9b-23931abd57d5",
     "type": "encrypt",
     "sourcePath": "/01-plain-media/video/sample.mp4",
     "extraFields": {
-      "plugin_password": "123456"
+      "encrypt_filename": "true",
+      "fn_charset": "full",
+      "fn_deconfuse": "true",
+      "fn_rounds": "8",
+      "fn_structured": "true",
+      "stream_preset": "balanced"
     },
-    "pluginName": "alist_encrypt",
-    "status": "completed",
-    "progress": 100,
-    "phase": "completed",
-    "createdAt": "2026-05-31T21:03:24.572054632Z",
-    "completedAt": "2026-05-31T21:03:25.037575002Z"
-  },
-  {
-    "id": "9a0a1d97-0827-426e-8c7d-c6db7b75fdb5",
-    "type": "decrypt",
-    "sourcePath": "/storage/emulated/0/hyYGPCwJPQ3+xrdAvfnn2.bin",
-    "extraFields": {
-      "plugin_password": "8682268"
-    },
-    "pluginName": "alist_encrypt",
-    "status": "completed",
-    "progress": 100,
-    "phase": "completed",
-    "createdAt": "2026-06-01T18:54:41.401075089Z",
-    "completedAt": "2026-06-01T18:54:42.604868431Z"
-  },
-  {
-    "id": "898bad69-c316-45ec-b3ef-3adf74a3c2a0",
-    "type": "decrypt",
-    "sourcePath": "/storage/emulated/0/hyYGPCwJPQ3+xrdAvfnn2.bin",
-    "extraFields": {
-      "plugin_password": "8682268"
-    },
-    "pluginName": "alist_encrypt",
+    "pluginName": "video",
     "status": "failed",
-    "progress": 5,
-    "phase": "analyzing",
-    "error": "source file not found, it may have been moved or deleted",
-    "errorDetail": "source file not found: stat /storage/emulated/0/storage/emulated/0/hyYGPCwJPQ3+xrdAvfnn2.bin: no such file or directory",
-    "createdAt": "2026-06-01T18:39:29.099299087Z",
-    "completedAt": "2026-06-01T18:39:29.334137084Z"
+    "progress": 15,
+    "phase": "preprocessing",
+    "error": "encryption processing failed",
+    "errorDetail": "encryption failed: post-encryption failed for '/storage/emulated/0/01-plain-media/video/sample.mp4': container verification failed: read orig error at 0: EOF",
+    "containerVersion": 4,
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-02T00:32:43.213307621Z",
+        "completedAt": "2026-06-02T00:32:43.213613661Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-02T00:32:43.213613661Z",
+        "completedAt": "2026-06-02T00:32:43.213964133Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-02T00:32:43.213964133Z",
+        "completedAt": "2026-06-02T00:32:43.213995251Z"
+      },
+      {
+        "phase": "preprocessing",
+        "startedAt": "2026-06-02T00:32:43.213995251Z"
+      }
+    ],
+    "createdAt": "2026-06-02T00:32:43.140319695Z",
+    "completedAt": "2026-06-02T00:32:44.540534553Z"
   },
   {
-    "id": "9680d628-f3d4-4ce9-8f3d-6dc1627033fb",
-    "type": "decrypt",
-    "sourcePath": "/hyYGPCwJPQ3+xrdAvfnn2.bin",
+    "id": "a2400b3a-8ab9-4a14-bb82-843815614e83",
+    "type": "encrypt",
+    "sourcePath": "/01-plain-media/image/screenshot.png",
     "extraFields": {
-      "enc_type": "aesctr",
-      "encode_filename": "false",
-      "plugin_password": "8682268"
+      "encrypt_filename": "true",
+      "fn_charset": "alnum",
+      "fn_deconfuse": "true",
+      "fn_rounds": "8",
+      "fn_structured": "true"
     },
-    "pluginName": "alist_encrypt",
+    "pluginName": "image",
     "status": "completed",
     "progress": 100,
     "phase": "completed",
-    "createdAt": "2026-06-01T19:58:36.559870958Z",
-    "completedAt": "2026-06-01T19:58:36.85231486Z"
-  },
-  {
-    "id": "e961d485-fac7-4032-b3b6-2a21f849c348",
-    "type": "decrypt",
-    "sourcePath": "/hyYGPCwJPQ3+xrdAvfnn2.bin",
-    "extraFields": {
-      "enc_type": "aesctr",
-      "encode_filename": "false",
-      "plugin_password": "8682268"
-    },
-    "pluginName": "alist_encrypt",
-    "status": "completed",
-    "progress": 100,
-    "phase": "completed",
-    "createdAt": "2026-06-01T19:57:49.147342048Z",
-    "completedAt": "2026-06-01T19:57:49.717407532Z"
-  },
-  {
-    "id": "2d01facd-89c0-43b7-b737-152059b439df",
-    "type": "decrypt",
-    "sourcePath": "/hyYGPCwJPQ3+xrdAvfnn2.bin",
-    "extraFields": {
-      "plugin_password": "8682268"
-    },
-    "pluginName": "alist_encrypt",
-    "status": "completed",
-    "progress": 100,
-    "phase": "completed",
-    "createdAt": "2026-06-01T18:41:55.940531074Z",
-    "completedAt": "2026-06-01T18:41:56.566728031Z"
-  },
-  {
-    "id": "f1ea3ed2-3a96-4e43-9487-d381570cb63c",
-    "type": "decrypt",
-    "sourcePath": "/hyYGPCwJPQ3+xrdAvfnn2.bin",
-    "extraFields": {
-      "plugin_password": "8682268"
-    },
-    "pluginName": "alist_encrypt",
-    "status": "completed",
-    "progress": 100,
-    "phase": "completed",
-    "createdAt": "2026-06-01T18:51:26.287082963Z",
-    "completedAt": "2026-06-01T18:51:27.370634461Z"
-  },
-  {
-    "id": "09d88a5b-214c-439b-afba-b45c84387391",
-    "type": "decrypt",
-    "sourcePath": "/hyYGPCwJPQ3+xrdAvfnn2.bin",
-    "extraFields": {
-      "enc_type": "aesctr",
-      "encode_filename": "false",
-      "plugin_password": "8682268"
-    },
-    "pluginName": "alist_encrypt",
-    "status": "completed",
-    "progress": 100,
-    "phase": "completed",
-    "createdAt": "2026-06-01T19:49:25.97760811Z",
-    "completedAt": "2026-06-01T19:49:26.205157153Z"
-  },
-  {
-    "id": "b070a883-a4bb-4c82-81d8-fc1cf9779178",
-    "type": "decrypt",
-    "sourcePath": "/hyYGPCwJPQ3+xrdAvfnn2.bin",
-    "extraFields": {
-      "enc_type": "aesctr",
-      "encode_filename": "false"
-    },
-    "pluginName": "alist_encrypt",
-    "status": "completed",
-    "progress": 100,
-    "phase": "completed",
-    "createdAt": "2026-06-01T19:46:51.421056864Z",
-    "completedAt": "2026-06-01T19:46:51.985176393Z"
-  },
-  {
-    "id": "04a0e869-3705-432f-936a-3947ecd8fef5",
-    "type": "decrypt",
-    "sourcePath": "/hyYGPCwJPQ3+xrdAvfnn2.bin",
-    "extraFields": {
-      "plugin_password": "8682268"
-    },
-    "pluginName": "alist_encrypt",
-    "status": "completed",
-    "progress": 100,
-    "phase": "completed",
-    "createdAt": "2026-06-01T19:22:08.883568335Z",
-    "completedAt": "2026-06-01T19:22:09.229963575Z"
-  },
-  {
-    "id": "8185e8d5-40ff-4e90-a9ff-2a8bd6e4ed8f",
-    "type": "decrypt",
-    "sourcePath": "/hyYGPCwJPQ3+xrdAvfnn2.bin",
-    "extraFields": {
-      "plugin_password": "8682268"
-    },
-    "pluginName": "alist_encrypt",
-    "status": "completed",
-    "progress": 100,
-    "phase": "completed",
-    "createdAt": "2026-06-01T20:08:24.876802352Z",
-    "completedAt": "2026-06-01T20:08:25.472206214Z"
-  },
-  {
-    "id": "a3281b7a-8f76-48ec-a738-2557962ce74c",
-    "type": "decrypt",
-    "sourcePath": "/storage/emulated/0/hyYGPCwJPQ3+xrdAvfnn2.bin",
-    "extraFields": {
-      "plugin_password": "8682268"
-    },
-    "pluginName": "alist_encrypt",
-    "status": "completed",
-    "progress": 100,
-    "phase": "completed",
-    "createdAt": "2026-06-01T18:51:23.812580085Z",
-    "completedAt": "2026-06-01T18:51:24.20261569Z"
-  },
-  {
-    "id": "0104d873-64bc-401a-9acf-0138c58a8a31",
-    "type": "decrypt",
-    "sourcePath": "/hyYGPCwJPQ3+xrdAvfnn2.bin",
-    "extraFields": {
-      "enc_type": "aesctr",
-      "encode_filename": "false",
-      "plugin_password": "8682268"
-    },
-    "pluginName": "alist_encrypt",
-    "status": "completed",
-    "progress": 100,
-    "phase": "completed",
-    "outputPath": "/storage/emulated/0/CAD放样.mp4",
-    "createdAt": "2026-06-01T22:00:40.10162993Z",
-    "completedAt": "2026-06-01T22:00:40.971985856Z"
-  },
-  {
-    "id": "aa914f64-38f8-4bb2-a318-7db78dd6a57e",
-    "type": "decrypt",
-    "sourcePath": "/hyYGPCwJPQ3+xrdAvfnn2.bin",
-    "extraFields": {
-      "plugin_password": "8682268"
-    },
-    "pluginName": "alist_encrypt",
-    "status": "completed",
-    "progress": 100,
-    "phase": "completed",
-    "createdAt": "2026-06-01T20:04:53.163351155Z",
-    "completedAt": "2026-06-01T20:04:54.119120192Z"
-  },
-  {
-    "id": "c1f81df2-17e8-46f8-bc77-0aa378d03474",
-    "type": "decrypt",
-    "sourcePath": "/hyYGPCwJPQ3+xrdAvfnn2.bin",
-    "extraFields": {
-      "plugin_password": "8682268"
-    },
-    "pluginName": "alist_encrypt",
-    "status": "completed",
-    "progress": 100,
-    "phase": "completed",
-    "createdAt": "2026-06-01T19:12:28.983479184Z",
-    "completedAt": "2026-06-01T19:12:29.95019059Z"
+    "containerVersion": 4,
+    "outputPath": "/storage/emulated/0/01-plain-media/image/screenshot.gnp.sccgi",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-02T00:35:32.576846379Z",
+        "completedAt": "2026-06-02T00:35:32.577239577Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-02T00:35:32.577239577Z",
+        "completedAt": "2026-06-02T00:35:32.577805015Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-02T00:35:32.577805015Z",
+        "completedAt": "2026-06-02T00:35:32.57783685Z"
+      },
+      {
+        "phase": "preprocessing",
+        "startedAt": "2026-06-02T00:35:32.57783685Z",
+        "completedAt": "2026-06-02T00:35:32.601128339Z",
+        "detail": "/storage/emulated/0/01-plain-media/image/screenshot.gnp.sccgi"
+      }
+    ],
+    "createdAt": "2026-06-02T00:35:32.294592253Z",
+    "completedAt": "2026-06-02T00:35:32.601128339Z"
   }
 ]

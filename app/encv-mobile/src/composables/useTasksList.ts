@@ -89,7 +89,8 @@ export function useTasksList() {
         const name = getTaskName(task).toLowerCase()
         const plugin = (task.pluginName || '').toLowerCase()
         const error = (task.error || '').toLowerCase()
-        return name.includes(q) || plugin.includes(q) || error.includes(q)
+        const id = task.id.toLowerCase()
+        return name.includes(q) || plugin.includes(q) || error.includes(q) || id.includes(q)
       })
     }
 

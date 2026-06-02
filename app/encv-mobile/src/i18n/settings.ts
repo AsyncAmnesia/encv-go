@@ -177,6 +177,10 @@ export default {
     'settings.configAnnotations': '配置注释',
     'settings.jsonError': 'JSON 格式错误',
     'settings.saveConfig': '保存配置',
+    'settings.default': '默认',
+    'settings.defaultValue': '默认值',
+    'settings.customized': '已自定义',
+    'settings.taskOverridable': '任务可覆盖',
   },
   en: {
     'settings.title': 'Settings',
@@ -356,5 +360,9 @@ export default {
     'settings.configAnnotations': 'Config Annotations',
     'settings.jsonError': 'JSON Format Error',
     'settings.saveConfig': 'Save Config',
+    'settings.default': 'Default',
+    'settings.defaultValue': 'Default value',
+    'settings.customized': 'Customized',
+    'settings.taskOverridable': 'Task overridable',
   },
 }
