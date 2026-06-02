@@ -27,7 +27,7 @@
             <ion-label>{{ pluginSection.sectionTitle ? tSectionTitle(pluginSection.sectionTitle) : tField(pluginSection.key) }}</ion-label>
             <ion-badge slot="end" color="primary" class="scope-badge scope-synced">
               <ion-icon :icon="cloudOutline" class="scope-badge-icon"></ion-icon>
-              {{ t('settings.synced') }}
+              <span class="scope-text">{{ t('settings.synced') }}</span>
             </ion-badge>
           </ion-list-header>
 
@@ -188,7 +188,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonBackButton, IonContent, IonList, IonListHeader, IonItem, IonItemDivider,
-  IonIcon, IonLabel, IonToggle, IonInput, IonSpinner, IonModal,
+  IonIcon, IonLabel, IonInput, IonSpinner, IonModal,
   modalController,
 } from '@ionic/vue'
 import {
@@ -425,10 +425,6 @@ function isFieldVisible(field: FieldDef): boolean {
   return true
 }
 
-function shouldShowBadge(field: FieldDef): boolean {
-  return !!field.isV4 || field.platform === 'mobile'
-}
-
 async function handleSaveConfig() {
   try {
     const textExtsVal = String(getValue(['plugin_settings', 'text', 'custom_text_extensions']) ?? '')
@@ -509,6 +505,17 @@ watch(serverOnline, async (online) => {
 .scope-synced {
   --background: rgba(var(--ion-color-primary-rgb), 0.12);
   --color: var(--ion-color-primary);
+}
+@media (max-width: 599px) {
+  .scope-badge {
+    --padding-start: 5px;
+    --padding-end: 5px;
+    --padding-top: 2px;
+    --padding-bottom: 2px;
+  }
+  .scope-badge .scope-text {
+    display: none;
+  }
 }
 .sync-indicator {
   font-size: 14px;

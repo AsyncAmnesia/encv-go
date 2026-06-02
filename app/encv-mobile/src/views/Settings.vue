@@ -18,7 +18,7 @@
           <ion-label>{{ t('settings.appearance') }}</ion-label>
           <ion-badge slot="end" color="medium" class="scope-badge">
             <ion-icon :icon="phonePortraitOutline" class="scope-badge-icon"></ion-icon>
-            {{ t('settings.localOnly') }}
+            <span class="scope-text">{{ t('settings.localOnly') }}</span>
           </ion-badge>
         </ion-list-header>
         <ion-item>
@@ -71,7 +71,7 @@
           <ion-label>{{ t('settings.player') }}</ion-label>
           <ion-badge slot="end" color="medium" class="scope-badge">
             <ion-icon :icon="phonePortraitOutline" class="scope-badge-icon"></ion-icon>
-            {{ t('settings.localOnly') }}
+            <span class="scope-text">{{ t('settings.localOnly') }}</span>
           </ion-badge>
         </ion-list-header>
         <ion-item>
@@ -186,7 +186,7 @@
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
               <ion-badge slot="end" color="primary" class="scope-badge scope-synced">
                 <ion-icon :icon="cloudOutline" class="scope-badge-icon"></ion-icon>
-                {{ t('settings.synced') }}
+                <span class="scope-text">{{ t('settings.synced') }}</span>
               </ion-badge>
             </ion-list-header>
             <ion-item button @click="goPlugins" detail>
@@ -202,7 +202,7 @@
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
               <ion-badge slot="end" color="primary" class="scope-badge scope-synced">
                 <ion-icon :icon="cloudOutline" class="scope-badge-icon"></ion-icon>
-                {{ t('settings.synced') }}
+                <span class="scope-text">{{ t('settings.synced') }}</span>
               </ion-badge>
             </ion-list-header>
             <ConfigFieldItem
@@ -223,7 +223,7 @@
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
               <ion-badge slot="end" color="primary" class="scope-badge scope-synced">
                 <ion-icon :icon="cloudOutline" class="scope-badge-icon"></ion-icon>
-                {{ t('settings.synced') }}
+                <span class="scope-text">{{ t('settings.synced') }}</span>
               </ion-badge>
             </ion-list-header>
 
@@ -413,7 +413,6 @@ import { registerFileFeature, unregisterFileFeature } from '@/composables/useFil
 import { createAlistEncryptFeature } from '@/features/alist-encrypt'
 import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus } from '@/api/encv'
 import type { IndexStats, FFmpegStatus } from '@/api/encv'
-import type { FieldDef } from '@/config/schemaParser'
 import { PLAY_MODE, isMpvSubMode } from '@/constants/player'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 import ConfigFieldItem from '@/components/ConfigFieldItem.vue'
@@ -906,6 +905,7 @@ watch(() => getFieldValue(['plugin_settings', 'alist_encrypt', 'enabled']), (ena
   display: inline-flex;
   align-items: center;
   gap: 3px;
+  flex-shrink: 0;
 }
 .scope-badge-icon {
   font-size: 12px;
@@ -913,6 +913,17 @@ watch(() => getFieldValue(['plugin_settings', 'alist_encrypt', 'enabled']), (ena
 .scope-synced {
   --background: rgba(var(--ion-color-primary-rgb), 0.12);
   --color: var(--ion-color-primary);
+}
+@media (max-width: 599px) {
+  .scope-badge {
+    --padding-start: 5px;
+    --padding-end: 5px;
+    --padding-top: 2px;
+    --padding-bottom: 2px;
+  }
+  .scope-badge .scope-text {
+    display: none;
+  }
 }
 .port-info {
   font-size: 12px;
