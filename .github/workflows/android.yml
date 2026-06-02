@@ -14,7 +14,7 @@ on:
         default: ''
         type: string
       skip_plugin:
-        description: 'Skip MPV plugin build (only build host app)'
+        description: 'Skip all plugin builds (MPV + OpenList). Only build host app.'
         required: false
         default: 'false'
         type: boolean
@@ -441,6 +441,7 @@ jobs:
 
       # === Build OpenList Plugin (AAR → APK via aar2apk) ===
       - name: Build OpenList AAR (gomobile bind)
+        if: inputs.skip_plugin != true
         run: |
           echo "═══ OpenList AAR Build (gomobile bind) ═══"
           bash scripts/build-openlist-aar.sh \
@@ -454,6 +455,7 @@ jobs:
           unzip -l app/encv-mobile/plugin-openlist/libs/openlist.aar | grep -E "libgojni|Openlistlib|\.so" || echo "(no matches)"
 
       - name: Extract OpenList AAR for plugin packaging
+        if: inputs.skip_plugin != true
         run: |
           AAR="app/encv-mobile/plugin-openlist/libs/openlist.aar"
           PLUGIN_SRC="app/encv-mobile/plugin-openlist/src/main"
@@ -488,6 +490,7 @@ jobs:
           echo "=== Extraction complete ==="
 
       - name: Build OpenList plugin APK (aar2apk)
+        if: inputs.skip_plugin != true
         run: |
           cd app/encv-mobile/android
           BUILD_TYPE="${{ inputs.version && 'Release' || 'Debug' }}"
@@ -508,7 +511,7 @@ jobs:
           fi
 
       - name: Verify OpenList plugin APK contents
-        if: always()
+        if: always() && inputs.skip_plugin != true
         continue-on-error: true
         run: |
           BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
