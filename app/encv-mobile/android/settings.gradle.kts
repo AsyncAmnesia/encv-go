@@ -25,7 +25,7 @@ dependencyResolutionManagement {
         google()
         maven { url = uri("https://jitpack.io") }
         flatDir {
-            dirs("${rootProject.projectDir}/capacitor-cordova-android-plugins/src/main/libs", "${rootProject.projectDir}/app/libs", "${rootProject.projectDir}/../plugin-openlist/libs")
+            dirs("${rootProject.projectDir}/capacitor-cordova-android-plugins/src/main/libs", "${rootProject.projectDir}/app/libs")
         }
     }
 }

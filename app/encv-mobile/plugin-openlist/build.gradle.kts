@@ -39,13 +39,12 @@ kotlin {
 dependencies {
     compileOnly(libs.combolite.core)
 
-    // Local AAR must be consumed via a repository (flatDir), not as
-    // `files(...)` — AGP rejects direct local .aar dependencies in
-    // library modules because the resulting AAR would not bundle the
-    // inner AAR's classes/resources. The flatDir repo is declared in
-    // settings.gradle.kts (alongside Maven Central / Google / JitPack)
-    // to avoid PREFER_PROJECT mode from dropping the global repos.
-    implementation(group = "", name = "openlist", ext = "aar")
+    // openlist-classes.jar is extracted from openlist.aar by the CI step
+    // "Extract OpenList AAR for plugin packaging". Unlike .aar dependencies,
+    // regular .jar deps ARE bundled into the library AAR by AGP, so aar2apk
+    // can package the gomobile bindings (openlistlib.*) and libgojni.so
+    // (copied to src/main/jniLibs/) into the final plugin APK.
+    implementation(files("libs/openlist-classes.jar"))
     implementation("androidx.core:core-ktx")
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
     implementation(platform(libs.compose.bom))
