@@ -592,11 +592,9 @@ func (p *VideoPlugin) Encrypt(dataReader io.Reader) (*crypto.EncryptionResult, e
 
 // Plugin 接口实现
 // 加密后处理器
-func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) error {
-	// 1. 【性能优化】使用传入的 result 中的精确大小
+func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) (string, error) {
 	logicalDataSize := result.EncryptedPayloadSize
 
-	// 2. 生成逻辑分片 (视频特有逻辑)
 	var logicalFragments []types.Fragment
 	var err error
 
@@ -606,17 +604,14 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 		baseSize := fragment.CalculateFragmentSize(logicalDataSize, int64(p.settings.ContainerChunkSizeMB)*1024*1024)
 		logicalFragments, err = fragment.CreateLogicalFragmentsFromSize(logicalDataSize, baseSize, types.FragmentType_SeekableStream)
 		if err != nil {
-			return fmt.Errorf("fallback fragment creation failed: %w", err)
+			return "", fmt.Errorf("fallback fragment creation failed: %w", err)
 		}
 	}
 
-	// 更新索引中的文件大小（保留原始明文文件大小用于元数据）
 	if stat, err := os.Stat(p.inputPath); err == nil {
 		p.index.OriginalFileSize = stat.Size()
 	}
 
-	// 3. 构造 Video 特有的 Manifest（KVI + LogicalFragments）
-	// 使用 result 中的 Salt 和 IV
 	kvi := VideoKVI_v2{
 		KVI: types.KVI{
 			SaltBase64: crypto.Base64Encode_v2(result.Salt),
@@ -626,10 +621,9 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 	}
 	manifest, err := types.NewManifest(kvi, logicalFragments)
 	if err != nil {
-		return fmt.Errorf("failed to create manifest: %w", err)
+		return "", fmt.Errorf("failed to create manifest: %w", err)
 	}
 
-	// 4. 准备通用 PackRequest
 	finalFilename := p.chunkNamer.GenerateMainChunkName(p.baseNamer.GenerateEncryptedBaseName(p.index.OriginalFilename))
 	finalBaseName := strings.TrimSuffix(finalFilename, p.settings.Ext)
 
@@ -638,20 +632,16 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 		startIdx = 0
 	}
 
-	// 5. 【重构】直接构造 PackParams，不再构造嵌套的 PackRequest
 	packParams := &packer.PackParams{
-		// --- 核心数据 ---
 		Manifest:       manifest,
 		PhysicalPacker: p.physicalPacker,
 		TempEncPath:    result.TempPath,
 
-		// --- 加密参数 ---
 		Salt:                 result.Salt,
 		IV:                   result.IV,
 		SaltIVHeaderSize:     result.SaltIVHeaderSize,
 		EncryptedPayloadSize: result.EncryptedPayloadSize,
 
-		// --- Packer 配置字段 ---
 		BaseName:              finalBaseName,
 		OutputDir:             p.outputDir,
 		Index:                 &p.index,
@@ -675,24 +665,22 @@ func (p *VideoPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) erro
 	}
 	packParams.PasswordHint = passwordHint
 
-	// 6. 调用唯一通用代理：packer.StandardPostEncrypt
-	// Helper 内部会组装 physical.PackRequest
-	if err := packer.StandardPostEncrypt(packParams); err != nil {
-		// 打包失败时，清理临时文件
+	outputPath, err := packer.StandardPostEncrypt(packParams)
+	if err != nil {
 		os.Remove(result.TempPath)
-		return fmt.Errorf("packing failed: %w", err)
+		return "", fmt.Errorf("packing failed: %w", err)
 	}
 
-	// 7. 清理临时加密文件（打包成功后不再需要）
 	os.Remove(result.TempPath)
 
-	// 8. 验证（如果启用）
 	if p.settings.VerifyAfterPack {
-		return p.verifyContainer()
+		if verifyErr := p.verifyContainer(); verifyErr != nil {
+			return "", verifyErr
+		}
 	}
 
 	slog.Info("Packed successfully", "plugin", p.Name())
-	return nil
+	return outputPath, nil
 }
 
 // createGOPAlignedFragments 基于关键帧位置生成逻辑分片
@@ -793,7 +781,7 @@ func (p *VideoPlugin) verifyContainer() error {
 		return fmt.Errorf("failed to create verification temp dir: %w", err)
 	}
 
-	if err := p.Decrypt(mainChunkFullPath, verifyTempDir); err != nil {
+	if _, err := p.Decrypt(mainChunkFullPath, verifyTempDir); err != nil {
 		os.RemoveAll(verifyTempDir)
 		return fmt.Errorf("verification failed: decryption error occurred: %w", err)
 	}
@@ -859,55 +847,50 @@ func (p *VideoPlugin) PreDecryptProcessor(containerPath, outputDir string) error
 }
 
 // Plugin 接口实现
-func (p *VideoPlugin) Decrypt(containerPath, outputDir string) error {
+func (p *VideoPlugin) Decrypt(containerPath, outputDir string) (string, error) {
 	slog.Info("Starting decryption", "plugin", p.Name(), "container_path", containerPath)
 	p.outputDir = outputDir
 
-	// --- 1. 【关键】通过 ContainerManager 获取一个可读的容器路径 ---
-	// ContainerManager 会智能地决定是使用原始文件还是重建文件
 	readablePath, err := p.containerManager.GetReadablePath(containerPath, p.chunkNamer)
 	if err != nil {
-		return fmt.Errorf("failed to get readable path from container manager: %w", err)
+		return "", fmt.Errorf("failed to get readable path from container manager: %w", err)
 	}
 	slog.Info("Using readable path", "plugin", p.Name(), "readable_path", readablePath)
 
-	// --- 2. 使用统一路径创建 reader 工厂 ---
 	factory, err := reader.NewDecryptReaderFactory(readablePath, p.cfg.Password)
 	if err != nil {
-		return fmt.Errorf("failed to create reader factory for '%s': %w", readablePath, err)
+		return "", fmt.Errorf("failed to create reader factory for '%s': %w", readablePath, err)
 	}
-	defer factory.Close() // 【关键】这个 Close 会同时清理物理临时文件（如果存在）
+	defer factory.Close()
 	slog.Info("Reader factory created successfully", "plugin", p.Name())
 
-	// --- 3. 使用工厂创建解密流并写入文件 ---
 	decryptedReader, err := factory.NewDecryptReader()
 	if err != nil {
-		return fmt.Errorf("[%s] failed to create decrypt reader: %w", p.Name(), err)
+		return "", fmt.Errorf("[%s] failed to create decrypt reader: %w", p.Name(), err)
 	}
 	defer decryptedReader.Close()
 
-	// 从 KVI 获取原始文件名
 	index := factory.GetIndex()
 	vIndex, ok := index.(*VideoIndex)
 	if !ok {
-		return fmt.Errorf("container is not a video container")
+		return "", fmt.Errorf("container is not a video container")
 	}
 
 	outputPath := filepath.Join(outputDir, vIndex.GetOriginalFilename())
 	outputFile, err := os.Create(outputPath)
 	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
+		return "", fmt.Errorf("failed to create output file: %w", err)
 	}
 	defer outputFile.Close()
 
 	if _, err := io.Copy(outputFile, decryptedReader); err != nil {
-		return fmt.Errorf("failed to write decrypted video stream: %w", err)
+		return "", fmt.Errorf("failed to write decrypted video stream: %w", err)
 	}
 
 	p.index = *vIndex
 
 	slog.Info("Decrypted successfully", "plugin", p.Name(), "output_path", outputPath)
-	return nil
+	return outputPath, nil
 }
 
 // Plugin 接口实现

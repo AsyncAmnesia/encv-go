@@ -360,6 +360,13 @@ export async function readFileContent(path: string): Promise<FileContentResponse
 export type TaskType = 'encrypt' | 'decrypt'
 export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled' | 'cancelling'
 
+export interface TaskStep {
+  phase: string
+  startedAt: string
+  completedAt?: string
+  detail?: string
+}
+
 export interface EncvTask {
   id: string
   type: TaskType
@@ -376,6 +383,8 @@ export interface EncvTask {
   warning?: string
   warningDetail?: string
   containerVersion?: number
+  outputPath?: string
+  steps?: TaskStep[]
   createdAt: string
   completedAt?: string
 }

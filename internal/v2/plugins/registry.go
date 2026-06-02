@@ -87,7 +87,7 @@ type Plugin interface {
 	Encrypt(dataReader io.Reader) (*crypto.EncryptionResult, error)
 	// 加密后处理器
 	// PostEncryptProcessor() error
-	PostEncryptProcessor(result *crypto.EncryptionResult) error
+	PostEncryptProcessor(result *crypto.EncryptionResult) (string, error)
 	//  打包器
 	// GetPhysicalPacker() physical.PhysicalPacker
 
@@ -98,8 +98,8 @@ type Plugin interface {
 	// Unpacker 解包器 TODO
 	// 解密预处理器
 	PreDecryptProcessor(containerPath, outputDir string) error
-	// Decrypt 解密容器文件到指定目录
-	Decrypt(containerPath, outputDir string) error
+	// Decrypt 解密容器文件到指定目录，返回解密产物路径
+	Decrypt(containerPath, outputDir string) (string, error)
 	// 解密后处理器
 	PostDecryptProcessor(containerPath string) error
 
@@ -554,7 +554,8 @@ func ProcessFileWithPlugin(p Plugin, inputPath string) (types.Index, io.ReadClos
 	return index, file, nil
 }
 
-func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputRootDir, outputDir string) (err error) {
+func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputRootDir, outputDir string) (string, error) {
+	var outputPath string
 	if vp, ok := plugin.(*video.VideoPlugin); ok {
 		vp.SetOutputDir(outputDir)
 	}
@@ -562,7 +563,7 @@ func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputR
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("EncryptFileWithPlugin panicked", "path", inputPath, "panic", r)
-			err = fmt.Errorf("encryption preprocessing failed: internal error: %v", r)
+			outputPath = ""
 		}
 	}()
 
@@ -573,41 +574,44 @@ func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputR
 	var dataReader io.ReadCloser
 
 	if needsPreprocessing {
+		var err error
 		index, dataReader, err = ProcessFileWithPlugin(plugin, inputPath)
 		if err != nil {
-			return fmt.Errorf("plugin failed to process file '%s': %w", inputPath, err)
+			return "", fmt.Errorf("plugin failed to process file '%s': %w", inputPath, err)
 		}
 		defer dataReader.Close()
 	}
 
 	if err := plugin.PreEncryptProcessor(index, inputPath, inputRootDir, outputDir); err != nil {
-		return fmt.Errorf("pre-encryption failed for '%s': %w", inputPath, err)
+		return "", fmt.Errorf("pre-encryption failed for '%s': %w", inputPath, err)
 	}
 	slog.Debug("PreEncryptProcessor completed", "path", inputPath)
 
 	var result *crypto.EncryptionResult
+	var err error
 	if needsPreprocessing {
 		result, err = plugin.Encrypt(dataReader)
 	} else {
 		file, ferr := os.Open(inputPath)
 		if ferr != nil {
-			return fmt.Errorf("failed to open file '%s': %w", inputPath, ferr)
+			return "", fmt.Errorf("failed to open file '%s': %w", inputPath, ferr)
 		}
 		defer file.Close()
 		result, err = plugin.Encrypt(file)
 	}
 	if err != nil {
-		return fmt.Errorf("encryption failed for '%s': %w", inputPath, err)
+		return "", fmt.Errorf("encryption failed for '%s': %w", inputPath, err)
 	}
 	slog.Debug("Encrypt completed", "path", inputPath)
 
 	if vp, ok := plugin.(*video.VideoPlugin); ok {
 		vp.SetPostEncryptVerify(true)
 	}
-	if err := plugin.PostEncryptProcessor(result); err != nil {
-		return fmt.Errorf("post-encryption failed for '%s': %w", inputPath, err)
+	outputPath, err = plugin.PostEncryptProcessor(result)
+	if err != nil {
+		return "", fmt.Errorf("post-encryption failed for '%s': %w", inputPath, err)
 	}
-	slog.Debug("PostEncryptProcessor completed", "path", inputPath)
+	slog.Debug("PostEncryptProcessor completed", "path", inputPath, "outputPath", outputPath)
 
 	if vp, ok := plugin.(*video.VideoPlugin); ok {
 		sourcePath := vp.EncryptedSourcePath()
@@ -622,29 +626,28 @@ func EncryptFileWithPlugin(ctx context.Context, plugin Plugin, inputPath, inputR
 		}
 	}
 
-	return nil
+	return outputPath, nil
 }
 
 // DecryptContainerWithPlugin 是一个新的辅助函数，封装了完整的解密流程
-func DecryptContainerWithPlugin(ctx context.Context, plugin Plugin, containerPath, outputDir string) error {
+func DecryptContainerWithPlugin(ctx context.Context, plugin Plugin, containerPath, outputDir string) (string, error) {
 	if err := plugin.PreDecryptProcessor(containerPath, outputDir); err != nil {
-		return fmt.Errorf("pre-decryption failed for '%s': %w", containerPath, err)
+		return "", fmt.Errorf("pre-decryption failed for '%s': %w", containerPath, err)
 	}
 	slog.Debug("PreDecryptProcessor completed", "path", containerPath)
 
-	// 2. 执行核心解密
-	if err := plugin.Decrypt(containerPath, outputDir); err != nil {
-		return fmt.Errorf("decryption failed for '%s': %w", containerPath, err)
+	outputPath, err := plugin.Decrypt(containerPath, outputDir)
+	if err != nil {
+		return "", fmt.Errorf("decryption failed for '%s': %w", containerPath, err)
 	}
-	slog.Debug("Decrypt completed", "path", containerPath)
+	slog.Debug("Decrypt completed", "path", containerPath, "outputPath", outputPath)
 
-	// 4. 执行后处理器
 	if err := plugin.PostDecryptProcessor(containerPath); err != nil {
-		return fmt.Errorf("post-encryption failed for '%s': %w", containerPath, err)
+		return "", fmt.Errorf("post-decryption failed for '%s': %w", containerPath, err)
 	}
 	slog.Debug("PostDecryptProcessor completed", "path", containerPath)
 
-	return nil
+	return outputPath, nil
 }
 
 // 遍历文件夹自动选择插件加密，这是使用 EncryptFileWithPlugin 而不是 Plugin.EncryptFile 的原因。
@@ -681,7 +684,7 @@ func WalkAndEncrypt(ctx context.Context, walkPath string, inputRootDir, outputDi
 		// 4. 对处理后的文件列表进行逐个加密
 		for _, path := range processedPaths {
 			slog.Debug("Processing file with plugin", "path", path, "plugin", fmt.Sprintf("%T", plugin))
-			if err := EncryptFileWithPlugin(ctx, plugin, path, inputRootDir, outputDir); err != nil {
+			if _, err := EncryptFileWithPlugin(ctx, plugin, path, inputRootDir, outputDir); err != nil {
 				slog.Warn("Failed to encrypt file, continuing", "path", path, "plugin", fmt.Sprintf("%T", plugin), "error", err)
 			}
 		}

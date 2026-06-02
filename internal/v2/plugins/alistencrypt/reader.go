@@ -42,7 +42,14 @@ func NewDecryptReader(r io.Reader, password string, fileSize int64) (*DecryptRea
 		if err != nil {
 			return nil, fmt.Errorf("failed to create cipher: %w", err)
 		}
-		source = io.MultiReader(bytes.NewReader(peekBuf[:n]), r)
+		if seeker, ok := r.(io.Seeker); ok {
+			if _, seekErr := seeker.Seek(0, io.SeekStart); seekErr != nil {
+				return nil, fmt.Errorf("failed to seek back to start: %w", seekErr)
+			}
+			source = r
+		} else {
+			source = io.MultiReader(bytes.NewReader(peekBuf[:n]), r)
+		}
 	}
 
 	return &DecryptReader{
@@ -114,6 +121,9 @@ func (dr *DecryptReader) Seek(offset int64, whence int) (int64, error) {
 			return 0, fmt.Errorf("failed to seek underlying reader: %w", err)
 		}
 		dr.readerPos = seekTarget
+		if reader, ok := dr.seeker.(io.Reader); ok {
+			dr.reader = reader
+		}
 	}
 
 	return newPos, nil

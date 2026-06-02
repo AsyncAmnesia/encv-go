@@ -1,6 +1,7 @@
 package alistencrypt
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -161,17 +162,18 @@ func (p *AlistEncryptPlugin) Encrypt(dataReader io.Reader) (*crypto.EncryptionRe
 	return result, nil
 }
 
-func (p *AlistEncryptPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) error {
+func (p *AlistEncryptPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) (string, error) {
 	originalFilename := filepath.Base(p.inputPath)
+	password := p.resolvePasswordFromTask()
 
-	finalPath, err := RenameToFinalEncrypted(result.TempPath, originalFilename, p.outputDir, p.settings.Suffix)
+	finalPath, err := RenameToFinalEncrypted(result.TempPath, originalFilename, p.outputDir, p.settings.Suffix, password, p.settings.EncType)
 	if err != nil {
 		os.Remove(result.TempPath)
-		return fmt.Errorf("failed to rename encrypted file: %w", err)
+		return "", fmt.Errorf("failed to rename encrypted file: %w", err)
 	}
 
 	slog.Info("alist_encrypt: encryption complete", "output", finalPath)
-	return nil
+	return finalPath, nil
 }
 
 func (p *AlistEncryptPlugin) CanDecrypt(containerPath string) bool {
@@ -179,27 +181,81 @@ func (p *AlistEncryptPlugin) CanDecrypt(containerPath string) bool {
 	if ext != p.settings.Suffix {
 		return false
 	}
-	return PeekIsAECTR2(containerPath)
+	if info, err := os.Stat(containerPath); err != nil || info.Size() == 0 {
+		return false
+	}
+	if PeekIsAECTR2(containerPath) {
+		return true
+	}
+	f, err := os.Open(containerPath)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	sample := make([]byte, 64)
+	n, _ := io.ReadFull(f, sample)
+	if n < 8 {
+		return false
+	}
+	// Heuristic: an alist-encrypted ciphertext is high-entropy; plain media
+	// files expose recognisable magic headers.  Reject obvious media files so
+	// we don't claim ownership of an MP4/MKV/etc. that just happens to end
+	// with .bin (e.g. user-renamed uploads).
+	if hasKnownMediaMagic(sample[:n]) {
+		return false
+	}
+	return true
+}
+
+// hasKnownMediaMagic reports whether the given byte slice contains any of the
+// common media / document magic markers.  The slice is the leading bytes of the
+// file as it sits on disk — an MP4's ftyp box can sit at offset 4 (after the
+// 4-byte size), so we search the whole window rather than only its start.
+func hasKnownMediaMagic(b []byte) bool {
+	checks := [][]byte{
+		[]byte("ftyp"),                    // MP4 / MOV / HEIC (at offset 4 normally)
+		[]byte{0x1A, 0x45, 0xDF, 0xA3},    // MKV / WebM (EBML)
+		[]byte("RIFF"),                    // AVI / WAV
+		[]byte("OggS"),                    // OGG
+		[]byte("ID3"),                     // MP3
+		[]byte("fLaC"),                    // FLAC
+		[]byte("\xFF\xD8\xFF"),            // JPEG
+		[]byte("\x89PNG"),                 // PNG
+		[]byte("GIF8"),                    // GIF
+		[]byte("%PDF"),                    // PDF
+		[]byte("<?xml"),                   // XML
+		[]byte("<!DOCTYPE html"),          // HTML
+	}
+	for _, c := range checks {
+		if len(c) > len(b) {
+			continue
+		}
+		if bytes.Contains(b, c) {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *AlistEncryptPlugin) PreDecryptProcessor(containerPath, outputDir string) error {
 	return nil
 }
 
-func (p *AlistEncryptPlugin) Decrypt(containerPath, outputDir string) error {
+func (p *AlistEncryptPlugin) Decrypt(containerPath, outputDir string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(containerPath))
 	if ext != p.settings.Suffix {
-		return &DecryptionError{Reason: "invalid format: extension mismatch", Err: ErrInvalidFormat}
+		return "", &DecryptionError{Reason: "invalid format: extension mismatch", Err: ErrInvalidFormat}
 	}
 
 	password := p.resolvePasswordFromTask()
 
-	if err := DecryptFile(containerPath, outputDir, password, p.settings.EncType); err != nil {
-		return fmt.Errorf("alist_encrypt decryption failed for '%s': %w", containerPath, err)
+	outputPath, err := DecryptFile(containerPath, outputDir, password, p.settings.EncType)
+	if err != nil {
+		return "", fmt.Errorf("alist_encrypt decryption failed for '%s': %w", containerPath, err)
 	}
 
-	slog.Info("alist_encrypt: decryption complete", "source", containerPath, "output_dir", outputDir)
-	return nil
+	slog.Info("alist_encrypt: decryption complete", "source", containerPath, "output_path", outputPath)
+	return outputPath, nil
 }
 
 func (p *AlistEncryptPlugin) PostDecryptProcessor(containerPath string) error {

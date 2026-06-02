@@ -911,9 +911,22 @@ func (s *Server) handlePredictPluginGin(c *gin.Context) {
 
 	var candidates []plugins.PluginCandidate
 	if req.Type == "encrypt" {
-		candidates = plugins.FindAllEncryptingPlugins(req.SourcePath)
+		// ★ 关键修复: 先用 SafeResolveToAbsPath 把前端传来的路径解析为绝对路径，
+		// 防止 mobile 模式下 servingDir=/storage/emulated/0 时，插件拿不到真实文件
+		absSourcePath, err := utils.SafeResolveToAbsPath(s.servingDir, req.SourcePath)
+		if err != nil {
+			c.JSON(200, gin.H{"candidates": []gin.H{}, "pluginName": nil, "taskOptions": nil, "error": fmt.Sprintf("invalid path: %v", err)})
+			return
+		}
+		candidates = plugins.FindAllEncryptingPlugins(absSourcePath)
 	} else {
-		targetPlugin, err := plugins.FindDecryptingPlugin(req.SourcePath)
+		// ★ 关键修复: 同上，解密前必须先 resolve 绝对路径
+		absSourcePath, err := utils.SafeResolveToAbsPath(s.servingDir, req.SourcePath)
+		if err != nil {
+			c.JSON(200, gin.H{"candidates": []gin.H{}, "pluginName": nil, "taskOptions": nil, "error": fmt.Sprintf("invalid path: %v", err)})
+			return
+		}
+		targetPlugin, err := plugins.FindDecryptingPlugin(absSourcePath)
 		if err != nil || targetPlugin == nil {
 			c.JSON(200, gin.H{"candidates": []gin.H{}, "pluginName": nil, "taskOptions": nil, "error": err.Error()})
 			return
@@ -1076,11 +1089,24 @@ func (s *Server) handleAlistEncryptStreamGin(c *gin.Context) {
 
 	slog.Info("API: alist-encrypt stream", "path", absPath)
 
+	// 走统一范式：构造 FileContentProvider，调 ContentHandler.ServeFile
+	// 与 v4 容器预览共享同一套 HTTP 协议处理（Range/206/Content-Length/Content-Range）
 	var plugin alistencrypt.AlistEncryptPlugin
-	if err := plugin.ServeStream(c.Writer, c.Request, absPath, password); err != nil {
-		slog.Error("API: alist-encrypt stream failed", "error", err)
+	rc, size, _, showName, err := plugin.Stream(absPath, password)
+	if err != nil {
+		slog.Error("API: alist-encrypt stream open failed", "error", err)
 		writeServiceErrorGin(c, err)
+		return
 	}
+	sr, ok := rc.(*alistencrypt.SeekableDecryptReader)
+	if !ok {
+		_ = rc.Close()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal: unexpected reader type"})
+		return
+	}
+	prov := alistencrypt.NewAlistEncryptFileProvider(sr, size, showName)
+	defer prov.Close()
+	s.contentHandler.ServeFile(c.Writer, c.Request, prov)
 }
 
 func (s *Server) handleAlistDecodeFilenameGin(c *gin.Context) {

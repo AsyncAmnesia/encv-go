@@ -9,138 +9,110 @@
       </ion-toolbar>
     </ion-header>
 
-    <ion-content>
-      <ion-list>
-        <ion-list-header>
-          <ion-label>{{ t('settings.indexStatus') }}</ion-label>
-        </ion-list-header>
+    <ion-content class="cache-detail-content">
+      <!-- 索引状态总览 -->
+      <div class="section-card index-overview">
+        <div class="overview-header">
+          <h4 class="card-title">
+            <ion-icon :icon="statsChartOutline" class="title-icon primary"></ion-icon>
+            {{ t('settings.indexStatus') }}
+          </h4>
+          <div v-if="stats?.isIndexing" class="indexing-badge">
+            <ion-spinner name="crescent" class="mini-spinner"></ion-spinner>
+            <span>{{ t('settings.indexing') }}</span>
+          </div>
+          <div v-else-if="stats" class="idle-badge">{{ t('settings.idle') }}</div>
+        </div>
 
-        <ion-item>
-          <ion-icon :icon="documentText" slot="start" color="primary"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.totalFiles') }}</h3>
-            <p>{{ stats?.totalFiles ?? '-' }}</p>
-          </ion-label>
-        </ion-item>
+        <div class="overview-grid">
+          <div class="stat-item">
+            <ion-icon :icon="documentTextOutline" class="stat-icon"></ion-icon>
+            <div class="stat-value">{{ stats?.totalFiles ?? '-' }}</div>
+            <div class="stat-label">{{ t('settings.totalFiles') }}</div>
+          </div>
+          <div class="stat-item">
+            <ion-icon :icon="folderOpenOutline" class="stat-icon"></ion-icon>
+            <div class="stat-value">{{ stats?.totalDirs ?? '-' }}</div>
+            <div class="stat-label">{{ t('settings.totalDirs') }}</div>
+          </div>
+          <div class="stat-item">
+            <ion-icon :icon="serverOutline" class="stat-icon"></ion-icon>
+            <div class="stat-value">{{ stats ? formatFileSize(stats.totalSize) : '-' }}</div>
+            <div class="stat-label">{{ t('settings.totalSize') }}</div>
+          </div>
+          <div class="stat-item" v-if="stats?.containers">
+            <ion-icon :icon="lockClosed" class="stat-icon warning"></ion-icon>
+            <div class="stat-value warning-text">{{ stats.containers }}</div>
+            <div class="stat-label">{{ t('settings.encryptedContainers') }}</div>
+          </div>
+        </div>
 
-        <ion-item>
-          <ion-icon :icon="folder" slot="start" color="primary"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.totalDirs') }}</h3>
-            <p>{{ stats?.totalDirs ?? '-' }}</p>
-          </ion-label>
-        </ion-item>
+        <div v-if="stats" class="meta-row">
+          <span class="meta-item">
+            <ion-icon :icon="timeOutline" class="meta-icon"></ion-icon>
+            {{ stats.indexedAt || t('settings.never') }}
+          </span>
+          <span class="meta-item" v-if="stats.lastBuildMs">
+            <ion-icon :icon="timerOutline" class="meta-icon"></ion-icon>
+            {{ stats.lastBuildMs }} ms
+          </span>
+          <span class="meta-item" v-if="stats.source">
+            <ion-icon :icon="cloudOutline" class="meta-icon"></ion-icon>
+            {{ stats.source === 'webdav' ? 'WebDAV' : t('settings.mobileIndex') }}
+          </span>
+        </div>
+      </div>
 
-        <ion-item>
-          <ion-icon :icon="speedometer" slot="start" color="primary"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.totalSize') }}</h3>
-            <p>{{ stats ? formatFileSize(stats.totalSize) : '-' }}</p>
-          </ion-label>
-        </ion-item>
+      <!-- 操作按钮 -->
+      <div class="action-grid">
+        <button
+          class="action-btn action-btn--primary"
+          :disabled="stats?.isIndexing"
+          @click="handleRebuild"
+        >
+          <ion-icon :icon="refreshCircleOutline"></ion-icon>
+          <span>{{ stats?.isIndexing ? t('settings.indexing') : t('settings.rebuildIndex') }}</span>
+        </button>
+        <button
+          class="action-btn action-btn--danger"
+          :disabled="stats?.isIndexing"
+          @click="handleClearIndex"
+        >
+          <ion-icon :icon="trashOutline"></ion-icon>
+          <span>{{ t('settings.clearIndex') }}</span>
+        </button>
+      </div>
 
-        <ion-item>
-          <ion-icon :icon="time" slot="start" color="primary"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.indexedAt') }}</h3>
-            <p>{{ stats?.indexedAt || t('settings.never') }}</p>
-          </ion-label>
-        </ion-item>
-
-        <ion-item>
-          <ion-icon :icon="timer" slot="start" color="primary"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.lastBuildTime') }}</h3>
-            <p>{{ stats?.lastBuildMs ? `${stats.lastBuildMs} ms` : '-' }}</p>
-          </ion-label>
-        </ion-item>
-
-        <ion-item>
-          <ion-icon :icon="stats?.isIndexing ? sync : checkmarkCircle" slot="start" :color="stats?.isIndexing ? 'warning' : 'success'"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.indexState') }}</h3>
-            <p>{{ stats?.isIndexing ? t('settings.indexing') : t('settings.idle') }}</p>
-          </ion-label>
-          <ion-spinner v-if="stats?.isIndexing" name="crescent" slot="end"></ion-spinner>
-        </ion-item>
-
-        <ion-item v-if="stats?.source">
-          <ion-icon :icon="server" slot="start" color="primary"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.indexSource') }}</h3>
-            <p>{{ stats.source === 'webdav' ? 'WebDAV' : t('settings.mobileIndex') }}</p>
-          </ion-label>
-        </ion-item>
-
-        <ion-item v-if="stats?.containers">
-          <ion-icon :icon="lockClosed" slot="start" color="warning"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.encryptedContainers') }}</h3>
-            <p>{{ stats.containers }}</p>
-          </ion-label>
-        </ion-item>
-      </ion-list>
-
-      <ion-list>
-        <ion-list-header>
-          <ion-label>{{ t('settings.actions') }}</ion-label>
-        </ion-list-header>
-
-        <ion-item button @click="handleRebuild" :disabled="stats?.isIndexing">
-          <ion-icon :icon="sync" slot="start" color="primary"></ion-icon>
-          <ion-label>
-            <h3>{{ stats?.isIndexing ? t('settings.indexing') : t('settings.rebuildIndex') }}</h3>
-          </ion-label>
-          <ion-spinner v-if="stats?.isIndexing" name="crescent" slot="end"></ion-spinner>
-        </ion-item>
-
-        <ion-item button @click="handleClearIndex" :disabled="stats?.isIndexing">
-          <ion-icon :icon="trash" slot="start" color="danger"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.clearIndex') }}</h3>
-          </ion-label>
-        </ion-item>
-      </ion-list>
-
-      <ion-list>
+      <!-- 缓存详情 -->
+      <ion-list lines="full">
         <ion-list-header>
           <ion-label>{{ t('settings.searchCache') }}</ion-label>
         </ion-list-header>
 
         <ion-item>
-          <ion-icon :icon="search" slot="start" color="primary"></ion-icon>
+          <ion-icon :icon="searchOutline" slot="start" color="primary"></ion-icon>
           <ion-label>
             <h3>{{ t('settings.cacheEntries') }}</h3>
             <p>{{ searchCacheSize }}</p>
           </ion-label>
+          <ion-button fill="clear" size="small" color="danger" @click="handleClearSearchCache">
+            {{ t('files.clear') }}
+          </ion-button>
         </ion-item>
 
-        <ion-item button @click="handleClearSearchCache">
-          <ion-icon :icon="trash" slot="start" color="danger"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.clearSearchCache') }}</h3>
-          </ion-label>
-        </ion-item>
-      </ion-list>
-
-      <ion-list>
         <ion-list-header>
           <ion-label>{{ t('settings.thumbCache') }}</ion-label>
         </ion-list-header>
 
         <ion-item>
-          <ion-icon :icon="image" slot="start" color="primary"></ion-icon>
+          <ion-icon :icon="imageOutline" slot="start" color="primary"></ion-icon>
           <ion-label>
             <h3>{{ t('settings.thumbCacheEntries') }}</h3>
             <p>{{ thumbCacheSize }} / {{ THUMB_CACHE_MAX }}</p>
           </ion-label>
-        </ion-item>
-
-        <ion-item button @click="handleClearThumbCache">
-          <ion-icon :icon="trash" slot="start" color="danger"></ion-icon>
-          <ion-label>
-            <h3>{{ t('settings.clearThumbCache') }}</h3>
-          </ion-label>
+          <ion-button fill="clear" size="small" color="danger" @click="handleClearThumbCache">
+            {{ t('files.clear') }}
+          </ion-button>
         </ion-item>
       </ion-list>
     </ion-content>
@@ -162,22 +134,23 @@ import {
   IonItem,
   IonIcon,
   IonLabel,
+  IonButton,
   IonSpinner,
   alertController,
 } from '@ionic/vue'
 import {
-  documentText,
-  folder,
-  speedometer,
-  time,
-  timer,
-  sync,
-  checkmarkCircle,
-  trash,
-  search,
-  server,
+  documentTextOutline,
+  folderOpenOutline,
+  serverOutline,
   lockClosed,
-  image,
+  timeOutline,
+  timerOutline,
+  cloudOutline,
+  searchOutline,
+  imageOutline,
+  trashOutline,
+  refreshCircleOutline,
+  statsChartOutline,
 } from 'ionicons/icons'
 import {
   getIndexStats,
@@ -258,6 +231,7 @@ function handleClearSearchCache() {
   }
   keysToRemove.forEach(key => localStorage.removeItem(key))
   searchCacheSize.value = 0
+  showToast({ message: t('settings.cleared'), duration: 1200, color: 'medium' })
 }
 
 function updateThumbCacheSize() {
@@ -276,6 +250,7 @@ async function handleClearThumbCache() {
         handler: () => {
           clearThumbCache()
           thumbCacheSize.value = 0
+          showToast({ message: t('settings.cleared'), duration: 1200, color: 'medium' })
         },
       },
     ],
@@ -284,12 +259,12 @@ async function handleClearThumbCache() {
 }
 
 onMounted(() => {
-  loadStats()
+  loadStats().catch(() => {})
   updateSearchCacheSize()
   updateThumbCacheSize()
   pollTimer = setInterval(() => {
     if (stats.value?.isIndexing) {
-      loadStats()
+      loadStats().catch(() => {})
     }
   }, 2000)
 })
@@ -298,3 +273,172 @@ onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
 })
 </script>
+
+<style scoped>
+.cache-detail-content {
+  --background: var(--ion-background-color);
+}
+
+.section-card {
+  margin: 12px 16px;
+  padding: 16px;
+  border-radius: 14px;
+  background: rgba(var(--ion-background-color-rgb, 255, 255, 255), 0.65);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-left: 3px solid var(--ion-color-primary);
+}
+body.dark .section-card {
+  background: rgba(var(--ion-background-color-rgb, 30, 30, 30), 0.7);
+}
+
+.overview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.title-icon { font-size: 17px; color: var(--ion-color-medium); }
+.title-icon.primary { color: var(--ion-color-primary); }
+
+.indexing-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ion-color-warning);
+  padding: 3px 10px;
+  border-radius: 10px;
+  background: rgba(var(--ion-color-warning-rgb), 0.1);
+}
+.mini-spinner {
+  width: 14px;
+  height: 14px;
+}
+.idle-badge {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ion-color-success);
+  padding: 3px 10px;
+  border-radius: 10px;
+  background: rgba(var(--ion-color-success-rgb), 0.08);
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 8px;
+  border-radius: 10px;
+  background: rgba(var(--ion-background-color-rgb), 0.5);
+}
+.stat-icon {
+  font-size: 20px;
+  color: var(--ion-color-primary);
+  opacity: 0.7;
+}
+.stat-icon.warning { color: var(--ion-color-warning); opacity: 0.85; }
+.stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--ion-text-color);
+}
+.stat-value.warning-text { color: var(--ion-color-warning); }
+.stat-label {
+  font-size: 11px;
+  color: var(--ion-color-medium);
+  text-align: center;
+}
+
+.meta-row {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding-top: 10px;
+  border-top: 1px solid rgba(var(--ion-color-medium-rgb), 0.15);
+}
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--ion-color-medium);
+}
+.meta-icon { font-size: 13px; }
+
+.action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 4px 16px 16px;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border: none;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+.action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.action-btn ion-icon { font-size: 18px; }
+
+.action-btn--primary {
+  background: rgba(var(--ion-color-primary-rgb), 0.12);
+  color: var(--ion-color-primary);
+}
+.action-btn--primary:not(:disabled):hover {
+  background: rgba(var(--ion-color-primary-rgb), 0.2);
+}
+.action-btn--primary:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+.action-btn--danger {
+  background: rgba(var(--ion-color-danger-rgb), 0.08);
+  color: var(--ion-color-danger);
+}
+.action-btn--danger:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+@media (max-width: 599px) {
+  .overview-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .stat-value { font-size: 17px; }
+  .action-grid { gap: 8px; }
+  .action-btn { padding: 10px 12px; font-size: 12.5px; }
+}
+</style>

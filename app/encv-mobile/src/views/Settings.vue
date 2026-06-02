@@ -16,55 +16,27 @@
       <ion-list>
         <ion-list-header>
           <ion-label>{{ t('settings.appearance') }}</ion-label>
+          <ion-badge slot="end" color="medium" class="scope-badge">
+            <ion-icon :icon="phonePortraitOutline" class="scope-badge-icon"></ion-icon>
+            <span class="scope-text">{{ t('settings.localOnly') }}</span>
+          </ion-badge>
         </ion-list-header>
-        <ion-item>
-          <ion-icon :icon="moon" slot="start"></ion-icon>
-          <ion-toggle :checked="isDark" @ionChange="handleDarkToggle">{{ t('settings.darkMode') }}</ion-toggle>
-        </ion-item>
-
-        <ion-item lines="full">
+        <ion-item button @click="goAppearance" detail>
           <ion-icon :icon="colorPaletteOutline" slot="start"></ion-icon>
           <ion-label>
-            <h3>{{ t('settings.themeColor') }}</h3>
-            <p>{{ t('settings.themeColorHelp') }}</p>
+            <h3>{{ t('settings.appearance') }}</h3>
+            <p>{{ t('settings.appearanceHelp') }}</p>
           </ion-label>
-        </ion-item>
-        <div class="theme-color-picker">
-          <div class="preset-colors">
-            <button
-              v-for="preset in THEME_PRESETS"
-              :key="preset.value"
-              class="color-dot"
-              :class="{ active: currentColor === preset.value }"
-              :style="{ backgroundColor: preset.value }"
-              :title="preset.name"
-              @click="setThemeColor(preset.value)"
-            ></button>
-          </div>
-          <div class="custom-color-row">
-            <label class="custom-color-label">{{ t('settings.customColor') }}</label>
-            <input
-              type="color"
-              class="color-input"
-              :value="currentColor"
-              @input="setThemeColor(($event.target as HTMLInputElement).value)"
-            />
-            <span class="color-hex">{{ currentColor.toUpperCase() }}</span>
-          </div>
-        </div>
-
-        <ion-item>
-          <ion-icon :icon="globeOutline" slot="start"></ion-icon>
-          <ion-select :value="locale" @ionChange="handleLocaleChange" interface="action-sheet" mode="ios">
-            <ion-select-option value="zh-CN">简体中文</ion-select-option>
-            <ion-select-option value="en">English</ion-select-option>
-          </ion-select>
         </ion-item>
       </ion-list>
 
       <ion-list>
         <ion-list-header>
           <ion-label>{{ t('settings.player') }}</ion-label>
+          <ion-badge slot="end" color="medium" class="scope-badge">
+            <ion-icon :icon="phonePortraitOutline" class="scope-badge-icon"></ion-icon>
+            <span class="scope-text">{{ t('settings.localOnly') }}</span>
+          </ion-badge>
         </ion-list-header>
         <ion-item>
           <ion-icon :icon="filmOutline" slot="start"></ion-icon>
@@ -171,11 +143,15 @@
 
       <template v-else-if="configLoaded">
         <template v-for="section in schemaFields" :key="section.key">
-          <!-- 过滤掉 server、admin、webdav 配置项，这些配置项有独立的设置页面 -->
-        <template v-if="!['server', 'admin', 'webdav', 'log'].includes(section.key)">
+          <!-- 过滤掉 server/admin/webdav/proxy/log 配置项，这些有独立页面或冗余 -->
+        <template v-if="!['server', 'admin', 'webdav', 'proxy', 'log'].includes(section.key)">
           <ion-list v-if="section.key === 'plugin_settings'">
             <ion-list-header>
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
+              <ion-badge slot="end" color="primary" class="scope-badge scope-synced">
+                <ion-icon :icon="cloudOutline" class="scope-badge-icon"></ion-icon>
+                <span class="scope-text">{{ t('settings.synced') }}</span>
+              </ion-badge>
             </ion-list-header>
             <ion-item button @click="goPlugins" detail>
               <ion-icon :icon="settingsOutline" slot="start"></ion-icon>
@@ -188,6 +164,10 @@
           <ion-list v-else-if="section.type !== 'object' || !section.properties">
             <ion-list-header>
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
+              <ion-badge slot="end" color="primary" class="scope-badge scope-synced">
+                <ion-icon :icon="cloudOutline" class="scope-badge-icon"></ion-icon>
+                <span class="scope-text">{{ t('settings.synced') }}</span>
+              </ion-badge>
             </ion-list-header>
             <ConfigFieldItem
               :field="section"
@@ -198,12 +178,17 @@
               @update:model-value="setValue([section.key], $event)"
               @input="handleInput([section.key], section, $event)"
               @browse="handleBrowsePath([section.key], section)"
+              @reset="resetFieldToDefault([section.key], section)"
             />
           </ion-list>
 
           <ion-list v-else>
             <ion-list-header>
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
+              <ion-badge slot="end" color="primary" class="scope-badge scope-synced">
+                <ion-icon :icon="cloudOutline" class="scope-badge-icon"></ion-icon>
+                <span class="scope-text">{{ t('settings.synced') }}</span>
+              </ion-badge>
             </ion-list-header>
 
             <template v-for="child in section.properties" :key="child.key">
@@ -222,6 +207,7 @@
                       @update:model-value="setValue([section.key, child.key, grandchild.key], $event)"
                       @input="handleInput([section.key, child.key, grandchild.key], grandchild, $event)"
                       @browse="handleBrowsePath([section.key, child.key, grandchild.key], grandchild)"
+                      @reset="resetFieldToDefault([section.key, child.key, grandchild.key], grandchild)"
                     />
                   </template>
                 </template>
@@ -251,31 +237,7 @@
               </template>
 
               <template v-else-if="isFieldVisible(child)">
-                <ion-item v-if="child.type === 'boolean'">
-                  <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
-                  <ion-toggle
-                    :checked="!!getValue([section.key, child.key])"
-                    @ionChange="setValue([section.key, child.key], !getValue([section.key, child.key]))"
-                  >{{ tField(child.key) }}</ion-toggle>
-                </ion-item>
-                <ion-item v-else-if="section.key === 'log' && child.key === 'level'">
-                  <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
-                  <ion-select
-                    :value="String(getValue(['log', 'level']) ?? 'info')"
-                    :label="tField('level')"
-                    label-placement="stacked"
-                    interface="action-sheet"
-                    mode="ios"
-                    @ionChange="setValue(['log', 'level'], $event.detail.value)"
-                  >
-                    <ion-select-option value="debug">DEBUG</ion-select-option>
-                    <ion-select-option value="info">INFO</ion-select-option>
-                    <ion-select-option value="warn">WARN</ion-select-option>
-                    <ion-select-option value="error">ERROR</ion-select-option>
-                  </ion-select>
-                </ion-item>
                 <ConfigFieldItem
-                  v-else
                   :field="child"
                   :model-value="getValue([section.key, child.key])"
                   :label="fieldLabel(child.key, child.required)"
@@ -284,6 +246,7 @@
                   @update:model-value="setValue([section.key, child.key], $event)"
                   @input="handleInput([section.key, child.key], child, $event)"
                   @browse="handleBrowsePath([section.key, child.key], child)"
+                  @reset="resetFieldToDefault([section.key, child.key], child)"
                 />
               </template>
             </template>
@@ -387,11 +350,11 @@ import { useRouter } from 'vue-router'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonContent, IonList, IonListHeader, IonItem, IonItemDivider,
-  IonIcon, IonLabel, IonToggle, IonBadge, IonSpinner,
+  IonIcon, IonLabel, IonBadge, IonSpinner,
   IonSelect, IonSelectOption, modalController, alertController,
 } from '@ionic/vue'
 import {
-  moon, globeOutline, server as serverIcon, save as saveIcon,
+  server as serverIcon, save as saveIcon,
   informationCircle,
   key, lockClosed, documentText, terminal, settingsOutline,
   cloudOutline, shieldCheckmark, eyeOutline, speedometerOutline,
@@ -400,12 +363,12 @@ import {
   textOutline, personOutline, folderOpen, refreshCircle,
   trash, bugOutline,
   phonePortraitOutline,
-  colorPaletteOutline, layersOutline,
+  colorPaletteOutline, layersOutline, globeOutline,
   fileTrayFull as databaseIcon,
 } from 'ionicons/icons'
-import { useTheme } from '@/composables/useTheme'
 import { useServerStatus } from '@/composables/useServerStatus'
 import { useConfig } from '@/composables/useConfig'
+import type { FieldDef } from '@/config/schemaParser'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { isNative, pickFolder, getPluginFullState, ensurePluginLoaded } from '@/plugins/GoProcess'
@@ -413,16 +376,14 @@ import { registerFileFeature, unregisterFileFeature } from '@/composables/useFil
 import { createAlistEncryptFeature } from '@/features/alist-encrypt'
 import { getIndexStats, fetchConfig, updateConfig, fetchFFmpegStatus } from '@/api/encv'
 import type { IndexStats, FFmpegStatus } from '@/api/encv'
-import type { FieldDef } from '@/config/schemaParser'
 import { PLAY_MODE, isMpvSubMode } from '@/constants/player'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 import ConfigFieldItem from '@/components/ConfigFieldItem.vue'
 
 const router = useRouter()
-const { isDark, currentColor, toggleDark, setThemeColor, THEME_PRESETS } = useTheme()
 const { isOnline: serverOnline, lastError: connectionError, checkStatus, backendPort } = useServerStatus()
-const { schemaFields, loading: configLoading, dirty, restartNeeded, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
-const { t, tField, tSectionTitle, setLocale, locale } = useI18n()
+const { schemaFields, loading: configLoading, dirty, restartNeeded, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue, resetFieldToDefault } = useConfig()
+const { t, tField, tSectionTitle } = useI18n()
 
 const configLoaded = ref(false)
 const indexStats = ref<IndexStats | null>(null)
@@ -485,6 +446,10 @@ async function applyScreenOrientation(orientation: string) {
   } catch (e) {
     console.debug('Failed to apply screen orientation:', e)
   }
+}
+
+function goAppearance() {
+  router.push('/tabs/settings/appearance')
 }
 
 function goDevTools() {
@@ -641,8 +606,8 @@ async function handleBrowsePath(path: string[], field: FieldDef) {
   }
 }
 
-function fieldLabel(key: string, required?: boolean): string {
-  return tField(key) + (required ? ' *' : '')
+function fieldLabel(key: string, _required?: boolean): string {
+  return tField(key)
 }
 
 const fieldIconMap: Record<string, string> = {
@@ -700,14 +665,6 @@ function isFieldVisible(field: FieldDef): boolean {
   return true
 }
 
-function handleDarkToggle() {
-  toggleDark()
-}
-
-function handleLocaleChange(event: CustomEvent) {
-  setLocale(event.detail.value as 'zh-CN' | 'en')
-}
-
 async function handleClearCache() {
   const alert = await alertController.create({
     header: t('settings.clearCache'),
@@ -750,7 +707,6 @@ async function handleResetSettings() {
         role: 'destructive',
         handler: () => {
           localStorage.clear()
-          if (isDark.value) toggleDark()
           showToast({
             message: t('settings.settingsReset'),
             duration: 1500,
@@ -806,15 +762,16 @@ function syncAlistEncryptFeature() {
   }
 }
 
-onMounted(async () => {
-  await checkStatus()
+onMounted(() => {
+  checkStatus().catch(() => {})
   if (serverOnline.value) {
-    await loadConfig()
-    configLoaded.value = true
-    try { indexStats.value = await getIndexStats() } catch {}
-    if (isNative()) { 
-      try { engineStatus.value = await fetchFFmpegStatus() } catch {}
-      await refreshMpvPluginStatus()
+    loadConfig()
+      .then(() => { configLoaded.value = true })
+      .catch(() => { configLoaded.value = true })
+    getIndexStats().then((s) => { indexStats.value = s }).catch(() => {})
+    if (isNative()) {
+      fetchFFmpegStatus().then((s) => { engineStatus.value = s }).catch(() => {})
+      refreshMpvPluginStatus().catch(() => {})
     }
     syncAlistEncryptFeature()
   }
@@ -858,14 +815,15 @@ async function refreshMpvPluginStatus() {
   }
 }
 
-watch(serverOnline, async (online) => {
+watch(serverOnline, (online) => {
   if (online) {
     if (!configLoaded.value) {
-      await loadConfig()
-      configLoaded.value = true
+      loadConfig()
+        .then(() => { configLoaded.value = true })
+        .catch(() => { configLoaded.value = true })
     }
-    try { indexStats.value = await getIndexStats() } catch {}
-    if (isNative()) { try { engineStatus.value = await fetchFFmpegStatus() } catch {} }
+    getIndexStats().then((s) => { indexStats.value = s }).catch(() => {})
+    if (isNative()) { fetchFFmpegStatus().then((s) => { engineStatus.value = s }).catch(() => {}) }
   }
 })
 
@@ -895,6 +853,36 @@ watch(() => getFieldValue(['plugin_settings', 'alist_encrypt', 'enabled']), (ena
 .placeholder-text {
   opacity: 0.5;
   font-style: italic;
+}
+.scope-badge {
+  font-size: 10px;
+  --padding-start: 6px;
+  --padding-end: 8px;
+  --padding-top: 3px;
+  --padding-bottom: 3px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.scope-badge-icon {
+  font-size: 12px;
+}
+.scope-synced {
+  --background: rgba(var(--ion-color-primary-rgb), 0.12);
+  --color: var(--ion-color-primary);
+}
+@media (max-width: 599px) {
+  .scope-badge {
+    --padding-start: 5px;
+    --padding-end: 5px;
+    --padding-top: 2px;
+    --padding-bottom: 2px;
+  }
+  .scope-badge .scope-text {
+    display: none;
+  }
 }
 .port-info {
   font-size: 12px;
@@ -979,63 +967,5 @@ watch(() => getFieldValue(['plugin_settings', 'alist_encrypt', 'enabled']), (ena
   color: var(--ion-color-danger);
   font-size: 12px;
   font-family: monospace;
-}
-.theme-color-picker {
-  padding: 8px 16px 16px;
-}
-.preset-colors {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 14px;
-}
-.color-dot {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 2.5px solid transparent;
-  cursor: pointer;
-  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
-  outline: none;
-  -webkit-tap-highlight-color: transparent;
-}
-.color-dot.active {
-  border-color: var(--ion-text-color, #333);
-  transform: scale(1.15);
-  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.08);
-}
-.custom-color-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.custom-color-label {
-  font-size: 13px;
-  color: var(--ion-text-secondary);
-  white-space: nowrap;
-}
-.color-input {
-  width: 40px;
-  height: 32px;
-  padding: 0;
-  border: 1px solid var(--ion-color-medium, #ccc);
-  border-radius: 6px;
-  cursor: pointer;
-  background: none;
-  outline: none;
-  appearance: none;
-  -webkit-appearance: none;
-}
-.color-input::-webkit-color-swatch-wrapper {
-  padding: 2px;
-}
-.color-input::-webkit-color-swatch {
-  border: none;
-  border-radius: 4px;
-}
-.color-hex {
-  font-size: 13px;
-  font-family: monospace;
-  color: var(--ion-text-secondary);
 }
 </style>

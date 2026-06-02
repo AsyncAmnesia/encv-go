@@ -26,7 +26,6 @@ function lruPush(keys: string[], key: string, map: Map<string, unknown>, value: 
 export function isAlistEncrypted(file: FileItem): boolean {
   if (file.isDirectory) return false
   const suffix = getFieldValue(['plugin_settings', 'alist_encrypt', 'suffix']) as string
-  console.error(`[ALIST-DBG] isAlistEncrypted: name=${file.name}, suffix=${JSON.stringify(suffix)}, matches=${!!suffix && file.name.endsWith(suffix)}`)
   return !!suffix && file.name.endsWith(suffix)
 }
 

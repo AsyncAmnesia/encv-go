@@ -80,11 +80,11 @@ export function useNewTaskModal() {
 
     syncState()
 
+    let alistCachedPassword = ''
     if (state.taskType === 'decrypt' && state.sourcePath) {
       try {
         const { getSessionPassword: getCachedPwd } = await import('@/features/alist-encrypt/useAlistEncrypt')
-        const cached = getCachedPwd(state.sourcePath)
-        if (cached) state.secondaryPassword = cached
+        alistCachedPassword = getCachedPwd(state.sourcePath) || ''
       } catch { /* alist-encrypt 未注册时静默忽略 */ }
     }
 
@@ -102,7 +102,7 @@ export function useNewTaskModal() {
             state.predictedPlugin = null
             state.candidates = []
             state.taskOptions = null
-            await doPredict(norm, state.taskType as 'encrypt' | 'decrypt')
+            await doPredict(norm, state.taskType as 'encrypt' | 'decrypt', { immediate: true })
             if (state.taskType === 'decrypt' && candidates.value.length === 0 && !predictedPlugin.value) {
               state.predictedPlugin = 'auto-detect'
             }
@@ -171,9 +171,12 @@ export function useNewTaskModal() {
     if (initialSourcePath) {
       const normalized = normalize(initialSourcePath)
       if (normalized) {
-        await doPredict(normalized, state.taskType as 'encrypt' | 'decrypt')
+        await doPredict(normalized, state.taskType as 'encrypt' | 'decrypt', { immediate: true })
         if (state.taskType === 'decrypt' && candidates.value.length === 0 && !predictedPlugin.value) {
           state.predictedPlugin = 'auto-detect'
+        }
+        if (alistCachedPassword && state.taskType === 'decrypt') {
+          extraValues.value.plugin_password = alistCachedPassword
         }
         syncState()
       }

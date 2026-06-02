@@ -135,22 +135,50 @@
         <ion-content class="ion-padding">
           <ion-list>
             <ion-item>
-              <ion-input v-model="formName" :label="t('webdav.name')" label-placement="stacked" placeholder="My WebDAV Server"></ion-input>
+              <InputWithHistory
+                v-model="formName"
+                :label="t('webdav.name')"
+                placeholder="My WebDAV Server"
+                :icon="cloud"
+                history-key="webdav.name"
+              />
             </ion-item>
             <ion-item>
-              <ion-input v-model="formUrl" :label="t('webdav.serverUrl')" label-placement="stacked" placeholder="https://dav.example.com"></ion-input>
+              <InputWithHistory
+                v-model="formUrl"
+                :label="t('webdav.serverUrl')"
+                placeholder="https://dav.example.com"
+                :icon="globe"
+                history-key="webdav.url"
+              />
             </ion-item>
             <ion-item>
-              <ion-input v-model="formUsername" :label="t('webdav.username')" label-placement="stacked" placeholder="user"></ion-input>
+              <InputWithHistory
+                v-model="formUsername"
+                :label="t('webdav.username')"
+                placeholder="user"
+                :icon="person"
+                history-key="webdav.username"
+              />
             </ion-item>
             <ion-item>
-              <ion-input v-model="formPassword" :type="showPassword ? 'text' : 'password'" :label="t('webdav.password')" label-placement="stacked" placeholder="password"></ion-input>
-              <ion-button fill="clear" slot="end" @click="showPassword = !showPassword">
-                <ion-icon :icon="showPassword ? eyeOff : eye"></ion-icon>
-              </ion-button>
+              <InputWithHistory
+                v-model="formPassword"
+                :label="t('webdav.password')"
+                placeholder="password"
+                :icon="lockClosed"
+                input-type="password"
+                history-key="webdav.password"
+              />
             </ion-item>
             <ion-item>
-              <ion-input v-model="formMountPath" :label="t('webdav.mountPath')" label-placement="stacked" placeholder="/webdav"></ion-input>
+              <InputWithHistory
+                v-model="formMountPath"
+                :label="t('webdav.mountPath')"
+                placeholder="/webdav"
+                :icon="folderOpen"
+                history-key="webdav.mountPath"
+              />
             </ion-item>
           </ion-list>
           <ion-button expand="block" @click="testConnection" :disabled="testing || !formUrl">
@@ -226,30 +254,36 @@
         <ion-content class="ion-padding">
           <ion-list>
             <ion-item>
-              <ion-input
+              <InputWithHistory
                 v-model="formSiteId"
                 :label="t('remote.siteId')"
-                label-placement="stacked"
                 :placeholder="t('remote.siteIdPlaceholder')"
                 :disabled="!!editingSiteId"
                 :error-text="formSiteIdError"
-                :class="{ 'ion-invalid': !!formSiteIdError, 'ion-touched': !!formSiteIdError }"
-                @ionInput="validateSiteId"
-              ></ion-input>
+                :icon="fingerPrint"
+                history-key="openlist.siteId"
+                @update:model-value="validateSiteId"
+              />
             </ion-item>
             <ion-item>
-              <ion-input
+              <InputWithHistory
                 v-model="formHost"
                 :label="t('remote.host')"
-                label-placement="stacked"
                 :placeholder="t('remote.hostPlaceholder')"
                 :error-text="formHostError"
-                :class="{ 'ion-invalid': !!formHostError, 'ion-touched': !!formHostError }"
-                @ionInput="validateHost"
-              ></ion-input>
+                :icon="globe"
+                history-key="openlist.host"
+                @update:model-value="validateHost"
+              />
             </ion-item>
             <ion-item>
-              <ion-input v-model="formDescription" :label="t('remote.description')" label-placement="stacked" :placeholder="t('remote.descriptionPlaceholder')"></ion-input>
+              <InputWithHistory
+                v-model="formDescription"
+                :label="t('remote.description')"
+                :placeholder="t('remote.descriptionPlaceholder')"
+                :icon="documentText"
+                history-key="openlist.description"
+              />
             </ion-item>
           </ion-list>
           <ion-button expand="block" @click="saveSite" :disabled="!formSiteId || !formHost || !!formSiteIdError || !!formHostError">
@@ -268,9 +302,9 @@ import {
   IonSegment, IonSegmentButton, IonLabel,
   IonList, IonItem, IonItemSliding, IonItemOptions, IonItemOption,
   IonIcon, IonBadge, IonFab, IonFabButton,
-  IonModal, IonButtons, IonButton, IonInput,
+  IonModal, IonButtons, IonButton,
 } from '@ionic/vue'
-import { add, cloud, flash, save as saveIcon, eye, eyeOff, home, globe } from 'ionicons/icons'
+import { add, cloud, flash, save as saveIcon, home, globe, folderOpen, person, lockClosed, documentText, fingerPrint } from 'ionicons/icons'
 import {
   getWebDAVConfigs, saveWebDAVConfigs, testWebDAVConnection,
   fetchRemoteInfo, addOpenlistSite, updateOpenlistSite, deleteOpenlistSite,
@@ -279,6 +313,7 @@ import type { WebDAVConfig, RemoteWebDAVInfo, OpenlistSiteInfo, WebDAVTestResult
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { copyToClipboard as clipboardWrite } from '@/composables/useClipboard'
+import InputWithHistory from '@/components/InputWithHistory.vue'
 
 const { t } = useI18n()
 
@@ -292,7 +327,6 @@ const showWebdavModal = ref(false)
 const editingId = ref('')
 const testing = ref(false)
 const testingId = ref('')
-const showPassword = ref(false)
 const testResult = ref<WebDAVTestResult | null>(null)
 const listTestResults = ref<Record<string, WebDAVTestResult>>({})
 const formName = ref('')

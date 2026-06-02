@@ -133,8 +133,10 @@ onIonViewWillEnter(() => {})
   justify-content: center;
   padding: 24px 12px;
   border-radius: 16px;
-  background: var(--ion-card-background);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  background: rgba(var(--ion-background-color-rgb), 0.55);
+  backdrop-filter: blur(var(--encv-bg-blur, 8px));
+  -webkit-backdrop-filter: blur(var(--encv-bg-blur, 8px));
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   min-height: 140px;

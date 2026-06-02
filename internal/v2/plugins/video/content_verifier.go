@@ -223,6 +223,13 @@ func (p *VideoContentVerifier) QuickSampleHashCheck(origPath, decPath string, sk
 	decInfo, _ := decFile.Stat()
 	totalSize := origInfo.Size()
 
+	if origInfo.Size() == 0 {
+		return fmt.Errorf("original file is empty (0 bytes), cannot verify integrity")
+	}
+	if decInfo.Size() == 0 {
+		return fmt.Errorf("decrypted file is empty (0 bytes), cannot verify integrity")
+	}
+
 	if !skipSizeCheck && totalSize != decInfo.Size() {
 		return fmt.Errorf("size mismatch")
 	}
@@ -248,6 +255,9 @@ func (p *VideoContentVerifier) QuickSampleHashCheck(origPath, decPath string, sk
 		// 读取原始文件
 		_, err := origFile.ReadAt(buf, offset)
 		if err != nil {
+			if err == io.EOF && offset == 0 {
+				return fmt.Errorf("original file appears empty or unreadable (EOF at offset 0)")
+			}
 			return fmt.Errorf("read orig error at %d: %w", offset, err)
 		}
 		hasher1.Write(buf)
@@ -255,6 +265,9 @@ func (p *VideoContentVerifier) QuickSampleHashCheck(origPath, decPath string, sk
 		// 读取解密文件
 		_, err = decFile.ReadAt(buf, offset)
 		if err != nil {
+			if err == io.EOF && offset == 0 {
+				return fmt.Errorf("decrypted file appears empty or unreadable (EOF at offset 0)")
+			}
 			return fmt.Errorf("read dec error at %d: %w", offset, err)
 		}
 		hasher2.Write(buf)

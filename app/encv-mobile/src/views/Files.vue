@@ -354,7 +354,14 @@
             </div>
             <p v-else class="no-tags-hint">暂无标签</p>
             <div class="tag-input-row">
-              <ion-input v-model="newTagInput" placeholder="输入新标签名" enterkeyhint="go" @keyup.enter="handleAddNewTag()"></ion-input>
+              <InputWithHistory
+                v-model="newTagInput"
+                :label="t('files.newTag')"
+                placeholder="输入新标签名"
+                :icon="pricetagOutline"
+                history-key="files.newTag"
+                @keyup-enter="handleAddNewTag()"
+              />
               <ion-button fill="solid" color="primary" @click="handleAddNewTag()" :disabled="!newTagInput.trim()">
                 添加
               </ion-button>
@@ -485,7 +492,7 @@ import { formatDateTime } from '@/composables/useDateFormat'
 import { useThumbnailCache } from '@/composables/useThumbnailCache'
 import { useFileFeatures, findClickHandler, isAnyContainerFile, getFeatureIcon } from '@/composables/useFileFeatures'
 import { preloadSubtitles } from '@/features/alist-encrypt'
-import { isAlistEncrypted, getStreamUrl } from '@/features/alist-encrypt/useAlistEncrypt'
+import { isAlistEncrypted, getSessionPassword, setSessionPassword, loadDecodedName, getDecodedName } from '@/features/alist-encrypt/useAlistEncrypt'
 import { promptPassword } from '@/features/alist-encrypt/password-dialog'
 import {
   isImageFile,
@@ -501,6 +508,7 @@ import { copyToClipboard } from '@/composables/useClipboard'
 import { showToast } from '@/composables/useToast'
 import { Share } from '@capacitor/share'
 import { PLAY_MODE, type PlayMode, VIDEO_DEFAULT, AUDIO_DEFAULT } from '@/constants/player'
+import InputWithHistory from '@/components/InputWithHistory.vue'
 
 const ALL_VALID_MODES: PlayMode[] = [
   PLAY_MODE.ARTPLAYER,
@@ -731,7 +739,7 @@ async function handleRefresh(event: CustomEvent) {
       const results = await searchPluginFiles(selectedPlugin.value)
       pluginFiles.value = results
     } catch (e) {
-      console.error('[Files] Plugin refresh failed:', e)
+      console.debug('[Files] Plugin refresh failed:', e)
     } finally {
       pluginLoaded.value = true
     }
@@ -794,10 +802,20 @@ function goUp() {
 async function handleFileClick(file: FileItem) {
   const clickResult = await findClickHandler(file)
   if (clickResult?.handled) {
-    const password = await promptPassword(file.name)
-    if (!password) return
-    const streamUrl = getStreamUrl(file, password)
-    router.push({ path: '/player', query: { path: file.path, name: file.name, streamUrl } })
+    const cached = getSessionPassword(file.path)
+    let password: string | undefined | null = cached
+    if (!password) {
+      password = await promptPassword(file.name)
+      if (!password) return
+    }
+    setSessionPassword(file.path, password)
+    if (isAlistEncrypted(file)) {
+      await loadDecodedName(file, password)
+    }
+    const displayName = isAlistEncrypted(file)
+      ? (getDecodedName(file.path) || file.name)
+      : file.name
+    router.push({ path: '/player', query: { path: file.path, name: displayName, alistPath: file.path, alistPassword: password } })
     return
   }
 
@@ -812,8 +830,7 @@ async function handleFileClick(file: FileItem) {
   if (isAlistEncrypted(file)) {
     const password = await promptPassword(file.name)
     if (!password) return
-    const streamUrl = getStreamUrl(file, password)
-    router.push({ path: '/player', query: { path: file.path, name: file.name, streamUrl } })
+    router.push({ path: '/player', query: { path: file.path, name: file.name, alistPath: file.path, alistPassword: password } })
     return
   }
 
@@ -934,7 +951,6 @@ async function handleLongPress(file: FileItem) {
     const isMedia = category === 'video' || category === 'audio'
 
     const featureActions = await getAllActions(file)
-    console.error('[ALIST-DBG] handleLongPress: file=', file.name, 'featureActions=', featureActions.map(a => a.id), 'count=', featureActions.length)
     for (const fa of featureActions) {
       buttons.push({
         text: fa.text(),
@@ -1416,7 +1432,7 @@ watch(selectedPlugin, async (plugin) => {
       if (gen !== pluginLoadGeneration) return
       pluginFiles.value = results
     } catch (e) {
-      console.error('[Files] Plugin stream load failed:', e)
+      console.debug('[Files] Plugin stream load failed:', e)
     }
     if (gen === pluginLoadGeneration) {
       pluginLoaded.value = true
@@ -1608,9 +1624,11 @@ function onBackendReadyWindow(event: Event) {
   gap: 8px;
   align-items: center;
 }
-.tag-input-row ion-input {
-  --padding-start: 12px;
+.tag-input-row .input-with-history {
   flex: 1;
+}
+.tag-input-row .input-with-history ion-input {
+  --padding-start: 12px;
 }
 .file-tag-chips {
   display: flex;

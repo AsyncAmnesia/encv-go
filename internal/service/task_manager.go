@@ -14,12 +14,20 @@ import (
 	"time"
 
 	"github.com/Soltus/encv-go/internal/config"
+	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	"github.com/Soltus/encv-go/internal/v2/plugins/video"
 	"github.com/Soltus/encv-go/internal/v2/types"
 	"github.com/google/uuid"
 )
+
+type TaskStep struct {
+	Phase       string     `json:"phase"`
+	StartedAt   time.Time  `json:"startedAt"`
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+	Detail      string     `json:"detail,omitempty"`
+}
 
 type MobileTask struct {
 	ID                string            `json:"id"`
@@ -40,6 +48,8 @@ type MobileTask struct {
 	Warning           string            `json:"warning,omitempty"`
 	WarningDetail     string            `json:"warningDetail,omitempty"`
 	ContainerVersion  int               `json:"containerVersion,omitempty"`
+	OutputPath        string            `json:"outputPath,omitempty"`
+	Steps             []TaskStep        `json:"steps,omitempty"`
 	CreatedAt         time.Time         `json:"createdAt"`
 	CompletedAt       *time.Time        `json:"completedAt,omitempty"`
 	cancelFn          context.CancelFunc
@@ -231,6 +241,19 @@ func (tm *TaskManager) Cancel(id string) (*MobileTask, error) {
 func (tm *TaskManager) updateProgress(id string, progress int, phase, speed, eta string) {
 	tm.mu.Lock()
 	if task, ok := tm.tasks[id]; ok {
+		if task.Phase != phase {
+			now := time.Now()
+			for i := len(task.Steps) - 1; i >= 0; i-- {
+				if task.Steps[i].CompletedAt == nil {
+					task.Steps[i].CompletedAt = &now
+					break
+				}
+			}
+			task.Steps = append(task.Steps, TaskStep{
+				Phase:     phase,
+				StartedAt: now,
+			})
+		}
 		task.Progress = progress
 		task.Phase = phase
 		task.Speed = speed
@@ -375,12 +398,11 @@ func (tm *TaskManager) dequeue() *MobileTask {
 }
 
 func (tm *TaskManager) resolveAbsPath(sourcePath string) string {
-	cleaned := filepath.Clean(sourcePath)
-	if strings.HasPrefix(cleaned, "..") {
-		return ""
+	abs, err := utils.SafeResolveToAbsPath(tm.servingDir, sourcePath)
+	if err != nil {
+		return filepath.Clean(sourcePath)
 	}
-	relPath := strings.TrimPrefix(cleaned, "/")
-	return filepath.Join(tm.servingDir, relPath)
+	return abs
 }
 
 func (tm *TaskManager) processTask(task *MobileTask) {
@@ -522,7 +544,7 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 	stopMonitor := make(chan struct{})
 	go tm.monitorFileProgress(taskID, outputDir, fileSize, stopMonitor)
 
-	err = plugins.EncryptFileWithPlugin(passwordCtx, plugin, absPath, tm.servingDir, outputDir)
+	outputPath, err := plugins.EncryptFileWithPlugin(passwordCtx, plugin, absPath, tm.servingDir, outputDir)
 	close(stopMonitor)
 
 	if err != nil {
@@ -545,11 +567,19 @@ func (tm *TaskManager) processEncrypt(task *MobileTask, absPath string) {
 		now := time.Now()
 		task.CompletedAt = &now
 
-		sourceBaseName := filepath.Base(absPath)
-		ext := filepath.Ext(sourceBaseName)
-		baseNameWithoutExt := strings.TrimSuffix(sourceBaseName, ext)
-		if outputFile := findEncryptedOutputFile(outputDir, baseNameWithoutExt); outputFile != "" {
-			task.ContainerVersion = detectContainerVersion(outputFile)
+		for i := len(task.Steps) - 1; i >= 0; i-- {
+			if task.Steps[i].CompletedAt == nil {
+				task.Steps[i].CompletedAt = &now
+				if outputPath != "" {
+					task.Steps[i].Detail = outputPath
+				}
+				break
+			}
+		}
+
+		if outputPath != "" {
+			task.ContainerVersion = detectContainerVersion(outputPath)
+			task.OutputPath = outputPath
 		}
 
 		if warnings := video.LastVerifyWarnings(); len(warnings) > 0 {
@@ -737,7 +767,7 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 	stopMonitor := make(chan struct{})
 	go tm.monitorFileProgress(taskID, outputDir, fileSize, stopMonitor)
 
-	err = plugins.DecryptContainerWithPlugin(passwordCtx, plugin, absPath, outputDir)
+	outputPath, err := plugins.DecryptContainerWithPlugin(passwordCtx, plugin, absPath, outputDir)
 	close(stopMonitor)
 
 	if err != nil {
@@ -759,12 +789,26 @@ func (tm *TaskManager) processDecrypt(task *MobileTask, absPath string) {
 		task.Eta = ""
 		now := time.Now()
 		task.CompletedAt = &now
+
+		for i := len(task.Steps) - 1; i >= 0; i-- {
+			if task.Steps[i].CompletedAt == nil {
+				task.Steps[i].CompletedAt = &now
+				if outputPath != "" {
+					task.Steps[i].Detail = outputPath
+				}
+				break
+			}
+		}
+
+		if outputPath != "" {
+			task.OutputPath = outputPath
+		}
 	}
 	tm.mu.Unlock()
 
 	tm.saveTasks()
 
-	slog.Info("Task completed", "id", task.ID, "type", task.Type)
+	slog.Info("Task completed", "id", task.ID, "type", task.Type, "output", task.OutputPath)
 	if tm.broadcaster != nil {
 		tm.broadcaster.Broadcast("task:completed", map[string]interface{}{
 			"id":     task.ID,
@@ -868,28 +912,4 @@ func detectContainerVersion(filePath string) int {
 		return 0
 	}
 	return version
-}
-
-func findEncryptedOutputFile(outputDir string, sourceBaseName string) string {
-	extensions := []string{".sccgt", ".sccgv", ".sccgi", ".sccga", ".sccgpdf", ".sccgwps"}
-	for _, ext := range extensions {
-		candidate := filepath.Join(outputDir, sourceBaseName+ext)
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
-	}
-	entries, err := os.ReadDir(outputDir)
-	if err != nil {
-		return ""
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if strings.HasPrefix(name, sourceBaseName) && plugins.IsContainer(name) {
-			return filepath.Join(outputDir, name)
-		}
-	}
-	return ""
 }

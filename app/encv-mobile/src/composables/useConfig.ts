@@ -80,7 +80,7 @@ function getFieldValue(path: string[]): unknown {
 function findSchemaDefault(path: string[]): unknown {
 	let fields: FieldDef[] | undefined = schemaFields.value
 	for (let i = 0; i < path.length - 1 && fields; i++) {
-		const child = fields.find(f => f.key === path[i])
+		const child: FieldDef | undefined = fields.find(f => f.key === path[i])
 		fields = child?.properties
 	}
 	const leaf = fields?.find(f => f.key === path[path.length - 1])
@@ -107,6 +107,11 @@ function setFieldValue(path: string[], value: unknown) {
   dirty.value = true
 }
 
+function resetFieldToDefault(path: string[], field: FieldDef) {
+  const defaultVal = getDefaultValue(field)
+  setFieldValue(path, defaultVal)
+}
+
 export function useConfig() {
   return {
     config,
@@ -119,7 +124,8 @@ export function useConfig() {
     resetConfig,
     getFieldValue,
     setFieldValue,
+    resetFieldToDefault,
   }
 }
 
-export { getFieldValue, setFieldValue }
+export { getFieldValue, setFieldValue, resetFieldToDefault }

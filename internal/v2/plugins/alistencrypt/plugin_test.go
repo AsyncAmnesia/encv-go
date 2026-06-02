@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/Soltus/encv-go/internal/config"
+	"github.com/Soltus/encv-go/internal/v2/handler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -170,6 +171,46 @@ func TestCanDecrypt(t *testing.T) {
 
 		assert.False(t, p.CanDecrypt(encvPath), ".encv should return false (ENCV container excluded)")
 	})
+
+	t.Run("V1_legacy_no_magic_returns_true", func(t *testing.T) {
+		// Legacy / v1 alist-encrypt ciphertexts have no AECTR2 magic header;
+		// the plugin should still claim ownership so that predict-plugin
+		// returns the alist_encrypt candidate and the modal can render.
+		p, ctx := newPluginWithSettings(t, ".bin", testPassword, "aesctr")
+		require.NoError(t, p.Initialize(ctx))
+
+		plaintext := make([]byte, 256)
+		for i := range plaintext {
+			plaintext[i] = byte((i * 7) ^ 0xA5)
+		}
+
+		cipher, err := Create(testPassword, "aesctr", int64(len(plaintext)))
+		require.NoError(t, err)
+		cipher.Encrypt(plaintext)
+
+		tmpDir := t.TempDir()
+		v1Path := filepath.Join(tmpDir, "legacy_no_magic.bin")
+		require.NoError(t, os.WriteFile(v1Path, plaintext, 0644))
+
+		assert.True(t, p.CanDecrypt(v1Path),
+			"V1 (no AECTR2 magic) .bin should still be claimed by alist_encrypt")
+	})
+
+	t.Run("renamed_mp4_with_bin_ext_returns_false", func(t *testing.T) {
+		// A user-renamed MP4 (e.g. uploaded as .bin) must not be claimed
+		// by the alist_encrypt plugin so the regular file flow handles it.
+		p, ctx := newPluginWithSettings(t, ".bin", testPassword, "aesctr")
+		require.NoError(t, p.Initialize(ctx))
+
+		tmpDir := t.TempDir()
+		mp4Bytes := append([]byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p', 'm', 'p', '4', '2'},
+			make([]byte, 100)...)
+		renamed := filepath.Join(tmpDir, "fake.bin")
+		require.NoError(t, os.WriteFile(renamed, mp4Bytes, 0644))
+
+		assert.False(t, p.CanDecrypt(renamed),
+			"plain MP4 magic should be detected and excluded from alist_encrypt")
+	})
 }
 
 func TestEncryptDecryptRoundtrip(t *testing.T) {
@@ -302,12 +343,25 @@ func TestStreamRange(t *testing.T) {
 	p, ctx := newPluginWithSettings(t, ".bin", testPassword, "aesctr")
 	require.NoError(t, p.Initialize(ctx))
 
+	// 走统一范式：Stream() 拿 reader + size + name，构造 FileContentProvider，
+	// 委托给 ContentHandler.ServeFile 处理 HTTP 协议。
+	// 这与 v4 容器预览走同一套逻辑，避免在插件内重复实现 Range/206。
+	helper := func(t *testing.T, req *http.Request) *httptest.ResponseRecorder {
+		t.Helper()
+		rc, size, _, showName, err := p.Stream(encPath, testPassword)
+		require.NoError(t, err)
+		sr, ok := rc.(*SeekableDecryptReader)
+		require.True(t, ok, "Stream() must return *SeekableDecryptReader")
+		prov := NewAlistEncryptFileProvider(sr, size, showName)
+		defer prov.Close()
+		rec := httptest.NewRecorder()
+		handler.NewContentHandler().ServeFile(rec, req, prov)
+		return rec
+	}
+
 	t.Run("range_full_200", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/test.bin", nil)
-		rec := httptest.NewRecorder()
-
-		err := p.ServeStream(rec, req, encPath, testPassword)
-		require.NoError(t, err)
+		rec := helper(t, req)
 		assert.Equal(t, http.StatusOK, rec.Result().StatusCode)
 
 		body := rec.Body.Bytes()
@@ -317,11 +371,10 @@ func TestStreamRange(t *testing.T) {
 	t.Run("range_partial_206", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/test.bin", nil)
 		req.Header.Set("Range", "bytes=100-200")
-		rec := httptest.NewRecorder()
-
-		err := p.ServeStream(rec, req, encPath, testPassword)
-		require.NoError(t, err)
+		rec := helper(t, req)
 		assert.Equal(t, http.StatusPartialContent, rec.Result().StatusCode)
+		assert.Equal(t, int64(101), rec.Result().ContentLength,
+			"Content-Length must be 101 (the partial length)")
 
 		body := rec.Body.Bytes()
 		assert.Len(t, body, 101, "range bytes=100-200 should return 101 bytes (100-200 inclusive)")
@@ -330,11 +383,9 @@ func TestStreamRange(t *testing.T) {
 	t.Run("range_end_exceeds_truncated_206", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/test.bin", nil)
 		req.Header.Set("Range", "bytes=900-9999")
-		rec := httptest.NewRecorder()
-
-		err := p.ServeStream(rec, req, encPath, testPassword)
-		require.NoError(t, err)
-		assert.Equal(t, http.StatusPartialContent, rec.Result().StatusCode, "end > fileSize should return 206 with truncation")
+		rec := helper(t, req)
+		assert.Equal(t, http.StatusPartialContent, rec.Result().StatusCode,
+			"end > fileSize should return 206 with truncation")
 
 		body := rec.Body.Bytes()
 		assert.Len(t, body, 124, "truncated range 900-1023 should return 124 bytes")
@@ -343,23 +394,26 @@ func TestStreamRange(t *testing.T) {
 	t.Run("range_start_exceeds_returns_416", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/test.bin", nil)
 		req.Header.Set("Range", "bytes=9999-10000")
-		rec := httptest.NewRecorder()
-
-		err := p.ServeStream(rec, req, encPath, testPassword)
-		require.NoError(t, err)
+		rec := helper(t, req)
 		assert.Equal(t, http.StatusRequestedRangeNotSatisfiable, rec.Result().StatusCode,
 			"start > fileSize must return 416 Range Not Satisfiable")
 	})
 
-	t.Run("range_negative_suffix_returns_400", func(t *testing.T) {
+	t.Run("range_suffix_returns_206", func(t *testing.T) {
+		// RFC 7233 §2.1: "bytes=-50" 是合法的 suffix-range，
+		// 表示"最后 50 个字节"，应返回 206 + Content-Range + 最后 50 字节。
+		// 这与 v4 容器预览走同一套 ContentHandler 行为，验证统一范式下的协议合规。
 		req := httptest.NewRequest(http.MethodGet, "/test.bin", nil)
 		req.Header.Set("Range", "bytes=-50")
-		rec := httptest.NewRecorder()
+		rec := helper(t, req)
+		assert.Equal(t, http.StatusPartialContent, rec.Result().StatusCode,
+			"suffix-range must return 206 Partial Content with last N bytes")
+		assert.Equal(t, int64(50), rec.Result().ContentLength,
+			"Content-Length must be 50 (the suffix length)")
 
-		err := p.ServeStream(rec, req, encPath, testPassword)
-		require.NoError(t, err)
-		assert.Equal(t, http.StatusBadRequest, rec.Result().StatusCode,
-			"suffix-range format not supported, must return 400 Bad Request")
+		body := rec.Body.Bytes()
+		expected := plaintext[len(plaintext)-50:]
+		assert.Equal(t, expected, body, "body must be the last 50 bytes of plaintext")
 	})
 }
 

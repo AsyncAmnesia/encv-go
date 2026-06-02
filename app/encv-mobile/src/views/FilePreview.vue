@@ -385,7 +385,7 @@ onMounted(() => loadFile())
 
 <style scoped>
 .preview-content {
-  --background: #1e1e2e;
+  --background: var(--ion-background-color);
 }
 
 .preview-wrapper {
