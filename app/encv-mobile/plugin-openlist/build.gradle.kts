@@ -36,20 +36,15 @@ kotlin {
     }
 }
 
-repositories {
-    flatDir {
-        dirs("libs")
-    }
-}
-
 dependencies {
     compileOnly(libs.combolite.core)
 
     // Local AAR must be consumed via a repository (flatDir), not as
     // `files(...)` — AGP rejects direct local .aar dependencies in
     // library modules because the resulting AAR would not bundle the
-    // inner AAR's classes/resources. With flatDir, the group is empty
-    // (no Maven group) and ext="aar" selects the local .aar artifact.
+    // inner AAR's classes/resources. The flatDir repo is declared in
+    // settings.gradle.kts (alongside Maven Central / Google / JitPack)
+    // to avoid PREFER_PROJECT mode from dropping the global repos.
     implementation(group = "", name = "openlist", ext = "aar")
     implementation("androidx.core:core-ktx")
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
