@@ -16,16 +16,15 @@ export async function showToast(options: ToastOptions) {
     message,
     duration = 2500,
     color = 'primary',
-    icon,
   } = options
 
   const id = ++toastIdCounter
 
   const toast = await toastController.create({
     message,
-    duration: 0,
+    duration,
     position: 'top',
-    cssClass: `encv-toast encv-toast--${color} ${icon ? 'encv-toast--with-icon' : ''}`,
+    cssClass: `encv-toast encv-toast--${color}`,
     buttons: [
       {
         icon: 'close-outline',
@@ -45,19 +44,6 @@ export async function showToast(options: ToastOptions) {
   activeToasts.push({ id, element: toastEl })
   repositionStack()
 
-  if (duration > 0) {
-    setTimeout(async () => {
-      const idx = activeToasts.findIndex((t) => t.id === id)
-      if (idx !== -1) {
-        activeToasts.splice(idx, 1)
-        repositionStack()
-      }
-      await toast.dismiss({
-        role: 'timeout',
-      })
-    }, duration)
-  }
-
   toast.onDidDismiss().then(() => {
     const idx = activeToasts.findIndex((t) => t.id === id)
     if (idx !== -1) {
@@ -74,7 +60,9 @@ function repositionStack() {
 
   while (activeToasts.length > MAX_STACK) {
     const removed = activeToasts.shift()
-    if (removed?.element) removed.element.remove()
+    if (removed?.element) {
+      try { removed.element.remove() } catch {}
+    }
   }
 
   const baseOffset = 12
@@ -87,7 +75,6 @@ function repositionStack() {
     const wrapper = el.querySelector('.toast-wrapper') as HTMLElement | null
     if (wrapper) {
       const offset = safeTop + idx * gap
-      el.style.setProperty('--encv-toast-offset', `${offset}px`)
       wrapper.style.transform = `translateY(${offset}px)`
       wrapper.style.transition = 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)'
     }

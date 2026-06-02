@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/Soltus/encv-go/internal/v2/crypto"
 )
@@ -64,9 +63,9 @@ func EncryptToFile(dataReader io.Reader, password string, outputDir string, sett
 	}, nil
 }
 
-func RenameToFinalEncrypted(tempPath string, originalFilename string, outputDir string, suffix string) (string, error) {
-	baseName := strings.TrimSuffix(originalFilename, filepath.Ext(originalFilename))
-	finalName := baseName + suffix
+func RenameToFinalEncrypted(tempPath string, originalFilename string, outputDir string, suffix string, password string, encType string) (string, error) {
+	encName := EncodeName(originalFilename, password, encType)
+	finalName := encName + suffix
 	finalPath := filepath.Join(outputDir, finalName)
 
 	if err := os.Rename(tempPath, finalPath); err != nil {

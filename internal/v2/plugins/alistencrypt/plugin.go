@@ -164,8 +164,9 @@ func (p *AlistEncryptPlugin) Encrypt(dataReader io.Reader) (*crypto.EncryptionRe
 
 func (p *AlistEncryptPlugin) PostEncryptProcessor(result *crypto.EncryptionResult) (string, error) {
 	originalFilename := filepath.Base(p.inputPath)
+	password := p.resolvePasswordFromTask()
 
-	finalPath, err := RenameToFinalEncrypted(result.TempPath, originalFilename, p.outputDir, p.settings.Suffix)
+	finalPath, err := RenameToFinalEncrypted(result.TempPath, originalFilename, p.outputDir, p.settings.Suffix, password, p.settings.EncType)
 	if err != nil {
 		os.Remove(result.TempPath)
 		return "", fmt.Errorf("failed to rename encrypted file: %w", err)

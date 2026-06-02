@@ -43,11 +43,12 @@
       "allow_no_reencode": true,
       "chunk_size_mb": 0,
       "ext": ".sccgv",
+      "keep_mkv_for_mkv_source": true,
       "light_container_main_chunk_enabled": true,
       "light_main_chunk_enabled": true,
       "skip_merge_for_split_mkv": false,
       "track_extensions": ".ass,.srt,.dm.ass,.vtt",
-      "verify_after_pack": false
+      "verify_after_pack": true
     },
     "wps": {
       "ext": ".sccgwps"
