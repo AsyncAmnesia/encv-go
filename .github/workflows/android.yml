@@ -445,7 +445,8 @@ jobs:
           echo "═══ OpenList AAR Build (gomobile bind) ═══"
           bash scripts/build-openlist-aar.sh \
             --output app/encv-mobile/plugin-openlist/libs \
-            --ndk /usr/local/lib/android/sdk/ndk/${{ env.NDK_VERSION }}
+            --ndk /usr/local/lib/android/sdk/ndk/${{ env.NDK_VERSION }} \
+            --frontend-version v4.1.8
           echo ""
           echo "=== AAR output ==="
           ls -lh app/encv-mobile/plugin-openlist/libs/openlist.aar*
