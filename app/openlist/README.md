@@ -10,7 +10,7 @@
 
 1. **fork 维护**：clone / push / 打 tag / 同步 frontend dist
 2. **跨会话 context 持久化**：新 AI 会话或新工程师把本文档纳入上下文，即可接手工作
-3. **故障速查**：常见 8 类问题的「症状 → 根因 → 修复」一表
+3. **故障速查**：常见 10 类问题的「症状 → 根因 → 修复」一表
 
 适用读者：
 
@@ -304,22 +304,25 @@ overlay key **覆盖**原 key（jq `.[0] * .[1]` 语义）。
 | [scripts/build-openlist-aar.ps1](../../scripts/build-openlist-aar.ps1) | Windows CI 镜像 | CI Windows leg |
 | [scripts/openlist-fork.env](../../scripts/openlist-fork.env) | fork URL / branch / pin 配置 | 所有人 |
 | [scripts/README.md](../../scripts/README.md) | 构建脚本详细文档 | 开发者 |
+| [.github/workflows/android.yml](../../.github/workflows/android.yml) | CI：验证 openlist AAR 构建 + 插件 APK 编译 | CI / 维护 |
 | [app/encv-mobile/plugin-openlist/README.md](../encv-mobile/plugin-openlist/README.md) | 插件模块说明 | 移动端开发者 |
 | [app/openlist/build-encv-desktop.ps1](./build-encv-desktop.ps1) | 桌面端 Tauri 构建（**已废弃**，仅留作历史） | 维护参考 |
 
 ### 9.1 快速开始
 
-```bash
-# 1. 编译 openlist.aar
-bash scripts/build-openlist-aar.sh \
-    --output /workspace/app/encv-mobile/plugin-openlist/libs
+> **以下命令均在仓库根目录（`/workspace`）执行。**
 
-# 2. 编译插件 APK
+```bash
+# 1. 编译 openlist.aar（gomobile bind，需要 Go + NDK + Java 工具链）
+bash scripts/build-openlist-aar.sh \
+    --output app/encv-mobile/plugin-openlist/libs
+
+# 2. 编译插件 APK（aar2apk 插件将 AAR 打包为可安装的插件 APK）
 cd app/encv-mobile/android
 ./gradlew :plugin-openlist:assembleDebug
 
 # 3. 产物
-#   app/encv-mobile/plugin-openlist/build/outputs/apk/debug/plugin-openlist-debug.apk
+#   app/encv-mobile/android/build/outputs/plugin-apks/debug/plugin-openlist-debug.apk
 ```
 
 ---
@@ -423,10 +426,11 @@ unzip -l plugin-openlist/libs/openlist.aar | grep -E "libgojni|Openlistlib"
 - [相关: implement-mobile-backend-api](../../.trae/specs/implement-mobile-backend-api/spec.md)
 - [相关: eval-combolite-mkv-ffmpeg-plugins](../../.trae/specs/eval-combolite-mkv-ffmpeg-plugins/spec.md)
 
-### 12.2 本仓库 README
+### 12.2 本仓库 README / CI
 
 - [scripts/README.md](../../scripts/README.md)
 - [app/encv-mobile/plugin-openlist/README.md](../encv-mobile/plugin-openlist/README.md)
+- [.github/workflows/android.yml](../../.github/workflows/android.yml) — 包含 `build-openlist-plugin` job
 - [app/openlist/build-encv-desktop.ps1](./build-encv-desktop.ps1)（已废弃）
 
 ### 12.3 外部仓库

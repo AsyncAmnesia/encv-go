@@ -439,6 +439,66 @@ jobs:
             echo "⏭️ Plugin APK not available"
           fi
 
+      # === Build OpenList Plugin (AAR → APK via aar2apk) ===
+      - name: Build OpenList AAR (gomobile bind)
+        run: |
+          echo "═══ OpenList AAR Build (gomobile bind) ═══"
+          bash scripts/build-openlist-aar.sh \
+            --output app/encv-mobile/plugin-openlist/libs \
+            --ndk /usr/local/lib/android/sdk/ndk/${{ env.NDK_VERSION }}
+          echo ""
+          echo "=== AAR output ==="
+          ls -lh app/encv-mobile/plugin-openlist/libs/openlist.aar*
+          echo "=== AAR contents (spot check) ==="
+          unzip -l app/encv-mobile/plugin-openlist/libs/openlist.aar | grep -E "libgojni|Openlistlib|\.so" || echo "(no matches)"
+
+      - name: Build OpenList plugin APK (aar2apk)
+        run: |
+          cd app/encv-mobile/android
+          BUILD_TYPE="${{ inputs.version && 'Release' || 'Debug' }}"
+          echo "=== Compiling OpenList plugin (${BUILD_TYPE}) ==="
+          ./gradlew ":plugin-openlist:compile${BUILD_TYPE}Kotlin" --stacktrace 2>&1
+          echo "=== Converting to plugin APK ==="
+          ./gradlew "convert_plugin-openlist_${BUILD_TYPE}" --stacktrace 2>&1
+          echo "=== Locating output ==="
+          OPENLIST_APK=$(find build -name "plugin-openlist-${BUILD_TYPE}.apk" -type f 2>/dev/null | head -1)
+          if [ -n "$OPENLIST_APK" ] && [ -f "$OPENLIST_APK" ]; then
+            echo "✅ OpenList Plugin APK:"
+            ls -lh "$OPENLIST_APK"
+          else
+            echo "::error::OpenList Plugin APK not found after build"
+            find build/outputs -name "*.apk" 2>/dev/null | head -5 || echo "No APKs found"
+            exit 1
+          fi
+
+      - name: Verify OpenList plugin APK contents
+        if: always()
+        continue-on-error: true
+        run: |
+          BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
+          OPENLIST_APK=$(find app/encv-mobile/android/build -name "plugin-openlist-${BUILD_TYPE}.apk" -type f 2>/dev/null | head -1)
+          if [ -f "$OPENLIST_APK" ]; then
+            echo "=== OpenList Plugin APK size ==="
+            ls -lh "$OPENLIST_APK"
+            echo "=== libgojni.so in APK ==="
+            if unzip -l "$OPENLIST_APK" | grep -q "libgojni"; then
+              unzip -l "$OPENLIST_APK" | grep "libgojni"
+              echo "✅ PASS: libgojni.so present (Go runtime embedded)"
+            else
+              echo "❌ FAIL: libgojni.so missing"
+            fi
+            echo "=== Openlistlib class in APK ==="
+            if unzip -l "$OPENLIST_APK" | grep -qi "openlistlib"; then
+              echo "✅ PASS: Openlistlib stub classes present"
+            else
+              echo "⚠️ WARN: Openlistlib classes not found (may be packaged differently)"
+            fi
+            echo "=== Total .so count ==="
+            unzip -l "$OPENLIST_APK" | grep -c "\.so" || echo "0"
+          else
+            echo "⏭️ OpenList Plugin APK not available"
+          fi
+
       # === Build ===
       - name: Build ${{ inputs.version && 'Release' || 'Debug' }} APK
         env:
@@ -554,6 +614,7 @@ jobs:
           path: |
             app/encv-mobile/android/app/build/outputs/apk/**/*.apk
             app/encv-mobile/android/build/outputs/plugin-apks/**/*.apk
+            app/encv-mobile/android/build/**/plugin-openlist*.apk
           retention-days: 3
 
       - name: Build summary
@@ -565,6 +626,10 @@ jobs:
           echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Version | \`${{ inputs.version || 'debug (development)' }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Go Binary | $(ls -lh app/encv-mobile/encv-go-arm64 2>/dev/null | awk '{print $5}' || echo N/A) |" >> $GITHUB_STEP_SUMMARY
+          echo "| OpenList AAR | $(ls -lh app/encv-mobile/plugin-openlist/libs/openlist.aar 2>/dev/null | awk '{print $5}' || echo N/A) |" >> $GITHUB_STEP_SUMMARY
           find app/encv-mobile/android/app/build/outputs/apk -name "*.apk" -type f 2>/dev/null | while read apk; do
             echo "| APK | $(basename "$apk") ($(\ls -lh "$apk" | awk '{print $5}')) |" >> $GITHUB_STEP_SUMMARY
+          done
+          find app/encv-mobile/android/build -name "plugin-openlist-*.apk" -type f 2>/dev/null | while read apk; do
+            echo "| OpenList Plugin APK | $(basename "$apk") ($(\ls -lh "$apk" | awk '{print $5}')) |" >> $GITHUB_STEP_SUMMARY
           done
