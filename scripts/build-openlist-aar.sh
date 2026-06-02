@@ -304,7 +304,31 @@ elif [[ -d "cmd/openlistlib" ]] && ls cmd/openlistlib/*.go >/dev/null 2>&1; then
 else
     die "Hi-Sillot fork is missing openlistlib/ (see spec §一) and no fallback exists"
 fi
+
+# Patch fork's go.mod to declare `tool golang.org/x/mobile/cmd/gobind`.
+# Required by gomobile >= 2026-05 (CL #780380/#779840, see go.dev/issue/77183).
+# The fork owner hasn't added this yet; we patch + restore so we don't dirty it.
+GOMOD_BACKUP=""
+GOMOD_NEEDS_RESTORE=0
+if ! grep -qE '^tool[[:space:]]+golang\.org/x/mobile/cmd/gobind' go.mod 2>/dev/null; then
+    GOMOD_BACKUP="$(mktemp)"
+    cp go.mod "${GOMOD_BACKUP}"
+    GOMOD_NEEDS_RESTORE=1
+    log "  patching fork go.mod: add tool directive for gomobile"
+    if [[ -n "$(tail -c1 go.mod)" ]] && [[ "$(tail -c1 go.mod)" != $'\n' ]]; then
+        printf '\n' >> go.mod
+    fi
+    printf '\ntool golang.org/x/mobile/cmd/gobind\n' >> go.mod
+    if ! grep -qE '^tool[[:space:]]+golang\.org/x/mobile/cmd/gobind' go.mod; then
+        [[ "${GOMOD_NEEDS_RESTORE}" == "1" ]] && cp "${GOMOD_BACKUP}" go.mod
+        die "failed to inject tool directive into fork go.mod"
+    fi
+fi
+
 log "== gomobile bind (bind pkg: ${BIND_PKG}) =="
+
+# Always restore fork go.mod on exit (success or failure) so we never persist local edits.
+trap '[[ "${GOMOD_NEEDS_RESTORE}" == "1" ]] && cp "${GOMOD_BACKUP}" "${SRC_DIR}/go.mod" && rm -f "${GOMOD_BACKUP}"' EXIT
 
 LDFLAGS="-s -w"
 LDFLAGS="${LDFLAGS} -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.Version=${BRANCH}'"
