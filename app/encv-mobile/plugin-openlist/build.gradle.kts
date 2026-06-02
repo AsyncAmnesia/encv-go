@@ -36,10 +36,20 @@ kotlin {
     }
 }
 
+repositories {
+    flatDir {
+        dirs("libs")
+    }
+}
+
 dependencies {
     compileOnly(libs.combolite.core)
 
-    implementation(files("libs/openlist.aar"))
+    // Local AAR must be consumed via a repository (flatDir), not as
+    // `files(...)` — AGP rejects direct local .aar dependencies in
+    // library modules because the resulting AAR would not bundle the
+    // inner AAR's classes/resources.
+    implementation(name = "openlist", ext = "aar")
     implementation("androidx.core:core-ktx")
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
     implementation(platform(libs.compose.bom))
