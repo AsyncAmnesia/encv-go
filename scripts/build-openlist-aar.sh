@@ -456,6 +456,23 @@ log "== Checksum =="
 ( cd "${OUTPUT}" && sha256sum openlist.aar > openlist.aar.sha256 )
 cat "${OUTPUT}/openlist.aar.sha256"
 
+log "== Copy frontend dist to plugin assets (production path) =="
+# C5 (spec §2.2): production runtime extracts dist from plugin-openlist APK assets/
+# (instead of relying on gomobile's //go:embed of public/dist into libgojni.so).
+# This makes frontend updates patchable without rebuilding the AAR.
+PLUGIN_ASSETS_DIR="${ENCV_GO_ROOT}/app/encv-mobile/plugin-openlist/src/main/assets"
+if [[ -d "${DIST_DIR}" && -f "${DIST_DIR}/index.html" ]]; then
+  PLUGIN_DIST="${PLUGIN_ASSETS_DIR}/dist"
+  log "  source: ${DIST_DIR}"
+  log "  target: ${PLUGIN_DIST}"
+  rm -rf "${PLUGIN_DIST}"
+  mkdir -p "${PLUGIN_DIST}"
+  cp -a "${DIST_DIR}/." "${PLUGIN_DIST}/"
+  log "  done: $(du -sh "${PLUGIN_DIST}" | cut -f1) copied to ${PLUGIN_DIST}"
+else
+  log "  (no frontend dist available, skipping plugin assets copy)"
+fi
+
 log "== Done =="
 log "  AAR  : ${OUTPUT}/openlist.aar"
 log "  SIZE : $(du -h "${OUTPUT}/openlist.aar" | cut -f1)"

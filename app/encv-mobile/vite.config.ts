@@ -1,63 +1,149 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import path from 'path'
+import path from 'node:path'
+import fs from 'node:fs'
+import sirv from 'sirv'
 
-const isDev = process.env.NODE_ENV !== 'production' || process.env.DEV === 'true'
+// Resolve the openlist fork's public/dist for dev-mode serving.
+// In dev, the SPA is served directly by Vite (no Go embed).
+// In prod (APK), the dist is bundled into the plugin APK's assets/dist/.
+const OPENLIST_DIST = path.resolve(__dirname, '../openlist/Hi-Sillot-OpenList/public/dist')
+const OPENLIST_DIST_EXISTS = fs.existsSync(path.join(OPENLIST_DIST, 'index.html'))
+// `openlist-ui` requests are proxied (path-rewrite) to this upstream.
+// In dev, this is a locally `go run .` OpenList instance.
+const OPENLIST_UPSTREAM = process.env.OPENLIST_UPSTREAM || 'http://127.0.0.1:5244'
 
-let mockPlugin: any
-if (isDev) {
-  try {
-    const { createMockPlugin } = require('./mock')
-    mockPlugin = createMockPlugin()
-  } catch (e) {
-    console.warn('[vite] Mock plugin not available, skipping')
+/**
+ * Vite plugin: openlist-ui-proxy
+ *
+ *  1. `/openlist-ui/api/*`        → proxy to `OPENLIST_UPSTREAM/api/*` (path rewrite)
+ *  2. `/openlist-ui/*`            → serve static files from Hi-Sillot-OpenList/public/dist/
+ *                                   with SPA fallback to index.html for non-asset paths
+ *
+ * Why path-rewrite instead of two sub-routes?
+ *   - OpenList SPA's hardcoded axios baseURL is `/`, so a single namespace `/openlist-ui/`
+ *     cleanly maps to `OpenList(5244)/` while letting Vite's other proxies (`/api`, `/openlist`)
+ *     continue to route to encv-go unchanged.
+ *
+ * Why cors is not a concern:
+ *   - OpenList's Cors.AllowOrigins defaults to ["*"] (internal/conf/config.go:222),
+ *     so the SPA at localhost:8100 calling /openlist-ui/api/* → Vite → OpenList(5244)
+ *     works without CORS preflight (proxy is server-side, browser sees same origin).
+ */
+function openlistUiProxy(): Plugin {
+  return {
+    name: 'openlist-ui-proxy',
+    configureServer(server) {
+      if (!OPENLIST_DIST_EXISTS) {
+        // Don't crash dev: many devs will clone the fork later. Log once and skip the
+        // static-serving half. The API proxy will still work if OpenList is up.
+        server.config.logger.warn(
+          `\n[openlist-ui] dist not found at ${OPENLIST_DIST}\n` +
+          `[openlist-ui] → run \`git clone --branch dev https://github.com/Hi-Sillot/OpenList.git app/openlist/Hi-Sillot-OpenList\` and download the frontend dist (see app/openlist/README.md §4.4)\n` +
+          `[openlist-ui] → SPA static serving is DISABLED; API proxy to ${OPENLIST_UPSTREAM} still works.\n`
+        )
+      }
+
+      // 1. /openlist-ui/api/* → upstream /api/*   (registered FIRST so it wins over static)
+      server.middlewares.use('/openlist-ui/api', async (req, res, next) => {
+        try {
+          const target = `${OPENLIST_UPSTREAM}/api${(req.url || '/').replace(/^\//, '/')}`
+          const headers: Record<string, string> = {}
+          for (const [k, v] of Object.entries(req.headers)) {
+            if (typeof v === 'string') headers[k] = v
+            else if (Array.isArray(v)) headers[k] = v.join(', ')
+          }
+          // Pass through the original host so OpenList can build absolute URLs
+          headers['host'] = new URL(OPENLIST_UPSTREAM).host
+          const upstream = await fetch(target, {
+            method: req.method,
+            headers,
+            // @ts-expect-error - Node fetch accepts a stream body in 18+
+            body: ['GET', 'HEAD'].includes(req.method || '') ? undefined : (req as any),
+            // @ts-expect-error - duplex needed when forwarding body
+            duplex: 'half',
+          } as any)
+          res.statusCode = upstream.status
+          upstream.headers.forEach((v, k) => {
+            // Don't forward encoding headers (Node will re-encode)
+            if (['content-encoding', 'transfer-encoding', 'connection'].includes(k.toLowerCase())) return
+            res.setHeader(k, v)
+          })
+          const buf = Buffer.from(await upstream.arrayBuffer())
+          res.end(buf)
+        } catch (e: any) {
+          res.statusCode = 502
+          res.setHeader('content-type', 'text/plain; charset=utf-8')
+          res.end(
+            `openlist-ui api proxy error: ${e?.message || e}\n\n` +
+            `Is OpenList running at ${OPENLIST_UPSTREAM}?\n` +
+            `Set OPENLIST_UPSTREAM env var to point elsewhere.\n`
+          )
+        }
+      })
+
+      // 2. /openlist-ui/* → static files from dist/  (registered SECOND)
+      if (OPENLIST_DIST_EXISTS) {
+        const serve = sirv(OPENLIST_DIST, {
+          dev: true,
+          single: true,         // SPA fallback for non-asset paths
+          etag: true,
+          dotfiles: false,
+        })
+        server.middlewares.use('/openlist-ui', (req, res, next) => {
+          // CRITICAL: strip the /openlist-ui prefix so sirv can resolve relative paths.
+          // Without this, sirv looks for `<dist>/openlist-ui/assets/foo.js` (doesn't exist)
+          // and `single: true` returns index.html — masking all asset 404s as SPA fallback.
+          const orig = req.url || '/'
+          req.url = orig.replace(/^\/openlist-ui\/?/, '/') || '/'
+          serve(req as any, res as any, next)
+        })
+      }
+    },
   }
 }
 
 export default defineConfig({
-  plugins: [vue(), ...(mockPlugin ? [mockPlugin] : [])],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-  },
-  build: {
-  },
+  plugins: [vue(), openlistUiProxy()],
   server: {
-    port: 5173,
-    host: '0.0.0.0',
+    port: 8100,
+    // Allow reading app/openlist/ (parent of encv-mobile/) so Vite can serve the fork's dist
+    fs: {
+      allow: [path.resolve(__dirname, '..')],
+    },
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:2025',
         changeOrigin: true,
-        timeout: 120_000,
       },
-      '/health': {
+      '/p': {
         target: 'http://127.0.0.1:2025',
         changeOrigin: true,
       },
-      '/stream': {
-        target: 'http://127.0.0.1:2025',
-        changeOrigin: true,
-        timeout: 120_000,
-      },
-      '/decrypt': {
-        target: 'http://127.0.0.1:2025',
-        changeOrigin: true,
-        timeout: 120_000,
-      },
-      '/preview': {
-        target: 'http://127.0.0.1:2025',
-        changeOrigin: true,
-        timeout: 120_000,
-      },
-      '/ping': {
+      // /openlist/sites/* — encv-go reverse proxy for the runtime data path.
+      // NOTE: prefix MUST be `/openlist/` (with trailing slash) to avoid
+      // hijacking `/openlist-ui/*` (the new Vite middleware below).
+      '/openlist/': {
         target: 'http://127.0.0.1:2025',
         changeOrigin: true,
       },
-      '/ws': {
-        target: 'ws://127.0.0.1:2025',
-        ws: true,
+      '/play': {
+        target: 'http://127.0.0.1:2025',
+        changeOrigin: true,
+      },
+    },
+  },
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['vue', 'vue-router', '@ionic/vue', '@ionic/vue-router'],
+        },
       },
     },
   },

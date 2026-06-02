@@ -62,6 +62,10 @@ object OpenListBridge : Event, LogCallback {
     @Volatile
     private var lastUpdateTs: Long = 0L
 
+    // C5: assets extraction state
+    private val ASSETS_PREFS = "openlist_assets"
+    private val ASSETS_KEY_VERSION = "extracted_version"
+
     /**
      * One-time init: register this object (which implements Event + LogCallback)
      * with the openlistlib static Init() entry. Idempotent. Safe to call from
@@ -71,7 +75,21 @@ object OpenListBridge : Event, LogCallback {
         Log.e(TAG, "[SAT-DBG][OpenList] init() entry | dataDir=$dataDir port=$port | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         appContext = context.applicationContext
         synchronized(lock) {
-            // Apply data dir every time (cheap, idempotent; gomobile sets a global flag).
+            // Step 1: Extract frontend dist from APK assets/ to filesDir (C5)
+            // This makes the production runtime use the on-disk dist instead of
+            // the //go:embed copy inside libgojni.so. Also writes config.json
+            // with dist_dir pointing to the extracted path, so OpenList reads
+            // conf.Conf.DistDir → os.DirFS, not the embed.
+            try {
+                ensureAssetsExtracted(appContext!!)
+                Log.e(TAG, "[SAT-DBG][OpenList] init() ensureAssetsExtracted OK")
+            } catch (e: Throwable) {
+                lastError = "ensureAssetsExtracted failed: ${e.message}"
+                lastUpdateTs = System.currentTimeMillis()
+                Log.e(TAG, "[SAT-DBG][OpenList] init() ensureAssetsExtracted FAILED", e)
+            }
+
+            // Step 2: Apply data dir to openlistlib (tells it where to look for config.json)
             try {
                 if (dataDir.isNotEmpty()) {
                     Openlistlib.SetConfigData(dataDir)
@@ -97,6 +115,90 @@ object OpenListBridge : Event, LogCallback {
                 Log.e(TAG, "[SAT-DBG][OpenList] init() skipped (already initialized)")
             }
         }
+    }
+
+    /**
+     * Extract OpenList frontend dist from APK assets/dist/ to filesDir/openlist/dist/.
+     * On first launch (or when the bundled VERSION changes), we:
+     *   1. Recursively copy assets/dist/* to filesDir/openlist/dist/
+     *   2. Write/update config.json in dataDir with dist_dir = filesDir/openlist/dist
+     *      so OpenList reads from disk at runtime (os.DirFS), not from embed.FS.
+     *
+     * On subsequent launches (same VERSION), this is a fast no-op (just rewrites config.json).
+     *
+     * Why: spec §2.2 C5 — lets us ship frontend updates as small APK patches without
+     * rebuilding the ~150MB gomobile AAR.
+     */
+    private fun ensureAssetsExtracted(context: Context) {
+        val filesDir = context.filesDir
+        val targetDist = java.io.File(filesDir, "openlist/dist")
+        val targetDataDir = java.io.File(filesDir, "openlist/data")
+        targetDataDir.mkdirs()
+
+        val prefs = context.getSharedPreferences(ASSETS_PREFS, Context.MODE_PRIVATE)
+        val bundledVersion = try {
+            context.assets.open("dist/VERSION").bufferedReader().use { it.readText().trim() }
+        } catch (e: Throwable) {
+            Log.e(TAG, "[OpenList] no dist/VERSION in APK assets (fallback to embed); err=${e.message}")
+            ""
+        }
+        val extractedVersion = prefs.getString(ASSETS_KEY_VERSION, "") ?: ""
+
+        val needsExtract = !targetDist.exists() ||
+            targetDist.list()?.isEmpty() == true ||
+            (bundledVersion.isNotEmpty() && bundledVersion != extractedVersion)
+
+        if (needsExtract && bundledVersion.isNotEmpty()) {
+            Log.e(TAG, "[OpenList] extracting dist from APK assets | bundled=$bundledVersion extracted=$extractedVersion | target=$targetDist")
+            copyAssetDir(context, java.io.File("dist"), targetDist)
+            prefs.edit().putString(ASSETS_KEY_VERSION, bundledVersion).apply()
+        } else {
+            Log.e(TAG, "[OpenList] dist extraction skipped | bundled=${bundledVersion.ifEmpty { "<none>" }} extracted=$extractedVersion")
+        }
+
+        // Write config.json with dist_dir pointing to the extracted dist
+        writeRuntimeConfig(targetDataDir, targetDist, prefs)
+    }
+
+    /**
+     * Recursively copy an asset directory from APK to local file system.
+     * Handles nested subdirectories (assets/dist/assets/index-*.js etc).
+     */
+    private fun copyAssetDir(context: Context, source: java.io.File, target: java.io.File) {
+        target.mkdirs()
+        val assetPath = source.path  // "dist" or "dist/assets" etc
+        val entries = try { context.assets.list(assetPath) ?: emptyArray() } catch (e: Throwable) { emptyArray() }
+        for (name in entries) {
+            val childAsset = "$assetPath/$name"
+            val childTarget = java.io.File(target, name)
+            // If list(name) returns non-empty, it's a directory; else it's a file
+            val children = try { context.assets.list(childAsset) ?: emptyArray() } catch (e: Throwable) { emptyArray() }
+            if (children.isNotEmpty()) {
+                copyAssetDir(context, java.io.File(childAsset), childTarget)
+            } else {
+                context.assets.open(childAsset).use { input ->
+                    childTarget.outputStream().use { output -> input.copyTo(output) }
+                }
+            }
+        }
+    }
+
+    /**
+     * Write config.json for the OpenList runtime. Preserves user-customized fields
+     * if config.json already exists, only injects/updates the dist_dir field.
+     */
+    private fun writeRuntimeConfig(dataDir: java.io.File, distDir: java.io.File, prefs: android.content.SharedPreferences) {
+        val configFile = java.io.File(dataDir, "config.json")
+        val existing = if (configFile.exists()) {
+            try { org.json.JSONObject(configFile.readText()) } catch (e: Throwable) { org.json.JSONObject() }
+        } else {
+            org.json.JSONObject()
+        }
+        existing.put("dist_dir", distDir.absolutePath)
+        // Don't override scheme: user might have custom port/HTTPS settings.
+        // If absent, the OpenList defaults take over.
+        configFile.writeText(existing.toString(2))
+        Log.e(TAG, "[OpenList] wrote config.json | dist_dir=${distDir.absolutePath} | dataDir=$dataDir")
     }
 
     /**
