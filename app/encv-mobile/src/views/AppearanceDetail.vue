@@ -426,12 +426,12 @@ function handleVividIntensityChange(event: Event) {
 .bg-gradient-card::before {
   content: '';
   position: absolute;
-  inset: 0;
-  background: inherit;
-  filter: blur(8px);
-  opacity: 0.4;
+  inset: -2px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, var(--gradient-colors));
+  filter: blur(6px);
+  opacity: 0.35;
   z-index: -1;
-  transform: scale(1.05);
 }
 .bg-gradient-card.bg-preset-active::after {
   content: '';

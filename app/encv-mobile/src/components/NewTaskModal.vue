@@ -235,7 +235,13 @@ async function handleClose() {
   margin: 10px 0;
   padding: 10px 14px;
   border-radius: 10px;
-  background: var(--ion-color-step-100, #f0f0f0);
+  background: rgba(var(--ion-background-color-rgb, 255, 255, 255), 0.5);
+  backdrop-filter: blur(var(--encv-bg-blur, 8px));
+  -webkit-backdrop-filter: blur(var(--encv-bg-blur, 8px));
+}
+
+body.dark .plugin-section {
+  background: rgba(30, 30, 30, 0.55);
 }
 
 .plugin-section.predicting {

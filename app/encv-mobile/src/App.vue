@@ -253,23 +253,24 @@ body.dark ion-toolbar {
   background: rgba(26, 26, 26, 0.85);
 }
 
-/* ===== Tab bar 整体渐变 + 动态流光 ===== */
+/* ===== Tab bar 半透明毛玻璃 + 微光动画 ===== */
 ion-tab-bar {
-  --background: linear-gradient(135deg,
-    rgba(var(--ion-color-primary-rgb), 0.95) 0%,
-    color-mix(in srgb, var(--ion-color-primary) 80%, var(--ion-color-primary-shade)) 100%);
-  --color: rgba(255, 255, 255, 0.7);
-  --color-selected: #ffffff;
+  --background: rgba(var(--ion-background-color-rgb, 255, 255, 255), 0.78);
+  --color: var(--ion-text-color);
+  --color-selected: var(--ion-color-primary);
   --border: none;
-  background: linear-gradient(135deg,
-    rgba(var(--ion-color-primary-rgb), 0.95) 0%,
-    color-mix(in srgb, var(--ion-color-primary) 80%, var(--ion-color-primary-shade)) 100%);
-  background-size: 200% 200%;
-  animation: encvTabBarFlow 8s ease-in-out infinite;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
+  background: rgba(var(--ion-background-color-rgb, 255, 255, 255), 0.78);
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  border-top: 1px solid rgba(var(--ion-text-color-rgb), 0.08);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.04);
   position: relative;
   overflow: hidden;
+}
+
+body.dark ion-tab-bar {
+  --background: rgba(26, 26, 26, 0.85);
+  background: rgba(26, 26, 26, 0.85);
 }
 
 ion-tab-bar::before {
@@ -281,9 +282,9 @@ ion-tab-bar::before {
   height: 100%;
   background: linear-gradient(90deg,
     transparent,
-    rgba(255, 255, 255, 0.15),
+    rgba(255, 255, 255, 0.08),
     transparent);
-  animation: encvTabBarShine 3.5s ease-in-out infinite;
+  animation: encvTabBarShine 4s ease-in-out infinite;
   pointer-events: none;
   z-index: 0;
 }
@@ -295,17 +296,16 @@ ion-tab-bar > * {
 
 ion-tab-button {
   --background: transparent;
-  --background-focused: rgba(255, 255, 255, 0.1);
-  --background-hover: rgba(255, 255, 255, 0.05);
-  --color: rgba(255, 255, 255, 0.7);
-  --color-selected: #ffffff;
+  --background-focused: rgba(var(--ion-color-primary-rgb), 0.12);
+  --background-hover: rgba(var(--ion-color-primary-rgb), 0.06);
+  --color: var(--ion-color-medium);
+  --color-selected: var(--ion-color-primary);
   transition: color 0.2s ease, transform 0.2s ease;
   background: transparent;
   font-weight: 500;
 }
 
 ion-tab-button.tab-selected {
-  --color: #ffffff;
   transform: translateY(-1px);
   font-weight: 600;
 }
@@ -316,12 +316,7 @@ ion-tab-button ion-icon {
 
 ion-tab-button.tab-selected ion-icon {
   transform: scale(1.15);
-  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.4));
-}
-
-@keyframes encvTabBarFlow {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+  filter: drop-shadow(0 0 4px rgba(var(--ion-color-primary-rgb), 0.4));
 }
 
 @keyframes encvTabBarShine {
@@ -349,7 +344,11 @@ body.dark ion-item {
 
 ion-list-header {
   --background: transparent;
-  background: transparent;
+  background: rgba(var(--ion-background-color-rgb, 255, 255, 255), 0.3);
+}
+
+body.dark ion-list-header {
+  background: rgba(30, 30, 30, 0.3);
 }
 
 .home-card {
@@ -387,12 +386,30 @@ body.dark .home-card {
   }
 }
 
-/* 强制 P3 模式时使用 display-p3 色空间 */
+/* 强制 P3 模式：当用户手动开启时，通过 CSS 变量应用 display-p3 色域 */
 :root {
   --encv-color-gamut: srgb;
 }
-:root[style*="--encv-color-gamut: display-p3"] {
-  --encv-color-gamut: display-p3;
+
+/* 当 --encv-color-gamut 为 display-p3 时，强制使用 P3 色彩空间渲染关键元素 */
+@supports (color: color(display-p3 1 0 0)) {
+  :root:has([style*="--encv-color-gamut: display-p3"]) ion-page,
+  :root[style*="--encv-color-gamut: display-p3"] ion-page {
+    color-gamut: display-p3;
+  }
+
+  :root:has([style*="--encv-color-gamut: display-p3"]) *,
+  :root[style*="--encv-color-gamut: display-p3"] * {
+    color-gamut: display-p3;
+  }
+}
+
+/* 降级方案：不支持 :has() 时，用 class 方式触发 */
+.encv-force-p3 {
+  color-gamut: display-p3 !important;
+}
+.encv-force-p3 * {
+  color-gamut: display-p3 !important;
 }
 
 /* ============================================

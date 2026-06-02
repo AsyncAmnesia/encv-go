@@ -194,10 +194,13 @@ function applyP3Mode(mode: 'off' | 'on' | 'auto') {
   const root = document.documentElement
   if (mode === 'on') {
     root.style.setProperty('--encv-color-gamut', 'display-p3')
+    root.classList.add('encv-force-p3')
   } else if (mode === 'off') {
     root.style.setProperty('--encv-color-gamut', 'srgb')
+    root.classList.remove('encv-force-p3')
   } else {
     root.style.removeProperty('--encv-color-gamut')
+    root.classList.remove('encv-force-p3')
   }
   localStorage.setItem(P3_KEY, mode)
 }

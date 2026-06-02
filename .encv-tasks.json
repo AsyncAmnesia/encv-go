@@ -1,5 +1,98 @@
 [
   {
+    "id": "a98072ee-3524-49af-9867-b0364aa1a0cf",
+    "type": "encrypt",
+    "sourcePath": "/01-plain-media/video/sample.mp4",
+    "pluginName": "video",
+    "status": "failed",
+    "progress": 0,
+    "error": "interrupted by restart",
+    "containerVersion": 4,
+    "createdAt": "2026-06-02T00:55:53.745239488Z",
+    "completedAt": "2026-06-02T06:24:31.093069183Z"
+  },
+  {
+    "id": "aff2396d-2745-40c9-a774-d8a664a61818",
+    "type": "decrypt",
+    "sourcePath": "/hyYGPCwJPQ3+xrdAvfnn2.bin",
+    "extraFields": {
+      "enc_type": "aesctr",
+      "encode_filename": "false",
+      "plugin_password": "8682268"
+    },
+    "pluginName": "alist_encrypt",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "outputPath": "/storage/emulated/0/CAD放样.mp4",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-02T06:34:54.192977855Z",
+        "completedAt": "2026-06-02T06:34:54.193122148Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-02T06:34:54.193122148Z",
+        "completedAt": "2026-06-02T06:34:54.193596397Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-02T06:34:54.193596397Z",
+        "completedAt": "2026-06-02T06:34:54.194602672Z"
+      },
+      {
+        "phase": "preprocessing",
+        "startedAt": "2026-06-02T06:34:54.194602672Z",
+        "completedAt": "2026-06-02T06:34:54.417237897Z",
+        "detail": "/storage/emulated/0/CAD放样.mp4"
+      }
+    ],
+    "createdAt": "2026-06-02T06:34:54.153021065Z",
+    "completedAt": "2026-06-02T06:34:54.417237897Z"
+  },
+  {
+    "id": "f6f00100-036e-4b8d-af75-e63a425034d0",
+    "type": "encrypt",
+    "sourcePath": "/CAD放样.mp4",
+    "targetPath": "/01-plain-media",
+    "extraFields": {
+      "enc_type": "aesctr",
+      "encode_filename": "true",
+      "plugin_password": "8682268"
+    },
+    "pluginName": "alist_encrypt",
+    "status": "completed",
+    "progress": 100,
+    "phase": "completed",
+    "outputPath": "/storage/emulated/0/01-plain-media/hyYGPCwJPQ3+xrdAvfnn2.bin",
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-02T06:36:14.436960387Z",
+        "completedAt": "2026-06-02T06:36:14.437152412Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-02T06:36:14.437152412Z",
+        "completedAt": "2026-06-02T06:36:14.43743493Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-02T06:36:14.43743493Z",
+        "completedAt": "2026-06-02T06:36:14.437463795Z"
+      },
+      {
+        "phase": "preprocessing",
+        "startedAt": "2026-06-02T06:36:14.437463795Z",
+        "completedAt": "2026-06-02T06:36:14.573311947Z",
+        "detail": "/storage/emulated/0/01-plain-media/hyYGPCwJPQ3+xrdAvfnn2.bin"
+      }
+    ],
+    "createdAt": "2026-06-02T06:36:13.631827112Z",
+    "completedAt": "2026-06-02T06:36:14.573311947Z"
+  },
+  {
     "id": "07f8ef34-cc46-449f-8b9b-23931abd57d5",
     "type": "encrypt",
     "sourcePath": "/01-plain-media/video/sample.mp4",
@@ -127,15 +220,5 @@
     ],
     "createdAt": "2026-06-02T00:54:12.730149383Z",
     "completedAt": "2026-06-02T00:54:14.209265963Z"
-  },
-  {
-    "id": "a98072ee-3524-49af-9867-b0364aa1a0cf",
-    "type": "encrypt",
-    "sourcePath": "/01-plain-media/video/sample.mp4",
-    "pluginName": "video",
-    "status": "queued",
-    "progress": 0,
-    "containerVersion": 4,
-    "createdAt": "2026-06-02T00:55:53.745239488Z"
   }
 ]
