@@ -232,7 +232,7 @@ async function handleRestart() {
     duration: 30000,
   })
   const success = await restartBackend()
-  await toast.dismiss()
+  await toast?.dismiss()
   showToast({
     message: success ? t('settings.restartSuccess') : t('settings.restartFailed'),
     duration: 2000,

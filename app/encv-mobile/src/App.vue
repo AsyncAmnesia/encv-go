@@ -280,4 +280,119 @@ body.dark ion-toolbar {
 :root[style*="--encv-color-gamut: display-p3"] {
   --encv-color-gamut: display-p3;
 }
+
+/* ============================================
+   ENCV Toast 系统 — 顶部展示 + 堆叠 + 动画
+   ============================================ */
+.encv-toast {
+  --background: transparent;
+  --box-shadow: none;
+  --color: var(--ion-text-color);
+  border-radius: 14px;
+  padding: 0 !important;
+  margin: 0 !important;
+  max-width: 380px;
+  width: calc(100% - 32px);
+  left: 16px !important;
+  right: 16px !important;
+  top: 0 !important;
+  bottom: auto !important;
+  pointer-events: auto;
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  overflow: visible;
+}
+
+.encv-toast .toast-wrapper {
+  border-radius: 14px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.12),
+    0 1px 4px rgba(0, 0, 0, 0.06);
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
+  transform-origin: top center;
+}
+
+.encv-toast.toast-entering .toast-wrapper {
+  animation: encvToastSlideIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.encv-toast.toast-leaving .toast-wrapper {
+  animation: encvToastSlideOut 0.25s ease-in forwards;
+}
+
+@keyframes encvToastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(var(--encv-toast-offset, 20px)) scale(1);
+  }
+}
+
+@keyframes encvToastSlideOut {
+  from {
+    opacity: 1;
+    transform: translateY(var(--encv-toast-offset, 20px)) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(calc(var(--encv-toast-offset, 20px) - 10px)) scale(0.96);
+  }
+}
+
+.encv-toast .toast-message {
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  flex: 1;
+  color: inherit;
+  line-height: 1.4;
+}
+
+.encv-toast .toast-button {
+  --padding-start: 6px;
+  --padding-end: 6px;
+  --border-radius: 50%;
+  min-width: 28px;
+  min-height: 28px;
+  font-size: 15px;
+  color: var(--ion-color-medium) !important;
+  margin-left: 2px;
+  flex-shrink: 0;
+}
+
+.encv-toast--primary {
+  --background: rgba(var(--ion-color-primary-rgb), 0.92);
+  --color: #ffffff;
+}
+body.dark .encv-toast--primary {
+  --background: rgba(var(--ion-color-primary-rgb), 0.88);
+}
+
+.encv-toast--success {
+  --background: rgba(34, 197, 94, 0.92);
+  --color: #ffffff;
+}
+
+.encv-toast--danger,
+.encv-toast--error {
+  --background: rgba(239, 68, 68, 0.92);
+  --color: #ffffff;
+}
+
+.encv-toast--warning {
+  --background: rgba(245, 158, 11, 0.92);
+  --color: #1a1a1a;
+}
+
+.encv-toast--medium {
+  --background: rgba(115, 115, 128, 0.9);
+  --color: #ffffff;
+}
 </style>

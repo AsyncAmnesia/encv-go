@@ -1,46 +1,105 @@
 import { toastController } from '@ionic/vue'
 
-export async function showToast(options: {
+interface ToastOptions {
   message: string
   duration?: number
   color?: string
-  position?: 'top' | 'bottom' | 'middle'
-}) {
+  icon?: string
+}
+
+const MAX_STACK = 5
+const activeToasts: Array<{ id: number; element: HTMLElement }> = []
+let toastIdCounter = 0
+
+export async function showToast(options: ToastOptions) {
+  const {
+    message,
+    duration = 2500,
+    color = 'primary',
+    icon,
+  } = options
+
+  const id = ++toastIdCounter
+
   const toast = await toastController.create({
-    message: options.message,
-    duration: options.duration ?? 2000,
-    color: options.color ?? 'dark',
-    position: options.position ?? 'bottom',
+    message,
+    duration: 0,
+    position: 'top',
+    cssClass: `encv-toast encv-toast--${color} ${icon ? 'encv-toast--with-icon' : ''}`,
     buttons: [
       {
-        text: '✕',
+        icon: 'close-outline',
+        side: 'end',
         role: 'cancel',
       },
     ],
+    animated: true,
+    keyboardClose: false,
   })
+
   await toast.present()
+
+  const toastEl = toast as unknown as HTMLElement
+  if (!toastEl) return
+
+  activeToasts.push({ id, element: toastEl })
+  repositionStack()
+
+  if (duration > 0) {
+    setTimeout(async () => {
+      const idx = activeToasts.findIndex((t) => t.id === id)
+      if (idx !== -1) {
+        activeToasts.splice(idx, 1)
+        repositionStack()
+      }
+      await toast.dismiss({
+        role: 'timeout',
+      })
+    }, duration)
+  }
+
+  toast.onDidDismiss().then(() => {
+    const idx = activeToasts.findIndex((t) => t.id === id)
+    if (idx !== -1) {
+      activeToasts.splice(idx, 1)
+      repositionStack()
+    }
+  })
+
   return toast
 }
 
-export function addDismissOnClick(toast: HTMLIonToastElement) {
-  toast.addEventListener('click', () => {
-    toast.dismiss(undefined, 'cancel')
+function repositionStack() {
+  if (activeToasts.length === 0) return
+
+  while (activeToasts.length > MAX_STACK) {
+    const removed = activeToasts.shift()
+    if (removed?.element) removed.element.remove()
+  }
+
+  const baseOffset = 12
+  const gap = 8
+  const safeTop = baseOffset + getSafeAreaInset()
+
+  activeToasts.forEach((t, idx) => {
+    const el = t.element
+    if (!el) return
+    const wrapper = el.querySelector('.toast-wrapper') as HTMLElement | null
+    if (wrapper) {
+      const offset = safeTop + idx * gap
+      el.style.setProperty('--encv-toast-offset', `${offset}px`)
+      wrapper.style.transform = `translateY(${offset}px)`
+      wrapper.style.transition = 'transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94)'
+    }
   })
 }
 
-export async function createDismissibleToast(options: {
-  message: string
-  duration?: number
-  color?: string
-  position?: 'top' | 'bottom' | 'middle'
-}) {
-  const toast = await toastController.create({
-    message: options.message,
-    duration: options.duration ?? 2000,
-    color: options.color ?? 'dark',
-    position: options.position ?? 'bottom',
-  })
-  addDismissOnClick(toast)
-  await toast.present()
-  return toast
+function getSafeAreaInset(): number {
+  try {
+    const root = document.documentElement
+    const computed = getComputedStyle(root)
+    const envTop = computed.getPropertyValue('--ion-safe-area-top')
+    if (envTop && envTop !== '') return parseFloat(envTop) || 0
+  } catch {}
+  return 20
 }

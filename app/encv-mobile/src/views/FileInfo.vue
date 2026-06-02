@@ -362,7 +362,7 @@ onMounted(() => loadInfo())
 
 <style scoped>
 .file-info-content {
-  --background: #1e1e2e;
+  --background: var(--ion-background-color);
 }
 
 .info-scroll {
@@ -373,10 +373,12 @@ onMounted(() => loadInfo())
 }
 
 .section-card {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--ion-background-color-rgb, 255, 255, 255), 0.6);
   border-radius: 10px;
   padding: 16px;
   border-left: 3px solid var(--ion-color-medium);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 .section-card.container-card { border-left-color: var(--ion-color-primary); }
 .section-card.alist-enc-card { border-left-color: var(--ion-color-danger); }

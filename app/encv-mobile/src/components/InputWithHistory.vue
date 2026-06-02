@@ -172,7 +172,7 @@ function handleEnter() {
 }
 
 body.dark .history-panel {
-  background: #1f1f21;
+  background: var(--ion-background-color, #1f1f21);
   border: 1px solid #2a2a2c;
 }
 

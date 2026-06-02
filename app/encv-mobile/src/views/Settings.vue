@@ -762,15 +762,16 @@ function syncAlistEncryptFeature() {
   }
 }
 
-onMounted(async () => {
-  await checkStatus()
+onMounted(() => {
+  checkStatus().catch(() => {})
   if (serverOnline.value) {
-    await loadConfig()
-    configLoaded.value = true
-    try { indexStats.value = await getIndexStats() } catch {}
-    if (isNative()) { 
-      try { engineStatus.value = await fetchFFmpegStatus() } catch {}
-      await refreshMpvPluginStatus()
+    loadConfig()
+      .then(() => { configLoaded.value = true })
+      .catch(() => { configLoaded.value = true })
+    getIndexStats().then((s) => { indexStats.value = s }).catch(() => {})
+    if (isNative()) {
+      fetchFFmpegStatus().then((s) => { engineStatus.value = s }).catch(() => {})
+      refreshMpvPluginStatus().catch(() => {})
     }
     syncAlistEncryptFeature()
   }
@@ -814,14 +815,15 @@ async function refreshMpvPluginStatus() {
   }
 }
 
-watch(serverOnline, async (online) => {
+watch(serverOnline, (online) => {
   if (online) {
     if (!configLoaded.value) {
-      await loadConfig()
-      configLoaded.value = true
+      loadConfig()
+        .then(() => { configLoaded.value = true })
+        .catch(() => { configLoaded.value = true })
     }
-    try { indexStats.value = await getIndexStats() } catch {}
-    if (isNative()) { try { engineStatus.value = await fetchFFmpegStatus() } catch {} }
+    getIndexStats().then((s) => { indexStats.value = s }).catch(() => {})
+    if (isNative()) { fetchFFmpegStatus().then((s) => { engineStatus.value = s }).catch(() => {}) }
   }
 })
 
