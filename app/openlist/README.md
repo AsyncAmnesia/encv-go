@@ -90,11 +90,12 @@ graph TB
 | 仓库 | 角色 | 与本项目关系 |
 |------|------|-------------|
 | **encv-mobile**（本仓库） | 主项目：WebView + encv-go + ComboLite | — |
-| **Hi-Sillot/OpenList** | 个人 fork，集成 ENCV 解密 + `openlistlib/` 入口 + **`glebarez/sqlite` 选型**（commit `404daf0`，2026-06-02） | 唯一被 build script clone |
+| **Hi-Sillot/OpenList** | 个人 fork，集成 ENCV 解密 + `openlistlib/` 入口 + **`glebarez/sqlite` 选型**（commit `404daf0`，2026-06-02） | 唯一被 build script clone，**本地路径：`app/openlist/Hi-Sillot-OpenList/`** |
 | **OpenListTeam/OpenList** | 上游 OpenList | 周期性 rebase 来源 |
 | **OpenListTeam/OpenList-Frontend** | 前端 dist 发布源 | 精确 tag 下载 |
-| **K-Sillot/OpenList-Mobile** | gomobile bind 参考实现 | 架构蓝本 |
-| **K-Sillot/OpenList-Desktop** | 桌面端 Tauri 实现 | 集成思路参考 |
+| **Hi-Sillot/OpenList-Frontend** | 前端 fork（i18n 同步源）；手动 clone | **本地路径：`app/openlist/Hi-Sillot-OpenList-Frontend/`** |
+| **K-Sillot/OpenList-Desktop** | 桌面端 Tauri 实现（项目已废弃，仓库保留参考） | 手动 clone；**本地路径：`app/openlist/K-Sillot-OpenList-Desktop/`** |
+| **K-Sillot/OpenList-Mobile** | gomobile bind 参考实现 | 仅在线浏览，**不参与本地集成** |
 
 ---
 
@@ -114,12 +115,14 @@ graph TB
 参见 §10，此处仅列最常用命令：
 
 ```bash
-# 1. 克隆（URL 注入 token，详见 §10）
+# 1. 克隆到固定目录（影响 build script 路径解析——fork 的 go.mod 相对路径 ../../../ 依赖此布局）
+cd /workspace/app/openlist
 git clone --branch dev \
-    https://x-access-token:${GITHUB_TOKEN}@github.com/Hi-Sillot/OpenList.git
+    https://x-access-token:${GITHUB_TOKEN}@github.com/Hi-Sillot/OpenList.git \
+    Hi-Sillot-OpenList
 
 # 2. 修改 + 提交
-cd OpenList
+cd Hi-Sillot-OpenList
 echo "v4.0.0" > frontend-pinned.txt
 git add frontend-pinned.txt
 git commit -m "bump frontend pin to v4.0.0"
@@ -142,6 +145,44 @@ git push origin encv-v0.1.0
 #   OPENLIST_FORK_PINNED_TAG=encv-v0.1.0
 # 重新跑 build-openlist-aar.sh 即可
 ```
+
+### 4.4 三个 fork 的本地布局
+
+> **设计铁律**：所有本地参与维护的 fork 都要 clone 到 `app/openlist/` 下固定子目录，目录名与 GitHub 仓库名同形（含 org 前缀），并由 `app/openlist/.gitignore` 整体忽略。`build-openlist-aar.sh` 默认把主 fork clone 到 `app/openlist/Hi-Sillot-OpenList/`，fork 的 go.mod 里的 `replace github.com/Soltus/encv-go => ../../../` 这个相对路径**依赖此布局**才能解析到 encv-go 根（`/workspace`）。
+
+```bash
+# 三层 fork 各自的固定路径（手动 clone，不需要时跳过）
+cd /workspace/app/openlist
+
+# ① 主 fork：build script 依赖（脚本会自动 clone/更新）
+#    如手动 clone 务必指定目录名为 Hi-Sillot-OpenList
+git clone --branch dev \
+    https://github.com/Hi-Sillot/OpenList.git \
+    Hi-Sillot-OpenList
+
+# ② 前端 fork：i18n 同步源（手动维护 ENCV overlay 翻译补丁时用到）
+git clone --branch main \
+    https://github.com/Hi-Sillot/OpenList-Frontend.git \
+    Hi-Sillot-OpenList-Frontend
+
+# ③ 桌面 fork：Tauri 实现参考（项目已废弃，仓库保留用作代码考古）
+git clone --branch main \
+    https://github.com/K-Sillot/OpenList-Desktop.git \
+    K-Sillot-OpenList-Desktop
+
+# ④ 在线参考（不需要本地 clone）：
+#    K-Sillot/OpenList-Mobile — 纯参考，https://github.com/K-Sillot/OpenList-Mobile
+```
+
+**环境变量覆盖**：`build-openlist-aar.sh` 支持 `OPENLIST_FORK_WORK_DIR` 环境变量，CI runner 想把 fork clone 到独立卷（如 `/cache/fork`、`D:\cache\fork`）复用时可设此变量，绕过默认布局。
+
+```bash
+# 例：CI runner 缓存策略
+export OPENLIST_FORK_WORK_DIR=/cache/fork
+bash scripts/build-openlist-aar.sh --output app/encv-mobile/plugin-openlist/libs
+```
+
+> **注意**：若用 `OPENLIST_FORK_WORK_DIR` 改了 fork 路径，go.mod 的相对 `replace` 不再成立；脚本会自动 `sed` 改回绝对路径兜底（见 D4）。
 
 ---
 
@@ -397,14 +438,14 @@ git push https://x-access-token:${GITHUB_TOKEN}@github.com/Hi-Sillot/OpenList.gi
 | 2 | **`gomobile init` 失败：找不到 NDK** | NDK 路径错或版本低 | 传 `--ndk $ANDROID_HOME/ndk/26.3.11579264` |
 | 3 | **AAR 缺 `openlistlib.Openlistlib` 类** | fork 缺 `openlistlib/` 包 | 参考主 spec §一补全 fork 入口 |
 | 4 | **OpenList-Frontend tag 404** | `frontend-pinned.txt` 写了 `v9.9.9`（不存在） | 核对 tag 全名：`v4.0.0` 而非 `4.0.0` |
-| 5 | **`replace github.com/Soltus/encv-go => ../../../` 解析失败** | sed 未把相对路径改绝对路径 | 检查 `--encv-go-root` 必为绝对路径 |
+| 5 | **`replace github.com/Soltus/encv-go => ../../../` 解析失败** | fork 不在 `app/openlist/Hi-Sillot-OpenList/`（默认布局），或用户设了 `OPENLIST_FORK_WORK_DIR` 到非标路径 | 默认布局下相对路径天然成立；若仍失败，build script 会自动 sed 兜底为绝对路径；详见 §4.4 |
 | 6 | **OpenListBridge.start() 后 5s 内 5244 不响应** | 端口冲突 / 防火墙 / AAR 缺类 | 跑 §11.3 端口检测；`adb logcat | grep OpenList` |
 | 7 | **i18n overlay jq 合并失败** | 缺 `jq` 或 overlay JSON 语法错 | `apt install jq`；`jq . public/dist/i18n-overlay/zh-CN/translation.json` |
 | 8 | **AAR 体积 > 50MB** | 编译时未加 `-ldflags="-s -w"` | build script 已默认加；若手动编译务必带 |
 | 9 | **`git push` 报 `terminal prompts disabled`** | 见 §10 | 用 `git push https://x-access-token:${GITHUB_TOKEN}@github.com/...` 替换裸 `git push` |
 | 10 | **`frontend-pinned.txt` 不被识别** | 文件编码非 UTF-8 / 多行注释不闭合 | `file frontend-pinned.txt` 应为 ASCII/UTF-8 |
-| 11 | **`undefined: LogCallback` at openlistlib/server.go:34** | Hi-Sillot fork 的 `openlistlib/event.go` 只定义了 `Event` interface，缺 `LogCallback` interface | fork 已 commit `c2424d2`（2026-06-02）补全 `LogCallback.OnLog(level int16, time int64, log string)`；build script 内 A2 兜底会在 fork 未推时自动注入 event.go |
-| 12 | **`# github.com/mattn/go-sqlite3` 编译失败 / `-fPIC` 报错** | fork 通过 `gorm.io/driver/sqlite` 链入 mattn CGO 库，gomobile 的 NDK toolchain 默认不解析 CGO 路径 | fork 已 commit `404daf0`（2026-06-02）切到 `github.com/glebarez/sqlite`（pure-Go，基于 modernc.org/sqlite）；AAR 体积 -12MB；build script 内 B2 兜底在 fork 未推时强 CGO 工具链 |
+| 11 | **`undefined: LogCallback` at openlistlib/server.go:34** | Hi-Sillot fork 的 `openlistlib/event.go` 只定义了 `Event` interface，缺 `LogCallback` interface | fork 已 commit `c2424d2`（2026-06-02）补全 `LogCallback.OnLog(level int16, time int64, log string)`；在 `app/openlist/Hi-Sillot-OpenList/openlistlib/event.go` 落地；build script 内 A2 兜底会在 fork 未推时自动注入 event.go |
+| 12 | **`# github.com/mattn/go-sqlite3` 编译失败 / `-fPIC` 报错** | fork 通过 `gorm.io/driver/sqlite` 链入 mattn CGO 库，gomobile 的 NDK toolchain 默认不解析 CGO 路径 | fork 已 commit `404daf0`（2026-06-02）切到 `github.com/glebarez/sqlite`（pure-Go，基于 modernc.org/sqlite）；在 `app/openlist/Hi-Sillot-OpenList/` 落地；AAR 体积 -12MB；build script 内 B2 兜底在 fork 未推时强 CGO 工具链 |
 
 ### 11.1 调试命令速查
 

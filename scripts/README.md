@@ -146,9 +146,9 @@ fork 没提供 `i18n-overlay/` 目录时，脚本直接跳过该步骤，原 fro
 
 1. 解析入参，校验 go / java / git / curl / tar / cmake / ndk-build
 2. 加载 `scripts/openlist-fork.env`（+ `.local` 覆盖）
-3. `$TMPDIR/openlist-aar-build/openlist/` 准备临时工作区，删除旧副本
+3. `app/openlist/Hi-Sillot-OpenList/` 准备本地工作区，删除旧副本
 4. `git clone --depth 1 --branch $BRANCH $FORK`
-5. `sed` 修复 `go.mod` 中 `replace github.com/Soltus/encv-go => ../../../` 指向 `--encv-go-root`
+5. 验证 fork `go.mod` 的 `replace github.com/Soltus/encv-go => ../../../` 相对路径（默认布局下天然成立；若 fork 在非标位置，脚本 sed 兜底为绝对路径）
 6. 解析 frontend 版本（4 级优先级），下载匹配版本的 OpenList-Frontend dist
 7. `jq` 合并 `public/dist/i18n-overlay/`（可选）
 8. 写 `public/dist/VERSION`（`${WEB_VERSION}-encv`）

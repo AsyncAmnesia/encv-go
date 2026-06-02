@@ -136,8 +136,19 @@ log "  output dir : ${OUTPUT}"
 log "  frontend-version CLI : ${FRONTEND_VERSION_CLI:-<none>}"
 log "  local-frontend-dist  : ${LOCAL_FRONTEND_DIST:-<none>}"
 
-WORK_DIR="${TMPDIR:-/tmp}/openlist-aar-build"
-SRC_DIR="${WORK_DIR}/openlist"
+# Default fork work dir: app/openlist/Hi-Sillot-OpenList/ under the encv-mobile
+# repo root. This location matches the fork's own `go.mod` line
+# `replace github.com/Soltus/encv-go => ../../../` so the relative replace
+# resolves naturally to the encv-go root (no sed patching needed).
+# Override with OPENLIST_FORK_WORK_DIR for CI runners that want to reuse a
+# cached clone on a separate volume (e.g. /cache/fork).
+if [[ -n "${OPENLIST_FORK_WORK_DIR:-}" ]]; then
+    WORK_DIR="${OPENLIST_FORK_WORK_DIR}"
+else
+    _REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+    WORK_DIR="${_REPO_ROOT}/app/openlist/Hi-Sillot-OpenList"
+fi
+SRC_DIR="${WORK_DIR}"
 
 log "== Workspace =="
 log "  ${WORK_DIR}"
@@ -167,15 +178,30 @@ git clone --depth 1 --branch "${BRANCH}" "${CLONE_URL}" "${SRC_DIR}"
 GOMOD="${SRC_DIR}/go.mod"
 [[ -f "${GOMOD}" ]] || die "go.mod not found in ${SRC_DIR}"
 
-log "== Patch go.mod (replace + gomobile mobile require) =="
-if grep -qE '^replace[[:space:]]+github\.com/Soltus/encv-go[[:space:]]+=>' "${GOMOD}"; then
-    sed -i.bak -E "s|^replace[[:space:]]+github\\.com/Soltus/encv-go[[:space:]]+=>[[:space:]]+[^[:space:]]+|replace github.com/Soltus/encv-go => ${ENCV_GO_ROOT}|" "${GOMOD}"
-    grep -E '^replace[[:space:]]+github\.com/Soltus/encv-go' "${GOMOD}" || die "go.mod replace patch failed"
-else
-    log "  (no encv-go replace line found, appending one)"
-    printf '\nreplace github.com/Soltus/encv-go => %s\n' "${ENCV_GO_ROOT}" >> "${GOMOD}"
-fi
-rm -f "${GOMOD}.bak"
+log "== Verify fork go.mod relative replace resolves correctly =="
+# Fork is expected at app/openlist/Hi-Sillot-OpenList/, so go.mod's
+# `replace github.com/Soltus/encv-go => ../../../` resolves to the encv-go
+# root (parent of app/). If fork moves to a non-standard location, sed-patch
+# the replace back to an absolute path. See D4 in
+# .trae/documents/fork-clone-path-refactor-to-app-openlist.md.
+_REL_REPLACE="$(grep -E '^replace[[:space:]]+github\.com/Soltus/encv-go[[:space:]]+=>' "${GOMOD}" 2>/dev/null | head -n 1 || true)"
+case "${_REL_REPLACE}" in
+    *../../../*|*"\${ENCV_GO_ROOT}"*)
+        log "  (relative replace detected: ${_REL_REPLACE##* } → resolves from fork to encv-go root)"
+        ;;
+    *)
+        if [[ -n "${_REL_REPLACE}" ]]; then
+            log "  WARN: non-relative replace found, fork go.mod has been modified upstream:"
+            log "        ${_REL_REPLACE}"
+            log "        sed-patching back to absolute path '${ENCV_GO_ROOT}' as safety net"
+            sed -i.bak -E "s|^replace[[:space:]]+github\\.com/Soltus/encv-go[[:space:]]+=>[[:space:]]+[^[:space:]]+|replace github.com/Soltus/encv-go => ${ENCV_GO_ROOT}|" "${GOMOD}"
+            rm -f "${GOMOD}.bak"
+        else
+            log "  WARN: no encv-go replace line found at all, appending one"
+            printf '\nreplace github.com/Soltus/encv-go => %s\n' "${ENCV_GO_ROOT}" >> "${GOMOD}"
+        fi
+        ;;
+esac
 
 # Patch 2: gomobile bind's pre-flight `build.Import("golang.org/x/mobile", ...)`
 # walks the module's *package graph* and fails when the package is only

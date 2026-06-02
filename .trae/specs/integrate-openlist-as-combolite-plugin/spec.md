@@ -456,7 +456,7 @@ ENCV 容器（`.sccgv`/`.sccgt`/`.sccgpdf`/`.sccgi`）的解密 SHALL **只在**
 |------|------|---------|
 | R1 | Hi-Sillot fork 没有 `openlistlib/`，需提交 PR/手动添加 | 由用户在 fork 仓库添加（参考 K-Sillot 的 `openlistlib/` 包结构） |
 | R2 | gomobile bind CGO 是否能与 encv-go 模块（含 CGO 子依赖）共存 | K-Sillot 已证明可行（OpenList 同样含 CGO） |
-| R3 | `replace github.com/Soltus/encv-go => ../../../` 路径在 encv-mobile 仓库下不成立 | build-openlist-aar.sh 用 sed 改成 `replace github.com/Soltus/encv-go => /workspace` |
+| R3 | ~~`replace github.com/Soltus/encv-go => ../../../` 路径在 encv-mobile 仓库下不成立~~ → **已解决**（2026-06-02） | fork 改克隆到 `app/openlist/Hi-Sillot-OpenList/`（[app/openlist/README.md §4.4](../../app/openlist/README.md#44-三个-fork-的本地布局)），相对路径 `../../../` 天然解析到 encv-go 根（`/workspace`）；build-openlist-aar.sh 的 sed 改写段随之改为「验证 + 兜底」。详见 [.trae/documents/fork-clone-path-refactor-to-app-openlist.md](../../.trae/documents/fork-clone-path-refactor-to-app-openlist.md) |
 | R4 | AAR 体积（libgojni.so 包含完整 Go runtime） | K-Sillot 实测 ~40MB，`-ldflags="-s -w"` 后可接受 |
 | R5 | iOS 端 gomobile bind 需独立 `-tags="ios,mobile"` 排包 | 用户明确仅 Android，**不处理** |
 | R6 | 5244 端口冲突（alist 等） | 插件配置页允许改端口（`OpenListConfig`），通过 `setConfigData` + `OpenListConfigManager` 持久化 |
