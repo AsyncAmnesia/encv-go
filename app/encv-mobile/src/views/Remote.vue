@@ -88,6 +88,8 @@
       </div>
 
       <div v-if="activeTab === 'openlist'">
+        <LocalOpenListStatusCard />
+
         <div v-if="openlistSiteKeys.length === 0" class="empty-state">
           <ion-icon :icon="globe" class="empty-icon"></ion-icon>
           <h3>{{ t('remote.noOpenlistSites') }}</h3>
@@ -96,20 +98,33 @@
 
         <ion-list v-else>
           <ion-item-sliding v-for="key in openlistSiteKeys" :key="key">
-            <ion-item @click="editSite(key)">
+            <ion-item @click="editSite(key)" :class="{ 'site-disabled': isSiteDisabled(key) }">
               <ion-icon :icon="globe" color="primary" slot="start"></ion-icon>
               <ion-label>
-                <h2>{{ key }}</h2>
+                <h2 class="site-name-row">
+                  <ion-chip v-if="isLocalLoopback(key)" color="primary" class="local-chip">{{ t('remote.localBadge') }}</ion-chip>
+                  <span>{{ key }}</span>
+                </h2>
                 <p v-if="openlistSites[key].description">{{ openlistSites[key].description }}</p>
                 <p>{{ t('remote.host') }}: {{ openlistSites[key].host }}</p>
                 <p class="proxy-url">{{ t('remote.proxyUrl') }}: {{ openlistSites[key].proxyUrl }}</p>
+                <ion-note v-if="!isSiteBuiltIn(key)" class="site-toggle-label-row">
+                  {{ isSiteDisabled(key) ? t('remote.siteDisabled') : t('remote.enabled') }}
+                </ion-note>
               </ion-label>
+              <ion-toggle
+                v-if="!isSiteBuiltIn(key)"
+                slot="end"
+                :checked="!isSiteDisabled(key)"
+                @ionChange="onSiteToggleChange(key, $event)"
+                @click.stop
+              ></ion-toggle>
             </ion-item>
             <ion-item-options side="end">
               <ion-item-option color="primary" @click.stop="copyProxyUrl(openlistSites[key].proxyUrl)">
                 {{ t('remote.copied') }}
               </ion-item-option>
-              <ion-item-option color="danger" @click.stop="handleDeleteSite(key)">
+              <ion-item-option v-if="!isSiteBuiltIn(key)" color="danger" @click.stop="handleDeleteSite(key)">
                 {{ t('webdav.delete') }}
               </ion-item-option>
             </ion-item-options>
@@ -303,6 +318,7 @@ import {
   IonList, IonItem, IonItemSliding, IonItemOptions, IonItemOption,
   IonIcon, IonBadge, IonFab, IonFabButton,
   IonModal, IonButtons, IonButton,
+  IonToggle, IonNote, IonChip,
 } from '@ionic/vue'
 import { add, cloud, flash, save as saveIcon, home, globe, folderOpen, person, lockClosed, documentText, fingerPrint } from 'ionicons/icons'
 import {
@@ -314,6 +330,7 @@ import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { copyToClipboard as clipboardWrite } from '@/composables/useClipboard'
 import InputWithHistory from '@/components/InputWithHistory.vue'
+import LocalOpenListStatusCard from '@/components/LocalOpenListStatusCard.vue'
 
 const { t } = useI18n()
 
@@ -321,7 +338,34 @@ const activeTab = ref<'webdav' | 'openlist'>('webdav')
 const webdavConfigs = ref<WebDAVConfig[]>([])
 const builtInWebdav = ref<RemoteWebDAVInfo | null>(null)
 const openlistSites = ref<Record<string, OpenlistSiteInfo>>({})
-const openlistSiteKeys = computed(() => Object.keys(openlistSites.value))
+const disabledSites = ref<Set<string>>(new Set())
+const openlistSiteKeys = computed(() => {
+  const all = Object.keys(openlistSites.value)
+  return [...all.filter(k => k === 'local-loopback'), ...all.filter(k => k !== 'local-loopback')]
+})
+
+function isLocalLoopback(key: string): boolean {
+  return key === 'local-loopback'
+}
+
+function isSiteBuiltIn(key: string): boolean {
+  return !!openlistSites.value[key]?.isBuiltIn || isLocalLoopback(key)
+}
+
+function isSiteDisabled(key: string): boolean {
+  return disabledSites.value.has(key)
+}
+
+function onSiteToggleChange(key: string, event: CustomEvent) {
+  const checked = !!event.detail.checked
+  const next = new Set(disabledSites.value)
+  if (checked) {
+    next.delete(key)
+  } else {
+    next.add(key)
+  }
+  disabledSites.value = next
+}
 
 const showWebdavModal = ref(false)
 const editingId = ref('')
@@ -655,5 +699,35 @@ onMounted(() => {
   font-size: 12px;
   margin-top: 4px;
   word-break: break-word;
+}
+
+.site-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.local-chip {
+  font-size: 10px;
+  font-weight: 600;
+  height: 22px;
+  margin: 0;
+  padding: 0 8px;
+}
+
+.site-toggle-label-row {
+  display: block;
+  font-size: 11px;
+  color: var(--ion-color-medium);
+  margin-top: 4px;
+}
+
+.site-disabled {
+  opacity: 0.5;
+}
+
+.site-disabled .proxy-url {
+  color: var(--ion-color-medium);
 }
 </style>

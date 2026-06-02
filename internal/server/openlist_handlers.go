@@ -48,6 +48,8 @@ func (p *ProxyGin) HandleRequest(c *gin.Context) {
 	siteTokenStr, _ := siteToken.(string)
 	siteIdStr, _ := siteId.(string)
 
+	openlist.MarkOpenListHeartbeat()
+
 	originalPath := c.Request.URL.Path
 	re := regexp.MustCompile(`^/openlist/sites/` + regexp.QuoteMeta(siteIdStr) + `/+`)
 	path := re.ReplaceAllString(originalPath, "/")
@@ -933,4 +935,12 @@ func generateSiteManagementHTML(siteCards string, sites map[string]types.ProxySi
 </body>
 </html>
     `, routes.OpenListProxy, routes.OpenListProxy, siteCards)
+}
+
+// LocalOpenListStatusHandler 处理 GET /openlist/local/status，
+// 返回本地 OpenList 插件的运行状态、端口、心跳等。
+func LocalOpenListStatusHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.JSON(http.StatusOK, openlist.GetLocalOpenListStatus())
+	}
 }

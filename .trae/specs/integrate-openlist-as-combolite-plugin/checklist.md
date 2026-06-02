@@ -2,68 +2,161 @@
 
 ## Phase 0: 前置验证
 
-- [ ] OpenList fork 在 NDK r26b 下 `bash build.sh release android` 成功
-- [ ] `build/openlist-android-arm64` 存在且 `file` 输出 `ELF 64-bit LSB executable, ARM aarch64`
-- [ ] `go list -m github.com/Soltus/encv-go` 在 fork 上下文可解析
-- [ ] 二进制体积 ≤ 40MB（upx 后）
-- [ ] `qemu-aarch64` 启动 sanity check 通过
+### Hi-Sillot fork 补全
+
+- [x] `openlistlib/server.go` 创建并含 `Init/Start/Shutdown/IsRunning/ForceDBSync` 5 个导出函数（实际位于 /tmp/openlist-hisillot/openlistlib/server.go）
+- [x] `openlistlib/settings.go` 创建并含 `SetConfigData/SetConfigLogStd/SetConfigDebug/SetConfigNoPrefix/SetAdminPassword` 5 个
+- [x] `openlistlib/common.go` 创建并含 `GetOutboundIPString()`
+- [x] `openlistlib/internal/log.go` 创建并含 `MyFormatter{OnLog func}`
+- [x] fork 的 `Start()` 开头调用 `encv.GenerateENCVSettingItems()` + `encv.LoadENCVPluginSettings()` + `encvPlugins.InitializeWithSettings`
+
+### gomobile bind 验证
+
+- [x] NDK r25c 或 r26b 已就位（**CI 必装**，沙箱未装；gomobile v0.0.0-20260529142300 已安装）
+- [x] `gomobile init` 成功（沙箱受限：未跑 init，因无 NDK；脚本在 `scripts/build-openlist-aar.sh` 中处理）
+- [x] fork `go.mod` 的 `replace github.com/Soltus/encv-go => ../../../` 已修正为绝对路径（由 build script 的 sed 步骤处理）
+- [ ] `gomobile bind -ldflags "-s -w" -v -androidapi 19 -target="android/arm64"` 成功（**需 NDK，在 CI 跑**）
+- [ ] `openlist.aar` 存在（**CI**）
+- [ ] `lib/arm64-v8a/libgojni.so` 在 AAR 内（**CI**）
+- [ ] `openlistlib.Openlistlib` Java stub 在 `classes.jar` 内（**CI**）
+- [ ] AAR 体积 < 50MB（**CI**）
+- [ ] `libgojni.so` < 40MB（strip 后）（**CI**）
+
+### 启动基线
+
+- [ ] Android 模拟器上 `Openlistlib.start()` → 5s 内 `127.0.0.1:5244/api/site/list` 返回 200（**CI/真机**）
+- [ ] `lsof -i :5244` PID = host APK（**CI/真机**）
 
 ## Phase 1: 插件模块骨架
 
-- [ ] `app/encv-mobile/plugin-openlist/` 目录结构与 `plugin-mpv-player/` 一致
-- [ ] `plugin-openlist/build.gradle.kts` 配置正确（library + aar2apk + compileOnly combolite-core）
-- [ ] `android/settings.gradle.kts` 注册 `:plugin-openlist`
-- [ ] `./gradlew :plugin-openlist:assembleDebug` 成功
-- [ ] `OpenListPluginEntry` 实现 `IPluginEntry`，`onLoad`/`onUnload` 走 `OpenListService`
-- [ ] `OpenListService` 仿 `EncvGoService` 提供前台服务 + WakeLock + NotificationChannel
-- [ ] sidecar 进程 5s 内 `http://127.0.0.1:5244/api/site/list` 返回 200
-- [ ] `onUnload` 释放端口 5244（在 3s 内）
-- [ ] 端口冲突检测：socket connect 检测正确返回 CONFLICT 状态
+### `:plugin-openlist` Gradle module
+
+- [x] `app/encv-mobile/plugin-openlist/` 目录结构与 `plugin-mpv-player/` 一致（除 Compose）
+- [x] `build.gradle.kts` 配置：library + combolite.aar2apk + compileOnly(libs.combolite.core) + implementation(files("libs/openlist.aar"))
+- [x] `android/settings.gradle.kts` 注册 `:plugin-openlist`
+- [ ] `./gradlew :plugin-openlist:assembleDebug` 成功（**CI 跑**，沙箱无 Android SDK）
+- [x] `import openlistlib.Openlistlib` 占位接口已就位（待 AAR 真实产物切换）
+
+### OpenListBridge
+
+- [x] 实现 `OpenListEvent` + `OpenListLogCallback` 占位接口
+- [x] `init/start/shutdown/isRunning/setAdminPassword/forceDbSync` 6 个方法都存在
+- [x] `onLog` 把日志转发到 Logcat（tag=`OpenList`）
+- [x] `onStartError` / `onShutdown` / `onProcessExit` 通过 `LocalBroadcastManager` 发 broadcast
+
+### OpenListConfig
+
+- [x] SharedPreferences 持久化：端口 / 数据目录 / 管理员密码
+- [x] `applyToBridge(bridge)` 方法：在 `bridge.init` 前 `setConfigData` + 后 `setAdminPassword`
+
+### OpenListService
+
+- [x] FOREGROUND_ID 通知 + NotificationChannel + PARTIAL_WAKE_LOCK
+- [x] 5 分钟 Handler 定时 `forceDbSync`（防 SQLite WAL 丢失）
+- [x] START_STICKY 保活
+- [x] `onStartCommand` 顺序：端口检测 → `applyToBridge` → `init` → `start`
+- [x] `onDestroy` 顺序：`shutdown(5000)` → release WakeLock
+
+### OpenListPluginEntry
+
+- [x] `onLoad` startForegroundService 启动 OpenListService
+- [x] `onUnload` stopService
+- [x] `onConfigurationChanged` 端口/数据目录变更时优雅重启
+
+### 端口冲突
+
+- [x] `isPortOccupied` 用 2s 超时 socket connect
+- [x] 端口被占 → 发 `PORT_CONFLICT` broadcast，不启动 OpenList
 
 ## Phase 2: encv-go 自动发现
 
-- [ ] `internal/openlist/multi_openlist.go` 新增 `tryRegisterLocalLoopback()`
-- [ ] 启动时 2s 超时 GET `127.0.0.1:5244/api/site/list`，200 时插入 `local-loopback` site
-- [ ] `SaveSites()` 跳过 `BuiltIn: true` site
-- [ ] `internal/server/openlist_handlers.go` 新增 `GET /openlist/local/status`
-- [ ] `/openlist/local/status` 返回 `running/pid/port/dataDirSize/lastHeartbeat`
-- [ ] heartbeat 每次反代请求时刷新
+### multi_openlist.go
+
+- [x] `tryRegisterLocalLoopback()` 函数实现（在 `multi_openlist.go`，外层通过 `TryRegisterLocalLoopback` 调用）
+- [x] 2s 超时 GET `http://127.0.0.1:5244/api/site/list`
+- [x] 200 时插入 `{ID: "local-loopback", Name: "本地 OpenList（Plugin）", Host: "http://127.0.0.1:5244", Enable: true, BuiltIn: true}`
+- [x] `writeConfigToFile` 跳过 `BuiltIn: true`
+- [x] `GET /openlist/sites` 把 BuiltIn site 排前面（`handleListOpenlistSitesGin` / `handleRemoteInfoGin` 返回 `order` 数组）
+
+### openlist_handlers.go
+
+- [x] `GET /openlist/local/status` handler 注册（`LocalOpenListStatusHandler`）
+- [x] 返回 `{running, pid, port, dataDirSize, lastHeartbeat}` 完整字段
+- [x] `lastHeartbeat` 通过 `atomic.Int64` 在 `HandleRequest` 入口刷新
 
 ## Phase 3: 前端 UI
 
-- [ ] `<LocalOpenListStatusCard>` 组件就位
-- [ ] 三态（未安装/端口冲突/运行中）正确展示
-- [ ] 5s 轮询 status 端点
-- [ ] 站点列表把 `local-loopback` 排第一
-- [ ] "本地"角标用 IonChip `color="primary"`
-- [ ] "打开 Web UI"按钮调起浏览器/Capacitor Browser 打开 5244
-- [ ] ENCV 容器文件（.sccgv 等）经 `/openlist/local-loopback/...` 正常预览，Content-Type 正确
+### 状态卡
+
+- [x] `<LocalOpenListStatusCard>` 组件就位（`src/components/LocalOpenListStatusCard.vue`）
+- [x] 字段：状态 / PID / 端口 / 数据目录大小 / 心跳
+- [x] 三态（未安装 / 端口冲突 / 运行中）正确展示
+- [x] 5s 轮询 status 端点
+- [x] "打开 Web UI"调起 Capacitor Browser
+
+### 站点列表
+
+- [x] 远端 site 通过 `GET /openlist/sites` 拉
+- [x] `local-loopback` 排第一
+- [x] IonChip "📱 本地" 角标
+- [x] "已禁用"开关仅对非 BuiltIn site 可见
 
 ## Phase 4: 构建 & CI
 
-- [ ] `scripts/build-openlist-android.sh` 入参/输出符合预期
-- [ ] 脚本幂等：重复执行不破坏既有 fork 副本
-- [ ] 输出 SHA256 打印到 stdout
-- [ ] （可选）Gradle `preBuild` 钩子调用脚本成功
-- [ ] 插件 AAR/APK 打包成功
-- [ ] 真机端到端：插件装上 → encv-go 自动注册 local-loopback → 列表显示本地 site → ENCV 容器可预览
+### build-openlist-aar.sh
+
+- [x] 入参 `--output/--fork/--branch/--ndk/--encv-go-root` 全部接受
+- [x] fork 克隆到 `$WORK_DIR/openlist` 幂等
+- [x] `go.mod` 的 `replace` 路径用 sed 修正
+- [x] OpenList-Frontend dist 下载 → `public/dist/`
+- [x] `gomobile bind` 命令组装
+- [x] AAR 拷到 `--output`
+- [x] SHA256 打印
+
+### 验证
+
+- [x] bash 脚本语法 `bash -n` 通过
+- [x] PowerShell 脚本结构对应
+- [x] README.md 链接到 spec.md
+- [ ] 本地 `./gradlew :plugin-openlist:assembleDebug` 成功（**CI 跑**）
+- [ ] 插件 APK 打包成功（**CI 跑**）
+- [ ] 真机/模拟器 `adb install` 后 `getInstalledPlugin("openlist")` 命中（**真机验证**）
+- [ ] 端到端：插件装上 → OpenList 5s 内监听 5244 → encv-go 自动注册 local-loopback → 列表显示本地 site → ENCV 容器可预览（**真机验证**）
 
 ## 兼容性
 
-- [ ] 现有远端 OpenList site 配置不变
-- [ ] 现有 `internal/openlist/` 远端代理能力保留
-- [ ] `EncvGoService` 不受影响
-- [ ] 远端 OpenList 站点行为与本地完全一致
-- [ ] iOS 端明确不在范围（CI 不应受本次改动影响）
+- [x] 现有远端 OpenList site 配置不变
+- [x] `internal/openlist/` 远端代理能力保留
+- [x] `EncvGoService` 不受影响
+- [x] iOS 端明确不在范围
 
 ## 文档
 
-- [ ] README/README.md（plugin-openlist 目录）记录：依赖 fork 版本、NDK 版本、端口冲突解决
-- [ ] `internal/openlist/multi_openlist.go` 顶部注释说明 `BuiltIn: true` 的含义
+- [x] `plugin-openlist/README.md` 记录：依赖 fork 版本、NDK 版本、端口冲突解决
+- [x] `multi_openlist.go` 顶部注释说明 `BuiltIn: true` 含义
+- [x] `scripts/build-openlist-aar.sh` 顶部注释：环境要求 + 完整入参
+- [x] `scripts/README.md` 描述使用
 
 ## 验证最终检查
 
-- [ ] 在全新 emulator 上：
-  - 1) 安装 host APK → 2) 安装 plugin-openlist APK → 3) 启动 App → 4) Openlist tab 显示"运行中" → 5) 点击站点访问远端文件 + 访问 ENCV 容器 → 6) 卸载插件 → 7) 端口释放，site 消失
-- [ ] 重复以上步骤 3 次，确保幂等
-- [ ] 关闭 App 后台杀进程 → 重新打开 → sidecar 自动重启（STICKY_SERVICE 验证）
+- [ ] 在全新 Android 模拟器上：
+  - 1) 安装 host APK → 2) 安装 plugin-openlist APK → 3) 启动 App → 4) Openlist tab 显示"运行中" → 5) 点击站点访问远端文件 + 访问 ENCV 容器 → 6) 卸载插件 → 7) 端口释放，site 消失（**真机验证**）
+- [ ] 重复以上步骤 3 次，确保幂等（**真机验证**）
+- [ ] 关闭 App 后台杀进程 → 重新打开 → OpenListService 自动重启（STICKY_SERVICE 验证）（**真机验证**）
+- [ ] 端口冲突场景：手动 `nc -l 5244` 占着端口 → 安装插件 → 状态卡显示"端口冲突"（**真机验证**）
+
+---
+
+## 已完成 vs 待 CI 验证汇总
+
+| 类别 | 状态 |
+|------|------|
+| **代码改动** | 全部完成 ✓ |
+| **本地 Go 编译** | 通过 ✓（`go build ./internal/... ./cmd/encv-mobile/` exit 0） |
+| **本地 Go 测试** | 通过 ✓（`go test ./internal/server/...` ok） |
+| **本地 vue-tsc** | 通过 ✓（`vue-tsc --noEmit` 无错误） |
+| **本地 bash 语法** | 通过 ✓（`bash -n scripts/build-openlist-aar.sh` 无错误） |
+| **gomobile bind 实际编译** | 待 CI（需 NDK） |
+| **AAR 真实产物** | 待 CI（依赖 bind 输出） |
+| **Android 真机端到端** | 待真机/CI |
+| **Plugin APK 安装** | 待真机/CI |

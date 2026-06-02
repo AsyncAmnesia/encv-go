@@ -35,9 +35,11 @@ rootProject.name = "encv-mobile"
 include(":app")
 include(":capacitor-cordova-android-plugins")
 include(":plugin-mpv-player")
+include(":plugin-openlist")
 include(":combolite-host")
 
 project(":capacitor-cordova-android-plugins").projectDir = file("./capacitor-cordova-android-plugins/")
 project(":plugin-mpv-player").projectDir = file("../plugin-mpv-player")
+project(":plugin-openlist").projectDir = file("../plugin-openlist")
 
 apply(from = "capacitor.settings.gradle")
