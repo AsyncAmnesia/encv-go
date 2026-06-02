@@ -50,9 +50,10 @@ export const BG_PRESETS: BgPreset[] = [
   { name: 'bg.darkBlack', value: '#000000', description: 'bg.darkBlackDesc', category: 'dark', textColor: '#ffffff' },
   { name: 'bg.midnight', value: '#0a0e1a', description: 'bg.midnightDesc', category: 'dark', textColor: '#d0d8e8' },
   { name: 'bg.charcoal', value: '#2a2a2e', description: 'bg.charcoalDesc', category: 'dark', textColor: '#d8d8d8' },
-  { name: 'bg.oceanDawn', value: null, description: 'bg.oceanDawnDesc', category: 'gradient', textColor: '#ffffff', gradientColors: ['#667eea', '#764ba2'] },
+  { name: 'bg.deepForest', value: null, description: 'bg.deepForestDesc', category: 'gradient', textColor: '#e8f0e0', gradientColors: ['#134e5e', '#71b280'] },
+  { name: 'bg.energeticPink', value: null, description: 'bg.energeticPinkDesc', category: 'gradient', textColor: '#ffffff', gradientColors: ['#ff6e7f', '#bfe9ff'] },
+  { name: 'bg.creamGray', value: null, description: 'bg.creamGrayDesc', category: 'gradient', textColor: '#3a3a3a', gradientColors: ['#fdfcfb', '#e2d1c3', '#c9d6df'] },
   { name: 'bg.sunsetGlow', value: null, description: 'bg.sunsetGlowDesc', category: 'gradient', textColor: '#ffffff', gradientColors: ['#fa709a', '#fee140'] },
-  { name: 'bg.northernLights', value: null, description: 'bg.northernLightsDesc', category: 'gradient', textColor: '#ffffff', gradientColors: ['#43e97b', '#38f9d7'] },
   { name: 'bg.auroraNight', value: null, description: 'bg.auroraNightDesc', category: 'gradient', textColor: '#e0e8ff', gradientColors: ['#0c1445', '#1a237e', '#283593'] },
 ]
 

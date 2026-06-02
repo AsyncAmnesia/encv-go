@@ -253,6 +253,82 @@ body.dark ion-toolbar {
   background: rgba(26, 26, 26, 0.85);
 }
 
+/* ===== Tab bar 整体渐变 + 动态流光 ===== */
+ion-tab-bar {
+  --background: linear-gradient(135deg,
+    rgba(var(--ion-color-primary-rgb), 0.95) 0%,
+    color-mix(in srgb, var(--ion-color-primary) 80%, var(--ion-color-primary-shade)) 100%);
+  --color: rgba(255, 255, 255, 0.7);
+  --color-selected: #ffffff;
+  --border: none;
+  background: linear-gradient(135deg,
+    rgba(var(--ion-color-primary-rgb), 0.95) 0%,
+    color-mix(in srgb, var(--ion-color-primary) 80%, var(--ion-color-primary-shade)) 100%);
+  background-size: 200% 200%;
+  animation: encvTabBarFlow 8s ease-in-out infinite;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+
+ion-tab-bar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -50%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(255, 255, 255, 0.15),
+    transparent);
+  animation: encvTabBarShine 3.5s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+ion-tab-bar > * {
+  position: relative;
+  z-index: 1;
+}
+
+ion-tab-button {
+  --background: transparent;
+  --background-focused: rgba(255, 255, 255, 0.1);
+  --background-hover: rgba(255, 255, 255, 0.05);
+  --color: rgba(255, 255, 255, 0.7);
+  --color-selected: #ffffff;
+  transition: color 0.2s ease, transform 0.2s ease;
+  background: transparent;
+  font-weight: 500;
+}
+
+ion-tab-button.tab-selected {
+  --color: #ffffff;
+  transform: translateY(-1px);
+  font-weight: 600;
+}
+
+ion-tab-button ion-icon {
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+ion-tab-button.tab-selected ion-icon {
+  transform: scale(1.15);
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.4));
+}
+
+@keyframes encvTabBarFlow {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@keyframes encvTabBarShine {
+  0% { left: -50%; }
+  100% { left: 100%; }
+}
+
 /* ===== 核心透明化规范：ion-item / ion-list / 卡片 ===== */
 ion-list {
   --background: transparent;
@@ -320,28 +396,32 @@ body.dark .home-card {
 }
 
 /* ============================================
-   ENCV Toast 系统 — 顶部展示 + 堆叠 + 动画
+   ENCV Toast 系统 — 顶部展示 + 堆叠 + Ionic Animation API
    ============================================ */
 .encv-toast {
   --background: transparent;
   --box-shadow: none;
   --color: var(--ion-text-color);
-  border-radius: 14px;
-  padding: 0 !important;
-  margin: 0 !important;
-  max-width: 380px;
-  width: calc(100% - 32px);
-  left: 16px !important;
-  right: 16px !important;
-  top: 0 !important;
-  bottom: auto !important;
-  pointer-events: auto;
-  backdrop-filter: blur(20px) saturate(1.8);
-  -webkit-backdrop-filter: blur(20px) saturate(1.8);
-  overflow: visible;
+  --min-height: auto;
+  --height: auto;
+  border-radius: 0;
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: auto;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  transform: none;
+  contain: layout style;
 }
 
 .encv-toast .toast-wrapper {
+  position: relative;
+  margin-top: var(--encv-toast-stack-offset, 16px);
   border-radius: 14px;
   padding: 12px 16px;
   display: flex;
@@ -350,38 +430,10 @@ body.dark .home-card {
   box-shadow:
     0 4px 24px rgba(0, 0, 0, 0.12),
     0 1px 4px rgba(0, 0, 0, 0.06);
-  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
+  pointer-events: auto;
+  max-width: 380px;
+  width: calc(100% - 32px);
   transform-origin: top center;
-}
-
-.encv-toast.toast-entering .toast-wrapper {
-  animation: encvToastSlideIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-}
-
-.encv-toast.toast-leaving .toast-wrapper {
-  animation: encvToastSlideOut 0.25s ease-in forwards;
-}
-
-@keyframes encvToastSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-16px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(var(--encv-toast-offset, 20px)) scale(1);
-  }
-}
-
-@keyframes encvToastSlideOut {
-  from {
-    opacity: 1;
-    transform: translateY(var(--encv-toast-offset, 20px)) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(calc(var(--encv-toast-offset, 20px) - 10px)) scale(0.96);
-  }
 }
 
 .encv-toast .toast-message {
@@ -400,7 +452,7 @@ body.dark .home-card {
   min-width: 28px;
   min-height: 28px;
   font-size: 15px;
-  color: var(--ion-color-medium) !important;
+  color: var(--ion-color-medium);
   margin-left: 2px;
   flex-shrink: 0;
 }
