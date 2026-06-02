@@ -18,6 +18,7 @@ import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import com.encvgo.combolite.EncvComboLiteHost
+import com.encvgo.combolite.OpenListStatusBridge
 import com.encvgo.combolite.diagnostic.DiagnosticKit
 import com.encvgo.combolite.model.OperationResult
 import com.encvgo.combolite.model.PluginFullState
@@ -285,6 +286,37 @@ class GoProcessPlugin : Plugin() {
         val pluginId = call.getString("pluginId") ?: run { call.reject("pluginId required"); return }
         val state = EncvComboLiteHost.getPluginFullState(pluginId)
         call.resolve(JSObject().apply { put("id", state.id); put("status", state.status); put("name", state.name ?: ""); put("version", state.version ?: "") })
+    }
+
+    @PluginMethod
+    fun getOpenListRuntime(call: PluginCall) {
+        Log.e(TAG, "[SAT-DBG][OpenList][Capacitor] getOpenListRuntime() called")
+        try {
+            val runtime = OpenListStatusBridge.read(context.applicationContext)
+            val ret = JSObject().apply {
+                put("isInstalled", runtime.isInstalled)
+                put("running", runtime.running)
+                put("port", runtime.port)
+                put("pid", runtime.pid)
+                put("dataSizeBytes", runtime.dataSizeBytes)
+                put("lastError", runtime.lastError ?: "")
+                put("lastUpdateTs", runtime.lastUpdateTs)
+            }
+            Log.e(TAG, "[SAT-DBG][OpenList][Capacitor] getOpenListRuntime() → $ret")
+            call.resolve(ret)
+        } catch (e: Throwable) {
+            Log.e(TAG, "[SAT-DBG][OpenList][Capacitor] getOpenListRuntime() FAILED", e)
+            call.reject("getOpenListRuntime failed: ${e.message}", e)
+        }
+    }
+
+    @PluginMethod
+    fun controlOpenList(call: PluginCall) {
+        val action = call.getString("action", "start")
+        Log.e(TAG, "[SAT-DBG][OpenList][Capacitor] controlOpenList() action=$action")
+        val ok = OpenListStatusBridge.control(context.applicationContext, action)
+        val ret = JSObject().apply { put("success", ok) }
+        call.resolve(ret)
     }
 
     @PluginMethod

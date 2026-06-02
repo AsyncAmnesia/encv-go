@@ -87,6 +87,7 @@ import {
   bugOutline,
 } from 'ionicons/icons'
 import { eventBus } from '@/composables/useEventBus'
+import { useOpenListBridge } from '@/composables/useOpenListBridge'
 import { formatFileSize } from '@/api/encv'
 import { useI18n } from '@/composables/useI18n'
 
@@ -96,6 +97,8 @@ const CRASH_LOOP_THRESHOLD = 3
 
 const { t } = useI18n()
 const router = useRouter()
+
+useOpenListBridge()
 
 const state = ref<string>('not_installed')
 const pid = ref(0)
@@ -140,11 +143,17 @@ function recordTransition(running: boolean) {
 }
 
 // ------ eventBus handlers ------
-function onOpenListStatus(data: { running: boolean; port: number; pid: number; dataSizeBytes: number }) {
+function onOpenListStatus(data: { running: boolean; port: number; pid: number; dataSizeBytes: number; isInstalled: boolean; lastError: string; lastUpdateTs: number }) {
   console.error('[SAT-DBG][OpenList][StatusCard] openlist:status event:', data)
-
   lastHeartbeat.value = Date.now()
-
+  if (!data.isInstalled) {
+    state.value = 'not_installed'
+    return
+  }
+  if (data.lastError && data.lastError.toLowerCase().includes('port')) {
+    state.value = 'port_conflict'
+    return
+  }
   if (data.running) {
     state.value = 'running'
     port.value = data.port
@@ -152,7 +161,6 @@ function onOpenListStatus(data: { running: boolean; port: number; pid: number; d
     dataDirSize.value = data.dataSizeBytes
     recordTransition(true)
   } else {
-    // If already in crash_loop, stay there until manually dismissed
     if (state.value !== 'crash_loop') {
       state.value = 'stopped'
     }

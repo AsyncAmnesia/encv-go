@@ -319,30 +319,6 @@ export async function getPluginFullState(pluginId: string): Promise<PluginFullSt
   }
 }
 
-export interface OpenListFullState {
-  running: boolean
-  port: number
-  pid: number
-  dataSizeBytes: number
-  lastStartError: string | null
-}
-
-export async function getOpenListFullState(): Promise<OpenListFullState> {
-  try {
-    const result = await GoProcess.getPluginFullState({ pluginId: 'com.encvgo.plugin.openlist' })
-    return {
-      running: result.status === 'ready',
-      port: (result as any).port ?? 0,
-      pid: (result as any).pid ?? 0,
-      dataSizeBytes: (result as any).dataSizeBytes ?? 0,
-      lastStartError: (result as any).lastStartError ?? null,
-    }
-  } catch (e) {
-    console.error('[SAT-DBG][OpenList][Bridge] getOpenListFullState failed:', e)
-    return { running: false, port: 0, pid: 0, dataSizeBytes: 0, lastStartError: String(e) }
-  }
-}
-
 export async function ensurePluginLoaded(pluginId: string): Promise<boolean> {
   try {
     const result = await GoProcess.ensurePluginLoaded({ pluginId })
@@ -373,5 +349,51 @@ export async function stopMpvInPlace(): Promise<{ success: boolean }> {
   } catch (e) {
     console.error('[GoProcess] stopMpvInPlace failed:', e)
     return { success: false }
+  }
+}
+
+export interface OpenListRuntime {
+  isInstalled: boolean
+  running: boolean
+  port: number
+  pid: number
+  dataSizeBytes: number
+  lastError: string
+  lastUpdateTs: number
+}
+
+export async function getOpenListRuntime(): Promise<OpenListRuntime> {
+  try {
+    const result = await (GoProcess as any).getOpenListRuntime()
+    return {
+      isInstalled: result.isInstalled ?? false,
+      running: result.running ?? false,
+      port: result.port ?? 0,
+      pid: result.pid ?? 0,
+      dataSizeBytes: result.dataSizeBytes ?? 0,
+      lastError: result.lastError ?? '',
+      lastUpdateTs: result.lastUpdateTs ?? 0,
+    }
+  } catch (e) {
+    console.error('[SAT-DBG][OpenList][Frontend] getOpenListRuntime failed:', e)
+    return {
+      isInstalled: false,
+      running: false,
+      port: 0,
+      pid: 0,
+      dataSizeBytes: 0,
+      lastError: String(e),
+      lastUpdateTs: 0,
+    }
+  }
+}
+
+export async function controlOpenList(action: 'start' | 'stop' | 'force_db_sync' | 'set_admin_password', args: Record<string, any> = {}): Promise<boolean> {
+  try {
+    const result = await (GoProcess as any).controlOpenList({ action, ...args })
+    return result.success === true
+  } catch (e) {
+    console.error('[SAT-DBG][OpenList][Frontend] controlOpenList failed:', e)
+    return false
   }
 }

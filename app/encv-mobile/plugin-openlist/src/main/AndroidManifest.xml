@@ -24,5 +24,11 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <provider
+            android:name="com.encvgo.plugin.openlist.OpenListStatusProvider"
+            android:authorities="com.encvgo.plugin.openlist.provider"
+            android:exported="true"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>
