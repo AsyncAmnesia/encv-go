@@ -90,7 +90,7 @@ graph TB
 | 仓库 | 角色 | 与本项目关系 |
 |------|------|-------------|
 | **encv-mobile**（本仓库） | 主项目：WebView + encv-go + ComboLite | — |
-| **Hi-Sillot/OpenList** | 个人 fork，集成 ENCV 解密 + `openlistlib/` 入口 | 唯一被 build script clone |
+| **Hi-Sillot/OpenList** | 个人 fork，集成 ENCV 解密 + `openlistlib/` 入口 + **`glebarez/sqlite` 选型**（commit `404daf0`，2026-06-02） | 唯一被 build script clone |
 | **OpenListTeam/OpenList** | 上游 OpenList | 周期性 rebase 来源 |
 | **OpenListTeam/OpenList-Frontend** | 前端 dist 发布源 | 精确 tag 下载 |
 | **K-Sillot/OpenList-Mobile** | gomobile bind 参考实现 | 架构蓝本 |
@@ -403,6 +403,8 @@ git push https://x-access-token:${GITHUB_TOKEN}@github.com/Hi-Sillot/OpenList.gi
 | 8 | **AAR 体积 > 50MB** | 编译时未加 `-ldflags="-s -w"` | build script 已默认加；若手动编译务必带 |
 | 9 | **`git push` 报 `terminal prompts disabled`** | 见 §10 | 用 `git push https://x-access-token:${GITHUB_TOKEN}@github.com/...` 替换裸 `git push` |
 | 10 | **`frontend-pinned.txt` 不被识别** | 文件编码非 UTF-8 / 多行注释不闭合 | `file frontend-pinned.txt` 应为 ASCII/UTF-8 |
+| 11 | **`undefined: LogCallback` at openlistlib/server.go:34** | Hi-Sillot fork 的 `openlistlib/event.go` 只定义了 `Event` interface，缺 `LogCallback` interface | fork 已 commit `c2424d2`（2026-06-02）补全 `LogCallback.OnLog(level int16, time int64, log string)`；build script 内 A2 兜底会在 fork 未推时自动注入 event.go |
+| 12 | **`# github.com/mattn/go-sqlite3` 编译失败 / `-fPIC` 报错** | fork 通过 `gorm.io/driver/sqlite` 链入 mattn CGO 库，gomobile 的 NDK toolchain 默认不解析 CGO 路径 | fork 已 commit `404daf0`（2026-06-02）切到 `github.com/glebarez/sqlite`（pure-Go，基于 modernc.org/sqlite）；AAR 体积 -12MB；build script 内 B2 兜底在 fork 未推时强 CGO 工具链 |
 
 ### 11.1 调试命令速查
 
