@@ -185,6 +185,9 @@ type ProxySiteConfig struct {
 	// 站点描述，可选，用于用户自己标识区分
 	Description string `json:"description,omitempty"`
 	// Token前端输入
+	// BuiltIn 标记该站点由 encv-go 运行时自动注册（例如本地 OpenList 插件）
+	// 持久化时会被跳过，列表展示时会排在最前
+	BuiltIn bool `json:"built_in,omitempty"`
 }
 
 // --- 日志配置 ---

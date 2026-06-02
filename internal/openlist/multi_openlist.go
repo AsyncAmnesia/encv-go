@@ -12,9 +12,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Soltus/encv-go/internal/utils"
+	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
 // FileInfoResponse 是 /api/fs/link 的响应结构
@@ -155,4 +157,115 @@ func (r *OpenListURLResolver) ResolveURL(physicalPath string) (string, error) {
 
 	// 3. 返回获取到的 URL
 	return fileInfo.Data.URL, nil
+}
+
+// --- 本地 OpenList 插件自动发现 ---
+
+// LocalLoopbackSiteID 是自动注册到 cfg.Proxy.Sites 的内置站点 ID
+const LocalLoopbackSiteID = "local-loopback"
+
+// LocalOpenListDefaultURL 是本地 OpenList 插件默认监听的地址
+const LocalOpenListDefaultURL = "http://127.0.0.1:5244"
+
+// LocalOpenListDefaultPort 是本地 OpenList 插件默认监听的端口
+const LocalOpenListDefaultPort = 5244
+
+// LocalOpenListProbeTimeout 探测本地 OpenList 的超时时间
+const LocalOpenListProbeTimeout = 2 * time.Second
+
+// lastOpenListHeartbeat 记录 encv-go 最近一次通过本地反代通道与 OpenList 通信的时间（unix 毫秒）
+var lastOpenListHeartbeat atomic.Int64
+
+func init() {
+	lastOpenListHeartbeat.Store(time.Now().UnixMilli())
+}
+
+// MarkOpenListHeartbeat 在每次 encv-go 反代 OpenList 请求时被调用，刷新心跳
+func MarkOpenListHeartbeat() {
+	lastOpenListHeartbeat.Store(time.Now().UnixMilli())
+}
+
+// GetLastOpenListHeartbeat 返回最近一次心跳的 unix 毫秒
+func GetLastOpenListHeartbeat() int64 {
+	return lastOpenListHeartbeat.Load()
+}
+
+// tryRegisterLocalLoopback 探测 127.0.0.1:5244 上的本地 OpenList 插件。
+// 如果插件可用，将其作为内置站点注册到 sites 中。
+// 重复调用是安全的：已存在则跳过；已存在但 Host 变化时更新。
+func tryRegisterLocalLoopback(sites map[string]types.ProxySiteConfig) error {
+	if sites == nil {
+		return fmt.Errorf("sites map is nil")
+	}
+
+	client := &http.Client{Timeout: LocalOpenListProbeTimeout}
+	probeURL := LocalOpenListDefaultURL + "/api/site/list"
+	resp, err := client.Get(probeURL)
+	if err != nil {
+		return fmt.Errorf("local openlist probe failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("local openlist probe returned status %d", resp.StatusCode)
+	}
+
+	builtin := types.ProxySiteConfig{
+		Host:        LocalOpenListDefaultURL,
+		Description: "本地 OpenList（Plugin）",
+		BuiltIn:     true,
+	}
+
+	if existing, ok := sites[LocalLoopbackSiteID]; ok {
+		if existing.BuiltIn {
+			existing.Host = builtin.Host
+			existing.Description = builtin.Description
+			sites[LocalLoopbackSiteID] = existing
+		}
+		return nil
+	}
+
+	sites[LocalLoopbackSiteID] = builtin
+	return nil
+}
+
+// TryRegisterLocalLoopback 导出版本，server.Start() 在启动时调用
+func TryRegisterLocalLoopback(sites map[string]types.ProxySiteConfig) {
+	_ = tryRegisterLocalLoopback(sites)
+}
+
+// IsLocalLoopbackSiteID 判断给定的 siteId 是否为内置的本地 OpenList 站点
+func IsLocalLoopbackSiteID(siteId string) bool {
+	return siteId == LocalLoopbackSiteID
+}
+
+// LocalOpenListStatus 是 /openlist/local/status 端点的响应结构
+type LocalOpenListStatus struct {
+	Running       bool  `json:"running"`
+	PID           int   `json:"pid"`
+	Port          int   `json:"port"`
+	DataDirSize   int64 `json:"dataDirSize"`
+	LastHeartbeat int64 `json:"lastHeartbeat"`
+}
+
+// ProbeLocalOpenList 探测本地 OpenList 是否在运行
+func ProbeLocalOpenList() bool {
+	client := &http.Client{Timeout: LocalOpenListProbeTimeout}
+	resp, err := client.Get(LocalOpenListDefaultURL + "/api/site/list")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+// GetLocalOpenListStatus 返回供前端查询的本地 OpenList 状态
+func GetLocalOpenListStatus() LocalOpenListStatus {
+	return LocalOpenListStatus{
+		Running:       ProbeLocalOpenList(),
+		PID:           0,
+		Port:          LocalOpenListDefaultPort,
+		DataDirSize:   0,
+		LastHeartbeat: GetLastOpenListHeartbeat(),
+	}
 }

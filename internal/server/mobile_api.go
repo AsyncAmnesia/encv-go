@@ -593,30 +593,45 @@ func (s *Server) handleRemoteInfoGin(c *gin.Context) {
 	}
 
 	openlistSites := make(map[string]interface{})
+	builtinOrder := []string{}
 	for siteId, siteCfg := range cfg.Proxy.Sites {
 		proxyURL := fmt.Sprintf("http://127.0.0.1:%d/openlist/sites/%s/", port, siteId)
-		openlistSites[siteId] = map[string]string{
+		openlistSites[siteId] = map[string]interface{}{
 			"host":        siteCfg.Host,
 			"description": siteCfg.Description,
 			"proxyUrl":    proxyURL,
+			"built_in":    siteCfg.BuiltIn,
+		}
+		if siteCfg.BuiltIn {
+			builtinOrder = append([]string{siteId}, builtinOrder...)
+		} else {
+			builtinOrder = append(builtinOrder, siteId)
 		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"webdav":        webdavInfo,
 		"openlistSites": openlistSites,
+		"openlistOrder": builtinOrder,
 	})
 }
 
 func (s *Server) handleListOpenlistSitesGin(c *gin.Context) {
 	sites := make(map[string]interface{})
+	builtinOrder := []string{}
 	for siteId, siteCfg := range s.cfg.Proxy.Sites {
-		sites[siteId] = map[string]string{
+		sites[siteId] = map[string]interface{}{
 			"host":        siteCfg.Host,
 			"description": siteCfg.Description,
+			"built_in":    siteCfg.BuiltIn,
+		}
+		if siteCfg.BuiltIn {
+			builtinOrder = append([]string{siteId}, builtinOrder...)
+		} else {
+			builtinOrder = append(builtinOrder, siteId)
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"sites": sites})
+	c.JSON(http.StatusOK, gin.H{"sites": sites, "order": builtinOrder})
 }
 
 func (s *Server) handleAddOpenlistSiteGin(c *gin.Context) {
@@ -787,7 +802,30 @@ func (s *Server) writeConfigToFile() error {
 	if s.configPath == "" {
 		return fmt.Errorf("config path not available")
 	}
-	indented, err := json.MarshalIndent(s.cfg, "", "  ")
+
+	raw, err := json.Marshal(s.cfg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	var generic map[string]interface{}
+	if err := json.Unmarshal(raw, &generic); err != nil {
+		return fmt.Errorf("failed to unmarshal config for filtering: %w", err)
+	}
+
+	if proxy, ok := generic["proxy"].(map[string]interface{}); ok {
+		if sites, ok := proxy["sites"].(map[string]interface{}); ok {
+			for id, raw := range sites {
+				if entry, ok := raw.(map[string]interface{}); ok {
+					if builtin, _ := entry["built_in"].(bool); builtin {
+						delete(sites, id)
+					}
+				}
+			}
+		}
+	}
+
+	indented, err := json.MarshalIndent(generic, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}

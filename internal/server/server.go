@@ -186,6 +186,8 @@ func (s *Server) Start(version string) (string, error) {
 	slog.Info("Server starting", "instance", s.instanceID, "version", s.version)
 	slog.Info("Main service serving from", "dir", s.servingDir)
 
+	openlist.TryRegisterLocalLoopback(s.cfg.Proxy.Sites)
+
 	wsMinLevel := slog.LevelInfo
 	switch s.cfg.Log.Level {
 	case "debug":
@@ -296,6 +298,8 @@ func (s *Server) Start(version string) (string, error) {
 	})
 
 	// OpenList 路由
+	r.GET(routes.OpenListProxy+"/local/status", LocalOpenListStatusHandler())
+
 	if len(s.cfg.Proxy.Sites) > 0 {
 		multiSiteServer := openlist.NewMultiSiteServer(config.NewContext(context.Background(), s.cfg))
 		proxyGin := NewProxyGin(s.cfg)

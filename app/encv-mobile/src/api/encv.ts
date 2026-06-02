@@ -498,11 +498,35 @@ export interface OpenlistSiteInfo {
   host: string
   description: string
   proxyUrl: string
+  isBuiltIn?: boolean
 }
 
 export interface RemoteInfo {
   webdav: RemoteWebDAVInfo
   openlistSites: Record<string, OpenlistSiteInfo>
+}
+
+export type LocalOpenListState = 'not_installed' | 'port_conflict' | 'running' | 'stopped'
+
+export interface LocalOpenListStatus {
+  state: LocalOpenListState
+  running: boolean
+  pid: number
+  port: number
+  dataDirSize: number
+  lastHeartbeat: number
+  error?: string
+}
+
+export async function fetchLocalOpenListStatus(): Promise<LocalOpenListStatus> {
+  console.debug('[API] fetchLocalOpenListStatus')
+  const baseUrl = getApiBaseUrl()
+  const response = await fetch(`${baseUrl}/openlist/local/status`)
+  if (!response.ok) {
+    console.error('[API] fetchLocalOpenListStatus failed:', response.status)
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+  return await response.json()
 }
 
 const WEBDAV_CONFIGS_KEY = 'encv-webdav-configs'
