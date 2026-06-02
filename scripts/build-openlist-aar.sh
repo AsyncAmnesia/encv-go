@@ -193,25 +193,24 @@ if [[ -n "${LOCAL_FRONTEND_DIST}" ]]; then
     FRONTEND_VERSION="${FRONTEND_VERSION_CLI:-${OPENLIST_FRONTEND_VERSION:-local}}"
     log "  version: ${FRONTEND_VERSION} (label, not a real upstream tag)"
 else
-    if [[ -f "${SRC_DIR}/frontend-pinned.txt" ]]; then
+    # Single source of truth: CLI > env > fork's frontend-pinned.txt > latest
+    if [[ -n "${FRONTEND_VERSION_CLI}" ]]; then
+        FRONTEND_VERSION="${FRONTEND_VERSION_CLI}"
+        log "  source: --frontend-version CLI"
+    elif [[ -n "${OPENLIST_FRONTEND_VERSION:-}" ]]; then
+        FRONTEND_VERSION="${OPENLIST_FRONTEND_VERSION}"
+        log "  source: OPENLIST_FRONTEND_VERSION env"
+    elif [[ -f "${SRC_DIR}/frontend-pinned.txt" ]]; then
         PINNED="$(cat "${SRC_DIR}/frontend-pinned.txt" 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?' | head -n 1 || true)"
         if [[ -n "${PINNED}" ]]; then
             FRONTEND_VERSION="${PINNED}"
             log "  source: fork frontend-pinned.txt"
         fi
     fi
-    if [[ -z "${FRONTEND_VERSION}" && -n "${FRONTEND_VERSION_CLI}" ]]; then
-        FRONTEND_VERSION="${FRONTEND_VERSION_CLI}"
-        log "  source: --frontend-version CLI"
-    fi
-    if [[ -z "${FRONTEND_VERSION}" && -n "${OPENLIST_FRONTEND_VERSION:-}" ]]; then
-        FRONTEND_VERSION="${OPENLIST_FRONTEND_VERSION}"
-        log "  source: OPENLIST_FRONTEND_VERSION env"
-    fi
     if [[ -z "${FRONTEND_VERSION}" ]]; then
         FRONTEND_VERSION="latest"
         echo "[WARN] no frontend pin, using latest" >&2
-        log "  source: fallback (releases/latest) — pin via frontend-pinned.txt to silence this warning"
+        log "  source: fallback (releases/latest) — set OPENLIST_FRONTEND_VERSION or --frontend-version to pin"
     fi
     log "  version: ${FRONTEND_VERSION}"
 

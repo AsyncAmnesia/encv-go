@@ -225,18 +225,25 @@ Hi-Sillot fork 在 `internal/conf/const.go` 中新增了 ENCV 设置项（`EncvD
 
 ### 7.2 4 级 Pin 优先级（高 → 低）
 
-1. `${SRC_DIR}/frontend-pinned.txt`（fork 提交时 pin，**不漂移**）
-2. `--frontend-version` CLI / PowerShell 入参
-3. `OPENLIST_FRONTEND_VERSION` 环境变量
-4. fallback `releases/latest` + stderr warning（CI lint 应 fail）
+1. `--frontend-version` CLI 入参（**最高，CI 显式传入**）
+2. `OPENLIST_FRONTEND_VERSION` 环境变量（开发者本地配置 / `openlist-fork.env`）
+3. `${SRC_DIR}/frontend-pinned.txt`（fork 提交时 pin，仅当前两者均未指定时生效）
+4. fallback `releases/latest` + stderr warning
+
+> **单一事实来源范式**：CI 必须用 `--frontend-version` 显式指定版本；本地开发可在 `openlist-fork.env` 中设 `OPENLIST_FRONTEND_VERSION`；fork 的 `frontend-pinned.txt` 仅作为默认兜底。
 
 `build-openlist-aar.sh` 内部：
 
 ```bash
-WEB_VERSION="$(grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?' \
-  "${SRC_DIR}/frontend-pinned.txt" 2>/dev/null | head -n 1)"
-# ↓ 若空则走 CLI / env / latest fallback
-curl "https://api.github.com/repos/OpenListTeam/OpenList-Frontend/releases/tags/${WEB_VERSION}"
+# 优先级：CLI → env → pinned.txt → latest
+if [[ -n "${FRONTEND_VERSION_CLI}" ]]; then
+  FRONTEND_VERSION="${FRONTEND_VERSION_CLI}"
+elif [[ -n "${OPENLIST_FRONTEND_VERSION:-}" ]]; then
+  FRONTEND_VERSION="${OPENLIST_FRONTEND_VERSION}"
+elif [[ -f "${SRC_DIR}/frontend-pinned.txt" ]]; then
+  FRONTEND_VERSION="$(grep -oE 'v[0-9]+\.[0-9]+' frontend-pinned.txt)"
+fi
+curl "https://api.github.com/repos/OpenListTeam/OpenList-Frontend/releases/tags/${FRONTEND_VERSION}"
 ```
 
 ### 7.3 VERSION 文件
