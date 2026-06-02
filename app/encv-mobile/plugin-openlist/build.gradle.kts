@@ -48,8 +48,9 @@ dependencies {
     // Local AAR must be consumed via a repository (flatDir), not as
     // `files(...)` — AGP rejects direct local .aar dependencies in
     // library modules because the resulting AAR would not bundle the
-    // inner AAR's classes/resources.
-    implementation(name = "openlist", ext = "aar")
+    // inner AAR's classes/resources. With flatDir, the group is empty
+    // (no Maven group) and ext="aar" selects the local .aar artifact.
+    implementation(group = "", name = "openlist", ext = "aar")
     implementation("androidx.core:core-ktx")
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
     implementation(platform(libs.compose.bom))
