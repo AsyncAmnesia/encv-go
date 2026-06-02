@@ -95,6 +95,12 @@
                 "algorithm": {
                   "type": "string",
                   "enum": ["AES-128-CTR"],
+                  "x-enum-labels": {
+                    "AES-128-CTR": "AES-128-CTR"
+                  },
+                  "x-enum-descriptions": {
+                    "AES-128-CTR": "当前仅支持此算法"
+                  },
                   "default": "AES-128-CTR",
                   "description": "加密算法（当前仅支持 AES-128-CTR）"
                 }
@@ -181,6 +187,20 @@
       "properties": {
         "level": {
           "type": "string",
+          "enum": ["debug", "info", "warn", "error"],
+          "x-enum-labels": {
+            "debug": "DEBUG",
+            "info": "INFO",
+            "warn": "WARN",
+            "error": "ERROR"
+          },
+          "x-enum-descriptions": {
+            "debug": "详细的插件匹配、文件处理等调试信息",
+            "info": "关键操作信息和服务状态",
+            "warn": "潜在问题但不影响运行的警告",
+            "error": "仅输出错误信息"
+          },
+          "default": "info",
           "description": "日志级别: debug, info, warn, error\n设置为 debug 可以看到详细的插件匹配、文件处理等调试信息。\ninfo 级别会输出关键操作信息和服务状态。\nwarn 输出潜在问题但不影响运行的警告。\nerror 只输出错误信息。"
         },
         "file": {

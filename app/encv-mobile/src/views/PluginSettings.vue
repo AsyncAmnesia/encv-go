@@ -25,6 +25,10 @@
         <ion-list>
           <ion-list-header>
             <ion-label>{{ pluginSection.sectionTitle ? tSectionTitle(pluginSection.sectionTitle) : tField(pluginSection.key) }}</ion-label>
+            <ion-badge slot="end" color="primary" class="scope-badge scope-synced">
+              <ion-icon :icon="cloudOutline" class="scope-badge-icon"></ion-icon>
+              {{ t('settings.synced') }}
+            </ion-badge>
           </ion-list-header>
 
           <template v-for="child in pluginSection.properties" :key="child.key">
@@ -44,6 +48,7 @@
                         :placeholder="t('settings.customTextExtsHint')"
                         @ionInput="handleCustomTextExtsInput($event)"
                       ></ion-input>
+                      <ion-icon :icon="cloudOutline" slot="end" class="sync-indicator"></ion-icon>
                     </ion-item>
                     <ion-item v-if="textExtsError" lines="none">
                       <ion-label class="ion-text-wrap error-text">
@@ -61,45 +66,18 @@
                       </ion-label>
                     </ion-item>
                   </template>
-                  <ion-item v-else-if="grandchild.type === 'boolean'">
-                    <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
-                    <ion-toggle
-                      :checked="!!getValue([pluginSection.key, child.key, grandchild.key])"
-                      @ionChange="setValue([pluginSection.key, child.key, grandchild.key], !getValue([pluginSection.key, child.key, grandchild.key]))"
-                    >{{ tField(grandchild.key) }}<span v-if="shouldShowBadge(grandchild)" class="config-badge" :class="grandchild.isV4 ? 'badge-v4' : grandchild.platform === 'mobile' ? 'badge-mobile' : 'badge-server'">{{ grandchild.isV4 ? 'v4' : grandchild.platform === 'mobile' ? '移动端' : '服务端' }}</span></ion-toggle>
-                  </ion-item>
-                  <ion-item v-else-if="grandchild.isSelect && grandchild.selectOptions">
-                    <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
-                    <ion-label>
-                      <h3>{{ tField(grandchild.key) }}<span v-if="shouldShowBadge(grandchild)" class="config-badge" :class="grandchild.isV4 ? 'badge-v4' : grandchild.platform === 'mobile' ? 'badge-mobile' : 'badge-server'">{{ grandchild.isV4 ? 'v4' : grandchild.platform === 'mobile' ? '移动端' : '服务端' }}</span></h3>
-                    </ion-label>
-                    <div class="preset-cards" slot="end">
-                      <div
-                        v-for="opt in grandchild.selectOptions"
-                        :key="opt.value"
-                        class="preset-card"
-                        :class="{ 'preset-card-active': getValue([pluginSection.key, child.key, grandchild.key]) === opt.value }"
-                        @click="setValue([pluginSection.key, child.key, grandchild.key], opt.value)"
-                      >
-                        <div class="preset-card-title">{{ opt.label }}</div>
-                        <div class="preset-card-desc">{{ opt.description }}</div>
-                      </div>
-                    </div>
-                  </ion-item>
-                  <ion-item v-else>
-                    <ion-icon :icon="getFieldIcon(grandchild.key, grandchild.type)" slot="start"></ion-icon>
-                    <ion-input
-                      :value="String(getValue([pluginSection.key, child.key, grandchild.key]) ?? '')"
-                      :type="grandchild.isPassword ? 'password' : grandchild.type === 'integer' ? 'number' : 'text'"
-                      :label="fieldLabel(grandchild.key, grandchild.required)"
-                      label-placement="stacked"
-                      :placeholder="grandchild.description || tField(grandchild.key)"
-                      @ionInput="handleInput([pluginSection.key, child.key, grandchild.key], grandchild, $event)"
-                    ></ion-input>
-                    <ion-button v-if="grandchild.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([pluginSection.key, child.key, grandchild.key], grandchild)">
-                      <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-                    </ion-button>
-                  </ion-item>
+                  <ConfigFieldItem
+                    v-else
+                    :field="grandchild"
+                    :model-value="getValue([pluginSection.key, child.key, grandchild.key])"
+                    :label="fieldLabel(grandchild.key, grandchild.required)"
+                    :placeholder="grandchild.description || tField(grandchild.key)"
+                    :icon="getFieldIcon(grandchild.key, grandchild.type)"
+                    @update:model-value="setValue([pluginSection.key, child.key, grandchild.key], $event)"
+                    @input="handleInput([pluginSection.key, child.key, grandchild.key], grandchild, $event)"
+                    @browse="handleBrowsePath([pluginSection.key, child.key, grandchild.key], grandchild)"
+                    @reset="resetFieldToDefault([pluginSection.key, child.key, grandchild.key], grandchild)"
+                  />
                 </template>
               </template>
             </template>
@@ -128,45 +106,17 @@
             </template>
 
             <template v-else-if="isFieldVisible(child)">
-              <ion-item v-if="child.type === 'boolean'">
-                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
-                <ion-toggle
-                  :checked="!!getValue([pluginSection.key, child.key])"
-                  @ionChange="setValue([pluginSection.key, child.key], !getValue([pluginSection.key, child.key]))"
-                >{{ tField(child.key) }}<span v-if="shouldShowBadge(child)" class="config-badge" :class="child.isV4 ? 'badge-v4' : child.platform === 'mobile' ? 'badge-mobile' : 'badge-server'">{{ child.isV4 ? 'v4' : child.platform === 'mobile' ? '移动端' : '服务端' }}</span></ion-toggle>
-              </ion-item>
-              <ion-item v-else-if="child.isSelect && child.selectOptions">
-                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
-                <ion-label>
-                  <h3>{{ tField(child.key) }}<span v-if="shouldShowBadge(child)" class="config-badge" :class="child.isV4 ? 'badge-v4' : child.platform === 'mobile' ? 'badge-mobile' : 'badge-server'">{{ child.isV4 ? 'v4' : child.platform === 'mobile' ? '移动端' : '服务端' }}</span></h3>
-                </ion-label>
-                <div class="preset-cards" slot="end">
-                  <div
-                    v-for="opt in child.selectOptions"
-                    :key="opt.value"
-                    class="preset-card"
-                    :class="{ 'preset-card-active': getValue([pluginSection.key, child.key]) === opt.value }"
-                    @click="setValue([pluginSection.key, child.key], opt.value)"
-                  >
-                    <div class="preset-card-title">{{ opt.label }}</div>
-                    <div class="preset-card-desc">{{ opt.description }}</div>
-                  </div>
-                </div>
-              </ion-item>
-              <ion-item v-else>
-                <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
-                <ion-input
-                  :value="String(getValue([pluginSection.key, child.key]) ?? '')"
-                  :type="child.isPassword ? 'password' : child.type === 'integer' ? 'number' : 'text'"
-                  :label="fieldLabel(child.key, child.required)"
-                  label-placement="stacked"
-                  :placeholder="child.description || tField(child.key)"
-                  @ionInput="handleInput([pluginSection.key, child.key], child, $event)"
-                ></ion-input>
-                <ion-button v-if="child.isPath" slot="end" fill="clear" class="browse-btn" @click="handleBrowsePath([pluginSection.key, child.key], child)">
-                  <ion-icon :icon="folderOpen" slot="icon-only"></ion-icon>
-                </ion-button>
-              </ion-item>
+              <ConfigFieldItem
+                :field="child"
+                :model-value="getValue([pluginSection.key, child.key])"
+                :label="fieldLabel(child.key, child.required)"
+                :placeholder="child.description || tField(child.key)"
+                :icon="getFieldIcon(child.key, child.type)"
+                @update:model-value="setValue([pluginSection.key, child.key], $event)"
+                @input="handleInput([pluginSection.key, child.key], child, $event)"
+                @browse="handleBrowsePath([pluginSection.key, child.key], child)"
+                @reset="resetFieldToDefault([pluginSection.key, child.key], child)"
+              />
             </template>
           </template>
 
@@ -247,6 +197,7 @@ import {
   newspaperOutline, eyeOutline, folderOpen,
   documentText, toggleOutline, lockClosed, textOutline,
   colorPaletteOutline, layersOutline, warningOutline,
+  cloudOutline,
 } from 'ionicons/icons'
 import { useConfig } from '@/composables/useConfig'
 import { usePluginExtensions } from '@/composables/usePluginExtensions'
@@ -257,9 +208,10 @@ import { fetchConfig, updateConfig, fetchTextPreviewExts, invalidateTextExtsCach
 import type { FieldDef } from '@/config/schemaParser'
 import { isNative } from '@/plugins/GoProcess'
 import FilePickerModal from '@/components/FilePickerModal.vue'
+import ConfigFieldItem from '@/components/ConfigFieldItem.vue'
 
 const { isOnline: serverOnline } = useServerStatus()
-const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
+const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue, resetFieldToDefault } = useConfig()
 const { getConflictingPlugins, load: loadExtensions, UNAVAILABLE, data: pluginExtData } = usePluginExtensions()
 const { t, tField, tSectionTitle } = useI18n()
 
@@ -539,6 +491,30 @@ watch(serverOnline, async (online) => {
   --padding-end: 8px;
   min-width: 44px;
   min-height: 44px;
+}
+.scope-badge {
+  font-size: 10px;
+  --padding-start: 6px;
+  --padding-end: 8px;
+  --padding-top: 3px;
+  --padding-bottom: 3px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.scope-badge-icon {
+  font-size: 12px;
+}
+.scope-synced {
+  --background: rgba(var(--ion-color-primary-rgb), 0.12);
+  --color: var(--ion-color-primary);
+}
+.sync-indicator {
+  font-size: 14px;
+  color: var(--ion-color-primary);
+  opacity: 0.4;
+  margin-left: 4px;
 }
 .config-badge {
   display: inline-block;

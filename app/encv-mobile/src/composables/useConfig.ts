@@ -107,6 +107,11 @@ function setFieldValue(path: string[], value: unknown) {
   dirty.value = true
 }
 
+function resetFieldToDefault(path: string[], field: FieldDef) {
+  const defaultVal = getDefaultValue(field)
+  setFieldValue(path, defaultVal)
+}
+
 export function useConfig() {
   return {
     config,
@@ -119,7 +124,8 @@ export function useConfig() {
     resetConfig,
     getFieldValue,
     setFieldValue,
+    resetFieldToDefault,
   }
 }
 
-export { getFieldValue, setFieldValue }
+export { getFieldValue, setFieldValue, resetFieldToDefault }

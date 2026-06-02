@@ -16,6 +16,10 @@
       <ion-list>
         <ion-list-header>
           <ion-label>{{ t('settings.appearance') }}</ion-label>
+          <ion-badge slot="end" color="medium" class="scope-badge">
+            <ion-icon :icon="phonePortraitOutline" class="scope-badge-icon"></ion-icon>
+            {{ t('settings.localOnly') }}
+          </ion-badge>
         </ion-list-header>
         <ion-item>
           <ion-icon :icon="moon" slot="start"></ion-icon>
@@ -65,6 +69,10 @@
       <ion-list>
         <ion-list-header>
           <ion-label>{{ t('settings.player') }}</ion-label>
+          <ion-badge slot="end" color="medium" class="scope-badge">
+            <ion-icon :icon="phonePortraitOutline" class="scope-badge-icon"></ion-icon>
+            {{ t('settings.localOnly') }}
+          </ion-badge>
         </ion-list-header>
         <ion-item>
           <ion-icon :icon="filmOutline" slot="start"></ion-icon>
@@ -172,10 +180,14 @@
       <template v-else-if="configLoaded">
         <template v-for="section in schemaFields" :key="section.key">
           <!-- 过滤掉 server、admin、webdav 配置项，这些配置项有独立的设置页面 -->
-        <template v-if="!['server', 'admin', 'webdav', 'log'].includes(section.key)">
+        <template v-if="!['server', 'admin', 'webdav'].includes(section.key)">
           <ion-list v-if="section.key === 'plugin_settings'">
             <ion-list-header>
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
+              <ion-badge slot="end" color="primary" class="scope-badge scope-synced">
+                <ion-icon :icon="cloudOutline" class="scope-badge-icon"></ion-icon>
+                {{ t('settings.synced') }}
+              </ion-badge>
             </ion-list-header>
             <ion-item button @click="goPlugins" detail>
               <ion-icon :icon="settingsOutline" slot="start"></ion-icon>
@@ -188,6 +200,10 @@
           <ion-list v-else-if="section.type !== 'object' || !section.properties">
             <ion-list-header>
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
+              <ion-badge slot="end" color="primary" class="scope-badge scope-synced">
+                <ion-icon :icon="cloudOutline" class="scope-badge-icon"></ion-icon>
+                {{ t('settings.synced') }}
+              </ion-badge>
             </ion-list-header>
             <ConfigFieldItem
               :field="section"
@@ -198,12 +214,17 @@
               @update:model-value="setValue([section.key], $event)"
               @input="handleInput([section.key], section, $event)"
               @browse="handleBrowsePath([section.key], section)"
+              @reset="resetFieldToDefault([section.key], section)"
             />
           </ion-list>
 
           <ion-list v-else>
             <ion-list-header>
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
+              <ion-badge slot="end" color="primary" class="scope-badge scope-synced">
+                <ion-icon :icon="cloudOutline" class="scope-badge-icon"></ion-icon>
+                {{ t('settings.synced') }}
+              </ion-badge>
             </ion-list-header>
 
             <template v-for="child in section.properties" :key="child.key">
@@ -222,6 +243,7 @@
                       @update:model-value="setValue([section.key, child.key, grandchild.key], $event)"
                       @input="handleInput([section.key, child.key, grandchild.key], grandchild, $event)"
                       @browse="handleBrowsePath([section.key, child.key, grandchild.key], grandchild)"
+                      @reset="resetFieldToDefault([section.key, child.key, grandchild.key], grandchild)"
                     />
                   </template>
                 </template>
@@ -251,31 +273,7 @@
               </template>
 
               <template v-else-if="isFieldVisible(child)">
-                <ion-item v-if="child.type === 'boolean'">
-                  <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
-                  <ion-toggle
-                    :checked="!!getValue([section.key, child.key])"
-                    @ionChange="setValue([section.key, child.key], !getValue([section.key, child.key]))"
-                  >{{ tField(child.key) }}</ion-toggle>
-                </ion-item>
-                <ion-item v-else-if="section.key === 'log' && child.key === 'level'">
-                  <ion-icon :icon="getFieldIcon(child.key, child.type)" slot="start"></ion-icon>
-                  <ion-select
-                    :value="String(getValue(['log', 'level']) ?? 'info')"
-                    :label="tField('level')"
-                    label-placement="stacked"
-                    interface="action-sheet"
-                    mode="ios"
-                    @ionChange="setValue(['log', 'level'], $event.detail.value)"
-                  >
-                    <ion-select-option value="debug">DEBUG</ion-select-option>
-                    <ion-select-option value="info">INFO</ion-select-option>
-                    <ion-select-option value="warn">WARN</ion-select-option>
-                    <ion-select-option value="error">ERROR</ion-select-option>
-                  </ion-select>
-                </ion-item>
                 <ConfigFieldItem
-                  v-else
                   :field="child"
                   :model-value="getValue([section.key, child.key])"
                   :label="fieldLabel(child.key, child.required)"
@@ -284,6 +282,7 @@
                   @update:model-value="setValue([section.key, child.key], $event)"
                   @input="handleInput([section.key, child.key], child, $event)"
                   @browse="handleBrowsePath([section.key, child.key], child)"
+                  @reset="resetFieldToDefault([section.key, child.key], child)"
                 />
               </template>
             </template>
@@ -406,6 +405,7 @@ import {
 import { useTheme } from '@/composables/useTheme'
 import { useServerStatus } from '@/composables/useServerStatus'
 import { useConfig } from '@/composables/useConfig'
+import type { FieldDef } from '@/config/schemaParser'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { isNative, pickFolder, getPluginFullState, ensurePluginLoaded } from '@/plugins/GoProcess'
@@ -421,7 +421,7 @@ import ConfigFieldItem from '@/components/ConfigFieldItem.vue'
 const router = useRouter()
 const { isDark, currentColor, toggleDark, setThemeColor, THEME_PRESETS } = useTheme()
 const { isOnline: serverOnline, lastError: connectionError, checkStatus, backendPort } = useServerStatus()
-const { schemaFields, loading: configLoading, dirty, restartNeeded, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue } = useConfig()
+const { schemaFields, loading: configLoading, dirty, restartNeeded, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue, resetFieldToDefault } = useConfig()
 const { t, tField, tSectionTitle, setLocale, locale } = useI18n()
 
 const configLoaded = ref(false)
@@ -895,6 +895,24 @@ watch(() => getFieldValue(['plugin_settings', 'alist_encrypt', 'enabled']), (ena
 .placeholder-text {
   opacity: 0.5;
   font-style: italic;
+}
+.scope-badge {
+  font-size: 10px;
+  --padding-start: 6px;
+  --padding-end: 8px;
+  --padding-top: 3px;
+  --padding-bottom: 3px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.scope-badge-icon {
+  font-size: 12px;
+}
+.scope-synced {
+  --background: rgba(var(--ion-color-primary-rgb), 0.12);
+  --color: var(--ion-color-primary);
 }
 .port-info {
   font-size: 12px;

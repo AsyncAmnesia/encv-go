@@ -181,6 +181,9 @@ export default {
     'settings.defaultValue': '默认值',
     'settings.customized': '已自定义',
     'settings.taskOverridable': '任务可覆盖',
+    'settings.localOnly': '仅本设备',
+    'settings.synced': '可同步',
+    'settings.mobileOnly': '移动端',
   },
   en: {
     'settings.title': 'Settings',

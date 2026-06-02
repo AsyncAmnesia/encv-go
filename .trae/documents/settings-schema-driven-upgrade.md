@@ -36,6 +36,22 @@
 
 `ConfigFieldItem` 被设计为通用组件，但它只处理了 2 种情况（boolean toggle / text input），而 `FieldDef` 接口定义了 6+ 种渲染分支。Settings.vue 和 PluginSettings.vue 不得不在各自模板中硬编码处理 `isSelect`、`log.level` 等特殊情况。
 
+### 关键缺失：服务端配置 vs 本地偏好的视觉区分
+
+当前设置页面中，**服务端 JSON 配置**（保存到 config.json，可同步到 PC/WebDAV）和**本地客户端偏好**（仅存 localStorage，如暗黑模式、语言、主题色）混在一起，用户无法区分。
+
+**两类设置的本质差异**：
+
+| 属性 | 服务端 JSON 配置（Schema 驱动） | 本地客户端偏好（localStorage） |
+|------|------|------|
+| 存储位置 | 服务端 `config.json` | 浏览器 `localStorage` |
+| 同步性 | ✅ PC/移动端/WebDAV 同步 | ❌ 仅当前设备 |
+| 数据来源 | JSON Schema 定义 | 前端硬编码 |
+| 渲染方式 | ConfigFieldItem（schema 驱动） | 独立 ion-item/ion-toggle |
+| 典型字段 | password, output_path, log.level, plugin_settings | 暗黑模式, 语言, 主题色, 视频播放器 |
+
+**用户需求**：一眼看出哪些设置是"同步的"（保存到服务端 JSON），哪些是"仅本地的"。
+
 ---
 
 ## 设计参考：优秀 Schema 驱动配置 UI 案例
@@ -49,18 +65,25 @@
 - **Reset to default**：hover 时出现齿轮图标，点击重置为默认值
 - **Enum descriptions**：下拉选项显示描述文字（如 `balanced: 画质较好、体积适中`）
 - **分组标题**：`--- Section Title ---` 语法从 description 中提取分组名
+- **User vs Workspace 区分**：VS Code 用标签页区分"用户设置"和"工作区设置"，视觉上用不同图标标记
 
 ### 2. macOS System Preferences
 
 - **分组卡片**：每个设置区域是一个圆角卡片
 - **Helper text**：灰色小字在控件下方
 - **Select 控件**：原生下拉菜单，选项简洁
+- **iCloud 同步标记**：系统偏好中 iCloud 同步的设置有云图标标记
 
 ### 3. Ant Design ProForm
 
 - **Schema → Form**：JSON Schema 驱动表单渲染
 - **`x-decorator` / `x-component`**：自定义扩展字段控制渲染方式
 - **联动校验**：基于 schema 的 required/type 自动校验
+
+### 4. Grafana Settings
+
+- **Server Config vs User Prefs 分区**：用不同的 section header + 图标区分
+- **云同步标记**：服务端配置有 `<cloud-outline>` 图标
 
 ### 本项目已有的优秀实践
 
@@ -121,6 +144,7 @@ field.type === 'string' (default)
 3. **Required 标记**：在 label 后显示红色 `*`（已有，保持）
 4. **默认值显示**：保持现有的"默认: xxx"文本，但移到 description 下方更自然的位置
 5. **Modified indicator**：已修改的字段左侧显示主题色竖线
+6. **云同步标记**：每个 schema 驱动字段右侧显示云图标，表示"此配置保存到服务端，可跨设备同步"
 
 **模板结构**：
 
@@ -221,7 +245,97 @@ defineEmits<{
 }>()
 ```
 
-### Step 2: 消除 Settings.vue 中的硬编码 select
+### Step 2: 服务端配置 vs 本地偏好的视觉区分系统
+
+**目标**：用户一眼区分"保存到服务端 JSON 可跨设备同步"的配置和"仅存本地 localStorage"的偏好。
+
+**设计方案：双区域 + 云同步标记**
+
+Settings.vue 的设置列表分为两个视觉区域：
+
+#### 区域 A：本地偏好（Appearance 区域）
+
+保持当前的 `ion-list` 样式，但添加一个区域标题 badge 标识"仅本设备"：
+
+```vue
+<ion-list>
+  <ion-list-header>
+    <ion-label>{{ t('settings.appearance') }}</ion-label>
+    <ion-badge slot="end" color="medium" class="scope-badge">
+      <ion-icon :icon="phonePortraitOutline" size="small"></ion-icon>
+      {{ t('settings.localOnly') }}
+    </ion-badge>
+  </ion-list-header>
+  <!-- 暗黑模式、语言、主题色、播放器、屏幕方向 -->
+</ion-list>
+```
+
+#### 区域 B：服务端配置（Schema 驱动区域）
+
+每个 schema 驱动的 section 添加云同步标记：
+
+```vue
+<ion-list v-for="section in schemaFields" :key="section.key">
+  <ion-list-header>
+    <ion-label>{{ sectionTitle }}</ion-label>
+    <ion-badge slot="end" color="primary" class="scope-badge scope-synced">
+      <ion-icon :icon="cloudOutline" size="small"></ion-icon>
+      {{ t('settings.synced') }}
+    </ion-badge>
+  </ion-list-header>
+  <!-- ConfigFieldItem 渲染的 schema 驱动字段 -->
+</ion-list>
+```
+
+**视觉差异总结**：
+
+| 元素 | 本地偏好 | 服务端配置 |
+|------|---------|-----------|
+| 区域标题 badge | 📱 仅本设备（灰色） | ☁️ 可同步（主题蓝色） |
+| 字段左侧图标 | 无特殊标记 | 无特殊标记 |
+| 字段 helper text | 无"默认值"提示 | 有"默认: xxx"提示 |
+| 字段右侧 | 无云图标 | ☁️ 小云图标 |
+| 修改标记 | 无 | 左侧主题色竖线 |
+| 重置按钮 | 无 | 已修改时显示 ↺ |
+
+**scope-badge 样式**：
+
+```css
+.scope-badge {
+  font-size: 10px;
+  --padding-start: 6px;
+  --padding-end: 8px;
+  --padding-top: 3px;
+  --padding-bottom: 3px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.scope-synced {
+  --background: rgba(var(--ion-color-primary-rgb), 0.12);
+  --color: var(--ion-color-primary);
+}
+```
+
+**ConfigFieldItem 新增云同步图标**：
+
+在每个 schema 驱动字段的 ion-item 右侧（或 helper text 末尾），添加一个小云图标：
+
+```vue
+<ion-icon :icon="cloudOutline" slot="end" class="sync-indicator" />
+```
+
+```css
+.sync-indicator {
+  font-size: 14px;
+  color: var(--ion-color-primary);
+  opacity: 0.5;
+  margin-left: 4px;
+}
+```
+
+### Step 3: 消除 Settings.vue 中的硬编码 select
 
 **目标**：删除 Settings.vue 中 `log.level` 的硬编码 `<ion-select>`，改由 ConfigFieldItem 的 schema 驱动渲染处理。
 
@@ -240,9 +354,9 @@ defineEmits<{
 </ion-item>
 ```
 
-**前提**：后端 schema 中 `log.level` 需要添加 `enum` 和 `x-enum-labels`（见 Step 4）。
+**前提**：后端 schema 中 `log.level` 需要添加 `enum` 和 `x-enum-labels`（见 Step 5）。
 
-### Step 3: 消除 Settings.vue 中的硬编码 boolean 渲染
+### Step 4: 消除 Settings.vue 中的硬编码 boolean 渲染
 
 **目标**：Settings.vue 第 254-260 行的 boolean 硬编码 toggle 也应走 ConfigFieldItem。
 
@@ -267,23 +381,9 @@ defineEmits<{
 />
 ```
 
-### Step 4: 后端 Schema 补充 enum 定义
+### Step 5: 后端 Schema 补充 enum 定义
 
 **目标**：让 `log.level` 和 `alist_encrypt.algorithm` 的 enum 在 JSON Schema 中完整定义，使前端能自动渲染 select。
-
-**改动文件**：`/workspace/internal/config/config.go`（Go 后端的 config 结构体）
-
-**需要添加的 schema 标签**：
-
-```go
-// LogConfig.Level — 添加 enum + x-enum-labels
-type LogConfig struct {
-    Level string `json:"level" jsonschema:"enum=debug;enum=info;enum=warn;enum=error" jsonschema_description:"日志级别"`
-    // ...
-}
-```
-
-或者直接修改前端 schema.json（如果后端修改成本高）：
 
 **改动文件**：`/workspace/app/encv-mobile/src/config/schema.json`
 
@@ -324,7 +424,7 @@ type LogConfig struct {
 }
 ```
 
-### Step 5: PluginSettings.vue 复用 ConfigFieldItem
+### Step 6: PluginSettings.vue 复用 ConfigFieldItem
 
 **目标**：将 PluginSettings.vue 中的 isSelect/boolean/input 渲染逻辑替换为 ConfigFieldItem。
 
@@ -338,7 +438,7 @@ type LogConfig struct {
 
 **注意**：PluginSettings.vue 的 `shouldShowBadge` 和 preset-card 样式需要迁移到 ConfigFieldItem 中。
 
-### Step 6: 新增 resetFieldToDefault 函数
+### Step 7: 新增 resetFieldToDefault 函数
 
 **目标**：支持每个字段"重置到默认值"操作。
 
@@ -351,7 +451,7 @@ function resetFieldToDefault(path: string[], field: FieldDef) {
 }
 ```
 
-### Step 7: 样式升级
+### Step 8: 样式升级
 
 **改动文件**：`/workspace/app/encv-mobile/src/components/ConfigFieldItem.vue`
 
@@ -393,9 +493,34 @@ function resetFieldToDefault(path: string[], field: FieldDef) {
   min-width: 32px;
   min-height: 32px;
 }
+
+/* 云同步标记 */
+.sync-indicator {
+  font-size: 14px;
+  color: var(--ion-color-primary);
+  opacity: 0.5;
+  margin-left: 4px;
+}
+
+/* 区域 scope badge */
+.scope-badge {
+  font-size: 10px;
+  --padding-start: 6px;
+  --padding-end: 8px;
+  --padding-top: 3px;
+  --padding-bottom: 3px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.scope-synced {
+  --background: rgba(var(--ion-color-primary-rgb), 0.12);
+  --color: var(--ion-color-primary);
+}
 ```
 
-### Step 8: Badge 系统统一
+### Step 9: Badge 系统统一
 
 **目标**：将 PluginSettings.vue 的 `shouldShowBadge` + `config-badge` 样式迁移到 ConfigFieldItem。
 
@@ -412,8 +537,8 @@ function resetFieldToDefault(path: string[], field: FieldDef) {
 
 | 文件 | 改动类型 | 描述 |
 |------|---------|------|
-| `src/components/ConfigFieldItem.vue` | **重大重写** | 全面 schema 驱动化：新增 select/preset-card/description/reset-to-default/modified-indicator/badge |
-| `src/views/Settings.vue` | **精简** | 删除硬编码 `log.level` select + 硬编码 boolean toggle，统一走 ConfigFieldItem |
+| `src/components/ConfigFieldItem.vue` | **重大重写** | 全面 schema 驱动化：新增 select/preset-card/description/reset-to-default/modified-indicator/badge/云同步标记 |
+| `src/views/Settings.vue` | **精简 + 双区域** | 删除硬编码 `log.level` select + 硬编码 boolean toggle；新增"仅本设备"/"可同步"区域标记 |
 | `src/views/PluginSettings.vue` | **精简** | 删除重复的 isSelect/boolean/input 渲染逻辑，统一走 ConfigFieldItem |
 | `src/config/schema.json` | **补充** | `log.level` 添加 enum + x-enum-labels + x-enum-descriptions；`alist_encrypt.algorithm` 添加 x-enum-labels |
 | `src/composables/useConfig.ts` | **小改** | 新增 `resetFieldToDefault` 函数 |
@@ -424,13 +549,13 @@ function resetFieldToDefault(path: string[], field: FieldDef) {
 
 | JSON Schema 特征 | FieldDef 字段 | UI 渲染 |
 |---|---|---|
-| `type: "boolean"` | `type: 'boolean'` | `<ion-toggle>` + label + description |
-| `type: "string"` + `enum` + `x-enum-labels` (3+ 项) | `isSelect: true`, `selectOptions` | preset-card 卡片组 |
-| `type: "string"` + `enum` (1-2 项) | `isSelect: true`, `selectOptions` | `<ion-select>` 下拉 |
-| `type: "string"` + 含 password | `isPassword: true` | `<ion-input type="password">` + 眼睛切换 |
-| `type: "string"` + 含 path/dir | `isPath: true` | `<ion-input>` + 文件夹浏览 |
-| `type: "string"` (普通) | — | `<ion-input>` |
-| `type: "integer"` | `type: 'integer'` | `<ion-input type="number">` |
+| `type: "boolean"` | `type: 'boolean'` | `<ion-toggle>` + label + description + ☁️ |
+| `type: "string"` + `enum` + `x-enum-labels` (3+ 项) | `isSelect: true`, `selectOptions` | preset-card 卡片组 + ☁️ |
+| `type: "string"` + `enum` (1-2 项) | `isSelect: true`, `selectOptions` | `<ion-select>` 下拉 + ☁️ |
+| `type: "string"` + 含 password | `isPassword: true` | `<ion-input type="password">` + 眼睛切换 + ☁️ |
+| `type: "string"` + 含 path/dir | `isPath: true` | `<ion-input>` + 文件夹浏览 + ☁️ |
+| `type: "string"` (普通) | — | `<ion-input>` + ☁️ |
+| `type: "integer"` | `type: 'integer'` | `<ion-input type="number">` + ☁️ |
 | `description` | `description` | `<ion-note slot="helper">` helper text |
 | `default` | `default` | 默认值提示 + 重置按钮 |
 | `required: true` | `required: true` | label 红色 `*` |
@@ -438,6 +563,19 @@ function resetFieldToDefault(path: string[], field: FieldDef) {
 | `x-v4: true` | `isV4: true` | v4 badge |
 | `x-enum-labels` | `selectOptions[].label` | 选项显示名 |
 | `x-enum-descriptions` | `selectOptions[].description` | 选项描述文字 |
+
+---
+
+## 服务端配置 vs 本地偏好视觉区分总表
+
+| 视觉元素 | 本地偏好（localStorage） | 服务端配置（Schema 驱动） |
+|---------|---------|-----------|
+| 区域标题 badge | 📱 仅本设备（灰色 medium） | ☁️ 可同步（主题蓝色 primary） |
+| 字段 helper text | 无"默认值"提示 | 有"默认: xxx"提示 |
+| 字段右侧图标 | 无云图标 | ☁️ 小云图标（半透明主题蓝） |
+| 修改标记 | 无 | 左侧主题色竖线 |
+| 重置按钮 | 无 | 已修改时显示 ↺ |
+| 典型字段 | 暗黑模式、语言、主题色、播放器、屏幕方向 | password、output_path、log.level、plugin_settings |
 
 ---
 
@@ -449,4 +587,5 @@ function resetFieldToDefault(path: string[], field: FieldDef) {
 4. **每个字段都显示 description**：helper text 可见
 5. **isSelect 字段渲染为 select/preset-card**：而非 text input
 6. **已修改字段有视觉标记**：左侧竖线 + 重置按钮
-7. **编译无报错**：`npm run build` 通过
+7. **服务端/本地视觉区分**：区域标题 badge + 字段云图标
+8. **编译无报错**：`npm run build` 通过
