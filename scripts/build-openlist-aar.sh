@@ -35,7 +35,8 @@ if [[ -f "$(dirname "$0")/openlist-fork.env.local" ]]; then
 fi
 
 NDK_DEFAULT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/ndk/26.3.11579264"
-ENCV_GO_ROOT_DEFAULT="/workspace"
+_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ENCV_GO_ROOT_DEFAULT="$(cd "${_SCRIPT_DIR}/.." && pwd)"
 
 FORK="${OPENLIST_FORK_URL:-https://github.com/Hi-Sillot/OpenList}"
 BRANCH="${OPENLIST_FORK_BRANCH:-dev}"
