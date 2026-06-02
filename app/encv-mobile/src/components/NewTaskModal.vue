@@ -79,6 +79,7 @@
         v-else
         :state="effectiveState"
         :on-update-source-path="props.onUpdateSourcePath"
+        :on-update-target-path="props.onUpdateTargetPath"
         :on-update-primary-override="props.onUpdatePrimaryOverride"
         :on-update-secondary-password="props.onUpdateSecondaryPassword"
         :on-update-extra-value="props.onUpdateExtraValue"

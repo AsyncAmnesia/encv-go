@@ -12,6 +12,18 @@
         @update:model-value="(v: string) => props.onUpdateSourcePath?.(v)"
         @browse="handleBrowseSource"
       />
+
+      <!-- 输出目录 -->
+      <InputWithHistory
+        :model-value="state.targetPath"
+        :label="t('tasks.targetPath')"
+        :placeholder="t('tasks.targetPathPlaceholder')"
+        :icon="folderOpen"
+        history-key="task.decrypt.targetPath"
+        browsable
+        @update:model-value="(v: string) => props.onUpdateTargetPath?.(v)"
+        @browse="handleBrowseTarget"
+      />
     </div>
 
     <!-- 密码字段（仅 PasswordGlobal 策略显示） -->
@@ -102,7 +114,7 @@ import {
   IonNote,
   modalController,
 } from '@ionic/vue'
-import { documentText, lockClosed } from 'ionicons/icons'
+import { documentText, lockClosed, folderOpen } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import FilePickerModal from '@/components/FilePickerModal.vue'
 import InputWithHistory from '@/components/InputWithHistory.vue'
@@ -112,11 +124,13 @@ import type { NewTaskState } from '@/components/NewTaskState'
 const props = withDefaults(defineProps<{
   state: NewTaskState
   onUpdateSourcePath?: (v: string) => void
+  onUpdateTargetPath?: (v: string) => void
   onUpdatePrimaryOverride?: (v: string) => void
   onUpdateSecondaryPassword?: (v: string) => void
   onUpdateExtraValue?: (payload: { key: string; value: string }) => void
 }>(), {
   onUpdateSourcePath: undefined,
+  onUpdateTargetPath: undefined,
   onUpdatePrimaryOverride: undefined,
   onUpdateSecondaryPassword: undefined,
   onUpdateExtraValue: undefined,
@@ -144,6 +158,18 @@ async function handleBrowseSource() {
   const { data, role } = await modal.onDidDismiss()
   if (role === 'select' && data) {
     props.onUpdateSourcePath?.(data.path)
+  }
+}
+
+async function handleBrowseTarget() {
+  const modal = await modalController.create({
+    component: FilePickerModal,
+    componentProps: { mode: 'folder' as const },
+  })
+  await modal.present()
+  const { data, role } = await modal.onDidDismiss()
+  if (role === 'select' && data) {
+    props.onUpdateTargetPath?.(data.path)
   }
 }
 </script>

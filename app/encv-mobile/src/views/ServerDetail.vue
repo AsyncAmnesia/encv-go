@@ -227,12 +227,11 @@ async function checkServer() {
 }
 
 async function handleRestart() {
-  const toast = await showToast({
+  showToast({
     message: t('settings.restarting'),
     duration: 30000,
   })
   const success = await restartBackend()
-  await toast?.dismiss()
   showToast({
     message: success ? t('settings.restartSuccess') : t('settings.restartFailed'),
     duration: 2000,
