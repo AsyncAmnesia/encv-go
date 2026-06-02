@@ -84,5 +84,58 @@
     ],
     "createdAt": "2026-06-02T00:35:32.294592253Z",
     "completedAt": "2026-06-02T00:35:32.601128339Z"
+  },
+  {
+    "id": "6c9a4edf-b49b-469a-b498-c64b2f890866",
+    "type": "encrypt",
+    "sourcePath": "/01-plain-media/video/sample.mp4",
+    "extraFields": {
+      "encrypt_filename": "false",
+      "fn_charset": "alnum",
+      "fn_deconfuse": "false",
+      "fn_rounds": "8",
+      "fn_structured": "false",
+      "stream_preset": "balanced"
+    },
+    "pluginName": "video",
+    "status": "failed",
+    "progress": 15,
+    "phase": "preprocessing",
+    "error": "encryption processing failed",
+    "errorDetail": "encryption failed: post-encryption failed for '/storage/emulated/0/01-plain-media/video/sample.mp4': container verification failed: original file appears empty or unreadable (EOF at offset 0)",
+    "containerVersion": 4,
+    "steps": [
+      {
+        "phase": "queued",
+        "startedAt": "2026-06-02T00:54:13.134807217Z",
+        "completedAt": "2026-06-02T00:54:13.134879883Z"
+      },
+      {
+        "phase": "analyzing",
+        "startedAt": "2026-06-02T00:54:13.134879883Z",
+        "completedAt": "2026-06-02T00:54:13.135142988Z"
+      },
+      {
+        "phase": "initializing",
+        "startedAt": "2026-06-02T00:54:13.135142988Z",
+        "completedAt": "2026-06-02T00:54:13.135185713Z"
+      },
+      {
+        "phase": "preprocessing",
+        "startedAt": "2026-06-02T00:54:13.135185713Z"
+      }
+    ],
+    "createdAt": "2026-06-02T00:54:12.730149383Z",
+    "completedAt": "2026-06-02T00:54:14.209265963Z"
+  },
+  {
+    "id": "a98072ee-3524-49af-9867-b0364aa1a0cf",
+    "type": "encrypt",
+    "sourcePath": "/01-plain-media/video/sample.mp4",
+    "pluginName": "video",
+    "status": "queued",
+    "progress": 0,
+    "containerVersion": 4,
+    "createdAt": "2026-06-02T00:55:53.745239488Z"
   }
 ]
