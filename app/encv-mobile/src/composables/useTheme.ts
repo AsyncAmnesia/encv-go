@@ -10,7 +10,7 @@ const VIVID_KEY = 'encv-vivid-mode'
 const _isDarkForced = ref<boolean | null>(null)
 const currentColor = ref('#4f8cff')
 const currentBgColor = ref<string | null>(null)
-const bgBlur = ref(0)
+const bgBlur = ref(12)
 const p3Mode = ref<'off' | 'on' | 'auto'>('auto')
 const vividMode = ref<'off' | 'on'>('off')
 const vividIntensity = ref(100)
@@ -25,8 +25,9 @@ export interface BgPreset {
   name: string
   value: string | null
   description: string
-  category: 'light' | 'eye' | 'dark'
+  category: 'light' | 'eye' | 'dark' | 'gradient'
   textColor: string
+  gradientColors?: [string, ...string[]]
 }
 
 export const THEME_PRESETS: ThemePreset[] = [
@@ -49,6 +50,10 @@ export const BG_PRESETS: BgPreset[] = [
   { name: 'bg.darkBlack', value: '#000000', description: 'bg.darkBlackDesc', category: 'dark', textColor: '#ffffff' },
   { name: 'bg.midnight', value: '#0a0e1a', description: 'bg.midnightDesc', category: 'dark', textColor: '#d0d8e8' },
   { name: 'bg.charcoal', value: '#2a2a2e', description: 'bg.charcoalDesc', category: 'dark', textColor: '#d8d8d8' },
+  { name: 'bg.oceanDawn', value: null, description: 'bg.oceanDawnDesc', category: 'gradient', textColor: '#ffffff', gradientColors: ['#667eea', '#764ba2'] },
+  { name: 'bg.sunsetGlow', value: null, description: 'bg.sunsetGlowDesc', category: 'gradient', textColor: '#ffffff', gradientColors: ['#fa709a', '#fee140'] },
+  { name: 'bg.northernLights', value: null, description: 'bg.northernLightsDesc', category: 'gradient', textColor: '#ffffff', gradientColors: ['#43e97b', '#38f9d7'] },
+  { name: 'bg.auroraNight', value: null, description: 'bg.auroraNightDesc', category: 'gradient', textColor: '#e0e8ff', gradientColors: ['#0c1445', '#1a237e', '#283593'] },
 ]
 
 function hexToRgb(hex: string): string {
@@ -88,21 +93,54 @@ function syncDarkClass() {
   }
 }
 
-function applyBgColor(bgColor: string | null) {
+function applyBgColor(bgColor: string | null, gradientColors?: [string, ...string[]]) {
   currentBgColor.value = bgColor
   const root = document.documentElement
-  if (bgColor) {
+  if (gradientColors && gradientColors.length >= 2) {
+    const angle = 135
+    const stops = gradientColors.join(', ')
+    root.style.setProperty('--ion-background-color', `linear-gradient(${angle}deg, ${stops})`)
+    root.style.setProperty('--ion-background-color-rgb', hexToRgb(gradientColors[0]))
+    root.style.setProperty('--encv-bg-text-color', '#ffffff')
+    root.style.setProperty('--encv-bg-gradient', `linear-gradient(${angle}deg, ${stops})`)
+    root.style.setProperty('--encv-bg-gradient-angle', `${angle}deg`)
+    document.body.style.backgroundImage = `linear-gradient(${angle}deg, ${stops})`
+    document.body.style.backgroundSize = 'cover'
+    document.body.style.backgroundAttachment = 'fixed'
+  } else if (bgColor) {
+    root.style.removeProperty('--encv-bg-gradient')
+    root.style.removeProperty('--encv-bg-gradient-angle')
     root.style.setProperty('--ion-background-color', bgColor)
     root.style.setProperty('--ion-background-color-rgb', hexToRgb(bgColor))
     root.style.setProperty('--encv-bg-text-color', getContrastColor(bgColor))
     document.body.style.backgroundColor = bgColor
+    document.body.style.backgroundImage = ''
   } else {
     root.style.removeProperty('--ion-background-color')
     root.style.removeProperty('--ion-background-color-rgb')
     root.style.removeProperty('--encv-bg-text-color')
+    root.style.removeProperty('--encv-bg-gradient')
+    root.style.removeProperty('--encv-bg-gradient-angle')
     document.body.style.backgroundColor = ''
+    document.body.style.backgroundImage = ''
   }
   syncDarkClass()
+}
+
+export function setBgColor(color: string | null) {
+  if (!color) {
+    localStorage.removeItem(BG_COLOR_KEY)
+    applyBgColor(null)
+    return
+  }
+  localStorage.setItem(BG_COLOR_KEY, color)
+  applyBgColor(color)
+}
+
+export function setBgGradient(colors: [string, ...string[]]) {
+  const key = colors.join('|')
+  localStorage.setItem(BG_COLOR_KEY, `gradient:${key}`)
+  applyBgColor(null, colors)
 }
 
 function applyColor(color: string) {
@@ -213,11 +251,16 @@ function initTheme() {
   }
 
   const storedBg = localStorage.getItem(BG_COLOR_KEY)
-  if (storedBg && /^#[0-9a-fA-F]{6}$/.test(storedBg)) {
-    applyBgColor(storedBg)
-  } else {
-    syncDarkClass()
+  if (storedBg) {
+    if (storedBg.startsWith('gradient:')) {
+      const colorsStr = storedBg.substring(9)
+      const colors = colorsStr.split('|').filter(c => /^#[0-9a-fA-F]{6}$/.test(c)) as [string, ...string[]]
+      if (colors.length >= 2) applyBgColor(null, colors)
+    } else if (/^#[0-9a-fA-F]{6}$/.test(storedBg)) {
+      applyBgColor(storedBg)
+    }
   }
+  syncDarkClass()
 
   const storedBlur = localStorage.getItem(BG_BLUR_KEY)
   if (storedBlur !== null) {
@@ -246,28 +289,19 @@ function setThemeColor(color: string) {
   applyColor(color)
 }
 
-function setBgColor(color: string | null) {
-  applyBgColor(color)
-  if (color) {
-    localStorage.setItem(BG_COLOR_KEY, color)
-  } else {
-    localStorage.removeItem(BG_COLOR_KEY)
-  }
-}
-
-function setBgBlur(blur: number) {
+export function setBgBlur(blur: number) {
   applyBgBlur(blur)
 }
 
-function setP3Mode(mode: 'off' | 'on' | 'auto') {
+export function setP3Mode(mode: 'off' | 'on' | 'auto') {
   applyP3Mode(mode)
 }
 
-function setVividMode(mode: 'off' | 'on') {
+export function setVividMode(mode: 'off' | 'on') {
   applyVividMode(mode)
 }
 
-function setVividIntensity(value: number) {
+export function setVividIntensity(value: number) {
   applyVividIntensity(value)
 }
 
@@ -291,6 +325,7 @@ export function useTheme() {
     detectP3Support,
     setThemeColor,
     setBgColor,
+    setBgGradient,
     setBgBlur,
     setP3Mode,
     setVividMode,

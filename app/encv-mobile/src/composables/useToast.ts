@@ -4,7 +4,6 @@ interface ToastOptions {
   message: string
   duration?: number
   color?: string
-  icon?: string
 }
 
 const MAX_STACK = 5
@@ -22,7 +21,7 @@ export async function showToast(options: ToastOptions) {
 
   const toast = await toastController.create({
     message,
-    duration,
+    duration: 0,
     position: 'top',
     cssClass: `encv-toast encv-toast--${color}`,
     buttons: [
@@ -38,11 +37,22 @@ export async function showToast(options: ToastOptions) {
 
   await toast.present()
 
-  const toastEl = toast as unknown as HTMLElement
+  const toastEl = (toast as unknown as { el: HTMLElement }).el
   if (!toastEl) return
 
   activeToasts.push({ id, element: toastEl })
   repositionStack()
+
+  if (duration > 0) {
+    setTimeout(async () => {
+      const idx = activeToasts.findIndex((t) => t.id === id)
+      if (idx !== -1) {
+        activeToasts.splice(idx, 1)
+        repositionStack()
+      }
+      await toast.dismiss({ role: 'timeout' })
+    }, duration)
+  }
 
   toast.onDidDismiss().then(() => {
     const idx = activeToasts.findIndex((t) => t.id === id)
@@ -60,9 +70,7 @@ function repositionStack() {
 
   while (activeToasts.length > MAX_STACK) {
     const removed = activeToasts.shift()
-    if (removed?.element) {
-      try { removed.element.remove() } catch {}
-    }
+    if (removed?.element) removed.element.remove()
   }
 
   const baseOffset = 12

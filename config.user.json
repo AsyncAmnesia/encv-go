@@ -46,7 +46,7 @@
       "keep_mkv_for_mkv_source": true,
       "light_container_main_chunk_enabled": true,
       "light_main_chunk_enabled": true,
-      "skip_merge_for_split_mkv": false,
+      "skip_merge_for_split_mkv": true,
       "track_extensions": ".ass,.srt,.dm.ass,.vtt",
       "verify_after_pack": true
     },

@@ -34,10 +34,13 @@
                 v-for="(preset, idx) in cat.presets"
                 :key="`${cat.key}-${idx}`"
                 class="bg-preset-card"
-                :class="{ 'bg-preset-active': currentBgColor === preset.value }"
-                :style="{ backgroundColor: preset.value ?? '#ffffff', color: preset.textColor }"
+                :class="{
+                  'bg-preset-active': cat.key === 'gradient' ? currentGradient === preset.name : currentBgColor === preset.value,
+                  'bg-gradient-card': preset.category === 'gradient',
+                }"
+                :style="getPresetStyle(preset)"
                 :title="t(preset.name)"
-                @click="handleBgColorChange(preset.value!)"
+                @click="cat.key === 'gradient' ? handleGradientSelect(preset) : handleBgColorChange(preset.value!)"
               >
                 <span class="bg-preset-name">{{ t(preset.name) }}</span>
               </button>
@@ -205,7 +208,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonIcon, IonLabel, IonToggle,
@@ -224,9 +227,11 @@ const {
   vividMode, vividIntensity, isP3Supported,
   THEME_PRESETS, BG_PRESETS,
   setThemeColor, setBgColor, setBgBlur, setP3Mode,
-  setVividMode, setVividIntensity,
+  setVividMode, setVividIntensity, setBgGradient,
 } = useTheme()
 const { t, locale, setLocale } = useI18n()
+
+const currentGradient = ref<string | null>(null)
 
 const bgCategories = computed(() => [
   {
@@ -244,6 +249,11 @@ const bgCategories = computed(() => [
     label: 'settings.bgDark',
     presets: BG_PRESETS.filter(p => p.category === 'dark'),
   },
+  {
+    key: 'gradient',
+    label: 'settings.bgGradient',
+    presets: BG_PRESETS.filter(p => p.category === 'gradient'),
+  },
 ])
 
 const p3Modes = [
@@ -258,6 +268,28 @@ function handleLocaleChange(event: CustomEvent) {
 
 function handleBgColorChange(value: string) {
   setBgColor(value)
+  currentGradient.value = null
+}
+
+function handleGradientSelect(preset: typeof BG_PRESETS[number]) {
+  if (preset.gradientColors) {
+    setBgGradient(preset.gradientColors)
+    currentGradient.value = preset.name
+  }
+}
+
+function getPresetStyle(preset: typeof BG_PRESETS[number]) {
+  if (preset.gradientColors) {
+    return {
+      background: `linear-gradient(135deg, ${preset.gradientColors.join(', ')})`,
+      color: preset.textColor,
+      '--gradient-colors': preset.gradientColors.join(', '),
+    } as Record<string, string>
+  }
+  return {
+    backgroundColor: preset.value ?? '#ffffff',
+    color: preset.textColor,
+  }
 }
 
 function handleBgBlurChange(event: Event) {
@@ -383,6 +415,43 @@ function handleVividIntensityChange(event: Event) {
   font-size: 11px;
   font-weight: 600;
   text-align: center;
+}
+
+.bg-gradient-card {
+  position: relative;
+  overflow: hidden;
+  background-size: 200% 200% !important;
+  animation: bgGradientShift 6s ease infinite;
+}
+.bg-gradient-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: inherit;
+  filter: blur(8px);
+  opacity: 0.4;
+  z-index: -1;
+  transform: scale(1.05);
+}
+.bg-gradient-card.bg-preset-active::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 14px;
+  padding: 2px;
+  background: linear-gradient(135deg, var(--gradient-colors));
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+@keyframes bgGradientShift {
+  0%, 100% { background-position: 0% 50%; }
+  25% { background-position: 100% 50%; }
+  50% { background-position: 100% 100%; }
+  75% { background-position: 0% 100%; }
 }
 .custom-bg-row {
   display: flex;

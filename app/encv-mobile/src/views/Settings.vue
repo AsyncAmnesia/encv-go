@@ -143,8 +143,8 @@
 
       <template v-else-if="configLoaded">
         <template v-for="section in schemaFields" :key="section.key">
-          <!-- 过滤掉 server、admin、webdav、log 配置项，这些配置项有独立的设置页面（log 在 DevToolsDetail） -->
-        <template v-if="!['server', 'admin', 'webdav', 'log'].includes(section.key)">
+          <!-- 过滤掉 server/admin/webdav/proxy/log 配置项，这些有独立页面或冗余 -->
+        <template v-if="!['server', 'admin', 'webdav', 'proxy', 'log'].includes(section.key)">
           <ion-list v-if="section.key === 'plugin_settings'">
             <ion-list-header>
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
