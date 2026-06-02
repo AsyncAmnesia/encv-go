@@ -223,7 +223,7 @@ ion-toggle.toggle-checked::part(handle) {
   background: #ffffff;
 }
 
-/* 背景高斯模糊：ion-content/ion-header/ion-toolbar/卡片 */
+/* 背景高斯模糊 + 全面透明化设计规范 */
 ion-content,
 ion-header,
 ion-toolbar,
@@ -251,6 +251,44 @@ ion-toolbar {
 body.dark ion-toolbar {
   --background: rgba(26, 26, 26, 0.85);
   background: rgba(26, 26, 26, 0.85);
+}
+
+/* ===== 核心透明化规范：ion-item / ion-list / 卡片 ===== */
+ion-list {
+  --background: transparent;
+  background: transparent;
+}
+
+ion-item {
+  --background: rgba(var(--ion-background-color-rgb, 255, 255, 255), 0.55);
+  background: rgba(var(--ion-background-color-rgb, 255, 255, 255), 0.55);
+  backdrop-filter: blur(var(--encv-bg-blur, 8px));
+  -webkit-backdrop-filter: blur(var(--encv-bg-blur, 8px));
+}
+
+body.dark ion-item {
+  --background: rgba(30, 30, 30, 0.6);
+  background: rgba(30, 30, 30, 0.6);
+}
+
+ion-list-header {
+  --background: transparent;
+  background: transparent;
+}
+
+.home-card {
+  background: rgba(var(--ion-background-color-rgb, 255, 255, 255), 0.6) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+body.dark .home-card {
+  background: rgba(30, 30, 30, 0.65) !important;
+}
+
+.player-card {
+  background: linear-gradient(135deg, rgba(var(--ion-color-primary-rgb), 0.12), rgba(var(--ion-color-primary-rgb), 0.04)) !important;
+  backdrop-filter: blur(12px);
 }
 
 /* P3 瑰彩显示：增强颜色饱和度与对比度 */
@@ -288,6 +326,8 @@ body.dark ion-toolbar {
   --background: transparent;
   --box-shadow: none;
   --color: var(--ion-text-color);
+  --min-height: auto;
+  --height: auto;
   border-radius: 14px;
   padding: 0 !important;
   margin: 0 !important;
@@ -297,10 +337,15 @@ body.dark ion-toolbar {
   right: 16px !important;
   top: 0 !important;
   bottom: auto !important;
+  height: auto !important;
+  min-height: auto !important;
+  max-height: fit-content !important;
   pointer-events: auto;
   backdrop-filter: blur(20px) saturate(1.8);
   -webkit-backdrop-filter: blur(20px) saturate(1.8);
   overflow: visible;
+  display: block;
+  position: fixed;
 }
 
 .encv-toast .toast-wrapper {
@@ -314,6 +359,9 @@ body.dark ion-toolbar {
     0 1px 4px rgba(0, 0, 0, 0.06);
   transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
   transform-origin: top center;
+  height: auto;
+  min-height: unset;
+  max-height: none;
 }
 
 .encv-toast.toast-entering .toast-wrapper {

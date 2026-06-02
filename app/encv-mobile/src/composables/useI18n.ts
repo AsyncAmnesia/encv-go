@@ -76,6 +76,12 @@ const fieldKeyMap: Record<string, string> = {
   'pdf': 'settings.pdf',
   'text': 'settings.text',
   'custom_text_extensions': 'settings.customTextExts',
+  'allow_no_reencode': 'settings.allowNoReencode',
+  'default_stream_preset': 'settings.defaultStreamPreset',
+  'suffix': 'settings.alistEncryptSuffix',
+  'default_password': 'settings.alistEncryptDefaultPassword',
+  'algorithm': 'settings.alistEncryptAlgorithm',
+  'enabled': 'settings.alistEncryptEnable',
 }
 
 const sectionTitleMap: Record<string, string> = {

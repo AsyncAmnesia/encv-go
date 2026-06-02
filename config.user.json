@@ -43,6 +43,7 @@
       "allow_no_reencode": true,
       "chunk_size_mb": 0,
       "ext": ".sccgv",
+      "light_container_main_chunk_enabled": true,
       "light_main_chunk_enabled": true,
       "skip_merge_for_split_mkv": false,
       "track_extensions": ".ass,.srt,.dm.ass,.vtt",
