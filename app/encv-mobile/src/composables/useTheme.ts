@@ -42,16 +42,29 @@ export const THEME_PRESETS: ThemePreset[] = [
 
 export const BG_PRESETS: BgPreset[] = [
   { name: 'bg.white', value: '#ffffff', description: 'bg.whiteDesc', category: 'light', textColor: '#1a1a1a' },
+  { name: 'bg.snow', value: '#f8fafc', description: 'bg.snowDesc', category: 'light', textColor: '#1e293b' },
+  { name: 'bg.pearl', value: '#fef3ed', description: 'bg.pearlDesc', category: 'light', textColor: '#431407' },
+  { name: 'bg.mist', value: '#f0f4f8', description: 'bg.mistDesc', category: 'light', textColor: '#334155' },
+  { name: 'bg.cloud', value: '#eef2ff', description: 'bg.cloudDesc', category: 'light', textColor: '#1e3a5f' },
+  { name: 'bg.ivory', value: '#fffff0', description: 'bg.ivoryDesc', category: 'light', textColor: '#3d3626' },
+
   { name: 'bg.sepia', value: '#f4ecd8', description: 'bg.sepiaDesc', category: 'eye', textColor: '#5b4636' },
   { name: 'bg.sage', value: '#dce4d0', description: 'bg.sageDesc', category: 'eye', textColor: '#3a4a30' },
   { name: 'bg.lavender', value: '#e6e0f0', description: 'bg.lavenderDesc', category: 'eye', textColor: '#3a2f4a' },
   { name: 'bg.cream', value: '#f5efe0', description: 'bg.creamDesc', category: 'eye', textColor: '#4a3f2a' },
+  { name: 'bg.dustyRose', value: '#f5e0dc', description: 'bg.dustyRoseDesc', category: 'eye', textColor: '#5c3333' },
+  { name: 'bg.frost', value: '#e8f0f8', description: 'bg.frostDesc', category: 'eye', textColor: '#2a3f52' },
+
   { name: 'bg.lightBlack', value: '#1a1a1a', description: 'bg.lightBlackDesc', category: 'dark', textColor: '#e0e0e0' },
   { name: 'bg.darkBlack', value: '#000000', description: 'bg.darkBlackDesc', category: 'dark', textColor: '#ffffff' },
   { name: 'bg.midnight', value: '#0a0e1a', description: 'bg.midnightDesc', category: 'dark', textColor: '#d0d8e8' },
   { name: 'bg.charcoal', value: '#2a2a2e', description: 'bg.charcoalDesc', category: 'dark', textColor: '#d8d8d8' },
+  { name: 'bg.ink', value: '#171923', description: 'bg.inkDesc', category: 'dark', textColor: '#c8cad8' },
+  { name: 'bg.obsidian', value: '#121218', description: 'bg.obsidianDesc', category: 'dark', textColor: '#b8b8c8' },
+
   { name: 'bg.deepForest', value: null, description: 'bg.deepForestDesc', category: 'gradient', textColor: '#e8f0e0', gradientColors: ['#134e5e', '#71b280'] },
-  { name: 'bg.energeticPink', value: null, description: 'bg.energeticPinkDesc', category: 'gradient', textColor: '#ffffff', gradientColors: ['#ff6e7f', '#bfe9ff'] },
+  { name: 'bg.oceanDusk', value: null, description: 'bg.oceanDuskDesc', category: 'gradient', textColor: '#ffffff', gradientColors: ['#2c3e50', '#4ca1af'] },
+  { name: 'bg.warmHoney', value: null, description: 'bg.warmHoneyDesc', category: 'gradient', textColor: '#4a3520', gradientColors: ['#f6d365', '#fda085'] },
   { name: 'bg.creamGray', value: null, description: 'bg.creamGrayDesc', category: 'gradient', textColor: '#3a3a3a', gradientColors: ['#fdfcfb', '#e2d1c3', '#c9d6df'] },
   { name: 'bg.sunsetGlow', value: null, description: 'bg.sunsetGlowDesc', category: 'gradient', textColor: '#ffffff', gradientColors: ['#fa709a', '#fee140'] },
   { name: 'bg.auroraNight', value: null, description: 'bg.auroraNightDesc', category: 'gradient', textColor: '#e0e8ff', gradientColors: ['#0c1445', '#1a237e', '#283593'] },

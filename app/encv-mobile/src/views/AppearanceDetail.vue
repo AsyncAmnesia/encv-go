@@ -402,7 +402,7 @@ function handleVividIntensityChange(event: Event) {
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.2s;
-  background: var(--ion-background-color);
+  background-color: #f0f2f5;
   min-height: 52px;
   outline: none;
   -webkit-tap-highlight-color: transparent;
@@ -431,7 +431,12 @@ function handleVividIntensityChange(event: Event) {
   background: linear-gradient(135deg, var(--gradient-colors));
   filter: blur(6px);
   opacity: 0.35;
-  z-index: -1;
+  z-index: 0;
+}
+.bg-gradient-card .bg-preset-name {
+  position: relative;
+  z-index: 1;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 .bg-gradient-card.bg-preset-active::after {
   content: '';
