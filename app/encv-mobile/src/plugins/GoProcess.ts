@@ -331,7 +331,7 @@ export async function getOpenListFullState(): Promise<OpenListFullState> {
   try {
     const result = await GoProcess.getPluginFullState({ pluginId: 'com.encvgo.plugin.openlist' })
     return {
-      running: result.status === 'running',
+      running: result.status === 'ready',
       port: (result as any).port ?? 0,
       pid: (result as any).pid ?? 0,
       dataSizeBytes: (result as any).dataSizeBytes ?? 0,
