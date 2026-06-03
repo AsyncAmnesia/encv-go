@@ -34,12 +34,28 @@ rootProject.name = "encv-mobile"
 
 include(":app")
 include(":capacitor-cordova-android-plugins")
-include(":plugin-mpv-player")
-include(":plugin-openlist")
 include(":combolite-host")
 
+// Plugin subprojects are ONLY included when explicitly requested (-PincludePlugins=true).
+// Without this flag, Gradle's full task graph resolution pulls in
+//   :plugin-openlist:compileReleaseKotlin (and :plugin-mpv-player:*)
+// whenever any assemble/build task runs — even though :app does NOT declare
+//   implementation(project(":plugin-openlist")).  A plugin Kotlin compile error
+//   then blocks the entire main app build.
+//
+// Usage:
+//   ./gradlew assembleDebug                        # ← main app only (fast)
+//   ./gradlew -PincludePlugins=true assembleDebug   # ← main app + plugins
+//   ./gradlew -PincludePlugins=true :plugin-openlist:compileReleaseKotlin  # ← plugin only
+if (findProperty("includePlugins")?.toString().toBoolean()) {
+    include(":plugin-mpv-player")
+    include(":plugin-openlist")
+}
+
 project(":capacitor-cordova-android-plugins").projectDir = file("./capacitor-cordova-android-plugins/")
-project(":plugin-mpv-player").projectDir = file("../plugin-mpv-player")
-project(":plugin-openlist").projectDir = file("../plugin-openlist")
+if (findProperty("includePlugins")?.toString().toBoolean()) {
+    project(":plugin-mpv-player").projectDir = file("../plugin-mpv-player")
+    project(":plugin-openlist").projectDir = file("../plugin-openlist")
+}
 
 apply(from = "capacitor.settings.gradle")

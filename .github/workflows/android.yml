@@ -386,13 +386,18 @@ jobs:
           echo "  Plugin APK: All MPV/FFmpeg .so files"
 
 
-      # === Build MPV Player Plugin ===
-      # NOTE: Plugin build failures must NOT block the main app upload.
-      # Each plugin step uses continue-on-error so the step still shows FAILED
-      # (red) in CI — this is NOT a silent ignore/warning.
+      # === Build Plugins (structurally isolated from main app) ===
+      # Plugin subprojects are conditionally included via -PincludePlugins=true
+      # (see android/settings.gradle.kts).  Without the flag, Gradle's task
+      # graph does NOT resolve :plugin-openlist:compile* or :plugin-mpv-player:*,
+      # so a plugin Kotlin compile error can NEVER block the main app APK.
+      #
+      # Each plugin step runs its own gradlew invocation with the flag.
+      # Failures here are real errors (red step, proper exit code) — they
+      # simply don't cascade to the main app build that follows.
+
       - name: Build MPV player plugin (JNI + Kotlin)
         if: inputs.skip_plugin != true
-        continue-on-error: true
         run: |
           cd app/encv-mobile/android
 
@@ -404,17 +409,16 @@ jobs:
 
           # Compile plugin Kotlin code (debug or release)
           BUILD_TYPE="${{ inputs.version && 'Release' || 'Debug' }}"
-          ./gradlew ":plugin-mpv-player:compile${BUILD_TYPE}Kotlin" --stacktrace 2>&1 || true
+          ./gradlew -PincludePlugins=true ":plugin-mpv-player:compile${BUILD_TYPE}Kotlin" --stacktrace 2>&1 || true
           echo "=== Plugin compile done (${BUILD_TYPE}) ==="
 
       - name: Package MPV plugin as APK
         if: inputs.skip_plugin != true
-        continue-on-error: true
         run: |
           cd app/encv-mobile/android
           BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
 
-          ./gradlew "convert_plugin-mpv-player_${BUILD_TYPE}" --stacktrace
+          ./gradlew -PincludePlugins=true "convert_plugin-mpv-player_${BUILD_TYPE}" --stacktrace
 
           PLUGIN_APK=$(find build -name "plugin-mpv-player-${BUILD_TYPE}.apk" -type f 2>/dev/null | head -1)
           if [ -n "$PLUGIN_APK" ] && [ -f "$PLUGIN_APK" ]; then
@@ -447,7 +451,6 @@ jobs:
       # === Build OpenList Plugin (AAR → APK via aar2apk) ===
       - name: Build OpenList AAR (gomobile bind)
         if: inputs.skip_plugin != true
-        continue-on-error: true
         run: |
           echo "═══ OpenList AAR Build (gomobile bind) ═══"
           bash scripts/build-openlist-aar.sh \
@@ -462,7 +465,6 @@ jobs:
 
       - name: Extract OpenList AAR for plugin packaging
         if: inputs.skip_plugin != true
-        continue-on-error: true
         run: |
           AAR="app/encv-mobile/plugin-openlist/libs/openlist.aar"
           PLUGIN_SRC="app/encv-mobile/plugin-openlist/src/main"
@@ -498,15 +500,14 @@ jobs:
 
       - name: Build OpenList plugin APK (aar2apk)
         if: inputs.skip_plugin != true
-        continue-on-error: true
         run: |
           cd app/encv-mobile/android
           BUILD_TYPE="${{ inputs.version && 'Release' || 'Debug' }}"
           APK_BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
           echo "=== Compiling OpenList plugin (${BUILD_TYPE}) ==="
-          ./gradlew ":plugin-openlist:compile${BUILD_TYPE}Kotlin" --stacktrace 2>&1
+          ./gradlew -PincludePlugins=true ":plugin-openlist:compile${BUILD_TYPE}Kotlin" --stacktrace 2>&1
           echo "=== Converting to plugin APK ==="
-          ./gradlew "convert_plugin-openlist_${APK_BUILD_TYPE}" --stacktrace 2>&1
+          ./gradlew -PincludePlugins=true "convert_plugin-openlist_${APK_BUILD_TYPE}" --stacktrace 2>&1
           echo "=== Locating output ==="
           OPENLIST_APK="build/outputs/plugin-apks/${APK_BUILD_TYPE}/plugin-openlist-${APK_BUILD_TYPE}.apk"
           if [ -f "$OPENLIST_APK" ]; then
