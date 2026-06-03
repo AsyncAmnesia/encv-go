@@ -1146,6 +1146,112 @@ fun <T : Any> getInterface(interfaceClass: Class<T>, className: String): T? {
 - 必须有 N 个**不同** class 预注册在 manifest
 - 池 = N 个不同 class 引用列表
 
+### 10.9.1 aar2apk file deps 注入铁律（⚠️ 实战踩坑 2026-06-03）
+
+> **核心原则：`aar2apk` 任务的 `localDependencyClasses` 和 `remoteDependencyAars`
+> 都不会接收 `implementation(files("xxx.jar"))` 形式的直接文件依赖。**
+> **想用 file 形式注入 native bridge 类（gomobile bind / JNI 类），必须走
+> sourceSet 注入方案（preBuild 解压 jar → build/generated/ → main java.srcDir）。**
+
+#### aar2apk 任务的 deps 拉取机制
+
+`com.combo.aar2apk.Aar2ApkPlugin.kt:107+134` 通过 `config.incoming.artifactView` 拉：
+
+```kotlin
+// localDependencyClasses (line 134-144)
+localDependencyClasses.from(config.incoming.artifactView {
+    attributes {
+        attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "android-classes-jar")
+    }
+    componentFilter { it is ProjectComponentIdentifier }   // ← 只接受 Project 子模块
+    lenient(true)
+}.files)
+
+// remoteDependencyAars (line 110-120)
+remoteDependencyAars.from(config.incoming.artifactView {
+    ...
+    componentFilter { it is ModuleComponentIdentifier }    // ← 只接受 maven 依赖
+    lenient(true)
+}.files)
+```
+
+**两个过滤器都排斥 `files("libs/xxx.jar")` 直接文件依赖**——file 不走 Gradle dependency graph，没有 component identifier。
+
+#### 后果
+
+`implementation(files("libs/openlist-classes.jar"))` 在 plugin-openlist 模块：
+
+| 阶段 | 行为 | 结果 |
+|------|------|------|
+| Kotlin/Java 编译 | AGP 把 jar 加入 classpath | ✅ 编译过（Kotlin 看到 openlistlib.Event） |
+| AGP 打 aar | classes.jar **只**含 module 自己的 .class（不含 openlistlib） | ⚠️ aar 缺 openlistlib |
+| aar2apk 转 APK | d8 合并 aar 的 classes.jar + 空 localDependencyClasses | ❌ APK dex 缺 openlistlib |
+| 运行时 | NoClassDefFoundError | 💥 崩 |
+
+#### 修复方案：sourceSet 注入
+
+`plugin-openlist/build.gradle.kts`：
+
+```kotlin
+android {
+    sourceSets {
+        getByName("main") {
+            java.srcDir(layout.buildDirectory.dir("generated/openlistlib"))
+        }
+    }
+}
+
+val unpackOpenlistClasses by tasks.registering {
+    val input = file("libs/openlist-classes.jar")
+    val outputDir = layout.buildDirectory.dir("generated/openlistlib").get().asFile
+    inputs.file(input)
+    outputs.dir(outputDir)
+    doLast {
+        outputDir.deleteRecursively()
+        outputDir.mkdirs()
+        copy { from(zipTree(input)); into(outputDir) }
+    }
+}
+
+afterEvaluate {
+    tasks.matching { it.name.startsWith("pre") && it.name.endsWith("Build") }
+        .configureEach { dependsOn(unpackOpenlistClasses) }
+}
+```
+
+这样：
+- `preBuild` → `unpackOpenlistClasses` → 解压到 `build/generated/openlistlib/`
+- Kotlin/Java 编译时 sourceSet 含 `build/generated/openlistlib/`，能找到 openlistlib 类
+- AGP 打 aar 时 **classes.jar 自然含** openlistlib 类（因为它们是 sourceSet 一部分）
+- aar2apk 解压 aar 拿 classes.jar → d8 合并 → **plugin APK dex 含 openlistlib** ✅
+- 运行时类能加载
+
+#### 方案对比
+
+| 方案 | 稳定性 | 依赖第三方 | 维护成本 | 选 |
+|------|--------|-----------|---------|---|
+| **sourceSet 注入** | 高（不依赖 aar2apk/AGP 内部） | 无 | 低（一个 task） | ✅ **本项目** |
+| 包成 .aar 走 maven coordinate | 中 | flatDir/mavenLocal | 中（额外仓库配置） | — |
+| 改 aar2apk 源码接受 file deps | 低 | fork ComboLite | 高 | ❌ |
+| 改 `implementation` 为 `compileOnly` + 手动塞 dex | 不可行 | — | — | ❌ |
+
+#### 沙箱验证步骤
+
+1. javac 生成 stub openlistlib jar（含 Event / LogCallback / Openlistlib .class）
+2. 把 stub jar 拷到 `plugin-openlist/libs/openlist-classes.jar`
+3. 手动解压到 `plugin-openlist/build/generated/openlistlib/`
+4. `kotlinc -classpath "build/generated/openlistlib:libs/openlist-classes.jar" OpenListBridge.kt -d /tmp/out`
+5. 验证：unresolved `openlistlib` 错误**消失**（只剩 android.* unresolved，预期）
+6. 清理 sandbox 临时文件（jar + build/）
+
+#### 铁律总结
+
+> 凡是依赖 gomobile bind / JNI 生成的 native bridge 类（编译产物是 jar 不是 aar），
+> **必须用 sourceSet 注入**。`implementation(files("xxx.jar"))` 不会让 aar2apk 把
+> 那些类合并到 plugin APK 的 dex。
+
+---
+
 ### 10.10 关键参考源码
 
 | 路径 | 内容 |
