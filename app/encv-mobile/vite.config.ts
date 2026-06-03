@@ -193,8 +193,16 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['vue', 'vue-router', '@ionic/vue', '@ionic/vue-router'],
+        // Vite 8 (rolldown) requires manualChunks to be a function, not an object.
+        manualChunks(id: string) {
+          if (id.includes('node_modules')) {
+            // Group major vendor libs into a single chunk
+            const vendorLibs = ['vue', 'vue-router', '@ionic/vue', '@ionic/vue-router']
+            for (const lib of vendorLibs) {
+              if (id.includes(lib)) return 'vendor'
+            }
+            return 'vendor' // fallback: all other node_modules
+          }
         },
       },
     },
