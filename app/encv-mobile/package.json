@@ -16,6 +16,7 @@
     "generate:mock": "tsx scripts/generate-mock-files.ts"
   },
   "dependencies": {
+    "@ajuarezso/capacitor-high-refresh-rate": "^0.6.0",
     "@capacitor/android": "^8.3.4",
     "@capacitor/core": "^8.3.4",
     "@capacitor/screen-orientation": "^8.0.1",
@@ -36,6 +37,7 @@
     "@vitest/coverage-v8": "^4.1.7",
     "@vue/test-utils": "^2.4.10",
     "jsdom": "^29.1.1",
+    "sirv": "^3.0.2",
     "typescript": "^5.9.3",
     "vite": "^8.0.13",
     "vitest": "^4.1.7",

@@ -35,7 +35,8 @@ if [[ -f "$(dirname "$0")/openlist-fork.env.local" ]]; then
 fi
 
 NDK_DEFAULT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}/ndk/26.3.11579264"
-ENCV_GO_ROOT_DEFAULT="/workspace"
+_SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ENCV_GO_ROOT_DEFAULT="$(cd "${_SCRIPT_DIR}/.." && pwd)"
 
 FORK="${OPENLIST_FORK_URL:-https://github.com/Hi-Sillot/OpenList}"
 BRANCH="${OPENLIST_FORK_BRANCH:-dev}"
@@ -53,7 +54,7 @@ Options:
   --output                 <dir>    Output directory for openlist.aar (required)
   --fork                   <url>    Hi-Sillot fork URL       (default: ${FORK})
   --branch                 <name>   Git branch / tag          (default: ${BRANCH})
-  --ndk                    <path>   Android NDK install path  (default: ${NDK_DEFAULT})
+  --ndk                    <path>   Android NDK install path  (env: ANDROID_NDK_HOME)  (default: ${NDK_DEFAULT})
   --encv-go-root           <dir>    Local encv-go checkout    (default: ${ENCV_GO_ROOT_DEFAULT})
   --frontend-version       <vX.Y.Z> Pin OpenList-Frontend version (overrides env and frontend-pinned.txt)
   --local-frontend-dist    <dir>    Skip download, copy local frontend dist directly into public/dist/
@@ -135,8 +136,19 @@ log "  output dir : ${OUTPUT}"
 log "  frontend-version CLI : ${FRONTEND_VERSION_CLI:-<none>}"
 log "  local-frontend-dist  : ${LOCAL_FRONTEND_DIST:-<none>}"
 
-WORK_DIR="${TMPDIR:-/tmp}/openlist-aar-build"
-SRC_DIR="${WORK_DIR}/openlist"
+# Default fork work dir: app/openlist/Hi-Sillot-OpenList/ under the encv-mobile
+# repo root. This location matches the fork's own `go.mod` line
+# `replace github.com/Soltus/encv-go => ../../../` so the relative replace
+# resolves naturally to the encv-go root (no sed patching needed).
+# Override with OPENLIST_FORK_WORK_DIR for CI runners that want to reuse a
+# cached clone on a separate volume (e.g. /cache/fork).
+if [[ -n "${OPENLIST_FORK_WORK_DIR:-}" ]]; then
+    WORK_DIR="${OPENLIST_FORK_WORK_DIR}"
+else
+    _REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+    WORK_DIR="${_REPO_ROOT}/app/openlist/Hi-Sillot-OpenList"
+fi
+SRC_DIR="${WORK_DIR}"
 
 log "== Workspace =="
 log "  ${WORK_DIR}"
@@ -166,15 +178,59 @@ git clone --depth 1 --branch "${BRANCH}" "${CLONE_URL}" "${SRC_DIR}"
 GOMOD="${SRC_DIR}/go.mod"
 [[ -f "${GOMOD}" ]] || die "go.mod not found in ${SRC_DIR}"
 
-log "== Patch go.mod replace directive =="
-if grep -qE '^replace[[:space:]]+github\.com/Soltus/encv-go[[:space:]]+=>' "${GOMOD}"; then
-    sed -i.bak -E "s|^replace[[:space:]]+github\\.com/Soltus/encv-go[[:space:]]+=>[[:space:]]+[^[:space:]]+|replace github.com/Soltus/encv-go => ${ENCV_GO_ROOT}|" "${GOMOD}"
-    grep -E '^replace[[:space:]]+github\.com/Soltus/encv-go' "${GOMOD}" || die "go.mod replace patch failed"
+log "== Verify fork go.mod relative replace resolves correctly =="
+# Fork is expected at app/openlist/Hi-Sillot-OpenList/, so go.mod's
+# `replace github.com/Soltus/encv-go => ../../../` resolves to the encv-go
+# root (parent of app/). If fork moves to a non-standard location, sed-patch
+# the replace back to an absolute path. See D4 in
+# .trae/documents/fork-clone-path-refactor-to-app-openlist.md.
+_REL_REPLACE="$(grep -E '^replace[[:space:]]+github\.com/Soltus/encv-go[[:space:]]+=>' "${GOMOD}" 2>/dev/null | head -n 1 || true)"
+case "${_REL_REPLACE}" in
+    *../../../*|*"\${ENCV_GO_ROOT}"*)
+        log "  (relative replace detected: ${_REL_REPLACE##* } → resolves from fork to encv-go root)"
+        ;;
+    *)
+        if [[ -n "${_REL_REPLACE}" ]]; then
+            log "  WARN: non-relative replace found, fork go.mod has been modified upstream:"
+            log "        ${_REL_REPLACE}"
+            log "        sed-patching back to absolute path '${ENCV_GO_ROOT}' as safety net"
+            sed -i.bak -E "s|^replace[[:space:]]+github\\.com/Soltus/encv-go[[:space:]]+=>[[:space:]]+[^[:space:]]+|replace github.com/Soltus/encv-go => ${ENCV_GO_ROOT}|" "${GOMOD}"
+            rm -f "${GOMOD}.bak"
+        else
+            log "  WARN: no encv-go replace line found at all, appending one"
+            printf '\nreplace github.com/Soltus/encv-go => %s\n' "${ENCV_GO_ROOT}" >> "${GOMOD}"
+        fi
+        ;;
+esac
+
+# Patch 2: gomobile bind's pre-flight `build.Import("golang.org/x/mobile", ...)`
+# walks the module's *package graph* and fails when the package is only
+# declared via a Go 1.24 `tool` directive. The `tool` directive only
+# registers the gobind binary; it does NOT make golang.org/x/mobile
+# importable from module code, so the bind check still misses it.
+#
+# The gomobile error message suggests `go get -tool`, but that adds a
+# `tool` directive — which is precisely the line the fork already has and
+# which the bind check ignores. The actual fix is a regular `require`
+# directive (go.dev/issue/77183; cmd/gomobile/bind.go in golang.org/x/mobile).
+#
+# This patch is idempotent: if the fork (or a future version of it) already
+# ships a `require golang.org/x/mobile v...` line, the `go get` is a no-op.
+if grep -qE 'golang\.org/x/mobile[[:space:]]+v[0-9]' "${GOMOD}"; then
+    log "  (require golang.org/x/mobile already present in go.mod, no patch needed)"
 else
-    log "  (no encv-go replace line found, appending one)"
-    printf '\nreplace github.com/Soltus/encv-go => %s\n' "${ENCV_GO_ROOT}" >> "${GOMOD}"
+    # Pin to the same pseudo-version gomobile itself downloads, so the
+    # module graph matches the gobind binary we install a few lines below.
+    PINNED_MOBILE_VERSION="v0.0.0-20260529142300-ecb4cd65260a"
+    log "  adding require golang.org/x/mobile ${PINNED_MOBILE_VERSION}"
+    log "  reason: gomobile bind needs the package in the module graph, not just the tool directive"
+    ( cd "${SRC_DIR}" && go get "golang.org/x/mobile@${PINNED_MOBILE_VERSION}" ) \
+        || die "go get golang.org/x/mobile@${PINNED_MOBILE_VERSION} failed"
+    log "  current golang.org/x/mobile entries in go.mod:"
+    grep -E 'golang\.org/x/mobile' "${GOMOD}" | while IFS= read -r line; do
+        log "    ${line}"
+    done
 fi
-rm -f "${GOMOD}.bak"
 
 log "== Resolve frontend version =="
 DIST_DIR="${SRC_DIR}/public/dist"
@@ -192,25 +248,24 @@ if [[ -n "${LOCAL_FRONTEND_DIST}" ]]; then
     FRONTEND_VERSION="${FRONTEND_VERSION_CLI:-${OPENLIST_FRONTEND_VERSION:-local}}"
     log "  version: ${FRONTEND_VERSION} (label, not a real upstream tag)"
 else
-    if [[ -f "${SRC_DIR}/frontend-pinned.txt" ]]; then
+    # Single source of truth: CLI > env > fork's frontend-pinned.txt > latest
+    if [[ -n "${FRONTEND_VERSION_CLI}" ]]; then
+        FRONTEND_VERSION="${FRONTEND_VERSION_CLI}"
+        log "  source: --frontend-version CLI"
+    elif [[ -n "${OPENLIST_FRONTEND_VERSION:-}" ]]; then
+        FRONTEND_VERSION="${OPENLIST_FRONTEND_VERSION}"
+        log "  source: OPENLIST_FRONTEND_VERSION env"
+    elif [[ -f "${SRC_DIR}/frontend-pinned.txt" ]]; then
         PINNED="$(cat "${SRC_DIR}/frontend-pinned.txt" 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?' | head -n 1 || true)"
         if [[ -n "${PINNED}" ]]; then
             FRONTEND_VERSION="${PINNED}"
             log "  source: fork frontend-pinned.txt"
         fi
     fi
-    if [[ -z "${FRONTEND_VERSION}" && -n "${FRONTEND_VERSION_CLI}" ]]; then
-        FRONTEND_VERSION="${FRONTEND_VERSION_CLI}"
-        log "  source: --frontend-version CLI"
-    fi
-    if [[ -z "${FRONTEND_VERSION}" && -n "${OPENLIST_FRONTEND_VERSION:-}" ]]; then
-        FRONTEND_VERSION="${OPENLIST_FRONTEND_VERSION}"
-        log "  source: OPENLIST_FRONTEND_VERSION env"
-    fi
     if [[ -z "${FRONTEND_VERSION}" ]]; then
         FRONTEND_VERSION="latest"
         echo "[WARN] no frontend pin, using latest" >&2
-        log "  source: fallback (releases/latest) — pin via frontend-pinned.txt to silence this warning"
+        log "  source: fallback (releases/latest) — set OPENLIST_FRONTEND_VERSION or --frontend-version to pin"
     fi
     log "  version: ${FRONTEND_VERSION}"
 
@@ -293,7 +348,7 @@ mkdir -p "${GOPATH_BIN}"
 export PATH="${GOPATH_BIN}:${PATH}"
 go install golang.org/x/mobile/cmd/gomobile@latest
 go install golang.org/x/mobile/cmd/gobind@latest
-gomobile init -ndk "${NDK}"
+gomobile init
 
 cd "${SRC_DIR}"
 BIND_PKG=""
@@ -304,6 +359,73 @@ elif [[ -d "cmd/openlistlib" ]] && ls cmd/openlistlib/*.go >/dev/null 2>&1; then
 else
     die "Hi-Sillot fork is missing openlistlib/ (see spec §一) and no fallback exists"
 fi
+
+# Sanity-check: fork must declare the gomobile tool directive (commit e3cd5b3+).
+# This is what makes the `gobind` binary invocable from `go generate` and similar
+# flows. The actual gomobile bind *package* dependency is added by the earlier
+# `Patch 2` block (a regular `require golang.org/x/mobile ...` directive),
+# because the bind pre-flight only consults the package graph, not the tool
+# graph. See go.dev/issue/77183.
+if ! grep -qE '^tool[[:space:]]+golang\.org/x/mobile/cmd/gobind' go.mod 2>/dev/null; then
+    die "fork go.mod missing 'tool golang.org/x/mobile/cmd/gobind' directive (see go.dev/issue/77183)"
+fi
+
+# A2 fallback: Hi-Sillot/OpenList fork is supposed to ship `openlistlib/event.go`
+# per spec §一 (Event + LogCallback interfaces for gobind). If the fork is
+# behind and hasn't pushed it yet, we inject a minimal compatible event.go so
+# `go build ./openlistlib` doesn't fail with `undefined: LogCallback`. Once the
+# fork catches up, this block is a no-op. See
+# .trae/documents/openlist-aar-sqlite-cgo-multi-solution.md §三 A2.
+FORK_HEAD="$(git -C "${SRC_DIR}" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+EVENT_GO="${SRC_DIR}/openlistlib/event.go"
+if [[ ! -f "${EVENT_GO}" ]]; then
+    log "  [A2] openlistlib/event.go missing in fork @ ${FORK_HEAD}, injecting fallback"
+    cat > "${EVENT_GO}" <<'EOF'
+// Code generated by scripts/build-openlist-aar.sh (A2 fallback). DO NOT EDIT
+// in this script — the authoritative source lives in Hi-Sillot/OpenList fork.
+// This file is overwritten on every build if the fork hasn't shipped it yet.
+// Once the fork adds openlistlib/event.go, this injection becomes a no-op.
+package openlistlib
+
+type Event interface {
+	OnStartError(eventType string, msg string)
+	OnShutdown(eventType string)
+	OnProcessExit(code int64)
+}
+
+type LogCallback interface {
+	OnLog(level int16, time int64, log string)
+}
+EOF
+    log "  [A2] injected: $(wc -l < "${EVENT_GO}") lines into ${EVENT_GO}"
+else
+    log "  [A2] openlistlib/event.go present in fork @ ${FORK_HEAD}, no injection needed"
+fi
+
+# B2 fallback: if the fork still uses gorm.io/driver/sqlite (which chains into
+# mattn/go-sqlite3, a CGO package), we must give gomobile bind a working C
+# cross-compiler pointing at the NDK. gomobile already sets CGO_ENABLED=1 for
+# Android targets, but without CC/CXX it falls back to the host gcc, which
+# can't produce android-arm64 ELF. We pre-set CC/CXX to the NDK clang.
+#
+# If the fork has switched to github.com/glebarez/sqlite (pure-Go, no CGO),
+# these exports are harmless extra env vars — gomobile's `go build` will simply
+# not invoke CGO. See .trae/documents/openlist-aar-sqlite-cgo-multi-solution.md
+# §三 B2.
+NDK_CLANG_DIR="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+if [[ -x "${NDK_CLANG_DIR}/aarch64-linux-android21-clang" ]]; then
+    export CC="${NDK_CLANG_DIR}/aarch64-linux-android21-clang"
+    export CXX="${NDK_CLANG_DIR}/aarch64-linux-android21-clang++"
+    log "  [B2] CGO toolchain pinned: CC=${CC}"
+    log "  [B2] CXX=${CXX}"
+    # Belt-and-suspenders: gomobile should already enable CGO for -target=android,
+    # but some versions / paths silently fall back to CGO_ENABLED=0.
+    export CGO_ENABLED=1
+else
+    log "  [B2] NDK clang not found at ${NDK_CLANG_DIR} (skipping CC/CXX pin);"
+    log "       if build fails on mattn/go-sqlite3, install NDK r25c+ or switch fork to glebarez/sqlite"
+fi
+
 log "== gomobile bind (bind pkg: ${BIND_PKG}) =="
 
 LDFLAGS="-s -w"
@@ -313,11 +435,17 @@ LDFLAGS="${LDFLAGS} -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.BuiltA
 LDFLAGS="${LDFLAGS} -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.GitAuthor=The OpenList Projects Contributors <noreply@openlist.team>'"
 LDFLAGS="${LDFLAGS} -X 'github.com/OpenListTeam/OpenList/v4/internal/conf.GitCommit=$(git -C "${SRC_DIR}" rev-parse --short HEAD)'"
 
+# 16KB page size alignment (NDK 28+ requirement, also future-proofs older NDKs).
+# See: https://developer.android.com/guide/practices/page-sizes
+export CGO_CFLAGS="-O2"
+export CGO_CXXFLAGS="-O2"
+export CGO_LDFLAGS="-O2 -s -w -Wl,-z,max-page-size=16384"
+
 cd "${SRC_DIR}"
 gomobile bind \
     -ldflags "${LDFLAGS}" \
     -v \
-    -androidapi 19 \
+    -androidapi 21 \
     -target="android/arm64" \
     -o "${OUTPUT}/openlist.aar" \
     "${BIND_PKG}"
@@ -327,6 +455,23 @@ gomobile bind \
 log "== Checksum =="
 ( cd "${OUTPUT}" && sha256sum openlist.aar > openlist.aar.sha256 )
 cat "${OUTPUT}/openlist.aar.sha256"
+
+log "== Copy frontend dist to plugin assets (production path) =="
+# C5 (spec §2.2): production runtime extracts dist from plugin-openlist APK assets/
+# (instead of relying on gomobile's //go:embed of public/dist into libgojni.so).
+# This makes frontend updates patchable without rebuilding the AAR.
+PLUGIN_ASSETS_DIR="${ENCV_GO_ROOT}/app/encv-mobile/plugin-openlist/src/main/assets"
+if [[ -d "${DIST_DIR}" && -f "${DIST_DIR}/index.html" ]]; then
+  PLUGIN_DIST="${PLUGIN_ASSETS_DIR}/dist"
+  log "  source: ${DIST_DIR}"
+  log "  target: ${PLUGIN_DIST}"
+  rm -rf "${PLUGIN_DIST}"
+  mkdir -p "${PLUGIN_DIST}"
+  cp -a "${DIST_DIR}/." "${PLUGIN_DIST}/"
+  log "  done: $(du -sh "${PLUGIN_DIST}" | cut -f1) copied to ${PLUGIN_DIST}"
+else
+  log "  (no frontend dist available, skipping plugin assets copy)"
+fi
 
 log "== Done =="
 log "  AAR  : ${OUTPUT}/openlist.aar"

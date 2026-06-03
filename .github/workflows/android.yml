@@ -14,7 +14,7 @@ on:
         default: ''
         type: string
       skip_plugin:
-        description: 'Skip MPV plugin build (only build host app)'
+        description: 'Skip all plugin builds (MPV + OpenList). Only build host app.'
         required: false
         default: 'false'
         type: boolean
@@ -386,9 +386,24 @@ jobs:
           echo "  Plugin APK: All MPV/FFmpeg .so files"
 
 
-      # === Build MPV Player Plugin ===
+      # === Build Plugins (structurally isolated from main app) ===
+      # Plugin subprojects are conditionally included via -PincludePlugins=true
+      # (see android/settings.gradle.kts).  Without the flag, Gradle's task
+      # graph does NOT resolve :plugin-openlist:compile* or :plugin-mpv-player:*,
+      # so a plugin Kotlin compile error can NEVER block the main app APK.
+      #
+      # Each plugin step runs its own gradlew invocation with -PincludePlugins=true.
+      # Two layers of isolation:
+      #   1. settings.gradle.kts conditional include — Gradle task graph never
+      #      pulls :plugin-openlist:* into the main app's assemble* task.
+      #   2. continue-on-error on each step — if a plugin build fails for its
+      #      own reasons (Kotlin compile error, missing AAR, etc.), the step
+      #      still shows FAILED (red, real error) but does NOT kill the job
+      #      before the main app APK is built and uploaded.
+
       - name: Build MPV player plugin (JNI + Kotlin)
         if: inputs.skip_plugin != true
+        continue-on-error: true
         run: |
           cd app/encv-mobile/android
 
@@ -400,16 +415,17 @@ jobs:
 
           # Compile plugin Kotlin code (debug or release)
           BUILD_TYPE="${{ inputs.version && 'Release' || 'Debug' }}"
-          ./gradlew ":plugin-mpv-player:compile${BUILD_TYPE}Kotlin" --stacktrace 2>&1 || true
+          ./gradlew -PincludePlugins=true ":plugin-mpv-player:compile${BUILD_TYPE}Kotlin" --stacktrace 2>&1 || true
           echo "=== Plugin compile done (${BUILD_TYPE}) ==="
 
       - name: Package MPV plugin as APK
         if: inputs.skip_plugin != true
+        continue-on-error: true
         run: |
           cd app/encv-mobile/android
           BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
 
-          ./gradlew "convert_plugin-mpv-player_${BUILD_TYPE}" --stacktrace
+          ./gradlew -PincludePlugins=true "convert_plugin-mpv-player_${BUILD_TYPE}" --stacktrace
 
           PLUGIN_APK=$(find build -name "plugin-mpv-player-${BUILD_TYPE}.apk" -type f 2>/dev/null | head -1)
           if [ -n "$PLUGIN_APK" ] && [ -f "$PLUGIN_APK" ]; then
@@ -437,6 +453,108 @@ jobs:
             unzip -l "$PLUGIN_APK" | grep -c "\.so" || echo "0"
           else
             echo "⏭️ Plugin APK not available"
+          fi
+
+      # === Build OpenList Plugin (AAR → APK via aar2apk) ===
+      - name: Build OpenList AAR (gomobile bind)
+        if: inputs.skip_plugin != true
+        continue-on-error: true
+        run: |
+          echo "═══ OpenList AAR Build (gomobile bind) ═══"
+          bash scripts/build-openlist-aar.sh \
+            --output app/encv-mobile/plugin-openlist/libs \
+            --ndk /usr/local/lib/android/sdk/ndk/${{ env.NDK_VERSION }} \
+            --frontend-version v4.1.8
+          echo ""
+          echo "=== AAR output ==="
+          ls -lh app/encv-mobile/plugin-openlist/libs/openlist.aar*
+          echo "=== AAR contents (spot check) ==="
+          unzip -l app/encv-mobile/plugin-openlist/libs/openlist.aar | grep -E "libgojni|Openlistlib|\.so" || echo "(no matches)"
+
+      - name: Extract OpenList AAR for plugin packaging
+        if: inputs.skip_plugin != true
+        continue-on-error: true
+        run: |
+          AAR="app/encv-mobile/plugin-openlist/libs/openlist.aar"
+          PLUGIN_SRC="app/encv-mobile/plugin-openlist/src/main"
+          echo "=== Extracting openlist.aar for plugin packaging ==="
+          TMPDIR=$(mktemp -d)
+          unzip -o "$AAR" -d "$TMPDIR"
+          echo "AAR top-level contents:"
+          ls -la "$TMPDIR/"
+          # Copy JNI libs (libgojni.so) so AGP bundles them into the plugin AAR,
+          # which aar2apk then packages into the final plugin APK.
+          if [ -d "$TMPDIR/jni" ]; then
+            rm -rf "$PLUGIN_SRC/jniLibs"
+            mkdir -p "$PLUGIN_SRC/jniLibs"
+            cp -r "$TMPDIR/jni/"* "$PLUGIN_SRC/jniLibs/"
+            echo "JNI libs copied:"
+            find "$PLUGIN_SRC/jniLibs" -name "*.so" -exec ls -lh {} \;
+          else
+            echo "::error::No jni/ directory in openlist.aar"
+            exit 1
+          fi
+          # Copy classes.jar (gomobile bindings) so AGP bundles it into the
+          # plugin AAR — regular .jar deps are bundled, unlike .aar deps.
+          if [ -f "$TMPDIR/classes.jar" ]; then
+            cp "$TMPDIR/classes.jar" app/encv-mobile/plugin-openlist/libs/openlist-classes.jar
+            echo "classes.jar copied:"
+            ls -lh app/encv-mobile/plugin-openlist/libs/openlist-classes.jar
+          else
+            echo "::error::No classes.jar in openlist.aar"
+            exit 1
+          fi
+          rm -rf "$TMPDIR"
+          echo "=== Extraction complete ==="
+
+      - name: Build OpenList plugin APK (aar2apk)
+        if: inputs.skip_plugin != true
+        continue-on-error: true
+        run: |
+          cd app/encv-mobile/android
+          BUILD_TYPE="${{ inputs.version && 'Release' || 'Debug' }}"
+          APK_BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
+          echo "=== Compiling OpenList plugin (${BUILD_TYPE}) ==="
+          ./gradlew -PincludePlugins=true ":plugin-openlist:compile${BUILD_TYPE}Kotlin" --stacktrace 2>&1
+          echo "=== Converting to plugin APK ==="
+          ./gradlew -PincludePlugins=true "convert_plugin-openlist_${APK_BUILD_TYPE}" --stacktrace 2>&1
+          echo "=== Locating output ==="
+          OPENLIST_APK="build/outputs/plugin-apks/${APK_BUILD_TYPE}/plugin-openlist-${APK_BUILD_TYPE}.apk"
+          if [ -f "$OPENLIST_APK" ]; then
+            echo "✅ OpenList Plugin APK:"
+            ls -lh "$OPENLIST_APK"
+          else
+            echo "::error::OpenList Plugin APK not found after build"
+            find build/outputs -name "*.apk" 2>/dev/null | head -5 || echo "No APKs found"
+            exit 1
+          fi
+
+      - name: Verify OpenList plugin APK contents
+        if: always() && inputs.skip_plugin != true
+        continue-on-error: true
+        run: |
+          BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
+          OPENLIST_APK="app/encv-mobile/android/build/outputs/plugin-apks/${BUILD_TYPE}/plugin-openlist-${BUILD_TYPE}.apk"
+          if [ -f "$OPENLIST_APK" ]; then
+            echo "=== OpenList Plugin APK size ==="
+            ls -lh "$OPENLIST_APK"
+            echo "=== libgojni.so in APK ==="
+            if unzip -l "$OPENLIST_APK" | grep -q "libgojni"; then
+              unzip -l "$OPENLIST_APK" | grep "libgojni"
+              echo "✅ PASS: libgojni.so present (Go runtime embedded)"
+            else
+              echo "❌ FAIL: libgojni.so missing"
+            fi
+            echo "=== Openlistlib class in APK ==="
+            if unzip -l "$OPENLIST_APK" | grep -qi "openlistlib"; then
+              echo "✅ PASS: Openlistlib stub classes present"
+            else
+              echo "⚠️ WARN: Openlistlib classes not found (may be packaged differently)"
+            fi
+            echo "=== Total .so count ==="
+            unzip -l "$OPENLIST_APK" | grep -c "\.so" || echo "0"
+          else
+            echo "⏭️ OpenList Plugin APK not available"
           fi
 
       # === Build ===
@@ -554,6 +672,7 @@ jobs:
           path: |
             app/encv-mobile/android/app/build/outputs/apk/**/*.apk
             app/encv-mobile/android/build/outputs/plugin-apks/**/*.apk
+            app/encv-mobile/android/build/**/plugin-openlist*.apk
           retention-days: 3
 
       - name: Build summary
@@ -565,6 +684,10 @@ jobs:
           echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Version | \`${{ inputs.version || 'debug (development)' }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Go Binary | $(ls -lh app/encv-mobile/encv-go-arm64 2>/dev/null | awk '{print $5}' || echo N/A) |" >> $GITHUB_STEP_SUMMARY
+          echo "| OpenList AAR | $(ls -lh app/encv-mobile/plugin-openlist/libs/openlist.aar 2>/dev/null | awk '{print $5}' || echo N/A) |" >> $GITHUB_STEP_SUMMARY
           find app/encv-mobile/android/app/build/outputs/apk -name "*.apk" -type f 2>/dev/null | while read apk; do
             echo "| APK | $(basename "$apk") ($(\ls -lh "$apk" | awk '{print $5}')) |" >> $GITHUB_STEP_SUMMARY
+          done
+          find app/encv-mobile/android/build -name "plugin-openlist-*.apk" -type f 2>/dev/null | while read apk; do
+            echo "| OpenList Plugin APK | $(basename "$apk") ($(\ls -lh "$apk" | awk '{print $5}')) |" >> $GITHUB_STEP_SUMMARY
           done

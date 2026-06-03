@@ -117,3 +117,24 @@ encv-mobile 前端（Ionic + Vue）已完整实现，包含 Files/Player/Tasks/W
 #### Scenario: WS 断开
 - **WHEN** 客户端断开连接
 - **THEN** 服务端清理资源
+
+### Requirement: 本地存储 sqlite 驱动 SHALL 使用 glebarez/sqlite
+
+如 encv-go 端未来需要引入本地 sqlite 持久化（任务队列、本地缓存、用户配置等），SHALL 选用 `github.com/glebarez/sqlite`（pure-Go，基于 `modernc.org/sqlite` 的 GORM Dialector），**禁止**引入 `github.com/mattn/go-sqlite3`。
+
+#### Scenario: 选型一致性
+- **WHEN** 任何 `go get` 拉入 sqlite 相关依赖
+- **THEN** import path 必须是 `github.com/glebarez/sqlite`；`go.mod` 不应出现 `mattn/go-sqlite3` 任何形式（直接或间接）
+- **AND** `gorm.Open(sqlite.Open(...), &gorm.Config{})` API 与 `gorm.io/driver/sqlite` 完全一致，无需业务层改写
+
+#### Scenario: 交叉编译验证
+- **WHEN** 在 Linux/macOS/Windows 任一平台为 Android arm64 交叉编译 encv-go
+- **THEN** `CGO_ENABLED=0 go build ./...` 应当通过；若失败说明违规引入了 CGO 驱动（如 mattn）
+
+#### Scenario: 性能预算
+- **GIVEN** OpenList 元数据场景为读多写少
+- **THEN** glebarez 写性能 20-30% 衰减可接受；读性能与 mattn 基本持平
+
+#### Scenario: 与 Hi-Sillot/OpenList fork 选型对齐
+- **GIVEN** fork 自身已切到 `github.com/glebarez/sqlite`（见 `.trae/documents/openlist-aar-sqlite-cgo-multi-solution.md` §三 B1）
+- **THEN** encv-go 端保持同款驱动，未来 gomobile 工具链复用、跨 ABI 打包、容器化部署均无 CGO 阻塞

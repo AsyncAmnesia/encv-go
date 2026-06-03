@@ -209,13 +209,19 @@ Write-Status "  output dir : $Output"
 Write-Status "  frontend-version CLI : $(if ([string]::IsNullOrEmpty($FrontendVersion)) { '<none>' } else { $FrontendVersion })"
 Write-Status "  local-frontend-dist  : $(if ([string]::IsNullOrEmpty($LocalFrontendDist)) { '<none>' } else { $LocalFrontendDist })"
 
-$tmpRoot = $env:TEMP
-if ([string]::IsNullOrEmpty($tmpRoot)) { $tmpRoot = 'C:\Temp' }
-if (-not (Test-Path -LiteralPath $tmpRoot)) {
-    New-Item -ItemType Directory -Path $tmpRoot -Force | Out-Null
+# Default fork work dir: <repo-root>\app\openlist\Hi-Sillot-OpenList\. This
+# location matches the fork's own go.mod line
+# `replace github.com/Soltus/encv-go => ../../../` so the relative replace
+# resolves naturally to the encv-go root (no sed patching needed). Override
+# with $env:OPENLIST_FORK_WORK_DIR for CI runners that want to reuse a cached
+# clone on a separate volume (e.g. D:\cache\fork).
+if (-not [string]::IsNullOrEmpty($env:OPENLIST_FORK_WORK_DIR)) {
+    $workDir = $env:OPENLIST_FORK_WORK_DIR
+} else {
+    $repoRoot = Split-Path -Parent $PSScriptRoot
+    $workDir  = Join-Path (Join-Path $repoRoot 'app\openlist') 'Hi-Sillot-OpenList'
 }
-$workDir  = Join-Path $tmpRoot 'openlist-aar-build'
-$srcDir   = Join-Path $workDir 'openlist'
+$srcDir   = $workDir
 if (Test-Path -LiteralPath $srcDir) {
     Remove-Item -LiteralPath $srcDir -Recurse -Force
 }
@@ -231,21 +237,41 @@ if (-not (Test-Path -LiteralPath $goMod)) {
     Write-Fatal "go.mod not found in $srcDir"
 }
 
-Write-Status "== Patch go.mod replace directive =="
-$replaced = $false
-$lines = Get-Content -LiteralPath $goMod
+Write-Status "== Verify fork go.mod relative replace resolves correctly =="
+# Fork is expected at <repo-root>\app\openlist\Hi-Sillot-OpenList\, so go.mod's
+# `replace github.com/Soltus/encv-go => ../../../` resolves to the encv-go
+# root. If fork moves to a non-standard location, sed-patch the replace back
+# to an absolute path. See D4 in
+# .trae/documents/fork-clone-path-refactor-to-app-openlist.md.
 $pattern = '^[ \t]*replace[ \t]+github\.com/Soltus/encv-go[ \t]+=>[ \t]+([^\s]+)'
+$relReplace = $null
+$lines = Get-Content -LiteralPath $goMod
 for ($i = 0; $i -lt $lines.Count; $i++) {
     if ($lines[$i] -match $pattern) {
-        $lines[$i] = "replace github.com/Soltus/encv-go => $EncvGoRoot"
-        $replaced = $true
+        $relReplace = $lines[$i]
         break
     }
 }
-if (-not $replaced) {
-    $lines += "replace github.com/Soltus/encv-go => $EncvGoRoot"
+if ($relReplace -and ($relReplace -match '^[ \t]*replace[ \t]+github\.com/Soltus/encv-go[ \t]+=>[ \t]+\.\./\.\./\.\./')) {
+    Write-Status "  (relative replace detected -> resolves from fork to encv-go root)"
+} else {
+    if ($relReplace) {
+        Write-Status "  WARN: non-relative replace found, fork go.mod has been modified upstream:"
+        Write-Status "        $relReplace"
+        Write-Status "        sed-patching back to absolute path '$EncvGoRoot' as safety net"
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match $pattern) {
+                $lines[$i] = "replace github.com/Soltus/encv-go => $EncvGoRoot"
+                break
+            }
+        }
+        Set-Content -LiteralPath $goMod -Value $lines -Encoding UTF8
+    } else {
+        Write-Status "  WARN: no encv-go replace line found at all, appending one"
+        $lines += "replace github.com/Soltus/encv-go => $EncvGoRoot"
+        Set-Content -LiteralPath $goMod -Value $lines -Encoding UTF8
+    }
 }
-Set-Content -LiteralPath $goMod -Value $lines -Encoding UTF8
 
 Write-Status "== Resolve frontend version =="
 $distDir = Join-Path $srcDir 'public\dist'

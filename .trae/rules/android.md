@@ -175,3 +175,57 @@ if (!buildType.isMinifyEnabled && androidResources.shrink) {
 > **症状**：CI guard 从未真正检查过构建配置文件
 > **根因**：`find ... -not -path "*build*"` 把 `build.gradle.kts` 也排除了（文件名含 "build"）
 > **修复**：使用 `-not -path "*/build/*"` （只排除目录）
+
+---
+
+## 五、gomobile + sqlite 选型铁律（plugin-openlist 必读）
+
+> **核心原则：gomobile bind 产物（AAR 内的 libgojni.so）若引入 sqlite，必须用 `github.com/glebarez/sqlite`（pure-Go），禁止 `gorm.io/driver/sqlite` / `mattn/go-sqlite3`（CGO）。**
+
+### 5.1 为什么 mattn/go-sqlite3 在 gomobile 路径下是雷
+
+`github.com/mattn/go-sqlite3` 是 **CGO 绑定驱动**——通过 `#cgo` 指令桥接 C 语言版的 `sqlite3.c`：
+
+| 维度 | mattn/go-sqlite3（CGO） | glebarez/sqlite（pure-Go） |
+|------|------------------------|---------------------------|
+| 编译要求 | `CGO_ENABLED=1` + 主机 gcc/clang | `CGO_ENABLED=0` 也可 |
+| 跨 ABI 稳定性 | 依赖目标平台 libc / NDK toolchain | 零系统依赖，arm64-v8a ELF 跨设备一致 |
+| gomobile bind 表现 | 必须给 gomobile 配 NDK clang，否则 host gcc 产错 ELF；常见 `-fPIC` / `setresuid` / musl 报错 | 直接 `go build` 产出，零摩擦 |
+| AAR 体积 | ~42 MB（带 SQLite C 静态库） | ~30 MB（纯 Go transpiled 字节码） |
+| 写性能 | 100% 基准 | 70-80%（OpenList 元数据场景不可感知） |
+| 与上游 OpenList API | 100% 兼容 | 100% 兼容（同 GORM Dialector 接口） |
+
+### 5.2 铁律
+
+> 任何走 `gomobile bind` 路径产出的 Go 代码（即 `libgojni.so`），如需 sqlite 持久化：
+> 1. **SHALL** 导入 `github.com/glebarez/sqlite`
+> 2. **SHALL NOT** 导入 `gorm.io/driver/sqlite`（其内部链入 mattn）
+> 3. **SHALL NOT** 直接导入 `github.com/mattn/go-sqlite3`
+
+> 非 gomobile 路径的普通 Go 二进制（encv-go 子进程、CLI 工具）目前未强制，但建议一致使用 `glebarez/sqlite` 以减少供应链碎片——见 `implement-mobile-backend-api/spec.md`「本地存储 sqlite 驱动 SHALL 使用 glebarez/sqlite」。
+
+### 5.3 验证
+
+```bash
+# 检查 gomobile 路径下是否违规引入 mattn
+cd fork && grep -rln '"github.com/mattn/go-sqlite3"\|"gorm.io/driver/sqlite"' . | head
+# 应为空
+
+# CGO_ENABLED=0 自检
+cd fork && CGO_ENABLED=0 go build ./...
+# 应通过（说明纯 Go）
+```
+
+### 5.4 应急回退（不应走到这一步）
+
+若 fork 仍使用 mattn 且 gomobile 撞 NDK toolchain 兼容坑，`scripts/build-openlist-aar.sh` 内置 **B2 兜底**：
+
+- 自动设 `CC=<NDK>/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang`
+- 强制 `CGO_ENABLED=1`
+- 但这只是「让 CI 跑过」，长期方案仍是切 glebarez（见 `.trae/documents/openlist-aar-sqlite-cgo-multi-solution.md` §三 B1）
+
+### 5.5 历史踩坑
+
+> **症状**：`gomobile bind` 报 `undefined: LogCallback`，补全后下一轮报 `# github.com/mattn/go-sqlite3` 或 `-fPIC` 失败
+> **根因**：fork 用 `gorm.io/driver/sqlite` 链入 mattn CGO 库，gomobile 的 NDK toolchain 默认不开启 CGO 路径解析
+> **修复**：fork 切 `glebarez/sqlite`（A1+B1 路径，spec 主推）；或脚本兜底强 CGO（A2+B2 路径，临时 CI 绿线）

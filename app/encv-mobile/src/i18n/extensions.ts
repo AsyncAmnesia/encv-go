@@ -28,6 +28,8 @@ export default {
     'extensions.installFromLocalHint': '选择 .apk 文件进行本地安装',
     'extensions.alistDecrypt': 'Alist-Encrypt 解密',
     'extensions.alistDecryptDesc': '支持 AES-128-CTR 加密文件的解密、加密和流式预览',
+    'extensions.openlist': 'OpenList',
+    'extensions.openlistDesc': '本地文件管理服务，支持 ENCV 容器透明解密和多存储源挂载',
   },
   en: {
     'extensions.title': 'Extensions',
@@ -58,5 +60,7 @@ export default {
     'extensions.installFromLocalHint': 'Select .apk file for local installation',
     'extensions.alistDecrypt': 'Alist-Encrypt Decrypt',
     'extensions.alistDecryptDesc': 'Support decryption, encryption and streaming preview of AES-128-CTR encrypted files',
+    'extensions.openlist': 'OpenList',
+    'extensions.openlistDesc': 'Local file management service with ENCV container transparent decryption and multi-storage mounting',
   },
 }

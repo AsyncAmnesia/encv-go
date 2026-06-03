@@ -5,7 +5,7 @@
 #   2. 后端必须用 air 监视重载（禁止 go build / 手动 go run）
 #   3. 不修改 config.user.json —— servingDir 永远为 /storage/emulated/0
 #   4. 严禁任何符号链接 —— mock-data 真实目录在 /storage/emulated/0
-#   5. 严禁误杀 agent-tool-host —— 它在 :5173（沙箱基础设施，反向代理到 vite）
+#   5. 自动检测端口占用：5173 被占时自动回退到 5174
 #   6. 脚本必须保持前台运行（nohup 进程由脚本管理），便于 OpenPreview 激活
 #   7. 脚本退出时优雅停止所有子进程
 set -euo pipefail
@@ -40,15 +40,21 @@ export PATH="/root/.local/share/mise/installs/go/1.25.1/bin:${PATH}"
 BACKEND_PORT="${ENCV_MOBILE_PORT:-2025}"
 MOCK_DIR="${ENCV_MOCK_ROOT:-/storage/emulated/0}"
 
-# 沙箱中 Vite 端口：5173 已被 agent-tool-host 占用，必须从 5174+ 开始
-VITE_PORT="${ENCV_VITE_PORT:-5174}"
+# 默认使用 5173（Vite 标准端口），被占用时自动回退到 5174
+_VITE_PORT_DEFAULT="${ENCV_VITE_PORT:-5174}"
+if lsof -i :5173 >/dev/null 2>&1; then
+  echo "    :5173 已被占用，使用 :5174"
+  VITE_PORT="${_VITE_PORT_DEFAULT}"
+else
+  VITE_PORT="5173"
+fi
 
 cd "${REPO_ROOT}"
 
 step() { echo ""; echo "==> $*"; }
 
-# ---------- Step 0: 停止残留 ENCV 进程（精确到进程名，绝不碰 agent-tool-host） ----------
-step "0/6 停止残留 ENCV 进程（不碰 agent-tool-host）"
+# ---------- Step 0: 停止残留 ENCV 进程 ----------
+step "0/6 停止残留 ENCV 进程"
 pkill -x air 2>/dev/null && echo "    killed air" || true
 pkill -f '^./tmp/encv' 2>/dev/null && echo "    killed ./tmp/encv" || true
 pkill -f '/tmp/encv start' 2>/dev/null && echo "    killed /tmp/encv start" || true
@@ -57,9 +63,7 @@ pkill -f 'node.*vite' 2>/dev/null && echo "    killed vite" || true
 BACKEND_PIDS="$(lsof -ti :"${BACKEND_PORT}" 2>/dev/null || true)"
 if [[ -n "${BACKEND_PIDS}" ]]; then
   for pid in ${BACKEND_PIDS}; do
-    if ! grep -q 'agent-tool-host' "/proc/${pid}/cmdline" 2>/dev/null; then
-      kill "${pid}" 2>/dev/null && echo "    killed backend pid=${pid}"
-    fi
+    kill "${pid}" 2>/dev/null && echo "    killed backend pid=${pid}"
   done
 fi
 sleep 1
@@ -102,7 +106,7 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24; do
 done
 
 # ---------- Step 4: Vite 前端（前台子进程） ----------
-step "4/6 启动 Vite 前端（port ${VITE_PORT}，agent-tool-host 反代）"
+step "4/6 启动 Vite 前端（port ${VITE_PORT}）"
 cd "${MOBILE_DIR}"
 ./node_modules/.bin/vite --host 0.0.0.0 --port "${VITE_PORT}" --strictPort &
 VITE_PID=$!
@@ -125,16 +129,15 @@ cat <<EOF
 ========================================
 ✅ ENCV 预览已启动
 
-  端口身份（沙箱铁律）：
-     :5173     = agent-tool-host  （沙箱基础设施，用户访问入口）
-     :${VITE_PORT}    = vite dev server  （agent-tool-host 反代到此）
-     :${BACKEND_PORT}     = Go Backend (air 监视重载)
+  端口分配：
+     :${VITE_PORT}  = Vite dev server（前端，用户直接访问）
+     :${BACKEND_PORT} = Go Backend（air 监视重载）
 
   用户访问地址（必须先 OpenPreview 激活）：
-     http://localhost:5173/  ← 用户在外部访问这个
+     http://localhost:${VITE_PORT}/
 
   ⚠️ 重要：必须使用 OpenPreview 工具激活预览才能外部访问
-     OpenPreview(command_id="<本脚本 command_id>", preview_url="http://localhost:5173")
+     OpenPreview(command_id="<本脚本 command_id>", preview_url="http://localhost:${VITE_PORT}/")
 
   配置文件:    ${REPO_ROOT}/config.user.json （未修改）
   servingDir:  ${MOCK_DIR}  （设计预期路径，脚本自建）
@@ -142,7 +145,7 @@ cat <<EOF
   停止:  Ctrl+C  （脚本会自动清理所有子进程）
 
   后续上传测试文件（hyYGPCwJPQ3+xrdAvfnn2.bin）：
-    - 浏览器访问 http://localhost:5173/  （前提：OpenPreview 已激活）
+    - 浏览器访问 http://localhost:${VITE_PORT}/  （前提：OpenPreview 已激活）
     - Files 页面 → Upload FAB → 选择文件
 ========================================
 EOF
