@@ -182,10 +182,34 @@
 - [ ] 6.7 访问 `/webview` 看到「需 Android WebView 容器」提示
 - [ ] 6.8 验证 HMR：修改 `OpenListStatusCard.vue` 后浏览器自动刷新
 
+## Phase 7: /webview 嵌入 OpenList 原生 SPA（iframe + Vite proxy）
+
+> **核心目标**：在 Capacitor 多例 UI 的 `/webview` 路由内显示 OpenList 自己的 Vue3 SPA（Hi-Sillot-OpenList-Frontend），让用户能在同一页面里既管理 OpenList 启停，又浏览 OpenList 文件管理。
+>
+> 沙箱浏览器模式下走 Vite proxy (`/openlist-spa/*` → `http://127.0.0.1:5244/*`)；真机 WebView 内 OpenList 与 Capacitor 同设备 → iframe 直连 5244。
+>
+> 仍需配合 `bash scripts/dev-openlist.sh` 启动 OpenList(5244) 后端。后端未启动时显示降级 UI「OpenList 后端未运行」+ 启动命令提示。
+
+- [ ] 7.1 修改 `plugin-openlist/web/vite.config.ts`：
+  - 添加 `server.proxy['/openlist-spa']` → `http://127.0.0.1:5244`
+  - `changeOrigin: true`、`rewrite: path => path.replace(/^\\/openlist-spa/, '')`
+- [ ] 7.2 重写 `plugin-openlist/web/src/views/OpenListWebView.vue`：
+  - 始终渲染 iframe，`:src` 根据 `import.meta.env.DEV` 切换（dev 走代理，prod 直连）
+  - 沙箱模式下 `onMounted` 主动探测 `/openlist-spa/` HEAD 请求（2s 超时）
+  - 探测失败 → `showFallback=true` → 显示「OpenList 后端未运行」+ `bash scripts/dev-openlist.sh` 提示 + 重试按钮
+  - 真机模式 → 直接假设可达（不探测），始终显示 iframe
+  - 顶部 toolbar 增加「外部打开」按钮（仅真机模式）
+- [ ] 7.3 重启 dev server：`pkill vite; bash scripts/dev-openlist-web.sh`
+- [ ] 7.4 验证 `/openlist-spa/` 代理生效（curl 502 表示代理工作但后端未启）
+- [ ] 7.5 验证 `/webview` 页面在浏览器中显示降级 UI（带 `bash scripts/dev-openlist.sh` 命令）
+- [ ] 7.6 验证用户运行 `bash scripts/dev-openlist.sh` 后 iframe 自动加载 OpenList SPA（hash 路由 `#/login`）
+- [ ] 7.7 验证 `vue-tsc --noEmit` 通过
+
 ## Task Dependencies
 
-- Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6
+- Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7
 - Phase 1 (Kotlin) 独立于 Phase 2-3 (Web)
 - Phase 2 (monorepo) 必须在 Phase 3 之前（共享包要先建好）
 - Phase 4 依赖 Phase 3（web 页面要先有，主 app 才能 import）
 - Phase 6 依赖 Phase 2-3（依赖 monorepo + 页面已建）
+- Phase 7 依赖 Phase 6（Vite dev server 必须已配好）

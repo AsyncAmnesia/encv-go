@@ -74,3 +74,16 @@
 - [ ] FAB 点击走 window.OpenListNative fallback 不报错
 - [ ] HMR 验证：修改 OpenListStatusCard.vue 后浏览器自动刷新
 - [ ] 与 dev-openlist.sh 的差异已在脚本注释中明确说明
+
+## Phase 7: /webview 嵌入 OpenList 原生 SPA
+
+- [ ] vite.config.ts 添加 /openlist-spa → http://127.0.0.1:5244 代理
+- [ ] OpenListWebView.vue 始终渲染 iframe（dev 走代理，prod 直连 5244）
+- [ ] 沙箱 dev 模式 onMounted 主动探测后端可达性（2s HEAD 超时）
+- [ ] 后端未启动时显示降级 UI（带 bash scripts/dev-openlist.sh 命令提示 + 重试按钮）
+- [ ] 真机模式不探测（始终显示 iframe）
+- [ ] 顶部 toolbar 外部打开按钮仅真机模式显示
+- [ ] 重启 dev server 后 /openlist-spa 代理返回 502（代理工作但后端未启）
+- [ ] 浏览器访问 /webview 看到降级 UI
+- [ ] 用户运行 dev-openlist.sh 后 iframe 自动加载 OpenList SPA
+- [ ] vue-tsc --noEmit 通过
