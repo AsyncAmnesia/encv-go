@@ -16,6 +16,9 @@ import com.getcapacitor.BridgeActivity
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
+import com.encvgo.app.plugins.GoProcessPlugin
+import com.masterpedidos.highrefreshrate.HighRefreshRatePlugin
+
 class MainActivity : BridgeActivity() {
     companion object {
         private const val TAG = "ENCV-go"
@@ -43,6 +46,7 @@ class MainActivity : BridgeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
             registerPlugin(GoProcessPlugin::class.java)
+            registerPlugin(HighRefreshRatePlugin::class.java)
         } catch (e: Exception) {
             Log.e(TAG, "registerPlugin failed", e)
         }
