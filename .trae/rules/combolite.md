@@ -152,7 +152,50 @@ dependencies {
 }
 ```
 
-### 1.5 EncvHostActivity 透明主题陷阱（⚠️ 实战踩坑！）
+### 1.6 宿主禁止编译期依赖任何扩展模块（⚠️ CI 踩坑！）
+
+> **核心原则：宿主（`:app`、`combolite-host`）不得声明 `implementation(project(":plugin-*"))`。**
+> **扩展是运行时通过 ComboLite `installPlugin()` 动态加载的独立进程 APK，宿主构建时根本不知道它是否存在。**
+
+#### 为什么不能依赖
+
+| 维度 | 说明 |
+|------|------|
+| **构建隔离** | CI 主应用构建不带 `-PincludePlugins=true`，settings.gradle.kts 不 include plugin project → `UnknownProjectException` 崩溃 |
+| **架构正确性** | MPV 扩展零宿主依赖，OpenList 也应同样。宿主与扩展之间只通过 ContentProvider / Intent / 文件系统通信 |
+| **aar2apk 级联** | 根 build.gradle.kts 的 aar2apk 模块注册和 combolite-host 的 dependencies 两处都必须无 plugin 引用，否则任一处都会在配置阶段崩溃 |
+
+#### 正确的跨进程通信方式
+
+```
+宿主进程 (:app / combolite-host)          扩展进程 (:plugin-xxx, aar2apk 产物)
+┌──────────────────────┐              ┌──────────────────────┐
+│ OpenListStatusBridge  │──ContentResolver.query()──▶│ OpenListStatusProvider│
+│ (内联 URI/列名常量)   │◀──MatrixCursor snapshot ──│ (exported provider)  │
+│                      │──ContentResolver.insert()─▶│                     │
+│ LocalBroadcastManager │◀──sendBroadcast() ───────│ OpenListBridge       │
+└──────────────────────┘              └──────────────────────┘
+```
+
+#### 常量同步规则
+
+如果宿主需要引用扩展定义的常量（如 ContentProvider authority、URI、列名）：
+
+| 方式 | 正确性 | 示例 |
+|------|--------|------|
+| ❌ `implementation(project(":plugin-openlist"))` | **编译期耦合，CI 必崩** | import OpenListStatusProvider.STATUS_URI |
+| ✅ **常量内联到宿主 bridge** | **零编译期依赖** | bridge 内部 `const val AUTHORITY = "..."` |
+| ✅ **接口定义在 combolite-core** | **双方依赖同一抽象** | 如果是通用协议 |
+
+#### 已踩坑案例
+
+**combolite-host/build.gradle.kts:31** — `implementation(project(":plugin-openlist"))`：
+- 只为了用 `OpenListStatusProvider` 的 6 个字符串常量（AUTHORITY、URI、列名）
+- MPV 没有这种依赖 → OpenList 也不应该有
+- CI 不传 `-PincludePlugins=true` 时 → `UnknownProjectException: Project with path ':plugin-openlist' could not be found`
+- **修复**：将常量内联到 `OpenListStatusBridge.kt`，彻底移除 dependency
+
+### 1.7 EncvHostActivity 透明主题陷阱（⚠️ 实战踩坑！）
 
 > **使用透明主题的 HostActivity 如果 ProxyManager 代理失败，
 > 用户会看到一个不可见的 Activity 覆盖在 WebView 上，表现为"卡住"。**
