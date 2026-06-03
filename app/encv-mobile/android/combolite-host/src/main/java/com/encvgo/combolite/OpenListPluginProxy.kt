@@ -3,6 +3,8 @@ package com.encvgo.combolite
 import android.content.Context
 import android.os.Bundle
 import android.util.Log
+import com.combo.core.utils.startPluginService
+import com.combo.core.utils.stopPluginService
 
 /**
  * Phase 25 A3.2：Host 端封装 plugin service class 反射。

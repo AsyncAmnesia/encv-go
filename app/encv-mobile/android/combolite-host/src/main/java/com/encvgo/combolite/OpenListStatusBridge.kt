@@ -2,8 +2,11 @@ package com.encvgo.combolite
 
 import android.content.ContentValues
 import android.content.Context
+import android.database.Cursor
 import android.net.Uri
 import android.util.Log
+import com.combo.core.utils.insertPlugin
+import com.combo.core.utils.queryPlugin
 
 /**
  * Host-side bridge to the OpenList extension.
