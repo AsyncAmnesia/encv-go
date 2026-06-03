@@ -30,8 +30,13 @@ val ksKeyPassword = localProps.getProperty("aar2apk.keyPassword")
 
 aar2apk {
     modules {
-        module(":plugin-mpv-player")
-        module(":plugin-openlist")
+        // Only register modules whose projects actually exist in settings.gradle.kts.
+        // When -PincludePlugins=true is NOT passed (main app builds like assembleRelease),
+        // settings.gradle.kts skips include(":plugin-*"), so findProject() returns null.
+        // Without this guard, aar2apk's afterEvaluate hook calls
+        // evaluationDependsOn(':plugin-mpv-player') on a non-existent project → crash.
+        if (findProject(":plugin-mpv-player") != null) module(":plugin-mpv-player")
+        if (findProject(":plugin-openlist") != null) module(":plugin-openlist")
     }
     signing {
         keystorePath.set(ksPath)
