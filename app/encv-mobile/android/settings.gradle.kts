@@ -47,13 +47,18 @@ include(":combolite-host")
 //   ./gradlew assembleDebug                        # ← main app only (fast)
 //   ./gradlew -PincludePlugins=true assembleDebug   # ← main app + plugins
 //   ./gradlew -PincludePlugins=true :plugin-openlist:compileReleaseKotlin  # ← plugin only
-if (findProperty("includePlugins")?.toString().toBoolean()) {
+//
+// NOTE: settings.gradle.kts does NOT have findProperty() (that's a Project API).
+// We read from gradle.startParameter.projectProperties instead.
+val includePlugins = gradle.startParameter.projectProperties["includePlugins"] == "true"
+
+if (includePlugins) {
     include(":plugin-mpv-player")
     include(":plugin-openlist")
 }
 
 project(":capacitor-cordova-android-plugins").projectDir = file("./capacitor-cordova-android-plugins/")
-if (findProperty("includePlugins")?.toString().toBoolean()) {
+if (includePlugins) {
     project(":plugin-mpv-player").projectDir = file("../plugin-mpv-player")
     project(":plugin-openlist").projectDir = file("../plugin-openlist")
 }
