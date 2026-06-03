@@ -4,59 +4,50 @@
 
 ### 1.1 诊断：对照 combolite-core 接口验证合规性
 
-- [ ] 1.1.1 反编译或查阅 `combolite-core` AAR 中的 `IPluginEntryClass` 接口定义，确认 `onLoad(context: PluginContext)`, `onUnload()`, `Content(): @Composable`, `pluginModule: List<Module>` 的契约要求
+- [ ] 1.1.1 查阅 `combolite-core` AAR 中的 `IPluginEntryClass` 接口定义，确认方法契约
 - [ ] 1.1.2 对比 MpvPluginEntry 与 OpenListPluginEntry 的每个方法实现差异
-- [ ] 1.1.3 检查 PluginLifecycleEngine 如何调用这些方法（load → onLoad? unload → onUnload? Content 何时渲染？）
+- [ ] 1.1.3 检查 PluginLifecycleEngine 如何调用这些方法
 - [ ] 1.1.4 确认 Service 生命周期与 Plugin load/unload 是否需要同步
-- [ ] 1.1.5 输出合规性差距报告（具体到每个方法的修复项）
+- [ ] 1.1.5 输出合规性差距报告
 
 ### 1.2 修复 OpenListPluginEntry.kt（合规）
 
 - [ ] 1.2.1 根据 1.1 诊断结果修复 `onLoad()` / `onUnload()` 行为
-- [ ] 1.2.2 如需同步生命周期：`onLoad()` 中检查/启动 Service；`onUnload()` 中 shutdown Service
+- [ ] 1.2.2 如需同步生命周期：`onLoad()` 检查/启动 Service；`onUnload()` shutdown Service
 - [ ] 1.2.3 Content() 内所有 Bridge 调用加 try-catch 防御
-- [ ] 1.2.4 验证 Koin module 注册符合规范（如需调整）
+- [ ] 1.2.4 验证/调整 Koin module 注册
 - [ ] 1.2.5 `./gradlew :plugin-openlist:compileDebugKotlin` 通过
 
-## Phase 2: Plugin APK Content() 瘦身（移除 Compose UI）
+## Phase 2: 插件内 UI 重写（Content()）
 
-> **注意**：此阶段与 Phase 1 可并行（如果合规修复不涉及 Content() 内部实现）
+> **需要用户确认方案 A（Compose WebView）或 方案 B（纯 Compose 原生控件）后再实施**
 
-### 2.1 重写 OpenListPluginEntry.kt Content()
+### 方案 A: Compose WebView（推荐）
 
-- [ ] 2.1.1 删除所有 `@Composable` 私有函数：`StatusCard`, `ControlCard`, `ConfigCard`, `InfoGrid`, `formatFileSize`
-- [ ] 2.1.2 删除所有 Compose Material3 import（`androidx.compose.foundation.*`, `androidx.compose.material3.*`, `androidx.compose.material.icons.*`, `androidx.lifecycle.*` compose 相关）
-- [ ] 2.1.3 `Content()` 改为返回空 `Box {}` 或最小占位文本
-- [ ] 2.1.4 保留 `IPluginEntryClass`, `PluginContext`, `@Composable` 的最小 import 集合
+- [ ] 2A.1 删除现有 StatusCard/ControlCard/ConfigCard 等 ~400 行手写 Compose UI
+- [ ] 2A.2 Content() 改为 `AndroidView { WebView }` 加载 `http://127.0.0.1:{port}`
+- [ ] 2A.3 实现 WebView 错误自愈（加载失败 → 启动 OpenList → 重试）
+- [ ] 2A.4 动态获取端口（从 Bridge snapshot 或 Config）
+- [ ] 2A.5 build.gradle.kts 移除 material3/icons-extended/lifecycle-runtime-compose，保留 compose.ui (AndroidView)
+- [ ] 2A.6 编译通过 + WebView 在插件进程中正确加载 OpenList SPA
 
-### 2.2 瘦身 build.gradle.kts
+### 方案 B: 纯 Compose 原生控件
 
-- [ ] 2.2.1 删除 `id("org.jetbrains.kotlin.plugin.compose")`
-- [ ] 2.2.2 删除 `buildFeatures { compose = true }`
-- [ ] 2.2.3 删除 compose BOM + 所有 compose dependencies（ui/runtime/material3/icons-extended/lifecycle-runtime-compose）
-- [ ] 2.2.4 保留非 compose 依赖不变
-- [ ] 2.2.5 `./gradlew :plugin-openlist:compileDebugKotlin` 通过
+- [ ] 2B.1 精简 Content() 为最小控制面板（仅 start/stop + 状态摘要 + "打开 Web UI" 按钮）
+- [ ] 2B.2 删除 ConfigCard（配置操作在 Web UI 中完成）
+- [ ] 2B.3 删除 StatusCard 中的详细字段（PID/数据大小等），只保留 running 状态
+- [ ] 2B.4 "打开 Web UI"按钮调用外部 Intent 打开浏览器
+- [ ] 2B.5 build.gradle.kts 可保留现有 compose 依赖或按需精简
+- [ ] 2B.6 编译通过
 
-### 2.3 编译验证
+## Phase 3: 验证
 
-- [ ] 2.3.1 确认产物 AAR 不含 `androidx.compose.*` 类
-- [ ] 2.3.2 `./gradlew :combolite-host:compileDebugKotlin` 通过
-
-## Phase 3: Host App — "打开管理界面" 入口（Capacitor InAppBrowser）
-
-### 3.1 检查并增强 LocalOpenListStatusCard.vue
-
-- [ ] 3.1.1 读取现有组件，确认当前状态展示逻辑
-- [ ] 3.1.2 新增"打开 OpenList 管理界面"按钮（ion-button）
-- [ ] 3.1.3 按钮点击调用 Capacitor Browser/InAppBrowser 打开 `http://127.0.0.1:{port}/#/login`
-- [ ] 3.1.4 仅在 `runtime.running === true` 时按钮 enabled
-- [ ] 3.1.5 确认 `@capacitor/browser` 或 `@capacitor/inappbrowser` 在 package.json 中
-
-### 3.2 TypeScript 编译验证
-
-- [ ] 3.2.1 `npx vue-tsc --noEmit` 通过 (0 errors)
+- [ ] 3.1 `./gradlew :plugin-openlist:compileDebugKotlin` 通过
+- [ ] 3.2 `./gradlew :combolite-host:compileDebugKotlin` 通过
+- [ ] 3.3 Host App TypeScript 编译不受影响（`vue-tsc --noEmit` 通过）
 
 ## Task Dependencies
 
-- Phase 1 和 Phase 2 可**并行执行**（合规修复 vs UI 瘩身互不影响）
-- Phase 3 在 Phase 2 完成后执行（确保 Content() 瘦身后再处理 Host 侧入口）
+- Phase 1（合规修复）可独立执行
+- Phase 2（UI 重写）依赖用户方案选择
+- Phase 3 在 Phase 1 + 2 完成后执行

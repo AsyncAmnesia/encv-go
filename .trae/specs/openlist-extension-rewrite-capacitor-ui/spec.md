@@ -1,4 +1,4 @@
-# OpenList 扩展重写 Spec（ComboLite 合规修复 + UI 技术选型）
+# OpenList 扩展重写 Spec（ComboLite 合规 + 插件内 UI 技术选型）
 
 ## Why
 
@@ -6,11 +6,13 @@
 
 ### 问题 A：不符合 ComboLite 插件规范（非 UI 问题）
 
-用户明确指出"违反 combolite 和 ui 无关"。需要排查并修复 Plugin APK 在 ComboLite 框架层面的合规性问题。参考实现为 [plugin-mpv-player](../plugin-mpv-player/)。
+用户明确指出"违反 combolite 和 ui 无关"。需要排查并修复 Plugin APK 在 ComboLite 框架层面的合规性问题。
 
-### 问题 B：UI 技术选型未定
+### 问题 B：插件内 UI 实现方式需决策
 
-用户问"openlist 扩展 UI 能否用 Capacitor 或 Compose 实现"。通过克隆分析 [K-Sillot/OpenList-Mobile](https://github.com/K-Sillot/OpenList-Mobile)（参考实现），已获得明确的架构参考。
+用户问"openlist 扩展 UI 能否用 Capacitor 或 Compose 实现"。通过克隆分析 [K-Sillot/OpenList-Mobile](https://github.com/K-Sillot/OpenList-Mobile)（参考实现），已获得架构参考。
+
+**核心原则：OpenList 扩展的 UI 属于插件自身，在 `Content()` 内渲染，不嵌入主应用。**
 
 ---
 
@@ -20,317 +22,193 @@
 
 | 维度 | K-Sillot/OpenList-Mobile | 我们的项目 |
 |------|--------------------------|-----------|
-| **框架** | Flutter (Dart) | Capacitor + Ionic Vue (TypeScript) |
-| **Android 壳** | 标准 Flutter Activity | Capacitor Android Runtime |
-| **OpenList 集成** | gomobile bind (`openlist-lib/`) | gomobile bind (`plugin-openlist/libs/openlist.aar`) |
+| **框架** | Flutter (Dart) | Host: Capacitor+Ionic Vue / Plugin: Android原生 |
+| **OpenList 集成** | gomobile bind (`openlist-lib/`) | gomobile bind (`libs/openlist.aar`) |
 | **Web UI 展示** | `flutter_inappwebview` (InAppWebView) | 待决定 |
 | **服务管理** | OpenListService (Android Service) | OpenListService (Android Service) |
-| **状态通信** | MethodChannel (Flutter↔Native) + LocalBroadcast | ContentProvider IPC |
 
-### A.2 K-Sillot 的 4 Tab 布局
+### A.2 K-Sillot 的做法（关键参考）
+
+K-Sillot/OpenList-Mobile 是一个**独立的 Flutter 应用**，它完整地包含了 OpenList 的所有 UI：
 
 ```
-┌─────────────────────────────────────────┐
-│  MyHomePage (Flutter Scaffold)           │
-│  ┌───────────────────────────────────┐  │
-│  │                                   │  │
-│  │  Tab 0: WebScreen (InAppWebView)  │  │ ← 内嵌浏览器加载 http://localhost:{port}
-│  │    → OpenList 自有 Vue3 SPA       │  │   （文件管理/存储驱动/用户权限）
-│  │                                   │  │
-│  ├───────────────────────────────────┤  │
-│  │  Tab 1: OpenListScreen (原生控件)  │  │ ← Flutter 原生控制面板
-│  │    ├─ AppBar: 版本号              │  │
-│  │    ├─ FAB: Start/Stop 切换        │  │
-│  │    └─ Body: LogListView (实时日志) │  │
-│  │    ├─ 密码设置 (PwdEditDialog)     │  │
-│  │    ├─ Config 编辑器               │  │
-│  │    └─ 桌面快捷方式                 │  │
-│  │                                   │  │
-│  ├───────────────────────────────────┤  │
-│  │  Tab 2: DownloadManagerPage       │  │
-│  │  Tab 3: SettingsScreen            │  │
-│  └───────────────────────────────────┘  │
-│  ═════════ BottomNavigationBar ════════ │
-└─────────────────────────────────────────┘
+┌─ OpenList-Mobile App (Flutter) ──────────────┐
+│                                                │
+│  Tab 0: WebScreen                             │
+│  ┌────────────────────────────────────────┐   │
+│  │  InAppWebView                          │   │
+│  │  → http://localhost:{port}             │   │
+│  │  （OpenList 自有 Vue3 SPA 全部功能）     │   │
+│  └────────────────────────────────────────┘   │
+│                                                │
+│  Tab 1: OpenListScreen (Flutter 原生控件)      │
+│    ├─ FAB: Start/Stop 切换                    │
+│    ├─ LogListView (实时日志)                   │
+│    ├─ 密码设置 (PwdEditDialog)                │
+│    ├─ Config 编辑器 (ConfigEditorPage)        │
+│    └─ 版本号 / 桌面快捷方式                   │
+│                                                │
+│  Tab 2: DownloadManager                       │
+│  Tab 3: Settings                              │
+└────────────────────────────────────────────────┘
 ```
 
-### A.3 关键 UI 组件分析
+**核心模式**：
+- **InAppWebView** 嵌入 OpenList 自有 Web UI（文件管理/存储驱动/用户权限/ENCV设置全部在这里操作）
+- **原生控件**只做启停控制 + 日志查看 + 密码/配置快捷编辑
+- Web UI 是主要交互界面，原生控件是辅助工具栏
 
-#### WebScreen — 内嵌 WebView 加载 OpenList Web UI
+### A.3 WebScreen 关键行为（InAppWebView）
 
 ```dart
-// lib/pages/web/web.dart (核心代码)
-class WebScreenState extends State<WebScreen> {
-  String _url = "http://localhost:5244";  // 默认端口
+// URL 动态化 — 从 Native 获取端口
+Android().getOpenListHttpPort()
+    .then((port) => {_url = "http://localhost:$port"});
 
-  @override
-  void initState() {
-    // 动态获取实际端口
-    Android().getOpenListHttpPort()
-        .then((port) => {_url = "http://localhost:$port"});
+// 错误自愈 — 加载失败自动启动服务并重试 3 次
+onReceivedError: (controller, request, error) async {
+  if (!await Android().isRunning()) {
+    await Android().startService();
+    for (int i = 0; i < 3; i++) {
+      await Future.delayed(Duration(milliseconds: 500));
+      if (await Android().isRunning()) { _webViewController?.reload(); break; }
+    }
   }
+}
 
-  Widget build(BuildContext context) {
-    return InAppWebView(
-      initialUrlRequest: URLRequest(url: WebUri(_url)),
-      onReceivedError: (controller, request, error) async {
-        // 收到错误时自动启动 OpenList 并重试
-        if (!await Android().isRunning()) {
-          await Android().startService();
-          for (int i = 0; i < 3; i++) {
-            await Future.delayed(Duration(milliseconds: 500));
-            if (await Android().isRunning()) { _webViewController?.reload(); break; }
-          }
-        }
-      },
-      onDownloadStartRequest: (controller, url) async {
-        // 下载拦截 → 内置下载管理器或外部应用
-      },
-    );
-  }
+// 下载拦截 — 文件下载走内置管理器
+onDownloadStartRequest: (controller, url) async {
+  DownloadManager.downloadFileInBackground(url.url, url.suggestedFilename);
 }
 ```
 
-**关键行为**：
-1. URL 动态化——从 Native 获取实际端口，不硬编码
-2. 错误自愈——WebView 加载失败时自动启动服务并重试 3 次
-3. 下载拦截——文件下载走内置 DownloadManager 或跳转外部 App
-4. URL scheme 过滤——非 http/https/file 等安全 scheme 弹窗确认后跳转
+### A.4 对我们项目的启示
 
-#### OpenListScreen — 原生控制面板
+K-Sillot 证明了 **"WebView 嵌入 OpenList Web UI + 原生辅助控件"** 是可行的产品形态。
 
-```dart
-// lib/pages/openlist/openlist.dart (核心代码)
-class OpenListScreen extends StatelessWidget {
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text("OpenList - ${version}"),
-        actions: [
-          IconButton(icon: Icons.password, onPressed: () {
-            showDialog(builder: (_) => PwdEditDialog(onConfirm: (pwd) =>
-              Android().setAdminPwd(pwd)));  // → MethodChannel → Native
-          }),
-          IconButton(icon: Icons.edit_note, onPressed: () {
-            Get.to(() => ConfigEditorPage());  // config.json 编辑器
-          }),
-          IconButton(icon: Icons.add_home, onPressed: () {
-            Android().addShortcut();  // 桌面快捷方式
-          }),
-        ],
-      ),
-      floatingActionButton: SwitchFloatingButton(
-        isSwitch: isRunning,
-        onSwitchChange: (s) => s ? startService() : stopService(),
-      ),
-      body: LogListView(logs: logs),  // 实时日志流
-    );
-  }
-}
-```
-
-**功能清单**：
-| 功能 | 实现方式 | 对应 Native 方法 |
-|------|---------|----------------|
-| 启停切换 | FAB SwitchFloatingButton | `ServiceManager.startService()/stopService()` |
-| 版本显示 | AppBar title | `Android().getOpenListVersion()` |
-| 密码设置 | PwdEditDialog | `Android().setAdminPwd(pwd)` |
-| 配置编辑 | ConfigEditorPage（独立页面） | 读/写 `config.json` 文件 |
-| 日志查看 | LogListView | Event receiver (`onServerLog`) |
-| 桌面快捷方式 | IconButton | `Android().addShortcut()` |
-
-#### ConfigEditorPage — config.json 编辑器
-
-完整功能的 JSON 编辑器：
-- 从 Native 获取 dataDir 路径 → 读取 `config.json`
-- 实时 JSON 校验（300ms debounce）+ 行号错误定位
-- 保存前自动备份 → 失败时回滚
-- 三选项对话框：取消 / 仅保存 / 保存并重启服务
-- 语法高亮预览模式（flutter_highlight + monokai/github theme）
-
-### A.4 服务通信架构
-
-```
-┌─ Flutter Layer (Dart)
-│   ServiceManager.instance.startService()
-│       ↓ MethodChannel
-│   Android().startService() / .stopService() / .isRunning()
-│       ↓ MethodChannel
-│
-├─ Android Native Layer (Kotlin)
-│   MainActivity.serviceBridge (ServiceBridge)
-│       ↓ startService() → startForegroundService(Intent)
-│   OpenListService (Foreground Service)
-│       ↓ OpenList.init() → OpenList.startup()
-│       ↓ OpenList.shutdown()
-│
-├─ Event 回调 (Native → Flutter)
-│   OpenList.Listener (onShutdown)
-│   LocalBroadcastManager (ACTION_STATUS_CHANGED)
-│       ↓ MainActivity.serviceBridge?.notifyServiceStatusChanged(isRunning)
-│           ↓ MethodChannel callback
-│   MyEventReceiver (onServiceStatusChanged, onServerLog)
-│
-└─ gomobile bind Layer
-    openlistlib.Openlistlib (AAR)
-        ↓ JNI
-    Go runtime (libgojni.so)
-```
-
-### A.5 对我们项目的启示
-
-| K-Sillot 模式 | 我们的对应方案 |
-|--------------|--------------|
-| **InAppWebView** 嵌入 OpenList Web UI | **Capacitor InAppBrowser** 或 `<iframe>` (dev) |
-| **FAB 启停** + **LogListView** | Ionic Vue 控制面板（StatusCard + ControlCard） |
-| **PwdEditDialog** | Ionic Alert / Modal 输入密码 |
-| **ConfigEditorPage** | 可选：Ionic 页面编辑 config.json 或直接打开 Web UI 的设置页 |
-| **MethodChannel 通信** | 已有 ContentProvider IPC（`OpenListStatusBridge`）+ GoProcess Plugin |
-| **Event 回调** | 已有轮询机制（`getOpenListRuntime()` 3s interval） |
+我们的 `plugin-openlist` 作为 ComboLite 插件，其 `Content()` 可以采用类似模式——在插件内部用 **Compose WebView** 或其他方式展示 OpenList 的管理界面。
 
 ---
 
-## Part B: ComboLite 规范合规性分析
+## Part B: ComboLite 规范合规性分析（非 UI）
 
-### B.1 参考实现对比（MpvPluginEntry vs OpenListPluginEntry）
+### B.1 参考实现对比
 
-| 维度 | MpvPluginEntry（合规参考） | OpenListPluginEntry（当前） | 差距？ |
-|------|--------------------------|--------------------------|--------|
-| `pluginModule` | `emptyList()` | `listOf(module { single{OpenListBridge} })` | ? 需确认 |
-| `onLoad(context)` | 空（无操作） | log + defer to Service | ? 需确认 |
-| `onUnload()` | 空（无操作） | log | ? 需确认 |
-| `Content()` | 返回核心功能 UI（播放器） | 返回管理面板 UI（状态+控制+配置） | ⚠️ 但用户说这不是问题 |
-| **运行时初始化** | Content() 内 `remember { MpvEngine(context) }` | **由 OpenListService 独立管理** | **可能违规** |
-| **生命周期绑定** | 跟随 ComboLite 插件生命周期 | **独立 Android Service** | **可能违规** |
-| **Crash 隔离** | 依赖 ComboLite 框架 | 自行 try-catch | 需检查 |
+| 维度 | MpvPluginEntry（合规参考） | OpenListPluginEntry（当前） |
+|------|--------------------------|--------------------------|
+| `pluginModule` | `emptyList()` | `listOf(module { single{OpenListBridge} })` |
+| `onLoad(context)` | 空 | log + defer to Service |
+| `onUnload()` | 空 | log |
+| `Content()` | 返回核心功能 UI（播放器） | 返回管理面板 UI (~400行) |
+| **运行时初始化** | Content() 内延迟初始化 | 由独立 OpenListService 管理 |
+| **生命周期绑定** | 跟随 ComboLite 插件生命周期 | 独立 Android Service |
 
-### B.2 可能的合规问题（待实施时逐一验证）
+### B.2 可能的合规问题（待实施时验证）
 
-> **注意**：以下是基于代码审查的推测，具体需在实施中对照 `combolite-core` AAR 的接口定义验证。
+> 具体合规项需对照 `combolite-core` AAR 接口定义逐一确认。
 
-1. **运行时初始化时机**：MpvPluginEntry 在 `Content()` 内延迟初始化引擎；OpenListPluginEntry 的 `onLoad()` 几乎为空，实际初始化委托给独立的 `OpenListService`。如果 ComboLite 要求 `onLoad()` 完成所有初始化，则当前实现不合规。
-
-2. **插件生命周期与 Service 生命周期的解耦**：OpenList 使用独立 Foreground Service，其生命周期不受 ComboLite `load/unload` 控制。这可能导致：
-   - ComboLite unload 插件后 OpenList 仍在后台运行
-   - ComboLite load 插件时 OpenList 已经在运行（端口冲突）
-
-3. **Koin module 注册内容**：MpvPluginEntry 不注册任何模块；OpenListPluginEntry 注册了 `OpenListBridge` 单例。需确认这是否符合 ComboLite 的 DI 规范。
-
-4. **错误上报机制**：ComboLite 可能有 `PluginCrashHandler` 或类似机制用于捕获插件崩溃。当前 OpenListPluginEntry 的 Compose UI 直接调用 `OpenListBridge.snapshot()` 无 try-catch，可能导致渲染线程崩溃传播到 ComboLite 框架。
+1. **运行时初始化时机**：`onLoad()` 是否应完成 Bridge 初始化？当前几乎为空。
+2. **Service 生命周期与 Plugin 生命周期的解耦**：`onUnload()` 时 Service 可能仍在运行。
+3. **Koin module 注册规范**：MpvPluginEntry 不注册模块，OpenListPluginEntry 注册了 Bridge 单例。
+4. **Crash 隔离**：Content() 内 Bridge 调用无 try-catch，崩溃可能传播到 ComboLite 框架。
 
 ---
 
 ## What Changes
 
-### 变更一：修复 ComboLite 合规性问题（Part A 核心）
+### 变更一：修复 ComboLite 合规性问题
 
-具体修复项待实施时对照 `combolite-core` 接口逐一验证和修复。初步方向：
+具体修复项待实施时对照 `combolite-core` 接口逐一验证和修复：
+1. 对齐 `onLoad()` / `onUnload()` 行为
+2. Service 生命周期与 Plugin 生命周期同步
+3. Content() 内防御性编程
+4. 验证 Koin module 注册规范
 
-1. **对齐 `onLoad()` / `onUnload()` 行为**：确保与 MpvPluginEntry 一致或符合 ComboLite 文档要求
-2. **Service 生命周期与 Plugin 生命周期同步**：`onUnload()` 时必须 shutdown service；`onLoad()` 时检查并恢复
-3. **Content() 内的防御性编程**：所有 Bridge 调用加 try-catch，防止崩溃传播到 ComboLite 框架
-4. **验证 Koin module 注册规范**
+### 变更二：插件内 UI 重写（Content()）
 
-### 变更二：UI 技术方案（Part B 核心）
+**当前**：~400 行 Compose Material3 手写 UI（StatusCard + ControlCard + ConfigCard），功能与 OpenList Web UI 重复。
 
-基于 K-Sillot/OpenList-Mobile 的成功实践，采用 **双面板方案**：
+**目标方案（二选一）**：
 
-```
-┌─ Host App (Capacitor / Ionic Vue) ─────────────┐
-│                                                  │
-│  Panel A: OpenList Web UI（内嵌 WebView）         │
-│  ┌──────────────────────────────────────────┐   │
-│  │  Capacitor InAppBrowser / IonRouterOutlet │   │
-│  │  → http://127.0.0.1:{port}/#/login      │   │
-│  │  （OpenList 自有 Vue3 SPA 完整功能）       │   │
-│  │  - 文件浏览/管理                          │   │
-│  │  - 存储驱动配置                            │   │
-│  │  - 用户权限管理                            │   │
-│  │  - ENCV 解密设置                           │   │
-│  └──────────────────────────────────────────┘   │
-│                                                  │
-│  Panel B: 原生控制条（Ionic Vue 组件）           │
-│  ┌──────────────────────────────────────────┐   │
-│  │  [● 运行中]  PID:12345  Port:5244         │   │
-│  │  [▶ 启动]  [⏹ 停止]  [🔑 密码]  [⚙ 配置] │   │
-│  │  [🌐 打开管理界面]                         │   │
-│  └──────────────────────────────────────────┘   │
-│                                                  │
-└──────────────────────────────────────────────────┘
+#### 方案 A：Compose WebView（推荐，对齐 K-Sillot 模式）
+
+在 `Content()` 内使用 **AndroidX WebView**（非 Compose Material3 手写组件）加载 OpenList 自有 Web UI：
+
+```kotlin
+@Composable
+override fun Content() {
+    // 使用 AndroidView 包裹 WebView，加载 http://127.0.0.1:{port}
+    // 类似 K-Sillot 的 InAppWebView 模式
+    AndroidView(factory = { context ->
+        WebView(context).apply {
+            webViewClient = WebViewClient()
+            loadUrl("http://127.0.0.1:${OpenListBridge.snapshot()["port"]}")
+        }
+    })
+}
 ```
 
-**技术选择**：
+**优点**：
+- 与 K-Sillot 成功实践一致
+- 自动获得 OpenList 所有 Web UI 功能（无需手写）
+- OpenList Web UI 升级时插件自动受益
+- Compose 依赖仅保留 `androidx.compose.ui`（AndroidView）+ WebView
 
-| 场景 | 方案 | 说明 |
-|------|------|------|
-| **开发预览** | Vite proxy `/openlist-ui/` → `127.0.0.1:5244` | 已有实现 |
-| **生产 APK — 方案首选** | `@capacitor/inappbrowser` 打开 OpenList SPA | 与 K-Sillot 的 InAppWebView 对等 |
-| **生产 APK — 方案备选** | Plugin APK 内嵌 Compose WebView | 如果 InAppBrowser 体验不佳 |
+**缺点**：
+- 仍需 compose runtime（但只需最小子集，不需要 material3）
+- WebView 在独立进程中可能有限制
 
-**Panel B（原生控制条）放在哪里**：
-- **方案 B1**：增强 `LocalOpenListStatusCard.vue`（Remote.vue 内），增加启停/密码/配置按钮
-- **方案 B2**：新建独立的 `OpenListManagePage.vue` 作为路由页面，包含完整控制面板 + WebView 入口
+#### 方案 B：纯 Compose 重写（保留现有模式但修正）
 
-> **推荐 B1**（最小改动）：保持 StatusCard 只读摘要不变，仅增加"打开管理界面"按钮（调 InAppBrowser）。启停/配置等操作直接在 OpenList Web UI 中完成（K-Sillot 也是这样——他的原生面板只有 start/stop + logs + password，其他都在 Web UI 里操作）。
+保留手写 Compose UI 方向，但：
+1. 修正为符合 ComboLite 规范的实现
+2. 只保留**必要**的控制功能（start/stop + 状态摘要），不重复 Web UI
+3. 增加"打开 Web UI"按钮跳转外部浏览器
 
-### 变更三：Plugin APK Content() 瘦身
+**优点**：完全原生体验，不依赖 WebView
+**缺点**：需要维护两套 UI（Compose + Web UI）；功能覆盖不如 Web UI 完整
 
-无论 UI 最终用什么技术实现，`OpenListPluginEntry.Content()` 都应瘦身：
+> **待用户确认选择方案 A 或 B**。
 
-- 当前：~400 行 Compose Material3 UI（StatusCard + ControlCard + ConfigCard）
-- 目标：空 Composable 或最小占位（因为 UI 已移至 Host App 侧）
-- 效果：移除 compose 依赖，APK 瘦身 ~15MB
+### 变更三：Host App 侧不做改动
+
+Host App（Ionic Vue）的 OpenList 相关代码保持不变：
+- `LocalOpenListStatusCard.vue` — 保持只读状态摘要
+- `Remote.vue` — 不增加管理功能
+- `ExtensionsPage.vue` — 不改变交互逻辑
+- `useOpenListBridge.ts` — 保持轮询逻辑
 
 ---
 
 ## Impact
 
-- Affected code:
-  - **修改**: `plugin-openlist/OpenListPluginEntry.kt`（Content() 瘦身 + 合规修复）
-  - **修改**: `plugin-openlist/build.gradle.kts`（移除 compose 依赖）
-  - **微调**: `src/components/LocalOpenListStatusCard.vue`（增加"打开管理界面"按钮）
-  - **可选新增**: `src/composables/useOpenListManager.ts`（如需原生控制条）
+- Affected code（仅在 `plugin-openlist/` 内）：
+  - **修改**: `OpenListPluginEntry.kt`（Content() 重写 + 合规修复）
+  - **修改**: `build.gradle.kts`（依赖调整）
   - **不变**: `OpenListBridge.kt`, `OpenListStatusProvider.kt`, `OpenListService.kt`, `OpenListConfig.kt`
-  - **不变**: `OpenListStatusBridge.kt`, `GoProcess.ts`
+- **不影响** Host App 任何 Vue/TS 文件
 
 ## ADDED Requirements
 
 ### Requirement: ComboLite 合规修复
 
-`plugin-openlist` SHALL 通过 ComboLite 框架的所有合规性检查。具体包括但不限于：
+`plugin-openlist` SHALL 通过 ComboLite 框架的所有合规性检查。
 
-- `onLoad()` / `onUnload()` 行为符合 `IPluginEntryClass` 接口契约
-- 插件运行时生命周期与 ComboLite 插件生命周期正确同步
-- 所有 Bridge 调用在 Composable 内有防御性异常处理
-- Koin module 注册符合 ComboLite DI 规范
+### Requirement: 插件内 UI 在 Content() 中渲染
 
-> **实施说明**：具体合规项需在编码阶段对照 `combolite-core` AAR 的接口定义逐一验证。
+OpenList 扩展的所有用户交互界面 SHALL 在 `OpenListPluginEntry.Content()` 中渲染，属于插件进程内部。Host App 不包含任何 OpenList 管理功能代码。
 
-### Requirement: OpenList Web UI 通过 Capacitor InAppBrowser 访问
-
-Host App SHALL 提供"打开 OpenList 管理界面"入口，使用 Capacitor InAppBrowser 插件打开 OpenList 自有的 Vue3 SPA。
-
-- **WHEN** 用户点击"打开管理界面"且 OpenList running=true
-- **THEN** `InAppBrowser.open({ url: 'http://127.0.0.1:{port}/#/' })` 打开 OpenList 管理 SPA
-- **WHEN** OpenList running=false
-- **THEN** 按钮 disabled 或隐藏
-
-### Requirement: Plugin Content() 瘦身
-
-`OpenListPluginEntry.Content()` SHALL 返回空或最小占位 Composable，不含任何管理 UI 组件。
+#### Scenario: 用户打开 OpenList 插件页面
+- **WHEN** ComboLite 框架调用 `Content()` 渲染 OpenList 插件页面
+- **THEN** 显示插件的完整管理界面（方案 A: WebView 加载 OpenList SPA / 方案 B: Compose 原生控件）
 
 ## MODIFIED Requirements
 
-### Requirement: LocalOpenListStatusCard 增强
-
-保留只读状态摘要展示，新增"打开管理界面"入口按钮。
+（无）
 
 ## REMOVED Requirements
 
-### Removed: Plugin Compose Management UI
-
-**Reason**: 功能重复（OpenList 自有 Web UI 已覆盖）；违反原始 spec 设计决策（"不分 Compose UI"）；用户明确表示 OpenList 有独立 UI。
-**Migration**: 删除 StatusCard/ControlCard/ConfigCard。管理功能通过 InAppBrowser 打开 OpenList Web UI 完成。
+（无）
 
 ---
 
@@ -341,24 +219,24 @@ Host App SHALL 提供"打开 OpenList 管理界面"入口，使用 Capacitor InA
 ┌─ Host App Process (Capacitor / Ionic Vue) ────┐
 │                                                │
 │  Remote.vue                                    │
-│  └─ LocalOpenListStatusCard                   │
-│       ├─ PID / Port / Running / DataSize       │  ← 只读摘要（已有）
-│       └─ [🌐 打开管理界面] 按钮                  │  ← 新增：InAppBrowser.open(5244)
+│  └─ LocalOpenListStatusCard (只读摘要，不变)    │
 │                                                │
-│  ExtensionsPage.vue                            │
-│  └─ OpenList 卡片                              │  ← install/uninstall/toggle（不变）
+│  ExtensionsPage.vue (install/uninstall，不变)   │
 │                                                │
-├─ Plugin APK Process (Independent) ─────────────┤
+├─ Plugin APK Process (Independent) ─────────────┤  ← 所有 UI 在这里
 │                                                │
-│  OpenListPluginEntry.Content()                 │  ← 空/最小占位（瘦身）
-│  OpenListBridge (gomobile 桥接)                │  ← 不变
-│  OpenListService (前台服务)                     │  ← 不变
-│  OpenListStatusProvider (ContentProvider IPC)  │  ← 不变
-│  OpenListConfig (配置持久化)                    │  ← 不变
+│  OpenListPluginEntry.Content()                 │
+│    ├─ 方案 A: AndroidView(WebView)             │  ← 加载 http://127.0.0.1:{port}
+│    │   → OpenList 自有 Vue3 SPA 完整功能        │
+│    └─ 或方案 B: Compose 原生控件               │  ← start/stop/status
+│                                                │
+│  OpenListBridge (gomobile 桥接)    （不变）      │
+│  OpenListService (前台服务)         （不变）      │
+│  OpenListStatusProvider (IPC)       （不变）      │
+│  OpenListConfig (配置持久化)         （不变）      │
 │                                                │
 ├─ OpenList Web UI (Vue3 SPA) ──────────────────┤
-│  http://127.0.0.1:{port}/#/                    │  ← InAppBrowser 承载
-│  （完整管理功能：文件/存储/用户/ENCV设置）        │
+│  http://127.0.0.1:{port}/#/                     │  ← 由插件内 WebView 加载
 │                                                │
 └────────────────────────────────────────────────┘
 ```
