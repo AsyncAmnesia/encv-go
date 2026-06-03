@@ -362,17 +362,45 @@
 
 ## Phase 13: OpenList 插件 APK 架构性构建失败修复
 
-> **根因**（CI 日志 `0_build.txt` L15699-15861 定位）：
-> 1. `plugin-openlist/build.gradle.kts` 漏 `id("org.jetbrains.kotlin.plugin.compose")` + 缺 `buildFeatures { compose = true }`——但源代码（含 `OpenListEmbedWebView`）仍用 `@Composable` + `AndroidView`，导致 `Could not resolve androidx.core:core-ktx:`（Gradle 在配置阶段就报依赖解析失败）
-> 2. `OpenListPluginEntry.kt` import 错包名：`com.encvgo.combolite.IPluginEntryClass` / `com.encvgo.combolite.PluginContext` 不存在，正确的是 `com.combo.core.api.IPluginEntryClass` / `com.combo.core.model.PluginContext`（参考 `MpvPluginEntry.kt`）
-> 3. `OpenListPluginJSInterface.kt:99` 调 `OpenListBridge.setAdminPwd(password)`，但 `OpenListBridge` 实际定义 `setAdminPassword(pwd: String)`（OpenListBridge.kt:324）——**编译期**因 `OpenListBridge` 是 `object` 会被 Kotlin 编译器报错
+> **核心原则：mpv 与 openlist 功能形态不同，不应锁镜。正确做法是直接读 combolite-core 2.0.2 源码确认架构契约，再针对 OpenList 实际需要裁剪 deps。**
 >
-> **架构性决策**：plugin-openlist 必须**完全镜像 plugin-mpv-player**（都是 ComboLite + Compose 插件），而非"半 Compose 半裸"的中间态。Compose 编译期插件 + `buildFeatures.compose=true` + 同款依赖集合是平台契约——`IPluginEntryClass.Content()` 是 `@Composable` 接口本身。
+> **直接读源码发现的真实架构契约**（`/tmp/combolite-src` 从 Maven Central 拉取的 `combolite-core-2.0.2-sources.jar`）：
+>
+> | 接口 | 强契约点 | openlist 用法 |
+> |------|---------|-------------|
+> | `IPluginEntryClass.pluginModule: List<Module>` | 必须实现，类型来自 `org.koin.core.module.Module` | `emptyList()` |
+> | `IPluginEntryClass.onLoad(context: PluginContext)` | 必须 | 初始化 Bridge + Config |
+> | `IPluginEntryClass.onUnload()` | 必须 | shutdown Service + Bridge |
+> | `IPluginEntryClass.Content()` | **必须 + 必须是 `@Composable`** | Composable 包装 AndroidView 宿主 WebView |
+> | `IPluginActivity` / `IPluginService` / `IPluginReceiver` | 可选 meta-data | **openlist 不用**（Service/Provider 都是普通 Android 组件，自己管生命周期） |
+>
+> **ClassLoader 拓扑**（combolite-core/PluginLifecycleManager.kt:224）：
+> ```
+> pluginClassLoader.parent = host's classLoader
+> ```
+> → host 已 implementation 的所有依赖（combolite-core / core-ktx / compose-ui / koin-core runtime），插件**用 compileOnly 就够**（运行时由 parent classloader 解析）。
+> → host **没有**的依赖（localbroadcastmanager / openlist-classes.jar / koin-core 类型），插件**必须 implementation** 打到 APK 里。
+>
+> **MPV vs OpenList 真实差异**（不要锁镜）：
+>
+> | 维度 | MPV | OpenList |
+> |------|-----|----------|
+> | Content 内部 | Composable + Material3 widget + icons | Composable + `AndroidView`(WebView) |
+> | 多余组件 | 无 | Service + ContentProvider + LocalBroadcastManager |
+> | Material3 依赖 | 必须 | **不要** |
+> | icons-extended | 必须 | **不要** |
+> | activity-compose | 必须 | **不要** |
+> | appcompat | 必须 | **不要** |
+> | localbroadcastmanager | 不要 | **必须**（host 没有） |
+> | openlist-classes.jar | 不要 | **必须**（gomobile 产物） |
 
-- [ ] 13.1 `plugin-openlist/build.gradle.kts` 重写：对齐 `plugin-mpv-player/build.gradle.kts`（Compose plugin + buildFeatures + BOM + compose ui + material3 + activity-compose + appcompat + `compileOnly("androidx.core:core-ktx")` + `localbroadcastmanager:1.1.0`）
-- [ ] 13.2 `OpenListPluginEntry.kt`：`com.encvgo.combolite.IPluginEntryClass` → `com.combo.core.api.IPluginEntryClass`，`com.encvgo.combolite.PluginContext` → `com.combo.core.model.PluginContext`
-- [ ] 13.3 `OpenListPluginJSInterface.kt:99`：`setAdminPwd` → `setAdminPassword`
-- [ ] 13.4 仓库全局 Grep 验证 `com.encvgo.combolite.IPlugin*` / `com.encvgo.combolite.PluginContext` / `setAdminPwd` 残留 0 处
-- [ ] 13.5 新增 `.trae/rules/verification-discipline.md`（防幻觉 + 本地工具优先 + CI 诊断纪律）
-- [ ] 13.6 清理 `job_logs.zip` + `/tmp/job_logs_inspect/`（用户明确要求）
-- [ ] 13.7 推送分支到 `trae/solo-agent-WAmQzy`，等 CI 跑通，下载 artifact 验证 `plugin-openlist-release.apk` 包含 `libgojni.so` + `Openlistlib*` + `assets/openlist/index.html`
+- [ ] 13.1 `plugin-openlist/build.gradle.kts` 重写：承接契约（compose plugin + buildFeatures.compose）+ 最小 deps（composet-bom + compose-ui + localbroadcastmanager + openlist-classes.jar + combolite-core compileOnly + koin-core compileOnly + core-ktx compileOnly）；**不**引 material3 / icons / activity-compose / appcompat
+- [ ] 13.2 `OpenListPluginEntry.kt` import 修复：`com.encvgo.combolite.IPlugin*` → `com.combo.core.api.IPlugin*` / `com.combo.core.model.PluginContext`
+- [ ] 13.3 `OpenListPluginJSInterface.kt:99`：`setAdminPwd` → `setAdminPassword`（编译期因 Bridge 是 `object` 会立刻报 NoSuchMethodError 之外的 unresolved reference）
+- [ ] 13.4 全局 Grep 验证 `setAdminPwd` / `com.encvgo.combolite.IPlugin*` / `com.encvgo.combolite.PluginContext` 残留 0 处
+- [ ] 13.5 `OpenListPluginEntry` 与 `IPluginEntryClass` 4 契约点对齐：pluginModule=onLoad=onUnload=@Composable Content()=已实现
+- [ ] 13.6 `AndroidManifest.xml` 验证：未注册 IPluginActivity/IPluginService/IPluginReceiver meta-data（用普通 Service/Provider 即可）
+- [ ] 13.7 新增 `.trae/rules/verification-discipline.md`（防幻觉 + 本地工具优先 + CI 诊断纪律）
+- [ ] 13.8 `.trae/rules/combolite.md` 记录 IPluginEntryClass 实际接口契约（pluginModule/onLoad/onUnload/Content + 必须 @Composable + Koin Module 类型）+ ClassLoader 拓扑（plugin.parent = host）
+- [ ] 13.9 清理 `job_logs.zip` + `/tmp/job_logs_inspect/`（用户明确要求）
+- [ ] 13.10 推送分支到 `trae/solo-agent-WAmQzy`，等 CI 跑通，下载 artifact 验证 `plugin-openlist-release.apk` 包含 `libgojni.so` + `Openlistlib*` + `assets/openlist/index.html`

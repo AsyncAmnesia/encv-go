@@ -665,3 +665,162 @@ Step 5: 验证插件 APK 内容
    - 🔧 kotlin-reflect健康检查 — 测试 4 个类的 ::function.javaMethod 是否可解析
    - 🔧 APK元数据+签名校验 — 验证 APK 结构和签名
    - 🔧 ValidationStrategy状态 — 验证策略是否真正生效
+
+---
+
+## 九、IPluginEntryClass 实际接口契约（combolite-core 2.0.2 源码审计）
+
+> 本节为插件开发者直接提供。源码来自 Maven Central `io.github.lnzz123:combolite-core:2.0.2`。
+> **不要凭印象猜**——任何「我以为 `Content()` 可以是非 Composable」「IPluginService 必须实现」等假设，先读 `/tmp/combolite-src/com/combo/core/api/` 实际文件再下结论。
+
+### 9.1 IPluginEntryClass（**唯一强契约入口**）
+
+```kotlin
+// combolite-core 2.0.2 /com/combo/core/api/IPluginEntryClass.kt
+package com.combo.core.api
+
+import androidx.compose.runtime.Composable
+import com.combo.core.model.PluginContext
+import org.koin.core.module.Module
+
+interface IPluginEntryClass {
+    val pluginModule: List<Module>      // 必含: org.koin.core.module.Module 类型
+    fun onLoad(context: PluginContext)   // 必含: 加载时初始化
+    fun onUnload()                       // 必含: 卸载时清理
+    @Composable
+    fun Content()                        // 必含 + 必为 @Composable, 无替代入口
+}
+```
+
+**PluginContext**（`/com/combo/core/model/PluginContext.kt`）：
+```kotlin
+data class PluginContext(
+    val application: Application,
+    val pluginInfo: PluginInfo
+)
+```
+
+### 9.2 4 个 plugin 入口契约点
+
+| 入口点 | 类型 | 必含? | 实现复杂度 |
+|--------|------|-------|----------|
+| `pluginModule` | `List<org.koin.core.module.Module>` | ✅ | 可为 `emptyList()` |
+| `onLoad(context)` | `fun` | ✅ | 自由实现 |
+| `onUnload()` | `fun` | ✅ | 自由实现 |
+| `Content()` | `@Composable fun` | ✅ | **必为 @Composable**（不可省注解） |
+
+### 9.3 可选入口（meta-data 声明）
+
+| 接口 | Meta-data 写法 | 何时需要 |
+|------|--------------|---------|
+| `IPluginActivity` | `plugin.activities` (XmlManager) | 插件要提供 Activity 容器 |
+| `IPluginService` | `plugin.services` (XmlManager) | 插件要提供 Service **且需要 host 代理** |
+| `IPluginReceiver` | `plugin.staticReceivers` (XmlManager) | 插件要接收广播且需 host 代理 |
+| `IPluginProvider` | `plugin.providers` (XmlManager) | 插件要提供 ContentProvider 且需 host 代理 |
+
+> **OPENLIST 例外**（phase 13 经验）：用**普通 Android `Service` / `ContentProvider`**（manifest 里直接 `<service>` / `<provider>`），插件自己管生命周期（`onLoad`/`onUnload` 启动/停止 Service），**不需要** `IPluginService` / `IPluginProvider` proxy 路径。这避开了 host proxy 的复杂度，适合单一进程插件。
+
+### 9.4 ClassLoader 拓扑（决定 deps 用 `compileOnly` 还是 `implementation`）
+
+combolite-core `PluginLifecycleManager.kt:224`：
+```kotlin
+val classLoader = PluginClassLoader(
+    pluginId = plugin.id,
+    pluginFile = pluginApkFile,
+    parent = context.application.classLoader,    // ← 父 classloader = host 的
+    ...
+)
+```
+
+**结论**：插件运行时**通过 parent classloader 委托给 host**——host 已 `implementation` 的任何依赖，插件**可用 `compileOnly`**，运行时由 parent 解析。
+
+| 依赖类型 | 何时 `compileOnly` | 何时 `implementation` |
+|---------|-------------------|----------------------|
+| combolite-core (api jar) | ✅ host 已 implementation | — |
+| androidx.core:core-ktx | ✅ host 已 implementation | — |
+| compose-ui | ✅ host 已 implementation | — |
+| koin-core (类型引用) | ✅ host 启动 Koin | — |
+| **localbroadcastmanager** | ❌ host **没有** | ✅ 必须 implementation |
+| **gomobile classes.jar** | ❌ host **没有** | ✅ 必须 implementation |
+| **OpenList 自定义 jar/AAR** | ❌ host **没有** | ✅ 必须 implementation |
+
+### 9.5 build.gradle.kts 最小骨架（基于实际契约）
+
+```kotlin
+plugins {
+    id("com.android.library")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")   // ← 强契约: Content() 是 @Composable
+    alias(libs.plugins.combolite.aar2apk)      // ← 强契约: 走 aar2apk 输出 plugin APK
+}
+
+android {
+    namespace = "com.example.plugin"
+    compileSdk = libs.versions.compileSdk.get().toInt()
+    defaultConfig { minSdk = libs.versions.minSdk.get().toInt() }
+    buildTypes {
+        release {
+            isMinifyEnabled = false        // ← 强契约: R8 破坏 kotlin-reflect @Metadata
+            isShrinkResources = false      // ← 强契约: AGP 与 minify 硬耦合
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+    buildFeatures {
+        compose = true                    // ← 强契约: @Composable 编译
+    }
+}
+
+dependencies {
+    compileOnly(libs.combolite.core)         // 由 host 提供
+    // ↓ 只加本插件实际需要的 deps（按 §9.4 决定 compileOnly vs implementation）
+}
+```
+
+### 9.6 锁镜警告（mpv ≠ openlist）
+
+**禁止**直接把 plugin-mpv-player 的 deps 照搬到新插件。mpv 的 deps 反映 mpv 的功能：
+
+| mpv 用的 | openlist 用的 | 结论 |
+|---------|-------------|------|
+| material3 | ❌（只用 AndroidView） | 不锁镜 |
+| material-icons-extended | ❌ | 不锁镜 |
+| activity-compose | ❌（无 Activity） | 不锁镜 |
+| appcompat | ❌ | 不锁镜 |
+| ❌ | localbroadcastmanager | openlist 独有 |
+| ❌ | openlist-classes.jar (gomobile) | openlist 独有 |
+
+**正确做法**：从 `IPluginEntryClass` 4 契约点出发 → 看本插件用哪些组件（Service/Receiver/Provider/Compose widget）→ 按 §9.4 决定 deps → 写 `build.gradle.kts`。
+
+### 9.7 plugin.openlist 真实形态（spec 落地参照）
+
+```kotlin
+// OpenListPluginEntry.kt
+class OpenListPluginEntry : IPluginEntryClass {
+    override val pluginModule: List<Module> = emptyList()
+    override fun onLoad(context: PluginContext) {
+        // 1. 加载 OpenListConfig
+        // 2. cfg.applyToBridge(OpenListBridge)
+        // 3. OpenListBridge.init(context.applicationContext)
+    }
+    override fun onUnload() {
+        OpenListService.stopIfRunning()
+        OpenListBridge.shutdown(5_000L)
+    }
+    @Composable
+    override fun Content() {
+        OpenListEmbedWebView(
+            containerId = "openlist-plugin-embed",
+            initialUrl = "https://localhost/openlist/"   // dev 模式
+        )
+    }
+}
+```
+
+`AndroidManifest.xml`：
+- `<meta-data android:name="plugin.entryClass" android:value="...OpenListPluginEntry" />`
+- `<service .OpenListService android:foregroundServiceType="dataSync" />`（普通 Service，非 IPluginService proxy）
+- `<provider .OpenListStatusProvider android:exported="true" />`（普通 Provider，供外部 observer）
+- **不需要** `plugin.activities` / `plugin.services` / `plugin.receivers` meta-data
