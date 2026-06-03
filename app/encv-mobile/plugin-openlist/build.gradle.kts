@@ -35,6 +35,29 @@ android {
         }
     }
 
+    // Phase 25 A3.3 修复: aar2apk 任务的 localDependencyClasses 只接受
+    // ProjectComponentIdentifier (Aar2ApkPlugin.kt:141) 和 remoteDependencyAars
+    // 只接受 ModuleComponentIdentifier (Aar2ApkPlugin.kt:117)；
+    // implementation(files("libs/openlist-classes.jar")) 是直接 file 依赖，
+    // 不属于这两类，会被 Gradle dependency graph 过滤掉，aar2apk 永远拿不到
+    // openlistlib 类。最终 plugin APK dex 不含 openlistlib.Event/LogCallback，
+    // 运行时 NoClassDefFoundError。
+    //
+    // 修复: preBuild 任务把 libs/openlist-classes.jar 解压到 build/generated/
+    // openlistlib/ 目录，加入 main sourceSet。这样 Kotlin/Java 编译时能找到
+    // openlistlib 类，AGP 打 aar 时 classes.jar 自然含 openlistlib，aar2apk
+    // 解压 aar 拿 classes.jar → d8 合并到 plugin APK dex → 运行时类能加载。
+    //
+    // sourceSet 注入 vs aar2apk 改造 vs 包成 .aar 走 maven coordinate:
+    // - sourceSet 注入最稳，不依赖 aar2apk 内部行为，不依赖 AGP 版本
+    // - 包成 .aar 走 maven 需要新 flatDir/mavenLocal 仓库配置
+    // - 改 aar2apk 是第三方库，要 fork
+    sourceSets {
+        getByName("main") {
+            java.srcDir(layout.buildDirectory.dir("generated/openlistlib"))
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
@@ -96,4 +119,47 @@ dependencies {
     // host 已 implementation("androidx.core:core-ktx:1.17.0") (app/build.gradle.kts:125),
     // 插件 ClassLoader 走 parent → host → 拿到,compileOnly 就够
     compileOnly("androidx.core:core-ktx")
+}
+
+// Phase 25 A3.3 修复: 解压 libs/openlist-classes.jar → build/generated/openlistlib/
+// 作为 sourceSet 的一部分参与编译（见 android.sourceSets 块）。
+// 这样 aar2apk 转换 plugin-openlist.aar 时，openlistlib 类已经在 aar 的
+// classes.jar 里，d8 会合并到 plugin APK dex。
+//
+// 为什么用 task 而不是 fileTree: 必须先解压 jar 才能让 sourceSet 看到 .class 文件。
+// AGP 编译期需要 .class 文件按包结构目录布局（openlistlib/Event.class 等）。
+val unpackOpenlistClasses by tasks.registering {
+    val input = file("libs/openlist-classes.jar")
+    val outputDir = layout.buildDirectory.dir("generated/openlistlib").get().asFile
+    inputs.file(input)
+    outputs.dir(outputDir)
+    doLast {
+        if (!input.exists()) {
+            // 必须 WARN 不要 fail —— 沙箱没 jar 时正常 fail-fast 不可取
+            // （CI 上 jar 一定存在，sandbox 测试编译时不存在才合理）
+            logger.warn("[plugin-openlist] libs/openlist-classes.jar not found, " +
+                    "skipping unpack. plugin APK will lack openlistlib classes.")
+            outputDir.deleteRecursively()
+            outputDir.mkdirs()
+            return@doLast
+        }
+        outputDir.deleteRecursively()
+        outputDir.mkdirs()
+        copy {
+            from(zipTree(input))
+            into(outputDir)
+        }
+        logger.lifecycle("[plugin-openlist] unpacked ${input.length() / 1024}KB → " +
+                "${outputDir.walkTopDown().count { it.isFile }} files into $outputDir")
+    }
+}
+
+// 让所有 build type 的 preBuild 都先跑 unpackOpenlistClasses
+// AGP 8.13.0: preBuild + preDebugBuild + preReleaseBuild 都存在
+// configureEach 比 configure 范围更广（debug/release 都能 hook）
+afterEvaluate {
+    tasks.matching { it.name.startsWith("pre") && it.name.endsWith("Build") }
+        .configureEach {
+            dependsOn(unpackOpenlistClasses)
+        }
 }
