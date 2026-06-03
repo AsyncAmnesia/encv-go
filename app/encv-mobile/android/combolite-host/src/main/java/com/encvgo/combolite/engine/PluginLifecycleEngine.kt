@@ -209,20 +209,47 @@ internal object PluginLifecycleEngine {
         }
     }
 
-    fun setupFramework(hostActivityClass: Class<*>) {
+    /**
+     * Phase 25 A2：Host 端 ComboLite 框架初始化。
+     *
+     * @param hostActivityClass 单一 Host Activity（comboLite 标准只能有 1 个）
+     * @param hostServicePool 16 个 Host Service 代理（com.encvgo.combolite.proxy.HostService1..16）
+     *   ComboLite ProxyManager 池大小 = servicePool.size，最多支持 servicePool.size - 1
+     *   个 plugin service 并发（+ 1 buffer 防 race）。
+     * @param hostProviderAuthority Host Provider 的 authority 字符串。
+     *   必须与 AndroidManifest.xml 中 <provider> 的 android:authorities 完全一致。
+     *   Plugin ContentResolver.queryPlugin() 会被改写路由到 content://<hostAuthority>/<encoded_plugin_authority>/path
+     */
+    fun setupFramework(
+        hostActivityClass: Class<*>,
+        hostServicePool: List<Class<out com.combo.core.component.service.BaseHostService>>,
+        hostProviderAuthority: String,
+    ) {
         try {
-            kotlinx.coroutines.runBlocking { PluginManager.setValidationStrategy(ValidationStrategy.Insecure) }
+            runBlocking { PluginManager.setValidationStrategy(ValidationStrategy.Insecure) }
         } catch (e: Error) {
         } catch (e: Exception) {
         }
         try {
-            kotlinx.coroutines.runBlocking { PluginCrashHandler.setGlobalClashCallback(null) }
+            runBlocking { PluginCrashHandler.setGlobalClashCallback(null) }
         } catch (e: Error) {
         } catch (e: Exception) {
         }
         try {
             PluginManager.proxyManager.setHostActivity(hostActivityClass as Class<BaseHostActivity>)
         } catch (e: Exception) {
+            Log.e(TAG, "setupFramework: setHostActivity failed", e)
         }
+        try {
+            PluginManager.proxyManager.setServicePool(hostServicePool)
+        } catch (e: Exception) {
+            Log.e(TAG, "setupFramework: setServicePool failed (size=${hostServicePool.size})", e)
+        }
+        try {
+            PluginManager.proxyManager.setHostProviderAuthority(hostProviderAuthority)
+        } catch (e: Exception) {
+            Log.e(TAG, "setupFramework: setHostProviderAuthority('$hostProviderAuthority') failed", e)
+        }
+        Log.i(TAG, "setupFramework: complete | servicePoolSize=${hostServicePool.size} providerAuthority='$hostProviderAuthority'")
     }
 }

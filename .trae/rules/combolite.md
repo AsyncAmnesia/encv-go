@@ -1120,19 +1120,31 @@ fun <T : Any> getInterface(interfaceClass: Class<T>, className: String): T? {
 | [OpenListStatusBridge.kt](file:///workspace/app/encv-mobile/android/combolite-host/src/main/java/com/encvgo/combolite/OpenListStatusBridge.kt) | classloader 反射 `OpenListBridge.snapshot()` | 改用 `contentResolver.queryPlugin(OpenListStatusProvider.STATUS_URI, ...)` |
 | [GoProcessPlugin.kt](file:///workspace/app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt) | classloader 反射 `OpenListBridge.start()` + 反射注册 statusListener | 改用 `context.startPluginService(OpenListPluginService::class.java, "main")`；statusListener 反射注册保留（host → plugin 方向） |
 
-### 10.9 Service pool size 选择（为什么 demo 用 10）
+### 10.9 Service pool size 选择（plugin-openlist 实际值 N=16）
 
-| 场景 | 池大小建议 | 原因 |
-|------|----------|------|
-| 普通 app（1-2 个 plugin service） | 4 | 占内存最小 |
-| 通用 demo / 框架示例 | 10 | ComboLite demo 默认值，覆盖多 service 并发场景 |
-| 复杂 app（多插件并发） | 16-20 | 预留 buffer |
+| 场景 | 池大小 | 理由 |
+|------|--------|------|
+| 单 plugin 1 service（如 openlist） | **2** | 1 用 + 1 buffer |
+| 多 plugin 各 1 service | **plugin 数 + 1** | 每个 plugin 1 个，加 1 buffer |
+| 同 plugin 多 instance | **max(instance 数) + 1** | 用 instanceId 区分同 class 多实例 |
+| 通用 demo / 框架示例 | 10 | ComboLite demo 演示并发（**不推荐**用于生产） |
+| 复杂 app 缓冲 | 16-20 | 多插件多 instance 余量 |
 
-**池耗尽语义**：[ProxyManager.kt:152-155](file:///tmp/combolite-src/com/combo/core/proxy/ProxyManager.kt#L152-L155) 返回 null，调用方 `startPluginService` 会 silently log error 不启动 service。用户感知不到任何反馈。
+**plugin-openlist 实际选择 N=16**：
+- openlist 1 个 main instance + 1 buffer = 绝对最小 2
+- 留 14 个余量给未来 plugin 扩展（player、sftp、baidupan、aliyundrive 等）
+- 不写死 10（demo 风格）也不写死 2（过保守）
 
-**修复**：
-- 监控 `proxyManager.activeServiceProxies.size`，接近池大小时警告
-- 不要为单个插件启 N 个 service（用 `instanceId` 区分，1 个 service class 可启多个实例）
+**ComboLite 架构硬约束（setServicePool）**：
+- 池是 `Queue<Class<out BaseHostService>>`（[ProxyManager.kt:115](file:///tmp/combolite-src/com/combo/core/proxy/ProxyManager.kt#L115)）
+- `setServicePool` 清空 `availableServiceProxies` + **清空 `activeServiceProxies`**（[ProxyManager.kt:112-113](file:///tmp/combolite-src/com/combo/core/proxy/ProxyManager.kt#L112-L113)）—— 运行中 plugin service 引用丢失
+- 因此**只能**在 `setupFramework` 一次性 set，不能 installPlugin 后重设
+- 扩容到 N' > 16：扩 manifest 加 `<service>` + 改 setServicePool 调用（一次性硬改）
+
+**Android 系统约束**：
+- Service 是 class-based（同一 class 多次注册 = 1 个实例）
+- 必须有 N 个**不同** class 预注册在 manifest
+- 池 = N 个不同 class 引用列表
 
 ### 10.10 关键参考源码
 

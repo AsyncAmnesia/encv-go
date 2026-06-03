@@ -150,5 +150,44 @@
             android:exported="false"
             android:theme="@style/AppTheme.NoActionBar"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode" />
+
+        <!-- ============================================================ -->
+        <!-- Phase 25 A2：ComboLite host 代理组件（plugin-openlist 用） -->
+        <!-- ============================================================ -->
+
+        <!-- Service 池：16 个空壳 Service，每个对应一个 plugin service instance -->
+        <service android:name="com.encvgo.combolite.proxy.HostService1" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService2" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService3" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService4" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService5" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService6" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService7" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService8" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService9" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService10" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService11" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService12" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService13" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService14" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService15" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService16" android:exported="false" />
+
+        <!-- Provider 代理：authority 必须与 EncvApplication.onFrameworkSetup 中 setHostProviderAuthority 一致 -->
+        <provider
+            android:name="com.encvgo.combolite.proxy.HostStatusProvider"
+            android:authorities="com.encvgo.app.provider"
+            android:exported="true" />
+
+        <!-- Receiver 代理：exported=true 接收系统/内部广播，转发给 plugin 静态 receiver -->
+        <receiver
+            android:name="com.encvgo.combolite.proxy.HostStaticReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.encvgo.plugin.openlist.BROADCAST_STATUS" />
+                <action android:name="com.encvgo.plugin.openlist.BROADCAST_LOG" />
+                <action android:name="com.encvgo.plugin.openlist.BROADCAST_PORT_CONFLICT" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
