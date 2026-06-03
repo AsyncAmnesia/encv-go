@@ -658,14 +658,22 @@ jobs:
           echo "╚══════════════════════════════════════════════════╝"
           CLASSES_JAR="app/encv-mobile/plugin-openlist/libs/openlist-classes.jar"
           if [ ! -f "$CLASSES_JAR" ]; then
-            echo "⏭️  openlist-classes.jar not present, skipping kotlinc pre-flight"
+            echo "⏭️  openlist-classes.jar not present — kotlinc pre-flight SKIPPED"
+            echo "    (jar is produced by 'Build OpenList AAR' + 'Extract OpenList AAR' steps)"
+            echo "    (guard will fall through to gradle build, which catches unresolved references too — just slower)"
+            echo "    Expected path: $CLASSES_JAR"
+            ls -la "$CLASSES_JAR" 2>&1 || true
+            echo ""
           else
             # Download kotlin-compiler-embeddable + stdlib + reflect + coroutines
             # via setup-kotlinc.sh (Maven Central, ~66MB, cached separately).
             bash .trae/scripts/setup-kotlinc.sh > /tmp/setup-kotlinc.log 2>&1
             SETUP_EXIT=$?
             if [ $SETUP_EXIT -ne 0 ]; then
-              echo "::warning::setup-kotlinc.sh failed (exit=$SETUP_EXIT, see /tmp/setup-kotlinc.log). Skipping kotlinc pre-flight."
+              echo "::warning::setup-kotlinc.sh failed (exit=$SETUP_EXIT). Last 30 lines of setup log:"
+              tail -30 /tmp/setup-kotlinc.log
+              echo "⚠️  Skipping kotlinc pre-flight (will rely on gradle build to catch errors)."
+              echo ""
             else
               KOTLINC=$(which kotlinc-2.3.21 2>/dev/null || echo "/usr/local/bin/kotlinc-2.3.21")
               # Build classpath: openlist classes + android.jar + combolite-core
@@ -674,6 +682,8 @@ jobs:
               CP="${CLASSES_JAR}"
               [ -n "$ANDROID_JAR" ] && CP="${CP}:${ANDROID_JAR}"
               [ -n "$COMBOLITE_JAR" ] && CP="${CP}:${COMBOLITE_JAR}"
+              echo "  kotlinc: $KOTLINC"
+              echo "  classpath: ${CP//:/, }"
 
               cd app/encv-mobile/plugin-openlist
               "$KOTLINC" -cp "$CP" -no-stdlib -no-reflect -Xsuppress-version-warnings \
@@ -682,21 +692,42 @@ jobs:
               PREFLIGHT_EXIT=$?
               cd -
 
-              # Show only REAL unresolved (filter out android.* / compose.* / koin.* / other 3rd party noise)
+              echo "  kotlinc exit: $PREFLIGHT_EXIT"
+              # Filtered list = "known Phase 17 bug class" (gomobile methods + Map<String,Any?> keys)
               REAL_ERRORS=$(grep -E "Unresolved reference '(forceDbSync|forceDBSync|setConfigData|setConfigLog|setConfigDebug|setConfigNoPrefix|setAdminPassword|init|start|shutdown|isRunning|getOutbound|running|port|pid|dataSizeBytes|lastError|lastUpdateTs)'" /tmp/encv-preflight.log || true)
-              if [ $PREFLIGHT_EXIT -ne 0 ] || [ -n "$REAL_ERRORS" ]; then
+              # ALL unresolved = everything not in expected-3rd-party whitelist
+              ALL_UNRESOLVED=$(grep -E "Unresolved reference" /tmp/encv-preflight.log || true)
+              # Whitelisted 3rd-party noise (expected: android.*, compose.*, koin.*, openlistlib.* stub not on classpath, etc.)
+              # Note: each pattern needs `\..*` to match the full reference like 'android.widget.Toast', not just 'android' literal.
+              NOISE=$(echo "$ALL_UNRESOLVED" | grep -E "Unresolved reference '(android\.|androidx\.|com\.combo\.|org\.jetbrains\.|com\.tencent\.|mm\.composer\.|kotlin\.|kotlinx\.|kotlinx\.coroutines\.|org\.koin\.|openlistlib\.|com\.encvgo\.)" || true)
+              TRULY_NEW=$(comm -23 <(echo "$ALL_UNRESOLVED" | sort -u) <(echo "$NOISE" | sort -u))
+
+              if [ "$PREFLIGHT_EXIT" -ne 0 ] || [ -n "$REAL_ERRORS" ] || [ -n "$TRULY_NEW" ]; then
                 echo "❌ kotlinc pre-flight FAILED"
                 if [ -n "$REAL_ERRORS" ]; then
-                  echo "Real Unresolved references (gomobile/Map-related):"
-                  echo "$REAL_ERRORS" | head -20
+                  echo "  --- Phase 17 bug class (gomobile/Map<String,Any?>) ---"
+                  echo "$REAL_ERRORS" | head -20 | sed 's/^/    /'
                 fi
-                echo "::error::❌ kotlinc pre-flight failed. Full log: /tmp/encv-preflight.log"
+                if [ -n "$TRULY_NEW" ]; then
+                  echo "  --- Other unresolved (NOT in expected 3rd-party whitelist) ---"
+                  echo "$TRULY_NEW" | head -20 | sed 's/^/    /'
+                fi
+                if [ -z "$REAL_ERRORS" ] && [ -z "$TRULY_NEW" ]; then
+                  echo "  (no unresolved references, but kotlinc exit=$PREFLIGHT_EXIT)"
+                  echo "  --- last 20 lines of kotlinc output ---"
+                  tail -20 /tmp/encv-preflight.log | sed 's/^/    /'
+                fi
+                echo "::error::❌ kotlinc pre-flight failed. Full log: /tmp/encv-preflight.log (already shown above)"
                 exit 1
               fi
-              echo "✅ kotlinc pre-flight PASSED"
+              echo "✅ kotlinc pre-flight PASSED (0 unresolved after filter)"
             fi
           fi
 
+          echo ""
+          echo "╔══════════════════════════════════════════════════╗"
+          echo "║  Gradle: compile + convert (real build)         ║"
+          echo "╚══════════════════════════════════════════════════╝"
           cd app/encv-mobile/android
           BUILD_TYPE="${{ inputs.version && 'Release' || 'Debug' }}"
           APK_BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
