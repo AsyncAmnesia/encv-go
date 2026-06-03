@@ -387,8 +387,12 @@ jobs:
 
 
       # === Build MPV Player Plugin ===
+      # NOTE: Plugin build failures must NOT block the main app upload.
+      # Each plugin step uses continue-on-error so the step still shows FAILED
+      # (red) in CI — this is NOT a silent ignore/warning.
       - name: Build MPV player plugin (JNI + Kotlin)
         if: inputs.skip_plugin != true
+        continue-on-error: true
         run: |
           cd app/encv-mobile/android
 
@@ -405,6 +409,7 @@ jobs:
 
       - name: Package MPV plugin as APK
         if: inputs.skip_plugin != true
+        continue-on-error: true
         run: |
           cd app/encv-mobile/android
           BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
@@ -442,6 +447,7 @@ jobs:
       # === Build OpenList Plugin (AAR → APK via aar2apk) ===
       - name: Build OpenList AAR (gomobile bind)
         if: inputs.skip_plugin != true
+        continue-on-error: true
         run: |
           echo "═══ OpenList AAR Build (gomobile bind) ═══"
           bash scripts/build-openlist-aar.sh \
@@ -456,6 +462,7 @@ jobs:
 
       - name: Extract OpenList AAR for plugin packaging
         if: inputs.skip_plugin != true
+        continue-on-error: true
         run: |
           AAR="app/encv-mobile/plugin-openlist/libs/openlist.aar"
           PLUGIN_SRC="app/encv-mobile/plugin-openlist/src/main"
@@ -491,6 +498,7 @@ jobs:
 
       - name: Build OpenList plugin APK (aar2apk)
         if: inputs.skip_plugin != true
+        continue-on-error: true
         run: |
           cd app/encv-mobile/android
           BUILD_TYPE="${{ inputs.version && 'Release' || 'Debug' }}"
