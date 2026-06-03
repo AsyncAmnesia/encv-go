@@ -454,3 +454,42 @@
   - §7.4 加 "推荐：一键脚本" + 列出 3 个 `禁止 curl` 的 CDN
   - "手动做法" 标注 "不推荐，仅当脚本失败时备查"
 - [ ] 15.6 **更新 spec 本文件**（tasks.md Phase 15）记录新工作流
+
+## Phase 16: Gradle Kotlin DSL 脚本编译错误修复（污染 mpv 构建）
+
+> **症状（CI 实际）**：
+> - step 31 `:plugin-mpv-player:convert_plugin-mpv-player_release` → BUILD FAILED in 14s
+> - step 32 `Package MPV plugin as APK` → BUILD FAILED in 1s
+> - step 36 `OpenList plugin APK (aar2apk)` → BUILD FAILED in 1s
+> - step 38 `Release APK build (composite)` → 看似 OK 但实际没生成 openlist APK
+> - **终态**：`openlist-release.apk` 没产物，主 app APK 只含 mpv
+>
+> **根因（build log line 14102-14104）**：
+> ```
+> e: file:///.../plugin-openlist/build.gradle.kts:81:52
+>     Unresolved reference 'foundation'.
+> e: file:///.../plugin-openlist/build.gradle.kts:82:52
+>     Unresolved reference 'foundation'.
+> ```
+> `plugin-openlist/build.gradle.kts:81-82` 在 Phase 14 修复时加了
+> `implementation(libs.compose.foundation)` + `implementation(libs.compose.foundation.layout)`，
+> 但**忘了在 `libs.versions.toml` 声明对应 library 别名**。
+> Gradle Kotlin DSL 脚本编译期就崩了（不是 source 编译期，是 build script 本身），
+> 因为 plugin-openlist 是同一个 multi-project 的子项目，
+> 任何子项目配置期失败都会让 `:plugin-mpv-player:convert_*` 也跟着死。
+>
+> **为什么污染 mpv**：
+> `convert_plugin-mpv-player_release` 任务需要解析整个 dependency graph，
+> Gradle 必然先 evaluate 所有子项目的 `build.gradle.kts`。
+> 任意一个子项目脚本编译失败 → 整个 configuration phase 退出码非 0。
+> 修复 openlist 后,mpv 自动恢复。
+
+- [ ] 16.1 修 `libs.versions.toml` 缺 2 个 alias：
+  - `compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }`
+  - `compose-foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout" }`
+  - 不带 `version.ref`（由 compose-bom 2024.06.00 管版本）
+- [ ] 16.2 沙箱验证：写脚本遍历所有 `build.gradle.kts` 提取 `libs.X.Y` 引用，
+       对照 toml alias（toml `-` → 访问器 `.`），**总失败数 0**
+- [ ] 16.3 沙箱验证：toml 23 个 lib alias + 5 个 plugin alias **全部唯一**（python tomllib 解析）
+- [ ] 16.4 沙箱验证：`/usr/local/bin/kotlinc-2.3.21` 跑 plugin-openlist 所有 .kt 文件 0 syntax / 0 abstract / 0 @Composable 错
+- [ ] 16.5 推送分支到 `trae/solo-agent-WAmQzy`，CI 跑通，下载 artifact 验证 openlist + mpv 双 APK 都生成

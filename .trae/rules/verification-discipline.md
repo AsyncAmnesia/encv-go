@@ -242,3 +242,41 @@ grep -c "unresolved reference" /tmp/err.log
 | 能抓出 unresolved reference | ✅ | ❌（沙箱只能报"有 unresolved"，不能定真伪） |
 
 **沙箱验证的定位**：抓 syntax / parse 错误（CI log 的核心 ~60% 错误都是这一类），然后给 CI 跑全量。**不是**替代 CI。
+
+### 7.7 沙箱也能抓 Gradle Kotlin DSL 脚本编译错误
+
+> **Phase 16 踩坑**：CI 报 `Unresolved reference 'foundation'.`（在 `build.gradle.kts:81-82`），
+> Phase 14 修复时加 `implementation(libs.compose.foundation)` 但忘了在 `libs.versions.toml` 声明。
+> **Gradle Kotlin DSL 脚本编译期就崩了**，不进入 source 编译期。
+>
+> **沙箱检测方法**：写一个 `bash` 脚本遍历所有 `build.gradle.kts`，
+> 提取 `libs.X.Y` 引用，对照 toml alias（toml `-` → 访问器 `.`），**总失败数应 0**。
+
+```bash
+# 1. 提取 toml 全部 alias
+TOML_LIBS=$(awk '/\[libraries\]/{flag=1; next} /^\[/{flag=0} flag && /^[a-zA-Z]/' \
+    android/gradle/libs.versions.toml | sed -E 's/^([a-zA-Z0-9._-]+).*/\1/')
+TOML_PLUGINS=$(awk '/\[plugins\]/{flag=1; next} /^\[/{flag=0} flag && /^[a-zA-Z]/' \
+    android/gradle/libs.versions.toml | sed -E 's/^([a-zA-Z0-9._-]+).*/\1/')
+
+# 2. 遍历所有 build.gradle.kts
+FAIL=0
+for f in $(find . -name "build.gradle.kts"); do
+    for ref in $(grep -oE 'libs\.(plugins|[a-zA-Z0-9._-]+)\.[a-zA-Z0-9._-]+' "$f" | sort -u); do
+        [[ "$ref" == libs.versions.* ]] && continue
+        if [[ "$ref" == libs.plugins.* ]]; then
+            alias="${ref#libs.plugins.}"; alias="${alias//./-}"
+            echo "$TOML_PLUGINS" | grep -qx "$alias" || { echo "✗ $f: $ref"; FAIL=$((FAIL+1)); }
+        else
+            alias="${ref#libs.}"; alias="${alias//./-}"
+            echo "$TOML_LIBS" | grep -qx "$alias" || { echo "✗ $f: $ref"; FAIL=$((FAIL+1)); }
+        fi
+    done
+done
+[ "$FAIL" -eq 0 ] && echo "✅ 所有 libs.* 引用都能在 toml 找到"
+```
+
+**根因 / 教训**：
+- 任何 `libs.X.Y` 引用都必须有 toml alias 对应（`toml alias 用 '-' 分隔, 访问器用 '.'`）
+- 改 build.gradle.kts 加新 `libs.*` 引用时,必须同时改 `libs.versions.toml` 声明
+- Gradle Kotlin DSL 脚本编译错误会污染整个 multi-project（**任何子项目配置期失败 → 其他子项目的任务也死**）
