@@ -392,12 +392,18 @@ jobs:
       # graph does NOT resolve :plugin-openlist:compile* or :plugin-mpv-player:*,
       # so a plugin Kotlin compile error can NEVER block the main app APK.
       #
-      # Each plugin step runs its own gradlew invocation with the flag.
-      # Failures here are real errors (red step, proper exit code) — they
-      # simply don't cascade to the main app build that follows.
+      # Each plugin step runs its own gradlew invocation with -PincludePlugins=true.
+      # Two layers of isolation:
+      #   1. settings.gradle.kts conditional include — Gradle task graph never
+      #      pulls :plugin-openlist:* into the main app's assemble* task.
+      #   2. continue-on-error on each step — if a plugin build fails for its
+      #      own reasons (Kotlin compile error, missing AAR, etc.), the step
+      #      still shows FAILED (red, real error) but does NOT kill the job
+      #      before the main app APK is built and uploaded.
 
       - name: Build MPV player plugin (JNI + Kotlin)
         if: inputs.skip_plugin != true
+        continue-on-error: true
         run: |
           cd app/encv-mobile/android
 
@@ -414,6 +420,7 @@ jobs:
 
       - name: Package MPV plugin as APK
         if: inputs.skip_plugin != true
+        continue-on-error: true
         run: |
           cd app/encv-mobile/android
           BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
@@ -451,6 +458,7 @@ jobs:
       # === Build OpenList Plugin (AAR → APK via aar2apk) ===
       - name: Build OpenList AAR (gomobile bind)
         if: inputs.skip_plugin != true
+        continue-on-error: true
         run: |
           echo "═══ OpenList AAR Build (gomobile bind) ═══"
           bash scripts/build-openlist-aar.sh \
@@ -465,6 +473,7 @@ jobs:
 
       - name: Extract OpenList AAR for plugin packaging
         if: inputs.skip_plugin != true
+        continue-on-error: true
         run: |
           AAR="app/encv-mobile/plugin-openlist/libs/openlist.aar"
           PLUGIN_SRC="app/encv-mobile/plugin-openlist/src/main"
@@ -500,6 +509,7 @@ jobs:
 
       - name: Build OpenList plugin APK (aar2apk)
         if: inputs.skip_plugin != true
+        continue-on-error: true
         run: |
           cd app/encv-mobile/android
           BUILD_TYPE="${{ inputs.version && 'Release' || 'Debug' }}"
