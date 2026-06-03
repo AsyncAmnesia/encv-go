@@ -58,11 +58,16 @@ data class OpenListConfig(
      * The actual port that openlistlib binds to is read from the on-disk
      * conf.Conf.Scheme.HttpPort at Start() time; this Kotlin-side port is
      * only the snapshot the UI/StatusProvider report.
+     *
+     * Phase 14 修复：bridge 实际没有 setPort()/setDataDir() 方法。
+     * gomobile 暴露的是 Openlistlib.setConfigData(String) 静态方法
+     * （见 OpenListBridge.kt 头注释），由 OpenListBridge.init() 内部调用。
+     * 这里仅做日志 + 校验；config 真正应用发生在 init()/start() 流程里。
      */
-    fun applyToBridge(bridge: OpenListBridge) {
+    fun applyToBridge(@Suppress("UNUSED_PARAMETER") bridge: OpenListBridge) {
         Log.e(TAG, "[SAT-DBG][OpenList] applyToBridge() | port=$port dataDir=$dataDir (adminPassword deferred to post-Start)")
-        bridge.setPort(port)
-        bridge.setDataDir(dataDir)
+        // Intentionally NOT calling bridge.setPort(port) — port 由 openlistlib 从 on-disk conf 读
+        // Intentionally NOT calling bridge.setDataDir(dataDir) — setConfigData() 由 init() 调
         // Intentionally NOT calling bridge.setAdminPassword(adminPassword) here.
     }
 }

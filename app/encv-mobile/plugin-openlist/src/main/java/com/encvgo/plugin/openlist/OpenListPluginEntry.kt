@@ -2,10 +2,7 @@ package com.encvgo.plugin.openlist
 
 import android.content.Context
 import android.util.Log
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
 import com.combo.core.api.IPluginEntryClass
 import com.combo.core.model.PluginContext
 import org.koin.core.module.Module
@@ -48,7 +45,10 @@ class OpenListPluginEntry : IPluginEntryClass {
     override fun onLoad(context: PluginContext) {
         Log.e(tag, "[OpenList] onLoad() | thread=${Thread.currentThread().name}")
         try {
-            val appCtx: Context = context.applicationContext
+            // Phase 14 修复：PluginContext 是 data class(application: Application, pluginInfo)
+            // 字段名是 application，不是 applicationContext（Android 习惯的 applicationContext
+            // 在这里用 .application.context 也可，但 PluginContext 自身直接暴露 application）
+            val appCtx: Context = context.application
             // 加载持久化配置
             val cfg = OpenListConfig.load(appCtx)
             cfg.applyToBridge(OpenListBridge)

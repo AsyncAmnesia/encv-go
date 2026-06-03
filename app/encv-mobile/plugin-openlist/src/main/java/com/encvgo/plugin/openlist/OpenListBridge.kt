@@ -125,7 +125,7 @@ object OpenListBridge : Event, LogCallback {
     /**
      * Extract OpenList frontend dist from APK assets/dist/ to filesDir/openlist/dist/.
      * On first launch (or when the bundled VERSION changes), we:
-     *   1. Recursively copy assets/dist/* to filesDir/openlist/dist/
+     *   1. Recursively copy assets/dist contents to filesDir/openlist/dist
      *   2. Write/update config.json in dataDir with dist_dir = filesDir/openlist/dist
      *      so OpenList reads from disk at runtime (os.DirFS), not from embed.FS.
      *

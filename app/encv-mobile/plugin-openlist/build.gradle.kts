@@ -67,14 +67,19 @@ dependencies {
 
     // Compose 编译期 + 运行时: IPluginEntryClass.Content() 是 @Composable，
     // OpenListEmbedWebView 用了 androidx.compose.ui.viewinterop.AndroidView +
-    // androidx.compose.ui.platform.LocalContext。
+    // androidx.compose.ui.platform.LocalContext + androidx.compose.foundation.layout.fillMaxSize。
     // host 已 implementation(platform(libs.compose.bom) + libs.compose.ui)，
     // 但我们用 implementation 而不是 compileOnly —— 因为 host 用了 BOM 2024.06.00，
     // 而 plugins 可能被独立加载调试；implementation 让插件自包含。
     // ⚠️ 不引 material3 / icons / activity-compose / appcompat —— OpenListEmbedWebView
     // 只是一段 Composable + AndroidView,不需要 Material 主题（锁镜 MPV 的陷阱）
+    // ⚠️ Phase 14 修复：必须加 compose.foundation + compose.foundation.layout
+    // (OpenListEmbedWebView.kt:38 用 Modifier.fillMaxSize() 来自 foundation.layout)
+    // (OpenListPluginEntry.kt 之前误用了 Box/fillMaxSize 已清理掉,这里仅 OpenListEmbedWebView 需要)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
+    implementation(libs.compose.foundation)         // Box / Column / Row 等基础 widget
+    implementation(libs.compose.foundation.layout) // fillMaxSize / padding / ColumnScope 等
 
     // Koin: IPluginEntryClass.pluginModule: List<Module> 的 Module 类型
     // 来自 org.koin.core.module.Module。OpenListPluginEntry.pluginModule = emptyList()
