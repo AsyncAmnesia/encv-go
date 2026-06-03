@@ -68,6 +68,20 @@ object OpenListBridge : Event, LogCallback {
     @Volatile
     private var lastUpdateTs: Long = 0L
 
+    /**
+     * Phase 23: host 注册的状态变更回调（in-process 推送，替代轮询）。
+     * plugin 在 host 进程里跑（PluginClassLoader），所以 host 通过 classloader
+     * 反射写入此字段，状态变更时 broadcastStatus() 会触发回调。
+     *
+     * @JvmStatic + 简单 lambda 类型（Map<String, Any?>）→ host 端通过反射
+     * `bridgeClass.getDeclaredField("statusListener").set(null, lambda)` 设置。
+     * 注意: Kotlin lambda 不能直接通过反射，host 端需用 java 接口 (Function1) 包裹
+     * 或用 kotlin.jvm.functions.Function1 接口。
+     */
+    @Volatile
+    @JvmStatic
+    var statusListener: kotlin.jvm.functions.Function1<Map<String, Any?>, Unit>? = null
+
     // C5: assets extraction state
     private val ASSETS_PREFS = "openlist_assets"
     private val ASSETS_KEY_VERSION = "extracted_version"
@@ -374,10 +388,12 @@ object OpenListBridge : Event, LogCallback {
     }
 
     /**
-     * Phase 22: 跨进程系统广播（替代轮询）。
-     * 历史：原 LocalBroadcastManager 是进程内广播，host 收不到 → 死代码。
-     * 现在改用 Context.sendBroadcast + setPackage 锁 host (com.encvgo.app)。
-     * 完整 snapshot 一起带上，host 不用再 query ContentProvider。
+     * Phase 23: 状态变更推送（in-process 替代轮询）。
+     * 历史：Phase 22 误用 LocalBroadcastManager + 跨进程系统广播，host 收不到
+     *       （plugin 和 host 在**同一进程**走 PluginClassLoader，LocalBroadcast
+     *       是进程内但 plugin 内无人 registerReceiver；系统广播也走不通因为
+     *       plugin 没系统级 install）。
+     * 现在：直接调 [statusListener]（host 启动时通过 classloader 反射注册）。
      */
     fun broadcastStatus(port: Int, running: Boolean) {
         Log.e(TAG, "[SAT-DBG][OpenList] broadcastStatus() | port=$port running=$running | ts=${System.currentTimeMillis()}")
@@ -387,39 +403,24 @@ object OpenListBridge : Event, LogCallback {
         }
         val snap = synchronized(lock) {
             mapOf(
+                "running" to running,
+                "port" to port,
+                "pid" to pid,
                 "data_size_bytes" to dataSizeBytes,
                 "last_error" to (lastError ?: ""),
                 "last_update_ts" to lastUpdateTs,
             )
         }
-        val dataSize = (snap["data_size_bytes"] as? Long) ?: 0L
-        val lastError = (snap["last_error"] as? String) ?: ""
-        val lastUpdateTs = (snap["last_update_ts"] as? Long) ?: 0L
-
-        // 老 LocalBroadcastManager 保留
-        try {
-            LocalBroadcastManager.getInstance(ctx).sendBroadcast(
-                Intent(OpenListService.BROADCAST_STATUS_CHANGED)
-                    .putExtra(OpenListService.EXTRA_PORT, port)
-                    .putExtra(OpenListService.EXTRA_RUNNING, running)
-            )
-        } catch (e: Throwable) {
-            Log.e(TAG, "[SAT-DBG][OpenList] broadcastStatus() LocalBroadcastManager FAILED", e)
-        }
-
-        // 新跨进程系统广播 → host
-        val crossIntent = Intent(OpenListService.ACTION_STATUS_CHANGED)
-            .setPackage(OpenListService.HOST_PACKAGE_NAME)
-            .putExtra(OpenListService.EXTRA_PORT, port)
-            .putExtra(OpenListService.EXTRA_RUNNING, running)
-            .putExtra(OpenListService.EXTRA_DATA_SIZE_BYTES, dataSize)
-            .putExtra(OpenListService.EXTRA_LAST_ERROR, lastError)
-            .putExtra(OpenListService.EXTRA_LAST_UPDATE_TS, lastUpdateTs)
-        try {
-            ctx.sendBroadcast(crossIntent)
-            Log.e(TAG, "[SAT-DBG][OpenList] broadcastStatus() | crossBroadcast sent | port=$port running=$running dataSize=$dataSize lastErr='$lastError' | ts=${System.currentTimeMillis()}")
-        } catch (e: Throwable) {
-            Log.e(TAG, "[SAT-DBG][OpenList] broadcastStatus() crossBroadcast FAILED", e)
+        val listener = statusListener
+        if (listener != null) {
+            try {
+                listener.invoke(snap)
+                Log.e(TAG, "[SAT-DBG][OpenList] broadcastStatus() listener invoked | dataSize=${snap["data_size_bytes"]} lastErr='${snap["last_error"]}'")
+            } catch (e: Throwable) {
+                Log.e(TAG, "[SAT-DBG][OpenList] broadcastStatus() listener FAILED", e)
+            }
+        } else {
+            Log.e(TAG, "[SAT-DBG][OpenList] broadcastStatus() no listener registered (host hasn't called PluginManager.getInterface yet?)")
         }
     }
 

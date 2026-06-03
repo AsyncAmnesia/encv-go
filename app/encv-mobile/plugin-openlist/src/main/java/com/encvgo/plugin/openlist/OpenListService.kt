@@ -30,31 +30,8 @@ class OpenListService : Service() {
         private const val DB_SYNC_INTERVAL_MS = 5 * 60 * 1_000L
 
         const val ACTION_SHUTDOWN = "com.encvgo.plugin.openlist.ACTION_SHUTDOWN"
-        const val BROADCAST_STATUS_CHANGED = "com.encvgo.plugin.openlist.BROADCAST_STATUS_CHANGED"
         const val BROADCAST_PORT_CONFLICT = "com.encvgo.plugin.openlist.BROADCAST_PORT_CONFLICT"
         const val BROADCAST_LOG = "com.encvgo.plugin.openlist.BROADCAST_LOG"
-        const val BROADCAST_PROCESS_EXIT = "com.encvgo.plugin.openlist.BROADCAST_PROCESS_EXIT"
-
-        /**
-         * Phase 22: 跨进程系统广播（替代轮询）。
-         * LocalBroadcastManager 是进程内广播，plugin 在独立 APK/进程里
-         * 跑，host 收不到——所以走系统广播 + setPackage 锁目标包。
-         * host package 在运行时由 [publishStatus] 注入（见 EncvComboLiteHost.hostPackageName）。
-         */
-        const val ACTION_STATUS_CHANGED = "com.encvgo.plugin.openlist.STATUS_CHANGED"
-        const val EXTRA_DATA_SIZE_BYTES = "data_size_bytes"
-        const val EXTRA_LAST_ERROR = "last_error"
-        const val EXTRA_LAST_UPDATE_TS = "last_update_ts"
-
-        /**
-         * Host 包名（plugin 把跨进程广播 setPackage 到这里）。
-         * 写死是因为 host app 在 monorepo 里 applicationId 是固定的。
-         * 如果未来要支持多 host，可移到 BuildConfig field 或读取动态配置。
-         */
-        const val HOST_PACKAGE_NAME = "com.encvgo.app"
-
-        const val EXTRA_PORT = "port"
-        const val EXTRA_RUNNING = "running"
         const val EXTRA_CONFLICT_PORT = "conflict_port"
 
         @Volatile
@@ -227,42 +204,13 @@ class OpenListService : Service() {
     }
 
     /**
-     * Phase 22: 跨进程系统广播（替代轮询）。
-     * 历史：原用 LocalBroadcastManager，但 plugin 在独立 APK/进程里跑，
-     *       LocalBroadcastManager 是进程内广播，host 收不到 → 死代码。
-     * 改用 Context.sendBroadcast + setPackage 锁目标 host app（com.encvgo.app）。
-     * 发送者无 <queries> 需求（setPackage 是显式目标）；
-     * 接收者 (GoProcessPlugin) 用 registerReceiver 动态注册 + RECEIVER_EXPORTED。
-     * 发送内容来自 [OpenListBridge.snapshot]——所有状态字段一致。
+     * Phase 23: 状态变更推送（in-process 替代轮询）。
+     * 历史：Phase 22 误用 LocalBroadcastManager + 跨进程系统广播，host 收不到。
+     * 现在：直接调 [OpenListBridge.broadcastStatus] 触发已注册的 [OpenListBridge.statusListener]
+     *       （host 启动时通过 PluginClassLoader 反射注册）。
      */
     private fun publishStatus(port: Int, running: Boolean) {
-        val snap = OpenListBridge.snapshot()
-        val dataSize = (snap["data_size_bytes"] as? Long) ?: 0L
-        val lastError = (snap["last_error"] as? String) ?: ""
-        val lastUpdateTs = (snap["last_update_ts"] as? Long) ?: 0L
-
-        // (1) 老 LocalBroadcastManager 仍保留兼容（plugin 内可能有别的组件在监听——
-        //     目前 grep 显示没有，但保留以防万一）
-        LocalBroadcastManager.getInstance(this).sendBroadcast(
-            Intent(BROADCAST_STATUS_CHANGED)
-                .putExtra(EXTRA_PORT, port)
-                .putExtra(EXTRA_RUNNING, running)
-        )
-
-        // (2) 跨进程系统广播 → host (com.encvgo.app)
-        val crossIntent = Intent(ACTION_STATUS_CHANGED)
-            .setPackage(HOST_PACKAGE_NAME)
-            .putExtra(EXTRA_PORT, port)
-            .putExtra(EXTRA_RUNNING, running)
-            .putExtra(EXTRA_DATA_SIZE_BYTES, dataSize)
-            .putExtra(EXTRA_LAST_ERROR, lastError)
-            .putExtra(EXTRA_LAST_UPDATE_TS, lastUpdateTs)
-        try {
-            sendBroadcast(crossIntent)
-            Log.e(TAG, "[SAT-DBG][OpenList] publishStatus() | crossBroadcast sent | port=$port running=$running dataSize=$dataSize lastErr='$lastError' lastUpdateTs=$lastUpdateTs | ts=${System.currentTimeMillis()}")
-        } catch (e: Throwable) {
-            Log.e(TAG, "[SAT-DBG][OpenList] publishStatus() crossBroadcast FAILED", e)
-        }
+        OpenListBridge.broadcastStatus(port, running)
     }
 
     private fun createNotificationChannel() {

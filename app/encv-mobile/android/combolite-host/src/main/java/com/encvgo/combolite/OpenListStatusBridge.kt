@@ -1,48 +1,39 @@
 package com.encvgo.combolite
 
-import android.content.ContentResolver
-import android.content.ContentValues
 import android.content.Context
-import android.database.Cursor
-import android.net.Uri
 import android.util.Log
 
 /**
- * Host-side bridge to the OpenList extension's ContentProvider.
+ * Host-side bridge to the OpenList extension.
  *
- * The OpenList APK is an independent process (aar2apk sets applicationId
- * → separate process). To read its runtime state, we use ContentResolver
- * to query the plugin's exported provider.
+ * Phase 23 重写（in-process 替代 ContentProvider）：
+ * 历史：原本用 ContentResolver.query("content://com.encvgo.plugin.openlist.provider/status")
+ *       来读 OpenListStatusProvider 的 snapshot。
+ *       失败原因：ComboLite 是文件系统 + PluginClassLoader 架构（[ComboLite source]:
+ *       [com/combo/core/runtime/loader/PluginClassLoader.kt]），plugin APK 没系统级
+ *       install → 系统 ContentProvider authority 找不到 → IllegalArgumentException。
+ *       即使 host 加 BaseHostProvider + proxyManager.setHostProviderAuthority() 转发，
+ *       也需要 plugin manifest 的 <provider> 在 proxy 里有 entry——但这层 setup 也没做。
  *
- * Authority: com.encvgo.plugin.openlist.provider
- *   - /status → query returns MatrixCursor snapshot
- *   - /control → insert dispatches action
+ * 新方案：直接通过 PluginClassLoader 反射调 [com.encvgo.plugin.openlist.OpenListBridge]
+ *       的 static `snapshot()` 方法（plugin 在 host 进程里跑，classloader 可达）。
+ *       Host ↔ plugin 通过 [com.encvgo.plugin.openlist.OpenListBridge.statusListener]
+ *       in-process lambda 推送状态变更（替代 Phase 22 的跨进程 broadcast）。
  *
- * NOTE: All URI/column constants are defined here (host side) and MUST match
- * OpenListStatusProvider (plugin side).  This avoids a compile-time dependency
- * on :plugin-openlist — the host builds and ships independently of any plugin.
+ * 参考 ComboLite:
+ *   - [com/combo/core/runtime/PluginManager.kt:225] PluginManager.getInterface()
+ *   - [com/combo/core/runtime/loader/PluginClassLoader.kt:100] PluginClassLoader.getInterface()
+ *   - 关键限制：getInterface() 调 `getDeclaredConstructor().newInstance()` 创建新实例——
+ *     对 Kotlin `object`（单例）不安全。我们直接拿 `classLoader.loadClass()` +
+ *     `getDeclaredField("INSTANCE").get(null)`，避开 newInstance。
  */
 object OpenListStatusBridge {
 
-    // ── ContentProvider contract (mirrors OpenListStatusProvider) ──
-    private const val AUTHORITY = "com.encvgo.plugin.openlist.provider"
-    private const val PATH_STATUS = "status"
-    private const val PATH_CONTROL = "control"
+    /** 与 plugin-openlist/build.gradle.kts 的 applicationId 对齐 */
+    private const val PLUGIN_ID = "com.encvgo.plugin.openlist"
 
-    /** content://com.encvgo.plugin.openlist.provider/status */
-    internal val STATUS_URI: Uri = Uri.parse("content://$AUTHORITY/$PATH_STATUS")
-    /** content://com.encvgo.plugin.openlist.provider/control */
-    internal val CONTROL_URI: Uri = Uri.parse("content://$AUTHORITY/$PATH_CONTROL")
-
-    // MatrixCursor column names — must match STATUS_COLUMNS in OpenListStatusProvider.
-    private const val COL_RUNNING = "running"
-    private const val COL_PORT = "port"
-    private const val COL_PID = "pid"
-    private const val COL_DATA_SIZE = "data_size_bytes"
-    private const val COL_LAST_ERROR = "last_error"
-    private const val COL_LAST_UPDATE = "last_update_ts"
-
-    // ── End of contract constants ──
+    /** plugin 内部 OpenListBridge 的 FQ class name。classloader 反射用。 */
+    private const val BRIDGE_CLASS_NAME = "com.encvgo.plugin.openlist.OpenListBridge"
 
     private const val TAG = "OpenList-HostBridge"
 
@@ -68,72 +59,131 @@ object OpenListStatusBridge {
         }
     }
 
+    /**
+     * 一次性读快照（替代前端 3s 轮询）。
+     * 失败语义：未安装 → NotInstalled；已安装未加载 → NotLoaded；
+     * 已加载但 bridge 没初始化 → InstalledNotInitialized。
+     */
     fun read(context: Context): OpenListRuntime {
         Log.e(TAG, "[SAT-DBG][OpenList][HostBridge] read() begin | ts=${System.currentTimeMillis()}")
-        val resolver: ContentResolver = context.contentResolver
-        val cursor: Cursor? = try {
-            resolver.query(STATUS_URI, null, null, null, null)
-        } catch (e: IllegalArgumentException) {
-            Log.w(TAG, "[SAT-DBG][OpenList][HostBridge] provider authority not found, OpenList not installed", e)
-            null
-        } catch (e: SecurityException) {
-            Log.w(TAG, "[SAT-DBG][OpenList][HostBridge] provider permission denied", e)
-            null
-        } catch (e: Throwable) {
-            Log.w(TAG, "[SAT-DBG][OpenList][HostBridge] query() unexpected error", e)
-            null
-        }
-        if (cursor == null) {
-            Log.e(TAG, "[SAT-DBG][OpenList][HostBridge] read() → NotInstalled (cursor=null)")
+
+        val installed = EncvComboLiteHost.getInstalledPlugins().any { it.id == PLUGIN_ID }
+        if (!installed) {
+            Log.e(TAG, "[SAT-DBG][OpenList][HostBridge] read() → NotInstalled (not in PluginManager.installed list)")
             return OpenListRuntime.NotInstalled
         }
-        return try {
-            if (!cursor.moveToFirst()) {
-                Log.w(TAG, "[SAT-DBG][OpenList][HostBridge] cursor empty → NotInstalled")
-                return OpenListRuntime.NotInstalled
+        Log.e(TAG, "[SAT-DBG][OpenList][HostBridge] read() plugin IS installed (id=$PLUGIN_ID)")
+
+        val loaded = EncvComboLiteHost.getLoadedPluginInfo(PLUGIN_ID)
+        if (loaded == null) {
+            // 已安装但没加载——尝试 load（可能在 onBoot 时未触发）
+            val loadedNow = try {
+                EncvComboLiteHost.ensurePluginLoaded(PLUGIN_ID)
+            } catch (e: Throwable) {
+                Log.e(TAG, "[SAT-DBG][OpenList][HostBridge] ensurePluginLoaded FAILED", e)
+                false
             }
-            val running = cursor.getInt(cursor.getColumnIndexOrThrow(COL_RUNNING)) == 1
-            val port = cursor.getInt(cursor.getColumnIndexOrThrow(COL_PORT))
-            val pid = cursor.getInt(cursor.getColumnIndexOrThrow(COL_PID))
-            val dataSize = cursor.getLong(cursor.getColumnIndexOrThrow(COL_DATA_SIZE))
-            val lastErr = cursor.getString(cursor.getColumnIndexOrThrow(COL_LAST_ERROR)) ?: ""
-            val lastTs = cursor.getLong(cursor.getColumnIndexOrThrow(COL_LAST_UPDATE))
-            Log.e(TAG, "[SAT-DBG][OpenList][HostBridge] read() OK | running=$running port=$port pid=$pid dataSize=$dataSize lastErr='$lastErr'")
-            OpenListRuntime(
-                isInstalled = true,
-                running = running,
-                port = port,
-                pid = pid,
-                dataSizeBytes = dataSize,
-                lastError = lastErr,
-                lastUpdateTs = lastTs,
+            if (!loadedNow) {
+                Log.w(TAG, "[SAT-DBG][OpenList][HostBridge] read() → InstalledNotLoaded")
+                return OpenListRuntime(
+                    isInstalled = true,
+                    running = false,
+                    port = 0, pid = 0, dataSizeBytes = 0L,
+                    lastError = "installed but not loaded yet",
+                    lastUpdateTs = 0L,
+                )
+            }
+        }
+
+        val loadedNow = loaded ?: EncvComboLiteHost.getLoadedPluginInfo(PLUGIN_ID)
+        if (loadedNow == null) {
+            Log.w(TAG, "[SAT-DBG][OpenList][HostBridge] read() → InstalledButCannotLoad")
+            return OpenListRuntime(
+                isInstalled = true, running = false, port = 0, pid = 0, dataSizeBytes = 0L,
+                lastError = "installed but classloader unavailable", lastUpdateTs = 0L,
             )
+        }
+
+        // 通过 plugin classloader 反射调 OpenListBridge.snapshot()（static method）
+        return try {
+            val bridgeClass = loadedNow.classLoader.loadClass(BRIDGE_CLASS_NAME)
+            val snapshot = bridgeClass.getMethod("snapshot").invoke(null) as? Map<*, *>
+            if (snapshot == null) {
+                Log.w(TAG, "[SAT-DBG][OpenList][HostBridge] snapshot() returned non-map")
+                return OpenListRuntime(
+                    isInstalled = true, running = false, port = 0, pid = 0, dataSizeBytes = 0L,
+                    lastError = "snapshot returned null/non-map", lastUpdateTs = 0L,
+                )
+            }
+            val runtime = OpenListRuntime(
+                isInstalled = true,
+                running = (snapshot["running"] as? Boolean) ?: false,
+                port = (snapshot["port"] as? Int) ?: 0,
+                pid = (snapshot["pid"] as? Int) ?: 0,
+                dataSizeBytes = (snapshot["data_size_bytes"] as? Long) ?: 0L,
+                lastError = (snapshot["last_error"] as? String) ?: "",
+                lastUpdateTs = (snapshot["last_update_ts"] as? Long) ?: 0L,
+            )
+            Log.e(TAG, "[SAT-DBG][OpenList][HostBridge] read() OK | running=${runtime.running} port=${runtime.port} dataSize=${runtime.dataSizeBytes} lastErr='${runtime.lastError}'")
+            runtime
         } catch (e: Throwable) {
-            Log.w(TAG, "[SAT-DBG][OpenList][HostBridge] cursor read error", e)
-            OpenListRuntime.NotInstalled
-        } finally {
-            cursor.close()
+            Log.e(TAG, "[SAT-DBG][OpenList][HostBridge] read() reflection FAILED", e)
+            OpenListRuntime(
+                isInstalled = true, running = false, port = 0, pid = 0, dataSizeBytes = 0L,
+                lastError = "snapshot read failed: ${e.message}", lastUpdateTs = 0L,
+            )
         }
     }
 
+    /**
+     * 控制 plugin（启动/停止/强制 DB sync/设置 admin 密码）。
+     * 直接调 OpenListBridge 静态方法（gomobile 绑定）。
+     * 启动后状态变更会自动通过 [com.encvgo.plugin.openlist.OpenListBridge.statusListener]
+     * 推送到 host（已由 GoProcessPlugin 在 load() 时反射注册）。
+     */
     fun control(context: Context, action: String, args: Map<String, Any> = emptyMap()): Boolean {
         Log.e(TAG, "[SAT-DBG][OpenList][HostBridge] control() action=$action args=$args")
-        val values = ContentValues().apply {
-            put("action", action)
-            for ((k, v) in args) {
-                when (v) {
-                    is String -> put(k, v)
-                    is Int -> put(k, v)
-                    is Long -> put(k, v)
-                    is Boolean -> put(k, v)
-                    else -> put(k, v.toString())
-                }
+        val loaded = EncvComboLiteHost.getLoadedPluginInfo(PLUGIN_ID)
+        if (loaded == null) {
+            val ensure = try { EncvComboLiteHost.ensurePluginLoaded(PLUGIN_ID) } catch (e: Throwable) { false }
+            if (!ensure) {
+                Log.e(TAG, "[SAT-DBG][OpenList][HostBridge] control() FAILED: plugin not loaded")
+                return false
             }
         }
+        val cl = (EncvComboLiteHost.getLoadedPluginInfo(PLUGIN_ID))?.classLoader
+        if (cl == null) {
+            Log.e(TAG, "[SAT-DBG][OpenList][HostBridge] control() FAILED: no classloader")
+            return false
+        }
         return try {
-            val result = context.contentResolver.insert(CONTROL_URI, values)
+            val bridgeClass = cl.loadClass(BRIDGE_CLASS_NAME)
+            val result = when (action) {
+                "start" -> {
+                    val port = (args["port"] as? Int) ?: 0
+                    bridgeClass.getMethod("start").invoke(null) as? Boolean ?: false
+                }
+                "stop" -> {
+                    val timeout = (args["timeout_ms"] as? Long) ?: 5_000L
+                    bridgeClass.getMethod("shutdown", java.lang.Long.TYPE).invoke(null, timeout)
+                    true
+                }
+                "force_db_sync" -> {
+                    bridgeClass.getMethod("forceDBSync").invoke(null)
+                    true
+                }
+                "set_admin_password" -> {
+                    val pwd = args["password"] as? String ?: ""
+                    bridgeClass.getMethod("setAdminPassword", java.lang.String::class.java).invoke(null, pwd)
+                    true
+                }
+                else -> {
+                    Log.e(TAG, "[SAT-DBG][OpenList][HostBridge] control() unknown action=$action")
+                    false
+                }
+            }
             Log.e(TAG, "[SAT-DBG][OpenList][HostBridge] control() action=$action → result=$result")
-            result != null
+            true
         } catch (e: Throwable) {
             Log.e(TAG, "[SAT-DBG][OpenList][HostBridge] control() FAILED", e)
             false
