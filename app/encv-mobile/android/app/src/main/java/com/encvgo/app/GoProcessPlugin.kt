@@ -70,8 +70,17 @@ class GoProcessPlugin : Plugin() {
      * Phase 23: in-process 状态变更回调（替代 Phase 22 跨进程 broadcast）。
      * 通过 PluginClassLoader 反射写入 [com.encvgo.plugin.openlist.OpenListBridge.statusListener]
      * 后，plugin 每次 broadcastStatus() 都会调此 lambda → [notifyListeners] 推 Capacitor。
+     *
+     * 类型选择：Kotlin 函数类型 `(Map<String, Any?>) -> Unit` —— 编译产物是
+     * `Function1` interface 的匿名实现，反射 set 字段（raw type `Function1`）
+     * 与 plugin 端 OpenListBridge.statusListener 字段（raw type `Function1`）兼容。
+     *
+     * 反例（CI 实测报错）：
+     *   `kotlin.jvm.functions.Function1<Map<...>, Unit> { snap -> ... }`
+     *   ❌ `Function1` 是普通 interface（不是 fun interface），没有 SAM 构造器
+     *   ❌ lambda 参数 `snap` 无法推断类型
      */
-    private val pluginStatusCallback = kotlin.jvm.functions.Function1<Map<String, Any?>, Unit> { snap ->
+    private val pluginStatusCallback: (Map<String, Any?>) -> Unit = { snap ->
         val running = (snap["running"] as? Boolean) ?: false
         val port = (snap["port"] as? Int) ?: 0
         val pid = (snap["pid"] as? Int) ?: 0

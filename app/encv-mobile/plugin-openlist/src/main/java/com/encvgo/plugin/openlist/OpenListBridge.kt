@@ -73,14 +73,19 @@ object OpenListBridge : Event, LogCallback {
      * plugin 在 host 进程里跑（PluginClassLoader），所以 host 通过 classloader
      * 反射写入此字段，状态变更时 broadcastStatus() 会触发回调。
      *
-     * @JvmStatic + 简单 lambda 类型（Map<String, Any?>）→ host 端通过反射
-     * `bridgeClass.getDeclaredField("statusListener").set(null, lambda)` 设置。
-     * 注意: Kotlin lambda 不能直接通过反射，host 端需用 java 接口 (Function1) 包裹
-     * 或用 kotlin.jvm.functions.Function1 接口。
+     * 类型选择：Kotlin 函数类型 `((Map<String, Any?>) -> Unit)?` —— 编译产物是
+     * `Function1` interface 的匿名实现类，JVM 字节码 raw type = `Function1`。
+     * 反射时 host 的 lambda 实例（同样 raw type `Function1`）可被 set 到本字段。
+     *
+     * 反例（CI 2026-06 实测）：
+     *   `var statusListener: kotlin.jvm.functions.Function1<Map<...>, Unit>? = null`
+     *   作为字段声明 OK，但 host 端写成 `Function1<Map<...>, Unit> { snap -> ... }`
+     *   会编译失败（Function1 是普通 interface，不是 fun interface，没有 SAM 构造器）。
+     *   → host 必须改用 Kotlin 函数类型 `(Map<String, Any?>) -> Unit` 形式 lambda。
      */
     @Volatile
     @JvmStatic
-    var statusListener: kotlin.jvm.functions.Function1<Map<String, Any?>, Unit>? = null
+    var statusListener: ((Map<String, Any?>) -> Unit)? = null
 
     // C5: assets extraction state
     private val ASSETS_PREFS = "openlist_assets"
