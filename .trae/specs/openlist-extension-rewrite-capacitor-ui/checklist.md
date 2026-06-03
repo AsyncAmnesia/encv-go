@@ -60,3 +60,17 @@
 - [ ] 主 app /openlist 路由可访问
 - [ ] 嵌入式 WebView 通过 OpenListNative JSInterface 调 OpenListBridge 成功
 - [ ] 共享组件 OpenListStatusCard / OpenListLogList 在主 app 和插件都可用
+
+## Phase 6: plugin-openlist/web 前端开发预览（沙箱浏览器版）
+
+- [ ] scripts/dev-openlist-web.sh 已创建（端口 5174 → 5175 fallback、信号陷阱、状态报告）
+- [ ] bash scripts/dev-openlist-web.sh 启动成功
+- [ ] curl http://localhost:5174/ 返回 200 + HTML
+- [ ] /home 路由渲染 OpenListHome（AppBar + 4 工具按钮 + StatusCard + LogList + FAB）
+- [ ] /config 路由渲染 OpenListConfigEditor（JSON 编辑器）
+- [ ] /settings 路由渲染 OpenListSettings（版本/数据目录）
+- [ ] /webview 路由渲染 OpenListWebView（提示需 Android WebView 容器）
+- [ ] OpenListStatusCard 在浏览器显示默认态（已停止）
+- [ ] FAB 点击走 window.OpenListNative fallback 不报错
+- [ ] HMR 验证：修改 OpenListStatusCard.vue 后浏览器自动刷新
+- [ ] 与 dev-openlist.sh 的差异已在脚本注释中明确说明

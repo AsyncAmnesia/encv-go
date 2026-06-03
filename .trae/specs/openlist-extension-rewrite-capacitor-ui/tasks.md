@@ -154,9 +154,38 @@
 - [ ] 5.8 验证嵌入式 WebView 通过 OpenListNative JSInterface 调 OpenListBridge 成功
 - [ ] 5.9 验证 OpenListStatusCard / OpenListLogList 共享组件在主 app 和插件都可用
 
+## Phase 6: plugin-openlist/web 前端开发预览（沙箱浏览器版）
+
+> **与既有 `scripts/dev-openlist.sh` 的关键区别**：
+> - `dev-openlist.sh` 预览的是 **OpenList 原生 SPA**（Hi-Sillot-OpenList/public/dist 里的 Vue3 SPA，通过 Vite middleware 反代到 OpenList(5244)）
+> - 本 Phase 预览的是 **plugin-openlist/web 的 Capacitor 多例 UI**（plugin 自己的 Vue3 + Ionic Vue 8 管理面板），不依赖 OpenList(5244)，由 `window.OpenListNative` 桥接 Android 端的 OpenListBridge
+>
+> 沙箱浏览器模式下 `window.OpenListNative` 不存在，所有 JS-Native 调用走 `safe(fallback, fn)` 安全 fallback → 显示「未安装/已停止」默认态。这是预期的「UI 视觉预览」目标。
+
+- [ ] 6.1 新建 `scripts/dev-openlist-web.sh`（沿用 `start-preview.sh` 的铁律风格）
+  - 默认端口 5174（plugin-openlist/web vite.config 已设）
+  - 端口被占时回退到 5175
+  - 启动前清理残留 vite 进程
+  - 信号陷阱：Ctrl+C 时优雅 kill 子进程
+  - 前台运行（保持 OpenPreview 可激活）
+  - 状态报告 + OpenPreview 提示
+- [ ] 6.2 `bash scripts/dev-openlist-web.sh` 启动成功
+- [ ] 6.3 `curl -s http://localhost:5174/` 返回 200 + HTML
+- [ ] 6.4 浏览器访问 OpenListHome（路由 `/home`）看到：
+  - AppBar 标题「OpenList - v0.0.0」
+  - 4 个工具按钮（密码/Config/Settings/WebView）
+  - OpenListStatusCard（默认态：已停止）
+  - OpenListLogList（空）
+  - FAB 启动按钮（点击走 fallback 不报错）
+- [ ] 6.5 访问 `/config` 看到 JSON 编辑器
+- [ ] 6.6 访问 `/settings` 看到版本/数据目录占位
+- [ ] 6.7 访问 `/webview` 看到「需 Android WebView 容器」提示
+- [ ] 6.8 验证 HMR：修改 `OpenListStatusCard.vue` 后浏览器自动刷新
+
 ## Task Dependencies
 
-- Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5
+- Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6
 - Phase 1 (Kotlin) 独立于 Phase 2-3 (Web)
 - Phase 2 (monorepo) 必须在 Phase 3 之前（共享包要先建好）
 - Phase 4 依赖 Phase 3（web 页面要先有，主 app 才能 import）
+- Phase 6 依赖 Phase 2-3（依赖 monorepo + 页面已建）
