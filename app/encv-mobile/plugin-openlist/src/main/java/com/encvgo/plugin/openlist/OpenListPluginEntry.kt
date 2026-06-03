@@ -49,8 +49,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.repeatOnLifecycle
+import com.combo.core.api.IPluginEntryClass
+import com.combo.core.model.PluginContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import org.koin.core.module.dsl.singleOf
+import org.koin.dsl.module
 
 class OpenListPluginEntry : IPluginEntryClass {
     companion object {
@@ -59,18 +63,11 @@ class OpenListPluginEntry : IPluginEntryClass {
     }
 
     override val pluginModule = listOf(module {
-        single { OpenListBridge }
+        singleOf(OpenListBridge)
     })
 
     override fun onLoad(context: PluginContext) {
-        Log.e(TAG, "[OpenList] onLoad() begin | thread=${Thread.currentThread().name}")
-        val app = context.application
-        try {
-            OpenListBridge.init(app)
-            Log.e(TAG, "[OpenList] onLoad() init OK")
-        } catch (e: Throwable) {
-            Log.e(TAG, "[OpenList] onLoad() init FAILED", e)
-        }
+        Log.e(TAG, "[OpenList] onLoad() | init deferred to OpenListService.startupSequence()")
     }
 
     override fun onUnload() {
