@@ -430,7 +430,117 @@ git push https://x-access-token:${GITHUB_TOKEN}@github.com/Hi-Sillot/OpenList.gi
 
 ---
 
-## 11. 故障排查 Checklist
+## 11. 开发模式预览（Dev Sandbox Preview）
+
+> **本节描述如何在沙箱 / 本机跑通 OpenList UI 预览，不依赖 APK 编译。**
+> **生产环境（APK 内 webview）走 §13 子路径挂载机制。**
+
+### 11.1 架构概览
+
+```
+开发模式（两端口独立）:
+  浏览器 ──→ http://localhost:8100/          ← encv-mobile 主应用 (Vite dev)
+         ──→ http://localhost:5244/         ← OpenList (go run . server)
+         ──→ http://localhost:8100/openlist-ui/ ← 可选：Vite 反代子路径（见 §13）
+
+生产模式（APK 内单端口）:
+  WebView ──→ http://127.0.0.1:2025/        ← encv-go
+              ├── /*                        ← encv-mobile SPA
+              ├── /openlist/*                ← encv-go 反代 → 127.0.0.1:5244
+              └── /openlist-ui/*             ← Vite middleware → sirv(assets/dist/)
+                  ├── /openlist-ui/api/*     → 127.0.0.1:5244/api/*
+                  └── /openlist-ui/assets/*   → plugin assets/dist/assets/*
+```
+
+**关键区别**：
+
+| 场景 | 访问方式 | API 路径 | 资源路径 |
+|------|---------|---------|---------|
+| **Dev 沙箱预览** | `http://localhost:5244/` 直访 | `/api/*` | `/assets/*` |
+| **Vite 子路径（可选）** | `http://localhost:8100/openlist-ui/` | `/openlist-ui/api/*` → 反代 | `/openlist-ui/assets/*` |
+| **APK 生产** | WebView 单端口 | `/openlist-ui/api/*` → 反代 | `/openlist-ui/assets/*` |
+
+### 11.2 一键启动 Dev 模式
+
+```bash
+# Terminal 1: 启动 OpenList Go 后端（端口 5244）
+cd app/encv-mobile
+bash scripts/dev-openlist.sh --data /tmp/preview-openlist-data
+
+# Terminal 2: 启动 Vite（端口 8100，可选）
+pnpm dev
+
+# 浏览器直访 OpenList（推荐，无需子路径）
+#   http://localhost:5244/
+# 登录: admin / <首次启动生成的随机密码>
+```
+
+`dev-openlist.sh` 行为：
+
+| 步骤 | 操作 | 条件 |
+|------|------|------|
+| 1 | 检测本地 `Hi-Sillot-OpenList-Frontend/dist/` 存在？ | 有 → 复制到 fork 的 `public/dist/`（热更新友好） |
+| 2 | 不存在 → 尝试从 GitHub Releases 下载 tarball | 版本默认 `4.1.8`，可用 `--frontend-version` 覆盖 |
+| 3 | 写入 `${DATA_DIR}/config.json` | 设置 `dist_dir` 为 fork `public/dist/` 绝对路径 |
+| 4 | `exec go run . server --data ${DATA_DIR}` | 首次 ~60s 编译，后续增量 ~2-5s |
+
+### 11.3 Vite 子路径插件 (`openlistUiProxy()`)
+
+位置：[app/encv-mobile/vite.config.ts](../encv-mobile/vite.config.ts) — `openlistUiProxy()` 插件。
+
+**注册两条中间件**（顺序重要，API 代理优先于静态文件）：
+
+```
+请求路径                          处理方式
+─────────────────────────────────────────────────
+/openlist-ui/api/*     →  反代到 OPENLIST_UPSTREAM/api/*
+                             （Vite 自动 strip 前缀）
+/openlist-ui/*           →  sirv(Hi-Sillot-OpenList/public/dist/)
+                             带 SPA fallback (single: true)
+其他                         →  Vite 默认处理（encv-mobile 主应用）
+```
+
+**依赖**：
+- `sirv@^3.0.2` — Vite 6+ 移除内置 static middleware 后的替代品
+- `Hi-Sillot-OpenList/public/dist/index.html` 必须存在
+
+### 11.4 绝对路径问题（⚠️ 已知坑）
+
+OpenList-Frontend 构建产物的 `index.html` 使用**绝对路径**引用资源：
+
+```html
+<!-- 原始 index.html（问题代码） -->
+<script type="module" src="/assets/index-S_YTMOrI.js"></script>
+<link rel="stylesheet" href="/assets/index-DYLAoZjS.css" />
+
+<!-- JS 预加载块（动态创建 DOM 元素） -->
+var preloads = [{"src":"/assets/index-S_YTMOrI.js"}, {"href":"/assets/index-DYLAoZjS.css"}];
+```
+
+当页面部署在 `/openlist-ui/` 子路径下时，浏览器把这些解析为主应用路径：
+- `/assets/index-S_YTMOrI.js` → `http://host:8100/assets/...`（**错误**：加载了 encv-mobile 的 JS 或 404）
+
+**症状**：白屏、`<div id="root">` 为空、无 JS 报错（因为加载了错误的 bundle 或根本没加载）。
+
+**修复**（vite.config.ts 中 `configureServer` 启动时一次性执行）：
+
+```typescript
+// 1. HTML 属性重写
+.replace(/src="\/assets\//g, 'src="/openlist-ui/assets/')
+.replace(/href="\/assets\//g, 'href="/openlist-ui/assets/')
+
+// 2. JS 字符串字面量重写（preloads 动态创建的路径）
+.replace(/":\"\/assets\//g, '":"/openlist-ui/assets/')
+
+// 3. base_path 注入（让 SPA 知道自己的子路径）
+.replace(/base_path:\s*undefined/, 'base_path: "/openlist-ui/"')
+```
+
+**注意**：此重写仅在生产子路径场景需要。Dev 模式下直接访问 `http://localhost:5244/` 即可，无需经过 Vite 代理。
+
+---
+
+## 12. 故障排查 Checklist
 
 | # | 症状 | 根因 | 修复 |
 |---|------|------|------|
@@ -446,8 +556,12 @@ git push https://x-access-token:${GITHUB_TOKEN}@github.com/Hi-Sillot/OpenList.gi
 | 10 | **`frontend-pinned.txt` 不被识别** | 文件编码非 UTF-8 / 多行注释不闭合 | `file frontend-pinned.txt` 应为 ASCII/UTF-8 |
 | 11 | **`undefined: LogCallback` at openlistlib/server.go:34** | Hi-Sillot fork 的 `openlistlib/event.go` 只定义了 `Event` interface，缺 `LogCallback` interface | fork 已 commit `c2424d2`（2026-06-02）补全 `LogCallback.OnLog(level int16, time int64, log string)`；在 `app/openlist/Hi-Sillot-OpenList/openlistlib/event.go` 落地；build script 内 A2 兜底会在 fork 未推时自动注入 event.go |
 | 12 | **`# github.com/mattn/go-sqlite3` 编译失败 / `-fPIC` 报错** | fork 通过 `gorm.io/driver/sqlite` 链入 mattn CGO 库，gomobile 的 NDK toolchain 默认不解析 CGO 路径 | fork 已 commit `404daf0`（2026-06-02）切到 `github.com/glebarez/sqlite`（pure-Go，基于 modernc.org/sqlite）；在 `app/openlist/Hi-Sillot-OpenList/` 落地；AAR 体积 -12MB；build script 内 B2 兜底在 fork 未推时强 CGO 工具链 |
+| 13 | **`/openlist-ui/` 白屏 / `net::ERR_EMPTY_RESPONSE`** | OpenList-Frontend 构建的 `index.html` 用**绝对路径**引用资源（`src="/assets/xxx.js"`），子路径部署时浏览器解析到主应用端口加载错误 bundle；JS 预加载块中的路径也是绝对路径字面量 | vite.config.ts 的 `openlistUiProxy()` 插件在启动时**预读取 + 重写 index.html**：HTML 属性 + JS 字符串字面量 + `base_path` 注入。详见 §11.4 |
+| 14 | **Vite 只监听 `[::1]:8100`（IPv6），外部访问 ERR_EMPTY_RESPONSE** | Vite 默认 `host: 'localhost'` 在某些沙箱只绑 IPv6；OpenPreview / 外部 host 走 IPv4 连不上 | vite.config.ts `server.host = '0.0.0.0'` 绑定所有接口 |
+| 15 | **`dev-openlist.sh` 下载 frontend dist 404** | GitHub Releases URL 格式错误或版本号不存在（如 `v4.1.8` 的 tarball 名可能变化） | 优先用本地构建的 dist：`cd Hi-Sillot-OpenList-Frontend && bun run build`，dev-openlist.sh 会自动检测并复制 |
+| 16 | **OpenList UI 登录后显示 "Failed fetching settings: 502"** | SPA 的 API baseURL 指向 `/api/...`（主应用路径）而非 `/openlist-ui/api/...`（代理路径）；或 OpenList(5244) 未启动 | Dev 模式直接访问 `http://localhost:5244/` 无此问题；子路径模式需注入 `base_path: "/openlist-ui/"`（§11.4 第 3 步） |
 
-### 11.1 调试命令速查
+### 12.1 调试命令速查
 
 ```bash
 # 5244 端口冲突
@@ -467,23 +581,25 @@ unzip -l plugin-openlist/libs/openlist.aar | grep -E "libgojni|Openlistlib"
 
 ---
 
-## 12. 双向链接
+## 13. 双向链接
 
-### 12.1 本仓库 spec
+### 13.1 本仓库 spec
 
 - [主 spec: integrate-openlist-as-combolite-plugin](../../.trae/specs/integrate-openlist-as-combolite-plugin/spec.md)
 - [本 spec: openlist-fork-onboarding-readme](../../.trae/specs/openlist-fork-onboarding-readme/spec.md)
+- [前端提取与沙箱预览 spec: openlist-frontend-extraction-and-sandbox-preview](../../.trae/specs/openlist-frontend-extraction-and-sandbox-preview/spec.md)
 - [相关: implement-mobile-backend-api](../../.trae/specs/implement-mobile-backend-api/spec.md)
 - [相关: eval-combolite-mkv-ffmpeg-plugins](../../.trae/specs/eval-combolite-mkv-ffmpeg-plugins/spec.md)
 
-### 12.2 本仓库 README / CI
+### 13.2 本仓库 README / CI
 
 - [scripts/README.md](../../scripts/README.md)
 - [app/encv-mobile/plugin-openlist/README.md](../encv-mobile/plugin-openlist/README.md)
 - [.github/workflows/android.yml](../../.github/workflows/android.yml) — 包含 `build-openlist-plugin` job
-- [app/openlist/build-encv-desktop.ps1](./build-encv-desktop.ps1)（已废弃）
+- [app/encv-mobile/vite.config.ts](../encv-mobile/vite.config.ts) — `openlistUiProxy()` Vite 插件（§11.3）
+- [app/encv-mobile/scripts/dev-openlist.sh](../encv-mobile/scripts/dev-openlist.sh) — 一键启动 OpenList dev 模式（§11.2）
 
-### 12.3 外部仓库
+### 13.3 外部仓库
 
 - [Hi-Sillot/OpenList](https://github.com/Hi-Sillot/OpenList) — 个人 fork，本项目主依赖
 - [Hi-Sillot/OpenList-Frontend](https://github.com/Hi-Sillot/OpenList-Frontend) — fork 前端
@@ -496,4 +612,5 @@ unzip -l plugin-openlist/libs/openlist.aar | grep -E "libgojni|Openlistlib"
 
 ## 维护
 
-- 工作流变更 → 同步更新本 README §4-§9；新 ENCV 设置项 → 同步 fork `internal/conf/const.go` + `frontend-pinned.txt` + `i18n-overlay/<lang>/translation.json`；新 CI 失败场景 → 追加到 §11 故障表末。
+- 工作流变更 → 同步更新本 README §4-§9；新 ENCV 设置项 → 同步 fork `internal/conf/const.go` + `frontend-pinned.txt` + `i18n-overlay/<lang>/translation.json`；新 CI 失败场景 → 追加到 §12 故障表末。
+- Vite 插件变更（`openlistUiProxy()`）→ 同步更新 §11.3 + §11.4；新增 dev 脚本参数 → 更新 §11.2；新增故障模式 → 追加到 §12 末尾。
