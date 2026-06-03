@@ -53,7 +53,6 @@ import com.combo.core.api.IPluginEntryClass
 import com.combo.core.model.PluginContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import org.koin.core.module.dsl.singleOf
 import org.koin.dsl.module
 
 class OpenListPluginEntry : IPluginEntryClass {
@@ -63,7 +62,7 @@ class OpenListPluginEntry : IPluginEntryClass {
     }
 
     override val pluginModule = listOf(module {
-        singleOf(OpenListBridge)
+        single { OpenListBridge }
     })
 
     override fun onLoad(context: PluginContext) {
