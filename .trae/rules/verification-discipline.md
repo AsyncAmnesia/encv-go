@@ -346,3 +346,160 @@ go run /tmp/lowerFirst.go
 **特别提醒**：
 - `DBSync` / `HTTPClient` 这种**全大写子词**会被保留（`lowerFirst` 只动首字符）
 - 写 Kotlin 包装函数时**注意 A2 fallback**：[`build-openlist-aar.sh:381`](file:///workspace/scripts/build-openlist-aar.sh) 只在 fork 缺 `openlistlib/event.go` 时才注入。Hi-Sillot/OpenList@`404daf0` 已自带 event.go（`OnProcessExit(code int)`）→ A2 fallback 被跳过 → gomobile 生成 `onProcessExit(int)`，**和现有 `code: Long` 不匹配**（下一轮 AAR 重构时会爆）。Phase 17 不动它，留作 Phase 18 风险登记。
+
+### 7.9 守卫也要被 test 验证（Guard self-test discipline）
+
+> **Phase 18 元教训**：写好的 guard 自己也要 smoke test，否则可能比没 guard 还糟。
+
+#### 7.9.1 反面教材（Guard A 盲点）
+
+**事件**：[`/workspace/.github/workflows/android.yml`](file:///workspace/.github/workflows/android.yml) Guard A（TOML alias guard）第一版：
+
+```bash
+# ❌ 第一版
+for f in $(find android -name "build.gradle.kts"); do
+    for ref in $(grep -oE 'libs\.(plugins|[a-zA-Z0-9._-]+)\.[a-zA-Z0-9._-]+' "$f" | sort -u); do
+        ...
+    done
+done
+```
+
+**症状**：
+- 破坏 `libs.versions.toml`（删 `compose-foundation` 2 行）后，guard **没报错**
+- 实际只检查了 22 个 `libs.*` refs，漏掉 14 个
+- 漏的是 `plugin-openlist/build.gradle.kts` 和 `plugin-mpv-player/build.gradle.kts`（**不在 `android/` 目录下**，是 `android/` 的 sibling）
+
+**根因链路**：
+```
+Guard A 期望: 遍历整个 monorepo 的所有 build.gradle.kts
+实际遍历:   find android -name "build.gradle.kts"
+              ↑ 范围被限制在 android/ 子树
+              ↑ plugin-openlist/ 在 app/encv-mobile/ 下, 不在 android/ 下
+              ↑ 漏 14/36 个 refs
+              ↑ 静默 false-pass
+              ↑ CI 仍然在 3 min Gradle 配置期才报 unresolved
+```
+
+**为什么 smoke test 没抓到**：smoke test 在 `app/encv-mobile/` 目录下跑，
+本身 `cd` 路径就有歧义 → 测了但被 `cd` 逻辑吞了，**没暴露**真正的盲点。
+
+#### 7.9.2 修复：故意坏掉（Break-it-back test）
+
+**任何新增的"自动化守卫"都必须经过「故意坏掉」的反向测试**：
+
+```bash
+# === 守卫自检模板 ===
+
+# 1. 在干净仓库上跑 → 期望 0 错
+bash <guard-script>
+# 预期: "✅ 所有 libs.* 引用都能在 toml 找到" / EXIT=0
+
+# 2. 故意引入已知 bug → 期望抓出
+cp android/gradle/libs.versions.toml /tmp/toml.bak
+# 删除 toml 中某个 alias (模拟 Phase 16 错)
+sed -i '/^compose-foundation =/d' android/gradle/libs.versions.toml
+bash <guard-script>
+# 预期: "✗ plugin-openlist/build.gradle.kts:81: libs.compose.foundation" / EXIT≠0
+# 验证抓到了! ✓
+
+# 3. 还原
+cp /tmp/toml.bak android/gradle/libs.versions.toml
+bash <guard-script>
+# 预期: 0 错 / EXIT=0
+```
+
+**对 Guard A 的实际修复**：
+```bash
+# ✅ 修复后
+for f in $(find . -name "build.gradle.kts"); do  # ← 从 repo root, 不限子目录
+    for ref in $(grep -oE 'libs\.(plugins|[a-zA-Z0-9._-]+)\.[a-zA-Z0-9._-]+' "$f" | sort -u); do
+        ...
+    done
+done
+# 验证: 36 refs (之前 22), 破坏后精准抓 2 错
+```
+
+#### 7.9.3 Guard self-test checklist
+
+写完任何 guard（bash 脚本 / GitHub Action / gradle task）后, **必做**：
+
+- [ ] **正向测试**：干净仓库跑 guard → 0 错, EXIT=0
+- [ ] **反向测试（必做）**：故意制造 guard 想抓的 bug → guard 必须报错并定位到具体文件 + 行
+- [ ] **回归测试**：还原 bug → guard 重新 0 错
+- [ ] **路径覆盖测试**：`find` / `grep` 范围从 **repo root** 开始, 不限子目录（除非 guard 明确只针对某子项目）
+- [ ] **silent-fail 排查**：guard 跑通但**实际没遍历到目标**也算失败（用 `wc -l` 或计数变量验证扫描量）
+
+#### 7.9.4 守卫与 CI 反馈链的金字塔
+
+```
+   ┌──────────────────┐
+   │   CI 编译 (3-5min)│   ← 最晚发现, 但最准确
+   ├──────────────────┤
+   │  Guard B (10s)   │   ← kotlinc pre-flight, 抓真 unresolved
+   ├──────────────────┤
+   │  Guard A + C (<1s)│  ← grep 静态扫描, 零网络
+   └──────────────────┘
+   越下越早发现, 越上越准. 守卫 = 把错误往下推, 早发现早治.
+```
+
+**关键认知**：guard 不是要替代 CI 编译, 是要把错误**往前推**——从 3 min 推到 1 s。
+但 guard **必须**经过 §7.9.3 的 self-test, 否则会把"假绿"伪装成"真绿",
+反而**增加**调试时间（你以为有 guard 罩着, 实际它在睡觉）。
+
+#### 7.9.5 历史教训时间线
+
+| Phase | 错类型 | Guard 抓到? | 耗时 |
+|-------|--------|------------|------|
+| 14 | `dist/* to` 嵌套块注释 | ❌（当时无 Guard B） | CI 4 min |
+| 15 | setup-kotlinc.sh 脚本 bug | ❌（脚本本身无 self-test） | 手动排错 20 min |
+| 16 | `libs.compose.foundation` 缺 toml | ❌（当时无 Guard A） | CI 3 min |
+| 17 | `forceDbSync` 命名错 | ❌（当时无 Guard B） | CI 3 min |
+| 17 | `snapshot.running` Map property | ❌（当时无 Guard C） | CI 3 min |
+| **18+** | **任何同类** | **✅ Guard A/B/C 抓** | **< 10s** |
+
+#### 7.9.6 反向测试在沙箱里的标准做法
+
+```bash
+# === 在 /workspace (CI repo root) 跑 ===
+
+# Guard A 范例
+cd /workspace
+TOML=app/encv-mobile/android/gradle/libs.versions.toml
+[ -f "$TOML" ] || TOML=android/gradle/libs.versions.toml
+
+# 1. 正向
+for f in $(find . -name "build.gradle.kts"); do
+    refs=$(grep -oE 'libs\.[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+' "$f" | sort -u | wc -l)
+    [ "$refs" -gt 0 ] && echo "  $f: $refs refs"
+done
+# 预期: 总 refs = 36 (含 plugin-openlist + plugin-mpv-player)
+
+# 2. 反向
+cp "$TOML" /tmp/toml.bak
+sed -i '/^compose-foundation =/d' "$TOML"
+<run guard>
+# 预期: EXIT≠0, 报错至少 1 个 line
+# 验证: guard 真能抓!
+
+# 3. 还原
+cp /tmp/toml.bak "$TOML"
+<run guard>
+# 预期: EXIT=0
+```
+
+**关键纪律**：
+- 沙箱 smoke test **必须从 CI repo root 跑**（不能 `cd app/encv-mobile` 再 `cd app/encv-mobile` 套两层）
+- 破坏测试**至少跑 1 次正向 + 1 次反向**, 不能省
+- guard 写完 24 小时内必须 self-test, 否则遗忘成本 > 测试成本
+
+#### 7.9.7 guard 写完后的强制 checklist（commit 前）
+
+- [ ] guard 脚本 bash -n 通过（无语法错）
+- [ ] YAML 嵌入的 guard 用 `python3 -c "import yaml; yaml.safe_load(open('android.yml'))"` 验证
+- [ ] **正向测试**跑过且 EXIT=0
+- [ ] **反向测试**跑过且 guard 真报错（不是 silent pass）
+- [ ] 路径范围从 repo root 起（不限子目录）
+- [ ] 已记录在 `tasks.md` Phase N 的子项
+- [ ] **§7.9 引用过**, 元教训已写下来
+
+任何一项没做 → **不允许 commit**。

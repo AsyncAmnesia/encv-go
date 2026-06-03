@@ -534,3 +534,46 @@
   - 但 [OpenListBridge.kt:420](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListBridge.kt) 实现 `override fun onProcessExit(code: Long)` —— **下一轮 AAR 重建时会爆**
   - 解决：把 `code: Long` 改 `code: Int`，或固定 fork 某个不带 event.go 的老 commit
 - [ ] 17.6 推送分支到 `trae/solo-agent-WAmQzy`，CI 跑通
+
+## Phase 18: android.yml 加固（5 个守卫 + 1 个缓存）
+
+> **背景**：Phase 16-17 暴露 CI 反馈链太长：
+> - Phase 16 错（`libs.compose.foundation` 缺 toml alias）→ 3 min Gradle 配置期才报
+> - Phase 17 错（8 个 unresolved）→ ~3 min `:plugin-openlist:compileReleaseKotlin` 才报
+> - AAR 重建（3-5 min）每次都重跑，git diff 一行也能触发全量 gomobile bind
+>
+> **用户反馈**：「你没改 android.yml 啊，没有主动诊断效率太低了」—— 必须把
+> `verification-discipline.md` §7.7-7.8 的规则**落到 CI**才能复利。
+>
+> **5 个守卫 + 1 个缓存**（按 ROI 排序）：
+
+- [ ] 18.1 **Guard A — TOML alias guard**（§7.7，最早期抓手，0 网络，< 1s）
+  - 在 "R8/ProGuard Guard" **之前** 跑（早于所有 Gradle 调用）
+  - bash 遍历所有 `build.gradle.kts` 提取 `libs.X.Y` 引用，对照 toml alias
+  - 0 失败则继续，1+ 失败则 `::error::` + exit 1
+  - **沙箱验证**：删 `compose-foundation` 2 行 → guard 抓出 2 错（plugin-openlist/build.gradle.kts:81-82）
+- [ ] 18.2 **Guard B — kotlinc pre-flight**（§7.8，~10s，抓真 unresolved）
+  - 在 "Build OpenList plugin APK" 步骤**最开头**（AAR 已抽好）
+  - 调 `bash .trae/scripts/setup-kotlinc.sh` 拉 kotlinc 工具
+  - kotlinc 跑 plugin 全部 .kt 配 classpath = `openlist-classes.jar + android.jar + combolite-core.jar`
+  - 只对**已知 gomobile + Map 字段名**做 unresolved 过滤（`grep -E "Unresolved reference '(forceDbSync|forceDBSync|...|port|pid|...)"`）
+  - 找不到 classes.jar → `::warning::` 跳过（fail-safe，不阻塞 CI）
+- [ ] 18.3 **Guard C — Map<String, Any?> property guard**（Phase 17 类抓错，< 1s）
+  - 同样在 "Build OpenList plugin APK" 步骤最开头，Guard B 之前
+  - grep `snapshot\.(running|port|pid|dataSizeBytes|lastError|lastUpdateTs)` → 0 匹配则通过
+  - **沙箱验证**：改回 `snapshot.running` → guard 抓出 3 错（line 65, 71, 72）
+- [ ] 18.4 **Cache A — openlist.aar + openlist-classes.jar 缓存**（节省 3-5 min）
+  - 在 "Build OpenList AAR" **之前** 用 `actions/cache@v4`
+  - key = `openlist-aar-{hash(build-openlist-aar.sh, plugin-openlist/build.gradle.kts)}-v2`
+  - restore-keys = `openlist-aar-` 兜底
+  - 命中 → 跳过 `Build OpenList AAR` 整个 step（`if: steps.cache-openlist-aar.outputs.cache-hit != 'true'`）
+- [ ] 18.5 **Guard D — gofmt**（Go 改必跑，< 1s）
+  - 在 "Run Go unit tests" 步骤**最开头**（go test 之前先 lint）
+  - `gofmt -l ./internal ./cmd` → 有文件列出则 `::error::` + exit 1
+- [ ] 18.6 **元教训**：写好的 guard 自己也要 smoke test 验证
+  - Guard A 第一版有盲点：`find android ...` 漏掉了 `plugin-openlist/`（不在 android/ 下）
+  - 只在 22 个 refs 上跑（漏 14 个），破坏 toml 后没抓到错
+  - 修：改 `find . -name "build.gradle.kts"` → 36 refs，破坏后精准抓 2 错
+  - 教训：**任何新增的"自动化守卫"都必须经过 "故意坏掉" 的反向测试**，否则可能比没 guard 还糟
+  - 见 [verification-discipline.md §7.9](file:///workspace/.trae/rules/verification-discipline.md)「守卫也要被 test 验证」
+- [ ] 18.7 推送分支到 `trae/solo-agent-WAmQzy`，CI 跑通，5 个守卫都 PASS
