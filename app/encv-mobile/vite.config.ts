@@ -115,6 +115,11 @@ export default defineConfig({
     // the Vite dev server (default is localhost-only which is IPv6-only on
     // some sandboxes, breaking IPv4 / hostname access).
     host: '0.0.0.0',
+    // Disable HMR WebSocket — the OpenPreview reverse proxy / webview
+    // sometimes resets the WS upgrade mid-flight, surfacing as
+    // `net::ERR_EMPTY_RESPONSE` in the browser.  Without HMR the page is
+    // fully static + full-reload on edits (acceptable for the preview path).
+    hmr: false,
     // Allow reading app/openlist/ (parent of encv-mobile/) so Vite can serve the fork's dist
     fs: {
       allow: [path.resolve(__dirname, '..')],
