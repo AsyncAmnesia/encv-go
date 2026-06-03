@@ -96,7 +96,7 @@ class OpenListPluginJSInterface(
             )
             // 如果服务正在运行，实时生效
             if (OpenListService.isRunning) {
-                OpenListBridge.setAdminPwd(password)
+                OpenListBridge.setAdminPassword(password)
             }
             true
         } catch (e: Throwable) {

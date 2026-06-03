@@ -157,3 +157,13 @@
 - [ ] npx cap --version 在 Node 24 下正常输出 8.x
 - [ ] 模拟 CI 全流程 5 步全 EXIT=0
 - [ ] 仓库无其他 Node 版本约束残留（.nvmrc / Dockerfile / docs）
+
+## Phase 13: OpenList 插件 APK 架构性构建失败修复
+
+- [ ] 13.A `plugin-openlist/build.gradle.kts` 包含 `id("org.jetbrains.kotlin.plugin.compose")` + `buildFeatures { compose = true }` + 与 MPV 同款依赖集合
+- [ ] 13.B `OpenListPluginEntry.kt` import 全为 `com.combo.core.api.*` / `com.combo.core.model.*`（无 `com.encvgo.combolite.*` 残留）
+- [ ] 13.C `OpenListPluginJSInterface.kt` 调 `OpenListBridge.setAdminPassword`（无 `setAdminPwd` 残留）
+- [ ] 13.D 仓库全局 Grep 验证 `setAdminPwd` / `com.encvgo.combolite.IPlugin*` / `com.encvgo.combolite.PluginContext` 残留 = 0
+- [ ] 13.E `.trae/rules/verification-discipline.md` 已创建并被引用
+- [ ] 13.F `job_logs.zip` 已删除，`/tmp/job_logs_inspect/` 已清空
+- [ ] 13.G CI 重新触发后，下载 artifact 验证 `plugin-openlist-release.apk` 包含 `libgojni.so` + `Openlistlib*` + `assets/openlist/index.html`

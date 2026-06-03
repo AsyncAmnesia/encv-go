@@ -359,3 +359,20 @@
 ## Task Dependencies
 
 - Phase 0 → ... → Phase 11 → Phase 12
+
+## Phase 13: OpenList 插件 APK 架构性构建失败修复
+
+> **根因**（CI 日志 `0_build.txt` L15699-15861 定位）：
+> 1. `plugin-openlist/build.gradle.kts` 漏 `id("org.jetbrains.kotlin.plugin.compose")` + 缺 `buildFeatures { compose = true }`——但源代码（含 `OpenListEmbedWebView`）仍用 `@Composable` + `AndroidView`，导致 `Could not resolve androidx.core:core-ktx:`（Gradle 在配置阶段就报依赖解析失败）
+> 2. `OpenListPluginEntry.kt` import 错包名：`com.encvgo.combolite.IPluginEntryClass` / `com.encvgo.combolite.PluginContext` 不存在，正确的是 `com.combo.core.api.IPluginEntryClass` / `com.combo.core.model.PluginContext`（参考 `MpvPluginEntry.kt`）
+> 3. `OpenListPluginJSInterface.kt:99` 调 `OpenListBridge.setAdminPwd(password)`，但 `OpenListBridge` 实际定义 `setAdminPassword(pwd: String)`（OpenListBridge.kt:324）——**编译期**因 `OpenListBridge` 是 `object` 会被 Kotlin 编译器报错
+>
+> **架构性决策**：plugin-openlist 必须**完全镜像 plugin-mpv-player**（都是 ComboLite + Compose 插件），而非"半 Compose 半裸"的中间态。Compose 编译期插件 + `buildFeatures.compose=true` + 同款依赖集合是平台契约——`IPluginEntryClass.Content()` 是 `@Composable` 接口本身。
+
+- [ ] 13.1 `plugin-openlist/build.gradle.kts` 重写：对齐 `plugin-mpv-player/build.gradle.kts`（Compose plugin + buildFeatures + BOM + compose ui + material3 + activity-compose + appcompat + `compileOnly("androidx.core:core-ktx")` + `localbroadcastmanager:1.1.0`）
+- [ ] 13.2 `OpenListPluginEntry.kt`：`com.encvgo.combolite.IPluginEntryClass` → `com.combo.core.api.IPluginEntryClass`，`com.encvgo.combolite.PluginContext` → `com.combo.core.model.PluginContext`
+- [ ] 13.3 `OpenListPluginJSInterface.kt:99`：`setAdminPwd` → `setAdminPassword`
+- [ ] 13.4 仓库全局 Grep 验证 `com.encvgo.combolite.IPlugin*` / `com.encvgo.combolite.PluginContext` / `setAdminPwd` 残留 0 处
+- [ ] 13.5 新增 `.trae/rules/verification-discipline.md`（防幻觉 + 本地工具优先 + CI 诊断纪律）
+- [ ] 13.6 清理 `job_logs.zip` + `/tmp/job_logs_inspect/`（用户明确要求）
+- [ ] 13.7 推送分支到 `trae/solo-agent-WAmQzy`，等 CI 跑通，下载 artifact 验证 `plugin-openlist-release.apk` 包含 `libgojni.so` + `Openlistlib*` + `assets/openlist/index.html`
