@@ -5,6 +5,10 @@ import { fileURLToPath, URL } from 'node:url'
 /**
  * plugin-openlist/web Vite 配置
  *
+ * 关键配置：`base: './'`
+ *   生产模式：WebView 加载 `file:///android_asset/openlist/index.html`
+ *   资源路径必须用相对路径 `./assets/...`（Vite 默认 `/assets/...` 会在 file:// 下 404）
+ *
  * Proxy 设计：
  *   /openlist-spa/*  →  http://127.0.0.1:5244/*
  *   /__openlist-health → 自定义中间件（Node 直连 5244，返回 CORS-OK JSON）
@@ -42,8 +46,6 @@ function openlistHealthPlugin(): Plugin {
           const r = await fetch(target, { signal: ac.signal })
           clearTimeout(timer)
           const elapsed = Date.now() - start
-          // 不管 status 是什么，只要 TCP/HTTP 通就算「活着」
-          // 因为 OpenList 即使 401/403/404 也说明进程在响应
           res.statusCode = 200
           res.end(JSON.stringify({
             alive: true,
@@ -55,7 +57,7 @@ function openlistHealthPlugin(): Plugin {
         } catch (e: any) {
           clearTimeout(timer)
           const elapsed = Date.now() - start
-          res.statusCode = 200 // 给浏览器 200（health 端点本身工作正常）
+          res.statusCode = 200
           res.end(JSON.stringify({
             alive: false,
             error: e?.name === 'AbortError' ? 'timeout' : (e?.message || String(e)),
@@ -71,6 +73,9 @@ function openlistHealthPlugin(): Plugin {
 }
 
 export default defineConfig({
+  // ⚠️ 必须 './'：Android WebView 通过 file:///android_asset/openlist/ 加载
+  // 绝对路径 '/assets/...' 在 file:// 协议下 404
+  base: './',
   plugins: [vue(), openlistHealthPlugin()],
   resolve: {
     alias: {
@@ -81,19 +86,20 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
     sourcemap: false,
+    // 显式清空 dist（保证 CI 干净构建）
+    emptyOutDir: true,
+    // 生成包含 <base href="./"> 的 index.html（file:// 加载必需）
+    // Vite 默认会处理，这里只是注释强调
   },
   server: {
     port: 5174,
     strictPort: false,
     proxy: {
-      // 沙箱开发模式：把 /openlist-spa/* 反代到 OpenList 后端 5244
-      // rewrite 把 /openlist-spa 前缀去掉（OpenList 后端不需要这个前缀）
       '/openlist-spa': {
         target: 'http://127.0.0.1:5244',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/openlist-spa/, ''),
-        // 后端未启动时不抛错（让 iframe 显示 502/连接失败 UI）
         bypass: () => null,
       },
     },

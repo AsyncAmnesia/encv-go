@@ -47,13 +47,19 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || github.sha }}
           fetch-depth: 1
 
+      - name: Set up pnpm
+        if: matrix.test-group == 'frontend-vitest'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Set up Node.js
         if: matrix.test-group == 'frontend-vitest'
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: app/encv-mobile/package-lock.json
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: app/encv-mobile/pnpm-lock.yaml
 
       - name: Set up Go
         if: matrix.test-group != 'frontend-vitest'
@@ -62,24 +68,27 @@ jobs:
           go-version: '1.23'
           cache-dependency-path: go.sum
 
-      - name: Cache npm dependencies
+      - name: Cache pnpm dependencies
         if: matrix.test-group == 'frontend-vitest'
         uses: actions/cache@v4
         with:
-          path: app/encv-mobile/node_modules
-          key: npm-main-${{ hashFiles('app/encv-mobile/package-lock.json') }}
-          restore-keys: npm-main-
+          path: |
+            app/encv-mobile/node_modules
+            app/encv-mobile/packages/components/node_modules
+            app/encv-mobile/plugin-openlist/web/node_modules
+          key: pnpm-main-${{ hashFiles('app/encv-mobile/pnpm-lock.yaml', 'app/encv-mobile/packages/**/package.json', 'app/encv-mobile/plugin-openlist/web/package.json') }}
+          restore-keys: pnpm-main-
 
       - name: Install frontend dependencies
         if: matrix.test-group == 'frontend-vitest'
-        run: cd app/encv-mobile && npm install
+        run: cd app/encv-mobile && pnpm install --frozen-lockfile
 
       - name: Run frontend vitest
         if: matrix.test-group == 'frontend-vitest'
         id: frontend-test
         run: |
           cd app/encv-mobile
-          npx vitest run --reporter=verbose 2>&1 | tee test-output.txt
+          pnpm exec vitest run --reporter=verbose 2>&1 | tee test-output.txt
           echo "result=$(grep -q 'passed' test-output.txt && echo 'success' || echo 'failure')" >> $GITHUB_OUTPUT
 
       - name: Run Go core tests
@@ -131,6 +140,11 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.branch || github.sha }}
           fetch-depth: 1
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -140,19 +154,22 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: app/encv-mobile/package-lock.json
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: app/encv-mobile/pnpm-lock.yaml
 
-      - name: Cache npm dependencies
+      - name: Cache pnpm dependencies
         uses: actions/cache@v4
         with:
-          path: app/encv-mobile/node_modules
-          key: npm-main-${{ hashFiles('app/encv-mobile/package-lock.json') }}
-          restore-keys: npm-main-
+          path: |
+            app/encv-mobile/node_modules
+            app/encv-mobile/packages/components/node_modules
+            app/encv-mobile/plugin-openlist/web/node_modules
+          key: pnpm-main-${{ hashFiles('app/encv-mobile/pnpm-lock.yaml', 'app/encv-mobile/packages/**/package.json', 'app/encv-mobile/plugin-openlist/web/package.json') }}
+          restore-keys: pnpm-main-
 
       - name: Install frontend dependencies
-        run: cd app/encv-mobile && npm install
+        run: cd app/encv-mobile && pnpm install --frozen-lockfile
 
       - name: Run Go full tests with coverage
         id: go-full-test
@@ -166,7 +183,7 @@ jobs:
         id: frontend-coverage
         run: |
           cd app/encv-mobile
-          npx vitest run --coverage --reporter=verbose 2>&1 | tee frontend-coverage-output.txt
+          pnpm exec vitest run --coverage --reporter=verbose 2>&1 | tee frontend-coverage-output.txt
           echo "result=$(grep -q 'passed' frontend-coverage-output.txt && echo 'success' || echo 'failure')" >> $GITHUB_OUTPUT
 
       - name: Upload Go coverage report

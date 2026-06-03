@@ -268,13 +268,58 @@
 - [ ] 9.7 验证 iframe @load 后 state='error'（不再误判 connected）
 - [ ] 9.8 验证 `vue-tsc --noEmit` 通过
 
+## Phase 10: CI 适配 + 真机测试准备（workspace 协议 + assets 同步 + manifest 修复）
+
+> **核心痛点**：CI 报 `npm error code EUNSUPPORTEDPROTOCOL: workspace:*`，
+> 因为仓库里同时存在 `pnpm-workspace.yaml`（用 `workspace:` 协议）但 CI 用 npm。
+> 此外还有多个真机测试前必须修复的隐患（vite base、router 模式、cleartext、assets 同步）。
+
+- [ ] 10.1 **CI 全面切到 pnpm**
+  - `.github/workflows/android.yml` 加 `pnpm/action-setup@v4`（version: 9）
+  - 替换 `cache: 'npm'` → `cache: 'pnpm'`
+  - 替换 `cache-dependency-path: package-lock.json` → `pnpm-lock.yaml`
+  - 替换 `npm install` → `pnpm install --frozen-lockfile`
+  - 替换 `npm run build` → `pnpm run build`
+  - 替换 `npx vitest` → `pnpm exec vitest`
+  - 替换 `npm-main-*` cache key → `pnpm-main-*`（含 monorepo 三个 node_modules 路径）
+  - `.github/workflows/test.yml` 同样改造（layer1 + layer2 各加 pnpm setup）
+- [ ] 10.2 **删 `package-lock.json`**（pnpm-lock.yaml 是唯一真源）
+- [ ] 10.3 **新建 `scripts/build-plugin-openlist-web.sh`**
+  - pnpm install → 校验 @encvgo/components 链接 → pnpm exec vite build
+  - 校验 dist/index.html 无绝对路径（grep 拒绝 `/`）
+  - 同步 dist/ → `plugin-openlist/src/main/assets/openlist/`
+  - 输出大小 + 下一步 gradle 命令
+- [ ] 10.4 **`vite.config.ts` 加 `base: './'`**（file:// 加载必需）
+  - 默认 `/` 在 `file:///android_asset/openlist/` 下 404
+  - 注释强调原因
+- [ ] 10.5 **`router/index.ts` 改 hash 模式**
+  - `createWebHistory()` → `createWebHashHistory()`
+  - file:// 协议不支持 history.pushState
+  - 即使支持，非根路径刷新会 404（无服务端路由）
+  - hash 模式天然兼容 file:// + 刷新友好
+- [ ] 10.6 **`AndroidManifest.xml` 加 `usesCleartextTraffic="true"`**
+  - OpenList 是 127.0.0.1:5244 明文 HTTP
+  - Android 9+ 默认禁止明文 HTTP，必须显式开
+  - 同时恢复 service / provider / meta-data（之前误删）
+- [ ] 10.7 **CI workflow 加 plugin web 构建步骤**
+  - 在主 app `pnpm run build` 之后
+  - 执行 `bash scripts/build-plugin-openlist-web.sh --prod`
+  - 必须在 Gradle build 之前（assets 资源必须就位）
+- [ ] 10.8 **模拟 CI 流程**（本地验证）
+  - pnpm install --frozen-lockfile ✓
+  - vue-tsc --noEmit 主 app ✓
+  - vue-tsc --noEmit plugin web ✓
+  - bash scripts/build-plugin-openlist-web.sh ✓ → assets/openlist/index.html 写入
+- [ ] 10.9 **真机测试 checklist 准备**
+  - [ ] Android 9+ 设备（明文 HTTP 兼容测试）
+  - [ ] `adb install app-debug.apk && adb install plugin-openlist-debug.apk`
+  - [ ] 主 app 启动 → 设置 → 扩展管理 → 看到 OpenList 插件
+  - [ ] 启用 OpenList 扩展 → 嵌入式 WebView 渲染（file:///android_asset/openlist/）
+  - [ ] WebView 内点「启动并加载」→ OpenList 服务启动（127.0.0.1:5244）
+  - [ ] 主 app 的 OpenList 管理面板（/openlist）能通过 ContentProvider 读状态
+  - [ ] 沙箱 dev preview: http://localhost:5174/webview 能看 Capacitor UI + iframe 嵌入 OpenList SPA
+
 ## Task Dependencies
 
-- Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 → Phase 8 → Phase 9
-- Phase 1 (Kotlin) 独立于 Phase 2-3 (Web)
-- Phase 2 (monorepo) 必须在 Phase 3 之前（共享包要先建好）
-- Phase 4 依赖 Phase 3（web 页面要先有，主 app 才能 import）
-- Phase 6 依赖 Phase 2-3（依赖 monorepo + 页面已建）
-- Phase 7 依赖 Phase 6（Vite dev server 必须已配好）
-- Phase 8 依赖 Phase 7（必须先有 iframe + 代理）
-- Phase 9 依赖 Phase 8（修复 Phase 8 的 connected 误判 bug）
+- Phase 0 → ... → Phase 9 → Phase 10
+- Phase 10 是上真机测试前的最后一道闸门

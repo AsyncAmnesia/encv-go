@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- OpenList 启动时监听 127.0.0.1:5244，需要 INTERNET 权限 -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- OpenList 是本地服务（127.0.0.1:5244），但 Android 9+ 默认禁止明文 HTTP -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -11,7 +14,17 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
-        android:label="OpenList">
+        android:label="@string/app_name"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="true"
+        tools:targetApi="33">
+        <!-- usesCleartextTraffic="true" 让 WebView 能访问 http://127.0.0.1:5244
+             仅本地回环，无安全风险；如需 HTTPS 访问外网，可改为 false + 加 network-security-config -->
+
         <meta-data
             android:name="plugin.entryClass"
             android:value="com.encvgo.plugin.openlist.OpenListPluginEntry" />
@@ -31,4 +44,5 @@
             android:exported="true"
             android:grantUriPermissions="true" />
     </application>
+
 </manifest>

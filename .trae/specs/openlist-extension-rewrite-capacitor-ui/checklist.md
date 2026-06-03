@@ -120,3 +120,21 @@
 - [ ] 重启 dev server 后 /__openlist-health 返回 { alive: false, code: ECONNREFUSED }
 - [ ] 浏览器实测：iframe @load 后保持 error 态（不再误判 connected）
 - [ ] vue-tsc --noEmit 通过
+
+## Phase 10: CI 适配 + 真机测试准备
+
+- [ ] .github/workflows/android.yml 加 pnpm/action-setup@v4
+- [ ] android.yml cache: 'pnpm' + cache-dependency-path: pnpm-lock.yaml
+- [ ] android.yml 替换 npm install / npm run build / npx → pnpm
+- [ ] android.yml pnpm cache key 包含 monorepo 三个 node_modules 路径
+- [ ] .github/workflows/test.yml layer1 + layer2 同样切 pnpm
+- [ ] 删除 package-lock.json
+- [ ] 新建 scripts/build-plugin-openlist-web.sh（构建+校验+同步）
+- [ ] vite.config.ts 加 base: './'（file:// 必需）
+- [ ] router/index.ts 改 createWebHashHistory（file:// 必需）
+- [ ] AndroidManifest.xml 加 usesCleartextTraffic="true"（明文 HTTP）
+- [ ] AndroidManifest.xml 恢复 service / provider / meta-data（关键 PluginEntry 注册）
+- [ ] CI android.yml 集成 build-plugin-openlist-web.sh --prod
+- [ ] 模拟 CI：pnpm install + 双端 vue-tsc + plugin web build 全 EXIT=0
+- [ ] plugin-openlist/src/main/assets/openlist/index.html 写入且 base 路径相对化
+- [ ] 真机测试 checklist 9 项就绪
