@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  plugin-openlist 是 **com.android.library**，不是独立 app。
+  所有 app 级资源（icon / roundIcon / theme / app_name）由 host app (encvid) 提供，
+  插件 manifest 不能引用它们（AAPT 会找不到 → verifyReleaseResources 失败）。
+
+  参考 plugin-mpv-player/src/main/AndroidManifest.xml：literal label 字符串、
+  无 @string/@mipmap/@style 引用、无 res/ 目录。
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
@@ -14,16 +22,15 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
-        android:label="@string/app_name"
+        android:label="OpenList"
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/AppTheme"
         android:usesCleartextTraffic="true"
         tools:targetApi="33">
         <!-- usesCleartextTraffic="true" 让 WebView 能访问 http://127.0.0.1:5244
              仅本地回环，无安全风险；如需 HTTPS 访问外网，可改为 false + 加 network-security-config -->
+        <!-- 不引用 host 才有的资源: 不引 @string/app_name / @mipmap/ic_launcher* /
+             @style/AppTheme —— 这些是 host app (encvid) 提供的 -->
 
         <meta-data
             android:name="plugin.entryClass"
