@@ -1,158 +1,222 @@
 # Tasks
 
-## Phase 1: 新增 Capacitor 插件（Host App 模块）
+## Phase 0: ComboLite 合规修复（与 UI 无关）
 
-### 1.1 创建 OpenListEmbedPlugin（Kotlin）
+- [ ] 0.1 阅读 `combolite-core` AAR 的 `IPluginEntryClass` 接口定义，确认 onLoad/onUnload/Content/pluginModule 契约
+- [ ] 0.2 对比 MpvPluginEntry vs OpenListPluginEntry 差距
+- [ ] 0.3 重写 `plugin-openlist/OpenListPluginEntry.kt`：
+  - `pluginModule = emptyList()`（与 MpvPluginEntry 一致）
+  - `onLoad(context)` 初始化 OpenListBridge
+  - `onUnload()` shutdown OpenListBridge + OpenListService
+  - `Content()` 返回最小占位 Box
+- [ ] 0.4 删除现有 Compose UI（StatusCard/ControlCard/ConfigCard/InfoGrid/formatFileSize）
+- [ ] 0.5 瘦身 `plugin-openlist/build.gradle.kts`（移除 compose plugin/buildFeatures/dependencies）
+- [ ] 0.6 `./gradlew :plugin-openlist:compileDebugKotlin` 通过
+- [ ] 0.7 `./gradlew :combolite-host:compileDebugKotlin` 通过
 
-- [ ] 1.1.1 新建 `android/app/src/main/java/com/encvgo/app/openlist/OpenListEmbedPlugin.kt`
-- [ ] 1.1.2 定义 `@CapacitorPlugin(name = "OpenListEmbed")` 类继承 `Plugin`
-- [ ] 1.1.3 实现 `@PluginMethod fun open(call)` → 调 `OpenListEmbedService.startEmbed()`
-- [ ] 1.1.4 实现 `@PluginMethod fun close(call)` → 调 `OpenListEmbedService.stopEmbed()`
-- [ ] 1.1.5 实现 `@PluginMethod fun setBounds(call)` → 调整 WebView 位置
-- [ ] 1.1.6 实现 `@PluginMethod fun isLoaded(call)` → 查询实例
-- [ ] 1.1.7 实现 `@PluginMethod fun navigate(call)` → `webView.loadUrl()`
-- [ ] 1.1.8 实现 `@PluginMethod fun getOpenListRuntime(call)` → 调 `OpenListStatusBridge.read()`
-- [ ] 1.1.9 实现 `@PluginMethod fun controlOpenList(call)` → 调 `OpenListStatusBridge.control()`
-- [ ] 1.1.10 在 `MainActivity.onCreate()` 注册插件（如果需要）
+## Phase 1: plugin-openlist 改造为独立 Capacitor 应用
 
-### 1.2 创建 OpenListEmbedService（多例管理器）
+### 1.1 新增 OpenListMainActivity
 
-- [ ] 1.2.1 新建 `android/app/src/main/java/com/encvgo/app/openlist/OpenListEmbedService.kt`
-- [ ] 1.2.2 定义 `companion object` 持有 `ConcurrentHashMap<String, OpenListEmbedInstance>`
-- [ ] 1.2.3 实现 `startEmbed(activity, containerId, port, path)` → 创建 WebView 并 addView 到主 Activity
-- [ ] 1.2.4 实现 `stopEmbed(containerId)` → 销毁 WebView
-- [ ] 1.2.5 实现 `setBounds(containerId, x, y, w, h)` → 调整 WebView layoutParams
-- [ ] 1.2.6 实现 WebView 错误自愈（loadUrl 失败 → 启动 OpenList → 重试 3 次）
-- [ ] 1.2.7 实现按需启动 OpenList（第一个 open() 触发 control('start')）
-- [ ] 1.2.8 实现延迟停止（所有 WebView 关闭后 30s 计时器）
+- [ ] 1.1.1 新建 `plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListMainActivity.kt`
+- [ ] 1.1.2 extends `com.getcapacitor.BridgeActivity`
+- [ ] 1.1.3 覆盖 `onCreate()` 调用 `super.onCreate()` 让 Capacitor 加载资源
+- [ ] 1.1.4 添加到 `AndroidManifest.xml`（独立 launcher Activity + intent-filter）
 
-### 1.3 创建 OpenListEmbedInstance（数据类）
+### 1.2 新增 Capacitor 插件（plugin-openlist 内部）
 
-- [ ] 1.3.1 新建 `android/app/src/main/java/com/encvgo/app/openlist/OpenListEmbedInstance.kt`
-- [ ] 1.3.2 定义 `data class(containerId, webView, port, path, createdAt)`
-- [ ] 1.3.3 定义 `isLoaded: Boolean` 计算属性
+- [ ] 1.2.1 新建 `plugin-openlist/src/main/java/com/encvgo/plugin/openlist/capacitor/OpenListServicePlugin.kt`
+  - `@CapacitorPlugin(name = "OpenListService")` extends `Plugin`
+  - `@PluginMethod fun start(call)` → `OpenListBridge.start()`
+  - `@PluginMethod fun stop(call)` → `OpenListBridge.stop()`
+  - `@PluginMethod fun getStatus(call)` → `OpenListBridge.snapshot()`
+  - `@PluginMethod fun getVersion(call)` → `OpenListConfig.version`
+  - `@PluginMethod fun getPort(call)` → `OpenListService.lastPort`
+  - `@PluginMethod fun getIsRunning(call)` → `OpenListService.isRunning`
 
-### 1.4 修改 GoProcessPlugin 移除 OpenList 方法
+- [ ] 1.2.2 新建 `plugin-openlist/src/main/java/com/encvgo/plugin/openlist/capacitor/OpenListConfigPlugin.kt`
+  - `@CapacitorPlugin(name = "OpenListConfig")` extends `Plugin`
+  - `@PluginMethod fun read(call)` → 读 config.json
+  - `@PluginMethod fun write(call)` → 写 config.json（自动备份）
+  - `@PluginMethod fun getDataDir(call)` → 读 dataDir
 
-- [ ] 1.4.1 移除 `getOpenListRuntime(call)` 方法
-- [ ] 1.4.2 移除 `controlOpenList(call)` 方法
-- [ ] 1.4.3 移除 `OpenListStatusBridge` import
+- [ ] 1.2.3 新建 `plugin-openlist/src/main/java/com/encvgo/plugin/openlist/capacitor/OpenListPasswordPlugin.kt`
+  - `@CapacitorPlugin(name = "OpenListPassword")` extends `Plugin`
+  - `@PluginMethod fun setPassword(call)` → `OpenListBridge.setAdminPwd(pwd)`
 
-### 1.5 编译验证
+- [ ] 1.2.4 在 `OpenListMainActivity` 注册这 3 个插件：`registerPlugin(OpenListServicePlugin::class.java)` etc.
 
-- [ ] 1.5.1 `./gradlew :app:compileDebugKotlin` 通过
-- [ ] 1.5.2 确认 OpenListEmbedPlugin 已注册
+### 1.3 资源准备
 
-## Phase 2: TypeScript 插件定义
+- [ ] 1.3.1 新建 `plugin-openlist/src/main/assets/capacitor.config.json`
+  - `appId: "com.encvgo.plugin.openlist"`
+  - `appName: "OpenList"`
+  - `webDir: "public"`
+  - `bundledWebRuntime: false`
 
-### 2.1 新增 OpenListEmbed.ts
+- [ ] 1.3.2 新建 `plugin-openlist/src/main/assets/capacitor.plugins.json`
+  - 注册 3 个 Capacitor 插件
 
-- [ ] 2.1.1 新建 `src/plugins/OpenListEmbed.ts`
-- [ ] 2.1.2 定义接口：`open/close/setBounds/isLoaded/navigate/getOpenListRuntime/controlOpenList`
-- [ ] 2.1.3 使用 `registerPlugin<OpenListEmbedPlugin>('OpenListEmbed', { web: () => import('./openlist-embed/web').then(m => new m.OpenListEmbedWeb()) })`
-- [ ] 2.1.4 导出 `OpenListEmbed` 实例
+- [ ] 1.3.3 新建 `plugin-openlist/src/main/assets/public/index.html`（占位，Phase 2 替换）
+  - `<html><body>OpenList - 等待 Phase 2 web 资源</body></html>`
 
-### 2.2 新增 web.ts（Web 端 stub）
+### 1.4 编译验证
 
-- [ ] 2.2.1 新建 `src/plugins/openlist-embed/web.ts`
-- [ ] 2.2.2 实现 `OpenListEmbedWeb extends WebPlugin` 提供 web 端 stub
+- [ ] 1.4.1 `./gradlew :plugin-openlist:assembleDebug` 通过
+- [ ] 1.4.2 产物 APK 包含 assets/public/index.html
+- [ ] 1.4.3 AndroidManifest.xml 中 OpenListMainActivity 已注册
 
-### 2.3 修改 GoProcess.ts 移除 OpenList
+## Phase 2: Capacitor Web 项目（K-Sillot Mobile 风格 UI 复刻）
 
-- [ ] 2.3.1 移除 `getOpenListRuntime()` 函数导出
-- [ ] 2.3.2 移除 `controlOpenList()` 函数导出
-- [ ] 2.3.3 移除 `OpenListRuntime` interface
-- [ ] 2.3.4 移除 `controlOpenList` 类型定义
+### 2.1 项目脚手架
 
-### 2.4 修改 web.ts 移除 OpenList
+- [ ] 2.1.1 新建 `plugin-openlist/web/` 目录
+- [ ] 2.1.2 新建 `plugin-openlist/web/package.json`：
+  - `vue@^3.4`
+  - `@ionic/vue@^8`
+  - `vue-router@^4`
+  - `vite@^5`
+  - `@vitejs/plugin-vue`
+  - `@capacitor/core`, `@capacitor/android`, `@capacitor/cli`
+  - `ionicons`
 
-- [ ] 2.4.1 移除 `GoProcessPlugin` interface 中的 `getOpenListRuntime` / `controlOpenList` 方法
-- [ ] 2.4.2 移除 `GoProcessWeb` 中相应 stub 实现
+- [ ] 2.1.3 新建 `plugin-openlist/web/vite.config.ts`
+- [ ] 2.1.4 新建 `plugin-openlist/web/capacitor.config.ts`
+- [ ] 2.1.5 新建 `plugin-openlist/web/tsconfig.json`
+- [ ] 2.1.6 新建 `plugin-openlist/web/index.html`
 
-### 2.5 TypeScript 编译
+### 2.2 Capacitor 插件定义（Web 端）
 
-- [ ] 2.5.1 `npx vue-tsc --noEmit` 通过 (0 errors)
-- [ ] 2.5.2 修复所有引用旧 `GoProcess.getOpenListRuntime` 的地方改用 `OpenListEmbed.getOpenListRuntime()`
+- [ ] 2.2.1 新建 `plugin-openlist/web/src/plugins/OpenListService.ts`
+  - interface: `start/stop/getStatus/getVersion/getPort/getIsRunning`
+  - `registerPlugin<OpenListServicePlugin>('OpenListService')`
 
-## Phase 3: Vue 组件（仅作为容器）
+- [ ] 2.2.2 新建 `plugin-openlist/web/src/plugins/OpenListConfig.ts`
+  - interface: `read/write/getDataDir`
 
-### 3.1 新增 OpenListEmbedContainer.vue
+- [ ] 2.2.3 新建 `plugin-openlist/web/src/plugins/OpenListPassword.ts`
+  - interface: `setPassword`
 
-- [ ] 3.1.1 新建 `src/components/OpenListEmbedContainer.vue`
-- [ ] 3.1.2 props: `{ containerId: string, autoStart?: boolean }`
-- [ ] 3.1.3 template: `<div :id="containerId" :style="containerStyle" />`
-- [ ] 3.1.4 onMounted: 等待 nextTick → `OpenListEmbed.open()`
-- [ ] 3.1.5 onUnmounted: `OpenListEmbed.close()`
-- [ ] 3.1.6 `vue-tsc --noEmit` 通过
+- [ ] 2.2.4 新建 `plugin-openlist/web/src/plugins/openlist-service/web.ts` 等 web stub（开发预览用）
 
-### 3.2 新增 OpenListPage.vue 入口
+### 2.3 入口与路由
 
-- [ ] 3.2.1 新建 `src/views/OpenListPage.vue`
-- [ ] 3.2.2 包含 `<OpenListEmbedContainer container-id="primary" auto-start />`
-- [ ] 3.2.3 包含 Ionic 全屏布局（ion-header + ion-content + ion-footer）
-- [ ] 3.2.4 可选：浮动按钮"打开新窗口" → 调 `OpenListEmbed.open({ containerId: 'secondary', port: 5244 })`（多例演示）
+- [ ] 2.3.1 新建 `plugin-openlist/web/src/main.ts`
+  - 引入 IonicVue
+  - 引入 router
+  - mount('#app')
 
-### 3.3 修改 router 添加路由
+- [ ] 2.3.2 新建 `plugin-openlist/web/src/router/index.ts`
+  - `/` → HomePage（默认 tab=openlist）
+  - `/web` → WebScreen
+  - `/openlist` → OpenListScreen
+  - `/downloads` → DownloadManager
+  - `/settings` → Settings
 
-- [ ] 3.3.1 在 `src/router/index.ts` 添加 `/openlist` → `OpenListPage.vue`
+- [ ] 2.3.3 新建 `plugin-openlist/web/src/App.vue`
+  - `<ion-app><ion-router-outlet /></ion-app>`
 
-## Phase 4: 修改现有页面（最小改动）
+### 2.4 页面（K-Sillot Mobile 复刻）
 
-### 4.1 修改 LocalOpenListStatusCard.vue
+- [ ] 2.4.1 新建 `plugin-openlist/web/src/views/HomePage.vue`（IonTabs 容器）
+  - 4 tab：Web / OpenList / Downloads / Settings
+  - tab="openlist" 为默认
 
-- [ ] 4.1.1 改用 `OpenListEmbed.getOpenListRuntime()` 替代 `GoProcess.getOpenListRuntime()`
+- [ ] 2.4.2 新建 `plugin-openlist/web/src/views/WebScreen.vue`（Tab 0，复刻 lib/pages/web/web.dart）
+  - iframe 加载 `http://127.0.0.1:{port}/#/login`
+  - 加载失败时尝试启动 OpenList 并重试
+  - 下载拦截走 Capacitor Browser
 
-### 4.2 修改 Remote.vue 添加入口
+- [ ] 2.4.3 新建 `plugin-openlist/web/src/views/OpenListScreen.vue`（Tab 1，复刻 lib/pages/openlist/openlist.dart）
+  - AppBar: "OpenList - v{version}"
+  - Actions: 密码 / Config / 桌面快捷 / 更多
+  - FAB: Start/Stop 切换
+  - Body: LogListView
 
-- [ ] 4.2.1 添加"打开 OpenList"按钮（ion-button）
-- [ ] 4.2.2 点击 → `router.push('/openlist')`
-- [ ] 4.2.3 可选：在卡片里显示 Embedded 状态指示
+- [ ] 2.4.4 新建 `plugin-openlist/web/src/views/DownloadManager.vue`（Tab 2，占位）
+  - 简化的下载管理页面
 
-### 4.3 修改 ExtensionsPage.vue
+- [ ] 2.4.5 新建 `plugin-openlist/web/src/views/Settings.vue`（Tab 3，占位）
+  - 简化的设置页面
 
-- [ ] 4.3.1 已安装的 OpenList 卡片增加"打开管理"按钮（替代或补充 enable toggle）
-- [ ] 4.3.2 点击 → `router.push('/openlist')`
+### 2.5 组件
 
-## Phase 5: Plugin APK 瘦身（plugin-openlist）
+- [ ] 2.5.1 新建 `plugin-openlist/web/src/components/LogListView.vue`（复刻 lib/pages/openlist/log_list_view.dart）
+  - 实时日志流（ion-list + 滚动到底部）
+  - 日志级别颜色（info/warn/error）
 
-### 5.1 重写 OpenListPluginEntry.kt
+- [ ] 2.5.2 新建 `plugin-openlist/web/src/components/PwdEditDialog.vue`（复刻 lib/pages/openlist/pwd_edit_dialog.dart）
+  - ion-alert 输入密码
+  - 确认后调 `OpenListPassword.setPassword(pwd)`
 
-- [ ] 5.1.1 删除 StatusCard/ControlCard/ConfigCard/InfoGrid/formatFileSize 函数
-- [ ] 5.1.2 删除所有 compose material3/icons/foundation/lifecycle import
-- [ ] 5.1.3 `pluginModule = emptyList()` 替代注册 OpenListBridge
-- [ ] 5.1.4 `onLoad()` 简化为空（OpenList 启动由 host 侧 OpenListEmbedService 触发）
-- [ ] 5.1.5 `onUnload()` 简化为空
-- [ ] 5.1.6 `Content()` 返回 `Box {}` 最小占位
+- [ ] 2.5.3 新建 `plugin-openlist/web/src/components/ConfigEditorPage.vue`（复刻 lib/pages/openlist/config_editor_page.dart）
+  - 读 config.json
+  - JSON 编辑器（textarea）
+  - 实时 JSON 校验（debounce 300ms）
+  - 保存前自动备份
+  - 三选项对话框：取消 / 仅保存 / 保存并重启
 
-### 5.2 瘦身 build.gradle.kts
+- [ ] 2.5.4 新建 `plugin-openlist/web/src/components/AboutDialog.vue`（复刻 lib/pages/openlist/about_dialog.dart）
+  - 显示 OpenList 版本、ENCV 适配信息
 
-- [ ] 5.2.1 删除 `id("org.jetbrains.kotlin.plugin.compose")`
-- [ ] 5.2.2 删除 `buildFeatures { compose = true }`
-- [ ] 5.2.3 删除 compose BOM + ui/runtime/material3/icons-extended/lifecycle-runtime-compose
+### 2.6 构建集成
 
-### 5.3 修改 OpenListService.kt
+- [ ] 2.6.1 `cd plugin-openlist/web && npm install`
+- [ ] 2.6.2 `npm run build` 产出 `dist/`
+- [ ] 2.6.3 `npx cap sync android` 同步 web 资源到 `android/src/main/assets/public/`
+- [ ] 2.6.4 `./gradlew :plugin-openlist:assembleDebug` 重新打包 APK
+- [ ] 2.6.5 确认 APK assets/public/ 包含 web bundle
 
-- [ ] 5.3.1 移除 `onCreate()` 中的自动启动逻辑
-- [ ] 5.3.2 改为按需启动（接收 `OpenListStatusBridge.control('start')` 触发）
-- [ ] 5.3.3 移除 boot-time self-start
+### 2.7 TypeScript 编译
 
-### 5.4 编译验证
+- [ ] 2.7.1 `cd plugin-openlist/web && npx vue-tsc --noEmit` 通过
 
-- [ ] 5.4.1 `./gradlew :plugin-openlist:compileDebugKotlin` 通过
-- [ ] 5.4.2 `./gradlew :combolite-host:compileDebugKotlin` 通过
-- [ ] 5.4.3 确认 plugin-openlist AAR 不含 compose 类
+## Phase 3: 主 app 集成（最小改动）
 
-## Phase 6: 端到端验证
+### 3.1 新增主 app Capacitor 插件
 
-- [ ] 6.1 全模块编译通过
-- [ ] 6.2 `vue-tsc --noEmit` 0 errors
-- [ ] 6.3 沙箱预览启动正常
-- [ ] 6.4 路径 `/openlist` 可访问，挂载的 OpenListEmbedContainer 渲染 div
-- [ ] 6.5 Native 侧 WebView 正确加载 OpenList Web UI
-- [ ] 6.6 多次进入 `/openlist` 验证多例（每个 containerId 独立）
-- [ ] 6.7 关闭页面 → WebView 销毁 → OpenListService 30s 延迟后停止
+- [ ] 3.1.1 新建 `android/app/src/main/java/com/encvgo/app/StartOpenListAppPlugin.kt`
+  - `@CapacitorPlugin(name = "StartOpenListApp")` extends `Plugin`
+  - `@PluginMethod fun start(call)` → `context.startActivity(Intent().setComponent(ComponentName("com.encvgo.plugin.openlist", "com.encvgo.plugin.openlist.OpenListMainActivity")))`
+  - 异常处理：插件未安装时返回 `{ success: false, error: "OpenList plugin not installed" }`
+
+- [ ] 3.1.2 在主 `MainActivity.onCreate()` 注册：`registerPlugin(StartOpenListAppPlugin::class.java)`
+
+### 3.2 TypeScript 定义
+
+- [ ] 3.2.1 新建 `src/plugins/StartOpenListApp.ts`
+  - interface: `start(): Promise<{ success: boolean; error?: string }>`
+  - `registerPlugin<StartOpenListAppPlugin>('StartOpenListApp')`
+
+- [ ] 3.2.2 新建 web stub `src/plugins/start-openlist-app/web.ts`
+
+### 3.3 主 app Vue 修改
+
+- [ ] 3.3.1 修改 `src/components/LocalOpenListStatusCard.vue`：
+  - 增加"启动 OpenList 独立界面"按钮（ion-button）
+  - 点击调 `StartOpenListApp.start()`
+
+- [ ] 3.3.2 修改 `src/views/ExtensionsPage.vue`：
+  - 已安装的 OpenList 卡片增加"启动"按钮
+  - 点击调 `StartOpenListApp.start()`
+
+### 3.4 TypeScript 编译
+
+- [ ] 3.4.1 `npx vue-tsc --noEmit` 通过 (0 errors)
+
+## Phase 4: 端到端验证
+
+- [ ] 4.1 全模块编译通过
+- [ ] 4.2 plugin-openlist APK 独立启动验证（adb am start）
+- [ ] 4.3 Capacitor 加载 web 资源成功
+- [ ] 4.4 OpenListScreen FAB 启动 OpenList → WebScreen iframe 加载成功
+- [ ] 4.5 密码设置 + Config 编辑 + 日志流验证
+- [ ] 4.6 主 app 调 `StartOpenListApp.start()` → OpenListMainActivity 启动
+- [ ] 4.7 主 app LocalOpenListStatusCard 通过 ContentProvider 读到 OpenList 状态
 
 ## Task Dependencies
 
-- Phase 1 (Native Plugin) → Phase 2 (TS Plugin) → Phase 3 (Vue) → Phase 4 (页面修改) → Phase 5 (Plugin 瘦身) → Phase 6 (验证)
-- Phase 5 (Plugin 瘦身) 可与 Phase 1-4 并行（仅 plugin-openlist 内修改）
+- Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4
+- Phase 1.2 依赖 Phase 0（OpenListBridge 初始化顺序调整）
+- Phase 2 依赖 Phase 1（Capacitor 插件 Native 实现先完成）
+- Phase 3 依赖 Phase 1（OpenListMainActivity 必须存在才能从主 app 启动）
