@@ -390,7 +390,12 @@ package openlistlib
 type Event interface {
 	OnStartError(eventType string, msg string)
 	OnShutdown(eventType string)
-	OnProcessExit(code int64)
+	// Match Hi-Sillot/OpenList@404daf0 openlistlib/event.go: `int`, not int64.
+	// gomobile maps Go `int` to Java `int` (NOT long). If we wrote int64 here,
+	// and the A2 fallback activated (fork deleted event.go), gomobile would
+	// generate `onProcessExit(long)` — incompatible with the canonical fork
+	// signature `onProcessExit(int)`. So we intentionally match the fork.
+	OnProcessExit(code int)
 }
 
 type LogCallback interface {

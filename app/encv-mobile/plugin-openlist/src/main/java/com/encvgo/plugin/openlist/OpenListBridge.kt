@@ -392,8 +392,15 @@ object OpenListBridge : Event, LogCallback {
 
     // === openlistlib.Event interface ===
     // gomobile generates **camelCase** Java method names from Go's PascalCase.
-    // Evidence: CI compile error lists abstract members as:
-    //   fun onProcessExit(p0: Long): Unit
+    // Evidence: read gomobile lowerFirst() (cmd/gobind/gen.go:527) + fork
+    // openlistlib/event.go @ Hi-Sillot/OpenList@404daf0. gomobile Go→Java type
+    // mapping for callback interfaces:
+    //   Go int   → Java int     (NOT long, even on 64-bit hosts)
+    //   Go int64 → Java long
+    //   Go int16 → Java short
+    //   Go string→ Java String
+    // Abstract members gomobile generates for `Event` + `LogCallback`:
+    //   fun onProcessExit(p0: Int): Unit   ← int, NOT long
     //   fun onShutdown(p0: String!): Unit
     //   fun onStartError(p0: String!, p1: String!): Unit
     //   fun onLog(p0: Short, p1: Long, p2: String!): Unit
@@ -417,7 +424,7 @@ object OpenListBridge : Event, LogCallback {
         broadcastStatus(0, false)
     }
 
-    override fun onProcessExit(code: Long) {
+    override fun onProcessExit(code: Int) {
         Log.e(TAG, "[SAT-DBG][OpenList] OnProcessExit() | code=$code | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         val msg = "process exited with code $code"
         synchronized(lock) {

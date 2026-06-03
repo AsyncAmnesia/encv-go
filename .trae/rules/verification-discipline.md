@@ -345,7 +345,7 @@ go run /tmp/lowerFirst.go
 
 **特别提醒**：
 - `DBSync` / `HTTPClient` 这种**全大写子词**会被保留（`lowerFirst` 只动首字符）
-- 写 Kotlin 包装函数时**注意 A2 fallback**：[`build-openlist-aar.sh:381`](file:///workspace/scripts/build-openlist-aar.sh) 只在 fork 缺 `openlistlib/event.go` 时才注入。Hi-Sillot/OpenList@`404daf0` 已自带 event.go（`OnProcessExit(code int)`）→ A2 fallback 被跳过 → gomobile 生成 `onProcessExit(int)`，**和现有 `code: Long` 不匹配**（下一轮 AAR 重构时会爆）。Phase 17 不动它，留作 Phase 18 风险登记。
+- 写 Kotlin 包装函数时**注意 A2 fallback**：[`build-openlist-aar.sh:381`](file:///workspace/scripts/build-openlist-aar.sh) 只在 fork 缺 `openlistlib/event.go` 时才注入。Hi-Sillot/OpenList@`404daf0` 已自带 event.go（`OnProcessExit(code int)`）→ A2 fallback 被跳过 → gomobile 生成 `onProcessExit(int)`。**Phase 21 已修复**：`OpenListBridge.kt:427` 把 `onProcessExit(code: Long)` 改为 `onProcessExit(code: Int)`，并同步把 A2 fallback 里的 `int64` 改为 `int` 保持兼容（见 [OpenListBridge.kt:392-403](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListBridge.kt#L392-L403) + [build-openlist-aar.sh:390-400](file:///workspace/scripts/build-openlist-aar.sh#L390-L400)）。风险关闭。
 
 ### 7.9 守卫也要被 test 验证（Guard self-test discipline）
 
