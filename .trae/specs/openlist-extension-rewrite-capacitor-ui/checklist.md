@@ -148,3 +148,12 @@
 - [ ] 默认生产构建 EXIT=0
 - [ ] --dev 开发构建 EXIT=0
 - [ ] dev vs prod 产物大小差异验证
+
+## Phase 12: Node.js 升级到 24 LTS
+
+- [ ] .github/workflows/android.yml node-version: '24'
+- [ ] .github/workflows/test.yml layer1 + layer2 node-version: '24'
+- [ ] sandbox Node 版本 ≥ 24
+- [ ] npx cap --version 在 Node 24 下正常输出 8.x
+- [ ] 模拟 CI 全流程 5 步全 EXIT=0
+- [ ] 仓库无其他 Node 版本约束残留（.nvmrc / Dockerfile / docs）

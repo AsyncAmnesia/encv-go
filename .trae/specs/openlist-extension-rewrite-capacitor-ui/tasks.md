@@ -337,7 +337,25 @@
 - [ ] 11.4 验证 `--dev` 开发构建 EXIT=0
 - [ ] 11.5 验证 dev 产物 vs prod 产物大小差异（dev 更大含 sourcemap）
 
+## Phase 12: Node.js 升级到 24 LTS（Capacitor 8 要求 ≥22）
+
+> **核心痛点**：CI 报 `[fatal] The Capacitor CLI requires NodeJS >=22.0.0`
+> 根因：Phase 10 改 CI 时把所有 `node-version: '20'` 写死了（当时是为了 pnpm 9 兼容而保守选择 20）
+> 实际 Capacitor 8.3.4 要求 Node ≥ 22，且当前最新 LTS 是 24（v24.x 已于 2025-05 正式 LTS）。
+>
+> 升级 Node 24 的好处：
+> - Capacitor 8 CLI 直接兼容（≥ 22 即可）
+> - 更好的 V8 引擎性能（vue-tsc 编译更快）
+> - pnpm 10 完整支持
+> - Node 22/24 内置 fetch / test runner / 等现代 API
+
+- [ ] 12.1 `.github/workflows/android.yml`：`node-version: '20'` → `'24'`
+- [ ] 12.2 `.github/workflows/test.yml` layer1 + layer2：两处都 `20` → `24`
+- [ ] 12.3 验证 sandbox 已装 Node 24.15.0（`node --version`）
+- [ ] 12.4 验证 `npx cap --version` 在 Node 24 下正常（输出 8.x）
+- [ ] 12.5 模拟 CI 全流程：pnpm install + vue-tsc × 2 + plugin web build + npx cap --version 全 EXIT=0
+- [ ] 12.6 验证仓库无其他 Node 版本约束（.nvmrc / Dockerfile / docs）
+
 ## Task Dependencies
 
-- Phase 0 → ... → Phase 10 → Phase 11
-- Phase 11 修复 Phase 10 引入的 --prod 误用
+- Phase 0 → ... → Phase 11 → Phase 12
