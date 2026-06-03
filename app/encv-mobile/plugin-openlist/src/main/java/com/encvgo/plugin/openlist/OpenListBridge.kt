@@ -16,22 +16,27 @@ import openlistlib.Openlistlib
  *
  * gomobile bind shape (https://go.dev/talks/2015/gophercon-go-on-mobile.slide §16):
  *   public abstract class openlistlib.Openlistlib {
- *     public static void SetConfigData(String path);
- *     public static void SetConfigAdminPassword(String pwd);
- *     public static void Init(Event e, LogCallback cb) throws Exception;
- *     public static void Start();
- *     public static void Shutdown(long timeoutMs) throws Exception;
- *     public static boolean IsRunning(String protocol);  // "" == any
- *     public static void ForceDBSync() throws Exception;
+ *     public static void setConfigData(String path);          // SetConfigData
+ *     public static void setAdminPassword(String pwd);        // SetAdminPassword
+ *     public static void init(Event e, LogCallback cb);       // Init
+ *     public static void start();                             // Start
+ *     public static void shutdown(long timeoutMs);            // Shutdown
+ *     public static boolean isRunning(String protocol);      // IsRunning
+ *     public static void forceDbSync();                       // ForceDBSync
  *   }
+ *
+ * IMPORTANT: gomobile generates **camelCase** Java method names from Go's
+ * PascalCase exported functions.  Always use `openlistlib.start()` never
+ * `openlistlib.Start()`.  Same for interface callbacks: `onProcessExit`
+ * not `OnProcessExit`.
  *
  * Rules enforced here:
  *   1. Openlistlib is abstract + private ctor → we only call its STATIC methods.
- *   2. Method names preserve Go case (capital S/A/P/I/R/F/D/B).
- *   3. Init/Shutdown/ForceDBSync may throw — wrap in try/catch.
+ *   2. Method names use gomobile's camelCase convention (Go Start → Java start).
+ *   3. init/shutdown/forceDbSync may throw — wrap in try/catch.
  *   4. Port is NOT an openlistlib API: it lives in on-disk conf.Conf.Scheme.HttpPort
- *      and is read by `Start()` from there. We don't try to set it via the lib.
- *   5. SetConfigData(dataDir) tells openlistlib where to look for the config dir.
+ *      and is read by start() from there. We don't try to set it via the lib.
+ *   5. setConfigData(dataDir) tells openlistlib where to look for the config dir.
  */
 object OpenListBridge : Event, LogCallback {
 
@@ -92,7 +97,7 @@ object OpenListBridge : Event, LogCallback {
             // Step 2: Apply data dir to openlistlib (tells it where to look for config.json)
             try {
                 if (dataDir.isNotEmpty()) {
-                    Openlistlib.SetConfigData(dataDir)
+                    Openlistlib.setConfigData(dataDir)
                     Log.e(TAG, "[SAT-DBG][OpenList] init() Openlistlib.SetConfigData($dataDir) OK")
                 }
             } catch (e: Throwable) {
@@ -102,7 +107,7 @@ object OpenListBridge : Event, LogCallback {
             }
             if (!initialized) {
                 try {
-                    Openlistlib.Init(this, this)
+                    Openlistlib.init(this, this)
                     initialized = true
                     lastUpdateTs = System.currentTimeMillis()
                     Log.e(TAG, "[SAT-DBG][OpenList] init() Openlistlib.Init() OK")
@@ -224,7 +229,7 @@ object OpenListBridge : Event, LogCallback {
         Thread {
             Log.e(TAG, "[SAT-DBG][OpenList] start() background thread | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
             try {
-                Openlistlib.Start()
+                Openlistlib.start()
                 val nativePid = Process.myPid()
                 val ts = System.currentTimeMillis()
                 synchronized(lock) {
@@ -260,7 +265,7 @@ object OpenListBridge : Event, LogCallback {
         }
         Thread {
             try {
-                Openlistlib.Shutdown(timeoutMs)
+                Openlistlib.shutdown(timeoutMs)
                 Log.e(TAG, "[SAT-DBG][OpenList] shutdown() Openlistlib.Shutdown() returned")
             } catch (e: Throwable) {
                 synchronized(lock) {
@@ -285,7 +290,7 @@ object OpenListBridge : Event, LogCallback {
     fun isRunning(): Boolean = synchronized(lock) { running }
 
     fun isRunning(protocol: String): Boolean = try {
-        Openlistlib.IsRunning(protocol)
+        Openlistlib.isRunning(protocol)
     } catch (e: Throwable) {
         Log.e(TAG, "[SAT-DBG][OpenList] IsRunning($protocol) threw", e)
         false
@@ -298,7 +303,7 @@ object OpenListBridge : Event, LogCallback {
         Log.e(TAG, "[SAT-DBG][OpenList] forceDbSync() entry | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         Thread {
             try {
-                Openlistlib.ForceDBSync()
+                Openlistlib.forceDbSync()
                 val ts = System.currentTimeMillis()
                 synchronized(lock) { lastUpdateTs = ts }
                 Log.e(TAG, "[SAT-DBG][OpenList] forceDbSync() done | ts=$ts")
@@ -319,7 +324,7 @@ object OpenListBridge : Event, LogCallback {
     fun setAdminPassword(pwd: String) {
         Log.e(TAG, "[SAT-DBG][OpenList] setAdminPassword() entry | length=${pwd.length} | thread=${Thread.currentThread().name}")
         try {
-            Openlistlib.SetAdminPassword(pwd)
+            Openlistlib.setAdminPassword(pwd)
             Log.e(TAG, "[SAT-DBG][OpenList] setAdminPassword() Openlistlib.SetAdminPassword() OK")
         } catch (e: Throwable) {
             synchronized(lock) {
@@ -382,8 +387,8 @@ object OpenListBridge : Event, LogCallback {
         }
     }
 
-    // === openlistlib.Event interface ===
-    override fun OnStartError(t: String, err: String) {
+    // === openlistlib.Event interface (gomobile generates camelCase) ===
+    override fun onStartError(t: String, err: String) {
         Log.e(TAG, "[SAT-DBG][OpenList] OnStartError() | t=$t err=$err | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         val combined = "$t: $err"
         synchronized(lock) {
@@ -394,7 +399,7 @@ object OpenListBridge : Event, LogCallback {
         broadcastStatus(0, false)
     }
 
-    override fun OnShutdown(t: String) {
+    override fun onShutdown(t: String) {
         Log.e(TAG, "[SAT-DBG][OpenList] OnShutdown() | t=$t | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         synchronized(lock) {
             running = false
@@ -403,7 +408,7 @@ object OpenListBridge : Event, LogCallback {
         broadcastStatus(0, false)
     }
 
-    override fun OnProcessExit(code: Int) {
+    override fun onProcessExit(code: Long) {
         Log.e(TAG, "[SAT-DBG][OpenList] OnProcessExit() | code=$code | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         val msg = "process exited with code $code"
         synchronized(lock) {
@@ -414,8 +419,8 @@ object OpenListBridge : Event, LogCallback {
         broadcastStatus(0, false)
     }
 
-    // === openlistlib.LogCallback interface ===
-    override fun OnLog(level: Short, time: Long, log: String) {
+    // === openlistlib.LogCallback interface (gomobile generates camelCase) ===
+    override fun onLog(level: Short, time: Long, log: String) {
         // Mirror the logrus entry to local broadcast for in-process subscribers.
         val ctx = appContext
         if (ctx != null) {
