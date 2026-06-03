@@ -498,7 +498,7 @@ object OpenListBridge : Event, LogCallback {
         if (ctx != null) {
             try {
                 LocalBroadcastManager.getInstance(ctx).sendBroadcast(
-                    Intent(OpenListService.BROADCAST_LOG)
+                    Intent(OpenListPluginService.BROADCAST_LOG)
                         .putExtra("level", level.toInt())
                         .putExtra("time", time)
                         .putExtra("log", log)

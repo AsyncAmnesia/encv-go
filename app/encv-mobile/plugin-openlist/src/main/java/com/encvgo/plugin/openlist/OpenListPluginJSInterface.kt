@@ -31,9 +31,15 @@ class OpenListPluginJSInterface(
     fun startOpenList(): String {
         return try {
             Log.e(tag, "[OpenList] JS -> startOpenList()")
-            // 启动前台服务
-            val intent = android.content.Intent(appContext, OpenListService::class.java)
-            appContext.startService(intent)
+            // Phase 25：plugin service 改为 OpenListPluginService (BasePluginService)。
+            // 此 Intent 指向 plugin service（系统找不到，因为 plugin 未 install）——dead code。
+            // 真正启动靠 host 反射 OpenListBridge.start()（A2 落地后改用 startPluginService）。
+            val intent = android.content.Intent(appContext, OpenListPluginService::class.java)
+            try {
+                appContext.startService(intent)
+            } catch (e: Throwable) {
+                Log.w(tag, "startService(Intent(OpenListPluginService)) failed (expected: plugin not system-installed)", e)
+            }
             // 等待服务启动完成后返回端口（简化：直接返回配置端口）
             val cfg = OpenListConfig.load(appContext)
             Log.e(tag, "[OpenList] startOpenList() OK | port=${cfg.port}")
@@ -48,7 +54,7 @@ class OpenListPluginJSInterface(
     fun stopOpenList(): Boolean {
         return try {
             Log.e(tag, "[OpenList] JS -> stopOpenList()")
-            OpenListService.stopIfRunning()
+            OpenListPluginService.stopIfRunning()
             Log.e(tag, "[OpenList] stopOpenList() OK")
             true
         } catch (e: Throwable) {
@@ -99,7 +105,7 @@ class OpenListPluginJSInterface(
                 adminPassword = password
             )
             // 如果服务正在运行，实时生效
-            if (OpenListService.isRunning) {
+            if (OpenListPluginService.isRunning) {
                 OpenListBridge.setAdminPassword(password)
             }
             true
@@ -179,7 +185,7 @@ class OpenListPluginJSInterface(
     @JavascriptInterface
     fun getIsRunning(): Boolean {
         return try {
-            OpenListService.isRunning
+            OpenListPluginService.isRunning
         } catch (e: Throwable) {
             false
         }

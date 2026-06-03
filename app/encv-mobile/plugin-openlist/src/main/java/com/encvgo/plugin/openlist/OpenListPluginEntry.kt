@@ -38,7 +38,7 @@ class OpenListPluginEntry : IPluginEntryClass {
     /**
      * ComboLite 框架加载插件时调用。
      *
-     * 修复：原来几乎为空，运行时启动委托给 OpenListService。
+     * 修复：原来几乎为空，运行时启动委托给 OpenListPluginService（Phase 25 前是 OpenListService）。
      * 现在：初始化 OpenListBridge + OpenListConfig（与 MpvPluginEntry 的 Content() 内
      * 初始化模式一致，只是提到 onLoad 阶段）。
      */
@@ -64,13 +64,18 @@ class OpenListPluginEntry : IPluginEntryClass {
      * ComboLite 框架卸载插件时调用。
      *
      * 修复：原来只 log，运行时继续在后台。
-     * 现在：shutdown Bridge + Service（彻底清理）。
+     * 现在：shutdown Bridge + PluginService（彻底清理）。
+     *
+     * Phase 25 改造：plugin service 改为 [OpenListPluginService]（BasePluginService 实现）。
+     * 如果 service 之前通过 [context.startPluginService] 启动过，
+     * [OpenListPluginService.stopIfRunning] 会优雅停掉；否则 no-op。
+     * （Phase 24 期间 service 是 dead code，本调用 no-op 是预期行为。）
      */
     override fun onUnload() {
         Log.e(tag, "[OpenList] onUnload()")
         try {
-            // 停止前台服务（如有运行）
-            OpenListService.stopIfRunning()
+            // 停止 plugin service（如有运行）
+            OpenListPluginService.stopIfRunning()
             // shutdown gomobile runtime
             OpenListBridge.shutdown(5_000L)
             Log.e(tag, "[OpenList] onUnload() OK")

@@ -39,12 +39,6 @@
             android:name="plugin.description"
             android:value="Local OpenList server plugin (gomobile bind)" />
 
-        <service
-            android:name=".OpenListService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-
         <provider
             android:name="com.encvgo.plugin.openlist.OpenListStatusProvider"
             android:authorities="com.encvgo.plugin.openlist.provider"

@@ -53,7 +53,7 @@ data class OpenListConfig(
      * Openlistlib.SetAdminPassword which queries the user DB; the DB isn't
      * initialized until Openlistlib.Init() (and even then, not until Start()
      * triggers bootstrap). Admin password reset must be deferred to AFTER
-     * the server has fully started (see OpenListService.startupSequence step6).
+     * the server has fully started (see OpenListPluginService.startupSequence step6).
      *
      * The actual port that openlistlib binds to is read from the on-disk
      * conf.Conf.Scheme.HttpPort at Start() time; this Kotlin-side port is
