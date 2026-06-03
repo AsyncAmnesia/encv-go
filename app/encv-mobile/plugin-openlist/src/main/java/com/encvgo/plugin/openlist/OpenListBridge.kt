@@ -387,8 +387,14 @@ object OpenListBridge : Event, LogCallback {
         }
     }
 
-    // === openlistlib.Event interface (gomobile generates camelCase) ===
-    override fun onStartError(t: String, err: String) {
+    // === openlistlib.Event interface ===
+    // gomobile generates Java method names matching the Go source naming.
+    // The Go interface (event.go / A2 fallback in build-openlist-aar.sh) declares:
+    //   OnStartError(eventType string, msg string)
+    //   OnShutdown(eventType string)
+    //   OnProcessExit(code int64)
+    // gomobile preserves these as Java method names (PascalCase).
+    override fun OnStartError(t: String, err: String) {
         Log.e(TAG, "[SAT-DBG][OpenList] OnStartError() | t=$t err=$err | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         val combined = "$t: $err"
         synchronized(lock) {
@@ -399,8 +405,8 @@ object OpenListBridge : Event, LogCallback {
         broadcastStatus(0, false)
     }
 
-    override fun onShutdown(t: String) {
-        Log.e(TAG, "[SAT-DBG][OpenList] OnShutdown() | t=$t | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
+    override fun OnShutdown(t: String) {
+        Log.e(TAG, "[SAT-DBG][OpenList] OnShutdown | t=$t | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         synchronized(lock) {
             running = false
             lastUpdateTs = System.currentTimeMillis()
@@ -408,7 +414,7 @@ object OpenListBridge : Event, LogCallback {
         broadcastStatus(0, false)
     }
 
-    override fun onProcessExit(code: Long) {
+    override fun OnProcessExit(code: Long) {
         Log.e(TAG, "[SAT-DBG][OpenList] OnProcessExit() | code=$code | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         val msg = "process exited with code $code"
         synchronized(lock) {
@@ -419,9 +425,9 @@ object OpenListBridge : Event, LogCallback {
         broadcastStatus(0, false)
     }
 
-    // === openlistlib.LogCallback interface (gomobile generates camelCase) ===
-    override fun onLog(level: Short, time: Long, log: String) {
-        // Mirror the logrus entry to local broadcast for in-process subscribers.
+    // === openlistlib.LogCallback interface ===
+    // Go: OnLog(level int16, time int64, log string) → Java: OnLog(short, long, String)
+    override fun OnLog(level: Short, time: Long, log: String) {
         val ctx = appContext
         if (ctx != null) {
             try {
@@ -435,7 +441,6 @@ object OpenListBridge : Event, LogCallback {
                 Log.e(TAG, "[SAT-DBG][OpenList] OnLog() broadcast FAILED", e)
             }
         }
-        // Update lastUpdateTs on every log line for liveness.
         val ts = System.currentTimeMillis()
         if (log.startsWith("data_size=")) {
             val raw = log.removePrefix("data_size=").trim()
