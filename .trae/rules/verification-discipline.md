@@ -280,3 +280,69 @@ done
 - 任何 `libs.X.Y` 引用都必须有 toml alias 对应（`toml alias 用 '-' 分隔, 访问器用 '.'`）
 - 改 build.gradle.kts 加新 `libs.*` 引用时,必须同时改 `libs.versions.toml` 声明
 - Gradle Kotlin DSL 脚本编译错误会污染整个 multi-project（**任何子项目配置期失败 → 其他子项目的任务也死**）
+
+### 7.8 gomobile Java 命名规则（**沙箱也能诊断**）
+
+> **Phase 17 踩坑**：CI 报 `Unresolved reference 'forceDbSync'.`（`OpenListBridge.kt:306`），
+> 一直猜是 gomobile 暴露了错误的方法名。其实**沙箱里能 100% 验证**：
+> 读 gomobile 源码里的 `lowerFirst()` 函数 + 读 fork 实际 Go 函数名 → 直接推导出 Java 名。
+
+**核心规则**（gomobile `cmd/gobind/gen.go:527 lowerFirst`）：
+
+```go
+func lowerFirst(s string) string {
+    // 逐 rune 走,遇到非大写就停
+    // 只 lowercase 第 1 个 rune,后面保留原样
+    // 例: "ForceDBSync" → "forceDBSync"   (DBSync 作为一个子词保留)
+    // 例: "SetConfigData" → "setConfigData"
+    // 例: "IsRunning" → "isRunning"
+}
+```
+
+**Go 函数名 → Java 方法名 速查**（fork `openlistlib/` 实际导出）：
+
+| Go 函数（PascalCase） | Java 方法（camelCase） | 本项目调用点 |
+|----------------------|----------------------|-------------|
+| `GetOutboundIP()` | `getOutboundIP()` | 未用 |
+| `GetOutboundIPString()` | `getOutboundIPString()` | 未用 |
+| `SetConfigData(path)` | `setConfigData(String)` | [OpenListBridge.kt:101](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListBridge.kt) ✅ |
+| `SetConfigLogStd(b)` | `setConfigLogStd(boolean)` | 未用 |
+| `SetConfigDebug(b)` | `setConfigDebug(boolean)` | 未用 |
+| `SetConfigNoPrefix(b)` | `setConfigNoPrefix(boolean)` | 未用 |
+| `SetAdminPassword(pwd)` | `setAdminPassword(String)` | [OpenListBridge.kt:330](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListBridge.kt) ✅ |
+| `Init(e Event, cb LogCallback)` | `init(Event, LogCallback)` | [OpenListBridge.kt:111](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListBridge.kt) ✅ |
+| `IsRunning(t)` | `isRunning(String)` | [OpenListBridge.kt:294](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListBridge.kt) ✅ |
+| `Start()` | `start()` | [OpenListBridge.kt:233](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListBridge.kt) ✅ |
+| `Shutdown(timeout)` | `shutdown(long)` | [OpenListBridge.kt:269](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListBridge.kt) ✅ |
+| **`ForceDBSync()`** | **`forceDBSync()`** | [OpenListBridge.kt:309](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListBridge.kt) ✅（Phase 17 修） |
+
+**沙箱自检脚本**（验证任意 Go 名字 → Java 名）：
+
+```bash
+# 用 gomobile 源码里的 lowerFirst 跑（直接复用其逻辑）
+cat > /tmp/lowerFirst.go <<'EOF'
+package main
+import ("fmt"; "unicode"; "unicode/utf8")
+func lowerFirst(s string) string {
+    if s == "" { return "" }
+    var conv []rune
+    for len(s) > 0 {
+        r, n := utf8.DecodeRuneInString(s)
+        if !unicode.IsUpper(r) {
+            if l := len(conv); l > 1 { conv[l-1] = unicode.ToUpper(conv[l-1]) }
+            return string(conv) + s
+        }
+        conv = append(conv, unicode.ToLower(r))
+        s = s[n:]
+    }
+    return string(conv)
+}
+func main() { fmt.Println(lowerFirst("ForceDBSync")) }
+EOF
+go run /tmp/lowerFirst.go
+# 期望输出: forceDBSync
+```
+
+**特别提醒**：
+- `DBSync` / `HTTPClient` 这种**全大写子词**会被保留（`lowerFirst` 只动首字符）
+- 写 Kotlin 包装函数时**注意 A2 fallback**：[`build-openlist-aar.sh:381`](file:///workspace/scripts/build-openlist-aar.sh) 只在 fork 缺 `openlistlib/event.go` 时才注入。Hi-Sillot/OpenList@`404daf0` 已自带 event.go（`OnProcessExit(code int)`）→ A2 fallback 被跳过 → gomobile 生成 `onProcessExit(int)`，**和现有 `code: Long` 不匹配**（下一轮 AAR 重构时会爆）。Phase 17 不动它，留作 Phase 18 风险登记。

@@ -22,7 +22,8 @@ import openlistlib.Openlistlib
  *     public static void start();                             // Start
  *     public static void shutdown(long timeoutMs);            // Shutdown
  *     public static boolean isRunning(String protocol);      // IsRunning
- *     public static void forceDbSync();                       // ForceDBSync
+ *     public static void forceDBSync();                        // ForceDBSync (Go) → forceDBSync (Java)
+ *                                                                 ^ gomobile lowerFirst: only first rune lowercased, DBSync preserved
  *   }
  *
  * IMPORTANT: gomobile generates **camelCase** Java method names from Go's
@@ -33,7 +34,7 @@ import openlistlib.Openlistlib
  * Rules enforced here:
  *   1. Openlistlib is abstract + private ctor → we only call its STATIC methods.
  *   2. Method names use gomobile's camelCase convention (Go Start → Java start).
- *   3. init/shutdown/forceDbSync may throw — wrap in try/catch.
+ *   3. init/shutdown/forceDBSync may throw — wrap in try/catch.
  *   4. Port is NOT an openlistlib API: it lives in on-disk conf.Conf.Scheme.HttpPort
  *      and is read by start() from there. We don't try to set it via the lib.
  *   5. setConfigData(dataDir) tells openlistlib where to look for the config dir.
@@ -303,7 +304,9 @@ object OpenListBridge : Event, LogCallback {
         Log.e(TAG, "[SAT-DBG][OpenList] forceDbSync() entry | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         Thread {
             try {
-                Openlistlib.forceDbSync()
+                // Phase 17 fix: gomobile lowerFirst maps Go "ForceDBSync" → Java "forceDBSync"
+                // (NOT "forceDbSync" — DBSync is preserved as a single subword, only first rune lowercased)
+                Openlistlib.forceDBSync()
                 val ts = System.currentTimeMillis()
                 synchronized(lock) { lastUpdateTs = ts }
                 Log.e(TAG, "[SAT-DBG][OpenList] forceDbSync() done | ts=$ts")

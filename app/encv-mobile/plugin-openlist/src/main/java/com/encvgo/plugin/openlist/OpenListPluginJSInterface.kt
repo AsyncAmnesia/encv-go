@@ -60,15 +60,19 @@ class OpenListPluginJSInterface(
     @JavascriptInterface
     fun getRuntimeStatus(): String {
         return try {
-            val snapshot = OpenListBridge.snapshot()
+            val snapshot = OpenListBridge.snapshot()  // Map<String, Any?>
             val cfg = OpenListConfig.load(appContext)
+            val isRunning = (snapshot["running"] as? Boolean) ?: false
+            // Phase 17 fix: snapshot() returns Map<String, Any?> (NOT a typed object).
+            // Must use map-key access (["key"]), not property access (.key).
+            // snake_case keys per OpenListBridge.snapshot() impl: "data_size_bytes" / "last_error" / "last_update_ts"
             JSONObject().apply {
-                put("running", snapshot.running)
-                put("port", if (snapshot.running) snapshot.port else cfg.port)
-                put("pid", snapshot.pid)
-                put("dataSizeBytes", snapshot.dataSizeBytes)
-                put("lastError", snapshot.lastError ?: "")
-                put("lastUpdateTs", snapshot.lastUpdateTs)
+                put("running", isRunning)
+                put("port", if (isRunning) (snapshot["port"] as? Int) ?: 0 else cfg.port)
+                put("pid", (snapshot["pid"] as? Int) ?: 0)
+                put("dataSizeBytes", (snapshot["data_size_bytes"] as? Long) ?: 0L)
+                put("lastError", (snapshot["last_error"] as? String) ?: "")
+                put("lastUpdateTs", (snapshot["last_update_ts"] as? Long) ?: 0L)
                 put("dataDir", cfg.dataDir)
                 put("isInstalled", true)
             }.toString()

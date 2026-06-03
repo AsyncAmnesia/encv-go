@@ -493,3 +493,44 @@
 - [ ] 16.3 沙箱验证：toml 23 个 lib alias + 5 个 plugin alias **全部唯一**（python tomllib 解析）
 - [ ] 16.4 沙箱验证：`/usr/local/bin/kotlinc-2.3.21` 跑 plugin-openlist 所有 .kt 文件 0 syntax / 0 abstract / 0 @Composable 错
 - [ ] 16.5 推送分支到 `trae/solo-agent-WAmQzy`，CI 跑通，下载 artifact 验证 openlist + mpv 双 APK 都生成
+
+## Phase 17: 8 个 unresolved reference（gomobile 命名 + Map property）
+
+> **症状（CI 实际）**：
+> ```
+> e: OpenListBridge.kt:306:29 Unresolved reference 'forceDbSync'.
+> e: OpenListPluginJSInterface.kt:66:41 Unresolved reference 'running'.
+> e: OpenListPluginJSInterface.kt:67:42 Unresolved reference 'running'.
+> e: OpenListPluginJSInterface.kt:67:60 Unresolved reference 'port'.
+> e: OpenListPluginJSInterface.kt:68:37 Unresolved reference 'pid'.
+> e: OpenListPluginJSInterface.kt:69:47 Unresolved reference 'dataSizeBytes'.
+> e: OpenListPluginJSInterface.kt:70:43 Unresolved reference 'lastError'.
+> e: OpenListPluginJSInterface.kt:71:46 Unresolved reference 'lastUpdateTs'.
+> ```
+>
+> **不要再猜——按用户指示「利用 CI 没有沙箱限制的优势诊断」**：
+> 1. clone 真 fork `https://github.com/Hi-Sillot/OpenList@dev`（沙箱能 clone）
+> 2. 读 fork `openlistlib/server.go` 找到实际 Go 函数名 `ForceDBSync`
+> 3. 读 gomobile 源码 `cmd/gobind/gen.go:527 lowerFirst` 找命名规则
+> 4. 用 Go 在沙箱里跑 `lowerFirst("ForceDBSync")` 实证
+
+- [ ] 17.1 **Bug 1**：`OpenListBridge.kt:306` 调用 `Openlistlib.forceDbSync()` → `Openlistlib.forceDBSync()`
+  - 根因：gomobile `lowerFirst("ForceDBSync")` = `"forceDBSync"`（保留 DBSync 子词大写，只动首字符）
+  - 头注释 line 25, 36 也一并改 `forceDbSync` → `forceDBSync`
+  - **沙箱实证**：`go run /tmp/lowerFirst.go` 输出 `forceDBSync`
+- [ ] 17.2 **Bug 2**：`OpenListPluginJSInterface.kt:66-71` 用 `snapshot.running` 等 property 访问
+  - 根因：`OpenListBridge.snapshot()` 返回 `Map<String, Any?>`，Kotlin Map 没有 `.running` 这种 property
+  - 修复：仿 [OpenListStatusProvider.kt:93-98](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListStatusProvider.kt) 改 `snapshot["running"] as? Boolean`
+  - 注意 key 用 snake_case（`data_size_bytes` / `last_error` / `last_update_ts`），JSON 输出再用 camelCase
+- [ ] 17.3 沙箱验证：`/usr/local/bin/kotlinc-2.3.21` 跑 fix 后
+  - 0 syntax / 0 abstract / 0 @Composable 错
+  - 0 unresolved `forceDbSync`（错名）—— 原 1 个
+  - 0 unresolved `running` / `port` / `pid` / `dataSizeBytes` / `lastError` / `lastUpdateTs` —— 原 7 个
+  - 剩 458 个 unresolved 全是预期第三方（android.* / com.combo.* / openlistlib.* / compose.* / koin.*）
+- [ ] 17.4 全仓库 grep `Openlistlib.<method>` 7 处调用，验证命名都正确（`setConfigData/init/start/shutdown/isRunning/setAdminPassword/forceDBSync`）
+- [ ] 17.5 **Phase 18 风险登记**（不修，仅登记）：
+  - [build-openlist-aar.sh:381](file:///workspace/scripts/build-openlist-aar.sh) A2 fallback 仅在 fork 缺 `openlistlib/event.go` 时注入
+  - Hi-Sillot/OpenList@`404daf0` **已自带** event.go（`OnProcessExit(code int)`）→ A2 跳过 → gomobile 生成 `onProcessExit(int)`
+  - 但 [OpenListBridge.kt:420](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListBridge.kt) 实现 `override fun onProcessExit(code: Long)` —— **下一轮 AAR 重建时会爆**
+  - 解决：把 `code: Long` 改 `code: Int`，或固定 fork 某个不带 event.go 的老 commit
+- [ ] 17.6 推送分支到 `trae/solo-agent-WAmQzy`，CI 跑通
