@@ -1,7 +1,6 @@
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
     alias(libs.plugins.combolite.aar2apk)
 }
 
@@ -25,9 +24,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
 
-    buildFeatures {
-        compose = true
-    }
+    // Phase 0 修复: 删除 buildFeatures { compose = true }
+    // Content() 改为嵌入式 WebView，不再需要 Compose Material3
 }
 
 kotlin {
@@ -47,11 +45,15 @@ dependencies {
     implementation(files("libs/openlist-classes.jar"))
     implementation("androidx.core:core-ktx")
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
-    implementation(platform(libs.compose.bom))
-    implementation(libs.compose.ui)
-    implementation(libs.compose.runtime)
-    implementation(libs.compose.material3)
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.4")
     compileOnly("io.insert-koin:koin-core:4.1.0")
+
+    // Phase 0 修复: 移除所有 compose 依赖
+    // - implementation(platform(libs.compose.bom))
+    // - implementation(libs.compose.ui)
+    // - implementation(libs.compose.runtime)
+    // - implementation(libs.compose.material3)
+    // - implementation("androidx.compose.material:material-icons-extended")
+    // - implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.4")
+    // Content() 现在用 AndroidView(WebView) 仅需 compose runtime 最小子集，
+    // 但 runtime 子集仍由 androidx.compose.runtime 提供，已被 core-ktx 等间接引入。
 }

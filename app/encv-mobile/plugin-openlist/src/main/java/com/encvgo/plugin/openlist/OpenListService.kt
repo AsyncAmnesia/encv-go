@@ -51,6 +51,22 @@ class OpenListService : Service() {
         private var instance: OpenListService? = null
 
         fun getInstance(): OpenListService? = instance
+
+        /**
+         * Phase 0 合规修复：供 OpenListPluginEntry.onUnload() 调用。
+         * 通知当前运行的 Service 优雅停止（如未运行则 no-op）。
+         */
+        fun stopIfRunning() {
+            val ctx = instance?.applicationContext ?: return
+            val intent = Intent(ctx, OpenListService::class.java).apply {
+                action = ACTION_SHUTDOWN
+            }
+            try {
+                ctx.startService(intent)
+            } catch (e: Exception) {
+                Log.w(TAG, "stopIfRunning: startService failed (maybe Service not declared)", e)
+            }
+        }
     }
 
     private val handler = Handler(Looper.getMainLooper())
