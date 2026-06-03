@@ -373,12 +373,30 @@ object OpenListBridge : Event, LogCallback {
         )
     }
 
+    /**
+     * Phase 22: 跨进程系统广播（替代轮询）。
+     * 历史：原 LocalBroadcastManager 是进程内广播，host 收不到 → 死代码。
+     * 现在改用 Context.sendBroadcast + setPackage 锁 host (com.encvgo.app)。
+     * 完整 snapshot 一起带上，host 不用再 query ContentProvider。
+     */
     fun broadcastStatus(port: Int, running: Boolean) {
         Log.e(TAG, "[SAT-DBG][OpenList] broadcastStatus() | port=$port running=$running | ts=${System.currentTimeMillis()}")
         val ctx = appContext ?: run {
             Log.e(TAG, "[SAT-DBG][OpenList] broadcastStatus() skipped (no appContext)")
             return
         }
+        val snap = synchronized(lock) {
+            mapOf(
+                "data_size_bytes" to dataSizeBytes,
+                "last_error" to (lastError ?: ""),
+                "last_update_ts" to lastUpdateTs,
+            )
+        }
+        val dataSize = (snap["data_size_bytes"] as? Long) ?: 0L
+        val lastError = (snap["last_error"] as? String) ?: ""
+        val lastUpdateTs = (snap["last_update_ts"] as? Long) ?: 0L
+
+        // 老 LocalBroadcastManager 保留
         try {
             LocalBroadcastManager.getInstance(ctx).sendBroadcast(
                 Intent(OpenListService.BROADCAST_STATUS_CHANGED)
@@ -386,7 +404,22 @@ object OpenListBridge : Event, LogCallback {
                     .putExtra(OpenListService.EXTRA_RUNNING, running)
             )
         } catch (e: Throwable) {
-            Log.e(TAG, "[SAT-DBG][OpenList] broadcastStatus() FAILED", e)
+            Log.e(TAG, "[SAT-DBG][OpenList] broadcastStatus() LocalBroadcastManager FAILED", e)
+        }
+
+        // 新跨进程系统广播 → host
+        val crossIntent = Intent(OpenListService.ACTION_STATUS_CHANGED)
+            .setPackage(OpenListService.HOST_PACKAGE_NAME)
+            .putExtra(OpenListService.EXTRA_PORT, port)
+            .putExtra(OpenListService.EXTRA_RUNNING, running)
+            .putExtra(OpenListService.EXTRA_DATA_SIZE_BYTES, dataSize)
+            .putExtra(OpenListService.EXTRA_LAST_ERROR, lastError)
+            .putExtra(OpenListService.EXTRA_LAST_UPDATE_TS, lastUpdateTs)
+        try {
+            ctx.sendBroadcast(crossIntent)
+            Log.e(TAG, "[SAT-DBG][OpenList] broadcastStatus() | crossBroadcast sent | port=$port running=$running dataSize=$dataSize lastErr='$lastError' | ts=${System.currentTimeMillis()}")
+        } catch (e: Throwable) {
+            Log.e(TAG, "[SAT-DBG][OpenList] broadcastStatus() crossBroadcast FAILED", e)
         }
     }
 

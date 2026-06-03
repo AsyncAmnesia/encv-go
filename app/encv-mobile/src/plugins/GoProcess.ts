@@ -397,3 +397,22 @@ export async function controlOpenList(action: 'start' | 'stop' | 'force_db_sync'
     return false
   }
 }
+
+/**
+ * Phase 22: 订阅 plugin-openlist 状态广播。
+ * host (GoProcessPlugin) 收到跨进程系统广播后调 notifyListeners('openlist:status', ...) 推送至此。
+ * 返回的 handle.remove() 必须在 onUnmounted 调用，避免内存泄漏。
+ */
+export function addOpenListStatusListener(
+  callback: (status: {
+    isInstalled: boolean
+    running: boolean
+    port: number
+    pid: number
+    dataSizeBytes: number
+    lastError: string
+    lastUpdateTs: number
+  }) => void,
+): Promise<{ remove: () => Promise<void> }> {
+  return (GoProcess as any).addListener('openlist:status', callback)
+}

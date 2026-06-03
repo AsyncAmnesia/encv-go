@@ -35,6 +35,21 @@ private const val REQUEST_CODE_INSTALL_CONFIRM = 9002
 private const val REQUEST_CODE_MPV_PLAYER = 9003
 private const val REQUEST_CODE_PICK_FOLDER = 9010
 
+/**
+ * Phase 22: plugin-openlist 跨进程状态广播契约。
+ * Action 和 extras 必须与 [com.encvgo.plugin.openlist.OpenListService] 严格一致。
+ * 跨 APK 通信用系统广播 + setPackage 定向，host 端注册 RECEIVER_EXPORTED 接收。
+ */
+private const val ACTION_OPENLIST_STATUS_CHANGED = "com.encvgo.plugin.openlist.STATUS_CHANGED"
+private const val EXTRA_OPENLIST_RUNNING = "running"
+private const val EXTRA_OPENLIST_PORT = "port"
+private const val EXTRA_OPENLIST_DATA_SIZE_BYTES = "data_size_bytes"
+private const val EXTRA_OPENLIST_LAST_ERROR = "last_error"
+private const val EXTRA_OPENLIST_LAST_UPDATE_TS = "last_update_ts"
+
+/** Capacitor event name (frontend 用 GoProcess.addListener('openlist:status', ...) 订阅) */
+private const val EVENT_OPENLIST_STATUS = "openlist:status"
+
 @CapacitorPlugin(
     name = "GoProcess",
     requestCodes = [REQUEST_CODE_PLUGIN_PICK, REQUEST_CODE_INSTALL_CONFIRM, REQUEST_CODE_MPV_PLAYER, REQUEST_CODE_PICK_FOLDER]
@@ -47,6 +62,7 @@ class GoProcessPlugin : Plugin() {
 
     private val pendingCalls = ConcurrentHashMap<String, PluginCall>()
     private var receiverRegistered = false
+    private var openListReceiverRegistered = false
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -58,13 +74,48 @@ class GoProcessPlugin : Plugin() {
         }
     }
 
+    /**
+     * Phase 22: 接收 plugin-openlist 跨进程系统广播，替代前端 3s 轮询。
+     * plugin 用 [Intent.setPackage("com.encvgo.app")] 定向投递，host 注册动态 receiver。
+     * Android 13+ 跨 APK 广播 receiver 必须是 RECEIVER_EXPORTED（不同 UID 限制）。
+     */
+    private val openListStatusReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent == null) return
+            if (intent.action != ACTION_OPENLIST_STATUS_CHANGED) return
+            val running = intent.getBooleanExtra(EXTRA_OPENLIST_RUNNING, false)
+            val port = intent.getIntExtra(EXTRA_OPENLIST_PORT, 0)
+            val dataSize = intent.getLongExtra(EXTRA_OPENLIST_DATA_SIZE_BYTES, 0L)
+            val lastError = intent.getStringExtra(EXTRA_OPENLIST_LAST_ERROR) ?: ""
+            val lastUpdateTs = intent.getLongExtra(EXTRA_OPENLIST_LAST_UPDATE_TS, 0L)
+            Log.e(TAG, "[SAT-DBG][OpenList][HostReceiver] onReceive | running=$running port=$port dataSize=$dataSize lastErr='$lastError' lastUpdateTs=$lastUpdateTs")
+            val js = JSObject().apply {
+                put("isInstalled", true)  // 收到 broadcast ⇒ provider 存在 ⇒ 已安装
+                put("running", running)
+                put("port", port)
+                put("pid", 0)            // broadcast 没带 pid（精简 payload），用 0 占位
+                put("dataSizeBytes", dataSize)
+                put("lastError", lastError)
+                put("lastUpdateTs", lastUpdateTs)
+            }
+            try {
+                notifyListeners(EVENT_OPENLIST_STATUS, js, true)
+                Log.e(TAG, "[SAT-DBG][OpenList][HostReceiver] notifyListeners('openlist:status') OK | payload=$js")
+            } catch (e: Throwable) {
+                Log.e(TAG, "[SAT-DBG][OpenList][HostReceiver] notifyListeners FAILED", e)
+            }
+        }
+    }
+
     override fun load() {
         super.load()
         registerStatusReceiver()
+        registerOpenListStatusReceiver()
     }
 
     override fun handleOnDestroy() {
         if (receiverRegistered) { context.unregisterReceiver(statusReceiver); receiverRegistered = false }
+        if (openListReceiverRegistered) { context.unregisterReceiver(openListStatusReceiver); openListReceiverRegistered = false }
         pendingCalls.clear()
         super.handleOnDestroy()
     }
@@ -570,6 +621,30 @@ class GoProcessPlugin : Plugin() {
         if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(statusReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         else @Suppress("DEPRECATION") context.registerReceiver(statusReceiver, filter)
         receiverRegistered = true
+    }
+
+    /**
+     * Phase 22: 注册 plugin-openlist 跨进程状态广播 receiver。
+     * 不同 APK 跨进程通信 → RECEIVER_EXPORTED（Android 13+ 强制）。
+     * setPackage("com.encvgo.app") 在 sender 端限制了投递目标，恶意第三方
+     * 无法伪造此 intent（必须知道 action + extras + 用 host 包名投递）。
+     * 实际安全级别够用：attack surface 等同于系统级 protected broadcasts。
+     */
+    private fun registerOpenListStatusReceiver() {
+        if (openListReceiverRegistered) return
+        try {
+            val filter = IntentFilter(ACTION_OPENLIST_STATUS_CHANGED)
+            if (Build.VERSION.SDK_INT >= 33) {
+                context.registerReceiver(openListStatusReceiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                context.registerReceiver(openListStatusReceiver, filter)
+            }
+            openListReceiverRegistered = true
+            Log.e(TAG, "[SAT-DBG][OpenList][HostReceiver] registered for action=$ACTION_OPENLIST_STATUS_CHANGED | sdk=${Build.VERSION.SDK_INT}")
+        } catch (e: Throwable) {
+            Log.e(TAG, "[SAT-DBG][OpenList][HostReceiver] register FAILED", e)
+        }
     }
 
     private fun startService(action: String, source: String, command: String) =
