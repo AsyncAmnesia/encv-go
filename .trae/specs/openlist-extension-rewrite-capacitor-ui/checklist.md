@@ -1,24 +1,29 @@
 # Checklist
 
-## Phase 1: 瘦身 Plugin APK（移除 Compose UI）
+## Phase 1: ComboLite 合规性诊断与修复（非 UI）
 
-- [ ] `OpenListPluginEntry.kt` 不包含任何 `@Composable` UI 组件（StatusCard/ControlCard/ConfigCard 已删除）
-- [ ] `OpenListPluginEntry.Content()` 返回空/最小占位 Composable
-- [ ] `build.gradle.kts` 不包含 compose plugin / buildFeatures / compose dependencies
-- [ ] `./gradlew :plugin-openlist:compileDebugKotlin` 编译通过
-- [ ] plugin-openlist 产物 AAR 不包含 `androidx.compose.*` 类
-- [ ] `./gradlew :combolite-host:compileDebugKotlin` 编译通过
+- [ ] `IPluginEntryClass` 接口契约已确认（onLoad/onUnload/Content/pluginModule 的要求）
+- [ ] MpvPluginEntry vs OpenListPluginEntry 差距分析完成
+- [ ] PluginLifecycleEngine 调用链路已确认
+- [ ] Service ↔ Plugin 生命周期同步方案确定
+- [ ] `onLoad()` / `onUnload()` 已修复符合规范
+- [ ] Content() 内 Bridge 调用有 try-catch 防御
+- [ ] Koin module 注册合规
+- [ ] `./gradlew :plugin-openlist:compileDebugKotlin` 通过
 
-## Phase 2: Host App 侧——"打开 OpenList"入口
+## Phase 2: Plugin APK Content() 瘦身
 
-- [ ] `LocalOpenListStatusCard.vue` 包含"打开 OpenList"按钮（调 Browser.open）
-- [ ] 按钮仅在 running=true 时可用
-- [ ] `@capacitor/browser` 在 package.json 中已声明依赖
-- [ ] Remote.vue 未被改造为管理面板
-- [ ] ExtensionsPage.vue 未增加启停控制或配置编辑功能
+- [ ] OpenListPluginEntry.kt 不包含 StatusCard/ControlCard/ConfigCard/InfoGrid/formatFileSize
+- [ ] 无 Compose Material3 import
+- [ ] Content() 返回空/最小占位
+- [ ] build.gradle.kts 无 compose plugin / buildFeatures / compose dependencies
+- [ ] 产物 AAR 不含 `androidx.compose.*` 类
+- [ ] combolite-host 编译通过
 
-## Phase 3: 清理验证
+## Phase 3: Host App — InAppBrowser 入口
 
-- [ ] TypeScript 编译通过（vue-tsc --noEmit 0 error）
-- [ ] plugin-openlist 目录无 Compose UI 残留引用
-- [ ] 全项目无外部文件引用被删除的 Compose 组件名
+- [ ] LocalOpenListStatusCard 包含"打开管理界面"按钮
+- [ ] 按钮调用 Browser/InAppBrowser 打开 `http://127.0.0.1:{port}/#/`
+- [ ] 按钮仅在 running=true 时 enabled
+- [ ] Capacitor browser/inappbrowser 依赖已在 package.json
+- [ ] vue-tsc --noEmit 通过 (0 errors)
