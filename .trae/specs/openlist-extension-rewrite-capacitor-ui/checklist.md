@@ -87,3 +87,20 @@
 - [ ] 浏览器访问 /webview 看到降级 UI
 - [ ] 用户运行 dev-openlist.sh 后 iframe 自动加载 OpenList SPA
 - [ ] vue-tsc --noEmit 通过
+
+## Phase 8: iframe 防御性状态 UI
+
+- [ ] IframeState 类型定义（5 态：probing/loading/connected/error/timeout）
+- [ ] 探测中状态显示 spinner + 目标地址
+- [ ] 加载中状态 iframe 半透明 0.6
+- [ ] 已连接状态绿色对勾 + 隐藏覆盖层
+- [ ] 错误状态红色 cloudOffline + lastError 详细信息
+- [ ] 超时状态黄色 timer + 「再试一次」按钮
+- [ ] 顶部状态条（颜色随状态变）
+- [ ] 顶部 toolbar 状态按钮（点击重试，probing 时禁用）
+- [ ] 「复制启动命令」按钮（navigator.clipboard + toast 反馈）
+- [ ] 探测超时 5s（cors 模式，区分 timeout vs error）
+- [ ] iframe sandbox 加固
+- [ ] 重试计数显示（retryCount > 0 时）
+- [ ] vue-tsc --noEmit 通过
+- [ ] 浏览器显示「错误」状态卡（带重试 + 复制命令）

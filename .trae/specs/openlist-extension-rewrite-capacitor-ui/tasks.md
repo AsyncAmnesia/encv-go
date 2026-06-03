@@ -205,11 +205,37 @@
 - [ ] 7.6 验证用户运行 `bash scripts/dev-openlist.sh` 后 iframe 自动加载 OpenList SPA（hash 路由 `#/login`）
 - [ ] 7.7 验证 `vue-tsc --noEmit` 通过
 
+## Phase 8: iframe 防御性状态 UI（5 态状态机）
+
+> **核心痛点**：之前 `v-show` 简单切 fallback，探测期间 iframe 是空白（用户感知「卡死/没反应」）。Phase 8 引入显式 5 态状态机 + 状态条 + 覆盖层 + 复制命令按钮，让每种异常都有明确视觉反馈。
+
+- [ ] 8.1 重写 `OpenListWebView.vue` 引入 `IframeState` 类型：
+  - `'probing'` 探测中（spinner + 「正在连接… 127.0.0.1:5244」）
+  - `'loading'` iframe 加载中（半透明 0.6）
+  - `'connected'` 已连接（绿色对勾 + 隐藏覆盖层）
+  - `'error'` 连接失败/502/404（红色 cloudOffline + lastError + 重试 + 复制命令）
+  - `'timeout'` 超时（黄色 timer + 「再试一次」）
+- [ ] 8.2 顶部 `ion-toolbar` 状态条（仅 probing/error/timeout 时显示）：
+  - 颜色随状态变（medium / danger / warning）
+  - 显示 icon + 状态文本
+- [ ] 8.3 覆盖层 `.state-overlay` 绝对定位遮挡 iframe 空白区
+  - 探测超时从 2s 提升到 5s（更宽容的慢网/慢启动）
+  - `mode: 'cors'` 显式探测（不再 no-cors，区分 timeout vs error）
+- [ ] 8.4 错误 UI 增加「复制启动命令」按钮（navigator.clipboard + toastController 反馈）
+- [ ] 8.5 顶部 toolbar 状态按钮（点一下重试）：
+  - icon 随状态变（checkmark / cloudOffline / timer / refresh）
+  - 颜色随状态变（success / danger / warning / medium）
+  - probing 时禁用（避免重复触发）
+- [ ] 8.6 iframe sandbox 属性加固（`allow-scripts allow-same-origin allow-forms allow-popups`）
+- [ ] 8.7 验证 `vue-tsc --noEmit` 通过
+- [ ] 8.8 验证 `/webview` 页面在 OpenList 未启动时显示「错误」状态卡（带重试 + 复制命令按钮）
+
 ## Task Dependencies
 
-- Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7
+- Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 → Phase 8
 - Phase 1 (Kotlin) 独立于 Phase 2-3 (Web)
 - Phase 2 (monorepo) 必须在 Phase 3 之前（共享包要先建好）
 - Phase 4 依赖 Phase 3（web 页面要先有，主 app 才能 import）
 - Phase 6 依赖 Phase 2-3（依赖 monorepo + 页面已建）
 - Phase 7 依赖 Phase 6（Vite dev server 必须已配好）
+- Phase 8 依赖 Phase 7（必须先有 iframe + 代理）
