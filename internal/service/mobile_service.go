@@ -19,8 +19,8 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/utils"
-	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
+	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/crypto"
 	"github.com/Soltus/encv-go/internal/v2/filename"
 	"github.com/Soltus/encv-go/internal/v2/handler"
@@ -88,8 +88,8 @@ type MobileService struct {
 	chunkNamers    []namer.ChunkNamer
 
 	// --- 可选依赖注入（用于测试） ---
-	dirReader        DirReader          // nil = 使用 os.ReadDir
-	containerDetector ContainerDetector  // nil = 使用 detector.DetectContainer
+	dirReader         DirReader         // nil = 使用 os.ReadDir
+	containerDetector ContainerDetector // nil = 使用 detector.DetectContainer
 }
 
 func NewMobileService(servingDir string, cfg *config.Config) *MobileService {
@@ -479,72 +479,72 @@ func (s *MobileService) GetFileInfo(queryPath string) (*FileInfoResult, error) {
 		}
 
 		if h.Version() == 4 && h.ManifestV4() != nil {
-		mf := h.ManifestV4()
-		hdr := h.HeaderV4()
+			mf := h.ManifestV4()
+			hdr := h.HeaderV4()
 
-		containerID := mf.ContainerID
-		if containerID == "" {
-			containerID = "(auto)"
-		}
-		result.Container["container_id"] = containerID
-		if cidStr, ok := result.Container["container_id"].(string); ok {
-			if !utf8.ValidString(cidStr) || !isPrintableJSONString(cidStr) {
-				result.Container["container_id"] = "(non-printable data)"
+			containerID := mf.ContainerID
+			if containerID == "" {
+				containerID = "(auto)"
 			}
-		}
-		if v, ok := result.Container["version"]; ok {
-			switch val := v.(type) {
-			case int:
-				if val < 0 || val > 999 {
-					result.Container["version"] = "?"
-				}
-			case float64:
-				if val < 0 || val > 999 {
-					result.Container["version"] = "?"
-				}
-			case string:
-				if !utf8.ValidString(val) || !isPrintableJSONString(val) {
-					result.Container["version"] = "?"
+			result.Container["container_id"] = containerID
+			if cidStr, ok := result.Container["container_id"].(string); ok {
+				if !utf8.ValidString(cidStr) || !isPrintableJSONString(cidStr) {
+					result.Container["container_id"] = "(non-printable data)"
 				}
 			}
-		}
-		result.Container["original_duration"] = mf.OriginalDuration
-		result.Container["segment_count"] = len(mf.Segments)
-		result.Container["manifest_size"] = hdr.ManifestLength
-		result.Container["header"] = map[string]interface{}{
-			"flags":           hdr.Flags,
-			"manifest_offset": hdr.ManifestOffset,
-			"manifest_length": hdr.ManifestLength,
-		}
+			if v, ok := result.Container["version"]; ok {
+				switch val := v.(type) {
+				case int:
+					if val < 0 || val > 999 {
+						result.Container["version"] = "?"
+					}
+				case float64:
+					if val < 0 || val > 999 {
+						result.Container["version"] = "?"
+					}
+				case string:
+					if !utf8.ValidString(val) || !isPrintableJSONString(val) {
+						result.Container["version"] = "?"
+					}
+				}
+			}
+			result.Container["original_duration"] = mf.OriginalDuration
+			result.Container["segment_count"] = len(mf.Segments)
+			result.Container["manifest_size"] = hdr.ManifestLength
+			result.Container["header"] = map[string]interface{}{
+				"flags":           hdr.Flags,
+				"manifest_offset": hdr.ManifestOffset,
+				"manifest_length": hdr.ManifestLength,
+			}
 
-		displayName, _ := filename.ResolveDisplayName(
-			context.Background(), result.Name, mf, hdr.Flags, "", filename.FNConfig{},
-		)
-		if displayName != result.Name {
-			result.DisplayName = displayName
-		}
-		result.Container["original_name"] = mf.OriginalName
-		result.Container["filename_alg"] = mf.FilenameAlgorithm
+			displayName, _ := filename.ResolveDisplayName(
+				context.Background(), result.Name, mf, hdr.Flags, "", filename.FNConfig{},
+			)
+			if displayName != result.Name {
+				result.DisplayName = displayName
+			}
+			result.Container["original_name"] = mf.OriginalName
+			result.Container["filename_alg"] = mf.FilenameAlgorithm
 
-		mfBytes, err := json.Marshal(mf)
-		if err != nil {
-			slog.Warn("GetFileInfo: failed to marshal manifest v4", "path", queryPath, "error", err)
-			result.Container["manifest"] = nil
-		} else if !utf8.Valid(mfBytes) {
-			slog.Warn("GetFileInfo: manifest v4 produced invalid UTF-8", "path", queryPath)
-			result.Container["manifest"] = "(contains invalid utf-8 data)"
-		} else {
-			var mfMap map[string]interface{}
-			if err := json.Unmarshal(mfBytes, &mfMap); err != nil {
-				slog.Warn("GetFileInfo: failed to unmarshal manifest v4", "path", queryPath, "error", err)
+			mfBytes, err := json.Marshal(mf)
+			if err != nil {
+				slog.Warn("GetFileInfo: failed to marshal manifest v4", "path", queryPath, "error", err)
 				result.Container["manifest"] = nil
+			} else if !utf8.Valid(mfBytes) {
+				slog.Warn("GetFileInfo: manifest v4 produced invalid UTF-8", "path", queryPath)
+				result.Container["manifest"] = "(contains invalid utf-8 data)"
 			} else {
-				delete(mfMap, "kvi")
-				sanitizeManifestMap(mfMap)
-				result.Container["manifest"] = mfMap
+				var mfMap map[string]interface{}
+				if err := json.Unmarshal(mfBytes, &mfMap); err != nil {
+					slog.Warn("GetFileInfo: failed to unmarshal manifest v4", "path", queryPath, "error", err)
+					result.Container["manifest"] = nil
+				} else {
+					delete(mfMap, "kvi")
+					sanitizeManifestMap(mfMap)
+					result.Container["manifest"] = mfMap
+				}
 			}
-		}
-	} else if h.Manifest() != nil {
+		} else if h.Manifest() != nil {
 			result.Container["manifest"] = h.Manifest()
 		}
 	}
@@ -559,9 +559,9 @@ type RenameFileRequest struct {
 }
 
 type RenameFileResponse struct {
-	Success      bool   `json:"success"`
+	Success     bool   `json:"success"`
 	DisplayName string `json:"display_name"`
-	Error        string `json:"error,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 func (s *MobileService) RenameFile(req *RenameFileRequest) (*RenameFileResponse, error) {
@@ -680,7 +680,7 @@ func (s *MobileService) RenameFile(req *RenameFileRequest) (*RenameFileResponse,
 		"encrypted", isEncrypted, "oldManifestLen", oldManifestLen, "newManifestLen", newManifestLen)
 
 	return &RenameFileResponse{
-		Success:      true,
+		Success:     true,
 		DisplayName: displayName,
 	}, nil
 }
@@ -1091,7 +1091,7 @@ func (s *MobileService) SearchFiles(queryPath string, keyword string, recursive 
 			}
 			return nil, err
 		}
-	for _, entry := range entries {
+		for _, entry := range entries {
 			if strings.HasPrefix(entry.Name(), ".") {
 				continue
 			}

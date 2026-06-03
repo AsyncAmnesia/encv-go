@@ -163,8 +163,8 @@ func TestTrimContainerExt(t *testing.T) {
 		{"foo.alist", "foo"},
 		{"foo.enc", "foo"},
 		{"foo.bin.bin", "foo.bin"}, // 只剥一次
-		{"foo", "foo"},              // 无后缀
-		{"foo.txt", "foo.txt"},      // 非容器后缀不动
+		{"foo", "foo"},             // 无后缀
+		{"foo.txt", "foo.txt"},     // 非容器后缀不动
 		{"encoded_test.mp4", "encoded_test.mp4"},
 	}
 	for _, c := range cases {

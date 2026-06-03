@@ -24,13 +24,13 @@ func AdaptV4ToV2(v4 *types.Manifest_v4, header *types.EnvelopeHeaderV4) *types.M
 		}
 
 		fragments[i] = types.Fragment{
-			ID:               seg.ID,
-			Type:             types.FragmentType_SeekableStream,
-			Length:           encDataSize,
+			ID:                seg.ID,
+			Type:              types.FragmentType_SeekableStream,
+			Length:            encDataSize,
 			GlobalStartOffset: runningOffset,
-			DataCRC32:        0,
-			PhysicalPath:     "",
-			PhysicalOffset:   physicalOffset,
+			DataCRC32:         0,
+			PhysicalPath:      "",
+			PhysicalOffset:    physicalOffset,
 		}
 		runningOffset += encDataSize
 	}

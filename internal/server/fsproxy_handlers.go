@@ -5,10 +5,10 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/gin-gonic/gin"
 	"github.com/Soltus/encv-go/internal/auth"
 	"github.com/Soltus/encv-go/internal/injector"
 	"github.com/Soltus/encv-go/internal/routes"
+	"github.com/gin-gonic/gin"
 )
 
 func (s *Server) handleFSProxyGin(c *gin.Context) {

@@ -218,7 +218,7 @@ func (p *ImagePlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 				Required:     false,
 				DefaultValue: "false",
 				Help:         "tasks.encryptFilenameHelp",
-				Condition:     "encrypt",
+				Condition:    "encrypt",
 			},
 			{
 				Key:          "fn_rounds",
@@ -229,7 +229,7 @@ func (p *ImagePlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 				Help:         "tasks.fnRoundsHelp",
 				Options:      []string{"4", "8", "12", "16"},
 				OptionLabels: map[string]string{"4": "4", "8": "8 (Recommended)", "12": "12", "16": "16"},
-				Condition:     "encrypt",
+				Condition:    "encrypt",
 			},
 			{
 				Key:          "fn_charset",
@@ -240,7 +240,7 @@ func (p *ImagePlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 				Help:         "tasks.fnCharsetHelp",
 				Options:      []string{"alnum", "alnum_symbols", "full"},
 				OptionLabels: map[string]string{"alnum": "Alphanumeric", "alnum_symbols": "Alnum + Symbols", "full": "Full (Alnum+Symbols+Hanzi+Emoji)"},
-				Condition:     "encrypt",
+				Condition:    "encrypt",
 			},
 			{
 				Key:          "fn_deconfuse",
@@ -249,7 +249,7 @@ func (p *ImagePlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 				Required:     false,
 				DefaultValue: "false",
 				Help:         "tasks.fnDeconfuseHelp",
-				Condition:     "encrypt",
+				Condition:    "encrypt",
 			},
 			{
 				Key:          "fn_structured",
@@ -258,7 +258,7 @@ func (p *ImagePlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 				Required:     false,
 				DefaultValue: "false",
 				Help:         "tasks.fnStructuredHelp",
-				Condition:     "encrypt",
+				Condition:    "encrypt",
 			},
 		},
 	}

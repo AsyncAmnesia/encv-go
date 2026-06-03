@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	"github.com/Soltus/encv-go/internal/auth"
 	"github.com/Soltus/encv-go/internal/routes"
+	"github.com/gin-gonic/gin"
 )
 
 func JWTAuthMiddleware(jwtManager *auth.JWTManager) gin.HandlerFunc {

@@ -17,13 +17,13 @@ func initPluginsForTaskOptions(t *testing.T) {
 	cfg := &config.Config{
 		Password: "global-test-pw",
 		PluginSettings: map[string]json.RawMessage{
-			"video":        json.RawMessage(`{"suffix": ".encv"}`),
+			"video":         json.RawMessage(`{"suffix": ".encv"}`),
 			"alist_encrypt": json.RawMessage(`{"suffix": ".bin", "enc_type": "aesctr"}`),
-			"text":         json.RawMessage(`{"suffix": ".sccgt"}`),
-			"audio":        json.RawMessage(`{"suffix": ".sccga"}`),
-			"image":        json.RawMessage(`{"suffix": ".sccgi"}`),
-			"pdf":          json.RawMessage(`{"suffix": ".sccgp"}`),
-			"wps":          json.RawMessage(`{"suffix": ".sccgw"}`),
+			"text":          json.RawMessage(`{"suffix": ".sccgt"}`),
+			"audio":         json.RawMessage(`{"suffix": ".sccga"}`),
+			"image":         json.RawMessage(`{"suffix": ".sccgi"}`),
+			"pdf":           json.RawMessage(`{"suffix": ".sccgp"}`),
+			"wps":           json.RawMessage(`{"suffix": ".sccgw"}`),
 		},
 	}
 	ctx := config.NewContext(context.Background(), cfg)

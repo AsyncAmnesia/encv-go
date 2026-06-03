@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
+	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
@@ -308,7 +308,6 @@ func (r *fileContainerReader) acquireMainFile() (*os.File, bool, error) {
 	}
 	return f, false, err
 }
-
 
 // findManifestBlockOffset 是一个辅助函数，用于找到 Manifest 块的起始偏移量。
 // 它会从文件开头扫描，直到找到第一个 BlockTypeManifest_v2 类型的块。

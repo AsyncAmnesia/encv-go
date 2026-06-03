@@ -182,8 +182,8 @@ func TestAesCtrKeyDerivation(t *testing.T) {
 
 func TestAesCtrEncryptDecryptRoundtrip(t *testing.T) {
 	testCases := []struct {
-		name     string
-		data     string
+		name string
+		data string
 	}{
 		{"empty", ""},
 		{"1_byte", "\x00"},
@@ -273,9 +273,9 @@ func TestSetPositionSeek(t *testing.T) {
 	encCipher.Encrypt(encrypted)
 
 	tests := []struct {
-		name           string
-		position       int64
-		expectStart    int
+		name        string
+		position    int64
+		expectStart int
 	}{
 		{"position_0_from_start", 0, 0},
 		{"position_16_skip_one_block", 16, 16},
@@ -432,9 +432,9 @@ func TestMixBase64FilenameRoundtrip(t *testing.T) {
 // 范式：EncodeName(baseName) + ext（ext 是用户原 ext，不是 .bin）
 func TestConvertRealNameParity(t *testing.T) {
 	cases := []struct {
-		showName  string
-		password  string
-		wantExt   string
+		showName string
+		password string
+		wantExt  string
 	}{
 		{"CAD放样.mp4", "8682268", ".mp4"},
 		{"test.txt", "pw", ".txt"},

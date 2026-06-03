@@ -283,5 +283,3 @@ func makeTestKVI_v4(salt []byte) json.RawMessage {
 	data, _ := json.Marshal(kvi)
 	return data
 }
-
-

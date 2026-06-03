@@ -9,22 +9,22 @@ import (
 )
 
 type TaskWithWarnings struct {
-	ID               string            `json:"id"`
-	Type             string            `json:"type"`
-	SourcePath       string            `json:"sourcePath"`
-	Status           string            `json:"status"`
-	Progress         int               `json:"progress"`
-	Error            string            `json:"error,omitempty"`
-	Warning          string            `json:"warning,omitempty"`
-	WarningDetail    []WarningDetail   `json:"warningDetail,omitempty"`
-	ContainerVersion int               `json:"containerVersion,omitempty"`
-	CreatedAt        time.Time         `json:"createdAt"`
-	CompletedAt      *time.Time        `json:"completedAt,omitempty"`
+	ID               string          `json:"id"`
+	Type             string          `json:"type"`
+	SourcePath       string          `json:"sourcePath"`
+	Status           string          `json:"status"`
+	Progress         int             `json:"progress"`
+	Error            string          `json:"error,omitempty"`
+	Warning          string          `json:"warning,omitempty"`
+	WarningDetail    []WarningDetail `json:"warningDetail,omitempty"`
+	ContainerVersion int             `json:"containerVersion,omitempty"`
+	CreatedAt        time.Time       `json:"createdAt"`
+	CompletedAt      *time.Time      `json:"completedAt,omitempty"`
 }
 
 type WarningDetail struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code     string `json:"code"`
+	Message  string `json:"message"`
 	Severity string `json:"severity"`
 }
 
@@ -97,81 +97,81 @@ func TestTask_WarningFields_Optional(t *testing.T) {
 	now := time.Now()
 
 	tests := []struct {
-		name           string
-		task           TaskWithWarnings
-		expectWarning  bool
-		expectDetail   bool
+		name          string
+		task          TaskWithWarnings
+		expectWarning bool
+		expectDetail  bool
 	}{
 		{
 			name: "no warnings - clean completion",
 			task: TaskWithWarnings{
-				ID:        "task-clean",
-				Type:      "encrypt",
+				ID:         "task-clean",
+				Type:       "encrypt",
 				SourcePath: "/input/video.mp4",
-				Status:    "completed",
-				Progress:  100,
-				CreatedAt: now,
+				Status:     "completed",
+				Progress:   100,
+				CreatedAt:  now,
 			},
 			expectWarning: false,
-			expectDetail: false,
+			expectDetail:  false,
 		},
 		{
 			name: "with warning only",
 			task: TaskWithWarnings{
-				ID:        "task-warn-only",
-				Type:      "encrypt",
+				ID:         "task-warn-only",
+				Type:       "encrypt",
 				SourcePath: "/input/video.mp4",
-				Status:    "completed",
-				Progress:  100,
-				Warning:   "minor issue detected",
-				CreatedAt: now,
+				Status:     "completed",
+				Progress:   100,
+				Warning:    "minor issue detected",
+				CreatedAt:  now,
 			},
 			expectWarning: true,
-			expectDetail: false,
+			expectDetail:  false,
 		},
 		{
 			name: "with warning detail only",
 			task: TaskWithWarnings{
-				ID:        "task-detail-only",
-				Type:      "encrypt",
+				ID:         "task-detail-only",
+				Type:       "encrypt",
 				SourcePath: "/input/video.mp4",
-				Status:    "completed",
-				Progress:  100,
+				Status:     "completed",
+				Progress:   100,
 				WarningDetail: []WarningDetail{
 					{Code: "TEST_CODE", Message: "test message", Severity: "info"},
 				},
 				CreatedAt: now,
 			},
 			expectWarning: false,
-			expectDetail: true,
+			expectDetail:  true,
 		},
 		{
 			name: "empty warning string should be omitted",
 			task: TaskWithWarnings{
-				ID:        "task-empty-warn",
-				Type:      "encrypt",
+				ID:         "task-empty-warn",
+				Type:       "encrypt",
 				SourcePath: "/input/video.mp4",
-				Status:    "completed",
-				Progress:  100,
-				Warning:   "",
-				CreatedAt: now,
+				Status:     "completed",
+				Progress:   100,
+				Warning:    "",
+				CreatedAt:  now,
 			},
 			expectWarning: false,
-			expectDetail: false,
+			expectDetail:  false,
 		},
 		{
 			name: "empty warning detail slice should be omitted",
 			task: TaskWithWarnings{
-				ID:             "task-empty-detail",
-				Type:           "encrypt",
-				SourcePath:     "/input/video.mp4",
-				Status:         "completed",
-				Progress:       100,
-				WarningDetail:  []WarningDetail{},
-				CreatedAt:      now,
+				ID:            "task-empty-detail",
+				Type:          "encrypt",
+				SourcePath:    "/input/video.mp4",
+				Status:        "completed",
+				Progress:      100,
+				WarningDetail: []WarningDetail{},
+				CreatedAt:     now,
 			},
 			expectWarning: false,
-			expectDetail: false,
+			expectDetail:  false,
 		},
 	}
 
@@ -207,53 +207,53 @@ func TestTask_WarningFields_Optional(t *testing.T) {
 
 func TestTask_CompletedWithWarning_DisplayLogic(t *testing.T) {
 	tests := []struct {
-		name           string
-		status         string
-		warning        string
-		detailCount    int
+		name               string
+		status             string
+		warning            string
+		detailCount        int
 		isValidCombination bool
 	}{
 		{
-			name:                "completed with single warning is valid",
-			status:              "completed",
-			warning:             "1 warning during encryption",
-			detailCount:         1,
-			isValidCombination:  true,
+			name:               "completed with single warning is valid",
+			status:             "completed",
+			warning:            "1 warning during encryption",
+			detailCount:        1,
+			isValidCombination: true,
 		},
 		{
-			name:                "completed with multiple warnings is valid",
-			status:              "completed",
-			warning:             "3 warnings during verification",
-			detailCount:         3,
-			isValidCombination:  true,
+			name:               "completed with multiple warnings is valid",
+			status:             "completed",
+			warning:            "3 warnings during verification",
+			detailCount:        3,
+			isValidCombination: true,
 		},
 		{
-			name:                "completed without warning is valid",
-			status:              "completed",
-			warning:             "",
-			detailCount:         0,
-			isValidCombination:  true,
+			name:               "completed without warning is valid",
+			status:             "completed",
+			warning:            "",
+			detailCount:        0,
+			isValidCombination: true,
 		},
 		{
-			name:                "running status with warning is valid (early detection)",
-			status:              "running",
-			warning:             "potential issue detected at 50%",
-			detailCount:         1,
-			isValidCombination:  true,
+			name:               "running status with warning is valid (early detection)",
+			status:             "running",
+			warning:            "potential issue detected at 50%",
+			detailCount:        1,
+			isValidCombination: true,
 		},
 		{
-			name:                "failed status with warning is valid (contextual info)",
-			status:              "failed",
-			warning:             "failure preceded by 2 warnings",
-			detailCount:         2,
-			isValidCombination:  true,
+			name:               "failed status with warning is valid (contextual info)",
+			status:             "failed",
+			warning:            "failure preceded by 2 warnings",
+			detailCount:        2,
+			isValidCombination: true,
 		},
 		{
-			name:                "queued status should not have warnings",
-			status:              "queued",
-			warning:             "",
-			detailCount:         0,
-			isValidCombination:  true,
+			name:               "queued status should not have warnings",
+			status:             "queued",
+			warning:            "",
+			detailCount:        0,
+			isValidCombination: true,
 		},
 	}
 
@@ -263,8 +263,8 @@ func TestTask_CompletedWithWarning_DisplayLogic(t *testing.T) {
 			details := make([]WarningDetail, tt.detailCount)
 			for i := range details {
 				details[i] = WarningDetail{
-					Code:    fmt.Sprintf("WARN_%03d", i+1),
-					Message: fmt.Sprintf("warning detail #%d", i+1),
+					Code:     fmt.Sprintf("WARN_%03d", i+1),
+					Message:  fmt.Sprintf("warning detail #%d", i+1),
 					Severity: "info",
 				}
 			}

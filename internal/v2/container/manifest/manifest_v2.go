@@ -242,7 +242,6 @@ func ReadManifestFromFile(filePath string) (*types.Manifest, *types.EnvelopeFoot
 	return manifest, footer, headerVersion, headerSize, nil
 }
 
-
 // ScanManifestFromFile 从头扫描文件，寻找 Manifest 块
 func ScanManifestFromFile(filePath string) (*types.Manifest, int, int64, error) {
 	file, err := os.Open(filePath)

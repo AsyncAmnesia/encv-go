@@ -13,17 +13,17 @@ import (
 
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/v2/crypto"
-	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	"github.com/Soltus/encv-go/internal/v2/namer"
+	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 
 type AlistEncryptPlugin struct {
-	ctx            context.Context
-	cfg            *config.Config
-	settings       AlistEncryptPluginConfig
-	outputDir      string
-	inputPath      string
+	ctx             context.Context
+	cfg             *config.Config
+	settings        AlistEncryptPluginConfig
+	outputDir       string
+	inputPath       string
 	taskExtraFields map[string]string
 }
 
@@ -213,18 +213,18 @@ func (p *AlistEncryptPlugin) CanDecrypt(containerPath string) bool {
 // 4-byte size), so we search the whole window rather than only its start.
 func hasKnownMediaMagic(b []byte) bool {
 	checks := [][]byte{
-		[]byte("ftyp"),                    // MP4 / MOV / HEIC (at offset 4 normally)
-		[]byte{0x1A, 0x45, 0xDF, 0xA3},    // MKV / WebM (EBML)
-		[]byte("RIFF"),                    // AVI / WAV
-		[]byte("OggS"),                    // OGG
-		[]byte("ID3"),                     // MP3
-		[]byte("fLaC"),                    // FLAC
-		[]byte("\xFF\xD8\xFF"),            // JPEG
-		[]byte("\x89PNG"),                 // PNG
-		[]byte("GIF8"),                    // GIF
-		[]byte("%PDF"),                    // PDF
-		[]byte("<?xml"),                   // XML
-		[]byte("<!DOCTYPE html"),          // HTML
+		[]byte("ftyp"),                 // MP4 / MOV / HEIC (at offset 4 normally)
+		[]byte{0x1A, 0x45, 0xDF, 0xA3}, // MKV / WebM (EBML)
+		[]byte("RIFF"),                 // AVI / WAV
+		[]byte("OggS"),                 // OGG
+		[]byte("ID3"),                  // MP3
+		[]byte("fLaC"),                 // FLAC
+		[]byte("\xFF\xD8\xFF"),         // JPEG
+		[]byte("\x89PNG"),              // PNG
+		[]byte("GIF8"),                 // GIF
+		[]byte("%PDF"),                 // PDF
+		[]byte("<?xml"),                // XML
+		[]byte("<!DOCTYPE html"),       // HTML
 	}
 	for _, c := range checks {
 		if len(c) > len(b) {
@@ -308,7 +308,7 @@ func (p *AlistEncryptPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 				Required:     false,
 				DefaultValue: "false",
 				Help:         "tasks.encodeFilenameHelp",
-				Condition:     "encrypt",
+				Condition:    "encrypt",
 			},
 			{
 				Key:          "enc_type",
@@ -319,7 +319,7 @@ func (p *AlistEncryptPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 				Help:         "tasks.encTypeHelp",
 				Options:      []string{"aesctr"},
 				OptionLabels: map[string]string{"aesctr": "AES-CTR-128"},
-				Condition:     "encrypt",
+				Condition:    "encrypt",
 			},
 		},
 	}

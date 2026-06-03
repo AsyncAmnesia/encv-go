@@ -27,21 +27,21 @@ type MockContainerHandle struct {
 	CloseErr            error
 }
 
-func (m *MockContainerHandle) Version() int                        { return m.VersionVal }
-func (m *MockContainerHandle) HeaderSize() int64                   { return m.HeaderSizeVal }
-func (m *MockContainerHandle) ContainerType() uint16              { return m.ContainerTypeVal }
-func (m *MockContainerHandle) IsSeekable() bool                   { return m.IsSeekableVal }
-func (m *MockContainerHandle) ContainerID() string                { return m.ContainerIDVal }
-func (m *MockContainerHandle) OriginalDuration() float64          { return m.OriginalDurationVal }
-func (m *MockContainerHandle) Manifest() *types.Manifest          { return m.ManifestVal }
-func (m *MockContainerHandle) ManifestV4() *types.Manifest_v4     { return m.ManifestV4Val }
-func (m *MockContainerHandle) HeaderV2() *types.EnvelopeHeader_v2  { return m.HeaderV2Val }
-func (m *MockContainerHandle) HeaderV3() *types.EnvelopeHeaderV3   { return m.HeaderV3Val }
-func (m *MockContainerHandle) HeaderV4() *types.EnvelopeHeaderV4   { return m.HeaderV4Val }
-func (m *MockContainerHandle) FooterV2() *types.EnvelopeFooter_v2  { return m.FooterV2Val }
-func (m *MockContainerHandle) FooterV4() *types.EnvelopeFooterV4  { return m.FooterV4Val }
+func (m *MockContainerHandle) Version() int                            { return m.VersionVal }
+func (m *MockContainerHandle) HeaderSize() int64                       { return m.HeaderSizeVal }
+func (m *MockContainerHandle) ContainerType() uint16                   { return m.ContainerTypeVal }
+func (m *MockContainerHandle) IsSeekable() bool                        { return m.IsSeekableVal }
+func (m *MockContainerHandle) ContainerID() string                     { return m.ContainerIDVal }
+func (m *MockContainerHandle) OriginalDuration() float64               { return m.OriginalDurationVal }
+func (m *MockContainerHandle) Manifest() *types.Manifest               { return m.ManifestVal }
+func (m *MockContainerHandle) ManifestV4() *types.Manifest_v4          { return m.ManifestV4Val }
+func (m *MockContainerHandle) HeaderV2() *types.EnvelopeHeader_v2      { return m.HeaderV2Val }
+func (m *MockContainerHandle) HeaderV3() *types.EnvelopeHeaderV3       { return m.HeaderV3Val }
+func (m *MockContainerHandle) HeaderV4() *types.EnvelopeHeaderV4       { return m.HeaderV4Val }
+func (m *MockContainerHandle) FooterV2() *types.EnvelopeFooter_v2      { return m.FooterV2Val }
+func (m *MockContainerHandle) FooterV4() *types.EnvelopeFooterV4       { return m.FooterV4Val }
 func (m *MockContainerHandle) Source() containerhandle.ContainerSource { return m.SourceVal }
-func (m *MockContainerHandle) Close() error                       { return m.CloseErr }
+func (m *MockContainerHandle) Close() error                            { return m.CloseErr }
 
 // NewMockV4Handle 创建一个模拟 V4 容器句柄（常用快捷方法）
 func NewMockV4Handle(containerType uint16, isSeekable bool, segmentCount int, manifestSize uint32) *MockContainerHandle {
@@ -56,7 +56,12 @@ func NewMockV4Handle(containerType uint16, isSeekable bool, segmentCount int, ma
 			ManifestOffset: 2048,
 			ManifestLength: uint32(manifestSize),
 			ContainerType:  containerType,
-			IsSeekable:     func() uint8 { if isSeekable { return 1 }; return 0 }(),
+			IsSeekable: func() uint8 {
+				if isSeekable {
+					return 1
+				}
+				return 0
+			}(),
 		},
 		FooterV4Val: &types.EnvelopeFooterV4{},
 		ManifestV4Val: &types.Manifest_v4{

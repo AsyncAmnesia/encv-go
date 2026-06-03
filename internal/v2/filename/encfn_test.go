@@ -142,31 +142,31 @@ func TestDeterminism(t *testing.T) {
 
 func TestBuildCharsetTable(t *testing.T) {
 	tests := []struct {
-		name          string
-		charsets      []FNCharset
-		deconfuse     bool
-		wantSize      int
-		wantErr       bool
-		wantContains  []rune
+		name            string
+		charsets        []FNCharset
+		deconfuse       bool
+		wantSize        int
+		wantErr         bool
+		wantContains    []rune
 		wantNotContains []rune
 	}{
 		{
-			name:     "alnum_only_no_deconfuse",
-			charsets: []FNCharset{},
+			name:      "alnum_only_no_deconfuse",
+			charsets:  []FNCharset{},
 			deconfuse: false,
-			wantSize: 62,
+			wantSize:  62,
 		},
 		{
-			name:     "alnum_only_deconfuse",
-			charsets: []FNCharset{},
+			name:      "alnum_only_deconfuse",
+			charsets:  []FNCharset{},
 			deconfuse: true,
-			wantSize: 56,
+			wantSize:  56,
 		},
 		{
-			name:          "hanzi_rare_deconfuse",
-			charsets:      []FNCharset{FNHanziRare},
-			deconfuse:     true,
-			wantSize:      -1,
+			name:            "hanzi_rare_deconfuse",
+			charsets:        []FNCharset{FNHanziRare},
+			deconfuse:       true,
+			wantSize:        -1,
 			wantNotContains: []rune{'0', 'O', 'o', '1', 'l', 'I'},
 		},
 		{
@@ -391,8 +391,8 @@ func TestDecodeErrors(t *testing.T) {
 
 func TestDifferentCharsetsRoundtrip(t *testing.T) {
 	testCases := []struct {
-		name     string
-		charsets []FNCharset
+		name      string
+		charsets  []FNCharset
 		deconfuse bool
 	}{
 		{"alnum_only", []FNCharset{}, true},
@@ -409,7 +409,7 @@ func TestDifferentCharsetsRoundtrip(t *testing.T) {
 				Password:  []byte("charset-test-pw"),
 				Salt:      []byte("charset-salt"),
 				Charsets:  tc.charsets,
-				Deconfuse:  tc.deconfuse,
+				Deconfuse: tc.deconfuse,
 				Rounds:    6,
 			}
 

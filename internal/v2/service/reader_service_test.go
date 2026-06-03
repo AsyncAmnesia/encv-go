@@ -31,18 +31,18 @@ type testKVI struct {
 	types.KVI
 }
 
-func (k testKVI) GetKind() types.IndexKind             { return "video" }
-func (k testKVI) GetEncryptionInfo() types.KVI          { return k.KVI }
-func (k testKVI) GetIndex() types.Index                 { return &testIndex{} }
+func (k testKVI) GetKind() types.IndexKind     { return "video" }
+func (k testKVI) GetEncryptionInfo() types.KVI { return k.KVI }
+func (k testKVI) GetIndex() types.Index        { return &testIndex{} }
 
 // testIndex 测试专用 Index 实现
 type testIndex struct{}
 
-func (i *testIndex) GetOriginalFilename() string      { return "fixture_video.mp4" }
-func (i *testIndex) GetOriginalFileSize() int64       { return 0 }
-func (i *testIndex) GetOriginalFileMD5() string        { return "" }
-func (i *testIndex) GetEncryptedFileMD5() string       { return "" }
-func (i *testIndex) GetMimeType() string               { return "video/mp4" }
+func (i *testIndex) GetOriginalFilename() string { return "fixture_video.mp4" }
+func (i *testIndex) GetOriginalFileSize() int64  { return 0 }
+func (i *testIndex) GetOriginalFileMD5() string  { return "" }
+func (i *testIndex) GetEncryptedFileMD5() string { return "" }
+func (i *testIndex) GetMimeType() string         { return "video/mp4" }
 
 // newTestReaderService 创建 ReaderService 测试辅助函数
 func newTestReaderService(t *testing.T) (*ReaderService, *testutil.ContainerFixture) {

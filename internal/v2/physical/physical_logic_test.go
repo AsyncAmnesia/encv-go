@@ -167,10 +167,10 @@ func TestFileChunkerPhysicalPacker_MultipleChunks(t *testing.T) {
 		"chunkSize < dataSize 时应产生多个分片文件，实际得到: %d 个", len(partFiles))
 
 	for _, name := range partFiles {
-	 fullPath := filepath.Join(outputDir, name)
+		fullPath := filepath.Join(outputDir, name)
 		info, err := os.Stat(fullPath)
-	 require.NoError(t, err)
-	 assert.Greater(t, info.Size(), int64(0), "每个分片文件大小应 > 0: %s", name)
+		require.NoError(t, err)
+		assert.Greater(t, info.Size(), int64(0), "每个分片文件大小应 > 0: %s", name)
 	}
 }
 

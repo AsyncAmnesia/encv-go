@@ -449,7 +449,7 @@ func (fs *encvWebDAVFS) removeEntryUnsafe(virtualPath, physicalPath string) {
 		}
 		fs.indexes.dirMap[parentDir] = newEntries
 	}
-		slog.Debug("Removed entry from index", "path", virtualPath)
+	slog.Debug("Removed entry from index", "path", virtualPath)
 }
 
 // getIndexes 现在安全地返回当前索引的深拷贝快照
@@ -499,10 +499,10 @@ type IndexProvider interface {
 }
 
 type IndexStatsResult struct {
-	TotalFiles   int `json:"totalFiles"`
-	TotalDirs    int `json:"totalDirs"`
-	Containers   int `json:"containers"`
-	Source       string `json:"source"`
+	TotalFiles int    `json:"totalFiles"`
+	TotalDirs  int    `json:"totalDirs"`
+	Containers int    `json:"containers"`
+	Source     string `json:"source"`
 }
 
 func (fs *encvWebDAVFS) GetIndexStats() IndexStatsResult {

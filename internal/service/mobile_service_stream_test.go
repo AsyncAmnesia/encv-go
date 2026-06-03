@@ -41,8 +41,8 @@ type mockDirEntry struct {
 	infoErr error
 }
 
-func (e *mockDirEntry) Name() string   { return e.name }
-func (e *mockDirEntry) IsDir() bool    { return e.isDir }
+func (e *mockDirEntry) Name() string { return e.name }
+func (e *mockDirEntry) IsDir() bool  { return e.isDir }
 func (e *mockDirEntry) Type() fs.FileMode {
 	if e.isDir {
 		return fs.ModeDir
@@ -278,7 +278,7 @@ func TestListFiles_DetectContainerOnDeletedFile(t *testing.T) {
 	cfg := defaultTestConfig()
 	svc := NewMobileService(dir, cfg)
 
-	mockEntries := []fs.DirEntry {
+	mockEntries := []fs.DirEntry{
 		&mockDirEntry{name: "normal.txt", isDir: false, size: 50, modTime: time.Now()},
 		&mockDirEntry{name: "gone.encv", isDir: false, size: 9999, modTime: time.Now()},
 	}

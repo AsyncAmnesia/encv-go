@@ -51,7 +51,7 @@ type VideoPlugin struct {
 	// 【新增】存储分片集信息，用于不合并直接加密模式
 	splitSets [][]string
 	// 【新增】存储分片文件路径集合，用于快速查找
-	splitPartPaths map[string]bool
+	splitPartPaths      map[string]bool
 	isPostEncryptVerify bool
 }
 
@@ -444,7 +444,7 @@ func (p *VideoPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 				Help:         "tasks.streamPresetHelp",
 				Options:      []string{"balanced", "quality", "high_quality"},
 				OptionLabels: map[string]string{"balanced": "Balanced", "quality": "Quality", "high_quality": "High Quality"},
-				Condition:     "encrypt",
+				Condition:    "encrypt",
 			},
 			{
 				Key:          "encrypt_filename",
@@ -453,7 +453,7 @@ func (p *VideoPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 				Required:     false,
 				DefaultValue: "false",
 				Help:         "tasks.encryptFilenameHelp",
-				Condition:     "encrypt",
+				Condition:    "encrypt",
 			},
 			{
 				Key:          "fn_rounds",
@@ -464,7 +464,7 @@ func (p *VideoPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 				Help:         "tasks.fnRoundsHelp",
 				Options:      []string{"4", "8", "12", "16"},
 				OptionLabels: map[string]string{"4": "4", "8": "8 (Recommended)", "12": "12", "16": "16"},
-				Condition:     "encrypt",
+				Condition:    "encrypt",
 			},
 			{
 				Key:          "fn_charset",
@@ -475,7 +475,7 @@ func (p *VideoPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 				Help:         "tasks.fnCharsetHelp",
 				Options:      []string{"alnum", "alnum_symbols", "full"},
 				OptionLabels: map[string]string{"alnum": "Alphanumeric", "alnum_symbols": "Alnum + Symbols", "full": "Full (Alnum+Symbols+Hanzi+Emoji)"},
-				Condition:     "encrypt",
+				Condition:    "encrypt",
 			},
 			{
 				Key:          "fn_deconfuse",
@@ -484,7 +484,7 @@ func (p *VideoPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 				Required:     false,
 				DefaultValue: "false",
 				Help:         "tasks.fnDeconfuseHelp",
-				Condition:     "encrypt",
+				Condition:    "encrypt",
 			},
 			{
 				Key:          "fn_structured",
@@ -493,7 +493,7 @@ func (p *VideoPlugin) GetTaskOptions() pluginInterfaces.TaskOptions {
 				Required:     false,
 				DefaultValue: "false",
 				Help:         "tasks.fnStructuredHelp",
-				Condition:     "encrypt",
+				Condition:    "encrypt",
 			},
 		},
 	}

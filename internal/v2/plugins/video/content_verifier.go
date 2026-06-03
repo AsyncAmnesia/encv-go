@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/Soltus/encv-go/internal/utils/ffmpeg"
-	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
+	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	"github.com/Soltus/encv-go/internal/v2/types"
 	mp4 "github.com/abema/go-mp4"

@@ -835,11 +835,11 @@ func (tm *TaskManager) failTask(id, errMsg string) {
 		slog.Error("Task failed", "id", id, "error", errMsg)
 		if tm.broadcaster != nil {
 			tm.broadcaster.Broadcast("task:completed", map[string]interface{}{
-			"id":          id,
-			"status":      "failed",
-			"error":       friendlyMsg,
-			"errorDetail": errMsg,
-		})
+				"id":          id,
+				"status":      "failed",
+				"error":       friendlyMsg,
+				"errorDetail": errMsg,
+			})
 			tm.broadcaster.Broadcast("log", map[string]interface{}{
 				"level":   "error",
 				"message": fmt.Sprintf("[Task %s] %s", id, errMsg),

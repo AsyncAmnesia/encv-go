@@ -10,29 +10,29 @@ import (
 )
 
 const (
-	ebmlIDEBCues          = 0x1C53BB6B
-	ebmlIDEBSegment       = 0x18538067
-	ebmlIDEBSegmentInfo   = 0x1549A966
-	ebmlIDEBPrevUID       = 0x3CB923
-	ebmlIDEBNextUID       = 0x3EB923
-	ebmlIDEBCuePoint      = 0xBB
-	ebmlIDEBCueTime       = 0xB3
-	ebmlIDEBCueTrackPositions = 0xB7
-	ebmlIDEBCueTrack      = 0xF7
-	ebmlIDEBCueClusterPosition = 0xF1
+	ebmlIDEBCues                = 0x1C53BB6B
+	ebmlIDEBSegment             = 0x18538067
+	ebmlIDEBSegmentInfo         = 0x1549A966
+	ebmlIDEBPrevUID             = 0x3CB923
+	ebmlIDEBNextUID             = 0x3EB923
+	ebmlIDEBCuePoint            = 0xBB
+	ebmlIDEBCueTime             = 0xB3
+	ebmlIDEBCueTrackPositions   = 0xB7
+	ebmlIDEBCueTrack            = 0xF7
+	ebmlIDEBCueClusterPosition  = 0xF1
 	ebmlIDEBCueRelativePosition = 0xF0
-	ebmlIDEBCueCodecState = 0x6A
-	ebmlIDEBCueReference  = 0xDB
-	ebmlIDEBChapters      = 0x1043A770
-	ebmlIDEBEditionEntry  = 0x45B9
-	ebmlIDEBCChapterAtom  = 0xB6
-	ebmlIDEBCChapterUID   = 0x73C4
-	ebmlIDEBCChapterTimeStart = 0x91
-	ebmlIDEBCChapterTimeEnd   = 0x92
-	ebmlIDEBCChapterString = 0x85
-	ebmlIDEBCChapterDisplay = 0x80
+	ebmlIDEBCueCodecState       = 0x6A
+	ebmlIDEBCueReference        = 0xDB
+	ebmlIDEBChapters            = 0x1043A770
+	ebmlIDEBEditionEntry        = 0x45B9
+	ebmlIDEBCChapterAtom        = 0xB6
+	ebmlIDEBCChapterUID         = 0x73C4
+	ebmlIDEBCChapterTimeStart   = 0x91
+	ebmlIDEBCChapterTimeEnd     = 0x92
+	ebmlIDEBCChapterString      = 0x85
+	ebmlIDEBCChapterDisplay     = 0x80
 	ebmlIDEBCChapterFlagEnabled = 0x4598
-	ebmlIDEBCueTrackNumber = 0xF7
+	ebmlIDEBCueTrackNumber      = 0xF7
 )
 
 func readVINT(r io.Reader) (uint64, int, error) {

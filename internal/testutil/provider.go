@@ -20,12 +20,14 @@ type MockFileContentProvider struct {
 	CloseErr    error
 }
 
-func (m *MockFileContentProvider) GetReader() io.ReadCloser             { return m.ReaderVal }
-func (m *MockFileContentProvider) GetSeeker() (io.Seeker, bool)         { return m.SeekerVal, m.HasSeeker }
-func (m *MockFileContentProvider) GetSeekerTo() (provider.SeekerTo, bool) { return m.SeekerToVal, m.HasSeekerTo }
-func (m *MockFileContentProvider) GetSize() int64                       { return m.SizeVal }
-func (m *MockFileContentProvider) GetName() string                      { return m.NameVal }
-func (m *MockFileContentProvider) Close() error                         { return m.CloseErr }
+func (m *MockFileContentProvider) GetReader() io.ReadCloser     { return m.ReaderVal }
+func (m *MockFileContentProvider) GetSeeker() (io.Seeker, bool) { return m.SeekerVal, m.HasSeeker }
+func (m *MockFileContentProvider) GetSeekerTo() (provider.SeekerTo, bool) {
+	return m.SeekerToVal, m.HasSeekerTo
+}
+func (m *MockFileContentProvider) GetSize() int64  { return m.SizeVal }
+func (m *MockFileContentProvider) GetName() string { return m.NameVal }
+func (m *MockFileContentProvider) Close() error    { return m.CloseErr }
 
 // NewMockProvider 从 []byte 数据创建一个 FileContentProvider
 // 自动包装为 io.ReadCloser + bytes.Reader(实现 io.Seeker)

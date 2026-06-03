@@ -19,14 +19,14 @@ type VideoIndex struct {
 	Height           int     `json:"height"`
 	OriginalFileSize int64   `json:"original_file_size"`
 	// 原始视频文件的完整路径，用于 Packer 查找关联文件（如字幕）
-	OriginalInputPath string           `json:"originalInputPath"`
-	OriginalFilename  string           `json:"original_filename"`
-	OriginalFileMD5   string           `json:"original_file_md5"`
-	EncryptedFileMD5  string           `json:"encrypted_file_md5"`
-	SubtitleTracks    []SubtitleTracks `json:"subtitle_tracks,omitempty"`
+	OriginalInputPath string                 `json:"originalInputPath"`
+	OriginalFilename  string                 `json:"original_filename"`
+	OriginalFileMD5   string                 `json:"original_file_md5"`
+	EncryptedFileMD5  string                 `json:"encrypted_file_md5"`
+	SubtitleTracks    []SubtitleTracks       `json:"subtitle_tracks,omitempty"`
 	Chapters          []MKVChapterInfo       `json:"chapters,omitempty"`
 	ChaptersV4        []types.ChapterInfo_v4 `json:"chapters_v4,omitempty"`
-	KeyFrameOffsets   []uint64         `json:"key_frame_offsets,omitempty"` // 存储所有关键帧的字节偏移量
+	KeyFrameOffsets   []uint64               `json:"key_frame_offsets,omitempty"` // 存储所有关键帧的字节偏移量
 }
 
 func (v *VideoIndex) GetOriginalFilename() string { return v.OriginalFilename }

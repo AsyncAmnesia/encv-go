@@ -8,11 +8,11 @@ import (
 	"log/slog"
 	"net/http"
 
-	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/logger"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
 	"github.com/Soltus/encv-go/internal/v2/container/envelope"
+	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/container/manifest"
 	"github.com/Soltus/encv-go/internal/v2/crypto"
 	"github.com/Soltus/encv-go/internal/v2/types"
@@ -35,7 +35,7 @@ type remoteEncryptedContainerReader struct {
 	urlResolver  URLResolver
 	// 【V3/V4 适配】缓存 Header 版本和大小 (V2:16, V3:2048, V4:2048)
 	headerSize int64
-	version     int
+	version    int
 	// 缓存，避免重复请求
 	manifest *types.Manifest
 }
@@ -481,5 +481,3 @@ func (r *remoteEncryptedContainerReader) GetFragments() []types.Fragment {
 func (r *remoteEncryptedContainerReader) Close() error {
 	return nil
 }
-
-

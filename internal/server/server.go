@@ -18,7 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/Soltus/encv-go/internal/auth"
 	"github.com/Soltus/encv-go/internal/config"
 	"github.com/Soltus/encv-go/internal/middleware"
@@ -26,29 +25,30 @@ import (
 	"github.com/Soltus/encv-go/internal/openlist/web"
 	"github.com/Soltus/encv-go/internal/register"
 	"github.com/Soltus/encv-go/internal/routes"
+	mobileservice "github.com/Soltus/encv-go/internal/service"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/handler"
 	"github.com/Soltus/encv-go/internal/v2/namer"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
-	mobileservice "github.com/Soltus/encv-go/internal/service"
 	"github.com/Soltus/encv-go/internal/v2/service"
 	"github.com/Soltus/encv-go/internal/webdav"
 	"github.com/dustin/go-humanize"
+	"github.com/gin-gonic/gin"
 	goWebdav "golang.org/x/net/webdav"
 )
 
 type Server struct {
-	server     *http.Server
-	cfg        *config.Config
-	configPath string
-	configMu   sync.Mutex
-	servingDir string
-	version    string
-	instanceID string
-	actualPort int
-	webdavDir  string
-	webdavPath string
+	server         *http.Server
+	cfg            *config.Config
+	configPath     string
+	configMu       sync.Mutex
+	servingDir     string
+	version        string
+	instanceID     string
+	actualPort     int
+	webdavDir      string
+	webdavPath     string
 	readerService  *service.ReaderService
 	mobileSvc      *mobileservice.MobileService
 	contentHandler *handler.ContentHandler

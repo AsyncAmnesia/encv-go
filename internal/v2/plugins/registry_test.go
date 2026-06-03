@@ -201,7 +201,7 @@ func TestValidateExtensionUniqueness_NoConflict(t *testing.T) {
 
 func TestValidateExtensionUniqueness_RealConflict(t *testing.T) {
 	conflictingSettings := map[string]json.RawMessage{
-		"video":        json.RawMessage(`{"ext":".sccgv"}`),
+		"video":         json.RawMessage(`{"ext":".sccgv"}`),
 		"alist_encrypt": json.RawMessage(`{"suffix":".sccgv"}`),
 	}
 	initPluginsWithSettings(t, conflictingSettings)

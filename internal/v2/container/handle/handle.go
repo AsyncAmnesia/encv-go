@@ -218,7 +218,7 @@ func convertV2ManifestToV4(mf *types.Manifest, hdr *types.EnvelopeHeaderV4) *typ
 		IsSeekable:       mf.Kind != "",
 		OriginalDuration: 0,
 		Segments:         segments,
-		KVI:             mf.KVI,
+		KVI:              mf.KVI,
 	}
 }
 
@@ -321,14 +321,14 @@ func (h *containerHandle) deriveAttributes() {
 	}
 }
 
-func (h *containerHandle) Version() int                  { return h.version }
-func (h *containerHandle) HeaderSize() int64             { return h.headerSize }
-func (h *containerHandle) ContainerType() uint16         { return h.containerType }
-func (h *containerHandle) IsSeekable() bool              { return h.isSeekable }
-func (h *containerHandle) ContainerID() string           { return h.containerID }
-func (h *containerHandle) OriginalDuration() float64     { return h.originalDuration }
-func (h *containerHandle) Manifest() *types.Manifest  { return h.manifestV2 }
-func (h *containerHandle) ManifestV4() *types.Manifest_v4 { return h.manifestV4 }
+func (h *containerHandle) Version() int                       { return h.version }
+func (h *containerHandle) HeaderSize() int64                  { return h.headerSize }
+func (h *containerHandle) ContainerType() uint16              { return h.containerType }
+func (h *containerHandle) IsSeekable() bool                   { return h.isSeekable }
+func (h *containerHandle) ContainerID() string                { return h.containerID }
+func (h *containerHandle) OriginalDuration() float64          { return h.originalDuration }
+func (h *containerHandle) Manifest() *types.Manifest          { return h.manifestV2 }
+func (h *containerHandle) ManifestV4() *types.Manifest_v4     { return h.manifestV4 }
 func (h *containerHandle) HeaderV2() *types.EnvelopeHeader_v2 { return h.headerV2 }
 func (h *containerHandle) HeaderV3() *types.EnvelopeHeaderV3  { return h.headerV3 }
 func (h *containerHandle) HeaderV4() *types.EnvelopeHeaderV4  { return h.headerV4 }
