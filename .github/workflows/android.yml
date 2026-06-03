@@ -667,7 +667,8 @@ jobs:
           else
             # Download kotlin-compiler-embeddable + stdlib + reflect + coroutines
             # via setup-kotlinc.sh (Maven Central, ~66MB, cached separately).
-            bash .trae/scripts/setup-kotlinc.sh > /tmp/setup-kotlinc.log 2>&1
+            # `|| true` shields from `set -e` killing the step on setup failure.
+            bash .trae/scripts/setup-kotlinc.sh > /tmp/setup-kotlinc.log 2>&1 || true
             SETUP_EXIT=$?
             if [ $SETUP_EXIT -ne 0 ]; then
               echo "::warning::setup-kotlinc.sh failed (exit=$SETUP_EXIT). Last 30 lines of setup log:"
@@ -686,9 +687,15 @@ jobs:
               echo "  classpath: ${CP//:/, }"
 
               cd app/encv-mobile/plugin-openlist
+              # NOTE: `|| true` is REQUIRED because the step's shell is
+              # `bash -e` (set -e from `shell: /usr/bin/bash -e {0}` header).
+              # Without it, kotlinc's non-zero exit would terminate the entire
+              # step BEFORE PREFLIGHT_EXIT=$? runs, hiding the actual error
+              # (Phase 19 finding: CI log showed "Process completed with exit
+              # code 1" with NO "❌ kotlinc pre-flight FAILED" message).
               "$KOTLINC" -cp "$CP" -no-stdlib -no-reflect -Xsuppress-version-warnings \
                 src/main/java/com/encvgo/plugin/openlist/*.kt \
-                -d /tmp/encv-preflight-out 2>/tmp/encv-preflight.log
+                -d /tmp/encv-preflight-out 2>/tmp/encv-preflight.log || true
               PREFLIGHT_EXIT=$?
               cd -
 
