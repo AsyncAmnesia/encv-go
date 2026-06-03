@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.net.Uri
+import android.util.Log
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -306,13 +307,13 @@ class GoProcessPlugin : Plugin() {
             call.resolve(ret)
         } catch (e: Throwable) {
             Log.e(TAG, "[SAT-DBG][OpenList][Capacitor] getOpenListRuntime() FAILED", e)
-            call.reject("getOpenListRuntime failed: ${e.message}", e)
+            call.reject("getOpenListRuntime failed: ${e.message}")
         }
     }
 
     @PluginMethod
     fun controlOpenList(call: PluginCall) {
-        val action = call.getString("action", "start")
+        val action = call.getString("action", "start") ?: "start"
         Log.e(TAG, "[SAT-DBG][OpenList][Capacitor] controlOpenList() action=$action")
         val ok = OpenListStatusBridge.control(context.applicationContext, action)
         val ret = JSObject().apply { put("success", ok) }
