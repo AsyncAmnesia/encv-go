@@ -166,6 +166,15 @@ jobs:
 
       - name: Run Go unit tests
         run: |
+          # Phase 18 Guard D: gofmt -l on touched Go files (CI fail-fast on style)
+          UNFORMATTED=$(gofmt -l ./internal ./cmd 2>/dev/null || true)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "::error::❌ gofmt check FAILED. Run \`gofmt -w <files>\` on:"
+            echo "$UNFORMATTED" | while read f; do echo "  - $f"; done
+            exit 1
+          fi
+          echo "✅ gofmt: all Go files properly formatted"
+
           echo "═══ Go Unit Tests (service layer) ═══"
           go test ./internal/service/ -count=1 -timeout 120s -v 2>&1 | tail -30
           echo ""
@@ -227,6 +236,68 @@ jobs:
           ls -la android/*.gradle android/app/*.gradle
 
       # === Non-Gradle customizations ===
+      # Phase 18 Guard A (from .trae/rules/verification-discipline.md §7.7):
+      # Validate every libs.X.Y reference in build.gradle.kts has a corresponding
+      # alias in libs.versions.toml. Catches Phase 16 bug class
+      # (Unresolved reference 'foundation' polluting the entire multi-project).
+      # Runs BEFORE R8 guard because toml mismatch blocks the whole config phase.
+      - name: "Pre-build: Gradle version catalog alias guard"
+        run: |
+          echo "╔══════════════════════════════════════════════════╗"
+          echo "║   Gradle Version Catalog Alias Guard (v1)       ║"
+          echo "║   Catches: libs.X.Y w/o toml alias (Phase 16)   ║"
+          echo "╚══════════════════════════════════════════════════╝"
+          echo ""
+
+          cd app/encv-mobile
+          TOML="android/gradle/libs.versions.toml"
+          if [ ! -f "$TOML" ]; then
+            echo "::error::libs.versions.toml not found at $TOML"
+            exit 1
+          fi
+
+          # Extract toml aliases (strip hyphen, Gradle maps '-' to '.' in accessor)
+          TOML_LIBS=$(awk '/\[libraries\]/{flag=1; next} /^\[/{flag=0} flag && /^[a-zA-Z]/' "$TOML" \
+                      | sed -E 's/^([a-zA-Z0-9._-]+).*/\1/' | sort -u)
+          TOML_PLUGINS=$(awk '/\[plugins\]/{flag=1; next} /^\[/{flag=0} flag && /^[a-zA-Z]/' "$TOML" \
+                         | sed -E 's/^([a-zA-Z0-9._-]+).*/\1/' | sort -u)
+
+          FAIL=0
+          TOTAL=0
+          # Search ALL build.gradle.kts under app/encv-mobile/ (incl. plugin-*/ siblings of android/)
+          for f in $(find . -name "build.gradle.kts" -not -path "*/build/*" -type f | sort); do
+            REFS=$(grep -oE 'libs\.(plugins|[a-zA-Z0-9._-]+)\.[a-zA-Z0-9._-]+' "$f" 2>/dev/null | sort -u)
+            for ref in $REFS; do
+              [[ "$ref" == libs.versions.* ]] && continue
+              TOTAL=$((TOTAL + 1))
+              if [[ "$ref" == libs.plugins.* ]]; then
+                alias="${ref#libs.plugins.}"; alias="${alias//./-}"
+                if ! echo "$TOML_PLUGINS" | grep -qx "$alias"; then
+                  echo "  ✗ $f: $ref ❌ PLUGIN '$alias' not in toml"
+                  FAIL=$((FAIL + 1))
+                fi
+              else
+                alias="${ref#libs.}"; alias="${alias//./-}"
+                if ! echo "$TOML_LIBS" | grep -qx "$alias"; then
+                  echo "  ✗ $f: $ref ❌ LIB '$alias' not in toml"
+                  FAIL=$((FAIL + 1))
+                fi
+              fi
+            done
+          done
+
+          echo ""
+          echo "────────────────────────────────────"
+          echo "Total libs.* references checked: $TOTAL"
+          echo "Failures: $FAIL"
+          echo "────────────────────────────────────"
+          if [ "$FAIL" -gt 0 ]; then
+            echo "::error::❌ TOML alias guard FAILED: $FAIL unresolved libs.* references"
+            echo "::error::Each libs.X.Y accessor must have an alias 'x-y' (dash) in [libraries] or [plugins] of libs.versions.toml"
+            exit 1
+          fi
+          echo "✅ TOML alias guard PASSED: all $TOTAL libs.* references resolvable"
+
       - name: Check R8/ProGuard is disabled for ALL build variants
         run: |
           set +e  # Don't let sub-command failures kill the script before we print diagnostics
@@ -480,8 +551,22 @@ jobs:
           fi
 
       # === Build OpenList Plugin (AAR → APK via aar2apk) ===
+      # Phase 18 Cache A: cache the gomobile bind output by fork commit hash.
+      # gomobile bind takes 3-5 min; if neither the fork commit nor the build
+      # script changed, reuse the cached openlist.aar + openlist-classes.jar.
+      - name: Restore OpenList AAR from cache
+        id: cache-openlist-aar
+        uses: actions/cache@v4
+        with:
+          path: |
+            app/encv-mobile/plugin-openlist/libs/openlist.aar
+            app/encv-mobile/plugin-openlist/libs/openlist-classes.jar
+          key: openlist-aar-${{ hashFiles('scripts/build-openlist-aar.sh', 'app/encv-mobile/plugin-openlist/build.gradle.kts') }}-v2
+          restore-keys: |
+            openlist-aar-
+
       - name: Build OpenList AAR (gomobile bind)
-        if: inputs.skip_plugin != true
+        if: inputs.skip_plugin != true && steps.cache-openlist-aar.outputs.cache-hit != 'true'
         continue-on-error: true
         run: |
           echo "═══ OpenList AAR Build (gomobile bind) ═══"
@@ -535,6 +620,83 @@ jobs:
         if: inputs.skip_plugin != true
         continue-on-error: true
         run: |
+          # Phase 18 Guard C (cheapest, fail-fast): grep for known-bad Map<String, Any?>
+          # property accesses. snapshot() returns a Map, so snapshot.running etc. is
+          # always wrong (Phase 17 bug class). Grep is sub-second; catches the bug
+          # BEFORE we even invoke gradle (which would take ~3 min to fail).
+          echo "╔══════════════════════════════════════════════════╗"
+          echo "║  Map<String,Any?> property-guard (Phase 17)     ║"
+          echo "╚══════════════════════════════════════════════════╝"
+          GUARD_C_FAIL=0
+          while IFS= read -r f; do
+            for prop in running port pid dataSizeBytes lastError lastUpdateTs; do
+              # Match snapshot.<prop>, exclude lines inside comments
+              match=$(grep -nE "(^|[^A-Za-z_])\bsnapshot\.${prop}\b" "$f" 2>/dev/null \
+                      | grep -vE ":\s*(//|\*)" || true)
+              if [ -n "$match" ]; then
+                echo "  ✗ $f: snapshot.${prop} is a Map<String,Any?> — use snapshot[\"${prop}\"]"
+                echo "$match" | sed 's/^/      /'
+                GUARD_C_FAIL=$((GUARD_C_FAIL + 1))
+              fi
+            done
+          done < <(find app/encv-mobile/plugin-openlist/src -name "*.kt" 2>/dev/null)
+          if [ "$GUARD_C_FAIL" -gt 0 ]; then
+            echo "::error::❌ Map property guard FAILED: $GUARD_C_FAIL bad access(es)"
+            echo "::error::snapshot() returns Map<String,Any?>. Use snapshot[\"key\"] instead of snapshot.key"
+            exit 1
+          fi
+          echo "✅ Map property guard PASSED"
+
+          # Phase 18 Guard B (kotlinc pre-flight): compile plugin Kotlin against
+          # openlist-classes.jar (real gomobile stubs) to catch Unresolved
+          # reference errors (Phase 17 bug class) BEFORE gradle's compileKotlin.
+          # The gradle compileKotlin task itself takes ~3 min; this guard fails
+          # in ~10s by going straight through kotlinc with classpath.
+          echo ""
+          echo "╔══════════════════════════════════════════════════╗"
+          echo "║  kotlinc pre-flight (Phase 17 Unresolved guard) ║"
+          echo "╚══════════════════════════════════════════════════╝"
+          CLASSES_JAR="app/encv-mobile/plugin-openlist/libs/openlist-classes.jar"
+          if [ ! -f "$CLASSES_JAR" ]; then
+            echo "⏭️  openlist-classes.jar not present, skipping kotlinc pre-flight"
+          else
+            # Download kotlin-compiler-embeddable + stdlib + reflect + coroutines
+            # via setup-kotlinc.sh (Maven Central, ~66MB, cached separately).
+            bash .trae/scripts/setup-kotlinc.sh > /tmp/setup-kotlinc.log 2>&1
+            SETUP_EXIT=$?
+            if [ $SETUP_EXIT -ne 0 ]; then
+              echo "::warning::setup-kotlinc.sh failed (exit=$SETUP_EXIT, see /tmp/setup-kotlinc.log). Skipping kotlinc pre-flight."
+            else
+              KOTLINC=$(which kotlinc-2.3.21 2>/dev/null || echo "/usr/local/bin/kotlinc-2.3.21")
+              # Build classpath: openlist classes + android.jar + combolite-core
+              ANDROID_JAR=$(find "$ANDROID_HOME/platforms" -name "android.jar" 2>/dev/null | head -1)
+              COMBOLITE_JAR=$(find ~/.gradle/caches -name "combolite-core-2.0.2*.jar" 2>/dev/null | grep -v sources | head -1)
+              CP="${CLASSES_JAR}"
+              [ -n "$ANDROID_JAR" ] && CP="${CP}:${ANDROID_JAR}"
+              [ -n "$COMBOLITE_JAR" ] && CP="${CP}:${COMBOLITE_JAR}"
+
+              cd app/encv-mobile/plugin-openlist
+              "$KOTLINC" -cp "$CP" -no-stdlib -no-reflect -Xsuppress-version-warnings \
+                src/main/java/com/encvgo/plugin/openlist/*.kt \
+                -d /tmp/encv-preflight-out 2>/tmp/encv-preflight.log
+              PREFLIGHT_EXIT=$?
+              cd -
+
+              # Show only REAL unresolved (filter out android.* / compose.* / koin.* / other 3rd party noise)
+              REAL_ERRORS=$(grep -E "Unresolved reference '(forceDbSync|forceDBSync|setConfigData|setConfigLog|setConfigDebug|setConfigNoPrefix|setAdminPassword|init|start|shutdown|isRunning|getOutbound|running|port|pid|dataSizeBytes|lastError|lastUpdateTs)'" /tmp/encv-preflight.log || true)
+              if [ $PREFLIGHT_EXIT -ne 0 ] || [ -n "$REAL_ERRORS" ]; then
+                echo "❌ kotlinc pre-flight FAILED"
+                if [ -n "$REAL_ERRORS" ]; then
+                  echo "Real Unresolved references (gomobile/Map-related):"
+                  echo "$REAL_ERRORS" | head -20
+                fi
+                echo "::error::❌ kotlinc pre-flight failed. Full log: /tmp/encv-preflight.log"
+                exit 1
+              fi
+              echo "✅ kotlinc pre-flight PASSED"
+            fi
+          fi
+
           cd app/encv-mobile/android
           BUILD_TYPE="${{ inputs.version && 'Release' || 'Debug' }}"
           APK_BUILD_TYPE="${{ inputs.version && 'release' || 'debug' }}"
