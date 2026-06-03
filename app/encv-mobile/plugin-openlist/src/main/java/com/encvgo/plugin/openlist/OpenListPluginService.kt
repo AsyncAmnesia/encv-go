@@ -137,7 +137,8 @@ class OpenListPluginService : BasePluginService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.e(TAG, "[SAT-DBG][OpenList] onStartCommand() | action=${intent?.action} flags=$flags startId=$startId | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
+        val portOverride = intent?.getIntExtra("port", -1) ?: -1
+        Log.e(TAG, "[SAT-DBG][OpenList] onStartCommand() | action=${intent?.action} portOverride=$portOverride flags=$flags startId=$startId | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         val ctx = proxyService
         if (ctx == null) {
             Log.e(TAG, "[SAT-DBG][OpenList] onStartCommand() FAILED: proxyService is null")
@@ -150,7 +151,7 @@ class OpenListPluginService : BasePluginService() {
         }
         acquireWakeLock()
         if (started.compareAndSet(false, true)) {
-            worker.execute { startupSequence() }
+            worker.execute { startupSequence(portOverride) }
         }
         if (intent?.action == ACTION_SHUTDOWN) {
             worker.execute { shutdownSequence() }
@@ -182,8 +183,8 @@ class OpenListPluginService : BasePluginService() {
 
     // === 业务逻辑（从历史 OpenListService 搬过来，几乎原样） ===
 
-    private fun startupSequence() {
-        Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() begin | thread=${Thread.currentThread().name}")
+    private fun startupSequence(portOverride: Int = -1) {
+        Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() begin | portOverride=$portOverride | thread=${Thread.currentThread().name}")
         val ctx = proxyService ?: run {
             Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() FAILED: proxyService null")
             return
@@ -193,7 +194,12 @@ class OpenListPluginService : BasePluginService() {
         val t0 = System.currentTimeMillis()
         Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step1: loading config...")
         val cfg = OpenListConfig.load(ctx)
-        val port = cfg.port
+        val port = if (portOverride > 0) {
+            Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step1: portOverride=$portOverride → override config port ${cfg.port}")
+            portOverride
+        } else {
+            cfg.port
+        }
         currentPort = port
         Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step1 done: config loaded | port=$port dataDir=${cfg.dataDir} | elapsed=${System.currentTimeMillis() - t0}ms")
 

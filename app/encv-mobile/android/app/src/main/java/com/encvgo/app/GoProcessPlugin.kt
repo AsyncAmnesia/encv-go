@@ -368,7 +368,26 @@ class GoProcessPlugin : Plugin() {
         call.getInt("port")?.let { args["port"] = it }
         call.getInt("timeout_ms")?.let { args["timeout_ms"] = it.toLong() }
         call.getString("password")?.let { args["password"] = it }
-        val ok = OpenListStatusBridge.control(context.applicationContext, action, args)
+
+        // Phase 25 A3.2 路由：
+        //   start / shutdown → 走 plugin service lifecycle (startPluginService / stopPluginService)
+        //   其他 (forceDBSync / setAdminPassword) → 走 ContentProvider insert action dispatch
+        val ok = when (action) {
+            "start" -> {
+                val extras = android.os.Bundle().apply {
+                    (args["port"] as? Int)?.let { putInt("port", it) }
+                }
+                com.encvgo.combolite.OpenListPluginProxy.startMainService(context, extras)
+            }
+            "shutdown" -> {
+                com.encvgo.combolite.OpenListPluginProxy.stopMainService(context)
+            }
+            else -> {
+                // forceDBSync / setAdminPassword → OpenListStatusBridge.control
+                OpenListStatusBridge.control(context.applicationContext, action, args)
+            }
+        }
+        Log.e(TAG, "[SAT-DBG][OpenList][Capacitor] controlOpenList() action=$action → ok=$ok")
         val ret = JSObject().apply { put("success", ok) }
         call.resolve(ret)
     }
