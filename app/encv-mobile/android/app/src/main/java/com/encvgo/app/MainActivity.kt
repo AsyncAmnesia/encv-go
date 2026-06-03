@@ -16,7 +16,7 @@ import com.getcapacitor.BridgeActivity
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
-import com.encvgo.app.plugins.GoProcessPlugin
+import com.encvgo.app.GoProcessPlugin
 import com.masterpedidos.highrefreshrate.HighRefreshRatePlugin
 
 class MainActivity : BridgeActivity() {
