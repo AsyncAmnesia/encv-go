@@ -230,12 +230,51 @@
 - [ ] 8.7 验证 `vue-tsc --noEmit` 通过
 - [ ] 8.8 验证 `/webview` 页面在 OpenList 未启动时显示「错误」状态卡（带重试 + 复制命令按钮）
 
+## Phase 9: 修复 iframe @load 误判 connected（健康探针 + 后置校验）
+
+> **核心痛点**：Phase 8 实现后用户实测反馈"闪了一下又空白了，右上角显示绿色勾"。根因：
+> 1. iframe 加载 502 错误页面（来自 Vite proxy）也会触发 `@load` 事件
+> 2. 之前 `onLoad()` 直接 `state.value = 'connected'`，没做后置校验
+> 3. 浏览器 fetch with `mode: 'cors'` 对 502 响应做 CORS 拦截 → `res.status === 0`（opaque）
+>    → `0 < 500` 落入 `else` 分支 → state='loading'（误判）
+> 4. iframe 显示 → @load → state='connected'（误判），但 iframe 是 502 错误页 → 视觉空白
+
+- [ ] 9.1 vite.config.ts 新增 `openlistHealthPlugin()` 中间件：
+  - 路由 `/__openlist-health`
+  - Node 端 `fetch('http://127.0.0.1:5244/api/public/settings', signal: AbortSignal.timeout(3000))`
+  - 响应 JSON：`{ alive, upstreamStatus, latency, target, ts, error?, code? }`
+  - 强制 CORS 头（`Access-Control-Allow-Origin: *`）→ 浏览器永远能读 status
+  - 区分 alive/timeout/connect-refused
+- [ ] 9.2 OpenListWebView.vue `probeBackend` 改用 `/__openlist-health`：
+  - Promise.race 实现 5s 前端兜底超时
+  - 拿到 alive=true → state='loading'（**不再直接 connected**，等 iframe @load）
+  - 拿到 alive=false → state='error'（带 error + code 详细信息）
+- [ ] 9.3 `onIframeLoad()` **关键修复**：
+  - 不再直接置 connected
+  - 改为调 `verifyAfterIframeLoad()` → 再发一次 health check
+  - alive=true → state='connected'（确认 iframe 加载的是真 SPA）
+  - alive=false → state='error'（iframe 加载的是 502 错误页，自动回退到错误状态卡）
+  - SPA 内导航/刷新（state 已是 connected）→ onIframeLoad 直接 return，零开销
+- [ ] 9.4 加 `pollHealth()` 周期性校验（10s 一次）：
+  - 仅在 state='connected' 时执行
+  - 后端突然挂掉 → 自动 transition to 'error'
+  - 组件 unmount 时清理 timer
+- [ ] 9.5 加 devtools 风格调试面板（右下角 bug FAB 触发）：
+  - 记录 `info/warn/error/probe` 四级日志
+  - 每次关键事件（onMounted/probe/iframe @load/verify/poll）都打点
+  - JSON 序列化 + 200 字符截断
+  - 仅 sandbox dev 模式可见
+- [ ] 9.6 验证重启 dev server 后 `/__openlist-health` 返回正确 JSON
+- [ ] 9.7 验证 iframe @load 后 state='error'（不再误判 connected）
+- [ ] 9.8 验证 `vue-tsc --noEmit` 通过
+
 ## Task Dependencies
 
-- Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 → Phase 8
+- Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6 → Phase 7 → Phase 8 → Phase 9
 - Phase 1 (Kotlin) 独立于 Phase 2-3 (Web)
 - Phase 2 (monorepo) 必须在 Phase 3 之前（共享包要先建好）
 - Phase 4 依赖 Phase 3（web 页面要先有，主 app 才能 import）
 - Phase 6 依赖 Phase 2-3（依赖 monorepo + 页面已建）
 - Phase 7 依赖 Phase 6（Vite dev server 必须已配好）
 - Phase 8 依赖 Phase 7（必须先有 iframe + 代理）
+- Phase 9 依赖 Phase 8（修复 Phase 8 的 connected 误判 bug）

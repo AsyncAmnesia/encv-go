@@ -56,7 +56,7 @@
         class="openlist-iframe"
         :class="{ 'iframe-loading': state === 'loading' }"
         @error="onError"
-        @load="onLoad"
+        @load="onIframeLoad"
         ref="frameRef"
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
       ></iframe>
@@ -117,7 +117,35 @@
           </div>
         </div>
       </div>
+
+      <!-- 调试面板（devtools 风格，初始隐藏，点开折叠） -->
+      <div v-if="debugOpen" class="debug-panel">
+        <div class="debug-header">
+          <span>Debug · {{ debugEntries.length }} entries</span>
+          <button class="debug-close" @click="debugOpen = false">×</button>
+        </div>
+        <div class="debug-list">
+          <div
+            v-for="(e, i) in debugEntries"
+            :key="i"
+            class="debug-entry"
+            :class="'debug-' + e.level"
+          >
+            <span class="debug-ts">{{ e.ts }}</span>
+            <span class="debug-level">{{ e.level.toUpperCase() }}</span>
+            <span class="debug-msg">{{ e.msg }}</span>
+            <span v-if="e.data" class="debug-data">{{ e.data }}</span>
+          </div>
+        </div>
+      </div>
     </ion-content>
+
+    <!-- 调试面板触发按钮（右下角悬浮，dev 模式可见）-->
+    <ion-fab v-if="isSandbox" vertical="bottom" horizontal="end" slot="fixed">
+      <ion-fab-button size="small" @click="debugOpen = !debugOpen">
+        <ion-icon :icon="bugOutline" />
+      </ion-fab-button>
+    </ion-fab>
   </ion-page>
 </template>
 
@@ -135,6 +163,8 @@ import {
   IonContent,
   IonIcon,
   IonSpinner,
+  IonFab,
+  IonFabButton,
   toastController,
 } from '@ionic/vue'
 import {
@@ -145,10 +175,18 @@ import {
   timerOutline,
   checkmarkCircleOutline,
   copyOutline,
+  bugOutline,
 } from 'ionicons/icons'
 import { OpenListNative, logBuffer } from '@/plugins/openlist-native'
 
 type IframeState = 'probing' | 'loading' | 'connected' | 'error' | 'timeout'
+
+interface DebugEntry {
+  ts: string
+  level: 'info' | 'warn' | 'error' | 'probe'
+  msg: string
+  data?: string
+}
 
 const router = useRouter()
 
@@ -157,8 +195,13 @@ const state = ref<IframeState>('probing')
 const lastError = ref('')
 const retryCount = ref(0)
 const frameRef = ref<HTMLIFrameElement | null>(null)
+const debugOpen = ref(false)
+const debugEntries = ref<DebugEntry[]>([])
 
 const PROBE_TIMEOUT_MS = 5000
+const HEALTH_POLL_INTERVAL_MS = 10000
+
+let pollTimer: ReturnType<typeof setInterval> | null = null
 
 /**
  * 沙箱 dev / 真机 prod 区分
@@ -205,74 +248,202 @@ const stateIcon = computed(() => {
   }
 })
 
+// ============== 调试日志 ==============
+
+function debug(level: DebugEntry['level'], msg: string, data?: any) {
+  const ts = new Date().toISOString().split('T')[1].slice(0, 12)
+  let dataStr = ''
+  if (data !== undefined) {
+    try {
+      dataStr = typeof data === 'string' ? data : JSON.stringify(data)
+      if (dataStr.length > 200) dataStr = dataStr.slice(0, 200) + '…'
+    } catch {
+      dataStr = String(data)
+    }
+  }
+  debugEntries.value.unshift({ ts, level, msg, data: dataStr })
+  if (debugEntries.value.length > 50) debugEntries.value.length = 50
+}
+
+// ============== 生命周期 ==============
+
 onMounted(async () => {
   port.value = OpenListNative.getPort()
+  debug('info', 'onMounted', { isSandbox: isSandbox.value, port: port.value })
   if (isSandbox.value) {
-    await probeBackend()
+    await probeBackend('initial')
   } else {
     // 真机模式：OpenList 与 Capacitor 同设备，假设后端可达
     state.value = 'loading'
   }
+  startHealthPolling()
 })
 
 onUnmounted(() => {
-  // 清理：可以在这里 abort 任何 in-flight 请求
+  stopHealthPolling()
 })
 
-/**
- * 沙箱后端可达性探测
- * - 区分 error（连接被拒/502）和 timeout（超时）
- * - 探测成功后切到 loading，等待 iframe @load 切到 connected
- */
-async function probeBackend() {
-  state.value = 'probing'
-  lastError.value = ''
+// ============== 健康轮询 ==============
 
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS)
+function startHealthPolling() {
+  stopHealthPolling()
+  pollTimer = setInterval(() => {
+    pollHealth()
+  }, HEALTH_POLL_INTERVAL_MS)
+}
 
+function stopHealthPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+async function pollHealth() {
+  // 仅在 connected 状态做后置校验：若后端突然挂掉，自动跳回 error
+  if (state.value !== 'connected') return
+  debug('probe', 'pollHealth (background)')
+  const result = await checkHealth()
+  if (!result.alive) {
+    debug('error', 'pollHealth: backend gone', result)
+    state.value = 'error'
+    lastError.value = `后端已离线：${result.error || 'unknown'}`
+  }
+}
+
+// ============== 探测 / 健康检查 ==============
+
+interface HealthResult {
+  alive: boolean
+  error?: string
+  code?: string
+  upstreamStatus?: number
+  latency?: number
+  ts: number
+}
+
+async function checkHealth(): Promise<HealthResult> {
   try {
-    const start = Date.now()
-    const res = await fetch('/openlist-spa/api/public/settings', {
-      method: 'HEAD',
-      mode: 'cors',
-      signal: controller.signal,
+    const res = await fetch('/__openlist-health', {
+      cache: 'no-store',
     })
-    clearTimeout(timer)
-    const elapsed = Date.now() - start
-
-    if (res.status >= 500) {
-      // 502/503/504 等：Vite proxy 通但后端拒
-      state.value = 'error'
-      lastError.value = `后端返回 ${res.status}（${elapsed}ms）`
-      logBuffer.error(lastError.value)
-    } else {
-      // 200/302/404 都算"后端活着"（404 也意味着 OpenList 在响应）
-      state.value = 'loading'
-      logBuffer.info(`OpenList 后端已连接（${elapsed}ms, status=${res.status}）`)
-    }
+    const data = await res.json() as HealthResult
+    return data
   } catch (e: any) {
-    clearTimeout(timer)
-    if (e?.name === 'AbortError') {
-      state.value = 'timeout'
-      lastError.value = `超过 ${PROBE_TIMEOUT_MS}ms 未响应`
-      logBuffer.warn('OpenList 后端探测超时')
-    } else {
-      state.value = 'error'
-      lastError.value = String(e?.message || e)
-      logBuffer.error('OpenList 后端探测失败：' + lastError.value)
+    return {
+      alive: false,
+      error: e?.message || String(e),
+      code: 'FETCH_FAILED',
+      ts: Date.now(),
     }
   }
 }
 
+/**
+ * 沙箱后端可达性探测（带超时）
+ * - 成功（alive=true）→ state=loading（等 iframe @load 进一步验证）
+ * - alive=false 且 error=timeout → state=timeout
+ * - alive=false 其它 → state=error
+ */
+async function probeBackend(reason: string = 'manual') {
+  state.value = 'probing'
+  lastError.value = ''
+  debug('probe', `probeBackend (${reason})`)
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS)
+
+  let result: HealthResult
+  try {
+    // 带超时的健康检查（middleware 自带 3s 超时，但前端再加一层保险）
+    const r = await Promise.race([
+      fetch('/__openlist-health', { cache: 'no-store', signal: controller.signal }),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new DOMException('probe timeout', 'AbortError')), PROBE_TIMEOUT_MS)
+      }),
+    ])
+    result = await (r as Response).json() as HealthResult
+    clearTimeout(timer)
+  } catch (e: any) {
+    clearTimeout(timer)
+    if (e?.name === 'AbortError' || e?.message?.includes('timeout')) {
+      state.value = 'timeout'
+      lastError.value = `超过 ${PROBE_TIMEOUT_MS}ms 未响应`
+      debug('warn', 'probeBackend timeout')
+      return
+    }
+    state.value = 'error'
+    lastError.value = String(e?.message || e)
+    debug('error', 'probeBackend fetch failed', e?.message)
+    return
+  }
+
+  debug('probe', 'health result', result)
+
+  if (result.alive) {
+    state.value = 'loading'
+    logBuffer.info(`OpenList 后端已连接 (${result.latency}ms, status=${result.upstreamStatus})`)
+  } else if (result.error === 'timeout') {
+    state.value = 'timeout'
+    lastError.value = `超过 ${PROBE_TIMEOUT_MS}ms 未响应`
+  } else {
+    state.value = 'error'
+    lastError.value = `${result.error || 'unknown'}${result.code ? ' (' + result.code + ')' : ''}`
+  }
+}
+
+// ============== iframe 事件 ==============
+
+function onIframeLoad() {
+  debug('info', 'iframe @load fired', {
+    currentState: state.value,
+    src: frameRef.value?.src?.slice(0, 80),
+  })
+
+  // 关键修复：iframe @load 不直接置 connected
+  // 原因：iframe 可能加载 502 错误页面（来自 Vite proxy）也会触发 @load
+  // 必须重新 health 校验才能确认是真 SPA 加载完成
+  if (state.value === 'connected') {
+    // 已经是 connected（用户在 SPA 内导航/刷新），不重复验证
+    return
+  }
+
+  // 立即做一次 health check 验证
+  verifyAfterIframeLoad()
+}
+
+async function verifyAfterIframeLoad() {
+  debug('probe', 'verifyAfterIframeLoad (post @load)')
+  const result = await checkHealth()
+  if (result.alive) {
+    state.value = 'connected'
+    debug('info', 'iframe verified, state=connected', result)
+  } else {
+    // iframe @load 触发了，但 health 不通过 → iframe 是 502 错误页
+    state.value = 'error'
+    lastError.value = `iframe 加载但后端不健康：${result.error}`
+    debug('error', 'iframe loaded 502 page', result)
+  }
+}
+
+function onError() {
+  debug('error', 'iframe @error fired')
+  logBuffer.error('iframe 加载失败')
+  if (isSandbox.value) {
+    state.value = 'error'
+    lastError.value = 'iframe 加载失败'
+  }
+}
+
+// ============== 用户操作 ==============
+
 function reload() {
   retryCount.value++
   if (isSandbox.value) {
-    probeBackend()
+    probeBackend('manual')
   } else {
     const frame = frameRef.value
     if (frame) {
-      // 真机模式：直接重载 iframe
       state.value = 'loading'
       const oldSrc = frame.src
       frame.src = 'about:blank'
@@ -283,21 +454,7 @@ function reload() {
   }
 }
 
-function onError() {
-  logBuffer.error('iframe 加载失败')
-  if (isSandbox.value) {
-    state.value = 'error'
-    lastError.value = 'iframe 加载失败'
-  }
-}
-
-function onLoad() {
-  logBuffer.info('iframe 加载完成')
-  state.value = 'connected'
-}
-
 function openExternal() {
-  // 真机模式：跳出 Capacitor WebView 单独打开
   const url = `http://127.0.0.1:${port.value || 5244}/`
   window.open(url, '_blank')
 }
@@ -449,4 +606,66 @@ async function copyCommand() {
 .status-icon-inline {
   font-size: 14px;
 }
+
+/* 调试面板（devtools 风格） */
+.debug-panel {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  width: 80%;
+  max-width: 480px;
+  max-height: 50%;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  border-radius: 6px;
+  font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11px;
+  z-index: 100;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  display: flex;
+  flex-direction: column;
+}
+.debug-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  border-bottom: 1px solid #333;
+  background: #252526;
+  border-radius: 6px 6px 0 0;
+}
+.debug-close {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.debug-close:hover { color: #fff; }
+.debug-list {
+  overflow-y: auto;
+  padding: 4px 0;
+  flex: 1;
+}
+.debug-entry {
+  padding: 3px 10px;
+  display: flex;
+  gap: 6px;
+  border-bottom: 1px solid #2a2a2a;
+  word-break: break-all;
+}
+.debug-entry:hover { background: #2a2a2a; }
+.debug-ts { color: #858585; flex-shrink: 0; }
+.debug-level {
+  flex-shrink: 0;
+  font-weight: 600;
+  width: 42px;
+}
+.debug-info .debug-level { color: #4ec9b0; }
+.debug-warn .debug-level { color: #dcdcaa; }
+.debug-error .debug-level { color: #f48771; }
+.debug-probe .debug-level { color: #9cdcfe; }
+.debug-msg { color: #d4d4d4; }
+.debug-data { color: #858585; margin-left: 6px; }
 </style>

@@ -104,3 +104,19 @@
 - [ ] 重试计数显示（retryCount > 0 时）
 - [ ] vue-tsc --noEmit 通过
 - [ ] 浏览器显示「错误」状态卡（带重试 + 复制命令）
+
+## Phase 9: 修复 iframe @load 误判 connected
+
+- [ ] vite.config.ts 添加 /__openlist-health 中间件（Node 直连 5244 + CORS 头）
+- [ ] checkHealth() 走 /__openlist-health（不再 mode: 'cors' 探测 proxy）
+- [ ] probeBackend 用 Promise.race 实现 5s 前端兜底超时
+- [ ] onIframeLoad 不再直接置 connected（改 verifyAfterIframeLoad 后置校验）
+- [ ] SPA 内导航/刷新时 onIframeLoad 直接 return（state 已是 connected）
+- [ ] verifyAfterIframeLoad 检测到 502 页面自动 transition to 'error'
+- [ ] pollHealth() 10s 周期校验，后端突然挂掉自动跳回 error
+- [ ] onUnmounted 清理 pollHealth timer
+- [ ] 右下角 bug FAB 触发 devtools 风格调试面板
+- [ ] 调试面板记录 info/warn/error/probe 四级日志
+- [ ] 重启 dev server 后 /__openlist-health 返回 { alive: false, code: ECONNREFUSED }
+- [ ] 浏览器实测：iframe @load 后保持 error 态（不再误判 connected）
+- [ ] vue-tsc --noEmit 通过
