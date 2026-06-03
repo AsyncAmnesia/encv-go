@@ -319,7 +319,25 @@
   - [ ] 主 app 的 OpenList 管理面板（/openlist）能通过 ContentProvider 读状态
   - [ ] 沙箱 dev preview: http://localhost:5174/webview 能看 Capacitor UI + iframe 嵌入 OpenList SPA
 
+## Phase 11: 修复 vite build --prod 报错（Vite 8 不支持 --prod）
+
+> **核心痛点**：CI 报 `CACError: Unknown option --prod`，因为 Vite 8 移除了 Webpack 风格的 `--prod` 参数。
+> - Vite 8 默认 `vite build` = 生产（NODE_ENV=production）
+> - 开发模式用 `vite build --mode development`
+> - `--prod` 是 Webpack 遗留，Vite 直接 reject
+
+- [ ] 11.1 **重写 `scripts/build-plugin-openlist-web.sh`**：
+  - 默认生产（不传 vite 额外参数）
+  - `--dev` 切开发（传 `--mode development`）
+  - `--prod` 兼容旧调用（接受但不传给 vite）
+  - 错误参数直接 exit 1 + 提示用法
+- [ ] 11.2 **CI workflow 移除 `--prod`**：
+  - `android.yml` 改为 `bash scripts/build-plugin-openlist-web.sh`
+- [ ] 11.3 验证默认生产构建 EXIT=0
+- [ ] 11.4 验证 `--dev` 开发构建 EXIT=0
+- [ ] 11.5 验证 dev 产物 vs prod 产物大小差异（dev 更大含 sourcemap）
+
 ## Task Dependencies
 
-- Phase 0 → ... → Phase 9 → Phase 10
-- Phase 10 是上真机测试前的最后一道闸门
+- Phase 0 → ... → Phase 10 → Phase 11
+- Phase 11 修复 Phase 10 引入的 --prod 误用

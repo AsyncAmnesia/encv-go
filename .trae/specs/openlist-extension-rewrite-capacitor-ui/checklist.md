@@ -138,3 +138,13 @@
 - [ ] 模拟 CI：pnpm install + 双端 vue-tsc + plugin web build 全 EXIT=0
 - [ ] plugin-openlist/src/main/assets/openlist/index.html 写入且 base 路径相对化
 - [ ] 真机测试 checklist 9 项就绪
+
+## Phase 11: 修复 vite build --prod 报错
+
+- [ ] scripts/build-plugin-openlist-web.sh 默认生产（不传 vite 参数）
+- [ ] scripts/build-plugin-openlist-web.sh --dev 切开发（传 --mode development）
+- [ ] scripts/build-plugin-openlist-web.sh --prod 兼容旧调用（接受但不传给 vite）
+- [ ] android.yml 移除 --prod
+- [ ] 默认生产构建 EXIT=0
+- [ ] --dev 开发构建 EXIT=0
+- [ ] dev vs prod 产物大小差异验证
