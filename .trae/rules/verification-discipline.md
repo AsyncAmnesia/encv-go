@@ -132,3 +132,102 @@ WebSearch 用于「补完知识盲区」而非「验证已知」。
 - [ ] 我读的 CI 日志——定位到具体 task + line 了吗？
 
 任何一项打勾失败 → 停下来用本地工具补足，再生成。
+
+---
+
+## 七、沙箱可下载范围分析（实战归纳）
+
+> 沙箱里的网络并不全通。盲目 `curl <github-release>` / `curl <google-cdn>` 经常 timeout。**先测后下**。
+
+### 7.1 已确认可达的源（Maven 协议族）
+
+| 源 | URL | 用途 |
+|----|-----|------|
+| **Maven Central** | `https://repo1.maven.org/maven2/` | 任何 JVM 库（Kotlin / AndroidX / ksp 等都镜像到这里） |
+| **npm registry** | `https://registry.npmjs.org/` | node 包 |
+| **Gradle Plugin Portal** | `https://plugins.gradle.org/m2/` | Gradle 插件 |
+| **Gradle distributions** | `https://services.gradle.org/distributions/` | Gradle 二进制 |
+| **GitHub 主页** | `https://github.com` | 列表浏览、API |
+| **cache-redirector.jetbrains.com** | (slow but reachable) | JetBrains 工具链 |
+
+### 7.2 已确认阻断的源（二进制 CDN）
+
+| 源 | 状态 | 阻断原因 |
+|----|------|----------|
+| `https://objects.githubusercontent.com` (GitHub Objects CDN) | ❌ 404 | 沙箱代理阻断 |
+| `https://github.com/.../releases/download/` (GitHub Releases 下载) | ❌ 404 | 同上 |
+| `https://dl.google.com/dl/android/maven2/` | ❌ 404 | Google CDN 阻断 |
+| `https://download.jetbrains.com/kotlin/` | ❌ 404 | JetBrains CDN 阻断 |
+
+### 7.3 沙箱里**已经有**的工具（**不要重新装**）
+
+```bash
+# 来自 mise 安装
+java 17.0.2  → /root/.local/share/mise/installs/java/17.0.2/bin/java
+javac 17.0.2
+gradle 8.14.4  → /root/.local/share/mise/installs/gradle/8.14.4/gradle-8.14.4/bin/gradle
+mvn 3.9.10     → /root/.local/share/mise/installs/maven/3.9.10/apache-maven-3.9.10/bin/mvn
+
+# pnpm 已通过 pnpm/action-setup 装好
+pnpm
+
+# 来自系统
+apt / apt-get  →  但 apt 仓库**没** kotlin / gradle 包
+```
+
+### 7.4 拿 Kotlin 编译器的标准做法
+
+**禁止**用 `curl GitHub releases/download/.../kotlin-compiler-2.3.21.zip`（会超时）
+**正确做法**：用 Maven 拉 `kotlin-compiler-embeddable`，自建包装脚本：
+
+```bash
+# /usr/local/bin/kotlinc-2.3.21
+KOTLIN_HOME="/tmp/kotlin-home"
+mkdir -p "$KOTLIN_HOME/lib"
+for art in kotlin-compiler-embeddable kotlin-stdlib kotlin-reflect; do
+    if [ ! -f "$KOTLIN_HOME/lib/${art}-2.3.21.jar" ]; then
+        curl -sL --max-time 30 -o "$KOTLIN_HOME/lib/${art}-2.3.21.jar" \
+            "https://repo1.maven.org/maven2/org/jetbrains/kotlin/${art}/2.3.21/${art}-2.3.21.jar"
+    fi
+done
+exec java -cp "$KOTLIN_HOME/lib/kotlin-compiler-embeddable-2.3.21.jar:$KOTLIN_HOME/lib/kotlin-stdlib-2.3.21.jar:$KOTLIN_HOME/lib/kotlin-reflect-2.3.21.jar" \
+    org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -kotlin-home "$KOTLIN_HOME" "$@"
+```
+
+**用法**（与原版 kotlinc 兼容）：
+
+```bash
+kotlinc-2.3.21 -version
+kotlinc-2.3.21 -Xsuppress-version-warnings -no-stdlib -no-reflect <*.kt> -d /tmp/out
+```
+
+### 7.5 用 kotlinc 在沙箱里做语法验证的标准流程
+
+```bash
+# 步骤 1: 沙箱语法检查（不用 classpath，仅看 syntax）
+cd /path/to/plugin
+kotlinc-2.3.21 -no-stdlib -no-reflect -Xsuppress-version-warnings src/main/java/**/*.kt -d /tmp/out 2>/tmp/err.log
+
+# 步骤 2: 过滤"真 bug" vs "缺依赖"两类错误
+echo "=== 语法/抽象成员/Composable 错误（真 bug）==="
+grep -E "Syntax error|Unclosed comment|Missing '|Expecting token|Unexpected token|abstract member|does not implement abstract|Composable invocations can only happen" /tmp/err.log
+# 应该为空——如果不为空,说明 source 有真 bug
+
+echo "=== Unresolved references（缺依赖，不是 source bug）==="
+grep -c "unresolved reference" /tmp/err.log
+# 数字大但都是预期的（android.*、com.combo.*、openlistlib.*、compose.*）
+```
+
+### 7.6 CI 错误 vs 沙箱验证的差异
+
+| 维度 | CI（真） | 沙箱验证（本次） |
+|------|---------|---------------|
+| 是否有 android.jar | ✅ | ❌ |
+| 是否有 combolite-core.jar | ✅ | ❌ |
+| 是否有 openlist-classes.jar | ✅ | ❌ |
+| 是否有 compose runtime | ✅ | ❌ |
+| 能抓出 syntax error | ✅ | ✅ |
+| 能抓出 abstract member error | ✅ | ✅（仅当 classpath 完整） |
+| 能抓出 unresolved reference | ✅ | ❌（沙箱只能报"有 unresolved"，不能定真伪） |
+
+**沙箱验证的定位**：抓 syntax / parse 错误（CI log 的核心 ~60% 错误都是这一类），然后给 CI 跑全量。**不是**替代 CI。
