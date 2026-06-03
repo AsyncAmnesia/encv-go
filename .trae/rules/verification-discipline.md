@@ -138,6 +138,8 @@ WebSearch 用于「补完知识盲区」而非「验证已知」。
 ## 七、沙箱可下载范围分析（实战归纳）
 
 > 沙箱里的网络并不全通。盲目 `curl <github-release>` / `curl <google-cdn>` 经常 timeout。**先测后下**。
+>
+> **Kotlin 编译器准备已工程化** → 直接跑 [`/workspace/.trae/scripts/setup-kotlinc.sh`](../scripts/setup-kotlinc.sh) 一键就绪（自动读 `libs.versions.toml`、从 Maven Central 拉 4 个 jar、写 `/usr/local/bin/kotlinc-<version>` wrapper）。详见 [trae_web_sandbox_network.md §八](trae_web_sandbox_network.md)。
 
 ### 7.1 已确认可达的源（Maven 协议族）
 
@@ -177,8 +179,17 @@ apt / apt-get  →  但 apt 仓库**没** kotlin / gradle 包
 
 ### 7.4 拿 Kotlin 编译器的标准做法
 
+**推荐：一键脚本**（自动读 `libs.versions.toml`、Maven Central 拉 4 个 jar、写 wrapper）：
+
+```bash
+bash /workspace/.trae/scripts/setup-kotlinc.sh
+```
+
 **禁止**用 `curl GitHub releases/download/.../kotlin-compiler-2.3.21.zip`（会超时）
-**正确做法**：用 Maven 拉 `kotlin-compiler-embeddable`，自建包装脚本：
+**禁止**用 `curl download.jetbrains.com/kotlin/...`（沙箱 CDN 阻断）
+**禁止**用 `curl dl.google.com/dl/android/maven2/...`（沙箱 CDN 阻断）
+
+**手动做法**（不推荐，仅当脚本失败时备查）：用 Maven 拉 `kotlin-compiler-embeddable`，自建包装脚本：
 
 ```bash
 # /usr/local/bin/kotlinc-2.3.21

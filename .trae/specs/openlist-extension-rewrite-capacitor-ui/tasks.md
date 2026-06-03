@@ -404,3 +404,53 @@
 - [ ] 13.8 `.trae/rules/combolite.md` 记录 IPluginEntryClass 实际接口契约（pluginModule/onLoad/onUnload/Content + 必须 @Composable + Koin Module 类型）+ ClassLoader 拓扑（plugin.parent = host）
 - [ ] 13.9 清理 `job_logs.zip` + `/tmp/job_logs_inspect/`（用户明确要求）
 - [ ] 13.10 推送分支到 `trae/solo-agent-WAmQzy`，等 CI 跑通，下载 artifact 验证 `plugin-openlist-release.apk` 包含 `libgojni.so` + `Openlistlib*` + `assets/openlist/index.html`
+
+## Phase 14: 沙箱 kotlinc 验证发现的语法/抽象/Composable 错误修复
+
+> **核心痛点**：CI 报 21 个 `unresolved reference` + 4 个 `syntax/abstract/composable` error。
+> 根因不是缺依赖，而是 `OpenListBridge.kt:128` 写了 `dist/* to` 触发 Kotlin 嵌套块注释
+> （`/* /* */ */` 语义），吞掉后续 330 行 → 所有 21 个 unresolved 都是级联。
+>
+> Phase 14 的关键认知：**沙箱无 android.jar / compose.jar / combolite-core.jar，**
+> **unresolved reference 数字大但都是预期的**——沙箱只能抓 parse/syntax 错
+> （这正是 CI log 的核心 ~60% 错误）。
+
+- [ ] 14.1 修 `OpenListBridge.kt:128` 的 `dist/* to` 嵌套块注释触发器 → 改为 `dist contents`
+- [ ] 14.2 删 `OpenListConfig.kt` 的幻觉方法调用 `bridge.setPort()` / `bridge.setDataDir()`
+- [ ] 14.3 给 `OpenListEmbedWebView.kt` 的 Composable 加 `@Composable` 注解
+- [ ] 14.4 修 `OpenListPluginEntry.kt` 的 `context.applicationContext` → `context.application`（PluginContext 是 data class）
+- [ ] 14.5 补 `plugin-openlist/build.gradle.kts` 的 `compose.foundation` + `compose.foundation.layout` 依赖
+- [ ] 14.6 沙箱验证：grep "Syntax error\|abstract member\|Composable invocations" 应为 0
+- [ ] 14.7 沙箱 unresolved reference 数字大但都是预期第三方类型（android.* / com.combo.* / openlistlib.* / compose.*）
+- [ ] 14.8 重写 `OpenListBridge.applyToBridge` 仅做日志（gomobile 暴露的是 `Openlistlib.setConfigData()` 静态方法）
+
+## Phase 15: 沙箱 kotlinc 自动化准备（工程化）
+
+> **核心痛点**：每次新沙箱会话 /tmp 被清空，kotlin 编译器需要重装。
+> 手动 curl 4 个 jar + 写 wrapper 易错，且后续 AI 不知道有现成 wrapper，必须重做。
+>
+> **解决方案**：仿照 `app/encv-mobile/scripts/start-preview.sh` 的铁律风格
+> 写一个一键脚本 `/workspace/.trae/scripts/setup-kotlinc.sh`。
+
+- [ ] 15.1 **创建** `/workspace/.trae/scripts/setup-kotlinc.sh`
+  - `set -euo pipefail` 严格模式
+  - 6 步骤：前置检查 → 创建 KOTLIN_HOME → 拉 4 jar → 写 wrapper → 验证 → 状态报告
+  - 自动 `grep` `libs.versions.toml` 的 `kotlin = "X.Y.Z"`（不硬编码版本）
+  - monorepo 多种布局兼容（app/encv-mobile/android/gradle/、android/gradle/、gradle/）
+  - 100% 走 Maven Central，**绝不**走 GitHub Releases / Google CDN / JetBrains CDN
+  - 4 个 jar：`kotlin-compiler-embeddable` + `kotlin-stdlib` + `kotlin-reflect` + `kotlinx-coroutines-core-jvm:1.10.2`
+  - 写 `/usr/local/bin/kotlinc-<version>` 包装脚本（exec java -cp ... K2JVMCompiler）
+  - 跑 `kotlinc-<version> -version` 验证
+  - 退出码：0=OK / 1=前置缺 / 2=网络失败 / 3=版本校验失败
+  - 幂等：jar 已有且 size 合理（compiler ≥50MB，其余 ≥100KB）就 skip
+- [ ] 15.2 **运行验证**：`bash /workspace/.trae/scripts/setup-kotlinc.sh` → 6 步骤全过 + EXIT=0
+- [ ] 15.3 **再次运行验证幂等**：直接返回 `[skip] 已有` + EXIT=0
+- [ ] 15.4 **更新 `.trae/rules/trae_web_sandbox_network.md`**
+  - §七：CDN 阻断清单（GitHub Releases / dl.google.com / download.jetbrains.com 全部 ❌）
+  - §八：kotlinc 一键拉取方案（指向 setup 脚本 + 脚本设计要点 + 调试流程）
+  - §九：跨文档引用表
+- [ ] 15.5 **更新 `.trae/rules/verification-discipline.md` §7**
+  - 顶部加 "Kotlin 编译器准备已工程化" 提示 → 指向 setup 脚本
+  - §7.4 加 "推荐：一键脚本" + 列出 3 个 `禁止 curl` 的 CDN
+  - "手动做法" 标注 "不推荐，仅当脚本失败时备查"
+- [ ] 15.6 **更新 spec 本文件**（tasks.md Phase 15）记录新工作流
