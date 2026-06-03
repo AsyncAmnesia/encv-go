@@ -94,12 +94,56 @@ function openlistUiProxy(): Plugin {
           etag: true,
           dotfiles: false,
         })
+        // Pre-read and rewrite index.html once at startup.
+        // OpenList's built index.html references assets via absolute URLs
+        // like src="/assets/xxx.js" — at /openlist-ui/ these resolve to
+        // http://host:8100/assets/... (the main encv-mobile app), causing
+        // a blank page (wrong JS bundle loaded or 404).
+        let rewrittenIndexHtml = ''
+        try {
+          const raw = fs.readFileSync(path.join(OPENLIST_DIST, 'index.html'), 'utf-8')
+          rewrittenIndexHtml = raw
+            // HTML attribute patterns (static tags)
+            .replace(/src="\/assets\//g, 'src="/openlist-ui/assets/')
+            .replace(/href="\/assets\//g, 'href="/openlist-ui/assets/')
+            .replace(/href="\/manifest\.json"/g, 'href="/openlist-ui/manifest.json"')
+            .replace(/data-src="\/assets\//g, 'data-src="/openlist-ui/assets/')
+            .replace(/src=(['"])\/assets\//g, 'src=$1/openlist-ui/assets/')
+            .replace(/href=(['"])(?!\/openlist-ui\/)(\/[^'"]*\.(js|css|ico|png|svg|json|woff2?)["'])/g,
+              'href=$1/openlist-ui$2')
+            // JS string literals — the preloads block dynamically creates
+            // <script>/<link> elements with absolute paths like
+            //   "src":"/assets/index-xxx.js"
+            // These must also be rewritten or the browser loads the wrong bundle.
+            .replace(/":\"\/assets\//g, '":"/openlist-ui/assets/')
+            // Inject base_path so the OpenList SPA knows it's served under
+            // /openlist-ui/ and routes API calls through our proxy prefix.
+            .replace(
+              /base_path:\s*undefined/,
+              'base_path: "/openlist-ui/"',
+            )
+          server.config.logger.info(
+            `[openlist-ui] Rewrote ${raw.length} → ${rewrittenIndexHtml.length} bytes ` +
+            `(index.html absolute paths → /openlist-ui/ prefixed)`,
+          )
+        } catch (e: any) {
+          server.config.logger.warn(`[openlist-ui] Failed to rewrite index.html: ${e.message}`)
+        }
+
         server.middlewares.use('/openlist-ui', (req, res, next) => {
-          // CRITICAL: strip the /openlist-ui prefix so sirv can resolve relative paths.
-          // Without this, sirv looks for `<dist>/openlist-ui/assets/foo.js` (doesn't exist)
-          // and `single: true` returns index.html — masking all asset 404s as SPA fallback.
           const orig = req.url || '/'
-          req.url = orig.replace(/^\/openlist-ui\/?/, '/') || '/'
+          const stripped = orig.replace(/^\/openlist-ui\/?/, '/') || '/'
+
+          // If this request resolves to index.html (root or SPA fallback),
+          // serve our pre-rewritten version instead of letting sirv serve the original.
+          if (rewrittenIndexHtml && (stripped === '/' || stripped === '/index.html')) {
+            res.setHeader('Content-Type', 'text/html; charset=utf-8')
+            res.setHeader('Content-Length', Buffer.byteLength(rewrittenIndexHtml))
+            res.end(rewrittenIndexHtml)
+            return
+          }
+
+          req.url = stripped
           serve(req as any, res as any, next)
         })
       }
@@ -115,11 +159,6 @@ export default defineConfig({
     // the Vite dev server (default is localhost-only which is IPv6-only on
     // some sandboxes, breaking IPv4 / hostname access).
     host: '0.0.0.0',
-    // Disable HMR WebSocket — the OpenPreview reverse proxy / webview
-    // sometimes resets the WS upgrade mid-flight, surfacing as
-    // `net::ERR_EMPTY_RESPONSE` in the browser.  Without HMR the page is
-    // fully static + full-reload on edits (acceptable for the preview path).
-    hmr: false,
     // Allow reading app/openlist/ (parent of encv-mobile/) so Vite can serve the fork's dist
     fs: {
       allow: [path.resolve(__dirname, '..')],
