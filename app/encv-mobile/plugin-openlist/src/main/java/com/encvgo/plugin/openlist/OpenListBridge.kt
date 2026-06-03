@@ -392,18 +392,35 @@ object OpenListBridge : Event, LogCallback {
 
     // === openlistlib.Event interface ===
     // gomobile generates **camelCase** Java method names from Go's PascalCase.
-    // Evidence: read gomobile lowerFirst() (cmd/gobind/gen.go:527) + fork
-    // openlistlib/event.go @ Hi-Sillot/OpenList@404daf0. gomobile Go→Java type
-    // mapping for callback interfaces:
-    //   Go int   → Java int     (NOT long, even on 64-bit hosts)
-    //   Go int64 → Java long
-    //   Go int16 → Java short
-    //   Go string→ Java String
+    // Evidence: read gomobile genjava.go (golang.org/x/mobile/bind/genjava.go).
+    // gomobile Go→Java type mapping for **64-bit Android targets** (linux/arm64
+    // is the only ABI we ship — see build-openlist-aar.sh):
+    //   Go bool   → Java boolean
+    //   Go int8   → Java byte
+    //   Go int16  → Java short
+    //   Go int32  → Java int     (← NOT long, even though int is 64-bit on this platform)
+    //   Go int    → Java long    (← int is 64-bit on linux/arm64, so it becomes long)
+    //   Go int64  → Java long
+    //   Go uint32 → Java long    (unsigned widened to signed long)
+    //   Go uint64 → Java long
+    //   Go float32→ Java float
+    //   Go float64→ Java double
+    //   Go string → Java String
+    // Source: golang.org/x/mobile/bind/genjava.go:117-120 (case types.Int64,
+    // types.UntypedInt → java.Long). This is the actual rule — **DO NOT
+    // assume `int` is 32-bit just because Java's int is 32-bit**.
+    //
     // Abstract members gomobile generates for `Event` + `LogCallback`:
-    //   fun onProcessExit(p0: Int): Unit   ← int, NOT long
+    //   fun onProcessExit(p0: Long): Unit
     //   fun onShutdown(p0: String!): Unit
     //   fun onStartError(p0: String!, p1: String!): Unit
     //   fun onLog(p0: Short, p1: Long, p2: String!): Unit
+    //
+    // Phase 17 风险（仍 OPEN）: 原写 `code: Long` 是对的；Phase 21 误判
+    // "int → int" 改成了 `code: Int`，CI 立刻爆 `onProcessExit overrides
+    // nothing`（gomobile 实际生成 `Long`）。已回滚到 `Long`。
+    // Phase 21 的教训：gomobile 类型映射**必须**查 genjava.go 源码，
+    // 不能凭「Java int 是 32-bit → Go int 也是 32-bit」想当然。
     override fun onStartError(t: String, err: String) {
         Log.e(TAG, "[SAT-DBG][OpenList] OnStartError() | t=$t err=$err | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         val combined = "$t: $err"
@@ -424,7 +441,7 @@ object OpenListBridge : Event, LogCallback {
         broadcastStatus(0, false)
     }
 
-    override fun onProcessExit(code: Int) {
+    override fun onProcessExit(code: Long) {
         Log.e(TAG, "[SAT-DBG][OpenList] OnProcessExit() | code=$code | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         val msg = "process exited with code $code"
         synchronized(lock) {

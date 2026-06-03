@@ -345,7 +345,72 @@ go run /tmp/lowerFirst.go
 
 **特别提醒**：
 - `DBSync` / `HTTPClient` 这种**全大写子词**会被保留（`lowerFirst` 只动首字符）
-- 写 Kotlin 包装函数时**注意 A2 fallback**：[`build-openlist-aar.sh:381`](file:///workspace/scripts/build-openlist-aar.sh) 只在 fork 缺 `openlistlib/event.go` 时才注入。Hi-Sillot/OpenList@`404daf0` 已自带 event.go（`OnProcessExit(code int)`）→ A2 fallback 被跳过 → gomobile 生成 `onProcessExit(int)`。**Phase 21 已修复**：`OpenListBridge.kt:427` 把 `onProcessExit(code: Long)` 改为 `onProcessExit(code: Int)`，并同步把 A2 fallback 里的 `int64` 改为 `int` 保持兼容（见 [OpenListBridge.kt:392-403](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListBridge.kt#L392-L403) + [build-openlist-aar.sh:390-400](file:///workspace/scripts/build-openlist-aar.sh#L390-L400)）。风险关闭。
+- 写 Kotlin 包装函数时**注意 A2 fallback**：[`build-openlist-aar.sh:381`](file:///workspace/scripts/build-openlist-aar.sh) 只在 fork 缺 `openlistlib/event.go` 时才注入。Hi-Sillot/OpenList@`404daf0` 已自带 event.go（`OnProcessExit(code int)`）→ A2 fallback 被跳过 → gomobile 在 64-bit Android 上生成 `onProcessExit(Long)`（Go `int` 是 64-bit，映射到 Java `long`，见 [genjava.go:117-120](file:///root/go/pkg/mod/golang.org/x/mobile@v0.0.0-20260602190626-68735029466e/bind/genjava.go#L117-L120)）→ Kotlin 端必须写 `code: Long`。**Phase 21 误判为 `Int` 引发 CI 编译失败，已回滚**。Phase 17 风险**仍 OPEN**（机制是 fork 同步 A2 fallback，不是类型修正）。
+
+### 7.8.1 gomobile Go→Java 类型映射铁律（Phase 21 教训）
+
+> **Phase 21 教训**：凭「Java `int` 是 32-bit → Go `int` 也应该是 32-bit」想当然，把 `onProcessExit(code: Long)` 改成 `code: Int`，CI 立刻报 `onProcessExit overrides nothing`，浪费 5 分钟构建时间。
+
+**铁律**：gomobile Go→Java 类型映射**必须**查 `golang.org/x/mobile/bind/genjava.go`，不能凭 Java 的类型知识类推。
+
+**正确映射**（64-bit Android = 我们唯一的目标 ABI）：
+
+| Go 类型 | Java 类型 | 备注 |
+|--------|-----------|------|
+| `bool` | `boolean` | |
+| `int8` | `byte` | |
+| `int16` | `short` | |
+| `int32` / `rune` | **`int`** | 32-bit Java int，**不会**随平台变 |
+| **`int`** | **`long`** | Go `int` 是 64-bit（linux/arm64）→ Java `long` |
+| `int64` | `long` | |
+| `uint32` | `long` | 无符号加宽到有符号 long |
+| `uint64` | `long` | 同上 |
+| `float32` | `float` | |
+| `float64` | `double` | |
+| `string` | `String` | |
+| `[]byte` | `byte[]` | |
+
+**速查**（gomobile `bind/genjava.go:117-120` 原文）：
+```go
+case types.Int16:                     kind = java.Short
+case types.Int32, types.UntypedRune:  kind = java.Int
+case types.Int64, types.UntypedInt:   kind = java.Long  // ← Go int 在 64-bit 平台走这里
+```
+
+**沙箱自检脚本**（验证 gomobile 实际生成的 Java 签名）：
+```bash
+# 在沙箱里手动跑 gomobile 一次，把 Event.class 反编译看方法签名
+cd /tmp && mkdir test-bind && cd test-bind
+cat > go.mod <<'EOF'
+module test
+go 1.22
+require golang.org/x/mobile v0.0.0-20260602190626-68735029466e
+EOF
+cat > event.go <<'EOF'
+package test
+type Event interface {
+    OnProcessExit(code int)
+    OnStartError(t string, err string)
+}
+EOF
+go mod tidy
+gomobile bind -target=android/arm64 .
+unzip -p test.aar classes.jar > classes.jar
+javap -p -classpath classes.jar test.Event
+# 期望: fun onProcessExit(p0: Long): Unit
+#       fun onStartError(p0: String, p1: String): Unit
+```
+
+**预防 checklist**（gomobile 改动 commit 前必跑）：
+- [ ] 读 `genjava.go` 确认目标 Go 类型的 case 分支
+- [ ] 沙箱跑 `javap -p` 看实际生成的 Java 签名（见上）
+- [ ] 写 Kotlin 后本地用 Guard B（kotlinc pre-flight）验证能 override
+
+**反面教材**（Phase 21 我的错）：
+- ❌ 凭「Java int 是 32-bit」推断 Go int → Java int
+- ❌ 看了 K-Sillot/OpenList-Mobile 的 `Long` 后不深究，反而认定它错
+- ❌ 用户挑战我时，没主动查 gomobile 源码
+- ✅ 正确做法：先 `Read /root/go/pkg/mod/golang.org/x/mobile/.../bind/genjava.go`，再决定类型
 
 ### 7.9 守卫也要被 test 验证（Guard self-test discipline）
 

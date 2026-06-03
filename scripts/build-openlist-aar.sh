@@ -390,12 +390,12 @@ package openlistlib
 type Event interface {
 	OnStartError(eventType string, msg string)
 	OnShutdown(eventType string)
-	// Match Hi-Sillot/OpenList@404daf0 openlistlib/event.go: `int`, not int64.
-	// gomobile maps Go `int` to Java `int` (NOT long). If we wrote int64 here,
-	// and the A2 fallback activated (fork deleted event.go), gomobile would
-	// generate `onProcessExit(long)` — incompatible with the canonical fork
-	// signature `onProcessExit(int)`. So we intentionally match the fork.
-	OnProcessExit(code int)
+	// gomobile maps Go `int` to Java `long` on 64-bit Android (linux/arm64
+	// is our only target ABI). See genjava.go case types.Int64/types.UntypedInt
+	// → java.Long. Writing `int` here would still produce Java `long`, but
+	// for clarity (and to match what Hi-Sillot/OpenList@404daf0's event.go
+	// uses) we keep `int64` to make the AAR regeneration identical.
+	OnProcessExit(code int64)
 }
 
 type LogCallback interface {
