@@ -46,10 +46,14 @@ func TestGoProcessPlugin_NoReflectionOnComboLite(t *testing.T) {
 		pattern *regexp.Regexp
 		desc    string
 	}{
-		{regexp.MustCompile(`PluginManager\.isInitialized`), "PluginManager.isInitialized 直接引用"},
-		{regexp.MustCompile(`PluginManager\.installerManager\.installPlugin\(`), "InstallerManager.installPlugin() 直接调用"},
-		{regexp.MustCompile(`PluginManager\.getAllInstallPlugins\(\)`), "PluginManager.getAllInstallPlugins() 直接调用"},
-		{regexp.MustCompile(`installConfirmReceiver`), "BroadcastReceiver 已定义"},
+		// New architecture (post-Capacitor refactor): direct PluginManager
+		// calls have been replaced with EncvComboLiteHost wrapper. The test
+		// enforces the new contract: GoProcessPlugin.kt should delegate all
+		// SDK calls through EncvComboLiteHost, not reach into PluginManager
+		// internals (which would couple it to ComboLite SDK changes).
+		{regexp.MustCompile(`EncvComboLiteHost\.installPlugin\(`), "EncvComboLiteHost.installPlugin() 包装调用"},
+		{regexp.MustCompile(`EncvComboLiteHost\.uninstallPlugin\(`), "EncvComboLiteHost.uninstallPlugin() 包装调用"},
+		{regexp.MustCompile(`statusReceiver`), "BroadcastReceiver 实例已定义 (statusReceiver)"},
 		{regexp.MustCompile(`registerReceiver`), "BroadcastReceiver 已注册"},
 		{regexp.MustCompile(`executeComboLiteInstall`), "executeComboLiteInstall 辅助方法存在"},
 	}
@@ -101,14 +105,15 @@ func TestEncvApplication_ProxyManagerConfigured(t *testing.T) {
 
 	src := string(content)
 
-	if !strings.Contains(src, `setHostActivity`) {
-		t.Error("MISSING: setHostActivity not called in onFrameworkSetup")
+	// New architecture: EncvComboLiteHost.setupFramework(EncvHostActivity::class.java)
+	// replaces the old proxyManager.setHostActivity(EncvHostActivity::class.java).
+	// The contract now is: onFrameworkSetup must wire the host activity to the
+	// ComboLite host (via the EncvComboLiteHost wrapper) using EncvHostActivity.
+	if !strings.Contains(src, `EncvComboLiteHost.setupFramework`) {
+		t.Error("MISSING: EncvComboLiteHost.setupFramework not called in onFrameworkSetup")
 	}
 	if !strings.Contains(src, `EncvHostActivity::class.java`) {
-		t.Error("MISSING: EncvHostActivity::class.java not passed to setHostActivity")
-	}
-	if !strings.Contains(src, `proxyManager.setHostActivity`) {
-		t.Error("MISSING: proxyManager.setHostActivity call missing")
+		t.Error("MISSING: EncvHostActivity::class.java not passed to setupFramework")
 	}
 }
 

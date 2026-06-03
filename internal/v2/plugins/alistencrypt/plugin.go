@@ -95,11 +95,12 @@ func (p *AlistEncryptPlugin) Initialize(ctx context.Context) error {
 		slog.Warn("alist_encrypt: suffix exceeds 16 chars, falling back to .bin",
 			"suffix", suffix)
 		p.settings.Suffix = ".bin"
-	} else if isReservedSuffix(suffix) {
-		slog.Warn("alist_encrypt: suffix conflicts with reserved extension, falling back to .bin",
-			"suffix", suffix)
-		p.settings.Suffix = ".bin"
 	}
+	// Note: previously also fell back to .bin if suffix was a reserved V2
+	// extension (.sccgv / .encv). This silently masked real extension conflicts
+	// (TestValidateExtensionUniqueness_RealConflict scenario). Now any
+	// explicit suffix is allowed; ValidateExtensionUniqueness() in registry.go
+	// is responsible for detecting cross-plugin collisions and reporting them.
 
 	if p.settings.EncType != "aesctr" {
 		slog.Warn("alist_encrypt: unsupported enc_type, only aesctr is built-in",
@@ -362,11 +363,7 @@ func (p *AlistEncryptPlugin) ResetTaskState() {
 	p.inputPath = ""
 }
 
-var reservedSuffixes = map[string]bool{
-	".sccgv": true,
-	".encv":  true,
-}
-
-func isReservedSuffix(suffix string) bool {
-	return reservedSuffixes[strings.ToLower(suffix)]
-}
+// (reservedSuffixes / isReservedSuffix removed in Phase 19 — they were dead code
+// after we stopped silently falling back from .sccgv / .encv to .bin. The
+// ValidateExtensionUniqueness() function in registry.go is the new
+// authoritative source of truth for extension conflict detection.)
