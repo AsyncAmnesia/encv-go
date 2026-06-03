@@ -503,3 +503,42 @@ cp /tmp/toml.bak "$TOML"
 - [ ] **§7.9 引用过**, 元教训已写下来
 
 任何一项没做 → **不允许 commit**。
+
+#### 7.9.8 Go 改动 commit 前必跑三件套（Phase 19 教训）
+
+> **Phase 19 教训**：以为只改了 Go 格式（gofmt 整库），commit 前只跑 `gofmt -l` + `go build` 验证，
+> 没跑 `go test` → CI 立刻爆 3 个 pre-existing Go test 失败 + 1 个安全 bug。
+> 浪费一整次 CI 时间。
+
+**Go 改动 commit 前必跑**（顺序无关，但全要跑）：
+
+```bash
+# 1. 格式
+gofmt -l ./internal ./cmd ./pkg 2>/dev/null  # 应输出空
+[ $? -eq 0 ] && echo "✅ gofmt"
+
+# 2. 类型 / 静态检查
+go vet ./internal/... ./cmd/... 2>&1
+[ $? -eq 0 ] && echo "✅ go vet"
+
+# 3. 单元测试
+go test ./internal/... ./cmd/... -count=1 -timeout 120s 2>&1 | tee /tmp/gotest.log
+[ $? -eq 0 ] && echo "✅ go test"
+```
+
+**任何一项不过** → 不允许 commit。这是从"gofmt 整库"commit 把 3 个 pre-existing test 失败 + 1 个安全漏洞带进 CI 后总结的铁律。
+
+**Phase 19 真实战果**：
+| 检查 | 之前 | 之后 |
+|------|------|------|
+| `gofmt -l` | ✅ | ✅ |
+| `go build` | ✅ | ✅ |
+| **`go test`** | **❌ 漏跑** | **✅ 必跑** |
+| `go vet` | ❌ 漏跑 | ✅ 必跑 |
+
+新增的两个 test failure 类型（§7.9 guard 抓不到，因为是运行时不是编译时）：
+1. **架构漂移型** — 旧 contract test 期望老 API（PluginManager.isInitialized），代码已重构走新封装（EncvComboLiteHost）
+2. **silent-fallback 型** — alist_encrypt plugin 静默把 `.sccgv` 改为 `.bin`，掩盖真实冲突
+
+**CI 守卫不会抓运行时 test 失败**（gofmt guard / kotlinc guard / toml guard 都是编译期守卫），
+所以沙箱的 `go test ./internal/...` 是**唯一**提前发现这类问题的环节。
