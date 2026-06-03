@@ -28,10 +28,4 @@ dependencies {
     implementation(libs.kotlin.stdlib)
     implementation(libs.kotlin.reflect)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    // :plugin-openlist only exists when -PincludePlugins=true (see settings.gradle.kts).
-    // Without this guard, the main app assembleRelease crashes at configuration time
-    // because :plugin-openlist was never included.
-    if (findProject(":plugin-openlist") != null) {
-        implementation(project(":plugin-openlist"))
-    }
 }

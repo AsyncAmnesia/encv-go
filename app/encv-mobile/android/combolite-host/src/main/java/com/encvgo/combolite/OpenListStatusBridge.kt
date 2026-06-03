@@ -6,7 +6,6 @@ import android.content.Context
 import android.database.Cursor
 import android.net.Uri
 import android.util.Log
-import com.encvgo.plugin.openlist.OpenListStatusProvider
 
 /**
  * Host-side bridge to the OpenList extension's ContentProvider.
@@ -18,8 +17,32 @@ import com.encvgo.plugin.openlist.OpenListStatusProvider
  * Authority: com.encvgo.plugin.openlist.provider
  *   - /status → query returns MatrixCursor snapshot
  *   - /control → insert dispatches action
+ *
+ * NOTE: All URI/column constants are defined here (host side) and MUST match
+ * OpenListStatusProvider (plugin side).  This avoids a compile-time dependency
+ * on :plugin-openlist — the host builds and ships independently of any plugin.
  */
 object OpenListStatusBridge {
+
+    // ── ContentProvider contract (mirrors OpenListStatusProvider) ──
+    private const val AUTHORITY = "com.encvgo.plugin.openlist.provider"
+    private const val PATH_STATUS = "status"
+    private const val PATH_CONTROL = "control"
+
+    /** content://com.encvgo.plugin.openlist.provider/status */
+    internal val STATUS_URI: Uri = Uri.parse("content://$AUTHORITY/$PATH_STATUS")
+    /** content://com.encvgo.plugin.openlist.provider/control */
+    internal val CONTROL_URI: Uri = Uri.parse("content://$AUTHORITY/$PATH_CONTROL")
+
+    // MatrixCursor column names — must match STATUS_COLUMNS in OpenListStatusProvider.
+    private const val COL_RUNNING = "running"
+    private const val COL_PORT = "port"
+    private const val COL_PID = "pid"
+    private const val COL_DATA_SIZE = "data_size_bytes"
+    private const val COL_LAST_ERROR = "last_error"
+    private const val COL_LAST_UPDATE = "last_update_ts"
+
+    // ── End of contract constants ──
 
     private const val TAG = "OpenList-HostBridge"
 
@@ -49,7 +72,7 @@ object OpenListStatusBridge {
         Log.e(TAG, "[SAT-DBG][OpenList][HostBridge] read() begin | ts=${System.currentTimeMillis()}")
         val resolver: ContentResolver = context.contentResolver
         val cursor: Cursor? = try {
-            resolver.query(OpenListStatusProvider.STATUS_URI, null, null, null, null)
+            resolver.query(STATUS_URI, null, null, null, null)
         } catch (e: IllegalArgumentException) {
             Log.w(TAG, "[SAT-DBG][OpenList][HostBridge] provider authority not found, OpenList not installed", e)
             null
@@ -69,12 +92,12 @@ object OpenListStatusBridge {
                 Log.w(TAG, "[SAT-DBG][OpenList][HostBridge] cursor empty → NotInstalled")
                 return OpenListRuntime.NotInstalled
             }
-            val running = cursor.getInt(cursor.getColumnIndexOrThrow(OpenListStatusProvider.COL_RUNNING)) == 1
-            val port = cursor.getInt(cursor.getColumnIndexOrThrow(OpenListStatusProvider.COL_PORT))
-            val pid = cursor.getInt(cursor.getColumnIndexOrThrow(OpenListStatusProvider.COL_PID))
-            val dataSize = cursor.getLong(cursor.getColumnIndexOrThrow(OpenListStatusProvider.COL_DATA_SIZE))
-            val lastErr = cursor.getString(cursor.getColumnIndexOrThrow(OpenListStatusProvider.COL_LAST_ERROR)) ?: ""
-            val lastTs = cursor.getLong(cursor.getColumnIndexOrThrow(OpenListStatusProvider.COL_LAST_UPDATE))
+            val running = cursor.getInt(cursor.getColumnIndexOrThrow(COL_RUNNING)) == 1
+            val port = cursor.getInt(cursor.getColumnIndexOrThrow(COL_PORT))
+            val pid = cursor.getInt(cursor.getColumnIndexOrThrow(COL_PID))
+            val dataSize = cursor.getLong(cursor.getColumnIndexOrThrow(COL_DATA_SIZE))
+            val lastErr = cursor.getString(cursor.getColumnIndexOrThrow(COL_LAST_ERROR)) ?: ""
+            val lastTs = cursor.getLong(cursor.getColumnIndexOrThrow(COL_LAST_UPDATE))
             Log.e(TAG, "[SAT-DBG][OpenList][HostBridge] read() OK | running=$running port=$port pid=$pid dataSize=$dataSize lastErr='$lastErr'")
             OpenListRuntime(
                 isInstalled = true,
@@ -108,7 +131,7 @@ object OpenListStatusBridge {
             }
         }
         return try {
-            val result = context.contentResolver.insert(OpenListStatusProvider.CONTROL_URI, values)
+            val result = context.contentResolver.insert(CONTROL_URI, values)
             Log.e(TAG, "[SAT-DBG][OpenList][HostBridge] control() action=$action → result=$result")
             result != null
         } catch (e: Throwable) {
