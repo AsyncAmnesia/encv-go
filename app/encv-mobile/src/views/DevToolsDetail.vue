@@ -41,6 +41,25 @@
         </ion-item>
       </ion-list>
 
+      <!-- 沙箱预览：dev 专属入口，生产构建整段 v-if false 移除 -->
+      <ion-list v-if="isDev">
+        <ion-list-header>
+          <ion-label>{{ t('devtools.sandboxPreview') }}</ion-label>
+          <ion-badge slot="end" color="warning" class="scope-badge scope-dev">
+            <ion-icon :icon="bugOutline" class="scope-badge-icon"></ion-icon>
+            <span class="scope-text">DEV</span>
+          </ion-badge>
+        </ion-list-header>
+        <p class="section-hint">{{ t('devtools.sandboxPreviewHint') }}</p>
+        <ion-item button detail @click="openPreviewOpenList">
+          <ion-icon :icon="eyeOutline" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('devtools.previewOpenList') }}</h3>
+            <p>{{ t('devtools.previewOpenListDesc') }}</p>
+          </ion-label>
+        </ion-item>
+      </ion-list>
+
       <ion-list v-if="configLoaded">
         <ion-list-header>
           <ion-label>{{ t('settings.logSettings') }}</ion-label>
@@ -122,13 +141,13 @@ import { computed } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonIcon, IonLabel, IonToggle,
-  IonButton, alertController,
+  IonButton, IonBadge, alertController,
 } from '@ionic/vue'
 import {
   bugOutline, downloadOutline, readerOutline, trashOutline,
   chevronForward, playCircleOutline, musicalNotesOutline,
   colorPaletteOutline, settingsOutline, terminal, documentText,
-  cloudOutline, refreshOutline,
+  cloudOutline, refreshOutline, eyeOutline,
 } from 'ionicons/icons'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/composables/useI18n'
@@ -203,6 +222,17 @@ function handlePrototypeClick(proto: typeof prototypes[0]) {
   router.push(`/tabs/settings/devtools/prototype/${proto.id}`)
 }
 
+// 沙箱预览：强制整页跳转，绕过 Vue Router 拦截
+// 为什么不用 <router-link>：<router-link> 只走 in-app 路由，/openlist-ui/ 不在路由表
+// 为什么不用 <a href>：Vue Router 4 在某些 setup 下会拦截 plain <a> 点击事件，
+//   导致 router 试图导航到 /openlist-ui/ 失败、渲空 <ion-router-outlet>
+// 为什么不用 window.open(_, '_blank')：会破坏 OpenPreview 会话（用户需手动切回 tab）
+// 为什么用 window.location.assign：触发完整页面加载，浏览器原生处理同源跳转
+const isDev = import.meta.env.DEV
+function openPreviewOpenList() {
+  window.location.assign('/openlist-ui/')
+}
+
 function handleVConsoleToggle(event: CustomEvent) {
   toggleVConsole(event.detail.checked)
 }
@@ -261,6 +291,30 @@ async function handleClearLogs() {
   color: var(--encv-text-secondary, #999);
   margin: 0 16px 8px;
   line-height: 1.5;
+}
+
+.scope-badge {
+  font-size: 10px;
+  --padding-start: 6px;
+  --padding-end: 8px;
+  --padding-top: 3px;
+  --padding-bottom: 3px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.scope-badge-icon {
+  font-size: 12px;
+}
+.scope-synced {
+  --background: rgba(var(--ion-color-primary-rgb), 0.12);
+  --color: var(--ion-color-primary);
+}
+.scope-dev {
+  --background: rgba(var(--ion-color-warning-rgb), 0.18);
+  --color: var(--ion-color-warning-shade);
 }
 
 .log-level-card {
