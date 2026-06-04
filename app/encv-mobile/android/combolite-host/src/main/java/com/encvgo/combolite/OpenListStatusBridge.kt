@@ -33,7 +33,7 @@ import com.combo.core.utils.queryPlugin
  *   - ComboLite 在 install plugin 时解析 manifest，存到 providerRegistry
  *
  * Status 推送方向（host → plugin）保持 Phase 24：
- *   [com.encvgo.plugin.openlist.OpenListBridge.statusListener] 反射注册 host lambda
+ *   [com.encvgo.plugin.openlist.OpenListNativeService.statusListener] 反射注册 host lambda
  *   plugin broadcastStatus() → lambda.invoke → Capacitor notifyListeners
  *   （A3 不动这块，因为 A3 只换"读 snapshot / 发 action"通道，状态推送方向仍 in-process）
  *

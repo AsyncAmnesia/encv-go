@@ -36,8 +36,8 @@ private const val REQUEST_CODE_MPV_PLAYER = 9003
 private const val REQUEST_CODE_PICK_FOLDER = 9010
 
 /**
- * Phase 23: in-process 状态推送契约（替代 Phase 22 跨进程 broadcast）。
- * plugin-openlist 通过 [com.encvgo.plugin.openlist.OpenListBridge.statusListener]
+ * Phase 26: in-process 状态推送契约（替代 Phase 22 跨进程 broadcast）。
+ * plugin-openlist 通过 [com.encvgo.plugin.openlist.OpenListNativeService.statusListener]
  * （host 启动时反射注册）调用此 lambda → [notifyListeners] 推到 Capacitor。
  */
 private const val EVENT_OPENLIST_STATUS = "openlist:status"
@@ -67,8 +67,8 @@ class GoProcessPlugin : Plugin() {
     }
 
     /**
-     * Phase 23: in-process 状态变更回调（替代 Phase 22 跨进程 broadcast）。
-     * 通过 PluginClassLoader 反射写入 [com.encvgo.plugin.openlist.OpenListBridge.statusListener]
+     * Phase 26: in-process 状态变更回调（替代 Phase 22 跨进程 broadcast）。
+     * 通过 PluginClassLoader 反射写入 [com.encvgo.plugin.openlist.OpenListNativeService.statusListener]
      * 后，plugin 每次 broadcastStatus() 都会调此 lambda → [notifyListeners] 推 Capacitor。
      *
      * 类型选择：Kotlin 函数类型 `(Map<String, Any?>) -> Unit` —— 编译产物是
@@ -647,7 +647,7 @@ class GoProcessPlugin : Plugin() {
     /**
      * Phase 23: 通过 PluginClassLoader 反射注册 statusListener 到 plugin。
      * plugin 在 host 进程里跑（PluginClassLoader），无 IPC 边界；
-     * 直接拿 LoadedPluginInfo.classLoader.loadClass("com.encvgo.plugin.openlist.OpenListBridge")
+     * 直接拿 LoadedPluginInfo.classLoader.loadClass("com.encvgo.plugin.openlist.OpenListNativeService")
      * → 拿 statusListener 字段 → set(pluginStatusCallback) 即可。
      *
      * 失败语义：plugin 未安装/未加载 → 静默返回（前端首屏会拿到 NotInstalled），
@@ -671,7 +671,10 @@ class GoProcessPlugin : Plugin() {
             return
         } ?: return
         try {
-            val bridgeClass = loaded.classLoader.loadClass("com.encvgo.plugin.openlist.OpenListBridge")
+            // Phase 26: 反射字段从 OpenListBridge 改为 OpenListNativeService
+            // —— gomobile bind 移除后, statusListener 字段迁移到 OpenListNativeService
+            // (与 OpenListBridge 字段同型: Kotlin @JvmStatic Function1<Map<String, Any?>, Unit>)
+            val bridgeClass = loaded.classLoader.loadClass("com.encvgo.plugin.openlist.OpenListNativeService")
             val listenerField = bridgeClass.getDeclaredField("statusListener")
             listenerField.isAccessible = true
             listenerField.set(null, pluginStatusCallback)
@@ -686,7 +689,7 @@ class GoProcessPlugin : Plugin() {
         if (!pluginListenerRegistered) return
         try {
             val l = EncvComboLiteHost.getLoadedPluginInfo("com.encvgo.plugin.openlist") ?: return
-            val bridgeClass = l.classLoader.loadClass("com.encvgo.plugin.openlist.OpenListBridge")
+            val bridgeClass = l.classLoader.loadClass("com.encvgo.plugin.openlist.OpenListNativeService")
             val listenerField = bridgeClass.getDeclaredField("statusListener")
             listenerField.isAccessible = true
             listenerField.set(null, null)

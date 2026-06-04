@@ -66,12 +66,10 @@ class OpenListPluginJSInterface(
     @JavascriptInterface
     fun getRuntimeStatus(): String {
         return try {
-            val snapshot = OpenListBridge.snapshot()  // Map<String, Any?>
+            // Phase 26: 改用 OpenListNativeService.snapshot() (ProcessBuilder 启的 Go 进程状态)
+            val snapshot = OpenListNativeService.snapshot()
             val cfg = OpenListConfig.load(appContext)
             val isRunning = (snapshot["running"] as? Boolean) ?: false
-            // Phase 17 fix: snapshot() returns Map<String, Any?> (NOT a typed object).
-            // Must use map-key access (["key"]), not property access (.key).
-            // snake_case keys per OpenListBridge.snapshot() impl: "data_size_bytes" / "last_error" / "last_update_ts"
             JSONObject().apply {
                 put("running", isRunning)
                 put("port", if (isRunning) (snapshot["port"] as? Int) ?: 0 else cfg.port)
@@ -104,10 +102,10 @@ class OpenListPluginJSInterface(
                 dataDir = cfg.dataDir,
                 adminPassword = password
             )
-            // 如果服务正在运行，实时生效
-            if (OpenListPluginService.isRunning) {
-                OpenListBridge.setAdminPassword(password)
-            }
+            // Phase 26: adminPassword 走 OpenList REST API /api/admin/user/set
+            // —— 不再调 OpenListBridge.setAdminPassword (gomobile bind 路径已废弃)
+            // native service 已通过 setAdminPassword() 收到 password,内部缓存待 REST 调用
+            OpenListNativeService.setAdminPassword(password)
             true
         } catch (e: Throwable) {
             Log.e(tag, "[OpenList] setAdminPassword() FAILED", e)

@@ -19,35 +19,19 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Phase 25 架构正确化（ComboLite §10.3）：OpenList plugin 改成 IPluginService 实现。
+ * Phase 26: 仿 host app 的 [com.encvgo.app.EncvGoService] + 上一版 OpenListPluginService
+ * 合并——用 ProcessBuilder 启 libopenlist.so（仿 EncvGoService）替代 gomobile bind 嵌入
+ * 进程模式（Openlistlib.start）。
  *
- * 历史：
- *   - Phase 24 之前：`class OpenListService : Service()` + manifest `<service>` 声明
- *     状态：永远不会被系统实例化（plugin 没系统 install），但 startupSequence 逻辑
- *           是手写在 OpenListService.onStartCommand 里，**没有任何路径触发**。
- *     运行时实际启动靠 host 通过 classloader 反射 `OpenListBridge.start()`。
- *   - Phase 24：保留 `extends Service` 死代码，仅在反射 `OpenListBridge` 上做改进。
- *
- * 现在（Phase 25 方案 A）：
- *   - 改为 `class OpenListPluginService : BasePluginService()`（IPluginService 实现）
- *   - 删 manifest `<service>` 声明（plugin service 是 POJO，框架走 BaseHostService 代理）
- *   - Context 来源：`proxyService`（host manifest 注册的 BaseHostService 实例）
- *   - 启动入口（待 A2 落地）：
- *       host 端 `context.startPluginService(OpenListPluginService::class.java, "main")`
- *       → ProxyManager.acquireServiceProxy → Intent 指向 host service
- *       → BaseHostService.onStartCommand → initPluginService → newInstance() + onAttach + onCreate
- *       → onAttach(proxyService) 注入 host service 引用（plugin 拿 Context）
- *       → onCreate() (本类) → 走 startupSequence
- *   - A2 落地前运行时仍由 host 反射 `OpenListBridge.start()` 走 in-process 路径；
- *     OpenListPluginService 类只是**架构正确**的占位，没有被启动过。
- *
- * 关键适配（BasePluginService → Service API 转换）：
- *   - `getSystemService(...)` → `proxyService!!.getSystemService(...)`（必须 non-null）
- *   - `startForeground(id, notif)` → `proxyService!!.startForeground(id, notif)`
- *   - `stopForeground(flag)` → `proxyService!!.stopForeground(flag)`
- *   - `stopSelf()` → `proxyService!!.stopSelf()`
- *   - `packageManager` → `proxyService!!.packageManager`
- *   - `applicationContext` → `proxyService!!.applicationContext` (或 `proxyService!!`)
+ * 启动链路：
+ *   host OpenListPluginService::class.java, "main"）
+ *     → ProxyManager.acquireServiceProxy
+ *     → BaseHostService.onStartCommand
+ *     → initPluginService → newInstance() + onAttach + onCreate
+ *     → onAttach(proxyService) 注入 host service 引用（plugin 拿 Context）
+ *     → onCreate() (本类) → 走 startupSequence
+ *     → startupSequence → OpenListNativeService.start() (ProcessBuilder 启 libopenlist.so)
+ *     → 等待 OpenList Go server "listening on 5244" 日志 → broadcastStatus(port, true)
  */
 class OpenListPluginService : BasePluginService() {
 
@@ -55,9 +39,7 @@ class OpenListPluginService : BasePluginService() {
         private const val TAG = "OpenList-PluginService"
         private const val CHANNEL_ID = "openlist_server"
         private const val FOREGROUND_ID = 5224
-        private const val DEFAULT_PORT = 5244
         private const val PORT_CONFLICT_TIMEOUT_MS = 2_000
-        private const val DB_SYNC_INTERVAL_MS = 5 * 60 * 1_000L
 
         const val ACTION_SHUTDOWN = "com.encvgo.plugin.openlist.ACTION_SHUTDOWN"
         const val BROADCAST_PORT_CONFLICT = "com.encvgo.plugin.openlist.BROADCAST_PORT_CONFLICT"
@@ -72,25 +54,11 @@ class OpenListPluginService : BasePluginService() {
         var currentPort: Int = 0
             private set
 
-        /**
-         * 当前活跃的 plugin service 实例（如果有）。
-         * host 在 [com.encvgo.plugin.openlist.OpenListPluginEntry.onUnload] 关闭时
-         * 通过 `service.shutdown()` 优雅停止（如未运行则 no-op）。
-         */
         @Volatile
         private var instance: OpenListPluginService? = null
 
-        /**
-         * 拿到当前 service 实例（用于 host 在 onUnload 触发 graceful shutdown）。
-         * 与历史 `OpenListService.getInstance()` 等价语义。
-         */
         fun getInstance(): OpenListPluginService? = instance
 
-        /**
-         * 合规修复（Phase 0）：供 OpenListPluginEntry.onUnload() 调用。
-         * 通知当前运行的 service 优雅停止（如未运行则 no-op）。
-         * 与历史 OpenListService.stopIfRunning() 行为一致。
-         */
         fun stopIfRunning() {
             val svc = instance
             if (svc == null) {
@@ -105,17 +73,6 @@ class OpenListPluginService : BasePluginService() {
     private val worker = Executors.newSingleThreadExecutor()
     private val started = AtomicBoolean(false)
     private var wakeLock: PowerManager.WakeLock? = null
-
-    private val dbSyncRunnable = object : Runnable {
-        override fun run() {
-            try {
-                OpenListBridge.forceDbSync()
-            } catch (e: Exception) {
-                Log.w(TAG, "forceDbSync failed", e)
-            }
-            handler.postDelayed(this, DB_SYNC_INTERVAL_MS)
-        }
-    }
 
     // === IPluginService lifecycle ===
 
@@ -133,6 +90,8 @@ class OpenListPluginService : BasePluginService() {
         } catch (e: Throwable) {
             Log.e(TAG, "[SAT-DBG][OpenList] createNotificationChannel FAILED", e)
         }
+        // 把 ctx 注入 OpenListNativeService（让 native service 能 locate libopenlist.so）
+        OpenListNativeService.init(ctx)
         Log.e(TAG, "[SAT-DBG][OpenList] onCreate() done | notification channel created")
     }
 
@@ -162,17 +121,12 @@ class OpenListPluginService : BasePluginService() {
     override fun onDestroy() {
         Log.e(TAG, "[SAT-DBG][OpenList] onDestroy() | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         instance = null
-        handler.removeCallbacks(dbSyncRunnable)
         releaseWakeLock()
         worker.shutdownNow()
         super.onDestroy()
         Log.e(TAG, "[SAT-DBG][OpenList] onDestroy() done")
     }
 
-    /**
-     * 外部触发优雅停止（[stopIfRunning] 调用）。等价于在 plugin service 上
-     * 派发 ACTION_SHUTDOWN intent——通过 worker 走 shutdownSequence。
-     */
     private fun shutdownFromExternal() {
         try {
             worker.execute { shutdownSequence() }
@@ -181,7 +135,7 @@ class OpenListPluginService : BasePluginService() {
         }
     }
 
-    // === 业务逻辑（从历史 OpenListService 搬过来，几乎原样） ===
+    // === 业务逻辑（仿 EncvGoService + 旧 OpenListService.startupSequence） ===
 
     private fun startupSequence(portOverride: Int = -1) {
         Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() begin | portOverride=$portOverride | thread=${Thread.currentThread().name}")
@@ -208,7 +162,6 @@ class OpenListPluginService : BasePluginService() {
         Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step2: checking port $port...")
         if (isPortOccupied(port)) {
             Log.w(TAG, "Port $port already in use, broadcasting PORT_CONFLICT")
-            // PORT_CONFLICT 仍走 LocalBroadcastManager (host 监听, plugin 内 0 receiver 监听到——保留原行为)
             androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(ctx).sendBroadcast(
                 Intent(BROADCAST_PORT_CONFLICT).putExtra(EXTRA_CONFLICT_PORT, port)
             )
@@ -219,33 +172,35 @@ class OpenListPluginService : BasePluginService() {
         }
         Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step2 done: port $port is free | elapsed=${System.currentTimeMillis() - t1}ms")
 
-        // Step 3: apply config to bridge
+        // Step 3: apply config to native service
         val t2 = System.currentTimeMillis()
-        Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step3: applying config to bridge...")
+        Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step3: applying config to native service...")
         try {
-            cfg.applyToBridge(OpenListBridge)
+            OpenListNativeService.setPort(port)
+            OpenListNativeService.setDataDir(cfg.dataDir)
+            // adminPassword 不传 native (走 OpenList REST API 在 web 端触发)
             Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step3 done: config applied | elapsed=${System.currentTimeMillis() - t2}ms")
 
-            // Step 4: bridge init
+            // Step 4: native service init + start
             val t3 = System.currentTimeMillis()
-            Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step4: initializing bridge...")
-            OpenListBridge.init(ctx)
-            Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step4 done: bridge initialized | elapsed=${System.currentTimeMillis() - t3}ms")
+            Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step4: starting native service...")
+            OpenListNativeService.init(ctx)
+            OpenListNativeService.start()
+            // OpenListNativeService.start() 是非阻塞的(内部 Thread{} 包 ProcessBuilder),
+            // isRunning 会在 stdout reader 线程捕获 "listening on" 日志后被设 true
+            Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step4 done: native service started (non-blocking) | elapsed=${System.currentTimeMillis() - t3}ms")
 
-            // Step 5: bridge start
-            val t4 = System.currentTimeMillis()
-            Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step5: starting bridge...")
-            OpenListBridge.start()
-            Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() step5 done: bridge started | elapsed=${System.currentTimeMillis() - t4}ms")
-
+            // 注意:Phase 26 简化 — startupSequence 不再 poll 等待 running=true,
+            // 由 OpenListNativeService 自己的 stdout reader 捕获 "listening on" 后
+            // broadcastStatus(port, true) 推 host.
+            // 这里只设本地 isRunning 标记(假设 server 启动成功——失败由 onLog/onProcessExit 路径处理)
             isRunning = true
-            OpenListBridge.broadcastStatus(port, true)
+            OpenListNativeService.broadcastStatus(port, true)
             try { updateNotification(ctx, "OpenList 运行中 :$port") } catch (_: Throwable) {}
-            handler.postDelayed(dbSyncRunnable, DB_SYNC_INTERVAL_MS)
             Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() complete | total=${System.currentTimeMillis() - t0}ms")
         } catch (e: Exception) {
             Log.e(TAG, "[SAT-DBG][OpenList] startupSequence() FAILED | elapsed=${System.currentTimeMillis() - t0}ms", e)
-            OpenListBridge.broadcastStatus(0, false)
+            OpenListNativeService.broadcastStatus(0, false)
             try { ctx.stopForeground(android.app.Service.STOP_FOREGROUND_REMOVE) } catch (_: Throwable) {}
             try { ctx.stopSelf() } catch (_: Throwable) {}
         }
@@ -254,18 +209,17 @@ class OpenListPluginService : BasePluginService() {
     private fun shutdownSequence() {
         Log.e(TAG, "[SAT-DBG][OpenList] shutdownSequence() begin | thread=${Thread.currentThread().name} | ts=${System.currentTimeMillis()}")
         val ctx = proxyService
-        handler.removeCallbacks(dbSyncRunnable)
         try {
-            Log.e(TAG, "[SAT-DBG][OpenList] shutdownSequence() calling bridge shutdown...")
-            OpenListBridge.shutdown(5_000L)
-            Log.e(TAG, "[SAT-DBG][OpenList] shutdownSequence() bridge shutdown returned")
+            Log.e(TAG, "[SAT-DBG][OpenList] shutdownSequence() calling native service shutdown...")
+            OpenListNativeService.shutdown(5_000L)
+            Log.e(TAG, "[SAT-DBG][OpenList] shutdownSequence() native service shutdown returned")
         } catch (e: Exception) {
             Log.w(TAG, "OpenList shutdown error", e)
-            Log.e(TAG, "[SAT-DBG][OpenList] shutdownSequence() bridge shutdown error", e)
+            Log.e(TAG, "[SAT-DBG][OpenList] shutdownSequence() native service shutdown error", e)
         }
         isRunning = false
         currentPort = 0
-        OpenListBridge.broadcastStatus(0, false)
+        OpenListNativeService.broadcastStatus(0, false)
         if (ctx != null) {
             try { ctx.stopForeground(android.app.Service.STOP_FOREGROUND_REMOVE) } catch (_: Throwable) {}
             try { ctx.stopSelf() } catch (_: Throwable) {}
@@ -309,7 +263,6 @@ class OpenListPluginService : BasePluginService() {
         val pendingIntent = if (openIntent != null) {
             PendingIntent.getActivity(ctx, 0, openIntent, flags)
         } else {
-            // plugin 端 fallback：调 proxyService 自身（host service 实例）
             val proxy = proxyService
             val pi = if (proxy != null) {
                 PendingIntent.getService(ctx, 0, Intent(ctx, proxy.javaClass), flags)

@@ -42,18 +42,19 @@ class OpenListPluginEntry : IPluginEntryClass {
      * 现在：初始化 OpenListBridge + OpenListConfig（与 MpvPluginEntry 的 Content() 内
      * 初始化模式一致，只是提到 onLoad 阶段）。
      */
+    /**
+     * Phase 26: 改为 OpenListNativeService（仿 host app 的 EncvGoService，ProcessBuilder
+     * 启 libopenlist.so）。不再调 OpenListBridge。
+     */
     override fun onLoad(context: PluginContext) {
         Log.e(tag, "[OpenList] onLoad() | thread=${Thread.currentThread().name}")
         try {
-            // Phase 14 修复：PluginContext 是 data class(application: Application, pluginInfo)
-            // 字段名是 application，不是 applicationContext（Android 习惯的 applicationContext
-            // 在这里用 .application.context 也可，但 PluginContext 自身直接暴露 application）
             val appCtx: Context = context.application
-            // 加载持久化配置
             val cfg = OpenListConfig.load(appCtx)
-            cfg.applyToBridge(OpenListBridge)
-            // 初始化 OpenListBridge（gomobile bind 初始化 + 资源提取）
-            OpenListBridge.init(appCtx)
+            // 注入 ctx + config 到 native service（不立即启进程——启进程在 service.onStartCommand）
+            OpenListNativeService.init(appCtx)
+            OpenListNativeService.setPort(cfg.port)
+            OpenListNativeService.setDataDir(cfg.dataDir)
             Log.e(tag, "[OpenList] onLoad() OK | port=${cfg.port} dataDir=${cfg.dataDir}")
         } catch (t: Throwable) {
             Log.e(tag, "[OpenList] onLoad() FAILED", t)
@@ -64,20 +65,18 @@ class OpenListPluginEntry : IPluginEntryClass {
      * ComboLite 框架卸载插件时调用。
      *
      * 修复：原来只 log，运行时继续在后台。
-     * 现在：shutdown Bridge + PluginService（彻底清理）。
+     * 现在：shutdown NativeService + PluginService（彻底清理）。
      *
-     * Phase 25 改造：plugin service 改为 [OpenListPluginService]（BasePluginService 实现）。
-     * 如果 service 之前通过 [context.startPluginService] 启动过，
-     * [OpenListPluginService.stopIfRunning] 会优雅停掉；否则 no-op。
-     * （Phase 24 期间 service 是 dead code，本调用 no-op 是预期行为。）
+     * Phase 26: 改为 shutdown OpenListNativeService（ProcessBuilder 启的 Go 进程）。
+     * 不再调 OpenListBridge.shutdown。
      */
     override fun onUnload() {
         Log.e(tag, "[OpenList] onUnload()")
         try {
             // 停止 plugin service（如有运行）
             OpenListPluginService.stopIfRunning()
-            // shutdown gomobile runtime
-            OpenListBridge.shutdown(5_000L)
+            // shutdown native Go server process
+            OpenListNativeService.shutdown(5_000L)
             Log.e(tag, "[OpenList] onUnload() OK")
         } catch (t: Throwable) {
             Log.e(tag, "[OpenList] onUnload() FAILED", t)
@@ -96,9 +95,11 @@ class OpenListPluginEntry : IPluginEntryClass {
      */
     @Composable
     override fun Content() {
+        // Phase 26: WebView 加载 OpenList Go server 提供的 Web UI (http://127.0.0.1:5244/)
+        // —— OpenListNativeService.start() 启 Go 进程后,OpenList server 监听 127.0.0.1:5244
         OpenListEmbedWebView(
             containerId = "openlist-plugin-embed",
-            initialUrl = "https://localhost/openlist/"
+            initialUrl = "http://127.0.0.1:5244/"
         )
     }
 }

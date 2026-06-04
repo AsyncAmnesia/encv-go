@@ -551,70 +551,23 @@ jobs:
           fi
 
       # === Build OpenList Plugin (AAR → APK via aar2apk) ===
-      # Phase 18 Cache A: cache the gomobile bind output by fork commit hash.
-      # gomobile bind takes 3-5 min; if neither the fork commit nor the build
-      # script changed, reuse the cached openlist.aar + openlist-classes.jar.
-      - name: Restore OpenList AAR from cache
-        id: cache-openlist-aar
-        uses: actions/cache@v4
-        with:
-          path: |
-            app/encv-mobile/plugin-openlist/libs/openlist.aar
-            app/encv-mobile/plugin-openlist/libs/openlist-classes.jar
-          key: openlist-aar-${{ hashFiles('scripts/build-openlist-aar.sh', 'app/encv-mobile/plugin-openlist/build.gradle.kts') }}-v2
-          restore-keys: |
-            openlist-aar-
-
-      - name: Build OpenList AAR (gomobile bind)
-        if: inputs.skip_plugin != true && steps.cache-openlist-aar.outputs.cache-hit != 'true'
-        continue-on-error: true
-        run: |
-          echo "═══ OpenList AAR Build (gomobile bind) ═══"
-          bash scripts/build-openlist-aar.sh \
-            --output app/encv-mobile/plugin-openlist/libs \
-            --ndk /usr/local/lib/android/sdk/ndk/${{ env.NDK_VERSION }} \
-            --frontend-version v4.1.8
-          echo ""
-          echo "=== AAR output ==="
-          ls -lh app/encv-mobile/plugin-openlist/libs/openlist.aar*
-          echo "=== AAR contents (spot check) ==="
-          unzip -l app/encv-mobile/plugin-openlist/libs/openlist.aar | grep -E "libgojni|Openlistlib|\.so" || echo "(no matches)"
-
-      - name: Extract OpenList AAR for plugin packaging
+      # Phase 26: 弃用 gomobile bind 嵌入进程模式,改用 host app 的 EncvGoService 模式
+      # (ProcessBuilder 启 libopenlist.so)—— 详见 plugin-openlist/build.gradle.kts 注释。
+      # 旧 gomobile bind 步骤 (Build OpenList AAR + Extract OpenList AAR) 完全废弃:
+      #   - libopenlist.so 由后续 Phase C (Go cross-compile) 步骤产出,直接放
+      #     plugin-openlist/src/main/jniLibs/<abi>/,走 AGP 标准 jniLibs 流程
+      #   - aar2apk 任务 [ConvertAarToApkTask.kt:179-193] 无条件 addNativeLibs,
+      #     集成 libopenlist.so 进 plugin APK 天然可行,无需 aar 字节 hack
+      #   - openlist.aar / openlist-classes.jar / injectOpenlistClassesToAar 任务
+      #     全部删除 (plugin-openlist/build.gradle.kts 已回退到干净 95 行)
+      - name: "[Phase 26] OpenList native binary placeholder"
         if: inputs.skip_plugin != true
-        continue-on-error: true
         run: |
-          AAR="app/encv-mobile/plugin-openlist/libs/openlist.aar"
-          PLUGIN_SRC="app/encv-mobile/plugin-openlist/src/main"
-          echo "=== Extracting openlist.aar for plugin packaging ==="
-          TMPDIR=$(mktemp -d)
-          unzip -o "$AAR" -d "$TMPDIR"
-          echo "AAR top-level contents:"
-          ls -la "$TMPDIR/"
-          # Copy JNI libs (libgojni.so) so AGP bundles them into the plugin AAR,
-          # which aar2apk then packages into the final plugin APK.
-          if [ -d "$TMPDIR/jni" ]; then
-            rm -rf "$PLUGIN_SRC/jniLibs"
-            mkdir -p "$PLUGIN_SRC/jniLibs"
-            cp -r "$TMPDIR/jni/"* "$PLUGIN_SRC/jniLibs/"
-            echo "JNI libs copied:"
-            find "$PLUGIN_SRC/jniLibs" -name "*.so" -exec ls -lh {} \;
-          else
-            echo "::error::No jni/ directory in openlist.aar"
-            exit 1
-          fi
-          # Copy classes.jar (gomobile bindings) so AGP bundles it into the
-          # plugin AAR — regular .jar deps are bundled, unlike .aar deps.
-          if [ -f "$TMPDIR/classes.jar" ]; then
-            cp "$TMPDIR/classes.jar" app/encv-mobile/plugin-openlist/libs/openlist-classes.jar
-            echo "classes.jar copied:"
-            ls -lh app/encv-mobile/plugin-openlist/libs/openlist-classes.jar
-          else
-            echo "::error::No classes.jar in openlist.aar"
-            exit 1
-          fi
-          rm -rf "$TMPDIR"
-          echo "=== Extraction complete ==="
+          echo "═══ Phase 26: gomobile bind 弃用,OpenList native binary 由 Phase C (Go cross-compile) 提供 ═══"
+          echo "当前状态: libopenlist.so 尚未编出,plugin-openlist.aar 不含 jniLibs"
+          echo "预期结果: plugin-openlist APK 仍能 build 成功 (Kotlin 编译 OK),但 OpenList server 进程无法启动 (缺 libopenlist.so)"
+          echo "TODO (Phase C): clone Hi-Sillot/OpenList fork → glebarez/sqlite 切换 → Go 1.21+ 交叉编译 → 拷到 src/main/jniLibs/<abi>/"
+          ls -la app/encv-mobile/plugin-openlist/ | head -10
 
       - name: Build OpenList plugin APK (aar2apk)
         if: inputs.skip_plugin != true
