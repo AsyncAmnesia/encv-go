@@ -35,6 +35,7 @@ cleanup() {
   pkill -P $$ 2>/dev/null || true
   pkill -x air 2>/dev/null || true
   pkill -f 'node.*vite' 2>/dev/null || true
+  pkill -f 'Hi-Sillot-OpenList-Frontend.*vite' 2>/dev/null || true
   exit 0
 }
 # 分离模式：禁止 trap 让子进程在脚本退出后继续存活
@@ -82,11 +83,12 @@ cd "${REPO_ROOT}"
 step() { echo ""; echo "==> $*"; }
 
 # ---------- Step 0: 停止残留 ENCV 进程 ----------
-step "0/6 停止残留 ENCV 进程"
+step "0/7 停止残留 ENCV 进程"
 pkill -x air 2>/dev/null && echo "    killed air" || true
 pkill -f '^./tmp/encv' 2>/dev/null && echo "    killed ./tmp/encv" || true
 pkill -f '/tmp/encv start' 2>/dev/null && echo "    killed /tmp/encv start" || true
 pkill -f 'node.*vite' 2>/dev/null && echo "    killed vite" || true
+pkill -f 'Hi-Sillot-OpenList-Frontend.*vite' 2>/dev/null && echo "    killed openlist vite" || true
 
 BACKEND_PIDS="$(lsof -ti :"${BACKEND_PORT}" 2>/dev/null || true)"
 if [[ -n "${BACKEND_PIDS}" ]]; then
@@ -106,7 +108,7 @@ fi
 cd "${REPO_ROOT}"
 
 # ---------- Step 2: 生成 mock 数据 ----------
-step "2/6 生成 mock 数据到 ${MOCK_DIR}"
+step "2/7 生成 mock 数据到 ${MOCK_DIR}"
 cd "${MOBILE_DIR}"
 npx tsx scripts/generate-mock-files.ts
 cd "${REPO_ROOT}"
@@ -133,7 +135,7 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24; do
 done
 
 # ---------- Step 4: Vite 前端（前台子进程） ----------
-step "4/6 启动 Vite 前端（port ${VITE_PORT}）"
+step "4/7 启动 Vite 前端（port ${VITE_PORT}）"
 cd "${MOBILE_DIR}"
 VITE_PID=$(spawn_bg /tmp/encv-vite.log ./node_modules/.bin/vite --host 0.0.0.0 --port "${VITE_PORT}" --strictPort)
 SUBPIDS+=("${VITE_PID}")
@@ -148,8 +150,27 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
   sleep 0.5
 done
 
-# ---------- Step 5: 状态报告 + OpenPreview 提示 ----------
-step "5/6 ✅ 服务全部就绪"
+# ---------- Step 5: OpenList 前端 dev server（沙箱预览 OpenList UI 入口） ----------
+step "5/7 启动 OpenList 前端 vite dev server（port 3000，沙箱预览用）"
+OPENLIST_DIR="${REPO_ROOT}/app/openlist/Hi-Sillot-OpenList-Frontend"
+if [[ -d "${OPENLIST_DIR}" ]] && [[ -f "${OPENLIST_DIR}/vite.config.ts" ]]; then
+  OPENLIST_PID=$(spawn_bg /tmp/encv-openlist.log env OPENLIST_PREVIEW_BASE="/openlist-ui/" pnpm --dir "${OPENLIST_DIR}" dev --host 127.0.0.1 --port 3000 --strictPort)
+  SUBPIDS+=("${OPENLIST_PID}")
+  echo "    openlist vite pid=${OPENLIST_PID}"
+  # 等待 OpenList vite 就绪
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    if curl -s "http://127.0.0.1:3000/openlist-ui/" >/dev/null 2>&1; then
+      echo "    openlist vite ready (port 3000, base=/openlist-ui/)"
+      break
+    fi
+    sleep 0.5
+  done
+else
+  echo "    ⚠️  ${OPENLIST_DIR} 不存在，跳过 OpenList dev 预览（沙箱预览 OpenList UI 入口将 302 到 503）"
+fi
+
+# ---------- Step 6: 状态报告 + OpenPreview 提示 ----------
+step "6/7 ✅ 服务全部就绪"
 cat <<EOF
 
 ========================================
@@ -158,9 +179,15 @@ cat <<EOF
   端口分配：
      :${VITE_PORT}  = Vite dev server（前端，用户直接访问）
      :${BACKEND_PORT} = Go Backend（air 监视重载）
+     :3000     = OpenList 前端 vite dev server（沙箱预览 OpenList UI）
 
   用户访问地址（必须先 OpenPreview 激活）：
      http://localhost:${VITE_PORT}/
+
+  沙箱预览 OpenList UI（dev 模式，真 HMR）：
+     设置 → 开发者工具 → 沙箱预览 → 预览 OpenList 前端
+     或直接:  http://localhost:${VITE_PORT}/api/preview/openlist-ui
+     (后端 302 → /openlist-ui/ → encv-mobile vite → :3000)
 
   ⚠️ 重要：必须使用 OpenPreview 工具激活预览才能外部访问
      OpenPreview(command_id="<本脚本 command_id>", preview_url="http://localhost:${VITE_PORT}/")
@@ -176,9 +203,9 @@ cat <<EOF
 ========================================
 EOF
 
-# ---------- Step 6: 保持前台运行（等待子进程或信号） ----------
+# ---------- Step 7: 保持前台运行（等待子进程或信号） ----------
 if [[ "${DETACH}" == "1" ]]; then
-  step "6/6 ✅ detached 模式，脚本退出（子进程继续运行）"
+  step "7/7 ✅ detached 模式，脚本退出（子进程继续运行）"
   cat <<EOF
 
 ========================================
@@ -187,10 +214,11 @@ if [[ "${DETACH}" == "1" ]]; then
   端口分配：
      :${VITE_PORT}  = Vite dev server（前端，用户直接访问）
      :${BACKEND_PORT} = Go Backend（air 监视重载）
+     :3000     = OpenList 前端 vite dev server（沙箱预览 OpenList UI）
 
-  PIDs:   air=${AIR_PID}  vite=${VITE_PID}
-  日志:   /tmp/encv-air.log  /tmp/encv-vite.log
-  停止:   pkill -x air ; pkill -f 'node.*vite'
+  PIDs:   air=${AIR_PID}  vite=${VITE_PID}  openlist=${OPENLIST_PID:-N/A}
+  日志:   /tmp/encv-air.log  /tmp/encv-vite.log  /tmp/encv-openlist.log
+  停止:   pkill -x air ; pkill -f 'node.*vite' ; pkill -f 'Hi-Sillot-OpenList-Frontend'
 
   ⚠️  OpenPreview 必须在脚本退出前激活（端口已就绪）
      OpenPreview(preview_url="http://localhost:${VITE_PORT}/")
@@ -200,8 +228,8 @@ EOF
   exit 0
 fi
 
-step "6/6 保持前台运行（按 Ctrl+C 停止）"
-echo "    air pid=${AIR_PID}  vite pid=${VITE_PID}"
+step "7/7 保持前台运行（按 Ctrl+C 停止）"
+echo "    air pid=${AIR_PID}  vite pid=${VITE_PID}  openlist pid=${OPENLIST_PID:-N/A}"
 echo "    等待子进程..."
 
 # 等待任何子进程退出

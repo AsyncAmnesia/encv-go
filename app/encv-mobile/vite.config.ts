@@ -2,12 +2,13 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'node:path'
 
-// 注意：原 openlistUiProxy() Vite middleware 已删除（架构改为后端驱动）。
-// OpenList UI 静态服务由 encv-go (port 2025) 承担，见 server.proxy['/openlist-ui/']。
-// 路径：app/encv-mobile/vite.config.ts → server.proxy → 127.0.0.1:2025/openlist-ui/*
-// 后端：internal/server/openlist_ui_handler.go handleStatic
-// 配置：config.user.json → preview.openlist_ui_dir
-// 与生产路径一致：APK 内 gomobile 进程从 filesDir/openlist/dist/ 服务。
+// 注意：OpenList UI 的静态服务由谁承担，取决于运行模式：
+//   - dev 沙箱预览：Hi-Sillot-OpenList-Frontend 的 vite dev server (:3000)，
+//     以 OPENLIST_PREVIEW_BASE="/openlist-ui/" 启动。Vite 透传 + dynamic base 改写 index.html。
+//     配置：app/openlist/Hi-Sillot-OpenList-Frontend/vite.config.ts 读 OPENLIST_PREVIEW_BASE。
+//   - 生产：APK 内 gomobile 进程从 filesDir/openlist/dist/ 自己服务。
+// 前端入口仍是后端驱动：GET /api/preview/openlist-ui → 302 → /openlist-ui/
+// 见：internal/server/openlist_ui_handler.go handlePreviewRedirect。
 
 export default defineConfig({
   plugins: [vue()],
@@ -37,15 +38,13 @@ export default defineConfig({
         target: 'http://127.0.0.1:2025',
         changeOrigin: true,
       },
-      // /openlist-ui/* — 透传到 encv-go 后端，由 encv-go 从 preview.openlist_ui_dir
-      // 静态服务 Hi-Sillot-OpenList/public/dist/。后端负责 SPA fallback + index.html
-      // 路径重写；Vite 不再持任何 UI 状态（生产路径一致：APK 内 gomobile 进程自己服务）。
+      // /openlist-ui/* — 透传到 OpenList 前端的 vite dev server (:3000)，
+      // 由该 server 以 OPENLIST_PREVIEW_BASE="/openlist-ui/" 启动并改写 index.html。
+      // 入口仍是后端驱动：/api/preview/openlist-ui → 302 → /openlist-ui/（下面 /api proxy 覆盖）
       '/openlist-ui/': {
-        target: 'http://127.0.0.1:2025',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
       },
-      // /api/preview/openlist-ui — encv-go 返回 302 → /openlist-ui/
-      // 由 /api proxy 自然覆盖
       '/play': {
         target: 'http://127.0.0.1:2025',
         changeOrigin: true,

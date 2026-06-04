@@ -215,7 +215,6 @@ func (s *Server) Start(version string) (string, error) {
 	// /api/preview/openlist-ui — 302 重定向到 /openlist-ui/（后端驱动跳转入口）
 	openlistUI := NewOpenlistUIHandler(s.cfg)
 	r.GET("/api/preview/openlist-ui", openlistUI.handlePreviewRedirect)
-	r.GET("/openlist-ui/*filepath", openlistUI.handleStatic)
 	r.GET("/api/config", s.handleGetConfigGin)
 	r.PUT("/api/config", s.handlePutConfigGin)
 	r.GET("/api/config/schema", s.handleConfigSchemaGin)

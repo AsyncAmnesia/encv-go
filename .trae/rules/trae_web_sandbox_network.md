@@ -190,11 +190,49 @@ GRADLE_OPTS="-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=18080 \
 
 | 源 | 用途 | 状态 | 替代方案 |
 |----|------|------|----------|
-| `https://objects.githubusercontent.com` | GitHub Release 资产 CDN | ❌ 404 | 改走 GitHub API + 直链解析；或换镜像源 |
-| `https://github.com/.../releases/download/...` | GitHub Releases 下载 | ❌ 404 | Maven Central 镜像（如 combolite-core） |
+| `https://objects.githubusercontent.com` | GitHub Release 资产 CDN | ❌ 404 | **走 gh-proxy.com 镜像**（实测 18 MB / 10s OK） |
+| `https://github.com/.../releases/download/...` | GitHub Releases 下载 | ❌ 404 | **走 gh-proxy.com / mirror.ghproxy.com 镜像** |
 | `https://dl.google.com/dl/android/maven2/...` | Android Maven 仓库 | ❌ 404 | `maven.google.com` 或阿里云 Google 镜像 |
 | `https://download.jetbrains.com/kotlin/...` | JetBrains Kotlin 二进制 | ❌ 404 | Maven Central `kotlin-compiler-embeddable` |
 | `https://services.gradle.org/distributions/...` | Gradle 二进制 | ✅ 200 | 已是上游源，不需要替代 |
+
+### 7.0 GitHub Release 镜像（2026-06-04 实战验证）
+
+> GitHub `releases/download` 直链沙箱 60s 超时（仅收到 ~800 KB / 18 MB）。
+> 但 **gh-proxy 类镜像通过 :18080 MCP 代理可达**，10s 内下完 18 MB tarball。
+> **优先用镜像而非直连。**
+
+| 镜像 | URL 模板 | 实测 |
+|------|---------|------|
+| `gh-proxy.com` | `https://gh-proxy.com/<原 URL>` | ✅ 18 MB / 10s（OpenList 4.2.2 dist） |
+| `mirror.ghproxy.com` | `https://mirror.ghproxy.com/<原 URL>` | ✅ 30s 内 |
+| `ghproxy.net` | `https://ghproxy.net/<原 URL>` | ✅ 30s 内 |
+| `ghfast.top` | `https://ghfast.top/<原 URL>` | ✅ 30s 内 |
+
+**用法**（以 OpenList-Frontend rolling dist 为例）：
+
+```bash
+# 1. 解析 release 元数据（API 走 MCP 代理可达）
+url=$(curl -fsSL --max-time 10 -H "Authorization: Bearer $GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github.v3+json" \
+  "https://api.github.com/repos/OpenListTeam/OpenList-Frontend/releases/tags/rolling" \
+  | jq -r '.assets[] | select(.name | endswith(".tar.gz")) | .browser_download_url' \
+  | grep -v "lite" | head -1)
+
+# 2. 走 gh-proxy 下载（10s 内）
+curl -fsSL --max-time 60 \
+  "https://gh-proxy.com/$url" \
+  -o /tmp/dist.tar.gz
+```
+
+**原理**：gh-proxy 类服务把 `<原 URL>` 路径透传到 GitHub，
+通过 :18080 走 HTTP CONNECT 隧道（沙箱 MCP 代理支持 CONNECT），
+绕开 `objects.githubusercontent.com` 的 404 / 阻断。
+
+**注意**：
+- **不要**用 `https://ghproxy.com/...`（缺 `-`）会 404
+- 镜像偶有 502 → `--max-time 10` 失败立即换下一个
+- 镜像不需要 GITHUB_TOKEN（GitHub 直连才需要）
 
 ### 7.1 识别 CDN 阻断的快速诊断
 
@@ -247,7 +285,8 @@ curl -L https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embe
    → 否：继续 ↓
 
 5. 是 GitHub Release 资产？
-   → 试试 github.com API 看是否有 redirect 到 S3
+   → **首选 gh-proxy.com / mirror.ghproxy.com 镜像**（10s 内，2026-06 验证）
+   → 镜像失败再试 github.com API 看是否有 redirect 到 S3
    → 若只有 S3 / objects.githubusercontent.com → 阻断，换源
 ```
 
