@@ -763,16 +763,24 @@ jobs:
           # A3.3 v2 关键诊断: build.gradle.kts 用错任务名 (下划线 vs 连字符)
           # 会导致 inject 任务永远不被 convert 触发,aar 不被修改,d8 漏 openlistlib
           # 这次修成连字符模式,本步验证 inject 任务真跑了 + aar 字节被修改
+          #
+          # ⚠️ 关键架构事实 (踩坑):
+          #   1. :plugin-openlist 只在 -PincludePlugins=true 时被 settings.gradle.kts
+          #      include,否则 ./gradlew 报 "project 'plugin-openlist' not found"
+          #   2. :plugin-openlist 的 projectDir = ../plugin-openlist (相对 android/),
+          #      所以 aar 输出在 app/encv-mobile/plugin-openlist/build/outputs/aar/,
+          #      **不是** app/encv-mobile/android/plugin-openlist/build/outputs/aar/
           mkdir -p /tmp/diagnostic-step385
           echo "step38.5 start ts=$(date +%s)" > /tmp/diagnostic-step385/META.txt
 
           cd "$GITHUB_WORKSPACE/app/encv-mobile/android"
-          echo "=== 检查 inject 任务配置 (--dry-run) ===" | tee /tmp/diagnostic-step385/inject-dryrun.txt
-          ./gradlew :plugin-openlist:injectOpenlistClassesToAar --dry-run 2>&1 | tail -10 >> /tmp/diagnostic-step385/inject-dryrun.txt
+          echo "=== 检查 inject 任务配置 (--dry-run, 必须带 -PincludePlugins=true) ===" | tee /tmp/diagnostic-step385/inject-dryrun.txt
+          ./gradlew -PincludePlugins=true :plugin-openlist:injectOpenlistClassesToAar --dry-run 2>&1 | tail -10 >> /tmp/diagnostic-step385/inject-dryrun.txt
           echo
           echo "=== aar/classes.jar 现状 (inject 任务应当真把 openlistlib 类合并进去) ==="
-          AAR="$GITHUB_WORKSPACE/app/encv-mobile/android/plugin-openlist/build/outputs/aar/plugin-openlist-release.aar"
-          AAR_DEBUG="$GITHUB_WORKSPACE/app/encv-mobile/android/plugin-openlist/build/outputs/aar/plugin-openlist-debug.aar"
+          # ⚠️ 真实路径: plugin-openlist 是兄弟目录,projectDir = ../plugin-openlist
+          AAR="$GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist/build/outputs/aar/plugin-openlist-release.aar"
+          AAR_DEBUG="$GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist/build/outputs/aar/plugin-openlist-debug.aar"
           AAR_FOUND=0
           for A in "$AAR" "$AAR_DEBUG"; do
             if [ -f "$A" ]; then
@@ -819,11 +827,21 @@ jobs:
           echo "step39 start ts=$(date +%s)" > /tmp/diagnostic-step39/META.txt
 
           # 路径策略：不 cd，直接用 $GITHUB_WORKSPACE 作为根
-          APK_PATH=$(find "$GITHUB_WORKSPACE/app/encv-mobile/android/build" -name "plugin-openlist-*-release.apk" -o -name "plugin-openlist-*-debug.apk" 2>/dev/null | head -1)
+          # aar2apk 输出在 root project (android/) 的 build/outputs/plugin-apks/<type>/
+          APK_PATH=""
+          for variant in release debug; do
+            P="$GITHUB_WORKSPACE/app/encv-mobile/android/build/outputs/plugin-apks/${variant}/plugin-openlist-${variant}.apk"
+            [ -f "$P" ] && APK_PATH="$P" && break
+          done
+          if [ -z "$APK_PATH" ]; then
+            # 兜底 find (兼容未来路径变动)
+            APK_PATH=$(find "$GITHUB_WORKSPACE/app/encv-mobile" -name "plugin-openlist-*.apk" -type f 2>/dev/null | head -1)
+          fi
           if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
             echo "❌ No plugin APK found at expected path" | tee /tmp/diagnostic-step39/REASON.txt
-            echo "查找过: $GITHUB_WORKSPACE/app/encv-mobile/android/build" >> /tmp/diagnostic-step39/REASON.txt
-            echo "可能根因: step 38 失败 / inject 任务抛 GradleException / aar 没被修改" >> /tmp/diagnostic-step39/REASON.txt
+            echo "查找过: $GITHUB_WORKSPACE/app/encv-mobile/android/build/outputs/plugin-apks/{release,debug}/" >> /tmp/diagnostic-step39/REASON.txt
+            echo "        $GITHUB_WORKSPACE/app/encv-mobile (兜底 find)" >> /tmp/diagnostic-step39/REASON.txt
+            echo "可能根因: step 38 失败 / convert 任务没跑 / aar2apk 输出路径变了" >> /tmp/diagnostic-step39/REASON.txt
             echo "请看 step 38.5 (Verify inject task ran) 的实际输出" >> /tmp/diagnostic-step39/REASON.txt
             exit 0
           fi
@@ -908,9 +926,21 @@ jobs:
           mkdir -p /tmp/diagnostic-step40
           echo "step40 start ts=$(date +%s)" > /tmp/diagnostic-step40/META.txt
 
-          AAR_PATH=$(find "$GITHUB_WORKSPACE/app/encv-mobile/android/plugin-openlist/build/outputs" -name "*.aar" 2>/dev/null | head -1)
+          # ⚠️ 真实路径: plugin-openlist 是 android/ 的兄弟目录
+          #   settings.gradle.kts:62-63  set projectDir = ../plugin-openlist
+          #   所以 aar 输出在 app/encv-mobile/plugin-openlist/build/outputs/aar/
+          AAR_PATH=""
+          for variant in release debug; do
+            P="$GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist/build/outputs/aar/plugin-openlist-${variant}.aar"
+            [ -f "$P" ] && AAR_PATH="$P" && break
+          done
+          if [ -z "$AAR_PATH" ]; then
+            # 兜底 find
+            AAR_PATH=$(find "$GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist/build" -name "*.aar" -type f 2>/dev/null | head -1)
+          fi
           if [ -z "$AAR_PATH" ] || [ ! -f "$AAR_PATH" ]; then
             echo "❌ No plugin-openlist AAR found (可能 plugin-openlist 编译失败)" | tee /tmp/diagnostic-step40/REASON.txt
+            echo "查找过: $GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist/build/outputs/aar/" >> /tmp/diagnostic-step40/REASON.txt
             echo "可能的根因:libs/openlist-classes.jar 不存在,compileKotlin 缺 openlistlib 引用" >> /tmp/diagnostic-step40/REASON.txt
             echo "修复:CI 步骤 'Extract OpenList AAR for plugin packaging' 必须成功" >> /tmp/diagnostic-step40/REASON.txt
             exit 0
@@ -977,7 +1007,8 @@ jobs:
           echo
           echo "=== run injectOpenlistClassesToAar task (--dry-run) ===" | tee /tmp/diagnostic-step41/inject-dryrun.txt
           cd "$GITHUB_WORKSPACE/app/encv-mobile/android"
-          ./gradlew :plugin-openlist:injectOpenlistClassesToAar --dry-run 2>&1 | tail -20 >> /tmp/diagnostic-step41/inject-dryrun.txt || true
+          # ⚠️ 必须 -PincludePlugins=true 否则 plugin-openlist 项目没注册
+          ./gradlew -PincludePlugins=true :plugin-openlist:injectOpenlistClassesToAar --dry-run 2>&1 | tail -20 >> /tmp/diagnostic-step41/inject-dryrun.txt || true
 
           echo
           echo "=== libs/openlist-classes.jar 现状 ===" | tee /tmp/diagnostic-step41/classes-jar-check.txt
