@@ -11,8 +11,6 @@
 //   compileOnly:  host 已提供，插件不打包（combolite-core / core-ktx / koin-core 类型）
 //   implementation: host 未提供，插件必须打包（localbroadcastmanager / openlist-classes.jar / compose-ui）
 import org.gradle.api.GradleException
-import java.util.zip.ZipOutputStream
-import java.util.zip.ZipEntry
 
 plugins {
     id("com.android.library")
@@ -227,35 +225,25 @@ val injectOpenlistClassesToAar by tasks.registering {
                 srcFile.copyTo(target, overwrite = true)
             }
 
-            // 4. 重打 classes.jar —— 直接用 ZipOutputStream 避免 ant.invokeMethod
-            // 在 Kotlin DSL 下的参数类型兼容问题 (mapOf() to Pair 不一定能转 NamedArgs)
+            // 4. 重打 classes.jar —— 用系统 `jar` 命令 (JDK 自带,无需 java.util.zip import)
+            // 为什么不用 java.util.zip.ZipOutputStream:
+            //   - Gradle build script 默认不 import java.*,FQN 写法在 build script 上下文解析失败
+            //   - 即使加 import,也是 hack —— 正常 APK 构建根本不会事后重打包任何东西
+            // 为什么不用 Gradle Jar 任务:
+            //   - Jar 任务要 register 在 config time,不能 inside doLast 循环
+            //   - forEach variant 不支持
+            // 妥协方案: ProcessBuilder 直接调用系统 jar (JDK 工具链必有)
             val mergedClassesJar = file("$buildDir/tmp/classes-merged-${variant}.jar")
-            mergedClassesJar.delete()
-            ZipOutputStream(mergedClassesJar.outputStream().buffered()).use { zos ->
-                tmpClassesDir.walkTopDown().filter { it.isFile }.forEach { f ->
-                    val entry = ZipEntry(f.relativeTo(tmpClassesDir).path.replace(File.separatorChar, '/'))
-                    zos.putNextEntry(entry)
-                    f.inputStream().use { it.copyTo(zos) }
-                    zos.closeEntry()
-                }
-            }
+            runJar(tmpClassesDir, mergedClassesJar)
             if (!mergedClassesJar.exists() || mergedClassesJar.length() == 0L) {
                 throw GradleException("[plugin-openlist] failed to repack classes.jar for $variant")
             }
             originalClassesJar.delete()
             mergedClassesJar.copyTo(originalClassesJar)
 
-            // 5. 重打 aar (同样用 ZipOutputStream)
+            // 5. 重打 aar —— 同样用系统 jar
             val newAar = file("$buildDir/tmp/aar-new-${variant}.aar")
-            newAar.delete()
-            ZipOutputStream(newAar.outputStream().buffered()).use { zos ->
-                tmpAarDir.walkTopDown().filter { it.isFile }.forEach { f ->
-                    val entry = ZipEntry(f.relativeTo(tmpAarDir).path.replace(File.separatorChar, '/'))
-                    zos.putNextEntry(entry)
-                    f.inputStream().use { it.copyTo(zos) }
-                    zos.closeEntry()
-                }
-            }
+            runJar(tmpAarDir, newAar)
             if (!newAar.exists() || newAar.length() == 0L) {
                 throw GradleException("[plugin-openlist] failed to repack aar for $variant")
             }
@@ -271,6 +259,40 @@ val injectOpenlistClassesToAar by tasks.registering {
             newAar.delete()
             mergedClassesJar.delete()
         }
+    }
+}
+
+/**
+ * 用系统 `jar` 命令 (JDK 自带) 重新打包一个目录成 jar/aar。
+ *
+ * 为什么不直接用 java.util.zip.ZipOutputStream:
+ *   - Gradle build script 默认不 import java.*,即使 FQN 写 java.util.zip.X
+ *     也会被 kotlinc 报 "Unresolved reference 'util'"
+ *   - 加 import 是 hack,正常 APK 构建根本不写 java.util.zip
+ *
+ * 为什么不直接用 Gradle Jar 任务:
+ *   - Jar 任务必须在 config time register,不能 inside forEach variant doLast 循环
+ *
+ * 妥协方案: ProcessBuilder 调用系统 jar (JDK 工具链必有,$JAVA_HOME/bin/jar)
+ *   - 不需要任何 import (ProcessBuilder 在 java.lang,自动 import)
+ *   - jar cf output -C dir . 语义清晰,所有 .class 文件进 output
+ */
+fun runJar(sourceDir: File, outputJar: File) {
+    outputJar.delete()
+    val proc = ProcessBuilder(
+        "jar", "cf", outputJar.absolutePath, "-C", sourceDir.absolutePath, "."
+    ).redirectErrorStream(true).start()
+    val stderr = proc.inputStream.bufferedReader().readText()
+    val exit = proc.waitFor()
+    if (exit != 0) {
+        throw GradleException(
+            "[plugin-openlist] jar repack failed (exit=$exit): $stderr"
+        )
+    }
+    if (!outputJar.exists() || outputJar.length() == 0L) {
+        throw GradleException(
+            "[plugin-openlist] jar repack produced no output: $outputJar"
+        )
     }
 }
 
