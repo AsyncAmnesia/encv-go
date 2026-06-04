@@ -1,31 +1,26 @@
 #!/usr/bin/env bash
-# =============================================================================
-# dev-openlist-web.sh
-# -----------------------------------------------------------------------------
-# 一键启动 plugin-openlist/web 的 Vite dev server（沙箱浏览器版）。
+# dev-openlist-web.sh — 启动 plugin-openlist/web Vite（plugin 管理 UI，端口 5174）
 #
-# ⚠️ 与 scripts/dev-openlist.sh 的关键区别：
-#   - dev-openlist.sh      → 预览 OpenList 原生 SPA（Hi-Sillot-OpenList/public/dist）
-#                             通过 Vite middleware 反代到 OpenList(5244) 后端
-#   - dev-openlist-web.sh  → 预览 plugin-openlist/web 的 Capacitor 多例 UI
-#                             (Vue3 + Ionic Vue 8 管理面板)
-#                             不依赖 OpenList(5244)，不依赖 Android WebView
-#                             由 `window.OpenListNative` 桥接 Android 端 OpenListBridge
+# 重要区别（与 2026-05 之前的旧版不同）：
+#   本脚本**只服务 plugin 管理 UI**（OpenListHome / Settings / ConfigEditor / WebView），
+#   **不再代理 OpenList 后端 (5244)**。
+#   撤销原因：subpath 路由改造（/openlist-spa/、/openlist-ui/）不可靠，
+#   OpenList 应在原始环境 / 跑（Hi-Sillot fork on 127.0.0.1:5244），与 prod 模式对齐。
 #
-# 沙箱浏览器模式下 `window.OpenListNative` 不存在 → 所有 JS-Native 调用走
-# `safe(fallback, fn)` 安全 fallback → 显示「未安装/已停止」默认态
-# → 这是预期的「UI 视觉预览」目标
+# 沙箱 dev 启动顺序：
+#   Terminal 1: bash scripts/dev-openlist.sh
+#               → 启动真实 OpenList fork on 127.0.0.1:5244（CORS=*）
+#   Terminal 2: bash scripts/dev-openlist-web.sh  ← 你在这里
+#               → Vite 5174 端口，OpenListWebView 的 iframe 直访 127.0.0.1:5244/#/login
+#   浏览器: open http://localhost:5174/webview
 #
-# 用法：
-#   bash scripts/dev-openlist-web.sh                  # 默认 5174
-#   ENCV_OPENLIST_WEB_PORT=5180 bash scripts/dev-openlist-web.sh
+# Production（Android WebView）：
+#   - WebView 加载 file:///android_asset/openlist/index.html（plugin-openlist/src/main/assets/openlist/）
+#   - iframe 内部直访 http://127.0.0.1:5244/（与本机 OpenList 进程同设备）
 #
-# 配合主 app 预览（不冲突）：
-#   Terminal 1: bash scripts/start-preview.sh          # 主 ENCV app (5173/5174)
-#   Terminal 2: bash scripts/dev-openlist-web.sh       # plugin-openlist/web (5174/5175)
-#   Browser A:  http://localhost:5173/                 # 主 app
-#   Browser B:  http://localhost:5174/                 # plugin web
-# =============================================================================
+# 与主 app encv-mobile Vite (8100) 的 /openlist-ui-proxy 无关：
+#   - 那个是主 app 开发期「在浏览器里调试 encv-mobile + 顺便看 OpenList」用的辅助中间件
+#   - 本脚本（5174）是 plugin 自己的管理 UI，职责互不重叠
 
 set -euo pipefail
 shopt -s lastpipe
