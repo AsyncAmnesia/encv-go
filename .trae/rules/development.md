@@ -614,3 +614,124 @@ try { filePath = decodeURIComponent(filePath) } catch {}
 | `!` | 无特殊含义 | 不编码 | `!`（安全） |
 
 **其中 `@` 是唯一确认会被迅雷浏览器/WAF 截断的字符。** 其他字符虽然理论上也可能被某些代理误处理，但双重编码方案统一保护了所有特殊字符。
+
+## 七、Hi-Sillot-OpenList-Frontend fork 适配：solid-icons 命名兼容（⚠️ 实战踩坑！）
+
+### 7.1 症状
+
+打开 `/openlist-ui/` 时，#root 一直空、只有注入的「返回 ENCV」按钮可见。debug pane 抓到：
+
+```
+[err] SyntaxError: The requested module '.../solid-icons@1.2.0_.../solid-icons/tb/index.js' does not provide an export named 'TbCheck' @ .../FolderTree.tsx:7:15
+```
+
+页面整体 JS module graph 解析失败 → Solid App 永远不 mount。
+
+### 7.2 根因
+
+| 维度 | 说明 |
+|------|------|
+| **fork 的源码约定** | `solid-icons` 1.8+：`import { TbCheck, TbX, TbFile } from "solid-icons/tb"`（无前缀 = 填充变体） |
+| **本工作区实际安装** | pnpm 锁定 `solid-icons@1.2.0`，**只有** `TbFillXxx` / `TbOutlineXxx` 前缀变体 |
+| **类型签名** | fork 的 `node_modules/.../tb/index.d.ts` 不会缺（npm 把上游 d.ts 一并装下来），所以 TS 编译过 |
+| **运行时** | 浏览器 ESM 解析真实 JS module 时发现导出列表对不上 → throw SyntaxError → 整个 module graph 中断 |
+
+### 7.3 命名映射
+
+| fork 写的（1.8+） | 1.2.0 实际提供 |
+|------------------|---------------|
+| `TbCheck` | `TbFillCircleCheck` / `TbOutlineCheck` |
+| `TbX` | `TbOutlineX` |
+| `TbFile` | `TbFillFile` / `TbOutlineFile` |
+| `TbFolder` | `TbFillFolder` / `TbOutlineFolder` |
+| `TbArchive` / `TbRefresh` / `TbCopy` / `TbLink` / `TbSelector` / `TbPlus` / `TbCheckbox` / `TbExternalLink` / `TbFileArrowRight` | `TbOutline${Xxx}` 全部存在 |
+
+> 其他包（`bi` / `ai` / `io` / `ri` / `cg` / `fa` / `fi` / `bs` / `im` / `si`）在 1.2.0 里都齐全，不受影响。
+
+### 7.4 修复方案：vite plugin 通用 import 重写
+
+**文件**：`app/openlist/Hi-Sillot-OpenList-Frontend/vite-plugins/solid-icons-compat.ts`
+
+```ts
+const TB_IMPORT_RE =
+  /import\s*\{\s*([^}]+?)\s*\}\s*from\s*(["'])solid-icons\/tb\2/g
+
+// 裸 Tb* → 改写为 TbOutlineXxx as TbXxx
+// 已带 Fill/Outline 前缀 → 保持
+```
+
+**接入位置**：`vite.config.ts` 必须在 `solidPlugin()` **之前**，`enforce: "pre"`：
+
+```ts
+plugins: [
+  solidIconsCompat(),  // ← 必须最先
+  solidPlugin(),
+  ...
+]
+```
+
+### 7.5 验证
+
+```bash
+# 1. 重启 openlist vite
+pkill -f 'Hi-Sillot-OpenList-Frontend.*vite'
+cd app/openlist/Hi-Sillot-OpenList-Frontend
+setsid nohup env OPENLIST_PREVIEW_BASE="/openlist-ui/" OPENLIST_NO_HMR=1 \
+  pnpm dev --host 127.0.0.1 --port 3000 --strictPort \
+  </dev/null >/tmp/encv-openlist.log 2>&1 &
+
+# 2. 验证重写生效
+curl -s 'http://127.0.0.1:3000/openlist-ui/src/components/FolderTree.tsx' \
+  | grep 'solid-icons/tb'
+# 期望：import { TbOutlineX as TbX, TbOutlineCheck as TbCheck } from "..."
+
+# 3. 浏览器打开 /openlist-ui/，debug pane 应该消失、#root 应该 mount
+```
+
+### 7.6 兼容性
+
+- 如果未来 `solid-icons` 升到 ≥ 1.8，本插件变成 no-op（重写后的名字在 1.8+ 也都存在）
+- TS 类型可能仍报缺导出，但 fork 是 .tsx + vite-plugin-solid，类型不参与运行
+- 不影响 production build：plugin 走 vite.transform，prod 也生效，但 prod 永远命中"已是正确前缀"分支
+
+## 八、vite HMR WebSocket 噪音过滤（16000 沙箱预览专用）
+
+### 8.1 症状
+
+encv-mobile 预览控制台持续刷：
+```
+[vite] failed to connect to websocket (Error: WebSocket closed without opened.)
+    at Object.connect (/@vite/client:892:13)
+```
+
+不影响应用运行（HMR 是开发辅助，非核心功能），但会污染 DevLogs。
+
+### 8.2 根因
+
+`16000` 沙箱入口（agent-tool-host）不支持 WebSocket Upgrade 协议。`@vite/client` 启动时尝试连 `ws://.../{__hmr__token__}`，连接被代理中断，浏览器每秒重试一次。
+
+### 8.3 修复
+
+`app/encv-mobile/src/composables/useFrontendLogs.ts` 的 `hijackConsole()` 增加 `isHmrWsNoise` 过滤：
+
+```ts
+console.error = (...args) => {
+  saved.error(...args)  // 原生 console.error 仍输出到 DevTools
+  if (isHmrWsNoise(args)) {
+    addLog('debug', ['[HMR WS sandbox noise] ' + args[0]])
+    return
+  }
+  addLog('error', args)
+}
+```
+
+`isHmrWsNoise` 匹配 `failed to connect to websocket` 和 `WebSocket closed without opened`。命中后**降级为 debug 级别**记录，不丢信息、不污染 error 流。
+
+### 8.4 为什么不做"完全关 HMR"
+
+| 做法 | 优劣 |
+|------|------|
+| 完全关 HMR（`hmr: false`） | 噪音彻底消失，但本地直连 `localhost:5173` 也失去 HMR |
+| **只过滤日志（推荐）** | **DevLogs 干净 + 本地直连 HMR 仍可用** |
+
+沙箱预览是只读验证场景，HMR 不可用是已知限制；本地开发仍依赖 HMR。
