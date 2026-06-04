@@ -665,3 +665,606 @@ Step 5: 验证插件 APK 内容
    - 🔧 kotlin-reflect健康检查 — 测试 4 个类的 ::function.javaMethod 是否可解析
    - 🔧 APK元数据+签名校验 — 验证 APK 结构和签名
    - 🔧 ValidationStrategy状态 — 验证策略是否真正生效
+
+---
+
+## 九、IPluginEntryClass 实际接口契约（combolite-core 2.0.2 源码审计）
+
+> 本节为插件开发者直接提供。源码来自 Maven Central `io.github.lnzz123:combolite-core:2.0.2`。
+> **不要凭印象猜**——任何「我以为 `Content()` 可以是非 Composable」「IPluginService 必须实现」等假设，先读 `/tmp/combolite-src/com/combo/core/api/` 实际文件再下结论。
+
+### 9.1 IPluginEntryClass（**唯一强契约入口**）
+
+```kotlin
+// combolite-core 2.0.2 /com/combo/core/api/IPluginEntryClass.kt
+package com.combo.core.api
+
+import androidx.compose.runtime.Composable
+import com.combo.core.model.PluginContext
+import org.koin.core.module.Module
+
+interface IPluginEntryClass {
+    val pluginModule: List<Module>      // 必含: org.koin.core.module.Module 类型
+    fun onLoad(context: PluginContext)   // 必含: 加载时初始化
+    fun onUnload()                       // 必含: 卸载时清理
+    @Composable
+    fun Content()                        // 必含 + 必为 @Composable, 无替代入口
+}
+```
+
+**PluginContext**（`/com/combo/core/model/PluginContext.kt`）：
+```kotlin
+data class PluginContext(
+    val application: Application,
+    val pluginInfo: PluginInfo
+)
+```
+
+### 9.2 4 个 plugin 入口契约点
+
+| 入口点 | 类型 | 必含? | 实现复杂度 |
+|--------|------|-------|----------|
+| `pluginModule` | `List<org.koin.core.module.Module>` | ✅ | 可为 `emptyList()` |
+| `onLoad(context)` | `fun` | ✅ | 自由实现 |
+| `onUnload()` | `fun` | ✅ | 自由实现 |
+| `Content()` | `@Composable fun` | ✅ | **必为 @Composable**（不可省注解） |
+
+### 9.3 可选入口（meta-data 声明）
+
+| 接口 | Meta-data 写法 | 何时需要 |
+|------|--------------|---------|
+| `IPluginActivity` | `plugin.activities` (XmlManager) | 插件要提供 Activity 容器 |
+| `IPluginService` | `plugin.services` (XmlManager) | 插件要提供 Service **且需要 host 代理** |
+| `IPluginReceiver` | `plugin.staticReceivers` (XmlManager) | 插件要接收广播且需 host 代理 |
+| `IPluginProvider` | `plugin.providers` (XmlManager) | 插件要提供 ContentProvider 且需 host 代理 |
+
+> **OPENLIST 例外**（phase 13 经验）：用**普通 Android `Service` / `ContentProvider`**（manifest 里直接 `<service>` / `<provider>`），插件自己管生命周期（`onLoad`/`onUnload` 启动/停止 Service），**不需要** `IPluginService` / `IPluginProvider` proxy 路径。这避开了 host proxy 的复杂度，适合单一进程插件。
+
+### 9.4 ClassLoader 拓扑（决定 deps 用 `compileOnly` 还是 `implementation`）
+
+combolite-core `PluginLifecycleManager.kt:224`：
+```kotlin
+val classLoader = PluginClassLoader(
+    pluginId = plugin.id,
+    pluginFile = pluginApkFile,
+    parent = context.application.classLoader,    // ← 父 classloader = host 的
+    ...
+)
+```
+
+**结论**：插件运行时**通过 parent classloader 委托给 host**——host 已 `implementation` 的任何依赖，插件**可用 `compileOnly`**，运行时由 parent 解析。
+
+| 依赖类型 | 何时 `compileOnly` | 何时 `implementation` |
+|---------|-------------------|----------------------|
+| combolite-core (api jar) | ✅ host 已 implementation | — |
+| androidx.core:core-ktx | ✅ host 已 implementation | — |
+| compose-ui | ✅ host 已 implementation | — |
+| koin-core (类型引用) | ✅ host 启动 Koin | — |
+| **localbroadcastmanager** | ❌ host **没有** | ✅ 必须 implementation |
+| **gomobile classes.jar** | ❌ host **没有** | ✅ 必须 implementation |
+| **OpenList 自定义 jar/AAR** | ❌ host **没有** | ✅ 必须 implementation |
+
+### 9.5 build.gradle.kts 最小骨架（基于实际契约）
+
+```kotlin
+plugins {
+    id("com.android.library")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")   // ← 强契约: Content() 是 @Composable
+    alias(libs.plugins.combolite.aar2apk)      // ← 强契约: 走 aar2apk 输出 plugin APK
+}
+
+android {
+    namespace = "com.example.plugin"
+    compileSdk = libs.versions.compileSdk.get().toInt()
+    defaultConfig { minSdk = libs.versions.minSdk.get().toInt() }
+    buildTypes {
+        release {
+            isMinifyEnabled = false        // ← 强契约: R8 破坏 kotlin-reflect @Metadata
+            isShrinkResources = false      // ← 强契约: AGP 与 minify 硬耦合
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+    buildFeatures {
+        compose = true                    // ← 强契约: @Composable 编译
+    }
+}
+
+dependencies {
+    compileOnly(libs.combolite.core)         // 由 host 提供
+    // ↓ 只加本插件实际需要的 deps（按 §9.4 决定 compileOnly vs implementation）
+}
+```
+
+### 9.6 锁镜警告（mpv ≠ openlist）
+
+**禁止**直接把 plugin-mpv-player 的 deps 照搬到新插件。mpv 的 deps 反映 mpv 的功能：
+
+| mpv 用的 | openlist 用的 | 结论 |
+|---------|-------------|------|
+| material3 | ❌（只用 AndroidView） | 不锁镜 |
+| material-icons-extended | ❌ | 不锁镜 |
+| activity-compose | ❌（无 Activity） | 不锁镜 |
+| appcompat | ❌ | 不锁镜 |
+| ❌ | localbroadcastmanager | openlist 独有 |
+| ❌ | openlist-classes.jar (gomobile) | openlist 独有 |
+
+**正确做法**：从 `IPluginEntryClass` 4 契约点出发 → 看本插件用哪些组件（Service/Receiver/Provider/Compose widget）→ 按 §9.4 决定 deps → 写 `build.gradle.kts`。
+
+### 9.7 plugin.openlist 真实形态（spec 落地参照）
+
+```kotlin
+// OpenListPluginEntry.kt
+class OpenListPluginEntry : IPluginEntryClass {
+    override val pluginModule: List<Module> = emptyList()
+    override fun onLoad(context: PluginContext) {
+        // 1. 加载 OpenListConfig
+        // 2. cfg.applyToBridge(OpenListBridge)
+        // 3. OpenListBridge.init(context.applicationContext)
+    }
+    override fun onUnload() {
+        OpenListService.stopIfRunning()
+        OpenListBridge.shutdown(5_000L)
+    }
+    @Composable
+    override fun Content() {
+        OpenListEmbedWebView(
+            containerId = "openlist-plugin-embed",
+            initialUrl = "https://localhost/openlist/"   // dev 模式
+        )
+    }
+}
+```
+
+`AndroidManifest.xml`：
+- `<meta-data android:name="plugin.entryClass" android:value="...OpenListPluginEntry" />`
+- `<service .OpenListService android:foregroundServiceType="dataSync" />`（普通 Service，非 IPluginService proxy）
+- `<provider .OpenListStatusProvider android:exported="true" />`（普通 Provider，供外部 observer）
+- **不需要** `plugin.activities` / `plugin.services` / `plugin.receivers` meta-data
+
+---
+
+## 十、Service / Receiver / Provider 三大模块架构铁律（⚠️ Phase 24 demo 研究，方案 A 决策）
+
+> **核心原则：ComboLite 是文件系统 + PluginClassLoader 架构，插件 APK 不被系统 install。**
+> **所有"Android 组件"在插件端都是纯类，由 host 端通过 ProxyManager 反射调度。**
+> **插件 manifest 的 `<service>` / `<receiver>` / `<provider>` 声明只用于被框架解析，不被 Android 系统看到。**
+
+### 10.1 三模块 host 端必备清单（demo 实测验证）
+
+来源：lnzz123/ComboLite `app/src/main/AndroidManifest.xml` + `HostApp.kt`。
+
+| 组件 | host manifest 注册数 | host class（demo） | proxyManager 配置 |
+|------|-------------------|------------------|------------------|
+| **Activity** | 1 | `HostActivity : BaseHostActivity` | `setHostActivity(HostActivity::class.java)` |
+| **Service 池** | 10 | `HostService1..10 : BaseHostService` | `setServicePool(listOf(HostService1, ..., HostService10))` |
+| **Provider** | 1 | `HostProvider : BaseHostProvider` | `setHostProviderAuthority("authority")` |
+| **Receiver** | 1 | `HostReceiver : BaseHostReceiver` | **不需要** setReceiverXxx——框架按 intent-filter action 匹配 |
+
+**HostApp.onFrameworkSetup() 标准模板**（[ComboLite demo HostApp.kt:54-72](https://raw.githubusercontent.com/lnzz123/ComboLite/master/app/src/main/java/com/combo/plugin/sample/HostApp.kt)）：
+
+```kotlin
+override fun onFrameworkSetup(): suspend () -> Unit {
+    return {
+        PluginManager.proxyManager.apply {
+            setHostActivity(HostActivity::class.java)              // ① Activity 代理
+            setServicePool(                                       // ② Service 池（demo = 10）
+                listOf(HostService1::class.java, ..., HostService10::class.java)
+            )
+            setHostProviderAuthority("com.example.host.provider") // ③ Provider 代理 authority
+        }
+        setValidationStrategy(ValidationStrategy.UserGrant)
+        PluginCrashHandler.setGlobalClashCallback(this@HostApp)
+    }
+}
+```
+
+**关键认知**：
+- Service 必须**预注册 N 个**——每个 plugin service 启动时分配一个 host service 代理（用完归还，pool 模式）
+- Provider **只需要 1 个**，但必须注册 authority——host ContentResolver 用 authority 路由到 plugin provider
+- Receiver **只需要 1 个**，用 intent-filter action 匹配——无 authority 概念
+- Activity 1 个即可——`startPluginActivity(cls)` 通过 host activity 的 intent extras 路由
+
+### 10.2 插件端 manifest 真相
+
+| 组件 | plugin manifest 需声明吗？ | manifest 声明的实际作用 |
+|------|--------------------------|---------------------|
+| **Service** | ❌ **不需要** `<service>` 标签 | N/A —— 框架 `PluginClassLoader.getInterface(IPluginService::class.java, className).newInstance()` 创建实例，host service 反射调用 lifecycle |
+| **Receiver** | ✅ 需要 `<receiver>` 标签 + `<intent-filter>` | [InstallerManager.parseStaticReceivers](file:///tmp/combolite-src/com/combo/core/runtime/installer/InstallerManager.kt) 用 `AXmlResourceParser` 解析插件 APK 的 `AndroidManifest.xml`，存到 `plugins.xml` 的 `staticReceivers` 列表 |
+| **Provider** | ✅ 需要 `<provider>` 标签 + `authorities` | 框架解析 authority + className 存到 `providerRegistry` |
+
+**反直觉点**：插件 manifest 的 `<receiver>` / `<provider>` **Android 系统完全看不到**（plugin 没系统 install），所以 `<receiver>` 的 `android:exported`、`android:enabled` 等属性是给 **ComboLite 框架** 用的，不是给系统用的。
+
+### 10.3 启动插件 Service 的标准模式
+
+[ComboLite core Extensions.kt:102-119](file:///tmp/combolite-src/com/combo/core/utils/Extensions.kt#L102-L119)：
+
+```kotlin
+// host 端：启动 plugin service
+context.startPluginService(MyPluginService::class.java, instanceId = "task1")
+```
+
+**内部链路**：
+```
+context.startPluginService(MyPluginService::class.java, "task1")
+  ① PluginManager.proxyManager.acquireServiceProxy("MyPluginService:task1")
+       → 从 availableServiceProxies 队列 poll 一个（demo = 10 个）
+       → 放入 activeServiceProxies["MyPluginService:task1"] = HostService3::class
+  ② Intent(this, HostService3::class.java).apply {
+       putExtra("plugin_service_class_name", "MyPluginService")
+       putExtra("plugin_service_instance_id", "MyPluginService:task1")
+     }
+  ③ context.startService(intent)        ← Intent 指向 HOST 的 service，不是 plugin!
+  ④ Android 系统实例化 HostService3 (注册在 host manifest)
+  ⑤ BaseHostService.onStartCommand(intent, ...)
+       → initPluginService(intent) 解析 extras
+       → PluginManager.getInterface(IPluginService::class.java, "MyPluginService")
+            → PluginClassLoader.getInterface() → clazz.getDeclaredConstructor().newInstance()
+       → pluginService.onAttach(this)        ← 注入 host service 引用（plugin 可调 Context）
+       → pluginService.onCreate()            ← 标准 lifecycle
+       → pluginService.onStartCommand(...)
+```
+
+**关键**：plugin service 不是真的 Android Service，**只是实现 `IPluginService` 接口的 POJO**。
+
+```kotlin
+// 插件端 MyPluginService.kt —— 不需要 <service> 声明
+class MyPluginService : BasePluginService() {  // BasePluginService : IPluginService
+    private var proxyService: Service? = null
+    override fun onAttach(proxyService: Service) { this.proxyService = proxyService }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // proxyService.startActivity(...) / getSystemService(...) / startForeground(...) 都可调
+        return START_STICKY
+    }
+}
+```
+
+**禁止**：
+- ❌ `class MyPluginService : Service()` + manifest `<service>` 声明——plugin 没系统 install，Android 永不实例化
+- ❌ `context.startService(Intent(context, MyPluginService::class.java))`——系统找不到 service
+- ❌ `extends Service` 而不是 `BasePluginService`——proxy 注入失败，无法调 `Context.startActivity` 等
+
+### 10.4 跨进程 ContentProvider 访问标准模式
+
+[ComboLite core Extensions.kt:210-251](file:///tmp/combolite-src/com/combo/core/utils/Extensions.kt#L210-L251)：
+
+```kotlin
+// 插件端声明（manifest）
+<provider android:name=".MyProvider"
+          android:authorities="com.example.myplugin.provider"
+          android:exported="true" />
+
+// 插件端实现 —— extends ContentProvider（不是 BasePluginProvider，普通 ContentProvider 即可）
+class MyProvider : ContentProvider() {
+    override fun onCreate() = true
+    override fun query(uri: Uri, ...) = /* MatrixCursor */
+    override fun insert(uri: Uri, values: ContentValues?) = null
+}
+
+// host 端访问
+val cursor = contentResolver.queryPlugin(
+    MyProvider.CONTENT_URI,           // 插件原始 URI
+    arrayOf("col1", "col2"),
+    null, null, null
+)
+```
+
+**内部链路**：
+```
+contentResolver.queryPlugin(MyProvider.CONTENT_URI, ...)
+  ① buildProxyUri(uri)
+       → 查找 authorityToProviderMap[pluginAuthority] = "com.example.myplugin.MyProvider"
+       → URLEncoder.encode(pluginAuthority) + path
+       → 构造 proxyUri: content://<hostAuthority>/<encodedPluginAuthority>/<path>
+  ② contentResolver.query(proxyUri, ...)
+  ③ Android 系统路由到 host 的 HostProvider（authority = hostAuthority，注册在 host manifest）
+  ④ BaseHostProvider.query(proxyUri, ...)
+       → 解析 proxyUri 还原 pluginAuthority
+       → PluginManager.proxyManager.findProviderInfoByAuthority(pluginAuthority)
+       → PluginManager.proxyManager.getOrInstantiateProvider(className)
+            → PluginManager.getInterface(ContentProvider::class.java, className)
+            → clazz.getDeclaredConstructor().newInstance()
+            → instance.attachInfo(context, null)  ← 关键：必须 attach 才能 query
+       → provider.query(rewrittenUri, ...)         ← rewrittenUri 还原成 plugin 原生 URI
+```
+
+**关键点**：
+- host **必须**注册 `<provider>` + 调 `setHostProviderAuthority(authority)`
+- host provider authority = plugin provider authority 经过 URLEncoder 后的 path 段
+- plugin provider 必须**用 `newInstance()` 创建**（不是 `getInstance()`），所以**不能用 Kotlin `object` 单例**——必须是 `class`
+- `attachInfo(context, null)` 必须在 `newInstance()` 后立刻调，否则 `query()` 等方法会 NPE（context 为 null）
+
+### 10.5 静态广播接收器标准模式
+
+```kotlin
+// 插件端声明（manifest）
+<receiver android:name=".MyReceiver" android:exported="false">
+    <intent-filter>
+        <action android:name="com.example.MY_ACTION" />
+    </intent-filter>
+</receiver>
+
+// 插件端实现 —— implements IPluginReceiver（不是 extends BroadcastReceiver）
+class MyReceiver : IPluginReceiver {
+    override fun onReceive(context: Context, intent: Intent) {
+        // 处理广播
+    }
+}
+
+// host 端触发
+context.sendInternalBroadcast(Intent("com.example.MY_ACTION").apply {
+    putExtra("key", "value")
+})
+```
+
+**内部链路**：
+```
+context.sendInternalBroadcast(intent)  // intent.setPackage(hostPackageName)
+  ① sendBroadcast(intent) → Android 系统投递到 host 的 HostReceiver
+  ② BaseHostReceiver.onReceive(context, intent)
+       → goAsync() + 协程
+       → PluginManager.proxyManager.findReceiversForIntent(intent)
+            → 遍历 staticReceiverRegistry
+            → 匹配 action / category / scheme / exported 检查
+       → 对每个匹配 plugin：PluginManager.getInterface(IPluginReceiver::class.java, className)
+       → pluginReceiver.onReceive(context, intent)
+```
+
+**关键点**：
+- host **必须**注册 `<receiver>`（exported=true + intent-filter）
+- plugin 的 receiver 类是**实现 `IPluginReceiver` interface 的 POJO**，**不是** `extends BroadcastReceiver`
+- host 端必须用 `sendInternalBroadcast(intent)`（自动 setPackage），不能用裸 `sendBroadcast`——否则 exported=false 的 plugin receiver 会被 ProxyManager 过滤掉
+
+### 10.6 方案 A vs 方案 B 决策（OpenList plugin 适用，2026-06-03 用户拍板方案 A）
+
+> **用户原话**："肯定选择方案A啊，谁说openlist扩展是无头的？"
+> **方案 A = 标准 ComboLite 三模块架构（host 注册代理 + plugin 走 IPluginService / IPluginReceiver / ContentProvider）**
+
+#### 决策背景
+
+| 维度 | 方案 A（标准 ComboLite） | 方案 B（in-process 纯反射，Phase 24 已实现） |
+|------|----------------------|--------------------------------------|
+| 架构正确性 | ✅ 完全符合 ComboLite demo | ⚠️ openlist 特殊化，破坏通用模式 |
+| 与未来 plugin 兼容 | ✅ 任何 IPluginService/IPluginReceiver 插件即插即用 | ❌ 每个插件都要重新写 classloader 反射 |
+| 代码量 | 多（host 端多 13 个代理类 + plugin 端改 IPluginService 实现） | 少（删 OpenListService/StatusProvider，搬逻辑到 OpenListBridge） |
+| Foreground Service | ✅ 可走 BaseHostService 代理（service pool 内有 host service 实例） | ❌ 必须用真 Service，但 plugin 没系统 install |
+| 静态广播分发 | ✅ PluginManager.proxyManager.findReceiversForIntent 统一调度 | ❌ plugin 端收不到任何系统广播 |
+| Provider 跨进程 | ✅ 走 host BaseHostProvider 代理 | ❌ IllegalArgumentException (authority 找不到) |
+| 跨 ABI 稳定性 | ✅ BaseHostService 走 host 进程 | N/A |
+| 调试复杂度 | 中（多 1 层代理） | 低（in-process 直接调） |
+
+#### 方案 A 实施清单（OpenList plugin 改造路径）
+
+1. **plugin 端**：
+   - 删 [OpenListService.kt](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListService.kt) 整文件
+   - 删 [OpenListStatusProvider.kt](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListStatusProvider.kt) 整文件
+   - 新建 `OpenListPluginService : BasePluginService`（实现 `IPluginService`，把 startupSequence/shutdownSequence 搬过来）
+   - 新建 `OpenListStatusProvider : ContentProvider`（保持 ContentProvider，因为 framework `attachInfo` 后能用）
+   - manifest 删 `<service>` 声明，**保留** `<provider authority="com.encvgo.plugin.openlist.provider">`（框架解析需要）
+   - [OpenListBridge.kt](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListBridge.kt) 删除 `instance / isRunning / currentPort` 字段（搬到 OpenListPluginService）
+   - [OpenListPluginEntry.kt](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListPluginEntry.kt) `onLoad` 改用 `OpenListPluginService` proxy
+
+2. **host 端**：
+   - 新建 `HostService1..10 : BaseHostService`（10 个 service 池）
+   - 新建 `HostStatusProvider : BaseHostProvider`
+   - 新建 `HostStaticReceiver : BaseHostReceiver`
+   - 新建 `HostPluginActivity : BaseHostActivity`（如需启动 plugin UI）
+   - host manifest 注册上述 13 个组件
+   - host `BaseHostApplication.onFrameworkSetup()` 调 `setServicePool(...)` + `setHostProviderAuthority("com.encvgo.app.provider")` + `setHostActivity(HostPluginActivity::class.java)`
+   - [GoProcessPlugin.kt](file:///workspace/app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt) `controlOpenList` 改用 `context.startPluginService(OpenListPluginService::class.java, instanceId="main")` 替代 classloader 反射
+   - [OpenListStatusBridge.kt](file:///workspace/app/encv-mobile/android/combolite-host/src/main/java/com/encvgo/combolite/OpenListStatusBridge.kt) `read` 改用 `contentResolver.queryPlugin(OpenListStatusProvider.CONTENT_URI, ...)` 替代 classloader 反射
+
+3. **验证**：
+   - plugin 装上 → UI 显示 running/port
+   - 按 start → host `startPluginService(OpenListPluginService)` 启动 → service 池分配 HostService3 → BaseHostService.onStartCommand → plugin service `onCreate` + `onStartCommand`
+   - status 变更 → `OpenListPluginService.broadcastStatus` → host receiver → `PluginManager.proxyManager.findReceiversForIntent` 匹配 → 调 plugin IPluginReceiver
+   - UI 查询 → host `contentResolver.queryPlugin(...)` → BaseHostProvider.query → plugin `OpenListStatusProvider.query`
+
+### 10.7 PluginClassLoader.getInterface 的两个致命陷阱（⚠️ 实战踩坑！）
+
+[PluginClassLoader.kt:100-119](file:///tmp/combolite-src/com/combo/core/runtime/loader/PluginClassLoader.kt#L100-L119)：
+
+```kotlin
+fun <T> getInterface(interfaceClass: Class<T>, className: String): T? = try {
+    val clazz = loadClass(className)
+    val instance = clazz.getDeclaredConstructor().newInstance()  // ← 陷阱 1
+    if (interfaceClass.isInstance(instance)) instance as T else null
+} catch (e: Exception) { null }
+```
+
+**陷阱 1：`getDeclaredConstructor().newInstance()` 对 Kotlin `object` 单例不安全**
+
+Kotlin `object` 单例的 INSTANCE 字段是懒初始化的（首次访问才创建）。`getDeclaredConstructor().newInstance()` 会绕过 INSTANCE 直接 `new`，可能：
+- 触发 `InstantiationException`（object 构造器是 private）
+- 创建出"半初始化"实例（companion object 字段未就绪）
+- 破坏单例语义（出现多个实例）
+
+**修复**：
+```kotlin
+// ❌ 错误：用 PluginManager.getInterface(IPluginService::class.java, MyService::class.java.name)
+//            → 内部 newInstance() → 崩
+// ✅ 正确：plugin 端用 class extends BasePluginService（普通 class），不用 object
+class MyService : BasePluginService() { ... }
+```
+
+**陷阱 2：`getInterface` 只查"插件自己 + 依赖链"——不查 host**
+
+[PluginManager.kt:225-249](file:///tmp/combolite-src/com/combo/core/runtime/PluginManager.kt#L225-L249)：
+
+```kotlin
+fun <T : Any> getInterface(interfaceClass: Class<T>, className: String): T? {
+    val targetPluginId = requireContext().classIndex[className]
+    if (targetPluginId == null) {
+        getInterfaceFromHost(interfaceClass, className)?.let { return it }  // ← host 兜底
+        return null
+    }
+    val loadedPlugin = requireContext().loadedPlugins.value[targetPluginId]
+    return loadedPlugin.classLoader.getInterface(interfaceClass, className)
+}
+```
+
+如果 class 不在**任何插件的类索引**中，框架会调 `getInterfaceFromHost` 兜底（host 类加载器）。但这只对**确实在 host classpath 里**的类有效——如想反射调 `OpenListBridge`（在插件 classpath），必须先确保插件已 `loadEnabledPlugins()` 加载到 classloader 池。
+
+### 10.8 plugin.openlist 当前形态对方案 A 的影响（决策参考）
+
+| 文件 | 现状 | 方案 A 改造 |
+|------|------|-----------|
+| [AndroidManifest.xml](file:///workspace/app/encv-mobile/plugin-openlist/src/main/AndroidManifest.xml) | 声明 `<service>` + `<provider>` | 删 `<service>`，保留 `<provider>` |
+| [OpenListService.kt](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListService.kt) | `class OpenListService : Service()` | 改为 `class OpenListPluginService : BasePluginService()` |
+| [OpenListStatusProvider.kt](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListStatusProvider.kt) | `class OpenListStatusProvider : ContentProvider()` | 保持不变（ContentProvider 即可，框架 newInstance + attachInfo 正常） |
+| [OpenListBridge.kt](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListBridge.kt) | `object OpenListBridge : Event, LogCallback` | 删 `instance / isRunning / currentPort`，搬到 OpenListPluginService |
+| [OpenListPluginEntry.kt](file:///workspace/app/encv-mobile/plugin-openlist/src/main/java/com/encvgo/plugin/openlist/OpenListPluginEntry.kt) | 普通 IPluginEntryClass | onLoad/onUnload 改用 `OpenListPluginService` proxy |
+| [OpenListStatusBridge.kt](file:///workspace/app/encv-mobile/android/combolite-host/src/main/java/com/encvgo/combolite/OpenListStatusBridge.kt) | classloader 反射 `OpenListBridge.snapshot()` | 改用 `contentResolver.queryPlugin(OpenListStatusProvider.STATUS_URI, ...)` |
+| [GoProcessPlugin.kt](file:///workspace/app/encv-mobile/android/app/src/main/java/com/encvgo/app/GoProcessPlugin.kt) | classloader 反射 `OpenListBridge.start()` + 反射注册 statusListener | 改用 `context.startPluginService(OpenListPluginService::class.java, "main")`；statusListener 反射注册保留（host → plugin 方向） |
+
+### 10.9 Service pool size 选择（plugin-openlist 实际值 N=16）
+
+| 场景 | 池大小 | 理由 |
+|------|--------|------|
+| 单 plugin 1 service（如 openlist） | **2** | 1 用 + 1 buffer |
+| 多 plugin 各 1 service | **plugin 数 + 1** | 每个 plugin 1 个，加 1 buffer |
+| 同 plugin 多 instance | **max(instance 数) + 1** | 用 instanceId 区分同 class 多实例 |
+| 通用 demo / 框架示例 | 10 | ComboLite demo 演示并发（**不推荐**用于生产） |
+| 复杂 app 缓冲 | 16-20 | 多插件多 instance 余量 |
+
+**plugin-openlist 实际选择 N=16**：
+- openlist 1 个 main instance + 1 buffer = 绝对最小 2
+- 留 14 个余量给未来 plugin 扩展（player、sftp、baidupan、aliyundrive 等）
+- 不写死 10（demo 风格）也不写死 2（过保守）
+
+**ComboLite 架构硬约束（setServicePool）**：
+- 池是 `Queue<Class<out BaseHostService>>`（[ProxyManager.kt:115](file:///tmp/combolite-src/com/combo/core/proxy/ProxyManager.kt#L115)）
+- `setServicePool` 清空 `availableServiceProxies` + **清空 `activeServiceProxies`**（[ProxyManager.kt:112-113](file:///tmp/combolite-src/com/combo/core/proxy/ProxyManager.kt#L112-L113)）—— 运行中 plugin service 引用丢失
+- 因此**只能**在 `setupFramework` 一次性 set，不能 installPlugin 后重设
+- 扩容到 N' > 16：扩 manifest 加 `<service>` + 改 setServicePool 调用（一次性硬改）
+
+**Android 系统约束**：
+- Service 是 class-based（同一 class 多次注册 = 1 个实例）
+- 必须有 N 个**不同** class 预注册在 manifest
+- 池 = N 个不同 class 引用列表
+
+### 10.9.1 aar2apk file deps 注入铁律（⚠️ 实战踩坑 2026-06-03）
+
+> **核心原则：`aar2apk` 任务的 `localDependencyClasses` 和 `remoteDependencyAars`
+> 都不会接收 `implementation(files("xxx.jar"))` 形式的直接文件依赖。**
+> **想用 file 形式注入 native bridge 类（gomobile bind / JNI 类），必须走
+> sourceSet 注入方案（preBuild 解压 jar → build/generated/ → main java.srcDir）。**
+
+#### aar2apk 任务的 deps 拉取机制
+
+`com.combo.aar2apk.Aar2ApkPlugin.kt:107+134` 通过 `config.incoming.artifactView` 拉：
+
+```kotlin
+// localDependencyClasses (line 134-144)
+localDependencyClasses.from(config.incoming.artifactView {
+    attributes {
+        attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "android-classes-jar")
+    }
+    componentFilter { it is ProjectComponentIdentifier }   // ← 只接受 Project 子模块
+    lenient(true)
+}.files)
+
+// remoteDependencyAars (line 110-120)
+remoteDependencyAars.from(config.incoming.artifactView {
+    ...
+    componentFilter { it is ModuleComponentIdentifier }    // ← 只接受 maven 依赖
+    lenient(true)
+}.files)
+```
+
+**两个过滤器都排斥 `files("libs/xxx.jar")` 直接文件依赖**——file 不走 Gradle dependency graph，没有 component identifier。
+
+#### 后果
+
+`implementation(files("libs/openlist-classes.jar"))` 在 plugin-openlist 模块：
+
+| 阶段 | 行为 | 结果 |
+|------|------|------|
+| Kotlin/Java 编译 | AGP 把 jar 加入 classpath | ✅ 编译过（Kotlin 看到 openlistlib.Event） |
+| AGP 打 aar | classes.jar **只**含 module 自己的 .class（不含 openlistlib） | ⚠️ aar 缺 openlistlib |
+| aar2apk 转 APK | d8 合并 aar 的 classes.jar + 空 localDependencyClasses | ❌ APK dex 缺 openlistlib |
+| 运行时 | NoClassDefFoundError | 💥 崩 |
+
+#### 修复方案：sourceSet 注入
+
+`plugin-openlist/build.gradle.kts`：
+
+```kotlin
+android {
+    sourceSets {
+        getByName("main") {
+            java.srcDir(layout.buildDirectory.dir("generated/openlistlib"))
+        }
+    }
+}
+
+val unpackOpenlistClasses by tasks.registering {
+    val input = file("libs/openlist-classes.jar")
+    val outputDir = layout.buildDirectory.dir("generated/openlistlib").get().asFile
+    inputs.file(input)
+    outputs.dir(outputDir)
+    doLast {
+        outputDir.deleteRecursively()
+        outputDir.mkdirs()
+        copy { from(zipTree(input)); into(outputDir) }
+    }
+}
+
+afterEvaluate {
+    tasks.matching { it.name.startsWith("pre") && it.name.endsWith("Build") }
+        .configureEach { dependsOn(unpackOpenlistClasses) }
+}
+```
+
+这样：
+- `preBuild` → `unpackOpenlistClasses` → 解压到 `build/generated/openlistlib/`
+- Kotlin/Java 编译时 sourceSet 含 `build/generated/openlistlib/`，能找到 openlistlib 类
+- AGP 打 aar 时 **classes.jar 自然含** openlistlib 类（因为它们是 sourceSet 一部分）
+- aar2apk 解压 aar 拿 classes.jar → d8 合并 → **plugin APK dex 含 openlistlib** ✅
+- 运行时类能加载
+
+#### 方案对比
+
+| 方案 | 稳定性 | 依赖第三方 | 维护成本 | 选 |
+|------|--------|-----------|---------|---|
+| **sourceSet 注入** | 高（不依赖 aar2apk/AGP 内部） | 无 | 低（一个 task） | ✅ **本项目** |
+| 包成 .aar 走 maven coordinate | 中 | flatDir/mavenLocal | 中（额外仓库配置） | — |
+| 改 aar2apk 源码接受 file deps | 低 | fork ComboLite | 高 | ❌ |
+| 改 `implementation` 为 `compileOnly` + 手动塞 dex | 不可行 | — | — | ❌ |
+
+#### 沙箱验证步骤
+
+1. javac 生成 stub openlistlib jar（含 Event / LogCallback / Openlistlib .class）
+2. 把 stub jar 拷到 `plugin-openlist/libs/openlist-classes.jar`
+3. 手动解压到 `plugin-openlist/build/generated/openlistlib/`
+4. `kotlinc -classpath "build/generated/openlistlib:libs/openlist-classes.jar" OpenListBridge.kt -d /tmp/out`
+5. 验证：unresolved `openlistlib` 错误**消失**（只剩 android.* unresolved，预期）
+6. 清理 sandbox 临时文件（jar + build/）
+
+#### 铁律总结
+
+> 凡是依赖 gomobile bind / JNI 生成的 native bridge 类（编译产物是 jar 不是 aar），
+> **必须用 sourceSet 注入**。`implementation(files("xxx.jar"))` 不会让 aar2apk 把
+> 那些类合并到 plugin APK 的 dex。
+
+---
+
+### 10.10 关键参考源码
+
+| 路径 | 内容 |
+|------|------|
+| [comboLite-core/.../api/IPluginService.kt](file:///tmp/combolite-src/com/combo/core/api/IPluginService.kt) | plugin service interface（onAttach + 完整 lifecycle） |
+| [comboLite-core/.../component/service/BaseHostService.kt](file:///tmp/combolite-src/com/combo/core/component/service/BaseHostService.kt) | host service 代理基类（initPluginService + lifecycle 转发） |
+| [comboLite-core/.../component/service/BasePluginService.kt](file:///tmp/combolite-src/com/combo/core/component/service/BasePluginService.kt) | plugin service 基类（proxyService 持有 + 默认空 lifecycle） |
+| [comboLite-core/.../api/IPluginReceiver.kt](file:///tmp/combolite-src/com/combo/core/api/IPluginReceiver.kt) | plugin receiver interface |
+| [comboLite-core/.../component/receiver/BaseHostReceiver.kt](file:///tmp/combolite-src/com/combo/core/component/receiver/BaseHostReceiver.kt) | host receiver 代理基类（goAsync + 协程 + 分发） |
+| [comboLite-core/.../component/provider/BaseHostProvider.kt](file:///tmp/combolite-src/com/combo/core/component/provider/BaseHostProvider.kt) | host provider 代理基类（withForwardedRequest 通用转发） |
+| [comboLite-core/.../utils/Extensions.kt](file:///tmp/combolite-src/com/combo/core/utils/Extensions.kt) | startPluginService / startPluginActivity / queryPlugin / sendInternalBroadcast 等扩展 |
+| [comboLite-core/.../proxy/ProxyManager.kt](file:///tmp/combolite-src/com/combo/core/proxy/ProxyManager.kt) | 四大组件代理调度（acquireServiceProxy / setHostXxx / findReceiversForIntent） |
+| [comboLite-core/.../runtime/loader/PluginClassLoader.kt](file:///tmp/combolite-src/com/combo/core/runtime/loader/PluginClassLoader.kt) | DexClassLoader + getInterface(newInstance 陷阱) |
+| [lnzz123/ComboLite/app/src/main/java/com/combo/plugin/sample/HostApp.kt](https://raw.githubusercontent.com/lnzz123/ComboLite/master/app/src/main/java/com/combo/plugin/sample/HostApp.kt) | demo 标准 onFrameworkSetup 模板 |
+| [lnzz123/ComboLite/app/src/main/AndroidManifest.xml](https://raw.githubusercontent.com/lnzz123/ComboLite/master/app/src/main/AndroidManifest.xml) | demo host manifest（10 service + 1 provider + 1 receiver + 1 activity） |
+

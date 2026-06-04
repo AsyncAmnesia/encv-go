@@ -56,23 +56,23 @@ func TestMobileOverlay_EmptySubObjects(t *testing.T) {
 	defer os.Unsetenv("ENCV_MOBILE")
 
 	testCases := []struct {
-		name     string
-		json     string
-		wantDir  string
+		name    string
+		json    string
+		wantDir string
 	}{
 		{
-			name: "mobile server dir empty",
-			json: `{"server":{"dir":"/","port":2025},"mobile":{"server":{"dir":""}}}`,
+			name:    "mobile server dir empty",
+			json:    `{"server":{"dir":"/","port":2025},"mobile":{"server":{"dir":""}}}`,
 			wantDir: "/workspace", // fallback to cwd since empty string
 		},
 		{
-			name: "mobile server null",
-			json: `{"server":{"dir":"/","port":2025},"mobile":{"server":null}}`,
+			name:    "mobile server null",
+			json:    `{"server":{"dir":"/","port":2025},"mobile":{"server":null}}`,
 			wantDir: "/workspace",
 		},
 		{
-			name: "mobile missing server key entirely",
-			json: `{"server":{"dir":"/","port":2025},"mobile":{"output":{"path":"/tmp"}}}`,
+			name:    "mobile missing server key entirely",
+			json:    `{"server":{"dir":"/","port":2025},"mobile":{"output":{"path":"/tmp"}}}`,
 			wantDir: "/workspace",
 		},
 	}

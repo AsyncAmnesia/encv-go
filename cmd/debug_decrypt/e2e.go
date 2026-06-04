@@ -30,7 +30,13 @@ func main() {
 		fmt.Printf("⚠️ Output file not found at %s\n", outputPath)
 		files, _ := os.ReadDir(outputDir)
 		for _, f := range files {
-			fmt.Printf("  Found: %s (%d bytes)\n", f.Name(), func() int64 { info, _ := f.Info(); if info != nil { return info.Size() }; return 0 }())
+			fmt.Printf("  Found: %s (%d bytes)\n", f.Name(), func() int64 {
+				info, _ := f.Info()
+				if info != nil {
+					return info.Size()
+				}
+				return 0
+			}())
 		}
 		return
 	}

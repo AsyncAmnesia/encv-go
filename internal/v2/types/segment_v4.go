@@ -50,19 +50,19 @@ type ChapterInfo_v4 struct {
 }
 
 type Manifest_v4 struct {
-	Version          uint16              `json:"version"`
-	ContainerID      string              `json:"container_id"`
-	ContainerType    string              `json:"container_type"`
-	IsSeekable       bool                `json:"is_seekable"`
-	OriginalDuration float64             `json:"original_duration,omitempty"`
-	Segments         []Segment_v4        `json:"segments"`
-	Playlists        map[string][]string `json:"playlists"`
-	Chapters         []ChapterInfo_v4    `json:"chapters,omitempty"`
-	DisasterZones    []DisasterZone      `json:"disaster_zones,omitempty"`
-	KVI              json.RawMessage     `json:"kvi"`
-	EDLHistory       []EDLEntry          `json:"edl_history,omitempty"`
-	OriginalName     string              `json:"original_name,omitempty"`
-	FilenameAlgorithm string             `json:"filename_alg,omitempty"`
+	Version           uint16              `json:"version"`
+	ContainerID       string              `json:"container_id"`
+	ContainerType     string              `json:"container_type"`
+	IsSeekable        bool                `json:"is_seekable"`
+	OriginalDuration  float64             `json:"original_duration,omitempty"`
+	Segments          []Segment_v4        `json:"segments"`
+	Playlists         map[string][]string `json:"playlists"`
+	Chapters          []ChapterInfo_v4    `json:"chapters,omitempty"`
+	DisasterZones     []DisasterZone      `json:"disaster_zones,omitempty"`
+	KVI               json.RawMessage     `json:"kvi"`
+	EDLHistory        []EDLEntry          `json:"edl_history,omitempty"`
+	OriginalName      string              `json:"original_name,omitempty"`
+	FilenameAlgorithm string              `json:"filename_alg,omitempty"`
 }
 
 var manifestV4BufferPool = sync.Pool{
@@ -136,8 +136,8 @@ func (m *Manifest_v4) ResolvePlaylist(name string) ([]Segment_v4, error) {
 	return segments, nil
 }
 
-func (m *Manifest_v4) GetOriginalName() string       { return m.OriginalName }
-func (m *Manifest_v4) GetFilenameAlgorithm() string   { return m.FilenameAlgorithm }
+func (m *Manifest_v4) GetOriginalName() string      { return m.OriginalName }
+func (m *Manifest_v4) GetFilenameAlgorithm() string { return m.FilenameAlgorithm }
 
 func (h *SegmentHeader) MarshalBinary() ([]byte, error) {
 	buf := make([]byte, SegmentHeaderSize)

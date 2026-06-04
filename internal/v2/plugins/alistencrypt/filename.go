@@ -14,7 +14,7 @@ import (
 
 const (
 	sourceChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-~+"
-	OrigPrefix   = "orig_"
+	OrigPrefix  = "orig_"
 )
 
 type mixBase64 struct {

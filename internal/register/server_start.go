@@ -8,9 +8,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/types"
+	"github.com/gin-gonic/gin"
 )
 
 func StartHttpHandlerWithRetry(handler http.Handler, initialPort int, instanceID, version string) (*http.Server, string, error) {

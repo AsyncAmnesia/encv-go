@@ -57,8 +57,8 @@ type PasswordStrategy string
 
 const (
 	PasswordGlobal      PasswordStrategy = "global"      // 使用全局密码（video 等大多数插件）
-	PasswordIndependent PasswordStrategy = "independent"  // 使用插件独立密码，不用全局密码（alist_encrypt）
-	PasswordNone         PasswordStrategy = "none"         // 不需要密码
+	PasswordIndependent PasswordStrategy = "independent" // 使用插件独立密码，不用全局密码（alist_encrypt）
+	PasswordNone        PasswordStrategy = "none"        // 不需要密码
 )
 
 // TaskOptions 返回该插件在创建加解密任务时需要的选项声明
@@ -77,7 +77,7 @@ type TaskField struct {
 	Label        string            `json:"label"`
 	Type         string            `json:"type"`
 	Required     bool              `json:"required"`
-	DefaultValue string           `json:"defaultValue"`
+	DefaultValue string            `json:"defaultValue"`
 	Help         string            `json:"help"`
 	Options      []string          `json:"options,omitempty"`
 	OptionLabels map[string]string `json:"optionLabels,omitempty"`

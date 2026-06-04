@@ -3,9 +3,9 @@ package server
 import (
 	"time"
 
+	"github.com/Soltus/encv-go/internal/config"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/Soltus/encv-go/internal/config"
 )
 
 func NewGinApp(cfg *config.Config) *gin.Engine {

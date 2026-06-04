@@ -390,6 +390,11 @@ package openlistlib
 type Event interface {
 	OnStartError(eventType string, msg string)
 	OnShutdown(eventType string)
+	// gomobile maps Go `int` to Java `long` on 64-bit Android (linux/arm64
+	// is our only target ABI). See genjava.go case types.Int64/types.UntypedInt
+	// → java.Long. Writing `int` here would still produce Java `long`, but
+	// for clarity (and to match what Hi-Sillot/OpenList@404daf0's event.go
+	// uses) we keep `int64` to make the AAR regeneration identical.
 	OnProcessExit(code int64)
 }
 

@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
+	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/crypto"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
@@ -30,17 +30,18 @@ type testE2EKVI struct {
 	types.KVI
 }
 
-func (k testE2EKVI) GetKind() types.IndexKind             { return "video" }
-func (k testE2EKVI) GetEncryptionInfo() types.KVI          { return k.KVI }
-func (k testE2EKVI) GetIndex() types.Index                 { return &types.NoOpIndex{} }
+func (k testE2EKVI) GetKind() types.IndexKind     { return "video" }
+func (k testE2EKVI) GetEncryptionInfo() types.KVI { return k.KVI }
+func (k testE2EKVI) GetIndex() types.Index        { return &types.NoOpIndex{} }
 
 // createV4ViaPluginPath 使用 SingleFileContainerWriterV4（插件加密实际路径）构造完整 V4 容器
 // 与 WriteV4Container（直接写入路径）不同，本函数走的是：
-//   → WriteHeader(V4 Magic=ENCV)
-//   → WriteKVI (Block 包裹)
-//   → WriteFragment (Block 包裹的加密数据)
-//   → WriteManifest → writeManifestV4 (XOR 混淆，无 Block header)
-//   → Close (回写 Header.ManifestOffset + 写 Footer)
+//
+//	→ WriteHeader(V4 Magic=ENCV)
+//	→ WriteKVI (Block 包裹)
+//	→ WriteFragment (Block 包裹的加密数据)
+//	→ WriteManifest → writeManifestV4 (XOR 混淆，无 Block header)
+//	→ Close (回写 Header.ManifestOffset + 写 Footer)
 func createV4ViaPluginPath(t *testing.T) (path string, password string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -54,13 +55,13 @@ func createV4ViaPluginPath(t *testing.T) (path string, password string) {
 	require.NoError(t, err)
 
 	v4Header := &types.EnvelopeHeaderV4{
-		Magic:          types.MagicHeader_v2,
-		Version:        4,
-		Flags:          1,
-		ContainerType:  types.ContainerTypeVideo,
-		IsSeekable:     1,
-		IDType:         uint32(types.IDType_Raw),
-		IDLength:       0,
+		Magic:         types.MagicHeader_v2,
+		Version:       4,
+		Flags:         1,
+		ContainerType: types.ContainerTypeVideo,
+		IsSeekable:    1,
+		IDType:        uint32(types.IDType_Raw),
+		IDLength:      0,
 	}
 
 	w, err := NewSingleFileContainerWriterV4(path, v4Header)
@@ -211,13 +212,13 @@ func TestSingleFileWriterV4_MultipleFragments(t *testing.T) {
 	iv, _ := crypto.GenerateIV_v2(types.IVSize_v2)
 
 	v4Header := &types.EnvelopeHeaderV4{
-		Magic:          types.MagicHeader_v2,
-		Version:        4,
-		Flags:          1,
-		ContainerType:  types.ContainerTypeVideo,
-		IsSeekable:     1,
-		IDType:         uint32(types.IDType_Raw),
-		IDLength:       0,
+		Magic:         types.MagicHeader_v2,
+		Version:       4,
+		Flags:         1,
+		ContainerType: types.ContainerTypeVideo,
+		IsSeekable:    1,
+		IDType:        uint32(types.IDType_Raw),
+		IDLength:      0,
 	}
 
 	w, err := NewSingleFileContainerWriterV4(path, v4Header)

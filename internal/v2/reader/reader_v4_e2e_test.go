@@ -42,13 +42,13 @@ func createV4PluginPathContainer(t *testing.T, containerType uint16, plaintext [
 	ciphertext := encryptedBuf.Bytes()
 
 	v4Header := &types.EnvelopeHeaderV4{
-		Magic:          types.MagicHeader_v2,
-		Version:        4,
-		Flags:          1,
-		ContainerType:  containerType,
-		IsSeekable:     1,
-		IDType:         uint32(types.IDType_Raw),
-		IDLength:       0,
+		Magic:         types.MagicHeader_v2,
+		Version:       4,
+		Flags:         1,
+		ContainerType: containerType,
+		IsSeekable:    1,
+		IDType:        uint32(types.IDType_Raw),
+		IDLength:      0,
 	}
 
 	w, err := writer.NewSingleFileContainerWriterV4(path, v4Header)

@@ -200,10 +200,10 @@ func BuildCharsetTable(charsets []FNCharset, deconfuse bool) ([]rune, error) {
 			if !deconfuseRunes[r] {
 				filtered = append(filtered, r)
 			}
-			}
+		}
 		if len(filtered) == 0 {
 			return nil, errors.New("enc-fn: empty charset after deconfusion")
-			}
+		}
 		table = filtered
 	}
 

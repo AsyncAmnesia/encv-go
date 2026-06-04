@@ -68,5 +68,9 @@ object EncvComboLiteHost {
         extras: Map<String, Any> = emptyMap()
     ): Intent = PluginLifecycleEngine.createProxyIntent(context, pluginId, targetActivity, hostActivityClass, extras)
 
-    fun setupFramework(hostActivityClass: Class<*>) = PluginLifecycleEngine.setupFramework(hostActivityClass)
+    fun setupFramework(
+        hostActivityClass: Class<*>,
+        hostServicePool: List<Class<out com.combo.core.component.service.BaseHostService>>,
+        hostProviderAuthority: String,
+    ) = PluginLifecycleEngine.setupFramework(hostActivityClass, hostServicePool, hostProviderAuthority)
 }

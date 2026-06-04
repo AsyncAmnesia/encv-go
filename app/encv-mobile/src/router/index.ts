@@ -45,6 +45,11 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'extensions.title' },
       },
       {
+        path: 'openlist',
+        component: () => import('@/views/OpenListView.vue'),
+        meta: { title: 'openlist.title' },
+      },
+      {
         path: 'settings/server',
         component: () => import('@/views/ServerDetail.vue'),
       },

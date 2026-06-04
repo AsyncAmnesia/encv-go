@@ -73,18 +73,23 @@ func TestPluginInitialization(t *testing.T) {
 		assert.Equal(t, "aesctr", p.settings.EncType)
 	})
 
-	t.Run("suffix_sccgv_conflict_fallback", func(t *testing.T) {
+	t.Run("suffix_sccgv_reserved_allowed", func(t *testing.T) {
+		// .sccgv is the V2 reserved extension; alist_encrypt IS the V2
+		// implementation, so it must be allowed to use .sccgv (no fallback).
+		// Cross-plugin conflicts with .sccgv are detected by
+		// ValidateExtensionUniqueness(), not silently masked here.
 		p, ctx := newPluginWithSettings(t, ".sccgv", testPassword, "aesctr")
 		err := p.Initialize(ctx)
 		require.NoError(t, err)
-		assert.Equal(t, ".bin", p.settings.Suffix, "reserved .sccgv suffix should fall back to .bin")
+		assert.Equal(t, ".sccgv", p.settings.Suffix, "reserved V2 suffix should be preserved")
 	})
 
-	t.Run("suffix_encv_conflict_fallback", func(t *testing.T) {
+	t.Run("suffix_encv_reserved_allowed", func(t *testing.T) {
+		// .encv is the legacy reserved extension; same rule as .sccgv.
 		p, ctx := newPluginWithSettings(t, ".encv", testPassword, "aesctr")
 		err := p.Initialize(ctx)
 		require.NoError(t, err)
-		assert.Equal(t, ".bin", p.settings.Suffix, "reserved .encv suffix should fall back to .bin")
+		assert.Equal(t, ".encv", p.settings.Suffix, "reserved legacy suffix should be preserved")
 	})
 
 	t.Run("suffix_no_dot_auto_fix", func(t *testing.T) {

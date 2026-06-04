@@ -13,15 +13,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/Soltus/encv-go/internal/config"
 	mobileservice "github.com/Soltus/encv-go/internal/service"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
-	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	alistencrypt "github.com/Soltus/encv-go/internal/v2/plugins/alistencrypt"
+	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	"github.com/Soltus/encv-go/internal/v2/types"
+	"github.com/gin-gonic/gin"
 )
 
 func isValidSiteID(id string) bool {
@@ -207,12 +207,12 @@ func (s *Server) handleServiceGuardGin(c *gin.Context) {
 		}
 
 		c.JSON(http.StatusForbidden, gin.H{
-			"ready":       false,
-			"servingDir":  s.servingDir,
-			"marker":      marker,
-			"found":       displayNames,
-			"detail":      fmt.Sprintf("server.dir missing %q, got: [%s]", marker, strings.Join(displayNames, ", ")),
-			"hint":        "Run: cd app/encv-mobile && npx tsx scripts/generate-mock-files.ts --dir /storage/emulated/0",
+			"ready":      false,
+			"servingDir": s.servingDir,
+			"marker":     marker,
+			"found":      displayNames,
+			"detail":     fmt.Sprintf("server.dir missing %q, got: [%s]", marker, strings.Join(displayNames, ", ")),
+			"hint":       "Run: cd app/encv-mobile && npx tsx scripts/generate-mock-files.ts --dir /storage/emulated/0",
 		})
 		return
 	}
@@ -856,11 +856,11 @@ func (s *Server) handleGetContainerVersionsGin(c *gin.Context) {
 func (s *Server) handleFFmpegStatusGin(c *gin.Context) {
 	ffmpegOk, ffprobeOk, errMsg, ffmpegDetail, ffprobeDetail := utils.CheckFFmpegAvailable()
 	c.JSON(http.StatusOK, gin.H{
-		"ffmpeg_available":   ffmpegOk,
-		"ffprobe_available":  ffprobeOk,
-		"error":              errMsg,
-		"ffmpeg_detail":      ffmpegDetail,
-		"ffprobe_detail":     ffprobeDetail,
+		"ffmpeg_available":  ffmpegOk,
+		"ffprobe_available": ffprobeOk,
+		"error":             errMsg,
+		"ffmpeg_detail":     ffmpegDetail,
+		"ffprobe_detail":    ffprobeDetail,
 	})
 }
 
@@ -974,7 +974,7 @@ func (s *Server) handlePredictPluginGin(c *gin.Context) {
 			Plugin: targetPlugin, Name: targetPlugin.Name(), MatchType: "container", Priority: 0,
 		}}
 		c.JSON(200, gin.H{
-			"candidates": []gin.H{{"name": targetPlugin.Name(), "matchType": "container", "priority": 0, "taskOptions": taskOptionsToGinH(opts)}},
+			"candidates":  []gin.H{{"name": targetPlugin.Name(), "matchType": "container", "priority": 0, "taskOptions": taskOptionsToGinH(opts)}},
 			"pluginName":  targetPlugin.Name(),
 			"taskOptions": taskOptionsToGinH(opts),
 		})
@@ -1000,7 +1000,7 @@ func (s *Server) handlePredictPluginGin(c *gin.Context) {
 	}
 
 	c.JSON(200, gin.H{
-		"candidates": candidateList,
+		"candidates":  candidateList,
 		"pluginName":  firstName,
 		"taskOptions": firstOptsH,
 	})

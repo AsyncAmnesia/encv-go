@@ -47,6 +47,13 @@ compose-ui = { group = "androidx.compose.ui", name = "ui" }
 compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 compose-runtime = { group = "androidx.compose.runtime", name = "runtime" }
 compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+# Phase 16 修复: 之前 plugin-openlist/build.gradle.kts:81-82 引用了
+# libs.compose.foundation / libs.compose.foundation.layout 但 toml 里没声明,
+# 导致 Gradle Kotlin DSL 脚本编译失败 (Script compilation errors: Unresolved reference 'foundation'),
+# 连锁污染 :plugin-mpv-player:convert_plugin-mpv-player_release 任务（同一 multi-project 配置期失败）。
+# 这两个 artifact 由 Compose BOM 管版本,不需要 version.ref
+compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
+compose-foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout" }
 bugly-crashreport = { group = "com.tencent.bugly", name = "crashreport", version.ref = "bugly" }
 
 [plugins]

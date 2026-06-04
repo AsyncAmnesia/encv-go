@@ -91,7 +91,7 @@ func TestPutConfig_StripsMobileSectionAndProtectsOverlayFields(t *testing.T) {
 			},
 		},
 		"output_path": "/storage/emulated/0/encv-output",
-		"password":     "new-key",
+		"password":    "new-key",
 	}
 	bodyData, _ := json.Marshal(bodyWithMobile)
 

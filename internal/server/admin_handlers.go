@@ -11,13 +11,13 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/Soltus/encv-go/internal/auth"
 	"github.com/Soltus/encv-go/internal/injector"
 	"github.com/Soltus/encv-go/internal/routes"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
+	"github.com/gin-gonic/gin"
 )
 
 func (s *Server) handleLoginGin(c *gin.Context) {
@@ -330,7 +330,7 @@ func (s *Server) handleFileRenameGin(c *gin.Context) {
 
 func (s *Server) handleFileCopyGin(c *gin.Context) {
 	var req struct {
-		SrcPath string `json:"srcPath" binding:"required"`
+		SrcPath  string `json:"srcPath" binding:"required"`
 		DestPath string `json:"destPath" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -443,7 +443,7 @@ func (s *Server) handleFileCopyGin(c *gin.Context) {
 
 func (s *Server) handleFileMoveGin(c *gin.Context) {
 	var req struct {
-		SrcPath string `json:"srcPath" binding:"required"`
+		SrcPath  string `json:"srcPath" binding:"required"`
 		DestPath string `json:"destPath" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {

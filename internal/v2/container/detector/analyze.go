@@ -12,10 +12,10 @@ import (
 	"text/tabwriter"
 	"text/template"
 
-	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/logger"
 	"github.com/Soltus/encv-go/internal/v2/chunker"
 	"github.com/Soltus/encv-go/internal/v2/container/block"
+	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/types"
 	"github.com/fxamacker/cbor/v2"
 )

@@ -239,10 +239,10 @@ func (r *SegmentSeekableReader) Close() error {
 }
 
 type SegmentSequentialReader struct {
-	info     *V4ContainerInfo
-	file     *os.File
-	playlist []types.Segment_v4
-	segIndex int
+	info      *V4ContainerInfo
+	file      *os.File
+	playlist  []types.Segment_v4
+	segIndex  int
 	segReader io.Reader
 }
 

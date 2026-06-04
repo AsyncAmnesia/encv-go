@@ -14,7 +14,7 @@ import (
 const securityTestDataSize int64 = 64 * 1024
 
 type verifyTestPair struct {
-	originalPath string
+	originalPath  string
 	decryptedPath string
 }
 
@@ -204,7 +204,7 @@ func TestVerify_TamperedManifest(t *testing.T) {
 		manifestOffset := -1
 		for i := searchStart; i < len(containerData)-4; i++ {
 			if containerData[i] == '{' && containerData[i+1] == '"' {
-				candidate := string(containerData[i : min(i+16, len(containerData))])
+				candidate := string(containerData[i:min(i+16, len(containerData))])
 				if containsManifestMarker(candidate) {
 					manifestOffset = i
 					break

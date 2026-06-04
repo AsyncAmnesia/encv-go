@@ -33,7 +33,7 @@ func PrintSection(text string) {
 
 type SpinnerStub struct{}
 
-func (s *SpinnerStub) Stop() error                  { return nil }
+func (s *SpinnerStub) Stop() error                      { return nil }
 func (s *SpinnerStub) Success(text string) *SpinnerStub { return s }
 func (s *SpinnerStub) Fail(text string) *SpinnerStub    { return s }
 

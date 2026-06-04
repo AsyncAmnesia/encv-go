@@ -16,7 +16,7 @@ import (
 
 // ChunkedContainerWriter 提供构建物理分片容器所需的工具方法
 type ChunkedContainerWriter struct {
-	globalHasher   hash.Hash32
+	globalHasher    hash.Hash32
 	lastManifestLen uint64
 }
 

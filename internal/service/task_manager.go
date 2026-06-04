@@ -400,7 +400,12 @@ func (tm *TaskManager) dequeue() *MobileTask {
 func (tm *TaskManager) resolveAbsPath(sourcePath string) string {
 	abs, err := utils.SafeResolveToAbsPath(tm.servingDir, sourcePath)
 	if err != nil {
-		return filepath.Clean(sourcePath)
+		// Security: path traversal detected (e.g., "../../../etc/passwd").
+		// Return empty string so the caller (processTask/processDecrypt) calls
+		// failTask instead of using the traversal path. Previously this fell
+		// through to filepath.Clean(sourcePath) which returned the original
+		// traversal path — pre-existing security bug.
+		return ""
 	}
 	return abs
 }
@@ -835,11 +840,11 @@ func (tm *TaskManager) failTask(id, errMsg string) {
 		slog.Error("Task failed", "id", id, "error", errMsg)
 		if tm.broadcaster != nil {
 			tm.broadcaster.Broadcast("task:completed", map[string]interface{}{
-			"id":          id,
-			"status":      "failed",
-			"error":       friendlyMsg,
-			"errorDetail": errMsg,
-		})
+				"id":          id,
+				"status":      "failed",
+				"error":       friendlyMsg,
+				"errorDetail": errMsg,
+			})
 			tm.broadcaster.Broadcast("log", map[string]interface{}{
 				"level":   "error",
 				"message": fmt.Sprintf("[Task %s] %s", id, errMsg),

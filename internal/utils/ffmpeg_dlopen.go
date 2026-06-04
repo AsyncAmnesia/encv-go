@@ -127,14 +127,14 @@ func getLibDir() string {
 type NativeErrorType int
 
 const (
-	NativeErrorDlopen   NativeErrorType = iota
-	NativeErrorSymbol                    NativeErrorType = iota
-	NativeErrorExit                      NativeErrorType = iota
+	NativeErrorDlopen NativeErrorType = iota
+	NativeErrorSymbol NativeErrorType = iota
+	NativeErrorExit   NativeErrorType = iota
 )
 
 type NativeError struct {
-	Type    NativeErrorType
-	Detail  string
+	Type     NativeErrorType
+	Detail   string
 	ExitCode int
 }
 

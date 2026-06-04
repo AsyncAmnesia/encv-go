@@ -5,15 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
-	"net/url"
 
+	"github.com/Soltus/encv-go/internal/v2/plugins/alistencrypt"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/Soltus/encv-go/internal/v2/plugins/alistencrypt"
 )
 
 const testPassword = "test_password_123"

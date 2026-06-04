@@ -1,6 +1,5 @@
 package video
 
-
 import (
 	"context"
 	"encoding/binary"
@@ -21,11 +20,11 @@ import (
 )
 
 type VideoContentPreprocessor struct {
-	settings       VideoPluginConfig
-	index          *VideoIndex
-	outputDir      string
-	splitPartPaths map[string]bool
-	ctx            context.Context
+	settings         VideoPluginConfig
+	index            *VideoIndex
+	outputDir        string
+	splitPartPaths   map[string]bool
+	ctx              context.Context
 	onFFmpegProgress func(percent float64, speed string)
 }
 
@@ -40,8 +39,8 @@ var (
 
 func detectPreferredEncoder() string {
 	encoders := []struct {
-		name   string
-		args   []string
+		name string
+		args []string
 	}{
 		{"h264_nvenc", []string{"-f", "lavfi", "-i", "nullsrc=s=256x256:d=0.1", "-c:v", "h264_nvenc", "-f", "null", "-"}},
 		{"h264_mediacodec", []string{"-f", "lavfi", "-i", "nullsrc=s=256x256:d=0.1", "-c:v", "h264_mediacodec", "-f", "null", "-"}},

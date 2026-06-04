@@ -25,26 +25,26 @@ const (
 )
 
 type EnvelopeHeaderV4 struct {
-	Magic           [4]byte
-	Version         uint16
-	Flags           uint16
-	ContainerType   uint16
-	IsSeekable      uint8
-	Reserved1       uint8
-	IDType          uint32
-	IDLength        uint32
-	PasswordHint    [16]byte
-	SpecialID       [SpecialIDMaxLenV4]byte
-	ManifestOffset  uint32
-	ManifestLength  uint32
-	HeaderCRC32     uint32
-	Reserved2       [8]byte
+	Magic          [4]byte
+	Version        uint16
+	Flags          uint16
+	ContainerType  uint16
+	IsSeekable     uint8
+	Reserved1      uint8
+	IDType         uint32
+	IDLength       uint32
+	PasswordHint   [16]byte
+	SpecialID      [SpecialIDMaxLenV4]byte
+	ManifestOffset uint32
+	ManifestLength uint32
+	HeaderCRC32    uint32
+	Reserved2      [8]byte
 }
 
 type EnvelopeFooterV4 struct {
-	Magic        [4]byte
-	GlobalCRC32  uint32
-	Reserved     [4]byte
+	Magic       [4]byte
+	GlobalCRC32 uint32
+	Reserved    [4]byte
 }
 
 func WriteHeaderV4(w io.Writer, h *EnvelopeHeaderV4) error {
@@ -155,13 +155,13 @@ func CreateHeaderV4(isMain bool, containerType uint16, isSeekable bool, idType I
 	}
 
 	header := &EnvelopeHeaderV4{
-		Magic:        MagicHeader_v2,
-		Version:      0x04,
-		Flags:        flags,
+		Magic:         MagicHeader_v2,
+		Version:       0x04,
+		Flags:         flags,
 		ContainerType: containerType,
-		IsSeekable:   seekable,
-		IDType:       uint32(idType),
-		PasswordHint: passwordHint,
+		IsSeekable:    seekable,
+		IDType:        uint32(idType),
+		PasswordHint:  passwordHint,
 	}
 	copy(header.SpecialID[:], idData)
 	header.IDLength = uint32(len(idData))

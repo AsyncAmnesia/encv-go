@@ -125,7 +125,62 @@ config.user.json (持久化, 不被修改)
   - [Hi-Sillot/Sillot-KMP](https://github.com/Hi-Sillot/Sillot-KMP) — Kotlin Multiplatform + Compose 模板，含完整的阿里云/腾讯 Maven 镜像配置
   - [K-Sillot](https://github.com/K-Sillot)（汐洛套件）— 上游依赖镜像集合
   - [Tencent-TDS/KuiklyUI-AI](https://github.com/Tencent-TDS/KuiklyUI-AI) — Kuikly Compose DSL 编码规范（rules/kuiklyComposeDSL.mdc）
-- **拉取源码参考**：优先 `raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}` 获取原始文件内容
+- **拉取源码参考**：**单次 `git clone --depth 1 https://github.com/{owner}/{repo}.git` 一次拿全**，**绝对禁止**用 `curl raw.githubusercontent.com` 遍历单文件下载（详见下方「拉取第三方源码铁律」）
+
+### 拉取第三方源码铁律（重要！违反 = 越界）
+
+> **核心原则：要拿就一次 `git clone` 拿全；不要 curl 遍历单文件。**
+
+#### 禁止行为清单
+
+| ❌ 禁止 | ✅ 正确做法 |
+|--------|------------|
+| `curl -fsSL https://raw.githubusercontent.com/xxx/yyy/main/xxx.kt` 单文件下载源码 | `git clone --depth 1 https://github.com/xxx/yyy` 一次拿全 |
+| `WebFetch` 拉第三方仓库的 `.kt` / `.java` / `.gradle` 等源码文件 | 引用 URL 进规则 / 文档，让用户去查 |
+| `WebSearch` 搜「xxx 仓库 yyy 文件源码」「xxx 函数实现」 | 搜概念、文档、issue 摘要、API 行为 |
+| `wget` 整站镜像、`git clone --depth 1` 之后又 `curl` 补文件 | 一次 `git clone` 之后所有 read / grep / search 都本地走 |
+
+#### 工具允许场景
+
+| 工具 | 允许场景 | 禁止场景 |
+|------|---------|---------|
+| `WebSearch` | 搜概念、官方文档、issue 摘要、API 行为、StackOverflow 答疑 | 搜第三方仓库的源码实现细节 |
+| `WebFetch` | 抓 README / 官方文档 / issue / blog / 官方 API 文档 | 抓 `raw.githubusercontent.com/.../*.kt` 等单文件源码 |
+| `curl` | 查 maven published artifact metadata / 校验下载 / GitHub API 元数据（`api.github.com/repos/.../commits` 等） | 抓 raw 源码文件 |
+| `git clone` | **唯一允许**的源码拉取方式，一次拿全 | — |
+
+#### 正确路径（按优先级）
+
+1. **先**看项目内已 clone 的源码（如 `/tmp/combolite-src/` 等）
+2. **再**查 `WebSearch` 找官方文档 / issue 摘要
+3. **再** `WebFetch` 抓官方 README / 文档页
+4. **再** `git clone --depth 1 <url>` 一次拿全 → 本地 read / grep
+5. **绝不用** `curl raw.githubusercontent.com` 遍历
+
+#### 越界反例（2026-06-03 本会话）
+
+为了诊断 aar2apk 的实现，我**未先 `git clone`** 而是直接：
+
+```
+WebSearch  搜 "lnzz123 ComboLite aar2apk PluginAar2ApkPlugin source github"     ❌
+WebFetch   https://github.com/lnzz123/ComboLite/tree/master/aar2apk             ❌
+WebFetch   https://raw.githubusercontent.com/lnzz123/ComboLite/master/.../xxx.kt  ❌  多次
+curl -fsSL https://api.github.com/repos/lnzz123/ComboLite/...                    ❌  多次
+curl -fsSL https://raw.githubusercontent.com/lnzz123/ComboLite/master/.../xxx.kt  ❌
+```
+
+**为什么是白痴行为**：
+- **一次 `git clone` 就能拿全**整个仓库（包含 aar2apk 源码），我偏要 curl 遍历单文件
+- 6+ 次外部请求 = 浪费 token + 延迟 + 失败重试
+- 下载的源码**没**真正读完就放弃
+- 实际**没产出**有效修复方案——aar2apk 只是 AAR→APK dex 合并，不需要看源码就能推断
+
+#### 优先级
+
+这条铁律**高于**一切「快速诊断」「深挖细节」的诱惑：
+- **不确定行为** → 优先查本地 clone + 现有规则文件 + 现有代码
+- **还不确定** → 引用 URL 进规则文件 + 问用户
+- **绝对禁止** → `curl raw.githubusercontent.com` / `WebFetch` 拉单文件源码 / `WebSearch` 搜源码实现
 - **Gradle/Maven 镜像（国内网络）**：当沙箱无法访问 `maven.google.com` / `repo.maven.org` 时，使用以下镜像（来自 Sillot-KMP settings.gradle.kts）：
 
 ### pluginManagement.repositories 镜像顺序

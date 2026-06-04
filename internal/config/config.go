@@ -44,8 +44,8 @@ type Config struct {
 	// Log 配置结构化日志的输出级别和文件路径。
 	Log types.LogConfig `json:"log"`
 	// --- 预览设置 ---
-	Preview *PreviewConfig `json:"preview,omitempty"`
-	Mobile  *types.MobileConfig  `json:"mobile,omitempty"`
+	Preview *PreviewConfig      `json:"preview,omitempty"`
+	Mobile  *types.MobileConfig `json:"mobile,omitempty"`
 }
 
 type PreviewConfig struct {
@@ -85,9 +85,9 @@ func FromContext(ctx context.Context) *Config {
 // DefaultConfig 返回一个包含所有默认值的配置实例。
 func DefaultConfig() *Config {
 	return &Config{
-		OutputPath:             "./encrypted",
+		OutputPath:              "./encrypted",
 		DefaultContainerVersion: 4,
-		Server:     types.HttpServer{Port: 1999, Dir: "./"},
+		Server:                  types.HttpServer{Port: 1999, Dir: "./"},
 		Webdav: types.WebdavServer{
 			Root: "",
 			Dir:  "",
@@ -114,7 +114,9 @@ func (c *Config) IsStrictMode() bool {
 }
 
 // Load 加载配置。优先级（低→高）：
-//   DefaultConfig() → config.user.json → config.dev.json（dev 最高优先级）
+//
+//	DefaultConfig() → config.user.json → config.dev.json（dev 最高优先级）
+//
 // 显式指定路径时走单文件模式（向后兼容）
 func Load(configPath string) (*Config, error) {
 	cfg := DefaultConfig()

@@ -5,8 +5,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/container/envelope"
+	containerhandle "github.com/Soltus/encv-go/internal/v2/container/handle"
 	"github.com/Soltus/encv-go/internal/v2/types"
 )
 

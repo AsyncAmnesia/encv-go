@@ -16,9 +16,9 @@ func BenchmarkCalculateFragmentSize(b *testing.B) {
 	}
 
 	physicalSizes := []int64{
-		0,                       // 不分片
-		30 * 1024 * 1024,        // 30MB
-		100 * 1024 * 1024,       // 100MB
+		0,                 // 不分片
+		30 * 1024 * 1024,  // 30MB
+		100 * 1024 * 1024, // 100MB
 	}
 
 	for _, totalSize := range sizes {

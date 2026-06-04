@@ -41,7 +41,7 @@ type benchKVI struct {
 	types.KVI
 }
 
-func (k benchKVI) GetKind() types.IndexKind        { return "video" }
+func (k benchKVI) GetKind() types.IndexKind     { return "video" }
 func (k benchKVI) GetEncryptionInfo() types.KVI { return k.KVI }
 func (k benchKVI) GetIndex() types.Index {
 	return &benchIndex{size: 0}

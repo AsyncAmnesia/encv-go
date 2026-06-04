@@ -68,8 +68,8 @@ class OpenListStatusProvider : ContentProvider() {
         val ctx = context
         if (ctx != null) {
             try {
-                OpenListBridge.init(ctx)
-                Log.e(TAG, "[SAT-DBG][OpenList][Provider] OpenListBridge.init() called")
+                OpenListNativeService.init(ctx)
+                Log.e(TAG, "[SAT-DBG][OpenList][Provider] OpenListNativeService.init() called")
             } catch (e: Throwable) {
                 Log.e(TAG, "[SAT-DBG][OpenList][Provider] init() FAILED", e)
             }
@@ -87,7 +87,8 @@ class OpenListStatusProvider : ContentProvider() {
         Log.e(TAG, "[SAT-DBG][OpenList][Provider] query() | uri=$uri | caller=${callingPackage ?: "(unknown)"} | ts=${System.currentTimeMillis()}")
         return when (uriMatcher.match(uri)) {
             CODE_STATUS -> {
-                val snap = OpenListBridge.snapshot()
+                // Phase 26: 改用 OpenListNativeService.snapshot() (ProcessBuilder 启的 Go 进程状态)
+                val snap = OpenListNativeService.snapshot()
                 // Defensive reads: snapshot is Map<String, Any?>; coerce with safe defaults
                 // so a missing field never NPEs the cross-process boundary.
                 val running: Boolean = (snap["running"] as? Boolean) ?: false
@@ -129,17 +130,19 @@ class OpenListStatusProvider : ContentProvider() {
                 Log.e(TAG, "[SAT-DBG][OpenList][Provider] insert(control) action=$action")
                 when (action) {
                     ACTION_START -> {
-                        try { OpenListBridge.start() } catch (e: Throwable) { Log.e(TAG, "[SAT-DBG][OpenList][Provider] start() FAILED", e) }
+                        // Phase 26: 改用 OpenListNativeService.start() (ProcessBuilder 启 Go server)
+                        try { OpenListNativeService.start() } catch (e: Throwable) { Log.e(TAG, "[SAT-DBG][OpenList][Provider] start() FAILED", e) }
                     }
                     ACTION_STOP -> {
-                        try { OpenListBridge.shutdown(3000L) } catch (e: Throwable) { Log.e(TAG, "[SAT-DBG][OpenList][Provider] stop() FAILED", e) }
+                        try { OpenListNativeService.shutdown(3000L) } catch (e: Throwable) { Log.e(TAG, "[SAT-DBG][OpenList][Provider] stop() FAILED", e) }
                     }
                     ACTION_FORCE_DB_SYNC -> {
-                        try { OpenListBridge.forceDbSync() } catch (e: Throwable) { Log.e(TAG, "[SAT-DBG][OpenList][Provider] forceDbSync() FAILED", e) }
+                        // Phase 26: 改用 OpenListNativeService.notifyDbSynced() (内部快照更新)
+                        try { OpenListNativeService.notifyDbSynced(System.currentTimeMillis()) } catch (e: Throwable) { Log.e(TAG, "[SAT-DBG][OpenList][Provider] forceDbSync() FAILED", e) }
                     }
                     ACTION_SET_ADMIN_PASSWORD -> {
                         val pwd = values.getAsString("password") ?: ""
-                        try { OpenListBridge.setAdminPassword(pwd) } catch (e: Throwable) { Log.e(TAG, "[SAT-DBG][OpenList][Provider] setAdminPassword() FAILED", e) }
+                        try { OpenListNativeService.setAdminPassword(pwd) } catch (e: Throwable) { Log.e(TAG, "[SAT-DBG][OpenList][Provider] setAdminPassword() FAILED", e) }
                     }
                     else -> Log.w(TAG, "[SAT-DBG][OpenList][Provider] unknown action: $action")
                 }

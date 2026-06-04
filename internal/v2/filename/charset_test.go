@@ -259,7 +259,7 @@ func TestCharsetCharWidth_values(t *testing.T) {
 		{256, 1},
 		{257, 1},
 		{256 * 256, 1},
-		{255 * 255 + 1, 1},
+		{255*255 + 1, 1},
 		{16, 2},
 		{10, 3},
 		{2, 8},
@@ -267,7 +267,9 @@ func TestCharsetCharWidth_values(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(strings.Map(func(r rune) rune {
-			if r == '_' { return 'B' }
+			if r == '_' {
+				return 'B'
+			}
 			return r
 		}, fmt.Sprintf("base_%d", tt.base)), func(t *testing.T) {
 			got := charsetCharWidth(tt.base)

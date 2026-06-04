@@ -207,9 +207,10 @@ type LogConfig struct {
 
 // MobileConfig 移动端专用配置段，桌面端忽略。
 // 字段命名镜像目标配置路径，实现无歧义映射：
-//   mobile.server.dir   → server.dir
-//   mobile.output.path  → output_path
-//   mobile.webdav.dir   → webdav.dir
+//
+//	mobile.server.dir   → server.dir
+//	mobile.output.path  → output_path
+//	mobile.webdav.dir   → webdav.dir
 //
 // 此配置段是运行时 overlay（覆盖层），不修改持久化的 config.user.json。
 // Go 端 Load() finalize() 阶段自动应用，Android 端通过 ENCV_MOBILE=1 触发。

@@ -28,16 +28,16 @@ const (
 )
 
 const (
-	ContainerV2            = 2
-	ContainerV3            = 3
-	ContainerV4            = 4
+	ContainerV2             = 2
+	ContainerV3             = 3
+	ContainerV4             = 4
 	DefaultContainerVersion = ContainerV4
 )
 
 type VersionStatus string
 
 const (
-	VersionStatusDeprecated VersionStatus = "deprecated"
+	VersionStatusDeprecated  VersionStatus = "deprecated"
 	VersionStatusStable      VersionStatus = "stable"
 	VersionStatusRecommended VersionStatus = "recommended"
 )
@@ -58,13 +58,13 @@ func GetBlockTypeName(blockType uint32) string {
 }
 
 var (
-	ByteOrder_v2       = binary.LittleEndian
-	ErrInvalidMagic_v2 = errors.New("invalid magic number")
-	ErrWrongPassword   = errors.New("wrong password: password hint mismatch")
-	ErrDataCorrupted   = errors.New("data corrupted: integrity check failed")
+	ByteOrder_v2         = binary.LittleEndian
+	ErrInvalidMagic_v2   = errors.New("invalid magic number")
+	ErrWrongPassword     = errors.New("wrong password: password hint mismatch")
+	ErrDataCorrupted     = errors.New("data corrupted: integrity check failed")
 	ErrDeprecatedVersion = errors.New("container version is deprecated")
-	MagicHeader_v2 = [4]byte{'E', 'N', 'C', 'V'}
-	MagicFooter_v2 = [4]byte{'E', 'N', 'C', 'V'}
+	MagicHeader_v2       = [4]byte{'E', 'N', 'C', 'V'}
+	MagicFooter_v2       = [4]byte{'E', 'N', 'C', 'V'}
 
 	manifestJSONBufferPool_v2 = sync.Pool{
 		New: func() interface{} {
@@ -120,10 +120,10 @@ const (
 
 // Fragment 定义了清单中的一个分片项
 type Fragment struct {
-	ID       string        `json:"id"`                 // 唯一标识符
-	Type     FragmentType  `json:"type"`               // 【更新】分片类型，使用枚举
-	Filename string        `json:"filename,omitempty"` // 可选，用于外部文件
-	Length   uint64        `json:"length"`             // 数据长度（字节）
+	ID       string       `json:"id"`                 // 唯一标识符
+	Type     FragmentType `json:"type"`               // 【更新】分片类型，使用枚举
+	Filename string       `json:"filename,omitempty"` // 可选，用于外部文件
+	Length   uint64       `json:"length"`             // 数据长度（字节）
 
 	// GlobalStartOffset 仅在 Type 为 FragmentType_SeekableStream 时有效。
 	// 它表示该分片在整个虚拟数据流中的起始字节位置，用于 O(1) 寻址。
@@ -188,12 +188,12 @@ type KVI_v2 = KVI
 
 // Manifest 容器清单，这是json的最外层
 type Manifest struct {
-	Version int64          `json:"version"`
+	Version int64 `json:"version"`
 	// Kind 现在是 Manifest 的顶级字段，用于标识 KVI 类型
-	Kind IndexKind      `json:"kind"`
+	Kind IndexKind `json:"kind"`
 	// KVI 字段持有原始的 JSON 数据，其具体类型由上层处理
 	KVI        json.RawMessage `json:"kvi"` // index在里面
-	Fragments  []Fragment       `json:"fragments"`
+	Fragments  []Fragment      `json:"fragments"`
 	Redundancy struct {
 		KVIBackupCRC string `json:"kvi_backup_crc,omitempty"`
 	} `json:"redundancy,omitempty"`
@@ -301,6 +301,7 @@ const (
 	// ManifestSchemaVersion 是 Manifest JSON schema 的版本号（注意：不是容器格式版本！）
 	ManifestSchemaVersion int64 = 2
 )
+
 // 兼容别名：旧名 ContainerVersion 仍有误导性，保留过渡
 const ContainerVersion = ManifestSchemaVersion // deprecated: use ManifestSchemaVersion
 

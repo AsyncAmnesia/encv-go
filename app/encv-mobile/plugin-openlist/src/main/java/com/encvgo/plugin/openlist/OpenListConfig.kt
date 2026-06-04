@@ -47,22 +47,11 @@ data class OpenListConfig(
     }
 
     /**
-     * Push the local config to OpenListBridge so it can be applied during init().
-     *
-     * IMPORTANT: do NOT call bridge.setAdminPassword() here — that delegates to
-     * Openlistlib.SetAdminPassword which queries the user DB; the DB isn't
-     * initialized until Openlistlib.Init() (and even then, not until Start()
-     * triggers bootstrap). Admin password reset must be deferred to AFTER
-     * the server has fully started (see OpenListService.startupSequence step6).
-     *
-     * The actual port that openlistlib binds to is read from the on-disk
-     * conf.Conf.Scheme.HttpPort at Start() time; this Kotlin-side port is
-     * only the snapshot the UI/StatusProvider report.
+     * Phase 26: 改为空实现（gomobile bind 移除后无 bridge 可 apply）。
+     * config 实际生效在 OpenListNativeService.start() —— 它把 port/dataDir 传给
+     * libopenlist.so 的 --port / --data 参数。
      */
-    fun applyToBridge(bridge: OpenListBridge) {
-        Log.e(TAG, "[SAT-DBG][OpenList] applyToBridge() | port=$port dataDir=$dataDir (adminPassword deferred to post-Start)")
-        bridge.setPort(port)
-        bridge.setDataDir(dataDir)
-        // Intentionally NOT calling bridge.setAdminPassword(adminPassword) here.
+    fun applyToBridge(@Suppress("UNUSED_PARAMETER") bridge: Any) {
+        Log.e(TAG, "[SAT-DBG][OpenList] applyToBridge() is now a no-op (Phase 26 ProcessBuilder mode)")
     }
 }

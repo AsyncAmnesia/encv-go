@@ -24,10 +24,10 @@ func DecodePathParam(raw string) string {
 // DecodeGinQueryParam 解码 Gin query 参数中的路径。
 //
 // 编码契约（前端 proxySafeEncode = 双重 encodeURIComponent）：
-//   1. 前端: encodeURIComponent(encodeURIComponent(raw_path))
-//   2. Gin c.Query() 自动反向解码一层（%252B → %2B）
-//   3. 本函数用 url.PathUnescape 反向解码第二层（%2B → +）
-//   4. 结果 = 原始路径 ✅
+//  1. 前端: encodeURIComponent(encodeURIComponent(raw_path))
+//  2. Gin c.Query() 自动反向解码一层（%252B → %2B）
+//  3. 本函数用 url.PathUnescape 反向解码第二层（%2B → +）
+//  4. 结果 = 原始路径 ✅
 //
 // 注意：必须使用 PathUnescape 而非 QueryUnescape，
 // 因为 QueryUnescape 会将 '+' 解码为空格（HTML form 规范），

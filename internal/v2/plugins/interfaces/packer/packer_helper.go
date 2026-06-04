@@ -38,7 +38,7 @@ type PackParams struct {
 	SpecialIDType         types.IDType
 	FinalFileName         string
 
-	PasswordHint          [16]byte
+	PasswordHint [16]byte
 }
 
 // StandardPostEncrypt 执行通用的打包流程

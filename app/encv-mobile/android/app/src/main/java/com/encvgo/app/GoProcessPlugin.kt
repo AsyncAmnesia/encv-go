@@ -35,6 +35,13 @@ private const val REQUEST_CODE_INSTALL_CONFIRM = 9002
 private const val REQUEST_CODE_MPV_PLAYER = 9003
 private const val REQUEST_CODE_PICK_FOLDER = 9010
 
+/**
+ * Phase 26: in-process 状态推送契约（替代 Phase 22 跨进程 broadcast）。
+ * plugin-openlist 通过 [com.encvgo.plugin.openlist.OpenListNativeService.statusListener]
+ * （host 启动时反射注册）调用此 lambda → [notifyListeners] 推到 Capacitor。
+ */
+private const val EVENT_OPENLIST_STATUS = "openlist:status"
+
 @CapacitorPlugin(
     name = "GoProcess",
     requestCodes = [REQUEST_CODE_PLUGIN_PICK, REQUEST_CODE_INSTALL_CONFIRM, REQUEST_CODE_MPV_PLAYER, REQUEST_CODE_PICK_FOLDER]
@@ -47,6 +54,7 @@ class GoProcessPlugin : Plugin() {
 
     private val pendingCalls = ConcurrentHashMap<String, PluginCall>()
     private var receiverRegistered = false
+    private var pluginListenerRegistered = false
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -58,13 +66,54 @@ class GoProcessPlugin : Plugin() {
         }
     }
 
+    /**
+     * Phase 26: in-process 状态变更回调（替代 Phase 22 跨进程 broadcast）。
+     * 通过 PluginClassLoader 反射写入 [com.encvgo.plugin.openlist.OpenListNativeService.statusListener]
+     * 后，plugin 每次 broadcastStatus() 都会调此 lambda → [notifyListeners] 推 Capacitor。
+     *
+     * 类型选择：Kotlin 函数类型 `(Map<String, Any?>) -> Unit` —— 编译产物是
+     * `Function1` interface 的匿名实现，反射 set 字段（raw type `Function1`）
+     * 与 plugin 端 OpenListBridge.statusListener 字段（raw type `Function1`）兼容。
+     *
+     * 反例（CI 实测报错）：
+     *   `kotlin.jvm.functions.Function1<Map<...>, Unit> { snap -> ... }`
+     *   ❌ `Function1` 是普通 interface（不是 fun interface），没有 SAM 构造器
+     *   ❌ lambda 参数 `snap` 无法推断类型
+     */
+    private val pluginStatusCallback: (Map<String, Any?>) -> Unit = { snap ->
+        val running = (snap["running"] as? Boolean) ?: false
+        val port = (snap["port"] as? Int) ?: 0
+        val pid = (snap["pid"] as? Int) ?: 0
+        val dataSize = (snap["data_size_bytes"] as? Long) ?: 0L
+        val lastError = (snap["last_error"] as? String) ?: ""
+        val lastUpdateTs = (snap["last_update_ts"] as? Long) ?: 0L
+        Log.e(TAG, "[SAT-DBG][OpenList][HostReceiver] in-process callback | running=$running port=$port pid=$pid dataSize=$dataSize lastErr='$lastError'")
+        val js = JSObject().apply {
+            put("isInstalled", true)
+            put("running", running)
+            put("port", port)
+            put("pid", pid)
+            put("dataSizeBytes", dataSize)
+            put("lastError", lastError)
+            put("lastUpdateTs", lastUpdateTs)
+        }
+        try {
+            notifyListeners(EVENT_OPENLIST_STATUS, js, true)
+            Log.e(TAG, "[SAT-DBG][OpenList][HostReceiver] notifyListeners('openlist:status') OK")
+        } catch (e: Throwable) {
+            Log.e(TAG, "[SAT-DBG][OpenList][HostReceiver] notifyListeners FAILED", e)
+        }
+    }
+
     override fun load() {
         super.load()
         registerStatusReceiver()
+        registerPluginStatusListener()
     }
 
     override fun handleOnDestroy() {
         if (receiverRegistered) { context.unregisterReceiver(statusReceiver); receiverRegistered = false }
+        unregisterPluginStatusListener()
         pendingCalls.clear()
         super.handleOnDestroy()
     }
@@ -315,7 +364,30 @@ class GoProcessPlugin : Plugin() {
     fun controlOpenList(call: PluginCall) {
         val action = call.getString("action", "start") ?: "start"
         Log.e(TAG, "[SAT-DBG][OpenList][Capacitor] controlOpenList() action=$action")
-        val ok = OpenListStatusBridge.control(context.applicationContext, action)
+        val args = mutableMapOf<String, Any>()
+        call.getInt("port")?.let { args["port"] = it }
+        call.getInt("timeout_ms")?.let { args["timeout_ms"] = it.toLong() }
+        call.getString("password")?.let { args["password"] = it }
+
+        // Phase 25 A3.2 路由：
+        //   start / shutdown → 走 plugin service lifecycle (startPluginService / stopPluginService)
+        //   其他 (forceDBSync / setAdminPassword) → 走 ContentProvider insert action dispatch
+        val ok = when (action) {
+            "start" -> {
+                val extras = android.os.Bundle().apply {
+                    (args["port"] as? Int)?.let { putInt("port", it) }
+                }
+                com.encvgo.combolite.OpenListPluginProxy.startMainService(context, extras)
+            }
+            "shutdown" -> {
+                com.encvgo.combolite.OpenListPluginProxy.stopMainService(context)
+            }
+            else -> {
+                // forceDBSync / setAdminPassword → OpenListStatusBridge.control
+                OpenListStatusBridge.control(context.applicationContext, action, args)
+            }
+        }
+        Log.e(TAG, "[SAT-DBG][OpenList][Capacitor] controlOpenList() action=$action → ok=$ok")
         val ret = JSObject().apply { put("success", ok) }
         call.resolve(ret)
     }
@@ -570,6 +642,62 @@ class GoProcessPlugin : Plugin() {
         if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(statusReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         else @Suppress("DEPRECATION") context.registerReceiver(statusReceiver, filter)
         receiverRegistered = true
+    }
+
+    /**
+     * Phase 23: 通过 PluginClassLoader 反射注册 statusListener 到 plugin。
+     * plugin 在 host 进程里跑（PluginClassLoader），无 IPC 边界；
+     * 直接拿 LoadedPluginInfo.classLoader.loadClass("com.encvgo.plugin.openlist.OpenListNativeService")
+     * → 拿 statusListener 字段 → set(pluginStatusCallback) 即可。
+     *
+     * 失败语义：plugin 未安装/未加载 → 静默返回（前端首屏会拿到 NotInstalled），
+     * 不阻塞 Capacitor 启动。
+     */
+    private fun registerPluginStatusListener() {
+        if (pluginListenerRegistered) return
+        val loaded = try {
+            val l = EncvComboLiteHost.getLoadedPluginInfo("com.encvgo.plugin.openlist")
+            if (l == null) {
+                Log.w(TAG, "[SAT-DBG][OpenList][HostReceiver] plugin not loaded yet; trying ensurePluginLoaded")
+                val ok = EncvComboLiteHost.ensurePluginLoaded("com.encvgo.plugin.openlist")
+                if (!ok) {
+                    Log.w(TAG, "[SAT-DBG][OpenList][HostReceiver] ensurePluginLoaded FAILED; will not register listener (frontend will get NotInstalled)")
+                    return
+                }
+                EncvComboLiteHost.getLoadedPluginInfo("com.encvgo.plugin.openlist")
+            } else l
+        } catch (e: Throwable) {
+            Log.e(TAG, "[SAT-DBG][OpenList][HostReceiver] getLoadedPluginInfo FAILED", e)
+            return
+        } ?: return
+        try {
+            // Phase 26: 反射字段从 OpenListBridge 改为 OpenListNativeService
+            // —— gomobile bind 移除后, statusListener 字段迁移到 OpenListNativeService
+            // (与 OpenListBridge 字段同型: Kotlin @JvmStatic Function1<Map<String, Any?>, Unit>)
+            val bridgeClass = loaded.classLoader.loadClass("com.encvgo.plugin.openlist.OpenListNativeService")
+            val listenerField = bridgeClass.getDeclaredField("statusListener")
+            listenerField.isAccessible = true
+            listenerField.set(null, pluginStatusCallback)
+            pluginListenerRegistered = true
+            Log.e(TAG, "[SAT-DBG][OpenList][HostReceiver] statusListener registered via classloader reflection | class=${bridgeClass.name}")
+        } catch (e: Throwable) {
+            Log.e(TAG, "[SAT-DBG][OpenList][HostReceiver] statusListener register FAILED", e)
+        }
+    }
+
+    private fun unregisterPluginStatusListener() {
+        if (!pluginListenerRegistered) return
+        try {
+            val l = EncvComboLiteHost.getLoadedPluginInfo("com.encvgo.plugin.openlist") ?: return
+            val bridgeClass = l.classLoader.loadClass("com.encvgo.plugin.openlist.OpenListNativeService")
+            val listenerField = bridgeClass.getDeclaredField("statusListener")
+            listenerField.isAccessible = true
+            listenerField.set(null, null)
+            pluginListenerRegistered = false
+            Log.e(TAG, "[SAT-DBG][OpenList][HostReceiver] statusListener unregistered")
+        } catch (e: Throwable) {
+            Log.e(TAG, "[SAT-DBG][OpenList][HostReceiver] statusListener unregister FAILED", e)
+        }
     }
 
     private fun startService(action: String, source: String, command: String) =
