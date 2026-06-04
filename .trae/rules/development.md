@@ -826,6 +826,149 @@ Browser axios 收到响应 ✅
 
 | 组件 | 职责 |
 |------|------|
-| **dev_preview_proxy** | 路由分发：`/openlist-ui/*` → openlist vite，`/api/public/*` → mock，其它 → encv-mobile vite |
-| **openlist vite proxy** | 跨 backend 桥接：`/openlist-ui/api/*`（沙箱）→ encv-go mock；真实部署时 `/api` → :5244 OpenList binary |
+| **dev_preview_proxy** | 路由分发：`/openlist-ui/*` → openlist vite，`/api/*` → :5244 OpenList backend，其它 → encv-mobile vite |
+| **openlist vite proxy** | 跨 backend 桥接：`/api` → :5244 OpenList binary（生产 + dev preview 一致） |
 | **不要在两者间加新层** | 任何"再封装一层"都会导致路由冲突或循环代理 |
+
+---
+
+## 十、dev preview 零 mock：全 reverse proxy 到 :5244 OpenList backend
+
+> **铁律（2026-06 更新）**：
+> **dev preview 不 mock 任何 `/api/*` 端点。**
+> **所有 OpenList API（含 `/me`、`/fs/*`、`/admin/*`、`/auth/*`、`/public/*`）全部 reverse proxy 到 :5244 真 OpenList backend。**
+> **这是 routing 不是 mock——后端真服务，开发体验与生产 100% 一致。**
+
+### 10.1 为什么不能再 mock
+
+**症状**：
+- mock 2 个端点时工作
+- 之后 dev preview 看起来能跑，但 OpenList frontend 一进入真实业务流程就报错
+- 用户说"mock 与真实 API 行为差异巨大"——列举了：`/fs/list` 排序、permission 校验、2FA 流程、token 失效时机
+
+**根因**：
+- mock 的字段不够全（settings 只有 7 个字段，真 backend 有 50+）
+- mock 的 status code 假设与真 backend 不一致
+- mock 的时序与真 backend 不同（mock 立即返，真 backend 有 DB 查询延迟）
+- mock 不能复现真 backend 的 bug 修复（真 backend 改了，mock 不知道）
+
+**修复**：删除所有 mock，让 NoRoute 把 `/api/*` 反代到 :5244 真 backend。
+
+### 10.2 当前 dev_preview_proxy 架构（最终方案）
+
+```
+Browser → 16000 (agent-tool-host 路径白名单) → 2025 (encv-go 编排) → ┬─ /openlist-ui/*  → :3000 (openlist vite)
+                                                                      ├─ /api/*          → :5244 (OpenList backend 真实 API)
+                                                                      └─ /*              → :5173 (encv-mobile vite)
+```
+
+**dev_preview_proxy.go 三个职责**：
+| 方法 | 路由 | 目标 |
+|------|------|------|
+| `RegisterExplicit` | `/openlist-ui/*` | :3000 openlist vite（vite proxy `/api` → :5244） |
+| `RegisterNoRoute` (1) | `/api/*` | :5244 OpenList backend（reverse proxy，不是 mock） |
+| `RegisterNoRoute` (2) | 其他 | :5173 encv-mobile vite |
+
+### 10.3 OpenList backend :5244 启动
+
+**编译**：
+```bash
+cd /workspace/app/openlist/Hi-Sillot-OpenList
+go build -tags=jsoniter -o /tmp/openlist .
+```
+
+**首次启动**（自动生成 admin 密码 + sqlite db）：
+```bash
+mkdir -p /tmp/openlist-data
+cat > /tmp/openlist-data/config.json <<'EOF'
+{
+  "database": {"type":"sqlite3","db_file":"/tmp/openlist-data/data.db","table_prefix":"x_"},
+  "scheme": {"address":"0.0.0.0","http_port":5244,"https_port":-1},
+  "temp_dir":"/tmp/openlist-data/temp",
+  "dist_dir":"/workspace/app/openlist/Hi-Sillot-OpenList/public/dist",
+  "log": {"enable":true,"name":"/tmp/openlist-data/log/log.log","max_size":50,"max_backups":30,"max_age":28,"compress":false}
+}
+EOF
+# stub index.html 让 go:embed 找到 dist
+echo '<!DOCTYPE html><title>OpenList Backend Stub</title>' > /workspace/app/openlist/Hi-Sillot-OpenList/public/dist/index.html
+
+/tmp/openlist server --data /tmp/openlist-data --dev --log-std
+```
+
+**关键陷阱**：
+- `--data` 标志**不**影响 sqlite db 文件位置（db 位置由 config.json 的 `database.db_file` 决定，或默认 `data/data.db`）
+- **必须** 设 `dist_dir`（或放 stub index.html 到 `public/dist`），否则启动 panic: `index.html not exist`
+- 默认 admin 密码：启动日志 `Successfully created the admin user and the initial password is: <password>`
+
+**修改 admin 密码为 `admin`（dev 友好）**：
+```bash
+python3 <<'EOF'
+import hashlib, secrets, sqlite3
+STATIC = 'https://github.com/alist-org/alist'
+new_salt = secrets.token_hex(8)
+inner = hashlib.sha256(f'admin-{STATIC}'.encode()).hexdigest()
+new_hash = hashlib.sha256(f'{inner}-{new_salt}'.encode()).hexdigest()
+db = sqlite3.connect('/tmp/openlist-data/data.db')
+db.execute("UPDATE x_users SET pwd_hash=?, salt=? WHERE username='admin'", (new_hash, new_salt))
+db.commit()
+EOF
+# 重启 backend
+```
+
+**密码算法参考**（OpenList v4 / alist）：
+- `StaticHash(pw) = sha256(pw + "-" + "https://github.com/alist-org/alist")`
+- `PwdHash = sha256(StaticHash(pw) + "-" + salt)`
+
+### 10.4 完整请求链路（dev preview 沙箱）
+
+```
+Browser
+  axios GET /api/auth/login
+  ↓
+16000 agent-tool-host
+  ↓ (白名单转发 /api/*)
+2025 encv-go dev_preview_proxy
+  ↓ NoRoute 匹配 /api/*
+5244 OpenList backend
+  ↓ 返回 {code:200, data:{token:"eyJ..."}}
+Browser 收到 JWT
+  ↓
+Browser
+  axios GET /api/me + Authorization: <jwt>
+  ↓
+16000 → 2025 → NoRoute → 5244
+  ↓
+5244 ParseToken(validTokenCache 有) → 返 admin user
+  ✅
+```
+
+**关键**：
+- OpenList frontend 用 `Authorization: <jwt>`（**无 Bearer 前缀**），不是 `Bearer <jwt>`——backend 期望纯 token
+- `validTokenCache` 是**内存 cache**——backend 重启会清空，需重新登录
+
+### 10.5 验证命令（端到端）
+
+```bash
+# 1. 登录拿 token
+T=$(curl -s -X POST http://127.0.0.1:2025/api/auth/login \
+       -H 'Content-Type: application/json' \
+       -d '{"username":"admin","password":"admin"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["token"])')
+
+# 2. /api/me（验证 token）
+curl -s http://127.0.0.1:2025/api/me -H "Authorization: $T"
+
+# 3. /api/fs/list（验证真实文件）
+curl -s "http://127.0.0.1:2025/api/fs/list?path=/" -H "Authorization: $T" | head -c 500
+
+# 4. /api/config（验证 encv-go 自己的 API 不被劫持）
+curl -s http://127.0.0.1:2025/api/config | head -c 200
+```
+
+### 10.6 反模式（再次强调）
+
+| 反模式 | 后果 |
+|--------|------|
+| dev_preview_proxy 加 `r.GET("/api/me", mockHandler)` 等具体 mock 端点 | gin 路由污染；mock 与真 backend 数据漂移 |
+| dev_preview_proxy 加 `r.GET("/api/*subpath", mock)` catch-all | 与 `/api/config` 等具体路径 gin radix tree 冲突 panic |
+| dev_preview_proxy NoRoute 转发 `/api/*` 到 encv-mobile vite (5173) | encv-mobile vite proxy `/api` → encv-go (2025) → 回环 502 |
+| **正确做法** | NoRoute 分发：`/api/*` → :5244 backend，其他 → :5173 vite |
