@@ -281,19 +281,20 @@ afterEvaluate {
             dependsOn(unpackOpenlistClasses)
         }
 
-    // injectOpenlistClassesToAar 必须在 convert_plugin_openlist_* 之前跑
+    // injectOpenlistClassesToAar 必须在 convert_plugin-openlist_* 之前跑
     // (aar2apk 任务 dependsOn(:plugin-openlist:assembleRelease/Debug) →
     // :plugin-openlist:bundleReleaseAar → aar2apk 读 aar)
     //
     // ⚠️ 任务名: aar2apk Aar2ApkPlugin.kt:82-86
     //   baseTaskName = modulePath.replace(":", "_").removePrefix("_")
-    //   modulePath = ":plugin-openlist" → baseTaskName = "plugin_openlist"
-    //   taskName = "convert_${baseTaskName}_${buildType}" = "convert_plugin_openlist_release"
-    // (注意:是下划线不是连字符,aar2apk 用 path → 标识符的转换规则)
+    //   modulePath = ":plugin-openlist" → replace 后 "_plugin-openlist"
+    //   removePrefix("_") 移除一个下划线 → "plugin-openlist" (保留连字符!)
+    //   taskName = "convert_${baseTaskName}_${buildType}" = "convert_plugin-openlist_release"
+    // (注意:是连字符不是下划线,modulePath 里的 '-' 原样保留)
     //
     // 我们 hook 在 convert_* 之前最稳:让 convert_* dependsOn inject 任务
     // 这样 aar 被修改后 aar2apk 才能读到含 openlistlib 的版本
-    tasks.matching { it.name.startsWith("convert_plugin_openlist_") }
+    tasks.matching { it.name.startsWith("convert_plugin-openlist_") }
         .configureEach {
             dependsOn(injectOpenlistClassesToAar)
         }
