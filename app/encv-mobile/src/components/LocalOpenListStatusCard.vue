@@ -12,24 +12,10 @@
     <div v-if="state === 'not_installed'" class="card-body">
       <p class="status-line">{{ t('remote.localOpenListNotInstalled') }}</p>
       <p class="status-desc">前往扩展管理页面安装 OpenList 扩展</p>
-      <div class="button-row">
-        <ion-button size="small" fill="solid" color="primary" @click="goToExtensions">
-          <ion-icon :icon="extensionPuzzleOutline" slot="start"></ion-icon>
-          前往扩展管理
-        </ion-button>
-        <!-- 沙箱预览入口：dev 专属，仅在 import.meta.env.DEV 时编译可见
-             链接到 vite.config.ts 的 openlistUiProxy() 中间件（/openlist-ui/），
-             同 tab 跳转保持 SPA + OpenPreview 会话连续性；_blank 会破坏沙箱预览会话 -->
-        <a
-          v-if="isDev"
-          class="preview-link"
-          href="/openlist-ui/"
-          rel="noopener"
-        >
-          <ion-icon :icon="eyeOutline" />
-          <span>{{ t('remote.localOpenListPreviewWebUi') }}</span>
-        </a>
-      </div>
+      <ion-button size="small" fill="solid" color="primary" @click="goToExtensions">
+        <ion-icon :icon="extensionPuzzleOutline" slot="start"></ion-icon>
+        前往扩展管理
+      </ion-button>
     </div>
 
     <!-- running: green card (keep existing pattern) -->
@@ -99,7 +85,6 @@ import {
   open as openIcon,
   extensionPuzzleOutline,
   bugOutline,
-  eyeOutline,
 } from 'ionicons/icons'
 import { eventBus } from '@/composables/useEventBus'
 import { useOpenListBridge } from '@/composables/useOpenListBridge'
@@ -210,8 +195,6 @@ function goToDevLogs() {
 function openWebUi() {
   window.open(`http://127.0.0.1:${port.value || 5244}/#/login`, '_system')
 }
-
-const isDev = import.meta.env.DEV
 
 // ------ computed ------
 const cardClass = computed(() => {
@@ -431,34 +414,6 @@ body.dark .status-line-error {
 
 .open-webui-btn {
   align-self: flex-start;
-}
-
-.button-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.preview-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 10px;
-  font-size: 13px;
-  color: var(--ion-color-primary);
-  text-decoration: none;
-  border: 1px solid var(--ion-color-primary);
-  border-radius: 6px;
-  transition: background-color 0.15s ease;
-}
-
-.preview-link ion-icon {
-  font-size: 14px;
-}
-
-.preview-link:hover {
-  background-color: rgba(var(--ion-color-primary-rgb), 0.08);
 }
 
 .card-error {
