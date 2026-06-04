@@ -209,6 +209,25 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/stream", gin.WrapF(s.handleStreamRequest))
 	r.GET("/decrypt", gin.WrapF(s.handleStreamRequest))
 	r.GET("/preview/*filepath", gin.WrapH(http.StripPrefix("/preview", web.PreviewHandler())))
+
+	// OpenList UI 入口（dev 沙箱预览）
+	//   /api/preview/openlist-ui — 302 重定向到 /openlist-ui/（后端驱动跳转入口）
+	//   /openlist-ui/*           — dev_preview_proxy 反代到 :3000 openlist vite
+	//                              （生产模式下不存在，由 gomobile 自行服务）
+	openlistUI := NewOpenlistUIHandler(s.cfg)
+	r.GET("/api/preview/openlist-ui", openlistUI.handlePreviewRedirect)
+
+	// Dev preview 编排：仅当 ENCV_DEV_PREVIEW=1 时启用
+	// 显式 /api/public/* 与 /openlist-ui/* 路由（先于 NoRoute 注册），
+	// NoRoute 的反代放到末尾避免被原 handleRequest 覆盖。
+	if os.Getenv("ENCV_DEV_PREVIEW") == "1" {
+		dp, dpErr := NewDevPreviewProxy()
+		if dpErr != nil {
+			slog.Error("[dev-preview-proxy] init failed, fallback to no proxy", "error", dpErr)
+		} else {
+			dp.RegisterExplicit(r)
+		}
+	}
 	r.GET("/api/config", s.handleGetConfigGin)
 	r.PUT("/api/config", s.handlePutConfigGin)
 	r.GET("/api/config/schema", s.handleConfigSchemaGin)
@@ -358,6 +377,17 @@ func (s *Server) Start(version string) (string, error) {
 	}
 
 	r.NoRoute(gin.WrapF(s.handleRequest))
+
+	// Dev preview 编排：仅当 ENCV_DEV_PREVIEW=1 时启用，覆盖原 NoRoute 让非 /api/* 走 encv-mobile vite。
+	// 顺序：必须放在原 NoRoute 之后（gin 的 NoRoute 是单 handler，后注册覆盖前注册）。
+	if os.Getenv("ENCV_DEV_PREVIEW") == "1" {
+		dp, dpErr := NewDevPreviewProxy()
+		if dpErr != nil {
+			slog.Error("[dev-preview-proxy] init failed, fallback to encv-go NoRoute", "error", dpErr)
+		} else {
+			dp.RegisterNoRoute(r)
+		}
+	}
 
 	srv, addr, err := register.StartGinWithRetry(r, s.cfg.Server.Port, s.instanceID, s.version)
 	if err != nil {

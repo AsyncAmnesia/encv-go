@@ -2,3 +2,6 @@ packages:
   - '.'
   - 'plugin-openlist/web'
   - 'packages/*'
+  # 沙箱预览 dev 模式：把 OpenList 前端 fork 加入 workspace，
+  # 共享根 node_modules，避免重复 install（pnpm 9+ 支持相对路径 workspace）
+  - '../../app/openlist/Hi-Sillot-OpenList-Frontend'

@@ -190,11 +190,49 @@ GRADLE_OPTS="-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=18080 \
 
 | 源 | 用途 | 状态 | 替代方案 |
 |----|------|------|----------|
-| `https://objects.githubusercontent.com` | GitHub Release 资产 CDN | ❌ 404 | 改走 GitHub API + 直链解析；或换镜像源 |
-| `https://github.com/.../releases/download/...` | GitHub Releases 下载 | ❌ 404 | Maven Central 镜像（如 combolite-core） |
+| `https://objects.githubusercontent.com` | GitHub Release 资产 CDN | ❌ 404 | **走 gh-proxy.com 镜像**（实测 18 MB / 10s OK） |
+| `https://github.com/.../releases/download/...` | GitHub Releases 下载 | ❌ 404 | **走 gh-proxy.com / mirror.ghproxy.com 镜像** |
 | `https://dl.google.com/dl/android/maven2/...` | Android Maven 仓库 | ❌ 404 | `maven.google.com` 或阿里云 Google 镜像 |
 | `https://download.jetbrains.com/kotlin/...` | JetBrains Kotlin 二进制 | ❌ 404 | Maven Central `kotlin-compiler-embeddable` |
 | `https://services.gradle.org/distributions/...` | Gradle 二进制 | ✅ 200 | 已是上游源，不需要替代 |
+
+### 7.0 GitHub Release 镜像（2026-06-04 实战验证）
+
+> GitHub `releases/download` 直链沙箱 60s 超时（仅收到 ~800 KB / 18 MB）。
+> 但 **gh-proxy 类镜像通过 :18080 MCP 代理可达**，10s 内下完 18 MB tarball。
+> **优先用镜像而非直连。**
+
+| 镜像 | URL 模板 | 实测 |
+|------|---------|------|
+| `gh-proxy.com` | `https://gh-proxy.com/<原 URL>` | ✅ 18 MB / 10s（OpenList 4.2.2 dist） |
+| `mirror.ghproxy.com` | `https://mirror.ghproxy.com/<原 URL>` | ✅ 30s 内 |
+| `ghproxy.net` | `https://ghproxy.net/<原 URL>` | ✅ 30s 内 |
+| `ghfast.top` | `https://ghfast.top/<原 URL>` | ✅ 30s 内 |
+
+**用法**（以 OpenList-Frontend rolling dist 为例）：
+
+```bash
+# 1. 解析 release 元数据（API 走 MCP 代理可达）
+url=$(curl -fsSL --max-time 10 -H "Authorization: Bearer $GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github.v3+json" \
+  "https://api.github.com/repos/OpenListTeam/OpenList-Frontend/releases/tags/rolling" \
+  | jq -r '.assets[] | select(.name | endswith(".tar.gz")) | .browser_download_url' \
+  | grep -v "lite" | head -1)
+
+# 2. 走 gh-proxy 下载（10s 内）
+curl -fsSL --max-time 60 \
+  "https://gh-proxy.com/$url" \
+  -o /tmp/dist.tar.gz
+```
+
+**原理**：gh-proxy 类服务把 `<原 URL>` 路径透传到 GitHub，
+通过 :18080 走 HTTP CONNECT 隧道（沙箱 MCP 代理支持 CONNECT），
+绕开 `objects.githubusercontent.com` 的 404 / 阻断。
+
+**注意**：
+- **不要**用 `https://ghproxy.com/...`（缺 `-`）会 404
+- 镜像偶有 502 → `--max-time 10` 失败立即换下一个
+- 镜像不需要 GITHUB_TOKEN（GitHub 直连才需要）
 
 ### 7.1 识别 CDN 阻断的快速诊断
 
@@ -247,7 +285,8 @@ curl -L https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-compiler-embe
    → 否：继续 ↓
 
 5. 是 GitHub Release 资产？
-   → 试试 github.com API 看是否有 redirect 到 S3
+   → **首选 gh-proxy.com / mirror.ghproxy.com 镜像**（10s 内，2026-06 验证）
+   → 镜像失败再试 github.com API 看是否有 redirect 到 S3
    → 若只有 S3 / objects.githubusercontent.com → 阻断，换源
 ```
 
@@ -333,6 +372,63 @@ grep -c "unresolved reference" /tmp/err.log
 - **kotlin 版本升级** → 改 `libs.versions.toml` 后重跑脚本即可（旧 wrapper 留着也无害，新 wrapper 叫 `kotlinc-<新版本>`）
 - **不要手动改 `/usr/local/bin/kotlinc-*`** → 应改 setup 脚本模板（占位符 `__VERSION__` / `__KOTLIN_HOME__`）
 - **不走 GitHub Releases** → 沙箱阻断 `objects.githubusercontent.com`（见 §七）
+
+---
+
+## 八、Preview Proxy 路由必须由 OpenPreview 工具注册（2026-06-04 实战踩坑）
+
+> **铁律：起完 dev server 必须调用 `OpenPreview` 工具，否则 16000 代理一律 400。**
+
+### 8.1 症状
+
+```
+curl http://127.0.0.1:16000/openlist-ui/   → 400 Service Unavailable
+```
+
+服务（vite、air、openlist vite）明明都在 5173/2025/3000 活着，但外部预览代理 16000 一个请求都不通。
+
+### 8.2 根因
+
+`agent-tool-host`（PID 由 `supervisor` 启动的 `/app/bin/agent-tool-host`）在 16000 暴露 preview proxy。
+它**不会自动发现**沙箱里监听的 dev server 端口——需要 agent 显式调用 `OpenPreview` 工具注册。
+
+agent-tool-host 日志会爆：
+```
+ERROR preview_proxy::proxy: [preview-proxy] No valid port found for request: / 
+  (default_port: None, registered_ports: [])
+```
+
+`registered_ports: []` = 路由表是空的。
+
+### 8.3 修复
+
+1. 起服务（`start-preview.sh` 或类似脚本），拿到**该命令的 `command_id`**
+2. 调用 `OpenPreview(command_id=..., preview_url="http://localhost:<vite-port>/")`
+3. 验证：日志出现 `Proxying / to port 5173`，16000 返回 200
+
+```bash
+# 验证脚本（OpenPreview 调用之后）
+for path in / /api/service-guard /api/preview/openlist-ui /openlist-ui/; do
+  code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:16000$path")
+  echo "  16000$path → $code"
+done
+# 全部应该 200 或 302，不再 400
+```
+
+### 8.4 注意事项
+
+- **OpenPreview 必须用启动 dev server 的那条命令的 `command_id`**——不是后续 curl 的 ID
+- **代理路由有 session/TTL**——长时间不活动 / 重启 agent-tool-host 后可能再次掉线，需要重新调用 OpenPreview
+- **多个 dev server 同时跑**时，OpenPreview 只能注册**一个**端口（默认 / 路径）。
+  - 当前 ENCV 架构：只注册 5173（encv-mobile vite），其它（3000/2025）通过 5173 的 proxy 间接访问
+  - 不要试图注册多个 OpenPreview——agent-tool-host 会用最后一次调用的端口
+- **检测掉线**：`grep "No valid port found" /var/log/tool/agent-tool-host.stdout.log` 是最快信号
+
+### 8.5 为什么 start-preview.sh 不自己调 OpenPreview
+
+start-preview.sh 是个普通 bash 脚本，没有 `OpenPreview` 工具的访问能力。
+它**只能**在最后打印 `OpenPreview(preview_url="...")` 提示，由 agent（运行在 MCP 那一侧）来真正调用工具。
+所以**每次重启预览都得 agent 收尾调一次 OpenPreview**，这是沙箱架构的硬约束。
 
 ---
 

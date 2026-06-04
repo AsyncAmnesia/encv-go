@@ -363,12 +363,13 @@ bash app/encv-mobile/scripts/start-preview.sh
 ```
 
 **脚本行为**：
-1. 杀掉残留的 air / encv / vite 进程（精确按进程名匹配，绝不杀 agent-tool-host）
-2. 确保 `node_modules` 就绪（缺失则自动 `npm install --prefer-offline`）
-3. 运行 `npx tsx scripts/generate-mock-files.ts` 生成 mock 数据到 `/storage/emulated/0/01-plain-media/...`
-4. 启动 `ENCV_DEV_PREVIEW=1 air` 监视 `./cmd/encv/`（air 自动重建并重启后端）
-5. 启动 Vite（`--host 0.0.0.0 --port 5174 --strictPort`）
-6. 脚本前台 `wait`，任一子进程退出则清理全部
+1. Step 0: 杀掉残留的 air / encv / vite 进程（精确按进程名匹配 + `lsof -ti :2025` 按端口兜底，绝不杀 agent-tool-host）
+2. Step 1: 确保 `node_modules` 就绪（缺失则自动 `pnpm install --no-frozen-lockline`，支持 workspace 成员）
+3. Step 2: 运行 `npx tsx scripts/generate-mock-files.ts` 生成 mock 数据到 `/storage/emulated/0/01-plain-media/...`
+4. Step 3: 启动 `ENCV_DEV_PREVIEW=1 air` 监视 `./cmd/encv/`（air 自动重建并重启后端）+ **verify `/api/service-guard` 返回 `servingDir=/storage/emulated/0`，否则 exit 1**
+5. Step 4: 启动 Vite（`--host 0.0.0.0 --port 5174 --strictPort`）
+6. Step 5: 启动 OpenList 前端 dev server (`:3000`, `OPENLIST_PREVIEW_BASE="/openlist-ui/"`) — 沙箱预览 OpenList UI 用
+7. Step 6/7: 状态报告 + 保持前台 / 退出 detach
 
 **激活外部访问**：
 - 脚本返回 `command_id` 后，**必须调用 `OpenPreview(command_id="<id>", preview_url="http://localhost:5174/")`**
@@ -400,6 +401,19 @@ bash app/encv-mobile/scripts/start-preview.sh
 | 端口被占用 | 上次开发会话未清理 | `lsof -i :2025 -i :5173` + `kill` |
 | 修改 Go 代码后前端无变化 | 后端是旧进程（go run 不会自动重启） | 重启后端：先 kill 旧进程再 `go run` |
 | Vite HMR 不生效 | 文件保存事件未触发（某些远程文件系统） | 触发一次 touch 或重启 Vite |
+| **service-guard BLOCKED：`server.dir missing "01-plain-media"`，列出 `.md` 文件** | **mobile overlay 未生效**：`server.dir` 留在默认的 `/` → 解析为 `/workspace` → 看到 workspace 根目录文件。常见原因：手工 `tmp/encv start` 没设 `ENCV_DEV_PREVIEW=1`，或 start-preview.sh Step 0 没杀掉残留进程 | `curl -s http://127.0.0.1:2025/api/service-guard` 看 `servingDir` 字段；应该是 `/storage/emulated/0` 而不是 `/` 或 `/workspace` |
+
+### 5.3.1 ⚠️ service-guard 失败根因清单（2026-06-04 实战踩坑）
+
+> **`/api/service-guard` 报告 `server.dir missing "01-plain-media"` 是 mobile overlay 没生效的标志**。
+> 任何路径下看到此错误，都按"mobile overlay 未触发"处理，不要去改 `config.user.json`。
+
+| 触发场景 | 根因 | 修复 |
+|----------|------|------|
+| 手工启动 `tmp/encv start` / `tmp/encv` | 缺 `ENCV_DEV_PREVIEW=1` 环境变量，config overlay 不被加载 | 用 `start-preview.sh` 启动；或手工起时 `export ENCV_DEV_PREVIEW=1` |
+| `start-preview.sh` 启动后服务 guard 失败 | Step 0 漏杀旧 `tmp/encv` 进程（`pkill -f '^./tmp/encv'` 不匹配 `/workspace/tmp/encv start`） | 2026-06-04 修复：Step 0 改用 `lsof -ti :2025` 按端口兜底杀进程；Step 3 启动 air 后必须 verify `/api/service-guard` 的 `servingDir == /storage/emulated/0`，否则 `exit 1` |
+| mock-data 不在 `/storage/emulated/0/01-plain-media` | 跳过了 `npx tsx scripts/generate-mock-files.ts` 步骤 | 重跑 start-preview.sh（Step 2 自动生成） |
+| 改了 `config.user.json` 的 `server.dir` 或 `mobile.server.dir` | 违反 start-preview.sh §5.2.1 铁律 | `git checkout config.user.json` 还原 |
 
 ### 5.4 开发环境健康检查
 
@@ -600,3 +614,720 @@ try { filePath = decodeURIComponent(filePath) } catch {}
 | `!` | 无特殊含义 | 不编码 | `!`（安全） |
 
 **其中 `@` 是唯一确认会被迅雷浏览器/WAF 截断的字符。** 其他字符虽然理论上也可能被某些代理误处理，但双重编码方案统一保护了所有特殊字符。
+
+## 七、Hi-Sillot-OpenList-Frontend fork 适配：solid-icons 命名兼容（⚠️ 实战踩坑！）
+
+### 7.1 症状
+
+打开 `/openlist-ui/` 时，#root 一直空、只有注入的「返回 ENCV」按钮可见。debug pane 抓到：
+
+```
+[err] SyntaxError: The requested module '.../solid-icons@1.2.0_.../solid-icons/tb/index.js' does not provide an export named 'TbCheck' @ .../FolderTree.tsx:7:15
+```
+
+页面整体 JS module graph 解析失败 → Solid App 永远不 mount。
+
+### 7.2 根因
+
+| 维度 | 说明 |
+|------|------|
+| **fork 的源码约定** | `solid-icons` 1.8+：`import { TbCheck, TbX, TbFile } from "solid-icons/tb"`（无前缀 = 填充变体） |
+| **本工作区实际安装** | pnpm 锁定 `solid-icons@1.2.0`，**只有** `TbFillXxx` / `TbOutlineXxx` 前缀变体 |
+| **类型签名** | fork 的 `node_modules/.../tb/index.d.ts` 不会缺（npm 把上游 d.ts 一并装下来），所以 TS 编译过 |
+| **运行时** | 浏览器 ESM 解析真实 JS module 时发现导出列表对不上 → throw SyntaxError → 整个 module graph 中断 |
+
+### 7.3 命名映射
+
+| fork 写的（1.8+） | 1.2.0 实际提供 |
+|------------------|---------------|
+| `TbCheck` | `TbFillCircleCheck` / `TbOutlineCheck` |
+| `TbX` | `TbOutlineX` |
+| `TbFile` | `TbFillFile` / `TbOutlineFile` |
+| `TbFolder` | `TbFillFolder` / `TbOutlineFolder` |
+| `TbArchive` / `TbRefresh` / `TbCopy` / `TbLink` / `TbSelector` / `TbPlus` / `TbCheckbox` / `TbExternalLink` / `TbFileArrowRight` | `TbOutline${Xxx}` 全部存在 |
+
+> 其他包（`bi` / `ai` / `io` / `ri` / `cg` / `fa` / `fi` / `bs` / `im` / `si`）在 1.2.0 里都齐全，不受影响。
+
+### 7.4 修复方案：vite plugin 通用 import 重写
+
+**文件**：`app/openlist/Hi-Sillot-OpenList-Frontend/vite-plugins/solid-icons-compat.ts`
+
+```ts
+const TB_IMPORT_RE =
+  /import\s*\{\s*([^}]+?)\s*\}\s*from\s*(["'])solid-icons\/tb\2/g
+
+// 裸 Tb* → 改写为 TbOutlineXxx as TbXxx
+// 已带 Fill/Outline 前缀 → 保持
+```
+
+**接入位置**：`vite.config.ts` 必须在 `solidPlugin()` **之前**，`enforce: "pre"`：
+
+```ts
+plugins: [
+  solidIconsCompat(),  // ← 必须最先
+  solidPlugin(),
+  ...
+]
+```
+
+### 7.5 验证
+
+```bash
+# 1. 重启 openlist vite
+pkill -f 'Hi-Sillot-OpenList-Frontend.*vite'
+cd app/openlist/Hi-Sillot-OpenList-Frontend
+setsid nohup env OPENLIST_PREVIEW_BASE="/openlist-ui/" OPENLIST_NO_HMR=1 \
+  pnpm dev --host 127.0.0.1 --port 3000 --strictPort \
+  </dev/null >/tmp/encv-openlist.log 2>&1 &
+
+# 2. 验证重写生效
+curl -s 'http://127.0.0.1:3000/openlist-ui/src/components/FolderTree.tsx' \
+  | grep 'solid-icons/tb'
+# 期望：import { TbOutlineX as TbX, TbOutlineCheck as TbCheck } from "..."
+
+# 3. 浏览器打开 /openlist-ui/，debug pane 应该消失、#root 应该 mount
+```
+
+### 7.6 兼容性
+
+- 如果未来 `solid-icons` 升到 ≥ 1.8，本插件变成 no-op（重写后的名字在 1.8+ 也都存在）
+- TS 类型可能仍报缺导出，但 fork 是 .tsx + vite-plugin-solid，类型不参与运行
+- 不影响 production build：plugin 走 vite.transform，prod 也生效，但 prod 永远命中"已是正确前缀"分支
+
+## 八、vite HMR WebSocket 噪音过滤（16000 沙箱预览专用）
+
+### 8.1 症状
+
+encv-mobile 预览控制台持续刷：
+```
+[vite] failed to connect to websocket (Error: WebSocket closed without opened.)
+    at Object.connect (/@vite/client:892:13)
+```
+
+不影响应用运行（HMR 是开发辅助，非核心功能），但会污染 DevLogs。
+
+### 8.2 根因
+
+`16000` 沙箱入口（agent-tool-host）不支持 WebSocket Upgrade 协议。`@vite/client` 启动时尝试连 `ws://.../{__hmr__token__}`，连接被代理中断，浏览器每秒重试一次。
+
+### 8.3 修复
+
+`app/encv-mobile/src/composables/useFrontendLogs.ts` 的 `hijackConsole()` 增加 `isHmrWsNoise` 过滤：
+
+```ts
+console.error = (...args) => {
+  saved.error(...args)  // 原生 console.error 仍输出到 DevTools
+  if (isHmrWsNoise(args)) {
+    addLog('debug', ['[HMR WS sandbox noise] ' + args[0]])
+    return
+  }
+  addLog('error', args)
+}
+```
+
+`isHmrWsNoise` 匹配 `failed to connect to websocket` 和 `WebSocket closed without opened`。命中后**降级为 debug 级别**记录，不丢信息、不污染 error 流。
+
+### 8.4 为什么不做"完全关 HMR"
+
+| 做法 | 优劣 |
+|------|------|
+| 完全关 HMR（`hmr: false`） | 噪音彻底消失，但本地直连 `localhost:5173` 也失去 HMR |
+| **只过滤日志（推荐）** | **DevLogs 干净 + 本地直连 HMR 仍可用** |
+
+沙箱预览是只读验证场景，HMR 不可用是已知限制；本地开发仍依赖 HMR。
+
+## 九、16000 agent-tool-host 代理路径白名单（⚠️ 实战踩坑！）
+
+### 9.1 症状
+
+OpenList UI 页面 JS 加载、mount 都正常，但 axios 调 `/api/public/settings` 返回 `Network Error`。GIN 日志里 0 条 `/api/*` 记录。看似后端不通，但本地 curl `http://127.0.0.1:2025/api/public/settings` 返回 200。
+
+### 9.2 根因
+
+`16000 agent-tool-host` 的 `preview_proxy::proxy` **只转发特定路径前缀**（基于 OpenPreview 注册的端口 + frontend base path）。从 `/var/log/tool/agent-tool-host.stdout.log` 看到的实际转发列表只有：
+
+| 路径模式 | 转发到 | 用途 |
+|---------|--------|------|
+| `/` | 2025 | 根 fallback |
+| `/openlist-ui/...` | 2025 | openlist vite 的所有资产 + 页面 |
+| `/ws` | 2025 | WebSocket（HMR / encv-go WS hub） |
+| `/?_port=...` | （自身） | 内部健康检查 |
+| `/?token=...` | 2025 | preview URL 带 token 鉴权 |
+
+**其他路径（包括 `/api/*`）被 16000 静默丢弃**——不返回 4xx、不写日志、TCP 直接关闭。浏览器 axios 等不到响应 → `Network Error`。
+
+### 9.3 验证
+
+```bash
+# 16000 实际代理了哪些路径
+grep "preview_proxy::proxy" /var/log/tool/agent-tool-host.stdout.log \
+  | sed 's/.*Proxying //; s/ to port.*//' | sort -u
+
+# 用户 axios 的请求是否进了 encv-go
+grep "api/public" /tmp/encv-air.log | grep -v 127.0.0.1
+# 期望：空（说明没到 encv-go，被 16000 截了）
+```
+
+### 9.4 修复方案：让 axios baseURL 走通前缀
+
+让 axios 的 baseURL 包含 16000 已知的白名单前缀（`/openlist-ui`），让请求被 16000 转发，再由 openlist vite 内部 proxy 回 encv-go 的 mock：
+
+**Step 1**：`vite-plugins/encv-openlist-config.ts` 把 `api` 从 `""` 改为 `"/openlist-ui"`：
+
+```ts
+window.OPENLIST_CONFIG = Object.assign({}, window.OPENLIST_CONFIG, {
+  // 沙箱预览下必须用 /openlist-ui 前缀，否则 16000 代理会丢请求
+  api: "/openlist-ui",
+  base_path: "/openlist-ui/",
+});
+```
+
+**Step 2**：`vite.config.ts` 的 proxy 必须用 RegExp（vite 字符串 key 是 prefix match，`"/api"` 不会匹配 `/openlist-ui/api/...`）：
+
+```ts
+proxy: {
+  "^/openlist-ui/api": {
+    target: "http://127.0.0.1:2025",  // encv-go dev_preview_proxy
+    changeOrigin: true,
+    // 把 /openlist-ui/api/* 重写为 /api/*，避免 dev_preview_proxy 的
+    // /openlist-ui/* 路由把请求回环到本 vite (无限代理循环)
+    rewrite: (path) => path.replace(/^\/openlist-ui\/api/, "/api"),
+  },
+}
+```
+
+### 9.5 完整请求链
+
+```
+Browser axios
+  GET /openlist-ui/api/public/settings
+  ↓
+16000 agent-tool-host（白名单：/openlist-ui/* 转发）
+  ↓
+encv-go dev_preview_proxy（/openlist-ui/* → :3000 openlist vite）
+  ↓
+openlist vite（proxy "^/openlist-ui/api" → encv-go，rewrite 为 /api/...）
+  ↓
+encv-go /api/public/* mock handler
+  ↓ 返回 JSON {"code":200,"data":{...}}
+Browser axios 收到响应 ✅
+```
+
+### 9.6 反模式（已验证失败）
+
+| 配置 | 失败现象 |
+|------|---------|
+| `api: ""` + openlist vite proxy `/api` | axios 调 `/api/...` → 16000 丢 |
+| `api: ""` + 改 openlist vite proxy 为 `/openlist-ui/api` | proxy 字符串 key 不匹配（不会触发） |
+| dev_preview_proxy 加 `/openlist-ui/api/*` 路由 | 与 `/openlist-ui/*` 路由冲突，gin 后注册覆盖前注册 |
+| **正确做法** | `api: "/openlist-ui"` + openlist vite proxy RegExp `^/openlist-ui/api` + rewrite |
+
+### 9.7 与 dev_preview_proxy 的职责边界
+
+| 组件 | 职责 |
+|------|------|
+| **dev_preview_proxy** | 路由分发：`/openlist-ui/*` → openlist vite，`/api/*` → :5244 OpenList backend，其它 → encv-mobile vite |
+| **openlist vite proxy** | 跨 backend 桥接：`/api` → :5244 OpenList binary（生产 + dev preview 一致） |
+| **不要在两者间加新层** | 任何"再封装一层"都会导致路由冲突或循环代理 |
+
+---
+
+## 十、dev preview 零 mock：全 reverse proxy 到 :5244 OpenList backend
+
+> **铁律（2026-06 更新）**：
+> **dev preview 不 mock 任何 `/api/*` 端点。**
+> **所有 OpenList API（含 `/me`、`/fs/*`、`/admin/*`、`/auth/*`、`/public/*`）全部 reverse proxy 到 :5244 真 OpenList backend。**
+> **这是 routing 不是 mock——后端真服务，开发体验与生产 100% 一致。**
+
+### 10.1 为什么不能再 mock
+
+**症状**：
+- mock 2 个端点时工作
+- 之后 dev preview 看起来能跑，但 OpenList frontend 一进入真实业务流程就报错
+- 用户说"mock 与真实 API 行为差异巨大"——列举了：`/fs/list` 排序、permission 校验、2FA 流程、token 失效时机
+
+**根因**：
+- mock 的字段不够全（settings 只有 7 个字段，真 backend 有 50+）
+- mock 的 status code 假设与真 backend 不一致
+- mock 的时序与真 backend 不同（mock 立即返，真 backend 有 DB 查询延迟）
+- mock 不能复现真 backend 的 bug 修复（真 backend 改了，mock 不知道）
+
+**修复**：删除所有 mock，让 NoRoute 把 `/api/*` 反代到 :5244 真 backend。
+
+### 10.2 当前 dev_preview_proxy 架构（最终方案）
+
+```
+Browser → 16000 (agent-tool-host 路径白名单) → 2025 (encv-go 编排) → ┬─ /openlist-ui/*  → :3000 (openlist vite)
+                                                                      ├─ /api/*          → :5244 (OpenList backend 真实 API)
+                                                                      └─ /*              → :5173 (encv-mobile vite)
+```
+
+**dev_preview_proxy.go 三个职责**：
+| 方法 | 路由 | 目标 |
+|------|------|------|
+| `RegisterExplicit` | `/openlist-ui/*` | :3000 openlist vite（vite proxy `/api` → :5244） |
+| `RegisterNoRoute` (1) | `/api/*` | :5244 OpenList backend（reverse proxy，不是 mock） |
+| `RegisterNoRoute` (2) | 其他 | :5173 encv-mobile vite |
+
+### 10.3 OpenList backend :5244 启动
+
+**编译**：
+```bash
+cd /workspace/app/openlist/Hi-Sillot-OpenList
+go build -tags=jsoniter -o /tmp/openlist .
+```
+
+**首次启动**（自动生成 admin 密码 + sqlite db）：
+```bash
+mkdir -p /tmp/openlist-data
+cat > /tmp/openlist-data/config.json <<'EOF'
+{
+  "database": {"type":"sqlite3","db_file":"/tmp/openlist-data/data.db","table_prefix":"x_"},
+  "scheme": {"address":"0.0.0.0","http_port":5244,"https_port":-1},
+  "temp_dir":"/tmp/openlist-data/temp",
+  "dist_dir":"/workspace/app/openlist/Hi-Sillot-OpenList/public/dist",
+  "log": {"enable":true,"name":"/tmp/openlist-data/log/log.log","max_size":50,"max_backups":30,"max_age":28,"compress":false}
+}
+EOF
+# stub index.html 让 go:embed 找到 dist
+echo '<!DOCTYPE html><title>OpenList Backend Stub</title>' > /workspace/app/openlist/Hi-Sillot-OpenList/public/dist/index.html
+
+/tmp/openlist server --data /tmp/openlist-data --dev --log-std
+```
+
+**关键陷阱**：
+- `--data` 标志**不**影响 sqlite db 文件位置（db 位置由 config.json 的 `database.db_file` 决定，或默认 `data/data.db`）
+- **必须** 设 `dist_dir`（或放 stub index.html 到 `public/dist`），否则启动 panic: `index.html not exist`
+- 默认 admin 密码：启动日志 `Successfully created the admin user and the initial password is: <password>`
+
+**修改 admin 密码为 `admin`（dev 友好）**：
+```bash
+python3 <<'EOF'
+import hashlib, secrets, sqlite3
+STATIC = 'https://github.com/alist-org/alist'
+new_salt = secrets.token_hex(8)
+inner = hashlib.sha256(f'admin-{STATIC}'.encode()).hexdigest()
+new_hash = hashlib.sha256(f'{inner}-{new_salt}'.encode()).hexdigest()
+db = sqlite3.connect('/tmp/openlist-data/data.db')
+db.execute("UPDATE x_users SET pwd_hash=?, salt=? WHERE username='admin'", (new_hash, new_salt))
+db.commit()
+EOF
+# 重启 backend
+```
+
+**密码算法参考**（OpenList v4 / alist）：
+- `StaticHash(pw) = sha256(pw + "-" + "https://github.com/alist-org/alist")`
+- `PwdHash = sha256(StaticHash(pw) + "-" + salt)`
+
+### 10.4 完整请求链路（dev preview 沙箱）
+
+```
+Browser
+  axios GET /api/auth/login
+  ↓
+16000 agent-tool-host
+  ↓ (白名单转发 /api/*)
+2025 encv-go dev_preview_proxy
+  ↓ NoRoute 匹配 /api/*
+5244 OpenList backend
+  ↓ 返回 {code:200, data:{token:"eyJ..."}}
+Browser 收到 JWT
+  ↓
+Browser
+  axios GET /api/me + Authorization: <jwt>
+  ↓
+16000 → 2025 → NoRoute → 5244
+  ↓
+5244 ParseToken(validTokenCache 有) → 返 admin user
+  ✅
+```
+
+**关键**：
+- OpenList frontend 用 `Authorization: <jwt>`（**无 Bearer 前缀**），不是 `Bearer <jwt>`——backend 期望纯 token
+- `validTokenCache` 是**内存 cache**——backend 重启会清空，需重新登录
+
+### 10.5 验证命令（端到端）
+
+```bash
+# 1. 登录拿 token
+T=$(curl -s -X POST http://127.0.0.1:2025/api/auth/login \
+       -H 'Content-Type: application/json' \
+       -d '{"username":"admin","password":"admin"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["token"])')
+
+# 2. /api/me（验证 token）
+curl -s http://127.0.0.1:2025/api/me -H "Authorization: $T"
+
+# 3. /api/fs/list（验证真实文件）
+curl -s "http://127.0.0.1:2025/api/fs/list?path=/" -H "Authorization: $T" | head -c 500
+
+# 4. /api/config（验证 encv-go 自己的 API 不被劫持）
+curl -s http://127.0.0.1:2025/api/config | head -c 200
+```
+
+### 10.6 反模式（再次强调）
+
+| 反模式 | 后果 |
+|--------|------|
+| dev_preview_proxy 加 `r.GET("/api/me", mockHandler)` 等具体 mock 端点 | gin 路由污染；mock 与真 backend 数据漂移 |
+| dev_preview_proxy 加 `r.GET("/api/*subpath", mock)` catch-all | 与 `/api/config` 等具体路径 gin radix tree 冲突 panic |
+| dev_preview_proxy NoRoute 转发 `/api/*` 到 encv-mobile vite (5173) | encv-mobile vite proxy `/api` → encv-go (2025) → 回环 502 |
+| **正确做法** | NoRoute 分发：`/api/*` → :5244 backend，其他 → :5173 vite |
+
+---
+
+## 十一、plugin-openlist 与 Hi-Sillot-OpenList-Frontend 是两个完全独立的前端（⚠️ 命名踩坑！）
+
+> **核心原则：**
+> **"openlist 前端"在 ENCV 语境下专指 `plugin-openlist/web`（Vue + Ionic + Capacitor），跑在 :5174。**
+> **Hi-Sillot-OpenList-Frontend（SolidJS, OpenListTeam 官方 web UI）跑在 :3000，是 OpenList 二进制自带的 dist 来源，与 ENCV 沙箱 dev preview 无关。**
+
+### 11.1 二者对比
+
+| 维度 | `app/encv-mobile/plugin-openlist/web/` ✅ ENCV 用这个 | `app/openlist/Hi-Sillot-OpenList-Frontend/` ❌ 别用 |
+|------|---|---|
+| **框架** | Vue 3 + Ionic 8 + Capacitor | SolidJS + Vite |
+| **Vite 端口** | **5174** | 3000 |
+| **Vite base** | dev: `/openlist-ui/` (env `VITE_BASE`); prod: `./` | dev: `process.env.OPENLIST_PREVIEW_BASE`; prod: `/__dynamic_base__/` |
+| **Vite proxy** | `/openlist-spa/*` → `http://127.0.0.1:5244/*` | `/api` → `http://localhost:5244` |
+| **健康检查** | `/__openlist-health`（Node 直连 5244） | 无 |
+| **角色** | ENCV plugin-openlist 的 Capacitor UI（OpenListHome / OpenListWebView / OpenListConfigEditor / OpenListSettings） | OpenList **自带的 web UI**，编译后是 binary go:embed 的 dist 源（**不是** ENCV 沙箱 dev 入口） |
+| **沙箱 dev 路径** | 浏览器 → 16000 → 2025 → **:5174** | 浏览器 → 16000 → 2025 → :3000（**错配**） |
+| **生产路径** | Android WebView `file:///android_asset/openlist/index.html` | OpenList binary 内 `public/dist/`（gomobile 用） |
+
+### 11.2 命名冲突的根因
+
+两个项目都叫"openlist 前端"：
+- `app/openlist/Hi-Sillot-OpenList-Frontend/` —— OpenListTeam 官方 web UI（SolidJS）
+- `app/encv-mobile/plugin-openlist/web/` —— ENCV 自己封装的 Capacitor UI（Vue）
+
+混淆的代价：
+- 把 `/openlist-ui/*` 路由到 :3000 → 用户看到 OpenListTeam 官方 web UI，**不是** ENCV 期望的 Capacitor UI
+- "Failed fetching settings: home.Network Error"——这是 Hi-Sillot-OpenList-Frontend (SolidJS) 的 i18n key `home.fetching_settings_failed` 报的，**不是** plugin-openlist
+- plugin-openlist/web 用的是 `/openlist-spa/*`（不是 `/api/*`），vite.config proxy 路径也不一样
+- plugin-openlist 用 `import.meta.env.DEV` 判断沙箱/真机，Hi-Sillot-OpenList-Frontend 用 `import.meta.env.VITE_LITE` 等
+
+### 11.3 plugin-openlist/web Vite 配置要点
+
+**`plugin-openlist/web/vite.config.ts` base 配置**：
+```ts
+const isSandboxDev = !!process.env.VITE_BASE
+
+export default defineConfig({
+  // 沙箱 dev：绝对 base（让 dev_preview_proxy 在 :2025 路由 /openlist-ui/*）
+  // 生产：相对 './'（Android WebView file:// 协议加载）
+  base: process.env.VITE_BASE || './',
+  ...
+  server: {
+    port: 5174,
+    proxy: {
+      '/openlist-spa': {
+        target: 'http://127.0.0.1:5244',
+        rewrite: (path) => path.replace(/^\/openlist-spa/, ''),
+      },
+    },
+  },
+})
+```
+
+**关键 base 行为**：
+- 沙箱 dev 设 `VITE_BASE=/openlist-ui/` → HTML 内 `<base href="/openlist-ui/">`，vite 处理 `/openlist-ui/*` prefix
+- 生产不设 → HTML 内 `<base href="./">`，Android file:// 协议加载相对资源
+- 同一份 config 同时支持两种模式，不引入分支 vite config
+
+### 11.4 dev_preview_proxy 路由表（最终版）
+
+```
+Browser
+  ↓
+16000 agent-tool-host
+  ↓ (白名单转发)
+2025 encv-go dev_preview_proxy
+  ├─ /openlist-ui/*    → :5174 (plugin-openlist vite, Vue + Ionic, base=/openlist-ui/)
+  ├─ /openlist-spa/*   → :5174 (plugin-openlist vite 内部 proxy → :5244)
+  ├─ /__openlist-health → :5174 (plugin-openlist vite 自定义 Node middleware)
+  ├─ /api/*            → :5244 (OpenList backend 真实 API, reverse proxy 不是 mock)
+  └─ /*                → :5173 (encv-mobile vite, Capacitor app 主前端)
+```
+
+**`/openlist-spa/*` 和 `/__openlist-health` 必须路由到 :5174**——不是 `/api/*` 也不是其他。plugin-openlist 内部 axios 用 `/openlist-spa/...` 当 baseURL（vite proxy rewrite 后打到 :5244 的 `/api/...`），健康检查用 `/__openlist-health`（Node 直连 :5244）。
+
+### 11.5 验证命令
+
+```bash
+# 1. plugin-openlist vite 起来（沙箱 dev 模式必须设 VITE_BASE）
+cd /workspace/app/encv-mobile/plugin-openlist/web
+VITE_BASE=/openlist-ui/ pnpm dev --host 127.0.0.1 --port 5174 --strictPort
+# 期望: "VITE v8.0.16 ready" + "Local: http://127.0.0.1:5174/openlist-ui/"
+
+# 2. 端到端
+curl -s http://127.0.0.1:5174/openlist-ui/                      # 200 HTML base=/openlist-ui/
+curl -s http://127.0.0.1:5174/__openlist-health                  # {"alive":true,...}
+curl -s http://127.0.0.1:5174/openlist-spa/api/public/settings   # 真 backend settings
+curl -s http://127.0.0.1:16000/openlist-ui/                      # 走沙箱链 16000→2025→5174
+curl -s http://127.0.0.1:16000/__openlist-health                 # 同上
+curl -s http://127.0.0.1:16000/openlist-spa/api/public/settings  # 同上
+```
+
+### 11.6 错误诊断速查
+
+| 现象 | 错配的路由 | 正确路由 |
+|------|----------|---------|
+| "Failed fetching settings: home.Network Error" | `/openlist-ui/*` → :3000 (Hi-Sillot SolidJS) | → :5174 (plugin-openlist Vue+Ionic) |
+| `/openlist-spa/*` 返 encv-mobile HTML | NoRoute 兜底到 :5173 encv-mobile vite | → :5174 plugin-openlist vite |
+| `/__openlist-health` 返 encv-mobile HTML | 同上 | → :5174 plugin-openlist vite |
+| `import.meta.env.DEV` 判断错误 | plugin-openlist 在 prod build 时 | vite 正常处理（dev=true 仅当 vite dev mode） |
+| backend :5244 启动 panic "index.html not exist" | binary go:embed 嵌入空 dist | config.json 设 `"dist_dir": "<absolute path>/public/dist"` |
+
+### 11.7 ENCV 沙箱 dev preview 同时启这两个（2026-06-04 修正）
+
+> **2026-06-04 修正**：之前的"不要启 :3000"是错的。`/openlist-spa/*` 必须由 Hi-Sillot-OpenList-Frontend vite dev (:3000) 提供真实 OpenList web UI，否则 iframe 加载的是 stub 或空 HTML。
+
+| 端口 | 启动命令 | 必须？ | 角色 |
+|------|---------|-------|------|
+| **5173** | `pnpm --dir app/encv-mobile dev` | ✅ | encv-mobile Capacitor app 主前端（Vue + Ionic） |
+| **5174** | `pnpm --dir app/encv-mobile/plugin-openlist/web dev` (env `VITE_BASE=/openlist-ui/`) | ✅ | plugin-openlist Capacitor UI（Vue + Ionic） |
+| **3000** | `pnpm --dir app/openlist/Hi-Sillot-OpenList-Frontend dev` (env `OPENLIST_PREVIEW_BASE=/openlist-spa/`) | ✅ | OpenListTeam 官方 web UI（SolidJS）—— plugin-openlist iframe 内加载 |
+| **5244** | `/tmp/openlist server --data /tmp/openlist-data --dev` | ✅ | OpenList backend binary 真实 API |
+| **2025** | `air` (env `ENCV_DEV_PREVIEW=1`) | ✅ | dev_preview_proxy front door（4 个上游编排） |
+
+`dev-openlist.sh` 启动 OpenList binary + 它的 dist。Hi-Sillot-OpenList-Frontend 的 `dist/` 仍是 binary 启动的**前置**（生产 dist 源），沙箱 dev 入口用 vite dev :3000 而不是 dist。
+
+`start-preview.sh` Step 0-7 一次性启全部 5 个进程（含 air + 3 个 vite + backend），detach=1 时脚本退出子进程继续运行。
+
+### 11.8 OpenList web UI iframe 加载原理（⚠️ 路由陷阱！）
+
+plugin-openlist 的 `OpenListWebView.vue` 通过 `<iframe src="/openlist-spa/#/login">` 加载 OpenList web UI。
+
+**关键陷阱**：iframe 内 axios 调 `/api/...` 时，浏览器**总是**把 URL 解析为 `/openlist-spa/api/...`（iframe 的 base href 是 `/openlist-spa/`）。
+
+```javascript
+// 浏览器内部：axios.get('/api/public/settings') 在 iframe 内
+// → 实际请求 URL: https://host:port/openlist-spa/api/public/settings
+```
+
+但 Hi-Sillot vite 的 proxy 规则只匹配 `/api`（不带前缀），不匹配 `/openlist-spa/api`。所以 vite 不会代理，fall through 到 SPA index.html（`/openlist-spa/api/...` 返 200 text/html）→ axios 拿到 HTML 当 JSON 解析 → 报 `Network Error` 或 JSON parse error。
+
+**修复**（`dev_preview_proxy.go`）：在 `:2025` 层先于 vite 一步把 `/openlist-spa/api/*` 摘出来反代到 :5244：
+
+```go
+// 1. /api/* → :5244（top-level API，encv-go 自身也用）
+if strings.HasPrefix(path, "/api/") || path == "/api" { ... return }
+
+// 2. /openlist-spa/api/* → :5244（iframe 内 API，strip /openlist-spa 前缀后打 :5244）
+//    必须在 /openlist-spa/* fallback 之前匹配！
+if strings.HasPrefix(path, "/openlist-spa/api/") || path == "/openlist-spa/api" {
+    c.Request.URL.Path = strings.TrimPrefix(path, "/openlist-spa")
+    p.proxyTo(c, p.openlistBackendURL)
+    return
+}
+
+// 3. /openlist-spa/* → :3000（OpenList web UI 静态资源 + SolidJS bundle）
+if strings.HasPrefix(path, "/openlist-spa/") || path == "/openlist-spa" { ... }
+```
+
+**验证命令**：
+```bash
+# 修复前：/openlist-spa/api/public/settings 返 HTML（vite SPA fallback）
+# 修复后：/openlist-spa/api/public/settings 返 JSON（真 backend settings）
+curl -s http://127.0.0.1:2025/openlist-spa/api/public/settings
+# 期望: {"code":200,"message":"success","data":{...}}
+```
+
+### 11.9 Hi-Sillot vite 配置变更不自动重启（⚠️ 实战踩坑！）
+
+> **核心原则：**
+> **`nohup ... &` 启动的 vite 不会因 vite.config.ts 变更自动重启。**
+> **改完 plugin 文件后必须手动 `pkill -f 'Hi-Sillot-OpenList-Frontend.*vite'` + 重启。**
+
+**症状**：
+- 修改了 `vite-plugins/encv-openlist-config.ts`（例如移除"返回 ENCV"按钮）
+- `touch vite.config.ts` / 直接编辑 plugin 文件 → vite 不重启
+- 浏览器看到的还是旧 HTML（按钮还在）
+
+**根因**：
+- vite config watcher 通过 fsnotify 监听 `vite.config.ts` 的 modify 事件
+- 但启动方式如果是 `nohup ... &`（脱离 TTY）或者 `pnpm dev` 经过 wrapper 层，fsnotify 事件可能丢失
+- 表现：vite 进程还在，但 plugin 改动不生效
+
+**修复**：
+```bash
+# 1) 改 vite-plugins/encv-*.ts 后手动 kill + 重启
+pkill -f 'Hi-Sillot-OpenList-Frontend.*vite'
+cd /workspace/app/openlist/Hi-Sillot-OpenList-Frontend
+nohup env OPENLIST_PREVIEW_BASE="/openlist-spa/" OPENLIST_NO_HMR=1 \
+  pnpm dev --host 127.0.0.1 --port 3000 --strictPort \
+  > /tmp/openlist-frontend-vite.log 2>&1 &
+```
+
+**验证命令**：
+```bash
+# 1. 改 plugin 文件后必须看到 vite log 有新的 "ready in NNN ms"
+tail -5 /tmp/openlist-frontend-vite.log
+# 期望: "VITE v6.4.3 ready in NNN ms" 出现至少 2 次
+
+# 2. curl 看 HTML 是否反映新 plugin
+curl -s http://127.0.0.1:2025/openlist-spa/ | grep "返回 ENCV"
+# 期望: 0 行（已移除）
+
+# 3. 如果还是旧的 → 说明 vite 没重启，再 pkill 一次
+```
+
+**预防**：
+- plugin 文件改动后**永远**手动重启 Hi-Sillot vite，不要相信 watcher
+- `start-preview.sh` 已加入 `pkill -f 'Hi-Sillot-OpenList-Frontend.*vite'` 逻辑（Step 0 清理阶段）
+
+### 11.10 axios 默认 Content-Type 触发 CORS preflight，是 Network Error 的关键嫌疑（⚠️ 2026-06-04 实战踩坑）
+
+> **核心原则：**
+> **`api 请求 200 ≠ 浏览器接受响应`。axios 默认给所有请求带 `Content-Type: application/json`，GET/HEAD/DELETE 等无 body 请求也会触发 CORS preflight，叠加沙箱代理链的不确定性导致 preflight 失败 → axios 报 "Network Error"。**
+> **修复：让 axios 的 GET 等无 body 请求不带 `Content-Type`，按 Fetch §2.2.2 走 "simple request" 路径，根本不发起 preflight。**
+
+**为什么之前以为是"重复 ACAO 头"**（已撤回的错路）：
+- 第一直觉假设根因是 dev_preview_proxy 重复设了 ACAO 头
+- 加了 `ModifyResponse` 清空上游 ACAO 头
+- 验证 4 个端点 ACAO 头从 2 → 1 → 自以为修好了
+- **但**用户继续报"你的思路不对"——根因不在 ACAO 重复
+
+**真实根因链路**（2026-06-04 用户反馈"你的思路不对"后定位）：
+```
+1. Hi-Sillot-OpenList-Frontend 的 axios instance 默认设：
+       headers: { "Content-Type": "application/json;charset=utf-8" }
+   （见 [request.ts](file:///workspace/app/openlist/Hi-Sillot-OpenList-Frontend/src/utils/request.ts#L7-L10)）
+
+2. 按 CORS 规范（Fetch §2.2.2），Content-Type: application/json 是
+   "non-simple" header → 浏览器对每个跨域请求先发 OPTIONS preflight
+   （即使 method=GET、body 为空）
+
+3. preflight 请求链：
+       浏览器 → :16000 agent-tool-host (preview-proxy) → :2025 encv-go → :5244 OpenList backend
+
+4. 沙箱预览链路至少两层代理（agent-tool-host + encv-go dev_preview_proxy），
+   preflight 经过两层后行为**不确定**（实测 OPTIONS 响应有时带 CORS 头有时不带，
+   取决于 agent-tool-host 版本/配置/缓存）。
+   一旦 preflight 响应没 CORS 头，浏览器直接拒绝 → 不发实际 GET
+
+5. axios 误以为网络错误 → message = "Network Error"
+
+6. Hi-Sillot App.tsx 把 "Network Error" 塞进 err() 数组
+   → handleRespWithoutAuthAndNotify 走 fail 路径
+   → setErr(["Network Error", "Network Error"])
+   → 页面渲染 "Failed fetching settings: home.Network Error, home.Network Error"
+   （i18n key `home.fetching_settings_failed` + "home." + e 拼出来）
+```
+
+**为什么 dev_preview_proxy 的 `ModifyResponse` 改 ACAO 头无效**：
+- 浏览器实际访问的是 :16000（agent-tool-host 入口），不是 :2025
+- 即使 dev_preview_proxy 改 ACAO 头，:16000 路径上看不到这个修改
+- 我们**不能**改 agent-tool-host 的代码（沙箱外部服务）
+- dev_preview_proxy 改 ACAO 头对 16000 路径**完全无影响**
+
+**修复**（[request.ts](file:///workspace/app/openlist/Hi-Sillot-OpenList-Frontend/src/utils/request.ts)）：
+- 不在 axios `create()` 时默认设 `Content-Type: application/json`
+- 在 `interceptors.request.use` 中按 method 动态决定：
+  - POST/PUT/PATCH + 有 body → 设 `application/json;charset=utf-8`
+  - GET/HEAD/DELETE/OPTIONS → 删掉 `Content-Type`
+- 删掉后浏览器把请求判定为 "simple request" → 不发 preflight → 避开所有 CORS preflight 风险
+
+```ts
+instance.interceptors.request.use(
+  (config) => {
+    const m = (config.method || "get").toLowerCase()
+    const hasBody = config.data !== undefined && config.data !== null
+    if (hasBody && (m === "post" || m === "put" || m === "patch")) {
+      config.headers["Content-Type"] = "application/json;charset=utf-8"
+    } else {
+      // GET 等简单 method 不带 Content-Type → 简单请求 → 不 preflight
+      if (config.headers) {
+        delete config.headers["Content-Type"]
+        delete config.headers["content-type"]
+      }
+    }
+    return config
+  },
+)
+```
+
+**验证**：
+```bash
+# 修复前：浏览器对每个 axios 请求都发 OPTIONS preflight
+# 修复后：GET 走 simple request，不发 preflight
+curl -sI http://127.0.0.1:16000/api/public/settings -H "Origin: http://localhost:16000"
+# → 200 OK with JSON body
+```
+
+**预防**：
+- **不要**给 GET/HEAD/DELETE 等无 body 请求设 `Content-Type: application/json`
+- 任何要走多层代理（agent-tool-host + 反代）的 API，前端**避免**触发 CORS preflight
+- 不能改上游代理行为时，从客户端绕开 preflight 是唯一出路
+- 这是 axios 的常见陷阱：默认 headers 是给 POST 设计的，但 axios 把它套用到 GET
+
+**相关**（独立 bug，不影响本期 Network Error 修复）：
+[`encv-openlist-config.ts` 注入的 `base_path: "/openlist-ui/"`](file:///workspace/app/openlist/Hi-Sillot-OpenList-Frontend/vite-plugins/encv-openlist-config.ts#L37-L40) — 实际 iframe base 是 `/openlist-spa/`，`joinBase()` 出来的资源路径全错（monaco/katex/mermaid 加载失败），但与 axios Network Error 无关。
+
+---
+
+## 十二、dev preview 不用 vite build production dist（原则：开发预览 = 真实代码路径）
+
+> **核心原则：**
+> **沙箱 dev preview 直接用 vite dev 跑源码，不做 production build。**
+> **改一行代码 → HMR 秒级生效；build 一次 → 等 30 秒 + 5MB dist 落盘。开发体验是数量级差距。**
+
+### 12.1 为什么 dev preview 不 build
+
+| 模式 | 命令 | 启动延迟 | 代码改→生效 | 适用场景 |
+|------|------|---------|-----------|---------|
+| **dev preview** | `vite dev --port 3000` | 0.5s | HMR 200ms | 沙箱预览、AI 调试、UI 改样式 |
+| ~~build preview~~ | `vite build && cp dist/ public/dist` | 30s | 30s+ | ❌ 不要用 |
+| production APK | `pnpm build:apk` | 5min+ | 重装 APK | 真机发布 |
+
+**dev preview 的核心优势**：
+1. 改一行代码 → 保存 → 浏览器秒级刷新（HMR 200ms）
+2. 不需要每次 `vite build` + `cp dist` 30 秒
+3. 不需要担心 base path 写错（dev 用 `VITE_BASE` 注入，prod 写死 `./`）
+4. 不需要担心 `go:embed` 同步问题（binary dist_dir vs source dist 漂移）
+
+### 12.2 vite dev base 注入原则
+
+**`vite dev` 用绝对 base（env 注入），`vite build` 用相对 base（Android file:// 加载）**：
+
+```ts
+// Hi-Sillot-OpenList-Frontend/vite.config.ts
+base: process.env.OPENLIST_PREVIEW_BASE
+  ? process.env.OPENLIST_PREVIEW_BASE  // dev: "/openlist-spa/"
+  : "/__dynamic_base__/",              // build: 由 vite-plugin-dynamic-base 运行时算
+
+// plugin-openlist/web/vite.config.ts
+base: process.env.VITE_BASE || './',   // dev: "/openlist-ui/" 或 build: "./"
+```
+
+| Env | HTML `<base>` | 资源路径 | 谁来 serve |
+|-----|--------------|---------|-----------|
+| `OPENLIST_PREVIEW_BASE=/openlist-spa/` | `/openlist-spa/` | `/openlist-spa/src/main.tsx` | :3000 vite dev |
+| 不设 | `/__dynamic_base__/` | `/__dynamic_base__/src/main.tsx` | OpenList binary `public/dist` |
+
+### 12.3 何时必须 build
+
+| 场景 | 是否需要 build | 原因 |
+|------|--------------|------|
+| 沙箱 dev preview 调试 UI | ❌ | vite dev 直接 serve 源码，HMR 200ms |
+| 改 OpenList 业务逻辑（设置、登录、文件管理） | ❌ | vite dev 改 .tsx 立即生效 |
+| 验证 OpenList web UI 集成 | ❌ | iframe 加载 /openlist-spa/，由 vite dev 服务 |
+| 打包 Android APK 真机测试 | ✅ | `pnpm build:apk` 含 vite build + go:embed + apk 签名 |
+| 上传 App Store / Play Store | ✅ | release apk + 签名 |
+| 性能测试 / Lighthouse 跑分 | ⚠️ | 可以 build，但要 `vite preview` 而不是 `vite dev` |
+
+### 12.4 铁律
+
+- **dev preview 模式下，Hi-Sillot-OpenList-Frontend 跑 vite dev (:3000)，不 build**
+- `start-preview.sh` Step 6 启 vite dev 而不是 build + cp
+- binary 的 `public/dist` 路径只用于 release APK（apk 构建时由 `pnpm build:apk` 全自动处理）
+- dev preview 下 backend (:5244) 的 `config.json` 可以指空 dist 或 stub，**不影响** vite dev 提供的 web UI
+
+### 12.5 不要做的事
+
+| ❌ 反模式 | 后果 | 正确做法 |
+|----------|------|---------|
+| `vite build && cp -r dist/* /tmp/openlist-data/public/dist` | 30s/build + dist 漂移 | `pnpm dev` |
+| 把 `OPENLIST_PREVIEW_BASE` 设为 `/` | base 冲突，dev_preview_proxy 路由不到 | 必须带 `/openlist-spa/` 前缀 |
+| 手动启 `vite preview` 跑 build dist | 失去 HMR | 一直用 `vite dev` |
+| 改 dist 下的 index.html | 每次 build 被清空 | 改 src/ 下的源码 |

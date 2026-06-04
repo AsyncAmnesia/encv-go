@@ -41,6 +41,25 @@
         </ion-item>
       </ion-list>
 
+      <!-- 沙箱预览：dev 专属入口，生产构建整段 v-if false 移除 -->
+      <ion-list v-if="isDev">
+        <ion-list-header>
+          <ion-label>{{ t('devtools.sandboxPreview') }}</ion-label>
+          <ion-badge slot="end" color="warning" class="scope-badge scope-dev">
+            <ion-icon :icon="bugOutline" class="scope-badge-icon"></ion-icon>
+            <span class="scope-text">DEV</span>
+          </ion-badge>
+        </ion-list-header>
+        <p class="section-hint">{{ t('devtools.sandboxPreviewHint') }}</p>
+        <ion-item button detail @click="openPreviewOpenList">
+          <ion-icon :icon="eyeOutline" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('devtools.previewOpenList') }}</h3>
+            <p>{{ t('devtools.previewOpenListDesc') }}</p>
+          </ion-label>
+        </ion-item>
+      </ion-list>
+
       <ion-list v-if="configLoaded">
         <ion-list-header>
           <ion-label>{{ t('settings.logSettings') }}</ion-label>
@@ -122,13 +141,13 @@ import { computed } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonIcon, IonLabel, IonToggle,
-  IonButton, alertController,
+  IonButton, IonBadge, alertController,
 } from '@ionic/vue'
 import {
   bugOutline, downloadOutline, readerOutline, trashOutline,
   chevronForward, playCircleOutline, musicalNotesOutline,
   colorPaletteOutline, settingsOutline, terminal, documentText,
-  cloudOutline, refreshOutline,
+  cloudOutline, refreshOutline, eyeOutline,
 } from 'ionicons/icons'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/composables/useI18n'
@@ -203,6 +222,22 @@ function handlePrototypeClick(proto: typeof prototypes[0]) {
   router.push(`/tabs/settings/devtools/prototype/${proto.id}`)
 }
 
+// 沙箱预览：后端驱动跳转
+//   前端 set window.location.href = '/api/preview/openlist-ui'
+//   encv-go (server.go) 返回 302 → /openlist-ui/
+//   浏览器自动跟随 302 → Vite server.proxy → encv-go handleStatic
+//   encv-go 从 preview.openlist_ui_dir 静态服务 Hi-Sillot-OpenList/public/dist/
+// 为什么用后端驱动：与生产路径一致（APK 内 gomobile 进程自己服务 UI），
+//   前端不持有 UI 路径 / dist 路径知识；dist 路径在生产换位置时前端零改动。
+// 为什么不用 <router-link>：是 in-app 路由跳转，会被 Vue Router 拦下。
+// 为什么不用 <a href>：同上，<a> 内部点击会被 Vue Router 4 拦截。
+// 为什么不用 window.open(_, '_blank')：会破坏 OpenPreview 会话。
+const isDev = import.meta.env.DEV
+function openPreviewOpenList() {
+  // 整个跳转由后端 302 决定最终 URL，前端不知道也不需要知道 /openlist-ui/
+  window.location.href = '/api/preview/openlist-ui'
+}
+
 function handleVConsoleToggle(event: CustomEvent) {
   toggleVConsole(event.detail.checked)
 }
@@ -261,6 +296,30 @@ async function handleClearLogs() {
   color: var(--encv-text-secondary, #999);
   margin: 0 16px 8px;
   line-height: 1.5;
+}
+
+.scope-badge {
+  font-size: 10px;
+  --padding-start: 6px;
+  --padding-end: 8px;
+  --padding-top: 3px;
+  --padding-bottom: 3px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.scope-badge-icon {
+  font-size: 12px;
+}
+.scope-synced {
+  --background: rgba(var(--ion-color-primary-rgb), 0.12);
+  --color: var(--ion-color-primary);
+}
+.scope-dev {
+  --background: rgba(var(--ion-color-warning-rgb), 0.18);
+  --color: var(--ion-color-warning-shade);
 }
 
 .log-level-card {

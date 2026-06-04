@@ -21,6 +21,7 @@
   },
   "output_path": "./output",
   "password": "my-encv_key，可以使用中文和标点符号✔",
+  "preview": {},
   "plugin_settings": {
     "alist_encrypt": {
       "default_password": "123456",
