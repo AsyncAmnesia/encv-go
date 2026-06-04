@@ -34,10 +34,12 @@ android {
     defaultConfig {
         minSdk = libs.versions.minSdk.get().toInt()
 
-        // Phase 26: 把 4 个 ABI 的 jniLibs 都打到 aar 里 —— aar2apk 任务
-        // 无条件 addNativeLibs (ConvertAarToApkTask.kt:179-193)，不需要 hack。
+        // Phase 27: 限制为仅 arm64-v8a 一个 ABI——现代 Android 设备几乎都是
+        // arm64-v8a（Google Play 2019 起强制 64-bit）；少 3 ABI 编译可让 build 时间
+        // 从 5-8 min 降到 ~2 min，APK 体积从 ~120-200MB 降到 ~30-50MB。
+        // 详见 .trae/specs/build-openlist-fork-as-android-native/spec.md。
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+            abiFilters += listOf("arm64-v8a")
         }
     }
 

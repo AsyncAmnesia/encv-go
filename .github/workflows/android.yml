@@ -550,24 +550,46 @@ jobs:
             echo "⏭️ Plugin APK not available"
           fi
 
-      # === Build OpenList Plugin (AAR → APK via aar2apk) ===
-      # Phase 26: 弃用 gomobile bind 嵌入进程模式,改用 host app 的 EncvGoService 模式
-      # (ProcessBuilder 启 libopenlist.so)—— 详见 plugin-openlist/build.gradle.kts 注释。
-      # 旧 gomobile bind 步骤 (Build OpenList AAR + Extract OpenList AAR) 完全废弃:
-      #   - libopenlist.so 由后续 Phase C (Go cross-compile) 步骤产出,直接放
-      #     plugin-openlist/src/main/jniLibs/<abi>/,走 AGP 标准 jniLibs 流程
-      #   - aar2apk 任务 [ConvertAarToApkTask.kt:179-193] 无条件 addNativeLibs,
-      #     集成 libopenlist.so 进 plugin APK 天然可行,无需 aar 字节 hack
-      #   - openlist.aar / openlist-classes.jar / injectOpenlistClassesToAar 任务
-      #     全部删除 (plugin-openlist/build.gradle.kts 已回退到干净 95 行)
-      - name: "[Phase 26] OpenList native binary placeholder"
+      # === Build OpenList Plugin (Phase 27: Hi-Sillot/OpenList fork 交叉编译为 libopenlist.so) ===
+      # 架构:Go 1.25.1 交叉编译 fork dev 分支为 arm64-v8a native binary,
+      # 拷到 plugin-openlist jniLibs/,走 AGP 标准 jniLibs 流程 → aar2apk 任务 addNativeLibs →
+      # plugin-openlist APK 含 lib/arm64-v8a/libopenlist.so。
+      # 详见 .trae/specs/build-openlist-fork-as-android-native/spec.md。
+      - name: Setup Go 1.25.1
+        if: inputs.skip_plugin != true
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: app/openlist/Hi-Sillot-OpenList/go.mod
+          cache-dependency-path: app/openlist/Hi-Sillot-OpenList/go.sum
+      - name: Build OpenList native libs (Go cross-compile, arm64-v8a)
         if: inputs.skip_plugin != true
         run: |
-          echo "═══ Phase 26: gomobile bind 弃用,OpenList native binary 由 Phase C (Go cross-compile) 提供 ═══"
-          echo "当前状态: libopenlist.so 尚未编出,plugin-openlist.aar 不含 jniLibs"
-          echo "预期结果: plugin-openlist APK 仍能 build 成功 (Kotlin 编译 OK),但 OpenList server 进程无法启动 (缺 libopenlist.so)"
-          echo "TODO (Phase C): clone Hi-Sillot/OpenList fork → glebarez/sqlite 切换 → Go 1.21+ 交叉编译 → 拷到 src/main/jniLibs/<abi>/"
-          ls -la app/encv-mobile/plugin-openlist/ | head -10
+          set -e
+          echo "═══ Phase 27: Hi-Sillot/OpenList fork 交叉编译为 libopenlist.so (arm64-v8a) ═══"
+          cd app/openlist/Hi-Sillot-OpenList
+          go mod download
+          CGO_ENABLED=0 GOOS=android GOARCH=arm64 \
+            go build -buildmode=c-shared -o /tmp/libopenlist-arm64.so ./cmd
+          echo ""
+          echo "=== libopenlist.so 构建产物 ==="
+          ls -lh /tmp/libopenlist-arm64.so
+          file /tmp/libopenlist-arm64.so
+          # 验证 ELF 头:必须是 ARM aarch64
+          if ! file /tmp/libopenlist-arm64.so | grep -q "ARM aarch64"; then
+            echo "::error::libopenlist.so 不是 ARM aarch64 架构"
+            exit 1
+          fi
+          echo "✅ libopenlist-arm64.so 构建成功"
+      - name: Copy libopenlist.so to plugin-openlist jniLibs
+        if: inputs.skip_plugin != true
+        run: |
+          set -e
+          JNI_DIR="app/encv-mobile/plugin-openlist/src/main/jniLibs/arm64-v8a"
+          mkdir -p "$JNI_DIR"
+          cp /tmp/libopenlist-arm64.so "$JNI_DIR/libopenlist.so"
+          echo "=== jniLibs 拷贝结果 ==="
+          ls -lh "$JNI_DIR/"
+          file "$JNI_DIR/libopenlist.so"
 
       - name: Build OpenList plugin APK (aar2apk)
         if: inputs.skip_plugin != true
