@@ -11,6 +11,8 @@
 //   compileOnly:  host 已提供，插件不打包（combolite-core / core-ktx / koin-core 类型）
 //   implementation: host 未提供，插件必须打包（localbroadcastmanager / openlist-classes.jar / compose-ui）
 import org.gradle.api.GradleException
+import java.util.zip.ZipOutputStream
+import java.util.zip.ZipEntry
 
 plugins {
     id("com.android.library")
@@ -229,9 +231,9 @@ val injectOpenlistClassesToAar by tasks.registering {
             // 在 Kotlin DSL 下的参数类型兼容问题 (mapOf() to Pair 不一定能转 NamedArgs)
             val mergedClassesJar = file("$buildDir/tmp/classes-merged-${variant}.jar")
             mergedClassesJar.delete()
-            java.util.zip.ZipOutputStream(mergedClassesJar.outputStream().buffered()).use { zos ->
+            ZipOutputStream(mergedClassesJar.outputStream().buffered()).use { zos ->
                 tmpClassesDir.walkTopDown().filter { it.isFile }.forEach { f ->
-                    val entry = java.util.zip.ZipEntry(f.relativeTo(tmpClassesDir).path.replace(File.separatorChar, '/'))
+                    val entry = ZipEntry(f.relativeTo(tmpClassesDir).path.replace(File.separatorChar, '/'))
                     zos.putNextEntry(entry)
                     f.inputStream().use { it.copyTo(zos) }
                     zos.closeEntry()
@@ -246,9 +248,9 @@ val injectOpenlistClassesToAar by tasks.registering {
             // 5. 重打 aar (同样用 ZipOutputStream)
             val newAar = file("$buildDir/tmp/aar-new-${variant}.aar")
             newAar.delete()
-            java.util.zip.ZipOutputStream(newAar.outputStream().buffered()).use { zos ->
+            ZipOutputStream(newAar.outputStream().buffered()).use { zos ->
                 tmpAarDir.walkTopDown().filter { it.isFile }.forEach { f ->
-                    val entry = java.util.zip.ZipEntry(f.relativeTo(tmpAarDir).path.replace(File.separatorChar, '/'))
+                    val entry = ZipEntry(f.relativeTo(tmpAarDir).path.replace(File.separatorChar, '/'))
                     zos.putNextEntry(entry)
                     f.inputStream().use { it.copyTo(zos) }
                     zos.closeEntry()
