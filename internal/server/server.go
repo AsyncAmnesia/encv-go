@@ -214,19 +214,28 @@ func (s *Server) Start(version string) (string, error) {
 	//   /api/preview/openlist-ui — 302 重定向到 /openlist-ui/（后端驱动跳转入口）
 	//   /openlist-ui/*           — dev_preview_proxy 反代到 :3000 openlist vite
 	//                              （生产模式下不存在，由 gomobile 自行服务）
-	openlistUI := NewOpenlistUIHandler(s.cfg)
-	r.GET("/api/preview/openlist-ui", openlistUI.handlePreviewRedirect)
-
-	// Dev preview 编排：仅当 ENCV_DEV_PREVIEW=1 时启用
-	// 显式 /api/public/* 与 /openlist-ui/* 路由（先于 NoRoute 注册），
-	// NoRoute 的反代放到末尾避免被原 handleRequest 覆盖。
+	//
+	// **注册顺序铁律**：dev_preview_proxy 必须在 /api/preview/openlist-ui 之前注册，
+	// 否则 dev_preview_proxy 的 `/api/*subpath` catch-all 会被 gin radix tree 拒绝：
+	//   `catch-all wildcard '*subpath' in new path '/api/*subpath' conflicts
+	//    with existing path segment 'preview' in existing prefix 'api/preview'`
+	// 解法：dev_preview_proxy 的 catch-all 内部 special-case `/api/preview/openlist-ui`，
+	//       生产模式下仍走 openlistUI.handlePreviewRedirect（保留 cfg 探测能力）。
 	if os.Getenv("ENCV_DEV_PREVIEW") == "1" {
+		// Dev preview 编排：仅当 ENCV_DEV_PREVIEW=1 时启用
+		// 显式 /api/* 与 /openlist-ui/* 路由（先于 NoRoute 注册），
+		// NoRoute 的反代放到末尾避免被原 handleRequest 覆盖。
+		// **必须先于 /api/preview/openlist-ui 注册**，否则上面那条 radix tree 冲突。
 		dp, dpErr := NewDevPreviewProxy()
 		if dpErr != nil {
 			slog.Error("[dev-preview-proxy] init failed, fallback to no proxy", "error", dpErr)
 		} else {
 			dp.RegisterExplicit(r)
 		}
+	} else {
+		// 生产模式：保留独立 /api/preview/openlist-ui 路由（gomobile 入口）
+		openlistUI := NewOpenlistUIHandler(s.cfg)
+		r.GET("/api/preview/openlist-ui", openlistUI.handlePreviewRedirect)
 	}
 	r.GET("/api/config", s.handleGetConfigGin)
 	r.PUT("/api/config", s.handlePutConfigGin)
