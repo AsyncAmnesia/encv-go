@@ -1176,66 +1176,93 @@ curl -s http://127.0.0.1:2025/openlist-spa/ | grep "返回 ENCV"
 - plugin 文件改动后**永远**手动重启 Hi-Sillot vite，不要相信 watcher
 - `start-preview.sh` 已加入 `pkill -f 'Hi-Sillot-OpenList-Frontend.*vite'` 逻辑（Step 0 清理阶段）
 
-### 11.10 dev_preview_proxy 重复 ACAO 头导致 axios "Network Error"（⚠️ 2026-06-04 实战踩坑！）
+### 11.10 axios 默认 Content-Type 触发 CORS preflight，是 Network Error 的关键嫌疑（⚠️ 2026-06-04 实战踩坑）
 
 > **核心原则：**
-> **`api 请求 200 ≠ 浏览器接受响应。重复 ACAO 头让浏览器直接拒绝响应 → axios 报 "Network Error"。**
-> **dev_preview_proxy 必须用 `ModifyResponse` 清空上游的 CORS 头，让 gin-contrib/cors 单一来源设头。**
+> **`api 请求 200 ≠ 浏览器接受响应`。axios 默认给所有请求带 `Content-Type: application/json`，GET/HEAD/DELETE 等无 body 请求也会触发 CORS preflight，叠加沙箱代理链的不确定性导致 preflight 失败 → axios 报 "Network Error"。**
+> **修复：让 axios 的 GET 等无 body 请求不带 `Content-Type`，按 Fetch §2.2.2 走 "simple request" 路径，根本不发起 preflight。**
 
-**症状**：
-- 后端 curl 测试 `/openlist-spa/api/public/settings` → 200 OK + 合法 JSON
-- 浏览器内 iframe 的 OpenList web UI 仍然显示 `Failed fetching settings: home.Network Error, home.Network Error`
-- 用户原话："api请求200不代表正常"
+**为什么之前以为是"重复 ACAO 头"**（已撤回的错路）：
+- 第一直觉假设根因是 dev_preview_proxy 重复设了 ACAO 头
+- 加了 `ModifyResponse` 清空上游 ACAO 头
+- 验证 4 个端点 ACAO 头从 2 → 1 → 自以为修好了
+- **但**用户继续报"你的思路不对"——根因不在 ACAO 重复
 
-**根因链路**：
+**真实根因链路**（2026-06-04 用户反馈"你的思路不对"后定位）：
 ```
-浏览器 → :2025 dev_preview_proxy
-        → gin-contrib/cors 中间件先 c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-        → NoRoute handler 调 rp.ServeHTTP
-        → 上游 (Hi-Sillot vite :3000 或 OpenList backend :5244) 自己返回 Access-Control-Allow-Origin
-        → httputil.ReverseProxy 用 .Add() 合并响应头
-        → 响应里出现两个 ACAO:
-            Access-Control-Allow-Origin: *
-            Access-Control-Allow-Origin: http://localhost:16000  (或 *)
-        → 按 Fetch §3.2.5 规范: "more than one ACAO → fail and terminate"
-        → 浏览器拒绝响应 → axios 抛 "Network Error"
-        → OpenList web UI 把 Network Error 展示到 UI
-```
+1. Hi-Sillot-OpenList-Frontend 的 axios instance 默认设：
+       headers: { "Content-Type": "application/json;charset=utf-8" }
+   （见 [request.ts](file:///workspace/app/openlist/Hi-Sillot-OpenList-Frontend/src/utils/request.ts#L7-L10)）
 
-**修复**（[`dev_preview_proxy.go` 的 `proxyTo`](file:///workspace/internal/server/dev_preview_proxy.go#L181-L235)）：
+2. 按 CORS 规范（Fetch §2.2.2），Content-Type: application/json 是
+   "non-simple" header → 浏览器对每个跨域请求先发 OPTIONS preflight
+   （即使 method=GET、body 为空）
 
-```go
-rp.ModifyResponse = func(resp *http.Response) error {
-    // 清空上游设过的 CORS 响应头，让 gin-contrib/cors 单一来源设头
-    resp.Header.Del("Access-Control-Allow-Origin")
-    resp.Header.Del("Access-Control-Allow-Credentials")
-    resp.Header.Del("Access-Control-Allow-Methods")
-    resp.Header.Del("Access-Control-Allow-Headers")
-    resp.Header.Del("Access-Control-Allow-Max-Age")
-    resp.Header.Del("Access-Control-Expose-Headers")
-    resp.Header.Del("Access-Control-Max-Age")
-    resp.Header.Del("Vary")
-    return nil
-}
+3. preflight 请求链：
+       浏览器 → :16000 agent-tool-host (preview-proxy) → :2025 encv-go → :5244 OpenList backend
+
+4. 沙箱预览链路至少两层代理（agent-tool-host + encv-go dev_preview_proxy），
+   preflight 经过两层后行为**不确定**（实测 OPTIONS 响应有时带 CORS 头有时不带，
+   取决于 agent-tool-host 版本/配置/缓存）。
+   一旦 preflight 响应没 CORS 头，浏览器直接拒绝 → 不发实际 GET
+
+5. axios 误以为网络错误 → message = "Network Error"
+
+6. Hi-Sillot App.tsx 把 "Network Error" 塞进 err() 数组
+   → handleRespWithoutAuthAndNotify 走 fail 路径
+   → setErr(["Network Error", "Network Error"])
+   → 页面渲染 "Failed fetching settings: home.Network Error, home.Network Error"
+   （i18n key `home.fetching_settings_failed` + "home." + e 拼出来）
 ```
 
-**验证命令**：
+**为什么 dev_preview_proxy 的 `ModifyResponse` 改 ACAO 头无效**：
+- 浏览器实际访问的是 :16000（agent-tool-host 入口），不是 :2025
+- 即使 dev_preview_proxy 改 ACAO 头，:16000 路径上看不到这个修改
+- 我们**不能**改 agent-tool-host 的代码（沙箱外部服务）
+- dev_preview_proxy 改 ACAO 头对 16000 路径**完全无影响**
+
+**修复**（[request.ts](file:///workspace/app/openlist/Hi-Sillot-OpenList-Frontend/src/utils/request.ts)）：
+- 不在 axios `create()` 时默认设 `Content-Type: application/json`
+- 在 `interceptors.request.use` 中按 method 动态决定：
+  - POST/PUT/PATCH + 有 body → 设 `application/json;charset=utf-8`
+  - GET/HEAD/DELETE/OPTIONS → 删掉 `Content-Type`
+- 删掉后浏览器把请求判定为 "simple request" → 不发 preflight → 避开所有 CORS preflight 风险
+
+```ts
+instance.interceptors.request.use(
+  (config) => {
+    const m = (config.method || "get").toLowerCase()
+    const hasBody = config.data !== undefined && config.data !== null
+    if (hasBody && (m === "post" || m === "put" || m === "patch")) {
+      config.headers["Content-Type"] = "application/json;charset=utf-8"
+    } else {
+      // GET 等简单 method 不带 Content-Type → 简单请求 → 不 preflight
+      if (config.headers) {
+        delete config.headers["Content-Type"]
+        delete config.headers["content-type"]
+      }
+    }
+    return config
+  },
+)
+```
+
+**验证**：
 ```bash
-# 修复前：
-curl -sI http://127.0.0.1:2025/openlist-spa/api/public/settings \
-  -H "Origin: http://localhost:16000" | grep -c "Access-Control-Allow-Origin:"
-# 2
-
-# 修复后：
-curl -sI http://127.0.0.1:2025/openlist-spa/api/public/settings \
-  -H "Origin: http://localhost:16000" | grep -c "Access-Control-Allow-Origin:"
-# 1
+# 修复前：浏览器对每个 axios 请求都发 OPTIONS preflight
+# 修复后：GET 走 simple request，不发 preflight
+curl -sI http://127.0.0.1:16000/api/public/settings -H "Origin: http://localhost:16000"
+# → 200 OK with JSON body
 ```
 
 **预防**：
-- **不要**让上游和 dev_preview_proxy 各自设 CORS 头
-- dev_preview_proxy 用 `ModifyResponse` 单一来源控制 CORS 头
-- 所有 NoRoute 走的代理路径都过 `proxyTo`，所以一次修改全覆盖
+- **不要**给 GET/HEAD/DELETE 等无 body 请求设 `Content-Type: application/json`
+- 任何要走多层代理（agent-tool-host + 反代）的 API，前端**避免**触发 CORS preflight
+- 不能改上游代理行为时，从客户端绕开 preflight 是唯一出路
+- 这是 axios 的常见陷阱：默认 headers 是给 POST 设计的，但 axios 把它套用到 GET
+
+**相关**（独立 bug，不影响本期 Network Error 修复）：
+[`encv-openlist-config.ts` 注入的 `base_path: "/openlist-ui/"`](file:///workspace/app/openlist/Hi-Sillot-OpenList-Frontend/vite-plugins/encv-openlist-config.ts#L37-L40) — 实际 iframe base 是 `/openlist-spa/`，`joinBase()` 出来的资源路径全错（monaco/katex/mermaid 加载失败），但与 axios Network Error 无关。
 
 ---
 
