@@ -129,7 +129,10 @@ fi
 # ---------- Step 3: air 启动后端（前台子进程） ----------
 step "3/6 启动后端（air 监视重载，ENCV_DEV_PREVIEW=1）"
 cd "${REPO_ROOT}"
-AIR_PID=$(spawn_bg /tmp/encv-air.log env ENCV_DEV_PREVIEW=1 air)
+# 把当前实际占用的 vite 端口告诉 dev_preview_proxy（$VITE_PORT 在上方已探测过）。
+export ENCV_DEV_MOBILE_VITE_URL="http://127.0.0.1:${VITE_PORT}"
+export ENCV_DEV_OPENLIST_VITE_URL="http://127.0.0.1:3000"
+AIR_PID=$(spawn_bg /tmp/encv-air.log env ENCV_DEV_PREVIEW=1 ENCV_DEV_MOBILE_VITE_URL="${ENCV_DEV_MOBILE_VITE_URL}" ENCV_DEV_OPENLIST_VITE_URL="${ENCV_DEV_OPENLIST_VITE_URL}" air)
 SUBPIDS+=("${AIR_PID}")
 echo "    air pid=${AIR_PID}"
 
@@ -189,7 +192,7 @@ done
 step "5/7 启动 OpenList 前端 vite dev server（port 3000，沙箱预览用）"
 OPENLIST_DIR="${REPO_ROOT}/app/openlist/Hi-Sillot-OpenList-Frontend"
 if [[ -d "${OPENLIST_DIR}" ]] && [[ -f "${OPENLIST_DIR}/vite.config.ts" ]]; then
-  OPENLIST_PID=$(spawn_bg /tmp/encv-openlist.log env OPENLIST_PREVIEW_BASE="/openlist-ui/" pnpm --dir "${OPENLIST_DIR}" dev --host 127.0.0.1 --port 3000 --strictPort)
+  OPENLIST_PID=$(spawn_bg /tmp/encv-openlist.log env OPENLIST_PREVIEW_BASE="/openlist-ui/" OPENLIST_NO_HMR=1 pnpm --dir "${OPENLIST_DIR}" dev --host 127.0.0.1 --port 3000 --strictPort)
   SUBPIDS+=("${OPENLIST_PID}")
   echo "    openlist vite pid=${OPENLIST_PID}"
   # 等待 OpenList vite 就绪
@@ -218,14 +221,20 @@ cat <<EOF
 
   用户访问地址（必须先 OpenPreview 激活）：
      http://localhost:${VITE_PORT}/
+     http://localhost:${BACKEND_PORT}/    ← 现在也是合法的入口（dev_preview_proxy 兜底到 :${VITE_PORT}）
 
-  沙箱预览 OpenList UI（dev 模式，真 HMR）：
+  沙箱预览 OpenList UI（dev 模式）：
      设置 → 开发者工具 → 沙箱预览 → 预览 OpenList 前端
-     或直接:  http://localhost:${VITE_PORT}/api/preview/openlist-ui
-     (后端 302 → /openlist-ui/ → encv-mobile vite → :3000)
+     或直接:  http://localhost:${BACKEND_PORT}/api/preview/openlist-ui
+     (后端 302 → /openlist-ui/ → dev_preview_proxy → :3000 openlist vite 独立)
 
-  ⚠️ 重要：必须使用 OpenPreview 工具激活预览才能外部访问
-     OpenPreview(command_id="<本脚本 command_id>", preview_url="http://localhost:${VITE_PORT}/")
+  ⚠️ 重要：必须使用 OpenPreview 工具激活预览才能外部访问（注册 2025 端口，不再注册 5173）
+     OpenPreview(command_id="<本脚本 command_id>", preview_url="http://localhost:${BACKEND_PORT}/")
+
+  HMR 说明（沙箱预览下被刻意关掉）：
+     16000 agent-tool-host 不支持 WebSocket 升级，@vite/client 连不上 WS 会刷错误。
+     start-preview.sh 启的两个 vite 都设了 HMR=off 走 16000 沙箱。
+     本地直连 5173 / 3000 时：杀掉 start-preview.sh 启的 vite，独立起就有 HMR。
 
   配置文件:    ${REPO_ROOT}/config.user.json （未修改）
   servingDir:  ${MOCK_DIR}  （设计预期路径，脚本自建）
@@ -256,7 +265,7 @@ if [[ "${DETACH}" == "1" ]]; then
   停止:   pkill -x air ; pkill -f 'node.*vite' ; pkill -f 'Hi-Sillot-OpenList-Frontend'
 
   ⚠️  OpenPreview 必须在脚本退出前激活（端口已就绪）
-     OpenPreview(preview_url="http://localhost:${VITE_PORT}/")
+     OpenPreview(preview_url="http://localhost:${BACKEND_PORT}/")
 ========================================
 EOF
   # 显式 exit 0，跳过原 wait -n 阻塞段
