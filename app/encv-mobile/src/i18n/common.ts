@@ -91,6 +91,7 @@ export default {
     'remote.localOpenListHeartbeatStale': '{seconds} 秒前',
     'remote.localOpenListGoSettings': '前往设置',
     'remote.localOpenListOpenWebUi': '打开 OpenList Web UI',
+    'remote.localOpenListPreviewWebUi': '预览 OpenList 前端',
     'remote.localOpenListLoadFailed': '读取本地 OpenList 状态失败',
     'remote.siteDisabled': '已禁用',
 
@@ -314,6 +315,7 @@ export default {
     'remote.localOpenListHeartbeatStale': '{seconds}s ago',
     'remote.localOpenListGoSettings': 'Open Settings',
     'remote.localOpenListOpenWebUi': 'Open OpenList Web UI',
+    'remote.localOpenListPreviewWebUi': 'Preview OpenList UI',
     'remote.localOpenListLoadFailed': 'Failed to read local OpenList status',
     'remote.siteDisabled': 'Disabled',
 
