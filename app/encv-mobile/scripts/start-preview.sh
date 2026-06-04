@@ -11,6 +11,15 @@
 set -euo pipefail
 shopt -s lastpipe
 
+# ---- 模式开关 ----
+#   ENCV_DETACH=0 (默认): 脚本前台 wait 阻塞，Ctrl+C 触发 cleanup
+#                        适合本地开发终端
+#   ENCV_DETACH=1:        air/vite 用 setsid+nohup 完全脱离脚本进程组
+#                        脚本验证端口就绪后立即 exit 0
+#                        适合沙箱/CI：tool call 不会被永久阻塞
+#                        停止命令: pkill -x air ; pkill -f 'node.*vite'
+DETACH="${ENCV_DETACH:-0}"
+
 # ---- 信号陷阱：脚本退出时杀掉所有子进程 ----
 SUBPIDS=()
 cleanup() {
@@ -28,7 +37,26 @@ cleanup() {
   pkill -f 'node.*vite' 2>/dev/null || true
   exit 0
 }
-trap cleanup INT TERM
+# 分离模式：禁止 trap 让子进程在脚本退出后继续存活
+if [[ "${DETACH}" == "1" ]]; then
+  trap - INT TERM
+else
+  trap cleanup INT TERM
+fi
+
+# ---- 后台启动封装 ----
+# detach=1: setsid+nohup 让子进程脱离 ctrl-c / 父进程组
+# detach=0: 简单 & 子进程，与脚本同进程组
+spawn_bg() {
+  local logfile="$1"
+  shift
+  if [[ "${DETACH}" == "1" ]]; then
+    setsid nohup "$@" </dev/null >>"${logfile}" 2>&1 &
+  else
+    "$@" &
+  fi
+  echo $!
+}
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MOBILE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -91,8 +119,7 @@ fi
 # ---------- Step 3: air 启动后端（前台子进程） ----------
 step "3/6 启动后端（air 监视重载，ENCV_DEV_PREVIEW=1）"
 cd "${REPO_ROOT}"
-ENCV_DEV_PREVIEW=1 air &
-AIR_PID=$!
+AIR_PID=$(spawn_bg /tmp/encv-air.log env ENCV_DEV_PREVIEW=1 air)
 SUBPIDS+=("${AIR_PID}")
 echo "    air pid=${AIR_PID}"
 
@@ -108,8 +135,7 @@ done
 # ---------- Step 4: Vite 前端（前台子进程） ----------
 step "4/6 启动 Vite 前端（port ${VITE_PORT}）"
 cd "${MOBILE_DIR}"
-./node_modules/.bin/vite --host 0.0.0.0 --port "${VITE_PORT}" --strictPort &
-VITE_PID=$!
+VITE_PID=$(spawn_bg /tmp/encv-vite.log ./node_modules/.bin/vite --host 0.0.0.0 --port "${VITE_PORT}" --strictPort)
 SUBPIDS+=("${VITE_PID}")
 echo "    vite pid=${VITE_PID}"
 
@@ -151,6 +177,29 @@ cat <<EOF
 EOF
 
 # ---------- Step 6: 保持前台运行（等待子进程或信号） ----------
+if [[ "${DETACH}" == "1" ]]; then
+  step "6/6 ✅ detached 模式，脚本退出（子进程继续运行）"
+  cat <<EOF
+
+========================================
+✅ ENCV 预览已启动（detach 模式）
+
+  端口分配：
+     :${VITE_PORT}  = Vite dev server（前端，用户直接访问）
+     :${BACKEND_PORT} = Go Backend（air 监视重载）
+
+  PIDs:   air=${AIR_PID}  vite=${VITE_PID}
+  日志:   /tmp/encv-air.log  /tmp/encv-vite.log
+  停止:   pkill -x air ; pkill -f 'node.*vite'
+
+  ⚠️  OpenPreview 必须在脚本退出前激活（端口已就绪）
+     OpenPreview(preview_url="http://localhost:${VITE_PORT}/")
+========================================
+EOF
+  # 显式 exit 0，跳过原 wait -n 阻塞段
+  exit 0
+fi
+
 step "6/6 保持前台运行（按 Ctrl+C 停止）"
 echo "    air pid=${AIR_PID}  vite pid=${VITE_PID}"
 echo "    等待子进程..."
