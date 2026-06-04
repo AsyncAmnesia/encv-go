@@ -1133,6 +1133,49 @@ curl -s http://127.0.0.1:2025/openlist-spa/api/public/settings
 # 期望: {"code":200,"message":"success","data":{...}}
 ```
 
+### 11.9 Hi-Sillot vite 配置变更不自动重启（⚠️ 实战踩坑！）
+
+> **核心原则：**
+> **`nohup ... &` 启动的 vite 不会因 vite.config.ts 变更自动重启。**
+> **改完 plugin 文件后必须手动 `pkill -f 'Hi-Sillot-OpenList-Frontend.*vite'` + 重启。**
+
+**症状**：
+- 修改了 `vite-plugins/encv-openlist-config.ts`（例如移除"返回 ENCV"按钮）
+- `touch vite.config.ts` / 直接编辑 plugin 文件 → vite 不重启
+- 浏览器看到的还是旧 HTML（按钮还在）
+
+**根因**：
+- vite config watcher 通过 fsnotify 监听 `vite.config.ts` 的 modify 事件
+- 但启动方式如果是 `nohup ... &`（脱离 TTY）或者 `pnpm dev` 经过 wrapper 层，fsnotify 事件可能丢失
+- 表现：vite 进程还在，但 plugin 改动不生效
+
+**修复**：
+```bash
+# 1) 改 vite-plugins/encv-*.ts 后手动 kill + 重启
+pkill -f 'Hi-Sillot-OpenList-Frontend.*vite'
+cd /workspace/app/openlist/Hi-Sillot-OpenList-Frontend
+nohup env OPENLIST_PREVIEW_BASE="/openlist-spa/" OPENLIST_NO_HMR=1 \
+  pnpm dev --host 127.0.0.1 --port 3000 --strictPort \
+  > /tmp/openlist-frontend-vite.log 2>&1 &
+```
+
+**验证命令**：
+```bash
+# 1. 改 plugin 文件后必须看到 vite log 有新的 "ready in NNN ms"
+tail -5 /tmp/openlist-frontend-vite.log
+# 期望: "VITE v6.4.3 ready in NNN ms" 出现至少 2 次
+
+# 2. curl 看 HTML 是否反映新 plugin
+curl -s http://127.0.0.1:2025/openlist-spa/ | grep "返回 ENCV"
+# 期望: 0 行（已移除）
+
+# 3. 如果还是旧的 → 说明 vite 没重启，再 pkill 一次
+```
+
+**预防**：
+- plugin 文件改动后**永远**手动重启 Hi-Sillot vite，不要相信 watcher
+- `start-preview.sh` 已加入 `pkill -f 'Hi-Sillot-OpenList-Frontend.*vite'` 逻辑（Step 0 清理阶段）
+
 ---
 
 ## 十二、dev preview 不用 vite build production dist（原则：开发预览 = 真实代码路径）
