@@ -561,25 +561,46 @@ jobs:
         with:
           go-version-file: app/openlist/Hi-Sillot-OpenList/go.mod
           cache-dependency-path: app/openlist/Hi-Sillot-OpenList/go.sum
-      - name: Build OpenList native libs (Go cross-compile, arm64-v8a)
+      - name: Build OpenList native libs (Go cross-compile, arm64-v8a, CGO+NDK)
         if: inputs.skip_plugin != true
+        env:
+          CGO_ENABLED: "1"
+          GOOS: android
+          GOARCH: arm64
+          # NDK clang toolchain (同 §encv-go-arm64 build 步骤,见 L190-195)
+          # Phase 27 关键:ffmpeg package 的 ffmpeg_dlopen.go 是 cgo-only
+          # (//go:build android + import "C" + dlopen),纯 Go 编译会缺符号。
+          # 详见 .trae/rules/android.md §5.5 兜底方案
+          CC: /usr/local/lib/android/sdk/ndk/${{ env.NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
         run: |
           set -e
           echo "═══ Phase 27: Hi-Sillot/OpenList fork 交叉编译为 libopenlist.so (arm64-v8a) ═══"
+          echo ""
+          echo "=== Go toolchain info ==="
+          go version
+          echo "CC=$CC"
+          echo "CGO_ENABLED=$CGO_ENABLED GOOS=$GOOS GOARCH=$GOARCH"
+          echo ""
           cd app/openlist/Hi-Sillot-OpenList
           go mod download
-          CGO_ENABLED=0 GOOS=android GOARCH=arm64 \
-            go build -buildmode=c-shared -o /tmp/libopenlist-arm64.so ./cmd
+          # buildmode=default (exe),产物为可执行 ELF,文件名取 libopenlist.so
+          # 是为了过 AGP jniLibs 打包(只打 *.so),运行时由 Kotlin setExecutable(true) 启用执行位
+          CGO_ENABLED=1 GOOS=android GOARCH=arm64 \
+            go build -o /tmp/libopenlist-arm64.so ./
           echo ""
           echo "=== libopenlist.so 构建产物 ==="
           ls -lh /tmp/libopenlist-arm64.so
           file /tmp/libopenlist-arm64.so
-          # 验证 ELF 头:必须是 ARM aarch64
+          # 验证 ELF 头:必须是 ARM aarch64 + ELF executable (not .so)
           if ! file /tmp/libopenlist-arm64.so | grep -q "ARM aarch64"; then
             echo "::error::libopenlist.so 不是 ARM aarch64 架构"
             exit 1
           fi
-          echo "✅ libopenlist-arm64.so 构建成功"
+          if ! file /tmp/libopenlist-arm64.so | grep -q "executable"; then
+            echo "::error::libopenlist.so 不是 executable ELF (是 shared object 或其它)"
+            exit 1
+          fi
+          echo "✅ libopenlist-arm64.so 构建成功 (ARM aarch64 executable)"
       - name: Copy libopenlist.so to plugin-openlist jniLibs
         if: inputs.skip_plugin != true
         run: |
