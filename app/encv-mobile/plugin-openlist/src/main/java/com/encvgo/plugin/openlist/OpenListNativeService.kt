@@ -151,73 +151,84 @@ object OpenListNativeService {
             }
         }
         Thread {
-            try {
-                val binary = locateNativeBinary(ctx)
-                if (binary == null) {
-                    synchronized(lock) {
-                        lastError = "libopenlist.so not found in nativeLibraryDir/filesDir"
-                        lastUpdateTs = System.currentTimeMillis()
-                    }
-                    broadcastStatus(0, false)
-                    return@start
-                }
-                val cfgPort = synchronized(lock) { if (port > 0) port else OpenListConfig.DEFAULT_PORT }
-                val cfgDataDir = synchronized(lock) { if (dataDir.isNotEmpty()) dataDir else OpenListConfig.defaultDataDir(ctx) }
-                val cfg = OpenListConfig.load(ctx)
-                // 确保 data dir 存在(OpenList server 不会自动 mkdir)
-                File(cfgDataDir).mkdirs()
-                Log.e(TAG, "[OpenList-Native] starting OpenList server | binary=${binary.absolutePath} port=$cfgPort dataDir=$cfgDataDir")
-                // 组装 args: libopenlist.so server --port <port> --data <dataDir> --admin <pwd> (pwd 留空)
-                val args = mutableListOf(
-                    binary.absolutePath,
-                    "server",
-                    "--port", cfgPort.toString(),
-                    "--data", cfgDataDir,
-                )
-                // 显式传 env:确保 Go runtime 不踩 host env(PATH/LD_LIBRARY_PATH)
-                val env = mutableMapOf<String, String>()
-                env["HOME"] = ctx.filesDir.absolutePath
-                env["TMPDIR"] = ctx.cacheDir.absolutePath
-                env["ANDROID_DATA"] = ctx.dataDir.absolutePath
-                val proc = ProcessBuilder(args)
-                    .directory(ctx.filesDir)
-                    .redirectErrorStream(false)
-                    .start()
+            runStartInBackground(ctx)
+        }.start()
+    }
+
+    /**
+     * 实际启动 OpenList server 的逻辑（抽到独立函数以便用裸 `return` 早退）。
+     *
+     * 之前在 Thread lambda 内写 `return@start`，但 `Thread { ... }` 不是 inline lambda，
+     * Kotlin 编译器报 `'return' is prohibited here`（L162:21）。
+     * 抽到 private fun 后，`return` 是普通 fun body return,完全合法。
+     */
+    private fun runStartInBackground(ctx: Context) {
+        try {
+            val binary = locateNativeBinary(ctx)
+            if (binary == null) {
                 synchronized(lock) {
-                    process = proc
-                    pid = try { android.os.Process.getUidForName("") /* sentinel, real pid below */ } catch (_: Throwable) { 0 }
-                    // Process.toString() 形如 "Process[pid=12345, ...]" — 解析它拿真实 pid
-                    val pidMatch = Regex("""pid=(\d+)""").find(proc.toString())
-                    if (pidMatch != null) {
-                        pid = pidMatch.groupValues[1].toIntOrNull() ?: 0
-                    }
-                    initialized = true
-                    lastUpdateTs = System.currentTimeMillis()
-                }
-                // 后台读 stdout/stderr → logcat(仿 EncvGoService.alsoLog)
-                startLogcatBridge(proc.inputStream, "stdout")
-                startLogcatBridge(proc.errorStream, "stderr")
-                val exitCode = proc.waitFor()
-                Log.e(TAG, "[OpenList-Native] OpenList server exited | code=$exitCode | binary=${binary.absolutePath}")
-                synchronized(lock) {
-                    running = false
-                    if (exitCode != 0) {
-                        lastError = "OpenList server exited with code $exitCode"
-                    }
-                    lastUpdateTs = System.currentTimeMillis()
-                }
-                broadcastStatus(cfgPort, false)
-            } catch (e: Throwable) {
-                Log.e(TAG, "[OpenList-Native] start() FAILED", e)
-                synchronized(lock) {
-                    lastError = "start failed: ${e.message}"
+                    lastError = "libopenlist.so not found in nativeLibraryDir/filesDir"
                     lastUpdateTs = System.currentTimeMillis()
                 }
                 broadcastStatus(0, false)
-            } finally {
-                starting.set(false)
+                return
             }
-        }.start()
+            val cfgPort = synchronized(lock) { if (port > 0) port else OpenListConfig.DEFAULT_PORT }
+            val cfgDataDir = synchronized(lock) { if (dataDir.isNotEmpty()) dataDir else OpenListConfig.defaultDataDir(ctx) }
+            val cfg = OpenListConfig.load(ctx)
+            // 确保 data dir 存在(OpenList server 不会自动 mkdir)
+            File(cfgDataDir).mkdirs()
+            Log.e(TAG, "[OpenList-Native] starting OpenList server | binary=${binary.absolutePath} port=$cfgPort dataDir=$cfgDataDir")
+            // 组装 args: libopenlist.so server --port <port> --data <dataDir> --admin <pwd> (pwd 留空)
+            val args = mutableListOf(
+                binary.absolutePath,
+                "server",
+                "--port", cfgPort.toString(),
+                "--data", cfgDataDir,
+            )
+            // 显式传 env:确保 Go runtime 不踩 host env(PATH/LD_LIBRARY_PATH)
+            val env = mutableMapOf<String, String>()
+            env["HOME"] = ctx.filesDir.absolutePath
+            env["TMPDIR"] = ctx.cacheDir.absolutePath
+            env["ANDROID_DATA"] = ctx.dataDir.absolutePath
+            val proc = ProcessBuilder(args)
+                .directory(ctx.filesDir)
+                .redirectErrorStream(false)
+                .start()
+            synchronized(lock) {
+                process = proc
+                pid = try { android.os.Process.getUidForName("") /* sentinel, real pid below */ } catch (_: Throwable) { 0 }
+                // Process.toString() 形如 "Process[pid=12345, ...]" — 解析它拿真实 pid
+                val pidMatch = Regex("""pid=(\d+)""").find(proc.toString())
+                if (pidMatch != null) {
+                    pid = pidMatch.groupValues[1].toIntOrNull() ?: 0
+                }
+                initialized = true
+                lastUpdateTs = System.currentTimeMillis()
+            }
+            // 后台读 stdout/stderr → logcat(仿 EncvGoService.alsoLog)
+            startLogcatBridge(proc.inputStream, "stdout")
+            startLogcatBridge(proc.errorStream, "stderr")
+            val exitCode = proc.waitFor()
+            Log.e(TAG, "[OpenList-Native] OpenList server exited | code=$exitCode | binary=${binary.absolutePath}")
+            synchronized(lock) {
+                running = false
+                if (exitCode != 0) {
+                    lastError = "OpenList server exited with code $exitCode"
+                }
+                lastUpdateTs = System.currentTimeMillis()
+            }
+            broadcastStatus(cfgPort, false)
+        } catch (e: Throwable) {
+            Log.e(TAG, "[OpenList-Native] start() FAILED", e)
+            synchronized(lock) {
+                lastError = "start failed: ${e.message}"
+                lastUpdateTs = System.currentTimeMillis()
+            }
+            broadcastStatus(0, false)
+        } finally {
+            starting.set(false)
+        }
     }
 
     private fun startLogcatBridge(stream: InputStream, label: String) {
