@@ -106,7 +106,7 @@ import {
   powerOutline,
   playOutline,
 } from 'ionicons/icons'
-import { OpenListStatusCard, OpenListLogList, type OpenListRuntime, type OpenListLog } from '../../../../packages/components/src/index.ts'
+import { OpenListStatusCard, OpenListLogList, type OpenListRuntime, type OpenListLog } from '@/components-shared/index.ts'
 import { OpenListNative, logBuffer } from '@/plugins/openlist-native'
 import PwdEditDialog from '@/components/PwdEditDialog.vue'
 

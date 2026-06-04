@@ -159,7 +159,18 @@ func (p *DevPreviewProxy) RegisterNoRoute(r *gin.Engine) {
 
 		// /openlist-spa/* 是 Hi-Sillot-OpenList-Frontend (OpenList web UI) 的 dev server 路径
 		// plugin-openlist 的 iframe 通过 /openlist-spa/#/login 加载 OpenList web UI
+		//
+		// 关键（2026-06-04）：**必须 strip /openlist-spa 前缀**再转发到 vite 3000。
+		//   - vite 3000 base = "/"，index.html 模板里 <script src="/src/main.tsx"> 是绝对路径
+		//   - 不 strip：vite 3000 收到 /openlist-spa/src/main.tsx → 找 root 下的 src/main.tsx 找不到 → 404
+		//   - strip：vite 3000 收到 /src/main.tsx → 正常找到
+		//   - 同时 dev_preview_proxy 的 /openlist-spa/api/* 规则仍然先匹配（见前一段代码），
+		//     把 /openlist-spa/api/* 转发到 :5244 backend
 		if strings.HasPrefix(path, "/openlist-spa/") || path == "/openlist-spa" {
+			c.Request.URL.Path = strings.TrimPrefix(path, "/openlist-spa")
+			if c.Request.URL.Path == "" {
+				c.Request.URL.Path = "/"
+			}
 			p.proxyTo(c, p.openlistFrontendViteURL)
 			return
 		}

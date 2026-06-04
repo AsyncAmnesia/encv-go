@@ -4,7 +4,7 @@
  * 在主 app Capacitor runtime 中调用 plugin-openlist 暴露的 OpenListNative。
  * 当主 app 页面中需要直接调 OpenList 后端时使用。
  */
-import type { OpenListRuntime } from '../packages/components/src/index.ts'
+import type { OpenListRuntime } from '@/components-shared/index.ts'
 
 declare global {
   interface Window {
