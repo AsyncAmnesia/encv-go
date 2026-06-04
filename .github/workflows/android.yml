@@ -47,7 +47,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          # 统一 Go 1.25.1（encv-go 根 go.mod + Hi-Sillot/OpenList fork 均声明 1.25.1）
+          # host 编译（encv-go for 端口 2025）与 fork 编译（libopenlist.so for 5244）
+          # 共用同一个 Go toolchain。
+          go-version-file: ./go.mod
           cache-dependency-path: go.sum
 
       - name: Set up JDK 21
@@ -566,12 +569,6 @@ jobs:
           ref: dev
           path: app/openlist/Hi-Sillot-OpenList
           fetch-depth: 1
-      - name: Setup Go 1.25.1
-        if: inputs.skip_plugin != true
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: app/openlist/Hi-Sillot-OpenList/go.mod
-          cache-dependency-path: app/openlist/Hi-Sillot-OpenList/go.sum
       - name: Build OpenList native libs (Go cross-compile, arm64-v8a, CGO+NDK)
         if: inputs.skip_plugin != true
         env:
