@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'node:path'
+import { openlistApiMock } from './vite-plugins/openlist-api-mock'
 
 // 注意：OpenList UI 的静态服务由谁承担，取决于运行模式：
 //   - dev 沙箱预览：Hi-Sillot-OpenList-Frontend 的 vite dev server (:3000)，
@@ -11,7 +12,7 @@ import path from 'node:path'
 // 见：internal/server/openlist_ui_handler.go handlePreviewRedirect。
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue(), openlistApiMock()],
   server: {
     port: 8100,
     // Listen on all interfaces so OpenPreview / external previews can reach
