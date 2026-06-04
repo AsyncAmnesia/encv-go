@@ -17,17 +17,18 @@
           <ion-icon :icon="extensionPuzzleOutline" slot="start"></ion-icon>
           前往扩展管理
         </ion-button>
-        <!-- dev 预览专属入口：通过 Vite openlistUiProxy() 跳到 /openlist-ui/，无需安装插件 -->
-        <ion-button
+        <!-- 沙箱预览入口：dev 专属，仅在 import.meta.env.DEV 时编译可见
+             链接到 vite.config.ts 的 openlistUiProxy() 中间件（/openlist-ui/），
+             同 tab 跳转保持 SPA + OpenPreview 会话连续性；_blank 会破坏沙箱预览会话 -->
+        <a
           v-if="isDev"
-          size="small"
-          fill="outline"
-          color="primary"
-          @click="openPreviewWebUi"
+          class="preview-link"
+          href="/openlist-ui/"
+          rel="noopener"
         >
-          <ion-icon :icon="eyeOutline" slot="start"></ion-icon>
-          {{ t('remote.localOpenListPreviewWebUi') }}
-        </ion-button>
+          <ion-icon :icon="eyeOutline" />
+          <span>{{ t('remote.localOpenListPreviewWebUi') }}</span>
+        </a>
       </div>
     </div>
 
@@ -211,13 +212,6 @@ function openWebUi() {
 }
 
 const isDev = import.meta.env.DEV
-
-function openPreviewWebUi() {
-  // 预览环境入口：跳到当前 Vite origin 下的 /openlist-ui/ 子路径
-  // openlistUiProxy() 把 /openlist-ui/api/* 反代到 5244，把 /openlist-ui/* 映射到 Hi-Sillot-OpenList/public/dist/
-  // 详见 vite.config.ts
-  window.open(`${window.location.origin}/openlist-ui/`, '_blank')
-}
 
 // ------ computed ------
 const cardClass = computed(() => {
@@ -442,7 +436,29 @@ body.dark .status-line-error {
 .button-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
+}
+
+.preview-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--ion-color-primary);
+  text-decoration: none;
+  border: 1px solid var(--ion-color-primary);
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
+}
+
+.preview-link ion-icon {
+  font-size: 14px;
+}
+
+.preview-link:hover {
+  background-color: rgba(var(--ion-color-primary-rgb), 0.08);
 }
 
 .card-error {
