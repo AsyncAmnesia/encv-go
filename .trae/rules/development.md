@@ -363,12 +363,13 @@ bash app/encv-mobile/scripts/start-preview.sh
 ```
 
 **脚本行为**：
-1. 杀掉残留的 air / encv / vite 进程（精确按进程名匹配，绝不杀 agent-tool-host）
-2. 确保 `node_modules` 就绪（缺失则自动 `npm install --prefer-offline`）
-3. 运行 `npx tsx scripts/generate-mock-files.ts` 生成 mock 数据到 `/storage/emulated/0/01-plain-media/...`
-4. 启动 `ENCV_DEV_PREVIEW=1 air` 监视 `./cmd/encv/`（air 自动重建并重启后端）
-5. 启动 Vite（`--host 0.0.0.0 --port 5174 --strictPort`）
-6. 脚本前台 `wait`，任一子进程退出则清理全部
+1. Step 0: 杀掉残留的 air / encv / vite 进程（精确按进程名匹配 + `lsof -ti :2025` 按端口兜底，绝不杀 agent-tool-host）
+2. Step 1: 确保 `node_modules` 就绪（缺失则自动 `pnpm install --no-frozen-lockline`，支持 workspace 成员）
+3. Step 2: 运行 `npx tsx scripts/generate-mock-files.ts` 生成 mock 数据到 `/storage/emulated/0/01-plain-media/...`
+4. Step 3: 启动 `ENCV_DEV_PREVIEW=1 air` 监视 `./cmd/encv/`（air 自动重建并重启后端）+ **verify `/api/service-guard` 返回 `servingDir=/storage/emulated/0`，否则 exit 1**
+5. Step 4: 启动 Vite（`--host 0.0.0.0 --port 5174 --strictPort`）
+6. Step 5: 启动 OpenList 前端 dev server (`:3000`, `OPENLIST_PREVIEW_BASE="/openlist-ui/"`) — 沙箱预览 OpenList UI 用
+7. Step 6/7: 状态报告 + 保持前台 / 退出 detach
 
 **激活外部访问**：
 - 脚本返回 `command_id` 后，**必须调用 `OpenPreview(command_id="<id>", preview_url="http://localhost:5174/")`**
@@ -400,6 +401,19 @@ bash app/encv-mobile/scripts/start-preview.sh
 | 端口被占用 | 上次开发会话未清理 | `lsof -i :2025 -i :5173` + `kill` |
 | 修改 Go 代码后前端无变化 | 后端是旧进程（go run 不会自动重启） | 重启后端：先 kill 旧进程再 `go run` |
 | Vite HMR 不生效 | 文件保存事件未触发（某些远程文件系统） | 触发一次 touch 或重启 Vite |
+| **service-guard BLOCKED：`server.dir missing "01-plain-media"`，列出 `.md` 文件** | **mobile overlay 未生效**：`server.dir` 留在默认的 `/` → 解析为 `/workspace` → 看到 workspace 根目录文件。常见原因：手工 `tmp/encv start` 没设 `ENCV_DEV_PREVIEW=1`，或 start-preview.sh Step 0 没杀掉残留进程 | `curl -s http://127.0.0.1:2025/api/service-guard` 看 `servingDir` 字段；应该是 `/storage/emulated/0` 而不是 `/` 或 `/workspace` |
+
+### 5.3.1 ⚠️ service-guard 失败根因清单（2026-06-04 实战踩坑）
+
+> **`/api/service-guard` 报告 `server.dir missing "01-plain-media"` 是 mobile overlay 没生效的标志**。
+> 任何路径下看到此错误，都按"mobile overlay 未触发"处理，不要去改 `config.user.json`。
+
+| 触发场景 | 根因 | 修复 |
+|----------|------|------|
+| 手工启动 `tmp/encv start` / `tmp/encv` | 缺 `ENCV_DEV_PREVIEW=1` 环境变量，config overlay 不被加载 | 用 `start-preview.sh` 启动；或手工起时 `export ENCV_DEV_PREVIEW=1` |
+| `start-preview.sh` 启动后服务 guard 失败 | Step 0 漏杀旧 `tmp/encv` 进程（`pkill -f '^./tmp/encv'` 不匹配 `/workspace/tmp/encv start`） | 2026-06-04 修复：Step 0 改用 `lsof -ti :2025` 按端口兜底杀进程；Step 3 启动 air 后必须 verify `/api/service-guard` 的 `servingDir == /storage/emulated/0`，否则 `exit 1` |
+| mock-data 不在 `/storage/emulated/0/01-plain-media` | 跳过了 `npx tsx scripts/generate-mock-files.ts` 步骤 | 重跑 start-preview.sh（Step 2 自动生成） |
+| 改了 `config.user.json` 的 `server.dir` 或 `mobile.server.dir` | 违反 start-preview.sh §5.2.1 铁律 | `git checkout config.user.json` 还原 |
 
 ### 5.4 开发环境健康检查
 

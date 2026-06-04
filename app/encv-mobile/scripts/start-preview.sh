@@ -78,8 +78,16 @@ fi
 BACKEND_PIDS="$(lsof -ti :"${BACKEND_PORT}" 2>/dev/null || true)"
 if [[ -n "${BACKEND_PIDS}" ]]; then
   for pid in ${BACKEND_PIDS}; do
-    kill "${pid}" 2>/dev/null && echo "    killed backend pid=${pid}"
+    kill "${pid}" 2>/dev/null && echo "    killed backend pid=${pid} (port ${BACKEND_PORT})"
   done
+  sleep 1
+  # 二次确认（部分进程是 setsid+nohup 起的，父进程死子进程未必死）
+  BACKEND_PIDS="$(lsof -ti :"${BACKEND_PORT}" 2>/dev/null || true)"
+  if [[ -n "${BACKEND_PIDS}" ]]; then
+    for pid in ${BACKEND_PIDS}; do
+      kill -9 "${pid}" 2>/dev/null && echo "    force-killed backend pid=${pid} (port ${BACKEND_PORT})"
+    done
+  fi
 fi
 sleep 1
 
@@ -119,6 +127,33 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24; do
   fi
   sleep 0.5
 done
+
+# 验证 mobile overlay 生效：servingDir 必须包含 01-plain-media
+# 这是 2026-06-04 修复的痛点：之前 tmp/encv 手工启动无 ENCV_DEV_PREVIEW=1，
+# mobile overlay 未触发，server.dir 留在默认的 "/" → 解析为 /workspace → 看到 .md 等文件
+SERVING_GUARD_OK=0
+for i in 1 2 3 4 5 6 7 8 9 10; do
+  GUARD_JSON=$(curl -s "http://localhost:${BACKEND_PORT}/api/service-guard" 2>/dev/null || true)
+  if echo "${GUARD_JSON}" | grep -q '"ready":true'; then
+    SERVING_DIR=$(echo "${GUARD_JSON}" | grep -oE '"servingDir":"[^"]*"' | head -1 | cut -d'"' -f4)
+    echo "    ✅ service-guard OK: servingDir=${SERVING_DIR}"
+    SERVING_GUARD_OK=1
+    break
+  fi
+  sleep 0.5
+done
+if [[ "${SERVING_GUARD_OK}" != "1" ]]; then
+  echo ""
+  echo "❌ 错误：后端 service-guard 校验失败（10s 内未 ready）" >&2
+  echo "   这通常意味着 mobile overlay (ENCV_DEV_PREVIEW=1) 没生效" >&2
+  echo "   检查: ps -ef | grep -E 'air|tmp/encv' | grep -v grep" >&2
+  echo "   检查: tail -20 /tmp/encv-air.log" >&2
+  echo "   手工验证: curl -s http://localhost:${BACKEND_PORT}/api/service-guard | head -c 500" >&2
+  echo ""
+  curl -s "http://localhost:${BACKEND_PORT}/api/service-guard" | head -c 500
+  echo ""
+  exit 1
+fi
 
 # ---------- Step 4: Vite 前端（前台子进程） ----------
 step "4/6 启动 Vite 前端（port ${VITE_PORT}）"
