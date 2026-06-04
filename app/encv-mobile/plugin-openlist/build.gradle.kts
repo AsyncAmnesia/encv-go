@@ -10,6 +10,8 @@
 // 依赖分类（与 plugin-mpv-player 不同的部分会高亮）：
 //   compileOnly:  host 已提供，插件不打包（combolite-core / core-ktx / koin-core 类型）
 //   implementation: host 未提供，插件必须打包（localbroadcastmanager / openlist-classes.jar / compose-ui）
+import org.gradle.api.GradleException
+
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
@@ -35,7 +37,7 @@ android {
         }
     }
 
-    // Phase 25 A3.3 修复: aar2apk 任务的 localDependencyClasses 只接受
+    // Phase 25 A3.3 修复（重写版）: aar2apk 任务的 localDependencyClasses 只接受
     // ProjectComponentIdentifier (Aar2ApkPlugin.kt:141) 和 remoteDependencyAars
     // 只接受 ModuleComponentIdentifier (Aar2ApkPlugin.kt:117)；
     // implementation(files("libs/openlist-classes.jar")) 是直接 file 依赖，
@@ -43,20 +45,31 @@ android {
     // openlistlib 类。最终 plugin APK dex 不含 openlistlib.Event/LogCallback，
     // 运行时 NoClassDefFoundError。
     //
-    // 修复: preBuild 任务把 libs/openlist-classes.jar 解压到 build/generated/
-    // openlistlib/ 目录，加入 main sourceSet。这样 Kotlin/Java 编译时能找到
-    // openlistlib 类，AGP 打 aar 时 classes.jar 自然含 openlistlib，aar2apk
-    // 解压 aar 拿 classes.jar → d8 合并到 plugin APK dex → 运行时类能加载。
+    // ❌ 旧版 A3.3 方案：把 .class 文件解到 build/generated/openlistlib/ 加到
+    // sourceSet.main.java.srcDir —— **完全错**：AGP 的 java 编译只处理
+    // .java/.kt 源文件，.class 文件被静默忽略，kotlinc 输出 classes 不含
+    // openlistlib 类，bundleReleaseAar 打包的 aar/classes.jar 也不含，
+    // aar2apk 拿到这个空 aar，d8 用 "DEX打包: 仅包含主模块代码" 模式只 d8
+    // 2 个 jar（main_aar/classes.jar + r_classes.jar），plugin APK dex
+    // 不含 openlistlib 类。runtime NoClassDefFoundError (CI 2026-06 验证)。
     //
-    // sourceSet 注入 vs aar2apk 改造 vs 包成 .aar 走 maven coordinate:
-    // - sourceSet 注入最稳，不依赖 aar2apk 内部行为，不依赖 AGP 版本
-    // - 包成 .aar 走 maven 需要新 flatDir/mavenLocal 仓库配置
-    // - 改 aar2apk 是第三方库，要 fork
-    sourceSets {
-        getByName("main") {
-            java.srcDir(layout.buildDirectory.dir("generated/openlistlib"))
-        }
-    }
+    // ✅ 新版 A3.3 方案：unpackOpenlistClasses 解 jar → build/generated/openlistlib/，
+    // **不在 sourceSet**，而是新增 injectOpenlistClassesToAar 任务：
+    //   1. 解 aar → tmp 目录
+    //   2. 解 aar/classes.jar + 合并 openlistlib classes
+    //   3. 重打 aar/classes.jar
+    //   4. 重打 aar
+    //   5. 替换 outputs/aar/...aar
+    // 让 aar2apk 拿到含 openlistlib 类的 aar → d8 合并到 plugin APK dex。
+    //
+    // 为什么不用 stub 写 openlistlib 类的 .java 源：gomobile 产物带 native
+    // 方法调 libgojni.so，stub 类缺 native 实现，运行时 OpenList 永远不起。
+    // 必须是 gomobile 产物的真 .class 文件（带 native 绑定）。
+    //
+    // 为什么不用 fileTree 合并到 kotlinc 输出目录：AGP 8.13 内部路径是
+    // build/tmp/kotlin-classes/release/，但 AGP 用增量构建 transform 任务
+    // 写这个目录，直接复制会被 AGP 自己的增量检测器误判。改 aar 字节是
+    // 离 AGP 内部最远、最稳的方案。
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
@@ -121,13 +134,12 @@ dependencies {
     compileOnly("androidx.core:core-ktx")
 }
 
-// Phase 25 A3.3 修复: 解压 libs/openlist-classes.jar → build/generated/openlistlib/
-// 作为 sourceSet 的一部分参与编译（见 android.sourceSets 块）。
-// 这样 aar2apk 转换 plugin-openlist.aar 时，openlistlib 类已经在 aar 的
-// classes.jar 里，d8 会合并到 plugin APK dex。
+// Phase 25 A3.3 修复（重写版 v2）: 解压 libs/openlist-classes.jar →
+// build/generated/openlistlib/，**不**进 sourceSet（AGP 不编译 .class）。
+// openlistlib 类的注入由 injectOpenlistClassesToAar 任务在 bundleReleaseAar
+// 之后手动 merge 到 aar/classes.jar 完成（见下文）。
 //
-// 为什么用 task 而不是 fileTree: 必须先解压 jar 才能让 sourceSet 看到 .class 文件。
-// AGP 编译期需要 .class 文件按包结构目录布局（openlistlib/Event.class 等）。
+// unpack 任务仍然必需：injectOpenlistClassesToAar 任务读取这个目录。
 val unpackOpenlistClasses by tasks.registering {
     val input = file("libs/openlist-classes.jar")
     val outputDir = layout.buildDirectory.dir("generated/openlistlib").get().asFile
@@ -154,6 +166,112 @@ val unpackOpenlistClasses by tasks.registering {
     }
 }
 
+// Phase 25 A3.3 v2: 在 bundleReleaseAar 之后手动 inject openlistlib classes
+// 到 aar/classes.jar。这样 aar2apk 拿到的 aar 里 classes.jar 含 openlistlib
+// 真 .class（带 native 方法调 libgojni.so），d8 合并到 plugin APK dex，
+// 运行时 plugin classloader 能 resolve openlistlib.Event / LogCallback。
+//
+// 实现步骤（每个 variant 一次）:
+//   1. 解 aar → build/tmp/aar-inject-<variant>/
+//   2. 解 aar/classes.jar → build/tmp/classes-merged-<variant>/
+//   3. 复制 build/generated/openlistlib/ → 上述目录（覆盖同名/追加新类）
+//   4. 重打 classes-merged-<variant>.jar 替换 aar/classes.jar
+//   5. 重打 aar-new-<variant>.aar 替换 outputs/aar/...aar
+val injectOpenlistClassesToAar by tasks.registering {
+    val generatedClasses = layout.buildDirectory.dir("generated/openlistlib")
+    inputs.dir(generatedClasses)
+    // 不声明 outputs.file(aar) 因为我们 in-place 修改 aar，Gradle 8.13 允许
+    // 通过 upToDateWhen 自定义 up-to-date 逻辑避免 input==output 警告。
+    doLast {
+        val src = generatedClasses.get().asFile
+        if (!src.exists() || src.walkTopDown().filter { it.isFile }.toList().isEmpty()) {
+            logger.warn("[plugin-openlist] injectOpenlistClassesToAar skipped: " +
+                    "no openlistlib classes in $src (libs/openlist-classes.jar missing?)")
+            return@doLast
+        }
+
+        listOf("release", "debug").forEach { variant ->
+            val aarFile = layout.buildDirectory.file("outputs/aar/plugin-openlist-${variant}.aar")
+                .get().asFile
+            if (!aarFile.exists()) {
+                logger.lifecycle("[plugin-openlist] injectOpenlistClassesToAar: " +
+                        "skip $variant (aar not built yet)")
+                return@forEach
+            }
+
+            val tmpAarDir = file("$buildDir/tmp/aar-inject-${variant}")
+            val tmpClassesDir = file("$buildDir/tmp/classes-merged-${variant}")
+            tmpAarDir.deleteRecursively()
+            tmpAarDir.mkdirs()
+            tmpClassesDir.deleteRecursively()
+            tmpClassesDir.mkdirs()
+
+            // 1. 解 aar
+            copy { from(zipTree(aarFile)); into(tmpAarDir) }
+
+            // 2+3. 解原 classes.jar + 复制 openlistlib classes
+            // ⚠️ 不能用 `copy { from(src); into(tmpClassesDir) }` —— Gradle
+            // CopySpec.from(File) 会把 src 当作子目录,导致 dst/src/... 错位
+            // (Python 测试时同样的 bug 在 verify 看到 0 com/encvgo/ 才暴露)。
+            // 必须遍历 src 下的 entry 复制到 dst 根。
+            val originalClassesJar = File(tmpAarDir, "classes.jar")
+            if (originalClassesJar.exists()) {
+                copy { from(zipTree(originalClassesJar)); into(tmpClassesDir) }
+            }
+            val openlistClassCount = src.walkTopDown().count { it.isFile && it.name.endsWith(".class") }
+            src.walkTopDown().filter { it.isFile }.forEach { srcFile ->
+                val target = File(tmpClassesDir, srcFile.relativeTo(src).path)
+                target.parentFile?.mkdirs()
+                srcFile.copyTo(target, overwrite = true)
+            }
+
+            // 4. 重打 classes.jar —— 直接用 ZipOutputStream 避免 ant.invokeMethod
+            // 在 Kotlin DSL 下的参数类型兼容问题 (mapOf() to Pair 不一定能转 NamedArgs)
+            val mergedClassesJar = file("$buildDir/tmp/classes-merged-${variant}.jar")
+            mergedClassesJar.delete()
+            java.util.zip.ZipOutputStream(mergedClassesJar.outputStream().buffered()).use { zos ->
+                tmpClassesDir.walkTopDown().filter { it.isFile }.forEach { f ->
+                    val entry = java.util.zip.ZipEntry(f.relativeTo(tmpClassesDir).path.replace(File.separatorChar, '/'))
+                    zos.putNextEntry(entry)
+                    f.inputStream().use { it.copyTo(zos) }
+                    zos.closeEntry()
+                }
+            }
+            if (!mergedClassesJar.exists() || mergedClassesJar.length() == 0L) {
+                throw GradleException("[plugin-openlist] failed to repack classes.jar for $variant")
+            }
+            originalClassesJar.delete()
+            mergedClassesJar.copyTo(originalClassesJar)
+
+            // 5. 重打 aar (同样用 ZipOutputStream)
+            val newAar = file("$buildDir/tmp/aar-new-${variant}.aar")
+            newAar.delete()
+            java.util.zip.ZipOutputStream(newAar.outputStream().buffered()).use { zos ->
+                tmpAarDir.walkTopDown().filter { it.isFile }.forEach { f ->
+                    val entry = java.util.zip.ZipEntry(f.relativeTo(tmpAarDir).path.replace(File.separatorChar, '/'))
+                    zos.putNextEntry(entry)
+                    f.inputStream().use { it.copyTo(zos) }
+                    zos.closeEntry()
+                }
+            }
+            if (!newAar.exists() || newAar.length() == 0L) {
+                throw GradleException("[plugin-openlist] failed to repack aar for $variant")
+            }
+            aarFile.delete()
+            newAar.copyTo(aarFile)
+
+            logger.lifecycle("[plugin-openlist] injected $openlistClassCount openlistlib " +
+                    "classes into $variant aar (new size: ${aarFile.length() / 1024}KB)")
+
+            // 清理 tmp
+            tmpAarDir.deleteRecursively()
+            tmpClassesDir.deleteRecursively()
+            newAar.delete()
+            mergedClassesJar.delete()
+        }
+    }
+}
+
 // 让所有 build type 的 preBuild 都先跑 unpackOpenlistClasses
 // AGP 8.13.0: preBuild + preDebugBuild + preReleaseBuild 都存在
 // configureEach 比 configure 范围更广（debug/release 都能 hook）
@@ -161,5 +279,22 @@ afterEvaluate {
     tasks.matching { it.name.startsWith("pre") && it.name.endsWith("Build") }
         .configureEach {
             dependsOn(unpackOpenlistClasses)
+        }
+
+    // injectOpenlistClassesToAar 必须在 convert_plugin_openlist_* 之前跑
+    // (aar2apk 任务 dependsOn(:plugin-openlist:assembleRelease/Debug) →
+    // :plugin-openlist:bundleReleaseAar → aar2apk 读 aar)
+    //
+    // ⚠️ 任务名: aar2apk Aar2ApkPlugin.kt:82-86
+    //   baseTaskName = modulePath.replace(":", "_").removePrefix("_")
+    //   modulePath = ":plugin-openlist" → baseTaskName = "plugin_openlist"
+    //   taskName = "convert_${baseTaskName}_${buildType}" = "convert_plugin_openlist_release"
+    // (注意:是下划线不是连字符,aar2apk 用 path → 标识符的转换规则)
+    //
+    // 我们 hook 在 convert_* 之前最稳:让 convert_* dependsOn inject 任务
+    // 这样 aar 被修改后 aar2apk 才能读到含 openlistlib 的版本
+    tasks.matching { it.name.startsWith("convert_plugin_openlist_") }
+        .configureEach {
+            dependsOn(injectOpenlistClassesToAar)
         }
 }

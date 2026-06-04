@@ -759,35 +759,40 @@ jobs:
         run: |
           # A3.4 强化验证：用 dexdump 字符串扫描 classes.dex 看 Lopenlistlib/* 类是否真在 dex
           # 旧版 grep -qi "openlistlib" 永远 false（dex 内的类不在 zip entry name 里）
-          APK_PATH=$(find app/encv-mobile/android/build -name "plugin-openlist-*-release.apk" -o -name "plugin-openlist-*-debug.apk" 2>/dev/null | head -1)
+          #
+          # 路径策略：不 cd，直接用 $GITHUB_WORKSPACE 作为根（job 容器默认 cwd 就是 repo root）
+          # 上次失败根因：cd app/encv-mobile/android 后用 find app/encv-mobile/android/build ...
+          #   → 路径双前缀找不到
+          APK_PATH=$(find "$GITHUB_WORKSPACE/app/encv-mobile/android/build" -name "plugin-openlist-*-release.apk" -o -name "plugin-openlist-*-debug.apk" 2>/dev/null | head -1)
           if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
             echo "❌ No plugin APK found at expected path"
+            echo "查找过: $GITHUB_WORKSPACE/app/encv-mobile/android/build"
             exit 0
           fi
           echo "=== APK: $APK_PATH ==="
           ls -lh "$APK_PATH"
 
-          mkdir -p /tmp/apk-inspect && cd /tmp/apk-inspect
-          rm -f classes.dex classes2.dex classes3.dex
-          unzip -o "$APK_PATH" 'classes*.dex' >/dev/null 2>&1 || true
-          ls -la classes*.dex 2>/dev/null
+          mkdir -p /tmp/apk-inspect
+          rm -f /tmp/apk-inspect/classes*.dex
+          unzip -o "$APK_PATH" 'classes*.dex' -d /tmp/apk-inspect/ >/dev/null 2>&1 || true
+          ls -la /tmp/apk-inspect/classes*.dex 2>/dev/null
 
           echo
           echo "=== dexdump availability ==="
           DEXDUMP=""
-          for p in /opt/android-sdk/build-tools/*/dexdump /usr/lib/android-sdk/build-tools/*/dexdump; do
+          for p in /opt/android-sdk/build-tools/*/dexdump /usr/lib/android-sdk/build-tools/*/dexdump "$ANDROID_HOME"/build-tools/*/dexdump; do
             [ -x "$p" ] && DEXDUMP="$p" && break
           done
           if [ -z "$DEXDUMP" ]; then
-            DEXDUMP=$(find / -name dexdump 2>/dev/null | head -1)
+            DEXDUMP=$(find / -name dexdump -executable 2>/dev/null | head -1)
           fi
           echo "dexdump=$DEXDUMP"
 
           echo
           echo "=== openlistlib classes in dex (via strings) ==="
-          for dex in classes*.dex; do
+          for dex in /tmp/apk-inspect/classes*.dex; do
             [ -f "$dex" ] || continue
-            echo "--- $dex ---"
+            echo "--- $(basename $dex) ---"
             echo "  bytes: $(stat -c%s "$dex")"
             COUNT=$(strings "$dex" | grep -c "Lopenlistlib/" 2>/dev/null || echo 0)
             echo "  Lopenlistlib/ 字符串数量: $COUNT"
@@ -799,9 +804,9 @@ jobs:
           echo
           echo "=== openlistlib classes in dex (via dexdump classes) ==="
           if [ -n "$DEXDUMP" ] && [ -x "$DEXDUMP" ]; then
-            for dex in classes*.dex; do
+            for dex in /tmp/apk-inspect/classes*.dex; do
               [ -f "$dex" ] || continue
-              echo "--- $dex ---"
+              echo "--- $(basename $dex) ---"
               "$DEXDUMP" "$dex" 2>/dev/null | grep -i "openlistlib" | head -20 || true
             done
           else
@@ -810,9 +815,9 @@ jobs:
 
           echo
           echo "=== com.encvgo.plugin.openlist classes in dex (sanity check) ==="
-          for dex in classes*.dex; do
+          for dex in /tmp/apk-inspect/classes*.dex; do
             [ -f "$dex" ] || continue
-            echo "--- $dex ---"
+            echo "--- $(basename $dex) ---"
             strings "$dex" | grep -E "Lcom/encvgo/plugin/openlist/" | sort -u | head -30
           done
 
@@ -825,64 +830,84 @@ jobs:
         if: inputs.skip_plugin != true
         continue-on-error: true
         run: |
-          # A3.4: 看 aar 阶段 classes.jar 里有什么类
-          # 这是 sourceSet 注入是否真把 openlistlib 合并到 module 自身 classes 的关键证据
-          AAR_PATH=$(find app/encv-mobile/android/plugin-openlist/build/outputs -name "*.aar" 2>/dev/null | head -1)
+          # A3.4 v2: 看 aar 阶段 classes.jar 里有什么类
+          # 关键证据: injectOpenlistClassesToAar 任务是否真把 openlistlib 类合并到 aar
+          AAR_PATH=$(find "$GITHUB_WORKSPACE/app/encv-mobile/android/plugin-openlist/build/outputs" -name "*.aar" 2>/dev/null | head -1)
           if [ -z "$AAR_PATH" ] || [ ! -f "$AAR_PATH" ]; then
             echo "❌ No plugin-openlist AAR found (可能 plugin-openlist 编译失败)"
-            echo "可能的根因：libs/openlist-classes.jar 不存在，compileKotlin 缺 openlistlib 引用"
-            echo "修复：CI 步骤 'Extract OpenList AAR for plugin packaging' 必须成功"
+            echo "可能的根因：libs/openlist-classes.jar 不存在,compileKotlin 缺 openlistlib 引用"
+            echo "修复:CI 步骤 'Extract OpenList AAR for plugin packaging' 必须成功"
             exit 0
           fi
           echo "=== AAR: $AAR_PATH ==="
           ls -lh "$AAR_PATH"
-          mkdir -p /tmp/aar-inspect && cd /tmp/aar-inspect
-          rm -rf * && unzip -o "$AAR_PATH" >/dev/null
+          mkdir -p /tmp/aar-inspect
+          rm -rf /tmp/aar-inspect/*
+          unzip -o "$AAR_PATH" -d /tmp/aar-inspect/ >/dev/null
           echo
           echo "=== AAR contents ==="
           unzip -l "$AAR_PATH" | tail -20
           echo
           echo "=== classes.jar classes (按包分组) ==="
-          if [ -f classes.jar ]; then
-            unzip -l classes.jar | awk '{print $NF}' | grep -E "\.class$" | awk -F'/' '{print $1"/"$2"/"$3"/"$4}' | sort -u | head -30
+          if [ -f /tmp/aar-inspect/classes.jar ]; then
+            unzip -l /tmp/aar-inspect/classes.jar | awk '{print $NF}' | grep -E "\.class$" | awk -F'/' '{print $1"/"$2"/"$3"/"$4}' | sort -u | head -30
             echo
             echo "--- openlistlib 包是否存在 ---"
-            unzip -l classes.jar | grep -E "openlistlib/" | head -20
-            if unzip -l classes.jar | grep -q "openlistlib/Event.class"; then
-              echo "✅ openlistlib/Event.class 在 classes.jar 里"
+            unzip -l /tmp/aar-inspect/classes.jar | grep -E "openlistlib/" | head -20
+            if unzip -l /tmp/aar-inspect/classes.jar | grep -q "openlistlib/Event.class"; then
+              echo "✅ openlistlib/Event.class 在 classes.jar 里 (inject 任务生效)"
             else
-              echo "❌ openlistlib/Event.class 不在 classes.jar 里 ← A3.3 sourceSet 注入未生效 或 openlist-classes.jar 缺失"
+              echo "❌ openlistlib/Event.class 不在 classes.jar 里 ← injectOpenlistClassesToAar 任务未跑/失败"
             fi
           else
             echo "❌ classes.jar 不在 aar 里（异常情况）"
           fi
 
-      - name: Inspect sourceSet injection (A3.3 unpackOpenlistClasses task)
+      - name: Inspect injectOpenlistClassesToAar task (A3.3 v2 injection)
         if: inputs.skip_plugin != true
         continue-on-error: true
         run: |
-          # A3.4: 看 sourceSet 注入任务是否真跑了
-          # preBuild → unpackOpenlistClasses → 解压到 build/generated/openlistlib/
-          cd app/encv-mobile/android
-
-          echo "=== build.gradle.kts sourceSet 注入检查 ==="
-          grep -n "srcDir.*generated/openlistlib" plugin-openlist/build.gradle.kts || echo "❌ sourceSet 注入行未找到"
+          # A3.4 v2: 验证 A3.3 重写版 injectOpenlistClassesToAar 任务配置
+          # 旧版 "sourceSet 注入" 已废弃,因为 AGP 不编译 .class 文件
+          BUILD_GRADLE="$GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist/build.gradle.kts"
+          if [ ! -f "$BUILD_GRADLE" ]; then
+            echo "❌ plugin-openlist/build.gradle.kts 不存在"
+            exit 0
+          fi
+          echo "=== build.gradle.kts inject 任务检查 ==="
+          grep -n "injectOpenlistClassesToAar\|unpackOpenlistClasses" "$BUILD_GRADLE" | head -10
           echo
-          grep -n "unpackOpenlistClasses\|afterEvaluate" plugin-openlist/build.gradle.kts | head -10
+          if grep -q "injectOpenlistClassesToAar" "$BUILD_GRADLE"; then
+            echo "✅ injectOpenlistClassesToAar 任务已定义"
+          else
+            echo "❌ injectOpenlistClassesToAar 任务未定义 ← A3.3 v2 未生效"
+          fi
+          if grep -q "sourceSets.*java.srcDir.*openlistlib" "$BUILD_GRADLE"; then
+            echo "⚠️ 旧版 sourceSet 注入仍存在,应删除 (AGP 不编译 .class)"
+          fi
 
           echo
-          echo "=== run unpackOpenlistClasses task (--dry-run) ==="
-          ./gradlew :plugin-openlist:unpackOpenlistClasses --dry-run 2>&1 | tail -20 || true
+          echo "=== run injectOpenlistClassesToAar task (--dry-run) ==="
+          cd "$GITHUB_WORKSPACE/app/encv-mobile/android"
+          ./gradlew :plugin-openlist:injectOpenlistClassesToAar --dry-run 2>&1 | tail -20 || true
 
           echo
           echo "=== libs/openlist-classes.jar 现状 ==="
-          ls -lh plugin-openlist/libs/openlist-classes.jar 2>/dev/null || echo "❌ libs/openlist-classes.jar 不存在 ← CI Extract OpenList AAR 步骤未跑/失败"
+          JAR="$GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist/libs/openlist-classes.jar"
+          if [ -f "$JAR" ]; then
+            ls -lh "$JAR"
+            echo "classes.jar 含 openlistlib 类:"
+            unzip -l "$JAR" | grep "openlistlib/" | head -10
+          else
+            echo "❌ libs/openlist-classes.jar 不存在 ← CI Extract OpenList AAR 步骤未跑/失败"
+          fi
 
           echo
           echo "=== build/generated/openlistlib/ 现状 ==="
-          if [ -d plugin-openlist/build/generated/openlistlib ]; then
-            find plugin-openlist/build/generated/openlistlib -name "*.class" | head -10
-            echo "class 数量: $(find plugin-openlist/build/generated/openlistlib -name "*.class" 2>/dev/null | wc -l)"
+          DIR="$GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist/build/generated/openlistlib"
+          if [ -d "$DIR" ]; then
+            find "$DIR" -name "*.class" | head -10
+            echo "class 数量: $(find "$DIR" -name "*.class" 2>/dev/null | wc -l)"
           else
             echo "❌ build/generated/openlistlib/ 不存在 ← unpackOpenlistClasses 任务未跑过"
           fi
@@ -894,11 +919,11 @@ jobs:
           # A3.4: 用 kotlinc 直接编译 OpenListBridge.kt + libs/openlist-classes.jar
           # 如果 unresolved 'openlistlib' 出现 → classes.jar 不含 openlistlib 类
           # 如果 unresolved 'openlistlib' 消失 → classes.jar 含 openlistlib 类（CI 提取成功）
-          cd app/encv-mobile/plugin-openlist
+          cd "$GITHUB_WORKSPACE/app/encv-mobile/plugin-openlist"
 
           if [ ! -f libs/openlist-classes.jar ]; then
-            echo "❌ libs/openlist-classes.jar 不存在，跳过 kotlinc verify"
-            echo "CI Extract OpenList AAR 步骤未成功，无法验证"
+            echo "❌ libs/openlist-classes.jar 不存在,跳过 kotlinc verify"
+            echo "CI Extract OpenList AAR 步骤未成功,无法验证"
             exit 0
           fi
           echo "=== libs/openlist-classes.jar 内容 ==="
@@ -922,40 +947,53 @@ jobs:
           fi
           echo "kotlinc=$KOTLINC"
           if [ -z "$KOTLINC" ]; then
-            echo "⚠️ kotlinc 不可用，跳过编译验证"
+            echo "⚠️ kotlinc 不可用,跳过编译验证"
             exit 0
           fi
           echo
-          echo "=== kotlinc compile OpenListBridge.kt (with classes.jar classpath) ==="
+          echo "=== kotlinc compile OpenListBridge.kt (with classes.jar classpath, FULL stdlib) ==="
+          # ⚠️ 不用 -no-stdlib —— OpenListBridge 用了 List/Map 等 stdlib 类
+          # 上次失败根因:-no-stdlib 让 stdlib 类 unresolved 报 unrelated 错误
           rm -rf /tmp/openlist-verify
-          "$KOTLINC" -no-stdlib -no-reflect -Xsuppress-version-warnings \
+          mkdir -p /tmp/openlist-verify
+          "$KOTLINC" -Xsuppress-version-warnings \
             -classpath "libs/openlist-classes.jar" \
             src/main/java/com/encvgo/plugin/openlist/OpenListBridge.kt \
-            -d /tmp/openlist-verify 2>&1 | grep -E "openlistlib|unresolved reference" | head -20 || true
+            -d /tmp/openlist-verify 2>/tmp/openlist-verify.log || true
+          echo "--- 过滤错误:openlistlib/unresolved ---"
+          grep -E "openlistlib|unresolved reference" /tmp/openlist-verify.log 2>/dev/null | head -20 || true
           echo
           echo "=== verify result ==="
           if [ -f /tmp/openlist-verify/com/encvgo/plugin/openlist/OpenListBridge.class ]; then
             echo "✅ OpenListBridge.class 生成成功 — openlistlib 类在 classpath 中"
           else
-            echo "❌ OpenListBridge.class 未生成 — openlistlib 类不可见（compileKotlin 必失败）"
+            echo "❌ OpenListBridge.class 未生成 — 完整 log:"
+            tail -30 /tmp/openlist-verify.log 2>/dev/null
           fi
 
       - name: Upload diagnostic bundle
         if: always() && inputs.skip_plugin != true
         continue-on-error: true
         run: |
-          # A3.4: 把所有诊断产物都打到 artifact
+          # A3.4 v2: 把所有诊断产物都打到 artifact
+          # 关键修复:不用 cd /workspace(容器里没有这个路径)
+          # 容器默认 cwd = $GITHUB_WORKSPACE = /home/runner/work/<repo>/<repo>
           mkdir -p /tmp/diagnostic
+          rm -rf /tmp/diagnostic/*
           cp -r /tmp/apk-inspect /tmp/diagnostic/ 2>/dev/null || true
           cp -r /tmp/aar-inspect /tmp/diagnostic/ 2>/dev/null || true
           cp -r /tmp/openlist-verify /tmp/diagnostic/ 2>/dev/null || true
-          cd /workspace
-          tar czf /tmp/diagnostic.tar.gz -C /tmp diagnostic 2>/dev/null
+          cp /tmp/openlist-verify.log /tmp/diagnostic/ 2>/dev/null || true
+          ls -la /tmp/diagnostic/
+          echo
+          tar czf /tmp/diagnostic.tar.gz -C /tmp diagnostic
           ls -lh /tmp/diagnostic.tar.gz
-          echo "/tmp/diagnostic.tar.gz" >> $GITHUB_STEP_SUMMARY
-          # 上传为独立 artifact（不阻塞主 APK artifact）
+
+          # 准备独立路径供后续 upload-artifact 步骤读取
           mkdir -p /tmp/diagnostic-artifact
           cp /tmp/diagnostic.tar.gz /tmp/diagnostic-artifact/openlist-diagnostic.tar.gz
+          ls -lh /tmp/diagnostic-artifact/
+          echo "Diagnostic ready at /tmp/diagnostic-artifact/openlist-diagnostic.tar.gz" >> $GITHUB_STEP_SUMMARY
 
       # === Build ===
       - name: Build ${{ inputs.version && 'Release' || 'Debug' }} APK
@@ -1077,12 +1115,18 @@ jobs:
 
       - name: Upload OpenList diagnostic bundle
         if: always() && inputs.skip_plugin != true
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: openlist-diagnostic${{ inputs.version && format('-v{0}', inputs.version) || '-debug' }}
           path: /tmp/diagnostic-artifact/openlist-diagnostic.tar.gz
           retention-days: 7
-          if-no-files-found: warn
+          # ⚠️ 用 error 而不是 warn —— 如果 file 缺失说明 step 43 (Upload diagnostic
+          # bundle) 失败,必须显式报错让用户看到(之前 warn 静默吞掉,用户反复反馈
+          # "openlist-diagnostic-{version}.tar.gz 根本没有上传成功")
+          # continue-on-error: true 防止 step 47 fail 阻塞整个 job 的 success 状态
+          # (主 APK artifact 已经在 step 46 上传)
+          if-no-files-found: error
 
       - name: Build summary
         if: always()
