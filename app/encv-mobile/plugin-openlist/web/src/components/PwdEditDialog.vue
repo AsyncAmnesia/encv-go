@@ -1,5 +1,12 @@
 <template>
-  <ion-modal :is-open="isOpen" @did-dismiss="onDismiss">
+  <!--
+    **重要（铁律：capacitor.md §1.1 反模式）**：
+    本组件由 modalController.create({ component: PwdEditDialog }) 加载时，
+    modalController 已经为它创建了全局 modal overlay（挂载在 <body> 根节点）。
+    **不能再内嵌 <ion-modal :is-open>**，否则会双重 wrapper 导致白屏。
+    此处直接渲染内容（header + content）即可。
+  -->
+  <div class="pwd-edit-dialog">
     <ion-header>
       <ion-toolbar>
         <ion-title>设置管理员密码</ion-title>
@@ -39,13 +46,12 @@
         确认
       </ion-button>
     </ion-content>
-  </ion-modal>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import {
-  IonModal,
   IonHeader,
   IonToolbar,
   IonTitle,
@@ -59,12 +65,10 @@ import {
 } from '@ionic/vue'
 
 const props = defineProps<{
-  isOpen?: boolean
   onConfirm: (password: string) => void | Promise<void>
 }>()
 
 const emit = defineEmits<{
-  (e: 'update:isOpen', v: boolean): void
   (e: 'did-dismiss'): void
 }>()
 
@@ -82,18 +86,27 @@ async function onConfirm() {
     return
   }
   error.value = ''
-  await props.onConfirm(password.value)
-  emit('update:isOpen', false)
+  try {
+    await props.onConfirm(password.value)
+  } catch (e: any) {
+    error.value = `设置失败：${e?.message || e}`
+    return
+  }
   emit('did-dismiss')
 }
 
 function onDismiss() {
-  emit('update:isOpen', false)
   emit('did-dismiss')
 }
 </script>
 
 <style scoped>
+.pwd-edit-dialog {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--ion-background-color);
+}
 .error-text {
   color: var(--ion-color-danger);
   font-size: 12px;
