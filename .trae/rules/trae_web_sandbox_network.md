@@ -336,6 +336,63 @@ grep -c "unresolved reference" /tmp/err.log
 
 ---
 
+## 八、Preview Proxy 路由必须由 OpenPreview 工具注册（2026-06-04 实战踩坑）
+
+> **铁律：起完 dev server 必须调用 `OpenPreview` 工具，否则 16000 代理一律 400。**
+
+### 8.1 症状
+
+```
+curl http://127.0.0.1:16000/openlist-ui/   → 400 Service Unavailable
+```
+
+服务（vite、air、openlist vite）明明都在 5173/2025/3000 活着，但外部预览代理 16000 一个请求都不通。
+
+### 8.2 根因
+
+`agent-tool-host`（PID 由 `supervisor` 启动的 `/app/bin/agent-tool-host`）在 16000 暴露 preview proxy。
+它**不会自动发现**沙箱里监听的 dev server 端口——需要 agent 显式调用 `OpenPreview` 工具注册。
+
+agent-tool-host 日志会爆：
+```
+ERROR preview_proxy::proxy: [preview-proxy] No valid port found for request: / 
+  (default_port: None, registered_ports: [])
+```
+
+`registered_ports: []` = 路由表是空的。
+
+### 8.3 修复
+
+1. 起服务（`start-preview.sh` 或类似脚本），拿到**该命令的 `command_id`**
+2. 调用 `OpenPreview(command_id=..., preview_url="http://localhost:<vite-port>/")`
+3. 验证：日志出现 `Proxying / to port 5173`，16000 返回 200
+
+```bash
+# 验证脚本（OpenPreview 调用之后）
+for path in / /api/service-guard /api/preview/openlist-ui /openlist-ui/; do
+  code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:16000$path")
+  echo "  16000$path → $code"
+done
+# 全部应该 200 或 302，不再 400
+```
+
+### 8.4 注意事项
+
+- **OpenPreview 必须用启动 dev server 的那条命令的 `command_id`**——不是后续 curl 的 ID
+- **代理路由有 session/TTL**——长时间不活动 / 重启 agent-tool-host 后可能再次掉线，需要重新调用 OpenPreview
+- **多个 dev server 同时跑**时，OpenPreview 只能注册**一个**端口（默认 / 路径）。
+  - 当前 ENCV 架构：只注册 5173（encv-mobile vite），其它（3000/2025）通过 5173 的 proxy 间接访问
+  - 不要试图注册多个 OpenPreview——agent-tool-host 会用最后一次调用的端口
+- **检测掉线**：`grep "No valid port found" /var/log/tool/agent-tool-host.stdout.log` 是最快信号
+
+### 8.5 为什么 start-preview.sh 不自己调 OpenPreview
+
+start-preview.sh 是个普通 bash 脚本，没有 `OpenPreview` 工具的访问能力。
+它**只能**在最后打印 `OpenPreview(preview_url="...")` 提示，由 agent（运行在 MCP 那一侧）来真正调用工具。
+所以**每次重启预览都得 agent 收尾调一次 OpenPreview**，这是沙箱架构的硬约束。
+
+---
+
 ## 九、跨文档引用
 
 | 主题 | 文档 |
