@@ -96,6 +96,7 @@ func (p *DevPreviewProxy) RegisterNoRoute(r *gin.Engine) {
 // 让 OpenList UI（Solid app）能 boot，不依赖 OpenList backend 二进制。
 // 真实后端启动后改成代理 :5244 即可。
 func (p *DevPreviewProxy) handleOpenlistPublicAPI(c *gin.Context) {
+	slog.Info("[dev-preview-proxy] /api/public/* hit", "path", c.Request.URL.Path, "remote", c.ClientIP())
 	c.Header("Content-Type", "application/json; charset=utf-8")
 
 	// 拼接 subpath（gin's /*subpath 包含前导 /，先 trim）

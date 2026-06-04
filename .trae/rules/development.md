@@ -735,3 +735,97 @@ console.error = (...args) => {
 | **只过滤日志（推荐）** | **DevLogs 干净 + 本地直连 HMR 仍可用** |
 
 沙箱预览是只读验证场景，HMR 不可用是已知限制；本地开发仍依赖 HMR。
+
+## 九、16000 agent-tool-host 代理路径白名单（⚠️ 实战踩坑！）
+
+### 9.1 症状
+
+OpenList UI 页面 JS 加载、mount 都正常，但 axios 调 `/api/public/settings` 返回 `Network Error`。GIN 日志里 0 条 `/api/*` 记录。看似后端不通，但本地 curl `http://127.0.0.1:2025/api/public/settings` 返回 200。
+
+### 9.2 根因
+
+`16000 agent-tool-host` 的 `preview_proxy::proxy` **只转发特定路径前缀**（基于 OpenPreview 注册的端口 + frontend base path）。从 `/var/log/tool/agent-tool-host.stdout.log` 看到的实际转发列表只有：
+
+| 路径模式 | 转发到 | 用途 |
+|---------|--------|------|
+| `/` | 2025 | 根 fallback |
+| `/openlist-ui/...` | 2025 | openlist vite 的所有资产 + 页面 |
+| `/ws` | 2025 | WebSocket（HMR / encv-go WS hub） |
+| `/?_port=...` | （自身） | 内部健康检查 |
+| `/?token=...` | 2025 | preview URL 带 token 鉴权 |
+
+**其他路径（包括 `/api/*`）被 16000 静默丢弃**——不返回 4xx、不写日志、TCP 直接关闭。浏览器 axios 等不到响应 → `Network Error`。
+
+### 9.3 验证
+
+```bash
+# 16000 实际代理了哪些路径
+grep "preview_proxy::proxy" /var/log/tool/agent-tool-host.stdout.log \
+  | sed 's/.*Proxying //; s/ to port.*//' | sort -u
+
+# 用户 axios 的请求是否进了 encv-go
+grep "api/public" /tmp/encv-air.log | grep -v 127.0.0.1
+# 期望：空（说明没到 encv-go，被 16000 截了）
+```
+
+### 9.4 修复方案：让 axios baseURL 走通前缀
+
+让 axios 的 baseURL 包含 16000 已知的白名单前缀（`/openlist-ui`），让请求被 16000 转发，再由 openlist vite 内部 proxy 回 encv-go 的 mock：
+
+**Step 1**：`vite-plugins/encv-openlist-config.ts` 把 `api` 从 `""` 改为 `"/openlist-ui"`：
+
+```ts
+window.OPENLIST_CONFIG = Object.assign({}, window.OPENLIST_CONFIG, {
+  // 沙箱预览下必须用 /openlist-ui 前缀，否则 16000 代理会丢请求
+  api: "/openlist-ui",
+  base_path: "/openlist-ui/",
+});
+```
+
+**Step 2**：`vite.config.ts` 的 proxy 必须用 RegExp（vite 字符串 key 是 prefix match，`"/api"` 不会匹配 `/openlist-ui/api/...`）：
+
+```ts
+proxy: {
+  "^/openlist-ui/api": {
+    target: "http://127.0.0.1:2025",  // encv-go dev_preview_proxy
+    changeOrigin: true,
+    // 把 /openlist-ui/api/* 重写为 /api/*，避免 dev_preview_proxy 的
+    // /openlist-ui/* 路由把请求回环到本 vite (无限代理循环)
+    rewrite: (path) => path.replace(/^\/openlist-ui\/api/, "/api"),
+  },
+}
+```
+
+### 9.5 完整请求链
+
+```
+Browser axios
+  GET /openlist-ui/api/public/settings
+  ↓
+16000 agent-tool-host（白名单：/openlist-ui/* 转发）
+  ↓
+encv-go dev_preview_proxy（/openlist-ui/* → :3000 openlist vite）
+  ↓
+openlist vite（proxy "^/openlist-ui/api" → encv-go，rewrite 为 /api/...）
+  ↓
+encv-go /api/public/* mock handler
+  ↓ 返回 JSON {"code":200,"data":{...}}
+Browser axios 收到响应 ✅
+```
+
+### 9.6 反模式（已验证失败）
+
+| 配置 | 失败现象 |
+|------|---------|
+| `api: ""` + openlist vite proxy `/api` | axios 调 `/api/...` → 16000 丢 |
+| `api: ""` + 改 openlist vite proxy 为 `/openlist-ui/api` | proxy 字符串 key 不匹配（不会触发） |
+| dev_preview_proxy 加 `/openlist-ui/api/*` 路由 | 与 `/openlist-ui/*` 路由冲突，gin 后注册覆盖前注册 |
+| **正确做法** | `api: "/openlist-ui"` + openlist vite proxy RegExp `^/openlist-ui/api` + rewrite |
+
+### 9.7 与 dev_preview_proxy 的职责边界
+
+| 组件 | 职责 |
+|------|------|
+| **dev_preview_proxy** | 路由分发：`/openlist-ui/*` → openlist vite，`/api/public/*` → mock，其它 → encv-mobile vite |
+| **openlist vite proxy** | 跨 backend 桥接：`/openlist-ui/api/*`（沙箱）→ encv-go mock；真实部署时 `/api` → :5244 OpenList binary |
+| **不要在两者间加新层** | 任何"再封装一层"都会导致路由冲突或循环代理 |
