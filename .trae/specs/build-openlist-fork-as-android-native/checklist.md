@@ -1,5 +1,7 @@
 # Checklist — Build OpenList Fork as Android Native Binary (Phase C)
 
+> **ABI 范围决策**：**只编 arm64-v8a 一个 ABI**（4 ABI → 1 ABI 简化）
+
 ## 阶段 0: 准备与验证
 
 - [ ] `app/openlist/Hi-Sillot-OpenList/` 目录存在，含 fork 源码
@@ -12,15 +14,14 @@
 - [ ] `go mod download` 退出码 0
 - [ ] `grep -rn 'import "C"\|#cgo' app/openlist/Hi-Sillot-OpenList/ --include="*.go"` 无输出
 
-## 阶段 1: 本地编译验证
+## 阶段 1: 本地编译验证（arm64-v8a only）
 
 - [ ] `GOOS=android GOARCH=arm64 CGO_ENABLED=0 go build -buildmode=c-shared -o /tmp/libopenlist-arm64.so ./cmd` 成功
 - [ ] `file /tmp/libopenlist-arm64.so` 显示 `ARM aarch64`
-- [ ] `GOOS=android GOARCH=arm ...` 成功（armeabi-v7a）
-- [ ] `GOOS=android GOARCH=386 ...` 成功（x86）
-- [ ] `GOOS=android GOARCH=amd64 ...` 成功（x86_64）
-- [ ] 4/4 编译退出码 0
-- [ ] 4/4 产物体积在 30-60MB 范围
+- [ ] 产物体积在 30-60MB 范围
+- [ ] **不**编 armeabi-v7a / x86 / x86_64（仅 arm64-v8a）
+- [ ] `plugin-openlist/build.gradle.kts` `defaultConfig.ndk.abiFilters` 是 `listOf("arm64-v8a")`（长度 1）
+- [ ] `src/main/jniLibs/` 只含 `arm64-v8a/` 子目录
 
 ## 阶段 2: CI 步骤集成
 
@@ -29,7 +30,7 @@
 - [ ] `.github/workflows/android.yml` 删 `Extract OpenList AAR for plugin packaging` step
 - [ ] `.github/workflows/android.yml` 删 `[Phase 26] OpenList native binary placeholder` step
 - [ ] `.github/workflows/android.yml` 新增 `Setup Go 1.25.1` step (actions/setup-go@v5, go-version-file)
-- [ ] `.github/workflows/android.yml` 新增 `Build OpenList native libs (Go cross-compile)` step
+- [ ] `.github/workflows/android.yml` 新增 `Build OpenList native libs (Go cross-compile, arm64-v8a)` step
 - [ ] `.github/workflows/android.yml` 新增 `Copy libopenlist.so to plugin-openlist jniLibs` step
 - [ ] `scripts/build-openlist-aar.sh` 已 `git rm`
 - [ ] `grep -rn "build-openlist-aar\|gomobile" .github/workflows/android.yml` 无输出
@@ -38,8 +39,8 @@
 
 - [ ] `./gradlew -PincludePlugins=true "convert_plugin-openlist_release" --stacktrace` 退出码 0
 - [ ] `app/encv-mobile/android/build/outputs/plugin-apks/release/plugin-openlist-release.apk` 存在
-- [ ] `unzip -l plugin-openlist-release.apk | grep libopenlist` 显示 4 个 ABI 条目
-- [ ] APK 体积增量在预期范围（4 ABI ~120-200MB）
+- [ ] `unzip -l plugin-openlist-release.apk | grep libopenlist` 显示 **1 行**（仅 `lib/arm64-v8a/libopenlist.so`）
+- [ ] APK 体积增量在 ~30-50MB 范围（单 ABI libopenlist.so）
 
 ## 阶段 4: 端到端验证（设备，可选）
 
@@ -56,11 +57,11 @@
 
 - [ ] `app/openlist/README.md` 新增「Phase C 交叉编译」章节（≥ 50 行）
 - [ ] `plugin-openlist/README.md` 删 `implementation(files("libs/openlist.aar"))` 引用
-- [ ] `plugin-openlist/README.md` 加 Phase 26/Phase C 架构说明
+- [ ] `plugin-openlist/README.md` 加 Phase 26/Phase C 架构说明（libopenlist.so via jniLibs + arm64-v8a only）
 
 ## 不变项（回归测试）
 
-- [ ] `plugin-openlist/build.gradle.kts` 仍是 Phase 26 干净 95 行（**不**为 Phase C 再改）
+- [ ] `plugin-openlist/build.gradle.kts` `jniLibs.srcDirs("src/main/jniLibs")` 仍存在（**不**为 Phase C 删除）
 - [ ] `OpenListNativeService.kt` 仍是 Phase 26 仿 EncvGoService 模式（**不**为 Phase C 再改）
 - [ ] host app `GoProcessPlugin.kt` classloader 反射类名仍是 `OpenListNativeService`（**不**为 Phase C 再改）
 - [ ] `.github/workflows/android.yml` step 顺序：Go setup → fork 编译 → jniLibs 拷贝 → gradle aar2apk → apk 验证

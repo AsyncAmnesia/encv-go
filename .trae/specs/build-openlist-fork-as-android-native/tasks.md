@@ -1,5 +1,7 @@
 # Tasks — Build OpenList Fork as Android Native Binary (Phase C)
 
+> **ABI 范围决策**：**只编 arm64-v8a 一个 ABI**（4 ABI → 1 ABI 简化）
+
 ## 阶段 0: 准备与验证
 
 ### T0.1 浅克隆 Hi-Sillot/OpenList dev 分支
@@ -16,9 +18,9 @@
 - [ ] `go mod tidy` 跑过（**dry-run 模式**，不写回 go.mod，只看是否缺包）
 - **Validation**: 退出码 0；无 `missing go.sum entry` 错误
 
-## 阶段 1: 本地验证 fork 交叉编译可行性
+## 阶段 1: 本地验证 fork 交叉编译可行性（仅 arm64-v8a）
 
-### T1.1 单 ABI 编译验证（arm64-v8a）
+### T1.1 arm64-v8a 编译验证
 - [ ] `cd app/openlist/Hi-Sillot-OpenList`
 - [ ] `CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -buildmode=c-shared -o /tmp/libopenlist-arm64.so ./cmd`
 - [ ] 验证退出码 0
@@ -26,18 +28,15 @@
 - [ ] 验证 `ls -lh /tmp/libopenlist-arm64.so` 体积在 30-60MB 范围
 - **Validation**: ELF 头 magic + aarch64 arch + 体积合理
 
-### T1.2 剩余 3 ABI 编译验证
-- [ ] `CGO_ENABLED=0 GOOS=android GOARCH=arm go build -buildmode=c-shared -o /tmp/libopenlist-arm.so ./cmd`
-- [ ] `CGO_ENABLED=0 GOOS=android GOARCH=386 go build -buildmode=c-shared -o /tmp/libopenlist-386.so ./cmd`
-- [ ] `CGO_ENABLED=0 GOOS=android GOARCH=amd64 go build -buildmode=c-shared -o /tmp/libopenlist-amd64.so ./cmd`
-- [ ] 4 个 ABI 都成功
-- [ ] `file /tmp/libopenlist-*.so` 都显示有效 Android shared library
-- **Validation**: 4/4 编译成功
-
-### T1.3 grep 验证 fork 无 CGO 依赖
+### T1.2 grep 验证 fork 无 CGO 依赖
 - [ ] `grep -rn 'import "C"\|#cgo' app/openlist/Hi-Sillot-OpenList/ --include="*.go" | head` 应**无输出**（除 docstring）
 - [ ] 如果有 CGO 引用，先替换为 pure-Go 等价物再继续
 - **Validation**: 0 个 CGO 引用
+
+### T1.3 abiFilters 配置调整
+- [ ] `app/encv-mobile/plugin-openlist/build.gradle.kts` `defaultConfig.ndk.abiFilters` 改 `listOf("arm64-v8a")`（删除其他 3 ABI）
+- [ ] 验证 `src/main/jniLibs/` 只含 `arm64-v8a/` 子目录
+- **Validation**: abiFilters 列表长度 1
 
 ## 阶段 2: CI 步骤集成
 
@@ -48,19 +47,19 @@
 
 ### T2.2 fork 编译 step（替代 Phase 26 placeholder）
 - [ ] `.github/workflows/android.yml` **删** step `- name: "[Phase 26] OpenList native binary placeholder"`
-- [ ] 新增 step `- name: Build OpenList native libs (Go cross-compile)`：
+- [ ] 新增 step `- name: Build OpenList native libs (Go cross-compile, arm64-v8a)`：
   - `cd app/openlist/Hi-Sillot-OpenList`
-  - 4 ABI 循环 `go build -buildmode=c-shared -o /tmp/libopenlist-${ABI}.so ./cmd` (CGO_ENABLED=0)
+  - `CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -buildmode=c-shared -o /tmp/libopenlist-arm64.so ./cmd`
   - 编译失败 fail-fast (`set -e`)
-- [ ] 编译产物 log：`ls -lh /tmp/libopenlist-*.so`
-- **Validation**: CI log 含 4 个 `libopenlist-<abi>.so` 行，体积合理
+- [ ] 编译产物 log：`ls -lh /tmp/libopenlist-arm64.so` + `file /tmp/libopenlist-arm64.so`
+- **Validation**: CI log 含 libopenlist-arm64.so 编译记录，体积合理
 
 ### T2.3 拷贝到 plugin-openlist jniLibs step
 - [ ] `.github/workflows/android.yml` 新增 step `- name: Copy libopenlist.so to plugin-openlist jniLibs`：
-  - ABI map: arm64→arm64-v8a, arm→armeabi-v7a, 386→x86, amd64→x86_64
-  - `cp /tmp/libopenlist-${GOARCH}.so app/encv-mobile/plugin-openlist/src/main/jniLibs/${ABI_DIR}/libopenlist.so`
-  - 验证 `ls -lh app/encv-mobile/plugin-openlist/src/main/jniLibs/*/libopenlist.so` 显示 4 个文件
-- **Validation**: CI log 含 4 行 `libopenlist.so` 拷贝记录
+  - `mkdir -p app/encv-mobile/plugin-openlist/src/main/jniLibs/arm64-v8a`
+  - `cp /tmp/libopenlist-arm64.so app/encv-mobile/plugin-openlist/src/main/jniLibs/arm64-v8a/libopenlist.so`
+  - 验证 `ls -lh app/encv-mobile/plugin-openlist/src/main/jniLibs/arm64-v8a/libopenlist.so` 显示文件
+- **Validation**: CI log 含 libopenlist.so 拷贝记录
 
 ### T2.4 旧 gomobile 脚本彻底删
 - [ ] `git rm scripts/build-openlist-aar.sh`（或直接 `rm` 删文件）
@@ -73,12 +72,12 @@
 - [ ] CI 跑 `./gradlew -PincludePlugins=true "convert_plugin-openlist_release" --stacktrace`
 - [ ] 验证退出码 0
 - [ ] 验证产物：`ls -lh app/encv-mobile/android/build/outputs/plugin-apks/release/plugin-openlist-release.apk`
-- [ ] 验证 `unzip -l app/encv-mobile/android/build/outputs/plugin-apks/release/plugin-openlist-release.apk | grep libopenlist` 显示 4 个 ABI 的 `lib/<abi>/libopenlist.so`
-- **Validation**: plugin APK 含 4 ABI libopenlist.so
+- [ ] 验证 `unzip -l app/encv-mobile/android/build/outputs/plugin-apks/release/plugin-openlist-release.apk | grep libopenlist` 显示 `lib/arm64-v8a/libopenlist.so`（**1 行**）
+- **Validation**: plugin APK 含单 ABI libopenlist.so
 
 ### T3.2 APK 体积审计
 - [ ] 对比 Phase 26 缺 libopenlist.so 的 APK 体积 vs Phase C 含 libopenlist.so 的 APK 体积
-- [ ] 期望增量：4 ABI 总和 ~120-200MB（与原 gomobile 150MB `libgojni.so` 量级相当）
+- [ ] 期望增量：~30-50MB（单 ABI libopenlist.so）
 - [ ] **不要**走 splits / app bundle（保留 fat APK 简化 aar2apk 流程）
 - **Validation**: APK 体积增加量在预期范围
 
@@ -108,12 +107,12 @@
 
 ### T5.1 app/openlist/README.md 新增章节
 - [ ] 在「Hi-Sillot fork 维护工作流」之后新增「Phase C 交叉编译」章节
-- [ ] 内容：Go 1.25.1 装、4 ABI build mode、jniLibs 拷贝、CI 集成点
+- [ ] 内容：Go 1.25.1 装、arm64-v8a build mode、jniLibs 拷贝、CI 集成点、**只编 arm64-v8a 不编其他 ABI 的原因**
 - **Validation**: 文档 ≥ 50 行新增
 
 ### T5.2 plugin-openlist/README.md 更新
 - [ ] 删 `implementation(files("libs/openlist.aar"))` 那行（Phase 26 已删 .aar 但 README 没更新）
-- [ ] 加 Phase 26/Phase C 架构说明（libopenlist.so via jniLibs）
+- [ ] 加 Phase 26/Phase C 架构说明（libopenlist.so via jniLibs + arm64-v8a only）
 - **Validation**: README 与实际构建配置一致
 
 # Task Dependencies
@@ -125,6 +124,12 @@
 # 关键决策点
 
 - **T1.1 失败时**：fork 内部 Go 错误（与 glebarez 无关）→ 提交 issue 给 Hi-Sillot/OpenList fork；不要硬改 fork 源码（避免与上游 drift）
-- **T1.3 撞 CGO**：fork 有 `import "C"` → 评估是否必要；非必要则先转 pure-Go 等价物再继续
+- **T1.2 撞 CGO**：fork 有 `import "C"` → 评估是否必要；非必要则先转 pure-Go 等价物再继续
 - **T2.1 失败时**：GitHub Actions runner 不支持 Go 1.25.1 → fallback 用 `actions/setup-go@v5` + `go-version: '1.25.1'` 手动写版本
 - **T3.1 失败时**：aar2apk 任务 addNativeLibs 没把 jniLibs 拷进 APK → 检查 `src/main/jniLibs` 路径是否与 plugin-openlist 的 `applicationId` 包名一致
+
+# Phase D 后可考虑（不包含在本 spec）
+
+- **D.1** 多 ABI 扩展：如有 armeabi-v7a / x86 / x86_64 设备需求，把 T1.3/T2.2/T2.3 扩展为 for 循环编 4 ABI
+- **D.2** fork upstream rebase：定期 rebase Hi-Sillot/OpenList fork 到 OpenListTeam/OpenList main，吸收上游特性
+- **D.3** Host app GoProcessPlugin 已有 OpenListNativeService.statusListener 反射的完全迁移（去掉反射，改用 ContentProvider）
