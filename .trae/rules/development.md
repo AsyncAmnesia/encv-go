@@ -1078,11 +1078,125 @@ curl -s http://127.0.0.1:16000/openlist-spa/api/public/settings  # 同上
 | `import.meta.env.DEV` 判断错误 | plugin-openlist 在 prod build 时 | vite 正常处理（dev=true 仅当 vite dev mode） |
 | backend :5244 启动 panic "index.html not exist" | binary go:embed 嵌入空 dist | config.json 设 `"dist_dir": "<absolute path>/public/dist"` |
 
-### 11.7 ENCV 沙箱 dev preview 不要同时启这两个
+### 11.7 ENCV 沙箱 dev preview 同时启这两个（2026-06-04 修正）
 
-- **必须启**：plugin-openlist/web (:5174)
-- **不要启**：Hi-Sillot-OpenList-Frontend (:3000)
+> **2026-06-04 修正**：之前的"不要启 :3000"是错的。`/openlist-spa/*` 必须由 Hi-Sillot-OpenList-Frontend vite dev (:3000) 提供真实 OpenList web UI，否则 iframe 加载的是 stub 或空 HTML。
 
-`dev-openlist.sh`（启动 OpenList binary + 它的 dist）里会触碰 Hi-Sillot-OpenList-Frontend 的 `dist/`，但那是作为 binary 启动的**前置**（生产 dist 源），不是 ENCV 沙箱 dev 入口。
+| 端口 | 启动命令 | 必须？ | 角色 |
+|------|---------|-------|------|
+| **5173** | `pnpm --dir app/encv-mobile dev` | ✅ | encv-mobile Capacitor app 主前端（Vue + Ionic） |
+| **5174** | `pnpm --dir app/encv-mobile/plugin-openlist/web dev` (env `VITE_BASE=/openlist-ui/`) | ✅ | plugin-openlist Capacitor UI（Vue + Ionic） |
+| **3000** | `pnpm --dir app/openlist/Hi-Sillot-OpenList-Frontend dev` (env `OPENLIST_PREVIEW_BASE=/openlist-spa/`) | ✅ | OpenListTeam 官方 web UI（SolidJS）—— plugin-openlist iframe 内加载 |
+| **5244** | `/tmp/openlist server --data /tmp/openlist-data --dev` | ✅ | OpenList backend binary 真实 API |
+| **2025** | `air` (env `ENCV_DEV_PREVIEW=1`) | ✅ | dev_preview_proxy front door（4 个上游编排） |
 
-`start-preview.sh` 现在正确只起 :5174，不再起 :3000。
+`dev-openlist.sh` 启动 OpenList binary + 它的 dist。Hi-Sillot-OpenList-Frontend 的 `dist/` 仍是 binary 启动的**前置**（生产 dist 源），沙箱 dev 入口用 vite dev :3000 而不是 dist。
+
+`start-preview.sh` Step 0-7 一次性启全部 5 个进程（含 air + 3 个 vite + backend），detach=1 时脚本退出子进程继续运行。
+
+### 11.8 OpenList web UI iframe 加载原理（⚠️ 路由陷阱！）
+
+plugin-openlist 的 `OpenListWebView.vue` 通过 `<iframe src="/openlist-spa/#/login">` 加载 OpenList web UI。
+
+**关键陷阱**：iframe 内 axios 调 `/api/...` 时，浏览器**总是**把 URL 解析为 `/openlist-spa/api/...`（iframe 的 base href 是 `/openlist-spa/`）。
+
+```javascript
+// 浏览器内部：axios.get('/api/public/settings') 在 iframe 内
+// → 实际请求 URL: https://host:port/openlist-spa/api/public/settings
+```
+
+但 Hi-Sillot vite 的 proxy 规则只匹配 `/api`（不带前缀），不匹配 `/openlist-spa/api`。所以 vite 不会代理，fall through 到 SPA index.html（`/openlist-spa/api/...` 返 200 text/html）→ axios 拿到 HTML 当 JSON 解析 → 报 `Network Error` 或 JSON parse error。
+
+**修复**（`dev_preview_proxy.go`）：在 `:2025` 层先于 vite 一步把 `/openlist-spa/api/*` 摘出来反代到 :5244：
+
+```go
+// 1. /api/* → :5244（top-level API，encv-go 自身也用）
+if strings.HasPrefix(path, "/api/") || path == "/api" { ... return }
+
+// 2. /openlist-spa/api/* → :5244（iframe 内 API，strip /openlist-spa 前缀后打 :5244）
+//    必须在 /openlist-spa/* fallback 之前匹配！
+if strings.HasPrefix(path, "/openlist-spa/api/") || path == "/openlist-spa/api" {
+    c.Request.URL.Path = strings.TrimPrefix(path, "/openlist-spa")
+    p.proxyTo(c, p.openlistBackendURL)
+    return
+}
+
+// 3. /openlist-spa/* → :3000（OpenList web UI 静态资源 + SolidJS bundle）
+if strings.HasPrefix(path, "/openlist-spa/") || path == "/openlist-spa" { ... }
+```
+
+**验证命令**：
+```bash
+# 修复前：/openlist-spa/api/public/settings 返 HTML（vite SPA fallback）
+# 修复后：/openlist-spa/api/public/settings 返 JSON（真 backend settings）
+curl -s http://127.0.0.1:2025/openlist-spa/api/public/settings
+# 期望: {"code":200,"message":"success","data":{...}}
+```
+
+---
+
+## 十二、dev preview 不用 vite build production dist（原则：开发预览 = 真实代码路径）
+
+> **核心原则：**
+> **沙箱 dev preview 直接用 vite dev 跑源码，不做 production build。**
+> **改一行代码 → HMR 秒级生效；build 一次 → 等 30 秒 + 5MB dist 落盘。开发体验是数量级差距。**
+
+### 12.1 为什么 dev preview 不 build
+
+| 模式 | 命令 | 启动延迟 | 代码改→生效 | 适用场景 |
+|------|------|---------|-----------|---------|
+| **dev preview** | `vite dev --port 3000` | 0.5s | HMR 200ms | 沙箱预览、AI 调试、UI 改样式 |
+| ~~build preview~~ | `vite build && cp dist/ public/dist` | 30s | 30s+ | ❌ 不要用 |
+| production APK | `pnpm build:apk` | 5min+ | 重装 APK | 真机发布 |
+
+**dev preview 的核心优势**：
+1. 改一行代码 → 保存 → 浏览器秒级刷新（HMR 200ms）
+2. 不需要每次 `vite build` + `cp dist` 30 秒
+3. 不需要担心 base path 写错（dev 用 `VITE_BASE` 注入，prod 写死 `./`）
+4. 不需要担心 `go:embed` 同步问题（binary dist_dir vs source dist 漂移）
+
+### 12.2 vite dev base 注入原则
+
+**`vite dev` 用绝对 base（env 注入），`vite build` 用相对 base（Android file:// 加载）**：
+
+```ts
+// Hi-Sillot-OpenList-Frontend/vite.config.ts
+base: process.env.OPENLIST_PREVIEW_BASE
+  ? process.env.OPENLIST_PREVIEW_BASE  // dev: "/openlist-spa/"
+  : "/__dynamic_base__/",              // build: 由 vite-plugin-dynamic-base 运行时算
+
+// plugin-openlist/web/vite.config.ts
+base: process.env.VITE_BASE || './',   // dev: "/openlist-ui/" 或 build: "./"
+```
+
+| Env | HTML `<base>` | 资源路径 | 谁来 serve |
+|-----|--------------|---------|-----------|
+| `OPENLIST_PREVIEW_BASE=/openlist-spa/` | `/openlist-spa/` | `/openlist-spa/src/main.tsx` | :3000 vite dev |
+| 不设 | `/__dynamic_base__/` | `/__dynamic_base__/src/main.tsx` | OpenList binary `public/dist` |
+
+### 12.3 何时必须 build
+
+| 场景 | 是否需要 build | 原因 |
+|------|--------------|------|
+| 沙箱 dev preview 调试 UI | ❌ | vite dev 直接 serve 源码，HMR 200ms |
+| 改 OpenList 业务逻辑（设置、登录、文件管理） | ❌ | vite dev 改 .tsx 立即生效 |
+| 验证 OpenList web UI 集成 | ❌ | iframe 加载 /openlist-spa/，由 vite dev 服务 |
+| 打包 Android APK 真机测试 | ✅ | `pnpm build:apk` 含 vite build + go:embed + apk 签名 |
+| 上传 App Store / Play Store | ✅ | release apk + 签名 |
+| 性能测试 / Lighthouse 跑分 | ⚠️ | 可以 build，但要 `vite preview` 而不是 `vite dev` |
+
+### 12.4 铁律
+
+- **dev preview 模式下，Hi-Sillot-OpenList-Frontend 跑 vite dev (:3000)，不 build**
+- `start-preview.sh` Step 6 启 vite dev 而不是 build + cp
+- binary 的 `public/dist` 路径只用于 release APK（apk 构建时由 `pnpm build:apk` 全自动处理）
+- dev preview 下 backend (:5244) 的 `config.json` 可以指空 dist 或 stub，**不影响** vite dev 提供的 web UI
+
+### 12.5 不要做的事
+
+| ❌ 反模式 | 后果 | 正确做法 |
+|----------|------|---------|
+| `vite build && cp -r dist/* /tmp/openlist-data/public/dist` | 30s/build + dist 漂移 | `pnpm dev` |
+| 把 `OPENLIST_PREVIEW_BASE` 设为 `/` | base 冲突，dev_preview_proxy 路由不到 | 必须带 `/openlist-spa/` 前缀 |
+| 手动启 `vite preview` 跑 build dist | 失去 HMR | 一直用 `vite dev` |
+| 改 dist 下的 index.html | 每次 build 被清空 | 改 src/ 下的源码 |

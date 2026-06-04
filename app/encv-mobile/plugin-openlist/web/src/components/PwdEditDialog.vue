@@ -62,14 +62,11 @@ import {
   IonItem,
   IonLabel,
   IonInput,
+  modalController,
 } from '@ionic/vue'
 
 const props = defineProps<{
   onConfirm: (password: string) => void | Promise<void>
-}>()
-
-const emit = defineEmits<{
-  (e: 'did-dismiss'): void
 }>()
 
 const password = ref('')
@@ -79,6 +76,17 @@ const error = ref('')
 const canConfirm = computed(() => {
   return password.value.length >= 4 && password.value === confirmPassword.value
 })
+
+/**
+ * 关键（capacitor.md §1.1 铁律）：
+ * 本组件由 `modalController.create({ component: PwdEditDialog })` 加载，
+ * 模态是挂载在 <body> 根节点的全局 overlay —— 父组件 Vue 树外。
+ * `emit('did-dismiss')` 在这种场景下找不到父组件监听器，**modal 不会关闭**。
+ * 必须用 `modalController.dismiss()` 全局 API 关闭。
+ */
+async function closeModal() {
+  await modalController.dismiss()
+}
 
 async function onConfirm() {
   if (!canConfirm.value) {
@@ -92,11 +100,14 @@ async function onConfirm() {
     error.value = `设置失败：${e?.message || e}`
     return
   }
-  emit('did-dismiss')
+  // 成功路径也用 modalController.dismiss() —— 见 closeModal 注释
+  await closeModal()
 }
 
-function onDismiss() {
-  emit('did-dismiss')
+async function onDismiss() {
+  // 取消：必须用全局 modalController.dismiss()，emit('did-dismiss') 在
+  // modalController.create() 场景下找不到父组件监听器，点击无反应
+  await closeModal()
 }
 </script>
 

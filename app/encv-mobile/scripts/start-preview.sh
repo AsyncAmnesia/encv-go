@@ -139,13 +139,22 @@ if [[ ! -d "${MOCK_DIR}/01-plain-media" ]]; then
 fi
 
 # ---------- Step 3: air 启动后端（前台子进程） ----------
-step "3/6 启动后端（air 监视重载，ENCV_DEV_PREVIEW=1）"
+step "3/7 启动后端（air 监视重载，ENCV_DEV_PREVIEW=1）"
 cd "${REPO_ROOT}"
 # 把当前实际占用的 vite 端口告诉 dev_preview_proxy（$VITE_PORT 在上方已探测过）。
-# 注意：plugin-openlist 走 :5174（独立 vite），所以 *BOTH* 5173（encv-mobile）+ 5174（plugin-openlist）
+# 注意：四个上游独立：
+#   - :5173 (encv-mobile vite)
+#   - :5174 (plugin-openlist/web vite)
+#   - :3000 (Hi-Sillot-OpenList-Frontend vite dev, OpenListTeam 官方 web UI)
+#   - :5244 (OpenList backend binary)
 export ENCV_DEV_MOBILE_VITE_URL="http://127.0.0.1:${VITE_PORT}"
 export ENCV_DEV_PLUGIN_OPENLIST_VITE_URL="http://127.0.0.1:${PLUGIN_OPENLIST_PORT}"
-AIR_PID=$(spawn_bg /tmp/encv-air.log env ENCV_DEV_PREVIEW=1 ENCV_DEV_MOBILE_VITE_URL="${ENCV_DEV_MOBILE_VITE_URL}" ENCV_DEV_PLUGIN_OPENLIST_VITE_URL="${ENCV_DEV_PLUGIN_OPENLIST_VITE_URL}" air)
+export ENCV_DEV_OPENLIST_FRONTEND_VITE_URL="http://127.0.0.1:${OPENLIST_FRONTEND_PORT:-3000}"
+AIR_PID=$(spawn_bg /tmp/encv-air.log env ENCV_DEV_PREVIEW=1 \
+  ENCV_DEV_MOBILE_VITE_URL="${ENCV_DEV_MOBILE_VITE_URL}" \
+  ENCV_DEV_PLUGIN_OPENLIST_VITE_URL="${ENCV_DEV_PLUGIN_OPENLIST_VITE_URL}" \
+  ENCV_DEV_OPENLIST_FRONTEND_VITE_URL="${ENCV_DEV_OPENLIST_FRONTEND_VITE_URL}" \
+  air)
 SUBPIDS+=("${AIR_PID}")
 echo "    air pid=${AIR_PID}"
 
@@ -223,17 +232,49 @@ else
   echo "    ⚠️  ${PLUGIN_OPENLIST_DIR} 不存在，跳过 plugin-openlist 预览（沙箱预览 OpenList UI 入口将 302 到 503）"
 fi
 
-# ---------- Step 6: 状态报告 + OpenPreview 提示 ----------
-step "6/7 ✅ 服务全部就绪"
+# ---------- Step 6: Hi-Sillot-OpenList-Frontend vite dev（OpenList web UI, plugin-openlist iframe 用） ----------
+step "6/7 启动 Hi-Sillot-OpenList-Frontend vite dev（port ${OPENLIST_FRONTEND_PORT:-3000}，OpenList web UI）"
+OPENLIST_FRONTEND_DIR="${REPO_ROOT}/app/openlist/Hi-Sillot-OpenList-Frontend"
+if [[ -d "${OPENLIST_FRONTEND_DIR}" ]] && [[ -f "${OPENLIST_FRONTEND_DIR}/vite.config.ts" ]]; then
+  # Hi-Sillot-OpenList-Frontend 的 OpenListTeam 官方 web UI（SolidJS）
+  # plugin-openlist 的 OpenListWebView iframe 通过 /openlist-spa/* 加载它
+  # dev 模式 base：OPENLIST_PREVIEW_BASE=/openlist-spa/，vite 处理 /openlist-spa/* 前缀
+  # vite 自带 /api → :5244 proxy，iframe 内 API 透明转发
+  OPENLIST_FRONTEND_PORT="${OPENLIST_FRONTEND_PORT:-3000}"
+  # 端口被占回退
+  if lsof -i :${OPENLIST_FRONTEND_PORT} >/dev/null 2>&1; then
+    while lsof -i :${OPENLIST_FRONTEND_PORT} >/dev/null 2>&1; do
+      OPENLIST_FRONTEND_PORT=$((OPENLIST_FRONTEND_PORT + 1))
+    done
+    echo "    :3000 已被占用，使用 :${OPENLIST_FRONTEND_PORT}"
+  fi
+  OPENLIST_FRONTEND_PID=$(spawn_bg /tmp/encv-openlist-frontend.log env OPENLIST_PREVIEW_BASE="/openlist-spa/" OPENLIST_NO_HMR=1 pnpm --dir "${OPENLIST_FRONTEND_DIR}" dev --host 127.0.0.1 --port "${OPENLIST_FRONTEND_PORT}" --strictPort)
+  SUBPIDS+=("${OPENLIST_FRONTEND_PID}")
+  echo "    openlist-frontend vite pid=${OPENLIST_FRONTEND_PID}"
+  # 等待 Hi-Sillot vite 就绪
+  for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    if curl -s "http://127.0.0.1:${OPENLIST_FRONTEND_PORT}/openlist-spa/" >/dev/null 2>&1; then
+      echo "    openlist-frontend vite ready (port ${OPENLIST_FRONTEND_PORT}, base=/openlist-spa/)"
+      break
+    fi
+    sleep 0.5
+  done
+else
+  echo "    ⚠️  ${OPENLIST_FRONTEND_DIR} 不存在，跳过 OpenList web UI 预览（plugin-openlist iframe 加载 :3000 会失败）"
+fi
+
+# ---------- Step 7: 状态报告 + OpenPreview 提示 ----------
+step "7/7 ✅ 服务全部就绪"
 cat <<EOF
 
 ========================================
 ✅ ENCV 预览已启动
 
   端口分配：
-     :${VITE_PORT}  = Vite dev server（encv-mobile 前端，用户直接访问）
-     :${BACKEND_PORT} = Go Backend（air 监视重载）
-     :${PLUGIN_OPENLIST_PORT} = plugin-openlist/web vite dev server（沙箱预览 OpenList UI 入口）
+     :${VITE_PORT}                = Vite dev server（encv-mobile 前端，用户直接访问）
+     :${BACKEND_PORT}             = Go Backend（air 监视重载）
+     :${PLUGIN_OPENLIST_PORT}     = plugin-openlist/web vite dev server（沙箱预览 OpenList UI 入口）
+     :${OPENLIST_FRONTEND_PORT:-3000}    = Hi-Sillot-OpenList-Frontend vite dev（OpenList web UI，iframe 内加载）
 
   用户访问地址（必须先 OpenPreview 激活）：
      http://localhost:${VITE_PORT}/

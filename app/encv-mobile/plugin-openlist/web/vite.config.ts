@@ -5,16 +5,18 @@ import { fileURLToPath, URL } from 'node:url'
 /**
  * plugin-openlist/web Vite 配置
  *
- * 关键配置：`base: './'`
+ * 关键配置：`base: './'` (生产) | `/openlist-ui/` (沙箱 dev, VITE_BASE env)
  *   生产模式：WebView 加载 `file:///android_asset/openlist/index.html`
  *   资源路径必须用相对路径 `./assets/...`（Vite 默认 `/assets/...` 会在 file:// 下 404）
  *
- * Proxy 设计：
- *   /openlist-spa/*  →  http://127.0.0.1:5244/*
+ * Proxy 设计（**重要：/openlist-spa 是 Hi-Sillot-OpenList-Frontend 的入口，不是 backend**）：
+ *   /openlist-spa/*  →  http://127.0.0.1:3000/* (Hi-Sillot-OpenList-Frontend vite dev)
+ *       plugin-openlist 的 OpenListWebView 通过 iframe 加载 /openlist-spa/#/login，
+ *       iframe 内显示 Hi-Sillot-OpenList-Frontend (OpenListTeam 官方 web UI, SolidJS)
  *   /__openlist-health → 自定义中间件（Node 直连 5244，返回 CORS-OK JSON）
  *
  * 沙箱浏览器模式下，OpenList 后端跑在 5244（由 scripts/dev-openlist.sh 启动）。
- * 我们的 Capacitor UI 通过 Vite 代理访问后端，前端无 CORS 问题（同源）。
+ * 我们的 Capacitor UI 通过 Vite 代理访问 OpenList web UI，前端无 CORS 问题（同源）。
  *
  * 生产模式（Android WebView 在 plugin-openlist Content() 内）：
  *   - OpenList 后端跑在 127.0.0.1:5244（同一设备）
@@ -107,8 +109,11 @@ export default defineConfig({
     port: 5174,
     strictPort: false,
     proxy: {
+      // ⚠️ Hi-Sillot-OpenList-Frontend (OpenListTeam 官方 web UI) 的 vite dev server
+      // 不是 OpenList backend：plugin-openlist iframe 通过 /openlist-spa/* 加载 OpenList web UI
+      // OpenList web UI 自己有 vite proxy /api → :5244 backend（vite.config.ts 在 Hi-Sillot-OpenList-Frontend）
       '/openlist-spa': {
-        target: 'http://127.0.0.1:5244',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/openlist-spa/, ''),
