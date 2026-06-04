@@ -209,6 +209,13 @@ func (s *Server) Start(version string) (string, error) {
 	r.GET("/stream", gin.WrapF(s.handleStreamRequest))
 	r.GET("/decrypt", gin.WrapF(s.handleStreamRequest))
 	r.GET("/preview/*filepath", gin.WrapH(http.StripPrefix("/preview", web.PreviewHandler())))
+
+	// OpenList UI 静态服务（dev 沙箱预览）：后端驱动，前端只调用 /api/preview/openlist-ui
+	// /openlist-ui/* — encv-go 直接从 preview.openlist_ui_dir 读 dist
+	// /api/preview/openlist-ui — 302 重定向到 /openlist-ui/（后端驱动跳转入口）
+	openlistUI := NewOpenlistUIHandler(s.cfg)
+	r.GET("/api/preview/openlist-ui", openlistUI.handlePreviewRedirect)
+	r.GET("/openlist-ui/*filepath", openlistUI.handleStatic)
 	r.GET("/api/config", s.handleGetConfigGin)
 	r.PUT("/api/config", s.handlePutConfigGin)
 	r.GET("/api/config/schema", s.handleConfigSchemaGin)

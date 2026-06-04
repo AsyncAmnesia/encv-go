@@ -222,15 +222,20 @@ function handlePrototypeClick(proto: typeof prototypes[0]) {
   router.push(`/tabs/settings/devtools/prototype/${proto.id}`)
 }
 
-// 沙箱预览：强制整页跳转，绕过 Vue Router 拦截
-// 为什么不用 <router-link>：<router-link> 只走 in-app 路由，/openlist-ui/ 不在路由表
-// 为什么不用 <a href>：Vue Router 4 在某些 setup 下会拦截 plain <a> 点击事件，
-//   导致 router 试图导航到 /openlist-ui/ 失败、渲空 <ion-router-outlet>
-// 为什么不用 window.open(_, '_blank')：会破坏 OpenPreview 会话（用户需手动切回 tab）
-// 为什么用 window.location.assign：触发完整页面加载，浏览器原生处理同源跳转
+// 沙箱预览：后端驱动跳转
+//   前端 set window.location.href = '/api/preview/openlist-ui'
+//   encv-go (server.go) 返回 302 → /openlist-ui/
+//   浏览器自动跟随 302 → Vite server.proxy → encv-go handleStatic
+//   encv-go 从 preview.openlist_ui_dir 静态服务 Hi-Sillot-OpenList/public/dist/
+// 为什么用后端驱动：与生产路径一致（APK 内 gomobile 进程自己服务 UI），
+//   前端不持有 UI 路径 / dist 路径知识；dist 路径在生产换位置时前端零改动。
+// 为什么不用 <router-link>：是 in-app 路由跳转，会被 Vue Router 拦下。
+// 为什么不用 <a href>：同上，<a> 内部点击会被 Vue Router 4 拦截。
+// 为什么不用 window.open(_, '_blank')：会破坏 OpenPreview 会话。
 const isDev = import.meta.env.DEV
 function openPreviewOpenList() {
-  window.location.assign('/openlist-ui/')
+  // 整个跳转由后端 302 决定最终 URL，前端不知道也不需要知道 /openlist-ui/
+  window.location.href = '/api/preview/openlist-ui'
 }
 
 function handleVConsoleToggle(event: CustomEvent) {

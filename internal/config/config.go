@@ -50,6 +50,11 @@ type Config struct {
 
 type PreviewConfig struct {
 	TextExtensions []string `json:"text_extensions,omitempty"`
+	// OpenlistUIDir dev 沙箱预览：指向 Hi-Sillot-OpenList/public/dist 的绝对路径
+	// 由 encv-go 在 :2025/openlist-ui/* 上静态服务（与生产路径一致：APK 内 gomobile
+	// 从 filesDir/openlist/dist/ 读，运行时由同一个 encv-go 进程服务）
+	// 为空时 /openlist-ui/* 返回 503，便于在未克隆 fork 时优雅降级
+	OpenlistUIDir string `json:"openlist_ui_dir,omitempty"`
 }
 
 // ConfigProvider 定义了获取插件配置的抽象接口
