@@ -21,9 +21,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * | 状态推送         | openlistlib.Event callback   | broadcast (in-process listener) |
  *
  * 关键设计点：
- * 1. `libopenlist.so` 是 Go 1.21+ 交叉编译产物，4 个 ABI 都打到 src/main/jniLibs/
+ * 1. `libopenlist.so` 是 Go 1.25.1 + CGO=1 + NDK clang 交叉编译产物（Phase 27）,
+ *    arm64-v8a 打到 src/main/jniLibs/（Phase 27 决策：4 ABI → 1 ABI）
  *    —— aar2apk 任务 [ConvertAarToApkTask.kt:179-193] 无条件 addNativeLibs,
- *    plugin APK 自动包含 lib/<abi>/libopenlist.so,无需 aar 字节 hack。
+ *    plugin APK 自动包含 lib/arm64-v8a/libopenlist.so,无需 aar 字节 hack。
  * 2. OpenList server 监听 127.0.0.1:5244（gomobile bind 版与新方案都用 OpenList 默认端口）
  * 3. WebView 加载 `http://127.0.0.1:5244/`,OpenList 自带 web UI
  * 4. config.json / data / db 都用 plugin 私有 dir（/data/data/<plugin-id>/files/openlist/）
@@ -158,7 +159,7 @@ object OpenListNativeService {
                         lastUpdateTs = System.currentTimeMillis()
                     }
                     broadcastStatus(0, false)
-                    return
+                    return@start
                 }
                 val cfgPort = synchronized(lock) { if (port > 0) port else OpenListConfig.DEFAULT_PORT }
                 val cfgDataDir = synchronized(lock) { if (dataDir.isNotEmpty()) dataDir else OpenListConfig.defaultDataDir(ctx) }
