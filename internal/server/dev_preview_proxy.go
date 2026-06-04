@@ -191,6 +191,33 @@ func (p *DevPreviewProxy) proxyTo(c *gin.Context, target *url.URL) {
 		req.Header.Set("X-Forwarded-Proto", schemeOf(c.Request))
 	}
 
+	// 关键（修复「api请求200但前端 Network Error」实战踩坑，2026-06-04）：
+	// 上游（Hi-Sillot vite :3000、OpenList backend :5244）会自己设 Access-Control-Allow-Origin。
+	// 我们的 gin-contrib/cors 中间件也会设 ACAO。
+	// 两边都设 → 响应头里出现**重复** ACAO 头：
+	//   Access-Control-Allow-Origin: *
+	//   Access-Control-Allow-Origin: http://localhost:16000
+	// 按 CORS 规范（Fetch §3.2.5）："If the response's set of headers contains
+	// more than one Access-Control-Allow-Origin header, return fail and terminate."
+	// → 浏览器（含 iOS Safari）**直接拒绝**响应 → axios 报 "Network Error"，
+	//    即使 HTTP 状态是 200、body 是合法 JSON。
+	// 修复：用 ModifyResponse 把上游设过的 ACAO 系列头全部清空，让 gin-contrib/cors
+	//      单一来源设头。
+	rp.ModifyResponse = func(resp *http.Response) error {
+		// 清空上游设过的 CORS 响应头
+		resp.Header.Del("Access-Control-Allow-Origin")
+		resp.Header.Del("Access-Control-Allow-Credentials")
+		resp.Header.Del("Access-Control-Allow-Methods")
+		resp.Header.Del("Access-Control-Allow-Headers")
+		resp.Header.Del("Access-Control-Allow-Max-Age")
+		resp.Header.Del("Access-Control-Expose-Headers")
+		resp.Header.Del("Access-Control-Max-Age")
+		resp.Header.Del("Vary")
+		// 注意：清理后 gin-contrib/cors 中间件会重新添加 ACAO 头（基于
+		// gin Context 的 c.Writer header map），所以只删一次即可。
+		return nil
+	}
+
 	// WebSocket 升级支持（HMR 通过 gin 也能透传）
 	rp.Transport = &http.Transport{
 		Proxy: http.ProxyFromEnvironment,

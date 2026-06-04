@@ -1176,6 +1176,67 @@ curl -s http://127.0.0.1:2025/openlist-spa/ | grep "返回 ENCV"
 - plugin 文件改动后**永远**手动重启 Hi-Sillot vite，不要相信 watcher
 - `start-preview.sh` 已加入 `pkill -f 'Hi-Sillot-OpenList-Frontend.*vite'` 逻辑（Step 0 清理阶段）
 
+### 11.10 dev_preview_proxy 重复 ACAO 头导致 axios "Network Error"（⚠️ 2026-06-04 实战踩坑！）
+
+> **核心原则：**
+> **`api 请求 200 ≠ 浏览器接受响应。重复 ACAO 头让浏览器直接拒绝响应 → axios 报 "Network Error"。**
+> **dev_preview_proxy 必须用 `ModifyResponse` 清空上游的 CORS 头，让 gin-contrib/cors 单一来源设头。**
+
+**症状**：
+- 后端 curl 测试 `/openlist-spa/api/public/settings` → 200 OK + 合法 JSON
+- 浏览器内 iframe 的 OpenList web UI 仍然显示 `Failed fetching settings: home.Network Error, home.Network Error`
+- 用户原话："api请求200不代表正常"
+
+**根因链路**：
+```
+浏览器 → :2025 dev_preview_proxy
+        → gin-contrib/cors 中间件先 c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+        → NoRoute handler 调 rp.ServeHTTP
+        → 上游 (Hi-Sillot vite :3000 或 OpenList backend :5244) 自己返回 Access-Control-Allow-Origin
+        → httputil.ReverseProxy 用 .Add() 合并响应头
+        → 响应里出现两个 ACAO:
+            Access-Control-Allow-Origin: *
+            Access-Control-Allow-Origin: http://localhost:16000  (或 *)
+        → 按 Fetch §3.2.5 规范: "more than one ACAO → fail and terminate"
+        → 浏览器拒绝响应 → axios 抛 "Network Error"
+        → OpenList web UI 把 Network Error 展示到 UI
+```
+
+**修复**（[`dev_preview_proxy.go` 的 `proxyTo`](file:///workspace/internal/server/dev_preview_proxy.go#L181-L235)）：
+
+```go
+rp.ModifyResponse = func(resp *http.Response) error {
+    // 清空上游设过的 CORS 响应头，让 gin-contrib/cors 单一来源设头
+    resp.Header.Del("Access-Control-Allow-Origin")
+    resp.Header.Del("Access-Control-Allow-Credentials")
+    resp.Header.Del("Access-Control-Allow-Methods")
+    resp.Header.Del("Access-Control-Allow-Headers")
+    resp.Header.Del("Access-Control-Allow-Max-Age")
+    resp.Header.Del("Access-Control-Expose-Headers")
+    resp.Header.Del("Access-Control-Max-Age")
+    resp.Header.Del("Vary")
+    return nil
+}
+```
+
+**验证命令**：
+```bash
+# 修复前：
+curl -sI http://127.0.0.1:2025/openlist-spa/api/public/settings \
+  -H "Origin: http://localhost:16000" | grep -c "Access-Control-Allow-Origin:"
+# 2
+
+# 修复后：
+curl -sI http://127.0.0.1:2025/openlist-spa/api/public/settings \
+  -H "Origin: http://localhost:16000" | grep -c "Access-Control-Allow-Origin:"
+# 1
+```
+
+**预防**：
+- **不要**让上游和 dev_preview_proxy 各自设 CORS 头
+- dev_preview_proxy 用 `ModifyResponse` 单一来源控制 CORS 头
+- 所有 NoRoute 走的代理路径都过 `proxyTo`，所以一次修改全覆盖
+
 ---
 
 ## 十二、dev preview 不用 vite build production dist（原则：开发预览 = 真实代码路径）
