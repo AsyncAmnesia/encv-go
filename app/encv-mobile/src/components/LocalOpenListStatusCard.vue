@@ -12,10 +12,23 @@
     <div v-if="state === 'not_installed'" class="card-body">
       <p class="status-line">{{ t('remote.localOpenListNotInstalled') }}</p>
       <p class="status-desc">前往扩展管理页面安装 OpenList 扩展</p>
-      <ion-button size="small" fill="solid" color="primary" @click="goToExtensions">
-        <ion-icon :icon="extensionPuzzleOutline" slot="start"></ion-icon>
-        前往扩展管理
-      </ion-button>
+      <div class="button-row">
+        <ion-button size="small" fill="solid" color="primary" @click="goToExtensions">
+          <ion-icon :icon="extensionPuzzleOutline" slot="start"></ion-icon>
+          前往扩展管理
+        </ion-button>
+        <!-- dev 预览专属入口：通过 Vite openlistUiProxy() 跳到 /openlist-ui/，无需安装插件 -->
+        <ion-button
+          v-if="isDev"
+          size="small"
+          fill="outline"
+          color="primary"
+          @click="openPreviewWebUi"
+        >
+          <ion-icon :icon="eyeOutline" slot="start"></ion-icon>
+          {{ t('remote.localOpenListPreviewWebUi') }}
+        </ion-button>
+      </div>
     </div>
 
     <!-- running: green card (keep existing pattern) -->
@@ -85,6 +98,7 @@ import {
   open as openIcon,
   extensionPuzzleOutline,
   bugOutline,
+  eyeOutline,
 } from 'ionicons/icons'
 import { eventBus } from '@/composables/useEventBus'
 import { useOpenListBridge } from '@/composables/useOpenListBridge'
@@ -194,6 +208,15 @@ function goToDevLogs() {
 
 function openWebUi() {
   window.open(`http://127.0.0.1:${port.value || 5244}/#/login`, '_system')
+}
+
+const isDev = import.meta.env.DEV
+
+function openPreviewWebUi() {
+  // 预览环境入口：跳到当前 Vite origin 下的 /openlist-ui/ 子路径
+  // openlistUiProxy() 把 /openlist-ui/api/* 反代到 5244，把 /openlist-ui/* 映射到 Hi-Sillot-OpenList/public/dist/
+  // 详见 vite.config.ts
+  window.open(`${window.location.origin}/openlist-ui/`, '_blank')
 }
 
 // ------ computed ------
@@ -414,6 +437,12 @@ body.dark .status-line-error {
 
 .open-webui-btn {
   align-self: flex-start;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .card-error {
