@@ -1279,6 +1279,46 @@ jobs:
             echo "No APK found to verify"
           fi
 
+      - name: Verify upload files exist + log sizes
+        if: always() && inputs.skip_plugin != true
+        continue-on-error: true
+        run: |
+          # 用户多次反馈 28.5MB encv-go-android-v1.0.1 只有 host APK ——
+          # 实际上传前**必须** ls 验证 plugin-openlist-*.apk 存在 + 大小
+          # (期望 >50MB 含 libgojni.so,~2MB 仅 dex)
+          echo "=== Host APK ===" | tee /tmp/diagnostic-apk-sizes.txt
+          for f in $(find app/encv-mobile/android/app/build/outputs/apk -name "*.apk" -type f 2>/dev/null); do
+            ls -lh "$f" | tee -a /tmp/diagnostic-apk-sizes.txt
+          done
+          echo | tee -a /tmp/diagnostic-apk-sizes.txt
+          echo "=== Plugin APKs ===" | tee -a /tmp/diagnostic-apk-sizes.txt
+          PLUGIN_FOUND=0
+          for f in $(find app/encv-mobile/android/build/outputs/plugin-apks -name "*.apk" -type f 2>/dev/null); do
+            ls -lh "$f" | tee -a /tmp/diagnostic-apk-sizes.txt
+            PLUGIN_FOUND=1
+          done
+          if [ "$PLUGIN_FOUND" -eq 0 ]; then
+            echo "❌ 找不到 plugin APK" | tee -a /tmp/diagnostic-apk-sizes.txt
+            echo "可能根因: step 38 (Build OpenList plugin APK) 失败" | tee -a /tmp/diagnostic-apk-sizes.txt
+            echo "          或 convert_plugin-openlist_release 任务被跳过" | tee -a /tmp/diagnostic-apk-sizes.txt
+            # 兜底查找 (兼容 aar2apk 路径变动)
+            echo "兜底 find (整个 encv-mobile):" | tee -a /tmp/diagnostic-apk-sizes.txt
+            find app/encv-mobile -name "plugin-openlist-*.apk" -type f 2>/dev/null | head -5 | tee -a /tmp/diagnostic-apk-sizes.txt
+          else
+            echo "✅ plugin APK 找到" | tee -a /tmp/diagnostic-apk-sizes.txt
+            echo "检查是否含 libgojni.so (期望 >50MB):" | tee -a /tmp/diagnostic-apk-sizes.txt
+            APK=$(find app/encv-mobile/android/build/outputs/plugin-apks -name "*.apk" -type f | head -1)
+            unzip -l "$APK" 2>/dev/null | grep -E "libgojni|lib/" | head -10 | tee -a /tmp/diagnostic-apk-sizes.txt
+            SIZE=$(stat -c%s "$APK" 2>/dev/null || stat -f%z "$APK" 2>/dev/null)
+            echo "plugin APK 字节数: $SIZE (期望 >50000000)" | tee -a /tmp/diagnostic-apk-sizes.txt
+          fi
+          # 把诊断日志也存到 /tmp/diagnostic-artifact 让 step 47 一并打包
+          mkdir -p /tmp/diagnostic-artifact
+          cp /tmp/diagnostic-apk-sizes.txt /tmp/diagnostic-artifact/ 2>/dev/null || true
+          # 也复制到 /tmp/diagnostic 供 step 43 打包
+          mkdir -p /tmp/diagnostic/diagnostic-apk-sizes
+          cp /tmp/diagnostic-apk-sizes.txt /tmp/diagnostic/diagnostic-apk-sizes/ 2>/dev/null || true
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -1288,6 +1328,7 @@ jobs:
             app/encv-mobile/android/build/outputs/plugin-apks/**/*.apk
             app/encv-mobile/android/build/**/plugin-openlist*.apk
           retention-days: 3
+          if-no-files-found: error
 
       - name: Upload OpenList diagnostic bundle
         if: always() && inputs.skip_plugin != true
