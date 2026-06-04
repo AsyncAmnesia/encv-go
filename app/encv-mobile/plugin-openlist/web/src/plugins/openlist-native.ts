@@ -7,7 +7,7 @@
  * 开发模式（无 WebView）：window.OpenListNative 不存在 → 返回安全默认值
  * 生产模式（嵌入 WebView）：window.OpenListNative 真实存在
  */
-import type { OpenListRuntime, OpenListLog } from '@encvgo/components'
+import type { OpenListRuntime, OpenListLog } from '../../../../packages/components/src/index.ts'
 
 declare global {
   interface Window {

@@ -68,7 +68,7 @@ import {
   IonSpinner,
 } from '@ionic/vue'
 import { refreshOutline, powerOutline, playOutline } from 'ionicons/icons'
-import { OpenListStatusCard, type OpenListRuntime } from '@encvgo/components'
+import { OpenListStatusCard, type OpenListRuntime } from '../../packages/components/src/index.ts'
 import { OpenListNative } from '@/plugins/openlist-native'
 
 const runtime = ref<OpenListRuntime>({
