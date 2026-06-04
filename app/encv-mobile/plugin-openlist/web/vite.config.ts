@@ -72,10 +72,22 @@ function openlistHealthPlugin(): Plugin {
   }
 }
 
+/**
+ * 沙箱 dev / 真机 prod 区分
+ *  - sandbox dev (VITE_BASE=/openlist-ui/): HTML base = /openlist-ui/
+ *      原因：dev_preview_proxy 在 :2025 把 /openlist-ui/* 反代到本 vite :5174
+ *      vite 收到 /openlist-ui/src/main.ts，base 匹配，serve web/src/main.ts
+ *      资源路径是绝对 /openlist-ui/assets/...，浏览器解析为同源请求（:2025）
+ *  - production (默认 './'): HTML base = ./
+ *      原因：Android WebView 加载 file:///android_asset/openlist/index.html
+ *      资源路径必须相对 ./assets/...（绝对路径在 file:// 协议下 404）
+ */
+
 export default defineConfig({
-  // ⚠️ 必须 './'：Android WebView 通过 file:///android_asset/openlist/ 加载
-  // 绝对路径 '/assets/...' 在 file:// 协议下 404
-  base: './',
+  // ⚠️ 沙箱 dev 用绝对 base（VITE_BASE），生产用相对 './'
+  // 沙箱 dev：HTML 内 <base href="/openlist-ui/">，vite 处理 /openlist-ui/* 前缀
+  // 生产：HTML 内 <base href="./">，Android WebView file:// 协议下加载相对资源
+  base: process.env.VITE_BASE || './',
   plugins: [vue(), openlistHealthPlugin()],
   resolve: {
     alias: {

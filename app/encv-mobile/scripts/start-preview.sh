@@ -70,12 +70,24 @@ BACKEND_PORT="${ENCV_MOBILE_PORT:-2025}"
 MOCK_DIR="${ENCV_MOCK_ROOT:-/storage/emulated/0}"
 
 # 默认使用 5173（Vite 标准端口），被占用时自动回退到 5174
-_VITE_PORT_DEFAULT="${ENCV_VITE_PORT:-5174}"
+_VITE_PORT_DEFAULT="${ENCV_VITE_PORT:-5173}"
 if lsof -i :5173 >/dev/null 2>&1; then
   echo "    :5173 已被占用，使用 :5174"
-  VITE_PORT="${_VITE_PORT_DEFAULT}"
+  VITE_PORT="5174"
 else
   VITE_PORT="5173"
+fi
+
+# plugin-openlist/web 默认 5174，被占用时回退 5175
+_PLUGIN_OPENLIST_PORT_DEFAULT=5174
+if lsof -i :5174 >/dev/null 2>&1; then
+  PLUGIN_OPENLIST_PORT=$((_PLUGIN_OPENLIST_PORT_DEFAULT + 1))
+  while lsof -i :${PLUGIN_OPENLIST_PORT} >/dev/null 2>&1; do
+    PLUGIN_OPENLIST_PORT=$((PLUGIN_OPENLIST_PORT + 1))
+  done
+  echo "    :5174 已被占用，使用 :${PLUGIN_OPENLIST_PORT}"
+else
+  PLUGIN_OPENLIST_PORT="${_PLUGIN_OPENLIST_PORT_DEFAULT}"
 fi
 
 cd "${REPO_ROOT}"
@@ -130,9 +142,10 @@ fi
 step "3/6 启动后端（air 监视重载，ENCV_DEV_PREVIEW=1）"
 cd "${REPO_ROOT}"
 # 把当前实际占用的 vite 端口告诉 dev_preview_proxy（$VITE_PORT 在上方已探测过）。
+# 注意：plugin-openlist 走 :5174（独立 vite），所以 *BOTH* 5173（encv-mobile）+ 5174（plugin-openlist）
 export ENCV_DEV_MOBILE_VITE_URL="http://127.0.0.1:${VITE_PORT}"
-export ENCV_DEV_OPENLIST_VITE_URL="http://127.0.0.1:3000"
-AIR_PID=$(spawn_bg /tmp/encv-air.log env ENCV_DEV_PREVIEW=1 ENCV_DEV_MOBILE_VITE_URL="${ENCV_DEV_MOBILE_VITE_URL}" ENCV_DEV_OPENLIST_VITE_URL="${ENCV_DEV_OPENLIST_VITE_URL}" air)
+export ENCV_DEV_PLUGIN_OPENLIST_VITE_URL="http://127.0.0.1:${PLUGIN_OPENLIST_PORT}"
+AIR_PID=$(spawn_bg /tmp/encv-air.log env ENCV_DEV_PREVIEW=1 ENCV_DEV_MOBILE_VITE_URL="${ENCV_DEV_MOBILE_VITE_URL}" ENCV_DEV_PLUGIN_OPENLIST_VITE_URL="${ENCV_DEV_PLUGIN_OPENLIST_VITE_URL}" air)
 SUBPIDS+=("${AIR_PID}")
 echo "    air pid=${AIR_PID}"
 
@@ -188,23 +201,26 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
   sleep 0.5
 done
 
-# ---------- Step 5: OpenList 前端 dev server（沙箱预览 OpenList UI 入口） ----------
-step "5/7 启动 OpenList 前端 vite dev server（port 3000，沙箱预览用）"
-OPENLIST_DIR="${REPO_ROOT}/app/openlist/Hi-Sillot-OpenList-Frontend"
-if [[ -d "${OPENLIST_DIR}" ]] && [[ -f "${OPENLIST_DIR}/vite.config.ts" ]]; then
-  OPENLIST_PID=$(spawn_bg /tmp/encv-openlist.log env OPENLIST_PREVIEW_BASE="/openlist-ui/" OPENLIST_NO_HMR=1 pnpm --dir "${OPENLIST_DIR}" dev --host 127.0.0.1 --port 3000 --strictPort)
-  SUBPIDS+=("${OPENLIST_PID}")
-  echo "    openlist vite pid=${OPENLIST_PID}"
-  # 等待 OpenList vite 就绪
+# ---------- Step 5: plugin-openlist/web vite dev server（沙箱预览 OpenList UI 入口） ----------
+step "5/7 启动 plugin-openlist/web vite dev server（port ${PLUGIN_OPENLIST_PORT}，沙箱预览 OpenList UI 入口）"
+PLUGIN_OPENLIST_DIR="${MOBILE_DIR}/plugin-openlist/web"
+if [[ -d "${PLUGIN_OPENLIST_DIR}" ]] && [[ -f "${PLUGIN_OPENLIST_DIR}/vite.config.ts" ]]; then
+  # 关键：VITE_BASE=/openlist-ui/ 让 vite 用绝对 base，dev_preview_proxy 才能在 :2025 路由
+  # dev: /openlist-ui/ -> :2025 -> :5174 vite (base=/openlist-ui/, vite 自动 strip prefix)
+  # prod: base=./ (Android file:// 加载)
+  PLUGIN_OPENLIST_PID=$(spawn_bg /tmp/encv-plugin-openlist.log env VITE_BASE="/openlist-ui/" OPENLIST_NO_HMR=1 pnpm --dir "${PLUGIN_OPENLIST_DIR}" dev --host 127.0.0.1 --port "${PLUGIN_OPENLIST_PORT}" --strictPort)
+  SUBPIDS+=("${PLUGIN_OPENLIST_PID}")
+  echo "    plugin-openlist vite pid=${PLUGIN_OPENLIST_PID}"
+  # 等待 plugin-openlist vite 就绪（vite base=/openlist-ui/，访问 /openlist-ui/ 才返 HTML）
   for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-    if curl -s "http://127.0.0.1:3000/openlist-ui/" >/dev/null 2>&1; then
-      echo "    openlist vite ready (port 3000, base=/openlist-ui/)"
+    if curl -s "http://127.0.0.1:${PLUGIN_OPENLIST_PORT}/openlist-ui/" >/dev/null 2>&1; then
+      echo "    plugin-openlist vite ready (port ${PLUGIN_OPENLIST_PORT}, base=/openlist-ui/)"
       break
     fi
     sleep 0.5
   done
 else
-  echo "    ⚠️  ${OPENLIST_DIR} 不存在，跳过 OpenList dev 预览（沙箱预览 OpenList UI 入口将 302 到 503）"
+  echo "    ⚠️  ${PLUGIN_OPENLIST_DIR} 不存在，跳过 plugin-openlist 预览（沙箱预览 OpenList UI 入口将 302 到 503）"
 fi
 
 # ---------- Step 6: 状态报告 + OpenPreview 提示 ----------
@@ -215,26 +231,26 @@ cat <<EOF
 ✅ ENCV 预览已启动
 
   端口分配：
-     :${VITE_PORT}  = Vite dev server（前端，用户直接访问）
+     :${VITE_PORT}  = Vite dev server（encv-mobile 前端，用户直接访问）
      :${BACKEND_PORT} = Go Backend（air 监视重载）
-     :3000     = OpenList 前端 vite dev server（沙箱预览 OpenList UI）
+     :${PLUGIN_OPENLIST_PORT} = plugin-openlist/web vite dev server（沙箱预览 OpenList UI 入口）
 
   用户访问地址（必须先 OpenPreview 激活）：
      http://localhost:${VITE_PORT}/
      http://localhost:${BACKEND_PORT}/    ← 现在也是合法的入口（dev_preview_proxy 兜底到 :${VITE_PORT}）
 
-  沙箱预览 OpenList UI（dev 模式）：
+  沙箱预览 OpenList UI（dev 模式，plugin-openlist Capacitor UI）：
      设置 → 开发者工具 → 沙箱预览 → 预览 OpenList 前端
      或直接:  http://localhost:${BACKEND_PORT}/api/preview/openlist-ui
-     (后端 302 → /openlist-ui/ → dev_preview_proxy → :3000 openlist vite 独立)
+     (后端 302 → /openlist-ui/ → dev_preview_proxy → :${PLUGIN_OPENLIST_PORT} plugin-openlist vite 独立)
 
-  ⚠️ 重要：必须使用 OpenPreview 工具激活预览才能外部访问（注册 2025 端口，不再注册 5173）
+  ⚠️ 重要：必须使用 OpenPreview 工具激活预览才能外部访问（注册 ${BACKEND_PORT} 端口，不再注册 ${VITE_PORT}）
      OpenPreview(command_id="<本脚本 command_id>", preview_url="http://localhost:${BACKEND_PORT}/")
 
   HMR 说明（沙箱预览下被刻意关掉）：
      16000 agent-tool-host 不支持 WebSocket 升级，@vite/client 连不上 WS 会刷错误。
      start-preview.sh 启的两个 vite 都设了 HMR=off 走 16000 沙箱。
-     本地直连 5173 / 3000 时：杀掉 start-preview.sh 启的 vite，独立起就有 HMR。
+     本地直连 ${VITE_PORT} / ${PLUGIN_OPENLIST_PORT} 时：杀掉 start-preview.sh 启的 vite，独立起就有 HMR。
 
   配置文件:    ${REPO_ROOT}/config.user.json （未修改）
   servingDir:  ${MOCK_DIR}  （设计预期路径，脚本自建）
@@ -256,13 +272,13 @@ if [[ "${DETACH}" == "1" ]]; then
 ✅ ENCV 预览已启动（detach 模式）
 
   端口分配：
-     :${VITE_PORT}  = Vite dev server（前端，用户直接访问）
+     :${VITE_PORT}  = Vite dev server（encv-mobile 前端）
      :${BACKEND_PORT} = Go Backend（air 监视重载）
-     :3000     = OpenList 前端 vite dev server（沙箱预览 OpenList UI）
+     :${PLUGIN_OPENLIST_PORT} = plugin-openlist/web vite dev server
 
-  PIDs:   air=${AIR_PID}  vite=${VITE_PID}  openlist=${OPENLIST_PID:-N/A}
-  日志:   /tmp/encv-air.log  /tmp/encv-vite.log  /tmp/encv-openlist.log
-  停止:   pkill -x air ; pkill -f 'node.*vite' ; pkill -f 'Hi-Sillot-OpenList-Frontend'
+  PIDs:   air=${AIR_PID}  vite=${VITE_PID}  plugin-openlist=${PLUGIN_OPENLIST_PID:-N/A}
+  日志:   /tmp/encv-air.log  /tmp/encv-vite.log  /tmp/encv-plugin-openlist.log
+  停止:  pkill -x air ; pkill -f 'node.*vite' ; pkill -f 'plugin-openlist.*vite'
 
   ⚠️  OpenPreview 必须在脚本退出前激活（端口已就绪）
      OpenPreview(preview_url="http://localhost:${BACKEND_PORT}/")
@@ -273,7 +289,7 @@ EOF
 fi
 
 step "7/7 保持前台运行（按 Ctrl+C 停止）"
-echo "    air pid=${AIR_PID}  vite pid=${VITE_PID}  openlist pid=${OPENLIST_PID:-N/A}"
+echo "    air pid=${AIR_PID}  vite pid=${VITE_PID}  plugin-openlist pid=${PLUGIN_OPENLIST_PID:-N/A}"
 echo "    等待子进程..."
 
 # 等待任何子进程退出

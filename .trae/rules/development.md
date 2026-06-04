@@ -972,3 +972,117 @@ curl -s http://127.0.0.1:2025/api/config | head -c 200
 | dev_preview_proxy 加 `r.GET("/api/*subpath", mock)` catch-all | 与 `/api/config` 等具体路径 gin radix tree 冲突 panic |
 | dev_preview_proxy NoRoute 转发 `/api/*` 到 encv-mobile vite (5173) | encv-mobile vite proxy `/api` → encv-go (2025) → 回环 502 |
 | **正确做法** | NoRoute 分发：`/api/*` → :5244 backend，其他 → :5173 vite |
+
+---
+
+## 十一、plugin-openlist 与 Hi-Sillot-OpenList-Frontend 是两个完全独立的前端（⚠️ 命名踩坑！）
+
+> **核心原则：**
+> **"openlist 前端"在 ENCV 语境下专指 `plugin-openlist/web`（Vue + Ionic + Capacitor），跑在 :5174。**
+> **Hi-Sillot-OpenList-Frontend（SolidJS, OpenListTeam 官方 web UI）跑在 :3000，是 OpenList 二进制自带的 dist 来源，与 ENCV 沙箱 dev preview 无关。**
+
+### 11.1 二者对比
+
+| 维度 | `app/encv-mobile/plugin-openlist/web/` ✅ ENCV 用这个 | `app/openlist/Hi-Sillot-OpenList-Frontend/` ❌ 别用 |
+|------|---|---|
+| **框架** | Vue 3 + Ionic 8 + Capacitor | SolidJS + Vite |
+| **Vite 端口** | **5174** | 3000 |
+| **Vite base** | dev: `/openlist-ui/` (env `VITE_BASE`); prod: `./` | dev: `process.env.OPENLIST_PREVIEW_BASE`; prod: `/__dynamic_base__/` |
+| **Vite proxy** | `/openlist-spa/*` → `http://127.0.0.1:5244/*` | `/api` → `http://localhost:5244` |
+| **健康检查** | `/__openlist-health`（Node 直连 5244） | 无 |
+| **角色** | ENCV plugin-openlist 的 Capacitor UI（OpenListHome / OpenListWebView / OpenListConfigEditor / OpenListSettings） | OpenList **自带的 web UI**，编译后是 binary go:embed 的 dist 源（**不是** ENCV 沙箱 dev 入口） |
+| **沙箱 dev 路径** | 浏览器 → 16000 → 2025 → **:5174** | 浏览器 → 16000 → 2025 → :3000（**错配**） |
+| **生产路径** | Android WebView `file:///android_asset/openlist/index.html` | OpenList binary 内 `public/dist/`（gomobile 用） |
+
+### 11.2 命名冲突的根因
+
+两个项目都叫"openlist 前端"：
+- `app/openlist/Hi-Sillot-OpenList-Frontend/` —— OpenListTeam 官方 web UI（SolidJS）
+- `app/encv-mobile/plugin-openlist/web/` —— ENCV 自己封装的 Capacitor UI（Vue）
+
+混淆的代价：
+- 把 `/openlist-ui/*` 路由到 :3000 → 用户看到 OpenListTeam 官方 web UI，**不是** ENCV 期望的 Capacitor UI
+- "Failed fetching settings: home.Network Error"——这是 Hi-Sillot-OpenList-Frontend (SolidJS) 的 i18n key `home.fetching_settings_failed` 报的，**不是** plugin-openlist
+- plugin-openlist/web 用的是 `/openlist-spa/*`（不是 `/api/*`），vite.config proxy 路径也不一样
+- plugin-openlist 用 `import.meta.env.DEV` 判断沙箱/真机，Hi-Sillot-OpenList-Frontend 用 `import.meta.env.VITE_LITE` 等
+
+### 11.3 plugin-openlist/web Vite 配置要点
+
+**`plugin-openlist/web/vite.config.ts` base 配置**：
+```ts
+const isSandboxDev = !!process.env.VITE_BASE
+
+export default defineConfig({
+  // 沙箱 dev：绝对 base（让 dev_preview_proxy 在 :2025 路由 /openlist-ui/*）
+  // 生产：相对 './'（Android WebView file:// 协议加载）
+  base: process.env.VITE_BASE || './',
+  ...
+  server: {
+    port: 5174,
+    proxy: {
+      '/openlist-spa': {
+        target: 'http://127.0.0.1:5244',
+        rewrite: (path) => path.replace(/^\/openlist-spa/, ''),
+      },
+    },
+  },
+})
+```
+
+**关键 base 行为**：
+- 沙箱 dev 设 `VITE_BASE=/openlist-ui/` → HTML 内 `<base href="/openlist-ui/">`，vite 处理 `/openlist-ui/*` prefix
+- 生产不设 → HTML 内 `<base href="./">`，Android file:// 协议加载相对资源
+- 同一份 config 同时支持两种模式，不引入分支 vite config
+
+### 11.4 dev_preview_proxy 路由表（最终版）
+
+```
+Browser
+  ↓
+16000 agent-tool-host
+  ↓ (白名单转发)
+2025 encv-go dev_preview_proxy
+  ├─ /openlist-ui/*    → :5174 (plugin-openlist vite, Vue + Ionic, base=/openlist-ui/)
+  ├─ /openlist-spa/*   → :5174 (plugin-openlist vite 内部 proxy → :5244)
+  ├─ /__openlist-health → :5174 (plugin-openlist vite 自定义 Node middleware)
+  ├─ /api/*            → :5244 (OpenList backend 真实 API, reverse proxy 不是 mock)
+  └─ /*                → :5173 (encv-mobile vite, Capacitor app 主前端)
+```
+
+**`/openlist-spa/*` 和 `/__openlist-health` 必须路由到 :5174**——不是 `/api/*` 也不是其他。plugin-openlist 内部 axios 用 `/openlist-spa/...` 当 baseURL（vite proxy rewrite 后打到 :5244 的 `/api/...`），健康检查用 `/__openlist-health`（Node 直连 :5244）。
+
+### 11.5 验证命令
+
+```bash
+# 1. plugin-openlist vite 起来（沙箱 dev 模式必须设 VITE_BASE）
+cd /workspace/app/encv-mobile/plugin-openlist/web
+VITE_BASE=/openlist-ui/ pnpm dev --host 127.0.0.1 --port 5174 --strictPort
+# 期望: "VITE v8.0.16 ready" + "Local: http://127.0.0.1:5174/openlist-ui/"
+
+# 2. 端到端
+curl -s http://127.0.0.1:5174/openlist-ui/                      # 200 HTML base=/openlist-ui/
+curl -s http://127.0.0.1:5174/__openlist-health                  # {"alive":true,...}
+curl -s http://127.0.0.1:5174/openlist-spa/api/public/settings   # 真 backend settings
+curl -s http://127.0.0.1:16000/openlist-ui/                      # 走沙箱链 16000→2025→5174
+curl -s http://127.0.0.1:16000/__openlist-health                 # 同上
+curl -s http://127.0.0.1:16000/openlist-spa/api/public/settings  # 同上
+```
+
+### 11.6 错误诊断速查
+
+| 现象 | 错配的路由 | 正确路由 |
+|------|----------|---------|
+| "Failed fetching settings: home.Network Error" | `/openlist-ui/*` → :3000 (Hi-Sillot SolidJS) | → :5174 (plugin-openlist Vue+Ionic) |
+| `/openlist-spa/*` 返 encv-mobile HTML | NoRoute 兜底到 :5173 encv-mobile vite | → :5174 plugin-openlist vite |
+| `/__openlist-health` 返 encv-mobile HTML | 同上 | → :5174 plugin-openlist vite |
+| `import.meta.env.DEV` 判断错误 | plugin-openlist 在 prod build 时 | vite 正常处理（dev=true 仅当 vite dev mode） |
+| backend :5244 启动 panic "index.html not exist" | binary go:embed 嵌入空 dist | config.json 设 `"dist_dir": "<absolute path>/public/dist"` |
+
+### 11.7 ENCV 沙箱 dev preview 不要同时启这两个
+
+- **必须启**：plugin-openlist/web (:5174)
+- **不要启**：Hi-Sillot-OpenList-Frontend (:3000)
+
+`dev-openlist.sh`（启动 OpenList binary + 它的 dist）里会触碰 Hi-Sillot-OpenList-Frontend 的 `dist/`，但那是作为 binary 启动的**前置**（生产 dist 源），不是 ENCV 沙箱 dev 入口。
+
+`start-preview.sh` 现在正确只起 :5174，不再起 :3000。

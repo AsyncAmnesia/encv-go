@@ -18,11 +18,15 @@ import (
 //
 // 架构：
 //
-//	Browser → 16000 (agent-tool-host) → 2025 (encv-go, 本文件编排) → ┬─ /openlist-ui/*  → :3000 (openlist vite)
+//	Browser → 16000 (agent-tool-host) → 2025 (encv-go, 本文件编排) → ┬─ /openlist-ui/*  → :5174 (plugin-openlist/web vite, Capacitor UI)
 //	                                                                  ├─ /api/*          → :5244 (OpenList backend 真实 API)
 //	                                                                  └─ /*              → :5173 (encv-mobile vite)
 //
-// 两个 vite 完全独立、各自 HMR，互不污染。本地直接访问 5173 / 3000 也能 dev。
+// 关键澄清："openlist-ui" 在 ENCV 语境下指 plugin-openlist 的 Capacitor UI（Vue + Ionic），
+// 不是 OpenList 自带的 Hi-Sillot-OpenList-Frontend (SolidJS, OpenListTeam 官方)。
+// plugin-openlist/web 的 vite :5174 是 ENCV 自己封装的 OpenList 管理界面。
+//
+// 两个 vite 完全独立、各自 HMR，互不污染。本地直接访问 5173 / 5174 也能 dev。
 // 沙箱走 16000 时 HMR 仍不通（16000 不支持 WebSocket 升级），但页面渲染不受影响。
 //
 // **绝对不做的事（铁律）**：
@@ -38,11 +42,12 @@ type DevPreviewProxy struct {
 	openlistBackendURL *url.URL
 }
 
-// NewDevPreviewProxy 构造 dev preview proxy。从环境变量读上游地址，缺省 :3000 / :5173 / :5244。
+// NewDevPreviewProxy 构造 dev preview proxy。从环境变量读上游地址，缺省 :5174 / :5173 / :5244。
+// 重要：pluginOpenlistViteURL 默认 :5174（plugin-openlist/web），不是 :3000（Hi-Sillot-OpenList-Frontend）。
 func NewDevPreviewProxy() (*DevPreviewProxy, error) {
-	openlistURL := os.Getenv("ENCV_DEV_OPENLIST_VITE_URL")
+	openlistURL := os.Getenv("ENCV_DEV_PLUGIN_OPENLIST_VITE_URL")
 	if openlistURL == "" {
-		openlistURL = "http://127.0.0.1:3000"
+		openlistURL = "http://127.0.0.1:5174"
 	}
 	mobileURL := os.Getenv("ENCV_DEV_MOBILE_VITE_URL")
 	if mobileURL == "" {
@@ -67,7 +72,7 @@ func NewDevPreviewProxy() (*DevPreviewProxy, error) {
 	}
 
 	slog.Info("[dev-preview-proxy] enabled",
-		"openlistVite", openlistURL,
+		"pluginOpenlistVite", openlistURL,
 		"encvMobileVite", mobileURL,
 		"openlistBackend", backendURL,
 		"trigger", "ENCV_DEV_PREVIEW=1",
@@ -97,15 +102,18 @@ func (p *DevPreviewProxy) RegisterExplicit(r *gin.Engine) {
 
 // RegisterNoRoute 注册 NoRoute 兜底反代：必须后于 encv-go 原 NoRoute 调用以覆盖之。
 // 把非 encv-go 自身已注册路径的请求分发到三个上游：
-//   - /api/*  → :5244 OpenList backend（reverse proxy，不是 mock）
-//   - 其他   → :5173 encv-mobile vite
+//   - /api/*            → :5244 OpenList backend（reverse proxy，不是 mock）
+//   - /openlist-spa/*   → :5174 plugin-openlist vite（vite 内部 proxy → :5244）
+//   - /__openlist-health → :5174 plugin-openlist vite（vite 内部 health middleware）
+//   - 其他              → :5173 encv-mobile vite
 //
 // 说明：
 //   - /openlist-ui/* 已被显式路由注册（RegisterExplicit），不会进 NoRoute。
 //   - /api/config、/api/files/*、/api/tasks/* 等 encv-go 自己的 API 也已被注册，NoRoute 接不到。
-//   - NoRoute 这里只会接到：/api/me、/api/fs/*、/api/admin/*、/api/auth/*、/api/public/* 等 OpenList API，
-//     以及 encv-mobile SPA 自己的路径（/、/tabs/*、/assets/*、/play）。
 //   - 关键：这是 **reverse proxy**（routing），不是 mock——后端真服务 :5244。
+//
+// plugin-openlist 的 vite (5174) 内部用 /openlist-spa/* 当 axios baseURL 调 backend
+// 用 /__openlist-health 当 Node 直连 health check 端点——这两个路径必须路由到 :5174。
 func (p *DevPreviewProxy) RegisterNoRoute(r *gin.Engine) {
 	r.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
@@ -114,6 +122,15 @@ func (p *DevPreviewProxy) RegisterNoRoute(r *gin.Engine) {
 		// 这不是 mock，是真实 reverse proxy，让所有 /api/*（含 /api/public/*）由 backend 服务
 		if strings.HasPrefix(path, "/api/") || path == "/api" {
 			p.proxyTo(c, p.openlistBackendURL)
+			return
+		}
+
+		// /openlist-spa/* 和 /__openlist-health 是 plugin-openlist vite (5174) 内部路径
+		// /openlist-spa/* 是 vite proxy 配置，转发到 5244
+		// /__openlist-health 是 vite 自定义中间件（Node 直连 5244 做 health check）
+		if strings.HasPrefix(path, "/openlist-spa/") || path == "/openlist-spa" ||
+			strings.HasPrefix(path, "/__openlist-") {
+			p.proxyTo(c, p.openlistViteURL)
 			return
 		}
 
