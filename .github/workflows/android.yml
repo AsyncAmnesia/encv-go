@@ -555,6 +555,17 @@ jobs:
       # 拷到 plugin-openlist jniLibs/,走 AGP 标准 jniLibs 流程 → aar2apk 任务 addNativeLibs →
       # plugin-openlist APK 含 lib/arm64-v8a/libopenlist.so。
       # 详见 .trae/specs/build-openlist-fork-as-android-native/spec.md。
+      #
+      # 关键:fork clone 不在主仓库(.gitignore 排除),必须 CI step 浅拉到
+      # app/openlist/Hi-Sillot-OpenList/。fork 是 public 仓库无需 token。
+      - name: Checkout Hi-Sillot/OpenList fork (Phase 27)
+        if: inputs.skip_plugin != true
+        uses: actions/checkout@v4
+        with:
+          repository: Hi-Sillot/OpenList
+          ref: dev
+          path: app/openlist/Hi-Sillot-OpenList
+          fetch-depth: 1
       - name: Setup Go 1.25.1
         if: inputs.skip_plugin != true
         uses: actions/setup-go@v5
