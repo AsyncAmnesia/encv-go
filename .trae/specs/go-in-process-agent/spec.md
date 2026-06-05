@@ -1,4 +1,4 @@
-# Spec: Go Agent 独立服务 + OpenList 定制接口 + Vue 渲染壳
+# Spec: Go Agent 独立服务 + OpenList 定制接口 + encv-go 插件适配 + Agent 设置二级页 + Vue 渲染壳
 
 > **核心思路**：Agent 是独立的 Go 微服务，通过 OpenList **定制开放的 HTTP 接口**执行工具调用。前端是个极薄 Vue 渲染壳，**首个集成入口直接嵌在 encv-mobile 主应用首页**。
 > **架构三段式**：`agent` Go 服务（SSE 流式对话 + 4-决策确认 + 内存缓存续传）↔ OpenList（仅暴露 `/api/ext/list_files`、`/api/ext/delete_file` 等定制接口）↔ encv-mobile 主应用首页（Vue 渲染壳）。
@@ -160,64 +160,168 @@
 
 ---
 
-### Requirement: 加解密容器插件系统适配 agent
+### Requirement: encv-go 加解密容器插件系统适配 agent
 
-**核心原则**：加解密容器插件（encv format）通过 manifest 声明能力，agent 在启动时扫描已安装插件，把插件能力自动注册为 agent 工具。用户授权后 agent 可对加密容器进行 list / read / write / decrypt / encrypt 操作。
+**真实架构**：`internal/v2/plugins/` 已存在 7 个 `Plugin`（`video` / `audio` / `image` / `wps` / `pdf` / `text` / `alistencrypt`），每个实现 `Encrypt(io.Reader) (*crypto.EncryptionResult, error)` 和 `CanDecrypt(containerPath) bool` 等方法。**插件 manifest 不存在 `tools` 字段**（我之前对插件系统的描述是幻觉，已撤销）。本节定义"如何把已有插件能力暴露为 agent 工具"。
 
-#### Scenario: 插件 manifest 声明 tools
-
-- **WHEN** 加解密容器插件（如 `encv-enc-aes256`、`encv-enc-sm4`、`encv-enc-chacha20`）安装到 encv-mobile 插件目录
-- **THEN** 插件 manifest（`plugin.json`）包含 `tools` 字段，数组形式声明该插件暴露给 agent 的工具
-- **AND** 每个 tool 条目形如：
-  ```json
-  {
-    "name": "encv_list_files",
-    "kind": "readOnly",
-    "needConfirm": false,
-    "schema": { "type": "function", "function": { "name": "encv_list_files", "description": "列出加密容器内文件", "parameters": { ... } } },
-    "handler": "encv.ListFiles",
-    "containerTypes": ["encv-aes256", "encv-sm4"]
-  }
-  ```
-- **AND** `handler` 是插件导出的 Go 函数（agent 通过 gRPC / IPC 调插件）
-
-#### Scenario: 容器内文件操作工具集
-
-- **WHEN** 插件 manifest 注册到 agent
-- **THEN** agent 注册以下 5 类工具（每个插件可裁剪）：
-  - `encv_list_files(containerPath, prefix?)` — 列出加密容器内文件 → `readOnly` 自动执行
-  - `encv_read_file(containerPath, innerPath)` — 解密读取单个文件 → `readOnly` 自动执行
-  - `encv_write_file(containerPath, innerPath, content)` — 加密写入文件 → `fileChange` **需确认**
-  - `encv_decrypt_to_openlist(containerPath, innerPath, destPath)` — 解密到 OpenList 路径 → `fileChange` **需确认**
-  - `encv_encrypt_from_openlist(srcPath, containerPath, innerPath)` — 从 OpenList 加密入库 → `fileChange` **需确认**
-
-#### Scenario: agent 启动时自动注册插件工具
+#### Scenario: agent 启动扫描所有已注册插件
 
 - **WHEN** agent 服务启动
-- **THEN** agent 扫描 `OPENCV_PLUGIN_DIR` 目录加载所有插件 manifest
-- **AND** 对每个 `tool` 条目，调用 `registry.Register(name, schema, handlerBridge, needConfirm, kind)`
-- **AND** `handlerBridge` 是统一 adapter，agent 调用时通过 IPC 转发到对应插件
-- **AND** 工具名以 `encv_` 前缀避免与 OpenList 工具重名
+- **THEN** agent 通过 `plugins.Plugins` 切片（已硬编码顺序：video/audio/image/wps/pdf/text/alistencrypt）拿到全部插件实例
+- **AND** 对每个 plugin，调用 `plugin.GetTaskOptions()` 拿到 `TaskOptions`（PasswordStrategy / SupportedVersions / ExtraFields）
+- **AND** 用这些元数据生成 OpenAI function calling schema
 
-#### Scenario: 危险操作的 NeedConfirm 强制
+#### Scenario: 每个插件注册 2 个工具
 
-- **WHEN** 插件 manifest 中 `needConfirm` 字段缺失或为 false，但 tool.kind ∈ `fileChange | command`
-- **THEN** agent **强制覆盖**为 `needConfirm = true`（防止插件误配置导致破坏性操作）
-- **AND** `readOnly` 类允许保持 `needConfirm = false`
+- **WHEN** 插件（除 `alistencrypt` 外）被 agent 扫描
+- **THEN** 自动注册 2 个工具，命名约定：`{PluginName}_encrypt` 和 `{PluginName}_decrypt`（如 `video_encrypt` / `video_decrypt`）
+- **AND** tool `kind`：
+  - `{name}_encrypt` → `fileChange`（输出新文件，**需确认**）
+  - `{name}_decrypt` → `fileChange`（输出新文件，**需确认**）
+- **AND** 工具 schema 入参：
+  - `input_paths: string[]` — 输入文件路径（OpenList 端绝对路径）
+  - `output_path: string` — 输出容器 / 输出目录
+  - `extra_fields: object` — 由 `plugin.GetTaskOptions().ExtraFields` 动态生成的字段
+  - `password: string`（可选）— `PasswordStrategy = global` 时省略；`= independent` 时必填
+  - `version: int`（可选）— `SupportVersionSelect = true` 时必填
+- **AND** 工具 description 用中文：例 `video_encrypt` 的 description：「使用 video 插件将视频文件加密为 .encv 容器。需要提供输入文件路径、输出容器路径、容器版本。」
+- **AND** 工具 handler 是 adapter：
+  ```go
+  func(plugin Plugin) func(args string) (string, error) {
+      return func(args string) (string, error) {
+          // 1. 解析 args → {InputPaths, OutputPath, ExtraFields, Password, Version}
+          // 2. plugin.SetTaskExtraFields(extraFields)
+          // 3. 调用 plugin.PreEncryptProcessor(...) 或 plugin.PreDecryptProcessor(...)
+          // 4. 调 plugin.Encrypt(reader) 或 plugin.Decrypt(reader, password)
+          // 5. 返回 {output_path, duration_ms, ...}
+      }
+  }
+  ```
+
+#### Scenario: alistencrypt 插件不重复注册工具
+
+- **WHEN** 插件名 = `alistencrypt`
+- **THEN** agent **不**注册 `alistencrypt_encrypt` / `alistencrypt_decrypt` 工具
+- **AND** 因为 alist 加密走 OpenList `/api/ext/*` 端点（已经作为 OpenList 工具暴露），避免重复
+- **AND** 在工具 description 中加入：「如需 alist 加密，请使用 `list_files` 等 OpenList 工具，alist 加密由 OpenList 端处理」
+
+#### Scenario: 插件 ExtraFields 注入
+
+- **WHEN** LLM 调用 `video_encrypt` 并填入 `extra_fields: {resolution: "1080p", codec: "h264"}`
+- **THEN** agent 把这些字段通过 `plugin.SetTaskExtraFields(extraFields)` 注入插件实例
+- **AND** 插件在 `PreEncryptProcessor` 阶段读取这些字段决定如何处理
+- **AND** 注入失败 → tool result 包装为 `IsError: true, Result: "{\"error\":\"plugin_field_injection_failed\"}"`
+
+#### Scenario: 密码策略遵循插件声明
+
+- **WHEN** 插件 `PasswordStrategy = global`
+- **THEN** tool schema 中 password 字段为 `optional`，agent 在调用时使用从 `agent_settings` 读取的全局密码
+- **WHEN** 插件 `PasswordStrategy = independent`（如 `alistencrypt`）
+- **THEN** tool schema 中 password 字段为 `required`，LLM 必须显式传入
+- **WHEN** 插件 `PasswordStrategy = none`
+- **THEN** tool schema 中不暴露 password 字段
+
+#### Scenario: 容器版本协商
+
+- **WHEN** 插件 `SupportVersionSelect = true` 且 `SupportedVersions = [1, 2, 3]`
+- **THEN** tool schema 中 version 字段为 `enum: [1, 2, 3]`，default 为 `plugin.GetTaskOptions().DefaultVersion`
+- **AND** agent 在调用前可读 `agent_settings` 里的 `default_container_version` 字段覆盖默认值
 
 #### Scenario: 插件错误隔离
 
-- **WHEN** 插件 IPC 失败（进程崩溃、超时、返回错误）
-- **THEN** agent 包装为 `ToolResultData{IsError: true, Status: "failed", Result: "{\"error\":\"plugin_unavailable\"}"}`
-- **AND** 错误消息不暴露插件内部堆栈
-- **AND** 单一插件故障不影响其他工具调用
+- **WHEN** 插件 `Encrypt` 返回 error（如密码错误、文件损坏）
+- **THEN** agent 包装为 `ToolResultData{IsError: true, Status: "failed", Result: "{...plugin error...}"}`
+- **AND** 不暴露 plugin 内部堆栈
+- **AND** 其他插件工具仍可正常调用
 
-#### Scenario: 工具 schema 描述容器能力
+#### Scenario: 容器识别（agent 自检容器类型）
 
-- **WHEN** LLM 收到插件工具的 schema
-- **THEN** `description` 字段用中文描述工具行为 + 容器格式要求
-- **AND** 例如 `encv_list_files` 的 description：「列出 encv 加密容器内的文件。容器路径形如 `/MyDrive/secrets.encv`。支持 AES-256/SM4/ChaCha20 三种格式。返回文件名、大小、修改时间。」
-- **AND** LLM 据此能正确推断何时调用容器工具
+- **WHEN** LLM 想调用 `video_decrypt(path)` 但 path 指向 `.pdf` 文件
+- **THEN** agent 调用 `plugin.CanDecrypt(path)` 自检 → false
+- **THEN** agent 返回 `ToolResultData{IsError: true, Result: "{\"error\":\"container_format_mismatch\"}"}` + 建议改用 `pdf_decrypt`
+- **AND** LLM 据此选择正确插件工具
+
+---
+
+### Requirement: Agent 设置二级页面（schema 驱动 + 二级页）
+
+**真实架构**：settings 已有的 `useConfig` + `ConfigFieldItem` + `config.schema.json` 三件套是 schema 驱动的。`plugin_settings` 段已在 schema 中并自动渲染。本节定义"如何在此基础上加 agent 设置"。
+
+#### Scenario: 在 config.schema.json 添加 `agent_settings` 段
+
+- **WHEN** schema 包含 `properties.agent_settings` 对象
+- **THEN** `Settings.vue` 自动遍历 `schemaFields` 并渲染该段（沿用现有 `ConfigFieldItem` 渲染逻辑）
+- **AND** agent_settings 段字段（最小集，可扩展）：
+  ```json
+  {
+    "agent_settings": {
+      "type": "object",
+      "sectionTitle": "settings.agentSettings",
+      "properties": {
+        "openai_api_key": { "type": "string", "secret": true, "description": "OpenAI API Key（仅存本机，不上传）" },
+        "openai_base_url": { "type": "string", "default": "https://api.openai.com/v1" },
+        "openai_model": { "type": "string", "default": "gpt-4o", "enum": ["gpt-4o", "gpt-4o-mini", "o1-preview", "o1-mini"] },
+        "openlist_base_url": { "type": "string", "default": "http://127.0.0.1:5244" },
+        "openlist_token": { "type": "string", "secret": true, "description": "OpenList admin token" },
+        "default_container_version": { "type": "integer", "default": 1 },
+        "enabled_tools": { "type": "array", "items": { "type": "string" }, "default": ["list_files", "read_file", "delete_file", "exec_command"] },
+        "system_prompt": { "type": "string", "format": "multiline", "default": "你是 ENCV 助手..." },
+        "max_tool_calls_per_turn": { "type": "integer", "default": 10 }
+      }
+    }
+  }
+  ```
+- **AND** `secret: true` 字段在 UI 渲染为 password input + 「显示/隐藏」切换
+- **AND** 保存走现有 `useConfig.saveConfig()` → `POST /api/config` → 写入 `config.user.json`
+
+#### Scenario: Settings.vue 加 agent 二级页入口
+
+- **WHEN** `Settings.vue` 渲染
+- **THEN** 复用 `goPlugins` 模式加一个 `<ion-item button @click="goAgent" detail>`（参考 `Settings.vue:543-545`）
+- **AND** 进入条件：`configLoaded === true && serverOnline === true`
+- **AND** 入口文案：`{{ t('settings.agent') }}` + 「AI 助手配置」副标题
+
+#### Scenario: AgentSettingsDetail.vue 二级页
+
+- **WHEN** 路由 `/tabs/settings/agent` 命中
+- **THEN** 渲染 `AgentSettingsDetail.vue`，复用 `useConfig` + `ConfigFieldItem`
+- **AND** 页面结构：
+  - 顶部 `<ion-toolbar>` 带保存按钮（`saveConfig()` 同 Settings.vue）
+  - 主体：用 `<ConfigFieldItem>` 渲染 `agent_settings` 下所有字段
+  - 底部：「测试连接」按钮 → `POST /api/agent/test` → 验证 OpenAI key + OpenList token 有效性 → toast 显示结果
+- **AND** 二级页定位为「高级 / 全部 agent 设置」，与 Settings.vue 主页面中的「agent_settings」段（基础设置）形成「基础+高级」分层
+
+#### Scenario: 路由注册（沿用现有模式）
+
+- **WHEN** 路由配置更新
+- **THEN** `router/index.ts` 加 `/tabs/settings/agent` 路由（参考 `/tabs/settings/plugins` 模式）
+- **AND** 复用 `Tabs.vue` 中的 `ion-item button` 模式，**不**用 modal（与现有 ServerDetail / AppearanceDetail / EngineDetail / CacheDetail / PluginSettings 一致）
+
+#### Scenario: agent_demo 启动时读取 agent_settings
+
+- **WHEN** `cmd/agent-demo/main.go` 启动
+- **THEN** 读 `config.user.json` → 取 `agent_settings` 段作为配置
+- **AND** `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL` 从 `agent_settings` 注入
+- **AND** `OPENLIST_BASE_URL` / `OPENLIST_TOKEN` 从 `agent_settings` 注入
+- **AND** `enabled_tools` 控制 agent 注册哪些工具（默认全注册，可裁剪）
+
+#### Scenario: schema 字段类型映射到 ConfigFieldItem
+
+- **THEN** `ConfigFieldItem` 已支持的类型：`string` / `integer` / `boolean` / `select`（enum）/ `multiline`
+- **AND** `secret: true` 的 string 字段渲染为 password input + 👁 切换按钮（参考现有 `password` 字段的 `fieldIconMap.password = key`）
+- **AND** `array` 类型当前在 ConfigFieldItem 渲染为「行式编辑」，agent 场景下 `enabled_tools` 应改用 `select-multiple` 枚举
+
+#### Scenario: i18n key
+
+- **WHEN** 新加 agent 设置段
+- **THEN** 在 `app/encv-mobile/src/i18n/settings.ts` 加：
+  - `settings.agent` = "AI 助手"
+  - `settings.agentSettings` = "AI 助手设置"
+  - `settings.agentSettingsHelp` = "配置 OpenAI / OpenList 接入信息和工具白名单"
+  - `settings.testConnection` = "测试连接"
+  - `settings.testConnectionSuccess` = "OpenAI ✓ OpenList ✓"
+  - `settings.testConnectionFailed` = "连接失败：{detail}"
+  - `agent_settings.openai_api_key` / `openai_base_url` / `openai_model` / `openlist_base_url` / `openlist_token` / `default_container_version` / `enabled_tools` / `system_prompt` / `max_tool_calls_per_turn`
 
 ---
 

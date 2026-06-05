@@ -1,8 +1,8 @@
-# Checklist: Go Agent 独立服务 + OpenList 定制接口 + Vue 渲染壳（encv-mobile 主应用首页）
+# Checklist: Go Agent 独立服务 + OpenList 定制接口 + encv-go 插件适配 + Agent 设置二级页 + Vue 渲染壳
 
 > 每个 checkpoint 都要勾选才能算 spec 完成。验证方法见每项 `[verify]` 标注。
 > **UI 组件验收**：每个 Vue 组件必须有 props 形状校验、className 与 codex_web 一致、状态文案中文 1:1 对齐。
-> **架构铁律**：OpenList **不集成** agent 库，只暴露 `/api/ext/*` 端点。AI 入口**只在** encv-mobile 主应用首页（浮动按钮 + modal），**不走路由**。
+> **架构铁律**：OpenList **不集成** agent 库，只暴露 `/api/ext/*` 端点。AI 入口**只在** encv-mobile 主应用首页（浮动按钮 + modal），**不走路由**。Settings 二级页 schema 驱动（沿用 `config.schema.json` + `useConfig` + `ConfigFieldItem`）。插件系统通过 adapter 把 7 个 `Plugin` 实例自动桥接为 12 个 agent 工具。
 
 ---
 
@@ -72,11 +72,73 @@
 ### 演示程序
 
 - [ ] `agent/cmd/agent-demo/main.go` 创建
+- [ ] demo 从 `agent_settings` 加载配置（OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL / OPENLIST_BASE_URL / OPENLIST_TOKEN / DEFAULT_CONTAINER_VERSION）
 - [ ] demo 注册 list_files (auto-run, KindReadOnly, mock 返回 ["a.txt", "b.txt"])
 - [ ] demo 注册 delete_file (need confirm, KindFileChange, mock 打印日志)
 - [ ] demo 注册 exec_command (need confirm, KindCommand, mock echo)
-- [ ] demo mount 3 个 handler 到 :5245
+- [ ] demo 注册 12 个插件工具（video_encrypt/decrypt / audio_encrypt/decrypt / image_encrypt/decrypt / wps_encrypt/decrypt / pdf_encrypt/decrypt / text_encrypt/decrypt），**跳过 alistencrypt**
+- [ ] demo 应用 `enabled_tools` 白名单过滤
+- [ ] demo mount 4 个 HTTP handler（`/api/chat` `/api/resume` `/api/confirm` `/api/agent/test`）到 :5245
 - [ ] `[verify]` `go run ./agent/cmd/agent-demo` 启动后 `curl -N http://localhost:5245/api/chat -d '{"messages":[{"role":"user","content":"list files"}]}'` 输出 SSE
+- [ ] `[verify]` `curl -X POST http://localhost:5245/api/agent/test` 返回 `{openai_ok: true, openlist_ok: true}`
+
+### encv-go 插件系统适配
+
+- [ ] `agent/plugin_scanner.go` 实现 `scanPluginTools(plugins []Plugin) []ToolDefinition`
+- [ ] 7 个插件（video/audio/image/wps/pdf/text/alistencrypt）扫描产出 12 个工具（7×2 - 2 跳过 alistencrypt）
+- [ ] 工具命名正确：`video_encrypt` / `video_decrypt` / `audio_encrypt` / `audio_decrypt` / `image_encrypt` / `image_decrypt` / `wps_encrypt` / `wps_decrypt` / `pdf_encrypt` / `pdf_decrypt` / `text_encrypt` / `text_decrypt`
+- [ ] **跳过 alistencrypt**（避免与 OpenList 工具重复）
+- [ ] 工具 schema 字段对齐：
+  - `input_paths: array<string>` required
+  - `output_path: string` required
+  - `extra_fields: object` —— 来自 `plugin.GetTaskOptions().ExtraFields`
+  - `password: string` —— 按 `PasswordStrategy` 决定 required/optional/hidden
+  - `version: integer` —— 按 `SupportVersionSelect` 决定 required/hidden
+- [ ] 工具 description 用中文，含插件名 + 容器扩展名
+- [ ] `agent/plugin_tool_handler.go` 实现 `makePluginEncryptHandler(Plugin)` / `makePluginDecryptHandler(Plugin)`
+- [ ] handler 流程：`SetTaskExtraFields` → `PreEncryptProcessor` → `Encrypt(reader)` → `PostEncryptProcessor`
+- [ ] `agent/plugin_scanner_test.go` 单测：mock 7 个插件，验证产出 12 个工具 + 字段正确
+- [ ] `agent/plugin_tool_handler_test.go` 单测：mock plugin，验证 handler 流程
+- [ ] `agent/config_loader.go` 读 `~/.encv/config.user.json` 的 `agent_settings` 段
+- [ ] `config_loader_test.go` 单测：mock config.user.json 验证字段加载
+- [ ] `[verify]` `go test ./agent/... -run 'TestPlugin|TestConfig' -v` 通过
+
+### 后端 /api/agent/test handler
+
+- [ ] `internal/agent/test_handler.go` 实现 `HandleTest(w, r)`
+- [ ] 并发 ping OpenAI（`GET OPENAI_BASE_URL/v1/models`）+ OpenList（`GET OPENLIST_BASE_URL/api/me`）
+- [ ] 5s 超时
+- [ ] 返回结构：`{openai_ok: bool, openlist_ok: bool, errors: {openai?: string, openlist?: string}}`
+- [ ] `test_handler_test.go` 单测 mock 响应
+- [ ] `[verify]` `curl -X POST http://localhost:5245/api/agent/test` 返回正确 JSON
+
+### Agent 设置二级页（schema 驱动）
+
+- [ ] `app/encv-mobile/src/config/schema.json` 加 `agent_settings` 段（10 个字段：openai_api_key/openai_base_url/openai_model/openlist_base_url/openlist_token/default_container_version/enabled_tools/system_prompt/max_tool_calls_per_turn）
+- [ ] 字段类型映射到 `ConfigFieldItem`：
+  - `string secret: true` → 密码框 + 👁 切换
+  - `string enum` → select
+  - `string format: multiline` → textarea
+  - `integer` → 数字框
+  - `array items: string` → 行式编辑或 select-multiple
+- [ ] `Settings.vue` 加 `function goAgent() { router.push('/tabs/settings/agent') }`（参考 `goPlugins` 模式）
+- [ ] `Settings.vue` 加 `<ion-item button @click="goAgent" detail>`（图标用 `sparklesOutline`）
+- [ ] `AgentSettingsDetail.vue` 创建
+- [ ] AgentSettingsDetail 模板结构：
+  - `<ion-toolbar>` 含返回按钮 + 保存按钮（`saveConfig()`）
+  - 主体：`<ConfigFieldItem>` 渲染 `agent_settings` 下所有字段
+  - 底部：测试连接按钮（POST `/api/agent/test` → toast 结果）
+- [ ] AgentSettingsDetail 复用 `useConfig` composable
+- [ ] 路由 `/tabs/settings/agent` 注册（参考 `/tabs/settings/plugins` 模式）
+- [ ] i18n key 完整：
+  - `settings.agent` / `settings.agentSettings` / `settings.agentSettingsHelp`
+  - `settings.testConnection` / `settings.testConnectionSuccess` / `settings.testConnectionFailed`
+  - `agent_settings.openai_api_key` / `openai_base_url` / `openai_model` / `openlist_base_url` / `openlist_token` / `default_container_version` / `enabled_tools` / `system_prompt` / `max_tool_calls_per_turn`
+- [ ] 路由命名：`/tabs/settings/agent` → `AgentSettingsDetail.vue`（**不**用 modal）
+- [ ] agent_demo 启动时读 `config.user.json` 的 `agent_settings` 段
+- [ ] 修改 `agent_settings.openai_api_key` 保存后，agent_demo 重启使用新 key
+- [ ] `[verify]` 浏览器进入 Settings → AI 助手 → 看到 10 个字段 → 修改后保存 → 重启 agent → 新 key 生效
+- [ ] `[verify]` 浏览器进入 Settings → AI 助手 → 点「测试连接」→ toast 显示 OpenAI ✓ + OpenList ✓
 
 ---
 
@@ -181,24 +243,31 @@
 - [ ] 注入 130 条消息 → DevTools 验证 `<MessageVirtualList>` 触发（DOM 节点数稳定）
 - [ ] 0 个 console error、0 个 SSE 解析失败
 - [ ] OpenList 进程崩溃时 → agent 服务不崩溃，下一次 tool 调 OpenList 时返回 ToolResult error
-- [ ] `[verify]` 0 个 console error、0 个 SSE 解析失败 + OpenList 故障隔离
+- [ ] **Settings → AI 助手二级页 → 修改 openai_api_key → 保存 → 验证 agent-demo 重启后使用新 key**
+- [ ] **Settings → AI 助手二级页 → 测试连接按钮 → 验证 OpenAI ✓ + OpenList ✓ toast**
+- [ ] **输入 "用 video 插件加密 foo.mp4" → ApprovalCard 4 按钮（video_encrypt）→ 批准 → 验证产生 .encv 容器**
+- [ ] **输入 "解密 secrets.encv" → ApprovalCard 4 按钮（video_decrypt）→ 批准 → 验证产生明文文件**
+- [ ] **错误用例：输入 "用 text 插件加密 foo.mp4" → ToolResult error（container_format_mismatch，建议改用 video_encrypt）**
+- [ ] **输入 "列文件" → 工具列表只包含 user 启用的（验证 enabled_tools 白名单生效）**
+- [ ] `[verify]` 0 个 console error、0 个 SSE 解析失败 + OpenList 故障隔离 + 插件工具正常调用
 
 ### 单元测试
 
-- [ ] `go test ./agent/...` 全绿
+- [ ] `go test ./agent/...` 全绿（含 TestPlugin、TestConfig、TestTestHandler）
 - [ ] `go test -race ./agent/...` 无 race warning
-- [ ] `pnpm test` vitest 全绿（含 useAgent 4-决策、ApprovalCard 4 按钮、UserMessageBubble 折叠、renderTurnItems 分组、AgentEntry modal 弹窗）
+- [ ] `pnpm test` vitest 全绿（含 useAgent 4-决策、ApprovalCard 4 按钮、UserMessageBubble 折叠、renderTurnItems 分组、AgentEntry modal 弹窗、AgentSettingsDetail 测试连接按钮）
 - [ ] 覆盖率：Go ≥ 70%、TypeScript ≥ 70%
 - [ ] `[verify]` CI 测试 pipeline 绿
 
 ### 文档同步
 
-- [ ] `unify-sandbox-preview-port/spec.md` 加 D16 章节（agent-api upstream + encv-mobile 首页 fab 入口）
+- [ ] `unify-sandbox-preview-port/spec.md` 加 D16 章节（agent-api upstream + encv-mobile 首页 fab 入口 + settings 二级页）
 - [ ] `unify-sandbox-preview-port/tasks.md` 加对应 task
-- [ ] `unify-sandbox-preview-port/checklist.md` 加检查点（agent-api 路由 + 首页 fab 联调）
-- [ ] `agent/README.md` 含使用示例 + API 一览 + **Decision 4 选 1 表格** + **OpenList 8 端点契约**
+- [ ] `unify-sandbox-preview-port/checklist.md` 加检查点（agent-api 路由 + 首页 fab 联调 + settings 测试连接）
+- [ ] `agent/README.md` 含使用示例 + API 一览 + **Decision 4 选 1 表格** + **OpenList 8 端点契约** + **插件 12 工具注册表**
 - [ ] `encv-mobile/src/components/agent/README.md` —— 记录与 codex_web 1:1 对应的组件、props、CSS class + **强调：入口在首页浮动按钮，不走路由**
 - [ ] `docs/pr-openlist-ext-api.md` —— 提交到 Hi-Sillot/OpenList 时附上的设计说明
+- [ ] `agent/PLUGIN_INTEGRATION.md` —— 7 个 plugin 如何被 adapter 桥接为 agent 工具（视频版/图版/音频版/文档版）
 - [ ] `[verify]` 文档 review 通过
 
 ---
