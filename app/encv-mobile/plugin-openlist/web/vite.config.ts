@@ -198,33 +198,26 @@ function dynamicHmrHostPlugin(): Plugin {
     name: 'dynamic-hmr-host',
     enforce: 'pre',
     configureServer(server) {
-      // ① 中间件：每次请求都更新 host + protocol
-      //   - 不锁"首次请求"——vite 启动可能有 self-ping，host 是 127.0.0.1
-      //   - 改成"最近一次非本地 host 优先"
+      // ① 中间件：每次请求都用最新 host/protocol 覆盖
+      //   - 不再过滤"本地 host"——localhost 才是沙箱本地调试最常用的访问方式
+      //   - 历史 BUG：之前用 isLocalHost 过滤，导致用户从 trae 域名切到 localhost 后，
+      //     detectedHost 锁在 trae 域名，@vite/client 注入错误 host，浏览器 HMR 死
+      //   - 同一时刻只会有一个访问者（沙箱 preview 单人调试），所以"最新请求赢"是安全的
       server.middlewares.use((req, res, next) => {
         if (!req.headers.host) return next()
 
         const rawHost = req.headers.host.split(':')[0]
         const proto = detectProtocolFromReq(req)
 
-        const isLocalHost =
-          rawHost === '127.0.0.1' ||
-          rawHost === 'localhost' ||
-          rawHost === '0.0.0.0' ||
-          rawHost === '::1' ||
-          rawHost === ''
-
-        if (!isLocalHost) {
-          const prevHost = detectedHost
-          const prevProto = detectedProtocol
-          detectedHost = rawHost
-          detectedProtocol = proto
-          hostSource = 'detected'
-          if (prevHost !== detectedHost || prevProto !== detectedProtocol) {
-            console.log(
-              `[dynamic-hmr-host] UPDATE host ${prevHost}->${detectedHost} proto ${prevProto}->${detectedProtocol} url=${req.url} xfp=${req.headers['x-forwarded-proto'] || ''} ref=${String(req.headers.referer || '').substring(0, 60)}`,
-            )
-          }
+        const prevHost = detectedHost
+        const prevProto = detectedProtocol
+        detectedHost = rawHost
+        detectedProtocol = proto
+        hostSource = 'detected'
+        if (prevHost !== detectedHost || prevProto !== detectedProtocol) {
+          console.log(
+            `[dynamic-hmr-host] UPDATE host ${prevHost}->${detectedHost} proto ${prevProto}->${detectedProtocol} url=${req.url} xfp=${req.headers['x-forwarded-proto'] || ''} ref=${String(req.headers.referer || '').substring(0, 60)}`,
+          )
         }
         next()
       })
