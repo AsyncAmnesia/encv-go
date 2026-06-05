@@ -5,6 +5,7 @@ import OpenListHome from '@/views/OpenListHome.vue'
 import OpenListConfigEditor from '@/views/OpenListConfigEditor.vue'
 import OpenListSettings from '@/views/OpenListSettings.vue'
 import OpenListWebView from '@/views/OpenListWebView.vue'
+import BackToMain from '@/views/BackToMain.vue'
 
 export const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/home' },
@@ -12,6 +13,9 @@ export const routes: RouteRecordRaw[] = [
   { path: '/config', component: OpenListConfigEditor },
   { path: '/settings', component: OpenListSettings },
   { path: '/webview', component: OpenListWebView },
+  // "返回 ENCV 主页面"视图：内嵌全屏 iframe 加载 encv-mobile :5173，
+  // 绕过 Trae 沙箱 OpenPreview 工具「单 port 限制」(trae_web_sandbox_network.md §8.4)
+  { path: '/back-to-main', component: BackToMain },
 ]
 
 /**

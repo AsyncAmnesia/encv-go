@@ -224,12 +224,17 @@ function goHome() {
 }
 
 function goBackToEncvMain() {
-  // 跳到 ENCV 主应用（encv-mobile 5173 vite dev）
-  // 沙箱 16000 → 2025 → 5173；直连 5173 都行
-  // 用 window.location.origin 确保跨端口（沙箱是 16000，本地可能是 5173）
-  const origin = window.location.origin
-  // encv-mobile 默认 home tab 是 /tabs/remote
-  window.location.href = origin + '/tabs/remote'
+  // 跳到 BackToMain 视图（plugin-openlist 内嵌全屏 iframe 加载 encv-mobile :5173）
+  // 为什么不直接 window.location.href 跳 :5173：
+  //   - Trae 沙箱 OpenPreview 单 port 限制 (trae_web_sandbox_network.md §8.4)：
+  //     OpenPreview 注册了 :5174，16000 入口只能代理 :5174，:5173 在沙箱内对外不可达
+  //   - 直接跳 `http://localhost:5173/tabs/remote` 在沙箱下会失败
+  //   - 在 :5174 内嵌 iframe 加载 :5173 走的是 sandbox 内部端口互通（vite 监听 0.0.0.0），
+  //     不依赖 16000 代理
+  // 为什么不调 OpenPreview 切换到 :5173：
+  //   - OpenPreview 是 AI agent 工具，前端无法调用
+  //   - 即使能调用，多次注册会 last-write-wins 覆盖
+  router.push('/back-to-main')
 }
 </script>
 
