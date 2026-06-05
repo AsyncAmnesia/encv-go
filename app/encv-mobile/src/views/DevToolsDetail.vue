@@ -58,6 +58,13 @@
             <p>{{ t('devtools.previewOpenListDesc') }}</p>
           </ion-label>
         </ion-item>
+        <ion-item button detail @click="openPreviewOpenListPlugin">
+          <ion-icon :icon="extensionPuzzleOutline" slot="start"></ion-icon>
+          <ion-label>
+            <h3>{{ t('devtools.previewOpenListLive') }}</h3>
+            <p>{{ t('devtools.previewOpenListLiveDesc') }}</p>
+          </ion-label>
+        </ion-item>
       </ion-list>
 
       <ion-list v-if="configLoaded">
