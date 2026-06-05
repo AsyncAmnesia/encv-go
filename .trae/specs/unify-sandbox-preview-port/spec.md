@@ -1,6 +1,8 @@
 # Spec: 沙箱统一预览端口（Unified Sandbox Preview Gateway）
 
-> **核心目标**：构建一个独立的"预览端口网关"项目，对外暴露 1 个独立端口 (`:16001`)，由该网关统一代理 encv-mobile 主 app（:5173）、plugin-openlist/web（:5174）、OpenList 后端（:5244，经 encv-go :2025），解决当前沙箱多端口无法被外网预览、Chrome `--proxy-server=:18080` body 截断、Origin 头被改写等系列预览稳定性问题。**`:16000` 已被 `agent-tool-host` (OpenPreview) 占用且不可让出，本 spec 不与它争抢。**
+> **核心目标**：让 preview-gateway **直接顶替 vite 占用 :5173**，外网链 `外网 → :16000 (OpenPreview) → :5173 (preview-gateway) → 4 个 upstream` 一次成型，统一暴露主 app / openlist plugin / openlist 后端 / encv-go。Vite 退化为纯净的 SPA dev server，搬到 :5175 作为 preview-gateway 的一个上游。
+>
+> **核心反转**：之前 spec 错误地试图用 :16001 新端口作为网关入口——但 :16000 已经被 `agent-tool-host` 占用且 agent-tool-host 已经在代理 :16000 → :5173 (vite)。正确的做法是**接管 :5173**，让 :16000 的现有链路直接命中网关。
 
 ---
 
@@ -9,33 +11,35 @@
 ### 1.1 沙箱当前预览形态（4 端口 + 1 代理）
 
 ```
-浏览器（沙箱内 Chrome agent-browser）
-  ↓ 走 :18080 强制代理（Trae IDE 内部）
-预览入口 :16000 (OpenPreview) → vite (:5173)               ← 主 app
-                                              ↓
-                                         :5174 (plugin-openlist-vite)
-                                         :5244 (OpenList Go server)
-                                         :2025 (encv-go reverse proxy)
+浏览器（沙箱内 Chrome agent-browser 或 外网用户）
+  ↓ 走 :18080 强制代理（沙箱内） / 走 OpenPreview（外网）
+预览入口 :16000 (agent-tool-host / OpenPreview)
+  ↓ 反向代理 :16000 → :5173
+:5173 vite (encv-mobile dev server)               ← 主 app
+  + 内部 plugin: /openlist-ui/ → :5174
+  + 内部 api:    /api/, /openlist/, /p/, /play/ → :2025 (encv-go) → :5244 (OpenList Go)
 ```
 
 ### 1.2 当前痛点
 
 | # | 痛点 | 现象 | 已踩过的坑 |
 |---|------|------|-----------|
-| **P1** | **多端口外网暴露困难** | 用户（外网）只能通过 :16000 单端口访问，其它 :5174/:5244/:2025 沙箱外不可达 | 用户原话："预览端口需要沙箱代理，我无法访问远程ip" |
+| **P1** | **外网只能访问主 app** | `:16000 → :5173 (vite)` 只服务主 app；/openlist-ui/、/api/、/openlist/ 这些路径 vite 内部才有 plugin/代理，但 vite 的内部代理对外不直接可见 | 用户原话："预览端口需要沙箱代理，我无法访问远程ip" |
 | **P2** | **沙箱 :18080 内部代理 bug** | Chrome agent-browser 走 :18080，body 截断 310 字节 | curl 经 :16000 拿 14645 字节，Chrome 经 :16000 拿 14335 字节 |
 | **P3** | **Origin 头被改写** | vite 看到 `Origin: http://localhost:5173`（不是 :16000），回显 `Access-Control-Allow-Origin: http://localhost:5173`，ESM `import()` 跨域失败 | 用户看到"openlist 扩展 ui 空白" |
 | **P4** | **vite HMR 跨端口失效** | 主 app 改代码，HMR 通过 :5173 ws 推送，但浏览器当前 origin 是 :16000，HMR 客户端拒绝连 | Vite 默认 ws 端口 = 同 server port，跨端口失效 |
 | **P5** | **iframe 同源策略** | 原本 OpenListView 用 iframe 加载 :5174，:16000 同源但跨子域跨端口 → iframe 父子通信需要 postMessage | 当前 OpenListView 已用 Capacitor 嵌入绕开此问题，但 WebView 路径仍需 iframe |
-| **P6** | **启动顺序耦合** | 用户必须 4 个 dev server 都起来（:5173 / :5174 / :5244 / :2025），任一未起 → 预览碎一半 | 已在 setup-sandbox-env.sh 加 pm2 兜底 |
+| **P6** | **vite 内部胶水多** | vite.config.ts 累加 `cors: '*'` + `openlistUiProxy` plugin + `server.proxy` 块 → 单点反向代理职责过重 | 用户原话："你的修复太胶水了，需要从根本上解决" |
 
-### 1.3 目标形态（1 端口网关）
+### 1.3 目标形态（接管 :5173，1 端口网关）
 
 ```
-浏览器 (本地 dev / agent-browser)
-  ↓ http://localhost:16001/...
-预览网关 :16001 (新项目, Node + http-proxy)
-  ├── /                  → encv-mobile SPA (:5173)
+外网用户 (外网)               本地 dev / agent-browser
+  ↓ http://<sandbox>/:16000/   ↓ http://localhost:5173/
+agent-tool-host (OpenPreview)
+  ↓ :16000 → :5173
+预览网关 :5173 (新项目, Node + http-proxy)  ← 接管 vite 老端口
+  ├── /                  → encv-mobile SPA (:5175)            ← vite 搬到这里
   ├── /openlist-ui/      → plugin-openlist/web (:5174)        ← SPA
   ├── /openlist/         → encv-go (:2025) → OpenList (:5244) ← reverse proxy
   ├── /api/              → encv-go (:2025)
@@ -43,19 +47,15 @@
   ├── /play              → encv-go (:2025)
   ├── /src/* /@vite/*    → vite 资源直转（保持 HMR 端口）
   └── /ws                → vite HMR WebSocket 转发（关键！解决 P4）
-
-外部访问路径（保持现状，spec 不破坏）:
-  外网用户 → :16000 (agent-tool-host / OpenPreview)
-                     ↓
-                  :5173 (encv-mobile vite 静态主 app)
 ```
 
 **核心收益**：
-- **网关是唯一路由权威**：所有路径都由 preview-gateway 决定，无 vite 内胶水
-- **本地 dev / agent-browser 用 :16001**：避开 :18080 沙箱代理 body 截断；避开 agent-tool-host 改写 Origin
-- **Origin 头不变量**：所有 :16001 请求都带 `Origin: http://localhost:16001`，vite 看到的 Origin 永远是 :16001 → CORS 一致
-- **HMR 走转发**：WebSocket 升级握手走网关 → vite `:5173/ws` 正常 HMR
-- **零胶水 vite**：vite :5173 是纯净的 vite dev server，不挂任何 reverse-proxy plugin
+- **外网单端口 :16000 直通全部上游**：OpenPreview 不用改配置，因为它本来就转发到 :5173 —— 现在 :5173 已经是网关了
+- **网关是唯一路由权威**：vite :5175 是纯 dev server，零胶水
+- **Origin 头不变量**：所有请求都带 `Origin: http://localhost:5173`（不论从 :16000 走还是直接 :5173 走），vite 看到的 Origin 永远是 :5173 → CORS 一致
+- **HMR 走转发**：WebSocket 升级握手走网关 → vite `:5175/ws` 正常 HMR
+- **零胶水 vite**：vite :5175 是纯净的 vite dev server，不挂任何 reverse-proxy plugin
+- **agent-tool-host 配置零改动**：它本来转发 :16000 → :5173；现在 :5173 是网关而不是 vite，效果立即生效
 
 ---
 
@@ -64,58 +64,55 @@
 ### 2.1 三层 + 1 网关
 
 ```
-Layer 0: 沙箱预览网关 (新, :16001, Node http-proxy)
-  └── 本地 dev / agent-browser 唯一入口；纯转发；零业务逻辑
+Layer 0: 沙箱预览网关 (新, :5173, Node http-proxy)
+  └── 接管原 vite 的 :5173 端口；agent-tool-host :16000 → :5173 链路零改动
+  └── 纯转发；零业务逻辑
 
-Layer 1: encv-mobile (:5173) + plugin-openlist/web (:5174) — Vite dev
+Layer 1: encv-mobile (:5175, 搬家自 :5173) + plugin-openlist/web (:5174) — Vite dev
   └── 沙箱内部，仍由 Vite 各自起；网关转发浏览器请求
-  └── **vite :5173 不再承担任何反向代理职责**（用户决策 D9）
+  └── **vite :5175 不再承担任何反向代理职责**（用户决策 D9）
 
 Layer 2: encv-go (:2025) + OpenList (:5244) — Go server
   └── 沙箱内部；纯后端 API
 
 Layer 3: 浏览器
-  ├── 本地 dev / agent-browser → http://localhost:16001/...
-  └── 外网用户 → http://<沙箱>/:16000/... → agent-tool-host → :5173 (vite 主 app 静态)
+  ├── 外网用户 → http://<sandbox>/:16000/... → agent-tool-host → :5173 (preview-gateway) → 全部上游
+  └── 本地 dev / agent-browser → http://localhost:5173/... → preview-gateway → 全部上游
 ```
 
 ### 2.2 关键决策
 
 | # | 决策 | 取值 | 理由 |
 |---|------|------|------|
-| **D1** | 网关端口 | **`:16001`** | :16000 已被 agent-tool-host (OpenPreview) 占用且不可让出；:16001 接近 :16000 语义、易记、不冲突 |
-| **D2** | 网关用什么实现？ | **Node `http-proxy` + `ws` 库** | 成熟；可同时代理 HTTP + WebSocket（HMR 关键） |
+| **D1** | 网关占用哪个端口？ | **`:5173`**（接管原 vite 端口） | agent-tool-host 已经在 :16000 → :5173；让 :5173 是网关就能让外网链直接命中网关，零配置改动 |
+| **D2** | 网关用什么实现？ | **Node `http-proxy`** | 成熟；`ws: true` 模式自动处理 WebSocket upgrade（HMR 关键） |
 | **D3** | 网关放哪个仓库？ | **`app/preview-gateway/` 独立项目** | 单一职责；可独立 pm2 进程；可独立测试 |
-| **D4** | 网关要鉴权吗？ | **不要** | 沙箱内本地 dev 用，无外部鉴权需求 |
-| **D5** | CORS / Origin 处理 | **网关层不做任何改写** | 让上游 vite / Go 自行处理；网关是 transparent proxy |
+| **D4** | 网关要鉴权吗？ | **不要** | 沙箱内本地 dev + agent-tool-host 内部转发用，无外部鉴权需求 |
+| **D5** | CORS / Origin 处理 | **网关层不做任何改写**（`changeOrigin: false`） | 让上游 vite / Go 自行处理；网关是 transparent proxy |
 | **D6** | HMR WebSocket 怎么转？ | **`http-proxy` 的 `ws: true` 自动 upgrade** | vite dev 默认 ws path = `/?token=...`；`http-proxy` 自动处理 Upgrade 头 |
-| **D7** | 出错兜底？ | **502 + JSON 错误** | 任意 upstream 不可达 → 网关返回 `{ error: "upstream down", upstream: "..." }` 便于 DevLogs 诊断 |
+| **D7** | 出错兜底？ | **502 + JSON 错误** | 任意 upstream 不可达 → 网关返回 `{ error: "upstream_unavailable", upstream: "..." }` 便于 DevLogs 诊断 |
 | **D8** | 健康检查端点？ | **`/__gateway/health`** | 返回所有 upstream 的 ping 结果；pm2 readiness 用 |
-| **D9** | vite :5173 是否承担反向代理？ | **完全不代理**（用户决策） | 之前的所有 vite 胶水（workspacePackageRewrite / alias / fs.allow / proxy 块）已撤销；vite 是纯净 dev server |
+| **D9** | vite 承担什么角色？ | **纯净 SPA dev server，搬到 :5175**（用户决策） | 之前的所有 vite 胶水（workspacePackageRewrite / alias / fs.allow / proxy 块 / cors '*'）已撤销；vite 是纯 dev server |
+| **D10** | vite 端口从 :5173 改到 :5175？ | **是** | 不与 preview-gateway 占 :5173 冲突；5173 现在是网关 |
 
 ### 2.3 与现有 OpenPreview 关系
 
-- `:16000` 是 `agent-tool-host` (OpenPreview) 实际监听的 TCP 端口，**无法让出**
-- preview-gateway `:16001` 是新增的**沙箱内**"二次路由"端口
-- 两者**不冲突**：preview-gateway 是新的、独立的本地 dev 入口
-- **外网访问**: 仍走 :16000 → agent-tool-host → :5173 (vite) → 只能访问主 app 静态页
-- **本地 dev / agent-browser**: 走 :16001 → preview-gateway → :5173/:5174/:2025 → 全部上游可达
+- `:16000` 是 `agent-tool-host` (OpenPreview) 实际监听的 TCP 端口，**已配置转发到 :5173**
+- 现在 `:5173` 不再是 vite，而是 preview-gateway
+- agent-tool-host 的配置**完全不需要改**——它仍然转发到 :5173，但 :5173 现在是网关
+- 链路自动生效：外网用户 → :16000 → agent-tool-host → :5173 (gateway) → 4 个 upstream
 
-**等价关系**：
+**等价关系（终态）**：
 ```
-本地 / agent-browser  → :16001
+外网用户               → :16000
                           │
-                          └─ 网关 (本 spec 引入)
-                                ├─ :5173 encv-mobile
-                                ├─ :5174 plugin-openlist/web
-                                └─ :2025 encv-go → :5244 OpenList
+                          └─ OpenPreview (agent-tool-host, 已存在, 不动)
+                                └─ :5173 preview-gateway (本 spec 接管)
+                                      ├─ :5175 encv-mobile vite (本 spec 搬离)
+                                      ├─ :5174 plugin-openlist/web
+                                      └─ :2025 encv-go → :5244 OpenList
 
-外网                   → :16000
-                          │
-                          ├─ OpenPreview (agent-tool-host)
-                          │     └─ :5173 encv-mobile (主 app 静态)
-                          │
-                          └─ 不可达 :5174 / :2025（沙箱基础设施限制）
+本地 / agent-browser  → :5173 (直接命中 preview-gateway, 同上)
 ```
 
 ---
@@ -135,25 +132,25 @@ const routes: Array<{ match: string, target: string, name: string }> = [
   { match: '/api',          target: 'http://127.0.0.1:2025', name: 'encv-go' },
   { match: '/p',            target: 'http://127.0.0.1:2025', name: 'encv-go' },
   { match: '/play',         target: 'http://127.0.0.1:2025', name: 'encv-go' },
-  // 默认 fallthrough → 主 app :5173
+  // 默认 fallthrough → encv-mobile vite :5175
 ]
 
 const proxies = new Map<string, httpProxy>()
 for (const r of routes) {
   proxies.set(r.name, httpProxy.createProxyServer({ target: r.target, changeOrigin: false }))
 }
-const mainApp = httpProxy.createProxyServer({ target: 'http://127.0.0.1:5173', ws: true, changeOrigin: false })
+const mainApp = httpProxy.createProxyServer({ target: 'http://127.0.0.1:5175', ws: true, changeOrigin: false })
 
 const server = http.createServer((req, res) => {
   const route = routes.find(r => req.url?.startsWith(r.match))
   if (route) {
     proxies.get(route.name)!.web(req, res)
   } else {
-    mainApp.web(req, res)
+    mainApp.web(req, res)  // fallthrough → encv-mobile vite :5175
   }
 })
 
-// WebSocket：识别 Upgrade 头，转发到 :5173 (主 app HMR) / :5174 (plugin HMR)
+// WebSocket：识别 Upgrade 头，转发到 :5175 (主 app HMR) / :5174 (plugin HMR)
 server.on('upgrade', (req, socket, head) => {
   if (req.url?.startsWith('/openlist-ui/')) {
     proxies.get('plugin-openlist-web')!.ws(req, socket, head)
@@ -161,29 +158,35 @@ server.on('upgrade', (req, socket, head) => {
     mainApp.ws(req, socket, head)
   }
 })
+
+server.listen(Number(process.env.PORT ?? 5173), '0.0.0.0', () => {
+  console.log(`[preview-gateway] listening on :5173 (replaces vite old port)`)
+})
 ```
 
 ### 3.2 沙箱 :18080 代理兼容性
 
 `agent-browser` Chrome 强制走 `http://127.0.0.1:18080` 沙箱代理，触发 body 截断 310 字节 bug。
 - **本 spec 不能修复** :18080 bug
-- **本 spec 缓解**：本地 agent-browser 调试时改用 `http://localhost:16001`（不走 :18080，因为 :16001 是沙箱内直接端口）
+- **本 spec 缓解**：
+  - 外网用户走 :16000 → agent-tool-host → :5173 (gateway) → 上游；与 :18080 无关
+  - 本地 agent-browser 调试时直接用 `http://localhost:5173`（沙箱内直连，绕过 :18080）
 - **body 完整传递** 由 Node http-proxy 保证（实测经 Node 转发的响应 Content-Length 完整）
 
 ### 3.3 CORS / Origin 一致性
 
 - 网关**不**改 `Origin` / `Host` 头（`changeOrigin: false`）
-- 浏览器请求 :16001 → 网关转发 → 上游看到 `Origin: http://localhost:16001`
-- vite 5+ 默认 `cors: true` 回显 Origin → 浏览器收到 `Access-Control-Allow-Origin: http://localhost:16001` → 匹配 → CORS 通过
+- 浏览器请求 :5173 (不论从 :16000 走还是直接 :5173 走) → 网关转发 → 上游看到 `Origin: http://localhost:5173`
+- vite 5+ 默认 `cors: true` 回显 Origin → 浏览器收到 `Access-Control-Allow-Origin: http://localhost:5173` → 匹配 → CORS 通过
 - **撤销**之前在 vite.config.ts 硬编码的 `cors: { origin: '*' }`（dev 配置可以是回显 Origin）
 - **不**在 vite.config.ts 中挂任何 reverse-proxy plugin（D9 决策）
 
 ### 3.4 HMR WebSocket 转发
 
 - vite dev 默认 ws path: `/?token=...`（无独立路径）
-- 浏览器看到 ws URL: `ws://localhost:16001/?token=...`（基于当前 origin :16001）
+- 浏览器看到 ws URL: `ws://localhost:5173/?token=...`（基于当前 origin :5173，因为 :16000 转发到 :5173 时 origin 头保持不变）
 - 网关在 `upgrade` 事件中识别 `Upgrade: websocket` + `Connection: Upgrade` 头
-- 转发到 `ws://127.0.0.1:5173/?token=...`（保持 query string 不变）
+- 转发到 `ws://127.0.0.1:5175/?token=...`（保持 query string 不变）
 - vite HMR 客户端 ws 握手成功 → 正常推送 hot module updates
 
 ### 3.5 错误兜底与可观测
@@ -224,11 +227,12 @@ Content-Type: application/json
 | # | 改动 | 文件 | 性质 | 风险 |
 |---|------|------|------|------|
 | **G1** | 新建 `app/preview-gateway/` 项目（package.json + tsconfig + src/server.ts） | 新 | TS | 低 |
-| **G2** | pm2 注册 `preview-gateway` 进程（端口 16001） | `ecosystem.config.cjs` (改) | JS | 低 |
+| **G2** | pm2 注册 `preview-gateway` 进程（端口 :5173） | `ecosystem.config.cjs` (改) | JS | 低 |
 | **G3** | setup-sandbox-env.sh 加 preview-gateway 启动步骤 | `scripts/setup-sandbox-env.sh` (改) | shell | 低 |
 | **G4** | vite.config.ts 撤销 `cors: { origin: '*' }` 硬编码 + 撤销 proxy 块 | `app/encv-mobile/vite.config.ts` (改) | TS | 中（需端到端验证） |
-| **G5** | agent-browser 调试时改用 :16001 单端口验证 | 无代码 | — | — |
-| **G6** | 文档：沙箱预览拓扑图更新 | `app/preview-gateway/README.md` (新) | md | 低 |
+| **G5** | **vite 端口从 :5173 改到 :5175**（D10 决策，让出 :5173 给 preview-gateway） | `app/encv-mobile/scripts/start-preview.sh` + `package.json` (改) | JS | 中（启动顺序耦合） |
+| **G6** | agent-browser 调试时改用 :5173 单端口验证 | 无代码 | — | — |
+| **G7** | 文档：沙箱预览拓扑图更新 | `app/preview-gateway/README.md` (新) | md | 低 |
 
 ### 4.1 撤销列表（修复后清理）
 
@@ -253,12 +257,13 @@ Content-Type: application/json
 
 ```
 P0 — 新建 preview-gateway 项目骨架 (G1)               ✅
-P1 — 写 HTTP 路由 + WebSocket 转发                    ✅
-P2 — 写 /__gateway/health 端点                       ✅
-P3 — pm2 注册 + setup-sandbox-env.sh 集成 (G2, G3)   ✅
-P4 — vite.config.ts 撤销 cors '*' + proxy 块 (G4)     ⏳ P3 后
-P5 — 端到端验证 (:16001 路径下 OpenListView 正常)    ⏳ P4 后
-P6 — 文档 (G6)                                       ⏳ P5 后
+P1 — 写 HTTP 路由 + WebSocket 转发                    ⏳ 需改端口从 :16001 → :5173
+P2 — 写 /__gateway/health 端点                       ⏳ P1 后
+P3 — pm2 注册 + setup-sandbox-env.sh 集成 (G2, G3)   ⏳ P2 后
+P4 — vite 端口从 :5173 改到 :5175 (G5)               ⏳ P3 后
+P5 — vite.config.ts 撤销 cors '*' + proxy 块 (G4)     ⏳ P4 后
+P6 — 端到端验证 (外网 :16000 直通 4 个上游)          ⏳ P5 后
+P7 — 文档 (G7)                                       ⏳ P6 后
 ```
 
 ---
@@ -270,11 +275,11 @@ P6 — 文档 (G6)                                       ⏳ P5 后
 | **R1** | 网关单点故障 | pm2 配 `autorestart: true`，挂掉自动拉起 |
 | **R2** | WebSocket 转发性能 | `http-proxy` 的 `ws: true` 自动处理 upgrade；4 个 upstream 并发量极小（沙箱内单用户） |
 | **R3** | 网关与 vite proxy 重复 | **D9 决策**：vite 不再有 proxy 块；只有 preview-gateway 是唯一代理 |
-| **R4** | `:18080` 沙箱代理仍截断 body | 本地 agent-browser 改用 :16001（不走 :18080）；或经 Node http-proxy 中转，body 完整 |
-| **R5** | 撤销 `cors: '*'` + proxy 块后其它 dev 场景破坏 | 仅 sandbox 预览路径用网关；其它本地 dev 仍 `pnpm dev` 直接 :5173（vite 默认 cors: true 已足够） |
-| **R6** | `:16000` 已被 agent-tool-host 占用 | D1 决策：preview-gateway 用 :16001，不与 :16000 冲突 |
-| **R7** | 外网用户只能访问 :16000 路径（agent-tool-host） | 接受限制：外网访问只到主 app 静态；:5174/:2025 等仅本地 dev / agent-browser 可达 |
-| **R8** | D9 决策导致 :16000 路径下 /openlist-ui/ 不可达 | 是 spec 接受的取舍；本地 dev 用 :16001 完整路径 |
+| **R4** | `:18080` 沙箱代理仍截断 body | 本地 agent-browser 改用 :5173（不走 :18080）；或经 Node http-proxy 中转，body 完整 |
+| **R5** | 撤销 `cors: '*'` + proxy 块后其它 dev 场景破坏 | 仅 sandbox 预览路径用网关；其它本地 dev 仍 `pnpm dev` 直接 :5175（vite 默认 cors: true 已足够） |
+| **R6** | vite 端口从 :5173 改到 :5175 影响其它工具链 | start-preview.sh 启动命令改 `--port 5175 --strictPort`；air 配置 / linter / IDE 调试端口不需要改 |
+| **R7** | 外网链 :16000 → :5173 切到 gateway 后 vite 不可达 | 是 spec 接受的取舍：vite 仍然在 :5175 跑（pm2 拉起），仅 :5173 不再是 vite；外网链 :16000 → :5173 (gateway) → :5175 (vite) 完整工作 |
+| **R8** | D9 决策导致 vite 老端口 :5173 路径下 /openlist-ui/ 不可达 | 是 spec 接受的取舍：所有 :5173 访问都经 preview-gateway，不再直连 vite |
 
 ---
 
@@ -293,18 +298,20 @@ P6 — 文档 (G6)                                       ⏳ P5 后
 
 | # | 判据 | 验证方式 |
 |---|------|----------|
-| **J1** | `pnpm dev` 起 preview-gateway，监听 :16001 | `curl -sI http://localhost:16001/ \| head -3` |
-| **J2** | 浏览器访问 :16001/ 加载 encv-mobile SPA | `curl -s http://localhost:16001/ \| grep -c '<div id="app">'` |
-| **J3** | :16001/openlist-ui/ 加载 plugin SPA | `curl -s -o /dev/null -w "%{http_code}" http://localhost:16001/openlist-ui/` |
-| **J4** | :16001/api/* 走 encv-go | `curl -s -o /dev/null -w "%{http_code}" http://localhost:16001/api/public/settings` |
-| **J5** | :16001/openlist/sites/* 走 encv-go → OpenList | `curl -s -o /dev/null -w "%{http_code}" http://localhost:16001/openlist/sites/local/api/public/settings` |
-| **J6** | WebSocket 升级转发到 vite HMR | `curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" http://localhost:16001/?token=test` 期望 101 |
-| **J7** | /__gateway/health 返回 4 个 upstream 状态 | `curl -s http://localhost:16001/__gateway/health \| jq .upstreams` |
-| **J8** | 浏览器实测 :16001/tabs/openlist 正常渲染 | agent-browser open + snapshot |
-| **J9** | 撤销 vite `cors: '*'` 后 :16001 仍 CORS 通过 | snapshot 显示 OpenListView 组件 |
+| **J1** | `pnpm dev` 起 preview-gateway，监听 :5173 | `curl -sI http://localhost:5173/ \| head -3`（拿到 vite HTML 即正确） |
+| **J2** | 外网 :16000 走 agent-tool-host → :5173 网关 → 主 app | `curl -s http://<sandbox>:16000/ \| grep -c '<div id="app">'` |
+| **J3** | 外网 :16000/openlist-ui/ 走网关 → :5174 plugin SPA | `curl -s -o /dev/null -w "%{http_code}" http://<sandbox>:16000/openlist-ui/` |
+| **J4** | 外网 :16000/api/* 走网关 → :2025 encv-go | `curl -s -o /dev/null -w "%{http_code}" http://<sandbox>:16000/api/public/settings` |
+| **J5** | 外网 :16000/openlist/sites/* 走网关 → :2025 → :5244 | `curl -s -o /dev/null -w "%{http_code}" http://<sandbox>:16000/openlist/sites/local/api/public/settings` |
+| **J6** | WebSocket 升级转发到 vite HMR (:5175) | `curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" http://localhost:5173/?token=test` 期望 101 |
+| **J7** | /__gateway/health 返回 4 个 upstream 状态 | `curl -s http://localhost:5173/__gateway/health \| jq .upstreams` |
+| **J8** | 浏览器实测 :16000/tabs/openlist 正常渲染 | agent-browser open + snapshot |
+| **J9** | 撤销 vite `cors: '*'` 后 :16000/:5173 仍 CORS 通过 | snapshot 显示 OpenListView 组件 |
 | **J10** | pm2 拉起 preview-gateway 后自愈 | `pm2 kill && pm2 start ecosystem.config.cjs` |
 | **J11** | vite.config.ts 不含 `proxy: { ... }` 块（D9 验证） | `grep -n "proxy:" app/encv-mobile/vite.config.ts` 应为空 |
 | **J12** | vite.config.ts 不含 `openlistUiProxy` plugin 引用 | `grep -n "openlistUiProxy" app/encv-mobile/vite.config.ts` 应为空 |
+| **J13** | vite 端口已搬到 :5175（D10 验证） | `curl -sI http://localhost:5175/ \| head -3`（拿到 vite HTML 即正确）；`curl -sI http://localhost:5173/` 拿到 preview-gateway 自己的响应 |
+| **J14** | agent-tool-host 配置未改 | `curl -sI http://<sandbox>:16000/` 拿到 200 + 转发到网关后的内容 |
 
 ---
 
