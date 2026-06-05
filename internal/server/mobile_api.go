@@ -8,8 +8,11 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -175,13 +178,82 @@ func (s *Server) handleUploadFileGin(c *gin.Context) {
 }
 
 func (s *Server) handleServiceGuardGin(c *gin.Context) {
+	// 收集诊断上下文（任何守卫失败都带上 → 调试不再靠"猜"）
+	cwd, _ := os.Getwd()
+	envDevPreview := os.Getenv("ENCV_DEV_PREVIEW") == "1"
+	envMobile := os.Getenv("ENCV_MOBILE") == "1"
+
+	// 规范：mock 脚本与启动脚本在仓库里的固定路径
+	mockScriptRel := "app/encv-mobile/scripts/generate-mock-files.ts"
+	previewScriptRel := "app/encv-mobile/scripts/start-preview.sh"
+	makefileRel := "Makefile"
+	docsMockSpec := ".trae/documents/mock-real-files-plan.md"
+
+	// 根因分类：A) 路径不可读 B) 缺 marker 目录
+	type guardContext struct {
+		Os          string `json:"os"`
+		Arch        string `json:"arch"`
+		Cwd         string `json:"cwd"`
+		ServingDir  string `json:"servingDir"`
+		ServingDirExists bool   `json:"servingDirExists"`
+		EnvDevPreview bool  `json:"envDevPreview"`
+		EnvMobile      bool  `json:"envMobile"`
+		MockScript   string `json:"mockScript"`
+		PreviewScript string `json:"previewScript"`
+		Makefile     string `json:"makefile"`
+		Docs         string `json:"docs"`
+	}
+
+	ctx := guardContext{
+		Os:             runtime.GOOS,
+		Arch:           runtime.GOARCH,
+		Cwd:            cwd,
+		ServingDir:     s.servingDir,
+		ServingDirExists: fileExists(s.servingDir),
+		EnvDevPreview:  envDevPreview,
+		EnvMobile:      envMobile,
+		MockScript:     mockScriptRel,
+		PreviewScript:  previewScriptRel,
+		Makefile:     makefileRel,
+		Docs:         docsMockSpec,
+	}
+
 	files, err := s.mobileSvc.ListFiles("/")
 	if err != nil {
+		// 根因 A: servingDir 不可读（Linux 沙箱常见 — 路径不存在或权限不足）
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"ready":      false,
-			"servingDir": s.servingDir,
-			"error":      err.Error(),
-			"detail":     "failed to list root directory",
+			"ready":  false,
+			"detail": "failed to list root directory",
+			"error":  err.Error(),
+			"context": ctx,
+			"remediation": []gin.H{
+				{
+					"scenario": "A1 — Linux 沙箱开发 (推荐)",
+					"steps": []string{
+						"切换到 Makefile dev-mobile 目标（自动 ENCV_DEV_PREVIEW=1 + mock 生成）：",
+						"  make dev-mobile",
+						"或手动：",
+						"  cd app/encv-mobile && npx tsx scripts/generate-mock-files.ts --dir /storage/emulated/0",
+						"  ENCV_DEV_PREVIEW=1 go run ./cmd/encv start",
+					},
+				},
+				{
+					"scenario": "A2 — Android 真机 (Capacitor)",
+					"steps": []string{
+						"路径 /storage/emulated/0 在 Android 上是合法路径，但需 SD 卡权限。",
+						"如使用沙盒路径或 scoped storage，改用：",
+						"  ENCV_DEV_PREVIEW=1 ENCV_MOCK_ROOT=/sdcard npx tsx scripts/generate-mock-files.ts",
+					},
+				},
+				{
+					"scenario": "A3 — 桌面端正常模式 (无 mobile overlay)",
+					"steps": []string{
+						"不要设 ENCV_DEV_PREVIEW / ENCV_MOBILE，servingDir 自动 = 当前目录。",
+						"在此目录运行 mock 生成：",
+						"  npx tsx scripts/generate-mock-files.ts --dir \"$(pwd)\"",
+					},
+				},
+			},
 		})
 		return
 	}
@@ -206,22 +278,134 @@ func (s *Server) handleServiceGuardGin(c *gin.Context) {
 			displayNames = displayNames[:10]
 		}
 
+		// 修复命令：自动用当前 servingDir 替换占位符
+		mockCmd := "cd app/encv-mobile && npx tsx scripts/generate-mock-files.ts --dir " + s.servingDir
+		makeCmd := "make dev-mobile    # ENCV_DEV_PREVIEW=1 + 自动 mock 生成"
+		previewCmd := "bash app/encv-mobile/scripts/start-preview.sh    # 一键前台启动（含 mock + air + vite）"
+
+		// 根因 B: servingDir 可读但缺 01-plain-media marker
 		c.JSON(http.StatusForbidden, gin.H{
-			"ready":      false,
-			"servingDir": s.servingDir,
-			"marker":     marker,
-			"found":      displayNames,
-			"detail":     fmt.Sprintf("server.dir missing %q, got: [%s]", marker, strings.Join(displayNames, ", ")),
-			"hint":       "Run: cd app/encv-mobile && npx tsx scripts/generate-mock-files.ts --dir /storage/emulated/0",
+			"ready":  false,
+			"marker": marker,
+			"found":  displayNames,
+			"detail": fmt.Sprintf("server.dir 缺少约定的 marker 目录 %q（这是 ENCV mock 数据规范的前缀，详见 %s）", marker, mockScriptRel),
+			"context": ctx,
+			"remediation": []gin.H{
+				{
+					"scenario": "B1 — 一键修复（推荐）",
+					"command":  previewCmd,
+					"explain":  "脚本会先 pkill 残留、npm install、生成 mock、启动 air+ENCV_DEV_PREVIEW=1、启动 Vite、保持前台运行（便于 OpenPreview 激活）",
+				},
+				{
+					"scenario": "B2 — Makefile 目标",
+					"command":  makeCmd,
+					"explain":  "执行 make dev-mobile 即可：先 mock 生成到 /storage/emulated/0，再 ENCV_MOBILE=1 ENCV_DEV_PREVIEW=1 go run",
+				},
+				{
+					"scenario": "B3 — 手动精确生成 mock 到当前 servingDir",
+					"command":  mockCmd,
+					"explain":  "规范脚本：scripts/generate-mock-files.ts 会在 " + s.servingDir + " 下创建 01-plain-media 04 个分类（plain/ae/container/boundary）",
+				},
+				{
+					"scenario": "B4 — 如果不想用 mock（极少见）",
+					"steps": []string{
+						"在 " + s.servingDir + " 下手动建一个空目录：",
+						"  mkdir -p " + s.servingDir + "/01-plain-media",
+						"（不推荐，违反 mock 规范，CI 会判违规）",
+					},
+				},
+			},
+			"expectations": gin.H{
+				"after_fix_servingDir": s.servingDir,
+				"after_fix_should_contain": []string{
+					"01-plain-media/   (普通媒体：image/video/audio/document)",
+					"02-alist-encrypt/ (AE 加密文件)",
+					"03-encv-containers/ (ENCV v4 容器)",
+					"04-boundary-test/  (边界测试：长文件名/控制字符/特殊字符)",
+				},
+				"verify_cmd": "curl -s http://localhost:2025/api/service-guard  # 期望 HTTP 200 + ready:true",
+			},
 		})
 		return
+	}
+
+	// OK: 一切就绪 — 列出 marker 实际内容（让用户立刻看到 mock 数据布局）
+	markerChildren := make([]string, 0, 4)
+	for _, f := range files {
+		if f.IsDirectory && (f.Name == "01-plain-media" || f.Name == "02-alist-encrypt" || f.Name == "03-encv-containers" || f.Name == "04-boundary-test") {
+			markerChildren = append(markerChildren, f.Name)
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"ready":      true,
 		"servingDir": s.servingDir,
 		"marker":     marker,
+		"context":    ctx,
+		"mockCategories": markerChildren,
+		"nextStep":   "前端访问 http://localhost:5173/ （前提是已 OpenPreview 激活）",
 	})
+}
+
+// fileExists 判断路径是否存在（避免守卫 error 里少这一上下文）
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
+// pluginOpenlistUpstream plugin-openlist 独立 Vite dev server
+// （由 pm2 app `plugin-openlist-vite` 拉起，独立于 encv-mobile vite :5173）
+const pluginOpenlistUpstream = "http://127.0.0.1:5174"
+
+// handlePluginOpenlistProxyGin 反向代理 /api/preview/plugin-openlist/* → :5174/*
+//
+// 为什么需要：
+//   - plugin-openlist 是独立 Capacitor 插件的 Vite dev server（:5174），
+//     跟 encv-mobile 主 vite (5173) 没有父子关系。
+//   - 前端点击 "预览 OpenList Plugin" 不能直接跳 :5174（破坏 OpenPreview 会话，
+//     且 Capacitor native 端 127.0.0.1 指向设备本身，不通）。
+//   - vite.config.ts 的 openlist-ui-proxy 只能代理 :5244（OpenList 真实前端），
+//     不能代理 :5174（plugin-openlist 是另一个独立 vite 进程）。
+//
+// 方案：encv-go 后端（独立后端）做 reverse proxy 协调，
+// 前端跳相对路径 /api/preview/plugin-openlist/ → encv-go → :5174。
+//
+// 完全不依赖 vite，符合"独立后端协调"原则。
+func (s *Server) handlePluginOpenlistProxyGin(c *gin.Context) {
+	target, err := url.Parse(pluginOpenlistUpstream)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid upstream: " + err.Error()})
+		return
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	// Director 改写 host + path，透传 header
+	originalDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		originalDirector(req)
+		req.Host = target.Host
+		// req.URL.Path 已经被 ReverseProxy 设为原始请求路径，
+		// 我们要 strip 掉 /api/preview/plugin-openlist 前缀
+		req.URL.Path = strings.TrimPrefix(req.URL.Path, "/api/preview/plugin-openlist")
+		if req.URL.Path == "" {
+			req.URL.Path = "/"
+		}
+	}
+	// 自定义 ErrorHandler：upstream 不可达时返回明确错误（不要 502 难诊断）
+	proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, err error) {
+		slog.Error("[plugin-openlist proxy] upstream error", "err", err, "url", req.URL.String())
+		rw.Header().Set("Content-Type", "text/html; charset=utf-8")
+		rw.WriteHeader(http.StatusBadGateway)
+		fmt.Fprintf(rw, `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>plugin-openlist 未运行</title></head>
+<body style="font-family:system-ui;padding:24px;max-width:560px;margin:auto">
+<h2>plugin-openlist dev server 未运行</h2>
+<p>upstream: %s</p>
+<p>err: %s</p>
+<p>启动方式（pm2 统一管理）：<code>npx pm2 start ecosystem.config.cjs --only plugin-openlist-vite</code></p>
+<p>或直接：<code>cd app/encv-mobile/plugin-openlist/web && pnpm dev</code></p>
+</body></html>`, pluginOpenlistUpstream, err.Error())
+	}
+	proxy.ServeHTTP(c.Writer, c.Request)
 }
 
 func (s *Server) handleReadFileContentGin(c *gin.Context) {

@@ -205,16 +205,15 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 
 /**
  * 沙箱 dev / 真机 prod 区分
- *  - dev:   走 Vite proxy /openlist-spa → 127.0.0.1:5244
+ *  - dev:   直访 127.0.0.1:5244（同源策略对 127.0.0.1 不严格，CORS=*）
  *  - prod:  直连 127.0.0.1:5244（同设备，OpenList 与 Capacitor 同进程域）
  */
 const isSandbox = computed(() => import.meta.env.DEV)
 
 const iframeUrl = computed(() => {
   const hash = '#/login'
-  if (isSandbox.value) {
-    return `/openlist-spa/${hash}`
-  }
+  // 撤销 /openlist-spa/ subpath 路由改造（subpath 模式不可靠），
+  // dev/prod 都直访 :5244（与 prod 部署对齐，OpenList 跑在原始环境 /）
   return `http://127.0.0.1:${port.value || 5244}/${hash}`
 })
 

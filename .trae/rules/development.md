@@ -363,12 +363,13 @@ bash app/encv-mobile/scripts/start-preview.sh
 ```
 
 **脚本行为**：
-1. 杀掉残留的 air / encv / vite 进程（精确按进程名匹配，绝不杀 agent-tool-host）
-2. 确保 `node_modules` 就绪（缺失则自动 `npm install --prefer-offline`）
-3. 运行 `npx tsx scripts/generate-mock-files.ts` 生成 mock 数据到 `/storage/emulated/0/01-plain-media/...`
-4. 启动 `ENCV_DEV_PREVIEW=1 air` 监视 `./cmd/encv/`（air 自动重建并重启后端）
-5. 启动 Vite（`--host 0.0.0.0 --port 5174 --strictPort`）
-6. 脚本前台 `wait`，任一子进程退出则清理全部
+1. Step 0: 杀掉残留的 air / encv / vite 进程（精确按进程名匹配 + `lsof -ti :2025` 按端口兜底，绝不杀 agent-tool-host）
+2. Step 1: 确保 `node_modules` 就绪（缺失则自动 `pnpm install --no-frozen-lockline`，支持 workspace 成员）
+3. Step 2: 运行 `npx tsx scripts/generate-mock-files.ts` 生成 mock 数据到 `/storage/emulated/0/01-plain-media/...`
+4. Step 3: 启动 `ENCV_DEV_PREVIEW=1 air` 监视 `./cmd/encv/`（air 自动重建并重启后端）+ **verify `/api/service-guard` 返回 `servingDir=/storage/emulated/0`，否则 exit 1**
+5. Step 4: 启动 Vite（`--host 0.0.0.0 --port 5174 --strictPort`）
+6. Step 5: 启动 OpenList 前端 dev server (`:3000`, `OPENLIST_PREVIEW_BASE="/openlist-ui/"`) — 沙箱预览 OpenList UI 用
+7. Step 6/7: 状态报告 + 保持前台 / 退出 detach
 
 **激活外部访问**：
 - 脚本返回 `command_id` 后，**必须调用 `OpenPreview(command_id="<id>", preview_url="http://localhost:5174/")`**
@@ -400,6 +401,19 @@ bash app/encv-mobile/scripts/start-preview.sh
 | 端口被占用 | 上次开发会话未清理 | `lsof -i :2025 -i :5173` + `kill` |
 | 修改 Go 代码后前端无变化 | 后端是旧进程（go run 不会自动重启） | 重启后端：先 kill 旧进程再 `go run` |
 | Vite HMR 不生效 | 文件保存事件未触发（某些远程文件系统） | 触发一次 touch 或重启 Vite |
+| **service-guard BLOCKED：`server.dir missing "01-plain-media"`，列出 `.md` 文件** | **mobile overlay 未生效**：`server.dir` 留在默认的 `/` → 解析为 `/workspace` → 看到 workspace 根目录文件。常见原因：手工 `tmp/encv start` 没设 `ENCV_DEV_PREVIEW=1`，或 start-preview.sh Step 0 没杀掉残留进程 | `curl -s http://127.0.0.1:2025/api/service-guard` 看 `servingDir` 字段；应该是 `/storage/emulated/0` 而不是 `/` 或 `/workspace` |
+
+### 5.3.1 ⚠️ service-guard 失败根因清单（2026-06-04 实战踩坑）
+
+> **`/api/service-guard` 报告 `server.dir missing "01-plain-media"` 是 mobile overlay 没生效的标志**。
+> 任何路径下看到此错误，都按"mobile overlay 未触发"处理，不要去改 `config.user.json`。
+
+| 触发场景 | 根因 | 修复 |
+|----------|------|------|
+| 手工启动 `tmp/encv start` / `tmp/encv` | 缺 `ENCV_DEV_PREVIEW=1` 环境变量，config overlay 不被加载 | 用 `start-preview.sh` 启动；或手工起时 `export ENCV_DEV_PREVIEW=1` |
+| `start-preview.sh` 启动后服务 guard 失败 | Step 0 漏杀旧 `tmp/encv` 进程（`pkill -f '^./tmp/encv'` 不匹配 `/workspace/tmp/encv start`） | 2026-06-04 修复：Step 0 改用 `lsof -ti :2025` 按端口兜底杀进程；Step 3 启动 air 后必须 verify `/api/service-guard` 的 `servingDir == /storage/emulated/0`，否则 `exit 1` |
+| mock-data 不在 `/storage/emulated/0/01-plain-media` | 跳过了 `npx tsx scripts/generate-mock-files.ts` 步骤 | 重跑 start-preview.sh（Step 2 自动生成） |
+| 改了 `config.user.json` 的 `server.dir` 或 `mobile.server.dir` | 违反 start-preview.sh §5.2.1 铁律 | `git checkout config.user.json` 还原 |
 
 ### 5.4 开发环境健康检查
 
@@ -600,3 +614,124 @@ try { filePath = decodeURIComponent(filePath) } catch {}
 | `!` | 无特殊含义 | 不编码 | `!`（安全） |
 
 **其中 `@` 是唯一确认会被迅雷浏览器/WAF 截断的字符。** 其他字符虽然理论上也可能被某些代理误处理，但双重编码方案统一保护了所有特殊字符。
+
+## 七、Hi-Sillot-OpenList-Frontend fork 适配：solid-icons 命名兼容（⚠️ 实战踩坑！）
+
+### 7.1 症状
+
+打开 `/openlist-ui/` 时，#root 一直空、只有注入的「返回 ENCV」按钮可见。debug pane 抓到：
+
+```
+[err] SyntaxError: The requested module '.../solid-icons@1.2.0_.../solid-icons/tb/index.js' does not provide an export named 'TbCheck' @ .../FolderTree.tsx:7:15
+```
+
+页面整体 JS module graph 解析失败 → Solid App 永远不 mount。
+
+### 7.2 根因
+
+| 维度 | 说明 |
+|------|------|
+| **fork 的源码约定** | `solid-icons` 1.8+：`import { TbCheck, TbX, TbFile } from "solid-icons/tb"`（无前缀 = 填充变体） |
+| **本工作区实际安装** | pnpm 锁定 `solid-icons@1.2.0`，**只有** `TbFillXxx` / `TbOutlineXxx` 前缀变体 |
+| **类型签名** | fork 的 `node_modules/.../tb/index.d.ts` 不会缺（npm 把上游 d.ts 一并装下来），所以 TS 编译过 |
+| **运行时** | 浏览器 ESM 解析真实 JS module 时发现导出列表对不上 → throw SyntaxError → 整个 module graph 中断 |
+
+### 7.3 命名映射
+
+| fork 写的（1.8+） | 1.2.0 实际提供 |
+|------------------|---------------|
+| `TbCheck` | `TbFillCircleCheck` / `TbOutlineCheck` |
+| `TbX` | `TbOutlineX` |
+| `TbFile` | `TbFillFile` / `TbOutlineFile` |
+| `TbFolder` | `TbFillFolder` / `TbOutlineFolder` |
+| `TbArchive` / `TbRefresh` / `TbCopy` / `TbLink` / `TbSelector` / `TbPlus` / `TbCheckbox` / `TbExternalLink` / `TbFileArrowRight` | `TbOutline${Xxx}` 全部存在 |
+
+> 其他包（`bi` / `ai` / `io` / `ri` / `cg` / `fa` / `fi` / `bs` / `im` / `si`）在 1.2.0 里都齐全，不受影响。
+
+### 7.4 修复方案：vite plugin 通用 import 重写
+
+**文件**：`app/openlist/Hi-Sillot-OpenList-Frontend/vite-plugins/solid-icons-compat.ts`
+
+```ts
+const TB_IMPORT_RE =
+  /import\s*\{\s*([^}]+?)\s*\}\s*from\s*(["'])solid-icons\/tb\2/g
+
+// 裸 Tb* → 改写为 TbOutlineXxx as TbXxx
+// 已带 Fill/Outline 前缀 → 保持
+```
+
+**接入位置**：`vite.config.ts` 必须在 `solidPlugin()` **之前**，`enforce: "pre"`：
+
+```ts
+plugins: [
+  solidIconsCompat(),  // ← 必须最先
+  solidPlugin(),
+  ...
+]
+```
+
+### 7.5 验证
+
+```bash
+# 1. 重启 openlist vite
+pkill -f 'Hi-Sillot-OpenList-Frontend.*vite'
+cd app/openlist/Hi-Sillot-OpenList-Frontend
+setsid nohup env OPENLIST_PREVIEW_BASE="/openlist-ui/" OPENLIST_NO_HMR=1 \
+  pnpm dev --host 127.0.0.1 --port 3000 --strictPort \
+  </dev/null >/tmp/encv-openlist.log 2>&1 &
+
+# 2. 验证重写生效
+curl -s 'http://127.0.0.1:3000/openlist-ui/src/components/FolderTree.tsx' \
+  | grep 'solid-icons/tb'
+# 期望：import { TbOutlineX as TbX, TbOutlineCheck as TbCheck } from "..."
+
+# 3. 浏览器打开 /openlist-ui/，debug pane 应该消失、#root 应该 mount
+```
+
+### 7.6 兼容性
+
+- 如果未来 `solid-icons` 升到 ≥ 1.8，本插件变成 no-op（重写后的名字在 1.8+ 也都存在）
+- TS 类型可能仍报缺导出，但 fork 是 .tsx + vite-plugin-solid，类型不参与运行
+- 不影响 production build：plugin 走 vite.transform，prod 也生效，但 prod 永远命中"已是正确前缀"分支
+
+## 八、vite HMR WebSocket 噪音过滤（16000 沙箱预览专用）
+
+### 8.1 症状
+
+encv-mobile 预览控制台持续刷：
+```
+[vite] failed to connect to websocket (Error: WebSocket closed without opened.)
+    at Object.connect (/@vite/client:892:13)
+```
+
+不影响应用运行（HMR 是开发辅助，非核心功能），但会污染 DevLogs。
+
+### 8.2 根因
+
+`16000` 沙箱入口（agent-tool-host）不支持 WebSocket Upgrade 协议。`@vite/client` 启动时尝试连 `ws://.../{__hmr__token__}`，连接被代理中断，浏览器每秒重试一次。
+
+### 8.3 修复
+
+`app/encv-mobile/src/composables/useFrontendLogs.ts` 的 `hijackConsole()` 增加 `isHmrWsNoise` 过滤：
+
+```ts
+console.error = (...args) => {
+  saved.error(...args)  // 原生 console.error 仍输出到 DevTools
+  if (isHmrWsNoise(args)) {
+    addLog('debug', ['[HMR WS sandbox noise] ' + args[0]])
+    return
+  }
+  addLog('error', args)
+}
+```
+
+`isHmrWsNoise` 匹配 `failed to connect to websocket` 和 `WebSocket closed without opened`。命中后**降级为 debug 级别**记录，不丢信息、不污染 error 流。
+
+### 8.4 为什么不做"完全关 HMR"
+
+| 做法 | 优劣 |
+|------|------|
+| 完全关 HMR（`hmr: false`） | 噪音彻底消失，但本地直连 `localhost:5173` 也失去 HMR |
+| **只过滤日志（推荐）** | **DevLogs 干净 + 本地直连 HMR 仍可用** |
+
+沙箱预览是只读验证场景，HMR 不可用是已知限制；本地开发仍依赖 HMR。

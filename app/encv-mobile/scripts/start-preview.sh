@@ -6,16 +6,16 @@
 #   3. 不修改 config.user.json —— servingDir 永远为 /storage/emulated/0
 #   4. 严禁任何符号链接 —— mock-data 真实目录在 /storage/emulated/0
 #   5. 自动检测端口占用：5173 被占时自动回退到 5174
-#   6. 脚本必须保持前台运行（nohup 进程由脚本管理），便于 OpenPreview 激活
-#   7. 脚本退出时优雅停止所有子进程
+#   6. 脚本必须保持前台运行（可被 pm2/nohup 包装，便于 OpenPreview 激活）
+#   7. 脚本退出时优雅停止所有子进程（仅主预览 :2025/:5173，不动 :5174）
 set -euo pipefail
 shopt -s lastpipe
 
-# ---- 信号陷阱：脚本退出时杀掉所有子进程 ----
+# ---- 信号陷阱：脚本退出时杀掉所有子进程（仅主预览端口） ----
 SUBPIDS=()
 cleanup() {
   echo ""
-  echo "==> 收到退出信号，停止所有子进程..."
+  echo "==> 收到退出信号，停止主预览子进程 (:2025 / :5173)..."
   for pid in "${SUBPIDS[@]}"; do
     if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
       kill "${pid}" 2>/dev/null || true
@@ -25,7 +25,14 @@ cleanup() {
   # 强制清理（air 还会启动 ./tmp/encv 子进程）
   pkill -P $$ 2>/dev/null || true
   pkill -x air 2>/dev/null || true
-  pkill -f 'node.*vite' 2>/dev/null || true
+  # 精确杀 5173 端口的 vite（保留 5174 plugin-openlist-vite）
+  for pid in $(lsof -ti :5173 2>/dev/null || true); do
+    kill "${pid}" 2>/dev/null || true
+  done
+  # 兜底：杀 2025 端口的 encv 主进程
+  for pid in $(lsof -ti :2025 2>/dev/null || true); do
+    kill "${pid}" 2>/dev/null || true
+  done
   exit 0
 }
 trap cleanup INT TERM
@@ -54,17 +61,33 @@ cd "${REPO_ROOT}"
 step() { echo ""; echo "==> $*"; }
 
 # ---------- Step 0: 停止残留 ENCV 进程 ----------
-step "0/6 停止残留 ENCV 进程"
+# ⚠️ 必须精确到「主预览」端口 (2025/5173) — 不能误杀 plugin-openlist-vite (:5174)
+step "0/6 停止残留 ENCV 主预览进程 (:2025 / :5173)"
 pkill -x air 2>/dev/null && echo "    killed air" || true
 pkill -f '^./tmp/encv' 2>/dev/null && echo "    killed ./tmp/encv" || true
 pkill -f '/tmp/encv start' 2>/dev/null && echo "    killed /tmp/encv start" || true
-pkill -f 'node.*vite' 2>/dev/null && echo "    killed vite" || true
+
+# 精确杀 5173 端口的 vite（保留 5174 plugin-openlist-vite）
+VITE_PIDS="$(lsof -ti :5173 2>/dev/null || true)"
+if [[ -n "${VITE_PIDS}" ]]; then
+  for pid in ${VITE_PIDS}; do
+    kill "${pid}" 2>/dev/null && echo "    killed vite-on-:5173 pid=${pid}" || true
+  done
+fi
 
 BACKEND_PIDS="$(lsof -ti :"${BACKEND_PORT}" 2>/dev/null || true)"
 if [[ -n "${BACKEND_PIDS}" ]]; then
   for pid in ${BACKEND_PIDS}; do
-    kill "${pid}" 2>/dev/null && echo "    killed backend pid=${pid}"
+    kill "${pid}" 2>/dev/null && echo "    killed backend pid=${pid} (port ${BACKEND_PORT})"
   done
+  sleep 1
+  # 二次确认（部分进程是 setsid+nohup 起的，父进程死子进程未必死）
+  BACKEND_PIDS="$(lsof -ti :"${BACKEND_PORT}" 2>/dev/null || true)"
+  if [[ -n "${BACKEND_PIDS}" ]]; then
+    for pid in ${BACKEND_PIDS}; do
+      kill -9 "${pid}" 2>/dev/null && echo "    force-killed backend pid=${pid} (port ${BACKEND_PORT})"
+    done
+  fi
 fi
 sleep 1
 
@@ -104,6 +127,33 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24; do
   fi
   sleep 0.5
 done
+
+# 验证 mobile overlay 生效：servingDir 必须包含 01-plain-media
+# 这是 2026-06-04 修复的痛点：之前 tmp/encv 手工启动无 ENCV_DEV_PREVIEW=1，
+# mobile overlay 未触发，server.dir 留在默认的 "/" → 解析为 /workspace → 看到 .md 等文件
+SERVING_GUARD_OK=0
+for i in 1 2 3 4 5 6 7 8 9 10; do
+  GUARD_JSON=$(curl -s "http://localhost:${BACKEND_PORT}/api/service-guard" 2>/dev/null || true)
+  if echo "${GUARD_JSON}" | grep -q '"ready":true'; then
+    SERVING_DIR=$(echo "${GUARD_JSON}" | grep -oE '"servingDir":"[^"]*"' | head -1 | cut -d'"' -f4)
+    echo "    ✅ service-guard OK: servingDir=${SERVING_DIR}"
+    SERVING_GUARD_OK=1
+    break
+  fi
+  sleep 0.5
+done
+if [[ "${SERVING_GUARD_OK}" != "1" ]]; then
+  echo ""
+  echo "❌ 错误：后端 service-guard 校验失败（10s 内未 ready）" >&2
+  echo "   这通常意味着 mobile overlay (ENCV_DEV_PREVIEW=1) 没生效" >&2
+  echo "   检查: ps -ef | grep -E 'air|tmp/encv' | grep -v grep" >&2
+  echo "   检查: tail -20 /tmp/encv-air.log" >&2
+  echo "   手工验证: curl -s http://localhost:${BACKEND_PORT}/api/service-guard | head -c 500" >&2
+  echo ""
+  curl -s "http://localhost:${BACKEND_PORT}/api/service-guard" | head -c 500
+  echo ""
+  exit 1
+fi
 
 # ---------- Step 4: Vite 前端（前台子进程） ----------
 step "4/6 启动 Vite 前端（port ${VITE_PORT}）"

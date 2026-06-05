@@ -5,29 +5,35 @@ import { fileURLToPath, URL } from 'node:url'
 /**
  * plugin-openlist/web Vite 配置
  *
- * 关键配置：`base: './'`
+ * 关键配置：`base: './'` (生产) | `/openlist-ui/` (沙箱 dev, VITE_BASE env)
  *   生产模式：WebView 加载 `file:///android_asset/openlist/index.html`
  *   资源路径必须用相对路径 `./assets/...`（Vite 默认 `/assets/...` 会在 file:// 下 404）
  *
- * Proxy 设计：
- *   /openlist-spa/*  →  http://127.0.0.1:5244/*
- *   /__openlist-health → 自定义中间件（Node 直连 5244，返回 CORS-OK JSON）
+ * 沙箱 dev 启动 OpenList 后端（真实 Hi-Sillot fork）：
+ *   Terminal 1: bash scripts/dev-openlist.sh
+ *   → 启动 http://127.0.0.1:5244/，前端 dist 来自 app/openlist/Hi-Sillot-OpenList/public/dist/
  *
- * 沙箱浏览器模式下，OpenList 后端跑在 5244（由 scripts/dev-openlist.sh 启动）。
- * 我们的 Capacitor UI 通过 Vite 代理访问后端，前端无 CORS 问题（同源）。
+ * 沙箱 dev 启动本 Vite（plugin 管理 UI，端口 5174）：
+ *   Terminal 2: bash scripts/dev-openlist-web.sh
+ *   → OpenListWebView 内的 iframe 直访 http://127.0.0.1:5244/#/login
  *
- * 生产模式（Android WebView 在 plugin-openlist Content() 内）：
- *   - OpenList 后端跑在 127.0.0.1:5244（同一设备）
- *   - iframe 直接访问 http://127.0.0.1:5244/（不走 Vite 代理）
- *   - 通过 import.meta.env.PROD 区分
+ * Production（Android WebView）：
+ *   - WebView 加载 file:///android_asset/openlist/index.html（plugin-openlist/src/main/assets/openlist/）
+ *   - iframe 内部直访 http://127.0.0.1:5244/（与本机 OpenList 进程同设备）
+ *
+ * 撤销 /openlist-spa/ subpath 路由改造：OpenList 应在原始环境 / 跑，
+ * iframe / fetch 均直访 :5244，无需 Vite proxy。
+ * 但保留 `__openlist-health` 中间件：Node 端探测 5244，绕过浏览器 CORS，
+ * 让 OpenListWebView 的状态机有可靠的 health 探测通道。
  */
 
 /**
  * 自定义中间件：显式健康检查端点
- * 解决 fetch('/openlist-spa/...', { mode: 'cors' }) 在 502 时被浏览器 CORS 拦截，
+ * 解决 fetch('http://127.0.0.1:5244/...', { mode: 'cors' }) 在 502 时被浏览器 CORS 拦截，
  * 导致 res.status 变成 0（opaque），state 误判为 loading 的问题。
  *
  * 直接在 Node 端用 fetch 探测 5244，回 JSON 给浏览器，带 CORS 头 → 永远可读。
+ * 同源访问（plugin-openlist vite :5174 fetch 自己 /__openlist-health）也工作。
  */
 function openlistHealthPlugin(): Plugin {
   return {
@@ -72,10 +78,22 @@ function openlistHealthPlugin(): Plugin {
   }
 }
 
+/**
+ * 沙箱 dev / 真机 prod 区分
+ *  - sandbox dev (VITE_BASE=/openlist-ui/): HTML base = /openlist-ui/
+ *      原因：dev_preview_proxy 在 :2025 把 /openlist-ui/* 反代到本 vite :5174
+ *      vite 收到 /openlist-ui/src/main.ts，base 匹配，serve web/src/main.ts
+ *      资源路径是绝对 /openlist-ui/assets/...，浏览器解析为同源请求（:2025）
+ *  - production (默认 './'): HTML base = ./
+ *      原因：Android WebView 加载 file:///android_asset/openlist/index.html
+ *      资源路径必须相对 ./assets/...（绝对路径在 file:// 协议下 404）
+ */
+
 export default defineConfig({
-  // ⚠️ 必须 './'：Android WebView 通过 file:///android_asset/openlist/ 加载
-  // 绝对路径 '/assets/...' 在 file:// 协议下 404
-  base: './',
+  // ⚠️ 沙箱 dev 用绝对 base（VITE_BASE），生产用相对 './'
+  // 沙箱 dev：HTML 内 <base href="/openlist-ui/">，vite 处理 /openlist-ui/* 前缀
+  // 生产：HTML 内 <base href="./">，Android WebView file:// 协议下加载相对资源
+  base: process.env.VITE_BASE || './',
   plugins: [vue(), openlistHealthPlugin()],
   resolve: {
     alias: {
@@ -94,14 +112,7 @@ export default defineConfig({
   server: {
     port: 5174,
     strictPort: false,
-    proxy: {
-      '/openlist-spa': {
-        target: 'http://127.0.0.1:5244',
-        changeOrigin: true,
-        secure: false,
-        rewrite: (path) => path.replace(/^\/openlist-spa/, ''),
-        bypass: () => null,
-      },
-    },
+    // 撤销 /openlist-spa/ proxy：iframe / fetch 都直访 :5244
+    // （见文件头注释：subpath 改造不可靠，OpenList 应在原始环境 / 跑）
   },
 })

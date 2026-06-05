@@ -1,0 +1,126 @@
+/* eslint-disable */
+// =============================================================================
+// ecosystem.config.cjs
+// -----------------------------------------------------------------------------
+// pm2 配置：统一管理 沙箱 dev 服务（主预览 + 辅助服务）
+//
+//   ① start-preview         (主预览 — start-preview.sh, :2025 + :5173)
+//   ② openlist              (Go OpenList 真实 fork, :5244)
+//   ③ plugin-openlist-vite  (Vite plugin 管理 UI, :5174)
+//
+// 用法：
+//   pm2 start ecosystem.config.cjs
+//   pm2 stop  ecosystem.config.cjs
+//   pm2 restart ecosystem.config.cjs
+//   pm2 status
+//   pm2 logs
+//   pm2 monit
+//
+// 包装脚本：scripts/previews.sh
+//   bash scripts/previews.sh start|stop|restart|status|logs|monit
+// =============================================================================
+
+const path = require('path');
+const fs = require('fs');
+
+const REPO_ROOT  = '/workspace';
+const MOBILE_DIR = path.join(REPO_ROOT, 'app', 'encv-mobile');
+const PLUGIN_DIR = path.join(MOBILE_DIR, 'plugin-openlist', 'web');
+
+const PREVIEW_SCRIPT = path.join(MOBILE_DIR, 'scripts', 'start-preview.sh');
+
+// ⚠️ pm2 fork 模式下 script 必须指向可加载文件（.js 路径 + interpreter）。
+//   - vite 的 shell 包装 (node_modules/.bin/vite) 不可用 — 第 2 行
+//     basedir=$(dirname ...) 会被 pm2 当 JS 解析报 SyntaxError。
+//   - script: 'node' + interpreter: 'node' 也不可用 — pm2 会把
+//     /root/.nvm/.../bin/node (ELF 二进制) 当 .js 加载报 Invalid token。
+//   - 正确做法：script 写 vite 的 JS 入口，interpreter 显式指定 node。
+const VITE_BIN_RELPATH = 'node_modules/vite/bin/vite.js';
+const VITE_BIN_PLUGIN  = path.join(PLUGIN_DIR, VITE_BIN_RELPATH);
+
+// 检查 start-preview.sh 存在性（缺失时给出明确报错）
+if (!fs.existsSync(PREVIEW_SCRIPT)) {
+  throw new Error(`start-preview.sh 不存在: ${PREVIEW_SCRIPT}`);
+}
+
+module.exports = {
+  apps: [
+    // ── ① start-preview (主预览) ────────────────────────────────────
+    //   start-preview.sh 自身前台阻塞（wait -n 等待任一子进程退出），
+    //   内部用 & 启 air 和 vite 子进程，由 trap INT/TERM 兜底清理。
+    //   pm2 把它当作一个长跑进程管（fork 模式）：
+    //     - max_memory_restart: 内存超限自动重启（杀 air+vite 再起）
+    //     - kill_timeout: 8s（air 还要调 go build，1.6s 默认不够）
+    //     - listen_timeout: 60s（mock 生成 + npm install + 第一次 go build 较慢）
+    {
+      name: 'start-preview',
+      script: PREVIEW_SCRIPT,
+      interpreter: 'bash',
+      cwd: REPO_ROOT,
+      // start-preview.sh 内部已经设了 ENCV_DEV_PREVIEW=1，这里不再设
+      env: {
+        PATH: process.env.PATH,
+        // 让 mock 生成走沙箱 fallback（脚本默认 /storage/emulated/0，已存在）
+        ENCV_MOCK_ROOT: '/storage/emulated/0',
+      },
+      // 内存超 1G 重启（air 跑久了 + go build 临时内存会涨）
+      max_memory_restart: '1G',
+      // 启动窗口 60s：mock 生成 + npm install + air 第一次 go build
+      listen_timeout: 60000,
+      // 8s 让 air 完成 go build 后再 SIGKILL
+      kill_timeout: 8000,
+      autorestart: true,
+      // 主预览预期常驻；超过 5 次重启说明代码坏了，别再循环
+      max_restarts: 5,
+      min_uptime: '60s',
+      out_file: '/tmp/pm2-start-preview.log',
+      error_file: '/tmp/pm2-start-preview.err.log',
+      // merge_logs: true 让多步输出不打乱
+      merge_logs: true,
+      time: true,
+    },
+
+    // ── ② OpenList 真实 fork (Go) ───────────────────────────────────
+    {
+      name: 'openlist',
+      // dev-openlist.sh 会自动用本地 fork 的 dist，fallback 到 release tarball
+      script: 'bash',
+      args: `${MOBILE_DIR}/scripts/dev-openlist.sh --port 5244`,
+      cwd: MOBILE_DIR,
+      env: {
+        PATH: process.env.PATH,
+        OPENLIST_DATA: '/tmp/openlist-data',
+      },
+      // OpenList 内存占用较大（gorm + 加密 + sqlite）
+      max_memory_restart: '1G',
+      // go run 编译时间较长
+      listen_timeout: 90000,
+      kill_timeout: 5000,
+      autorestart: true,
+      max_restarts: 10,
+      out_file: '/tmp/pm2-openlist.log',
+      error_file: '/tmp/pm2-openlist.err.log',
+    },
+
+    // ── ③ plugin-openlist Vite (plugin 管理 UI) ─────────────────────
+    {
+      name: 'plugin-openlist-vite',
+      script: VITE_BIN_PLUGIN,
+      args: '--host 0.0.0.0 --port 5174 --strictPort',
+      interpreter: 'node',
+      cwd: PLUGIN_DIR,
+      env: {
+        PATH: process.env.PATH,
+      },
+      max_memory_restart: '512M',
+      listen_timeout: 15000,
+      kill_timeout: 3000,
+      autorestart: true,
+      max_restarts: 10,
+      out_file: '/tmp/pm2-plugin-openlist-vite.log',
+      error_file: '/tmp/pm2-plugin-openlist-vite.err.log',
+    },
+  ],
+
+  deploy: {},
+};
