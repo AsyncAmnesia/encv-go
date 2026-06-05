@@ -1,4 +1,4 @@
-# Tasks: Go Agent 进程内闭环库 + Vue 渲染壳
+# Tasks: Go Agent 独立服务 + OpenList 定制接口 + Vue 渲染壳（encv-mobile 主应用首页）
 
 > 实施顺序：先 Go 库（自底向上），后 Vue 渲染壳（先原子组件 → 组合组件 → 顶层视图），最后集成 demo + 验证。
 > **UI 组件命名/Props 必须与 codex_web 1:1 对齐**，便于后续组件库合并。
@@ -105,16 +105,25 @@
 
 ## Phase 4: 演示程序
 
-### Task 4.1: agent-demo 入口
+### Task 4.1: agent-demo 入口（独立 Go 服务，调 OpenList 定制接口）
 
-- [ ] SubTask 4.1.1: 在 `cmd/agent-demo/main.go` 写演示程序
-  - 注册 list_files (auto-run, KindReadOnly)
-  - 注册 delete_file (need confirm, KindFileChange)
-  - 注册 exec_command (need confirm, KindCommand)
-  - mount 3 个 HTTP handler
+- [ ] SubTask 4.1.1: 在 `cmd/agent-demo/main.go` 写演示程序（独立二进制，跑 :5245）
+  - 创建 `OpenListClient`（从 env 读 `OPENLIST_BASE_URL` + `OPENLIST_TOKEN`）
+  - 注册 list_files → `ol.ListFiles(path)` 调 `POST /api/ext/list_files`
+  - 注册 delete_file → `ol.DeleteFiles(paths)` 调 `POST /api/ext/delete_file`（need confirm）
+  - 注册 exec_command → `ol.ExecCommand(...)` 调 `POST /api/ext/exec_command`（need confirm）
+  - 注册 read_file / write_file / rename / get_storage_info / search_files 同理
+  - mount 3 个 HTTP handler (`/api/chat` `/api/resume` `/api/confirm`)
   - 监听 :5245
 - [ ] SubTask 4.1.2: 写 Makefile 或 go run 指令
 - [ ] SubTask 4.1.3: 验证 `curl -N http://localhost:5245/api/chat -d '{...}'` 流式输出 SSE
+
+### Task 4.2: OpenList 定制接口契约文档（驱动外部 PR）
+
+- [ ] SubTask 4.2.1: 写 `agent/openlist_contract.md` —— 8 个端点的完整 spec（请求/响应/错误码/鉴权）
+- [ ] SubTask 4.2.2: 写 `agent/openlist_client.go` —— Go 客户端 + 单测（mock OpenList 响应）
+- [ ] SubTask 4.2.3: 写 `agent/openlist_client_test.go` —— 8 个端点 round-trip
+- [ ] SubTask 4.2.4: 写 PR 模板 `docs/pr-openlist-ext-api.md` —— 提交到 Hi-Sillot/OpenList 时附上的设计说明
 
 ---
 
@@ -168,29 +177,36 @@
   - 输入框 + 发送/停止按钮
   - 自动滚动到底部（`scrollToIndex(messages.length - 1, {align: 'end'})`）
 
-### Task 5.6: 路由与依赖
+### Task 5.6: 集成入口（首页浮动按钮 + 依赖）
 
-- [ ] SubTask 5.6.1: `plugin-openlist/web/package.json` 加 `markstream-vue` + `vue-virtual-scroller` 依赖
+- [ ] SubTask 5.6.1: `encv-mobile/package.json` 加 `markstream-vue` + `vue-virtual-scroller` 依赖
 - [ ] SubTask 5.6.2: `pnpm install` 验证
-- [ ] SubTask 5.6.3: `router/index.ts` 加 `/agent` 路由
-- [ ] SubTask 5.6.4: 在 OpenListHome 或 Tabs 加 "💬 AI 助手" 入口按钮
+- [ ] SubTask 5.6.3: **`AgentEntry.vue`** 创建 —— 浮动 AI 按钮 + `modalController.create(AgentChat)` 弹窗
+- [ ] SubTask 5.6.4: **`Home.vue`** 改造 —— 在 `<IonContent>` 内挂载 `<AgentEntry />`（右下角浮动）
+- [ ] SubTask 5.6.5: i18n key 添加（`agent.title` / `agent.fabLabel` / `agent.placeholder`）
+- [ ] SubTask 5.6.6: **不使用路由**——确认 `router/index.ts` 不加 `/agent` 路由（避免跳页）
 
 ---
 
 ## Phase 6: 端到端验证
 
-### Task 6.1: 沙箱 dev 联调
+### Task 6.1: 沙箱 dev 联调（3 进程：agent + OpenList + encv-mobile）
 
 - [ ] SubTask 6.1.1: `ecosystem.config.cjs` 加 `agent-demo` app（编译 + 跑 :5245）
 - [ ] SubTask 6.1.2: `pm2 save` 持久化
 - [ ] SubTask 6.1.3: `curl -N http://localhost:5245/api/chat` SSE 正常流
-- [ ] SubTask 6.1.4: 浏览器 `/openlist-ui/#/agent` 输入 "list files" → UI 展示 ✅ list_files + 文件列表
-- [ ] SubTask 6.1.5: 浏览器输入 "delete foo.txt" → **ApprovalCard 4 按钮** 出现 → 点击「批准」→ UI 展示 ✅ delete_file
-- [ ] SubTask 6.1.6: 同上但点击「本轮批准」→ 验证 sessionGrants 生效（第二次同类调用直接执行）
-- [ ] SubTask 6.1.7: 同上但点击「拒绝」→ UI 展示 ToolResult error（user_rejected），LLM 继续
-- [ ] SubTask 6.1.8: 同上但点击「拒绝并停止」→ UI 立即收到 stream_end，本轮结束
-- [ ] SubTask 6.1.9: 流式过程中刷新页面 → 几秒内 resume 追平进度
-- [ ] SubTask 6.1.10: 注入 130 条消息 → 验证 `<MessageVirtualList>` 触发
+- [ ] SubTask 6.1.4: preview-gateway 加 `/agent-api/*` upstream → `127.0.0.1:5245`
+- [ ] SubTask 6.1.5: 浏览器 encv-mobile 主页 → 看到右下角浮动 AI 按钮
+- [ ] SubTask 6.1.6: 点击浮动按钮 → 弹出 AgentChat modal（全屏 overlay）
+- [ ] SubTask 6.1.7: 输入 "list files" → UI 展示 ✅ list_files + 文件列表（数据来自 OpenList /api/ext/list_files）
+- [ ] SubTask 6.1.8: 输入 "delete foo.txt" → **ApprovalCard 4 按钮** 出现 → 点击「批准」→ UI 展示 ✅ delete_file
+- [ ] SubTask 6.1.9: 同上但点击「本轮批准」→ 验证 sessionGrants 生效（第二次同类调用直接执行）
+- [ ] SubTask 6.1.10: 同上但点击「拒绝」→ UI 展示 ToolResult error（user_rejected），LLM 继续
+- [ ] SubTask 6.1.11: 同上但点击「拒绝并停止」→ UI 立即收到 stream_end，本轮结束
+- [ ] SubTask 6.1.12: 流式过程中刷新页面 → 几秒内 resume 追平进度
+- [ ] SubTask 6.1.13: 注入 130 条消息 → 验证 `<MessageVirtualList>` 触发
+- [ ] SubTask 6.1.14: 验证 0 个 console error、0 个 SSE 解析失败
+- [ ] SubTask 6.1.15: 验证 OpenList 进程崩溃时，agent 服务优雅降级（tool 调 OpenList 失败 → ToolResult error，不连带 agent 崩溃）
 
 ### Task 6.2: 单元测试
 
@@ -201,11 +217,12 @@
 
 ### Task 6.3: 文档同步
 
-- [ ] SubTask 6.3.1: 在 `unify-sandbox-preview-port/spec.md` 加 D16 章节（agent-demo upstream）
+- [ ] SubTask 6.3.1: 在 `unify-sandbox-preview-port/spec.md` 加 D16 章节（agent-api upstream + encv-mobile 首页 fab 入口）
 - [ ] SubTask 6.3.2: 在 `unify-sandbox-preview-port/tasks.md` 加对应 task
 - [ ] SubTask 6.3.3: 在 `unify-sandbox-preview-port/checklist.md` 加检查点
-- [ ] SubTask 6.3.4: `agent/README.md` 含使用示例 + API 一览
-- [ ] SubTask 6.3.5: 写 `plugin-openlist/web/src/components/agent/README.md` —— 记录与 codex_web 1:1 对应的组件、props、CSS class，便于跨项目复用
+- [ ] SubTask 6.3.4: `agent/README.md` 含使用示例 + API 一览 + **Decision 4 选 1 表格** + **OpenList 8 端点契约说明**
+- [ ] SubTask 6.3.5: 写 `encv-mobile/src/components/agent/README.md` —— 记录与 codex_web 1:1 对应的组件、props、CSS class，**强调：入口在首页浮动按钮，不走路由**
+- [ ] SubTask 6.3.6: 写 `docs/pr-openlist-ext-api.md` —— 提交到 Hi-Sillot/OpenList 时附上的设计说明（含 8 个端点契约 + 鉴权 + 错误码），便于跨项目复用
 
 ---
 
@@ -225,14 +242,15 @@
 | 3.2 (/resume) | 2.4 |
 | 3.3 (/confirm) | 2.3 |
 | 3.4 (SSE 工具) | 1.2 |
-| 4.1 (demo) | 3.1, 3.2, 3.3 |
+| 4.1 (demo) | 1.3, 2.x, 3.x, **4.2.2 (openlist_client)** |
+| 4.2 (OpenList 契约) | — |
 | 5.1 (useAgent) | — (前端独立) |
 | 5.2 (原子组件) | — |
 | 5.3 (复合组件) | 5.2 |
 | 5.4 (User/Markdown) | 5.2 |
 | 5.5 (虚拟化/顶层) | 5.2, 5.3, 5.4, 5.1 |
-| 5.6 (路由/依赖) | 5.5 |
-| 6.1 (联调) | 4.1, 5.6 |
+| 5.6 (首页入口) | 5.5 |
+| 6.1 (联调) | 4.1, 4.2, 5.6 |
 | 6.2 (单测) | 全部 |
 | 6.3 (文档) | 6.1 |
 

@@ -1,7 +1,8 @@
-# Checklist: Go Agent 进程内闭环库 + Vue 渲染壳
+# Checklist: Go Agent 独立服务 + OpenList 定制接口 + Vue 渲染壳（encv-mobile 主应用首页）
 
 > 每个 checkpoint 都要勾选才能算 spec 完成。验证方法见每项 `[verify]` 标注。
 > **UI 组件验收**：每个 Vue 组件必须有 props 形状校验、className 与 codex_web 一致、状态文案中文 1:1 对齐。
+> **架构铁律**：OpenList **不集成** agent 库，只暴露 `/api/ext/*` 端点。AI 入口**只在** encv-mobile 主应用首页（浮动按钮 + modal），**不走路由**。
 
 ---
 
@@ -144,15 +145,19 @@
   - [ ] 仅当 `nearBottom === true` 时跟随滚动
 - [ ] `[verify]` 注入 130 条消息 → DevTools 检查虚拟列表生效（DOM 中只有 ~20 个 message 节点）
 
-### 路由挂载
+### 首页浮动按钮入口（铁律：不用路由）
 
-- [ ] `router/index.ts` 加 `/agent` 路由 → AgentChat
-- [ ] OpenListHome 或 Tabs 加 "💬 AI 助手" 入口按钮
-- [ ] `[verify]` 浏览器点击入口跳到 /agent 路由
+- [ ] **`AgentEntry.vue`** 创建 —— 浮动 AI 按钮 + `modalController.create(AgentChat)` 弹窗
+- [ ] **`Home.vue`** 改造 —— 在 `<IonContent>` 内挂载 `<AgentEntry />`（右下角浮动，绝对定位）
+- [ ] i18n key 添加（`agent.title` / `agent.fabLabel` / `agent.placeholder`）
+- [ ] **`router/index.ts` 不加 `/agent` 路由** —— 入口全部走 modal
+- [ ] 浮动按钮 z-index 高于所有 IonContent 内容（z-index ≥ 100）
+- [ ] 点击浮动按钮 → modal 弹出 → modal 关闭后 Home.vue 状态保持不变
+- [ ] `[verify]` 浏览器打开 encv-mobile 主页 → 看到右下角浮动 AI 按钮 → 点击 → 弹出全屏 AgentChat → 关闭 → 回到首页
 
-### markstream-vue + vue-virtual-scroller 依赖
+### 依赖
 
-- [ ] `plugin-openlist/web/package.json` 加 `markstream-vue: ^x.x.x` + `vue-virtual-scroller: ^x.x.x`
+- [ ] `encv-mobile/package.json` 加 `markstream-vue: ^x.x.x` + `vue-virtual-scroller: ^x.x.x`
 - [ ] `pnpm install` 成功
 - [ ] `[verify]` `pnpm dev` 起后访问测试页，code block 渐进渲染
 
@@ -160,36 +165,40 @@
 
 ## 端到端验证
 
-### 沙箱 dev 联调
+### 沙箱 dev 联调（3 进程：agent + OpenList + encv-mobile）
 
 - [ ] `ecosystem.config.cjs` 加 `agent-demo` app（编译 + 跑 :5245）
 - [ ] `pm2 save` 持久化
 - [ ] `curl -N http://localhost:5245/api/chat` SSE 正常流
-- [ ] 浏览器 `/openlist-ui/#/agent` 输入 "list files" → UI 展示 ✅ list_files + 文件列表
-- [ ] 浏览器输入 "delete foo.txt" → ApprovalCard 4 按钮出现 → 点击「批准」→ ✅ delete_file
-- [ ] 浏览器输入 "delete foo.txt" → ApprovalCard 4 按钮出现 → 点击「本轮批准」→ ✅ 再次同类调用自动执行（无 ApprovalCard）
-- [ ] 浏览器输入 "delete foo.txt" → 点击「拒绝」→ ToolResult error（user_rejected），LLM 继续生成
-- [ ] 浏览器输入 "delete foo.txt" → 点击「拒绝并停止」→ 立即收到 stream_end，本轮结束
+- [ ] preview-gateway 加 `/agent-api/*` upstream → `127.0.0.1:5245`
+- [ ] 浏览器 encv-mobile 主页（`http://localhost:5173`）→ 看到右下角浮动 AI 按钮
+- [ ] 点击浮动按钮 → modal 弹出 → 输入 "list files" → UI 展示 ✅ list_files + 文件列表（**数据来自 OpenList** `/api/ext/list_files`）
+- [ ] 输入 "delete foo.txt" → ApprovalCard 4 按钮出现 → 点击「批准」→ ✅ delete_file（**实际调 OpenList** `/api/ext/delete_file`）
+- [ ] 输入 "delete foo.txt" → ApprovalCard 4 按钮出现 → 点击「本轮批准」→ ✅ 再次同类调用自动执行（无 ApprovalCard）
+- [ ] 输入 "delete foo.txt" → 点击「拒绝」→ ToolResult error（user_rejected），LLM 继续生成
+- [ ] 输入 "delete foo.txt" → 点击「拒绝并停止」→ 立即收到 stream_end，本轮结束
 - [ ] 流式过程中刷新页面 → 几秒内 resume 追平进度，UI 完整复现
 - [ ] 注入 130 条消息 → DevTools 验证 `<MessageVirtualList>` 触发（DOM 节点数稳定）
 - [ ] 0 个 console error、0 个 SSE 解析失败
-- [ ] `[verify]` 0 个 console error、0 个 SSE 解析失败
+- [ ] OpenList 进程崩溃时 → agent 服务不崩溃，下一次 tool 调 OpenList 时返回 ToolResult error
+- [ ] `[verify]` 0 个 console error、0 个 SSE 解析失败 + OpenList 故障隔离
 
 ### 单元测试
 
 - [ ] `go test ./agent/...` 全绿
 - [ ] `go test -race ./agent/...` 无 race warning
-- [ ] `pnpm test` vitest 全绿（含 useAgent 4-决策、ApprovalCard 4 按钮、UserMessageBubble 折叠、renderTurnItems 分组）
+- [ ] `pnpm test` vitest 全绿（含 useAgent 4-决策、ApprovalCard 4 按钮、UserMessageBubble 折叠、renderTurnItems 分组、AgentEntry modal 弹窗）
 - [ ] 覆盖率：Go ≥ 70%、TypeScript ≥ 70%
 - [ ] `[verify]` CI 测试 pipeline 绿
 
 ### 文档同步
 
-- [ ] `unify-sandbox-preview-port/spec.md` 加 D16 章节（agent-demo upstream）
+- [ ] `unify-sandbox-preview-port/spec.md` 加 D16 章节（agent-api upstream + encv-mobile 首页 fab 入口）
 - [ ] `unify-sandbox-preview-port/tasks.md` 加对应 task
-- [ ] `unify-sandbox-preview-port/checklist.md` 加检查点（agent-demo 路由 + 联调）
-- [ ] `agent/README.md` 含使用示例 + API 一览 + **Decision 4 选 1 表格**
-- [ ] `plugin-openlist/web/src/components/agent/README.md` —— 记录与 codex_web 1:1 对应的组件、props、CSS class
+- [ ] `unify-sandbox-preview-port/checklist.md` 加检查点（agent-api 路由 + 首页 fab 联调）
+- [ ] `agent/README.md` 含使用示例 + API 一览 + **Decision 4 选 1 表格** + **OpenList 8 端点契约**
+- [ ] `encv-mobile/src/components/agent/README.md` —— 记录与 codex_web 1:1 对应的组件、props、CSS class + **强调：入口在首页浮动按钮，不走路由**
+- [ ] `docs/pr-openlist-ext-api.md` —— 提交到 Hi-Sillot/OpenList 时附上的设计说明
 - [ ] `[verify]` 文档 review 通过
 
 ---
@@ -202,6 +211,7 @@
 - [ ] SSE 写入不阻塞（每事件写完即 flush）
 - [ ] Resume 追平进度延迟 < 1s（50ms polling）
 - [ ] 消息列表 1000+ 时虚拟列表仍流畅（虚拟化生效）
+- [ ] agent → OpenList 调 `/api/ext/*` 单次 P95 < 100ms（本地网络）
 
 ### 安全
 
@@ -209,12 +219,16 @@
 - [ ] HTTP handler 设 `Content-Type: text/event-stream` 严格，无任何 HTML 注入
 - [ ] SessionID 由 server 生成（UUIDv4），不接受客户端传入作为唯一信任
 - [ ] 4 决策的 `decision` 字段在 handler 中做白名单校验（拒绝非 4 值）
+- [ ] agent → OpenList 调用携带 `OPENLIST_TOKEN`，不暴露给前端
+- [ ] OpenAI API key 仅在 agent 服务 env 持有，不下发前端
+- [ ] **OpenList `/api/ext/*` 端点沿用 OpenList 现有 ACL**（用户 / 管理员 token），不绕过权限检查
 
 ### 兼容性
 
 - [ ] Go ≥ 1.21（用 `slices` / `maps` 标准库）
 - [ ] Vue 3 + TypeScript 5+（项目现状）
 - [ ] 不依赖任何 CGO（gomobile 兼容预留）
+- [ ] agent 服务、OpenList、encv-mobile 是**完全独立的三进程**，可独立部署 / 升级
 
 ---
 
@@ -223,8 +237,9 @@
 - [ ] Session 内存缓存，进程重启即丢（v2 加 Redis/SQLite）
 - [ ] 单 session 串行，并发 ConfirmTool 需 v2 加锁
 - [ ] OpenAI 单一 provider（v2 加 Anthropic / Gemini 适配）
-- [ ] OpenList fork 集成需外部 PR（vendor agent 库）
+- [ ] **OpenList 集成需外部 PR**（`Hi-Sillot/OpenList` 仓库提 PR 加 8 个 `/api/ext/*` 端点），不修改本仓库 OpenList 源码
 - [ ] WebSearchSummaryMessage v1 仅占位（v2 实装）
+- [ ] 当前 agent demo 用 mock OpenList 响应（Phase 6.1.7-6.1.11 联调前需替换为真实 OpenAI key）
 
 ---
 

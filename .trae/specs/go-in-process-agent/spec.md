@@ -1,8 +1,9 @@
-# Spec: Go Agent 进程内闭环库 + Vue 渲染壳
+# Spec: Go Agent 独立服务 + OpenList 定制接口 + Vue 渲染壳
 
-> **核心思路**：把 Agent 写进 Go 应用进程内，AI 直接调用应用自己的 Go 方法（零跨语言绑定、零伴生进程）。
-> **架构简化**：Go Agent Library（注册中心 + 流控）+ Vue 渲染壳（基于 Codex Web UI 验过的 `MessageBlocks` 模式）。
+> **核心思路**：Agent 是独立的 Go 微服务，通过 OpenList **定制开放的 HTTP 接口**执行工具调用。前端是个极薄 Vue 渲染壳，**首个集成入口直接嵌在 encv-mobile 主应用首页**。
+> **架构三段式**：`agent` Go 服务（SSE 流式对话 + 4-决策确认 + 内存缓存续传）↔ OpenList（仅暴露 `/api/ext/list_files`、`/api/ext/delete_file` 等定制接口）↔ encv-mobile 主应用首页（Vue 渲染壳）。
 > **UI 参考**：[codex_web](https://github.com/shopkeeper2020/codex_web) 的 `MessageBlocks`/`ApprovalCard`/`renderTurnItems` 模式 —— `ApprovalDecision` 4 选 1、`MessageAuthor` 作者头、`BlockHeader` 块头、`GroupedOperationMessage` 操作分组、消息列表虚拟化（>120 触发）。
+> **OpenList 集成边界（铁律）**：**不在 OpenList 源码里集成 agent 库**（避免 fork 维护成本、避免污染 upstream）。OpenList 只负责「定制接口开放」—— 在 Hi-Sillot/OpenList 提 PR 添加 5-8 个 `/api/ext/*` 端点，agent 服务通过 HTTP 调用这些端点实现工具执行。
 
 ---
 
@@ -12,12 +13,13 @@
 
 **新方案核心价值**：
 
-1. **零网络开销**：Agent 跑在应用进程内，工具调用就是 Go 函数调用，零序列化、零 IPC。
-2. **绝对安全**：不需要把 Go 方法暴露成 HTTP 端点，能力调用完全在进程内完成。
+1. **零 OpenList 源码污染**：agent 库独立部署为 Go 微服务，OpenList 只暴露最小化定制接口（5-8 个 `/api/ext/*` 端点），后续 OpenList 升级 / 切换 fork 都不影响 agent。
+2. **绝对安全可控**：agent → OpenList 走 HTTP 调用，所有调用可审计、可限流、可熔断；OpenList 自己的鉴权机制（账号 / Token）继续生效，不会因为 AI 调用绕过权限检查。
 3. **天然支持断点续传**：Go 进程不挂，内存缓存就在。前端 WebView 刷新、App 重启，/resume 接口瞬间追平进度。
-4. **可复用**：agent 库是独立 Go module，可被 OpenList、encv-go、任何 Go 应用 import。
+4. **可复用**：agent 库是独立 Go module，可被 encv-go、任何需要 AI 工具调用的 Go 应用 import。
 5. **前端解耦**：Vue 不知道后端有什么工具，只根据 `Event` 流渲染 UI。换后端、换工具，前端零改动。
 6. **经过验证的 UX**：UI 直接复用 `codex_web` 的高保真组件（基于官方 Codex Desktop 截图对齐），避开了从零设计带来的视觉/交互缺陷。
+7. **集成入口直达主应用**：首个入口嵌在 encv-mobile 主应用首页，无需先进入 plugin-openlist 子模块才能用 AI。
 
 ---
 
@@ -25,16 +27,17 @@
 
 ### 新增
 
-- `agent/` 顶层 Go module —— 可复用的 Agent 进程内库
+- `agent/` 顶层 Go module —— 独立可部署的 Agent 微服务（**不是 OpenList 的 in-process 库**）
   - `types.go` — `Event` / `EventType` / `ToolCallData` / `ToolResultData` / `MessageData` / **`Decision`**（4 选 1 确认决策）
   - `registry.go` — `ToolRegistry`（注册中心，线程安全）
-  - `agent.go` — `Agent` 核心（`Chat` / `ConfirmTool` / `Resume` + `SessionCache`）
+  - `agent.go` — `Agent` 核心（`Chat` / `ConfirmTool` / `Resume` + `SessionCache` + `sessionGrants`）
   - `openai.go` — OpenAI 流式客户端（tool_calls 处理 + 多轮递归）
-  - `http.go` — HTTP/SSE handlers（`/api/chat` / `/api/resume` / `/api/confirm`）
-  - `cmd/agent-demo/main.go` — 演示程序（注册 list_files + delete_file）
+  - `http.go` — HTTP/SSE handlers（`/api/chat` / `/api/resume` / `/api/confirm`）—— 暴露给前端
+  - `openlist_client.go` — **OpenList 定制接口 HTTP 客户端**（调用 `OPENLIST_BASE_URL/api/ext/*`）
+  - `cmd/agent-demo/main.go` — 演示程序（注册 list_files / delete_file / exec_command → 转调 OpenList 定制接口）
   - `go.mod` / `README.md`
-- `app/encv-mobile/plugin-openlist/web/src/composables/useAgent.ts` — Vue 复合式（reactive state + SSE 解析 + 断点续传 + 4-决策决策）
-- `app/encv-mobile/plugin-openlist/web/src/components/agent/` — Vue 组件库
+- `app/encv-mobile/src/composables/useAgent.ts` — **encv-mobile 主应用**复合式（reactive state + SSE 解析 + 断点续传 + 4-决策决策）
+- `app/encv-mobile/src/components/agent/` — **encv-mobile 主应用**Vue 组件库
   - `MessageAuthor.vue` — 作者头（icon + label + meta）
   - `BlockHeader.vue` — 块头（icon + title + status badge + copy + expand）
   - `StatusBadge.vue` — 状态徽章（`ready` / `warn` / `idle` 三种 tone）
@@ -46,19 +49,34 @@
   - `UserMessageBubble.vue` — 用户消息气泡（长文本自动折叠）
   - `MessageVirtualList.vue` — 虚拟化消息列表（>120 触发）
   - `MarkdownStream.vue` — 流式 Markdown 渲染（封装 markstream-vue）
-- `app/encv-mobile/plugin-openlist/web/src/views/AgentChat.vue` — 顶层聊天视图（renderTurnItems 等价实现）
-- `app/encv-mobile/plugin-openlist/web/src/router/index.ts` — 注册 `/agent` 路由
+- `app/encv-mobile/src/components/agent/AgentEntry.vue` — **首页 AI 助手入口按钮 + 弹出式 AgentChat**
+- `app/encv-mobile/src/components/agent/AgentChat.vue` — 顶层聊天视图（renderTurnItems 等价实现）
+- `app/encv-mobile/src/views/Home.vue` — **首页改造**：把 `AgentEntry` 放在头部 / 浮动按钮位置
+- `app/encv-mobile/src/locales/{zh-CN,en-US}.json` — 新增 `agent.*` / `modals.approve*` i18n key
 
 ### 修改
 
-- `app/encv-mobile/plugin-openlist/web/package.json` — 新增 `markstream-vue`、`vue-virtual-scroller` 依赖
-- `app/encv-mobile/plugin-openlist/web/src/router/index.ts` — 新增 AgentChat 路由
-- `app/encv-mobile/plugin-openlist/web/src/locales/{zh-CN,en-US}.json` — 新增 `agent.*` / `modals.approve*` i18n key
+- `app/encv-mobile/package.json` — 新增 `markstream-vue`、`vue-virtual-scroller` 依赖
+- `app/encv-mobile/src/views/Home.vue` — 集成 `AgentEntry` 浮动按钮
+- `app/encv-mobile/src/locales/{zh-CN,en-US}.json` — 新增 i18n key
+
+### 外部仓库 PR（不在本仓库）
+
+- `Hi-Sillot/OpenList`（独立 PR 仓库）— 添加 `/api/ext/*` 定制接口
+  - `POST /api/ext/list_files` — body `{path: string}`，return `{files: [{name, size, mtime, isDir}]}`
+  - `POST /api/ext/read_file` — body `{path: string, maxBytes?: int}`，return `{content: string, mime: string}`
+  - `POST /api/ext/write_file` — body `{path: string, content: string}`，return `{success: bool}`
+  - `POST /api/ext/delete_file` — body `{paths: string[]}`，return `{deleted: int, failed: []string}`
+  - `POST /api/ext/rename` — body `{from: string, to: string}`，return `{success: bool}`
+  - `POST /api/ext/exec_command` — body `{command: string, cwd: string, timeout: int}`，return `{stdout, stderr, exitCode, durationMs}`
+  - `POST /api/ext/get_storage_info` — body `{}`，return `{total, used, free, files, drives}`
+  - 全部走 OpenList 现有 `Authorization` token 鉴权
+  - 全部加 `/api/ext/` 路径前缀方便 firewall 规则
 
 ### 影响的现有 spec
 
-- `wire-openlist-runtime-and-ui-v2` — OpenList 集成与 UI
-- `unify-sandbox-preview-port` — preview-gateway 路由（未来加 `/agent-ui/` upstream）
+- `wire-openlist-runtime-and-ui-v2` — OpenList 集成与 UI（受影响：OpenList 需新增 /api/ext/* 端点）
+- `unify-sandbox-preview-port` — preview-gateway 路由（未来加 `/agent-api/` upstream 指向 :5245）
 
 ---
 
@@ -94,6 +112,51 @@
 - **THEN** body 包含 `Decision` 字段
 - **AND** `Decision` 取值限于：**`accept`**（批准本次）/ **`accept_for_session`**（本轮批准，所有同类 tool 都自动放行）/ **`decline`**（拒绝并继续 LLM）/ **`cancel`**（拒绝并停止本轮）
 - **AND** 与 codex_web `approvalDecisionSchema` 一一对应，避免后续集成时再做映射
+
+---
+
+### Requirement: OpenList 定制接口契约（Hi-Sillot/OpenList 外部 PR）
+
+**核心原则**：OpenList 不集成 agent 库，只暴露 `/api/ext/*` 端点供 agent 服务调用。所有工具能力由 agent 服务通过 HTTP 调用 OpenList 实现。
+
+#### Scenario: 接口清单（8 个端点）
+
+- **WHEN** agent 服务注册工具时
+- **THEN** 调用 OpenList 下列端点执行实际操作：
+
+| 工具名 | OpenList 端点 | 入参 | 返回 | Kind |
+|--------|---------------|------|------|------|
+| `list_files` | `POST /api/ext/list_files` | `{path: string}` | `{files: [{name, size, mtime, isDir}]}` | `readOnly` |
+| `read_file` | `POST /api/ext/read_file` | `{path, maxBytes?}` | `{content, mime}` | `readOnly` |
+| `write_file` | `POST /api/ext/write_file` | `{path, content}` | `{success}` | `fileChange` |
+| `delete_file` | `POST /api/ext/delete_file` | `{paths: string[]}` | `{deleted, failed}` | `fileChange` |
+| `rename` | `POST /api/ext/rename` | `{from, to}` | `{success}` | `fileChange` |
+| `exec_command` | `POST /api/ext/exec_command` | `{command, cwd, timeout}` | `{stdout, stderr, exitCode, durationMs}` | `command` |
+| `get_storage_info` | `POST /api/ext/get_storage_info` | `{}` | `{total, used, free, files, drives}` | `readOnly` |
+| `search_files` | `POST /api/ext/search_files` | `{path, pattern, maxResults?}` | `{matches: [{path, score}]}` | `readOnly` |
+
+- **AND** 所有端点接受 OpenList 标准 `Authorization: Bearer <token>` header（沿用 OpenList 现有用户 / 管理员 token 体系）
+- **AND** 所有端点返回标准 JSON，错误用 HTTP 4xx/5xx + body `{error, code, message}`
+
+#### Scenario: agent 服务调用方式
+
+- **WHEN** agent 收到 LLM 的 `tool_call`（如 `list_files`）
+- **THEN** 调 `OpenListClient.ListFiles(path)` → 内部 `POST OPENLIST_BASE_URL/api/ext/list_files`
+- **AND** 把 OpenList 返回值序列化为 JSON string 作为 tool_result
+- **AND** OpenList 端点失败时返回 4xx/5xx → agent 包装为 `ToolResultData{IsError: true, Status: "failed"}`
+
+#### Scenario: 鉴权传递
+
+- **WHEN** agent 启动
+- **THEN** 从环境变量 `OPENLIST_BASE_URL` + `OPENLIST_TOKEN` 读取配置
+- **AND** 每次调 OpenList 端点时把 `OPENLIST_TOKEN` 放入 Authorization header
+- **AND** 端到端鉴权链：用户 → agent 服务 → OpenList（同用户身份，OpenList 走自己的 ACL）
+
+#### Scenario: 接口版本兼容
+
+- **WHEN** OpenList 升级导致 `/api/ext/*` 端点契约变化
+- **THEN** agent 服务可通过 `OPENLIST_API_VERSION` 环境变量选择目标版本
+- **AND** 默认 v1，新接口可在 `/api/ext/v2/*` 部署
 
 ---
 
@@ -491,38 +554,121 @@
 
 ---
 
-### Requirement: 应用集成示例（OpenList）
+### Requirement: 应用集成示例（OpenList 定制接口 + 独立 agent 服务）
 
-OpenList（Hi-Sillot fork）SHOULD 能用 ≤ 20 行代码集成 agent 库。
+**铁律**：OpenList 不集成 agent 库，agent 是独立 Go 微服务，通过 HTTP 调用 OpenList 暴露的 `/api/ext/*` 端点。
 
-#### Scenario: 最小集成示例
+#### Scenario: agent 服务独立部署（:5245）
 
 ```go
-registry := agent.NewRegistry()
-registry.Register("list_files", schema, func(args string) (string, error) {
-    files, _ := openlist.ListFiles(parsePath(args))
-    return json.Marshal(files)
-}, false, agent.KindReadOnly)  // 自动执行
-registry.Register("delete_file", schema, func(args string) (string, error) {
-    openlist.DeleteFile(parsePath(args))
-    return `{"success":true}`, nil
-}, true, agent.KindFileChange)  // 需确认
-registry.Register("exec_command", schema, func(args string) (string, error) {
-    return openlist.ExecCommand(args)
-}, true, agent.KindCommand)  // 需确认
+// cmd/agent-demo/main.go —— 独立 Go 二进制，独立进程
+package main
 
-ag := agent.NewAgent(os.Getenv("OPENAI_API_KEY"), registry)
+import (
+    "os"
+    "github.com/encv/agent"
+)
 
-http.HandleFunc("/api/chat", ag.HandleChat)
-http.HandleFunc("/api/resume", ag.HandleResume)
-http.HandleFunc("/api/confirm", ag.HandleConfirm)
-http.ListenAndServe(":5244", nil)
+func main() {
+    // 1. 创建 OpenList 客户端
+    ol := agent.NewOpenListClient(
+        os.Getenv("OPENLIST_BASE_URL"),  // http://localhost:5244
+        os.Getenv("OPENLIST_TOKEN"),     // admin token
+    )
+
+    // 2. 创建工具注册中心
+    registry := agent.NewRegistry()
+    registry.Register("list_files", schema, func(args string) (string, error) {
+        var p struct{ Path string `json:"path"` }
+        json.Unmarshal([]byte(args), &p)
+        return ol.ListFiles(p.Path)  // HTTP POST /api/ext/list_files
+    }, false, agent.KindReadOnly)
+    registry.Register("delete_file", schema, func(args string) (string, error) {
+        var p struct{ Paths []string `json:"paths"` }
+        json.Unmarshal([]byte(args), &p)
+        return ol.DeleteFiles(p.Paths)  // HTTP POST /api/ext/delete_file
+    }, true, agent.KindFileChange)
+    registry.Register("exec_command", schema, func(args string) (string, error) {
+        var p struct {
+            Command, Cwd string
+            Timeout int
+        }
+        json.Unmarshal([]byte(args), &p)
+        return ol.ExecCommand(p.Command, p.Cwd, p.Timeout)  // HTTP POST /api/ext/exec_command
+    }, true, agent.KindCommand)
+
+    // 3. 启动 Agent
+    ag := agent.NewAgent(os.Getenv("OPENAI_API_KEY"), registry)
+
+    // 4. mount HTTP handlers
+    http.HandleFunc("/api/chat", ag.HandleChat)
+    http.HandleFunc("/api/resume", ag.HandleResume)
+    http.HandleFunc("/api/confirm", ag.HandleConfirm)
+    http.ListenAndServe(":5245", nil)  // 独立端口
+}
 ```
 
-#### Scenario: 实际 OpenList fork 集成
+#### Scenario: OpenList 端只暴露接口（Hi-Sillot/OpenList PR）
 
-- **WHEN** 提交 PR 到 `Hi-Sillot/OpenList` 把 agent 包 vendor 进去
-- **THEN** PR review 焦点：go.mod 依赖方向、import path、OpenList 现有 LLM 入口是否替换
+```go
+// Hi-Sillot/OpenList/server/handles/ext.go —— OpenList 端
+package handles
+
+// POST /api/ext/list_files
+func ListFiles(c *gin.Context) {
+    var req struct{ Path string `json:"path"` }
+    if err := c.ShouldBindJSON(&req); err != nil { ... }
+    user := c.MustGet("user").(*model.User)  // 走 OpenList 鉴权
+    files, err := op.ListFiles(user, req.Path)
+    c.JSON(200, gin.H{"files": files})
+}
+// 其他 7 个端点类似...
+```
+
+#### Scenario: 集成入口（encv-mobile 主应用首页）
+
+```vue
+<!-- app/encv-mobile/src/views/Home.vue -->
+<template>
+  <IonPage>
+    <IonHeader>...</IonHeader>
+    <IonContent>
+      <!-- 现有首页内容（文件浏览 / 任务列表 等） -->
+      <FileBrowser />
+
+      <!-- 🆕 AI 助手浮动按钮 -->
+      <AgentEntry />  <!-- 点击 → 弹出 AgentChat -->
+    </IonContent>
+  </IonPage>
+</template>
+```
+
+```vue
+<!-- app/encv-mobile/src/components/agent/AgentEntry.vue -->
+<template>
+  <button class="agent-fab" @click="openAgent">
+    <IonIcon :icon="sparklesOutline" />  <!-- AI 闪亮图标 -->
+  </button>
+</template>
+
+<script setup>
+function openAgent() {
+  // 不走路由！用 modalController 在首页弹出 AgentChat 全屏 overlay
+  modalController.create({
+    component: AgentChat,
+    componentProps: { apiBase: '/agent-api' },  // → preview-gateway → :5245
+  }).then(m => m.present())
+}
+</script>
+```
+
+#### Scenario: 关键约束
+
+- **THEN** agent 服务、OpenList、encv-mobile 是 **三个独立进程**，通过 HTTP 互通
+- **AND** OpenList 不感知 agent 存在，只暴露 `Authorization` 鉴权下的 `/api/ext/*` 端点
+- **AND** agent 服务可热升级、灰度、AB test，与 OpenList 解耦
+- **AND** encv-mobile 端只看得到 agent 服务的 `/api/chat` `/api/resume` `/api/confirm` 三个 SSE 端点
+- **AND** 未来切到其他后端（如自研 encv-go），agent 服务注册表换工具实现即可，前端 0 改动
 
 ---
 
@@ -541,11 +687,20 @@ http.ListenAndServe(":5244", nil)
 ## 约束与限制
 
 1. **OpenAI 依赖**：库使用 `github.com/sashabaranov/go-openai` 或类似。需要在 agent 库的 go.mod 明确。
-2. **OpenList fork 集成需外部 PR**：本仓库不直接持有 OpenList 源码，agent 库的集成需要在 Hi-Sillot fork 仓库提 PR。
-3. **session 内存缓存**：当前版本 session 存在 Go 进程内存，进程重启即丢。生产环境建议加 Redis / SQLite 持久化（v2 任务）。
-4. **单个 session 只能串行**：ConfirmTool 调用时假设 session 处于挂起态，并发调用需加锁。
-5. **沙箱 dev 阶段**：agent 库 demo 程序（`cmd/agent-demo/main.go`）独立运行在 :5245（不冲突 :5244 OpenList 真实后端），便于前端联调。
-6. **UI 必须 1:1 复用 codex_web 模式**：所有组件命名、props 形状、视觉 token 与 codex_web 一致（中文文案、状态文案、按钮顺序固定），便于未来 codex_web → ENCV 组件库复用代码。
+2. **OpenList 集成边界（铁律）**：
+   - **禁止**在 OpenList 源码里集成 agent 库（vendor、go.mod 引入、复制 types.go 都不允许）
+   - **只**在 Hi-Sillot/OpenList 提外部 PR，添加 8 个 `/api/ext/*` 定制接口（5-7 个文件、≤ 300 行改动）
+   - OpenList 端改动独立版本化（branch: `feat/ext-api-for-encv-agent`），与 encv-mobile 主仓库解耦
+3. **进程边界（铁律）**：
+   - `agent` 服务 = 独立 Go 二进制，端口 **:5245**（demo），生产可换
+   - OpenList = 端口 **:5244**（沿用）
+   - encv-mobile = 端口 **:5173**（vite dev）
+   - preview-gateway = 端口 **:16000**，转发 `/agent-api/*` → `127.0.0.1:5245`
+4. **session 内存缓存**：当前版本 session 存在 Go 进程内存，进程重启即丢。生产环境建议加 Redis / SQLite 持久化（v2 任务）。
+5. **单个 session 只能串行**：ConfirmTool 调用时假设 session 处于挂起态，并发调用需加锁。
+6. **沙箱 dev 阶段**：agent demo（`cmd/agent-demo/main.go`）独立运行在 :5245，便于前端联调。
+7. **UI 必须 1:1 复用 codex_web 模式**：所有组件命名、props 形状、视觉 token 与 codex_web 一致（中文文案、状态文案、按钮顺序固定），便于未来 codex_web → ENCV 组件库复用代码。
+8. **集成入口（铁律）**：AI 助手入口**只在 encv-mobile 主应用首页**（`Home.vue`）首次出现，不在 plugin-openlist 路由下，不在 Tasks tab 下，不在单独路由。入口是 `AgentEntry` 浮动按钮 → 弹 modal → 全屏 AgentChat。
 
 ---
 
@@ -568,4 +723,59 @@ http.ListenAndServe(":5244", nil)
 | `useVirtualizer` from `@tanstack/react-virtual` | `RecycleScroller` from `vue-virtual-scroller` | 等价能力 |
 | `i18n` zh-CN / en-US | zh-CN / en-US | 完全相同 |
 | `approvalCard` / `approvalHeader` / `approvalBody` / `approvalActions` | 同名 CSS class | 完全相同 |
-| token `var(--color-bg-elevated)` 等 | 同样的 CSS variable | 在 plugin-openlist/web 的 `tokens.css` 中定义 |
+| token `var(--color-bg-elevated)` 等 | 同样的 CSS variable | 在 `app/encv-mobile/src/styles/tokens.css` 中定义 |
+| codex_web 路由 `/` → App.tsx | encv-mobile `Home.vue` → 浮动按钮 + modal | 入口位置不同（首页 pop modal） |
+
+---
+
+## 三个进程的全景图
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  encv-mobile 主应用（:5173 vite dev）                              │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  Home.vue（主应用首页）                                       │  │
+│  │  ┌──────────────────┐  ┌──────────────────────────────────┐  │  │
+│  │  │ FileBrowser      │  │ <AgentEntry />  ← 浮动 AI 按钮   │  │  │
+│  │  │ （现有内容）      │  │                                  │  │  │
+│  │  │                  │  │ 点击 → modalController.create(   │  │  │
+│  │  │                  │  │   AgentChat,                     │  │  │
+│  │  │                  │  │   {apiBase: '/agent-api'}        │  │  │
+│  │  │                  │  │ )                                │  │  │
+│  │  └──────────────────┘  └──────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│         │ fetch POST /agent-api/api/chat (SSE)                     │
+│         │ fetch POST /agent-api/api/confirm (SSE)                  │
+│         ▼                                                           │
+│  preview-gateway（:16000）                                          │
+│         │ 路径 /agent-api/* → proxy_pass http://127.0.0.1:5245      │
+│         ▼                                                           │
+│  agent 服务（:5245，独立 Go 二进制）                                │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  POST /api/chat  → agent.Chat(sessionId, messages)          │  │
+│  │  POST /api/resume → agent.Resume(sessionId, offset)         │  │
+│  │  POST /api/confirm → agent.ConfirmTool(sessionId, tcID, dec)│  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│         │ Tool handler: OpenListClient.ListFiles(path)             │
+│         │ HTTP POST http://127.0.0.1:5244/api/ext/list_files        │
+│         │ Header: Authorization: Bearer ${OPENLIST_TOKEN}           │
+│         ▼                                                           │
+│  OpenList（:5244，Hi-Sillot fork，外部 PR 加 8 个端点）            │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  POST /api/ext/list_files  ──┐ 走 OpenList 现有 ACL          │  │
+│  │  POST /api/ext/read_file    │ 用户鉴权 → 业务处理            │  │
+│  │  POST /api/ext/write_file   │                               │  │
+│  │  POST /api/ext/delete_file  │ 改 ≤ 300 行                    │  │
+│  │  POST /api/ext/rename       │ 5-7 个新文件                   │  │
+│  │  POST /api/ext/exec_command │ 不引入 agent 依赖              │  │
+│  │  POST /api/ext/get_storage_info                              │  │
+│  │  POST /api/ext/search_files ─┘                               │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+**关键不变量**：
+- encv-mobile **不**直接连 OpenList 的 `/api/ext/*`（统一走 agent 服务中转）
+- encv-mobile **不**直连 OpenAI（agent 服务代理，apiKey 不下发前端）
+- OpenList **不**感知 agent 服务存在（无耦合，可独立升级）
+- agent 服务是**唯一**连接 OpenAI 和 OpenList 的组件
