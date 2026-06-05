@@ -58,6 +58,24 @@ done
 ok "基础工具链全部就绪"
 log "  go=$(go version)  node=$(node --version)  pnpm=$(pnpm --version)"
 
+# pm2 兜底安装（previews.sh 强依赖，但不在系统基础包内）
+if command -v pm2 >/dev/null 2>&1; then
+  ok "pm2 已安装: $(command -v pm2)"
+else
+  log "pm2 缺失，npm i -g pm2 ..."
+  if npm install -g pm2 --no-audit --no-fund 2>&1 | tail -5; then
+    if command -v pm2 >/dev/null 2>&1; then
+      ok "pm2 安装成功: $(command -v pm2)"
+    else
+      warn "npm i -g pm2 返回 0 但 pm2 仍不在 PATH（previews.sh 将无法运行）"
+      FAILED=$((FAILED+1))
+    fi
+  else
+    warn "pm2 安装失败（previews.sh 将无法运行）"
+    FAILED=$((FAILED+1))
+  fi
+fi
+
 # ============================================================================
 # 步骤 1/5: 装 Go 工具链 (air)
 # ============================================================================
@@ -228,7 +246,7 @@ cat <<EOF
 
 工具链：
 EOF
-for cmd in go node pnpm git cmake java kotlinc air; do
+for cmd in go node pnpm pm2 git cmake java kotlinc air; do
   if command -v "$cmd" >/dev/null 2>&1; then
     ver=$("$cmd" --version 2>&1 | head -1 | sed 's/^/  /')
     echo "  ✅ $cmd $ver"
