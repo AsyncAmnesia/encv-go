@@ -78,11 +78,19 @@ const UPSTREAMS: Upstream[] = [
     pathRewrite: (p) => p.replace(/^\/openlist-ui(?=\/|$)/, '') || '/',
   },
   {
-    match: '/openlist/',
-    target: 'http://127.0.0.1:2025',
-    wsTarget: 'ws://127.0.0.1:2025',
-    name: 'encv-go',
-    hint: 'Check pm2 status for start-preview (encv-go :2025)',
+    // /openlist 是 OpenList 真实前端入口（:5244），不是 encv-go 端点。
+    // 原配置写的是 :2025（encv-go），但 encv-go 内部没有 `/openlist` 根路径
+    // 的 reverse proxy（只注册了 /openlist/local/status、/openlist/sites 端点），
+    // 直接转发到 :2025 会 404。
+    // 正确做法：preview-gateway 自己把 /openlist/* 透传到 OpenList upstream :5244。
+    // 需要 strip /openlist 前缀：/openlist → /、/openlist/xxx → /xxx
+    //   （OpenList serve 在 :5244 根路径，不是 /openlist 命名空间）
+    match: '/openlist',
+    target: 'http://127.0.0.1:5244',
+    wsTarget: 'ws://127.0.0.1:5244',
+    name: 'openlist',
+    hint: 'Check pm2 status for openlist (:5244)',
+    pathRewrite: (p) => p.replace(/^\/openlist(?=\/|$)/, '') || '/',
   },
   {
     match: '/api',
@@ -160,8 +168,12 @@ function logUpstream(req: IncomingMessage, up: Upstream, status: 'OK' | 'FAIL', 
 function pickUpstream(url: string | undefined, referer: string | undefined, cookie: string | undefined): Upstream {
   if (!url) return DEFAULT_UPSTREAM
   for (const up of UPSTREAMS) {
+    // 把 '/openlist-ui' 同时匹配 '/openlist-ui' 和 '/openlist-ui/...'
+    // 把 '/openlist'   同时匹配 '/openlist'   和 '/openlist/...'
+    // 把 '/api'        匹配 '/api'  和 '/api/...'
     if (url === up.match) return up
-    if (url.startsWith(up.match)) return up
+    if (url === up.match + '/') return up
+    if (url.startsWith(up.match + '/')) return up
   }
   // Cookie-based fallback: when user has visited /openlist-ui/ in this session,
   // they've received a Set-Cookie: __plugin_spa=1. Subsequent subresource requests
