@@ -165,6 +165,11 @@ module.exports = {
       cwd: PLUGIN_DIR,
       env: {
         PATH: process.env.PATH,
+        // ⚠️ 沙箱 dev 必须设 VITE_BASE=/openlist-ui/ —— 让 Vite 在 dev 模式下
+        // 也用绝对 base 解析资源路径（HTML 内的 ./src/main.ts → /openlist-ui/src/main.ts）
+        // 这是 plugin-openlist web 在 preview-gateway :16666/openlist-ui/ 下
+        // 不再空白的核心修复（spec/unify-sandbox-preview-port §防御性 UI）
+        VITE_BASE: '/openlist-ui/',
       },
       max_memory_restart: '512M',
       listen_timeout: 15000,

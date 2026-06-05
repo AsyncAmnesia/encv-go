@@ -53,6 +53,17 @@ interface Upstream {
   name: string
   /** Hint shown in 502 error */
   hint: string
+  /**
+   * Path rewrite function: transform req.url before forwarding to upstream.
+   * Default = identity (path kept as-is). Use this to STRIP a path prefix
+   * (e.g. '/openlist-ui/...' → '/...' for Vite, which serves from its own root).
+   *
+   * Why needed: Vite dev mode HTML outputs absolute paths like `/src/main.ts`
+   * (no base prefix). Without pathRewrite, browser's follow-up requests go to
+   * :16666/src/main.ts → fallthrough to :8100 (encv-mobile) → 404.
+   * With strip prefix, :16666/openlist-ui/src/main.ts → :5174/src/main.ts → OK.
+   */
+  pathRewrite?: (path: string) => string
 }
 
 const UPSTREAMS: Upstream[] = [
@@ -62,6 +73,9 @@ const UPSTREAMS: Upstream[] = [
     wsTarget: 'ws://127.0.0.1:5174',
     name: 'plugin-openlist-web',
     hint: 'Check pm2 status for plugin-openlist-vite',
+    // Strip /openlist-ui prefix: /openlist-ui/src/main.ts → /src/main.ts
+    // （vite 收到 /src/main.ts，dev 模式下正常 serve）
+    pathRewrite: (p) => p.replace(/^\/openlist-ui(?=\/|$)/, '') || '/',
   },
   {
     match: '/openlist/',
@@ -132,17 +146,32 @@ function logUpstream(req: IncomingMessage, up: Upstream, status: 'OK' | 'FAIL', 
  * - `/api...`           → encv-go
  * - `/p/...`            → encv-go
  * - `/play...`          → encv-go
+ * - Referer contains `/openlist-ui/` (subresources of plugin SPA) → plugin-openlist-web
+ * - Cookie `__plugin_spa=1` (set when user visits /openlist-ui/) → plugin-openlist-web
+ *   (key for Vite dev mode: main.ts's absolute-root imports like /src/App.vue are
+ *   dispatched to /openlist-ui subresources; without cookie they fallthrough to :8100
+ *   and 404)
  * - default             → encv-mobile
  *
  * For path-prefix routes that are NOT followed by `/` (e.g. `/api`,
  * `/play`), we still match. The upstream's server is responsible for routing
  * the exact path within its namespace.
  */
-function pickUpstream(url: string | undefined): Upstream {
+function pickUpstream(url: string | undefined, referer: string | undefined, cookie: string | undefined): Upstream {
   if (!url) return DEFAULT_UPSTREAM
   for (const up of UPSTREAMS) {
     if (url === up.match) return up
     if (url.startsWith(up.match)) return up
+  }
+  // Cookie-based fallback: when user has visited /openlist-ui/ in this session,
+  // they've received a Set-Cookie: __plugin_spa=1. Subsequent subresource requests
+  // (Vite's absolute-root paths like /src/App.vue) carry this cookie → route to :5174.
+  if (cookie && /(?:^|;\s*)__plugin_spa=1/.test(cookie)) {
+    return UPSTREAMS.find((u) => u.match === '/openlist-ui') ?? DEFAULT_UPSTREAM
+  }
+  // Referer-based fallback (works in some sandboxes; not in Trae IDE default policy).
+  if (referer && /\/openlist-ui\//.test(referer)) {
+    return UPSTREAMS.find((u) => u.match === '/openlist-ui') ?? DEFAULT_UPSTREAM
   }
   return DEFAULT_UPSTREAM
 }
@@ -161,6 +190,30 @@ function createProxyFor(up: Upstream): httpProxy {
     proxyTimeout: 30_000,
     timeout: 30_000,
   })
+
+  // ⚠️ 沙箱 dev critical: when user visits /openlist-ui/ (plugin SPA entry),
+  // inject Set-Cookie: __plugin_spa=1 so subsequent subresource requests
+  // (Vite's absolute-root imports: /src/App.vue, /@fs/..., /node_modules/...)
+  // can be routed to :5174 even when Referer is empty (Trae IDE default
+  // referrer-policy strips it). This is the linchpin that makes
+  // /openlist-ui/ not stay blank.
+  if (up.match === '/openlist-ui') {
+    proxy.on('proxyRes', (proxyRes, _req) => {
+      // Only inject for HTML responses (the SPA entry document)
+      const ct = proxyRes.headers['content-type']
+      if (ct && /text\/html/i.test(String(ct))) {
+        const existing = proxyRes.headers['set-cookie']
+        const cookieLine = '__plugin_spa=1; Path=/; SameSite=Lax; Max-Age=3600'
+        if (existing) {
+          proxyRes.headers['set-cookie'] = Array.isArray(existing)
+            ? [...existing, cookieLine]
+            : [String(existing), cookieLine]
+        } else {
+          proxyRes.headers['set-cookie'] = [cookieLine]
+        }
+      }
+    })
+  }
 
   proxy.on('error', (err, req, resOrSocket) => {
     // Error can happen for both HTTP and WS requests
@@ -216,7 +269,7 @@ const server = http.createServer((req, res) => {
     return
   }
 
-  const up = pickUpstream(req.url)
+  const up = pickUpstream(req.url, req.headers.referer, req.headers.cookie)
   const proxy = proxies.get(up.name)
   if (!proxy) {
     res.writeHead(500, { 'Content-Type': 'application/json' })
@@ -224,8 +277,16 @@ const server = http.createServer((req, res) => {
     return
   }
 
+  // Apply pathRewrite (if any) before forwarding
+  const originalUrl = req.url
+  if (up.pathRewrite) {
+    req.url = up.pathRewrite(req.url ?? '/')
+  }
+
   // No body parsing — just forward the stream
   proxy.web(req, res, { target: up.target }, (err) => {
+    // Restore req.url in case the connection is reused (defensive)
+    if (up.pathRewrite) req.url = originalUrl
     // err already handled by proxy.on('error') listener; this callback
     // is only for sync errors during dispatch.
     if (!res.headersSent) {
@@ -243,12 +304,16 @@ const server = http.createServer((req, res) => {
 // =============================================================================
 
 server.on('upgrade', (req, socket, head) => {
-  const up = pickUpstream(req.url)
+  const up = pickUpstream(req.url, req.headers.referer, req.headers.cookie)
   const proxy = proxies.get(up.name)
   if (!proxy) {
     socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n')
     socket.destroy()
     return
+  }
+  // Apply pathRewrite for WS too (HMR ws path: /openlist-ui/?token=... → /?token=...)
+  if (up.pathRewrite) {
+    req.url = up.pathRewrite(req.url ?? '/')
   }
   // http-proxy's `ws()` method handles the upgrade transparently
   proxy.ws(req, socket, head, { target: up.wsTarget }, (err) => {

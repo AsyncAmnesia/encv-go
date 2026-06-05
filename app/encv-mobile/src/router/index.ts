@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from '@ionic/vue-router'
 import type { RouteRecordRaw } from 'vue-router'
 import Tabs from '@/views/Tabs.vue'
+import NotFoundView from '@/views/NotFoundView.vue'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -104,6 +105,12 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'file-info',
         component: () => import('@/views/FileInfo.vue'),
+      },
+      // Catch-all 404 路由（防御性 UI：开发期任何路径不匹配都显示清晰提示而不是空白）
+      {
+        path: ':pathMatch(.*)*',
+        name: 'not-found',
+        component: NotFoundView,
       },
     ],
   },

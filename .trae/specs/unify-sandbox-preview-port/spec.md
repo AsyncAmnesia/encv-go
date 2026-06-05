@@ -94,6 +94,9 @@ Layer 3: 浏览器
 | **D8** | 健康检查端点？ | **`/__gateway/health`** | 返回所有 upstream 的 ping 结果；pm2 readiness 用 |
 | **D9** | vite 承担什么角色？ | **纯净 SPA dev server，监听 :8100**（用户决策） | 之前的所有 vite 胶水（workspacePackageRewrite / alias / fs.allow / proxy 块 / cors '*'）已撤销；vite 是纯 dev server |
 | **D10** | agent-tool-host 的默认 upstream 怎么改？ | **需要 IDE OpenPreview 工具显式注册（无自动机制）** | 实测发现 preview-proxy 内部 :80 register 端点 requires_auth=true，普通 agent-browser navigate 不会触发。Register 仅在 `OpenPreview(command_id=..., preview_url=...)` 调用时由 PreviewManager 执行。终态须用 OpenPreview(preview_url="http://localhost:16666/") 显式激活 |
+| **D11** | 沙箱 dev 下 plugin SPA 子资源（`/src/...`、`/@fs/...`、`/node_modules/...`）如何路由回 :5174？ | **VITE_BASE + Vite injectBaseHref plugin + fs.allow + preview-gateway pathRewrite + Set-Cookie 注入** 五层修复 | Vite 8 (rolldown) dev 模式不基于 `<base href>` 改写 import 路径，所有 import 解析为绝对根（如 `/node_modules/.vite/deps/vue.js?v=hash`）。裸 base 失效，必须用 (1) `transformIndexHtml order:'post'` 替换 placeholder → `<base>` + 改 `@vite/client` 的 src；(2) `server.fs.allow` 扩展到 `/workspace` 解决 `/@fs/...` 返回 SPA fallback 的 text/html；(3) preview-gateway pathRewrite 剥 `/openlist-ui` 前缀；(4) Set-Cookie `__plugin_spa=1` 标记后续子资源请求 |
+| **D12** | 沙箱 dev 怎么识别"用户从 `/openlist-ui/` 进入的子资源请求"？ | **Cookie 路由（Referer 不可靠）** | Trae IDE 沙箱 Chrome 默认 `referrer-policy = strict-origin-when-cross-origin`，network requests 中 `document.referrer` 为空。改用 Set-Cookie 注入（HTML 响应时） + 后续请求带 cookie 头判定。Cookie 路径 `Path=/` 覆盖所有子路由，Max-Age=3600 限制作用域，SameSite=Lax 兼顾安全 |
+| **D13** | 防御性 UI：路由不匹配 / 组件渲染崩溃时怎么显示？ | **catch-all 404 + onErrorCaptured 错误边界 + 根级 rootError fallback 三层防护** | 任意 vue-router 未匹配路由 → `/:pathMatch(.*)*` → `NotFoundView`（列出全部已知路由 + 诊断信息 + 返回/重载按钮）；任意子组件 render 异常 → `onErrorCaptured` 捕获 → 父级降级渲染 + 显示堆栈；根级异常（mount 失败）→ `rootError` 响应式状态 → 整个 app 显示错误屏 + reload 按钮 |
 
 ### 2.3 与现有 OpenPreview 关系
 
@@ -313,6 +316,321 @@ P7 — 文档 (G7)                                       ⏳ P6 后
 | **J12** | vite.config.ts 不含 `openlistUiProxy` plugin 引用 | `grep -n "openlistUiProxy" app/encv-mobile/vite.config.ts` 应为空 |
 | **J13** | vite 实际监听 :8100（D9 验证） | `curl -sI http://localhost:8100/ \| head -3`（拿到 vite HTML 即正确） |
 | **J14** | OpenPreview 工具激活 :16666 后 :16000 默认 upstream 切换 | `OpenPreview(preview_url="http://localhost:16666/")` 显式注册；日志 `PreviewManager` Port registered: 16666 |
+
+---
+
+## 十、防御性 UI 设计（D13）
+
+> **核心原则**：白屏 = 失败。**任何**路径不匹配 / 组件渲染异常 / 资源加载失败都必须显示**可诊断的 UI**，而不是空白页面。
+>
+> 动机：沙箱 dev 路径下 plugin-openlist SPA 经常因为：(1) vite 注入 `/@vite/client` 路径错；(2) 沙箱 Chrome 缺 referer 头导致资源 404；(3) 用户输入未知 hash 路由；(4) 子组件崩溃等场景空白。修复后**仍需**有兜底 UI 让开发者一眼看出"哪里错了"。
+
+### 10.1 三层防护架构
+
+```
+┌────────────────────────────────────────────────────────┐
+│ Layer 1: vue-router catch-all（路由级）                │
+│   任何未匹配路径 → :pathMatch(.*)* → NotFoundView       │
+│   - 列出所有已知路由（可点击跳转）                       │
+│   - 显示 location.pathname / router base / currentRoute │
+│   - 「返回 /home」「重新加载」按钮                       │
+│   - <details> 折叠 debug 面板（黑底等宽字体）           │
+└────────────────────────────────────────────────────────┘
+            │ 路由匹配但组件崩溃？
+            ▼
+┌────────────────────────────────────────────────────────┐
+│ Layer 2: onErrorCaptured（组件级）                      │
+│   父组件捕获子组件 render 异常 → 显示局部错误 UI         │
+│   - 错误标题 + 图标                                      │
+│   - 错误堆栈（折叠）                                    │
+│   - 「重新加载」「返回」按钮                              │
+│   - 阻止异常冒泡到根（return false）                     │
+└────────────────────────────────────────────────────────┘
+            │ 根组件 mount 失败？
+            ▼
+┌────────────────────────────────────────────────────────┐
+│ Layer 3: rootError fallback（应用级）                  │
+│   App.vue 顶层 catch → 整 app 替换为错误屏               │
+│   - 大图标 + 「应用启动失败」                            │
+│   - 错误堆栈（可复制）                                  │
+│   - 「重新加载」按钮                                    │
+└────────────────────────────────────────────────────────┘
+```
+
+### 10.2 NotFoundView 设计（主 app + plugin-openlist-web 各一份）
+
+**主 app 版本**（[NotFoundView.vue](file:///workspace/app/encv-mobile/src/views/NotFoundView.vue)）：
+
+```vue
+<template>
+  <ion-page>
+    <ion-header>
+      <ion-toolbar color="warning">
+        <ion-title>404 — 找不到这个页面</ion-title>
+      </ion-toolbar>
+    </ion-header>
+    <ion-content class="ion-padding">
+      <ion-card>
+        <ion-card-header>
+          <ion-icon :icon="alertCircleOutline" size="large" color="warning" />
+          <ion-card-title>路由未匹配</ion-card-title>
+          <ion-card-subtitle>path: <code>{{ $route.path }}</code></ion-card-subtitle>
+        </ion-card-header>
+        <ion-card-content>
+          <p>可能是 URL 输错、路由未注册、或上游资源加载失败。</p>
+          <ion-button @click="goHome">返回首页</ion-button>
+          <ion-button @click="reload">重新加载</ion-button>
+          <details>
+            <summary>调试信息</summary>
+            <pre>{{ debugInfo }}</pre>
+          </details>
+        </ion-card-content>
+      </ion-card>
+      <ion-list>
+        <ion-list-header>已知路由</ion-list-header>
+        <ion-item v-for="r in knownRoutes" :key="r.path" button @click="goTo(r.path)">
+          <ion-label>{{ r.path }}</ion-label>
+        </ion-item>
+      </ion-list>
+    </ion-content>
+  </ion-page>
+</template>
+```
+
+**plugin-openlist-web 版本**（[NotFoundView.vue](file:///workspace/app/encv-mobile/plugin-openlist/web/src/views/NotFoundView.vue)）—— 结构同主 app，但：
+- 路由列表来自 plugin-openlist-web 自己的 `routes`
+- 按钮：`返回 /home`（plugin SPA 内部 hash 路由）
+- 不使用 ion-card（plugin SPA 是纯 Vue，无 Ionic 依赖）
+
+### 10.3 vue-router 路由表 catch-all 注册
+
+**主 app**（[router/index.ts](file:///workspace/app/encv-mobile/src/router/index.ts)）：
+
+```ts
+export const routes: RouteRecordRaw[] = [
+  // ... 已有路由
+  {
+    path: ':pathMatch(.*)*',
+    name: 'not-found',
+    component: NotFoundView,
+  },
+]
+```
+
+**plugin-openlist-web**（[router/index.ts](file:///workspace/app/encv-mobile/plugin-openlist/web/src/router/index.ts)）：
+
+```ts
+export const router = createRouter({
+  history: createWebHashHistory('/openlist-ui/'),  // ← base 参数关键
+  routes: [
+    { path: '/', redirect: '/home' },
+    // ... 已有路由
+    { path: '/:pathMatch(.*)*', name: 'not-found', component: NotFoundView },
+  ],
+})
+```
+
+### 10.4 App.vue 错误边界
+
+**主 app** + **plugin-openlist-web** 的 `App.vue` 都加：
+
+```vue
+<script setup lang="ts">
+import { onErrorCaptured, ref } from 'vue'
+import { bugOutline } from 'ionicons/icons'
+
+const rootError = ref<Error | null>(null)
+
+onErrorCaptured((err) => {
+  console.error('[App] captured render error:', err)
+  rootError.value = err instanceof Error ? err : new Error(String(err))
+  // 不冒泡到 Vue 顶层
+  return false
+})
+</script>
+
+<template>
+  <!-- 根级异常：整 app 替换为错误屏 -->
+  <div v-if="rootError" class="root-error">
+    <ion-icon :icon="bugOutline" size="large" color="danger" />
+    <h1>应用启动失败</h1>
+    <pre>{{ rootError.stack ?? rootError.message }}</pre>
+    <ion-button @click="location.reload()">重新加载</ion-button>
+  </div>
+
+  <!-- 正常渲染 -->
+  <ion-app v-else>
+    <ion-router-outlet />
+  </ion-app>
+</template>
+```
+
+### 10.5 为什么"白屏 = 失败"
+
+| 场景 | 不防御的后果 | 防御后 |
+|------|------------|-------|
+| 用户手输 `/tabs/typo` | 整个 SPA 空白 | 显示 404 + 路由列表 + 返回按钮 |
+| 沙箱 vite HMR 断开 | dev mode 整个 SPA 卡死 | 重新加载按钮可恢复 |
+| `OpenListView` 组件 import 失败 | /tabs/openlist 空白 | rootError 屏 + 堆栈 + 重新加载 |
+| 用户手输 `/openlist-ui/#/zzz` | 空白 | 显示 404 + 已知路由 |
+| 上游 :5174 vite 挂掉 | 入口 HTML 502 → 浏览器空白 | preview-gateway 已返 502 JSON（仍可诊断） |
+
+### 10.6 禁止的反模式
+
+| 反模式 | 后果 |
+|--------|------|
+| ❌ inline `<ion-modal :is-open="showModal">` 用于跨 tab 操作 | tab 非活跃时 modal 不渲染（capacitor.md §1.1） |
+| ❌ 把 catch-all 路由放在 routes 列表第一项 | 永远匹配不到其他路由 |
+| ❌ `onErrorCaptured` 不 `return false` | 异常继续冒泡到根，被 Vue 默认 handler 吞掉 |
+| ❌ `rootError` 状态用 `let` 不用 `ref` | Vue 不会响应式更新 |
+| ❌ NotFoundView 不导出 debug 信息 | 出了问题无法诊断 |
+
+---
+
+## 十一、沙箱 dev 资源路由：Cookie 标记机制（D11 + D12）
+
+> **核心问题**：Vite 8 (rolldown) dev 模式不基于 `<base href>` 改写 import 路径，所有 import 解析为**绝对根路径**（如 `/node_modules/.vite/deps/vue.js?v=hash`）。浏览器访问 `/openlist-ui/` 时：
+>
+> 1. 入口 HTML 中 `<script src="./src/main.ts">` → base href 把它解析为 `/openlist-ui/src/main.ts` → gateway 路由到 :5174 ✓
+> 2. main.ts 内部 `import 'vue'` → vite dev 解析为 `/node_modules/.vite/deps/vue.js?v=hash`（绝对根，**不带 /openlist-ui 前缀**） → 浏览器请求 `http://localhost:16666/node_modules/...` → **fallthrough 到 :8100 (encv-mobile)** → 404 ✗
+
+### 11.1 单一机制为什么不够
+
+| 机制 | 单独作用 | 失败原因 |
+|------|---------|---------|
+| `<base href="/openlist-ui/">` | 让相对路径变 base-prefixed | Vite 8 dev 模式内部 import 不基于 base 改写 |
+| `server.origin: 'http://...:16666/openlist-ui'` | 让 vite 输出完整 origin 路径 | Vite 8 仍输出绝对根路径（实测） |
+| `enforce:'pre' + transform` 改 .ts/.vue 内路径 | 拦截 import 重写 | main.ts 入口文件不被 user transform 处理 |
+| preview-gateway Referer 路由 | 用 referer 判定 | Trae IDE 沙箱 Chrome referer 为空 |
+
+### 11.2 五层修复链
+
+**Layer 1: VITE_BASE 环境变量**
+
+```bash
+# scripts/dev-openlist-web.sh
+export VITE_BASE="/openlist-ui/"
+```
+
+**Layer 2: vite.config.ts — injectBaseHref plugin (order: 'post')**
+
+```ts
+function injectBaseHref(href: string): Plugin {
+  return {
+    name: 'inject-base-href',
+    transformIndexHtml: {
+      order: 'post',  // 必须在 Vite 注入 @vite/client 之后
+      handler(html) {
+        let result = html
+        // 1) 占位符 → <base> 标签
+        result = result.replace(
+          '<!--VITE-BASE-HREF-PLACEHOLDER-->',
+          `<base href="${href}" />`,
+        )
+        // 2) @vite/client 路径加前缀
+        if (result.includes('<script type="module" src="/@vite/client">')) {
+          result = result.replace(
+            '<script type="module" src="/@vite/client">',
+            `<script type="module" src="${href.replace(/\/$/, '')}/@vite/client">`,
+          )
+        }
+        return result
+      },
+    },
+  }
+}
+```
+
+**Layer 3: vite.config.ts — fs.allow 扩展**
+
+```ts
+server: {
+  fs: {
+    allow: [
+      path.resolve(__dirname),
+      path.resolve(__dirname, '..', '..', '..'),  // encv-mobile root
+      path.resolve('/workspace/app/encv-mobile'),
+      path.resolve('/workspace/app/encv-mobile/node_modules'),
+      path.resolve('/workspace'),
+    ],
+  },
+}
+```
+
+**Layer 4: preview-gateway — pathRewrite 剥前缀**
+
+```ts
+const UPSTREAMS: Upstream[] = [
+  {
+    match: '/openlist-ui',
+    target: 'http://127.0.0.1:5174',
+    pathRewrite: (p) => p.replace(/^\/openlist-ui(?=\/|$)/, '') || '/',
+  },
+]
+```
+
+**Layer 5: preview-gateway — Set-Cookie 注入 + Cookie 路由**
+
+```ts
+// 1) 注入（HTML 响应时）
+proxy.on('proxyRes', (proxyRes, _req) => {
+  const ct = proxyRes.headers['content-type']
+  if (ct && /text\/html/i.test(String(ct))) {
+    const cookieLine = '__plugin_spa=1; Path=/; SameSite=Lax; Max-Age=3600'
+    const existing = proxyRes.headers['set-cookie']
+    proxyRes.headers['set-cookie'] = existing
+      ? (Array.isArray(existing) ? [...existing, cookieLine] : [String(existing), cookieLine])
+      : [cookieLine]
+  }
+})
+
+// 2) 路由识别（pickUpstream 末尾的 fallback）
+if (cookie && /(?:^|;\s*)__plugin_spa=1/.test(cookie)) {
+  return UPSTREAMS.find((u) => u.match === '/openlist-ui') ?? DEFAULT_UPSTREAM
+}
+```
+
+### 11.3 完整请求流（带 cookie 路由）
+
+```
+用户访问 http://localhost:16666/openlist-ui/
+  ↓ gateway 收到
+  pickUpstream: url="/openlist-ui/" 匹配 match="/openlist-ui" → :5174
+  pathRewrite: "/openlist-ui/" → "/"
+  ↓ proxy 到 :5174
+  vite 返回 HTML（已含 <base href="/openlist-ui/"> + 改过的 @vite/client）
+  ↓ proxyRes 钩子：content-type=text/html → Set-Cookie: __plugin_spa=1
+  ↓ 浏览器收到 HTML + Set-Cookie: __plugin_spa=1
+  浏览器执行 <script src="/openlist-ui/src/main.ts">  ← 相对路径，基于 base
+  ↓ gateway 收到 /openlist-ui/src/main.ts + cookie
+  pickUpstream: url 匹配 → :5174
+  pathRewrite: "/openlist-ui/src/main.ts" → "/src/main.ts"
+  ↓ proxy 到 :5174
+  vite 返回 main.ts 内容（内部 import 是绝对根路径）
+  浏览器执行 main.ts → 触发 import 'vue' → 解析为 /node_modules/.vite/deps/vue.js
+  ↓ gateway 收到 /node_modules/.vite/deps/vue.js + cookie __plugin_spa=1
+  pickUpstream: url 不匹配任何 prefix → 但 cookie 命中 → :5174
+  ↓ proxy 到 :5174
+  vite 返回正确的 vue.js ✓
+```
+
+### 11.4 验证命令
+
+```bash
+# 入口 HTML 应包含 /openlist-ui/@vite/client
+curl -s http://localhost:16666/openlist-ui/ | grep -oE '/openlist-ui/@vite|src/main\.ts'
+# 期望：/openlist-ui/@vite  src/main.ts
+
+# Set-Cookie 注入
+curl -sI http://localhost:16666/openlist-ui/ | grep -i set-cookie
+# 期望：__plugin_spa=1; Path=/; SameSite=Lax; Max-Age=3600
+
+# 子资源路由：带 cookie → text/javascript；不带 cookie → fallthrough (text/html)
+curl -sI -H "Cookie: __plugin_spa=1" http://localhost:16666/src/views/OpenListHome.vue
+# 期望：Content-Type: text/javascript
+curl -sI http://localhost:16666/src/views/OpenListHome.vue
+# 期望：Content-Type: text/html (encv-mobile SPA fallback)
+```
 
 ---
 
