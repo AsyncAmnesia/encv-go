@@ -21,7 +21,9 @@
     "ignoreDeprecations": "5.0",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@encvgo/components": ["../packages/components/src/index.ts"],
+      "@encvgo/components/*": ["../packages/components/src/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue", "src/**/*.json", "capacitor.config.ts"]
