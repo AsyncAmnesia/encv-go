@@ -146,3 +146,21 @@
 - [x] `ss -tlnp | grep -E "(:16666|:8100|:5174|:2025|:5244)"` → 5 端口全部监听
 - [x] `/tabs/zzzz` 浏览器实测：显示主 app NotFoundView（开发者友好 404 + 路由列表）
 - [x] `/openlist-ui/#/not-a-real-path` 浏览器实测：显示 plugin SPA NotFoundView
+
+## 沙箱 dev HMR 修复（D14）— WS 升级连通
+
+- [x] `app/encv-mobile/plugin-openlist/web/vite.config.ts` 含 `server.allowedHosts: true`
+- [x] `app/encv-mobile/vite.config.ts` 含 `server.allowedHosts: true`
+- [x] `app/encv-mobile/plugin-openlist/web/vite.config.ts` 含 `dynamicHmrHostPlugin`（`enforce: 'pre'`）
+- [x] `app/encv-mobile/vite.config.ts` 含 `dynamicHmrHostPlugin`（`enforce: 'pre'`）
+- [x] `dynamicHmrHostPlugin` 替换 `__HMR_HOSTNAME__` 为 auto-detected 外部 host
+- [x] `dynamicHmrHostPlugin` 替换 `__HMR_PORT__` 为 `16666`
+- [x] `dynamicHmrHostPlugin` 替换 `__HMR_PROTOCOL__` 为 `ws`/`wss`（从 Referer 推断）
+- [x] `dynamicHmrHostPlugin` **不替换** `__WS_TOKEN__`（vite 生成，gateway 透传）
+- [x] 验证：外部 Host 访问 `:5174/@vite/client` 返回 200（不再 403）
+- [x] 验证：HMR config `socketHost` 包含外部域名（不再 `localhost`）
+- [x] 验证：WS 升级（带 `Sec-WebSocket-Protocol: vite-hmr`）直接 :5174 返回 101
+- [x] 验证：WS 升级（带 cookie）经 gateway :16666 → :5174 返回 101
+- [x] 验证：WS 升级（外部 Host + cookie）经 gateway → :5174 返回 101
+- [x] 验证：WS 升级无 cookie fallthrough 到 :8100 返回 101
+- [x] 浏览器 console 不再报 `[vite] failed to connect to websocket`

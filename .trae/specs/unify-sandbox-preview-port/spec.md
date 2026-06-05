@@ -97,6 +97,7 @@ Layer 3: 浏览器
 | **D11** | 沙箱 dev 下 plugin SPA 子资源（`/src/...`、`/@fs/...`、`/node_modules/...`）如何路由回 :5174？ | **VITE_BASE + Vite injectBaseHref plugin + fs.allow + preview-gateway pathRewrite + Set-Cookie 注入** 五层修复 | Vite 8 (rolldown) dev 模式不基于 `<base href>` 改写 import 路径，所有 import 解析为绝对根（如 `/node_modules/.vite/deps/vue.js?v=hash`）。裸 base 失效，必须用 (1) `transformIndexHtml order:'post'` 替换 placeholder → `<base>` + 改 `@vite/client` 的 src；(2) `server.fs.allow` 扩展到 `/workspace` 解决 `/@fs/...` 返回 SPA fallback 的 text/html；(3) preview-gateway pathRewrite 剥 `/openlist-ui` 前缀；(4) Set-Cookie `__plugin_spa=1` 标记后续子资源请求 |
 | **D12** | 沙箱 dev 怎么识别"用户从 `/openlist-ui/` 进入的子资源请求"？ | **Cookie 路由（Referer 不可靠）** | Trae IDE 沙箱 Chrome 默认 `referrer-policy = strict-origin-when-cross-origin`，network requests 中 `document.referrer` 为空。改用 Set-Cookie 注入（HTML 响应时） + 后续请求带 cookie 头判定。Cookie 路径 `Path=/` 覆盖所有子路由，Max-Age=3600 限制作用域，SameSite=Lax 兼顾安全 |
 | **D13** | 防御性 UI：路由不匹配 / 组件渲染崩溃时怎么显示？ | **catch-all 404 + onErrorCaptured 错误边界 + 根级 rootError fallback 三层防护** | 任意 vue-router 未匹配路由 → `/:pathMatch(.*)*` → `NotFoundView`（列出全部已知路由 + 诊断信息 + 返回/重载按钮）；任意子组件 render 异常 → `onErrorCaptured` 捕获 → 父级降级渲染 + 显示堆栈；根级异常（mount 失败）→ `rootError` 响应式状态 → 整个 app 显示错误屏 + reload 按钮 |
+| **D14** | 沙箱 dev 浏览器 console 报 `[vite] failed to connect to websocket` 怎么修？ | **vite 5+ allowedHosts 拒绝 + HMR host 锁定 localhost + @vite/client 占位符替换 三个根因 + 五件套修复** | (a) vite 5+ 默认 `server.allowedHosts` 锁 localhost，外部 trae.cn 域名直接 403 拒绝 → 设 `allowedHosts: true`；(b) vite `server.hmr.host` 默认从 `server.host` 派生（0.0.0.0 → 退回 localhost），浏览器在远程沙箱无法连接 → 用 `enforce:'pre'` + `transform` 钩子拦截 `@vite/client`，替换 `__HMR_HOSTNAME__` / `__HMR_PORT__` / `__HMR_PROTOCOL__` / `__HMR_BASE__` 四个占位符为 auto-detected 外部 host + 网关端口 16666；(c) vite 8 WS upgrade 监听器要求 `Sec-WebSocket-Protocol: vite-hmr` 才响应（`@vite/client` 实际会发，但 curl 测试要带）；(d) preview-gateway 已有的 cookie 路由让 WS upgrade 在根路径也能正确路由到 :5174；(e) `__WS_TOKEN__` 不要替换（vite 生成，gateway 透传） |
 
 ### 2.3 与现有 OpenPreview 关系
 
@@ -631,6 +632,142 @@ curl -sI -H "Cookie: __plugin_spa=1" http://localhost:16666/src/views/OpenListHo
 curl -sI http://localhost:16666/src/views/OpenListHome.vue
 # 期望：Content-Type: text/html (encv-mobile SPA fallback)
 ```
+
+---
+
+## 十二、沙箱 dev HMR 修复（D14）
+
+> **核心问题**：沙箱 dev 浏览器跑在外部 trae.cn 域名（如 `run-agent-...trae.cn:16666`），vite dev server 跑在沙箱内 `:5174` / `:8100`。浏览器无法直连 `localhost:5174`，HMR 一直报 `[vite] failed to connect to websocket`。
+
+### 12.1 三个隐藏根因
+
+**(1) vite 5+ `server.allowedHosts` 默认白名单**：
+
+vite 5+ 引入安全特性：默认 `server.allowedHosts` 锁 `localhost / 127.0.0.1` 等白名单，外部 Host 头（如 `run-agent-...trae.cn`）直接返回 403 `Blocked request. This host is not allowed.`。
+
+**复现**：
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" \
+  -H "Host: run-agent-test.trae.cn:16666" \
+  http://127.0.0.1:5174/@vite/client
+# 修复前：403
+# 修复后：200
+```
+
+**修复**：
+```ts
+server: {
+  allowedHosts: true,  // 允许所有 Host
+}
+```
+
+**(2) vite `server.hmr.host` 默认锁定 localhost**：
+
+vite `server.hmr.host` 默认从 `server.host` 派生。当 `server.host = '0.0.0.0'`（沙箱必须监听所有接口）时，HMR host 退回 `'localhost'`，但沙箱外浏览器连不上沙箱内 `localhost`。
+
+**复现**：
+```bash
+curl -s http://127.0.0.1:5174/@vite/client | grep "socketHost ="
+# 修复前：${"localhost" || importMetaUrl.hostname}:5174/
+# 修复后：${"run-agent-test.trae.cn" || importMetaUrl.hostname}:16666/
+```
+
+**修复**（`dynamicHmrHostPlugin`）：
+
+`enforce: 'pre'` + `transform` 钩子拦截 `@vite/client` 模块，替换 vite 注入的占位符：
+
+| 占位符 | 注入值（修复前） | 替换值（修复后） |
+|--------|----------------|----------------|
+| `__HMR_HOSTNAME__` | `"localhost"` | auto-detected `req.headers.host` 剥端口 |
+| `__HMR_PORT__` | `5174` | `16666`（preview-gateway port） |
+| `__HMR_PROTOCOL__` | `"ws"` | `"wss"` 当 Referer 是 `https://`，否则 `"ws"` |
+| `__HMR_BASE__` | `"/"` | `"/"`（保持） |
+| `__WS_TOKEN__` | vite 随机 token | **不要替换**（gateway 透传给上游） |
+
+**为什么 `enforce: 'pre'`？** vite 8 内部用 `code.replace('__HMR_HOSTNAME__', hostReplacement)` 替换占位符，`enforce: 'pre'` 保证我们的 transform 在 vite 内部替换之前先替换好。vite 内部再 replace 时找不到占位符就跳过。
+
+**auto-detect 流程**：
+```
+1. 浏览器 GET http://run-agent-...trae.cn:16666/openlist-ui/
+2. 网关剥前缀 → :5174 vite 收到 GET /
+3. vite 中间件 (configureServer) 检测 req.headers.host = 'run-agent-...trae.cn:16666'
+   → 存到 detectedHost / detectedProtocol
+4. vite 响应 HTML (含 <script src="/openlist-ui/@vite/client">)
+5. 浏览器 GET /openlist-ui/@vite/client → 网关剥前缀 → :5174 vite
+6. transform @vite/client → dynamicHmrHostPlugin (enforce:'pre') 替换占位符
+7. 浏览器收到 client.mjs，HMR client 连接 ws://run-agent-...trae.cn:16666/?token=...
+8. 网关 WS upgrade → cookie 路由到 :5174 → vite 接受
+```
+
+**(3) vite 8 WS upgrade 监听器要求 `Sec-WebSocket-Protocol: vite-hmr`**：
+
+vite 8 在 `if (wsServer)` 分支只对带 `vite-hmr` 或 `vite-ping` subprotocol 的 WS upgrade 调 `handleUpgrade`。`@vite/client` 实际 `new WebSocket(url, 'vite-hmr')` 会带，但 curl/wscat 测试要手动加：
+
+```js
+req.headers['Sec-WebSocket-Protocol'] = 'vite-hmr'  // 关键！
+```
+
+### 12.2 五件套修复清单
+
+| # | 文件 | 改动 | 作用 |
+|---|------|------|------|
+| 1 | `app/encv-mobile/plugin-openlist/web/vite.config.ts` | 加 `server.allowedHosts: true` | 让 vite 接受外部 Host |
+| 2 | `app/encv-mobile/plugin-openlist/web/vite.config.ts` | 加 `dynamicHmrHostPlugin` (enforce:'pre') | 替换 @vite/client 占位符为外部 host |
+| 3 | `app/encv-mobile/vite.config.ts` | 同上（主 app 版本，端口 16666） | 同上 |
+| 4 | `app/preview-gateway/src/server.ts` | （已存在）cookie 路由 + WS upgrade 透传 | 让根路径 WS upgrade 路由到正确 upstream |
+| 5 | （浏览器端）`@vite/client` | 自动带 `Sec-WebSocket-Protocol: vite-hmr` | 触发 vite WS 处理 |
+
+### 12.3 env var 覆盖
+
+`dynamicHmrHostPlugin` 支持 env var 覆盖 auto-detect，优先级：**env > auto-detect > fallback**：
+
+| env | 默认值 | 说明 |
+|-----|--------|------|
+| `HMR_HOST` | auto-detected | 外部 host（不含端口） |
+| `HMR_PROTOCOL` | auto from Referer | `ws` 或 `wss` |
+| `HMR_CLIENT_PORT` | `16666` | 浏览器连的端口（应等于 preview-gateway port） |
+
+### 12.4 完整验证命令
+
+```bash
+# A) @vite/client 接受外部 Host + HMR config 正确
+curl -s -H "Host: run-agent-test.trae.cn:16666" http://127.0.0.1:5174/@vite/client \
+  | grep -E "(socketHost|hmrPort|socketProtocol) ="
+# 期望：socketHost = ${"run-agent-test.trae.cn" || ...}:16666/
+
+# B) 经 gateway 完整链路（cookie 路由）
+curl -s -H "Host: run-agent-test.trae.cn:16666" \
+  http://localhost:16666/openlist-ui/@vite/client \
+  | grep -E "(socketHost|hmrPort) ="
+
+# C) WS 升级测试（必须带 Sec-WebSocket-Protocol: vite-hmr）
+node -e "
+const http = require('http');
+const req = http.request({
+  host:'127.0.0.1', port:16666, path:'/?token=test', method:'GET',
+  headers:{
+    'Connection':'Upgrade','Upgrade':'websocket',
+    'Sec-WebSocket-Key':'dGhlIHNhbXBsZSBub25jZQ==',
+    'Sec-WebSocket-Version':'13',
+    'Sec-WebSocket-Protocol':'vite-hmr',
+    'Cookie':'__plugin_spa=1',
+    'Host':'run-agent-test.trae.cn:16666',
+  },
+});
+req.on('upgrade',(r)=>console.log('UPGRADE',r.statusCode));
+req.on('response',(r)=>console.log('RESP',r.statusCode));
+req.on('error',(e)=>console.log('ERR',e.message));
+req.setTimeout(3000,()=>{console.log('TIMEOUT');process.exit(0)});
+req.end();
+"
+# 期望：UPGRADE 101
+```
+
+### 12.5 已知限制
+
+1. **auto-detect 是一次性的**：第一个请求的 Host 锁定后不变。如果用同一 vite 进程服务多个域名（罕见），需要每个域名单独启动 vite。
+2. **HTTPS 场景必须靠 Referer 推断 protocol**：如果 referer 不可靠（如 strict-origin-when-cross-origin），可用 `HMR_PROTOCOL=wss` env 覆盖。
+3. **__WS_TOKEN__ 不能改**：vite 启动时随机生成，注入 @vite/client。gateway 透传 token，vite 验证。
 
 ---
 
