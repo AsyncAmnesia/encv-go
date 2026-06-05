@@ -26,9 +26,6 @@ importers:
       '@capacitor/status-bar':
         specifier: ^8.0.2
         version: 8.0.2(@capacitor/core@8.4.0)
-      '@encvgo/components':
-        specifier: workspace:*
-        version: link:packages/components
       '@ionic/vue':
         specifier: ^8.8.7
         version: 8.8.8(@stencil/core@4.43.5)(vue-router@4.6.4(vue@3.5.35(typescript@5.9.3)))(vue@3.5.35(typescript@5.9.3))
@@ -85,23 +82,8 @@ importers:
         specifier: ^2.2.10
         version: 2.2.12(typescript@5.9.3)
 
-  packages/components:
-    dependencies:
-      '@ionic/vue':
-        specifier: ^8.0.0
-        version: 8.8.8(@stencil/core@4.43.5)(vue-router@4.6.4(vue@3.5.35(typescript@5.9.3)))(vue@3.5.35(typescript@5.9.3))
-      ionicons:
-        specifier: ^7.0.0 || ^8.0.0
-        version: 8.0.13
-      vue:
-        specifier: ^3.5.0
-        version: 3.5.35(typescript@5.9.3)
-
   plugin-openlist/web:
     dependencies:
-      '@encvgo/components':
-        specifier: workspace:*
-        version: link:../../packages/components
       '@ionic/vue':
         specifier: ^8.8.7
         version: 8.8.8(@stencil/core@4.43.5)(vue-router@4.6.4(vue@3.5.35(typescript@5.9.3)))(vue@3.5.35(typescript@5.9.3))

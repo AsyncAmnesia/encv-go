@@ -2,66 +2,7 @@ import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'node:path'
 import fs from 'node:fs'
-import { pathToFileURL } from 'node:url'
 import sirv from 'sirv'
-
-/**
- * Vite plugin: workspace-package-rewrite
- *
- * The `@encvgo/components` workspace package lives at
- *   /workspace/app/encv-mobile/packages/components/src/index.ts
- * — outside Vite's `root` (encv-mobile/). The default TS/Node resolution
- * pipeline turns the import into the URL `/packages/components/src/index.ts`,
- * which Vite's dev server then SPA-fallbacks (404 + 492-byte HTML) because
- * the path is outside both `root` and `fs.allow`'s default
- * (which only allows `root` + ancestors).
- *
- * We already grant `fs.allow: [path.resolve(__dirname, '..')]`, so the
- * file IS reachable via the `/@fs/<abs-path>` URL. This plugin rewrites
- * incoming `/packages/...` requests to the corresponding `/@fs/...` URL
- * so the workspace package becomes loadable.
- *
- * Applies to:
- *   - dev server requests (`configureServer`)
- *   - module resolution (`resolveId`) — so the import inside .vue/.ts
- *     source files also becomes `/@fs/...`
- */
-function workspacePackageRewrite(): Plugin {
-  const PKG_ROOT = path.resolve(__dirname, 'packages')
-  return {
-    name: 'workspace-package-rewrite',
-    enforce: 'pre',
-    resolveId(source, importer) {
-      // Match the absolute URL form Vite injects after resolving
-      // `@encvgo/components` (e.g. `/packages/components/src/index.ts`).
-      if (source.startsWith('/packages/')) {
-        const abs = path.join(PKG_ROOT, source.replace(/^\/packages\//, ''))
-        if (fs.existsSync(abs)) {
-          return pathToFileURL(abs).href
-        }
-      }
-      return null
-    },
-    configureServer(server) {
-      server.middlewares.use((req, res, next) => {
-        const url = req.url || ''
-        if (url.startsWith('/packages/') || url.startsWith('packages/')) {
-          const stripped = url.replace(/^[/]+/, '/')
-          const abs = path.join(PKG_ROOT, stripped.replace(/^\/packages\//, ''))
-          if (fs.existsSync(abs)) {
-            const qIdx = url.indexOf('?')
-            const query = qIdx >= 0 ? url.slice(qIdx) : ''
-            req.url = `/@fs${pathToFileURL(abs).pathname}${query}`
-            server.config.logger.info(
-              `[workspace-rewrite] ${url} → ${req.url}`,
-            )
-          }
-        }
-        next()
-      })
-    },
-  }
-}
 
 // Resolve the openlist fork's public/dist for dev-mode serving.
 // In dev, the SPA is served directly by Vite (no Go embed).
@@ -224,14 +165,14 @@ function openlistUiProxy(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [vue(), openlistUiProxy(), workspacePackageRewrite()],
+  plugins: [vue(), openlistUiProxy()],
   server: {
     port: 8100,
     // Listen on all interfaces so OpenPreview / external previews can reach
     // the Vite dev server (default is localhost-only which is IPv6-only on
     // some sandboxes, breaking IPv4 / hostname access).
     host: '0.0.0.0',
-    // ⚠️ 2026-06-05 fix: Trae IDE's sandbox proxy (agent-tool-host :16000)
+    // ⚠️ 2026-06-05: Trae IDE's sandbox proxy (agent-tool-host :16000)
     //   rewrites the request's Origin header to match the upstream port
     //   (e.g. browser at :16000 → vite at :5173 with `Origin: http://localhost:5173`).
     //   Vite's default `cors: true` reflects the (rewritten) Origin back, so
@@ -243,10 +184,6 @@ export default defineConfig({
     cors: {
       origin: '*',
       credentials: false,
-    },
-    // Allow reading app/openlist/ (parent of encv-mobile/) so Vite can serve the fork's dist
-    fs: {
-      allow: [path.resolve(__dirname, '..')],
     },
     proxy: {
       '/api': {
@@ -271,29 +208,9 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: [
-      { find: '@', replacement: path.resolve(__dirname, 'src') + '/' },
-      // ⚠️ 2026-06-05 fix: `@encvgo/components` is a pnpm workspace package
-      //   (packages/components/src/index.ts). Without this alias, Vite
-      //   resolves it to the absolute URL `/packages/components/src/index.ts`
-      //   which falls outside the Vite root and `fs.allow` — the request
-      //   hits SPA fallback, returns the 492-byte root HTML, and the
-      //   browser fails to parse it as JavaScript, breaking
-      //   `import('/src/views/OpenListView.vue')` (transitively, every
-      //   OpenList module chain).
-      //
-      //   We point the alias to the absolute filesystem path so Vite
-      //   serves it via the `fs.allow: [.., '..']` permission granted
-      //   above (line ~190), and injects the proper ESM import URL
-      //   (e.g. `/@fs/.../index.ts`) which the browser CAN load.
-      {
-        find: '@encvgo/components',
-        replacement: path.resolve(
-          __dirname,
-          'packages/components/src/index.ts',
-        ),
-      },
-    ],
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+    },
   },
   build: {
     rollupOptions: {

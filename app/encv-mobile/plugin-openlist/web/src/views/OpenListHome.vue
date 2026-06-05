@@ -26,7 +26,7 @@
 
     <ion-content>
       <!--
-        复用 @encvgo/components 共享状态卡
+        复用本地 components-shared 共享状态卡
       -->
       <OpenListStatusCard :runtime="runtime" />
 
@@ -54,7 +54,7 @@
         </div>
       </div>
 
-      <!-- 复用 @encvgo/components 共享日志列表 -->
+      <!-- 复用本地 components-shared 共享日志列表 -->
       <OpenListLogList :logs="logs" />
 
       <!--
@@ -106,7 +106,7 @@ import {
   powerOutline,
   playOutline,
 } from 'ionicons/icons'
-import { OpenListStatusCard, OpenListLogList, type OpenListRuntime, type OpenListLog } from '@encvgo/components'
+import { OpenListStatusCard, OpenListLogList, type OpenListRuntime, type OpenListLog } from '@/components-shared'
 import { OpenListNative, logBuffer } from '@/plugins/openlist-native'
 import PwdEditDialog from '@/components/PwdEditDialog.vue'
 
