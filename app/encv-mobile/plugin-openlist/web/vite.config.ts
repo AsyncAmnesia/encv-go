@@ -341,8 +341,15 @@ export default defineConfig({
     //     所以 vite 看到的是原始外部域名，不是 localhost
     //   - 设 true 允许所有 Host，匹配 preview-gateway 反代场景
     allowedHosts: true,
-    // ⚠️ 沙箱 dev 必须扩展 fs.allow：
-    //   - vite 默认 fs.allow 只允许项目根目录 + 其祖先
+    // ⚠️ CRITICAL: 沙箱 dev 必须禁用 HMR！ (详见主 app vite.config.ts 同名注释)
+    // 链路: trae 域名 → agent-tool-host(:16000) → preview-gateway(:16666) → vite(:5174)
+    // agent-tool-host 不支持 WebSocket 升级 → vite 8 client.mjs:892 永远抛 `WebSocket closed without opened`
+    // 修复: hmr:false 让 vite 不再注入 /@vite/client, console 不再有 WS 错误
+    // 代价: 用户改代码需 Ctrl+R 硬刷 —— 沙箱 dev 可接受
+    hmr: false,
+  },
+  // ⚠️ 沙箱 dev 必须扩展 fs.allow：
+  //   - vite 默认 fs.allow 只允许项目根目录 + 其祖先
     //   - main.ts 内 import "/@fs/workspace/app/encv-mobile/node_modules/..." 引用的是
     //     encv-mobile 主 app 的 node_modules（plugin-openlist/web 自己没装 @ionic/vue）
     //   - 不扩 allow 时 vite 返回 403/404/SPA fallback → 浏览器收到 text/html →

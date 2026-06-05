@@ -224,6 +224,22 @@ export default defineConfig({
     allowedHosts: true,
     // Vite 默认 cors=true 会 reflect Origin —— 配合 preview-gateway changeOrigin:false，
     // 链路 :16666 → :8100 看到的 Origin=Host 匹配，CORS 天然通过
+    // ────────────────────────────────────────────────────────────────────────
+    // ⚠️ CRITICAL: 沙箱 dev 必须禁用 HMR！
+    //
+    // 链路: 浏览器(trae 域名) → agent-tool-host(:16000) → preview-gateway(:16666) → vite(:8100)
+    //
+    // agent-tool-host 是 supervisor 管的反向代理，**不支持 WebSocket 升级**
+    // (Sec-WebSocket-Key / Upgrade: websocket 头被丢弃)。
+    // → 浏览器拿 `wss://...:16666/?token=...vite-hmr` 主动连接永远立刻被关
+    // → vite 8 client.mjs 第 892 行捕获 `WebSocket closed without opened` 抛红字
+    //
+    // 修复: `server.hmr = false` 告诉 vite **完全不注入 HMR client 代码**。
+    //       浏览器加载 /@vite/client 时 vite 不再 push <script> 到 HTML,
+    //       也就没有 WS 连接尝试, console 不再有 [vite] failed to connect to websocket。
+    //
+    // 代价: 用户改代码需要 Ctrl+R 硬刷 —— 对沙箱 dev 完全可接受 (没有连续编辑场景)。
+    hmr: false,
   },
   resolve: {
     alias: {
