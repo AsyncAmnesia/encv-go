@@ -99,7 +99,12 @@ fi
 cd "${REPO_ROOT}"
 
 # ---------- Step 2: 生成 mock 数据 ----------
-step "2/6 生成 mock 数据到 ${MOCK_DIR}"
+# 沙箱首次启动时 ${MOCK_DIR} 还不存在（root 权限下可建），先 mkdir 再生成。
+if [[ ! -d "${MOCK_DIR}" ]]; then
+  step "2a/6 创建 mock 根目录 ${MOCK_DIR}（沙箱首次启动）"
+  mkdir -p "${MOCK_DIR}" || { echo "❌ 无法创建 ${MOCK_DIR}" >&2; exit 1; }
+fi
+step "2b/6 生成 mock 数据到 ${MOCK_DIR}"
 cd "${MOBILE_DIR}"
 npx tsx scripts/generate-mock-files.ts
 cd "${REPO_ROOT}"
@@ -110,9 +115,13 @@ if [[ ! -d "${MOCK_DIR}/01-plain-media" ]]; then
 fi
 
 # ---------- Step 3: air 启动后端（前台子进程） ----------
-step "3/6 启动后端（air 监视重载，ENCV_DEV_PREVIEW=1）"
+# env 注入策略：
+#   - pm2 监管：ecosystem.config.cjs 已注入 ENCV_DEV_PREVIEW=1 / ENCV_MOBILE=1
+#   - 裸脚本用户：.air-run.sh 末尾 `export ENCV_DEV_PREVIEW=:-1` 兜底
+# 这里不重复 inline 设，避免在 air rebuild 时不稳定。
+step "3/6 启动后端（air 监视重载，ENCV_DEV_PREVIEW/ENCV_MOBILE 由 .air-run.sh 兜底）"
 cd "${REPO_ROOT}"
-ENCV_DEV_PREVIEW=1 air &
+air &
 AIR_PID=$!
 SUBPIDS+=("${AIR_PID}")
 echo "    air pid=${AIR_PID}"

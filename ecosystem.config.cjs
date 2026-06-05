@@ -115,9 +115,16 @@ module.exports = {
       script: PREVIEW_SCRIPT,
       interpreter: 'bash',
       cwd: REPO_ROOT,
-      // start-preview.sh 内部已经设了 ENCV_DEV_PREVIEW=1，这里不再设
+      // ✅ 必须由 pm2 注入这两个 env！之前依赖 start-preview.sh 第 115 行的
+      //   inline env `ENCV_DEV_PREVIEW=1 air &`，在 air rebuild / pm2 restart
+      //   路径下不稳定（air 重新拉起 ./tmp/encv 时可能丢 env）。
+      //   pm2 直接注入到 bash 进程环境，air fork ./tmp/encv 时 100% 透传。
+      //   触发条件见 internal/config/config.go:292-294 ApplyMobileOverlay。
+      //   .air-run.sh 末尾还有 `:-1` 兜底（修复 2）。
       env: {
         PATH: process.env.PATH,
+        ENCV_DEV_PREVIEW: '1',
+        ENCV_MOBILE: '1',
         // 让 mock 生成走沙箱 fallback（脚本默认 /storage/emulated/0，已存在）
         ENCV_MOCK_ROOT: '/storage/emulated/0',
       },

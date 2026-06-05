@@ -67,7 +67,7 @@
 | `encv-mobile-vite` | :8100 | ✅ 必备 | 主 app Vite（被 :16666/ 代理） |
 | `preview-helper` | :15002 | ✅ 必备 | OpenPreview 占位 |
 | `openpreview-stub` | :15003 | ✅ 必备 | OpenPreview web_server command_id 源 |
-| `start-preview` | :2025 + :5173 | ⚠️ 可选 | Go 后端 air + 旧 vite；现已拆出独立进程 |
+| `start-preview` | :2025 + :5173 | ⚠️ 可选 | Go 后端 air + 旧 vite；**⚠️ pm2 启动时必须注入 `ENCV_DEV_PREVIEW=1` + `ENCV_MOBILE=1`**（见 §五 env 注入铁律） |
 | `openlist` | :5244 | ⚠️ 可选 | OpenList 真实 fork Go 服务 |
 | `plugin-openlist-vite` | :5174 | ⚠️ 可选 | OpenList 管理 UI Vite（被 :16666/openlist-ui/ 代理） |
 
@@ -198,7 +198,57 @@ curl -s http://localhost:16666/__gateway/health | head -c 200
 
 ---
 
-## 五、强制自检清单
+## 五、start-preview env 注入铁律（2026-06-05 mobile overlay 触发失败事故后写入）
+
+> **核心原则：`ApplyMobileOverlay` 由 `ENCV_MOBILE=1` 或 `ENCV_DEV_PREVIEW=1` 触发，缺失则 servingDir 退回 `/workspace`（用户看到 `.md` / `.gitignore`，不是 mock 媒体）。**
+
+### 7.1 三层注入（缺一不可）
+
+| 层 | 文件 | 作用 |
+|----|------|------|
+| **L1 pm2 注入** | `ecosystem.config.cjs` `start-preview` 块 `env` | pm2 fork 时直接注入到 bash 进程 |
+| **L2 air → encv 传递** | `.air-run.sh` `export ${X:-1}` 兜底 | air rebuild 重启 ./tmp/encv 时不会丢 env |
+| **L3 启动脚本** | `start-preview.sh` 不再 inline 设 | 不重复设，避免冲突；只注释说明 |
+
+**为什么不在 `start-preview.sh` 设 inline env `ENCV_DEV_PREVIEW=1 air &`**：
+- inline env 只对 `air` 进程有效，但 air rebuild 时**不一定**透传给新的 `./tmp/encv`（air 0.x 行为）
+- pm2 restart 后，ecosystem 注入的 env 是唯一稳定来源
+
+### 7.2 自检命令
+
+```bash
+# 1. service-guard 必须返 envDevPreview=true
+curl -s http://localhost:2025/api/service-guard | jq '.context.envDevPreview'
+# 期望：true
+
+# 2. servingDir 必须是 /storage/emulated/0
+curl -s http://localhost:2025/api/service-guard | jq '.context.servingDir'
+# 期望："/storage/emulated/0"
+
+# 3. mock 数据落地
+ls /storage/emulated/0/01-plain-media/ | head
+# 期望：01.mp4 02.mp3 03.png 04.pdf 05.txt ...
+```
+
+**自检失败排查表**：
+
+| 现象 | 原因 | 修复 |
+|------|------|------|
+| `envDevPreview: false` | env 没传到 encv | 检查 L1（pm2 env）+ L2（.air-run.sh） |
+| `servingDir: "/workspace"` | mobile overlay 没触发 | 同上 |
+| `servingDirExists: false` | mock 没生成 | `start-preview.sh:99-110` mkdir 兜底 |
+| air rebuild 后 env 变 false | L2 兜底缺失 | 检查 `.air-run.sh` 末尾 export |
+
+### 7.3 绝对禁止
+
+- ❌ 在 start-preview.sh 里设 `ENCV_DEV_PREVIEW=1 air &` inline env（已知不稳定）
+- ❌ 让 `./tmp/encv` 直接以 pm2 启动，绕过 air 监视
+- ❌ 移除 `.air-run.sh` 的 `export ${X:-1}` 兜底（被前人坑过：air rebuild 丢 env）
+- ❌ 在 `ecosystem.config.cjs` 启动时**不设** `ENCV_DEV_PREVIEW` / `ENCV_MOBILE`
+
+---
+
+## 六、强制自检清单
 
 每次启动 dev 服务前必须确认：
 
@@ -207,17 +257,23 @@ curl -s http://localhost:16666/__gateway/health | head -c 200
 - [ ] 启动命令是 `pm2 start ...`，**不是** `nohup`、`&`、`sleep` 阻塞
 - [ ] 启动后 `pm2 list` 看到目标 app `online`
 - [ ] `curl :16666/` 返回 200（fallthrough 到 vite）
+- [ ] **`curl :2025/api/service-guard | jq .context.envDevPreview` = true**（mobile overlay 生效）
+- [ ] **`curl :2025/api/service-guard | jq .context.servingDir` = /storage/emulated/0**
 - [ ] `pm2 save` 持久化（sandbox 会话重置可 `pm2 resurrect`）
 
 ---
 
-## 六、相关 spec / 文件
+## 七、相关 spec / 文件
 
 | 文件 | 作用 |
 |------|------|
 | [/workspace/ecosystem.config.cjs](file:///workspace/ecosystem.config.cjs) | pm2 完整配置（4 主 + 3 辅） |
+| [/workspace/.air-run.sh](file:///workspace/.air-run.sh) | air rebuild 时 env 兜底 export |
 | [/workspace/scripts/previews.sh](file:///workspace/scripts/previews.sh) | pm2 启停包装（start/stop/restart/status/logs/monit/kill） |
 | [/workspace/scripts/openpreview-stub.js](file:///workspace/scripts/openpreview-stub.js) | OpenPreview web_server command_id 源 |
 | [/workspace/.preview-helper.js](file:///workspace/.preview-helper.js) | 早期占位（被 openpreview-stub 取代） |
+| [/workspace/app/encv-mobile/scripts/start-preview.sh](file:///workspace/app/encv-mobile/scripts/start-preview.sh) | 主预览脚本（mock 生成 + air 启动） |
 | [/workspace/app/preview-gateway/README.md](file:///workspace/app/preview-gateway/README.md) | 网关 + 路由 + 健康检查文档 |
 | [/workspace/.trae/specs/unify-sandbox-preview-port/spec.md](file:///workspace/.trae/specs/unify-sandbox-preview-port/spec.md) | 端口决策 D1-D9 原始 spec |
+| [/workspace/.trae/documents/plan-fix-sandbox-preview-env-injection.md](file:///workspace/.trae/documents/plan-fix-sandbox-preview-env-injection.md) | 本次 env 注入修复 plan（2026-06-05） |
+| [/workspace/internal/config/config.go](file:///workspace/internal/config/config.go) | `ApplyMobileOverlay` 触发条件：`ENCV_MOBILE=1 \|\| ENCV_DEV_PREVIEW=1`（L292-294） |
