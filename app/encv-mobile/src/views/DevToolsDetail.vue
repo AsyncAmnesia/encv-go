@@ -245,13 +245,17 @@ function openPreviewOpenList() {
 // 与现有 /openlist-ui/ 入口的区别：openlist-ui 是 dev 沙箱代理，plugin-openlist
 // 是 Capacitor OpenList plugin 自身的管理 UI（独立前端，不在 encv-mobile 内）
 //
-// 为什么用 window.open(_, '_system') 而不是 window.location.assign：
-// - 跟 LocalOpenListStatusCard.openWebUi（跳 :5244）保持完全一致
-// - '_system' target 由 Capacitor Browser 拦截：native 端走系统浏览器，
-//   web 端走新标签页。当前 encv-mobile SPA / OpenPreview 会话不丢
-// - window.location.assign 会触发整页加载，破坏 OpenPreview 会话锚定的 :5173
+// 为什么跳 /api/preview/plugin-openlist/（encv-go 后端相对路径）而不是 :5174：
+// - 独立后端协调：encv-go 后端 reverse proxy 该路径到 127.0.0.1:5174
+//   （见 internal/server/mobile_api.go handlePluginOpenlistProxyGin）
+// - 不依赖 vite：vite.config.ts 的 openlist-ui-proxy 只能代理 :5244（OpenList 真实前端），
+//   不能代理 :5174（plugin-openlist 是另一个独立 vite 进程）
+// - 不依赖 OpenPreview 会话：跳相对路径不破坏当前 OpenPreview 工具锚定的 :5173
+// - Capacitor native 端 127.0.0.1 指向设备本身，跳绝对 URL 不可达
+//   走 encv-go 后端相对路径，由后端内部处理上游转发
+// - 跟 openPreviewOpenList（/openlist-ui/）保持同一种风格：相对路径 + 整页跳转
 function openPreviewOpenListPlugin() {
-  window.open('http://127.0.0.1:5174/', '_system')
+  window.location.assign('/api/preview/plugin-openlist/')
 }
 
 function handleVConsoleToggle(event: CustomEvent) {

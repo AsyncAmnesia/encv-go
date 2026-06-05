@@ -8,6 +8,8 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -349,6 +351,61 @@ func (s *Server) handleServiceGuardGin(c *gin.Context) {
 func fileExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
+}
+
+// pluginOpenlistUpstream plugin-openlist 独立 Vite dev server
+// （由 pm2 app `plugin-openlist-vite` 拉起，独立于 encv-mobile vite :5173）
+const pluginOpenlistUpstream = "http://127.0.0.1:5174"
+
+// handlePluginOpenlistProxyGin 反向代理 /api/preview/plugin-openlist/* → :5174/*
+//
+// 为什么需要：
+//   - plugin-openlist 是独立 Capacitor 插件的 Vite dev server（:5174），
+//     跟 encv-mobile 主 vite (5173) 没有父子关系。
+//   - 前端点击 "预览 OpenList Plugin" 不能直接跳 :5174（破坏 OpenPreview 会话，
+//     且 Capacitor native 端 127.0.0.1 指向设备本身，不通）。
+//   - vite.config.ts 的 openlist-ui-proxy 只能代理 :5244（OpenList 真实前端），
+//     不能代理 :5174（plugin-openlist 是另一个独立 vite 进程）。
+//
+// 方案：encv-go 后端（独立后端）做 reverse proxy 协调，
+// 前端跳相对路径 /api/preview/plugin-openlist/ → encv-go → :5174。
+//
+// 完全不依赖 vite，符合"独立后端协调"原则。
+func (s *Server) handlePluginOpenlistProxyGin(c *gin.Context) {
+	target, err := url.Parse(pluginOpenlistUpstream)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid upstream: " + err.Error()})
+		return
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	// Director 改写 host + path，透传 header
+	originalDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		originalDirector(req)
+		req.Host = target.Host
+		// req.URL.Path 已经被 ReverseProxy 设为原始请求路径，
+		// 我们要 strip 掉 /api/preview/plugin-openlist 前缀
+		req.URL.Path = strings.TrimPrefix(req.URL.Path, "/api/preview/plugin-openlist")
+		if req.URL.Path == "" {
+			req.URL.Path = "/"
+		}
+	}
+	// 自定义 ErrorHandler：upstream 不可达时返回明确错误（不要 502 难诊断）
+	proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, err error) {
+		slog.Error("[plugin-openlist proxy] upstream error", "err", err, "url", req.URL.String())
+		rw.Header().Set("Content-Type", "text/html; charset=utf-8")
+		rw.WriteHeader(http.StatusBadGateway)
+		fmt.Fprintf(rw, `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>plugin-openlist 未运行</title></head>
+<body style="font-family:system-ui;padding:24px;max-width:560px;margin:auto">
+<h2>plugin-openlist dev server 未运行</h2>
+<p>upstream: %s</p>
+<p>err: %s</p>
+<p>启动方式（pm2 统一管理）：<code>npx pm2 start ecosystem.config.cjs --only plugin-openlist-vite</code></p>
+<p>或直接：<code>cd app/encv-mobile/plugin-openlist/web && pnpm dev</code></p>
+</body></html>`, pluginOpenlistUpstream, err.Error())
+	}
+	proxy.ServeHTTP(c.Writer, c.Request)
 }
 
 func (s *Server) handleReadFileContentGin(c *gin.Context) {

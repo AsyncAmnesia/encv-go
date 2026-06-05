@@ -261,6 +261,12 @@ func (s *Server) Start(version string) (string, error) {
 	r.POST("/api/logs", s.handleAPILogsGin)
 	r.GET("/ws", gin.WrapF(s.handleWebSocket))
 
+	// plugin-openlist 独立 vite dev server (:5174) 反向代理
+	// 路径：/api/preview/plugin-openlist/* → http://127.0.0.1:5174/*
+	// 独立后端协调（不走 vite），前端点击跳相对路径即可
+	r.Any("/api/preview/plugin-openlist/*filepath", s.handlePluginOpenlistProxyGin)
+	r.Any("/api/preview/plugin-openlist", s.handlePluginOpenlistProxyGin)
+
 	// Admin 路由
 	r.GET(routes.Admin, func(c *gin.Context) {
 		c.Redirect(http.StatusFound, routes.FSProxy+"/")
