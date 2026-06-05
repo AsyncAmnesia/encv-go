@@ -15,7 +15,7 @@
               slot="icon-only"
             />
           </ion-button>
-          <ion-button @click="openExternal" v-if="state === 'connected'">
+          <ion-button @click="openExternal" v-if="!isSandbox && state === 'connected'">
             <ion-icon :icon="openOutline" slot="icon-only" />
           </ion-button>
         </ion-buttons>
@@ -73,14 +73,14 @@
         <div v-if="state === 'probing'" class="state-card state-probing">
           <ion-spinner name="crescent" class="state-spinner" />
           <p class="state-title">正在连接 OpenList 后端…</p>
-          <p class="state-hint">127.0.0.1:{{ port || 5244 }}</p>
+          <p class="state-hint">127.0.0.1:5244（{{ isSandbox ? 'Vite proxy' : 'localhost' }}）</p>
         </div>
 
         <!-- 错误：连接失败/502/404 -->
         <div v-else-if="state === 'error'" class="state-card state-error">
           <ion-icon :icon="cloudOfflineOutline" class="state-icon" />
           <p class="state-title">OpenList 后端未运行</p>
-          <p class="state-hint">{{ lastError || '后端不可达（127.0.0.1:5244 无响应）' }}</p>
+          <p class="state-hint">{{ lastError || '后端不可达（连接被拒绝或 502）' }}</p>
 
           <div class="state-command-block">
             <p class="state-hint-small">在另一个终端启动 OpenList 后端：</p>
@@ -140,8 +140,8 @@
       </div>
     </ion-content>
 
-    <!-- 调试面板触发按钮（plugin 管理 UI 永远可见，便于开发调试）-->
-    <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+    <!-- 调试面板触发按钮（右下角悬浮，dev 模式可见）-->
+    <ion-fab v-if="isSandbox" vertical="bottom" horizontal="end" slot="fixed">
       <ion-fab-button size="small" @click="debugOpen = !debugOpen">
         <ion-icon :icon="bugOutline" />
       </ion-fab-button>
@@ -150,7 +150,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   IonPage,
@@ -204,13 +204,18 @@ const HEALTH_POLL_INTERVAL_MS = 10000
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 /**
- * iframe URL：与 prod 模式对齐——OpenList 跑在原始环境 /，直访 127.0.0.1:5244。
- * 撤销 /openlist-spa/ subpath 路由改造（subpath 模式不可靠）。
- * CORS：OpenList fork 默认 AllowOrigins: ["*"]，跨域 fetch 无障碍。
+ * 沙箱 dev / 真机 prod 区分
+ *  - dev:   直访 127.0.0.1:5244（同源策略对 127.0.0.1 不严格，CORS=*）
+ *  - prod:  直连 127.0.0.1:5244（同设备，OpenList 与 Capacitor 同进程域）
  */
-const iframeUrl = computed(() =>
-  `http://127.0.0.1:${port.value || 5244}/#/login`,
-)
+const isSandbox = computed(() => import.meta.env.DEV)
+
+const iframeUrl = computed(() => {
+  const hash = '#/login'
+  // 撤销 /openlist-spa/ subpath 路由改造（subpath 模式不可靠），
+  // dev/prod 都直访 :5244（与 prod 部署对齐，OpenList 跑在原始环境 /）
+  return `http://127.0.0.1:${port.value || 5244}/${hash}`
+})
 
 const stateText = computed(() => {
   switch (state.value) {
@@ -263,9 +268,13 @@ function debug(level: DebugEntry['level'], msg: string, data?: any) {
 
 onMounted(async () => {
   port.value = OpenListNative.getPort()
-  debug('info', 'onMounted', { port: port.value, iframeUrl: iframeUrl.value })
-  // 撤销 isSandbox 分支：dev 与 prod 都直访 127.0.0.1:5244，统一探活路径
-  await probeBackend('initial')
+  debug('info', 'onMounted', { isSandbox: isSandbox.value, port: port.value })
+  if (isSandbox.value) {
+    await probeBackend('initial')
+  } else {
+    // 真机模式：OpenList 与 Capacitor 同设备，假设后端可达
+    state.value = 'loading'
+  }
   startHealthPolling()
 })
 
@@ -313,40 +322,27 @@ interface HealthResult {
 }
 
 async function checkHealth(): Promise<HealthResult> {
-  // 直访 OpenList 自身的 /api/public/settings 端点（CORS=*，最权威）
-  const base = `http://127.0.0.1:${port.value || 5244}`
-  const target = `${base}/api/public/settings`
-  const start = Date.now()
   try {
-    const res = await fetch(target, {
+    const res = await fetch('/__openlist-health', {
       cache: 'no-store',
-      mode: 'cors',
     })
-    const elapsed = Date.now() - start
-    return {
-      alive: res.ok,
-      upstreamStatus: res.status,
-      latency: elapsed,
-      ts: Date.now(),
-    }
+    const data = await res.json() as HealthResult
+    return data
   } catch (e: any) {
     return {
       alive: false,
       error: e?.message || String(e),
-      code: e?.cause?.code || e?.code || 'FETCH_FAILED',
+      code: 'FETCH_FAILED',
       ts: Date.now(),
     }
   }
 }
 
 /**
- * 后端可达性探测（带超时）
+ * 沙箱后端可达性探测（带超时）
  * - 成功（alive=true）→ state=loading（等 iframe @load 进一步验证）
- * - alive=false 且 error 包含 timeout → state=timeout
+ * - alive=false 且 error=timeout → state=timeout
  * - alive=false 其它 → state=error
- *
- * 撤销 /__openlist-health Vite middleware：直访 /api/public/settings，
- * 浏览器看到的请求是 127.0.0.1:5244 域，OpenList 默认 AllowOrigins=* 放行。
  */
 async function probeBackend(reason: string = 'manual') {
   state.value = 'probing'
@@ -358,25 +354,15 @@ async function probeBackend(reason: string = 'manual') {
 
   let result: HealthResult
   try {
-    // 直访 OpenList /api/public/settings（前端自带 5s 超时保险）
-    const base = `http://127.0.0.1:${port.value || 5244}`
+    // 带超时的健康检查（middleware 自带 3s 超时，但前端再加一层保险）
     const r = await Promise.race([
-      fetch(`${base}/api/public/settings`, {
-        cache: 'no-store',
-        mode: 'cors',
-        signal: controller.signal,
-      }),
+      fetch('/__openlist-health', { cache: 'no-store', signal: controller.signal }),
       new Promise<never>((_, reject) => {
         setTimeout(() => reject(new DOMException('probe timeout', 'AbortError')), PROBE_TIMEOUT_MS)
       }),
     ])
-    const upstreamStatus = (r as Response).status
+    result = await (r as Response).json() as HealthResult
     clearTimeout(timer)
-    result = {
-      alive: (r as Response).ok,
-      upstreamStatus,
-      ts: Date.now(),
-    }
   } catch (e: any) {
     clearTimeout(timer)
     if (e?.name === 'AbortError' || e?.message?.includes('timeout')) {
@@ -395,10 +381,13 @@ async function probeBackend(reason: string = 'manual') {
 
   if (result.alive) {
     state.value = 'loading'
-    logBuffer.info(`OpenList 后端已连接 (status=${result.upstreamStatus})`)
+    logBuffer.info(`OpenList 后端已连接 (${result.latency}ms, status=${result.upstreamStatus})`)
+  } else if (result.error === 'timeout') {
+    state.value = 'timeout'
+    lastError.value = `超过 ${PROBE_TIMEOUT_MS}ms 未响应`
   } else {
     state.value = 'error'
-    lastError.value = `OpenList 后端返回 ${result.upstreamStatus || '未知状态'}`
+    lastError.value = `${result.error || 'unknown'}${result.code ? ' (' + result.code + ')' : ''}`
   }
 }
 
@@ -411,7 +400,7 @@ function onIframeLoad() {
   })
 
   // 关键修复：iframe @load 不直接置 connected
-  // 原因：iframe 可能加载错误页（OpenList 后端返回 5xx、或跨域拦截）也会触发 @load
+  // 原因：iframe 可能加载 502 错误页面（来自 Vite proxy）也会触发 @load
   // 必须重新 health 校验才能确认是真 SPA 加载完成
   if (state.value === 'connected') {
     // 已经是 connected（用户在 SPA 内导航/刷新），不重复验证
@@ -429,28 +418,39 @@ async function verifyAfterIframeLoad() {
     state.value = 'connected'
     debug('info', 'iframe verified, state=connected', result)
   } else {
-    // iframe @load 触发了，但 health 不通过 → iframe 是错误页
+    // iframe @load 触发了，但 health 不通过 → iframe 是 502 错误页
     state.value = 'error'
-    lastError.value = `iframe 加载但后端不健康：${result.error || 'unknown'}`
-    debug('error', 'iframe loaded error page', result)
+    lastError.value = `iframe 加载但后端不健康：${result.error}`
+    debug('error', 'iframe loaded 502 page', result)
   }
 }
 
 function onError() {
   debug('error', 'iframe @error fired')
   logBuffer.error('iframe 加载失败')
-  state.value = 'error'
-  lastError.value = 'iframe 加载失败'
+  if (isSandbox.value) {
+    state.value = 'error'
+    lastError.value = 'iframe 加载失败'
+  }
 }
 
 // ============== 用户操作 ==============
 
 function reload() {
   retryCount.value++
-  // 撤销 isSandbox 分支：dev 与 prod 统一——重置 state，重新走 probeBackend
-  // 原因：直访 127.0.0.1:5244 后，iframe 是否能成功加载取决于后端可达性，
-  //       不能假设 prod 永远可达（端口可能冲突/进程挂掉）
-  probeBackend('manual')
+  if (isSandbox.value) {
+    probeBackend('manual')
+  } else {
+    const frame = frameRef.value
+    if (frame) {
+      state.value = 'loading'
+      const oldSrc = frame.src
+      frame.src = 'about:blank'
+      nextTick(() => {
+        frame.src = oldSrc
+      })
+    }
+  }
 }
 
 function openExternal() {
