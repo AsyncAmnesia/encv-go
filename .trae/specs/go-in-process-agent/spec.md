@@ -160,6 +160,67 @@
 
 ---
 
+### Requirement: 加解密容器插件系统适配 agent
+
+**核心原则**：加解密容器插件（encv format）通过 manifest 声明能力，agent 在启动时扫描已安装插件，把插件能力自动注册为 agent 工具。用户授权后 agent 可对加密容器进行 list / read / write / decrypt / encrypt 操作。
+
+#### Scenario: 插件 manifest 声明 tools
+
+- **WHEN** 加解密容器插件（如 `encv-enc-aes256`、`encv-enc-sm4`、`encv-enc-chacha20`）安装到 encv-mobile 插件目录
+- **THEN** 插件 manifest（`plugin.json`）包含 `tools` 字段，数组形式声明该插件暴露给 agent 的工具
+- **AND** 每个 tool 条目形如：
+  ```json
+  {
+    "name": "encv_list_files",
+    "kind": "readOnly",
+    "needConfirm": false,
+    "schema": { "type": "function", "function": { "name": "encv_list_files", "description": "列出加密容器内文件", "parameters": { ... } } },
+    "handler": "encv.ListFiles",
+    "containerTypes": ["encv-aes256", "encv-sm4"]
+  }
+  ```
+- **AND** `handler` 是插件导出的 Go 函数（agent 通过 gRPC / IPC 调插件）
+
+#### Scenario: 容器内文件操作工具集
+
+- **WHEN** 插件 manifest 注册到 agent
+- **THEN** agent 注册以下 5 类工具（每个插件可裁剪）：
+  - `encv_list_files(containerPath, prefix?)` — 列出加密容器内文件 → `readOnly` 自动执行
+  - `encv_read_file(containerPath, innerPath)` — 解密读取单个文件 → `readOnly` 自动执行
+  - `encv_write_file(containerPath, innerPath, content)` — 加密写入文件 → `fileChange` **需确认**
+  - `encv_decrypt_to_openlist(containerPath, innerPath, destPath)` — 解密到 OpenList 路径 → `fileChange` **需确认**
+  - `encv_encrypt_from_openlist(srcPath, containerPath, innerPath)` — 从 OpenList 加密入库 → `fileChange` **需确认**
+
+#### Scenario: agent 启动时自动注册插件工具
+
+- **WHEN** agent 服务启动
+- **THEN** agent 扫描 `OPENCV_PLUGIN_DIR` 目录加载所有插件 manifest
+- **AND** 对每个 `tool` 条目，调用 `registry.Register(name, schema, handlerBridge, needConfirm, kind)`
+- **AND** `handlerBridge` 是统一 adapter，agent 调用时通过 IPC 转发到对应插件
+- **AND** 工具名以 `encv_` 前缀避免与 OpenList 工具重名
+
+#### Scenario: 危险操作的 NeedConfirm 强制
+
+- **WHEN** 插件 manifest 中 `needConfirm` 字段缺失或为 false，但 tool.kind ∈ `fileChange | command`
+- **THEN** agent **强制覆盖**为 `needConfirm = true`（防止插件误配置导致破坏性操作）
+- **AND** `readOnly` 类允许保持 `needConfirm = false`
+
+#### Scenario: 插件错误隔离
+
+- **WHEN** 插件 IPC 失败（进程崩溃、超时、返回错误）
+- **THEN** agent 包装为 `ToolResultData{IsError: true, Status: "failed", Result: "{\"error\":\"plugin_unavailable\"}"}`
+- **AND** 错误消息不暴露插件内部堆栈
+- **AND** 单一插件故障不影响其他工具调用
+
+#### Scenario: 工具 schema 描述容器能力
+
+- **WHEN** LLM 收到插件工具的 schema
+- **THEN** `description` 字段用中文描述工具行为 + 容器格式要求
+- **AND** 例如 `encv_list_files` 的 description：「列出 encv 加密容器内的文件。容器路径形如 `/MyDrive/secrets.encv`。支持 AES-256/SM4/ChaCha20 三种格式。返回文件名、大小、修改时间。」
+- **AND** LLM 据此能正确推断何时调用容器工具
+
+---
+
 ### Requirement: 工具注册中心（ToolRegistry）
 
 `agent` 包 SHALL 提供线程安全的工具注册中心，让应用能注册自己的 Go 原生能力。
@@ -523,8 +584,6 @@
 ---
 
 ### Requirement: 顶层聊天视图（AgentChat.vue）
-
-`AgentChat.vue` SHALL 用 `renderTurnItems` 等价逻辑把 messages 数组转换为渲染块。
 
 #### Scenario: 渲染流程
 
