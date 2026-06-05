@@ -134,9 +134,22 @@ function openlistUiProxy(): Plugin {
           const orig = req.url || '/'
           const stripped = orig.replace(/^\/openlist-ui\/?/, '/') || '/'
 
-          // If this request resolves to index.html (root or SPA fallback),
-          // serve our pre-rewritten version instead of letting sirv serve the original.
-          if (rewrittenIndexHtml && (stripped === '/' || stripped === '/index.html')) {
+          // Decide SPA fallback vs. real file.
+          // - Path has no extension or doesn't resolve to an existing file in dist
+          //   → it's an SPA route (/, /@login, /@home, /@s/xxx, /@login?redirect=…)
+          //   → serve our pre-rewritten index.html (paths injected with /openlist-ui/ prefix)
+          // - Path resolves to a real file in dist
+          //   → let sirv serve it as-is
+          //
+          // Why the file check matters: sirv with `single: true` would otherwise
+          // fall back to the ORIGINAL (unrewritten) index.html for SPA routes,
+          // which uses absolute /assets/... paths that resolve to the wrong origin
+          // and produce a blank page (404 or wrong JS bundle).
+          const hasExt = /\.[a-z0-9]{1,5}$/i.test(stripped)
+          const candidate = path.join(OPENLIST_DIST, stripped)
+          const isRealFile = hasExt && fs.existsSync(candidate) && fs.statSync(candidate).isFile()
+
+          if (rewrittenIndexHtml && !isRealFile) {
             res.setHeader('Content-Type', 'text/html; charset=utf-8')
             res.setHeader('Content-Length', Buffer.byteLength(rewrittenIndexHtml))
             res.end(rewrittenIndexHtml)
