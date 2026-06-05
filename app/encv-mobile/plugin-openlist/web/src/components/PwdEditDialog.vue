@@ -62,14 +62,11 @@ import {
   IonItem,
   IonLabel,
   IonInput,
+  modalController,
 } from '@ionic/vue'
 
 const props = defineProps<{
   onConfirm: (password: string) => void | Promise<void>
-}>()
-
-const emit = defineEmits<{
-  (e: 'did-dismiss'): void
 }>()
 
 const password = ref('')
@@ -80,6 +77,8 @@ const canConfirm = computed(() => {
   return password.value.length >= 4 && password.value === confirmPassword.value
 })
 
+// modalController.create 加载的子组件无法 emit 关闭自己，
+// 必须调 modalController.dismiss() 才会真正 dismiss 当前 modal overlay。
 async function onConfirm() {
   if (!canConfirm.value) {
     error.value = '密码不一致或太短（至少 4 位）'
@@ -92,11 +91,11 @@ async function onConfirm() {
     error.value = `设置失败：${e?.message || e}`
     return
   }
-  emit('did-dismiss')
+  await modalController.dismiss()
 }
 
-function onDismiss() {
-  emit('did-dismiss')
+async function onDismiss() {
+  await modalController.dismiss()
 }
 </script>
 
