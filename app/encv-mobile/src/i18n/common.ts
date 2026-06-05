@@ -342,6 +342,8 @@ export default {
     'devtools.sandboxPreviewHint': 'Dev-only entries (auto-hidden in production builds)',
     'devtools.previewOpenList': 'Preview OpenList UI',
     'devtools.previewOpenListDesc': 'Jump to /openlist-ui/ via Vite middleware (openlistUiProxy), no CORS',
+    'devtools.previewOpenListLive': 'Preview OpenList (Live :5244)',
+    'devtools.previewOpenListLiveDesc': 'Open http://127.0.0.1:5244/ standalone (prod-equivalent)',
     'devtools.composePrototypes': 'Compose UI Prototypes',
     'devtools.composePrototypesHint': 'Preview Android Compose components in sandbox for UI design communication. Tap a card to navigate to the prototype.',
     'devtools.protoMpvPlayerDesc': 'MPV player main screen with video rendering area and control overlay',

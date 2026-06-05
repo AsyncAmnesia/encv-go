@@ -148,6 +148,7 @@ import {
   chevronForward, playCircleOutline, musicalNotesOutline,
   colorPaletteOutline, settingsOutline, terminal, documentText,
   cloudOutline, refreshOutline, eyeOutline,
+  globeOutline,
 } from 'ionicons/icons'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/composables/useI18n'
@@ -231,6 +232,11 @@ function handlePrototypeClick(proto: typeof prototypes[0]) {
 const isDev = import.meta.env.DEV
 function openPreviewOpenList() {
   window.location.assign('/openlist-ui/')
+}
+
+// 跳 :5244 OpenList 真实前端（与 prod 部署一致）
+function openPreviewOpenListLive() {
+  window.location.assign('http://127.0.0.1:5244/')
 }
 
 function handleVConsoleToggle(event: CustomEvent) {
