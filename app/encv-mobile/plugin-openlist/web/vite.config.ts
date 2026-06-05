@@ -255,8 +255,6 @@ function dynamicHmrHostPlugin(): Plugin {
             .replace(/__MODE__/g, JSON.stringify(mode))
             .replace(/__BASE__/g, JSON.stringify(devBase))
             .replace(/__SERVER_HOST__/g, JSON.stringify(serverHostStr))
-            .replace(/__HMR_PROTOCOL__/g, JSON.stringify(protocol))
-            .replace(/__HMR_HOSTNAME__/g, JSON.stringify(host))
             .replace(/__HMR_PORT__/g, JSON.stringify(port))
             .replace(/__HMR_DIRECT_TARGET__/g, JSON.stringify(directTarget))
             .replace(/__HMR_BASE__/g, JSON.stringify(base))
@@ -266,6 +264,17 @@ function dynamicHmrHostPlugin(): Plugin {
             .replace(/__WS_TOKEN__/g, JSON.stringify(wsToken ?? ''))
             .replace(/__SERVER_FORWARD_CONSOLE__/g, 'false')
             .replace(/__BUNDLED_DEV__/g, 'false')
+            // ⚠️ CRITICAL: HMR hostname 必须注入空字符串，让 vite 8 fallback 到
+            //   `__HMR_HOSTNAME__ || importMetaUrl.hostname` 的 importMetaUrl 分支。
+            //   沙箱 trae 域名 hash 部分（run-agent-{32hex}...）每次 sandbox 重启都变，
+            //   我们检测到的 host 在 sandbox 重启后立刻作废，注入新值也无意义。
+            //   改用 importMetaUrl = import.meta.url 的 host（当前页面的 origin），
+            //   浏览器会永远用正确的当前 sandbox 域名连 HMR WS。
+            .replace(/__HMR_HOSTNAME__/g, '""')
+            // 协议同理：注入空字符串 → vite 8 fallback 到 importMetaUrl.protocol
+            //   importMetaUrl.protocol === "https:" ? "wss" : "ws"
+            //   用户访问 https://... → "wss"，http://... → "ws"，永远正确
+            .replace(/__HMR_PROTOCOL__/g, '""')
             // ⚠️ __PURE__ 是 rollup tree-shaking 注解（/* @__PURE__ */），
             //   在 vite 8 client.mjs 中只以这种合法 JS 注释形式出现。
             //   浏览器能正常解析 /* @__PURE__ */，无需替换。
