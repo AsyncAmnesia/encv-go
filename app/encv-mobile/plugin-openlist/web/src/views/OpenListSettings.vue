@@ -3,7 +3,15 @@
     <ion-header>
       <ion-toolbar>
         <ion-buttons slot="start">
-          <ion-back-button default-href="#/home" />
+          <!--
+            用 ion-button + @click router.push 替代 ion-back-button
+            原因：ion-back-button 在 vue-router 4 hash 模式下 default-href 行为不可靠
+            （Ionic 8 ion-back-button 内部可能走 history.back()，popstate 不触发 hashchange）
+            router.push('/home') 显式 hash 跳，hashchange 事件一定触发
+          -->
+          <ion-button @click="goBackToHome" title="返回 home">
+            <ion-icon slot="icon-only" :icon="chevronBackOutline" />
+          </ion-button>
         </ion-buttons>
         <ion-title>设置</ion-title>
       </ion-toolbar>
@@ -28,6 +36,17 @@
           <br />
           所有数据（密码、Config、版本）都通过 <code>http://127.0.0.1:5244/api/*</code> 直访 backend（撤销 /openlist-spa/ 路由改造）。
         </div>
+        <details class="preview-debug">
+          <summary>🔧 路由诊断（点击展开）</summary>
+          <div class="debug-section">
+            <div><strong>location.hash</strong>: <code>{{ currentHash }}</code></div>
+            <div><strong>已注册 routes</strong>: <code>{{ registeredRoutes.join(', ') }}</code></div>
+            <div><strong>logBuffer 最近 5 条</strong>:</div>
+            <ul class="debug-log">
+              <li v-for="(line, i) in recentLogs" :key="i" v-html="line"></li>
+            </ul>
+          </div>
+        </details>
       </div>
 
       <ion-list>
@@ -114,7 +133,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   IonPage,
@@ -129,8 +148,8 @@ import {
   IonLabel,
   IonIcon,
 } from '@ionic/vue'
-import { globeOutline, homeOutline, arrowBackOutline } from 'ionicons/icons'
-import { OpenListNative } from '@/plugins/openlist-native'
+import { globeOutline, homeOutline, arrowBackOutline, chevronBackOutline } from 'ionicons/icons'
+import { OpenListNative, logBuffer } from '@/plugins/openlist-native'
 
 const router = useRouter()
 
@@ -144,6 +163,13 @@ const loadingVersion = ref(false)
 const realVersion = ref('')
 const versionError = ref('')
 const isBackendReachable = ref(false)
+
+// logBuffer 状态（用于 debug section）
+const recentLogs = ref<string[]>([])
+const currentHash = ref(window.location.hash || '(empty)')
+const registeredRoutes = ref<string[]>([])
+
+let hashPollTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
   // **核心检测**：dev preview 模式 = window.OpenListNative 不存在
@@ -159,8 +185,26 @@ onMounted(async () => {
   if (isDevPreview.value) {
     await fetchRealVersion()
     await probeBackendHealth()
+    // 启动路由诊断轮询
+    registeredRoutes.value = router.getRoutes().map(r => r.path)
+    hashPollTimer = setInterval(() => {
+      currentHash.value = window.location.hash || '(empty)'
+      // 同步 logBuffer 输出
+      recentLogs.value = logBuffer.getAll().slice(-5).map(formatLogLine)
+    }, 1000)
   }
 })
+
+onUnmounted(() => {
+  if (hashPollTimer) clearInterval(hashPollTimer)
+})
+
+function formatLogLine(entry: any): string {
+  const level = entry?.level?.toUpperCase() || 'INFO'
+  const msg = entry?.message || ''
+  const color = level === 'ERROR' ? '#ef4444' : level === 'WARN' ? '#f59e0b' : '#22c55e'
+  return `<span style="color:${color}">[${level}]</span> ${msg}`
+}
 
 /**
  * 从 :5244 /api/public/settings 拿真版本（无需 auth）
@@ -223,8 +267,16 @@ function goHome() {
   router.push('/home')
 }
 
+/**
+ * toolbar 左上角返回按钮：显式 router.push 避免 ion-back-button + default-href 在
+ * vue-router 4 hash 模式下行为不可靠。
+ */
+function goBackToHome() {
+  router.push('/home')
+}
+
 function goBackToEncvMain() {
-  // 跳到 BackToMain 视图（plugin-openlist 内嵌全屏 iframe 加载 encv-mobile :5173）
+  // 跳到 BackToMain 视图（plugin-openlist 内嵌全屏 iframe 加载 encv-mobile :5173）。
   // 为什么不直接 window.location.href 跳 :5173：
   //   - Trae 沙箱 OpenPreview 单 port 限制 (trae_web_sandbox_network.md §8.4)：
   //     OpenPreview 注册了 :5174，16000 入口只能代理 :5174，:5173 在沙箱内对外不可达
@@ -234,7 +286,16 @@ function goBackToEncvMain() {
   // 为什么不调 OpenPreview 切换到 :5173：
   //   - OpenPreview 是 AI agent 工具，前端无法调用
   //   - 即使能调用，多次注册会 last-write-wins 覆盖
-  router.push('/back-to-main')
+  logBuffer.info('[OpenListSettings] goBackToEncvMain → /back-to-main')
+  // 检查路由是否注册（如果 plugins/router 还没初始化好，fallback 跳绝对 URL）
+  const hasRoute = router.getRoutes().some(r => r.path === '/back-to-main')
+  if (hasRoute) {
+    router.push('/back-to-main')
+  } else {
+    // Fallback：直接跳 :5173（直连模式 OK；沙箱模式会失败但允许尝试）
+    logBuffer.warn('[OpenListSettings] /back-to-main 未注册，fallback 直接跳 :5173')
+    window.location.assign('http://127.0.0.1:5173/tabs/remote')
+  }
 }
 </script>
 
