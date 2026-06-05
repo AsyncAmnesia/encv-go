@@ -52,6 +52,7 @@ const GATEWAY_SCRIPT  = path.join(GATEWAY_DIR, 'dist', 'server.js');
 //   - 正确做法：script 写 vite 的 JS 入口，interpreter 显式指定 node。
 const VITE_BIN_RELPATH = 'node_modules/vite/bin/vite.js';
 const VITE_BIN_PLUGIN  = path.join(PLUGIN_DIR, VITE_BIN_RELPATH);
+const VITE_BIN_MAIN    = path.join(MOBILE_DIR, VITE_BIN_RELPATH);
 
 // 检查 start-preview.sh 存在性（缺失时给出明确报错）
 if (!fs.existsSync(PREVIEW_SCRIPT)) {
@@ -175,7 +176,9 @@ module.exports = {
       error_file: '/tmp/pm2-openlist.err.log',
     },
 
-    // ── ③ plugin-openlist Vite (plugin 管理 UI) ─────────────────────
+    // ── ④ plugin-openlist-vite (plugin 管理 UI, :5174) ────────────────
+    //   实际是 4 号上游（preview-gateway → :16666/openlist-ui/），
+    //   头部列表 ④ 与下方 apps 顺序保持一致。
     {
       name: 'plugin-openlist-vite',
       script: VITE_BIN_PLUGIN,
@@ -197,6 +200,27 @@ module.exports = {
       max_restarts: 10,
       out_file: '/tmp/pm2-plugin-openlist-vite.log',
       error_file: '/tmp/pm2-plugin-openlist-vite.err.log',
+    },
+
+    // ── ⑤ preview-helper (占位 HTTP server, :15001) ─────────────────
+    //   唯一作用：让 OpenPreview 工具有一个 web_server 类型 command 可注册
+    //   （它要求 command_id 来自 toolcall history 中的 web_server 命令）。
+    //   真实预览走 :16666 preview-gateway，本服务纯返回 200 OK。
+    //   不阻塞 sandbox 会话：pm2 fork 模式，daemon 化。
+    //   持久化：pm2 save → /root/.pm2/dump.pm2；会话重置后 pm2 resurrect 自动恢复。
+    {
+      name: 'preview-helper',
+      script: path.join(REPO_ROOT, '.preview-helper.js'),
+      interpreter: 'node',
+      cwd: REPO_ROOT,
+      env: { PATH: process.env.PATH, PORT: '15002' },
+      max_memory_restart: '64M',
+      listen_timeout: 5000,
+      kill_timeout: 2000,
+      autorestart: true,
+      max_restarts: 10,
+      out_file: '/tmp/pm2-preview-helper.log',
+      error_file: '/tmp/pm2-preview-helper.err.log',
     },
   ],
 

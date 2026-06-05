@@ -179,6 +179,12 @@ function dynamicHmrHostPlugin(): Plugin {
             //   在 vite 8 client.mjs 中只以这种合法 JS 注释形式出现。
             //   浏览器能正常解析 /* @__PURE__ */，无需替换。
             //   切勿替换为 /*#__PURE__*/ —— 会与 @ 前缀拼成 /* @/*#__PURE__*/ */ 这种非法嵌套注释。
+            // ⚠️ client.mjs 第 1 行有 `import "@vite/env"` —— vite 的虚拟模块
+            //   标识符，正常 transform 流程会被 resolve 成 /@vite/env 真实 URL。
+            //   我们 middleware 直返绕过了 transform 流程，必须手动把裸标识符
+            //   替换为绝对 URL，否则浏览器报：
+            //     Uncaught TypeError: Failed to resolve module specifier "@vite/env"
+            .replace(/import\s+["']@vite\/env["'];?/g, 'import "/@vite/env";')
 
           res.setHeader('Content-Type', 'text/javascript')
           res.setHeader('Cache-Control', 'no-cache')
