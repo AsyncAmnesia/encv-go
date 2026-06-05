@@ -5,9 +5,11 @@
 #   2. 后端必须用 air 监视重载（禁止 go build / 手动 go run）
 #   3. 不修改 config.user.json —— servingDir 永远为 /storage/emulated/0
 #   4. 严禁任何符号链接 —— mock-data 真实目录在 /storage/emulated/0
-#   5. 自动检测端口占用：5173 被占时自动回退到 5174
+#   5. Vite 强制监听 :8100（D9: vite 是纯净 SPA dev server，不做反向代理；
+#                     统一由 preview-gateway :16666 接管跨上游转发）
 #   6. 脚本必须保持前台运行（可被 pm2/nohup 包装，便于 OpenPreview 激活）
-#   7. 脚本退出时优雅停止所有子进程（仅主预览 :2025/:5173，不动 :5174）
+#   7. 脚本退出时优雅停止所有子进程（仅主预览 :2025/:8100，不动 :5174 plugin-openlist-web
+#                     和 :16666 preview-gateway —— 它们由各自 pm2 app 管理）
 set -euo pipefail
 shopt -s lastpipe
 
@@ -15,7 +17,7 @@ shopt -s lastpipe
 SUBPIDS=()
 cleanup() {
   echo ""
-  echo "==> 收到退出信号，停止主预览子进程 (:2025 / :5173)..."
+  echo "==> 收到退出信号，停止主预览子进程 (:2025 / :8100)..."
   for pid in "${SUBPIDS[@]}"; do
     if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
       kill "${pid}" 2>/dev/null || true
@@ -25,8 +27,8 @@ cleanup() {
   # 强制清理（air 还会启动 ./tmp/encv 子进程）
   pkill -P $$ 2>/dev/null || true
   pkill -x air 2>/dev/null || true
-  # 精确杀 5173 端口的 vite（保留 5174 plugin-openlist-vite）
-  for pid in $(lsof -ti :5173 2>/dev/null || true); do
+  # 精确杀 8100 端口的 vite（保留 5174 plugin-openlist-vite 和 16666 preview-gateway）
+  for pid in $(lsof -ti :8100 2>/dev/null || true); do
     kill "${pid}" 2>/dev/null || true
   done
   # 兜底：杀 2025 端口的 encv 主进程
@@ -47,31 +49,27 @@ export PATH="/root/.local/share/mise/installs/go/1.25.1/bin:${PATH}"
 BACKEND_PORT="${ENCV_MOBILE_PORT:-2025}"
 MOCK_DIR="${ENCV_MOCK_ROOT:-/storage/emulated/0}"
 
-# 默认使用 5173（Vite 标准端口），被占用时自动回退到 5174
-_VITE_PORT_DEFAULT="${ENCV_VITE_PORT:-5174}"
-if lsof -i :5173 >/dev/null 2>&1; then
-  echo "    :5173 已被占用，使用 :5174"
-  VITE_PORT="${_VITE_PORT_DEFAULT}"
-else
-  VITE_PORT="5173"
-fi
+# D9: Vite 强制监听 :8100（统一入口由 preview-gateway :16666 接管，vite 不再做反向代理）
+# 不再做 :5173 占用检测 —— 5173 历史上是 Vite 默认端口，但已经被 preview-gateway 替代
+VITE_PORT="${ENCV_VITE_PORT:-8100}"
 
 cd "${REPO_ROOT}"
 
 step() { echo ""; echo "==> $*"; }
 
 # ---------- Step 0: 停止残留 ENCV 进程 ----------
-# ⚠️ 必须精确到「主预览」端口 (2025/5173) — 不能误杀 plugin-openlist-vite (:5174)
-step "0/6 停止残留 ENCV 主预览进程 (:2025 / :5173)"
+# ⚠️ 必须精确到「主预览」端口 (2025/8100) — 不能误杀 plugin-openlist-vite (:5174)
+#    和 preview-gateway (:16666)
+step "0/6 停止残留 ENCV 主预览进程 (:2025 / :8100)"
 pkill -x air 2>/dev/null && echo "    killed air" || true
 pkill -f '^./tmp/encv' 2>/dev/null && echo "    killed ./tmp/encv" || true
 pkill -f '/tmp/encv start' 2>/dev/null && echo "    killed /tmp/encv start" || true
 
-# 精确杀 5173 端口的 vite（保留 5174 plugin-openlist-vite）
-VITE_PIDS="$(lsof -ti :5173 2>/dev/null || true)"
+# 精确杀 8100 端口的 vite（保留 5174 plugin-openlist-vite 和 16666 preview-gateway）
+VITE_PIDS="$(lsof -ti :8100 2>/dev/null || true)"
 if [[ -n "${VITE_PIDS}" ]]; then
   for pid in ${VITE_PIDS}; do
-    kill "${pid}" 2>/dev/null && echo "    killed vite-on-:5173 pid=${pid}" || true
+    kill "${pid}" 2>/dev/null && echo "    killed vite-on-:8100 pid=${pid}" || true
   done
 fi
 
@@ -179,15 +177,27 @@ cat <<EOF
 ========================================
 ✅ ENCV 预览已启动
 
-  端口分配：
-     :${VITE_PORT}  = Vite dev server（前端，用户直接访问）
-     :${BACKEND_PORT} = Go Backend（air 监视重载）
+  端口分配（单端口对外，preview-gateway 统一代理）:
+     :8100  = Vite dev server（前端，纯净 SPA，不做反向代理）
+     :2025  = Go Backend（air 监视重载）
+     :16666 = preview-gateway（统一入口，4 上游代理）
+     :5174  = plugin-openlist-web（Vite，被 :16666/openlist-ui 代理）
+     :16000 = agent-tool-host（OpenPreview 工具用的外网入口）
 
-  用户访问地址（必须先 OpenPreview 激活）：
-     http://localhost:${VITE_PORT}/
+  跨上游路由（由 :16666 接管）:
+     /             → :8100  encv-mobile
+     /openlist-ui  → :5174  plugin-openlist-web
+     /openlist/    → :2025  encv-go
+     /api          → :2025  encv-go
+     /p/           → :2025  encv-go
+     /play         → :2025  encv-go
 
-  ⚠️ 重要：必须使用 OpenPreview 工具激活预览才能外部访问
-     OpenPreview(command_id="<本脚本 command_id>", preview_url="http://localhost:${VITE_PORT}/")
+  用户访问地址（必须先 OpenPreview 激活 :16666 触发自动注册）:
+     http://localhost:16666/   ← 统一入口（推荐）
+     http://localhost:8100/    ← 直连 vite（仅排查用，跨上游路由不可用）
+
+  ⚠️ 重要：必须用 OpenPreview 激活 :16666 才能外部访问
+     OpenPreview(command_id="<本脚本 command_id>", preview_url="http://localhost:16666/")
 
   配置文件:    ${REPO_ROOT}/config.user.json （未修改）
   servingDir:  ${MOCK_DIR}  （设计预期路径，脚本自建）
@@ -195,7 +205,7 @@ cat <<EOF
   停止:  Ctrl+C  （脚本会自动清理所有子进程）
 
   后续上传测试文件（hyYGPCwJPQ3+xrdAvfnn2.bin）：
-    - 浏览器访问 http://localhost:${VITE_PORT}/  （前提：OpenPreview 已激活）
+    - 浏览器访问 http://localhost:16666/  （前提：OpenPreview 已激活）
     - Files 页面 → Upload FAB → 选择文件
 ========================================
 EOF

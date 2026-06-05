@@ -4,8 +4,8 @@
 // -----------------------------------------------------------------------------
 // pm2 配置：统一管理 沙箱 dev 服务（统一预览网关 + 主预览 + 辅助服务）
 //
-//   ① preview-gateway     (统一预览网关, :16000 — 对外唯一端口)
-//   ② start-preview       (主预览 — start-preview.sh, :2025 + :5173)
+//   ① preview-gateway     (统一预览网关, :16666 — 对外唯一端口)
+//   ② start-preview       (主预览 — start-preview.sh, :2025 + :8100)
 //   ③ openlist            (Go OpenList 真实 fork, :5244)
 //   ④ plugin-openlist-vite(Vite plugin 管理 UI, :5174)
 //
@@ -19,6 +19,18 @@
 //
 // 包装脚本：scripts/previews.sh
 //   bash scripts/previews.sh start|stop|restart|status|logs|monit
+//
+// 端口决策（spec/unify-sandbox-preview-port §D1-D9）:
+//   :16666 = preview-gateway 唯一对外端口（用户决策 "好记"）
+//            agent-tool-host 内部 preview-proxy 会在首次
+//            agent-browser navigate :16666 时自动注册该端口
+//   :8100  = encv-mobile Vite（纯净 SPA，不再做反向代理胶水）
+//   :5174  = plugin-openlist-web Vite（被 :16666/openlist-ui 代理）
+//   :2025  = encv-go（被 :16666/api + /openlist/ + /p/ + /play 代理）
+//   :5244  = OpenList fork（被 encv-go :2025 内部代理）
+//
+//   ⚠️ 历史 :16000 = OpenPreview 工具用的外网入口（agent-tool-host），
+//      仅用于把 :16666 转给外网用户；preview-gateway 自身不再监听 :16000。
 // =============================================================================
 
 const path = require('path');
@@ -56,10 +68,13 @@ if (!fs.existsSync(GATEWAY_SCRIPT)) {
 
 module.exports = {
   apps: [
-    // ── ① preview-gateway (统一预览网关, :16000) ────────────────────
-    //   唯一对外端口。浏览器、agent-browser、外网用户都走 :16000。
-    //   网关内部分发到 :5173 / :5174 / :2025 / :5244 四个 upstream。
-    //   health 端点：http://localhost:16000/__gateway/health
+    // ── ① preview-gateway (统一预览网关, :16666) ────────────────────
+    //   唯一对外端口。浏览器、agent-browser、外网用户都走 :16666。
+    //   网关内部分发到 :8100 / :5174 / :2025 / :5244 四个 upstream。
+    //   health 端点：http://localhost:16666/__gateway/health
+    //
+    //   启动顺序：必须在 vite (:8100) 起来之后再 restart，否则
+    //   第一次 health check 会短暂失败（不影响代理本身的可用性）
     {
       name: 'preview-gateway',
       script: GATEWAY_SCRIPT,
@@ -67,7 +82,7 @@ module.exports = {
       cwd: GATEWAY_DIR,
       env: {
         PATH: process.env.PATH,
-        PORT: '16000',
+        PORT: '16666',
         HOST: '0.0.0.0',
       },
       // 网关内存占用极小（纯转发）

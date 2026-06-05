@@ -4,10 +4,16 @@
  *
  * Single-port reverse proxy for sandbox preview.
  *
- *   外网/浏览器 → :16000 → 4 upstream
+ *   外网/浏览器 → :16000 (OpenPreview) → :16666 (gateway) → 4 upstream
+ *   本地 dev    → :16666 (gateway) → 4 upstream
+ *
+ * D1 (用户决策："好记"): 监听 :16666
+ *   - 避开 :16000 (agent-tool-host 占用)
+ *   - 避开 :5173 (vite 老端口，由 preview-proxy 旧 default 占用)
+ *   - 避开 :8100 (vite 新端口，本 spec 改的)
  *
  * Routes (see spec §3.1):
- *   /             → encv-mobile (Vite, :5173)         — default fallthrough
+ *   /             → encv-mobile (Vite, :8100)         — default fallthrough
  *   /openlist-ui/ → plugin-openlist-web (Vite, :5174)
  *   /openlist/    → encv-go (Go, :2025)               — proxies to OpenList (:5244)
  *   /api          → encv-go (Go, :2025)
@@ -16,7 +22,7 @@
  *   /__gateway/health → gateway itself
  *
  * WebSocket:
- *   Upgrade on /             → ws://:5173 (main app HMR)
+ *   Upgrade on /             → ws://:8100 (main app HMR)
  *   Upgrade on /openlist-ui/ → ws://:5174 (plugin HMR)
  */
 
@@ -32,7 +38,7 @@ import type { Duplex } from 'node:stream'
 // Config
 // =============================================================================
 
-const PORT = Number(process.env.PORT ?? 16000)
+const PORT = Number(process.env.PORT ?? 16666)
 const HOST = process.env.HOST ?? '0.0.0.0'
 const LOG_PREFIX = '[gateway]'
 
@@ -89,10 +95,10 @@ const UPSTREAMS: Upstream[] = [
 
 const DEFAULT_UPSTREAM: Upstream = {
   match: '/',
-  target: 'http://127.0.0.1:5173',
-  wsTarget: 'ws://127.0.0.1:5173',
+  target: 'http://127.0.0.1:8100',
+  wsTarget: 'ws://127.0.0.1:8100',
   name: 'encv-mobile',
-  hint: 'Check pm2 status for start-preview (encv-mobile vite :5173)',
+  hint: 'Check pm2 status for start-preview (encv-mobile vite :8100)',
 }
 
 const HEALTH_TIMEOUT_MS = 3000
@@ -325,12 +331,13 @@ async function handleHealth(_req: IncomingMessage, res: ServerResponse): Promise
 // =============================================================================
 
 server.listen(PORT, HOST, () => {
-  log(`listening on http://${HOST}:${PORT}`)
+  log(`listening on http://${HOST}:${PORT} (D1: 好记，16666)`)
   log(`routes:`)
   for (const up of [DEFAULT_UPSTREAM, ...UPSTREAMS]) {
     log(`  ${up.match.padEnd(20)} → ${up.target}  (${up.name})`)
   }
   log(`health:  http://${HOST}:${PORT}/__gateway/health`)
+  log(`external: :16000 (OpenPreview) → :16666 (this gateway) after agent-browser navigate :16666 triggers auto-register`)
 })
 
 // Graceful shutdown (pm2 sends SIGINT)

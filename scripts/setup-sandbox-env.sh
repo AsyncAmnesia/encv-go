@@ -313,12 +313,16 @@ cat <<EOF
 
 下一步（手动拉起服务，本脚本不负责）：
   bash scripts/previews.sh start
-                → preview-gateway   on :16000  (统一对外预览入口)
-                → start-preview     on :2025 + :5173  (encv-go + Vite encv-mobile)
+                → preview-gateway   on :16666  (统一对外预览入口)
+                → start-preview     on :2025 + :8100  (encv-go + Vite encv-mobile)
                 → openlist          on :5244  (OpenList Go fork)
                 → plugin-openlist-vite on :5174  (Vite plugin 管理 UI)
 
-  浏览器访问：http://localhost:16000/
+  浏览器访问：http://localhost:16666/
+
+  ⚠️ 首次访问 :16666 时，agent-tool-host 内部的 preview-proxy 会自动
+     把 :16666 注册到 OpenPreview 外网白名单，之后才能用 OpenPreview 工具
+     激活外网预览（agent-browser navigate :16666 触发自动注册）。
 
 ========================================
 EOF
