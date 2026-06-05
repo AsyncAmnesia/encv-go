@@ -135,8 +135,17 @@ describe('renderTurnItems', () => {
       a(3, 'done', { tool_calls: [tc('a1', 'command', 'pending', true)] }),
     ]
     const out = renderTurnItems(messages, 'idle')
-    // u-0 user → c-1 group → u-2 user → a-3 approval
-    expect(out.map((o) => o.type)).toEqual(['user', 'operationGroup', 'user', 'approval'])
+    // 当前实现会同时输出 assistantText + operationGroup
+    // （让用户既看到 AI 思考文本，又看到工具调用结果）
+    // u-0 user → a-1 assistantText + c-1 group → u-2 user → a-3 assistantText + a-3 approval
+    expect(out.map((o) => o.type)).toEqual([
+      'user',
+      'assistantText',
+      'operationGroup',
+      'user',
+      'assistantText',
+      'approval',
+    ])
   })
 
   it('handles tool_result.is_error as error item', () => {

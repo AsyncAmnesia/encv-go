@@ -162,13 +162,19 @@ func (a *Agent) Chat(
 // the single owner of the session cache and the OpenAI stream
 // for one turn; the loop is re-entered after auto-run tools to
 // fetch the next assistant message.
+//
+// Channel lifecycle: the channel is closed by `finishAndClose`
+// which guarantees the final stream_end event lands before the
+// channel is closed. The single-owner rule (only runLoop or
+// resumeAfterDecision may call finishAndClose) avoids the
+// double-close pitfall.
 func (a *Agent) runLoop(
 	ctx context.Context,
 	sessionID string,
 	messages []openai.ChatCompletionMessage,
 	out chan<- *Event,
 ) {
-	defer a.finishSession(sessionID, out)
+	defer a.finishAndClose(sessionID, out)
 
 	for turn := 0; ; turn++ {
 		if a.cfg.MaxToolCallsPerTurn > 0 && turn >= a.cfg.MaxToolCallsPerTurn {
@@ -452,6 +458,12 @@ func (a *Agent) ConfirmTool(
 // resumeAfterDecision runs the post-decision logic: apply the
 // decision, push the resulting tool result event, then continue
 // the streaming loop with updated messages.
+//
+// Channel ownership: the channel is closed by finishAndClose
+// on the way out, before the goroutine returns. The accept /
+// accept_for_session / decline paths delegate to runLoop
+// (which also calls finishAndClose), so the path that
+// delegates MUST return without re-closing.
 func (a *Agent) resumeAfterDecision(
 	ctx context.Context,
 	sessionID, toolName, toolCallID string,
@@ -459,7 +471,7 @@ func (a *Agent) resumeAfterDecision(
 	messages []openai.ChatCompletionMessage,
 	out chan<- *Event,
 ) {
-	defer a.finishSession(sessionID, out)
+	defer a.finishAndClose(sessionID, out)
 
 	def, _ := a.Registry.Get(toolName)
 	if def.Handler == nil {
@@ -523,7 +535,10 @@ func (a *Agent) resumeAfterDecision(
 			IsError: true,
 			Status:  "cancelled",
 		}))
-		// No further LLM call; turn ends here.
+		// No further LLM call; turn ends here. The channel
+		// is closed by the deferred finishAndClose below; we
+		// exit BEFORE calling runLoop so runLoop does not
+		// double-close.
 		return
 
 	default:
@@ -659,6 +674,27 @@ func (a *Agent) finishSession(sessionID string, out chan<- *Event) {
 	// Best-effort send. The consumer might have disconnected.
 	defer func() { _ = recover() }()
 	out <- ev
+}
+
+// finishAndClose is the canonical exit sequence for a Chat /
+// ConfirmTool goroutine: it marks the session finished, pushes
+// the terminal stream_end event, and THEN closes the channel
+// (so the consumer's streamSSE writer sees the event before
+// the close).
+//
+// Order matters: the send must succeed before close, otherwise
+// the stream_end event would be lost. The buffered channel
+// (size 32) plus the recover() in finishSession cover the
+// "consumer already gone" edge case gracefully.
+func (a *Agent) finishAndClose(sessionID string, out chan<- *Event) {
+	defer func() {
+		// Close in a recover-protected block so a panic from
+		// a double-close (caller bug) does not crash the
+		// whole process.
+		defer func() { _ = recover() }()
+		close(out)
+	}()
+	a.finishSession(sessionID, out)
 }
 
 // mustJSON is the non-erroring sibling of json.Marshal; the

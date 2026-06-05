@@ -89,3 +89,27 @@ func (r *ToolRegistry) GetAllSchemas() []any {
 	}
 	return out
 }
+
+// Names returns the registered tool names in unspecified
+// order. The slice is freshly allocated and may be mutated by
+// the caller. Used by the demo's enabled_tools filter and by
+// debug endpoints that need to enumerate the registry.
+func (r *ToolRegistry) Names() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]string, 0, len(r.tools))
+	for name := range r.tools {
+		out = append(out, name)
+	}
+	return out
+}
+
+// Unregister removes a tool by name. It is a no-op if the
+// tool does not exist. The primary use case is the demo's
+// enabled_tools filter; production code should not strip
+// tools at runtime.
+func (r *ToolRegistry) Unregister(name string) {
+	r.mu.Lock()
+	delete(r.tools, name)
+	r.mu.Unlock()
+}
