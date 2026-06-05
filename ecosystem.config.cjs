@@ -44,8 +44,10 @@ module.exports = {
       // air 包装（live reload），air 的 entrypoint 是 .air-run.sh
       script: '/workspace/.air-run.sh',
       cwd: REPO_ROOT,
+      // ❌ 不要设 ENCV_DEV_PREVIEW=1 —— 它会触发 mobile overlay 把
+      //    server.dir 覆盖为 /storage/emulated/0 (Android-only 路径)，
+      //    service-guard 会 503。前端在 dev 沙箱也能直接连桌面端 API。
       env: {
-        ENCV_DEV_PREVIEW: '1',
         PATH: process.env.PATH,
       },
       max_memory_restart: '768M',
