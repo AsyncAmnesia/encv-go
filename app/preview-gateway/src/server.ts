@@ -68,14 +68,18 @@ interface Upstream {
 
 const UPSTREAMS: Upstream[] = [
   {
+    // 关键：pathRewrite 必须是 **identity**（不剥前缀），让 vite 收到完整路径。
+    // vite.config.ts 配置了 `base: '/openlist-ui/'`，dev 模式下 vite 会强制校验
+    // 请求 URL 是否匹配 base —— 如果 pathRewrite 剥成 `/`，vite 立刻 302 跳回
+    // `/openlist-ui/`，形成无限重定向循环。
+    // 保留前缀后 vite 收到 `/openlist-ui/` 完整路径，与 base 匹配，零重定向。
+    // 子资源（/openlist-ui/src/main.ts、/openlist-ui/@vite/client 等）同样保留前缀转发。
     match: '/openlist-ui',
     target: 'http://127.0.0.1:5174',
     wsTarget: 'ws://127.0.0.1:5174',
     name: 'plugin-openlist-web',
     hint: 'Check pm2 status for plugin-openlist-vite',
-    // Strip /openlist-ui prefix: /openlist-ui/src/main.ts → /src/main.ts
-    // （vite 收到 /src/main.ts，dev 模式下正常 serve）
-    pathRewrite: (p) => p.replace(/^\/openlist-ui(?=\/|$)/, '') || '/',
+    // 故意不写 pathRewrite —— 默认 identity（详见上方注释）
   },
   {
     // /openlist 是 OpenList 真实前端入口（:5244），不是 encv-go 端点。

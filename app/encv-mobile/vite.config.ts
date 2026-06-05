@@ -209,7 +209,34 @@ function dynamicHmrHostPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [vue(), dynamicHmrHostPlugin()],
+  plugins: [
+    vue(),
+    dynamicHmrHostPlugin(),
+    // ────────────────────────────────────────────────────────────────────────
+    // ⚠️ CRITICAL: 沙箱 dev 必须删除 Vite 自动注入的 @vite/client 脚本！
+    //
+    // vite 8 (rolldown) 即使设了 `server.hmr = false`，**仍然**会注入
+    // <script type="module" src="/@vite/client"> —— hmr:false 只关 HMR 的 WS
+    // server，**不阻止** htmlRewritePlugin 注入 client 脚本。
+    //
+    // 沙箱 dev 链路: trae 域名 → agent-tool-host(:16000) → preview-gateway(:16666) → vite(:8100)
+    // agent-tool-host 不支持 WebSocket 升级 → 浏览器拿 wss://...:16666/?token=...
+    // 主动连接永远立刻被关 → vite 8 client.mjs:892 抛红字 `[vite] failed to connect to websocket`
+    //
+    // 修复: 在 transformIndexHtml (order: 'post') 物理删除 @vite/client 的 <script> 标签。
+    {
+      name: 'remove-vite-client-sandbox-dev',
+      transformIndexHtml: {
+        order: 'post',
+        handler(html: string) {
+          return html.replace(
+            /<script\s+type="module"\s+src="[^"]*\/@vite\/client"[^>]*><\/script>/g,
+            '<!-- @vite/client removed (hmr disabled in sandbox dev) -->',
+          )
+        },
+      },
+    } as Plugin,
+  ],
   server: {
     // 统一入口改 :8100（由 preview-gateway :16666 接管对外暴露）
     port: 8100,
@@ -224,21 +251,6 @@ export default defineConfig({
     allowedHosts: true,
     // Vite 默认 cors=true 会 reflect Origin —— 配合 preview-gateway changeOrigin:false，
     // 链路 :16666 → :8100 看到的 Origin=Host 匹配，CORS 天然通过
-    // ────────────────────────────────────────────────────────────────────────
-    // ⚠️ CRITICAL: 沙箱 dev 必须禁用 HMR！
-    //
-    // 链路: 浏览器(trae 域名) → agent-tool-host(:16000) → preview-gateway(:16666) → vite(:8100)
-    //
-    // agent-tool-host 是 supervisor 管的反向代理，**不支持 WebSocket 升级**
-    // (Sec-WebSocket-Key / Upgrade: websocket 头被丢弃)。
-    // → 浏览器拿 `wss://...:16666/?token=...vite-hmr` 主动连接永远立刻被关
-    // → vite 8 client.mjs 第 892 行捕获 `WebSocket closed without opened` 抛红字
-    //
-    // 修复: `server.hmr = false` 告诉 vite **完全不注入 HMR client 代码**。
-    //       浏览器加载 /@vite/client 时 vite 不再 push <script> 到 HTML,
-    //       也就没有 WS 连接尝试, console 不再有 [vite] failed to connect to websocket。
-    //
-    // 代价: 用户改代码需要 Ctrl+R 硬刷 —— 对沙箱 dev 完全可接受 (没有连续编辑场景)。
     hmr: false,
   },
   resolve: {

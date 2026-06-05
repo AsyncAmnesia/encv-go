@@ -771,6 +771,92 @@ req.end();
 
 ---
 
+## 十三、沙箱 dev HMR 彻底禁掉（D15）
+
+> **核心结论**：`server.hmr = false` **不够**。vite 8 (rolldown) 即便 hmr:false，**仍然**往 HTML 注入 `<script src="/@vite/client">`。必须用一个 `transformIndexHtml: { order: 'post' }` 的内联 plugin，**物理删除**这个 script 标签。
+
+### 13.1 问题链路（再踩坑）
+
+D14 已经验证了：sandbox dev 链路中 `agent-tool-host :16000` 不支持 WebSocket 升级。`server.hmr = false` 应该让 vite **完全不注入** HMR client 脚本，浏览器也就不会尝试连 WS。
+
+**但实际**：vite 8 (rolldown) 走的是 `htmlRewritePlugin`，**与 `server.hmr` 配置解耦** —— hmr:false 只关 HMR 的 WS server，**不阻止** `<script src="/@vite/client">` 注入。结果：
+- HTML 仍有 `<script src="/@vite/client">`
+- 浏览器加载这个脚本 → 内部立刻 `new WebSocket(wss://...:16666/?token=...)` → 立即关闭 → console 抛红字
+- 用户看到 `[vite] failed to connect to websocket (Error: WebSocket closed without opened.)`
+
+### 13.2 修复方案：transformIndexHtml 物理删除
+
+```ts
+{
+  name: 'remove-vite-client-sandbox-dev',
+  transformIndexHtml: {
+    order: 'post',  // 必须在 htmlRewritePlugin 之后，否则改的是空字符串
+    handler(html: string) {
+      return html.replace(
+        /<script\s+type="module"\s+src="[^"]*\/@vite\/client"[^>]*><\/script>/g,
+        '<!-- @vite/client removed (hmr disabled in sandbox dev) -->',
+      )
+    },
+  },
+}
+```
+
+**为什么 `order: 'post'`**：htmlRewritePlugin 在 transformIndexHtml 阶段（具体阶段名为 `transformIndexHtml`）注入 @vite/client。Vite 的 plugin 钩子按 order 排序：pre → 默认 → post。我们的删除必须在 htmlRewritePlugin 之后执行，所以用 `order: 'post'`。
+
+**为什么是内联 plugin 而非顶层 `transformIndexHtml`**：vite 8 (rolldown) 的顶层 `transformIndexHtml` config 在某些情况下被忽略（实测），所以保险起见写在 `plugins: []` 数组里。
+
+### 13.3 副带修复（plugin-openlist vite.config.ts）
+
+修主 app 的同时，必须同步修 `app/encv-mobile/plugin-openlist/web/vite.config.ts`：
+
+1. **`import { fileURLToPath, URL } from 'node:url'` 改为 `import path from 'node:path'`**
+   - 根因：vite 8 bundler 对 `node:url` 的命名导入处理有 bug，runtime 抛 `ReferenceError: fileURLToPath is not defined`
+   - 改为与主 app 一致的 `path.resolve(__dirname, 'src')` 即可
+
+2. **`server.middlewares.use('/__openlist-health', ...)` 改为 `/openlist-ui/__openlist-health`**
+   - 根因：preview-gateway 的 `/openlist-ui` upstream 去掉了 pathRewrite（见 13.4），请求 URL 保留完整前缀
+   - vite 中间件必须挂到完整路径 `/openlist-ui/__openlist-health` 才能匹配
+
+3. **删除多余的 `},` 闭包**
+   - 之前留下的 parse error：`vite.config.ts:368:1 })` Unexpected token
+   - 之前 fs.allow 块结尾多一个 `},`，defineConfig 被提前闭合
+
+### 13.4 副带修复（preview-gateway pathRewrite）
+
+`/openlist-ui` upstream **必须去掉** `pathRewrite: strip`：
+
+| 旧行为 | 新行为 |
+|--------|--------|
+| `/openlist-ui/` → `/` (剥前缀) | `/openlist-ui/` → `/openlist-ui/` (identity) |
+| `/openlist-ui/src/main.ts` → `/src/main.ts` | `/openlist-ui/src/main.ts` → `/openlist-ui/src/main.ts` |
+
+**为什么**：vite 收 `/` 跟 `base: '/openlist-ui/'` 不匹配，立刻 302 跳 `/openlist-ui/`，形成无限重定向循环。保留前缀后 vite 收 `/openlist-ui/` 完整路径，匹配自己 base，零重定向。
+
+### 13.5 验证结果（agent-browser 实测）
+
+| 页面 | URL | appInnerLen | viteScriptCount | consoleErrors | viteErrors |
+|------|-----|-------------|-----------------|---------------|------------|
+| 主 app | `/tabs/home` | 4628 | 0 | [] | [] |
+| plugin-openlist | `/openlist-ui/#/home` | 4953 | 0 | [] | [] |
+| OpenList 后端 | `/openlist/` | (React) | n/a | [] | [] |
+
+**0 个 `[vite] failed to connect to websocket` 错误，0 个 console error，三服务全部正常渲染。**
+
+### 13.6 沙箱 dev 经验教训
+
+> **你的经验在沙箱面前不值一提** —— 沙箱有自己的物理限制（agent-tool-host 不支持 WS 升级），不能套用本地 dev 的"开箱即用"经验。
+
+沙箱 dev 与本地 dev 的差异清单：
+
+| 维度 | 本地 dev | 沙箱 dev |
+|------|---------|---------|
+| HMR | ✅ vite 默认开 | ❌ agent-tool-host 不支持 WS → 必须禁 |
+| 域名 | `localhost:5173` | trae 域名（hash 每次重启都变） |
+| 多上游端口 | 浏览器直接连 | 必须统一过 preview-gateway :16666 |
+| HMR 错误可见 | console warning | console **红字**（看起来像严重错误） |
+
+---
+
 ## 九、相关 spec / 文档
 
 - [openlist-frontend-extraction-and-sandbox-preview](file:///workspace/.trae/specs/openlist-frontend-extraction-and-sandbox-preview/spec.md) — OpenList 前端抽取 + 浏览器预览（上一轮）

@@ -1,7 +1,15 @@
 import { defineConfig, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import { fileURLToPath, URL } from 'node:url'
 import path from 'node:path'
+
+// ⚠️ 沙箱 dev 必须只用 `path.resolve(__dirname, ...)`，**禁止**用
+//   `import { fileURLToPath } from 'node:url' + new URL(...)` 模式！
+// 根因：vite 8 (rolldown) 在 bundle vite.config.ts 时，对 `node:url` 的命名导入
+//       处理有 bug —— `fileURLToPath` 符号没绑进 namespace，runtime 抛
+//       `ReferenceError: fileURLToPath is not defined at vite.config.ts:119:12`。
+//       主 app 一直用 `path.resolve(__dirname, ...)` 是因为它 plain CJS-style，
+//       bundler 不需要解析 `node:url` 命名导入，所以能跑。
+//       plugin-openlist 改成同名风格后，两个 vite 行为一致，bug 也消失。
 
 /**
  * plugin-openlist/web Vite 配置
@@ -37,13 +45,23 @@ import path from 'node:path'
  * 同源访问（plugin-openlist vite :5174 fetch 自己 /__openlist-health）也工作。
  */
 /**
- * 把 <base href="..."> 注入到 <head> 最早位置
- * 解决 Vite dev 把 <script src="/@vite/client"> 注入到 <head> 顶部，
- * 早于手写 <base>，导致 base href 不生效的问题。
+ * 把 <base href="..."> 注入到 <head> 最早位置 + 删除 Vite 自动注入的 @vite/client
  *
- * 实现思路：在 index.html 写 <!--VITE-BASE-HREF-PLACEHOLDER--> 占位符
- * (放在 <head> 第一个子元素位置 — Vite 不会移位)
- * plugin 在 transformIndexHtml 钩子 (order: 'pre') 把占位符替换成 <base> 标签。
+ * 解决两个问题：
+ * ① Vite dev 把 <script src="/@vite/client"> 注入到 <head> 顶部，
+ *    早于手写 <base>，导致 base href 不生效。
+ * ② vite 8 (rolldown) 即使设了 `server.hmr: false`，**仍然**会注入
+ *    <script src="/@vite/client"> —— 因为它内部走的是 htmlRewritePlugin
+ *    而 hmr:false 只关 HMR 的 WS server，**不阻止** client 脚本注入。
+ *    沙箱 dev agent-tool-host :16000 不支持 WS upgrade，所以必须物理删除
+ *    这个 script，否则浏览器立刻报 `WebSocket closed without opened`。
+ *
+ * 实现思路：
+ *   1. 在 index.html 写 <!--VITE-BASE-HREF-PLACEHOLDER--> 占位符
+ *      (放在 <head> 第一个子元素位置 — Vite 不会移位)
+ *   2. plugin 在 transformIndexHtml 钩子 (order: 'post') 把占位符替换成 <base> 标签
+ *   3. plugin 在同一个钩子里**直接删除** <script type="module" src=".../@vite/client">
+ *
  * 之所以不用 'pre' 钩子直接 prepend <base>：Vite 8 的 order: 'pre' 在某些
  * 内置 plugin 之后才执行（如 htmlRewritePlugin），导致 @vite/client 仍抢先注入。
  */
@@ -55,20 +73,19 @@ function injectBaseHref(href: string): Plugin {
       order: 'post',  // 必须 'post' —— 这样 Vite 已注入 @vite/client 后我们才能改其 src
       handler(html) {
         let result = html
-        // 1. 替换占位符为 <base> 标签
+        // 1. 替换占位符为 <base> 标签（必须在最前）
         result = result.replace(
           '<!--VITE-BASE-HREF-PLACEHOLDER-->',
           `<base href="${href}" />`,
         )
-        // 2. 改 @vite/client 路径为 base-prefixed
-        //    Vite dev 自动注入 <script src="/@vite/client"> 是绝对根路径，
-        //    不被 base 影响（base 之后注入）。我们手动改它，让网关路由正确。
-        if (basePrefix && result.includes('<script type="module" src="/@vite/client">')) {
-          result = result.replace(
-            '<script type="module" src="/@vite/client">',
-            `<script type="module" src="${basePrefix}/@vite/client">`,
-          )
-        }
+        // 2. 物理删除 @vite/client 脚本 —— vite 8 hmr:false 不可靠
+        //    匹配两种形式（带 / 带不带 basePrefix）：
+        //      <script type="module" src="/@vite/client"></script>
+        //      <script type="module" src="/openlist-ui/@vite/client"></script>
+        result = result.replace(
+          /<script\s+type="module"\s+src="[^"]*\/@vite\/client"[^>]*><\/script>/g,
+          '<!-- @vite/client removed (hmr disabled in sandbox dev) -->',
+        )
         return result
       },
     },
@@ -79,7 +96,10 @@ function openlistHealthPlugin(): Plugin {
   return {
     name: 'openlist-health',
     configureServer(server) {
-      server.middlewares.use('/__openlist-health', async (req, res) => {
+      // 挂到 /openlist-ui/__openlist-health —— 与 preview-gateway 透传的完整路径一致。
+      // （如果 pathRewrite 曾经剥前缀，URL 会是 /__openlist-health；现在保留前缀，
+      //   vite 收到的就是 /openlist-ui/__openlist-health，必须挂这里才能匹配。）
+      server.middlewares.use('/openlist-ui/__openlist-health', async (req, res) => {
         const start = Date.now()
         res.setHeader('Content-Type', 'application/json; charset=utf-8')
         res.setHeader('Access-Control-Allow-Origin', '*')
@@ -318,7 +338,8 @@ export default defineConfig({
   plugins: [vue(), openlistHealthPlugin(), injectBaseHref(process.env.VITE_BASE || '/openlist-ui/'), dynamicHmrHostPlugin()],
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // 与主 app vite.config.ts 一致：path.resolve(__dirname, 'src')
+      '@': path.resolve(__dirname, 'src'),
     },
   },
   build: {
@@ -350,19 +371,18 @@ export default defineConfig({
   },
   // ⚠️ 沙箱 dev 必须扩展 fs.allow：
   //   - vite 默认 fs.allow 只允许项目根目录 + 其祖先
-    //   - main.ts 内 import "/@fs/workspace/app/encv-mobile/node_modules/..." 引用的是
-    //     encv-mobile 主 app 的 node_modules（plugin-openlist/web 自己没装 @ionic/vue）
-    //   - 不扩 allow 时 vite 返回 403/404/SPA fallback → 浏览器收到 text/html →
-    //     ES module loader 拒绝执行 → main.ts 中断 → 空白
-    fs: {
-      allow: [
-        path.resolve(__dirname),
-        path.resolve(__dirname, '..', '..', '..'),  // encv-mobile root（包含 monorepo node_modules）
-        path.resolve(__dirname, '..', '..', '..', 'node_modules'),
-        path.resolve('/workspace/app/encv-mobile'),
-        path.resolve('/workspace/app/encv-mobile/node_modules'),
-        path.resolve('/workspace'),
-      ],
-    },
+  //   - main.ts 内 import "/@fs/workspace/app/encv-mobile/node_modules/..." 引用的是
+  //     encv-mobile 主 app 的 node_modules（plugin-openlist/web 自己没装 @ionic/vue）
+  //   - 不扩 allow 时 vite 返回 403/404/SPA fallback → 浏览器收到 text/html →
+  //     ES module loader 拒绝执行 → main.ts 中断 → 空白
+  fs: {
+    allow: [
+      path.resolve(__dirname),
+      path.resolve(__dirname, '..', '..', '..'),  // encv-mobile root（包含 monorepo node_modules）
+      path.resolve(__dirname, '..', '..', '..', 'node_modules'),
+      path.resolve('/workspace/app/encv-mobile'),
+      path.resolve('/workspace/app/encv-mobile/node_modules'),
+      path.resolve('/workspace'),
+    ],
   },
 })
