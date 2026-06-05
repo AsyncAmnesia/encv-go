@@ -134,6 +134,25 @@ module.exports = {
       time: true,
     },
 
+    // ── ② encv-mobile Vite (主 app, :8100) ───────────────────────────
+    //   历史上由 start-preview.sh 内部 & 启动，但 pm2 重启 start-preview 时
+    //   会清理 8100 vite → 主 app 频繁短暂不可用。拆成独立 pm2 app 更稳。
+    {
+      name: 'encv-mobile-vite',
+      script: VITE_BIN_MAIN,
+      args: '--host 0.0.0.0 --port 8100 --strictPort',
+      interpreter: 'node',
+      cwd: MOBILE_DIR,
+      env: { PATH: process.env.PATH },
+      max_memory_restart: '512M',
+      listen_timeout: 15000,
+      kill_timeout: 3000,
+      autorestart: true,
+      max_restarts: 10,
+      out_file: '/tmp/pm2-encv-mobile-vite.log',
+      error_file: '/tmp/pm2-encv-mobile-vite.err.log',
+    },
+
     // ── ② OpenList 真实 fork (Go) ───────────────────────────────────
     {
       name: 'openlist',
