@@ -15,7 +15,7 @@
     <span class="collapsedLabel">{{ label }}</span>
     <span v-if="meta" class="collapsedMeta">{{ meta }}</span>
     <ion-icon
-      v-if="onToggle"
+      v-if="onToggle != null"
       :icon="expanded ? chevronUp : chevronDown"
       class="collapsedChevron"
     />

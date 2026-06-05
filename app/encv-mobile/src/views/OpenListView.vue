@@ -45,7 +45,7 @@
           href="/openlist-ui/"
           class="ion-margin"
         >
-          <ion-icon :icon="openInNewOutline" slot="start" />
+          <ion-icon :icon="openOutline" slot="start" />
           打开 plugin-openlist 管理 UI
         </ion-button>
         <ion-button
@@ -98,7 +98,7 @@ import {
   IonIcon,
   IonSpinner,
 } from '@ionic/vue'
-import { refreshOutline, powerOutline, playOutline, openInNewOutline, globeOutline } from 'ionicons/icons'
+import { refreshOutline, powerOutline, playOutline, openOutline, globeOutline } from 'ionicons/icons'
 import { OpenListStatusCard, type OpenListRuntime } from '@/components-shared'
 import { OpenListNative } from '@/plugins/openlist-native'
 

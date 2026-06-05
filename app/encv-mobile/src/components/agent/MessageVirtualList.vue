@@ -64,7 +64,7 @@ const props = withDefaults(
 
 const VIRTUAL_LIST_THRESHOLD = 120
 
-const scrollerRef = ref<InstanceType<typeof RecycleScroller> | null>(null)
+const scrollerRef = ref<HTMLDivElement | null>(null)
 const containerRef = ref<HTMLDivElement | null>(null)
 
 function scrollToLatest(behavior: 'auto' | 'smooth' = 'smooth') {

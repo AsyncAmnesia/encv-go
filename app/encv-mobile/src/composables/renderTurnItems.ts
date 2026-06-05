@@ -58,7 +58,8 @@ interface WebSearchGroup {
   toolCallIds: string[]
 }
 
-const FLUSH_GAP_MS = 800
+// 8 个合并窗常量（已删除，模板里不直接用）
+//   旧代码: const FLUSH_GAP_MS = 800
 
 /**
  * renderTurnItems 纯函数
@@ -175,6 +176,11 @@ export function renderTurnItems(
         } catch {
           // ignore
         }
+        continue
+      } else if (tc.kind === 'readOnly') {
+        // webSearch 走 webSearch 合并窗；readOnly 单独走 operationGroup
+        flushWebGroup()
+        tryAppendToGroup(tc)
         continue
       }
 

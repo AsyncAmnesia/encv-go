@@ -33,6 +33,7 @@ export default {
     'agent.tool.command': '运行命令',
     'agent.tool.fileChange': '编辑文件',
     'agent.tool.readOnly': '读取信息',
+    'agent.tool.webSearch': '联网搜索',
     'agent.tool.unknown': '调用工具',
   },
   en: {
@@ -69,6 +70,7 @@ export default {
     'agent.tool.command': 'Run command',
     'agent.tool.fileChange': 'Edit file',
     'agent.tool.readOnly': 'Read info',
+    'agent.tool.webSearch': 'Web search',
     'agent.tool.unknown': 'Invoke tool',
   },
 }

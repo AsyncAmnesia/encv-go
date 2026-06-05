@@ -16,7 +16,7 @@
 
 <script setup lang="ts">
 import { MarkdownRender } from 'markstream-vue'
-import 'markstream-vue/dist/index.css'
+import 'markstream-vue/index.css'
 
 defineProps<{
   source: string

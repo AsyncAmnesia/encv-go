@@ -126,17 +126,11 @@ import { useI18n } from '@/composables/useI18n'
 import { useAgent, type Decision, type ToolCall } from '@/composables/useAgent'
 import { useRenderTurnItems } from '@/composables/renderTurnItems'
 import UserMessageBubble from '@/components/agent/UserMessageBubble.vue'
-import MarkdownStream from '@/components/agent/MarkdownStream.vue'
-import StatusBadge from '@/components/agent/StatusBadge.vue'
-import MessageAuthor from '@/components/agent/MessageAuthor.vue'
 import ApprovalCard from '@/components/agent/ApprovalCard.vue'
 import GroupedOperationMessage from '@/components/agent/GroupedOperationMessage.vue'
-import FileChangeSummaryMessage from '@/components/agent/FileChangeSummaryMessage.vue'
 import ReasoningMessage from '@/components/agent/ReasoningMessage.vue'
 import ErrorMessage from '@/components/agent/ErrorMessage.vue'
 import WebSearchSummaryMessage from '@/components/agent/WebSearchSummaryMessage.vue'
-
-const props = defineProps<{ apiBase?: string }>()
 
 const { t } = useI18n()
 
@@ -160,8 +154,8 @@ const canSend = computed(() => status.value !== 'streaming' && inputText.value.t
 
 // ─── 工具调用查找 ─────────────────────────────────────────
 function findToolCall(id: string): ToolCall | null {
-  for (const msg of messages) {
-    const tc = msg.tool_calls.find((t) => t.id === id)
+  for (const msg of messages.value) {
+    const tc = msg.tool_calls.find((t: ToolCall) => t.id === id)
     if (tc) return tc
   }
   return null
@@ -242,14 +236,14 @@ watch(
 
 // 监听 messages 变化（长度/最后一条）→ 接近底部时自动滚
 watch(
-  () => messages.length,
+  () => messages.value.length,
   () => {
     if (nearBottom.value) scrollToBottom()
   },
 )
 
 watch(
-  () => messages[messages.length - 1]?.content,
+  () => messages.value[messages.value.length - 1]?.content,
   () => {
     if (nearBottom.value) scrollToBottom('auto')
   },

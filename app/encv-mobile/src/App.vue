@@ -64,7 +64,7 @@ const rootError = ref(false)
 const rootErrorMessage = ref('')
 const rootErrorStack = ref('')
 
-onErrorCaptured((err: any, instance, info) => {
+onErrorCaptured((err: any, _instance: unknown, info: string) => {
   // 防止无限递归：如果已经是 error 状态，不再捕获（fallback 自己崩了）
   if (rootError.value) return false
 

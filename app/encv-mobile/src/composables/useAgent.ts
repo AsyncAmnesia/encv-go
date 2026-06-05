@@ -18,7 +18,7 @@
  *   - Requirement: Event 类型契约（6 种 event type）
  *   - Requirement: 4-决策 ConfirmRequest
  */
-import { reactive, ref } from 'vue'
+import { ref } from 'vue'
 import { showToast } from '@/composables/useToast'
 
 // =============================================================================
@@ -44,7 +44,7 @@ export interface AgentEvent {
   data: string
 }
 
-export type ToolKind = 'command' | 'fileChange' | 'readOnly' | 'unknown'
+export type ToolKind = 'command' | 'fileChange' | 'readOnly' | 'webSearch' | 'unknown'
 export type ToolStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
 
 export interface ToolCall {
@@ -186,7 +186,7 @@ function generateSessionId(): string {
 // =============================================================================
 
 export function useAgent() {
-  const messages = reactive<Message[]>([])
+  const messages = ref<Message[]>([])
   const status = ref<AgentStatus>('idle')
   let currentSessionId = ''
   let eventOffset = 0
@@ -199,9 +199,9 @@ export function useAgent() {
    * 用于 catch 块 / stop() / 错误恢复场景
    */
   function finalizeLastAssistant(): void {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === 'assistant' && messages[i].isStreaming) {
-        messages[i].isStreaming = false
+    for (let i = messages.value.length - 1; i >= 0; i--) {
+      if (messages.value[i].role === 'assistant' && messages.value[i].isStreaming) {
+        messages.value[i].isStreaming = false
         break
       }
     }
@@ -215,7 +215,7 @@ export function useAgent() {
       const payload = {
         sessionId: currentSessionId,
         eventOffset,
-        messages: JSON.parse(JSON.stringify(messages)),
+        messages: JSON.parse(JSON.stringify(messages.value)),
         status: status.value,
       }
       localStorage.setItem(STORAGE_PREFIX + currentSessionId, JSON.stringify(payload))
@@ -333,7 +333,7 @@ export function useAgent() {
       finalizeLastAssistant()
       if (status.value === 'streaming') {
         // 决定 status：是否有 pending 确认？
-        const hasPendingConfirm = messages.some((m) =>
+        const hasPendingConfirm = messages.value.some((m) =>
           m.tool_calls.some((tc) => tc.needsConfirm && tc.status === 'pending'),
         )
         status.value = hasPendingConfirm ? 'confirming' : 'idle'
@@ -354,8 +354,8 @@ export function useAgent() {
   function handleAgentEvent(event: AgentEvent): void {
     // 取最后一条 assistant 消息（流式追加目标）
     const lastAssistant = () => {
-      for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i].role === 'assistant') return messages[i]
+      for (let i = messages.value.length - 1; i >= 0; i--) {
+        if (messages.value[i].role === 'assistant') return messages.value[i]
       }
       // 没有 assistant → 立即创建一条
       const newMsg: Message = {
@@ -365,8 +365,8 @@ export function useAgent() {
         tool_results: [],
         isStreaming: true,
       }
-      messages.push(newMsg)
-      return messages[messages.length - 1]
+      messages.value.push(newMsg)
+    return messages.value[messages.value.length - 1]
     }
 
     switch (event.type) {
@@ -392,7 +392,7 @@ export function useAgent() {
         const ts = parseToolStatus(event.data)
         if (ts) {
           // 找到对应的 tool_call 并更新 status
-          for (const msg of messages) {
+          for (const msg of messages.value) {
             const tc = msg.tool_calls.find((t) => t.id === ts.id)
             if (tc) {
               tc.status = ts.status
@@ -412,16 +412,16 @@ export function useAgent() {
       }
       case 'stream_end': {
         // 标记最后 assistant 消息流式结束
-        for (let i = messages.length - 1; i >= 0; i--) {
-          if (messages[i].role === 'assistant' && messages[i].isStreaming) {
-            messages[i].isStreaming = false
+        for (let i = messages.value.length - 1; i >= 0; i--) {
+          if (messages.value[i].role === 'assistant' && messages.value[i].isStreaming) {
+            messages.value[i].isStreaming = false
             break
           }
         }
         // 决定下一个 status：
         //   - 如果有 pending tool_call（needsConfirm=true 且 status=pending）→ confirming
         //   - 否则 → idle
-        const hasPendingConfirm = messages.some((m) =>
+        const hasPendingConfirm = messages.value.some((m) =>
           m.tool_calls.some((tc) => tc.needsConfirm && tc.status === 'pending'),
         )
         status.value = hasPendingConfirm ? 'confirming' : 'idle'
@@ -461,13 +461,13 @@ export function useAgent() {
     }
 
     // 推 user 消息 + 空 assistant 占位
-    messages.push({
+    messages.value.push({
       role: 'user',
       content: text,
       tool_calls: [],
       tool_results: [],
     })
-    messages.push({
+    messages.value.push({
       role: 'assistant',
       content: '',
       tool_calls: [],
@@ -485,7 +485,7 @@ export function useAgent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           sessionId: currentSessionId,
-          messages: messages.map((m) => ({
+          messages: messages.value.map((m) => ({
             role: m.role,
             content: m.content,
           })),
@@ -532,7 +532,7 @@ export function useAgent() {
 
     // 找到对应的 tool_call，把它的 status 标记为 'running' 表示处理中
     let targetTool: ToolCall | null = null
-    for (const msg of messages) {
+    for (const msg of messages.value) {
       const tc = msg.tool_calls.find((t) => t.id === toolCallId)
       if (tc) {
         targetTool = tc
@@ -595,7 +595,7 @@ export function useAgent() {
     currentSessionId = saved.sessionId
     eventOffset = saved.eventOffset || 0
     // 恢复 messages
-    messages.splice(0, messages.length, ...(saved.messages || []))
+    messages.value.splice(0, messages.value.length, ...(saved.messages || []))
     status.value = saved.status || 'idle'
 
     // 如果上次是 streaming 状态，主动 resume 追平进度
@@ -660,7 +660,7 @@ export function useAgent() {
     }
     currentSessionId = ''
     eventOffset = 0
-    messages.splice(0, messages.length)
+    messages.value.splice(0, messages.value.length)
     status.value = 'idle'
   }
 

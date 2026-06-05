@@ -103,11 +103,17 @@ import {
   codeSlashOutline,
   shieldCheckmarkOutline,
   helpCircleOutline,
+  searchOutline,
   chevronUpOutline,
   chevronDownOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import type { ToolCall, Decision, ToolKind } from '@/composables/useAgent'
+
+// 模板用 chevronUp/chevronDown 引用，必须从 import 别名重绑定，否则
+// 模板引用未定义变量（vue-tsc 报 chevronUp/Down 不在 template scope）。
+const chevronUp = chevronUpOutline
+const chevronDown = chevronDownOutline
 
 const props = defineProps<{
   toolCall: ToolCall
@@ -126,6 +132,7 @@ const kindIcon = computed(() => {
     command: terminalOutline,
     fileChange: codeSlashOutline,
     readOnly: shieldCheckmarkOutline,
+    webSearch: searchOutline,
     unknown: helpCircleOutline,
   }
   return map[props.toolCall.kind] || helpCircleOutline
@@ -136,6 +143,7 @@ const titleText = computed(() => {
     command: t('agent.tool.command'),
     fileChange: t('agent.tool.fileChange'),
     readOnly: t('agent.tool.readOnly'),
+    webSearch: t('agent.tool.webSearch'),
     unknown: t('agent.tool.unknown'),
   }
   const kindLabel = kindMap[props.toolCall.kind] || props.toolCall.kind

@@ -16,14 +16,14 @@ import { describe, it, expect } from 'vitest'
 import { renderTurnItems } from '@/composables/renderTurnItems'
 import type { Message } from '@/composables/useAgent'
 
-const u = (i: number, content: string): Message => ({
+const u = (_i: number, content: string): Message => ({
   role: 'user',
   content,
   tool_calls: [],
   tool_results: [],
 })
 
-const a = (i: number, content: string, extra: Partial<Message> = {}): Message => ({
+const a = (_i: number, content: string, extra: Partial<Message> = {}): Message => ({
   role: 'assistant',
   content,
   tool_calls: [],

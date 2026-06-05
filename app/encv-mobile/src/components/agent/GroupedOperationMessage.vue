@@ -74,15 +74,15 @@ const summary = computed(() => {
   const cmd = props.items.filter((i) => i.kind === 'command').length
   const file = props.items.filter((i) => i.kind === 'fileChange').length
   if (allCommand.value) {
-    return t('agent.ops.commands', { n, ms: totalDuration.value || 0 })
+    return t('agent.ops.commands', { n: String(n), ms: String(totalDuration.value || 0) })
   }
   if (allFileChange.value) {
-    return t('agent.ops.files', { n })
+    return t('agent.ops.files', { n: String(n) })
   }
   if (cmd > 0 && file > 0) {
-    return t('agent.ops.mixed', { n, cmd, file })
+    return t('agent.ops.mixed', { n: String(n), cmd: String(cmd), file: String(file) })
   }
-  return t('agent.ops.toolOutputs', { n })
+  return t('agent.ops.toolOutputs', { n: String(n) })
 })
 
 const icon = computed(() => {

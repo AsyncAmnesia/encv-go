@@ -28,6 +28,8 @@
 import { ref, computed } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import { documentTextOutline, chevronUpOutline, chevronDownOutline } from 'ionicons/icons'
+
+const documentOutline = documentTextOutline
 import StatusBadge from './StatusBadge.vue'
 import { useI18n } from '@/composables/useI18n'
 import type { ToolCall, ToolStatus } from '@/composables/useAgent'
@@ -68,7 +70,7 @@ const paths = computed<string[]>(() => {
 
 const lastItem = computed<ToolCall | null>(() => props.items[props.items.length - 1] ?? null)
 
-const summary = computed(() => t('agent.ops.files', { n: props.items.length }))
+const summary = computed(() => t('agent.ops.files', { n: String(props.items.length) }))
 
 const status = computed(() => {
   const s = lastItem.value?.status
