@@ -212,9 +212,9 @@ const isSandbox = computed(() => import.meta.env.DEV)
 
 const iframeUrl = computed(() => {
   const hash = '#/login'
-  // 撤销 /openlist-spa/ subpath 路由改造（subpath 模式不可靠），
-  // dev/prod 都直访 :5244（与 prod 部署对齐，OpenList 跑在原始环境 /）
-  return `http://127.0.0.1:${port.value || 5244}/${hash}`
+  // 走 preview-gateway 统一收口 :16666/openlist/ → :5244 OpenList upstream
+  //   不再硬编码 :5244 — 沙箱 dev 唯一对外端口是 :16666（agent-tool-host :16000 代理过来）
+  return `http://localhost:16666/openlist/${hash}`
 })
 
 const stateText = computed(() => {
