@@ -11,14 +11,15 @@
 #   - bash scripts/dev-openlist-web.sh  (plugin-openlist Vite on 5174)
 #
 # 包含步骤：
-#   0/5  前置检查（go / node / pnpm / git / curl / cmake）
-#   1/5  装 Go 工具链 (air-verse/air live reload)
-#   2/5  装 Kotlin 工具链 (运行 .trae/scripts/setup-kotlinc.sh)
-#   3/5  clone OpenList 双 fork
+#   0/6  前置检查（go / node / pnpm / git / curl / cmake）
+#   1/6  装 Go 工具链 (air-verse/air live reload)
+#   2/6  装 Kotlin 工具链 (运行 .trae/scripts/setup-kotlinc.sh)
+#   3/6  clone OpenList 双 fork
 #         - 后端: app/openlist/Hi-Sillot-OpenList/   (dev 分支)
 #         - 前端: app/openlist/Hi-Sillot-OpenList-Frontend/ (main 分支)
-#   4/5  构建前端 fork 的 dist (Hi-Sillot-OpenList-Frontend/dist/)
-#   5/5  pnpm install encv-mobile 主 app + plugin-openlist/web
+#   4/6  构建前端 fork 的 dist (Hi-Sillot-OpenList-Frontend/dist/)
+#   5/6  pnpm install encv-mobile 主 app + plugin-openlist/web
+#   6/6  构建 preview-gateway 网关（app/preview-gateway/）
 #
 # 退出码:
 #   0  = 全部就绪
@@ -79,7 +80,7 @@ fi
 # ============================================================================
 # 步骤 1/5: 装 Go 工具链 (air)
 # ============================================================================
-step "1/5 装 Go 工具链（air-verse/air，用于 start-preview.sh live reload）"
+step "1/6 装 Go 工具链（air-verse/air，用于 start-preview.sh live reload）"
 
 # air 已迁移：github.com/cosmtrek/air → github.com/air-verse/air
 if command -v air >/dev/null 2>&1; then
@@ -205,7 +206,7 @@ fi
 # ============================================================================
 # 步骤 5/5: pnpm install encv-mobile
 # ============================================================================
-step "5/5 pnpm install encv-mobile + plugin-openlist/web"
+step "5/6 pnpm install encv-mobile + plugin-openlist/web"
 
 # 5a. 主 app
 if [[ -d "${MOBILE_DIR}/node_modules/vite" ]]; then
@@ -236,6 +237,42 @@ else
 fi
 
 # ============================================================================
+# 步骤 6/6: 构建 preview-gateway 网关
+# ============================================================================
+step "6/6 构建 preview-gateway 网关（app/preview-gateway/）"
+
+if [[ -d "${GATEWAY_DIR}/node_modules" ]]; then
+  ok "preview-gateway node_modules 已就绪"
+else
+  log "pnpm install preview-gateway ..."
+  cd "${GATEWAY_DIR}"
+  if pnpm install --prefer-offline 2>&1 | tail -5; then
+    ok "preview-gateway 依赖安装完成"
+  else
+    err "preview-gateway pnpm install 失败（网关跑不起来）"
+    FAILED=$((FAILED+1))
+  fi
+fi
+
+if [[ -f "${GATEWAY_DIR}/dist/server.js" ]]; then
+  ok "preview-gateway dist/server.js 已构建"
+else
+  log "构建 preview-gateway (pnpm build) ..."
+  cd "${GATEWAY_DIR}"
+  if pnpm build 2>&1 | tail -8; then
+    if [[ -f "${GATEWAY_DIR}/dist/server.js" ]]; then
+      ok "preview-gateway 构建完成"
+    else
+      warn "构建退出 0 但 dist/server.js 不存在"
+      FAILED=$((FAILED+1))
+    fi
+  else
+    err "preview-gateway 构建失败（pm2 启动会失败）"
+    FAILED=$((FAILED+1))
+  fi
+fi
+
+# ============================================================================
 # 环境就绪报告（只展示静态资源状态，不拉起任何服务）
 # ============================================================================
 step "✅ 环境准备完成"
@@ -259,7 +296,7 @@ cat <<EOF
 
 仓库：
 EOF
-for d in "${BACKEND_FORK_DIR}" "${FRONTEND_FORK_DIR}" "${MOBILE_DIR}/node_modules/vite" "${FRONTEND_FORK_DIR}/dist/index.html"; do
+for d in "${BACKEND_FORK_DIR}" "${FRONTEND_FORK_DIR}" "${MOBILE_DIR}/node_modules/vite" "${FRONTEND_FORK_DIR}/dist/index.html" "${GATEWAY_DIR}/dist/server.js"; do
   if [[ -e "$d" ]]; then
     if [[ -d "$d/.git" ]]; then
       branch=$(cd "$d" && git rev-parse --abbrev-ref HEAD 2>/dev/null)
@@ -275,15 +312,13 @@ done
 cat <<EOF
 
 下一步（手动拉起服务，本脚本不负责）：
-  Terminal 1:  bash scripts/start-preview.sh
-                → encv-go (air 监视) on :2025
-                → Vite encv-mobile on :5173 (或 :5174)
+  bash scripts/previews.sh start
+                → preview-gateway   on :16000  (统一对外预览入口)
+                → start-preview     on :2025 + :5173  (encv-go + Vite encv-mobile)
+                → openlist          on :5244  (OpenList Go fork)
+                → plugin-openlist-vite on :5174  (Vite plugin 管理 UI)
 
-  Terminal 2:  bash scripts/dev-openlist.sh
-                → OpenList 真实 fork on :5244（自动优先用本地 dist）
-
-  Terminal 3:  bash scripts/dev-openlist-web.sh
-                → plugin-openlist Vite on :5174（iframe 直访 127.0.0.1:5244）
+  浏览器访问：http://localhost:16000/
 
 ========================================
 EOF

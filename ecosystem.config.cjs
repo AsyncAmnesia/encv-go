@@ -2,11 +2,12 @@
 // =============================================================================
 // ecosystem.config.cjs
 // -----------------------------------------------------------------------------
-// pm2 配置：统一管理 沙箱 dev 服务（主预览 + 辅助服务）
+// pm2 配置：统一管理 沙箱 dev 服务（统一预览网关 + 主预览 + 辅助服务）
 //
-//   ① start-preview         (主预览 — start-preview.sh, :2025 + :5173)
-//   ② openlist              (Go OpenList 真实 fork, :5244)
-//   ③ plugin-openlist-vite  (Vite plugin 管理 UI, :5174)
+//   ① preview-gateway     (统一预览网关, :16000 — 对外唯一端口)
+//   ② start-preview       (主预览 — start-preview.sh, :2025 + :5173)
+//   ③ openlist            (Go OpenList 真实 fork, :5244)
+//   ④ plugin-openlist-vite(Vite plugin 管理 UI, :5174)
 //
 // 用法：
 //   pm2 start ecosystem.config.cjs
@@ -23,11 +24,13 @@
 const path = require('path');
 const fs = require('fs');
 
-const REPO_ROOT  = '/workspace';
-const MOBILE_DIR = path.join(REPO_ROOT, 'app', 'encv-mobile');
-const PLUGIN_DIR = path.join(MOBILE_DIR, 'plugin-openlist', 'web');
+const REPO_ROOT      = '/workspace';
+const MOBILE_DIR     = path.join(REPO_ROOT, 'app', 'encv-mobile');
+const PLUGIN_DIR     = path.join(MOBILE_DIR, 'plugin-openlist', 'web');
+const GATEWAY_DIR    = path.join(REPO_ROOT, 'app', 'preview-gateway');
 
-const PREVIEW_SCRIPT = path.join(MOBILE_DIR, 'scripts', 'start-preview.sh');
+const PREVIEW_SCRIPT  = path.join(MOBILE_DIR, 'scripts', 'start-preview.sh');
+const GATEWAY_SCRIPT  = path.join(GATEWAY_DIR, 'dist', 'server.js');
 
 // ⚠️ pm2 fork 模式下 script 必须指向可加载文件（.js 路径 + interpreter）。
 //   - vite 的 shell 包装 (node_modules/.bin/vite) 不可用 — 第 2 行
@@ -43,9 +46,45 @@ if (!fs.existsSync(PREVIEW_SCRIPT)) {
   throw new Error(`start-preview.sh 不存在: ${PREVIEW_SCRIPT}`);
 }
 
+// 检查 preview-gateway 编译产物（缺失时报错，提示先 setup-sandbox-env.sh）
+if (!fs.existsSync(GATEWAY_SCRIPT)) {
+  throw new Error(
+    `preview-gateway dist/server.js 不存在: ${GATEWAY_SCRIPT}\n` +
+    `请先运行 setup-sandbox-env.sh（或 cd ${GATEWAY_DIR} && pnpm install && pnpm build）`,
+  );
+}
+
 module.exports = {
   apps: [
-    // ── ① start-preview (主预览) ────────────────────────────────────
+    // ── ① preview-gateway (统一预览网关, :16000) ────────────────────
+    //   唯一对外端口。浏览器、agent-browser、外网用户都走 :16000。
+    //   网关内部分发到 :5173 / :5174 / :2025 / :5244 四个 upstream。
+    //   health 端点：http://localhost:16000/__gateway/health
+    {
+      name: 'preview-gateway',
+      script: GATEWAY_SCRIPT,
+      interpreter: 'node',
+      cwd: GATEWAY_DIR,
+      env: {
+        PATH: process.env.PATH,
+        PORT: '16000',
+        HOST: '0.0.0.0',
+      },
+      // 网关内存占用极小（纯转发）
+      max_memory_restart: '256M',
+      listen_timeout: 10000,
+      kill_timeout: 3000,
+      autorestart: true,
+      // 启动后立即可用，预期常驻
+      max_restarts: 10,
+      min_uptime: '10s',
+      out_file: '/tmp/pm2-preview-gateway.log',
+      error_file: '/tmp/pm2-preview-gateway.err.log',
+      merge_logs: true,
+      time: true,
+    },
+
+    // ── ② start-preview (主预览) ────────────────────────────────────
     //   start-preview.sh 自身前台阻塞（wait -n 等待任一子进程退出），
     //   内部用 & 启 air 和 vite 子进程，由 trap INT/TERM 兜底清理。
     //   pm2 把它当作一个长跑进程管（fork 模式）：
