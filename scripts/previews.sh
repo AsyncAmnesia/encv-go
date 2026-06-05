@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 # =============================================================================
-# previews.sh — 沙箱辅助 dev 服务统一管理（基于 pm2）
+# previews.sh — 沙箱 dev 服务统一管理（基于 pm2）
 # -----------------------------------------------------------------------------
-# ⚠️  主预览（encv-go :2025 + encv-mobile-vite :5173）不在 pm2 里！
-#     必须用 bash app/encv-mobile/scripts/start-preview.sh 前台运行。
-#     本脚本只管 pm2 内的「辅助服务」：
-#        ① openlist             (:5244) — OpenList 真实 fork
-#        ② plugin-openlist-vite (:5174) — plugin 管理 UI
+# 管 3 个 app（主预览 + 辅助服务）：
+#   ① start-preview         (:2025 + :5173) — 主预览（air 后端 + Vite 前端）
+#   ② openlist              (:5244)          — OpenList 真实 fork
+#   ③ plugin-openlist-vite  (:5174)          — plugin 管理 UI
 #
 # 用法：
-#   bash scripts/previews.sh start         # 启全部辅助服务
-#   bash scripts/previews.sh stop          # 停全部辅助服务
-#   bash scripts/previews.sh restart       # 重启全部辅助服务
-#   bash scripts/previews.sh status        # 状态 + 端口 + 内存
-#   bash scripts/previews.sh logs [app]    # 实时日志
-#   bash scripts/previews.sh monit         # 终端仪表盘
-#   bash scripts/previews.sh kill          # 强杀全部
+#   bash scripts/previews.sh start [app]  启全部 / 单个
+#   bash scripts/previews.sh stop  [app]  停全部 / 单个
+#   bash scripts/previews.sh restart [app] 重启全部 / 单个
+#   bash scripts/previews.sh reload        0 秒重载配置
+#   bash scripts/previews.sh status        状态 + 端口 + 内存
+#   bash scripts/previews.sh logs   [app]  实时日志
+#   bash scripts/previews.sh monit         终端仪表盘
+#   bash scripts/previews.sh kill          强杀全部 + 端口兜底
 # =============================================================================
 
 set -uo pipefail
@@ -35,21 +35,19 @@ usage() {
 用法: bash scripts/previews.sh <command> [app_name]
 
 命令:
-  start [app]   启辅助服务全部 / 单个
-  stop  [app]   停辅助服务全部 / 单个
-  restart [app] 重启辅助服务全部 / 单个
-  reload        0 秒停机重载（pickup ecosystem.config.cjs 变更）
+  start [app]   启全部 / 单个
+  stop  [app]   停全部 / 单个
+  restart [app] 重启全部 / 单个
+  reload        0 秒重载（pickup ecosystem.config.cjs 变更）
   status        pm2 状态 + 端口 + 内存
   logs   [app]  实时日志（默认全部交错，指定 app 看单个）
   monit         终端仪表盘（CPU/内存/事件）
   kill          强杀全部（从 pm2 进程列表清空 + 端口兜底）
 
-主预览（不在 pm2）:
-  bash app/encv-mobile/scripts/start-preview.sh   # 前台启动 :2025 + :5173
-
 服务名:
-  openlist             (:5244)
-  plugin-openlist-vite (:5174)
+  start-preview         (主预览 :2025 air + :5173 vite)
+  openlist              (:5244)
+  plugin-openlist-vite  (:5174)
 EOF
 }
 
@@ -64,8 +62,10 @@ APP_NAME="${2:-}"
 
 check_ports() {
   echo ""
-  log "📡 pm2 辅助服务端口状态："
+  log "📡 端口状态："
   local ports=(
+    "2025:encv-go (start-preview 子进程)"
+    "5173:encv-mobile-vite (start-preview 子进程)"
     "5244:openlist"
     "5174:plugin-openlist-vite"
   )
@@ -80,17 +80,6 @@ check_ports() {
       printf "   :%-5s  ${R}❌${N} %s\n" "$port" "$name"
     fi
   done
-  echo ""
-  log "📡 主预览端口（不在 pm2，由 start-preview.sh 前台管）："
-  for entry in "2025:encv-go" "5173:encv-mobile-vite"; do
-    local port="${entry%%:*}"
-    local name="${entry##*:}"
-    if lsof -i ":$port" >/dev/null 2>&1; then
-      printf "   :%-5s  ${G}✅${N} %s\n" "$port" "$name"
-    else
-      printf "   :%-5s  ${Y}⏸${N}  %s (需 bash app/encv-mobile/scripts/start-preview.sh)\n" "$port" "$name"
-    fi
-  done
 }
 
 case "$CMD" in
@@ -99,7 +88,7 @@ case "$CMD" in
       log "启 ${APP_NAME} ..."
       pm2 start "$ECOSYSTEM" --only "$APP_NAME" 2>&1 | tail -8
     else
-      log "启全部辅助服务 ..."
+      log "启全部 (start-preview + openlist + plugin-openlist-vite) ..."
       pm2 start "$ECOSYSTEM" 2>&1 | tail -20
     fi
     sleep 2
@@ -112,7 +101,7 @@ case "$CMD" in
       log "停 ${APP_NAME} ..."
       pm2 stop "$APP_NAME" 2>&1 | tail -5
     else
-      log "停全部辅助服务 ..."
+      log "停全部 ..."
       pm2 stop "$ECOSYSTEM" 2>&1 | tail -5
     fi
     sleep 1
@@ -124,7 +113,7 @@ case "$CMD" in
       log "重启 ${APP_NAME} ..."
       pm2 restart "$APP_NAME" 2>&1 | tail -5
     else
-      log "重启全部辅助服务 ..."
+      log "重启全部 ..."
       pm2 restart "$ECOSYSTEM" 2>&1 | tail -5
     fi
     sleep 2
@@ -158,7 +147,7 @@ case "$CMD" in
     warn "⚠️  强杀所有 pm2 进程 ..."
     pm2 kill 2>&1 | tail -3
     sleep 1
-    for port in 5244 5174; do
+    for port in 2025 5173 5244 5174; do
       pids=$(lsof -ti ":$port" 2>/dev/null || true)
       if [[ -n "$pids" ]]; then
         log "清理 :$port 残留 pids: $pids"

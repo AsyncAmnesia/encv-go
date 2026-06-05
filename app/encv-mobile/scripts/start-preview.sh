@@ -6,16 +6,16 @@
 #   3. 不修改 config.user.json —— servingDir 永远为 /storage/emulated/0
 #   4. 严禁任何符号链接 —— mock-data 真实目录在 /storage/emulated/0
 #   5. 自动检测端口占用：5173 被占时自动回退到 5174
-#   6. 脚本必须保持前台运行（nohup 进程由脚本管理），便于 OpenPreview 激活
-#   7. 脚本退出时优雅停止所有子进程
+#   6. 脚本必须保持前台运行（可被 pm2/nohup 包装，便于 OpenPreview 激活）
+#   7. 脚本退出时优雅停止所有子进程（仅主预览 :2025/:5173，不动 :5174）
 set -euo pipefail
 shopt -s lastpipe
 
-# ---- 信号陷阱：脚本退出时杀掉所有子进程 ----
+# ---- 信号陷阱：脚本退出时杀掉所有子进程（仅主预览端口） ----
 SUBPIDS=()
 cleanup() {
   echo ""
-  echo "==> 收到退出信号，停止所有子进程..."
+  echo "==> 收到退出信号，停止主预览子进程 (:2025 / :5173)..."
   for pid in "${SUBPIDS[@]}"; do
     if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
       kill "${pid}" 2>/dev/null || true
@@ -25,7 +25,14 @@ cleanup() {
   # 强制清理（air 还会启动 ./tmp/encv 子进程）
   pkill -P $$ 2>/dev/null || true
   pkill -x air 2>/dev/null || true
-  pkill -f 'node.*vite' 2>/dev/null || true
+  # 精确杀 5173 端口的 vite（保留 5174 plugin-openlist-vite）
+  for pid in $(lsof -ti :5173 2>/dev/null || true); do
+    kill "${pid}" 2>/dev/null || true
+  done
+  # 兜底：杀 2025 端口的 encv 主进程
+  for pid in $(lsof -ti :2025 2>/dev/null || true); do
+    kill "${pid}" 2>/dev/null || true
+  done
   exit 0
 }
 trap cleanup INT TERM
@@ -54,11 +61,19 @@ cd "${REPO_ROOT}"
 step() { echo ""; echo "==> $*"; }
 
 # ---------- Step 0: 停止残留 ENCV 进程 ----------
-step "0/6 停止残留 ENCV 进程"
+# ⚠️ 必须精确到「主预览」端口 (2025/5173) — 不能误杀 plugin-openlist-vite (:5174)
+step "0/6 停止残留 ENCV 主预览进程 (:2025 / :5173)"
 pkill -x air 2>/dev/null && echo "    killed air" || true
 pkill -f '^./tmp/encv' 2>/dev/null && echo "    killed ./tmp/encv" || true
 pkill -f '/tmp/encv start' 2>/dev/null && echo "    killed /tmp/encv start" || true
-pkill -f 'node.*vite' 2>/dev/null && echo "    killed vite" || true
+
+# 精确杀 5173 端口的 vite（保留 5174 plugin-openlist-vite）
+VITE_PIDS="$(lsof -ti :5173 2>/dev/null || true)"
+if [[ -n "${VITE_PIDS}" ]]; then
+  for pid in ${VITE_PIDS}; do
+    kill "${pid}" 2>/dev/null && echo "    killed vite-on-:5173 pid=${pid}" || true
+  done
+fi
 
 BACKEND_PIDS="$(lsof -ti :"${BACKEND_PORT}" 2>/dev/null || true)"
 if [[ -n "${BACKEND_PIDS}" ]]; then
