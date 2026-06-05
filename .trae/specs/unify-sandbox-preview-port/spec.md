@@ -93,7 +93,7 @@ Layer 3: 浏览器
 | **D7** | 出错兜底？ | **502 + JSON 错误** | 任意 upstream 不可达 → 网关返回 `{ error: "upstream_unavailable", upstream: "..." }` 便于 DevLogs 诊断 |
 | **D8** | 健康检查端点？ | **`/__gateway/health`** | 返回所有 upstream 的 ping 结果；pm2 readiness 用 |
 | **D9** | vite 承担什么角色？ | **纯净 SPA dev server，监听 :8100**（用户决策） | 之前的所有 vite 胶水（workspacePackageRewrite / alias / fs.allow / proxy 块 / cors '*'）已撤销；vite 是纯 dev server |
-| **D10** | agent-tool-host 的默认 upstream 怎么改？ | **首次 agent-browser navigate :16666 时自动改写** | 字符串二进制发现：`Navigate with original_url: , registering port` —— agent-browser navigate 会自动调用 preview-proxy register API |
+| **D10** | agent-tool-host 的默认 upstream 怎么改？ | **需要 IDE OpenPreview 工具显式注册（无自动机制）** | 实测发现 preview-proxy 内部 :80 register 端点 requires_auth=true，普通 agent-browser navigate 不会触发。Register 仅在 `OpenPreview(command_id=..., preview_url=...)` 调用时由 PreviewManager 执行。终态须用 OpenPreview(preview_url="http://localhost:16666/") 显式激活 |
 
 ### 2.3 与现有 OpenPreview 关系
 
@@ -312,7 +312,7 @@ P7 — 文档 (G7)                                       ⏳ P6 后
 | **J11** | vite.config.ts 不含 `proxy: { ... }` 块（D9 验证） | `grep -n "proxy:" app/encv-mobile/vite.config.ts` 应为空 |
 | **J12** | vite.config.ts 不含 `openlistUiProxy` plugin 引用 | `grep -n "openlistUiProxy" app/encv-mobile/vite.config.ts` 应为空 |
 | **J13** | vite 实际监听 :8100（D9 验证） | `curl -sI http://localhost:8100/ \| head -3`（拿到 vite HTML 即正确） |
-| **J14** | agent-browser navigate http://localhost:16666/ 后 :16000 默认 upstream 改写为 :16666 | `tail -f /var/log/tool/agent-tool-host.stdout.log \| grep 'registering port'`；日志显示 16666 被注册 |
+| **J14** | OpenPreview 工具激活 :16666 后 :16000 默认 upstream 切换 | `OpenPreview(preview_url="http://localhost:16666/")` 显式注册；日志 `PreviewManager` Port registered: 16666 |
 
 ---
 
