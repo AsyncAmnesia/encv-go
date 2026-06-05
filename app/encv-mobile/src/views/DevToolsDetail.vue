@@ -244,8 +244,14 @@ function openPreviewOpenList() {
 // 跳 :5174 plugin-openlist 管理 UI（OpenListHome/Settings/ConfigEditor）
 // 与现有 /openlist-ui/ 入口的区别：openlist-ui 是 dev 沙箱代理，plugin-openlist
 // 是 Capacitor OpenList plugin 自身的管理 UI（独立前端，不在 encv-mobile 内）
+//
+// 为什么用 window.open(_, '_system') 而不是 window.location.assign：
+// - 跟 LocalOpenListStatusCard.openWebUi（跳 :5244）保持完全一致
+// - '_system' target 由 Capacitor Browser 拦截：native 端走系统浏览器，
+//   web 端走新标签页。当前 encv-mobile SPA / OpenPreview 会话不丢
+// - window.location.assign 会触发整页加载，破坏 OpenPreview 会话锚定的 :5173
 function openPreviewOpenListPlugin() {
-  window.location.assign('http://127.0.0.1:5174/')
+  window.open('http://127.0.0.1:5174/', '_system')
 }
 
 function handleVConsoleToggle(event: CustomEvent) {
