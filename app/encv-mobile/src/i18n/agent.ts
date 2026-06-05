@@ -2,6 +2,8 @@ export default {
   'zh-CN': {
     'agent.title': 'AI 助手',
     'agent.fabLabel': '打开 AI 助手',
+    'agent.model': '模型',
+    'agent.temperature': '温度',
     'agent.placeholder': '输入消息，回车发送…',
     'agent.thinking': '正在思考',
     'agent.running': '正在运行',
@@ -39,6 +41,8 @@ export default {
   en: {
     'agent.title': 'AI Assistant',
     'agent.fabLabel': 'Open AI assistant',
+    'agent.model': 'Model',
+    'agent.temperature': 'Temp',
     'agent.placeholder': 'Type a message, press Enter to send…',
     'agent.thinking': 'Thinking',
     'agent.running': 'Running',

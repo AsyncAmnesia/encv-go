@@ -192,6 +192,25 @@ export function useAgent() {
   let eventOffset = 0
   let abortController: AbortController | null = null
 
+  // 模型/温度从 localStorage 读取（AgentChat 顶部 UI 选择会同步写入这里）
+  const MODEL_STORAGE_KEY = 'encv-agent-selected-model'
+  const TEMP_STORAGE_KEY = 'encv-agent-temperature'
+  const activeModel = ref<string>(
+    (() => {
+      try { return localStorage.getItem(MODEL_STORAGE_KEY) || 'gpt-4o-mini' }
+      catch { return 'gpt-4o-mini' }
+    })(),
+  )
+  const activeTemperature = ref<number>(
+    (() => {
+      try {
+        const v = localStorage.getItem(TEMP_STORAGE_KEY)
+        const n = v == null ? 0.7 : Number(v)
+        return Number.isFinite(n) ? n : 0.7
+      } catch { return 0.7 }
+    })(),
+  )
+
   // ─── 内部辅助 ───────────────────────────────────────────────────────────
 
   /**
@@ -672,5 +691,7 @@ export function useAgent() {
     resume,
     stop,
     reset,
+    activeModel,
+    activeTemperature,
   }
 }

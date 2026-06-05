@@ -14,12 +14,13 @@
  *
  * Routes (see spec §3.1):
  *   /             → encv-mobile (Vite, :8100)         — default fallthrough
- *   /openlist-ui/ → plugin-openlist-web (Vite, :5174)
- *   /openlist/    → encv-go (Go, :2025)               — proxies to OpenList (:5244)
- *   /api          → encv-go (Go, :2025)
- *   /p            → encv-go (Go, :2025)
- *   /play         → encv-go (Go, :2025)
- *   /__gateway/health → gateway itself
+ *   - /openlist-ui/ → plugin-openlist-web (Vite, :5174)
+ *   - /openlist/    → encv-go (Go, :2025)               — proxies to OpenList (:5244)
+ *   - /agent-api/   → in-process agent (Go, :5245)      — AI assistant SSE
+ *   - /api          → encv-go (Go, :2025)
+ *   - /p            → encv-go (Go, :2025)
+ *   - /play         → encv-go (Go, :2025)
+ *   - /__gateway/health → gateway itself
  *
  * WebSocket:
  *   Upgrade on /             → ws://:8100 (main app HMR)
@@ -95,6 +96,19 @@ const UPSTREAMS: Upstream[] = [
     name: 'openlist',
     hint: 'Check pm2 status for openlist (:5244)',
     pathRewrite: (p) => p.replace(/^\/openlist(?=\/|$)/, '') || '/',
+  },
+  {
+    // /agent-api 是 in-process AI agent (Go, :5245) 的 SSE 端点
+    //   POST /agent-api/api/chat    — 发起对话 (SSE)
+    //   POST /agent-api/api/confirm — 4-决策确认 (SSE)
+    //   POST /agent-api/api/resume  — 断点续传 (SSE)
+    // pathRewrite 把 /agent-api/* 剥成 /* 转发到 Go agent 命名空间
+    match: '/agent-api',
+    target: 'http://127.0.0.1:5245',
+    wsTarget: 'ws://127.0.0.1:5245',
+    name: 'agent-go',
+    hint: 'Check pm2 status for agent-go (:5245) — in-process AI agent (Go)',
+    pathRewrite: (p) => p.replace(/^\/agent-api(?=\/|$)/, '') || '/',
   },
   {
     match: '/api',

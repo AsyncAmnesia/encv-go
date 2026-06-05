@@ -25,6 +25,27 @@
       </button>
     </header>
 
+    <div class="agentChatToolbar">
+      <label class="toolbarField">
+        <span class="toolbarLabel">{{ t('agent.model') }}</span>
+        <select v-model="selectedModel" class="toolbarSelect" :disabled="status === 'streaming'">
+          <option v-for="m in availableModels" :key="m.id" :value="m.id">{{ m.label }}</option>
+        </select>
+      </label>
+      <label class="toolbarField toolbarFieldNarrow">
+        <span class="toolbarLabel">{{ t('agent.temperature') }}</span>
+        <input
+          v-model.number="temperature"
+          type="number"
+          min="0"
+          max="2"
+          step="0.1"
+          class="toolbarInput"
+          :disabled="status === 'streaming'"
+        />
+      </label>
+    </div>
+
     <main class="agentChatMain" ref="mainRef">
       <div v-if="renderedItems.length === 0" class="agentChatEmpty">
         <ion-icon :icon="chatbubblesIcon" class="emptyIcon" />
@@ -151,6 +172,42 @@ const stopIcon = stopOutline
 const chatbubblesIcon = chatbubblesOutline
 
 const canSend = computed(() => status.value !== 'streaming' && inputText.value.trim().length > 0)
+
+// ─── 模型选择 ─────────────────────────────────────────────
+const availableModels = [
+  { id: 'gpt-4o-mini', label: 'GPT-4o mini' },
+  { id: 'gpt-4o', label: 'GPT-4o' },
+  { id: 'claude-3-5-sonnet', label: 'Claude 3.5 Sonnet' },
+  { id: 'claude-3-5-haiku', label: 'Claude 3.5 Haiku' },
+  { id: 'ollama:qwen2.5-coder:7b', label: 'Ollama · Qwen2.5-Coder 7B' },
+  { id: 'custom', label: 'Custom…' },
+]
+const SELECTED_MODEL_KEY = 'encv-agent-selected-model'
+const TEMPERATURE_KEY = 'encv-agent-temperature'
+const storedModel = (() => {
+  try {
+    return localStorage.getItem(SELECTED_MODEL_KEY) || 'gpt-4o-mini'
+  } catch {
+    return 'gpt-4o-mini'
+  }
+})()
+const storedTemp = (() => {
+  try {
+    const v = localStorage.getItem(TEMPERATURE_KEY)
+    const n = v == null ? 0.7 : Number(v)
+    return Number.isFinite(n) ? n : 0.7
+  } catch {
+    return 0.7
+  }
+})()
+const selectedModel = ref<string>(storedModel)
+const temperature = ref<number>(storedTemp)
+watch(selectedModel, (v) => {
+  try { localStorage.setItem(SELECTED_MODEL_KEY, v) } catch { /* ignore */ }
+})
+watch(temperature, (v) => {
+  try { localStorage.setItem(TEMPERATURE_KEY, String(v)) } catch { /* ignore */ }
+})
 
 // ─── 工具调用查找 ─────────────────────────────────────────
 function findToolCall(id: string): ToolCall | null {

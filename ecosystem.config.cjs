@@ -11,6 +11,7 @@
 //   ⑤ encv-mobile-vite    (主 app Vite, :8100 — 独立 pm2 app)
 //   ⑥ preview-helper      (OpenPreview 占位, :15002)
 //   ⑦ openpreview-stub    (OpenPreview 注册源, :15003)
+//   ⑧ agent-stub          (in-process AI agent stub, :5245 — 临时)
 //
 // 用法：
 //   pm2 start ecosystem.config.cjs
@@ -251,6 +252,27 @@ module.exports = {
       max_restarts: 10,
       out_file: '/tmp/pm2-openpreview-stub.log',
       error_file: '/tmp/pm2-openpreview-stub.err.log',
+    },
+
+    // ── ⑦ agent-stub (in-process AI agent stub, :5245) ─────────────
+    //   临时 stub：模拟 spec §go-in-process-agent 的 SSE 端点
+    //   (POST /api/chat, /api/confirm, /api/resume)。
+    //   preview-gateway 通过 /agent-api/* 路由转发到本服务。
+    //   真实 Go agent 就绪后用 :5245 真实进程替换本 stub。
+    //   不阻塞会话：pm2 fork 模式，daemon 化。
+    {
+      name: 'agent-stub',
+      script: path.join(REPO_ROOT, 'scripts', 'agent-stub.js'),
+      interpreter: 'node',
+      cwd: REPO_ROOT,
+      env: { PATH: process.env.PATH, PORT: '5245', HOST: '0.0.0.0' },
+      max_memory_restart: '128M',
+      listen_timeout: 5000,
+      kill_timeout: 2000,
+      autorestart: true,
+      max_restarts: 10,
+      out_file: '/tmp/pm2-agent-stub.log',
+      error_file: '/tmp/pm2-agent-stub.err.log',
     },
   ],
 
