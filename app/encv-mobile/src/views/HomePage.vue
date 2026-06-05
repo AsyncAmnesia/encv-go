@@ -52,6 +52,9 @@
           </div>
         </div>
       </div>
+
+      <!-- 浮动 AI 入口（Phase 7.6） -->
+      <AgentEntry />
     </ion-content>
   </ion-page>
 </template>

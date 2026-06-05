@@ -83,6 +83,10 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/PluginSettings.vue'),
       },
       {
+        path: 'settings/agent',
+        component: () => import('@/views/AgentSettingsDetail.vue'),
+      },
+      {
         path: 'settings/devtools',
         component: () => import('@/views/DevToolsDetail.vue'),
       },

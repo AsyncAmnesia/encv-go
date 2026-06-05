@@ -144,7 +144,7 @@
       <template v-else-if="configLoaded">
         <template v-for="section in schemaFields" :key="section.key">
           <!-- 过滤掉 server/admin/webdav/proxy/log 配置项，这些有独立页面或冗余 -->
-        <template v-if="!['server', 'admin', 'webdav', 'proxy', 'log'].includes(section.key)">
+        <template v-if="!['server', 'admin', 'webdav', 'proxy', 'log', 'agent_settings'].includes(section.key)">
           <ion-list v-if="section.key === 'plugin_settings'">
             <ion-list-header>
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
@@ -157,6 +157,23 @@
               <ion-icon :icon="settingsOutline" slot="start"></ion-icon>
               <ion-label>
                 <h3>{{ tField(section.key) }}</h3>
+              </ion-label>
+            </ion-item>
+          </ion-list>
+
+          <ion-list v-else-if="section.key === 'agent_settings'">
+            <ion-list-header>
+              <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
+              <ion-badge slot="end" color="primary" class="scope-badge scope-synced">
+                <ion-icon :icon="cloudOutline" class="scope-badge-icon"></ion-icon>
+                <span class="scope-text">{{ t('settings.synced') }}</span>
+              </ion-badge>
+            </ion-list-header>
+            <ion-item button @click="goAgent" detail>
+              <ion-icon :icon="sparklesOutline" slot="start"></ion-icon>
+              <ion-label>
+                <h3>{{ t('settings.agent') }}</h3>
+                <p>{{ t('settings.agentSettingsHelp') }}</p>
               </ion-label>
             </ion-item>
           </ion-list>
@@ -361,7 +378,7 @@ import {
   filmOutline, musicalNotesOutline, imagesOutline, readerOutline,
   newspaperOutline, gitNetworkOutline, toggleOutline,
   textOutline, personOutline, folderOpen, refreshCircle,
-  trash, bugOutline,
+  trash, bugOutline, sparklesOutline,
   phonePortraitOutline,
   colorPaletteOutline, layersOutline, globeOutline,
   fileTrayFull as databaseIcon,
@@ -542,6 +559,10 @@ function goCache() {
 
 function goPlugins() {
   router.push('/tabs/settings/plugins')
+}
+
+function goAgent() {
+  router.push('/tabs/settings/agent')
 }
 
 function getValue(path: string[]): unknown {

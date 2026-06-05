@@ -32,6 +32,8 @@ interface JsonSchemaProperty {
   items?: JsonSchemaProperty
   enum?: string[]
   default?: unknown
+  secret?: boolean
+  format?: string
 }
 
 interface JsonSchemaDef {
@@ -84,7 +86,7 @@ function parseProperty(
 		type: (resolved.type || 'string') as FieldType,
 		required: isRequired,
 		sectionTitle: sectionTitle || undefined,
-		isPassword: isPasswordField(key),
+		isPassword: isPasswordField(key, resolved as JsonSchemaProperty),
 		isPath: isPathField(key),
 		default: resolved.default,
 	}
@@ -137,7 +139,9 @@ function formatLabel(key: string): string {
     .replace(/\b\w/g, c => c.toUpperCase())
 }
 
-function isPasswordField(key: string): boolean {
+function isPasswordField(key: string, prop?: JsonSchemaProperty): boolean {
+  if (prop?.secret === true) return true
+  if (prop?.format === 'password') return true
   return key.toLowerCase().includes('password')
 }
 
