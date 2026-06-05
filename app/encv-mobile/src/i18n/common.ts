@@ -115,6 +115,8 @@ export default {
     'devtools.sandboxPreviewHint': '开发环境专属入口（生产构建自动隐藏）',
     'devtools.previewOpenList': '预览 OpenList 前端',
     'devtools.previewOpenListDesc': '通过 Vite 中间件 (openlistUiProxy) 跳转 /openlist-ui/，无 CORS 障碍',
+    'devtools.previewOpenListLive': '预览 OpenList Plugin',
+    'devtools.previewOpenListLiveDesc': '跳转 http://127.0.0.1:5174/ OpenList Plugin 管理 UI（OpenListHome/Settings/ConfigEditor）',
     'devtools.composePrototypes': 'Compose UI 原型',
     'devtools.composePrototypesHint': '在沙箱中预览 Android Compose 组件，辅助 UI 设计沟通。点击卡片跳转到对应原型页面。',
     'devtools.protoMpvPlayerDesc': 'MPV 播放器主界面，包含视频渲染区和控制层叠加',

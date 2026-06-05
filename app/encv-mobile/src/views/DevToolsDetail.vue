@@ -148,7 +148,7 @@ import {
   chevronForward, playCircleOutline, musicalNotesOutline,
   colorPaletteOutline, settingsOutline, terminal, documentText,
   cloudOutline, refreshOutline, eyeOutline,
-  globeOutline,
+  extensionPuzzleOutline,
 } from 'ionicons/icons'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/composables/useI18n'
@@ -234,9 +234,11 @@ function openPreviewOpenList() {
   window.location.assign('/openlist-ui/')
 }
 
-// 跳 :5244 OpenList 真实前端（与 prod 部署一致）
-function openPreviewOpenListLive() {
-  window.location.assign('http://127.0.0.1:5244/')
+// 跳 :5174 plugin-openlist 管理 UI（OpenListHome/Settings/ConfigEditor）
+// 与现有 /openlist-ui/ 入口的区别：openlist-ui 是 dev 沙箱代理，plugin-openlist
+// 是 Capacitor OpenList plugin 自身的管理 UI（独立前端，不在 encv-mobile 内）
+function openPreviewOpenListPlugin() {
+  window.location.assign('http://127.0.0.1:5174/')
 }
 
 function handleVConsoleToggle(event: CustomEvent) {
