@@ -151,7 +151,35 @@ function dynamicHmrHostPlugin(): Plugin {
   let detectedProtocol: 'ws' | 'wss' = 'ws'
   let hostSource: 'env' | 'detected' | 'pending' = 'pending'
 
-  function resolveHost(reqHost?: string, referer?: string): { host: string; protocol: 'ws' | 'wss' } {
+  /**
+   * 多源探测 HTTPS：
+   *   1. X-Forwarded-Proto 头（preview-gateway 透传，HTTPS→:5174 时设为 'https'）
+   *   2. Referer 头（页面层协议）
+   *   3. req.socket.encrypted（直连 HTTPS，但 :5174 一般是 HTTP，兜底）
+   *   4. Host 端口（:443 → https，其余 → http）
+   * 优先级递减。任一命中即返回。
+   */
+  function detectProtocolFromReq(req: any): 'ws' | 'wss' {
+    const xfp = String(req.headers?.['x-forwarded-proto'] || '').toLowerCase().split(',')[0].trim()
+    if (xfp === 'https') return 'wss'
+    if (xfp === 'http') return 'ws'
+
+    const ref = String(req.headers?.referer || req.headers?.referrer || '')
+    if (ref.startsWith('https://')) return 'wss'
+    if (ref.startsWith('http://')) return 'ws'
+
+    if (req.socket?.encrypted || req.connection?.encrypted) return 'wss'
+
+    const host = String(req.headers?.host || '')
+    if (host.endsWith(':443')) return 'wss'
+
+    return 'ws'
+  }
+
+  function resolveHost(
+    reqHost?: string,
+    proto?: 'ws' | 'wss',
+  ): { host: string; protocol: 'ws' | 'wss' } {
     // 优先用 env
     if (envHmrHost) {
       hostSource = 'env'
@@ -160,8 +188,7 @@ function dynamicHmrHostPlugin(): Plugin {
     // 其次 auto-detect
     if (reqHost) {
       hostSource = 'detected'
-      const proto = referer?.startsWith('https://') ? 'wss' : 'ws'
-      return { host: reqHost.split(':')[0], protocol: proto }
+      return { host: reqHost.split(':')[0], protocol: proto || 'ws' }
     }
     // 最后 fallback
     return { host: 'localhost', protocol: 'ws' }
@@ -171,45 +198,95 @@ function dynamicHmrHostPlugin(): Plugin {
     name: 'dynamic-hmr-host',
     enforce: 'pre',
     configureServer(server) {
-      // 中间件：捕获首次请求的 Host 头
+      // ① 中间件：每次请求都更新 host + protocol
+      //   - 不锁"首次请求"——vite 启动可能有 self-ping，host 是 127.0.0.1
+      //   - 改成"最近一次非本地 host 优先"
       server.middlewares.use((req, res, next) => {
-        if (hostSource === 'pending' && req.headers.host) {
-          const r = resolveHost(req.headers.host, req.headers.referer)
-          detectedHost = r.host
-          detectedProtocol = r.protocol
-          console.log(
-            `[dynamic-hmr-host] source=${hostSource} host=${detectedHost} protocol=${detectedProtocol}`,
-          )
+        if (!req.headers.host) return next()
+
+        const rawHost = req.headers.host.split(':')[0]
+        const proto = detectProtocolFromReq(req)
+
+        const isLocalHost =
+          rawHost === '127.0.0.1' ||
+          rawHost === 'localhost' ||
+          rawHost === '0.0.0.0' ||
+          rawHost === '::1' ||
+          rawHost === ''
+
+        if (!isLocalHost) {
+          const prevHost = detectedHost
+          const prevProto = detectedProtocol
+          detectedHost = rawHost
+          detectedProtocol = proto
+          hostSource = 'detected'
+          if (prevHost !== detectedHost || prevProto !== detectedProtocol) {
+            console.log(
+              `[dynamic-hmr-host] UPDATE host ${prevHost}->${detectedHost} proto ${prevProto}->${detectedProtocol} url=${req.url} xfp=${req.headers['x-forwarded-proto'] || ''} ref=${String(req.headers.referer || '').substring(0, 60)}`,
+            )
+          }
         }
         next()
       })
-    },
-    transform(code, id) {
-      // 拦截 vite 的 client.mjs，替换 HMR config 占位符
-      const isViteClient =
-        id.includes('vite/dist/client/client.mjs') ||
-        id.includes('vite/client') ||
-        id.endsWith('@vite/client') ||
-        id.includes('/@vite/client')
-      if (!isViteClient) return null
 
-      const { host, protocol } = resolveHost(
-        detectedHost ?? undefined,
-        undefined, // protocol 已从 middleware 检测过
-      )
-      const port = envHmrClientPort ? Number(envHmrClientPort) : 16666
-      const base = '/'
+      // ② ⚠️ 关键：直接接管 /@vite/client 请求的响应
+      //   - 用 transform 钩子有缺陷：vite 模块图缓存 mutable 状态
+      //   - 用中间件直接响应：每次请求都基于最新状态生成
+      server.middlewares.use(async (req, res, next) => {
+        const url = req.url || ''
+        if (!/^\/@vite\/client(\?|$)/.test(url)) {
+          return next()
+        }
 
-      // vite 占位符是裸标识符（如 __HMR_PORT__），vite 内部 transform 后续
-      // 会 escapeReplacement 替换。enforce:'pre' 保证我们先替换，
-      // vite 内部再 replace 时找不到占位符就跳过。
-      let modified = code
-      modified = modified.replace(/__HMR_HOSTNAME__/g, JSON.stringify(host))
-      modified = modified.replace(/__HMR_PORT__/g, String(port))
-      modified = modified.replace(/__HMR_PROTOCOL__/g, JSON.stringify(protocol))
-      modified = modified.replace(/__HMR_BASE__/g, JSON.stringify(base))
-      // 不要改 __WS_TOKEN__：vite 生成的 token，gateway 透传给上游即可
-      return { code: modified, map: null }
+        try {
+          const viteClientPath = require.resolve('vite/dist/client/client.mjs', {
+            paths: [server.config.root],
+          })
+          const fs = await import('node:fs/promises')
+          let code = await fs.readFile(viteClientPath, 'utf-8')
+
+          const { host, protocol } = resolveHost(detectedHost ?? undefined, detectedProtocol)
+          const port = envHmrClientPort ? Number(envHmrClientPort) : 16666
+          const base = '/'
+          const devBase = server.config.base || '/'
+          const mode = server.config.mode || 'development'
+          const serverHostStr = `${host}:${port}${devBase}`
+          const directTarget = `${host}:${port}${devBase}`
+          const hmrTimeout = 30000
+          const hmrEnableOverlay = true
+          const hmrConfigName = 'vite.config.ts'
+          const wsToken = (server.config as any).webSocketToken
+
+          // ⚠️ 必须替换全部 vite 8 (rolldown) client.mjs 占位符
+          code = code
+            .replace(/__MODE__/g, JSON.stringify(mode))
+            .replace(/__BASE__/g, JSON.stringify(devBase))
+            .replace(/__SERVER_HOST__/g, JSON.stringify(serverHostStr))
+            .replace(/__HMR_PROTOCOL__/g, JSON.stringify(protocol))
+            .replace(/__HMR_HOSTNAME__/g, JSON.stringify(host))
+            .replace(/__HMR_PORT__/g, JSON.stringify(port))
+            .replace(/__HMR_DIRECT_TARGET__/g, JSON.stringify(directTarget))
+            .replace(/__HMR_BASE__/g, JSON.stringify(base))
+            .replace(/__HMR_TIMEOUT__/g, JSON.stringify(hmrTimeout))
+            .replace(/__HMR_ENABLE_OVERLAY__/g, JSON.stringify(hmrEnableOverlay))
+            .replace(/__HMR_CONFIG_NAME__/g, JSON.stringify(hmrConfigName))
+            .replace(/__WS_TOKEN__/g, JSON.stringify(wsToken ?? ''))
+            .replace(/__SERVER_FORWARD_CONSOLE__/g, 'false')
+            .replace(/__BUNDLED_DEV__/g, 'false')
+            // ⚠️ __PURE__ 是 rollup tree-shaking 注解（/* @__PURE__ */），
+            //   在 vite 8 client.mjs 中只以这种合法 JS 注释形式出现。
+            //   浏览器能正常解析 /* @__PURE__ */，无需替换。
+            //   切勿替换为 /*#__PURE__*/ —— 会与 @ 前缀拼成 /* @/*#__PURE__*/ */ 这种非法嵌套注释。
+
+          res.setHeader('Content-Type', 'text/javascript')
+          res.setHeader('Cache-Control', 'no-cache')
+          res.statusCode = 200
+          res.end(code)
+        } catch (e) {
+          console.error('[dynamic-hmr-host] @vite/client serve failed:', e)
+          next()
+        }
+      })
     },
   }
 }

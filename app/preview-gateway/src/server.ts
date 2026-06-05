@@ -191,6 +191,49 @@ function createProxyFor(up: Upstream): httpProxy {
     timeout: 30_000,
   })
 
+  // ⚠️ 沙箱 dev critical: override http-proxy's xfwd behavior for X-Forwarded-Proto.
+  // http-proxy's built-in xfwd: true uses `req.socket.encrypted` to decide
+  // X-Forwarded-Proto. If Trae proxy terminates TLS and forwards HTTP to us,
+  // req.socket.encrypted=false → xfwd writes "http" → vite's @vite/client
+  // injects `ws://...` → browser on https:// page gets SecurityError
+  // "An insecure WebSocket connection may not be initiated from a page loaded over HTTPS".
+  //
+  // We override by reading `req.protocol` (Node IncomingMessage property) which
+  // already honors the X-Forwarded-Proto header set by Trae proxy. If Trae didn't
+  // set it, we fall back to 'https' for Trae-sandbox domains (match *.trae.cn or
+  // has the well-known preview-gw prefix), otherwise 'http'.
+  proxy.on('proxyReq', (proxyReq, req) => {
+    const host = String(req.headers.host || '')
+    const xfpRaw = req.headers['x-forwarded-proto']
+    let xfpFirstStr: string = ''
+    if (Array.isArray(xfpRaw) && xfpRaw.length > 0 && xfpRaw[0] !== undefined) {
+      xfpFirstStr = xfpRaw[0] as string
+    } else if (typeof xfpRaw === 'string') {
+      xfpFirstStr = xfpRaw
+    }
+    const xfpFromIncoming = xfpFirstStr.toLowerCase().split(',')[0]?.trim() ?? ''
+    let xfp = xfpFromIncoming
+    if (!xfp) {
+      // Heuristic: Trae sandbox external domains are HTTPS. The Trae proxy
+      // terminates TLS at its edge; the connection from Trae to us is plain
+      // HTTP, so req.protocol would say 'http' — but the user-facing URL is
+      // HTTPS. Trust the host pattern.
+      if (/trae\.cn$/i.test(host) || /agent-sandbox/i.test(host) || /^run-agent-/i.test(host)) {
+        xfp = 'https'
+      } else {
+        const sock: any = req.socket
+        if (sock?.encrypted) {
+          xfp = 'https'
+        } else {
+          xfp = 'http'
+        }
+      }
+    }
+    if (xfp) {
+      proxyReq.setHeader('X-Forwarded-Proto', xfp)
+    }
+  })
+
   // ⚠️ 沙箱 dev critical: when user visits /openlist-ui/ (plugin SPA entry),
   // inject Set-Cookie: __plugin_spa=1 so subsequent subresource requests
   // (Vite's absolute-root imports: /src/App.vue, /@fs/..., /node_modules/...)
