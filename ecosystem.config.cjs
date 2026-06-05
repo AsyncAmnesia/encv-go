@@ -8,6 +8,9 @@
 //   ② start-preview       (主预览 — start-preview.sh, :2025 + :8100)
 //   ③ openlist            (Go OpenList 真实 fork, :5244)
 //   ④ plugin-openlist-vite(Vite plugin 管理 UI, :5174)
+//   ⑤ encv-mobile-vite    (主 app Vite, :8100 — 独立 pm2 app)
+//   ⑥ preview-helper      (OpenPreview 占位, :15002)
+//   ⑦ openpreview-stub    (OpenPreview 注册源, :15003)
 //
 // 用法：
 //   pm2 start ecosystem.config.cjs
@@ -221,6 +224,26 @@ module.exports = {
       max_restarts: 10,
       out_file: '/tmp/pm2-preview-helper.log',
       error_file: '/tmp/pm2-preview-helper.err.log',
+    },
+
+    // ── ⑥ openpreview-stub (OpenPreview 注册源, :15003) ─────────────
+    //   启动 /workspace/scripts/openpreview-stub.js (pm2 守护，daemon 化)。
+    //   与 preview-helper :15002 共存，端口不冲突。
+    //   真实预览仍走 :16666 preview-gateway。
+    //   完整规则：.trae/rules/preview-management.md §三
+    {
+      name: 'openpreview-stub',
+      script: path.join(REPO_ROOT, 'scripts', 'openpreview-stub.js'),
+      interpreter: 'node',
+      cwd: path.join(REPO_ROOT, 'scripts'),
+      env: { PATH: process.env.PATH, PORT: '15003' },
+      max_memory_restart: '64M',
+      listen_timeout: 5000,
+      kill_timeout: 2000,
+      autorestart: true,
+      max_restarts: 10,
+      out_file: '/tmp/pm2-openpreview-stub.log',
+      error_file: '/tmp/pm2-openpreview-stub.err.log',
     },
   ],
 
