@@ -1,0 +1,16 @@
+id,name,category,size,encrypted
+1,photo.jpg,image,107,false
+2,screenshot.png,image,512,false
+3,sample.mp4,video,45056,false
+4,comedy.mkv,video,2048,false
+5,music.mp3,audio,45184,false
+6,podcast.flac,audio,1024,false
+7,report.pdf,document,512,false
+8,notes.txt,text,1024,false
+9,data.csv,csv,256,false
+10,secret.ae,encrypt,4096,true
+11,document.ae,encrypt,8192,true
+12,hidden-gem.ae,encrypt,16384,true
+13,container.sccgv,container,8192,true
+14,archive.scext,container,16384,true
+15,bundle.scepkg,container,32768,true
