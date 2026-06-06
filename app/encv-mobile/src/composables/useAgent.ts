@@ -20,6 +20,7 @@
  */
 import { ref } from 'vue'
 import { showToast } from '@/composables/useToast'
+import { config } from '@/composables/useConfig'
 
 // =============================================================================
 // 类型定义（与 agent Go 服务契约对齐）
@@ -630,6 +631,22 @@ export function useAgent() {
       if (abortController) abortController.abort()
     }, 30_000)
 
+    // ── 构建消息列表：system prompt + 历史对话 ──
+    const apiMessages: Array<{ role: string; content: string }> = []
+
+    // 注入用户设置的 system prompt（从配置中读取）
+    const agentSettings = config.value?.agent_settings as Record<string, unknown> | undefined
+    const systemPrompt = agentSettings?.system_prompt as string | undefined
+    if (systemPrompt && typeof systemPrompt === 'string' && systemPrompt.trim()) {
+      apiMessages.push({ role: 'system', content: systemPrompt.trim() })
+    }
+
+    // 追加历史消息（不含空的 assistant 占位消息）
+    for (const m of messages.value) {
+      if (m.role === 'assistant' && !m.content && !m.reasoning && m.tool_calls.length === 0) continue
+      apiMessages.push({ role: m.role, content: m.content })
+    }
+
     try {
       console.debug('[useAgent] send() starting fetch to', `${AGENT_API_BASE}/api/chat`)
       const response = await fetch(`${AGENT_API_BASE}/api/chat`, {
@@ -639,10 +656,7 @@ export function useAgent() {
           sessionId: currentSessionId.value,
           model: activeModel.value,
           temperature: activeTemperature.value,
-          messages: messages.value.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
+          messages: apiMessages,
         }),
         signal: abortController.signal,
       })

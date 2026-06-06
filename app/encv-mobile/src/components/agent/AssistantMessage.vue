@@ -63,5 +63,25 @@ const meta = computed(() => {
   background: rgba(var(--ion-color-medium-rgb), 0.10);
   border-radius: 12px 14px 14px 4px;
   border-top-left-radius: 4px;
+  /* 流式输出时高度平滑过渡，消除跳动 */
+  transition: height 0.25s ease-out, padding 0.25s ease-out;
+}
+
+/* 打字光标动画（流式期间显示） */
+.assistantMessageBody :deep(.markdownStream_streaming)::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--ion-color-primary);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: cursorBlink 1s step-end infinite;
+  border-radius: 1px;
+}
+
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 </style>

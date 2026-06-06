@@ -128,4 +128,4 @@ export function useConfig() {
   }
 }
 
-export { getFieldValue, setFieldValue, resetFieldToDefault }
+export { getFieldValue, setFieldValue, resetFieldToDefault, config }

@@ -32,6 +32,34 @@ defineProps<{
   word-break: break-word;
 }
 
+/* 流式输出：高度平滑过渡 + 内容淡入 */
+.markdownStream_streaming {
+  transition: max-height 0.3s ease-out, opacity 0.2s ease-out;
+}
+
+.markdownStream_streaming > :deep(*) {
+  animation: streamFadeIn 0.35s ease-out both;
+}
+
+/* 错开每段/每个元素的入场时间，避免同时闪烁 */
+.markdownStream_streaming > :deep(:nth-child(1)) { animation-delay: 0ms; }
+.markdownStream_streaming > :deep(:nth-child(2)) { animation-delay: 40ms; }
+.markdownStream_streaming > :deep(:nth-child(3)) { animation-delay: 80ms; }
+.markdownStream_streaming > :deep(:nth-child(4)) { animation-delay: 120ms; }
+.markdownStream_streaming > :deep(:nth-child(5)) { animation-delay: 160ms; }
+.markdownStream_streaming > :deep(:nth-child(n+6)) { animation-delay: 200ms; }
+
+@keyframes streamFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .markdownStream p {
   margin: 6px 0;
 }
