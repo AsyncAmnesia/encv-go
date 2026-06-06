@@ -233,6 +233,31 @@ func ListPluginTools() []map[string]interface{} {
 	return out
 }
 
+// ListAgentTools 合并所有 agent 可用工具：插件工具（加密/解密）+ fs 工具（只读）。
+// 这是真正发到 OpenAI /v1/chat/completions 的 "tools" 字段。
+//
+// 重要：之前 ListPluginTools() 从未被发给 LLM（handleAgentChat 的 reqBody 里没 "tools" 字段），
+// 也就是说 agent 实际根本无法调用任何 tool，只能聊天。本函数是修复这个核心断点的入口。
+func (s *Server) ListAgentTools() []map[string]interface{} {
+	out := ListPluginTools()
+	out = append(out, s.ListFSTools()...)
+	return out
+}
+
+// executeAgentTool 统一派发所有 agent 工具调用。
+// 优先查插件工具表（pluginOpsByName），未命中再走 fs 工具。
+// 不存在的工具名 → 报错。
+//
+// 这是把 fs 工具接入 agent 系统的入口。
+// executePluginTool 保留为旧入口（向后兼容 + 测试）；新代码应调 executeAgentTool。
+func (s *Server) executeAgentTool(ctx context.Context, toolName, argsJSON string) (string, error) {
+	if _, ok := pluginOpsByName[toolName]; ok {
+		return executePluginTool(ctx, toolName, argsJSON)
+	}
+	// fs 工具
+	return s.executeFSTool(ctx, toolName, argsJSON)
+}
+
 // executePluginTool 执行一个插件工具调用。
 // 返回 (outputJSON, error)。outputJSON 描述执行结果（output_path / error / 耗时等）。
 //
@@ -395,4 +420,34 @@ func okJSON(m map[string]interface{}) string {
 // errJSON 把错误包装为 {"error": code, "message": msg} JSON
 func errJSON(code, msg string) string {
 	return okJSON(map[string]interface{}{"error": code, "message": msg})
+}
+
+// agentToolsToOpenAITools 把 agent 内部 tool 元数据转换为 OpenAI /v1/chat/completions
+// "tools" 字段要求的格式：
+//
+//	[
+//	  { "type": "function", "function": { "name": ..., "description": ..., "parameters": ... } },
+//	  ...
+//	]
+//
+// 注意：OpenAI 不认 "needConfirm" 字段（那是前端用的），这里主动剔除；
+// 保留 "kind" 字段也无害（OpenAI 忽略未知字段）。
+func agentToolsToOpenAITools(tools []map[string]interface{}) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(tools))
+	for _, t := range tools {
+		fn := map[string]interface{}{
+			"name": t["name"],
+		}
+		if d, ok := t["description"].(string); ok {
+			fn["description"] = d
+		}
+		if p, ok := t["parameters"]; ok {
+			fn["parameters"] = p
+		}
+		out = append(out, map[string]interface{}{
+			"type":     "function",
+			"function": fn,
+		})
+	}
+	return out
 }

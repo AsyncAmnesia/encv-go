@@ -166,7 +166,10 @@ func startSessionGC() {
 // 返回：
 //   - tool_result（已执行）
 //   - 新的 messages（已追加 tool_result）
-func executeAndRecurse(ctx context.Context, sess *agentSession, agentCfg agentConfig, tool toolCallAccumulator) (chatMsg, error) {
+//
+// s 用于路由到正确的工具实现（fs / plugin）。fs 工具是 read-only 不需要 confirm，
+// 但为了统一流程也走这里。
+func executeAndRecurse(ctx context.Context, s *Server, sess *agentSession, agentCfg agentConfig, tool toolCallAccumulator) (chatMsg, error) {
 	var argsObj map[string]interface{}
 	_ = json.Unmarshal([]byte(tool.Function.Arguments), &argsObj)
 
@@ -175,7 +178,7 @@ func executeAndRecurse(ctx context.Context, sess *agentSession, agentCfg agentCo
 	)
 
 	start := time.Now()
-	raw, execErr := executePluginTool(ctx, tool.Function.Name, tool.Function.Arguments)
+	raw, execErr := s.executeAgentTool(ctx, tool.Function.Name, tool.Function.Arguments)
 	_ = time.Since(start).Milliseconds() // 预留 durationMs 字段供后续 metrics
 	if execErr != nil {
 		resultStr = fmt.Sprintf(`{"error":"internal","message":%q}`, execErr.Error())
@@ -218,12 +221,19 @@ type openaiChatResponse struct {
 }
 
 // callOpenAIChatOnce 同步调一次 OpenAI（非流式）。返回 LLM 响应。
-func callOpenAIChatOnce(ctx context.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg) (*openaiChatResponse, error) {
+//
+// 关键：把 agent 工具列表塞到 reqBody["tools"] 里——之前没有这个字段，
+// LLM 永远只能聊天不能调工具，这是 agent "perceive file system" 的前提。
+func callOpenAIChatOnce(ctx context.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg, openAITools []map[string]interface{}) (*openaiChatResponse, error) {
 	reqBody := map[string]interface{}{
 		"model":       model,
 		"messages":    messages,
 		"temperature": temperature,
 		"stream":      false,
+	}
+	if len(openAITools) > 0 {
+		reqBody["tools"] = openAITools
+		reqBody["tool_choice"] = "auto"
 	}
 	reqJSON, _ := json.Marshal(reqBody)
 
@@ -260,12 +270,18 @@ func callOpenAIChatOnce(ctx context.Context, cfg agentConfig, model string, temp
 
 // callOpenAIStream 调一次 OpenAI 流式，返回事件 channel。
 // 用于在 confirm 后递归流式输出 LLM 继续生成的回复。
-func callOpenAIStream(ctx context.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg) (<-chan openaiStreamEvent, error) {
+//
+// 与 callOpenAIChatOnce 一样，把 agent 工具列表塞到 reqBody["tools"]。
+func callOpenAIStream(ctx context.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg, openAITools []map[string]interface{}) (<-chan openaiStreamEvent, error) {
 	reqBody := map[string]interface{}{
 		"model":       model,
 		"messages":    messages,
 		"temperature": temperature,
 		"stream":      true,
+	}
+	if len(openAITools) > 0 {
+		reqBody["tools"] = openAITools
+		reqBody["tool_choice"] = "auto"
 	}
 	reqJSON, _ := json.Marshal(reqBody)
 
@@ -347,14 +363,18 @@ type openaiStreamEvent struct {
 }
 
 // streamChat 写 SSE 事件到 client —— 用于 /api/confirm 递归时
-func (s *Server) streamChat(ctx context.Context, c *gin.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg, sess *agentSession) {
+//
+// openAITools 已经被 caller 包装成 OpenAI 协议格式（带 type:"function"），直接传即可。
+// toolMeta 保留为 agent 内部格式（name → {needConfirm, kind, ...}），
+// 用于在 SSE 推 tool_call 事件时给前端正确的 needsConfirm / kind。
+func (s *Server) streamChat(ctx context.Context, c *gin.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg, sess *agentSession, openAITools []map[string]interface{}, toolMeta map[string]map[string]interface{}) {
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		return
 	}
 	s.setSSEHeaders(c.Writer)
 
-	ch, err := callOpenAIStream(ctx, cfg, model, temperature, messages)
+	ch, err := callOpenAIStream(ctx, cfg, model, temperature, messages, openAITools)
 	if err != nil {
 		slog.Warn("agent: stream error", "error", err)
 		s.sendSSEEventSafe(c.Writer, flusher, "stream_error", err.Error())
@@ -397,15 +417,36 @@ func (s *Server) streamChat(ctx context.Context, c *gin.Context, cfg agentConfig
 				pendingTools = append(pendingTools, *tc)
 			}
 			if len(pendingTools) > 0 {
-				// 推 tool_call 事件
+				// 推 tool_call 事件（按 tool 名查 meta 决定 needsConfirm / kind）
 				for _, tc := range pendingTools {
+					needConfirm := true
+					kind := "fileChange"
+					if meta, ok := toolMeta[tc.Function.Name]; ok {
+						if v, ok := meta["needConfirm"].(bool); ok {
+							needConfirm = v
+						}
+						if v, ok := meta["kind"].(string); ok {
+							kind = v
+						}
+					}
+					// F 阶段：检查 session 授权表 → 已授权工具自动放行
+					autoRun := false
+					if !needConfirm && sess != nil {
+						// fs 工具永远不需 confirm，理论上不会进 PendingTools；
+						// 但 plugin 工具在 accept_for_session 之后会回写
+						sess.mu.Lock()
+						if sess.GrantedTools[tc.Function.Name] {
+							autoRun = true
+						}
+						sess.mu.Unlock()
+					}
 					payload := map[string]interface{}{
 						"id":           tc.ID,
 						"name":         tc.Function.Name,
 						"args":         tc.Function.Arguments,
-						"auto_run":     false,
-						"needsConfirm": true,
-						"kind":         "fileChange",
+						"auto_run":     autoRun,
+						"needsConfirm": needConfirm,
+						"kind":         kind,
 					}
 					s.sendSSEEventSafe(c.Writer, flusher, "tool_call", payload)
 				}

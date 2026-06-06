@@ -339,6 +339,58 @@
 
 ---
 
+## Phase 9: Agent 本地 fs 工具（取代 OpenList 外部依赖）
+
+> **背景**：原计划让 agent 通过 HTTP 调 OpenList 的 `/api/ext/*` 端点。但用户反馈"和 openlist 八竿子打不着，现在完全不要考虑 openlist 都能力"，所以本 phase 把 fs 能力直接做进 encv-go 自身（in-process）。OpenList 相关代码（`agent/openlist_client.go` 等）已撤销。
+
+### Task 9.1: agent_fs_bridge.go 实现
+
+- [x] SubTask 9.1.1: 创建 `internal/server/agent_fs_bridge.go`
+- [x] SubTask 9.1.2: 实现 `mountInfo` 结构（id/type/public_path/description/available）
+- [x] SubTask 9.1.3: 实现 `(s *Server) ListFSMounts()` —— 枚举 `servingDir` / `webdavDir`
+- [x] SubTask 9.1.4: 实现 `(s *Server) resolveMount(mountID)` —— 物理根路径解析
+- [x] SubTask 9.1.5: 实现 5 个 schema：`fsToolListMountsSchema` / `ListFiles` / `ReadFile` / `StatFile` / `GetStorageInfo`
+- [x] SubTask 9.1.6: 实现 `(s *Server) ListFSTools()` —— 5 个工具元信息
+- [x] SubTask 9.1.7: 实现 `(s *Server) executeFSTool(ctx, name, args)` 派发器
+- [x] SubTask 9.1.8: 实现 5 个 handler：`fsListMounts` / `fsListFiles` / `fsReadFile` / `fsStatFile` / `fsGetStorageInfo`
+- [x] SubTask 9.1.9: 实现辅助函数：`statFS`（syscall.Statfs 跨平台）、`detectContainerEntry`（读 4 字节 ENCV magic）、`base64Encode`（手写避免引 base64 包）
+- [x] SubTask 9.1.10: 所有路径走 `utils.SafeResolveToAbsPath` 沙箱化，越界返回 `path_forbidden`
+
+### Task 9.2: agent_plugin_bridge.go 工具聚合
+
+- [x] SubTask 9.2.1: 新增 `executeAgentTool` 方法（plugin 派发 + fs 派发）
+- [x] SubTask 9.2.2: 新增 `(s *Server) ListAgentTools()` —— 合并 `ListPluginTools()` + `s.ListFSTools()`
+- [x] SubTask 9.2.3: 新增 `agentToolsToOpenAITools` —— 转 OpenAI `{type:"function", function:{name, description, parameters}}` 格式
+
+### Task 9.3: OpenAI 请求 reqBody.tools 字段（关键修复）
+
+- [x] SubTask 9.3.1: `callOpenAIChatOnce` 新增 `openAITools []map[string]interface{}` 参数，非空时写入 `reqBody.tools` + `reqBody.tool_choice = "auto"`
+- [x] SubTask 9.3.2: `callOpenAIStream` 同步加 `openAITools` 参数
+- [x] SubTask 9.3.3: `streamChat` 新增 `openAITools` + `toolMeta` 参数
+- [x] SubTask 9.3.4: `executeAndRecurse` 改为方法（或接受 `s *Server`），调用 `s.executeAgentTool` 代替原 `executePluginTool`
+- [x] SubTask 9.3.5: `handleAgentChat` 构造 `agentTools` / `openAITools` / `toolMeta` 并透传到所有下游调用
+- [x] SubTask 9.3.6: `handleAgentConfirm` 递归 `streamChat` 调用也透传 `openAITools` + `toolMeta`
+- [x] SubTask 9.3.7: `emitToolCallEvent` 新增 `toolMeta` 参数，从 `toolMeta[tc.Function.Name]` 读 `needConfirm` + `kind`
+
+### Task 9.4: fs 工具测试
+
+- [x] SubTask 9.4.1: 创建 `internal/server/agent_fs_bridge_test.go`
+- [x] SubTask 9.4.2: 覆盖 `ListFSMounts` / `resolveMount` 4+4 场景
+- [x] SubTask 9.4.3: 覆盖 5 个 fs tool 的 happy + error 路径
+- [x] SubTask 9.4.4: 专门覆盖 `path_forbidden` —— 用 `subdir/../../etc` 真正逃出 baseDir
+- [x] SubTask 9.4.5: 覆盖 `agentToolsToOpenAITools` 格式正确性
+- [x] SubTask 9.4.6: 覆盖 `executeAgentTool` 三路派发（plugin / fs / unknown）
+- [x] SubTask 9.4.7: `go test ./internal/server/...` 全绿
+
+### Task 9.5: 清理与回归
+
+- [x] SubTask 9.5.1: 确认 `agent/openlist_client.go` / `agent/cmd/agent-demo/main.go` 已撤销 OpenList 工具注册
+- [x] SubTask 9.5.2: 确认 `agent/openlist_client_test.go` 通过（pre-existing test 损坏已修复）
+- [x] SubTask 9.5.3: `go build ./...` 无新错误（`cmd/bench-report` 的 Windows syscall 错误是 pre-existing，与本 phase 无关）
+- [x] SubTask 9.5.4: `go test ./internal/server/...` 全绿
+
+---
+
 # Task Dependencies
 
 | Task | Depends on |

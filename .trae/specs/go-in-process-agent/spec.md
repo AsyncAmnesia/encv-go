@@ -841,6 +841,141 @@ function openAgent() {
 
 ---
 
+## Requirement: Agent 本地文件系统工具（5 个只读 fs tool）
+
+**核心原则**：AI agent 必须能真实地"感知"encv-go 暴露的本地文件系统（`servingDir` / `webdavDir`），不依赖任何外部服务（OpenList 之类的已被砍掉）。LLM 通过 5 个只读工具实现"ls / cat / stat / df"。
+
+#### Scenario: 工具清单
+
+- **WHEN** agent 服务启动或收到 `/api/chat` 请求
+- **THEN** server 构造 `agentTools := s.ListAgentTools()`（合并 plugin + fs）
+- **AND** 通过 `agentToolsToOpenAITools(agentTools)` 转为 OpenAI `{type:"function", function:{name, description, parameters}}` 格式
+- **AND** 写入 OpenAI 请求 `reqBody` 的 `"tools"` 字段 + `"tool_choice": "auto"`
+- **AND** 5 个 fs 工具列表如下：
+
+| 工具名 | 入参 | 返回关键字段 | needConfirm | kind |
+|--------|------|-------------|-------------|------|
+| `list_mounts` | `{}` | `{count, items:[{id,type,public_path,description,available}], server:{goos}}` | false | `fileRead` |
+| `list_files` | `{mount_id, rel_path?, max_entries?}` | `{mount_id, rel_path, count, items:[{name, rel_path, is_dir, size, modified, is_encrypted}], truncated}` | false | `fileRead` |
+| `read_file` | `{mount_id, rel_path, max_bytes?}` | `{mount_id, rel_path, size, encoding, is_binary, content\|content_b64}` | false | `fileRead` |
+| `stat_file` | `{mount_id, rel_path}` | `{mount_id, rel_path, name, is_dir, size, mode, modified, is_encrypted}` | false | `fileRead` |
+| `get_storage_info` | `{}` | `{count, items:[{mount_id, public_path, physical, storage_info:{total,used,free}}], server:{goos}}` | false | `fileRead` |
+
+#### Scenario: 路径沙箱化
+
+- **WHEN** 工具收到带 `rel_path` 的 args（如 `rel_path="/foo/bar"`, `rel_path="subdir/../../etc"`）
+- **THEN** 走 `utils.SafeResolveToAbsPath(root, relPath)` 解析（root = `servingDir` 或 `webdavDir`）
+- **AND** 若解析结果不在 `root` 树下 → 返回 `errJSON("path_forbidden", "forbidden: path traversal detected")`
+- **AND** `SafeResolveToAbsPath` 内部的 `filepath.Rel(root, finalPath)` 检查是最后一道防线，绕过它必须修改 Go 源码
+
+#### Scenario: 容器嗅探（is_encrypted）
+
+- **WHEN** 工具遇到 `.encv` 文件（`list_files` / `stat_file`）
+- **THEN** 读文件头 4 字节
+- **AND** 若 == `"ENCV"` → `is_encrypted = true`（提示 LLM 这是加密容器）
+- **AND** 不读容器内部内容（透明解压由专门 plugin 工具负责）
+
+#### Scenario: 二进制文件处理
+
+- **WHEN** `read_file` 读取文件
+- **THEN** 头 512 字节内含 `0x00` → 视为二进制
+- **AND** 二进制文件：返回 `{is_binary:true, content_b64:"<base64>", note:"二进制文件已用 base64 编码"}`，**不**返回 `content` 字段（防上下文爆炸）
+- **AND** 文本文件：返回 `{is_binary:false, content:"<utf8>"}`
+
+#### Scenario: 容量保护
+
+- **WHEN** `read_file` 收到 `max_bytes`（默认 65536，上限 1048576）
+- **THEN** 若文件实际大小 > max_bytes → 返回 `errJSON("too_large", "文件 N 字节 > max_bytes M 字节")`，不硬读
+- **WHEN** `list_files` 收到 `max_entries`（默认 200，上限 1000）
+- **THEN** 截断 entries 列表 + 设置 `truncated:true`，让 LLM 知道还有未列出的条目
+
+#### Scenario: 隐藏文件过滤
+
+- **WHEN** `list_files` 列举目录
+- **THEN** 跳过以 `.` 开头的条目（与 `mobile_service.ListFiles` 行为一致）
+- **AND** LLM 不会看到 `.git/` `.env` 之类的隐藏目录
+
+#### Scenario: 错误码契约
+
+所有 fs tool 失败时返回统一格式：
+
+```json
+{"error": "<code>", "message": "<human readable>"}
+```
+
+错误码枚举：
+
+| code | 触发条件 |
+|------|---------|
+| `invalid_args` | args JSON 解析失败 |
+| `missing_args` | 必填字段缺失（如 mount_id） |
+| `mount_unavailable` | mount_id 找不到 / 不可读 |
+| `path_forbidden` | ../ 逃逸 baseDir |
+| `readdir_failed` | os.ReadDir 失败（权限 / IO） |
+| `stat_failed` | os.Stat 失败 |
+| `is_directory` | read_file 目标是个目录 |
+| `too_large` | 文件 > max_bytes |
+| `read_failed` | os.ReadFile 失败 |
+| `no_mounts` | get_storage_info 时无任何可用挂载 |
+
+#### Scenario: 工具元信息（needConfirm + kind）透传
+
+- **WHEN** `handleAgentChat` 收到 LLM 流式响应含 `tool_call`
+- **THEN** 构造 `toolMeta map[toolName] -> {name, needConfirm, kind}`
+- **AND** 调 `s.emitToolCallEvent(sess, w, flusher, tc, toolMeta)` 时透传
+- **AND** `emitToolCallEvent` 查 `toolMeta[tc.Function.Name]`：
+  - `needConfirm` = `true` → SSE payload `needsConfirm:true, auto_run:false`（未授权）/ `auto_run:true`（已授权）
+  - `kind` = `fileRead` → SSE payload `kind:"fileRead"`（前端按只读渲染，不弹"危险"警告）
+- **AND** fs 工具全部 `needConfirm=false`（只读操作）
+- **AND** plugin 工具全部 `needConfirm=true`（加密/解密副作用）
+
+#### Scenario: 工具派发（executeAgentTool）
+
+- **WHEN** LLM 返回 tool_call 名称
+- **THEN** `executeAndRecurse` 调 `s.executeAgentTool(ctx, name, argsJSON)`
+- **AND** 派发优先级：
+  1. `pluginOpsByName[name]` → `executePluginTool(...)`（plugin 加密/解密）
+  2. fs 工具名 (`list_mounts` / `list_files` / `read_file` / `stat_file` / `get_storage_info`) → `executeFSTool(...)`
+  3. 都不匹配 → `errJSON("unknown_tool", ...)`
+- **AND** 此函数代替早期的 `executePluginTool`（旧名），但 plugin 内部逻辑完全保留
+
+#### Scenario: OpenAI 请求 reqBody.tools 字段（关键修复）
+
+- **BEFORE**：`callOpenAIChatOnce` / `callOpenAIStream` 构造的 `reqBody` **不**含 `tools` 字段
+- **AFTER**：`callOpenAIChatOnce` / `callOpenAIStream` 新增 `openAITools []map[string]interface{}` 参数
+- **AND** 若 `openAITools` 非空 → reqBody 加 `"tools": openAITools, "tool_choice": "auto"`
+- **AND** `handleAgentChat` 在调 OpenAI 前先 `agentTools := s.ListAgentTools()` + `openAITools := agentToolsToOpenAITools(agentTools)`
+- **AND** `handleAgentConfirm` 递归调 `streamChat` 时也透传 `openAITools`（保证 confirm 后继续 LLM 调用时工具仍然可用）
+
+#### Scenario: 关键文件 / 函数
+
+- `internal/server/agent_fs_bridge.go` — fs 工具实现（mountInfo, ListFSMounts, resolveMount, 5 个 schema, ListFSTools, executeFSTool, 5 个 handler, statFS, detectContainerEntry, base64Encode）
+- `internal/server/agent_plugin_bridge.go` — `executeAgentTool` 派发器 + `ListAgentTools` 聚合 + `agentToolsToOpenAITools` 转换
+- `internal/server/agent_tool_loop.go` — `callOpenAIChatOnce` / `callOpenAIStream` / `streamChat` / `executeAndRecurse` 全部接受 `openAITools` / `toolMeta` / `s *Server` 参数
+- `internal/server/agent_api.go` — `handleAgentChat` 构造 agentTools/openAITools/toolMeta + 透传给 `emitToolCallEvent` / `streamChat` / `executeAndRecurse`
+
+#### Scenario: 测试覆盖
+
+`internal/server/agent_fs_bridge_test.go` 必须覆盖：
+
+- [x] `ListFSMounts` 在 serving / serving+webdav / serving==webdav / 不可用目录下的行为
+- [x] `resolveMount` 4 种情况（valid serving / valid webdav / unknown / unavailable）
+- [x] `fsListMounts` 输出结构
+- [x] `fsListFiles` happy path + 默认 rel_path + 缺 mount_id + 非法 JSON + mount_unavailable + path_forbidden + max_entries 截断 + 隐藏文件过滤
+- [x] `fsReadFile` 文本 / 二进制 / 目录 / too_large / not found / path_forbidden / 默认 max_bytes
+- [x] `fsStatFile` 文件 / 目录 / ENCV 容器 / path_forbidden
+- [x] `fsGetStorageInfo` happy + no mounts
+- [x] `executeFSTool` 路由：unknown + 5 个工具 dispatch
+- [x] `ListFSTools` 含 5 个 + 全部 `needConfirm=false` + `kind=fileRead`
+- [x] `ListAgentTools` 聚合 plugin + fs + 无重名
+- [x] `agentToolsToOpenAITools` 输出 OpenAI 协议格式 + 不泄漏内部字段
+- [x] `executeAgentTool` 路由：fs / plugin / unknown
+- [x] `detectContainerEntry` ENCV magic + 短文件 + 不存在
+- [x] `statFS` happy + empty path
+- [x] `base64Encode` 7 个标准 vector
+
+---
+
 ## REMOVED Requirements
 
 无（保留现有 OpenList 真实后端 WebView 集成作为 fallback）

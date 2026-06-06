@@ -455,11 +455,28 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	}
 
 	// ⑤ 构建 OpenAI 兼容请求
+	//
+	// 关键：把 agent 工具列表（plugin 加密解密 + fs 只读）发给 LLM。
+	// 之前这里没 "tools" 字段，agent 实际根本无法调任何工具——这是让 LLM "perceive
+	// the mounted file system" 的真正入口。
+	agentTools := s.ListAgentTools()
+	openAITools := agentToolsToOpenAITools(agentTools)
+	toolMeta := make(map[string]map[string]interface{}, len(agentTools))
+	for _, t := range agentTools {
+		if n, ok := t["name"].(string); ok {
+			toolMeta[n] = t
+		}
+	}
+
 	reqBody := map[string]interface{}{
 		"model":       model,
 		"messages":    finalMessages,
 		"temperature": body.Temperature,
 		"stream":      true,
+	}
+	if len(openAITools) > 0 {
+		reqBody["tools"] = openAITools
+		reqBody["tool_choice"] = "auto"
 	}
 	reqJSON, _ := json.Marshal(reqBody)
 
@@ -537,7 +554,7 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 				}
 			}
 			for _, tc := range pendingTools {
-				s.emitToolCallEvent(sess, c.Writer, flusher, tc)
+				s.emitToolCallEvent(sess, c.Writer, flusher, tc, toolMeta)
 			}
 			// 缓存 pending tools 到 session（供 confirm 取用）
 			if len(pendingTools) > 0 {
@@ -614,7 +631,7 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 					}
 				}
 				for _, tc := range pendingTools {
-					s.emitToolCallEvent(sess, c.Writer, flusher, tc)
+					s.emitToolCallEvent(sess, c.Writer, flusher, tc, toolMeta)
 				}
 				// 缓存 pending tools
 				if len(pendingTools) > 0 {
@@ -636,7 +653,7 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 			}
 		}
 		for _, tc := range pendingTools {
-		s.emitToolCallEvent(sess, c.Writer, flusher, tc)
+		s.emitToolCallEvent(sess, c.Writer, flusher, tc, toolMeta)
 	}
 	if len(pendingTools) > 0 {
 		sess.mu.Lock()
@@ -671,10 +688,24 @@ type openaiToolCallChunk struct {
 }
 
 // emitToolCallEvent 推送一个完整的 tool_call 事件给前端
-func (s *Server) emitToolCallEvent(sess *agentSession, w http.ResponseWriter, flusher http.Flusher, tc toolCallAccumulator) {
+//
+// toolMeta 是 agent 内部 tool 元数据（name → {needConfirm, kind, ...}），
+// 用于正确标记每个 tool 的 needConfirm（fs 工具永远 false，plugin 工具永远 true）
+// 和 kind（fs=fileRead, plugin=fileChange）。
+func (s *Server) emitToolCallEvent(sess *agentSession, w http.ResponseWriter, flusher http.Flusher, tc toolCallAccumulator, toolMeta map[string]map[string]interface{}) {
+	needConfirm := true
+	kind := "fileChange"
+	if meta, ok := toolMeta[tc.Function.Name]; ok {
+		if v, ok := meta["needConfirm"].(bool); ok {
+			needConfirm = v
+		}
+		if v, ok := meta["kind"].(string); ok {
+			kind = v
+		}
+	}
 	// F 阶段：检查 session 授权表 → 已授权工具自动放行（auto_run=true）
 	autoRun := false
-	if sess != nil {
+	if needConfirm && sess != nil {
 		sess.mu.Lock()
 		autoRun = sess.GrantedTools[tc.Function.Name]
 		sess.mu.Unlock()
@@ -684,9 +715,9 @@ func (s *Server) emitToolCallEvent(sess *agentSession, w http.ResponseWriter, fl
 		"id":           tc.ID,
 		"name":         tc.Function.Name,
 		"args":         tc.Function.Arguments,
-		"auto_run":     autoRun,                          // F 阶段：true=前端不弹 ApprovalCard 直接放行
-		"needsConfirm": !autoRun,                          // auto_run=true 时不再需要 confirm
-		"kind":         "fileChange",
+		"auto_run":     autoRun, // F 阶段：true=前端不弹 ApprovalCard 直接放行
+		"needsConfirm": needConfirm && !autoRun,
+		"kind":         kind,
 	}
 	s.sendAndCache(sess, w, flusher, "tool_call", payload)
 }
@@ -783,7 +814,7 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 		if cfg.BaseURL == "" {
 			cfg.BaseURL = "https://api.openai.com"
 		}
-		toolMsg, _ = executeAndRecurse(c.Request.Context(), sess, cfg, *tool)
+		toolMsg, _ = executeAndRecurse(c.Request.Context(), s, sess, cfg, *tool)
 		// 推 tool_status: completed 给前端
 		statusMsg := "completed"
 		if body.Decision == "accept_for_session" {
@@ -838,7 +869,16 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 		finalMessages = append(finalMessages, chatMsg{Role: "system", Content: cfg.SystemPrompt})
 		finalMessages = append(finalMessages, sess.Messages...)
 	}
-	s.streamChat(c.Request.Context(), c, cfg, sess.LastModel, sess.LastTemperature, finalMessages, sess)
+	// 递归时也要把工具列表塞回去——LLM 可能在后续轮次继续调工具
+	agentTools := s.ListAgentTools()
+	openAITools := agentToolsToOpenAITools(agentTools)
+	toolMeta := make(map[string]map[string]interface{}, len(agentTools))
+	for _, t := range agentTools {
+		if n, ok := t["name"].(string); ok {
+			toolMeta[n] = t
+		}
+	}
+	s.streamChat(c.Request.Context(), c, cfg, sess.LastModel, sess.LastTemperature, finalMessages, sess, openAITools, toolMeta)
 }
 
 // ─── POST /api/resume — SSE 断点续传（基于事件缓存重放） ──
