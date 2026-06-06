@@ -209,8 +209,30 @@ func TestOpenListClient_GetStorageInfo(t *testing.T) {
 
 func TestOpenListClient_SearchFiles(t *testing.T) {
 	srv := newFakeOpenListServer()
-	srv.set("POST", "/api/admin/fs/search", 200, `{
+	srv.set("GET", "/api/admin/storage/list", 200, `{
 		"code": 200,
+		"message": "ok",
+		"data": [
+			{"id": 1, "mount_path": "/", "driver": "local", "status": "enabled"},
+			{"id": 2, "mount_path": "/s3", "driver": "s3", "status": "enabled"}
+		]
+	}`)
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+	c := NewOpenListClient(ts.URL, "tok", nil)
+	storages, err := c.ListStorages(context.Background())
+	if err != nil {
+		t.Fatalf("ListStorages: %v", err)
+	}
+	if len(storages) != 2 {
+		t.Errorf("storages: %d", len(storages))
+	}
+	if storages[0]["mount_path"] != "/" {
+		t.Errorf("mount_path: %v", storages[0]["mount_path"])
+	}
+}
+	srv := newFakeOpenListServer()
+	srv.set("POST", "/api/admin/fs/search", 200, `{
 		"message": "ok",
 		"data": {
 			"content": [

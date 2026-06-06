@@ -230,6 +230,77 @@ func (c *OpenListClient) GetStorageInfo(ctx context.Context) (map[string]any, er
 	return resp.Data, nil
 }
 
+// storageListResponse mirrors OpenList's /api/admin/storage/list
+// response. The `content` array carries one entry per mounted
+// storage backend (e.g. Local / S3 / GoogleDrive / Onedrive).
+type storageListResponse struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    *struct {
+		Content []storageMount `json:"content"`
+		Total   int           `json:"total"`
+	} `json:"data"`
+}
+
+// storageMount is the agent-friendly projection of an OpenList
+// storage entry. Only the fields the agent actually uses are
+// captured here:
+//
+//   - ID        OpenList storage ID (used by admin endpoints)
+//   - MountPath absolute path on the OpenList instance where
+//     this storage is mounted (e.g. "/", "/local", "/s3")
+//   - Driver    storage driver name (e.g. "Local", "S3",
+//     "GoogleDrive", "Onedrive", "AlistV3"...)
+//   - Order     load order (smaller = higher priority on
+//     overlapping mount paths)
+//   - Enabled   whether the storage is enabled
+//   - Status    runtime status (OpenList reports "work" when
+//     healthy, other strings when broken)
+//
+// The agent surfaces this list verbatim to the LLM so it can
+// "perceive" the file-system layout: before calling
+// list_files("/foo") the LLM should first call ListStorages
+// to discover whether /foo is a valid mount path.
+type storageMount struct {
+	ID        int    `json:"id"`
+	MountPath string `json:"mount_path"`
+	Driver    string `json:"driver"`
+	Order     int    `json:"order"`
+	Enabled   bool   `json:"enabled"`
+	Status    string `json:"status"`
+}
+
+// ListStoragesResult is the agent-friendly result of
+// ListStorages.
+type ListStoragesResult struct {
+	Items []storageMount `json:"items"`
+	Total int            `json:"total"`
+}
+
+// ListStorages calls OpenList's /api/admin/storage/list and
+// returns the list of mounted storage backends. The agent
+// uses this to "perceive" what file systems are actually
+// mounted on the remote instance — without it the LLM has to
+// guess mount paths when calling list_files, which silently
+// returns an empty list for nonexistent paths.
+//
+// The endpoint is admin-only; pass a non-admin token and you
+// get a 401.
+func (c *OpenListClient) ListStorages(ctx context.Context) (*ListStoragesResult, error) {
+	var resp storageListResponse
+	if err := c.doJSON(ctx, "GET", "/api/admin/storage/list", nil, &resp); err != nil {
+		return nil, err
+	}
+	out := &ListStoragesResult{Total: 0}
+	if resp.Data != nil {
+		out.Total = resp.Data.Total
+		for _, it := range resp.Data.Content {
+			out.Items = append(out.Items, it)
+		}
+	}
+	return out, nil
+}
+
 // SearchFiles searches by keyword. OpenList's /api/admin/fs/search
 // returns a list of file items; we return the typed slice.
 func (c *OpenListClient) SearchFiles(ctx context.Context, parent, keyword string) ([]fileItem, error) {

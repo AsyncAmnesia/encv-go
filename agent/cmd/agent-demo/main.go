@@ -224,6 +224,22 @@ func registerOpenListTools(reg *agent.ToolRegistry, cfg agent.AgentConfig) {
 		},
 		false, agent.KindReadOnly)
 
+	// list_storages lets the LLM perceive OpenList's mounted
+	// file systems before issuing list_files against an
+	// unknown path. Without this tool the LLM has to guess
+	// mount paths, which silently returns an empty list for
+	// nonexistent paths (very confusing for the user).
+	reg.Register("list_storages",
+		&openListListStoragesSchema,
+		func(args string) (string, error) {
+			items, err := client.ListStorages(httpContext())
+			if err != nil {
+				return agent.PluginErrorJSON("openlist_error", err.Error()), nil
+			}
+			return toJSON(items), nil
+		},
+		false, agent.KindReadOnly)
+
 	reg.Register("search_files",
 		&openListSearchFilesSchema,
 		func(args string) (string, error) {
