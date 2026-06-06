@@ -20,6 +20,7 @@
  */
 import { ref } from 'vue'
 import { showToast } from '@/composables/useToast'
+import { getDeviceIdSync } from './useDeviceId'
 
 // =============================================================================
 // 类型定义（与 agent Go 服务契约对齐）
@@ -649,6 +650,7 @@ export function useAgent() {
           model: activeModel.value,
           temperature: activeTemperature.value,
           messages: apiMessages,
+          deviceId: getDeviceIdSync(),
         }),
         signal: abortController.signal,
       })

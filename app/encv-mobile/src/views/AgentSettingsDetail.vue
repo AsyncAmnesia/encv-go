@@ -401,8 +401,6 @@ async function handleSaveConfig() {
         if (encRes.ok) {
           const { encrypted } = await encRes.json()
           setFieldValue(['agent_settings', 'openai_api_key'], encrypted)
-          // 保存设备指纹到配置，后端解密时需要
-          setFieldValue(['agent_settings', '_device_id'], deviceId)
           apiKeyPlainValue.value = '' // 清除明文缓存
         }
       } catch (e) {

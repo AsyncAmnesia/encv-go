@@ -184,10 +184,9 @@ type agentConfig struct {
 	APIKey       string `json:"openai_api_key"`
 	BaseURL      string `json:"openai_base_url"`
 	SystemPrompt string `json:"system_prompt"`
-	DeviceId     string `json:"_device_id"` // 内部字段：加密时使用的设备指纹
 }
 
-func (s *Server) readAgentConfig() agentConfig {
+func (s *Server) readAgentConfig(deviceId ...string) agentConfig {
 	var cfg agentConfig
 	if s.configPath == "" {
 		slog.Warn("agent: configPath is empty")
@@ -212,13 +211,12 @@ func (s *Server) readAgentConfig() agentConfig {
 		slog.Warn("agent: invalid agent_settings json", "error", err)
 		return cfg
 	}
-	cfg.APIKey = DecryptApiKey(agent["openai_api_key"], agent["_device_id"])
+	cfg.APIKey = DecryptApiKey(agent["openai_api_key"], deviceId...)
 	cfg.BaseURL = agent["openai_base_url"]
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://api.openai.com"
 	}
 	cfg.SystemPrompt = agent["system_prompt"]
-	cfg.DeviceId = agent["_device_id"]
 	return cfg
 }
 
@@ -378,14 +376,15 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		Model       string    `json:"model"`
 		Temperature float64   `json:"temperature"`
 		Messages    []chatMsg `json:"messages"`
+		DeviceId    string    `json:"deviceId"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json", "detail": err.Error()})
 		return
 	}
 
-	// ② 读取 agent 配置（API Key / Base URL）
-	cfg := s.readAgentConfig()
+	// ② 读取 agent 配置（API Key / Base URL / System Prompt）
+	cfg := s.readAgentConfig(body.DeviceId)
 	if cfg.APIKey == "" {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no_api_key", "message": "未配置 API Key，请在 AI 设置中填写"})
 		return
