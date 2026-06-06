@@ -148,7 +148,6 @@ import { showToast } from '@/composables/useToast'
 import { fetchConfig, updateConfig } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
 import ConfigFieldItem from '@/components/ConfigFieldItem.vue'
-import { getApiBaseUrl } from '@/api/encv'
 
 const { isOnline: serverOnline } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue, resetFieldToDefault } = useConfig()
@@ -252,9 +251,10 @@ async function handleTestConnection() {
   testResult.value = ''
   testResultSuccess.value = false
   try {
-    const baseUrl = getApiBaseUrl()
-    const response = await fetch(`${baseUrl}/api/agent/test`, {
-      method: 'POST',
+    // 走 /agent-api/* 命名空间转发到 agent 后端 :5245
+    // 不走 encv-go 的 /api/agent/test（encv-go 当前没这端点，会 404）
+    const response = await fetch('/agent-api/test', {
+      method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     })
     if (!response.ok) {

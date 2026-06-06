@@ -13,15 +13,15 @@
 <template>
   <div class="agentChat">
     <header class="agentChatHeader">
-      <button type="button" class="headerBtn headerBtnIcon" @click="handleClose" :title="t('common.close')">
-        <ion-icon :icon="closeIcon" />
+      <button type="button" class="headerBtn" @click="handleOpenHistory" :title="t('agent.history')">
+        <ion-icon :icon="timeIcon" />
       </button>
       <div class="headerTitle">
         <ion-icon :icon="sparkleIcon" class="headerTitleIcon" />
         <span>{{ t('agent.title') }}</span>
       </div>
-      <button type="button" class="headerBtn" @click="handleReset" :title="t('agent.newSession')">
-        <ion-icon :icon="refreshIcon" />
+      <button type="button" class="headerBtn" @click="handleNewSession" :title="t('agent.newSession')">
+        <ion-icon :icon="addIcon" />
       </button>
     </header>
 
@@ -47,7 +47,18 @@
     </div>
 
     <main class="agentChatMain" ref="mainRef">
-      <div v-if="renderedItems.length === 0" class="agentChatEmpty">
+      <div v-if="lastError" class="agentChatError">
+        <ion-icon :icon="alertIcon" class="errorIcon" />
+        <div class="errorContent">
+          <p class="errorTitle">{{ t('agent.errorTitle') }}</p>
+          <p class="errorMessage">{{ lastError }}</p>
+        </div>
+        <button type="button" class="errorRetry" @click="retryLast">{{ t('agent.retry') }}</button>
+        <button type="button" class="errorDismiss" @click="dismissError" :title="t('common.close')">
+          <ion-icon :icon="closeIcon" />
+        </button>
+      </div>
+      <div v-if="renderedItems.length === 0 && !lastError" class="agentChatEmpty">
         <ion-icon :icon="chatbubblesIcon" class="emptyIcon" />
         <p>{{ t('agent.emptyHint') }}</p>
       </div>
@@ -104,7 +115,9 @@
           rows="1"
           :placeholder="t('agent.placeholder')"
           :disabled="status === 'streaming'"
-          @keydown.enter.exact.prevent="handleSend"
+          @keydown.shift.enter.exact.prevent="handleSend"
+          @keydown.meta.enter.exact.prevent="handleSend"
+          @keydown.ctrl.enter.exact.prevent="handleSend"
           @input="autoResize"
           ref="inputRef"
         ></textarea>
@@ -128,7 +141,47 @@
           <ion-icon :icon="stopIcon" />
         </button>
       </div>
+      <div class="footerHint">{{ t('agent.inputHint') }}</div>
     </footer>
+
+    <div v-if="historyOpen" class="historyOverlay" @click.self="historyOpen = false">
+      <div class="historyPanel">
+        <div class="historyHeader">
+          <h3>{{ t('agent.history') }}</h3>
+          <button type="button" class="headerBtn" @click="handleClose" :title="t('common.close')">
+            <ion-icon :icon="closeIcon" />
+          </button>
+        </div>
+        <div class="historyList">
+          <div
+            v-for="s in sessions"
+            :key="s.id"
+            class="historyItem"
+            :class="{ historyItemActive: s.id === currentSessionId }"
+            @click="switchSession(s.id); historyOpen = false"
+          >
+            <ion-icon :icon="chatbubblesIcon" class="historyItemIcon" />
+            <div class="historyItemMain">
+              <p class="historyItemTitle">{{ s.title || '(空)' }}</p>
+              <p class="historyItemMeta">
+                {{ s.messageCount }} {{ t('agent.messages') }}
+              </p>
+            </div>
+            <button
+              type="button"
+              class="historyItemDelete"
+              @click.stop="handleDeleteSession(s.id, $event)"
+              :title="t('agent.deleteSession')"
+            >
+              <ion-icon :icon="closeIcon" />
+            </button>
+          </div>
+          <div v-if="sessions.length === 0" class="historyEmpty">
+            <p>{{ t('agent.noHistory') }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -138,10 +191,12 @@ import { IonIcon, modalController, alertController } from '@ionic/vue'
 import {
   closeOutline,
   sparklesOutline,
-  refreshOutline,
+  addOutline,
   sendOutline,
   stopOutline,
   chatbubblesOutline,
+  alertCircleOutline,
+  timeOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { useAgent, type Decision, type ToolCall } from '@/composables/useAgent'
@@ -155,7 +210,7 @@ import WebSearchSummaryMessage from '@/components/agent/WebSearchSummaryMessage.
 
 const { t } = useI18n()
 
-const { messages, status, send, confirmTool, resume, stop, reset } = useAgent()
+const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, lastError, dismissError, retryLast } = useAgent()
 
 const renderedItems = useRenderTurnItems(messages, status)
 
@@ -166,10 +221,13 @@ const nearBottom = ref(true)
 
 const closeIcon = closeOutline
 const sparkleIcon = sparklesOutline
-const refreshIcon = refreshOutline
+const addIcon = addOutline
 const sendIcon = sendOutline
 const stopIcon = stopOutline
 const chatbubblesIcon = chatbubblesOutline
+const alertIcon = alertCircleOutline
+const timeIcon = timeOutline
+const historyOpen = ref(false)
 
 const canSend = computed(() => status.value !== 'streaming' && inputText.value.trim().length > 0)
 
@@ -252,10 +310,34 @@ function handleStop() {
   stop()
 }
 
-async function handleReset() {
+async function handleNewSession() {
+  // 如果当前 session 已经有消息，弹确认
+  if (messages.value.length > 0) {
+    const alert = await alertController.create({
+      header: t('agent.newSession'),
+      message: t('agent.confirmNewSession'),
+      buttons: [
+        { text: t('common.cancel'), role: 'cancel' },
+        { text: t('common.confirm'), role: 'destructive' },
+      ],
+    })
+    await alert.present()
+    const { role } = await alert.onDidDismiss()
+    if (role !== 'destructive') return
+  }
+  newSession()
+}
+
+async function handleOpenHistory() {
+  await Promise.resolve()
+  historyOpen.value = true
+}
+
+async function handleDeleteSession(sessionId: string, event: Event) {
+  event.stopPropagation()
   const alert = await alertController.create({
-    header: t('agent.newSession'),
-    message: t('agent.confirmReset'),
+    header: t('agent.deleteSession'),
+    message: t('agent.confirmDeleteSession'),
     buttons: [
       { text: t('common.cancel'), role: 'cancel' },
       { text: t('common.confirm'), role: 'destructive' },
@@ -264,11 +346,12 @@ async function handleReset() {
   await alert.present()
   const { role } = await alert.onDidDismiss()
   if (role === 'destructive') {
-    reset()
+    deleteSession(sessionId)
   }
 }
 
 function handleClose() {
+  historyOpen.value = false
   modalController.dismiss()
 }
 

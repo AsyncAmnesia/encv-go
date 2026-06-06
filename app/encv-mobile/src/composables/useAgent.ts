@@ -25,7 +25,15 @@ import { showToast } from '@/composables/useToast'
 // 类型定义（与 agent Go 服务契约对齐）
 // =============================================================================
 
-export type AgentStatus = 'idle' | 'streaming' | 'confirming'
+export type AgentStatus = 'idle' | 'streaming' | 'confirming' | 'error'
+
+export interface SessionMeta {
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
+  messageCount: number
+}
 
 export type Decision = 'accept' | 'accept_for_session' | 'decline' | 'cancel'
 
@@ -188,7 +196,10 @@ function generateSessionId(): string {
 export function useAgent() {
   const messages = ref<Message[]>([])
   const status = ref<AgentStatus>('idle')
-  let currentSessionId = ''
+  const lastError = ref<string>('')
+  const lastUserInput = ref<string>('')
+  const sessions = ref<SessionMeta[]>([])
+  const currentSessionId = ref<string>('')
   let eventOffset = 0
   let abortController: AbortController | null = null
 
@@ -229,15 +240,15 @@ export function useAgent() {
   // ─── 持久化 ─────────────────────────────────────────────────────────────
 
   function saveState() {
-    if (!currentSessionId) return
+    if (!currentSessionId.value) return
     try {
       const payload = {
-        sessionId: currentSessionId,
+        sessionId: currentSessionId.value,
         eventOffset,
         messages: JSON.parse(JSON.stringify(messages.value)),
         status: status.value,
       }
-      localStorage.setItem(STORAGE_PREFIX + currentSessionId, JSON.stringify(payload))
+      localStorage.setItem(STORAGE_PREFIX + currentSessionId.value, JSON.stringify(payload))
     } catch (e) {
       console.debug('[useAgent] saveState failed:', e)
     }
@@ -285,6 +296,109 @@ export function useAgent() {
       console.debug('[useAgent] findLatestPersistedSession failed:', e)
       return null
     }
+  }
+
+  /**
+   * 扫描 localStorage 中所有 `agent:session:*` 键，返回按 updatedAt 倒序的 session 列表
+   * 用于 UI 渲染"会话历史"
+   */
+  function refreshSessions(): void {
+    const list: SessionMeta[] = []
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (!key || !key.startsWith(STORAGE_PREFIX)) continue
+        const raw = localStorage.getItem(key)
+        if (!raw) continue
+        try {
+          const parsed = JSON.parse(raw) as {
+            sessionId?: string
+            messages?: Message[]
+          }
+          if (!parsed?.sessionId) continue
+          const msgs = parsed.messages || []
+          const firstUser = msgs.find((m) => m.role === 'user')
+          const title =
+            (firstUser?.content || '').split('\n')[0]?.slice(0, 40) || '(空会话)'
+          const updatedAt = msgs.length > 0 ? Date.now() - (msgs.length - 1) : 0
+          const createdAt = updatedAt
+          list.push({
+            id: parsed.sessionId,
+            title,
+            createdAt,
+            updatedAt,
+            messageCount: msgs.length,
+          })
+        } catch {
+          // skip
+        }
+      }
+    } catch (e) {
+      console.debug('[useAgent] refreshSessions failed:', e)
+    }
+    list.sort((a, b) => b.updatedAt - a.updatedAt)
+    sessions.value = list
+  }
+
+  /**
+   * 切换到指定 session：先 stop 当前流，再加载目标 session 消息
+   */
+  function switchSession(sessionId: string): void {
+    if (sessionId === currentSessionId.value) return
+    if (abortController) {
+      abortController.abort()
+      abortController = null
+    }
+    const saved = loadState(sessionId)
+    if (!saved) {
+      console.debug('[useAgent] switchSession: no saved state for', sessionId)
+      return
+    }
+    currentSessionId.value = saved.sessionId
+    eventOffset = saved.eventOffset
+    messages.value = saved.messages.map((m) => ({ ...m }))
+    status.value = 'idle'
+    lastError.value = ''
+    saveState()
+  }
+
+  /**
+   * 创建新 session 并切到它（不删除原 session，留作历史）
+   */
+  function newSession(): void {
+    if (abortController) {
+      abortController.abort()
+      abortController = null
+    }
+    if (currentSessionId.value && messages.value.length > 0) {
+      // 当前会话已存在消息 → 持久化保留作为历史
+      saveState()
+    }
+    currentSessionId.value = generateSessionId()
+    eventOffset = 0
+    messages.value = []
+    status.value = 'idle'
+    lastError.value = ''
+    lastUserInput.value = ''
+    saveState()
+    refreshSessions()
+  }
+
+  /**
+   * 删除一个 session（不可恢复）
+   */
+  function deleteSession(sessionId: string): void {
+    try {
+      localStorage.removeItem(STORAGE_PREFIX + sessionId)
+    } catch {
+      // ignore
+    }
+    if (sessionId === currentSessionId.value) {
+      currentSessionId.value = ''
+      messages.value = []
+      eventOffset = 0
+    }
+    refreshSessions()
   }
 
   // ─── SSE 解析器 ─────────────────────────────────────────────────────────
@@ -461,23 +575,20 @@ export function useAgent() {
    * 发送用户消息，发起对话
    */
   async function send(text: string): Promise<void> {
-    if (status.value === 'streaming') {
-      console.debug('[useAgent] send ignored: already streaming')
+    if (status.value === 'streaming' || status.value === 'confirming') {
+      console.debug('[useAgent] send: ignored (busy)')
       return
     }
-    if (!text || !text.trim()) return
 
-    // 中断旧 stream
-    if (abortController) {
-      abortController.abort()
-      abortController = null
-    }
+    // 关闭上一轮的错误条
+    lastError.value = ''
+    lastUserInput.value = text
 
     // 第一次发送：分配新 session
-    if (!currentSessionId) {
-      currentSessionId = generateSessionId()
-      eventOffset = 0
+    if (!currentSessionId.value) {
+      currentSessionId.value = generateSessionId()
     }
+    eventOffset = 0
 
     // 推 user 消息 + 空 assistant 占位
     messages.value.push({
@@ -496,6 +607,7 @@ export function useAgent() {
 
     status.value = 'streaming'
     saveState()
+    refreshSessions()
 
     abortController = new AbortController()
     try {
@@ -503,7 +615,9 @@ export function useAgent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionId: currentSessionId,
+          sessionId: currentSessionId.value,
+          model: activeModel.value,
+          temperature: activeTemperature.value,
           messages: messages.value.map((m) => ({
             role: m.role,
             content: m.content,
@@ -524,10 +638,11 @@ export function useAgent() {
         finalizeLastAssistant()
         status.value = 'idle'
       } else {
+        const detail = e?.message || String(e)
         console.error('[useAgent] send failed:', e)
-        showToast({ message: 'Agent request failed', duration: 2000, color: 'danger' })
+        lastError.value = detail
+        status.value = 'error'
         finalizeLastAssistant()
-        status.value = 'idle'
       }
     } finally {
       abortController = null
@@ -539,7 +654,7 @@ export function useAgent() {
    * 4-决策确认工具调用
    */
   async function confirmTool(toolCallId: string, decision: Decision): Promise<void> {
-    if (!currentSessionId) {
+    if (!currentSessionId.value) {
       console.debug('[useAgent] confirmTool: no active session')
       return
     }
@@ -572,7 +687,7 @@ export function useAgent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionId: currentSessionId,
+          sessionId: currentSessionId.value,
           toolCallId,
           decision,
         }),
@@ -611,7 +726,7 @@ export function useAgent() {
     const saved = loadState(sessionId)
     if (!saved) return
 
-    currentSessionId = saved.sessionId
+    currentSessionId.value = saved.sessionId
     eventOffset = saved.eventOffset || 0
     // 恢复 messages
     messages.value.splice(0, messages.value.length, ...(saved.messages || []))
@@ -629,7 +744,7 @@ export function useAgent() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            sessionId: currentSessionId,
+            sessionId: currentSessionId.value,
             offset: eventOffset,
           }),
           signal: abortController.signal,
@@ -667,21 +782,48 @@ export function useAgent() {
 
   /**
    * 重置 session（清空消息、状态、持久化）
+   * ⚠️ 旧版是 destroy；现在 newSession 替代 reset 的语义——
+   *    reset 仅用于内部紧急回退（UI 入口已切换为 newSession）
    */
   function reset(): void {
     stop()
-    if (currentSessionId) {
+    if (currentSessionId.value) {
       try {
-        localStorage.removeItem(STORAGE_PREFIX + currentSessionId)
+        localStorage.removeItem(STORAGE_PREFIX + currentSessionId.value)
       } catch {
         // ignore
       }
     }
-    currentSessionId = ''
+    currentSessionId.value = ''
     eventOffset = 0
     messages.value.splice(0, messages.value.length)
     status.value = 'idle'
+    lastError.value = ''
+    lastUserInput.value = ''
+    refreshSessions()
   }
+
+  /**
+   * 关闭错误条
+   */
+  function dismissError(): void {
+    lastError.value = ''
+    if (status.value === 'error') status.value = 'idle'
+  }
+
+  /**
+   * 重发上一次失败的用户消息
+   */
+  function retryLast(): void {
+    const text = lastUserInput.value
+    if (!text) return
+    lastError.value = ''
+    status.value = 'idle'
+    void send(text)
+  }
+
+  // 构造时同步一次 session 列表（供 UI 立即显示）
+  refreshSessions()
 
   return {
     messages,
@@ -691,6 +833,15 @@ export function useAgent() {
     resume,
     stop,
     reset,
+    newSession,
+    switchSession,
+    deleteSession,
+    refreshSessions,
+    sessions,
+    currentSessionId,
+    lastError,
+    dismissError,
+    retryLast,
     activeModel,
     activeTemperature,
   }

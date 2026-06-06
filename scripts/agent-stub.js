@@ -9,6 +9,7 @@
  *   POST /api/chat    — 发起对话（SSE）
  *   POST /api/confirm — 4-决策确认（SSE）
  *   POST /api/resume  — 断点续传（SSE）
+ *   GET  /test        — 测试连接（{openai: 'ok', openlist: 'ok', model: '...'}）
  *   GET  /__agent/health — 健康检查
  *
  * SSE 事件格式（与 useAgent.ts processSSE 对齐）：
@@ -157,6 +158,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/chat') return handleChat(req, res)
   if (req.method === 'POST' && req.url === '/api/confirm') return handleConfirm(req, res)
   if (req.method === 'POST' && req.url === '/api/resume') return handleResume(req, res)
+  if ((req.method === 'GET' || req.method === 'POST') && req.url === '/test') return handleTest(req, res)
   res.writeHead(404, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify({ error: 'not_found', method: req.method, path: req.url }))
 })
