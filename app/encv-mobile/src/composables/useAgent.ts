@@ -82,6 +82,8 @@ export interface Message {
   tool_calls: ToolCall[]
   tool_results: ToolResult[]
   isStreaming?: boolean
+  /** 发送失败时的错误信息（每条消息独立） */
+  error?: string
 }
 
 // =============================================================================
@@ -660,26 +662,30 @@ export function useAgent() {
       // 收到了事件但 assistant 内容仍为空且无工具调用 → 异常空回复
       const lastAssistant = [...messages.value].reverse().find((m) => m.role === 'assistant')
       if (lastAssistant && !lastAssistant.content && lastAssistant.tool_calls.length === 0) {
-        console.error('[useAgent] WARNING: stream ended with empty assistant reply — treating as error')
-        lastError.value = '服务端返回空回复，请重试'
-        status.value = 'error'
+        console.error('[useAgent] WARNING: stream ended with empty assistant reply — marking user msg as errored')
+        const lastUserMsg = [...messages.value].reverse().find((m) => m.role === 'user')
+        if (lastUserMsg) lastUserMsg.error = '服务端返回空回复，请重试'
+        status.value = 'idle'
       }
     } catch (e: any) {
+      // 找到本次发送的 user 消息，标记错误（每条消息独立错误状态）
+      const lastUserMsg = [...messages.value].reverse().find((m) => m.role === 'user')
       if (e?.name === 'AbortError') {
         if (timedOut) {
           console.error('[useAgent] send timed out (30s)')
-          lastError.value = '请求超时（30秒内服务端无响应），请检查网络或稍后重试'
-          status.value = 'error'
+          if (lastUserMsg) lastUserMsg.error = '请求超时（30秒内服务端无响应），请检查网络或稍后重试'
+          status.value = 'idle'
         } else {
           console.debug('[useAgent] send aborted by user')
+          // 用户主动停止：不标记错误
         }
         finalizeLastAssistant()
-        if (status.value !== 'error') status.value = 'idle'
+        if (status.value !== 'idle') status.value = 'idle'
       } else {
         const detail = e?.message || String(e)
         console.error('[useAgent] send failed:', detail, e)
-        lastError.value = detail
-        status.value = 'error'
+        if (lastUserMsg) lastUserMsg.error = detail
+        status.value = 'idle'
         finalizeLastAssistant()
       }
     } finally {

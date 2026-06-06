@@ -49,8 +49,8 @@
     </div>
 
     <main class="agentChatMain" ref="mainRef">
-      <!-- 空状态（无错误且无消息时显示） -->
-      <div v-if="renderedItems.length === 0 && !lastError" class="agentChatEmpty">
+      <!-- 空状态（无消息时显示） -->
+      <div v-if="renderedItems.length === 0" class="agentChatEmpty">
         <ion-icon :icon="chatbubblesIcon" class="emptyIcon" />
         <p>{{ t('agent.emptyHint') }}</p>
       </div>
@@ -94,29 +94,10 @@
           <ErrorMessage
             v-else-if="item.type === 'error'"
             :text="item.text"
+            :on-retry="() => handleRetryError(item)"
           />
         </div>
       </template>
-
-      <!-- 异常状态条：吸附在消息列表下方（而非固定顶部） -->
-      <div v-if="lastError" class="agentChatError" role="alert">
-        <div class="errorBarIcon">
-          <ion-icon :icon="alertIcon" />
-        </div>
-        <div class="errorBarBody">
-          <p class="errorBarTitle">{{ t('agent.errorTitle') }}</p>
-          <p class="errorBarMessage">{{ lastError }}</p>
-        </div>
-        <div class="errorBarActions">
-          <button type="button" class="errorBarRetry" @click="retryLast">
-            <ion-icon :icon="refreshIcon" />
-            <span>{{ t('agent.retry') }}</span>
-          </button>
-          <button type="button" class="errorBarClose" @click="dismissError" :aria-label="t('common.close')">
-            <ion-icon :icon="closeIcon" />
-          </button>
-        </div>
-      </div>
     </main>
 
     <footer class="agentChatFooter">
@@ -207,9 +188,7 @@ import {
   sendOutline,
   stopOutline,
   chatbubblesOutline,
-  alertCircleOutline,
   timeOutline,
-  refreshOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { useAgent, type Decision, type ToolCall } from '@/composables/useAgent'
@@ -226,7 +205,7 @@ const { t } = useI18n()
 // Agent API 基础路径（与 useAgent.ts 保持一致）
 const AGENT_API_BASE = '/agent-api'
 
-const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, lastError, dismissError, retryLast } = useAgent()
+const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId } = useAgent()
 
 const renderedItems = useRenderTurnItems(messages, status)
 
@@ -241,9 +220,7 @@ const addIcon = addOutline
 const sendIcon = sendOutline
 const stopIcon = stopOutline
 const chatbubblesIcon = chatbubblesOutline
-const alertIcon = alertCircleOutline
 const timeIcon = timeOutline
-const refreshIcon = refreshOutline
 const historyOpen = ref(false)
 
 const canSend = computed(() => status.value !== 'streaming' && inputText.value.trim().length > 0)
@@ -352,6 +329,29 @@ function handleSend() {
 
 function handleStop() {
   stop()
+}
+
+/**
+ * 重试一条出错的消息：清除 error 标记 + 删除关联的 assistant 消息 + 重新发送
+ */
+function handleRetryError(item: { type: 'error'; messageIndex: number }) {
+  // 找到对应的 user 消息（error item 的 messageIndex 指向原始消息索引）
+  const idx = item.messageIndex
+  if (idx < 0 || idx >= messages.value.length) return
+
+  const targetMsg = messages.value[idx]
+  if (!targetMsg || targetMsg.role !== 'user') return
+
+  const text = targetMsg.content
+  // 清除错误标记
+  delete targetMsg.error
+
+  // 删除该 user 消息之后的所有消息（包括空的 assistant 占位 + 任何已产生的回复）
+  messages.value.splice(idx)
+
+  // 重新发送
+  send(text)
+  nextTick(() => scrollToBottom())
 }
 
 async function handleNewSession() {
@@ -645,105 +645,6 @@ defineExpose({})
   color: var(--ion-text-color);
   outline: none;
   text-align: center;
-}
-
-/* ── Error bar（异常状态条） ─────────────────────────── */
-.agentChatError {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 8px 12px 4px;
-  padding: 10px 14px;
-  background: var(--error-bar-bg, rgba(239, 68, 68, 0.08));
-  border: 1px solid var(--error-bar-border, rgba(239, 68, 68, 0.20));
-  border-radius: 12px;
-  font-size: 13px;
-  animation: errorBarSlideIn 0.25s ease-out;
-}
-
-@keyframes errorBarSlideIn {
-  from { opacity: 0; transform: translateY(-8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.errorBarIcon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--error-bar-icon-bg, rgba(239, 68, 68, 0.12));
-  color: var(--ion-color-danger, #ef4444);
-  font-size: 18px;
-  flex-shrink: 0;
-}
-
-.errorBarBody {
-  flex: 1;
-  min-width: 0;
-}
-
-.errorBarTitle {
-  font-weight: 600;
-  font-size: 12px;
-  margin: 0 0 2px;
-  color: var(--ion-text-color, #1a1a1a);
-  letter-spacing: 0.01em;
-}
-
-.errorBarMessage {
-  margin: 0;
-  font-size: 12px;
-  color: var(--ion-color-danger, #ef4444);
-  word-break: break-word;
-  line-height: 1.4;
-  opacity: 0.9;
-}
-
-.errorBarActions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.errorBarRetry {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 14px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--ion-color-danger, #ef4444);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-  line-height: 1;
-  transition: opacity 0.15s;
-}
-.errorBarRetry:hover { opacity: 0.88; }
-.errorBarRetry:active { opacity: 0.75; }
-
-.errorBarClose {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--ion-color-medium, #666);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  flex-shrink: 0;
-}
-.errorBarClose:hover {
-  background: rgba(var(--ion-color-medium-rgb, 102, 102, 102), 0.10);
-  color: var(--ion-text-color, #1a1a1a);
 }
 
 /* ── Footer hint ─────────────────────────────────────── */

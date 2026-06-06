@@ -160,23 +160,101 @@ async function handleTest(req, res) {
 }
 
 async function handleModels(req, res) {
-  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
-  // 返回模拟模型列表（真实 agent 应从 OpenAI /providers 动态查询）
-  const models = [
-    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'openai' },
-    { id: 'gpt-4o', name: 'GPT-4o', provider: 'openai' },
-    { id: 'gpt-4.1', name: 'GPT-4.1', provider: 'openai' },
-    { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', provider: 'openai' },
-    { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', provider: 'openai' },
-    { id: 'o3', name: 'O3', provider: 'openai' },
-    { id: 'o3-mini', name: 'O3 Mini', provider: 'openai' },
-    { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', provider: 'anthropic' },
-    { id: 'claude-haiku-4-20250514', name: 'Claude Haiku 4', provider: 'anthropic' },
-    { id: 'deepseek-chat', name: 'DeepSeek Chat', provider: 'deepseek' },
-    { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', provider: 'deepseek' },
-    { id: 'qwen3-coder-plus', name: 'Qwen3 Coder Plus', provider: 'qwen' },
-  ]
-  res.end(JSON.stringify({ models, defaultModel: 'gpt-4o-mini' }))
+  // 从配置文件读取 API key 和 base URL，调用真实供应商 /v1/models 接口
+  const configPath = require('path').join(__dirname, '..', 'config.user.json')
+  let apiKey = ''
+  let baseUrl = 'https://api.openai.com'
+  try {
+    const fs = require('node:fs')
+    const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
+    const agent = raw.agent_settings || {}
+    apiKey = agent.openai_api_key || ''
+    baseUrl = agent.openai_base_url || 'https://api.openai.com'
+  } catch (e) {
+    log(`read config failed: ${e.message}`)
+  }
+
+  if (!apiKey) {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+    res.end(JSON.stringify({
+      models: [],
+      defaultModel: '',
+      error: 'no_api_key',
+      note: '未配置 OpenAI API Key，请在 AI 设置中填写',
+    }))
+    return
+  }
+
+  try {
+    const url = new URL('/v1/models', baseUrl)
+    const fetchRes = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!fetchRes.ok) {
+      throw new Error(`HTTP ${fetchRes.status}: ${fetchRes.statusText}`)
+    }
+    const data = await fetchRes.json()
+    // 过滤出可用的 chat/completion 模型（按 openai 官方返回格式）
+    const rawModels = data.data || []
+    // 按字母排序，优先显示 gpt- / o- / claude- 开头的模型
+    const sorted = rawModels
+      .map((m) => ({
+        id: m.id,
+        name: m.id,
+        provider: detectProvider(m.id),
+        created: m.created || 0,
+      }))
+      .sort((a, b) => {
+        const pa = modelSortKey(a.id)
+        const pb = modelSortKey(b.id)
+        return pa !== pb ? pa - pb : a.id.localeCompare(b.id)
+      })
+
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+    res.end(JSON.stringify({ models: sorted, defaultModel: '' }))
+    log(`models: fetched ${sorted.length} models from ${baseUrl}`)
+  } catch (e) {
+    log(`models fetch failed: ${e.message}`)
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+    res.end(JSON.stringify({
+      models: [],
+      defaultModel: '',
+      error: e.message,
+      note: `无法从 ${baseUrl} 获取模型列表: ${e.message}`,
+    }))
+  }
+}
+
+function detectProvider(modelId) {
+  const lower = modelId.toLowerCase()
+  if (lower.startsWith('gpt') || lower.startsWith('o1') || lower.startsWith('o3') || lower.startsWith('o4')) return 'openai'
+  if (lower.startsWith('claude')) return 'anthropic'
+  if (lower.includes('deepseek')) return 'deepseek'
+  if (lower.includes('qwen')) return 'qwen'
+  if (lower.includes('gemini')) return 'google'
+  if (lower.includes('llama') || lower.includes('meta')) return 'meta'
+  return 'unknown'
+}
+
+function modelSortKey(id) {
+  const lower = id.toLowerCase()
+  // 优先级：gpt-4o > gpt-4 > o3 > claude > deepseek > 其他
+  if (lower.startsWith('gpt-4o')) return 0
+  if (lower.startsWith('gpt-4.')) return 1
+  if (lower === 'gpt-4') return 2
+  if (lower.startsWith('gpt-4')) return 3
+  if (lower.startsWith('o3-mini')) return 4
+  if (lower.startsWith('o3')) return 5
+  if (lower.startsWith('o4')) return 6
+  if (lower.startsWith('gpt-3.5')) return 7
+  if (lower.startsWith('claude-sonnet')) return 8
+  if (lower.startsWith('claude-haiku')) return 9
+  if (lower.startsWith('claude-opus')) return 10
+  if (lower.startsWith('claude')) return 11
+  if (lower.includes('deepseek')) return 12
+  if (lower.includes('qwen')) return 13
+  return 99
 }
 
 const server = http.createServer(async (req, res) => {

@@ -126,6 +126,10 @@ export function renderTurnItems(
       flushOpGroup(true)
       flushWebGroup()
       out.push({ type: 'user', messageId: `u-${idx}`, text: msg.content })
+      // user 消息携带 error → 紧跟一个错误项（每条消息独立错误状态）
+      if (msg.error) {
+        out.push({ type: 'error', messageId: `uerr-${idx}`, text: msg.error, messageIndex: idx })
+      }
     } else if (msg.role === 'assistant') {
       flushOpGroup(true)
       flushWebGroup()
