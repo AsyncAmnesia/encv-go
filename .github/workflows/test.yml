@@ -36,7 +36,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-group: [frontend-vitest, go-core-test, combolite-static]
+        test-group: [frontend-vitest, go-core-test, combolite-static, lint-no-nodejs-crypto]
     outputs:
       layer1-result: ${{ steps.test-result.outputs.result }}
 
@@ -107,6 +107,16 @@ jobs:
           go test ./internal/service/ -count=1 -timeout 60s -run TestComboLite -v 2>&1 | tee test-output.txt
           echo "result=$(grep -q 'PASS' test-output.txt && echo 'success' || echo 'failure')" >> $GITHUB_OUTPUT
 
+      - name: Run no-nodejs-crypto lint
+        if: matrix.test-group == 'lint-no-nodejs-crypto'
+        id: lint-no-nodejs-crypto
+        run: |
+          echo "═══ No-NodeJS-Crypto Lint (禁止 Node.js crypto 加密 API Key) ═══"
+          bash scripts/ci-check-no-nodejs-crypto.sh 2>&1 | tee test-output.txt
+          rc=${PIPESTATUS[0]}
+          echo "result=$(test $rc -eq 0 && echo 'success' || echo 'failure')" >> $GITHUB_OUTPUT
+          exit $rc
+
       - name: Set overall test result
         id: test-result
         run: |
@@ -116,6 +126,8 @@ jobs:
             echo "result=${{ steps.go-core-test.outputs.result }}" >> $GITHUB_OUTPUT
           elif [ "${{ matrix.test-group }}" = 'combolite-static' ]; then
             echo "result=${{ steps.combolite-test.outputs.result }}" >> $GITHUB_OUTPUT
+          elif [ "${{ matrix.test-group }}" = 'lint-no-nodejs-crypto' ]; then
+            echo "result=${{ steps.lint-no-nodejs-crypto.outputs.result }}" >> $GITHUB_OUTPUT
           fi
 
       - name: Upload test output
