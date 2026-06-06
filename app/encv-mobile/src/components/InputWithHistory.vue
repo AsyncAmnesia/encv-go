@@ -90,7 +90,14 @@ const resolvedType = computed(() => {
 })
 
 function handleInput(e: CustomEvent) {
-  emit('update:modelValue', e.detail.value ?? '')
+  // 防御：ionInput 事件必须是 CustomEvent 携带 detail.value
+  // 但代码路径中可能存在非 CustomEvent 派发（如测试代码 dispatchEvent(new Event('ionInput'))），
+  // 这种情况下 e.detail 是 undefined，原代码会抛 "Cannot read properties of undefined"
+  const detail: any = (e as any)?.detail
+  const raw = typeof detail?.value === 'string' || typeof detail?.value === 'number'
+    ? detail.value
+    : ''
+  emit('update:modelValue', raw)
 }
 
 function handleFocus() {

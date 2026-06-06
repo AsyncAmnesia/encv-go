@@ -69,17 +69,23 @@
             <!-- 用 <template> 把所有 openai_api_key 相关 UI 包成单一条件块，-->
             <!-- 避免 v-if/v-else-if 链被中间插入的 v-if 打断导致 ConfigFieldItem 误命中 -->
             <template v-else-if="child.key === 'openai_api_key'">
-              <InputWithHistory
-                :model-value="apiKeyPlainValue"
-                :label="fieldLabel(child.key, child.required)"
-                :placeholder="t('agent.apiKeyPlaceholder') || 'sk-...'"
-                :icon="key"
-                input-type="password"
-                :history-key="'config.agent_api_key'"
-                :is-customized="isApiKeyCustomized"
-                @update:model-value="handleApiKeyInput($event)"
-                @reset="handleApiKeyReset"
-              />
+              <div ref="apiKeyInputRef" class="api-key-input-wrap" :class="{ 'api-key-broken': apiKeyStatus === 'decrypt-failed' }">
+                <InputWithHistory
+                  :model-value="apiKeyPlainValue"
+                  :label="fieldLabel(child.key, child.required)"
+                  :placeholder="apiKeyInputPlaceholder"
+                  :icon="key"
+                  input-type="password"
+                  :history-key="'config.agent_api_key'"
+                  :is-customized="isApiKeyCustomized"
+                  @update:model-value="handleApiKeyInput($event)"
+                  @reset="handleApiKeyReset"
+                />
+                <p v-if="apiKeyStatus === 'decrypt-failed' && !apiKeyPlainValue" class="api-key-mask-hint">
+                  <ion-icon :icon="lockIcon" class="api-key-mask-icon"></ion-icon>
+                  {{ t('agent.apiKeyMaskHint') || '已存储加密值但当前无法解密显示，请重新输入后保存以覆盖损坏值' }}
+                </p>
+              </div>
 
               <!-- API Key 状态徽标 + 后端 base + 测试按钮（紧跟 input 显示） -->
               <ion-item lines="none" class="apiKeyStatusItem">
@@ -154,9 +160,32 @@
                 <span>{{ t('agent.loadingModels') }}...</span>
               </div>
 
-              <!-- 加载失败：显示错误 + 手动输入回退 -->
+              <!-- 加载失败：显示错误 + 手动输入回退 + 跳转到 API Key 设置（依赖关系暴露） -->
               <div v-else-if="settingsModelsError" class="model-error-state">
                 <p class="model-error-text">{{ settingsModelsError }}</p>
+                <div class="model-error-actions">
+                  <!-- 当错误根因是 API Key 状态问题时，提供"一键跳转"入口 -->
+                  <!-- ref + onMounted 时 addEventListener，避免 Vue 模板 @click 偶发被 Shadow DOM 拦截 -->
+                  <div v-if="isModelErrorCausedByApiKey" class="model-error-fix-wrap" data-testid="scroll-to-api-key">
+                    <ion-button
+                      size="small"
+                      fill="outline"
+                      color="primary"
+                    >
+                      <ion-icon :icon="key" slot="start"></ion-icon>
+                      {{ t('agent.modelErrorFixApiKey') || '↑ 跳转到 API Key 设置' }}
+                    </ion-button>
+                  </div>
+                  <ion-button
+                    size="small"
+                    fill="clear"
+                    color="medium"
+                    @click="goToDevLogs"
+                  >
+                    <ion-icon :icon="bugIcon" slot="start"></ion-icon>
+                    {{ t('agent.apiKeyViewLogs') }}
+                  </ion-button>
+                </div>
                 <input
                   type="text"
                   class="model-fallback-input"
@@ -268,7 +297,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonBackButton, IonContent, IonList, IonListHeader, IonItem,
@@ -336,6 +365,95 @@ const apiKeyStatusDetail = ref('') // 详细错误信息（用于展开）
 const roundtripRunning = ref(false)
 
 const apiKeyPlainValue = ref('') // 用户正在编辑的明文（内存中，password input 自动掩码）
+
+// Template ref：用于"跳转到 API Key"按钮的滚动定位 + 焦点
+const apiKeyInputRef = ref<HTMLElement | null>(null)
+
+// Template ref：用于"跳转到 API Key"错误暴露按钮的 click 绑定
+// 用 addEventListener 而非 @click：ion-button 内部 Shadow DOM 偶发会拦截 @click 冒泡
+// addEventListener 直接挂到外层 div 上，不经过 Shadow DOM 中转
+//
+// 不使用 ref="..." 绑定：v-for 内部 ref 会被 Vue 自动收集为数组，
+// 函数 ref 也不能稳定拿到 DOM 元素。
+// 改为 onMounted + onActivated 后用 querySelector 抓取，更可靠。
+
+// 输入框 placeholder 根据 API Key 状态切换
+// 当 decrypt-failed 时明确告诉用户"这里有损坏的密文"，避免被误认为输入框是空的
+const apiKeyInputPlaceholder = computed(() => {
+  if (apiKeyStatus.value === 'decrypt-failed') {
+    return t('agent.apiKeyPlaceholderBroken') || '已存储加密值但无法解密，请重新输入'
+  }
+  if (apiKeyStatus.value === 'encrypted' || apiKeyStatus.value === 'plaintext') {
+    return t('agent.apiKeyPlaceholderKeep') || '已配置（输入新值将覆盖）'
+  }
+  return t('agent.apiKeyPlaceholder') || 'sk-...'
+})
+
+// model-error 是否由 API Key 状态问题引起——决定是否显示"一键跳转"按钮
+// 关键：让依赖关系可被发现。模型列表不能孤立地报告"未配置 API Key"，
+// 必须在 UI 上提供回到根因的入口
+const isModelErrorCausedByApiKey = computed(() => {
+  return apiKeyStatus.value === 'empty'
+      || apiKeyStatus.value === 'decrypt-failed'
+      || apiKeyStatus.value === 'encrypt-failed'
+      || apiKeyStatus.value === 'test-failed'
+})
+
+// 滚动到 API Key 输入框并聚焦
+// 这是"错误暴露机制"的关键：让用户从下游错误直接跳到根因
+// 关键技术点：ion-input 会把原生 <input> 放在 light DOM 里（id=ion-input-X, name=ion-input-X），
+// 所以 querySelector('input') 在 light DOM 就能拿到，不必穿透 Shadow DOM。
+// 但聚焦后需要保持：ion-input 的 ionFocusable 行为可能再次夺焦，所以聚焦后必须保留。
+function scrollToApiKey() {
+  nextTick(() => {
+    const el = apiKeyInputRef.value
+    if (!el) {
+      console.error('[scrollToApiKey] no ref')
+      return
+    }
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    // 调试：打印 DOM 结构，确认 input 在哪一层
+    const wrap = el.querySelector('.input-with-history') || el
+    const lightInputs = wrap.querySelectorAll('input')
+    const ionInputEl = el.querySelector('ion-input')
+    const shadowInput = ionInputEl?.shadowRoot?.querySelector('input') as HTMLInputElement | null
+    console.debug('[scrollToApiKey] DOM tree', {
+      lightInputs: lightInputs.length,
+      shadowInput: !!shadowInput,
+      hasIonInputSetFocus: ionInputEl && typeof (ionInputEl as any).setFocus === 'function',
+    })
+    // 优先用 ion-input 的官方 setFocus（最稳定，会处理 Shadow DOM 焦点 + 滚动定位）
+    if (ionInputEl && typeof (ionInputEl as any).setFocus === 'function') {
+      setTimeout(() => {
+        try {
+          ;(ionInputEl as any).setFocus()
+          // 再在 light DOM 上把 input 选中，方便用户直接覆盖
+          const realInput = lightInputs[0] || shadowInput
+          if (realInput) {
+            // 再延迟一点 select，等 focus 真正生效
+            setTimeout(() => {
+              try { (realInput as HTMLInputElement).select() } catch { /* ignore */ }
+            }, 50)
+          }
+        } catch (e) {
+          console.error('[scrollToApiKey] setFocus failed:', e)
+        }
+      }, 400)
+      return
+    }
+    // 兜底：直接 focus light DOM 上的 input
+    if (lightInputs[0]) {
+      setTimeout(() => {
+        try {
+          lightInputs[0].focus({ preventScroll: true })
+          lightInputs[0].select()
+        } catch (e) {
+          console.error('[scrollToApiKey] light focus failed:', e)
+        }
+      }, 400)
+    }
+  })
+}
 
 // 是否已自定义（非默认空值）
 // 注意：不能用 apiKeyPlainValue 作为判断源——页面加载时 decryptAndLoadApiKey 会把解密后的
@@ -512,6 +630,27 @@ const settingsModelsLoading = ref(true)
 const settingsModelsError = ref('')
 
 async function fetchSettingsModels() {
+  // 依赖关卡：API Key 状态不健康时直接走"已知的失败原因"分支，
+  // 不向后端发无意义的请求，同时给用户精准的错误文案（不显示误导性的"未配置"）
+  if (apiKeyStatus.value === 'empty') {
+    settingsModelsLoading.value = false
+    settingsModelsError.value = t('agent.modelErrorNoApiKey') ||
+      '未配置 API Key：模型列表需要有效的 OpenAI API Key 才能拉取。请在上方填写 API Key 后保存。'
+    return
+  }
+  if (apiKeyStatus.value === 'decrypt-failed') {
+    settingsModelsLoading.value = false
+    settingsModelsError.value = t('agent.modelErrorDecryptFailed') ||
+      'API Key 已存储但无法解密：加密密钥可能已轮换或存储值已损坏。请在上方重新输入 API Key 后保存以覆盖。'
+    return
+  }
+  if (apiKeyStatus.value === 'encrypting' || apiKeyStatus.value === 'decrypting') {
+    // 异步状态未稳定，等 watcher 触发重试
+    settingsModelsLoading.value = true
+    settingsModelsError.value = ''
+    return
+  }
+
   settingsModelsLoading.value = true
   settingsModelsError.value = ''
   try {
@@ -519,7 +658,10 @@ async function fetchSettingsModels() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     if (data.error && data.error === 'no_api_key') {
-      settingsModelsError.value = t('agent.noApiKeyHint') || '未配置 API Key，请先填写上方 API Key 后保存'
+      // 罕见路径：API Key 状态显示正常但后端拿不到（并发竞态 / 配置 reload 中）
+      // 同样把"一键跳转"露出
+      settingsModelsError.value = t('agent.modelErrorNoApiKey') ||
+        '未配置 API Key：模型列表需要有效的 OpenAI API Key 才能拉取。请在上方填写 API Key 后保存。'
     } else if (data.error) {
       settingsModelsError.value = data.note || data.error
     } else {
@@ -534,6 +676,22 @@ async function fetchSettingsModels() {
     settingsModelsLoading.value = false
   }
 }
+
+// API Key 状态机变化时自动同步模型列表请求
+// 这是"依赖追踪"的关键——之前模型列表只在 onMounted 拉一次，
+// 用户在 API Key 输入框修改后看不到模型列表的同步刷新
+watch(apiKeyStatus, (newStatus, oldStatus) => {
+  if (newStatus === oldStatus) return
+  // 只有从"不可用"切到"可用"时才主动重试
+  const wasBroken = oldStatus === 'empty' || oldStatus === 'decrypt-failed' || oldStatus === 'encrypt-failed'
+  const isReady = newStatus === 'encrypted' || newStatus === 'plaintext'
+  if (wasBroken && isReady) {
+    fetchSettingsModels()
+  } else if (newStatus === 'empty' || newStatus === 'decrypt-failed') {
+    // 状态机进入"不可用"，立刻同步给模型列表（不等待 fetch 返回）
+    fetchSettingsModels()
+  }
+})
 
 function handleModelManualInput(event: Event) {
   const val = (event.target as HTMLInputElement).value
@@ -907,7 +1065,25 @@ async function handleCopyDoctorJson() {
   }
 }
 
+// "↑ 跳转到 API Key 设置"按钮的 click 绑定
+// 用 document 级事件委托：监听 document click，匹配 .model-error-fix-wrap 子树
+// 这样不依赖 ref 绑定（v-for + Shadow DOM 会让 ref 不可靠）
+// 也不依赖 addEventListener 到 wrap 本身（wrap 元素可能被 v-if 重建）
+function handleDocumentClick(e: Event) {
+  const target = e.target as HTMLElement | null
+  if (!target) return
+  // 向上查找最近的 .model-error-fix-wrap
+  const wrap = target.closest('.model-error-fix-wrap') as HTMLElement | null
+  if (!wrap) return
+  e.preventDefault()
+  e.stopPropagation()
+  scrollToApiKey()
+}
+
 onMounted(async () => {
+  // document 级 capture 阶段监听（capture 比 bubble 早，更稳）
+  document.addEventListener('click', handleDocumentClick, { capture: true })
+
   if (serverOnline.value) {
     await loadConfig()
     configLoaded.value = true
@@ -916,6 +1092,10 @@ onMounted(async () => {
     // 动态获取模型列表（不阻塞页面渲染）
     fetchSettingsModels()
   }
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleDocumentClick, { capture: true } as any)
 })
 </script>
 
@@ -1042,6 +1222,39 @@ onMounted(async () => {
   color: var(--ion-color-danger, #eb445a);
   font-size: 12px;
   margin: 0 0 6px;
+}
+.model-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+.api-key-input-wrap {
+  position: relative;
+}
+.api-key-input-wrap.api-key-broken {
+  /* 当 API Key 损坏时，输入框周围加红色高亮，提示用户这里有"事故点" */
+  outline: 1px solid var(--ion-color-danger, #eb445a);
+  outline-offset: -1px;
+  border-radius: 6px;
+  animation: api-key-broken-pulse 2.4s ease-in-out infinite;
+}
+@keyframes api-key-broken-pulse {
+  0%, 100% { outline-color: var(--ion-color-danger, #eb445a); }
+  50% { outline-color: transparent; }
+}
+.api-key-mask-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 12px 8px;
+  color: var(--ion-color-danger, #eb445a);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.api-key-mask-icon {
+  font-size: 14px;
+  flex-shrink: 0;
 }
 .model-fallback-input {
   width: 100%;
