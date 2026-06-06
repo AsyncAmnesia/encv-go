@@ -5,6 +5,11 @@
  * 临时 stub，模拟 spec §go-in-process-agent 的 in-process AI agent
  * 直到真实 Go agent 就绪（:5245）。
  *
+ * ⚠️ API Key 加解密已迁回 Go 主后端（internal/server/agent_api.go::EncryptApiKey）。
+ *    本 stub 不再承担任何加密职责——mobile app 的 preview-gateway 已把
+ *    /agent-api/* 路由到 encv-go (:2025)，Node.js crypto 在 WebView/Capacitor
+ *    容器内不可移植（详见 scripts/ci-check-no-nodejs-crypto.sh）。
+ *
  * 端点（与 useAgent.ts L483/552/609 对齐）：
  *   POST /api/chat    — 发起对话（SSE）
  *   POST /api/confirm — 4-决策确认（SSE）
@@ -20,44 +25,18 @@
  * 由 ecosystem.config.cjs 的 agent-stub 进程监管。
  */
 const http = require('node:http')
-const { randomUUID, createCipheriv, createDecipheriv, randomBytes, scryptSync } = require('node:crypto')
 
 const PORT = Number(process.env.PORT || 5245)
 const HOST = process.env.HOST || '0.0.0.0'
 
-// ─── API Key 加密/解密（防止 config.user.json 明文暴露） ──────
-// 使用 AES-256-CBC + 密钥派生（scrypt），存储格式: enc:<base64(iv+ciphertext)>
-const CRYPTO_PASSPHRASE = 'encv-agent-key-v1'  // 固定盐值（本地配置保护，非安全边界）
-const CRYPTO_SALT = Buffer.from('encv-mobile-salt-2024', 'utf8')
-
-function encryptApiKey(plaintext) {
-  if (!plaintext) return ''
-  // 已加密的不重复加密
-  if (plaintext.startsWith('enc:')) return plaintext
-  const key = scryptSync(CRYPTO_PASSPHRASE, CRYPTO_SALT, 32)
-  const iv = randomBytes(16)
-  const cipher = createCipheriv('aes-256-cbc', key, iv)
-  let enc = cipher.update(plaintext, 'utf8', 'base64')
-  enc += cipher.final('base64')
-  return 'enc:' + iv.toString('base64') + ':' + enc
-}
-
-function decryptApiKey(stored) {
-  if (!stored) return ''
-  if (!stored.startsWith('enc:')) return stored // 未加密的旧格式兼容
-  try {
-    const parts = stored.slice(4).split(':')
-    const iv = Buffer.from(parts[0], 'base64')
-    const ciphertext = Buffer.from(parts[1], 'base64')
-    const key = scryptSync(CRYPTO_PASSPHRASE, CRYPTO_SALT, 32)
-    const decipher = createDecipheriv('aes-256-cbc', key, iv)
-    let dec = decipher.update(ciphertext, null, 'utf8')
-    dec += decipher.final('utf8')
-    return dec
-  } catch (e) {
-    log(`decrypt failed: ${e.message}`)
-    return ''
-  }
+// ─── Session ID 生成（不依赖 Node 内置 crypto，避免触发 CI lint） ──
+// 不需要密码学强度的 UUID（仅是 SSE 会话标识），用 Math.random() 自实现 v4。
+function uuidv4() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
 }
 
 function log(...args) {
@@ -143,7 +122,7 @@ async function handleChat(req, res) {
     res.end(JSON.stringify({ error: 'invalid_json', detail: String(e) }))
     return
   }
-  const sessionId = body?.sessionId || randomUUID()
+  const sessionId = body?.sessionId || uuidv4()
   log(`chat session=${sessionId} model=${body?.model} temp=${body?.temperature}`)
   setSseHeaders(res)
   sendEvent(res, 'session_start', sessionId)
@@ -195,107 +174,18 @@ async function handleTest(req, res) {
 }
 
 async function handleModels(req, res) {
-  // 从配置文件读取 API key 和 base URL，调用真实供应商 /v1/models 接口
-  const configPath = require('path').join(__dirname, '..', 'config.user.json')
-  let apiKey = ''
-  let baseUrl = 'https://api.openai.com'
-  try {
-    const fs = require('node:fs')
-    const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
-    const agent = raw.agent_settings || {}
-    apiKey = decryptApiKey(agent.openai_api_key || '')
-    baseUrl = agent.openai_base_url || 'https://api.openai.com'
-  } catch (e) {
-    log(`read config failed: ${e.message}`)
-  }
-
-  if (!apiKey) {
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
-    res.end(JSON.stringify({
-      models: [],
-      defaultModel: '',
-      error: 'no_api_key',
-      note: '未配置 OpenAI API Key，请在 AI 设置中填写',
-    }))
-    return
-  }
-
-  try {
-    const url = new URL('/v1/models', baseUrl)
-    const fetchRes = await fetch(url.toString(), {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(10_000),
-    })
-    if (!fetchRes.ok) {
-      throw new Error(`HTTP ${fetchRes.status}: ${fetchRes.statusText}`)
-    }
-    // ⚠️ 防御：外部 API 可能返回 HTML（WAF/限流页），检查 Content-Type
-    const ct = (fetchRes.headers.get('content-type') || '').toLowerCase()
-    if (!ct.includes('application/json')) {
-      const bodyText = await fetchRes.text().slice(0, 200)
-      throw new Error(`供应商返回非 JSON 响应 (${ct}): ${bodyText}`)
-    }
-    const data = await fetchRes.json()
-    // 过滤出可用的 chat/completion 模型（按 openai 官方返回格式）
-    const rawModels = data.data || []
-    // 按字母排序，优先显示 gpt- / o- / claude- 开头的模型
-    const sorted = rawModels
-      .map((m) => ({
-        id: m.id,
-        name: m.id,
-        provider: detectProvider(m.id),
-        created: m.created || 0,
-      }))
-      .sort((a, b) => {
-        const pa = modelSortKey(a.id)
-        const pb = modelSortKey(b.id)
-        return pa !== pb ? pa - pb : a.id.localeCompare(b.id)
-      })
-
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
-    res.end(JSON.stringify({ models: sorted, defaultModel: '' }))
-    log(`models: fetched ${sorted.length} models from ${baseUrl}`)
-  } catch (e) {
-    log(`models fetch failed: ${e.message}`)
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
-    res.end(JSON.stringify({
-      models: [],
-      defaultModel: '',
-      error: e.message,
-      note: `无法从 ${baseUrl} 获取模型列表`,
-    }))
-  }
-}
-
-function detectProvider(modelId) {
-  const lower = modelId.toLowerCase()
-  if (lower.startsWith('gpt') || lower.startsWith('o1') || lower.startsWith('o3') || lower.startsWith('o4')) return 'openai'
-  if (lower.startsWith('claude')) return 'anthropic'
-  if (lower.includes('deepseek')) return 'deepseek'
-  if (lower.includes('qwen')) return 'qwen'
-  if (lower.includes('gemini')) return 'google'
-  if (lower.includes('llama') || lower.includes('meta')) return 'meta'
-  return 'unknown'
-}
-
-function modelSortKey(id) {
-  const lower = id.toLowerCase()
-  // 优先级：gpt-4o > gpt-4 > o3 > claude > deepseek > 其他
-  if (lower.startsWith('gpt-4o')) return 0
-  if (lower.startsWith('gpt-4.')) return 1
-  if (lower === 'gpt-4') return 2
-  if (lower.startsWith('gpt-4')) return 3
-  if (lower.startsWith('o3-mini')) return 4
-  if (lower.startsWith('o3')) return 5
-  if (lower.startsWith('o4')) return 6
-  if (lower.startsWith('gpt-3.5')) return 7
-  if (lower.startsWith('claude-sonnet')) return 8
-  if (lower.startsWith('claude-haiku')) return 9
-  if (lower.startsWith('claude-opus')) return 10
-  if (lower.startsWith('claude')) return 11
-  if (lower.includes('deepseek')) return 12
-  if (lower.includes('qwen')) return 13
-  return 99
+  // ⚠️ 此端点已弃用：API Key 加解密 + 供应商 /v1/models 调用全部迁到
+  //    Go 主后端（internal/server/agent_api.go::handleAgentModels）。
+  //    mobile app 走 preview-gateway /agent-api → encv-go (:2025)，
+  //    不会落到 :5245。这里只做占位响应，避免 pm2 监听到 :5245 时
+  //    旧脚本访问此端点拿到 404。
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+  res.end(JSON.stringify({
+    models: [],
+    defaultModel: '',
+    error: 'stub_deprecated',
+    note: 'use Go side /agent-api/api/models (encv-go :2025, see internal/server/agent_api.go)',
+  }))
 }
 
 const server = http.createServer(async (req, res) => {
@@ -309,26 +199,13 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/resume') return handleResume(req, res)
   if ((req.method === 'GET' || req.method === 'POST') && req.url === '/test') return handleTest(req, res)
   if (req.method === 'GET' && req.url === '/api/models') return handleModels(req, res)
-  // 前端调用：加密 API Key 后再保存到 config.user.json（防止明文存储）
-  if (req.method === 'POST' && req.url === '/api/encrypt-key') {
-    let body
-    try { body = await readJsonBody(req) } catch (e) {
-      res.writeHead(400, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ error: 'invalid_json' }))
-      return
-    }
-    const encrypted = encryptApiKey(body?.key || '')
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
-    res.end(JSON.stringify({ encrypted }))
-    return
-  }
   res.writeHead(404, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify({ error: 'not_found', method: req.method, path: req.url }))
 })
 
 server.listen(PORT, HOST, () => {
   log(`listening on http://${HOST}:${PORT} (stub for spec §go-in-process-agent)`)
-  log(`routes: POST /api/chat /api/confirm /api/resume  |  GET /__agent/health`)
+  log(`routes: POST /api/chat /api/confirm /api/resume  |  GET /__agent/health  |  GET /api/models (deprecated, use Go side)`)
 })
 
 for (const sig of ['SIGINT', 'SIGTERM']) {
