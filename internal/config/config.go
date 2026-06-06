@@ -46,6 +46,9 @@ type Config struct {
 	// --- 预览设置 ---
 	Preview *PreviewConfig      `json:"preview,omitempty"`
 	Mobile  *types.MobileConfig `json:"mobile,omitempty"`
+	// AgentSettings AI agent 配置（openai_api_key, model 等）
+	// 使用 json.RawMessage 透传，避免定义详细子结构
+	AgentSettings json.RawMessage `json:"agent_settings,omitempty"`
 }
 
 type PreviewConfig struct {
