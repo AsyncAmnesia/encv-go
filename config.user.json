@@ -3,6 +3,10 @@
   "admin": {
     "password": "123456"
   },
+  "agent_settings": {
+    "openai_api_key": "enc:oiJegaLvIK/7S8ZEa6Kcu6UFM6DVe/JnKk4KcO6tnhaH6Fb82ulU3OSoSfPMnfmWZXsfRrWGaSYuJKsAwe8slk2yNBByL/bsgHQxcPfBqXk=",
+    "openai_base_url": "https://api.gptgod.online/v1"
+  },
   "default_container_version": 0,
   "log": {
     "file": "encv.log",

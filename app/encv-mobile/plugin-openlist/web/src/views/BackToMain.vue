@@ -87,7 +87,9 @@ import { refreshOutline } from 'ionicons/icons'
 // 目标 encv-mobile vite dev server 直连地址。
 // 用 127.0.0.1 而非 localhost：避免某些环境 DNS 解析 localhost 到 ::1 失败。
 // 用 5173 是 start-preview.sh 起的端口（被占时回退 5174，但 5174 是 plugin-openlist 自身占着）
-const ENCV_MAIN_URL = 'http://127.0.0.1:5173/tabs/remote'
+// 走 preview-gateway 统一收口 :16666（沙箱 dev 唯一对外端口）
+//   /tabs/remote  → 主 app Remote tab（不再硬编码 :5173，因为主 app vite 已迁到 :8100）
+const ENCV_MAIN_URL = 'http://localhost:16666/tabs/remote'
 
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 const iframeSrc = ref(ENCV_MAIN_URL)
@@ -127,12 +129,12 @@ function onIframeLoad() {
 }
 
 /**
- * 健康探测：fetch 5173 根路径，能 200 就认为 :5173 在线
+ * 健康探测：fetch :16666 根路径，能 200 就认为 preview-gateway 在线
  * 不阻塞渲染：失败时只是设错误标记，不抛异常
  */
 async function probeHealth() {
   try {
-    const res = await fetch('http://127.0.0.1:5173/', {
+    const res = await fetch('http://localhost:16666/', {
       method: 'HEAD',
       cache: 'no-store',
       signal: AbortSignal.timeout(1500),

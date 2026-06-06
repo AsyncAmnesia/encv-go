@@ -161,6 +161,23 @@
             </ion-item>
           </ion-list>
 
+          <ion-list v-else-if="section.key === 'agent_settings'">
+            <ion-list-header>
+              <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
+              <ion-badge slot="end" color="primary" class="scope-badge scope-synced">
+                <ion-icon :icon="cloudOutline" class="scope-badge-icon"></ion-icon>
+                <span class="scope-text">{{ t('settings.synced') }}</span>
+              </ion-badge>
+            </ion-list-header>
+            <ion-item button @click="goAgent" detail>
+              <ion-icon :icon="sparklesOutline" slot="start"></ion-icon>
+              <ion-label>
+                <h3>{{ t('settings.agent') }}</h3>
+                <p>{{ t('settings.agentSettingsHelp') }}</p>
+              </ion-label>
+            </ion-item>
+          </ion-list>
+
           <ion-list v-else-if="section.type !== 'object' || !section.properties">
             <ion-list-header>
               <ion-label>{{ section.sectionTitle ? tSectionTitle(section.sectionTitle) : tField(section.key) }}</ion-label>
@@ -361,7 +378,7 @@ import {
   filmOutline, musicalNotesOutline, imagesOutline, readerOutline,
   newspaperOutline, gitNetworkOutline, toggleOutline,
   textOutline, personOutline, folderOpen, refreshCircle,
-  trash, bugOutline,
+  trash, bugOutline, sparklesOutline,
   phonePortraitOutline,
   colorPaletteOutline, layersOutline, globeOutline,
   fileTrayFull as databaseIcon,
@@ -542,6 +559,10 @@ function goCache() {
 
 function goPlugins() {
   router.push('/tabs/settings/plugins')
+}
+
+function goAgent() {
+  router.push('/tabs/settings/agent')
 }
 
 function getValue(path: string[]): unknown {

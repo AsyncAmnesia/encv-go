@@ -20,6 +20,12 @@ func InitializePlugins(ctx context.Context) error {
 	return encvPlugins.InitializePlugins(ctx)
 }
 
+// Plugins 返回已注册的插件列表（由 internal/v2/plugins 维护）。
+// 供 agent 集成等需要直接遍历插件的调用方使用。
+func Plugins() []encvPlugins.Plugin {
+	return encvPlugins.Plugins
+}
+
 func GetPluginMetas() []pluginInterfaces.PluginMeta {
 	return encvPlugins.GetPluginMetas()
 }

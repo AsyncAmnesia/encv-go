@@ -52,6 +52,9 @@
           </div>
         </div>
       </div>
+
+      <!-- 浮动 AI 入口（Phase 7.6） -->
+      <AgentEntry />
     </ion-content>
   </ion-page>
 </template>
@@ -69,6 +72,7 @@ import { playCircle, folder, lockClosed, globe, layersOutline } from 'ionicons/i
 import { useI18n } from '@/composables/useI18n'
 import { useRouter } from 'vue-router'
 import { onIonViewWillEnter } from '@ionic/vue'
+import AgentEntry from '@/components/agent/AgentEntry.vue'
 
 const { t } = useI18n()
 const router = useRouter()

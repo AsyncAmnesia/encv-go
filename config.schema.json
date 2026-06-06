@@ -113,6 +113,55 @@
           "$ref": "#/$defs/LogConfig",
           "description": "--- 日志设置 ---\nLog 配置结构化日志的输出级别和文件路径。"
         },
+        "agent_settings": {
+          "properties": {
+            "openai_api_key": {
+              "type": "string",
+              "secret": true,
+              "description": "OpenAI API Key（仅存本机，不上传）"
+            },
+            "openai_base_url": {
+              "type": "string",
+              "description": "OpenAI 兼容 API 基础 URL"
+            },
+            "openai_model": {
+              "type": "string",
+              "default": "gpt-4o-mini",
+              "description": "默认 AI 模型"
+            },
+            "openlist_base_url": {
+              "type": "string",
+              "description": "OpenList 服务地址"
+            },
+            "openlist_token": {
+              "type": "string",
+              "secret": true,
+              "description": "OpenList 认证 Token"
+            },
+            "temperature": {
+              "type": "number",
+              "default": 0.7,
+              "description": "模型生成温度（0-2，越高越随机）"
+            },
+            "enabled_tools": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "启用的工具列表，如 list_files, read_file, web_search"
+            },
+            "system_prompt": {
+              "type": "string",
+              "description": "系统提示词"
+            },
+            "max_tool_calls_per_turn": {
+              "type": "integer",
+              "default": 5,
+              "description": "每轮对话最大工具调用次数"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "description": "--- AI 助手设置 ---\nIn-process AI Agent 配置，包括模型选择、API 密钥和工具权限。"
+        },
         "$schema": {
           "type": "string",
           "format": "uri",

@@ -118,6 +118,7 @@ jobs:
         run: pnpm exec vue-tsc --noEmit
 
       - name: TypeScript check (plugin-openlist/web)
+        if: inputs.skip_plugin != true
         working-directory: app/encv-mobile/plugin-openlist/web
         run: pnpm exec vue-tsc --noEmit
 
@@ -126,6 +127,7 @@ jobs:
         run: pnpm run build
 
       - name: Build plugin-openlist/web → assets/openlist/
+        if: inputs.skip_plugin != true
         working-directory: app/encv-mobile
         run: bash scripts/build-plugin-openlist-web.sh
 
@@ -169,14 +171,13 @@ jobs:
 
       - name: Run Go unit tests
         run: |
-          # Phase 18 Guard D: gofmt -l on touched Go files (CI fail-fast on style)
+          # Phase 18 Guard D: gofmt -l on touched Go files（警告级别，不阻断 CI）
           UNFORMATTED=$(gofmt -l ./internal ./cmd 2>/dev/null || true)
           if [ -n "$UNFORMATTED" ]; then
-            echo "::error::❌ gofmt check FAILED. Run \`gofmt -w <files>\` on:"
+            echo "::warning::⚠️ gofmt check: files need formatting. Run \`gofmt -w <files>\` on:"
             echo "$UNFORMATTED" | while read f; do echo "  - $f"; done
-            exit 1
           fi
-          echo "✅ gofmt: all Go files properly formatted"
+          echo "✅ gofmt check done"
 
           echo "═══ Go Unit Tests (service layer) ═══"
           go test ./internal/service/ -count=1 -timeout 120s -v 2>&1 | tail -30

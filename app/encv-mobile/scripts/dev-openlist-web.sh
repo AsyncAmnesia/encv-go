@@ -98,6 +98,13 @@ fi
 # ---- Step 3: 启动 Vite dev server ----
 step "3/4 启动 Vite dev server (port ${VITE_PORT})"
 cd "${WEB_DIR}"
+
+# ⚠️ 沙箱 dev 必须设 VITE_BASE=/openlist-ui/ —— preview-gateway 把 :16666/openlist-ui/* 透传到 :5174，
+# Vite 需要在 HTML 输出 <base href="/openlist-ui/">，否则相对资源路径（./src/main.ts）会被
+# 浏览器解析到 :16666/ 主 app 路径 → 404 → 整个 plugin SPA 空白。
+# 重要：同时也让 vue-router 用 createWebHashHistory('/openlist-ui/')，让 hash 路由也感知 base。
+export VITE_BASE="/openlist-ui/"
+
 ./node_modules/.bin/vite --host 0.0.0.0 --port "${VITE_PORT}" --strictPort &
 VITE_PID=$!
 SUBPIDS+=("${VITE_PID}")

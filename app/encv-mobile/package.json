@@ -19,18 +19,20 @@
     "@ajuarezso/capacitor-high-refresh-rate": "^0.6.0",
     "@capacitor/android": "^8.3.4",
     "@capacitor/core": "^8.3.4",
+    "@capacitor/device": "^8.0.2",
     "@capacitor/screen-orientation": "^8.0.1",
     "@capacitor/share": "^8.0.1",
     "@capacitor/status-bar": "^8.0.2",
-    "@encvgo/components": "workspace:*",
     "@ionic/vue": "^8.8.7",
     "@ionic/vue-router": "^8.8.7",
     "@tanstack/vue-virtual": "^3.13.26",
     "artplayer": "^5.4.0",
     "ionicons": "^8.0.13",
+    "markstream-vue": "1.0.1-beta.5",
     "vconsole": "^3.15.1",
     "vue": "^3.5.34",
-    "vue-router": "^4.6.4"
+    "vue-router": "^4.6.4",
+    "vue-virtual-scroller": "^3.0.4"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.3.4",

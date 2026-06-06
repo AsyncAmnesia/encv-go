@@ -8,6 +8,7 @@ import devlogs from '@/i18n/devlogs'
 import extensions from '@/i18n/extensions'
 import errors from '@/i18n/errors'
 import modals from '@/i18n/modals'
+import agent from '@/i18n/agent'
 
 type Locale = 'zh-CN' | 'en'
 type MessageModule = { 'zh-CN': Record<string, string>; en: Record<string, string> }
@@ -31,6 +32,7 @@ const messages: Record<Locale, Record<string, string>> = mergeModules([
   extensions,
   errors,
   modals,
+  agent,
 ])
 
 function getStoredLocale(): Locale {
@@ -82,6 +84,16 @@ const fieldKeyMap: Record<string, string> = {
   'default_password': 'settings.alistEncryptDefaultPassword',
   'algorithm': 'settings.alistEncryptAlgorithm',
   'enabled': 'settings.alistEncryptEnable',
+  'agent_settings': 'settings.agentSettings',
+  'openai_api_key': 'settings.openaiApiKey',
+  'openai_base_url': 'settings.openaiBaseUrl',
+  'openai_model': 'settings.openaiModel',
+  'openlist_base_url': 'settings.openlistBaseUrl',
+  'openlist_token': 'settings.openlistToken',
+  'default_container_version': 'settings.defaultContainerVersion',
+  'enabled_tools': 'settings.enabledTools',
+  'system_prompt': 'settings.systemPrompt',
+  'max_tool_calls_per_turn': 'settings.maxToolCallsPerTurn',
 }
 
 const sectionTitleMap: Record<string, string> = {
@@ -92,6 +104,7 @@ const sectionTitleMap: Record<string, string> = {
   'WebDAV 服务器设置': 'settings.webdavServerSettings',
   'Openlist 代理服务器设置': 'settings.proxyServerSettings',
   '日志设置': 'settings.logSettings',
+  'AI 助手设置': 'settings.agentSettings',
 }
 
 function t(key: string, params?: Record<string, string>): string {

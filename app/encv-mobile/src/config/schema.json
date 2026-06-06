@@ -131,6 +131,69 @@
           "$ref": "#/$defs/LogConfig",
           "description": "--- 日志设置 ---\nLog 配置结构化日志的输出级别和文件路径。"
         },
+        "agent_settings": {
+          "properties": {
+            "openai_api_key": {
+              "type": "string",
+              "secret": true,
+              "description": "OpenAI API Key（仅存本机，不上传）",
+              "x-platform": "both"
+            },
+            "openai_base_url": {
+              "type": "string",
+              "default": "https://api.openai.com/v1",
+              "description": "OpenAI API Base URL",
+              "x-platform": "both"
+            },
+            "openai_model": {
+              "type": "string",
+              "default": "gpt-4o-mini",
+              "x-dynamic-options": "/agent-api/api/models",
+              "description": "OpenAI 模型选择（从供应商 API 动态获取）",
+              "x-platform": "both"
+            },
+            "openlist_base_url": {
+              "type": "string",
+              "default": "http://127.0.0.1:5244",
+              "description": "OpenList 服务地址（agent 通过此地址调用 /api/ext/* 工具端点）",
+              "x-platform": "both"
+            },
+            "openlist_token": {
+              "type": "string",
+              "secret": true,
+              "description": "OpenList admin token（用于 agent 调 /api/ext/* 时的 Authorization 头）",
+              "x-platform": "both"
+            },
+            "default_container_version": {
+              "type": "integer",
+              "default": 1,
+              "description": "默认容器版本（覆盖插件的 DefaultVersion）",
+              "x-platform": "both"
+            },
+            "enabled_tools": {
+              "type": "array",
+              "default": ["list_files", "read_file", "delete_file", "exec_command"],
+              "description": "启用的工具白名单（默认 list_files / read_file / delete_file / exec_command）",
+              "x-platform": "both"
+            },
+            "system_prompt": {
+              "type": "string",
+              "format": "multiline",
+              "default": "你是 ENCV 助手，帮助用户管理加密容器和文件。请优先使用 readOnly 工具，需要写入时主动说明并等待用户确认。",
+              "description": "Agent 系统提示词（multiline）",
+              "x-platform": "both"
+            },
+            "max_tool_calls_per_turn": {
+              "type": "integer",
+              "default": 10,
+              "description": "单轮最大工具调用次数（防无限递归）",
+              "x-platform": "both"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "description": "--- AI 助手设置 ---\nAgent 服务的 OpenAI / OpenList 接入信息和工具白名单。"
+        },
         "$schema": {
           "type": "string",
           "format": "uri",

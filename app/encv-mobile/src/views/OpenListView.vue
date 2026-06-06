@@ -29,6 +29,37 @@
         </ul>
       </div>
 
+      <!--
+        沙箱 dev 入口（preview-gateway 统一收口 :16666）：
+        - /openlist-ui/  → plugin-openlist 独立 Vite SPA (Vue + Ionic)
+        - /openlist/     → OpenList Go 后端真实管理 UI
+        因为三者同源（都是 http://localhost:16666），用 <a href> 即可整页跳转
+        （主 app 是 Capacitor WebView 或浏览器，router.push 不支持跨 SPA 跳转）
+      -->
+      <div class="quick-entries">
+        <h3 class="entries-title">沙箱 dev 快速入口</h3>
+        <ion-button
+          expand="block"
+          fill="outline"
+          color="primary"
+          href="/openlist-ui/"
+          class="ion-margin"
+        >
+          <ion-icon :icon="openOutline" slot="start" />
+          打开 plugin-openlist 管理 UI
+        </ion-button>
+        <ion-button
+          expand="block"
+          fill="outline"
+          color="secondary"
+          href="/openlist/"
+          class="ion-margin"
+        >
+          <ion-icon :icon="globeOutline" slot="start" />
+          打开 OpenList 真实管理 UI
+        </ion-button>
+      </div>
+
       <ion-button expand="block" @click="reloadStatus" class="ion-margin">
         <ion-icon :icon="refreshOutline" slot="start" />
         刷新状态
@@ -67,8 +98,8 @@ import {
   IonIcon,
   IonSpinner,
 } from '@ionic/vue'
-import { refreshOutline, powerOutline, playOutline } from 'ionicons/icons'
-import { OpenListStatusCard, type OpenListRuntime } from '@encvgo/components'
+import { refreshOutline, powerOutline, playOutline, openOutline, globeOutline } from 'ionicons/icons'
+import { OpenListStatusCard, type OpenListRuntime } from '@/components-shared'
 import { OpenListNative } from '@/plugins/openlist-native'
 
 const runtime = ref<OpenListRuntime>({
