@@ -296,7 +296,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonBackButton, IonContent, IonList, IonListHeader, IonItem,
@@ -653,7 +653,11 @@ async function fetchSettingsModels() {
   settingsModelsLoading.value = true
   settingsModelsError.value = ''
   try {
-    const res = await fetch('/agent-api/api/models')
+    // 关键：必须传 deviceId 给后端！
+    // 后端 readAgentConfig(deviceId) 用 deviceId 派生 AES 解密 key，
+    // 不传 deviceId 会用错的 key 派生，永远解不出设备绑定的密文。
+    const did = await getDeviceId()
+    const res = await fetch(`/agent-api/api/models?deviceId=${encodeURIComponent(did)}`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     if (data.error && data.error === 'no_api_key') {
@@ -942,9 +946,11 @@ async function handleTestConnection() {
   try {
     // 走 /agent-api/* 命名空间转发到 agent 后端 :5245
     // 不走 encv-go 的 /api/agent/test（encv-go 当前没这端点，会 404）
-    const response = await fetch('/agent-api/test', {
+    // 关键：传 deviceId，后端用 deviceId 派生 AES 解密 key
+    const did = await getDeviceId()
+    const response = await fetch(`/agent-api/test?deviceId=${encodeURIComponent(did)}`, {
       method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Device-Id': did },
     })
     if (!response.ok) {
       let detail = `HTTP ${response.status}`
@@ -1205,6 +1211,38 @@ onMounted(async () => {
   flex-wrap: wrap;
   gap: 6px;
   margin: 4px 0 8px;
+}
+/* "↑ 跳转到 API Key 设置" 按钮（用原生 button 避免 ion-button Shadow DOM
+   偶发拦截 @click 冒泡）—— 视觉对齐 Ionic outline 小按钮 */
+.model-error-fix-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--ion-color-primary, #4f8cff);
+  background: transparent;
+  border: 1px solid var(--ion-color-primary, #4f8cff);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.model-error-fix-btn:hover {
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
+}
+.model-error-fix-btn:active {
+  background: rgba(var(--ion-color-primary-rgb), 0.16);
+}
+.model-error-fix-btn:focus-visible {
+  outline: 2px solid var(--ion-color-primary, #4f8cff);
+  outline-offset: 1px;
+}
+.model-error-fix-icon {
+  font-size: 14px;
+  flex-shrink: 0;
 }
 .api-key-input-wrap {
   position: relative;

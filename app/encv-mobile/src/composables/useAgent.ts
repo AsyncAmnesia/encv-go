@@ -1396,6 +1396,12 @@ export function useAgent() {
           sessionId: currentSessionId.value,
           toolCallId,
           decision,
+          // 关键：必须传 deviceId！
+          // 后端 handleAgentConfirm 在 accept/accept_for_session 分支
+          // 会调 readAgentConfig(body.DeviceId) 派生 AES 解密 key 来读 API Key。
+          // 不传 deviceId 会用错的 salt，永远解不出设备绑定的密文，
+          // 真实执行工具时 Authorization header 会是空 Bearer，OpenAI 返回 401。
+          deviceId: getDeviceIdSync(),
         }),
         signal: abortController.signal,
       })

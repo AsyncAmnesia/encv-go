@@ -239,14 +239,26 @@ func (s *Server) registerAgentRoutes(r *gin.Engine) {
 // ─── GET /api/models — 从供应商获取模型列表 ─────────────────
 
 func (s *Server) handleAgentModels(c *gin.Context) {
-	cfg := s.readAgentConfig()
+	// deviceId 必须从 query 取（GET 无 body）
+	// 不传 deviceId 会用错的 key 派生，永远解不出设备绑定的密文
+	deviceId := c.Query("deviceId")
+	cfg := s.readAgentConfig(deviceId)
 
 	if cfg.APIKey == "" {
+		// 区分两种失败原因：
+		// - 真的没配置（用户从未填过） → note 给空
+		// - 配了但 deviceId 不对 → note 给"设备不匹配"
+		note := "未配置 OpenAI API Key，请在 AI 设置中填写"
+		if deviceId == "" {
+			note = "未配置 OpenAI API Key 或缺少 deviceId 参数，请在 AI 设置中填写"
+		} else {
+			note = "未配置 OpenAI API Key 或 deviceId 不匹配当前设备"
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"models":      []interface{}{},
 			"defaultModel": "",
 			"error":       "no_api_key",
-			"note":        "未配置 OpenAI API Key，请在 AI 设置中填写",
+			"note":        note,
 		})
 		return
 	}
@@ -350,7 +362,12 @@ func (s *Server) handleAgentDecryptKey(c *gin.Context) {
 // ─── GET/POST /test — 测试连接 ───────────────────────────────
 
 func (s *Server) handleAgentTest(c *gin.Context) {
-	cfg := s.readAgentConfig()
+	// deviceId 从 query/header 取（GET 无 body，POST 允许 header 走）
+	deviceId := c.Query("deviceId")
+	if deviceId == "" {
+		deviceId = c.GetHeader("X-Device-Id")
+	}
+	cfg := s.readAgentConfig(deviceId)
 
 	result := gin.H{
 		"openai": "ok",
