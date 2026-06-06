@@ -350,7 +350,7 @@ import ConfigFieldItem from '@/components/ConfigFieldItem.vue'
 import InputWithHistory from '@/components/InputWithHistory.vue'
 import { useRouter } from 'vue-router'
 
-const { isOnline: serverOnline } = useServerStatus()
+const { isOnline: serverOnline, checkStatus: checkServerStatusNow } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue, resetFieldToDefault } = useConfig()
 const { t, tField } = useI18n()
 const router = useRouter()
@@ -1135,8 +1135,12 @@ onMounted(async () => {
 
 // 监听后端连接状态：从未连接 → 已连接时自动重新拉配置，
 // 避免"切到 AI 设置时后端刚好没起来 → 页面永远空白"的状态机卡死。
+//
+// 重要：之前的条件 `!configError.value` 是错的——离线时 configError 会被 set
+// 为 "请确认 encv-go 服务已启动"，后端恢复后 configError 不清零，watcher 永不触发。
+// 改为：online=true 且 !configLoaded 时就重试（loadConfigSafely 内部会清空 configError）
 watch(serverOnline, async (online) => {
-  if (online && !configLoaded.value && !configError.value) {
+  if (online && !configLoaded.value) {
     await loadConfigSafely()
   }
 })
@@ -1165,16 +1169,24 @@ async function loadConfigSafely() {
 
 /**
  * 手动重试：用户点击错误态 UI 的"重试"按钮时调用。
- * 会在重试前先调一次 checkStatus（useServerStatus 已暴露的接口），
- * 把刚连上的后端及时同步到 serverOnline 状态。
+ *
+ * 之前的实现是个空壳：try/catch 里啥也没有，注释说"useServerStatus 内部已封装好
+ * checkStatus"，但根本没调。结果是用户点"重试"按钮后页面纹丝不动 → 误以为崩溃。
+ *
+ * 修复：先主动触发 useServerStatus.checkStatus() 重新探测（不走缓存），
+ * 再根据探测结果决定 loadConfig 或更新错误文案。
  */
 async function retryLoadConfig() {
-  // 触发 useServerStatus 重新探测
+  // 重试前先主动探测一次后端（避免 serverOnline 缓存还是 false）
+  let onlineNow = serverOnline.value
   try {
-    // useServerStatus 内部已封装好 checkStatus，调用方这里只关心触发；
-    // 若未导出 checkStatus，可以直接 await loadConfig()，store 端自己会重试
-  } catch {/* ignore */}
-  if (serverOnline.value) {
+    const result = await checkServerStatusNow()
+    onlineNow = result?.online === true
+  } catch (e) {
+    console.debug('[AgentSettingsDetail] retryLoadConfig checkStatus failed:', e)
+    // 探测失败时不改变 onlineNow，沿用缓存值
+  }
+  if (onlineNow) {
     await loadConfigSafely()
   } else {
     // 后端仍离线，只更新错误文案，等 watch(serverOnline) 自动重试
