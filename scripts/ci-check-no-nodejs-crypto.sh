@@ -4,15 +4,12 @@
 # -----------------------------------------------------------------------------
 # 硬性 lint：禁止在主源码树中用 Node.js crypto 加密 API Key。
 #
-# 背景（来自实战踩坑）：
-#   ① 历史上 scripts/agent-stub.js 用 node:crypto 的 scryptSync + AES-256-CBC
-#      加密 OpenAI API Key，但 mobile app 的 preview-gateway 已经把
-#      /agent-api/* 路由到 encv-go (:2025)，由 internal/server/agent_api.go
-#      的 EncryptApiKey / DecryptApiKey 提供加解密（Go 主后端实现）。
-#   ② Node.js crypto 在手机 WebView / Capacitor 容器 / 纯前端环境下不可移植，
-#      一旦 agent-stub.js 与 mobile app 串到同一个运行时（pm2 进程组、容器
-#      共享 filesystem 等）就会寄——scryptSync 同步阻塞 WebView 主线程、密钥
-#      派生固定 salt 易被反推、AES-CBC 格式与 Go 端 AES-GCM 不兼容导致解密失败。
+# 背景（历史踩坑，2025-Q1 → 2026-Q2 移除）：
+#   ① 历史上 scripts/agent-stub.js 曾用 node:crypto 的 scryptSync + AES-256-CBC
+#      加密 OpenAI API Key。该文件已删除，但本 lint 保留作为**未来回归守卫**。
+#   ② Node.js crypto 在手机 WebView / Capacitor 容器 / 纯前端环境下不可移植：
+#      scryptSync 同步阻塞 WebView 主线程、固定 salt 易被反推、AES-CBC 格式
+#      与 Go 端 AES-GCM 不兼容（跨端解密必然失败）。
 #   ③ 因此本脚本检测到下列任一模式即 exit 1，CI 红灯。
 #
 # 检测模式（仅扫描 JS/TS/Vue 主源码，不查 Go）：
@@ -22,7 +19,7 @@
 #   createCipheriv / createDecipheriv     AES primitives
 #   createCipher( / createDecipher(       旧版 API
 #   crypto\.createCipher\b / crypto\.createDecipher\b   旧版 API
-#   \bencryptApiKey\b / \bdecryptApiKey\b                agent-stub.js 函数名
+#   \bencryptApiKey\b / \bdecryptApiKey\b                历史 agent-stub.js 函数名（仍保留检测，防回归）
 #   node:crypto                      Node.js 内置 crypto 模块导入
 #
 # 修复指引（一旦红灯）：
@@ -94,7 +91,7 @@ INCLUDE_FILES=(
 # ─── 3. 禁用模式表（按"风险类型"分组） ────────────────────────
 # 每条模式 = 一行 grep -E 正则
 PATTERNS=(
-  # 模式 A：Node.js crypto 模块导入（agent-stub.js 风格最显眼的标记）
+  # 模式 A：Node.js crypto 模块导入（历史 agent-stub.js 风格最显眼的标记）
   'node:crypto'
 
   # 模式 B：密钥派生
@@ -112,7 +109,7 @@ PATTERNS=(
   'crypto\.createCipher\b'
   'crypto\.createDecipher\b'
 
-  # 模式 E：agent-stub.js 专用函数名（最强信号，与 Node.js crypto 1:1 关联）
+  # 模式 E：历史 agent-stub.js 专用函数名（最强信号，与 Node.js crypto 1:1 关联）
   '\bencryptApiKey\b'
   '\bdecryptApiKey\b'
 )

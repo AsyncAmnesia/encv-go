@@ -16,7 +16,7 @@
  *   /             → encv-mobile (Vite, :8100)         — default fallthrough
  *   - /openlist-ui/ → plugin-openlist-web (Vite, :5174)
  *   - /openlist/    → encv-go (Go, :2025)               — proxies to OpenList (:5244)
- *   - /agent-api/   → in-process agent (Go, :5245)      — AI assistant SSE
+ *   - /agent-api/   → encv-go (Go, :2025)                — AI assistant SSE (in-process)
  *   - /api          → encv-go (Go, :2025)
  *   - /p            → encv-go (Go, :2025)
  *   - /play         → encv-go (Go, :2025)

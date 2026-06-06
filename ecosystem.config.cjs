@@ -11,7 +11,10 @@
 //   ⑤ encv-mobile-vite    (主 app Vite, :8100 — 独立 pm2 app)
 //   ⑥ preview-helper      (OpenPreview 占位, :15002)
 //   ⑦ openpreview-stub    (OpenPreview 注册源, :15003)
-//   ⑧ agent-stub          (in-process AI agent stub, :5245 — 临时)
+//
+//   AI Agent SSE 端点已集成到 encv-go :2025 (internal/server/agent_api.go)，
+//   历史上曾有独立的 agent-stub 进程 (scripts/agent-stub.js) 占 :5245 端口，
+//   因 Node.js crypto 在 WebView 不可移植被移除（见 ci-check-no-nodejs-crypto.sh）。
 //
 // 用法：
 //   pm2 start ecosystem.config.cjs
@@ -252,33 +255,6 @@ module.exports = {
       max_restarts: 10,
       out_file: '/tmp/pm2-openpreview-stub.log',
       error_file: '/tmp/pm2-openpreview-stub.err.log',
-    },
-
-    // ── ⑦ agent-stub (in-process AI agent stub, :5245) ─────────────
-    //   临时 stub：模拟 spec §go-in-process-agent 的 SSE 端点
-    //   (POST /api/chat, /api/confirm, /api/resume)。
-    //
-    //   ⚠️ 重要：/api/encrypt-key 已迁回 Go 主后端（internal/server/agent_api.go），
-    //      本 stub 不再承担任何加密职责。Node.js crypto 在 WebView/Capacitor
-    //      容器内不可移植——见 scripts/ci-check-no-nodejs-crypto.sh 强制 lint。
-    //
-    //   preview-gateway 通过 /agent-api/* 路由转发到本服务（注意：实际产品
-    //   路径会优先命中 encv-go :2025，:5245 仅作为占位/回退）。
-    //   真实 Go agent 就绪后用 :5245 真实进程替换本 stub。
-    //   不阻塞会话：pm2 fork 模式，daemon 化。
-    {
-      name: 'agent-stub',
-      script: path.join(REPO_ROOT, 'scripts', 'agent-stub.js'),
-      interpreter: 'node',
-      cwd: REPO_ROOT,
-      env: { PATH: process.env.PATH, PORT: '5245', HOST: '0.0.0.0' },
-      max_memory_restart: '128M',
-      listen_timeout: 5000,
-      kill_timeout: 2000,
-      autorestart: true,
-      max_restarts: 10,
-      out_file: '/tmp/pm2-agent-stub.log',
-      error_file: '/tmp/pm2-agent-stub.err.log',
     },
   ],
 

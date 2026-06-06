@@ -261,7 +261,7 @@ func (s *Server) Start(version string) (string, error) {
 	r.POST("/api/logs", s.handleAPILogsGin)
 	r.GET("/ws", gin.WrapF(s.handleWebSocket))
 
-	// Agent AI 端点（集成到 encv-go，不再使用独立 agent-stub 进程）
+	// Agent AI 端点（集成到 encv-go 主后端）
 	s.registerAgentRoutes(r)
 
 	// plugin-openlist 独立 vite dev server (:5174) 反向代理
