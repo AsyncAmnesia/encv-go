@@ -384,3 +384,154 @@ func TestHandleLanAccess_POSTAlsoSupported(t *testing.T) {
 		t.Errorf("POST should be supported, got %d (body: %s)", rec.Code, rec.Body.String())
 	}
 }
+
+// ---- Spec-named tests (Task 26 acceptance criteria) ----
+
+// TestEnumerateIPv4_ExcludesLoopback is the spec-named variant of
+// the loopback-exclusion assertion. It walks the real net stack of
+// the test host and asserts that no entry in the result is a
+// 127.0.0.0/8 address — the property the front-end relies on to
+// avoid showing "http://127.0.0.1:5245/" as a "LAN access" URL.
+func TestEnumerateIPv4_ExcludesLoopback(t *testing.T) {
+	addrs, err := EnumerateIPv4()
+	if err != nil {
+		t.Fatalf("EnumerateIPv4: %v", err)
+	}
+	for _, a := range addrs {
+		if a.IP == "127.0.0.1" {
+			t.Errorf("EnumerateIPv4 returned 127.0.0.1: %+v", a)
+		}
+		ip := net.ParseIP(a.IP)
+		if ip != nil && ip.IsLoopback() {
+			t.Errorf("EnumerateIPv4 returned loopback IP: %s", a.IP)
+		}
+	}
+}
+
+// TestEnumerateIPv4_ReturnsValidShape asserts every returned entry
+// has the documented wire shape: a non-empty interface name, a
+// non-empty IP, and a parseable IP literal. This is the test that
+// protects the front-end from accidental field renames or
+// unparseable garbage leaking into the JSON payload.
+func TestEnumerateIPv4_ReturnsValidShape(t *testing.T) {
+	addrs, err := EnumerateIPv4()
+	if err != nil {
+		t.Fatalf("EnumerateIPv4: %v", err)
+	}
+	for _, a := range addrs {
+		if a.Interface == "" {
+			t.Errorf("empty Interface field: %+v", a)
+		}
+		if a.IP == "" {
+			t.Errorf("empty IP field: %+v", a)
+		}
+		if net.ParseIP(a.IP) == nil {
+			t.Errorf("non-parseable IP: %+v", a)
+		}
+		// Field type sanity: the IP must look like a dotted quad
+		// (the function is documented IPv4-only). A regression
+		// that leaks an IPv6 literal would manifest here.
+		if !looksLikeIPv4(a.IP) {
+			t.Errorf("non-IPv4-looking address: %q", a.IP)
+		}
+	}
+}
+
+// looksLikeIPv4 is a tiny helper used by TestEnumerateIPv4_ReturnsValidShape.
+// It returns true when s has the "a.b.c.d" shape of an IPv4 dotted
+// quad. We do not use net.ParseIP because that also accepts
+// abbreviated IPv6 forms.
+func looksLikeIPv4(s string) bool {
+	parts := strings.Split(s, ".")
+	if len(parts) != 4 {
+		return false
+	}
+	for _, p := range parts {
+		if p == "" {
+			return false
+		}
+		for _, r := range p {
+			if r < '0' || r > '9' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// TestIsPrivateOrPublic uses *net.IPNet mocks to verify the
+// classification of every documented IPv4 category. This is the
+// test the spec calls out explicitly: it constructs in-memory
+// *net.IPNet values (no net stack required) and checks the
+// classification. The mock mask is a /32 because the classifier
+// only inspects address bytes, but the field is required by the
+// struct literal.
+func TestIsPrivateOrPublic(t *testing.T) {
+	cases := []struct {
+		name string
+		ip   string
+		want string
+	}{
+		// Loopback
+		{"loopback-127.0.0.1", "127.0.0.1", "loopback"},
+		{"loopback-127.0.0.42", "127.0.0.42", "loopback"},
+		{"loopback-edge-127.255.255.254", "127.255.255.254", "loopback"},
+		// Link-local
+		{"link-local-169.254.0.1", "169.254.0.1", "link-local"},
+		{"link-local-edge-169.254.255.254", "169.254.255.254", "link-local"},
+		// Unspecified
+		{"unspecified-0.0.0.0", "0.0.0.0", "unspecified"},
+		// RFC 1918 private ranges
+		{"private-10/8-low", "10.0.0.1", "private"},
+		{"private-10/8-high", "10.255.255.255", "private"},
+		{"private-172.16/12-low", "172.16.0.1", "private"},
+		{"private-172.16/12-mid", "172.20.5.5", "private"},
+		{"private-172.16/12-high", "172.31.255.255", "private"},
+		{"private-192.168/16-low", "192.168.0.1", "private"},
+		{"private-192.168/16-high", "192.168.255.255", "private"},
+		// Public addresses
+		{"public-1.1.1.1", "1.1.1.1", "public"},
+		{"public-8.8.8.8", "8.8.8.8", "public"},
+		{"public-9.9.9.9", "9.9.9.9", "public"},
+		// Off-by-one boundary checks
+		{"public-172.15-just-below", "172.15.255.255", "public"},
+		{"public-172.32-just-above", "172.32.0.0", "public"},
+		{"public-192.167-just-below", "192.167.255.255", "public"},
+		{"public-192.169-just-above", "192.169.0.0", "public"},
+		{"public-11-just-above-10", "11.0.0.0", "public"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ip := net.ParseIP(c.ip)
+			if ip == nil {
+				t.Fatalf("net.ParseIP(%q) returned nil", c.ip)
+			}
+			mock := &net.IPNet{IP: ip, Mask: net.CIDRMask(32, 32)}
+			if got := IsPrivateOrPublic(mock); got != c.want {
+				t.Errorf("IsPrivateOrPublic(%s) = %q, want %q", c.ip, got, c.want)
+			}
+		})
+	}
+
+	// Edge cases: nil/empty input. The function must not panic.
+	t.Run("nil-input", func(t *testing.T) {
+		if got := IsPrivateOrPublic(nil); got != "unknown" {
+			t.Errorf("IsPrivateOrPublic(nil) = %q, want unknown", got)
+		}
+	})
+	t.Run("zero-value-IPNet", func(t *testing.T) {
+		if got := IsPrivateOrPublic(&net.IPNet{}); got != "unknown" {
+			t.Errorf("IsPrivateOrPublic(empty) = %q, want unknown", got)
+		}
+	})
+	t.Run("ipv6-input", func(t *testing.T) {
+		ip := net.ParseIP("::1")
+		if ip == nil {
+			t.Fatalf("net.ParseIP(::1) returned nil")
+		}
+		mock := &net.IPNet{IP: ip, Mask: net.CIDRMask(128, 128)}
+		if got := IsPrivateOrPublic(mock); got != "unknown" {
+			t.Errorf("IsPrivateOrPublic(::1) = %q, want unknown", got)
+		}
+	})
+}

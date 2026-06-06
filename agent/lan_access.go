@@ -175,3 +175,57 @@ func joinHostPort(host string, port int) string {
 	}
 	return fmt.Sprintf("%s:%d", host, port)
 }
+
+// IsPrivateOrPublic classifies a *net.IPNet into one of the
+// documented wire categories used by the LAN-access feature:
+//
+//   - "unspecified"  0.0.0.0
+//   - "loopback"     127.0.0.0/8
+//   - "link-local"   169.254.0.0/16 (RFC 3927)
+//   - "private"      RFC 1918: 10/8, 172.16/12, 192.168/16
+//   - "public"       everything else (routable on the internet)
+//
+// The classification is IPv4-only; nil/empty nets, nil IP, and
+// IPv6 nets are reported as "unknown" so callers can treat them
+// defensively without panicking. The function does not consult
+// ipNet.Mask — every RFC 1918 block is matched on its address
+// bytes alone, which matches the spec's "construct *net.IPNet
+// mock" testing approach where the mask is mostly irrelevant.
+func IsPrivateOrPublic(ipNet *net.IPNet) string {
+	if ipNet == nil {
+		return "unknown"
+	}
+	ip := ipNet.IP
+	if ip == nil {
+		return "unknown"
+	}
+	v4 := ip.To4()
+	if v4 == nil {
+		return "unknown"
+	}
+	// 0.0.0.0 (anycast / "bind to all" sentinel)
+	if v4[0] == 0 {
+		return "unspecified"
+	}
+	// 127.0.0.0/8 — host-internal loopback
+	if v4[0] == 127 {
+		return "loopback"
+	}
+	// 169.254.0.0/16 — RFC 3927 link-local (used by DHCP-less hosts)
+	if v4[0] == 169 && v4[1] == 254 {
+		return "link-local"
+	}
+	// RFC 1918 private ranges. Boundary checks below guard against
+	// the well-known off-by-one traps (172.15 is public, 172.32 is
+	// public; 192.167 is public, 192.169 is public).
+	if v4[0] == 10 {
+		return "private"
+	}
+	if v4[0] == 172 && v4[1] >= 16 && v4[1] <= 31 {
+		return "private"
+	}
+	if v4[0] == 192 && v4[1] == 168 {
+		return "private"
+	}
+	return "public"
+}
