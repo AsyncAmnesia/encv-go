@@ -195,43 +195,6 @@ function generateSessionId(): string {
 }
 
 // =============================================================================
-// System Prompt 解析（从服务端配置获取，带缓存）
-// =============================================================================
-
-let _cachedSystemPrompt: string | null = null
-let _systemPromptCacheTs = 0
-const SYSTEM_PROMPT_CACHE_TTL = 30_000 // 30s 缓存
-
-/**
- * 从 /api/config 获取 agent_settings.system_prompt
- * 带内存缓存，避免每次 send 都请求
- */
-async function resolveSystemPrompt(): Promise<string | null> {
-  const now = Date.now()
-  if (_cachedSystemPrompt !== null && (now - _systemPromptCacheTs) < SYSTEM_PROMPT_CACHE_TTL) {
-    return _cachedSystemPrompt || null
-  }
-  try {
-    const res = await fetch('/api/config')
-    if (!res.ok) return null
-    const cfg = await res.json() as Record<string, unknown>
-    const agentSettings = cfg?.agent_settings as Record<string, unknown> | undefined
-    const prompt = agentSettings?.system_prompt as string | undefined
-    _cachedSystemPrompt = (prompt && typeof prompt === 'string' && prompt.trim()) ? prompt.trim() : ''
-    _systemPromptCacheTs = now
-    return _cachedSystemPrompt || null
-  } catch {
-    return null
-  }
-}
-
-/** 主动失效缓存（设置页保存后调用） */
-export function invalidateSystemPromptCache(): void {
-  _cachedSystemPrompt = null
-  _systemPromptCacheTs = 0
-}
-
-// =============================================================================
 // 复合式主体
 // =============================================================================
 
@@ -667,18 +630,8 @@ export function useAgent() {
       if (abortController) abortController.abort()
     }, 30_000)
 
-    // ── 构建消息列表：system prompt + 历史对话 ──
+    // ── 构建消息列表：历史对话（system prompt 由后端从 config 注入） ──
     const apiMessages: Array<{ role: string; content: string }> = []
-
-    // 注入用户设置的 system prompt（从服务端配置 API 获取，带 30s 缓存）
-    try {
-      const systemPrompt = await resolveSystemPrompt()
-      if (systemPrompt) {
-        apiMessages.push({ role: 'system', content: systemPrompt })
-      }
-    } catch (e) {
-      console.debug('[useAgent] failed to resolve system prompt, skipping:', e)
-    }
 
     // 追加历史消息（不含空的 assistant 占位消息）
     for (const m of messages.value) {
@@ -946,6 +899,5 @@ export function useAgent() {
     retryLast,
     activeModel,
     activeTemperature,
-    invalidateSystemPromptCache,
   }
 }

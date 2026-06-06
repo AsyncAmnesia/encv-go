@@ -306,8 +306,8 @@ describe('useAgent', () => {
 
       await agent.confirmTool('tc-x', 'accept')
 
-      expect(fetchSpy).toHaveBeenCalledTimes(3)
-      const confirmCall = fetchSpy.mock.calls[2]
+      expect(fetchSpy).toHaveBeenCalledTimes(2)
+      const confirmCall = fetchSpy.mock.calls[1]
       expect(confirmCall[0]).toBe('/agent-api/api/confirm')
       const body = JSON.parse(confirmCall[1].body)
       expect(body.toolCallId).toBe('tc-x')
@@ -324,9 +324,6 @@ describe('useAgent', () => {
       for (const decision of decisions) {
         fetchSpy.mockReset()
         localStorage.clear()
-        // 清除系统提示词缓存（模块级变量跨迭代持久化）
-        const { invalidateSystemPromptCache } = await import('@/composables/useAgent')
-        invalidateSystemPromptCache()
 
         const sse1 = sseLine('tool_call', {
           id: `tc-${decision}`,
@@ -345,7 +342,7 @@ describe('useAgent', () => {
         fetchSpy.mockImplementation(urlAwareMock(fetchReturningStream(makeSSEStream([sse2]))))
         await agent.confirmTool(`tc-${decision}`, decision)
 
-        const body = JSON.parse(fetchSpy.mock.calls[2][1].body)
+        const body = JSON.parse(fetchSpy.mock.calls[1][1].body)
         expect(body.decision).toBe(decision)
       }
     })

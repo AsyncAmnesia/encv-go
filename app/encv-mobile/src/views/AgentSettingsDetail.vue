@@ -212,6 +212,7 @@ import { useConfig } from '@/composables/useConfig'
 import { useServerStatus } from '@/composables/useServerStatus'
 import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
+import { getDeviceId } from '@/composables/useDeviceId'
 import { fetchConfig, updateConfig } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
 import ConfigFieldItem from '@/components/ConfigFieldItem.vue'
@@ -255,10 +256,11 @@ async function decryptAndLoadApiKey() {
   }
   // 加密格式：调用后端解密
   try {
+    const deviceId = await getDeviceId()
     const res = await fetch('/agent-api/api/decrypt-key', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ encrypted: stored }),
+      body: JSON.stringify({ encrypted: stored, deviceId }),
     })
     if (res.ok) {
       const { decrypted } = await res.json()
@@ -390,14 +392,17 @@ async function handleSaveConfig() {
     const rawKey = String(getFieldValue(['agent_settings', 'openai_api_key']) ?? '')
     if (rawKey && !rawKey.startsWith('enc:')) {
       try {
+        const deviceId = await getDeviceId()
         const encRes = await fetch('/agent-api/api/encrypt-key', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key: rawKey }),
+          body: JSON.stringify({ key: rawKey, deviceId }),
         })
         if (encRes.ok) {
           const { encrypted } = await encRes.json()
           setFieldValue(['agent_settings', 'openai_api_key'], encrypted)
+          // 保存设备指纹到配置，后端解密时需要
+          setFieldValue(['agent_settings', '_device_id'], deviceId)
           apiKeyPlainValue.value = '' // 清除明文缓存
         }
       } catch (e) {

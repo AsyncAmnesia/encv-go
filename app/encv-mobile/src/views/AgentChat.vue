@@ -135,7 +135,7 @@
           rows="1"
           :placeholder="t('agent.placeholder')"
           :disabled="status === 'streaming'"
-          @keydown.shift.enter.exact.prevent="handleSend"
+          @keydown.enter.exact.prevent="handleSend"
           @keydown.meta.enter.exact.prevent="handleSend"
           @keydown.ctrl.enter.exact.prevent="handleSend"
           @keydown="handleInputKeydown"

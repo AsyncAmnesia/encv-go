@@ -30,12 +30,18 @@ const (
 	cryptoSalt       = "encv-mobile-salt-2024"
 )
 
-func deriveKey() []byte {
-	// 与 Node.js scryptSync(passphrase, salt, 32) 默认参数完全一致：
-	//   N=16384(2^14), r=8, p=1, keylen=32
+// deriveKey 使用 passphrase + salt + 可选的设备指纹进行 scrypt 密钥派生
+// 设备指纹确保同一密文在不同设备上无法解密（即使知道 passphrase）
+func deriveKey(deviceId ...string) []byte {
+	// 基础 salt
+	saltBase := cryptoSalt
+	// 如果提供了设备 ID，追加到 salt 中
+	if len(deviceId) > 0 && deviceId[0] != "" {
+		saltBase = saltBase + ":" + deviceId[0]
+	}
 	key, err := scrypt.Key(
 		[]byte(cryptoPassphrase),
-		[]byte(cryptoSalt),
+		[]byte(saltBase),
 		16384, // N (与 Node.js 默认值一致)
 		8,     // r
 		1,     // p
@@ -48,15 +54,15 @@ func deriveKey() []byte {
 	return key
 }
 
-// EncryptApiKey 加密明文 API Key（与 Node.js createCipheriv 'aes-256-cbc' 兼容）
-func EncryptApiKey(plaintext string) string {
+// EncryptApiKey 加密明文 API Key（可选设备指纹加盐）
+func EncryptApiKey(plaintext string, deviceId ...string) string {
 	if plaintext == "" {
 		return ""
 	}
 	if strings.HasPrefix(plaintext, "enc:") {
 		return plaintext // 已加密不重复加密
 	}
-	key := deriveKey()
+	key := deriveKey(deviceId...)
 	iv := make([]byte, aes.BlockSize)
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
 		slog.Warn("agent: failed to generate IV", "error", err)
@@ -78,10 +84,10 @@ func EncryptApiKey(plaintext string) string {
 	return "enc:" + base64.StdEncoding.EncodeToString(result)
 }
 
-// DecryptApiKey 解密存储的 API Key（兼容两种格式）
+// DecryptApiKey 解密存储的 API Key（兼容两种格式，可选设备指纹加盐需与加密时一致）
 // 格式 A（Node.js agent-stub）: enc:<base64(iv)>:<base64(ciphertext)>
 // 格式 B（Go EncryptApiKey）:  enc:<base64(iv||ciphertext)>  （IV 和密文拼接后整体 base64）
-func DecryptApiKey(stored string) string {
+func DecryptApiKey(stored string, deviceId ...string) string {
 	if stored == "" {
 		return ""
 	}
@@ -94,7 +100,7 @@ func DecryptApiKey(stored string) string {
 	if strings.Contains(raw, ":") {
 		parts := strings.SplitN(raw, ":", 2)
 		if len(parts) == 2 {
-			if result := tryDecryptParts(parts[0], parts[1]); result != "" {
+			if result := tryDecryptParts(parts[0], parts[1], deviceId...); result != "" {
 				return result
 			}
 			// 格式 A 解密失败，不返回错误——可能实际是格式 B 中包含冒号的 base64
@@ -110,7 +116,7 @@ func DecryptApiKey(stored string) string {
 	}
 	iv := combined[:aes.BlockSize]
 	ct := combined[aes.BlockSize:]
-	result := tryDecrypt(iv, ct)
+	result := tryDecrypt(iv, ct, deviceId...)
 	if result != "" {
 		return result
 	}
@@ -119,7 +125,7 @@ func DecryptApiKey(stored string) string {
 	return ""
 }
 
-func tryDecryptParts(ivB64, ctB64 string) string {
+func tryDecryptParts(ivB64, ctB64 string, deviceId ...string) string {
 	iv, err := base64.StdEncoding.DecodeString(ivB64)
 	if err != nil || len(iv) != aes.BlockSize {
 		return ""
@@ -128,11 +134,11 @@ func tryDecryptParts(ivB64, ctB64 string) string {
 	if err != nil || len(ct) == 0 {
 		return ""
 	}
-	return tryDecrypt(iv, ct)
+	return tryDecrypt(iv, ct, deviceId...)
 }
 
-func tryDecrypt(iv, ct []byte) string {
-	key := deriveKey()
+func tryDecrypt(iv, ct []byte, deviceId ...string) string {
+	key := deriveKey(deviceId...)
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return ""
@@ -175,8 +181,10 @@ func pkcs7Unpad(data []byte) []byte {
 // ─── Agent 配置读取 ──────────────────────────────────────────
 
 type agentConfig struct {
-	APIKey  string `json:"openai_api_key"`
-	BaseURL string `json:"openai_base_url"`
+	APIKey       string `json:"openai_api_key"`
+	BaseURL      string `json:"openai_base_url"`
+	SystemPrompt string `json:"system_prompt"`
+	DeviceId     string `json:"_device_id"` // 内部字段：加密时使用的设备指纹
 }
 
 func (s *Server) readAgentConfig() agentConfig {
@@ -204,11 +212,13 @@ func (s *Server) readAgentConfig() agentConfig {
 		slog.Warn("agent: invalid agent_settings json", "error", err)
 		return cfg
 	}
-	cfg.APIKey = DecryptApiKey(agent["openai_api_key"])
+	cfg.APIKey = DecryptApiKey(agent["openai_api_key"], agent["_device_id"])
 	cfg.BaseURL = agent["openai_base_url"]
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://api.openai.com"
 	}
+	cfg.SystemPrompt = agent["system_prompt"]
+	cfg.DeviceId = agent["_device_id"]
 	return cfg
 }
 
@@ -312,13 +322,14 @@ func (s *Server) handleAgentModels(c *gin.Context) {
 
 func (s *Server) handleAgentEncryptKey(c *gin.Context) {
 	var body struct {
-		Key string `json:"key"`
+		Key       string `json:"key"`
+		DeviceId  string `json:"deviceId"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
 		return
 	}
-	encrypted := EncryptApiKey(body.Key)
+	encrypted := EncryptApiKey(body.Key, body.DeviceId)
 	c.JSON(http.StatusOK, gin.H{"encrypted": encrypted})
 }
 
@@ -327,12 +338,13 @@ func (s *Server) handleAgentEncryptKey(c *gin.Context) {
 func (s *Server) handleAgentDecryptKey(c *gin.Context) {
 	var body struct {
 		Encrypted string `json:"encrypted"`
+		DeviceId  string `json:"deviceId"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
 		return
 	}
-	decrypted := DecryptApiKey(body.Encrypted)
+	decrypted := DecryptApiKey(body.Encrypted, body.DeviceId)
 	c.JSON(http.StatusOK, gin.H{"decrypted": decrypted})
 }
 
@@ -392,6 +404,14 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		return
 	}
 
+	// ③½ 注入系统提示词（从配置读取，前端无需关心）
+	finalMessages := body.Messages
+	if cfg.SystemPrompt != "" {
+		finalMessages = make([]chatMsg, 0, len(body.Messages)+1)
+		finalMessages = append(finalMessages, chatMsg{Role: "system", Content: cfg.SystemPrompt})
+		finalMessages = append(finalMessages, body.Messages...)
+	}
+
 	// ④ Flusher 检测
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
@@ -402,7 +422,7 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	// ⑤ 构建 OpenAI 兼容请求
 	reqBody := map[string]interface{}{
 		"model":       model,
-		"messages":    body.Messages,
+		"messages":    finalMessages,
 		"temperature": body.Temperature,
 		"stream":      true,
 	}

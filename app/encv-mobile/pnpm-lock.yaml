@@ -17,6 +17,9 @@ importers:
       '@capacitor/core':
         specifier: ^8.3.4
         version: 8.4.0
+      '@capacitor/device':
+        specifier: ^8.0.2
+        version: 8.0.2(@capacitor/core@8.4.0)
       '@capacitor/screen-orientation':
         specifier: ^8.0.1
         version: 8.0.1(@capacitor/core@8.4.0)
@@ -182,6 +185,11 @@ packages:
 
   '@capacitor/core@8.4.0':
     resolution: {integrity: sha512-LrS1xPIrqLtJABBIPDGXxxKmI9OyesrzWw8DiHbxhSC9JoiLUleUAJlX1a0LWIVLRbuY4Szgf9huFeRqYH2SAQ==}
+
+  '@capacitor/device@8.0.2':
+    resolution: {integrity: sha512-fIqSXnG0s6bz5A/0xFgSXDkbU+Xl65ti80LhucNvLI4kGhJzcNn6SwWVwpXN9SJTOFWXblXknHNppheP8X1frQ==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
 
   '@capacitor/screen-orientation@8.0.1':
     resolution: {integrity: sha512-DPz/1YGmlAUDMg2ON+AGJp1eFn9IfVNP9VKI5zIU+jD5xAZ4JGxUDlY9MDCvEPQs7UCD53NduJpqvqhcnb32Kw==}
@@ -1715,6 +1723,10 @@ snapshots:
   '@capacitor/core@8.4.0':
     dependencies:
       tslib: 2.8.1
+
+  '@capacitor/device@8.0.2(@capacitor/core@8.4.0)':
+    dependencies:
+      '@capacitor/core': 8.4.0
 
   '@capacitor/screen-orientation@8.0.1(@capacitor/core@8.4.0)':
     dependencies:
