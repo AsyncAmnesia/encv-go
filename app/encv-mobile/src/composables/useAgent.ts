@@ -27,6 +27,7 @@ import {
   type Attachment,
   type MessageContentPart,
 } from './useAttachments'
+import { useContextUsage } from './useContextUsage'
 
 // =============================================================================
 // 类型定义（与 agent Go 服务契约对齐）
@@ -515,6 +516,18 @@ export function useAgent() {
   const pendingMessages = ref<Message[]>([])
   /** 本地已处理事件计数（与 lastEventId 解耦：eventOffset 永远递增，lastEventId 由 SSE id 行决定） */
   let eventOffset = 0
+  /**
+   * Context 图标：从 /api/agent/context-usage 周期拉取的实时数据
+   * （tokens/window/percent、todos、referencedFiles、compactions）
+   * 由 ContextIcon / ContextPopover 直接读取。
+   *
+   * **不自动 start**：测试中 useAgent() 不应触发任何 fetch。
+   * AgentChat 视图在 onMounted 时调 start()，onUnmounted 时调 stop()。
+   */
+  const contextUsage = useContextUsage({
+    sessionId: currentSessionId,
+    status,
+  })
   /**
    * SSE 标准 Last-Event-ID：服务端为每个事件分配的全局递增 ID。
    * 用于断点续传——前端解析 `id: N` 行维护此字段，resume() 时回传给后端。
@@ -1648,6 +1661,8 @@ export function useAgent() {
     activeTemperature,
     // Task 11 (Steer / Queue)：UI 用它渲染「已排队：xxx」提示。
     pendingMessages,
+    // Context 图标：实时上下文使用 + todos + referenced files
+    contextUsage,
     // Task 4：以下为测试专用钩子。生产代码不应调用——所有 serverInstance
     // 同步都由 useAgent 内部 await refreshServerInstance() 完成。
     __refreshServerInstanceForTest: refreshServerInstance,

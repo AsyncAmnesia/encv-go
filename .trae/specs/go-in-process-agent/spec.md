@@ -976,6 +976,108 @@ function openAgent() {
 
 ---
 
+### Requirement: Context 图标（会话顶部的上下文占用视图）
+
+**核心原则**：AI agent 在长对话中会逐步"吃"上下文窗口（每次 `text_delta` / `tool_call` / `tool_result` 都会消耗 token）。前端 SHALL 在聊天顶部显示一个常驻的 Context 图标，**点击弹出 popover** 展示：(1) 当前 token 占用百分比，(2) 任务列表（plan todos），(3) 上下文引用的文件。数据来源是后端 `/api/agent/context-usage` 端点。
+
+#### Scenario: 后端 `/api/agent/context-usage` 端点契约
+
+- **WHEN** 前端 GET `/api/agent/context-usage?sessionId=xxx`
+- **THEN** 返回 JSON：
+  ```json
+  {
+    "sessionId": "default",
+    "model": "gpt-4o",
+    "usage": { "tokens": 12345, "window": 128000, "percent": 9.6 },
+    "todos": [
+      { "content": "读取文件", "status": "completed" },
+      { "content": "编辑配置文件", "status": "in_progress" },
+      { "content": "运行测试", "status": "pending" }
+    ],
+    "referencedFiles": [
+      { "path": "/foo/bar.txt", "mountId": "serving", "viaTool": "read_file", "lastRefAt": 1700000000000 }
+    ],
+    "compactions": 0,
+    "updatedAt": 1700000000000
+  }
+  ```
+- **AND** `usage.percent` = `tokens / window * 100`（保留 1 位小数）
+- **AND** `usage.tokens` 用启发式估算：`CJK 字符 / 1.5 + ASCII 字符 / 4 + 工具调用 args 长度 / 4 + 每个 message role 4 token`
+- **AND** `usage.window` 查表：`gpt-4o`→128000、`claude-3-5-sonnet`→200000、`deepseek-chat`→64000、`qwen-plus`→131072、`o1`→200000；启发式 `128k`→128000、`32k`→32000、`1m`→1000000；默认 8192
+- **AND** `todos` 来自最近一次 plan 工具调用的结果（`write_todos` / `set_plan` / `plan_update` / `todos` / `update_todos` 都视为 plan 工具）；扫描 messages 取最近一次
+- **AND** `referencedFiles` 去重（按 `path`），按 `lastRefAt` 倒序；从 `read_file` / `list_files` / `stat_file` 工具的 args 中提取 `rel_path` + `mountId`
+- **AND** `compactions` 来自 `EventCache` 中 `type:"context_compaction"` 事件计数
+- **AND** `updatedAt` 是后端响应生成时间戳（毫秒）
+
+#### Scenario: 端点不存在 sessionId 时返回空数据
+
+- **WHEN** 前端 GET `/api/agent/context-usage?sessionId=nonexistent`
+- **AND** sessionId 不在 `sessions` map 中
+- **THEN** 返回 `200 OK` + 空数据结构（`usage:{tokens:0, window:8192, percent:0}`、`todos:[]`、`referencedFiles:[]`、`compactions:0`）
+- **AND** 不返回 4xx（前端 polling 简单容错）
+
+#### Scenario: 前端 `useContextUsage` 周期拉取
+
+- **WHEN** 组件 mount / `sessionId` 变化 / `status` 变化
+- **THEN** 启动 polling：
+  - `status === 'streaming' || 'confirming'` → **5s** 间隔
+  - `status === 'idle' || 'error'` → **30s** 间隔
+- **AND** 拉取失败仅 `console.debug`，**不**弹 toast / 不影响 UI
+- **AND** 组件 unmount 时清 timer
+
+#### Scenario: sessionId 变化时不偷偷发请求
+
+- **WHEN** `useAgent()` 内部 ref 初始化（`currentSessionId` 从 undefined → 'default'）
+- **THEN** `useContextUsage` 的 `sessionId` watch 触发
+- **AND** 仅在 polling 已启动后（`timer != null`）才发请求
+- **AND** 否则由 `AgentChat` 视图在 `onMounted` 调 `contextUsage.start()` 时触发首次拉取
+
+#### Scenario: Context 图标展示规则
+
+- **WHEN** `ContextIcon` 渲染
+- **THEN** 显示：
+  - **icon**：`layers` 图标（Ionicons `layersOutline`）
+  - **text**：当前 `usage.percent`（如 `9.6%`）
+  - **tone** 映射：
+    - `percent < 70%` → `tone-ok`（绿色）
+    - `70% ≤ percent < 90%` → `tone-warn`（黄色）
+    - `percent ≥ 90%` → `tone-danger`（红色）
+    - 数据未加载 → `tone-idle`（灰色）
+  - **compression badge**：若 `compactions > 0` → 右上角小红点 + 数字（如 `2`）
+- **AND** 点击图标 → `IonPopover` 弹出 `ContextPopover` 组件
+
+#### Scenario: ContextPopover 三段式布局
+
+- **WHEN** 用户点击 Context 图标
+- **THEN** popover 内渲染 3 个 section：
+  1. **Usage 段**：进度条（gradient: 0% 绿 → 70% 黄 → 90% 红）+ 数值（如 `12,345 / 128,000 tokens · 9.6%`）+ model 名
+  2. **Todos 段**：任务列表，每项含 status icon（`checkmarkCircle` / `sync` / `ellipsisHorizontalCircle`） + 状态文字（`已完成` / `进行中` / `待办`）+ 进度条（已完成 / 总数）
+  3. **Files 段**：引用的文件列表，每项含 `path` + `mountId` + `viaTool` + `lastRefAt`（相对时间如 `2 min ago`）
+- **AND** 数据为空时显示 `暂无任务` / `暂无引用文件` 占位文本
+- **AND** 加载中显示 `<IonSpinner />`
+
+#### Scenario: 6 个组件按 codex_web 风格重做
+
+- **WHEN** `GroupedOperationMessage` / `FileChangeSummaryMessage` / `ReasoningMessage` / `WebSearchSummaryMessage` / `PlanBlock` / `AgentTaskMessage` 渲染
+- **THEN** 全部升级为可点击 header（`<button>` 而非 `<div>`）+ chevron 旋转图标 + 折叠/展开动效
+- **AND** 状态指示用 `<StatusBadge>` 三 tone（`ready` / `warn` / `idle`）替代纯文本
+- **AND** plan / task 组件内 todo 项用 ionicons 替代 ✓/●/○ 字符（`checkmarkCircle` / `sync` / `ellipsisHorizontalCircle`）
+- **AND** `PlanBlock` 顶部加 `plan-progress` 进度条（绿色 gradient），含 `2/5 (1 进行中)` 计数
+- **AND** `AgentTaskMessage` 加 `agentTaskProgressBar` 进度条 + 失败 / 进行中 / 完成 状态徽章
+- **AND** `ReasoningMessage` "正在思考" 状态时 `StatusBadge` 带 `pulse` 动画
+
+#### Scenario: 关键文件 / 函数
+
+- `internal/server/agent_context_usage.go` — `handleAgentContextUsage` handler + `estimateStringTokens` + `lookupContextWindow` + `extractTodos` + `extractReferencedFiles` + `parseTodosJSON` + `readPathFromToolArgs`
+- `internal/server/agent_context_usage_test.go` — 30+ 单元测试覆盖 token 估算 / model 查表 / todo 解析 / 文件引用提取 / HTTP handler
+- `internal/server/agent_api.go` — 注册 `r.GET("/api/agent/context-usage", s.handleAgentContextUsage)`
+- `app/encv-mobile/src/composables/useContextUsage.ts` — `useContextUsage({sessionId, status})` composable，输出 `data / loading / lastFetchedAt / start / stop / refresh`
+- `app/encv-mobile/src/components/agent/ContextIcon.vue` — header 按钮 + 4 tone 配色 + compression badge + IonPopover 触发器
+- `app/encv-mobile/src/components/agent/ContextPopover.vue` — 3 段式 popover（usage / todos / files）
+- `app/encv-mobile/src/views/AgentChat.vue` — `<ContextIcon>` 插入在 header 标题与新会话按钮之间；`onMounted(contextUsage.start())` / `onUnmounted(contextUsage.stop())`
+
+---
+
 ## REMOVED Requirements
 
 无（保留现有 OpenList 真实后端 WebView 集成作为 fallback）

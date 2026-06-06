@@ -11,11 +11,12 @@
     - 折叠阈值：subTasks 行数 > 7 或全部 description 拼接字符数 > 520
       → 默认折叠（点击展开）
     - 任一阈值未触发 → 默认展开全部（短列表无需折叠）
-    - 头部展示"子任务"标题 + 进度 (n/m)
-    - 状态图标：pending ○ / in_progress ● / completed ✓ / failed ✕
+    - 头部展示"子任务"标题 + 进度 (n/m) + 状态徽章
+    - 状态图标：ionicons（checkmarkCircle / sync / ellipsisHorizontal / closeCircle）
     - 与 plan/operationGroup 独立渲染，不与之合并
     - 复用 BlockHeader 的视觉语言（border + 浅色背景 + primary tint）
     - streaming 态：边框高亮 + 等待图标 pulse（与 PlanBlock 一致）
+    - codex_web 风格：agent task + 多子任务状态徽章 + 折叠
 -->
 <template>
   <div class="agent-task" :class="{ 'is-streaming': props.streaming }">
@@ -25,10 +26,33 @@
       <span class="agentTaskProgress">
         {{ t('agent.subTaskProgress', { done: String(completedCount), total: String(props.subTasks.length) }) }}
       </span>
+      <StatusBadge
+        v-if="failedCount > 0"
+        :label="t('agent.failed')"
+        tone="warn"
+      />
+      <StatusBadge
+        v-else-if="props.streaming || inProgressCount > 0"
+        :label="t('agent.planStatusInProgress')"
+        tone="idle"
+        pulse
+      />
+      <StatusBadge
+        v-else-if="props.subTasks.length > 0 && completedCount === props.subTasks.length"
+        :label="t('agent.completed')"
+        tone="ready"
+      />
       <ion-icon
         :icon="expanded ? chevronUp : chevronDown"
         class="agentTaskChevron"
       />
+    </div>
+
+    <!-- 进度条 -->
+    <div v-if="props.subTasks.length > 0" class="agentTaskProgressBar">
+      <div class="agentTaskProgressBarTrack">
+        <div class="agentTaskProgressBarFill" :style="{ width: progressPct + '%' }" />
+      </div>
     </div>
 
     <!-- reasoning 区域：仅当存在 reasoning 文本时显示（折叠态也保留） -->
@@ -42,7 +66,12 @@
         :class="`agentTaskItem--${task.status}`"
         :data-testid="`agent-task-item-${task.id}`"
       >
-        <span class="agentTaskMarker" aria-hidden="true">{{ statusMarker(task.status) }}</span>
+        <span class="agentTaskMarker" aria-hidden="true">
+          <ion-icon
+            :icon="statusIcon(task.status)"
+            :class="`agentTaskMarkerIcon agentTaskMarkerIcon--${task.status}`"
+          />
+        </span>
         <span class="agentTaskDescription">{{ task.description }}</span>
         <span class="agentTaskStatusLabel">{{ statusLabel(task.status) }}</span>
       </li>
@@ -58,7 +87,12 @@ import {
   gitBranchOutline,
   chevronUpOutline,
   chevronDownOutline,
+  checkmarkCircle,
+  sync,
+  ellipsisHorizontalCircle,
+  closeCircle,
 } from 'ionicons/icons'
+import StatusBadge from './StatusBadge.vue'
 import { useI18n } from '@/composables/useI18n'
 import type { SubTask } from '@/composables/renderTurnItems'
 import {
@@ -86,19 +120,11 @@ const icon = gitBranchOutline
 const chevronUp = chevronUpOutline
 const chevronDown = chevronDownOutline
 
-/**
- * 折叠判定：行数超过阈值 或 description 拼接字符数超过阈值
- * → 默认折叠（用户可点击展开）。两个条件取或，任一触发就折叠。
- *
- * 这是 spec §D6 要求的"agent task 折叠阈值 7 行 / 520 字符"——
- * 阈值常量从 renderTurnItems 模块导出，UI 与未来后端契约变化时
- * 只需改一处。
- */
 const shouldCollapse = computed(() => {
   if (props.subTasks.length > AGENT_TASK_COLLAPSE_LINE_COUNT) return true
   const totalChars = props.subTasks.reduce(
     (acc, t) => acc + (t.description?.length ?? 0),
-    0,
+    acc,
   )
   return totalChars > AGENT_TASK_COLLAPSE_CHAR_COUNT
 })
@@ -114,23 +140,30 @@ function toggleExpanded() {
 const completedCount = computed(
   () => props.subTasks.filter((s) => s.status === 'completed').length,
 )
+const inProgressCount = computed(
+  () => props.subTasks.filter((s) => s.status === 'in_progress').length,
+)
+const failedCount = computed(
+  () => props.subTasks.filter((s) => s.status === 'failed').length,
+)
+const progressPct = computed(() => {
+  const total = props.subTasks.length
+  if (total === 0) return 0
+  return Math.round((completedCount.value / total) * 100)
+})
 
 const reasoningText = computed(() => {
   const r = props.reasoning
   return typeof r === 'string' && r.trim().length > 0 ? r.trim() : ''
 })
 
-function statusMarker(status: SubTask['status']): string {
+function statusIcon(status: SubTask['status']) {
   switch (status) {
-    case 'completed':
-      return '✓'
-    case 'in_progress':
-      return '●'
-    case 'failed':
-      return '✕'
+    case 'completed': return checkmarkCircle
+    case 'in_progress': return sync
+    case 'failed': return closeCircle
     case 'pending':
-    default:
-      return '○'
+    default: return ellipsisHorizontalCircle
   }
 }
 
@@ -198,6 +231,28 @@ function statusLabel(status: SubTask['status']): string {
   flex-shrink: 0;
 }
 
+/* 进度条 */
+.agentTaskProgressBar {
+  display: flex;
+  align-items: center;
+  padding: 0 22px;
+}
+
+.agentTaskProgressBarTrack {
+  flex: 1;
+  height: 4px;
+  background: rgba(var(--ion-color-medium-rgb), 0.15);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.agentTaskProgressBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e, #16a34a);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
 .agentTaskReasoning {
   margin: 0;
   font-size: 12px;
@@ -246,26 +301,38 @@ function statusLabel(status: SubTask['status']): string {
 
 .agentTaskMarker {
   flex: 0 0 auto;
-  width: 1rem;
+  width: 1.1rem;
   text-align: center;
-  font-size: 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.agentTaskItem--completed .agentTaskMarker {
+.agentTaskMarkerIcon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.agentTaskItem--completed .agentTaskMarkerIcon {
   color: var(--ion-color-success, #16a34a);
 }
 
-.agentTaskItem--in_progress .agentTaskMarker {
+.agentTaskItem--in_progress .agentTaskMarkerIcon {
   color: var(--ion-color-primary, #4f8cff);
-  animation: agent-task-pulse 1.6s ease-in-out infinite;
+  animation: agent-task-spin 1.6s linear infinite;
 }
 
-.agentTaskItem--failed .agentTaskMarker {
+.agentTaskItem--failed .agentTaskMarkerIcon {
   color: var(--ion-color-danger, #ef4444);
 }
 
-.agentTaskItem--pending .agentTaskMarker {
+.agentTaskItem--pending .agentTaskMarkerIcon {
   color: var(--ion-color-step-400, #9ca3af);
+}
+
+@keyframes agent-task-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 @keyframes agent-task-pulse {

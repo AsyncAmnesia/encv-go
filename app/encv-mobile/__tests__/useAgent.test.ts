@@ -127,7 +127,23 @@ describe('useAgent', () => {
       if (urlStr.includes('/api/config')) {
         return { ok: true, status: 200, json: () => Promise.resolve({}) } as Response
       }
-      return { ok: true, status: 200, body: null } as Response
+      // /api/agent/context-usage 默认返回空 session（context icon 用）
+      if (urlStr.includes('/api/agent/context-usage')) {
+        return {
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            sessionId: 'default',
+            model: '',
+            usage: { tokens: 0, window: 8192, percent: 0 },
+            todos: [],
+            referencedFiles: [],
+            compactions: 0,
+            updatedAt: Date.now(),
+          }),
+        } as Response
+      }
+      return { ok: true, status: 200, body: null, json: () => Promise.resolve({}) } as unknown as Response
     })
     localStorage.clear()
     mockedShowToast.mockClear()

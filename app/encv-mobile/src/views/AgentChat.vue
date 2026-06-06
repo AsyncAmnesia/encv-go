@@ -21,6 +21,12 @@
         <ion-icon :icon="sparkleIcon" class="headerTitleIcon" />
         <span>{{ t('agent.title') }}</span>
       </div>
+      <!-- 上下文使用图标（点击 → 弹窗：todos + 引用文件） -->
+      <ContextIcon
+        :data="contextUsage.data.value"
+        :loading="contextUsage.loading.value"
+        class="headerContext"
+      />
       <button type="button" class="headerBtn" @click="handleNewSession" :title="t('agent.newSession')">
         <ion-icon :icon="addIcon" />
       </button>
@@ -351,7 +357,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { IonIcon, modalController, alertController } from '@ionic/vue'
 import {
   closeOutline,
@@ -387,13 +393,23 @@ import ContextCompactionDivider from '@/components/agent/ContextCompactionDivide
 import AgentTaskMessage from '@/components/agent/AgentTaskMessage.vue'
 import AttachmentTray from '@/components/agent/AttachmentTray.vue'
 import SlashMenu from '@/components/agent/SlashMenu.vue'
+import ContextIcon from '@/components/agent/ContextIcon.vue'
 
 const { t } = useI18n()
 
 // Agent API 基础路径（与 useAgent.ts 保持一致）
 const AGENT_API_BASE = '/agent-api'
 
-const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId } = useAgent()
+const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage } = useAgent()
+
+onMounted(() => {
+  // 启动 Context 图标的轮询（5s/30s 周期自适应当前 streaming 状态）
+  contextUsage.start()
+})
+onUnmounted(() => {
+  // 卸载时清理 timer，避免内存泄漏
+  contextUsage.stop()
+})
 
 // Task 12：附件管理（Composer `+` 按钮）
 const {

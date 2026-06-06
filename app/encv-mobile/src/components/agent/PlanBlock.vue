@@ -1,5 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { IonIcon } from '@ionic/vue'
+import {
+  checkmarkCircle,
+  sync,
+  ellipsisHorizontalCircle,
+  checkboxOutline,
+} from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import BlockHeader from './BlockHeader.vue'
 
@@ -40,22 +47,54 @@ const orderedTodos = computed(() => {
   return [...inProgress, ...pending, ...unknown, ...completed]
 })
 
+const completedCount = computed(
+  () => props.todos.filter((x) => x.status === 'completed').length,
+)
+const inProgressCount = computed(
+  () => props.todos.filter((x) => x.status === 'in_progress').length,
+)
+const progressPct = computed(() => {
+  const total = props.todos.length
+  if (total === 0) return 0
+  return Math.round((completedCount.value / total) * 100)
+})
+
 function statusLabel(status: string): string {
   if (status === 'in_progress') return t('agent.planStatusInProgress')
   if (status === 'completed') return t('agent.planStatusCompleted')
   if (status === 'pending') return t('agent.planStatusPending')
   return status
 }
+
+function statusIcon(status: string) {
+  if (status === 'completed') return checkmarkCircle
+  if (status === 'in_progress') return sync
+  return ellipsisHorizontalCircle
+}
 </script>
 
 <template>
   <div class="plan-block" :class="{ 'is-streaming': props.streaming }">
     <BlockHeader
-      icon="list-outline"
+      :icon="checkboxOutline"
       :title="t('agent.plan')"
       :badge="props.streaming ? t('agent.streaming') : undefined"
       :expanded="true"
     />
+    <!-- 进度条（仅当有 todo 时显示） -->
+    <div v-if="orderedTodos.length > 0" class="plan-progress" aria-label="Plan progress">
+      <div class="plan-progress-bar">
+        <div class="plan-progress-fill" :style="{ width: progressPct + '%' }" />
+      </div>
+      <span class="plan-progress-text">
+        <span class="plan-progress-count">{{ completedCount }}</span>
+        <span class="plan-progress-sep">/</span>
+        <span class="plan-progress-total">{{ orderedTodos.length }}</span>
+        <span v-if="inProgressCount > 0" class="plan-progress-hint">
+          （{{ inProgressCount }} {{ t('agent.planStatusInProgress') }}）
+        </span>
+      </span>
+    </div>
     <ol v-if="orderedTodos.length > 0" class="plan-list" data-testid="plan-list">
       <li
         v-for="todo in orderedTodos"
@@ -65,9 +104,10 @@ function statusLabel(status: string): string {
         :data-testid="`plan-item-${todo.id}`"
       >
         <span class="plan-marker" aria-hidden="true">
-          <template v-if="todo.status === 'completed'">✓</template>
-          <template v-else-if="todo.status === 'in_progress'">●</template>
-          <template v-else>○</template>
+          <ion-icon
+            :icon="statusIcon(todo.status)"
+            :class="`plan-marker-icon plan-marker-icon--${todo.status}`"
+          />
         </span>
         <span class="plan-content">{{ todo.content }}</span>
         <span class="plan-status">{{ statusLabel(todo.status) }}</span>
@@ -91,6 +131,52 @@ function statusLabel(status: string): string {
 .plan-block.is-streaming {
   border-color: var(--ion-color-primary);
   box-shadow: 0 0 0 1px var(--ion-color-primary-tint, rgba(79, 140, 255, 0.3));
+}
+
+/* 进度条 */
+.plan-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+}
+
+.plan-progress-bar {
+  flex: 1;
+  height: 4px;
+  background: rgba(var(--ion-color-medium-rgb), 0.15);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.plan-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #22c55e, #16a34a);
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+.plan-progress-text {
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.plan-progress-count {
+  font-weight: 600;
+  color: var(--ion-color-success, #16a34a);
+}
+
+.plan-progress-sep,
+.plan-progress-total {
+  color: var(--encv-text-secondary);
+}
+
+.plan-progress-hint {
+  margin-left: 4px;
+  color: var(--ion-color-primary, #4f8cff);
+  font-weight: 500;
 }
 
 .plan-list {
@@ -131,26 +217,38 @@ function statusLabel(status: string): string {
 
 .plan-marker {
   flex: 0 0 auto;
-  width: 1rem;
+  width: 1.1rem;
   text-align: center;
-  font-size: 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.plan-item--completed .plan-marker {
+.plan-marker-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.plan-item--completed .plan-marker-icon {
   color: var(--ion-color-success, #16a34a);
 }
 
-.plan-item--in_progress .plan-marker {
+.plan-item--in_progress .plan-marker-icon {
   color: var(--ion-color-primary, #4f8cff);
-  animation: plan-pulse 1.6s ease-in-out infinite;
+  animation: plan-marker-spin 1.6s linear infinite;
 }
 
-.plan-item--pending .plan-marker {
+.plan-item--pending .plan-marker-icon {
   color: var(--ion-color-step-400, #9ca3af);
 }
 
-.plan-item--unknown .plan-marker {
+.plan-item--unknown .plan-marker-icon {
   color: var(--ion-color-step-400, #9ca3af);
+}
+
+@keyframes plan-marker-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
 
 @keyframes plan-pulse {

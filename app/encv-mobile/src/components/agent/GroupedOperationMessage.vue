@@ -17,10 +17,13 @@
     :force-complete="forceComplete"
   />
   <div v-else class="groupedOp">
-    <!-- 外层：OperationGroupSummary 摘要卡片 -->
-    <div
+    <!-- 外层：OperationGroupSummary 摘要卡片（点击展开/折叠） -->
+    <button
+      type="button"
       class="groupedOpHeader"
-      :class="{ groupedOpHeader_active: isActive }"
+      :class="{ groupedOpHeader_active: isActive, groupedOpHeader_expanded: groupExpanded }"
+      :aria-expanded="groupExpanded"
+      @click="toggleGroup"
     >
       <ion-icon :icon="icon" class="groupedOpIcon" />
       <span class="groupedOpSummary">{{ summary }}</span>
@@ -29,24 +32,38 @@
         :label="status"
         :tone="statusTone"
       />
-    </div>
+      <ion-icon
+        :icon="chevronIcon"
+        class="groupedOpChevron"
+        :class="{ groupedOpChevron_open: groupExpanded }"
+      />
+    </button>
 
     <!-- 内层：OperationItemDetail 列表（两级折叠） -->
-    <div v-if="hasDetail" class="groupedOpList">
+    <div v-if="hasDetail && groupExpanded" class="groupedOpList">
       <div
         v-for="(it, idx) in visibleItems"
         :key="`${it.id}-${idx}`"
         class="groupedOpItem"
+        @click="toggleItem(idx)"
       >
         <ion-icon :icon="itemIcon(it.kind)" class="groupedOpItemIcon" />
         <span class="groupedOpItemName">{{ it.name || t('agent.tool.unknown') }}</span>
-        <span class="groupedOpItemArgs">{{ truncateArgs(it.args) }}</span>
+        <span class="groupedOpItemArgs">
+          {{ expandedItems.has(idx) ? it.args : truncateArgs(it.args) }}
+        </span>
+        <ion-icon
+          v-if="it.args && it.args.length > 80"
+          :icon="chevronIcon"
+          class="groupedOpItemChevron"
+          :class="{ groupedOpItemChevron_open: expandedItems.has(idx) }"
+        />
       </div>
       <button
         v-if="canExpand"
         type="button"
         class="groupedOpMore"
-        @click="expandGroup"
+        @click.stop="expandGroup"
       >
         {{ showMoreLabel }}
       </button>
@@ -54,7 +71,7 @@
         v-else-if="canCollapse"
         type="button"
         class="groupedOpMore"
-        @click="collapseGroup"
+        @click.stop="collapseGroup"
       >
         {{ t('agent.ops.collapseAll') }}
       </button>
@@ -72,6 +89,7 @@ import {
   eyeOutline,
   searchOutline,
   helpCircleOutline,
+  chevronForward as chevronIcon,
 } from 'ionicons/icons'
 import StatusBadge from './StatusBadge.vue'
 import FileChangeSummaryMessage from './FileChangeSummaryMessage.vue'
@@ -86,6 +104,21 @@ const props = defineProps<{
 
 const { t } = useI18n()
 const groupExpanded = ref(false)
+const expandedItems = ref<Set<number>>(new Set())
+
+function toggleGroup() {
+  groupExpanded.value = !groupExpanded.value
+}
+
+function toggleItem(idx: number) {
+  if (expandedItems.value.has(idx)) {
+    expandedItems.value.delete(idx)
+  } else {
+    expandedItems.value.add(idx)
+  }
+  // trigger reactivity
+  expandedItems.value = new Set(expandedItems.value)
+}
 
 const kinds = computed(() => props.items.map((it) => it.kind))
 const allFileChange = computed(() => kinds.value.length > 0 && kinds.value.every((k) => k === 'fileChange'))
@@ -218,12 +251,26 @@ function truncateArgs(raw: string): string {
   color: var(--ion-text-color);
   max-width: 100%;
   flex-wrap: wrap;
+  /* button reset */
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.groupedOpHeader:hover {
+  background: rgba(var(--ion-color-medium-rgb), 0.14);
+  border-color: rgba(var(--ion-color-medium-rgb), 0.28);
 }
 
 .groupedOpHeader_active {
   background: rgba(var(--ion-color-primary-rgb), 0.12);
   border-color: rgba(var(--ion-color-primary-rgb), 0.3);
   animation: groupedOpPulse 1.4s ease-in-out infinite;
+}
+
+.groupedOpHeader_expanded {
+  background: rgba(var(--ion-color-medium-rgb), 0.14);
+  border-color: rgba(var(--ion-color-medium-rgb), 0.28);
 }
 
 .groupedOpIcon {
@@ -235,6 +282,18 @@ function truncateArgs(raw: string): string {
 .groupedOpSummary {
   font-weight: 500;
   word-break: break-word;
+}
+
+.groupedOpChevron {
+  font-size: 12px;
+  color: var(--encv-text-secondary);
+  flex-shrink: 0;
+  margin-inline-start: 2px;
+  transition: transform 0.2s ease;
+}
+
+.groupedOpChevron_open {
+  transform: rotate(90deg);
 }
 
 .groupedOpList {
@@ -255,6 +314,14 @@ function truncateArgs(raw: string): string {
   gap: 6px;
   min-width: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.groupedOpItem:hover {
+  background: rgba(var(--ion-color-medium-rgb), 0.1);
 }
 
 .groupedOpItemIcon {
@@ -276,6 +343,30 @@ function truncateArgs(raw: string): string {
   white-space: nowrap;
   min-width: 0;
   flex: 1;
+  font-size: 11px;
+}
+
+/* Args 展开后：多行显示 + 自动换行 + 浅灰背景 */
+.groupedOpItem:has(.groupedOpItemChevron_open) .groupedOpItemArgs {
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: rgba(var(--ion-color-medium-rgb), 0.08);
+  padding: 4px 6px;
+  border-radius: 3px;
+  font-size: 10.5px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.groupedOpItemChevron {
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.groupedOpItemChevron_open {
+  transform: rotate(90deg);
 }
 
 .groupedOpMore {

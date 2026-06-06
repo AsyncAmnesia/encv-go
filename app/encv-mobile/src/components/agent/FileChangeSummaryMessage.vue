@@ -6,8 +6,14 @@
 -->
 <template>
   <div class="fileChangeSummary">
-    <!-- 外层：FileChangeSummary 摘要卡片 -->
-    <div class="fileChangeHeader" :class="{ fileChangeHeader_active: isActive }">
+    <!-- 外层：FileChangeSummary 摘要卡片（点击展开/折叠） -->
+    <button
+      type="button"
+      class="fileChangeHeader"
+      :class="{ fileChangeHeader_active: isActive, fileChangeHeader_expanded: headerExpanded }"
+      :aria-expanded="headerExpanded"
+      @click="toggleHeader"
+    >
       <ion-icon :icon="icon" class="fileChangeIcon" />
       <span class="fileChangeSummaryText">{{ summary }}</span>
       <StatusBadge
@@ -15,10 +21,15 @@
         :label="status"
         :tone="statusTone"
       />
-    </div>
+      <ion-icon
+        :icon="chevronIcon"
+        class="fileChangeChevron"
+        :class="{ fileChangeChevron_open: headerExpanded }"
+      />
+    </button>
 
     <!-- 内层：文件路径列表（两级折叠） -->
-    <div v-if="hasDetail" class="fileChangeList">
+    <div v-if="hasDetail && headerExpanded" class="fileChangeList">
       <div
         v-for="(p, idx) in visiblePaths"
         :key="`${idx}-${p}`"
@@ -32,7 +43,7 @@
         v-if="canExpand"
         type="button"
         class="fileChangeMore"
-        @click="expandList"
+        @click.stop="expandList"
       >
         {{ showMoreLabel }}
       </button>
@@ -40,7 +51,7 @@
         v-else-if="canCollapse"
         type="button"
         class="fileChangeMore"
-        @click="collapseList"
+        @click.stop="collapseList"
       >
         {{ t('agent.ops.collapseAll') }}
       </button>
@@ -51,7 +62,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { IonIcon } from '@ionic/vue'
-import { documentTextOutline } from 'ionicons/icons'
+import { documentTextOutline, chevronForward as chevronIcon } from 'ionicons/icons'
 import StatusBadge from './StatusBadge.vue'
 import { OPERATION_COLLAPSE_INITIAL_COUNT } from './twoLevelGrouping'
 import { useI18n } from '@/composables/useI18n'
@@ -64,6 +75,11 @@ const props = defineProps<{
 
 const { t } = useI18n()
 const listExpanded = ref(false)
+const headerExpanded = ref(false)
+
+function toggleHeader() {
+  headerExpanded.value = !headerExpanded.value
+}
 
 const icon = documentTextOutline
 const documentOutline = documentTextOutline
@@ -163,10 +179,24 @@ function truncate(p: string): string {
   color: var(--ion-text-color);
   max-width: 100%;
   flex-wrap: wrap;
+  /* button reset */
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.fileChangeHeader:hover {
+  background: rgba(var(--ion-color-primary-rgb), 0.14);
+  border-color: rgba(var(--ion-color-primary-rgb), 0.3);
 }
 
 .fileChangeHeader_active {
   animation: fileChangeActivePulse 1.4s ease-in-out infinite;
+}
+
+.fileChangeHeader_expanded {
+  background: rgba(var(--ion-color-primary-rgb), 0.14);
+  border-color: rgba(var(--ion-color-primary-rgb), 0.3);
 }
 
 .fileChangeIcon {
@@ -177,6 +207,18 @@ function truncate(p: string): string {
 
 .fileChangeSummaryText {
   font-weight: 500;
+}
+
+.fileChangeChevron {
+  font-size: 12px;
+  color: var(--ion-color-primary);
+  flex-shrink: 0;
+  margin-inline-start: 2px;
+  transition: transform 0.2s ease;
+}
+
+.fileChangeChevron_open {
+  transform: rotate(90deg);
 }
 
 .fileChangeList {

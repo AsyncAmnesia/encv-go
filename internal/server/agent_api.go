@@ -227,6 +227,7 @@ func (s *Server) registerAgentRoutes(r *gin.Engine) {
 	r.GET("/api/models", s.handleAgentModels)
 	r.POST("/api/encrypt-key", s.handleAgentEncryptKey)
 	r.POST("/api/decrypt-key", s.handleAgentDecryptKey)
+	r.GET("/api/agent/context-usage", s.handleAgentContextUsage)
 	r.GET("/test", s.handleAgentTest)
 	r.POST("/test", s.handleAgentTest)
 	r.POST("/api/chat", s.handleAgentChat)

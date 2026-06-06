@@ -391,6 +391,116 @@
 
 ---
 
+## Phase 10: Context 图标 + 时间线混合内容（codex_web 风格升级）
+
+> **背景**：当前 AI 输出只渲染了纯 markdown 卡片，没有 timeline 式的混合内容（md 渲染 → 已编辑 2 个文件 → 读取 2 个文件 → md 渲染 → 思考 → 搜索找到 15 行 → ...）。本 phase 把 6 个已有组件按 codex_web 风格升级（可点击 header + chevron + StatusBadge 替换文本），并在会话顶部加 Context 图标（点击弹 popover 看任务列表 + 上下文占用 + 引用文件）。
+>
+> **参考仓库**：[codex_web](https://github.com/shopkeeper2020/codex_web) 的 `apps/web/src/app/components/MessageBlocks.tsx`
+
+### Task 10.1: 后端 `/api/agent/context-usage` 端点
+
+- [x] SubTask 10.1.1: 创建 `internal/server/agent_context_usage.go`
+- [x] SubTask 10.1.2: 实现 `modelContextWindows` map（gpt-4o→128000, claude-3-5-sonnet→200000, deepseek-chat→64000, qwen-plus→131072, o1→200000, glm-4-plus→128000 等）
+- [x] SubTask 10.1.3: 实现 `lookupContextWindow(model string) int` —— 表查 + 启发式（128k→128000, 32k→32000, 1m→1000000）+ 默认 8192
+- [x] SubTask 10.1.4: 实现 `estimateStringTokens(s string) int` —— `CJK字符/1.5 + ASCII字符/4`
+- [x] SubTask 10.1.5: 实现 `estimateTokens(messages []chatMsg) int` —— 累加 content + tool_calls args + 每个 role 4 token
+- [x] SubTask 10.1.6: 实现 `planTodo{content, status}` struct + `isPlanToolName(name)`（接受 write_todos/set_plan/plan_update/todos/update_todos）
+- [x] SubTask 10.1.7: 实现 `parseTodosJSON(s)` —— 支持 `[]` 和 `{todos:[...]}` 两种格式
+- [x] SubTask 10.1.8: 实现 `todosFromArray(arr)` —— 处理 `active_form` fallback + 默认 status
+- [x] SubTask 10.1.9: 实现 `extractTodos(messages)` —— 反向扫描取最近一次 plan 工具调用的结果
+- [x] SubTask 10.1.10: 实现 `referencedFile{path, mountId, viaTool, lastRefAt}` struct
+- [x] SubTask 10.1.11: 实现 `readPathFromToolArgs(toolName, argsJSON)` —— 仅 fs 工具（read_file/list_files/stat_file）返回 `{mountId, path}`
+- [x] SubTask 10.1.12: 实现 `extractReferencedFiles(messages)` —— dedup by path + sort by recency
+- [x] SubTask 10.1.13: 实现 `countCompactions(sess)` —— 扫 `EventCache` 中 `type:"context_compaction"` 计数
+- [x] SubTask 10.1.14: 实现 `handleAgentContextUsage(c *gin.Context)` —— 返回 6 字段响应
+- [x] SubTask 10.1.15: 在 `agent_api.go` 注册 `r.GET("/api/agent/context-usage", s.handleAgentContextUsage)`
+
+### Task 10.2: context_usage 端点测试
+
+- [x] SubTask 10.2.1: 创建 `internal/server/agent_context_usage_test.go`
+- [x] SubTask 10.2.2: 覆盖 `estimateStringTokens` —— empty / ASCII / CJK / mixed
+- [x] SubTask 10.2.3: 覆盖 `estimateTokens` —— empty / with content / with tool_calls
+- [x] SubTask 10.2.4: 覆盖 `lookupContextWindow` —— known / heuristic / default
+- [x] SubTask 10.2.5: 覆盖 `parseTodosJSON` —— array / wrapped / empty / active_form fallback / default status
+- [x] SubTask 10.2.6: 覆盖 `extractTodos` —— from latest / no plan / accepts multiple tool names
+- [x] SubTask 10.2.7: 覆盖 `extractReferencedFiles` —— empty / read_file / list_files / list_files default root / dedup+recency / ignores plugin tools
+- [x] SubTask 10.2.8: 覆盖 `readPathFromToolArgs` —— unknown / invalid JSON / missing rel_path
+- [x] SubTask 10.2.9: 覆盖 `containsAny` helper
+- [x] SubTask 10.2.10: 覆盖 `handleAgentContextUsage` —— no session / with session / with todos+refs / default sessionId / percent 计算
+- [x] SubTask 10.2.11: `go test ./internal/server/...` 全绿（33+ 测试）
+
+### Task 10.3: 前端 `useContextUsage` composable
+
+- [x] SubTask 10.3.1: 创建 `app/encv-mobile/src/composables/useContextUsage.ts`
+- [x] SubTask 10.3.2: 定义 `ContextUsage` / `ContextTodo` / `ContextReferencedFile` / `ContextUsageResponse` 类型
+- [x] SubTask 10.3.3: 实现 `useContextUsage({sessionId, status})` composable
+- [x] SubTask 10.3.4: streaming/confirming → 5s 间隔，idle/error → 30s 间隔
+- [x] SubTask 10.3.5: 错误静默：拉取失败仅 `console.debug`
+- [x] SubTask 10.3.6: `watch(() => opts.status.value)` 切换频率；`watch(() => opts.sessionId.value)` 触发拉取（**仅在 timer != null 时**）
+- [x] SubTask 10.3.7: `onUnmounted` 清理 timer + watch
+- [x] SubTask 10.3.8: 导出 `start()` / `stop()` / `refresh()` / `data` / `loading` / `lastFetchedAt`
+
+### Task 10.4: ContextIcon + ContextPopover 组件
+
+- [x] SubTask 10.4.1: 创建 `app/encv-mobile/src/components/agent/ContextIcon.vue`
+  - header 按钮：`<IonButton fill="clear" size="small">` + `<IonIcon :icon="layersOutline" />` + 百分比文本
+  - 4 tone 配色（`tone-ok` / `tone-warn` / `tone-danger` / `tone-idle`）
+  - compression badge：`<div v-if="compactions > 0">` 红点 + 数字
+  - 点击触发 `<IonPopover :is-open="show" :event="event" @didDismiss="show=false">`
+  - prop `compact?: boolean` 控制大小
+- [x] SubTask 10.4.2: 创建 `app/encv-mobile/src/components/agent/ContextPopover.vue`
+  - 3 section: `usage-section` / `todos-section` / `files-section`
+  - Usage 段：`<div class="usageBar">` gradient 进度条 + 数值（`formatTokens` 1.2K/1.5M）
+  - Todos 段：`<ul class="todoList">` 每项含 status icon + label + 进度条
+  - Files 段：`<ul class="fileList">` 每项含 path + mountId + viaTool + 相对时间
+  - 空状态：`<div class="emptyState">{{ t('context.emptyTodos') }}</div>`
+  - 加载中：`<IonSpinner v-if="loading" />`
+
+### Task 10.5: AgentChat 集成 Context 图标
+
+- [x] SubTask 10.5.1: 修改 `app/encv-mobile/src/views/AgentChat.vue`
+- [x] SubTask 10.5.2: import `ContextIcon` + `import { onUnmounted }` from vue
+- [x] SubTask 10.5.3: useAgent() 解构增加 `contextUsage`
+- [x] SubTask 10.5.4: `onMounted(() => contextUsage.start())` + `onUnmounted(() => contextUsage.stop())`
+- [x] SubTask 10.5.5: 在 header 标题与新会话按钮之间插入 `<ContextIcon :data="contextUsage.data.value" :loading="contextUsage.loading.value" />`
+
+### Task 10.6: 6 个组件按 codex_web 风格重做
+
+- [x] SubTask 10.6.1: **`GroupedOperationMessage.vue`** —— header 改为 `<button>` + chevron + 整体可折叠 + per-item 可展开
+- [x] SubTask 10.6.2: **`FileChangeSummaryMessage.vue`** —— header 改为 `<button>` + chevron + 整体可折叠
+- [x] SubTask 10.6.3: **`ReasoningMessage.vue`** —— `t('agent.reasoning')` + StatusBadge（idle+pulse when streaming）+ meta text `t('agent.thinkingMeta')`
+- [x] SubTask 10.6.4: **`WebSearchSummaryMessage.vue`** —— `t('agent.webSearch')` + StatusBadge with total hits + per-query hit count badge
+- [x] SubTask 10.6.5: **`PlanBlock.vue`** —— ionicons (checkmarkCircle/sync/ellipsisHorizontalCircle) 替代字符 + `plan-progress` 进度条 + `2/5 (1 进行中)` 计数
+- [x] SubTask 10.6.6: **`AgentTaskMessage.vue`** —— ionicons + `agentTaskProgressBar` + 状态徽章
+- [x] SubTask 10.6.7: **`StatusBadge.vue`** —— 新增 `pulse?: boolean` prop + `statusBadge_pulse` CSS animation
+
+### Task 10.7: useAgent 集成 + 测试修复
+
+- [x] SubTask 10.7.1: 修改 `useAgent.ts` —— 导入 `useContextUsage`，不自动 start（让 AgentChat 视图管理 lifecycle）
+- [x] SubTask 10.7.2: 在 useAgent return 中暴露 `contextUsage`
+- [x] SubTask 10.7.3: 修改 `useAgent.test.ts` —— 给 `/api/agent/context-usage` 加默认 mock 返回空 session 数据
+- [x] SubTask 10.7.4: 修复 `useContextUsage` 的 sessionId watch 在 `timer == null` 时不发请求（避免 useAgent 初始化时偷偷 fetch）
+
+### Task 10.8: i18n + 清理
+
+- [x] SubTask 10.8.1: 在 `app/encv-mobile/src/i18n/agent.ts` 加 keys：
+  - `agent.thinkingMeta` = "正在推理…" / "Thinking…"
+  - `agent.thought` = "已思考" / "Thought"
+  - `agent.reasoning` = "推理" / "Reasoning"
+  - `agent.webSearch` = "搜索" / "Search"
+  - `agent.queries` = "个查询" / "queries"
+  - `agent.query` = "个查询" / "query"
+- [x] SubTask 10.8.2: 移除 `app/encv-mobile/src/views/AgentChat.vue` 残留的 `console.log` / 调试代码
+
+### Task 10.9: 全栈验证
+
+- [x] SubTask 10.9.1: `go test ./internal/server/...` 全绿（30+ context_usage 测试 + 原有回归）
+- [x] SubTask 10.9.2: 前端 vitest 55 个 useAgent 测试 + 全套 547 个测试（3 个 pre-existing 失败与本 phase 无关）
+- [x] SubTask 10.9.3: `go build ./...` 无新错误
+- [x] SubTask 10.9.4: 文档同步（spec.md §Context 图标 + tasks.md Phase 10）完成
+
+---
+
 # Task Dependencies
 
 | Task | Depends on |
