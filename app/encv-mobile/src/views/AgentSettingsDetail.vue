@@ -78,6 +78,7 @@
                 :history-key="'config.agent_api_key'"
                 :is-customized="isApiKeyCustomized"
                 @update:model-value="handleApiKeyInput($event)"
+                @reset="handleApiKeyReset"
               />
 
               <!-- API Key 状态徽标 + 后端 base + 测试按钮（紧跟 input 显示） -->
@@ -337,8 +338,12 @@ const roundtripRunning = ref(false)
 const apiKeyPlainValue = ref('') // 用户正在编辑的明文（内存中，password input 自动掩码）
 
 // 是否已自定义（非默认空值）
+// 注意：不能用 apiKeyPlainValue 作为判断源——页面加载时 decryptAndLoadApiKey 会把解密后的
+// 明文回填到 apiKeyPlainValue，导致"已保存的密文"被误判为"用户修改中"。
+// 正确语义：当前显示内容是否与"默认空值"不同 → 存储值非空即视为已自定义。
 const isApiKeyCustomized = computed(() => {
-  return apiKeyPlainValue.value.length > 0
+  const stored = getFieldValue(['agent_settings', 'openai_api_key'])
+  return typeof stored === 'string' && stored.length > 0
 })
 
 // 状态徽标展示
@@ -421,11 +426,29 @@ async function decryptAndLoadApiKey() {
       body: JSON.stringify({ encrypted: stored, deviceId }),
     })
     if (res.ok) {
-      const { decrypted } = await res.json()
-      apiKeyPlainValue.value = decrypted || ''
-      apiKeyStatus.value = 'encrypted'
-      apiKeyStatusDetail.value = ''
-      devlogApiInfo(`decrypt-key OK (${(decrypted || '').length} chars)`, { kind: 'decrypt' })
+      const data = await res.json().catch(() => ({} as any))
+      const decrypted = typeof data?.decrypted === 'string' ? data.decrypted : ''
+      if (decrypted) {
+        // 真正解密成功：明文回填到 input，状态机切换到 encrypted
+        apiKeyPlainValue.value = decrypted
+        apiKeyStatus.value = 'encrypted'
+        apiKeyStatusDetail.value = ''
+        devlogApiInfo(`decrypt-key OK (${decrypted.length} chars)`, { kind: 'decrypt' })
+      } else {
+        // HTTP 200 但 decrypted 为空：后端所有格式都解不出（key/salt 不匹配/数据被截断等）
+        // 这不是"成功"，是"配置存在但无法解密"，状态必须切到 decrypt-failed 让用户看到红徽标
+        apiKeyPlainValue.value = ''
+        apiKeyStatus.value = 'decrypt-failed'
+        apiKeyStatusDetail.value = t('agent.apiKeyStatusDecryptFailedEmpty') ||
+          'Stored API key cannot be decrypted (all formats exhausted). The encryption key may have rotated or the stored value is corrupted.'
+        devlogApiError(new Error('decrypt-key returned empty decrypted'), {
+          kind: 'decrypt',
+          endpoint: '/api/decrypt-key',
+          status: res.status,
+          deviceId,
+          body: JSON.stringify(data).slice(0, 200),
+        })
+      }
     } else {
       let body = ''
       try { body = await res.text() } catch { /* ignore */ }
@@ -457,6 +480,29 @@ async function decryptAndLoadApiKey() {
 function handleApiKeyInput(val: string) {
   apiKeyPlainValue.value = val
   setFieldValue(['agent_settings', 'openai_api_key'], val)
+  // 用户开始编辑：状态机切到 'plaintext'（避免仍显示"已加密"绿徽标误导用户）
+  // 保留 encrypted/decrypt-failed 等已发生的错误状态：仅在用户实际"从干净状态开始输入"时切换
+  if (apiKeyStatus.value === 'empty' || apiKeyStatus.value === 'encrypted' || apiKeyStatus.value === 'plaintext') {
+    if (val) {
+      apiKeyStatus.value = 'plaintext'
+      apiKeyStatusDetail.value = 'Unencrypted in memory; will be encrypted on save'
+    } else {
+      // 用户把内容清空 → 回到 empty
+      apiKeyStatus.value = 'empty'
+      apiKeyStatusDetail.value = ''
+    }
+  }
+}
+
+// 重置 API Key 到默认值（空）
+// 之前 InputWithHistory 的 ↺ 按钮 click 后无任何反应——@reset 事件未挂载。
+// 这里把存储值清空、明文缓存清空、状态机归位到 empty。
+function handleApiKeyReset() {
+  apiKeyPlainValue.value = ''
+  setFieldValue(['agent_settings', 'openai_api_key'], '')
+  apiKeyStatus.value = 'empty'
+  apiKeyStatusDetail.value = ''
+  devlogApiInfo('api_key reset to default (empty)', { kind: 'replay', endpoint: 'reset-button' })
 }
 
 // ─── 动态模型选择（openai_model 字段） ──────────────────────
@@ -505,6 +551,11 @@ const agentSection = computed<FieldDef | undefined>(() => {
 const toolsChips = computed<string[]>(() => {
   const raw = getFieldValue(['agent_settings', 'enabled_tools'])
   if (Array.isArray(raw)) return raw.filter((s): s is string => typeof s === 'string')
+  // 兼容老数据：值是 string 时（如 "list_files,read_file"），解析为数组。
+  // 否则用户看到的 chip 列表与实际存储值完全不一致——会以为是 bug。
+  if (typeof raw === 'string' && raw.length > 0) {
+    return raw.split(',').map(s => s.trim()).filter(s => s.length > 0)
+  }
   return []
 })
 
@@ -521,11 +572,17 @@ function setValue(path: string[], value: unknown) {
 }
 
 function handleInput(path: string[], field: FieldDef, event: CustomEvent) {
-  const val = (event.target as HTMLInputElement).value
+  // ion-input 的 ionInput 事件是 CustomEvent，值在 event.detail.value
+  // 不能用 event.target.value：event.target 是 ion-input 元素（不是原生 input）
+  // 直接读 .detail.value 才是稳定可靠的（兼容 number / string / 未知类型）
+  const detail: any = (event as any)?.detail
+  const raw = typeof detail?.value === 'string' || typeof detail?.value === 'number'
+    ? detail.value
+    : ''
   if (field.type === 'integer') {
-    setFieldValue(path, val ? Number(val) : 0)
+    setFieldValue(path, raw !== '' && raw !== null && raw !== undefined ? Number(raw) : 0)
   } else {
-    setFieldValue(path, val)
+    setFieldValue(path, String(raw))
   }
 }
 

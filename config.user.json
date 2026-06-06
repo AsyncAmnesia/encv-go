@@ -9,7 +9,8 @@
       "read_file",
       "delete_file",
       "exec_command"
-    ]
+    ],
+    "openai_api_key": "enc:FgxNqiSiBAszhOJvRt5Xs50IKl7H4s8IqK54Ki05pG6Oym/4PUS4il2lzUn1B2FoBWrxvxODgGmKpsD+C1aVXPkfqLmkLbQKDNo71mq96QE="
   },
   "default_container_version": 0,
   "log": {
