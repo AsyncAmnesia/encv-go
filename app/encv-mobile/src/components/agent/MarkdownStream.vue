@@ -2,11 +2,13 @@
   MarkdownStream - 流式 Markdown 渲染
   封装 markstream-vue 的 MarkdownRender（default export）
   正确 prop: content（不是 source！）
+
+  关键：不用 :key 绑定 content，否则每次 text_delta 都销毁重建 → 闪烁
+  markstream-vue 自身的 smooth-streaming prop 会处理增量更新
 -->
 <template>
   <div class="markdownStream" :class="{ markdownStream_streaming: streaming }">
     <MarkdownRender
-      :key="content || '_empty'"
       :content="content"
       :smooth-streaming="streaming"
     />
@@ -24,7 +26,7 @@ defineProps<{
 </script>
 
 <style>
-/* 全局样式：让 markstream 在 dark mode 下可读 */
+/* ── 全局样式：让 markstream 在 dark mode 下可读 ── */
 .markdownStream {
   font-size: 13.5px;
   line-height: 1.6;
@@ -32,27 +34,29 @@ defineProps<{
   word-break: break-word;
 }
 
-/* 流式输出：高度平滑过渡 + 内容淡入 */
-.markdownStream_streaming {
-  transition: max-height 0.3s ease-out, opacity 0.2s ease-out;
+/* ── 流式输出平滑过渡（容器级） ── */
+.markdownStream_streaming .markstream-vue {
+  /* 高度变化时平滑过渡，消除内容追加时的跳动 */
+  transition: height 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
-.markdownStream_streaming > :deep(*) {
-  animation: streamFadeIn 0.35s ease-out both;
+/* ── 流式输出：新内容块淡入上滑 ── */
+.markdownStream_streaming .markstream-vue > * {
+  animation: streamFadeIn 0.4s ease-out both;
 }
 
-/* 错开每段/每个元素的入场时间，避免同时闪烁 */
-.markdownStream_streaming > :deep(:nth-child(1)) { animation-delay: 0ms; }
-.markdownStream_streaming > :deep(:nth-child(2)) { animation-delay: 40ms; }
-.markdownStream_streaming > :deep(:nth-child(3)) { animation-delay: 80ms; }
-.markdownStream_streaming > :deep(:nth-child(4)) { animation-delay: 120ms; }
-.markdownStream_streaming > :deep(:nth-child(5)) { animation-delay: 160ms; }
-.markdownStream_streaming > :deep(:nth-child(n+6)) { animation-delay: 200ms; }
+/* 错开入场时间，避免所有段落同时闪烁 */
+.markdownStream_streaming .markstream-vue > *:nth-child(1)  { animation-delay: 0ms; }
+.markdownStream_streaming .markstream-vue > *:nth-child(2)  { animation-delay: 50ms; }
+.markdownStream_streaming .markstream-vue > *:nth-child(3)  { animation-delay: 100ms; }
+.markdownStream_streaming .markstream-vue > *:nth-child(4)  { animation-delay: 150ms; }
+.markdownStream_streaming .markstream-vue > *:nth-child(5)  { animation-delay: 200ms; }
+.markdownStream_streaming .markstream-vue > *:nth-child(n+6) { animation-delay: 250ms; }
 
 @keyframes streamFadeIn {
   from {
     opacity: 0;
-    transform: translateY(3px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -60,6 +64,7 @@ defineProps<{
   }
 }
 
+/* ── 排版规则 ── */
 .markdownStream p {
   margin: 6px 0;
 }
@@ -74,7 +79,6 @@ defineProps<{
   font-weight: 700;
   color: var(--ion-text-color);
 }
-
 .markdownStream h1 { font-size: 18px; }
 .markdownStream h2 { font-size: 16px; }
 .markdownStream h3 { font-size: 15px; }
@@ -87,7 +91,6 @@ defineProps<{
   padding-left: 20px;
   margin: 6px 0;
 }
-
 .markdownStream li {
   margin: 2px 0;
 }
@@ -108,7 +111,6 @@ defineProps<{
   border: 1px solid rgba(var(--ion-color-medium-rgb), 0.18);
   overflow: auto;
 }
-
 .markdownStream pre code {
   background: transparent;
   padding: 0;
@@ -128,7 +130,6 @@ defineProps<{
   color: var(--ion-color-primary);
   text-decoration: none;
 }
-
 .markdownStream a:hover {
   text-decoration: underline;
 }
@@ -139,21 +140,19 @@ defineProps<{
   font-size: 12.5px;
   width: 100%;
 }
-
 .markdownStream th,
 .markdownStream td {
   padding: 4px 8px;
   border: 1px solid rgba(var(--ion-color-medium-rgb), 0.3);
   text-align: left;
 }
-
 .markdownStream th {
   background: rgba(var(--ion-color-medium-rgb), 0.12);
   font-weight: 600;
 }
 
+/* 流式期间 code block 降低饱和度，避免高亮闪烁 */
 .markdownStream_streaming pre {
-  /* 流式期间 code block 不高亮，避免闪烁 */
   filter: saturate(0.85);
 }
 </style>

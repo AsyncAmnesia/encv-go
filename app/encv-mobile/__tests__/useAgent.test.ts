@@ -69,6 +69,21 @@ function fetchReturningError(status = 500): ReturnType<typeof vi.fn> {
   } as Response)
 }
 
+/**
+ * 创建 URL 感知的 mock 实现：
+ *   /api/config → 返回空配置（无 system_prompt）
+ *   其他 URL → 使用 fallback（通常是测试提供的 SSE stream）
+ */
+function urlAwareMock(fallback: ReturnType<typeof vi.fn>): ReturnType<typeof vi.fn> {
+  return vi.fn(async (url: string | Request) => {
+    const urlStr = typeof url === 'string' ? url : (url as Request).url
+    if (urlStr.includes('/api/config')) {
+      return { ok: true, status: 200, json: () => Promise.resolve({}) } as Response
+    }
+    return fallback(url)
+  })
+}
+
 // ─── 测试 ─────────────────────────────────────────────────────────────────
 
 describe('useAgent', () => {
@@ -76,6 +91,15 @@ describe('useAgent', () => {
 
   beforeEach(() => {
     fetchSpy = vi.spyOn(globalThis, 'fetch')
+    // 默认 mock：/api/config 返回空配置，其他 URL 返回空 body
+    // 各测试通过 fetchSpy.mockImplementation(urlAwareMock(fallback)) 覆盖
+    fetchSpy.mockImplementation(async (url: string | Request) => {
+      const urlStr = typeof url === 'string' ? url : (url as Request).url
+      if (urlStr.includes('/api/config')) {
+        return { ok: true, status: 200, json: () => Promise.resolve({}) } as Response
+      }
+      return { ok: true, status: 200, body: null } as Response
+    })
     localStorage.clear()
     mockedShowToast.mockClear()
   })
@@ -260,7 +284,7 @@ describe('useAgent', () => {
         kind: 'fileChange',
       }) +
       sseLine('stream_end', {})
-      fetchSpy.mockImplementationOnce(fetchReturningStream(makeSSEStream([sse1])))
+      fetchSpy.mockImplementation(urlAwareMock(fetchReturningStream(makeSSEStream([sse1]))))
 
       const agent = useAgent()
       await agent.send('delete')
@@ -278,12 +302,12 @@ describe('useAgent', () => {
         duration_ms: 10,
       }) +
       sseLine('stream_end', {})
-      fetchSpy.mockImplementationOnce(fetchReturningStream(makeSSEStream([sse2])))
+      fetchSpy.mockImplementation(urlAwareMock(fetchReturningStream(makeSSEStream([sse2]))))
 
       await agent.confirmTool('tc-x', 'accept')
 
-      expect(fetchSpy).toHaveBeenCalledTimes(2)
-      const confirmCall = fetchSpy.mock.calls[1]
+      expect(fetchSpy).toHaveBeenCalledTimes(3)
+      const confirmCall = fetchSpy.mock.calls[2]
       expect(confirmCall[0]).toBe('/agent-api/api/confirm')
       const body = JSON.parse(confirmCall[1].body)
       expect(body.toolCallId).toBe('tc-x')
@@ -300,6 +324,9 @@ describe('useAgent', () => {
       for (const decision of decisions) {
         fetchSpy.mockReset()
         localStorage.clear()
+        // 清除系统提示词缓存（模块级变量跨迭代持久化）
+        const { invalidateSystemPromptCache } = await import('@/composables/useAgent')
+        invalidateSystemPromptCache()
 
         const sse1 = sseLine('tool_call', {
           id: `tc-${decision}`,
@@ -308,17 +335,17 @@ describe('useAgent', () => {
           auto_run: false,
           kind: 'command',
         }) + sseLine('stream_end', {})
-        fetchSpy.mockImplementationOnce(fetchReturningStream(makeSSEStream([sse1])))
+        fetchSpy.mockImplementation(urlAwareMock(fetchReturningStream(makeSSEStream([sse1]))))
 
         const agent = useAgent()
         await agent.send('q')
         expect(agent.status.value).toBe('confirming')
 
         const sse2 = sseLine('stream_end', {})
-        fetchSpy.mockImplementationOnce(fetchReturningStream(makeSSEStream([sse2])))
+        fetchSpy.mockImplementation(urlAwareMock(fetchReturningStream(makeSSEStream([sse2]))))
         await agent.confirmTool(`tc-${decision}`, decision)
 
-        const body = JSON.parse(fetchSpy.mock.calls[1][1].body)
+        const body = JSON.parse(fetchSpy.mock.calls[2][1].body)
         expect(body.decision).toBe(decision)
       }
     })
@@ -327,7 +354,7 @@ describe('useAgent', () => {
       // 第一次 send：模拟一个完整但很短的流
       const sse1 = sseLine('text_delta', { content: 'first' }) +
                    sseLine('stream_end', {})
-      fetchSpy.mockImplementationOnce(fetchReturningStream(makeSSEStream([sse1])))
+      fetchSpy.mockImplementation(urlAwareMock(fetchReturningStream(makeSSEStream([sse1]))))
 
       const { send, status, messages } = useAgent()
       await send('first')
@@ -338,7 +365,7 @@ describe('useAgent', () => {
       // 第二次 send 应该正常进行（idle → streaming）
       const sse2 = sseLine('text_delta', { content: 'second' }) +
                    sseLine('stream_end', {})
-      fetchSpy.mockImplementationOnce(fetchReturningStream(makeSSEStream([sse2])))
+      fetchSpy.mockImplementation(urlAwareMock(fetchReturningStream(makeSSEStream([sse2]))))
       await send('second')
 
       expect(messages.value.length).toBe(4) // 2 user + 2 assistant
@@ -355,12 +382,12 @@ describe('useAgent', () => {
         },
       })
 
-      fetchSpy.mockImplementationOnce(
-        vi.fn().mockResolvedValue({
+      fetchSpy.mockImplementation(
+        urlAwareMock(vi.fn().mockResolvedValue({
           ok: true,
           status: 200,
           body: slowStream,
-        } as Response)
+        } as Response))
       )
 
       const { send, status, messages } = useAgent()
@@ -634,13 +661,13 @@ describe('useAgent', () => {
         auto_run: false,
         kind: 'command',
       }) + sseLine('stream_end', {})
-      fetchSpy.mockImplementationOnce(fetchReturningStream(makeSSEStream([sse1])))
+      fetchSpy.mockImplementation(urlAwareMock(fetchReturningStream(makeSSEStream([sse1]))))
       const agent = useAgent()
       await agent.send('q')
       expect(agent.status.value).toBe('confirming')
 
       // 第二次 fetch 500 错误
-      fetchSpy.mockImplementationOnce(fetchReturningError(500))
+      fetchSpy.mockImplementation(urlAwareMock(fetchReturningError(500)))
       await agent.confirmTool('tc-r', 'accept')
 
       expect(agent.status.value).toBe('confirming')
