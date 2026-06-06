@@ -5,8 +5,9 @@
 // 测试策略：
 //   - ListPluginTools / pluginNameCN：纯函数测试，无需 mock
 //   - executePluginTool 错误路径：传 invalid args → 验证返回 errJSON（不调用真插件）
-//   - getOrCreateSession：map 并发安全 + 复用
-//   - chatMsg 序列化：ToolCallID/Name 字段 JSON 编解码正确
+//   - getOrCreateSession：map 并发安全 + 复用 + LastAccess 更新
+//   - chatMsg 序列化：ToolCallID/Name/ToolCalls 字段 JSON 编解码正确
+//   - session GC：清理过期 + 保留活跃 + LastAccess 不被错误清理
 package server
 
 import (
@@ -16,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	encvPlugins "github.com/Soltus/encv-go/pkg/encv/plugins"
 )
@@ -243,7 +245,8 @@ func TestChatMsg_ToolMessageSerialization(t *testing.T) {
 	if err := json.Unmarshal(raw, &back); err != nil {
 		t.Fatalf("Unmarshal 失败: %v", err)
 	}
-	if back != msg {
+	if back.Role != msg.Role || back.Content != msg.Content ||
+		back.ToolCallID != msg.ToolCallID || back.Name != msg.Name {
 		t.Errorf("反序列化结果不一致:\n got: %+v\nwant: %+v", back, msg)
 	}
 }
@@ -318,12 +321,15 @@ func TestAgentSession_ConfirmAppendsAssistantAndToolMessages(t *testing.T) {
 	sess.PendingTools[0].Function.Arguments = `{"input_path":"/a.mp4"}`
 	sess.mu.Unlock()
 
-	// 模拟 confirm 流程
+	// 模拟 confirm 流程（用新的 ToolCalls 字段，不再 hack Content）
 	sess.mu.Lock()
 	tool := sess.PendingTools[0]
+	allToolCalls := make([]toolCallAccumulator, len(sess.PendingTools))
+	copy(allToolCalls, sess.PendingTools)
 	assistantMsg := chatMsg{
-		Role:    "assistant",
-		Content: "[tool_call:" + tool.ID + ":" + tool.Function.Name + ":" + tool.Function.Arguments + "]",
+		Role:      "assistant",
+		Content:   "",
+		ToolCalls: allToolCalls,
 	}
 	toolMsg := chatMsg{
 		Role:       "tool",
@@ -343,6 +349,18 @@ func TestAgentSession_ConfirmAppendsAssistantAndToolMessages(t *testing.T) {
 	}
 	if sess.Messages[1].Role != "assistant" {
 		t.Errorf("第二条消息 role = %q, want assistant", sess.Messages[1].Role)
+	}
+	if len(sess.Messages[1].ToolCalls) != 1 {
+		t.Fatalf("assistant 消息 ToolCalls 数量 = %d, want 1", len(sess.Messages[1].ToolCalls))
+	}
+	if sess.Messages[1].ToolCalls[0].ID != "call_1" {
+		t.Errorf("assistant ToolCalls[0].ID = %q, want call_1", sess.Messages[1].ToolCalls[0].ID)
+	}
+	if sess.Messages[1].ToolCalls[0].Function.Name != "video_encrypt" {
+		t.Errorf("assistant ToolCalls[0].Function.Name = %q, want video_encrypt", sess.Messages[1].ToolCalls[0].Function.Name)
+	}
+	if sess.Messages[1].Content != "" {
+		t.Errorf("assistant 消息 Content 应为空（被 ToolCalls 替代）: %q", sess.Messages[1].Content)
 	}
 	if sess.Messages[2].Role != "tool" {
 		t.Errorf("第三条消息 role = %q, want tool", sess.Messages[2].Role)
@@ -408,5 +426,164 @@ func TestErrJSON_HasErrorAndMessage(t *testing.T) {
 	}
 	if m["message"] != "test message" {
 		t.Errorf("message 字段 = %v, want test message", m["message"])
+	}
+}
+
+// ─── session GC ──────────────────────────────────────────────
+
+func TestGcIdleSessions_EvictsExpired(t *testing.T) {
+	// 创建一个 session 然后手动回拨 LastAccess 到过期
+	id := "gc-evict-test"
+	sess := getOrCreateSession(id)
+	if sess == nil {
+		t.Fatal("getOrCreateSession 失败")
+	}
+
+	// 回拨到 31 分钟前（超过 sessionIdleTTL=30min）
+	sessionMu.Lock()
+	sess.LastAccess = time.Now().Add(-31 * time.Minute)
+	sessionMu.Unlock()
+
+	// 执行 GC
+	evicted := gcIdleSessions()
+	if evicted < 1 {
+		t.Errorf("应至少清理 1 个 session, got %d", evicted)
+	}
+
+	// 验证 session 已消失
+	sessionMu.RLock()
+	_, exists := sessions[id]
+	sessionMu.RUnlock()
+	if exists {
+		t.Errorf("session %q 应已被 GC 清理", id)
+	}
+}
+
+func TestGcIdleSessions_PreservesActive(t *testing.T) {
+	// 创建活跃 session（LastAccess = now），GC 不应清理
+	id := "gc-active-test"
+	sess := getOrCreateSession(id)
+	if sess == nil {
+		t.Fatal("getOrCreateSession 失败")
+	}
+
+	// 显式设置 LastAccess 为 1 分钟前（未过期）
+	sessionMu.Lock()
+	sess.LastAccess = time.Now().Add(-1 * time.Minute)
+	sessionMu.Unlock()
+
+	evicted := gcIdleSessions()
+	_ = evicted // 可能有别的测试残留的过期 session 被清
+
+	sessionMu.RLock()
+	_, exists := sessions[id]
+	sessionMu.RUnlock()
+	if !exists {
+		t.Errorf("活跃 session %q 不应被 GC 清理", id)
+	}
+}
+
+func TestGetOrCreateSession_UpdatesLastAccess(t *testing.T) {
+	// 首次创建
+	id := "gc-touch-test"
+	s1 := getOrCreateSession(id)
+	sessionMu.RLock()
+	firstAccess := s1.LastAccess
+	sessionMu.RUnlock()
+
+	// 睡 50ms 后再 getOrCreate → LastAccess 必须更新
+	time.Sleep(50 * time.Millisecond)
+	s2 := getOrCreateSession(id)
+	sessionMu.RLock()
+	secondAccess := s2.LastAccess
+	sessionMu.RUnlock()
+
+	if !secondAccess.After(firstAccess) {
+		t.Errorf("LastAccess 未更新: first=%v, second=%v", firstAccess, secondAccess)
+	}
+}
+
+// ─── chatMsg.ToolCalls 序列化 ────────────────────────────────
+
+func TestChatMsg_AssistantWithToolCalls(t *testing.T) {
+	// assistant 消息带 tool_calls 数组 → 序列化必须正确
+	tc := toolCallAccumulator{ID: "call_1", Type: "function"}
+	tc.Function.Name = "video_encrypt"
+	tc.Function.Arguments = `{"input_path":"/a.mp4"}`
+
+	msg := chatMsg{
+		Role:      "assistant",
+		Content:   "",
+		ToolCalls: []toolCallAccumulator{tc},
+	}
+	raw, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("Marshal 失败: %v", err)
+	}
+	got := string(raw)
+	if !strings.Contains(got, `"role":"assistant"`) {
+		t.Errorf("缺 role: %s", got)
+	}
+	if !strings.Contains(got, `"tool_calls":[{`) {
+		t.Errorf("缺 tool_calls 数组: %s", got)
+	}
+	if !strings.Contains(got, `"id":"call_1"`) {
+		t.Errorf("缺 tool_call id: %s", got)
+	}
+	if !strings.Contains(got, `"name":"video_encrypt"`) {
+		t.Errorf("缺 function.name: %s", got)
+	}
+	if !strings.Contains(got, `"arguments":"{\"input_path\":\"/a.mp4\"}"`) {
+		t.Errorf("缺 function.arguments: %s", got)
+	}
+
+	// 反序列化恢复
+	var back chatMsg
+	if err := json.Unmarshal(raw, &back); err != nil {
+		t.Fatalf("Unmarshal 失败: %v", err)
+	}
+	if len(back.ToolCalls) != 1 || back.ToolCalls[0].ID != "call_1" {
+		t.Errorf("反序列化 ToolCalls 异常: %+v", back.ToolCalls)
+	}
+}
+
+func TestChatMsg_OmitsToolCallsWhenEmpty(t *testing.T) {
+	// 普通 user 消息不应有 tool_calls 字段（omitempty 生效）
+	msg := chatMsg{Role: "user", Content: "hello"}
+	raw, _ := json.Marshal(msg)
+	got := string(raw)
+	if strings.Contains(got, "tool_calls") {
+		t.Errorf("user 消息不应有 tool_calls 字段: %s", got)
+	}
+	if strings.Contains(got, "tool_call_id") {
+		t.Errorf("user 消息不应有 tool_call_id 字段: %s", got)
+	}
+}
+
+func TestToolCallAccumulator_IndexOmittedWhenZero(t *testing.T) {
+	// Index 字段 omitempty：0 值不序列化（OpenAI 协议不需要 index）
+	tc := toolCallAccumulator{ID: "call_x", Type: "function"}
+	tc.Function.Name = "video_encrypt"
+	raw, _ := json.Marshal(tc)
+	got := string(raw)
+	if strings.Contains(got, `"index"`) {
+		t.Errorf("Index=0 不应被序列化: %s", got)
+	}
+	// 验证必要字段都在
+	for _, want := range []string{`"id":"call_x"`, `"type":"function"`, `"name":"video_encrypt"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("缺字段 %s: %s", want, got)
+		}
+	}
+}
+
+func TestToolCallAccumulator_IndexSerializedWhenNonZero(t *testing.T) {
+	// Index 字段非 0 时正常序列化（流式响应需要）
+	tc := toolCallAccumulator{ID: "call_x", Type: "function", Index: 3}
+	tc.Function.Name = "video_encrypt"
+	raw, _ := json.Marshal(tc)
+	got := string(raw)
+	if !strings.Contains(got, `"index":3`) {
+		t.Errorf("Index=3 应被序列化: %s", got)
 	}
 }

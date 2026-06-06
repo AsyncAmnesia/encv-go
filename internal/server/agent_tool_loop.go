@@ -44,11 +44,14 @@ import (
 
 // toolCallAccumulator 累积 OpenAI 流式 tool_calls。
 // OpenAI 工具调用在多个 chunk 中分片到达，必须按 (id, index) 聚合。
+//
+// Index 字段只在流式累积时使用，序列化为 assistant 消息的 tool_calls 数组时
+// 用 omitempty 跳过（OpenAI 协议不需要 index）。
 type toolCallAccumulator struct {
-	ID        string `json:"id"`
-	Type      string `json:"type"`
-	Index     int    `json:"index"`
-	Function  struct {
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Index    int    `json:"index,omitempty"`
+	Function struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
 	} `json:"function"`
@@ -62,21 +65,30 @@ type agentSession struct {
 	PendingTools    []toolCallAccumulator // 当前 LLM 决策的工具调用（待 confirm）
 	LastModel       string
 	LastTemperature float64
+	LastAccess      time.Time // 最近一次 getOrCreateSession 时间，用于 GC 判定
 }
+
+const (
+	// sessionIdleTTL — session 无活动多久后被 GC 回收
+	sessionIdleTTL = 30 * time.Minute
+	// sessionGCInterval — 后台 GC 扫描间隔
+	sessionGCInterval = 5 * time.Minute
+)
 
 var (
 	sessionMu sync.RWMutex
 	sessions  = make(map[string]*agentSession)
 )
 
-// getOrCreateSession 获取或创建 session
+// getOrCreateSession 获取或创建 session，顺便更新 LastAccess
 func getOrCreateSession(id string) *agentSession {
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
 	if s, ok := sessions[id]; ok {
+		s.LastAccess = time.Now()
 		return s
 	}
-	s := &agentSession{SessionID: id}
+	s := &agentSession{SessionID: id, LastAccess: time.Now()}
 	sessions[id] = s
 	return s
 }
@@ -88,6 +100,41 @@ func updateSession(id string, fn func(*agentSession)) {
 	if s, ok := sessions[id]; ok {
 		fn(s)
 	}
+}
+
+// gcIdleSessions 清理空闲超过 sessionIdleTTL 的 session，返回被清理的数量。
+// 公开此函数供单测验证（不依赖后台 goroutine）。
+func gcIdleSessions() int {
+	sessionMu.Lock()
+	defer sessionMu.Unlock()
+	now := time.Now()
+	evicted := 0
+	for id, s := range sessions {
+		if now.Sub(s.LastAccess) > sessionIdleTTL {
+			delete(sessions, id)
+			evicted++
+			slog.Info("agent: session evicted (idle)", "id", id, "idle", now.Sub(s.LastAccess).String())
+		}
+	}
+	return evicted
+}
+
+// startSessionGC 启动后台 GC goroutine，每 sessionGCInterval 跑一次。
+// 多次调用是安全的（用 sync.Once 保护）。
+var startSessionGCSyncOnce sync.Once
+
+func startSessionGC() {
+	startSessionGCSyncOnce.Do(func() {
+		go func() {
+			ticker := time.NewTicker(sessionGCInterval)
+			defer ticker.Stop()
+			for range ticker.C {
+				if n := gcIdleSessions(); n > 0 {
+					slog.Info("agent: session GC pass", "evicted", n, "remaining", len(sessions))
+				}
+			}
+		}()
+	})
 }
 
 // ─── 工具调用执行 + 递归 ───────────────────────────────────────

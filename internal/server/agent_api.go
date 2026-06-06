@@ -383,6 +383,9 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		return
 	}
 
+	// ①½ 启动后台 session GC（幂等）
+	startSessionGC()
+
 	// ② 读取 agent 配置（API Key / Base URL / System Prompt）
 	cfg := s.readAgentConfig(body.DeviceId)
 	if cfg.APIKey == "" {
@@ -662,6 +665,7 @@ type confirmRequest struct {
 	SessionId  string `json:"sessionId"`
 	ToolCallId string `json:"toolCallId"`
 	Decision   string `json:"decision"` // accept | decline | cancel
+	DeviceId   string `json:"deviceId"` // 设备指纹（用于 API Key 解密 + 系统提示词）
 }
 
 func (s *Server) handleAgentConfirm(c *gin.Context) {
@@ -725,23 +729,24 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 		return
 	}
 
-	// ⑦ 构造 assistant 消息（包含 tool_calls 字段），让 OpenAI 知道哪些调用被处理了
-	//     注意：OpenAI 协议要求 assistant 消息带 tool_calls 数组
-	//     —— 但我们 chatMsg 结构体暂未扩展 tool_calls 字段。
-	//     这里采用最简方案：把 tool_call 信息编码到 Content 里（hack 但能用），
-	//     并把 toolCallId 映射到 tool 消息的 tool_call_id。
-	//     完整实现需扩展 chatMsg 增加 ToolCalls 字段（后续 phase）。
+	// ⑦ 构造 assistant 消息（带 tool_calls 数组）
+	//     OpenAI 协议要求 assistant 消息带 tool_calls 数组，否则 LLM 不知道上轮调用了哪些 tool。
+	//     这里把所有 pending tool_calls 都放进去（即使有些用户没确认，也保留引用给 LLM），
+	//     对应的 tool 消息只针对用户 confirm 的那一个。
+	//     注：toolCallAccumulator.Index 在序列化时已用 omitempty 跳过（OpenAI 协议不需要）。
+	allToolCalls := make([]toolCallAccumulator, len(sess.PendingTools))
+	copy(allToolCalls, sess.PendingTools)
 	assistantMsg := chatMsg{
-		Role: "assistant",
-		Content: fmt.Sprintf("[tool_call:%s:%s:%s]",
-			tool.ID, tool.Function.Name, tool.Function.Arguments),
+		Role:      "assistant",
+		Content:   "", // assistant 决策后 content 通常为空（被 tool_calls 替代）
+		ToolCalls: allToolCalls,
 	}
 
 	// ⑧ accept → 真实执行；decline → 注入 cancelled 假结果
 	var toolMsg chatMsg
 	if body.Decision == "accept" {
-		// 读取 agent 配置（不带 deviceId 派生加密）
-		cfg := s.readAgentConfig()
+		// 读取 agent 配置（用 deviceId 派生 API Key 解密 + 系统提示词）
+		cfg := s.readAgentConfig(body.DeviceId)
 		if cfg.BaseURL == "" {
 			cfg.BaseURL = "https://api.openai.com"
 		}
@@ -774,7 +779,7 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 	sess.mu.Unlock()
 
 	// ⑩ 递归下一轮 chat（流式）
-	cfg := s.readAgentConfig()
+	cfg := s.readAgentConfig(body.DeviceId)
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://api.openai.com"
 	}
@@ -946,9 +951,12 @@ func sortModels(models []modelEntry) {
 
 // chatMsg 是 chat 请求中的消息格式。
 // ToolCallID 和 Name 仅在 role=="tool" 时使用（OpenAI tool message 协议要求）。
+// ToolCalls 仅在 role=="assistant" 时使用（携带 LLM 决策的工具调用清单，
+// 供 confirm 后的下一轮 chat 引用，否则 LLM 不知道上轮调用了哪些 tool）。
 type chatMsg struct {
-	Role       string `json:"role"`
-	Content    string `json:"content"`
-	ToolCallID string `json:"tool_call_id,omitempty"`
-	Name       string `json:"name,omitempty"`
+	Role       string                 `json:"role"`
+	Content    string                 `json:"content"`
+	ToolCallID string                 `json:"tool_call_id,omitempty"`
+	Name       string                 `json:"name,omitempty"`
+	ToolCalls  []toolCallAccumulator  `json:"tool_calls,omitempty"`
 }
