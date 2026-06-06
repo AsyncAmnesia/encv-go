@@ -368,21 +368,21 @@ export default defineConfig({
     // 修复: hmr:false 让 vite 不再注入 /@vite/client, console 不再有 WS 错误
     // 代价: 用户改代码需 Ctrl+R 硬刷 —— 沙箱 dev 可接受
     hmr: false,
-  },
-  // ⚠️ 沙箱 dev 必须扩展 fs.allow：
-  //   - vite 默认 fs.allow 只允许项目根目录 + 其祖先
-  //   - main.ts 内 import "/@fs/workspace/app/encv-mobile/node_modules/..." 引用的是
-  //     encv-mobile 主 app 的 node_modules（plugin-openlist/web 自己没装 @ionic/vue）
-  //   - 不扩 allow 时 vite 返回 403/404/SPA fallback → 浏览器收到 text/html →
-  //     ES module loader 拒绝执行 → main.ts 中断 → 空白
-  fs: {
-    allow: [
-      path.resolve(__dirname),
-      path.resolve(__dirname, '..', '..', '..'),  // encv-mobile root（包含 monorepo node_modules）
-      path.resolve(__dirname, '..', '..', '..', 'node_modules'),
-      path.resolve('/workspace/app/encv-mobile'),
-      path.resolve('/workspace/app/encv-mobile/node_modules'),
-      path.resolve('/workspace'),
-    ],
+    // ⚠️ 沙箱 dev 必须扩展 server.fs.allow：
+    //   - vite 默认 fs.allow 只允许项目根目录 + 其祖先
+    //   - main.ts 内 import "/@fs/workspace/app/encv-mobile/node_modules/..." 引用的是
+    //     encv-mobile 主 app 的 node_modules（plugin-openlist/web 自己没装 @ionic/vue）
+    //   - 不扩 allow 时 vite 返回 403/404/SPA fallback → 浏览器收到 text/html →
+    //     ES module loader 拒绝执行 → main.ts 中断 → 空白
+    fs: {
+      allow: [
+        path.resolve(__dirname),
+        path.resolve(__dirname, '..', '..', '..'),  // encv-mobile root（包含 monorepo node_modules）
+        path.resolve(__dirname, '..', '..', '..', 'node_modules'),
+        path.resolve('/workspace/app/encv-mobile'),
+        path.resolve('/workspace/app/encv-mobile/node_modules'),
+        path.resolve('/workspace'),
+      ],
+    },
   },
 })
