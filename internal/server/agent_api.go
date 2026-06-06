@@ -78,8 +78,9 @@ func EncryptApiKey(plaintext string) string {
 	return "enc:" + base64.StdEncoding.EncodeToString(result)
 }
 
-// DecryptApiKey 解密存储的 API Key（与 Node.js 兼容）
-// 存储格式: enc:<base64(iv)>:<base64(ciphertext_with_pkcs7)>
+// DecryptApiKey 解密存储的 API Key（兼容两种格式）
+// 格式 A（Node.js agent-stub）: enc:<base64(iv)>:<base64(ciphertext)>
+// 格式 B（Go EncryptApiKey）:  enc:<base64(iv||ciphertext)>  （IV 和密文拼接后整体 base64）
 func DecryptApiKey(stored string) string {
 	if stored == "" {
 		return ""
@@ -88,39 +89,58 @@ func DecryptApiKey(stored string) string {
 		return stored // 未加密的旧格式兼容
 	}
 	raw := stored[4:]
-	// 格式: <base64_iv>:<base64_ciphertext> — 先按 ':' 分割再分别 base64 解码
-	parts := strings.SplitN(raw, ":", 2)
-	if len(parts) != 2 {
-		slog.Warn("agent: invalid enc format, expected iv:ciphertext")
-		return ""
+
+	// ── 尝试格式 A：冒号分隔（Node.js 兼容）────────
+	if strings.Contains(raw, ":") {
+		parts := strings.SplitN(raw, ":", 2)
+		if len(parts) == 2 {
+			if result := tryDecryptParts(parts[0], parts[1]); result != "" {
+				return result
+			}
+			// 格式 A 解密失败，不返回错误——可能实际是格式 B 中包含冒号的 base64
+			// 继续尝试格式 B
+		}
 	}
 
-	iv, err := base64.StdEncoding.DecodeString(parts[0])
+	// ── 尝试格式 B：Go 单段 base64（iv || ciphertext 拼接）──
+	combined, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil || len(combined) < aes.BlockSize+1 {
+		slog.Warn("agent: decrypt format-B base64 failed", "error", err, "len", len(raw))
+		return ""
+	}
+	iv := combined[:aes.BlockSize]
+	ct := combined[aes.BlockSize:]
+	result := tryDecrypt(iv, ct)
+	if result != "" {
+		return result
+	}
+
+	slog.Warn("agent: all decrypt formats exhausted")
+	return ""
+}
+
+func tryDecryptParts(ivB64, ctB64 string) string {
+	iv, err := base64.StdEncoding.DecodeString(ivB64)
 	if err != nil || len(iv) != aes.BlockSize {
-		slog.Warn("agent: decrypt iv base64 failed", "error", err, "len", len(iv))
 		return ""
 	}
-
-	ct, err := base64.StdEncoding.DecodeString(parts[1])
-	if err != nil || len(ct) == 0 || len(ct)%aes.BlockSize != 0 {
-		slog.Warn("agent: decrypt ct base64 failed", "error", err, "len", len(ct))
+	ct, err := base64.StdEncoding.DecodeString(ctB64)
+	if err != nil || len(ct) == 0 {
 		return ""
 	}
+	return tryDecrypt(iv, ct)
+}
 
+func tryDecrypt(iv, ct []byte) string {
 	key := deriveKey()
-
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		slog.Warn("agent: decrypt cipher failed", "error", err)
 		return ""
 	}
 	stream := cipher.NewCBCDecrypter(block, iv)
 	stream.CryptBlocks(ct, ct)
-
-	// 移除 PKCS7 padding
 	pt := pkcs7Unpad(ct)
 	if pt == nil {
-		slog.Warn("agent: invalid pkcs7 padding")
 		return ""
 	}
 	return string(pt)
@@ -161,6 +181,10 @@ type agentConfig struct {
 
 func (s *Server) readAgentConfig() agentConfig {
 	var cfg agentConfig
+	if s.configPath == "" {
+		slog.Warn("agent: configPath is empty")
+		return cfg
+	}
 	data, err := os.ReadFile(s.configPath)
 	if err != nil {
 		slog.Warn("agent: cannot read config file", "path", s.configPath, "error", err)
@@ -173,10 +197,11 @@ func (s *Server) readAgentConfig() agentConfig {
 	}
 	agentRaw, ok := raw["agent_settings"]
 	if !ok {
-		return cfg
+		return cfg // agent_settings 不存在不是错误，返回空配置
 	}
 	var agent map[string]string
 	if err := json.Unmarshal(agentRaw, &agent); err != nil {
+		slog.Warn("agent: invalid agent_settings json", "error", err)
 		return cfg
 	}
 	cfg.APIKey = DecryptApiKey(agent["openai_api_key"])
@@ -192,6 +217,7 @@ func (s *Server) readAgentConfig() agentConfig {
 func (s *Server) registerAgentRoutes(r *gin.Engine) {
 	r.GET("/api/models", s.handleAgentModels)
 	r.POST("/api/encrypt-key", s.handleAgentEncryptKey)
+	r.POST("/api/decrypt-key", s.handleAgentDecryptKey)
 	r.GET("/test", s.handleAgentTest)
 	r.POST("/test", s.handleAgentTest)
 	r.POST("/api/chat", s.handleAgentChat)
@@ -296,6 +322,20 @@ func (s *Server) handleAgentEncryptKey(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"encrypted": encrypted})
 }
 
+// ─── POST /api/decrypt-key — 解密 API Key（前端编辑时回填） ───
+
+func (s *Server) handleAgentDecryptKey(c *gin.Context) {
+	var body struct {
+		Encrypted string `json:"encrypted"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
+		return
+	}
+	decrypted := DecryptApiKey(body.Encrypted)
+	c.JSON(http.StatusOK, gin.H{"decrypted": decrypted})
+}
+
 // ─── GET/POST /test — 测试连接 ───────────────────────────────
 
 func (s *Server) handleAgentTest(c *gin.Context) {
@@ -320,6 +360,13 @@ func (s *Server) handleAgentTest(c *gin.Context) {
 // ─── POST /api/chat — SSE 对话（stub：echo 模式） ─────────────
 
 func (s *Server) handleAgentChat(c *gin.Context) {
+	// 防御：确保 response writer 支持 Flusher（代理中间件可能包装过）
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "sse_not_supported"})
+		return
+	}
+
 	s.setSSEHeaders(c.Writer)
 
 	var body struct {
@@ -329,7 +376,13 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		Messages    []chatMsg `json:"messages"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
-		s.sendSSEEvent(c.Writer, "error", gin.H{"message": "invalid_json"})
+		s.sendSSEEventSafe(c.Writer, flusher, "error", gin.H{"message": "invalid_json"})
+		return
+	}
+
+	// 防护：空消息数组
+	if len(body.Messages) == 0 {
+		s.sendSSEEventSafe(c.Writer, flusher, "error", gin.H{"message": "empty_messages"})
 		return
 	}
 
@@ -345,26 +398,36 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	}
 
 	reply := fmt.Sprintf("（encv-go agent）收到消息: %s\n模型: %s | 温度: %.1f", userInput, body.Model, body.Temperature)
-	s.streamText(c.Writer, reply, 4, 40)
-	s.sendSSEEvent(c.Writer, "stream_end", "")
+	s.streamTextSafe(c.Writer, flusher, reply, 4, 40)
+	s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
 }
 
 // ─── POST /api/confirm — SSE 工具确认（stub） ────────────────
 
 func (s *Server) handleAgentConfirm(c *gin.Context) {
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "sse_not_supported"})
+		return
+	}
 	s.setSSEHeaders(c.Writer)
 	reply := fmt.Sprintf("（encv-go agent stub）已收到决策")
-	s.streamText(c.Writer, reply, 3, 40)
-	s.sendSSEEvent(c.Writer, "stream_end", "")
+	s.streamTextSafe(c.Writer, flusher, reply, 3, 40)
+	s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
 }
 
 // ─── POST /api/resume — SSE 断点续传（stub） ─────────────────
 
 func (s *Server) handleAgentResume(c *gin.Context) {
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "sse_not_supported"})
+		return
+	}
 	s.setSSEHeaders(c.Writer)
 	reply := "（encv-go agent stub）已恢复 session。真实 agent 将继续流式输出。"
-	s.streamText(c.Writer, reply, 3, 50)
-	s.sendSSEEvent(c.Writer, "stream_end", "")
+	s.streamTextSafe(c.Writer, flusher, reply, 3, 50)
+	s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
 }
 
 // ─── SSE 辅助函数 ────────────────────────────────────────────
@@ -375,8 +438,12 @@ func (s *Server) setSSEHeaders(w http.ResponseWriter) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(": agent ok\n\n"))
-	w.(http.Flusher).Flush()
+	// 注释：初始 SSE comment 用于确认连接建立
+	// 如果写入失败（client 已断开），调用方 Safe 函数会检测到
+	_, _ = w.Write([]byte(": agent ok\n\n"))
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func (s *Server) sendSSEEvent(w http.ResponseWriter, eventType string, data interface{}) {
@@ -384,6 +451,18 @@ func (s *Server) sendSSEEvent(w http.ResponseWriter, eventType string, data inte
 	json.NewEncoder(buf).Encode(data)
 	fmt.Fprintf(w, "data: {\"type\": \"%s\", \"data\": %s}\n\n", eventType, buf.String())
 	w.(http.Flusher).Flush()
+}
+
+// sendSSEEventSafe — 带 client disconnect 检测的安全版本
+func (s *Server) sendSSEEventSafe(w http.ResponseWriter, flusher http.Flusher, eventType string, data interface{}) {
+	buf := new(bytes.Buffer)
+	json.NewEncoder(buf).Encode(data)
+	n, err := fmt.Fprintf(w, "data: {\"type\": \"%s\", \"data\": %s}\n\n", eventType, buf.String())
+	if err != nil || n < 0 {
+		slog.Warn("agent: sse write failed (client disconnected?)", "error", err)
+		return
+	}
+	flusher.Flush()
 }
 
 func (s *Server) streamText(w http.ResponseWriter, text string, chunkSize int, delayMs time.Duration) {
@@ -394,6 +473,19 @@ func (s *Server) streamText(w http.ResponseWriter, text string, chunkSize int, d
 			end = len(runes)
 		}
 		s.sendSSEEvent(w, "text_delta", string(runes[i:end]))
+		time.Sleep(delayMs)
+	}
+}
+
+// streamTextSafe — 安全版本：检测断连后立即停止
+func (s *Server) streamTextSafe(w http.ResponseWriter, flusher http.Flusher, text string, chunkSize int, delayMs time.Duration) {
+	runes := []rune(text)
+	for i := 0; i < len(runes); i += chunkSize {
+		end := i + chunkSize
+		if end > len(runes) {
+			end = len(runes)
+		}
+		s.sendSSEEventSafe(w, flusher, "text_delta", string(runes[i:end]))
 		time.Sleep(delayMs)
 	}
 }

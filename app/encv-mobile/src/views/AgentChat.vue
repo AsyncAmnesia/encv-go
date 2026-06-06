@@ -105,7 +105,30 @@
     </main>
 
     <footer class="agentChatFooter">
-      <div class="footerInputRow">
+      <!-- "/" 工具选择命令面板 -->
+      <div v-if="showToolPalette" class="tool-palette">
+        <div class="tool-palette-header">
+          <span class="tool-palette-title">{{ t('agent.selectTool') || '选择工具' }}</span>
+        </div>
+        <div
+          v-for="tool in filteredTools"
+          :key="tool.name"
+          class="tool-palette-item"
+          :class="{ 'tool-palette-active': activeToolIndex === filteredTools.indexOf(tool) }"
+          @click="selectTool(tool)"
+        >
+          <ion-icon :icon="tool.icon" class="tool-palette-icon"></ion-icon>
+          <div class="tool-palette-info">
+            <span class="tool-palette-name">{{ tool.name }}</span>
+            <span class="tool-palette-desc">{{ tool.desc }}</span>
+          </div>
+        </div>
+        <div v-if="filteredTools.length === 0" class="tool-palette-empty">
+          {{ t('agent.noMatchingTools') || '无匹配工具' }}
+        </div>
+      </div>
+
+      <div class="footerInputRow" :class="{ 'footerInputRow-palette': showToolPalette }">
         <textarea
           v-model="inputText"
           class="footerInput"
@@ -115,6 +138,7 @@
           @keydown.shift.enter.exact.prevent="handleSend"
           @keydown.meta.enter.exact.prevent="handleSend"
           @keydown.ctrl.enter.exact.prevent="handleSend"
+          @keydown="handleInputKeydown"
           @input="autoResize"
           ref="inputRef"
         ></textarea>
@@ -193,6 +217,11 @@ import {
   stopOutline,
   chatbubblesOutline,
   timeOutline,
+  documentTextOutline,
+  folderOpenOutline,
+  trashOutline,
+  terminalOutline,
+  searchOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { useAgent, type Decision, type ToolCall } from '@/composables/useAgent'
@@ -228,6 +257,75 @@ const timeIcon = timeOutline
 const historyOpen = ref(false)
 
 const canSend = computed(() => status.value !== 'streaming' && inputText.value.trim().length > 0)
+
+// ─── "/" 工具选择命令面板 ────────────────────────────────
+interface ToolDef {
+  name: string
+  desc: string
+  icon: string
+  keyword: string // 触发关键词
+}
+
+const availableTools: ToolDef[] = [
+  { name: 'list_files',   desc: '列出目录中的文件',    icon: folderOpenOutline, keyword: 'list' },
+  { name: 'read_file',    desc: '读取文件内容',          icon: documentTextOutline, keyword: 'read' },
+  { name: 'delete_file',  desc: '删除文件',              icon: trashOutline, keyword: 'delete' },
+  { name: 'exec_command', desc: '执行 shell 命令',       icon: terminalOutline, keyword: 'exec' },
+  { name: 'web_search',   desc: '搜索网络信息',          icon: searchOutline, keyword: 'search' },
+]
+
+const showToolPalette = computed(() => {
+  const text = inputText.value.trim()
+  // 仅当输入以 "/" 开头且不超过 20 字符时显示（防止长文本误触发）
+  return text.startsWith('/') && text.length <= 20 && text.length > 0
+})
+
+const filteredTools = computed(() => {
+  const query = inputText.value.trim().slice(1).toLowerCase() // 去掉 "/"
+  if (!query) return availableTools
+  return availableTools.filter((t) =>
+    t.name.toLowerCase().includes(query) ||
+    t.keyword.toLowerCase().includes(query) ||
+    t.desc.toLowerCase().includes(query),
+  )
+})
+
+const activeToolIndex = ref(0)
+
+// 当过滤结果变化时重置选中索引
+watch(filteredTools, () => {
+  activeToolIndex.value = 0
+})
+
+function selectTool(tool: ToolDef) {
+  // 替换输入框中的 "/xxx" 为工具调用提示
+  inputText.value = `@${tool.name}() `
+  autoResize()
+  // 下一步：用户填写参数后发送，后端 AI 解析 @tool_name() 语法
+}
+
+function handleInputKeydown(e: KeyboardEvent) {
+  if (!showToolPalette.value) return
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    activeToolIndex.value = (activeToolIndex.value + 1) % filteredTools.value.length
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    activeToolIndex.value = (activeToolIndex.value - 1 + filteredTools.value.length) % filteredTools.value.length
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    if (filteredTools.value[activeToolIndex.value]) {
+      selectTool(filteredTools.value[activeToolIndex.value])
+    }
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    if (showToolPalette.value) {
+      // 工具面板打开时：仅关闭面板，不清空输入（保留用户已输入内容）
+      inputText.value = ''
+    }
+  }
+}
 
 // ─── 模型选择（动态从 API 获取） ────────────────────────────
 interface ModelOption {
@@ -667,6 +765,87 @@ defineExpose({})
   color: var(--ion-text-color-step-350, #999);
   padding: 2px 0 0;
   user-select: none;
+}
+
+/* ── Tool Palette ("/" 命令面板) ───────────────────────── */
+.tool-palette {
+  background: var(--ion-background-color);
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.25);
+  border-radius: 10px 10px 0 0;
+  margin: 0 12px;
+  max-height: 220px;
+  overflow-y: auto;
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
+  z-index: 10;
+}
+
+.tool-palette-header {
+  padding: 8px 12px 4px;
+  border-bottom: 1px solid rgba(var(--ion-color-medium-rgb), 0.12);
+}
+
+.tool-palette-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ion-text-color-step-400, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tool-palette-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.tool-palette-item:hover,
+.tool-palette-item:active,
+.tool-palette-active {
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
+}
+
+.tool-palette-active {
+  background: rgba(var(--ion-color-primary-rgb), 0.12);
+}
+
+.tool-palette-icon {
+  font-size: 18px;
+  color: var(--ion-color-primary);
+  flex-shrink: 0;
+}
+
+.tool-palette-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.tool-palette-name {
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  color: var(--ion-text-color);
+}
+
+.tool-palette-desc {
+  font-size: 11px;
+  color: var(--ion-text-color-step-400, #888);
+}
+
+.tool-palette-empty {
+  padding: 16px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--ion-text-color-step-350, #999);
+}
+
+.footerInputRow-palette {
+  border-radius: 0 0 12px 12px;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
 }
 
 /* ── History overlay / panel ─────────────────────────── */

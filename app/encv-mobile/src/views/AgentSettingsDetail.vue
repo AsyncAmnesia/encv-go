@@ -65,26 +65,18 @@
               </ion-item>
             </template>
 
-            <!-- openai_api_key：密码输入 + 脱敏显示（保存时自动加密） -->
-            <div v-else-if="child.key === 'openai_api_key'" class="config-field config-field-card">
-              <div class="field-label-row">
-                <ion-icon :icon="key" class="field-icon"></ion-icon>
-                <span class="field-label-text">{{ fieldLabel(child.key, child.required) }}</span>
-              </div>
-              <p v-if="child.description" class="field-description-text">{{ child.description }}</p>
-              <div class="api-key-input-row">
-                <input
-                  :type="apiKeyVisible ? 'text' : 'password'"
-                  class="api-key-input"
-                  :value="apiKeyDisplayValue"
-                  :placeholder="t('agent.apiKeyPlaceholder') || 'sk-...'"
-                  @input="handleApiKeyInput($event)"
-                />
-                <button type="button" class="api-key-toggle" @click="apiKeyVisible = !apiKeyVisible">
-                  <ion-icon :icon="apiKeyVisible ? eyeOffOutline : eyeOutline" />
-                </button>
-              </div>
-            </div>
+            <!-- openai_api_key：使用通用密码输入框（InputWithHistory），保存时自动加密 -->
+            <InputWithHistory
+              v-else-if="child.key === 'openai_api_key'"
+              :model-value="apiKeyPlainValue"
+              :label="fieldLabel(child.key, child.required)"
+              :placeholder="t('agent.apiKeyPlaceholder') || 'sk-...'"
+              :icon="key"
+              input-type="password"
+              :history-key="'config.agent_api_key'"
+              :is-customized="isApiKeyCustomized"
+              @update:model-value="handleApiKeyInput($event)"
+            />
 
             <ConfigFieldItem
               v-else-if="child.key !== 'openai_model'"
@@ -215,7 +207,6 @@ import {
   save as saveIcon, sparklesOutline, cloudOutline, settingsOutline,
   documentText, lockClosed, speedometerOutline, key, globeOutline,
   optionsOutline, listOutline, flashOutline, closeCircleOutline,
-  eyeOutline, eyeOffOutline,
 } from 'ionicons/icons'
 import { useConfig } from '@/composables/useConfig'
 import { useServerStatus } from '@/composables/useServerStatus'
@@ -224,6 +215,7 @@ import { showToast } from '@/composables/useToast'
 import { fetchConfig, updateConfig } from '@/api/encv'
 import type { FieldDef } from '@/config/schemaParser'
 import ConfigFieldItem from '@/components/ConfigFieldItem.vue'
+import InputWithHistory from '@/components/InputWithHistory.vue'
 
 const { isOnline: serverOnline } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue, resetFieldToDefault } = useConfig()
@@ -239,22 +231,50 @@ const flashIcon = flashOutline
 const closeIcon = closeCircleOutline
 
 // ─── API Key 脱敏/加密处理 ────────────────────────────────
-const apiKeyVisible = ref(false)
-const apiKeyPlainValue = ref('') // 用户正在编辑的明文（内存中）
+const apiKeyPlainValue = ref('') // 用户正在编辑的明文（内存中，password input 自动掩码）
 
-// 显示值：已加密的显示 ****，未加密或用户输入中显示实际值（password type 自动掩码）
-const apiKeyDisplayValue = computed(() => {
-  const stored = String(getFieldValue(['agent_settings', 'openai_api_key']) ?? '')
-  // 如果用户正在编辑，显示编辑中的值
-  if (apiKeyPlainValue.value) return apiKeyPlainValue.value
-  // 已加密存储 → 显示占位符
-  if (stored.startsWith('enc:')) return '••••••••••••••••'
-  // 未加密的旧格式 → 原样显示（password input 会自动掩码）
-  return stored
+// 是否已自定义（非默认空值）
+const isApiKeyCustomized = computed(() => {
+  return apiKeyPlainValue.value.length > 0
 })
 
-function handleApiKeyInput(event: Event) {
-  const val = (event.target as HTMLInputElement).value
+/**
+ * 加载配置后自动解密 API Key（如果存储的是加密格式）
+ * 解密后的明文存入 apiKeyPlainValue，由 InputWithHistory(password) 的 type="password" 自动掩码显示
+ */
+async function decryptAndLoadApiKey() {
+  const stored = String(getFieldValue(['agent_settings', 'openai_api_key']) ?? '')
+  if (!stored) {
+    apiKeyPlainValue.value = ''
+    return
+  }
+  if (!stored.startsWith('enc:')) {
+    // 未加密的旧格式：直接使用
+    apiKeyPlainValue.value = stored
+    return
+  }
+  // 加密格式：调用后端解密
+  try {
+    const res = await fetch('/agent-api/api/decrypt-key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ encrypted: stored }),
+    })
+    if (res.ok) {
+      const { decrypted } = await res.json()
+      apiKeyPlainValue.value = decrypted || ''
+    } else {
+      // 解密失败：显示占位符，用户需重新输入
+      console.warn('[AgentSettings] decrypt failed, user must re-enter key')
+      apiKeyPlainValue.value = ''
+    }
+  } catch (e) {
+    console.warn('[AgentSettings] decrypt request failed:', e)
+    apiKeyPlainValue.value = ''
+  }
+}
+
+function handleApiKeyInput(val: string) {
   apiKeyPlainValue.value = val
   setFieldValue(['agent_settings', 'openai_api_key'], val)
 }
@@ -476,6 +496,8 @@ onMounted(async () => {
   if (serverOnline.value) {
     await loadConfig()
     configLoaded.value = true
+    // 解密 API Key 回填到密码框（加密存储 → 解密明文 → password input 自动掩码）
+    await decryptAndLoadApiKey()
     // 动态获取模型列表（不阻塞页面渲染）
     fetchSettingsModels()
   }
@@ -627,13 +649,16 @@ onMounted(async () => {
   margin: 0 0 6px;
 }
 
-/* 动态 preset-cards（与 ConfigFieldItem 保持一致） */
+/* 动态 preset-cards（与 ConfigFieldItem 保持一致，限高滚动） */
 .preset-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
   gap: 8px;
   margin-top: 10px;
   width: 100%;
+  max-height: 280px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 .preset-card {
   padding: 10px 8px;
@@ -659,40 +684,5 @@ onMounted(async () => {
   line-height: 1.3;
 }
 
-/* ── API Key 密码输入框 ─────────────────────────────────── */
-.api-key-input-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-.api-key-input {
-  flex: 1;
-  padding: 8px 10px;
-  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.3);
-  border-radius: 8px;
-  background: var(--ion-background-color);
-  color: var(--ion-text-color);
-  font-size: 13px;
-  font-family: monospace;
-  outline: none;
-  box-sizing: border-box;
-}
-.api-key-input:focus {
-  border-color: var(--ion-color-primary);
-}
-.api-key-toggle {
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.3);
-  border-radius: 8px;
-  background: var(--ion-background-color);
-  color: var(--ion-color-medium);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-}
+/* ── 模型选择器样式（见上方 .preset-cards） ──────────────── */
 </style>
