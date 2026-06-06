@@ -88,6 +88,10 @@ func EncryptApiKey(plaintext string, deviceId ...string) string {
 // DecryptApiKey 解密存储的 API Key（兼容两种格式，可选设备指纹加盐需与加密时一致）
 // 格式 A（Node.js agent-stub）: enc:<base64(iv)>:<base64(ciphertext)>
 // 格式 B（Go EncryptApiKey）:  enc:<base64(iv||ciphertext)>  （IV 和密文拼接后整体 base64）
+//
+// 关键向后兼容：deviceId 功能是后加的，加密历史上曾用「空 deviceId」派生 key。
+// 老用户的存量密文都是这种 legacy 格式——如果当前 deviceId 派生 key 解不出来，
+// 必须 fallback 到无 deviceId 派生再试一次。否则老用户的 AI 功能永远 503。
 func DecryptApiKey(stored string, deviceId ...string) string {
 	if stored == "" {
 		return ""
@@ -97,6 +101,30 @@ func DecryptApiKey(stored string, deviceId ...string) string {
 	}
 	raw := stored[4:]
 
+	// ① 第一次尝试：用调用方提供的 deviceId 派生 key
+	if result := tryDecryptAll(raw, deviceId...); result != "" {
+		return result
+	}
+
+	// ② Fallback：deviceId 非空时，再用「空 deviceId」派生重试
+	//    用途：老密文（deviceId 功能引入前加密，salt = cryptoSalt）解不出来
+	//    的话，这里用旧版相同的 salt 再试一次。这是真正能解出老数据的关键。
+	//    如果两次都解不出 → 真的是损坏的密文或数据被改过。
+	if len(deviceId) > 0 && deviceId[0] != "" {
+		slog.Info("agent: falling back to legacy empty-deviceId decryption")
+		if result := tryDecryptAll(raw); result != "" {
+			return result
+		}
+	}
+
+	slog.Warn("agent: all decrypt formats exhausted (incl. legacy fallback)")
+	return ""
+}
+
+// tryDecryptAll 用给定 deviceId 派生 key，对 raw 依次尝试格式 A 和格式 B。
+// 抽出成独立函数是为了让 DecryptApiKey 能用同一个 deviceId 集合做"第一次尝试"
+// 和"legacy fallback"两次调用，避免逻辑重复。
+func tryDecryptAll(raw string, deviceId ...string) string {
 	// ── 尝试格式 A：冒号分隔（Node.js 兼容）────────
 	if strings.Contains(raw, ":") {
 		parts := strings.SplitN(raw, ":", 2)
@@ -112,18 +140,11 @@ func DecryptApiKey(stored string, deviceId ...string) string {
 	// ── 尝试格式 B：Go 单段 base64（iv || ciphertext 拼接）──
 	combined, err := base64.StdEncoding.DecodeString(raw)
 	if err != nil || len(combined) < aes.BlockSize+1 {
-		slog.Warn("agent: decrypt format-B base64 failed", "error", err, "len", len(raw))
 		return ""
 	}
 	iv := combined[:aes.BlockSize]
 	ct := combined[aes.BlockSize:]
-	result := tryDecrypt(iv, ct, deviceId...)
-	if result != "" {
-		return result
-	}
-
-	slog.Warn("agent: all decrypt formats exhausted")
-	return ""
+	return tryDecrypt(iv, ct, deviceId...)
 }
 
 func tryDecryptParts(ivB64, ctB64 string, deviceId ...string) string {
