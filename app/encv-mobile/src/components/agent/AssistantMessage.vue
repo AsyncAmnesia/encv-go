@@ -12,7 +12,7 @@
       :variant="streaming ? 'streaming' : 'default'"
     />
     <div class="assistantMessageBody">
-      <MarkdownStream :source="text" :streaming="streaming" />
+      <MarkdownStream :content="text" :streaming="streaming" />
     </div>
   </div>
 </template>

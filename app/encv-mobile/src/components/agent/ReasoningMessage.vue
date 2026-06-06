@@ -11,7 +11,7 @@
       <ion-icon :icon="expanded ? chevronUp : chevronDown" class="reasoningChevron" />
     </div>
     <div v-if="expanded" class="reasoningBody">
-      <MarkdownStream :source="text" :streaming="false" />
+      <MarkdownStream :content="text" :streaming="false" />
     </div>
   </div>
 </template>
