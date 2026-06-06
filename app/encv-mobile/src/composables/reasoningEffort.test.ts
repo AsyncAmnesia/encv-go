@@ -210,7 +210,7 @@ describe('i18nKeyFor', () => {
 
   describe('与 normalize 联用', () => {
     it('normalize → i18nKeyFor 链路对所有别名都正确', () => {
-      const cases: Array<[string, string]> = [
+      const cases: Array<[unknown, string]> = [
         ['low', 'agent.reasoningEffort.low'],
         ['LOW', 'agent.reasoningEffort.low'],
         ['minimal', 'agent.reasoningEffort.low'],

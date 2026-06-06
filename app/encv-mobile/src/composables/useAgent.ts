@@ -1076,7 +1076,9 @@ export function useAgent() {
             '[useAgent] compaction: replaced',
             data.replaced_message_count,
             'messages @',
-            new Date(data.triggered_at_ms).toISOString(),
+            data.triggered_at_ms
+              ? new Date(data.triggered_at_ms).toISOString()
+              : '(no timestamp)',
           )
         }
         break

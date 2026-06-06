@@ -26,14 +26,6 @@ function makeFile(name: string, sizeBytes: number, mimeType = ''): File {
   return new File([content], name, { type: mimeType })
 }
 
-/**
- * 等待所有 pending 微任务 resolve（addFiles 内部用 FileReader 异步读）
- */
-async function flushMicrotasks() {
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  await new Promise((resolve) => setTimeout(resolve, 0))
-}
-
 describe('useAttachments.addFiles', () => {
   it('adds image files (mime image/*)', async () => {
     const { attachments, addFiles } = useAttachments()
@@ -160,7 +152,7 @@ describe('useAttachments.serialize', () => {
   })
 
   it('serializes text + image + file in OpenAI multimodal order', async () => {
-    const { attachments, addFiles, serialize } = useAttachments()
+    const { addFiles, serialize } = useAttachments()
     await addFiles([
       makeFile('photo.png', 100, 'image/png'),
       makeFile('doc.pdf', 100, 'application/pdf'),
@@ -176,7 +168,7 @@ describe('useAttachments.serialize', () => {
   })
 
   it('omits text element when text is empty (attachments only)', async () => {
-    const { attachments, addFiles, serialize } = useAttachments()
+    const { addFiles, serialize } = useAttachments()
     await addFiles([makeFile('a.png', 100, 'image/png')])
     const parts = serialize('')
     expect(parts.length).toBe(1)

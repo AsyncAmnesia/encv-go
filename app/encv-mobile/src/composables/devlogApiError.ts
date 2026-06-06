@@ -26,6 +26,12 @@ export type ApiErrorKind =
   | 'fetch-models'    // GET  /api/models
   | 'test'            // GET  /test
   | 'roundtrip'       // 本地合成：encrypt → decrypt 验证一致性
+  | 'sync-doctor'     // GET  /api/sync/doctor
+  | 'sync-doctor-copy' // 用户点击 "复制诊断 JSON" 失败
+  | 'lan-access'      // GET  /api/network/lan-access
+  | 'fork'            // POST /api/agent/fork
+  | 'replay'          // POST /api/agent/replay
+  | 'skills'          // GET  /api/skills
   | 'unknown'
 
 export interface ApiErrorContext {

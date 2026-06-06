@@ -26,6 +26,7 @@ import {
   type ToolCall,
   CONTEXT_COMPACTION_MARKER,
 } from './useAgent'
+import type { MessageContentPart } from './useAttachments'
 
 /** 单条 todo，源自 plan tool (write_todos) 的 args JSON。 */
 export interface PlanTodo {
@@ -120,6 +121,20 @@ export const AGENT_TASK_COLLAPSE_LINE_COUNT = 7
 export const AGENT_TASK_COLLAPSE_CHAR_COUNT = 520
 
 /**
+ * 把 Message.content（string | MessageContentPart[] | undefined）规整为字符串。
+ * 仅取首个 text 段；其余类型（image_url / file）以占位符 [附件] 兜底。
+ * 缺失或非文本时返回空字符串。
+ */
+function contentToText(content: string | MessageContentPart[] | undefined): string {
+  if (!content) return ''
+  if (typeof content === 'string') return content
+  for (const part of content) {
+    if (part.type === 'text' && part.text) return part.text
+  }
+  return ''
+}
+
+/**
  * renderTurnItems 纯函数
  * 1. 单条 user / assistant / error / reasoning → 直接产出 item
  * 2. 累积连续 toolCall（command/fileChange/readOnly）→ operationGroup
@@ -196,7 +211,7 @@ export function renderTurnItems(
     if (msg.role === 'user') {
       flushOpGroup(true)
       flushWebGroup()
-      out.push({ type: 'user', messageId: `u-${idx}`, text: msg.content })
+      out.push({ type: 'user', messageId: `u-${idx}`, text: contentToText(msg.content) })
       // user 消息携带 error → 紧跟一个错误项（每条消息独立错误状态）
       if (msg.error) {
         out.push({ type: 'error', messageId: `uerr-${idx}`, text: msg.error, messageIndex: idx })
@@ -251,11 +266,12 @@ export function renderTurnItems(
           continue
         }
       }
-      if (msg.content && msg.content.trim().length > 0) {
+      const contentText = contentToText(msg.content)
+      if (contentText && contentText.trim().length > 0) {
         out.push({
           type: 'assistantText',
           messageId: `a-${idx}`,
-          text: msg.content,
+          text: contentText,
           streaming,
         })
       }

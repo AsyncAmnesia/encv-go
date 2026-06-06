@@ -811,7 +811,8 @@ async function handleRunSyncDoctor() {
     doctorIssuesCount.value = Array.isArray(report?.issues) ? report.issues.length : 0
     devlogApiInfo(`sync doctor OK (${doctorIssuesCount.value} issues)`, {
       kind: 'sync-doctor',
-      version: report?.version,
+      endpoint: '/api/sync/doctor',
+      extra: { version: report?.version },
     })
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)
@@ -842,7 +843,7 @@ async function handleCopyDoctorJson() {
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e)
     showToast({ message: t('agent.syncDoctorCopyFailed') + ': ' + detail, duration: 2000, color: 'danger' })
-    devlogApiError(e, { kind: 'sync-doctor-copy' })
+    devlogApiError(e, { kind: 'sync-doctor-copy', endpoint: 'clipboard' })
   }
 }
 
