@@ -186,7 +186,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { IonIcon, modalController, alertController } from '@ionic/vue'
 import {
   closeOutline,
@@ -364,7 +364,6 @@ function scrollToBottom(behavior: 'auto' | 'smooth' = 'smooth') {
 }
 
 // 监听 status 变化 → streaming 开始时滚动到底部
-import { watch } from 'vue'
 watch(
   () => status.value,
   (newStatus) => {
@@ -549,5 +548,263 @@ defineExpose({})
 
 .footerStopBtn {
   background: var(--ion-color-danger);
+}
+
+/* ── Toolbar (model / temperature) ─────────────────── */
+.agentChatToolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: rgba(var(--ion-color-medium-rgb), 0.06);
+  border-bottom: 1px solid rgba(var(--ion-color-medium-rgb), 0.12);
+  flex-shrink: 0;
+}
+
+.toolbarField {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.toolbarFieldNarrow {
+  min-width: 70px;
+}
+
+.toolbarLabel {
+  color: var(--ion-text-color-step-400, #888);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.toolbarSelect {
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.25);
+  background: var(--ion-background-color);
+  color: var(--ion-text-color);
+  outline: none;
+  max-width: 160px;
+}
+
+.toolbarInput {
+  width: 52px;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.25);
+  background: var(--ion-background-color);
+  color: var(--ion-text-color);
+  outline: none;
+  text-align: center;
+}
+
+/* ── Error bar ──────────────────────────────────────── */
+.agentChatError {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 12px;
+  padding: 8px 12px;
+  background: rgba(var(--ion-color-danger-rgb), 0.08);
+  border: 1px solid rgba(var(--ion-color-danger-rgb), 0.25);
+  border-radius: 10px;
+  font-size: 13px;
+  animation: errorSlideIn 0.25s ease-out;
+}
+
+@keyframes errorSlideIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.errorIcon {
+  color: var(--ion-color-danger);
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.errorContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.errorTitle {
+  font-weight: 600;
+  font-size: 12px;
+  margin: 0 0 2px;
+  color: var(--ion-text-color);
+}
+
+.errorMessage {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ion-color-danger);
+  word-break: break-word;
+}
+
+.errorRetry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ion-color-primary);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.errorDismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ion-text-color-step-400);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ── Footer hint ─────────────────────────────────────── */
+.footerHint {
+  text-align: center;
+  font-size: 11px;
+  color: var(--ion-text-color-step-350, #999);
+  padding: 2px 0 0;
+  user-select: none;
+}
+
+/* ── History overlay / panel ─────────────────────────── */
+.historyOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: historyFadeIn 0.18s ease-out;
+}
+
+@keyframes historyFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.historyPanel {
+  width: 100%;
+  max-width: 420px;
+  max-height: 60vh;
+  background: var(--ion-background-color);
+  border-radius: 16px 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.2);
+}
+
+.historyHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(var(--ion-color-medium-rgb), 0.15);
+  flex-shrink: 0;
+}
+
+.historyHeader h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.historyList {
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px 0;
+}
+
+.historyItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.historyItem:hover,
+.historyItem:active {
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
+}
+
+.historyItemActive {
+  background: rgba(var(--ion-color-primary-rgb), 0.1);
+}
+
+.historyItemActive .historyItemTitle {
+  font-weight: 600;
+}
+
+.historyItemIcon {
+  font-size: 22px;
+  color: var(--ion-color-primary);
+  flex-shrink: 0;
+}
+
+.historyItemMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.historyItemTitle {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ion-text-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.historyItemMeta {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--ion-text-color-step-400);
+}
+
+.historyItemDelete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ion-text-color-step-350);
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.historyItem:hover .historyItemDelete {
+  opacity: 1;
+}
+
+.historyEmpty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--ion-text-color-step-350);
+  font-size: 13px;
 }
 </style>

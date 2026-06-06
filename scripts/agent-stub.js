@@ -149,6 +149,16 @@ async function handleResume(req, res) {
   res.end()
 }
 
+async function handleTest(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+  res.end(JSON.stringify({
+    openai: 'ok',
+    openlist: 'ok',
+    model: 'gpt-4o-mini (stub)',
+    note: 'agent-stub mock response — real agent pending',
+  }))
+}
+
 const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/__agent/health') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
