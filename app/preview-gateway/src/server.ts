@@ -98,16 +98,19 @@ const UPSTREAMS: Upstream[] = [
     pathRewrite: (p) => p.replace(/^\/openlist(?=\/|$)/, '') || '/',
   },
   {
-    // /agent-api 是 in-process AI agent (Go, :5245) 的 SSE 端点
-    //   POST /agent-api/api/chat    — 发起对话 (SSE)
-    //   POST /agent-api/api/confirm — 4-决策确认 (SSE)
-    //   POST /agent-api/api/resume  — 断点续传 (SSE)
-    // pathRewrite 把 /agent-api/* 剥成 /* 转发到 Go agent 命名空间
+    // /agent-api → encv-go (:2025) — AI agent 端点已集成到主后端
+    //   GET  /agent-api/api/models     — 模型列表（从供应商 API 动态获取）
+    //   POST /agent-api/api/encrypt-key — API Key 加密
+    //   GET/POST /agent-api/test       — 测试连接
+    //   POST /agent-api/api/chat      — 发起对话 (SSE)
+    //   POST /agent-api/api/confirm   — 4-决策确认 (SSE)
+    //   POST /agent-api/api/resume    — 断点续传 (SSE)
+    // pathRewrite 把 /agent-api/* 剥成 /* 转发到 encv-go
     match: '/agent-api',
-    target: 'http://127.0.0.1:5245',
-    wsTarget: 'ws://127.0.0.1:5245',
-    name: 'agent-go',
-    hint: 'Check pm2 status for agent-go (:5245) — in-process AI agent (Go)',
+    target: 'http://127.0.0.1:2025',
+    wsTarget: 'ws://127.0.0.1:2025',
+    name: 'encv-go-agent',
+    hint: 'Agent routes integrated in encv-go (:2025)',
     pathRewrite: (p) => p.replace(/^\/agent-api(?=\/|$)/, '') || '/',
   },
   {
