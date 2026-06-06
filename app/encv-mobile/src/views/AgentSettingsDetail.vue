@@ -78,6 +78,51 @@
               @update:model-value="handleApiKeyInput($event)"
             />
 
+            <!-- API Key 状态徽标 + 后端 base + 测试按钮（紧跟 input 显示） -->
+            <ion-item v-if="child.key === 'openai_api_key'" lines="none" class="apiKeyStatusItem">
+              <ion-icon :icon="bugIcon" slot="start" class="apiKeyStatusIcon"></ion-icon>
+              <ion-label class="ion-text-wrap">
+                <div class="apiKeyStatusRow">
+                  <ion-badge :color="apiKeyStatusBadge.color" class="apiKeyStatusBadge">
+                    <ion-icon
+                      v-if="apiKeyStatusBadge.spinning"
+                      :icon="apiKeyStatusBadge.icon"
+                      class="apiKeyStatusBadgeIcon"
+                    ></ion-icon>
+                    <ion-icon
+                      v-else
+                      :icon="apiKeyStatusBadge.icon"
+                      class="apiKeyStatusBadgeIcon"
+                    ></ion-icon>
+                    <span class="apiKeyStatusBadgeText">{{ apiKeyStatusBadge.label }}</span>
+                  </ion-badge>
+                  <ion-spinner v-if="roundtripRunning" name="crescent" class="apiKeySpinner"></ion-spinner>
+                </div>
+                <p v-if="apiKeyStatusDetail" class="apiKeyStatusDetail">{{ apiKeyStatusDetail }}</p>
+                <p class="apiKeyBackendLine">
+                  <span class="apiKeyBackendLabel">{{ t('agent.apiKeyBackendLabel') }}:</span>
+                  <code class="apiKeyBackendBase">{{ agentApiBaseCtx.base }}</code>
+                  <span class="apiKeyBackendSource">({{ agentApiBaseLabel }})</span>
+                </p>
+              </ion-label>
+              <ion-button
+                slot="end"
+                size="small"
+                fill="outline"
+                :disabled="roundtripRunning"
+                @click="handleRoundtripTest"
+              >
+                <ion-icon :icon="refreshIcon" slot="start"></ion-icon>
+                {{ t('agent.apiKeyActionRoundtrip') }}
+              </ion-button>
+            </ion-item>
+            <ion-item v-if="child.key === 'openai_api_key' && apiKeyStatusDetail" lines="none">
+              <ion-button slot="end" size="small" fill="clear" color="medium" @click="goToDevLogs">
+                <ion-icon :icon="bugIcon" slot="start"></ion-icon>
+                {{ t('agent.apiKeyViewLogs') }}
+              </ion-button>
+            </ion-item>
+
             <ConfigFieldItem
               v-else-if="child.key !== 'openai_model'"
               :field="child"
@@ -200,13 +245,15 @@ import { ref, computed, onMounted } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonBackButton, IonContent, IonList, IonListHeader, IonItem,
-  IonIcon, IonLabel, IonInput, IonSpinner, IonModal,
-  IonNote, IonChip,
+  IonIcon, IonLabel, IonInput, IonSpinner, IonModal, IonNote, IonChip,
+  IonBadge,
 } from '@ionic/vue'
 import {
   save as saveIcon, sparklesOutline, cloudOutline, settingsOutline,
   documentText, lockClosed, speedometerOutline, key, globeOutline,
   optionsOutline, listOutline, flashOutline, closeCircleOutline,
+  checkmarkCircle, lockOpenOutline, alertCircleOutline,
+  refreshOutline, bugOutline,
 } from 'ionicons/icons'
 import { useConfig } from '@/composables/useConfig'
 import { useServerStatus } from '@/composables/useServerStatus'
@@ -214,13 +261,17 @@ import { useI18n } from '@/composables/useI18n'
 import { showToast } from '@/composables/useToast'
 import { getDeviceId } from '@/composables/useDeviceId'
 import { fetchConfig, updateConfig } from '@/api/encv'
+import { getAgentApiBase, getAgentApiBaseContext } from '@/composables/useAgentApiBase'
+import { devlogApiError, devlogApiInfo } from '@/composables/devlogApiError'
 import type { FieldDef } from '@/config/schemaParser'
 import ConfigFieldItem from '@/components/ConfigFieldItem.vue'
 import InputWithHistory from '@/components/InputWithHistory.vue'
+import { useRouter } from 'vue-router'
 
 const { isOnline: serverOnline } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue, resetFieldToDefault } = useConfig()
 const { t, tField } = useI18n()
+const router = useRouter()
 
 const configLoaded = ref(false)
 const testing = ref(false)
@@ -230,8 +281,30 @@ const testResultSuccess = ref(false)
 const listIcon = listOutline
 const flashIcon = flashOutline
 const closeIcon = closeCircleOutline
+const lockOpenIcon = lockOpenOutline
+const lockIcon = lockClosed
+const checkmarkIcon = checkmarkCircle
+const alertIcon = alertCircleOutline
+const refreshIcon = refreshOutline
+const bugIcon = bugOutline
 
-// ─── API Key 脱敏/加密处理 ────────────────────────────────
+// ─── API Key 状态机（spec F.3 状态反馈 UI）────────────────────
+type ApiKeyStatus =
+  | 'empty'           // 未配置
+  | 'plaintext'       // 加载到明文（明文储存格式或刚解密回填）
+  | 'encrypted'       // 已加密储存（enc:xxx）
+  | 'decrypting'      // 解密中
+  | 'encrypting'      // 加密中
+  | 'decrypt-failed'  // 解密失败
+  | 'encrypt-failed'  // 加密失败
+  | 'test-failed'     // 连通性测试失败
+  | 'roundtrip-ok'    // 往返测试成功
+  | 'roundtrip-mismatch' // 往返测试不一致
+
+const apiKeyStatus = ref<ApiKeyStatus>('empty')
+const apiKeyStatusDetail = ref('') // 详细错误信息（用于展开）
+const roundtripRunning = ref(false)
+
 const apiKeyPlainValue = ref('') // 用户正在编辑的明文（内存中，password input 自动掩码）
 
 // 是否已自定义（非默认空值）
@@ -239,25 +312,81 @@ const isApiKeyCustomized = computed(() => {
   return apiKeyPlainValue.value.length > 0
 })
 
+// 状态徽标展示
+const apiKeyStatusBadge = computed(() => {
+  switch (apiKeyStatus.value) {
+    case 'empty':
+      return { color: 'medium' as const, icon: lockOpenIcon, label: t('agent.apiKeyStatusEmpty') }
+    case 'plaintext':
+      return { color: 'warning' as const, icon: lockOpenIcon, label: t('agent.apiKeyStatusPlaintext') }
+    case 'encrypted':
+      return { color: 'success' as const, icon: lockIcon, label: t('agent.apiKeyStatusEncrypted') }
+    case 'decrypting':
+      return { color: 'primary' as const, icon: refreshIcon, label: t('agent.apiKeyStatusDecrypting'), spinning: true }
+    case 'encrypting':
+      return { color: 'primary' as const, icon: refreshIcon, label: t('agent.apiKeyStatusEncrypting'), spinning: true }
+    case 'decrypt-failed':
+      return { color: 'danger' as const, icon: alertIcon, label: t('agent.apiKeyStatusDecryptFailed') }
+    case 'encrypt-failed':
+      return { color: 'danger' as const, icon: alertIcon, label: t('agent.apiKeyStatusEncryptFailed') }
+    case 'test-failed':
+      return { color: 'danger' as const, icon: alertIcon, label: t('agent.apiKeyStatusTestFailed') }
+    case 'roundtrip-ok':
+      return { color: 'success' as const, icon: checkmarkIcon, label: t('agent.apiKeyStatusRoundtripOk') }
+    case 'roundtrip-mismatch':
+      return { color: 'danger' as const, icon: alertIcon, label: t('agent.apiKeyStatusRoundtripMismatch') }
+    default:
+      return { color: 'medium' as const, icon: lockOpenIcon, label: '' }
+  }
+})
+
+// Agent API base 当前解析（用于 UI 展示"实际打到哪里"）
+const agentApiBaseCtx = computed(() => getAgentApiBaseContext())
+const agentApiBaseLabel = computed(() => {
+  switch (agentApiBaseCtx.value.source) {
+    case 'dev-gateway':       return t('agent.apiKeyBackendDev')
+    case 'native-default':    return t('agent.apiKeyBackendNative')
+    case 'user-configured':   return t('agent.apiKeyBackendUser')
+    case 'web-fallback':      return t('agent.apiKeyBackendFallback')
+  }
+})
+
 /**
  * 加载配置后自动解密 API Key（如果存储的是加密格式）
  * 解密后的明文存入 apiKeyPlainValue，由 InputWithHistory(password) 的 type="password" 自动掩码显示
+ *
+ * 状态机驱动：
+ *   - 'empty'      → 没存
+ *   - 'plaintext'  → 存的是明文（旧数据或 dev 模式手动）
+ *   - 'decrypting' → 正在调 /api/decrypt-key
+ *   - 'encrypted'  → 解密成功（明文已回填到 input 内存）
+ *   - 'decrypt-failed' → /api/decrypt-key 返回非 2xx
  */
 async function decryptAndLoadApiKey() {
   const stored = String(getFieldValue(['agent_settings', 'openai_api_key']) ?? '')
+
+  // 1. 决定初始状态（不依赖 network）
   if (!stored) {
     apiKeyPlainValue.value = ''
+    apiKeyStatus.value = 'empty'
+    apiKeyStatusDetail.value = ''
     return
   }
   if (!stored.startsWith('enc:')) {
-    // 未加密的旧格式：直接使用
+    // 明文存储 → 不需要网络，但提示"未加密"以防误以为是加密的
     apiKeyPlainValue.value = stored
+    apiKeyStatus.value = 'plaintext'
+    apiKeyStatusDetail.value = 'Stored without enc: prefix; encryption skipped on save'
     return
   }
-  // 加密格式：调用后端解密
+
+  // 2. encrypted 格式 → 调 /api/decrypt-key
+  apiKeyStatus.value = 'decrypting'
+  apiKeyStatusDetail.value = ''
+  let deviceId = ''
   try {
-    const deviceId = await getDeviceId()
-    const res = await fetch('/agent-api/api/decrypt-key', {
+    deviceId = await getDeviceId()
+    const res = await fetch(`${getAgentApiBase()}/api/decrypt-key`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ encrypted: stored, deviceId }),
@@ -265,14 +394,34 @@ async function decryptAndLoadApiKey() {
     if (res.ok) {
       const { decrypted } = await res.json()
       apiKeyPlainValue.value = decrypted || ''
+      apiKeyStatus.value = 'encrypted'
+      apiKeyStatusDetail.value = ''
+      devlogApiInfo(`decrypt-key OK (${(decrypted || '').length} chars)`, { kind: 'decrypt' })
     } else {
-      // 解密失败：显示占位符，用户需重新输入
-      console.warn('[AgentSettings] decrypt failed, user must re-enter key')
+      let body = ''
+      try { body = await res.text() } catch { /* ignore */ }
+      const detail = `HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ''}`
       apiKeyPlainValue.value = ''
+      apiKeyStatus.value = 'decrypt-failed'
+      apiKeyStatusDetail.value = detail
+      devlogApiError(new Error(`decrypt-key ${detail}`), {
+        kind: 'decrypt',
+        endpoint: '/api/decrypt-key',
+        status: res.status,
+        body,
+        deviceId,
+      })
     }
   } catch (e) {
-    console.warn('[AgentSettings] decrypt request failed:', e)
+    const detail = e instanceof Error ? e.message : String(e)
     apiKeyPlainValue.value = ''
+    apiKeyStatus.value = 'decrypt-failed'
+    apiKeyStatusDetail.value = detail
+    devlogApiError(e, {
+      kind: 'decrypt',
+      endpoint: '/api/decrypt-key',
+      deviceId,
+    })
   }
 }
 
@@ -391,9 +540,13 @@ async function handleSaveConfig() {
     // 保存前加密 API Key（防止明文写入 config.user.json）
     const rawKey = String(getFieldValue(['agent_settings', 'openai_api_key']) ?? '')
     if (rawKey && !rawKey.startsWith('enc:')) {
+      // 状态：开始加密
+      apiKeyStatus.value = 'encrypting'
+      apiKeyStatusDetail.value = ''
+      let deviceId = ''
       try {
-        const deviceId = await getDeviceId()
-        const encRes = await fetch('/agent-api/api/encrypt-key', {
+        deviceId = await getDeviceId()
+        const encRes = await fetch(`${getAgentApiBase()}/api/encrypt-key`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key: rawKey, deviceId }),
@@ -402,9 +555,33 @@ async function handleSaveConfig() {
           const { encrypted } = await encRes.json()
           setFieldValue(['agent_settings', 'openai_api_key'], encrypted)
           apiKeyPlainValue.value = '' // 清除明文缓存
+          apiKeyStatus.value = 'encrypted'
+          apiKeyStatusDetail.value = ''
+          devlogApiInfo(`encrypt-key OK (${encrypted.length} chars)`, { kind: 'encrypt' })
+        } else {
+          let body = ''
+          try { body = await encRes.text() } catch { /* ignore */ }
+          const detail = `HTTP ${encRes.status}${body ? `: ${body.slice(0, 200)}` : ''}`
+          apiKeyStatus.value = 'encrypt-failed'
+          apiKeyStatusDetail.value = detail
+          devlogApiError(new Error(`encrypt-key ${detail}`), {
+            kind: 'encrypt',
+            endpoint: '/api/encrypt-key',
+            status: encRes.status,
+            body,
+            deviceId,
+          })
+          // 不抛：让用户至少能把明文存下来（降级路径），但状态徽标已变红
         }
       } catch (e) {
-        console.warn('[AgentSettings] encrypt key failed, saving as-is:', e)
+        const detail = e instanceof Error ? e.message : String(e)
+        apiKeyStatus.value = 'encrypt-failed'
+        apiKeyStatusDetail.value = detail
+        devlogApiError(e, {
+          kind: 'encrypt',
+          endpoint: '/api/encrypt-key',
+          deviceId,
+        })
       }
     }
     await saveConfig()
@@ -413,6 +590,102 @@ async function handleSaveConfig() {
     const detail = e instanceof Error ? e.message : String(e)
     showToast({ message: t('settings.configSaveFailed') + ': ' + detail, duration: 3000, color: 'danger' })
   }
+}
+
+/**
+ * 往返测试：明文 → /encrypt-key → /decrypt-key → 比对原文
+ *
+ * 用于诊断"加密看似成功但解密时数据丢失 / 哈希被改" 等问题。
+ * 与 handleSaveConfig 完全独立：不修改任何持久化数据。
+ */
+async function handleRoundtripTest() {
+  const rawKey = apiKeyPlainValue.value || String(getFieldValue(['agent_settings', 'openai_api_key']) ?? '').replace(/^enc:/, '')
+  if (!rawKey) {
+    showToast({ message: t('agent.apiKeyStatusEmpty'), duration: 1500, color: 'warning' })
+    return
+  }
+  roundtripRunning.value = true
+  apiKeyStatus.value = 'encrypting'
+  apiKeyStatusDetail.value = ''
+
+  let deviceId = ''
+  try {
+    deviceId = await getDeviceId()
+    // 1. encrypt
+    const encRes = await fetch(`${getAgentApiBase()}/api/encrypt-key`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: rawKey, deviceId }),
+    })
+    if (!encRes.ok) {
+      let body = ''
+      try { body = await encRes.text() } catch { /* ignore */ }
+      const detail = `encrypt HTTP ${encRes.status}${body ? `: ${body.slice(0, 200)}` : ''}`
+      apiKeyStatus.value = 'encrypt-failed'
+      apiKeyStatusDetail.value = detail
+      devlogApiError(new Error(detail), {
+        kind: 'roundtrip',
+        endpoint: '/api/encrypt-key',
+        status: encRes.status,
+        body,
+        deviceId,
+      })
+      return
+    }
+    const { encrypted } = await encRes.json()
+    devlogApiInfo(`roundtrip encrypt → ${encrypted.length} chars`, { kind: 'roundtrip' })
+
+    // 2. decrypt
+    apiKeyStatus.value = 'decrypting'
+    const decRes = await fetch(`${getAgentApiBase()}/api/decrypt-key`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ encrypted, deviceId }),
+    })
+    if (!decRes.ok) {
+      let body = ''
+      try { body = await decRes.text() } catch { /* ignore */ }
+      const detail = `decrypt HTTP ${decRes.status}${body ? `: ${body.slice(0, 200)}` : ''}`
+      apiKeyStatus.value = 'decrypt-failed'
+      apiKeyStatusDetail.value = detail
+      devlogApiError(new Error(detail), {
+        kind: 'roundtrip',
+        endpoint: '/api/decrypt-key',
+        status: decRes.status,
+        body,
+        deviceId,
+      })
+      return
+    }
+    const { decrypted } = await decRes.json()
+
+    // 3. 比对
+    if (decrypted === rawKey) {
+      apiKeyStatus.value = 'roundtrip-ok'
+      apiKeyStatusDetail.value = `${rawKey.length} chars match`
+      devlogApiInfo('roundtrip OK', { kind: 'roundtrip' })
+    } else {
+      apiKeyStatus.value = 'roundtrip-mismatch'
+      apiKeyStatusDetail.value = `original=${rawKey.length} chars, decrypted=${(decrypted || '').length} chars`
+      devlogApiError(new Error('roundtrip mismatch'), {
+        kind: 'roundtrip',
+        endpoint: '/api/decrypt-key',
+        deviceId,
+        extra: { originalLen: rawKey.length, decryptedLen: (decrypted || '').length },
+      })
+    }
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    apiKeyStatus.value = 'test-failed'
+    apiKeyStatusDetail.value = detail
+    devlogApiError(e, { kind: 'roundtrip', endpoint: '/api/encrypt-key', deviceId })
+  } finally {
+    roundtripRunning.value = false
+  }
+}
+
+function goToDevLogs() {
+  router.push('/tabs/devlogs')
 }
 
 function handleResetConfig() {
@@ -688,4 +961,76 @@ onMounted(async () => {
 }
 
 /* ── 模型选择器样式（见上方 .preset-cards） ──────────────── */
+
+/* ── API Key 状态徽标 ─────────────────────────── */
+.apiKeyStatusItem {
+  --min-height: 0;
+  --padding-start: 16px;
+  --padding-end: 16px;
+  --inner-padding-end: 0;
+  margin-top: 4px;
+}
+.apiKeyStatusIcon {
+  color: var(--ion-color-medium);
+  font-size: 18px;
+  align-self: flex-start;
+  margin-top: 4px;
+}
+.apiKeyStatusRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.apiKeyStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 10px;
+}
+.apiKeyStatusBadgeIcon {
+  font-size: 12px;
+}
+.apiKeyStatusBadgeText {
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+.apiKeySpinner {
+  width: 14px;
+  height: 14px;
+}
+.apiKeyStatusDetail {
+  font-size: 11px;
+  color: var(--ion-color-medium);
+  font-family: monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 6px 0 0;
+  line-height: 1.4;
+}
+.apiKeyBackendLine {
+  font-size: 11px;
+  color: var(--ion-color-medium);
+  margin: 8px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+}
+.apiKeyBackendLabel {
+  font-weight: 500;
+}
+.apiKeyBackendBase {
+  font-family: monospace;
+  background: rgba(var(--ion-color-medium-rgb), 0.1);
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: var(--ion-text-color);
+}
+.apiKeyBackendSource {
+  color: var(--ion-color-medium);
+  font-style: italic;
+}
 </style>

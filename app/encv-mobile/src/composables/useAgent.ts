@@ -21,6 +21,7 @@
 import { ref } from 'vue'
 import { showToast } from '@/composables/useToast'
 import { getDeviceIdSync } from './useDeviceId'
+import { getAgentApiBase } from './useAgentApiBase'
 
 // =============================================================================
 // 类型定义（与 agent Go 服务契约对齐）
@@ -95,8 +96,8 @@ export interface Message {
 /** 持久化到 localStorage 的 key 前缀 */
 const STORAGE_PREFIX = 'agent:session:'
 
-/** Agent 服务 API 路径（由 preview-gateway :16666 转发到 :5245） */
-const AGENT_API_BASE = '/agent-api'
+/** Agent 服务 API 路径（dev 走 preview-gateway :16666 → :2025；APK 直接 :2025） */
+const AGENT_API_BASE = getAgentApiBase()
 
 /** ToolCall 状态在 tool_status 事件中可能的取值 */
 const TOOL_STATUS_VALUES: ReadonlySet<ToolStatus> = new Set<ToolStatus>([
