@@ -94,11 +94,11 @@ describe('useAgent', () => {
       const { send, messages } = useAgent()
       await send('hi')
 
-      expect(messages.length).toBe(2)
-      expect(messages[0].role).toBe('user')
-      expect(messages[0].content).toBe('hi')
-      expect(messages[1].role).toBe('assistant')
-      expect(messages[1].content).toBe('Hello World')
+      expect(messages.value.length).toBe(2)
+      expect(messages.value[0].role).toBe('user')
+      expect(messages.value[0].content).toBe('hi')
+      expect(messages.value[1].role).toBe('assistant')
+      expect(messages.value[1].content).toBe('Hello World')
     })
 
     it('reasoning_delta 追加到 reasoning 字段', async () => {
@@ -109,7 +109,7 @@ describe('useAgent', () => {
       const { send, messages } = useAgent()
       await send('q')
 
-      const assistant = messages.find((m) => m.role === 'assistant')!
+      const assistant = messages.value.find((m) => m.role === 'assistant')!
       expect(assistant.reasoning).toBe('thinking... ')
       expect(assistant.content).toBe('answer')
     })
@@ -128,7 +128,7 @@ describe('useAgent', () => {
       const { send, messages } = useAgent()
       await send('list files')
 
-      const assistant = messages.find((m) => m.role === 'assistant')!
+      const assistant = messages.value.find((m) => m.role === 'assistant')!
       expect(assistant.tool_calls.length).toBe(1)
       const tc = assistant.tool_calls[0]
       expect(tc.id).toBe('tc-1')
@@ -151,7 +151,7 @@ describe('useAgent', () => {
       const { send, messages } = useAgent()
       await send('list')
 
-      const tc = messages[1].tool_calls[0]
+      const tc = messages.value[1].tool_calls[0]
       expect(tc.needsConfirm).toBe(false)
     })
 
@@ -170,7 +170,7 @@ describe('useAgent', () => {
       const { send, messages } = useAgent()
       await send('run')
 
-      const tc = messages[1].tool_calls[0]
+      const tc = messages.value[1].tool_calls[0]
       expect(tc.status).toBe('success')
     })
 
@@ -195,10 +195,10 @@ describe('useAgent', () => {
       const { send, messages } = useAgent()
       await send('list')
 
-      expect(messages[1].tool_results.length).toBe(1)
-      expect(messages[1].tool_results[0].id).toBe('tc-4')
-      expect(messages[1].tool_results[0].is_error).toBe(false)
-      expect(messages[1].tool_results[0].duration_ms).toBe(42)
+      expect(messages.value[1].tool_results.length).toBe(1)
+      expect(messages.value[1].tool_results[0].id).toBe('tc-4')
+      expect(messages.value[1].tool_results[0].is_error).toBe(false)
+      expect(messages.value[1].tool_results[0].duration_ms).toBe(42)
     })
 
     it('stream_end 把 status 切回 idle（无 pending 确认时）', async () => {
@@ -211,7 +211,7 @@ describe('useAgent', () => {
 
       expect(status.value).toBe('idle')
       // 最后 assistant 消息应标记 isStreaming=false
-      const lastAssistant = messages[messages.length - 1]
+      const lastAssistant = messages.value[messages.value.length - 1]
       expect(lastAssistant.isStreaming).toBe(false)
     })
 
@@ -244,7 +244,7 @@ describe('useAgent', () => {
       const { send, messages, status } = useAgent()
       await send('q')
 
-      expect(messages[1].content).toBe('hi')
+      expect(messages.value[1].content).toBe('hi')
       expect(status.value).toBe('idle')
     })
   })
@@ -266,7 +266,7 @@ describe('useAgent', () => {
       await agent.send('delete')
 
       expect(agent.status.value).toBe('confirming')
-      expect(agent.messages[1].tool_calls[0].id).toBe('tc-x')
+      expect(agent.messages.value[1].tool_calls[0].id).toBe('tc-x')
 
       // 第二次 confirmTool：accept
       const sse2 = sseLine('tool_result', {
@@ -341,9 +341,9 @@ describe('useAgent', () => {
       fetchSpy.mockImplementationOnce(fetchReturningStream(makeSSEStream([sse2])))
       await send('second')
 
-      expect(messages.length).toBe(4) // 2 user + 2 assistant
-      expect(messages[0].content).toBe('first')
-      expect(messages[2].content).toBe('second')
+      expect(messages.value.length).toBe(4) // 2 user + 2 assistant
+      expect(messages.value[0].content).toBe('first')
+      expect(messages.value[2].content).toBe('second')
     })
 
     it('send 期间 status=streaming 时第二次 send 立即返回且不发新请求', async () => {
@@ -371,15 +371,15 @@ describe('useAgent', () => {
       await new Promise((r) => setTimeout(r, 5))
 
       expect(status.value).toBe('streaming')
-      expect(messages.length).toBe(2)
+      expect(messages.value.length).toBe(2)
 
       // 第二次 send：应立即返回（被忽略）
       await send('second')
 
       // fetch 仍只调用一次，messages 仍只有 2 条
       expect(fetchSpy).toHaveBeenCalledTimes(1)
-      expect(messages.length).toBe(2)
-      expect(messages[0].content).toBe('first')
+      expect(messages.value.length).toBe(2)
+      expect(messages.value[0].content).toBe('first')
 
       // 清理：关闭流 + 等第一次 send 完成
       if (streamController) streamController.close()
@@ -433,9 +433,9 @@ describe('useAgent', () => {
       const { resume, messages } = useAgent()
       await resume()
 
-      expect(messages.length).toBe(2)
-      expect(messages[0].content).toBe('prev q')
-      expect(messages[1].content).toBe('prev a')
+      expect(messages.value.length).toBe(2)
+      expect(messages.value[0].content).toBe('prev q')
+      expect(messages.value[1].content).toBe('prev a')
       expect(fetchSpy).not.toHaveBeenCalled()
     })
 
@@ -464,7 +464,7 @@ describe('useAgent', () => {
       expect(body.sessionId).toBe(fakeSessionId)
       expect(body.offset).toBe(2)
 
-      expect(messages[1].content).toBe('partial complete')
+      expect(messages.value[1].content).toBe('partial complete')
       expect(status.value).toBe('idle')
     })
   })
@@ -485,7 +485,7 @@ describe('useAgent', () => {
       await promise
 
       expect(status.value).toBe('idle')
-      expect(messages[1].isStreaming).toBe(false)
+      expect(messages.value[1].isStreaming).toBe(false)
     })
 
     it('reset 清空所有状态 + 删除 localStorage', async () => {
@@ -496,11 +496,11 @@ describe('useAgent', () => {
       const { send, reset, messages, status } = useAgent()
       await send('hi')
 
-      expect(messages.length).toBeGreaterThan(0)
+      expect(messages.value.length).toBeGreaterThan(0)
       expect(localStorage.length).toBeGreaterThan(0)
 
       reset()
-      expect(messages.length).toBe(0)
+      expect(messages.value.length).toBe(0)
       expect(status.value).toBe('idle')
       expect(localStorage.length).toBe(0)
     })
@@ -516,7 +516,7 @@ describe('useAgent', () => {
       expect(mockedShowToast).toHaveBeenCalled()
       expect(status.value).toBe('idle')
       // 流式结束标记
-      expect(messages[1].isStreaming).toBe(false)
+      expect(messages.value[1].isStreaming).toBe(false)
     })
 
     it('无效 JSON SSE payload 静默忽略（不崩溃）', async () => {
@@ -528,7 +528,7 @@ describe('useAgent', () => {
       const { send, messages, status } = useAgent()
       await send('q')
 
-      expect(messages[1].content).toBe('ok')
+      expect(messages.value[1].content).toBe('ok')
       expect(status.value).toBe('idle')
     })
 
@@ -541,8 +541,8 @@ describe('useAgent', () => {
       const { send, messages, status } = useAgent()
       await send('q')
 
-      expect(messages[1].content).toBe('ok')
-      expect(messages[1].tool_calls.length).toBe(0)
+      expect(messages.value[1].content).toBe('ok')
+      expect(messages.value[1].tool_calls.length).toBe(0)
       expect(status.value).toBe('idle')
     })
   })
@@ -556,13 +556,14 @@ describe('useAgent', () => {
         body: null,
       } as Response))
 
-      const { send, status } = useAgent()
+      const { send, status, messages } = useAgent()
       await send('q')
 
-      // body 为 null 时 processSSE 立即返回，stream_end 永远到不了
-      // status 仍保持 streaming（fetch 已 resolve）
-      // 实际生产中这不应该发生，但保证不崩
-      expect(status.value).toBe('streaming')
+      // body 为 null 时 send() 抛出异常 → catch → status=idle + user msg 标记 error
+      expect(status.value).toBe('idle')
+      // 最后一条 user 消息应标记了 error
+      const lastUserMsg = [...messages.value].reverse().find((m) => m.role === 'user')
+      expect(lastUserMsg?.error).toBeTruthy()
     })
   })
 
@@ -586,7 +587,7 @@ describe('useAgent', () => {
 
       expect(status.value).toBe('idle')
       // 流式结束标记
-      expect(messages[1].isStreaming).toBe(false)
+      expect(messages.value[1].isStreaming).toBe(false)
     })
 
     it('resume 时没有 streaming 状态：不发请求', async () => {
@@ -612,7 +613,7 @@ describe('useAgent', () => {
       await resume()
 
       expect(fetchSpy).not.toHaveBeenCalled()
-      expect(messages.length).toBe(0)
+      expect(messages.value.length).toBe(0)
       expect(status.value).toBe('idle')
     })
   })
@@ -643,7 +644,7 @@ describe('useAgent', () => {
       await agent.confirmTool('tc-r', 'accept')
 
       expect(agent.status.value).toBe('confirming')
-      expect(agent.messages[1].tool_calls[0].status).toBe('pending')
+      expect(agent.messages.value[1].tool_calls[0].status).toBe('pending')
       expect(mockedShowToast).toHaveBeenCalled()
     })
   })
@@ -675,13 +676,13 @@ describe('useAgent', () => {
 
       await a.send('for A')
       // A 完成，B 不应有任何消息
-      expect(a.messages.length).toBe(2)
-      expect(b.messages.length).toBe(0)
+      expect(a.messages.value.length).toBe(2)
+      expect(b.messages.value.length).toBe(0)
 
       a.reset()
       // A 清空后 B 仍不变
-      expect(a.messages.length).toBe(0)
-      expect(b.messages.length).toBe(0)
+      expect(a.messages.value.length).toBe(0)
+      expect(b.messages.value.length).toBe(0)
     })
   })
 })

@@ -685,6 +685,7 @@ export function useAgent() {
         const detail = e?.message || String(e)
         console.error('[useAgent] send failed:', detail, e)
         if (lastUserMsg) lastUserMsg.error = detail
+        showToast({ message: detail, duration: 3000, color: 'danger' })
         status.value = 'idle'
         finalizeLastAssistant()
       }
