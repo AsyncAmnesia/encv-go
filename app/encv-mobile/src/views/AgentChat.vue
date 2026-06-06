@@ -28,8 +28,10 @@
     <div class="agentChatToolbar">
       <label class="toolbarField">
         <span class="toolbarLabel">{{ t('agent.model') }}</span>
-        <select v-model="selectedModel" class="toolbarSelect" :disabled="status === 'streaming'">
-          <option v-for="m in availableModels" :key="m.id" :value="m.id">{{ m.label }}</option>
+        <select v-model="selectedModel" class="toolbarSelect" :disabled="status === 'streaming' || modelsLoading">
+          <option v-if="modelsLoading" value="" disabled>{{ t('agent.loadingModels') }}...</option>
+          <option v-else-if="modelsError" value="" disabled>{{ t('agent.modelsError') }}</option>
+          <option v-for="m in availableModels" :key="m.id" :value="m.id">{{ m.name }}</option>
         </select>
       </label>
       <label class="toolbarField toolbarFieldNarrow">
@@ -47,27 +49,7 @@
     </div>
 
     <main class="agentChatMain" ref="mainRef">
-      <!-- 异常状态条：网络错误 / API 不可用 / 流式中断 -->
-      <div v-if="lastError" class="agentChatError" role="alert">
-        <div class="errorBarIcon">
-          <ion-icon :icon="alertIcon" />
-        </div>
-        <div class="errorBarBody">
-          <p class="errorBarTitle">{{ t('agent.errorTitle') }}</p>
-          <p class="errorBarMessage">{{ lastError }}</p>
-        </div>
-        <div class="errorBarActions">
-          <button type="button" class="errorBarRetry" @click="retryLast">
-            <ion-icon :icon="refreshIcon" />
-            <span>{{ t('agent.retry') }}</span>
-          </button>
-          <button type="button" class="errorBarClose" @click="dismissError" :aria-label="t('common.close')">
-            <ion-icon :icon="closeIcon" />
-          </button>
-        </div>
-      </div>
-
-      <!-- 空状态（无错误时显示） -->
+      <!-- 空状态（无错误且无消息时显示） -->
       <div v-if="renderedItems.length === 0 && !lastError" class="agentChatEmpty">
         <ion-icon :icon="chatbubblesIcon" class="emptyIcon" />
         <p>{{ t('agent.emptyHint') }}</p>
@@ -115,6 +97,26 @@
           />
         </div>
       </template>
+
+      <!-- 异常状态条：吸附在消息列表下方（而非固定顶部） -->
+      <div v-if="lastError" class="agentChatError" role="alert">
+        <div class="errorBarIcon">
+          <ion-icon :icon="alertIcon" />
+        </div>
+        <div class="errorBarBody">
+          <p class="errorBarTitle">{{ t('agent.errorTitle') }}</p>
+          <p class="errorBarMessage">{{ lastError }}</p>
+        </div>
+        <div class="errorBarActions">
+          <button type="button" class="errorBarRetry" @click="retryLast">
+            <ion-icon :icon="refreshIcon" />
+            <span>{{ t('agent.retry') }}</span>
+          </button>
+          <button type="button" class="errorBarClose" @click="dismissError" :aria-label="t('common.close')">
+            <ion-icon :icon="closeIcon" />
+          </button>
+        </div>
+      </div>
     </main>
 
     <footer class="agentChatFooter">
@@ -221,6 +223,9 @@ import WebSearchSummaryMessage from '@/components/agent/WebSearchSummaryMessage.
 
 const { t } = useI18n()
 
+// Agent API 基础路径（与 useAgent.ts 保持一致）
+const AGENT_API_BASE = '/agent-api'
+
 const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, lastError, dismissError, retryLast } = useAgent()
 
 const renderedItems = useRenderTurnItems(messages, status)
@@ -243,15 +248,42 @@ const historyOpen = ref(false)
 
 const canSend = computed(() => status.value !== 'streaming' && inputText.value.trim().length > 0)
 
-// ─── 模型选择 ─────────────────────────────────────────────
-const availableModels = [
-  { id: 'gpt-4o-mini', label: 'GPT-4o mini' },
-  { id: 'gpt-4o', label: 'GPT-4o' },
-  { id: 'claude-3-5-sonnet', label: 'Claude 3.5 Sonnet' },
-  { id: 'claude-3-5-haiku', label: 'Claude 3.5 Haiku' },
-  { id: 'ollama:qwen2.5-coder:7b', label: 'Ollama · Qwen2.5-Coder 7B' },
-  { id: 'custom', label: 'Custom…' },
-]
+// ─── 模型选择（动态从 API 获取） ────────────────────────────
+interface ModelOption {
+  id: string
+  name: string
+  provider: string
+}
+
+const availableModels = ref<ModelOption[]>([])
+const modelsLoading = ref(true)
+const modelsError = ref('')
+
+async function fetchModels() {
+  modelsLoading.value = true
+  modelsError.value = ''
+  try {
+    const res = await fetch(`${AGENT_API_BASE}/api/models`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    availableModels.value = (data.models || []).map((m: any) => ({
+      id: m.id,
+      name: m.name || m.id,
+      provider: m.provider || 'unknown',
+    }))
+    // 如果当前选中的模型不在列表中，切换到默认值
+    if (availableModels.value.length > 0 && !availableModels.value.some(m => m.id === selectedModel.value)) {
+      selectedModel.value = data.defaultModel || availableModels.value[0].id
+    }
+  } catch (e: any) {
+    console.error('[AgentChat] fetchModels failed:', e)
+    modelsError.value = e?.message || String(e)
+    // fallback：保留空列表，用户无法选择但不会崩溃
+  } finally {
+    modelsLoading.value = false
+  }
+}
+
 const SELECTED_MODEL_KEY = 'encv-agent-selected-model'
 const TEMPERATURE_KEY = 'encv-agent-temperature'
 const storedModel = (() => {
@@ -401,6 +433,8 @@ watch(
 )
 
 onMounted(async () => {
+  // 动态获取可用模型列表（不阻塞 UI）
+  fetchModels()
   // 启动时尝试恢复最近 session
   await resume()
   nextTick(() => scrollToBottom('auto'))

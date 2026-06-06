@@ -159,6 +159,26 @@ async function handleTest(req, res) {
   }))
 }
 
+async function handleModels(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+  // 返回模拟模型列表（真实 agent 应从 OpenAI /providers 动态查询）
+  const models = [
+    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', provider: 'openai' },
+    { id: 'gpt-4o', name: 'GPT-4o', provider: 'openai' },
+    { id: 'gpt-4.1', name: 'GPT-4.1', provider: 'openai' },
+    { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', provider: 'openai' },
+    { id: 'gpt-4.1-nano', name: 'GPT-4.1 Nano', provider: 'openai' },
+    { id: 'o3', name: 'O3', provider: 'openai' },
+    { id: 'o3-mini', name: 'O3 Mini', provider: 'openai' },
+    { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', provider: 'anthropic' },
+    { id: 'claude-haiku-4-20250514', name: 'Claude Haiku 4', provider: 'anthropic' },
+    { id: 'deepseek-chat', name: 'DeepSeek Chat', provider: 'deepseek' },
+    { id: 'deepseek-reasoner', name: 'DeepSeek Reasoner', provider: 'deepseek' },
+    { id: 'qwen3-coder-plus', name: 'Qwen3 Coder Plus', provider: 'qwen' },
+  ]
+  res.end(JSON.stringify({ models, defaultModel: 'gpt-4o-mini' }))
+}
+
 const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && req.url === '/__agent/health') {
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
@@ -169,6 +189,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/confirm') return handleConfirm(req, res)
   if (req.method === 'POST' && req.url === '/api/resume') return handleResume(req, res)
   if ((req.method === 'GET' || req.method === 'POST') && req.url === '/test') return handleTest(req, res)
+  if (req.method === 'GET' && req.url === '/api/models') return handleModels(req, res)
   res.writeHead(404, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify({ error: 'not_found', method: req.method, path: req.url }))
 })

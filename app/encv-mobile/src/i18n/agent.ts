@@ -29,6 +29,8 @@ export default {
     'agent.messages': '条消息',
     'agent.errorTitle': '请求失败',
     'agent.retry': '重试',
+    'agent.loadingModels': '加载模型列表',
+    'agent.modelsError': '模型加载失败',
     'agent.inputHint': 'Shift/⌘/Ctrl + Enter 发送，Enter 换行',
     'agent.emptyHint': '向 AI 助手提问、生成文件、或调用工具',
 
@@ -77,6 +79,8 @@ export default {
     'agent.messages': 'messages',
     'agent.errorTitle': 'Request failed',
     'agent.retry': 'Retry',
+    'agent.loadingModels': 'Loading models',
+    'agent.modelsError': 'Failed to load',
     'agent.inputHint': 'Shift/⌘/Ctrl + Enter to send, Enter for newline',
     'agent.emptyHint': 'Ask the assistant, generate files, or invoke tools',
 
