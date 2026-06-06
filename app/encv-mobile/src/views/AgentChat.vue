@@ -47,17 +47,27 @@
     </div>
 
     <main class="agentChatMain" ref="mainRef">
-      <div v-if="lastError" class="agentChatError">
-        <ion-icon :icon="alertIcon" class="errorIcon" />
-        <div class="errorContent">
-          <p class="errorTitle">{{ t('agent.errorTitle') }}</p>
-          <p class="errorMessage">{{ lastError }}</p>
+      <!-- 异常状态条：网络错误 / API 不可用 / 流式中断 -->
+      <div v-if="lastError" class="agentChatError" role="alert">
+        <div class="errorBarIcon">
+          <ion-icon :icon="alertIcon" />
         </div>
-        <button type="button" class="errorRetry" @click="retryLast">{{ t('agent.retry') }}</button>
-        <button type="button" class="errorDismiss" @click="dismissError" :title="t('common.close')">
-          <ion-icon :icon="closeIcon" />
-        </button>
+        <div class="errorBarBody">
+          <p class="errorBarTitle">{{ t('agent.errorTitle') }}</p>
+          <p class="errorBarMessage">{{ lastError }}</p>
+        </div>
+        <div class="errorBarActions">
+          <button type="button" class="errorBarRetry" @click="retryLast">
+            <ion-icon :icon="refreshIcon" />
+            <span>{{ t('agent.retry') }}</span>
+          </button>
+          <button type="button" class="errorBarClose" @click="dismissError" :aria-label="t('common.close')">
+            <ion-icon :icon="closeIcon" />
+          </button>
+        </div>
       </div>
+
+      <!-- 空状态（无错误时显示） -->
       <div v-if="renderedItems.length === 0 && !lastError" class="agentChatEmpty">
         <ion-icon :icon="chatbubblesIcon" class="emptyIcon" />
         <p>{{ t('agent.emptyHint') }}</p>
@@ -197,6 +207,7 @@ import {
   chatbubblesOutline,
   alertCircleOutline,
   timeOutline,
+  refreshOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { useAgent, type Decision, type ToolCall } from '@/composables/useAgent'
@@ -227,6 +238,7 @@ const stopIcon = stopOutline
 const chatbubblesIcon = chatbubblesOutline
 const alertIcon = alertCircleOutline
 const timeIcon = timeOutline
+const refreshIcon = refreshOutline
 const historyOpen = ref(false)
 
 const canSend = computed(() => status.value !== 'streaming' && inputText.value.trim().length > 0)
@@ -601,77 +613,103 @@ defineExpose({})
   text-align: center;
 }
 
-/* ── Error bar ──────────────────────────────────────── */
+/* ── Error bar（异常状态条） ─────────────────────────── */
 .agentChatError {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 8px 12px;
-  padding: 8px 12px;
-  background: rgba(var(--ion-color-danger-rgb), 0.08);
-  border: 1px solid rgba(var(--ion-color-danger-rgb), 0.25);
-  border-radius: 10px;
+  gap: 10px;
+  margin: 8px 12px 4px;
+  padding: 10px 14px;
+  background: var(--error-bar-bg, rgba(239, 68, 68, 0.08));
+  border: 1px solid var(--error-bar-border, rgba(239, 68, 68, 0.20));
+  border-radius: 12px;
   font-size: 13px;
-  animation: errorSlideIn 0.25s ease-out;
+  animation: errorBarSlideIn 0.25s ease-out;
 }
 
-@keyframes errorSlideIn {
-  from { opacity: 0; transform: translateY(-6px); }
+@keyframes errorBarSlideIn {
+  from { opacity: 0; transform: translateY(-8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.errorIcon {
-  color: var(--ion-color-danger);
-  font-size: 20px;
+.errorBarIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--error-bar-icon-bg, rgba(239, 68, 68, 0.12));
+  color: var(--ion-color-danger, #ef4444);
+  font-size: 18px;
   flex-shrink: 0;
 }
 
-.errorContent {
+.errorBarBody {
   flex: 1;
   min-width: 0;
 }
 
-.errorTitle {
+.errorBarTitle {
   font-weight: 600;
   font-size: 12px;
   margin: 0 0 2px;
-  color: var(--ion-text-color);
+  color: var(--ion-text-color, #1a1a1a);
+  letter-spacing: 0.01em;
 }
 
-.errorMessage {
+.errorBarMessage {
   margin: 0;
   font-size: 12px;
-  color: var(--ion-color-danger);
+  color: var(--ion-color-danger, #ef4444);
   word-break: break-word;
+  line-height: 1.4;
+  opacity: 0.9;
 }
 
-.errorRetry {
-  display: inline-flex;
+.errorBarActions {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 5px 14px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--ion-color-primary);
-  color: #fff;
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
+  gap: 6px;
   flex-shrink: 0;
 }
 
-.errorDismiss {
+.errorBarRetry {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ion-color-danger, #ef4444);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1;
+  transition: opacity 0.15s;
+}
+.errorBarRetry:hover { opacity: 0.88; }
+.errorBarRetry:active { opacity: 0.75; }
+
+.errorBarClose {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border: 0;
   border-radius: 50%;
   background: transparent;
-  color: var(--ion-text-color-step-400);
+  color: var(--ion-color-medium, #666);
   cursor: pointer;
+  transition: background 0.15s, color 0.15s;
   flex-shrink: 0;
+}
+.errorBarClose:hover {
+  background: rgba(var(--ion-color-medium-rgb, 102, 102, 102), 0.10);
+  color: var(--ion-text-color, #1a1a1a);
 }
 
 /* ── Footer hint ─────────────────────────────────────── */
