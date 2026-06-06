@@ -4,7 +4,8 @@
     "password": "123456"
   },
   "agent_settings": {
-    "openai_api_key": "sk-fctGwMohd9gsrEHVtfIsJe1Y8sucQH7QmRDbGCNURWmSXxWG"
+    "openai_api_key": "sk-fctGwMohd9gsrEHVtfIsJe1Y8sucQH7QmRDbGCNURWmSXxWG",
+    "openai_base_url": "https://api.gptgod.online/v1"
   },
   "default_container_version": 0,
   "log": {

@@ -147,15 +147,9 @@
             },
             "openai_model": {
               "type": "string",
-              "default": "gpt-4o",
-              "enum": ["gpt-4o", "gpt-4o-mini", "o1-preview", "o1-mini"],
-              "x-enum-labels": {
-                "gpt-4o": "GPT-4o",
-                "gpt-4o-mini": "GPT-4o mini",
-                "o1-preview": "o1-preview",
-                "o1-mini": "o1-mini"
-              },
-              "description": "OpenAI 模型选择",
+              "default": "gpt-4o-mini",
+              "x-dynamic-options": "/agent-api/api/models",
+              "description": "OpenAI 模型选择（从供应商 API 动态获取）",
               "x-platform": "both"
             },
             "openlist_base_url": {

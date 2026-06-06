@@ -66,7 +66,7 @@
             </template>
 
             <ConfigFieldItem
-              v-else
+              v-else-if="child.key !== 'openai_model'"
               :field="child"
               :model-value="getValue(['agent_settings', child.key])"
               :label="fieldLabel(child.key, child.required)"
@@ -76,6 +76,60 @@
               @input="handleInput(['agent_settings', child.key], child, $event)"
               @reset="resetFieldToDefault(['agent_settings', child.key], child)"
             />
+
+            <!-- openai_model：动态模型选择器（从供应商 API 获取） -->
+            <div v-else-if="child.key === 'openai_model'" class="config-field config-field-card">
+              <div class="field-label-row">
+                <ion-icon :icon="sparklesOutline" class="field-icon"></ion-icon>
+                <span class="field-label-text">{{ fieldLabel(child.key, child.required) }}</span>
+                <ion-icon :icon="cloudOutline" class="sync-indicator" :title="t('settings.synced')"></ion-icon>
+              </div>
+              <p v-if="child.description" class="field-description-text">{{ child.description }}</p>
+
+              <!-- 加载中 -->
+              <div v-if="settingsModelsLoading" class="model-loading">
+                <ion-spinner name="crescent" class="model-spinner"></ion-spinner>
+                <span>{{ t('agent.loadingModels') }}...</span>
+              </div>
+
+              <!-- 加载失败：显示错误 + 手动输入回退 -->
+              <div v-else-if="settingsModelsError" class="model-error-state">
+                <p class="model-error-text">{{ settingsModelsError }}</p>
+                <input
+                  type="text"
+                  class="model-fallback-input"
+                  :value="String(getValue(['agent_settings', 'openai_model']) ?? '')"
+                  :placeholder="t('agent.modelFallbackPlaceholder') || '输入模型名称'"
+                  @input="handleModelManualInput($event)"
+                />
+              </div>
+
+              <!-- 正常：动态 preset-cards -->
+              <div v-else-if="settingsModelOptions.length > 0" class="preset-cards">
+                <div
+                  v-for="opt in settingsModelOptions"
+                  :key="opt.id"
+                  class="preset-card"
+                  :class="{ 'preset-card-active': String(getValue(['agent_settings', 'openai_model'])) === opt.id }"
+                  @click="setValue(['agent_settings', 'openai_model'], opt.id)"
+                >
+                  <div class="preset-card-title">{{ opt.name || opt.id }}</div>
+                  <div v-if="opt.provider && opt.provider !== 'unknown'" class="preset-card-desc">{{ opt.provider }}</div>
+                </div>
+              </div>
+
+              <!-- 空列表 -->
+              <div v-else class="model-empty">
+                <p>{{ t('agent.noModelsAvailable') || '无可用模型' }}</p>
+                <input
+                  type="text"
+                  class="model-fallback-input"
+                  :value="String(getValue(['agent_settings', 'openai_model']) ?? '')"
+                  :placeholder="t('agent.modelFallbackPlaceholder') || '输入模型名称'"
+                  @input="handleModelManualInput($event)"
+                />
+              </div>
+            </div>
           </template>
         </ion-list>
 
@@ -161,6 +215,41 @@ const testResultSuccess = ref(false)
 const listIcon = listOutline
 const flashIcon = flashOutline
 const closeIcon = closeCircleOutline
+
+// ─── 动态模型选择（openai_model 字段） ──────────────────────
+interface SettingsModelOption { id: string; name: string; provider: string }
+const settingsModelOptions = ref<SettingsModelOption[]>([])
+const settingsModelsLoading = ref(true)
+const settingsModelsError = ref('')
+
+async function fetchSettingsModels() {
+  settingsModelsLoading.value = true
+  settingsModelsError.value = ''
+  try {
+    const res = await fetch('/agent-api/api/models')
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    if (data.error && data.error === 'no_api_key') {
+      settingsModelsError.value = t('agent.noApiKeyHint') || '未配置 API Key，请先填写上方 API Key 后保存'
+    } else if (data.error) {
+      settingsModelsError.value = data.note || data.error
+    } else {
+      settingsModelOptions.value = (data.models || []).map((m: any) => ({
+        id: m.id, name: m.name || m.id, provider: m.provider || 'unknown',
+      }))
+    }
+  } catch (e: any) {
+    console.error('[AgentSettings] fetchModels failed:', e)
+    settingsModelsError.value = e?.message || String(e)
+  } finally {
+    settingsModelsLoading.value = false
+  }
+}
+
+function handleModelManualInput(event: Event) {
+  const val = (event.target as HTMLInputElement).value
+  setValue(['agent_settings', 'openai_model'], val)
+}
 
 const showJsonEditor = ref(false)
 const jsonText = ref('')
@@ -326,6 +415,8 @@ onMounted(async () => {
   if (serverOnline.value) {
     await loadConfig()
     configLoaded.value = true
+    // 动态获取模型列表（不阻塞页面渲染）
+    fetchSettingsModels()
   }
 })
 </script>
@@ -430,5 +521,80 @@ onMounted(async () => {
   color: var(--ion-color-danger);
   font-size: 12px;
   font-family: monospace;
+}
+
+/* ── 动态模型选择器 ─────────────────────────────────────── */
+.model-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  color: var(--ion-color-medium);
+  font-size: 13px;
+}
+.model-spinner {
+  width: 18px;
+  height: 18px;
+}
+.model-error-state,
+.model-empty {
+  padding: 8px 0;
+}
+.model-error-text {
+  color: var(--ion-color-danger, #eb445a);
+  font-size: 12px;
+  margin: 0 0 6px;
+}
+.model-fallback-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.3);
+  border-radius: 8px;
+  background: var(--ion-background-color);
+  color: var(--ion-text-color);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  box-sizing: border-box;
+}
+.model-fallback-input:focus {
+  border-color: var(--ion-color-primary);
+}
+.model-empty p {
+  color: var(--ion-color-medium);
+  font-size: 12px;
+  margin: 0 0 6px;
+}
+
+/* 动态 preset-cards（与 ConfigFieldItem 保持一致） */
+.preset-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+  width: 100%;
+}
+.preset-card {
+  padding: 10px 8px;
+  border: 2px solid var(--ion-color-light-shade, #e0e0e0);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+  background: var(--ion-background-color, transparent);
+}
+.preset-card-active {
+  border-color: var(--ion-color-primary);
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
+}
+.preset-card-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+.preset-card-desc {
+  font-size: 11px;
+  color: var(--ion-color-medium);
+  margin-top: 3px;
+  line-height: 1.3;
 }
 </style>

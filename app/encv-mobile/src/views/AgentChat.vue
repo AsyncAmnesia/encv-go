@@ -30,7 +30,11 @@
         <span class="toolbarLabel">{{ t('agent.model') }}</span>
         <select v-model="selectedModel" class="toolbarSelect" :disabled="status === 'streaming' || modelsLoading">
           <option v-if="modelsLoading" value="" disabled>{{ t('agent.loadingModels') }}...</option>
-          <option v-else-if="modelsError" value="" disabled>{{ t('agent.modelsError') }}</option>
+          <template v-else-if="modelsError">
+            <option value="" disabled>{{ modelsError }}</option>
+            <!-- 错误时仍保留当前选中模型，确保用户可继续使用 -->
+            <option v-if="selectedModel && !availableModels.some(m => m.id === selectedModel)" :value="selectedModel">{{ selectedModel }}</option>
+          </template>
           <option v-for="m in availableModels" :key="m.id" :value="m.id">{{ m.name }}</option>
         </select>
       </label>
@@ -243,6 +247,15 @@ async function fetchModels() {
     const res = await fetch(`${AGENT_API_BASE}/api/models`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
+    // 处理各种错误状态
+    if (data.error === 'no_api_key') {
+      modelsError.value = t('agent.noApiKeyHint') || '未配置 API Key'
+      return
+    }
+    if (data.error || !Array.isArray(data.models)) {
+      modelsError.value = data.note || t('agent.modelsError')
+      return
+    }
     availableModels.value = (data.models || []).map((m: any) => ({
       id: m.id,
       name: m.name || m.id,
@@ -254,8 +267,8 @@ async function fetchModels() {
     }
   } catch (e: any) {
     console.error('[AgentChat] fetchModels failed:', e)
-    modelsError.value = e?.message || String(e)
-    // fallback：保留空列表，用户无法选择但不会崩溃
+    // 网络错误等：不阻断用户使用，显示提示但保留已存储的模型选择
+    modelsError.value = t('agent.modelsError')
   } finally {
     modelsLoading.value = false
   }
