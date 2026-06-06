@@ -5,9 +5,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -446,6 +448,56 @@ func TestHandleHealth_OK(t *testing.T) {
 	}
 	if body["ok"] != true {
 		t.Errorf("ok flag: %v", body)
+	}
+	// Task 4.1: /api/health must carry serverInstanceId so the
+	// front-end can detect server restarts and clear stale SSE
+	// sequence tracking state.
+	id, ok := body["serverInstanceId"].(string)
+	if !ok || id == "" {
+		t.Errorf("serverInstanceId missing or empty: %v", body)
+	}
+	// The id reported over HTTP must match the one held by the
+	// Agent (single source of truth).
+	if a.ServerInstanceId() == "" {
+		t.Errorf("Agent.ServerInstanceId() should not be empty")
+	}
+	if id != a.ServerInstanceId() {
+		t.Errorf("serverInstanceId mismatch: http=%q agent=%q", id, a.ServerInstanceId())
+	}
+	// The id must be stable across multiple calls within the
+	// same process — it is generated once at NewAgent time and
+	// never re-rolled.
+	rec2 := httptest.NewRecorder()
+	a.HandleHealth(rec2, httptest.NewRequest("GET", "/api/health", nil))
+	var body2 map[string]any
+	if err := json.Unmarshal(rec2.Body.Bytes(), &body2); err != nil {
+		t.Fatal(err)
+	}
+	if body2["serverInstanceId"] != id {
+		t.Errorf("serverInstanceId not stable across calls: %q -> %q", id, body2["serverInstanceId"])
+	}
+	// It must also contain the host + pid so log readers can
+	// correlate it with a real OS process. We embed os.Getpid()
+	// and the host name; pid is enough to assert without
+	// making the test environment-specific.
+	wantPid := fmt.Sprintf("-%d-", os.Getpid())
+	if !strings.Contains(id, wantPid) {
+		t.Errorf("serverInstanceId %q should embed pid %d", id, os.Getpid())
+	}
+}
+
+// TestServerInstanceId_DistinctAcrossAgents makes sure two
+// agents built in quick succession receive distinct ids. We use
+// nanosecond precision in generateServerInstanceId so the two
+// calls — even when only nanoseconds apart — always differ.
+func TestServerInstanceId_DistinctAcrossAgents(t *testing.T) {
+	a1 := NewAgent(AgentConfig{}, NewRegistry())
+	a2 := NewAgent(AgentConfig{}, NewRegistry())
+	if a1.ServerInstanceId() == a2.ServerInstanceId() {
+		t.Errorf("two NewAgent calls should produce distinct ids, got %q twice", a1.ServerInstanceId())
+	}
+	if a1.ServerInstanceId() == "" || a2.ServerInstanceId() == "" {
+		t.Errorf("serverInstanceId must be non-empty: a1=%q a2=%q", a1.ServerInstanceId(), a2.ServerInstanceId())
 	}
 }
 

@@ -104,6 +104,7 @@ import {
   shieldCheckmarkOutline,
   helpCircleOutline,
   searchOutline,
+  listOutline,
   chevronUpOutline,
   chevronDownOutline,
 } from 'ionicons/icons'
@@ -134,6 +135,7 @@ const kindIcon = computed(() => {
     fileChange: codeSlashOutline,
     readOnly: shieldCheckmarkOutline,
     webSearch: searchOutline,
+    plan: listOutline,
     unknown: helpCircleOutline,
   }
   return map[props.toolCall.kind] || helpCircleOutline
@@ -145,6 +147,7 @@ const titleText = computed(() => {
     fileChange: t('agent.tool.fileChange'),
     readOnly: t('agent.tool.readOnly'),
     webSearch: t('agent.tool.webSearch'),
+    plan: t('agent.plan'),
     unknown: t('agent.tool.unknown'),
   }
   const kindLabel = kindMap[props.toolCall.kind] || props.toolCall.kind

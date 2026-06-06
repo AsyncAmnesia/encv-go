@@ -38,6 +38,13 @@ export default {
     'agent.inputHint': 'Shift/⌘/Ctrl + Enter 发送，Enter 换行',
     'agent.emptyHint': '向 AI 助手提问、生成文件、或调用工具',
 
+    // ── Task 12: 附件（Composer `+` 按钮） ────────────────
+    'agent.attach': '添加附件',
+    'agent.removeAttachment': '移除附件',
+    'agent.attachmentCount': '已附加 {n} 个文件',
+    'agent.imageAttachment': '图片附件',
+    'agent.fileAttachment': '文件附件',
+
     // ── API Key 加密状态（状态反馈 UI） ─────────────────
     'agent.apiKeyStatusEmpty': '未配置',
     'agent.apiKeyStatusPlaintext': '明文',
@@ -66,11 +73,44 @@ export default {
     'agent.ops.files': '已编辑 {n} 个文件',
     'agent.ops.mixed': '已执行 {n} 个操作（{cmd} 命令 + {file} 文件变更）',
     'agent.ops.toolOutputs': '已执行 {n} 个工具',
+    'agent.ops.commandsSummary': '{n} 条命令',
+    'agent.ops.filesSummary': '{n} 个文件',
+    'agent.ops.expandAll': '展开全部',
+    'agent.ops.collapseAll': '收起全部',
+    'agent.ops.showMore': '显示更多 ({n})',
     'agent.tool.command': '运行命令',
     'agent.tool.fileChange': '编辑文件',
     'agent.tool.readOnly': '读取信息',
     'agent.tool.webSearch': '联网搜索',
     'agent.tool.unknown': '调用工具',
+
+    // ── Plan / Todo 块 ─────────────────────────────────
+    'agent.plan': '计划',
+    'agent.planEmpty': '（暂无计划）',
+    'agent.planStatusPending': '待办',
+    'agent.planStatusInProgress': '进行中',
+    'agent.planStatusCompleted': '已完成',
+    'agent.streaming': '加载中',
+
+    // ── 活跃态细分文案（active 集合下区分显示用） ─────
+    'agent.statusRunning': '正在运行',
+    'agent.statusEditing': '正在编辑',
+    'agent.statusThinking': '正在思考',
+
+    // ── Task 7: 上下文自动压缩分隔线 ─────────────────
+    // 后端在 messages token 数越过 80% 窗口时调用 LLM summary 压缩老消息，
+    // 推送 EventCompaction 事件，前端渲染为不可展开的水平分隔线。
+    'agent.contextCompaction': '上下文已自动压缩',
+
+    // ── Task 10: Slash 命令菜单（"/" 触发） ─────────────────
+    // 触发条件：textarea 内容以 "/" 开头时弹出，分组"功能" + "技能"。
+    // 功能项固定 3 条（attach / plan-mode / permission-mode），
+    // 技能项从后端 /api/skills 动态拉取。
+    'agent.slashMenuTitle': 'Slash 命令',
+    'agent.slashMenuFeatures': '功能',
+    'agent.slashMenuSkills': '技能',
+    'agent.slashMenuNoMatches': '无匹配项',
+    'agent.slashMenuHint': '↑↓ 选择 · Enter 应用 · Esc 关闭',
   },
   en: {
     'agent.title': 'AI Assistant',
@@ -111,6 +151,13 @@ export default {
     'agent.inputHint': 'Shift/⌘/Ctrl + Enter to send, Enter for newline',
     'agent.emptyHint': 'Ask the assistant, generate files, or invoke tools',
 
+    // ── Task 12: attachments (Composer `+` button) ─────────────
+    'agent.attach': 'Attach',
+    'agent.removeAttachment': 'Remove attachment',
+    'agent.attachmentCount': '{n} attachment(s) attached',
+    'agent.imageAttachment': 'Image attachment',
+    'agent.fileAttachment': 'File attachment',
+
     // ── API Key encryption status (status feedback UI) ───────────
     'agent.apiKeyStatusEmpty': 'Not set',
     'agent.apiKeyStatusPlaintext': 'Plaintext',
@@ -139,10 +186,45 @@ export default {
     'agent.ops.files': 'Edited {n} file(s)',
     'agent.ops.mixed': 'Performed {n} operation(s) ({cmd} commands + {file} file changes)',
     'agent.ops.toolOutputs': 'Ran {n} tool(s)',
+    'agent.ops.commandsSummary': '{n} command(s)',
+    'agent.ops.filesSummary': '{n} file(s)',
+    'agent.ops.expandAll': 'Expand all',
+    'agent.ops.collapseAll': 'Collapse all',
+    'agent.ops.showMore': 'Show more ({n})',
     'agent.tool.command': 'Run command',
     'agent.tool.fileChange': 'Edit file',
     'agent.tool.readOnly': 'Read info',
     'agent.tool.webSearch': 'Web search',
     'agent.tool.unknown': 'Invoke tool',
+
+    // ── Plan / Todo block ─────────────────────────────
+    'agent.plan': 'Plan',
+    'agent.planEmpty': '(no plan yet)',
+    'agent.planStatusPending': 'Pending',
+    'agent.planStatusInProgress': 'In progress',
+    'agent.planStatusCompleted': 'Done',
+    'agent.streaming': 'Loading',
+
+    // ── Active-state sub-labels (used to differentiate within the active set) ─────
+    'agent.statusRunning': 'Running',
+    'agent.statusEditing': 'Editing',
+    'agent.statusThinking': 'Thinking',
+
+    // ── Task 7: context auto-compression divider ─────────────────
+    // Backend triggers auto-compaction when the running messages
+    // exceed 80% of the model context window. The front-end
+    // renders a non-expandable horizontal divider at the position
+    // the compacted messages used to occupy.
+    'agent.contextCompaction': 'Context auto-compressed',
+
+    // ── Task 10: Slash command menu ("/" trigger) ─────────────────
+    // Trigger: textarea content starts with "/". Two groups: "Features"
+    // (static, 3 items: attach / plan-mode / permission-mode) and
+    // "Skills" (dynamic, fetched from backend /api/skills on mount).
+    'agent.slashMenuTitle': 'Slash commands',
+    'agent.slashMenuFeatures': 'Features',
+    'agent.slashMenuSkills': 'Skills',
+    'agent.slashMenuNoMatches': 'No matches',
+    'agent.slashMenuHint': '↑↓ navigate · Enter apply · Esc close',
   },
 }

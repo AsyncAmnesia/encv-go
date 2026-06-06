@@ -71,17 +71,46 @@ function fetchReturningError(status = 500): ReturnType<typeof vi.fn> {
 
 /**
  * 创建 URL 感知的 mock 实现：
- *   /api/config → 返回空配置（无 system_prompt）
- *   其他 URL → 使用 fallback（通常是测试提供的 SSE stream）
+ *   /api/config   → 返回空配置（无 system_prompt）
+ *   /api/health   → 返回 { serverInstanceId }（Task 4 引入的 health 端点）
+ *   其他 URL      → 使用 fallback（通常是测试提供的 SSE stream）
+ *
+ * options.serverInstanceId 控制 /api/health 返回的 instance id；
+ * 不传则用固定字符串 'test-instance'，所有 useAgent 实例共享。
  */
-function urlAwareMock(fallback: ReturnType<typeof vi.fn>): ReturnType<typeof vi.fn> {
+function urlAwareMock(
+  fallback: ReturnType<typeof vi.fn>,
+  options?: { serverInstanceId?: string },
+): ReturnType<typeof vi.fn> {
+  const instanceId = options?.serverInstanceId ?? 'test-instance'
   return vi.fn(async (url: string | Request) => {
     const urlStr = typeof url === 'string' ? url : (url as Request).url
     if (urlStr.includes('/api/config')) {
       return { ok: true, status: 200, json: () => Promise.resolve({}) } as Response
     }
+    if (urlStr.includes('/api/health')) {
+      return {
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ serverInstanceId: instanceId }),
+      } as Response
+    }
     return fallback(url)
   })
+}
+
+/**
+ * 找出 fetchSpy.mock.calls 中最后一次匹配 path 的调用下标。
+ * Task 4 之后 send() 会先调 /api/health 再调 /agent-api/*，
+ * 所以原本写死下标的断言需要按 URL 重新定位。
+ */
+function findLastCallIndex(calls: unknown[][], path: string): number {
+  for (let i = calls.length - 1; i >= 0; i--) {
+    const c = calls[i]
+    const url = typeof c[0] === 'string' ? c[0] : (c[0] as Request).url
+    if (url.includes(path)) return i
+  }
+  return -1
 }
 
 // ─── 测试 ─────────────────────────────────────────────────────────────────
@@ -271,6 +300,54 @@ describe('useAgent', () => {
       expect(messages.value[1].content).toBe('hi')
       expect(status.value).toBe('idle')
     })
+
+    // ─── Task 7: 上下文自动压缩事件 ──────────────────────
+    it('compaction 事件插入 role=system + marker 的合成消息', async () => {
+      const sse = sseLine('text_delta', { content: 'pre' }) +
+                  sseLine('compaction', {
+                    summary_text: 'summary-abc',
+                    replaced_message_count: 3,
+                    triggered_at_ms: 1700000000000,
+                  }) +
+                  sseLine('text_delta', { content: 'post' }) +
+                  sseLine('stream_end', {})
+      fetchSpy.mockImplementation(fetchReturningStream(makeSSEStream([sse])))
+
+      const { send, messages, status } = useAgent()
+      await send('q')
+
+      // messages: [user, assistant(pre), system(marker), assistant(post)]
+      expect(messages.value.length).toBe(4)
+      expect(messages.value[0].role).toBe('user')
+      expect(messages.value[1].role).toBe('assistant')
+      expect(messages.value[1].content).toBe('pre')
+      // 第 3 条：合成的 system marker 消息
+      expect(messages.value[2].role).toBe('system')
+      expect(messages.value[2].content).toBe('上下文已自动压缩')
+      // 第 4 条：assistant post
+      expect(messages.value[3].role).toBe('assistant')
+      expect(messages.value[3].content).toBe('post')
+      // status 不受 compaction 影响
+      expect(status.value).toBe('idle')
+    })
+
+    it('compaction 事件 data 解析失败时仍插入 marker 消息（容错）', async () => {
+      // 直接发非 JSON 的 data：parseCompactionData 返回 null，
+      // 但 useAgent 仍然 push 一条 marker 消息
+      const sse = sseLine('text_delta', { content: 'ok' }) +
+                  // data 字段是普通字符串而非 JSON object
+                  `data: ${JSON.stringify({ type: 'compaction', data: 'garbage' })}\n\n` +
+                  sseLine('stream_end', {})
+      fetchSpy.mockImplementation(fetchReturningStream(makeSSEStream([sse])))
+
+      const { send, messages } = useAgent()
+      await send('q')
+
+      const marker = messages.value.find(
+        (m) => m.role === 'system' && m.content === '上下文已自动压缩',
+      )
+      expect(marker).toBeTruthy()
+    })
   })
 
   describe('send - 4 决策 confirmTool', () => {
@@ -306,8 +383,12 @@ describe('useAgent', () => {
 
       await agent.confirmTool('tc-x', 'accept')
 
-      expect(fetchSpy).toHaveBeenCalledTimes(2)
-      const confirmCall = fetchSpy.mock.calls[1]
+      // Task 4：send 入口加了 /api/health，所以 fetchSpy 总调用次数
+      // 从 2 变 3（/api/health + /api/chat + /api/confirm）。改用
+      // findLastCallIndex 按 URL 定位 confirm 调用的下标。
+      const confirmIdx = findLastCallIndex(fetchSpy.mock.calls as unknown[][], '/api/confirm')
+      expect(confirmIdx).toBeGreaterThanOrEqual(0)
+      const confirmCall = fetchSpy.mock.calls[confirmIdx]
       expect(confirmCall[0]).toBe('/agent-api/api/confirm')
       const body = JSON.parse(confirmCall[1].body)
       expect(body.toolCallId).toBe('tc-x')
@@ -342,7 +423,7 @@ describe('useAgent', () => {
         fetchSpy.mockImplementation(urlAwareMock(fetchReturningStream(makeSSEStream([sse2]))))
         await agent.confirmTool(`tc-${decision}`, decision)
 
-        const body = JSON.parse(fetchSpy.mock.calls[1][1].body)
+        const body = JSON.parse(fetchSpy.mock.calls[findLastCallIndex(fetchSpy.mock.calls as unknown[][], '/api/confirm')][1].body)
         expect(body.decision).toBe(decision)
       }
     })
@@ -397,11 +478,14 @@ describe('useAgent', () => {
       expect(status.value).toBe('streaming')
       expect(messages.value.length).toBe(2)
 
-      // 第二次 send：应立即返回（被忽略）
+      // 第二次 send：应立即返回（被忽略）。注意：Task 4 在 send 入口
+      // 调 /api/health 是在 status 检查之后，所以 streaming 时第二次 send
+      // 仍然立即 return，不会再发任何 fetch。
       await send('second')
 
-      // fetch 仍只调用一次，messages 仍只有 2 条
-      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      // 第一次 send 调了 2 次：/api/health + /api/chat。第二次 send 因
+      // status=streaming 立即 return，没增加任何 fetch。
+      expect(fetchSpy).toHaveBeenCalledTimes(2)
       expect(messages.value.length).toBe(2)
       expect(messages.value[0].content).toBe('first')
 
@@ -906,5 +990,221 @@ describe('useAgent', () => {
       expect(a.messages.value.length).toBe(0)
       expect(b.messages.value.length).toBe(0)
     })
+  })
+
+  // ─── Task 4: Server Instance + Sequence 去重 ───────────────────────
+  describe('Task 4: server instance + SSE sequence 去重', () => {
+    /**
+     * 构造带 `id: N` 行的 SSE 事件（SSE 标准断点续传字段）
+     */
+    function sseLineWithId(id: number, type: string, data: unknown): string {
+      return `id: ${id}\ndata: ${JSON.stringify({ type, data: JSON.stringify(data) })}\n\n`
+    }
+
+    /**
+     * URL-aware mock：按 URL 路由返回不同响应。
+     *   /api/config   → 空配置
+     *   /api/health   → { serverInstanceId: <id> } (200)
+     *   /agent-api/   → fallback（一般给 SSE 流）
+     */
+    function healthAwareMock(
+      instanceId: string,
+      fallback: ReturnType<typeof vi.fn>,
+    ): ReturnType<typeof vi.fn> {
+      return vi.fn(async (url: string | Request) => {
+        const urlStr = typeof url === 'string' ? url : (url as Request).url
+        if (urlStr.includes('/api/config')) {
+          return { ok: true, status: 200, json: () => Promise.resolve({}) } as Response
+        }
+        if (urlStr.includes('/api/health')) {
+          return {
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({ serverInstanceId: instanceId }),
+          } as Response
+        }
+        return fallback(url)
+      })
+    }
+
+    it('send() 入口拉取 /api/health 取 serverInstanceId（成功路径）', async () => {
+      const instanceId = 'host-12345-1700000000000000000'
+      const sse = sseLine('text_delta', { content: 'ok' }) +
+                  sseLine('stream_end', {})
+      fetchSpy.mockImplementation(healthAwareMock(instanceId, fetchReturningStream(makeSSEStream([sse]))))
+
+      const agent = useAgent()
+      // 初始时 instance 是空串
+      expect(agent.__getServerInstanceForTest()).toBe('')
+
+      await agent.send('hi')
+
+      // 拉取成功后应已设置
+      expect(agent.__getServerInstanceForTest()).toBe(instanceId)
+      // /api/health 至少被调用了一次（在 send 入口处）
+      const healthCalls = fetchSpy.mock.calls.filter((c) =>
+        (typeof c[0] === 'string' ? c[0] : (c[0] as Request).url).includes('/api/health')
+      )
+      expect(healthCalls.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('拉取 /api/health 失败时 fallback 到空串 + 业务继续', async () => {
+      // /api/health 直接抛异常
+      fetchSpy.mockImplementation(vi.fn(async (url: string | Request) => {
+        const urlStr = typeof url === 'string' ? url : (url as Request).url
+        if (urlStr.includes('/api/config')) {
+          return { ok: true, status: 200, json: () => Promise.resolve({}) } as Response
+        }
+        if (urlStr.includes('/api/health')) {
+          throw new Error('network down')
+        }
+        const sse = sseLine('text_delta', { content: 'still works' }) +
+                    sseLine('stream_end', {})
+        return { ok: true, status: 200, body: makeSSEStream([sse]) } as Response
+      }))
+
+      const agent = useAgent()
+      await agent.send('hi')
+
+      // instance 保持空串（不抛错）
+      expect(agent.__getServerInstanceForTest()).toBe('')
+      // 业务仍正常
+      expect(agent.messages.value[1].content).toBe('still works')
+      expect(agent.status.value).toBe('idle')
+    })
+
+    it('同一 SSE 流内重复 sequence 被丢弃（不重复 dispatch）', async () => {
+      const instanceId = 'inst-A'
+      const sse = sseLineWithId(10, 'text_delta', { content: 'first ' }) +
+                  // sequence 11 重复（id: 11）
+                  sseLineWithId(11, 'text_delta', { content: 'duplicate' }) +
+                  sseLineWithId(11, 'text_delta', { content: 'should-be-dropped' }) +
+                  sseLineWithId(12, 'text_delta', { content: 'after-dup' }) +
+                  sseLine('stream_end', {})
+      fetchSpy.mockImplementation(healthAwareMock(instanceId, fetchReturningStream(makeSSEStream([sse]))))
+
+      const agent = useAgent()
+      // 强制把 instance 固定到 A（避免自动 refresh 时进入新值）
+      agent.__setServerInstanceForTest(instanceId)
+      await agent.send('q')
+
+      // id=10: "first "
+      // id=11 (第一次): "duplicate" — 11 进入 seen 集合
+      // id=11 (第二次): drop，console.debug 触发，messages 不变
+      // id=12: "after-dup"
+      expect(agent.messages.value[1].content).toBe('first duplicateafter-dup')
+      // seen 集合：{10, 11, 12}
+      expect(agent.__getSeenSequencesForTest()).toEqual([10, 11, 12])
+    })
+
+    it('server instance 变化时 seenSequences 被清空（新进程 sequence 重新计数）', async () => {
+      // 关键：让 urlAwareMock 每次 send 时按当前 instance 路由决定 mock 值。
+      // 用一个 mutable 状态让两次 send() 拉到不同的 instance id。
+      let currentMockedInstance = 'inst-A'
+
+      // 第一轮：instance=A，流内 seq=5
+      const sseA = sseLineWithId(5, 'text_delta', { content: 'from-A' }) +
+                   sseLine('stream_end', {})
+      fetchSpy.mockImplementation(
+        urlAwareMock(fetchReturningStream(makeSSEStream([sseA])), {
+          serverInstanceId: currentMockedInstance,
+        }),
+      )
+
+      const agent = useAgent()
+      await agent.send('q')
+
+      expect(agent.messages.value[1].content).toBe('from-A')
+      expect(agent.__getSeenSequencesForTest()).toEqual([5])
+      expect(agent.__getServerInstanceForTest()).toBe('inst-A')
+
+      // 切换 instance id：第二轮 send() 入口调 /api/health 会拉到 B
+      // → refreshServerInstance 检测到变化 → seenSequences 被清空
+      currentMockedInstance = 'inst-B'
+
+      // 第二轮：instance=B，流内 seq=5（与 A 重复，模拟新进程从 1 重新
+      // 开始编号——但 5 也可能再次出现，seenSequences 必须被清空才能 dispatch）
+      const sseB = sseLineWithId(5, 'text_delta', { content: 'from-B' }) +
+                   sseLine('stream_end', {})
+      fetchSpy.mockImplementation(
+        urlAwareMock(fetchReturningStream(makeSSEStream([sseB])), {
+          serverInstanceId: currentMockedInstance,
+        }),
+      )
+
+      await agent.send('q2')
+
+      // 最后一条 assistant 消息
+      const lastAssistant = agent.messages.value[agent.messages.value.length - 1]
+      expect(lastAssistant.content).toBe('from-B')
+      // seen 集合在 instance 切换后已被清空，再加入新 instance 的 seq 5
+      expect(agent.__getSeenSequencesForTest()).toEqual([5])
+      // currentServerInstance 已更新到 B
+      expect(agent.__getServerInstanceForTest()).toBe('inst-B')
+    })
+
+    it('超过 MAX_TRACKED_REALTIME_SEQUENCES (2000) 时按 FIFO 驱逐最老', async () => {
+      // 我们用 __setServerInstanceForTest + 直接给 useAgent 喂大量重复序列
+      // 的方式比较重——这里用更轻量方式：构造 seq 1..2001 + 重复 seq 1
+      // 期望 1 被驱逐，再次出现 seq 1 时不重复 dispatch（因为它已被清出 seen）
+
+      // 实际简单版：构造 2001 个不同 seq 编号的事件 + 第 2002 个
+      // 但受限于流式 2001 行的开销，我们用 4 个事件 + 直接 assert rememberSequence 行为
+      // —— 不行，rememberSequence 是闭包私有。改用行为验证：
+      // 构造 seq 1..2001 全 dispatch + seq 1 重复（已驱逐）应该重新 dispatch
+      //
+      // 简化路径：直接通过 send 触发一次 add，然后调用 __setServerInstanceForTest 不变，
+      // 连续 emit 2000 个 unique seq 编号 + 1 个 earliest(seq=1) 重新出现。
+      // 困难是 processSSE 不接受"2000 个事件"——它只在一条 SSE 流中工作。
+      // 退而求其次：构造 2002 个事件，第一个被驱逐后再次出现时应该不丢。
+      //
+      // 实测更简单的：构造 2001 个 events + 重复 seq 1。
+      // 1..2000 全部进入 seen，第 2001 个（FIFO 淘汰 seq 1）
+      // 第 2002 个 (seq 1) → seen 集合里 seq 1 已被驱逐 → 视为新 → dispatch
+
+      // 实际性能考虑：构造 2002 个 SSE 字符串太大。我们采用更聪明的
+      // 验证方式：构造 MAX_TRACKED_REALTIME_SEQUENCES (2000) 个 seq 1..2000，
+      // 然后再次 send 在新流中只发 seq 1 + seq 2。
+      //   - send 1: seq 1..2000 → seen = {1..2000}, order = [1..2000]
+      //   - send 2: seq 1 → 命中 seen（FIFO 还未淘汰）→ 丢弃；seq 2 → 命中 → 丢弃
+      //   - 我们再 setServerInstance 不变，直接 send 2001 个：
+      //     实际上要触发 FIFO 必须构造 2001+ 个事件。
+      //
+      // 折中：本测试只断言"seenSequences 容量被限制到 2000 以内"——用性能更好的方式：
+      // 构造刚好 2001 个 unique seq 的 SSE 流 + 1 个重复最早 seq，断言后到达的不会丢。
+      //
+      // 性能 vs 简单性：构造 2002 个事件的 SSE 字符串约 2002 * 60 bytes ≈ 120KB，
+      // 对 vitest 来说可接受。
+      const MAX = 2000
+      const ids: number[] = []
+      for (let i = 1; i <= MAX; i++) ids.push(i)
+      let sseBody = ''
+      for (const id of ids) {
+        sseBody += sseLineWithId(id, 'text_delta', { content: 'x' })
+      }
+      // 第 2001 个事件：seq=2001（让 seq=1 被 FIFO 淘汰）
+      sseBody += sseLineWithId(MAX + 1, 'text_delta', { content: 'y' })
+      // 第 2002 个事件：seq=1（已被淘汰）→ 视为新 → dispatch
+      sseBody += sseLineWithId(1, 'text_delta', { content: 'z' })
+      sseBody += sseLine('stream_end', {})
+
+      fetchSpy.mockImplementation(healthAwareMock('inst-fifo', fetchReturningStream(makeSSEStream([sseBody]))))
+
+      const agent = useAgent()
+      agent.__setServerInstanceForTest('inst-fifo')
+      await agent.send('q')
+
+      // seenSequences 容量应被钳制到 MAX 以内
+      const seen = agent.__getSeenSequencesForTest()
+      expect(seen.length).toBeLessThanOrEqual(MAX)
+      // seq=1 被淘汰后，seen 集合里不应包含它（除非容量计算错误）
+      // 但 seen 是个 LIFO-like 的数组，shift 后顺序是 [2..2001] + [1 (重新加入)]
+      // = 长度 2000 + 1 (第 2002 个加入的 1)？不对：第 2002 个 1 也会 push 到尾部
+      // 并触发 shift 把 2 淘汰。seen 长度稳定在 MAX
+      expect(seen.length).toBe(MAX)
+      // 验证 seen 顺序：最老的应是 3（2 被淘汰），最新的应是 1
+      expect(seen[0]).toBe(3)
+      expect(seen[seen.length - 1]).toBe(1)
+    }, 15000)
   })
 })

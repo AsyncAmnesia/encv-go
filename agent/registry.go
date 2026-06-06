@@ -113,3 +113,76 @@ func (r *ToolRegistry) Unregister(name string) {
 	delete(r.tools, name)
 	r.mu.Unlock()
 }
+
+// planToolSchema is the OpenAI-style function-calling schema
+// for the built-in write_todos plan tool. It is a static
+// map (not a *openai.FunctionDefinition) so the registry can
+// convert it via convertMapToTool without an extra type
+// import.
+var planToolSchema = map[string]any{
+	"type": "function",
+	"function": map[string]any{
+		"name":        "write_todos",
+		"description": "Persist the assistant's current step-by-step plan to the session. The front-end renders the latest plan snapshot as a PlanBlock; subsequent calls overwrite the snapshot.",
+		"parameters": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"todos": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"id": map[string]any{
+								"type":        "string",
+								"description": "Stable identifier for the todo item; the LLM should reuse the same id when reordering.",
+							},
+							"status": map[string]any{
+								"type":        "string",
+								"enum":        []string{"pending", "in_progress", "completed"},
+								"description": "Lifecycle state of the todo item.",
+							},
+							"content": map[string]any{
+								"type":        "string",
+								"description": "Human-readable description of the step.",
+							},
+						},
+						"required": []string{"id", "status", "content"},
+					},
+				},
+			},
+			"required": []string{"todos"},
+		},
+	},
+}
+
+// planToolNoopHandler is the placeholder handler that
+// NewPlanToolHandler registers. The agent core has a
+// dedicated code path (runPlanTool) that bridges sessionID
+// into the call, parses the todos and stores them on the
+// session cache; this no-op handler is never actually
+// invoked at runtime but is required by the ToolDefinition
+// shape. Keeping the handler side-effect-free also means
+// accidental direct invocations (e.g. from a test that
+// bypasses the agent loop) cannot corrupt the cache.
+func planToolNoopHandler(args string) (string, error) {
+	return `{"ok":true,"note":"plan handler is a no-op; agent core handles write_todos"}`, nil
+}
+
+// NewPlanToolHandler returns the ToolDefinition for the
+// built-in write_todos plan tool. The schema is the single
+// source of truth for the tool's wire shape; the handler is
+// a no-op because the agent core has a dedicated execution
+// path that knows the sessionID.
+//
+// Callers wire this into the registry at startup; the agent
+// then recognises any tool call whose Kind == KindPlan and
+// routes it through runPlanTool so SessionCache.Todos is
+// updated.
+func NewPlanToolHandler() ToolDefinition {
+	return ToolDefinition{
+		Schema:      planToolSchema,
+		Handler:     planToolNoopHandler,
+		NeedConfirm: false,
+		Kind:        KindPlan,
+	}
+}

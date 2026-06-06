@@ -92,6 +92,11 @@
             :queries="item.queries"
             :tool-calls="resolveToolCalls(item.toolCallIds)"
           />
+          <PlanBlock
+            v-else-if="item.type === 'plan'"
+            :todos="item.todos"
+            :streaming="item.streaming"
+          />
           <ReasoningMessage
             v-else-if="item.type === 'reasoning'"
             :text="item.text"
@@ -101,6 +106,11 @@
             v-else-if="item.type === 'error'"
             :text="item.text"
             :on-retry="() => handleRetryError(item)"
+          />
+          <!-- Task 7：上下文自动压缩分隔线（不可展开） -->
+          <ContextCompactionDivider
+            v-else-if="item.type === 'compaction'"
+            :text="item.text"
           />
         </div>
       </template>
@@ -138,6 +148,11 @@
               :queries="item.queries"
               :tool-calls="resolveToolCalls(item.toolCallIds)"
             />
+            <PlanBlock
+              v-else-if="item.type === 'plan'"
+              :todos="item.todos"
+              :streaming="item.streaming"
+            />
             <ReasoningMessage
               v-else-if="item.type === 'reasoning'"
               :text="item.text"
@@ -148,36 +163,58 @@
               :text="item.text"
               :on-retry="() => handleRetryError(item)"
             />
+            <!-- Task 7：虚拟滚动分支同样渲染 ContextCompactionDivider -->
+            <ContextCompactionDivider
+              v-else-if="item.type === 'compaction'"
+              :text="item.text"
+            />
           </div>
         </template>
       </MessageVirtualList>
     </main>
 
     <footer class="agentChatFooter">
-      <!-- "/" 工具选择命令面板 -->
-      <div v-if="showToolPalette" class="tool-palette">
-        <div class="tool-palette-header">
-          <span class="tool-palette-title">{{ t('agent.selectTool') || '选择工具' }}</span>
-        </div>
-        <div
-          v-for="tool in filteredTools"
-          :key="tool.name"
-          class="tool-palette-item"
-          :class="{ 'tool-palette-active': activeToolIndex === filteredTools.indexOf(tool) }"
-          @click="selectTool(tool)"
-        >
-          <ion-icon :icon="tool.icon" class="tool-palette-icon"></ion-icon>
-          <div class="tool-palette-info">
-            <span class="tool-palette-name">{{ tool.name }}</span>
-            <span class="tool-palette-desc">{{ tool.desc }}</span>
-          </div>
-        </div>
-        <div v-if="filteredTools.length === 0" class="tool-palette-empty">
-          {{ t('agent.noMatchingTools') || '无匹配工具' }}
-        </div>
-      </div>
+      <!--
+        Task 10: "/" 触发的命令面板（useSlashMenu + SlashMenu 组件）。
+        模板挂在 footer 内，组件自身用 Teleport 把 overlay 提升到 body
+        以避免被 textarea 滚动裁剪。
+      -->
+      <SlashMenu
+        v-if="slashMenu.isOpen.value"
+        :items="slashMenu.items.value"
+        :query="slashMenu.query.value"
+        :selected-index="slashMenu.selectedIndex.value"
+        :on-apply="(id) => slashMenu.applyById(id)"
+        :on-close="slashMenu.closeMenu"
+        :on-selected-index-change="(n) => (slashMenu.selectedIndex.value = n)"
+      />
 
-      <div class="footerInputRow" :class="{ 'footerInputRow-palette': showToolPalette }">
+      <!-- Task 12: 附件展示行（textarea 上方） -->
+      <AttachmentTray
+        v-if="attachments.length > 0"
+        :attachments="attachments"
+        :on-remove="removeAttachment"
+      />
+
+      <div class="footerInputRow" :class="{ 'footerInputRow-palette': slashMenu.isOpen.value }">
+        <!-- Task 12: 附件 `+` 按钮 -->
+        <button
+          v-if="status !== 'streaming'"
+          type="button"
+          class="footerAttachBtn"
+          :title="t('agent.attach')"
+          :aria-label="t('agent.attach')"
+          @click="triggerAttach"
+        >
+          <ion-icon :icon="attachIcon" />
+        </button>
+        <input
+          ref="fileInputRef"
+          type="file"
+          multiple
+          class="footerAttachInput"
+          @change="handleAttachChange"
+        />
         <textarea
           v-model="inputText"
           class="footerInput"
@@ -186,8 +223,8 @@
           :disabled="status === 'streaming'"
           @keydown.ctrl.enter.exact.prevent="handleSend"
           @keydown.meta.enter.exact.prevent="handleSend"
-          @keydown="handleInputKeydown"
-          @input="autoResize"
+          @keydown="onTextareaKeydown"
+          @input="onTextareaInput"
           ref="inputRef"
         ></textarea>
         <button
@@ -265,15 +302,14 @@ import {
   stopOutline,
   chatbubblesOutline,
   timeOutline,
-  documentTextOutline,
-  folderOpenOutline,
-  trashOutline,
-  terminalOutline,
-  searchOutline,
+  attachOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { useAgent, type Decision, type ToolCall } from '@/composables/useAgent'
 import { useRenderTurnItems } from '@/composables/renderTurnItems'
+import { useAttachments } from '@/composables/useAttachments'
+import { useSlashMenu } from '@/composables/useSlashMenu'
+import { showToast } from '@/composables/useToast'
 import UserMessageBubble from '@/components/agent/UserMessageBubble.vue'
 import ApprovalCard from '@/components/agent/ApprovalCard.vue'
 import GroupedOperationMessage from '@/components/agent/GroupedOperationMessage.vue'
@@ -282,6 +318,10 @@ import ErrorMessage from '@/components/agent/ErrorMessage.vue'
 import AssistantMessage from '@/components/agent/AssistantMessage.vue'
 import WebSearchSummaryMessage from '@/components/agent/WebSearchSummaryMessage.vue'
 import MessageVirtualList from '@/components/agent/MessageVirtualList.vue'
+import PlanBlock from '@/components/agent/PlanBlock.vue'
+import ContextCompactionDivider from '@/components/agent/ContextCompactionDivider.vue'
+import AttachmentTray from '@/components/agent/AttachmentTray.vue'
+import SlashMenu from '@/components/agent/SlashMenu.vue'
 
 const { t } = useI18n()
 
@@ -290,7 +330,24 @@ const AGENT_API_BASE = '/agent-api'
 
 const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId } = useAgent()
 
-const renderedItems = useRenderTurnItems(messages, status)
+// Task 12：附件管理（Composer `+` 按钮）
+const {
+  attachments,
+  addFiles,
+  removeAttachment,
+  clearAttachments,
+} = useAttachments({
+  onError: (msg) => showToast({ message: msg, duration: 2400, color: 'warning' }),
+})
+
+// Task 7：把 i18n 解析后的 "上下文已自动压缩" 文本通过 computed
+// 注入到 renderTurnItems，renderTurnItems 把它塞进 RenderedItem
+// 供 ContextCompactionDivider 直接渲染。这里用 computed 而非
+// t('agent.contextCompaction') 直接调用——renderTurnItems 的
+// 第三个参数要 Ref/ComputedRef，让语言切换时自动重渲染。
+const compactionText = computed(() => t('agent.contextCompaction'))
+
+const renderedItems = useRenderTurnItems(messages, status, compactionText)
 
 const inputText = ref('')
 const inputRef = ref<HTMLTextAreaElement | null>(null)
@@ -308,77 +365,88 @@ const sendIcon = sendOutline
 const stopIcon = stopOutline
 const chatbubblesIcon = chatbubblesOutline
 const timeIcon = timeOutline
+const attachIcon = attachOutline
 const historyOpen = ref(false)
 
-const canSend = computed(() => status.value !== 'streaming' && inputText.value.trim().length > 0)
+// Task 12：隐藏 file input 的引用
+const fileInputRef = ref<HTMLInputElement | null>(null)
 
-// ─── "/" 工具选择命令面板 ────────────────────────────────
-interface ToolDef {
-  name: string
-  desc: string
-  icon: string
-  keyword: string // 触发关键词
+function triggerAttach() {
+  // 复用同一个 input：每次点击重置 value，确保选同一文件也能触发 change
+  const el = fileInputRef.value
+  if (!el) return
+  el.value = ''
+  el.click()
 }
 
-const availableTools: ToolDef[] = [
-  { name: 'list_files',   desc: '列出目录中的文件',    icon: folderOpenOutline, keyword: 'list' },
-  { name: 'read_file',    desc: '读取文件内容',          icon: documentTextOutline, keyword: 'read' },
-  { name: 'delete_file',  desc: '删除文件',              icon: trashOutline, keyword: 'delete' },
-  { name: 'exec_command', desc: '执行 shell 命令',       icon: terminalOutline, keyword: 'exec' },
-  { name: 'web_search',   desc: '搜索网络信息',          icon: searchOutline, keyword: 'search' },
-]
-
-const showToolPalette = computed(() => {
-  const text = inputText.value.trim()
-  // 仅当输入以 "/" 开头且不超过 20 字符时显示（防止长文本误触发）
-  return text.startsWith('/') && text.length <= 20 && text.length > 0
-})
-
-const filteredTools = computed(() => {
-  const query = inputText.value.trim().slice(1).toLowerCase() // 去掉 "/"
-  if (!query) return availableTools
-  return availableTools.filter((t) =>
-    t.name.toLowerCase().includes(query) ||
-    t.keyword.toLowerCase().includes(query) ||
-    t.desc.toLowerCase().includes(query),
-  )
-})
-
-const activeToolIndex = ref(0)
-
-// 当过滤结果变化时重置选中索引
-watch(filteredTools, () => {
-  activeToolIndex.value = 0
-})
-
-function selectTool(tool: ToolDef) {
-  // 替换输入框中的 "/xxx" 为工具调用提示
-  inputText.value = `@${tool.name}() `
-  autoResize()
-  // 下一步：用户填写参数后发送，后端 AI 解析 @tool_name() 语法
-}
-
-function handleInputKeydown(e: KeyboardEvent) {
-  if (!showToolPalette.value) return
-
-  if (e.key === 'ArrowDown') {
-    e.preventDefault()
-    activeToolIndex.value = (activeToolIndex.value + 1) % filteredTools.value.length
-  } else if (e.key === 'ArrowUp') {
-    e.preventDefault()
-    activeToolIndex.value = (activeToolIndex.value - 1 + filteredTools.value.length) % filteredTools.value.length
-  } else if (e.key === 'Enter') {
-    e.preventDefault()
-    if (filteredTools.value[activeToolIndex.value]) {
-      selectTool(filteredTools.value[activeToolIndex.value])
-    }
-  } else if (e.key === 'Escape') {
-    e.preventDefault()
-    if (showToolPalette.value) {
-      // 工具面板打开时：仅关闭面板，不清空输入（保留用户已输入内容）
-      inputText.value = ''
-    }
+async function handleAttachChange(e: Event) {
+  const target = e.target as HTMLInputElement
+  const files = target.files
+  if (!files || files.length === 0) return
+  const result = await addFiles(files)
+  if (result.rejected.length > 0) {
+    const names = result.rejected.map((r) => r.name).join(', ')
+    const sample = result.rejected[0]?.reason || '文件超限'
+    showToast({
+      message: `已跳过 ${result.rejected.length} 个文件（${names}）：${sample}`,
+      duration: 3000,
+      color: 'warning',
+    })
   }
+  // 清空 input.value 允许重复选同一文件
+  target.value = ''
+}
+
+const canSend = computed(() => {
+  if (status.value === 'streaming') return false
+  // 文本非空 OR 至少一个附件都可以发送
+  return inputText.value.trim().length > 0 || attachments.value.length > 0
+})
+
+// ─── Task 10: "/" 命令面板（useSlashMenu） ─────────────────
+// 取代旧版内联 tool palette：现在支持功能 + 技能两类。
+// 静态功能项（attach / plan-mode / permission-mode）由 composable 内部定义。
+// 技能项从后端 /api/skills 拉取，mount 时拉一次缓存。
+// apply 回调在这里桥接："添加附件" → triggerAttach 打开 file picker；
+// "Plan 模式" / "权限模式" → 留作未来扩展，目前仅 toast 提示。
+// 技能选中 → 在输入框中插入 "@<skill-name> " 让用户继续编辑。
+const slashMenu = useSlashMenu({
+  onAttach: () => {
+    // 复用 Task 12 的 + 按钮逻辑
+    triggerAttach()
+  },
+  onTogglePlanMode: () => {
+    showToast({ message: 'Plan 模式：开发中', duration: 1600, color: 'medium' })
+  },
+  onTogglePermissionMode: () => {
+    showToast({ message: '权限模式：开发中', duration: 1600, color: 'medium' })
+  },
+  onSelectSkill: (id, label) => {
+    // 选中技能 → 在输入框中插入 "@<label> "，等用户继续编辑
+    void id // 技能 id 当前仅用于日志/未来埋点；label 用于填充输入
+    inputText.value = `@${label} `
+    autoResize()
+    nextTick(() => inputRef.value?.focus())
+  },
+})
+
+/**
+ * textarea @input 入口：先走原生 autoResize 维持高度，
+ * 再把当前文本传给 slashMenu.handleInput 决定开关。
+ */
+function onTextareaInput() {
+  autoResize()
+  slashMenu.handleInput(inputText.value)
+}
+
+/**
+ * textarea @keydown 入口：先让 slashMenu 拦截 ↑
+ * ↓ / Enter / Escape（菜单打开时）；未拦截时放行原生行为。
+ */
+function onTextareaKeydown(e: KeyboardEvent) {
+  // slashMenu.handleKeydown 内部决定是否拦截
+  if (slashMenu.handleKeydown(e)) return
+  // 菜单未打开时：菜单不处理，留给浏览器默认（如 Tab、Backspace 等）
 }
 
 // ─── 模型选择（动态从 API 获取） ────────────────────────────
@@ -486,9 +554,12 @@ function autoResize() {
 function handleSend() {
   if (!canSend.value) return
   const text = inputText.value.trim()
+  const atts = attachments.value.slice() // 拍快照：避免 send 异步期间被清空后引用空数组
   inputText.value = ''
   autoResize()
-  send(text)
+  send(text, { attachments: atts })
+  // 发送后清空 tray（避免下次发送重复附带）
+  clearAttachments()
   nextTick(() => scrollToBottom())
 }
 
@@ -507,7 +578,20 @@ function handleRetryError(item: { type: 'error'; messageIndex: number }) {
   const targetMsg = messages.value[idx]
   if (!targetMsg || targetMsg.role !== 'user') return
 
-  const text = targetMsg.content
+  // Task 12：content 可能是 multimodal 数组。从中抽出 text 元素作为
+  // 重发文本（附件不再重复附带——本地状态已丢失原 attachment 引用）。
+  let text = ''
+  if (typeof targetMsg.content === 'string') {
+    text = targetMsg.content
+  } else {
+    for (const part of targetMsg.content) {
+      if (part.type === 'text') {
+        text += part.text
+      }
+    }
+    text = text.trim()
+  }
+
   // 清除错误标记
   delete targetMsg.error
 
@@ -765,6 +849,34 @@ defineExpose({})
   font-size: 18px;
   flex-shrink: 0;
   color: #fff;
+}
+
+/* Task 12：附件 `+` 按钮（与发送按钮同尺寸，无背景色） */
+.footerAttachBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ion-color-primary);
+  cursor: pointer;
+  font-size: 18px;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background 0.12s;
+}
+
+.footerAttachBtn:hover,
+.footerAttachBtn:active {
+  background: rgba(var(--ion-color-primary-rgb), 0.12);
+}
+
+/* 隐藏原生 file input —— 用按钮触发 */
+.footerAttachInput {
+  display: none;
 }
 
 .footerSendBtn {

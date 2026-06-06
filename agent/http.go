@@ -19,8 +19,32 @@ import (
 // before calling Agent.Chat. A future migration to another LLM
 // SDK is then a local change to this file.
 type ChatRequest struct {
-	SessionID string                   `json:"session_id"`
-	Messages  []map[string]any         `json:"messages"`
+	SessionID string           `json:"session_id"`
+	Messages  []map[string]any `json:"messages"`
+	// Mode selects the send mode for the message:
+	//   - "" or "start": regular new turn (default behaviour,
+	//     equivalent to a fresh Chat call).
+	//   - "steer":       the message is meant to steer the
+	//     current in-flight turn; the agent uses the supplied
+	//     messages as the new running state. Steer preserves
+	//     the existing confirm flow (if a tool call is
+	//     produced the ApprovalCard is still shown).
+	//   - "queue":       the message is held until the current
+	//     turn fully ends. The agent stores it in
+	//     agent.PendingMessages[sessionID] and a
+	//     HookTurnEnd listener starts a new Chat after the
+	//     current runLoop returns. Queue returns immediately
+	//     (the HTTP response is closed) because the events
+	//     will surface through the existing SSE / Resume
+	//     connection once the queued Chat runs.
+	Mode string `json:"mode,omitempty"`
+	// SelectedSkills is the optional list of skill names the
+	// front-end wants to activate for this session. When
+	// non-empty, the default session_start hook registered
+	// by NewAgent will append the corresponding skill
+	// prompts to the session's per-session system prompt
+	// override so the LLM sees them on the first turn.
+	SelectedSkills []string `json:"selected_skills,omitempty"`
 }
 
 // ResumeRequest is the JSON payload accepted by /api/resume.
@@ -67,9 +91,28 @@ func (a *Agent) HandleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ch, err := a.Chat(r.Context(), req.SessionID, msgs)
+	// Register the per-session skill selection BEFORE Chat
+	// so the session_start hook (which runs inside the
+	// Chat's runLoop goroutine) can read it from
+	// a.selectedSkillsFor. The happens-before guarantee of
+	// sync.Map.Store makes the SetSelectedSkills call
+	// visible to the runLoop goroutine without any
+	// additional synchronisation.
+	a.SetSelectedSkills(req.SessionID, req.SelectedSkills)
+
+	ch, err := a.ChatMode(r.Context(), req.SessionID, msgs, req.Mode)
 	if err != nil {
 		http.Error(w, "chat error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Queue mode stores the message and returns a channel
+	// that is already closed — the actual Chat happens
+	// later, on the next HookTurnEnd. The HTTP response is
+	// therefore 202 Accepted with an empty body so the
+	// front-end knows the message was buffered rather than
+	// streamed.
+	if req.Mode == "queue" {
+		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 	streamSSE(w, r, ch)
@@ -284,12 +327,18 @@ func convertMessages(in []map[string]any) ([]openai.ChatCompletionMessage, error
 // HandleHealth is a minimal liveness probe. It is intentionally
 // separate from the SSE endpoints so an external watcher can
 // poll it cheaply.
+//
+// The response carries the agent's process-wide serverInstanceId
+// (see Agent.ServerInstanceId) so the front-end can detect
+// server restarts and discard any stale SSE sequence tracking
+// state from the previous instance.
 func (a *Agent) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"ok":        true,
-		"ts":        time.Now().UnixMilli(),
-		"openai_ok": a.cfg.OpenAIAPIKey != "",
+		"ok":                true,
+		"ts":                time.Now().UnixMilli(),
+		"openai_ok":         a.cfg.OpenAIAPIKey != "",
+		"serverInstanceId": a.serverInstanceId,
 	})
 }
 

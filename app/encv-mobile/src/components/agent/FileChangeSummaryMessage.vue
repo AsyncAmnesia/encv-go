@@ -1,11 +1,13 @@
 <!--
-  FileChangeSummaryMessage - 文件变更特化摘要
-  摘要：「已编辑 N 个文件」+ 文件列表
-  当 operationGroup 全是 fileChange 时由 GroupedOperationMessage 委托渲染
+  FileChangeSummaryMessage - 文件变更特化摘要（两级折叠）
+  - 外层 FileChangeSummary 卡片：显示"已编辑 N 个文件"汇总
+  - 内层文件路径列表：默认显示前 3 条，"显示更多 (N)" 展开后显示全部
+  - 当 operationGroup 全是 fileChange 时由 GroupedOperationMessage 委托渲染
 -->
 <template>
   <div class="fileChangeSummary">
-    <div class="fileChangeHeader" :class="{ fileChangeHeader_active: isActive }" @click="expanded = !expanded">
+    <!-- 外层：FileChangeSummary 摘要卡片 -->
+    <div class="fileChangeHeader" :class="{ fileChangeHeader_active: isActive }">
       <ion-icon :icon="icon" class="fileChangeIcon" />
       <span class="fileChangeSummaryText">{{ summary }}</span>
       <StatusBadge
@@ -13,13 +15,35 @@
         :label="status"
         :tone="statusTone"
       />
-      <ion-icon :icon="expanded ? chevronUp : chevronDown" class="fileChangeChevron" />
     </div>
-    <div v-if="expanded" class="fileChangeList">
-      <div v-for="(p, idx) in paths" :key="`${idx}-${p}`" class="fileChangeItem" :title="p">
+
+    <!-- 内层：文件路径列表（两级折叠） -->
+    <div v-if="hasDetail" class="fileChangeList">
+      <div
+        v-for="(p, idx) in visiblePaths"
+        :key="`${idx}-${p}`"
+        class="fileChangeItem"
+        :title="p"
+      >
         <ion-icon :icon="documentOutline" class="fileChangeItemIcon" />
         <span class="fileChangeItemPath">{{ truncate(p) }}</span>
       </div>
+      <button
+        v-if="canExpand"
+        type="button"
+        class="fileChangeMore"
+        @click="expandList"
+      >
+        {{ showMoreLabel }}
+      </button>
+      <button
+        v-else-if="canCollapse"
+        type="button"
+        class="fileChangeMore"
+        @click="collapseList"
+      >
+        {{ t('agent.ops.collapseAll') }}
+      </button>
     </div>
   </div>
 </template>
@@ -27,10 +51,9 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { IonIcon } from '@ionic/vue'
-import { documentTextOutline, chevronUpOutline, chevronDownOutline } from 'ionicons/icons'
-
-const documentOutline = documentTextOutline
+import { documentTextOutline } from 'ionicons/icons'
 import StatusBadge from './StatusBadge.vue'
+import { OPERATION_COLLAPSE_INITIAL_COUNT } from './twoLevelGrouping'
 import { useI18n } from '@/composables/useI18n'
 import type { ToolCall, ToolStatus } from '@/composables/useAgent'
 
@@ -40,11 +63,10 @@ const props = defineProps<{
 }>()
 
 const { t } = useI18n()
-const expanded = ref(false)
+const listExpanded = ref(false)
 
 const icon = documentTextOutline
-const chevronUp = chevronUpOutline
-const chevronDown = chevronDownOutline
+const documentOutline = documentTextOutline
 
 const paths = computed<string[]>(() => {
   const out: string[] = []
@@ -70,7 +92,7 @@ const paths = computed<string[]>(() => {
 
 const lastItem = computed<ToolCall | null>(() => props.items[props.items.length - 1] ?? null)
 
-const summary = computed(() => t('agent.ops.files', { n: String(props.items.length) }))
+const summary = computed(() => t('agent.ops.files', { n: String(paths.value.length) }))
 
 const status = computed(() => {
   const s = lastItem.value?.status
@@ -91,6 +113,32 @@ const statusTone = computed<'ready' | 'warn' | 'idle'>(() => {
 })
 
 const isActive = computed(() => lastItem.value?.status === 'running' || lastItem.value?.status === 'pending')
+
+// 两级折叠：hasDetail / visiblePaths / canExpand / canCollapse
+const hasDetail = computed(() => paths.value.length > 0)
+const visiblePaths = computed(() => {
+  if (listExpanded.value) return paths.value
+  return paths.value.slice(0, OPERATION_COLLAPSE_INITIAL_COUNT)
+})
+const canExpand = computed(
+  () => !listExpanded.value && paths.value.length > OPERATION_COLLAPSE_INITIAL_COUNT,
+)
+const canCollapse = computed(
+  () => listExpanded.value && paths.value.length > OPERATION_COLLAPSE_INITIAL_COUNT,
+)
+const showMoreLabel = computed(() =>
+  t('agent.ops.showMore', {
+    n: String(paths.value.length - OPERATION_COLLAPSE_INITIAL_COUNT),
+  }),
+)
+
+function expandList() {
+  listExpanded.value = true
+}
+
+function collapseList() {
+  listExpanded.value = false
+}
 
 function truncate(p: string): string {
   if (p.length <= 60) return p
@@ -113,8 +161,6 @@ function truncate(p: string): string {
   border: 1px solid rgba(var(--ion-color-primary-rgb), 0.2);
   font-size: 12px;
   color: var(--ion-text-color);
-  cursor: pointer;
-  user-select: none;
   max-width: 100%;
   flex-wrap: wrap;
 }
@@ -131,12 +177,6 @@ function truncate(p: string): string {
 
 .fileChangeSummaryText {
   font-weight: 500;
-}
-
-.fileChangeChevron {
-  font-size: 12px;
-  color: var(--encv-text-secondary);
-  flex-shrink: 0;
 }
 
 .fileChangeList {
@@ -170,6 +210,22 @@ function truncate(p: string): string {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.fileChangeMore {
+  align-self: flex-start;
+  margin-top: 4px;
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+  font-size: 11.5px;
+  color: var(--ion-color-primary);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.fileChangeMore:hover {
+  text-decoration: underline;
 }
 
 @keyframes fileChangeActivePulse {

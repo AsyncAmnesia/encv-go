@@ -22,6 +22,11 @@ import { ref } from 'vue'
 import { showToast } from '@/composables/useToast'
 import { getDeviceIdSync } from './useDeviceId'
 import { getAgentApiBase } from './useAgentApiBase'
+import {
+  serializeAttachments,
+  type Attachment,
+  type MessageContentPart,
+} from './useAttachments'
 
 // =============================================================================
 // 类型定义（与 agent Go 服务契约对齐）
@@ -47,6 +52,12 @@ export type AgentEventType =
   | 'tool_result'
   | 'stream_status'  // 后端流式状态（断点续传时推 synced / more_pending）
   | 'stream_end'
+  // 上下文自动压缩事件。Task 7 引入：后端在 messages token 数
+  // 越过窗口 80% 时调用 LLM summary 压缩老消息，并推送本事件。
+  // 前端收到时插入一条 role='system', content='上下文已自动压缩'
+  // 的合成消息（renderTurnItems 把它转成 ContextCompactionDivider）。
+  // 这是 7 种 event type 中的第 7 种，原有 6 种契约不变。
+  | 'compaction'
 
 /** Agent 推送到 SSE channel 的事件 */
 export interface AgentEvent {
@@ -55,7 +66,7 @@ export interface AgentEvent {
   data: string
 }
 
-export type ToolKind = 'command' | 'fileChange' | 'readOnly' | 'webSearch' | 'unknown'
+export type ToolKind = 'command' | 'fileChange' | 'readOnly' | 'webSearch' | 'plan' | 'unknown'
 export type ToolStatus = 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
 
 export interface ToolCall {
@@ -79,15 +90,44 @@ export interface ToolResult {
 }
 
 export interface Message {
-  role: 'user' | 'assistant'
-  content: string
+  role: 'user' | 'assistant' | 'system'
+  /**
+   * Task 12：附件场景下 content 可能是 OpenAI multimodal 数组
+   * （text / image_url / file 元素）。老消息（无附件）保持 string。
+   * 持久化层 JSON.parse 后这个 union 仍能正确还原。
+   */
+  content: string | MessageContentPart[]
   reasoning?: string
   tool_calls: ToolCall[]
   tool_results: ToolResult[]
   isStreaming?: boolean
-  /** 发送失败时的错误信息（每条消息独立） */
+  /**
+   * 发送失败时的错误信息（每条消息独立）
+   */
   error?: string
+  /**
+   * Task 11 (Steer / Queue)：当用户点击「排队下一条」时，
+   * 该 user 消息进入 pendingMessages 队列，等待当前 turn
+   * 完全结束后由服务端 drain hook 触发新一轮 Chat。pending=true
+   * 时 UI 应展示「已排队」标签。首个 text_delta 事件到达时
+   * 自动清除（说明服务端已开始处理该消息）。
+   */
+  pending?: boolean
 }
+
+/**
+ * Task 7 引入的「上下文已自动压缩」标记文本。后端在
+ * EventCompaction 事件里推送一份 LLM 生成的 summary，前端把它
+ * 包裹成一条 role='system' 的合成消息插入 messages 列表。renderTurnItems
+ * 检测到 message.role === 'system' && content === CONTEXT_COMPACTION_MARKER
+ * 时产出 compaction 类型的 RenderedItem，由 AgentChat.vue
+ * 渲染为不可展开的 ContextCompactionDivider 分隔线。
+ *
+ * 该 marker 是 *单向契约*：前端在 useAgent.ts 收到 compaction 事件
+ * 时构造，后端不会直接发这个字符串。如果后端在 messages 数组里看到
+ * 这条「system:上下文已自动压缩」消息，会被忽略（不会再次触发压缩）。
+ */
+export const CONTEXT_COMPACTION_MARKER = '上下文已自动压缩'
 
 // =============================================================================
 // 常量
@@ -98,6 +138,13 @@ const STORAGE_PREFIX = 'agent:session:'
 
 /** Agent 服务 API 路径（dev 走 preview-gateway :16666 → :2025；APK 直接 :2025） */
 const AGENT_API_BASE = getAgentApiBase()
+
+/**
+ * 单实例最多追踪的 SSE sequence 编号数。超过此上限时按插入顺序
+ * 淘汰最老的 sequence 编号（FIFO 近似 LRU）。参考 codex-web
+ * `appServerRealtimeReducer.ts` 的 `MAX_TRACKED_REALTIME_SEQUENCES` 常量。
+ */
+const MAX_TRACKED_REALTIME_SEQUENCES = 2_000
 
 /** ToolCall 状态在 tool_status 事件中可能的取值 */
 const TOOL_STATUS_VALUES: ReadonlySet<ToolStatus> = new Set<ToolStatus>([
@@ -216,12 +263,68 @@ function parseStreamStatusData(data: string): StreamStatusData | null {
   }
 }
 
+/**
+ * CompactionData 是后端 EventCompaction 事件的 payload 形状（Task 7）：
+ *   {
+ *     summary_text: string,            // LLM 生成的 summary
+ *     replaced_message_count: number,  // 被替换的旧消息数
+ *     triggered_at_ms: number,          // unix 毫秒时间戳
+ *   }
+ *
+ * parseCompactionData 容忍后端包装格式（data 字段是 JSON 字符串）：
+ *   - 直接 JSON.parse(data) 拿到 CompactionData
+ *   - 旧后端可能把整个 CompactionData 直接 stringify 在 data 里
+ *   - 极端场景：data 损坏 → 返回 null，让上层用 fallback 行为
+ */
+export interface CompactionData {
+  summary_text?: string
+  replaced_message_count?: number
+  triggered_at_ms?: number
+}
+
+function parseCompactionData(data: string): CompactionData | null {
+  if (!data) return null
+  try {
+    const parsed = JSON.parse(data) as Partial<CompactionData>
+    if (!parsed || typeof parsed !== 'object') return null
+    return {
+      summary_text: typeof parsed.summary_text === 'string' ? parsed.summary_text : undefined,
+      replaced_message_count:
+        typeof parsed.replaced_message_count === 'number' ? parsed.replaced_message_count : undefined,
+      triggered_at_ms: typeof parsed.triggered_at_ms === 'number' ? parsed.triggered_at_ms : undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
 function generateSessionId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
   }
   // 极端 fallback（老浏览器 / 测试环境无 crypto）
   return `sess-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+}
+
+/**
+ * Task 12：从 Message.content 抽取会话标题用的纯文本。
+ *  - string  → 第一行前 40 字符
+ *  - array   → 取首个 text 元素
+ *  - empty   → 空串
+ */
+function extractUserTitle(content: string | MessageContentPart[] | undefined): string {
+  if (!content) return ''
+  if (typeof content === 'string') {
+    return content.split('\n')[0]?.slice(0, 40) || ''
+  }
+  // multimodal 数组：找第一个 text 元素
+  for (const part of content) {
+    if (part.type === 'text' && part.text) {
+      return part.text.split('\n')[0]?.slice(0, 40) || ''
+    }
+  }
+  // 全是附件没文本：返回一个占位提示
+  return '[附件]'
 }
 
 // =============================================================================
@@ -235,6 +338,15 @@ export function useAgent() {
   const lastUserInput = ref<string>('')
   const sessions = ref<SessionMeta[]>([])
   const currentSessionId = ref<string>('')
+  /**
+   * Task 11 (Steer / Queue)：跟踪已通过「排队下一条」按钮提交、
+   * 但服务端尚未开始处理的 user 消息。pendingMessages 数组的元素
+   * 是 messages.value 中对应 user 消息的引用（同一对象），这样
+   * UI 可以直接从 pendingMessages 取出 text 渲染「已排队：xxx」
+   * 提示，并在服务端开始处理时（首个 text_delta 到达）实时清除
+   * 对应条目的 pending 标记。
+   */
+  const pendingMessages = ref<Message[]>([])
   /** 本地已处理事件计数（与 lastEventId 解耦：eventOffset 永远递增，lastEventId 由 SSE id 行决定） */
   let eventOffset = 0
   /**
@@ -244,6 +356,19 @@ export function useAgent() {
    */
   let lastEventId = 0
   let abortController: AbortController | null = null
+
+  // ─── Server Instance + Sequence 去重（Task 4） ────────────────────────
+  // 后端 /api/health 返回 process-wide 唯一的 serverInstanceId。同一进程
+  // 启动期间它恒定；进程重启（OS 分配新 PID / 启动时间不同）就会变化。
+  // 前端每次拉取发现 instance 变化时，必须清空 seenSequences——因为新进程
+  // 的 SSE sequence 编号可能与旧进程"撞号"，不复用旧的去重集合会造成
+  // 真实事件被错误丢弃。
+  /** 当前进程已知的 serverInstanceId；空串 = 尚未拉取过 /api/health */
+  let currentServerInstance = ''
+  /** 已见 SSE sequence 编号集合；超过 MAX_TRACKED_REALTIME_SEQUENCES 时按 FIFO 驱逐 */
+  const seenSequences = new Set<number>()
+  /** 配合 Set 实现的 FIFO 驱逐顺序表 */
+  const seenSequencesOrder: number[] = []
 
   // 模型/温度从 localStorage 读取（AgentChat 顶部 UI 选择会同步写入这里）
   const MODEL_STORAGE_KEY = 'encv-agent-selected-model'
@@ -277,6 +402,62 @@ export function useAgent() {
         break
       }
     }
+  }
+
+  /**
+   * 拉取后端 /api/health 取 serverInstanceId，并按规则同步到本地状态：
+   *   - 拉取失败 / 解析失败 / 字段缺失 → 静默保留 currentServerInstance 不动
+   *     （fallback 到空串 + console.warn 提示，但不抛错）
+   *   - 拉到新 id 且 ≠ currentServerInstance → 清空 seenSequences（关键！新进程
+   *     编号从 1 开始，旧 instance 的 sequence 集合必须丢弃避免误丢事件）
+   *   - 拉到与 currentServerInstance 相同的 id → 保持 sequence 去重集合不变
+   *
+   * 安全：仅在 init() / send() 入口处被调用；不会在 SSE 流过程中触发，
+   * 所以不会与正在进行的 sequence 编号检查产生竞态。
+   */
+  async function refreshServerInstance(): Promise<void> {
+    try {
+      const response = await fetch(`${AGENT_API_BASE}/api/health`, { method: 'GET' })
+      if (!response.ok) {
+        console.warn('[useAgent] refreshServerInstance: /api/health returned', response.status)
+        return
+      }
+      const data = await response.json()
+      const newId = typeof data?.serverInstanceId === 'string' ? data.serverInstanceId : ''
+      if (!newId) {
+        console.warn('[useAgent] refreshServerInstance: response missing serverInstanceId')
+        return
+      }
+      if (newId !== currentServerInstance) {
+        console.debug('[useAgent] server instance changed:', currentServerInstance || '(none)', '->', newId)
+        currentServerInstance = newId
+        // 清空去重状态：旧 instance 的 sequence 编号集合在物理上属于旧进程，
+        // 复用它们会导致新进程的真实事件被错误判为重复。
+        seenSequences.clear()
+        seenSequencesOrder.length = 0
+      }
+    } catch (e) {
+      // 网络/CORS 等错误：保留旧值不丢业务，但提示一次
+      console.warn('[useAgent] refreshServerInstance: fetch /api/health failed:', e)
+    }
+  }
+
+  /**
+   * 记录一个 sequence 编号为"已见"。超过 MAX_TRACKED_REALTIME_SEQUENCES
+   * 时按插入顺序淘汰最老的编号。返回 true 表示"新增"（未见过），false
+   * 表示"重复"（已在集合中）。
+   */
+  function rememberSequence(seq: number): boolean {
+    if (seenSequences.has(seq)) {
+      return false
+    }
+    seenSequences.add(seq)
+    seenSequencesOrder.push(seq)
+    if (seenSequencesOrder.length > MAX_TRACKED_REALTIME_SEQUENCES) {
+      const evict = seenSequencesOrder.shift()
+      if (evict !== undefined) seenSequences.delete(evict)
+    }
+    return true
   }
 
   // ─── 持久化 ─────────────────────────────────────────────────────────────
@@ -363,8 +544,9 @@ export function useAgent() {
           if (!parsed?.sessionId) continue
           const msgs = parsed.messages || []
           const firstUser = msgs.find((m) => m.role === 'user')
-          const title =
-            (firstUser?.content || '').split('\n')[0]?.slice(0, 40) || '(空会话)'
+          // Task 12：content 可能是 multimodal 数组（带附件的 user 消息），
+          //          从中抽出首段 text 元素作为会话标题。
+          const title = extractUserTitle(firstUser?.content) || '(空会话)'
           const updatedAt = msgs.length > 0 ? Date.now() - (msgs.length - 1) : 0
           const createdAt = updatedAt
           list.push({
@@ -509,9 +691,19 @@ export function useAgent() {
         received = true
         try {
           const event = JSON.parse(payload) as AgentEvent
-          // 关联 SSE id：若同一事件声明了 id，则覆盖到 lastEventId
-          // （一个事件只能有一个 data，多个 id 行以最后一个为准）
+          // Task 4.3：sequence 去重。若事件声明了 SSE id (currentEventId)，
+          // 且该 id 已在当前 serverInstance 见过 → 整条事件丢弃，不再 dispatch。
+          // 注意：未声明 id 的事件（如后端断点续传 stream_status 边界事件）跳过
+          // 去重逻辑，避免误丢无 id 的合法事件。
           if (currentEventId !== null) {
+            if (!rememberSequence(currentEventId)) {
+              console.debug('[useAgent] drop duplicate seq', currentEventId)
+              // 重置 currentEventId 避免下一行误用
+              currentEventId = null
+              continue
+            }
+            // 关联 SSE id：若同一事件声明了 id，则覆盖到 lastEventId
+            // （一个事件只能有一个 data，多个 id 行以最后一个为准）
             lastEventId = currentEventId
             // 重置 currentEventId 避免下一行误用
             currentEventId = null
@@ -580,12 +772,38 @@ export function useAgent() {
    * 单个 event type → reactive state dispatch
    */
   function handleAgentEvent(event: AgentEvent): void {
-    // 取最后一条 assistant 消息（流式追加目标）
-    const lastAssistant = () => {
-      for (let i = messages.value.length - 1; i >= 0; i--) {
-        if (messages.value[i].role === 'assistant') return messages.value[i]
+    // 取最后一条 *正在 streaming* 的 assistant 消息作为流式追加目标。
+    //
+    // Task 7 之前：实现是"最后一条 assistant 消息"，因为 send() 每次
+    // 都会推一条新的空 assistant(isStreaming=true)，老的已经
+    // 被 stream_end / finalizeLastAssistant 标记为 isStreaming=false。
+    //
+    // Task 7 之后：compaction 事件会在 messages 中插入 system marker
+    // 标记，*并 finalize 掉当前 streaming 的 assistant*。如果下一个
+    // text_delta 仍走"最后一条 assistant 消息"路径，它会找到刚被
+    // finalize 的老 assistant，把 post-compaction 的文本 append 到
+    // pre-compaction 文本后面，marker 漂到消息尾部。
+    //
+    // 修正：把"messages 尾部为 system 消息"作为 turn 边界的硬信号——
+    // 说明上一个 turn 已被边界事件（compaction、未来的 user 切分等）
+    // 显式终结，后续 text_delta 应当开一条新 assistant。resume 路径
+    // 不触发此分支（resume 不会在 messages 尾部插入 system 消息），
+    // 因此原"追加到最后一条 assistant"行为保留。
+    const lastAssistant = (): Message => {
+      // Turn 边界检测：尾部是 system 消息 → 必须新开 assistant
+      const tail = messages.value[messages.value.length - 1]
+      const isTurnBoundary = tail && tail.role === 'system'
+      if (!isTurnBoundary) {
+        // 非 turn 边界：优先 streaming → fallback 到任何 assistant
+        for (let i = messages.value.length - 1; i >= 0; i--) {
+          const m = messages.value[i]
+          if (m.role === 'assistant' && m.isStreaming) return m
+        }
+        for (let i = messages.value.length - 1; i >= 0; i--) {
+          if (messages.value[i].role === 'assistant') return messages.value[i]
+        }
       }
-      // 没有 assistant → 立即创建一条
+      // turn 边界 or 没有 assistant → 创建新 assistant
       const newMsg: Message = {
         role: 'assistant',
         content: '',
@@ -594,7 +812,7 @@ export function useAgent() {
         isStreaming: true,
       }
       messages.value.push(newMsg)
-    return messages.value[messages.value.length - 1]
+      return messages.value[messages.value.length - 1]
     }
 
     switch (event.type) {
@@ -676,6 +894,65 @@ export function useAgent() {
           m.tool_calls.some((tc) => tc.needsConfirm && tc.status === 'pending'),
         )
         status.value = hasPendingConfirm ? 'confirming' : 'idle'
+        // Task 11：每个 stream_end 清掉队首 pending 消息。
+        // 时序说明：当 in-flight turn 结束时，stream_end 触发
+        // 队首清空（即使这个 turn 实际处理的是该消息，UI 端
+        // 「已排队」标签与实际处理节拍同步）；后续 queued turn
+        // 各自的 stream_end 同样按 FIFO 清队。
+        if (pendingMessages.value.length > 0) {
+          const first = pendingMessages.value.shift()!
+          first.pending = false
+        }
+        break
+      }
+      case 'compaction': {
+        // Task 7：上下文自动压缩事件。
+        //
+        // 后端在 messages token 数越过 80% 窗口阈值时，调用 LLM
+        // 生成老消息的 summary，并在 messages 头部插入一条
+        // role='system', name='compaction' 的合成消息。
+        // 本事件只是告知前端"这里发生了压缩"，附带：
+        //   - summary_text:   LLM 生成的 summary 文本（前端不渲染）
+        //   - replaced_message_count: 被替换的旧消息数
+        //   - triggered_at_ms: unix 毫秒时间戳
+        //
+        // 前端在 messages 列表里也插入一条 role='system' 的合成
+        // 消息，content 固定为 CONTEXT_COMPACTION_MARKER。
+        // renderTurnItems 会把这条消息转成 ContextCompactionDivider
+        // （不可展开的水平分隔线），位置恰好对应被压缩掉的旧
+        // 消息所在位置。summary 文本本身不展示——压缩是不可逆的，
+        // 用户看到「这里有 N 条消息被合并为一段总结」即可。
+        //
+        // 关键时序：先 finalize 当前 streaming 的 assistant 消息
+        // （mark isStreaming=false），再 push system marker。如果
+        // 不 finalize，下一个 text_delta 仍会找到这条"还在流式"
+        // 的老 assistant，把 post-compaction 的内容 append 上去，
+        // marker 漂到消息尾部——视觉上分隔线就不在压缩点的位置了。
+        // 配合 Task 7 改的 lastAssistant 行为（只取 streaming
+        // assistant），post-compaction 的 text_delta 会创建一条新
+        // 的 assistant 消息，marker 自然落在两条 assistant 之间。
+        //
+        // 容错：compaction 事件不应让 status 切换；不影响
+        // streaming 状态。重复到达时直接再 push 一条 marker
+        // （后端保证只发一次）。
+        finalizeLastAssistant()
+        const data = parseCompactionData(event.data)
+        // 不论 data 是否解析成功都插入 marker（即使解析失败也
+        // 给用户一个 divider 提示此处发生了压缩）。
+        messages.value.push({
+          role: 'system',
+          content: CONTEXT_COMPACTION_MARKER,
+          tool_calls: [],
+          tool_results: [],
+        })
+        if (data) {
+          console.debug(
+            '[useAgent] compaction: replaced',
+            data.replaced_message_count,
+            'messages @',
+            new Date(data.triggered_at_ms).toISOString(),
+          )
+        }
         break
       }
       default:
@@ -691,8 +968,31 @@ export function useAgent() {
 
   /**
    * 发送用户消息，发起对话
+   *
+   * Task 11 (Steer / Queue)：新增 `mode` 选项，支持三种发送模式：
+   *   - "start"  默认行为：常规发起一轮新 turn，blocking 等待 SSE 流。
+   *   - "steer"  与 start 等价的 server-side 行为，语义上标记"修正当前
+   *              turn"。在 UI 上用「引导当前」按钮触发，行为对用户透明。
+   *   - "queue"  排队下一条：仅在 status='streaming' 时合法。消息被
+   *              加入 pendingMessages 队列，立即在 messages.value 中
+   *              渲染（带 pending 标记），同时 POST /api/chat with
+   *              mode='queue'。服务端在当前 turn 完全结束后由 drain
+   *              hook 启动新一轮 Chat，结果通过现有 SSE 连接回流。
+   *
+   * Task 12：可选接受 `attachments`（图片 / 文件）。如果提供，会和 text
+   * 一起被编码成 OpenAI multimodal content 数组塞进 Message.content
+   * （参见 useAttachments.serializeAttachments）。
    */
-  async function send(text: string): Promise<void> {
+  async function send(
+    text: string,
+    options?: { mode?: 'start' | 'steer' | 'queue'; attachments?: Attachment[] },
+  ): Promise<void> {
+    const mode = options?.mode ?? 'start'
+    if (mode === 'queue') {
+      await sendQueued(text, options?.attachments ?? [])
+      return
+    }
+
     if (status.value === 'streaming' || status.value === 'confirming') {
       console.debug('[useAgent] send: ignored (busy)')
       return
@@ -702,6 +1002,11 @@ export function useAgent() {
     lastError.value = ''
     lastUserInput.value = text
 
+    // Task 4：先拉取 /api/health 取 serverInstanceId。每次 send 都刷一次——
+    // 开销可忽略（一次 GET，且 health 不带 SSE body），但能在"中途服务器
+    // 重启"时立刻把 seenSequences 清空，避免后续事件被错误判为重复。
+    await refreshServerInstance()
+
     // 第一次发送：分配新 session
     if (!currentSessionId.value) {
       currentSessionId.value = generateSessionId()
@@ -710,9 +1015,17 @@ export function useAgent() {
     lastEventId = 0
 
     // 推 user 消息 + 空 assistant 占位
+    // Task 12：如果有 attachments，content 编为 multimodal 数组；
+    //          否则保持原样（纯字符串）以保持向后兼容。
+    const attachments = options?.attachments ?? []
+    const userContent: string | MessageContentPart[] =
+      attachments.length > 0
+        ? serializeAttachments(text, attachments)
+        : text
+
     messages.value.push({
       role: 'user',
-      content: text,
+      content: userContent,
       tool_calls: [],
       tool_results: [],
     })
@@ -737,16 +1050,25 @@ export function useAgent() {
     }, 30_000)
 
     // ── 构建消息列表：历史对话（system prompt 由后端从 config 注入） ──
-    const apiMessages: Array<{ role: string; content: string }> = []
+    // Task 12：content 可能是 string 或 multimodal 数组，原样透传。
+    const apiMessages: Array<{ role: string; content: string | MessageContentPart[] }> = []
 
-    // 追加历史消息（不含空的 assistant 占位消息）
+    // 追加历史消息（不含空的 assistant 占位消息）。
+    // Task 7：跳过 role='system' + content=CONTEXT_COMPACTION_MARKER
+    // 的合成消息——后端在触发压缩时已经把这段 summary 写进了
+    // 自己的 session 持久化层，前端再回送一份就是重复。
     for (const m of messages.value) {
       if (m.role === 'assistant' && !m.content && !m.reasoning && m.tool_calls.length === 0) continue
+      // Task 7：跳过 system + CONTEXT_COMPACTION_MARKER 的合成消息。
+      // Task 12：content 可能是 multimodal 数组，这种情况下不可能 ==
+      // CONTEXT_COMPACTION_MARKER（string），TS 也允许此比较但用 typeof
+      // 守卫更安全。
+      if (m.role === 'system' && typeof m.content === 'string' && m.content === CONTEXT_COMPACTION_MARKER) continue
       apiMessages.push({ role: m.role, content: m.content })
     }
 
     try {
-      console.debug('[useAgent] send() starting fetch to', `${AGENT_API_BASE}/api/chat`)
+      console.debug('[useAgent] send() starting fetch to', `${AGENT_API_BASE}/api/chat`, 'mode=', mode)
       const response = await fetch(`${AGENT_API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -756,6 +1078,9 @@ export function useAgent() {
           temperature: activeTemperature.value,
           messages: apiMessages,
           deviceId: getDeviceIdSync(),
+          // Task 11：把 mode 字段透传给后端。后端 ChatMode 根据 mode
+          // 走 start/steer/queue 三种分支（"" 视为 start）。
+          mode,
         }),
         signal: abortController.signal,
       })
@@ -808,6 +1133,97 @@ export function useAgent() {
     } finally {
       clearTimeout(timeoutId)
       abortController = null
+      saveState()
+    }
+  }
+
+  /**
+   * Task 11：「排队下一条」按钮的内部实现。仅在 status='streaming' 或
+   * 'confirming' 时合法。流程：
+   *   1. 推一条带 pending=true 的 user 消息到 messages.value，并
+   *      加入 pendingMessages 队列（同一对象引用，便于 UI 双向引用）。
+   *   2. POST /api/chat with mode='queue'，body 包含完整消息列表
+   *      （含刚 push 的 user 消息，与 start/steer 一致）。
+   *   3. 期望服务端返回 202 Accepted —— 不读取 SSE（queued turn 的
+   *      事件会通过现有 SSE 连接回流，由 handleAgentEvent 接管）。
+   *   4. 出错时把 user 消息从 pendingMessages 移除并标记 error。
+   *
+   * 注意：排队期间不打断当前 SSE 流、不创建新 assistant 占位——等
+   * 排队的 turn 真正启动时，由 handleAgentEvent 的 lastAssistant()
+   * 在首个 text_delta 时按需创建。
+   */
+  async function sendQueued(text: string, attachments: Attachment[]): Promise<void> {
+    if (status.value !== 'streaming' && status.value !== 'confirming') {
+      console.debug('[useAgent] sendQueued: ignored (no active turn to queue after)')
+      return
+    }
+    if (!currentSessionId.value) {
+      console.debug('[useAgent] sendQueued: ignored (no active session)')
+      return
+    }
+
+    lastError.value = ''
+
+    // Task 12：multimodal content 数组 vs 纯字符串
+    const userContent: string | MessageContentPart[] =
+      attachments.length > 0
+        ? serializeAttachments(text, attachments)
+        : text
+
+    // Push user 消息（带 pending=true），并把它登记到 pendingMessages。
+    // 两个数组共享同一对象引用：messages.value 渲染聊天气泡，
+    // pendingMessages 暴露给 UI 渲染「已排队：xxx」提示。
+    const userMsg: Message = {
+      role: 'user',
+      content: userContent,
+      tool_calls: [],
+      tool_results: [],
+      pending: true,
+    }
+    messages.value.push(userMsg)
+    pendingMessages.value.push(userMsg)
+    saveState()
+    refreshSessions()
+
+    // 复用 send() 的 apiMessages 构建逻辑（不能调 send() 本身——
+    // 那会重置 eventOffset 并破坏当前 SSE 流的状态机）。
+    const apiMessages: Array<{ role: string; content: string | MessageContentPart[] }> = []
+    for (const m of messages.value) {
+      if (m.role === 'assistant' && !m.content && !m.reasoning && m.tool_calls.length === 0) continue
+      if (m.role === 'system' && typeof m.content === 'string' && m.content === CONTEXT_COMPACTION_MARKER) continue
+      apiMessages.push({ role: m.role, content: m.content })
+    }
+
+    try {
+      console.debug('[useAgent] sendQueued() POST /api/chat mode=queue')
+      const response = await fetch(`${AGENT_API_BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: currentSessionId.value,
+          model: activeModel.value,
+          temperature: activeTemperature.value,
+          messages: apiMessages,
+          deviceId: getDeviceIdSync(),
+          mode: 'queue',
+        }),
+      })
+      // queue 模式服务端约定返回 202 Accepted（chat.go 中由
+      // HandleChat 在 mode=='queue' 时显式 WriteHeader 202）。
+      if (response.status !== 202) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText || '排队失败'}`)
+      }
+      console.debug('[useAgent] sendQueued: 202 Accepted, message parked on server')
+    } catch (e: any) {
+      const detail = e?.message || String(e)
+      console.error('[useAgent] sendQueued failed:', detail, e)
+      // 出错：把 user 消息从 pendingMessages 摘除并标记 error（保留在
+      // messages.value 以便用户看到失败提示）。
+      const idx = pendingMessages.value.indexOf(userMsg)
+      if (idx !== -1) pendingMessages.value.splice(idx, 1)
+      userMsg.error = '排队失败：' + detail
+      userMsg.pending = false
+      showToast({ message: '排队失败', duration: 3000, color: 'danger' })
       saveState()
     }
   }
@@ -1053,5 +1469,15 @@ export function useAgent() {
     retryLast,
     activeModel,
     activeTemperature,
+    // Task 11 (Steer / Queue)：UI 用它渲染「已排队：xxx」提示。
+    pendingMessages,
+    // Task 4：以下为测试专用钩子。生产代码不应调用——所有 serverInstance
+    // 同步都由 useAgent 内部 await refreshServerInstance() 完成。
+    __refreshServerInstanceForTest: refreshServerInstance,
+    __getServerInstanceForTest: () => currentServerInstance,
+    __setServerInstanceForTest: (id: string) => {
+      currentServerInstance = id
+    },
+    __getSeenSequencesForTest: () => seenSequencesOrder.slice(),
   }
 }
