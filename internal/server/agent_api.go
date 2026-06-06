@@ -411,6 +411,20 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		finalMessages = append(finalMessages, body.Messages...)
 	}
 
+	// ③¾ 缓存 session：messages（不含 system）+ model + temperature
+	//     —— confirm 时按 sessionId 取回继续对话
+	sessID := body.SessionId
+	if sessID == "" {
+		sessID = "default"
+	}
+	sess := getOrCreateSession(sessID)
+	sess.mu.Lock()
+	sess.Messages = append([]chatMsg{}, body.Messages...) // 存用户原始 messages（不含 system）
+	sess.LastModel = model
+	sess.LastTemperature = body.Temperature
+	sess.PendingTools = nil // 新一轮开始，清空旧的 pending
+	sess.mu.Unlock()
+
 	// ④ Flusher 检测
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
@@ -476,6 +490,11 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024) // 大 buffer 防止长行截断
 	hasContent := false
 
+	// 累积 tool_calls（OpenAI 流式分片到达，必须按 index 聚合）
+	tcAccum := make(map[int]*toolCallAccumulator)
+	var pendingTools []toolCallAccumulator
+	streamEnded := false
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.HasPrefix(line, "data: ") {
@@ -483,18 +502,34 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		}
 		dataStr := strings.TrimPrefix(line, "data: ")
 		if dataStr == "[DONE]" {
+			// 推 finish 阶段的 tool_call 事件（如果有累积的）
+			if len(pendingTools) == 0 {
+				for _, tc := range tcAccum {
+					pendingTools = append(pendingTools, *tc)
+				}
+			}
+			for _, tc := range pendingTools {
+				s.emitToolCallEvent(c.Writer, flusher, tc)
+			}
+			// 缓存 pending tools 到 session（供 confirm 取用）
+			if len(pendingTools) > 0 {
+				sess.mu.Lock()
+				sess.PendingTools = pendingTools
+				sess.mu.Unlock()
+			}
 			s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+			streamEnded = true
 			break
 		}
 
 		// 解析 OpenAI chunk 格式
 		var chunk struct {
-		 Choices []struct {
+			Choices []struct {
 				Delta struct {
-					Content      string `json:"content"`
-					Role         string `json:"role"`
-					ToolCalls    []interface{} `json:"tool_calls"`
-					ReasoningContent string `json:"reasoning_content"`
+					Content          string                   `json:"content"`
+					Role             string                   `json:"role"`
+					ToolCalls        []openaiToolCallChunk    `json:"tool_calls"`
+					ReasoningContent string                   `json:"reasoning_content"`
 				} `json:"delta"`
 				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
@@ -519,16 +554,68 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 				s.sendSSEEventSafe(c.Writer, flusher, "reasoning_delta", delta.ReasoningContent)
 			}
 
-			// 工具调用 → tool_call
+			// 工具调用 → 按 index 累积
 			if len(delta.ToolCalls) > 0 {
-				s.sendSSEEventSafe(c.Writer, flusher, "tool_call", delta.ToolCalls)
+				for _, tc := range delta.ToolCalls {
+					cur, ok := tcAccum[tc.Index]
+					if !ok {
+						cur = &toolCallAccumulator{Index: tc.Index, ID: tc.ID, Type: tc.Type}
+						tcAccum[tc.Index] = cur
+					}
+					if tc.ID != "" {
+						cur.ID = tc.ID
+					}
+					if tc.Type != "" {
+						cur.Type = tc.Type
+					}
+					if tc.Function.Name != "" {
+						cur.Function.Name += tc.Function.Name
+					}
+					if tc.Function.Arguments != "" {
+						cur.Function.Arguments += tc.Function.Arguments
+					}
+				}
 			}
 
-			// 结束标记
+			// 结束标记 —— 在 finish_reason 出现时推 tool_call 事件
 			if choice.FinishReason != "" {
+				// 收集所有累积的 tool_calls
+				if len(pendingTools) == 0 {
+					for _, tc := range tcAccum {
+						pendingTools = append(pendingTools, *tc)
+					}
+				}
+				for _, tc := range pendingTools {
+					s.emitToolCallEvent(c.Writer, flusher, tc)
+				}
+				// 缓存 pending tools
+				if len(pendingTools) > 0 {
+					sess.mu.Lock()
+					sess.PendingTools = pendingTools
+					sess.mu.Unlock()
+				}
 				s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+				streamEnded = true
 			}
 		}
+	}
+
+	// 兜底：扫描器跑完但没收到 [DONE] / finish_reason
+	if !streamEnded {
+		if len(pendingTools) == 0 {
+			for _, tc := range tcAccum {
+				pendingTools = append(pendingTools, *tc)
+			}
+		}
+		for _, tc := range pendingTools {
+			s.emitToolCallEvent(c.Writer, flusher, tc)
+		}
+		if len(pendingTools) > 0 {
+			sess.mu.Lock()
+			sess.PendingTools = pendingTools
+			sess.mu.Unlock()
+		}
+		s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
 	}
 
 	// 如果上游没有发送任何内容（非流式响应等），兜底读取完整 body
@@ -541,32 +628,174 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		slog.Warn("agent: sse scanner error", "error", err)
 	}
 
-	slog.Info("agent: chat completed", "model", model, "has_content", hasContent)
+	slog.Info("agent: chat completed", "model", model, "has_content", hasContent, "pending_tools", len(pendingTools))
 }
 
-// ─── POST /api/confirm — SSE 工具确认（stub） ────────────────
+// openaiToolCallChunk 是 OpenAI 流式 tool_calls 单个分片的结构
+type openaiToolCallChunk struct {
+	Index    int    `json:"index"`
+	ID       string `json:"id"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"function"`
+}
+
+// emitToolCallEvent 推送一个完整的 tool_call 事件给前端
+func (s *Server) emitToolCallEvent(w http.ResponseWriter, flusher http.Flusher, tc toolCallAccumulator) {
+	payload := map[string]interface{}{
+		"id":           tc.ID,
+		"name":         tc.Function.Name,
+		"args":         tc.Function.Arguments,
+		"auto_run":     false,
+		"needsConfirm": true,
+		"kind":         "fileChange",
+	}
+	s.sendSSEEventSafe(w, flusher, "tool_call", payload)
+}
+
+// ─── POST /api/confirm — SSE 工具确认 ───────────────────────
+
+// confirmRequest 是 /api/confirm 的请求体
+type confirmRequest struct {
+	SessionId  string `json:"sessionId"`
+	ToolCallId string `json:"toolCallId"`
+	Decision   string `json:"decision"` // accept | decline | cancel
+}
 
 func (s *Server) handleAgentConfirm(c *gin.Context) {
-	// ① 先消耗请求体（与 handleAgentChat 保持一致顺序）
-	var body struct{}
-	_ = c.ShouldBindJSON(&body)
+	// ① 解析请求体
+	var body confirmRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json", "detail": err.Error()})
+		return
+	}
 
-	flusher, ok := c.Writer.(http.Flusher)
+	// ② 决策白名单校验
+	switch body.Decision {
+	case "accept", "decline", "cancel":
+		// pass
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_decision", "message": "decision 必须是 accept / decline / cancel"})
+		return
+	}
+
+	// ③ session 必须存在
+	sessID := body.SessionId
+	if sessID == "" {
+		sessID = "default"
+	}
+	sessionMu.RLock()
+	sess, ok := sessions[sessID]
+	sessionMu.RUnlock()
 	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session_not_found", "message": "未找到会话，请重新发起对话"})
+		return
+	}
+
+	// ④ Flusher 检测
+	flusher, okFlusher := c.Writer.(http.Flusher)
+	if !okFlusher {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "sse_not_supported"})
 		return
 	}
 	s.setSSEHeaders(c.Writer)
-	reply := fmt.Sprintf("（encv-go agent stub）已收到决策")
-	s.streamTextSafe(c.Writer, flusher, reply, 3, 40)
-	s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+
+	// ⑤ cancel：立即终止，不执行、不递归
+	if body.Decision == "cancel" {
+		s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+		return
+	}
+
+	// ⑥ accept / decline：必须找到对应的 tool_call
+	sess.mu.Lock()
+	var tool *toolCallAccumulator
+	for i := range sess.PendingTools {
+		if sess.PendingTools[i].ID == body.ToolCallId {
+			tool = &sess.PendingTools[i]
+			break
+		}
+	}
+	if tool == nil {
+		sess.mu.Unlock()
+		slog.Warn("agent: confirm tool not found", "session", sessID, "toolCallId", body.ToolCallId)
+		s.sendSSEEventSafe(c.Writer, flusher, "stream_error", "tool_call_not_found: "+body.ToolCallId)
+		s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+		return
+	}
+
+	// ⑦ 构造 assistant 消息（包含 tool_calls 字段），让 OpenAI 知道哪些调用被处理了
+	//     注意：OpenAI 协议要求 assistant 消息带 tool_calls 数组
+	//     —— 但我们 chatMsg 结构体暂未扩展 tool_calls 字段。
+	//     这里采用最简方案：把 tool_call 信息编码到 Content 里（hack 但能用），
+	//     并把 toolCallId 映射到 tool 消息的 tool_call_id。
+	//     完整实现需扩展 chatMsg 增加 ToolCalls 字段（后续 phase）。
+	assistantMsg := chatMsg{
+		Role: "assistant",
+		Content: fmt.Sprintf("[tool_call:%s:%s:%s]",
+			tool.ID, tool.Function.Name, tool.Function.Arguments),
+	}
+
+	// ⑧ accept → 真实执行；decline → 注入 cancelled 假结果
+	var toolMsg chatMsg
+	if body.Decision == "accept" {
+		// 读取 agent 配置（不带 deviceId 派生加密）
+		cfg := s.readAgentConfig()
+		if cfg.BaseURL == "" {
+			cfg.BaseURL = "https://api.openai.com"
+		}
+		toolMsg, _ = executeAndRecurse(c.Request.Context(), sess, cfg, *tool)
+		// 推 tool_status: completed 给前端
+		s.sendSSEEventSafe(c.Writer, flusher, "tool_status", map[string]interface{}{
+			"id":     tool.ID,
+			"status": "completed",
+			"result": toolMsg.Content,
+		})
+	} else {
+		// decline: 构造 cancelled 假结果
+		toolMsg = chatMsg{
+			Role:       "tool",
+			Content:    `{"cancelled": true, "reason": "user_declined"}`,
+			ToolCallID: tool.ID,
+			Name:       tool.Function.Name,
+		}
+		s.sendSSEEventSafe(c.Writer, flusher, "tool_status", map[string]interface{}{
+			"id":     tool.ID,
+			"status": "cancelled",
+			"result": "user_declined",
+		})
+	}
+
+	// ⑨ 把 assistant + tool 消息追加到 session.messages
+	sess.Messages = append(sess.Messages, assistantMsg, toolMsg)
+	// 清空 pending tools
+	sess.PendingTools = nil
+	sess.mu.Unlock()
+
+	// ⑩ 递归下一轮 chat（流式）
+	cfg := s.readAgentConfig()
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = "https://api.openai.com"
+	}
+	// 注入 system prompt（与 handleAgentChat 一致）
+	finalMessages := sess.Messages
+	if cfg.SystemPrompt != "" {
+		finalMessages = make([]chatMsg, 0, len(sess.Messages)+1)
+		finalMessages = append(finalMessages, chatMsg{Role: "system", Content: cfg.SystemPrompt})
+		finalMessages = append(finalMessages, sess.Messages...)
+	}
+	s.streamChat(c.Request.Context(), c, cfg, sess.LastModel, sess.LastTemperature, finalMessages, sess)
 }
 
-// ─── POST /api/resume — SSE 断点续传（stub） ─────────────────
+// ─── POST /api/resume — SSE 断点续传（暂未实现） ─────────────
 
 func (s *Server) handleAgentResume(c *gin.Context) {
-	// ① 先消耗请求体（与 handleAgentChat 保持一致顺序）
-	var body struct{}
+	// 先消耗请求体（保持与 handleAgentChat 一致的顺序）
+	var body struct {
+		SessionId string `json:"sessionId"`
+		Offset    int64  `json:"offset"`
+	}
 	_ = c.ShouldBindJSON(&body)
 
 	flusher, ok := c.Writer.(http.Flusher)
@@ -575,8 +804,8 @@ func (s *Server) handleAgentResume(c *gin.Context) {
 		return
 	}
 	s.setSSEHeaders(c.Writer)
-	reply := "（encv-go agent stub）已恢复 session。真实 agent 将继续流式输出。"
-	s.streamTextSafe(c.Writer, flusher, reply, 3, 50)
+	// 当前后端无事件缓存（bufio.Scanner 流式已消费）→ 明确告知前端不支持
+	s.sendSSEEventSafe(c.Writer, flusher, "stream_error", "resume_not_implemented: 当前后端无事件缓存，断点续传需重构为事件驱动架构")
 	s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
 }
 
@@ -715,8 +944,11 @@ func sortModels(models []modelEntry) {
 	}
 }
 
-// chatMsg 是 chat 请求中的消息格式
+// chatMsg 是 chat 请求中的消息格式。
+// ToolCallID 和 Name 仅在 role=="tool" 时使用（OpenAI tool message 协议要求）。
 type chatMsg struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string `json:"role"`
+	Content    string `json:"content"`
+	ToolCallID string `json:"tool_call_id,omitempty"`
+	Name       string `json:"name,omitempty"`
 }

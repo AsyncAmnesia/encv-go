@@ -80,3 +80,9 @@ require (
 	golang.org/x/sys v0.41.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/Soltus/encv-go/internal/v2/plugins => ./internal/v2/plugins
+
+replace github.com/Soltus/encv-go/internal/v2/crypto => ./internal/v2/crypto
+
+replace github.com/Soltus/encv-go/internal/v2/plugins/interfaces => ./internal/v2/plugins/interfaces
