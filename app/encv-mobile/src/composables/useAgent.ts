@@ -502,6 +502,10 @@ export function useAgent() {
   const messages = ref<Message[]>([])
   const status = ref<AgentStatus>('idle')
   const lastError = ref<string>('')
+  // 错误语义码：后端 buildHttpError 在 Error 上挂 .code 字段（'no_api_key' / 'upstream_error' / 'unknown'），
+  // 前端 chat UI 据此做分支判断（如展示"去 AI 设置"按钮）。
+  // 与 lastError 的区别：lastError 是给人看的字符串，lastErrorCode 是给程序判断的结构化字段。
+  const lastErrorCode = ref<'' | 'no_api_key' | 'upstream_error' | 'invalid_json' | 'unknown'>('')
   const lastUserInput = ref<string>('')
   const sessions = ref<SessionMeta[]>([])
   const currentSessionId = ref<string>('')
@@ -765,6 +769,7 @@ export function useAgent() {
     messages.value = saved.messages.map((m) => ({ ...m }))
     status.value = 'idle'
     lastError.value = ''
+    lastErrorCode.value = ''
     saveState()
   }
 
@@ -1181,6 +1186,7 @@ export function useAgent() {
 
     // 关闭上一轮的错误条
     lastError.value = ''
+    lastErrorCode.value = ''
     lastUserInput.value = text
 
     // Task 4：先拉取 /api/health 取 serverInstanceId。每次 send 都刷一次——
@@ -1310,6 +1316,11 @@ export function useAgent() {
         const detail = e?.message || String(e)
         console.error('[useAgent] send failed:', detail, e)
         if (lastUserMsg) lastUserMsg.error = detail
+        // 把后端 buildHttpError 挂的 .code 提取出来（'no_api_key' / 'upstream_error' / 等）。
+        // chat UI 据此可以展示"去 AI 设置"快捷按钮，让用户从对话流直达修复点，
+        // 避免"我保存了 key 但 chat 还是 503"的卡死循环（用户的 6 条日志就是这个场景）。
+        const errCode = e?.code as 'no_api_key' | 'upstream_error' | 'invalid_json' | 'unknown' | undefined
+        lastErrorCode.value = errCode ?? 'unknown'
         showToast({ message: detail, duration: 3000, color: 'danger' })
         status.value = 'idle'
         finalizeLastAssistant()
@@ -1623,6 +1634,7 @@ export function useAgent() {
    */
   function dismissError(): void {
     lastError.value = ''
+    lastErrorCode.value = ''
     if (status.value === 'error') status.value = 'idle'
   }
 
@@ -1655,6 +1667,7 @@ export function useAgent() {
     sessions,
     currentSessionId,
     lastError,
+    lastErrorCode,
     dismissError,
     retryLast,
     activeModel,

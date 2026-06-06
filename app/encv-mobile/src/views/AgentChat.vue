@@ -32,6 +32,25 @@
       </button>
     </header>
 
+    <!--
+      no_api_key 自愈 banner：仅在 chat 发送返回 503 {error: "no_api_key"} 时出现。
+      原因：用户可能在另一台设备配过 key，本设备的 deviceId 解不开。
+      给一个直达 AI 设置的入口，避免"我不知道去哪里修"的卡死循环。
+    -->
+    <div v-if="lastErrorCode === 'no_api_key'" class="noApiKeyBanner">
+      <ion-icon :icon="keyIcon" class="noApiKeyBannerIcon" />
+      <div class="noApiKeyBannerText">
+        <strong>{{ t('agent.noApiKeyTitle') || '未配置 API Key' }}</strong>
+        <span>{{ t('agent.noApiKeyHint2') || '当前设备无法解密已存储的 key，请去 AI 设置重新输入。' }}</span>
+      </div>
+      <button type="button" class="noApiKeyBannerBtn" @click="goToApiKeySettings">
+        {{ t('agent.goToApiKeySettings') || '去设置' }}
+      </button>
+      <button type="button" class="noApiKeyBannerClose" @click="dismissError" :title="t('common.close') || '关闭'">
+        <ion-icon :icon="closeIcon" />
+      </button>
+    </div>
+
     <div class="agentChatToolbar">
       <label class="toolbarField">
         <span class="toolbarLabel">{{ t('agent.model') }}</span>
@@ -358,6 +377,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { IonIcon, modalController, alertController } from '@ionic/vue'
 import {
   closeOutline,
@@ -371,6 +391,7 @@ import {
   globeOutline,
   clipboardOutline,
   refreshCircleOutline,
+  keyOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { getDeviceIdSync } from '@/composables/useDeviceId'
@@ -400,7 +421,30 @@ const { t } = useI18n()
 // Agent API 基础路径（与 useAgent.ts 保持一致）
 const AGENT_API_BASE = '/agent-api'
 
-const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage } = useAgent()
+const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError } = useAgent()
+const router = useRouter()
+
+/**
+ * 跳转到 AI 设置页面（让用户重新输入 API Key）。
+ *
+ * 触发场景：no_api_key banner 出现时（后端 readAgentConfig(deviceId)
+ * 返回空，说明当前 deviceId 派生不出 AES key 解开存储密文）。
+ *
+ * 行为：
+ *   1. 先 dismiss banner（避免下次进来还显示）
+ *   2. 关闭当前 AgentChat modal（modalController.dismiss）
+ *   3. 用 vue-router 跳到 /tabs/settings/agent
+ *
+ * 为什么不直接 router.push：AgentChat 是 modal，路由跳转不会自动关 modal，
+ * 用户回到 home 还会看到飘着的对话窗口。必须先 dismiss。
+ */
+async function goToApiKeySettings(): Promise<void> {
+  dismissError()
+  try {
+    await modalController.dismiss()
+  } catch {/* ignore — 可能 modal 已经被关 */}
+  router.push('/tabs/settings/agent')
+}
 
 onMounted(() => {
   // 启动 Context 图标的轮询（5s/30s 周期自适应当前 streaming 状态）
@@ -444,6 +488,7 @@ const sparkleIcon = sparklesOutline
 const addIcon = addOutline
 const sendIcon = sendOutline
 const stopIcon = stopOutline
+const keyIcon = keyOutline
 const chatbubblesIcon = chatbubblesOutline
 const timeIcon = timeOutline
 const attachIcon = attachOutline
@@ -1031,6 +1076,77 @@ defineExpose({})
 
 .footerStopBtn {
   background: var(--ion-color-danger);
+}
+
+/* ── no_api_key 自愈 banner ─────────────────────────────
+   触发条件：chat 发送返回 503 {error: "no_api_key"}（设备解密不开存的密文）。
+   设计要点：
+   - 高对比红色（与 chat 顶部 toolbar 区分，避免被误以为是普通状态条）
+   - icon + 文案 + 主操作按钮 + 关闭按钮四件套，缺一不可
+   - 文案给两个句号：短句放强解释，长句放行动指引
+*/
+.noApiKeyBanner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: linear-gradient(
+    90deg,
+    rgba(var(--ion-color-danger-rgb), 0.16),
+    rgba(var(--ion-color-danger-rgb), 0.08)
+  );
+  border-bottom: 1px solid rgba(var(--ion-color-danger-rgb), 0.4);
+  color: var(--ion-color-danger-shade);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.noApiKeyBannerIcon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.noApiKeyBannerText {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+}
+.noApiKeyBannerText strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.noApiKeyBannerText span {
+  font-size: 12px;
+  opacity: 0.85;
+}
+.noApiKeyBannerBtn {
+  background: var(--ion-color-danger);
+  color: var(--ion-color-danger-contrast, #fff);
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.noApiKeyBannerBtn:hover {
+  opacity: 0.9;
+}
+.noApiKeyBannerClose {
+  background: transparent;
+  border: none;
+  color: var(--ion-color-danger-shade);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.noApiKeyBannerClose ion-icon {
+  font-size: 18px;
 }
 
 /* ── Toolbar (model / temperature) ─────────────────── */

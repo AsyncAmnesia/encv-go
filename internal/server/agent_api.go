@@ -239,6 +239,32 @@ func (s *Server) registerAgentRoutes(r *gin.Engine) {
 
 // ─── GET /api/models — 从供应商获取模型列表 ─────────────────
 
+// buildChatCompletionsURL 拼接 OpenAI 兼容 chat completions 端点 URL。
+//
+// 关键修复：base URL 已经包含 /v1 后缀时不能重复拼接。
+// 之前无条件 + "/v1/chat/completions" 导致 base_url="https://api.openai.com/v1" 时
+// 实际请求 URL 变成 "https://api.openai.com/v1/v1/chat/completions" → 上游 404 / EOF。
+//
+// 规则：
+//   - 去掉尾部 /
+//   - 去掉已存在的 /v1 后缀（不区分大小写，兼容 https://api.openai.com/V1 等）
+//   - 拼接标准 /v1/chat/completions
+//
+// 用例：
+//   "https://api.openai.com/v1"   → "https://api.openai.com/v1/chat/completions"
+//   "https://api.openai.com/v1/"  → "https://api.openai.com/v1/chat/completions"
+//   "https://api.openai.com"      → "https://api.openai.com/v1/chat/completions"
+//   "https://api.openai.com/V1"   → "https://api.openai.com/v1/chat/completions"
+//   "https://proxy.example.com/openai/v1" → "https://proxy.example.com/openai/v1/chat/completions"
+func buildChatCompletionsURL(baseURL string) string {
+	base := strings.TrimRight(baseURL, "/")
+	// 去掉已存在的 /v1 后缀（不区分大小写，避免 https://api.openai.com/V1 的边界情况）
+	if strings.HasSuffix(strings.ToLower(base), "/v1") {
+		base = strings.TrimRight(base[:len(base)-3], "/")
+	}
+	return base + "/v1/chat/completions"
+}
+
 func (s *Server) handleAgentModels(c *gin.Context) {
 	// deviceId 必须从 query 取（GET 无 body）
 	// 不传 deviceId 会用错的 key 派生，永远解不出设备绑定的密文
@@ -481,7 +507,7 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	}
 	reqJSON, _ := json.Marshal(reqBody)
 
-	reqURL := strings.TrimRight(cfg.BaseURL, "/") + "/v1/chat/completions"
+	reqURL := buildChatCompletionsURL(cfg.BaseURL)
 	httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, reqURL, bytes.NewReader(reqJSON))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "build_request_failed", "message": err.Error()})

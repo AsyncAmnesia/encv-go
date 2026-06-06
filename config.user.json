@@ -4,13 +4,9 @@
     "password": "123456"
   },
   "agent_settings": {
-    "enabled_tools": [
-      "list_files",
-      "read_file",
-      "delete_file",
-      "exec_command"
-    ],
-    "openai_api_key": "enc:U8Z84mmJvLaN8RcS0Bge0SLpZAOWZ/NAy3O8YJip+NcM8xM8kfafEEeipGPfmieAfodU9BkSZNhX/jqulLd+v0iumUOV6kNE1WLM9vapRCY="
+    "openai_api_key": "enc:y7G1HCYI0v4qp3UvfP3WdYUPMq8/liQZCz3VgANYKX3qHbDxYjtAlnMqsuLaGxt/",
+    "openai_base_url": "https://api.openai.com/v1",
+    "openai_model": "gpt-4o"
   },
   "default_container_version": 0,
   "log": {
