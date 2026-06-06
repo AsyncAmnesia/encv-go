@@ -2,7 +2,6 @@
 package server
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -16,9 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/crypto/scrypt"
-
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/scrypt"
 )
 
 // ─── API Key 加密/解密（防止 config.user.json 明文暴露） ──────
@@ -360,15 +358,7 @@ func (s *Server) handleAgentTest(c *gin.Context) {
 // ─── POST /api/chat — SSE 对话（stub：echo 模式） ─────────────
 
 func (s *Server) handleAgentChat(c *gin.Context) {
-	// 防御：确保 response writer 支持 Flusher（代理中间件可能包装过）
-	flusher, ok := c.Writer.(http.Flusher)
-	if !ok {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "sse_not_supported"})
-		return
-	}
-
-	s.setSSEHeaders(c.Writer)
-
+	// ① 先解析请求体（在写入任何响应头之前）
 	var body struct {
 		SessionId   string    `json:"sessionId"`
 		Model       string    `json:"model"`
@@ -376,11 +366,21 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		Messages    []chatMsg `json:"messages"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
-		s.sendSSEEventSafe(c.Writer, flusher, "error", gin.H{"message": "invalid_json"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json", "detail": err.Error()})
 		return
 	}
 
-	// 防护：空消息数组
+	// ② 防御：确保 response writer 支持 Flusher
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "sse_not_supported"})
+		return
+	}
+
+	// ③ 设置 SSE 响应头（确认输入合法后才 commit 响应）
+	s.setSSEHeaders(c.Writer)
+
+	// ④ 防护：空消息数组
 	if len(body.Messages) == 0 {
 		s.sendSSEEventSafe(c.Writer, flusher, "error", gin.H{"message": "empty_messages"})
 		return
@@ -405,6 +405,10 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 // ─── POST /api/confirm — SSE 工具确认（stub） ────────────────
 
 func (s *Server) handleAgentConfirm(c *gin.Context) {
+	// ① 先消耗请求体（与 handleAgentChat 保持一致顺序）
+	var body struct{}
+	_ = c.ShouldBindJSON(&body)
+
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "sse_not_supported"})
@@ -419,6 +423,10 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 // ─── POST /api/resume — SSE 断点续传（stub） ─────────────────
 
 func (s *Server) handleAgentResume(c *gin.Context) {
+	// ① 先消耗请求体（与 handleAgentChat 保持一致顺序）
+	var body struct{}
+	_ = c.ShouldBindJSON(&body)
+
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "sse_not_supported"})
@@ -447,17 +455,15 @@ func (s *Server) setSSEHeaders(w http.ResponseWriter) {
 }
 
 func (s *Server) sendSSEEvent(w http.ResponseWriter, eventType string, data interface{}) {
-	buf := new(bytes.Buffer)
-	json.NewEncoder(buf).Encode(data)
-	fmt.Fprintf(w, "data: {\"type\": \"%s\", \"data\": %s}\n\n", eventType, buf.String())
+	raw, _ := json.Marshal(data)
+	fmt.Fprintf(w, "data: {\"type\": \"%s\", \"data\": %s}\n\n", eventType, raw)
 	w.(http.Flusher).Flush()
 }
 
 // sendSSEEventSafe — 带 client disconnect 检测的安全版本
 func (s *Server) sendSSEEventSafe(w http.ResponseWriter, flusher http.Flusher, eventType string, data interface{}) {
-	buf := new(bytes.Buffer)
-	json.NewEncoder(buf).Encode(data)
-	n, err := fmt.Fprintf(w, "data: {\"type\": \"%s\", \"data\": %s}\n\n", eventType, buf.String())
+	raw, _ := json.Marshal(data) // json.Marshal 不追加 \n（与 json.Encoder.Encode 不同！）
+	n, err := fmt.Fprintf(w, "data: {\"type\": \"%s\", \"data\": %s}\n\n", eventType, raw)
 	if err != nil || n < 0 {
 		slog.Warn("agent: sse write failed (client disconnected?)", "error", err)
 		return

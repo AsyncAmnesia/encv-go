@@ -7,21 +7,49 @@
 <template>
   <div class="markdownStream" :class="{ markdownStream_streaming: streaming }">
     <MarkdownRender
+      :key="source || '_empty'"
       :source="source"
       :render-code-blocks="!streaming"
       :disable-shiki="streaming"
     />
+    <!-- markstream-vue 渲染失败时的降级：直接显示原始文本 -->
+    <div v-if="source && !streaming" class="markdown-fallback" ref="fallbackRef"></div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref, watch, nextTick, onMounted } from 'vue'
 import { MarkdownRender } from 'markstream-vue'
 import 'markstream-vue/index.css'
 
-defineProps<{
+const props = defineProps<{
   source: string
   streaming?: boolean
 }>()
+
+const fallbackRef = ref<HTMLElement | null>(null)
+
+// 当 MarkdownRender 可能未渲染时，用纯文本兜底
+async function checkFallback() {
+  await nextTick()
+  if (!fallbackRef.value) return
+  const parent = fallbackRef.value.parentElement
+  if (!parent) return
+  // 检查同级的 MarkdownRender 是否有实际内容（非空注释节点）
+  const renderEl = parent.querySelector('.markdown-render, [data-markstream]')
+  const hasContent = renderEl && renderEl.innerHTML.replace(/<!--[\s\S]*?-->/g, '').trim().length > 0
+  if (!hasContent && props.source) {
+    // MarkdownRender 未产出内容 → 显示原文
+    fallbackRef.value.textContent = props.source
+    fallbackRef.value.style.display = ''
+  } else {
+    // MarkdownRender 有内容 → 隐藏兜底
+    if (fallbackRef.value) fallbackRef.value.style.display = 'none'
+  }
+}
+
+watch(() => props.source, () => { checkFallback() }, { immediate: true })
+onMounted(() => { checkFallback() })
 </script>
 
 <style>
@@ -128,5 +156,13 @@ defineProps<{
 .markdownStream_streaming pre {
   /* 流式期间 code block 不高亮，避免闪烁 */
   filter: saturate(0.85);
+}
+
+/* 纯文本降级显示（默认可见，markstream 有内容时由 JS 隐藏） */
+.markdown-fallback {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13.5px;
+  line-height: 1.6;
 }
 </style>

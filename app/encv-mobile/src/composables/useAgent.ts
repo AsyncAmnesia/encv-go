@@ -111,19 +111,22 @@ const TOOL_STATUS_VALUES: ReadonlySet<ToolStatus> = new Set<ToolStatus>([
 
 /**
  * 解析 `text_delta` / `reasoning_delta` 的 data 字段
- * Agent 推送格式：`{"content": "..."}` —— 反序列化为字符串
+ * 后端格式：json.Marshal(plainString) → 经外层 JSON 解码后 data 就是纯文本
+ * 兼容旧格式：{"content": "..."} 包装
  */
 function parseContentDelta(data: string): string {
+  if (!data) return ''
+  // 尝试作为 JSON 解析（兼容 {"content":"..."} 或包装字符串格式）
   try {
     const parsed = JSON.parse(data)
     if (typeof parsed === 'string') return parsed
     if (parsed && typeof parsed === 'object' && 'content' in parsed) {
       return String((parsed as { content: unknown }).content ?? '')
     }
-    return ''
   } catch {
-    return ''
+    // 不是有效 JSON → 后端发的是纯文本（当前 encv-go stub 格式），直接使用
   }
+  return data
 }
 
 /**
@@ -628,7 +631,7 @@ export function useAgent() {
     }, 30_000)
 
     try {
-      console.error('[useAgent] send() starting fetch to', `${AGENT_API_BASE}/api/chat`)
+      console.debug('[useAgent] send() starting fetch to', `${AGENT_API_BASE}/api/chat`)
       const response = await fetch(`${AGENT_API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

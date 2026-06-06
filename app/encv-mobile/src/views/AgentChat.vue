@@ -231,6 +231,7 @@ import ApprovalCard from '@/components/agent/ApprovalCard.vue'
 import GroupedOperationMessage from '@/components/agent/GroupedOperationMessage.vue'
 import ReasoningMessage from '@/components/agent/ReasoningMessage.vue'
 import ErrorMessage from '@/components/agent/ErrorMessage.vue'
+import AssistantMessage from '@/components/agent/AssistantMessage.vue'
 import WebSearchSummaryMessage from '@/components/agent/WebSearchSummaryMessage.vue'
 
 const { t } = useI18n()
