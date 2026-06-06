@@ -2,6 +2,8 @@
 package server
 
 import (
+	"bufio"
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -355,10 +357,10 @@ func (s *Server) handleAgentTest(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-// ─── POST /api/chat — SSE 对话（stub：echo 模式） ─────────────
+// ─── POST /api/chat — SSE 对话（代理到 OpenAI 兼容 API） ──────
 
 func (s *Server) handleAgentChat(c *gin.Context) {
-	// ① 先解析请求体（在写入任何响应头之前）
+	// ① 解析请求体（必须在 WriteHeader 之前）
 	var body struct {
 		SessionId   string    `json:"sessionId"`
 		Model       string    `json:"model"`
@@ -370,36 +372,157 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		return
 	}
 
-	// ② 防御：确保 response writer 支持 Flusher
+	// ② 读取 agent 配置（API Key / Base URL）
+	cfg := s.readAgentConfig()
+	if cfg.APIKey == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "no_api_key", "message": "未配置 API Key，请在 AI 设置中填写"})
+		return
+	}
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = "https://api.openai.com"
+	}
+	model := body.Model
+	if model == "" {
+		model = "gpt-4o-mini"
+	}
+
+	// ③ 防御：空消息
+	if len(body.Messages) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "empty_messages"})
+		return
+	}
+
+	// ④ Flusher 检测
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "sse_not_supported"})
 		return
 	}
 
-	// ③ 设置 SSE 响应头（确认输入合法后才 commit 响应）
-	s.setSSEHeaders(c.Writer)
+	// ⑤ 构建 OpenAI 兼容请求
+	reqBody := map[string]interface{}{
+		"model":       model,
+		"messages":    body.Messages,
+		"temperature": body.Temperature,
+		"stream":      true,
+	}
+	reqJSON, _ := json.Marshal(reqBody)
 
-	// ④ 防护：空消息数组
-	if len(body.Messages) == 0 {
-		s.sendSSEEventSafe(c.Writer, flusher, "error", gin.H{"message": "empty_messages"})
+	reqURL := strings.TrimRight(cfg.BaseURL, "/") + "/v1/chat/completions"
+	httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, reqURL, bytes.NewReader(reqJSON))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "build_request_failed", "message": err.Error()})
+		return
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+	httpReq.Header.Set("Accept", "text/event-stream")
+
+	// ⑥ 发起上游请求
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		slog.Warn("agent: chat upstream request failed", "url", reqURL, "error", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream_error", "message": "无法连接到 AI 服务: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	// ⑦ 上游错误处理
+	if resp.StatusCode >= 400 {
+		errBody, _ := io.ReadAll(resp.Body)
+		slog.Warn("agent: chat upstream error", "status", resp.StatusCode, "body", string(errBody))
+		// 尝试解析 OpenAI 错误格式
+		var openaiErr struct {
+			Error struct {
+				Message string `json:"message"`
+				Type    string `json:"type"`
+				Code    string `json:"code"`
+			} `json:"error"`
+		}
+		json.Unmarshal(errBody, &openaiErr)
+		msg := openaiErr.Error.Message
+		if msg == "" {
+			msg = fmt.Sprintf("AI 服务返回 HTTP %d", resp.StatusCode)
+		}
+		c.JSON(resp.StatusCode, gin.H{"error": "upstream_error", "message": msg})
 		return
 	}
 
-	userInput := ""
-	for i := len(body.Messages) - 1; i >= 0; i-- {
-		if body.Messages[i].Role == "user" {
-			userInput = body.Messages[i].Content
+	// ⑧ 设置 SSE 响应头并开始流式转发
+	s.setSSEHeaders(c.Writer)
+
+	// ⑨ 逐行读取上游 SSE 并转换格式转发给客户端
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024) // 大 buffer 防止长行截断
+	hasContent := false
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		dataStr := strings.TrimPrefix(line, "data: ")
+		if dataStr == "[DONE]" {
+			s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
 			break
 		}
-	}
-	if userInput == "" {
-		userInput = "(empty)"
+
+		// 解析 OpenAI chunk 格式
+		var chunk struct {
+		 Choices []struct {
+				Delta struct {
+					Content      string `json:"content"`
+					Role         string `json:"role"`
+					ToolCalls    []interface{} `json:"tool_calls"`
+					ReasoningContent string `json:"reasoning_content"`
+				} `json:"delta"`
+				FinishReason string `json:"finish_reason"`
+			} `json:"choices"`
+		}
+		if err := json.Unmarshal([]byte(dataStr), &chunk); err != nil {
+			slog.Debug("agent: skip unparseable chunk", "error", err)
+			continue
+		}
+
+		for _, choice := range chunk.Choices {
+			delta := choice.Delta
+
+			// 文本内容 → text_delta
+			if delta.Content != "" {
+				hasContent = true
+				s.sendSSEEventSafe(c.Writer, flusher, "text_delta", delta.Content)
+			}
+
+			// 推理内容 → reasoning_delta
+			if delta.ReasoningContent != "" {
+				hasContent = true
+				s.sendSSEEventSafe(c.Writer, flusher, "reasoning_delta", delta.ReasoningContent)
+			}
+
+			// 工具调用 → tool_call
+			if len(delta.ToolCalls) > 0 {
+				s.sendSSEEventSafe(c.Writer, flusher, "tool_call", delta.ToolCalls)
+			}
+
+			// 结束标记
+			if choice.FinishReason != "" {
+				s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+			}
+		}
 	}
 
-	reply := fmt.Sprintf("你好！我是 ENCV AI 助手（stub 模式）。\n\n我收到了你的消息「%s」。\n当前使用模型：%s（温度 %.1f）。\n\n这是一个模拟回复 —— 真正的 AI 对话功能将在接入大语言模型后启用。", userInput, body.Model, body.Temperature)
-	s.streamTextSafe(c.Writer, flusher, reply, 4, 40)
-	s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+	// 如果上游没有发送任何内容（非流式响应等），兜底读取完整 body
+	if !hasContent {
+		slog.Info("agent: no streaming content from upstream, checking for non-stream response")
+		// 已经被 scanner 消费了，无法重读。这里只是安全兜底。
+	}
+
+	if err := scanner.Err(); err != nil {
+		slog.Warn("agent: sse scanner error", "error", err)
+	}
+
+	slog.Info("agent: chat completed", "model", model, "has_content", hasContent)
 }
 
 // ─── POST /api/confirm — SSE 工具确认（stub） ────────────────
