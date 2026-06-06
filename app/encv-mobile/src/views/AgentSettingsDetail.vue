@@ -65,6 +65,27 @@
               </ion-item>
             </template>
 
+            <!-- openai_api_key：密码输入 + 脱敏显示（保存时自动加密） -->
+            <div v-else-if="child.key === 'openai_api_key'" class="config-field config-field-card">
+              <div class="field-label-row">
+                <ion-icon :icon="key" class="field-icon"></ion-icon>
+                <span class="field-label-text">{{ fieldLabel(child.key, child.required) }}</span>
+              </div>
+              <p v-if="child.description" class="field-description-text">{{ child.description }}</p>
+              <div class="api-key-input-row">
+                <input
+                  :type="apiKeyVisible ? 'text' : 'password'"
+                  class="api-key-input"
+                  :value="apiKeyDisplayValue"
+                  :placeholder="t('agent.apiKeyPlaceholder') || 'sk-...'"
+                  @input="handleApiKeyInput($event)"
+                />
+                <button type="button" class="api-key-toggle" @click="apiKeyVisible = !apiKeyVisible">
+                  <ion-icon :icon="apiKeyVisible ? eyeOffOutline : eyeOutline" />
+                </button>
+              </div>
+            </div>
+
             <ConfigFieldItem
               v-else-if="child.key !== 'openai_model'"
               :field="child"
@@ -194,6 +215,7 @@ import {
   save as saveIcon, sparklesOutline, cloudOutline, settingsOutline,
   documentText, lockClosed, speedometerOutline, key, globeOutline,
   optionsOutline, listOutline, flashOutline, closeCircleOutline,
+  eyeOutline, eyeOffOutline,
 } from 'ionicons/icons'
 import { useConfig } from '@/composables/useConfig'
 import { useServerStatus } from '@/composables/useServerStatus'
@@ -215,6 +237,27 @@ const testResultSuccess = ref(false)
 const listIcon = listOutline
 const flashIcon = flashOutline
 const closeIcon = closeCircleOutline
+
+// ─── API Key 脱敏/加密处理 ────────────────────────────────
+const apiKeyVisible = ref(false)
+const apiKeyPlainValue = ref('') // 用户正在编辑的明文（内存中）
+
+// 显示值：已加密的显示 ****，未加密或用户输入中显示实际值（password type 自动掩码）
+const apiKeyDisplayValue = computed(() => {
+  const stored = String(getFieldValue(['agent_settings', 'openai_api_key']) ?? '')
+  // 如果用户正在编辑，显示编辑中的值
+  if (apiKeyPlainValue.value) return apiKeyPlainValue.value
+  // 已加密存储 → 显示占位符
+  if (stored.startsWith('enc:')) return '••••••••••••••••'
+  // 未加密的旧格式 → 原样显示（password input 会自动掩码）
+  return stored
+})
+
+function handleApiKeyInput(event: Event) {
+  const val = (event.target as HTMLInputElement).value
+  apiKeyPlainValue.value = val
+  setFieldValue(['agent_settings', 'openai_api_key'], val)
+}
 
 // ─── 动态模型选择（openai_model 字段） ──────────────────────
 interface SettingsModelOption { id: string; name: string; provider: string }
@@ -323,6 +366,24 @@ function getFieldIcon(fieldKey: string, fieldType: string): string {
 
 async function handleSaveConfig() {
   try {
+    // 保存前加密 API Key（防止明文写入 config.user.json）
+    const rawKey = String(getFieldValue(['agent_settings', 'openai_api_key']) ?? '')
+    if (rawKey && !rawKey.startsWith('enc:')) {
+      try {
+        const encRes = await fetch('/agent-api/api/encrypt-key', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: rawKey }),
+        })
+        if (encRes.ok) {
+          const { encrypted } = await encRes.json()
+          setFieldValue(['agent_settings', 'openai_api_key'], encrypted)
+          apiKeyPlainValue.value = '' // 清除明文缓存
+        }
+      } catch (e) {
+        console.warn('[AgentSettings] encrypt key failed, saving as-is:', e)
+      }
+    }
     await saveConfig()
     showToast({ message: t('settings.configSaved'), duration: 1500, color: 'success' })
   } catch (e) {
@@ -596,5 +657,42 @@ onMounted(async () => {
   color: var(--ion-color-medium);
   margin-top: 3px;
   line-height: 1.3;
+}
+
+/* ── API Key 密码输入框 ─────────────────────────────────── */
+.api-key-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.api-key-input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.3);
+  border-radius: 8px;
+  background: var(--ion-background-color);
+  color: var(--ion-text-color);
+  font-size: 13px;
+  font-family: monospace;
+  outline: none;
+  box-sizing: border-box;
+}
+.api-key-input:focus {
+  border-color: var(--ion-color-primary);
+}
+.api-key-toggle {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.3);
+  border-radius: 8px;
+  background: var(--ion-background-color);
+  color: var(--ion-color-medium);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
 }
 </style>

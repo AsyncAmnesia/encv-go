@@ -34,6 +34,7 @@ export default {
     'agent.noApiKeyHint': '未配置 API Key，请先填写上方 API Key 后保存',
     'agent.modelFallbackPlaceholder': '手动输入模型名称',
     'agent.noModelsAvailable': '无可用模型，可手动输入',
+    'agent.apiKeyPlaceholder': 'sk-...',
     'agent.inputHint': 'Shift/⌘/Ctrl + Enter 发送，Enter 换行',
     'agent.emptyHint': '向 AI 助手提问、生成文件、或调用工具',
 
@@ -87,6 +88,7 @@ export default {
     'agent.noApiKeyHint': 'API Key not configured. Please enter it above and save.',
     'agent.modelFallbackPlaceholder': 'Enter model name manually',
     'agent.noModelsAvailable': 'No models available, type manually',
+    'agent.apiKeyPlaceholder': 'sk-...',
     'agent.inputHint': 'Shift/⌘/Ctrl + Enter to send, Enter for newline',
     'agent.emptyHint': 'Ask the assistant, generate files, or invoke tools',
 

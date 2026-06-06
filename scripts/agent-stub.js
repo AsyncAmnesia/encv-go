@@ -20,10 +20,45 @@
  * 由 ecosystem.config.cjs 的 agent-stub 进程监管。
  */
 const http = require('node:http')
-const { randomUUID } = require('node:crypto')
+const { randomUUID, createCipheriv, createDecipheriv, randomBytes, scryptSync } = require('node:crypto')
 
 const PORT = Number(process.env.PORT || 5245)
 const HOST = process.env.HOST || '0.0.0.0'
+
+// ─── API Key 加密/解密（防止 config.user.json 明文暴露） ──────
+// 使用 AES-256-CBC + 密钥派生（scrypt），存储格式: enc:<base64(iv+ciphertext)>
+const CRYPTO_PASSPHRASE = 'encv-agent-key-v1'  // 固定盐值（本地配置保护，非安全边界）
+const CRYPTO_SALT = Buffer.from('encv-mobile-salt-2024', 'utf8')
+
+function encryptApiKey(plaintext) {
+  if (!plaintext) return ''
+  // 已加密的不重复加密
+  if (plaintext.startsWith('enc:')) return plaintext
+  const key = scryptSync(CRYPTO_PASSPHRASE, CRYPTO_SALT, 32)
+  const iv = randomBytes(16)
+  const cipher = createCipheriv('aes-256-cbc', key, iv)
+  let enc = cipher.update(plaintext, 'utf8', 'base64')
+  enc += cipher.final('base64')
+  return 'enc:' + iv.toString('base64') + ':' + enc
+}
+
+function decryptApiKey(stored) {
+  if (!stored) return ''
+  if (!stored.startsWith('enc:')) return stored // 未加密的旧格式兼容
+  try {
+    const parts = stored.slice(4).split(':')
+    const iv = Buffer.from(parts[0], 'base64')
+    const ciphertext = Buffer.from(parts[1], 'base64')
+    const key = scryptSync(CRYPTO_PASSPHRASE, CRYPTO_SALT, 32)
+    const decipher = createDecipheriv('aes-256-cbc', key, iv)
+    let dec = decipher.update(ciphertext, null, 'utf8')
+    dec += decipher.final('utf8')
+    return dec
+  } catch (e) {
+    log(`decrypt failed: ${e.message}`)
+    return ''
+  }
+}
 
 function log(...args) {
   console.log('[agent-stub]', ...args)
@@ -168,7 +203,7 @@ async function handleModels(req, res) {
     const fs = require('node:fs')
     const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'))
     const agent = raw.agent_settings || {}
-    apiKey = agent.openai_api_key || ''
+    apiKey = decryptApiKey(agent.openai_api_key || '')
     baseUrl = agent.openai_base_url || 'https://api.openai.com'
   } catch (e) {
     log(`read config failed: ${e.message}`)
@@ -193,6 +228,12 @@ async function handleModels(req, res) {
     })
     if (!fetchRes.ok) {
       throw new Error(`HTTP ${fetchRes.status}: ${fetchRes.statusText}`)
+    }
+    // ⚠️ 防御：外部 API 可能返回 HTML（WAF/限流页），检查 Content-Type
+    const ct = (fetchRes.headers.get('content-type') || '').toLowerCase()
+    if (!ct.includes('application/json')) {
+      const bodyText = await fetchRes.text().slice(0, 200)
+      throw new Error(`供应商返回非 JSON 响应 (${ct}): ${bodyText}`)
     }
     const data = await fetchRes.json()
     // 过滤出可用的 chat/completion 模型（按 openai 官方返回格式）
@@ -221,7 +262,7 @@ async function handleModels(req, res) {
       models: [],
       defaultModel: '',
       error: e.message,
-      note: `无法从 ${baseUrl} 获取模型列表: ${e.message}`,
+      note: `无法从 ${baseUrl} 获取模型列表`,
     }))
   }
 }
@@ -268,6 +309,19 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && req.url === '/api/resume') return handleResume(req, res)
   if ((req.method === 'GET' || req.method === 'POST') && req.url === '/test') return handleTest(req, res)
   if (req.method === 'GET' && req.url === '/api/models') return handleModels(req, res)
+  // 前端调用：加密 API Key 后再保存到 config.user.json（防止明文存储）
+  if (req.method === 'POST' && req.url === '/api/encrypt-key') {
+    let body
+    try { body = await readJsonBody(req) } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: 'invalid_json' }))
+      return
+    }
+    const encrypted = encryptApiKey(body?.key || '')
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+    res.end(JSON.stringify({ encrypted }))
+    return
+  }
   res.writeHead(404, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify({ error: 'not_found', method: req.method, path: req.url }))
 })
