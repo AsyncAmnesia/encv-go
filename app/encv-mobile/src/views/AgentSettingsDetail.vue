@@ -165,17 +165,16 @@
                 <p class="model-error-text">{{ settingsModelsError }}</p>
                 <div class="model-error-actions">
                   <!-- 当错误根因是 API Key 状态问题时，提供"一键跳转"入口 -->
-                  <!-- ref + onMounted 时 addEventListener，避免 Vue 模板 @click 偶发被 Shadow DOM 拦截 -->
-                  <div v-if="isModelErrorCausedByApiKey" class="model-error-fix-wrap" data-testid="scroll-to-api-key">
-                    <ion-button
-                      size="small"
-                      fill="outline"
-                      color="primary"
-                    >
-                      <ion-icon :icon="key" slot="start"></ion-icon>
-                      {{ t('agent.modelErrorFixApiKey') || '↑ 跳转到 API Key 设置' }}
-                    </ion-button>
-                  </div>
+                  <!-- 用原生 <button> 避免 ion-button 内部 Shadow DOM 偶发拦截 @click 冒泡 -->
+                  <button
+                    v-if="isModelErrorCausedByApiKey"
+                    type="button"
+                    class="model-error-fix-btn"
+                    @click="scrollToApiKey"
+                  >
+                    <ion-icon :icon="key" class="model-error-fix-icon"></ion-icon>
+                    {{ t('agent.modelErrorFixApiKey') || '↑ 跳转到 API Key 设置' }}
+                  </button>
                   <ion-button
                     size="small"
                     fill="clear"
@@ -1065,25 +1064,7 @@ async function handleCopyDoctorJson() {
   }
 }
 
-// "↑ 跳转到 API Key 设置"按钮的 click 绑定
-// 用 document 级事件委托：监听 document click，匹配 .model-error-fix-wrap 子树
-// 这样不依赖 ref 绑定（v-for + Shadow DOM 会让 ref 不可靠）
-// 也不依赖 addEventListener 到 wrap 本身（wrap 元素可能被 v-if 重建）
-function handleDocumentClick(e: Event) {
-  const target = e.target as HTMLElement | null
-  if (!target) return
-  // 向上查找最近的 .model-error-fix-wrap
-  const wrap = target.closest('.model-error-fix-wrap') as HTMLElement | null
-  if (!wrap) return
-  e.preventDefault()
-  e.stopPropagation()
-  scrollToApiKey()
-}
-
 onMounted(async () => {
-  // document 级 capture 阶段监听（capture 比 bubble 早，更稳）
-  document.addEventListener('click', handleDocumentClick, { capture: true })
-
   if (serverOnline.value) {
     await loadConfig()
     configLoaded.value = true
@@ -1092,10 +1073,6 @@ onMounted(async () => {
     // 动态获取模型列表（不阻塞页面渲染）
     fetchSettingsModels()
   }
-})
-
-onBeforeUnmount(() => {
-  document.removeEventListener('click', handleDocumentClick, { capture: true } as any)
 })
 </script>
 
