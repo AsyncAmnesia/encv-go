@@ -96,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import {
   terminalOutline,
@@ -124,6 +124,7 @@ const props = defineProps<{
 const { t } = useI18n()
 const processingDecision = ref<Decision | null>(null)
 const diffExpanded = ref(false)
+let safetyTimer: number | null = null
 
 const MAX_FILE_CHIPS = 6
 
@@ -248,15 +249,44 @@ const canShowSessionGrant = computed(() => props.toolCall.kind !== 'readOnly')
 
 const disabled = computed(() => props.isProcessing || processingDecision.value !== null)
 
+/**
+ * 当父组件通知流结束（isProcessing 变 false）时，
+ * 同步清空本地 processingDecision，让按钮立即恢复可点击。
+ *
+ * 5s safetyTimer 保留作为挂起兜底：若 SSE 网络异常挂起导致 isProcessing 永远为 true，
+ * 也能保证按钮最终恢复，避免永久 disabled 的 UX 陷阱。
+ */
+watch(
+  () => props.isProcessing,
+  (curr, prev) => {
+    if (prev === true && curr === false) {
+      processingDecision.value = null
+      if (safetyTimer !== null) {
+        window.clearTimeout(safetyTimer)
+        safetyTimer = null
+      }
+    }
+  },
+)
+
+onBeforeUnmount(() => {
+  if (safetyTimer !== null) {
+    window.clearTimeout(safetyTimer)
+    safetyTimer = null
+  }
+})
+
 function handleDecide(decision: Decision) {
   if (disabled.value) return
   processingDecision.value = decision
   try {
     props.onDecide(props.toolCall.id, decision)
   } finally {
-    // 处理完后由父组件 isProcessing 重新驱动；超时兜底防止按钮永久 disabled
-    window.setTimeout(() => {
+    // safetyTimer：网络挂起兜底 5s 强制清空，防止按钮永久 disabled
+    if (safetyTimer !== null) window.clearTimeout(safetyTimer)
+    safetyTimer = window.setTimeout(() => {
       if (processingDecision.value === decision) processingDecision.value = null
+      safetyTimer = null
     }, 5000)
   }
 }
