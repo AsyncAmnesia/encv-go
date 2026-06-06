@@ -66,6 +66,27 @@ type agentSession struct {
 	LastModel       string
 	LastTemperature float64
 	LastAccess      time.Time // 最近一次 getOrCreateSession 时间，用于 GC 判定
+
+	// ─── D 阶段：断点续传（事件缓存） ───
+	// EventCache 按事件 ID 升序存储，/api/resume 用它重放 lastEventID 之后的事件。
+	// 写入锁：sess.mu
+	// 读取锁：sess.mu（Resume 时拷贝切片后释放锁）
+	EventCache    []AgentEvent
+	eventIDCounter int64 // 单调递增事件 ID（sess.mu 保护下读写）
+	InProgress    bool  // 当前是否有 chat/confirm 在生成（用于 Resume 状态判定）
+
+	// ─── F 阶段：4 决策 UX（accept_for_session） ───
+	// GrantedTools 记录本 session 内已被用户"本次会话授权"的工具名。
+	// 后续同 session 同名 tool_call 自动放行（auto_run=true），不再弹 ApprovalCard。
+	// 锁：sess.mu
+	GrantedTools map[string]bool
+}
+
+// AgentEvent 是 SSE 事件的结构化表示，供 /api/resume 重放
+type AgentEvent struct {
+	ID   int64       `json:"id"`
+	Type string      `json:"type"`
+	Data interface{} `json:"data"`
 }
 
 const (
@@ -88,7 +109,7 @@ func getOrCreateSession(id string) *agentSession {
 		s.LastAccess = time.Now()
 		return s
 	}
-	s := &agentSession{SessionID: id, LastAccess: time.Now()}
+	s := &agentSession{SessionID: id, LastAccess: time.Now(), GrantedTools: make(map[string]bool)}
 	sessions[id] = s
 	return s
 }

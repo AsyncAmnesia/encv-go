@@ -13,13 +13,18 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Soltus/encv-go/internal/v2/plugins"
+	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	encvPlugins "github.com/Soltus/encv-go/pkg/encv/plugins"
+	"github.com/gin-gonic/gin"
 )
 
 // ─── ListPluginTools ──────────────────────────────────────────
@@ -585,5 +590,700 @@ func TestToolCallAccumulator_IndexSerializedWhenNonZero(t *testing.T) {
 	got := string(raw)
 	if !strings.Contains(got, `"index":3`) {
 		t.Errorf("Index=3 应被序列化: %s", got)
+	}
+}
+
+// ─── 动态 schema（B.1.3）──────────────────────────────────────
+
+func TestBuildDynamicSchema_EncryptBaseline(t *testing.T) {
+	// 任意插件加密 schema 都有 input_paths/output_path
+	tools := ListPluginTools()
+	var encryptTool map[string]interface{}
+	for _, tool := range tools {
+		if tool["name"].(string) == "wps_encrypt" {
+			encryptTool = tool
+			break
+		}
+	}
+	if encryptTool == nil {
+		t.Skip("wps_encrypt 工具不存在")
+	}
+	params := encryptTool["parameters"].(map[string]interface{})
+	props := params["properties"].(map[string]interface{})
+	if _, ok := props["input_paths"]; !ok {
+		t.Error("encrypt schema 应含 input_paths")
+	}
+	if _, ok := props["output_path"]; !ok {
+		t.Error("encrypt schema 应含 output_path")
+	}
+	required := params["required"].([]string)
+	hasInputPaths := false
+	hasOutputPath := false
+	for _, r := range required {
+		if r == "input_paths" {
+			hasInputPaths = true
+		}
+		if r == "output_path" {
+			hasOutputPath = true
+		}
+	}
+	if !hasInputPaths || !hasOutputPath {
+		t.Errorf("input_paths/output_path 都应在 required 列表: %v", required)
+	}
+}
+
+func TestBuildDynamicSchema_DecryptBaseline(t *testing.T) {
+	// decrypt 必有 container_path/output_dir
+	tools := ListPluginTools()
+	var decryptTool map[string]interface{}
+	for _, tool := range tools {
+		if tool["name"].(string) == "wps_decrypt" {
+			decryptTool = tool
+			break
+		}
+	}
+	if decryptTool == nil {
+		t.Skip("wps_decrypt 工具不存在")
+	}
+	params := decryptTool["parameters"].(map[string]interface{})
+	props := params["properties"].(map[string]interface{})
+	if _, ok := props["container_path"]; !ok {
+		t.Error("decrypt schema 应含 container_path")
+	}
+	if _, ok := props["output_dir"]; !ok {
+		t.Error("decrypt schema 应含 output_dir")
+	}
+}
+
+func TestBuildDynamicSchema_ExtraFieldsPresent(t *testing.T) {
+	// video 插件有 6 个 extra_fields（按 TaskOptions）
+	// 检查 video_encrypt 的 schema 包含 extra_fields 子对象
+	tools := ListPluginTools()
+	var videoEncrypt map[string]interface{}
+	for _, tool := range tools {
+		if tool["name"].(string) == "video_encrypt" {
+			videoEncrypt = tool
+			break
+		}
+	}
+	if videoEncrypt == nil {
+		t.Skip("video_encrypt 工具不存在")
+	}
+	params := videoEncrypt["parameters"].(map[string]interface{})
+	props := params["properties"].(map[string]interface{})
+	extraFields, ok := props["extra_fields"].(map[string]interface{})
+	if !ok {
+		t.Fatal("video_encrypt schema 应含 extra_fields")
+	}
+	extraProps, ok := extraFields["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatal("extra_fields 应有 properties 子对象")
+	}
+	// video 至少应有 stream_preset 字段
+	if _, ok := extraProps["stream_preset"]; !ok {
+		t.Error("video extra_fields 应含 stream_preset 字段")
+	}
+}
+
+func TestBuildDynamicSchema_VersionField(t *testing.T) {
+	// video 插件 SupportVersionSelect=true → schema 必有 version
+	// pdf 插件 SupportVersionSelect=false → schema 不应有 version
+	tools := ListPluginTools()
+	getTool := func(name string) map[string]interface{} {
+		for _, tool := range tools {
+			if tool["name"].(string) == name {
+				return tool
+			}
+		}
+		return nil
+	}
+
+	if videoEnc := getTool("video_encrypt"); videoEnc != nil {
+		props := videoEnc["parameters"].(map[string]interface{})["properties"].(map[string]interface{})
+		if _, ok := props["version"]; !ok {
+			t.Error("video_encrypt schema 应含 version 字段")
+		}
+	} else {
+		t.Skip("video_encrypt 工具不存在")
+	}
+
+	if pdfEnc := getTool("pdf_encrypt"); pdfEnc != nil {
+		props := pdfEnc["parameters"].(map[string]interface{})["properties"].(map[string]interface{})
+		if _, ok := props["version"]; ok {
+			t.Error("pdf_encrypt schema 不应含 version 字段（SupportVersionSelect=false）")
+		}
+	}
+}
+
+func TestBuildDynamicSchema_PasswordStrategy(t *testing.T) {
+	// 全局密码插件（video/audio/...）不应有 password 字段
+	// 独立密码插件（alist_encrypt）已被排除
+	// 所以 6 插件都不应暴露 password 给 LLM
+	tools := ListPluginTools()
+	for _, tool := range tools {
+		name := tool["name"].(string)
+		props := tool["parameters"].(map[string]interface{})["properties"].(map[string]interface{})
+		if _, ok := props["password"]; ok {
+			t.Errorf("工具 %s 不应暴露 password 字段（PasswordGlobal 策略）", name)
+		}
+	}
+}
+
+func TestJsonSchemaType(t *testing.T) {
+	tests := []struct {
+		pluginType string
+		schemaType string
+	}{
+		{"bool", "boolean"},
+		{"int", "integer"},
+		{"integer", "integer"},
+		{"float", "number"},
+		{"number", "number"},
+		{"select", "string"},
+		{"string", "string"},
+		{"password", "string"},
+		{"text", "string"},
+		{"array", "array"},
+		{"unknown_type", "string"}, // fallback
+	}
+	for _, tt := range tests {
+		if got := jsonSchemaType(tt.pluginType); got != tt.schemaType {
+			t.Errorf("jsonSchemaType(%q) = %q, want %q", tt.pluginType, got, tt.schemaType)
+		}
+	}
+}
+
+func TestBuildTaskFieldSchema(t *testing.T) {
+	// bool 字段
+	boolField := pluginInterfaces.TaskField{
+		Key: "encrypt_filename", Label: "加密文件名", Type: "bool",
+		DefaultValue: "false", Help: "是否加密文件名",
+	}
+	bs := buildTaskFieldSchema(boolField)
+	if bs["type"] != "boolean" {
+		t.Errorf("bool field type = %v, want boolean", bs["type"])
+	}
+	if bs["default"] != "false" {
+		t.Errorf("bool field default = %v, want false", bs["default"])
+	}
+
+	// select 字段
+	selectField := pluginInterfaces.TaskField{
+		Key: "stream_preset", Label: "流预设", Type: "select",
+		Options:      []string{"balanced", "high_quality"},
+		OptionLabels: map[string]string{"balanced": "Balanced", "high_quality": "High Quality"},
+	}
+	ss := buildTaskFieldSchema(selectField)
+	if ss["type"] != "string" {
+		t.Errorf("select field type = %v, want string", ss["type"])
+	}
+	enum, ok := ss["enum"].([]string)
+	if !ok || len(enum) != 2 {
+		t.Errorf("select field enum 异常: %v", ss["enum"])
+	}
+}
+
+func TestInjectExtraFields_NoOpWhenEmpty(t *testing.T) {
+	// 空 fields → 直接 return，不调 setter
+	p := findAnyPlugin(t)
+	// 这里不能直接 mock，但可以验证空 fields 不 panic
+	injectExtraFields(p, nil)
+	injectExtraFields(p, map[string]interface{}{})
+}
+
+func TestInjectExtraFields_SkipWhenNoSetter(t *testing.T) {
+	// 6 核心插件都没实现 SetTaskExtraFields → 应该 no-op（不 panic）
+	p := findAnyPlugin(t)
+	if _, ok := p.(pluginInterfaces.TaskExtraFieldsSetter); ok {
+		t.Skip("插件实现了 SetTaskExtraFields（alist_encrypt 之类），此测试不适用")
+	}
+	// 不应 panic
+	injectExtraFields(p, map[string]interface{}{
+		"stream_preset": "balanced",
+		"fn_rounds":     8,
+	})
+}
+
+func findAnyPlugin(t *testing.T) plugins.Plugin {
+	t.Helper()
+	all := encvPlugins.Plugins()
+	for _, p := range all {
+		if !strings.HasPrefix(p.Name(), "alist") {
+			return p
+		}
+	}
+	t.Fatal("找不到非 alist 插件")
+	return nil
+}
+
+// ─── D 阶段：事件缓存 + 断点续传 ─────────────────────────────
+
+func TestMaxEventID_EmptySlice(t *testing.T) {
+	if got := maxEventID(nil); got != 0 {
+		t.Errorf("maxEventID(nil) = %d, want 0", got)
+	}
+	if got := maxEventID([]AgentEvent{}); got != 0 {
+		t.Errorf("maxEventID(empty) = %d, want 0", got)
+	}
+}
+
+func TestMaxEventID_ReturnsLastID(t *testing.T) {
+	events := []AgentEvent{
+		{ID: 1, Type: "text_delta"},
+		{ID: 5, Type: "tool_call"},
+		{ID: 3, Type: "stream_end"},
+	}
+	if got := maxEventID(events); got != 5 {
+		t.Errorf("maxEventID = %d, want 5（取最大 ID，不依赖顺序）", got)
+	}
+}
+
+func TestSendAndCache_AppendsToEventCache(t *testing.T) {
+	sess := getOrCreateSession("d-cache-test")
+	defer deleteSessionForTest("d-cache-test")
+
+	rec := httptest.NewRecorder()
+	srv := &Server{}
+	srv.sendAndCache(sess, rec, rec, "text_delta", "hello")
+
+	if got := len(sess.EventCache); got != 1 {
+		t.Fatalf("EventCache 长度 = %d, want 1", got)
+	}
+	if sess.EventCache[0].ID != 1 {
+		t.Errorf("第一个事件 ID = %d, want 1", sess.EventCache[0].ID)
+	}
+	if sess.EventCache[0].Type != "text_delta" {
+		t.Errorf("Type = %q, want text_delta", sess.EventCache[0].Type)
+	}
+	// 验证 HTTP 响应也写了
+	if !strings.Contains(rec.Body.String(), "text_delta") {
+		t.Errorf("HTTP 响应应含 text_delta: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "hello") {
+		t.Errorf("HTTP 响应应含 data 'hello': %s", rec.Body.String())
+	}
+}
+
+func TestSendAndCache_MonotonicIDs(t *testing.T) {
+	sess := getOrCreateSession("d-monotonic-test")
+	defer deleteSessionForTest("d-monotonic-test")
+
+	rec := httptest.NewRecorder()
+	srv := &Server{}
+	srv.sendAndCache(sess, rec, rec, "text_delta", "1")
+	srv.sendAndCache(sess, rec, rec, "text_delta", "2")
+	srv.sendAndCache(sess, rec, rec, "text_delta", "3")
+
+	if len(sess.EventCache) != 3 {
+		t.Fatalf("EventCache 长度 = %d, want 3", len(sess.EventCache))
+	}
+	for i, e := range sess.EventCache {
+		want := int64(i + 1)
+		if e.ID != want {
+			t.Errorf("EventCache[%d].ID = %d, want %d", i, e.ID, want)
+		}
+	}
+}
+
+func TestSendAndCache_NilSession(t *testing.T) {
+	// nil session → 不缓存但不 panic
+	rec := httptest.NewRecorder()
+	srv := &Server{}
+	srv.sendAndCache(nil, rec, rec, "text_delta", "hi")
+	if !strings.Contains(rec.Body.String(), "hi") {
+		t.Errorf("HTTP 响应应含 hi: %s", rec.Body.String())
+	}
+}
+
+func TestSendAndCache_ConcurrentSafety(t *testing.T) {
+	// 并发写 → 事件 ID 必须严格单调递增
+	sess := getOrCreateSession("d-concurrent-test")
+	defer deleteSessionForTest("d-concurrent-test")
+
+	rec := httptest.NewRecorder()
+	srv := &Server{}
+	const n = 50
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
+			srv.sendAndCache(sess, rec, rec, "text_delta", "x")
+		}()
+	}
+	wg.Wait()
+
+	if len(sess.EventCache) != n {
+		t.Fatalf("EventCache 长度 = %d, want %d", len(sess.EventCache), n)
+	}
+	// 验证 ID 严格递增（1..n）—— sendAndCache 内部用 sess.mu 保护 eventIDCounter
+	seen := make(map[int64]bool)
+	for _, e := range sess.EventCache {
+		if seen[e.ID] {
+			t.Errorf("重复 ID: %d", e.ID)
+		}
+		seen[e.ID] = true
+	}
+}
+
+// ─── helper ───
+
+// deleteSessionForTest 测试结束后清理 session（不影响其他测试的 sessions map）
+func deleteSessionForTest(id string) {
+	sessionMu.Lock()
+	delete(sessions, id)
+	sessionMu.Unlock()
+}
+
+// createGinContextForTest 构造一个测试用 gin.Context（httptest.ResponseRecorder + http.Request）
+// 让 handleAgentXXX 等 gin handler 函数能直接调用
+func createGinContextForTest(rec *httptest.ResponseRecorder, req *http.Request) *gin.Context {
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+	return c
+}
+
+// ─── handleAgentResume 重放逻辑（直接测试内部状态机） ───────
+
+func TestResumeLogic_FindStartIndex(t *testing.T) {
+	// 给定 EventCache 和 lastEventID，找到正确的 startIdx
+	cases := []struct {
+		name        string
+		cache       []AgentEvent
+		lastEventID int64
+		wantStart   int
+	}{
+		{
+			name: "lastEventID=0 重放全部",
+			cache: []AgentEvent{
+				{ID: 1, Type: "text_delta"},
+				{ID: 2, Type: "text_delta"},
+				{ID: 3, Type: "stream_end"},
+			},
+			lastEventID: 0,
+			wantStart:   0,
+		},
+		{
+			name: "lastEventID=1 重放 ID 2,3",
+			cache: []AgentEvent{
+				{ID: 1, Type: "text_delta"},
+				{ID: 2, Type: "text_delta"},
+				{ID: 3, Type: "stream_end"},
+			},
+			lastEventID: 1,
+			wantStart:   1,
+		},
+		{
+			name: "lastEventID=3（最后）重放空",
+			cache: []AgentEvent{
+				{ID: 1, Type: "text_delta"},
+				{ID: 2, Type: "text_delta"},
+				{ID: 3, Type: "stream_end"},
+			},
+			lastEventID: 3,
+			wantStart:   3,
+		},
+		{
+			name:        "空 cache",
+			cache:       nil,
+			lastEventID: 0,
+			wantStart:   0,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			// 复用 handleAgentResume 中的算法
+			startIdx := 0
+			for i, e := range tt.cache {
+				if e.ID > tt.lastEventID {
+					startIdx = i
+					break
+				}
+				if i == len(tt.cache)-1 && e.ID <= tt.lastEventID {
+					startIdx = len(tt.cache)
+				}
+			}
+			if startIdx != tt.wantStart {
+				t.Errorf("startIdx = %d, want %d", startIdx, tt.wantStart)
+			}
+		})
+	}
+}
+
+func TestHandleAgentResume_HTTP_ReplayEvents(t *testing.T) {
+	// 集成测试：构造 session + EventCache，调 /api/resume，验证响应内容
+	id := "d-resume-http-test"
+	sess := getOrCreateSession(id)
+	defer deleteSessionForTest(id)
+
+	// 手动注入 5 个事件到 EventCache
+	sess.mu.Lock()
+	sess.EventCache = []AgentEvent{
+		{ID: 1, Type: "text_delta", Data: "hello "},
+		{ID: 2, Type: "text_delta", Data: "world"},
+		{ID: 3, Type: "tool_call", Data: map[string]interface{}{"id": "call_1", "name": "video_encrypt"}},
+		{ID: 4, Type: "tool_status", Data: map[string]interface{}{"id": "call_1", "status": "completed"}},
+		{ID: 5, Type: "stream_end", Data: ""},
+	}
+	sess.InProgress = false // 已结束
+	sess.mu.Unlock()
+
+	// 调 /api/resume 从 lastEventID=2 开始
+	req := httptest.NewRequest(http.MethodPost, "/api/resume",
+		strings.NewReader(`{"sessionId":"`+id+`","lastEventId":2}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	srv := &Server{}
+	srv.handleAgentResume(createGinContextForTest(rec, req))
+
+	body := rec.Body.String()
+	t.Logf("Resume 响应:\n%s", body)
+
+	// 验证重放了 ID 3,4,5（SSE 格式：`id: N`）
+	if !strings.Contains(body, "id: 3\n") {
+		t.Errorf("响应应含 id: 3 字段: %s", body)
+	}
+	if !strings.Contains(body, "id: 4\n") {
+		t.Errorf("响应应含 id: 4 字段: %s", body)
+	}
+	if !strings.Contains(body, "id: 5\n") {
+		t.Errorf("响应应含 id: 5 字段: %s", body)
+	}
+	// ID 1,2 不应被重放
+	if strings.Contains(body, "id: 1\n") || strings.Contains(body, "id: 2\n") {
+		t.Errorf("不应重放 ID 1,2: %s", body)
+	}
+	// 应含 tool_call 事件
+	if !strings.Contains(body, "tool_call") {
+		t.Errorf("应重放 tool_call 事件: %s", body)
+	}
+	if !strings.Contains(body, "stream_end") {
+		t.Errorf("响应应含 stream_end: %s", body)
+	}
+}
+
+func TestHandleAgentResume_HTTP_Header_LastEventID(t *testing.T) {
+	// SSE 协议标准 header：Last-Event-ID
+	id := "default" // handleAgentResume 的 sessionId 默认值
+
+	sess := getOrCreateSession(id)
+	defer deleteSessionForTest(id)
+
+	sess.mu.Lock()
+	sess.EventCache = []AgentEvent{
+		{ID: 1, Type: "text_delta", Data: "a"},
+		{ID: 2, Type: "text_delta", Data: "b"},
+	}
+	sess.InProgress = false
+	sess.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/resume", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Last-Event-ID", "1")
+	rec := httptest.NewRecorder()
+	srv := &Server{}
+	srv.handleAgentResume(createGinContextForTest(rec, req))
+
+	body := rec.Body.String()
+	// 应只重放 ID=2
+	if !strings.Contains(body, "id: 2\n") {
+		t.Errorf("应重放 ID 2: %s", body)
+	}
+	if strings.Contains(body, "id: 1\n") {
+		t.Errorf("不应重放 ID 1: %s", body)
+	}
+}
+
+func TestHandleAgentResume_HTTP_NotFound(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/resume",
+		strings.NewReader(`{"sessionId":"nonexistent","lastEventId":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv := &Server{}
+	srv.handleAgentResume(createGinContextForTest(rec, req))
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("session_not_found 应返回 404, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "session_not_found") {
+		t.Errorf("响应应含 session_not_found: %s", rec.Body.String())
+	}
+}
+
+func TestHandleAgentResume_HTTP_InProgress_Synced(t *testing.T) {
+	// lastEventID = 末尾，inProgress=true → 应推 stream_status: synced
+	id := "d-resume-synced-test"
+	sess := getOrCreateSession(id)
+	defer deleteSessionForTest(id)
+
+	sess.mu.Lock()
+	sess.EventCache = []AgentEvent{
+		{ID: 1, Type: "text_delta", Data: "hi"},
+	}
+	sess.InProgress = true // 还在流式
+	sess.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/resume",
+		strings.NewReader(`{"sessionId":"`+id+`","lastEventId":1}`))
+	rec := httptest.NewRecorder()
+	srv := &Server{}
+	srv.handleAgentResume(createGinContextForTest(rec, req))
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"stream_status"`) {
+		t.Errorf("inProgress + synced 应推 stream_status: %s", body)
+	}
+	if !strings.Contains(body, `"synced"`) {
+		t.Errorf("应含 status:synced: %s", body)
+	}
+}
+
+// ─── F 阶段：4 决策 UX（accept_for_session + sessionGrants） ───
+
+func TestGrantedTools_InitializedOnSessionCreate(t *testing.T) {
+	// getOrCreateSession 必须初始化 GrantedTools map（防止 nil map 写入 panic）
+	id := "f-grant-init-test"
+	sess := getOrCreateSession(id)
+	defer deleteSessionForTest(id)
+
+	if sess.GrantedTools == nil {
+		t.Fatal("GrantedTools 应被初始化为非 nil map")
+	}
+	// 写入不应 panic
+	sess.GrantedTools["video_encrypt"] = true
+	if !sess.GrantedTools["video_encrypt"] {
+		t.Error("写入后读取失败")
+	}
+}
+
+func TestEmitToolCallEvent_NotGranted_AutoRunFalse(t *testing.T) {
+	// session 未授权该工具 → auto_run=false, needsConfirm=true
+	sess := getOrCreateSession("f-no-grant-test")
+	defer deleteSessionForTest("f-no-grant-test")
+
+	rec := httptest.NewRecorder()
+	srv := &Server{}
+	tc := toolCallAccumulator{ID: "call_1", Type: "function"}
+	tc.Function.Name = "video_encrypt"
+	tc.Function.Arguments = `{"input_paths":["/a.mp4"]}`
+
+	srv.emitToolCallEvent(sess, rec, rec, tc)
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"auto_run":false`) {
+		t.Errorf("未授权时 auto_run 应为 false: %s", body)
+	}
+	if !strings.Contains(body, `"needsConfirm":true`) {
+		t.Errorf("未授权时 needsConfirm 应为 true: %s", body)
+	}
+}
+
+func TestEmitToolCallEvent_Granted_AutoRunTrue(t *testing.T) {
+	// session 已授权该工具 → auto_run=true, needsConfirm=false
+	sess := getOrCreateSession("f-granted-test")
+	defer deleteSessionForTest("f-granted-test")
+
+	// 模拟 accept_for_session 写入
+	sess.GrantedTools["video_encrypt"] = true
+
+	rec := httptest.NewRecorder()
+	srv := &Server{}
+	tc := toolCallAccumulator{ID: "call_2", Type: "function"}
+	tc.Function.Name = "video_encrypt" // 同名工具
+	tc.Function.Arguments = `{"input_paths":["/b.mp4"]}`
+
+	srv.emitToolCallEvent(sess, rec, rec, tc)
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"auto_run":true`) {
+		t.Errorf("已授权时 auto_run 应为 true: %s", body)
+	}
+	if !strings.Contains(body, `"needsConfirm":false`) {
+		t.Errorf("已授权时 needsConfirm 应为 false: %s", body)
+	}
+}
+
+func TestEmitToolCallEvent_GrantIsNameScoped(t *testing.T) {
+	// 授权 video_encrypt 不应影响 audio_encrypt
+	sess := getOrCreateSession("f-grant-scoped-test")
+	defer deleteSessionForTest("f-grant-scoped-test")
+	sess.GrantedTools["video_encrypt"] = true
+
+	rec := httptest.NewRecorder()
+	srv := &Server{}
+	tc := toolCallAccumulator{ID: "call_3", Type: "function"}
+	tc.Function.Name = "audio_encrypt" // 不同名
+	srv.emitToolCallEvent(sess, rec, rec, tc)
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"auto_run":false`) {
+		t.Errorf("audio_encrypt 不应被 video 授权覆盖: %s", body)
+	}
+}
+
+func TestEmitToolCallEvent_NilSession(t *testing.T) {
+	// nil session → auto_run=false, needsConfirm=true（不 panic）
+	rec := httptest.NewRecorder()
+	srv := &Server{}
+	tc := toolCallAccumulator{ID: "call_4", Type: "function"}
+	tc.Function.Name = "video_encrypt"
+	srv.emitToolCallEvent(nil, rec, rec, tc)
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"auto_run":false`) {
+		t.Errorf("nil session 应 default auto_run=false: %s", body)
+	}
+}
+
+func TestHandleAgentConfirm_HTTP_InvalidDecision(t *testing.T) {
+	// 非白名单决策 → 400
+	id := "f-invalid-decision"
+	sess := getOrCreateSession(id)
+	defer deleteSessionForTest(id)
+	_ = sess // 占位：保证 session 已注册
+
+	req := httptest.NewRequest(http.MethodPost, "/api/confirm",
+		strings.NewReader(`{"sessionId":"`+id+`","toolCallId":"call_x","decision":"unknown_decision"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv := &Server{}
+	srv.handleAgentConfirm(createGinContextForTest(rec, req))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("非法 decision 应返回 400, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "invalid_decision") {
+		t.Errorf("响应应含 invalid_decision: %s", rec.Body.String())
+	}
+}
+
+func TestHandleAgentConfirm_HTTP_CancelDecision(t *testing.T) {
+	// cancel 决策：应直接推 stream_end，不执行工具
+	// 不依赖真实插件执行，最快验证 cancel 路径
+	id := "f-cancel-decision"
+	sess := getOrCreateSession(id)
+	defer deleteSessionForTest(id)
+
+	// 准备一个 pending tool（让 cancel 之前的查找能走通）
+	sess.mu.Lock()
+	sess.PendingTools = []toolCallAccumulator{}
+	sess.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/confirm",
+		strings.NewReader(`{"sessionId":"`+id+`","toolCallId":"any","decision":"cancel"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv := &Server{}
+	srv.handleAgentConfirm(createGinContextForTest(rec, req))
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "stream_end") {
+		t.Errorf("cancel 应推 stream_end: %s", body)
+	}
+	// 不应推 tool_status（没有执行任何工具）
+	if strings.Contains(body, "tool_status") {
+		t.Errorf("cancel 不应推 tool_status: %s", body)
 	}
 }

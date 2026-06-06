@@ -14,7 +14,7 @@
 
 按依赖顺序和价值密度，把 `go-in-process-agent/tasks.md` 中**未完成项**拆成 7 个 phase。每个 phase 都有 user-visible 产出（不是内部重构）。
 
-### Phase A: 工具调用最小闭环（最关键，让 AI 真正能做事）
+### Phase A: 工具调用最小闭环（最关键，让 AI 真正能做事）  ✅ 已完成（agent library）
 
 - 后端：实现 `/api/chat` 解析 OpenAI 返回的 `tool_calls`，路由到注册表执行
 - 后端：实现 4 决策 ConfirmTool + `/api/confirm`（accept / accept_for_session / decline / cancel）
@@ -22,36 +22,36 @@
 - 前端：tool_call 事件渲染 ApprovalCard
 - 前端：tool_result 事件渲染到消息列表
 
-### Phase B: 插件工具桥接（让 AI 真正操作文件）
+### Phase B: 插件工具桥接（让 AI 真正操作文件）  ✅ 已完成（encv-go 主后端）
 
 - 后端：`scanPluginTools` + `makePluginEncryptHandler` + `makePluginDecryptHandler`（spec 写完但未实现）
 - 后端：plugin 12 个工具自动注册到 demo
 - 前端：UI 提示"已运行 video_encrypt"等
 
-### Phase C: OpenList 真实联调（让 AI 看到远端文件）
+### Phase C: OpenList 真实联调（让 AI 看到远端文件）  ⛔ SKIPPED（用户决策）
 
 - 后端：OpenListClient 8 个端点真实调通（list_files / read_file / write_file / delete_file / rename / exec_command / get_storage_info / search_files）
 - 后端：把 OpenList 端点作为 8 个 readOnly/fileChange/command 工具注册
 - 前端：AI 输入"列文件"→ 真实调 OpenList → 文件列表展示
 
-### Phase D: 断点续传（生产可用性）
+### Phase D: 断点续传（生产可用性）  ✅ 后端完成 / ⏳ 前端未开始
 
 - 后端：`/api/resume` + `agent.Resume(sessionID, offset)` 实现（spec 有，代码无）
 - 前端：`useAgent.resume()` mount 时从 localStorage 自动恢复
 - 前端：刷新页面 5 秒内追平进度
 
-### Phase E: 长会话虚拟化（性能）
+### Phase E: 长会话虚拟化（性能）  ⏳ 未开始
 
 - 前端：实现 `renderTurnItems` 累积 + `MessageVirtualList` vue-virtual-scroller 集成
 - 前端：阈值判断 `messages.length > 120`
 
-### Phase F: 4 决策完整文案（UX 收口）
+### Phase F: 4 决策完整文案（UX 收口）  ✅ 后端白名单完成 / ⏳ 前端未开始
 
 - 后端：decision 字段白名单校验（拒绝非 4 值）
 - 前端：4 决策按钮文案 + i18n（批准 / 本轮批准 / 拒绝 / 拒绝并停止）
 - 前端：按钮点击"处理中"状态 + 禁用其他按钮
 
-### Phase G: 端到端联调 + 测试（验收）
+### Phase G: 端到端联调 + 测试（验收）  ⏳ 未开始
 
 - `ecosystem.config.cjs` 加 agent-demo
 - preview-gateway `/agent-api/*` upstream 配通

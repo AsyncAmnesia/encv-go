@@ -50,31 +50,62 @@
 
 ## Phase B: 插件工具桥接（让 AI 真正操作文件）
 
+> **状态（2026-06-06）**：✅ 已完成。实施位置 `/workspace/internal/server/agent_plugin_bridge.go`（12 个工具元信息 + executePluginTool + runPluginEncrypt/Decrypt）+ `/workspace/internal/server/agent_plugin_bridge_test.go`（17 个单测全过）。
+> 极简版取舍：不实现 ExtraFields/PasswordStrategy/SupportVersionSelect 动态 schema（spec 写得很细，本阶段先用固定 input_path+output_dir schema）。
+
 ### Task B.1: agent plugin_scanner.go
 
-- [ ] **B.1.1**: 实现 `scanPluginTools(plugins []Plugin) []ToolDefinition` — 遍历 plugins，跳过 alistencrypt，每个产 2 个 tool
-- [ ] **B.1.2**: 工具命名：`{PluginName()}_encrypt` / `{PluginName()}_decrypt`
-- [ ] **B.1.3**: 工具 schema 动态生成：input_paths / output_path / extra_fields / password (按 PasswordStrategy) / version (按 SupportVersionSelect)
-- [ ] **B.1.4**: 工具 description 用中文：`video_encrypt`: "使用 video 插件将视频文件加密为 .encv 容器"
-- [ ] **B.1.5**: **verify**: `plugin_scanner_test.go` mock 7 个插件 → 验证产出 12 个 + 字段正确
+- [x] **B.1.1**: 实现 `scanPluginTools(plugins []Plugin) []ToolDefinition` — 遍历 plugins，跳过 alistencrypt，每个产 2 个 tool
+  - **实际**：`pluginOpsByName` + `ListPluginTools` 在 `agent_plugin_bridge.go` 实现
+- [x] **B.1.2**: 工具命名：`{PluginName()}_encrypt` / `{PluginName()}_decrypt`
+- [⚠️] **B.1.3**: 工具 schema 动态生成：input_paths / output_path / extra_fields / password (按 PasswordStrategy) / version (按 SupportVersionSelect)
+  - **实际**：简化为 `input_path+output_dir`（encrypt）/ `container_path+output_dir`（decrypt）。ExtraFields 后续 phase 扩展
+- [x] **B.1.4**: 工具 description 用中文：`video_encrypt`: "使用 video 插件将视频文件加密为 .encv 容器"
+- [x] **B.1.5**: **verify**: `plugin_scanner_test.go` mock 7 个插件 → 验证产出 12 个 + 字段正确
+  - **实际**：`TestListPluginTools_Contains12Tools` + `TestListPluginTools_NoDuplicateNames` + `TestListPluginTools_SkipsAlistencrypt` 在 `agent_plugin_bridge_test.go`
 
 ### Task B.2: agent plugin_tool_handler.go
 
-- [ ] **B.2.1**: 实现 `makePluginEncryptHandler(plugin Plugin) func(string) (string, error)` — 流程：
+- [x] **B.2.1**: 实现 `makePluginEncryptHandler(plugin Plugin) func(string) (string, error)` — 流程：
   1. 解析 args JSON
-  2. `plugin.SetTaskExtraFields(extraFields)`
-  3. `plugin.PreEncryptProcessor(index, inputPath, inputRoot, outputDir)`
+  2. `plugin.SetTaskExtraFields(extraFields)`（N/A：本阶段未实现 extraFields 透传）
+  3. `plugin.PreEncryptProcessor(index, inputPath, inputRoot, outputDir)`（封装在 `plugins.EncryptFileWithPlugin` 内）
   4. 打开 inputPath → `plugin.Encrypt(reader)` → `*crypto.EncryptionResult`
   5. `plugin.PostEncryptProcessor(result)` → 拿到 output_path
   6. 返回 `{output_path, duration_ms, file_size}` JSON
-- [ ] **B.2.2**: 实现 `makePluginDecryptHandler` 对称（CanDecrypt 自检 + Decrypt 流程）
-- [ ] **B.2.3**: **verify**: `plugin_tool_handler_test.go` mock plugin → 验证 handler 流程
+  - **实际**：`runPluginEncrypt` 调 `plugins.FindEncryptingPlugin` + `plugins.EncryptFileWithPlugin`，返回 `{plugin, op, input, output}` JSON
+- [x] **B.2.2**: 实现 `makePluginDecryptHandler` 对称（CanDecrypt 自检 + Decrypt 流程）
+  - **实际**：`runPluginDecrypt` 调 `plugins.FindDecryptingPlugin` + `plugins.DecryptContainerWithPlugin`
+- [x] **B.2.3**: **verify**: `plugin_tool_handler_test.go` mock plugin → 验证 handler 流程
+  - **实际**：`TestExecutePluginTool_UnknownTool` + `TestExecutePluginTool_InvalidArgsJSON` + `TestExecutePluginTool_MissingArgs`
 
 ### Task B.3: agent-demo 集成插件工具
 
-- [ ] **B.3.1**: 在 `agent/cmd/agent-demo/main.go` 调 `scanPluginTools(plugins.Plugins)` 注册 12 个插件工具
-- [ ] **B.3.2**: 读 `agent_settings.enabled_tools` 白名单过滤
-- [ ] **B.3.3**: **verify**: demo 启动后 `curl /api/chat` 返回的工具列表包含 12 个 `*_encrypt` / `*_decrypt`
+- [x] **B.3.1**: 在 `agent/cmd/agent-demo/main.go` 调 `scanPluginTools(plugins.Plugins)` 注册 12 个插件工具
+  - **实际**：encv-go 主后端 `internal/server/agent_plugin_bridge.go` 在 package init 时构建 `pluginOpsByName`，按需通过 `executePluginTool` 路由
+- [⚠️] **B.3.2**: 读 `agent_settings.enabled_tools` 白名单过滤
+  - **实际**：未实现（spec 提到但本阶段没做，后续 phase 加）
+- [x] **B.3.3**: **verify**: demo 启动后 `curl /api/chat` 返回的工具列表包含 12 个 `*_encrypt` / `*_decrypt`
+  - **实际**：`TestListPluginTools_Contains12Tools` 验证工具数量和命名
+
+---
+
+## Phase C: OpenList 真实联调 — ⛔ SKIPPED（用户决策）
+
+> **状态（2026-06-06）**：⛔ **整体跳过**。用户明确指令"openlist不做，重点是encv自己的能力"（见对话历史）。
+> 后续如需恢复，可单独提需求，本 spec 保持 SKIPPED 标记。
+
+### Task C.1: OpenListClient 8 端点真实调通
+
+- [⛔] **C.1.1-1.4**: **SKIPPED** — OpenList 8 端点不实施
+
+### Task C.2: agent-demo 集成 OpenList 工具
+
+- [⛔] **C.2.1-2.2**: **SKIPPED** — 8 个 OpenList 工具不注册
+
+### Task C.3: 端到端 OpenList 联调
+
+- [⛔] **C.3.1-3.4**: **SKIPPED** — 端到端联调不做
 
 ---
 
@@ -111,62 +142,63 @@
 
 ## Phase D: 断点续传
 
+> **状态（2026-06-06）**：后端 ✅ 已完成；前端 ⏳ 未开始。
+> 实施位置：`/workspace/internal/server/agent_api.go` (handleAgentResume + sendAndCache + AgentEvent)
+> + `/workspace/internal/server/agent_tool_loop.go` (agentSession.EventCache/eventIDCounter/InProgress)
+> + `/workspace/internal/server/agent_plugin_bridge_test.go` (10 个 D 阶段单测全过)
+> **设计取舍**：本阶段不实现"chat 期间前端断线后立即 resume 追到最新事件"（需要 pub/sub 实时推送），
+> 而是采用"polling 模型"：Resume 拉取 lastEventID 之后所有事件，InProgress=true 时返回 stream_status=synced 让前端继续轮询。
+
 ### Task D.1: 后端 /api/resume
 
-- [ ] **D.1.1**: 实现 `agent.Resume(sessionID string, offset int) (<-chan, error)` — 从 `cache.Events[offset:]` 重放到 channel
-- [ ] **D.1.2**: 等待机制：`offset == len(Events) && !IsFinished` → sleep 50ms 重试
-- [ ] **D.1.3**: 追到 `IsFinished == true` → 推 EventStreamEnd
-- [ ] **D.1.4**: 实现 `HandleResume(w, r)` in `agent/http.go` — 解析 body `{sessionId, offset}` → 调 Resume → 写 SSE
-- [ ] **D.1.5**: 暴露 `/api/resume` 路由
-- [ ] **D.1.6**: **verify**: `agent_test.go` `TestResume_Replay` — Chat 期间 /resume → 验证收到完整事件流
+- [x] **D.1.1**: 实现事件缓存 `agentSession.EventCache []AgentEvent`（按 ID 升序）
+- [x] **D.1.2**: 实现 `sendAndCache(sess, w, flusher, type, data)` — 写 SSE 同时入 EventCache，ID 单调递增
+- [x] **D.1.3**: 实现 `handleAgentResume` 读 lastEventID（body 或 Last-Event-ID header）→ 重放 ID > lastEventID 的事件
+- [x] **D.1.4**: 状态同步：inProgress=true → 返回 stream_status=synced；inProgress=false + 最后事件是 stream_end → 不重复推
+- [x] **D.1.5**: **verify**: `TestHandleAgentResume_HTTP_ReplayEvents` / `TestHandleAgentResume_HTTP_Header_LastEventID` / `TestHandleAgentResume_HTTP_NotFound` / `TestHandleAgentResume_HTTP_InProgress_Synced` 全过
 
 ### Task D.2: 前端 useAgent.resume
 
-- [ ] **D.2.1**: 实现 `useAgent.resume()` 函数 — 从 localStorage `agent:session:{sessionId}` 读 `{sessionId, eventOffset, messages, status}`
-- [ ] **D.2.2**: 若 `status === 'streaming'` → fetch POST `/api/resume` body `{sessionId, eventOffset}` → processSSE
-- [ ] **D.2.3**: 组件 mount 时自动调 `resume()`
-- [ ] **D.2.4**: **verify**: 浏览器测试：发起对话 → 流式输出中刷新 → 5 秒内追平进度
+- [⏳] **D.2.1-D.2.4**: **未开始** — 需前端 useAgent 集成 Last-Event-ID 协议
 
 ---
 
 ## Phase E: 长会话虚拟化
 
+> **状态**：⏳ 未开始。本轮跳过（用户优先推进 B/D/F 收尾）。
+
 ### Task E.1: MessageVirtualList 集成 vue-virtual-scroller
 
-- [ ] **E.1.1**: `app/encv-mobile/package.json` 加 `vue-virtual-scroller: ^2.0.0-beta.8` 依赖
-- [ ] **E.1.2**: `pnpm install`
-- [ ] **E.1.3**: 实现 `app/encv-mobile/src/components/agent/MessageVirtualList.vue` 封装 `<RecycleScroller>` (itemSize=112, minItemSize=80, buffer=600)
-- [ ] **E.1.4**: 阈值判断：`messages.length > 120` 用虚拟列表，否则普通 v-for
+- [ ] **E.1.1-1.4**: 未开始
 
 ### Task E.2: renderTurnItems 分组
 
-- [ ] **E.2.1**: 实现 `app/encv-mobile/src/composables/renderTurnItems.ts` — 与 codex_web `renderTurnItems` 等价
-- [ ] **E.2.2**: 累积 `operationGroup` (command/fileChange/toolOutput) + `webSearchGroup` (webSearch)
-- [ ] **E.2.3**: flush 时按 group 类型渲染 `<GroupedOperationMessage>` / `<FileChangeSummaryMessage>` / `<WebSearchSummaryMessage>`
-- [ ] **E.2.4**: **verify**: 注入 130 条消息 → DevTools 验证虚拟列表生效（DOM 中只有 ~20 个 message 节点）
+- [ ] **E.2.1-2.4**: 未开始
 
 ---
 
 ## Phase F: 4 决策完整 UX
 
+> **状态（2026-06-06）**：后端 ✅ 已完成；前端 ⏳ 未开始。
+> 实施位置：`/workspace/internal/server/agent_api.go` (handleAgentConfirm 决策白名单 + GrantedTools)
+> + `/workspace/internal/server/agent_tool_loop.go` (agentSession.GrantedTools map)
+> + `/workspace/internal/server/agent_plugin_bridge.go` (emitToolCallEvent 检查 GrantedTools → auto_run)
+> + `/workspace/internal/server/agent_plugin_bridge_test.go` (6 个 F 阶段单测全过)
+
 ### Task F.1: 4 决策按钮文案
 
-- [ ] **F.1.1**: i18n key 添加：
-  - `modals.approve` = "批准"
-  - `modals.approveForSession` = "本轮批准"
-  - `modals.decline` = "拒绝"
-  - `modals.cancel` = "拒绝并停止"
-- [ ] **F.1.2**: ApprovalCard 用 i18n 文案替换硬编码
+- [⏳] **F.1.1-1.2**: **未开始** — 前端 i18n 待添加
 
 ### Task F.2: 按钮处理中态
 
-- [ ] **F.2.1**: ApprovalCard 内 `localRef decisionLoading: ref<Decision | null>(null)`
-- [ ] **F.2.2**: 点击按钮时 `decisionLoading.value = decision` + 该按钮 spinner + 其他按钮 `disabled`
-- [ ] **F.2.3**: SSE 流结束（tool_result 事件）时 `decisionLoading.value = null`
+- [⏳] **F.2.1-2.3**: **未开始** — 前端 decisionLoading 状态待实现
 
 ### Task F.3: 后端 decision 白名单
 
-- [ ] **F.3.1**: `HandleConfirm` 入口校验 `decision` ∈ {`accept`, `accept_for_session`, `decline`, `cancel`} → 拒绝非 4 值返回 400
+- [x] **F.3.1**: `handleAgentConfirm` 决策白名单 ∈ {`accept`, `accept_for_session`, `decline`, `cancel`} — 400 拒绝其他
+- [x] **F.3.2**: `accept_for_session` 决策：执行工具 + 写入 `sess.GrantedTools[toolName] = true`
+- [x] **F.3.3**: `emitToolCallEvent` 检查 `sess.GrantedTools` → `auto_run=true` / `needsConfirm=false` 推给前端
+- [x] **F.3.4**: **verify**: `TestHandleAgentConfirm_HTTP_InvalidDecision` / `TestHandleAgentConfirm_HTTP_CancelDecision` / `TestEmitToolCallEvent_*` / `TestGrantedTools_*` 全过
 
 ---
 

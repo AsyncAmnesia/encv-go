@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"os"
 	"strings"
 	"time"
@@ -426,6 +427,7 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	sess.LastModel = model
 	sess.LastTemperature = body.Temperature
 	sess.PendingTools = nil // 新一轮开始，清空旧的 pending
+	sess.InProgress = true  // 标记流式生成中
 	sess.mu.Unlock()
 
 	// ④ Flusher 检测
@@ -487,6 +489,12 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 
 	// ⑧ 设置 SSE 响应头并开始流式转发
 	s.setSSEHeaders(c.Writer)
+	// chat 流结束（或 panic）时清 InProgress
+	defer func() {
+		sess.mu.Lock()
+		sess.InProgress = false
+		sess.mu.Unlock()
+	}()
 
 	// ⑨ 逐行读取上游 SSE 并转换格式转发给客户端
 	scanner := bufio.NewScanner(resp.Body)
@@ -512,7 +520,7 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 				}
 			}
 			for _, tc := range pendingTools {
-				s.emitToolCallEvent(c.Writer, flusher, tc)
+				s.emitToolCallEvent(sess, c.Writer, flusher, tc)
 			}
 			// 缓存 pending tools 到 session（供 confirm 取用）
 			if len(pendingTools) > 0 {
@@ -520,7 +528,7 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 				sess.PendingTools = pendingTools
 				sess.mu.Unlock()
 			}
-			s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+			s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
 			streamEnded = true
 			break
 		}
@@ -548,13 +556,13 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 			// 文本内容 → text_delta
 			if delta.Content != "" {
 				hasContent = true
-				s.sendSSEEventSafe(c.Writer, flusher, "text_delta", delta.Content)
+				s.sendAndCache(sess, c.Writer, flusher, "text_delta", delta.Content)
 			}
 
 			// 推理内容 → reasoning_delta
 			if delta.ReasoningContent != "" {
 				hasContent = true
-				s.sendSSEEventSafe(c.Writer, flusher, "reasoning_delta", delta.ReasoningContent)
+				s.sendAndCache(sess, c.Writer, flusher, "reasoning_delta", delta.ReasoningContent)
 			}
 
 			// 工具调用 → 按 index 累积
@@ -589,7 +597,7 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 					}
 				}
 				for _, tc := range pendingTools {
-					s.emitToolCallEvent(c.Writer, flusher, tc)
+					s.emitToolCallEvent(sess, c.Writer, flusher, tc)
 				}
 				// 缓存 pending tools
 				if len(pendingTools) > 0 {
@@ -597,7 +605,7 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 					sess.PendingTools = pendingTools
 					sess.mu.Unlock()
 				}
-				s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+				s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
 				streamEnded = true
 			}
 		}
@@ -611,15 +619,15 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 			}
 		}
 		for _, tc := range pendingTools {
-			s.emitToolCallEvent(c.Writer, flusher, tc)
-		}
-		if len(pendingTools) > 0 {
-			sess.mu.Lock()
-			sess.PendingTools = pendingTools
-			sess.mu.Unlock()
-		}
-		s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+		s.emitToolCallEvent(sess, c.Writer, flusher, tc)
 	}
+	if len(pendingTools) > 0 {
+		sess.mu.Lock()
+		sess.PendingTools = pendingTools
+		sess.mu.Unlock()
+	}
+	s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
+}
 
 	// 如果上游没有发送任何内容（非流式响应等），兜底读取完整 body
 	if !hasContent {
@@ -646,16 +654,24 @@ type openaiToolCallChunk struct {
 }
 
 // emitToolCallEvent 推送一个完整的 tool_call 事件给前端
-func (s *Server) emitToolCallEvent(w http.ResponseWriter, flusher http.Flusher, tc toolCallAccumulator) {
+func (s *Server) emitToolCallEvent(sess *agentSession, w http.ResponseWriter, flusher http.Flusher, tc toolCallAccumulator) {
+	// F 阶段：检查 session 授权表 → 已授权工具自动放行（auto_run=true）
+	autoRun := false
+	if sess != nil {
+		sess.mu.Lock()
+		autoRun = sess.GrantedTools[tc.Function.Name]
+		sess.mu.Unlock()
+	}
+
 	payload := map[string]interface{}{
 		"id":           tc.ID,
 		"name":         tc.Function.Name,
 		"args":         tc.Function.Arguments,
-		"auto_run":     false,
-		"needsConfirm": true,
+		"auto_run":     autoRun,                          // F 阶段：true=前端不弹 ApprovalCard 直接放行
+		"needsConfirm": !autoRun,                          // auto_run=true 时不再需要 confirm
 		"kind":         "fileChange",
 	}
-	s.sendSSEEventSafe(w, flusher, "tool_call", payload)
+	s.sendAndCache(sess, w, flusher, "tool_call", payload)
 }
 
 // ─── POST /api/confirm — SSE 工具确认 ───────────────────────
@@ -664,7 +680,7 @@ func (s *Server) emitToolCallEvent(w http.ResponseWriter, flusher http.Flusher, 
 type confirmRequest struct {
 	SessionId  string `json:"sessionId"`
 	ToolCallId string `json:"toolCallId"`
-	Decision   string `json:"decision"` // accept | decline | cancel
+	Decision   string `json:"decision"` // accept | decline | cancel | accept_for_session
 	DeviceId   string `json:"deviceId"` // 设备指纹（用于 API Key 解密 + 系统提示词）
 }
 
@@ -678,10 +694,10 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 
 	// ② 决策白名单校验
 	switch body.Decision {
-	case "accept", "decline", "cancel":
+	case "accept", "decline", "cancel", "accept_for_session":
 		// pass
 	default:
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_decision", "message": "decision 必须是 accept / decline / cancel"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_decision", "message": "decision 必须是 accept / decline / cancel / accept_for_session"})
 		return
 	}
 
@@ -708,7 +724,7 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 
 	// ⑤ cancel：立即终止，不执行、不递归
 	if body.Decision == "cancel" {
-		s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+		s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
 		return
 	}
 
@@ -724,8 +740,8 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 	if tool == nil {
 		sess.mu.Unlock()
 		slog.Warn("agent: confirm tool not found", "session", sessID, "toolCallId", body.ToolCallId)
-		s.sendSSEEventSafe(c.Writer, flusher, "stream_error", "tool_call_not_found: "+body.ToolCallId)
-		s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+		s.sendAndCache(sess, c.Writer, flusher, "stream_error", "tool_call_not_found: "+body.ToolCallId)
+		s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
 		return
 	}
 
@@ -742,9 +758,9 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 		ToolCalls: allToolCalls,
 	}
 
-	// ⑧ accept → 真实执行；decline → 注入 cancelled 假结果
+	// ⑧ accept / accept_for_session → 真实执行；decline → 注入 cancelled 假结果
 	var toolMsg chatMsg
-	if body.Decision == "accept" {
+	if body.Decision == "accept" || body.Decision == "accept_for_session" {
 		// 读取 agent 配置（用 deviceId 派生 API Key 解密 + 系统提示词）
 		cfg := s.readAgentConfig(body.DeviceId)
 		if cfg.BaseURL == "" {
@@ -752,9 +768,15 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 		}
 		toolMsg, _ = executeAndRecurse(c.Request.Context(), sess, cfg, *tool)
 		// 推 tool_status: completed 给前端
-		s.sendSSEEventSafe(c.Writer, flusher, "tool_status", map[string]interface{}{
+		statusMsg := "completed"
+		if body.Decision == "accept_for_session" {
+			// 同时记录到 session 授权表
+			sess.GrantedTools[tool.Function.Name] = true
+			statusMsg = "completed_granted" // 前端可显示不同文案
+		}
+		s.sendAndCache(sess, c.Writer, flusher, "tool_status", map[string]interface{}{
 			"id":     tool.ID,
-			"status": "completed",
+			"status": statusMsg,
 			"result": toolMsg.Content,
 		})
 	} else {
@@ -765,7 +787,7 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 			ToolCallID: tool.ID,
 			Name:       tool.Function.Name,
 		}
-		s.sendSSEEventSafe(c.Writer, flusher, "tool_status", map[string]interface{}{
+		s.sendAndCache(sess, c.Writer, flusher, "tool_status", map[string]interface{}{
 			"id":     tool.ID,
 			"status": "cancelled",
 			"result": "user_declined",
@@ -776,7 +798,16 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 	sess.Messages = append(sess.Messages, assistantMsg, toolMsg)
 	// 清空 pending tools
 	sess.PendingTools = nil
+	// 标记递归 chat 进行中（让 resume 能感知）
+	sess.InProgress = true
 	sess.mu.Unlock()
+
+	// ⑨½ 递归 chat 结束/panic 时清 InProgress
+	defer func() {
+		sess.mu.Lock()
+		sess.InProgress = false
+		sess.mu.Unlock()
+	}()
 
 	// ⑩ 递归下一轮 chat（流式）
 	cfg := s.readAgentConfig(body.DeviceId)
@@ -793,25 +824,118 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 	s.streamChat(c.Request.Context(), c, cfg, sess.LastModel, sess.LastTemperature, finalMessages, sess)
 }
 
-// ─── POST /api/resume — SSE 断点续传（暂未实现） ─────────────
+// ─── POST /api/resume — SSE 断点续传（基于事件缓存重放） ──
 
 func (s *Server) handleAgentResume(c *gin.Context) {
-	// 先消耗请求体（保持与 handleAgentChat 一致的顺序）
+	// ① 解析请求体（lastEventID 从 body 或 SSE standard header Last-Event-ID 取）
 	var body struct {
-		SessionId string `json:"sessionId"`
-		Offset    int64  `json:"offset"`
+		SessionId   string `json:"sessionId"`
+		LastEventID int64  `json:"lastEventId"`
 	}
 	_ = c.ShouldBindJSON(&body)
+	if body.LastEventID == 0 {
+		// SSE 协议标准 header：Last-Event-ID（前端用 EventSource 自带支持）
+		if hdr := c.GetHeader("Last-Event-ID"); hdr != "" {
+			if n, err := strconv.ParseInt(hdr, 10, 64); err == nil {
+				body.LastEventID = n
+			}
+		}
+	}
 
+	// ② session 必须存在
+	sessID := body.SessionId
+	if sessID == "" {
+		sessID = "default"
+	}
+	sessionMu.RLock()
+	sess, ok := sessions[sessID]
+	sessionMu.RUnlock()
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "session_not_found", "message": "未找到会话"})
+		return
+	}
+
+	// ③ Flusher 检测
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "sse_not_supported"})
 		return
 	}
 	s.setSSEHeaders(c.Writer)
-	// 当前后端无事件缓存（bufio.Scanner 流式已消费）→ 明确告知前端不支持
-	s.sendSSEEventSafe(c.Writer, flusher, "stream_error", "resume_not_implemented: 当前后端无事件缓存，断点续传需重构为事件驱动架构")
-	s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+
+	// ④ 取 EventCache 副本（释放锁后遍历，避免长时间持锁）
+	sess.mu.Lock()
+	eventCache := make([]AgentEvent, len(sess.EventCache))
+	copy(eventCache, sess.EventCache)
+	inProgress := sess.InProgress
+	sess.mu.Unlock()
+
+	// ⑤ 找到 lastEventID 之后第一个事件的索引
+	startIdx := 0
+	for i, e := range eventCache {
+		if e.ID > body.LastEventID {
+			startIdx = i
+			break
+		}
+		// 如果遍历完没找到（即 lastEventID >= 最后一个事件 ID），保持 startIdx = 0
+		// 但这会导致全量重放——更合理的处理：如果 lastEventID == 最后事件 ID，startIdx = len
+		if i == len(eventCache)-1 && e.ID <= body.LastEventID {
+			startIdx = len(eventCache)
+		}
+	}
+
+	// ⑥ 如果 lastEventID 已经到最后（startIdx == len），且 in_progress=false（已结束）→ 推 stream_end
+	if startIdx >= len(eventCache) {
+		if !inProgress {
+			s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+			return
+		}
+		// 仍 inProgress 但没有新事件 → 推 status: synced
+		s.sendSSEEventSafe(c.Writer, flusher, "stream_status", map[string]interface{}{
+			"status":     "synced",
+			"inProgress": true,
+			"maxEventId": maxEventID(eventCache),
+		})
+		return
+	}
+
+	// ⑦ 重放 startIdx 之后的所有事件
+	slog.Info("agent: resume replay events", "session", sessID, "lastEventID", body.LastEventID, "count", len(eventCache)-startIdx)
+	for _, e := range eventCache[startIdx:] {
+		// SSE 标准：在 data 之前带 `id: <eventID>` 字段
+		raw, _ := json.Marshal(e.Data)
+		fmt.Fprintf(c.Writer, "id: %d\ndata: {\"type\": \"%s\", \"data\": %s}\n\n", e.ID, e.Type, raw)
+	}
+	flusher.Flush()
+
+	// ⑧ 如果仍 inProgress，前端稍后再次 resume；如果已完成 → 推 stream_end
+	if inProgress {
+		s.sendSSEEventSafe(c.Writer, flusher, "stream_status", map[string]interface{}{
+			"status":     "more_pending",
+			"inProgress": true,
+			"maxEventId": maxEventID(eventCache),
+		})
+	} else {
+		// 检查最后一个事件是否是 stream_end
+		last := eventCache[len(eventCache)-1]
+		if last.Type != "stream_end" {
+			s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+		}
+	}
+}
+
+// maxEventID 返回 EventCache 中最大的事件 ID（按 ID 找真正的 max，不依赖顺序）
+func maxEventID(events []AgentEvent) int64 {
+	if len(events) == 0 {
+		return 0
+	}
+	max := events[0].ID
+	for _, e := range events[1:] {
+		if e.ID > max {
+			max = e.ID
+		}
+	}
+	return max
 }
 
 // ─── SSE 辅助函数 ────────────────────────────────────────────
@@ -845,6 +969,19 @@ func (s *Server) sendSSEEventSafe(w http.ResponseWriter, flusher http.Flusher, e
 		return
 	}
 	flusher.Flush()
+}
+
+// sendAndCache 发送 SSE 事件并同时缓存到 session.EventCache（供 /api/resume 重放）。
+// 如果 sess == nil（例如 session 不存在），降级为只发送不缓存。
+func (s *Server) sendAndCache(sess *agentSession, w http.ResponseWriter, flusher http.Flusher, eventType string, data interface{}) {
+	if sess != nil {
+		sess.mu.Lock()
+		sess.eventIDCounter++
+		eventID := sess.eventIDCounter
+		sess.EventCache = append(sess.EventCache, AgentEvent{ID: eventID, Type: eventType, Data: data})
+		sess.mu.Unlock()
+	}
+	s.sendSSEEventSafe(w, flusher, eventType, data)
 }
 
 func (s *Server) streamText(w http.ResponseWriter, text string, chunkSize int, delayMs time.Duration) {

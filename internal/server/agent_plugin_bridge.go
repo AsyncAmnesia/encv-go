@@ -5,7 +5,8 @@
 // 设计目标：
 //   - 12 个工具：6 个插件（video/audio/image/wps/pdf/text）× 2 操作（encrypt/decrypt）
 //   - 工具描述用中文，符合用户使用习惯
-//   - schema 极简：仅 input_path / output_dir（先满足"AI 能调用"，复杂参数后续扩展）
+//   - schema 动态生成：input_paths / output_path / extra_fields（来自 plugin.GetTaskOptions().ExtraFields）/
+//     password（按 PasswordStrategy 决定 required/optional/hidden）/ version（按 SupportVersionSelect）
 //   - 复用 plugins.EncryptFileWithPlugin / DecryptContainerWithPlugin 高层 API
 //   - 安全：所有 encrypt/decrypt 操作都标记为 NeedConfirm=true，前端必须弹 ApprovalCard
 //
@@ -25,11 +26,13 @@ import (
 	"strings"
 
 	"github.com/Soltus/encv-go/internal/v2/plugins"
+	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	encvPlugins "github.com/Soltus/encv-go/pkg/encv/plugins"
 )
 
 // pluginToolDef 描述一个由插件支持的 agent 工具
 type pluginToolDef struct {
+	plugin      plugins.Plugin
 	name        string
 	description string
 	op          string // "encrypt" | "decrypt"
@@ -47,11 +50,13 @@ var pluginOpsByName = func() map[string]pluginToolDef {
 		// 中文插件名映射（用户可见名）
 		cnName := pluginNameCN(p.Name())
 		m[p.Name()+"_encrypt"] = pluginToolDef{
+			plugin:      p,
 			name:        p.Name() + "_encrypt",
 			description: fmt.Sprintf("使用 %s 插件加密文件为 .encv 容器", cnName),
 			op:          "encrypt",
 		}
 		m[p.Name()+"_decrypt"] = pluginToolDef{
+			plugin:      p,
 			name:        p.Name() + "_decrypt",
 			description: fmt.Sprintf("使用 %s 插件解密 .encv 容器为原始文件", cnName),
 			op:          "decrypt",
@@ -80,50 +85,148 @@ func pluginNameCN(name string) string {
 	}
 }
 
-// toolSchemaEncrypt / toolSchemaDecrypt 极简 schema：input_path + output_dir
-var toolSchemaEncrypt = map[string]interface{}{
-	"type": "object",
-	"properties": map[string]interface{}{
-		"input_path": map[string]interface{}{
-			"type":        "string",
-			"description": "要加密的源文件绝对路径",
-		},
-		"output_dir": map[string]interface{}{
-			"type":        "string",
-			"description": "加密产物输出目录（绝对路径）",
-		},
-	},
-	"required": []string{"input_path", "output_dir"},
+// toolSchemaEncrypt / toolSchemaDecrypt 动态 schema 生成器
+// 根据插件 GetTaskOptions() 返回的元数据，动态生成完整 schema：
+//   - input_paths/output_path 基础字段
+//   - extra_fields 来自 plugin.ExtraFields（每个 TaskField 转为 JSON Schema 属性）
+//   - password 按 PasswordStrategy（global=optional, independent=optional, none=隐藏）
+//   - version 按 SupportVersionSelect（true=必填 select, false=隐藏）
+
+// buildTaskFieldSchema 把单个 TaskField 转成 JSON Schema property
+func buildTaskFieldSchema(f pluginInterfaces.TaskField) map[string]interface{} {
+	prop := map[string]interface{}{
+		"type":        jsonSchemaType(f.Type),
+		"description": f.Label,
+	}
+	if f.Help != "" {
+		prop["description"] = f.Label + " — " + f.Help
+	}
+	if f.DefaultValue != "" {
+		prop["default"] = f.DefaultValue
+	}
+	if len(f.Options) > 0 {
+		prop["enum"] = f.Options
+		if len(f.OptionLabels) > 0 {
+			prop["enumNames"] = f.OptionLabels
+		}
+	}
+	return prop
 }
 
-var toolSchemaDecrypt = map[string]interface{}{
-	"type": "object",
-	"properties": map[string]interface{}{
-		"container_path": map[string]interface{}{
+// jsonSchemaType 把 plugin field type 映射到 JSON Schema type
+func jsonSchemaType(t string) string {
+	switch t {
+	case "bool":
+		return "boolean"
+	case "int", "integer":
+		return "integer"
+	case "float", "number":
+		return "number"
+	case "select", "string", "password", "text":
+		return "string"
+	case "array":
+		return "array"
+	default:
+		return "string"
+	}
+}
+
+// buildDynamicSchema 为指定插件+操作生成完整的 JSON Schema
+func buildDynamicSchema(p plugins.Plugin, op string) map[string]interface{} {
+	opts := p.GetTaskOptions()
+
+	properties := map[string]interface{}{}
+	required := []string{}
+
+	if op == "encrypt" {
+		properties["input_paths"] = map[string]interface{}{
+			"type":        "array",
+			"items":       map[string]interface{}{"type": "string"},
+			"description": "要加密的源文件绝对路径列表（可批量）",
+		}
+		properties["output_path"] = map[string]interface{}{
+			"type":        "string",
+			"description": "加密产物 .encv 容器输出路径（绝对路径）",
+		}
+		required = append(required, "input_paths", "output_path")
+	} else { // decrypt
+		properties["container_path"] = map[string]interface{}{
 			"type":        "string",
 			"description": ".encv 容器文件绝对路径",
-		},
-		"output_dir": map[string]interface{}{
+		}
+		properties["output_dir"] = map[string]interface{}{
 			"type":        "string",
 			"description": "解密产物输出目录（绝对路径）",
-		},
-	},
-	"required": []string{"container_path", "output_dir"},
+		}
+		required = append(required, "container_path", "output_dir")
+	}
+
+	// ② extra_fields：按 op 过滤（plugin 通过 Condition 字段声明 encrypt/decrypt）
+	extraProps := map[string]interface{}{}
+	for _, f := range opts.ExtraFields {
+		if f.Condition != "" && f.Condition != op {
+			continue
+		}
+		extraProps[f.Key] = buildTaskFieldSchema(f)
+		if f.Required {
+			required = append(required, f.Key)
+		}
+	}
+	if len(extraProps) > 0 {
+		properties["extra_fields"] = map[string]interface{}{
+			"type":        "object",
+			"description": "插件高级选项（动态生成自 " + p.Name() + " 插件）",
+			"properties":  extraProps,
+		}
+		required = append(required, "extra_fields")
+	}
+
+	// ③ password：按 PasswordStrategy 决定
+	switch opts.PasswordStrategy {
+	case pluginInterfaces.PasswordGlobal:
+		// 用全局密码（从配置读），不传给 LLM
+	case pluginInterfaces.PasswordIndependent:
+		// 插件独立密码，LLM 必须传
+		properties["password"] = map[string]interface{}{
+			"type":        "string",
+			"description": "该插件的主密码（与全局密码独立）",
+		}
+		required = append(required, "password")
+	case pluginInterfaces.PasswordNone:
+		// 不需要密码，不暴露字段
+	}
+
+	// ④ version：按 SupportVersionSelect
+	if opts.SupportVersionSelect {
+		verProp := map[string]interface{}{
+			"type":        "integer",
+			"description": "容器版本号",
+			"default":     opts.DefaultVersion,
+		}
+		if len(opts.SupportedVersions) > 0 {
+			verProp["enum"] = opts.SupportedVersions
+		}
+		properties["version"] = verProp
+		required = append(required, "version")
+	}
+
+	return map[string]interface{}{
+		"type":       "object",
+		"properties": properties,
+		"required":   required,
+	}
 }
 
 // ListPluginTools 返回所有插件工具的元信息（name + description + schema）。
 // 前端可调用以渲染"已启用工具"列表。
+// Schema 是动态生成的：根据每个 plugin 的 GetTaskOptions() 返回 ExtraFields / PasswordStrategy / SupportVersionSelect
 func ListPluginTools() []map[string]interface{} {
 	out := make([]map[string]interface{}, 0, len(pluginOpsByName))
 	for _, def := range pluginOpsByName {
-		schema := toolSchemaEncrypt
-		if def.op == "decrypt" {
-			schema = toolSchemaDecrypt
-		}
 		out = append(out, map[string]interface{}{
 			"name":        def.name,
 			"description": def.description,
-			"parameters":  schema,
+			"parameters":  buildDynamicSchema(def.plugin, def.op),
 			"needConfirm": true, // 加密/解密均需用户确认（写入文件是高危操作）
 		})
 	}
@@ -152,19 +255,23 @@ func executePluginTool(ctx context.Context, toolName, argsJSON string) (string, 
 
 func runPluginEncrypt(ctx context.Context, def pluginToolDef, argsJSON string) (string, error) {
 	var args struct {
-		InputPath string `json:"input_path"`
-		OutputDir string `json:"output_dir"`
+		InputPaths  []string               `json:"input_paths"`
+		OutputPath  string                 `json:"output_path"`
+		ExtraFields map[string]interface{} `json:"extra_fields"`
+		Password    string                 `json:"password"`
+		Version     int                    `json:"version"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return errJSON("invalid_args", err.Error()), nil
 	}
-	if args.InputPath == "" || args.OutputDir == "" {
-		return errJSON("missing_args", "input_path 和 output_dir 必填"), nil
+	if len(args.InputPaths) == 0 || args.OutputPath == "" {
+		return errJSON("missing_args", "input_paths 和 output_path 必填"), nil
 	}
 
-	// 推断插件（按文件类型）
+	// 推断插件（按文件类型）—— 单文件路径（多文件取第一个判断）
 	pluginName := strings.TrimSuffix(def.name, "_encrypt")
-	p, err := plugins.FindEncryptingPlugin(args.InputPath)
+	inputPath := args.InputPaths[0]
+	p, err := plugins.FindEncryptingPlugin(inputPath)
 	if err != nil {
 		// 兜底：尝试用 toolName 找 plugin
 		var err2 error
@@ -181,25 +288,32 @@ func runPluginEncrypt(ctx context.Context, def pluginToolDef, argsJSON string) (
 		), nil
 	}
 
-	inputRootDir := filepath.Dir(args.InputPath)
-	outputPath, err := plugins.EncryptFileWithPlugin(ctx, p, args.InputPath, inputRootDir, args.OutputDir)
+	// 注入 extra_fields（如果插件实现 SetTaskExtraFields）
+	injectExtraFields(p, args.ExtraFields)
+
+	inputRootDir := filepath.Dir(inputPath)
+	outputPath, err := plugins.EncryptFileWithPlugin(ctx, p, inputPath, inputRootDir, args.OutputPath)
 	if err != nil {
-		slog.Warn("agent: plugin encrypt failed", "plugin", p.Name(), "input", args.InputPath, "error", err)
+		slog.Warn("agent: plugin encrypt failed", "plugin", p.Name(), "input", inputPath, "error", err)
 		return errJSON("encrypt_failed", err.Error()), nil
 	}
 
 	return okJSON(map[string]interface{}{
 		"plugin":   p.Name(),
 		"op":       "encrypt",
-		"input":    args.InputPath,
+		"input":    inputPath,
 		"output":   outputPath,
+		"version":  args.Version,
 	}), nil
 }
 
 func runPluginDecrypt(ctx context.Context, def pluginToolDef, argsJSON string) (string, error) {
 	var args struct {
-		ContainerPath string `json:"container_path"`
-		OutputDir     string `json:"output_dir"`
+		ContainerPath string                 `json:"container_path"`
+		OutputDir     string                 `json:"output_dir"`
+		ExtraFields   map[string]interface{} `json:"extra_fields"`
+		Password      string                 `json:"password"`
+		Version       int                    `json:"version"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return errJSON("invalid_args", err.Error()), nil
@@ -225,6 +339,9 @@ func runPluginDecrypt(ctx context.Context, def pluginToolDef, argsJSON string) (
 		), nil
 	}
 
+	// 注入 extra_fields
+	injectExtraFields(p, args.ExtraFields)
+
 	outputPath, err := plugins.DecryptContainerWithPlugin(ctx, p, args.ContainerPath, args.OutputDir)
 	if err != nil {
 		slog.Warn("agent: plugin decrypt failed", "plugin", p.Name(), "input", args.ContainerPath, "error", err)
@@ -236,7 +353,27 @@ func runPluginDecrypt(ctx context.Context, def pluginToolDef, argsJSON string) (
 		"op":       "decrypt",
 		"input":    args.ContainerPath,
 		"output":   outputPath,
+		"version":  args.Version,
 	}), nil
+}
+
+// injectExtraFields 通过 type assertion 调用插件的 SetTaskExtraFields
+// 如果插件未实现（6 个核心插件目前都没实现），则 no-op。
+func injectExtraFields(p plugins.Plugin, fields map[string]interface{}) {
+	if len(fields) == 0 {
+		return
+	}
+	setter, ok := p.(pluginInterfaces.TaskExtraFieldsSetter)
+	if !ok {
+		slog.Debug("agent: plugin doesn't implement SetTaskExtraFields, skipping", "plugin", p.Name())
+		return
+	}
+	// 把 map[string]interface{} 转 map[string]string（plugin API 要求）
+	strMap := make(map[string]string, len(fields))
+	for k, v := range fields {
+		strMap[k] = fmt.Sprintf("%v", v)
+	}
+	setter.SetTaskExtraFields(strMap)
 }
 
 // findPluginByName 在 plugins 列表中按 name 查找插件
