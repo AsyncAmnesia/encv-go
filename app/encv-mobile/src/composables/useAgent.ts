@@ -116,12 +116,6 @@ export interface Message {
    */
   error?: string
   /**
-   * 发送失败时的后端 error 码（如 'no_api_key' / 'upstream_error' / 'unknown'）。
-   * 用于 UI 分支判断——例如 no_api_key 时显示"前往 AI 设置"按钮而不是只让用户重试。
-   * 配套 buildHttpError() 透传。后端 body 没有 error 字段时为 'unknown'。
-   */
-  errorCode?: string
-  /**
    * Task 11 (Steer / Queue)：当用户点击「排队下一条」时，
    * 该 user 消息进入 pendingMessages 队列，等待当前 turn
    * 完全结束后由服务端 drain hook 触发新一轮 Chat。pending=true
@@ -1302,12 +1296,7 @@ export function useAgent() {
       } else {
         const detail = e?.message || String(e)
         console.error('[useAgent] send failed:', detail, e)
-        if (lastUserMsg) {
-          lastUserMsg.error = detail
-          // 把后端 error 码也透出去——no_api_key 时 UI 给"去设置"按钮，
-          // upstream_error 时给"重试"按钮，分支展示更精准
-          lastUserMsg.errorCode = (e as any)?.code || 'unknown'
-        }
+        if (lastUserMsg) lastUserMsg.error = detail
         showToast({ message: detail, duration: 3000, color: 'danger' })
         status.value = 'idle'
         finalizeLastAssistant()

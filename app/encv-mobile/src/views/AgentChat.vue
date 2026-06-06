@@ -152,9 +152,7 @@
           <ErrorMessage
             v-else-if="item.type === 'error'"
             :text="item.text"
-            :error-code="item.errorCode"
             :on-retry="() => handleRetryError(item)"
-            :on-go-to-settings="goToAgentSettings"
           />
           <!-- Task 7：上下文自动压缩分隔线（不可展开） -->
           <ContextCompactionDivider
@@ -216,9 +214,7 @@
             <ErrorMessage
               v-else-if="item.type === 'error'"
               :text="item.text"
-              :error-code="item.errorCode"
               :on-retry="() => handleRetryError(item)"
-              :on-go-to-settings="goToAgentSettings"
             />
             <!-- Task 7：虚拟滚动分支同样渲染 ContextCompactionDivider -->
             <ContextCompactionDivider
@@ -371,7 +367,6 @@ import {
   refreshCircleOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
-import { useRouter } from 'vue-router'
 import { getDeviceIdSync } from '@/composables/useDeviceId'
 import { useAgent, type Decision, type ToolCall, getLanAccess, type LanAddress } from '@/composables/useAgent'
 import { useRenderTurnItems } from '@/composables/renderTurnItems'
@@ -394,7 +389,6 @@ import AttachmentTray from '@/components/agent/AttachmentTray.vue'
 import SlashMenu from '@/components/agent/SlashMenu.vue'
 
 const { t } = useI18n()
-const router = useRouter()
 
 // Agent API 基础路径（与 useAgent.ts 保持一致）
 const AGENT_API_BASE = '/agent-api'
@@ -732,16 +726,6 @@ function handleRetryError(item: { type: 'error'; messageIndex: number }) {
   // 重新发送
   send(text)
   nextTick(() => scrollToBottom())
-}
-
-/**
- * 跳转到 AI 设置页（让用户填 / 修复 API Key）
- * 用于 no_api_key 错误时的"前往 AI 设置"按钮
- */
-function goToAgentSettings() {
-  // 关闭当前 tab 的当前 view，回到 Settings tab 的 AI 配置子页
-  // 用 router.push 而不是 modalController，因为 AI 配置是 Settings tab 下的子路由
-  router.push('/tabs/settings/agent')
 }
 
 async function handleNewSession() {

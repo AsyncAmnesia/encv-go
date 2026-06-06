@@ -15,14 +15,6 @@ function deepClone<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj))
 }
 
-function buildInitialConfig(): Record<string, unknown> {
-  const initial: Record<string, unknown> = {}
-  for (const field of schemaFields.value) {
-    initial[field.key] = getDefaultValue(field)
-  }
-  return initial
-}
-
 async function loadConfig() {
   loading.value = true
   try {
@@ -31,10 +23,13 @@ async function loadConfig() {
     originalConfig.value = deepClone(data)
     dirty.value = false
   } catch (error) {
+    // 不要静默回退到 schema 默认值——这会让"后端挂了"伪装成"已加载、配置全空"，
+    // 触发 apiKeyStatus='empty' 等下游状态机全部误判（用户看到空白字段以为是 bug，
+    // 实际是 fetch 失败）。改为向上抛错，调用方（AgentSettingsDetail.loadConfigSafely
+    // / Settings.vue / PluginSettings.vue）各自决定如何显示错误态。
     console.error('[ENCV] Failed to load config:', error)
-    config.value = buildInitialConfig()
-    originalConfig.value = deepClone(config.value)
-    dirty.value = false
+    loading.value = false
+    throw error
   }
   loading.value = false
 }

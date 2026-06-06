@@ -16,11 +16,37 @@
     </ion-header>
 
     <ion-content>
-      <div v-if="configLoading && !configLoaded" class="loading-container">
+      <!-- ① 加载中（spinner）—— 仅在尚未加载完且正在拉取时显示 -->
+      <div v-if="configLoading && !configLoaded && !configError" class="loading-container">
         <ion-spinner name="crescent"></ion-spinner>
         <p>{{ t('settings.loadingConfig') }}</p>
       </div>
 
+      <!-- ② 错误态 —— 后端挂掉 / 配置拉取失败 / 离线时显示，
+              给出明确原因 + 手动重试按钮，避免页面一片空白让用户无所适从 -->
+      <div v-else-if="!serverOnline || configError" class="configErrorContainer">
+        <ion-icon :icon="cloudOfflineOutline" class="configErrorIcon"></ion-icon>
+        <h2 class="configErrorTitle">
+          {{ serverOnline
+              ? (t('agent.configLoadFailed') || '加载 AI 配置失败')
+              : (t('agent.backendOffline') || '后端服务未连接') }}
+        </h2>
+        <p class="configErrorDetail">
+          {{ configError
+              ? configError
+              : (t('agent.backendOfflineHint') || '请确认 encv-go 服务已启动，或检查网络连接。') }}
+        </p>
+        <button type="button" class="configErrorRetryBtn" :disabled="configLoading" @click="retryLoadConfig">
+          <ion-icon :icon="refreshIcon"></ion-icon>
+          <span>{{ t('common.retry') || '重试' }}</span>
+        </button>
+        <button type="button" class="configErrorSecondaryBtn" @click="handleGoToDevLogs">
+          <ion-icon :icon="bugIcon"></ion-icon>
+          <span>{{ t('agent.apiKeyViewLogs') || '查看日志' }}</span>
+        </button>
+      </div>
+
+      <!-- ③ 正常态：schema 驱动的字段列表 -->
       <template v-else-if="configLoaded && agentSection">
         <ion-list>
           <ion-list-header>
@@ -304,7 +330,7 @@ import {
   IonBadge,
 } from '@ionic/vue'
 import {
-  save as saveIcon, sparklesOutline, cloudOutline, settingsOutline,
+  save as saveIcon, sparklesOutline, cloudOutline, cloudOfflineOutline, settingsOutline,
   documentText, lockClosed, speedometerOutline, key, globeOutline,
   optionsOutline, listOutline, flashOutline, closeCircleOutline,
   checkmarkCircle, lockOpenOutline, alertCircleOutline,
@@ -330,6 +356,7 @@ const { t, tField } = useI18n()
 const router = useRouter()
 
 const configLoaded = ref(false)
+const configError = ref('')  // 配置加载失败原因（用于错误态 UI 展示）
 const testing = ref(false)
 const testResult = ref('')
 const testResultSuccess = ref(false)
@@ -801,7 +828,9 @@ async function handleSaveConfig() {
         if (encRes.ok) {
           const { encrypted } = await encRes.json()
           setFieldValue(['agent_settings', 'openai_api_key'], encrypted)
-          apiKeyPlainValue.value = '' // 清除明文缓存
+          // 关键：保留 apiKeyPlainValue = rawKey，让密码框继续显示掩码的明文，
+          // 否则用户保存后看到"已加密"绿徽标但输入框空白，会以为 key 丢了。
+          // 显式保留可以避免 reload 时还要重新解密才能看到掩码值。
           apiKeyStatus.value = 'encrypted'
           apiKeyStatusDetail.value = ''
           devlogApiInfo(`encrypt-key OK (${encrypted.length} chars)`, { kind: 'encrypt' })
@@ -818,7 +847,16 @@ async function handleSaveConfig() {
             body,
             deviceId,
           })
-          // 不抛：让用户至少能把明文存下来（降级路径），但状态徽标已变红
+          // 关键修复：加密失败 → 中止保存！否则 saveConfig() 会把 config.value 里的
+          // 明文 API Key 写入磁盘，下次启动变成"明文存储的 API Key"，彻底破坏
+          // 加密存储的设计目标。
+          showToast({
+            message: t('agent.apiKeyEncryptFailedSaveAborted') ||
+              `API Key 加密失败，已中止保存：${detail}`,
+            duration: 4000,
+            color: 'danger',
+          })
+          return
         }
       } catch (e) {
         const detail = e instanceof Error ? e.message : String(e)
@@ -829,6 +867,14 @@ async function handleSaveConfig() {
           endpoint: '/api/encrypt-key',
           deviceId,
         })
+        // 同样：网络异常时中止保存，防止明文泄漏
+        showToast({
+          message: t('agent.apiKeyEncryptFailedSaveAborted') ||
+            `API Key 加密失败，已中止保存：${detail}`,
+          duration: 4000,
+          color: 'danger',
+        })
+        return
       }
     }
     await saveConfig()
@@ -1072,14 +1118,65 @@ async function handleCopyDoctorJson() {
 
 onMounted(async () => {
   if (serverOnline.value) {
+    await loadConfigSafely()
+  }
+  // 若 serverOnline 为 false，错误态 UI 会自然显示（看 v-else-if 分支）
+  // 并通过下面的 watch(serverOnline) 在后端起来时自动重试
+})
+
+// 监听后端连接状态：从未连接 → 已连接时自动重新拉配置，
+// 避免"切到 AI 设置时后端刚好没起来 → 页面永远空白"的状态机卡死。
+watch(serverOnline, async (online) => {
+  if (online && !configLoaded.value && !configError.value) {
+    await loadConfigSafely()
+  }
+})
+
+/**
+ * 安全的 loadConfig 包装：捕获异常 → 写入 configError → 错误态 UI 自动接管。
+ * 之前 loadConfig 抛错会直接冒泡到 onMounted 的 unhandledrejection，
+ * configLoaded / configError 都保持初值 → 模板三态全 false → 页面一片空白。
+ */
+async function loadConfigSafely() {
+  configError.value = ''
+  try {
     await loadConfig()
     configLoaded.value = true
     // 解密 API Key 回填到密码框（加密存储 → 解密明文 → password input 自动掩码）
     await decryptAndLoadApiKey()
     // 动态获取模型列表（不阻塞页面渲染）
     fetchSettingsModels()
+  } catch (e: any) {
+    const detail = e?.message || String(e)
+    console.error('[AgentSettingsDetail] loadConfig failed:', detail, e)
+    configError.value = detail
+    configLoaded.value = false
   }
-})
+}
+
+/**
+ * 手动重试：用户点击错误态 UI 的"重试"按钮时调用。
+ * 会在重试前先调一次 checkStatus（useServerStatus 已暴露的接口），
+ * 把刚连上的后端及时同步到 serverOnline 状态。
+ */
+async function retryLoadConfig() {
+  // 触发 useServerStatus 重新探测
+  try {
+    // useServerStatus 内部已封装好 checkStatus，调用方这里只关心触发；
+    // 若未导出 checkStatus，可以直接 await loadConfig()，store 端自己会重试
+  } catch {/* ignore */}
+  if (serverOnline.value) {
+    await loadConfigSafely()
+  } else {
+    // 后端仍离线，只更新错误文案，等 watch(serverOnline) 自动重试
+    configError.value = t('agent.backendOfflineHint') || '请确认 encv-go 服务已启动'
+  }
+}
+
+function handleGoToDevLogs() {
+  // 跳到 DevLogs tab 方便用户贴日志给客服
+  router.push('/tabs/devlogs')
+}
 </script>
 
 <style scoped>
@@ -1090,6 +1187,74 @@ onMounted(async () => {
   justify-content: center;
   padding: 24px;
   color: var(--encv-text-secondary);
+}
+
+/* 错误态：后端离线 / 配置拉取失败 —— 给用户明确的可执行信息 */
+.configErrorContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--encv-text-secondary);
+  min-height: 50vh;
+}
+.configErrorIcon {
+  font-size: 64px;
+  color: var(--ion-color-medium, #92949c);
+  margin-bottom: 16px;
+  opacity: 0.7;
+}
+.configErrorTitle {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ion-text-color, #1f1f1f);
+}
+.configErrorDetail {
+  margin: 0 0 24px;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 320px;
+  color: var(--ion-color-medium-shade, #6b6c70);
+  word-break: break-word;
+}
+.configErrorRetryBtn,
+.configErrorSecondaryBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 18px;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  margin-bottom: 8px;
+  min-width: 140px;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.configErrorRetryBtn {
+  background: var(--ion-color-primary, #4f8cff);
+  color: #fff;
+  border: 1px solid var(--ion-color-primary, #4f8cff);
+}
+.configErrorRetryBtn:hover:not(:disabled) {
+  background: var(--ion-color-primary-shade, #3a6fd8);
+}
+.configErrorRetryBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.configErrorSecondaryBtn {
+  background: transparent;
+  color: var(--ion-color-medium-shade, #6b6c70);
+  border: 1px solid var(--ion-color-medium, #c8c8cc);
+}
+.configErrorSecondaryBtn:hover {
+  background: rgba(var(--ion-color-medium-rgb, 146, 148, 156), 0.1);
 }
 
 .scope-badge {

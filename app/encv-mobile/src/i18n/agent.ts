@@ -71,15 +71,17 @@ export default {
     'agent.apiKeyBackendFallback': '兜底配置',
     'agent.apiKeyViewLogs': '查看日志',
 
-    // ── 会话界面错误信息（chat send 失败时的精准提示） ─────
-    // 关键：HTTP 503 / 502 这种 status text 对用户毫无意义。错误信息要直接
-    // 说明"为什么失败"和"用户该做什么"。no_api_key 类是最高频的——AI
-    // 没配 key 导致的失败，UI 必须给"去设置"出口而不是只让用户重试。
-    'agent.chatErrorNoApiKey': 'AI 助手未启用：未配置 OpenAI API Key。点击下方"前往设置"填写后重试。',
-    'agent.chatErrorUpstream': 'AI 服务返回错误：{message}',
-    'agent.chatErrorGeneric': '请求失败：{message}',
-    'agent.chatErrorGoToSettings': '前往 AI 设置',
-    'agent.chatErrorDismiss': '知道了',
+    // ── AI 设置页错误态（后端离线 / 配置加载失败） ─────
+    // 之前 v-if 三态全 false 时页面一片空白，用户完全看不到发生了什么。
+    // 错误态必须给"是什么错 + 怎么修"两条信息，而不是只丢一个 spinner 卡死。
+    'agent.backendOffline': '后端服务未连接',
+    'agent.backendOfflineHint': '请确认 encv-go 服务已启动，或检查网络连接。',
+    'agent.configLoadFailed': '加载 AI 配置失败',
+
+    // ── API Key 加密失败时中止保存的提示 ─────
+    // 关键：必须在 /api/encrypt-key 失败时立即中止 saveConfig，
+    // 否则明文 API Key 会被写入磁盘，破坏加密存储设计。
+    'agent.apiKeyEncryptFailedSaveAborted': 'API Key 加密失败，已中止保存（避免明文写入磁盘）',
 
     'modals.approve': '批准',
     'modals.approveForSession': '本轮批准',
@@ -236,16 +238,16 @@ export default {
     'agent.apiKeyBackendFallback': 'fallback config',
     'agent.apiKeyViewLogs': 'View logs',
 
-    // ── Chat error messages (precise user-facing error text) ─────
-    // Status text like "Service Unavailable" is meaningless to users. The error
-    // must say WHY it failed and what the user can do. no_api_key is the most
-    // common failure path — UI must offer a "go to settings" path instead of
-    // just a retry button.
-    'agent.chatErrorNoApiKey': 'AI assistant is disabled: no OpenAI API Key configured. Tap "Open settings" below to fill in the key, then retry.',
-    'agent.chatErrorUpstream': 'AI service returned an error: {message}',
-    'agent.chatErrorGeneric': 'Request failed: {message}',
-    'agent.chatErrorGoToSettings': 'Open AI settings',
-    'agent.chatErrorDismiss': 'Got it',
+    // ── AI settings error state (backend offline / config load failed) ─────
+    // Previously when all 3 v-if conditions were false, the page was completely
+    // blank. The error state must say "what went wrong + how to fix" — not
+    // just an eternal spinner.
+    'agent.backendOffline': 'Backend service not connected',
+    'agent.backendOfflineHint': 'Please confirm encv-go is running, or check the network connection.',
+    'agent.configLoadFailed': 'Failed to load AI configuration',
+
+    // API Key encryption failure → abort save (avoid writing plaintext to disk)
+    'agent.apiKeyEncryptFailedSaveAborted': 'API Key encryption failed, save aborted (to avoid writing plaintext to disk)',
 
     'modals.approve': 'Approve',
     'modals.approveForSession': 'Approve for session',
