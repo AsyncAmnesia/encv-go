@@ -619,11 +619,14 @@ export function useAgent() {
 
     abortController = new AbortController()
     // 30s 超时保护：如果后端长时间无响应，自动中断
+    let timedOut = false
     const timeoutId = setTimeout(() => {
+      timedOut = true
       if (abortController) abortController.abort()
     }, 30_000)
 
     try {
+      console.error('[useAgent] send() starting fetch to', `${AGENT_API_BASE}/api/chat`)
       const response = await fetch(`${AGENT_API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -657,13 +660,13 @@ export function useAgent() {
       // 收到了事件但 assistant 内容仍为空且无工具调用 → 异常空回复
       const lastAssistant = [...messages.value].reverse().find((m) => m.role === 'assistant')
       if (lastAssistant && !lastAssistant.content && lastAssistant.tool_calls.length === 0) {
-        console.warn('[useAgent] send completed but assistant reply is empty')
+        console.error('[useAgent] WARNING: stream ended with empty assistant reply — treating as error')
+        lastError.value = '服务端返回空回复，请重试'
+        status.value = 'error'
       }
     } catch (e: any) {
       if (e?.name === 'AbortError') {
-        // 区分用户主动停止和超时自动中断
-        const isTimeout = !abortController.signal.aborted
-        if (isTimeout) {
+        if (timedOut) {
           console.error('[useAgent] send timed out (30s)')
           lastError.value = '请求超时（30秒内服务端无响应），请检查网络或稍后重试'
           status.value = 'error'
@@ -674,7 +677,7 @@ export function useAgent() {
         if (status.value !== 'error') status.value = 'idle'
       } else {
         const detail = e?.message || String(e)
-        console.error('[useAgent] send failed:', e)
+        console.error('[useAgent] send failed:', detail, e)
         lastError.value = detail
         status.value = 'error'
         finalizeLastAssistant()
