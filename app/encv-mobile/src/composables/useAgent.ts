@@ -414,12 +414,16 @@ export function useAgent() {
    * 注：agent Go 服务推送的每行已经是一个 `{type, data}` JSON；
    *     data 字段是 stringified payload。
    */
-  async function processSSE(stream: ReadableStream<Uint8Array> | null): Promise<void> {
-    if (!stream) return
+  /**
+   * 解析 SSE 流，返回是否收到过至少一个有效事件
+   */
+  async function processSSE(stream: ReadableStream<Uint8Array> | null): Promise<{ received: boolean }> {
+    if (!stream) return { received: false }
 
     const reader = stream.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
+    let received = false
 
     try {
       while (true) {
@@ -439,6 +443,7 @@ export function useAgent() {
             if (!line.startsWith('data: ')) continue
             const payload = line.slice(6).trim()
             if (!payload) continue
+            received = true
             try {
               const event = JSON.parse(payload) as AgentEvent
               handleAgentEvent(event)
@@ -452,6 +457,7 @@ export function useAgent() {
       if (buffer.trim().startsWith('data: ')) {
         const payload = buffer.trim().slice(6).trim()
         if (payload) {
+          received = true
           try {
             const event = JSON.parse(payload) as AgentEvent
             handleAgentEvent(event)
@@ -479,6 +485,8 @@ export function useAgent() {
         // already released
       }
     }
+
+    return { received }
   }
 
   /**
@@ -610,6 +618,11 @@ export function useAgent() {
     refreshSessions()
 
     abortController = new AbortController()
+    // 30s 超时保护：如果后端长时间无响应，自动中断
+    const timeoutId = setTimeout(() => {
+      if (abortController) abortController.abort()
+    }, 30_000)
+
     try {
       const response = await fetch(`${AGENT_API_BASE}/api/chat`, {
         method: 'POST',
@@ -627,16 +640,38 @@ export function useAgent() {
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
+        throw new Error(`HTTP ${response.status}: ${response.statusText || '请求失败'}`)
       }
 
-      await processSSE(response.body)
+      if (!response.body) {
+        throw new Error('响应体为空（可能被代理或网络中间层截断）')
+      }
+
+      const result = await processSSE(response.body)
+
+      // 流结束但未收到任何事件 → 后端无响应
+      if (!result.received) {
+        throw new Error('服务端无响应：连接已关闭但未返回任何数据')
+      }
+
+      // 收到了事件但 assistant 内容仍为空且无工具调用 → 异常空回复
+      const lastAssistant = [...messages.value].reverse().find((m) => m.role === 'assistant')
+      if (lastAssistant && !lastAssistant.content && lastAssistant.tool_calls.length === 0) {
+        console.warn('[useAgent] send completed but assistant reply is empty')
+      }
     } catch (e: any) {
       if (e?.name === 'AbortError') {
-        console.debug('[useAgent] send aborted by user')
-        // 标记流式结束
+        // 区分用户主动停止和超时自动中断
+        const isTimeout = !abortController.signal.aborted
+        if (isTimeout) {
+          console.error('[useAgent] send timed out (30s)')
+          lastError.value = '请求超时（30秒内服务端无响应），请检查网络或稍后重试'
+          status.value = 'error'
+        } else {
+          console.debug('[useAgent] send aborted by user')
+        }
         finalizeLastAssistant()
-        status.value = 'idle'
+        if (status.value !== 'error') status.value = 'idle'
       } else {
         const detail = e?.message || String(e)
         console.error('[useAgent] send failed:', e)
@@ -645,6 +680,7 @@ export function useAgent() {
         finalizeLastAssistant()
       }
     } finally {
+      clearTimeout(timeoutId)
       abortController = null
       saveState()
     }
