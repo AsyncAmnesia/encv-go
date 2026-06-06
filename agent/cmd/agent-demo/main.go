@@ -5,12 +5,13 @@
 //
 // Endpoints:
 //
-//	POST /api/chat            → SSE stream of agent events
-//	POST /api/resume          → resume a session from offset N
-//	POST /api/confirm         → apply a confirmation decision
-//	POST /api/agent/test      → ping OpenAI + OpenList
-//	GET  /api/health          → liveness probe
-//	GET  /api/agent/tools     → list registered tools (debug)
+//	POST /api/chat                   → SSE stream of agent events
+//	POST /api/resume                 → resume a session from offset N
+//	POST /api/confirm                → apply a confirmation decision
+//	POST /api/agent/test             → ping OpenAI + OpenList
+//	GET  /api/health                 → liveness probe
+//	GET  /api/agent/tools            → list registered tools (debug)
+//	GET  /api/network/lan-access     → enumerate LAN-routable IPv4 URLs
 //
 // Configuration is loaded from `agent_settings` inside the
 // user config (see config_loader.go for the lookup order).
@@ -84,6 +85,12 @@ func main() {
 			"count": countRegistered(registry),
 		})
 	})
+	// Task 26 (LAN Access): enumerate IPv4 interfaces that are
+	// reachable from a peer on the local network. The port
+	// query param defaults to 5245 (this binary's listen
+	// port) so the URLs printed in the Settings panel match
+	// the URL the user typed in the browser.
+	mux.HandleFunc("/api/network/lan-access", a.HandleLanAccess)
 
 	// 4. Listen.
 	srv := &http.Server{

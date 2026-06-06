@@ -53,6 +53,53 @@
       </label>
     </div>
 
+    <!--
+      Task 26 (LAN Access)：局域网访问地址折叠面板。
+      默认折叠（v-show），点击展开。挂载在 toolbar 下方、main 上方——
+      该位置在视觉上属于"次要状态信息"，不会分散对话注意力。
+      数据源：useAgent.getLanAccess() → GET /api/network/lan-access。
+    -->
+    <details class="lanAccessPanel" :open="lanAccessOpen" @toggle="lanAccessOpen = ($event.target as HTMLDetailsElement).open">
+      <summary class="lanAccessSummary">
+        <ion-icon :icon="globeIcon" class="lanAccessSummaryIcon" />
+        <span class="lanAccessSummaryText">{{ t('agent.lanAccess') }}</span>
+        <span v-if="lanAccesses.length > 0" class="lanAccessSummaryCount">{{ lanAccesses.length }}</span>
+      </summary>
+      <div class="lanAccessBody">
+        <p class="lanAccessHelp">{{ t('agent.lanAccessHelp') }}</p>
+        <div v-if="lanAccessLoading" class="lanAccessLoading">{{ t('settings.loading') }}</div>
+        <div v-else-if="lanAccesses.length === 0" class="lanAccessEmpty">
+          {{ t('agent.lanAccessEmpty') }}
+        </div>
+        <ul v-else class="lanAccessList">
+          <li v-for="addr in lanAccesses" :key="addr.ip" class="lanAccessItem">
+            <div class="lanAccessItemMain">
+              <code class="lanAccessUrl">{{ addr.url }}</code>
+              <span class="lanAccessInterface">{{ t('agent.lanAccessInterface', { name: addr.interface }) }}</span>
+            </div>
+            <button
+              type="button"
+              class="lanAccessCopyBtn"
+              :title="t('agent.lanAccessCopy')"
+              :aria-label="t('agent.lanAccessCopy')"
+              @click="handleCopyLanAccess(addr.url)"
+            >
+              <ion-icon :icon="clipboardIcon" />
+            </button>
+          </li>
+        </ul>
+        <button
+          type="button"
+          class="lanAccessRefresh"
+          @click="handleRefreshLanAccess"
+          :disabled="lanAccessLoading"
+        >
+          <ion-icon :icon="refreshCircleIcon" />
+          <span>{{ t('agent.lanAccessRefresh') }}</span>
+        </button>
+      </div>
+    </details>
+
     <main class="agentChatMain" ref="mainRef" @scroll="onMainScroll">
       <!-- 空状态（无消息时显示） -->
       <div v-if="renderedItems.length === 0" class="agentChatEmpty">
@@ -112,6 +159,12 @@
             v-else-if="item.type === 'compaction'"
             :text="item.text"
           />
+          <!-- Task 22: agent task 消息（subagent 拆解的子任务列表） -->
+          <AgentTaskMessage
+            v-else-if="item.type === 'agentTask'"
+            :sub-tasks="item.subTasks"
+            :reasoning="item.reasoning"
+          />
         </div>
       </template>
       <!-- 长会话（> 120）：虚拟滚动优化 -->
@@ -167,6 +220,12 @@
             <ContextCompactionDivider
               v-else-if="item.type === 'compaction'"
               :text="item.text"
+            />
+            <!-- Task 22: 虚拟滚动分支同样渲染 AgentTaskMessage -->
+            <AgentTaskMessage
+              v-else-if="item.type === 'agentTask'"
+              :sub-tasks="item.subTasks"
+              :reasoning="item.reasoning"
             />
           </div>
         </template>
@@ -303,9 +362,12 @@ import {
   chatbubblesOutline,
   timeOutline,
   attachOutline,
+  globeOutline,
+  clipboardOutline,
+  refreshCircleOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
-import { useAgent, type Decision, type ToolCall } from '@/composables/useAgent'
+import { useAgent, type Decision, type ToolCall, getLanAccess, type LanAddress } from '@/composables/useAgent'
 import { useRenderTurnItems } from '@/composables/renderTurnItems'
 import { useAttachments } from '@/composables/useAttachments'
 import { useSlashMenu } from '@/composables/useSlashMenu'
@@ -320,6 +382,8 @@ import WebSearchSummaryMessage from '@/components/agent/WebSearchSummaryMessage.
 import MessageVirtualList from '@/components/agent/MessageVirtualList.vue'
 import PlanBlock from '@/components/agent/PlanBlock.vue'
 import ContextCompactionDivider from '@/components/agent/ContextCompactionDivider.vue'
+// Task 22：agent task 消息（subagent 拆解的子任务列表）
+import AgentTaskMessage from '@/components/agent/AgentTaskMessage.vue'
 import AttachmentTray from '@/components/agent/AttachmentTray.vue'
 import SlashMenu from '@/components/agent/SlashMenu.vue'
 
@@ -366,7 +430,63 @@ const stopIcon = stopOutline
 const chatbubblesIcon = chatbubblesOutline
 const timeIcon = timeOutline
 const attachIcon = attachOutline
+const globeIcon = globeOutline
+const clipboardIcon = clipboardOutline
+const refreshCircleIcon = refreshCircleOutline
 const historyOpen = ref(false)
+
+// ── Task 26 (LAN Access) ───────────────────────────────────
+// 折叠面板状态：默认收起。数据由 useAgent.getLanAccess() 拉取。
+// 展开时才拉取（按需），关闭后保留缓存，避免反复网络请求。
+const lanAccessOpen = ref(false)
+const lanAccesses = ref<LanAddress[]>([])
+const lanAccessLoading = ref(false)
+const lanAccessLoaded = ref(false)
+
+async function handleRefreshLanAccess(): Promise<void> {
+  lanAccessLoading.value = true
+  try {
+    lanAccesses.value = await getLanAccess(0)
+    lanAccessLoaded.value = true
+  } finally {
+    lanAccessLoading.value = false
+  }
+}
+
+async function handleCopyLanAccess(url: string): Promise<void> {
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(url)
+      showToast({ message: t('agent.lanAccessCopied', { url }), duration: 1600, color: 'success' })
+    } else {
+      // Fallback：临时 textarea + execCommand（老 webview 兼容）
+      const ta = document.createElement('textarea')
+      ta.value = url
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      document.body.appendChild(ta)
+      ta.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(ta)
+      if (ok) {
+        showToast({ message: t('agent.lanAccessCopied', { url }), duration: 1600, color: 'success' })
+      } else {
+        showToast({ message: t('agent.lanAccessCopyFailed'), duration: 1800, color: 'danger' })
+      }
+    }
+  } catch {
+    showToast({ message: t('agent.lanAccessCopyFailed'), duration: 1800, color: 'danger' })
+  }
+}
+
+// 监听展开事件：用户首次展开时拉取一次。后续点击「刷新」按钮
+// 可强制重拉。watch 比 onMounted 触发更精准——避免用户在折叠
+// 面板被滚动出视野前白白消耗一次网络请求。
+watch(lanAccessOpen, async (open) => {
+  if (open && !lanAccessLoaded.value && !lanAccessLoading.value) {
+    await handleRefreshLanAccess()
+  }
+})
 
 // Task 12：隐藏 file input 的引用
 const fileInputRef = ref<HTMLInputElement | null>(null)
@@ -901,6 +1021,173 @@ defineExpose({})
   background: rgba(var(--ion-color-medium-rgb), 0.06);
   border-bottom: 1px solid rgba(var(--ion-color-medium-rgb), 0.12);
   flex-shrink: 0;
+}
+
+/* ── LAN Access 折叠面板（Task 26） ─────────────────── */
+.lanAccessPanel {
+  background: var(--ion-toolbar-background, var(--ion-background-color));
+  border-bottom: 1px solid rgba(var(--ion-color-medium-rgb), 0.12);
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.lanAccessPanel[open] {
+  padding-bottom: 8px;
+}
+
+.lanAccessSummary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  outline: none;
+}
+
+.lanAccessSummary::-webkit-details-marker {
+  display: none;
+}
+
+.lanAccessSummary::marker {
+  content: '';
+}
+
+.lanAccessSummaryIcon {
+  font-size: 16px;
+  color: var(--ion-color-primary);
+  flex-shrink: 0;
+}
+
+.lanAccessSummaryText {
+  flex: 1;
+  font-weight: 500;
+  color: var(--ion-text-color);
+}
+
+.lanAccessSummaryCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: rgba(var(--ion-color-primary-rgb), 0.18);
+  color: var(--ion-color-primary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.lanAccessBody {
+  padding: 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lanAccessHelp {
+  margin: 0 0 2px;
+  font-size: 11px;
+  color: var(--ion-text-color-step-400, #888);
+}
+
+.lanAccessEmpty,
+.lanAccessLoading {
+  font-size: 12px;
+  color: var(--ion-text-color-step-400, #888);
+  padding: 4px 0;
+}
+
+.lanAccessList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lanAccessItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(var(--ion-color-medium-rgb), 0.06);
+  border-radius: 8px;
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.12);
+}
+
+.lanAccessItemMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.lanAccessUrl {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 12px;
+  color: var(--ion-color-primary);
+  word-break: break-all;
+  line-height: 1.35;
+}
+
+.lanAccessInterface {
+  font-size: 10px;
+  color: var(--ion-text-color-step-400, #888);
+}
+
+.lanAccessCopyBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ion-color-primary);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.12s;
+}
+
+.lanAccessCopyBtn:hover,
+.lanAccessCopyBtn:active {
+  background: rgba(var(--ion-color-primary-rgb), 0.14);
+}
+
+.lanAccessRefresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--ion-text-color-step-400, #888);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.lanAccessRefresh:hover:not(:disabled),
+.lanAccessRefresh:active:not(:disabled) {
+  background: rgba(var(--ion-color-medium-rgb), 0.1);
+  color: var(--ion-text-color);
+}
+
+.lanAccessRefresh:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .toolbarField {

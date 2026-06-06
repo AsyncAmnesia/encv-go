@@ -203,6 +203,29 @@
             <ion-spinner v-if="testing" slot="end" name="crescent"></ion-spinner>
           </ion-item>
         </ion-list>
+
+        <!-- Task 25: Sync Doctor — 脱敏诊断报告 -->
+        <ion-list>
+          <ion-item button :disabled="doctorRunning" @click="handleRunSyncDoctor">
+            <ion-icon :icon="medkitIcon" slot="start"></ion-icon>
+            <ion-label>
+              <h3>{{ t('agent.syncDoctor') }}</h3>
+              <p>{{ doctorIssuesCount > 0 ? t('agent.syncDoctorResult') + ' (' + doctorIssuesCount + ')' : t('agent.syncDoctorEmpty') }}</p>
+            </ion-label>
+            <ion-spinner v-if="doctorRunning" slot="end" name="crescent"></ion-spinner>
+          </ion-item>
+          <ion-item v-if="doctorReportJson" lines="none" class="doctor-result-item">
+            <div class="doctor-result-wrap">
+              <pre class="doctor-result-pre">{{ doctorReportJson }}</pre>
+              <div class="doctor-result-actions">
+                <ion-button size="small" fill="outline" @click="handleCopyDoctorJson">
+                  <ion-icon :icon="copyIcon" slot="start"></ion-icon>
+                  {{ t('agent.syncDoctorCopy') }}
+                </ion-button>
+              </div>
+            </div>
+          </ion-item>
+        </ion-list>
       </template>
 
       <ion-list v-if="configLoaded && agentSection">
@@ -253,7 +276,7 @@ import {
   documentText, lockClosed, speedometerOutline, key, globeOutline,
   optionsOutline, listOutline, flashOutline, closeCircleOutline,
   checkmarkCircle, lockOpenOutline, alertCircleOutline,
-  refreshOutline, bugOutline,
+  refreshOutline, bugOutline, medkitOutline, copyOutline,
 } from 'ionicons/icons'
 import { useConfig } from '@/composables/useConfig'
 import { useServerStatus } from '@/composables/useServerStatus'
@@ -263,6 +286,7 @@ import { getDeviceId } from '@/composables/useDeviceId'
 import { fetchConfig, updateConfig } from '@/api/encv'
 import { getAgentApiBase, getAgentApiBaseContext } from '@/composables/useAgentApiBase'
 import { devlogApiError, devlogApiInfo } from '@/composables/devlogApiError'
+import { runSyncDoctor, type DoctorReport } from '@/composables/useAgent'
 import type { FieldDef } from '@/config/schemaParser'
 import ConfigFieldItem from '@/components/ConfigFieldItem.vue'
 import InputWithHistory from '@/components/InputWithHistory.vue'
@@ -287,6 +311,8 @@ const checkmarkIcon = checkmarkCircle
 const alertIcon = alertCircleOutline
 const refreshIcon = refreshOutline
 const bugIcon = bugOutline
+const medkitIcon = medkitOutline
+const copyIcon = copyOutline
 
 // ─── API Key 状态机（spec F.3 状态反馈 UI）────────────────────
 type ApiKeyStatus =
@@ -768,6 +794,58 @@ async function handleSaveJson() {
   }
 }
 
+// ─── Task 25: Sync Doctor ────────────────────────────────
+// 后端 /api/sync/doctor 返回的 DoctorReport 在前端只读展示
+// （用于 bug 报告 / 自检）。不修改任何持久化数据。
+const doctorRunning = ref(false)
+const doctorReportJson = ref('')
+const doctorIssuesCount = ref(0)
+
+async function handleRunSyncDoctor() {
+  if (doctorRunning.value) return
+  doctorRunning.value = true
+  try {
+    const report: DoctorReport = await runSyncDoctor()
+    // 2 空格缩进，方便用户 / 客服直接复制到 issue
+    doctorReportJson.value = JSON.stringify(report, null, 2)
+    doctorIssuesCount.value = Array.isArray(report?.issues) ? report.issues.length : 0
+    devlogApiInfo(`sync doctor OK (${doctorIssuesCount.value} issues)`, {
+      kind: 'sync-doctor',
+      version: report?.version,
+    })
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    showToast({ message: t('agent.syncDoctorFailed', { msg: detail }), duration: 3000, color: 'danger' })
+    devlogApiError(e, { kind: 'sync-doctor', endpoint: '/api/sync/doctor' })
+  } finally {
+    doctorRunning.value = false
+  }
+}
+
+async function handleCopyDoctorJson() {
+  if (!doctorReportJson.value) return
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(doctorReportJson.value)
+    } else {
+      // Fallback: 用一个隐藏 textarea + execCommand
+      const ta = document.createElement('textarea')
+      ta.value = doctorReportJson.value
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    showToast({ message: t('agent.syncDoctorCopied'), duration: 1500, color: 'success' })
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    showToast({ message: t('agent.syncDoctorCopyFailed') + ': ' + detail, duration: 2000, color: 'danger' })
+    devlogApiError(e, { kind: 'sync-doctor-copy' })
+  }
+}
+
 onMounted(async () => {
   if (serverOnline.value) {
     await loadConfig()
@@ -1032,5 +1110,39 @@ onMounted(async () => {
 .apiKeyBackendSource {
   color: var(--ion-color-medium);
   font-style: italic;
+}
+
+/* ── Task 25: Sync Doctor 结果块 ───────────────────── */
+.doctor-result-item {
+  --min-height: 0;
+  --padding-start: 16px;
+  --padding-end: 16px;
+  --inner-padding-end: 0;
+}
+.doctor-result-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.doctor-result-pre {
+  width: 100%;
+  max-height: 320px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(var(--ion-color-medium-rgb), 0.08);
+  color: var(--ion-text-color);
+  font-family: 'SF Mono', Menlo, Consolas, 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre;
+  word-break: normal;
+  box-sizing: border-box;
+}
+.doctor-result-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

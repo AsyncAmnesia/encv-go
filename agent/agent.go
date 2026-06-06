@@ -2,9 +2,12 @@ package agent
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -126,6 +129,18 @@ type Agent struct {
 	// auto-run.
 	SessionGrants sync.Map
 
+	// sessionsParent maps sessionID → parentSessionID. Task 23
+	// (Side Conversation / Fork) populates it: when the user
+	// clicks the "分叉" button in the front-end, the server
+	// calls NewSession(parentID) which (a) generates a fresh
+	// UUID for the new session, (b) records the parent link
+	// here, and (c) returns the new id. The map is keyed by
+	// child id; parent id is the value (empty string means
+	// "no parent / root session"). Use Agent.ParentOf to read
+	// it. sync.Map keeps the HTTP goroutine and the
+	// runResume goroutine race-free without an extra mutex.
+	sessionsParent sync.Map
+
 	// PendingCalls maps sessionID → *pendingCall. Only one
 	// pending call per session is allowed at a time; the
 	// guarantee is enforced by Agent.mu.
@@ -177,6 +192,29 @@ type Agent struct {
 	// per-session override is a runtime concern, not a
 	// history concern.
 	systemPromptBySession sync.Map
+
+	// planModeBySession maps sessionID → bool. Task 19
+	// (Plan Mode toggle) populates it from ChatRequest.PlanMode:
+	// a true value causes injectSystemPrompt to append a
+	// "list steps first, wait for user confirmation" directive
+	// to the per-session system prompt. A false value (or
+	// never-set) removes the entry so planModeFor returns
+	// false. sync.Map is the same shape as the other
+	// per-session maps (selectedSkillsBySession,
+	// systemPromptBySession, sessionOverrides) so HTTP
+	// goroutines and runLoop goroutines stay race-free
+	// without an extra mutex.
+	planModeBySession sync.Map
+
+	// permissionModeBySession maps sessionID → string. Task 20
+	// (Permission Mode Switcher) populates it from
+	// ChatRequest.PermissionMode; the agent core consults it
+	// at tool-execution time to decide whether a tool that
+	// registered NeedConfirm=true should still auto-run. The
+	// default (no entry) means PermissionDefault, the legacy
+	// "respect NeedConfirm" behaviour. Entries are removed
+	// when the user toggles the switch back to default.
+	permissionModeBySession sync.Map
 
 	// compactor, when non-nil, is consulted at the top of
 	// every streamOneTurn. If the running messages slice
@@ -354,6 +392,108 @@ func (a *Agent) Chat(
 	return a.ChatMode(ctx, sessionID, messages, "")
 }
 
+// NewSession (Task 23 — Side Conversation / Fork) mints a
+// fresh, never-used session id and records the parent → child
+// link in a.sessionsParent. The returned id is distinct from
+// the parent id (UUID v4) and the parent's SessionCache is
+// not mutated by the call. An empty parentID is treated as
+// "root": a brand-new id is still returned and ParentOf on
+// the new id will return ("", false) — the explicit empty
+// parent entry is reserved for a future iteration of the
+// spec.
+//
+// This stub is intentionally minimal: it does NOT deep-copy
+// the parent's messages into the child. The deep-copy
+// semantics are a follow-up task; the test suite only locks
+// id-uniqueness and parent-link invariants at this stage.
+func (a *Agent) NewSession(parentID string) string {
+	newID := generateNewSessionID()
+	a.sessionsParent.Store(newID, parentID)
+	// Pre-create the SessionCache so a subsequent Chat /
+	// Resume call on the new id does not race the first
+	// emit. This mirrors the "always pre-create" pattern
+	// used by ensureSession for the Chat entry point.
+	a.ensureSession(newID)
+	return newID
+}
+
+// ParentOf returns the parent session id for childID. The
+// boolean is true when an explicit entry exists; the value
+// is the parent id (which may itself be empty for "root"
+// forks). This is the read-side counterpart of NewSession.
+//
+// An empty childID or an unknown id returns ("", false) —
+// sync.Map.Load is the only branch that ever returns
+// ok=false, so unknown sessions are reported exactly like
+// the legacy "no parent" sentinel without a separate code
+// path.
+func (a *Agent) ParentOf(childID string) (string, bool) {
+	if childID == "" {
+		return "", false
+	}
+	v, ok := a.sessionsParent.Load(childID)
+	if !ok {
+		return "", false
+	}
+	pid, _ := v.(string)
+	return pid, true
+}
+
+// HandleFork is the HTTP entry point for POST /api/agent/fork.
+// The front-end dispatches a fork request when the user
+// clicks the "分叉" button in the chat header. The handler:
+//
+//   1. Rejects non-POST methods with 405 (requirePOST contract).
+//   2. Rejects missing/empty session_id with 400.
+//   3. On success, mints a new session id via
+//      [Agent.NewSession] and returns a JSON body of shape
+//      {"session_id": "<new>", "parent_session_id": "<parent>"}.
+//
+// The handler is a thin shim over NewSession + ParentOf —
+// it exists so the front-end can stay decoupled from the
+// in-memory map and so future iterations of the spec (deep
+// copy of messages, parent breadcrumb in the SSE stream)
+// have a single place to wire into.
+func (a *Agent) HandleFork(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.SessionID == "" {
+		http.Error(w, "session_id is required", http.StatusBadRequest)
+		return
+	}
+	newID := a.NewSession(req.SessionID)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"session_id":        newID,
+		"parent_session_id": req.SessionID,
+	})
+}
+
+// generateNewSessionID returns a hex-encoded 16-byte random
+// id suitable for use as a session id. It is split out from
+// the server-instance-id generator because session ids must
+// be (a) unique per call and (b) cheap to mint, whereas the
+// server instance id is generated once at process start and
+// is allowed to be deterministic (hostname + pid hash). A
+// crypto/rand failure falls back to a time-based id so a
+// faulty RNG never wedges the fork path.
+func generateNewSessionID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("%016x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
+}
+
 // ChatMode is the mode-aware entry point that powers the
 // front-end's "steer" / "queue" send buttons. mode is one of:
 //   - "" or "start": identical to Chat — a fresh turn is
@@ -405,6 +545,112 @@ func (a *Agent) ChatMode(
 	out := make(chan *Event, 32)
 	go a.runLoop(ctx, sessionID, messages, out, !existed)
 	return out, nil
+}
+
+// SetPlanMode (Task 19) records the front-end's plan-mode
+// toggle state for sessionID. The HTTP layer calls this on
+// every Chat so the flag is always up-to-date with what the
+// user sees in the composer. Passing false (the zero value)
+// deletes the entry so a session that toggles plan mode off
+// reverts to the default behaviour without leaving a stale
+// "true" behind.
+//
+// The flag is consulted by injectSystemPrompt, which appends
+// a plan-aware instruction to the system message when set.
+// It does NOT alter the tool registry — see package doc.
+func (a *Agent) SetPlanMode(sessionID string, enabled bool) {
+	if sessionID == "" {
+		return
+	}
+	if !enabled {
+		a.planModeBySession.Delete(sessionID)
+		return
+	}
+	a.planModeBySession.Store(sessionID, true)
+}
+
+// planModeFor returns true when SetPlanMode(sessionID, true)
+// was last called for the given session. Returns false (the
+// default) for sessions that have never sent planMode, never
+// enabled it, or explicitly cleared it. Used by
+// injectSystemPrompt to decide whether to append the
+// plan-aware instruction.
+func (a *Agent) planModeFor(sessionID string) bool {
+	if sessionID == "" {
+		return false
+	}
+	v, ok := a.planModeBySession.Load(sessionID)
+	if !ok {
+		return false
+	}
+	b, _ := v.(bool)
+	return b
+}
+
+// SetSessionPermissionMode stores the per-session
+// permission tier for sessionID. The reader
+// ([Agent.permissionModeFor]) treats unknown / empty
+// values as PermissionDefault at lookup time, so a
+// caller that forgets to validate the string first
+// still produces safe runtime behaviour. An empty
+// sessionID is a no-op (defensive). A PermissionDefault
+// (or empty) value deletes the per-session entry so a
+// session that toggles back to "default" reverts on the
+// very next turn with no stale "auto-review" left behind
+// — the legacy behaviour is exactly "no entry" for
+// default mode.
+//
+// Task 20 (Permission Mode Switcher). See
+// ChatRequest.PermissionMode for the wire contract.
+func (a *Agent) SetSessionPermissionMode(sessionID string, mode PermissionMode) {
+	if sessionID == "" {
+		return
+	}
+	if mode == "" || mode == PermissionDefault {
+		a.permissionModeBySession.Delete(sessionID)
+		return
+	}
+	a.permissionModeBySession.Store(sessionID, mode)
+}
+
+// ClearSessionPermissionMode removes the per-session
+// permission tier for sessionID, reverting subsequent
+// emitToolCall decisions to the tool's registered
+// NeedConfirm value. The method exists for parity with the
+// per-session plan-mode toggle and is used by tests that
+// share a single agent across multiple scenarios.
+// An empty sessionID is a no-op; an unknown sessionID
+// is also a no-op because sync.Map.Delete is idempotent.
+func (a *Agent) ClearSessionPermissionMode(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	a.permissionModeBySession.Delete(sessionID)
+}
+
+// permissionModeFor returns the per-session permission
+// tier for sessionID, or PermissionDefault when none is
+// set or the stored value is not one of the three
+// documented constants. The method is the read-side
+// counterpart of SetSessionPermissionMode and is invoked
+// from streamOneTurn at every emitToolCall call.
+// An empty return value MUST be treated by the caller as
+// "no override" — the agent falls back to the tool's
+// registered NeedConfirm value in that case, which is the
+// legacy behaviour.
+func (a *Agent) permissionModeFor(sessionID string) PermissionMode {
+	if sessionID == "" {
+		return PermissionDefault
+	}
+	v, ok := a.permissionModeBySession.Load(sessionID)
+	if !ok {
+		return PermissionDefault
+	}
+	mode, _ := v.(PermissionMode)
+	if !IsValidPermissionMode(mode) {
+		return PermissionDefault
+	}
+	return mode
 }
 
 // enqueueAndReturnClosed stores the messages on the
@@ -705,7 +951,19 @@ func (a *Agent) streamOneTurn(
 			continue
 		}
 
+		// Task 20 — Permission Mode Switcher. The legacy
+		// autoRun computation is preserved exactly; the new
+		// modes (auto-review / full-access) simply force
+		// autoRun=true so the ApprovalCard is skipped. The
+		// tool_call + tool_status("running") + tool_result
+		// event sequence is unchanged, which means the
+		// audit trail (HookPreToolCall / HookPostToolCall,
+		// the recorder store, etc.) is unaffected — only
+		// the user-facing confirmation flow changes.
 		autoRun := !def.NeedConfirm || a.isGranted(sessionID, ptc.Name)
+		if mode := a.permissionModeFor(sessionID); mode == PermissionAutoReview || mode == PermissionFullAccess {
+			autoRun = true
+		}
 		a.emitToolCall(sessionID, out, ptc, def, autoRun)
 
 		if !autoRun {

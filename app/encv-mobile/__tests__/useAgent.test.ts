@@ -20,7 +20,7 @@ vi.mock('@/composables/useToast', () => ({
 // 否则 jsdom 默认提供 crypto.randomUUID 不会有问题，但我们仍要确保 stable 行为。
 // 这里只 mock fetch 来注入可控的 SSE 响应流。
 
-import { useAgent, type Message } from '@/composables/useAgent'
+import { useAgent, type Message, type DoctorReport, getLanAccess, type LanAddress } from '@/composables/useAgent'
 import { showToast } from '@/composables/useToast'
 
 const mockedShowToast = vi.mocked(showToast)
@@ -1206,5 +1206,167 @@ describe('useAgent', () => {
       expect(seen[0]).toBe(3)
       expect(seen[seen.length - 1]).toBe(1)
     }, 15000)
+  })
+
+  // ─── Task 25: Sync Doctor ────────────────────────────────
+  //
+  // runSyncDoctor 是 useAgent 模块导出的顶层函数（非 composable 实例方法），
+  // 所以可以脱离 useAgent() 单独 import。下面的测试只关心它的 HTTP 行为。
+  describe('Task 25: runSyncDoctor', () => {
+    beforeEach(() => {
+      globalThis.fetch = originalFetch
+    })
+    afterEach(() => {
+      globalThis.fetch = originalFetch
+    })
+
+    it('POST /api/sync/doctor 并返回解析后的 DoctorReport', async () => {
+      const fakeReport: DoctorReport = {
+        generated_at_ms: 1_700_000_000_000,
+        version: 'v0.1.0',
+        agent: {
+          version: 'v0.1.0',
+          server_instance_id: 'inst-1',
+          go_version: 'go1.22',
+          gomaxprocs: 4,
+          num_goroutine: 5,
+          openai_api_key_configured: true,
+        },
+        sessions: { total_cached: 2, total_persisted: 3, largest_session_size_bytes: 1024 },
+        tools: { registered_count: 2, names: ['echo', 'list_files'] },
+        openlist: { base_url_configured: true, token_configured: true, last_ping_ms: 12 },
+        skills: { loaded_count: 0, names: [] },
+        issues: ['openai_api_key is set'],
+      }
+      const spy = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(fakeReport),
+      } as Response)
+      globalThis.fetch = spy as unknown as typeof fetch
+
+      const { runSyncDoctor } = await import('@/composables/useAgent')
+      const report = await runSyncDoctor()
+      expect(spy).toHaveBeenCalledTimes(1)
+      const [calledUrl, calledInit] = spy.mock.calls[0] as [string, RequestInit]
+      expect(calledUrl).toContain('/api/sync/doctor')
+      expect(calledInit.method).toBe('POST')
+      expect(report.version).toBe('v0.1.0')
+      expect(report.agent.gomaxprocs).toBe(4)
+      expect(report.tools.names).toEqual(['echo', 'list_files'])
+      expect(report.issues).toEqual(['openai_api_key is set'])
+    })
+
+    it('非 2xx 响应时抛 Error（HTTP n）', async () => {
+      const spy = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        json: () => Promise.reject(new Error('not json')),
+      } as Response)
+      globalThis.fetch = spy as unknown as typeof fetch
+
+      const { runSyncDoctor } = await import('@/composables/useAgent')
+      await expect(runSyncDoctor()).rejects.toThrow(/HTTP 503/)
+    })
+
+    it('响应体不合法时抛 Error（malformed doctor report）', async () => {
+      const spy = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ not: 'a doctor report' }),
+      } as Response)
+      globalThis.fetch = spy as unknown as typeof fetch
+
+      const { runSyncDoctor } = await import('@/composables/useAgent')
+      await expect(runSyncDoctor()).rejects.toThrow(/malformed doctor report/)
+    })
+  })
+
+  // ─── Task 26: LAN Access ───────────────────────────────────────────────
+  // 覆盖 useAgent.getLanAccess() 的三个分支：成功 / HTTP 错误 / 网络错误。
+  // 字段形状（interface / ip / url）是与后端 agent/lan_access.go 的
+  // wire contract；任何字段重命名都是 breaking change，测试必须同步。
+  describe('Task 26: getLanAccess（局域网访问地址枚举）', () => {
+    beforeEach(() => {
+      // 每次用例重置 fetch mock 防止跨用例污染。
+      globalThis.fetch = originalFetch
+    })
+
+    it('happy path：200 + addresses 数组透传到 caller', async () => {
+      const sample: LanAddress[] = [
+        { interface: 'en0', ip: '192.168.1.10', url: 'http://192.168.1.10:5245' },
+        { interface: 'eth0', ip: '10.0.0.5', url: 'http://10.0.0.5:5245' },
+      ]
+      const spy = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ addresses: sample, port: 5245 }),
+      } as Response)
+      globalThis.fetch = spy as unknown as typeof fetch
+
+      const result = await getLanAccess(0)
+      expect(result).toEqual(sample)
+      // 默认 port=0 ⇒ 不带 ?port= 查询参数（让后端走默认 5245）
+      const calledUrl = (spy.mock.calls[0]?.[0] as string) || ''
+      expect(calledUrl).not.toMatch(/\?port=/)
+    })
+
+    it('port > 0 时 query string 带 port 参数', async () => {
+      const spy = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ addresses: [], port: 8123 }),
+      } as Response)
+      globalThis.fetch = spy as unknown as typeof fetch
+
+      await getLanAccess(8123)
+      expect(spy).toHaveBeenCalledTimes(1)
+      const calledUrl = (spy.mock.calls[0]?.[0] as string) || ''
+      expect(calledUrl).toMatch(/\?port=8123$/)
+    })
+
+    it('HTTP 非 2xx 时返回空数组（不抛错）', async () => {
+      const spy = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        json: () => Promise.reject(new Error('not used')),
+      } as Response)
+      globalThis.fetch = spy as unknown as typeof fetch
+
+      const result = await getLanAccess(0)
+      expect(result).toEqual([])
+    })
+
+    it('网络异常时返回空数组（不抛错）', async () => {
+      const spy = vi.fn().mockRejectedValue(new TypeError('network down'))
+      globalThis.fetch = spy as unknown as typeof fetch
+
+      const result = await getLanAccess(0)
+      expect(result).toEqual([])
+    })
+
+    it('响应体不合法时（缺 addresses 字段）返回空数组', async () => {
+      const spy = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ port: 5245 }), // 无 addresses
+      } as Response)
+      globalThis.fetch = spy as unknown as typeof fetch
+
+      const result = await getLanAccess(0)
+      expect(result).toEqual([])
+    })
+
+    it('addresses 不是数组时（malformed）返回空数组', async () => {
+      const spy = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ addresses: 'not-an-array' }),
+      } as Response)
+      globalThis.fetch = spy as unknown as typeof fetch
+
+      const result = await getLanAccess(0)
+      expect(result).toEqual([])
+    })
   })
 })

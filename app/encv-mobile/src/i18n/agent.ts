@@ -111,6 +111,41 @@ export default {
     'agent.slashMenuSkills': '技能',
     'agent.slashMenuNoMatches': '无匹配项',
     'agent.slashMenuHint': '↑↓ 选择 · Enter 应用 · Esc 关闭',
+
+    // ── Task 22: Agent Task Message（subagent 子任务列表） ─────────
+    // 后端 SubagentDispatch 事件触发：AI 把复杂任务拆给多个 subagent
+    // 并行 / 串行处理，前端把子任务列表渲染为可折叠块。折叠阈值与
+    // codex-web MessageBlocks.tsx:68-69 对齐（7 行 / 520 字符）。
+    'agent.agentTask': '子任务',
+    'agent.subTaskProgress': '{done}/{total}',
+    'agent.agentTaskEmpty': '（暂无子任务）',
+
+    // ── Task 26: LAN Access（局域网访问地址面板） ─────────────────
+    // 后端 /api/network/lan-access 枚举当前可被同 WiFi 设备访问的
+    // URL，前端在 AgentChat 顶部折叠面板展示。面板用途：用户把
+    // http://192.168.x.x:5245/ 输入手机/平板浏览器也能用 AI 助手。
+    'agent.lanAccess': '网络访问地址',
+    'agent.lanAccessHelp': '同 WiFi 下的设备可用此地址访问',
+    'agent.lanAccessEmpty': '未发现可用的网络接口',
+    'agent.lanAccessRefresh': '刷新',
+    'agent.lanAccessCopy': '复制',
+    'agent.lanAccessCopied': '已复制 {url}',
+    'agent.lanAccessCopyFailed': '复制失败',
+    'agent.lanAccessInterface': '接口：{name}',
+
+    // ── Task 25: Sync Doctor（脱敏诊断按钮） ─────────────
+    // 后端 /api/sync/doctor 返回的 DoctorReport 报告由用户在
+    // Settings 面板中点击「运行 sync 诊断」拉取；展示原文 JSON
+    // 给用户用于 bug 报告（报告中所有 API key/token/password
+    // 已被后端 Redact，无需在前端再次脱敏）。
+    'agent.syncDoctor': '运行 sync 诊断',
+    'agent.syncDoctorRunning': '正在生成诊断报告…',
+    'agent.syncDoctorResult': '诊断结果',
+    'agent.syncDoctorCopy': '复制 JSON',
+    'agent.syncDoctorCopied': '诊断 JSON 已复制',
+    'agent.syncDoctorCopyFailed': '复制失败',
+    'agent.syncDoctorFailed': '诊断失败：{msg}',
+    'agent.syncDoctorEmpty': '未发现问题',
   },
   en: {
     'agent.title': 'AI Assistant',
@@ -226,5 +261,41 @@ export default {
     'agent.slashMenuSkills': 'Skills',
     'agent.slashMenuNoMatches': 'No matches',
     'agent.slashMenuHint': '↑↓ navigate · Enter apply · Esc close',
+
+    // ── Task 22: Agent Task Message (subagent sub-task list) ─────────
+    // Backend SubagentDispatch event: AI splits complex tasks across
+    // multiple subagents (parallel/serial) and the front-end renders
+    // the sub-task list as a foldable block. Collapse thresholds
+    // align with codex-web MessageBlocks.tsx:68-69 (7 lines / 520 chars).
+    'agent.agentTask': 'Sub-tasks',
+    'agent.subTaskProgress': '{done}/{total}',
+    'agent.agentTaskEmpty': '(no sub-tasks)',
+
+    // ── Task 26: LAN Access (LAN access URL panel) ─────────────────
+    // Backend /api/network/lan-access enumerates URLs reachable from
+    // a peer on the same WiFi. The Settings panel surfaces them so
+    // the user can type http://192.168.x.x:5245/ into a phone/tablet
+    // browser on the same network and reach the AI assistant.
+    'agent.lanAccess': 'LAN access',
+    'agent.lanAccessHelp': 'Devices on the same WiFi can use these addresses',
+    'agent.lanAccessEmpty': 'No usable network interface found',
+    'agent.lanAccessRefresh': 'Refresh',
+    'agent.lanAccessCopy': 'Copy',
+    'agent.lanAccessCopied': 'Copied {url}',
+    'agent.lanAccessCopyFailed': 'Copy failed',
+    'agent.lanAccessInterface': 'Interface: {name}',
+
+    // ── Task 25: Sync Doctor (redacted diagnostic) ─────────────
+    // Triggered from the Settings panel; the report is shown
+    // raw to the user for bug-reporting purposes (all secrets
+    // have already been Redacted server-side).
+    'agent.syncDoctor': 'Run sync doctor',
+    'agent.syncDoctorRunning': 'Generating diagnostic report…',
+    'agent.syncDoctorResult': 'Diagnostic result',
+    'agent.syncDoctorCopy': 'Copy JSON',
+    'agent.syncDoctorCopied': 'Diagnostic JSON copied',
+    'agent.syncDoctorCopyFailed': 'Copy failed',
+    'agent.syncDoctorFailed': 'Doctor failed: {msg}',
+    'agent.syncDoctorEmpty': 'No issues detected',
   },
 }

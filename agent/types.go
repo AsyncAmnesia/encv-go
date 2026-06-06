@@ -319,3 +319,46 @@ type AgentConfig struct {
 	// zero skills.
 	SkillsDir string
 }
+
+// PermissionMode is the per-session tool-confirmation tier.
+// Task 20 (Permission Mode Switcher) exposes three values
+// to the front-end: PermissionDefault (the legacy
+// "respect NeedConfirm" behaviour), PermissionAutoReview
+// (force auto-run but still emit tool_call + tool_result
+// events for visual review), and PermissionFullAccess
+// (force auto-run, no ApprovalCard at all). The constants
+// are declared alongside the type so the wire format and
+// the in-memory representation stay in lockstep.
+type PermissionMode string
+
+const (
+	// PermissionDefault preserves the legacy behaviour:
+	// a tool that registered NeedConfirm=true still asks
+	// for confirmation, a tool that did not still auto-runs.
+	PermissionDefault PermissionMode = "default"
+	// PermissionAutoReview forces every tool to auto-run
+	// while still emitting the tool_call + tool_result
+	// events on the wire. The front-end renders a
+	// non-modal review badge in place of the ApprovalCard.
+	PermissionAutoReview PermissionMode = "auto-review"
+	// PermissionFullAccess forces every tool to auto-run
+	// AND tells the front-end to skip rendering an
+	// ApprovalCard for the duration of the session. The
+	// tool_call / tool_result events still surface so
+	// DevLogs can audit the execution.
+	PermissionFullAccess PermissionMode = "full-access"
+)
+
+// IsValidPermissionMode reports whether m is one of the
+// three documented PermissionMode values. The HTTP layer
+// uses it to coerce unknown / empty values to
+// PermissionDefault rather than 400ing — see
+// ChatRequest.PermissionMode for the rationale.
+func IsValidPermissionMode(m PermissionMode) bool {
+	switch m {
+	case PermissionDefault, PermissionAutoReview, PermissionFullAccess:
+		return true
+	default:
+		return false
+	}
+}

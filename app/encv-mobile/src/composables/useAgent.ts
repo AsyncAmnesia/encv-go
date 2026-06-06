@@ -90,7 +90,17 @@ export interface ToolResult {
 }
 
 export interface Message {
-  role: 'user' | 'assistant' | 'system'
+  /**
+   * Task 22：agent 派发 subagent 拆解任务时插入的"agent task"消息。
+   * 与 user/assistant/system 并列，是前端渲染层的合法角色之一。
+   * 后端在 SubagentDispatch 事件中构造（content 是 JSON 字符串，
+   * 形如 {"subTasks":[{id,status,description}], "reasoning":"..."}）。
+   * renderTurnItems 检测到该角色时产出 type='agentTask' 的
+   * RenderedItem，由 AgentTaskMessage.vue 渲染子任务列表。
+   * 后端持久化 / 上下文回送时该 role 一并保留——见 send() 里的
+   * apiMessages 构造循环。
+   */
+  role: 'user' | 'assistant' | 'system' | 'agent_task'
   /**
    * Task 12：附件场景下 content 可能是 OpenAI multimodal 数组
    * （text / image_url / file 元素）。老消息（无附件）保持 string。
@@ -306,6 +316,50 @@ function generateSessionId(): string {
   return `sess-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
 }
 
+// =============================================================================
+// Task 26 (LAN Access) —— 与后端 /api/network/lan-access 对齐的类型
+// =============================================================================
+//
+// 后端 agent/lan_access.go::LanAddress 的 JSON 形状。字段重命名是
+// breaking change —— 任何修改都必须同步更新 AgentChat.vue 的渲染层。
+// 保持后端字段 tag 与前端 interface 字段名一致：interface / ip / url。
+export interface LanAddress {
+  interface: string
+  ip: string
+  url: string
+}
+
+/**
+ * Task 26：拉取当前后端可访问的 LAN URL 列表。
+ *
+ * 调用后端 GET /api/network/lan-access?port=... ，失败时返回空数组并
+ * 留痕一条 console.debug（不抛错、不显示 toast —— 该功能是辅助性的，
+ * UI 应当自己处理空列表状态：折叠面板显示 "未发现可用网络接口"）。
+ *
+ * @param port 监听端口，传 0 让后端用默认 5245
+ */
+export async function getLanAccess(port: number = 0): Promise<LanAddress[]> {
+  try {
+    const qs = port > 0 ? `?port=${port}` : ''
+    const response = await fetch(`${AGENT_API_BASE}/api/network/lan-access${qs}`, {
+      method: 'GET',
+    })
+    if (!response.ok) {
+      console.debug('[getLanAccess] HTTP', response.status, '— returning empty list')
+      return []
+    }
+    const data = (await response.json()) as { addresses?: LanAddress[] }
+    if (!data || !Array.isArray(data.addresses)) {
+      console.debug('[getLanAccess] malformed response:', data)
+      return []
+    }
+    return data.addresses
+  } catch (e) {
+    console.debug('[getLanAccess] fetch failed:', e)
+    return []
+  }
+}
+
 /**
  * Task 12：从 Message.content 抽取会话标题用的纯文本。
  *  - string  → 第一行前 40 字符
@@ -325,6 +379,78 @@ function extractUserTitle(content: string | MessageContentPart[] | undefined): s
   }
   // 全是附件没文本：返回一个占位提示
   return '[附件]'
+}
+
+// =============================================================================
+// Task 25 (Sync Doctor) —— 与后端 /api/sync/doctor 对齐的类型
+// =============================================================================
+//
+// DoctorReport 的 JSON 形状由 agent/sync_doctor.go::DoctorReport 定义。
+// 前端不依赖任何后端内部结构 —— 只消费这个 doctor 报告的 wire 字段。
+// 后端已经在生成报告前对所有错误信息和配置做 Redact 处理，所以
+// 前端把它原样塞进 <pre> 块 / 剪贴板 / 截图分享都是安全的。
+export interface DoctorReport {
+  generated_at_ms: number
+  version: string
+  agent: {
+    version: string
+    server_instance_id: string
+    go_version: string
+    gomaxprocs: number
+    num_goroutine: number
+    openai_api_key_configured: boolean
+  }
+  sessions: {
+    total_cached: number
+    total_persisted: number
+    largest_session_size_bytes: number
+  }
+  tools: {
+    registered_count: number
+    names: string[]
+  }
+  openlist: {
+    base_url_configured: boolean
+    token_configured: boolean
+    last_ping_ms: number
+    last_error?: string
+  }
+  skills: {
+    loaded_count: number
+    names: string[]
+  }
+  issues: string[]
+}
+
+/**
+ * Task 25：调用后端 /api/sync/doctor 拉取一次脱敏诊断报告。
+ *
+ * 用途：AgentSettingsDetail.vue 面板的「运行 sync 诊断」按钮，
+ * 拿到 JSON 后展示给用户（<pre> 块 + 复制按钮）。
+ *
+ * 行为：
+ *  - 成功：返回解析后的 DoctorReport，调用方自行 JSON.stringify 展示。
+ *  - 失败：抛 Error，调用方负责 toast / 弹窗。
+ *
+ * 副作用：无（HTTP 只读）。AbortSignal 透传给 fetch 以便 UI 能取消
+ * 一个长尾的 doctor 请求（实际后端超时是 2 秒，不会真等很久）。
+ */
+export async function runSyncDoctor(signal?: AbortSignal): Promise<DoctorReport> {
+  const response = await fetch(`${AGENT_API_BASE}/api/sync/doctor`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    // 没有 body 也合法：handler 接受 GET/POST 两种 method。
+    body: JSON.stringify({}),
+    ...(signal ? { signal } : {}),
+  })
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+  const report = (await response.json()) as DoctorReport
+  if (!report || typeof report !== 'object' || !Array.isArray(report.issues)) {
+    throw new Error('malformed doctor report')
+  }
+  return report
 }
 
 // =============================================================================

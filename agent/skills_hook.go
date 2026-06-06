@@ -140,8 +140,19 @@ func (a *Agent) ClearSessionSystemPrompt(sessionID string) {
 // have these skills available" header — the LLM only needs
 // to see the static prompt once per turn, and the chat
 // history already carries the conversation.
+//
+// Task 19 (Plan Mode): when the front-end's toggle is on
+// for this session, the plan-mode instruction is appended
+// to the system prompt body. The flag does NOT alter the
+// tool registry — only the system text — so the agent
+// still sees the same tool set, just nudged into
+// "list steps first, wait for user confirmation before
+// executing" mode.
 func (a *Agent) injectSystemPrompt(sessionID string, messages []openai.ChatCompletionMessage) []openai.ChatCompletionMessage {
 	sp := a.SessionSystemPrompt(sessionID)
+	if a.planModeFor(sessionID) {
+		sp = appendPlanModeInstruction(sp)
+	}
 	if strings.TrimSpace(sp) == "" {
 		return messages
 	}
@@ -152,4 +163,22 @@ func (a *Agent) injectSystemPrompt(sessionID string, messages []openai.ChatCompl
 	})
 	out = append(out, messages...)
 	return out
+}
+
+// planModeInstruction is the appended directive text used
+// by injectSystemPrompt when planModeFor(sessionID) is true.
+// It is package-private so tests can assert the exact
+// string the agent sends to the LLM.
+const planModeInstruction = "你处于「目标 / Plan 模式」。在执行任何工具或命令之前，先用文字列出完成该任务的完整步骤（每条 1 句、3-7 条），并明确「请用户确认是否执行」。只有在用户回复「确认 / 继续 / go」等明确指令后，才可以开始实际执行。"
+
+// appendPlanModeInstruction returns base with the plan-mode
+// directive appended. A leading separator is added when base
+// is non-empty so the two halves read as distinct paragraphs
+// to the LLM. An all-whitespace base is treated as empty and
+// the directive is returned on its own.
+func appendPlanModeInstruction(base string) string {
+	if strings.TrimSpace(base) == "" {
+		return planModeInstruction
+	}
+	return base + "\n\n" + planModeInstruction
 }

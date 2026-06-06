@@ -34,6 +34,19 @@ export interface PlanTodo {
   content: string
 }
 
+/**
+ * Task 22：agent task 消息中的子任务（subagent 拆解）。
+ * 与 plan/todo 不同——子任务来源是后端 agent 框架（codex-web 形态），
+ * 不是 write_todos 工具。状态集合固定为四态，避免后端传来未知
+ * 字符串导致渲染分支爆炸；非合法值由 parseAgentTaskContent 防御性降级
+ * 为 'pending'。
+ */
+export interface SubTask {
+  id: string
+  status: 'pending' | 'in_progress' | 'completed' | 'failed'
+  description: string
+}
+
 /** 单条渲染项 - 由 AgentChat 分发到对应组件 */
 export type RenderedItem =
   | { type: 'user'; messageId: string; text: string }
@@ -48,6 +61,11 @@ export type RenderedItem =
   // RenderedItem[] 数组中的下标（用 idx 衍生），用于 key
   // 生成；text 是 i18n 文本（"上下文已自动压缩"）。
   | { type: 'compaction'; messageId: string; text: string }
+  // Task 22：agent task 消息。subTasks 是子任务列表；reasoning
+  // 是可选的"为什么派发子任务"的高层说明（来自后端 SubagentDispatch
+  // 事件）。渲染端 AgentTaskMessage.vue 负责折叠展示（默认按
+  // AGENT_TASK_COLLAPSE_LINE_COUNT / _CHAR_COUNT 阈值）。
+  | { type: 'agentTask'; messageId: string; subTasks: SubTask[]; reasoning?: string }
 
 /**
  * useRenderTurnItems - 组合式接口
@@ -85,6 +103,21 @@ interface WebSearchGroup {
 
 // 8 个合并窗常量（已删除，模板里不直接用）
 //   旧代码: const FLUSH_GAP_MS = 800
+
+/**
+ * Task 22：agent task 消息的折叠阈值常量。参考
+ * codex-web `MessageBlocks.tsx:68-69` 的同名常量。
+ *
+ *  - AGENT_TASK_COLLAPSE_LINE_COUNT：子任务行数 ≤ 此值时
+ *    AgentTaskMessage.vue 默认展开（视为"短列表"）
+ *  - AGENT_TASK_COLLAPSE_CHAR_COUNT：所有 description 拼接的
+ *    字符数 ≤ 此值时也默认展开；任一条件触发折叠
+ *
+ * 这两个常量只用于"是否自动展开"决策，不限制 UI 实际渲染
+ * 的最大行数/字符数——用户可手动展开查看全部。
+ */
+export const AGENT_TASK_COLLAPSE_LINE_COUNT = 7
+export const AGENT_TASK_COLLAPSE_CHAR_COUNT = 520
 
 /**
  * renderTurnItems 纯函数
@@ -190,6 +223,21 @@ export function renderTurnItems(
         type: 'compaction',
         messageId: `c-${idx}`,
         text: effectiveCompactionText,
+      })
+    } else if (msg.role === 'agent_task') {
+      // Task 22：agent task 消息。content 形如
+      //   {"subTasks":[{id,status,description}, ...], "reasoning":"..."}
+      // 解析失败时退化为空 subTasks（UI 渲染"无子任务"提示，不崩溃）。
+      // 紧跟前一条消息尾部插入，先 flush 完旧 group（防止 agent task
+      // 跟 operationGroup 串在一起——它们语义独立）。
+      flushOpGroup(true)
+      flushWebGroup()
+      const parsed = parseAgentTaskContent(msg.content)
+      out.push({
+        type: 'agentTask',
+        messageId: `at-${idx}`,
+        subTasks: parsed.subTasks,
+        ...(parsed.reasoning ? { reasoning: parsed.reasoning } : {}),
       })
     } else if (msg.role === 'assistant') {
       flushOpGroup(true)
@@ -334,4 +382,54 @@ export function parsePlanArgs(args: string): PlanTodo[] {
     out.push({ id: t.id, status, content: t.content })
   }
   return out
+}
+
+/**
+ * Task 22：解析 agent_task 消息的 content JSON。
+ *
+ * 接受以下形状：
+ *   {
+ *     "subTasks": [{ id, status, description }, ...],
+ *     "reasoning"?: string
+ *   }
+ *
+ * 解析失败 / 字段缺失时退化为空 subTasks + 无 reasoning——UI
+ * 渲染"无子任务"提示而不崩溃（与 parsePlanArgs 失败时返回 [] 的
+ * 防御策略一致）。status 字段非合法四态时降级为 'pending'，避免
+ * 后端版本演进时引入新状态导致前端空白。
+ */
+export function parseAgentTaskContent(
+  content: string | unknown,
+): { subTasks: SubTask[]; reasoning?: string } {
+  let parsed: unknown
+  if (typeof content === 'string') {
+    if (!content) return { subTasks: [] }
+    try {
+      parsed = JSON.parse(content)
+    } catch {
+      return { subTasks: [] }
+    }
+  } else {
+    parsed = content
+  }
+  if (!parsed || typeof parsed !== 'object') return { subTasks: [] }
+  const obj = parsed as { subTasks?: unknown; reasoning?: unknown }
+  const rawList = Array.isArray(obj.subTasks) ? obj.subTasks : []
+  const out: SubTask[] = []
+  for (const item of rawList) {
+    if (!item || typeof item !== 'object') continue
+    const t = item as { id?: unknown; status?: unknown; description?: unknown }
+    if (typeof t.id !== 'string') continue
+    if (typeof t.description !== 'string') continue
+    const status: SubTask['status'] =
+      t.status === 'pending' ||
+      t.status === 'in_progress' ||
+      t.status === 'completed' ||
+      t.status === 'failed'
+        ? t.status
+        : 'pending'
+    out.push({ id: t.id, status, description: t.description })
+  }
+  const reasoning = typeof obj.reasoning === 'string' ? obj.reasoning : undefined
+  return reasoning ? { subTasks: out, reasoning } : { subTasks: out }
 }

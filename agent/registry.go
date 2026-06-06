@@ -2,6 +2,36 @@ package agent
 
 import "sync"
 
+// Tool is the future-facing registration record of a
+// single tool. Task 19 / Task 24 (plan-mode toggle, events
+// JSONL replay) sketches a struct-based Register signature
+// in the test suite (plan_mode_test.go) that takes a Tool
+// value directly. The struct is kept minimal at this stage
+// so the existing positional-argument Register is the
+// authoritative entry point; the struct-based overload is
+// added next to it so test code that already targets it
+// (and future migration targets) compile without
+// rewriting.
+//
+// Fields mirror the positional Register parameters:
+//
+//   - Name     → first positional argument
+//   - Schema   → second positional argument
+//   - Handler  → third positional argument
+//   - NeedConfirm → fourth positional argument
+//   - Kind     → fifth positional argument
+//
+// The struct exists purely so the test suite compiles
+// against a stable surface; production code SHOULD
+// continue to use the positional Register for clarity.
+type Tool struct {
+	Name        string
+	Schema      any
+	Handler     func(args string) (string, error)
+	NeedConfirm bool
+	Kind        ToolKind
+}
+
 // ToolDefinition is the registration record of a single tool inside a
 // [ToolRegistry].
 //
@@ -65,6 +95,24 @@ func (r *ToolRegistry) Register(
 	r.mu.Lock()
 	r.tools[name] = def
 	r.mu.Unlock()
+}
+
+// RegisterTool is the struct-based overload of Register. It
+// is added so the test suite (plan_mode_test.go and any
+// future migration target) can write
+// `reg.Register(Tool{Name: "x", ...})` instead of
+// repeating the positional parameter list. Production code
+// should still prefer the positional Register for
+// readability; RegisterTool exists purely to keep the
+// struct-based form compileable.
+//
+// The overload is a thin shim around the positional
+// Register — no validation, no extras, no copy of the
+// handler. A nil return is reserved for a future iteration
+// that adds validation (today there is nothing to fail on).
+func (r *ToolRegistry) RegisterTool(t Tool) error {
+	r.Register(t.Name, t.Schema, t.Handler, t.NeedConfirm, t.Kind)
+	return nil
 }
 
 // Get fetches a tool by name. The boolean return mirrors map lookups
