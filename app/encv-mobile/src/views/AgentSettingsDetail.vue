@@ -95,7 +95,7 @@
             <!-- 用 <template> 把所有 openai_api_key 相关 UI 包成单一条件块，-->
             <!-- 避免 v-if/v-else-if 链被中间插入的 v-if 打断导致 ConfigFieldItem 误命中 -->
             <template v-else-if="child.key === 'openai_api_key'">
-              <div ref="apiKeyInputRef" class="api-key-input-wrap" :class="{ 'api-key-broken': apiKeyStatus === 'decrypt-failed' }">
+              <div class="api-key-input-wrap" :class="{ 'api-key-broken': apiKeyStatus === 'decrypt-failed' }">
                 <InputWithHistory
                   :model-value="apiKeyPlainValue"
                   :label="fieldLabel(child.key, child.required)"
@@ -393,7 +393,11 @@ const roundtripRunning = ref(false)
 const apiKeyPlainValue = ref('') // 用户正在编辑的明文（内存中，password input 自动掩码）
 
 // Template ref：用于"跳转到 API Key"按钮的滚动定位 + 焦点
-const apiKeyInputRef = ref<HTMLElement | null>(null)
+// 注意：原本用 ref="apiKeyInputRef" 绑 <div>，但 <div> 在 <template v-for> 内
+// 会被 Vue 收集为数组（[div]），调 scrollIntoView 报 "is not a function"。
+// 改用 scrollToApiKey() 内部的 document.querySelector('.api-key-input-wrap') 抓取。
+// 保留 ref 声明以备未来其他需要（暂未使用，加 :ref 也不绑，删了避免误导）。
+// const apiKeyInputRef = ref<HTMLElement | null>(null)
 
 // Template ref：用于"跳转到 API Key"错误暴露按钮的 click 绑定
 // 用 addEventListener 而非 @click：ion-button 内部 Shadow DOM 偶发会拦截 @click 冒泡
@@ -430,11 +434,16 @@ const isModelErrorCausedByApiKey = computed(() => {
 // 关键技术点：ion-input 会把原生 <input> 放在 light DOM 里（id=ion-input-X, name=ion-input-X），
 // 所以 querySelector('input') 在 light DOM 就能拿到，不必穿透 Shadow DOM。
 // 但聚焦后需要保持：ion-input 的 ionFocusable 行为可能再次夺焦，所以聚焦后必须保留。
+//
+// 重要：不能用 apiKeyInputRef.value 拿 DOM —— 模板里 <div ref="apiKeyInputRef"> 在
+// <template v-for> 内，Vue 收集的是数组，ref.value 是 [div]，调 scrollIntoView
+// 必报 "el.scrollIntoView is not a function"。统一改用 querySelector 抓取。
 function scrollToApiKey() {
   nextTick(() => {
-    const el = apiKeyInputRef.value
+    // 防御 1：找 .api-key-input-wrap —— 页面里只有一个（openai_api_key 字段专属）
+    const el = document.querySelector<HTMLElement>('.api-key-input-wrap')
     if (!el) {
-      console.error('[scrollToApiKey] no ref')
+      console.error('[scrollToApiKey] no .api-key-input-wrap found')
       return
     }
     el.scrollIntoView({ behavior: 'smooth', block: 'center' })
