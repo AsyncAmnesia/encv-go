@@ -54,4 +54,14 @@ const meta = computed(() => {
   padding-left: 30px;
   min-width: 0;
 }
+
+/* AI 回复气泡：左侧浅色背景，圆角 */
+.assistantMessageBody :deep(.markdownStream) {
+  display: inline-block;
+  max-width: 100%;
+  padding: 10px 14px;
+  background: rgba(var(--ion-color-medium-rgb), 0.10);
+  border-radius: 12px 14px 14px 4px;
+  border-top-left-radius: 4px;
+}
 </style>

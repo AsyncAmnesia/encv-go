@@ -397,7 +397,7 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		userInput = "(empty)"
 	}
 
-	reply := fmt.Sprintf("（encv-go agent）收到消息: %s\n模型: %s | 温度: %.1f", userInput, body.Model, body.Temperature)
+	reply := fmt.Sprintf("你好！我是 ENCV AI 助手（stub 模式）。\n\n我收到了你的消息「%s」。\n当前使用模型：%s（温度 %.1f）。\n\n这是一个模拟回复 —— 真正的 AI 对话功能将在接入大语言模型后启用。", userInput, body.Model, body.Temperature)
 	s.streamTextSafe(c.Writer, flusher, reply, 4, 40)
 	s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
 }
