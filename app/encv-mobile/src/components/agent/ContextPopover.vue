@@ -136,7 +136,7 @@ import {
   ellipsisHorizontal as pendingIcon,
   sync as inProgressIcon,
   checkmarkCircle as completedIcon,
-  compress as compressIcon,
+  archiveOutline as compressIcon,
 } from 'ionicons/icons'
 import type { ContextUsageResponse } from '@/composables/useContextUsage'
 
