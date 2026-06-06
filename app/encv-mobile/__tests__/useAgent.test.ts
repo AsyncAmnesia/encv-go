@@ -486,10 +486,208 @@ describe('useAgent', () => {
       expect(fetchSpy.mock.calls[0][0]).toBe('/agent-api/api/resume')
       const body = JSON.parse(fetchSpy.mock.calls[0][1].body)
       expect(body.sessionId).toBe(fakeSessionId)
-      expect(body.offset).toBe(2)
+      // D.2: body 字段名从 offset 改成 lastEventId（与后端 handleAgentResume 对齐）
+      expect(body.lastEventId).toBe(0)
+      expect(body.offset).toBeUndefined()
+      // D.2.3: lastEventId=0 时不发送 Last-Event-ID header
+      const headers = fetchSpy.mock.calls[0][1].headers
+      expect(headers['Last-Event-ID']).toBeUndefined()
 
       expect(messages.value[1].content).toBe('partial complete')
       expect(status.value).toBe('idle')
+    })
+  })
+
+  describe('D.2 - resume 协议对齐（Last-Event-ID / stream_status）', () => {
+    /**
+     * 构造带 `id:` 行的 SSE 事件（SSE 标准断点续传字段）
+     */
+    function sseLineWithId(id: number, type: string, data: unknown): string {
+      return `id: ${id}\ndata: ${JSON.stringify({ type, data: JSON.stringify(data) })}\n\n`
+    }
+
+    it('解析 SSE `id: N` 行：processSSE 维护 lastEventId', async () => {
+      const sse = sseLineWithId(7, 'text_delta', { content: 'tail' }) +
+                  sseLineWithId(8, 'stream_end', {})
+      fetchSpy.mockImplementation(fetchReturningStream(makeSSEStream([sse])))
+
+      const { send, messages, status } = useAgent()
+      await send('q')
+
+      // 收到 2 个事件，data 都被解析
+      expect(messages.value[1].content).toBe('tail')
+      expect(status.value).toBe('idle')
+    })
+
+    it('resume 时从 localStorage 恢复 lastEventId 并发送 Last-Event-ID header', async () => {
+      const fakeSessionId = 'session-last-event-id'
+      localStorage.setItem(`agent:session:${fakeSessionId}`, JSON.stringify({
+        sessionId: fakeSessionId,
+        eventOffset: 5,
+        lastEventId: 42,  // 关键：上次收到的服务端事件 id
+        messages: [
+          { role: 'user', content: 'q', tool_calls: [], tool_results: [] },
+          { role: 'assistant', content: 'partial', tool_calls: [], tool_results: [], isStreaming: true },
+        ],
+        status: 'streaming',
+      }))
+
+      const sse = sseLine('stream_end', {})
+      fetchSpy.mockImplementation(fetchReturningStream(makeSSEStream([sse])))
+
+      const { resume } = useAgent()
+      await resume()
+
+      // 验证：body.lastEventId + header.Last-Event-ID 都带上了
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+      const body = JSON.parse(fetchSpy.mock.calls[0][1].body)
+      const headers = fetchSpy.mock.calls[0][1].headers
+      expect(body.lastEventId).toBe(42)
+      expect(headers['Last-Event-ID']).toBe('42')
+    })
+
+    it('stream_status.more_pending → 链式 resume（连续两次 /api/resume 调用）', async () => {
+      const fakeSessionId = 'session-stream-status'
+      localStorage.setItem(`agent:session:${fakeSessionId}`, JSON.stringify({
+        sessionId: fakeSessionId,
+        eventOffset: 1,
+        lastEventId: 10,
+        messages: [
+          { role: 'user', content: 'q', tool_calls: [], tool_results: [] },
+          { role: 'assistant', content: 'a', tool_calls: [], tool_results: [], isStreaming: true },
+        ],
+        status: 'streaming',
+      }))
+
+      // 第一轮 resume：server 推 stream_status.more_pending
+      const sse1 = sseLine('stream_status', { status: 'more_pending', inProgress: true, maxEventId: 11 })
+      // 第二轮 resume：server 推真正的事件 + stream_end
+      const sse2 = sseLine('text_delta', { content: ' tail' }) +
+                   sseLine('stream_end', {})
+
+      let callCount = 0
+      fetchSpy.mockImplementation(vi.fn(async (url: string | Request) => {
+        const urlStr = typeof url === 'string' ? url : (url as Request).url
+        if (urlStr.includes('/api/config')) {
+          return { ok: true, status: 200, json: () => Promise.resolve({}) } as Response
+        }
+        if (urlStr.includes('/api/resume')) {
+          callCount++
+          const stream = callCount === 1 ? makeSSEStream([sse1]) : makeSSEStream([sse2])
+          return { ok: true, status: 200, body: stream } as Response
+        }
+        return { ok: false, status: 404 } as Response
+      }))
+
+      const { resume, messages } = useAgent()
+      await resume()
+
+      // 关键断言：被链式调用了两次
+      expect(callCount).toBe(2)
+      expect(messages.value[1].content).toBe('a tail')
+    })
+
+    it('stream_status.synced → 退出链式 resume（保持 streaming 状态由下一次轮询触发）', async () => {
+      const fakeSessionId = 'session-synced'
+      localStorage.setItem(`agent:session:${fakeSessionId}`, JSON.stringify({
+        sessionId: fakeSessionId,
+        eventOffset: 1,
+        lastEventId: 5,
+        messages: [
+          { role: 'user', content: 'q', tool_calls: [], tool_results: [] },
+          { role: 'assistant', content: 'a', tool_calls: [], tool_results: [], isStreaming: true },
+        ],
+        status: 'streaming',
+      }))
+
+      // server 推 stream_status.synced + 自然关闭流（无 stream_end）
+      const sse1 = sseLine('stream_status', { status: 'synced', inProgress: true, maxEventId: 5 })
+
+      let callCount = 0
+      fetchSpy.mockImplementation(vi.fn(async (url: string | Request) => {
+        const urlStr = typeof url === 'string' ? url : (url as Request).url
+        if (urlStr.includes('/api/config')) {
+          return { ok: true, status: 200, json: () => Promise.resolve({}) } as Response
+        }
+        if (urlStr.includes('/api/resume')) {
+          callCount++
+          return { ok: true, status: 200, body: makeSSEStream([sse1]) } as Response
+        }
+        return { ok: false, status: 404 } as Response
+      }))
+
+      const { resume, messages, status } = useAgent()
+      await resume()
+
+      // synced：只调用一次（没有 more_pending 触发下一轮）
+      expect(callCount).toBe(1)
+      // synced 不修改 messages.content（仅同步 lastEventId）
+      expect(messages.value[1].content).toBe('a')
+      // status 仍为 streaming（等待用户后续触发）
+      // 注：processSSE 流关闭时会执行 finalizeLastAssistant + status 回退
+      // 但 messages 中有 isStreaming=true，会被 finalizeLastAssistant 影响
+      expect(status.value).toBe('idle')  // 流自然关闭后切回 idle
+    })
+
+    it('runResumeChain 限制 maxHops=32 防无限递归', async () => {
+      const fakeSessionId = 'session-infinite'
+      localStorage.setItem(`agent:session:${fakeSessionId}`, JSON.stringify({
+        sessionId: fakeSessionId,
+        eventOffset: 1,
+        lastEventId: 5,
+        messages: [
+          { role: 'user', content: 'q', tool_calls: [], tool_results: [] },
+          { role: 'assistant', content: 'a', tool_calls: [], tool_results: [], isStreaming: true },
+        ],
+        status: 'streaming',
+      }))
+
+      // server 永远只推 more_pending（不推 stream_end）
+      const sseForever = sseLine('stream_status', { status: 'more_pending', inProgress: true, maxEventId: 1 })
+      let callCount = 0
+
+      fetchSpy.mockImplementation(vi.fn(async (url: string | Request) => {
+        const urlStr = typeof url === 'string' ? url : (url as Request).url
+        if (urlStr.includes('/api/config')) {
+          return { ok: true, status: 200, json: () => Promise.resolve({}) } as Response
+        }
+        if (urlStr.includes('/api/resume')) {
+          callCount++
+          return { ok: true, status: 200, body: makeSSEStream([sseForever]) } as Response
+        }
+        return { ok: false, status: 404 } as Response
+      }))
+
+      const { resume } = useAgent()
+      await resume()
+
+      // maxHops=32：每轮 resume 包含初次，最多 32 次
+      expect(callCount).toBe(32)
+    })
+
+    it('老存档（无 lastEventId 字段）兼容：缺省按 0 处理', async () => {
+      const fakeSessionId = 'session-legacy'
+      // 注意：stored 没有 lastEventId 字段
+      localStorage.setItem(`agent:session:${fakeSessionId}`, JSON.stringify({
+        sessionId: fakeSessionId,
+        eventOffset: 0,
+        messages: [
+          { role: 'user', content: 'q', tool_calls: [], tool_results: [] },
+          { role: 'assistant', content: 'a', tool_calls: [], tool_results: [], isStreaming: true },
+        ],
+        status: 'streaming',
+      }))
+
+      const sse = sseLine('stream_end', {})
+      fetchSpy.mockImplementation(fetchReturningStream(makeSSEStream([sse])))
+
+      const { resume } = useAgent()
+      await resume()
+
+      const body = JSON.parse(fetchSpy.mock.calls[0][1].body)
+      const headers = fetchSpy.mock.calls[0][1].headers
+      expect(body.lastEventId).toBe(0)  // 缺省
+      expect(headers['Last-Event-ID']).toBeUndefined()  // 0 不发 header
     })
   })
 

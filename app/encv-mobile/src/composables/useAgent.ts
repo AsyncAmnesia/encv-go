@@ -44,6 +44,7 @@ export type AgentEventType =
   | 'tool_call'
   | 'tool_status'
   | 'tool_result'
+  | 'stream_status'  // 后端流式状态（断点续传时推 synced / more_pending）
   | 'stream_end'
 
 /** Agent 推送到 SSE channel 的事件 */
@@ -187,6 +188,33 @@ function parseToolResultData(data: string): ToolResult | null {
   }
 }
 
+/**
+ * 解析 `stream_status` 的 data 字段 —— StreamStatusData
+ * 后端格式（internal/server/agent_api.go::sendAndCache stream_status 分支）：
+ *   { "status": "synced" | "more_pending", "inProgress": bool, "maxEventId"?: number }
+ *
+ * 此类型在 D.2 引入：断点续传链路的前端信号
+ */
+export interface StreamStatusData {
+  status: 'synced' | 'more_pending' | string
+  inProgress?: boolean
+  maxEventId?: number
+}
+
+function parseStreamStatusData(data: string): StreamStatusData | null {
+  try {
+    const parsed = JSON.parse(data) as Partial<StreamStatusData>
+    if (!parsed || typeof parsed.status !== 'string') return null
+    return {
+      status: parsed.status,
+      inProgress: parsed.inProgress,
+      maxEventId: typeof parsed.maxEventId === 'number' ? parsed.maxEventId : undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
 function generateSessionId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
@@ -206,7 +234,14 @@ export function useAgent() {
   const lastUserInput = ref<string>('')
   const sessions = ref<SessionMeta[]>([])
   const currentSessionId = ref<string>('')
+  /** 本地已处理事件计数（与 lastEventId 解耦：eventOffset 永远递增，lastEventId 由 SSE id 行决定） */
   let eventOffset = 0
+  /**
+   * SSE 标准 Last-Event-ID：服务端为每个事件分配的全局递增 ID。
+   * 用于断点续传——前端解析 `id: N` 行维护此字段，resume() 时回传给后端。
+   * 0 = 尚未收到任何事件 id。
+   */
+  let lastEventId = 0
   let abortController: AbortController | null = null
 
   // 模型/温度从 localStorage 读取（AgentChat 顶部 UI 选择会同步写入这里）
@@ -251,6 +286,7 @@ export function useAgent() {
       const payload = {
         sessionId: currentSessionId.value,
         eventOffset,
+        lastEventId,
         messages: JSON.parse(JSON.stringify(messages.value)),
         status: status.value,
       }
@@ -263,6 +299,8 @@ export function useAgent() {
   function loadState(sessionId: string): {
     sessionId: string
     eventOffset: number
+    /** 兼容老存档：无 lastEventId 字段时默认为 0 */
+    lastEventId?: number
     messages: Message[]
     status: AgentStatus
   } | null {
@@ -382,6 +420,7 @@ export function useAgent() {
     }
     currentSessionId.value = generateSessionId()
     eventOffset = 0
+    lastEventId = 0
     messages.value = []
     status.value = 'idle'
     lastError.value = ''
@@ -403,6 +442,7 @@ export function useAgent() {
       currentSessionId.value = ''
       messages.value = []
       eventOffset = 0
+      lastEventId = 0
     }
     refreshSessions()
   }
@@ -422,14 +462,72 @@ export function useAgent() {
    */
   /**
    * 解析 SSE 流，返回是否收到过至少一个有效事件
+   *
+   * 支持 SSE 标准 `id: N` 字段（后端断点续传时用），用于维护 lastEventId。
+   * 多个 `id:` 行在同一事件中以最后一个为准。
+   *
+   * 返回结构：
+   *   - received:      是否收到过任何 data 事件
+   *   - streamEnded:   是否收到过 stream_end 事件（用于 runResumeChain 决定是否链式续传）
+   *   - morePending:   最后一个有意义事件是否为 stream_status.more_pending
+   *                    （若 true 且 !streamEnded，runResumeChain 应继续下一轮）
    */
-  async function processSSE(stream: ReadableStream<Uint8Array> | null): Promise<{ received: boolean }> {
-    if (!stream) return { received: false }
+  async function processSSE(stream: ReadableStream<Uint8Array> | null): Promise<{
+    received: boolean
+    streamEnded: boolean
+    morePending: boolean
+  }> {
+    if (!stream) return { received: false, streamEnded: false, morePending: false }
 
     const reader = stream.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
     let received = false
+    let streamEnded = false
+    /** 最后一个 stream_status 事件：synced 还是 more_pending（用于 chain 决策） */
+    let lastStreamStatus: 'synced' | 'more_pending' | null = null
+
+    /**
+     * 处理一个完整 SSE 事件（已被 \n\n 分隔）
+     * 维护 currentEventId 用于关联同一事件内的 data 行
+     */
+    function consumeEvent(rawEvent: string): void {
+      if (!rawEvent.trim()) return
+      let currentEventId: number | null = null
+      const lines = rawEvent.split('\n')
+      for (const line of lines) {
+        // SSE 标准：id: N —— 用于断点续传
+        if (line.startsWith('id:')) {
+          const n = parseInt(line.slice(3).trim(), 10)
+          if (Number.isFinite(n) && n >= 0) currentEventId = n
+          continue
+        }
+        if (!line.startsWith('data: ')) continue
+        const payload = line.slice(6).trim()
+        if (!payload) continue
+        received = true
+        try {
+          const event = JSON.parse(payload) as AgentEvent
+          // 关联 SSE id：若同一事件声明了 id，则覆盖到 lastEventId
+          // （一个事件只能有一个 data，多个 id 行以最后一个为准）
+          if (currentEventId !== null) {
+            lastEventId = currentEventId
+            // 重置 currentEventId 避免下一行误用
+            currentEventId = null
+          }
+          if (event.type === 'stream_end') streamEnded = true
+          if (event.type === 'stream_status') {
+            const payload = parseStreamStatusData(event.data)
+            if (payload?.status === 'synced' || payload?.status === 'more_pending') {
+              lastStreamStatus = payload.status
+            }
+          }
+          handleAgentEvent(event)
+        } catch (e) {
+          console.debug('[useAgent] malformed SSE payload:', payload, e)
+        }
+      }
+    }
 
     try {
       while (true) {
@@ -442,35 +540,13 @@ export function useAgent() {
         buffer = events.pop() || ''
 
         for (const rawEvent of events) {
-          if (!rawEvent.trim()) continue
-          // 一行 data: {...}
-          const lines = rawEvent.split('\n')
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue
-            const payload = line.slice(6).trim()
-            if (!payload) continue
-            received = true
-            try {
-              const event = JSON.parse(payload) as AgentEvent
-              handleAgentEvent(event)
-            } catch (e) {
-              console.debug('[useAgent] malformed SSE payload:', payload, e)
-            }
-          }
+          consumeEvent(rawEvent)
         }
       }
       // 处理 trailing buffer（不带 \n\n 结尾的最后一段）
-      if (buffer.trim().startsWith('data: ')) {
-        const payload = buffer.trim().slice(6).trim()
-        if (payload) {
-          received = true
-          try {
-            const event = JSON.parse(payload) as AgentEvent
-            handleAgentEvent(event)
-          } catch {
-            // ignore trailing malformed
-          }
-        }
+      if (buffer.trim()) {
+        consumeEvent(buffer)
+        buffer = ''
       }
 
       // 流结束：清理未结束的 assistant 消息 + 恢复 idle 状态
@@ -492,7 +568,11 @@ export function useAgent() {
       }
     }
 
-    return { received }
+    return {
+      received,
+      streamEnded,
+      morePending: lastStreamStatus === 'more_pending',
+    }
   }
 
   /**
@@ -557,6 +637,29 @@ export function useAgent() {
         }
         break
       }
+      case 'stream_status': {
+        // 后端断点续传信号：
+        //   { status: 'synced',       inProgress: bool, maxEventId?: number }
+        //   { status: 'more_pending', inProgress: bool, maxEventId?: number }
+        // 前端拿到信号后由 runResumeChain 决定下一轮，handleAgentEvent 本身
+        // 不修改 status（status 由 stream_end / confirm 决策驱动），但要：
+        //   1. 同步服务端声明的 maxEventId 到 lastEventId（覆盖，避免漂移）
+        //   2. 通过 console.debug 留痕便于排查
+        const payload = parseStreamStatusData(event.data)
+        if (payload?.maxEventId !== undefined) {
+          if (payload.maxEventId > lastEventId) {
+            lastEventId = payload.maxEventId
+          }
+        }
+        if (payload?.status === 'synced') {
+          console.debug('[useAgent] stream_status: synced, awaiting new events')
+        } else if (payload?.status === 'more_pending') {
+          console.debug('[useAgent] stream_status: more_pending, will re-resume')
+        } else {
+          console.debug('[useAgent] stream_status:', payload)
+        }
+        break
+      }
       case 'stream_end': {
         // 标记最后 assistant 消息流式结束
         for (let i = messages.value.length - 1; i >= 0; i--) {
@@ -603,6 +706,7 @@ export function useAgent() {
       currentSessionId.value = generateSessionId()
     }
     eventOffset = 0
+    lastEventId = 0
 
     // 推 user 消息 + 空 assistant 占位
     messages.value.push({
@@ -775,6 +879,14 @@ export function useAgent() {
 
   /**
    * 启动时自动续传：恢复最近的 session 并继续追平进度
+   *
+   * 协议：
+   *   ① 优先用 SSE 标准 `Last-Event-ID` HTTP header（与 EventSource 一致）
+   *   ② 同时在 body 携带 `lastEventId` 字段（兼容 Go handler 当前解析路径）
+   *   ③ 处理后端 `stream_status` 事件：
+   *      - synced: 服务端已追平，等待新事件 → 短间隔轮询
+   *      - more_pending: 服务端还有事件未推完 → 立即发起下一轮 resume
+   *   ④ 收尾：服务端流自然结束（stream_end）→ 状态切回 idle
    */
   async function resume(): Promise<void> {
     const sessionId = findLatestPersistedSession()
@@ -785,42 +897,81 @@ export function useAgent() {
 
     currentSessionId.value = saved.sessionId
     eventOffset = saved.eventOffset || 0
+    lastEventId = saved.lastEventId || 0
     // 恢复 messages
     messages.value.splice(0, messages.value.length, ...(saved.messages || []))
     status.value = saved.status || 'idle'
 
     // 如果上次是 streaming 状态，主动 resume 追平进度
     if (status.value === 'streaming') {
-      if (abortController) {
-        abortController.abort()
-        abortController = null
-      }
-      abortController = new AbortController()
-      try {
+      await runResumeChain()
+    }
+  }
+
+  /**
+   * 实际跑一轮 resume，处理 `stream_status` 事件决定是否链式续传。
+   * 与 resume() 分离是为了支持 stream_status.more_pending 时递归调用。
+   */
+  async function runResumeChain(maxHops = 32): Promise<void> {
+    if (abortController) {
+      abortController.abort()
+      abortController = null
+    }
+    abortController = new AbortController()
+    const controller = abortController
+    let hopsLeft = maxHops
+    try {
+      // 链式 resume：每轮处理 processSSE 的信号决定下一步
+      //   - streamEnded=true       → 退出循环（服务端显式 stream_end）
+      //   - morePending=true       → 立刻下一轮（hopsLeft-- 防止无限递归）
+      //   - 完全没收到事件          → 退出（流自然关闭且没新事件，等同于 synced）
+      //   - 收到 synced            → 退出（保持 streaming 状态由后续触发）
+      //   - status 切到非 streaming → 退出
+      while (hopsLeft-- > 0) {
+        const headerLastEventId = lastEventId > 0 ? String(lastEventId) : undefined
         const response = await fetch(`${AGENT_API_BASE}/api/resume`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            // SSE 标准 Last-Event-ID：与 EventSource 协议一致
+            ...(headerLastEventId ? { 'Last-Event-ID': headerLastEventId } : {}),
+          },
           body: JSON.stringify({
             sessionId: currentSessionId.value,
-            offset: eventOffset,
+            // body 字段名：与后端 handleAgentResume 的 lastEventId 字段对齐
+            // （不再使用旧的 offset 字段）
+            lastEventId: lastEventId,
           }),
-          signal: abortController.signal,
+          signal: controller.signal,
         })
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`)
         }
-        await processSSE(response.body)
-      } catch (e: any) {
-        if (e?.name !== 'AbortError') {
-          console.error('[useAgent] resume failed:', e)
-          finalizeLastAssistant()
-          status.value = 'idle'
-        }
-      } finally {
-        abortController = null
-        saveState()
+
+        const { received, streamEnded, morePending } = await processSSE(response.body)
+
+        // 收尾判定
+        if (streamEnded) break                  // 服务端显式收尾 → 退出
+        if (morePending) continue               // 服务端还有事件未推完 → 立刻下一轮
+        if (!received) break                    // 流自然关闭且无事件 → 退出
+        if (status.value !== 'streaming') break // 已被 confirm/cancel 切走 → 退出
+        // 收到事件但 neither morePending nor streamEnded：保守退出，
+        // 避免无限循环（实际上 server 应该会推 stream_status 或 stream_end）
+        break
       }
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') {
+        console.error('[useAgent] resume failed:', e)
+        finalizeLastAssistant()
+        status.value = 'idle'
+      }
+    } finally {
+      // 仅当 controller 没被换掉时才清空（避免覆盖新一轮 runResumeChain 的 controller）
+      if (abortController === controller) {
+        abortController = null
+      }
+      saveState()
     }
   }
 
