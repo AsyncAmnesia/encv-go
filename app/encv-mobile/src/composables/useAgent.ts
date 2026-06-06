@@ -116,6 +116,12 @@ export interface Message {
    */
   error?: string
   /**
+   * 发送失败时的后端 error 码（如 'no_api_key' / 'upstream_error' / 'unknown'）。
+   * 用于 UI 分支判断——例如 no_api_key 时显示"前往 AI 设置"按钮而不是只让用户重试。
+   * 配套 buildHttpError() 透传。后端 body 没有 error 字段时为 'unknown'。
+   */
+  errorCode?: string
+  /**
    * Task 11 (Steer / Queue)：当用户点击「排队下一条」时，
    * 该 user 消息进入 pendingMessages 队列，等待当前 turn
    * 完全结束后由服务端 drain hook 触发新一轮 Chat。pending=true
@@ -316,6 +322,46 @@ function generateSessionId(): string {
   return `sess-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
 }
 
+/**
+ * 把 fetch 失败响应构造成带 .code 标记的 Error。
+ *
+ * 背景：后端在缺 API Key / 解密失败 / 上游错误等场景下，body 是
+ *   { "error": "no_api_key", "message": "未配置 API Key，请在 AI 设置中填写" }
+ *  之前前端只读 statusText = "Service Unavailable"，把"未配置 API Key"
+ *  这层用户语义吞了——用户只看到 "HTTP 503: Service Unavailable"，完全
+ *  不知道为什么。
+ *
+ * 此函数：
+ *   1. 尝试 JSON.parse(body) → 取 message / error 字段
+ *   2. 拼成 "后端文案（HTTP 503）" 给用户看
+ *   3. 在 Error 上挂 .code 字段（'no_api_key' / 'upstream_error' / 'unknown'），
+ *      供上游 UI 做分支判断（如 chat 显示"去设置"按钮）
+ */
+async function buildHttpError(response: Response, endpoint: string): Promise<Error & { code?: string; status?: number }> {
+  let bodyText = ''
+  let parsed: any = null
+  try {
+    bodyText = await response.text()
+    if (bodyText) {
+      try { parsed = JSON.parse(bodyText) } catch { /* not JSON */ }
+    }
+  } catch {
+    // 读 body 失败也无所谓，落到 fallback
+  }
+  const userMessage = (parsed && typeof parsed.message === 'string' && parsed.message.trim())
+    ? parsed.message
+    : (parsed && typeof parsed.error === 'string' && parsed.error !== 'unknown' && parsed.error.trim())
+      ? parsed.error
+      : (response.statusText || '请求失败')
+  const code = (parsed && typeof parsed.error === 'string') ? parsed.error : 'unknown'
+  const detail = `${userMessage}（HTTP ${response.status}）`
+  console.error('[useAgent]', endpoint, 'failed:', detail, parsed || bodyText)
+  const err = new Error(detail) as Error & { code?: string; status?: number }
+  err.code = code
+  err.status = response.status
+  return err
+}
+
 // =============================================================================
 // Task 26 (LAN Access) —— 与后端 /api/network/lan-access 对齐的类型
 // =============================================================================
@@ -444,7 +490,7 @@ export async function runSyncDoctor(signal?: AbortSignal): Promise<DoctorReport>
     ...(signal ? { signal } : {}),
   })
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
+    throw await buildHttpError(response, '/api/sync/doctor')
   }
   const report = (await response.json()) as DoctorReport
   if (!report || typeof report !== 'object' || !Array.isArray(report.issues)) {
@@ -1214,7 +1260,10 @@ export function useAgent() {
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText || '请求失败'}`)
+        // 关键：解析后端 JSON body 拿到真正的 message 字段，而不是只显示
+        // "HTTP 503: Service Unavailable"。后端 handleAgentChat 在缺 API Key
+        // 等场景下会返回 {error, message, ...}，前端要把 message 透给用户。
+        throw await buildHttpError(response, '/api/chat')
       }
 
       if (!response.body) {
@@ -1253,7 +1302,12 @@ export function useAgent() {
       } else {
         const detail = e?.message || String(e)
         console.error('[useAgent] send failed:', detail, e)
-        if (lastUserMsg) lastUserMsg.error = detail
+        if (lastUserMsg) {
+          lastUserMsg.error = detail
+          // 把后端 error 码也透出去——no_api_key 时 UI 给"去设置"按钮，
+          // upstream_error 时给"重试"按钮，分支展示更精准
+          lastUserMsg.errorCode = (e as any)?.code || 'unknown'
+        }
         showToast({ message: detail, duration: 3000, color: 'danger' })
         status.value = 'idle'
         finalizeLastAssistant()
@@ -1407,7 +1461,7 @@ export function useAgent() {
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
+        throw await buildHttpError(response, '/api/confirm')
       }
 
       await processSSE(response.body)

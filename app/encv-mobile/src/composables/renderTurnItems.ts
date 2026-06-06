@@ -56,7 +56,7 @@ export type RenderedItem =
   | { type: 'operationGroup'; messageId: string; toolCallIds: string[]; forceComplete: boolean }
   | { type: 'webSearchGroup'; messageId: string; queries: string[]; toolCallIds: string[] }
   | { type: 'reasoning'; messageId: string; text: string; streaming: boolean }
-  | { type: 'error'; messageId: string; text: string; messageIndex: number }
+  | { type: 'error'; messageId: string; text: string; messageIndex: number; errorCode?: string }
   | { type: 'plan'; messageId: string; toolCallId: string; todos: PlanTodo[]; streaming: boolean }
   // Task 7：上下文自动压缩分隔线。position 字段是分隔线在
   // RenderedItem[] 数组中的下标（用 idx 衍生），用于 key
@@ -214,7 +214,7 @@ export function renderTurnItems(
       out.push({ type: 'user', messageId: `u-${idx}`, text: contentToText(msg.content) })
       // user 消息携带 error → 紧跟一个错误项（每条消息独立错误状态）
       if (msg.error) {
-        out.push({ type: 'error', messageId: `uerr-${idx}`, text: msg.error, messageIndex: idx })
+        out.push({ type: 'error', messageId: `uerr-${idx}`, text: msg.error, messageIndex: idx, errorCode: msg.errorCode })
       }
     } else if (msg.role === 'system' && msg.content === CONTEXT_COMPACTION_MARKER) {
       // Task 7：上下文自动压缩分隔线

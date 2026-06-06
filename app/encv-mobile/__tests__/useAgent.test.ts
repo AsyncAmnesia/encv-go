@@ -1369,4 +1369,65 @@ describe('useAgent', () => {
       expect(result).toEqual([])
     })
   })
+
+  // ─── Task 27：buildHttpError 错误信息精准化 ─────────────────────
+  // 背景：之前前端只读 response.statusText ("Service Unavailable")，
+  // 把后端真正的 message 字段 ("未配置 API Key，请在 AI 设置中填写") 吞了。
+  // buildHttpError 必须能 (1) 解析 JSON body 拿 message，
+  // (2) 透出 error code 给 UI 做"去设置"按钮分支判断。
+  describe('buildHttpError（错误信息精准化）', () => {
+    it('503 + {error:"no_api_key", message:"未配置 API Key"} → 透出 message + code', async () => {
+      const spy = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+        text: () => Promise.resolve(JSON.stringify({ error: 'no_api_key', message: '未配置 API Key，请在 AI 设置中填写' })),
+      } as Response)
+      globalThis.fetch = spy as unknown as typeof fetch
+
+      const { runSyncDoctor } = await import('@/composables/useAgent')
+      let capturedErr: any
+      try { await runSyncDoctor() } catch (e) { capturedErr = e }
+      // 错误信息必须含后端 message，不是只显示 "Service Unavailable"
+      expect(capturedErr?.message).toContain('未配置 API Key')
+      // 错误码必须透出（用于 UI "去设置" 按钮分支）
+      expect(capturedErr?.code).toBe('no_api_key')
+      // HTTP 状态码后缀保留便于排错
+      expect(capturedErr?.message).toContain('HTTP 503')
+    })
+
+    it('502 + {error:"upstream_error", message:"rate limit"} → 透出 upstream_error', async () => {
+      const spy = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        statusText: 'Bad Gateway',
+        text: () => Promise.resolve(JSON.stringify({ error: 'upstream_error', message: 'rate limit' })),
+      } as Response)
+      globalThis.fetch = spy as unknown as typeof fetch
+
+      const { runSyncDoctor } = await import('@/composables/useAgent')
+      let capturedErr: any
+      try { await runSyncDoctor() } catch (e) { capturedErr = e }
+      expect(capturedErr?.message).toContain('rate limit')
+      expect(capturedErr?.code).toBe('upstream_error')
+    })
+
+    it('body 不是 JSON 时 fallback 到 statusText，不崩', async () => {
+      const spy = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+        text: () => Promise.resolve('not a json body'),
+      } as Response)
+      globalThis.fetch = spy as unknown as typeof fetch
+
+      const { runSyncDoctor } = await import('@/composables/useAgent')
+      let capturedErr: any
+      try { await runSyncDoctor() } catch (e) { capturedErr = e }
+      // fallback 到了 statusText
+      expect(capturedErr?.message).toContain('Service Unavailable')
+      // code 兜底为 unknown
+      expect(capturedErr?.code).toBe('unknown')
+    })
+  })
 })
