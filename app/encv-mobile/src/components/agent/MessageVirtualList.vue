@@ -1,75 +1,103 @@
 <!--
   MessageVirtualList - 虚拟滚动消息列表
-  封装 vue-virtual-scroller 的 RecycleScroller
-  - itemSize=112, minItemSize=80, buffer=600
-  - 暴露 scrollToLatest(behavior) 方法
+  封装 vue-virtual-scroller 的 RecycleScroller，用于长会话（>120 条）性能优化
+  - 接收 RenderedItem[]，按类型估算 itemSize
+  - keyField=messageId 与 renderTurnItems 对齐
+  - 暴露 scrollToBottom(behavior) 方法供 AgentChat 调用
+  - item slot 留给父组件填充分发逻辑（UserMessageBubble / AssistantMessage 等）
 -->
 <template>
   <div class="messageVirtualList" ref="containerRef">
     <component
       :is="RecycleScroller"
-      v-if="messages.length >= VIRTUAL_LIST_THRESHOLD"
       ref="scrollerRef"
       class="virtualScroller"
-      :items="messages"
-      :item-size="estimateSize"
+      :items="items"
+      :item-size="getItemSize"
       :min-item-size="minItemSize"
-      :buffer="overscan"
-      key-field="id"
+      :buffer="buffer"
+      key-field="messageId"
       @scroll="onScroll"
     >
       <template #default="{ item, index }">
-        <div class="virtualItem" :data-index="index">
+        <div
+          class="virtualItem"
+          :data-index="index"
+          :data-type="(item as RenderedItem).type"
+        >
           <slot name="item" :item="item" :index="index" />
         </div>
       </template>
+      <template #empty>
+        <slot name="empty" />
+      </template>
     </component>
-    <div v-else class="messagePlainList">
-      <div
-        v-for="(item, index) in messages"
-        :key="(item as any).id || index"
-        class="virtualItem"
-        :data-index="index"
-      >
-        <slot name="item" :item="item" :index="index" />
-      </div>
-      <slot name="empty" v-if="messages.length === 0" />
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { RecycleScroller } from 'vue-virtual-scroller'
+import { RecycleScroller, type RecycleScrollerExposed } from 'vue-virtual-scroller'
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css'
-
-export interface MessageListItem {
-  id: string
-  [key: string]: unknown
-}
+import type { RenderedItem } from '@/composables/renderTurnItems'
 
 const props = withDefaults(
   defineProps<{
-    messages: MessageListItem[]
-    estimateSize?: number
+    items: RenderedItem[]
+    /** 最小行高（默认 80px） */
     minItemSize?: number
-    overscan?: number
+    /** 预渲染缓冲区（像素），默认 400 */
+    buffer?: number
   }>(),
   {
-    estimateSize: 112,
     minItemSize: 80,
-    overscan: 600,
+    buffer: 400,
   },
 )
 
-const VIRTUAL_LIST_THRESHOLD = 120
-
-const scrollerRef = ref<HTMLDivElement | null>(null)
+const scrollerRef = ref<RecycleScrollerExposed | null>(null)
 const containerRef = ref<HTMLDivElement | null>(null)
 
-function scrollToLatest(behavior: 'auto' | 'smooth' = 'smooth') {
-  if (scrollerRef.value && typeof (scrollerRef.value as any).scrollToItem === 'function') {
-    ;(scrollerRef.value as any).scrollToItem(props.messages.length - 1, behavior)
+/**
+ * 按 item type 估算高度
+ * RecycleScroller 是固定行高模式（itemSize），不能完全精确但对滚动位置影响小
+ * - user / error: 短气泡 80px
+ * - assistantText / reasoning: 中等 120px
+ * - approval: 表单卡 160px
+ * - operationGroup: 列表卡 200px
+ * - webSearchGroup: 搜索卡 140px
+ */
+function getItemSize(item: RenderedItem): number {
+  switch (item.type) {
+    case 'user':
+      return 80
+    case 'assistantText':
+      return 120
+    case 'reasoning':
+      return 100
+    case 'error':
+      return 80
+    case 'approval':
+      return 160
+    case 'operationGroup':
+      return 200
+    case 'webSearchGroup':
+      return 140
+    default:
+      return 120
+  }
+}
+
+/**
+ * 滚到列表底部
+ * @param behavior 'auto' | 'smooth'
+ */
+function scrollToBottom(behavior: 'auto' | 'smooth' = 'smooth') {
+  if (scrollerRef.value && typeof (scrollerRef.value as unknown as { scrollToItem?: (n: number, b?: ScrollBehavior) => void }).scrollToItem === 'function') {
+    ;(scrollerRef.value as unknown as { scrollToItem: (n: number, b?: ScrollBehavior) => void }).scrollToItem(
+      props.items.length - 1,
+      behavior,
+    )
   } else if (containerRef.value) {
     // 降级：直接滚到 container 底部
     const el = containerRef.value
@@ -79,10 +107,9 @@ function scrollToLatest(behavior: 'auto' | 'smooth' = 'smooth') {
 
 function onScroll(_e: Event) {
   // 子组件可监听 scroll 事件以实现"是否接近底部"判断
-  // 当前由 AgentChat 的 nearBottom computed 维护
 }
 
-defineExpose({ scrollToLatest })
+defineExpose({ scrollToBottom })
 </script>
 
 <style scoped>
@@ -90,6 +117,8 @@ defineExpose({ scrollToLatest })
   position: relative;
   flex: 1;
   min-height: 0;
+  height: 100%;
+  width: 100%;
 }
 
 .virtualScroller {
@@ -99,12 +128,6 @@ defineExpose({ scrollToLatest })
 
 .virtualItem {
   padding: 0;
-}
-
-.messagePlainList {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px 12px;
+  box-sizing: border-box;
 }
 </style>

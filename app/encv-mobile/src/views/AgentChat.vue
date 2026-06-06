@@ -5,7 +5,8 @@
   流程：
   1. 顶部 header：标题 + 关闭按钮 + Reset
   2. 主体：renderTurnItems(messages, status) → 分发到不同组件
-     - 消息数 > 120 → 触发 MessageVirtualList
+     - renderedItems.length <= 120 → 原生 v-for（性能足够）
+     - renderedItems.length >  120 → MessageVirtualList（虚拟滚动）
   3. 底部：输入框（idle 时可用，streaming 时显示停止按钮）
 
   接收 props: { apiBase: string }  （spec 7.5 要求；当前 useAgent 内部固定 /agent-api，参数保留供以后扩展）
@@ -52,13 +53,14 @@
       </label>
     </div>
 
-    <main class="agentChatMain" ref="mainRef">
+    <main class="agentChatMain" ref="mainRef" @scroll="onMainScroll">
       <!-- 空状态（无消息时显示） -->
       <div v-if="renderedItems.length === 0" class="agentChatEmpty">
         <ion-icon :icon="chatbubblesIcon" class="emptyIcon" />
         <p>{{ t('agent.emptyHint') }}</p>
       </div>
-      <template v-else>
+      <!-- 短会话（≤ 120）：原生 v-for（无虚拟化开销） -->
+      <template v-else-if="renderedItems.length <= VIRTUAL_LIST_THRESHOLD">
         <div
           v-for="item in renderedItems"
           :key="item.messageId"
@@ -102,6 +104,53 @@
           />
         </div>
       </template>
+      <!-- 长会话（> 120）：虚拟滚动优化 -->
+      <MessageVirtualList
+        v-else
+        ref="virtualListRef"
+        :items="renderedItems"
+      >
+        <template #item="{ item }">
+          <div class="renderedItemWrap">
+            <UserMessageBubble
+              v-if="item.type === 'user'"
+              :text="item.text"
+            />
+            <AssistantMessage
+              v-else-if="item.type === 'assistantText'"
+              :text="item.text"
+              :streaming="item.streaming"
+              :status="status"
+            />
+            <ApprovalCard
+              v-else-if="item.type === 'approval'"
+              :tool-call="findToolCall(item.toolCallId)!"
+              :on-decide="handleDecide"
+              :is-processing="status === 'streaming'"
+            />
+            <GroupedOperationMessage
+              v-else-if="item.type === 'operationGroup'"
+              :items="resolveToolCalls(item.toolCallIds)"
+              :force-complete="item.forceComplete"
+            />
+            <WebSearchSummaryMessage
+              v-else-if="item.type === 'webSearchGroup'"
+              :queries="item.queries"
+              :tool-calls="resolveToolCalls(item.toolCallIds)"
+            />
+            <ReasoningMessage
+              v-else-if="item.type === 'reasoning'"
+              :text="item.text"
+              :streaming="item.streaming"
+            />
+            <ErrorMessage
+              v-else-if="item.type === 'error'"
+              :text="item.text"
+              :on-retry="() => handleRetryError(item)"
+            />
+          </div>
+        </template>
+      </MessageVirtualList>
     </main>
 
     <footer class="agentChatFooter">
@@ -232,6 +281,7 @@ import ReasoningMessage from '@/components/agent/ReasoningMessage.vue'
 import ErrorMessage from '@/components/agent/ErrorMessage.vue'
 import AssistantMessage from '@/components/agent/AssistantMessage.vue'
 import WebSearchSummaryMessage from '@/components/agent/WebSearchSummaryMessage.vue'
+import MessageVirtualList from '@/components/agent/MessageVirtualList.vue'
 
 const { t } = useI18n()
 
@@ -245,7 +295,11 @@ const renderedItems = useRenderTurnItems(messages, status)
 const inputText = ref('')
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const mainRef = ref<HTMLDivElement | null>(null)
+const virtualListRef = ref<{ scrollToBottom: (behavior?: 'auto' | 'smooth') => void } | null>(null)
 const nearBottom = ref(true)
+
+/** 触发虚拟滚动的阈值（renderedItems 数量 > 此值时切换） */
+const VIRTUAL_LIST_THRESHOLD = 120
 
 const closeIcon = closeOutline
 const sparkleIcon = sparklesOutline
@@ -512,10 +566,29 @@ function handleClose() {
 
 function scrollToBottom(behavior: 'auto' | 'smooth' = 'smooth') {
   nextTick(() => {
+    // 长会话走虚拟列表的 scrollToItem
+    if (renderedItems.value.length > VIRTUAL_LIST_THRESHOLD && virtualListRef.value) {
+      virtualListRef.value.scrollToBottom(behavior)
+      return
+    }
+    // 短会话走原生 container 滚动
     const el = mainRef.value
     if (!el) return
     el.scrollTo({ top: el.scrollHeight, behavior })
   })
+}
+
+/**
+ * 监听 main 容器滚动，更新 nearBottom
+ * 虚拟列表模式下滚动源是 RecycleScroller 内部 wrapper，
+ * 但其 scroll 事件会冒泡到 main 容器，逻辑统一处理
+ */
+function onMainScroll() {
+  const el = mainRef.value
+  if (!el) return
+  const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+  // 80px 阈值内视为"接近底部"——避免长消息末尾抖动
+  nearBottom.value = distanceFromBottom < 80
 }
 
 // 监听 status 变化 → streaming 开始时滚动到底部
