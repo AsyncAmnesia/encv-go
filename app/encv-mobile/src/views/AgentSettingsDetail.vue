@@ -66,62 +66,65 @@
             </template>
 
             <!-- openai_api_key：使用通用密码输入框（InputWithHistory），保存时自动加密 -->
-            <InputWithHistory
-              v-else-if="child.key === 'openai_api_key'"
-              :model-value="apiKeyPlainValue"
-              :label="fieldLabel(child.key, child.required)"
-              :placeholder="t('agent.apiKeyPlaceholder') || 'sk-...'"
-              :icon="key"
-              input-type="password"
-              :history-key="'config.agent_api_key'"
-              :is-customized="isApiKeyCustomized"
-              @update:model-value="handleApiKeyInput($event)"
-            />
+            <!-- 用 <template> 把所有 openai_api_key 相关 UI 包成单一条件块，-->
+            <!-- 避免 v-if/v-else-if 链被中间插入的 v-if 打断导致 ConfigFieldItem 误命中 -->
+            <template v-else-if="child.key === 'openai_api_key'">
+              <InputWithHistory
+                :model-value="apiKeyPlainValue"
+                :label="fieldLabel(child.key, child.required)"
+                :placeholder="t('agent.apiKeyPlaceholder') || 'sk-...'"
+                :icon="key"
+                input-type="password"
+                :history-key="'config.agent_api_key'"
+                :is-customized="isApiKeyCustomized"
+                @update:model-value="handleApiKeyInput($event)"
+              />
 
-            <!-- API Key 状态徽标 + 后端 base + 测试按钮（紧跟 input 显示） -->
-            <ion-item v-if="child.key === 'openai_api_key'" lines="none" class="apiKeyStatusItem">
-              <ion-icon :icon="bugIcon" slot="start" class="apiKeyStatusIcon"></ion-icon>
-              <ion-label class="ion-text-wrap">
-                <div class="apiKeyStatusRow">
-                  <ion-badge :color="apiKeyStatusBadge.color" class="apiKeyStatusBadge">
-                    <ion-icon
-                      v-if="apiKeyStatusBadge.spinning"
-                      :icon="apiKeyStatusBadge.icon"
-                      class="apiKeyStatusBadgeIcon"
-                    ></ion-icon>
-                    <ion-icon
-                      v-else
-                      :icon="apiKeyStatusBadge.icon"
-                      class="apiKeyStatusBadgeIcon"
-                    ></ion-icon>
-                    <span class="apiKeyStatusBadgeText">{{ apiKeyStatusBadge.label }}</span>
-                  </ion-badge>
-                  <ion-spinner v-if="roundtripRunning" name="crescent" class="apiKeySpinner"></ion-spinner>
-                </div>
-                <p v-if="apiKeyStatusDetail" class="apiKeyStatusDetail">{{ apiKeyStatusDetail }}</p>
-                <p class="apiKeyBackendLine">
-                  <span class="apiKeyBackendLabel">{{ t('agent.apiKeyBackendLabel') }}:</span>
-                  <code class="apiKeyBackendBase">{{ agentApiBaseCtx.base }}</code>
-                  <span class="apiKeyBackendSource">({{ agentApiBaseLabel }})</span>
-                </p>
-              </ion-label>
-              <ion-button
-                slot="end"
-                size="small"
-                fill="outline"
-                :disabled="roundtripRunning"
-                @click="handleRoundtripTest"
-              >
-                <ion-icon :icon="refreshIcon" slot="start"></ion-icon>
-                {{ t('agent.apiKeyActionRoundtrip') }}
-              </ion-button>
-            </ion-item>
-            <ion-item v-if="child.key === 'openai_api_key' && apiKeyStatusDetail" lines="none">
-              <ion-button slot="end" size="small" fill="clear" color="medium" @click="goToDevLogs">
-                <ion-icon :icon="bugIcon" slot="start"></ion-icon>
-                {{ t('agent.apiKeyViewLogs') }}
-              </ion-button>
-            </ion-item>
+              <!-- API Key 状态徽标 + 后端 base + 测试按钮（紧跟 input 显示） -->
+              <ion-item lines="none" class="apiKeyStatusItem">
+                <ion-icon :icon="bugIcon" slot="start" class="apiKeyStatusIcon"></ion-icon>
+                <ion-label class="ion-text-wrap">
+                  <div class="apiKeyStatusRow">
+                    <ion-badge :color="apiKeyStatusBadge.color" class="apiKeyStatusBadge">
+                      <ion-icon
+                        v-if="apiKeyStatusBadge.spinning"
+                        :icon="apiKeyStatusBadge.icon"
+                        class="apiKeyStatusBadgeIcon"
+                      ></ion-icon>
+                      <ion-icon
+                        v-else
+                        :icon="apiKeyStatusBadge.icon"
+                        class="apiKeyStatusBadgeIcon"
+                      ></ion-icon>
+                      <span class="apiKeyStatusBadgeText">{{ apiKeyStatusBadge.label }}</span>
+                    </ion-badge>
+                    <ion-spinner v-if="roundtripRunning" name="crescent" class="apiKeySpinner"></ion-spinner>
+                  </div>
+                  <p v-if="apiKeyStatusDetail" class="apiKeyStatusDetail">{{ apiKeyStatusDetail }}</p>
+                  <p class="apiKeyBackendLine">
+                    <span class="apiKeyBackendLabel">{{ t('agent.apiKeyBackendLabel') }}:</span>
+                    <code class="apiKeyBackendBase">{{ agentApiBaseCtx.base }}</code>
+                    <span class="apiKeyBackendSource">({{ agentApiBaseLabel }})</span>
+                  </p>
+                </ion-label>
+                <ion-button
+                  slot="end"
+                  size="small"
+                  fill="outline"
+                  :disabled="roundtripRunning"
+                  @click="handleRoundtripTest"
+                >
+                  <ion-icon :icon="refreshIcon" slot="start"></ion-icon>
+                  {{ t('agent.apiKeyActionRoundtrip') }}
+                </ion-button>
+              </ion-item>
+              <ion-item v-if="apiKeyStatusDetail" lines="none">
+                <ion-button slot="end" size="small" fill="clear" color="medium" @click="goToDevLogs">
+                  <ion-icon :icon="bugIcon" slot="start"></ion-icon>
+                  {{ t('agent.apiKeyViewLogs') }}
+                </ion-button>
+              </ion-item>
+            </template>
 
             <ConfigFieldItem
               v-else-if="child.key !== 'openai_model'"

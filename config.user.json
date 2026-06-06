@@ -4,8 +4,12 @@
     "password": "123456"
   },
   "agent_settings": {
-    "openai_api_key": "enc:oiJegaLvIK/7S8ZEa6Kcu6UFM6DVe/JnKk4KcO6tnhaH6Fb82ulU3OSoSfPMnfmWZXsfRrWGaSYuJKsAwe8slk2yNBByL/bsgHQxcPfBqXk=",
-    "openai_base_url": "https://api.gptgod.online/v1"
+    "enabled_tools": [
+      "list_files",
+      "read_file",
+      "delete_file",
+      "exec_command"
+    ]
   },
   "default_container_version": 0,
   "log": {
@@ -24,40 +28,8 @@
     }
   },
   "output_path": "./output",
-  "password": "my-encv_key，可以使用中文和标点符号✔",
-  "plugin_settings": {
-    "alist_encrypt": {
-      "default_password": "123456",
-      "enabled": true,
-      "suffix": ".bin"
-    },
-    "audio": {
-      "ext": ".sccga"
-    },
-    "image": {
-      "ext": ".sccgi"
-    },
-    "pdf": {
-      "ext": ".sccgpdf"
-    },
-    "text": {
-      "ext": ".sccgt"
-    },
-    "video": {
-      "allow_no_reencode": true,
-      "chunk_size_mb": 0,
-      "ext": ".sccgv",
-      "keep_mkv_for_mkv_source": true,
-      "light_container_main_chunk_enabled": true,
-      "light_main_chunk_enabled": true,
-      "skip_merge_for_split_mkv": false,
-      "track_extensions": ".ass,.srt,.dm.ass,.vtt",
-      "verify_after_pack": true
-    },
-    "wps": {
-      "ext": ".sccgwps"
-    }
-  },
+  "password": "my-encv_key",
+  "plugin_settings": {},
   "proxy": {
     "disable_signature_verification": false,
     "sites": {
