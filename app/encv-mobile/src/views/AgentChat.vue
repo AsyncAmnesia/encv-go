@@ -175,6 +175,7 @@
           <GroupedOperationMessage
             v-else-if="item.type === 'operationGroup'"
             :items="resolveToolCalls(item.toolCallIds)"
+            :results-by-call-id="resolveToolResultsByCallId(item.toolCallIds)"
             :force-complete="item.forceComplete"
           />
           <WebSearchSummaryMessage
@@ -235,41 +236,42 @@
               :is-processing="status === 'streaming'"
             />
             <GroupedOperationMessage
-              v-else-if="item.type === 'operationGroup'"
-              :items="resolveToolCalls(item.toolCallIds)"
-              :force-complete="item.forceComplete"
-            />
-            <WebSearchSummaryMessage
-              v-else-if="item.type === 'webSearchGroup'"
-              :queries="item.queries"
-              :tool-calls="resolveToolCalls(item.toolCallIds)"
-            />
-            <PlanBlock
-              v-else-if="item.type === 'plan'"
-              :todos="item.todos"
-              :streaming="item.streaming"
-            />
-            <ReasoningMessage
-              v-else-if="item.type === 'reasoning'"
-              :text="item.text"
-              :streaming="item.streaming"
-            />
-            <ErrorMessage
-              v-else-if="item.type === 'error'"
-              :text="item.text"
-              :on-retry="() => handleRetryError(item)"
-            />
-            <!-- Task 7：虚拟滚动分支同样渲染 ContextCompactionDivider -->
-            <ContextCompactionDivider
-              v-else-if="item.type === 'compaction'"
-              :text="item.text"
-            />
-            <!-- Task 22: 虚拟滚动分支同样渲染 AgentTaskMessage -->
-            <AgentTaskMessage
-              v-else-if="item.type === 'agentTask'"
-              :sub-tasks="item.subTasks"
-              :reasoning="item.reasoning"
-            />
+            v-else-if="item.type === 'operationGroup'"
+            :items="resolveToolCalls(item.toolCallIds)"
+            :results-by-call-id="resolveToolResultsByCallId(item.toolCallIds)"
+            :force-complete="item.forceComplete"
+          />
+          <WebSearchSummaryMessage
+            v-else-if="item.type === 'webSearchGroup'"
+            :queries="item.queries"
+            :tool-calls="resolveToolCalls(item.toolCallIds)"
+          />
+          <PlanBlock
+            v-else-if="item.type === 'plan'"
+            :todos="item.todos"
+            :streaming="item.streaming"
+          />
+          <ReasoningMessage
+            v-else-if="item.type === 'reasoning'"
+            :text="item.text"
+            :streaming="item.streaming"
+          />
+          <ErrorMessage
+            v-else-if="item.type === 'error'"
+            :text="item.text"
+            :on-retry="() => handleRetryError(item)"
+          />
+          <!-- Task 7：虚拟滚动分支同样渲染 ContextCompactionDivider -->
+          <ContextCompactionDivider
+            v-else-if="item.type === 'compaction'"
+            :text="item.text"
+          />
+          <!-- Task 22: 虚拟滚动分支同样渲染 AgentTaskMessage -->
+          <AgentTaskMessage
+            v-else-if="item.type === 'agentTask'"
+            :sub-tasks="item.subTasks"
+            :reasoning="item.reasoning"
+          />
           </div>
         </template>
       </MessageVirtualList>
@@ -473,7 +475,7 @@ import {
 import { useI18n } from '@/composables/useI18n'
 import { getDeviceIdSync } from '@/composables/useDeviceId'
 import { getAgentApiBase } from '@/composables/useAgentApiBase'
-import { useAgent, type Decision, type ToolCall, getLanAccess, type LanAddress } from '@/composables/useAgent'
+import { useAgent, type Decision, type ToolCall, type ToolResult, getLanAccess, type LanAddress } from '@/composables/useAgent'
 import { useRenderTurnItems } from '@/composables/renderTurnItems'
 import { useAttachments } from '@/composables/useAttachments'
 import { useSlashMenu } from '@/composables/useSlashMenu'
@@ -916,11 +918,23 @@ function handleModelPickerOutsideClick(e: MouseEvent) {
   }
 }
 
-// ─── 工具调用查找 ─────────────────────────────────────────
+// ─── 工具调用 / 结果查找 ───────────────────────────────
+// 工具调用 (tool_call 事件) 和 工具结果 (tool_result 事件) 是分别到达的，
+// 渲染时需要按 id 配对。ToolCall 描述「调了什么 / args / 状态」，
+// ToolResult 描述「真实返回 / 错误信息 / 耗时」。结构化卡片（MountListCard /
+// FileListCard / FileContentCard）读 ToolResult.result 的 JSON 渲染。
 function findToolCall(id: string): ToolCall | null {
   for (const msg of messages.value) {
     const tc = msg.tool_calls.find((t: ToolCall) => t.id === id)
     if (tc) return tc
+  }
+  return null
+}
+
+function findToolResult(id: string): ToolResult | null {
+  for (const msg of messages.value) {
+    const tr = msg.tool_results.find((r: ToolResult) => r.id === id)
+    if (tr) return tr
   }
   return null
 }
@@ -930,6 +944,16 @@ function resolveToolCalls(ids: string[]): ToolCall[] {
   for (const id of ids) {
     const tc = findToolCall(id)
     if (tc) out.push(tc)
+  }
+  return out
+}
+
+/** 按 id 查 tool result，构造成 name→Result 的 record 给结构化卡片用 */
+function resolveToolResultsByCallId(ids: string[]): Record<string, ToolResult> {
+  const out: Record<string, ToolResult> = {}
+  for (const id of ids) {
+    const tr = findToolResult(id)
+    if (tr) out[id] = tr
   }
   return out
 }

@@ -58,6 +58,29 @@
           class="groupedOpItemChevron"
           :class="{ groupedOpItemChevron_open: expandedItems.has(idx) }"
         />
+        <!--
+          tool_result 结构化卡片：按 toolCall.name 分发到对应卡片组件
+            - list_mounts → MountListCard
+            - list_files  → FileListCard
+            - read_file   → FileContentCard
+            - stat_file   → FileListCard（单条记录模式）
+          resultsByCallId 由 AgentChat 父组件传过来（id → ToolResult）。
+          没有 result 的 item（pending / 失败）→ 不渲染卡片，原有 row 保留。
+        -->
+        <div v-if="resultFor(it.id, it.name)" class="groupedOpItemCard" @click.stop>
+          <MountListCard
+            v-if="it.name === 'list_mounts'"
+            :result-json="resultFor(it.id, it.name)!.result"
+          />
+          <FileListCard
+            v-else-if="it.name === 'list_files' || it.name === 'stat_file'"
+            :result-json="resultFor(it.id, it.name)!.result"
+          />
+          <FileContentCard
+            v-else-if="it.name === 'read_file'"
+            :result-json="resultFor(it.id, it.name)!.result"
+          />
+        </div>
       </div>
       <button
         v-if="canExpand"
@@ -93,18 +116,46 @@ import {
 } from 'ionicons/icons'
 import StatusBadge from './StatusBadge.vue'
 import FileChangeSummaryMessage from './FileChangeSummaryMessage.vue'
+import MountListCard from './MountListCard.vue'
+import FileListCard from './FileListCard.vue'
+import FileContentCard from './FileContentCard.vue'
 import { OPERATION_COLLAPSE_INITIAL_COUNT } from './twoLevelGrouping'
 import { useI18n } from '@/composables/useI18n'
-import type { ToolCall, ToolKind, ToolStatus } from '@/composables/useAgent'
+import type { ToolCall, ToolKind, ToolResult, ToolStatus } from '@/composables/useAgent'
 
 const props = defineProps<{
   items: ToolCall[]
+  /**
+   * toolCallId → ToolResult 的映射（由 AgentChat 用 findToolResult 配对后传过来）。
+   * 用于在每个 item 下方条件渲染结构化卡片（MountListCard / FileListCard / FileContentCard）。
+   * 可选：未传 / 没结果时不渲染卡片，原有 row 保留。
+   */
+  resultsByCallId?: Record<string, ToolResult>
   forceComplete?: boolean
 }>()
 
 const { t } = useI18n()
 const groupExpanded = ref(false)
 const expandedItems = ref<Set<number>>(new Set())
+
+/**
+ * 取 item 对应的 ToolResult。
+ * 返回 null 时模板不渲染结构化卡片（item 仍按原 row 显示）。
+ */
+function resultFor(id: string, name: string | undefined): ToolResult | null {
+  if (!props.resultsByCallId || !name) return null
+  // 只对"已知支持结构化卡片"的工具名查 result —— 其他工具（video_encrypt 等）
+  // 的 result 不在 resultsByCallId 也不影响 row 渲染。
+  if (
+    name !== 'list_mounts' &&
+    name !== 'list_files' &&
+    name !== 'stat_file' &&
+    name !== 'read_file'
+  ) {
+    return null
+  }
+  return props.resultsByCallId[id] ?? null
+}
 
 function toggleGroup() {
   groupExpanded.value = !groupExpanded.value
@@ -367,6 +418,18 @@ function truncateArgs(raw: string): string {
 
 .groupedOpItemChevron_open {
   transform: rotate(90deg);
+}
+
+/*
+  tool_result 结构化卡片容器：
+  - grid-column: 1 / -1 → 跨整行（不与 name/args/chevron 同行）
+  - padding-left 缩进让卡片视觉上"属于" item
+  - @click.stop 防止点击卡片内部时触发外层 toggleItem（避免反复折叠 args）
+*/
+.groupedOpItemCard {
+  grid-column: 1 / -1;
+  margin: 4px 0 0 24px;
+  min-width: 0;
 }
 
 .groupedOpMore {

@@ -128,9 +128,15 @@ func TestHandleAgentChat_MockBuiltin(t *testing.T) {
 	if !strings.Contains(body, "list_mounts") {
 		t.Error("SSE 输出应含 list_mounts 工具调用")
 	}
-	// studio_video 文件名应出现（来自剧本硬编码的 mock data）
-	if !strings.Contains(body, "studio_video") {
-		t.Error("SSE 输出应含 studio_video 文件名（来自剧本数据）")
+	// 真实 5 步流程断言：list_mounts + 2 次 list_files + read_file 都应出现
+	for _, expected := range []string{"call_mount", "call_files1", "call_files2", "call_read"} {
+		if !strings.Contains(body, expected) {
+			t.Errorf("SSE 输出应含真实流程 tool_call id: %s", expected)
+		}
+	}
+	// 不应再出现老剧本硬编码的假文件名（user 真机测试时复用的"假数据"）
+	if strings.Contains(body, "studio_video") {
+		t.Error("SSE 输出不应再含硬编码假文件名 studio_video（已改为真实流程）")
 	}
 	// 第一个 stream_start 应含 mock:true
 	if !strings.Contains(body, `"mock":true`) {

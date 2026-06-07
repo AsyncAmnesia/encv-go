@@ -57,119 +57,191 @@ func scenarioDefaultFriendly() *MockScenario {
 // 2. list_files_query — 修复 [真机问题] 的核心场景
 // ════════════════════════════════════════════════════════════════
 //
-// 用途：触发 list_mounts → list_files → 完整文本回复，验证工具调用结构化渲染。
+// 用途：触发 list_mounts → list_files → list_files → read_file → markdown
+// 总结，验证工具调用结构化渲染 + 真实多步流程 + 真实文件系统数据。
 // 触发："有哪些文件" / "有哪些视频" 等。
+//
+// ⚠️ 重要：所有 args.rel_path 必须是 /storage/emulated/0/ 下真实存在的路径，
+// 否则 execute_real=true 的真实 handler 会返 readdir_failed 真错误（与硬编码
+// 的假数据混在一起，看起来"剧本又造假了"）。
 
 func scenarioListFilesQuery() *MockScenario {
-	mountsResult := `{"count":1,"items":[{"id":"serving","path":"/mnt/serving","name":"serving"}]}`
-	filesResult := `{"files":[{"name":"studio_video_1762059800961.mp4","size":554000000,"is_dir":false},{"name":"QQ","is_dir":true},{"name":"Subtitles","is_dir":true},{"name":"qqmusic","is_dir":true}]}`
-
 	return &MockScenario{
 		ID:          "list_files_query",
-		Description: "list_mounts → list_files + 完整文本（覆盖 [真机问题]）",
-		// execute_real=true 标记：list_mounts / list_files 是只读工具，
-		// 应在 mock 模式下也实际执行（结果用真实文件系统数据，覆盖硬编码 JSON），
-		// 避免「mock 剧本编造文件列表」的真机问题。
-		Keywords: []string{"有哪些文件", "有什么文件", "视频", "Movies", "目录", "列一下"},
+		Description: "5 步真实流程：mounts → files → files → read_file → markdown 总结",
+		// execute_real=true 标记：list_mounts / list_files / read_file 是只读工具，
+		// 在 mock 模式下也应实际执行（结果用真实文件系统数据），避免"剧本编造"。
+		Keywords: []string{"有哪些文件", "有什么文件", "视频", "Movies", "目录", "列一下", "01-plain-media"},
 		Steps: []MockStep{
-			// Step 1: 开场白
+			// Step 1: stream_start + 开场白（markdown: 标题）
 			{DelayMs: 0, Events: []MockEvent{
 				{Type: "stream_start", Data: map[string]interface{}{
 					"scenario": "list_files_query",
 				}},
-				{Type: "text_delta", Data: map[string]interface{}{"text": "好的，我先查看挂载点。\n\n"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "## 查看你的媒体库\n\n"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "先列出**挂载点**，再递归到 `01-plain-media` 看视频文件。\n\n"}},
 			}},
-			// Step 2: 调 list_mounts（execute_real=true → 实际调用 s.executeAgentTool）
+
+			// Step 2: list_mounts（execute_real=true → 真实读 mounts 配置）
 			{DelayMs: 500, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
-					"id":           "call_1",
+					"id":           "call_mount",
 					"name":         "list_mounts",
 					"args":         "{}",
 					"auto_run":     true,
 					"needsConfirm": false,
-					"kind":         "fileRead",
+					"kind":         "readOnly",
 					"execute_real": true,
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{
-					"id":     "call_1",
+					"id":     "call_mount",
 					"status": "running",
 				}},
 			}},
-			// Step 3: list_mounts 结果（execute_real 时硬编码 result 会被覆盖，可保留作 fallback）
-			{DelayMs: 300, Events: []MockEvent{
+
+			// Step 3: list_mounts 结果（被真实结果覆盖，hardcode 仅作 fallback）
+			{DelayMs: 350, Events: []MockEvent{
 				{Type: "tool_status", Data: map[string]interface{}{
-					"id":     "call_1",
+					"id":     "call_mount",
 					"status": "success",
 				}},
 				{Type: "tool_result", Data: map[string]interface{}{
-					"id":         "call_1",
+					"id":         "call_mount",
 					"name":       "list_mounts",
-					"result":     mountsResult,
+					"result":     `{"count":1,"items":[{"id":"serving","path":"/storage/emulated/0","name":"serving"}]}`,
 					"isError":    false,
 					"status":     "success",
-					"durationMs": 12,
+					"durationMs": 5,
 				}},
 			}},
-			// Step 4: 中间过渡文本
-			{DelayMs: 400, Events: []MockEvent{
-				{Type: "text_delta", Data: map[string]interface{}{"text": "已找到挂载点 serving。继续查看 Movies 目录..."}},
+
+			// Step 4: 过渡文本 + list_files(/01-plain-media) 调真实
+			{DelayMs: 300, Events: []MockEvent{
+				{Type: "text_delta", Data: map[string]interface{}{"text": "已找到挂载点 `serving` → `/storage/emulated/0`。继续递归到 `01-plain-media`...\n\n"}},
 			}},
-			// Step 5: 调 list_files（execute_real=true）
-			{DelayMs: 500, Events: []MockEvent{
+			{DelayMs: 400, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
-					"id":           "call_2",
+					"id":           "call_files1",
 					"name":         "list_files",
-					"args":         `{"mount_id":"serving","rel_path":"Movies"}`,
+					"args":         `{"mount_id":"serving","rel_path":"/01-plain-media"}`,
 					"auto_run":     true,
 					"needsConfirm": false,
-					"kind":         "fileRead",
+					"kind":         "readOnly",
 					"execute_real": true,
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{
-					"id":     "call_2",
+					"id":     "call_files1",
 					"status": "running",
 				}},
 			}},
-			// Step 6: list_files 结果
-			{DelayMs: 400, Events: []MockEvent{
+			{DelayMs: 350, Events: []MockEvent{
 				{Type: "tool_status", Data: map[string]interface{}{
-					"id":     "call_2",
+					"id":     "call_files1",
 					"status": "success",
 				}},
 				{Type: "tool_result", Data: map[string]interface{}{
-					"id":         "call_2",
+					"id":         "call_files1",
 					"name":       "list_files",
-					"result":     filesResult,
+					"result":     `{"files":[{"name":"audio","is_dir":true},{"name":"document","is_dir":true},{"name":"image","is_dir":true},{"name":"video","is_dir":true}]}`,
 					"isError":    false,
 					"status":     "success",
-					"durationMs": 18,
+					"durationMs": 8,
 				}},
 			}},
-			// Step 7: 完整文本回答（4 段拼接为完整回复）
+
+			// Step 5: 进入 video 子目录
 			{DelayMs: 300, Events: []MockEvent{
-				{Type: "text_delta", Data: map[string]interface{}{"text": "在 /Movies 目录下发现 1 个视频文件：\n\n"}},
-				{Type: "text_delta", Data: map[string]interface{}{"text": "- studio_video_1762059800961.mp4 (约 554MB)\n\n"}},
-				{Type: "text_delta", Data: map[string]interface{}{"text": "其他条目都是子目录，如 QQ、Subtitles、qqmusic...\n"}},
-				{Type: "text_delta", Data: map[string]interface{}{"text": "如需进一步查看子目录内容，请告诉我。"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "`01-plain-media` 下有 4 个子目录（`audio` / `document` / `image` / `video`）。点开 `video` 看一下...\n\n"}},
 			}},
+			{DelayMs: 400, Events: []MockEvent{
+				{Type: "tool_call", Data: map[string]interface{}{
+					"id":           "call_files2",
+					"name":         "list_files",
+					"args":         `{"mount_id":"serving","rel_path":"/01-plain-media/video"}`,
+					"auto_run":     true,
+					"needsConfirm": false,
+					"kind":         "readOnly",
+					"execute_real": true,
+				}},
+				{Type: "tool_status", Data: map[string]interface{}{
+					"id":     "call_files2",
+					"status": "running",
+				}},
+			}},
+			{DelayMs: 350, Events: []MockEvent{
+				{Type: "tool_status", Data: map[string]interface{}{
+					"id":     "call_files2",
+					"status": "success",
+				}},
+				{Type: "tool_result", Data: map[string]interface{}{
+					"id":         "call_files2",
+					"name":       "list_files",
+					"result":     `{"files":[{"name":"comedy.mkv","size":312000000,"is_dir":false},{"name":"sample.mp4","size":268000000,"is_dir":false}]}`,
+					"isError":    false,
+					"status":     "success",
+					"durationMs": 6,
+				}},
+			}},
+
+			// Step 6: 读 video 里的 sample.mp4 文件元数据
+			{DelayMs: 400, Events: []MockEvent{
+				{Type: "tool_call", Data: map[string]interface{}{
+					"id":           "call_read",
+					"name":         "read_file",
+					"args":         `{"mount_id":"serving","rel_path":"/01-plain-media/document/notes.txt","max_bytes":500}`,
+					"auto_run":     true,
+					"needsConfirm": false,
+					"kind":         "readOnly",
+					"execute_real": true,
+				}},
+				{Type: "tool_status", Data: map[string]interface{}{
+					"id":     "call_read",
+					"status": "running",
+				}},
+			}},
+			{DelayMs: 350, Events: []MockEvent{
+				{Type: "tool_status", Data: map[string]interface{}{
+					"id":     "call_read",
+					"status": "success",
+				}},
+				{Type: "tool_result", Data: map[string]interface{}{
+					"id":         "call_read",
+					"name":       "read_file",
+					"result":     `{"content":"# Mock 媒体库说明\n\n这是 encv-go 沙箱 mock 模式测试用的真实文件。\n存放在 /storage/emulated/0/01-plain-media/，对应 Android 真机的 Movies/DCIM 目录。\n\n- video/  : sample.mp4, comedy.mkv\n- document/: notes.txt, report.pdf, data.csv\n- audio/  : podcast.mp3\n- image/   : screenshot.png\n","mimeType":"text/plain","size":312}`,
+					"isError":    false,
+					"status":     "success",
+					"durationMs": 4,
+				}},
+			}},
+
+			// Step 7: 完整 markdown 总结（带标题 / 列表 / 代码块 / 表格）
+			{DelayMs: 200, Events: []MockEvent{
+				{Type: "text_delta", Data: map[string]interface{}{"text": "### 你的媒体库概览\n\n"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "| 子目录 | 视频文件 | 文档 | 音频 | 图片 |\n"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "|--------|---------|------|------|------|\n"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "| `01-plain-media/video/` | `comedy.mkv` (298MB) + `sample.mp4` (256MB) | - | - | - |\n"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "| `01-plain-media/document/` | - | `notes.txt` / `report.pdf` / `data.csv` | - | - |\n\n"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "**下一步建议**（点击 chip 直接执行）：\n\n"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "1. 加密 `sample.mp4`\n2. 查看 `notes.txt` 完整内容\n3. 切换到搜索字幕剧本\n"}},
+			}},
+
 			// Step 8: 结束
 			{DelayMs: 100, Events: []MockEvent{
 				{Type: "stream_end", Data: map[string]interface{}{
 					"finishReason": "stop",
-					"usage":        map[string]int{"totalTokens": 318},
+					"usage":        map[string]int{"totalTokens": 618},
 				}},
 			}},
 		},
-		// 预设：用户看了 /Movies 列表后最可能的 4 个后续动作
-		//   - p_qq/p_sub/p_music：进入 Movies 的 3 个子目录，触发 list_files_query 递归
-		//     （args.rel_path 不同 → 真实 list_files 返回对应子目录内容）
-		//   - p_encrypt：跳到 encrypt_video 剧本（写操作需用户二次确认）
+		// 预设：用户看了媒体库列表后最可能的 3 个后续动作
+		//   - p_qq/p_sub：进入更深的子目录（实际触发 list_files_query 递归）
 		//   - p_search：跳到 multi_step_search 剧本
+		//   - p_encrypt：跳到 encrypt_video 剧本（写操作）
 		Presets: []MockPreset{
-			{ID: "p_qq", Label: "📂 QQ 子目录", UserText: "查看 Movies/QQ 目录", Tooltip: "查看 QQ 目录里的内容"},
-			{ID: "p_sub", Label: "📂 Subtitles", UserText: "查看 Movies/Subtitles 目录", Tooltip: "查看字幕目录"},
-			{ID: "p_search", Label: "🔍 搜索字幕", UserText: "搜索带字幕的视频", Tooltip: "触发 multi_step_search 剧本"},
-			{ID: "p_encrypt", Label: "🔒 加密这个视频", UserText: "加密这个视频", Tooltip: "触发 encrypt_video 剧本（需用户确认）"},
+			{ID: "p_video", Label: "🎬 视频文件", UserText: "查看 video 子目录", Tooltip: "进入 01-plain-media/video 看视频文件列表", Icon: "🎬"},
+			{ID: "p_doc", Label: "📄 文档", UserText: "查看 document 子目录", Tooltip: "进入 01-plain-media/document 看文档列表", Icon: "📄"},
+			{ID: "p_search", Label: "🔍 搜索字幕", UserText: "搜索带字幕的视频", Tooltip: "触发 multi_step_search 剧本", Icon: "🔍"},
+			{ID: "p_encrypt", Label: "🔒 加密 sample.mp4", UserText: "加密 sample.mp4", Tooltip: "触发 encrypt_video 剧本（需用户确认）", Icon: "🔒"},
 		},
 	}
 }
@@ -255,7 +327,7 @@ func scenarioReadAndSummarize() *MockScenario {
 					"args":         `{"mount_id":"serving","rel_path":"docs/readme.md"}`,
 					"auto_run":     true,
 					"needsConfirm": false,
-					"kind":         "fileRead",
+					"kind":         "readOnly",
 					"execute_real": true, // 只读工具：mock 模式也用真实文件内容
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{
@@ -327,7 +399,7 @@ func scenarioMultiStepSearch() *MockScenario {
 					"args":         `{"mount_id":"serving","rel_path":"Movies"}`,
 					"auto_run":     true,
 					"needsConfirm": false,
-					"kind":         "fileRead",
+					"kind":         "readOnly",
 					"execute_real": true,
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{
@@ -357,7 +429,7 @@ func scenarioMultiStepSearch() *MockScenario {
 					"args":         `{"mount_id":"serving","rel_path":"Movies/sub"}`,
 					"auto_run":     true,
 					"needsConfirm": false,
-					"kind":         "fileRead",
+					"kind":         "readOnly",
 					"execute_real": true,
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{
@@ -402,7 +474,7 @@ func scenarioMultiStepSearch() *MockScenario {
 					"args":         `{"mount_id":"serving","rel_path":"Movies/sub/target.mp4"}`,
 					"auto_run":     true,
 					"needsConfirm": false,
-					"kind":         "fileRead",
+					"kind":         "readOnly",
 					"execute_real": true,
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{
@@ -608,7 +680,7 @@ func scenarioToolCallWithArgs() *MockScenario {
 					"args":         `{"mount_id":"serving","rel_path":"Movies/2024","max_entries":"50","filter":{"ext":[".mp4",".mkv"],"min_size":1048576}}`,
 					"auto_run":     true,
 					"needsConfirm": false,
-					"kind":         "fileRead",
+					"kind":         "readOnly",
 					"execute_real": true, // 真实 list_files（args 透传给 handler）
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{
@@ -659,7 +731,7 @@ func scenarioMultiToolParallel() *MockScenario {
 					"args":         `{"mount_id":"serving","rel_path":"Movies"}`,
 					"auto_run":     true,
 					"needsConfirm": false,
-					"kind":         "fileRead",
+					"kind":         "readOnly",
 					"execute_real": true,
 				}},
 				{Type: "tool_call", Data: map[string]interface{}{
@@ -668,7 +740,7 @@ func scenarioMultiToolParallel() *MockScenario {
 					"args":         `{"mount_id":"serving","rel_path":"Music"}`,
 					"auto_run":     true,
 					"needsConfirm": false,
-					"kind":         "fileRead",
+					"kind":         "readOnly",
 					"execute_real": true,
 				}},
 				{Type: "tool_call", Data: map[string]interface{}{
@@ -677,7 +749,7 @@ func scenarioMultiToolParallel() *MockScenario {
 					"args":         `{"mount_id":"serving","rel_path":"Documents"}`,
 					"auto_run":     true,
 					"needsConfirm": false,
-					"kind":         "fileRead",
+					"kind":         "readOnly",
 					"execute_real": true,
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{
