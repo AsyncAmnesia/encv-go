@@ -170,6 +170,187 @@ func TestMockEngine_ExecuteReal_FallbackWhenNoExecutor(t *testing.T) {
 	}
 }
 
+// TestMockEngine_EmitsInitialPresetsOnStreamStart 验证 Run 在 stream_start
+// 后立即推 mock_presets 事件，data.presets 包含剧本声明的所有 MockPreset。
+func TestMockEngine_EmitsInitialPresetsOnStreamStart(t *testing.T) {
+	eng := NewMockEngine()
+	sc := &MockScenario{
+		ID: "test_presets_initial",
+		Presets: []MockPreset{
+			{ID: "p1", Label: "选项 1", UserText: "选 1"},
+			{ID: "p2", Label: "选项 2", UserText: "选 2"},
+		},
+		Steps: []MockStep{
+			{DelayMs: 0, Events: []MockEvent{
+				{Type: "stream_start", Data: map[string]interface{}{"scenario": "test_presets_initial"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "hi"}},
+				{Type: "stream_end", Data: map[string]interface{}{"finishReason": "stop"}},
+			}},
+		},
+	}
+
+	s := newMockTestServer()
+	sess := newMockSession()
+	rec := httptest.NewRecorder()
+
+	if err := eng.Run(context.Background(), s, sess, rec, rec, sc, 10.0, true); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// 找到 mock_presets 事件
+	pe := findEventOfType(sess, "mock_presets")
+	if pe == nil {
+		t.Fatal("expected mock_presets event in cache")
+	}
+	data, _ := pe.Data.(map[string]interface{})
+	if data["scenario"] != "test_presets_initial" {
+		t.Errorf("scenario = %v, want test_presets_initial", data["scenario"])
+	}
+	if data["phase"] != "initial" {
+		t.Errorf("phase = %v, want initial", data["phase"])
+	}
+	presets, ok := data["presets"].([]MockPreset)
+	if !ok {
+		t.Fatalf("presets type = %T, want []MockPreset", data["presets"])
+	}
+	if len(presets) != 2 {
+		t.Errorf("presets count = %d, want 2", len(presets))
+	}
+	if presets[0].ID != "p1" || presets[1].ID != "p2" {
+		t.Errorf("presets IDs = [%s, %s], want [p1, p2]", presets[0].ID, presets[1].ID)
+	}
+}
+
+// TestMockEngine_NoPresetsWhenScenarioEmpty 验证未声明 Presets 的剧本
+// 不会推 mock_presets 事件（保持事件流干净）。
+func TestMockEngine_NoPresetsWhenScenarioEmpty(t *testing.T) {
+	eng := NewMockEngine()
+	sc := &MockScenario{
+		ID: "test_presets_none",
+		Steps: []MockStep{
+			{DelayMs: 0, Events: []MockEvent{
+				{Type: "stream_start", Data: map[string]interface{}{"scenario": "test_presets_none"}},
+				{Type: "stream_end", Data: map[string]interface{}{"finishReason": "stop"}},
+			}},
+		},
+	}
+
+	s := newMockTestServer()
+	sess := newMockSession()
+	rec := httptest.NewRecorder()
+
+	if err := eng.Run(context.Background(), s, sess, rec, rec, sc, 10.0, true); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if pe := findEventOfType(sess, "mock_presets"); pe != nil {
+		t.Errorf("scenario.Presets 为空时不应有 mock_presets, got %+v", pe.Data)
+	}
+}
+
+// TestMockEngine_MidScenarioPresetUpdate 验证 mid-scenario 的 mock_presets
+// 事件被透传给前端（不修改 data，只是 forward）。
+func TestMockEngine_MidScenarioPresetUpdate(t *testing.T) {
+	eng := NewMockEngine()
+	sc := &MockScenario{
+		ID: "test_presets_mid",
+		Steps: []MockStep{
+			{DelayMs: 0, Events: []MockEvent{
+				{Type: "stream_start", Data: map[string]interface{}{"scenario": "test_presets_mid"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "step 1"}},
+			}},
+			{DelayMs: 10, Events: []MockEvent{
+				{Type: "mock_presets", Data: map[string]interface{}{
+					"scenario": "test_presets_mid",
+					"phase":    "after_step_1",
+					"presets": []MockPreset{
+						{ID: "m1", Label: "中间选项", UserText: "中间选择"},
+					},
+				}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "step 2"}},
+				{Type: "stream_end", Data: map[string]interface{}{"finishReason": "stop"}},
+			}},
+		},
+	}
+
+	s := newMockTestServer()
+	sess := newMockSession()
+	rec := httptest.NewRecorder()
+
+	if err := eng.Run(context.Background(), s, sess, rec, rec, sc, 10.0, true); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// 找所有 mock_presets 事件（应有 1 个：mid-scenario 那条）
+	count := 0
+	for _, ev := range sess.EventCache {
+		if ev.Type == "mock_presets" {
+			count++
+			data, _ := ev.Data.(map[string]interface{})
+			if data["phase"] != "after_step_1" {
+				t.Errorf("phase = %v, want after_step_1", data["phase"])
+			}
+		}
+	}
+	if count != 1 {
+		t.Errorf("mock_presets 事件数 = %d, want 1 (mid-scenario only)", count)
+	}
+}
+
+// TestMockEngine_EmitsClearOnStreamEnd 验证剧本结束时推 mock_presets_clear
+// 事件（让前端清空 preset bar）。
+func TestMockEngine_EmitsClearOnStreamEnd(t *testing.T) {
+	eng := NewMockEngine()
+	sc := &MockScenario{
+		ID: "test_presets_clear",
+		Presets: []MockPreset{
+			{ID: "p1", Label: "X", UserText: "x"},
+		},
+		Steps: []MockStep{
+			{DelayMs: 0, Events: []MockEvent{
+				{Type: "stream_start", Data: map[string]interface{}{"scenario": "test_presets_clear"}},
+				{Type: "stream_end", Data: map[string]interface{}{"finishReason": "stop"}},
+			}},
+		},
+	}
+
+	s := newMockTestServer()
+	sess := newMockSession()
+	rec := httptest.NewRecorder()
+
+	if err := eng.Run(context.Background(), s, sess, rec, rec, sc, 10.0, true); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	clears := 0
+	for _, ev := range sess.EventCache {
+		if ev.Type == "mock_presets_clear" {
+			clears++
+		}
+	}
+	// 至少 1 次（stream_end case），兜底 1 次（scenario_done）→ 总共 2 次
+	if clears < 1 {
+		t.Errorf("mock_presets_clear 事件数 = %d, want ≥ 1", clears)
+	}
+}
+
+// TestMockEngine_AllBuiltinScenariosHavePresets 验证 12 个内置剧本都至少
+// 有 1 个 Preset（覆盖验收清单 §"每个剧本应支持多个预设"）。
+func TestMockEngine_AllBuiltinScenariosHavePresets(t *testing.T) {
+	eng := NewMockEngine()
+	scenarios := eng.AllScenarios()
+
+	missing := []string{}
+	for _, sc := range scenarios {
+		if len(sc.Presets) == 0 {
+			missing = append(missing, sc.ID)
+		}
+	}
+	if len(missing) > 0 {
+		t.Errorf("以下剧本缺少 Presets（验收要求每个剧本都支持预设输入）：%v", missing)
+	}
+}
+
 // TestMockEngine_ExecuteReal_ErrorPropagatesAsIsError 验证 realExecutor
 // 返回 error 时，tool_result 事件 isError=true / status=failed / result 含错误信息。
 func TestMockEngine_ExecuteReal_ErrorPropagatesAsIsError(t *testing.T) {

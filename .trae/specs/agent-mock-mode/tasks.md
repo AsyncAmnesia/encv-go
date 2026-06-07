@@ -126,3 +126,101 @@
 - Task 8 依赖 Task 7
 - Task 9 无依赖
 - Task 10 依赖所有 Task
+
+---
+
+# 增量 Tasks（Mock 剧本预设输入控件）
+
+- [x] Task 11: 后端 MockPreset 数据结构 + mock_presets 事件协议
+  - 依赖：Task 1
+  - 涉及文件：`internal/server/agent_mock.go` / `internal/server/agent_mock_scenarios.go`
+  - 步骤：
+    - [x] SubTask 11.1: `MockPreset` 类型（id / label / userText / icon / tooltip）
+    - [x] SubTask 11.2: `MockScenario.Presets []MockPreset` 字段
+    - [x] SubTask 11.3: `MockEngine.emitInitialPresets()` —— stream_start 之后立刻推
+    - [x] SubTask 11.4: `MockEngine.endMockPresets()` —— stream_end 之后立刻推 mock_presets_clear
+    - [x] SubTask 11.5: mid-scenario step 内推 mock_presets 事件（透传）实现连续会话预设
+    - [x] SubTask 11.6: 12 个内置剧本全部加 Presets 字段（每个 ≥3 个）
+    - [x] SubTask 11.7: `multi_step_search` 剧本 mid-scenario 推第二组 mock_presets（演示连续会话）
+  - 验证：编译通过；测试通过
+
+- [x] Task 12: 后端 execute_real 真实工具执行
+  - 依赖：Task 1
+  - 涉及文件：`internal/server/agent_mock.go` / `internal/server/server.go`
+  - 步骤：
+    - [x] SubTask 12.1: `MockStep` 加 `ExecuteReal bool` 字段（标记 tool_call 是否调真实 handler）
+    - [x] SubTask 12.2: `MockEngine.realExecutor` 字段 + `SetRealExecutor` 方法
+    - [x] SubTask 12.3: `pendingRealCalls` map 追踪 execute_real=true 的 tool_call
+    - [x] SubTask 12.4: tool_result 事件处理时匹配 → 调 realExecutor 拿真结果 → 覆盖剧本硬编码 data
+    - [x] SubTask 12.5: nil realExecutor 时 fallback 到硬编码（向后兼容）
+    - [x] SubTask 12.6: 12 个剧本**所有** tool_call 标 `execute_real: true`
+    - [x] SubTask 12.7: `server.NewServer` 在 return 前调 `s.mockEngine.SetRealExecutor(s.executeAgentTool)`
+  - 验证：单元测试 `TestMockEngine_ExecuteReal_*` 3 个全过
+
+- [x] Task 13: 前端 useAgent 解析 mock_presets 事件
+  - 依赖：Task 11
+  - 涉及文件：`app/encv-mobile/src/composables/useAgent.ts`
+  - 步骤：
+    - [x] SubTask 13.1: `AgentEventType` 联合类型加 `mock_presets` / `mock_presets_clear`
+    - [x] SubTask 13.2: `MockPreset` interface 导出
+    - [x] SubTask 13.3: `mockPresets` / `mockPresetsPhase` / `mockPresetsScenario` ref 声明
+    - [x] SubTask 13.4: `case 'mock_presets':` 解析 JSON 覆盖 mockPresets.value
+    - [x] SubTask 13.5: `case 'mock_presets_clear':` 清空三个 ref
+    - [x] SubTask 13.6: `pickMockPreset(preset)` 函数 → `send(preset.userText, { mode: 'start' })`
+    - [x] SubTask 13.7: export 4 个新成员
+  - 验证：vue-tsc 0 错误
+
+- [x] Task 14: 前端 MockPresetBar 组件
+  - 依赖：Task 13
+  - 涉及文件：`app/encv-mobile/src/components/agent/MockPresetBar.vue`（新建）
+  - 步骤：
+    - [x] SubTask 14.1: props：`presets` / `scenario` / `phase` / `disabled`
+    - [x] SubTask 14.2: emits：`pick [preset: MockPreset]`
+    - [x] SubTask 14.3: header（🧪 + scenario 名 + phase + hint）
+    - [x] SubTask 14.4: chip 列表（水平滚动 + icon + label）
+    - [x] SubTask 14.5: 暗黑模式适配
+    - [x] SubTask 14.6: 流式进行中 disabled 状态
+  - 验证：vue-tsc 0 错误
+
+- [x] Task 15: AgentChat 集成 MockPresetBar
+  - 依赖：Task 13, Task 14
+  - 涉及文件：`app/encv-mobile/src/views/AgentChat.vue`
+  - 步骤：
+    - [x] SubTask 15.1: useAgent 解构加 `mockPresets` / `mockPresetsPhase` / `pickMockPreset`
+    - [x] SubTask 15.2: import MockPresetBar
+    - [x] SubTask 15.3: 在 AttachmentTray 之后、footerInputRow 之前挂 MockPresetBar
+    - [x] SubTask 15.4: v-if = `isMockMode && mockPresets.length > 0`
+    - [x] SubTask 15.5: `:disabled` 绑定 `status === 'streaming'`
+    - [x] SubTask 15.6: `@pick` → `pickMockPreset(preset)`
+  - 验证：vue-tsc 0 错误；vite build 0 错误
+
+- [x] Task 16: i18n 增量文案
+  - 依赖：无
+  - 涉及文件：`app/encv-mobile/src/i18n/agent.ts`
+  - 步骤：
+    - [x] SubTask 16.1: 加 `agent.mockPresetBarAria` / `agent.mockPresetBarDefaultScenario` / `agent.mockPresetBarHint`
+    - [x] SubTask 16.2: 同步 en 翻译
+  - 验证：vue-tsc 0 错误
+
+- [x] Task 17: 单元测试覆盖
+  - 依赖：Task 11, Task 12
+  - 涉及文件：`internal/server/agent_mock_test.go`（追加）
+  - 步骤：
+    - [x] SubTask 17.1: `TestMockEngine_ExecuteReal_OverridesHardcoded`
+    - [x] SubTask 17.2: `TestMockEngine_ExecuteReal_FallbackWhenNoExecutor`
+    - [x] SubTask 17.3: `TestMockEngine_ExecuteReal_ErrorPropagatesAsIsError`
+    - [x] SubTask 17.4: `TestMockEngine_EmitsInitialPresetsOnStreamStart`
+    - [x] SubTask 17.5: `TestMockEngine_NoPresetsWhenScenarioEmpty`
+    - [x] SubTask 17.6: `TestMockEngine_MidScenarioPresetUpdate`
+    - [x] SubTask 17.7: `TestMockEngine_EmitsClearOnStreamEnd`
+    - [x] SubTask 17.8: `TestMockEngine_AllBuiltinScenariosHavePresets`
+  - 验证：`go test ./internal/server/... -run TestMockEngine -v` 全部通过
+
+- [x] Task 18: 编译 + 构建 + 验证
+  - 依赖：所有增量 Task
+  - 步骤：
+    - [x] SubTask 18.1: `go build ./cmd/encv` 0 错误
+    - [x] SubTask 18.2: `pnpm vue-tsc --noEmit` 0 错误
+    - [x] SubTask 18.3: `pnpm vite build` 0 错误
+    - [x] SubTask 18.4: `go test ./internal/server/... -run TestMockEngine -v` 8 个测试全过
+

@@ -44,6 +44,12 @@ func scenarioDefaultFriendly() *MockScenario {
 				}},
 			}},
 		},
+		// 预设：引导用户进入主功能剧本（覆盖常见开场白 → 触发后续子剧本）
+		Presets: []MockPreset{
+			{ID: "ask_files", Label: "📁 查看文件", UserText: "有哪些视频文件", Tooltip: "触发 list_files_query 剧本"},
+			{ID: "ask_summarize", Label: "📄 总结文档", UserText: "总结 docs/readme.md", Tooltip: "触发 read_and_summarize 剧本"},
+			{ID: "ask_encrypt", Label: "🔒 加密视频", UserText: "加密这个视频", Tooltip: "触发 encrypt_video 剧本"},
+		},
 	}
 }
 
@@ -154,6 +160,17 @@ func scenarioListFilesQuery() *MockScenario {
 				}},
 			}},
 		},
+		// 预设：用户看了 /Movies 列表后最可能的 4 个后续动作
+		//   - p_qq/p_sub/p_music：进入 Movies 的 3 个子目录，触发 list_files_query 递归
+		//     （args.rel_path 不同 → 真实 list_files 返回对应子目录内容）
+		//   - p_encrypt：跳到 encrypt_video 剧本（写操作需用户二次确认）
+		//   - p_search：跳到 multi_step_search 剧本
+		Presets: []MockPreset{
+			{ID: "p_qq", Label: "📂 QQ 子目录", UserText: "查看 Movies/QQ 目录", Tooltip: "查看 QQ 目录里的内容"},
+			{ID: "p_sub", Label: "📂 Subtitles", UserText: "查看 Movies/Subtitles 目录", Tooltip: "查看字幕目录"},
+			{ID: "p_search", Label: "🔍 搜索字幕", UserText: "搜索带字幕的视频", Tooltip: "触发 multi_step_search 剧本"},
+			{ID: "p_encrypt", Label: "🔒 加密这个视频", UserText: "加密这个视频", Tooltip: "触发 encrypt_video 剧本（需用户确认）"},
+		},
 	}
 }
 
@@ -199,6 +216,17 @@ func scenarioEncryptVideo() *MockScenario {
 					"usage":        map[string]int{"totalTokens": 89},
 				}},
 			}},
+		},
+		// 预设：tool_call 推出去之前用户可以点 chip 切换动作
+		//   - p_cancel：放弃加密（最常见）
+		//   - p_choose_other：改看其他文件
+		//   - p_modify_path：修改输出路径（实际触发 list_files_query 让用户选目录）
+		// 注意：tool_call 仍会推送（needsConfirm=true），用户后续在确认卡上
+		// 点 Approve/Deny 决定是否真加密。preset 是"前哨"操作。
+		Presets: []MockPreset{
+			{ID: "p_cancel", Label: "❌ 取消", UserText: "算了，不加密了", Tooltip: "取消加密动作"},
+			{ID: "p_modify_path", Label: "📁 改输出到 /Encrypted", UserText: "改加密输出到 /Encrypted 目录", Tooltip: "修改输出路径"},
+			{ID: "p_choose_other", Label: "📂 看其他视频", UserText: "有哪些视频文件", Tooltip: "跳到 list_files_query 选别的"},
 		},
 	}
 }
@@ -259,6 +287,17 @@ func scenarioReadAndSummarize() *MockScenario {
 					"usage":        map[string]int{"totalTokens": 156},
 				}},
 			}},
+		},
+		// 预设：用户看完 summary 后的常见后续
+		//   - p_full：要求看完整原文（不总结）
+		//   - p_translate：翻译成中文
+		//   - p_bullets：要 bullet 列表版总结
+		//   - p_save：保存总结到文件（跳到需要 write_file 的剧情）
+		Presets: []MockPreset{
+			{ID: "p_full", Label: "📜 看完整原文", UserText: "显示 readme.md 完整内容", Tooltip: "跳到 read_file 完整版"},
+			{ID: "p_bullets", Label: "🔹 bullet 列表版", UserText: "用 bullet 列表总结 readme.md", Tooltip: "切换为列表格式"},
+			{ID: "p_translate", Label: "🌐 翻译成中文", UserText: "把 readme.md 翻译成中文", Tooltip: "中文化输出"},
+			{ID: "p_save", Label: "💾 保存为摘要", UserText: "把这份总结保存到 notes/summary.md", Tooltip: "保存到文件（需确认）"},
 		},
 	}
 }
@@ -340,6 +379,21 @@ func scenarioMultiStepSearch() *MockScenario {
 					"durationMs": 12,
 				}},
 			}},
+			// ⏸️ Mid-scenario preset update（演示「高级剧本连续会话预设」）：
+			// Round 2 完成后发现目标，前端 bar 切换为「深入看 sub / 统计大小 / 加密」
+			// 用户点 chip 直接发送 UserText，触发下一个剧本（无 server pause，
+			// mock_presets 只是 UI 提示，scenario 仍会继续播到 stream_end）。
+			{DelayMs: 100, Events: []MockEvent{
+				{Type: "mock_presets", Data: map[string]interface{}{
+					"scenario": "multi_step_search",
+					"phase":    "after_round_2",
+					"presets": []MockPreset{
+						{ID: "p_stat", Label: "📊 看文件大小", UserText: "Movies/sub/target.mp4 多大", Tooltip: "触发 stat_file 详细输出"},
+						{ID: "p_encrypt_found", Label: "🔒 加密这个文件", UserText: "加密 Movies/sub/target.mp4", Tooltip: "跳到 encrypt_video"},
+						{ID: "p_done", Label: "✅ 结束搜索", UserText: "好的，不用再找了", Tooltip: "结束本轮搜索"},
+					},
+				}},
+			}},
 			// Round 3: stat_file（execute_real=true — 真实文件 stat）
 			{DelayMs: 300, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
@@ -381,6 +435,13 @@ func scenarioMultiStepSearch() *MockScenario {
 				}},
 			}},
 		},
+		// 初始预设（剧本刚激活时显示）。mid-scenario 阶段另有 after_round_2 预设
+		// （见上方 step 5），前端会按"最新 mock_presets 事件"覆盖。
+		Presets: []MockPreset{
+			{ID: "p_init_listing", Label: "📂 先列 Movies", UserText: "列出 Movies 目录", Tooltip: "从入口开始"},
+			{ID: "p_init_all_video", Label: "🎬 找所有视频", UserText: "找所有视频", Tooltip: "触发完整 3 轮搜索"},
+			{ID: "p_init_cancel", Label: "❌ 取消", UserText: "算了不找了", Tooltip: "退出搜索"},
+		},
 	}
 }
 
@@ -408,6 +469,12 @@ func scenarioStreamingError() *MockScenario {
 					"message": "上游 LLM 服务超时（模拟）",
 				}},
 			}},
+		},
+		// 预设：用户看到错误状态后可能的恢复动作
+		Presets: []MockPreset{
+			{ID: "p_retry", Label: "🔁 重试", UserText: "重试一下", Tooltip: "重发相同问题"},
+			{ID: "p_simpler", Label: "📝 简化问题", UserText: "列出 /Movies", Tooltip: "换成简单 list_files_query"},
+			{ID: "p_view_logs", Label: "📋 查看错误日志", UserText: "显示错误日志", Tooltip: "切到 DevLogs tab"},
 		},
 	}
 }
@@ -458,6 +525,12 @@ func scenarioTruncationLongText() *MockScenario {
 				}},
 			}},
 		},
+		// 预设：超长文本后用户常见动作
+		Presets: []MockPreset{
+			{ID: "p_summarize_long", Label: "🔹 总结上面", UserText: "用 bullet 总结上面这篇", Tooltip: "压缩为 bullet"},
+			{ID: "p_key_points", Label: "🎯 关键点", UserText: "提取关键点", Tooltip: "关键点提取"},
+			{ID: "p_save_long", Label: "💾 保存全文", UserText: "保存到 docs/long.md", Tooltip: "保存到文件"},
+		},
 	}
 }
 
@@ -502,6 +575,12 @@ func scenarioReasoningChain() *MockScenario {
 				}},
 			}},
 		},
+		// 预设：推理完成后用户可能追问
+		Presets: []MockPreset{
+			{ID: "p_why_z", Label: "❓ 为什么选 Z", UserText: "为什么是 Z 不是 X", Tooltip: "追问决策依据"},
+			{ID: "p_alternative", Label: "🔄 换思路", UserText: "换个思路分析", Tooltip: "重新推理"},
+			{ID: "p_save_reasoning", Label: "💾 保存推理过程", UserText: "把推理过程保存到 analysis.md", Tooltip: "保存到文件"},
+		},
 	}
 }
 
@@ -543,6 +622,15 @@ func scenarioToolCallWithArgs() *MockScenario {
 					"usage":        map[string]int{"totalTokens": 78},
 				}},
 			}},
+		},
+		// 预设：用户看到带复杂 args 的工具调用后，可调整参数重试
+		//   - p_no_filter：去掉 filter 直接列
+		//   - p_smaller_size：把 min_size 改大（找大文件）
+		//   - p_different_ext：换文件类型
+		Presets: []MockPreset{
+			{ID: "p_no_filter", Label: "📂 不用 filter", UserText: "列出 Movies/2024 全部文件", Tooltip: "去掉 filter/max_entries"},
+			{ID: "p_smaller_size", Label: "💎 找大于 10GB 的", UserText: "Movies/2024 找大于 10GB 的视频", Tooltip: "min_size 调大"},
+			{ID: "p_different_ext", Label: "🎞️ 改成 mkv", UserText: "Movies/2024 找 mkv 视频", Tooltip: "改 ext 过滤"},
 		},
 	}
 }
@@ -612,6 +700,12 @@ func scenarioMultiToolParallel() *MockScenario {
 				}},
 			}},
 		},
+		// 预设：3 个并行工具调用后用户可能想筛选/汇总
+		Presets: []MockPreset{
+			{ID: "p_only_movies", Label: "🎬 只看 Movies", UserText: "只列 Movies 目录", Tooltip: "缩减范围"},
+			{ID: "p_count_files", Label: "🔢 统计文件数", UserText: "统计每个目录有多少文件", Tooltip: "触发 stat_file 批量"},
+			{ID: "p_export", Label: "📤 导出结果", UserText: "把列表导出为 json", Tooltip: "导出结构化结果"},
+		},
 	}
 }
 
@@ -641,6 +735,12 @@ func scenarioContextExhausted() *MockScenario {
 					},
 				}},
 			}},
+		},
+		// 预设：触发 length 截断后用户恢复动作
+		Presets: []MockPreset{
+			{ID: "p_clear_history", Label: "🧹 清空上下文", UserText: "清空上下文", Tooltip: "清空历史会话重试"},
+			{ID: "p_split", Label: "✂️ 分两段问", UserText: "分段总结这段", Tooltip: "分两轮问"},
+			{ID: "p_shorter", Label: "📝 简短回答", UserText: "简短回答 100 字内", Tooltip: "限制 max_tokens"},
 		},
 	}
 }
@@ -697,6 +797,12 @@ func scenarioChineseGreeting() *MockScenario {
 					"usage":        map[string]int{"totalTokens": 16},
 				}},
 			}},
+		},
+		// 预设：打招呼后用户可能立刻开问
+		Presets: []MockPreset{
+			{ID: "p_greet_files", Label: "📁 看看文件", UserText: "有哪些视频文件", Tooltip: "跳到 list_files_query"},
+			{ID: "p_greet_help", Label: "❓ 你能做什么", UserText: "你能做什么", Tooltip: "跳到 default_friendly"},
+			{ID: "p_greet_encrypt", Label: "🔒 加密视频", UserText: "加密这个视频", Tooltip: "跳到 encrypt_video"},
 		},
 	}
 }

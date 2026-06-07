@@ -299,6 +299,21 @@
         :on-remove="removeAttachment"
       />
 
+      <!--
+        Mock 模式预设输入控件：覆盖在输入框上方。
+        数据由 useAgent().mockPresets 提供（后端 mock_presets 事件驱动）。
+        mid-scenario 会再次触发事件 → 完整覆盖 chip 列表（连续会话预设）。
+        流式进行中（status === 'streaming'）时禁用 chip，防止重复触发。
+      -->
+      <MockPresetBar
+        v-if="isMockMode && mockPresets.length > 0"
+        :presets="mockPresets"
+        :scenario="mockScenario ?? ''"
+        :phase="mockPresetsPhase"
+        :disabled="status === 'streaming'"
+        @pick="(preset) => { void pickMockPreset(preset) }"
+      />
+
       <div class="footerInputRow" :class="{ 'footerInputRow-palette': slashMenu.isOpen.value }">
         <!-- 模型选择器（输入框内嵌，参考 ChatGPT/Claude 主流设计） -->
         <div class="modelPicker" ref="modelPickerRef">
@@ -476,6 +491,7 @@ import ContextCompactionDivider from '@/components/agent/ContextCompactionDivide
 // Task 22：agent task 消息（subagent 拆解的子任务列表）
 import AgentTaskMessage from '@/components/agent/AgentTaskMessage.vue'
 import AttachmentTray from '@/components/agent/AttachmentTray.vue'
+import MockPresetBar from '@/components/agent/MockPresetBar.vue'
 import SlashMenu from '@/components/agent/SlashMenu.vue'
 import ContextIcon from '@/components/agent/ContextIcon.vue'
 
@@ -485,7 +501,7 @@ const { t } = useI18n()
 // Agent API 基础 URL（动态解析：dev 走网关 / prod 直连后端）
 const AGENT_API_BASE = getAgentApiBase()
 
-const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel, setApiDefaultModel, isMockMode, mockScenario, currentMockMode, loadMockMode, setMockMode } = useAgent()
+const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel, setApiDefaultModel, isMockMode, mockScenario, currentMockMode, loadMockMode, setMockMode, mockPresets, mockPresetsPhase, pickMockPreset } = useAgent()
 const router = useRouter()
 
 /**

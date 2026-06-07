@@ -44,6 +44,24 @@ type MockScenario struct {
 	Keywords    []string // 关键词匹配（任一命中，不区分大小写）
 	Regex       string   // 正则匹配
 	Steps       []MockStep
+	// Presets 是「剧本激活时」向 UI 推送的快捷输入按钮。
+	// 每个预设会被前端渲染为 chip；点击后自动填充或直接发送 userText。
+	// 高级剧本可同时利用 mid-scenario 的 mock_presets 事件覆盖/扩展
+	// 此初始列表（实现「随剧本进度更新」的多轮会话交互）。
+	Presets []MockPreset
+}
+
+// MockPreset 是单个预设输入按钮。
+//
+// ID 在剧本内唯一，用于去重 / 追踪点击。
+// Label 显示在 chip 上，UserText 是点击后实际发送给 agent 的文本。
+// Icon / Tooltip 可选（前端会安全 fallback）。
+type MockPreset struct {
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	UserText string `json:"userText"`
+	Icon     string `json:"icon,omitempty"`
+	Tooltip  string `json:"tooltip,omitempty"`
 }
 
 // MockStep 是一组事件 + 触发前延迟。
@@ -353,9 +371,29 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 					merged["scenario"] = scenario.ID
 					s.sendAndCache(sess, w, flusher, "stream_start", merged)
 					streamStartEmitted = true
+
+					// 紧随 stream_start 推送初始预设按钮（如果有）。
+					// 前端 MockPresetBar 监听到 mock_presets 事件即渲染 chip。
+					// mid-scenario 期间的预设更新通过单独的 mock_presets 事件
+					// 在 steps 内推（见下方 switch case）。
+					if len(scenario.Presets) > 0 {
+						s.sendAndCache(sess, w, flusher, "mock_presets", map[string]interface{}{
+							"scenario": scenario.ID,
+							"phase":    "initial",
+							"presets":  scenario.Presets,
+						})
+					}
 				} else {
 					s.sendAndCache(sess, w, flusher, "stream_start", ev.Data)
 				}
+
+			case "mock_presets":
+				// mid-scenario 预设更新（高级剧本多轮会话）：
+				// 剧本可在任意 step 推一个 mock_presets 事件，data.presets 覆盖
+				// 当前激活的预设列表。前端基于此实时刷新 chip 按钮。
+				// data.phase 字段由剧本作者标记当前阶段（initial/middle/followup），
+				// 仅做调试 / 埋点用，前端不强依赖。
+				s.sendAndCache(sess, w, flusher, "mock_presets", ev.Data)
 
 			case "text_delta":
 				textSeq++
@@ -375,6 +413,7 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 				if isErrorStatus(ev.Data) {
 					s.sendAndCache(sess, w, flusher, "stream_end",
 						map[string]interface{}{"finishReason": "error"})
+					s.endMockPresets(sess, w, flusher, scenario.ID, "stream_status_error")
 					slog.Info("mock: stream_status=error injected auto stream_end",
 						"scenario", scenario.ID)
 					return nil
@@ -406,6 +445,13 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 				}
 				s.sendAndCache(sess, w, flusher, "tool_result", ev.Data)
 
+			case "stream_end":
+				// 推送 stream_end 后立刻推 mock_presets_clear，让前端清空 bar。
+				// 这样用户看到 assistant 完整回复后，preset 按钮自动消失，
+				// 输入框恢复"自由输入"状态。下次新场景激活时再发新预设。
+				s.sendAndCache(sess, w, flusher, "stream_end", ev.Data)
+				s.endMockPresets(sess, w, flusher, scenario.ID, "stream_end")
+
 			default:
 				// 其他类型：原样推送
 				s.sendAndCache(sess, w, flusher, ev.Type, ev.Data)
@@ -420,7 +466,21 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 			"scenario", scenario.ID, "count", len(pendingRealCalls))
 	}
 
+	// 防御性兜底：若剧本没显式发 stream_end 事件（异常剧本），
+	// 此处也推一次 clear，防止 chip 永久挂在 UI 上。
+	// 幂等：stream_end case 已发过的 clear 会带相同 scenario ID，重复清空是 OK 的。
+	s.endMockPresets(sess, w, flusher, scenario.ID, "scenario_done")
+
 	return nil
+}
+
+// endMockPresets 推一个 mock_presets_clear 事件，前端 MockPresetBar 收到后清空 chip。
+// reason 仅做调试 / 埋点用，前端不强依赖。
+func (s *Server) endMockPresets(sess *agentSession, w http.ResponseWriter, flusher http.Flusher, scenarioID, reason string) {
+	s.sendAndCache(sess, w, flusher, "mock_presets_clear", map[string]interface{}{
+		"scenario": scenarioID,
+		"reason":   reason,
+	})
 }
 
 // pendingRealCall 是剧本中标记 execute_real=true 的 tool_call 的最小信息。

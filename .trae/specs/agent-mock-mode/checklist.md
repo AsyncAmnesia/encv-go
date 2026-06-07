@@ -83,3 +83,75 @@
 - [ ] 提问"触发超时" → 错误 toast 显示
 - [ ] 设置 mock_speed=0.1 → SSE 明显变慢
 - [ ] 自定义剧本（custom 模式）→ 用户输入命中关键词 → 触发自定义剧本
+
+---
+
+# 增量 Checklist：Mock 剧本预设输入控件
+
+## 数据结构 & SSE 协议
+
+- [x] `MockPreset` 类型定义完整（ID / Label / UserText / Icon / Tooltip）
+- [x] `MockScenario.Presets []MockPreset` 字段
+- [x] `mock_presets` SSE 事件类型（data: `{ scenario, phase, presets: MockPreset[] }`）
+- [x] `mock_presets_clear` SSE 事件类型
+- [x] stream_start 之后**立即**推初始 mock_presets
+- [x] stream_end 之后**立即**推 mock_presets_clear
+- [x] mid-scenario step 可推 mock_presets 透传更新（连续会话）
+- [x] 12 个剧本**全部**包含 Presets 字段（每个 ≥3 个）
+- [x] `multi_step_search` 剧本在 mid-scenario 推第二组 mock_presets
+
+## execute_real 真实工具执行
+
+- [x] `MockStep.ExecuteReal bool` 字段
+- [x] `MockEngine.realExecutor` 字段 + `SetRealExecutor` 方法
+- [x] `pendingRealCalls` map 追踪 execute_real=true 的 tool_call
+- [x] tool_result 事件处理时调 realExecutor 拿真结果覆盖硬编码
+- [x] nil realExecutor 时 fallback 到硬编码（向后兼容）
+- [x] `server.NewServer` 在 return 前调 `SetRealExecutor(s.executeAgentTool)`
+- [x] 12 个剧本**所有** tool_call 标 `execute_real: true`
+
+## 前端 useAgent
+
+- [x] `AgentEventType` 联合类型含 `mock_presets` / `mock_presets_clear`
+- [x] `MockPreset` interface 导出
+- [x] `mockPresets` / `mockPresetsPhase` / `mockPresetsScenario` ref 声明
+- [x] `case 'mock_presets':` 解析 JSON 覆盖 mockPresets.value
+- [x] `case 'mock_presets_clear':` 清空三个 ref
+- [x] `pickMockPreset(preset)` 函数 → `send(preset.userText, { mode: 'start' })`
+- [x] 状态检查（busy 时静默忽略）
+- [x] export 4 个新成员（mockPresets / mockPresetsPhase / mockPresetsScenario / pickMockPreset）
+
+## 前端 MockPresetBar 组件
+
+- [x] props：`presets` / `scenario` / `phase` / `disabled`
+- [x] emits：`pick [preset: MockPreset]`
+- [x] header（🧪 + scenario 名 + phase + 「点击直接发送」hint）
+- [x] chip 列表（水平滚动 + icon + label）
+- [x] 暗黑模式适配（半透明 primary tint）
+- [x] 流式进行中 disabled 状态（防止重复触发）
+- [x] v-if = `isMockMode && mockPresets.length > 0`（AgentChat 集成）
+- [x] 位于 AttachmentTray 之后、footerInputRow 之前（输入框上方覆盖）
+
+## i18n 增量
+
+- [x] `agent.mockPresetBarAria` zh + en
+- [x] `agent.mockPresetBarDefaultScenario` zh + en
+- [x] `agent.mockPresetBarHint` zh + en
+
+## 单元测试
+
+- [x] `TestMockEngine_ExecuteReal_OverridesHardcoded`
+- [x] `TestMockEngine_ExecuteReal_FallbackWhenNoExecutor`
+- [x] `TestMockEngine_ExecuteReal_ErrorPropagatesAsIsError`
+- [x] `TestMockEngine_EmitsInitialPresetsOnStreamStart`
+- [x] `TestMockEngine_NoPresetsWhenScenarioEmpty`
+- [x] `TestMockEngine_MidScenarioPresetUpdate`
+- [x] `TestMockEngine_EmitsClearOnStreamEnd`
+- [x] `TestMockEngine_AllBuiltinScenariosHavePresets`
+
+## 编译 / 构建
+
+- [x] go build ./cmd/encv 0 错误
+- [x] pnpm vue-tsc --noEmit 0 错误
+- [x] pnpm vite build 0 错误
+- [x] go test ./internal/server/... 全部通过

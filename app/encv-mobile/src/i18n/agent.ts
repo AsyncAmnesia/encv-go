@@ -192,6 +192,12 @@ export default {
     'agent.mockModeCustom': '自定义剧本',
     'agent.mockModeSet': '已切换到：{mode}',
     'agent.mockModeSetFailed': '切换 mock 模式失败',
+    // ── Mock 模式预设输入控件（覆盖在输入框上方的 chip 列表） ─────
+    // 由后端 mock_presets 事件驱动，每条预设点击后会调 useAgent().pickMockPreset
+    // 发送 userText。后端在剧本任一阶段都可以推新事件实现 mid-scenario 更新。
+    'agent.mockPresetBarAria': 'Mock 模式预设输入',
+    'agent.mockPresetBarDefaultScenario': '剧本',
+    'agent.mockPresetBarHint': '点击直接发送',
   },
   en: {
     'agent.title': 'AI Assistant',
@@ -385,5 +391,9 @@ export default {
     'agent.mockModeCustom': 'Custom Scenarios',
     'agent.mockModeSet': 'Switched to: {mode}',
     'agent.mockModeSetFailed': 'Failed to switch mock mode',
+    // Mock mode preset chips (chips overlaid on the input area)
+    'agent.mockPresetBarAria': 'Mock mode preset inputs',
+    'agent.mockPresetBarDefaultScenario': 'Scenario',
+    'agent.mockPresetBarHint': 'Click to send',
   },
 }

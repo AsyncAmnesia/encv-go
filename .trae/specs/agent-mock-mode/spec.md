@@ -592,3 +592,128 @@ Mock 引擎 SHALL 支持在剧本中途注入错误，验证前端错误处理�
    - 顶部「🧪 模拟模式」徽章显示
 6. **错误模拟验证** — 提问"触发超时" → 验证错误 toast 显示
 7. **时间模拟验证** — 设置 `mock_speed=0.1` → 验证 SSE 事件明显变慢
+
+---
+
+## ADDED Requirements (增量 #1：Mock 剧本预设输入控件)
+
+> **触发背景**：用户反馈 mock 模式下要提供"分支选择"入口 — 同一剧本的不同用户输入（不同分支、不同结果）以及高级剧本的连续会话预设都应在剧本运行前/中以可点击 chip 形式呈现，而不是让用户手敲。
+
+### Requirement: MockPreset 数据结构
+
+`MockScenario` SHALL 支持可选的 `Presets []MockPreset` 字段。每个预设是一个可点击的快速输入按钮。
+
+```go
+type MockPreset struct {
+    ID       string `json:"id"`       // 全局唯一，用于前端 data-testid
+    Label    string `json:"label"`    // chip 上显示的短文本
+    UserText string `json:"userText"` // 点击后注入到对话的 user 消息
+    Icon     string `json:"icon,omitempty"`    // 可选 emoji
+    Tooltip  string `json:"tooltip,omitempty"` // 可选长描述
+}
+```
+
+#### Scenario: 12 个内置剧本**必须**包含 Presets
+
+- **WHEN** `agent_mock_scenarios.go` 的 `builtinScenarios` 列表加载
+- **THEN** 12 个剧本每一个都 SHALL 至少包含 3 个 Preset（保证用户进入剧本立刻有可选项）
+- **AND** 每个 Preset 的 `userText` SHALL 是能匹配其他剧本触发词的真实 user 消息（演示跨剧本跳转）
+- **AND** 验收由 `TestMockEngine_AllBuiltinScenariosHavePresets` 单元测试强制检查
+
+#### Scenario: 高级剧本连续会话预设
+
+- **WHEN** 高级剧本（≥3 轮 tool_call）运行
+- **THEN** 该剧本 SHALL 在 mid-scenario step 推送**第二次** `mock_presets` 事件以更新预设列表
+- **AND** 第二次推送的 presets 反映当前剧本进度（阶段名 `phase` 不同）
+- **AND** 前端每次 `mock_presets` 事件**完整替换**当前 chip 列表（mid-scenario 更新天然覆盖）
+
+### Requirement: mock_presets SSE 事件协议
+
+后端 MockEngine SHALL 在以下时机推 `mock_presets` 事件：
+
+1. `stream_start` 事件**之后**立刻推**初始** `mock_presets`（scenario 当前阶段的预设）
+2. 任意 mid-scenario step 内可推**更新版** `mock_presets`（实现连续会话）
+3. `stream_end` 事件**之后**立刻推 `mock_presets_clear`（清空 chip 列表）
+
+#### Scenario: 事件 data 形状
+
+```json
+// mock_presets
+{
+    "scenario": "list_files_query",
+    "phase": "initial",
+    "presets": [
+        {"id": "p_qq", "label": "QQ 目录", "userText": "查看 QQ 目录", "icon": "📁", "tooltip": "..."},
+        ...
+    ]
+}
+
+// mock_presets_clear
+{}
+```
+
+#### Scenario: stream_end 后立刻清空
+
+- **WHEN** MockEngine 推 `stream_end` 事件
+- **THEN** 紧跟着推一个 `mock_presets_clear` 事件
+- **AND** 前端 `useAgent` 收到 `mock_presets_clear` 后清空 `mockPresets` ref
+- **AND** 验收由 `TestMockEngine_EmitsClearOnStreamEnd` 单元测试强制检查
+
+### Requirement: 前端 MockPresetBar 组件
+
+`MockPresetBar.vue` SHALL 是 AgentChat 输入框上方的 chip 列表组件，仅在 mock 模式 + 有预设时显示。
+
+#### Scenario: 组件契约
+
+```vue
+<MockPresetBar
+    :presets="mockPresets"
+    :scenario="mockScenario"
+    :phase="mockPresetsPhase"
+    :disabled="status === 'streaming'"
+    @pick="(preset) => pickMockPreset(preset)"
+/>
+```
+
+- 仅在 `isMockMode && mockPresets.length > 0` 时渲染
+- header 显示 🧪 + scenario 名 + phase 阶段（调试可见）+ 「点击直接发送」hint
+- chip 列表水平滚动（`overflow-x: auto`），每个 chip 是 `<button>` 含 icon + label
+- 流式进行中时 chip 禁用（`pointer-events: none`），防止重复触发
+- 暗黑模式：半透明 primary tint 背景，与 ion-content 背景融合
+
+#### Scenario: 点击 chip → send
+
+- **WHEN** 用户点击 chip
+- **THEN** emit `pick` 事件，父组件 `AgentChat` 调 `useAgent().pickMockPreset(preset)`
+- **AND** `pickMockPreset` 内部调 `send(preset.userText, { mode: 'start' })`
+- **AND** 状态检查：`status === 'idle'` 时才发送（busy 时静默忽略）
+- **AND** 调试日志：`[useAgent] pickMockPreset → <id> | userText = <text>`
+
+### Requirement: i18n 文案（增量）
+
+| key | zh-CN | en |
+|-----|-------|---|
+| `agent.mockPresetBarAria` | Mock 模式预设输入 | Mock mode preset inputs |
+| `agent.mockPresetBarDefaultScenario` | 剧本 | Scenario |
+| `agent.mockPresetBarHint` | 点击直接发送 | Click to send |
+
+### Requirement: 关键文件 / 函数（增量）
+
+- `internal/server/agent_mock.go` — `MockPreset` 类型 + `MockEngine.emitInitialPresets/endMockPresets` + `mock_presets` event case
+- `internal/server/agent_mock_scenarios.go` — 12 个剧本全部加 `Presets` 字段
+- `app/encv-mobile/src/composables/useAgent.ts` — `mock_presets` / `mock_presets_clear` 事件 + `mockPresets` ref + `pickMockPreset`
+- `app/encv-mobile/src/components/agent/MockPresetBar.vue` — 新增 chip 列表组件
+- `app/encv-mobile/src/views/AgentChat.vue` — 集成 MockPresetBar 覆盖在输入框上方
+- `app/encv-mobile/src/i18n/agent.ts` — 3 个新 i18n key
+- `internal/server/agent_mock_test.go` — 8 个新单元测试覆盖
+
+### Requirement: 单元测试覆盖（增量）
+
+- [x] `TestMockEngine_EmitsInitialPresetsOnStreamStart` — 验证初始 mock_presets 在 stream_start 之后推送
+- [x] `TestMockEngine_NoPresetsWhenScenarioEmpty` — 验证无 Presets 字段时不推 mock_presets
+- [x] `TestMockEngine_MidScenarioPresetUpdate` — 验证 mid-scenario 推 mock_presets 实现覆盖更新
+- [x] `TestMockEngine_EmitsClearOnStreamEnd` — 验证 stream_end 触发 mock_presets_clear
+- [x] `TestMockEngine_AllBuiltinScenariosHavePresets` — 验收：12 个剧本都至少有 1 个 Preset
+- [x] `TestMockEngine_ExecuteReal_OverridesHardcoded` — 验证 execute_real=true 时调真实 handler
+- [x] `TestMockEngine_ExecuteReal_FallbackWhenNoExecutor` — 验证 nil realExecutor 时 fallback 到硬编码
+- [x] `TestMockEngine_ExecuteReal_ErrorPropagatesAsIsError` — 验证 error → isError=true

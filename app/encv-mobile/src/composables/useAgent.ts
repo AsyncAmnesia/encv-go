@@ -62,6 +62,22 @@ export type AgentEventType =
   // 的合成消息（renderTurnItems 把它转成 ContextCompactionDivider）。
   // 这是 7 种 event type 中的第 7 种，原有 6 种契约不变。
   | 'compaction'
+  // Mock 模式剧本预设：后端 MockEngine 在 stream_start 之后（或 mid-scenario
+  // 任意 step 内）推送，data 形状是 { scenario, phase, presets: MockPreset[] }。
+  // 前端收到后由 MockPresetBar 渲染为输入框上方的 chip 按钮列表。
+  | 'mock_presets'
+  // Mock 模式预设清空信号：后端在 stream_end 时推，前端 MockPresetBar 收到
+  // 后清空 chip。reason 字段仅做调试。
+  | 'mock_presets_clear'
+
+/** 单个 mock 预设按钮契约（与后端 internal/server.MockPreset JSON 对应） */
+export interface MockPreset {
+  id: string
+  label: string
+  userText: string
+  icon?: string
+  tooltip?: string
+}
 
 /** Agent 推送到 SSE channel 的事件 */
 export interface AgentEvent {
@@ -674,6 +690,18 @@ export function useAgent() {
   const isMockMode = ref(false)
   const mockScenario = ref<string>('')
 
+  // ─── Mock 模式预设按钮（覆盖在输入框上方，由 mock_presets 事件驱动） ──
+  // 三个 ref 状态：
+  //   - mockPresets：当前激活的预设 chip 列表
+  //   - mockPresetsPhase：当前阶段（initial / after_round_2 / ...，调试用）
+  //   - mockPresetsScenario：当前预设归属的 scenario ID（调试用）
+  // 后端会在 stream_start 之后立刻推一次 mock_presets 事件初始化，
+  // 并在 stream_end 时推 mock_presets_clear 清空。
+  // 中级/高级剧本可在 mid-scenario step 内再次推 mock_presets 实现"随进度更新"。
+  const mockPresets = ref<MockPreset[]>([])
+  const mockPresetsPhase = ref<string>('')
+  const mockPresetsScenario = ref<string>('')
+
   // ─── Mock 模式控制（用户从 AgentChat 顶栏的"🧪 模拟"badge 切换） ──
   // 字段语义与后端 cfg.Agent.MockMode 一一对应：
   //   - 'off'     → 真实 LLM 调用（默认）
@@ -684,6 +712,27 @@ export function useAgent() {
   // 下次会话起立即生效（无需重启后端）。
   type MockMode = 'off' | 'builtin' | 'custom'
   const currentMockMode = ref<MockMode>('off')
+
+  /**
+   * 模拟模式预设 chip 点击：直接把 preset.userText 喂给 send()。
+   * 与用户在输入框里打字的区别：
+   *   - 不会先填到 input.value（用户点击 chip 的预期是"立即发"，不是"先看再改"）
+   *   - 会触发和正常 send 完全一样的流程（后端按 userText 关键词重新匹配 scenario）
+   * 用 mode='start'（而非 'steer' / 'queue'）：mock 模式是单次请求流。
+   */
+  async function pickMockPreset(preset: MockPreset): Promise<void> {
+    if (!preset || typeof preset.userText !== 'string' || preset.userText.length === 0) {
+      console.debug('[useAgent] pickMockPreset: invalid preset', preset)
+      return
+    }
+    // 状态检查：跟 send 保持一致 —— 正在 streaming/confirming 时丢弃
+    if (status.value === 'streaming' || status.value === 'confirming') {
+      console.debug('[useAgent] pickMockPreset: ignored (busy)')
+      return
+    }
+    console.debug('[useAgent] pickMockPreset →', preset.id, '| userText =', preset.userText)
+    await send(preset.userText, { mode: 'start' })
+  }
 
   async function loadMockMode() {
     try {
@@ -1305,6 +1354,57 @@ export function useAgent() {
         }
         break
       }
+      case 'mock_presets': {
+        // Mock 模式剧本预设推送：
+        //   - 后端在 stream_start 之后立即推一次（phase=initial）
+        //   - 高级剧本可在 mid-scenario 任意 step 再推（phase=after_round_2 等）
+        // data 形状：{ scenario, phase, presets: MockPreset[] }
+        //
+        // 前端覆盖行为：每次 mock_presets 事件都**完整替换**当前 mockPresets。
+        // 这样 mid-scenario 更新（高级剧本的"随进度更新"）天然就是覆盖语义。
+        try {
+          const raw = JSON.parse(event.data) as
+            | { scenario?: unknown; phase?: unknown; presets?: unknown }
+            | null
+          if (!raw) break
+          const list = Array.isArray(raw.presets) ? (raw.presets as MockPreset[]) : []
+          // 兼容后端发送 MockPreset 时字段大小写：id/label/userText/tooltip
+          // 一律 lowercase 归一化（后端 json tag 是 lowercase，前端契约保持一致）。
+          mockPresets.value = list
+            .filter((p): p is MockPreset => !!p && typeof p === 'object' && typeof p.id === 'string' && typeof p.userText === 'string')
+            .map((p) => ({
+              id: p.id,
+              label: String(p.label ?? p.id),
+              userText: p.userText,
+              icon: typeof p.icon === 'string' ? p.icon : undefined,
+              tooltip: typeof p.tooltip === 'string' ? p.tooltip : undefined,
+            }))
+          mockPresetsPhase.value = String(raw.phase ?? '')
+          mockPresetsScenario.value = String(raw.scenario ?? '')
+          console.debug(
+            '[useAgent] mock_presets:',
+            mockPresets.value.length,
+            'presets, phase=',
+            mockPresetsPhase.value,
+            ', scenario=',
+            mockPresetsScenario.value,
+          )
+        } catch (e) {
+          console.debug('[useAgent] mock_presets parse failed:', e)
+        }
+        break
+      }
+
+      case 'mock_presets_clear': {
+        // 后端在 stream_end 时推：清空 chip 按钮（让输入框恢复自由输入状态）。
+        // 原因 reason 字段仅做调试。
+        mockPresets.value = []
+        mockPresetsPhase.value = ''
+        mockPresetsScenario.value = ''
+        console.debug('[useAgent] mock_presets_clear')
+        break
+      }
+
       case 'compaction': {
         // Task 7：上下文自动压缩事件。
         //
@@ -1920,6 +2020,15 @@ export function useAgent() {
     currentMockMode,
     loadMockMode,
     setMockMode,
+    // Mock 模式预设按钮：覆盖在输入框上方的 chip 列表。
+    // - mockPresets：当前 chip 列表（mock_presets 事件驱动）
+    // - mockPresetsPhase：当前阶段（initial / after_round_2 / ...）
+    // - mockPresetsScenario：当前 scenario ID
+    // - pickMockPreset：点击 chip → send(preset.userText)
+    mockPresets,
+    mockPresetsPhase,
+    mockPresetsScenario,
+    pickMockPreset,
     // Task 4：以下为测试专用钩子。生产代码不应调用——所有 serverInstance
     // 同步都由 useAgent 内部 await refreshServerInstance() 完成。
     __refreshServerInstanceForTest: refreshServerInstance,
