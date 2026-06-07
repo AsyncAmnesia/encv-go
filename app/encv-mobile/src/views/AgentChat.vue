@@ -904,7 +904,9 @@ defineExpose({})
 .agentChat {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 100vh;
+  max-height: 100vh;
+  width: 100vw;
   background: var(--ion-background-color);
   color: var(--ion-text-color);
 }

@@ -80,10 +80,17 @@ body.dark .agentEntry {
 <style>
 /* 全局：AgentChat modal 全屏（不挡 header 但占满） */
 ion-modal.agent-chat-modal {
-  --width: 100%;
-  --height: 100%;
-  --max-width: 100%;
-  --max-height: 100%;
+  --width: 100vw;
+  --height: 100vh;
+  --max-width: 100vw;
+  --max-height: 100vh;
   --border-radius: 0;
+  left: 0 !important;
+  top: 0 !important;
+}
+
+ion-modal.agent-chat-modal .modal-wrapper {
+  width: 100vw !important;
+  height: 100vh !important;
 }
 </style>
