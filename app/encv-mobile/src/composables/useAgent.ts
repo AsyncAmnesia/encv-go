@@ -18,7 +18,7 @@
  *   - Requirement: Event 类型契约（6 种 event type）
  *   - Requirement: 4-决策 ConfirmRequest
  */
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { showToast } from '@/composables/useToast'
 import { getDeviceIdSync } from './useDeviceId'
 import { getAgentApiBase } from './useAgentApiBase'
@@ -689,6 +689,17 @@ export function useAgent() {
   // 前端拿到任一信号就置 isMockMode=true，让 AgentChat 顶部展示"🧪 模拟"badge。
   const isMockMode = ref(false)
   const mockScenario = ref<string>('')
+
+  // 调试开关：URL 带 ?debug=agent 时为 true，强制显示 AgentDebugPanel。
+  // 浏览器端用 window.location，SSR 时降级为 false。
+  const isDebugAgent = computed(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      return new URLSearchParams(window.location.search).get('debug') === 'agent'
+    } catch {
+      return false
+    }
+  })
 
   // ─── Mock 模式预设按钮（覆盖在输入框上方，由 mock_presets 事件驱动） ──
   // 三个 ref 状态：
@@ -2086,6 +2097,9 @@ export function useAgent() {
     mockPresetsScenario,
     pickMockPreset,
     loadMockPresets,
+    // 调试开关：URL ?debug=agent 时强制显示 AgentDebugPanel（mock 模式时也自动开）。
+    // 便于排查"SSE 事件 → messages → renderedItems → UI 组件"全链路断点。
+    isDebugAgent,
     // Task 4：以下为测试专用钩子。生产代码不应调用——所有 serverInstance
     // 同步都由 useAgent 内部 await refreshServerInstance() 完成。
     __refreshServerInstanceForTest: refreshServerInstance,

@@ -316,6 +316,14 @@
         @pick="(preset) => { void pickMockPreset(preset) }"
       />
 
+      <!-- 调试面板：mock 模式自动开 / URL ?debug=agent 强制开 -->
+      <AgentDebugPanel
+        v-if="isMockMode || isDebugAgent"
+        :messages="messages"
+        :rendered-items="renderedItems"
+        :default-open="isMockMode"
+      />
+
       <div class="footerInputRow" :class="{ 'footerInputRow-palette': slashMenu.isOpen.value }">
         <!-- 模型选择器（输入框内嵌，参考 ChatGPT/Claude 主流设计） -->
         <div class="modelPicker" ref="modelPickerRef">
@@ -494,6 +502,7 @@ import ContextCompactionDivider from '@/components/agent/ContextCompactionDivide
 import AgentTaskMessage from '@/components/agent/AgentTaskMessage.vue'
 import AttachmentTray from '@/components/agent/AttachmentTray.vue'
 import MockPresetBar from '@/components/agent/MockPresetBar.vue'
+import AgentDebugPanel from '@/components/agent/AgentDebugPanel.vue'
 import SlashMenu from '@/components/agent/SlashMenu.vue'
 import ContextIcon from '@/components/agent/ContextIcon.vue'
 
@@ -522,7 +531,7 @@ const mockPresetBarPhase = computed(() => {
 // Agent API 基础 URL（动态解析：dev 走网关 / prod 直连后端）
 const AGENT_API_BASE = getAgentApiBase()
 
-const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel, setApiDefaultModel, isMockMode, mockScenario, currentMockMode, loadMockMode, setMockMode, mockPresets, mockPresetsPhase, mockPresetsScenario, pickMockPreset, loadMockPresets } = useAgent()
+const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel, setApiDefaultModel, isMockMode, isDebugAgent, mockScenario, currentMockMode, loadMockMode, setMockMode, mockPresets, mockPresetsPhase, mockPresetsScenario, pickMockPreset, loadMockPresets } = useAgent()
 const router = useRouter()
 
 /**
