@@ -230,12 +230,14 @@ func callOpenAIChatOnce(ctx context.Context, cfg agentConfig, model string, temp
 		"messages":    messages,
 		"temperature": temperature,
 		"stream":      false,
+		"max_tokens":  lookupMaxOutputTokens(model),
 	}
 	if len(openAITools) > 0 {
 		reqBody["tools"] = openAITools
 		reqBody["tool_choice"] = "auto"
 		slog.Info("callOpenAIChatOnce: sending request with tools",
-			"model", model, "tool_count", len(openAITools))
+			"model", model, "tool_count", len(openAITools),
+			"max_output_tokens", lookupMaxOutputTokens(model))
 	}
 	reqJSON, _ := json.Marshal(reqBody)
 
@@ -285,34 +287,27 @@ func callOpenAIChatOnce(ctx context.Context, cfg agentConfig, model string, temp
 //
 // 与 callOpenAIChatOnce 一样，把 agent 工具列表塞到 reqBody["tools"]。
 func callOpenAIStream(ctx context.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg, openAITools []map[string]interface{}) (<-chan openaiStreamEvent, error) {
-	// max_tokens 根据模型上下文窗口动态决定，而非硬编码
-	// 策略：context window 的 ~12.5%（即 1/8），下限 4096，上限 16384
-	// gpt-4o (128k) → 16000, deepseek-chat (64k) → 8000, gpt-4 (8k) → 4096
+	// max_tokens 必须是模型单次输出硬上限（max_completion_tokens），不是 context window / 8
+	// 上下文 128k 不等于输出 128k。例如 gpt-4o 输出上限 = 16,384
+	maxOut := lookupMaxOutputTokens(model)
 	contextWindow := lookupContextWindow(model)
-	dynamicMaxTokens := contextWindow / 8
-	if dynamicMaxTokens < 4096 {
-		dynamicMaxTokens = 4096
-	}
-	if dynamicMaxTokens > 16384 {
-		dynamicMaxTokens = 16384
-	}
 
 	reqBody := map[string]interface{}{
 		"model":       model,
 		"messages":    messages,
 		"temperature": temperature,
 		"stream":      true,
-		"max_tokens":  dynamicMaxTokens,
+		"max_tokens":  maxOut,
 	}
 	if len(openAITools) > 0 {
 		reqBody["tools"] = openAITools
 		reqBody["tool_choice"] = "auto"
 		slog.Info("callOpenAIStream: sending request with tools",
 			"model", model, "tool_count", len(openAITools),
-			"context_window", contextWindow, "max_tokens", dynamicMaxTokens)
+			"context_window", contextWindow, "max_output_tokens", maxOut)
 	} else {
 		slog.Info("callOpenAIStream: WARNING no tools provided",
-			"model", model, "context_window", contextWindow, "max_tokens", dynamicMaxTokens)
+			"model", model, "context_window", contextWindow, "max_output_tokens", maxOut)
 	}
 	reqJSON, _ := json.Marshal(reqBody)
 
