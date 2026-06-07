@@ -4,6 +4,7 @@ package server
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -15,6 +16,7 @@ import (
 	"net/http"
 	"strconv"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -191,7 +193,30 @@ func pkcs7Unpad(data []byte) []byte {
 //   - 强制 LLM 先调 list_mounts 发现可用文件系统，禁止凭训练数据编造路径
 //   - 明确告知工具能力边界（只读、无写入）
 //   - 中文为主（本项目面向国内用户）
+//   - 使用 XML 标签格式做 tool calling（兼容不支持 function calling 的 API 代理）
 const defaultAgentSystemPrompt = `你是 ENCV AI 助手，可以帮助用户浏览文件、管理加密容器和执行操作。
+
+【工具调用方式 — 必须严格遵守】
+当需要调用工具时，你必须在回复中输出以下 XML 格式：
+
+<tool_call name="工具名">
+{"参数名": "参数值"}
+</tool_call)
+
+示例：
+<tool_call name="list_mounts>
+{}
+</tool_call)
+
+<tool_call name="list_files">
+{"mount_id": "serving", "rel_path": "/"}
+</tool_call)
+
+规则：
+- 每次可以调用一个或多个工具（输出多个 <tool_call) 块）
+- 工具调用后，系统会自动执行并返回结果给你
+- 你根据工具返回的结果继续回答用户问题
+- 如果不需要调用工具，直接正常回复即可
 
 【重要规则 — 违反 = 严重错误】
 1. 在回答任何关于"有哪些文件""当前目录有什么"的问题之前，**必须先调用 list_mounts 工具**获取可访问的挂载点列表，再用 list_files 查看具体内容。
@@ -199,13 +224,18 @@ const defaultAgentSystemPrompt = `你是 ENCV AI 助手，可以帮助用户浏�
 3. 你只能看到通过 list_mounts 工具返回的挂载点和文件。不要假设任何预置的目录结构。
 4. 所有文件操作都是只读的（list_mounts / list_files / read_file / stat_file）。如需修改文件，请告知用户手动操作。
 
-【可用工具】
-- list_mounts: 列出当前可访问的文件系统挂载点
-- list_files: 列出某个挂载点内的目录内容
-- read_file: 读取文本文件内容
-- stat_file: 查询文件/目录元信息
-- get_storage_info: 查看磁盘空间使用情况
-- 加密/解密相关工具（由插件提供）`
+【可用工具列表】
+1. list_mounts: 列出当前可访问的文件系统挂载点。参数：无（传空 {}）
+2. list_files: 列出挂载点内某个目录下的文件与子目录。参数：mount_id（必填，如 "serving" 或 "webdav"），rel_path（可选，默认 "/"）
+3. read_file: 读取文本文件内容。参数：mount_id（必填），rel_path（必填，文件相对路径）
+4. stat_file: 查询文件/目录元信息（大小/修改时间/是否目录）。参数：mount_id（必填），rel_path（必填）
+5. get_storage_info: 查看磁盘空间使用情况。参数：无
+6. image_encrypt: 图片加密。参数：input_paths（文件路径数组），output_dir（输出目录），extra_fields（选项对象）
+7. image_decrypt: 图片解密。参数：container_path（容器路径），output_dir（输出目录）
+8. wps_encrypt: WPS文档加密。参数：input_paths, output_dir, extra_fields
+9. pdf_decrypt: PDF解密。参数：container_path, output_dir
+10. text_encrypt: 文本加密。参数：input_paths, output_dir, extra_fields
+11. video_decrypt: 视频解密。参数：container_path, output_dir, version`
 
 // ─── Agent 配置读取 ──────────────────────────────────────────
 
@@ -494,6 +524,43 @@ func (s *Server) handleAgentDecryptKey(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"decrypted": decrypted})
 }
 
+// ─── Prompt-Based Tool Calling ──────────────────────────────────
+// 用于兼容不支持 function calling (tools 参数) 的 API 代理。
+// LLM 通过 <tool_call name="xxx">JSON</tool_call) XML 标签输出工具调用，
+// 后端解析并执行。
+
+// promptToolCall 表示从 LLM 文本响应中提取的工具调用
+type promptToolCall struct {
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"` // 原始 JSON
+}
+
+// toolCallRE 匹配 <tool_call name="xxx">...</tool_call)
+var toolCallRE = regexp.MustCompile(`(?s)<tool_call\s+name="([^"]+)">\s*(\{.*?})\s*</tool_call\)`)
+
+// extractToolCallsFromText 从 LLM 响应文本中提取所有工具调用
+func extractToolCallsFromText(text string) []promptToolCall {
+	matches := toolCallRE.FindAllStringSubmatch(text, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	calls := make([]promptToolCall, 0, len(matches))
+	for _, m := range matches {
+		calls = append(calls, promptToolCall{
+			Name:      m[1],
+			Arguments: json.RawMessage(m[2]),
+		})
+	}
+	return calls
+}
+
+// stripToolCallsFromText 移除文本中的 <tool_call) 块，保留普通回复内容
+func stripToolCallsFromText(text string) string {
+	return toolCallRE.ReplaceAllString(text, "")
+}
+
+const maxPromptToolRounds = 3 // 最多执行几轮 tool calling
+
 // ─── GET/POST /test — 测试连接 ───────────────────────────────
 
 func (s *Server) handleAgentTest(c *gin.Context) {
@@ -518,6 +585,19 @@ func (s *Server) handleAgentTest(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
+}
+
+// executePromptToolCall 执行一个从文本中提取的工具调用。
+// 它调用已有的 executeAgentTool 并返回 JSON 格式的结果字符串。
+func (s *Server) executePromptToolCall(tc promptToolCall) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	result, err := s.executeAgentTool(ctx, tc.Name, string(tc.Arguments))
+	if err != nil {
+		return fmt.Sprintf(`{"error": "工具执行失败", "tool": %q, "detail": %q}`, tc.Name, err.Error())
+	}
+	return result
 }
 
 // ─── POST /api/chat — SSE 对话（代理到 OpenAI 兼容 API） ──────
@@ -606,20 +686,214 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		}
 	}
 
-	reqBody := map[string]interface{}{
-		"model":       model,
-		"messages":    finalMessages,
-		"temperature": body.Temperature,
-		"stream":      true,
-	}
-	if len(openAITools) > 0 {
-		reqBody["tools"] = openAITools
-		reqBody["tool_choice"] = "auto"
-	}
-	reqJSON, _ := json.Marshal(reqBody)
-
 	reqURL := buildChatCompletionsURL(cfg.BaseURL)
-	httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, reqURL, bytes.NewReader(reqJSON))
+
+	// ════════════════════════════════════════════════════════════
+	// 阶段 1: Prompt-Based Tool Calling（非流式检测）
+	// ════════════════════════════════════════════════════════════
+	// 用 stream=false 调用 LLM，检查回复中是否含 <tool_call) 标签。
+	// 如果有 → 执行工具 → 将结果注入 messages → 进入阶段 2 流式输出
+	// 如果无 → 直接输出文本内容并返回
+	// ════════════════════════════════════════════════════════════
+	{
+		detectBody := map[string]interface{}{
+			"model":       model,
+			"messages":    finalMessages,
+			"temperature": body.Temperature,
+			"stream":      false,
+		}
+		if len(openAITools) > 0 {
+			detectBody["tools"] = openAITools
+			detectBody["tool_choice"] = "auto"
+		}
+		detectJSON, _ := json.Marshal(detectBody)
+
+		slog.Info("agent: phase-1 detecting tool calls (prompt-based FC)", "model", model)
+
+		detectReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, reqURL, bytes.NewReader(detectJSON))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "build_detect_request_failed", "message": err.Error()})
+			return
+		}
+		detectReq.Header.Set("Content-Type", "application/json")
+		detectReq.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+
+		detectClient := &http.Client{Timeout: 120 * time.Second}
+		detectResp, err := detectClient.Do(detectReq)
+		if err != nil {
+			slog.Warn("agent: phase-1 request failed, falling back to streaming mode", "error", err)
+			// 阶段 1 失败时降级到原来的纯流式模式（不走 tool calling）
+			goto doStreamMode
+		}
+		defer detectResp.Body.Close()
+
+		detectRespBytes, _ := io.ReadAll(detectResp.Body)
+
+		if detectResp.StatusCode >= 400 {
+			slog.Warn("agent: phase-1 upstream error, falling back to streaming", "status", detectResp.StatusCode)
+			goto doStreamMode
+		}
+
+		// 解析非流式响应
+		var detectResult struct {
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+				FinishReason string `json:"finish_reason"`
+			} `json:"choices"`
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		json.Unmarshal(detectRespBytes, &detectResult)
+		if detectResult.Error.Message != "" {
+			slog.Warn("agent: phase-1 API error, falling back to streaming", "error", detectResult.Error.Message)
+			goto doStreamMode
+		}
+
+		var phase1Text string
+		if len(detectResult.Choices) > 0 {
+			phase1Text = detectResult.Choices[0].Message.Content
+		}
+
+		// 检测是否包含 <tool_call) 标签
+		toolCalls := extractToolCallsFromText(phase1Text)
+		if len(toolCalls) == 0 {
+			// 没有 tool call — 直接将文本作为 SSE 推送给客户端
+			slog.Info("agent: phase-1 no tool detected, streaming text response")
+			flusher, ok := c.Writer.(http.Flusher)
+			if !ok {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "sse_not_supported"})
+				return
+			}
+			s.setSSEHeaders(c.Writer)
+			sess.mu.Lock()
+			sess.InProgress = true
+			sess.mu.Unlock()
+			defer func() {
+				sess.mu.Lock()
+				sess.InProgress = false
+				sess.mu.Unlock()
+			}()
+
+			// 将文本分段推送（模拟流式效果）
+			cleanText := stripToolCallsFromText(phase1Text)
+			if cleanText != "" {
+				// 按 chunk 分割模拟打字效果
+				chunkSize := 20
+				runes := []rune(cleanText)
+				for i := 0; i < len(runes); i += chunkSize {
+					end := i + chunkSize
+					if end > len(runes) {
+						end = len(runes)
+					}
+					s.sendAndCache(sess, c.Writer, flusher, "text_delta", string(runes[i:end]))
+					time.Sleep(10 * time.Millisecond) // 模拟打字延迟
+				}
+			}
+			s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
+			slog.Info("agent: chat completed (phase-1 direct)", "model", model)
+			return
+		}
+
+		// ★ 有 tool call！执行工具并将结果注入 messages
+		slog.Info("agent: phase-1 tool calls detected", "count", len(toolCalls), "tools", func() []string {
+			names := make([]string, len(toolCalls))
+			for i, tc := range toolCalls {
+				names[i] = tc.Name
+			}
+			return names
+		}())
+
+		// 把 LLM 的完整回复（含 tool call 标签）作为 assistant 消息追加
+		assistantReply := phase1Text
+		finalMessages = append(finalMessages, chatMsg{Role: "assistant", Content: assistantReply})
+
+		// 执行每个工具调用
+		for round := 0; round < maxPromptToolRounds && len(toolCalls) > 0; round++ {
+			for _, tc := range toolCalls {
+				result := s.executePromptToolCall(tc)
+				// 工具结果作为 role="tool" 消息追加（模仿 OpenAI function calling 格式）
+				finalMessages = append(finalMessages, chatMsg{Role: "tool", Content: result})
+				slog.Info("agent: tool executed", "name", tc.Name, "result_len", len(result))
+			}
+
+			// 追加提示让 LLM 基于工具结果生成最终回复
+			finalMessages = append(finalMessages, chatMsg{Role: "user", Content: "工具已执行完成。请基于以上工具返回的结果回答用户的原始问题。如果需要更多信息可以继续调用工具。"})
+
+			// 再调一次非流式检查是否还有新 tool call（递归）
+			nextDetectBody := map[string]interface{}{
+				"model":       model,
+				"messages":    finalMessages,
+				"temperature": body.Temperature,
+				"stream":      false,
+			}
+			nextJSON, _ := json.Marshal(nextDetectBody)
+			nextReq, _ := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, reqURL, bytes.NewReader(nextJSON))
+			nextReq.Header.Set("Content-Type", "application/json")
+			nextReq.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+			nextResp, err := detectClient.Do(nextReq)
+			if err != nil {
+				slog.Warn("agent: follow-up tool detection failed", "round", round+1, "error", err)
+				break
+			}
+			nextBytes, _ := io.ReadAll(nextResp.Body)
+			nextResp.Body.Close()
+
+			var nextResult struct {
+				Choices []struct {
+					Message struct { Content string `json:"content"` } `json:"message"`
+				} `json:"choices"`
+			}
+			json.Unmarshal(nextBytes, &nextResult)
+			var nextText string
+			if len(nextResult.Choices) > 0 {
+				nextText = nextResult.Choices[0].Message.Content
+			}
+
+			nextToolCalls := extractToolCallsFromText(nextText)
+			if len(nextToolCalls) == 0 {
+				// 没有更多 tool call 了，把最终回复保存为 assistant 消息
+				finalMessages = append(finalMessages, chatMsg{Role: "assistant", Content: nextText})
+				break
+			}
+			// 还有 tool call，继续循环
+			finalMessages = append(finalMessages, chatMsg{Role: "assistant", Content: nextText})
+			toolCalls = nextToolCalls
+		}
+
+		// 更新 session 的 messages（去掉临时的 tool 中间消息）
+		sess.mu.Lock()
+		sess.Messages = append([]chatMsg{}, body.Messages...)
+		sess.mu.Unlock()
+
+		slog.Info("agent: phase-1 complete, entering phase-2 streaming", "total_messages", len(finalMessages))
+
+		// 不 goto —— 继续往下走进入阶段 2 流式输出
+	}
+
+doStreamMode:
+	// ════════════════════════════════════════════════════════════
+	// 阶段 2: 流式输出最终回复给客户端
+	// （原始的 OpenAI 流式转发逻辑）
+	// ════════════════════════════════════════════════════════════
+	reqBody := map[string]interface{}{
+			"model":       model,
+			"messages":    finalMessages,
+			"temperature": body.Temperature,
+			"stream":      true,
+		}
+		if len(openAITools) > 0 {
+			reqBody["tools"] = openAITools
+			reqBody["tool_choice"] = "auto"
+		}
+		reqJSON, _ := json.Marshal(reqBody)
+
+		fmt.Fprintf(os.Stderr, "[AGENT-DEBUG] phase-2 streaming request (messages=%d, tools=%d)\n",
+			len(finalMessages), len(openAITools))
+
+		httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, reqURL, bytes.NewReader(reqJSON))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "build_request_failed", "message": err.Error()})
 		return
@@ -791,15 +1065,15 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 			}
 		}
 		for _, tc := range pendingTools {
-		s.emitToolCallEvent(sess, c.Writer, flusher, tc, toolMeta)
+			s.emitToolCallEvent(sess, c.Writer, flusher, tc, toolMeta)
+		}
+		if len(pendingTools) > 0 {
+			sess.mu.Lock()
+			sess.PendingTools = pendingTools
+			sess.mu.Unlock()
+		}
+		s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
 	}
-	if len(pendingTools) > 0 {
-		sess.mu.Lock()
-		sess.PendingTools = pendingTools
-		sess.mu.Unlock()
-	}
-	s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
-}
 
 	// 如果上游没有发送任何内容（非流式响应等），兜底读取完整 body
 	if !hasContent {

@@ -336,6 +336,84 @@ func TestHandleAgentChat_NoAPIKey_Returns503(t *testing.T) {
 	}
 }
 
+func TestHandleAgentChat_ToolsIncludedInRequest(t *testing.T) {
+	// 验证 handleAgentChat 在转发请求时包含 tools 字段
+	cfgJSON := `{
+		"agent_settings": {
+			"openai_api_key": "sk-test-tools",
+			"openai_base_url": "https://api.test.com"
+		}
+	}`
+	tmpDir := t.TempDir()
+	cfgPath := filepath.Join(tmpDir, "config.user.json")
+	os.WriteFile(cfgPath, []byte(cfgJSON), 0644)
+
+	s := &Server{configPath: cfgPath}
+	var req recordedRequest
+	r, cleanup := setupChatRouter(s, &req)
+	defer cleanup()
+
+	body := map[string]interface{}{
+		"sessionId": "sess-tools",
+		"model":     "gpt-4o-mini",
+		"messages": []map[string]string{
+			{"role": "user", "content": "列出文件"},
+		},
+	}
+	w := httptest.NewRecorder()
+	reqJSON, _ := json.Marshal(body)
+	r.ServeHTTP(w, httptest.NewRequest("POST", "/api/chat", strings.NewReader(string(reqJSON))))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("HTTP status = %d, body = %s", w.Code, w.Body.String())
+	}
+
+	// 验证 tools 字段存在且非空
+	tools, ok := req.Body["tools"].([]interface{})
+	if !ok {
+		t.Fatalf("请求体中缺少 tools 字段。完整 body keys: %+v", getMapKeys(req.Body))
+	}
+	if len(tools) == 0 {
+		t.Fatal("tools 数组为空 — LLM 将无法调用任何函数")
+	}
+
+	// 验证包含核心工具
+	toolNames := make([]string, len(tools))
+	for i, toolIf := range tools {
+		tool, ok := toolIf.(map[string]interface{})
+		if !ok {
+			t.Fatalf("tools[%d] 不是 map", i)
+		}
+		fn, ok := tool["function"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("tools[%d].function 缺失", i)
+		}
+		name, _ := fn["name"].(string)
+		toolNames[i] = name
+	}
+
+	hasListMounts := false
+	for _, n := range toolNames {
+		if n == "list_mounts" {
+			hasListMounts = true
+			break
+		}
+	}
+	if !hasListMounts {
+		t.Errorf("tools 中缺少 list_mounts。实际工具列表: %v", toolNames)
+	}
+
+	t.Logf("✅ 请求包含 %d 个工具: %v", len(tools), toolNames)
+}
+
+func getMapKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 func TestHandleAgentChat_EmptyMessages_Returns400(t *testing.T) {
 	cfgJSON := `{
 		"agent_settings": {
