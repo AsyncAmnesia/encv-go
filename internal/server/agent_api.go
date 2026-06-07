@@ -821,8 +821,16 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		}
 
 		// flushBuffer 把缓冲的文本一次性转发给客户端（当确定不是工具调用时调用）
+		textSeq := 0 // 全局文本序列号（跨 round 递增，用于诊断乱序）
 		flushBuffer := func() {
-			for _, chunk := range textBuf {
+			for i, chunk := range textBuf {
+				textSeq++
+				slog.Info("agent: [TEXT-SEQ] text_delta sent",
+					"seq", textSeq,
+					"mode", "flush",
+					"buf_idx", i,
+					"chunk_len", len(chunk),
+					"preview", chunk[:min(60, len(chunk))])
 				s.sendAndCache(sess, c.Writer, flusher, "text_delta", chunk)
 			}
 			textBuf = nil
@@ -855,6 +863,12 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 						}
 					} else {
 						// 正常实时模式或缓冲已释放 → 直接转发
+						textSeq++
+						slog.Info("agent: [TEXT-SEQ] text_delta sent",
+							"seq", textSeq,
+							"mode", "realtime",
+							"chunk_len", len(textChunk),
+							"preview", textChunk[:min(60, len(textChunk))])
 						s.sendAndCache(sess, c.Writer, flusher, "text_delta", textChunk)
 					}
 				}
