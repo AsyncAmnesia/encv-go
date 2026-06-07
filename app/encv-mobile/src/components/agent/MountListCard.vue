@@ -14,6 +14,9 @@
     <div class="mountListCardHeader">
       <ion-icon :icon="folderOpenIcon" class="mountListCardIcon" />
       <span class="mountListCardTitle">{{ titleText }}</span>
+      <span v-if="parsed.error && !rawResult" class="mountListCardBadge mountListCardBadge_warn">等待结果</span>
+      <span v-else-if="parsed.error" class="mountListCardBadge mountListCardBadge_error">解析异常</span>
+      <span v-if="dataSourceTag" class="mountListCardSource">{{ dataSourceTag }}</span>
       <span v-if="mounts.length > 0" class="mountListCardCount">{{ mounts.length }}</span>
     </div>
     <ul v-if="mounts.length > 0" class="mountListCardList">
@@ -25,6 +28,10 @@
         <code class="mountListCardItemPath">{{ m.path || '/' }}</code>
       </li>
     </ul>
+    <div v-else-if="!resultJson" class="mountListCardEmpty">
+      <ion-icon :icon="hourglassIcon" class="mountListCardEmptyIcon" />
+      <span>工具执行中…</span>
+    </div>
     <div v-else class="mountListCardEmpty">未发现挂载点</div>
     <details v-if="rawResult" class="mountListCardRaw">
       <summary>查看原始数据</summary>
@@ -36,18 +43,21 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { IonIcon } from '@ionic/vue'
-import { folderOpenOutline, serverOutline } from 'ionicons/icons'
+import { folderOpenOutline, serverOutline, hourglassOutline } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 
 const props = defineProps<{
   /** 后端 tool_result.result 的 JSON 字符串（list_mounts 返回值） */
   resultJson: string
+  /** 工具执行状态 */
+  status?: 'pending' | 'running' | 'success' | 'failed'
 }>()
 
 const { t } = useI18n()
 
 const folderOpenIcon = folderOpenOutline
 const serverIcon = serverOutline
+const hourglassIcon = hourglassOutline
 
 interface Mount {
   id?: string
@@ -78,8 +88,17 @@ const mounts = computed(() => parsed.value.mounts)
 const rawResult = computed(() => (parsed.value.error ? props.resultJson : ''))
 
 const titleText = computed(() => {
+  if (props.status === 'pending' || props.status === 'running') return t('agent.toolCards.mountsTitle') || '挂载点（查询中）'
   if (parsed.value.error) return t('agent.toolCards.parseFailed') || '挂载点（数据异常）'
   return t('agent.toolCards.mountsTitle') || '挂载点'
+})
+
+const dataSourceTag = computed(() => {
+  if (!props.resultJson) return ''
+  const s = props.resultJson
+  if (s.includes('"FAKE":true') || s.includes('"FAKE": true')) return 'mock 数据'
+  if (s.includes('studio_video_')) return '历史 mock'
+  return ''
 })
 </script>
 
@@ -203,4 +222,33 @@ const titleText = computed(() => {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+.mountListCardBadge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.mountListCardBadge_warn {
+  background: rgba(var(--ion-color-warning-rgb), 0.18);
+  color: var(--ion-color-warning-shade);
+}
+.mountListCardBadge_error {
+  background: rgba(var(--ion-color-danger-rgb), 0.15);
+  color: var(--ion-color-danger);
+}
+
+.mountListCardSource {
+  font-size: 10px;
+  color: var(--encv-text-secondary, #888);
+  opacity: 0.8;
+}
+
+.mountListCardEmptyIcon {
+  font-size: 16px;
+  margin-right: 4px;
+  animation: spin 1.5s linear infinite;
+}
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 </style>

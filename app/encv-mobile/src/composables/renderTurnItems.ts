@@ -1,4 +1,159 @@
 /**
+ * renderAgentFlow - Task 27：agent 流式时间轴渲染
+ *
+ * 按 Message.eventLog 的顺序，把文本段和工具调用/结果交错产出为 RenderedItem[]。
+ *
+ * 算法：
+ * 1. 把 displayText（全部 markdown 文本）按 eventLog 中的 'text' 条目数均分。
+ *    分割点用自然断点优先（\n\n 双换行 / ## 标题），保证每段是完整语义块。
+ * 2. 遍历 eventLog：
+ *    - 'text' → 产出 assistantText（取对应 text segment）
+ *    - 'tool_call' → 产出 operation（单条工具调用卡片）
+ *    - 'tool_result' → 产出 toolResultCard（单条工具结果数据卡片）
+ * 3. tool_result 紧跟在对应的 tool_call 后面（eventLog 保证顺序）
+ *
+ * 输出追加到 out 数组（不返回新数组——由调用方 renderTurnItems 统一管理）。
+ */
+function renderAgentFlow(
+  out: RenderedItem[],
+  msg: Message,
+  messageIndex: number,
+  displayText: string,
+  streaming: boolean,
+): void {
+  const log = msg.eventLog!
+  const textEntryCount = log.filter((e) => e.type === 'text').length
+
+  // 把 displayText 分成 textEntryCount 段（按自然断点分割）
+  const textSegments = splitContentIntoSegments(displayText, textEntryCount)
+
+  let textIdx = 0
+  // 预建 id→ToolCall / id→ToolResult 查找表（O(1) 配对）
+  const tcMap = new Map(msg.tool_calls.map((tc) => [tc.id, tc]))
+  const trMap = new Map(msg.tool_results.map((tr) => [tr.id, tr]))
+
+  for (const entry of log) {
+    if (entry.type === 'text') {
+      const seg = textSegments[textIdx] ?? ''
+      textIdx++
+      if (seg.trim().length > 0) {
+        out.push({
+          type: 'assistantText',
+          messageId: `a-${messageIndex}`,
+          text: seg,
+          streaming,
+        })
+      }
+    } else if (entry.type === 'tool_call' && entry.id) {
+      const tc = tcMap.get(entry.id)
+      if (tc) {
+        // plan / webSearch / approval 走特殊路径（与旧逻辑一致）
+        if (tc.kind === 'plan') {
+          const todos = parsePlanArgs(tc.args)
+          out.push({
+            type: 'plan',
+            messageId: tc.id,
+            toolCallId: tc.id,
+            todos,
+            streaming:
+              streaming &&
+              (tc.status === 'pending' || tc.status === 'running'),
+          })
+        } else if (tc.kind === 'webSearch') {
+          // webSearch 在时间轴模式下也单独渲染（不做 group 合并）
+          out.push({ type: 'operation', messageId: `a-${messageIndex}`, toolCallId: tc.id, streaming })
+        } else if (tc.status === 'pending' && tc.needsConfirm) {
+          out.push({ type: 'approval', toolCallId: tc.id, messageId: tc.id })
+        } else {
+          // readOnly / command / fileChange / unknown → operation 卡片
+          out.push({ type: 'operation', messageId: `a-${messageIndex}`, toolCallId: tc.id, streaming })
+        }
+      }
+    } else if (entry.type === 'tool_result' && entry.id) {
+      const tr = trMap.get(entry.id)
+      if (tr) {
+        out.push({
+          type: 'toolResultCard',
+          messageId: `a-${messageIndex}`,
+          toolResultId: tr.id,
+          name: tr.name,
+          result: tr.result,
+        })
+      }
+    }
+    // stream_start / stream_end / 其他类型在 eventLog 中但不产生 RenderedItem
+  }
+
+  // 如果还有剩余 text 段没消费完（eventLog 不完整时兜底）
+  while (textIdx < textSegments.length) {
+    const seg = textSegments[textIdx]
+    textIdx++
+    if (seg.trim().length > 0) {
+      out.push({
+        type: 'assistantText',
+        messageId: `a-${messageIndex}`,
+        text: seg,
+        streaming,
+      })
+    }
+  }
+}
+
+/**
+ * splitContentIntoSegments - 把全文按目标段数 + 自然断点切分。
+ *
+ * 策略：
+ * 1. 先按 \n\n（双换行，markdown 段落分隔）预切成候选段
+ * 2. 如果候选段数 >= targetCount → 直接取前 targetCount-1 段 + 剩余合并为最后一段
+ * 3. 如果候选段数 < targetCount → 从最长段中间再切（保证段数够）
+ * 4. targetCount <= 1 时直接返回 [fullText]
+ */
+function splitContentIntoSegments(fullText: string, targetCount: number): string[] {
+  if (!fullText || fullText.trim().length === 0) return []
+  if (targetCount <= 1) return [fullText]
+
+  // 按双换行预切
+  const candidates = fullText.split(/\n\n+/)
+
+  if (candidates.length >= targetCount) {
+    // 够分：前 n-1 段各取一段，剩余全归最后一段
+    const result = candidates.slice(0, targetCount - 1)
+    const tail = candidates.slice(targetCount - 1).join('\n\n')
+    result.push(tail)
+    return result
+  }
+
+  // 不够分：从最长的一段中间再切
+  const result = [...candidates]
+  while (result.length < targetCount) {
+    // 找当前最长的段
+    let longestIdx = 0
+    let longestLen = 0
+    for (let i = 0; i < result.length; i++) {
+      if (result[i].length > longestLen) {
+        longestLen = result[i].length
+        longestIdx = i
+      }
+    }
+    // 最长段太短了（<20 字符）没法再切 → 停止
+    if (longestLen < 20) break
+    // 从中间位置切
+    const mid = Math.floor(result[longestIdx].length / 2)
+    // 尽量在换行或空格处切（避免截断单词）
+    let cutPos = mid
+    const nlBefore = result[longestIdx].lastIndexOf('\n', mid)
+    const nlAfter = result[longestIdx].indexOf('\n', mid)
+    if (nlBefore > mid - 100) cutPos = nlBefore + 1
+    else if (nlAfter > 0 && nlAfter < mid + 100) cutPos = nlAfter + 1
+    const head = result[longestIdx].slice(0, cutPos)
+    const tail = result[longestIdx].slice(cutPos)
+    result.splice(longestIdx, 1, head, tail)
+  }
+
+  return result
+}
+
+/**
  * renderTurnItems - 把 messages 数组转换为渲染块
  * 参照 codex_web renderTurnItems()
  * 累积 operationGroup（command/fileChange/toolOutput）和 webSearchGroup
@@ -90,6 +245,13 @@ export type RenderedItem =
   | { type: 'assistantText'; messageId: string; text: string; streaming: boolean }
   | { type: 'approval'; toolCallId: string; messageId: string }
   | { type: 'operationGroup'; messageId: string; toolCallIds: string[]; forceComplete: boolean }
+  // Task 27：单条工具调用卡片（agent 流式时间轴模式）。
+  // 当 Message.eventLog 存在时，renderTurnItems 不再聚合所有 tool_call 到 operationGroup，
+  // 而是按 eventLog 顺序逐个产出 operation + toolResultCard，实现真正的 agent 步骤流。
+  | { type: 'operation'; messageId: string; toolCallId: string; streaming: boolean }
+  // Task 27：单条工具结果数据卡片（紧跟对应 operation 后）。
+  // AgentChat 按 name 分发到 MountListCard / FileListCard / FileContentCard。
+  | { type: 'toolResultCard'; messageId: string; toolResultId: string; name: string; result: string }
   | { type: 'webSearchGroup'; messageId: string; queries: string[]; toolCallIds: string[] }
   | { type: 'reasoning'; messageId: string; text: string; streaming: boolean }
   | { type: 'error'; messageId: string; text: string; messageIndex: number }
@@ -381,30 +543,42 @@ export function renderTurnItems(
       flushWebGroup()
       const streaming = !!msg.isStreaming && status === 'streaming'
       // 错误优先
-      if (msg.role === 'assistant' && msg.tool_results.length > 0) {
+      if (msg.tool_results.length > 0) {
         const lastErr = [...msg.tool_results].reverse().find((r) => r.is_error)
         if (lastErr && !streaming) {
           out.push({ type: 'error', messageId: `a-${idx}`, text: lastErr.result, messageIndex: idx })
           continue
         }
       }
-      // 安全网（参考 LangChain ai.tsx 的分离渲染模式）：
-      // 若本消息已被解析出 tool_calls（说明后端成功识别了工具调用），
-      // 则从显示文本中剥离可能的工具调用 JSON 残留，避免在
-      // GroupedOperationMessage 旁边重复显示原始 JSON。
+
+      // ── Task 27：agent 流式时间轴渲染（eventLog 模式）────────
+      // 当 Message 存在 eventLog 时，按事件到达顺序交错产出：
+      //   text → operation(tool_call) → toolResultCard → text → ...
+      // 不再聚合为"一大段文本 + 一个折叠 group"。
+      //
+      // 无 eventLog 时（旧消息 / 非 agent 场景）走 fallback 路径（原逻辑）。
       const rawContentText = contentToText(msg.content, 'assistant')
       const displayText =
         (msg.tool_calls?.length ?? 0) > 0
           ? stripToolCallJSON(rawContentText)
           : rawContentText
-      if (displayText && displayText.trim().length > 0) {
-        out.push({
-          type: 'assistantText',
-          messageId: `a-${idx}`,
-          text: displayText,
-          streaming,
-        })
+
+      if (msg.eventLog && msg.eventLog.length > 0 && msg.tool_calls.length > 0) {
+        // 时间轴模式：把 content 按 eventLog 中的 text 条目数均分，
+        // 每个 text 段与紧随其后的 tool_call / tool_result 配对。
+        renderAgentFlow(out, msg, idx, displayText, streaming)
+      } else {
+        // fallback：旧聚合模式（向后兼容）
+        if (displayText && displayText.trim().length > 0) {
+          out.push({
+            type: 'assistantText',
+            messageId: `a-${idx}`,
+            text: displayText,
+            streaming,
+          })
+        }
       }
+
       if (msg.reasoning && msg.reasoning.trim().length > 0) {
         out.push({
           type: 'reasoning',

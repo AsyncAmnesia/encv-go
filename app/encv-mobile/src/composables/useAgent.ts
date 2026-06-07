@@ -111,6 +111,18 @@ export interface ToolResult {
 
 export interface Message {
   /**
+   * Task 27：事件到达顺序日志（agent 流式时间轴渲染核心）。
+   *
+   * 后端 SSE 事件流按时间顺序到达：text_delta → tool_call → tool_result → text_delta → ...
+   * 但 Message 结构体把所有 text 合并到 content、所有 tool_calls/tool_results 分开存。
+   * eventLog 记录原始到达顺序，让 renderTurnItems 能按时间轴交错渲染：
+   *   [text, tool_call(id=call_mount), tool_result(id=call_mount), text, tool_call(id=call_files1), ...]
+   *
+   * 每条 entry 的 type 取值：'text' | 'tool_call' | 'tool_result' | 'stream_start' | 'stream_end'
+   * tool_call / tool_result 条目额外带 id 字段用于配对。
+   */
+  eventLog?: Array<{ type: string; id?: string }>
+  /**
    * Task 22：agent 派发 subagent 拆解任务时插入的"agent task"消息。
    * 与 user/assistant/system 并列，是前端渲染层的合法角色之一。
    * 后端在 SubagentDispatch 事件中构造（content 是 JSON 字符串，
@@ -1348,6 +1360,7 @@ export function useAgent() {
         tool_calls: [],
         tool_results: [],
         isStreaming: true,
+        eventLog: [], // Task 27：初始化事件顺序日志
       }
       messages.value.push(newMsg)
       return messages.value[messages.value.length - 1]
@@ -1358,6 +1371,9 @@ export function useAgent() {
         const m = lastAssistant()
         const parsed = parseContentDelta(event.data)
         appendSequencedChunk(m, 'content', parsed.seq, parsed.text)
+        // Task 27：记录文本事件到达顺序
+        if (!m.eventLog) m.eventLog = []
+        m.eventLog.push({ type: 'text' })
         break
       }
       case 'reasoning_delta': {
@@ -1371,6 +1387,9 @@ export function useAgent() {
         if (tool) {
           const m = lastAssistant()
           m.tool_calls.push(tool)
+          // Task 27：记录工具调用事件到达顺序
+          if (!m.eventLog) m.eventLog = []
+          m.eventLog.push({ type: 'tool_call', id: tool.id })
         }
         break
       }
@@ -1393,6 +1412,9 @@ export function useAgent() {
         if (result) {
           const m = lastAssistant()
           m.tool_results.push(result)
+          // Task 27：记录工具结果事件到达顺序
+          if (!m.eventLog) m.eventLog = []
+          m.eventLog.push({ type: 'tool_result', id: result.id })
         }
         break
       }

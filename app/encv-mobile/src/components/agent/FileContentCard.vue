@@ -14,11 +14,22 @@
     <div class="fileContentCardHeader">
       <ion-icon :icon="documentTextIcon" class="fileContentCardIcon" />
       <span class="fileContentCardTitle">{{ titleText }}</span>
+      <span v-if="parsed.error && !rawResult" class="fileContentCardBadge fileContentCardBadge_warn">等待结果</span>
+      <span v-else-if="parsed.error" class="fileContentCardBadge fileContentCardBadge_error">解析异常</span>
+      <span v-if="dataSourceTag" class="fileContentCardSource">{{ dataSourceTag }}</span>
       <span v-if="meta.size !== undefined" class="fileContentCardMeta">{{ formatSize(meta.size) }}</span>
+      <span v-if="content" class="fileContentCardLines">{{ contentLineCount }} 行</span>
       <span v-if="meta.mimeType" class="fileContentCardMime">{{ meta.mimeType }}</span>
     </div>
     <pre v-if="content" class="fileContentCardBody" :class="{ fileContentCardBody_collapsed: !expanded }"><code>{{ expanded ? content : truncatedContent }}</code></pre>
+    <div v-else-if="!resultJson" class="fileContentCardEmpty">
+      <ion-icon :icon="hourglassIcon" class="fileContentCardEmptyIcon" />
+      <span>工具执行中…</span>
+    </div>
     <div v-else class="fileContentCardEmpty">文件内容为空</div>
+    <div v-if="looksBinary" class="fileContentCardBinaryWarn">
+      ⚠ 内容可能包含二进制数据，仅显示可读部分
+    </div>
     <div v-if="showToggle" class="fileContentCardActions">
       <button type="button" class="fileContentCardToggle" @click="toggle">
         {{ expanded ? '收起' : `展开全部 (${content.length} 字符)` }}
@@ -34,17 +45,20 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { IonIcon } from '@ionic/vue'
-import { documentTextOutline } from 'ionicons/icons'
+import { documentTextOutline, hourglassOutline } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 
 const props = defineProps<{
   /** 后端 tool_result.result 的 JSON 字符串 */
   resultJson: string
+  /** 工具执行状态 */
+  status?: 'pending' | 'running' | 'success' | 'failed'
 }>()
 
 const { t } = useI18n()
 
 const documentTextIcon = documentTextOutline
+const hourglassIcon = hourglassOutline
 const expanded = ref(false)
 
 const COLLAPSE_THRESHOLD = 4000
@@ -95,8 +109,27 @@ const truncatedContent = computed(() => {
 })
 
 const titleText = computed(() => {
+  if (props.status === 'pending' || props.status === 'running') return t('agent.toolCards.fileContentTitle') || '文件内容（查询中）'
   if (parsed.value.error) return t('agent.toolCards.parseFailed') || '文件内容（数据异常）'
   return t('agent.toolCards.fileContentTitle') || '文件内容'
+})
+
+const dataSourceTag = computed(() => {
+  if (!props.resultJson) return ''
+  const s = props.resultJson
+  if (s.includes('"FAKE":true') || s.includes('"FAKE": true')) return 'mock 数据'
+  if (s.includes('studio_video_')) return '历史 mock'
+  return ''
+})
+
+const contentLineCount = computed(() => {
+  return content.value ? content.value.split('\n').length : 0
+})
+
+const looksBinary = computed(() => {
+  if (content.value.length < 50) return false
+  const nonPrintable = (content.value.match(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g) || []).length
+  return nonPrintable > content.value.length * 0.05
 })
 
 function toggle() {
@@ -235,4 +268,48 @@ function formatSize(bytes: number): string {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+.fileContentCardBadge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.fileContentCardBadge_warn {
+  background: rgba(var(--ion-color-warning-rgb), 0.18);
+  color: var(--ion-color-warning-shade);
+}
+.fileContentCardBadge_error {
+  background: rgba(var(--ion-color-danger-rgb), 0.15);
+  color: var(--ion-color-danger);
+}
+
+.fileContentCardSource {
+  font-size: 10px;
+  color: var(--encv-text-secondary, #888);
+  opacity: 0.8;
+}
+
+.fileContentCardLines {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 10px;
+  color: var(--encv-text-secondary, #888);
+}
+
+.fileContentCardBinaryWarn {
+  margin-top: 4px;
+  padding: 4px 8px;
+  font-size: 10.5px;
+  color: var(--ion-color-warning-shade, #e68a00);
+  background: rgba(var(--ion-color-warning-rgb), 0.1);
+  border-radius: 4px;
+}
+
+.fileContentCardEmptyIcon {
+  font-size: 16px;
+  margin-right: 4px;
+  animation: spin 1.5s linear infinite;
+}
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 </style>

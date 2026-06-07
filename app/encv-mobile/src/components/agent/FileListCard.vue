@@ -17,6 +17,9 @@
     <div class="fileListCardHeader">
       <ion-icon :icon="listIcon" class="fileListCardIcon" />
       <span class="fileListCardTitle">{{ titleText }}</span>
+      <span v-if="parsed.error && !rawResult" class="fileListCardBadge fileListCardBadge_warn">等待结果</span>
+      <span v-else-if="parsed.error" class="fileListCardBadge fileListCardBadge_error">解析异常</span>
+      <span v-if="dataSourceTag" class="fileListCardSource">{{ dataSourceTag }}</span>
       <span v-if="rows.length > 0" class="fileListCardCount">{{ rows.length }}</span>
     </div>
     <div v-if="rows.length > 0" class="fileListCardTable">
@@ -27,7 +30,7 @@
         <span class="fileListCardColType">类型</span>
       </div>
       <div
-        v-for="(row, idx) in rows"
+        v-for="(row, idx) in visibleRows"
         :key="`${row.name}-${idx}`"
         class="fileListCardRow"
       >
@@ -42,7 +45,14 @@
         <span class="fileListCardColType">{{ row.is_dir ? '目录' : '文件' }}</span>
       </div>
     </div>
-    <div v-else class="fileListCardEmpty">空目录（无文件）</div>
+    <div v-if="rows.length > 20" class="fileListCardTruncate">
+      显示前 {{ Math.min(rows.length, 20) }} / 共 {{ rows.length }} 条
+    </div>
+    <div v-else-if="!resultJson" class="fileListCardEmpty">
+      <ion-icon :icon="hourglassIcon" class="fileListCardEmptyIcon" />
+      <span>工具执行中…</span>
+    </div>
+    <div v-else-if="rows.length === 0" class="fileListCardEmpty">空目录（无文件）</div>
     <details v-if="rawResult" class="fileListCardRaw">
       <summary>查看原始数据</summary>
       <pre>{{ rawResult }}</pre>
@@ -53,12 +63,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { IonIcon } from '@ionic/vue'
-import { folderOutline, documentOutline, listOutline } from 'ionicons/icons'
+import { folderOutline, documentOutline, listOutline, hourglassOutline } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 
 const props = defineProps<{
   /** 后端 tool_result.result 的 JSON 字符串 */
   resultJson: string
+  /** 工具执行状态 */
+  status?: 'pending' | 'running' | 'success' | 'failed'
 }>()
 
 const { t } = useI18n()
@@ -66,6 +78,7 @@ const { t } = useI18n()
 const folderIcon = folderOutline
 const fileIcon = documentOutline
 const listIcon = listOutline
+const hourglassIcon = hourglassOutline
 
 interface FileRow {
   name: string
@@ -112,12 +125,22 @@ const parsed = computed<{ rows: FileRow[]; error: string; isStat: boolean }>(() 
 })
 
 const rows = computed(() => parsed.value.rows)
+const visibleRows = computed(() => rows.value.slice(0, 20))
 const rawResult = computed(() => (parsed.value.error ? props.resultJson : ''))
 
 const titleText = computed(() => {
+  if (props.status === 'pending' || props.status === 'running') return t('agent.toolCards.fileListTitle') || '文件列表（查询中）'
   if (parsed.value.error) return t('agent.toolCards.parseFailed') || '文件列表（数据异常）'
   if (parsed.value.isStat) return t('agent.toolCards.fileStatTitle') || '文件信息'
   return t('agent.toolCards.fileListTitle') || '文件列表'
+})
+
+const dataSourceTag = computed(() => {
+  if (!props.resultJson) return ''
+  const s = props.resultJson
+  if (s.includes('"FAKE":true') || s.includes('"FAKE": true')) return 'mock 数据'
+  if (s.includes('studio_video_')) return '历史 mock'
+  return ''
 })
 
 function formatSize(bytes?: number): string {
@@ -283,4 +306,40 @@ function formatSize(bytes?: number): string {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+.fileListCardBadge {
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.fileListCardBadge_warn {
+  background: rgba(var(--ion-color-warning-rgb), 0.18);
+  color: var(--ion-color-warning-shade);
+}
+.fileListCardBadge_error {
+  background: rgba(var(--ion-color-danger-rgb), 0.15);
+  color: var(--ion-color-danger);
+}
+
+.fileListCardSource {
+  font-size: 10px;
+  color: var(--encv-text-secondary, #888);
+  opacity: 0.8;
+}
+
+.fileListCardTruncate {
+  padding: 4px 0;
+  text-align: center;
+  font-size: 10.5px;
+  color: var(--encv-text-secondary, #888);
+}
+
+.fileListCardEmptyIcon {
+  font-size: 16px;
+  margin-right: 4px;
+  animation: spin 1.5s linear infinite;
+}
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 </style>

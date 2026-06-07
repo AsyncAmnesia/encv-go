@@ -178,6 +178,28 @@
             :results-by-call-id="resolveToolResultsByCallId(item.toolCallIds)"
             :force-complete="item.forceComplete"
           />
+          <!-- Task 27：agent 流式时间轴模式 —— 单条工具调用卡片 -->
+          <OperationCard
+            v-else-if="item.type === 'operation' && findToolCallById(item.toolCallId)"
+            :tool-call="findToolCallById(item.toolCallId)!"
+            :streaming="item.streaming"
+          >
+            <!-- toolResultCard 紧跟在 operation 后面（由 renderAgentFlow 保证顺序） -->
+            <template v-if="findToolResultById(item.toolCallId)" #result>
+              <MountListCard
+                v-if="findToolResultById(item.toolCallId)!.name === 'list_mounts'"
+                :result-json="findToolResultById(item.toolCallId)!.result"
+              />
+              <FileListCard
+                v-else-if="findToolResultById(item.toolCallId)?.name === 'list_files' || findToolResultById(item.toolCallId)?.name === 'stat_file'"
+                :result-json="findToolResultById(item.toolCallId)!.result"
+              />
+              <FileContentCard
+                v-else-if="findToolResultById(item.toolCallId)?.name === 'read_file'"
+                :result-json="findToolResultById(item.toolCallId)!.result"
+              />
+            </template>
+          </OperationCard>
           <WebSearchSummaryMessage
             v-else-if="item.type === 'webSearchGroup'"
             :queries="item.queries"
@@ -241,6 +263,27 @@
             :results-by-call-id="resolveToolResultsByCallId(item.toolCallIds)"
             :force-complete="item.forceComplete"
           />
+          <!-- Task 27：agent 流式时间轴模式 —— 单条工具调用卡片（虚拟滚动分支） -->
+          <OperationCard
+            v-else-if="item.type === 'operation' && findToolCallById(item.toolCallId)"
+            :tool-call="findToolCallById(item.toolCallId)!"
+            :streaming="item.streaming"
+          >
+            <template v-if="findToolResultById(item.toolCallId)" #result>
+              <MountListCard
+                v-if="findToolResultById(item.toolCallId)!.name === 'list_mounts'"
+                :result-json="findToolResultById(item.toolCallId)!.result"
+              />
+              <FileListCard
+                v-else-if="findToolResultById(item.toolCallId)?.name === 'list_files' || findToolResultById(item.toolCallId)?.name === 'stat_file'"
+                :result-json="findToolResultById(item.toolCallId)!.result"
+              />
+              <FileContentCard
+                v-else-if="findToolResultById(item.toolCallId)?.name === 'read_file'"
+                :result-json="findToolResultById(item.toolCallId)!.result"
+              />
+            </template>
+          </OperationCard>
           <WebSearchSummaryMessage
             v-else-if="item.type === 'webSearchGroup'"
             :queries="item.queries"
@@ -493,6 +536,10 @@ import { showToast } from '@/composables/useToast'
 import UserMessageBubble from '@/components/agent/UserMessageBubble.vue'
 import ApprovalCard from '@/components/agent/ApprovalCard.vue'
 import GroupedOperationMessage from '@/components/agent/GroupedOperationMessage.vue'
+import OperationCard from '@/components/agent/OperationCard.vue'
+import MountListCard from '@/components/agent/MountListCard.vue'
+import FileListCard from '@/components/agent/FileListCard.vue'
+import FileContentCard from '@/components/agent/FileContentCard.vue'
 import ReasoningMessage from '@/components/agent/ReasoningMessage.vue'
 import ErrorMessage from '@/components/agent/ErrorMessage.vue'
 import AssistantMessage from '@/components/agent/AssistantMessage.vue'
@@ -949,6 +996,10 @@ function findToolResult(id: string): ToolResult | null {
   }
   return null
 }
+
+// renderAgentFlow 时间轴模式模板引用的别名（与 findToolCall / findToolResult 同义）
+function findToolCallById(id: string): ToolCall | null { return findToolCall(id) }
+function findToolResultById(id: string): ToolResult | null { return findToolResult(id) }
 
 function resolveToolCalls(ids: string[]): ToolCall[] {
   const out: ToolCall[] = []
