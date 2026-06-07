@@ -894,3 +894,179 @@ func scenarioChineseGreeting() *MockScenario {
 		},
 	}
 }
+
+// ════════════════════════════════════════════════════════════════
+// 13. complex_workflow — 超长输出繁杂剧本（流式渲染+折叠态+Footer 综合测试）
+// ════════════════════════════════════════════════════════════════
+//
+// 用途：验证真正逐步流式渲染、OperationCard 折叠态、独立 Footer、
+//       长文本滚动性能。包含 6 个 tool_call（混合 readOnly/fileChange/command）、
+//       10+ 段 text_delta、总时长 ~20s @ 1x 速。
+//
+// 触发："帮我全面分析" / "详细分析" / "完整报告" / "comprehensive" / "繁杂"
+
+func scenarioComplexWorkflow() *MockScenario {
+	return &MockScenario{
+		ID:          "complex_workflow",
+		Description: "超长多步工作流：6 tool_call + 10 text_delta — 验证流式渲染/折叠/Footer/滚动",
+		Keywords:    []string{"帮我全面分析", "详细分析", "完整报告", "comprehensive", "繁杂", "深度诊断", "全量扫描"},
+		Steps: []MockStep{
+			// ── Phase 1：开场 + 第一个工具调用 ──
+			{DelayMs: 0, Events: []MockEvent{
+				{Type: "stream_start", Data: map[string]interface{}{"scenario": "complex_workflow"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "## 系统全面诊断报告\n\n"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "正在对当前环境进行**多维度深度扫描**，请稍候...\n\n"}},
+			}},
+			{DelayMs: 1200, Events: []MockEvent{
+				{Type: "tool_call", Data: map[string]interface{}{
+					"id":           "cw_mount", "name": "list_mounts", "args": "{}",
+					"auto_run": true, "needsConfirm": false, "kind": "readOnly", "execute_real": true,
+				}},
+				{Type: "tool_status", Data: map[string]interface{}{"id": "cw_mount", "status": "running"}},
+			}},
+			{DelayMs: 1000, Events: []MockEvent{
+				{Type: "tool_status", Data: map[string]interface{}{"id": "cw_mount", "status": "success"}},
+				{Type: "tool_result", Data: map[string]interface{}{
+					"id": "cw_mount", "name": "list_mounts",
+					"result": `{"count":2,"items":[{"id":"serving","path":"/storage/emulated/0","name":"serving"},{"id":"sdcard","path":"/storage/emulated/0/Android/data","name":"sdcard"}]}`,
+					"isError": false, "status": "success", "durationMs": 8,
+				}},
+			}},
+
+			// ── Phase 2：递归文件扫描（3 层）──
+			{DelayMs: 800, Events: []MockEvent{
+				{Type: "text_delta", Data: map[string]interface{}{"text": "### 挂载点状态\n\n检测到 **2 个挂载点**，开始递归扫描...\n\n"}},
+			}},
+			{DelayMs: 1000, Events: []MockEvent{
+				{Type: "tool_call", Data: map[string]interface{}{
+					"id": "cw_root", "name": "list_files",
+					"args": `{"mount_id":"serving","rel_path":"/01-plain-media"}`,
+					"auto_run": true, "needsConfirm": false, "kind": "readOnly", "execute_real": true,
+				}},
+				{Type: "tool_status", Data: map[string]interface{}{"id": "cw_root", "status": "running"}},
+			}},
+			{DelayMs: 900, Events: []MockEvent{
+				{Type: "tool_status", Data: map[string]interface{}{"id": "cw_root", "status": "success"}},
+				{Type: "tool_result", Data: map[string]interface{}{
+					"id": "cw_root", "name": "list_files",
+					"result":     `{"count":5,"files":[{"name":"video","is_dir":true},{"name":"document","is_dir":true},{"name":"audio","is_dir":true},{"name":"image","is_dir":true},{"name":"config.json","size":2048,"is_dir":false}]}`,
+					"isError":    false,
+					"status":     "success",
+					"durationMs": 12,
+				}},
+			}},
+			{DelayMs: 800, Events: []MockEvent{
+				{Type: "tool_call", Data: map[string]interface{}{
+					"id": "cw_video", "name": "list_files",
+					"args": `{"mount_id":"serving","rel_path":"/01-plain-media/video"}`,
+					"auto_run": true, "needsConfirm": false, "kind": "readOnly", "execute_real": true,
+				}},
+				{Type: "tool_status", Data: map[string]interface{}{"id": "cw_video", "status": "running"}},
+			}},
+			{DelayMs: 900, Events: []MockEvent{
+				{Type: "tool_status", Data: map[string]interface{}{"id": "cw_video", "status": "success"}},
+				{Type: "tool_result", Data: map[string]interface{}{
+					"id": "cw_video", "name": "list_files",
+					"result": `{"files":[{"name":"sample.mp4","size":268435456,"is_dir":false},{"name":"comedy.mkv","size":312000000,"is_dir":false},{"name":"tutorial.avi","size":104857600,"is_dir":false},{"name":"concert.flac","size":52428800,"is_dir":false}]}`,
+					"isError": false, "status": "success", "durationMs": 15,
+				}},
+			}},
+
+			// ── Phase 3：读取配置文件 ──
+			{DelayMs: 800, Events: []MockEvent{
+				{Type: "text_delta", Data: map[string]interface{}{"text": "### 文件系统详情\n\n"}},
+				{Type: "text_delta_templated", Data: map[string]interface{}{
+					"text": fmt.Sprintf(
+						"根目录下发现 **%d** 个子目录和 **1** 个配置文件。\n\n"+
+						"**视频目录内容**：{%cw_video:files%}\n\n"+
+						"正在读取配置文件...\n\n",
+					),
+				}},
+			}},
+			{DelayMs: 1000, Events: []MockEvent{
+				{Type: "tool_call", Data: map[string]interface{}{
+					"id": "cw_read_cfg", "name": "read_file",
+					"args": `{"mount_id":"serving","rel_path":"/01-plain-media/config.json","max_bytes":2000}`,
+					"auto_run": true, "needsConfirm": false, "kind": "readOnly", "execute_real": true,
+				}},
+				{Type: "tool_status", Data: map[string]interface{}{"id": "cw_read_cfg", "status": "running"}},
+			}},
+			{DelayMs: 800, Events: []MockEvent{
+				{Type: "tool_status", Data: map[string]interface{}{"id": "cw_read_cfg", "status": "success"}},
+				{Type: "tool_result", Data: map[string]interface{}{
+					"id": "cw_read_cfg", "name": "read_file",
+					"result": `{"content":"{\"version\":\"2.1\",\"encoding\":\"utf-8\",\"last_modified\":\"2025-06-07T10:30:00Z\",\"checksum\":\"sha256:a1b2c3d4\"}","mimeType":"application/json","size":128}`,
+					"isError": false, "status": "success", "durationMs": 5,
+				}},
+			}},
+
+			// ── Phase 4：命令执行（磁盘空间检查）──
+			{DelayMs: 800, Events: []MockEvent{
+				{Type: "text_delta", Data: map[string]interface{}{"text": "### 系统资源\n\n正在检查磁盘空间和内存使用情况...\n\n"}},
+			}},
+			{DelayMs: 1000, Events: []MockEvent{
+				{Type: "tool_call", Data: map[string]interface{}{
+					"id": "cw_df", "name": "shell_command",
+					"args": `{"command":"df -h /storage/emulated/0 && free -m"}`,
+					"auto_run": true, "needsConfirm": false, "kind": "command", "execute_real": false,
+				}},
+				{Type: "tool_status", Data: map[string]interface{}{"id": "cw_df", "status": "running"}},
+			}},
+			{DelayMs: 1200, Events: []MockEvent{
+				{Type: "tool_status", Data: map[string]interface{}{"id": "cw_df", "status": "success"}},
+				{Type: "tool_result", Data: map[string]interface{}{
+					"id": "cw_df", "name": "shell_command",
+					"result": `{"output":"Filesystem      Size  Used Avail Use%/mnt\n/dev/block/bootdevice  118G   42G   76G   36%\n\n              total        used        free        shared    buff/cache   available\nMem:          8192        3521        2145         512         2526        4321\nSwap:         4096         128         3968","exit_code":0}`,
+					"isError": false, "status": "success", "durationMs": 320,
+				}},
+			}},
+
+			// ── Phase 5：写操作（需确认）──
+			{DelayMs: 800, Events: []MockEvent{
+				{Type: "text_delta", Data: map[string]interface{}{"text": "### 建议操作\n\n基于以上扫描结果，建议执行以下优化操作：\n\n"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "1. **清理缓存**：释放约 2.5GB 磁盘空间\n"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "2. **生成索引**：为 video 目录建立文件索引\n"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "3. **备份配置**：导出当前配置快照\n\n"}},
+			}},
+			{DelayMs: 600, Events: []MockEvent{
+				{Type: "tool_call", Data: map[string]interface{}{
+					"id": "cw_backup", "name": "write_file",
+					"args": `{"mount_id":"serving","rel_path":"/01-plain-media/backup-config-20250607.json","content":"{\"scan_time\":\"2025-06-07T12:00:00Z\",\"files_found\":8,\"total_size\":737MB}"}`,
+					"auto_run": false, "needsConfirm": true, "kind": "fileChange", "execute_real": false,
+				}},
+				{Type: "tool_status", Data: map[string]interface{}{"id": "cw_backup", "status": "running"}},
+			}},
+
+			// ── Phase 6：动态总结 + 结束 ──
+			{DelayMs: 1500, Events: []MockEvent{
+				{Type: "text_delta_templated", Data: map[string]interface{}{
+					"text": "## 诊断总结\n\n",
+				}},
+				{Type: "text_delta_templated", Data: map[string]interface{}{
+					"text": fmt.Sprintf(
+						"| 维度 | 结果 |\n|------|------|\n"+
+						"| 挂载点 | {%cw_root:count} 个目录 + 配置文件 |\n"+
+						"| 视频文件 | {%cw_video:files%} |\n"+
+						"| 磁盘使用 | 42G / 118G (36%%) |\n"+
+						"| 内存使用 | 3.5G / 8G (43%%) |\n"+
+						"| 待确认操作 | 备份配置文件（需用户批准）|\n\n"+
+						"**下一步建议**（点击 chip 直接执行）：\n\n"+
+						"1. 加密所有视频文件\n2. 清理临时缓存\n3. 生成完整文件索引\n4. 导出 PDF 报告\n",
+					),
+				}},
+			}},
+			{DelayMs: 500, Events: []MockEvent{
+				{Type: "stream_end", Data: map[string]interface{}{
+					"finishReason": "stop",
+					"usage":        map[string]int{"totalTokens": 1247},
+				}},
+			}},
+		},
+		Presets: []MockPreset{
+			{ID: "p_cw_encrypt_all", Label: "🔒 全部加密", UserText: "加密所有视频文件", Tooltip: "触发 encrypt_video 剧本批量模式"},
+			{ID: "p_cw_clean", Label: "🧹 清理缓存", UserText: "清理临时缓存释放空间", Tooltip: "执行 shell_command 清理"},
+			{ID: "p_cw_index", Label: "📋 生成索引", UserText: "生成文件索引", Tooltip: "遍历所有目录生成 JSON 索引"},
+			{ID: "p_cw_pdf", Label: "📄 导出PDF", UserText: "导出诊断报告为PDF", Tooltip: "将本次结果格式化为 PDF 文档"},
+		},
+	}
+}

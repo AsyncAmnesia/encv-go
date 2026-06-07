@@ -129,6 +129,7 @@ func NewMockEngine() *MockEngine {
 		scenarioMultiToolParallel(),
 		scenarioContextExhausted(),
 		scenarioChineseGreeting(),
+		scenarioComplexWorkflow(),
 	}
 	return e
 }
