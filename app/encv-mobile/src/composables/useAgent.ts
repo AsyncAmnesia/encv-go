@@ -290,9 +290,10 @@ function appendSequencedChunk(
 /**
  * 解析 `tool_call` 的 data 字段 —— ToolCallData
  */
-function parseToolCallData(data: string): ToolCall | null {
+function parseToolCallData(data: unknown): ToolCall | null {
   try {
-    const parsed = JSON.parse(data) as Partial<ToolCall>
+    // event.data 可能是已解析的对象（processSSE 中 JSON.parse 后）或字符串（旧代码路径）
+    const parsed: Partial<ToolCall> = typeof data === 'string' ? JSON.parse(data) : (data as Partial<ToolCall>)
     if (!parsed.id || !parsed.name) return null
     const autoRun = parsed.auto_run !== false
     return {
@@ -312,13 +313,15 @@ function parseToolCallData(data: string): ToolCall | null {
 /**
  * 解析 `tool_status` 的 data 字段 —— 包含 id 和 status
  */
-function parseToolStatus(data: string): { id: string; status: ToolStatus } | null {
+function parseToolStatus(data: unknown): { id: string; status: ToolStatus } | null {
   try {
-    const parsed = JSON.parse(data) as { id?: string; status?: string }
-    if (!parsed.id || !parsed.status) return null
-    const status = parsed.status as ToolStatus
+    const parsed = typeof data === 'string' ? JSON.parse(data) : data
+    if (!parsed || typeof parsed !== 'object') return null
+    const { id, status: rawStatus } = parsed as { id?: string; status?: string }
+    if (!id || !rawStatus) return null
+    const status = rawStatus as ToolStatus
     if (!TOOL_STATUS_VALUES.has(status)) return null
-    return { id: String(parsed.id), status }
+    return { id, status }
   } catch {
     return null
   }
@@ -327,17 +330,19 @@ function parseToolStatus(data: string): { id: string; status: ToolStatus } | nul
 /**
  * 解析 `tool_result` 的 data 字段 —— ToolResultData
  */
-function parseToolResultData(data: string): ToolResult | null {
+function parseToolResultData(data: unknown): ToolResult | null {
   try {
-    const parsed = JSON.parse(data) as Partial<ToolResult>
-    if (!parsed.id || !parsed.name) return null
+    const parsed = typeof data === 'string' ? JSON.parse(data) : data
+    if (!parsed || typeof parsed !== 'object') return null
+    const p = parsed as Partial<ToolResult>
+    if (!p.id || !p.name) return null
     return {
-      id: String(parsed.id),
-      name: String(parsed.name),
-      result: typeof parsed.result === 'string' ? parsed.result : JSON.stringify(parsed.result ?? ''),
-      is_error: parsed.is_error === true,
-      status: String(parsed.status ?? 'success'),
-      duration_ms: typeof parsed.duration_ms === 'number' ? parsed.duration_ms : 0,
+      id: String(p.id),
+      name: String(p.name),
+      result: typeof p.result === 'string' ? p.result : JSON.stringify(p.result ?? ''),
+      is_error: p.is_error === true,
+      status: String(p.status ?? 'success'),
+      duration_ms: typeof p.duration_ms === 'number' ? p.duration_ms : 0,
     }
   } catch {
     return null
