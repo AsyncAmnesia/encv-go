@@ -1202,11 +1202,21 @@ async function handleCopyDoctorJson() {
 }
 
 onMounted(async () => {
-  if (serverOnline.value) {
-    await loadConfigSafely()
+  // 关键：之前 `if (serverOnline.value)` 同步判断 ref 当时的值，但
+  // useServerStatus.checkStatus() 是异步的——onMounted 执行时 checkStatus 还没返回，
+  // serverOnline 仍是初始 false → 永远不调 loadConfigSafely → 错误态 UI 永远显示。
+  //
+  // 修复：主动 await checkStatus 探测一次（即使 useServerStatus 模块单例已 init），
+  // 然后才根据探测结果决定是否加载 config。
+  try {
+    const probe = await checkServerStatusNow()
+    if (probe.online) {
+      await loadConfigSafely()
+    }
+    // offline 时错误态 UI 接管，并依赖 watch(serverOnline) 在后续 online 时重试
+  } catch (e) {
+    console.error('[AgentSettingsDetail] onMounted probe failed:', e)
   }
-  // 若 serverOnline 为 false，错误态 UI 会自然显示（看 v-else-if 分支）
-  // 并通过下面的 watch(serverOnline) 在后端起来时自动重试
 })
 
 // 监听后端连接状态：从未连接 → 已连接时自动重新拉配置，
