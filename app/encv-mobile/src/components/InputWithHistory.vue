@@ -76,6 +76,7 @@ const emit = defineEmits<{
   reset: []
   'commit-history': [value: string]
   'keyup-enter': []
+  blur: []
 }>()
 
 const { t } = useI18n()
@@ -90,7 +91,14 @@ const resolvedType = computed(() => {
 })
 
 function handleInput(e: CustomEvent) {
-  emit('update:modelValue', e.detail.value ?? '')
+  // 防御：ionInput 事件必须是 CustomEvent 携带 detail.value
+  // 但代码路径中可能存在非 CustomEvent 派发（如测试代码 dispatchEvent(new Event('ionInput'))），
+  // 这种情况下 e.detail 是 undefined，原代码会抛 "Cannot read properties of undefined"
+  const detail: any = (e as any)?.detail
+  const raw = typeof detail?.value === 'string' || typeof detail?.value === 'number'
+    ? detail.value
+    : ''
+  emit('update:modelValue', raw)
 }
 
 function handleFocus() {
@@ -106,6 +114,9 @@ function handleBlur() {
   setTimeout(() => {
     showHistory.value = false
   }, 150)
+  // 关键：暴露 blur 事件给父组件——父组件可借此自动保存
+  // 场景：用户修改 API Key 后不按 Enter 就离开 input → blur 时自动加密保存
+  emit('blur')
 }
 
 function handleSelect(value: string) {

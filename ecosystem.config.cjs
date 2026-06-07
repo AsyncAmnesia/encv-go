@@ -33,7 +33,7 @@
 //            agent-browser navigate :16666 时自动注册该端口
 //   :8100  = encv-mobile Vite（纯净 SPA，不再做反向代理胶水）
 //   :5174  = plugin-openlist-web Vite（被 :16666/openlist-ui 代理）
-//   :2025  = encv-go（被 :16666/api + /openlist/ + /p/ + /play 代理）
+//   :2025  = encv-go（被 :16666/api + /agent-api + /ws + /openlist/ + /p/ + /play 代理）
 //   :5244  = OpenList fork（被 encv-go :2025 内部代理）
 //
 //   ⚠️ 历史 :16000 = OpenPreview 工具用的外网入口（agent-tool-host），

@@ -2,6 +2,10 @@ export default {
   'zh-CN': {
     'common.confirm': '确认',
     'common.cancel': '取消',
+    'common.retry': '重试',
+    'common.refresh': '刷新',
+    'common.error': '错误',
+    'common.close': '关闭',
 
     'tabs.home': '首页',
     'tabs.files': '文件',
@@ -231,6 +235,10 @@ export default {
   en: {
     'common.confirm': 'Confirm',
     'common.cancel': 'Cancel',
+    'common.retry': 'Retry',
+    'common.refresh': 'Refresh',
+    'common.error': 'Error',
+    'common.close': 'Close',
 
     'tabs.home': 'Home',
     'tabs.files': 'Files',

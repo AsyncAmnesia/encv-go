@@ -2,8 +2,6 @@
 package server
 
 import (
-	"bufio"
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -31,19 +29,24 @@ const (
 	cryptoSalt       = "encv-mobile-salt-2024"
 )
 
-// deriveKey 使用 passphrase + salt + 可选的设备指纹进行 scrypt 密钥派生
-// 设备指纹确保同一密文在不同设备上无法解密（即使知道 passphrase）
+// deriveKey 使用 passphrase + salt 进行 scrypt 密钥派生。
+//
+// 关键设计决策（2026-06 修复）：
+//   - **完全忽略 deviceId**。早期版本把 deviceId 拼到 salt 后面作为设备绑定，
+//     实际产生 2 个致命问题：
+//       1. 设备变化 / 浏览器沙箱切换 → deviceId 变 → 已存密文永远解不出
+//       2. 历史 Node.js agent-stub 用 scryptSync + 不同 salt 加密的密文，
+//          即便有正确 deviceId 也解不开（参数不兼容）
+//   - 现在统一只用固定 passphrase + salt 派生，跨设备稳定。
+//   - deviceId 仍然作为参数保留（API 兼容 + 给未来可选的"设备绑定"模式留口子），
+//     但实际不参与派生。
 func deriveKey(deviceId ...string) []byte {
-	// 基础 salt
 	saltBase := cryptoSalt
-	// 如果提供了设备 ID，追加到 salt 中
-	if len(deviceId) > 0 && deviceId[0] != "" {
-		saltBase = saltBase + ":" + deviceId[0]
-	}
+	_ = deviceId // 故意忽略，保持签名兼容
 	key, err := scrypt.Key(
 		[]byte(cryptoPassphrase),
 		[]byte(saltBase),
-		16384, // N (与 Node.js 默认值一致)
+		16384, // N
 		8,     // r
 		1,     // p
 		32,    // keylen (AES-256)
@@ -179,6 +182,133 @@ func pkcs7Unpad(data []byte) []byte {
 	return data[:len(data)-padding]
 }
 
+// defaultAgentSystemPrompt 是内置默认 system prompt。
+// 当 config.user.json 的 agent_settings.system_prompt 为空或未配置时使用。
+//
+// ════════════════════════════════════════════════════════════
+// 平台级 Tool Use 架构（核心设计决策）
+// ════════════════════════════════════════════════════════════
+//
+// 背景：当前使用的 API 代理（gptgod）会静默丢弃 OpenAI 标准的 `tools` 参数，
+// 导致 API 级 Function Calling（tool_calls 字段）永远为空。
+//
+// 解决方案：在 system prompt 中嵌入完整的工具定义 + 调用协议，
+// 让 LLM 以**纯文本 JSON 数组**格式输出工具调用，后端用 extractToolCallsFromText() 解析执行。
+//
+// 调用循环：
+//   用户提问 → LLM 输出 [tool_call JSON] → 后端解析+执行 → 注入结果 → LLM 基于结果回答
+//
+// ⚠️ 修改此常量时必须同步更新 agent_api_test.go 中的相关测试。
+const defaultAgentSystemPrompt = `你是 ENCV AI 助手，可以帮助用户浏览文件、管理加密容器和执行操作。
+
+## ═══════════════════════════════════════════════════════
+## 工具调用协议（平台级 Tool Use）— 必须严格遵守
+## ═══════════════════════════════════════════════════════
+
+### 调用方式
+
+当你需要使用工具时，你的**整个回复必须只包含一个 JSON 数组**，不能有任何其他文字：
+
+[{"name":"工具名","arguments":{"参数1":"值1","参数2":"值2"}}]
+
+一次可以调用多个工具（数组多个元素）。不需要工具时，正常用自然语言回复。
+
+### 完整对话流程示例
+
+用户: 有哪些文件？
+助手: [{"name":"list_mounts","arguments":{}}]
+系统: [工具结果注入: {"count":2,"items":[{"id":"local","path":"/data"},{"id":"usb","path":"/mnt/usb"}]}]
+助手: 当前有 2 个挂载点：
+1. local (/data)
+2. usb (/mnt/usb)
+需要查看哪个目录的内容？
+
+用户: 看 /data 下有什么
+助手: [{"name":"list_files","arguments":{"mount_id":"local","rel_path":"/"}}]
+系统: [工具结果注入: {"items":[{"name":"doc.pdf","is_dir":false,"size":204800},...]}]
+助手: /data 目录下有以下文件：
+- doc.pdf (200KB)
+- photo.jpg (1.2MB)
+- videos/ (目录)
+
+用户: 读一下 doc.pdf 的内容
+助手: [{"name":"read_file","arguments":{"mount_id":"local","rel_path":"/doc.pdf"}}]
+系统: [工具结果注入: {"content":"%PDF-1.4...","note":"二进制文件，无法显示文本内容"}]
+助手: doc.pdf 是一个二进制 PDF 文件，无法直接显示文本内容。如需查看，请用 PDF 解密工具解密后打开。
+
+### 错误恢复示例
+
+用户: 加密这个视频 /data/video.mp4
+助手: [{"name":"video_encrypt","arguments":{"input_paths":["/data/video.mp4"],"output_path":"/data/video.enc"}}]
+系统: [等待用户确认...]
+
+---
+
+## ═══════════════════════════════════════════════════════
+## 可用工具定义（含完整参数 Schema）
+## ═══════════════════════════════════════════════════════
+
+### 🔍 文件系统只读工具（自动执行，无需确认）
+
+#### 1. list_mounts — 列出挂载点
+参数：无（传空对象 {}）
+返回：挂载点列表，每个包含 id 和 path
+⚠️ 在回答任何"有哪些文件""什么目录"问题之前，**必须先调用此工具**
+
+#### 2. list_files — 列出目录内容
+参数（均为 string 类型，必填）：
+- mount_id: 挂载点 ID（从 list_mounts 返回值获取）
+- rel_path: 相对路径（根目录用 "/"）
+可选参数：
+- max_entries: 最大返回条目数（数字字符串，默认 "100"）
+
+#### 3. read_file — 读取文件内容
+参数（均为 string 类型，必填）：
+- mount_id: 挂载点 ID
+- rel_path: 文件相对路径
+⚠️ 仅适用于文本文件。二进制文件会返回占位提示。
+
+#### 4. stat_file — 查询文件元信息
+参数（均为 string 类型，必填）：
+- mount_id: 挂载点 ID
+- rel_path: 文件/目录相对路径
+返回：大小、修改时间、是否目录、是否容器
+
+#### 5. get_storage_info — 磁盘空间
+参数：无（传空对象 {}）
+返回：总容量、已用、剩余字节数
+
+### 🔐 加密/解密工具（需要用户确认）
+
+所有加密/解密工具共享相同参数格式：
+
+**加密工具参数（必填）：**
+- input_paths: string[] — 要加密的源文件路径数组
+- output_path: string — 加密后的输出容器路径
+
+**解密工具参数（必填）：**
+- container_path: string — 加密容器文件路径
+- output_dir: string — 解密输出目录
+
+可用工具列表：
+6. video_encrypt / video_decrypt — 视频（插件名 video）
+7. audio_encrypt / audio_decrypt — 音频（插件名 audio）
+8. image_encrypt / image_decrypt — 图片（插件名 image）
+9. wps_encrypt / wps_decrypt — WPS文档（插件名 wps）
+10. pdf_encrypt / pdf_decrypt — PDF文件（插件名 pdf）
+11. text_encrypt / text_decrypt — 纯文本（插件名 text）
+
+---
+
+## ═══════════════════════════════════════════════════════
+## 强制规则（违反 = 严重错误）
+## ═══════════════════════════════════════════════════════
+
+1. **禁止编造文件路径**。未调用 list_mounts/list_files 就不知道有什么文件。如果不知道，明确说"我需要先查看文件列表"，不要猜测。
+2. **工具调用的 arguments 必须是有效的 JSON 对象**。不要省略引号、不要用 Python dict 格式。
+3. **只读工具会自动执行**，加密/解密工具需要用户确认。你只需输出 JSON，系统会处理其余一切。
+4. **绝对不要混合文字和 JSON**。要么纯自然语言，要么纯 JSON 数组。`
+
 // ─── Agent 配置读取 ──────────────────────────────────────────
 
 type agentConfig struct {
@@ -227,6 +357,8 @@ func (s *Server) registerAgentRoutes(r *gin.Engine) {
 	r.GET("/api/models", s.handleAgentModels)
 	r.POST("/api/encrypt-key", s.handleAgentEncryptKey)
 	r.POST("/api/decrypt-key", s.handleAgentDecryptKey)
+	r.POST("/api/agent/reset-key", s.handleAgentResetKey)
+	r.GET("/api/agent/context-usage", s.handleAgentContextUsage)
 	r.GET("/test", s.handleAgentTest)
 	r.POST("/test", s.handleAgentTest)
 	r.POST("/api/chat", s.handleAgentChat)
@@ -236,17 +368,134 @@ func (s *Server) registerAgentRoutes(r *gin.Engine) {
 	slog.Info("Agent API routes registered (integrated into encv-go)")
 }
 
+// ─── POST /api/agent/reset-key — 清空 config 里的 openai_api_key ──────
+//
+// 用途：前端在 decrypt-key 持续返回空字符串时（典型场景：deviceId 变了 /
+// 历史 Node.js agent-stub 加密的密文与 Go 端 scrypt 不兼容），自动调本端点
+// 把 config.user.json 里的 agent_settings.openai_api_key 字段置空，
+// 引导用户重新输入一次。
+//
+// 设计原则：
+//   - 不接受任何参数。直接清空，单一职责。
+//   - 写盘前加锁防并发。
+//   - 写盘后用 slog.Info 留痕（不写 s.cfg 内存——密文不在内存中，运行时
+//     每次都从文件 readAgentConfig 读，避免内存/磁盘状态漂移）。
+func (s *Server) handleAgentResetKey(c *gin.Context) {
+	if s.configPath == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "config path not available"})
+		return
+	}
+
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+
+	// 1. 读现有 config
+	data, err := os.ReadFile(s.configPath)
+	if err != nil {
+		slog.Warn("agent: reset-key cannot read config", "path", s.configPath, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot_read_config", "detail": err.Error()})
+		return
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		slog.Warn("agent: reset-key cannot parse config", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid_config", "detail": err.Error()})
+		return
+	}
+
+	// 2. 拿 agent_settings 块
+	agentRaw, ok := raw["agent_settings"]
+	if !ok {
+		// agent_settings 块本就不存在 → 没东西可清，直接成功
+		slog.Info("agent: reset-key no-op (agent_settings absent)")
+		c.JSON(http.StatusOK, gin.H{"reset": false, "reason": "no agent_settings block"})
+		return
+	}
+	var agent map[string]interface{}
+	if err := json.Unmarshal(agentRaw, &agent); err != nil {
+		slog.Warn("agent: reset-key cannot parse agent_settings", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid_agent_settings", "detail": err.Error()})
+		return
+	}
+
+	// 3. 记录原值（仅长度，不打内容，避免日志泄露密文）
+	prev, _ := agent["openai_api_key"].(string)
+	prevLen := len(prev)
+
+	// 4. 清空
+	agent["openai_api_key"] = ""
+	newAgent, _ := json.Marshal(agent)
+	raw["agent_settings"] = newAgent
+
+	// 5. 写回（保留缩进风格）
+	indented, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "marshal_failed", "detail": err.Error()})
+		return
+	}
+	if err := os.WriteFile(s.configPath, append(indented, '\n'), 0644); err != nil {
+		slog.Error("agent: reset-key write config failed", "path", s.configPath, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "write_failed", "detail": err.Error()})
+		return
+	}
+
+	slog.Info("agent: reset-key cleared openai_api_key from config", "path", s.configPath, "prev_len", prevLen)
+	c.JSON(http.StatusOK, gin.H{
+		"reset":   true,
+		"prevLen": prevLen,
+		"message": "openai_api_key has been cleared. Please re-enter the key in AI Settings.",
+	})
+}
+
 // ─── GET /api/models — 从供应商获取模型列表 ─────────────────
 
+// buildChatCompletionsURL 拼接 OpenAI 兼容 chat completions 端点 URL。
+//
+// 关键修复：base URL 已经包含 /v1 后缀时不能重复拼接。
+// 之前无条件 + "/v1/chat/completions" 导致 base_url="https://api.openai.com/v1" 时
+// 实际请求 URL 变成 "https://api.openai.com/v1/v1/chat/completions" → 上游 404 / EOF。
+//
+// 规则：
+//   - 去掉尾部 /
+//   - 去掉已存在的 /v1 后缀（不区分大小写，兼容 https://api.openai.com/V1 等）
+//   - 拼接标准 /v1/chat/completions
+//
+// 用例：
+//   "https://api.openai.com/v1"   → "https://api.openai.com/v1/chat/completions"
+//   "https://api.openai.com/v1/"  → "https://api.openai.com/v1/chat/completions"
+//   "https://api.openai.com"      → "https://api.openai.com/v1/chat/completions"
+//   "https://api.openai.com/V1"   → "https://api.openai.com/v1/chat/completions"
+//   "https://proxy.example.com/openai/v1" → "https://proxy.example.com/openai/v1/chat/completions"
+func buildChatCompletionsURL(baseURL string) string {
+	base := strings.TrimRight(baseURL, "/")
+	// 去掉已存在的 /v1 后缀（不区分大小写，避免 https://api.openai.com/V1 的边界情况）
+	if strings.HasSuffix(strings.ToLower(base), "/v1") {
+		base = strings.TrimRight(base[:len(base)-3], "/")
+	}
+	return base + "/v1/chat/completions"
+}
+
 func (s *Server) handleAgentModels(c *gin.Context) {
-	cfg := s.readAgentConfig()
+	// deviceId 必须从 query 取（GET 无 body）
+	// 不传 deviceId 会用错的 key 派生，永远解不出设备绑定的密文
+	deviceId := c.Query("deviceId")
+	cfg := s.readAgentConfig(deviceId)
 
 	if cfg.APIKey == "" {
+		// 区分两种失败原因：
+		// - 真的没配置（用户从未填过） → note 给空
+		// - 配了但 deviceId 不对 → note 给"设备不匹配"
+		note := "未配置 OpenAI API Key，请在 AI 设置中填写"
+		if deviceId == "" {
+			note = "未配置 OpenAI API Key 或缺少 deviceId 参数，请在 AI 设置中填写"
+		} else {
+			note = "未配置 OpenAI API Key 或 deviceId 不匹配当前设备"
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"models":      []interface{}{},
 			"defaultModel": "",
 			"error":       "no_api_key",
-			"note":        "未配置 OpenAI API Key，请在 AI 设置中填写",
+			"note":        note,
 		})
 		return
 	}
@@ -350,7 +599,12 @@ func (s *Server) handleAgentDecryptKey(c *gin.Context) {
 // ─── GET/POST /test — 测试连接 ───────────────────────────────
 
 func (s *Server) handleAgentTest(c *gin.Context) {
-	cfg := s.readAgentConfig()
+	// deviceId 从 query/header 取（GET 无 body，POST 允许 header 走）
+	deviceId := c.Query("deviceId")
+	if deviceId == "" {
+		deviceId = c.GetHeader("X-Device-Id")
+	}
+	cfg := s.readAgentConfig(deviceId)
 
 	result := gin.H{
 		"openai": "ok",
@@ -408,12 +662,15 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	}
 
 	// ③½ 注入系统提示词（从配置读取，前端无需关心）
+	//     配置为空时使用内置默认 prompt（强制 list_mounts + 禁止编造路径）
 	finalMessages := body.Messages
-	if cfg.SystemPrompt != "" {
-		finalMessages = make([]chatMsg, 0, len(body.Messages)+1)
-		finalMessages = append(finalMessages, chatMsg{Role: "system", Content: cfg.SystemPrompt})
-		finalMessages = append(finalMessages, body.Messages...)
+	systemPrompt := cfg.SystemPrompt
+	if systemPrompt == "" {
+		systemPrompt = defaultAgentSystemPrompt
 	}
+	finalMessages = make([]chatMsg, 0, len(body.Messages)+1)
+	finalMessages = append(finalMessages, chatMsg{Role: "system", Content: systemPrompt})
+	finalMessages = append(finalMessages, body.Messages...)
 
 	// ③¾ 缓存 session：messages（不含 system）+ model + temperature
 	//     —— confirm 时按 sessionId 取回继续对话
@@ -437,209 +694,397 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		return
 	}
 
-	// ⑤ 构建 OpenAI 兼容请求
-	reqBody := map[string]interface{}{
-		"model":       model,
-		"messages":    finalMessages,
-		"temperature": body.Temperature,
-		"stream":      true,
-	}
-	reqJSON, _ := json.Marshal(reqBody)
-
-	reqURL := strings.TrimRight(cfg.BaseURL, "/") + "/v1/chat/completions"
-	httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, reqURL, bytes.NewReader(reqJSON))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "build_request_failed", "message": err.Error()})
-		return
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+cfg.APIKey)
-	httpReq.Header.Set("Accept", "text/event-stream")
-
-	// ⑥ 发起上游请求
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		slog.Warn("agent: chat upstream request failed", "url", reqURL, "error", err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream_error", "message": "无法连接到 AI 服务: " + err.Error()})
-		return
-	}
-	defer resp.Body.Close()
-
-	// ⑦ 上游错误处理
-	if resp.StatusCode >= 400 {
-		errBody, _ := io.ReadAll(resp.Body)
-		slog.Warn("agent: chat upstream error", "status", resp.StatusCode, "body", string(errBody))
-		// 尝试解析 OpenAI 错误格式
-		var openaiErr struct {
-			Error struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-				Code    string `json:"code"`
-			} `json:"error"`
-		}
-		json.Unmarshal(errBody, &openaiErr)
-		msg := openaiErr.Error.Message
-		if msg == "" {
-			msg = fmt.Sprintf("AI 服务返回 HTTP %d", resp.StatusCode)
-		}
-		c.JSON(resp.StatusCode, gin.H{"error": "upstream_error", "message": msg})
-		return
-	}
-
-	// ⑧ 设置 SSE 响应头并开始流式转发
+	// ④½ 提前设置 SSE headers —— 让客户端立即建立连接，
+	//     Agent Loop 期间可通过同一连接推送进度事件（thinking / tool_executed）
 	s.setSSEHeaders(c.Writer)
-	// chat 流结束（或 panic）时清 InProgress
+	// 初始注释确认 SSE 连接已建立
+	c.Writer.Write([]byte(": agent loop starting\n\n"))
+	flusher.Flush()
+
+	// ⑤ 构建 OpenAI 兼容请求
+	//
+	// 关键：把 agent 工具列表（plugin 加密解密 + fs 只读）发给 LLM。
+	// 之前这里没 "tools" 字段，agent 实际根本无法调任何工具——这是让 LLM "perceive
+	// the mounted file system" 的真正入口。
+	agentTools := s.ListAgentTools()
+	openAITools := agentToolsToOpenAITools(agentTools)
+	toolMeta := make(map[string]map[string]interface{}, len(agentTools))
+	for _, t := range agentTools {
+		if n, ok := t["name"].(string); ok {
+			toolMeta[n] = t
+		}
+	}
+
+	// ════════════════════════════════════════════════════════════
+	// 阶段 1: Agent Tool Loop（参照 OpenAI Agents SDK 模式）
+	// ════════════════════════════════════════════════════════════
+	//
+	// 核心循环：非流式调 LLM → 如果返回 tool_calls → 自动执行只读工具
+	//           → 注入结果 → 继续循环 → 直到 LLM 返回纯文本
+	//
+	// 客户端无感知：工具执行完全在服务端完成，客户端只收到最终流式文本。
+	// 只有需要用户确认的工具（加密/解密等）才会中断循环并推 approval 事件。
+	// ════════════════════════════════════════════════════════════
+	const maxAgentLoopRounds = 5
+	var (
+		loopMessages     = finalMessages // 循环内的 messages（包含 system + 历史对话）
+		pendingTools     []toolCallAccumulator
+		finalAssistantText string         // LLM 最终文本回复
+		autoToolExecuted bool           // 是否有工具被执行过
+	)
+
+	for round := 0; round < maxAgentLoopRounds; round++ {
+		slog.Info("agent: loop round",
+			"round", round+1,
+			"max_rounds", maxAgentLoopRounds,
+			"messages_count", len(loopMessages),
+			"tools_count", len(openAITools))
+
+		// 推送循环进度事件（客户端可显示"正在思考..."或轮次指示器）
+		s.sendSSEEventSafe(c.Writer, flusher, "stream_status", map[string]interface{}{
+			"status":  "thinking",
+			"round":   round + 1,
+			"message": fmt.Sprintf("正在调用 LLM (第 %d/%d 轮)...", round+1, maxAgentLoopRounds),
+		})
+
+		// ═════════════════════════════════════════════════════
+		// 流式调用 LLM —— 文本实时转发给客户端，tool_calls 累积后处理
+		// ═════════════════════════════════════════════════════
+		streamCh, err := callOpenAIStream(c.Request.Context(), cfg, model, body.Temperature, loopMessages, openAITools)
+		if err != nil {
+			slog.Warn("agent: loop stream failed", "round", round+1, "error", err)
+			s.sendSSEEventSafe(c.Writer, flusher, "stream_error", map[string]interface{}{
+				"code":    "llm_request_failed",
+				"message": err.Error(),
+				"round":   round + 1,
+			})
+			s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+			return
+		}
+
+		// 读取流式事件：累积 tool_calls / 智能缓冲文本
+		var (
+			roundTextContent     string
+			roundToolCalls       []toolCallAccumulator
+			tcAccumulator        = make(map[int]*toolCallAccumulator)
+			finishReason         string
+			gotToolCalls         bool
+
+			// ═══ 平台级 Tool Use 智能缓冲 ═══
+			// 问题：如果 LLM 输出工具调用 JSON（如 [{"name":"list_mounts",...}]），
+			//       之前的代码会通过 text_delta 实时把原始 JSON 推送给用户。
+			//       用户看到的是裸 JSON 而非工具执行结果。
+			//
+			// 解决：前 bufSizeLimit 字符进入缓冲区，检测是否像工具调用 JSON：
+			//   - 以 [ 或 { 开头 + 包含 "name" 字段 → 进入"疑似工具调用"模式
+			//     → 继续缓冲所有后续文本，不转发给客户端
+			//     → 流结束后用 extractToolCallsFromText 解析
+			//     → 解析成功 → 执行工具，JSON 永远不暴露给用户
+			//     → 解析失败 → 补发所有缓冲的文本（降级为普通文本）
+			//   - 不像工具调用 → 立即转发已缓冲的部分 + 切回实时模式
+			textBuf          []string           // 缓冲的 text_delta chunks
+			bufMode          = true             // 是否在缓冲模式（前 N 字符）
+			suspectedToolCall = false            // 是否检测到可能是工具调用
+		)
+		const bufSizeLimit = 60 // 缓冲阈值（字符数）
+
+		// looksLikeToolCall 检查累积文本是否看起来像工具调用 JSON
+		looksLikeToolCall := func(s string) bool {
+			trimmed := strings.TrimSpace(s)
+			if len(trimmed) < 3 {
+				return false
+			}
+			// 以 [ 或 { 开头 且包含 "name" 关键字
+			if (trimmed[0] == '[' || trimmed[0] == '{') &&
+				strings.Contains(trimmed, `"name"`) {
+				return true
+			}
+			return false
+		}
+
+		// flushBuffer 把缓冲的文本一次性转发给客户端（当确定不是工具调用时调用）
+		flushBuffer := func() {
+			for _, chunk := range textBuf {
+				s.sendAndCache(sess, c.Writer, flusher, "text_delta", chunk)
+			}
+			textBuf = nil
+		}
+
+		for ev := range streamCh {
+			switch ev.Type {
+			case "text_delta":
+				if textChunk, ok := ev.Data.(string); ok && textChunk != "" {
+					roundTextContent += textChunk
+
+					if suspectedToolCall {
+						// 已确认为疑似工具调用 → 继续缓冲，不转发
+						textBuf = append(textBuf, textChunk)
+					} else if bufMode && len(roundTextContent) < bufSizeLimit {
+						// 缓冲阶段：积累足够样本再判断
+						textBuf = append(textBuf, textChunk)
+						// 积累到一定量后判断
+						if len(roundTextContent) >= bufSizeLimit || looksLikeToolCall(roundTextContent) {
+							if looksLikeToolCall(roundTextContent) {
+								suspectedToolCall = true
+								slog.Info("agent: detected suspected tool call JSON, buffering",
+									"prefix_len", len(roundTextContent),
+									"preview", roundTextContent[:min(80, len(roundTextContent))])
+							} else {
+								// 不像工具调用 → 立即释放缓冲区，切回实时模式
+								flushBuffer()
+								bufMode = false
+							}
+						}
+					} else {
+						// 正常实时模式或缓冲已释放 → 直接转发
+						s.sendAndCache(sess, c.Writer, flusher, "text_delta", textChunk)
+					}
+				}
+			case "reasoning_delta":
+				if textChunk, ok := ev.Data.(string); ok && textChunk != "" {
+					s.sendAndCache(sess, c.Writer, flusher, "reasoning_delta", textChunk)
+				}
+			case "tool_call_chunk":
+				gotToolCalls = true
+				tc := ev.Data.(toolCallAccumulator)
+				cur, ok := tcAccumulator[tc.Index]
+				if !ok {
+					cur = &toolCallAccumulator{Index: tc.Index, Type: "function"}
+					tcAccumulator[tc.Index] = cur
+				}
+				if tc.ID != "" { cur.ID = tc.ID }
+				if tc.Type != "" { cur.Type = tc.Type }
+				cur.Function.Name += tc.Function.Name
+				cur.Function.Arguments += tc.Function.Arguments
+			case "finish_reason":
+				if s, ok := ev.Data.(string); ok { finishReason = s }
+			case "stream_end":
+				// 正常结束
+			}
+		}
+
+		// 收集所有累积的完整 tool_calls
+		if gotToolCalls {
+			for _, tc := range tcAccumulator {
+				if tc.Function.Name != "" {
+					roundToolCalls = append(roundToolCalls, *tc)
+				}
+			}
+		}
+
+		// ── 分支 A: LLM 返回了 tool_calls ──
+		if gotToolCalls && len(roundToolCalls) > 0 {
+			slog.Info("agent: loop tool_calls received (stream)",
+				"round", round+1,
+				"tool_count", len(roundToolCalls),
+				"finish_reason", finishReason)
+
+			// 把 assistant 的 tool_calls 消息追加到历史
+			loopMessages = append(loopMessages, chatMsg{
+				Role:      "assistant",
+				Content:   roundTextContent,
+				ToolCalls: roundToolCalls,
+			})
+
+			allAutoExecuted := true
+			for _, tc := range roundToolCalls {
+				needConfirm := true
+				if meta, ok := toolMeta[tc.Function.Name]; ok {
+					if v, ok := meta["needConfirm"].(bool); ok { needConfirm = v }
+				}
+
+				if needConfirm {
+					pendingTools = append(pendingTools, tc)
+					allAutoExecuted = false
+				} else {
+					start := time.Now()
+					result, execErr := s.executeAgentTool(
+						c.Request.Context(), tc.Function.Name, tc.Function.Arguments)
+					slog.Info("agent: loop tool executed",
+						"name", tc.Function.Name,
+						"duration_ms", time.Since(start).Milliseconds(),
+						"has_error", execErr != nil)
+					s.sendSSEEventSafe(c.Writer, flusher, "stream_status", map[string]interface{}{
+						"status":      "tool_executed",
+						"tool_name":   tc.Function.Name,
+						"round":       round + 1,
+						"duration_ms": time.Since(start).Milliseconds(),
+					})
+					if execErr != nil {
+						result = fmt.Sprintf(`{"error":"tool_execution_failed","detail":%q}`, execErr.Error())
+					}
+					loopMessages = append(loopMessages, chatMsg{
+						Role: "tool", Content: result,
+						ToolCallID: tc.ID, Name: tc.Function.Name,
+					})
+					autoToolExecuted = true
+				}
+			}
+
+			if !allAutoExecuted {
+				slog.Info("agent: loop exiting — tools need user confirmation",
+					"pending_count", len(pendingTools))
+				break
+			}
+
+			loopMessages = append(loopMessages, chatMsg{
+				Role: "user",
+				Content: "[工具执行结果已注入。请基于以上结果回答用户的原始问题。]",
+			})
+			continue
+		}
+
+		// ── 分支 B: LLM 返回了纯文本（无 API 级 tool_calls）──
+		//     注意：如果 suspectedToolCall=true，文本可能还在缓冲区中未转发！
+		//     需要在 extractToolCallsFromText 结果出来后决定：丢弃（是工具调用）或补发（普通文本）
+
+		// DEBUG: 记录 LLM 实际返回内容（截断到 500 字符），用于诊断工具调用为何不触发
+		textPreview := roundTextContent
+		if len(textPreview) > 500 {
+			textPreview = textPreview[:500] + "...(truncated)"
+		}
+		slog.Info("agent: loop got text response",
+			"round", round+1,
+			"finish_reason", finishReason,
+			"text_len", len(roundTextContent),
+			"text_preview", textPreview,
+			"suspected_tool_call", suspectedToolCall,
+			"buf_mode", bufMode,
+			"buf_len", len(textBuf))
+		finalAssistantText = roundTextContent
+
+		// 平台级 Tool Use：尝试从文本中解析工具调用 JSON（应对 API 代理丢弃 tools 参数的情况）
+		parsedCalls, remainingText := extractToolCallsFromText(finalAssistantText)
+		if len(parsedCalls) > 0 {
+			// ★★ 工具调用成功解析 ★★
+			// 如果文本在缓冲区中 → 丢弃缓冲区，用户永远看不到原始 JSON
+			if suspectedToolCall || bufMode {
+				slog.Info("agent: discarding buffered tool call JSON — user will not see raw JSON",
+					"buf_size", len(textBuf))
+				textBuf = nil // 丢弃缓冲区
+				suspectedToolCall = false
+				bufMode = false
+			}
+
+			slog.Info("agent: loop parsed tool calls from text (platform-level Tool Use) ★★ 工具调用成功解析 ★★",
+				"round", round+1,
+				"parsed_count", len(parsedCalls),
+				"remaining_len", len(remainingText),
+				"tool_names", func() (names []string) {
+					ns := make([]string, len(parsedCalls))
+					for i, c := range parsedCalls { ns[i] = c.Name }
+					return ns
+				}())
+
+			accums := parsedToolCallsToAccumulator(parsedCalls)
+			loopMessages = append(loopMessages, chatMsg{
+				Role: "assistant", Content: finalAssistantText,
+			})
+
+			allAutoExecuted := true
+			for _, tc := range accums {
+				needConfirm := true
+				if meta, ok := toolMeta[tc.Function.Name]; ok {
+					if v, ok := meta["needConfirm"].(bool); ok { needConfirm = v }
+				}
+				if needConfirm {
+					pendingTools = append(pendingTools, tc)
+					allAutoExecuted = false
+				} else {
+					start := time.Now()
+					result, execErr := s.executeAgentTool(
+						c.Request.Context(), tc.Function.Name, tc.Function.Arguments)
+					slog.Info("agent: loop parsed tool executed",
+						"name", tc.Function.Name,
+						"duration_ms", time.Since(start).Milliseconds(),
+						"has_error", execErr != nil)
+					s.sendSSEEventSafe(c.Writer, flusher, "stream_status", map[string]interface{}{
+						"status":      "tool_executed",
+						"tool_name":   tc.Function.Name,
+						"round":       round + 1,
+						"duration_ms": time.Since(start).Milliseconds(),
+					})
+					if execErr != nil {
+						result = fmt.Sprintf(`{"error":"tool_execution_failed","detail":%q}`, execErr.Error())
+					}
+					loopMessages = append(loopMessages, chatMsg{
+						Role: "tool", Content: result,
+						ToolCallID: tc.ID, Name: tc.Function.Name,
+					})
+					autoToolExecuted = true
+				}
+			}
+			if !allAutoExecuted { break }
+			loopMessages = append(loopMessages, chatMsg{
+				Role: "user",
+				Content: "[工具执行结果已注入。请基于以上结果回答用户的原始问题。]",
+			})
+			continue
+		}
+		// 分支 B 也没有解析到工具调用 → LLM 输出了纯文本回复（非工具调用）
+		// 如果之前在缓冲模式 → 需要补发缓冲的文本给客户端
+		if suspectedToolCall || bufMode {
+			slog.Info("agent: flushing buffered text — was suspected tool call but parsing failed",
+				"buf_size", len(textBuf))
+			flushBuffer()
+			suspectedToolCall = false
+			bufMode = false
+		}
+
+		slog.Info("agent: loop no tool calls found — LLM returned plain text response",
+			"round", round+1,
+			"auto_tool_executed", autoToolExecuted,
+			"text_len", len(finalAssistantText))
+		break
+	}
+
+	// 更新 session 的 messages（用于后续 resume/confirm）
+	sess.mu.Lock()
+	sess.Messages = append([]chatMsg{}, body.Messages...) // 用户原始消息
+	// 把循环中产生的所有 assistant/tool 消息也存一份（简化：只存最后几轮的关键内容）
+	if len(pendingTools) > 0 {
+		sess.PendingTools = pendingTools
+	}
+	sess.mu.Unlock()
+
+	// ════════════════════════════════════════════════════════════
+	// 阶段 2: 流式输出给客户端
+	// ════════════════════════════════════════════════════════════
+	// （SSE headers 已在阶段 1 之前设置，无需重复）
 	defer func() {
 		sess.mu.Lock()
 		sess.InProgress = false
 		sess.mu.Unlock()
 	}()
 
-	// ⑨ 逐行读取上游 SSE 并转换格式转发给客户端
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024) // 大 buffer 防止长行截断
-	hasContent := false
-
-	// 累积 tool_calls（OpenAI 流式分片到达，必须按 index 聚合）
-	tcAccum := make(map[int]*toolCallAccumulator)
-	var pendingTools []toolCallAccumulator
-	streamEnded := false
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		dataStr := strings.TrimPrefix(line, "data: ")
-		if dataStr == "[DONE]" {
-			// 推 finish 阶段的 tool_call 事件（如果有累积的）
-			if len(pendingTools) == 0 {
-				for _, tc := range tcAccum {
-					pendingTools = append(pendingTools, *tc)
-				}
-			}
-			for _, tc := range pendingTools {
-				s.emitToolCallEvent(sess, c.Writer, flusher, tc)
-			}
-			// 缓存 pending tools 到 session（供 confirm 取用）
-			if len(pendingTools) > 0 {
-				sess.mu.Lock()
-				sess.PendingTools = pendingTools
-				sess.mu.Unlock()
-			}
-			s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
-			streamEnded = true
-			break
-		}
-
-		// 解析 OpenAI chunk 格式
-		var chunk struct {
-			Choices []struct {
-				Delta struct {
-					Content          string                   `json:"content"`
-					Role             string                   `json:"role"`
-					ToolCalls        []openaiToolCallChunk    `json:"tool_calls"`
-					ReasoningContent string                   `json:"reasoning_content"`
-				} `json:"delta"`
-				FinishReason string `json:"finish_reason"`
-			} `json:"choices"`
-		}
-		if err := json.Unmarshal([]byte(dataStr), &chunk); err != nil {
-			slog.Debug("agent: skip unparseable chunk", "error", err)
-			continue
-		}
-
-		for _, choice := range chunk.Choices {
-			delta := choice.Delta
-
-			// 文本内容 → text_delta
-			if delta.Content != "" {
-				hasContent = true
-				s.sendAndCache(sess, c.Writer, flusher, "text_delta", delta.Content)
-			}
-
-			// 推理内容 → reasoning_delta
-			if delta.ReasoningContent != "" {
-				hasContent = true
-				s.sendAndCache(sess, c.Writer, flusher, "reasoning_delta", delta.ReasoningContent)
-			}
-
-			// 工具调用 → 按 index 累积
-			if len(delta.ToolCalls) > 0 {
-				for _, tc := range delta.ToolCalls {
-					cur, ok := tcAccum[tc.Index]
-					if !ok {
-						cur = &toolCallAccumulator{Index: tc.Index, ID: tc.ID, Type: tc.Type}
-						tcAccum[tc.Index] = cur
-					}
-					if tc.ID != "" {
-						cur.ID = tc.ID
-					}
-					if tc.Type != "" {
-						cur.Type = tc.Type
-					}
-					if tc.Function.Name != "" {
-						cur.Function.Name += tc.Function.Name
-					}
-					if tc.Function.Arguments != "" {
-						cur.Function.Arguments += tc.Function.Arguments
-					}
-				}
-			}
-
-			// 结束标记 —— 在 finish_reason 出现时推 tool_call 事件
-			if choice.FinishReason != "" {
-				// 收集所有累积的 tool_calls
-				if len(pendingTools) == 0 {
-					for _, tc := range tcAccum {
-						pendingTools = append(pendingTools, *tc)
-					}
-				}
-				for _, tc := range pendingTools {
-					s.emitToolCallEvent(sess, c.Writer, flusher, tc)
-				}
-				// 缓存 pending tools
-				if len(pendingTools) > 0 {
-					sess.mu.Lock()
-					sess.PendingTools = pendingTools
-					sess.mu.Unlock()
-				}
-				s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
-				streamEnded = true
-			}
-		}
-	}
-
-	// 兜底：扫描器跑完但没收到 [DONE] / finish_reason
-	if !streamEnded {
-		if len(pendingTools) == 0 {
-			for _, tc := range tcAccum {
-				pendingTools = append(pendingTools, *tc)
-			}
-		}
-		for _, tc := range pendingTools {
-		s.emitToolCallEvent(sess, c.Writer, flusher, tc)
-	}
+	// 2a: 有待确认工具 → 推送 tool_call 事件 + stream_end
 	if len(pendingTools) > 0 {
-		sess.mu.Lock()
-		sess.PendingTools = pendingTools
-		sess.mu.Unlock()
+		for _, tc := range pendingTools {
+			s.emitToolCallEvent(sess, c.Writer, flusher, tc, toolMeta)
+		}
+		s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
+		slog.Info("agent: chat completed (pending approval)",
+			"pending_tools", len(pendingTools),
+			"auto_executed", autoToolExecuted)
+		return
 	}
+
+	// 2b: 有最终文本 → 文本已在 Agent Loop 中通过 streaming 实时发送
+	//     这里只需确保 stream_end 被发出（作为安全兜底）
+	if finalAssistantText != "" {
+		s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
+		slog.Info("agent: chat completed (text streamed in real-time)",
+			"chars", len(finalAssistantText),
+			"loop_rounds_executed", autoToolExecuted)
+		return
+	}
+
+	// 2c: 兜底——LLM 未返回任何文本（finalAssistantText 为空）
+	//     发送一个 text_delta 提示事件，避免前端显示"服务端返回空回复"
+	s.sendSSEEventSafe(c.Writer, flusher, "text_delta", "（AI 助手未生成有效回复，可能需要换个问题或检查 API Key 配置）")
 	s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
-}
-
-	// 如果上游没有发送任何内容（非流式响应等），兜底读取完整 body
-	if !hasContent {
-		slog.Info("agent: no streaming content from upstream, checking for non-stream response")
-		// 已经被 scanner 消费了，无法重读。这里只是安全兜底。
-	}
-
-	if err := scanner.Err(); err != nil {
-		slog.Warn("agent: sse scanner error", "error", err)
-	}
-
-	slog.Info("agent: chat completed", "model", model, "has_content", hasContent, "pending_tools", len(pendingTools))
+	slog.Warn("agent: chat completed with no output (empty finalAssistantText)",
+		"rounds", autoToolExecuted)
 }
 
 // openaiToolCallChunk 是 OpenAI 流式 tool_calls 单个分片的结构
@@ -654,10 +1099,24 @@ type openaiToolCallChunk struct {
 }
 
 // emitToolCallEvent 推送一个完整的 tool_call 事件给前端
-func (s *Server) emitToolCallEvent(sess *agentSession, w http.ResponseWriter, flusher http.Flusher, tc toolCallAccumulator) {
+//
+// toolMeta 是 agent 内部 tool 元数据（name → {needConfirm, kind, ...}），
+// 用于正确标记每个 tool 的 needConfirm（fs 工具永远 false，plugin 工具永远 true）
+// 和 kind（fs=fileRead, plugin=fileChange）。
+func (s *Server) emitToolCallEvent(sess *agentSession, w http.ResponseWriter, flusher http.Flusher, tc toolCallAccumulator, toolMeta map[string]map[string]interface{}) {
+	needConfirm := true
+	kind := "fileChange"
+	if meta, ok := toolMeta[tc.Function.Name]; ok {
+		if v, ok := meta["needConfirm"].(bool); ok {
+			needConfirm = v
+		}
+		if v, ok := meta["kind"].(string); ok {
+			kind = v
+		}
+	}
 	// F 阶段：检查 session 授权表 → 已授权工具自动放行（auto_run=true）
 	autoRun := false
-	if sess != nil {
+	if needConfirm && sess != nil {
 		sess.mu.Lock()
 		autoRun = sess.GrantedTools[tc.Function.Name]
 		sess.mu.Unlock()
@@ -667,9 +1126,9 @@ func (s *Server) emitToolCallEvent(sess *agentSession, w http.ResponseWriter, fl
 		"id":           tc.ID,
 		"name":         tc.Function.Name,
 		"args":         tc.Function.Arguments,
-		"auto_run":     autoRun,                          // F 阶段：true=前端不弹 ApprovalCard 直接放行
-		"needsConfirm": !autoRun,                          // auto_run=true 时不再需要 confirm
-		"kind":         "fileChange",
+		"auto_run":     autoRun, // F 阶段：true=前端不弹 ApprovalCard 直接放行
+		"needsConfirm": needConfirm && !autoRun,
+		"kind":         kind,
 	}
 	s.sendAndCache(sess, w, flusher, "tool_call", payload)
 }
@@ -766,7 +1225,7 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 		if cfg.BaseURL == "" {
 			cfg.BaseURL = "https://api.openai.com"
 		}
-		toolMsg, _ = executeAndRecurse(c.Request.Context(), sess, cfg, *tool)
+		toolMsg, _ = executeAndRecurse(c.Request.Context(), s, sess, cfg, *tool)
 		// 推 tool_status: completed 给前端
 		statusMsg := "completed"
 		if body.Decision == "accept_for_session" {
@@ -814,14 +1273,25 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://api.openai.com"
 	}
-	// 注入 system prompt（与 handleAgentChat 一致）
+	// 注入 system prompt（与 handleAgentChat 一致，空配置时用默认）
 	finalMessages := sess.Messages
-	if cfg.SystemPrompt != "" {
-		finalMessages = make([]chatMsg, 0, len(sess.Messages)+1)
-		finalMessages = append(finalMessages, chatMsg{Role: "system", Content: cfg.SystemPrompt})
-		finalMessages = append(finalMessages, sess.Messages...)
+	systemPrompt := cfg.SystemPrompt
+	if systemPrompt == "" {
+		systemPrompt = defaultAgentSystemPrompt
 	}
-	s.streamChat(c.Request.Context(), c, cfg, sess.LastModel, sess.LastTemperature, finalMessages, sess)
+	finalMessages = make([]chatMsg, 0, len(sess.Messages)+1)
+	finalMessages = append(finalMessages, chatMsg{Role: "system", Content: systemPrompt})
+	finalMessages = append(finalMessages, sess.Messages...)
+	// 递归时也要把工具列表塞回去——LLM 可能在后续轮次继续调工具
+	agentTools := s.ListAgentTools()
+	openAITools := agentToolsToOpenAITools(agentTools)
+	toolMeta := make(map[string]map[string]interface{}, len(agentTools))
+	for _, t := range agentTools {
+		if n, ok := t["name"].(string); ok {
+			toolMeta[n] = t
+		}
+	}
+	s.streamChat(c.Request.Context(), c, cfg, sess.LastModel, sess.LastTemperature, finalMessages, sess, openAITools, toolMeta)
 }
 
 // ─── POST /api/resume — SSE 断点续传（基于事件缓存重放） ──

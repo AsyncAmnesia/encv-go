@@ -110,6 +110,22 @@ var openListGetStorageInfoSchema = openai.FunctionDefinition{
 	},
 }
 
+// openListListStoragesSchema is the function-calling schema for
+// the `list_storages` tool. It exposes OpenList's mounted
+// storage backends (Local / S3 / GoogleDrive / Onedrive /
+// AlistV3 / ...) so the agent can perceive the file-system
+// layout before issuing list_files calls against an unknown
+// path. The path the LLM sees is `mount_path` — that's the
+// root of each mounted backend (e.g. "/", "/local", "/gdrive").
+var openListListStoragesSchema = openai.FunctionDefinition{
+	Name:        "list_storages",
+	Description: "列出 OpenList 上所有已挂载的存储后端（如 Local / S3 / GoogleDrive / Onedrive），返回 mount_path / driver / enabled / status。",
+	Parameters: map[string]any{
+		"type":       "object",
+		"properties": map[string]any{},
+	},
+}
+
 var openListSearchFilesSchema = openai.FunctionDefinition{
 	Name:        "search_files",
 	Description: "在 OpenList 远端 parent 目录下按关键词搜索文件。",

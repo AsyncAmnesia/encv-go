@@ -1,9 +1,8 @@
 <!--
   MessageAuthor - 消息作者头
-  参照 codex_web MessageAuthor{icon, label, meta}
-  - icon: Ionicons 引用（必须先 import 后使用）
-  - label: 作者名（"Codex" / "计划" / "审批" / "工具" / "出错"）
-  - meta?:  状态文案（"正在思考" / "已完成" / ...）
+  参照 codex_web .messageAuthor：
+  - 28px 圆形头像 + label + meta（可选）
+  - grid 布局：28px icon | minmax(0,1fr) text | 8px gap
 -->
 <template>
   <div class="messageAuthor">
@@ -34,42 +33,45 @@ const variant = computed(() => props.variant || 'default')
 </script>
 
 <style scoped>
+/* ── 参照 codex_web .messageAuthor ─────────────────────────── */
 .messageAuthor {
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 28px;
+  margin-bottom: 4px;
 }
 
+/* 参照 codex_web .avatar: 28px 圆形 */
 .avatar {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  background: rgba(var(--ion-color-primary-rgb), 0.12);
+  background: rgba(var(--ion-color-primary-rgb), 0.10);
   color: var(--ion-color-primary);
 }
 
 .avatar_streaming {
-  background: rgba(var(--ion-color-primary-rgb), 0.18);
+  background: rgba(var(--ion-color-primary-rgb), 0.16);
   animation: authorAvatarPulse 1.6s ease-in-out infinite;
 }
 
 .avatar_error {
-  background: rgba(var(--ion-color-danger-rgb), 0.16);
+  background: rgba(var(--ion-color-danger-rgb), 0.12);
   color: var(--ion-color-danger);
 }
 
 .avatar_tool {
-  background: rgba(139, 92, 246, 0.16);
+  background: rgba(139, 92, 246, 0.12);
   color: #8b5cf6;
 }
 
 .avatarIcon {
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .authorText {
@@ -86,8 +88,8 @@ const variant = computed(() => props.variant || 'default')
 }
 
 .authorMeta {
-  font-size: 11px;
-  color: var(--encv-text-secondary);
+  font-size: 11.5px;
+  color: var(--encv-text-secondary, var(--ion-color-medium));
   margin-top: 1px;
 }
 

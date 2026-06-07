@@ -1169,7 +1169,7 @@ func TestEmitToolCallEvent_NotGranted_AutoRunFalse(t *testing.T) {
 	tc.Function.Name = "video_encrypt"
 	tc.Function.Arguments = `{"input_paths":["/a.mp4"]}`
 
-	srv.emitToolCallEvent(sess, rec, rec, tc)
+	srv.emitToolCallEvent(sess, rec, rec, tc, toolMetaFor("video_encrypt"))
 
 	body := rec.Body.String()
 	if !strings.Contains(body, `"auto_run":false`) {
@@ -1194,7 +1194,7 @@ func TestEmitToolCallEvent_Granted_AutoRunTrue(t *testing.T) {
 	tc.Function.Name = "video_encrypt" // 同名工具
 	tc.Function.Arguments = `{"input_paths":["/b.mp4"]}`
 
-	srv.emitToolCallEvent(sess, rec, rec, tc)
+	srv.emitToolCallEvent(sess, rec, rec, tc, toolMetaFor("video_encrypt"))
 
 	body := rec.Body.String()
 	if !strings.Contains(body, `"auto_run":true`) {
@@ -1215,7 +1215,7 @@ func TestEmitToolCallEvent_GrantIsNameScoped(t *testing.T) {
 	srv := &Server{}
 	tc := toolCallAccumulator{ID: "call_3", Type: "function"}
 	tc.Function.Name = "audio_encrypt" // 不同名
-	srv.emitToolCallEvent(sess, rec, rec, tc)
+	srv.emitToolCallEvent(sess, rec, rec, tc, toolMetaFor("audio_encrypt"))
 
 	body := rec.Body.String()
 	if !strings.Contains(body, `"auto_run":false`) {
@@ -1229,7 +1229,7 @@ func TestEmitToolCallEvent_NilSession(t *testing.T) {
 	srv := &Server{}
 	tc := toolCallAccumulator{ID: "call_4", Type: "function"}
 	tc.Function.Name = "video_encrypt"
-	srv.emitToolCallEvent(nil, rec, rec, tc)
+	srv.emitToolCallEvent(nil, rec, rec, tc, toolMetaFor("video_encrypt"))
 
 	body := rec.Body.String()
 	if !strings.Contains(body, `"auto_run":false`) {
@@ -1285,5 +1285,17 @@ func TestHandleAgentConfirm_HTTP_CancelDecision(t *testing.T) {
 	// 不应推 tool_status（没有执行任何工具）
 	if strings.Contains(body, "tool_status") {
 		t.Errorf("cancel 不应推 tool_status: %s", body)
+	}
+}
+
+// toolMetaFor 测试用 helper：构造只含一个 tool 的 toolMeta
+// （mirror 真实场景下 handleAgentChat 构造 toolMeta 的逻辑）
+func toolMetaFor(toolName string) map[string]map[string]interface{} {
+	return map[string]map[string]interface{}{
+		toolName: {
+			"name":        toolName,
+			"needConfirm": true,  // 加密/解密 plugin 默认需 confirm
+			"kind":        "fileChange",
+		},
 	}
 }

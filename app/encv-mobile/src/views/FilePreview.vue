@@ -342,7 +342,7 @@ async function loadFile() {
         previewType.value = 'unsupported'
       }
     } catch (e: any) {
-      console.error('Failed to load encrypted file:', e)
+      console.error('Failed to load encrypted file:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
       error.value = e?.message || String(e)
     } finally {
       loading.value = false
@@ -369,7 +369,7 @@ async function loadFile() {
       fileSize.value = 0
     }
   } catch (e: any) {
-    console.error('Failed to load file:', e)
+    console.error('Failed to load file:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
     error.value = e?.message || String(e)
   } finally {
     loading.value = false

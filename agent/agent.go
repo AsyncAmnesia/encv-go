@@ -2,9 +2,13 @@ package agent
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -23,6 +27,12 @@ type SessionCache struct {
 	mu         sync.Mutex
 	Events     []*Event
 	IsFinished bool
+	// Todos is the latest snapshot from the plan tool
+	// (KindPlan / write_todos). The agent overwrites this
+	// every time the LLM emits a new plan tool call so the
+	// front-end can render a stable PlanBlock that reflects
+	// the assistant's current plan.
+	Todos []Todo
 }
 
 // appendEvent is the only legitimate way to grow the cache; it
@@ -58,13 +68,58 @@ type pendingCall struct {
 	Messages   []openai.ChatCompletionMessage
 }
 
+// pendingMessageQueue is a per-session FIFO of message sets
+// waiting to be processed by a future Chat call. It is the
+// backing store for the queue send mode: ChatMode(mode="queue")
+// appends, and the always-on pendingQueueDrainHook consumes the
+// front element on HookTurnEnd and spawns a new Chat in a
+// fresh goroutine.
+type pendingMessageQueue struct {
+	mu       sync.Mutex
+	messages [][]openai.ChatCompletionMessage
+}
+
+func (q *pendingMessageQueue) enqueue(msgs []openai.ChatCompletionMessage) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.messages = append(q.messages, msgs)
+}
+
+// dequeue returns the front message set and true, or nil and
+// false when the queue is empty. Callers must consume the
+// returned slice by value — the queue keeps its own reference
+// to the original storage until dequeue is called.
+func (q *pendingMessageQueue) dequeue() ([]openai.ChatCompletionMessage, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if len(q.messages) == 0 {
+		return nil, false
+	}
+	msgs := q.messages[0]
+	q.messages = q.messages[1:]
+	return msgs, true
+}
+
 // Agent is the long-lived orchestrator. It owns the registry, the
 // OpenAI client, the per-session caches, the session-level
 // approval grants, and the pending-confirmation state.
+//
+// store is optional (nil = in-memory only, the legacy mode). When
+// non-nil, every event pushed to a session cache is also appended
+// to the store's JSONL file so a process restart can replay the
+// event stream.
 type Agent struct {
 	cfg      AgentConfig
 	Registry *ToolRegistry
 	llm      llmStream
+
+	// serverInstanceId uniquely identifies this in-process agent
+	// across its lifetime. It is generated once in NewAgent /
+	// NewAgentWithLLM and stays constant for the process. The
+	// value is exposed via /api/health so the front-end can
+	// detect server restarts and clear stale SSE sequence
+	// tracking state.
+	serverInstanceId string
 
 	// Sessions maps sessionID → *SessionCache.
 	Sessions sync.Map
@@ -74,40 +129,225 @@ type Agent struct {
 	// auto-run.
 	SessionGrants sync.Map
 
+	// sessionsParent maps sessionID → parentSessionID. Task 23
+	// (Side Conversation / Fork) populates it: when the user
+	// clicks the "分叉" button in the front-end, the server
+	// calls NewSession(parentID) which (a) generates a fresh
+	// UUID for the new session, (b) records the parent link
+	// here, and (c) returns the new id. The map is keyed by
+	// child id; parent id is the value (empty string means
+	// "no parent / root session"). Use Agent.ParentOf to read
+	// it. sync.Map keeps the HTTP goroutine and the
+	// runResume goroutine race-free without an extra mutex.
+	sessionsParent sync.Map
+
 	// PendingCalls maps sessionID → *pendingCall. Only one
 	// pending call per session is allowed at a time; the
 	// guarantee is enforced by Agent.mu.
-	mu            sync.Mutex
-	PendingCalls  map[string]*pendingCall
+	mu           sync.Mutex
+	PendingCalls map[string]*pendingCall
+
+	// pendingMessages maps sessionID → FIFO queue of
+	// message sets waiting to be processed after the
+	// current turn fully ends. The queue is populated by
+	// ChatMode with mode="queue" and drained by the always-on
+	// pendingQueueDrainHook on HookTurnEnd.
+	pendingMessages map[string]*pendingMessageQueue
+	pendingMu       sync.Mutex
+
+	// store is the durable JSONL backend. nil means the agent
+	// runs purely in memory; the existing 2-arg NewAgent
+	// callers therefore keep working without any change.
+	store *SessionStore
+
+	// hooks is the user-registered callback list, invoked
+	// synchronously on the chat goroutine at each of the 6
+	// documented hook points (see HookEvent). Access is
+	// serialised by hooksMu: RegisterHook takes the write
+	// lock, runHooks snapshots under the read lock so a
+	// long hook chain does not block new registrations.
+	hooks   []HookFunc
+	hooksMu sync.RWMutex
+
+	// Skills is the set of skills loaded from
+	// cfg.SkillsDir at NewAgent time. The slice is read-only
+	// after construction; concurrent reads from hooks are
+	// safe because the slice is never mutated.
+	Skills []Skill
+
+	// selectedSkillsBySession maps sessionID → []string
+	// (the names the front-end asked to activate for that
+	// session). The HTTP layer populates it before Chat;
+	// the runLoop reads it when constructing the
+	// HookSessionStart context. sync.Map provides the
+	// happens-before guarantee between the HTTP goroutine
+	// and the chat goroutine.
+	selectedSkillsBySession sync.Map
+
+	// systemPromptBySession maps sessionID → string. The
+	// default skill-injection hook writes the joined skill
+	// prompt here; chatRequest reads it and prepends a
+	// system message when the value is non-empty. The map
+	// is intentionally separate from the durable store: a
+	// per-session override is a runtime concern, not a
+	// history concern.
+	systemPromptBySession sync.Map
+
+	// planModeBySession maps sessionID → bool. Task 19
+	// (Plan Mode toggle) populates it from ChatRequest.PlanMode:
+	// a true value causes injectSystemPrompt to append a
+	// "list steps first, wait for user confirmation" directive
+	// to the per-session system prompt. A false value (or
+	// never-set) removes the entry so planModeFor returns
+	// false. sync.Map is the same shape as the other
+	// per-session maps (selectedSkillsBySession,
+	// systemPromptBySession, sessionOverrides) so HTTP
+	// goroutines and runLoop goroutines stay race-free
+	// without an extra mutex.
+	planModeBySession sync.Map
+
+	// permissionModeBySession maps sessionID → string. Task 20
+	// (Permission Mode Switcher) populates it from
+	// ChatRequest.PermissionMode; the agent core consults it
+	// at tool-execution time to decide whether a tool that
+	// registered NeedConfirm=true should still auto-run. The
+	// default (no entry) means PermissionDefault, the legacy
+	// "respect NeedConfirm" behaviour. Entries are removed
+	// when the user toggles the switch back to default.
+	permissionModeBySession sync.Map
+
+	// compactor, when non-nil, is consulted at the top of
+	// every streamOneTurn. If the running messages slice
+	// exceeds compactor.threshold * window, the agent asks
+	// the LLM for a one-shot summary and replaces the older
+	// messages in place. NewAgent / NewAgentWithLLM build
+	// a sensible default (DefaultModelContextWindow tokens,
+	// 0.8 threshold) so existing callers automatically gain
+	// compaction; tests that need a deterministic behaviour
+	// can override via SetCompactor.
+	compactor *Compactor
+
+	// summaryFnForTest is a test-only hook that overrides
+	// buildSummaryFn's return value. nil = use the default
+	// (openai-backed) summary fn. Production code MUST NOT
+	// touch this field; the SetSummaryFnForTest method is
+	// the only legitimate setter.
+	summaryFnForTest SummaryFunc
 }
 
 // NewAgent constructs an Agent. The registry must already contain
-// all tools; NewAgent does not auto-register anything.
-func NewAgent(cfg AgentConfig, registry *ToolRegistry) *Agent {
+// all tools; NewAgent does not auto-register anything. The store
+// is optional: when omitted (or passed as nil) the agent runs
+// purely in memory; when provided, every event is also appended
+// to the store so a process restart can replay sessions via
+// Resume.
+//
+// NewAgent also walks cfg.SkillsDir (defaulting to
+// "$HOME/.encv/skills" when empty) and registers a default
+// session_start hook that injects the front-end's selected
+// skills into the per-session system prompt. The hook is a
+// no-op when no skills are loaded, so existing callers
+// continue to behave exactly as before.
+func NewAgent(cfg AgentConfig, registry *ToolRegistry, storeOpt ...*SessionStore) *Agent {
 	if registry == nil {
 		registry = NewRegistry()
 	}
-	a := &Agent{
-		cfg:          cfg,
-		Registry:     registry,
-		llm:          &openaiStream{client: newOpenAIClient(cfg)},
-		PendingCalls: make(map[string]*pendingCall),
+	var store *SessionStore
+	if len(storeOpt) > 0 {
+		store = storeOpt[0]
 	}
+	a := &Agent{
+		cfg:              cfg,
+		Registry:         registry,
+		llm:              &openaiStream{client: newOpenAIClient(cfg)},
+		PendingCalls:     make(map[string]*pendingCall),
+		store:            store,
+		serverInstanceId: generateServerInstanceId(),
+	}
+	a.loadSkillsAndRegisterHook(cfg.SkillsDir)
 	return a
 }
 
 // NewAgentWithLLM lets tests inject a fake llmStream. Production
-// code should use NewAgent.
-func NewAgentWithLLM(cfg AgentConfig, registry *ToolRegistry, llm llmStream) *Agent {
+// code should use NewAgent. The store argument follows the same
+// variadic-nil convention as NewAgent. The skills scan follows
+// the same convention as NewAgent: configured via
+// cfg.SkillsDir, with a default session_start hook registered
+// only when at least one skill is found.
+func NewAgentWithLLM(cfg AgentConfig, registry *ToolRegistry, llm llmStream, storeOpt ...*SessionStore) *Agent {
 	if registry == nil {
 		registry = NewRegistry()
 	}
-	return &Agent{
-		cfg:          cfg,
-		Registry:     registry,
-		llm:          llm,
-		PendingCalls: make(map[string]*pendingCall),
+	var store *SessionStore
+	if len(storeOpt) > 0 {
+		store = storeOpt[0]
 	}
+	a := &Agent{
+		cfg:              cfg,
+		Registry:         registry,
+		llm:              llm,
+		PendingCalls:     make(map[string]*pendingCall),
+		pendingMessages:  make(map[string]*pendingMessageQueue),
+		store:            store,
+		serverInstanceId: generateServerInstanceId(),
+	}
+	a.loadSkillsAndRegisterHook(cfg.SkillsDir)
+	a.registerPendingQueueDrainHook()
+	return a
+}
+
+// loadSkillsAndRegisterHook scans the skills directory and
+// registers the default session_start hook. It is split out
+// from NewAgent / NewAgentWithLLM so both constructors share
+// the same one-line implementation.
+//
+// A missing or unreadable skills directory is not an error:
+// the agent simply runs with no skills. The hook is registered
+// only when at least one skill was parsed, so a skill-free
+// agent does not pay the per-session hook dispatch cost.
+func (a *Agent) loadSkillsAndRegisterHook(skillsDir string) {
+	dir := skillsDir
+	if dir == "" {
+		dir = defaultSkillsDir()
+	}
+	skills, err := ScanSkills(dir)
+	if err != nil {
+		// We log to stderr rather than failing the agent
+		// bootstrap: a broken skill manifest is a
+		// user-correctable configuration error, not a
+		// reason to refuse to start.
+		fmt.Fprintf(os.Stderr, "agent: skills scan from %s failed: %v\n", dir, err)
+		return
+	}
+	if len(skills) == 0 {
+		return
+	}
+	a.Skills = skills
+	a.RegisterHook(defaultSkillInjectionHook(a))
+}
+
+// generateServerInstanceId returns a string that uniquely
+// identifies the current process. It combines the host name, the
+// process ID, and the construction time. The value is stable for
+// the lifetime of the process and is regenerated on every
+// restart. Nanosecond precision is used so two NewAgent calls
+// within the same second still receive distinct ids — this
+// matters for test suites that build multiple agents in quick
+// succession.
+func generateServerInstanceId() string {
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		host = "unknown-host"
+	}
+	return fmt.Sprintf("%s-%d-%d", host, os.Getpid(), time.Now().UnixNano())
+}
+
+// ServerInstanceId returns the process-wide unique id for this
+// Agent. The value is generated once in NewAgent and stays
+// constant for the lifetime of the process. HTTP handlers expose
+// it via /api/health.
+func (a *Agent) ServerInstanceId() string {
+	return a.serverInstanceId
 }
 
 // ensureSession returns the cache for sessionID, creating one if
@@ -137,13 +377,161 @@ func (a *Agent) getSession(sessionID string) (*SessionCache, bool) {
 // If a previous turn on the same sessionID is still pending
 // confirmation, the new call is rejected so we never end up with
 // two concurrent goroutines mutating the same session cache.
+//
+// The first Chat call on a sessionID triggers
+// [HookSessionStart]; subsequent calls on the same sessionID do
+// not re-fire it. The detection is "did the session exist before
+// this call?", not "was this Chat's caller an HTTP request?" —
+// internal re-entry via ConfirmTool is treated as the same
+// session and does not re-fire.
 func (a *Agent) Chat(
 	ctx context.Context,
 	sessionID string,
 	messages []openai.ChatCompletionMessage,
 ) (<-chan *Event, error) {
+	return a.ChatMode(ctx, sessionID, messages, "")
+}
+
+// NewSession (Task 23 — Side Conversation / Fork) mints a
+// fresh, never-used session id and records the parent → child
+// link in a.sessionsParent. The returned id is distinct from
+// the parent id (UUID v4) and the parent's SessionCache is
+// not mutated by the call. An empty parentID is treated as
+// "root": a brand-new id is still returned and ParentOf on
+// the new id will return ("", false) — the explicit empty
+// parent entry is reserved for a future iteration of the
+// spec.
+//
+// This stub is intentionally minimal: it does NOT deep-copy
+// the parent's messages into the child. The deep-copy
+// semantics are a follow-up task; the test suite only locks
+// id-uniqueness and parent-link invariants at this stage.
+func (a *Agent) NewSession(parentID string) string {
+	newID := generateNewSessionID()
+	a.sessionsParent.Store(newID, parentID)
+	// Pre-create the SessionCache so a subsequent Chat /
+	// Resume call on the new id does not race the first
+	// emit. This mirrors the "always pre-create" pattern
+	// used by ensureSession for the Chat entry point.
+	a.ensureSession(newID)
+	return newID
+}
+
+// ParentOf returns the parent session id for childID. The
+// boolean is true when an explicit entry exists; the value
+// is the parent id (which may itself be empty for "root"
+// forks). This is the read-side counterpart of NewSession.
+//
+// An empty childID or an unknown id returns ("", false) —
+// sync.Map.Load is the only branch that ever returns
+// ok=false, so unknown sessions are reported exactly like
+// the legacy "no parent" sentinel without a separate code
+// path.
+func (a *Agent) ParentOf(childID string) (string, bool) {
+	if childID == "" {
+		return "", false
+	}
+	v, ok := a.sessionsParent.Load(childID)
+	if !ok {
+		return "", false
+	}
+	pid, _ := v.(string)
+	return pid, true
+}
+
+// HandleFork is the HTTP entry point for POST /api/agent/fork.
+// The front-end dispatches a fork request when the user
+// clicks the "分叉" button in the chat header. The handler:
+//
+//   1. Rejects non-POST methods with 405 (requirePOST contract).
+//   2. Rejects missing/empty session_id with 400.
+//   3. On success, mints a new session id via
+//      [Agent.NewSession] and returns a JSON body of shape
+//      {"session_id": "<new>", "parent_session_id": "<parent>"}.
+//
+// The handler is a thin shim over NewSession + ParentOf —
+// it exists so the front-end can stay decoupled from the
+// in-memory map and so future iterations of the spec (deep
+// copy of messages, parent breadcrumb in the SSE stream)
+// have a single place to wire into.
+func (a *Agent) HandleFork(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.SessionID == "" {
+		http.Error(w, "session_id is required", http.StatusBadRequest)
+		return
+	}
+	newID := a.NewSession(req.SessionID)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"session_id":        newID,
+		"parent_session_id": req.SessionID,
+	})
+}
+
+// generateNewSessionID returns a hex-encoded 16-byte random
+// id suitable for use as a session id. It is split out from
+// the server-instance-id generator because session ids must
+// be (a) unique per call and (b) cheap to mint, whereas the
+// server instance id is generated once at process start and
+// is allowed to be deterministic (hostname + pid hash). A
+// crypto/rand failure falls back to a time-based id so a
+// faulty RNG never wedges the fork path.
+func generateNewSessionID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("%016x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// ChatMode is the mode-aware entry point that powers the
+// front-end's "steer" / "queue" send buttons. mode is one of:
+//   - "" or "start": identical to Chat — a fresh turn is
+//     started immediately. This is the legacy behaviour.
+//   - "steer":       also a fresh turn, semantically marking
+//     the message as a course-correction to an in-flight turn
+//     the front-end knows about. The agent runs the LLM call
+//     in the same way as start; the difference is purely a
+//     client/server contract marker so the front-end can tell
+//     turns apart. The confirm flow is untouched: if the
+//     steered response triggers a tool call, the
+//     [ApprovalCard] still surfaces.
+//   - "queue":       the message is held in
+//     agent.pendingMessages[sessionID] and a new Chat is
+//     triggered after the current turn fully ends. The
+//     returned channel is closed immediately so HTTP callers
+//     can finish their response; the actual events surface
+//     through the existing SSE / Resume stream once the
+//     queued turn starts running.
+//
+// Unknown mode values return an error so typos surface
+// immediately rather than silently reverting to start.
+func (a *Agent) ChatMode(
+	ctx context.Context,
+	sessionID string,
+	messages []openai.ChatCompletionMessage,
+	mode string,
+) (<-chan *Event, error) {
 	if sessionID == "" {
 		return nil, fmt.Errorf("agent: sessionID must not be empty")
+	}
+	switch mode {
+	case "", "start", "steer":
+		// Fall through to the existing Chat path.
+	case "queue":
+		return a.enqueueAndReturnClosed(sessionID, messages), nil
+	default:
+		return nil, fmt.Errorf("agent: unknown chat mode %q (want \"\", \"start\", \"steer\" or \"queue\")", mode)
 	}
 	a.mu.Lock()
 	if _, busy := a.PendingCalls[sessionID]; busy {
@@ -152,10 +540,196 @@ func (a *Agent) Chat(
 	}
 	a.mu.Unlock()
 
+	_, existed := a.getSession(sessionID)
 	_ = a.ensureSession(sessionID)
 	out := make(chan *Event, 32)
-	go a.runLoop(ctx, sessionID, messages, out)
+	go a.runLoop(ctx, sessionID, messages, out, !existed)
 	return out, nil
+}
+
+// SetPlanMode (Task 19) records the front-end's plan-mode
+// toggle state for sessionID. The HTTP layer calls this on
+// every Chat so the flag is always up-to-date with what the
+// user sees in the composer. Passing false (the zero value)
+// deletes the entry so a session that toggles plan mode off
+// reverts to the default behaviour without leaving a stale
+// "true" behind.
+//
+// The flag is consulted by injectSystemPrompt, which appends
+// a plan-aware instruction to the system message when set.
+// It does NOT alter the tool registry — see package doc.
+func (a *Agent) SetPlanMode(sessionID string, enabled bool) {
+	if sessionID == "" {
+		return
+	}
+	if !enabled {
+		a.planModeBySession.Delete(sessionID)
+		return
+	}
+	a.planModeBySession.Store(sessionID, true)
+}
+
+// planModeFor returns true when SetPlanMode(sessionID, true)
+// was last called for the given session. Returns false (the
+// default) for sessions that have never sent planMode, never
+// enabled it, or explicitly cleared it. Used by
+// injectSystemPrompt to decide whether to append the
+// plan-aware instruction.
+func (a *Agent) planModeFor(sessionID string) bool {
+	if sessionID == "" {
+		return false
+	}
+	v, ok := a.planModeBySession.Load(sessionID)
+	if !ok {
+		return false
+	}
+	b, _ := v.(bool)
+	return b
+}
+
+// SetSessionPermissionMode stores the per-session
+// permission tier for sessionID. The reader
+// ([Agent.permissionModeFor]) treats unknown / empty
+// values as PermissionDefault at lookup time, so a
+// caller that forgets to validate the string first
+// still produces safe runtime behaviour. An empty
+// sessionID is a no-op (defensive). A PermissionDefault
+// (or empty) value deletes the per-session entry so a
+// session that toggles back to "default" reverts on the
+// very next turn with no stale "auto-review" left behind
+// — the legacy behaviour is exactly "no entry" for
+// default mode.
+//
+// Task 20 (Permission Mode Switcher). See
+// ChatRequest.PermissionMode for the wire contract.
+func (a *Agent) SetSessionPermissionMode(sessionID string, mode PermissionMode) {
+	if sessionID == "" {
+		return
+	}
+	if mode == "" || mode == PermissionDefault {
+		a.permissionModeBySession.Delete(sessionID)
+		return
+	}
+	a.permissionModeBySession.Store(sessionID, mode)
+}
+
+// ClearSessionPermissionMode removes the per-session
+// permission tier for sessionID, reverting subsequent
+// emitToolCall decisions to the tool's registered
+// NeedConfirm value. The method exists for parity with the
+// per-session plan-mode toggle and is used by tests that
+// share a single agent across multiple scenarios.
+// An empty sessionID is a no-op; an unknown sessionID
+// is also a no-op because sync.Map.Delete is idempotent.
+func (a *Agent) ClearSessionPermissionMode(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	a.permissionModeBySession.Delete(sessionID)
+}
+
+// permissionModeFor returns the per-session permission
+// tier for sessionID, or PermissionDefault when none is
+// set or the stored value is not one of the three
+// documented constants. The method is the read-side
+// counterpart of SetSessionPermissionMode and is invoked
+// from streamOneTurn at every emitToolCall call.
+// An empty return value MUST be treated by the caller as
+// "no override" — the agent falls back to the tool's
+// registered NeedConfirm value in that case, which is the
+// legacy behaviour.
+func (a *Agent) permissionModeFor(sessionID string) PermissionMode {
+	if sessionID == "" {
+		return PermissionDefault
+	}
+	v, ok := a.permissionModeBySession.Load(sessionID)
+	if !ok {
+		return PermissionDefault
+	}
+	mode, _ := v.(PermissionMode)
+	if !IsValidPermissionMode(mode) {
+		return PermissionDefault
+	}
+	return mode
+}
+
+// enqueueAndReturnClosed stores the messages on the
+// per-session pending queue and returns a channel that is
+// already closed. The drain hook will pick the messages up
+// on the next HookTurnEnd and start a fresh Chat.
+func (a *Agent) enqueueAndReturnClosed(
+	sessionID string,
+	messages []openai.ChatCompletionMessage,
+) <-chan *Event {
+	a.pendingMu.Lock()
+	q, ok := a.pendingMessages[sessionID]
+	if !ok {
+		q = &pendingMessageQueue{}
+		a.pendingMessages[sessionID] = q
+	}
+	a.pendingMu.Unlock()
+	q.enqueue(messages)
+	out := make(chan *Event, 1)
+	close(out)
+	return out
+}
+
+// registerPendingQueueDrainHook wires the always-on HookTurnEnd
+// listener that drains the per-session queue after every turn
+// ends. Multiple queued messages are processed in FIFO order —
+// each drain spawns a new runLoop, whose own HookTurnEnd
+// re-fires the hook to pick the next message.
+func (a *Agent) registerPendingQueueDrainHook() {
+	a.RegisterHook(a.pendingQueueDrainHook)
+}
+
+// pendingQueueDrainHook is the body of the drain hook. It is
+// exported indirectly via RegisterHook so the registration
+// stays in one place; the implementation is small enough that
+// inlining it in NewAgentWithLLM would clutter that
+// constructor.
+func (a *Agent) pendingQueueDrainHook(ctx context.Context, hc *HookContext) error {
+	if hc == nil || hc.Event != HookTurnEnd {
+		return nil
+	}
+	a.pendingMu.Lock()
+	q, ok := a.pendingMessages[hc.SessionID]
+	a.pendingMu.Unlock()
+	if !ok {
+		return nil
+	}
+	msgs, ok := q.dequeue()
+	if !ok {
+		return nil
+	}
+	// Spawn a new Chat in its own goroutine — calling Chat
+	// directly from the hook would deadlock because the
+	// current runLoop is still on the call stack (the hook
+	// fires synchronously from streamOneTurn's defer).
+	// We also detach the context: the original request's
+	// context will be cancelled as soon as the HTTP handler
+	// returns, and we do not want the queued Chat to be
+	// killed with it. The drain is fire-and-forget; the
+	// events surface through SessionCache so any subsequent
+	// Resume picks them up.
+	go func() {
+		ch, err := a.Chat(context.Background(), hc.SessionID, msgs)
+		if err != nil {
+			// The most common cause is a pending tool
+			// confirmation; in that case the user can
+			// simply re-queue. We do not retry.
+			return
+		}
+		// Drain the channel so the runLoop keeps producing
+		// events (the SessionCache is updated as a side
+		// effect of each event being emitted). The events
+		// themselves are discarded because the original
+		// HTTP request that submitted the queue mode has
+		// long since returned.
+		for range ch {
+		}
+	}()
+	return nil
 }
 
 // runLoop is the worker goroutine behind Chat/ConfirmTool. It is
@@ -168,13 +742,29 @@ func (a *Agent) Chat(
 // channel is closed. The single-owner rule (only runLoop or
 // resumeAfterDecision may call finishAndClose) avoids the
 // double-close pitfall.
+//
+// isNewSession distinguishes the very first runLoop entry for a
+// session (a brand-new Chat) from a re-entry (ConfirmTool
+// handing control back to the LLM after a tool decision). Only
+// the former fires [HookSessionStart]; the latter is a turn
+// continuation within an already-open session.
 func (a *Agent) runLoop(
 	ctx context.Context,
 	sessionID string,
 	messages []openai.ChatCompletionMessage,
 	out chan<- *Event,
+	isNewSession bool,
 ) {
 	defer a.finishAndClose(sessionID, out)
+
+	if isNewSession {
+		a.runHooks(ctx, &HookContext{
+			Event:          HookSessionStart,
+			SessionID:      sessionID,
+			Messages:       messages,
+			SelectedSkills: a.selectedSkillsFor(sessionID),
+		})
+	}
 
 	for turn := 0; ; turn++ {
 		if a.cfg.MaxToolCallsPerTurn > 0 && turn >= a.cfg.MaxToolCallsPerTurn {
@@ -198,13 +788,64 @@ func (a *Agent) runLoop(
 // either auto-execute or suspend". It returns shouldContinue=true
 // when the loop should fetch the next assistant message
 // (i.e. all tool calls were auto-executed).
+//
+// [HookTurnStart] fires synchronously at the top, before the
+// LLM stream is opened. [HookTurnEnd] fires via defer on every
+// return path (success, error, suspended) so the hook always
+// sees the final messages slice regardless of how the turn
+// terminated.
 func (a *Agent) streamOneTurn(
 	ctx context.Context,
 	sessionID string,
 	messages []openai.ChatCompletionMessage,
 	out chan<- *Event,
 ) (bool, error) {
-	req := a.chatRequest(messages, a.cfg.OpenAIModel)
+	a.runHooks(ctx, &HookContext{
+		Event:     HookTurnStart,
+		SessionID: sessionID,
+		Messages:  messages,
+	})
+	// Deferred so we observe the post-tool-call messages
+	// snapshot rather than the pre-LLM one. The closure
+	// captures the messages parameter by reference (a
+	// function parameter is still a local variable), so any
+	// append inside this body is visible to the hook.
+	defer func() {
+		a.runHooks(ctx, &HookContext{
+			Event:     HookTurnEnd,
+			SessionID: sessionID,
+			Messages:  messages,
+		})
+	}()
+
+	// Compaction: when the running history exceeds the
+	// configured threshold, ask the LLM (via the agent's
+	// own openai client) for a one-shot summary and
+	// replace the older messages in place. The event is
+	// pushed BEFORE the LLM stream starts so the front-end
+	// sees the divider at the position the compacted
+	// messages used to occupy. If compaction fails (e.g. the
+	// LLM call errors out), we surface the error and abort
+	// the turn — half-applied state would be worse than no
+	// compaction at all.
+	if a.compactor != nil {
+		_, replaced, compactErr := a.maybeCompact(ctx, sessionID, messages, out)
+		if compactErr != nil {
+			return false, fmt.Errorf("compaction failed: %w", compactErr)
+		}
+		if replaced > 0 {
+			// Truncate the slice header so subsequent
+			// append(...) calls in this turn see the
+			// compacted length, not the original.
+			keep := len(messages) - replaced
+			if keep < 0 {
+				keep = 0
+			}
+			messages = messages[:1+keep]
+		}
+	}
+
+	req := a.chatRequest(a.injectSystemPrompt(sessionID, messages), a.cfg.OpenAIModel)
 	stream, err := a.llm.CreateChatCompletionStream(ctx, req)
 	if err != nil {
 		return false, fmt.Errorf("create chat stream: %w", err)
@@ -310,7 +951,19 @@ func (a *Agent) streamOneTurn(
 			continue
 		}
 
+		// Task 20 — Permission Mode Switcher. The legacy
+		// autoRun computation is preserved exactly; the new
+		// modes (auto-review / full-access) simply force
+		// autoRun=true so the ApprovalCard is skipped. The
+		// tool_call + tool_status("running") + tool_result
+		// event sequence is unchanged, which means the
+		// audit trail (HookPreToolCall / HookPostToolCall,
+		// the recorder store, etc.) is unaffected — only
+		// the user-facing confirmation flow changes.
 		autoRun := !def.NeedConfirm || a.isGranted(sessionID, ptc.Name)
+		if mode := a.permissionModeFor(sessionID); mode == PermissionAutoReview || mode == PermissionFullAccess {
+			autoRun = true
+		}
 		a.emitToolCall(sessionID, out, ptc, def, autoRun)
 
 		if !autoRun {
@@ -328,8 +981,78 @@ func (a *Agent) streamOneTurn(
 			continue
 		}
 
-		// Auto-run.
-		resultStr, status, runErr := a.runTool(def, ptc.Arguments)
+		// Auto-run path. PreToolCall / PostToolCall hooks
+		// fire around the handler invocation; a hook that
+		// sets hc.Cancel=true short-circuits the execution
+		// and synthesises a "cancelled" tool result so the
+		// LLM can continue the turn.
+		kind := def.Kind
+		if kind == "" {
+			kind = KindUnknown
+		}
+		hookToolCall := &ToolCallData{
+			ID:      ptc.ID,
+			Name:    ptc.Name,
+			Args:    ptc.Arguments,
+			AutoRun: true,
+			Kind:    kind,
+		}
+		cancel := false
+		a.runHooks(ctx, &HookContext{
+			Event:     HookPreToolCall,
+			SessionID: sessionID,
+			Messages:  messages,
+			ToolCall:  hookToolCall,
+			Cancel:    &cancel,
+		})
+		if cancel {
+			cancelled := `{"error":"cancelled_by_hook"}`
+			a.emitData(sessionID, out, EventToolResult, mustJSON(ToolResultData{
+				ID:      ptc.ID,
+				Name:    ptc.Name,
+				Result:  cancelled,
+				IsError: true,
+				Status:  "cancelled",
+			}))
+			messages = append(messages, openai.ChatCompletionMessage{
+				Role:       openai.ChatMessageRoleTool,
+				ToolCallID: ptc.ID,
+				Content:    cancelled,
+			})
+			continue
+		}
+
+		// Plan tool (KindPlan / write_todos) has its own
+		// bespoke execution path: the handler signature does
+		// not include sessionID, so the agent core bridges
+		// the call to runPlanTool which parses the todos and
+		// stores them on SessionCache.Todos. EventToolStatus
+		// and EventToolResult are still pushed on the wire
+		// (the rest of the loop below handles that) so the
+		// front-end sees a uniform tool-call lifecycle.
+		var resultStr string
+		var status string
+		var runErr error
+		if def.Kind == KindPlan {
+			resultStr, status, runErr = a.runPlanTool(sessionID, ptc.Arguments)
+		} else {
+			resultStr, status, runErr = a.runTool(def, ptc.Arguments)
+		}
+		hookToolResult := &ToolResultData{
+			ID:         ptc.ID,
+			Name:       ptc.Name,
+			Result:     resultStr,
+			IsError:    runErr != nil,
+			Status:     status,
+			DurationMs: 0, // filled in by the handler
+		}
+		a.runHooks(ctx, &HookContext{
+			Event:      HookPostToolCall,
+			SessionID:  sessionID,
+			Messages:   messages,
+			ToolCall:   hookToolCall,
+			ToolResult: hookToolResult,
+		})
 		a.emitData(sessionID, out, EventToolResult, mustJSON(ToolResultData{
 			ID:         ptc.ID,
 			Name:       ptc.Name,
@@ -378,6 +1101,34 @@ func (a *Agent) runTool(def ToolDefinition, args string) (string, string, error)
 	return result, "success", nil
 }
 
+// runPlanTool is the bespoke executor for the KindPlan
+// (write_todos) tool. It parses the args into a []Todo and
+// overwrites the session cache's Todos slice, so the front-end
+// can read the latest plan snapshot from a single field
+// (SessionCache.Todos) without having to walk the event log.
+//
+// The handler is registered as a no-op closure in
+// NewPlanToolHandler — the agent core bridges sessionID into
+// the call here because the standard handler signature
+// `func(args string) (string, error)` does not include it.
+//
+// The tool result is always success; malformed input is
+// surfaced as a tool result with status="failed" so the LLM
+// can see the error in the next turn.
+func (a *Agent) runPlanTool(sessionID, args string) (string, string, error) {
+	var payload struct {
+		Todos []Todo `json:"todos"`
+	}
+	if err := json.Unmarshal([]byte(args), &payload); err != nil {
+		return fmt.Sprintf(`{"error":"invalid_args","message":%q}`, err.Error()), "failed", nil
+	}
+	cache := a.ensureSession(sessionID)
+	cache.mu.Lock()
+	cache.Todos = payload.Todos
+	cache.mu.Unlock()
+	return `{"ok":true,"count":` + fmt.Sprintf("%d", len(payload.Todos)) + `}`, "success", nil
+}
+
 // emitToolCall pushes an EventToolCall (with AutoRun and Kind) and
 // an EventToolStatus("running") so the UI can render the badge.
 func (a *Agent) emitToolCall(sessionID string, out chan<- *Event, ptc *parsedToolCall, def ToolDefinition, autoRun bool) {
@@ -415,6 +1166,44 @@ func (a *Agent) isGranted(sessionID, toolName string) bool {
 
 func grantKey(sessionID, toolName string) string {
 	return sessionID + "|" + toolName
+}
+
+// RegisterHook adds a callback to the agent's hook list. Hooks
+// are invoked synchronously on the chat goroutine, in
+// registration order, at each of the 6 documented
+// [HookEvent] points. Safe to call from any goroutine,
+// concurrently with hook dispatch (the dispatch path
+// snapshots the slice under a read lock).
+//
+// The callback MUST NOT block for long. Long-running side
+// work (network calls, disk I/O) should be dispatched onto a
+// background goroutine inside the hook body, otherwise the
+// chat goroutine stalls.
+//
+// The callback MUST NOT call back into the agent's public
+// API (Chat / ConfirmTool / ShutdownSession) for the same
+// session, or it will deadlock the worker goroutine that
+// is currently invoking it.
+func (a *Agent) RegisterHook(h HookFunc) {
+	a.hooksMu.Lock()
+	a.hooks = append(a.hooks, h)
+	a.hooksMu.Unlock()
+}
+
+// ShutdownSession fires the [HookSessionShutdown] event for
+// the given sessionID. It is the explicit "session ended"
+// trigger called by the front-end (or a maintenance job)
+// when the user is done with a session.
+//
+// The agent does NOT destroy any state: the SessionCache
+// stays in memory so a subsequent Resume call can still
+// replay cached events. The hook exists so audit loggers /
+// durable state flushers can react to the user's intent.
+func (a *Agent) ShutdownSession(ctx context.Context, sessionID string) {
+	a.runHooks(ctx, &HookContext{
+		Event:     HookSessionShutdown,
+		SessionID: sessionID,
+	})
 }
 
 // ConfirmTool applies a user decision to a pending tool call and
@@ -547,7 +1336,9 @@ func (a *Agent) resumeAfterDecision(
 	}
 
 	// Continue the loop with the post-decision messages.
-	a.runLoop(ctx, sessionID, messages, out)
+	// isNewSession=false: ConfirmTool is a continuation of
+	// the same session, never a brand-new one.
+	a.runLoop(ctx, sessionID, messages, out, false)
 }
 
 func pendingArgs(messages []openai.ChatCompletionMessage, toolCallID string) string {
@@ -579,6 +1370,14 @@ func isValidDecision(d Decision) bool {
 // still running, the loop polls every 50ms for new events. If
 // the session is finished and we have caught up, it emits a
 // stream_end and closes.
+//
+// When the in-memory SessionCache is missing (typically because
+// the process restarted), Resume falls back to the durable
+// SessionStore: if the JSONL file exists, the cache is rebuilt
+// from it and marked finished (no new events will arrive from a
+// previous run). A missing store OR a missing JSONL file yields
+// the original "session not found" error so callers do not need
+// to distinguish in-memory from durable lookups.
 func (a *Agent) Resume(
 	ctx context.Context,
 	sessionID string,
@@ -589,7 +1388,29 @@ func (a *Agent) Resume(
 	}
 	cache, ok := a.getSession(sessionID)
 	if !ok {
-		return nil, fmt.Errorf("agent: session %q not found", sessionID)
+		// Cache miss — try to recover from durable storage.
+		if a.store == nil || !a.store.Exists(sessionID) {
+			return nil, fmt.Errorf("agent: session %q not found", sessionID)
+		}
+		events, err := a.store.Load(sessionID)
+		if err != nil {
+			return nil, fmt.Errorf("agent: failed to load session %q: %w", sessionID, err)
+		}
+		if len(events) == 0 {
+			return nil, fmt.Errorf("agent: session %q has no recoverable events", sessionID)
+		}
+		// Reconstruct the in-memory cache from the JSONL file.
+		// We mark the cache finished because the process that
+		// produced these events is gone — no goroutine is
+		// still writing to this session.
+		cache = a.ensureSession(sessionID)
+		cache.mu.Lock()
+		for i := range events {
+			ev := events[i] // local copy so &ev is unique per iteration
+			cache.Events = append(cache.Events, &ev)
+		}
+		cache.IsFinished = true
+		cache.mu.Unlock()
 	}
 	out := make(chan *Event, 32)
 	go a.runResume(ctx, cache, offset, out)
@@ -628,13 +1449,32 @@ func (a *Agent) runResume(
 	}
 }
 
+// cacheAndPersist is the single chokepoint through which every
+// event lands in the in-memory SessionCache AND (when a store
+// is configured) in the durable JSONL file. It is the only
+// legitimate way to grow the cache; direct appendEvent calls
+// are no longer used in the agent core.
+//
+// If the session has never been observed before, ensureSession
+// creates the cache so the in-memory write is never silently
+// dropped. Persistence failures (disk full, permission denied)
+// are intentionally dropped on the floor via "_ =": the live
+// turn MUST NOT be blocked by a storage hiccup. SessionStore.Append
+// has already logged the warning, so DevLogs / stderr will
+// surface the problem for operators.
+func (a *Agent) cacheAndPersist(sessionID string, ev *Event) {
+	cache := a.ensureSession(sessionID)
+	cache.appendEvent(ev)
+	if a.store != nil {
+		_ = a.store.Append(sessionID, *ev)
+	}
+}
+
 // emitData builds an Event and pushes it to BOTH the session
 // cache and the consumer's channel.
 func (a *Agent) emitData(sessionID string, out chan<- *Event, t EventType, data string) {
 	ev := &Event{Type: t, Data: data}
-	if v, ok := a.Sessions.Load(sessionID); ok {
-		v.(*SessionCache).appendEvent(ev)
-	}
+	a.cacheAndPersist(sessionID, ev)
 	// We use a non-blocking send: if the consumer is slower than
 	// the producer we still want to keep producing. The
 	// frontend's UI is forgiving of small backlogs; the agent
@@ -653,9 +1493,7 @@ func (a *Agent) emitData(sessionID string, out chan<- *Event, t EventType, data 
 func (a *Agent) emitError(sessionID string, out chan<- *Event, code, msg string) {
 	payload := map[string]string{"code": code, "message": msg}
 	ev := &Event{Type: EventStreamEnd, Data: mustJSON(payload)}
-	if v, ok := a.Sessions.Load(sessionID); ok {
-		v.(*SessionCache).appendEvent(ev)
-	}
+	a.cacheAndPersist(sessionID, ev)
 	out <- ev
 }
 
@@ -668,9 +1506,7 @@ func (a *Agent) finishSession(sessionID string, out chan<- *Event) {
 		v.(*SessionCache).mu.Unlock()
 	}
 	ev := &Event{Type: EventStreamEnd, Data: ""}
-	if v, ok := a.Sessions.Load(sessionID); ok {
-		v.(*SessionCache).appendEvent(ev)
-	}
+	a.cacheAndPersist(sessionID, ev)
 	// Best-effort send. The consumer might have disconnected.
 	defer func() { _ = recover() }()
 	out <- ev
@@ -712,4 +1548,121 @@ func cloneMessages(in []openai.ChatCompletionMessage) []openai.ChatCompletionMes
 	out := make([]openai.ChatCompletionMessage, len(in))
 	copy(out, in)
 	return out
+}
+
+// SetCompactor swaps the agent's auto-compaction unit. Passing
+// nil disables compaction entirely (the agent will never call
+// runCompaction on its own). Tests use this to install a
+// compactor with a custom threshold / estimator.
+func (a *Agent) SetCompactor(c *Compactor) {
+	a.compactor = c
+}
+
+// SetSummaryFnForTest injects a deterministic SummaryFn for
+// tests so the agent's compaction path can be exercised
+// without standing up an httptest server. The function is
+// only honoured when a.compactor is non-nil; passing nil
+// restores the default (openai-backed) summary fn. The hook
+// is stored in a test-only field; production code MUST NOT
+// call this method.
+func (a *Agent) SetSummaryFnForTest(fn SummaryFunc) {
+	a.summaryFnForTest = fn
+}
+
+// maybeCompact inspects the running messages slice and, if
+// the compactor decides the conversation has grown past the
+// configured threshold, asks the LLM for a summary and
+// rewrites the slice in place. The function returns the
+// summary message (empty when no compaction happened) and
+// the number of messages that were replaced; the caller
+// truncates the slice to the new length (1 + the trailing
+// `keep` messages).
+//
+// The summary message is inserted at index 0 — the agent's
+// chat APIs all see "head of the conversation" as the
+// canonical position for system-level context, and OpenAI's
+// chat completion API treats the first system message as the
+// global directive.
+//
+// The EventCompaction event is pushed to the consumer
+// channel after a successful compaction so the front-end
+// can render a divider at the right position.
+func (a *Agent) maybeCompact(
+	ctx context.Context,
+	sessionID string,
+	messages []openai.ChatCompletionMessage,
+	out chan<- *Event,
+) (summaryMsg openai.ChatCompletionMessage, replaced int, err error) {
+	if a.compactor == nil {
+		return openai.ChatCompletionMessage{}, 0, nil
+	}
+	if !a.compactor.ShouldCompact(messages) {
+		return openai.ChatCompletionMessage{}, 0, nil
+	}
+	summaryFn := a.buildSummaryFn()
+	if summaryFn == nil {
+		// No usable LLM client (e.g. the test agent
+		// injected a fake llmStream). We degrade to a
+		// no-op rather than failing the turn — the user
+		// can still get a reply, they just lose the
+		// auto-compression benefit.
+		return openai.ChatCompletionMessage{}, 0, nil
+	}
+	summaryMsg, replaced, err = a.compactor.Compact(ctx, messages, summaryFn)
+	if err != nil {
+		return openai.ChatCompletionMessage{}, 0, err
+	}
+	if replaced == 0 {
+		return openai.ChatCompletionMessage{}, 0, nil
+	}
+	// Copy the summary into the backing array at index 0,
+	// and shift the trailing `keep` messages down by
+	// `replaced` positions. We cannot shrink the slice
+	// header from inside this function (slices are passed
+	// by value); the caller truncates via `messages =
+	// messages[:1+keep]` after we return.
+	keep := len(messages) - replaced
+	if keep < 0 {
+		keep = 0
+	}
+	// Shift the trailing `keep` messages down by `replaced`
+	// positions so they start at index 1.
+	for i := 0; i < keep; i++ {
+		messages[1+i] = messages[replaced+i]
+	}
+	// Overwrite index 0 with the summary.
+	messages[0] = summaryMsg
+
+	// Push the compaction event for the front-end.
+	a.emitData(sessionID, out, EventCompaction, mustJSON(CompactionData{
+		SummaryText:          summaryMsg.Content,
+		ReplacedMessageCount: replaced,
+		TriggeredAtMs:        nowMs(),
+	}))
+	return summaryMsg, replaced, nil
+}
+
+// buildSummaryFn returns a SummaryFn backed by the agent's
+// real OpenAI client (via openaiStream) when one is available.
+// Tests that wire a fake llmStream get a non-streaming summary
+// through the same openai.Client that the streaming path uses
+// (realLLMFake in http_test.go wraps a real *openai.Client);
+// for tests using fakeLLM (no client at all) the function
+// returns nil and maybeCompact degrades to a no-op.
+func (a *Agent) buildSummaryFn() SummaryFunc {
+	// Test hook wins (lets tests inject a deterministic
+	// summary fn without standing up an httptest server).
+	if a.summaryFnForTest != nil {
+		return a.summaryFnForTest
+	}
+	// Look at the agent's llmStream: the only real
+	// production path is openaiStream, which carries an
+	// *openai.Client. We accept the type via a type
+	// assertion so tests can pass any llmStream and we
+	// simply degrade to "no summary" if it's not the
+	// real one.
+	if os, ok := a.llm.(*openaiStream); ok && os != nil && os.client != nil {
+		return NewOpenAISummaryFn(os.client, a.cfg.OpenAIModel)
+	}
+	return nil
 }

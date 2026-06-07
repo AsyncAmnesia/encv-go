@@ -134,6 +134,16 @@ const UPSTREAMS: Upstream[] = [
     name: 'encv-go',
     hint: 'Check pm2 status for start-preview (encv-go :2025)',
   },
+  {
+    // /ws → encv-go (:2025) — WebSocket endpoint for agent chat, DevLogs
+    // MUST be before DEFAULT_UPSTREAM; otherwise /ws falls through to vite (:8100)
+    // which has no /ws handler → WebSocket stuck in CONNECTING forever.
+    match: '/ws',
+    target: 'http://127.0.0.1:2025',
+    wsTarget: 'ws://127.0.0.1:2025',
+    name: 'encv-go',
+    hint: 'Check pm2 status for start-preview (encv-go :2025)',
+  },
 ]
 
 const DEFAULT_UPSTREAM: Upstream = {
@@ -220,8 +230,8 @@ function createProxyFor(up: Upstream): httpProxy {
     changeOrigin: false,  // CRITICAL: do NOT rewrite Origin/Host — see spec §3.3
     xfwd: true,           // add X-Forwarded-* headers (helps Vite detect proxy)
     preserveHeaderKeyCase: true,
-    proxyTimeout: 30_000,
-    timeout: 30_000,
+    proxyTimeout: 120_000,   // agent chat 多轮 LLM 调用可能需要 60s+
+    timeout: 120_000,         // 同上（非流式端点如 /api/models 仍秒回，不影响）
   })
 
   // ⚠️ 沙箱 dev critical: override http-proxy's xfwd behavior for X-Forwarded-Proto.
@@ -472,6 +482,18 @@ async function handleHealth(_req: IncomingMessage, res: ServerResponse): Promise
 // =============================================================================
 
 server.listen(PORT, HOST, () => {
+  // ── 防御守卫：/ws 必须在 UPSTREAMS 中 ─────────────────────────────
+  // 历史踩坑（2026-06-07）：/ws 不在 UPSTREAMS 中 → 走 DEFAULT_UPSTREAM →
+  // vite :8100（无 /ws handler）→ WebSocket 永远卡在 CONNECTING →
+  // DevLogs 显示 "ws=connecting" 但 HTTP /api/config 正常 → 用户困惑。
+  // 此断言在启动时立即暴露遗漏，不等用户报告。
+  const hasWsRoute = UPSTREAMS.some((u) => u.match === '/ws')
+  if (!hasWsRoute) {
+    log('FATAL: /ws route missing from UPSTREAMS! WebSocket will fall through to vite.')
+    log('FATAL: Add { match: "/ws", target: "http://127.0.0.1:2025", wsTarget: "ws://127.0.0.1:2025" } to UPSTREAMS.')
+    process.exit(1)
+  }
+
   log(`listening on http://${HOST}:${PORT} (D1: 好记，16666)`)
   log(`routes:`)
   for (const up of [DEFAULT_UPSTREAM, ...UPSTREAMS]) {

@@ -21,10 +21,35 @@
         <ion-icon :icon="sparkleIcon" class="headerTitleIcon" />
         <span>{{ t('agent.title') }}</span>
       </div>
+      <!-- 上下文使用图标（点击 → 弹窗：todos + 引用文件） -->
+      <ContextIcon
+        :data="contextUsage.data.value"
+        :loading="contextUsage.loading.value"
+        class="headerContext"
+      />
       <button type="button" class="headerBtn" @click="handleNewSession" :title="t('agent.newSession')">
         <ion-icon :icon="addIcon" />
       </button>
     </header>
+
+    <!--
+      no_api_key 自愈 banner：仅在 chat 发送返回 503 {error: "no_api_key"} 时出现。
+      原因：用户可能在另一台设备配过 key，本设备的 deviceId 解不开。
+      给一个直达 AI 设置的入口，避免"我不知道去哪里修"的卡死循环。
+    -->
+    <div v-if="lastErrorCode === 'no_api_key'" class="noApiKeyBanner">
+      <ion-icon :icon="keyIcon" class="noApiKeyBannerIcon" />
+      <div class="noApiKeyBannerText">
+        <strong>{{ t('agent.noApiKeyTitle') || '未配置 API Key' }}</strong>
+        <span>{{ t('agent.noApiKeyHint2') || '当前设备无法解密已存储的 key，请去 AI 设置重新输入。' }}</span>
+      </div>
+      <button type="button" class="noApiKeyBannerBtn" @click="goToApiKeySettings">
+        {{ t('agent.goToApiKeySettings') || '去设置' }}
+      </button>
+      <button type="button" class="noApiKeyBannerClose" @click="dismissError" :title="t('common.close') || '关闭'">
+        <ion-icon :icon="closeIcon" />
+      </button>
+    </div>
 
     <div class="agentChatToolbar">
       <label class="toolbarField">
@@ -53,7 +78,72 @@
       </label>
     </div>
 
-    <main class="agentChatMain" ref="mainRef" @scroll="onMainScroll">
+    <!--
+      Task 26 (LAN Access)：局域网访问地址折叠面板。
+      默认折叠（v-show），点击展开。挂载在 toolbar 下方、main 上方——
+      该位置在视觉上属于"次要状态信息"，不会分散对话注意力。
+      数据源：useAgent.getLanAccess() → GET /api/network/lan-access。
+    -->
+    <details class="lanAccessPanel" :open="lanAccessOpen" @toggle="lanAccessOpen = ($event.target as HTMLDetailsElement).open">
+      <summary class="lanAccessSummary">
+        <ion-icon :icon="globeIcon" class="lanAccessSummaryIcon" />
+        <span class="lanAccessSummaryText">{{ t('agent.lanAccess') }}</span>
+        <span v-if="lanAccesses.length > 0" class="lanAccessSummaryCount">{{ lanAccesses.length }}</span>
+      </summary>
+      <div class="lanAccessBody">
+        <p class="lanAccessHelp">{{ t('agent.lanAccessHelp') }}</p>
+        <div v-if="lanAccessLoading" class="lanAccessLoading">{{ t('settings.loading') }}</div>
+        <div v-else-if="lanAccesses.length === 0" class="lanAccessEmpty">
+          {{ t('agent.lanAccessEmpty') }}
+        </div>
+        <ul v-else class="lanAccessList">
+          <li v-for="addr in lanAccesses" :key="addr.ip" class="lanAccessItem">
+            <div class="lanAccessItemMain">
+              <code class="lanAccessUrl">{{ addr.url }}</code>
+              <span class="lanAccessInterface">{{ t('agent.lanAccessInterface', { name: addr.interface }) }}</span>
+            </div>
+            <button
+              type="button"
+              class="lanAccessCopyBtn"
+              :title="t('agent.lanAccessCopy')"
+              :aria-label="t('agent.lanAccessCopy')"
+              @click="handleCopyLanAccess(addr.url)"
+            >
+              <ion-icon :icon="clipboardIcon" />
+            </button>
+          </li>
+        </ul>
+        <button
+          type="button"
+          class="lanAccessRefresh"
+          @click="handleRefreshLanAccess"
+          :disabled="lanAccessLoading"
+        >
+          <ion-icon :icon="refreshCircleIcon" />
+          <span>{{ t('agent.lanAccessRefresh') }}</span>
+        </button>
+      </div>
+    </details>
+
+    <!-- 消息区域：圆点导航（左）+ 滚动内容（右） -->
+    <div class="agentChatBody">
+      <!-- 左侧圆点导航（≥3 条消息时显示）—— 在滚动容器外部，不随内容滚走 -->
+      <div
+        v-if="renderedItems.length >= 3"
+        class="dotNavigation"
+      >
+        <button
+          v-for="(item, idx) in renderedItems"
+          :key="item.messageId"
+          type="button"
+          class="dotNavDot"
+          :class="{ dotNavDot_active: activeMessageIndex === idx }"
+          :title="`跳转到第 ${idx + 1} 条消息`"
+          @click="scrollToMessage(idx)"
+        />
+      </div>
+
+      <main class="agentChatMain" ref="mainRef" @scroll="onMainScroll">
       <!-- 空状态（无消息时显示） -->
       <div v-if="renderedItems.length === 0" class="agentChatEmpty">
         <ion-icon :icon="chatbubblesIcon" class="emptyIcon" />
@@ -62,9 +152,10 @@
       <!-- 短会话（≤ 120）：原生 v-for（无虚拟化开销） -->
       <template v-else-if="renderedItems.length <= VIRTUAL_LIST_THRESHOLD">
         <div
-          v-for="item in renderedItems"
+          v-for="(item, idx) in renderedItems"
           :key="item.messageId"
           class="renderedItemWrap"
+          :data-msg-idx="idx"
         >
           <UserMessageBubble
             v-if="item.type === 'user'"
@@ -92,6 +183,11 @@
             :queries="item.queries"
             :tool-calls="resolveToolCalls(item.toolCallIds)"
           />
+          <PlanBlock
+            v-else-if="item.type === 'plan'"
+            :todos="item.todos"
+            :streaming="item.streaming"
+          />
           <ReasoningMessage
             v-else-if="item.type === 'reasoning'"
             :text="item.text"
@@ -101,6 +197,17 @@
             v-else-if="item.type === 'error'"
             :text="item.text"
             :on-retry="() => handleRetryError(item)"
+          />
+          <!-- Task 7：上下文自动压缩分隔线（不可展开） -->
+          <ContextCompactionDivider
+            v-else-if="item.type === 'compaction'"
+            :text="item.text"
+          />
+          <!-- Task 22: agent task 消息（subagent 拆解的子任务列表） -->
+          <AgentTaskMessage
+            v-else-if="item.type === 'agentTask'"
+            :sub-tasks="item.subTasks"
+            :reasoning="item.reasoning"
           />
         </div>
       </template>
@@ -138,6 +245,11 @@
               :queries="item.queries"
               :tool-calls="resolveToolCalls(item.toolCallIds)"
             />
+            <PlanBlock
+              v-else-if="item.type === 'plan'"
+              :todos="item.todos"
+              :streaming="item.streaming"
+            />
             <ReasoningMessage
               v-else-if="item.type === 'reasoning'"
               :text="item.text"
@@ -148,36 +260,65 @@
               :text="item.text"
               :on-retry="() => handleRetryError(item)"
             />
+            <!-- Task 7：虚拟滚动分支同样渲染 ContextCompactionDivider -->
+            <ContextCompactionDivider
+              v-else-if="item.type === 'compaction'"
+              :text="item.text"
+            />
+            <!-- Task 22: 虚拟滚动分支同样渲染 AgentTaskMessage -->
+            <AgentTaskMessage
+              v-else-if="item.type === 'agentTask'"
+              :sub-tasks="item.subTasks"
+              :reasoning="item.reasoning"
+            />
           </div>
         </template>
       </MessageVirtualList>
     </main>
+    </div><!-- /.agentChatBody -->
 
     <footer class="agentChatFooter">
-      <!-- "/" 工具选择命令面板 -->
-      <div v-if="showToolPalette" class="tool-palette">
-        <div class="tool-palette-header">
-          <span class="tool-palette-title">{{ t('agent.selectTool') || '选择工具' }}</span>
-        </div>
-        <div
-          v-for="tool in filteredTools"
-          :key="tool.name"
-          class="tool-palette-item"
-          :class="{ 'tool-palette-active': activeToolIndex === filteredTools.indexOf(tool) }"
-          @click="selectTool(tool)"
-        >
-          <ion-icon :icon="tool.icon" class="tool-palette-icon"></ion-icon>
-          <div class="tool-palette-info">
-            <span class="tool-palette-name">{{ tool.name }}</span>
-            <span class="tool-palette-desc">{{ tool.desc }}</span>
-          </div>
-        </div>
-        <div v-if="filteredTools.length === 0" class="tool-palette-empty">
-          {{ t('agent.noMatchingTools') || '无匹配工具' }}
-        </div>
-      </div>
+      <!--
+        Task 10: "/" 触发的命令面板（useSlashMenu + SlashMenu 组件）。
+        模板挂在 footer 内，组件自身用 Teleport 把 overlay 提升到 body
+        以避免被 textarea 滚动裁剪。
+      -->
+      <SlashMenu
+        v-if="slashMenu.isOpen.value"
+        :items="slashMenu.items.value"
+        :query="slashMenu.query.value"
+        :selected-index="slashMenu.selectedIndex.value"
+        :on-apply="(id) => slashMenu.applyById(id)"
+        :on-close="slashMenu.closeMenu"
+        :on-selected-index-change="(n) => (slashMenu.selectedIndex.value = n)"
+      />
 
-      <div class="footerInputRow" :class="{ 'footerInputRow-palette': showToolPalette }">
+      <!-- Task 12: 附件展示行（textarea 上方） -->
+      <AttachmentTray
+        v-if="attachments.length > 0"
+        :attachments="attachments"
+        :on-remove="removeAttachment"
+      />
+
+      <div class="footerInputRow" :class="{ 'footerInputRow-palette': slashMenu.isOpen.value }">
+        <!-- Task 12: 附件 `+` 按钮 -->
+        <button
+          v-if="status !== 'streaming'"
+          type="button"
+          class="footerAttachBtn"
+          :title="t('agent.attach')"
+          :aria-label="t('agent.attach')"
+          @click="triggerAttach"
+        >
+          <ion-icon :icon="attachIcon" />
+        </button>
+        <input
+          ref="fileInputRef"
+          type="file"
+          multiple
+          class="footerAttachInput"
+          @change="handleAttachChange"
+        />
         <textarea
           v-model="inputText"
           class="footerInput"
@@ -186,8 +327,8 @@
           :disabled="status === 'streaming'"
           @keydown.ctrl.enter.exact.prevent="handleSend"
           @keydown.meta.enter.exact.prevent="handleSend"
-          @keydown="handleInputKeydown"
-          @input="autoResize"
+          @keydown="onTextareaKeydown"
+          @input="onTextareaInput"
           ref="inputRef"
         ></textarea>
         <button
@@ -255,7 +396,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { IonIcon, modalController, alertController } from '@ionic/vue'
 import {
   closeOutline,
@@ -265,15 +407,20 @@ import {
   stopOutline,
   chatbubblesOutline,
   timeOutline,
-  documentTextOutline,
-  folderOpenOutline,
-  trashOutline,
-  terminalOutline,
-  searchOutline,
+  attachOutline,
+  globeOutline,
+  clipboardOutline,
+  refreshCircleOutline,
+  keyOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
-import { useAgent, type Decision, type ToolCall } from '@/composables/useAgent'
+import { getDeviceIdSync } from '@/composables/useDeviceId'
+import { getAgentApiBase } from '@/composables/useAgentApiBase'
+import { useAgent, type Decision, type ToolCall, getLanAccess, type LanAddress } from '@/composables/useAgent'
 import { useRenderTurnItems } from '@/composables/renderTurnItems'
+import { useAttachments } from '@/composables/useAttachments'
+import { useSlashMenu } from '@/composables/useSlashMenu'
+import { showToast } from '@/composables/useToast'
 import UserMessageBubble from '@/components/agent/UserMessageBubble.vue'
 import ApprovalCard from '@/components/agent/ApprovalCard.vue'
 import GroupedOperationMessage from '@/components/agent/GroupedOperationMessage.vue'
@@ -282,21 +429,79 @@ import ErrorMessage from '@/components/agent/ErrorMessage.vue'
 import AssistantMessage from '@/components/agent/AssistantMessage.vue'
 import WebSearchSummaryMessage from '@/components/agent/WebSearchSummaryMessage.vue'
 import MessageVirtualList from '@/components/agent/MessageVirtualList.vue'
+import PlanBlock from '@/components/agent/PlanBlock.vue'
+import ContextCompactionDivider from '@/components/agent/ContextCompactionDivider.vue'
+// Task 22：agent task 消息（subagent 拆解的子任务列表）
+import AgentTaskMessage from '@/components/agent/AgentTaskMessage.vue'
+import AttachmentTray from '@/components/agent/AttachmentTray.vue'
+import SlashMenu from '@/components/agent/SlashMenu.vue'
+import ContextIcon from '@/components/agent/ContextIcon.vue'
 
 const { t } = useI18n()
 
 // Agent API 基础路径（与 useAgent.ts 保持一致）
-const AGENT_API_BASE = '/agent-api'
+// Agent API 基础 URL（动态解析：dev 走网关 / prod 直连后端）
+const AGENT_API_BASE = getAgentApiBase()
 
-const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId } = useAgent()
+const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError } = useAgent()
+const router = useRouter()
 
-const renderedItems = useRenderTurnItems(messages, status)
+/**
+ * 跳转到 AI 设置页面（让用户重新输入 API Key）。
+ *
+ * 触发场景：no_api_key banner 出现时（后端 readAgentConfig(deviceId)
+ * 返回空，说明当前 deviceId 派生不出 AES key 解开存储密文）。
+ *
+ * 行为：
+ *   1. 先 dismiss banner（避免下次进来还显示）
+ *   2. 关闭当前 AgentChat modal（modalController.dismiss）
+ *   3. 用 vue-router 跳到 /tabs/settings/agent
+ *
+ * 为什么不直接 router.push：AgentChat 是 modal，路由跳转不会自动关 modal，
+ * 用户回到 home 还会看到飘着的对话窗口。必须先 dismiss。
+ */
+async function goToApiKeySettings(): Promise<void> {
+  dismissError()
+  try {
+    await modalController.dismiss()
+  } catch {/* ignore — 可能 modal 已经被关 */}
+  router.push('/tabs/settings/agent')
+}
+
+onMounted(() => {
+  // 启动 Context 图标的轮询（5s/30s 周期自适应当前 streaming 状态）
+  contextUsage.start()
+})
+onUnmounted(() => {
+  // 卸载时清理 timer，避免内存泄漏
+  contextUsage.stop()
+})
+
+// Task 12：附件管理（Composer `+` 按钮）
+const {
+  attachments,
+  addFiles,
+  removeAttachment,
+  clearAttachments,
+} = useAttachments({
+  onError: (msg) => showToast({ message: msg, duration: 2400, color: 'warning' }),
+})
+
+// Task 7：把 i18n 解析后的 "上下文已自动压缩" 文本通过 computed
+// 注入到 renderTurnItems，renderTurnItems 把它塞进 RenderedItem
+// 供 ContextCompactionDivider 直接渲染。这里用 computed 而非
+// t('agent.contextCompaction') 直接调用——renderTurnItems 的
+// 第三个参数要 Ref/ComputedRef，让语言切换时自动重渲染。
+const compactionText = computed(() => t('agent.contextCompaction'))
+
+const renderedItems = useRenderTurnItems(messages, status, compactionText)
 
 const inputText = ref('')
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const mainRef = ref<HTMLDivElement | null>(null)
 const virtualListRef = ref<{ scrollToBottom: (behavior?: 'auto' | 'smooth') => void } | null>(null)
 const nearBottom = ref(true)
+const activeMessageIndex = ref(0)
 
 /** 触发虚拟滚动的阈值（renderedItems 数量 > 此值时切换） */
 const VIRTUAL_LIST_THRESHOLD = 120
@@ -306,79 +511,147 @@ const sparkleIcon = sparklesOutline
 const addIcon = addOutline
 const sendIcon = sendOutline
 const stopIcon = stopOutline
+const keyIcon = keyOutline
 const chatbubblesIcon = chatbubblesOutline
 const timeIcon = timeOutline
+const attachIcon = attachOutline
+const globeIcon = globeOutline
+const clipboardIcon = clipboardOutline
+const refreshCircleIcon = refreshCircleOutline
 const historyOpen = ref(false)
 
-const canSend = computed(() => status.value !== 'streaming' && inputText.value.trim().length > 0)
+// ── Task 26 (LAN Access) ───────────────────────────────────
+// 折叠面板状态：默认收起。数据由 useAgent.getLanAccess() 拉取。
+// 展开时才拉取（按需），关闭后保留缓存，避免反复网络请求。
+const lanAccessOpen = ref(false)
+const lanAccesses = ref<LanAddress[]>([])
+const lanAccessLoading = ref(false)
+const lanAccessLoaded = ref(false)
 
-// ─── "/" 工具选择命令面板 ────────────────────────────────
-interface ToolDef {
-  name: string
-  desc: string
-  icon: string
-  keyword: string // 触发关键词
-}
-
-const availableTools: ToolDef[] = [
-  { name: 'list_files',   desc: '列出目录中的文件',    icon: folderOpenOutline, keyword: 'list' },
-  { name: 'read_file',    desc: '读取文件内容',          icon: documentTextOutline, keyword: 'read' },
-  { name: 'delete_file',  desc: '删除文件',              icon: trashOutline, keyword: 'delete' },
-  { name: 'exec_command', desc: '执行 shell 命令',       icon: terminalOutline, keyword: 'exec' },
-  { name: 'web_search',   desc: '搜索网络信息',          icon: searchOutline, keyword: 'search' },
-]
-
-const showToolPalette = computed(() => {
-  const text = inputText.value.trim()
-  // 仅当输入以 "/" 开头且不超过 20 字符时显示（防止长文本误触发）
-  return text.startsWith('/') && text.length <= 20 && text.length > 0
-})
-
-const filteredTools = computed(() => {
-  const query = inputText.value.trim().slice(1).toLowerCase() // 去掉 "/"
-  if (!query) return availableTools
-  return availableTools.filter((t) =>
-    t.name.toLowerCase().includes(query) ||
-    t.keyword.toLowerCase().includes(query) ||
-    t.desc.toLowerCase().includes(query),
-  )
-})
-
-const activeToolIndex = ref(0)
-
-// 当过滤结果变化时重置选中索引
-watch(filteredTools, () => {
-  activeToolIndex.value = 0
-})
-
-function selectTool(tool: ToolDef) {
-  // 替换输入框中的 "/xxx" 为工具调用提示
-  inputText.value = `@${tool.name}() `
-  autoResize()
-  // 下一步：用户填写参数后发送，后端 AI 解析 @tool_name() 语法
-}
-
-function handleInputKeydown(e: KeyboardEvent) {
-  if (!showToolPalette.value) return
-
-  if (e.key === 'ArrowDown') {
-    e.preventDefault()
-    activeToolIndex.value = (activeToolIndex.value + 1) % filteredTools.value.length
-  } else if (e.key === 'ArrowUp') {
-    e.preventDefault()
-    activeToolIndex.value = (activeToolIndex.value - 1 + filteredTools.value.length) % filteredTools.value.length
-  } else if (e.key === 'Enter') {
-    e.preventDefault()
-    if (filteredTools.value[activeToolIndex.value]) {
-      selectTool(filteredTools.value[activeToolIndex.value])
-    }
-  } else if (e.key === 'Escape') {
-    e.preventDefault()
-    if (showToolPalette.value) {
-      // 工具面板打开时：仅关闭面板，不清空输入（保留用户已输入内容）
-      inputText.value = ''
-    }
+async function handleRefreshLanAccess(): Promise<void> {
+  lanAccessLoading.value = true
+  try {
+    lanAccesses.value = await getLanAccess(0)
+    lanAccessLoaded.value = true
+  } finally {
+    lanAccessLoading.value = false
   }
+}
+
+async function handleCopyLanAccess(url: string): Promise<void> {
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(url)
+      showToast({ message: t('agent.lanAccessCopied', { url }), duration: 1600, color: 'success' })
+    } else {
+      // Fallback：临时 textarea + execCommand（老 webview 兼容）
+      const ta = document.createElement('textarea')
+      ta.value = url
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      document.body.appendChild(ta)
+      ta.select()
+      const ok = document.execCommand('copy')
+      document.body.removeChild(ta)
+      if (ok) {
+        showToast({ message: t('agent.lanAccessCopied', { url }), duration: 1600, color: 'success' })
+      } else {
+        showToast({ message: t('agent.lanAccessCopyFailed'), duration: 1800, color: 'danger' })
+      }
+    }
+  } catch {
+    showToast({ message: t('agent.lanAccessCopyFailed'), duration: 1800, color: 'danger' })
+  }
+}
+
+// 监听展开事件：用户首次展开时拉取一次。后续点击「刷新」按钮
+// 可强制重拉。watch 比 onMounted 触发更精准——避免用户在折叠
+// 面板被滚动出视野前白白消耗一次网络请求。
+watch(lanAccessOpen, async (open) => {
+  if (open && !lanAccessLoaded.value && !lanAccessLoading.value) {
+    await handleRefreshLanAccess()
+  }
+})
+
+// Task 12：隐藏 file input 的引用
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
+function triggerAttach() {
+  // 复用同一个 input：每次点击重置 value，确保选同一文件也能触发 change
+  const el = fileInputRef.value
+  if (!el) return
+  el.value = ''
+  el.click()
+}
+
+async function handleAttachChange(e: Event) {
+  const target = e.target as HTMLInputElement
+  const files = target.files
+  if (!files || files.length === 0) return
+  const result = await addFiles(files)
+  if (result.rejected.length > 0) {
+    const names = result.rejected.map((r) => r.name).join(', ')
+    const sample = result.rejected[0]?.reason || '文件超限'
+    showToast({
+      message: `已跳过 ${result.rejected.length} 个文件（${names}）：${sample}`,
+      duration: 3000,
+      color: 'warning',
+    })
+  }
+  // 清空 input.value 允许重复选同一文件
+  target.value = ''
+}
+
+const canSend = computed(() => {
+  if (status.value === 'streaming') return false
+  // 文本非空 OR 至少一个附件都可以发送
+  return inputText.value.trim().length > 0 || attachments.value.length > 0
+})
+
+// ─── Task 10: "/" 命令面板（useSlashMenu） ─────────────────
+// 取代旧版内联 tool palette：现在支持功能 + 技能两类。
+// 静态功能项（attach / plan-mode / permission-mode）由 composable 内部定义。
+// 技能项从后端 /api/skills 拉取，mount 时拉一次缓存。
+// apply 回调在这里桥接："添加附件" → triggerAttach 打开 file picker；
+// "Plan 模式" / "权限模式" → 留作未来扩展，目前仅 toast 提示。
+// 技能选中 → 在输入框中插入 "@<skill-name> " 让用户继续编辑。
+const slashMenu = useSlashMenu({
+  onAttach: () => {
+    // 复用 Task 12 的 + 按钮逻辑
+    triggerAttach()
+  },
+  onTogglePlanMode: () => {
+    showToast({ message: 'Plan 模式：开发中', duration: 1600, color: 'medium' })
+  },
+  onTogglePermissionMode: () => {
+    showToast({ message: '权限模式：开发中', duration: 1600, color: 'medium' })
+  },
+  onSelectSkill: (id, label) => {
+    // 选中技能 → 在输入框中插入 "@<label> "，等用户继续编辑
+    void id // 技能 id 当前仅用于日志/未来埋点；label 用于填充输入
+    inputText.value = `@${label} `
+    autoResize()
+    nextTick(() => inputRef.value?.focus())
+  },
+})
+
+/**
+ * textarea @input 入口：先走原生 autoResize 维持高度，
+ * 再把当前文本传给 slashMenu.handleInput 决定开关。
+ */
+function onTextareaInput() {
+  autoResize()
+  slashMenu.handleInput(inputText.value)
+}
+
+/**
+ * textarea @keydown 入口：先让 slashMenu 拦截 ↑
+ * ↓ / Enter / Escape（菜单打开时）；未拦截时放行原生行为。
+ */
+function onTextareaKeydown(e: KeyboardEvent) {
+  // slashMenu.handleKeydown 内部决定是否拦截
+  if (slashMenu.handleKeydown(e)) return
+  // 菜单未打开时：菜单不处理，留给浏览器默认（如 Tab、Backspace 等）
 }
 
 // ─── 模型选择（动态从 API 获取） ────────────────────────────
@@ -395,9 +668,11 @@ const modelsError = ref('')
 async function fetchModels() {
   modelsLoading.value = true
   modelsError.value = ''
+  const did = getDeviceIdSync()
+  let url = `${AGENT_API_BASE}/api/models?deviceId=${encodeURIComponent(did)}`
   try {
-    const res = await fetch(`${AGENT_API_BASE}/api/models`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`)
     const data = await res.json()
     // 处理各种错误状态
     if (data.error === 'no_api_key') {
@@ -418,9 +693,14 @@ async function fetchModels() {
       selectedModel.value = data.defaultModel || availableModels.value[0].id
     }
   } catch (e: any) {
-    console.error('[AgentChat] fetchModels failed:', e)
+    const errInfo = (() => {
+      if (!e) return '(null)'
+      if (e instanceof Error) return `${e.name}: ${e.message}`
+      try { return JSON.stringify(e) } catch { return String(e) }
+    })()
+    console.error(`[AgentChat] fetchModels failed: url=${url} error=${errInfo}`)
     // 网络错误等：不阻断用户使用，显示提示但保留已存储的模型选择
-    modelsError.value = t('agent.modelsError')
+    modelsError.value = `${t('agent.modelsError')} (${errInfo})`
   } finally {
     modelsLoading.value = false
   }
@@ -486,9 +766,12 @@ function autoResize() {
 function handleSend() {
   if (!canSend.value) return
   const text = inputText.value.trim()
+  const atts = attachments.value.slice() // 拍快照：避免 send 异步期间被清空后引用空数组
   inputText.value = ''
   autoResize()
-  send(text)
+  send(text, { attachments: atts })
+  // 发送后清空 tray（避免下次发送重复附带）
+  clearAttachments()
   nextTick(() => scrollToBottom())
 }
 
@@ -507,7 +790,20 @@ function handleRetryError(item: { type: 'error'; messageIndex: number }) {
   const targetMsg = messages.value[idx]
   if (!targetMsg || targetMsg.role !== 'user') return
 
-  const text = targetMsg.content
+  // Task 12：content 可能是 multimodal 数组。从中抽出 text 元素作为
+  // 重发文本（附件不再重复附带——本地状态已丢失原 attachment 引用）。
+  let text = ''
+  if (typeof targetMsg.content === 'string') {
+    text = targetMsg.content
+  } else {
+    for (const part of targetMsg.content) {
+      if (part.type === 'text') {
+        text += part.text
+      }
+    }
+    text = text.trim()
+  }
+
   // 清除错误标记
   delete targetMsg.error
 
@@ -591,6 +887,59 @@ function onMainScroll() {
   nearBottom.value = distanceFromBottom < 80
 }
 
+/** IntersectionObserver：追踪当前视口中最接近中心的消息项 */
+let dotObserver: IntersectionObserver | null = null
+
+function setupDotObserver() {
+  cleanupDotObserver()
+  const el = mainRef.value
+  if (!el) return
+  dotObserver = new IntersectionObserver(
+    (entries) => {
+      // 找到相交比例最大的元素（最接近视口中心）
+      let maxRatio = 0
+      let targetIdx = activeMessageIndex.value
+      for (const entry of entries) {
+        if (entry.intersectionRatio > maxRatio) {
+          maxRatio = entry.intersectionRatio
+          const idx = Number((entry.target as HTMLElement).dataset.msgIdx ?? -1)
+          if (idx >= 0) targetIdx = idx
+        }
+      }
+      if (maxRatio > 0) activeMessageIndex.value = targetIdx
+    },
+    { root: el, threshold: [0, 0.25, 0.5, 0.75, 1] },
+  )
+  // 观察所有消息项
+  nextTick(() => {
+    el.querySelectorAll('.renderedItemWrap').forEach((wrap) => {
+      dotObserver?.observe(wrap)
+    })
+  })
+}
+
+function cleanupDotObserver() {
+  dotObserver?.disconnect()
+  dotObserver = null
+}
+
+// 消息列表变化时重建 Observer
+watch(renderedItems, () => nextTick(setupDotObserver), { flush: 'post' })
+onMounted(() => nextTick(setupDotObserver))
+onUnmounted(cleanupDotObserver)
+
+/**
+ * 点导航：跳转到指定索引的消息项
+ */
+function scrollToMessage(idx: number) {
+  const el = mainRef.value
+  if (!el) return
+  const itemWraps = el.querySelectorAll('.renderedItemWrap')
+  if (idx < 0 || idx >= itemWraps.length) return
+  const target = itemWraps[idx] as HTMLElement
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 // 监听 status 变化 → streaming 开始时滚动到底部
 watch(
   () => status.value,
@@ -632,7 +981,9 @@ defineExpose({})
 .agentChat {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 100vh;
+  max-height: 100vh;
+  width: 100vw;
   background: var(--ion-background-color);
   color: var(--ion-text-color);
 }
@@ -689,11 +1040,12 @@ defineExpose({})
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px 12px 12px;
+  padding: 8px 12px 12px 36px; /* 左侧留出圆点导航空间 (4px gap + ~24px nav + 8px margin) */
   display: flex;
   flex-direction: column;
   gap: 6px;
   -webkit-overflow-scrolling: touch;
+  position: relative;
 }
 
 .agentChatEmpty {
@@ -767,6 +1119,34 @@ defineExpose({})
   color: #fff;
 }
 
+/* Task 12：附件 `+` 按钮（与发送按钮同尺寸，无背景色） */
+.footerAttachBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ion-color-primary);
+  cursor: pointer;
+  font-size: 18px;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background 0.12s;
+}
+
+.footerAttachBtn:hover,
+.footerAttachBtn:active {
+  background: rgba(var(--ion-color-primary-rgb), 0.12);
+}
+
+/* 隐藏原生 file input —— 用按钮触发 */
+.footerAttachInput {
+  display: none;
+}
+
 .footerSendBtn {
   background: var(--ion-color-primary);
 }
@@ -780,6 +1160,77 @@ defineExpose({})
   background: var(--ion-color-danger);
 }
 
+/* ── no_api_key 自愈 banner ─────────────────────────────
+   触发条件：chat 发送返回 503 {error: "no_api_key"}（设备解密不开存的密文）。
+   设计要点：
+   - 高对比红色（与 chat 顶部 toolbar 区分，避免被误以为是普通状态条）
+   - icon + 文案 + 主操作按钮 + 关闭按钮四件套，缺一不可
+   - 文案给两个句号：短句放强解释，长句放行动指引
+*/
+.noApiKeyBanner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: linear-gradient(
+    90deg,
+    rgba(var(--ion-color-danger-rgb), 0.16),
+    rgba(var(--ion-color-danger-rgb), 0.08)
+  );
+  border-bottom: 1px solid rgba(var(--ion-color-danger-rgb), 0.4);
+  color: var(--ion-color-danger-shade);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.noApiKeyBannerIcon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.noApiKeyBannerText {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+}
+.noApiKeyBannerText strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.noApiKeyBannerText span {
+  font-size: 12px;
+  opacity: 0.85;
+}
+.noApiKeyBannerBtn {
+  background: var(--ion-color-danger);
+  color: var(--ion-color-danger-contrast, #fff);
+  border: none;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.noApiKeyBannerBtn:hover {
+  opacity: 0.9;
+}
+.noApiKeyBannerClose {
+  background: transparent;
+  border: none;
+  color: var(--ion-color-danger-shade);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.noApiKeyBannerClose ion-icon {
+  font-size: 18px;
+}
+
 /* ── Toolbar (model / temperature) ─────────────────── */
 .agentChatToolbar {
   display: flex;
@@ -789,6 +1240,173 @@ defineExpose({})
   background: rgba(var(--ion-color-medium-rgb), 0.06);
   border-bottom: 1px solid rgba(var(--ion-color-medium-rgb), 0.12);
   flex-shrink: 0;
+}
+
+/* ── LAN Access 折叠面板（Task 26） ─────────────────── */
+.lanAccessPanel {
+  background: var(--ion-toolbar-background, var(--ion-background-color));
+  border-bottom: 1px solid rgba(var(--ion-color-medium-rgb), 0.12);
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.lanAccessPanel[open] {
+  padding-bottom: 8px;
+}
+
+.lanAccessSummary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  outline: none;
+}
+
+.lanAccessSummary::-webkit-details-marker {
+  display: none;
+}
+
+.lanAccessSummary::marker {
+  content: '';
+}
+
+.lanAccessSummaryIcon {
+  font-size: 16px;
+  color: var(--ion-color-primary);
+  flex-shrink: 0;
+}
+
+.lanAccessSummaryText {
+  flex: 1;
+  font-weight: 500;
+  color: var(--ion-text-color);
+}
+
+.lanAccessSummaryCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: rgba(var(--ion-color-primary-rgb), 0.18);
+  color: var(--ion-color-primary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.lanAccessBody {
+  padding: 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lanAccessHelp {
+  margin: 0 0 2px;
+  font-size: 11px;
+  color: var(--ion-text-color-step-400, #888);
+}
+
+.lanAccessEmpty,
+.lanAccessLoading {
+  font-size: 12px;
+  color: var(--ion-text-color-step-400, #888);
+  padding: 4px 0;
+}
+
+.lanAccessList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lanAccessItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(var(--ion-color-medium-rgb), 0.06);
+  border-radius: 8px;
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.12);
+}
+
+.lanAccessItemMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.lanAccessUrl {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 12px;
+  color: var(--ion-color-primary);
+  word-break: break-all;
+  line-height: 1.35;
+}
+
+.lanAccessInterface {
+  font-size: 10px;
+  color: var(--ion-text-color-step-400, #888);
+}
+
+.lanAccessCopyBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ion-color-primary);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.12s;
+}
+
+.lanAccessCopyBtn:hover,
+.lanAccessCopyBtn:active {
+  background: rgba(var(--ion-color-primary-rgb), 0.14);
+}
+
+.lanAccessRefresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--ion-text-color-step-400, #888);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.lanAccessRefresh:hover:not(:disabled),
+.lanAccessRefresh:active:not(:disabled) {
+  background: rgba(var(--ion-color-medium-rgb), 0.1);
+  color: var(--ion-text-color);
+}
+
+.lanAccessRefresh:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .toolbarField {
@@ -1044,5 +1662,59 @@ defineExpose({})
   padding: 32px 16px;
   color: var(--ion-text-color-step-350);
   font-size: 13px;
+}
+
+/* ── Dot Navigation（左侧圆点导航） ──────────────────────── */
+/* 位于 .agentChatBody(flex row) 内，是 main(scroll) 的兄弟元素 */
+.agentChatBody {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  position: relative; /* 为绝对定位的圆点导航提供定位上下文 */
+}
+
+/* 圆点导航：absolute 定位在 body 左侧，不受滚动影响 */
+.dotNavigation {
+  position: absolute;
+  left: 2px;
+  top: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  z-index: 20;
+  padding: 8px 5px;
+  background: rgba(var(--ion-background-color-rgb, 255, 255, 255), 0.9);
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.18);
+  border-radius: 10px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
+  overflow-y: auto;
+  align-self: flex-start;
+}
+
+.dotNavDot {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(var(--ion-color-medium-rgb), 0.45);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.18s ease;
+  outline: none;
+}
+
+.dotNavDot:hover {
+  background: rgba(var(--ion-color-primary-rgb), 0.55);
+  transform: scale(1.25);
+}
+
+.dotNavDot_active {
+  background: var(--ion-color-primary);
+  box-shadow: 0 0 0 2px rgba(var(--ion-color-primary-rgb), 0.28);
+  transform: scale(1.35);
 }
 </style>

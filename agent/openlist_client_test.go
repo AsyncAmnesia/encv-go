@@ -210,7 +210,6 @@ func TestOpenListClient_GetStorageInfo(t *testing.T) {
 func TestOpenListClient_SearchFiles(t *testing.T) {
 	srv := newFakeOpenListServer()
 	srv.set("POST", "/api/admin/fs/search", 200, `{
-		"code": 200,
 		"message": "ok",
 		"data": {
 			"content": [

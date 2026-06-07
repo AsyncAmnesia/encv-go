@@ -2,15 +2,17 @@
   StatusBadge - 三色调状态徽章
   参照 codex_web StatusBadge{label, tone}
   tone: ready=绿 (success), warn=橙 (warning), idle=灰 (medium)
+  pulse: 是否显示脉冲（流式 / 进行中状态）
 -->
 <template>
-  <span class="statusBadge" :class="`statusBadge_${tone}`">{{ label }}</span>
+  <span class="statusBadge" :class="[`statusBadge_${tone}`, { statusBadge_pulse: pulse }]">{{ label }}</span>
 </template>
 
 <script setup lang="ts">
 defineProps<{
   label: string
   tone: 'ready' | 'warn' | 'idle'
+  pulse?: boolean
 }>()
 </script>
 
@@ -41,6 +43,15 @@ defineProps<{
 .statusBadge_idle {
   background: rgba(146, 148, 156, 0.16);
   color: var(--ion-color-medium-shade, #808289);
+}
+
+.statusBadge_pulse {
+  animation: statusBadgePulse 1.4s ease-in-out infinite;
+}
+
+@keyframes statusBadgePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 body.dark .statusBadge_ready {

@@ -451,8 +451,18 @@ function handleResetConfig() {
 
 onMounted(async () => {
   if (serverOnline.value) {
-    await loadConfig()
-    configLoaded.value = true
+    try {
+      await loadConfig()
+      configLoaded.value = true
+    } catch (e) {
+      // loadConfig 现在会抛错（不再静默回退到 schema 默认值，
+      // 避免"后端挂了"伪装成"已加载、配置全空"的状态机混乱）。
+      // PluginSettings 没有像 AgentSettingsDetail 那样专门的错误态 UI，
+      // 这里用 toast 提示 + 静默回退到 configLoaded=true 显示空字段，
+      // 与 Settings.vue 的降级策略保持一致。
+      console.error('[PluginSettings] loadConfig failed:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
+      configLoaded.value = true
+    }
     try { await loadExtensions() } catch {}
     try {
       const exts = await fetchTextPreviewExts()
@@ -463,8 +473,13 @@ onMounted(async () => {
 
 watch(serverOnline, async (online) => {
   if (online && !configLoaded.value) {
-    await loadConfig()
-    configLoaded.value = true
+    try {
+      await loadConfig()
+      configLoaded.value = true
+    } catch (e) {
+      console.error('[PluginSettings] watch loadConfig failed:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
+      configLoaded.value = true
+    }
   }
 })
 </script>

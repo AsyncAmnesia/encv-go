@@ -1142,7 +1142,7 @@ async function handleFileSelected(event: Event) {
       await uploadFile(currentPath.value, file)
       successCount++
     } catch (e) {
-      console.error('[Files] upload failed:', file.name, e)
+      console.error('[Files] upload failed:', file.name, e instanceof Error ? `${e.name}: ${e.message}` : String(e))
       failCount++
     }
   }

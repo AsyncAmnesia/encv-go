@@ -166,7 +166,10 @@ func startSessionGC() {
 // 返回：
 //   - tool_result（已执行）
 //   - 新的 messages（已追加 tool_result）
-func executeAndRecurse(ctx context.Context, sess *agentSession, agentCfg agentConfig, tool toolCallAccumulator) (chatMsg, error) {
+//
+// s 用于路由到正确的工具实现（fs / plugin）。fs 工具是 read-only 不需要 confirm，
+// 但为了统一流程也走这里。
+func executeAndRecurse(ctx context.Context, s *Server, sess *agentSession, agentCfg agentConfig, tool toolCallAccumulator) (chatMsg, error) {
 	var argsObj map[string]interface{}
 	_ = json.Unmarshal([]byte(tool.Function.Arguments), &argsObj)
 
@@ -175,7 +178,7 @@ func executeAndRecurse(ctx context.Context, sess *agentSession, agentCfg agentCo
 	)
 
 	start := time.Now()
-	raw, execErr := executePluginTool(ctx, tool.Function.Name, tool.Function.Arguments)
+	raw, execErr := s.executeAgentTool(ctx, tool.Function.Name, tool.Function.Arguments)
 	_ = time.Since(start).Milliseconds() // 预留 durationMs 字段供后续 metrics
 	if execErr != nil {
 		resultStr = fmt.Sprintf(`{"error":"internal","message":%q}`, execErr.Error())
@@ -218,12 +221,21 @@ type openaiChatResponse struct {
 }
 
 // callOpenAIChatOnce 同步调一次 OpenAI（非流式）。返回 LLM 响应。
-func callOpenAIChatOnce(ctx context.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg) (*openaiChatResponse, error) {
+//
+// 关键：把 agent 工具列表塞到 reqBody["tools"] 里——之前没有这个字段，
+// LLM 永远只能聊天不能调工具，这是 agent "perceive file system" 的前提。
+func callOpenAIChatOnce(ctx context.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg, openAITools []map[string]interface{}) (*openaiChatResponse, error) {
 	reqBody := map[string]interface{}{
 		"model":       model,
 		"messages":    messages,
 		"temperature": temperature,
 		"stream":      false,
+	}
+	if len(openAITools) > 0 {
+		reqBody["tools"] = openAITools
+		reqBody["tool_choice"] = "auto"
+		slog.Info("callOpenAIChatOnce: sending request with tools",
+			"model", model, "tool_count", len(openAITools))
 	}
 	reqJSON, _ := json.Marshal(reqBody)
 
@@ -255,17 +267,37 @@ func callOpenAIChatOnce(ctx context.Context, cfg agentConfig, model string, temp
 	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, fmt.Errorf("decode openai response: %w", err)
 	}
+
+	slog.Info("callOpenAIChatOnce: response received",
+		"status", resp.StatusCode,
+		"has_tool_calls", len(out.Choices) > 0 && len(out.Choices[0].Message.ToolCalls) > 0,
+		"finish_reason", func() string {
+			if len(out.Choices) > 0 { return out.Choices[0].FinishReason }
+			return "(no choices)"
+		}(),
+	)
+
 	return &out, nil
 }
 
 // callOpenAIStream 调一次 OpenAI 流式，返回事件 channel。
 // 用于在 confirm 后递归流式输出 LLM 继续生成的回复。
-func callOpenAIStream(ctx context.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg) (<-chan openaiStreamEvent, error) {
+//
+// 与 callOpenAIChatOnce 一样，把 agent 工具列表塞到 reqBody["tools"]。
+func callOpenAIStream(ctx context.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg, openAITools []map[string]interface{}) (<-chan openaiStreamEvent, error) {
 	reqBody := map[string]interface{}{
 		"model":       model,
 		"messages":    messages,
 		"temperature": temperature,
 		"stream":      true,
+	}
+	if len(openAITools) > 0 {
+		reqBody["tools"] = openAITools
+		reqBody["tool_choice"] = "auto"
+		slog.Info("callOpenAIStream: sending request with tools",
+			"model", model, "tool_count", len(openAITools))
+	} else {
+		slog.Info("callOpenAIStream: WARNING no tools provided")
 	}
 	reqJSON, _ := json.Marshal(reqBody)
 
@@ -347,14 +379,18 @@ type openaiStreamEvent struct {
 }
 
 // streamChat 写 SSE 事件到 client —— 用于 /api/confirm 递归时
-func (s *Server) streamChat(ctx context.Context, c *gin.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg, sess *agentSession) {
+//
+// openAITools 已经被 caller 包装成 OpenAI 协议格式（带 type:"function"），直接传即可。
+// toolMeta 保留为 agent 内部格式（name → {needConfirm, kind, ...}），
+// 用于在 SSE 推 tool_call 事件时给前端正确的 needsConfirm / kind。
+func (s *Server) streamChat(ctx context.Context, c *gin.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg, sess *agentSession, openAITools []map[string]interface{}, toolMeta map[string]map[string]interface{}) {
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		return
 	}
 	s.setSSEHeaders(c.Writer)
 
-	ch, err := callOpenAIStream(ctx, cfg, model, temperature, messages)
+	ch, err := callOpenAIStream(ctx, cfg, model, temperature, messages, openAITools)
 	if err != nil {
 		slog.Warn("agent: stream error", "error", err)
 		s.sendSSEEventSafe(c.Writer, flusher, "stream_error", err.Error())
@@ -397,15 +433,36 @@ func (s *Server) streamChat(ctx context.Context, c *gin.Context, cfg agentConfig
 				pendingTools = append(pendingTools, *tc)
 			}
 			if len(pendingTools) > 0 {
-				// 推 tool_call 事件
+				// 推 tool_call 事件（按 tool 名查 meta 决定 needsConfirm / kind）
 				for _, tc := range pendingTools {
+					needConfirm := true
+					kind := "fileChange"
+					if meta, ok := toolMeta[tc.Function.Name]; ok {
+						if v, ok := meta["needConfirm"].(bool); ok {
+							needConfirm = v
+						}
+						if v, ok := meta["kind"].(string); ok {
+							kind = v
+						}
+					}
+					// F 阶段：检查 session 授权表 → 已授权工具自动放行
+					autoRun := false
+					if !needConfirm && sess != nil {
+						// fs 工具永远不需 confirm，理论上不会进 PendingTools；
+						// 但 plugin 工具在 accept_for_session 之后会回写
+						sess.mu.Lock()
+						if sess.GrantedTools[tc.Function.Name] {
+							autoRun = true
+						}
+						sess.mu.Unlock()
+					}
 					payload := map[string]interface{}{
 						"id":           tc.ID,
 						"name":         tc.Function.Name,
 						"args":         tc.Function.Arguments,
-						"auto_run":     false,
-						"needsConfirm": true,
-						"kind":         "fileChange",
+						"auto_run":     autoRun,
+						"needsConfirm": needConfirm,
+						"kind":         kind,
 					}
 					s.sendSSEEventSafe(c.Writer, flusher, "tool_call", payload)
 				}
@@ -418,4 +475,308 @@ func (s *Server) streamChat(ctx context.Context, c *gin.Context, cfg agentConfig
 			s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
 		}
 	}
+}
+
+// ════════════════════════════════════════════════════════════
+// 平台级 Tool Use：文本解析器
+// ════════════════════════════════════════════════════════════
+//
+// 当 API 代理（如 gptgod）静默丢弃 OpenAI tools 参数导致
+// API 级 Function Calling 不生效时，用此解析器从 LLM 文本回复中
+// 提取工具调用 JSON。
+//
+// System prompt 指示 LLM 在需要调用工具时输出：
+//   [{"name":"tool_name","arguments":{...}}]
+//
+// 解析策略（按优先级）：
+//   1. 整个文本是 JSON 数组 → 直接解析
+//   2. 文本以 [ 开头 → 提取第一个完整的 [...]
+//   3. ```json 代码块 → 提取代码块内容
+//   4. ``` (无语言标记) 代码块 → 尝试解析为工具调用
+//   5. 整个文本是单个 JSON object → 包装为单元素数组
+//   6. 文本中间嵌入 [ 或 { → 提取并尝试解析
+//
+// 额外处理：
+//   - 字段名归一化：tool→name, params/input→arguments
+//   - 单对象自动包装为数组
+
+// parsedToolCall 是从 LLM 文本中解析出的工具调用
+type parsedToolCall struct {
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"`
+}
+
+// extractToolCallsFromText 从 LLM 文本回复中提取工具调用。
+// 返回 (toolCalls, remainingText)：
+//   - toolCalls: 解析到的工具调用列表（可能为空）
+//   - remainingText: 剥离工具调用 JSON 后的剩余文本（LLM 的自然语言部分）
+func extractToolCallsFromText(text string) ([]parsedToolCall, string) {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return nil, ""
+	}
+
+	// DEBUG: 记录 LLM 原始输出（截断到 300 字符，避免日志爆炸）
+	debugPreview := trimmed
+	if len(debugPreview) > 300 {
+		debugPreview = debugPreview[:300] + "..."
+	}
+	slog.Debug("extractToolCallsFromText: input", "len", len(trimmed), "preview", debugPreview)
+
+	// 策略 1: 整个文本就是 JSON 数组
+	if strings.HasPrefix(trimmed, "[") {
+		if calls, ok := tryParseArray(trimmed, ""); ok && len(calls) > 0 {
+			slog.Info("extractToolCalls: strategy-1 (full JSON array)", "count", len(calls))
+			return calls, ""
+		}
+	}
+
+	// 策略 2: 文本以 [ 开头，提取第一个完整的 [...]
+	if strings.HasPrefix(trimmed, "[") {
+		if endIdx := findJSONArrayEnd(trimmed); endIdx > 0 {
+			jsonStr := trimmed[:endIdx]
+			remaining := strings.TrimSpace(trimmed[endIdx:])
+			if calls, ok := tryParseArray(jsonStr, remaining); ok && len(calls) > 0 {
+				slog.Info("extractToolCalls: strategy-2 (prefix array)", "count", len(calls))
+				return calls, remaining
+			}
+		}
+	}
+
+	// 策略 3: ```json 代码块
+	if start := strings.Index(trimmed, "```json"); start >= 0 {
+		if calls, rem := tryExtractCodeBlock(trimmed, start, "json"); len(calls) > 0 {
+			slog.Info("extractToolCalls: strategy-3 (```json block)", "count", len(calls))
+			return calls, rem
+		}
+	}
+
+	// 策略 4: ``` (无语言标记) 代码块 — 有些 LLM 直接用 ``` 包裹 JSON
+	if start := strings.Index(trimmed, "```"); start >= 0 {
+		// 跳过已处理的 ```json
+		nextLine := strings.Index(trimmed[start:], "\n")
+		if nextLine > 0 {
+			afterMarker := trimmed[start : start+nextLine]
+			if !strings.Contains(afterMarker, "json") {
+				if calls, rem := tryExtractCodeBlock(trimmed, start, ""); len(calls) > 0 {
+					slog.Info("extractToolCalls: strategy-4 (``` block no lang)", "count", len(calls))
+					return calls, rem
+				}
+			}
+		}
+	}
+
+	// 策略 5: 整个文本是单个 JSON object → 包装为单元素数组
+	if strings.HasPrefix(trimmed, "{") {
+		var single parsedToolCall
+		if err := json.Unmarshal([]byte(trimmed), &single); err == nil && single.Name != "" {
+			calls := []parsedToolCall{normalizeFields(single)}
+			slog.Info("extractToolCalls: strategy-5 (single object wrapped)", "name", single.Name)
+			return calls, ""
+		}
+	}
+
+	// 策略 6: 文本中间嵌入 JSON 数组 [...]
+	if bracketStart := strings.Index(trimmed, "["); bracketStart >= 0 {
+		if endIdx := findJSONArrayEnd(trimmed[bracketStart:]); endIdx > 0 {
+			candidate := trimmed[bracketStart : bracketStart+endIdx]
+			before := strings.TrimSpace(trimmed[:bracketStart])
+			after := strings.TrimSpace(trimmed[bracketStart+endIdx:])
+			remaining := joinNonEmpty(before, after)
+			if calls, ok := tryParseArray(candidate, remaining); ok && len(calls) > 0 {
+				slog.Info("extractToolCalls: strategy-6 (embedded array)", "count", len(calls))
+				return calls, remaining
+			}
+		}
+	}
+
+	// 策略 7: 文件中间嵌入单个 JSON object {...}（LLM 有时输出单个对象而非数组）
+	if braceStart := strings.Index(trimmed, "{"); braceStart >= 0 {
+		if endIdx := findJSONObjectEnd(trimmed[braceStart:]); endIdx > 0 {
+			candidate := trimmed[braceStart : braceStart+endIdx]
+			before := strings.TrimSpace(trimmed[:braceStart])
+			after := strings.TrimSpace(trimmed[braceStart+endIdx:])
+			remaining := joinNonEmpty(before, after)
+			var single parsedToolCall
+			if err := json.Unmarshal([]byte(candidate), &single); err == nil && single.Name != "" {
+				calls := []parsedToolCall{normalizeFields(single)}
+				slog.Info("extractToolCalls: strategy-7 (embedded single object)",
+					"name", single.Name, "has_remaining", remaining != "")
+				return calls, remaining
+			}
+		}
+	}
+
+	slog.Debug("extractToolCallsFromText: no tool calls found in text")
+	return nil, trimmed
+}
+
+// tryParseArray 尝试将字符串解析为 parsedToolCall 数组，验证每个元素有 name 字段
+func tryParseArray(jsonStr, remaining string) ([]parsedToolCall, bool) {
+	var calls []parsedToolCall
+	if err := json.Unmarshal([]byte(jsonStr), &calls); err != nil {
+		return nil, false
+	}
+	valid := make([]parsedToolCall, 0, len(calls))
+	for _, c := range calls {
+		if c.Name == "" {
+			return nil, false
+		}
+		valid = append(valid, normalizeFields(c))
+	}
+	return valid, true
+}
+
+// tryExtractCodeBlock 从 ```xxx 标记处提取代码块内容并尝试解析为工具调用
+func tryExtractCodeBlock(fullText string, codeBlockStart int, lang string) ([]parsedToolCall, string) {
+	if lang != "" {
+		// 跳过 ```json 后的换行或空格
+		contentStart := codeBlockStart + 7 // len("```json") = 7
+		for contentStart < len(fullText) && (fullText[contentStart] == ' ' || fullText[contentStart] == '\n' || fullText[contentStart] == '\r') {
+			contentStart++
+		}
+		endIdx := strings.Index(fullText[contentStart:], "```")
+		if endIdx <= 0 {
+			return nil, ""
+		}
+		codeBlock := strings.TrimSpace(fullText[contentStart : contentStart+endIdx])
+		before := strings.TrimSpace(fullText[:codeBlockStart])
+		after := strings.TrimSpace(fullText[contentStart+endIdx+3:])
+		remaining := joinNonEmpty(before, after)
+
+		if calls, ok := tryParseArray(codeBlock, remaining); ok {
+			return calls, remaining
+		}
+		// 也尝试单对象
+		var single parsedToolCall
+		if err := json.Unmarshal([]byte(codeBlock), &single); err == nil && single.Name != "" {
+			return []parsedToolCall{normalizeFields(single)}, remaining
+		}
+	}
+	return nil, ""
+}
+
+// normalizeFields 归一化字段名：有些 LLM 输出 tool/params/input 而非标准 name/arguments
+func normalizeFields(c parsedToolCall) parsedToolCall {
+	// 归一化 name 字段
+	if c.Name == "" {
+		// 尝试从可能的别名获取（如果未来需要扩展）
+	}
+
+	// 确保 arguments 不为 nil
+	if len(c.Arguments) == 0 {
+		c.Arguments = json.RawMessage(`{}`)
+	}
+	return c
+}
+
+// findJSONObjectEnd 找到 JSON 对象的结束位置（匹配嵌套 {} 和 []）。
+// 输入必须以 { 开头。返回 } 之后的位置（不含 }），找不到返回 -1。
+func findJSONObjectEnd(s string) int {
+	if len(s) == 0 || s[0] != '{' {
+		return -1
+	}
+	depth := 0
+	inString := false
+	escape := false
+	for i, ch := range s {
+		if escape {
+			escape = false
+			continue
+		}
+		if ch == '\\' && inString {
+			escape = true
+			continue
+		}
+		if ch == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		switch ch {
+		case '{', '[':
+			depth++
+		case '}', ']':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return -1
+}
+
+// joinNonEmpty 拼接两个非空字符串，用换行分隔
+func joinNonEmpty(a, b string) string {
+	if a == "" {
+		return b
+	}
+	if b == "" {
+		return a
+	}
+	return a + "\n" + b
+}
+
+// findJSONArrayEnd 找到 JSON 数组的结束位置（匹配嵌套 [] 和 {}）。
+// 输入必须以 [ 开头。返回 ] 之后的位置（不含 ]），找不到返回 -1。
+func findJSONArrayEnd(s string) int {
+	if len(s) == 0 || s[0] != '[' {
+		return -1
+	}
+	depth := 0
+	inString := false
+	escape := false
+	for i, ch := range s {
+		if escape {
+			escape = false
+			continue
+		}
+		if ch == '\\' && inString {
+			escape = true
+			continue
+		}
+		if ch == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		switch ch {
+		case '[':
+			depth++
+		case ']':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return -1
+}
+
+// parsedToolCallsToAccumulator 把 parsedToolCall 转换为 toolCallAccumulator（OpenAI 协议格式）
+// 用于和已有的 Agent Loop 分支 A（API 级 tool_calls）统一处理。
+func parsedToolCallsToAccumulator(calls []parsedToolCall) []toolCallAccumulator {
+	result := make([]toolCallAccumulator, 0, len(calls))
+	for i, c := range calls {
+		argsStr := "{}"
+		if len(c.Arguments) > 0 {
+			argsStr = string(c.Arguments)
+		}
+		result = append(result, toolCallAccumulator{
+			ID:   fmt.Sprintf("ptc_%d_%d", time.Now().UnixMilli(), i),
+			Type: "function",
+			Function: struct {
+				Name      string `json:"name"`
+				Arguments string `json:"arguments"`
+			}{
+				Name:      c.Name,
+				Arguments: argsStr,
+			},
+		})
+	}
+	return result
 }

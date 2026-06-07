@@ -1,7 +1,7 @@
 <!--
   UserMessageBubble - 用户消息气泡
-  参照 codex_web UserPlainText
-  - 右对齐 + 蓝色背景 + 圆角
+  参照 codex_web .userMessage / .userMessageEditor：
+  - 右对齐 + 浅灰背景（#f0f1f3）+ 圆角 18px
   - 长消息自动折叠（>560 字符 或 >9 行）
   - 纯文本渲染（不解析 Markdown）
 -->
@@ -42,6 +42,7 @@ const shouldCollapse = computed(() => charCount.value > CHAR_LIMIT || lineCount.
 </script>
 
 <style scoped>
+/* ── 参照 codex_web .userMessage（右对齐）──────────────────── */
 .userBubble {
   display: flex;
   flex-direction: column;
@@ -50,16 +51,26 @@ const shouldCollapse = computed(() => charCount.value > CHAR_LIMIT || lineCount.
   max-width: 100%;
 }
 
+/* 参照 codex_web .userMessageEditor: 浅灰底 + 大圆角 */
 .userBubbleText {
-  max-width: 88%;
-  padding: 8px 14px;
-  background: var(--ion-color-primary);
-  color: var(--ion-color-primary-contrast, #fff);
-  border-radius: 16px 16px 4px 16px;
+  max-width: min(72%, 620px);
+  min-width: min(100%, 280px);
+  padding: 10px 14px 8px;
+  background: #f0f1f3;
+  color: #111827;
+  border-radius: 18px;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.48;
   word-break: break-word;
   overflow-wrap: anywhere;
+}
+
+/* 暗黑模式适配 */
+@media (prefers-color-scheme: dark) {
+  .userBubbleText {
+    background: rgba(var(--ion-color-medium-rgb), 0.15);
+    color: var(--ion-text-color);
+  }
 }
 
 .userBubbleText_collapsed {

@@ -247,11 +247,27 @@ export function getExternalStreamUrl(path: string): string {
 
 export async function checkServerStatus(): Promise<{ online: boolean; error?: string }> {
   try {
+    // 关键：使用与 Agent API 端点完全相同的 base URL。
+    // 在 dev模式下 getApiBaseUrl() 返回空字符串（相对路径），
+    // 但 preview-gateway 只代理 /api 和 /agent-api 前缀——
+    // 如果用 /api/service-guard 而 preview-gateway 的 /api 规则因某种原因
+    // 未覆盖该子路径（或 Trae 外层 proxy 干扰），探测会静默失败。
+    //
+    // 改用 /api/config 作为健康检查端点（content-type 校验防 vite SPA fallback），
+    // 因为：
+    //   1. 用户日志证实 /api/* 路径可达（decrypt-key status=200）
+    //   2. /api/config 是 encv-go 核心端点，一定存在
+    //   3. 即使返回空 JSON {} 也证明后端在线（vs vite 返回 HTML）
     const baseUrl = getApiBaseUrl()
-    const response = await fetch(`${baseUrl}/health`)
+    const response = await fetch(`${baseUrl}/api/config`)
     if (response.ok) {
-      console.info('[API] server online')
-      return { online: true }
+      const contentType = response.headers.get('content-type') || ''
+      if (contentType.includes('application/json')) {
+        console.info('[API] server online (config JSON)')
+        return { online: true }
+      }
+      console.warn('[API] server probe returned non-JSON, treating as offline')
+      return { online: false, error: `config probe returned ${contentType || 'unknown'} (likely vite SPA fallback)` }
     }
     return { online: false, error: `HTTP ${response.status}` }
   } catch (e) {
@@ -678,9 +694,23 @@ export async function fetchConfig(): Promise<Record<string, unknown>> {
     let detail = `HTTP ${response.status}`
     try {
       const body = await response.text()
-      if (body) detail += `: ${body}`
+      if (body) detail += `: ${body.slice(0, 200)}`
     } catch {}
     throw new Error(detail)
+  }
+  // 关键健壮性：vite dev SPA fallback 对未匹配的路径返回 index.html
+  // （即 <!DOCTYPE html>...），如果响应是 HTML 而不是 JSON，
+  // 说明 baseUrl 配错或请求被错误地路由到了 vite dev server。
+  // 抛出明确错误，避免上游 JSON.parse 报 "Unexpected token '<'"。
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    const snippet = (await response.text()).slice(0, 200)
+    throw new Error(
+      `fetchConfig: response is not JSON (content-type: "${contentType}"). ` +
+      `This usually means /api is being routed to vite dev SPA fallback instead of the Go backend. ` +
+      `Use the preview-gateway :16666 entry, not vite :8100 directly. ` +
+      `Body: ${snippet}`,
+    )
   }
   return await response.json()
 }

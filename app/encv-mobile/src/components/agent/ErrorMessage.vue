@@ -70,7 +70,7 @@ const label = '出错'
   color: var(--ion-color-danger, #ef4444);
   font-size: 11.5px;
   cursor: pointer;
-  width: fit-content;
+  font-family: inherit;
 }
 .errorRetryBtn:hover {
   background: var(--error-bg, rgba(239, 68, 68, 0.08));

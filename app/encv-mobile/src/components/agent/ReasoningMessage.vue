@@ -1,13 +1,30 @@
 <!--
   ReasoningMessage - 推理过程（折叠展示）
-  头部：MessageAuthor(bulbOutline, "推理", meta)
+  头部：MessageAuthor(bulbOutline, "推理", meta) + 状态徽章
   折叠态：只显示 "推理" 文字
   展开态：显示完整 reasoning 文本（Markdown 渲染）
+  codex_web 风格：左侧 icon 圆头像 + label + meta + 状态徽章 + chevron
 -->
 <template>
-  <div class="reasoningMessage">
+  <div class="reasoningMessage" :class="{ reasoningMessage_streaming: streaming }">
     <div class="reasoningHeader" @click="expanded = !expanded">
-      <MessageAuthor :icon="icon" :label="label" :meta="metaText" :variant="streaming ? 'streaming' : 'default'" />
+      <MessageAuthor
+        :icon="icon"
+        :label="label"
+        :meta="metaText"
+        :variant="streaming ? 'streaming' : 'default'"
+      />
+      <StatusBadge
+        v-if="streaming"
+        :label="t('agent.thinking')"
+        tone="idle"
+        pulse
+      />
+      <StatusBadge
+        v-else
+        :label="t('agent.thought')"
+        tone="ready"
+      />
       <ion-icon :icon="expanded ? chevronUp : chevronDown" class="reasoningChevron" />
     </div>
     <div v-if="expanded" class="reasoningBody">
@@ -21,6 +38,7 @@ import { ref, computed } from 'vue'
 import { bulbOutline, chevronUpOutline, chevronDownOutline } from 'ionicons/icons'
 import MessageAuthor from './MessageAuthor.vue'
 import MarkdownStream from './MarkdownStream.vue'
+import StatusBadge from './StatusBadge.vue'
 import { useI18n } from '@/composables/useI18n'
 
 const props = defineProps<{
@@ -34,8 +52,8 @@ const icon = bulbOutline
 const chevronUp = chevronUpOutline
 const chevronDown = chevronDownOutline
 
-const label = computed(() => '推理')
-const metaText = computed(() => (props.streaming ? t('agent.thinking') : ''))
+const label = computed(() => t('agent.reasoning'))
+const metaText = computed(() => (props.streaming ? t('agent.thinkingMeta') : ''))
 </script>
 
 <style scoped>
@@ -43,10 +61,14 @@ const metaText = computed(() => (props.streaming ? t('agent.thinking') : ''))
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 6px 0;
-  border-left: 2px solid rgba(var(--ion-color-medium-rgb), 0.2);
-  padding-left: 8px;
-  margin: 4px 0;
+  padding: 8px 0 8px 8px;
+  border-left: 3px solid rgba(var(--ion-color-medium-rgb), 0.25);
+  margin: 6px 0;
+  transition: border-color 0.3s ease;
+}
+
+.reasoningMessage_streaming {
+  border-left-color: rgba(var(--ion-color-primary-rgb), 0.5);
 }
 
 .reasoningHeader {
@@ -61,11 +83,16 @@ const metaText = computed(() => (props.streaming ? t('agent.thinking') : ''))
 .reasoningChevron {
   font-size: 14px;
   color: var(--encv-text-secondary);
+  flex-shrink: 0;
 }
 
 .reasoningBody {
   padding-left: 30px;
   font-size: 13px;
   color: var(--encv-text-secondary);
+  background: rgba(var(--ion-color-medium-rgb), 0.05);
+  border-radius: 4px;
+  padding: 8px 10px 8px 30px;
+  margin-top: 4px;
 }
 </style>

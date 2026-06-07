@@ -1,10 +1,14 @@
 <!--
   AssistantMessage - AI 回复文本块
-  头部：MessageAuthor(sparklesOutline, "Codex", meta)
-  主体：MarkdownStream(source, streaming)
+  参照 codex_web assistantMessage / plainAssistantMessage：
+  - 无背景气泡（纯文本，与页面背景融合）
+  - MessageAuthor(28px 圆形头像, label, meta)
+  - MarkdownStream(source, streaming)
+  - markdownBody: 14px / line-height 1.62 / 正确间距
+  - 底部栏：时间戳（左）+ 复制按钮（右）
 -->
 <template>
-  <div class="assistantMessage">
+  <div class="assistantMessage" ref="msgRef">
     <MessageAuthor
       :icon="icon"
       :label="label"
@@ -14,57 +18,122 @@
     <div class="assistantMessageBody">
       <MarkdownStream :content="text" :streaming="streaming" />
     </div>
+    <!-- 底部栏：时间戳 + 复制 -->
+    <div v-if="!streaming" class="assistantMessageFooter">
+      <span class="footerTimestamp">{{ displayTime }}</span>
+      <button
+        type="button"
+        class="footerCopyBtn"
+        :title="'复制内容'"
+        :aria-label="'复制消息内容'"
+        @click="handleCopy"
+      >
+        <ion-icon :icon="copyIconVar" />
+      </button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { sparklesOutline } from 'ionicons/icons'
+import { IonIcon } from '@ionic/vue'
+import { sparklesOutline, copyOutline } from 'ionicons/icons'
 import MessageAuthor from './MessageAuthor.vue'
 import MarkdownStream from './MarkdownStream.vue'
 import { useI18n } from '@/composables/useI18n'
+import { showToast } from '@/composables/useToast'
 import type { AgentStatus } from '@/composables/useAgent'
 
 const props = defineProps<{
   text: string
   streaming: boolean
   status?: AgentStatus
+  /** 时间戳（Unix ms），不传则用当前时间 */
+  timestamp?: number
 }>()
 
 const { t } = useI18n()
 const icon = sparklesOutline
+const copyIconVar = copyOutline
 
 const label = computed(() => 'AI 助手')
 const meta = computed(() => {
   if (props.streaming) return t('agent.thinking')
   return ''
 })
+
+/** 格式化时间戳为 HH:mm */
+const displayTime = computed(() => {
+  const ts = props.timestamp ?? Date.now()
+  const d = new Date(ts)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
+})
+
+/** 复制全文到剪贴板 */
+async function handleCopy() {
+  try {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(props.text)
+    } else {
+      // Fallback：临时 textarea + execCommand
+      const ta = document.createElement('textarea')
+      ta.value = props.text
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    showToast({ message: '已复制', duration: 1200, color: 'success' })
+  } catch {
+    showToast({ message: '复制失败', duration: 1600, color: 'danger' })
+  }
+}
 </script>
 
 <style scoped>
+/* ── 参照 codex_web .assistantMessage ─────────────────────── */
 .assistantMessage {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 0 4px;
+  gap: 4px;
+  margin-bottom: 18px;
   max-width: 100%;
 }
 
 .assistantMessageBody {
-  padding-left: 30px;
+  padding-left: 36px; /* 28px avatar + 8px gap */
   min-width: 0;
 }
 
-/* AI 回复气泡：左侧浅色背景，圆角 */
+/* ── markdownBody：参照 codex_web .markdownBody ──────────── */
 .assistantMessageBody :deep(.markdownStream) {
-  display: inline-block;
+  display: block;
   max-width: 100%;
-  padding: 10px 14px;
-  background: rgba(var(--ion-color-medium-rgb), 0.10);
-  border-radius: 12px 14px 14px 4px;
-  border-top-left-radius: 4px;
-  /* 流式输出时高度平滑过渡，消除跳动 */
-  transition: height 0.25s ease-out, padding 0.25s ease-out;
+  color: var(--ion-text-color);
+  font-size: 14px;
+  line-height: 1.62;
+  overflow-wrap: break-word;
+}
+
+/* 段落/列表/代码块间距（codex_web: margin 0 0 12px） */
+.assistantMessageBody :deep(.markdownStream) :deep(.node-slot) {
+  margin-bottom: 12px;
+}
+
+.assistantMessageBody :deep(.markdownStream) :deep(.node-slot:last-child) {
+  margin-bottom: 0;
+}
+
+/* 行内代码：圆角 + 浅灰底（codex_web 风格） */
+.assistantMessageBody :deep(.markdownStream) :deep(.inline-code) {
+  border-radius: 5px;
+  padding: 1px 5px;
+  background: var(--ion-color-light);
+  font-size: 0.9em;
 }
 
 /* 打字光标动画（流式期间显示） */
@@ -83,5 +152,46 @@ const meta = computed(() => {
 @keyframes cursorBlink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
+}
+
+/* ── 底部栏：时间戳 + 复制 ─────────────────────────────── */
+.assistantMessageFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 36px;
+  margin-top: 4px;
+  border-top: 1px solid rgba(var(--ion-color-medium-rgb), 0.12);
+  padding-top: 4px;
+}
+
+.footerTimestamp {
+  font-size: 11px;
+  color: var(--encv-text-secondary, rgba(127,127,127,0.6));
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.footerCopyBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--encv-text-secondary, rgba(127,127,127,0.45));
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.footerCopyBtn:hover,
+.footerCopyBtn:active {
+  color: var(--ion-color-primary);
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
 }
 </style>

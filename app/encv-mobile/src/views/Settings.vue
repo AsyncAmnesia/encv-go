@@ -830,7 +830,7 @@ async function refreshMpvPluginStatus() {
       console.debug('[Settings] MPV plugin status:', state.status)
     }
   } catch (e: any) {
-    console.error('[Settings] refreshMpvPluginStatus failed:', e)
+    console.error('[Settings] refreshMpvPluginStatus failed:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
     mpvPluginStatus.value = 'error'
     mpvPluginError.value = e.message || '查询失败'
   }

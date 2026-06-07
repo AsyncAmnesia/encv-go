@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,8 +20,70 @@ import (
 // before calling Agent.Chat. A future migration to another LLM
 // SDK is then a local change to this file.
 type ChatRequest struct {
-	SessionID string                   `json:"session_id"`
-	Messages  []map[string]any         `json:"messages"`
+	SessionID string           `json:"session_id"`
+	Messages  []map[string]any `json:"messages"`
+	// Mode selects the send mode for the message:
+	//   - "" or "start": regular new turn (default behaviour,
+	//     equivalent to a fresh Chat call).
+	//   - "steer":       the message is meant to steer the
+	//     current in-flight turn; the agent uses the supplied
+	//     messages as the new running state. Steer preserves
+	//     the existing confirm flow (if a tool call is
+	//     produced the ApprovalCard is still shown).
+	//   - "queue":       the message is held until the current
+	//     turn fully ends. The agent stores it in
+	//     agent.PendingMessages[sessionID] and a
+	//     HookTurnEnd listener starts a new Chat after the
+	//     current runLoop returns. Queue returns immediately
+	//     (the HTTP response is closed) because the events
+	//     will surface through the existing SSE / Resume
+	//     connection once the queued Chat runs.
+	Mode string `json:"mode,omitempty"`
+	// SelectedSkills is the optional list of skill names the
+	// front-end wants to activate for this session. When
+	// non-empty, the default session_start hook registered
+	// by NewAgent will append the corresponding skill
+	// prompts to the session's per-session system prompt
+	// override so the LLM sees them on the first turn.
+	SelectedSkills []string `json:"selected_skills,omitempty"`
+	// PermissionMode is the optional per-turn permission
+	// tier for tool invocations. When non-empty, the
+	// handler stores it via
+	// Agent.SetSessionPermissionMode and the agent core
+	// consults it at tool-execution time to decide
+	// whether a tool that registered NeedConfirm=true
+	// should still be auto-run. The three documented
+	// values are:
+	//
+	//   - "default"      — use def.NeedConfirm as-is. The
+	//     legacy ApprovalCard flow applies.
+	//   - "auto-review"  — force auto-run for every tool.
+	//     The ApprovalCard is skipped, but the tool_call
+	//     + tool_result events still surface on the
+	//     wire for visual review.
+	//   - "full-access"  — force auto-run + the front-end
+	//     contract is "no ApprovalCard rendered at all".
+	//
+	// Task 20 (Permission Mode Switcher). An empty
+	// string is interpreted as "default", which
+	// preserves the legacy behaviour for any caller that
+	// does not send the field. The HTTP layer tolerates
+	// unknown values by silently treating them as
+	// default (rather than 400ing) so a front-end
+	// downgrade scenario (e.g. an older app talking to a
+	// newer server) never breaks the chat.
+	PermissionMode PermissionMode `json:"permission_mode,omitempty"`
+	// PlanMode toggles the per-session "list steps
+	// first, wait for user confirmation before
+	// executing" directive on the system prompt.
+	// Task 19 (Plan Mode): the handler forwards the
+	// value to Agent.SetPlanMode so the very next turn
+	// already sees the change. A false value removes
+	// the per-session entry (it is NOT a no-op),
+	// matching the toggle-off semantic the front-end
+	// expects. The flag does NOT alter the tool
+	// registry — only the system prompt text.
+	PlanMode bool `json:"plan_mode,omitempty"`
 }
 
 // ResumeRequest is the JSON payload accepted by /api/resume.
@@ -67,9 +130,57 @@ func (a *Agent) HandleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ch, err := a.Chat(r.Context(), req.SessionID, msgs)
+	// Register the per-session skill selection BEFORE Chat
+	// so the session_start hook (which runs inside the
+	// Chat's runLoop goroutine) can read it from
+	// a.selectedSkillsFor. The happens-before guarantee of
+	// sync.Map.Store makes the SetSelectedSkills call
+	// visible to the runLoop goroutine without any
+	// additional synchronisation.
+	a.SetSelectedSkills(req.SessionID, req.SelectedSkills)
+
+	// Task 20 (Permission Mode Switcher). Always write
+	// the per-turn permission tier so a session that
+	// toggles the switch off (e.g. from "auto-review"
+	// back to "default") reverts on the very next
+	// emitToolCall call. We normalise unknown / empty
+	// values to "default" so an older front-end
+	// sending a stale or missing field still gets the
+	// legacy ApprovalCard flow. The HTTP layer is
+	// deliberately permissive here — a front-end
+	// downgrade scenario (older app, newer server)
+	// must never break the chat; the alternative
+	// (400ing on unknown) would lock the app out of
+	// the server.
+	permMode := req.PermissionMode
+	if !IsValidPermissionMode(permMode) {
+		permMode = PermissionDefault
+	}
+	a.SetSessionPermissionMode(req.SessionID, permMode)
+
+	// Task 19 (Plan Mode toggle). Always write the
+	// current value, including the false case, so a
+	// session that toggles the switch off reverts on
+	// the next turn (SetPlanMode deletes the entry on
+	// false). The flag is consulted by
+	// injectSystemPrompt to append a plan-aware
+	// instruction to the system message; the tool
+	// registry is untouched.
+	a.SetPlanMode(req.SessionID, req.PlanMode)
+
+	ch, err := a.ChatMode(r.Context(), req.SessionID, msgs, req.Mode)
 	if err != nil {
 		http.Error(w, "chat error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Queue mode stores the message and returns a channel
+	// that is already closed — the actual Chat happens
+	// later, on the next HookTurnEnd. The HTTP response is
+	// therefore 202 Accepted with an empty body so the
+	// front-end knows the message was buffered rather than
+	// streamed.
+	if req.Mode == "queue" {
+		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 	streamSSE(w, r, ch)
@@ -284,13 +395,102 @@ func convertMessages(in []map[string]any) ([]openai.ChatCompletionMessage, error
 // HandleHealth is a minimal liveness probe. It is intentionally
 // separate from the SSE endpoints so an external watcher can
 // poll it cheaply.
+//
+// The response carries the agent's process-wide serverInstanceId
+// (see Agent.ServerInstanceId) so the front-end can detect
+// server restarts and discard any stale SSE sequence tracking
+// state from the previous instance.
 func (a *Agent) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"ok":        true,
-		"ts":        time.Now().UnixMilli(),
-		"openai_ok": a.cfg.OpenAIAPIKey != "",
+		"ok":                true,
+		"ts":                time.Now().UnixMilli(),
+		"openai_ok":         a.cfg.OpenAIAPIKey != "",
+		"serverInstanceId": a.serverInstanceId,
 	})
+}
+
+// LanAccessResponse is the JSON shape returned by
+// /api/network/lan-access. The Addresses field uses the
+// shared [LanAddress] type so the wire contract matches the
+// front-end expectation (interface / ip / url). Port echoes
+// the port that was used to build the URLs, which makes it
+// easy to display "currently listening on 5245" in the UI.
+type LanAccessResponse struct {
+	Addresses []LanAddress `json:"addresses"`
+	Port      int          `json:"port"`
+}
+
+// HandleLanAccess is the HTTP entry point for
+// /api/network/lan-access. It enumerates the host's IPv4
+// interfaces (excluding loopback + link-local) and returns
+// the URLs a peer on the same LAN could use to reach the
+// agent.
+//
+// Query parameters:
+//
+//	port  optional, defaults to 5245 (the agent-demo listen
+//	      port). Must be a positive integer when supplied;
+//	      an invalid value falls back to 5245 rather than
+//	      400-ing — the endpoint is informational and a
+//	      fall-through is more useful than a hard error.
+//
+// The endpoint is GET-friendly so the Settings panel can
+// poll it on mount without writing a POST body.
+func (a *Agent) HandleLanAccess(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	port := 5245
+	if raw := r.URL.Query().Get("port"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n <= 65535 {
+			port = n
+		}
+	}
+
+	addrs, err := EnumerateIPv4()
+	if err != nil {
+		WriteJSONError(w, http.StatusInternalServerError, "enumerate interfaces: "+err.Error())
+		return
+	}
+	addrs = formatLANURLs(addrs, port)
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(LanAccessResponse{
+		Addresses: addrs,
+		Port:      port,
+	})
+}
+
+// HandleSyncDoctor (Task 25 — Sync Doctor) is the HTTP entry
+// point for POST /api/sync/doctor. It is intentionally
+// side-effect free: a doctor run only reads agent state and
+// (best-effort) pings OpenList with a 2-second budget. The
+// returned JSON is the same DoctorReport payload the
+// front-end renders verbatim inside a <pre> block.
+//
+// The endpoint accepts GET as well as POST so the doctor
+// report can be eyeballed from a browser without a JSON
+// poster. The handler is the same in both cases.
+func (a *Agent) HandleSyncDoctor(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	report := a.RunDoctor(r.Context())
+	w.Header().Set("Content-Type", "application/json")
+	// Pretty-print the report (2-space indent) so the
+	// front-end's <pre> block and DevLogs both render it
+	// legibly. The handler is on the cold path (operator
+	// action, not steady-state traffic), so the extra
+	// marshalling cost is irrelevant.
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(report)
 }
 
 // SetRouteTimeout is a convenience wrapper that wraps each

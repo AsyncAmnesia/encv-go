@@ -350,7 +350,7 @@ async function loadInfo() {
       pluginPrediction.value = null
     }
   } catch (e: any) {
-    console.error('[FileInfo] failed:', e)
+    console.error('[FileInfo] failed:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
     error.value = e?.message || String(e)
   } finally {
     loading.value = false

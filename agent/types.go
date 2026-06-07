@@ -41,6 +41,17 @@ const (
 	// EventStreamEnd marks the end of a streaming turn. After this
 	// event the channel is closed. Data is an empty string.
 	EventStreamEnd EventType = "stream_end"
+
+	// EventCompaction signals that the agent has auto-compressed
+	// the conversation history. The payload (CompactionData) carries
+	// the LLM-generated summary text and the count of messages it
+	// replaced. The front-end renders a non-expandable divider at
+	// the position the compacted messages used to occupy so the user
+	// can see "context was compressed here" without re-reading the
+	// dropped text. The agent has already inserted a synthetic
+	// "summary" message at the head of the conversation; the event
+	// itself is purely informational.
+	EventCompaction EventType = "compaction"
 )
 
 // Decision is one of four user responses to a pending tool approval.
@@ -85,10 +96,26 @@ const (
 	// effects (e.g. list_files).
 	KindReadOnly ToolKind = "readOnly"
 
+	// KindPlan marks the built-in write_todos plan tool. The
+	// front-end renders a PlanBlock for tool calls of this
+	// kind; operationGroup and other groupings MUST NOT
+	// coalesce plan calls into their windows.
+	KindPlan ToolKind = "plan"
+
 	// KindUnknown is the safe default when the caller cannot classify
 	// the tool. Front-ends should fall back to a neutral icon.
 	KindUnknown ToolKind = "unknown"
 )
+
+// Todo is one entry in the plan tool's todo list. The agent
+// stores the latest list on the session cache so the front-end
+// can render a stable PlanBlock while the assistant refines its
+// plan across multiple tool calls.
+type Todo struct {
+	ID      string `json:"id"`
+	Status  string `json:"status"`
+	Content string `json:"content"`
+}
 
 // Event is the atomic unit emitted on the agent's event channel.
 //
@@ -133,6 +160,34 @@ type ToolResultData struct {
 type ToolStatusData struct {
 	ID     string `json:"id"`
 	Status string `json:"status"`
+}
+
+// CompactionData is the payload of [EventCompaction].
+//
+// The agent estimates the total token count of the conversation
+// before each LLM turn. When the count crosses the threshold
+// (default 80% of the model context window), it asks the LLM
+// itself to summarise the older messages and replaces them in
+// place with a single "summary" message. This event is then
+// pushed to the front-end so it can render a divider at the
+// compaction boundary.
+//
+// SummaryText is the LLM-generated summary the agent just
+// inserted at the head of the messages slice.
+//
+// ReplacedMessageCount is the number of older messages that
+// were dropped from the conversation. It is purely advisory
+// (used by the UI for the divider label / log) and is NOT used
+// by the front-end to recover the dropped text — that text is
+// gone from the conversation once the event is emitted.
+//
+// TriggeredAtMs is the unix-millisecond timestamp at which the
+// compaction was emitted, included so DevLogs can correlate
+// the event with other agent logs.
+type CompactionData struct {
+	SummaryText          string `json:"summary_text"`
+	ReplacedMessageCount int    `json:"replaced_message_count"`
+	TriggeredAtMs        int64  `json:"triggered_at_ms"`
 }
 
 // MessageData is the in-memory accumulator for a single assistant
@@ -188,6 +243,51 @@ type PluginTaskOptions struct {
 	ExtraFields          []PluginTaskField
 }
 
+// HookEvent is the discriminator of the 6 hook points the
+// agent exposes to user-supplied callbacks. The value is a
+// stable wire string; persist it in your audit log so callers
+// can correlate events across agent versions.
+type HookEvent string
+
+const (
+	// HookSessionStart fires when a brand-new session is
+	// created — i.e. the first Chat call on a sessionID
+	// that has no pre-existing SessionCache. Use it to
+	// inject per-session system prompt overrides, register
+	// skills, or audit "session opened" events.
+	HookSessionStart HookEvent = "session_start"
+
+	// HookTurnStart fires immediately before the agent
+	// calls the LLM (one fire per turn, including resumed
+	// turns after auto-run tool loops).
+	HookTurnStart HookEvent = "turn_start"
+
+	// HookTurnEnd fires after the LLM stream ends and any
+	// tool-call processing is complete, but before the
+	// terminal EventStreamEnd is pushed. Use it to capture
+	// assistant outputs for analytics or compaction.
+	HookTurnEnd HookEvent = "turn_end"
+
+	// HookPreToolCall fires before an auto-run tool
+	// handler is invoked. Set hc.Cancel to true to abort
+	// the execution; the agent then synthesises a
+	// "cancelled" tool result so the LLM can continue
+	// the turn.
+	HookPreToolCall HookEvent = "pre_tool_call"
+
+	// HookPostToolCall fires after a tool handler has
+	// returned. The hook receives both the original tool
+	// call and the result so loggers / policy enforcers
+	// can audit the call.
+	HookPostToolCall HookEvent = "post_tool_call"
+
+	// HookSessionShutdown fires when an explicit
+	// ShutdownSession call is made on the agent. Use it to
+	// flush durable state, close databases, or push a
+	// final audit event.
+	HookSessionShutdown HookEvent = "session_shutdown"
+)
+
 // AgentConfig is the top-level configuration consumed by NewAgent.
 // Field names are snake_case on the wire (see config_loader.go) but
 // idiomatic Go here.
@@ -209,4 +309,56 @@ type AgentConfig struct {
 	// GlobalPassword is the fallback password for plugins whose
 	// PasswordStrategy == "global" (video/audio/image/wps/pdf/text).
 	GlobalPassword string
+
+	// SkillsDir is the on-disk directory ScanSkills walks at
+	// NewAgent time. The expected layout is
+	// "<SkillsDir>/<skill-name>/SKILL.md", one folder per
+	// skill. An empty string defaults to "$HOME/.encv/skills"
+	// (or "./.encv/skills" if $HOME is unset). A missing
+	// directory is not an error: NewAgent continues with
+	// zero skills.
+	SkillsDir string
+}
+
+// PermissionMode is the per-session tool-confirmation tier.
+// Task 20 (Permission Mode Switcher) exposes three values
+// to the front-end: PermissionDefault (the legacy
+// "respect NeedConfirm" behaviour), PermissionAutoReview
+// (force auto-run but still emit tool_call + tool_result
+// events for visual review), and PermissionFullAccess
+// (force auto-run, no ApprovalCard at all). The constants
+// are declared alongside the type so the wire format and
+// the in-memory representation stay in lockstep.
+type PermissionMode string
+
+const (
+	// PermissionDefault preserves the legacy behaviour:
+	// a tool that registered NeedConfirm=true still asks
+	// for confirmation, a tool that did not still auto-runs.
+	PermissionDefault PermissionMode = "default"
+	// PermissionAutoReview forces every tool to auto-run
+	// while still emitting the tool_call + tool_result
+	// events on the wire. The front-end renders a
+	// non-modal review badge in place of the ApprovalCard.
+	PermissionAutoReview PermissionMode = "auto-review"
+	// PermissionFullAccess forces every tool to auto-run
+	// AND tells the front-end to skip rendering an
+	// ApprovalCard for the duration of the session. The
+	// tool_call / tool_result events still surface so
+	// DevLogs can audit the execution.
+	PermissionFullAccess PermissionMode = "full-access"
+)
+
+// IsValidPermissionMode reports whether m is one of the
+// three documented PermissionMode values. The HTTP layer
+// uses it to coerce unknown / empty values to
+// PermissionDefault rather than 400ing — see
+// ChatRequest.PermissionMode for the rationale.
+func IsValidPermissionMode(m PermissionMode) bool {
+	switch m {
+	case PermissionDefault, PermissionAutoReview, PermissionFullAccess:
+		return true
+	default:
+		return false
+	}
 }

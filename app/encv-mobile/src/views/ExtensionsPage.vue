@@ -206,7 +206,7 @@ async function loadExtensions() {
     ]
     console.error('[SAT-DBG][Extensions] extensions.value.length=', extensions.value.length)
   } catch (e) {
-    console.error('[SAT-DBG][Extensions] loadExtensions ERROR:', e)
+    console.error('[SAT-DBG][Extensions] loadExtensions ERROR:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
   } finally {
     isLoading.value = false
   }
@@ -259,7 +259,7 @@ async function handleToggleEnabled(id: string, currentEnabled: boolean) {
       showToast({ message: t('extensions.toggleFailed'), duration: 2000, color: 'danger' })
     }
   } catch (e: any) {
-    console.error('togglePluginEnabled failed:', e)
+    console.error('togglePluginEnabled failed:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
     showToast({ message: e?.message || t('extensions.toggleFailed'), duration: 2000, color: 'danger' })
   }
   await loadExtensions()
@@ -290,7 +290,7 @@ async function handleUninstall(id: string) {
               showToast({ message: t('extensions.uninstallFailed'), duration: 2000, color: 'danger' })
             }
           } catch (e: any) {
-            console.error('uninstallPlugin failed:', e)
+            console.error('uninstallPlugin failed:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
             showToast({ message: e?.message || t('extensions.uninstallFailed'), duration: 2000, color: 'danger' })
           }
           await loadExtensions()
