@@ -195,9 +195,11 @@ export default {
     // ── Mock 模式预设输入控件（覆盖在输入框上方的 chip 列表） ─────
     // 由后端 mock_presets 事件驱动，每条预设点击后会调 useAgent().pickMockPreset
     // 发送 userText。后端在剧本任一阶段都可以推新事件实现 mid-scenario 更新。
+    // "覆盖式 UI" 语义：chip 在 mock 模式开启期间永远显示，流结束不清空。
     'agent.mockPresetBarAria': 'Mock 模式预设输入',
     'agent.mockPresetBarDefaultScenario': '剧本',
     'agent.mockPresetBarHint': '点击直接发送',
+    'agent.mockPresetBarPickerScenario': '剧本库',
   },
   en: {
     'agent.title': 'AI Assistant',
@@ -395,5 +397,6 @@ export default {
     'agent.mockPresetBarAria': 'Mock mode preset inputs',
     'agent.mockPresetBarDefaultScenario': 'Scenario',
     'agent.mockPresetBarHint': 'Click to send',
+    'agent.mockPresetBarPickerScenario': 'Scenario Library',
   },
 }

@@ -429,6 +429,7 @@ func (s *Server) registerAgentRoutes(r *gin.Engine) {
 	r.POST("/api/decrypt-key", s.handleAgentDecryptKey)
 	r.POST("/api/agent/reset-key", s.handleAgentResetKey)
 	r.GET("/api/agent/context-usage", s.handleAgentContextUsage)
+	r.GET("/api/agent/mock/presets", s.handleAgentMockPresets)
 	r.GET("/test", s.handleAgentTest)
 	r.POST("/test", s.handleAgentTest)
 	r.POST("/api/chat", s.handleAgentChat)
@@ -1829,4 +1830,73 @@ type chatMsg struct {
 	ToolCallID string                 `json:"tool_call_id,omitempty"`
 	Name       string                 `json:"name,omitempty"`
 	ToolCalls  []toolCallAccumulator  `json:"tool_calls,omitempty"`
+}
+
+// ─── GET /api/agent/mock/presets — 全局剧本选择器预设 ─────────────
+//
+// 用途：用户**首次**进入 AgentChat 时（还没发过任何消息），前端主动拉
+// 一次本端点拿到"剧本选择器"预设（12 个内置剧本入口），覆盖在输入框
+// 上方。后续用户点 chip 触发对应剧本；流结束后 chip 保留（不再自动 clear）。
+//
+// 行为契约：
+//   - mock 模式开启（builtin 或 custom）→ 返回所有 builtin scenarios 的入口
+//   - mock 模式关闭（off） → 返回空 presets
+//   - 自定义剧本（custom 模式） → builtin + custom 一起返回
+//
+// 与 /api/chat 流内 mock_presets 事件的差异：
+//   - 流内 mock_presets：剧本运行中推，覆盖式更新 chip（mid-scenario 切换分支）
+//   - 本端点：仅用于"首次进入" + "用户主动 refresh" 场景
+type scenarioPickerEntry struct {
+	ID          string `json:"id"`
+	ScenarioID  string `json:"scenarioId"`
+	Label       string `json:"label"`
+	UserText    string `json:"userText"`
+	Icon        string `json:"icon,omitempty"`
+	Tooltip     string `json:"tooltip,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+func (s *Server) handleAgentMockPresets(c *gin.Context) {
+	cfg := s.getAgentConfig()
+	mode := cfg.MockMode
+
+	// mock 模式关闭时返回空（前端 v-if 自然不渲染）
+	if mode == "off" || mode == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"scenario":  "",
+			"phase":     "off",
+			"presets":   []scenarioPickerEntry{},
+			"mockMode":  mode,
+		})
+		return
+	}
+
+	// 遍历所有内置 + 自定义剧本，每个转成一个 picker entry
+	allScenarios := s.mockEngine.AllScenarios()
+	entries := make([]scenarioPickerEntry, 0, len(allScenarios))
+
+	for _, sc := range allScenarios {
+		// 跳过"无 Presets 字段"的剧本（理论上 12 个 builtin 都有）
+		if len(sc.Presets) == 0 {
+			continue
+		}
+		// picker 入口：取剧本第一个 Preset 的 userText 作为触发关键词
+		firstPreset := sc.Presets[0]
+		entries = append(entries, scenarioPickerEntry{
+			ID:          "pick_" + sc.ID,
+			ScenarioID:  sc.ID,
+			Label:       "🎬 " + sc.ID,
+			UserText:    firstPreset.UserText,
+			Icon:        "🎬",
+			Tooltip:     sc.Description,
+			Description: sc.Description,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"scenario": "scenario_picker",
+		"phase":    "picker",
+		"presets":  entries,
+		"mockMode": mode,
+	})
 }

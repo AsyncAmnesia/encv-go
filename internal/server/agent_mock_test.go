@@ -297,18 +297,20 @@ func TestMockEngine_MidScenarioPresetUpdate(t *testing.T) {
 	}
 }
 
-// TestMockEngine_EmitsClearOnStreamEnd 验证剧本结束时推 mock_presets_clear
-// 事件（让前端清空 preset bar）。
-func TestMockEngine_EmitsClearOnStreamEnd(t *testing.T) {
+// TestMockEngine_StreamEndDoesNotClearPresets 验证"覆盖显示"语义：
+// 剧本 stream_end 后**不再**推 mock_presets_clear —— chip 必须保留在
+// 输入框上方供用户选下一轮输入。仅当用户**主动**退出 mock 模式时才推
+// clear（由 setMockMode handler 显式触发）。
+func TestMockEngine_StreamEndDoesNotClearPresets(t *testing.T) {
 	eng := NewMockEngine()
 	sc := &MockScenario{
-		ID: "test_presets_clear",
+		ID: "test_presets_retained",
 		Presets: []MockPreset{
 			{ID: "p1", Label: "X", UserText: "x"},
 		},
 		Steps: []MockStep{
 			{DelayMs: 0, Events: []MockEvent{
-				{Type: "stream_start", Data: map[string]interface{}{"scenario": "test_presets_clear"}},
+				{Type: "stream_start", Data: map[string]interface{}{"scenario": "test_presets_retained"}},
 				{Type: "stream_end", Data: map[string]interface{}{"finishReason": "stop"}},
 			}},
 		},
@@ -328,9 +330,8 @@ func TestMockEngine_EmitsClearOnStreamEnd(t *testing.T) {
 			clears++
 		}
 	}
-	// 至少 1 次（stream_end case），兜底 1 次（scenario_done）→ 总共 2 次
-	if clears < 1 {
-		t.Errorf("mock_presets_clear 事件数 = %d, want ≥ 1", clears)
+	if clears != 0 {
+		t.Errorf("stream_end 之后不应推 mock_presets_clear（chip 永远覆盖显示），实际 %d 次", clears)
 	}
 }
 

@@ -734,6 +734,51 @@ export function useAgent() {
     await send(preset.userText, { mode: 'start' })
   }
 
+  /**
+   * 首次进入 AgentChat 时拉取"全局剧本选择器"覆盖在输入框上方。
+   * 由 AgentChat.vue 的 onMounted 调用（仅一次）。
+   * 后端 mock 模式关闭时返回空 presets → v-if 自然不渲染。
+   * 后端流内 mock_presets 事件会**覆盖**本函数写入的 presets。
+   */
+  async function loadMockPresets(): Promise<void> {
+    try {
+      const resp = await fetch(`${AGENT_API_BASE}/api/agent/mock/presets`)
+      if (!resp.ok) {
+        console.debug('[useAgent] loadMockPresets: HTTP', resp.status)
+        return
+      }
+      const data = (await resp.json()) as {
+        scenario?: string
+        phase?: string
+        presets?: MockPreset[]
+        mockMode?: string
+      }
+      const list = Array.isArray(data.presets) ? data.presets : []
+      // 标准化：scenario_picker 后端 ID 是 "pick_xxx" 风格，但前端 type
+      // 要求必须有 id+label+userText。后端已经保证。
+      mockPresets.value = list.filter(
+        (p): p is MockPreset =>
+          !!p &&
+          typeof p === 'object' &&
+          typeof p.id === 'string' &&
+          typeof p.label === 'string' &&
+          typeof p.userText === 'string',
+      )
+      mockPresetsPhase.value = String(data.phase ?? 'picker')
+      mockPresetsScenario.value = String(data.scenario ?? 'scenario_picker')
+      console.debug(
+        '[useAgent] loadMockPresets →',
+        mockPresets.value.length,
+        'presets | mode =',
+        data.mockMode,
+        '| phase =',
+        mockPresetsPhase.value,
+      )
+    } catch (e) {
+      console.debug('[useAgent] loadMockPresets failed:', e)
+    }
+  }
+
   async function loadMockMode() {
     try {
       const resp = await fetch(`${AGENT_API_BASE}/api/config`)
@@ -747,6 +792,16 @@ export function useAgent() {
       const m = String(cfg?.agent_settings?.mock_mode ?? 'off').toLowerCase()
       currentMockMode.value =
         m === 'builtin' || m === 'custom' ? (m as MockMode) : 'off'
+      // 覆盖式 UI：mock 模式配置开启时，isMockMode 必须**预先**置 true，
+      // 否则用户首次进 AgentChat（还没发过消息）chip 不会显示。
+      // 后续发消息触发流时，stream_start 事件会再次确认 isMockMode=true。
+      isMockMode.value = currentMockMode.value !== 'off'
+      console.debug(
+        '[MockMode] load → mode =',
+        currentMockMode.value,
+        '| isMockMode =',
+        isMockMode.value,
+      )
     } catch (e) {
       console.debug('[MockMode] load failed:', e)
     }
@@ -1396,12 +1451,12 @@ export function useAgent() {
       }
 
       case 'mock_presets_clear': {
-        // 后端在 stream_end 时推：清空 chip 按钮（让输入框恢复自由输入状态）。
-        // 原因 reason 字段仅做调试。
-        mockPresets.value = []
-        mockPresetsPhase.value = ''
-        mockPresetsScenario.value = ''
-        console.debug('[useAgent] mock_presets_clear')
+        // 故意 noop：chip 在 mock 模式开启期间**永远覆盖显示**（覆盖式 UI）。
+        // 收到 clear 事件**不**清空 mockPresets —— 仅当用户**主动**退出 mock 模式
+        // （setMockMode("off") 触发 X-Mock-Mode header 变化）时，isMockMode 变 false，
+        // AgentChat 的 v-if 自然不再渲染 MockPresetBar。
+        // 后端未来若需要主动清 chip（极少见），可以走一个新的 `mock_presets_reset` 事件。
+        console.debug('[useAgent] mock_presets_clear (ignored, chip 永远覆盖显示)')
         break
       }
 
@@ -2021,14 +2076,16 @@ export function useAgent() {
     loadMockMode,
     setMockMode,
     // Mock 模式预设按钮：覆盖在输入框上方的 chip 列表。
-    // - mockPresets：当前 chip 列表（mock_presets 事件驱动）
-    // - mockPresetsPhase：当前阶段（initial / after_round_2 / ...）
+    // - mockPresets：当前 chip 列表（mock_presets 事件 / loadMockPresets 驱动）
+    // - mockPresetsPhase：当前阶段（initial / after_round_2 / picker / ...）
     // - mockPresetsScenario：当前 scenario ID
     // - pickMockPreset：点击 chip → send(preset.userText)
+    // - loadMockPresets：AgentChat onMounted 调一次拉"全局剧本选择器"
     mockPresets,
     mockPresetsPhase,
     mockPresetsScenario,
     pickMockPreset,
+    loadMockPresets,
     // Task 4：以下为测试专用钩子。生产代码不应调用——所有 serverInstance
     // 同步都由 useAgent 内部 await refreshServerInstance() 完成。
     __refreshServerInstanceForTest: refreshServerInstance,

@@ -308,8 +308,8 @@
       <MockPresetBar
         v-if="isMockMode && mockPresets.length > 0"
         :presets="mockPresets"
-        :scenario="mockScenario ?? ''"
-        :phase="mockPresetsPhase"
+        :scenario="mockPresetBarScenario"
+        :phase="mockPresetBarPhase"
         :disabled="status === 'streaming'"
         @pick="(preset) => { void pickMockPreset(preset) }"
       />
@@ -497,11 +497,30 @@ import ContextIcon from '@/components/agent/ContextIcon.vue'
 
 const { t } = useI18n()
 
+// Mock 预设输入栏头部显示：
+// - picker 阶段（首次进 AgentChat）→ "剧本库"（i18n mockPresetBarPickerScenario）
+// - 实际剧本阶段 → 当前 scenario ID
+// - 都不匹配 → "剧本"（默认）
+const mockPresetBarScenario = computed(() => {
+  const phase = mockPresetsPhase.value
+  const sc = mockPresetsScenario.value
+  if (sc === 'scenario_picker' || phase === 'picker') {
+    return t('agent.mockPresetBarPickerScenario')
+  }
+  return sc || mockScenario.value || t('agent.mockPresetBarDefaultScenario')
+})
+// phase 阶段文案：picker 隐藏（已在 scenario 里表达），其他透传
+const mockPresetBarPhase = computed(() => {
+  const phase = mockPresetsPhase.value
+  if (phase === 'picker' || phase === 'off') return ''
+  return phase
+})
+
 // Agent API 基础路径（与 useAgent.ts 保持一致）
 // Agent API 基础 URL（动态解析：dev 走网关 / prod 直连后端）
 const AGENT_API_BASE = getAgentApiBase()
 
-const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel, setApiDefaultModel, isMockMode, mockScenario, currentMockMode, loadMockMode, setMockMode, mockPresets, mockPresetsPhase, pickMockPreset } = useAgent()
+const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel, setApiDefaultModel, isMockMode, mockScenario, currentMockMode, loadMockMode, setMockMode, mockPresets, mockPresetsPhase, mockPresetsScenario, pickMockPreset, loadMockPresets } = useAgent()
 const router = useRouter()
 
 /**
@@ -1164,10 +1183,26 @@ onMounted(async () => {
   // 启动时尝试恢复最近 session
   await resume()
   // 加载当前 mock 模式（用户主动控制 → action-sheet 切换）
-  void loadMockMode()
+  await loadMockMode()
+  // mock 模式开启时 → 拉"全局剧本选择器"覆盖在输入框上方
+  // 用户首次进入就能看到 chip，不必先发消息触发流
+  if (isMockMode.value) {
+    void loadMockPresets()
+  }
   nextTick(() => scrollToBottom('auto'))
   // 模型选择器：点击外部关闭下拉
   document.addEventListener('click', handleModelPickerOutsideClick)
+})
+
+// 用户在 Settings/其他位置切换 mock 模式后 → 重新拉/清空 chip
+// off → 清空（v-if 自然不渲染，无需手动）
+// builtin/custom → 拉新选择器覆盖当前 chip
+watch(currentMockMode, (newMode, _oldMode) => {
+  console.debug('[AgentChat] mock mode changed →', newMode)
+  if (newMode === 'builtin' || newMode === 'custom') {
+    void loadMockPresets()
+  }
+  // 'off' 不需要清空 —— isMockMode.value = false → v-if 不渲染
 })
 
 onUnmounted(() => {

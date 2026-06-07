@@ -446,11 +446,13 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 				s.sendAndCache(sess, w, flusher, "tool_result", ev.Data)
 
 			case "stream_end":
-				// 推送 stream_end 后立刻推 mock_presets_clear，让前端清空 bar。
-				// 这样用户看到 assistant 完整回复后，preset 按钮自动消失，
-				// 输入框恢复"自由输入"状态。下次新场景激活时再发新预设。
+				// 推送 stream_end 后**不再**清空 chip —— 用户视角的"覆盖显示"语义：
+				// chip 在 mock 模式开启期间永远覆盖在输入框上方，剧本结束后保留
+				// 当前阶段 chip（mid-scenario 推过的话保留 mid；没推过保留 initial），
+				// 下次 stream_start 后推的 mock_presets 会**覆盖**当前 chip。
+				// 仅当用户**主动**退出 mock 模式（前端点 "🧪 模拟" 切换）才发
+				// mock_presets_clear。
 				s.sendAndCache(sess, w, flusher, "stream_end", ev.Data)
-				s.endMockPresets(sess, w, flusher, scenario.ID, "stream_end")
 
 			default:
 				// 其他类型：原样推送
@@ -466,10 +468,9 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 			"scenario", scenario.ID, "count", len(pendingRealCalls))
 	}
 
-	// 防御性兜底：若剧本没显式发 stream_end 事件（异常剧本），
-	// 此处也推一次 clear，防止 chip 永久挂在 UI 上。
-	// 幂等：stream_end case 已发过的 clear 会带相同 scenario ID，重复清空是 OK 的。
-	s.endMockPresets(sess, w, flusher, scenario.ID, "scenario_done")
+	// 防御性兜底已移除：剧本结束不再发 clear —— chip 在 mock 模式开启期间
+	// 永远覆盖显示。endMockPresets 函数仍保留，供"用户主动退出 mock 模式"
+	// 路径调用（由前端 setMockMode("off") 触发，会清空 chip）。
 
 	return nil
 }
