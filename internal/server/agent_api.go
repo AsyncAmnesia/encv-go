@@ -749,6 +749,8 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		pendingTools     []toolCallAccumulator
 		finalAssistantText string         // LLM 最终文本回复
 		autoToolExecuted bool           // 是否有工具被执行过
+		textSeq          int            // 全局 seq 计数器（跨 round 递增，供 text_delta 使用）
+		reasoningSeq     int            // 全局 seq 计数器（跨 round 递增，供 reasoning_delta 使用）
 	)
 
 	for round := 0; round < maxAgentLoopRounds; round++ {
@@ -821,17 +823,13 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		}
 
 		// flushBuffer 把缓冲的文本一次性转发给客户端（当确定不是工具调用时调用）
-		textSeq := 0 // 全局文本序列号（跨 round 递增，用于诊断乱序）
+		// 架构升级：text_delta / reasoning_delta 事件从裸字符串改为 {seq, text} 结构，
+		// 前端按 seq 排序渲染，解决 SSE chunk 乱序/丢包问题。
 		flushBuffer := func() {
-			for i, chunk := range textBuf {
+			for _, chunk := range textBuf {
 				textSeq++
-				slog.Info("agent: [TEXT-SEQ] text_delta sent",
-					"seq", textSeq,
-					"mode", "flush",
-					"buf_idx", i,
-					"chunk_len", len(chunk),
-					"preview", chunk[:min(60, len(chunk))])
-				s.sendAndCache(sess, c.Writer, flusher, "text_delta", chunk)
+				s.sendAndCache(sess, c.Writer, flusher, "text_delta",
+					map[string]interface{}{"seq": textSeq, "text": chunk})
 			}
 			textBuf = nil
 		}
@@ -864,17 +862,15 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 					} else {
 						// 正常实时模式或缓冲已释放 → 直接转发
 						textSeq++
-						slog.Info("agent: [TEXT-SEQ] text_delta sent",
-							"seq", textSeq,
-							"mode", "realtime",
-							"chunk_len", len(textChunk),
-							"preview", textChunk[:min(60, len(textChunk))])
-						s.sendAndCache(sess, c.Writer, flusher, "text_delta", textChunk)
+						s.sendAndCache(sess, c.Writer, flusher, "text_delta",
+							map[string]interface{}{"seq": textSeq, "text": textChunk})
 					}
 				}
 			case "reasoning_delta":
 				if textChunk, ok := ev.Data.(string); ok && textChunk != "" {
-					s.sendAndCache(sess, c.Writer, flusher, "reasoning_delta", textChunk)
+					reasoningSeq++
+					s.sendAndCache(sess, c.Writer, flusher, "reasoning_delta",
+						map[string]interface{}{"seq": reasoningSeq, "text": textChunk})
 				}
 			case "tool_call_chunk":
 				gotToolCalls = true
@@ -1121,7 +1117,9 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 
 	// 2c: 兜底——LLM 未返回任何文本（finalAssistantText 为空）
 	//     发送一个 text_delta 提示事件，避免前端显示"服务端返回空回复"
-	s.sendSSEEventSafe(c.Writer, flusher, "text_delta", "（AI 助手未生成有效回复，可能需要换个问题或检查 API Key 配置）")
+	textSeq++ // fallback 也递增 seq，保持全局唯一
+	s.sendSSEEventSafe(c.Writer, flusher, "text_delta",
+		map[string]interface{}{"seq": textSeq, "text": "（AI 助手未生成有效回复，可能需要换个问题或检查 API Key 配置）"})
 	s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
 	slog.Warn("agent: chat completed with no output (empty finalAssistantText)",
 		"rounds", autoToolExecuted)
@@ -1496,12 +1494,14 @@ func (s *Server) sendAndCache(sess *agentSession, w http.ResponseWriter, flusher
 
 func (s *Server) streamText(w http.ResponseWriter, text string, chunkSize int, delayMs time.Duration) {
 	runes := []rune(text)
+	seq := 0
 	for i := 0; i < len(runes); i += chunkSize {
 		end := i + chunkSize
 		if end > len(runes) {
 			end = len(runes)
 		}
-		s.sendSSEEvent(w, "text_delta", string(runes[i:end]))
+		seq++
+		s.sendSSEEvent(w, "text_delta", map[string]interface{}{"seq": seq, "text": string(runes[i:end])})
 		time.Sleep(delayMs)
 	}
 }
@@ -1509,12 +1509,14 @@ func (s *Server) streamText(w http.ResponseWriter, text string, chunkSize int, d
 // streamTextSafe — 安全版本：检测断连后立即停止
 func (s *Server) streamTextSafe(w http.ResponseWriter, flusher http.Flusher, text string, chunkSize int, delayMs time.Duration) {
 	runes := []rune(text)
+	seq := 0
 	for i := 0; i < len(runes); i += chunkSize {
 		end := i + chunkSize
 		if end > len(runes) {
 			end = len(runes)
 		}
-		s.sendSSEEventSafe(w, flusher, "text_delta", string(runes[i:end]))
+		seq++
+		s.sendSSEEventSafe(w, flusher, "text_delta", map[string]interface{}{"seq": seq, "text": string(runes[i:end])})
 		time.Sleep(delayMs)
 	}
 }

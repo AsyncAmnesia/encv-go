@@ -176,19 +176,92 @@ const TOOL_STATUS_VALUES: ReadonlySet<ToolStatus> = new Set<ToolStatus>([
  * 后端格式：json.Marshal(plainString) → 经外层 JSON 解码后 data 就是纯文本
  * 兼容旧格式：{"content": "..."} 包装
  */
-function parseContentDelta(data: string): string {
-  if (!data) return ''
-  // 尝试作为 JSON 解析（兼容 {"content":"..."} 或包装字符串格式）
-  try {
-    const parsed = JSON.parse(data)
-    if (typeof parsed === 'string') return parsed
-    if (parsed && typeof parsed === 'object' && 'content' in parsed) {
-      return String((parsed as { content: unknown }).content ?? '')
+/**
+ * 解析 text_delta / reasoning_delta 的 data 字段。
+ *
+ * 后端架构升级后事件格式从裸字符串变为 {seq: number, text: string}，
+ * 此函数兼容两种格式：
+ *   - 旧格式：data 是 string → { text, seq: undefined }
+ *   - 新格式：data 是 {seq, text} 对象 → { text, seq }
+ */
+interface ParsedContentDelta {
+  text: string
+  seq?: number
+}
+function parseContentDelta(data: unknown): ParsedContentDelta {
+  if (!data) return { text: '' }
+  if (typeof data === 'string') {
+    try {
+      const parsed = JSON.parse(data)
+      if (typeof parsed === 'string') return { text: parsed }
+      if (parsed && typeof parsed === 'object') {
+        // 新格式 {seq, text}
+        if ('text' in parsed && 'seq' in parsed) {
+          return { text: String(parsed.text ?? ''), seq: Number(parsed.seq) }
+        }
+        // 旧格式兼容 {"content":"..."}
+        if ('content' in parsed) {
+          return { text: String((parsed as { content: unknown }).content ?? '') }
+        }
+      }
+    } catch {
+      // 不是有效 JSON → 纯文本，直接使用
     }
-  } catch {
-    // 不是有效 JSON → 后端发的是纯文本（当前 encv-go stub 格式），直接使用
+    return { text: data }
   }
-  return data
+  // data 已经是对象（新格式，SSE 层已 JSON.parse）
+  if (data && typeof data === 'object') {
+    if ('text' in data && 'seq' in data) {
+      return { text: String((data as { text: unknown }).text ?? ''), seq: Number((data as { seq: unknown }).seq) }
+    }
+  }
+  return { text: String(data ?? '') }
+}
+
+/**
+ * 按 seq 序列号追加文本块到消息字段，保证乱序到达时也能正确排序显示。
+ *
+ * 内部维护 msg._contentSeqBuf / msg._reasoningSeqBuf（Map<number, string>），
+ * 每次写入后按 key 排序重建 msg.content / msg.reasoning。
+ */
+function appendSequencedChunk(
+  msg: Record<string, unknown>,
+  field: 'content' | 'reasoning',
+  seq: number | undefined,
+  text: string,
+) {
+  const bufKey = field === 'content' ? '_contentSeqBuf' : '_reasoningSeqBuf'
+  let buf = msg[bufKey] as Map<number, string> | undefined
+  if (!buf) {
+    buf = new Map<number, string>()
+    msg[bufKey] = buf
+  }
+
+  if (seq !== undefined) {
+    // 有序号模式：存入 buffer，按 seq 排序后重建
+    buf.set(seq, text)
+    let rebuilt = ''
+    const sortedKeys = Array.from(buf.keys()).sort((a, b) => a - b)
+    for (const k of sortedKeys) rebuilt += buf.get(k)
+    msg[field] = rebuilt
+
+    // 检测乱序/丢包（seq 不连续）
+    if (buf.size > 1 && sortedKeys.length > 1) {
+      for (let i = 1; i < sortedKeys.length; i++) {
+        if (sortedKeys[i] - sortedKeys[i - 1] > 1) {
+          console.warn(
+            `[useAgent] seq gap detected in ${field}:`,
+            `missing ${sortedKeys[i - 1] + 1}..${sortedKeys[i] - 1}`,
+            `(got ${sortedKeys[i - 1]} → ${sortedKeys[i]}, total=${buf.size})`,
+          )
+          break // 只报一次
+        }
+      }
+    }
+  } else {
+    // 无序号（旧格式 fallback）：直接追加
+    ;(msg[field] as string) = ((msg[field] as string) || '') + text
+  }
 }
 
 /**
@@ -1007,12 +1080,14 @@ export function useAgent() {
     switch (event.type) {
       case 'text_delta': {
         const m = lastAssistant()
-        m.content += parseContentDelta(event.data)
+        const parsed = parseContentDelta(event.data)
+        appendSequencedChunk(m, 'content', parsed.seq, parsed.text)
         break
       }
       case 'reasoning_delta': {
         const m = lastAssistant()
-        m.reasoning = (m.reasoning || '') + parseContentDelta(event.data)
+        const parsed = parseContentDelta(event.data)
+        appendSequencedChunk(m, 'reasoning', parsed.seq, parsed.text)
         break
       }
       case 'tool_call': {
