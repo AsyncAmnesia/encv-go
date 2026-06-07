@@ -57,6 +57,39 @@
 
 ---
 
+### 反模式 D：`pnpm build` + `pnpm preview` 制造孤儿前端（2026-06-07 mobile mock preset 验证事故）
+
+**症状**：用户说"重建前端并给我预览链接"时，擅自跑：
+1. `pnpm build` — 跑 vue-tsc + vite build 完整构建
+2. `pnpm preview --port 4173` — 启动 vite 自带静态预览服务
+
+**根因（连环误判）**：
+1. 错把 `pnpm build` 当成"重建前端"标准做法 — 实际 `build` 产物 `dist/` 是给 **Android 离线包**用的（Capacitor sync → android/app/src/main/assets/public/），**不是 dev 预览**
+2. 错把 vite 自带 `preview` 当成"预览链接"通用方案 — vite preview 是**纯静态服务**，不走 vite dev 插件链（@ionic/vue、Capacitor polyfill、HMR 客户端）→ 前端能打开但**调不到任何 `/api/`** → 用户看到的"无错白屏 + 工具调用失败"是孤儿前端症状
+3. 错以为"vite preview"是 Capacitor + Ionic Vue 项目的合法入口 — 实际本项目 preview 链路是**已 pm2 守护的 4 件套**（preview-gateway:16666 → encv-mobile-vite:8100 → Go 后端 :2025），OpenPreview 直接打 16666 就行
+4. 思考过程没核对 §二 沙箱 dev 服务拓扑表，假设 vite 自己 serve 出来就等于项目预览
+
+**禁止**：
+- ❌ `cd app/encv-mobile && pnpm build`（除非用户明确说"打 Android 包 / Capacitor sync"）
+- ❌ `cd app/encv-mobile && pnpm preview`（vite 自带静态预览，绕开项目管控链路）
+- ❌ 任何 `vite --port 4xxx` / `vite preview --port 4xxx`（非 8100 端口都脱离项目管控）
+- ❌ 任何 `npx serve dist` / `python3 -m http.server dist` / `npx http-server dist`（同样孤儿）
+
+**正确做法（用户说"重建前端 / 给我预览链接"时）**：
+- ✅ **不** build：vite dev (8100) 跑源码 + HMR，源码改动已自动热重载
+- ✅ **不**启新进程：preview-gateway (16666) + encv-mobile-vite (8100) + Go 后端 (2025) 已在 pm2 守护（除非 `pm2 list` 显示 offline 才需要 `pm2 restart`）
+- ✅ Preview 链接直接用：**http://localhost:16666/**
+- ✅ 调用 OpenPreview 工具展示 16666 链接（command_id 取最近一次 `curl -sI :16666/` 健康检查的 RunCommand 即可）
+- ✅ 如真要"完整重打"前端（如 Capacitor sync 场景），必须先和用户确认目标，并明确告知 `pnpm build` 不会重启 dev 服务
+
+**反查清单（用户说 preview/build/dev 时，先问自己）**：
+- [ ] 用户说的"预览"是 web dev 预览还是 Android 离线包？
+- [ ] pm2 list 看过吗？4 件套是否都在 online？
+- [ ] 我要启的端口在 §二 拓扑表里吗？（16666 / 8100 / 15002 / 15003 / 2025 / 5173 / 5244 / 5174）
+- [ ] 我要跑的命令在 §四 禁止命令清单里吗？
+
+---
+
 ## 二、pm2 联动启动标准流程
 
 ### 2.1 沙箱 dev 服务拓扑（本项目固定 4 上游）
@@ -195,6 +228,9 @@ curl -s http://localhost:16666/__gateway/health | head -c 200
 | `node server.js` blocking | 直接跑 node | `pm2 start server.js --name xxx` |
 | `vite --port N &` blocking | `vite --port 8100 &` | `pm2 start vite.js --name encv-mobile-vite -- --port 8100` |
 | 任何 `&` 启后台 | `cmd &` | `pm2 start` |
+| **`pnpm build`（误当作 dev 预览）** | `pnpm build` | vite dev (8100) 跑源码 + HMR，**不 build** |
+| **`pnpm preview`（vite 静态预览，孤儿前端）** | `pnpm preview --port 4173` | preview-gateway (16666) → vite dev (8100) → Go 后端 |
+| **任意 `npx serve dist` / `http-server dist`** | 静态文件服务绕开 API 反代 | preview-gateway (16666) 是唯一合法入口 |
 
 ---
 
@@ -260,6 +296,15 @@ ls /storage/emulated/0/01-plain-media/ | head
 - [ ] **`curl :2025/api/service-guard | jq .context.envDevPreview` = true**（mobile overlay 生效）
 - [ ] **`curl :2025/api/service-guard | jq .context.servingDir` = /storage/emulated/0**
 - [ ] `pm2 save` 持久化（sandbox 会话重置可 `pm2 resurrect`）
+
+**当用户说"重建前端 / 给我预览链接 / dev server 起一下"时，先过这一关**：
+
+- [ ] 我**没有**在用 `pnpm build` 吗？（除非用户明确说"打 Android 包 / Capacitor sync"）
+- [ ] 我**没有**在用 `pnpm preview` / `vite preview` / `npx serve dist` 吗？
+- [ ] 我要启的端口在 §二 拓扑表（16666 / 8100 / 15002 / 15003 / 2025）吗？
+- [ ] `pm2 list` 显示 preview-gateway + encv-mobile-vite + Go 后端都 online 吗？
+- [ ] 如果都已 online，我**根本不需要启任何进程** — 直接给链接 http://localhost:16666/
+- [ ] OpenPreview 调用过了吗？（不是只口头说链接，要真正调工具）
 
 ---
 
