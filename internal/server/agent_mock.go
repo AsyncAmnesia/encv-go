@@ -19,6 +19,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -73,6 +74,18 @@ type MockEvent struct {
 type MockEngine struct {
 	builtinScenarios []*MockScenario
 	customScenarios  []*MockScenario
+
+	// realExecutor 是 tool_call 事件 data 中 execute_real=true 时
+	// 实际调用以拿真实结果的回调。典型为 (*Server).executeAgentTool。
+	// nil 时 execute_real=true 的 tool_call 仍按剧本硬编码 result 推送
+	// （保持单测可用 + 容灾）。
+	realExecutor func(ctx context.Context, toolName, argsJSON string) (string, error)
+}
+
+// SetRealExecutor 注入真实工具执行器。生产环境（*Server）启动时调用一次，
+// 把 s.executeAgentTool 绑进来；单测环境不调用，全部走硬编码剧本。
+func (e *MockEngine) SetRealExecutor(fn func(ctx context.Context, toolName, argsJSON string) (string, error)) {
+	e.realExecutor = fn
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -265,6 +278,12 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 	reasoningSeq := 0
 	streamStartEmitted := false
 
+	// pendingRealCalls 记录剧本中声明 execute_real=true 的 tool_call。
+	// 键为 call ID，值为 (toolName, argsJSON)。
+	// 在后续 step 遇到匹配的 tool_result 时，realExecutor 实际执行，
+	// 真实返回值覆盖剧本的硬编码 result。
+	pendingRealCalls := make(map[string]pendingRealCall)
+
 	for stepIdx, step := range scenario.Steps {
 		// 1. 推 step 前的延迟
 		if err := sleepDelay(ctx, step.DelayMs, effectiveSpeed); err != nil {
@@ -312,6 +331,15 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 						"scenario", scenario.ID, "step", stepIdx, "ev", evIdx)
 					continue
 				}
+				// execute_real 字段：true 时把 (id → name+args) 登记到 pendingRealCalls，
+				// 后续匹配 tool_result 时实际调 realExecutor 拿真实结果。
+				// 缺省 false（保持向后兼容：单测/无 executor 时按硬编码剧本走）。
+				if execReal, _ := ev.Data["execute_real"].(bool); execReal {
+					args, _ := ev.Data["args"].(string)
+					pendingRealCalls[id] = pendingRealCall{name: name, args: args}
+					slog.Debug("mock: tool_call marked execute_real=true, will call real handler at result",
+						"scenario", scenario.ID, "id", id, "name", name)
+				}
 				s.sendAndCache(sess, w, flusher, "tool_call", ev.Data)
 
 			case "stream_start":
@@ -352,14 +380,109 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 					return nil
 				}
 
+			case "tool_result":
+				// 若对应的 tool_call 标记了 execute_real=true 且 realExecutor 已注入，
+				// 实际调用以拿真实结果，覆盖剧本的硬编码 result。
+				// 否则按剧本硬编码 data 原样推送。
+				id, _ := ev.Data["id"].(string)
+				name, _ := ev.Data["name"].(string)
+				if pending, ok := pendingRealCalls[id]; ok {
+					delete(pendingRealCalls, id)
+					if e.realExecutor != nil {
+						// 先检查 ctx 取消（避免 realExecutor 长耗时后做无用功）
+						select {
+						case <-ctx.Done():
+							slog.Info("mock: ctx cancelled before real tool exec",
+								"scenario", scenario.ID, "id", id, "name", pending.name)
+							return ctx.Err()
+						default:
+						}
+						e.executeRealAndEmit(ctx, s, sess, w, flusher, pending, id, name)
+						continue
+					}
+					// realExecutor == nil：单测/容灾路径，硬编码剧本 result
+					slog.Debug("mock: execute_real=true but realExecutor nil, falling back to hardcoded result",
+						"scenario", scenario.ID, "id", id)
+				}
+				s.sendAndCache(sess, w, flusher, "tool_result", ev.Data)
+
 			default:
-				// 其他类型（tool_status / tool_result / stream_end）：原样推送
+				// 其他类型：原样推送
 				s.sendAndCache(sess, w, flusher, ev.Type, ev.Data)
 			}
 		}
 	}
 
+	// 剧本结束时尚未消费的 pending real calls（剧本只发了 tool_call
+	// 没发对应 tool_result）→ 静默丢弃。Run 局部 map 随函数返回 GC。
+	if len(pendingRealCalls) > 0 {
+		slog.Debug("mock: scenario ended with unmatched real-exec tool_calls (will be GC'd)",
+			"scenario", scenario.ID, "count", len(pendingRealCalls))
+	}
+
 	return nil
+}
+
+// pendingRealCall 是剧本中标记 execute_real=true 的 tool_call 的最小信息。
+// 后续匹配的 tool_result 事件触发实际 realExecutor 调用时使用。
+type pendingRealCall struct {
+	name string
+	args string
+}
+
+// executeRealAndEmit 实际调用 realExecutor 拿真实结果，推送 tool_result 事件。
+//
+// 事件 data 字段：
+//   - id, name：取自剧本 tool_call（保证 ID 一致性，前端可关联 tool_call ↔ tool_result）
+//   - result：realExecutor 返回的 JSON 字符串
+//   - isError / status：基于 realExecutor 的 error 返回值
+//   - durationMs：真实执行耗时
+//
+// realExecutor 内部会自行处理 ctx 取消（executeFSTool/executePluginTool 都用 ctx 传下去）。
+// 本函数不返回错误，slog 记录所有失败路径。
+func (e *MockEngine) executeRealAndEmit(
+	ctx context.Context,
+	s *Server,
+	sess *agentSession,
+	w http.ResponseWriter,
+	flusher http.Flusher,
+	pending pendingRealCall,
+	id string,
+	name string,
+) {
+	t0 := time.Now()
+	out, err := e.realExecutor(ctx, pending.name, pending.args)
+	dur := time.Since(t0).Milliseconds()
+
+	if err != nil {
+		// 真实工具执行报错 → 推送带 isError=true 的 tool_result
+		resultStr := out
+		if resultStr == "" {
+			resultStr = fmt.Sprintf(`{"error":%q}`, err.Error())
+		}
+		slog.Warn("mock: real tool exec failed, emit tool_result with isError=true",
+			"id", id, "name", pending.name, "args", pending.args, "dur_ms", dur, "error", err)
+		s.sendAndCache(sess, w, flusher, "tool_result", map[string]interface{}{
+			"id":         id,
+			"name":       name,
+			"result":     resultStr,
+			"isError":    true,
+			"status":     "failed",
+			"durationMs": dur,
+		})
+		return
+	}
+
+	slog.Info("mock: real tool exec succeeded",
+		"id", id, "name", pending.name, "args", pending.args, "dur_ms", dur)
+	s.sendAndCache(sess, w, flusher, "tool_result", map[string]interface{}{
+		"id":         id,
+		"name":       name,
+		"result":     out,
+		"isError":    false,
+		"status":     "success",
+		"durationMs": dur,
+	})
 }
 
 // sleepDelay 按 (DelayMs / speed) 等待，遇 ctx 取消立即返回。

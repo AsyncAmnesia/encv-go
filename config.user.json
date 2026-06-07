@@ -4,6 +4,7 @@
     "password": "123456"
   },
   "agent_settings": {
+    "mock_mode": "builtin",
     "openai_api_key": "enc:2EbMrA05RCjsaOCJ3nDooY7HXKFxXeQiD40trzM9dzLbluXgRgZi95K0YunUlQRPCJd4jQbsUtdy9mlmEXD94fyxH71PAqfHXrK3nsen8B8=",
     "openai_base_url": "https://api.gptgod.online/v1",
     "openai_model": "gpt-4o"

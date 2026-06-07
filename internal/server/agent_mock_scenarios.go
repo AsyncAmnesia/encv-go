@@ -61,7 +61,10 @@ func scenarioListFilesQuery() *MockScenario {
 	return &MockScenario{
 		ID:          "list_files_query",
 		Description: "list_mounts → list_files + 完整文本（覆盖 [真机问题]）",
-		Keywords:    []string{"有哪些文件", "有什么文件", "视频", "Movies", "目录", "列一下"},
+		// execute_real=true 标记：list_mounts / list_files 是只读工具，
+		// 应在 mock 模式下也实际执行（结果用真实文件系统数据，覆盖硬编码 JSON），
+		// 避免「mock 剧本编造文件列表」的真机问题。
+		Keywords: []string{"有哪些文件", "有什么文件", "视频", "Movies", "目录", "列一下"},
 		Steps: []MockStep{
 			// Step 1: 开场白
 			{DelayMs: 0, Events: []MockEvent{
@@ -70,7 +73,7 @@ func scenarioListFilesQuery() *MockScenario {
 				}},
 				{Type: "text_delta", Data: map[string]interface{}{"text": "好的，我先查看挂载点。\n\n"}},
 			}},
-			// Step 2: 调 list_mounts
+			// Step 2: 调 list_mounts（execute_real=true → 实际调用 s.executeAgentTool）
 			{DelayMs: 500, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_1",
@@ -79,13 +82,14 @@ func scenarioListFilesQuery() *MockScenario {
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "fileRead",
+					"execute_real": true,
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_1",
 					"status": "running",
 				}},
 			}},
-			// Step 3: list_mounts 结果
+			// Step 3: list_mounts 结果（execute_real 时硬编码 result 会被覆盖，可保留作 fallback）
 			{DelayMs: 300, Events: []MockEvent{
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_1",
@@ -104,7 +108,7 @@ func scenarioListFilesQuery() *MockScenario {
 			{DelayMs: 400, Events: []MockEvent{
 				{Type: "text_delta", Data: map[string]interface{}{"text": "已找到挂载点 serving。继续查看 Movies 目录..."}},
 			}},
-			// Step 5: 调 list_files
+			// Step 5: 调 list_files（execute_real=true）
 			{DelayMs: 500, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_2",
@@ -113,6 +117,7 @@ func scenarioListFilesQuery() *MockScenario {
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "fileRead",
+					"execute_real": true,
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_2",
@@ -163,7 +168,11 @@ func scenarioEncryptVideo() *MockScenario {
 	return &MockScenario{
 		ID:          "encrypt_video",
 		Description: "1 tool_call (kind=fileChange) — 验证 plugin 工具确认流程",
-		Keywords:    []string{"加密视频", "加密", "encrypt", "video"},
+		// ⚠️ execute_real=false（不是 true）：
+		// video_encrypt 是写操作（会真的加密文件），mock 模式绝对不能让
+		// 剧本误删/误改用户文件。硬编码 tool_result 用 success 占位，
+		// 真正的加密由用户在确认流（needsConfirm=true）触发。
+		Keywords: []string{"加密视频", "加密", "encrypt", "video"},
 		Steps: []MockStep{
 			{DelayMs: 0, Events: []MockEvent{
 				{Type: "stream_start", Data: map[string]interface{}{"scenario": "encrypt_video"}},
@@ -177,6 +186,7 @@ func scenarioEncryptVideo() *MockScenario {
 					"auto_run":     false,
 					"needsConfirm": true,
 					"kind":         "fileChange",
+					"execute_real": false, // 写操作：见上方注释，绝不能在 mock 模式下实际执行
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_enc_1",
@@ -218,6 +228,7 @@ func scenarioReadAndSummarize() *MockScenario {
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "fileRead",
+					"execute_real": true, // 只读工具：mock 模式也用真实文件内容
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_read_1",
@@ -269,7 +280,7 @@ func scenarioMultiStepSearch() *MockScenario {
 				{Type: "stream_start", Data: map[string]interface{}{"scenario": "multi_step_search"}},
 				{Type: "text_delta", Data: map[string]interface{}{"text": "我来搜索视频文件。"}},
 			}},
-			// Round 1: list_files
+			// Round 1: list_files（execute_real=true）
 			{DelayMs: 400, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_search_1",
@@ -278,6 +289,7 @@ func scenarioMultiStepSearch() *MockScenario {
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "fileRead",
+					"execute_real": true,
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_search_1",
@@ -298,7 +310,7 @@ func scenarioMultiStepSearch() *MockScenario {
 					"durationMs": 15,
 				}},
 			}},
-			// Round 2: 模拟 grep 工具（实际项目中是 list_files + filter）
+			// Round 2: 模拟 grep 工具（实际项目中是 list_files + filter，execute_real=true）
 			{DelayMs: 300, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_search_2",
@@ -307,6 +319,7 @@ func scenarioMultiStepSearch() *MockScenario {
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "fileRead",
+					"execute_real": true,
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_search_2",
@@ -327,7 +340,7 @@ func scenarioMultiStepSearch() *MockScenario {
 					"durationMs": 12,
 				}},
 			}},
-			// Round 3: read_file
+			// Round 3: stat_file（execute_real=true — 真实文件 stat）
 			{DelayMs: 300, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_search_3",
@@ -336,6 +349,7 @@ func scenarioMultiStepSearch() *MockScenario {
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "fileRead",
+					"execute_real": true,
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_search_3",
@@ -516,6 +530,7 @@ func scenarioToolCallWithArgs() *MockScenario {
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "fileRead",
+					"execute_real": true, // 真实 list_files（args 透传给 handler）
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_args_1",
@@ -557,6 +572,7 @@ func scenarioMultiToolParallel() *MockScenario {
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "fileRead",
+					"execute_real": true,
 				}},
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_par_2",
@@ -565,6 +581,7 @@ func scenarioMultiToolParallel() *MockScenario {
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "fileRead",
+					"execute_real": true,
 				}},
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_par_3",
@@ -573,6 +590,7 @@ func scenarioMultiToolParallel() *MockScenario {
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "fileRead",
+					"execute_real": true,
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_par_1",

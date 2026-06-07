@@ -11,6 +11,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -23,6 +24,206 @@ import (
 // 用于 Run 单元测试（避免读 config / 网络等副作用）。
 func newMockTestServer() *Server {
 	return &Server{mockEngine: NewMockEngine()}
+}
+
+// ─── execute_real 测试 ────────────────────────────────────────
+
+// TestMockEngine_ExecuteReal_OverridesHardcoded 验证当 tool_call 标记
+// execute_real=true 且 realExecutor 已注入时：
+//   - realExecutor 被实际调用
+//   - 真实返回值覆盖剧本的硬编码 result
+//   - 事件 isError=false / durationMs > 0
+func TestMockEngine_ExecuteReal_OverridesHardcoded(t *testing.T) {
+	eng := NewMockEngine()
+	calls := []string{}
+	eng.SetRealExecutor(func(ctx context.Context, name, args string) (string, error) {
+		calls = append(calls, name)
+		return `{"live":true,"name":"` + name + `"}`, nil
+	})
+
+	// 构造一个最小化剧本：tool_call(execute_real=true) + tool_result（硬编码假数据）
+	sc := &MockScenario{
+		ID:       "test_execute_real",
+		Keywords: []string{"x"},
+		Steps: []MockStep{
+			{DelayMs: 0, Events: []MockEvent{
+				{Type: "stream_start", Data: map[string]interface{}{"scenario": "test_execute_real"}},
+			}},
+			{DelayMs: 10, Events: []MockEvent{
+				{Type: "tool_call", Data: map[string]interface{}{
+					"id":           "call_real_1",
+					"name":         "list_files",
+					"args":         `{"mount_id":"serving","rel_path":"Movies"}`,
+					"auto_run":     true,
+					"needsConfirm": false,
+					"kind":         "fileRead",
+					"execute_real": true,
+				}},
+			}},
+			{DelayMs: 10, Events: []MockEvent{
+				// 硬编码假数据，应被真实结果覆盖
+				{Type: "tool_result", Data: map[string]interface{}{
+					"id":         "call_real_1",
+					"name":       "list_files",
+					"result":     `{"FAKE":true}`,
+					"isError":    false,
+					"status":     "success",
+					"durationMs": 999,
+				}},
+			}},
+			{DelayMs: 10, Events: []MockEvent{
+				{Type: "stream_end", Data: map[string]interface{}{"finishReason": "stop"}},
+			}},
+		},
+	}
+
+	s := newMockTestServer()
+	sess := newMockSession()
+	rec := httptest.NewRecorder()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := eng.Run(ctx, s, sess, rec, rec, sc, 10.0, true); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// 验证 realExecutor 被调用
+	if len(calls) != 1 || calls[0] != "list_files" {
+		t.Errorf("realExecutor 调用次数 = %d, names = %v, want 1×[list_files]", len(calls), calls)
+	}
+
+	// 验证 tool_result 事件被覆盖为真实数据
+	tr := findEventOfType(sess, "tool_result")
+	if tr == nil {
+		t.Fatal("expected tool_result event")
+	}
+	data, ok := tr.Data.(map[string]interface{})
+	if !ok {
+		t.Fatalf("tool_result.Data type = %T", tr.Data)
+	}
+	if got, _ := data["result"].(string); got != `{"live":true,"name":"list_files"}` {
+		t.Errorf("result 被覆盖 = %q, want real executor output", got)
+	}
+	if data["isError"] != false {
+		t.Errorf("isError = %v, want false", data["isError"])
+	}
+	if data["status"] != "success" {
+		t.Errorf("status = %v, want success", data["status"])
+	}
+	// durationMs 缓存中是 int64（未经 JSON 序列化）；断言它存在且非硬编码值 999。
+	// 不强制 > 0（mock 函数可能瞬时返回 0ms）——关键是「不是剧本硬编码 999」。
+	if dur, ok := data["durationMs"].(int64); !ok {
+		t.Errorf("durationMs 类型 = %T, want int64", data["durationMs"])
+	} else if dur == 999 {
+		t.Errorf("durationMs = %v, want real elapsed time (not hardcoded 999)", data["durationMs"])
+	}
+}
+
+// TestMockEngine_ExecuteReal_FallbackWhenNoExecutor 验证 realExecutor 为 nil
+// 时 execute_real=true 仍按硬编码剧本 result 推送（容灾 + 单测）。
+func TestMockEngine_ExecuteReal_FallbackWhenNoExecutor(t *testing.T) {
+	eng := NewMockEngine()
+	// 不调 SetRealExecutor — 留 nil
+
+	sc := &MockScenario{
+		ID: "test_execute_real_fallback",
+		Steps: []MockStep{
+			{DelayMs: 0, Events: []MockEvent{
+				{Type: "stream_start", Data: map[string]interface{}{"scenario": "test_execute_real_fallback"}},
+				{Type: "tool_call", Data: map[string]interface{}{
+					"id":           "call_fb_1",
+					"name":         "list_files",
+					"args":         `{}`,
+					"auto_run":     true,
+					"needsConfirm": false,
+					"kind":         "fileRead",
+					"execute_real": true,
+				}},
+				{Type: "tool_result", Data: map[string]interface{}{
+					"id":         "call_fb_1",
+					"name":       "list_files",
+					"result":     `{"HARDCODED":true}`,
+					"isError":    false,
+					"status":     "success",
+					"durationMs": 42,
+				}},
+				{Type: "stream_end", Data: map[string]interface{}{"finishReason": "stop"}},
+			}},
+		},
+	}
+
+	s := newMockTestServer()
+	sess := newMockSession()
+	rec := httptest.NewRecorder()
+
+	if err := eng.Run(context.Background(), s, sess, rec, rec, sc, 10.0, true); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	tr := findEventOfType(sess, "tool_result")
+	data, _ := tr.Data.(map[string]interface{})
+	if got, _ := data["result"].(string); got != `{"HARDCODED":true}` {
+		t.Errorf("realExecutor=nil 时 result 应保持硬编码 = %q, want HARDCODED", got)
+	}
+	if data["durationMs"] != 42 {
+		t.Errorf("realExecutor=nil 时 durationMs 应保持硬编码 42, got %v", data["durationMs"])
+	}
+}
+
+// TestMockEngine_ExecuteReal_ErrorPropagatesAsIsError 验证 realExecutor
+// 返回 error 时，tool_result 事件 isError=true / status=failed / result 含错误信息。
+func TestMockEngine_ExecuteReal_ErrorPropagatesAsIsError(t *testing.T) {
+	eng := NewMockEngine()
+	eng.SetRealExecutor(func(ctx context.Context, name, args string) (string, error) {
+		return "", fmt.Errorf("simulated execution failure")
+	})
+
+	sc := &MockScenario{
+		ID: "test_execute_real_err",
+		Steps: []MockStep{
+			{DelayMs: 0, Events: []MockEvent{
+				{Type: "stream_start", Data: map[string]interface{}{"scenario": "test_execute_real_err"}},
+				{Type: "tool_call", Data: map[string]interface{}{
+					"id":           "call_err_1",
+					"name":         "list_files",
+					"args":         `{}`,
+					"auto_run":     true,
+					"needsConfirm": false,
+					"kind":         "fileRead",
+					"execute_real": true,
+				}},
+				{Type: "tool_result", Data: map[string]interface{}{
+					"id":         "call_err_1",
+					"name":       "list_files",
+					"result":     `{"old":"to-be-overridden"}`,
+					"isError":    false,
+					"status":     "success",
+					"durationMs": 1,
+				}},
+				{Type: "stream_end", Data: map[string]interface{}{"finishReason": "stop"}},
+			}},
+		},
+	}
+
+	s := newMockTestServer()
+	sess := newMockSession()
+	rec := httptest.NewRecorder()
+
+	if err := eng.Run(context.Background(), s, sess, rec, rec, sc, 10.0, true); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	tr := findEventOfType(sess, "tool_result")
+	data, _ := tr.Data.(map[string]interface{})
+	if data["isError"] != true {
+		t.Errorf("realExecutor 返回 error 时 isError 应为 true, got %v", data["isError"])
+	}
+	if data["status"] != "failed" {
+		t.Errorf("status 应为 failed, got %v", data["status"])
+	}
+	if got, _ := data["result"].(string); !strings.Contains(got, "simulated execution failure") {
+		t.Errorf("result 应含错误信息, got %q", got)
+	}
 }
 
 // newMockSession 构造一个最小化的 agentSession。
