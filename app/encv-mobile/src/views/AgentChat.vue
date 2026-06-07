@@ -388,6 +388,7 @@ import { useChatEngine } from '@/composables/useChatEngine'
 // 触发引擎注册（模块副作用自动注册到 EngineRegistry）
 import '@/engines/defaultEngine'
 import '@/engines/copilotkitStyleEngine'
+import '@/engines/tdesignEngine'
 // 以下组件现在由 DefaultMessagesView.vue 内部导入（引擎渲染路径）
 // AgentChat.vue 作为宿主容器不再直接引用这些组件
 import AttachmentTray from '@/components/agent/AttachmentTray.vue'

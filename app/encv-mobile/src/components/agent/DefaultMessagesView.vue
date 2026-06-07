@@ -34,6 +34,7 @@
           :streaming="item.streaming"
           :status="status"
           :compact="!item.firstInGroup"
+          :show-footer="false"
         />
         <!-- 独立 Footer 段：时间戳固定，不依赖末段类型 -->
         <div
@@ -135,6 +136,7 @@
             :streaming="item.streaming"
             :status="status"
             :compact="!item.firstInGroup"
+            :show-footer="false"
           />
           <!-- 独立 Footer 段（虚拟滚动分支） -->
           <div

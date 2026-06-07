@@ -45,13 +45,14 @@
               :text="item.text"
             />
 
-            <!-- AI 文本消息 -->
+            <!-- AI 文本消息（show-footer=false：footer 由独立 messageFooter 段渲染） -->
             <AssistantMessage
               v-else-if="item.type === 'assistantText'"
               :text="item.text"
               :streaming="item.streaming"
               :status="status"
               :compact="!item.firstInGroup"
+              :show-footer="false"
             />
 
             <!-- 工具调用操作卡片（CopilotKit 风格渐变边框包裹） -->
