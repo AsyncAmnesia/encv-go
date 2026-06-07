@@ -185,25 +185,61 @@ func pkcs7Unpad(data []byte) []byte {
 // defaultAgentSystemPrompt 是内置默认 system prompt。
 // 当 config.user.json 的 agent_settings.system_prompt 为空或未配置时使用。
 //
-// 设计原则：
-//   - 强制 LLM 先调 list_mounts 发现可用文件系统，禁止凭训练数据编造路径
-//   - 明确告知工具能力边界（只读、无写入）
-//   - 中文为主（本项目面向国内用户）
+// 设计原则（平台级 Tool Use 架构）：
+//   - 在 system prompt 中嵌入完整工具定义（名称、参数 schema、描述）
+//   - 告诉 LLM：当需要调用工具时，以 JSON 数组格式输出工具调用
+//   - 后端解析 LLM 文本中的工具调用 JSON → 执行 → 注入结果 → 继续循环
+//   - 这是因为部分 API 代理（如 gptgod）会静默丢弃 OpenAI tools 参数，
+//     导致 API 级 Function Calling 不生效，必须走平台级文本解析兜底
 const defaultAgentSystemPrompt = `你是 ENCV AI 助手，可以帮助用户浏览文件、管理加密容器和执行操作。
 
 【重要规则 — 违反 = 严重错误】
 1. 在回答任何关于"有哪些文件""当前目录有什么"的问题之前，**必须先调用 list_mounts 工具**获取可访问的挂载点列表，再用 list_files 查看具体内容。
-2. **绝对禁止编造文件路径或目录结构**。如果未调用工具就不知道有哪些文件，应明确告知用户"我需要先查看文件列表"，而不是猜测 /boot/、/etc/ 等路径。
+2. **绝对禁止编造文件路径或目录结构**。如果未调用工具就不知道有哪些文件，应明确告知用户"我需要先查看文件列表"，而不是猜测路径。
 3. 你只能看到通过 list_mounts 工具返回的挂载点和文件。不要假设任何预置的目录结构。
 4. 所有文件操作都是只读的（list_mounts / list_files / read_file / stat_file）。如需修改文件，请告知用户手动操作。
 
-【可用工具】
-- list_mounts: 列出当前可访问的文件系统挂载点
-- list_files: 列出某个挂载点内的目录内容
-- read_file: 读取文本文件内容
-- stat_file: 查询文件/目录元信息
-- get_storage_info: 查看磁盘空间使用情况
-- 加密/解密相关工具（由插件提供）`
+【工具调用方式 — 平台级 Tool Use】
+当你需要调用工具时，**你必须且只能**输出一个 JSON 数组，格式如下：
+
+[{"name":"工具名","arguments":{"参数名":"参数值"}}]
+
+示例：
+- 调用 list_mounts：[{"name":"list_mounts","arguments":{}}]
+- 调用 list_files：[{"name":"list_files","arguments":{"mount_id":"xxx","rel_path":"/"}}]
+- 调用 read_file：[{"name":"read_file","arguments":{"mount_id":"xxx","rel_path":"/file.txt"}}]
+
+【严格规则】
+- 当你需要使用工具时，整个回复必须**只包含**工具调用 JSON 数组，不能有其他文字
+- 一次可以调用多个工具（JSON 数组多个元素）
+- 不需要调用工具时，正常用自然语言回复用户
+- 工具执行完成后，系统会自动把结果注入，你基于结果继续回答
+
+【可用工具清单】
+
+== 文件系统只读工具 ==
+1. list_mounts：列出当前可访问的文件系统挂载点（参数：无）
+2. list_files：列出某个挂载点内目录内容（参数：mount_id, rel_path, max_entries?）
+3. read_file：读取文本文件内容（参数：mount_id, rel_path）
+4. stat_file：查询文件/目录元信息（参数：mount_id, rel_path）
+5. get_storage_info：查看磁盘空间使用情况（参数：无）
+
+== 加密/解密工具（需用户确认） ==
+6. video_encrypt：使用视频插件加密文件
+7. video_decrypt：使用视频插件解密容器
+8. audio_encrypt：使用音频插件加密文件
+9. audio_decrypt：使用音频插件解密容器
+10. image_encrypt：使用图片插件加密文件
+11. image_decrypt：使用图片插件解密容器
+12. wps_encrypt：使用 WPS 文档插件加密文件
+13. wps_decrypt：使用 WPS 文档插件解密容器
+14. pdf_encrypt：使用 PDF 插件加密文件
+15. pdf_decrypt：使用 PDF 插件解密容器
+16. text_encrypt：使用文本插件加密文件
+17. text_decrypt：使用文本插件解密容器
+
+加密工具参数：input_paths(string[]), output_path(string)
+解密工具参数：container_path(string), output_dir(string)`
 
 // ─── Agent 配置读取 ──────────────────────────────────────────
 
@@ -732,13 +768,94 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		}
 
 		// ── 分支 B: LLM 返回纯文本（无 tool_calls）──
+		//     先尝试平台级 Tool Use 文本解析（应对 API 代理丢弃 tools 参数的情况）
 		slog.Info("agent: loop got text response",
 			"round", round+1,
 			"finish_reason", choice.FinishReason,
 			"text_len", len(msg.Content))
 
+		// 平台级 Tool Use：尝试从文本中解析工具调用 JSON
+		parsedCalls, remainingText := extractToolCallsFromText(msg.Content)
+		if len(parsedCalls) > 0 {
+			slog.Info("agent: loop parsed tool calls from text (platform-level Tool Use)",
+				"round", round+1,
+				"parsed_count", len(parsedCalls),
+				"remaining_len", len(remainingText))
+
+			// 转换为 toolCallAccumulator 格式，复用分支 A 的处理逻辑
+			accums := parsedToolCallsToAccumulator(parsedCalls)
+
+			// 追加 assistant 消息（含原始文本，保留 remainingText 作为上下文）
+			loopMessages = append(loopMessages, chatMsg{
+				Role:    "assistant",
+				Content: msg.Content,
+			})
+
+			// 逐个处理解析出的工具调用（与分支 A 逻辑相同）
+			allAutoExecuted := true
+			for _, tc := range accums {
+				needConfirm := true
+				if meta, ok := toolMeta[tc.Function.Name]; ok {
+					if v, ok := meta["needConfirm"].(bool); ok {
+						needConfirm = v
+					}
+				}
+
+				if needConfirm {
+					slog.Info("agent: loop parsed tool needs confirm",
+						"name", tc.Function.Name,
+						"round", round+1)
+					pendingTools = append(pendingTools, tc)
+					allAutoExecuted = false
+				} else {
+					slog.Info("agent: loop auto-executing parsed tool",
+						"name", tc.Function.Name,
+						"round", round+1)
+					start := time.Now()
+					result, execErr := s.executeAgentTool(
+						c.Request.Context(),
+						tc.Function.Name,
+						tc.Function.Arguments,
+					)
+					slog.Info("agent: loop parsed tool executed",
+						"name", tc.Function.Name,
+						"duration_ms", time.Since(start).Milliseconds(),
+						"has_error", execErr != nil)
+
+					if execErr != nil {
+						result = fmt.Sprintf(`{"error":"tool_execution_failed","detail":%q}`, execErr.Error())
+					}
+
+					loopMessages = append(loopMessages, chatMsg{
+						Role:       "tool",
+						Content:    result,
+						ToolCallID: tc.ID,
+						Name:       tc.Function.Name,
+					})
+					autoToolExecuted = true
+				}
+			}
+
+			if !allAutoExecuted {
+				// 有工具需要用户确认 → 退出循环
+				// 如果有剩余文本（LLM 在工具调用外还说了什么），也记录下来
+				if remainingText != "" {
+					slog.Info("agent: loop has remaining text with pending tools",
+						"remaining_len", len(remainingText))
+				}
+				break
+			}
+
+			// 所有工具都自动执行 → 继续下一轮
+			loopMessages = append(loopMessages, chatMsg{
+				Role:    "user",
+				Content: "[工具执行结果已注入。请基于以上结果回答用户的原始问题。]",
+			})
+			continue
+		}
+
+		// 确认是纯文本回复 → 退出循环
 		finalAssistantText = msg.Content
-		// 把最终 assistant 回复也追加到 session messages
 		loopMessages = append(loopMessages, chatMsg{Role: "assistant", Content: msg.Content})
 		break
 	}

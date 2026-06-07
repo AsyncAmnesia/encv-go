@@ -694,3 +694,122 @@ func TestEncryptDecrypt_RoundTrip_IgnoresDeviceID(t *testing.T) {
 
 // 防止未使用 import 报警
 var _ = io.EOF
+
+// ════════════════════════════════════════════════════════════
+// 平台级 Tool Use 文本解析器测试
+// ════════════════════════════════════════════════════════════
+
+func TestExtractToolCallsFromText_FullJSONArray(t *testing.T) {
+	// 策略 1: 整个文本就是 JSON 数组
+	input := `[{"name":"list_mounts","arguments":{}}]`
+	calls, remaining := extractToolCallsFromText(input)
+	if len(calls) != 1 || calls[0].Name != "list_mounts" {
+		t.Fatalf("expected 1 call(list_mounts), got %d calls: %+v", len(calls), calls)
+	}
+	if remaining != "" {
+		t.Errorf("expected empty remaining, got %q", remaining)
+	}
+}
+
+func TestExtractToolCallsFromText_MultipleCalls(t *testing.T) {
+	input := `[{"name":"list_mounts","arguments":{}},{"name":"list_files","arguments":{"mount_id":"default","rel_path":"/"}}]`
+	calls, remaining := extractToolCallsFromText(input)
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 calls, got %d", len(calls))
+	}
+	if calls[0].Name != "list_mounts" || calls[1].Name != "list_files" {
+		t.Errorf("wrong names: %+v", calls)
+	}
+	if remaining != "" {
+		t.Errorf("expected empty remaining, got %q", remaining)
+	}
+}
+
+func TestExtractToolCallsFromText_WithArguments(t *testing.T) {
+	input := `[{"name":"read_file","arguments":{"mount_id":"default","rel_path":"/test.txt"}}]`
+	calls, _ := extractToolCallsFromText(input)
+	if len(calls) != 1 || calls[0].Name != "read_file" {
+		t.Fatalf("expected 1 call(read_file), got %+v", calls)
+	}
+	var args map[string]string
+	json.Unmarshal(calls[0].Arguments, &args)
+	if args["mount_id"] != "default" || args["rel_path"] != "/test.txt" {
+		t.Errorf("wrong args: %+v", args)
+	}
+}
+
+func TestExtractToolCallsFromText_PlainText_NoMatch(t *testing.T) {
+	input := `你好，今天天气不错。有什么可以帮你的？`
+	calls, remaining := extractToolCallsFromText(input)
+	if len(calls) != 0 {
+		t.Errorf("expected 0 calls, got %d", len(calls))
+	}
+	if remaining != input {
+		t.Errorf("remaining should be original text, got %q", remaining)
+	}
+}
+
+func TestExtractToolCallsFromText_CodeBlock(t *testing.T) {
+	// 策略 3: ```json 代码块
+	input := "我来帮你查看文件列表：\n\n```json\n[{\"name\":\"list_mounts\",\"arguments\":{}}]\n```\n\n请稍等。"
+	calls, remaining := extractToolCallsFromText(input)
+	if len(calls) != 1 || calls[0].Name != "list_mounts" {
+		t.Fatalf("expected 1 call(list_mounts), got %d: %+v", len(calls), calls)
+	}
+	if remaining == "" {
+		t.Error("expected non-empty remaining text")
+	}
+}
+
+func TestExtractToolCallsFromText_Empty(t *testing.T) {
+	calls, remaining := extractToolCallsFromText("")
+	if len(calls) != 0 || remaining != "" {
+		t.Errorf("empty input should return nil, got calls=%d remaining=%q", len(calls), remaining)
+	}
+}
+
+func TestFindJSONArrayEnd_Simple(t *testing.T) {
+	s := `{"a":1}`
+	idx := findJSONArrayEnd(s)
+	if idx != -1 {
+		t.Errorf("object should return -1, got %d", idx)
+	}
+}
+
+func TestFindJSONArrayEnd_Nested(t *testing.T) {
+	s := `[{"name":"test","arguments":{"key":"value[with_brackets]"}}]`
+	idx := findJSONArrayEnd(s)
+	if idx <= 0 {
+		t.Errorf("expected positive index, got %d", idx)
+	}
+	// 验证截取后是合法 JSON
+	var v []interface{}
+	json.Unmarshal([]byte(s[:idx]), &v)
+	if len(v) != 1 {
+		t.Error("should parse as array with 1 element")
+	}
+}
+
+func TestParsedToolCallsToAccumulator(t *testing.T) {
+	calls := []parsedToolCall{
+		{Name: "list_mounts", Arguments: json.RawMessage(`{}`)},
+		{Name: "read_file", Arguments: json.RawMessage(`{"path":"/f"}`)},
+	}
+	accums := parsedToolCallsToAccumulator(calls)
+	if len(accums) != 2 {
+		t.Fatalf("expected 2 accumulators, got %d", len(accums))
+	}
+	if accums[0].Function.Name != "list_mounts" {
+		t.Errorf("[0] wrong name: %s", accums[0].Function.Name)
+	}
+	if accums[1].Function.Name != "read_file" {
+		t.Errorf("[1] wrong name: %s", accums[1].Function.Name)
+	}
+	if accums[1].Function.Arguments != `{"path":"/f"}` {
+		t.Errorf("[1] wrong args: %s", accums[1].Function.Arguments)
+	}
+	// ID 应该以 ptc_ 开头
+	if !strings.HasPrefix(accums[0].ID, "ptc_") {
+		t.Errorf("[0] ID should start with ptc_: %s", accums[0].ID)
+	}
+}
