@@ -559,8 +559,8 @@ export function useAgent() {
   const TEMP_STORAGE_KEY = 'encv-agent-temperature'
   const activeModel = ref<string>(
     (() => {
-      try { return localStorage.getItem(MODEL_STORAGE_KEY) || 'gpt-4o-mini' }
-      catch { return 'gpt-4o-mini' }
+      try { return localStorage.getItem(MODEL_STORAGE_KEY) || 'gpt-4o' }
+      catch { return 'gpt-4o' }
     })(),
   )
   const activeTemperature = ref<number>(
