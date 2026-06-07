@@ -11,7 +11,10 @@
 //   - Spec: /workspace/.trae/specs/agent-mock-mode/spec.md §Requirement: 内置剧本清单
 package server
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // ════════════════════════════════════════════════════════════════
 // 1. default_friendly — fallback 默认剧本
@@ -88,7 +91,7 @@ func scenarioListFilesQuery() *MockScenario {
 			}},
 
 			// Step 2: list_mounts（execute_real=true → 真实读 mounts 配置）
-			{DelayMs: 800, Events: []MockEvent{
+			{DelayMs: 1200, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_mount",
 					"name":         "list_mounts",
@@ -105,7 +108,7 @@ func scenarioListFilesQuery() *MockScenario {
 			}},
 
 			// Step 3: list_mounts 结果（被真实结果覆盖，hardcode 仅作 fallback）
-			{DelayMs: 600, Events: []MockEvent{
+			{DelayMs: 1000, Events: []MockEvent{
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_mount",
 					"status": "success",
@@ -121,10 +124,10 @@ func scenarioListFilesQuery() *MockScenario {
 			}},
 
 			// Step 4: 过渡文本 + list_files(/01-plain-media) 调真实
-			{DelayMs: 600, Events: []MockEvent{
+			{DelayMs: 800, Events: []MockEvent{
 				{Type: "text_delta", Data: map[string]interface{}{"text": "已找到挂载点 `serving` → `/storage/emulated/0`。继续递归到 `01-plain-media`...\n\n"}},
 			}},
-			{DelayMs: 700, Events: []MockEvent{
+			{DelayMs: 1000, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_files1",
 					"name":         "list_files",
@@ -139,7 +142,7 @@ func scenarioListFilesQuery() *MockScenario {
 					"status": "running",
 				}},
 			}},
-			{DelayMs: 600, Events: []MockEvent{
+			{DelayMs: 900, Events: []MockEvent{
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_files1",
 					"status": "success",
@@ -155,10 +158,10 @@ func scenarioListFilesQuery() *MockScenario {
 			}},
 
 			// Step 5: 进入 video 子目录
-			{DelayMs: 600, Events: []MockEvent{
+			{DelayMs: 800, Events: []MockEvent{
 				{Type: "text_delta", Data: map[string]interface{}{"text": "`01-plain-media` 下有 4 个子目录（`audio` / `document` / `image` / `video`）。点开 `video` 看一下...\n\n"}},
 			}},
-			{DelayMs: 700, Events: []MockEvent{
+			{DelayMs: 1000, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_files2",
 					"name":         "list_files",
@@ -173,7 +176,7 @@ func scenarioListFilesQuery() *MockScenario {
 					"status": "running",
 				}},
 			}},
-			{DelayMs: 600, Events: []MockEvent{
+			{DelayMs: 900, Events: []MockEvent{
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_files2",
 					"status": "success",
@@ -189,7 +192,7 @@ func scenarioListFilesQuery() *MockScenario {
 			}},
 
 			// Step 6: 读 video 里的 sample.mp4 文件元数据
-			{DelayMs: 700, Events: []MockEvent{
+			{DelayMs: 1000, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_read",
 					"name":         "read_file",
@@ -204,7 +207,7 @@ func scenarioListFilesQuery() *MockScenario {
 					"status": "running",
 				}},
 			}},
-			{DelayMs: 600, Events: []MockEvent{
+			{DelayMs: 900, Events: []MockEvent{
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_read",
 					"status": "success",
@@ -219,19 +222,27 @@ func scenarioListFilesQuery() *MockScenario {
 				}},
 			}},
 
-			// Step 7: 总结文本（不含硬编码数值——具体数据已由上方结构化卡片展示）
-			// 注意：文件名/大小/目录结构全部来自 tool_result 真实返回，
-			// 此处只做自然语言归纳，不重复具体数值。
-			{DelayMs: 800, Events: []MockEvent{
-				{Type: "text_delta", Data: map[string]interface{}{"text": "### 你的媒体库概览\n\n"}},
-				{Type: "text_delta", Data: map[string]interface{}{"text": "已完成对 `01-plain-media` 目录的递归扫描：先列出挂载点，再逐级进入子目录读取文件列表。\n\n"}},
-				{Type: "text_delta", Data: map[string]interface{}{"text": "上方工具调用卡片已展示完整的目录结构和文件详情（含真实大小和修改时间）。\n\n"}},
-				{Type: "text_delta", Data: map[string]interface{}{"text": "**下一步建议**（点击 chip 直接执行）：\n\n"}},
-				{Type: "text_delta", Data: map[string]interface{}{"text": "1. 加密视频文件\n2. 查看文档完整内容\n3. 切换到搜索剧本\n"}},
+			// Step 7: 动态总结（从 tool_result 真实数据取值——文件名/大小全部来自 handler 返回值）
+			// 使用 text_delta_templated 事件类型，{%id:field%} 占位符在 Run 时替换为真实数据
+			{DelayMs: 1500, Events: []MockEvent{
+				{Type: "text_delta_templated", Data: map[string]interface{}{"text": "### 你的媒体库概览\n\n"}},
+				{Type: "text_delta_templated", Data: map[string]interface{}{"text": fmt.Sprintf(
+					"已完成对 `01-plain-media` 的递归扫描。\n\n"+
+					"**视频文件**：{%call_files2:files%}\n\n"+
+					"**子目录**：{%call_files1:items%}\n\n"+
+					"**挂载点**：{%call_mount:mounts%}\n\n",
+				)}},
+			{Type: "text_delta_templated", Data: map[string]interface{}{
+					"text": fmt.Sprintf(
+						"**读取文件**：{%call_read:error%}\n\n"+
+						"**下一步建议**（点击 chip 直接执行）：\n\n"+
+						"1. 加密视频文件\n2. 查看文档完整内容\n3. 切换到搜索剧本\n",
+					),
+				}},
 			}},
 
 			// Step 8: 结束
-			{DelayMs: 300, Events: []MockEvent{
+			{DelayMs: 500, Events: []MockEvent{
 				{Type: "stream_end", Data: map[string]interface{}{
 					"finishReason": "stop",
 					"usage":        map[string]int{"totalTokens": 618},

@@ -166,8 +166,22 @@
             :streaming="item.streaming"
             :status="status"
             :compact="!item.firstInGroup"
-            :show-footer="!!item.showFooter"
           />
+          <!-- 独立 Footer 段：时间戳固定，不依赖末段类型 -->
+          <div
+            v-else-if="item.type === 'messageFooter'"
+            class="messageFooterStandalone"
+          >
+            <span class="footerTimestamp">{{ formatFooterTime(item.timestamp) }}</span>
+            <button
+              type="button"
+              class="footerCopyBtn"
+              :title="'复制内容'"
+              @click="copyMessageContent(item.messageId)"
+            >
+              <ion-icon :icon="copyIconVar" />
+            </button>
+          </div>
           <ApprovalCard
             v-else-if="item.type === 'approval'"
             :tool-call="findToolCall(item.toolCallId)!"
@@ -253,8 +267,22 @@
               :streaming="item.streaming"
               :status="status"
               :compact="!item.firstInGroup"
-              :show-footer="!!item.showFooter"
             />
+            <!-- 独立 Footer 段（虚拟滚动分支） -->
+            <div
+              v-else-if="item.type === 'messageFooter'"
+              class="messageFooterStandalone"
+            >
+              <span class="footerTimestamp">{{ formatFooterTime(item.timestamp) }}</span>
+              <button
+                type="button"
+                class="footerCopyBtn"
+                :title="'复制内容'"
+                @click="copyMessageContent(item.messageId)"
+              >
+                <ion-icon :icon="copyIconVar" />
+              </button>
+            </div>
             <ApprovalCard
               v-else-if="item.type === 'approval'"
               :tool-call="findToolCall(item.toolCallId)!"
@@ -528,6 +556,7 @@ import {
   keyOutline,
   chevronDownOutline,
   flaskOutline,
+  copyOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { getDeviceIdSync } from '@/composables/useDeviceId'
@@ -661,6 +690,7 @@ const clipboardIcon = clipboardOutline
 const refreshCircleIcon = refreshCircleOutline
 const chevronDownIcon = chevronDownOutline
 const flaskIcon = flaskOutline
+const copyIconVar = copyOutline
 const historyOpen = ref(false)
 
 // ── Task 26 (LAN Access) ───────────────────────────────────
@@ -1004,6 +1034,40 @@ function findToolResult(id: string): ToolResult | null {
 // renderAgentFlow 时间轴模式模板引用的别名（与 findToolCall / findToolResult 同义）
 function findToolCallById(id: string): ToolCall | null { return findToolCall(id) }
 function findToolResultById(id: string): ToolResult | null { return findToolResult(id) }
+
+/** 格式化 Footer 固定时间戳为 HH:mm */
+function formatFooterTime(timestamp: number): string {
+  const d = new Date(timestamp)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
+}
+
+/** 复制 messageFooter 对应消息的全文内容 */
+async function copyMessageContent(messageId: string): Promise<void> {
+  // 从 messageId (如 "a-2") 提取消息索引
+  const idx = parseInt(messageId.replace(/^[au]-/, ''), 10)
+  const msg = messages.value[idx]
+  if (!msg?.content) return
+  const text = typeof msg.content === 'string' ? msg.content : ''
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    showToast({ message: '已复制', duration: 1200, color: 'success' })
+  } catch {
+    showToast({ message: '复制失败', duration: 1600, color: 'danger' })
+  }
+}
 
 function resolveToolCalls(ids: string[]): ToolCall[] {
   const out: ToolCall[] = []
@@ -1449,6 +1513,47 @@ defineExpose({})
 .renderedItemWrap {
   display: flex;
   flex-direction: column;
+}
+
+/* 独立 Footer 段：时间戳固定，与 AssistantMessage 解耦 */
+.messageFooterStandalone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 36px;
+  margin-top: 2px;
+  border-top: 1px solid rgba(var(--ion-color-medium-rgb), 0.12);
+  padding-top: 4px;
+}
+
+.messageFooterStandalone .footerTimestamp {
+  font-size: 11px;
+  color: var(--encv-text-secondary, rgba(127,127,127,0.6));
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.messageFooterStandalone .footerCopyBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--encv-text-secondary, rgba(127,127,127,0.45));
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.messageFooterStandalone .footerCopyBtn:hover,
+.messageFooterStandalone .footerCopyBtn:active {
+  color: var(--ion-color-primary);
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
 }
 
 .agentChatFooter {

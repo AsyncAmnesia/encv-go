@@ -19,6 +19,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -303,6 +304,11 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 	// 真实返回值覆盖剧本的硬编码 result。
 	pendingRealCalls := make(map[string]pendingRealCall)
 
+	// collectedResults 收集所有已完成的 tool_result（id → 结果信息）。
+	// 用于 text_delta_templated 事件类型从真实结果动态生成文本，
+	// 避免剧本 Step 7 硬编码文件名/大小等数值。
+	collectedResults := make(map[string]toolResultInfo)
+
 	// ─── Task 27 调试：写独立日志文件（stdout 被 air-run.sh exec 吞掉后看不到） ──
 	// 每次 Run 写入 /tmp/mock-debug-{scenarioID}.log，追加模式。
 	// 格式：每行一个 event（ts | step | evIdx | type | data摘要）
@@ -431,6 +437,18 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 					map[string]interface{}{"seq": textSeq, "text": text})
 				writeDebug(stepIdx, evIdx, "text_delta", text[:min(80, len(text))])
 
+			case "text_delta_templated":
+				// 动态文本模板：data.text 中可包含 {%id%} 占位符，
+				// Run 方法从 collectedResults 中取对应 tool_result 的 JSON 替换。
+				// 用途：Step 7 总结文本从真实工具返回值动态生成文件名/大小等，
+				// 避免硬编码数值与实际数据不一致。
+				textSeq++
+				template, _ := ev.Data["text"].(string)
+				rendered := renderTextTemplate(template, collectedResults)
+				s.sendAndCache(sess, w, flusher, "text_delta",
+					map[string]interface{}{"seq": textSeq, "text": rendered})
+				writeDebug(stepIdx, evIdx, "text_delta_templated", rendered[:min(100, len(rendered))])
+
 			case "reasoning_delta":
 				reasoningSeq++
 				text, _ := ev.Data["text"].(string)
@@ -466,12 +484,18 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 							return ctx.Err()
 						default:
 						}
-						e.executeRealAndEmit(ctx, s, sess, w, flusher, pending, id, name, writeDebug)
+						realResult := e.executeRealAndEmit(ctx, s, sess, w, flusher, pending, id, name, writeDebug)
+						collectedResults[id] = toolResultInfo{id: id, name: name, result: realResult}
 						continue
 					}
 					// realExecutor == nil：单测/容灾路径，硬编码剧本 result
 					slog.Debug("mock: execute_real=true but realExecutor nil, falling back to hardcoded result",
 						"scenario", scenario.ID, "id", id)
+				}
+				// 收集结果（硬编码路径 + realExecutor=nil fallback）
+				resultStr, _ := ev.Data["result"].(string)
+				if resultStr != "" && id != "" {
+					collectedResults[id] = toolResultInfo{id: id, name: name, result: resultStr}
 				}
 				s.sendAndCache(sess, w, flusher, "tool_result", ev.Data)
 				writeDebug(stepIdx, evIdx, "tool_result", fmt.Sprintf("id=%s name=%s", id, name))
@@ -524,7 +548,16 @@ type pendingRealCall struct {
 	args string
 }
 
+// toolResultInfo 记录已完成的 tool_result（用于动态文本模板）。
+type toolResultInfo struct {
+	id     string
+	name   string
+	result string // JSON 字符串
+}
+
 // executeRealAndEmit 实际调用 realExecutor 拿真实结果，推送 tool_result 事件。
+//
+// 返回真实结果字符串（供 Run 方法写入 collectedResults 用于动态模板）。
 //
 // 事件 data 字段：
 //   - id, name：取自剧本 tool_call（保证 ID 一致性，前端可关联 tool_call ↔ tool_result）
@@ -544,7 +577,7 @@ func (e *MockEngine) executeRealAndEmit(
 	id string,
 	name string,
 	writeDebug func(step, ev int, evType, dataSummary string),
-) {
+) string {
 	t0 := time.Now()
 	out, err := e.realExecutor(ctx, pending.name, pending.args)
 	dur := time.Since(t0).Milliseconds()
@@ -566,7 +599,7 @@ func (e *MockEngine) executeRealAndEmit(
 			"durationMs": dur,
 		})
 		writeDebug(-1, -1, "tool_result(err)", fmt.Sprintf("id=%s name=%s err=%s", id, name, err.Error()))
-		return
+		return resultStr // 返回结果供 collectedResults 收集
 	}
 
 	slog.Info("mock: real tool exec succeeded",
@@ -580,6 +613,131 @@ func (e *MockEngine) executeRealAndEmit(
 		"durationMs": dur,
 	})
 	writeDebug(-1, -1, "tool_result(ok)", fmt.Sprintf("id=%s name=%s dur=%dms", id, name, dur))
+	return out // 返回结果供 collectedResults 收集
+}
+
+// renderTextTemplate 将模板中的 {%id%} 和 {%id:field%} 占位符替换为 tool_result 真实数据。
+//
+// 语法：
+//   - {%call_id%}           → 完整 JSON 结果
+//   - {%call_id:field%}     → JSON 中指定字段的值（自动格式化）
+//   - {%call_id:files%}     → list_files 结果的文件列表摘要（名称+大小）
+//   - {%call_id:mounts%}    → list_mounts 结果的挂载点列表摘要
+//
+// 示例模板：
+//   "发现文件：{%call_files2:files%}"
+//   → "发现文件：comedy.mkv (11.4 KB) / sample.mp4 (21.5 KB)"
+func renderTextTemplate(template string, results map[string]toolResultInfo) string {
+	// 快速路径：无占位符直接返回
+	if !strings.Contains(template, "{%") {
+		return template
+	}
+
+	// 正则匹配 {%id%} 或 {%id:field%}
+	re := regexp.MustCompile(`\{%(\w+)(?::(\w+))?\%}`)
+	result := re.ReplaceAllStringFunc(template, func(match string) string {
+		// 提取 id 和可选 field
+		submatches := re.FindStringSubmatch(match)
+		if len(submatches) < 2 {
+			return match // 格式不匹配，原样保留
+		}
+		callID := submatches[1]
+		field := submatches[2]
+
+		info, ok := results[callID]
+		if !ok {
+			return fmt.Sprintf("(未知工具:%s)", callID)
+		}
+
+		// 无字段指定 → 返回完整 JSON（截断防过长）
+		if field == "" {
+			trimmed := info.result
+			if len(trimmed) > 200 {
+				trimmed = trimmed[:200] + "..."
+			}
+			return trimmed
+		}
+
+		// 有字段指定 → 从 JSON 中提取并格式化
+		return extractField(info.result, callID, field)
+	})
+
+	return result
+}
+
+// extractField 从 tool_result JSON 中提取指定字段并返回人类可读的文本。
+func extractField(jsonStr, callID, field string) string {
+	var raw interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
+		return fmt.Sprintf("(解析失败:%s)", field)
+	}
+
+	obj, ok := raw.(map[string]interface{})
+	if !ok {
+		return "(非对象结果)"
+	}
+
+	switch field {
+	case "files", "items":
+		// 文件/目录列表 → "name (size)" 格式
+		arr, _ := obj[field].([]interface{})
+		var parts []string
+		for _, item := range arr {
+			itemMap, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			name, _ := itemMap["name"].(string)
+			size, _ := itemMap["size"].(float64)
+			isDir, _ := itemMap["is_dir"].(bool)
+
+			if isDir {
+				parts = append(parts, name+"/")
+			} else if size > 0 {
+				parts = append(parts, fmt.Sprintf("%s (%s)", name, formatBytes(int64(size))))
+			} else if name != "" {
+				parts = append(parts, name)
+			}
+		}
+		if len(parts) == 0 {
+			return "(空列表)"
+		}
+		return strings.Join(parts, " / ")
+
+	case "count":
+		if count, ok := obj["count"].(float64); ok {
+			return fmt.Sprintf("%d", int(count))
+		}
+		return "?"
+
+	case "error":
+		if err, ok := obj["error"].(string); ok {
+			return err
+		}
+		return ""
+
+	default:
+		// 通用字段提取
+		val, exists := obj[field]
+		if !exists {
+			return fmt.Sprintf( "(无字段:%s)", field)
+		}
+		return fmt.Sprintf("%v", val)
+	}
+}
+
+// formatBytes 将字节数转为人类可读的大小。
+func formatBytes(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
 // sleepDelay 按 (DelayMs / speed) 等待，遇 ctx 取消立即返回。

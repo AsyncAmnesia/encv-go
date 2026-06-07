@@ -54,7 +54,6 @@ function renderAgentFlow(
           text: seg,
           streaming,
           firstInGroup: globalPos === 0,       // 第一个 text 段 → 显示头像/名字
-          showFooter: globalPos === textGlobalIndices.length - 1, // 最后一个 text 段 → 显示时间/复制
         })
       }
     } else if (entry.type === 'tool_call' && entry.id) {
@@ -89,6 +88,14 @@ function renderAgentFlow(
     }
     // stream_start / stream_end / 其他类型在 eventLog 中但不产生 RenderedItem
   }
+
+  // 独立 Footer 段：时间戳固定为渲染时刻（不随组件 re-render 刷新）
+  // 不依赖末段是 text —— 即使最后一段是 operation，footer 也独立展示
+  out.push({
+    type: 'messageFooter',
+    messageId: `a-${messageIndex}`,
+    timestamp: Date.now(),
+  })
 
   // 如果还有剩余 text 段没消费完（eventLog 不完整时兜底）
   while (textIdx < textSegments.length) {
@@ -303,7 +310,8 @@ export interface SubTask {
 /** 单条渲染项 - 由 AgentChat 分发到对应组件 */
 export type RenderedItem =
   | { type: 'user'; messageId: string; text: string }
-  | { type: 'assistantText'; messageId: string; text: string; streaming: boolean; firstInGroup?: boolean; showFooter?: boolean }
+  | { type: 'assistantText'; messageId: string; text: string; streaming: boolean; firstInGroup?: boolean }
+  | { type: 'messageFooter'; messageId: string; timestamp: number }
   | { type: 'approval'; toolCallId: string; messageId: string }
   | { type: 'operationGroup'; messageId: string; toolCallIds: string[]; forceComplete: boolean }
   // Task 27：单条工具调用卡片（agent 流式时间轴模式）。

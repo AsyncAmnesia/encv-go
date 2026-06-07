@@ -6,14 +6,14 @@
   - OperationCard：渲染**单个** tool_call，紧跟其 toolResultCard（新模式）
 
   设计要点：
-  - 紧凑的单行卡片：图标 + 名称 + args + status badge
-  - 不折叠——agent 时间轴要求每步都可见
-  - status 实时更新（pending → running → success/failed）
-  - 内嵌 ToolResultCard 容器 slot（由 AgentChat 按 name 分发到具体卡片）
+  - 折叠态（默认）：单行图标+名称+状态badge，点击展开
+  - 展开态：完整卡片（图标+名称+状态+参数+结果slot）
+  - streaming 时强制展开（用户需看到实时进度）
 -->
 <template>
-  <div class="operationCard" :class="{ operationCard_streaming: streaming }">
-    <div class="operationCardHead">
+  <div class="operationCard" :class="{ operationCard_streaming: streaming, operationCard_collapsed: isCollapsed && !streaming }">
+    <!-- 折叠/展开 切换头部（始终显示） -->
+    <div class="operationCardHead" @click="toggleCollapse">
       <ion-icon :icon="toolIcon" class="operationCardIcon" />
       <span class="operationCardName">{{ toolCall.name || t('agent.tool.unknown') }}</span>
       <StatusBadge
@@ -22,19 +22,24 @@
         :pulse="streaming || toolCall.status === 'running' || toolCall.status === 'pending'"
         class="operationCardBadge"
       />
+      <ion-icon :icon="isCollapsed ? chevronDownOutline : chevronUpOutline" class="operationCardToggle" />
     </div>
-    <div v-if="toolCall.args" class="operationCardArgs">
-      <code>{{ truncateArgs(toolCall.args) }}</code>
-    </div>
-    <!-- ToolResultCard 插槽：AgentChat 按 name 分发到 MountListCard / FileListCard / FileContentCard -->
-    <div v-if="$slots.result" class="operationCardResult">
-      <slot name="result" />
+
+    <!-- 展开内容（折叠时隐藏） -->
+    <div v-show="!isCollapsed || streaming" class="operationCardBody">
+      <div v-if="toolCall.args" class="operationCardArgs">
+        <code>{{ truncateArgs(toolCall.args) }}</code>
+      </div>
+      <!-- ToolResultCard 插槽：AgentChat 按 name 分发到 MountListCard / FileListCard / FileContentCard -->
+      <div v-if="$slots.result" class="operationCardResult">
+        <slot name="result" />
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { IonIcon } from '@ionic/vue'
 import {
   terminalOutline,
@@ -42,6 +47,8 @@ import {
   eyeOutline,
   searchOutline,
   ellipsisHorizontalCircleOutline,
+  chevronDownOutline,
+  chevronUpOutline,
 } from 'ionicons/icons'
 import StatusBadge from './StatusBadge.vue'
 import { useI18n } from '@/composables/useI18n'
@@ -49,11 +56,20 @@ import type { ToolCall } from '@/composables/useAgent'
 
 const props = defineProps<{
   toolCall: ToolCall
-  /** 流式状态（running/pending 时显示脉冲动画） */
+  /** 流式状态（running/pending 时显示脉冲动画 + 强制展开） */
   streaming?: boolean
 }>()
 
 const { t } = useI18n()
+
+// 折叠态：默认折叠（有内容时），streaming 强制展开
+const isCollapsed = ref(true)
+
+function toggleCollapse() {
+  if (!props.streaming) {
+    isCollapsed.value = !isCollapsed.value
+  }
+}
 
 /** 按 kind 选图标 */
 const toolIcon = computed(() => {
@@ -99,6 +115,7 @@ function truncateArgs(args: string): string {
   border-radius: 7px;
   padding: 6px 10px;
   font-size: 11.5px;
+  transition: border-color 0.2s;
 }
 
 .operationCard_streaming {
@@ -115,6 +132,13 @@ function truncateArgs(args: string): string {
   display: flex;
   align-items: center;
   gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.operationCardHead:active {
+  opacity: 0.7;
 }
 
 .operationCardIcon {
@@ -128,6 +152,11 @@ function truncateArgs(args: string): string {
   font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
   color: var(--ion-text-color);
   flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .operationCardBadge {
@@ -135,8 +164,24 @@ function truncateArgs(args: string): string {
   flex-shrink: 0;
 }
 
+.operationCardToggle {
+  font-size: 12px;
+  color: var(--encv-text-secondary, rgba(127,127,127,0.45));
+  flex-shrink: 0;
+  margin-left: 2px;
+  transition: transform 0.2s;
+}
+
+.operationCard_collapsed .operationCardToggle {
+  /* 折叠时箭头向下 */
+}
+
+/* 展开内容区 */
+.operationCardBody {
+  margin-top: 4px;
+}
+
 .operationCardArgs {
-  margin-top: 3px;
   padding-left: 20px; /* 缩进与图标对齐 */
 }
 
