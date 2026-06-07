@@ -78,14 +78,18 @@ export function hijackConsole() {
   // 只是没有热重载）。在 DevLogs 里把它降级为 debug 级别，避免淹没真正的错误。
   const isHmrWsNoise = (args: any[]): boolean => {
     if (args.length === 0) return false
-    // 检查每个参数（字符串或 Error 对象的 message）
-    for (const arg of args) {
-      const s = typeof arg === 'string' ? arg : (arg?.message ?? '')
-      if (s.includes('failed to connect to websocket') || s.includes('WebSocket closed without opened')) {
-        return true
-      }
-    }
-    return false
+    // 拼接所有参数为字符串后统一匹配（覆盖单参数、多参数、Error 对象嵌套等场景）
+    const combined = args.map((a): string => {
+      if (typeof a === 'string') return a
+      if (a instanceof Error) return a.message || ''
+      if (a?.message) return String(a.message)
+      return String(a ?? '')
+    }).join(' ')
+    return (
+      combined.includes('failed to connect to websocket') ||
+      combined.includes('WebSocket closed without opened') ||
+      combined.includes('HMR')
+    )
   }
   console.debug = (...args: any[]) => { saved.debug(...args); addLog('debug', args) }
   console.info = (...args: any[]) => { saved.info(...args); addLog('info', args) }

@@ -960,9 +960,12 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		return
 	}
 
-	// 2c: 兜底——不应到达这里
-	s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
-	slog.Warn("agent: chat completed with no output (unexpected)")
+	// 2c: 兜底——LLM 未返回任何文本（finalAssistantText 为空）
+	//     发送一个 text_delta 提示事件，避免前端显示"服务端返回空回复"
+	s.sendSSEEventSafe(c.Writer, flusher, "text_delta", "（AI 助手未生成有效回复，可能需要换个问题或检查 API Key 配置）")
+	s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
+	slog.Warn("agent: chat completed with no output (empty finalAssistantText)",
+		"rounds", autoToolExecuted)
 }
 
 // openaiToolCallChunk 是 OpenAI 流式 tool_calls 单个分片的结构
