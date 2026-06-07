@@ -71,7 +71,12 @@ func scenarioListFilesQuery() *MockScenario {
 		Description: "5 步真实流程：mounts → files → files → read_file → markdown 总结",
 		// execute_real=true 标记：list_mounts / list_files / read_file 是只读工具，
 		// 在 mock 模式下也应实际执行（结果用真实文件系统数据），避免"剧本编造"。
-		Keywords: []string{"有哪些文件", "有什么文件", "视频", "Movies", "目录", "列一下", "01-plain-media"},
+		Keywords: []string{
+			// 中文
+			"有哪些文件", "有什么文件", "视频", "目录", "列一下", "01-plain-media", "看看文件", "看下文件",
+			// 英文（小写，Match 函数统一转小写后 Contains 匹配）
+			"video", "movie", "files", "list files", "list",
+		},
 		Steps: []MockStep{
 			// Step 1: stream_start + 开场白（markdown: 标题）
 			{DelayMs: 0, Events: []MockEvent{
