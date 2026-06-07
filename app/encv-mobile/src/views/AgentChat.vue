@@ -126,6 +126,22 @@
     </details>
 
     <main class="agentChatMain" ref="mainRef" @scroll="onMainScroll">
+      <!-- 左侧圆点导航（≥3 条消息时显示） -->
+      <div
+        v-if="renderedItems.length >= 3"
+        class="dotNavigation"
+      >
+        <button
+          v-for="(item, idx) in renderedItems"
+          :key="item.messageId"
+          type="button"
+          class="dotNavDot"
+          :class="{ dotNavDot_active: activeMessageIndex === idx }"
+          :title="`跳转到第 ${idx + 1} 条消息`"
+          @click="scrollToMessage(idx)"
+        />
+      </div>
+
       <!-- 空状态（无消息时显示） -->
       <div v-if="renderedItems.length === 0" class="agentChatEmpty">
         <ion-icon :icon="chatbubblesIcon" class="emptyIcon" />
@@ -481,6 +497,7 @@ const inputRef = ref<HTMLTextAreaElement | null>(null)
 const mainRef = ref<HTMLDivElement | null>(null)
 const virtualListRef = ref<{ scrollToBottom: (behavior?: 'auto' | 'smooth') => void } | null>(null)
 const nearBottom = ref(true)
+const activeMessageIndex = ref(0)
 
 /** 触发虚拟滚动的阈值（renderedItems 数量 > 此值时切换） */
 const VIRTUAL_LIST_THRESHOLD = 120
@@ -854,7 +871,7 @@ function scrollToBottom(behavior: 'auto' | 'smooth' = 'smooth') {
 }
 
 /**
- * 监听 main 容器滚动，更新 nearBottom
+ * 监听 main 容器滚动，更新 nearBottom 和 activeMessageIndex
  * 虚拟列表模式下滚动源是 RecycleScroller 内部 wrapper，
  * 但其 scroll 事件会冒泡到 main 容器，逻辑统一处理
  */
@@ -864,6 +881,33 @@ function onMainScroll() {
   const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
   // 80px 阈值内视为"接近底部"——避免长消息末尾抖动
   nearBottom.value = distanceFromBottom < 80
+
+  // 更新点导航的活跃索引：根据当前滚动位置找到最接近视口顶部的消息项
+  const itemWraps = el.querySelectorAll('.renderedItemWrap')
+  if (itemWraps.length === 0) return
+  let closestIdx = 0
+  let closestDist = Infinity
+  const scrollTop = el.scrollTop + 40 // 40px 偏移量让顶部元素更早被激活
+  itemWraps.forEach((wrap, idx) => {
+    const dist = Math.abs((wrap as HTMLElement).offsetTop - scrollTop)
+    if (dist < closestDist) {
+      closestDist = dist
+      closestIdx = idx
+    }
+  })
+  activeMessageIndex.value = closestIdx
+}
+
+/**
+ * 点导航：跳转到指定索引的消息项
+ */
+function scrollToMessage(idx: number) {
+  const el = mainRef.value
+  if (!el) return
+  const itemWraps = el.querySelectorAll('.renderedItemWrap')
+  if (idx < 0 || idx >= itemWraps.length) return
+  const target = itemWraps[idx] as HTMLElement
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 // 监听 status 变化 → streaming 开始时滚动到底部
@@ -971,6 +1015,7 @@ defineExpose({})
   flex-direction: column;
   gap: 6px;
   -webkit-overflow-scrolling: touch;
+  position: relative;
 }
 
 .agentChatEmpty {
@@ -1587,5 +1632,47 @@ defineExpose({})
   padding: 32px 16px;
   color: var(--ion-text-color-step-350);
   font-size: 13px;
+}
+
+/* ── Dot Navigation（左侧圆点导航） ──────────────────────── */
+.dotNavigation {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 5;
+  padding: 8px 4px;
+  background: rgba(var(--ion-background-color-rgb), 0.7);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.dotNavDot {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(var(--ion-color-medium-rgb), 0.45);
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.18s ease;
+  outline: none;
+}
+
+.dotNavDot:hover {
+  background: rgba(var(--ion-color-primary-rgb), 0.55);
+  transform: scale(1.25);
+}
+
+.dotNavDot_active {
+  background: var(--ion-color-primary);
+  box-shadow: 0 0 0 2px rgba(var(--ion-color-primary-rgb), 0.28);
+  transform: scale(1.35);
 }
 </style>

@@ -3,13 +3,18 @@
 
   行为：
   - 显示当前会话的上下文使用百分比（X.X%）+ 压缩次数徽章
-  - 点击 → 弹出 ContextPopover（任务列表 + 上下文详情 + 引用文件）
+  - 点击 → 通过 modalController.create() 弹出底部面板（ContextPopoverModal）
   - 高负载时（>=80%）图标 + 文字变橙红色，提示接近上限
 
   设计要点：
   - 紧凑：button 内只放 icon + 百分比 + 可选徽章
   - 暗黑/亮色模式兼容：颜色全部走 CSS 变量
   - disabled 状态：拉取失败/未就绪时显示「—」占位
+
+  架构（per workspace rules §1.1）：
+  - 使用 modalController.create() 替代 ion-popover
+  - 底部滑入式面板，全宽 + max 70vh
+  - 通过 reactive state object 传递数据（per §1.2）
 -->
 <template>
   <ion-button
@@ -31,34 +36,15 @@
       :color="compactions >= 3 ? 'warning' : 'medium'"
     >×{{ compactions }}</ion-badge>
   </ion-button>
-
-  <!-- Popover 容器 -->
-  <ion-popover
-    :is-open="isOpen"
-    :event="event"
-    side="bottom"
-    alignment="end"
-    class="context-popover-host"
-    :show-backdrop="true"
-    :backdrop-dismiss="true"
-    style="--width: 92vw; --max-height: 70vh; --min-height: 200px;"
-    @did-dismiss="closePopover"
-  >
-    <ContextPopover
-      v-if="isOpen"
-      :data="data"
-      :loading="loading ?? false"
-      @close="closePopover"
-    />
-  </ion-popover>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { IonButton, IonIcon, IonBadge, IonPopover } from '@ionic/vue'
+import { computed, reactive } from 'vue'
+import { IonButton, IonIcon, IonBadge, modalController } from '@ionic/vue'
 import { layers as layersIcon } from 'ionicons/icons'
-import ContextPopover from './ContextPopover.vue'
+import ContextPopoverModal from './ContextPopoverModal.vue'
 import type { ContextUsageResponse } from '@/composables/useContextUsage'
+import type { ContextPopoverState } from './ContextPopoverModal.vue'
 
 const props = defineProps<{
   /** null = 尚未拉到数据；非 null = 已就绪 */
@@ -67,9 +53,6 @@ const props = defineProps<{
   /** 紧凑模式：只显示图标，不显示百分比 */
   compact?: boolean
 }>()
-
-const isOpen = ref(false)
-const event = ref<Event | null>(null)
 
 const ariaLabel = computed(() => {
   if (!props.data) return '上下文使用（加载中）'
@@ -91,14 +74,24 @@ const toneClass = computed(() => {
   return 'tone-ok'
 })
 
-function openPopover(e: Event) {
-  event.value = e
-  isOpen.value = true
-}
+/**
+ * 打开底部弹出面板（modalController.create 模式）
+ * per workspace rules §1.1 + §1.2: 使用 reactive state object 传递数据
+ */
+async function openPopover() {
+  const state: ContextPopoverState = reactive({
+    data: props.data,
+    loading: props.loading ?? false,
+  })
 
-function closePopover() {
-  isOpen.value = false
-  event.value = null
+  const modal = await modalController.create({
+    component: ContextPopoverModal,
+    componentProps: { state },
+    cssClass: 'context-popover-modal',
+    backdropDismiss: true,
+    showBackdrop: true,
+  })
+  await modal.present()
 }
 </script>
 

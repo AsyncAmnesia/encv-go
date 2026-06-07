@@ -619,4 +619,19 @@ body.dark .encv-toast--primary {
   --background: rgba(115, 115, 128, 0.9);
   --color: #ffffff;
 }
+
+/* ============================================
+   Context Popover 底部面板（modalController.create 模式）
+   全宽 + 从底部滑入 + 圆角顶部
+   ============================================ */
+.context-popover-modal .modal-wrapper {
+  align-items: flex-end;
+}
+
+.context-popover-modal ion-modal {
+  --border-radius: 16px 16px 0 0;
+  --height: auto;
+  --max-height: 70vh;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.15);
+}
 </style>
