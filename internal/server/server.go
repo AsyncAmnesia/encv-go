@@ -55,6 +55,7 @@ type Server struct {
 	chunkNamers    []namer.ChunkNamer
 	jwtManager     *auth.JWTManager
 	webdavFS       webdav.IndexProvider
+	mockEngine     *MockEngine
 }
 
 func NewServer(ctx context.Context, configPath string) *Server {
@@ -70,6 +71,7 @@ func NewServer(ctx context.Context, configPath string) *Server {
 		mobileSvc:      mobileSvc,
 		contentHandler: contentHandler,
 		instanceID:     fmt.Sprintf("%x", time.Now().UnixNano()),
+		mockEngine:     NewMockEngine(),
 	}
 }
 

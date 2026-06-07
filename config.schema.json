@@ -156,6 +156,28 @@
               "type": "integer",
               "default": 5,
               "description": "每轮对话最大工具调用次数"
+            },
+            "mock_mode": {
+              "type": "select",
+              "options": ["off", "builtin", "custom"],
+              "default": "off",
+              "description": "agent.mockMode"
+            },
+            "mock_speed": {
+              "type": "number",
+              "min": 0,
+              "max": 10,
+              "step": 0.1,
+              "default": 1.0,
+              "description": "agent.mockSpeedHelp"
+            },
+            "mock_scenarios": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              },
+              "default": [],
+              "description": "agent.mockScenarios"
             }
           },
           "additionalProperties": false,

@@ -20,6 +20,19 @@
       <div class="headerTitle">
         <ion-icon :icon="sparkleIcon" class="headerTitleIcon" />
         <span>{{ t('agent.title') }}</span>
+        <!--
+          Mock 模式 badge：仅在后端 cfg.Agent.MockMode != "off" 时显示。
+          视觉上贴近标题（flask icon + "模拟" 文案），鼠标悬停时
+          tooltip 显示具体 scenario id 方便开发/测试时辨识。
+        -->
+        <span
+          v-if="isMockMode"
+          class="mockBadge"
+          :title="t('agent.mockBadgeTooltip', { scenario: mockScenario })"
+        >
+          <ion-icon :icon="flaskIcon" class="mockBadgeIcon" />
+          <span class="mockBadgeText">{{ t('agent.mockBadge') }}</span>
+        </span>
       </div>
       <!-- 上下文使用图标（点击 → 弹窗：todos + 引用文件） -->
       <ContextIcon
@@ -429,6 +442,7 @@ import {
   refreshCircleOutline,
   keyOutline,
   chevronDownOutline,
+  flaskOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { getDeviceIdSync } from '@/composables/useDeviceId'
@@ -460,7 +474,7 @@ const { t } = useI18n()
 // Agent API 基础 URL（动态解析：dev 走网关 / prod 直连后端）
 const AGENT_API_BASE = getAgentApiBase()
 
-const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel, setApiDefaultModel } = useAgent()
+const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel, setApiDefaultModel, isMockMode, mockScenario } = useAgent()
 const router = useRouter()
 
 /**
@@ -536,6 +550,7 @@ const globeIcon = globeOutline
 const clipboardIcon = clipboardOutline
 const refreshCircleIcon = refreshCircleOutline
 const chevronDownIcon = chevronDownOutline
+const flaskIcon = flaskOutline
 const historyOpen = ref(false)
 
 // ── Task 26 (LAN Access) ───────────────────────────────────
@@ -1115,6 +1130,30 @@ defineExpose({})
 .headerTitleIcon {
   color: var(--ion-color-primary);
   font-size: 18px;
+}
+
+/* ── Mock 模式 badge（紧贴标题右侧，仅 isMockMode=true 时显示） ── */
+.mockBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: rgba(var(--ion-color-medium-rgb), 0.12);
+  color: var(--ion-color-medium);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  user-select: none;
+}
+
+.mockBadgeIcon {
+  font-size: 12px;
+  color: var(--ion-color-medium);
+}
+
+.mockBadgeText {
+  letter-spacing: 0.02em;
 }
 
 .agentChatMain {

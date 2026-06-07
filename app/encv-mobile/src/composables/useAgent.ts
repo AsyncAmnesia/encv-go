@@ -53,6 +53,7 @@ export type AgentEventType =
   | 'tool_status'
   | 'tool_result'
   | 'stream_status'  // 后端流式状态（断点续传时推 synced / more_pending）
+  | 'stream_start'   // Mock 模式信号：data = { mock: true, scenario: "..." }
   | 'stream_end'
   | 'stream_error'   // 后端在 SSE 流过程中遇到不可恢复错误时推送
   // 上下文自动压缩事件。Task 7 引入：后端在 messages token 数
@@ -664,6 +665,15 @@ export function useAgent() {
     })(),
   )
 
+  // ─── Mock 模式检测 ────────────────────────────────────────
+  // 后端在 cfg.Agent.MockMode != "off" 时启用 mock 模式：
+  //   - HTTP response header: X-Mock-Mode: builtin|custom
+  //   - HTTP response header: X-Mock-Scenario: <scenario_id>
+  //   - SSE 首个 stream_start 事件 data: { mock: true, scenario: "..." }
+  // 前端拿到任一信号就置 isMockMode=true，让 AgentChat 顶部展示"🧪 模拟"badge。
+  const isMockMode = ref(false)
+  const mockScenario = ref<string>('')
+
   // ─── 内部辅助 ───────────────────────────────────────────────────────────
 
   /**
@@ -1219,6 +1229,22 @@ export function useAgent() {
         console.error('[useAgent] stream_error:', errorMsg)
         break
       }
+      case 'stream_start': {
+        // Mock 模式信号：后端在 cfg.Agent.MockMode != "off" 时，SSE 流首
+        // 个事件就是 stream_start，data 形状是 { mock: true, scenario: "..." }。
+        // 拿到就置 isMockMode = true，AgentChat 顶部展示"🧪 模拟"badge。
+        // 容忍旧后端/不 mock 模式：data 可能为空 / 不含 mock 字段 → 不动状态。
+        try {
+          const raw = JSON.parse(event.data) as { mock?: unknown; scenario?: unknown } | null
+          if (raw && raw.mock === true) {
+            isMockMode.value = true
+            mockScenario.value = String(raw.scenario ?? '')
+          }
+        } catch {
+          // data 不是 JSON → 非 mock 信号，忽略
+        }
+        break
+      }
       case 'compaction': {
         // Task 7：上下文自动压缩事件。
         //
@@ -1411,6 +1437,15 @@ export function useAgent() {
 
       if (!response.body) {
         throw new Error('响应体为空（可能被代理或网络中间层截断）')
+      }
+
+      // Mock 模式 header 检测（备份信号）：SSE stream_start 事件是主信号，
+      // 但如果首条事件到达前 header 已被读取，这里先把状态置好，避免 UI
+      // 看到一段无 badge 的"普通"回复再被刷成 mock。
+      const mockHeader = response.headers.get('X-Mock-Mode')
+      if (mockHeader) {
+        isMockMode.value = true
+        mockScenario.value = response.headers.get('X-Mock-Scenario') ?? ''
       }
 
       const result = await processSSE(response.body)
@@ -1817,6 +1852,10 @@ export function useAgent() {
     pendingMessages,
     // Context 图标：实时上下文使用 + todos + referenced files
     contextUsage,
+    // Mock 模式：后端 cfg.Agent.MockMode != "off" 时由 SSE stream_start
+    // 事件或 X-Mock-Mode header 触发，UI 据此展示"🧪 模拟"badge。
+    isMockMode,
+    mockScenario,
     // Task 4：以下为测试专用钩子。生产代码不应调用——所有 serverInstance
     // 同步都由 useAgent 内部 await refreshServerInstance() 完成。
     __refreshServerInstanceForTest: refreshServerInstance,

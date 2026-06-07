@@ -51,6 +51,75 @@ type Config struct {
 	AgentSettings json.RawMessage `json:"agent_settings,omitempty"`
 }
 
+// Agent 是 agent_settings 段的类型化表示。
+// 与 Config.AgentSettings json.RawMessage 并存使用：raw 通道保留向后兼容
+// 的 wire 格式，类型化 Agent 供 server / agent_mock 等运行时使用。
+type Agent struct {
+	// --- OpenAI 侧 ---
+	OpenAIAPIKey  string `json:"openai_api_key,omitempty"`
+	OpenAIBaseURL string `json:"openai_base_url,omitempty"`
+	OpenAIModel   string `json:"openai_model,omitempty"`
+
+	// --- OpenList 侧 ---
+	OpenListBaseURL string `json:"openlist_base_url,omitempty"`
+	OpenListToken   string `json:"openlist_token,omitempty"`
+
+	// --- 行为配置 ---
+	Temperature            float64  `json:"temperature,omitempty"`
+	EnabledTools           []string `json:"enabled_tools,omitempty"`
+	SystemPrompt           string   `json:"system_prompt,omitempty"`
+	MaxToolCallsPerTurn    int      `json:"max_tool_calls_per_turn,omitempty"`
+	DefaultContainerVersion int     `json:"default_container_version,omitempty"`
+	GlobalPassword         string   `json:"global_password,omitempty"`
+
+	// ─── Mock 模式（参考 .trae/specs/agent-mock-mode/spec.md）───
+	// MockMode 控制 agent 行为：
+	//   "off"     — 默认，调用真实 OpenAI/gptgod
+	//   "builtin" — 启用内置 12 个 mock 剧本（0 token 消耗）
+	//   "custom"  — 仅使用 Agent.MockScenarios 中定义的自定义剧本
+	MockMode string `json:"mock_mode,omitempty"`
+
+	// MockSpeed 时间缩放因子：1.0=正常, 0.1=10x 慢放, 10=10x 快进, 0=零延迟同步
+	MockSpeed float64 `json:"mock_speed,omitempty"`
+
+	// MockScenarios 自定义剧本（仅 MockMode=="custom" 时使用）
+	MockScenarios []MockScenario `json:"mock_scenarios,omitempty"`
+}
+
+// MockScenario — 自定义 mock 剧本配置项（与 internal/server/agent_mock.go 中的同名类型语义一致）
+// 这里只保留 JSON 序列化所需的字段；运行时类型转换由 server 包处理
+type MockScenario struct {
+	ID          string     `json:"id"`
+	Description string     `json:"description,omitempty"`
+	ExactMatch  string     `json:"exact_match,omitempty"`
+	Keywords    []string   `json:"keywords,omitempty"`
+	Regex       string     `json:"regex,omitempty"`
+	Steps       []MockStep `json:"steps"`
+}
+
+type MockStep struct {
+	DelayMs int                     `json:"delay_ms"`
+	Events  []map[string]interface{} `json:"events"`
+}
+
+// DefaultAgentConfig 返回一个包含所有 agent 默认值的配置实例。
+// 同时为 mock 相关字段补充防御性默认值（即便结构体已设置零值）。
+func DefaultAgentConfig() *Agent {
+	a := &Agent{
+		OpenAIModel:            "gpt-4o-mini",
+		Temperature:            0.7,
+		MaxToolCallsPerTurn:    5,
+		DefaultContainerVersion: 4,
+	}
+	if a.MockMode == "" {
+		a.MockMode = "off"
+	}
+	if a.MockSpeed == 0 {
+		a.MockSpeed = 1.0
+	}
+	return a
+}
+
 type PreviewConfig struct {
 	TextExtensions []string `json:"text_extensions,omitempty"`
 }

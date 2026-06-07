@@ -18,6 +18,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/scrypt"
+
+	"github.com/Soltus/encv-go/internal/config"
 )
 
 // ─── API Key 加密/解密（防止 config.user.json 明文暴露） ──────
@@ -364,6 +366,61 @@ func (s *Server) resolveActiveModel(deviceId string) string {
 	return "gpt-4o"
 }
 
+// getAgentConfig 读取 config 文件中的 agent_settings 段，并解析为类型化的 *config.Agent。
+// 用于访问 MockMode / MockSpeed / MockScenarios 等运行时字段。
+// 任何错误（路径为空 / 读不到文件 / JSON 解析失败 / agent_settings 缺失）都返回 DefaultAgentConfig()。
+func (s *Server) getAgentConfig() *config.Agent {
+	if s.configPath == "" {
+		return config.DefaultAgentConfig()
+	}
+	data, err := os.ReadFile(s.configPath)
+	if err != nil {
+		slog.Debug("agent: getAgentConfig read file failed", "path", s.configPath, "error", err)
+		return config.DefaultAgentConfig()
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		slog.Debug("agent: getAgentConfig parse top-level json failed", "error", err)
+		return config.DefaultAgentConfig()
+	}
+	agentRaw, ok := raw["agent_settings"]
+	if !ok {
+		return config.DefaultAgentConfig()
+	}
+	var agentCfg config.Agent
+	if err := json.Unmarshal(agentRaw, &agentCfg); err != nil {
+		slog.Debug("agent: getAgentConfig parse agent_settings failed", "error", err)
+		return config.DefaultAgentConfig()
+	}
+	return &agentCfg
+}
+
+// lastUserTextFromLoopMessages 提取 messages 列表中最后一条 role=="user" 消息的文本内容。
+// 用于 Mock 模式下的剧本触发匹配（关键词/正则/精确匹配都需要纯文本）。
+//
+// chatMsg.Content 当前始终是 string 类型；未来若扩展为 []ContentPart 等结构，
+// 在此处补充分支即可（参考 OpenAI multimodal 多模态 content array 格式）。
+func lastUserTextFromLoopMessages(msgs []chatMsg) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "user" {
+			return msgs[i].Content
+		}
+	}
+	return ""
+}
+
+// truncateForLog 把字符串截断到 max 字符，超出部分用 "..." 表示。
+// 用于日志中预览用户输入，避免长消息刷屏。
+func truncateForLog(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
+}
+
 // ─── 路由注册 ────────────────────────────────────────────────
 
 func (s *Server) registerAgentRoutes(r *gin.Engine) {
@@ -704,6 +761,50 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	sess.PendingTools = nil // 新一轮开始，清空旧的 pending
 	sess.InProgress = true  // 标记流式生成中
 	sess.mu.Unlock()
+
+	// ════════════════════════════════════════════════════════════
+	// ③⁴ Mock 模式短路（核心测试 / CI / 离线开发路径）
+	// ════════════════════════════════════════════════════════════
+	//
+	// 触发条件：config.user.json 的 agent_settings.mock_mode 设为 "builtin" 或 "custom"。
+	//   - builtin 模式无匹配 → Match 内部 fallback 到 default_friendly（不会落到这里）
+	//   - custom 模式无匹配 → Match 返回 nil → 继续走真实 OpenAI
+	// 短路后完全不调用 OpenAI/gptgod，0 token 消耗。
+	//
+	// 必须放在 session 缓存之后（需要 sess 写入 EventCache），
+	// 必须放在 callOpenAIStream 之前（避免无谓的 API 请求）。
+	agentCfg := s.getAgentConfig()
+	mockMode := strings.ToLower(strings.TrimSpace(agentCfg.MockMode))
+	if mockMode != "" && mockMode != "off" {
+		userText := lastUserTextFromLoopMessages(body.Messages)
+		scenario := s.mockEngine.Match(userText, mockMode)
+		if scenario != nil {
+			c.Header("X-Mock-Scenario", scenario.ID)
+			c.Header("X-Mock-Mode", mockMode)
+
+			flusher, _ := c.Writer.(http.Flusher)
+			s.setSSEHeaders(c.Writer)
+			slog.Info("agent: mock mode short-circuit",
+				"mode", mockMode,
+				"scenario", scenario.ID,
+				"user_text", truncateForLog(userText, 100),
+				"speed", agentCfg.MockSpeed)
+			if err := s.mockEngine.Run(c.Request.Context(), s, sess, c.Writer, flusher, scenario,
+				agentCfg.MockSpeed, true /* mockFlag */); err != nil {
+				slog.Warn("agent: mock engine run failed", "scenario", scenario.ID, "error", err)
+			}
+			sess.mu.Lock()
+			sess.InProgress = false
+			sess.mu.Unlock()
+			return
+		}
+		// builtin 模式无匹配 → Match 内部已 fallback 到 default_friendly，不会到这里
+		// custom 模式无匹配 → Match 返回 nil，落到这里 → 继续走真实 OpenAI
+		if mockMode == "custom" {
+			slog.Info("agent: custom mock no match, falling through to real API",
+				"user_text", truncateForLog(userText, 200))
+		}
+	}
 
 	// ④ Flusher 检测
 	flusher, ok := c.Writer.(http.Flusher)
@@ -1296,6 +1397,11 @@ type confirmRequest struct {
 	DeviceId   string `json:"deviceId"` // 设备指纹（用于 API Key 解密 + 系统提示词）
 }
 
+// handleAgentConfirm 处理用户对工具调用的 accept/decline/cancel 决策。
+//
+// 注意：Mock 模式（agent_settings.mock_mode = "builtin" | "custom"）**不**影响本端点。
+// 原因：confirm 只是执行已生成的 tool_call / 递归下一轮 chat，不直接驱动 LLM。
+// Mock 短路只发生在 /api/chat 的初始入口；confirm 路径直接走真实 OpenAI 即可。
 func (s *Server) handleAgentConfirm(c *gin.Context) {
 	// ① 解析请求体
 	var body confirmRequest

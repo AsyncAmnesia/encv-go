@@ -182,6 +182,16 @@ export default {
     'agent.syncDoctorCopyFailed': '复制失败',
     'agent.syncDoctorFailed': '诊断失败：{msg}',
     'agent.syncDoctorEmpty': '未发现问题',
+
+    // ── Agent Mock Mode（剧本回放，不计费、不调真实 LLM） ─────────
+    'agent.mockBadge': '模拟',
+    'agent.mockBadgeTooltip': '当前为 mock 模式（不计费），场景：{scenario}',
+    'agent.mockMode': '模拟模式',
+    'agent.mockModeOff': '关闭（真实 API）',
+    'agent.mockModeBuiltin': '内置剧本',
+    'agent.mockModeCustom': '自定义剧本',
+    'agent.mockSpeed': '播放速度',
+    'agent.mockSpeedHelp': '1.0 = 正常速度，0.1 = 慢放，10 = 快进',
   },
   en: {
     'agent.title': 'AI Assistant',
@@ -365,5 +375,15 @@ export default {
     'agent.syncDoctorCopyFailed': 'Copy failed',
     'agent.syncDoctorFailed': 'Doctor failed: {msg}',
     'agent.syncDoctorEmpty': 'No issues detected',
+
+    // ── Agent Mock Mode (scripted replay, no cost, no real LLM) ─────────
+    'agent.mockBadge': 'Mock',
+    'agent.mockBadgeTooltip': 'Mock mode active (no cost), scenario: {scenario}',
+    'agent.mockMode': 'Mock Mode',
+    'agent.mockModeOff': 'Off (Real API)',
+    'agent.mockModeBuiltin': 'Built-in Scenarios',
+    'agent.mockModeCustom': 'Custom Scenarios',
+    'agent.mockSpeed': 'Playback Speed',
+    'agent.mockSpeedHelp': '1.0 normal, 0.1 slow, 10 fast',
   },
 }
