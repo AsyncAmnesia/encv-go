@@ -290,6 +290,67 @@ function getConflictingPlugins(suffix): string[] {
 
 **关键约束**：L2 和 L3 不得依赖 L1 的存在。用户可能通过第三方编辑器直接修改 config JSON 绕过前端。
 
+### 四、preview-gateway UPSTREAMS 路由完整性守卫（⚠️ 实战踩坑）
+
+> **核心原则：所有后端端点路径必须在 UPSTREAMS 中有显式路由，不得依赖 DEFAULT_UPSTREAM 兜底。**
+> **DEFAULT_UPSTREAM 只能用于 SPA index.html fallback，不能代理任何 API/WS 端点。**
+
+#### 4.1 踩坑记录（2026-06-07）
+
+**症状**：DevLogs 显示 `server online (ws=connecting)` —— HTTP 探测 `/api/config` 正常返回 200，但 WebSocket 始终卡在 CONNECTING 状态。
+
+**根因链路**：
+```
+浏览器 → ws://host:16666/ws
+  → preview-gateway pickUpstream("/ws")
+  → ❌ /ws 不在任何 UPSTREAMS 匹配规则中
+  → 走 DEFAULT_UPSTREAM → vite :8100
+  → vite 没有 /ws 端点 handler
+  → WebSocket 永远卡在 CONNECTING（不报错、不超时、不 onerror）
+```
+
+**为什么难排查**：
+- HTTP `/api/config` 正常 → `serverOnline = true` ✅
+- 所有 HTTP API 调用正常 → 用户认为"后端没挂"
+- 只有 WS 不通 → DevLogs 显示 `ws=connecting`
+- **vite 对 WS upgrade 请求不响应也不拒绝**——连接悬挂
+
+#### 4.2 必须显式路由的路径清单
+
+| 路径 | 目标 | 用途 |
+|------|------|------|
+| `/api` | encv-go :2025 | REST API |
+| `/agent-api` | encv-go :2025 | Agent SSE/API（pathRewrite 剥前缀） |
+| `/ws` | **encv-go :2025** | **WebSocket（DevLogs + agent chat 推送）** |
+| `/p/` | encv-go :2025 | 预览路径 |
+| `/play` | encv-go :2025 | 播放路径 |
+| `/openlist` | OpenList :5244 | OpenList UI |
+| `/openlist-ui` | plugin-vite :5174 | 插件管理 UI |
+
+#### 4.3 防御守卫实现
+
+preview-gateway [server.ts](app/preview-gateway/src/server.ts) 启动时断言检查：
+
+```typescript
+// server.listen 回调内
+const hasWsRoute = UPSTREAMS.some((u) => u.match === '/ws')
+if (!hasWsRoute) {
+  log('FATAL: /ws route missing from UPSTREAMS!')
+  process.exit(1)
+}
+```
+
+**新增任何后端端点时**：必须同步在 UPSTREAMS 数组中添加路由条目，否则启动即 crash。
+
+#### 4.4 排查 checklist
+
+当遇到「HTTP 正常但 WS/实时功能异常」时：
+
+1. **确认路径在 UPSTREAMS 中**：`grep 'match:' preview-gateway/src/server.ts`
+2. **确认 wsTarget 正确**：WS 升级目标必须指向实际监听该路径的进程
+3. **pm2 logs preview-gateway** 看 upgrade 请求是否被正确转发
+4. **直连验证**：`curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" http://127.0.0.1:2025/ws`
+
 ## Trae Web 沙箱前端访问规则（重要！）
 
 > **铁律：云端沙箱只能通过 agent-tool-host 代理访问前端，严禁混淆端口身份**

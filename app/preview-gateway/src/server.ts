@@ -482,6 +482,18 @@ async function handleHealth(_req: IncomingMessage, res: ServerResponse): Promise
 // =============================================================================
 
 server.listen(PORT, HOST, () => {
+  // ── 防御守卫：/ws 必须在 UPSTREAMS 中 ─────────────────────────────
+  // 历史踩坑（2026-06-07）：/ws 不在 UPSTREAMS 中 → 走 DEFAULT_UPSTREAM →
+  // vite :8100（无 /ws handler）→ WebSocket 永远卡在 CONNECTING →
+  // DevLogs 显示 "ws=connecting" 但 HTTP /api/config 正常 → 用户困惑。
+  // 此断言在启动时立即暴露遗漏，不等用户报告。
+  const hasWsRoute = UPSTREAMS.some((u) => u.match === '/ws')
+  if (!hasWsRoute) {
+    log('FATAL: /ws route missing from UPSTREAMS! WebSocket will fall through to vite.')
+    log('FATAL: Add { match: "/ws", target: "http://127.0.0.1:2025", wsTarget: "ws://127.0.0.1:2025" } to UPSTREAMS.')
+    process.exit(1)
+  }
+
   log(`listening on http://${HOST}:${PORT} (D1: 好记，16666)`)
   log(`routes:`)
   for (const up of [DEFAULT_UPSTREAM, ...UPSTREAMS]) {
