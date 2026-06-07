@@ -1284,6 +1284,27 @@ export function useAgent() {
    * 单个 event type → reactive state dispatch
    */
   function handleAgentEvent(event: AgentEvent): void {
+    // ─── Task 27 终极调试：DOM 级标记（绕开 Vue 响应式，100% 可见） ──
+    // 每次调用都在 <body> 追加一个不可见 div 的 data 属性。
+    // DevTools → Elements → 搜 "sse-event-count" 即可看到总数。
+    // 不依赖 console（移动端不可读）不依赖 reactive（可能 HMR 丢失）。
+    try {
+      let el = document.getElementById('sse-debug-counter')
+      if (!el) {
+        el = document.createElement('div')
+        el.id = 'sse-debug-counter'
+        el.style.cssText = 'position:fixed;top:0;left:0;background:red;color:white;z-index:99999;font-size:10px;padding:2px 6px'
+        document.body.appendChild(el)
+      }
+      const count = (parseInt(el.dataset.count || '0', 10) + 1)
+      el.dataset.count = String(count)
+      el.textContent = `SSE events: ${count} (last: ${event.type})`
+      // 同时把最近 20 条 type 写到 dataset，DevTools 可查
+      const log = (el.dataset.log || '').split('|').filter(Boolean).slice(-19)
+      log.push(event.type)
+      el.dataset.log = log.join('|')
+    } catch {/* DOM 不可用（SSR）时静默 */}
+
     // 取最后一条 *正在 streaming* 的 assistant 消息作为流式追加目标。
     //
     // Task 7 之前：实现是"最后一条 assistant 消息"，因为 send() 每次

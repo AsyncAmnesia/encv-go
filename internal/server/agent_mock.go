@@ -466,7 +466,7 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 							return ctx.Err()
 						default:
 						}
-						e.executeRealAndEmit(ctx, s, sess, w, flusher, pending, id, name)
+						e.executeRealAndEmit(ctx, s, sess, w, flusher, pending, id, name, writeDebug)
 						continue
 					}
 					// realExecutor == nil：单测/容灾路径，硬编码剧本 result
@@ -543,6 +543,7 @@ func (e *MockEngine) executeRealAndEmit(
 	pending pendingRealCall,
 	id string,
 	name string,
+	writeDebug func(step, ev int, evType, dataSummary string),
 ) {
 	t0 := time.Now()
 	out, err := e.realExecutor(ctx, pending.name, pending.args)
@@ -564,6 +565,7 @@ func (e *MockEngine) executeRealAndEmit(
 			"status":     "failed",
 			"durationMs": dur,
 		})
+		writeDebug(-1, -1, "tool_result(err)", fmt.Sprintf("id=%s name=%s err=%s", id, name, err.Error()))
 		return
 	}
 
@@ -577,6 +579,7 @@ func (e *MockEngine) executeRealAndEmit(
 		"status":     "success",
 		"durationMs": dur,
 	})
+	writeDebug(-1, -1, "tool_result(ok)", fmt.Sprintf("id=%s name=%s dur=%dms", id, name, dur))
 }
 
 // sleepDelay 按 (DelayMs / speed) 等待，遇 ctx 取消立即返回。
