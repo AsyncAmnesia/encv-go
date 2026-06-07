@@ -8,8 +8,8 @@
  *    分割点用自然断点优先（\n\n 双换行 / ## 标题），保证每段是完整语义块。
  * 2. 遍历 eventLog：
  *    - 'text' → 产出 assistantText（取对应 text segment）
- *    - 'tool_call' → 产出 operation（单条工具调用卡片）
- *    - 'tool_result' → 产出 toolResultCard（单条工具结果数据卡片）
+ *    - 'tool_call' → 产出 operation（单条工具调用卡片，内嵌 #result slot 渲染结果）
+ *    - 'tool_result' → 不产出独立项（结果由 OperationCard #result slot 内嵌渲染）
  * 3. tool_result 紧跟在对应的 tool_call 后面（eventLog 保证顺序）
  *
  * 输出追加到 out 数组（不返回新数组——由调用方 renderTurnItems 统一管理）。
@@ -28,9 +28,8 @@ function renderAgentFlow(
   const textSegments = splitContentIntoSegments(displayText, textEntryCount)
 
   let textIdx = 0
-  // 预建 id→ToolCall / id→ToolResult 查找表（O(1) 配对）
+  // 预建 id→ToolCall 查找表（O(1) 查找）
   const tcMap = new Map(msg.tool_calls.map((tc) => [tc.id, tc]))
-  const trMap = new Map(msg.tool_results.map((tr) => [tr.id, tr]))
 
   for (const entry of log) {
     if (entry.type === 'text') {
@@ -70,16 +69,9 @@ function renderAgentFlow(
         }
       }
     } else if (entry.type === 'tool_result' && entry.id) {
-      const tr = trMap.get(entry.id)
-      if (tr) {
-        out.push({
-          type: 'toolResultCard',
-          messageId: `a-${messageIndex}`,
-          toolResultId: tr.id,
-          name: tr.name,
-          result: tr.result,
-        })
-      }
+      // tool_result 不产出独立 RenderedItem——结果已由对应 operation 的
+      // OperationCard #result slot 通过 findToolResultById() 内嵌渲染。
+      // 此处仅保留 eventLog 中的位置信息（用于未来扩展，如结果折叠/展开状态）。
     }
     // stream_start / stream_end / 其他类型在 eventLog 中但不产生 RenderedItem
   }
@@ -247,10 +239,11 @@ export type RenderedItem =
   | { type: 'operationGroup'; messageId: string; toolCallIds: string[]; forceComplete: boolean }
   // Task 27：单条工具调用卡片（agent 流式时间轴模式）。
   // 当 Message.eventLog 存在时，renderTurnItems 不再聚合所有 tool_call 到 operationGroup，
-  // 而是按 eventLog 顺序逐个产出 operation + toolResultCard，实现真正的 agent 步骤流。
+  // 而是按 eventLog 顺序逐个产出 operation（内嵌 #result slot 渲染结果），实现真正的 agent 步骤流。
   | { type: 'operation'; messageId: string; toolCallId: string; streaming: boolean }
   // Task 27：单条工具结果数据卡片（紧跟对应 operation 后）。
-  // AgentChat 按 name 分发到 MountListCard / FileListCard / FileContentCard。
+  // 注意：当前 renderAgentFlow 不再产出此类型（结果由 OperationCard #result slot 内嵌渲染）。
+  // 保留类型定义以备未来独立渲染 tool_result 之需。
   | { type: 'toolResultCard'; messageId: string; toolResultId: string; name: string; result: string }
   | { type: 'webSearchGroup'; messageId: string; queries: string[]; toolCallIds: string[] }
   | { type: 'reasoning'; messageId: string; text: string; streaming: boolean }
@@ -489,6 +482,11 @@ export function renderTurnItems(
   }
 
   let messageIndex = 0
+  // Task 27：记录已通过 eventLog 时间轴模式处理的消息索引。
+  // 这些消息的 tool_calls 已在 renderAgentFlow 中逐条产出 operation（内嵌结果 slot），
+  // 必须跳过下面（行 ~593）的旧累积循环，否则每条工具调用会被渲染两份。
+  const eventLogHandledIndices = new Set<number>()
+
   for (const msg of messages) {
     const idx = messageIndex++
     // ── 主消息体 ──────────────────────────────────────────
@@ -553,7 +551,7 @@ export function renderTurnItems(
 
       // ── Task 27：agent 流式时间轴渲染（eventLog 模式）────────
       // 当 Message 存在 eventLog 时，按事件到达顺序交错产出：
-      //   text → operation(tool_call) → toolResultCard → text → ...
+      //   text → operation(tool_call, 内嵌结果) → text → ...
       // 不再聚合为"一大段文本 + 一个折叠 group"。
       //
       // 无 eventLog 时（旧消息 / 非 agent 场景）走 fallback 路径（原逻辑）。
@@ -567,6 +565,7 @@ export function renderTurnItems(
         // 时间轴模式：把 content 按 eventLog 中的 text 条目数均分，
         // 每个 text 段与紧随其后的 tool_call / tool_result 配对。
         renderAgentFlow(out, msg, idx, displayText, streaming)
+        eventLogHandledIndices.add(idx) // 标记：此消息的 tool_calls 已由时间轴处理完
       } else {
         // fallback：旧聚合模式（向后兼容）
         if (displayText && displayText.trim().length > 0) {
@@ -590,6 +589,8 @@ export function renderTurnItems(
     }
 
     // ── tool_calls 累积 ──────────────────────────────────
+    // Task 27：eventLog 时间轴模式已处理过的消息，跳过旧累积循环（避免双重渲染）
+    if (!eventLogHandledIndices.has(idx)) {
     for (const tc of msg.tool_calls || []) {
       // approval 单独成项
       if (tc.status === 'pending' && tc.needsConfirm) {
@@ -641,6 +642,7 @@ export function renderTurnItems(
       flushWebGroup()
       tryAppendToGroup(tc)
     }
+    } // end eventLogHandledIndices skip
 
     // ── tool_results 错误回灌（仅当本条消息内已有内容）──
     if (msg.tool_results && msg.tool_results.length > 0 && !msg.content) {
