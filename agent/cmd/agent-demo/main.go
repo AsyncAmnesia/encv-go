@@ -109,6 +109,13 @@ func main() {
 func registerOpenListTools(reg *agent.ToolRegistry, cfg agent.AgentConfig) {
 	client := agent.NewOpenListClient(cfg.OpenListBaseURL, cfg.OpenListToken, nil)
 
+	// Single shared 30-second context for all OpenList tool
+	// calls. M4 fix: previously every handler called
+	// httpContext() on each invocation and discarded the
+	// cancel function, leaking the timer for 30s.
+	slctx, slcancel := httpContext()
+	defer slcancel()
+
 	reg.Register("list_files",
 		&openListListFilesSchema,
 		func(args string) (string, error) {
@@ -118,7 +125,7 @@ func registerOpenListTools(reg *agent.ToolRegistry, cfg agent.AgentConfig) {
 			if err := json.Unmarshal([]byte(args), &in); err != nil {
 				return agent.PluginErrorJSON("invalid_args", err.Error()), nil
 			}
-			res, err := client.ListFiles(httpContext(), in.Path)
+			res, err := client.ListFiles(slctx, in.Path)
 			if err != nil {
 				return agent.PluginErrorJSON("openlist_error", err.Error()), nil
 			}
@@ -135,7 +142,7 @@ func registerOpenListTools(reg *agent.ToolRegistry, cfg agent.AgentConfig) {
 			if err := json.Unmarshal([]byte(args), &in); err != nil {
 				return agent.PluginErrorJSON("invalid_args", err.Error()), nil
 			}
-			data, err := client.ReadFile(httpContext(), in.Path)
+			data, err := client.ReadFile(slctx, in.Path)
 			if err != nil {
 				return agent.PluginErrorJSON("openlist_error", err.Error()), nil
 			}
@@ -153,7 +160,7 @@ func registerOpenListTools(reg *agent.ToolRegistry, cfg agent.AgentConfig) {
 			if err := json.Unmarshal([]byte(args), &in); err != nil {
 				return agent.PluginErrorJSON("invalid_args", err.Error()), nil
 			}
-			ok, err := client.WriteFile(httpContext(), in.Path, []byte(in.Content))
+			ok, err := client.WriteFile(slctx, in.Path, []byte(in.Content))
 			if err != nil {
 				return agent.PluginErrorJSON("openlist_error", err.Error()), nil
 			}
@@ -170,7 +177,7 @@ func registerOpenListTools(reg *agent.ToolRegistry, cfg agent.AgentConfig) {
 			if err := json.Unmarshal([]byte(args), &in); err != nil {
 				return agent.PluginErrorJSON("invalid_args", err.Error()), nil
 			}
-			ok, err := client.DeleteFile(httpContext(), in.Path)
+			ok, err := client.DeleteFile(slctx, in.Path)
 			if err != nil {
 				return agent.PluginErrorJSON("openlist_error", err.Error()), nil
 			}
@@ -188,7 +195,7 @@ func registerOpenListTools(reg *agent.ToolRegistry, cfg agent.AgentConfig) {
 			if err := json.Unmarshal([]byte(args), &in); err != nil {
 				return agent.PluginErrorJSON("invalid_args", err.Error()), nil
 			}
-			ok, err := client.Rename(httpContext(), in.Src, in.Dst)
+			ok, err := client.Rename(slctx, in.Src, in.Dst)
 			if err != nil {
 				return agent.PluginErrorJSON("openlist_error", err.Error()), nil
 			}
@@ -205,7 +212,7 @@ func registerOpenListTools(reg *agent.ToolRegistry, cfg agent.AgentConfig) {
 			if err := json.Unmarshal([]byte(args), &in); err != nil {
 				return agent.PluginErrorJSON("invalid_args", err.Error()), nil
 			}
-			out, err := client.ExecCommand(httpContext(), in.Command)
+			out, err := client.ExecCommand(slctx, in.Command)
 			if err != nil {
 				return agent.PluginErrorJSON("openlist_error", err.Error()), nil
 			}
@@ -216,7 +223,7 @@ func registerOpenListTools(reg *agent.ToolRegistry, cfg agent.AgentConfig) {
 	reg.Register("get_storage_info",
 		&openListGetStorageInfoSchema,
 		func(args string) (string, error) {
-			info, err := client.GetStorageInfo(httpContext())
+			info, err := client.GetStorageInfo(slctx)
 			if err != nil {
 				return agent.PluginErrorJSON("openlist_error", err.Error()), nil
 			}
@@ -232,7 +239,7 @@ func registerOpenListTools(reg *agent.ToolRegistry, cfg agent.AgentConfig) {
 	reg.Register("list_storages",
 		&openListListStoragesSchema,
 		func(args string) (string, error) {
-			items, err := client.ListStorages(httpContext())
+			items, err := client.ListStorages(slctx)
 			if err != nil {
 				return agent.PluginErrorJSON("openlist_error", err.Error()), nil
 			}
@@ -250,7 +257,7 @@ func registerOpenListTools(reg *agent.ToolRegistry, cfg agent.AgentConfig) {
 			if err := json.Unmarshal([]byte(args), &in); err != nil {
 				return agent.PluginErrorJSON("invalid_args", err.Error()), nil
 			}
-			hits, err := client.SearchFiles(httpContext(), in.Parent, in.Keyword)
+			hits, err := client.SearchFiles(slctx, in.Parent, in.Keyword)
 			if err != nil {
 				return agent.PluginErrorJSON("openlist_error", err.Error()), nil
 			}

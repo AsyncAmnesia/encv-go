@@ -46,6 +46,8 @@ function customizeMarkdownIt(md: MarkdownIt): MarkdownIt {
   line-height: 1.6;
   color: var(--ion-text-color);
   word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* ── 流式输出平滑过渡（容器级） ── */

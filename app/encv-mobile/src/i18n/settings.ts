@@ -557,5 +557,7 @@ export default {
     'bg.sunsetGlowDesc': 'Sunset glow, pink-gold',
     'bg.auroraNight': 'Aurora Night',
     'bg.auroraNightDesc': 'Aurora night, deep blue',
+
+    'inputHistory.clear': 'Clear',
   },
 }

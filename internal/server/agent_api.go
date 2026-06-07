@@ -18,6 +18,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/scrypt"
+
+	"github.com/Soltus/encv-go/internal/config"
 )
 
 // ─── API Key 加密/解密（防止 config.user.json 明文暴露） ──────
@@ -315,6 +317,7 @@ type agentConfig struct {
 	APIKey       string `json:"openai_api_key"`
 	BaseURL      string `json:"openai_base_url"`
 	SystemPrompt string `json:"system_prompt"`
+	OpenAIModel  string `json:"openai_model"`
 }
 
 func (s *Server) readAgentConfig(deviceId ...string) agentConfig {
@@ -348,7 +351,80 @@ func (s *Server) readAgentConfig(deviceId ...string) agentConfig {
 		cfg.BaseURL = "https://api.openai.com"
 	}
 	cfg.SystemPrompt = agent["system_prompt"]
+	cfg.OpenAIModel = agent["openai_model"]
 	return cfg
+}
+
+// resolveActiveModel 解析当前激活模型：优先从 agent_settings 读（用户在 AI 设置中选的），
+// 否则默认 gpt-4o。这才是 context-usage 在"无活动 session"时该展示的模型，
+// 否则前端会显示 8192 兜底默认值，误导用户。
+func (s *Server) resolveActiveModel(deviceId string) string {
+	cfg := s.readAgentConfig(deviceId)
+	if cfg.OpenAIModel != "" {
+		return cfg.OpenAIModel
+	}
+	return "gpt-4o"
+}
+
+// getAgentConfig 读取 config 文件中的 agent_settings 段，并解析为类型化的 *config.Agent。
+// 用于访问 MockMode / MockSpeed / MockScenarios 等运行时字段。
+// 任何错误（路径为空 / 读不到文件 / JSON 解析失败 / agent_settings 缺失）都返回 DefaultAgentConfig()。
+func (s *Server) getAgentConfig() *config.Agent {
+	if s.configPath == "" {
+		return config.DefaultAgentConfig()
+	}
+	data, err := os.ReadFile(s.configPath)
+	if err != nil {
+		slog.Debug("agent: getAgentConfig read file failed", "path", s.configPath, "error", err)
+		return config.DefaultAgentConfig()
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		slog.Debug("agent: getAgentConfig parse top-level json failed", "error", err)
+		return config.DefaultAgentConfig()
+	}
+	agentRaw, ok := raw["agent_settings"]
+	if !ok {
+		return config.DefaultAgentConfig()
+	}
+	var agentCfg config.Agent
+	if err := json.Unmarshal(agentRaw, &agentCfg); err != nil {
+		slog.Debug("agent: getAgentConfig parse agent_settings failed", "error", err)
+		return config.DefaultAgentConfig()
+	}
+	// 防御性修正：用户配置文件中可能缺失 mock_speed 字段（JSON 零值为 0）
+	// 导致 MockEngine.Run() 中 sleepDelay 把所有 Step 延迟归零，SSE 事件
+	// 毫秒级全部推送完毕，前端无法看到逐步流式效果。
+	if agentCfg.MockSpeed <= 0 {
+		agentCfg.MockSpeed = 1.0
+	}
+	return &agentCfg
+}
+
+// lastUserTextFromLoopMessages 提取 messages 列表中最后一条 role=="user" 消息的文本内容。
+// 用于 Mock 模式下的剧本触发匹配（关键词/正则/精确匹配都需要纯文本）。
+//
+// chatMsg.Content 当前始终是 string 类型；未来若扩展为 []ContentPart 等结构，
+// 在此处补充分支即可（参考 OpenAI multimodal 多模态 content array 格式）。
+func lastUserTextFromLoopMessages(msgs []chatMsg) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "user" {
+			return msgs[i].Content
+		}
+	}
+	return ""
+}
+
+// truncateForLog 把字符串截断到 max 字符，超出部分用 "..." 表示。
+// 用于日志中预览用户输入，避免长消息刷屏。
+func truncateForLog(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
 }
 
 // ─── 路由注册 ────────────────────────────────────────────────
@@ -359,6 +435,7 @@ func (s *Server) registerAgentRoutes(r *gin.Engine) {
 	r.POST("/api/decrypt-key", s.handleAgentDecryptKey)
 	r.POST("/api/agent/reset-key", s.handleAgentResetKey)
 	r.GET("/api/agent/context-usage", s.handleAgentContextUsage)
+	r.GET("/api/agent/mock/presets", s.handleAgentMockPresets)
 	r.GET("/test", s.handleAgentTest)
 	r.POST("/test", s.handleAgentTest)
 	r.POST("/api/chat", s.handleAgentChat)
@@ -493,7 +570,7 @@ func (s *Server) handleAgentModels(c *gin.Context) {
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"models":      []interface{}{},
-			"defaultModel": "",
+			"defaultModel": cfg.OpenAIModel,
 			"error":       "no_api_key",
 			"note":        note,
 		})
@@ -561,7 +638,7 @@ func (s *Server) handleAgentModels(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"models":      sorted,
-		"defaultModel": "",
+		"defaultModel": cfg.OpenAIModel,
 	})
 	slog.Info("agent: models fetched", "count", len(sorted), "base_url", cfg.BaseURL)
 }
@@ -641,6 +718,12 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	// ①½ 启动后台 session GC（幂等）
 	startSessionGC()
 
+	// A2UI 协议版本识别（预留，本轮不处理）
+	if a2v := c.GetHeader("X-A2UI-Version"); a2v != "" {
+		slog.Info("agent: A2UI protocol requested", "version", a2v, "session", body.SessionId)
+		// 未来：根据 version 选择不同的 Surface 渲染策略
+	}
+
 	// ② 读取 agent 配置（API Key / Base URL / System Prompt）
 	cfg := s.readAgentConfig(body.DeviceId)
 	if cfg.APIKey == "" {
@@ -652,7 +735,12 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	}
 	model := body.Model
 	if model == "" {
-		model = "gpt-4o-mini"
+		// 跟随用户在 AI 设置中选的激活模型，而不是写死 gpt-4o-mini
+		if cfg.OpenAIModel != "" {
+			model = cfg.OpenAIModel
+		} else {
+			model = "gpt-4o"
+		}
 	}
 
 	// ③ 防御：空消息
@@ -686,6 +774,63 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	sess.PendingTools = nil // 新一轮开始，清空旧的 pending
 	sess.InProgress = true  // 标记流式生成中
 	sess.mu.Unlock()
+
+	// ════════════════════════════════════════════════════════════
+	// ③⁴ Mock 模式短路（核心测试 / CI / 离线开发路径）
+	// ════════════════════════════════════════════════════════════
+	//
+	// 触发条件：config.user.json 的 agent_settings.mock_mode 设为 "builtin" 或 "custom"。
+	//   - builtin 模式无匹配 → Match 内部 fallback 到 default_friendly（不会落到这里）
+	//   - custom 模式无匹配 → Match 返回 nil → 继续走真实 OpenAI
+	// 短路后完全不调用 OpenAI/gptgod，0 token 消耗。
+	//
+	// 必须放在 session 缓存之后（需要 sess 写入 EventCache），
+	// 必须放在 callOpenAIStream 之前（避免无谓的 API 请求）。
+	agentCfg := s.getAgentConfig()
+	mockMode := strings.ToLower(strings.TrimSpace(agentCfg.MockMode))
+
+	// ════════════════════════════════════════════════════════════
+	// AG-UI 协议模式检测（Phase 4）
+	// ════════════════════════════════════════════════════════════
+	// 当请求携带 X-Agent-Protocol: agui header 或 ?protocol=agui query 时，
+	// 后端使用 AGUIEventMapper 输出标准 AG-UI 格式事件，而非自定义 SSE 格式。
+	// 前端 TDesignEngine 通过此协议与后端通信。
+	aguiMode := c.GetHeader("X-Agent-Protocol") == "agui" || c.Request.URL.Query().Get("protocol") == "agui"
+
+	if mockMode != "" && mockMode != "off" {
+		userText := lastUserTextFromLoopMessages(body.Messages)
+		scenario := s.mockEngine.Match(userText, mockMode)
+		if scenario != nil {
+			c.Header("X-Mock-Scenario", scenario.ID)
+			c.Header("X-Mock-Mode", mockMode)
+			if aguiMode {
+				c.Header("X-Agent-Protocol", "agui")
+			}
+
+			flusher, _ := c.Writer.(http.Flusher)
+			s.setSSEHeaders(c.Writer)
+			slog.Info("agent: mock mode short-circuit",
+				"mode", mockMode,
+				"scenario", scenario.ID,
+				"user_text", truncateForLog(userText, 100),
+				"speed", agentCfg.MockSpeed,
+				"agui_mode", aguiMode)
+			if err := s.mockEngine.Run(c.Request.Context(), s, sess, c.Writer, flusher, scenario,
+				agentCfg.MockSpeed, true /* mockFlag */, aguiMode); err != nil {
+				slog.Warn("agent: mock engine run failed", "scenario", scenario.ID, "error", err)
+			}
+			sess.mu.Lock()
+			sess.InProgress = false
+			sess.mu.Unlock()
+			return
+		}
+		// builtin 模式无匹配 → Match 内部已 fallback 到 default_friendly，不会到这里
+		// custom 模式无匹配 → Match 返回 nil，落到这里 → 继续走真实 OpenAI
+		if mockMode == "custom" {
+			slog.Info("agent: custom mock no match, falling through to real API",
+				"user_text", truncateForLog(userText, 200))
+		}
+	}
 
 	// ④ Flusher 检测
 	flusher, ok := c.Writer.(http.Flusher)
@@ -731,6 +876,8 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		pendingTools     []toolCallAccumulator
 		finalAssistantText string         // LLM 最终文本回复
 		autoToolExecuted bool           // 是否有工具被执行过
+		textSeq          int            // 全局 seq 计数器（跨 round 递增，供 text_delta 使用）
+		reasoningSeq     int            // 全局 seq 计数器（跨 round 递增，供 reasoning_delta 使用）
 	)
 
 	for round := 0; round < maxAgentLoopRounds; round++ {
@@ -788,24 +935,76 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		)
 		const bufSizeLimit = 60 // 缓冲阈值（字符数）
 
-		// looksLikeToolCall 检查累积文本是否看起来像工具调用 JSON
-		looksLikeToolCall := func(s string) bool {
+	// containsEmbeddedToolCallPattern 在任意位置扫描工具调用 JSON 特征。
+	//
+	// 参考 LobeChat 的协议级分离思路：LobeChat 通过 chunkType='text'/'tools_calling'
+	// 在协议层面分离文本和工具调用。由于 gptgod 代理不发送标准 tool_call_chunk 事件，
+	// 我们需要在文本层做更精确的启发式检测来模拟同样的效果。
+	//
+	// 此函数用于：
+	//   1) looksLikeToolCheck 策略 2 — 嵌入式检测（中文正文后接 JSON）
+	//   2) 实时模式的二次检测 — bufMode 已释放后发现后续 chunk 出现工具调用特征
+	containsEmbeddedToolCallPattern := func(s string) bool {
+		if len(s) < 20 {
+			return false
+		}
+		return strings.Contains(s, `[{"name"`) ||
+			strings.Contains(s, `{"name":"`) ||
+			strings.Contains(s, `"function":`) ||
+			strings.Contains(s, `"arguments":`)
+	}
+
+	// splitTextIntoChunks 将文本按字符数分割为等长大块。
+	// 用于 Branch B 成功解析工具调用后，将 remainingText 分块作为 text_delta 补发给前端，
+	// 模拟 LobeChat stream_chunk chunkType='text' 的增量推送效果。
+	splitTextIntoChunks := func(text string, chunkSize int) []string {
+		runes := []rune(text)
+		if len(runes) <= chunkSize {
+			return []string{text}
+		}
+		var chunks []string
+		for i := 0; i < len(runes); i += chunkSize {
+			end := i + chunkSize
+			if end > len(runes) {
+				end = len(runes)
+			}
+			chunks = append(chunks, string(runes[i:end]))
+		}
+		return chunks
+	}
+
+	// truncateStr 截断字符串到指定长度（用于日志预览）
+	truncateStr := func(s string, maxLen int) string {
+		if len(s) <= maxLen {
+			return s
+		}
+		return s[:maxLen] + "..."
+	}
+
+	// looksLikeToolCall 检查累积文本是否看起来像工具调用 JSON
+	looksLikeToolCall := func(s string) bool {
 			trimmed := strings.TrimSpace(s)
 			if len(trimmed) < 3 {
 				return false
 			}
-			// 以 [ 或 { 开头 且包含 "name" 关键字
+			// 策略 1：文本以 [ 或 { 开头（原有逻辑 — 处理以 JSON 开头的回复）
 			if (trimmed[0] == '[' || trimmed[0] == '{') &&
 				strings.Contains(trimmed, `"name"`) {
 				return true
 			}
-			return false
+			// ★ 策略 2：文本任意位置嵌入工具调用 JSON 特征（新增）
+			//    处理「中文正文 + 后接工具调用 JSON」的嵌入式场景
+			return containsEmbeddedToolCallPattern(trimmed)
 		}
 
 		// flushBuffer 把缓冲的文本一次性转发给客户端（当确定不是工具调用时调用）
+		// 架构升级：text_delta / reasoning_delta 事件从裸字符串改为 {seq, text} 结构，
+		// 前端按 seq 排序渲染，解决 SSE chunk 乱序/丢包问题。
 		flushBuffer := func() {
 			for _, chunk := range textBuf {
-				s.sendAndCache(sess, c.Writer, flusher, "text_delta", chunk)
+				textSeq++
+				s.sendAndCache(sess, c.Writer, flusher, "text_delta",
+					map[string]interface{}{"seq": textSeq, "text": chunk})
 			}
 			textBuf = nil
 		}
@@ -836,13 +1035,31 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 							}
 						}
 					} else {
-						// 正常实时模式或缓冲已释放 → 直接转发
-						s.sendAndCache(sess, c.Writer, flusher, "text_delta", textChunk)
+						// 正常实时模式或缓冲已释放
+						// ★ 二次检测（参考 LobeChat chunkType 分发思路）：
+						//   如果累积文本中出现嵌入式工具调用特征，立即重新进入缓冲模式，
+						//   防止工具调用 JSON 作为普通 text_delta 泄漏给前端。
+						//   注意：只在 roundTextContent 上做检测（O(n) 字符串搜索），
+						//   不对每个 chunk 做（避免性能问题）。
+						if !suspectedToolCall && containsEmbeddedToolCallPattern(roundTextContent) {
+							slog.Info("agent: mid-stream embedded tool call detected, re-buffering",
+								"text_len", len(roundTextContent),
+								"chunk_preview", truncateStr(textChunk, 40))
+							suspectedToolCall = true
+							bufMode = true
+							textBuf = append(textBuf, textChunk)
+						} else {
+							textSeq++
+							s.sendAndCache(sess, c.Writer, flusher, "text_delta",
+								map[string]interface{}{"seq": textSeq, "text": textChunk})
+						}
 					}
 				}
 			case "reasoning_delta":
 				if textChunk, ok := ev.Data.(string); ok && textChunk != "" {
-					s.sendAndCache(sess, c.Writer, flusher, "reasoning_delta", textChunk)
+					reasoningSeq++
+					s.sendAndCache(sess, c.Writer, flusher, "reasoning_delta",
+						map[string]interface{}{"seq": reasoningSeq, "text": textChunk})
 				}
 			case "tool_call_chunk":
 				gotToolCalls = true
@@ -863,6 +1080,14 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 			}
 		}
 
+		// 检测输出被 token 限制截断
+		if finishReason == "length" {
+			slog.Warn("agent: LLM response truncated (finish_reason=length)",
+				"round", round+1,
+				"text_len", len(roundTextContent),
+				"text_tail", roundTextContent[max(0, len(roundTextContent)-100):])
+		}
+
 		// 收集所有累积的完整 tool_calls
 		if gotToolCalls {
 			for _, tc := range tcAccumulator {
@@ -879,6 +1104,17 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 				"tool_count", len(roundToolCalls),
 				"finish_reason", finishReason)
 
+			// ★ 如果有缓冲区残留的前置文本（工具调用之前的正常正文），立即发送。
+			// 这些文本在 tool_call_chunk 事件到达之前就已经产生，是安全的自然语言内容。
+			// 参考 LobeChat stream_start 重置 accumulatedContent 的思路：
+			// 在进入工具调用处理之前，先确保前置文本已正确投递给客户端。
+			if len(textBuf) > 0 {
+				flushBuffer()
+				slog.Info("agent: Branch A flushed pre-tool-call buffered text",
+					"buf_chunks", len(textBuf))
+				textBuf = nil
+			}
+
 			// 把 assistant 的 tool_calls 消息追加到历史
 			loopMessages = append(loopMessages, chatMsg{
 				Role:      "assistant",
@@ -892,6 +1128,10 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 				if meta, ok := toolMeta[tc.Function.Name]; ok {
 					if v, ok := meta["needConfirm"].(bool); ok { needConfirm = v }
 				}
+
+				// ★ 无论是否需要确认，都向前端推送 tool_call 事件
+				// 这样前端才能渲染 GroupedOperationMessage 等结构化组件
+				s.emitToolCallEvent(sess, c.Writer, flusher, tc, toolMeta)
 
 				if needConfirm {
 					pendingTools = append(pendingTools, tc)
@@ -909,6 +1149,15 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 						"tool_name":   tc.Function.Name,
 						"round":       round + 1,
 						"duration_ms": time.Since(start).Milliseconds(),
+					})
+					// 推送 tool_status 事件，让前端 GroupedOperationMessage 更新状态徽章
+					statusVal := "success"
+					if execErr != nil {
+						statusVal = "failed"
+					}
+					s.sendAndCache(sess, c.Writer, flusher, "tool_status", map[string]interface{}{
+						"id":     tc.ID,
+						"status": statusVal,
 					})
 					if execErr != nil {
 						result = fmt.Sprintf(`{"error":"tool_execution_failed","detail":%q}`, execErr.Error())
@@ -987,6 +1236,10 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 				if meta, ok := toolMeta[tc.Function.Name]; ok {
 					if v, ok := meta["needConfirm"].(bool); ok { needConfirm = v }
 				}
+
+				// ★ 向前端推送 tool_call 事件（与 API 级 tool_calls 路径一致）
+				s.emitToolCallEvent(sess, c.Writer, flusher, tc, toolMeta)
+
 				if needConfirm {
 					pendingTools = append(pendingTools, tc)
 					allAutoExecuted = false
@@ -1004,6 +1257,15 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 						"round":       round + 1,
 						"duration_ms": time.Since(start).Milliseconds(),
 					})
+					// 推送 tool_status 事件（平台级 Tool Use 路径）
+					parsedStatusVal := "success"
+					if execErr != nil {
+						parsedStatusVal = "failed"
+					}
+					s.sendAndCache(sess, c.Writer, flusher, "tool_status", map[string]interface{}{
+						"id":     tc.ID,
+						"status": parsedStatusVal,
+					})
 					if execErr != nil {
 						result = fmt.Sprintf(`{"error":"tool_execution_failed","detail":%q}`, execErr.Error())
 					}
@@ -1019,6 +1281,22 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 				Role: "user",
 				Content: "[工具执行结果已注入。请基于以上结果回答用户的原始问题。]",
 			})
+
+			// ★ 补发 remainingText（参考 LobeChat stream_chunk chunkType='text' 的增量模式）
+			// extractToolCallsFromText 返回的 remainingText 是剥离工具调用 JSON 后的
+			// 自然语言部分。LobeChat 不需要这个步骤因为它的协议天然分离（chunkType 区分），
+			// 但我们的架构决定了必须手动补发，否则 JSON 之后的正文会丢失 → 回答截断。
+			if remainingText != "" {
+				chunks := splitTextIntoChunks(remainingText, 100)
+				for _, ch := range chunks {
+					textSeq++
+					s.sendAndCache(sess, c.Writer, flusher, "text_delta",
+						map[string]interface{}{"seq": textSeq, "text": ch})
+				}
+				slog.Info("agent: Branch B remaining text sent to client",
+					"remaining_len", len(remainingText), "chunks", len(chunks))
+			}
+
 			continue
 		}
 		// 分支 B 也没有解析到工具调用 → LLM 输出了纯文本回复（非工具调用）
@@ -1081,7 +1359,9 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 
 	// 2c: 兜底——LLM 未返回任何文本（finalAssistantText 为空）
 	//     发送一个 text_delta 提示事件，避免前端显示"服务端返回空回复"
-	s.sendSSEEventSafe(c.Writer, flusher, "text_delta", "（AI 助手未生成有效回复，可能需要换个问题或检查 API Key 配置）")
+	textSeq++ // fallback 也递增 seq，保持全局唯一
+	s.sendSSEEventSafe(c.Writer, flusher, "text_delta",
+		map[string]interface{}{"seq": textSeq, "text": "（AI 助手未生成有效回复，可能需要换个问题或检查 API Key 配置）"})
 	s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
 	slog.Warn("agent: chat completed with no output (empty finalAssistantText)",
 		"rounds", autoToolExecuted)
@@ -1143,6 +1423,11 @@ type confirmRequest struct {
 	DeviceId   string `json:"deviceId"` // 设备指纹（用于 API Key 解密 + 系统提示词）
 }
 
+// handleAgentConfirm 处理用户对工具调用的 accept/decline/cancel 决策。
+//
+// 注意：Mock 模式（agent_settings.mock_mode = "builtin" | "custom"）**不**影响本端点。
+// 原因：confirm 只是执行已生成的 tool_call / 递归下一轮 chat，不直接驱动 LLM。
+// Mock 短路只发生在 /api/chat 的初始入口；confirm 路径直接走真实 OpenAI 即可。
 func (s *Server) handleAgentConfirm(c *gin.Context) {
 	// ① 解析请求体
 	var body confirmRequest
@@ -1456,12 +1741,14 @@ func (s *Server) sendAndCache(sess *agentSession, w http.ResponseWriter, flusher
 
 func (s *Server) streamText(w http.ResponseWriter, text string, chunkSize int, delayMs time.Duration) {
 	runes := []rune(text)
+	seq := 0
 	for i := 0; i < len(runes); i += chunkSize {
 		end := i + chunkSize
 		if end > len(runes) {
 			end = len(runes)
 		}
-		s.sendSSEEvent(w, "text_delta", string(runes[i:end]))
+		seq++
+		s.sendSSEEvent(w, "text_delta", map[string]interface{}{"seq": seq, "text": string(runes[i:end])})
 		time.Sleep(delayMs)
 	}
 }
@@ -1469,12 +1756,14 @@ func (s *Server) streamText(w http.ResponseWriter, text string, chunkSize int, d
 // streamTextSafe — 安全版本：检测断连后立即停止
 func (s *Server) streamTextSafe(w http.ResponseWriter, flusher http.Flusher, text string, chunkSize int, delayMs time.Duration) {
 	runes := []rune(text)
+	seq := 0
 	for i := 0; i < len(runes); i += chunkSize {
 		end := i + chunkSize
 		if end > len(runes) {
 			end = len(runes)
 		}
-		s.sendSSEEventSafe(w, flusher, "text_delta", string(runes[i:end]))
+		seq++
+		s.sendSSEEventSafe(w, flusher, "text_delta", map[string]interface{}{"seq": seq, "text": string(runes[i:end])})
 		time.Sleep(delayMs)
 	}
 }
@@ -1566,4 +1855,73 @@ type chatMsg struct {
 	ToolCallID string                 `json:"tool_call_id,omitempty"`
 	Name       string                 `json:"name,omitempty"`
 	ToolCalls  []toolCallAccumulator  `json:"tool_calls,omitempty"`
+}
+
+// ─── GET /api/agent/mock/presets — 全局剧本选择器预设 ─────────────
+//
+// 用途：用户**首次**进入 AgentChat 时（还没发过任何消息），前端主动拉
+// 一次本端点拿到"剧本选择器"预设（12 个内置剧本入口），覆盖在输入框
+// 上方。后续用户点 chip 触发对应剧本；流结束后 chip 保留（不再自动 clear）。
+//
+// 行为契约：
+//   - mock 模式开启（builtin 或 custom）→ 返回所有 builtin scenarios 的入口
+//   - mock 模式关闭（off） → 返回空 presets
+//   - 自定义剧本（custom 模式） → builtin + custom 一起返回
+//
+// 与 /api/chat 流内 mock_presets 事件的差异：
+//   - 流内 mock_presets：剧本运行中推，覆盖式更新 chip（mid-scenario 切换分支）
+//   - 本端点：仅用于"首次进入" + "用户主动 refresh" 场景
+type scenarioPickerEntry struct {
+	ID          string `json:"id"`
+	ScenarioID  string `json:"scenarioId"`
+	Label       string `json:"label"`
+	UserText    string `json:"userText"`
+	Icon        string `json:"icon,omitempty"`
+	Tooltip     string `json:"tooltip,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+func (s *Server) handleAgentMockPresets(c *gin.Context) {
+	cfg := s.getAgentConfig()
+	mode := cfg.MockMode
+
+	// mock 模式关闭时返回空（前端 v-if 自然不渲染）
+	if mode == "off" || mode == "" {
+		c.JSON(http.StatusOK, gin.H{
+			"scenario":  "",
+			"phase":     "off",
+			"presets":   []scenarioPickerEntry{},
+			"mockMode":  mode,
+		})
+		return
+	}
+
+	// 遍历所有内置 + 自定义剧本，每个转成一个 picker entry
+	allScenarios := s.mockEngine.AllScenarios()
+	entries := make([]scenarioPickerEntry, 0, len(allScenarios))
+
+	for _, sc := range allScenarios {
+		// 跳过"无 Presets 字段"的剧本（理论上 12 个 builtin 都有）
+		if len(sc.Presets) == 0 {
+			continue
+		}
+		// picker 入口：取剧本第一个 Preset 的 userText 作为触发关键词
+		firstPreset := sc.Presets[0]
+		entries = append(entries, scenarioPickerEntry{
+			ID:          "pick_" + sc.ID,
+			ScenarioID:  sc.ID,
+			Label:       "🎬 " + sc.ID,
+			UserText:    firstPreset.UserText,
+			Icon:        "🎬",
+			Tooltip:     sc.Description,
+			Description: sc.Description,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"scenario": "scenario_picker",
+		"phase":    "picker",
+		"presets":  entries,
+		"mockMode": mode,
+	})
 }

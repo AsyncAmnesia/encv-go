@@ -18,7 +18,7 @@
  *   - Requirement: Event 类型契约（6 种 event type）
  *   - Requirement: 4-决策 ConfirmRequest
  */
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { showToast } from '@/composables/useToast'
 import { getDeviceIdSync } from './useDeviceId'
 import { getAgentApiBase } from './useAgentApiBase'
@@ -41,6 +41,7 @@ export interface SessionMeta {
   createdAt: number
   updatedAt: number
   messageCount: number
+  rounds: number
 }
 
 export type Decision = 'accept' | 'accept_for_session' | 'decline' | 'cancel'
@@ -52,6 +53,7 @@ export type AgentEventType =
   | 'tool_status'
   | 'tool_result'
   | 'stream_status'  // 后端流式状态（断点续传时推 synced / more_pending）
+  | 'stream_start'   // Mock 模式信号：data = { mock: true, scenario: "..." }
   | 'stream_end'
   | 'stream_error'   // 后端在 SSE 流过程中遇到不可恢复错误时推送
   // 上下文自动压缩事件。Task 7 引入：后端在 messages token 数
@@ -60,6 +62,22 @@ export type AgentEventType =
   // 的合成消息（renderTurnItems 把它转成 ContextCompactionDivider）。
   // 这是 7 种 event type 中的第 7 种，原有 6 种契约不变。
   | 'compaction'
+  // Mock 模式剧本预设：后端 MockEngine 在 stream_start 之后（或 mid-scenario
+  // 任意 step 内）推送，data 形状是 { scenario, phase, presets: MockPreset[] }。
+  // 前端收到后由 MockPresetBar 渲染为输入框上方的 chip 按钮列表。
+  | 'mock_presets'
+  // Mock 模式预设清空信号：后端在 stream_end 时推，前端 MockPresetBar 收到
+  // 后清空 chip。reason 字段仅做调试。
+  | 'mock_presets_clear'
+
+/** 单个 mock 预设按钮契约（与后端 internal/server.MockPreset JSON 对应） */
+export interface MockPreset {
+  id: string
+  label: string
+  userText: string
+  icon?: string
+  tooltip?: string
+}
 
 /** Agent 推送到 SSE channel 的事件 */
 export interface AgentEvent {
@@ -93,6 +111,18 @@ export interface ToolResult {
 
 export interface Message {
   /**
+   * Task 27：事件到达顺序日志（agent 流式时间轴渲染核心）。
+   *
+   * 后端 SSE 事件流按时间顺序到达：text_delta → tool_call → tool_result → text_delta → ...
+   * 但 Message 结构体把所有 text 合并到 content、所有 tool_calls/tool_results 分开存。
+   * eventLog 记录原始到达顺序，让 renderTurnItems 能按时间轴交错渲染：
+   *   [text, tool_call(id=call_mount), tool_result(id=call_mount), text, tool_call(id=call_files1), ...]
+   *
+   * 每条 entry 的 type 取值：'text' | 'tool_call' | 'tool_result' | 'stream_start' | 'stream_end'
+   * tool_call / tool_result 条目额外带 id 字段用于配对。
+   */
+  eventLog?: Array<{ type: string; id?: string }>
+  /**
    * Task 22：agent 派发 subagent 拆解任务时插入的"agent task"消息。
    * 与 user/assistant/system 并列，是前端渲染层的合法角色之一。
    * 后端在 SubagentDispatch 事件中构造（content 是 JSON 字符串，
@@ -125,6 +155,11 @@ export interface Message {
    * 自动清除（说明服务端已开始处理该消息）。
    */
   pending?: boolean
+  /**
+   * 内部 buffer：SSE {seq, text} 排序重建用（不持久化，不回送给后端）
+   */
+  _contentSeqBuf?: Map<number, string>
+  _reasoningSeqBuf?: Map<number, string>
 }
 
 /**
@@ -176,27 +211,101 @@ const TOOL_STATUS_VALUES: ReadonlySet<ToolStatus> = new Set<ToolStatus>([
  * 后端格式：json.Marshal(plainString) → 经外层 JSON 解码后 data 就是纯文本
  * 兼容旧格式：{"content": "..."} 包装
  */
-function parseContentDelta(data: string): string {
-  if (!data) return ''
-  // 尝试作为 JSON 解析（兼容 {"content":"..."} 或包装字符串格式）
-  try {
-    const parsed = JSON.parse(data)
-    if (typeof parsed === 'string') return parsed
-    if (parsed && typeof parsed === 'object' && 'content' in parsed) {
-      return String((parsed as { content: unknown }).content ?? '')
+/**
+ * 解析 text_delta / reasoning_delta 的 data 字段。
+ *
+ * 后端架构升级后事件格式从裸字符串变为 {seq: number, text: string}，
+ * 此函数兼容两种格式：
+ *   - 旧格式：data 是 string → { text, seq: undefined }
+ *   - 新格式：data 是 {seq, text} 对象 → { text, seq }
+ */
+interface ParsedContentDelta {
+  text: string
+  seq?: number
+}
+function parseContentDelta(data: unknown): ParsedContentDelta {
+  if (!data) return { text: '' }
+  if (typeof data === 'string') {
+    try {
+      const parsed = JSON.parse(data)
+      if (typeof parsed === 'string') return { text: parsed }
+      if (parsed && typeof parsed === 'object') {
+        // 新格式 {seq, text}
+        if ('text' in parsed && 'seq' in parsed) {
+          return { text: String(parsed.text ?? ''), seq: Number(parsed.seq) }
+        }
+        // 旧格式兼容 {"content":"..."}
+        if ('content' in parsed) {
+          return { text: String((parsed as { content: unknown }).content ?? '') }
+        }
+      }
+    } catch {
+      // 不是有效 JSON → 纯文本，直接使用
     }
-  } catch {
-    // 不是有效 JSON → 后端发的是纯文本（当前 encv-go stub 格式），直接使用
+    return { text: data }
   }
-  return data
+  // data 已经是对象（新格式，SSE 层已 JSON.parse）
+  if (data && typeof data === 'object') {
+    if ('text' in data && 'seq' in data) {
+      return { text: String((data as { text: unknown }).text ?? ''), seq: Number((data as { seq: unknown }).seq) }
+    }
+  }
+  return { text: String(data ?? '') }
+}
+
+/**
+ * 按 seq 序列号追加文本块到消息字段，保证乱序到达时也能正确排序显示。
+ *
+ * 内部维护 msg._contentSeqBuf / msg._reasoningSeqBuf（Map<number, string>），
+ * 每次写入后按 key 排序重建 msg.content / msg.reasoning。
+ */
+function appendSequencedChunk(
+  msg: Message,
+  field: 'content' | 'reasoning',
+  seq: number | undefined,
+  text: string,
+) {
+  const bufKey = field === 'content' ? '_contentSeqBuf' : '_reasoningSeqBuf'
+  let buf = msg[bufKey] as Map<number, string> | undefined
+  if (!buf) {
+    buf = new Map<number, string>()
+    msg[bufKey] = buf
+  }
+
+  if (seq !== undefined) {
+    // 有序号模式：存入 buffer，按 seq 排序后重建
+    buf.set(seq, text)
+    let rebuilt = ''
+    const sortedKeys = Array.from(buf.keys()).sort((a, b) => a - b)
+    for (const k of sortedKeys) rebuilt += buf.get(k)
+    msg[field] = rebuilt
+
+    // 检测乱序/丢包（seq 不连续）
+    if (buf.size > 1 && sortedKeys.length > 1) {
+      for (let i = 1; i < sortedKeys.length; i++) {
+        if (sortedKeys[i] - sortedKeys[i - 1] > 1) {
+          console.warn(
+            `[useAgent] seq gap detected in ${field}:`,
+            `missing ${sortedKeys[i - 1] + 1}..${sortedKeys[i] - 1}`,
+            `(got ${sortedKeys[i - 1]} → ${sortedKeys[i]}, total=${buf.size})`,
+          )
+          break // 只报一次
+        }
+      }
+    }
+  } else {
+    // 无序号（旧格式 fallback）：直接追加
+    ;(msg[field] as string) = ((msg[field] as string) || '') + text
+  }
 }
 
 /**
  * 解析 `tool_call` 的 data 字段 —— ToolCallData
  */
-function parseToolCallData(data: string): ToolCall | null {
+function parseToolCallData(data: unknown): ToolCall | null {
   try {
-    const parsed = JSON.parse(data) as Partial<ToolCall>
+    // event.data 可能是已解析的对象（processSSE 中 JSON.parse 后）或字符串（旧代码路径）
+    const parsed: Partial<ToolCall> = typeof data === 'string' ? JSON.parse(data) : (data as Partial<ToolCall>)
     if (!parsed.id || !parsed.name) return null
     const autoRun = parsed.auto_run !== false
     return {
@@ -216,13 +325,15 @@ function parseToolCallData(data: string): ToolCall | null {
 /**
  * 解析 `tool_status` 的 data 字段 —— 包含 id 和 status
  */
-function parseToolStatus(data: string): { id: string; status: ToolStatus } | null {
+function parseToolStatus(data: unknown): { id: string; status: ToolStatus } | null {
   try {
-    const parsed = JSON.parse(data) as { id?: string; status?: string }
-    if (!parsed.id || !parsed.status) return null
-    const status = parsed.status as ToolStatus
+    const parsed = typeof data === 'string' ? JSON.parse(data) : data
+    if (!parsed || typeof parsed !== 'object') return null
+    const { id, status: rawStatus } = parsed as { id?: string; status?: string }
+    if (!id || !rawStatus) return null
+    const status = rawStatus as ToolStatus
     if (!TOOL_STATUS_VALUES.has(status)) return null
-    return { id: String(parsed.id), status }
+    return { id, status }
   } catch {
     return null
   }
@@ -231,17 +342,19 @@ function parseToolStatus(data: string): { id: string; status: ToolStatus } | nul
 /**
  * 解析 `tool_result` 的 data 字段 —— ToolResultData
  */
-function parseToolResultData(data: string): ToolResult | null {
+function parseToolResultData(data: unknown): ToolResult | null {
   try {
-    const parsed = JSON.parse(data) as Partial<ToolResult>
-    if (!parsed.id || !parsed.name) return null
+    const parsed = typeof data === 'string' ? JSON.parse(data) : data
+    if (!parsed || typeof parsed !== 'object') return null
+    const p = parsed as Partial<ToolResult>
+    if (!p.id || !p.name) return null
     return {
-      id: String(parsed.id),
-      name: String(parsed.name),
-      result: typeof parsed.result === 'string' ? parsed.result : JSON.stringify(parsed.result ?? ''),
-      is_error: parsed.is_error === true,
-      status: String(parsed.status ?? 'success'),
-      duration_ms: typeof parsed.duration_ms === 'number' ? parsed.duration_ms : 0,
+      id: String(p.id),
+      name: String(p.name),
+      result: typeof p.result === 'string' ? p.result : JSON.stringify(p.result ?? ''),
+      is_error: p.is_error === true,
+      status: String(p.status ?? 'success'),
+      duration_ms: typeof p.duration_ms === 'number' ? p.duration_ms : 0,
     }
   } catch {
     return null
@@ -563,6 +676,18 @@ export function useAgent() {
       catch { return 'gpt-4o-mini' }
     })(),
   )
+  /**
+   * API 返回的默认模型（来自 /api/models 的 defaultModel 字段）。
+   * AgentChat 在 fetchModels 成功后通过 setApiDefaultModel() 写入，
+   * newSession 时用于重置 activeModel。
+   */
+  const apiDefaultModel = ref<string>('')
+  /** 当前会话的创建时间戳（毫秒），用于持久化和历史列表排序 */
+  const sessionCreatedAt = ref<number>(Date.now())
+  // 之前怀疑 gpt-4o-mini 在 gptgod 代理下不发 tools，临时加了 safeModel
+  // 白名单做硬编码降级。实测 gpt-4o-mini 完全能用工具（3 轮 list_mounts →
+  // list_files → 输出 4 个目录），根因不在模型上。回退这段逻辑，
+  // 直接用 activeModel —— 真正的问题要去看后端日志 / 实际请求体。
   const activeTemperature = ref<number>(
     (() => {
       try {
@@ -572,6 +697,192 @@ export function useAgent() {
       } catch { return 0.7 }
     })(),
   )
+
+  // ─── Mock 模式检测 ────────────────────────────────────────
+  // 后端在 cfg.Agent.MockMode != "off" 时启用 mock 模式：
+  //   - HTTP response header: X-Mock-Mode: builtin|custom
+  //   - HTTP response header: X-Mock-Scenario: <scenario_id>
+  //   - SSE 首个 stream_start 事件 data: { mock: true, scenario: "..." }
+  // 前端拿到任一信号就置 isMockMode=true，让 AgentChat 顶部展示"🧪 模拟"badge。
+  const isMockMode = ref(false)
+  const mockScenario = ref<string>('')
+
+  // 调试开关：URL 带 ?debug=agent 时为 true，强制显示 AgentDebugPanel。
+  // 浏览器端用 window.location，SSR 时降级为 false。
+  const isDebugAgent = computed(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      return new URLSearchParams(window.location.search).get('debug') === 'agent'
+    } catch {
+      return false
+    }
+  })
+
+  // ─── 原始 SSE 事件日志（调试用：AgentDebugPanel ⑦ 区展示） ──
+  // 每个进 processSSE 的 event 都追加一条（含 type + data 摘要 + 时间戳）。
+  // 不自动清理——用户手动"清空"或新建会话时重置。
+  const rawSSEEvents = ref<{ ts: string; type: string; dataSummary: string; seq?: number | null }[]>([])
+
+  /** 追加一条原始事件到日志（最多保留 200 条防内存爆炸） */
+  function pushRawEvent(type: string, dataSummary: string, seq?: number | null) {
+    rawSSEEvents.value.push({
+      ts: new Date().toISOString().slice(11, 23), // HH:MM:SS.mmm
+      type,
+      dataSummary,
+      seq: seq ?? null,
+    })
+    if (rawSSEEvents.value.length > 200) {
+      rawSSEEvents.value = rawSSEEvents.value.slice(-150)
+    }
+  }
+
+  // ─── Mock 模式预设按钮（覆盖在输入框上方，由 mock_presets 事件驱动） ──
+  // 三个 ref 状态：
+  //   - mockPresets：当前激活的预设 chip 列表
+  //   - mockPresetsPhase：当前阶段（initial / after_round_2 / ...，调试用）
+  //   - mockPresetsScenario：当前预设归属的 scenario ID（调试用）
+  // 后端会在 stream_start 之后立刻推一次 mock_presets 事件初始化，
+  // 并在 stream_end 时推 mock_presets_clear 清空。
+  // 中级/高级剧本可在 mid-scenario step 内再次推 mock_presets 实现"随进度更新"。
+  const mockPresets = ref<MockPreset[]>([])
+  const mockPresetsPhase = ref<string>('')
+  const mockPresetsScenario = ref<string>('')
+
+  // ─── Mock 模式控制（用户从 AgentChat 顶栏的"🧪 模拟"badge 切换） ──
+  // 字段语义与后端 cfg.Agent.MockMode 一一对应：
+  //   - 'off'     → 真实 LLM 调用（默认）
+  //   - 'builtin' → 内置 12 个剧本
+  //   - 'custom'  → config.user.json 中 agent_settings.mock_scenarios
+  //
+  // 修改后会立刻调 PUT /api/config 持久化到后端 config.user.json，
+  // 下次会话起立即生效（无需重启后端）。
+  type MockMode = 'off' | 'builtin' | 'custom'
+  const currentMockMode = ref<MockMode>('off')
+
+  /**
+   * 模拟模式预设 chip 点击：直接把 preset.userText 喂给 send()。
+   * 与用户在输入框里打字的区别：
+   *   - 不会先填到 input.value（用户点击 chip 的预期是"立即发"，不是"先看再改"）
+   *   - 会触发和正常 send 完全一样的流程（后端按 userText 关键词重新匹配 scenario）
+   * 用 mode='start'（而非 'steer' / 'queue'）：mock 模式是单次请求流。
+   */
+  async function pickMockPreset(preset: MockPreset): Promise<void> {
+    if (!preset || typeof preset.userText !== 'string' || preset.userText.length === 0) {
+      console.debug('[useAgent] pickMockPreset: invalid preset', preset)
+      return
+    }
+    // 状态检查：跟 send 保持一致 —— 正在 streaming/confirming 时丢弃
+    if (status.value === 'streaming' || status.value === 'confirming') {
+      console.debug('[useAgent] pickMockPreset: ignored (busy)')
+      return
+    }
+    console.debug('[useAgent] pickMockPreset →', preset.id, '| userText =', preset.userText)
+    await send(preset.userText, { mode: 'start' })
+  }
+
+  /**
+   * 首次进入 AgentChat 时拉取"全局剧本选择器"覆盖在输入框上方。
+   * 由 AgentChat.vue 的 onMounted 调用（仅一次）。
+   * 后端 mock 模式关闭时返回空 presets → v-if 自然不渲染。
+   * 后端流内 mock_presets 事件会**覆盖**本函数写入的 presets。
+   */
+  async function loadMockPresets(): Promise<void> {
+    try {
+      const resp = await fetch(`${AGENT_API_BASE}/api/agent/mock/presets`)
+      if (!resp.ok) {
+        console.debug('[useAgent] loadMockPresets: HTTP', resp.status)
+        return
+      }
+      const data = (await resp.json()) as {
+        scenario?: string
+        phase?: string
+        presets?: MockPreset[]
+        mockMode?: string
+      }
+      const list = Array.isArray(data.presets) ? data.presets : []
+      // 标准化：scenario_picker 后端 ID 是 "pick_xxx" 风格，但前端 type
+      // 要求必须有 id+label+userText。后端已经保证。
+      mockPresets.value = list.filter(
+        (p): p is MockPreset =>
+          !!p &&
+          typeof p === 'object' &&
+          typeof p.id === 'string' &&
+          typeof p.label === 'string' &&
+          typeof p.userText === 'string',
+      )
+      mockPresetsPhase.value = String(data.phase ?? 'picker')
+      mockPresetsScenario.value = String(data.scenario ?? 'scenario_picker')
+      console.debug(
+        '[useAgent] loadMockPresets →',
+        mockPresets.value.length,
+        'presets | mode =',
+        data.mockMode,
+        '| phase =',
+        mockPresetsPhase.value,
+      )
+    } catch (e) {
+      console.debug('[useAgent] loadMockPresets failed:', e)
+    }
+  }
+
+  async function loadMockMode() {
+    try {
+      const resp = await fetch(`${AGENT_API_BASE}/api/config`)
+      if (!resp.ok) {
+        console.debug('[MockMode] fetch /api/config failed: HTTP', resp.status)
+        return
+      }
+      const cfg = (await resp.json()) as {
+        agent_settings?: { mock_mode?: string }
+      }
+      const m = String(cfg?.agent_settings?.mock_mode ?? 'off').toLowerCase()
+      currentMockMode.value =
+        m === 'builtin' || m === 'custom' ? (m as MockMode) : 'off'
+      // 覆盖式 UI：mock 模式配置开启时，isMockMode 必须**预先**置 true，
+      // 否则用户首次进 AgentChat（还没发过消息）chip 不会显示。
+      // 后续发消息触发流时，stream_start 事件会再次确认 isMockMode=true。
+      isMockMode.value = currentMockMode.value !== 'off'
+      console.debug(
+        '[MockMode] load → mode =',
+        currentMockMode.value,
+        '| isMockMode =',
+        isMockMode.value,
+      )
+    } catch (e) {
+      console.debug('[MockMode] load failed:', e)
+    }
+  }
+
+  async function setMockMode(mode: MockMode) {
+    if (mode === currentMockMode.value) return
+    try {
+      // 必须整张 config 一并 PUT（后端会保留非 agent_settings 字段）。
+      const getResp = await fetch(`${AGENT_API_BASE}/api/config`)
+      if (!getResp.ok) throw new Error(`fetch /api/config → HTTP ${getResp.status}`)
+      const cfg = (await getResp.json()) as Record<string, unknown>
+      const agentSettings = (cfg.agent_settings as Record<string, unknown> | undefined) ?? {}
+      agentSettings.mock_mode = mode
+      cfg.agent_settings = agentSettings
+      const putResp = await fetch(`${AGENT_API_BASE}/api/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cfg),
+      })
+      if (!putResp.ok) {
+        const errText = await putResp.text()
+        throw new Error(`PUT /api/config → HTTP ${putResp.status}: ${errText}`)
+      }
+      currentMockMode.value = mode
+      // 立即重置 isMockMode：下次 send 时再由 SSE stream_start 事件重新置位
+      isMockMode.value = false
+      mockScenario.value = ''
+      console.info('[MockMode] set to', mode)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      console.error('[MockMode] setMockMode failed:', msg)
+      throw e
+    }
+  }
 
   // ─── 内部辅助 ───────────────────────────────────────────────────────────
 
@@ -655,6 +966,8 @@ export function useAgent() {
         lastEventId,
         messages: JSON.parse(JSON.stringify(messages.value)),
         status: status.value,
+        createdAt: sessionCreatedAt.value,
+        updatedAt: Date.now(),
       }
       localStorage.setItem(STORAGE_PREFIX + currentSessionId.value, JSON.stringify(payload))
     } catch (e) {
@@ -669,11 +982,18 @@ export function useAgent() {
     lastEventId?: number
     messages: Message[]
     status: AgentStatus
+    createdAt?: number
+    updatedAt?: number
   } | null {
     try {
       const raw = localStorage.getItem(STORAGE_PREFIX + sessionId)
       if (!raw) return null
-      return JSON.parse(raw)
+      const parsed = JSON.parse(raw)
+      // 恢复会话创建时间（兼容老存档无此字段）
+      if (typeof parsed?.createdAt === 'number') {
+        sessionCreatedAt.value = parsed.createdAt
+      }
+      return parsed
     } catch (e) {
       console.debug('[useAgent] loadState failed:', e)
       return null
@@ -724,6 +1044,8 @@ export function useAgent() {
           const parsed = JSON.parse(raw) as {
             sessionId?: string
             messages?: Message[]
+            createdAt?: number
+            updatedAt?: number
           }
           if (!parsed?.sessionId) continue
           const msgs = parsed.messages || []
@@ -731,14 +1053,18 @@ export function useAgent() {
           // Task 12：content 可能是 multimodal 数组（带附件的 user 消息），
           //          从中抽出首段 text 元素作为会话标题。
           const title = extractUserTitle(firstUser?.content) || '(空会话)'
-          const updatedAt = msgs.length > 0 ? Date.now() - (msgs.length - 1) : 0
-          const createdAt = updatedAt
+          // 优先使用持久化的真实时间戳，兼容老存档无此字段
+          const createdAt = parsed.createdAt || Date.now()
+          const updatedAt = parsed.updatedAt || createdAt
+          // 轮次 = 用户消息数量（每条 user 消息代表一轮对话）
+          const rounds = msgs.filter((m) => m.role === 'user').length
           list.push({
             id: parsed.sessionId,
             title,
             createdAt,
             updatedAt,
             messageCount: msgs.length,
+            rounds,
           })
         } catch {
           // skip
@@ -793,6 +1119,11 @@ export function useAgent() {
     status.value = 'idle'
     lastError.value = ''
     lastUserInput.value = ''
+    sessionCreatedAt.value = Date.now()
+    // 如果 API 返回了默认模型，新会话时重置为该默认模型
+    if (apiDefaultModel.value) {
+      activeModel.value = apiDefaultModel.value
+    }
     saveState()
     refreshSessions()
   }
@@ -876,6 +1207,19 @@ export function useAgent() {
         received = true
         try {
           const event = JSON.parse(payload) as AgentEvent
+          // ─── Task 27 调试：每个 SSE 事件立即 console.error 打印 ───
+          // 看后端到底推了哪些 event.type + data 摘要（特别关注 tool_call / tool_result）
+          const dataSummary =
+            event.data == null
+              ? 'null'
+              : typeof event.data === 'string'
+                ? event.data.slice(0, 120)
+                : JSON.stringify(event.data).slice(0, 200)
+          console.error(
+            `[useAgent][SSE] type=${event.type} id=${currentEventId ?? '-'} data=${dataSummary}`,
+          )
+          // ⑦ 区：追加到原始事件日志（AgentDebugPanel 可视化展示）
+          pushRawEvent(event.type, dataSummary, currentEventId)
           // Task 4.3：sequence 去重。若事件声明了 SSE id (currentEventId)，
           // 且该 id 已在当前 serverInstance 见过 → 整条事件丢弃，不再 dispatch。
           // 注意：未声明 id 的事件（如后端断点续传 stream_status 边界事件）跳过
@@ -957,6 +1301,27 @@ export function useAgent() {
    * 单个 event type → reactive state dispatch
    */
   function handleAgentEvent(event: AgentEvent): void {
+    // ─── Task 27 终极调试：DOM 级标记（绕开 Vue 响应式，100% 可见） ──
+    // 每次调用都在 <body> 追加一个不可见 div 的 data 属性。
+    // DevTools → Elements → 搜 "sse-event-count" 即可看到总数。
+    // 不依赖 console（移动端不可读）不依赖 reactive（可能 HMR 丢失）。
+    try {
+      let el = document.getElementById('sse-debug-counter')
+      if (!el) {
+        el = document.createElement('div')
+        el.id = 'sse-debug-counter'
+        el.style.cssText = 'position:fixed;top:0;left:0;background:red;color:white;z-index:99999;font-size:10px;padding:2px 6px'
+        document.body.appendChild(el)
+      }
+      const count = (parseInt(el.dataset.count || '0', 10) + 1)
+      el.dataset.count = String(count)
+      el.textContent = `SSE events: ${count} (last: ${event.type})`
+      // 同时把最近 20 条 type 写到 dataset，DevTools 可查
+      const log = (el.dataset.log || '').split('|').filter(Boolean).slice(-19)
+      log.push(event.type)
+      el.dataset.log = log.join('|')
+    } catch {/* DOM 不可用（SSR）时静默 */}
+
     // 取最后一条 *正在 streaming* 的 assistant 消息作为流式追加目标。
     //
     // Task 7 之前：实现是"最后一条 assistant 消息"，因为 send() 每次
@@ -995,6 +1360,7 @@ export function useAgent() {
         tool_calls: [],
         tool_results: [],
         isStreaming: true,
+        eventLog: [], // Task 27：初始化事件顺序日志
       }
       messages.value.push(newMsg)
       return messages.value[messages.value.length - 1]
@@ -1003,12 +1369,17 @@ export function useAgent() {
     switch (event.type) {
       case 'text_delta': {
         const m = lastAssistant()
-        m.content += parseContentDelta(event.data)
+        const parsed = parseContentDelta(event.data)
+        appendSequencedChunk(m, 'content', parsed.seq, parsed.text)
+        // Task 27：记录文本事件到达顺序
+        if (!m.eventLog) m.eventLog = []
+        m.eventLog.push({ type: 'text' })
         break
       }
       case 'reasoning_delta': {
         const m = lastAssistant()
-        m.reasoning = (m.reasoning || '') + parseContentDelta(event.data)
+        const parsed = parseContentDelta(event.data)
+        appendSequencedChunk(m, 'reasoning', parsed.seq, parsed.text)
         break
       }
       case 'tool_call': {
@@ -1016,6 +1387,9 @@ export function useAgent() {
         if (tool) {
           const m = lastAssistant()
           m.tool_calls.push(tool)
+          // Task 27：记录工具调用事件到达顺序
+          if (!m.eventLog) m.eventLog = []
+          m.eventLog.push({ type: 'tool_call', id: tool.id })
         }
         break
       }
@@ -1038,6 +1412,9 @@ export function useAgent() {
         if (result) {
           const m = lastAssistant()
           m.tool_results.push(result)
+          // Task 27：记录工具结果事件到达顺序
+          if (!m.eventLog) m.eventLog = []
+          m.eventLog.push({ type: 'tool_result', id: result.id })
         }
         break
       }
@@ -1099,13 +1476,80 @@ export function useAgent() {
         //   3. 切换 status 为 'error'
         //   4. 不再继续处理后续事件（连接即将关闭）
         finalizeLastAssistant()
-        const errorMsg = parseContentDelta(event.data) || '服务端流式传输发生未知错误'
+        const errorMsg = parseContentDelta(event.data).text || '服务端流式传输发生未知错误'
         lastError.value = errorMsg
         lastErrorCode.value = 'upstream_error'
         status.value = 'error'
         console.error('[useAgent] stream_error:', errorMsg)
         break
       }
+      case 'stream_start': {
+        // Mock 模式信号：后端在 cfg.Agent.MockMode != "off" 时，SSE 流首
+        // 个事件就是 stream_start，data 形状是 { mock: true, scenario: "..." }。
+        // 拿到就置 isMockMode = true，AgentChat 顶部展示"🧪 模拟"badge。
+        // 容忍旧后端/不 mock 模式：data 可能为空 / 不含 mock 字段 → 不动状态。
+        try {
+          const raw = JSON.parse(event.data) as { mock?: unknown; scenario?: unknown } | null
+          if (raw && raw.mock === true) {
+            isMockMode.value = true
+            mockScenario.value = String(raw.scenario ?? '')
+          }
+        } catch {
+          // data 不是 JSON → 非 mock 信号，忽略
+        }
+        break
+      }
+      case 'mock_presets': {
+        // Mock 模式剧本预设推送：
+        //   - 后端在 stream_start 之后立即推一次（phase=initial）
+        //   - 高级剧本可在 mid-scenario 任意 step 再推（phase=after_round_2 等）
+        // data 形状：{ scenario, phase, presets: MockPreset[] }
+        //
+        // 前端覆盖行为：每次 mock_presets 事件都**完整替换**当前 mockPresets。
+        // 这样 mid-scenario 更新（高级剧本的"随进度更新"）天然就是覆盖语义。
+        try {
+          const raw = JSON.parse(event.data) as
+            | { scenario?: unknown; phase?: unknown; presets?: unknown }
+            | null
+          if (!raw) break
+          const list = Array.isArray(raw.presets) ? (raw.presets as MockPreset[]) : []
+          // 兼容后端发送 MockPreset 时字段大小写：id/label/userText/tooltip
+          // 一律 lowercase 归一化（后端 json tag 是 lowercase，前端契约保持一致）。
+          mockPresets.value = list
+            .filter((p): p is MockPreset => !!p && typeof p === 'object' && typeof p.id === 'string' && typeof p.userText === 'string')
+            .map((p) => ({
+              id: p.id,
+              label: String(p.label ?? p.id),
+              userText: p.userText,
+              icon: typeof p.icon === 'string' ? p.icon : undefined,
+              tooltip: typeof p.tooltip === 'string' ? p.tooltip : undefined,
+            }))
+          mockPresetsPhase.value = String(raw.phase ?? '')
+          mockPresetsScenario.value = String(raw.scenario ?? '')
+          console.debug(
+            '[useAgent] mock_presets:',
+            mockPresets.value.length,
+            'presets, phase=',
+            mockPresetsPhase.value,
+            ', scenario=',
+            mockPresetsScenario.value,
+          )
+        } catch (e) {
+          console.debug('[useAgent] mock_presets parse failed:', e)
+        }
+        break
+      }
+
+      case 'mock_presets_clear': {
+        // 故意 noop：chip 在 mock 模式开启期间**永远覆盖显示**（覆盖式 UI）。
+        // 收到 clear 事件**不**清空 mockPresets —— 仅当用户**主动**退出 mock 模式
+        // （setMockMode("off") 触发 X-Mock-Mode header 变化）时，isMockMode 变 false，
+        // AgentChat 的 v-if 自然不再渲染 MockPresetBar。
+        // 后端未来若需要主动清 chip（极少见），可以走一个新的 `mock_presets_reset` 事件。
+        console.debug('[useAgent] mock_presets_clear (ignored, chip 永远覆盖显示)')
+        break
+      }
+
       case 'compaction': {
         // Task 7：上下文自动压缩事件。
         //
@@ -1298,6 +1742,15 @@ export function useAgent() {
 
       if (!response.body) {
         throw new Error('响应体为空（可能被代理或网络中间层截断）')
+      }
+
+      // Mock 模式 header 检测（备份信号）：SSE stream_start 事件是主信号，
+      // 但如果首条事件到达前 header 已被读取，这里先把状态置好，避免 UI
+      // 看到一段无 badge 的"普通"回复再被刷成 mock。
+      const mockHeader = response.headers.get('X-Mock-Mode')
+      if (mockHeader) {
+        isMockMode.value = true
+        mockScenario.value = response.headers.get('X-Mock-Scenario') ?? ''
       }
 
       const result = await processSSE(response.body)
@@ -1666,6 +2119,14 @@ export function useAgent() {
     void send(text)
   }
 
+  /**
+   * 设置 API 返回的默认模型（由 AgentChat.fetchModels 调用）。
+   * 写入后 newSession() 会自动使用此值重置 activeModel。
+   */
+  function setApiDefaultModel(m: string): void {
+    apiDefaultModel.value = m
+  }
+
   // 构造时同步一次 session 列表（供 UI 立即显示）
   refreshSessions()
 
@@ -1689,10 +2150,37 @@ export function useAgent() {
     retryLast,
     activeModel,
     activeTemperature,
+    // Issue 1: API 默认模型（新会话时使用）
+    apiDefaultModel,
+    setApiDefaultModel,
     // Task 11 (Steer / Queue)：UI 用它渲染「已排队：xxx」提示。
     pendingMessages,
     // Context 图标：实时上下文使用 + todos + referenced files
     contextUsage,
+    // Mock 模式：后端 cfg.Agent.MockMode != "off" 时由 SSE stream_start
+    // 事件或 X-Mock-Mode header 触发，UI 据此展示"🧪 模拟"badge。
+    isMockMode,
+    mockScenario,
+    // 用户主动切换（AgentChat 顶栏的"🧪 模拟"badge → action-sheet 触发）
+    currentMockMode,
+    loadMockMode,
+    setMockMode,
+    // Mock 模式预设按钮：覆盖在输入框上方的 chip 列表。
+    // - mockPresets：当前 chip 列表（mock_presets 事件 / loadMockPresets 驱动）
+    // - mockPresetsPhase：当前阶段（initial / after_round_2 / picker / ...）
+    // - mockPresetsScenario：当前 scenario ID
+    // - pickMockPreset：点击 chip → send(preset.userText)
+    // - loadMockPresets：AgentChat onMounted 调一次拉"全局剧本选择器"
+    mockPresets,
+    mockPresetsPhase,
+    mockPresetsScenario,
+    pickMockPreset,
+    loadMockPresets,
+    // 调试开关：URL ?debug=agent 时强制显示 AgentDebugPanel（mock 模式时也自动开）。
+    // 便于排查"SSE 事件 → messages → renderedItems → UI 组件"全链路断点。
+    isDebugAgent,
+    // 调试：原始 SSE 事件日志（AgentDebugPanel ⑦ 区展示）
+    rawSSEEvents,
     // Task 4：以下为测试专用钩子。生产代码不应调用——所有 serverInstance
     // 同步都由 useAgent 内部 await refreshServerInstance() 完成。
     __refreshServerInstanceForTest: refreshServerInstance,

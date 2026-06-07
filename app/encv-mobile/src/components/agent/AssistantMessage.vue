@@ -8,8 +8,9 @@
   - 底部栏：时间戳（左）+ 复制按钮（右）
 -->
 <template>
-  <div class="assistantMessage" ref="msgRef">
+  <div class="assistantMessage" :class="{ assistantMessage_compact: compact }" ref="msgRef">
     <MessageAuthor
+      v-if="!compact"
       :icon="icon"
       :label="label"
       :meta="meta"
@@ -18,8 +19,8 @@
     <div class="assistantMessageBody">
       <MarkdownStream :content="text" :streaming="streaming" />
     </div>
-    <!-- 底部栏：时间戳 + 复制 -->
-    <div v-if="!streaming" class="assistantMessageFooter">
+    <!-- 底部栏：时间戳 + 复制（仅 showFooter=true 且非流式时显示） -->
+    <div v-if="showFooter && !streaming" class="assistantMessageFooter">
       <span class="footerTimestamp">{{ displayTime }}</span>
       <button
         type="button"
@@ -50,6 +51,18 @@ const props = defineProps<{
   status?: AgentStatus
   /** 时间戳（Unix ms），不传则用当前时间 */
   timestamp?: number
+  /**
+   * 紧凑模式：隐藏头像/名字。
+   * 用于 agent 时间轴模式——同轮消息只有第一个 text 段显示完整 header，
+   * 后续 text 段用 compact=true 只渲染 markdown body。
+   */
+  compact?: boolean
+  /**
+   * 强制显示 footer（时间戳+复制按钮）。
+   * 用于 agent 时间轴模式——只有最后一个 text 段显示 footer，
+   * 即使在 compact 模式下也展示。
+   */
+  showFooter?: boolean
 }>()
 
 const { t } = useI18n()
@@ -102,6 +115,15 @@ async function handleCopy() {
   gap: 4px;
   margin-bottom: 18px;
   max-width: 100%;
+}
+
+/* 紧凑模式：agent 时间轴后续 text 段——无头像/无 footer / 更紧凑 */
+.assistantMessage_compact {
+  margin-bottom: 6px;
+}
+
+.assistantMessage_compact .assistantMessageBody {
+  padding-left: 0;
 }
 
 .assistantMessageBody {

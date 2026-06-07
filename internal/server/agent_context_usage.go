@@ -75,6 +75,54 @@ var modelContextWindows = map[string]int{
 	"moonshot-v1-128k":       128000,
 }
 
+// modelMaxOutputTokens 常见模型的单次输出上限（max_completion_tokens 硬上限）
+// 注意：上下文窗口 128k 不等于输出 128k。OpenAI 官方 gpt-4o 输出上限 16,384。
+// 来源：各厂商公开文档（截至 2026-06）。
+//   - OpenAI:  https://platform.openai.com/docs/models
+//   - Anthropic: https://docs.anthropic.com/en/docs/about-claude/models
+//   - DeepSeek: https://api-docs.deepseek.com/quick_start/pricing
+//   - Qwen:    https://help.aliyun.com/zh/model-studio
+//   - GLM:     https://open.bigmodel.cn/dev/api
+// 不在表内默认 4096（保守，绝不超出厂商上限）。
+var modelMaxOutputTokens = map[string]int{
+	// OpenAI
+	"gpt-4":                  4096,
+	"gpt-4-32k":              4096,
+	"gpt-4-turbo":            4096,
+	"gpt-4-turbo-preview":    4096,
+	"gpt-4o":                 16384,
+	"gpt-4o-mini":            16384,
+	"gpt-3.5-turbo":          4096,
+	"gpt-3.5-turbo-16k":      4096,
+	"o1":                     100000,
+	"o1-mini":                65536,
+	"o1-preview":             32768,
+	"o3-mini":                100000,
+	// Anthropic (经 OpenAI 兼容代理)
+	"claude-3-5-sonnet":      8192,
+	"claude-3-5-haiku":       8192,
+	"claude-3-opus":          4096,
+	"claude-3-sonnet":        4096,
+	"claude-3-haiku":         4096,
+	// DeepSeek
+	"deepseek-chat":          8000,
+	"deepseek-coder":         8000,
+	"deepseek-reasoner":      8000,
+	// Qwen
+	"qwen-turbo":             8192,
+	"qwen-plus":              8192,
+	"qwen-max":               8192,
+	"qwen2.5-72b-instruct":   8192,
+	// 智谱 GLM
+	"glm-4":                  4096,
+	"glm-4-plus":             4096,
+	"glm-4-long":             4096,
+	// Moonshot
+	"moonshot-v1-8k":         8000,
+	"moonshot-v1-32k":        32000,
+	"moonshot-v1-128k":       128000,
+}
+
 // lookupContextWindow 根据模型名查 context window
 // 不在表内则用启发式（名字含 128k → 128000，含 32k → 32000，含 16k → 16385，含 8k → 8192）
 // 都没有则默认 8192
@@ -115,6 +163,27 @@ func containsAny(s string, subs ...string) bool {
 		}
 	}
 	return false
+}
+
+// lookupMaxOutputTokens 查模型单次输出硬上限
+// 不在表内则用启发式（名字含 16k → 16384，含 8k → 8192，含 4k → 4096），都没有默认 4096
+func lookupMaxOutputTokens(model string) int {
+	if model == "" {
+		return 4096
+	}
+	if v, ok := modelMaxOutputTokens[model]; ok {
+		return v
+	}
+	lower := model
+	switch {
+	case containsAny(lower, "16k", "16000"):
+		return 16384
+	case containsAny(lower, "8k", "8000"):
+		return 8192
+	case containsAny(lower, "4k", "4000"):
+		return 4096
+	}
+	return 4096
 }
 
 // ─── Token 估算 ──────────────────────────────────────────────
@@ -357,15 +426,17 @@ func (s *Server) handleAgentContextUsage(c *gin.Context) {
 
 	if !ok {
 		// 无 session：返回零状态
+		// 仍然用真实激活模型查表，避免前端显示 8192 误导用户
+		activeModel := s.resolveActiveModel(c.Query("deviceId"))
 		c.JSON(http.StatusOK, gin.H{
 			"sessionId":        sessionId,
-			"model":            "",
-			"usage":            gin.H{"tokens": 0, "window": 8192, "percent": 0.0},
+			"model":            activeModel,
+			"usage":            gin.H{"tokens": 0, "window": lookupContextWindow(activeModel), "percent": 0.0},
 			"todos":            []planTodo{},
 			"referencedFiles":  []referencedFile{},
 			"compactions":      0,
 			"updatedAt":        time.Now().UnixMilli(),
-			"note":             "无活动 session",
+			"note":             "无活动 session（已使用激活模型 " + activeModel + " 查表）",
 		})
 		return
 	}

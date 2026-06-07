@@ -230,11 +230,12 @@ func callOpenAIChatOnce(ctx context.Context, cfg agentConfig, model string, temp
 		"messages":    messages,
 		"temperature": temperature,
 		"stream":      false,
+		// 故意不传 max_tokens —— 上游 LLM API 按自己模型最大输出返回
 	}
 	if len(openAITools) > 0 {
 		reqBody["tools"] = openAITools
 		reqBody["tool_choice"] = "auto"
-		slog.Info("callOpenAIChatOnce: sending request with tools",
+		slog.Info("callOpenAIChatOnce: sending request with tools (max_tokens omitted, upstream decides)",
 			"model", model, "tool_count", len(openAITools))
 	}
 	reqJSON, _ := json.Marshal(reqBody)
@@ -285,6 +286,11 @@ func callOpenAIChatOnce(ctx context.Context, cfg agentConfig, model string, temp
 //
 // 与 callOpenAIChatOnce 一样，把 agent 工具列表塞到 reqBody["tools"]。
 func callOpenAIStream(ctx context.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg, openAITools []map[string]interface{}) (<-chan openaiStreamEvent, error) {
+	// 故意不传 max_tokens —— 让我们根本不知道任何厂商的上限，避免硬编码瞎编。
+	// 上游 LLM API 会按自己的模型最大输出返回（gpt-4o 16k, claude 8k, deepseek 8k... 各厂商自己决定）。
+	// 这比维护一个会过时的查表更可靠。
+	contextWindow := lookupContextWindow(model)
+
 	reqBody := map[string]interface{}{
 		"model":       model,
 		"messages":    messages,
@@ -294,10 +300,12 @@ func callOpenAIStream(ctx context.Context, cfg agentConfig, model string, temper
 	if len(openAITools) > 0 {
 		reqBody["tools"] = openAITools
 		reqBody["tool_choice"] = "auto"
-		slog.Info("callOpenAIStream: sending request with tools",
-			"model", model, "tool_count", len(openAITools))
+		slog.Info("callOpenAIStream: sending request with tools (max_tokens omitted, upstream decides)",
+			"model", model, "tool_count", len(openAITools),
+			"context_window", contextWindow)
 	} else {
-		slog.Info("callOpenAIStream: WARNING no tools provided")
+		slog.Info("callOpenAIStream: WARNING no tools provided (max_tokens omitted, upstream decides)",
+			"model", model, "context_window", contextWindow)
 	}
 	reqJSON, _ := json.Marshal(reqBody)
 

@@ -55,6 +55,7 @@ type Server struct {
 	chunkNamers    []namer.ChunkNamer
 	jwtManager     *auth.JWTManager
 	webdavFS       webdav.IndexProvider
+	mockEngine     *MockEngine
 }
 
 func NewServer(ctx context.Context, configPath string) *Server {
@@ -63,14 +64,20 @@ func NewServer(ctx context.Context, configPath string) *Server {
 	readerService := service.NewReaderService(containerManager)
 	contentHandler := handler.NewContentHandler()
 	mobileSvc := mobileservice.NewMobileService("", cfg)
-	return &Server{
+	s := &Server{
 		cfg:            cfg,
 		configPath:     configPath,
 		readerService:  readerService,
 		mobileSvc:      mobileSvc,
 		contentHandler: contentHandler,
 		instanceID:     fmt.Sprintf("%x", time.Now().UnixNano()),
+		mockEngine:     NewMockEngine(),
 	}
+	// 把 mock 引擎的 tool_call.execute_real 真实执行器绑到 s.executeAgentTool
+	// ——剧本里声明 execute_real=true 的工具调用会被实际执行（覆盖硬编码 result）。
+	// 见 internal/server/agent_mock.go §executeRealAndEmit
+	s.mockEngine.SetRealExecutor(s.executeAgentTool)
+	return s
 }
 
 func (s *Server) GetInstanceID() string {

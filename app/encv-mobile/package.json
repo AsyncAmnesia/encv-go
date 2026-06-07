@@ -26,6 +26,7 @@
     "@ionic/vue": "^8.8.7",
     "@ionic/vue-router": "^8.8.7",
     "@tanstack/vue-virtual": "^3.13.26",
+    "@tdesign-vue-next/chat": "0.5.0-alpha.11",
     "artplayer": "^5.4.0",
     "ionicons": "^8.0.13",
     "markstream-vue": "1.0.1-beta.5",

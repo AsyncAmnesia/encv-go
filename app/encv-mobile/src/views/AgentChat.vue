@@ -20,6 +20,56 @@
       <div class="headerTitle">
         <ion-icon :icon="sparkleIcon" class="headerTitleIcon" />
         <span>{{ t('agent.title') }}</span>
+        <!--
+          Mock 模式切换器（用户在会话界面直接配置，无需去 Settings → Agent）。
+          三种状态：off / builtin / custom。
+          行为：
+            - 始终显示（让用户随时知道当前是真实 API 还是 mock）
+            - 点击 → 弹 action-sheet 切换模式
+            - mode=off 灰色，builtin/custom 强调色 + 文字"模拟"
+          currentMockMode 由 useAgent 从后端 /api/config 加载，切换时
+          通过 PUT /api/config 持久化（无需重启后端）。
+        -->
+        <button
+          type="button"
+          class="mockBadge"
+          :class="{
+            mockBadge_active: currentMockMode !== 'off',
+            mockBadge_clickable: true,
+          }"
+          :title="mockBadgeTitle"
+          @click="toggleMockMode"
+        >
+          <ion-icon :icon="flaskIcon" class="mockBadgeIcon" />
+          <span class="mockBadgeText">{{ mockBadgeText }}</span>
+          <ion-icon :icon="chevronDownIcon" class="mockBadgeChevron" />
+        </button>
+        <!-- 多渲染引擎切换器（同款模型选择器样式） -->
+        <div class="enginePicker" ref="enginePickerRef">
+          <button
+            type="button"
+            class="enginePickerBtn"
+            @click="enginePickerOpen = !enginePickerOpen"
+            :title="'切换聊天引擎'"
+          >
+            <span class="enginePickerLabel">{{ currentEngineDisplayName }}</span>
+            <ion-icon :icon="chevronDownIcon" class="enginePickerArrow" :class="{ 'enginePickerArrow_open': enginePickerOpen }" />
+          </button>
+          <Transition name="modelPickerFade">
+            <div v-if="enginePickerOpen" class="enginePickerDropdown">
+              <button
+                v-for="e in engineList"
+                :key="e.id"
+                type="button"
+                class="enginePickerOption"
+                :class="{ 'enginePickerOption_active': currentEngineId === e.id }"
+                @click="handleSwitchEngine(e.id); enginePickerOpen = false"
+              >
+                <span class="enginePickerOptionName">{{ e.name }}</span>
+              </button>
+            </div>
+          </Transition>
+        </div>
       </div>
       <!-- 上下文使用图标（点击 → 弹窗：todos + 引用文件） -->
       <ContextIcon
@@ -51,32 +101,7 @@
       </button>
     </div>
 
-    <div class="agentChatToolbar">
-      <label class="toolbarField">
-        <span class="toolbarLabel">{{ t('agent.model') }}</span>
-        <select v-model="selectedModel" class="toolbarSelect" :disabled="status === 'streaming' || modelsLoading">
-          <option v-if="modelsLoading" value="" disabled>{{ t('agent.loadingModels') }}...</option>
-          <template v-else-if="modelsError">
-            <option value="" disabled>{{ modelsError }}</option>
-            <!-- 错误时仍保留当前选中模型，确保用户可继续使用 -->
-            <option v-if="selectedModel && !availableModels.some(m => m.id === selectedModel)" :value="selectedModel">{{ selectedModel }}</option>
-          </template>
-          <option v-for="m in availableModels" :key="m.id" :value="m.id">{{ m.name }}</option>
-        </select>
-      </label>
-      <label class="toolbarField toolbarFieldNarrow">
-        <span class="toolbarLabel">{{ t('agent.temperature') }}</span>
-        <input
-          v-model.number="temperature"
-          type="number"
-          min="0"
-          max="2"
-          step="0.1"
-          class="toolbarInput"
-          :disabled="status === 'streaming'"
-        />
-      </label>
-    </div>
+    <!-- 模型选择已移至输入框内（footerInputRow 左侧） -->
 
     <!--
       Task 26 (LAN Access)：局域网访问地址折叠面板。
@@ -144,136 +169,20 @@
       </div>
 
       <main class="agentChatMain" ref="mainRef" @scroll="onMainScroll">
-      <!-- 空状态（无消息时显示） -->
-      <div v-if="renderedItems.length === 0" class="agentChatEmpty">
+      <!--
+        多渲染引擎架构：通过 EngineRenderer 组件渲染当前引擎的消息列表。
+        EngineRenderer 使用 render() 函数直接输出 VNode，避免 <component :is="vnode"> 不稳定。
+      -->
+      <EngineRenderer
+        v-if="currentEngine"
+        :engine="currentEngine"
+        :render-props="engineRenderProps"
+      />
+      <!-- 引擎加载失败时的 fallback（不应触发，但防御性保留） -->
+      <div v-else class="agentChatEmpty">
         <ion-icon :icon="chatbubblesIcon" class="emptyIcon" />
-        <p>{{ t('agent.emptyHint') }}</p>
+        <p>引擎加载失败，请刷新页面</p>
       </div>
-      <!-- 短会话（≤ 120）：原生 v-for（无虚拟化开销） -->
-      <template v-else-if="renderedItems.length <= VIRTUAL_LIST_THRESHOLD">
-        <div
-          v-for="(item, idx) in renderedItems"
-          :key="item.messageId"
-          class="renderedItemWrap"
-          :data-msg-idx="idx"
-        >
-          <UserMessageBubble
-            v-if="item.type === 'user'"
-            :text="item.text"
-          />
-          <AssistantMessage
-            v-else-if="item.type === 'assistantText'"
-            :text="item.text"
-            :streaming="item.streaming"
-            :status="status"
-          />
-          <ApprovalCard
-            v-else-if="item.type === 'approval'"
-            :tool-call="findToolCall(item.toolCallId)!"
-            :on-decide="handleDecide"
-            :is-processing="status === 'streaming'"
-          />
-          <GroupedOperationMessage
-            v-else-if="item.type === 'operationGroup'"
-            :items="resolveToolCalls(item.toolCallIds)"
-            :force-complete="item.forceComplete"
-          />
-          <WebSearchSummaryMessage
-            v-else-if="item.type === 'webSearchGroup'"
-            :queries="item.queries"
-            :tool-calls="resolveToolCalls(item.toolCallIds)"
-          />
-          <PlanBlock
-            v-else-if="item.type === 'plan'"
-            :todos="item.todos"
-            :streaming="item.streaming"
-          />
-          <ReasoningMessage
-            v-else-if="item.type === 'reasoning'"
-            :text="item.text"
-            :streaming="item.streaming"
-          />
-          <ErrorMessage
-            v-else-if="item.type === 'error'"
-            :text="item.text"
-            :on-retry="() => handleRetryError(item)"
-          />
-          <!-- Task 7：上下文自动压缩分隔线（不可展开） -->
-          <ContextCompactionDivider
-            v-else-if="item.type === 'compaction'"
-            :text="item.text"
-          />
-          <!-- Task 22: agent task 消息（subagent 拆解的子任务列表） -->
-          <AgentTaskMessage
-            v-else-if="item.type === 'agentTask'"
-            :sub-tasks="item.subTasks"
-            :reasoning="item.reasoning"
-          />
-        </div>
-      </template>
-      <!-- 长会话（> 120）：虚拟滚动优化 -->
-      <MessageVirtualList
-        v-else
-        ref="virtualListRef"
-        :items="renderedItems"
-      >
-        <template #item="{ item }">
-          <div class="renderedItemWrap">
-            <UserMessageBubble
-              v-if="item.type === 'user'"
-              :text="item.text"
-            />
-            <AssistantMessage
-              v-else-if="item.type === 'assistantText'"
-              :text="item.text"
-              :streaming="item.streaming"
-              :status="status"
-            />
-            <ApprovalCard
-              v-else-if="item.type === 'approval'"
-              :tool-call="findToolCall(item.toolCallId)!"
-              :on-decide="handleDecide"
-              :is-processing="status === 'streaming'"
-            />
-            <GroupedOperationMessage
-              v-else-if="item.type === 'operationGroup'"
-              :items="resolveToolCalls(item.toolCallIds)"
-              :force-complete="item.forceComplete"
-            />
-            <WebSearchSummaryMessage
-              v-else-if="item.type === 'webSearchGroup'"
-              :queries="item.queries"
-              :tool-calls="resolveToolCalls(item.toolCallIds)"
-            />
-            <PlanBlock
-              v-else-if="item.type === 'plan'"
-              :todos="item.todos"
-              :streaming="item.streaming"
-            />
-            <ReasoningMessage
-              v-else-if="item.type === 'reasoning'"
-              :text="item.text"
-              :streaming="item.streaming"
-            />
-            <ErrorMessage
-              v-else-if="item.type === 'error'"
-              :text="item.text"
-              :on-retry="() => handleRetryError(item)"
-            />
-            <!-- Task 7：虚拟滚动分支同样渲染 ContextCompactionDivider -->
-            <ContextCompactionDivider
-              v-else-if="item.type === 'compaction'"
-              :text="item.text"
-            />
-            <!-- Task 22: 虚拟滚动分支同样渲染 AgentTaskMessage -->
-            <AgentTaskMessage
-              v-else-if="item.type === 'agentTask'"
-              :sub-tasks="item.subTasks"
-              :reasoning="item.reasoning"
-            />
-          </div>
-        </template>
-      </MessageVirtualList>
     </main>
     </div><!-- /.agentChatBody -->
 
@@ -300,7 +209,73 @@
         :on-remove="removeAttachment"
       />
 
+      <!--
+        Mock 模式预设输入控件：覆盖在输入框上方。
+        数据由 useAgent().mockPresets 提供（后端 mock_presets 事件驱动）。
+        mid-scenario 会再次触发事件 → 完整覆盖 chip 列表（连续会话预设）。
+        流式进行中（status === 'streaming'）时禁用 chip，防止重复触发。
+      -->
+      <MockPresetBar
+        v-if="isMockMode && mockPresets.length > 0"
+        :presets="mockPresets"
+        :scenario="mockPresetBarScenario"
+        :phase="mockPresetBarPhase"
+        :disabled="status === 'streaming'"
+        @pick="(preset) => { void pickMockPreset(preset) }"
+      />
+
+      <!-- 调试面板：mock 模式自动开 / URL ?debug=agent 强制开 -->
+      <AgentDebugPanel
+        v-if="isMockMode || isDebugAgent"
+        :messages="messages"
+        :rendered-items="renderedItems"
+        :agent-status="status"
+        :raw-sse-events="rawSSEEvents"
+        :default-open="isMockMode"
+      />
+
       <div class="footerInputRow" :class="{ 'footerInputRow-palette': slashMenu.isOpen.value }">
+        <!-- 模型选择器（输入框内嵌，参考 ChatGPT/Claude 主流设计） -->
+        <div class="modelPicker" ref="modelPickerRef">
+          <button
+            type="button"
+            class="modelPickerBtn"
+            :disabled="status === 'streaming' || modelsLoading"
+            @click="modelPickerOpen = !modelPickerOpen"
+            :title="t('agent.model')"
+          >
+            <span class="modelPickerLabel">{{ currentModelDisplayName }}</span>
+            <ion-icon :icon="chevronDownIcon" class="modelPickerArrow" :class="{ 'modelPickerArrow_open': modelPickerOpen }" />
+          </button>
+          <Transition name="modelPickerFade">
+            <div v-if="modelPickerOpen" class="modelPickerDropdown">
+              <div v-if="modelsLoading" class="modelPickerLoading">{{ t('agent.loadingModels') }}...</div>
+              <template v-else-if="modelsError">
+                <div class="modelPickerError">{{ modelsError }}</div>
+                <button
+                  v-if="selectedModel && !availableModels.some(m => m.id === selectedModel)"
+                  type="button"
+                  class="modelPickerOption modelPickerOption_active"
+                  @click="selectModel(selectedModel); modelPickerOpen = false"
+                >{{ selectedModel }}</button>
+              </template>
+              <template v-else>
+                <button
+                  v-for="m in availableModels"
+                  :key="m.id"
+                  type="button"
+                  class="modelPickerOption"
+                  :class="{ 'modelPickerOption_active': selectedModel === m.id }"
+                  @click="selectModel(m.id); modelPickerOpen = false"
+                >
+                  <span class="modelPickerOptionName">{{ m.name }}</span>
+                  <span v-if="m.provider !== 'unknown'" class="modelPickerOptionProvider">{{ m.provider }}</span>
+                </button>
+              </template>
+            </div>
+          </Transition>
+        </div>
+
         <!-- Task 12: 附件 `+` 按钮 -->
         <button
           v-if="status !== 'streaming'"
@@ -374,7 +349,7 @@
             <div class="historyItemMain">
               <p class="historyItemTitle">{{ s.title || '(空)' }}</p>
               <p class="historyItemMeta">
-                {{ s.messageCount }} {{ t('agent.messages') }}
+                {{ formatSessionMeta(s) }}
               </p>
             </div>
             <button
@@ -412,38 +387,100 @@ import {
   clipboardOutline,
   refreshCircleOutline,
   keyOutline,
+  chevronDownOutline,
+  flaskOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { getDeviceIdSync } from '@/composables/useDeviceId'
 import { getAgentApiBase } from '@/composables/useAgentApiBase'
-import { useAgent, type Decision, type ToolCall, getLanAccess, type LanAddress } from '@/composables/useAgent'
+import { useAgent, type Decision, getLanAccess, type LanAddress } from '@/composables/useAgent'
 import { useRenderTurnItems } from '@/composables/renderTurnItems'
 import { useAttachments } from '@/composables/useAttachments'
 import { useSlashMenu } from '@/composables/useSlashMenu'
 import { showToast } from '@/composables/useToast'
-import UserMessageBubble from '@/components/agent/UserMessageBubble.vue'
-import ApprovalCard from '@/components/agent/ApprovalCard.vue'
-import GroupedOperationMessage from '@/components/agent/GroupedOperationMessage.vue'
-import ReasoningMessage from '@/components/agent/ReasoningMessage.vue'
-import ErrorMessage from '@/components/agent/ErrorMessage.vue'
-import AssistantMessage from '@/components/agent/AssistantMessage.vue'
-import WebSearchSummaryMessage from '@/components/agent/WebSearchSummaryMessage.vue'
-import MessageVirtualList from '@/components/agent/MessageVirtualList.vue'
-import PlanBlock from '@/components/agent/PlanBlock.vue'
-import ContextCompactionDivider from '@/components/agent/ContextCompactionDivider.vue'
-// Task 22：agent task 消息（subagent 拆解的子任务列表）
-import AgentTaskMessage from '@/components/agent/AgentTaskMessage.vue'
+// 多渲染引擎架构：引入引擎系统和已注册的引擎实现
+import { useChatEngine } from '@/composables/useChatEngine'
+// 触发引擎注册（模块副作用自动注册到 EngineRegistry）
+import '@/engines/defaultEngine'
+import '@/engines/copilotkitStyleEngine'
+import '@/engines/tdesignEngine'
+// 引擎渲染包装组件（解决 <component :is="vnode"> 不稳定的问题）
+import EngineRenderer from '@/components/agent/EngineRenderer.vue'
+// 以下组件现在由 DefaultMessagesView.vue 内部导入（引擎渲染路径）
+// AgentChat.vue 作为宿主容器不再直接引用这些组件
 import AttachmentTray from '@/components/agent/AttachmentTray.vue'
+import MockPresetBar from '@/components/agent/MockPresetBar.vue'
+import AgentDebugPanel from '@/components/agent/AgentDebugPanel.vue'
 import SlashMenu from '@/components/agent/SlashMenu.vue'
 import ContextIcon from '@/components/agent/ContextIcon.vue'
 
 const { t } = useI18n()
 
+// ── 多渲染引擎架构：引擎切换系统 ─────────────────────
+const { currentEngine, currentEngineId, engineList, switchEngine: doSwitchEngine } = useChatEngine()
+
+// 引擎切换器下拉状态
+const enginePickerOpen = ref(false)
+const enginePickerRef = ref<HTMLElement | null>(null)
+
+/** 当前引擎显示名称 */
+const currentEngineDisplayName = computed(() => {
+  const id = currentEngineId.value
+  const found = engineList.value.find(e => e.id === id)
+  return found?.name || id
+})
+
+/** 构建传给当前引擎的 renderProps */
+const engineRenderProps = computed(() => ({
+  messages: messages.value,
+  status: status.value,
+  onSend: async (text: string) => { send(text) },
+  onStop: () => stop(),
+  onConfirmTool: async (id: string, decision: string) => confirmTool(id, decision as Decision),
+  onCopyMessage: async (messageId: string) => onCopyMessage(messageId),
+  onPresetClick: (userText: string) => pickMockPreset({ id: '', label: userText, tooltip: '', userText } as any),
+  streaming: status.value === 'streaming',
+}))
+
+/** 引擎切换（带 toast 反馈） */
+  function handleSwitchEngine(engineId: string): void {
+    const ok = doSwitchEngine(engineId)
+    if (ok) {
+      const name = engineList.value.find(e => e.id === engineId)?.name || engineId
+      showToast({ message: `已切换到 ${name}`, duration: 1200, color: 'success' })
+    }
+  }
+
+  /** 复制消息内容（引擎回调 —— 实际复制逻辑在 DefaultMessagesView 内部实现） */
+  async function onCopyMessage(_messageId: string): Promise<void> {
+    // 由 DefaultMessagesView 内部处理，此处仅作为引擎接口的桥接
+    // 如果未来其他引擎也需要此回调，可在此统一实现
+  }
+
+// Mock 预设输入栏头部显示：
+// - picker 阶段（首次进 AgentChat）→ "剧本库"（i18n mockPresetBarPickerScenario）
+// - 实际剧本阶段 → 当前 scenario ID
+// - 都不匹配 → "剧本"（默认）
+const mockPresetBarScenario = computed(() => {
+  const phase = mockPresetsPhase.value
+  const sc = mockPresetsScenario.value
+  if (sc === 'scenario_picker' || phase === 'picker') {
+    return t('agent.mockPresetBarPickerScenario')
+  }
+  return sc || mockScenario.value || t('agent.mockPresetBarDefaultScenario')
+})
+// phase 阶段文案：picker 隐藏（已在 scenario 里表达），其他透传
+const mockPresetBarPhase = computed(() => {
+  const phase = mockPresetsPhase.value
+  if (phase === 'picker' || phase === 'off') return ''
+  return phase
+})
+
 // Agent API 基础路径（与 useAgent.ts 保持一致）
 // Agent API 基础 URL（动态解析：dev 走网关 / prod 直连后端）
 const AGENT_API_BASE = getAgentApiBase()
 
-const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError } = useAgent()
+const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel, setApiDefaultModel, isMockMode, isDebugAgent, mockScenario, currentMockMode, loadMockMode, setMockMode, mockPresets, mockPresetsPhase, mockPresetsScenario, pickMockPreset, loadMockPresets, rawSSEEvents } = useAgent()
 const router = useRouter()
 
 /**
@@ -518,6 +555,9 @@ const attachIcon = attachOutline
 const globeIcon = globeOutline
 const clipboardIcon = clipboardOutline
 const refreshCircleIcon = refreshCircleOutline
+const chevronDownIcon = chevronDownOutline
+const flaskIcon = flaskOutline
+// copyIconVar 已移至 DefaultMessagesView.vue（引擎渲染路径内的复制按钮）
 const historyOpen = ref(false)
 
 // ── Task 26 (LAN Access) ───────────────────────────────────
@@ -688,6 +728,10 @@ async function fetchModels() {
       name: m.name || m.id,
       provider: m.provider || 'unknown',
     }))
+    // 保存 API 返回的默认模型（新会话时使用）
+    if (data.defaultModel) {
+      setApiDefaultModel(data.defaultModel)
+    }
     // 如果当前选中的模型不在列表中，切换到默认值
     if (availableModels.value.length > 0 && !availableModels.value.some(m => m.id === selectedModel.value)) {
       selectedModel.value = data.defaultModel || availableModels.value[0].id
@@ -728,31 +772,117 @@ const selectedModel = ref<string>(storedModel)
 const temperature = ref<number>(storedTemp)
 watch(selectedModel, (v) => {
   try { localStorage.setItem(SELECTED_MODEL_KEY, v) } catch { /* ignore */ }
+  // 同步到 useAgent 的 activeModel（send/sendQueued 读取此值）
+  activeModel.value = v
 })
 watch(temperature, (v) => {
   try { localStorage.setItem(TEMPERATURE_KEY, String(v)) } catch { /* ignore */ }
 })
 
-// ─── 工具调用查找 ─────────────────────────────────────────
-function findToolCall(id: string): ToolCall | null {
-  for (const msg of messages.value) {
-    const tc = msg.tool_calls.find((t: ToolCall) => t.id === id)
-    if (tc) return tc
-  }
-  return null
+// ─── 模型选择器（输入框内嵌） ─────────────────────────────
+const modelPickerOpen = ref(false)
+const modelPickerRef = ref<HTMLElement | null>(null)
+
+/** 当前模型的显示名称（从 availableModels 查找，找不到则用 id 本身） */
+const currentModelDisplayName = computed(() => {
+  const id = selectedModel.value
+  const found = availableModels.value.find(m => m.id === id)
+  return found?.name || id
+})
+
+function selectModel(id: string) {
+  selectedModel.value = id
 }
 
-function resolveToolCalls(ids: string[]): ToolCall[] {
-  const out: ToolCall[] = []
-  for (const id of ids) {
-    const tc = findToolCall(id)
-    if (tc) out.push(tc)
+// ─── Mock 模式切换器（在会话界面直接配置，弹 action-sheet） ────────
+/**
+ * 徽章文本：根据当前模式显示对应文案
+ *  - off     → "真实 API"   （灰色，提示"未启用 mock"）
+ *  - builtin → "模拟·内置"
+ *  - custom  → "模拟·自定义"
+ */
+const mockBadgeText = computed(() => {
+  if (currentMockMode.value === 'builtin') return `${t('agent.mockBadge')}·${t('agent.mockModeBuiltin')}`
+  return t('agent.mockModeOff')
+})
+
+/**
+ * 徽章 tooltip：
+ *  - active 时显示当前 scenario id（来自最近一次 SSE 响应）
+ *  - off 时显示"点击切换模式"
+ */
+const mockBadgeTitle = computed(() => {
+  if (currentMockMode.value === 'off') return t('agent.mockMode')
+  if (isMockMode.value && mockScenario.value) {
+    return t('agent.mockBadgeTooltip', { scenario: mockScenario.value })
   }
-  return out
+  return t('agent.mockMode')
+})
+
+/**
+ * 点击徽章 → 直接切换 off ↔ builtin（无 action-sheet）
+ * 切换经由 useAgent.setMockMode() 走 PUT /api/config 持久化
+ */
+async function toggleMockMode(): Promise<void> {
+  const next = currentMockMode.value === 'off' ? 'builtin' : 'off'
+  try {
+    await setMockMode(next)
+    showToast({
+      message: next === 'off'
+        ? (t('agent.mockModeOff') || '真实 API')
+        : (t('agent.mockModeBuiltin') || '模拟·内置'),
+      duration: 1200,
+      color: next === 'off' ? 'medium' : 'success',
+    })
+  } catch (e) {
+    showToast({
+      message: `${t('agent.mockModeSetFailed') || '切换失败'}: ${e instanceof Error ? e.message : String(e)}`,
+      duration: 2400,
+      color: 'danger',
+    })
+  }
 }
 
-function handleDecide(toolCallId: string, decision: Decision) {
-  confirmTool(toolCallId, decision)
+/** 点击外部关闭下拉 */
+function handleModelPickerOutsideClick(e: MouseEvent) {
+  if (modelPickerOpen.value && modelPickerRef.value && !modelPickerRef.value.contains(e.target as Node)) {
+    modelPickerOpen.value = false
+  }
+  if (enginePickerOpen.value && enginePickerRef.value && !enginePickerRef.value.contains(e.target as Node)) {
+    enginePickerOpen.value = false
+  }
+}
+
+// ── 工具调用/结果查找已移至 DefaultMessagesView.vue（引擎渲染路径）──
+// AgentChat 作为宿主容器不再直接操作消息渲染细节
+
+/**
+ * 格式化会话历史列表项的元信息（时间 + 消息数 + 轮次）
+ */
+function formatSessionMeta(s: { messageCount: number; rounds: number; updatedAt: number }): string {
+  const time = formatRelativeTime(s.updatedAt)
+  const parts = [time]
+  if (s.rounds > 0) {
+    parts.push(`${s.rounds} ${t('agent.rounds') || '轮'}`)
+  }
+  parts.push(`${s.messageCount} ${t('agent.messages')}`)
+  return parts.join(' · ')
+}
+
+/**
+ * 简易相对时间格式化
+ */
+function formatRelativeTime(ts: number): string {
+  if (!ts) return ''
+  const diff = Date.now() - ts
+  const abs = Math.abs(diff)
+  const d = new Date(ts)
+  if (abs < 60_000) return t('agent.justNow') || '刚刚'
+  if (abs < 3600_000) return `${Math.floor(abs / 60_000)}${t('agent.minutesAgo') || '分钟前'}`
+  if (abs < 86400_000) return `${Math.floor(abs / 3600_000)}${t('agent.hoursAgo') || '小时前'}`
+  if (abs < 604_800_000) return `${Math.floor(abs / 86400_000)}${t('agent.daysAgo') || '天前'}`
+  // 超过一周显示日期
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 // ─── 输入框处理 ──────────────────────────────────────────
@@ -777,42 +907,6 @@ function handleSend() {
 
 function handleStop() {
   stop()
-}
-
-/**
- * 重试一条出错的消息：清除 error 标记 + 删除关联的 assistant 消息 + 重新发送
- */
-function handleRetryError(item: { type: 'error'; messageIndex: number }) {
-  // 找到对应的 user 消息（error item 的 messageIndex 指向原始消息索引）
-  const idx = item.messageIndex
-  if (idx < 0 || idx >= messages.value.length) return
-
-  const targetMsg = messages.value[idx]
-  if (!targetMsg || targetMsg.role !== 'user') return
-
-  // Task 12：content 可能是 multimodal 数组。从中抽出 text 元素作为
-  // 重发文本（附件不再重复附带——本地状态已丢失原 attachment 引用）。
-  let text = ''
-  if (typeof targetMsg.content === 'string') {
-    text = targetMsg.content
-  } else {
-    for (const part of targetMsg.content) {
-      if (part.type === 'text') {
-        text += part.text
-      }
-    }
-    text = text.trim()
-  }
-
-  // 清除错误标记
-  delete targetMsg.error
-
-  // 删除该 user 消息之后的所有消息（包括空的 assistant 占位 + 任何已产生的回复）
-  messages.value.splice(idx)
-
-  // 重新发送
-  send(text)
-  nextTick(() => scrollToBottom())
 }
 
 async function handleNewSession() {
@@ -970,7 +1064,31 @@ onMounted(async () => {
   fetchModels()
   // 启动时尝试恢复最近 session
   await resume()
+  // 加载当前 mock 模式（用户主动控制 → action-sheet 切换）
+  await loadMockMode()
+  // mock 模式开启时 → 拉"全局剧本选择器"覆盖在输入框上方
+  // 用户首次进入就能看到 chip，不必先发消息触发流
+  if (isMockMode.value) {
+    void loadMockPresets()
+  }
   nextTick(() => scrollToBottom('auto'))
+  // 模型选择器：点击外部关闭下拉
+  document.addEventListener('click', handleModelPickerOutsideClick)
+})
+
+// 用户在 Settings/其他位置切换 mock 模式后 → 重新拉/清空 chip
+// off → 清空（v-if 自然不渲染，无需手动）
+// builtin/custom → 拉新选择器覆盖当前 chip
+watch(currentMockMode, (newMode, _oldMode) => {
+  console.debug('[AgentChat] mock mode changed →', newMode)
+  if (newMode === 'builtin' || newMode === 'custom') {
+    void loadMockPresets()
+  }
+  // 'off' 不需要清空 —— isMockMode.value = false → v-if 不渲染
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleModelPickerOutsideClick)
 })
 
 // 暴露给 modal container（可选）
@@ -1036,6 +1154,154 @@ defineExpose({})
   font-size: 18px;
 }
 
+/* ── Mock 模式切换器（始终可见、可点击、反映当前模式） ── */
+.mockBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(var(--ion-color-medium-rgb), 0.12);
+  color: var(--ion-color-medium);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  user-select: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.mockBadge:hover {
+  background: rgba(var(--ion-color-medium-rgb), 0.22);
+}
+
+.mockBadge:active {
+  transform: scale(0.96);
+}
+
+.mockBadge:focus-visible {
+  outline: 2px solid var(--ion-color-primary);
+  outline-offset: 1px;
+}
+
+/* 启用 mock（builtin / custom）时的强调色 */
+.mockBadge_active {
+  background: rgba(var(--ion-color-primary-rgb), 0.16);
+  color: var(--ion-color-primary);
+}
+
+.mockBadge_active:hover {
+  background: rgba(var(--ion-color-primary-rgb), 0.24);
+}
+
+.mockBadgeIcon {
+  font-size: 12px;
+  color: inherit;
+}
+
+.mockBadgeText {
+  letter-spacing: 0.02em;
+}
+
+.mockBadgeChevron {
+  font-size: 10px;
+  color: inherit;
+  opacity: 0.7;
+}
+
+/* ── 多渲染引擎切换器（同款模型选择器样式） ─────────── */
+.enginePicker {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.enginePickerBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid rgba(var(--ion-color-primary-rgb), 0.25);
+  border-radius: 8px;
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
+  color: var(--ion-color-primary);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.enginePickerBtn:hover {
+  background: rgba(var(--ion-color-primary-rgb), 0.14);
+  border-color: rgba(var(--ion-color-primary-rgb), 0.3);
+}
+
+.enginePickerLabel {
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.enginePickerArrow {
+  font-size: 12px;
+  transition: transform 0.2s ease;
+  color: var(--ion-color-primary);
+  opacity: 0.7;
+}
+
+.enginePickerArrow_open {
+  transform: rotate(180deg);
+}
+
+.enginePickerDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 140px;
+  max-width: 220px;
+  background: var(--ion-background-color);
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.2);
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);
+  z-index: 50;
+  padding: 4px;
+}
+
+.enginePickerOption {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ion-text-color);
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.enginePickerOption:hover {
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
+}
+
+.enginePickerOption_active {
+  background: rgba(var(--ion-color-primary-rgb), 0.12);
+  font-weight: 600;
+  color: var(--ion-color-primary);
+}
+
+.enginePickerOptionName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .agentChatMain {
   flex: 1;
   min-height: 0;
@@ -1066,6 +1332,47 @@ defineExpose({})
 .renderedItemWrap {
   display: flex;
   flex-direction: column;
+}
+
+/* 独立 Footer 段：时间戳固定，与 AssistantMessage 解耦 */
+.messageFooterStandalone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 36px;
+  margin-top: 2px;
+  border-top: 1px solid rgba(var(--ion-color-medium-rgb), 0.12);
+  padding-top: 4px;
+}
+
+.messageFooterStandalone .footerTimestamp {
+  font-size: 11px;
+  color: var(--encv-text-secondary, rgba(127,127,127,0.6));
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.messageFooterStandalone .footerCopyBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--encv-text-secondary, rgba(127,127,127,0.45));
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.messageFooterStandalone .footerCopyBtn:hover,
+.messageFooterStandalone .footerCopyBtn:active {
+  color: var(--ion-color-primary);
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
 }
 
 .agentChatFooter {
@@ -1145,6 +1452,135 @@ defineExpose({})
 /* 隐藏原生 file input —— 用按钮触发 */
 .footerAttachInput {
   display: none;
+}
+
+/* ── 模型选择器（输入框内嵌） ──────────────────────────── */
+.modelPicker {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.modelPickerBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.25);
+  border-radius: 8px;
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
+  color: var(--ion-color-primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.modelPickerBtn:hover:not(:disabled) {
+  background: rgba(var(--ion-color-primary-rgb), 0.14);
+  border-color: rgba(var(--ion-color-primary-rgb), 0.3);
+}
+
+.modelPickerBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.modelPickerLabel {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modelPickerArrow {
+  font-size: 12px;
+  transition: transform 0.2s ease;
+  color: var(--ion-color-primary);
+  opacity: 0.7;
+}
+
+.modelPickerArrow_open {
+  transform: rotate(180deg);
+}
+
+.modelPickerDropdown {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 180px;
+  max-width: 260px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--ion-background-color);
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.2);
+  border-radius: 10px;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.14);
+  z-index: 50;
+  padding: 4px;
+}
+
+.modelPickerLoading,
+.modelPickerError {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--ion-text-color-step-400, #888);
+  text-align: center;
+}
+
+.modelPickerOption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ion-text-color);
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.modelPickerOption:hover {
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
+}
+
+.modelPickerOption_active {
+  background: rgba(var(--ion-color-primary-rgb), 0.12);
+  font-weight: 600;
+  color: var(--ion-color-primary);
+}
+
+.modelPickerOptionName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modelPickerOptionProvider {
+  font-size: 10px;
+  color: var(--ion-text-color-step-400, #999);
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+/* 下拉动画 */
+.modelPickerFade-enter-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.modelPickerFade-leave-active {
+  transition: opacity 0.1s ease, transform 0.1s ease;
+}
+.modelPickerFade-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+.modelPickerFade-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
 }
 
 .footerSendBtn {

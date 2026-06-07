@@ -257,12 +257,13 @@ func NewAgent(cfg AgentConfig, registry *ToolRegistry, storeOpt ...*SessionStore
 		store = storeOpt[0]
 	}
 	a := &Agent{
-		cfg:              cfg,
-		Registry:         registry,
-		llm:              &openaiStream{client: newOpenAIClient(cfg)},
-		PendingCalls:     make(map[string]*pendingCall),
-		store:            store,
-		serverInstanceId: generateServerInstanceId(),
+		cfg:               cfg,
+		Registry:          registry,
+		llm:               &openaiStream{client: newOpenAIClient(cfg)},
+		PendingCalls:      make(map[string]*pendingCall),
+		pendingMessages:   make(map[string]*pendingMessageQueue),
+		store:             store,
+		serverInstanceId:  generateServerInstanceId(),
 	}
 	a.loadSkillsAndRegisterHook(cfg.SkillsDir)
 	return a
@@ -354,11 +355,21 @@ func (a *Agent) ServerInstanceId() string {
 // it does not exist yet.
 func (a *Agent) ensureSession(sessionID string) *SessionCache {
 	if v, ok := a.Sessions.Load(sessionID); ok {
-		return v.(*SessionCache)
+		if cache, ok := v.(*SessionCache); ok {
+			return cache
+		}
 	}
 	c := &SessionCache{}
 	actual, _ := a.Sessions.LoadOrStore(sessionID, c)
-	return actual.(*SessionCache)
+	if cache, ok := actual.(*SessionCache); ok {
+		return cache
+	}
+	// The map somehow holds a non-SessionCache value; recover by
+	// storing and returning a fresh one. Callers always end up
+	// with a usable cache, just a "lost" one in the slot.
+	c2 := &SessionCache{}
+	a.Sessions.Store(sessionID, c2)
+	return c2
 }
 
 // getSession fetches a cache without creating it.
@@ -367,7 +378,11 @@ func (a *Agent) getSession(sessionID string) (*SessionCache, bool) {
 	if !ok {
 		return nil, false
 	}
-	return v.(*SessionCache), true
+	cache, ok := v.(*SessionCache)
+	if !ok {
+		return nil, false
+	}
+	return cache, true
 }
 
 // Chat kicks off a streaming turn. The returned channel emits
@@ -489,7 +504,13 @@ func (a *Agent) HandleFork(w http.ResponseWriter, r *http.Request) {
 func generateNewSessionID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return fmt.Sprintf("%016x", time.Now().UnixNano())
+		// crypto/rand failure is essentially never; if it ever
+		// happens the only correct behaviour is to crash the
+		// goroutine rather than risk a collision. Use
+		// log.Fatalf-style panic: returning a deterministic
+		// fallback (time.Now().UnixNano) can collide under
+		// high-concurrency SessionStart storms.
+		panic(fmt.Sprintf("crypto/rand failed: %v", err))
 	}
 	return hex.EncodeToString(b[:])
 }
@@ -657,6 +678,11 @@ func (a *Agent) permissionModeFor(sessionID string) PermissionMode {
 // per-session pending queue and returns a channel that is
 // already closed. The drain hook will pick the messages up
 // on the next HookTurnEnd and start a fresh Chat.
+//
+// The whole critical section (map lookup + queue enqueue) is
+// held under a.pendingMu to close the M1 race window where a
+// drain hook could observe the queue as empty between the map
+// insert and the enqueue call.
 func (a *Agent) enqueueAndReturnClosed(
 	sessionID string,
 	messages []openai.ChatCompletionMessage,
@@ -667,8 +693,8 @@ func (a *Agent) enqueueAndReturnClosed(
 		q = &pendingMessageQueue{}
 		a.pendingMessages[sessionID] = q
 	}
+	q.messages = append(q.messages, messages)
 	a.pendingMu.Unlock()
-	q.enqueue(messages)
 	out := make(chan *Event, 1)
 	close(out)
 	return out
@@ -694,42 +720,79 @@ func (a *Agent) pendingQueueDrainHook(ctx context.Context, hc *HookContext) erro
 	}
 	a.pendingMu.Lock()
 	q, ok := a.pendingMessages[hc.SessionID]
+	if !ok {
+		a.pendingMu.Unlock()
+		return nil
+	}
+	if len(q.messages) == 0 {
+		a.pendingMu.Unlock()
+		return nil
+	}
+	msgs := q.messages[0]
+	q.messages = q.messages[1:]
 	a.pendingMu.Unlock()
-	if !ok {
-		return nil
-	}
-	msgs, ok := q.dequeue()
-	if !ok {
-		return nil
-	}
+
 	// Spawn a new Chat in its own goroutine — calling Chat
 	// directly from the hook would deadlock because the
 	// current runLoop is still on the call stack (the hook
 	// fires synchronously from streamOneTurn's defer).
-	// We also detach the context: the original request's
-	// context will be cancelled as soon as the HTTP handler
-	// returns, and we do not want the queued Chat to be
-	// killed with it. The drain is fire-and-forget; the
-	// events surface through SessionCache so any subsequent
-	// Resume picks them up.
+	//
+	// Context: use the hook's context (M3) so the queued
+	// Chat inherits the original request lifetime. The
+	// previous context.Background() could leak goroutines
+	// if the user disconnected mid-flight.
+	//
+	// M1 retry: if the goroutine observes the queue as
+	// empty (e.g. an enqueue lost the race against our
+	// drain), retry a few times before giving up so the
+	// user does not have to re-send. Bounded retries keep
+	// the worst case bounded.
+	_ = ctx // silence linter when not directly used in this branch
+	drainCtx := ctx
+	if drainCtx == nil {
+		drainCtx = context.Background()
+	}
 	go func() {
-		ch, err := a.Chat(context.Background(), hc.SessionID, msgs)
-		if err != nil {
-			// The most common cause is a pending tool
-			// confirmation; in that case the user can
-			// simply re-queue. We do not retry.
-			return
-		}
-		// Drain the channel so the runLoop keeps producing
-		// events (the SessionCache is updated as a side
-		// effect of each event being emitted). The events
-		// themselves are discarded because the original
-		// HTTP request that submitted the queue mode has
-		// long since returned.
-		for range ch {
-		}
+		a.spawnQueuedChat(drainCtx, hc.SessionID, msgs)
 	}()
 	return nil
+}
+
+// spawnQueuedChat wraps the fire-and-forget Chat call with a
+// short retry loop in case the dequeue lost a race against
+// enqueueAndReturnClosed.
+func (a *Agent) spawnQueuedChat(ctx context.Context, sessionID string, msgs []openai.ChatCompletionMessage) {
+	for attempt := 0; attempt < 5; attempt++ {
+		// Re-check: maybe an enqueue raced ahead of us.
+		a.pendingMu.Lock()
+		if len(msgs) == 0 {
+			q, ok := a.pendingMessages[sessionID]
+			if !ok || len(q.messages) == 0 {
+				a.pendingMu.Unlock()
+				return
+			}
+			msgs = q.messages[0]
+			q.messages = q.messages[1:]
+		}
+		a.pendingMu.Unlock()
+
+		ch, err := a.Chat(ctx, sessionID, msgs)
+		if err == nil {
+			// Drain the channel so the runLoop keeps producing
+			// (it would deadlock waiting for a consumer on
+			// the unbuffered path).
+			for range ch {
+			}
+			return
+		}
+		// The most common cause is a pending tool
+		// confirmation; in that case the user can
+		// simply re-queue. We do not retry the Chat
+		// itself, but we DO yield so the producer can
+		// finish enqueuing, then re-check the queue.
+		msgs = nil
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 // runLoop is the worker goroutine behind Chat/ConfirmTool. It is
@@ -755,6 +818,16 @@ func (a *Agent) runLoop(
 	out chan<- *Event,
 	isNewSession bool,
 ) {
+	// Use a pointer to the local messages slice so that any
+	// append inside streamOneTurn propagates back to the next
+	// loop iteration. The previous code passed the slice by
+	// value, which silently dropped tool result messages
+	// (see tool_call_diagnosis.md C1 / C6 — auto-run multi-turn
+	// tool calling loop was completely broken).
+	//
+	// We retain the named local `messages` so the rest of
+	// runLoop reads naturally; only the call to streamOneTurn
+	// takes the address.
 	defer a.finishAndClose(sessionID, out)
 
 	if isNewSession {
@@ -773,7 +846,7 @@ func (a *Agent) runLoop(
 			return
 		}
 
-		shouldContinue, err := a.streamOneTurn(ctx, sessionID, messages, out)
+		shouldContinue, err := a.streamOneTurn(ctx, sessionID, &messages, out)
 		if err != nil {
 			a.emitError(sessionID, out, "openai_error", err.Error())
 			return
@@ -794,16 +867,22 @@ func (a *Agent) runLoop(
 // return path (success, error, suspended) so the hook always
 // sees the final messages slice regardless of how the turn
 // terminated.
+//
+// messages is a POINTER to the caller's slice: every append /
+// truncate in this function writes through *messages so the
+// caller (runLoop) observes the post-turn state on its next
+// iteration. Passing a plain slice would break auto-run
+// multi-turn tool chains (see tool_call_diagnosis.md C1, C6).
 func (a *Agent) streamOneTurn(
 	ctx context.Context,
 	sessionID string,
-	messages []openai.ChatCompletionMessage,
+	messages *[]openai.ChatCompletionMessage,
 	out chan<- *Event,
 ) (bool, error) {
 	a.runHooks(ctx, &HookContext{
 		Event:     HookTurnStart,
 		SessionID: sessionID,
-		Messages:  messages,
+		Messages:  *messages,
 	})
 	// Deferred so we observe the post-tool-call messages
 	// snapshot rather than the pre-LLM one. The closure
@@ -814,7 +893,7 @@ func (a *Agent) streamOneTurn(
 		a.runHooks(ctx, &HookContext{
 			Event:     HookTurnEnd,
 			SessionID: sessionID,
-			Messages:  messages,
+			Messages:  *messages,
 		})
 	}()
 
@@ -829,7 +908,7 @@ func (a *Agent) streamOneTurn(
 	// the turn — half-applied state would be worse than no
 	// compaction at all.
 	if a.compactor != nil {
-		_, replaced, compactErr := a.maybeCompact(ctx, sessionID, messages, out)
+		_, replaced, compactErr := a.maybeCompact(ctx, sessionID, *messages, out)
 		if compactErr != nil {
 			return false, fmt.Errorf("compaction failed: %w", compactErr)
 		}
@@ -837,15 +916,18 @@ func (a *Agent) streamOneTurn(
 			// Truncate the slice header so subsequent
 			// append(...) calls in this turn see the
 			// compacted length, not the original.
-			keep := len(messages) - replaced
+			// Write through the pointer so runLoop's
+			// next iteration also sees the compacted
+			// length (C6 fix).
+			keep := len(*messages) - replaced
 			if keep < 0 {
 				keep = 0
 			}
-			messages = messages[:1+keep]
+			*messages = (*messages)[:1+keep]
 		}
 	}
 
-	req := a.chatRequest(a.injectSystemPrompt(sessionID, messages), a.cfg.OpenAIModel)
+	req := a.chatRequest(a.injectSystemPrompt(sessionID, *messages), a.cfg.OpenAIModel)
 	stream, err := a.llm.CreateChatCompletionStream(ctx, req)
 	if err != nil {
 		return false, fmt.Errorf("create chat stream: %w", err)
@@ -911,7 +993,7 @@ func (a *Agent) streamOneTurn(
 		assistant.ToolCalls = openAITCs
 	}
 	if assistant.Content != "" || len(assistant.ToolCalls) > 0 {
-		messages = append(messages, assistant)
+		*messages = append(*messages, assistant)
 	}
 
 	// 3. No tool calls → turn is over.
@@ -943,7 +1025,7 @@ func (a *Agent) streamOneTurn(
 				IsError: true,
 				Status:  "failed",
 			}))
-			messages = append(messages, openai.ChatCompletionMessage{
+			*messages = append(*messages, openai.ChatCompletionMessage{
 				Role:       openai.ChatMessageRoleTool,
 				ToolCallID: ptc.ID,
 				Content:    fmt.Sprintf(`{"error":"unknown_tool","name":%q}`, ptc.Name),
@@ -974,7 +1056,7 @@ func (a *Agent) streamOneTurn(
 				ToolCallID: ptc.ID,
 				ToolName:   ptc.Name,
 				Args:       ptc.Arguments,
-				Messages:   cloneMessages(messages),
+				Messages:   cloneMessages(*messages),
 			}
 			a.mu.Unlock()
 			anySuspended = true
@@ -1001,7 +1083,7 @@ func (a *Agent) streamOneTurn(
 		a.runHooks(ctx, &HookContext{
 			Event:     HookPreToolCall,
 			SessionID: sessionID,
-			Messages:  messages,
+			Messages:  *messages,
 			ToolCall:  hookToolCall,
 			Cancel:    &cancel,
 		})
@@ -1014,7 +1096,7 @@ func (a *Agent) streamOneTurn(
 				IsError: true,
 				Status:  "cancelled",
 			}))
-			messages = append(messages, openai.ChatCompletionMessage{
+			*messages = append(*messages, openai.ChatCompletionMessage{
 				Role:       openai.ChatMessageRoleTool,
 				ToolCallID: ptc.ID,
 				Content:    cancelled,
@@ -1032,11 +1114,12 @@ func (a *Agent) streamOneTurn(
 		// front-end sees a uniform tool-call lifecycle.
 		var resultStr string
 		var status string
+		var durMs int64
 		var runErr error
 		if def.Kind == KindPlan {
-			resultStr, status, runErr = a.runPlanTool(sessionID, ptc.Arguments)
+			resultStr, status, durMs, runErr = a.runPlanTool(sessionID, ptc.Arguments)
 		} else {
-			resultStr, status, runErr = a.runTool(def, ptc.Arguments)
+			resultStr, status, durMs, runErr = a.runTool(def, ptc.Arguments)
 		}
 		hookToolResult := &ToolResultData{
 			ID:         ptc.ID,
@@ -1044,12 +1127,12 @@ func (a *Agent) streamOneTurn(
 			Result:     resultStr,
 			IsError:    runErr != nil,
 			Status:     status,
-			DurationMs: 0, // filled in by the handler
+			DurationMs: durMs,
 		}
 		a.runHooks(ctx, &HookContext{
 			Event:      HookPostToolCall,
 			SessionID:  sessionID,
-			Messages:   messages,
+			Messages:   *messages,
 			ToolCall:   hookToolCall,
 			ToolResult: hookToolResult,
 		})
@@ -1059,20 +1142,20 @@ func (a *Agent) streamOneTurn(
 			Result:     resultStr,
 			IsError:    runErr != nil,
 			Status:     status,
-			DurationMs: 0, // filled in by the handler
+			DurationMs: durMs,
 		}))
 		if runErr != nil {
 			// Failure result is still appended to the message
 			// history so the LLM can see what went wrong and
 			// try a different approach.
-			messages = append(messages, openai.ChatCompletionMessage{
+			*messages = append(*messages, openai.ChatCompletionMessage{
 				Role:       openai.ChatMessageRoleTool,
 				ToolCallID: ptc.ID,
 				Content:    resultStr,
 			})
 			continue
 		}
-		messages = append(messages, openai.ChatCompletionMessage{
+		*messages = append(*messages, openai.ChatCompletionMessage{
 			Role:       openai.ChatMessageRoleTool,
 			ToolCallID: ptc.ID,
 			Content:    resultStr,
@@ -1090,15 +1173,14 @@ func (a *Agent) streamOneTurn(
 // runTool invokes a handler and times the call. The duration is
 // pushed as a ToolStatus update so the UI can render a "running"
 // badge that becomes "success" / "failed".
-func (a *Agent) runTool(def ToolDefinition, args string) (string, string, error) {
+func (a *Agent) runTool(def ToolDefinition, args string) (string, string, int64, error) {
 	t0 := time.Now()
 	result, err := def.Handler(args)
 	dur := time.Since(t0).Milliseconds()
-	_ = dur
 	if err != nil {
-		return fmt.Sprintf(`{"error":%q}`, err.Error()), "failed", err
+		return fmt.Sprintf(`{"error":%q}`, err.Error()), "failed", dur, err
 	}
-	return result, "success", nil
+	return result, "success", dur, nil
 }
 
 // runPlanTool is the bespoke executor for the KindPlan
@@ -1115,18 +1197,19 @@ func (a *Agent) runTool(def ToolDefinition, args string) (string, string, error)
 // The tool result is always success; malformed input is
 // surfaced as a tool result with status="failed" so the LLM
 // can see the error in the next turn.
-func (a *Agent) runPlanTool(sessionID, args string) (string, string, error) {
+func (a *Agent) runPlanTool(sessionID, args string) (string, string, int64, error) {
+	t0 := time.Now()
 	var payload struct {
 		Todos []Todo `json:"todos"`
 	}
 	if err := json.Unmarshal([]byte(args), &payload); err != nil {
-		return fmt.Sprintf(`{"error":"invalid_args","message":%q}`, err.Error()), "failed", nil
+		return fmt.Sprintf(`{"error":"invalid_args","message":%q}`, err.Error()), "failed", time.Since(t0).Milliseconds(), nil
 	}
 	cache := a.ensureSession(sessionID)
 	cache.mu.Lock()
 	cache.Todos = payload.Todos
 	cache.mu.Unlock()
-	return `{"ok":true,"count":` + fmt.Sprintf("%d", len(payload.Todos)) + `}`, "success", nil
+	return `{"ok":true,"count":` + fmt.Sprintf("%d", len(payload.Todos)) + `}`, "success", time.Since(t0).Milliseconds(), nil
 }
 
 // emitToolCall pushes an EventToolCall (with AutoRun and Kind) and
@@ -1260,7 +1343,19 @@ func (a *Agent) resumeAfterDecision(
 	messages []openai.ChatCompletionMessage,
 	out chan<- *Event,
 ) {
-	defer a.finishAndClose(sessionID, out)
+	// No `defer a.finishAndClose` here on purpose:
+	//
+	//   - Accept / AcceptForSession / Decline fall through to
+	//     a.runLoop below; runLoop owns the close via its own
+	//     defer. If we also deferred close here, we would
+	//     double-close the channel and panic (recovered but
+	//     emits stream_end twice).
+	//   - Cancel / default return before runLoop, so they
+	//     must call finishAndClose manually below.
+	//
+	// The previous "must return without re-closing" comment
+	// in this function was therefore impossible to honour —
+	// the defer ran unconditionally.
 
 	def, _ := a.Registry.Get(toolName)
 	if def.Handler == nil {
@@ -1272,12 +1367,14 @@ func (a *Agent) resumeAfterDecision(
 
 	switch decision {
 	case DecisionAccept:
-		resultStr, status, _ := a.runTool(def, pendingArgs(messages, toolCallID))
+		resultStr, status, durMs, runErr := a.runTool(def, pendingArgs(messages, toolCallID))
 		a.emitData(sessionID, out, EventToolResult, mustJSON(ToolResultData{
-			ID:     toolCallID,
-			Name:   toolName,
-			Result: resultStr,
-			Status: status,
+			ID:         toolCallID,
+			Name:       toolName,
+			Result:     resultStr,
+			IsError:    runErr != nil,
+			Status:     status,
+			DurationMs: durMs,
 		}))
 		messages = append(messages, openai.ChatCompletionMessage{
 			Role:       openai.ChatMessageRoleTool,
@@ -1287,12 +1384,14 @@ func (a *Agent) resumeAfterDecision(
 
 	case DecisionAcceptForSession:
 		a.SessionGrants.Store(grantKey(sessionID, toolName), struct{}{})
-		resultStr, status, _ := a.runTool(def, pendingArgs(messages, toolCallID))
+		resultStr, status, durMs, runErr := a.runTool(def, pendingArgs(messages, toolCallID))
 		a.emitData(sessionID, out, EventToolResult, mustJSON(ToolResultData{
-			ID:     toolCallID,
-			Name:   toolName,
-			Result: resultStr,
-			Status: status,
+			ID:         toolCallID,
+			Name:       toolName,
+			Result:     resultStr,
+			IsError:    runErr != nil,
+			Status:     status,
+			DurationMs: durMs,
 		}))
 		messages = append(messages, openai.ChatCompletionMessage{
 			Role:       openai.ChatMessageRoleTool,
@@ -1324,20 +1423,22 @@ func (a *Agent) resumeAfterDecision(
 			IsError: true,
 			Status:  "cancelled",
 		}))
-		// No further LLM call; turn ends here. The channel
-		// is closed by the deferred finishAndClose below; we
-		// exit BEFORE calling runLoop so runLoop does not
-		// double-close.
+		// No further LLM call; turn ends here. Close the
+		// channel manually because runLoop (which would
+		// have closed it via defer) is not entered.
+		a.finishAndClose(sessionID, out)
 		return
 
 	default:
 		a.emitError(sessionID, out, "invalid_decision", string(decision))
+		a.finishAndClose(sessionID, out)
 		return
 	}
 
 	// Continue the loop with the post-decision messages.
 	// isNewSession=false: ConfirmTool is a continuation of
-	// the same session, never a brand-new one.
+	// the same session, never a brand-new one. runLoop
+	// owns the close via its own defer a.finishAndClose.
 	a.runLoop(ctx, sessionID, messages, out, false)
 }
 
@@ -1475,18 +1576,13 @@ func (a *Agent) cacheAndPersist(sessionID string, ev *Event) {
 func (a *Agent) emitData(sessionID string, out chan<- *Event, t EventType, data string) {
 	ev := &Event{Type: t, Data: data}
 	a.cacheAndPersist(sessionID, ev)
-	// We use a non-blocking send: if the consumer is slower than
-	// the producer we still want to keep producing. The
-	// frontend's UI is forgiving of small backlogs; the agent
-	// is not forgiving of deadlock.
-	select {
-	case out <- ev:
-	default:
-		// Drop on the floor with a buffered channel that grows.
-		// For this implementation we just block; backpressure
-		// here is preferable to losing events.
-		out <- ev
-	}
+	// Blocking send. The channel is buffered (size 32) so
+	// short bursts are absorbed; once the buffer fills, the
+	// agent goroutine applies backpressure to the producer
+	// path rather than silently dropping events. Silent
+	// drops would corrupt the persisted event log and make
+	// resume-after-restart impossible.
+	out <- ev
 }
 
 // emitError pushes a stream_end with an error payload.
@@ -1501,9 +1597,11 @@ func (a *Agent) emitError(sessionID string, out chan<- *Event, code, msg string)
 // stream_end. Called by both Chat and ConfirmTool on exit.
 func (a *Agent) finishSession(sessionID string, out chan<- *Event) {
 	if v, ok := a.Sessions.Load(sessionID); ok {
-		v.(*SessionCache).mu.Lock()
-		v.(*SessionCache).IsFinished = true
-		v.(*SessionCache).mu.Unlock()
+		if cache, ok := v.(*SessionCache); ok {
+			cache.mu.Lock()
+			cache.IsFinished = true
+			cache.mu.Unlock()
+		}
 	}
 	ev := &Event{Type: EventStreamEnd, Data: ""}
 	a.cacheAndPersist(sessionID, ev)
