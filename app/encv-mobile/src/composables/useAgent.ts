@@ -1172,6 +1172,17 @@ export function useAgent() {
         received = true
         try {
           const event = JSON.parse(payload) as AgentEvent
+          // ─── Task 27 调试：每个 SSE 事件立即 console.error 打印 ───
+          // 看后端到底推了哪些 event.type + data 摘要（特别关注 tool_call / tool_result）
+          const dataSummary =
+            event.data == null
+              ? 'null'
+              : typeof event.data === 'string'
+                ? event.data.slice(0, 120)
+                : JSON.stringify(event.data).slice(0, 200)
+          console.error(
+            `[useAgent][SSE] type=${event.type} id=${currentEventId ?? '-'} data=${dataSummary}`,
+          )
           // Task 4.3：sequence 去重。若事件声明了 SSE id (currentEventId)，
           // 且该 id 已在当前 serverInstance 见过 → 整条事件丢弃，不再 dispatch。
           // 注意：未声明 id 的事件（如后端断点续传 stream_status 边界事件）跳过
