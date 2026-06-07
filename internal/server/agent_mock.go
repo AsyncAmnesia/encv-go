@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -302,6 +303,32 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 	// 真实返回值覆盖剧本的硬编码 result。
 	pendingRealCalls := make(map[string]pendingRealCall)
 
+	// ─── Task 27 调试：写独立日志文件（stdout 被 air-run.sh exec 吞掉后看不到） ──
+	// 每次 Run 写入 /tmp/mock-debug-{scenarioID}.log，追加模式。
+	// 格式：每行一个 event（ts | step | evIdx | type | data摘要）
+	// 用完后 `cat /tmp/mock-debug-list_files_query.log` 直接看。
+	debugLog, debugLogErr := os.OpenFile(
+		"/tmp/mock-debug-"+scenario.ID+".log",
+		os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644,
+	)
+	if debugLogErr != nil {
+		slog.Warn("mock: cannot open debug log file", "error", debugLogErr)
+	}
+	defer func() { //nolint:errcheck
+		if debugLog != nil {
+			debugLog.Close()
+		}
+	}()
+
+	writeDebug := func(step, ev int, evType string, dataSummary string) {
+		if debugLog == nil {
+			return
+		}
+		line := fmt.Sprintf("%s | step=%d ev=%d type=%s data=%s\n",
+			time.Now().Format("15:04:05.000"), step, ev, evType, dataSummary)
+		debugLog.WriteString(line) //nolint:errcheck
+	}
+
 	for stepIdx, step := range scenario.Steps {
 		// 1. 推 step 前的延迟
 		if err := sleepDelay(ctx, step.DelayMs, effectiveSpeed); err != nil {
@@ -359,6 +386,7 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 						"scenario", scenario.ID, "id", id, "name", name)
 				}
 				s.sendAndCache(sess, w, flusher, "tool_call", ev.Data)
+				writeDebug(stepIdx, evIdx, "tool_call", fmt.Sprintf("id=%s name=%s", id, name))
 
 			case "stream_start":
 				// 首个 stream_start 注入 mock: true 字段（前端用来显示「模拟模式」徽章）
@@ -371,6 +399,7 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 					merged["scenario"] = scenario.ID
 					s.sendAndCache(sess, w, flusher, "stream_start", merged)
 					streamStartEmitted = true
+					writeDebug(stepIdx, evIdx, "stream_start", fmt.Sprintf("mock=%v scenario=%s", mockFlag, scenario.ID))
 
 					// 紧随 stream_start 推送初始预设按钮（如果有）。
 					// 前端 MockPresetBar 监听到 mock_presets 事件即渲染 chip。
@@ -400,6 +429,7 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 				text, _ := ev.Data["text"].(string)
 				s.sendAndCache(sess, w, flusher, "text_delta",
 					map[string]interface{}{"seq": textSeq, "text": text})
+				writeDebug(stepIdx, evIdx, "text_delta", text[:min(80, len(text))])
 
 			case "reasoning_delta":
 				reasoningSeq++
@@ -444,6 +474,7 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 						"scenario", scenario.ID, "id", id)
 				}
 				s.sendAndCache(sess, w, flusher, "tool_result", ev.Data)
+				writeDebug(stepIdx, evIdx, "tool_result", fmt.Sprintf("id=%s name=%s", id, name))
 
 			case "stream_end":
 				// 推送 stream_end 后**不再**清空 chip —— 用户视角的"覆盖显示"语义：
@@ -453,10 +484,12 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 				// 仅当用户**主动**退出 mock 模式（前端点 "🧪 模拟" 切换）才发
 				// mock_presets_clear。
 				s.sendAndCache(sess, w, flusher, "stream_end", ev.Data)
+				writeDebug(stepIdx, evIdx, "stream_end", "")
 
 			default:
 				// 其他类型：原样推送
 				s.sendAndCache(sess, w, flusher, ev.Type, ev.Data)
+				writeDebug(stepIdx, evIdx, ev.Type, "")
 			}
 		}
 	}

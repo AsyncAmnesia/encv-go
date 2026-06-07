@@ -148,8 +148,8 @@
           - 有 type=tool_call / tool_result → 后端推了（看前端为什么没 append 到 messages）
           - 只有 type=text_delta / stream_start / stream_end → 后端没推 tool_call
       -->
-      <section v-if="rawSSEEvents && rawSSEEvents.length > 0" class="agentDebugSection">
-        <h4>⑦ 原始 SSE 事件流 ({{ rawSSEEvents.length }} 条)</h4>
+      <section class="agentDebugSection">
+        <h4>⑦ 原始 SSE 事件流 ({{ (rawSSEEvents || []).length }} 条)</h4>
         <div class="agentDebugSseStats">
           <span v-for="(c, t) in sseTypeCounts" :key="t" class="agentDebugChip" :class="{ agentDebugChip_emphasis: t === 'tool_call' || t === 'tool_result' }">
             {{ t }}: {{ c }}
