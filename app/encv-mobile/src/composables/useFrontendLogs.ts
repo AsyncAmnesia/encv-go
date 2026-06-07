@@ -18,12 +18,44 @@ let origConsole: {
   log: Console['log']
 } | null = null
 
+/**
+ * 安全序列化任意值为可读字符串。
+ * 解决核心痛点：JSON.stringify(new Error('test')) → '{}' （Error 属性不可枚举）
+ */
+function safeStringify(v: any): string {
+  if (v == null) return '(null)'
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  // Error / TypeError / DOMException 等
+  if (v instanceof Error) {
+    const parts: string[] = [v.name || 'Error', v.message || '(no message)']
+    if ((v as any).cause) parts.push(`cause=${safeStringify((v as any).cause)}`)
+    return parts.filter(Boolean).join(': ')
+  }
+  // Event 对象
+  if (v instanceof Event) {
+    const code = (v as any).code
+    return code ? v.type + ' (code=' + code + ')' : v.type
+  }
+  // Response 对象
+  if (v instanceof Response) {
+    return `HTTP ${v.status} ${v.statusText}`
+  }
+  // 普通对象 / 数组
+  try {
+    const s = JSON.stringify(v)
+    return s !== '{}' ? s : Object.prototype.toString.call(v)
+  } catch {
+    return Object.prototype.toString.call(v)
+  }
+}
+
 function addLog(level: string, args: any[]) {
   logs.value.push({
     id: ++nextId,
     timestamp: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
     level,
-    message: args.map((a) => typeof a === 'string' ? a : JSON.stringify(a)).join(' '),
+    message: args.map(safeStringify).join(' '),
   })
   if (logs.value.length > 2000) {
     logs.value = logs.value.slice(-1500)

@@ -134,7 +134,7 @@ watch(proto, async (p) => {
     const mod = await p.component()
     loadedComponent.value = mod.default
   } catch (e) {
-    console.error('Failed to load prototype component:', e)
+    console.error('Failed to load prototype component:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
   }
 }, { immediate: true })
 

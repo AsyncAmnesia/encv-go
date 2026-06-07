@@ -493,7 +493,7 @@ function scrollToApiKey() {
             }, 50)
           }
         } catch (e) {
-          console.error('[scrollToApiKey] setFocus failed:', e)
+          console.error('[scrollToApiKey] setFocus failed:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
         }
       }, 400)
       return
@@ -505,7 +505,7 @@ function scrollToApiKey() {
           lightInputs[0].focus({ preventScroll: true })
           lightInputs[0].select()
         } catch (e) {
-          console.error('[scrollToApiKey] light focus failed:', e)
+          console.error('[scrollToApiKey] light focus failed:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
         }
       }, 400)
     }
@@ -808,12 +808,13 @@ async function fetchSettingsModels() {
 
   settingsModelsLoading.value = true
   settingsModelsError.value = ''
+  let url = ''
   try {
     // 关键：必须传 deviceId 给后端！
     // 后端 readAgentConfig(deviceId) 用 deviceId 派生 AES 解密 key，
     // 不传 deviceId 会用错的 key 派生，永远解不出设备绑定的密文。
     const did = await getDeviceId()
-    const url = `${getAgentApiBase()}/api/models?deviceId=${encodeURIComponent(did)}`
+    url = `${getAgentApiBase()}/api/models?deviceId=${encodeURIComponent(did)}`
     const res = await fetch(url)
     if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`)
     const data = await res.json()
@@ -1283,7 +1284,7 @@ onMounted(async () => {
     }
     // offline 时错误态 UI 接管，并依赖 watch(serverOnline) 在后续 online 时重试
   } catch (e) {
-    console.error('[AgentSettingsDetail] onMounted probe failed:', e)
+    console.error('[AgentSettingsDetail] onMounted probe failed:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
   }
 })
 
@@ -1366,7 +1367,7 @@ async function loadConfigSafely() {
     fetchSettingsModels()
   } catch (e: any) {
     const detail = e?.message || String(e)
-    console.error('[AgentSettingsDetail] loadConfig failed:', detail, e)
+    console.error('[AgentSettingsDetail] loadConfig failed:', detail)
     configError.value = detail
     configLoaded.value = false
   }

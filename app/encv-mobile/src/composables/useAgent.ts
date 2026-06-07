@@ -350,7 +350,7 @@ async function buildHttpError(response: Response, endpoint: string): Promise<Err
       : (response.statusText || '请求失败')
   const code = (parsed && typeof parsed.error === 'string') ? parsed.error : 'unknown'
   const detail = `${userMessage}（HTTP ${response.status}）`
-  console.error('[useAgent]', endpoint, 'failed:', detail, parsed || bodyText)
+  console.error('[useAgent]', endpoint, 'failed:', detail)
   const err = new Error(detail) as Error & { code?: string; status?: number }
   err.code = code
   err.status = response.status
@@ -621,7 +621,7 @@ export function useAgent() {
       }
     } catch (e) {
       // 网络/CORS 等错误：保留旧值不丢业务，但提示一次
-      console.warn('[useAgent] refreshServerInstance: fetch /api/health failed:', e)
+      console.warn('[useAgent] refreshServerInstance: fetch /api/health failed:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
     }
   }
 
@@ -1314,7 +1314,7 @@ export function useAgent() {
         if (status.value !== 'idle') status.value = 'idle'
       } else {
         const detail = e?.message || String(e)
-        console.error('[useAgent] send failed:', detail, e)
+      console.error('[useAgent] send failed:', detail)
         if (lastUserMsg) lastUserMsg.error = detail
         // 把后端 buildHttpError 挂的 .code 提取出来（'no_api_key' / 'upstream_error' / 等）。
         // chat UI 据此可以展示"去 AI 设置"快捷按钮，让用户从对话流直达修复点，
@@ -1411,7 +1411,7 @@ export function useAgent() {
       console.debug('[useAgent] sendQueued: 202 Accepted, message parked on server')
     } catch (e: any) {
       const detail = e?.message || String(e)
-      console.error('[useAgent] sendQueued failed:', detail, e)
+      console.error('[useAgent] sendQueued failed:', detail)
       // 出错：把 user 消息从 pendingMessages 摘除并标记 error（保留在
       // messages.value 以便用户看到失败提示）。
       const idx = pendingMessages.value.indexOf(userMsg)
@@ -1484,7 +1484,7 @@ export function useAgent() {
         if (targetTool) targetTool.status = 'pending'
         status.value = 'confirming'
       } else {
-        console.error('[useAgent] confirmTool failed:', e)
+        console.error('[useAgent] confirmTool failed:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
         if (targetTool) targetTool.status = 'pending'
         showToast({ message: 'Confirm request failed', duration: 2000, color: 'danger' })
         status.value = 'confirming'
@@ -1580,7 +1580,7 @@ export function useAgent() {
       }
     } catch (e: any) {
       if (e?.name !== 'AbortError') {
-        console.error('[useAgent] resume failed:', e)
+        console.error('[useAgent] resume failed:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
         finalizeLastAssistant()
         status.value = 'idle'
       }

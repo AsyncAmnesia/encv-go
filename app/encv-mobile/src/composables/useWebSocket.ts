@@ -80,7 +80,7 @@ function handleMessage(event: MessageEvent) {
     }
     eventBus.emit('ws:message', { type: msg.type, data: msg.data })
   } catch (e) {
-    console.error('[ENCV-WS] Failed to parse message:', e)
+    console.error('[ENCV-WS] Failed to parse message:', e instanceof Error ? `${e.name}: ${e.message}` : String(e), 'raw=', event.data?.slice(0, 200))
   }
 }
 
@@ -91,11 +91,12 @@ function connect() {
 
   const url = getWebSocketUrl()
   connectionState.value = 'connecting'
+  console.info(`[ENCV-WS] connecting to ${url} (dev=${import.meta.env.DEV}, origin=${location.origin})`)
 
   try {
     ws = new WebSocket(url)
   } catch (e) {
-    console.error('[ENCV-WS] Failed to create WebSocket:', e)
+    console.error('[ENCV-WS] Failed to create WebSocket:', e instanceof Error ? `${e.name}: ${e.message}` : String(e), `url=${url}`)
     connectionState.value = 'disconnected'
     scheduleReconnect()
     return
@@ -105,6 +106,7 @@ function connect() {
     connectionState.value = 'connected'
     reconnectDelay = 1000
     startHeartbeat()
+    console.info(`[ENCV-WS] connected to ${url}`)
     eventBus.emit('server:status', { online: true })
   }
 
@@ -122,7 +124,8 @@ function connect() {
 
   ws.onerror = () => {
     connectionState.value = 'disconnected'
-    eventBus.emit('server:connection-error', { error: 'Failed to connect to server' })
+    console.error('[ENCV-WS] WebSocket error:', `url=${url}`, `readyState=${ws?.readyState}`)
+    eventBus.emit('server:connection-error', { error: `Failed to connect to ${url}` })
   }
 }
 

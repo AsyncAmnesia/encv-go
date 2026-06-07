@@ -27,7 +27,7 @@ async function loadConfig() {
     // 触发 apiKeyStatus='empty' 等下游状态机全部误判（用户看到空白字段以为是 bug，
     // 实际是 fetch 失败）。改为向上抛错，调用方（AgentSettingsDetail.loadConfigSafely
     // / Settings.vue / PluginSettings.vue）各自决定如何显示错误态。
-    console.error('[ENCV] Failed to load config:', error)
+    console.error('[ENCV] Failed to load config:', error instanceof Error ? `${error.name}: ${error.message}` : String(error))
     loading.value = false
     throw error
   }
@@ -44,7 +44,7 @@ async function saveConfig() {
       restartNeeded.value = true
     }
   } catch (error) {
-    console.error('[ENCV] Failed to save config:', error)
+    console.error('[ENCV] Failed to save config:', error instanceof Error ? `${error.name}: ${error.message}` : String(error))
     throw error
   } finally {
     loading.value = false

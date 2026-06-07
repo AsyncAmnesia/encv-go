@@ -460,7 +460,7 @@ onMounted(async () => {
       // PluginSettings 没有像 AgentSettingsDetail 那样专门的错误态 UI，
       // 这里用 toast 提示 + 静默回退到 configLoaded=true 显示空字段，
       // 与 Settings.vue 的降级策略保持一致。
-      console.error('[PluginSettings] loadConfig failed:', e)
+      console.error('[PluginSettings] loadConfig failed:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
       configLoaded.value = true
     }
     try { await loadExtensions() } catch {}
@@ -477,7 +477,7 @@ watch(serverOnline, async (online) => {
       await loadConfig()
       configLoaded.value = true
     } catch (e) {
-      console.error('[PluginSettings] watch loadConfig failed:', e)
+      console.error('[PluginSettings] watch loadConfig failed:', e instanceof Error ? `${e.name}: ${e.message}` : String(e))
       configLoaded.value = true
     }
   }

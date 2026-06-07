@@ -647,12 +647,9 @@ const modelsError = ref('')
 async function fetchModels() {
   modelsLoading.value = true
   modelsError.value = ''
+  const did = getDeviceIdSync()
+  let url = `${AGENT_API_BASE}/api/models?deviceId=${encodeURIComponent(did)}`
   try {
-    // 关键：必须传 deviceId 给后端！
-    // 后端 handleAgentModels 用 deviceId 派生 AES 解密 key 读取 API Key，
-    // 不传 deviceId 会用错的 key 派生 → 永远解不出设备绑定的密文 → 503
-    const did = getDeviceIdSync()
-    const url = `${AGENT_API_BASE}/api/models?deviceId=${encodeURIComponent(did)}`
     const res = await fetch(url)
     if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`)
     const data = await res.json()
