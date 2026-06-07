@@ -280,11 +280,6 @@ export default {
     'bg.auroraNightDesc': '极夜深蓝，深邃渐变',
     'inputHistory.recent': '最近使用',
     'inputHistory.clear': '清空',
-
-    // ── Agent Mock Mode（设置面板的剧本配置提示） ─────────
-    'settings.mockBuiltinHint': '内置 12 个情景剧本，自动匹配用户输入',
-    'settings.mockCustomHint': '编辑 agent_settings.mock_scenarios 自定义剧本',
-    'settings.mockScenarios': '自定义剧本',
   },
   en: {
     'settings.title': 'Settings',
@@ -563,9 +558,6 @@ export default {
     'bg.auroraNight': 'Aurora Night',
     'bg.auroraNightDesc': 'Aurora night, deep blue',
 
-    // ── Agent Mock Mode (scenario configuration hints in the settings panel) ─────────
-    'settings.mockBuiltinHint': '12 built-in scenarios auto-match user input',
-    'settings.mockCustomHint': 'Edit agent_settings.mock_scenarios to customize',
-    'settings.mockScenarios': 'Custom Scenarios',
+    'inputHistory.clear': 'Clear',
   },
 }

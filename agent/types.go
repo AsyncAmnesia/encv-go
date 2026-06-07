@@ -150,7 +150,7 @@ type ToolResultData struct {
 	Result     string `json:"result"`
 	IsError    bool   `json:"is_error"`
 	Status     string `json:"status"`
-	DurationMs int    `json:"duration_ms"`
+	DurationMs int64  `json:"duration_ms"`
 }
 
 // ToolStatusData is the payload of [EventToolStatus]. It is a

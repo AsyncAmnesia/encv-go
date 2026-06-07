@@ -21,18 +21,29 @@
         <ion-icon :icon="sparkleIcon" class="headerTitleIcon" />
         <span>{{ t('agent.title') }}</span>
         <!--
-          Mock 模式 badge：仅在后端 cfg.Agent.MockMode != "off" 时显示。
-          视觉上贴近标题（flask icon + "模拟" 文案），鼠标悬停时
-          tooltip 显示具体 scenario id 方便开发/测试时辨识。
+          Mock 模式切换器（用户在会话界面直接配置，无需去 Settings → Agent）。
+          三种状态：off / builtin / custom。
+          行为：
+            - 始终显示（让用户随时知道当前是真实 API 还是 mock）
+            - 点击 → 弹 action-sheet 切换模式
+            - mode=off 灰色，builtin/custom 强调色 + 文字"模拟"
+          currentMockMode 由 useAgent 从后端 /api/config 加载，切换时
+          通过 PUT /api/config 持久化（无需重启后端）。
         -->
-        <span
-          v-if="isMockMode"
+        <button
+          type="button"
           class="mockBadge"
-          :title="t('agent.mockBadgeTooltip', { scenario: mockScenario })"
+          :class="{
+            mockBadge_active: currentMockMode !== 'off',
+            mockBadge_clickable: true,
+          }"
+          :title="mockBadgeTitle"
+          @click="openMockModeSheet"
         >
           <ion-icon :icon="flaskIcon" class="mockBadgeIcon" />
-          <span class="mockBadgeText">{{ t('agent.mockBadge') }}</span>
-        </span>
+          <span class="mockBadgeText">{{ mockBadgeText }}</span>
+          <ion-icon :icon="chevronDownIcon" class="mockBadgeChevron" />
+        </button>
       </div>
       <!-- 上下文使用图标（点击 → 弹窗：todos + 引用文件） -->
       <ContextIcon
@@ -427,7 +438,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { IonIcon, modalController, alertController } from '@ionic/vue'
+import { IonIcon, modalController, alertController, actionSheetController } from '@ionic/vue'
 import {
   closeOutline,
   sparklesOutline,
@@ -474,7 +485,7 @@ const { t } = useI18n()
 // Agent API 基础 URL（动态解析：dev 走网关 / prod 直连后端）
 const AGENT_API_BASE = getAgentApiBase()
 
-const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel, setApiDefaultModel, isMockMode, mockScenario } = useAgent()
+const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel, setApiDefaultModel, isMockMode, mockScenario, currentMockMode, loadMockMode, setMockMode } = useAgent()
 const router = useRouter()
 
 /**
@@ -787,6 +798,82 @@ function selectModel(id: string) {
   selectedModel.value = id
 }
 
+// ─── Mock 模式切换器（在会话界面直接配置，弹 action-sheet） ────────
+/**
+ * 徽章文本：根据当前模式显示对应文案
+ *  - off     → "真实 API"   （灰色，提示"未启用 mock"）
+ *  - builtin → "模拟·内置"
+ *  - custom  → "模拟·自定义"
+ */
+const mockBadgeText = computed(() => {
+  if (currentMockMode.value === 'builtin') return `${t('agent.mockBadge')}·${t('agent.mockModeBuiltin')}`
+  if (currentMockMode.value === 'custom') return `${t('agent.mockBadge')}·${t('agent.mockModeCustom')}`
+  return t('agent.mockModeOff')
+})
+
+/**
+ * 徽章 tooltip：
+ *  - active 时显示当前 scenario id（来自最近一次 SSE 响应）
+ *  - off 时显示"点击切换模式"
+ */
+const mockBadgeTitle = computed(() => {
+  if (currentMockMode.value === 'off') return t('agent.mockMode')
+  if (isMockMode.value && mockScenario.value) {
+    return t('agent.mockBadgeTooltip', { scenario: mockScenario.value })
+  }
+  return t('agent.mockMode')
+})
+
+/**
+ * 点击徽章 → 弹 action-sheet 让用户选 off/builtin/custom
+ * 切换经由 useAgent.setMockMode() 走 PUT /api/config 持久化
+ */
+async function openMockModeSheet(): Promise<void> {
+  const current = currentMockMode.value
+  const sheet = await actionSheetController.create({
+    header: t('agent.mockMode'),
+    buttons: [
+      {
+        text: t('agent.mockModeOff'),
+        handler: () => { void switchMockMode('off') },
+      },
+      {
+        text: t('agent.mockModeBuiltin'),
+        handler: () => { void switchMockMode('builtin') },
+      },
+      {
+        text: t('agent.mockModeCustom'),
+        handler: () => { void switchMockMode('custom') },
+      },
+      {
+        text: t('common.cancel'),
+        role: 'cancel',
+      },
+    ],
+  })
+  await sheet.present()
+  // 当前模式额外加 checked 标记（视觉反馈）—— 需要在 sheet 创建后 patch
+  // （Ionic 8 actionSheet 暂不支持 per-button checked，这里仅控制文本可见性）
+  void current
+}
+
+async function switchMockMode(mode: 'off' | 'builtin' | 'custom'): Promise<void> {
+  try {
+    await setMockMode(mode)
+    showToast({
+      message: t('agent.mockModeSet', { mode: t(`agent.mockMode${mode.charAt(0).toUpperCase()}${mode.slice(1)}`) }) || `Mock mode: ${mode}`,
+      duration: 1600,
+      color: mode === 'off' ? 'medium' : 'success',
+    })
+  } catch (e) {
+    showToast({
+      message: `${t('agent.mockModeSetFailed') || '切换失败'}: ${e instanceof Error ? e.message : String(e)}`,
+      duration: 2400,
+      color: 'danger',
+    })
+  }
+}
+
 /** 点击外部关闭下拉 */
 function handleModelPickerOutsideClick(e: MouseEvent) {
   if (modelPickerOpen.value && modelPickerRef.value && !modelPickerRef.value.contains(e.target as Node)) {
@@ -1060,6 +1147,8 @@ onMounted(async () => {
   fetchModels()
   // 启动时尝试恢复最近 session
   await resume()
+  // 加载当前 mock 模式（用户主动控制 → action-sheet 切换）
+  void loadMockMode()
   nextTick(() => scrollToBottom('auto'))
   // 模型选择器：点击外部关闭下拉
   document.addEventListener('click', handleModelPickerOutsideClick)
@@ -1132,12 +1221,13 @@ defineExpose({})
   font-size: 18px;
 }
 
-/* ── Mock 模式 badge（紧贴标题右侧，仅 isMockMode=true 时显示） ── */
+/* ── Mock 模式切换器（始终可见、可点击、反映当前模式） ── */
 .mockBadge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 3px 8px;
+  border: 0;
   border-radius: 12px;
   background: rgba(var(--ion-color-medium-rgb), 0.12);
   color: var(--ion-color-medium);
@@ -1145,15 +1235,47 @@ defineExpose({})
   font-weight: 500;
   line-height: 1.4;
   user-select: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.mockBadge:hover {
+  background: rgba(var(--ion-color-medium-rgb), 0.22);
+}
+
+.mockBadge:active {
+  transform: scale(0.96);
+}
+
+.mockBadge:focus-visible {
+  outline: 2px solid var(--ion-color-primary);
+  outline-offset: 1px;
+}
+
+/* 启用 mock（builtin / custom）时的强调色 */
+.mockBadge_active {
+  background: rgba(var(--ion-color-primary-rgb), 0.16);
+  color: var(--ion-color-primary);
+}
+
+.mockBadge_active:hover {
+  background: rgba(var(--ion-color-primary-rgb), 0.24);
 }
 
 .mockBadgeIcon {
   font-size: 12px;
-  color: var(--ion-color-medium);
+  color: inherit;
 }
 
 .mockBadgeText {
   letter-spacing: 0.02em;
+}
+
+.mockBadgeChevron {
+  font-size: 10px;
+  color: inherit;
+  opacity: 0.7;
 }
 
 .agentChatMain {

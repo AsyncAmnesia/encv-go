@@ -1053,7 +1053,7 @@ func TestAgent_RunTool_TimesHandlerExecution(t *testing.T) {
 			return `{"ok":true}`, nil
 		},
 	}
-	out, status, err := a.runTool(def, `{}`)
+	out, status, _, err := a.runTool(def, `{}`)
 	if err != nil {
 		t.Errorf("runTool returned error: %v", err)
 	}
@@ -1069,7 +1069,7 @@ func TestAgent_RunTool_TimesHandlerExecution(t *testing.T) {
 			return "", errors.New("boom")
 		},
 	}
-	out, status, err = a.runTool(def, `{}`)
+	out, status, _, err = a.runTool(def, `{}`)
 	if err == nil {
 		t.Errorf("expected error")
 	}

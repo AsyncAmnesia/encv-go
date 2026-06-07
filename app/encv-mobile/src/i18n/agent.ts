@@ -190,8 +190,8 @@ export default {
     'agent.mockModeOff': '关闭（真实 API）',
     'agent.mockModeBuiltin': '内置剧本',
     'agent.mockModeCustom': '自定义剧本',
-    'agent.mockSpeed': '播放速度',
-    'agent.mockSpeedHelp': '1.0 = 正常速度，0.1 = 慢放，10 = 快进',
+    'agent.mockModeSet': '已切换到：{mode}',
+    'agent.mockModeSetFailed': '切换 mock 模式失败',
   },
   en: {
     'agent.title': 'AI Assistant',
@@ -383,7 +383,7 @@ export default {
     'agent.mockModeOff': 'Off (Real API)',
     'agent.mockModeBuiltin': 'Built-in Scenarios',
     'agent.mockModeCustom': 'Custom Scenarios',
-    'agent.mockSpeed': 'Playback Speed',
-    'agent.mockSpeedHelp': '1.0 normal, 0.1 slow, 10 fast',
+    'agent.mockModeSet': 'Switched to: {mode}',
+    'agent.mockModeSetFailed': 'Failed to switch mock mode',
   },
 }

@@ -674,6 +674,66 @@ export function useAgent() {
   const isMockMode = ref(false)
   const mockScenario = ref<string>('')
 
+  // ─── Mock 模式控制（用户从 AgentChat 顶栏的"🧪 模拟"badge 切换） ──
+  // 字段语义与后端 cfg.Agent.MockMode 一一对应：
+  //   - 'off'     → 真实 LLM 调用（默认）
+  //   - 'builtin' → 内置 12 个剧本
+  //   - 'custom'  → config.user.json 中 agent_settings.mock_scenarios
+  //
+  // 修改后会立刻调 PUT /api/config 持久化到后端 config.user.json，
+  // 下次会话起立即生效（无需重启后端）。
+  type MockMode = 'off' | 'builtin' | 'custom'
+  const currentMockMode = ref<MockMode>('off')
+
+  async function loadMockMode() {
+    try {
+      const resp = await fetch(`${AGENT_API_BASE}/api/config`)
+      if (!resp.ok) {
+        console.debug('[MockMode] fetch /api/config failed: HTTP', resp.status)
+        return
+      }
+      const cfg = (await resp.json()) as {
+        agent_settings?: { mock_mode?: string }
+      }
+      const m = String(cfg?.agent_settings?.mock_mode ?? 'off').toLowerCase()
+      currentMockMode.value =
+        m === 'builtin' || m === 'custom' ? (m as MockMode) : 'off'
+    } catch (e) {
+      console.debug('[MockMode] load failed:', e)
+    }
+  }
+
+  async function setMockMode(mode: MockMode) {
+    if (mode === currentMockMode.value) return
+    try {
+      // 必须整张 config 一并 PUT（后端会保留非 agent_settings 字段）。
+      const getResp = await fetch(`${AGENT_API_BASE}/api/config`)
+      if (!getResp.ok) throw new Error(`fetch /api/config → HTTP ${getResp.status}`)
+      const cfg = (await getResp.json()) as Record<string, unknown>
+      const agentSettings = (cfg.agent_settings as Record<string, unknown> | undefined) ?? {}
+      agentSettings.mock_mode = mode
+      cfg.agent_settings = agentSettings
+      const putResp = await fetch(`${AGENT_API_BASE}/api/config`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cfg),
+      })
+      if (!putResp.ok) {
+        const errText = await putResp.text()
+        throw new Error(`PUT /api/config → HTTP ${putResp.status}: ${errText}`)
+      }
+      currentMockMode.value = mode
+      // 立即重置 isMockMode：下次 send 时再由 SSE stream_start 事件重新置位
+      isMockMode.value = false
+      mockScenario.value = ''
+      console.info('[MockMode] set to', mode)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      console.error('[MockMode] setMockMode failed:', msg)
+      throw e
+    }
+  }
+
   // ─── 内部辅助 ───────────────────────────────────────────────────────────
 
   /**
@@ -1856,6 +1916,10 @@ export function useAgent() {
     // 事件或 X-Mock-Mode header 触发，UI 据此展示"🧪 模拟"badge。
     isMockMode,
     mockScenario,
+    // 用户主动切换（AgentChat 顶栏的"🧪 模拟"badge → action-sheet 触发）
+    currentMockMode,
+    loadMockMode,
+    setMockMode,
     // Task 4：以下为测试专用钩子。生产代码不应调用——所有 serverInstance
     // 同步都由 useAgent 内部 await refreshServerInstance() 完成。
     __refreshServerInstanceForTest: refreshServerInstance,

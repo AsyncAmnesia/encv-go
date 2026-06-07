@@ -11,9 +11,13 @@ import (
 // default for the OpenList tool calls. The deadline is large
 // enough to absorb the typical small-list operation without
 // firing in normal use.
-func httpContext() context.Context {
-	ctx, _ := context.WithTimeout(context.Background(), 30*time.Second)
-	return ctx
+//
+// The caller is responsible for calling the returned cancel
+// function to release the timer immediately (M4: previously
+// the cancel was discarded, which `go vet` flags and which
+// delays the timer GC by 30s even after the request finishes).
+func httpContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 30*time.Second)
 }
 
 // OpenList tool schemas. Each is a small
