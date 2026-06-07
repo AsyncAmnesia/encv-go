@@ -678,9 +678,23 @@ export async function fetchConfig(): Promise<Record<string, unknown>> {
     let detail = `HTTP ${response.status}`
     try {
       const body = await response.text()
-      if (body) detail += `: ${body}`
+      if (body) detail += `: ${body.slice(0, 200)}`
     } catch {}
     throw new Error(detail)
+  }
+  // 关键健壮性：vite dev SPA fallback 对未匹配的路径返回 index.html
+  // （即 <!DOCTYPE html>...），如果响应是 HTML 而不是 JSON，
+  // 说明 baseUrl 配错或请求被错误地路由到了 vite dev server。
+  // 抛出明确错误，避免上游 JSON.parse 报 "Unexpected token '<'"。
+  const contentType = response.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    const snippet = (await response.text()).slice(0, 200)
+    throw new Error(
+      `fetchConfig: response is not JSON (content-type: "${contentType}"). ` +
+      `This usually means /api is being routed to vite dev SPA fallback instead of the Go backend. ` +
+      `Use the preview-gateway :16666 entry, not vite :8100 directly. ` +
+      `Body: ${snippet}`,
+    )
   }
   return await response.json()
 }
