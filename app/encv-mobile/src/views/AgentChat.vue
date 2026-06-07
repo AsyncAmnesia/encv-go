@@ -652,8 +652,9 @@ async function fetchModels() {
     // 后端 handleAgentModels 用 deviceId 派生 AES 解密 key 读取 API Key，
     // 不传 deviceId 会用错的 key 派生 → 永远解不出设备绑定的密文 → 503
     const did = getDeviceIdSync()
-    const res = await fetch(`${AGENT_API_BASE}/api/models?deviceId=${encodeURIComponent(did)}`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const url = `${AGENT_API_BASE}/api/models?deviceId=${encodeURIComponent(did)}`
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`)
     const data = await res.json()
     // 处理各种错误状态
     if (data.error === 'no_api_key') {
@@ -674,9 +675,14 @@ async function fetchModels() {
       selectedModel.value = data.defaultModel || availableModels.value[0].id
     }
   } catch (e: any) {
-    console.error('[AgentChat] fetchModels failed:', e?.message || e?.toString?.() || JSON.stringify(e) || '(unknown error)')
+    const errInfo = (() => {
+      if (!e) return '(null)'
+      if (e instanceof Error) return `${e.name}: ${e.message}`
+      try { return JSON.stringify(e) } catch { return String(e) }
+    })()
+    console.error(`[AgentChat] fetchModels failed: url=${url} error=${errInfo}`)
     // 网络错误等：不阻断用户使用，显示提示但保留已存储的模型选择
-    modelsError.value = t('agent.modelsError')
+    modelsError.value = `${t('agent.modelsError')} (${errInfo})`
   } finally {
     modelsLoading.value = false
   }

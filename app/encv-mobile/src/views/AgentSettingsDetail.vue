@@ -358,6 +358,19 @@ import ConfigFieldItem from '@/components/ConfigFieldItem.vue'
 import InputWithHistory from '@/components/InputWithHistory.vue'
 import { useRouter } from 'vue-router'
 
+/** 健壮的错误序列化 — 处理 TypeError/DOMException/AbortError/普通 Error 等所有情况 */
+function serializeError(e: unknown): string {
+  if (!e) return '(null error)'
+  if (e instanceof Error) {
+    // TypeError: Failed to fetch / DOMException: NetworkError 等
+    const parts: string[] = [e.name || 'Error', e.message || '(no message)']
+    if ((e as any).cause) parts.push(`cause=${serializeError((e as any).cause)}`)
+    return parts.filter(Boolean).join(': ')
+  }
+  if (typeof e === 'string') return e
+  try { return JSON.stringify(e) } catch { return String(e) }
+}
+
 const { isOnline: serverOnline, checkStatus: checkServerStatusNow } = useServerStatus()
 const { schemaFields, loading: configLoading, dirty, loadConfig, saveConfig, resetConfig, getFieldValue, setFieldValue, resetFieldToDefault } = useConfig()
 const { t, tField } = useI18n()
@@ -800,8 +813,9 @@ async function fetchSettingsModels() {
     // 后端 readAgentConfig(deviceId) 用 deviceId 派生 AES 解密 key，
     // 不传 deviceId 会用错的 key 派生，永远解不出设备绑定的密文。
     const did = await getDeviceId()
-    const res = await fetch(`${getAgentApiBase()}/api/models?deviceId=${encodeURIComponent(did)}`)
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const url = `${getAgentApiBase()}/api/models?deviceId=${encodeURIComponent(did)}`
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`)
     const data = await res.json()
     if (data.error && data.error === 'no_api_key') {
       // 罕见路径：API Key 状态显示正常但后端拿不到（并发竞态 / 配置 reload 中）
@@ -816,8 +830,9 @@ async function fetchSettingsModels() {
       }))
     }
   } catch (e: any) {
-    console.error('[AgentSettings] fetchModels failed:', e?.message || e?.toString?.() || JSON.stringify(e) || '(unknown error)')
-    settingsModelsError.value = e?.message || String(e)
+    const errInfo = serializeError(e)
+    console.error(`[AgentSettings] fetchModels failed: url=${url} error=${errInfo}`)
+    settingsModelsError.value = `网络错误 (${errInfo})`
   } finally {
     settingsModelsLoading.value = false
   }
