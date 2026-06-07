@@ -76,6 +76,7 @@ const emit = defineEmits<{
   reset: []
   'commit-history': [value: string]
   'keyup-enter': []
+  blur: []
 }>()
 
 const { t } = useI18n()

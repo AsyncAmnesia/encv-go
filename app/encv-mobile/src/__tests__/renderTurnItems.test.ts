@@ -196,11 +196,9 @@ describe('stripLeadingToolCallJson', () => {
 
   it('returns original when JSON has no known tool keys', async () => {
     const fn = await getStripFn()
-    const input = '{ "name": "test", "value": 42 }some text'
-    // name is in TOOL_CALL_JSON_KEYS but value is not — but name alone isn't enough
-    // Actually "name" IS in the set, so this WOULD be stripped. Let me use non-tool keys.
-    const input2 = '{ "foo": "bar", "baz": [1,2] }some text'
-    expect(fn(input2)).toBe('{ "foo": "bar", "baz": [1,2] }some text')
+    const input = '{ "foo": "bar", "baz": [1,2] }some text'
+    // JSON with non-tool keys should not be stripped
+    expect(fn(input)).toBe('{ "foo": "bar", "baz": [1,2] }some text')
   })
 
   it('returns original when JSON is not at start', async () => {

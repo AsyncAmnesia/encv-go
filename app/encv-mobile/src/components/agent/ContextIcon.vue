@@ -46,7 +46,7 @@
     <ContextPopover
       v-if="isOpen"
       :data="data"
-      :loading="loading"
+      :loading="loading ?? false"
       @close="closePopover"
     />
   </ion-popover>

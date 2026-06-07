@@ -124,7 +124,7 @@ const shouldCollapse = computed(() => {
   if (props.subTasks.length > AGENT_TASK_COLLAPSE_LINE_COUNT) return true
   const totalChars = props.subTasks.reduce(
     (acc, t) => acc + (t.description?.length ?? 0),
-    acc,
+    0,
   )
   return totalChars > AGENT_TASK_COLLAPSE_CHAR_COUNT
 })
