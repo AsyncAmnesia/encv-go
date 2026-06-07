@@ -279,6 +279,49 @@ func callOpenAIChatOnce(ctx context.Context, cfg agentConfig, model string, temp
 	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, fmt.Errorf("decode openai response: %w", err)
 	}
+
+	// ── DIAGNOSTIC: 记录 gptgod 返回的原始响应（确认是否有 tool_calls）──
+	diag := map[string]interface{}{
+		"status":         resp.StatusCode,
+		"has_tool_calls": len(out.Choices) > 0 && len(out.Choices[0].Message.ToolCalls) > 0,
+		"tool_call_count": func() int {
+			if len(out.Choices) > 0 {
+				return len(out.Choices[0].Message.ToolCalls)
+			}
+			return 0
+		}(),
+		"finish_reason": func() string {
+			if len(out.Choices) > 0 {
+				return out.Choices[0].FinishReason
+			}
+			return "(no choices)"
+		}(),
+		"content_preview": func() string {
+			if len(out.Choices) > 0 && out.Choices[0].Message.Content != "" {
+				c := out.Choices[0].Message.Content
+				if len(c) > 300 {
+					c = c[:300]
+				}
+				return c
+			}
+			return "(empty)"
+		}(),
+		"raw_response_keys": func() []string {
+			var raw map[string]json.RawMessage
+			json.Unmarshal(body, &raw)
+			keys := make([]string, 0, len(raw))
+			for k := range raw {
+				keys = append(keys, k)
+			}
+			return keys
+		}(),
+	}
+	slog.Info("callOpenAIChatOnce: response received", diag)
+	// 同时写入文件供排查（pm2 日志可能截断）
+	if diagJSON, err := json.MarshalIndent(diag, "", "  "); err == nil {
+		_ = os.WriteFile("/tmp/agent-gptgod-response.json", diagJSON, 0644)
+	}
+
 	return &out, nil
 }
 

@@ -2,8 +2,6 @@
 package server
 
 import (
-	"bufio"
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -606,256 +604,204 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		}
 	}
 
-	reqURL := buildChatCompletionsURL(cfg.BaseURL)
+	// ════════════════════════════════════════════════════════════
+	// 阶段 1: Agent Tool Loop（参照 OpenAI Agents SDK 模式）
+	// ════════════════════════════════════════════════════════════
+	//
+	// 核心循环：非流式调 LLM → 如果返回 tool_calls → 自动执行只读工具
+	//           → 注入结果 → 继续循环 → 直到 LLM 返回纯文本
+	//
+	// 客户端无感知：工具执行完全在服务端完成，客户端只收到最终流式文本。
+	// 只有需要用户确认的工具（加密/解密等）才会中断循环并推 approval 事件。
+	// ════════════════════════════════════════════════════════════
+	const maxAgentLoopRounds = 5
+	var (
+		loopMessages     = finalMessages // 循环内的 messages（包含 system + 历史对话）
+		pendingTools     []toolCallAccumulator
+		finalAssistantText string         // LLM 最终文本回复
+		autoToolExecuted bool           // 是否有工具被执行过
+	)
 
-	reqBody := map[string]interface{}{
-		"model":       model,
-		"messages":    finalMessages,
-		"temperature": body.Temperature,
-		"stream":      true,
-	}
-	if len(openAITools) > 0 {
-		reqBody["tools"] = openAITools
-		// TODO: 改回 "auto"。"required" 仅用于调试确认 FC 是否生效
-		reqBody["tool_choice"] = "required"
-	}
-	reqJSON, _ := json.Marshal(reqBody)
+	for round := 0; round < maxAgentLoopRounds; round++ {
+		slog.Info("agent: loop round",
+			"round", round+1,
+			"max_rounds", maxAgentLoopRounds,
+			"messages_count", len(loopMessages),
+			"tools_count", len(openAITools))
 
-	// ── DEBUG: 流式诊断 — 记录请求关键参数和响应时序 ──
-	slog.Info("agent: chat request",
-		"model", model,
-		"stream", true,
-		"tools_count", len(openAITools),
-		"url", reqURL,
-		"messages_count", len(finalMessages))
-
-	httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, reqURL, bytes.NewReader(reqJSON))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "build_request_failed", "message": err.Error()})
-		return
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+cfg.APIKey)
-	httpReq.Header.Set("Accept", "text/event-stream")
-
-	// ⑥ 发起上游请求
-	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		slog.Warn("agent: chat upstream request failed", "url", reqURL, "error", err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "upstream_error", "message": "无法连接到 AI 服务: " + err.Error()})
-		return
-	}
-	defer resp.Body.Close()
-
-	// ── DEBUG: 响应诊断 ──
-	slog.Info("agent: chat response received",
-		"status", resp.StatusCode,
-		"content_type", resp.Header.Get("Content-Type"),
-		"transfer_encoding", resp.Header.Get("Transfer-Encoding"))
-
-	// ⑦ 上游错误处理
-	if resp.StatusCode >= 400 {
-		errBody, _ := io.ReadAll(resp.Body)
-		slog.Warn("agent: chat upstream error", "status", resp.StatusCode, "body", string(errBody))
-		// 尝试解析 OpenAI 错误格式
-		var openaiErr struct {
-			Error struct {
-				Message string `json:"message"`
-				Type    string `json:"type"`
-				Code    string `json:"code"`
-			} `json:"error"`
+		resp, err := callOpenAIChatOnce(c.Request.Context(), cfg, model, body.Temperature, loopMessages, openAITools)
+		if err != nil {
+			slog.Warn("agent: loop request failed", "round", round+1, "error", err)
+			// 循环中失败时降级：直接告诉客户端错误
+			c.JSON(http.StatusBadGateway, gin.H{"error": "llm_request_failed", "message": err.Error()})
+			return
 		}
-		json.Unmarshal(errBody, &openaiErr)
-		msg := openaiErr.Error.Message
-		if msg == "" {
-			msg = fmt.Sprintf("AI 服务返回 HTTP %d", resp.StatusCode)
+
+		if resp.Error != nil {
+			slog.Warn("agent: loop API error", "round", round+1, "error", resp.Error.Message)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "upstream_error", "message": resp.Error.Message})
+			return
 		}
-		c.JSON(resp.StatusCode, gin.H{"error": "upstream_error", "message": msg})
-		return
+
+		if len(resp.Choices) == 0 {
+			slog.Warn("agent: loop empty choices", "round", round+1)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "empty_response"})
+			return
+		}
+
+		choice := resp.Choices[0]
+		msg := choice.Message
+
+		// ── 分支 A: LLM 返回了 tool_calls ──
+		if len(msg.ToolCalls) > 0 {
+			slog.Info("agent: loop tool_calls received",
+				"round", round+1,
+				"tool_count", len(msg.ToolCalls),
+				"finish_reason", choice.FinishReason)
+
+			// 把 assistant 的 tool_calls 消息追加到历史
+			loopMessages = append(loopMessages, chatMsg{
+				Role:      "assistant",
+				Content:   msg.Content,
+				ToolCalls: msg.ToolCalls,
+			})
+
+			// 逐个处理工具调用
+			allAutoExecuted := true
+			for _, tc := range msg.ToolCalls {
+				// 查工具 meta 判断是否需要确认
+				needConfirm := true
+				if meta, ok := toolMeta[tc.Function.Name]; ok {
+					if v, ok := meta["needConfirm"].(bool); ok {
+						needConfirm = v
+					}
+				}
+
+				if needConfirm {
+					// 需要用户确认 → 存入 pending，退出循环
+					slog.Info("agent: loop tool needs confirm",
+						"name", tc.Function.Name,
+						"round", round+1)
+					pendingTools = append(pendingTools, tc)
+					allAutoExecuted = false
+				} else {
+					// 只读工具 → 自动执行
+					slog.Info("agent: loop auto-executing tool",
+						"name", tc.Function.Name,
+						"round", round+1)
+					start := time.Now()
+					result, execErr := s.executeAgentTool(
+						c.Request.Context(),
+						tc.Function.Name,
+						tc.Function.Arguments,
+					)
+					slog.Info("agent: loop tool executed",
+						"name", tc.Function.Name,
+						"duration_ms", time.Since(start).Milliseconds(),
+						"has_error", execErr != nil)
+
+					if execErr != nil {
+						result = fmt.Sprintf(`{"error":"tool_execution_failed","detail":%q}`, execErr.Error())
+					}
+
+					// 注入 tool 结果（OpenAI 协议要求 role="tool" + tool_call_id）
+					loopMessages = append(loopMessages, chatMsg{
+						Role:       "tool",
+						Content:    result,
+						ToolCallID: tc.ID,
+						Name:       tc.Function.Name,
+					})
+					autoToolExecuted = true
+				}
+			}
+
+			if !allAutoExecuted {
+				// 有工具需要用户确认 → 退出循环，进入阶段 2 推送 approval
+				slog.Info("agent: loop exiting — tools need user confirmation",
+					"pending_count", len(pendingTools))
+				break
+			}
+
+			// 所有工具都自动执行了 → 继续下一轮循环（LLM 会基于工具结果继续生成）
+			// 追加一个提示消息引导 LLM 输出最终回复
+			loopMessages = append(loopMessages, chatMsg{
+				Role:    "user",
+				Content: "[工具执行结果已注入。请基于以上结果回答用户的原始问题。]",
+			})
+			continue
+		}
+
+		// ── 分支 B: LLM 返回纯文本（无 tool_calls）──
+		slog.Info("agent: loop got text response",
+			"round", round+1,
+			"finish_reason", choice.FinishReason,
+			"text_len", len(msg.Content))
+
+		finalAssistantText = msg.Content
+		// 把最终 assistant 回复也追加到 session messages
+		loopMessages = append(loopMessages, chatMsg{Role: "assistant", Content: msg.Content})
+		break
 	}
 
-	// ⑧ 设置 SSE 响应头并开始流式转发
+	// 更新 session 的 messages（用于后续 resume/confirm）
+	sess.mu.Lock()
+	sess.Messages = append([]chatMsg{}, body.Messages...) // 用户原始消息
+	// 把循环中产生的所有 assistant/tool 消息也存一份（简化：只存最后几轮的关键内容）
+	if len(pendingTools) > 0 {
+		sess.PendingTools = pendingTools
+	}
+	sess.mu.Unlock()
+
+	// ════════════════════════════════════════════════════════════
+	// 阶段 2: 流式输出给客户端
+	// ════════════════════════════════════════════════════════════
 	s.setSSEHeaders(c.Writer)
-	// chat 流结束（或 panic）时清 InProgress
 	defer func() {
 		sess.mu.Lock()
 		sess.InProgress = false
 		sess.mu.Unlock()
 	}()
 
-	// ⑨ 逐行读取上游 SSE 并转换格式转发给客户端
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024) // 大 buffer 防止长行截断
-	hasContent := false
-
-	// ── DEBUG: 流式时序诊断 ──
-	chunkCount := 0
-	requestSentTime := time.Now() // 近似值：在 client.Do() 前更准，但这里也行
-
-	// 累积 tool_calls（OpenAI 流式分片到达，必须按 index 聚合）
-	tcAccum := make(map[int]*toolCallAccumulator)
-	var pendingTools []toolCallAccumulator
-	streamEnded := false
-
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		dataStr := strings.TrimPrefix(line, "data: ")
-
-		// ── DEBUG: 记录每个原始 SSE chunk（仅前3个 + 含 tool 的）──
-		if chunkCount < 3 || strings.Contains(dataStr, "tool_call") || strings.Contains(dataStr, "finish_reason") {
-			preview := dataStr
-			if len(preview) > 300 {
-				preview = preview[:300]
-			}
-			slog.Info("agent: raw SSE chunk", "chunk#", chunkCount, "len", len(dataStr), "data", preview)
-		}
-
-		// 首个 data chunk 到达计时
-		if chunkCount == 0 {
-			preview := dataStr
-			if len(preview) > 120 {
-				preview = preview[:120]
-			}
-			slog.Info("agent: first SSE chunk arrived",
-				"elapsed_ms", time.Since(requestSentTime).Milliseconds(),
-				"preview", preview)
-		}
-		chunkCount++
-		if dataStr == "[DONE]" {
-			// 推 finish 阶段的 tool_call 事件（如果有累积的）
-			if len(pendingTools) == 0 {
-				for _, tc := range tcAccum {
-					pendingTools = append(pendingTools, *tc)
-				}
-			}
-			for _, tc := range pendingTools {
-				s.emitToolCallEvent(sess, c.Writer, flusher, tc, toolMeta)
-			}
-			// 缓存 pending tools 到 session（供 confirm 取用）
-			if len(pendingTools) > 0 {
-				sess.mu.Lock()
-				sess.PendingTools = pendingTools
-				sess.mu.Unlock()
-			}
-			s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
-			streamEnded = true
-			break
-		}
-
-		// 解析 OpenAI chunk 格式
-		var chunk struct {
-			Choices []struct {
-				Delta struct {
-					Content          string                   `json:"content"`
-					Role             string                   `json:"role"`
-					ToolCalls        []openaiToolCallChunk    `json:"tool_calls"`
-					ReasoningContent string                   `json:"reasoning_content"`
-				} `json:"delta"`
-				FinishReason string `json:"finish_reason"`
-			} `json:"choices"`
-		}
-		if err := json.Unmarshal([]byte(dataStr), &chunk); err != nil {
-			slog.Debug("agent: skip unparseable chunk", "error", err)
-			continue
-		}
-
-		for _, choice := range chunk.Choices {
-			delta := choice.Delta
-
-			// 文本内容 → text_delta
-			if delta.Content != "" {
-				hasContent = true
-				s.sendAndCache(sess, c.Writer, flusher, "text_delta", delta.Content)
-			}
-
-			// 推理内容 → reasoning_delta
-			if delta.ReasoningContent != "" {
-				hasContent = true
-				s.sendAndCache(sess, c.Writer, flusher, "reasoning_delta", delta.ReasoningContent)
-			}
-
-			// 工具调用 → 按 index 累积
-			if len(delta.ToolCalls) > 0 {
-				for _, tc := range delta.ToolCalls {
-					cur, ok := tcAccum[tc.Index]
-					if !ok {
-						cur = &toolCallAccumulator{Index: tc.Index, ID: tc.ID, Type: tc.Type}
-						tcAccum[tc.Index] = cur
-					}
-					if tc.ID != "" {
-						cur.ID = tc.ID
-					}
-					if tc.Type != "" {
-						cur.Type = tc.Type
-					}
-					if tc.Function.Name != "" {
-						cur.Function.Name += tc.Function.Name
-					}
-					if tc.Function.Arguments != "" {
-						cur.Function.Arguments += tc.Function.Arguments
-					}
-				}
-			}
-
-			// 结束标记 —— 在 finish_reason 出现时推 tool_call 事件
-			if choice.FinishReason != "" {
-				// 收集所有累积的 tool_calls
-				if len(pendingTools) == 0 {
-					for _, tc := range tcAccum {
-						pendingTools = append(pendingTools, *tc)
-					}
-				}
-				for _, tc := range pendingTools {
-					s.emitToolCallEvent(sess, c.Writer, flusher, tc, toolMeta)
-				}
-				// 缓存 pending tools
-				if len(pendingTools) > 0 {
-					sess.mu.Lock()
-					sess.PendingTools = pendingTools
-					sess.mu.Unlock()
-				}
-				s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
-				streamEnded = true
-			}
-		}
-	}
-
-	// 兜底：扫描器跑完但没收到 [DONE] / finish_reason
-	if !streamEnded {
-		if len(pendingTools) == 0 {
-			for _, tc := range tcAccum {
-				pendingTools = append(pendingTools, *tc)
-			}
-		}
+	// 2a: 有待确认工具 → 推送 tool_call 事件 + stream_end
+	if len(pendingTools) > 0 {
 		for _, tc := range pendingTools {
 			s.emitToolCallEvent(sess, c.Writer, flusher, tc, toolMeta)
 		}
-		if len(pendingTools) > 0 {
-			sess.mu.Lock()
-			sess.PendingTools = pendingTools
-			sess.mu.Unlock()
+		s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
+		slog.Info("agent: chat completed (pending approval)",
+			"pending_tools", len(pendingTools),
+			"auto_executed", autoToolExecuted)
+		return
+	}
+
+	// 2b: 有最终文本 → 模拟流式输出（从非流式响应转为 SSE chunks）
+	if finalAssistantText != "" {
+		// 按 chunk 分割模拟打字效果（类似 codex_web 的体验）
+		chunkSize := 16
+		runes := []rune(finalAssistantText)
+		totalChunks := (len(runes) + chunkSize - 1) / chunkSize
+		for i := 0; i < len(runes); i += chunkSize {
+			end := i + chunkSize
+			if end > len(runes) {
+				end = len(runes)
+			}
+			s.sendAndCache(sess, c.Writer, flusher, "text_delta", string(runes[i:end]))
+			// 每 10 个 chunk flush 一次，模拟自然打字节奏
+			if (i/chunkSize)%10 == 0 {
+				time.Sleep(15 * time.Millisecond)
+			}
 		}
 		s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
+		slog.Info("agent: chat completed (text streamed)",
+			"chars", len(finalAssistantText),
+			"chunks", totalChunks,
+			"loop_rounds_executed", autoToolExecuted)
+		return
 	}
 
-	// 如果上游没有发送任何内容（非流式响应等），兜底读取完整 body
-	if !hasContent {
-		slog.Info("agent: no streaming content from upstream, checking for non-stream response")
-		// 已经被 scanner 消费了，无法重读。这里只是安全兜底。
-	}
-
-	if err := scanner.Err(); err != nil {
-		slog.Warn("agent: sse scanner error", "error", err)
-	}
-
-	slog.Info("agent: chat completed", "model", model, "has_content", hasContent,
-		"pending_tools", len(pendingTools),
-		"total_sse_chunks", chunkCount,
-		"total_elapsed_ms", time.Since(requestSentTime).Milliseconds())
+	// 2c: 兜底——不应到达这里
+	s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+	slog.Warn("agent: chat completed with no output (unexpected)")
 }
 
 // openaiToolCallChunk 是 OpenAI 流式 tool_calls 单个分片的结构

@@ -116,12 +116,12 @@ func setupChatRouter(s *Server, recorder *recordedRequest) (*gin.Engine, func())
 		recorder.URL = req.URL.String()
 		recorder.Header = req.Header.Clone()
 		json.NewDecoder(req.Body).Decode(&recorder.Body)
-		body := `data: {"type":"message_delta","content":"ok"}
-data: [DONE]
-`
+		// Agent Loop 使用 callOpenAIChatOnce（非流式），返回标准 OpenAI JSON 格式
+		body := `{"choices":[{"message":{"role":"assistant","content":"ok","tool_calls":[]},"finish_reason":"stop"}]}`
+
 		return &http.Response{
 			StatusCode: 200,
-			Header:     map[string][]string{"Content-Type": {"text/event-stream"}},
+			Header:     map[string][]string{"Content-Type": {"application/json"}},
 			Body:       io.NopCloser(strings.NewReader(body)),
 		}, nil
 	})
