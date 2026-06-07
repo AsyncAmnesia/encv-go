@@ -15,6 +15,7 @@
       <ion-icon :icon="documentTextIcon" class="fileContentCardIcon" />
       <span class="fileContentCardTitle">{{ titleText }}</span>
       <span v-if="parsed.error && !rawResult" class="fileContentCardBadge fileContentCardBadge_warn">等待结果</span>
+      <span v-else-if="parsed.isErrorResponse" class="fileContentCardBadge fileContentCardBadge_error">{{ errorBadgeLabel }}</span>
       <span v-else-if="parsed.error" class="fileContentCardBadge fileContentCardBadge_error">解析异常</span>
       <span v-if="dataSourceTag" class="fileContentCardSource">{{ dataSourceTag }}</span>
       <span v-if="meta.size !== undefined" class="fileContentCardMeta">{{ formatSize(meta.size) }}</span>
@@ -25,6 +26,10 @@
     <div v-else-if="!resultJson" class="fileContentCardEmpty">
       <ion-icon :icon="hourglassIcon" class="fileContentCardEmptyIcon" />
       <span>工具执行中…</span>
+    </div>
+    <div v-else-if="parsed.isErrorResponse" class="fileContentCardError">
+      <ion-icon :icon="documentTextIcon" class="fileContentCardErrorIcon" />
+      <span class="fileContentCardErrorMsg">{{ parsed.error }}</span>
     </div>
     <div v-else class="fileContentCardEmpty">文件内容为空</div>
     <div v-if="looksBinary" class="fileContentCardBinaryWarn">
@@ -70,14 +75,18 @@ interface ParsedFile {
   note?: string
 }
 
-const parsed = computed<{ data: ParsedFile | null; error: string }>(() => {
+const parsed = computed<{ data: ParsedFile | null; error: string; isErrorResponse: boolean }>(() => {
   if (!props.resultJson) {
-    return { data: null, error: 'empty result' }
+    return { data: null, error: 'empty result', isErrorResponse: false }
   }
   try {
-    const obj = JSON.parse(props.resultJson) as Partial<ParsedFile>
+    const obj = JSON.parse(props.resultJson) as Partial<ParsedFile & { error?: string; message?: string }>
+    // 错误响应格式：{"error": "too_large", "message": "文件 xxx 字节 > max_bytes"}
+    if (typeof obj.error === 'string' && obj.error.length > 0 && !obj.content) {
+      return { data: null, error: obj.message || obj.error, isErrorResponse: true }
+    }
     if (typeof obj.content !== 'string') {
-      return { data: null, error: 'missing content field' }
+      return { data: null, error: 'missing content field', isErrorResponse: false }
     }
     return {
       data: {
@@ -87,11 +96,12 @@ const parsed = computed<{ data: ParsedFile | null; error: string }>(() => {
         note: typeof obj.note === 'string' ? obj.note : undefined,
       },
       error: '',
+      isErrorResponse: false,
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     console.debug('[FileContentCard] parse failed:', msg, props.resultJson)
-    return { data: null, error: msg }
+    return { data: null, error: msg, isErrorResponse: false }
   }
 })
 
@@ -110,8 +120,15 @@ const truncatedContent = computed(() => {
 
 const titleText = computed(() => {
   if (props.status === 'pending' || props.status === 'running') return t('agent.toolCards.fileContentTitle') || '文件内容（查询中）'
+  if (parsed.value.isErrorResponse) return parsed.value.error.includes('too_large') ? '文件过大' : '读取失败'
   if (parsed.value.error) return t('agent.toolCards.parseFailed') || '文件内容（数据异常）'
   return t('agent.toolCards.fileContentTitle') || '文件内容'
+})
+
+const errorBadgeLabel = computed(() => {
+  const err = parsed.value.error
+  if (err?.includes('too_large')) return '过大'
+  return '错误'
 })
 
 const dataSourceTag = computed(() => {
@@ -243,6 +260,26 @@ function formatSize(bytes: number): string {
   text-align: center;
   color: var(--encv-text-secondary, #888);
   font-size: 11.5px;
+}
+
+.fileContentCardError {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: rgba(var(--ion-color-danger-rgb), 0.06);
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: var(--ion-color-danger, #eb445a);
+}
+
+.fileContentCardErrorIcon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.fileContentCardErrorMsg {
+  word-break: break-word;
 }
 
 .fileContentCardRaw {

@@ -92,14 +92,18 @@ const parsed = computed<{ rows: FileRow[]; error: string; isStat: boolean }>(() 
     return { rows: [], error: 'empty result', isStat: false }
   }
   try {
-    const obj = JSON.parse(props.resultJson) as
-      | { files?: FileRow[]; name?: string; size?: number; is_dir?: boolean; mtime?: string }
-      | FileRow[]
-    if (Array.isArray(obj)) {
-      return { rows: obj.filter((r) => r && typeof r.name === 'string'), error: '', isStat: false }
+    const raw = JSON.parse(props.resultJson)
+    // 真实 list_files handler 返回 { count, items: [...] }
+    // 历史/mock 数据可能用 { files: [...] } 或裸数组
+    if (Array.isArray(raw)) {
+      return { rows: raw.filter((r: FileRow) => r && typeof r.name === 'string'), error: '', isStat: false }
     }
-    if (Array.isArray(obj.files)) {
-      return { rows: obj.files, error: '', isStat: false }
+    const obj = raw as { files?: FileRow[]; items?: FileRow[]; count?: number; name?: string; size?: number; is_dir?: boolean; mtime?: string }
+    const fileArray = Array.isArray(obj.files) ? obj.files
+      : Array.isArray(obj.items) ? obj.items
+      : []
+    if (fileArray.length > 0) {
+      return { rows: fileArray.filter((r) => r && typeof r.name === 'string'), error: '', isStat: false }
     }
     if (typeof obj.name === 'string') {
       // stat_file 返回单条记录
