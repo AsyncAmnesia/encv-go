@@ -682,20 +682,35 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		resp, err := callOpenAIChatOnce(c.Request.Context(), cfg, model, body.Temperature, loopMessages, openAITools)
 		if err != nil {
 			slog.Warn("agent: loop request failed", "round", round+1, "error", err)
-			// 循环中失败时降级：直接告诉客户端错误
-			c.JSON(http.StatusBadGateway, gin.H{"error": "llm_request_failed", "message": err.Error()})
+			// SSE headers 已设置，必须用 SSE 事件格式返回错误（不能用 c.JSON）
+			s.sendSSEEventSafe(c.Writer, flusher, "stream_error", map[string]interface{}{
+				"code":    "llm_request_failed",
+				"message": err.Error(),
+				"round":   round + 1,
+			})
+			s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
 			return
 		}
 
 		if resp.Error != nil {
 			slog.Warn("agent: loop API error", "round", round+1, "error", resp.Error.Message)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "upstream_error", "message": resp.Error.Message})
+			s.sendSSEEventSafe(c.Writer, flusher, "stream_error", map[string]interface{}{
+				"code":    "upstream_error",
+				"message": resp.Error.Message,
+				"round":   round + 1,
+			})
+			s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
 			return
 		}
 
 		if len(resp.Choices) == 0 {
 			slog.Warn("agent: loop empty choices", "round", round+1)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "empty_response"})
+			s.sendSSEEventSafe(c.Writer, flusher, "stream_error", map[string]interface{}{
+				"code":    "empty_response",
+				"message": "LLM 返回了空的选择列表",
+				"round":   round + 1,
+			})
+			s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
 			return
 		}
 

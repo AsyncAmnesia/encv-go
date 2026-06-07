@@ -53,6 +53,7 @@ export type AgentEventType =
   | 'tool_result'
   | 'stream_status'  // 后端流式状态（断点续传时推 synced / more_pending）
   | 'stream_end'
+  | 'stream_error'   // 后端在 SSE 流过程中遇到不可恢复错误时推送
   // 上下文自动压缩事件。Task 7 引入：后端在 messages token 数
   // 越过窗口 80% 时调用 LLM summary 压缩老消息，并推送本事件。
   // 前端收到时插入一条 role='system', content='上下文已自动压缩'
@@ -1087,6 +1088,22 @@ export function useAgent() {
           const first = pendingMessages.value.shift()!
           first.pending = false
         }
+        break
+      }
+      case 'stream_error': {
+        // 后端在 SSE 流过程中遇到不可恢复错误时推送此事件。
+        // data 字段包含错误信息（JSON 字符串或纯文本）。
+        // 前端收到后应：
+        //   1. finalize 当前 streaming 的 assistant 消息
+        //   2. 记录错误信息到 lastError / lastErrorCode
+        //   3. 切换 status 为 'error'
+        //   4. 不再继续处理后续事件（连接即将关闭）
+        finalizeLastAssistant()
+        const errorMsg = parseContentDelta(event.data) || '服务端流式传输发生未知错误'
+        lastError.value = errorMsg
+        lastErrorCode.value = 'upstream_error'
+        status.value = 'error'
+        console.error('[useAgent] stream_error:', errorMsg)
         break
       }
       case 'compaction': {
