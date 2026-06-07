@@ -315,6 +315,7 @@ type agentConfig struct {
 	APIKey       string `json:"openai_api_key"`
 	BaseURL      string `json:"openai_base_url"`
 	SystemPrompt string `json:"system_prompt"`
+	OpenAIModel  string `json:"openai_model"`
 }
 
 func (s *Server) readAgentConfig(deviceId ...string) agentConfig {
@@ -348,7 +349,19 @@ func (s *Server) readAgentConfig(deviceId ...string) agentConfig {
 		cfg.BaseURL = "https://api.openai.com"
 	}
 	cfg.SystemPrompt = agent["system_prompt"]
+	cfg.OpenAIModel = agent["openai_model"]
 	return cfg
+}
+
+// resolveActiveModel 解析当前激活模型：优先从 agent_settings 读（用户在 AI 设置中选的），
+// 否则默认 gpt-4o。这才是 context-usage 在"无活动 session"时该展示的模型，
+// 否则前端会显示 8192 兜底默认值，误导用户。
+func (s *Server) resolveActiveModel(deviceId string) string {
+	cfg := s.readAgentConfig(deviceId)
+	if cfg.OpenAIModel != "" {
+		return cfg.OpenAIModel
+	}
+	return "gpt-4o"
 }
 
 // ─── 路由注册 ────────────────────────────────────────────────
@@ -652,7 +665,12 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	}
 	model := body.Model
 	if model == "" {
-		model = "gpt-4o-mini"
+		// 跟随用户在 AI 设置中选的激活模型，而不是写死 gpt-4o-mini
+		if cfg.OpenAIModel != "" {
+			model = cfg.OpenAIModel
+		} else {
+			model = "gpt-4o"
+		}
 	}
 
 	// ③ 防御：空消息

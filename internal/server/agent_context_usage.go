@@ -426,15 +426,17 @@ func (s *Server) handleAgentContextUsage(c *gin.Context) {
 
 	if !ok {
 		// 无 session：返回零状态
+		// 仍然用真实激活模型查表，避免前端显示 8192 误导用户
+		activeModel := s.resolveActiveModel(c.Query("deviceId"))
 		c.JSON(http.StatusOK, gin.H{
 			"sessionId":        sessionId,
-			"model":            "",
-			"usage":            gin.H{"tokens": 0, "window": 8192, "percent": 0.0},
+			"model":            activeModel,
+			"usage":            gin.H{"tokens": 0, "window": lookupContextWindow(activeModel), "percent": 0.0},
 			"todos":            []planTodo{},
 			"referencedFiles":  []referencedFile{},
 			"compactions":      0,
 			"updatedAt":        time.Now().UnixMilli(),
-			"note":             "无活动 session",
+			"note":             "无活动 session（已使用激活模型 " + activeModel + " 查表）",
 		})
 		return
 	}
