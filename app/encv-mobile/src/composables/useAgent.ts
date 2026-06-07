@@ -41,6 +41,7 @@ export interface SessionMeta {
   createdAt: number
   updatedAt: number
   messageCount: number
+  rounds: number
 }
 
 export type Decision = 'accept' | 'accept_for_session' | 'decline' | 'cancel'
@@ -636,6 +637,14 @@ export function useAgent() {
       catch { return 'gpt-4o-mini' }
     })(),
   )
+  /**
+   * API 返回的默认模型（来自 /api/models 的 defaultModel 字段）。
+   * AgentChat 在 fetchModels 成功后通过 setApiDefaultModel() 写入，
+   * newSession 时用于重置 activeModel。
+   */
+  const apiDefaultModel = ref<string>('')
+  /** 当前会话的创建时间戳（毫秒），用于持久化和历史列表排序 */
+  const sessionCreatedAt = ref<number>(Date.now())
   // 之前怀疑 gpt-4o-mini 在 gptgod 代理下不发 tools，临时加了 safeModel
   // 白名单做硬编码降级。实测 gpt-4o-mini 完全能用工具（3 轮 list_mounts →
   // list_files → 输出 4 个目录），根因不在模型上。回退这段逻辑，
@@ -732,6 +741,8 @@ export function useAgent() {
         lastEventId,
         messages: JSON.parse(JSON.stringify(messages.value)),
         status: status.value,
+        createdAt: sessionCreatedAt.value,
+        updatedAt: Date.now(),
       }
       localStorage.setItem(STORAGE_PREFIX + currentSessionId.value, JSON.stringify(payload))
     } catch (e) {
@@ -746,11 +757,18 @@ export function useAgent() {
     lastEventId?: number
     messages: Message[]
     status: AgentStatus
+    createdAt?: number
+    updatedAt?: number
   } | null {
     try {
       const raw = localStorage.getItem(STORAGE_PREFIX + sessionId)
       if (!raw) return null
-      return JSON.parse(raw)
+      const parsed = JSON.parse(raw)
+      // 恢复会话创建时间（兼容老存档无此字段）
+      if (typeof parsed?.createdAt === 'number') {
+        sessionCreatedAt.value = parsed.createdAt
+      }
+      return parsed
     } catch (e) {
       console.debug('[useAgent] loadState failed:', e)
       return null
@@ -801,6 +819,8 @@ export function useAgent() {
           const parsed = JSON.parse(raw) as {
             sessionId?: string
             messages?: Message[]
+            createdAt?: number
+            updatedAt?: number
           }
           if (!parsed?.sessionId) continue
           const msgs = parsed.messages || []
@@ -808,14 +828,18 @@ export function useAgent() {
           // Task 12：content 可能是 multimodal 数组（带附件的 user 消息），
           //          从中抽出首段 text 元素作为会话标题。
           const title = extractUserTitle(firstUser?.content) || '(空会话)'
-          const updatedAt = msgs.length > 0 ? Date.now() - (msgs.length - 1) : 0
-          const createdAt = updatedAt
+          // 优先使用持久化的真实时间戳，兼容老存档无此字段
+          const createdAt = parsed.createdAt || Date.now()
+          const updatedAt = parsed.updatedAt || createdAt
+          // 轮次 = 用户消息数量（每条 user 消息代表一轮对话）
+          const rounds = msgs.filter((m) => m.role === 'user').length
           list.push({
             id: parsed.sessionId,
             title,
             createdAt,
             updatedAt,
             messageCount: msgs.length,
+            rounds,
           })
         } catch {
           // skip
@@ -870,6 +894,11 @@ export function useAgent() {
     status.value = 'idle'
     lastError.value = ''
     lastUserInput.value = ''
+    sessionCreatedAt.value = Date.now()
+    // 如果 API 返回了默认模型，新会话时重置为该默认模型
+    if (apiDefaultModel.value) {
+      activeModel.value = apiDefaultModel.value
+    }
     saveState()
     refreshSessions()
   }
@@ -1745,6 +1774,14 @@ export function useAgent() {
     void send(text)
   }
 
+  /**
+   * 设置 API 返回的默认模型（由 AgentChat.fetchModels 调用）。
+   * 写入后 newSession() 会自动使用此值重置 activeModel。
+   */
+  function setApiDefaultModel(m: string): void {
+    apiDefaultModel.value = m
+  }
+
   // 构造时同步一次 session 列表（供 UI 立即显示）
   refreshSessions()
 
@@ -1768,6 +1805,9 @@ export function useAgent() {
     retryLast,
     activeModel,
     activeTemperature,
+    // Issue 1: API 默认模型（新会话时使用）
+    apiDefaultModel,
+    setApiDefaultModel,
     // Task 11 (Steer / Queue)：UI 用它渲染「已排队：xxx」提示。
     pendingMessages,
     // Context 图标：实时上下文使用 + todos + referenced files

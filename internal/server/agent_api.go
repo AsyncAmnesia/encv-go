@@ -506,7 +506,7 @@ func (s *Server) handleAgentModels(c *gin.Context) {
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"models":      []interface{}{},
-			"defaultModel": "",
+			"defaultModel": cfg.OpenAIModel,
 			"error":       "no_api_key",
 			"note":        note,
 		})
@@ -574,7 +574,7 @@ func (s *Server) handleAgentModels(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"models":      sorted,
-		"defaultModel": "",
+		"defaultModel": cfg.OpenAIModel,
 	})
 	slog.Info("agent: models fetched", "count", len(sorted), "base_url", cfg.BaseURL)
 }

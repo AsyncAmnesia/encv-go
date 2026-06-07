@@ -390,7 +390,7 @@
             <div class="historyItemMain">
               <p class="historyItemTitle">{{ s.title || '(空)' }}</p>
               <p class="historyItemMeta">
-                {{ s.messageCount }} {{ t('agent.messages') }}
+                {{ formatSessionMeta(s) }}
               </p>
             </div>
             <button
@@ -460,7 +460,7 @@ const { t } = useI18n()
 // Agent API 基础 URL（动态解析：dev 走网关 / prod 直连后端）
 const AGENT_API_BASE = getAgentApiBase()
 
-const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel } = useAgent()
+const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel, setApiDefaultModel } = useAgent()
 const router = useRouter()
 
 /**
@@ -706,6 +706,10 @@ async function fetchModels() {
       name: m.name || m.id,
       provider: m.provider || 'unknown',
     }))
+    // 保存 API 返回的默认模型（新会话时使用）
+    if (data.defaultModel) {
+      setApiDefaultModel(data.defaultModel)
+    }
     // 如果当前选中的模型不在列表中，切换到默认值
     if (availableModels.value.length > 0 && !availableModels.value.some(m => m.id === selectedModel.value)) {
       selectedModel.value = data.defaultModel || availableModels.value[0].id
@@ -791,6 +795,35 @@ function resolveToolCalls(ids: string[]): ToolCall[] {
     if (tc) out.push(tc)
   }
   return out
+}
+
+/**
+ * 格式化会话历史列表项的元信息（时间 + 消息数 + 轮次）
+ */
+function formatSessionMeta(s: { messageCount: number; rounds: number; updatedAt: number }): string {
+  const time = formatRelativeTime(s.updatedAt)
+  const parts = [time]
+  if (s.rounds > 0) {
+    parts.push(`${s.rounds} ${t('agent.rounds') || '轮'}`)
+  }
+  parts.push(`${s.messageCount} ${t('agent.messages')}`)
+  return parts.join(' · ')
+}
+
+/**
+ * 简易相对时间格式化
+ */
+function formatRelativeTime(ts: number): string {
+  if (!ts) return ''
+  const diff = Date.now() - ts
+  const abs = Math.abs(diff)
+  const d = new Date(ts)
+  if (abs < 60_000) return t('agent.justNow') || '刚刚'
+  if (abs < 3600_000) return `${Math.floor(abs / 60_000)}${t('agent.minutesAgo') || '分钟前'}`
+  if (abs < 86400_000) return `${Math.floor(abs / 3600_000)}${t('agent.hoursAgo') || '小时前'}`
+  if (abs < 604_800_000) return `${Math.floor(abs / 86400_000)}${t('agent.daysAgo') || '天前'}`
+  // 超过一周显示日期
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 function handleDecide(toolCallId: string, decision: Decision) {
