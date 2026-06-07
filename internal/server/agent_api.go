@@ -679,10 +679,12 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 			"message": fmt.Sprintf("正在调用 LLM (第 %d/%d 轮)...", round+1, maxAgentLoopRounds),
 		})
 
-		resp, err := callOpenAIChatOnce(c.Request.Context(), cfg, model, body.Temperature, loopMessages, openAITools)
+		// ═════════════════════════════════════════════════════
+		// 流式调用 LLM —— 文本实时转发给客户端，tool_calls 累积后处理
+		// ═════════════════════════════════════════════════════
+		streamCh, err := callOpenAIStream(c.Request.Context(), cfg, model, body.Temperature, loopMessages, openAITools)
 		if err != nil {
-			slog.Warn("agent: loop request failed", "round", round+1, "error", err)
-			// SSE headers 已设置，必须用 SSE 事件格式返回错误（不能用 c.JSON）
+			slog.Warn("agent: loop stream failed", "round", round+1, "error", err)
 			s.sendSSEEventSafe(c.Writer, flusher, "stream_error", map[string]interface{}{
 				"code":    "llm_request_failed",
 				"message": err.Error(),
@@ -692,215 +694,178 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 			return
 		}
 
-		if resp.Error != nil {
-			slog.Warn("agent: loop API error", "round", round+1, "error", resp.Error.Message)
-			s.sendSSEEventSafe(c.Writer, flusher, "stream_error", map[string]interface{}{
-				"code":    "upstream_error",
-				"message": resp.Error.Message,
-				"round":   round + 1,
-			})
-			s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
-			return
+		// 读取流式事件：累积 tool_calls / 实时转发文本
+		var (
+			roundTextContent     string
+			roundToolCalls       []toolCallAccumulator
+			tcAccumulator        = make(map[int]*toolCallAccumulator)
+			finishReason         string
+			gotToolCalls         bool
+		)
+
+		for ev := range streamCh {
+			switch ev.Type {
+			case "text_delta":
+				if textChunk, ok := ev.Data.(string); ok && textChunk != "" {
+					roundTextContent += textChunk
+					// ★ 关键：实时转发给客户端！用户立即看到文字逐字出现
+					s.sendAndCache(sess, c.Writer, flusher, "text_delta", textChunk)
+				}
+			case "reasoning_delta":
+				if textChunk, ok := ev.Data.(string); ok && textChunk != "" {
+					s.sendAndCache(sess, c.Writer, flusher, "reasoning_delta", textChunk)
+				}
+			case "tool_call_chunk":
+				gotToolCalls = true
+				tc := ev.Data.(toolCallAccumulator)
+				cur, ok := tcAccumulator[tc.Index]
+				if !ok {
+					cur = &toolCallAccumulator{Index: tc.Index, Type: "function"}
+					tcAccumulator[tc.Index] = cur
+				}
+				if tc.ID != "" { cur.ID = tc.ID }
+				if tc.Type != "" { cur.Type = tc.Type }
+				cur.Function.Name += tc.Function.Name
+				cur.Function.Arguments += tc.Function.Arguments
+			case "finish_reason":
+				if s, ok := ev.Data.(string); ok { finishReason = s }
+			case "stream_end":
+				// 正常结束
+			}
 		}
 
-		if len(resp.Choices) == 0 {
-			slog.Warn("agent: loop empty choices", "round", round+1)
-			s.sendSSEEventSafe(c.Writer, flusher, "stream_error", map[string]interface{}{
-				"code":    "empty_response",
-				"message": "LLM 返回了空的选择列表",
-				"round":   round + 1,
-			})
-			s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
-			return
+		// 收集所有累积的完整 tool_calls
+		if gotToolCalls {
+			for _, tc := range tcAccumulator {
+				if tc.Function.Name != "" {
+					roundToolCalls = append(roundToolCalls, *tc)
+				}
+			}
 		}
-
-		choice := resp.Choices[0]
-		msg := choice.Message
 
 		// ── 分支 A: LLM 返回了 tool_calls ──
-		if len(msg.ToolCalls) > 0 {
-			slog.Info("agent: loop tool_calls received",
+		if gotToolCalls && len(roundToolCalls) > 0 {
+			slog.Info("agent: loop tool_calls received (stream)",
 				"round", round+1,
-				"tool_count", len(msg.ToolCalls),
-				"finish_reason", choice.FinishReason)
+				"tool_count", len(roundToolCalls),
+				"finish_reason", finishReason)
 
 			// 把 assistant 的 tool_calls 消息追加到历史
 			loopMessages = append(loopMessages, chatMsg{
 				Role:      "assistant",
-				Content:   msg.Content,
-				ToolCalls: msg.ToolCalls,
+				Content:   roundTextContent,
+				ToolCalls: roundToolCalls,
 			})
 
-			// 逐个处理工具调用
 			allAutoExecuted := true
-			for _, tc := range msg.ToolCalls {
-				// 查工具 meta 判断是否需要确认
+			for _, tc := range roundToolCalls {
 				needConfirm := true
 				if meta, ok := toolMeta[tc.Function.Name]; ok {
-					if v, ok := meta["needConfirm"].(bool); ok {
-						needConfirm = v
-					}
+					if v, ok := meta["needConfirm"].(bool); ok { needConfirm = v }
 				}
 
 				if needConfirm {
-					// 需要用户确认 → 存入 pending，退出循环
-					slog.Info("agent: loop tool needs confirm",
-						"name", tc.Function.Name,
-						"round", round+1)
 					pendingTools = append(pendingTools, tc)
 					allAutoExecuted = false
 				} else {
-					// 只读工具 → 自动执行
-					slog.Info("agent: loop auto-executing tool",
-						"name", tc.Function.Name,
-						"round", round+1)
 					start := time.Now()
 					result, execErr := s.executeAgentTool(
-						c.Request.Context(),
-						tc.Function.Name,
-						tc.Function.Arguments,
-					)
+						c.Request.Context(), tc.Function.Name, tc.Function.Arguments)
 					slog.Info("agent: loop tool executed",
 						"name", tc.Function.Name,
 						"duration_ms", time.Since(start).Milliseconds(),
 						"has_error", execErr != nil)
-
-					// 推送工具执行完成事件（客户端可显示工具名 + 耗时）
-					s.sendSSEEventSafe(c.Writer, flusher, "stream_status", map[string]interface{}{
-						"status":     "tool_executed",
-						"tool_name":  tc.Function.Name,
-						"round":      round + 1,
-						"duration_ms": time.Since(start).Milliseconds(),
-					})
-
-					if execErr != nil {
-						result = fmt.Sprintf(`{"error":"tool_execution_failed","detail":%q}`, execErr.Error())
-					}
-
-					// 注入 tool 结果（OpenAI 协议要求 role="tool" + tool_call_id）
-					loopMessages = append(loopMessages, chatMsg{
-						Role:       "tool",
-						Content:    result,
-						ToolCallID: tc.ID,
-						Name:       tc.Function.Name,
-					})
-					autoToolExecuted = true
-				}
-			}
-
-			if !allAutoExecuted {
-				// 有工具需要用户确认 → 退出循环，进入阶段 2 推送 approval
-				slog.Info("agent: loop exiting — tools need user confirmation",
-					"pending_count", len(pendingTools))
-				break
-			}
-
-			// 所有工具都自动执行了 → 继续下一轮循环（LLM 会基于工具结果继续生成）
-			// 追加一个提示消息引导 LLM 输出最终回复
-			loopMessages = append(loopMessages, chatMsg{
-				Role:    "user",
-				Content: "[工具执行结果已注入。请基于以上结果回答用户的原始问题。]",
-			})
-			continue
-		}
-
-		// ── 分支 B: LLM 返回纯文本（无 tool_calls）──
-		//     先尝试平台级 Tool Use 文本解析（应对 API 代理丢弃 tools 参数的情况）
-		slog.Info("agent: loop got text response",
-			"round", round+1,
-			"finish_reason", choice.FinishReason,
-			"text_len", len(msg.Content))
-
-		// 平台级 Tool Use：尝试从文本中解析工具调用 JSON
-		parsedCalls, remainingText := extractToolCallsFromText(msg.Content)
-		if len(parsedCalls) > 0 {
-			slog.Info("agent: loop parsed tool calls from text (platform-level Tool Use)",
-				"round", round+1,
-				"parsed_count", len(parsedCalls),
-				"remaining_len", len(remainingText))
-
-			// 转换为 toolCallAccumulator 格式，复用分支 A 的处理逻辑
-			accums := parsedToolCallsToAccumulator(parsedCalls)
-
-			// 追加 assistant 消息（含原始文本，保留 remainingText 作为上下文）
-			loopMessages = append(loopMessages, chatMsg{
-				Role:    "assistant",
-				Content: msg.Content,
-			})
-
-			// 逐个处理解析出的工具调用（与分支 A 逻辑相同）
-			allAutoExecuted := true
-			for _, tc := range accums {
-				needConfirm := true
-				if meta, ok := toolMeta[tc.Function.Name]; ok {
-					if v, ok := meta["needConfirm"].(bool); ok {
-						needConfirm = v
-					}
-				}
-
-				if needConfirm {
-					slog.Info("agent: loop parsed tool needs confirm",
-						"name", tc.Function.Name,
-						"round", round+1)
-					pendingTools = append(pendingTools, tc)
-					allAutoExecuted = false
-				} else {
-					slog.Info("agent: loop auto-executing parsed tool",
-						"name", tc.Function.Name,
-						"round", round+1)
-					start := time.Now()
-					result, execErr := s.executeAgentTool(
-						c.Request.Context(),
-						tc.Function.Name,
-						tc.Function.Arguments,
-					)
-					slog.Info("agent: loop parsed tool executed",
-						"name", tc.Function.Name,
-						"duration_ms", time.Since(start).Milliseconds(),
-						"has_error", execErr != nil)
-
 					s.sendSSEEventSafe(c.Writer, flusher, "stream_status", map[string]interface{}{
 						"status":      "tool_executed",
 						"tool_name":   tc.Function.Name,
 						"round":       round + 1,
 						"duration_ms": time.Since(start).Milliseconds(),
 					})
-
 					if execErr != nil {
 						result = fmt.Sprintf(`{"error":"tool_execution_failed","detail":%q}`, execErr.Error())
 					}
-
 					loopMessages = append(loopMessages, chatMsg{
-						Role:       "tool",
-						Content:    result,
-						ToolCallID: tc.ID,
-						Name:       tc.Function.Name,
+						Role: "tool", Content: result,
+						ToolCallID: tc.ID, Name: tc.Function.Name,
 					})
 					autoToolExecuted = true
 				}
 			}
 
 			if !allAutoExecuted {
-				// 有工具需要用户确认 → 退出循环
-				// 如果有剩余文本（LLM 在工具调用外还说了什么），也记录下来
-				if remainingText != "" {
-					slog.Info("agent: loop has remaining text with pending tools",
-						"remaining_len", len(remainingText))
-				}
+				slog.Info("agent: loop exiting — tools need user confirmation",
+					"pending_count", len(pendingTools))
 				break
 			}
 
-			// 所有工具都自动执行 → 继续下一轮
 			loopMessages = append(loopMessages, chatMsg{
-				Role:    "user",
+				Role: "user",
 				Content: "[工具执行结果已注入。请基于以上结果回答用户的原始问题。]",
 			})
 			continue
 		}
 
-		// 确认是纯文本回复 → 退出循环
-		finalAssistantText = msg.Content
-		loopMessages = append(loopMessages, chatMsg{Role: "assistant", Content: msg.Content})
+		// ── 分支 B: LLM 返回了纯文本（无 tool_calls）──
+		//     文本已通过上面的 text_delta case 实时转发给客户端了
+		slog.Info("agent: loop got text response (streamed in real-time)",
+			"round", round+1,
+			"finish_reason", finishReason,
+			"text_len", len(roundTextContent))
+		finalAssistantText = roundTextContent
+
+		// 平台级 Tool Use：尝试从文本中解析工具调用 JSON（应对 API 代理丢弃 tools 参数的情况）
+		parsedCalls, remainingText := extractToolCallsFromText(finalAssistantText)
+		if len(parsedCalls) > 0 {
+			slog.Info("agent: loop parsed tool calls from text (platform-level Tool Use)",
+				"round", round+1,
+				"parsed_count", len(parsedCalls),
+				"remaining_len", len(remainingText))
+
+			accums := parsedToolCallsToAccumulator(parsedCalls)
+			loopMessages = append(loopMessages, chatMsg{
+				Role: "assistant", Content: finalAssistantText,
+			})
+
+			allAutoExecuted := true
+			for _, tc := range accums {
+				needConfirm := true
+				if meta, ok := toolMeta[tc.Function.Name]; ok {
+					if v, ok := meta["needConfirm"].(bool); ok { needConfirm = v }
+				}
+				if needConfirm {
+					pendingTools = append(pendingTools, tc)
+					allAutoExecuted = false
+				} else {
+					start := time.Now()
+					result, execErr := s.executeAgentTool(
+						c.Request.Context(), tc.Function.Name, tc.Function.Arguments)
+					slog.Info("agent: loop parsed tool executed",
+						"name", tc.Function.Name,
+						"duration_ms", time.Since(start).Milliseconds(),
+						"has_error", execErr != nil)
+					s.sendSSEEventSafe(c.Writer, flusher, "stream_status", map[string]interface{}{
+						"status":      "tool_executed",
+						"tool_name":   tc.Function.Name,
+						"round":       round + 1,
+						"duration_ms": time.Since(start).Milliseconds(),
+					})
+					if execErr != nil {
+						result = fmt.Sprintf(`{"error":"tool_execution_failed","detail":%q}`, execErr.Error())
+					}
+					loopMessages = append(loopMessages, chatMsg{
+						Role: "tool", Content: result,
+						ToolCallID: tc.ID, Name: tc.Function.Name,
+					})
+					autoToolExecuted = true
+				}
+			}
+			if !allAutoExecuted { break }
+			loopMessages = append(loopMessages, chatMsg{
+				Role: "user",
+				Content: "[工具执行结果已注入。请基于以上结果回答用户的原始问题。]",
+			})
+			continue
+		}
 		break
 	}
 
@@ -935,27 +900,12 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		return
 	}
 
-	// 2b: 有最终文本 → 模拟流式输出（从非流式响应转为 SSE chunks）
+	// 2b: 有最终文本 → 文本已在 Agent Loop 中通过 streaming 实时发送
+	//     这里只需确保 stream_end 被发出（作为安全兜底）
 	if finalAssistantText != "" {
-		// 按 chunk 分割模拟打字效果（类似 codex_web 的体验）
-		chunkSize := 16
-		runes := []rune(finalAssistantText)
-		totalChunks := (len(runes) + chunkSize - 1) / chunkSize
-		for i := 0; i < len(runes); i += chunkSize {
-			end := i + chunkSize
-			if end > len(runes) {
-				end = len(runes)
-			}
-			s.sendAndCache(sess, c.Writer, flusher, "text_delta", string(runes[i:end]))
-			// 每 10 个 chunk flush 一次，模拟自然打字节奏
-			if (i/chunkSize)%10 == 0 {
-				time.Sleep(15 * time.Millisecond)
-			}
-		}
 		s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
-		slog.Info("agent: chat completed (text streamed)",
+		slog.Info("agent: chat completed (text streamed in real-time)",
 			"chars", len(finalAssistantText),
-			"chunks", totalChunks,
 			"loop_rounds_executed", autoToolExecuted)
 		return
 	}
