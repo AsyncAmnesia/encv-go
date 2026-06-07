@@ -150,9 +150,10 @@
       <!-- 短会话（≤ 120）：原生 v-for（无虚拟化开销） -->
       <template v-else-if="renderedItems.length <= VIRTUAL_LIST_THRESHOLD">
         <div
-          v-for="item in renderedItems"
+          v-for="(item, idx) in renderedItems"
           :key="item.messageId"
           class="renderedItemWrap"
+          :data-msg-idx="idx"
         >
           <UserMessageBubble
             v-if="item.type === 'user'"
@@ -871,7 +872,7 @@ function scrollToBottom(behavior: 'auto' | 'smooth' = 'smooth') {
 }
 
 /**
- * 监听 main 容器滚动，更新 nearBottom 和 activeMessageIndex
+ * 监听 main 容器滚动，更新 nearBottom
  * 虚拟列表模式下滚动源是 RecycleScroller 内部 wrapper，
  * 但其 scroll 事件会冒泡到 main 容器，逻辑统一处理
  */
@@ -881,22 +882,48 @@ function onMainScroll() {
   const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
   // 80px 阈值内视为"接近底部"——避免长消息末尾抖动
   nearBottom.value = distanceFromBottom < 80
-
-  // 更新点导航的活跃索引：根据当前滚动位置找到最接近视口顶部的消息项
-  const itemWraps = el.querySelectorAll('.renderedItemWrap')
-  if (itemWraps.length === 0) return
-  let closestIdx = 0
-  let closestDist = Infinity
-  const scrollTop = el.scrollTop + 40 // 40px 偏移量让顶部元素更早被激活
-  itemWraps.forEach((wrap, idx) => {
-    const dist = Math.abs((wrap as HTMLElement).offsetTop - scrollTop)
-    if (dist < closestDist) {
-      closestDist = dist
-      closestIdx = idx
-    }
-  })
-  activeMessageIndex.value = closestIdx
 }
+
+/** IntersectionObserver：追踪当前视口中最接近中心的消息项 */
+let dotObserver: IntersectionObserver | null = null
+
+function setupDotObserver() {
+  cleanupDotObserver()
+  const el = mainRef.value
+  if (!el) return
+  dotObserver = new IntersectionObserver(
+    (entries) => {
+      // 找到相交比例最大的元素（最接近视口中心）
+      let maxRatio = 0
+      let targetIdx = activeMessageIndex.value
+      for (const entry of entries) {
+        if (entry.intersectionRatio > maxRatio) {
+          maxRatio = entry.intersectionRatio
+          const idx = Number((entry.target as HTMLElement).dataset.msgIdx ?? -1)
+          if (idx >= 0) targetIdx = idx
+        }
+      }
+      if (maxRatio > 0) activeMessageIndex.value = targetIdx
+    },
+    { root: el, threshold: [0, 0.25, 0.5, 0.75, 1] },
+  )
+  // 观察所有消息项
+  nextTick(() => {
+    el.querySelectorAll('.renderedItemWrap').forEach((wrap) => {
+      dotObserver?.observe(wrap)
+    })
+  })
+}
+
+function cleanupDotObserver() {
+  dotObserver?.disconnect()
+  dotObserver = null
+}
+
+// 消息列表变化时重建 Observer
+watch(renderedItems, () => nextTick(setupDotObserver), { flush: 'post' })
+onMounted(() => nextTick(setupDotObserver))
+onUnmounted(cleanupDotObserver)
 
 /**
  * 点导航：跳转到指定索引的消息项
@@ -1635,21 +1662,26 @@ defineExpose({})
 }
 
 /* ── Dot Navigation（左侧圆点导航） ──────────────────────── */
+/* sticky 定位：随滚动容器固定在可视区左侧，不随内容滚走 */
 .dotNavigation {
-  position: absolute;
-  left: 6px;
-  top: 50%;
-  transform: translateY(-50%);
+  position: sticky;
+  float: left; /* 脱离文档流，不占据消息宽度 */
+  left: 4px;
+  top: 80px; /* header 高度下方开始 sticky */
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   z-index: 5;
   padding: 8px 4px;
-  background: rgba(var(--ion-background-color-rgb), 0.7);
+  margin-right: 8px;
+  background: rgba(var(--ion-background-color-rgb), 0.75);
   border-radius: 10px;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  align-self: flex-start;
 }
 
 .dotNavDot {
