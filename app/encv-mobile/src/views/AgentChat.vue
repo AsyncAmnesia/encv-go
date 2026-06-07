@@ -321,6 +321,7 @@
         v-if="isMockMode || isDebugAgent"
         :messages="messages"
         :rendered-items="renderedItems"
+        :agent-status="status"
         :default-open="isMockMode"
       />
 

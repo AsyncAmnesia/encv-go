@@ -102,16 +102,52 @@
             <span class="agentDebugDiagLevel">{{ line.level }}</span>
             {{ line.text }}
           </li>
+          <li v-if="diagnostics.length === 0" class="agentDebugDiag_empty">
+            <span class="agentDebugDiagLevel">empty</span>
+            诊断数组为空 = messages / renderedItems 都是 0（数据流没过来）或所有 key 都不触发诊断
+          </li>
         </ul>
+      </section>
+
+      <!--
+        ⑥ 可复制 dump：完整状态文本（messages 详情 + renderedItems type 分布）
+        调试按钮：点 Copy 写剪贴板 / 点 Select 选中让用户手动 ⌘+C
+        即便 console.error 不可读（移动端 / 自动收起）也能从 UI 直接复制
+      -->
+      <section class="agentDebugSection">
+        <h4>⑥ 可复制 dump</h4>
+        <div class="agentDebugActions">
+          <button type="button" class="agentDebugBtn" @click="copyDump">
+            <ion-icon :icon="copyOutline" />
+            <span>{{ copyStatus === 'copied' ? '已复制 ✓' : copyStatus === 'failed' ? '复制失败' : '复制全部' }}</span>
+          </button>
+          <button type="button" class="agentDebugBtn" @click="selectAllDump">
+            <ion-icon :icon="refreshOutline" />
+            <span>全选文本（手动 ⌘+C）</span>
+          </button>
+        </div>
+        <textarea
+          id="agentDebugDumpTextarea"
+          ref="dumpTextarea"
+          class="agentDebugDumpText"
+          :value="dumpText"
+          readonly
+          rows="10"
+          spellcheck="false"
+          @click="selectAllDump"
+        ></textarea>
+        <p class="agentDebugDumpHint">
+          ⓘ 复制后粘给我（包括 agentStatus / messages / renderedItems 状态）；移动端可点「全选文本」后长按复制
+        </p>
       </section>
     </div>
   </details>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch, onMounted, ref } from 'vue'
 import { IonIcon } from '@ionic/vue'
-import { bugOutline } from 'ionicons/icons'
+import { bugOutline, copyOutline, refreshOutline } from 'ionicons/icons'
 import type { Message, ToolCall } from '@/composables/useAgent'
 
 type RenderedItemLike = { type: string; [k: string]: unknown }
@@ -122,6 +158,8 @@ const props = defineProps<{
   renderedItems: RenderedItemLike[]
   /** 默认是否展开（mock 模式自动展开便于诊断） */
   defaultOpen?: boolean
+  /** 当前 agent status（idle / streaming / confirming / error） */
+  agentStatus?: string
 }>()
 
 const bugIcon = bugOutline
@@ -249,6 +287,141 @@ function checkForFakeData(): string[] {
   }
   return suspicious
 }
+
+// ─── 实时状态 dump（可复制） ──────────────────────────────
+function getMsgText(m: Message): string {
+  // content 可能是 string | MessageContentPart[]，dump 时统一转字符串
+  if (typeof m.content === 'string') return m.content
+  if (Array.isArray(m.content)) {
+    return m.content
+      .map((p) => (typeof p === 'string' ? p : (p as { text?: string })?.text ?? ''))
+      .join('')
+  }
+  return ''
+}
+
+const dumpText = computed(() => {
+  const lines: string[] = []
+  const ts = new Date().toISOString()
+  lines.push(`# AgentDebugPanel dump @ ${ts}`)
+  lines.push(`agentStatus: ${props.agentStatus ?? '(unset)'}`)
+  lines.push(`messages.length: ${props.messages.length}`)
+  lines.push(`renderedItems.length: ${props.renderedItems.length}`)
+  lines.push('')
+  lines.push('--- messages ---')
+  props.messages.forEach((m, i) => {
+    const text = getMsgText(m).slice(0, 80).replace(/\n/g, '⏎')
+    lines.push(
+      `[${i}] role=${m.role} content="${text}" tool_calls=${m.tool_calls.length} tool_results=${m.tool_results.length}`,
+    )
+    m.tool_calls.forEach((tc) => {
+      lines.push(`  call  id=${tc.id} name=${tc.name} kind=${tc.kind} status=${tc.status} args=${(tc.args || '').slice(0, 60)}`)
+    })
+    m.tool_results.forEach((tr) => {
+      lines.push(`  result id=${tr.id} name=${tr.name} status=${tr.status} result="${(tr.result || '').slice(0, 200).replace(/\n/g, '⏎')}"`)
+    })
+  })
+  lines.push('')
+  lines.push('--- renderedItems (type 分布 + 关键字段) ---')
+  const typeCounts: Record<string, number> = {}
+  for (const r of props.renderedItems) typeCounts[r.type] = (typeCounts[r.type] ?? 0) + 1
+  lines.push(`typeCounts: ${JSON.stringify(typeCounts)}`)
+  props.renderedItems.forEach((r, i) => {
+    const keys = Object.keys(r).filter((k) => k !== 'type')
+    const summary = keys.map((k) => {
+      const v = r[k]
+      if (Array.isArray(v)) return `${k}=[${v.length}]`
+      if (typeof v === 'string') return `${k}="${v.slice(0, 40).replace(/\n/g, '⏎')}"`
+      return `${k}=${JSON.stringify(v)?.slice(0, 40)}`
+    }).join(' ')
+    lines.push(`[${i}] ${r.type} ${summary}`)
+  })
+  return lines.join('\n')
+})
+
+const copyStatus = ref<'idle' | 'copied' | 'failed'>('idle')
+
+async function copyDump() {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(dumpText.value)
+    } else {
+      // fallback：选中文本让用户手动复制
+      const ta = document.getElementById('agentDebugDumpTextarea') as HTMLTextAreaElement | null
+      if (ta) {
+        ta.select()
+        document.execCommand('copy')
+        ta.blur()
+      }
+    }
+    copyStatus.value = 'copied'
+    console.error('[AgentDebugPanel] dump copied:\n' + dumpText.value)
+    setTimeout(() => (copyStatus.value = 'idle'), 1500)
+  } catch (e) {
+    copyStatus.value = 'failed'
+    console.error('[AgentDebugPanel] copy failed:', e)
+  }
+}
+
+const dumpTextarea = ref<HTMLTextAreaElement | null>(null)
+function selectAllDump() {
+  dumpTextarea.value?.select()
+}
+
+// ─── 实时监控：变化时立即 console.error 打印 ──────────────
+onMounted(() => {
+  console.error(
+    '[AgentDebugPanel] mounted — messages=',
+    props.messages.length,
+    'renderedItems=',
+    props.renderedItems.length,
+    'agentStatus=',
+    props.agentStatus,
+  )
+  console.error('[AgentDebugPanel] initial dump:\n' + dumpText.value)
+})
+
+watch(
+  () => props.messages.length,
+  (newLen, oldLen) => {
+    console.error(
+      `[AgentDebugPanel] messages.length: ${oldLen} → ${newLen} (Δ=${newLen - (oldLen ?? 0)})`,
+    )
+    if (newLen > 0) {
+      const last = props.messages[props.messages.length - 1]
+      console.error(
+        `[AgentDebugPanel] last message: role=${last.role} content="${getMsgText(last).slice(0, 120).replace(/\n/g, '⏎')}" tool_calls=${last.tool_calls.length} tool_results=${last.tool_results.length}`,
+      )
+    }
+    console.error('[AgentDebugPanel] dump @ messages change:\n' + dumpText.value)
+  },
+)
+
+watch(
+  () => props.renderedItems.length,
+  (newLen, oldLen) => {
+    console.error(
+      `[AgentDebugPanel] renderedItems.length: ${oldLen} → ${newLen} (Δ=${newLen - (oldLen ?? 0)})`,
+    )
+    const types = props.renderedItems.map((r) => r.type)
+    console.error(`[AgentDebugPanel] renderedItem types: [${types.join(', ')}]`)
+  },
+)
+
+watch(
+  () => props.renderedItems.map((r) => r.type).join('|'),
+  (newTypes, oldTypes) => {
+    if (newTypes === oldTypes) return
+    console.error(`[AgentDebugPanel] renderedItem type set changed: "${oldTypes}" → "${newTypes}"`)
+  },
+)
+
+watch(
+  () => props.agentStatus,
+  (newStatus, oldStatus) => {
+    console.error(`[AgentDebugPanel] agentStatus: ${oldStatus ?? '?'} → ${newStatus ?? '?'}`)
+  },
+)
 </script>
 
 <style scoped>
@@ -499,5 +672,70 @@ function checkForFakeData(): string[] {
   font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.agentDebugDiag_empty {
+  background: rgba(var(--ion-color-medium-rgb), 0.12);
+  color: var(--encv-text-secondary, #888);
+  font-style: italic;
+}
+
+.agentDebugActions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.agentDebugBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.3);
+  border-radius: 4px;
+  background: rgba(var(--ion-color-medium-rgb), 0.08);
+  color: var(--ion-text-color);
+  font-size: 11px;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  cursor: pointer;
+}
+
+.agentDebugBtn:hover {
+  background: rgba(var(--ion-color-medium-rgb), 0.14);
+}
+
+.agentDebugBtn ion-icon {
+  font-size: 13px;
+}
+
+.agentDebugDumpText {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 10.5px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.3);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.25);
+  color: #d4d4d4;
+  resize: vertical;
+  min-height: 180px;
+  white-space: pre;
+  overflow-x: auto;
+  word-break: normal;
+  cursor: text;
+}
+
+.agentDebugDumpText:focus {
+  outline: 1px solid var(--ion-color-primary);
+}
+
+.agentDebugDumpHint {
+  margin: 4px 0 0;
+  font-size: 10px;
+  color: var(--encv-text-secondary, #888);
+  font-style: italic;
 }
 </style>
