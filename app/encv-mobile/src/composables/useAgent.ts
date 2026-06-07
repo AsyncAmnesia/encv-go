@@ -126,6 +126,11 @@ export interface Message {
    * 自动清除（说明服务端已开始处理该消息）。
    */
   pending?: boolean
+  /**
+   * 内部 buffer：SSE {seq, text} 排序重建用（不持久化，不回送给后端）
+   */
+  _contentSeqBuf?: Map<number, string>
+  _reasoningSeqBuf?: Map<number, string>
 }
 
 /**
@@ -226,7 +231,7 @@ function parseContentDelta(data: unknown): ParsedContentDelta {
  * 每次写入后按 key 排序重建 msg.content / msg.reasoning。
  */
 function appendSequencedChunk(
-  msg: Record<string, unknown>,
+  msg: Message,
   field: 'content' | 'reasoning',
   seq: number | undefined,
   text: string,
@@ -1207,7 +1212,7 @@ export function useAgent() {
         //   3. 切换 status 为 'error'
         //   4. 不再继续处理后续事件（连接即将关闭）
         finalizeLastAssistant()
-        const errorMsg = parseContentDelta(event.data) || '服务端流式传输发生未知错误'
+        const errorMsg = parseContentDelta(event.data).text || '服务端流式传输发生未知错误'
         lastError.value = errorMsg
         lastErrorCode.value = 'upstream_error'
         status.value = 'error'
