@@ -1,7 +1,10 @@
 <!--
   AssistantMessage - AI 回复文本块
-  头部：MessageAuthor(sparklesOutline, "Codex", meta)
-  主体：MarkdownStream(source, streaming)
+  参照 codex_web assistantMessage / plainAssistantMessage：
+  - 无背景气泡（纯文本，与页面背景融合）
+  - MessageAuthor(28px 圆形头像, label, meta)
+  - MarkdownStream(source, streaming)
+  - markdownBody: 14px / line-height 1.62 / 正确间距
 -->
 <template>
   <div class="assistantMessage">
@@ -42,29 +45,45 @@ const meta = computed(() => {
 </script>
 
 <style scoped>
+/* ── 参照 codex_web .assistantMessage ─────────────────────── */
 .assistantMessage {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 0 4px;
+  gap: 4px;
+  margin-bottom: 18px;
   max-width: 100%;
 }
 
 .assistantMessageBody {
-  padding-left: 30px;
+  padding-left: 36px; /* 28px avatar + 8px gap */
   min-width: 0;
 }
 
-/* AI 回复气泡：左侧浅色背景，圆角 */
+/* ── markdownBody：参照 codex_web .markdownBody ──────────── */
 .assistantMessageBody :deep(.markdownStream) {
   display: block;
   max-width: 100%;
-  padding: 10px 14px;
-  background: rgba(var(--ion-color-medium-rgb), 0.10);
-  border-radius: 12px 14px 14px 4px;
-  border-top-left-radius: 4px;
-  /* 流式输出时高度平滑过渡，消除跳动 */
-  transition: height 0.25s ease-out, padding 0.25s ease-out;
+  color: var(--ion-text-color);
+  font-size: 14px;
+  line-height: 1.62;
+  overflow-wrap: break-word;
+}
+
+/* 段落/列表/代码块间距（codex_web: margin 0 0 12px） */
+.assistantMessageBody :deep(.markdownStream) :deep(.node-slot) {
+  margin-bottom: 12px;
+}
+
+.assistantMessageBody :deep(.markdownStream) :deep(.node-slot:last-child) {
+  margin-bottom: 0;
+}
+
+/* 行内代码：圆角 + 浅灰底（codex_web 风格） */
+.assistantMessageBody :deep(.markdownStream) :deep(.inline-code) {
+  border-radius: 5px;
+  padding: 1px 5px;
+  background: var(--ion-color-light);
+  font-size: 0.9em;
 }
 
 /* 打字光标动画（流式期间显示） */
