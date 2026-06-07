@@ -808,18 +808,66 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		)
 		const bufSizeLimit = 60 // 缓冲阈值（字符数）
 
-		// looksLikeToolCall 检查累积文本是否看起来像工具调用 JSON
-		looksLikeToolCall := func(s string) bool {
+	// containsEmbeddedToolCallPattern 在任意位置扫描工具调用 JSON 特征。
+	//
+	// 参考 LobeChat 的协议级分离思路：LobeChat 通过 chunkType='text'/'tools_calling'
+	// 在协议层面分离文本和工具调用。由于 gptgod 代理不发送标准 tool_call_chunk 事件，
+	// 我们需要在文本层做更精确的启发式检测来模拟同样的效果。
+	//
+	// 此函数用于：
+	//   1) looksLikeToolCheck 策略 2 — 嵌入式检测（中文正文后接 JSON）
+	//   2) 实时模式的二次检测 — bufMode 已释放后发现后续 chunk 出现工具调用特征
+	containsEmbeddedToolCallPattern := func(s string) bool {
+		if len(s) < 20 {
+			return false
+		}
+		return strings.Contains(s, `[{"name"`) ||
+			strings.Contains(s, `{"name":"`) ||
+			strings.Contains(s, `"function":`) ||
+			strings.Contains(s, `"arguments":`)
+	}
+
+	// splitTextIntoChunks 将文本按字符数分割为等长大块。
+	// 用于 Branch B 成功解析工具调用后，将 remainingText 分块作为 text_delta 补发给前端，
+	// 模拟 LobeChat stream_chunk chunkType='text' 的增量推送效果。
+	splitTextIntoChunks := func(text string, chunkSize int) []string {
+		runes := []rune(text)
+		if len(runes) <= chunkSize {
+			return []string{text}
+		}
+		var chunks []string
+		for i := 0; i < len(runes); i += chunkSize {
+			end := i + chunkSize
+			if end > len(runes) {
+				end = len(runes)
+			}
+			chunks = append(chunks, string(runes[i:end]))
+		}
+		return chunks
+	}
+
+	// truncateStr 截断字符串到指定长度（用于日志预览）
+	truncateStr := func(s string, maxLen int) string {
+		if len(s) <= maxLen {
+			return s
+		}
+		return s[:maxLen] + "..."
+	}
+
+	// looksLikeToolCall 检查累积文本是否看起来像工具调用 JSON
+	looksLikeToolCall := func(s string) bool {
 			trimmed := strings.TrimSpace(s)
 			if len(trimmed) < 3 {
 				return false
 			}
-			// 以 [ 或 { 开头 且包含 "name" 关键字
+			// 策略 1：文本以 [ 或 { 开头（原有逻辑 — 处理以 JSON 开头的回复）
 			if (trimmed[0] == '[' || trimmed[0] == '{') &&
 				strings.Contains(trimmed, `"name"`) {
 				return true
 			}
-			return false
+			// ★ 策略 2：文本任意位置嵌入工具调用 JSON 特征（新增）
+			//    处理「中文正文 + 后接工具调用 JSON」的嵌入式场景
+			return containsEmbeddedToolCallPattern(trimmed)
 		}
 
 		// flushBuffer 把缓冲的文本一次性转发给客户端（当确定不是工具调用时调用）
@@ -860,10 +908,24 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 							}
 						}
 					} else {
-						// 正常实时模式或缓冲已释放 → 直接转发
-						textSeq++
-						s.sendAndCache(sess, c.Writer, flusher, "text_delta",
-							map[string]interface{}{"seq": textSeq, "text": textChunk})
+						// 正常实时模式或缓冲已释放
+						// ★ 二次检测（参考 LobeChat chunkType 分发思路）：
+						//   如果累积文本中出现嵌入式工具调用特征，立即重新进入缓冲模式，
+						//   防止工具调用 JSON 作为普通 text_delta 泄漏给前端。
+						//   注意：只在 roundTextContent 上做检测（O(n) 字符串搜索），
+						//   不对每个 chunk 做（避免性能问题）。
+						if !suspectedToolCall && containsEmbeddedToolCallPattern(roundTextContent) {
+							slog.Info("agent: mid-stream embedded tool call detected, re-buffering",
+								"text_len", len(roundTextContent),
+								"chunk_preview", truncateStr(textChunk, 40))
+							suspectedToolCall = true
+							bufMode = true
+							textBuf = append(textBuf, textChunk)
+						} else {
+							textSeq++
+							s.sendAndCache(sess, c.Writer, flusher, "text_delta",
+								map[string]interface{}{"seq": textSeq, "text": textChunk})
+						}
 					}
 				}
 			case "reasoning_delta":
@@ -914,6 +976,17 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 				"round", round+1,
 				"tool_count", len(roundToolCalls),
 				"finish_reason", finishReason)
+
+			// ★ 如果有缓冲区残留的前置文本（工具调用之前的正常正文），立即发送。
+			// 这些文本在 tool_call_chunk 事件到达之前就已经产生，是安全的自然语言内容。
+			// 参考 LobeChat stream_start 重置 accumulatedContent 的思路：
+			// 在进入工具调用处理之前，先确保前置文本已正确投递给客户端。
+			if len(textBuf) > 0 {
+				flushBuffer()
+				slog.Info("agent: Branch A flushed pre-tool-call buffered text",
+					"buf_chunks", len(textBuf))
+				textBuf = nil
+			}
 
 			// 把 assistant 的 tool_calls 消息追加到历史
 			loopMessages = append(loopMessages, chatMsg{
@@ -1081,6 +1154,22 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 				Role: "user",
 				Content: "[工具执行结果已注入。请基于以上结果回答用户的原始问题。]",
 			})
+
+			// ★ 补发 remainingText（参考 LobeChat stream_chunk chunkType='text' 的增量模式）
+			// extractToolCallsFromText 返回的 remainingText 是剥离工具调用 JSON 后的
+			// 自然语言部分。LobeChat 不需要这个步骤因为它的协议天然分离（chunkType 区分），
+			// 但我们的架构决定了必须手动补发，否则 JSON 之后的正文会丢失 → 回答截断。
+			if remainingText != "" {
+				chunks := splitTextIntoChunks(remainingText, 100)
+				for _, ch := range chunks {
+					textSeq++
+					s.sendAndCache(sess, c.Writer, flusher, "text_delta",
+						map[string]interface{}{"seq": textSeq, "text": ch})
+				}
+				slog.Info("agent: Branch B remaining text sent to client",
+					"remaining_len", len(remainingText), "chunks", len(chunks))
+			}
+
 			continue
 		}
 		// 分支 B 也没有解析到工具调用 → LLM 输出了纯文本回复（非工具调用）

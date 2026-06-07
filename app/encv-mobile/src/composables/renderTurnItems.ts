@@ -28,6 +28,42 @@ import {
 } from './useAgent'
 import type { MessageContentPart } from './useAttachments'
 
+/**
+ * stripToolCallJSON — 从消息文本中剥离工具调用 JSON 片段（安全网）。
+ *
+ * 参考 LangChain agent-chat-ui 的 getContentString() 设计：
+ * - LobeChat: 协议级分离（chunkType 区分 text/tools_calling），content 永远不含 tool JSON
+ * - LangChain: content 可能含 tool_use block，渲染时 getContentString() 过滤只取 text 类型
+ * - 我们: 后端可能泄漏 tool JSON 到 content（gptgod 代理不发送标准 tool_call_chunk 事件），
+ *        渲染前需清理，避免在 GroupedOperationMessage 旁边重复显示原始 JSON
+ *
+ * 匹配 OpenAI function calling 格式:
+ *   [{"name":"xxx","arguments":{...}}]  — 数组形式（最常见）
+ *   {"name":"xxx","arguments":{...}}      — 单对象形式
+ */
+export function stripToolCallJSON(text: string): string {
+  if (!text) return text
+
+  let cleaned = text
+
+  // 模式 1: [...{"name":"...",...}] 数组形式（OpenAI function calling 标准格式）
+  cleaned = cleaned.replace(
+    /\[\s*\{\s*"name"\s*:\s*"[^"]*"(?:\s*,\s*"[^"]*"\s*:\s*(?:\{[^}]*\}|"[^"]*"))*\s*\}\s*\]/g,
+    '',
+  )
+
+  // 模式 2: {"name":"...",...} 单对象形式（独立行）
+  cleaned = cleaned.replace(
+    /^\s*\{\s*"name"\s*:\s*"[^"]*"(?:\s*,\s*"[^"]*"\s*:\s*(?:\{[^}]*\}|"[^"]*"))*\s*\}\s*/gm,
+    '',
+  )
+
+  // 清理产生的多余空行（连续 3+ 个换行合并为最多 2 个）
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n')
+
+  return cleaned.trim()
+}
+
 /** 单条 todo，源自 plan tool (write_todos) 的 args JSON。 */
 export interface PlanTodo {
   id: string
@@ -352,12 +388,20 @@ export function renderTurnItems(
           continue
         }
       }
-      const contentText = contentToText(msg.content, 'assistant')
-      if (contentText && contentText.trim().length > 0) {
+      // 安全网（参考 LangChain ai.tsx 的分离渲染模式）：
+      // 若本消息已被解析出 tool_calls（说明后端成功识别了工具调用），
+      // 则从显示文本中剥离可能的工具调用 JSON 残留，避免在
+      // GroupedOperationMessage 旁边重复显示原始 JSON。
+      const rawContentText = contentToText(msg.content, 'assistant')
+      const displayText =
+        (msg.tool_calls?.length ?? 0) > 0
+          ? stripToolCallJSON(rawContentText)
+          : rawContentText
+      if (displayText && displayText.trim().length > 0) {
         out.push({
           type: 'assistantText',
           messageId: `a-${idx}`,
-          text: contentText,
+          text: displayText,
           streaming,
         })
       }
