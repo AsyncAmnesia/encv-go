@@ -239,6 +239,8 @@ fi
 # ============================================================================
 # 步骤 6/6: 构建 preview-gateway 网关
 # ============================================================================
+GATEWAY_DIR="${REPO_ROOT}/app/preview-gateway"
+
 step "6/6 构建 preview-gateway 网关（app/preview-gateway/）"
 
 if [[ -d "${GATEWAY_DIR}/node_modules" ]]; then
