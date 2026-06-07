@@ -392,6 +392,12 @@ func (s *Server) getAgentConfig() *config.Agent {
 		slog.Debug("agent: getAgentConfig parse agent_settings failed", "error", err)
 		return config.DefaultAgentConfig()
 	}
+	// 防御性修正：用户配置文件中可能缺失 mock_speed 字段（JSON 零值为 0）
+	// 导致 MockEngine.Run() 中 sleepDelay 把所有 Step 延迟归零，SSE 事件
+	// 毫秒级全部推送完毕，前端无法看到逐步流式效果。
+	if agentCfg.MockSpeed <= 0 {
+		agentCfg.MockSpeed = 1.0
+	}
 	return &agentCfg
 }
 
