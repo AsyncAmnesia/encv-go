@@ -125,8 +125,9 @@
       </div>
     </details>
 
-    <main class="agentChatMain" ref="mainRef" @scroll="onMainScroll">
-      <!-- 左侧圆点导航（≥3 条消息时显示） -->
+    <!-- 消息区域：圆点导航（左）+ 滚动内容（右） -->
+    <div class="agentChatBody">
+      <!-- 左侧圆点导航（≥3 条消息时显示）—— 在滚动容器外部，不随内容滚走 -->
       <div
         v-if="renderedItems.length >= 3"
         class="dotNavigation"
@@ -142,6 +143,7 @@
         />
       </div>
 
+      <main class="agentChatMain" ref="mainRef" @scroll="onMainScroll">
       <!-- 空状态（无消息时显示） -->
       <div v-if="renderedItems.length === 0" class="agentChatEmpty">
         <ion-icon :icon="chatbubblesIcon" class="emptyIcon" />
@@ -273,6 +275,7 @@
         </template>
       </MessageVirtualList>
     </main>
+    </div><!-- /.agentChatBody -->
 
     <footer class="agentChatFooter">
       <!--
@@ -1037,7 +1040,7 @@ defineExpose({})
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px 12px 12px;
+  padding: 8px 12px 12px 36px; /* 左侧留出圆点导航空间 (4px gap + ~24px nav + 8px margin) */
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1662,24 +1665,31 @@ defineExpose({})
 }
 
 /* ── Dot Navigation（左侧圆点导航） ──────────────────────── */
-/* sticky 定位：随滚动容器固定在可视区左侧，不随内容滚走 */
+/* 位于 .agentChatBody(flex row) 内，是 main(scroll) 的兄弟元素 */
+.agentChatBody {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  position: relative; /* 为绝对定位的圆点导航提供定位上下文 */
+}
+
+/* 圆点导航：absolute 定位在 body 左侧，不受滚动影响 */
 .dotNavigation {
-  position: sticky;
-  float: left; /* 脱离文档流，不占据消息宽度 */
-  left: 4px;
-  top: 80px; /* header 高度下方开始 sticky */
+  position: absolute;
+  left: 2px;
+  top: 8px;
+  bottom: 8px;
   display: flex;
   flex-direction: column;
   gap: 5px;
-  z-index: 5;
-  padding: 8px 4px;
-  margin-right: 8px;
-  background: rgba(var(--ion-background-color-rgb), 0.75);
+  z-index: 20;
+  padding: 8px 5px;
+  background: rgba(var(--ion-background-color-rgb, 255, 255, 255), 0.9);
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.18);
   border-radius: 10px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  max-height: calc(100vh - 120px);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
   overflow-y: auto;
   align-self: flex-start;
 }
