@@ -285,20 +285,34 @@ func callOpenAIChatOnce(ctx context.Context, cfg agentConfig, model string, temp
 //
 // 与 callOpenAIChatOnce 一样，把 agent 工具列表塞到 reqBody["tools"]。
 func callOpenAIStream(ctx context.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg, openAITools []map[string]interface{}) (<-chan openaiStreamEvent, error) {
+	// max_tokens 根据模型上下文窗口动态决定，而非硬编码
+	// 策略：context window 的 ~12.5%（即 1/8），下限 4096，上限 16384
+	// gpt-4o (128k) → 16000, deepseek-chat (64k) → 8000, gpt-4 (8k) → 4096
+	contextWindow := lookupContextWindow(model)
+	dynamicMaxTokens := contextWindow / 8
+	if dynamicMaxTokens < 4096 {
+		dynamicMaxTokens = 4096
+	}
+	if dynamicMaxTokens > 16384 {
+		dynamicMaxTokens = 16384
+	}
+
 	reqBody := map[string]interface{}{
 		"model":       model,
 		"messages":    messages,
 		"temperature": temperature,
 		"stream":      true,
-		"max_tokens":  8192,
+		"max_tokens":  dynamicMaxTokens,
 	}
 	if len(openAITools) > 0 {
 		reqBody["tools"] = openAITools
 		reqBody["tool_choice"] = "auto"
 		slog.Info("callOpenAIStream: sending request with tools",
-			"model", model, "tool_count", len(openAITools))
+			"model", model, "tool_count", len(openAITools),
+			"context_window", contextWindow, "max_tokens", dynamicMaxTokens)
 	} else {
-		slog.Info("callOpenAIStream: WARNING no tools provided")
+		slog.Info("callOpenAIStream: WARNING no tools provided",
+			"model", model, "context_window", contextWindow, "max_tokens", dynamicMaxTokens)
 	}
 	reqJSON, _ := json.Marshal(reqBody)
 
