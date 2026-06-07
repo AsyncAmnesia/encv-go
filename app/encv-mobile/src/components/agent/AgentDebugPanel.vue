@@ -140,6 +140,41 @@
           ⓘ 复制后粘给我（包括 agentStatus / messages / renderedItems 状态）；移动端可点「全选文本」后长按复制
         </p>
       </section>
+
+      <!--
+        ⑦ 原始 SSE 事件流（实时捕获，不需要复制 console）
+        每行：时间戳 | event.type | data 摘要（前 200 字符）
+        关键判断：
+          - 有 type=tool_call / tool_result → 后端推了（看前端为什么没 append 到 messages）
+          - 只有 type=text_delta / stream_start / stream_end → 后端没推 tool_call
+      -->
+      <section v-if="rawSSEEvents && rawSSEEvents.length > 0" class="agentDebugSection">
+        <h4>⑦ 原始 SSE 事件流 ({{ rawSSEEvents.length }} 条)</h4>
+        <div class="agentDebugSseStats">
+          <span v-for="(c, t) in sseTypeCounts" :key="t" class="agentDebugChip" :class="{ agentDebugChip_emphasis: t === 'tool_call' || t === 'tool_result' }">
+            {{ t }}: {{ c }}
+          </span>
+        </div>
+        <textarea
+          id="agentDebugSseTextarea"
+          ref="sseTextarea"
+          class="agentDebugDumpText"
+          :value="sseEventText"
+          readonly
+          rows="12"
+          spellcheck="false"
+          @click="selectAllSse"
+        ></textarea>
+        <div class="agentDebugActions">
+          <button type="button" class="agentDebugBtn" @click="copySse">
+            <ion-icon :icon="copyOutline" />
+            <span>{{ sseCopyStatus === 'copied' ? '已复制 ✓' : '复制 SSE 事件流' }}</span>
+          </button>
+        </div>
+        <p class="agentDebugDumpHint">
+          ⓘ 这就是后端推给前端的所有 SSE 事件——直接粘给我就能看到有没有 tool_call/tool_result
+        </p>
+      </section>
     </div>
   </details>
 </template>
@@ -160,6 +195,12 @@ const props = defineProps<{
   defaultOpen?: boolean
   /** 当前 agent status（idle / streaming / confirming / error） */
   agentStatus?: string
+  /**
+   * 原始 SSE 事件日志（useAgent.pushRawEvent 追加的数组）。
+   * 每条含 { ts, type, dataSummary, seq }。
+   * AgentDebugPanel ⑦ 区直接渲染——用户不需要复制 console 了。
+   */
+  rawSSEEvents?: { ts: string; type: string; dataSummary: string; seq?: number | null }[]
 }>()
 
 const bugIcon = bugOutline
@@ -366,6 +407,43 @@ async function copyDump() {
 const dumpTextarea = ref<HTMLTextAreaElement | null>(null)
 function selectAllDump() {
   dumpTextarea.value?.select()
+}
+
+// ─── ⑦ 区：SSE 事件流 ─────────────────────────────────────
+const sseTextarea = ref<HTMLTextAreaElement | null>(null)
+const sseCopyStatus = ref<'idle' | 'copied' | 'failed'>('idle')
+
+const sseTypeCounts = computed<Record<string, number>>(() => {
+  const counts: Record<string, number> = {}
+  if (!props.rawSSEEvents) return counts
+  for (const ev of props.rawSSEEvents) counts[ev.type] = (counts[ev.type] ?? 0) + 1
+  return counts
+})
+
+const sseEventText = computed(() => {
+  if (!props.rawSSEEvents || props.rawSSEEvents.length === 0) return '(无 SSE 事件)'
+  return props.rawSSEEvents
+    .map((ev) => {
+      const seqTag = ev.seq != null ? ` [seq=${ev.seq}]` : ''
+      return `[${ev.ts}] type=${ev.type}${seqTag} data=${ev.dataSummary}`
+    })
+    .join('\n')
+})
+
+function selectAllSse() {
+  sseTextarea.value?.select()
+}
+
+async function copySse() {
+  try {
+    await navigator.clipboard?.writeText(sseEventText.value)
+    sseCopyStatus.value = 'copied'
+    console.error('[AgentDebugPanel] SSE events copied:\n' + sseEventText.value)
+    setTimeout(() => (sseCopyStatus.value = 'idle'), 1500)
+  } catch (e) {
+    sseCopyStatus.value = 'failed'
+    console.error('[AgentDebugPanel] copy SSE failed:', e)
+  }
 }
 
 // ─── 实时监控：变化时立即 console.error 打印 ──────────────

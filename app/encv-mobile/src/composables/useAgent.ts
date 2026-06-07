@@ -701,6 +701,24 @@ export function useAgent() {
     }
   })
 
+  // ─── 原始 SSE 事件日志（调试用：AgentDebugPanel ⑦ 区展示） ──
+  // 每个进 processSSE 的 event 都追加一条（含 type + data 摘要 + 时间戳）。
+  // 不自动清理——用户手动"清空"或新建会话时重置。
+  const rawSSEEvents = ref<{ ts: string; type: string; dataSummary: string; seq?: number | null }[]>([])
+
+  /** 追加一条原始事件到日志（最多保留 200 条防内存爆炸） */
+  function pushRawEvent(type: string, dataSummary: string, seq?: number | null) {
+    rawSSEEvents.value.push({
+      ts: new Date().toISOString().slice(11, 23), // HH:MM:SS.mmm
+      type,
+      dataSummary,
+      seq: seq ?? null,
+    })
+    if (rawSSEEvents.value.length > 200) {
+      rawSSEEvents.value = rawSSEEvents.value.slice(-150)
+    }
+  }
+
   // ─── Mock 模式预设按钮（覆盖在输入框上方，由 mock_presets 事件驱动） ──
   // 三个 ref 状态：
   //   - mockPresets：当前激活的预设 chip 列表
@@ -1183,6 +1201,8 @@ export function useAgent() {
           console.error(
             `[useAgent][SSE] type=${event.type} id=${currentEventId ?? '-'} data=${dataSummary}`,
           )
+          // ⑦ 区：追加到原始事件日志（AgentDebugPanel 可视化展示）
+          pushRawEvent(event.type, dataSummary, currentEventId)
           // Task 4.3：sequence 去重。若事件声明了 SSE id (currentEventId)，
           // 且该 id 已在当前 serverInstance 见过 → 整条事件丢弃，不再 dispatch。
           // 注意：未声明 id 的事件（如后端断点续传 stream_status 边界事件）跳过
@@ -2111,6 +2131,8 @@ export function useAgent() {
     // 调试开关：URL ?debug=agent 时强制显示 AgentDebugPanel（mock 模式时也自动开）。
     // 便于排查"SSE 事件 → messages → renderedItems → UI 组件"全链路断点。
     isDebugAgent,
+    // 调试：原始 SSE 事件日志（AgentDebugPanel ⑦ 区展示）
+    rawSSEEvents,
     // Task 4：以下为测试专用钩子。生产代码不应调用——所有 serverInstance
     // 同步都由 useAgent 内部 await refreshServerInstance() 完成。
     __refreshServerInstanceForTest: refreshServerInstance,

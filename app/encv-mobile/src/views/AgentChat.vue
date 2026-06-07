@@ -322,6 +322,7 @@
         :messages="messages"
         :rendered-items="renderedItems"
         :agent-status="status"
+        :raw-sse-events="rawSSEEvents"
         :default-open="isMockMode"
       />
 
@@ -532,7 +533,7 @@ const mockPresetBarPhase = computed(() => {
 // Agent API 基础 URL（动态解析：dev 走网关 / prod 直连后端）
 const AGENT_API_BASE = getAgentApiBase()
 
-const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel, setApiDefaultModel, isMockMode, isDebugAgent, mockScenario, currentMockMode, loadMockMode, setMockMode, mockPresets, mockPresetsPhase, mockPresetsScenario, pickMockPreset, loadMockPresets } = useAgent()
+const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel, setApiDefaultModel, isMockMode, isDebugAgent, mockScenario, currentMockMode, loadMockMode, setMockMode, mockPresets, mockPresetsPhase, mockPresetsScenario, pickMockPreset, loadMockPresets, rawSSEEvents } = useAgent()
 const router = useRouter()
 
 /**
