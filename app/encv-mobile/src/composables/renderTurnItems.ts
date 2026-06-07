@@ -27,14 +27,25 @@ function renderAgentFlow(
   // 把 displayText 分成 textEntryCount 段（按自然断点分割）
   const textSegments = splitContentIntoSegments(displayText, textEntryCount)
 
+  // 预扫描：找出所有 text 段在 eventLog 中的全局序号（用于标记首/尾）
+  const textGlobalIndices: number[] = []
+  let ti = 0
+  for (let ei = 0; ei < log.length && ti < textSegments.length; ei++) {
+    if (log[ei].type === 'text') {
+      textGlobalIndices.push(ei)
+      ti++
+    }
+  }
+
   let textIdx = 0
-  let isFirstText = true // 同轮消息的第一个 text 段显示 author header
   // 预建 id→ToolCall 查找表（O(1) 查找）
   const tcMap = new Map(msg.tool_calls.map((tc) => [tc.id, tc]))
 
-  for (const entry of log) {
+  for (let entryIdx = 0; entryIdx < log.length; entryIdx++) {
+    const entry = log[entryIdx]
     if (entry.type === 'text') {
       const seg = textSegments[textIdx] ?? ''
+      const globalPos = textGlobalIndices.indexOf(entryIdx)
       textIdx++
       if (seg.trim().length > 0) {
         out.push({
@@ -42,9 +53,9 @@ function renderAgentFlow(
           messageId: `a-${messageIndex}`,
           text: seg,
           streaming,
-          firstInGroup: isFirstText, // 只有第一个 text 段显示头像/名字/时间
+          firstInGroup: globalPos === 0,       // 第一个 text 段 → 显示头像/名字
+          showFooter: globalPos === textGlobalIndices.length - 1, // 最后一个 text 段 → 显示时间/复制
         })
-        isFirstText = false
       }
     } else if (entry.type === 'tool_call' && entry.id) {
       const tc = tcMap.get(entry.id)
@@ -292,7 +303,7 @@ export interface SubTask {
 /** 单条渲染项 - 由 AgentChat 分发到对应组件 */
 export type RenderedItem =
   | { type: 'user'; messageId: string; text: string }
-  | { type: 'assistantText'; messageId: string; text: string; streaming: boolean; firstInGroup?: boolean }
+  | { type: 'assistantText'; messageId: string; text: string; streaming: boolean; firstInGroup?: boolean; showFooter?: boolean }
   | { type: 'approval'; toolCallId: string; messageId: string }
   | { type: 'operationGroup'; messageId: string; toolCallIds: string[]; forceComplete: boolean }
   // Task 27：单条工具调用卡片（agent 流式时间轴模式）。

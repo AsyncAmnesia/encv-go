@@ -219,15 +219,15 @@ func scenarioListFilesQuery() *MockScenario {
 				}},
 			}},
 
-			// Step 7: 完整 markdown 总结（带标题 / 列表 / 代码块 / 表格）
+			// Step 7: 总结文本（不含硬编码数值——具体数据已由上方结构化卡片展示）
+			// 注意：文件名/大小/目录结构全部来自 tool_result 真实返回，
+			// 此处只做自然语言归纳，不重复具体数值。
 			{DelayMs: 800, Events: []MockEvent{
 				{Type: "text_delta", Data: map[string]interface{}{"text": "### 你的媒体库概览\n\n"}},
-				{Type: "text_delta", Data: map[string]interface{}{"text": "| 子目录 | 视频文件 | 文档 | 音频 | 图片 |\n"}},
-				{Type: "text_delta", Data: map[string]interface{}{"text": "|--------|---------|------|------|------|\n"}},
-				{Type: "text_delta", Data: map[string]interface{}{"text": "| `01-plain-media/video/` | `comedy.mkv` (298MB) + `sample.mp4` (256MB) | - | - | - |\n"}},
-				{Type: "text_delta", Data: map[string]interface{}{"text": "| `01-plain-media/document/` | - | `notes.txt` / `report.pdf` / `data.csv` | - | - |\n\n"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "已完成对 `01-plain-media` 目录的递归扫描：先列出挂载点，再逐级进入子目录读取文件列表。\n\n"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "上方工具调用卡片已展示完整的目录结构和文件详情（含真实大小和修改时间）。\n\n"}},
 				{Type: "text_delta", Data: map[string]interface{}{"text": "**下一步建议**（点击 chip 直接执行）：\n\n"}},
-				{Type: "text_delta", Data: map[string]interface{}{"text": "1. 加密 `sample.mp4`\n2. 查看 `notes.txt` 完整内容\n3. 切换到搜索字幕剧本\n"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "1. 加密视频文件\n2. 查看文档完整内容\n3. 切换到搜索剧本\n"}},
 			}},
 
 			// Step 8: 结束

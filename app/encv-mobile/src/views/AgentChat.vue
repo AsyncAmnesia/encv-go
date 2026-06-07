@@ -166,6 +166,7 @@
             :streaming="item.streaming"
             :status="status"
             :compact="!item.firstInGroup"
+            :show-footer="!!item.showFooter"
           />
           <ApprovalCard
             v-else-if="item.type === 'approval'"
@@ -252,6 +253,7 @@
               :streaming="item.streaming"
               :status="status"
               :compact="!item.firstInGroup"
+              :show-footer="!!item.showFooter"
             />
             <ApprovalCard
               v-else-if="item.type === 'approval'"
