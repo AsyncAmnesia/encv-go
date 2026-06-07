@@ -106,6 +106,7 @@
                   :is-customized="isApiKeyCustomized"
                   @update:model-value="handleApiKeyInput($event)"
                   @reset="handleApiKeyReset"
+                  @keyup-enter="handleApiKeyEnter"
                 />
                 <p v-if="apiKeyStatus === 'decrypt-failed' && !apiKeyPlainValue" class="api-key-mask-hint">
                   <ion-icon :icon="lockIcon" class="api-key-mask-icon"></ion-icon>
@@ -589,11 +590,18 @@ async function decryptAndLoadApiKey() {
         devlogApiInfo(`decrypt-key OK (${decrypted.length} chars)`, { kind: 'decrypt' })
       } else {
         // HTTP 200 但 decrypted 为空：后端所有格式都解不出（key/salt 不匹配/数据被截断等）
-        // 这不是"成功"，是"配置存在但无法解密"，状态必须切到 decrypt-failed 让用户看到红徽标
+        // 2026-06 修复：自动破坏性迁移 → 调 /api/agent/reset-key 把 config 里的 openai_api_key
+        // 字段清空，让用户重新输入一次。
+        //
+        // 为什么是自动而不是提示用户？
+        //   旧密文（Node.js agent-stub 加密 / deviceId-bound）永久解不出。
+        //   提示用户"重新输入"需要用户主动操作，但用户已经在"4 条 decrypt failed 日志"中愤怒
+        //   ——再让他手动清空 + 手动输入 + 手动保存，他会骂人。
+        //   改成：自动清空 + 自动 focus 输入框 + 大红色 banner 解释原因 + 用户只输一次即可。
         apiKeyPlainValue.value = ''
         apiKeyStatus.value = 'decrypt-failed'
         apiKeyStatusDetail.value = t('agent.apiKeyStatusDecryptFailedEmpty') ||
-          'Stored API key cannot be decrypted (all formats exhausted). The encryption key may have rotated or the stored value is corrupted.'
+          'Stored API key cannot be decrypted. The encryption key may have rotated or the stored value is corrupted. Auto-clearing now — please re-enter your key.'
         devlogApiError(new Error('decrypt-key returned empty decrypted'), {
           kind: 'decrypt',
           endpoint: '/api/decrypt-key',
@@ -601,6 +609,8 @@ async function decryptAndLoadApiKey() {
           deviceId,
           body: JSON.stringify(data).slice(0, 200),
         })
+        // 自动迁移：清空 config 里的密文 + 状态机 + 自动跳到 input
+        await autoResetBrokenApiKey()
       }
     } else {
       let body = ''
@@ -656,6 +666,72 @@ function handleApiKeyReset() {
   apiKeyStatus.value = 'empty'
   apiKeyStatusDetail.value = ''
   devlogApiInfo('api_key reset to default (empty)', { kind: 'replay', endpoint: 'reset-button' })
+}
+
+/**
+ * API Key 输入框按 Enter 时触发：立即加密 + 保存整个 config。
+ *
+ * 关键 UX：autoResetBrokenApiKey 后用户**只需输入一次 + 按 Enter** 即可完成全流程，
+ * 不必再点顶部的"保存"按钮。这是从"用户愤怒不愿操作"到"零操作可用"的关键。
+ */
+async function handleApiKeyEnter() {
+  // 1. 基本校验：必须有内容
+  const raw = apiKeyPlainValue.value.trim()
+  if (!raw) {
+    showToast({ message: t('agent.apiKeyEmpty') || '请输入 API Key', duration: 2000, color: 'warning' })
+    return
+  }
+  // 2. 必须看起来像 OpenAI key（避免误存其他内容）
+  if (!/^sk[-_]/i.test(raw) && raw.length < 20) {
+    showToast({
+      message: t('agent.apiKeyInvalid') || 'API Key 格式看起来不对，应以 sk- 开头',
+      duration: 3000,
+      color: 'warning',
+    })
+    return
+  }
+  devlogApiInfo('api_key enter pressed → auto save', { kind: 'encrypt' })
+  // 3. 复用 handleSaveConfig 逻辑：加密 + 持久化整个 config
+  await handleSaveConfig()
+}
+
+/**
+ * 自动破坏性迁移：解密失败时（典型场景：deviceId 变了 / Node.js 旧密文
+ * 与 Go 端 scrypt 不兼容），调用后端 /api/agent/reset-key 把 config 里的
+ * openai_api_key 字段置空，状态机归位到 empty，并自动滚动 + 聚焦输入框。
+ *
+ * 关键 UX：用户**无需任何操作**——只需看到红 banner + 已被聚焦的输入框，
+ * 直接打字输入新 key 即可，blur 时自动保存。
+ */
+async function autoResetBrokenApiKey() {
+  try {
+    const res = await fetch(`${getAgentApiBase()}/api/agent/reset-key`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    if (res.ok) {
+      const data = await res.json().catch(() => ({} as any))
+      devlogApiInfo(`reset-key OK (prev_len=${data?.prevLen ?? 'n/a'})`, { kind: 'decrypt' })
+    } else {
+      devlogApiError(new Error(`reset-key HTTP ${res.status}`), {
+        kind: 'decrypt',
+        endpoint: '/api/agent/reset-key',
+        status: res.status,
+      })
+    }
+  } catch (e) {
+    devlogApiError(e, { kind: 'decrypt', endpoint: '/api/agent/reset-key' })
+  }
+  // 不论后端成功与否，都清掉前端 store + 状态机
+  setFieldValue(['agent_settings', 'openai_api_key'], '')
+  apiKeyPlainValue.value = ''
+  apiKeyStatus.value = 'empty'
+  apiKeyStatusDetail.value = t('agent.apiKeyAutoReset') ||
+    'Old API key was unreadable and has been auto-cleared. Please enter your key below — it will save automatically on blur.'
+  // 自动滚动 + 聚焦：让用户无缝衔接
+  scrollToApiKey()
+  devlogApiInfo('api_key auto-reset, scrolling to input', { kind: 'decrypt' })
 }
 
 // ─── 动态模型选择（openai_model 字段） ──────────────────────

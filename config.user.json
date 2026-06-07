@@ -4,7 +4,7 @@
     "password": "123456"
   },
   "agent_settings": {
-    "openai_api_key": "enc:y7G1HCYI0v4qp3UvfP3WdYUPMq8/liQZCz3VgANYKX3qHbDxYjtAlnMqsuLaGxt/",
+    "openai_api_key": "",
     "openai_base_url": "https://api.openai.com/v1",
     "openai_model": "gpt-4o"
   },

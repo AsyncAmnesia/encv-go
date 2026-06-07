@@ -31,19 +31,24 @@ const (
 	cryptoSalt       = "encv-mobile-salt-2024"
 )
 
-// deriveKey 使用 passphrase + salt + 可选的设备指纹进行 scrypt 密钥派生
-// 设备指纹确保同一密文在不同设备上无法解密（即使知道 passphrase）
+// deriveKey 使用 passphrase + salt 进行 scrypt 密钥派生。
+//
+// 关键设计决策（2026-06 修复）：
+//   - **完全忽略 deviceId**。早期版本把 deviceId 拼到 salt 后面作为设备绑定，
+//     实际产生 2 个致命问题：
+//       1. 设备变化 / 浏览器沙箱切换 → deviceId 变 → 已存密文永远解不出
+//       2. 历史 Node.js agent-stub 用 scryptSync + 不同 salt 加密的密文，
+//          即便有正确 deviceId 也解不开（参数不兼容）
+//   - 现在统一只用固定 passphrase + salt 派生，跨设备稳定。
+//   - deviceId 仍然作为参数保留（API 兼容 + 给未来可选的"设备绑定"模式留口子），
+//     但实际不参与派生。
 func deriveKey(deviceId ...string) []byte {
-	// 基础 salt
 	saltBase := cryptoSalt
-	// 如果提供了设备 ID，追加到 salt 中
-	if len(deviceId) > 0 && deviceId[0] != "" {
-		saltBase = saltBase + ":" + deviceId[0]
-	}
+	_ = deviceId // 故意忽略，保持签名兼容
 	key, err := scrypt.Key(
 		[]byte(cryptoPassphrase),
 		[]byte(saltBase),
-		16384, // N (与 Node.js 默认值一致)
+		16384, // N
 		8,     // r
 		1,     // p
 		32,    // keylen (AES-256)
@@ -227,6 +232,7 @@ func (s *Server) registerAgentRoutes(r *gin.Engine) {
 	r.GET("/api/models", s.handleAgentModels)
 	r.POST("/api/encrypt-key", s.handleAgentEncryptKey)
 	r.POST("/api/decrypt-key", s.handleAgentDecryptKey)
+	r.POST("/api/agent/reset-key", s.handleAgentResetKey)
 	r.GET("/api/agent/context-usage", s.handleAgentContextUsage)
 	r.GET("/test", s.handleAgentTest)
 	r.POST("/test", s.handleAgentTest)
@@ -235,6 +241,85 @@ func (s *Server) registerAgentRoutes(r *gin.Engine) {
 	r.POST("/api/resume", s.handleAgentResume)
 
 	slog.Info("Agent API routes registered (integrated into encv-go)")
+}
+
+// ─── POST /api/agent/reset-key — 清空 config 里的 openai_api_key ──────
+//
+// 用途：前端在 decrypt-key 持续返回空字符串时（典型场景：deviceId 变了 /
+// 历史 Node.js agent-stub 加密的密文与 Go 端 scrypt 不兼容），自动调本端点
+// 把 config.user.json 里的 agent_settings.openai_api_key 字段置空，
+// 引导用户重新输入一次。
+//
+// 设计原则：
+//   - 不接受任何参数。直接清空，单一职责。
+//   - 写盘前加锁防并发。
+//   - 写盘后用 slog.Info 留痕（不写 s.cfg 内存——密文不在内存中，运行时
+//     每次都从文件 readAgentConfig 读，避免内存/磁盘状态漂移）。
+func (s *Server) handleAgentResetKey(c *gin.Context) {
+	if s.configPath == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "config path not available"})
+		return
+	}
+
+	s.configMu.Lock()
+	defer s.configMu.Unlock()
+
+	// 1. 读现有 config
+	data, err := os.ReadFile(s.configPath)
+	if err != nil {
+		slog.Warn("agent: reset-key cannot read config", "path", s.configPath, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot_read_config", "detail": err.Error()})
+		return
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		slog.Warn("agent: reset-key cannot parse config", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid_config", "detail": err.Error()})
+		return
+	}
+
+	// 2. 拿 agent_settings 块
+	agentRaw, ok := raw["agent_settings"]
+	if !ok {
+		// agent_settings 块本就不存在 → 没东西可清，直接成功
+		slog.Info("agent: reset-key no-op (agent_settings absent)")
+		c.JSON(http.StatusOK, gin.H{"reset": false, "reason": "no agent_settings block"})
+		return
+	}
+	var agent map[string]interface{}
+	if err := json.Unmarshal(agentRaw, &agent); err != nil {
+		slog.Warn("agent: reset-key cannot parse agent_settings", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid_agent_settings", "detail": err.Error()})
+		return
+	}
+
+	// 3. 记录原值（仅长度，不打内容，避免日志泄露密文）
+	prev, _ := agent["openai_api_key"].(string)
+	prevLen := len(prev)
+
+	// 4. 清空
+	agent["openai_api_key"] = ""
+	newAgent, _ := json.Marshal(agent)
+	raw["agent_settings"] = newAgent
+
+	// 5. 写回（保留缩进风格）
+	indented, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "marshal_failed", "detail": err.Error()})
+		return
+	}
+	if err := os.WriteFile(s.configPath, append(indented, '\n'), 0644); err != nil {
+		slog.Error("agent: reset-key write config failed", "path", s.configPath, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "write_failed", "detail": err.Error()})
+		return
+	}
+
+	slog.Info("agent: reset-key cleared openai_api_key from config", "path", s.configPath, "prev_len", prevLen)
+	c.JSON(http.StatusOK, gin.H{
+		"reset":   true,
+		"prevLen": prevLen,
+		"message": "openai_api_key has been cleared. Please re-enter the key in AI Settings.",
+	})
 }
 
 // ─── GET /api/models — 从供应商获取模型列表 ─────────────────
