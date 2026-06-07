@@ -395,6 +395,7 @@ import {
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { getDeviceIdSync } from '@/composables/useDeviceId'
+import { getAgentApiBase } from '@/composables/useAgentApiBase'
 import { useAgent, type Decision, type ToolCall, getLanAccess, type LanAddress } from '@/composables/useAgent'
 import { useRenderTurnItems } from '@/composables/renderTurnItems'
 import { useAttachments } from '@/composables/useAttachments'
@@ -419,7 +420,8 @@ import ContextIcon from '@/components/agent/ContextIcon.vue'
 const { t } = useI18n()
 
 // Agent API 基础路径（与 useAgent.ts 保持一致）
-const AGENT_API_BASE = '/agent-api'
+// Agent API 基础 URL（动态解析：dev 走网关 / prod 直连后端）
+const AGENT_API_BASE = getAgentApiBase()
 
 const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError } = useAgent()
 const router = useRouter()
@@ -672,7 +674,7 @@ async function fetchModels() {
       selectedModel.value = data.defaultModel || availableModels.value[0].id
     }
   } catch (e: any) {
-    console.error('[AgentChat] fetchModels failed:', e)
+    console.error('[AgentChat] fetchModels failed:', e?.message || e?.toString?.() || JSON.stringify(e) || '(unknown error)')
     // 网络错误等：不阻断用户使用，显示提示但保留已存储的模型选择
     modelsError.value = t('agent.modelsError')
   } finally {

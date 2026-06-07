@@ -800,7 +800,7 @@ async function fetchSettingsModels() {
     // 后端 readAgentConfig(deviceId) 用 deviceId 派生 AES 解密 key，
     // 不传 deviceId 会用错的 key 派生，永远解不出设备绑定的密文。
     const did = await getDeviceId()
-    const res = await fetch(`/agent-api/api/models?deviceId=${encodeURIComponent(did)}`)
+    const res = await fetch(`${getAgentApiBase()}/api/models?deviceId=${encodeURIComponent(did)}`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     if (data.error && data.error === 'no_api_key') {
@@ -816,7 +816,7 @@ async function fetchSettingsModels() {
       }))
     }
   } catch (e: any) {
-    console.error('[AgentSettings] fetchModels failed:', e)
+    console.error('[AgentSettings] fetchModels failed:', e?.message || e?.toString?.() || JSON.stringify(e) || '(unknown error)')
     settingsModelsError.value = e?.message || String(e)
   } finally {
     settingsModelsLoading.value = false
