@@ -113,6 +113,9 @@ function handleBlur() {
   setTimeout(() => {
     showHistory.value = false
   }, 150)
+  // 关键：暴露 blur 事件给父组件——父组件可借此自动保存
+  // 场景：用户修改 API Key 后不按 Enter 就离开 input → blur 时自动加密保存
+  emit('blur')
 }
 
 function handleSelect(value: string) {

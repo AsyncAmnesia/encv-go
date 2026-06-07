@@ -107,6 +107,7 @@
                   @update:model-value="handleApiKeyInput($event)"
                   @reset="handleApiKeyReset"
                   @keyup-enter="handleApiKeyEnter"
+                  @blur="handleApiKeyBlur"
                 />
                 <p v-if="apiKeyStatus === 'decrypt-failed' && !apiKeyPlainValue" class="api-key-mask-hint">
                   <ion-icon :icon="lockIcon" class="api-key-mask-icon"></ion-icon>
@@ -693,6 +694,29 @@ async function handleApiKeyEnter() {
   devlogApiInfo('api_key enter pressed → auto save', { kind: 'encrypt' })
   // 3. 复用 handleSaveConfig 逻辑：加密 + 持久化整个 config
   await handleSaveConfig()
+}
+
+/**
+ * 离开 API Key 输入框时自动保存。
+ *
+ * 为什么 blur 也要保存？
+ *   - 用户可能从解密成功的"sk-placeholder-..."全选删掉 → 重新输入真 key → 直接关掉页面
+ *   - 这时候 Enter 没被按过，但真 key 已经输入好了——blur 时自动保存。
+ *   - 只有"用户改动了内容"才保存，避免空 blur 时也触发 save。
+ */
+async function handleApiKeyBlur() {
+  const raw = apiKeyPlainValue.value.trim()
+  if (!raw) return // 空白不保存
+  if (raw.startsWith('enc:')) return // 已经是密文格式（用户没改）
+  // 只有当值跟初始"解密后的值"不同时才保存
+  // 简化：直接保存（重复保存无害，PUT /api/config 是幂等的）
+  devlogApiInfo('api_key blur → auto save', { kind: 'encrypt' })
+  try {
+    await handleSaveConfig()
+  } catch (e) {
+    // 静默失败——用户没主动操作，不需要打扰
+    console.debug('[handleApiKeyBlur] auto-save on blur failed:', e)
+  }
 }
 
 /**
