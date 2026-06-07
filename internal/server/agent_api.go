@@ -762,22 +762,83 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 			return
 		}
 
-		// 读取流式事件：累积 tool_calls / 实时转发文本
+		// 读取流式事件：累积 tool_calls / 智能缓冲文本
 		var (
 			roundTextContent     string
 			roundToolCalls       []toolCallAccumulator
 			tcAccumulator        = make(map[int]*toolCallAccumulator)
 			finishReason         string
 			gotToolCalls         bool
+
+			// ═══ 平台级 Tool Use 智能缓冲 ═══
+			// 问题：如果 LLM 输出工具调用 JSON（如 [{"name":"list_mounts",...}]），
+			//       之前的代码会通过 text_delta 实时把原始 JSON 推送给用户。
+			//       用户看到的是裸 JSON 而非工具执行结果。
+			//
+			// 解决：前 bufSizeLimit 字符进入缓冲区，检测是否像工具调用 JSON：
+			//   - 以 [ 或 { 开头 + 包含 "name" 字段 → 进入"疑似工具调用"模式
+			//     → 继续缓冲所有后续文本，不转发给客户端
+			//     → 流结束后用 extractToolCallsFromText 解析
+			//     → 解析成功 → 执行工具，JSON 永远不暴露给用户
+			//     → 解析失败 → 补发所有缓冲的文本（降级为普通文本）
+			//   - 不像工具调用 → 立即转发已缓冲的部分 + 切回实时模式
+			textBuf          []string           // 缓冲的 text_delta chunks
+			bufMode          = true             // 是否在缓冲模式（前 N 字符）
+			suspectedToolCall = false            // 是否检测到可能是工具调用
 		)
+		const bufSizeLimit = 60 // 缓冲阈值（字符数）
+
+		// looksLikeToolCall 检查累积文本是否看起来像工具调用 JSON
+		looksLikeToolCall := func(s string) bool {
+			trimmed := strings.TrimSpace(s)
+			if len(trimmed) < 3 {
+				return false
+			}
+			// 以 [ 或 { 开头 且包含 "name" 关键字
+			if (trimmed[0] == '[' || trimmed[0] == '{') &&
+				strings.Contains(trimmed, `"name"`) {
+				return true
+			}
+			return false
+		}
+
+		// flushBuffer 把缓冲的文本一次性转发给客户端（当确定不是工具调用时调用）
+		flushBuffer := func() {
+			for _, chunk := range textBuf {
+				s.sendAndCache(sess, c.Writer, flusher, "text_delta", chunk)
+			}
+			textBuf = nil
+		}
 
 		for ev := range streamCh {
 			switch ev.Type {
 			case "text_delta":
 				if textChunk, ok := ev.Data.(string); ok && textChunk != "" {
 					roundTextContent += textChunk
-					// ★ 关键：实时转发给客户端！用户立即看到文字逐字出现
-					s.sendAndCache(sess, c.Writer, flusher, "text_delta", textChunk)
+
+					if suspectedToolCall {
+						// 已确认为疑似工具调用 → 继续缓冲，不转发
+						textBuf = append(textBuf, textChunk)
+					} else if bufMode && len(roundTextContent) < bufSizeLimit {
+						// 缓冲阶段：积累足够样本再判断
+						textBuf = append(textBuf, textChunk)
+						// 积累到一定量后判断
+						if len(roundTextContent) >= bufSizeLimit || looksLikeToolCall(roundTextContent) {
+							if looksLikeToolCall(roundTextContent) {
+								suspectedToolCall = true
+								slog.Info("agent: detected suspected tool call JSON, buffering",
+									"prefix_len", len(roundTextContent),
+									"preview", roundTextContent[:min(80, len(roundTextContent))])
+							} else {
+								// 不像工具调用 → 立即释放缓冲区，切回实时模式
+								flushBuffer()
+								bufMode = false
+							}
+						}
+					} else {
+						// 正常实时模式或缓冲已释放 → 直接转发
+						s.sendAndCache(sess, c.Writer, flusher, "text_delta", textChunk)
+					}
 				}
 			case "reasoning_delta":
 				if textChunk, ok := ev.Data.(string); ok && textChunk != "" {
@@ -873,23 +934,38 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 			continue
 		}
 
-		// ── 分支 B: LLM 返回了纯文本（无 tool_calls）──
-		//     文本已通过上面的 text_delta case 实时转发给客户端了
+		// ── 分支 B: LLM 返回了纯文本（无 API 级 tool_calls）──
+		//     注意：如果 suspectedToolCall=true，文本可能还在缓冲区中未转发！
+		//     需要在 extractToolCallsFromText 结果出来后决定：丢弃（是工具调用）或补发（普通文本）
+
 		// DEBUG: 记录 LLM 实际返回内容（截断到 500 字符），用于诊断工具调用为何不触发
 		textPreview := roundTextContent
 		if len(textPreview) > 500 {
 			textPreview = textPreview[:500] + "...(truncated)"
 		}
-		slog.Info("agent: loop got text response (streamed in real-time)",
+		slog.Info("agent: loop got text response",
 			"round", round+1,
 			"finish_reason", finishReason,
 			"text_len", len(roundTextContent),
-			"text_preview", textPreview)
+			"text_preview", textPreview,
+			"suspected_tool_call", suspectedToolCall,
+			"buf_mode", bufMode,
+			"buf_len", len(textBuf))
 		finalAssistantText = roundTextContent
 
 		// 平台级 Tool Use：尝试从文本中解析工具调用 JSON（应对 API 代理丢弃 tools 参数的情况）
 		parsedCalls, remainingText := extractToolCallsFromText(finalAssistantText)
 		if len(parsedCalls) > 0 {
+			// ★★ 工具调用成功解析 ★★
+			// 如果文本在缓冲区中 → 丢弃缓冲区，用户永远看不到原始 JSON
+			if suspectedToolCall || bufMode {
+				slog.Info("agent: discarding buffered tool call JSON — user will not see raw JSON",
+					"buf_size", len(textBuf))
+				textBuf = nil // 丢弃缓冲区
+				suspectedToolCall = false
+				bufMode = false
+			}
+
 			slog.Info("agent: loop parsed tool calls from text (platform-level Tool Use) ★★ 工具调用成功解析 ★★",
 				"round", round+1,
 				"parsed_count", len(parsedCalls),
@@ -946,7 +1022,15 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 			continue
 		}
 		// 分支 B 也没有解析到工具调用 → LLM 输出了纯文本回复（非工具调用）
-		// 这是正常情况：用户问普通问题、LLM 直接回答
+		// 如果之前在缓冲模式 → 需要补发缓冲的文本给客户端
+		if suspectedToolCall || bufMode {
+			slog.Info("agent: flushing buffered text — was suspected tool call but parsing failed",
+				"buf_size", len(textBuf))
+			flushBuffer()
+			suspectedToolCall = false
+			bufMode = false
+		}
+
 		slog.Info("agent: loop no tool calls found — LLM returned plain text response",
 			"round", round+1,
 			"auto_tool_executed", autoToolExecuted,
