@@ -230,8 +230,8 @@ function createProxyFor(up: Upstream): httpProxy {
     changeOrigin: false,  // CRITICAL: do NOT rewrite Origin/Host — see spec §3.3
     xfwd: true,           // add X-Forwarded-* headers (helps Vite detect proxy)
     preserveHeaderKeyCase: true,
-    proxyTimeout: 30_000,
-    timeout: 30_000,
+    proxyTimeout: 120_000,   // agent chat 多轮 LLM 调用可能需要 60s+
+    timeout: 120_000,         // 同上（非流式端点如 /api/models 仍秒回，不影响）
   })
 
   // ⚠️ 沙箱 dev critical: override http-proxy's xfwd behavior for X-Forwarded-Proto.
