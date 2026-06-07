@@ -115,6 +115,11 @@ export interface UseChatEngineReturn {
  * 切换引擎时所有使用方自动更新。
  */
 export function useChatEngine(): UseChatEngineReturn {
+  // 引擎模块可能在 useChatEngine() 首次调用前已通过 import 注册，
+  // 但 engineList 在模块初始化时可能为空（注册还没执行）。
+  // 每次调用时刷新列表，确保 UI 能看到所有已注册引擎。
+  engineList.value = getRegisteredEngines()
+
   function switchEngine(id: string): boolean {
     if (id === activeEngineId.value && currentEngine.value) {
       return true // 已经是目标引擎

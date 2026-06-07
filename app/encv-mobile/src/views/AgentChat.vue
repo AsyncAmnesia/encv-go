@@ -38,22 +38,37 @@
             mockBadge_clickable: true,
           }"
           :title="mockBadgeTitle"
-          @click="openMockModeSheet"
+          @click="toggleMockMode"
         >
           <ion-icon :icon="flaskIcon" class="mockBadgeIcon" />
           <span class="mockBadgeText">{{ mockBadgeText }}</span>
           <ion-icon :icon="chevronDownIcon" class="mockBadgeChevron" />
         </button>
-        <!-- 多渲染引擎切换器（微型下拉） -->
-        <div class="engineSwitcher">
-          <select
-            class="engineSelect"
-            :value="currentEngineId"
-            @change="handleSwitchEngine(($event.target as HTMLSelectElement).value)"
+        <!-- 多渲染引擎切换器（同款模型选择器样式） -->
+        <div class="enginePicker" ref="enginePickerRef">
+          <button
+            type="button"
+            class="enginePickerBtn"
+            @click="enginePickerOpen = !enginePickerOpen"
             :title="'切换聊天引擎'"
           >
-            <option v-for="e in engineList" :key="e.id" :value="e.id">{{ e.name }}</option>
-          </select>
+            <span class="enginePickerLabel">{{ currentEngineDisplayName }}</span>
+            <ion-icon :icon="chevronDownIcon" class="enginePickerArrow" :class="{ 'enginePickerArrow_open': enginePickerOpen }" />
+          </button>
+          <Transition name="modelPickerFade">
+            <div v-if="enginePickerOpen" class="enginePickerDropdown">
+              <button
+                v-for="e in engineList"
+                :key="e.id"
+                type="button"
+                class="enginePickerOption"
+                :class="{ 'enginePickerOption_active': currentEngineId === e.id }"
+                @click="handleSwitchEngine(e.id); enginePickerOpen = false"
+              >
+                <span class="enginePickerOptionName">{{ e.name }}</span>
+              </button>
+            </div>
+          </Transition>
         </div>
       </div>
       <!-- 上下文使用图标（点击 → 弹窗：todos + 引用文件） -->
@@ -358,7 +373,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { IonIcon, modalController, alertController, actionSheetController } from '@ionic/vue'
+import { IonIcon, modalController, alertController } from '@ionic/vue'
 import {
   closeOutline,
   sparklesOutline,
@@ -403,6 +418,17 @@ const { t } = useI18n()
 
 // ── 多渲染引擎架构：引擎切换系统 ─────────────────────
 const { currentEngine, currentEngineId, engineList, switchEngine: doSwitchEngine } = useChatEngine()
+
+// 引擎切换器下拉状态
+const enginePickerOpen = ref(false)
+const enginePickerRef = ref<HTMLElement | null>(null)
+
+/** 当前引擎显示名称 */
+const currentEngineDisplayName = computed(() => {
+  const id = currentEngineId.value
+  const found = engineList.value.find(e => e.id === id)
+  return found?.name || id
+})
 
 /** 构建传给当前引擎的 renderProps */
 const engineRenderProps = computed(() => ({
@@ -777,7 +803,6 @@ function selectModel(id: string) {
  */
 const mockBadgeText = computed(() => {
   if (currentMockMode.value === 'builtin') return `${t('agent.mockBadge')}·${t('agent.mockModeBuiltin')}`
-  if (currentMockMode.value === 'custom') return `${t('agent.mockBadge')}·${t('agent.mockModeCustom')}`
   return t('agent.mockModeOff')
 })
 
@@ -795,45 +820,19 @@ const mockBadgeTitle = computed(() => {
 })
 
 /**
- * 点击徽章 → 弹 action-sheet 让用户选 off/builtin/custom
+ * 点击徽章 → 直接切换 off ↔ builtin（无 action-sheet）
  * 切换经由 useAgent.setMockMode() 走 PUT /api/config 持久化
  */
-async function openMockModeSheet(): Promise<void> {
-  const current = currentMockMode.value
-  const sheet = await actionSheetController.create({
-    header: t('agent.mockMode'),
-    buttons: [
-      {
-        text: t('agent.mockModeOff'),
-        handler: () => { void switchMockMode('off') },
-      },
-      {
-        text: t('agent.mockModeBuiltin'),
-        handler: () => { void switchMockMode('builtin') },
-      },
-      {
-        text: t('agent.mockModeCustom'),
-        handler: () => { void switchMockMode('custom') },
-      },
-      {
-        text: t('common.cancel'),
-        role: 'cancel',
-      },
-    ],
-  })
-  await sheet.present()
-  // 当前模式额外加 checked 标记（视觉反馈）—— 需要在 sheet 创建后 patch
-  // （Ionic 8 actionSheet 暂不支持 per-button checked，这里仅控制文本可见性）
-  void current
-}
-
-async function switchMockMode(mode: 'off' | 'builtin' | 'custom'): Promise<void> {
+async function toggleMockMode(): Promise<void> {
+  const next = currentMockMode.value === 'off' ? 'builtin' : 'off'
   try {
-    await setMockMode(mode)
+    await setMockMode(next)
     showToast({
-      message: t('agent.mockModeSet', { mode: t(`agent.mockMode${mode.charAt(0).toUpperCase()}${mode.slice(1)}`) }) || `Mock mode: ${mode}`,
-      duration: 1600,
-      color: mode === 'off' ? 'medium' : 'success',
+      message: next === 'off'
+        ? (t('agent.mockModeOff') || '真实 API')
+        : (t('agent.mockModeBuiltin') || '模拟·内置'),
+      duration: 1200,
+      color: next === 'off' ? 'medium' : 'success',
     })
   } catch (e) {
     showToast({
@@ -848,6 +847,9 @@ async function switchMockMode(mode: 'off' | 'builtin' | 'custom'): Promise<void>
 function handleModelPickerOutsideClick(e: MouseEvent) {
   if (modelPickerOpen.value && modelPickerRef.value && !modelPickerRef.value.contains(e.target as Node)) {
     modelPickerOpen.value = false
+  }
+  if (enginePickerOpen.value && enginePickerRef.value && !enginePickerRef.value.contains(e.target as Node)) {
+    enginePickerOpen.value = false
   }
 }
 
@@ -1209,48 +1211,95 @@ defineExpose({})
   opacity: 0.7;
 }
 
-/* ── 多渲染引擎切换器（微型下拉） ─────────────────── */
-.engineSwitcher {
+/* ── 多渲染引擎切换器（同款模型选择器样式） ─────────── */
+.enginePicker {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.enginePickerBtn {
   display: inline-flex;
   align-items: center;
-}
-
-.engineSelect {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  background: rgba(var(--ion-color-primary-rgb), 0.1);
+  gap: 2px;
+  height: 26px;
+  padding: 0 8px;
   border: 1px solid rgba(var(--ion-color-primary-rgb), 0.25);
-  border-radius: 10px;
+  border-radius: 8px;
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
   color: var(--ion-color-primary);
+  cursor: pointer;
   font-size: 11px;
   font-weight: 500;
-  font-family: inherit;
-  padding: 2px 22px 2px 8px; /* 右侧留出箭头空间 */
-  cursor: pointer;
-  outline: none;
-  transition: background 0.15s, border-color 0.15s;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234f8cff'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 6px center;
-  background-size: 10px 6px;
-  max-width: 110px;
+  white-space: nowrap;
+  transition: all 0.15s ease;
 }
 
-.engineSelect:hover {
-  background-color: rgba(var(--ion-color-primary-rgb), 0.16);
-  border-color: rgba(var(--ion-color-primary-rgb), 0.4);
+.enginePickerBtn:hover {
+  background: rgba(var(--ion-color-primary-rgb), 0.14);
+  border-color: rgba(var(--ion-color-primary-rgb), 0.3);
 }
 
-.engineSelect:focus {
-  border-color: var(--ion-color-primary);
-  box-shadow: 0 0 0 2px rgba(var(--ion-color-primary-rgb), 0.2);
+.enginePickerLabel {
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.engineSelect option {
+.enginePickerArrow {
+  font-size: 12px;
+  transition: transform 0.2s ease;
+  color: var(--ion-color-primary);
+  opacity: 0.7;
+}
+
+.enginePickerArrow_open {
+  transform: rotate(180deg);
+}
+
+.enginePickerDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 140px;
+  max-width: 220px;
   background: var(--ion-background-color);
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.2);
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);
+  z-index: 50;
+  padding: 4px;
+}
+
+.enginePickerOption {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
   color: var(--ion-text-color);
-  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.enginePickerOption:hover {
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
+}
+
+.enginePickerOption_active {
+  background: rgba(var(--ion-color-primary-rgb), 0.12);
+  font-weight: 600;
+  color: var(--ion-color-primary);
+}
+
+.enginePickerOptionName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .agentChatMain {
