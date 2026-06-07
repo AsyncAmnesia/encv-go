@@ -4,7 +4,6 @@ package server
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -16,7 +15,6 @@ import (
 	"net/http"
 	"strconv"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
@@ -610,212 +608,28 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 
 	reqURL := buildChatCompletionsURL(cfg.BaseURL)
 
-	// ════════════════════════════════════════════════════════════
-	// 阶段 1: Prompt-Based Tool Calling（非流式检测）
-	// ════════════════════════════════════════════════════════════
-	// 用 stream=false 调用 LLM，检查回复中是否含 <tool_call) 标签。
-	// 如果有 → 执行工具 → 将结果注入 messages → 进入阶段 2 流式输出
-	// 如果无 → 直接输出文本内容并返回
-	// ════════════════════════════════════════════════════════════
-	{
-		detectBody := map[string]interface{}{
-			"model":       model,
-			"messages":    finalMessages,
-			"temperature": body.Temperature,
-			"stream":      false,
-		}
-		if len(openAITools) > 0 {
-			detectBody["tools"] = openAITools
-			detectBody["tool_choice"] = "auto"
-		}
-		detectJSON, _ := json.Marshal(detectBody)
-
-		slog.Info("agent: phase-1 detecting tool calls (prompt-based FC)", "model", model)
-
-		detectReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, reqURL, bytes.NewReader(detectJSON))
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "build_detect_request_failed", "message": err.Error()})
-			return
-		}
-		detectReq.Header.Set("Content-Type", "application/json")
-		detectReq.Header.Set("Authorization", "Bearer "+cfg.APIKey)
-
-		detectClient := &http.Client{Timeout: 120 * time.Second}
-		detectResp, err := detectClient.Do(detectReq)
-		if err != nil {
-			slog.Warn("agent: phase-1 request failed, falling back to streaming mode", "error", err)
-			// 阶段 1 失败时降级到原来的纯流式模式（不走 tool calling）
-			goto doStreamMode
-		}
-		defer detectResp.Body.Close()
-
-		detectRespBytes, _ := io.ReadAll(detectResp.Body)
-
-		if detectResp.StatusCode >= 400 {
-			slog.Warn("agent: phase-1 upstream error, falling back to streaming", "status", detectResp.StatusCode)
-			goto doStreamMode
-		}
-
-		// 解析非流式响应
-		var detectResult struct {
-			Choices []struct {
-				Message struct {
-					Content string `json:"content"`
-				} `json:"message"`
-				FinishReason string `json:"finish_reason"`
-			} `json:"choices"`
-			Error struct {
-				Message string `json:"message"`
-			} `json:"error"`
-		}
-		json.Unmarshal(detectRespBytes, &detectResult)
-		if detectResult.Error.Message != "" {
-			slog.Warn("agent: phase-1 API error, falling back to streaming", "error", detectResult.Error.Message)
-			goto doStreamMode
-		}
-
-		var phase1Text string
-		if len(detectResult.Choices) > 0 {
-			phase1Text = detectResult.Choices[0].Message.Content
-		}
-
-		// 检测是否包含 <tool_call) 标签
-		toolCalls := extractToolCallsFromText(phase1Text)
-		if len(toolCalls) == 0 {
-			// 没有 tool call — 直接将文本作为 SSE 推送给客户端
-			slog.Info("agent: phase-1 no tool detected, streaming text response")
-			flusher, ok := c.Writer.(http.Flusher)
-			if !ok {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "sse_not_supported"})
-				return
-			}
-			s.setSSEHeaders(c.Writer)
-			sess.mu.Lock()
-			sess.InProgress = true
-			sess.mu.Unlock()
-			defer func() {
-				sess.mu.Lock()
-				sess.InProgress = false
-				sess.mu.Unlock()
-			}()
-
-			// 将文本分段推送（模拟流式效果）
-			cleanText := stripToolCallsFromText(phase1Text)
-			if cleanText != "" {
-				// 按 chunk 分割模拟打字效果
-				chunkSize := 20
-				runes := []rune(cleanText)
-				for i := 0; i < len(runes); i += chunkSize {
-					end := i + chunkSize
-					if end > len(runes) {
-						end = len(runes)
-					}
-					s.sendAndCache(sess, c.Writer, flusher, "text_delta", string(runes[i:end]))
-					time.Sleep(10 * time.Millisecond) // 模拟打字延迟
-				}
-			}
-			s.sendAndCache(sess, c.Writer, flusher, "stream_end", "")
-			slog.Info("agent: chat completed (phase-1 direct)", "model", model)
-			return
-		}
-
-		// ★ 有 tool call！执行工具并将结果注入 messages
-		slog.Info("agent: phase-1 tool calls detected", "count", len(toolCalls), "tools", func() []string {
-			names := make([]string, len(toolCalls))
-			for i, tc := range toolCalls {
-				names[i] = tc.Name
-			}
-			return names
-		}())
-
-		// 把 LLM 的完整回复（含 tool call 标签）作为 assistant 消息追加
-		assistantReply := phase1Text
-		finalMessages = append(finalMessages, chatMsg{Role: "assistant", Content: assistantReply})
-
-		// 执行每个工具调用
-		for round := 0; round < maxPromptToolRounds && len(toolCalls) > 0; round++ {
-			for _, tc := range toolCalls {
-				result := s.executePromptToolCall(tc)
-				// 工具结果作为 role="tool" 消息追加（模仿 OpenAI function calling 格式）
-				finalMessages = append(finalMessages, chatMsg{Role: "tool", Content: result})
-				slog.Info("agent: tool executed", "name", tc.Name, "result_len", len(result))
-			}
-
-			// 追加提示让 LLM 基于工具结果生成最终回复
-			finalMessages = append(finalMessages, chatMsg{Role: "user", Content: "工具已执行完成。请基于以上工具返回的结果回答用户的原始问题。如果需要更多信息可以继续调用工具。"})
-
-			// 再调一次非流式检查是否还有新 tool call（递归）
-			nextDetectBody := map[string]interface{}{
-				"model":       model,
-				"messages":    finalMessages,
-				"temperature": body.Temperature,
-				"stream":      false,
-			}
-			nextJSON, _ := json.Marshal(nextDetectBody)
-			nextReq, _ := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, reqURL, bytes.NewReader(nextJSON))
-			nextReq.Header.Set("Content-Type", "application/json")
-			nextReq.Header.Set("Authorization", "Bearer "+cfg.APIKey)
-			nextResp, err := detectClient.Do(nextReq)
-			if err != nil {
-				slog.Warn("agent: follow-up tool detection failed", "round", round+1, "error", err)
-				break
-			}
-			nextBytes, _ := io.ReadAll(nextResp.Body)
-			nextResp.Body.Close()
-
-			var nextResult struct {
-				Choices []struct {
-					Message struct { Content string `json:"content"` } `json:"message"`
-				} `json:"choices"`
-			}
-			json.Unmarshal(nextBytes, &nextResult)
-			var nextText string
-			if len(nextResult.Choices) > 0 {
-				nextText = nextResult.Choices[0].Message.Content
-			}
-
-			nextToolCalls := extractToolCallsFromText(nextText)
-			if len(nextToolCalls) == 0 {
-				// 没有更多 tool call 了，把最终回复保存为 assistant 消息
-				finalMessages = append(finalMessages, chatMsg{Role: "assistant", Content: nextText})
-				break
-			}
-			// 还有 tool call，继续循环
-			finalMessages = append(finalMessages, chatMsg{Role: "assistant", Content: nextText})
-			toolCalls = nextToolCalls
-		}
-
-		// 更新 session 的 messages（去掉临时的 tool 中间消息）
-		sess.mu.Lock()
-		sess.Messages = append([]chatMsg{}, body.Messages...)
-		sess.mu.Unlock()
-
-		slog.Info("agent: phase-1 complete, entering phase-2 streaming", "total_messages", len(finalMessages))
-
-		// 不 goto —— 继续往下走进入阶段 2 流式输出
-	}
-
-doStreamMode:
-	// ════════════════════════════════════════════════════════════
-	// 阶段 2: 流式输出最终回复给客户端
-	// （原始的 OpenAI 流式转发逻辑）
-	// ════════════════════════════════════════════════════════════
 	reqBody := map[string]interface{}{
-			"model":       model,
-			"messages":    finalMessages,
-			"temperature": body.Temperature,
-			"stream":      true,
-		}
-		if len(openAITools) > 0 {
-			reqBody["tools"] = openAITools
-			reqBody["tool_choice"] = "auto"
-		}
-		reqJSON, _ := json.Marshal(reqBody)
+		"model":       model,
+		"messages":    finalMessages,
+		"temperature": body.Temperature,
+		"stream":      true,
+	}
+	if len(openAITools) > 0 {
+		reqBody["tools"] = openAITools
+		// TODO: 改回 "auto"。"required" 仅用于调试确认 FC 是否生效
+		reqBody["tool_choice"] = "required"
+	}
+	reqJSON, _ := json.Marshal(reqBody)
 
-		fmt.Fprintf(os.Stderr, "[AGENT-DEBUG] phase-2 streaming request (messages=%d, tools=%d)\n",
-			len(finalMessages), len(openAITools))
+	// ── DEBUG: 流式诊断 — 记录请求关键参数和响应时序 ──
+	slog.Info("agent: chat request",
+		"model", model,
+		"stream", true,
+		"tools_count", len(openAITools),
+		"url", reqURL,
+		"messages_count", len(finalMessages))
 
-		httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, reqURL, bytes.NewReader(reqJSON))
+	httpReq, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, reqURL, bytes.NewReader(reqJSON))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "build_request_failed", "message": err.Error()})
 		return
@@ -833,6 +647,12 @@ doStreamMode:
 		return
 	}
 	defer resp.Body.Close()
+
+	// ── DEBUG: 响应诊断 ──
+	slog.Info("agent: chat response received",
+		"status", resp.StatusCode,
+		"content_type", resp.Header.Get("Content-Type"),
+		"transfer_encoding", resp.Header.Get("Transfer-Encoding"))
 
 	// ⑦ 上游错误处理
 	if resp.StatusCode >= 400 {
@@ -869,6 +689,10 @@ doStreamMode:
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024) // 大 buffer 防止长行截断
 	hasContent := false
 
+	// ── DEBUG: 流式时序诊断 ──
+	chunkCount := 0
+	requestSentTime := time.Now() // 近似值：在 client.Do() 前更准，但这里也行
+
 	// 累积 tool_calls（OpenAI 流式分片到达，必须按 index 聚合）
 	tcAccum := make(map[int]*toolCallAccumulator)
 	var pendingTools []toolCallAccumulator
@@ -880,6 +704,27 @@ doStreamMode:
 			continue
 		}
 		dataStr := strings.TrimPrefix(line, "data: ")
+
+		// ── DEBUG: 记录每个原始 SSE chunk（仅前3个 + 含 tool 的）──
+		if chunkCount < 3 || strings.Contains(dataStr, "tool_call") || strings.Contains(dataStr, "finish_reason") {
+			preview := dataStr
+			if len(preview) > 300 {
+				preview = preview[:300]
+			}
+			slog.Info("agent: raw SSE chunk", "chunk#", chunkCount, "len", len(dataStr), "data", preview)
+		}
+
+		// 首个 data chunk 到达计时
+		if chunkCount == 0 {
+			preview := dataStr
+			if len(preview) > 120 {
+				preview = preview[:120]
+			}
+			slog.Info("agent: first SSE chunk arrived",
+				"elapsed_ms", time.Since(requestSentTime).Milliseconds(),
+				"preview", preview)
+		}
+		chunkCount++
 		if dataStr == "[DONE]" {
 			// 推 finish 阶段的 tool_call 事件（如果有累积的）
 			if len(pendingTools) == 0 {
@@ -1007,7 +852,10 @@ doStreamMode:
 		slog.Warn("agent: sse scanner error", "error", err)
 	}
 
-	slog.Info("agent: chat completed", "model", model, "has_content", hasContent, "pending_tools", len(pendingTools))
+	slog.Info("agent: chat completed", "model", model, "has_content", hasContent,
+		"pending_tools", len(pendingTools),
+		"total_sse_chunks", chunkCount,
+		"total_elapsed_ms", time.Since(requestSentTime).Milliseconds())
 }
 
 // openaiToolCallChunk 是 OpenAI 流式 tool_calls 单个分片的结构
