@@ -231,10 +231,8 @@ describe('stripLeadingToolCallJson', () => {
 
   it('integration: assistant message with tool JSON gets cleaned via renderTurnItems', () => {
     const msg: Message = {
-      id: 'a-1',
       role: 'assistant',
       content: '{ "queries":[""], "source_filter":["file_library"] }\n# 文件列表\n\n1. test.py',
-      created_at: Date.now(),
       tool_calls: [],
       tool_results: [],
     }
@@ -248,10 +246,8 @@ describe('stripLeadingToolCallJson', () => {
 
   it('integration: user message with tool JSON is NOT cleaned', () => {
     const msg: Message = {
-      id: 'u-1',
       role: 'user',
       content: '{ "queries":["test"] }请帮我找文件',
-      created_at: Date.now(),
       tool_calls: [],
       tool_results: [],
     }
