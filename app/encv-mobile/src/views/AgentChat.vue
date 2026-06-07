@@ -165,6 +165,7 @@
             :text="item.text"
             :streaming="item.streaming"
             :status="status"
+            :compact="!item.firstInGroup"
           />
           <ApprovalCard
             v-else-if="item.type === 'approval'"
@@ -250,6 +251,7 @@
               :text="item.text"
               :streaming="item.streaming"
               :status="status"
+              :compact="!item.firstInGroup"
             />
             <ApprovalCard
               v-else-if="item.type === 'approval'"

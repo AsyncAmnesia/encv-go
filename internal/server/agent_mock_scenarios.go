@@ -78,7 +78,7 @@ func scenarioListFilesQuery() *MockScenario {
 			"video", "movie", "files", "list files", "list",
 		},
 		Steps: []MockStep{
-			// Step 1: stream_start + 开场白（markdown: 标题）
+			// Step 1: stream_start + 开场白（markdown: 标题）—— 立即展示，用户已等待
 			{DelayMs: 0, Events: []MockEvent{
 				{Type: "stream_start", Data: map[string]interface{}{
 					"scenario": "list_files_query",
@@ -88,7 +88,7 @@ func scenarioListFilesQuery() *MockScenario {
 			}},
 
 			// Step 2: list_mounts（execute_real=true → 真实读 mounts 配置）
-			{DelayMs: 500, Events: []MockEvent{
+			{DelayMs: 800, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_mount",
 					"name":         "list_mounts",
@@ -105,7 +105,7 @@ func scenarioListFilesQuery() *MockScenario {
 			}},
 
 			// Step 3: list_mounts 结果（被真实结果覆盖，hardcode 仅作 fallback）
-			{DelayMs: 350, Events: []MockEvent{
+			{DelayMs: 600, Events: []MockEvent{
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_mount",
 					"status": "success",
@@ -121,10 +121,10 @@ func scenarioListFilesQuery() *MockScenario {
 			}},
 
 			// Step 4: 过渡文本 + list_files(/01-plain-media) 调真实
-			{DelayMs: 300, Events: []MockEvent{
+			{DelayMs: 600, Events: []MockEvent{
 				{Type: "text_delta", Data: map[string]interface{}{"text": "已找到挂载点 `serving` → `/storage/emulated/0`。继续递归到 `01-plain-media`...\n\n"}},
 			}},
-			{DelayMs: 400, Events: []MockEvent{
+			{DelayMs: 700, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_files1",
 					"name":         "list_files",
@@ -139,7 +139,7 @@ func scenarioListFilesQuery() *MockScenario {
 					"status": "running",
 				}},
 			}},
-			{DelayMs: 350, Events: []MockEvent{
+			{DelayMs: 600, Events: []MockEvent{
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_files1",
 					"status": "success",
@@ -155,10 +155,10 @@ func scenarioListFilesQuery() *MockScenario {
 			}},
 
 			// Step 5: 进入 video 子目录
-			{DelayMs: 300, Events: []MockEvent{
+			{DelayMs: 600, Events: []MockEvent{
 				{Type: "text_delta", Data: map[string]interface{}{"text": "`01-plain-media` 下有 4 个子目录（`audio` / `document` / `image` / `video`）。点开 `video` 看一下...\n\n"}},
 			}},
-			{DelayMs: 400, Events: []MockEvent{
+			{DelayMs: 700, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_files2",
 					"name":         "list_files",
@@ -173,7 +173,7 @@ func scenarioListFilesQuery() *MockScenario {
 					"status": "running",
 				}},
 			}},
-			{DelayMs: 350, Events: []MockEvent{
+			{DelayMs: 600, Events: []MockEvent{
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_files2",
 					"status": "success",
@@ -189,7 +189,7 @@ func scenarioListFilesQuery() *MockScenario {
 			}},
 
 			// Step 6: 读 video 里的 sample.mp4 文件元数据
-			{DelayMs: 400, Events: []MockEvent{
+			{DelayMs: 700, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_read",
 					"name":         "read_file",
@@ -204,7 +204,7 @@ func scenarioListFilesQuery() *MockScenario {
 					"status": "running",
 				}},
 			}},
-			{DelayMs: 350, Events: []MockEvent{
+			{DelayMs: 600, Events: []MockEvent{
 				{Type: "tool_status", Data: map[string]interface{}{
 					"id":     "call_read",
 					"status": "success",
@@ -220,7 +220,7 @@ func scenarioListFilesQuery() *MockScenario {
 			}},
 
 			// Step 7: 完整 markdown 总结（带标题 / 列表 / 代码块 / 表格）
-			{DelayMs: 200, Events: []MockEvent{
+			{DelayMs: 800, Events: []MockEvent{
 				{Type: "text_delta", Data: map[string]interface{}{"text": "### 你的媒体库概览\n\n"}},
 				{Type: "text_delta", Data: map[string]interface{}{"text": "| 子目录 | 视频文件 | 文档 | 音频 | 图片 |\n"}},
 				{Type: "text_delta", Data: map[string]interface{}{"text": "|--------|---------|------|------|------|\n"}},
@@ -231,7 +231,7 @@ func scenarioListFilesQuery() *MockScenario {
 			}},
 
 			// Step 8: 结束
-			{DelayMs: 100, Events: []MockEvent{
+			{DelayMs: 300, Events: []MockEvent{
 				{Type: "stream_end", Data: map[string]interface{}{
 					"finishReason": "stop",
 					"usage":        map[string]int{"totalTokens": 618},

@@ -28,6 +28,7 @@ function renderAgentFlow(
   const textSegments = splitContentIntoSegments(displayText, textEntryCount)
 
   let textIdx = 0
+  let isFirstText = true // 同轮消息的第一个 text 段显示 author header
   // 预建 id→ToolCall 查找表（O(1) 查找）
   const tcMap = new Map(msg.tool_calls.map((tc) => [tc.id, tc]))
 
@@ -41,7 +42,9 @@ function renderAgentFlow(
           messageId: `a-${messageIndex}`,
           text: seg,
           streaming,
+          firstInGroup: isFirstText, // 只有第一个 text 段显示头像/名字/时间
         })
+        isFirstText = false
       }
     } else if (entry.type === 'tool_call' && entry.id) {
       const tc = tcMap.get(entry.id)
@@ -104,8 +107,8 @@ function splitContentIntoSegments(fullText: string, targetCount: number): string
   if (!fullText || fullText.trim().length === 0) return []
   if (targetCount <= 1) return [fullText]
 
-  // 按双换行预切
-  const candidates = fullText.split(/\n\n+/)
+  // 按双换行预切，但保护 markdown 表格块（| 开头的连续行不应在中间断开）
+  const candidates = splitPreservingTables(fullText)
 
   if (candidates.length >= targetCount) {
     // 够分：前 n-1 段各取一段，剩余全归最后一段
@@ -115,23 +118,24 @@ function splitContentIntoSegments(fullText: string, targetCount: number): string
     return result
   }
 
-  // 不够分：从最长的一段中间再切
+  // 不够分：从最长的一段中间再切（避开表格区域）
   const result = [...candidates]
   while (result.length < targetCount) {
-    // 找当前最长的段
-    let longestIdx = 0
+    // 找当前最长的段（跳过表格段）
+    let longestIdx = -1
     let longestLen = 0
     for (let i = 0; i < result.length; i++) {
-      if (result[i].length > longestLen) {
-        longestLen = result[i].length
+      const len = result[i].length
+      // 跳过表格段（以 | 开头）和太短的段
+      const isTable = /^\s*\|/.test(result[i])
+      if (len > longestLen && len >= 20 && !isTable) {
+        longestLen = len
         longestIdx = i
       }
     }
-    // 最长段太短了（<20 字符）没法再切 → 停止
-    if (longestLen < 20) break
-    // 从中间位置切
+    if (longestIdx === -1) break // 所有剩余段都是表格或太短，无法继续切分
+    // 从中间位置切（尽量在换行或空格处）
     const mid = Math.floor(result[longestIdx].length / 2)
-    // 尽量在换行或空格处切（避免截断单词）
     let cutPos = mid
     const nlBefore = result[longestIdx].lastIndexOf('\n', mid)
     const nlAfter = result[longestIdx].indexOf('\n', mid)
@@ -143,6 +147,60 @@ function splitContentIntoSegments(fullText: string, targetCount: number): string
   }
 
   return result
+}
+
+/**
+ * 按双换行分割文本，但保持 markdown 表格块完整。
+ * 表格块 = 连续的以 | 开头的行（含分隔行 |---|---|）。
+ * 这些行之间只用 \n 分隔，不应被 \n\n 切分点拆散。
+ */
+function splitPreservingTables(text: string): string[] {
+  const lines = text.split('\n')
+  const segments: string[] = []
+  let current: string[] = []
+  let inTable = false
+
+  for (const line of lines) {
+    const isTableRow = /^\s*\|/.test(line)
+    if (isTableRow && !inTable) {
+      // 进入表格：先把之前累积的非表格内容作为一个 segment
+      if (current.length > 0) {
+        segments.push(current.join('\n'))
+        current = []
+      }
+      inTable = true
+      current.push(line)
+    } else if (!isTableRow && inTable) {
+      // 离开表格：表格内容作为独立 segment
+      inTable = false
+      current.push(line) // 表格最后一行后的空行也归入表格段
+      segments.push(current.join('\n'))
+      current = []
+    } else {
+      current.push(line)
+    }
+  }
+  // 处理末尾残余
+  if (current.length > 0) {
+    segments.push(current.join('\n'))
+  }
+
+  // 对非表格段再做 \n\n 二次切分
+  const result: string[] = []
+  for (const seg of segments) {
+    if (/^\s*\|/m.test(seg)) {
+      // 表格段：保持完整
+      result.push(seg)
+    } else {
+      // 非表格段：按 \n\n 再细分
+      const parts = seg.split(/\n\n+/)
+      for (const p of parts) {
+        if (p.trim().length > 0) result.push(p)
+      }
+    }
+  }
+
+  return result.length > 0 ? result : [text]
 }
 
 /**
@@ -234,7 +292,7 @@ export interface SubTask {
 /** 单条渲染项 - 由 AgentChat 分发到对应组件 */
 export type RenderedItem =
   | { type: 'user'; messageId: string; text: string }
-  | { type: 'assistantText'; messageId: string; text: string; streaming: boolean }
+  | { type: 'assistantText'; messageId: string; text: string; streaming: boolean; firstInGroup?: boolean }
   | { type: 'approval'; toolCallId: string; messageId: string }
   | { type: 'operationGroup'; messageId: string; toolCallIds: string[]; forceComplete: boolean }
   // Task 27：单条工具调用卡片（agent 流式时间轴模式）。
