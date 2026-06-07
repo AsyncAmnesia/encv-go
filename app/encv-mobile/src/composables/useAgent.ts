@@ -632,8 +632,8 @@ export function useAgent() {
   const TEMP_STORAGE_KEY = 'encv-agent-temperature'
   const activeModel = ref<string>(
     (() => {
-      try { return localStorage.getItem(MODEL_STORAGE_KEY) || 'gpt-4o' }
-      catch { return 'gpt-4o' }
+      try { return localStorage.getItem(MODEL_STORAGE_KEY) || 'gpt-4o-mini' }
+      catch { return 'gpt-4o-mini' }
     })(),
   )
   // 之前怀疑 gpt-4o-mini 在 gptgod 代理下不发 tools，临时加了 safeModel

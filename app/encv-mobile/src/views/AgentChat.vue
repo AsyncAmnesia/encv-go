@@ -51,32 +51,7 @@
       </button>
     </div>
 
-    <div class="agentChatToolbar">
-      <label class="toolbarField">
-        <span class="toolbarLabel">{{ t('agent.model') }}</span>
-        <select v-model="selectedModel" class="toolbarSelect" :disabled="status === 'streaming' || modelsLoading">
-          <option v-if="modelsLoading" value="" disabled>{{ t('agent.loadingModels') }}...</option>
-          <template v-else-if="modelsError">
-            <option value="" disabled>{{ modelsError }}</option>
-            <!-- 错误时仍保留当前选中模型，确保用户可继续使用 -->
-            <option v-if="selectedModel && !availableModels.some(m => m.id === selectedModel)" :value="selectedModel">{{ selectedModel }}</option>
-          </template>
-          <option v-for="m in availableModels" :key="m.id" :value="m.id">{{ m.name }}</option>
-        </select>
-      </label>
-      <label class="toolbarField toolbarFieldNarrow">
-        <span class="toolbarLabel">{{ t('agent.temperature') }}</span>
-        <input
-          v-model.number="temperature"
-          type="number"
-          min="0"
-          max="2"
-          step="0.1"
-          class="toolbarInput"
-          :disabled="status === 'streaming'"
-        />
-      </label>
-    </div>
+    <!-- 模型选择已移至输入框内（footerInputRow 左侧） -->
 
     <!--
       Task 26 (LAN Access)：局域网访问地址折叠面板。
@@ -301,6 +276,47 @@
       />
 
       <div class="footerInputRow" :class="{ 'footerInputRow-palette': slashMenu.isOpen.value }">
+        <!-- 模型选择器（输入框内嵌，参考 ChatGPT/Claude 主流设计） -->
+        <div class="modelPicker" ref="modelPickerRef">
+          <button
+            type="button"
+            class="modelPickerBtn"
+            :disabled="status === 'streaming' || modelsLoading"
+            @click="modelPickerOpen = !modelPickerOpen"
+            :title="t('agent.model')"
+          >
+            <span class="modelPickerLabel">{{ currentModelDisplayName }}</span>
+            <ion-icon :icon="chevronDownIcon" class="modelPickerArrow" :class="{ 'modelPickerArrow_open': modelPickerOpen }" />
+          </button>
+          <Transition name="modelPickerFade">
+            <div v-if="modelPickerOpen" class="modelPickerDropdown">
+              <div v-if="modelsLoading" class="modelPickerLoading">{{ t('agent.loadingModels') }}...</div>
+              <template v-else-if="modelsError">
+                <div class="modelPickerError">{{ modelsError }}</div>
+                <button
+                  v-if="selectedModel && !availableModels.some(m => m.id === selectedModel)"
+                  type="button"
+                  class="modelPickerOption modelPickerOption_active"
+                  @click="selectModel(selectedModel); modelPickerOpen = false"
+                >{{ selectedModel }}</button>
+              </template>
+              <template v-else>
+                <button
+                  v-for="m in availableModels"
+                  :key="m.id"
+                  type="button"
+                  class="modelPickerOption"
+                  :class="{ 'modelPickerOption_active': selectedModel === m.id }"
+                  @click="selectModel(m.id); modelPickerOpen = false"
+                >
+                  <span class="modelPickerOptionName">{{ m.name }}</span>
+                  <span v-if="m.provider !== 'unknown'" class="modelPickerOptionProvider">{{ m.provider }}</span>
+                </button>
+              </template>
+            </div>
+          </Transition>
+        </div>
+
         <!-- Task 12: 附件 `+` 按钮 -->
         <button
           v-if="status !== 'streaming'"
@@ -412,6 +428,7 @@ import {
   clipboardOutline,
   refreshCircleOutline,
   keyOutline,
+  chevronDownOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { getDeviceIdSync } from '@/composables/useDeviceId'
@@ -443,7 +460,7 @@ const { t } = useI18n()
 // Agent API 基础 URL（动态解析：dev 走网关 / prod 直连后端）
 const AGENT_API_BASE = getAgentApiBase()
 
-const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError } = useAgent()
+const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel } = useAgent()
 const router = useRouter()
 
 /**
@@ -518,6 +535,7 @@ const attachIcon = attachOutline
 const globeIcon = globeOutline
 const clipboardIcon = clipboardOutline
 const refreshCircleIcon = refreshCircleOutline
+const chevronDownIcon = chevronDownOutline
 const historyOpen = ref(false)
 
 // ── Task 26 (LAN Access) ───────────────────────────────────
@@ -728,10 +746,34 @@ const selectedModel = ref<string>(storedModel)
 const temperature = ref<number>(storedTemp)
 watch(selectedModel, (v) => {
   try { localStorage.setItem(SELECTED_MODEL_KEY, v) } catch { /* ignore */ }
+  // 同步到 useAgent 的 activeModel（send/sendQueued 读取此值）
+  activeModel.value = v
 })
 watch(temperature, (v) => {
   try { localStorage.setItem(TEMPERATURE_KEY, String(v)) } catch { /* ignore */ }
 })
+
+// ─── 模型选择器（输入框内嵌） ─────────────────────────────
+const modelPickerOpen = ref(false)
+const modelPickerRef = ref<HTMLElement | null>(null)
+
+/** 当前模型的显示名称（从 availableModels 查找，找不到则用 id 本身） */
+const currentModelDisplayName = computed(() => {
+  const id = selectedModel.value
+  const found = availableModels.value.find(m => m.id === id)
+  return found?.name || id
+})
+
+function selectModel(id: string) {
+  selectedModel.value = id
+}
+
+/** 点击外部关闭下拉 */
+function handleModelPickerOutsideClick(e: MouseEvent) {
+  if (modelPickerOpen.value && modelPickerRef.value && !modelPickerRef.value.contains(e.target as Node)) {
+    modelPickerOpen.value = false
+  }
+}
 
 // ─── 工具调用查找 ─────────────────────────────────────────
 function findToolCall(id: string): ToolCall | null {
@@ -971,6 +1013,12 @@ onMounted(async () => {
   // 启动时尝试恢复最近 session
   await resume()
   nextTick(() => scrollToBottom('auto'))
+  // 模型选择器：点击外部关闭下拉
+  document.addEventListener('click', handleModelPickerOutsideClick)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleModelPickerOutsideClick)
 })
 
 // 暴露给 modal container（可选）
@@ -1145,6 +1193,135 @@ defineExpose({})
 /* 隐藏原生 file input —— 用按钮触发 */
 .footerAttachInput {
   display: none;
+}
+
+/* ── 模型选择器（输入框内嵌） ──────────────────────────── */
+.modelPicker {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.modelPickerBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.25);
+  border-radius: 8px;
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
+  color: var(--ion-color-primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.modelPickerBtn:hover:not(:disabled) {
+  background: rgba(var(--ion-color-primary-rgb), 0.14);
+  border-color: rgba(var(--ion-color-primary-rgb), 0.3);
+}
+
+.modelPickerBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.modelPickerLabel {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modelPickerArrow {
+  font-size: 12px;
+  transition: transform 0.2s ease;
+  color: var(--ion-color-primary);
+  opacity: 0.7;
+}
+
+.modelPickerArrow_open {
+  transform: rotate(180deg);
+}
+
+.modelPickerDropdown {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 180px;
+  max-width: 260px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--ion-background-color);
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.2);
+  border-radius: 10px;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.14);
+  z-index: 50;
+  padding: 4px;
+}
+
+.modelPickerLoading,
+.modelPickerError {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--ion-text-color-step-400, #888);
+  text-align: center;
+}
+
+.modelPickerOption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ion-text-color);
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.modelPickerOption:hover {
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
+}
+
+.modelPickerOption_active {
+  background: rgba(var(--ion-color-primary-rgb), 0.12);
+  font-weight: 600;
+  color: var(--ion-color-primary);
+}
+
+.modelPickerOptionName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modelPickerOptionProvider {
+  font-size: 10px;
+  color: var(--ion-text-color-step-400, #999);
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+/* 下拉动画 */
+.modelPickerFade-enter-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.modelPickerFade-leave-active {
+  transition: opacity 0.1s ease, transform 0.1s ease;
+}
+.modelPickerFade-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+.modelPickerFade-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
 }
 
 .footerSendBtn {
