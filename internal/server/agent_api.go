@@ -929,6 +929,10 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 					if v, ok := meta["needConfirm"].(bool); ok { needConfirm = v }
 				}
 
+				// ★ 无论是否需要确认，都向前端推送 tool_call 事件
+				// 这样前端才能渲染 GroupedOperationMessage 等结构化组件
+				s.emitToolCallEvent(sess, c.Writer, flusher, tc, toolMeta)
+
 				if needConfirm {
 					pendingTools = append(pendingTools, tc)
 					allAutoExecuted = false
@@ -945,6 +949,15 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 						"tool_name":   tc.Function.Name,
 						"round":       round + 1,
 						"duration_ms": time.Since(start).Milliseconds(),
+					})
+					// 推送 tool_status 事件，让前端 GroupedOperationMessage 更新状态徽章
+					statusVal := "success"
+					if execErr != nil {
+						statusVal = "failed"
+					}
+					s.sendAndCache(sess, c.Writer, flusher, "tool_status", map[string]interface{}{
+						"id":     tc.ID,
+						"status": statusVal,
 					})
 					if execErr != nil {
 						result = fmt.Sprintf(`{"error":"tool_execution_failed","detail":%q}`, execErr.Error())
@@ -1023,6 +1036,10 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 				if meta, ok := toolMeta[tc.Function.Name]; ok {
 					if v, ok := meta["needConfirm"].(bool); ok { needConfirm = v }
 				}
+
+				// ★ 向前端推送 tool_call 事件（与 API 级 tool_calls 路径一致）
+				s.emitToolCallEvent(sess, c.Writer, flusher, tc, toolMeta)
+
 				if needConfirm {
 					pendingTools = append(pendingTools, tc)
 					allAutoExecuted = false
@@ -1039,6 +1056,15 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 						"tool_name":   tc.Function.Name,
 						"round":       round + 1,
 						"duration_ms": time.Since(start).Milliseconds(),
+					})
+					// 推送 tool_status 事件（平台级 Tool Use 路径）
+					parsedStatusVal := "success"
+					if execErr != nil {
+						parsedStatusVal = "failed"
+					}
+					s.sendAndCache(sess, c.Writer, flusher, "tool_status", map[string]interface{}{
+						"id":     tc.ID,
+						"status": parsedStatusVal,
 					})
 					if execErr != nil {
 						result = fmt.Sprintf(`{"error":"tool_execution_failed","detail":%q}`, execErr.Error())

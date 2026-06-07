@@ -33,21 +33,21 @@
     </header>
 
     <!-- ─── ① Usage 进度条 ─────────────────────────── -->
-    <section v-if="data" class="ctx-section">
+    <section v-if="data && data.usage" class="ctx-section">
       <div class="ctx-usage">
         <div class="ctx-usage-numbers">
-          <span class="ctx-usage-pct" :class="getToneClass(data.usage.percent)">
-            {{ data.usage.percent.toFixed(1) }}%
+          <span class="ctx-usage-pct" :class="getToneClass(data.usage.percent ?? 0)">
+            {{ (data.usage.percent ?? 0).toFixed(1) }}%
           </span>
           <span class="ctx-usage-detail">
-            {{ formatTokens(data.usage.tokens) }} / {{ formatTokens(data.usage.window) }} tokens
+            {{ formatTokens(data.usage.tokens ?? 0) }} / {{ formatTokens(data.usage.window ?? 0) }} tokens
           </span>
         </div>
         <div class="ctx-usage-bar">
           <div
             class="ctx-usage-fill"
-            :class="getToneClass(data.usage.percent)"
-            :style="{ width: Math.min(100, data.usage.percent) + '%' }"
+            :class="getToneClass(data.usage.percent ?? 0)"
+            :style="{ width: Math.min(100, data.usage.percent ?? 0) + '%' }"
           />
         </div>
         <div v-if="data.compactions > 0" class="ctx-usage-compact">
@@ -58,7 +58,7 @@
     </section>
 
     <!-- ─── ② Todos 任务列表 ────────────────────────── -->
-    <section v-if="data && data.todos.length > 0" class="ctx-section">
+    <section v-if="data && Array.isArray(data.todos) && data.todos.length > 0" class="ctx-section">
       <h4 class="ctx-section-title">
         <ion-icon :icon="checkboxIcon" />
         <span>任务列表</span>
@@ -86,7 +86,7 @@
     </section>
 
     <!-- ─── ③ Referenced Files 引用文件 ─────────────── -->
-    <section v-if="data && data.referencedFiles.length > 0" class="ctx-section">
+    <section v-if="data && Array.isArray(data.referencedFiles) && data.referencedFiles.length > 0" class="ctx-section">
       <h4 class="ctx-section-title">
         <ion-icon :icon="documentIcon" />
         <span>引用的文件</span>
