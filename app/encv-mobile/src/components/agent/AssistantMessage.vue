@@ -19,8 +19,8 @@
     <div class="assistantMessageBody">
       <MarkdownStream :content="text" :streaming="streaming" />
     </div>
-    <!-- 底部栏：时间戳 + 复制（非流式时显示；紧凑模式下仅最后一段强制展示） -->
-    <div v-if="(!compact || showFooter) && !streaming" class="assistantMessageFooter">
+    <!-- 底部栏：时间戳 + 复制（仅 showFooter=true 且非流式时显示） -->
+    <div v-if="showFooter && !streaming" class="assistantMessageFooter">
       <span class="footerTimestamp">{{ displayTime }}</span>
       <button
         type="button"

@@ -10,7 +10,7 @@
  * SPEC: /workspace/.trae/specs/multi-engine-chat-architecture/tasks.md Task 1.2
  */
 
-import { shallowRef, type ShallowRef } from 'vue'
+import { shallowRef, ref, type ShallowRef, type Ref } from 'vue'
 import type { ChatEngine } from './chatEngine'
 import {
   createEngineInstance,
@@ -25,13 +25,20 @@ const STORAGE_KEY = 'encv-chat-engine'
 const DEFAULT_ENGINE_ID = 'default'
 
 // =============================================================================
-// 引擎状态（模块级单例）
+// 引擎状态（模块级单例，响应式）
 // =============================================================================
 
-/** 当前活跃引擎实例 */
-let currentEngineInstance: ChatEngine | null = null
-/** 当前引擎 ID */
-let currentEngineId: string = loadSavedEngineId()
+/**
+ * 当前活跃引擎实例（shallowRef，切换时触发重新渲染）
+ * 模块级单例——所有 useChatEngine() 调用共享同一个 ref
+ */
+const currentEngine: ShallowRef<ChatEngine | null> = shallowRef(null)
+
+/** 当前引擎 ID（响应式，用于 select 绑定） */
+const activeEngineId = ref(loadSavedEngineId())
+
+/** 所有已注册引擎的元信息列表（响应式） */
+const engineList = ref(getRegisteredEngines())
 
 /**
  * 从 localStorage 加载保存的引擎 ID
@@ -58,6 +65,30 @@ function saveEngineId(id: string): void {
   }
 }
 
+/**
+ * 确保引擎可用 —— 如果实例不存在则创建，失败则尝试 default
+ */
+function ensureEngine(id: string): ChatEngine | null {
+  let instance = createEngineInstance(id)
+  if (!instance && id !== DEFAULT_ENGINE_ID) {
+    console.warn(`[useChatEngine] Engine "${id}" not found, falling back to default`)
+    instance = createEngineInstance(DEFAULT_ENGINE_ID)
+    if (instance) {
+      activeEngineId.value = DEFAULT_ENGINE_ID
+      saveEngineId(DEFAULT_ENGINE_ID)
+    }
+  }
+  return instance
+}
+
+// 初始化：确保有活跃实例
+if (!currentEngine.value) {
+  currentEngine.value = ensureEngine(activeEngineId.value)
+  if (currentEngine.value) {
+    activeEngineId.value = currentEngine.value.id
+  }
+}
+
 // =============================================================================
 // useChatEngine Composable
 // =============================================================================
@@ -65,10 +96,10 @@ function saveEngineId(id: string): void {
 export interface UseChatEngineReturn {
   /** 当前活跃引擎（shallowRef，切换时触发重新渲染） */
   currentEngine: ShallowRef<ChatEngine | null>
-  /** 当前引擎 ID */
-  currentEngineId: string
-  /** 所有已注册引擎的元信息列表 */
-  engineList: Array<{ id: string; name: string; description?: string }>
+  /** 当前引擎 ID（响应式，用于 select 绑定） */
+  currentEngineId: Ref<string>
+  /** 所有已注册引擎的元信息列表（响应式） */
+  engineList: Ref<Array<{ id: string; name: string; description?: string }>>
   /**
    * 切换到指定引擎
    * @param id 目标引擎 id
@@ -80,32 +111,12 @@ export interface UseChatEngineReturn {
 /**
  * 获取引擎切换器实例
  *
- * 使用方式：
- * ```vue
- * <script setup>
- * const { currentEngine, switchEngine, engineList } = useChatEngine()
- * </script>
- * <template>
- *   <component :is="currentEngine?.renderMessages(props)" />
- *   <!-- 切换按钮 -->
- *   <select @change="switchEngine($event.target.value)">
- *     <option v-for="e in engineList" :key="e.id" :value="e.id" :selected="e.id === currentEngineId">
- *       {{ e.name }}
- *     </option>
- *   </select>
- * </template>
- * ```
+ * 所有调用方共享同一个模块级响应式状态（currentEngine / activeEngineId / engineList），
+ * 切换引擎时所有使用方自动更新。
  */
 export function useChatEngine(): UseChatEngineReturn {
-  const currentEngine = shallowRef<ChatEngine | null>(currentEngineInstance)
-
-  // 确保有活跃实例
-  if (!currentEngine.value) {
-    currentEngine.value = ensureEngine(currentEngineId)
-  }
-
   function switchEngine(id: string): boolean {
-    if (id === currentEngineId && currentEngine.value) {
+    if (id === activeEngineId.value && currentEngine.value) {
       return true // 已经是目标引擎
     }
 
@@ -125,39 +136,27 @@ export function useChatEngine(): UseChatEngineReturn {
       console.warn(`[useChatEngine] Engine "${id}" failed to create, falling back to default`)
       const fallback = ensureEngine(DEFAULT_ENGINE_ID)
       currentEngine.value = fallback
-      currentEngineId = DEFAULT_ENGINE_ID
+      activeEngineId.value = DEFAULT_ENGINE_ID
       saveEngineId(DEFAULT_ENGINE_ID)
       return false
     }
 
     currentEngine.value = newEngine
-    currentEngineId = id
+    activeEngineId.value = id
     saveEngineId(id)
+
+    // 刷新引擎列表（可能有新引擎注册）
+    engineList.value = getRegisteredEngines()
+
     return true
   }
 
   return {
     currentEngine,
-    currentEngineId,
-    engineList: getRegisteredEngines(),
+    currentEngineId: activeEngineId,
+    engineList,
     switchEngine,
   }
-}
-
-/**
- * 确保引擎可用 —— 如果实例不存在则创建，失败则尝试 default
- */
-function ensureEngine(id: string): ChatEngine | null {
-  let instance = createEngineInstance(id)
-  if (!instance && id !== DEFAULT_ENGINE_ID) {
-    console.warn(`[useChatEngine] Engine "${id}" not found, falling back to default`)
-    instance = createEngineInstance(DEFAULT_ENGINE_ID)
-    if (instance) {
-      currentEngineId = DEFAULT_ENGINE_ID
-      saveEngineId(DEFAULT_ENGINE_ID)
-    }
-  }
-  return instance
 }
 
 /** 导出常量供外部使用 */

@@ -155,13 +155,13 @@
 
       <main class="agentChatMain" ref="mainRef" @scroll="onMainScroll">
       <!--
-        多渲染引擎架构：通过 currentEngine.renderMessages() 动态渲染消息列表。
-        DefaultEngine → DefaultMessagesView.vue（与改造前完全一致）
-        CopilotKit 风格 → CopilotKitStyleChat.vue（头像+内容双栏布局）
+        多渲染引擎架构：通过 EngineRenderer 组件渲染当前引擎的消息列表。
+        EngineRenderer 使用 render() 函数直接输出 VNode，避免 <component :is="vnode"> 不稳定。
       -->
-      <component
-        :is="currentEngine?.renderMessages(engineRenderProps)"
+      <EngineRenderer
         v-if="currentEngine"
+        :engine="currentEngine"
+        :render-props="engineRenderProps"
       />
       <!-- 引擎加载失败时的 fallback（不应触发，但防御性保留） -->
       <div v-else class="agentChatEmpty">
@@ -389,6 +389,8 @@ import { useChatEngine } from '@/composables/useChatEngine'
 import '@/engines/defaultEngine'
 import '@/engines/copilotkitStyleEngine'
 import '@/engines/tdesignEngine'
+// 引擎渲染包装组件（解决 <component :is="vnode"> 不稳定的问题）
+import EngineRenderer from '@/components/agent/EngineRenderer.vue'
 // 以下组件现在由 DefaultMessagesView.vue 内部导入（引擎渲染路径）
 // AgentChat.vue 作为宿主容器不再直接引用这些组件
 import AttachmentTray from '@/components/agent/AttachmentTray.vue'
@@ -418,7 +420,7 @@ const engineRenderProps = computed(() => ({
   function handleSwitchEngine(engineId: string): void {
     const ok = doSwitchEngine(engineId)
     if (ok) {
-      const name = engineList.find(e => e.id === engineId)?.name || engineId
+      const name = engineList.value.find(e => e.id === engineId)?.name || engineId
       showToast({ message: `已切换到 ${name}`, duration: 1200, color: 'success' })
     }
   }
