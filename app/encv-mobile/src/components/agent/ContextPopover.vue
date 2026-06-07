@@ -186,9 +186,8 @@ function todoStatusLabel(status: string): string {
 
 <style scoped>
 .ctx-popover {
-  width: 360px;
-  max-width: 92vw;
-  max-height: 70vh;
+  width: 100%;
+  max-height: inherit;
   overflow-y: auto;
   background: var(--ion-background-color);
   color: var(--ion-text-color);

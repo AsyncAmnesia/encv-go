@@ -626,6 +626,13 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		return
 	}
 
+	// ④½ 提前设置 SSE headers —— 让客户端立即建立连接，
+	//     Agent Loop 期间可通过同一连接推送进度事件（thinking / tool_executed）
+	s.setSSEHeaders(c.Writer)
+	// 初始注释确认 SSE 连接已建立
+	c.Writer.Write([]byte(": agent loop starting\n\n"))
+	flusher.Flush()
+
 	// ⑤ 构建 OpenAI 兼容请求
 	//
 	// 关键：把 agent 工具列表（plugin 加密解密 + fs 只读）发给 LLM。
@@ -664,6 +671,13 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 			"max_rounds", maxAgentLoopRounds,
 			"messages_count", len(loopMessages),
 			"tools_count", len(openAITools))
+
+		// 推送循环进度事件（客户端可显示"正在思考..."或轮次指示器）
+		s.sendSSEEventSafe(c.Writer, flusher, "stream_status", map[string]interface{}{
+			"status":  "thinking",
+			"round":   round + 1,
+			"message": fmt.Sprintf("正在调用 LLM (第 %d/%d 轮)...", round+1, maxAgentLoopRounds),
+		})
 
 		resp, err := callOpenAIChatOnce(c.Request.Context(), cfg, model, body.Temperature, loopMessages, openAITools)
 		if err != nil {
@@ -735,6 +749,14 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 						"name", tc.Function.Name,
 						"duration_ms", time.Since(start).Milliseconds(),
 						"has_error", execErr != nil)
+
+					// 推送工具执行完成事件（客户端可显示工具名 + 耗时）
+					s.sendSSEEventSafe(c.Writer, flusher, "stream_status", map[string]interface{}{
+						"status":     "tool_executed",
+						"tool_name":  tc.Function.Name,
+						"round":      round + 1,
+						"duration_ms": time.Since(start).Milliseconds(),
+					})
 
 					if execErr != nil {
 						result = fmt.Sprintf(`{"error":"tool_execution_failed","detail":%q}`, execErr.Error())
@@ -822,6 +844,13 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 						"duration_ms", time.Since(start).Milliseconds(),
 						"has_error", execErr != nil)
 
+					s.sendSSEEventSafe(c.Writer, flusher, "stream_status", map[string]interface{}{
+						"status":      "tool_executed",
+						"tool_name":   tc.Function.Name,
+						"round":       round + 1,
+						"duration_ms": time.Since(start).Milliseconds(),
+					})
+
 					if execErr != nil {
 						result = fmt.Sprintf(`{"error":"tool_execution_failed","detail":%q}`, execErr.Error())
 					}
@@ -872,7 +901,7 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	// ════════════════════════════════════════════════════════════
 	// 阶段 2: 流式输出给客户端
 	// ════════════════════════════════════════════════════════════
-	s.setSSEHeaders(c.Writer)
+	// （SSE headers 已在阶段 1 之前设置，无需重复）
 	defer func() {
 		sess.mu.Lock()
 		sess.InProgress = false

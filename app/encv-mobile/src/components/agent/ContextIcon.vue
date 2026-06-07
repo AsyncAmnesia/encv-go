@@ -41,6 +41,7 @@
     class="context-popover-host"
     :show-backdrop="true"
     :backdrop-dismiss="true"
+    style="--width: 92vw; --max-height: 70vh; --min-height: 200px;"
     @did-dismiss="closePopover"
   >
     <ContextPopover
