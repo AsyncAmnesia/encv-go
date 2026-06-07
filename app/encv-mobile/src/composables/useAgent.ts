@@ -563,6 +563,10 @@ export function useAgent() {
       catch { return 'gpt-4o' }
     })(),
   )
+  // 之前怀疑 gpt-4o-mini 在 gptgod 代理下不发 tools，临时加了 safeModel
+  // 白名单做硬编码降级。实测 gpt-4o-mini 完全能用工具（3 轮 list_mounts →
+  // list_files → 输出 4 个目录），根因不在模型上。回退这段逻辑，
+  // 直接用 activeModel —— 真正的问题要去看后端日志 / 实际请求体。
   const activeTemperature = ref<number>(
     (() => {
       try {
