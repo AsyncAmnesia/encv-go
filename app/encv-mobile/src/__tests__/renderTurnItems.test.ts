@@ -166,3 +166,100 @@ describe('renderTurnItems', () => {
     expect(out[0].type).toBe('error')
   })
 })
+
+// =============================================================================
+// stripLeadingToolCallJson 测试（LLM 工具调用 JSON 前缀清理）
+// =============================================================================
+describe('stripLeadingToolCallJson', () => {
+  it('exports the function', async () => {
+    const { stripLeadingToolCallJson } = await import('@/composables/renderTurnItems')
+    expect(typeof stripLeadingToolCallJson).toBe('function')
+  })
+
+  // 需要动态 import 因为 vitest esbuild 模式下顶层 await 不稳定
+  async function getStripFn() {
+    const { stripLeadingToolCallJson } = await import('@/composables/renderTurnItems')
+    return stripLeadingToolCallJson
+  }
+
+  it('strips file_search tool call JSON prefix', async () => {
+    const fn = await getStripFn()
+    const input = '{ "queries":[""], "source_filter": ["file_library"], "intent": "nav" }当前工作区共有以下文件：'
+    expect(fn(input)).toBe('当前工作区共有以下文件：')
+  })
+
+  it('preserves normal markdown content without JSON prefix', async () => {
+    const fn = await getStripFn()
+    const input = '# Hello\n\n这是正常的回复内容。'
+    expect(fn(input)).toBe('# Hello\n\n这是正常的回复内容。')
+  })
+
+  it('returns original when JSON has no known tool keys', async () => {
+    const fn = await getStripFn()
+    const input = '{ "name": "test", "value": 42 }some text'
+    // name is in TOOL_CALL_JSON_KEYS but value is not — but name alone isn't enough
+    // Actually "name" IS in the set, so this WOULD be stripped. Let me use non-tool keys.
+    const input2 = '{ "foo": "bar", "baz": [1,2] }some text'
+    expect(fn(input2)).toBe('{ "foo": "bar", "baz": [1,2] }some text')
+  })
+
+  it('returns original when JSON is not at start', async () => {
+    const fn = await getStripFn()
+    const input = '查看文件列表：\n{ "queries": [""] }'
+    expect(fn(input)).toBe('查看文件列表：\n{ "queries": [""] }')
+  })
+
+  it('returns original when JSON is the entire content (no trailing text)', async () => {
+    const fn = await getStripFn()
+    const input = '{ "queries": [""], "intent": "nav" }'
+    expect(fn(input)).toBe('{ "queries": [""], "intent": "nav" }')
+  })
+
+  it('handles nested braces correctly', async () => {
+    const fn = await getStripFn()
+    const input = '{ "queries": [{"path": "/tmp"}], "source_filter": ["file_library"], "intent": "nav" }结果如下：'
+    expect(fn(input)).toBe('结果如下：')
+  })
+
+  it('handles empty string', async () => {
+    const fn = await getStripFn()
+    expect(fn('')).toBe('')
+  })
+
+  it('handles non-object start (plain text)', async () => {
+    const fn = await getStripFn()
+    expect(fn('Hello world')).toBe('Hello world')
+  })
+
+  it('integration: assistant message with tool JSON gets cleaned via renderTurnItems', () => {
+    const msg: Message = {
+      id: 'a-1',
+      role: 'assistant',
+      content: '{ "queries":[""], "source_filter":["file_library"] }\n# 文件列表\n\n1. test.py',
+      created_at: Date.now(),
+      tool_calls: [],
+      tool_results: [],
+    }
+    const out = renderTurnItems([msg], 'idle')
+    expect(out).toHaveLength(1)
+    expect(out[0].type).toBe('assistantText')
+    // JSON prefix should be stripped
+    expect((out[0] as { text: string }).text).not.toContain('"queries"')
+    expect((out[0] as { text: string }).text).toContain('# 文件列表')
+  })
+
+  it('integration: user message with tool JSON is NOT cleaned', () => {
+    const msg: Message = {
+      id: 'u-1',
+      role: 'user',
+      content: '{ "queries":["test"] }请帮我找文件',
+      created_at: Date.now(),
+      tool_calls: [],
+      tool_results: [],
+    }
+    const out = renderTurnItems([msg], 'idle')
+    expect(out).toHaveLength(1)
+    // user messages are NOT stripped
+    expect((out[0] as { text: string }).text).toContain('"queries"')
+  })
+})

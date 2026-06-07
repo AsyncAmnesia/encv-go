@@ -124,14 +124,100 @@ export const AGENT_TASK_COLLAPSE_CHAR_COUNT = 520
  * 把 Message.content（string | MessageContentPart[] | undefined）规整为字符串。
  * 仅取首个 text 段；其余类型（image_url / file）以占位符 [附件] 兜底。
  * 缺失或非文本时返回空字符串。
+ *
+ * 对于 assistant 消息，额外清理 LLM 在文本内容中泄露的工具调用 JSON 前缀
+ *（如 `{ "queries":[...], "source_filter":[...], "intent":"nav" }`），
+ * 避免用户看到原始工具调用元数据混在回复正文中。
  */
-function contentToText(content: string | MessageContentPart[] | undefined): string {
-  if (!content) return ''
-  if (typeof content === 'string') return content
-  for (const part of content) {
-    if (part.type === 'text' && part.text) return part.text
+function contentToText(
+  content: string | MessageContentPart[] | undefined,
+  role?: string,
+): string {
+  const raw = (() => {
+    if (!content) return ''
+    if (typeof content === 'string') return content
+    for (const part of content) {
+      if (part.type === 'text' && part.text) return part.text
+    }
+    return ''
+  })()
+
+  // 仅对 assistant 消息做工具调用 JSON 清理
+  if (role === 'assistant' && raw) {
+    return stripLeadingToolCallJson(raw)
   }
-  return ''
+  return raw
+}
+
+/**
+ * 清理 assistant 消息中 LLM 泄露的工具调用 JSON 前缀。
+ *
+ * 某些 LLM 提供商（尤其是 function calling 模式）会在 text_delta 中把
+ * 工具调用的参数 JSON 作为响应正文的前缀输出，例如：
+ *   { "queries":[""], "source_filter":["file_library"], "intent":"nav" }当前工作区共有以下文件：
+ *
+ * 本函数检测并剥离这类前缀，保留后续的自然语言/Markdown 正文。
+ *
+ * 匹配策略：
+ *   1. 行首的 `{ "key": ... }` JSON 对象（可能跨多行）
+ *   2. JSON 后紧跟非空白字符（说明 JSON 是前缀而非独立内容）
+ *   3. JSON 内包含已知工具调用 key 名（queries / source_filter / intent /
+ *      path / command / file_path 等）
+ */
+const TOOL_CALL_JSON_KEYS = new Set([
+  'queries', 'source_filter', 'intent', 'path', 'command',
+  'file_path', 'directory', 'pattern', 'query',
+  'operation', 'arguments', 'tool_name', 'name',
+])
+
+export function stripLeadingToolCallJson(text: string): string {
+  const trimmed = text.trimStart()
+  if (!trimmed.startsWith('{')) return text
+
+  // 尝试从行首解析一个完整 JSON 对象
+  let depth = 0
+  let jsonEnd = -1
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i]
+    if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) {
+        jsonEnd = i + 1
+        break
+      }
+    }
+    // 简单跳过字符串字面量（不处理转义引号——够用即可）
+    else if (ch === '"') {
+      const close = trimmed.indexOf('"', i + 1)
+      if (close === -1) break
+      i = close
+    }
+  }
+
+  if (jsonEnd <= 0) return text // 不完整 JSON，不处理
+
+  const candidate = trimmed.slice(0, jsonEnd)
+  let hasToolKey = false
+  // 快速扫描：JSON 中是否包含已知工具调用 key
+  const keyRegex = /"([a-z_]+)"\s*:/g
+  let match: RegExpExecArray | null
+  while ((match = keyRegex.exec(candidate)) !== null) {
+    if (TOOL_CALL_JSON_KEYS.has(match[1])) {
+      hasToolKey = true
+      break
+    }
+  }
+
+  if (!hasToolKey) return text // 不是工具调用 JSON
+
+  // JSON 后是否有非空白内容？有 → 剥离前缀；无 → 整段都是 JSON，保留原样
+  const rest = trimmed.slice(jsonEnd).trimStart()
+  if (rest.length > 0) {
+    return rest
+  }
+
+  return text
 }
 
 /**
@@ -266,7 +352,7 @@ export function renderTurnItems(
           continue
         }
       }
-      const contentText = contentToText(msg.content)
+      const contentText = contentToText(msg.content, 'assistant')
       if (contentText && contentText.trim().length > 0) {
         out.push({
           type: 'assistantText',
