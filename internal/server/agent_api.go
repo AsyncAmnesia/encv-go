@@ -193,30 +193,7 @@ func pkcs7Unpad(data []byte) []byte {
 //   - 强制 LLM 先调 list_mounts 发现可用文件系统，禁止凭训练数据编造路径
 //   - 明确告知工具能力边界（只读、无写入）
 //   - 中文为主（本项目面向国内用户）
-//   - 使用 XML 标签格式做 tool calling（兼容不支持 function calling 的 API 代理）
 const defaultAgentSystemPrompt = `你是 ENCV AI 助手，可以帮助用户浏览文件、管理加密容器和执行操作。
-
-【工具调用方式 — 必须严格遵守】
-当需要调用工具时，你必须在回复中输出以下 XML 格式：
-
-<tool_call name="工具名">
-{"参数名": "参数值"}
-</tool_call)
-
-示例：
-<tool_call name="list_mounts>
-{}
-</tool_call)
-
-<tool_call name="list_files">
-{"mount_id": "serving", "rel_path": "/"}
-</tool_call)
-
-规则：
-- 每次可以调用一个或多个工具（输出多个 <tool_call) 块）
-- 工具调用后，系统会自动执行并返回结果给你
-- 你根据工具返回的结果继续回答用户问题
-- 如果不需要调用工具，直接正常回复即可
 
 【重要规则 — 违反 = 严重错误】
 1. 在回答任何关于"有哪些文件""当前目录有什么"的问题之前，**必须先调用 list_mounts 工具**获取可访问的挂载点列表，再用 list_files 查看具体内容。
@@ -224,18 +201,13 @@ const defaultAgentSystemPrompt = `你是 ENCV AI 助手，可以帮助用户浏�
 3. 你只能看到通过 list_mounts 工具返回的挂载点和文件。不要假设任何预置的目录结构。
 4. 所有文件操作都是只读的（list_mounts / list_files / read_file / stat_file）。如需修改文件，请告知用户手动操作。
 
-【可用工具列表】
-1. list_mounts: 列出当前可访问的文件系统挂载点。参数：无（传空 {}）
-2. list_files: 列出挂载点内某个目录下的文件与子目录。参数：mount_id（必填，如 "serving" 或 "webdav"），rel_path（可选，默认 "/"）
-3. read_file: 读取文本文件内容。参数：mount_id（必填），rel_path（必填，文件相对路径）
-4. stat_file: 查询文件/目录元信息（大小/修改时间/是否目录）。参数：mount_id（必填），rel_path（必填）
-5. get_storage_info: 查看磁盘空间使用情况。参数：无
-6. image_encrypt: 图片加密。参数：input_paths（文件路径数组），output_dir（输出目录），extra_fields（选项对象）
-7. image_decrypt: 图片解密。参数：container_path（容器路径），output_dir（输出目录）
-8. wps_encrypt: WPS文档加密。参数：input_paths, output_dir, extra_fields
-9. pdf_decrypt: PDF解密。参数：container_path, output_dir
-10. text_encrypt: 文本加密。参数：input_paths, output_dir, extra_fields
-11. video_decrypt: 视频解密。参数：container_path, output_dir, version`
+【可用工具】
+- list_mounts: 列出当前可访问的文件系统挂载点
+- list_files: 列出某个挂载点内的目录内容
+- read_file: 读取文本文件内容
+- stat_file: 查询文件/目录元信息
+- get_storage_info: 查看磁盘空间使用情况
+- 加密/解密相关工具（由插件提供）`
 
 // ─── Agent 配置读取 ──────────────────────────────────────────
 
@@ -524,43 +496,6 @@ func (s *Server) handleAgentDecryptKey(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"decrypted": decrypted})
 }
 
-// ─── Prompt-Based Tool Calling ──────────────────────────────────
-// 用于兼容不支持 function calling (tools 参数) 的 API 代理。
-// LLM 通过 <tool_call name="xxx">JSON</tool_call) XML 标签输出工具调用，
-// 后端解析并执行。
-
-// promptToolCall 表示从 LLM 文本响应中提取的工具调用
-type promptToolCall struct {
-	Name      string          `json:"name"`
-	Arguments json.RawMessage `json:"arguments"` // 原始 JSON
-}
-
-// toolCallRE 匹配 <tool_call name="xxx">...</tool_call)
-var toolCallRE = regexp.MustCompile(`(?s)<tool_call\s+name="([^"]+)">\s*(\{.*?})\s*</tool_call\)`)
-
-// extractToolCallsFromText 从 LLM 响应文本中提取所有工具调用
-func extractToolCallsFromText(text string) []promptToolCall {
-	matches := toolCallRE.FindAllStringSubmatch(text, -1)
-	if len(matches) == 0 {
-		return nil
-	}
-	calls := make([]promptToolCall, 0, len(matches))
-	for _, m := range matches {
-		calls = append(calls, promptToolCall{
-			Name:      m[1],
-			Arguments: json.RawMessage(m[2]),
-		})
-	}
-	return calls
-}
-
-// stripToolCallsFromText 移除文本中的 <tool_call) 块，保留普通回复内容
-func stripToolCallsFromText(text string) string {
-	return toolCallRE.ReplaceAllString(text, "")
-}
-
-const maxPromptToolRounds = 3 // 最多执行几轮 tool calling
-
 // ─── GET/POST /test — 测试连接 ───────────────────────────────
 
 func (s *Server) handleAgentTest(c *gin.Context) {
@@ -585,19 +520,6 @@ func (s *Server) handleAgentTest(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, result)
-}
-
-// executePromptToolCall 执行一个从文本中提取的工具调用。
-// 它调用已有的 executeAgentTool 并返回 JSON 格式的结果字符串。
-func (s *Server) executePromptToolCall(tc promptToolCall) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	result, err := s.executeAgentTool(ctx, tc.Name, string(tc.Arguments))
-	if err != nil {
-		return fmt.Sprintf(`{"error": "工具执行失败", "tool": %q, "detail": %q}`, tc.Name, err.Error())
-	}
-	return result
 }
 
 // ─── POST /api/chat — SSE 对话（代理到 OpenAI 兼容 API） ──────
