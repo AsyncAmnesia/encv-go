@@ -36,9 +36,15 @@
               ? configError
               : (t('agent.backendOfflineHint') || '请确认 encv-go 服务已启动，或检查网络连接。') }}
         </p>
+        <!-- 诊断信息：展开查看当前探测结果，避免"后端服务未连接"这种无用的提示 -->
+        <details class="configErrorDiag" open>
+          <summary>诊断信息</summary>
+          <pre class="configErrorDiagPre">{{ diagInfo }}</pre>
+        </details>
         <button type="button" class="configErrorRetryBtn" :disabled="configLoading" @click="retryLoadConfig">
           <ion-icon :icon="refreshIcon"></ion-icon>
           <span>{{ t('common.retry') || '重试' }}</span>
+          <span v-if="autoRetryCount > 0" class="retryCount">({{ autoRetryCount }})</span>
         </button>
         <button type="button" class="configErrorSecondaryBtn" @click="handleGoToDevLogs">
           <ion-icon :icon="bugIcon"></ion-icon>
@@ -359,6 +365,7 @@ const router = useRouter()
 
 const configLoaded = ref(false)
 const configError = ref('')  // 配置加载失败原因（用于错误态 UI 展示）
+const autoRetryCount = ref(0)  // 自动重试次数（显示在"重试"按钮上）
 const testing = ref(false)
 const testResult = ref('')
 const testResultSuccess = ref(false)
@@ -841,6 +848,28 @@ const showJsonEditor = ref(false)
 const jsonText = ref('')
 const jsonError = ref('')
 
+// 诊断信息：错误态 UI 展示的完整状态快照
+// 目的：让用户（和开发者）一眼看到"到底哪一步失败了"，而不是只看到"后端服务未连接"
+const diagInfo = computed(() => {
+  const lines: string[] = []
+  lines.push(`serverOnline   = ${serverOnline.value}`)
+  lines.push(`configLoaded    = ${configLoaded.value}`)
+  lines.push(`configError     = ${JSON.stringify(configError.value).slice(0, 200)}`)
+  lines.push(`autoRetryCount  = ${autoRetryCount.value}`)
+  lines.push(`configLoading   = ${configLoading.value}`)
+  const now = new Date().toLocaleTimeString()
+  lines.push(`timestamp       = ${now}`)
+  try {
+    const base = getAgentApiBaseContext()
+    lines.push(`agentApiBase     = ${base.base} (${base.source})`)
+  } catch { /* ignore */ }
+  try {
+    const apiBase = getApiBaseUrl()
+    lines.push(`apiBaseUrl       = ${apiBase || '(empty/dev mode)'}`)
+  } catch { /* ignore */ }
+  return lines.join('\n')
+})
+
 const agentSection = computed<FieldDef | undefined>(() => {
   return schemaFields.value.find(s => s.key === 'agent_settings')
 })
@@ -1269,7 +1298,8 @@ function startAutoRetry() {
   autoRetryTimer = setInterval(async () => {
     // 只在"已确认后端在线但 config 没加载成功"时重试
     if (serverOnline.value && !configLoaded.value) {
-      console.debug('[AgentSettingsDetail] auto-retry: serverOnline=true but configLoaded=false, retrying...')
+      autoRetryCount.value++
+      console.debug(`[AgentSettingsDetail] auto-retry #${autoRetryCount.value}: serverOnline=true but configLoaded=false, retrying...`)
       await loadConfigSafely()
     }
     // 如果已经加载成功，停止重试
@@ -1779,5 +1809,35 @@ function handleGoToDevLogs() {
 .doctor-result-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+/* ── 诊断面板 ─────────────────────────────────────────── */
+.configErrorDiag {
+  margin: 12px 0;
+  max-width: 400px;
+  width: 100%;
+  text-align: left;
+}
+.configErrorDiag summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--ion-color-medium);
+  user-select: none;
+}
+.configErrorDiagPre {
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-family: monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-top: 6px;
+  color: var(--ion-color-medium-shade);
+}
+.retryCount {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-left: 4px;
 }
 </style>

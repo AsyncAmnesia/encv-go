@@ -134,6 +134,16 @@ const UPSTREAMS: Upstream[] = [
     name: 'encv-go',
     hint: 'Check pm2 status for start-preview (encv-go :2025)',
   },
+  {
+    // /ws → encv-go (:2025) — WebSocket endpoint for agent chat, DevLogs
+    // MUST be before DEFAULT_UPSTREAM; otherwise /ws falls through to vite (:8100)
+    // which has no /ws handler → WebSocket stuck in CONNECTING forever.
+    match: '/ws',
+    target: 'http://127.0.0.1:2025',
+    wsTarget: 'ws://127.0.0.1:2025',
+    name: 'encv-go',
+    hint: 'Check pm2 status for start-preview (encv-go :2025)',
+  },
 ]
 
 const DEFAULT_UPSTREAM: Upstream = {
