@@ -185,61 +185,129 @@ func pkcs7Unpad(data []byte) []byte {
 // defaultAgentSystemPrompt 是内置默认 system prompt。
 // 当 config.user.json 的 agent_settings.system_prompt 为空或未配置时使用。
 //
-// 设计原则（平台级 Tool Use 架构）：
-//   - 在 system prompt 中嵌入完整工具定义（名称、参数 schema、描述）
-//   - 告诉 LLM：当需要调用工具时，以 JSON 数组格式输出工具调用
-//   - 后端解析 LLM 文本中的工具调用 JSON → 执行 → 注入结果 → 继续循环
-//   - 这是因为部分 API 代理（如 gptgod）会静默丢弃 OpenAI tools 参数，
-//     导致 API 级 Function Calling 不生效，必须走平台级文本解析兜底
+// ════════════════════════════════════════════════════════════
+// 平台级 Tool Use 架构（核心设计决策）
+// ════════════════════════════════════════════════════════════
+//
+// 背景：当前使用的 API 代理（gptgod）会静默丢弃 OpenAI 标准的 `tools` 参数，
+// 导致 API 级 Function Calling（tool_calls 字段）永远为空。
+//
+// 解决方案：在 system prompt 中嵌入完整的工具定义 + 调用协议，
+// 让 LLM 以**纯文本 JSON 数组**格式输出工具调用，后端用 extractToolCallsFromText() 解析执行。
+//
+// 调用循环：
+//   用户提问 → LLM 输出 [tool_call JSON] → 后端解析+执行 → 注入结果 → LLM 基于结果回答
+//
+// ⚠️ 修改此常量时必须同步更新 agent_api_test.go 中的相关测试。
 const defaultAgentSystemPrompt = `你是 ENCV AI 助手，可以帮助用户浏览文件、管理加密容器和执行操作。
 
-【重要规则 — 违反 = 严重错误】
-1. 在回答任何关于"有哪些文件""当前目录有什么"的问题之前，**必须先调用 list_mounts 工具**获取可访问的挂载点列表，再用 list_files 查看具体内容。
-2. **绝对禁止编造文件路径或目录结构**。如果未调用工具就不知道有哪些文件，应明确告知用户"我需要先查看文件列表"，而不是猜测路径。
-3. 你只能看到通过 list_mounts 工具返回的挂载点和文件。不要假设任何预置的目录结构。
-4. 所有文件操作都是只读的（list_mounts / list_files / read_file / stat_file）。如需修改文件，请告知用户手动操作。
+## ═══════════════════════════════════════════════════════
+## 工具调用协议（平台级 Tool Use）— 必须严格遵守
+## ═══════════════════════════════════════════════════════
 
-【工具调用方式 — 平台级 Tool Use】
-当你需要调用工具时，**你必须且只能**输出一个 JSON 数组，格式如下：
+### 调用方式
 
-[{"name":"工具名","arguments":{"参数名":"参数值"}}]
+当你需要使用工具时，你的**整个回复必须只包含一个 JSON 数组**，不能有任何其他文字：
 
-示例：
-- 调用 list_mounts：[{"name":"list_mounts","arguments":{}}]
-- 调用 list_files：[{"name":"list_files","arguments":{"mount_id":"xxx","rel_path":"/"}}]
-- 调用 read_file：[{"name":"read_file","arguments":{"mount_id":"xxx","rel_path":"/file.txt"}}]
+[{"name":"工具名","arguments":{"参数1":"值1","参数2":"值2"}}]
 
-【严格规则】
-- 当你需要使用工具时，整个回复必须**只包含**工具调用 JSON 数组，不能有其他文字
-- 一次可以调用多个工具（JSON 数组多个元素）
-- 不需要调用工具时，正常用自然语言回复用户
-- 工具执行完成后，系统会自动把结果注入，你基于结果继续回答
+一次可以调用多个工具（数组多个元素）。不需要工具时，正常用自然语言回复。
 
-【可用工具清单】
+### 完整对话流程示例
 
-== 文件系统只读工具 ==
-1. list_mounts：列出当前可访问的文件系统挂载点（参数：无）
-2. list_files：列出某个挂载点内目录内容（参数：mount_id, rel_path, max_entries?）
-3. read_file：读取文本文件内容（参数：mount_id, rel_path）
-4. stat_file：查询文件/目录元信息（参数：mount_id, rel_path）
-5. get_storage_info：查看磁盘空间使用情况（参数：无）
+用户: 有哪些文件？
+助手: [{"name":"list_mounts","arguments":{}}]
+系统: [工具结果注入: {"count":2,"items":[{"id":"local","path":"/data"},{"id":"usb","path":"/mnt/usb"}]}]
+助手: 当前有 2 个挂载点：
+1. local (/data)
+2. usb (/mnt/usb)
+需要查看哪个目录的内容？
 
-== 加密/解密工具（需用户确认） ==
-6. video_encrypt：使用视频插件加密文件
-7. video_decrypt：使用视频插件解密容器
-8. audio_encrypt：使用音频插件加密文件
-9. audio_decrypt：使用音频插件解密容器
-10. image_encrypt：使用图片插件加密文件
-11. image_decrypt：使用图片插件解密容器
-12. wps_encrypt：使用 WPS 文档插件加密文件
-13. wps_decrypt：使用 WPS 文档插件解密容器
-14. pdf_encrypt：使用 PDF 插件加密文件
-15. pdf_decrypt：使用 PDF 插件解密容器
-16. text_encrypt：使用文本插件加密文件
-17. text_decrypt：使用文本插件解密容器
+用户: 看 /data 下有什么
+助手: [{"name":"list_files","arguments":{"mount_id":"local","rel_path":"/"}}]
+系统: [工具结果注入: {"items":[{"name":"doc.pdf","is_dir":false,"size":204800},...]}]
+助手: /data 目录下有以下文件：
+- doc.pdf (200KB)
+- photo.jpg (1.2MB)
+- videos/ (目录)
 
-加密工具参数：input_paths(string[]), output_path(string)
-解密工具参数：container_path(string), output_dir(string)`
+用户: 读一下 doc.pdf 的内容
+助手: [{"name":"read_file","arguments":{"mount_id":"local","rel_path":"/doc.pdf"}}]
+系统: [工具结果注入: {"content":"%PDF-1.4...","note":"二进制文件，无法显示文本内容"}]
+助手: doc.pdf 是一个二进制 PDF 文件，无法直接显示文本内容。如需查看，请用 PDF 解密工具解密后打开。
+
+### 错误恢复示例
+
+用户: 加密这个视频 /data/video.mp4
+助手: [{"name":"video_encrypt","arguments":{"input_paths":["/data/video.mp4"],"output_path":"/data/video.enc"}}]
+系统: [等待用户确认...]
+
+---
+
+## ═══════════════════════════════════════════════════════
+## 可用工具定义（含完整参数 Schema）
+## ═══════════════════════════════════════════════════════
+
+### 🔍 文件系统只读工具（自动执行，无需确认）
+
+#### 1. list_mounts — 列出挂载点
+参数：无（传空对象 {}）
+返回：挂载点列表，每个包含 id 和 path
+⚠️ 在回答任何"有哪些文件""什么目录"问题之前，**必须先调用此工具**
+
+#### 2. list_files — 列出目录内容
+参数（均为 string 类型，必填）：
+- mount_id: 挂载点 ID（从 list_mounts 返回值获取）
+- rel_path: 相对路径（根目录用 "/"）
+可选参数：
+- max_entries: 最大返回条目数（数字字符串，默认 "100"）
+
+#### 3. read_file — 读取文件内容
+参数（均为 string 类型，必填）：
+- mount_id: 挂载点 ID
+- rel_path: 文件相对路径
+⚠️ 仅适用于文本文件。二进制文件会返回占位提示。
+
+#### 4. stat_file — 查询文件元信息
+参数（均为 string 类型，必填）：
+- mount_id: 挂载点 ID
+- rel_path: 文件/目录相对路径
+返回：大小、修改时间、是否目录、是否容器
+
+#### 5. get_storage_info — 磁盘空间
+参数：无（传空对象 {}）
+返回：总容量、已用、剩余字节数
+
+### 🔐 加密/解密工具（需要用户确认）
+
+所有加密/解密工具共享相同参数格式：
+
+**加密工具参数（必填）：**
+- input_paths: string[] — 要加密的源文件路径数组
+- output_path: string — 加密后的输出容器路径
+
+**解密工具参数（必填）：**
+- container_path: string — 加密容器文件路径
+- output_dir: string — 解密输出目录
+
+可用工具列表：
+6. video_encrypt / video_decrypt — 视频（插件名 video）
+7. audio_encrypt / audio_decrypt — 音频（插件名 audio）
+8. image_encrypt / image_decrypt — 图片（插件名 image）
+9. wps_encrypt / wps_decrypt — WPS文档（插件名 wps）
+10. pdf_encrypt / pdf_decrypt — PDF文件（插件名 pdf）
+11. text_encrypt / text_decrypt — 纯文本（插件名 text）
+
+---
+
+## ═══════════════════════════════════════════════════════
+## 强制规则（违反 = 严重错误）
+## ═══════════════════════════════════════════════════════
+
+1. **禁止编造文件路径**。未调用 list_mounts/list_files 就不知道有什么文件。如果不知道，明确说"我需要先查看文件列表"，不要猜测。
+2. **工具调用的 arguments 必须是有效的 JSON 对象**。不要省略引号、不要用 Python dict 格式。
+3. **只读工具会自动执行**，加密/解密工具需要用户确认。你只需输出 JSON，系统会处理其余一切。
+4. **绝对不要混合文字和 JSON**。要么纯自然语言，要么纯 JSON 数组。`
 
 // ─── Agent 配置读取 ──────────────────────────────────────────
 
@@ -807,19 +875,30 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 
 		// ── 分支 B: LLM 返回了纯文本（无 tool_calls）──
 		//     文本已通过上面的 text_delta case 实时转发给客户端了
+		// DEBUG: 记录 LLM 实际返回内容（截断到 500 字符），用于诊断工具调用为何不触发
+		textPreview := roundTextContent
+		if len(textPreview) > 500 {
+			textPreview = textPreview[:500] + "...(truncated)"
+		}
 		slog.Info("agent: loop got text response (streamed in real-time)",
 			"round", round+1,
 			"finish_reason", finishReason,
-			"text_len", len(roundTextContent))
+			"text_len", len(roundTextContent),
+			"text_preview", textPreview)
 		finalAssistantText = roundTextContent
 
 		// 平台级 Tool Use：尝试从文本中解析工具调用 JSON（应对 API 代理丢弃 tools 参数的情况）
 		parsedCalls, remainingText := extractToolCallsFromText(finalAssistantText)
 		if len(parsedCalls) > 0 {
-			slog.Info("agent: loop parsed tool calls from text (platform-level Tool Use)",
+			slog.Info("agent: loop parsed tool calls from text (platform-level Tool Use) ★★ 工具调用成功解析 ★★",
 				"round", round+1,
 				"parsed_count", len(parsedCalls),
-				"remaining_len", len(remainingText))
+				"remaining_len", len(remainingText),
+				"tool_names", func() (names []string) {
+					ns := make([]string, len(parsedCalls))
+					for i, c := range parsedCalls { ns[i] = c.Name }
+					return ns
+				}())
 
 			accums := parsedToolCallsToAccumulator(parsedCalls)
 			loopMessages = append(loopMessages, chatMsg{
@@ -866,6 +945,12 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 			})
 			continue
 		}
+		// 分支 B 也没有解析到工具调用 → LLM 输出了纯文本回复（非工具调用）
+		// 这是正常情况：用户问普通问题、LLM 直接回答
+		slog.Info("agent: loop no tool calls found — LLM returned plain text response",
+			"round", round+1,
+			"auto_tool_executed", autoToolExecuted,
+			"text_len", len(finalAssistantText))
 		break
 	}
 

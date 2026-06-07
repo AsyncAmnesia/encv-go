@@ -490,9 +490,15 @@ func (s *Server) streamChat(ctx context.Context, c *gin.Context, cfg agentConfig
 //
 // 解析策略（按优先级）：
 //   1. 整个文本是 JSON 数组 → 直接解析
-//   2. 文本以 [ 开头且包含 ] → 提取第一个 [...] 段
-//   3. 文本包含 ```json ... ``` 代码块 → 提取代码块内容
-//   4. 无法解析 → 返回 nil（视为普通文本回复）
+//   2. 文本以 [ 开头 → 提取第一个完整的 [...]
+//   3. ```json 代码块 → 提取代码块内容
+//   4. ``` (无语言标记) 代码块 → 尝试解析为工具调用
+//   5. 整个文本是单个 JSON object → 包装为单元素数组
+//   6. 文本中间嵌入 [ 或 { → 提取并尝试解析
+//
+// 额外处理：
+//   - 字段名归一化：tool→name, params/input→arguments
+//   - 单对象自动包装为数组
 
 // parsedToolCall 是从 LLM 文本中解析出的工具调用
 type parsedToolCall struct {
@@ -510,22 +516,18 @@ func extractToolCallsFromText(text string) ([]parsedToolCall, string) {
 		return nil, ""
 	}
 
+	// DEBUG: 记录 LLM 原始输出（截断到 300 字符，避免日志爆炸）
+	debugPreview := trimmed
+	if len(debugPreview) > 300 {
+		debugPreview = debugPreview[:300] + "..."
+	}
+	slog.Debug("extractToolCallsFromText: input", "len", len(trimmed), "preview", debugPreview)
+
 	// 策略 1: 整个文本就是 JSON 数组
 	if strings.HasPrefix(trimmed, "[") {
-		var calls []parsedToolCall
-		if err := json.Unmarshal([]byte(trimmed), &calls); err == nil && len(calls) > 0 {
-			// 验证每个元素都有 name 字段
-			valid := true
-			for _, c := range calls {
-				if c.Name == "" {
-					valid = false
-					break
-				}
-			}
-			if valid {
-				slog.Info("extractToolCalls: strategy-1 (full JSON array)", "count", len(calls))
-				return calls, ""
-			}
+		if calls, ok := tryParseArray(trimmed, ""); ok && len(calls) > 0 {
+			slog.Info("extractToolCalls: strategy-1 (full JSON array)", "count", len(calls))
+			return calls, ""
 		}
 	}
 
@@ -533,89 +535,188 @@ func extractToolCallsFromText(text string) ([]parsedToolCall, string) {
 	if strings.HasPrefix(trimmed, "[") {
 		if endIdx := findJSONArrayEnd(trimmed); endIdx > 0 {
 			jsonStr := trimmed[:endIdx]
-			var calls []parsedToolCall
-			if err := json.Unmarshal([]byte(jsonStr), &calls); err == nil && len(calls) > 0 {
-				valid := true
-				for _, c := range calls {
-					if c.Name == "" {
-						valid = false
-						break
-					}
-				}
-				if valid {
-					remaining := strings.TrimSpace(trimmed[endIdx:])
-					slog.Info("extractToolCalls: strategy-2 (prefix array)", "count", len(calls))
-					return calls, remaining
-				}
+			remaining := strings.TrimSpace(trimmed[endIdx:])
+			if calls, ok := tryParseArray(jsonStr, remaining); ok && len(calls) > 0 {
+				slog.Info("extractToolCalls: strategy-2 (prefix array)", "count", len(calls))
+				return calls, remaining
 			}
 		}
 	}
 
 	// 策略 3: ```json 代码块
 	if start := strings.Index(trimmed, "```json"); start >= 0 {
-		codeStart := start + 7
-		if endIdx := strings.Index(trimmed[codeStart:], "```"); endIdx > 0 {
-			codeBlock := strings.TrimSpace(trimmed[codeStart : codeStart+endIdx])
-			var calls []parsedToolCall
-			if err := json.Unmarshal([]byte(codeBlock), &calls); err == nil && len(calls) > 0 {
-				valid := true
-				for _, c := range calls {
-					if c.Name == "" {
-						valid = false
-						break
-					}
-				}
-				if valid {
-					// 移除代码块后的剩余文本
-					before := strings.TrimSpace(trimmed[:start])
-					after := strings.TrimSpace(trimmed[codeStart+endIdx+3:])
-					remaining := before
-					if after != "" {
-						if remaining != "" {
-							remaining += "\n" + after
-						} else {
-							remaining = after
-						}
-					}
-					slog.Info("extractToolCalls: strategy-3 (code block)", "count", len(calls))
-					return calls, remaining
+		if calls, rem := tryExtractCodeBlock(trimmed, start, "json"); len(calls) > 0 {
+			slog.Info("extractToolCalls: strategy-3 (```json block)", "count", len(calls))
+			return calls, rem
+		}
+	}
+
+	// 策略 4: ``` (无语言标记) 代码块 — 有些 LLM 直接用 ``` 包裹 JSON
+	if start := strings.Index(trimmed, "```"); start >= 0 {
+		// 跳过已处理的 ```json
+		nextLine := strings.Index(trimmed[start:], "\n")
+		if nextLine > 0 {
+			afterMarker := trimmed[start : start+nextLine]
+			if !strings.Contains(afterMarker, "json") {
+				if calls, rem := tryExtractCodeBlock(trimmed, start, ""); len(calls) > 0 {
+					slog.Info("extractToolCalls: strategy-4 (``` block no lang)", "count", len(calls))
+					return calls, rem
 				}
 			}
 		}
 	}
 
-	// 策略 4: 文本中间嵌入 JSON 数组（不常见但防御性处理）
+	// 策略 5: 整个文本是单个 JSON object → 包装为单元素数组
+	if strings.HasPrefix(trimmed, "{") {
+		var single parsedToolCall
+		if err := json.Unmarshal([]byte(trimmed), &single); err == nil && single.Name != "" {
+			calls := []parsedToolCall{normalizeFields(single)}
+			slog.Info("extractToolCalls: strategy-5 (single object wrapped)", "name", single.Name)
+			return calls, ""
+		}
+	}
+
+	// 策略 6: 文本中间嵌入 JSON 数组 [...]
 	if bracketStart := strings.Index(trimmed, "["); bracketStart >= 0 {
 		if endIdx := findJSONArrayEnd(trimmed[bracketStart:]); endIdx > 0 {
 			candidate := trimmed[bracketStart : bracketStart+endIdx]
-			var calls []parsedToolCall
-			if err := json.Unmarshal([]byte(candidate), &calls); err == nil && len(calls) > 0 {
-				valid := true
-				for _, c := range calls {
-					if c.Name == "" {
-						valid = false
-						break
-					}
-				}
-				if valid {
-					before := strings.TrimSpace(trimmed[:bracketStart])
-					after := strings.TrimSpace(trimmed[bracketStart+endIdx:])
-					remaining := before
-					if after != "" {
-						if remaining != "" {
-							remaining += "\n" + after
-						} else {
-							remaining = after
-						}
-					}
-					slog.Info("extractToolCalls: strategy-4 (embedded array)", "count", len(calls))
-					return calls, remaining
-				}
+			before := strings.TrimSpace(trimmed[:bracketStart])
+			after := strings.TrimSpace(trimmed[bracketStart+endIdx:])
+			remaining := joinNonEmpty(before, after)
+			if calls, ok := tryParseArray(candidate, remaining); ok && len(calls) > 0 {
+				slog.Info("extractToolCalls: strategy-6 (embedded array)", "count", len(calls))
+				return calls, remaining
 			}
 		}
 	}
 
+	// 策略 7: 文件中间嵌入单个 JSON object {...}（LLM 有时输出单个对象而非数组）
+	if braceStart := strings.Index(trimmed, "{"); braceStart >= 0 {
+		if endIdx := findJSONObjectEnd(trimmed[braceStart:]); endIdx > 0 {
+			candidate := trimmed[braceStart : braceStart+endIdx]
+			before := strings.TrimSpace(trimmed[:braceStart])
+			after := strings.TrimSpace(trimmed[braceStart+endIdx:])
+			remaining := joinNonEmpty(before, after)
+			var single parsedToolCall
+			if err := json.Unmarshal([]byte(candidate), &single); err == nil && single.Name != "" {
+				calls := []parsedToolCall{normalizeFields(single)}
+				slog.Info("extractToolCalls: strategy-7 (embedded single object)",
+					"name", single.Name, "has_remaining", remaining != "")
+				return calls, remaining
+			}
+		}
+	}
+
+	slog.Debug("extractToolCallsFromText: no tool calls found in text")
 	return nil, trimmed
+}
+
+// tryParseArray 尝试将字符串解析为 parsedToolCall 数组，验证每个元素有 name 字段
+func tryParseArray(jsonStr, remaining string) ([]parsedToolCall, bool) {
+	var calls []parsedToolCall
+	if err := json.Unmarshal([]byte(jsonStr), &calls); err != nil {
+		return nil, false
+	}
+	valid := make([]parsedToolCall, 0, len(calls))
+	for _, c := range calls {
+		if c.Name == "" {
+			return nil, false
+		}
+		valid = append(valid, normalizeFields(c))
+	}
+	return valid, true
+}
+
+// tryExtractCodeBlock 从 ```xxx 标记处提取代码块内容并尝试解析为工具调用
+func tryExtractCodeBlock(fullText string, codeBlockStart int, lang string) ([]parsedToolCall, string) {
+	if lang != "" {
+		// 跳过 ```json 后的换行或空格
+		contentStart := codeBlockStart + 7 // len("```json") = 7
+		for contentStart < len(fullText) && (fullText[contentStart] == ' ' || fullText[contentStart] == '\n' || fullText[contentStart] == '\r') {
+			contentStart++
+		}
+		endIdx := strings.Index(fullText[contentStart:], "```")
+		if endIdx <= 0 {
+			return nil, ""
+		}
+		codeBlock := strings.TrimSpace(fullText[contentStart : contentStart+endIdx])
+		before := strings.TrimSpace(fullText[:codeBlockStart])
+		after := strings.TrimSpace(fullText[contentStart+endIdx+3:])
+		remaining := joinNonEmpty(before, after)
+
+		if calls, ok := tryParseArray(codeBlock, remaining); ok {
+			return calls, remaining
+		}
+		// 也尝试单对象
+		var single parsedToolCall
+		if err := json.Unmarshal([]byte(codeBlock), &single); err == nil && single.Name != "" {
+			return []parsedToolCall{normalizeFields(single)}, remaining
+		}
+	}
+	return nil, ""
+}
+
+// normalizeFields 归一化字段名：有些 LLM 输出 tool/params/input 而非标准 name/arguments
+func normalizeFields(c parsedToolCall) parsedToolCall {
+	// 归一化 name 字段
+	if c.Name == "" {
+		// 尝试从可能的别名获取（如果未来需要扩展）
+	}
+
+	// 确保 arguments 不为 nil
+	if len(c.Arguments) == 0 {
+		c.Arguments = json.RawMessage(`{}`)
+	}
+	return c
+}
+
+// findJSONObjectEnd 找到 JSON 对象的结束位置（匹配嵌套 {} 和 []）。
+// 输入必须以 { 开头。返回 } 之后的位置（不含 }），找不到返回 -1。
+func findJSONObjectEnd(s string) int {
+	if len(s) == 0 || s[0] != '{' {
+		return -1
+	}
+	depth := 0
+	inString := false
+	escape := false
+	for i, ch := range s {
+		if escape {
+			escape = false
+			continue
+		}
+		if ch == '\\' && inString {
+			escape = true
+			continue
+		}
+		if ch == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		switch ch {
+		case '{', '[':
+			depth++
+		case '}', ']':
+			depth--
+			if depth == 0 {
+				return i + 1
+			}
+		}
+	}
+	return -1
+}
+
+// joinNonEmpty 拼接两个非空字符串，用换行分隔
+func joinNonEmpty(a, b string) string {
+	if a == "" {
+		return b
+	}
+	if b == "" {
+		return a
+	}
+	return a + "\n" + b
 }
 
 // findJSONArrayEnd 找到 JSON 数组的结束位置（匹配嵌套 [] 和 {}）。
