@@ -44,6 +44,17 @@
           <span class="mockBadgeText">{{ mockBadgeText }}</span>
           <ion-icon :icon="chevronDownIcon" class="mockBadgeChevron" />
         </button>
+        <!-- 多渲染引擎切换器（微型下拉） -->
+        <div class="engineSwitcher">
+          <select
+            class="engineSelect"
+            :value="currentEngineId"
+            @change="handleSwitchEngine(($event.target as HTMLSelectElement).value)"
+            :title="'切换聊天引擎'"
+          >
+            <option v-for="e in engineList" :key="e.id" :value="e.id">{{ e.name }}</option>
+          </select>
+        </div>
       </div>
       <!-- 上下文使用图标（点击 → 弹窗：todos + 引用文件） -->
       <ContextIcon
@@ -143,213 +154,20 @@
       </div>
 
       <main class="agentChatMain" ref="mainRef" @scroll="onMainScroll">
-      <!-- 空状态（无消息时显示） -->
-      <div v-if="renderedItems.length === 0" class="agentChatEmpty">
+      <!--
+        多渲染引擎架构：通过 currentEngine.renderMessages() 动态渲染消息列表。
+        DefaultEngine → DefaultMessagesView.vue（与改造前完全一致）
+        CopilotKit 风格 → CopilotKitStyleChat.vue（头像+内容双栏布局）
+      -->
+      <component
+        :is="currentEngine?.renderMessages(engineRenderProps)"
+        v-if="currentEngine"
+      />
+      <!-- 引擎加载失败时的 fallback（不应触发，但防御性保留） -->
+      <div v-else class="agentChatEmpty">
         <ion-icon :icon="chatbubblesIcon" class="emptyIcon" />
-        <p>{{ t('agent.emptyHint') }}</p>
+        <p>引擎加载失败，请刷新页面</p>
       </div>
-      <!-- 短会话（≤ 120）：原生 v-for（无虚拟化开销） -->
-      <template v-else-if="renderedItems.length <= VIRTUAL_LIST_THRESHOLD">
-        <div
-          v-for="(item, idx) in renderedItems"
-          :key="item.messageId"
-          class="renderedItemWrap"
-          :data-msg-idx="idx"
-        >
-          <UserMessageBubble
-            v-if="item.type === 'user'"
-            :text="item.text"
-          />
-          <AssistantMessage
-            v-else-if="item.type === 'assistantText'"
-            :text="item.text"
-            :streaming="item.streaming"
-            :status="status"
-            :compact="!item.firstInGroup"
-          />
-          <!-- 独立 Footer 段：时间戳固定，不依赖末段类型 -->
-          <div
-            v-else-if="item.type === 'messageFooter'"
-            class="messageFooterStandalone"
-          >
-            <span class="footerTimestamp">{{ formatFooterTime(item.timestamp) }}</span>
-            <button
-              type="button"
-              class="footerCopyBtn"
-              :title="'复制内容'"
-              @click="copyMessageContent(item.messageId)"
-            >
-              <ion-icon :icon="copyIconVar" />
-            </button>
-          </div>
-          <ApprovalCard
-            v-else-if="item.type === 'approval'"
-            :tool-call="findToolCall(item.toolCallId)!"
-            :on-decide="handleDecide"
-            :is-processing="status === 'streaming'"
-          />
-          <GroupedOperationMessage
-            v-else-if="item.type === 'operationGroup'"
-            :items="resolveToolCalls(item.toolCallIds)"
-            :results-by-call-id="resolveToolResultsByCallId(item.toolCallIds)"
-            :force-complete="item.forceComplete"
-          />
-          <!-- Task 27：agent 流式时间轴模式 —— 单条工具调用卡片 -->
-          <OperationCard
-            v-else-if="item.type === 'operation' && findToolCallById(item.toolCallId)"
-            :tool-call="findToolCallById(item.toolCallId)!"
-            :streaming="item.streaming"
-          >
-            <!-- toolResultCard 紧跟在 operation 后面（由 renderAgentFlow 保证顺序） -->
-            <template v-if="findToolResultById(item.toolCallId)" #result>
-              <MountListCard
-                v-if="findToolResultById(item.toolCallId)!.name === 'list_mounts'"
-                :result-json="findToolResultById(item.toolCallId)!.result"
-              />
-              <FileListCard
-                v-else-if="findToolResultById(item.toolCallId)?.name === 'list_files' || findToolResultById(item.toolCallId)?.name === 'stat_file'"
-                :result-json="findToolResultById(item.toolCallId)!.result"
-              />
-              <FileContentCard
-                v-else-if="findToolResultById(item.toolCallId)?.name === 'read_file'"
-                :result-json="findToolResultById(item.toolCallId)!.result"
-              />
-            </template>
-          </OperationCard>
-          <WebSearchSummaryMessage
-            v-else-if="item.type === 'webSearchGroup'"
-            :queries="item.queries"
-            :tool-calls="resolveToolCalls(item.toolCallIds)"
-          />
-          <PlanBlock
-            v-else-if="item.type === 'plan'"
-            :todos="item.todos"
-            :streaming="item.streaming"
-          />
-          <ReasoningMessage
-            v-else-if="item.type === 'reasoning'"
-            :text="item.text"
-            :streaming="item.streaming"
-          />
-          <ErrorMessage
-            v-else-if="item.type === 'error'"
-            :text="item.text"
-            :on-retry="() => handleRetryError(item)"
-          />
-          <!-- Task 7：上下文自动压缩分隔线（不可展开） -->
-          <ContextCompactionDivider
-            v-else-if="item.type === 'compaction'"
-            :text="item.text"
-          />
-          <!-- Task 22: agent task 消息（subagent 拆解的子任务列表） -->
-          <AgentTaskMessage
-            v-else-if="item.type === 'agentTask'"
-            :sub-tasks="item.subTasks"
-            :reasoning="item.reasoning"
-          />
-        </div>
-      </template>
-      <!-- 长会话（> 120）：虚拟滚动优化 -->
-      <MessageVirtualList
-        v-else
-        ref="virtualListRef"
-        :items="renderedItems"
-      >
-        <template #item="{ item }">
-          <div class="renderedItemWrap">
-            <UserMessageBubble
-              v-if="item.type === 'user'"
-              :text="item.text"
-            />
-            <AssistantMessage
-              v-else-if="item.type === 'assistantText'"
-              :text="item.text"
-              :streaming="item.streaming"
-              :status="status"
-              :compact="!item.firstInGroup"
-            />
-            <!-- 独立 Footer 段（虚拟滚动分支） -->
-            <div
-              v-else-if="item.type === 'messageFooter'"
-              class="messageFooterStandalone"
-            >
-              <span class="footerTimestamp">{{ formatFooterTime(item.timestamp) }}</span>
-              <button
-                type="button"
-                class="footerCopyBtn"
-                :title="'复制内容'"
-                @click="copyMessageContent(item.messageId)"
-              >
-                <ion-icon :icon="copyIconVar" />
-              </button>
-            </div>
-            <ApprovalCard
-              v-else-if="item.type === 'approval'"
-              :tool-call="findToolCall(item.toolCallId)!"
-              :on-decide="handleDecide"
-              :is-processing="status === 'streaming'"
-            />
-            <GroupedOperationMessage
-            v-else-if="item.type === 'operationGroup'"
-            :items="resolveToolCalls(item.toolCallIds)"
-            :results-by-call-id="resolveToolResultsByCallId(item.toolCallIds)"
-            :force-complete="item.forceComplete"
-          />
-          <!-- Task 27：agent 流式时间轴模式 —— 单条工具调用卡片（虚拟滚动分支） -->
-          <OperationCard
-            v-else-if="item.type === 'operation' && findToolCallById(item.toolCallId)"
-            :tool-call="findToolCallById(item.toolCallId)!"
-            :streaming="item.streaming"
-          >
-            <template v-if="findToolResultById(item.toolCallId)" #result>
-              <MountListCard
-                v-if="findToolResultById(item.toolCallId)!.name === 'list_mounts'"
-                :result-json="findToolResultById(item.toolCallId)!.result"
-              />
-              <FileListCard
-                v-else-if="findToolResultById(item.toolCallId)?.name === 'list_files' || findToolResultById(item.toolCallId)?.name === 'stat_file'"
-                :result-json="findToolResultById(item.toolCallId)!.result"
-              />
-              <FileContentCard
-                v-else-if="findToolResultById(item.toolCallId)?.name === 'read_file'"
-                :result-json="findToolResultById(item.toolCallId)!.result"
-              />
-            </template>
-          </OperationCard>
-          <WebSearchSummaryMessage
-            v-else-if="item.type === 'webSearchGroup'"
-            :queries="item.queries"
-            :tool-calls="resolveToolCalls(item.toolCallIds)"
-          />
-          <PlanBlock
-            v-else-if="item.type === 'plan'"
-            :todos="item.todos"
-            :streaming="item.streaming"
-          />
-          <ReasoningMessage
-            v-else-if="item.type === 'reasoning'"
-            :text="item.text"
-            :streaming="item.streaming"
-          />
-          <ErrorMessage
-            v-else-if="item.type === 'error'"
-            :text="item.text"
-            :on-retry="() => handleRetryError(item)"
-          />
-          <!-- Task 7：虚拟滚动分支同样渲染 ContextCompactionDivider -->
-          <ContextCompactionDivider
-            v-else-if="item.type === 'compaction'"
-            :text="item.text"
-          />
-          <!-- Task 22: 虚拟滚动分支同样渲染 AgentTaskMessage -->
-          <AgentTaskMessage
-            v-else-if="item.type === 'agentTask'"
-            :sub-tasks="item.subTasks"
-            :reasoning="item.reasoning"
-          />
-          </div>
-        </template>
-      </MessageVirtualList>
     </main>
     </div><!-- /.agentChatBody -->
 
@@ -556,32 +374,22 @@ import {
   keyOutline,
   chevronDownOutline,
   flaskOutline,
-  copyOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { getDeviceIdSync } from '@/composables/useDeviceId'
 import { getAgentApiBase } from '@/composables/useAgentApiBase'
-import { useAgent, type Decision, type ToolCall, type ToolResult, getLanAccess, type LanAddress } from '@/composables/useAgent'
+import { useAgent, type Decision, getLanAccess, type LanAddress } from '@/composables/useAgent'
 import { useRenderTurnItems } from '@/composables/renderTurnItems'
 import { useAttachments } from '@/composables/useAttachments'
 import { useSlashMenu } from '@/composables/useSlashMenu'
 import { showToast } from '@/composables/useToast'
-import UserMessageBubble from '@/components/agent/UserMessageBubble.vue'
-import ApprovalCard from '@/components/agent/ApprovalCard.vue'
-import GroupedOperationMessage from '@/components/agent/GroupedOperationMessage.vue'
-import OperationCard from '@/components/agent/OperationCard.vue'
-import MountListCard from '@/components/agent/MountListCard.vue'
-import FileListCard from '@/components/agent/FileListCard.vue'
-import FileContentCard from '@/components/agent/FileContentCard.vue'
-import ReasoningMessage from '@/components/agent/ReasoningMessage.vue'
-import ErrorMessage from '@/components/agent/ErrorMessage.vue'
-import AssistantMessage from '@/components/agent/AssistantMessage.vue'
-import WebSearchSummaryMessage from '@/components/agent/WebSearchSummaryMessage.vue'
-import MessageVirtualList from '@/components/agent/MessageVirtualList.vue'
-import PlanBlock from '@/components/agent/PlanBlock.vue'
-import ContextCompactionDivider from '@/components/agent/ContextCompactionDivider.vue'
-// Task 22：agent task 消息（subagent 拆解的子任务列表）
-import AgentTaskMessage from '@/components/agent/AgentTaskMessage.vue'
+// 多渲染引擎架构：引入引擎系统和已注册的引擎实现
+import { useChatEngine } from '@/composables/useChatEngine'
+// 触发引擎注册（模块副作用自动注册到 EngineRegistry）
+import '@/engines/defaultEngine'
+import '@/engines/copilotkitStyleEngine'
+// 以下组件现在由 DefaultMessagesView.vue 内部导入（引擎渲染路径）
+// AgentChat.vue 作为宿主容器不再直接引用这些组件
 import AttachmentTray from '@/components/agent/AttachmentTray.vue'
 import MockPresetBar from '@/components/agent/MockPresetBar.vue'
 import AgentDebugPanel from '@/components/agent/AgentDebugPanel.vue'
@@ -589,6 +397,36 @@ import SlashMenu from '@/components/agent/SlashMenu.vue'
 import ContextIcon from '@/components/agent/ContextIcon.vue'
 
 const { t } = useI18n()
+
+// ── 多渲染引擎架构：引擎切换系统 ─────────────────────
+const { currentEngine, currentEngineId, engineList, switchEngine: doSwitchEngine } = useChatEngine()
+
+/** 构建传给当前引擎的 renderProps */
+const engineRenderProps = computed(() => ({
+  messages: messages.value,
+  status: status.value,
+  onSend: async (text: string) => { send(text) },
+  onStop: () => stop(),
+  onConfirmTool: async (id: string, decision: string) => confirmTool(id, decision as Decision),
+  onCopyMessage: async (messageId: string) => onCopyMessage(messageId),
+  onPresetClick: (userText: string) => pickMockPreset({ id: '', label: userText, tooltip: '', userText } as any),
+  streaming: status.value === 'streaming',
+}))
+
+/** 引擎切换（带 toast 反馈） */
+  function handleSwitchEngine(engineId: string): void {
+    const ok = doSwitchEngine(engineId)
+    if (ok) {
+      const name = engineList.find(e => e.id === engineId)?.name || engineId
+      showToast({ message: `已切换到 ${name}`, duration: 1200, color: 'success' })
+    }
+  }
+
+  /** 复制消息内容（引擎回调 —— 实际复制逻辑在 DefaultMessagesView 内部实现） */
+  async function onCopyMessage(_messageId: string): Promise<void> {
+    // 由 DefaultMessagesView 内部处理，此处仅作为引擎接口的桥接
+    // 如果未来其他引擎也需要此回调，可在此统一实现
+  }
 
 // Mock 预设输入栏头部显示：
 // - picker 阶段（首次进 AgentChat）→ "剧本库"（i18n mockPresetBarPickerScenario）
@@ -690,7 +528,7 @@ const clipboardIcon = clipboardOutline
 const refreshCircleIcon = refreshCircleOutline
 const chevronDownIcon = chevronDownOutline
 const flaskIcon = flaskOutline
-const copyIconVar = copyOutline
+// copyIconVar 已移至 DefaultMessagesView.vue（引擎渲染路径内的复制按钮）
 const historyOpen = ref(false)
 
 // ── Task 26 (LAN Access) ───────────────────────────────────
@@ -1010,83 +848,8 @@ function handleModelPickerOutsideClick(e: MouseEvent) {
   }
 }
 
-// ─── 工具调用 / 结果查找 ───────────────────────────────
-// 工具调用 (tool_call 事件) 和 工具结果 (tool_result 事件) 是分别到达的，
-// 渲染时需要按 id 配对。ToolCall 描述「调了什么 / args / 状态」，
-// ToolResult 描述「真实返回 / 错误信息 / 耗时」。结构化卡片（MountListCard /
-// FileListCard / FileContentCard）读 ToolResult.result 的 JSON 渲染。
-function findToolCall(id: string): ToolCall | null {
-  for (const msg of messages.value) {
-    const tc = msg.tool_calls.find((t: ToolCall) => t.id === id)
-    if (tc) return tc
-  }
-  return null
-}
-
-function findToolResult(id: string): ToolResult | null {
-  for (const msg of messages.value) {
-    const tr = msg.tool_results.find((r: ToolResult) => r.id === id)
-    if (tr) return tr
-  }
-  return null
-}
-
-// renderAgentFlow 时间轴模式模板引用的别名（与 findToolCall / findToolResult 同义）
-function findToolCallById(id: string): ToolCall | null { return findToolCall(id) }
-function findToolResultById(id: string): ToolResult | null { return findToolResult(id) }
-
-/** 格式化 Footer 固定时间戳为 HH:mm */
-function formatFooterTime(timestamp: number): string {
-  const d = new Date(timestamp)
-  const hh = String(d.getHours()).padStart(2, '0')
-  const mm = String(d.getMinutes()).padStart(2, '0')
-  return `${hh}:${mm}`
-}
-
-/** 复制 messageFooter 对应消息的全文内容 */
-async function copyMessageContent(messageId: string): Promise<void> {
-  // 从 messageId (如 "a-2") 提取消息索引
-  const idx = parseInt(messageId.replace(/^[au]-/, ''), 10)
-  const msg = messages.value[idx]
-  if (!msg?.content) return
-  const text = typeof msg.content === 'string' ? msg.content : ''
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-    } else {
-      const ta = document.createElement('textarea')
-      ta.value = text
-      ta.style.position = 'fixed'
-      ta.style.left = '-9999px'
-      document.body.appendChild(ta)
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
-    }
-    showToast({ message: '已复制', duration: 1200, color: 'success' })
-  } catch {
-    showToast({ message: '复制失败', duration: 1600, color: 'danger' })
-  }
-}
-
-function resolveToolCalls(ids: string[]): ToolCall[] {
-  const out: ToolCall[] = []
-  for (const id of ids) {
-    const tc = findToolCall(id)
-    if (tc) out.push(tc)
-  }
-  return out
-}
-
-/** 按 id 查 tool result，构造成 name→Result 的 record 给结构化卡片用 */
-function resolveToolResultsByCallId(ids: string[]): Record<string, ToolResult> {
-  const out: Record<string, ToolResult> = {}
-  for (const id of ids) {
-    const tr = findToolResult(id)
-    if (tr) out[id] = tr
-  }
-  return out
-}
+// ── 工具调用/结果查找已移至 DefaultMessagesView.vue（引擎渲染路径）──
+// AgentChat 作为宿主容器不再直接操作消息渲染细节
 
 /**
  * 格式化会话历史列表项的元信息（时间 + 消息数 + 轮次）
@@ -1117,10 +880,6 @@ function formatRelativeTime(ts: number): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-function handleDecide(toolCallId: string, decision: Decision) {
-  confirmTool(toolCallId, decision)
-}
-
 // ─── 输入框处理 ──────────────────────────────────────────
 function autoResize() {
   const el = inputRef.value
@@ -1143,42 +902,6 @@ function handleSend() {
 
 function handleStop() {
   stop()
-}
-
-/**
- * 重试一条出错的消息：清除 error 标记 + 删除关联的 assistant 消息 + 重新发送
- */
-function handleRetryError(item: { type: 'error'; messageIndex: number }) {
-  // 找到对应的 user 消息（error item 的 messageIndex 指向原始消息索引）
-  const idx = item.messageIndex
-  if (idx < 0 || idx >= messages.value.length) return
-
-  const targetMsg = messages.value[idx]
-  if (!targetMsg || targetMsg.role !== 'user') return
-
-  // Task 12：content 可能是 multimodal 数组。从中抽出 text 元素作为
-  // 重发文本（附件不再重复附带——本地状态已丢失原 attachment 引用）。
-  let text = ''
-  if (typeof targetMsg.content === 'string') {
-    text = targetMsg.content
-  } else {
-    for (const part of targetMsg.content) {
-      if (part.type === 'text') {
-        text += part.text
-      }
-    }
-    text = text.trim()
-  }
-
-  // 清除错误标记
-  delete targetMsg.error
-
-  // 删除该 user 消息之后的所有消息（包括空的 assistant 占位 + 任何已产生的回复）
-  messages.value.splice(idx)
-
-  // 重新发送
-  send(text)
-  nextTick(() => scrollToBottom())
 }
 
 async function handleNewSession() {
@@ -1481,6 +1204,50 @@ defineExpose({})
   font-size: 10px;
   color: inherit;
   opacity: 0.7;
+}
+
+/* ── 多渲染引擎切换器（微型下拉） ─────────────────── */
+.engineSwitcher {
+  display: inline-flex;
+  align-items: center;
+}
+
+.engineSelect {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background: rgba(var(--ion-color-primary-rgb), 0.1);
+  border: 1px solid rgba(var(--ion-color-primary-rgb), 0.25);
+  border-radius: 10px;
+  color: var(--ion-color-primary);
+  font-size: 11px;
+  font-weight: 500;
+  font-family: inherit;
+  padding: 2px 22px 2px 8px; /* 右侧留出箭头空间 */
+  cursor: pointer;
+  outline: none;
+  transition: background 0.15s, border-color 0.15s;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%234f8cff'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 10px 6px;
+  max-width: 110px;
+}
+
+.engineSelect:hover {
+  background-color: rgba(var(--ion-color-primary-rgb), 0.16);
+  border-color: rgba(var(--ion-color-primary-rgb), 0.4);
+}
+
+.engineSelect:focus {
+  border-color: var(--ion-color-primary);
+  box-shadow: 0 0 0 2px rgba(var(--ion-color-primary-rgb), 0.2);
+}
+
+.engineSelect option {
+  background: var(--ion-background-color);
+  color: var(--ion-text-color);
+  padding: 4px 8px;
 }
 
 .agentChatMain {

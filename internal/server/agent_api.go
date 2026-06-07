@@ -718,6 +718,12 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	// ①½ 启动后台 session GC（幂等）
 	startSessionGC()
 
+	// A2UI 协议版本识别（预留，本轮不处理）
+	if a2v := c.GetHeader("X-A2UI-Version"); a2v != "" {
+		slog.Info("agent: A2UI protocol requested", "version", a2v, "session", body.SessionId)
+		// 未来：根据 version 选择不同的 Surface 渲染策略
+	}
+
 	// ② 读取 agent 配置（API Key / Base URL / System Prompt）
 	cfg := s.readAgentConfig(body.DeviceId)
 	if cfg.APIKey == "" {
@@ -782,12 +788,24 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	// 必须放在 callOpenAIStream 之前（避免无谓的 API 请求）。
 	agentCfg := s.getAgentConfig()
 	mockMode := strings.ToLower(strings.TrimSpace(agentCfg.MockMode))
+
+	// ════════════════════════════════════════════════════════════
+	// AG-UI 协议模式检测（Phase 4）
+	// ════════════════════════════════════════════════════════════
+	// 当请求携带 X-Agent-Protocol: agui header 或 ?protocol=agui query 时，
+	// 后端使用 AGUIEventMapper 输出标准 AG-UI 格式事件，而非自定义 SSE 格式。
+	// 前端 TDesignEngine 通过此协议与后端通信。
+	aguiMode := c.GetHeader("X-Agent-Protocol") == "agui" || c.Request.URL.Query().Get("protocol") == "agui"
+
 	if mockMode != "" && mockMode != "off" {
 		userText := lastUserTextFromLoopMessages(body.Messages)
 		scenario := s.mockEngine.Match(userText, mockMode)
 		if scenario != nil {
 			c.Header("X-Mock-Scenario", scenario.ID)
 			c.Header("X-Mock-Mode", mockMode)
+			if aguiMode {
+				c.Header("X-Agent-Protocol", "agui")
+			}
 
 			flusher, _ := c.Writer.(http.Flusher)
 			s.setSSEHeaders(c.Writer)
@@ -795,9 +813,10 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 				"mode", mockMode,
 				"scenario", scenario.ID,
 				"user_text", truncateForLog(userText, 100),
-				"speed", agentCfg.MockSpeed)
+				"speed", agentCfg.MockSpeed,
+				"agui_mode", aguiMode)
 			if err := s.mockEngine.Run(c.Request.Context(), s, sess, c.Writer, flusher, scenario,
-				agentCfg.MockSpeed, true /* mockFlag */); err != nil {
+				agentCfg.MockSpeed, true /* mockFlag */, aguiMode); err != nil {
 				slog.Warn("agent: mock engine run failed", "scenario", scenario.ID, "error", err)
 			}
 			sess.mu.Lock()
