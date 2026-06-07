@@ -184,6 +184,29 @@ func pkcs7Unpad(data []byte) []byte {
 	return data[:len(data)-padding]
 }
 
+// defaultAgentSystemPrompt 是内置默认 system prompt。
+// 当 config.user.json 的 agent_settings.system_prompt 为空或未配置时使用。
+//
+// 设计原则：
+//   - 强制 LLM 先调 list_mounts 发现可用文件系统，禁止凭训练数据编造路径
+//   - 明确告知工具能力边界（只读、无写入）
+//   - 中文为主（本项目面向国内用户）
+const defaultAgentSystemPrompt = `你是 ENCV AI 助手，可以帮助用户浏览文件、管理加密容器和执行操作。
+
+【重要规则 — 违反 = 严重错误】
+1. 在回答任何关于"有哪些文件""当前目录有什么"的问题之前，**必须先调用 list_mounts 工具**获取可访问的挂载点列表，再用 list_files 查看具体内容。
+2. **绝对禁止编造文件路径或目录结构**。如果未调用工具就不知道有哪些文件，应明确告知用户"我需要先查看文件列表"，而不是猜测 /boot/、/etc/ 等路径。
+3. 你只能看到通过 list_mounts 工具返回的挂载点和文件。不要假设任何预置的目录结构。
+4. 所有文件操作都是只读的（list_mounts / list_files / read_file / stat_file）。如需修改文件，请告知用户手动操作。
+
+【可用工具】
+- list_mounts: 列出当前可访问的文件系统挂载点
+- list_files: 列出某个挂载点内的目录内容
+- read_file: 读取文本文件内容
+- stat_file: 查询文件/目录元信息
+- get_storage_info: 查看磁盘空间使用情况
+- 加密/解密相关工具（由插件提供）`
+
 // ─── Agent 配置读取 ──────────────────────────────────────────
 
 type agentConfig struct {
@@ -537,12 +560,15 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	}
 
 	// ③½ 注入系统提示词（从配置读取，前端无需关心）
+	//     配置为空时使用内置默认 prompt（强制 list_mounts + 禁止编造路径）
 	finalMessages := body.Messages
-	if cfg.SystemPrompt != "" {
-		finalMessages = make([]chatMsg, 0, len(body.Messages)+1)
-		finalMessages = append(finalMessages, chatMsg{Role: "system", Content: cfg.SystemPrompt})
-		finalMessages = append(finalMessages, body.Messages...)
+	systemPrompt := cfg.SystemPrompt
+	if systemPrompt == "" {
+		systemPrompt = defaultAgentSystemPrompt
 	}
+	finalMessages = make([]chatMsg, 0, len(body.Messages)+1)
+	finalMessages = append(finalMessages, chatMsg{Role: "system", Content: systemPrompt})
+	finalMessages = append(finalMessages, body.Messages...)
 
 	// ③¾ 缓存 session：messages（不含 system）+ model + temperature
 	//     —— confirm 时按 sessionId 取回继续对话
@@ -974,13 +1000,15 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://api.openai.com"
 	}
-	// 注入 system prompt（与 handleAgentChat 一致）
+	// 注入 system prompt（与 handleAgentChat 一致，空配置时用默认）
 	finalMessages := sess.Messages
-	if cfg.SystemPrompt != "" {
-		finalMessages = make([]chatMsg, 0, len(sess.Messages)+1)
-		finalMessages = append(finalMessages, chatMsg{Role: "system", Content: cfg.SystemPrompt})
-		finalMessages = append(finalMessages, sess.Messages...)
+	systemPrompt := cfg.SystemPrompt
+	if systemPrompt == "" {
+		systemPrompt = defaultAgentSystemPrompt
 	}
+	finalMessages = make([]chatMsg, 0, len(sess.Messages)+1)
+	finalMessages = append(finalMessages, chatMsg{Role: "system", Content: systemPrompt})
+	finalMessages = append(finalMessages, sess.Messages...)
 	// 递归时也要把工具列表塞回去——LLM 可能在后续轮次继续调工具
 	agentTools := s.ListAgentTools()
 	openAITools := agentToolsToOpenAITools(agentTools)

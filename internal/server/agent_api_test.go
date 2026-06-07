@@ -200,7 +200,7 @@ func TestHandleAgentChat_SystemPromptInjected(t *testing.T) {
 }
 
 func TestHandleAgentChat_NoSystemPrompt_WhenEmpty(t *testing.T) {
-	// 配置无 system_prompt → 不注入，原样转发
+	// 配置无 system_prompt → 注入内置默认 prompt（强制 list_mounts + 禁止编造路径）
 	cfgJSON := `{
 		"agent_settings": {
 			"openai_api_key": "sk-test",
@@ -233,16 +233,23 @@ func TestHandleAgentChat_NoSystemPrompt_WhenEmpty(t *testing.T) {
 	}
 
 	messages, _ := req.Body["messages"].([]interface{})
-	if len(messages) != 2 {
-		t.Fatalf("无 system_prompt 时 messages 长度应为 2，得到 %d", len(messages))
+	// 无配置时注入默认 system prompt → messages 长度 = 1(system) + 2(原始) = 3
+	if len(messages) != 3 {
+		t.Fatalf("无 system_prompt 时应注入默认 prompt，messages 长度应为 3，得到 %d", len(messages))
 	}
-	// 第一条必须是原始 user 消志（不是 system）
+	// 第一条必须是内置默认 system 消息
 	first := messages[0].(map[string]interface{})
-	if first["role"] == "system" {
-		t.Error("system_prompt 为空时不应该注入 system 消息")
+	if first["role"] != "system" {
+		t.Errorf("messages[0].role = %q, want \"system\"（默认 prompt）", first["role"])
 	}
-	if first["role"] != "user" {
-		t.Errorf("messages[0].role = %q, want \"user\"", first["role"])
+	systemContent, _ := first["content"].(string)
+	if !strings.Contains(systemContent, "list_mounts") {
+		t.Error("默认 system prompt 应包含 list_mounts 指令")
+	}
+	// 后续消息保持原顺序
+	second := messages[1].(map[string]interface{})
+	if second["role"] != "user" {
+		t.Errorf("messages[1].role = %q, want \"user\"", second["role"])
 	}
 }
 
