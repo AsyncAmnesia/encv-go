@@ -290,6 +290,7 @@ func callOpenAIStream(ctx context.Context, cfg agentConfig, model string, temper
 		"messages":    messages,
 		"temperature": temperature,
 		"stream":      true,
+		"max_tokens":  8192,
 	}
 	if len(openAITools) > 0 {
 		reqBody["tools"] = openAITools

@@ -863,6 +863,14 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 			}
 		}
 
+		// 检测输出被 token 限制截断
+		if finishReason == "length" {
+			slog.Warn("agent: LLM response truncated (finish_reason=length)",
+				"round", round+1,
+				"text_len", len(roundTextContent),
+				"text_tail", roundTextContent[max(0, len(roundTextContent)-100):])
+		}
+
 		// 收集所有累积的完整 tool_calls
 		if gotToolCalls {
 			for _, tc := range tcAccumulator {
