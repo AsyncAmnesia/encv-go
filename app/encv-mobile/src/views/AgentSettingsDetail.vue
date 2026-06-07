@@ -324,7 +324,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonBackButton, IonContent, IonList, IonListHeader, IonItem,
@@ -1246,12 +1246,62 @@ onMounted(async () => {
 // 监听后端连接状态：从未连接 → 已连接时自动重新拉配置，
 // 避免"切到 AI 设置时后端刚好没起来 → 页面永远空白"的状态机卡死。
 //
-// 重要：之前的条件 `!configError.value` 是错的——离线时 configError 会被 set
-// 为 "请确认 encv-go 服务已启动"，后端恢复后 configError 不清零，watcher 永不触发。
-// 改为：online=true 且 !configLoaded 时就重试（loadConfigSafely 内部会清空 configError）
+// ⚠️ watcher 只在 serverOnline 值变化时触发。如果 serverOnline 已经是 true
+//    但 loadConfigSafely 内部 fetchConfig 失败（网络抖动 / Trae proxy 超时），
+//    watcher 不会再次触发 → 组件永久卡在错误态。
+//    因此需要配合下面的 autoRetryInterval 作为兜底。
 watch(serverOnline, async (online) => {
   if (online && !configLoaded.value) {
     await loadConfigSafely()
+  }
+})
+
+// ─── 防卡死：定时探测 + 自动重试 ─────────────────────────────
+//
+// 场景：serverOnline=true 但 fetchConfig 因网络/proxy 问题失败 →
+//       watcher 不再触发（值没变）→ 错误态 UI 永久显示。
+//       用 5s 定时器兜底：只要还在错误态且未加载成功，就持续重试。
+//
+let autoRetryTimer: ReturnType<typeof setInterval> | null = null
+
+function startAutoRetry() {
+  stopAutoRetry()
+  autoRetryTimer = setInterval(async () => {
+    // 只在"已确认后端在线但 config 没加载成功"时重试
+    if (serverOnline.value && !configLoaded.value) {
+      console.debug('[AgentSettingsDetail] auto-retry: serverOnline=true but configLoaded=false, retrying...')
+      await loadConfigSafely()
+    }
+    // 如果已经加载成功，停止重试
+    if (configLoaded.value) {
+      stopAutoRetry()
+    }
+  }, 5000)
+}
+
+function stopAutoRetry() {
+  if (autoRetryTimer) {
+    clearInterval(autoRetryTimer)
+    autoRetryTimer = null
+  }
+}
+
+// 组件卸载时清理
+onBeforeUnmount(() => {
+  stopAutoRetry()
+})
+
+// 首次进入错误态或加载完成时，启动/停止自动重试
+watch(configLoaded, (loaded) => {
+  if (loaded) {
+    stopAutoRetry()
+  } else if (serverOnline.value) {
+    startAutoRetry()
+  }
+})
+watch(configError, (err) => {
+  if (err && serverOnline.value && !configLoaded.value) {
+    startAutoRetry()
   }
 })
 

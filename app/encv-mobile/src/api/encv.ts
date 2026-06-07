@@ -247,22 +247,27 @@ export function getExternalStreamUrl(path: string): string {
 
 export async function checkServerStatus(): Promise<{ online: boolean; error?: string }> {
   try {
+    // 关键：使用与 Agent API 端点完全相同的 base URL。
+    // 在 dev模式下 getApiBaseUrl() 返回空字符串（相对路径），
+    // 但 preview-gateway 只代理 /api 和 /agent-api 前缀——
+    // 如果用 /api/service-guard 而 preview-gateway 的 /api 规则因某种原因
+    // 未覆盖该子路径（或 Trae 外层 proxy 干扰），探测会静默失败。
+    //
+    // 改用 /api/config 作为健康检查端点（content-type 校验防 vite SPA fallback），
+    // 因为：
+    //   1. 用户日志证实 /api/* 路径可达（decrypt-key status=200）
+    //   2. /api/config 是 encv-go 核心端点，一定存在
+    //   3. 即使返回空 JSON {} 也证明后端在线（vs vite 返回 HTML）
     const baseUrl = getApiBaseUrl()
-    // 关键：用 /api/service-guard 而不是 /health 探测后端。
-    // 原因：vite dev SPA fallback 对任何未匹配路径返回 200 + index.html，
-    // 包括 /health —— 这会让"后端实际未连"伪装成"后端 online"。
-    // /api/service-guard 是 encv-go 独有的端点（vite 不知道），如果 vite 兜底，
-    // 返回 content-type=text/html，从而可以识别"路径错"vs"真后端响应"。
-    const response = await fetch(`${baseUrl}/api/service-guard`)
+    const response = await fetch(`${baseUrl}/api/config`)
     if (response.ok) {
       const contentType = response.headers.get('content-type') || ''
       if (contentType.includes('application/json')) {
-        console.info('[API] server online (service-guard JSON)')
+        console.info('[API] server online (config JSON)')
         return { online: true }
       }
-      // 200 但非 JSON = vite SPA fallback，假装成功但实际后端没连
       console.warn('[API] server probe returned non-JSON, treating as offline')
-      return { online: false, error: `service-guard returned ${contentType || 'unknown'} (likely vite SPA fallback)` }
+      return { online: false, error: `config probe returned ${contentType || 'unknown'} (likely vite SPA fallback)` }
     }
     return { online: false, error: `HTTP ${response.status}` }
   } catch (e) {
