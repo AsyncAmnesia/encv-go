@@ -156,6 +156,16 @@
               "type": "integer",
               "default": 5,
               "description": "每轮对话最大工具调用次数"
+            },
+            "mock_scenarios_dir": {
+              "type": "string",
+              "default": "",
+              "description": "剧本外置目录：扫描此目录下的 *.yaml / *.json 作为 mock 剧本。空字符串 = 走 Go 字面量 fallback。详见 internal/server/mock_scenarios/SCHEMA.md。"
+            },
+            "mock_scenarios_hot_reload": {
+              "type": "boolean",
+              "default": false,
+              "description": "是否启用 fsnotify 热重载：检测到 mock_scenarios_dir 内 *.yaml / *.json 变更时自动 reload。仅在 mock_scenarios_dir 非空时生效。"
             }
           },
           "additionalProperties": false,

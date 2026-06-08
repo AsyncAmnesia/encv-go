@@ -1,8 +1,10 @@
 package server
 
 // ────────────────────────────────────────────────────────────────────
-// 剧本 v2 场景（agent-tools-scenarios-v2 spec §三.5）
+// 剧本 v2 场景（agent-tools-scenarios-v2 spec §三.5）— Go 字面量版本
 // ────────────────────────────────────────────────────────────────────
+//
+// ⚠️ DEPRECATED — 剧本外置 spec 已生效。
 //
 // 8 个 v2 场景，覆盖：
 //   - 单轮线性（search_*）: 演示 search_files 各种 query 形态
@@ -10,6 +12,12 @@ package server
 //   - 多轮 + 预览确认（batch_rename_with_preview）: dry_run → 确认 → 执行
 //   - 分支选择（branch_encrypt_or_decrypt / branch_video_or_audio）
 //   - 真实 shell（command_run_ffprobe）: command_run 受限 shell 输出
+//
+// 当前状态：保留作为 fallback。推荐迁移路径：
+//   1. 把下方 mockScenariosV2 列表的 8 个剧本转写为 YAML
+//   2. 放到 internal/server/mock_scenarios/v2/01_xxx.yaml
+//   3. 验证通过后即可禁用此 fallback
+//   4. 详见 internal/server/mock_scenarios/SCHEMA.md
 //
 // 所有 v2 场景都把 Rounds/RoundContext/Branches 等字段填齐；
 // 引擎通过 scenario.Rounds > 0 自动判定走 v2 路径。

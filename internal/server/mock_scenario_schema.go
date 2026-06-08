@@ -372,7 +372,12 @@ func validateStringField(ctx, evType, key, value string) error {
 
 	// 字段名本身若是 "user_text" / "userText" 等自由文本字段 → 拒绝
 	// 注意：preset.user_text 走独立路径（YAMLPreset.Validate），不在此处处理
-	if reFreeFormInput.MatchString(key) {
+	//
+	// 例外：mock_presets 事件 data.presets[].user_text 是 chip 点击后发送的预定义消息，
+	// 是剧本预设的一部分（不是用户自由输入），允许出现。
+	// 区分依据：evType == "mock_presets" 且 key 含 ".user_text" → 豁免
+	isMockPresetsUserText := evType == "mock_presets" && (key == "user_text" || strings.HasSuffix(key, ".user_text"))
+	if reFreeFormInput.MatchString(key) && !isMockPresetsUserText {
 		return fmt.Errorf("%s: field %q uses forbidden free-form input key %q (scenarios MUST use preset chips, not user text input)",
 			ctx, key, key)
 	}

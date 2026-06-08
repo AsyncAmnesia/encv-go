@@ -1,14 +1,28 @@
 // internal/server/agent_mock_scenarios.go
 //
-// 12 个内置 MockScenario 定义。
+// 12 个内置 MockScenario 定义（v1 剧本，Go 字面量版本）。
 //
-// 设计原则：
+// ⚠️ DEPRECATED — 剧本外置 spec 已生效。
+//
+// 当前状态：保留作为 fallback。
+//   - 当 agent_settings.mock_scenarios_dir 为空时，loader 注入此 12 个剧本
+//   - 当 mock_scenarios_dir 有 YAML 时，YAML 优先，此文件内容被覆盖
+//   - 当 mock_scenarios_dir 解析失败时，loader 也注入此 fallback
+//
+// 推荐迁移路径：
+//   1. 把本文件中每个 scenarioDefaultFriendly() 等函数转写为 YAML
+//   2. 放到 internal/server/mock_scenarios/builtin/01_xxx.yaml
+//   3. 验证通过后（CI 红线测试 + 启动 log）即可禁用此文件
+//   4. 详见 internal/server/mock_scenarios/SCHEMA.md
+//
+// 设计原则（v1 设计，仍适用）：
 //   - 每个剧本是独立函数返回 *MockScenario，便于单测直接调用验证事件序列
 //   - 所有事件类型与真实 OpenAI 路径输出字节级一致（前端 0 改动）
 //   - 延迟/事件顺序严格按 spec.md 编排，覆盖 [真机问题] / [reasoning 排序] / [并行工具] 等代码分支
 //
 // 参考：
 //   - Spec: /workspace/.trae/specs/agent-mock-mode/spec.md §Requirement: 内置剧本清单
+//   - 迁移指南: /workspace/.trae/specs/externalize-mock-scenarios/spec.md
 package server
 
 import (

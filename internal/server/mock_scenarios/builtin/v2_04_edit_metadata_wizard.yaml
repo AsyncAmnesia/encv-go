@@ -1,0 +1,112 @@
+# edit_metadata_wizard — 4 轮元数据编辑向导（v2 多轮）
+#
+# 用途：演示 v2 多轮（pause_for_user + set_context）状态机。
+#
+# 多轮机制：
+#   - 4 轮：选文件 → 选字段 → 输入值 → 确认执行
+#   - 每轮 PauseForUser=true → 推完此 step 后暂停等 user_text
+#   - SetContext 写入 RoundContext（v2 状态机跨轮共享）
+#
+# 数据完整性：
+#   - 不写具体文件路径（Movies/a.mp4 ❌）
+#   - 不写具体新值（My New Title ❌）
+#   - 不写 tool_result 事件（engine 自动产生）
+#   - text_delta 是通用 UI 文案
+#
+# 触发：关键词 edit_metadata_wizard
+id: edit_metadata_wizard
+description: 4 轮元数据编辑向导（选文件→选字段→输入值→确认）
+
+keywords:
+  - edit_metadata_wizard
+
+rounds: 4
+
+presets:
+  - id: wiz_start
+    label: "开始编辑元数据"
+    user_text: "开始"
+    icon: ""
+    tooltip: "开始 4 轮元数据编辑向导"
+
+steps:
+  # ── Round 0: 选文件（推 mock_presets 列表） ──
+  - id: r0_select_file
+    round_idx: 0
+    delay_ms: 10
+    events:
+      - type: text_delta
+        data: { text: "请选择要编辑的文件：" }
+      - type: mock_presets
+        data:
+          scenario: edit_metadata_wizard
+          phase: select_file
+          presets: []
+          # ⚠️ 注意：mock_presets 的 presets 字段也是用户输入的过滤条件
+          # 真实文件列表应通过 search_files 工具查得后再推
+          # YAML 里留空，由调用方在生产环境填入真实数据
+
+  # ── Round 1: 选字段 ──
+  - id: r1_select_field
+    round_idx: 1
+    delay_ms: 10
+    events:
+      - type: text_delta
+        data: { text: "你想编辑哪个字段？" }
+      - type: mock_presets
+        data:
+          scenario: edit_metadata_wizard
+          phase: select_field
+          presets:
+            - id: f_title
+              label: "title"
+              user_text: "title"
+            - id: f_year
+              label: "year"
+              user_text: "year"
+            - id: f_genre
+              label: "genre"
+              user_text: "genre"
+
+  # ── Round 2: 输入新值（暂停等 user_text） ──
+  - id: r2_input_value
+    round_idx: 2
+    delay_ms: 10
+    events:
+      - type: text_delta
+        data: { text: "请输入新值：" }
+
+  # ── Round 3: 确认 + 调真实工具（engine 自动产生 tool_result） ──
+  - id: r3_confirm_execute
+    round_idx: 3
+    delay_ms: 10
+    events:
+      - type: text_delta
+        # ✅ 通用 UI 文案（不含具体路径/字段名/新值）
+        data: { text: "已收到您选择的内容，准备执行元数据编辑…" }
+
+  - id: r3_tool_call
+    round_idx: 3
+    delay_ms: 30
+    events:
+      - type: tool_call
+        data:
+          id: call_emw_1
+          name: edit_metadata
+          # ⚠️ args 是用户输入的过滤条件（具体 path/field/value 由 UI 收集后填入）
+          # YAML 里用占位（实际生产由前端 chip + 输入框填入）
+          args: { path: "<USER_SELECTED_FILE>", field: "<USER_SELECTED_FIELD>", value: "<USER_ENTERED_VALUE>" }
+          auto_run: true
+          needsConfirm: true
+          kind: metadataEdit
+          execute_real: true
+
+  - id: r3_end
+    round_idx: 3
+    delay_ms: 50
+    events:
+      - type: text_delta
+        # ✅ 不写"已更新 title 字段" — 那是真实结果
+        data: { text: "执行完成。详见上方工具结果。" }
+      - type: stream_end
+        data: { finishReason: stop }

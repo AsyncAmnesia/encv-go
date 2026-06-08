@@ -1,0 +1,93 @@
+# branch_encrypt_or_decrypt — 分支选择：加密 / 解密 / 取消（v2 分支）
+#
+# 用途：演示 v2 分支（branches 列表 + 触发关键词）选择流程。
+#
+# 分支机制：
+#   - Branches 列表定义可选分支（含 trigger_keywords / trigger_regex）
+#   - 第一个 step 标 BranchChoice: true → 推 mock_branch_choice
+#   - 用户回复含 trigger_keywords → 推进对应分支
+#
+# 数据完整性：
+#   - 不接 free-form text（用户必须用 chip / 关键词）
+#   - text_delta 是通用 UI 文案
+id: branch_encrypt_or_decrypt
+description: 分支选择：加密 / 解密 / 取消
+
+keywords:
+  - branch_encrypt_or_decrypt
+
+rounds: 1
+
+branches:
+  - id: encrypt
+    label: "🔒 加密"
+    description: "对所选文件执行加密"
+    icon: "🔒"
+    trigger_keywords:
+      - 加密
+      - encrypt
+    trigger_regex: "(?i)^enc(rypt)?$"
+    initial_step_id: encrypt_action
+
+  - id: decrypt
+    label: "🔓 解密"
+    description: "解密已加密文件"
+    icon: "🔓"
+    trigger_keywords:
+      - 解密
+      - decrypt
+    trigger_regex: "(?i)^dec(rypt)?$"
+    initial_step_id: decrypt_action
+
+  - id: cancel
+    label: "✗ 取消"
+    description: "什么也不做"
+    icon: "✗"
+    trigger_keywords:
+      - 取消
+      - cancel
+      - no
+    trigger_regex: "(?i)^(cancel|no|quit)$"
+    initial_step_id: cancel_action
+
+steps:
+  - id: choose_action
+    round_idx: 0
+    delay_ms: 10
+    branch_id: choose_action
+    branch_choice: true
+    events:
+      - type: stream_start
+        data: { scenario: branch_encrypt_or_decrypt }
+      - type: text_delta
+        data: { text: "请选择操作类型：" }
+
+  # ── 分支目标 1：加密 ──
+  - id: encrypt_action
+    round_idx: 0
+    delay_ms: 10
+    events:
+      - type: text_delta
+        data: { text: "好的，进入加密流程…" }
+      - type: stream_end
+        data: { finishReason: stop }
+
+  # ── 分支目标 2：解密 ──
+  - id: decrypt_action
+    round_idx: 0
+    delay_ms: 10
+    events:
+      - type: text_delta
+        data: { text: "好的，进入解密流程…" }
+      - type: stream_end
+        data: { finishReason: stop }
+
+  # ── 分支目标 3：取消 ──
+  - id: cancel_action
+    round_idx: 0
+    delay_ms: 10
+    events:
+      - type: text_delta
+        data: { text: "好的，已取消。什么也不做。" }
+      - type: stream_end
+        data: { finishReason: stop }
