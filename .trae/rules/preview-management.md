@@ -66,7 +66,7 @@
 **根因（连环误判）**：
 1. 错把 `pnpm build` 当成"重建前端"标准做法 — 实际 `build` 产物 `dist/` 是给 **Android 离线包**用的（Capacitor sync → android/app/src/main/assets/public/），**不是 dev 预览**
 2. 错把 vite 自带 `preview` 当成"预览链接"通用方案 — vite preview 是**纯静态服务**，不走 vite dev 插件链（@ionic/vue、Capacitor polyfill、HMR 客户端）→ 前端能打开但**调不到任何 `/api/`** → 用户看到的"无错白屏 + 工具调用失败"是孤儿前端症状
-3. 错以为"vite preview"是 Capacitor + Ionic Vue 项目的合法入口 — 实际本项目 preview 链路是**已 pm2 守护的 4 件套**（preview-gateway:16666 → encv-mobile-vite:8100 → Go 后端 :2025），OpenPreview 直接打 16666 就行
+3. 错以为"vite preview"是 Capacitor + Ionic Vue 项目的合法入口 — 实际本项目 preview 链路是**已 pm2 守护的 2 件套**（preview-gateway:16666 内部统一管理 Go 后端 :2025 + Vite :8100），OpenPreview 直接打 16666 就行
 4. 思考过程没核对 §二 沙箱 dev 服务拓扑表，假设 vite 自己 serve 出来就等于项目预览
 
 **禁止**：
@@ -77,51 +77,66 @@
 
 **正确做法（用户说"重建前端 / 给我预览链接"时）**：
 - ✅ **不** build：vite dev (8100) 跑源码 + HMR，源码改动已自动热重载
-- ✅ **不**启新进程：preview-gateway (16666) + encv-mobile-vite (8100) + Go 后端 (2025) 已在 pm2 守护（除非 `pm2 list` 显示 offline 才需要 `pm2 restart`）
+- ✅ **不**启新进程：preview-gateway (16666) 已在 pm2 守护（除非 `pm2 list` 显示 offline 才需要 `pm2 restart`）
 - ✅ Preview 链接直接用：**http://localhost:16666/**
 - ✅ 调用 OpenPreview 工具展示 16666 链接（command_id 取最近一次 `curl -sI :16666/` 健康检查的 RunCommand 即可）
 - ✅ 如真要"完整重打"前端（如 Capacitor sync 场景），必须先和用户确认目标，并明确告知 `pnpm build` 不会重启 dev 服务
 
 **反查清单（用户说 preview/build/dev 时，先问自己）**：
 - [ ] 用户说的"预览"是 web dev 预览还是 Android 离线包？
-- [ ] pm2 list 看过吗？4 件套是否都在 online？
-- [ ] 我要启的端口在 §二 拓扑表里吗？（16666 / 8100 / 15002 / 15003 / 2025 / 5173 / 5244 / 5174）
+- [ ] pm2 list 看过吗？2 件套 (preview-gateway + openpreview-stub) 是否都在 online？
+- [ ] 我要启的端口在 §二 拓扑表里吗？（16666 / 15003；2025/8100/5174/5244 由 gateway 按需拉起）
 - [ ] 我要跑的命令在 §四 禁止命令清单里吗？
 
 ---
 
-## 二、pm2 联动启动标准流程
+## 二、pm2 联动启动标准流程（方案 C：网关合一，2026-06-08 大改）
 
-### 2.1 沙箱 dev 服务拓扑（本项目固定 4 上游）
+### 2.1 沙箱 dev 服务拓扑（pm2 监管 2 个 + gateway 内部管理 4 个子进程）
 
 | pm2 app | 端口 | 必备 | 角色 |
 |---------|------|------|------|
-| `preview-gateway` | :16666 | ✅ 必备 | 统一预览网关，对外唯一入口 |
-| `encv-mobile-vite` | :8100 | ✅ 必备 | 主 app Vite（被 :16666/ 代理） |
-| `preview-helper` | :15002 | ✅ 必备 | OpenPreview 占位 |
-| `openpreview-stub` | :15003 | ✅ 必备 | OpenPreview web_server command_id 源 |
-| `start-preview` | :2025 + :5173 | ⚠️ 可选 | Go 后端 air + 旧 vite；**⚠️ pm2 启动时必须注入 `ENCV_DEV_PREVIEW=1` + `ENCV_MOBILE=1`**（见 §五 env 注入铁律） |
-| `openlist` | :5244 | ⚠️ 可选 | OpenList 真实 fork Go 服务 |
-| `plugin-openlist-vite` | :5174 | ⚠️ 可选 | OpenList 管理 UI Vite（被 :16666/openlist-ui/ 代理） |
+| `preview-gateway` | :16666 | ✅ 必备 | 统一预览网关，**唯一对外入口 + 唯一进程管理者** |
+| `openpreview-stub` | :15003 | ✅ 必备 | OpenPreview web_server command_id 源（无法绕开，详见 §三） |
 
-**主 app 入口最少依赖**：`preview-gateway` + `encv-mobile-vite` + `preview-helper` + `openpreview-stub`，其余按需。
+**gateway 内部子进程**（由 `preview-gateway` 自己 `child_process.spawn` 管理，**不需独立 pm2 app**）：
 
-### 2.2 启动标准命令
+| 子进程 | 端口 | 默认 | 角色 | 开关 env |
+|--------|------|------|------|----------|
+| `encv-go` (air) | :2025 | ✅ 启用 | Go 后端（mobile overlay 关键） | `SPAWN_GO=0` 关闭 |
+| `encv-mobile-vite` | :8100 | ✅ 启用 | 主 app Vite（被 :16666/ 代理） | `SPAWN_VITE=0` 关闭 |
+| `plugin-openlist-vite` | :5174 | ❌ 按需 | OpenList 管理 UI Vite | `SPAWN_PLUGIN_VITE=1` 启用 |
+| `openlist` | :5244 | ❌ 按需 | OpenList 真实 fork Go 服务 | `SPAWN_OPENLIST=1` 启用 |
+
+**为什么只有 2 个 pm2 app？**（方案 C 解决的问题）
+- **历史 7 app 架构**：`preview-gateway` + `encv-mobile-vite` + `preview-helper` + `openpreview-stub` + `start-preview` + `plugin-openlist-vite` + `openlist`
+- **核心 bug**：`start-preview` 内部 & 启 vite :8100 与 `encv-mobile-vite` 抢同一端口；`preview-helper` 与 `openpreview-stub` 功能完全重复
+- **方案 C**：所有 dev 进程下放到 `preview-gateway` 内部（src/children.ts）；pm2 只管 2 个真正长跑的 app
+- **子进程死 → gateway 死 → pm2 重启整套**（避免出现 "vite 死、Go 活、gateway 200、用户看到白屏" 的鬼状态）
+
+### 2.2 启动标准命令（**只此一条**）
 
 ```bash
-# 1. 装 pm2（一次性）
-npm install -g pm2
+# 1. 装 pm2（一次性，setup-sandbox-env.sh 已做）
+which pm2 || npm install -g pm2
 
-# 2. 启动主 app 4 件套（来自 ecosystem.config.cjs）
-pm2 start /workspace/ecosystem.config.cjs \
-  --only preview-gateway,encv-mobile-vite,preview-helper
+# 2. 一行启动全部（2 个 app；其余由 preview-gateway 内部 spawn）
+pm2 start /workspace/ecosystem.config.cjs
 
-# 3. 额外启 openpreview-stub（该 app 不在 ecosystem 里，独立维护）
-PORT=15003 pm2 start /workspace/scripts/openpreview-stub.js \
-  --name openpreview-stub
+# 3. 验证
+pm2 list                                              # 看到 2 个 online
+curl -s http://localhost:16666/__gateway/health       # ok:true
+curl -sI http://localhost:16666/                      # HTTP/1.1 200 OK
+curl -s http://localhost:16666/api/service-guard | jq '.context.envDevPreview'   # true
+```
 
-# 4. 保存状态（sandbox 会话重置后可 pm2 resurrect 恢复）
-pm2 save
+**如果需要 plugin-vite / openlist**（按需）：
+```bash
+# 临时：单次启动前注入 env
+SPAWN_PLUGIN_VITE=1 pm2 restart preview-gateway
+SPAWN_OPENLIST=1    pm2 restart preview-gateway
+
+# 永久：编辑 ecosystem.config.cjs 把对应 env 改 '1'
 ```
 
 ### 2.3 完整命令参考
@@ -137,11 +152,11 @@ pm2 logs preview-gateway --lines 100
 pm2 logs --nostream --raw 0 0 100               # 拉最近 100 行非流
 
 # 启停
-pm2 start <script> --name <name>                # 启
-pm2 restart <name>                              # 重启
-pm2 stop <name>                                 # 停（保留 pm2 注册表）
-pm2 delete <name>                               # 删（出注册表）
-pm2 delete all                                  # 全删
+pm2 start /workspace/ecosystem.config.cjs       # 启全部
+pm2 restart preview-gateway                     # 改 gateway 配置（含 spawn 子进程重启）
+pm2 restart openpreview-stub                    # 改 stub
+pm2 stop all && pm2 delete all                  # 全清
+pm2 start <script> --name <name>                # 临时启单 app（不推荐，破坏单一管理）
 
 # 配置
 pm2 save                                        # 写 /root/.pm2/dump.pm2
@@ -152,15 +167,17 @@ pm2 reload ecosystem                            # 0 秒重载
 ### 2.4 验证命令
 
 ```bash
-# 端口在线
-lsof -i :16666 -i :8100 -i :15003 | head
+# 端口在线（只需检查 16666 / 15003；2025/8100 由 gateway 内部管理）
+lsof -i :16666 -i :15003 | grep LISTEN
 
 # 主 app 入口可达
 curl -sI http://localhost:16666/ | head -1
 # 期望: HTTP/1.1 200 OK
 
-# preview-gateway health（如果其他 upstream 未启，会 503；不影响 / 路径）
-curl -s http://localhost:16666/__gateway/health | head -c 200
+# preview-gateway health（含子进程状态）
+curl -s http://localhost:16666/__gateway/health | jq '{ok, children: [.children[].name], optionalDown: .optionalDown | length}'
+# 期望: {"ok": true, "children": ["encv-go", "encv-mobile-vite"], "optionalDown": 2}
+#  optionalDown 数 = 2 是因为 plugin-vite + openlist 按需未启（这是预期）
 ```
 
 ---
@@ -212,8 +229,8 @@ curl -s http://localhost:16666/__gateway/health | head -c 200
 |------|------|------|
 | `OpenPreview` 返回 401 | 命令不是 web_server 类型 | 用 `command_type: web_server` 重启 |
 | `OpenPreview` 返回 port already registered | 上一次注册过；先取消 | 检查 agent-tool-host 内部 preview-proxy 状态 |
-| `curl :16666/` 返回 502 | preview-gateway 上游不可达 | `pm2 list` 看 vite 是否 online；`curl :8100` 直连验证 |
-| `curl :16666/` 200 但浏览器白屏 | vite :8100 死了 | `pm2 restart encv-mobile-vite` |
+| `curl :16666/` 返回 502 | preview-gateway 子进程（encv-go / encv-mobile-vite）未就绪 | `curl :16666/__gateway/health | jq .children` 看哪个没 ready；`pm2 logs preview-gateway --lines 100` |
+| `curl :16666/` 200 但浏览器白屏 | encv-mobile-vite 子进程死了 | `pm2 restart preview-gateway`（整组重启） |
 
 ---
 
@@ -226,7 +243,7 @@ curl -s http://localhost:16666/__gateway/health | head -c 200
 | `nohup xxx &` | `nohup node s.js &` | `pm2 start s.js --name xxx` |
 | `setsid xxx` | `setsid vite &` | `pm2 start vite --name xxx` |
 | `node server.js` blocking | 直接跑 node | `pm2 start server.js --name xxx` |
-| `vite --port N &` blocking | `vite --port 8100 &` | `pm2 start vite.js --name encv-mobile-vite -- --port 8100` |
+| `vite --port N &` blocking | `vite --port 8100 &` | `pm2 restart preview-gateway`（vite 由 gateway 内部 spawn，不需手起） |
 | 任何 `&` 启后台 | `cmd &` | `pm2 start` |
 | **`pnpm build`（误当作 dev 预览）** | `pnpm build` | vite dev (8100) 跑源码 + HMR，**不 build** |
 | **`pnpm preview`（vite 静态预览，孤儿前端）** | `pnpm preview --port 4173` | preview-gateway (16666) → vite dev (8100) → Go 后端 |
@@ -234,53 +251,78 @@ curl -s http://localhost:16666/__gateway/health | head -c 200
 
 ---
 
-## 五、start-preview env 注入铁律（2026-06-05 mobile overlay 触发失败事故后写入）
+## 五、env 注入铁律（2026-06-05 mobile overlay 触发失败事故后写入；2026-06-08 方案 C 重写）
 
 > **核心原则：`ApplyMobileOverlay` 由 `ENCV_MOBILE=1` 或 `ENCV_DEV_PREVIEW=1` 触发，缺失则 servingDir 退回 `/workspace`（用户看到 `.md` / `.gitignore`，不是 mock 媒体）。**
 
-### 7.1 三层注入（缺一不可）
+### 5.1 三层注入（缺一不可）
 
 | 层 | 文件 | 作用 |
 |----|------|------|
-| **L1 pm2 注入** | `ecosystem.config.cjs` `start-preview` 块 `env` | pm2 fork 时直接注入到 bash 进程 |
-| **L2 air → encv 传递** | `.air-run.sh` `export ${X:-1}` 兜底 | air rebuild 重启 ./tmp/encv 时不会丢 env |
-| **L3 启动脚本** | `start-preview.sh` 不再 inline 设 | 不重复设，避免冲突；只注释说明 |
+| **L1 pm2 → gateway** | `ecosystem.config.cjs` `preview-gateway` 块 `env` | pm2 fork 时注入到 gateway Node 进程 |
+| **L2 gateway → air 子进程** | `app/preview-gateway/src/server.ts` `buildChildSpecs()` | gateway `child_process.spawn` air 时透传 env |
+| **L3 air → encv 传递** | `.air-run.sh` `export ${X:-1}` 兜底 | air rebuild 重启 ./tmp/encv 时不会丢 env |
+
+**数据流**：
+```
+ecosystem.config.cjs  (L1: ENCV_DEV_PREVIEW=1 / ENCV_MOBILE=1)
+  ↓ pm2 start
+preview-gateway 进程  (Node，环境变量在 process.env)
+  ↓ buildChildSpecs() spread process.env + defaults  (L2)
+air 子进程  (bash，环境变量在 air shell)
+  ↓ air exec
+.air-run.sh  (export ${X:-1} 兜底  L3)
+  ↓ exec
+./tmp/encv start  (Go，env 在 os.Getenv)
+  ↓ config.Load() → ApplyMobileOverlay 触发
+```
+
+**为什么 L2 显式 spread 不省略**：
+- `process.env` 在 Node 里有但**不会自动**被子进程继承 — 必须用 `spawn(cmd, args, { env: ... })` 显式传递
+- `buildChildSpecs` 里 `env: { ...process.env, ENCV_*: '1' }` 强制覆盖，避免用户在父 shell 里设了 `ENCV_MOBILE=0` 导致冲突
 
 **为什么不在 `start-preview.sh` 设 inline env `ENCV_DEV_PREVIEW=1 air &`**：
+- start-preview.sh 已**删除**（方案 C 大改，脚本退化为只跑 mock 生成）
 - inline env 只对 `air` 进程有效，但 air rebuild 时**不一定**透传给新的 `./tmp/encv`（air 0.x 行为）
-- pm2 restart 后，ecosystem 注入的 env 是唯一稳定来源
+- L1 + L2 + L3 三层防御才是稳定来源
 
-### 7.2 自检命令
+### 5.2 自检命令
 
 ```bash
 # 1. service-guard 必须返 envDevPreview=true
-curl -s http://localhost:2025/api/service-guard | jq '.context.envDevPreview'
+curl -s http://localhost:16666/api/service-guard | jq '.context.envDevPreview'
 # 期望：true
 
 # 2. servingDir 必须是 /storage/emulated/0
-curl -s http://localhost:2025/api/service-guard | jq '.context.servingDir'
+curl -s http://localhost:16666/api/service-guard | jq '.context.servingDir'
 # 期望："/storage/emulated/0"
 
 # 3. mock 数据落地
 ls /storage/emulated/0/01-plain-media/ | head
 # 期望：01.mp4 02.mp3 03.png 04.pdf 05.txt ...
+
+# 4. gateway children 状态（确认 air 在跑）
+curl -s http://localhost:16666/__gateway/health | jq '.children[].name'
+# 期望：["encv-go", "encv-mobile-vite"]
 ```
 
 **自检失败排查表**：
 
 | 现象 | 原因 | 修复 |
 |------|------|------|
-| `envDevPreview: false` | env 没传到 encv | 检查 L1（pm2 env）+ L2（.air-run.sh） |
+| `envDevPreview: false` | env 没传到 encv | 检查 L1（pm2 env）+ L2（gateway buildChildSpecs）+ L3（.air-run.sh） |
 | `servingDir: "/workspace"` | mobile overlay 没触发 | 同上 |
-| `servingDirExists: false` | mock 没生成 | `start-preview.sh:99-110` mkdir 兜底 |
-| air rebuild 后 env 变 false | L2 兜底缺失 | 检查 `.air-run.sh` 末尾 export |
+| `servingDirExists: false` | mock 没生成 | `gateway src/preflight.ts:ensureMockData` 兜底 |
+| air rebuild 后 env 变 false | L3 兜底缺失 | 检查 `.air-run.sh` 末尾 export |
+| gateway children 缺 encv-go | air 启动失败 / 90s 就绪超时 | `pm2 logs preview-gateway --lines 100` 看错误 |
 
-### 7.3 绝对禁止
+### 5.3 绝对禁止
 
-- ❌ 在 start-preview.sh 里设 `ENCV_DEV_PREVIEW=1 air &` inline env（已知不稳定）
-- ❌ 让 `./tmp/encv` 直接以 pm2 启动，绕过 air 监视
 - ❌ 移除 `.air-run.sh` 的 `export ${X:-1}` 兜底（被前人坑过：air rebuild 丢 env）
-- ❌ 在 `ecosystem.config.cjs` 启动时**不设** `ENCV_DEV_PREVIEW` / `ENCV_MOBILE`
+- ❌ 在 `ecosystem.config.cjs` `preview-gateway` 块 env 里**不设** `ENCV_DEV_PREVIEW` / `ENCV_MOBILE`
+- ❌ 在 `src/children.ts` `buildChildSpecs` 里删掉 `{ ...process.env, ENCV_*: ... }` 显式 spread
+- ❌ 让 `./tmp/encv` 直接以 pm2 启动，绕过 air 监视
+- ❌ 复活 start-preview.sh 里的 inline env 注入（方案 C 已删）
 
 ---
 
@@ -289,12 +331,13 @@ ls /storage/emulated/0/01-plain-media/ | head
 每次启动 dev 服务前必须确认：
 
 - [ ] pm2 已装（`which pm2`）—— 未装则 `npm install -g pm2`
-- [ ] ecosystem.config.cjs 已存在（`/workspace/ecosystem.config.cjs`）
-- [ ] 启动命令是 `pm2 start ...`，**不是** `nohup`、`&`、`sleep` 阻塞
-- [ ] 启动后 `pm2 list` 看到目标 app `online`
-- [ ] `curl :16666/` 返回 200（fallthrough 到 vite）
-- [ ] **`curl :2025/api/service-guard | jq .context.envDevPreview` = true**（mobile overlay 生效）
-- [ ] **`curl :2025/api/service-guard | jq .context.servingDir` = /storage/emulated/0**
+- [ ] ecosystem.config.cjs 已存在（`/workspace/ecosystem.config.cjs`）且 `preview-gateway/dist/server.js` 已构建（`pnpm build`）
+- [ ] 启动命令是 `pm2 start /workspace/ecosystem.config.cjs`，**不是** `nohup`、`&`、`sleep` 阻塞
+- [ ] 启动后 `pm2 list` 看到 **2 个** app `online`（preview-gateway + openpreview-stub）
+- [ ] **`curl :16666/__gateway/health | jq .ok` = true**（必检 upstream 全 alive）
+- [ ] `curl :16666/` 返回 200（fallthrough 到 vite :8100）
+- [ ] **`curl :16666/api/service-guard | jq .context.envDevPreview` = true**（mobile overlay 生效）
+- [ ] **`curl :16666/api/service-guard | jq .context.servingDir` = /storage/emulated/0**
 - [ ] `pm2 save` 持久化（sandbox 会话重置可 `pm2 resurrect`）
 
 **当用户说"重建前端 / 给我预览链接 / dev server 起一下"时，先过这一关**：

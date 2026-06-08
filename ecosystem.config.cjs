@@ -1,72 +1,52 @@
 /* eslint-disable */
 // =============================================================================
-// ecosystem.config.cjs
+// ecosystem.config.cjs — 方案 C：网关合一
 // -----------------------------------------------------------------------------
-// pm2 配置：统一管理 沙箱 dev 服务（统一预览网关 + 主预览 + 辅助服务）
+// pm2 配置：精简为 2 个 app。
+//   ① preview-gateway   (:16666) — 唯一对外入口 + 唯一进程管理者
+//      内部 child_process.spawn 管理 4 个子进程：
+//        - encv-go         (:2025)  SPAWN_GO=1 (default)
+//        - encv-mobile-vite(:8100)  SPAWN_VITE=1 (default)
+//        - plugin-vite     (:5174)  SPAWN_PLUGIN_VITE=0 (按需)
+//        - openlist        (:5244)  SPAWN_OPENLIST=0 (按需)
+//   ② openpreview-stub  (:15003) — OpenPreview 工具垫脚石
+//      （agent-tool-host 要求 command_id 来自 web_server 类型命令；
+//        本服务纯返 200 OK，真实预览仍走 :16666）
 //
-//   ① preview-gateway     (统一预览网关, :16666 — 对外唯一端口)
-//   ② start-preview       (主预览 — start-preview.sh, :2025 + :8100)
-//   ③ openlist            (Go OpenList 真实 fork, :5244)
-//   ④ plugin-openlist-vite(Vite plugin 管理 UI, :5174)
-//   ⑤ encv-mobile-vite    (主 app Vite, :8100 — 独立 pm2 app)
-//   ⑥ preview-helper      (OpenPreview 占位, :15002)
-//   ⑦ openpreview-stub    (OpenPreview 注册源, :15003)
-//
-//   AI Agent SSE 端点已集成到 encv-go :2025 (internal/server/agent_api.go)，
-//   历史上曾有独立的 agent-stub 进程 (scripts/agent-stub.js) 占 :5245 端口，
-//   因 Node.js crypto 在 WebView 不可移植被移除（见 ci-check-no-nodejs-crypto.sh）。
+// 历史变更（2026-06-08 方案 C 大改）：
+//   - 删除 start-preview（amalgamated 巨脚本，子进程已下沉到 gateway）
+//   - 删除 encv-mobile-vite（端口冲突源；现由 gateway 独占 :8100）
+//   - 删除 plugin-openlist-vite / openlist（现由 gateway 按需拉起）
+//   - 删除 preview-helper（与 openpreview-stub 功能完全重复）
+//   - ENCV_DEV_PREVIEW / ENCV_MOBILE env 注入：start-preview.sh → gateway 的 air 子进程
+//   - .air-run.sh 的 `:-1` 兜底保留（防御性深度）
 //
 // 用法：
-//   pm2 start ecosystem.config.cjs
-//   pm2 stop  ecosystem.config.cjs
-//   pm2 restart ecosystem.config.cjs
-//   pm2 status
-//   pm2 logs
-//   pm2 monit
+//   pm2 start /workspace/ecosystem.config.cjs          # 启全部（2 个）
+//   pm2 restart preview-gateway                        # 改 gateway 配置
+//   pm2 restart openpreview-stub                       # 改 stub
+//   pm2 stop all && pm2 delete all                     # 全清
+//   pm2 save && pm2 resurrect                          # 跨会话持久化
 //
-// 包装脚本：scripts/previews.sh
-//   bash scripts/previews.sh start|stop|restart|status|logs|monit
-//
-// 端口决策（spec/unify-sandbox-preview-port §D1-D9）:
-//   :16666 = preview-gateway 唯一对外端口（用户决策 "好记"）
-//            agent-tool-host 内部 preview-proxy 会在首次
-//            agent-browser navigate :16666 时自动注册该端口
-//   :8100  = encv-mobile Vite（纯净 SPA，不再做反向代理胶水）
-//   :5174  = plugin-openlist-web Vite（被 :16666/openlist-ui 代理）
-//   :2025  = encv-go（被 :16666/api + /agent-api + /ws + /openlist/ + /p/ + /play 代理）
-//   :5244  = OpenList fork（被 encv-go :2025 内部代理）
-//
-//   ⚠️ 历史 :16000 = OpenPreview 工具用的外网入口（agent-tool-host），
-//      仅用于把 :16666 转给外网用户；preview-gateway 自身不再监听 :16000。
+// 端口决策（spec/unify-sandbox-preview-port §D1-D9）：
+//   :16666 = preview-gateway 唯一对外端口
+//   :8100  = encv-mobile Vite（gateway 内部子进程）
+//   :5174  = plugin-openlist-web Vite（按需）
+//   :2025  = encv-go（gateway 内部子进程）
+//   :5244  = OpenList fork（按需）
+//   :15003 = openpreview-stub（OpenPreview 工具垫脚石）
 // =============================================================================
 
 const path = require('path');
 const fs = require('fs');
 
-const REPO_ROOT      = '/workspace';
-const MOBILE_DIR     = path.join(REPO_ROOT, 'app', 'encv-mobile');
-const PLUGIN_DIR     = path.join(MOBILE_DIR, 'plugin-openlist', 'web');
-const GATEWAY_DIR    = path.join(REPO_ROOT, 'app', 'preview-gateway');
+const REPO_ROOT     = '/workspace';
+const MOBILE_DIR    = path.join(REPO_ROOT, 'app', 'encv-mobile');
+const GATEWAY_DIR   = path.join(REPO_ROOT, 'app', 'preview-gateway');
 
-const PREVIEW_SCRIPT  = path.join(MOBILE_DIR, 'scripts', 'start-preview.sh');
-const GATEWAY_SCRIPT  = path.join(GATEWAY_DIR, 'dist', 'server.js');
+const GATEWAY_SCRIPT = path.join(GATEWAY_DIR, 'dist', 'server.js');
 
-// ⚠️ pm2 fork 模式下 script 必须指向可加载文件（.js 路径 + interpreter）。
-//   - vite 的 shell 包装 (node_modules/.bin/vite) 不可用 — 第 2 行
-//     basedir=$(dirname ...) 会被 pm2 当 JS 解析报 SyntaxError。
-//   - script: 'node' + interpreter: 'node' 也不可用 — pm2 会把
-//     /root/.nvm/.../bin/node (ELF 二进制) 当 .js 加载报 Invalid token。
-//   - 正确做法：script 写 vite 的 JS 入口，interpreter 显式指定 node。
-const VITE_BIN_RELPATH = 'node_modules/vite/bin/vite.js';
-const VITE_BIN_PLUGIN  = path.join(PLUGIN_DIR, VITE_BIN_RELPATH);
-const VITE_BIN_MAIN    = path.join(MOBILE_DIR, VITE_BIN_RELPATH);
-
-// 检查 start-preview.sh 存在性（缺失时给出明确报错）
-if (!fs.existsSync(PREVIEW_SCRIPT)) {
-  throw new Error(`start-preview.sh 不存在: ${PREVIEW_SCRIPT}`);
-}
-
-// 检查 preview-gateway 编译产物（缺失时报错，提示先 setup-sandbox-env.sh）
+// 启动前 fail-fast：dist 必须存在
 if (!fs.existsSync(GATEWAY_SCRIPT)) {
   throw new Error(
     `preview-gateway dist/server.js 不存在: ${GATEWAY_SCRIPT}\n` +
@@ -76,13 +56,10 @@ if (!fs.existsSync(GATEWAY_SCRIPT)) {
 
 module.exports = {
   apps: [
-    // ── ① preview-gateway (统一预览网关, :16666) ────────────────────
-    //   唯一对外端口。浏览器、agent-browser、外网用户都走 :16666。
-    //   网关内部分发到 :8100 / :5174 / :2025 / :5244 四个 upstream。
-    //   health 端点：http://localhost:16666/__gateway/health
-    //
-    //   启动顺序：必须在 vite (:8100) 起来之后再 restart，否则
-    //   第一次 health check 会短暂失败（不影响代理本身的可用性）
+    // ── ① preview-gateway (:16666) ───────────────────────────────────
+    // 方案 C 核心：单进程 = 单入口 = 单一管理。
+    // gateway 内部 spawn air / vite / plugin-vite / openlist，
+    // 任何子进程死 → gateway 退出 → pm2 重启整套。
     {
       name: 'preview-gateway',
       script: GATEWAY_SCRIPT,
@@ -92,156 +69,37 @@ module.exports = {
         PATH: process.env.PATH,
         PORT: '16666',
         HOST: '0.0.0.0',
+        // ── 子进程开关（方案 C） ──
+        SPAWN_GO: '1',          // air → encv-go (:2025)，mobile overlay 关键
+        SPAWN_VITE: '1',        // encv-mobile Vite (:8100)
+        SPAWN_PLUGIN_VITE: '0', // plugin-openlist-web Vite (:5174)，按需 1
+        SPAWN_OPENLIST: '0',    // OpenList fork (:5244)，按需 1
+        SKIP_MOCK_GEN: '0',     // 1=跳过 mock 数据生成（CI 或预热场景）
+        // ── env 注入铁律（L1 pm2 注入） ──
+        // 透传给 air 子进程，触发 ApplyMobileOverlay
+        // (internal/config/config.go:292-294)
+        ENCV_DEV_PREVIEW: '1',
+        ENCV_MOBILE: '1',
+        ENCV_MOCK_ROOT: '/storage/emulated/0',
       },
-      // 网关内存占用极小（纯转发）
+      // 网关本体轻量；子进程会跑出来几百 MB（Go 编译 + Vite + node_modules）
       max_memory_restart: '256M',
-      listen_timeout: 10000,
-      kill_timeout: 3000,
+      listen_timeout: 120_000,  // preflight + air 首次 build + 4 子进程就绪总计
+      kill_timeout: 10_000,    // stopAll() 给 5s grace + 兜底
       autorestart: true,
-      // 启动后立即可用，预期常驻
       max_restarts: 10,
-      min_uptime: '10s',
+      min_uptime: '30s',
       out_file: '/tmp/pm2-preview-gateway.log',
       error_file: '/tmp/pm2-preview-gateway.err.log',
       merge_logs: true,
       time: true,
     },
 
-    // ── ② start-preview (主预览) ────────────────────────────────────
-    //   start-preview.sh 自身前台阻塞（wait -n 等待任一子进程退出），
-    //   内部用 & 启 air 和 vite 子进程，由 trap INT/TERM 兜底清理。
-    //   pm2 把它当作一个长跑进程管（fork 模式）：
-    //     - max_memory_restart: 内存超限自动重启（杀 air+vite 再起）
-    //     - kill_timeout: 8s（air 还要调 go build，1.6s 默认不够）
-    //     - listen_timeout: 60s（mock 生成 + npm install + 第一次 go build 较慢）
-    {
-      name: 'start-preview',
-      script: PREVIEW_SCRIPT,
-      interpreter: 'bash',
-      cwd: REPO_ROOT,
-      // ✅ 必须由 pm2 注入这两个 env！之前依赖 start-preview.sh 第 115 行的
-      //   inline env `ENCV_DEV_PREVIEW=1 air &`，在 air rebuild / pm2 restart
-      //   路径下不稳定（air 重新拉起 ./tmp/encv 时可能丢 env）。
-      //   pm2 直接注入到 bash 进程环境，air fork ./tmp/encv 时 100% 透传。
-      //   触发条件见 internal/config/config.go:292-294 ApplyMobileOverlay。
-      //   .air-run.sh 末尾还有 `:-1` 兜底（修复 2）。
-      env: {
-        PATH: process.env.PATH,
-        ENCV_DEV_PREVIEW: '1',
-        ENCV_MOBILE: '1',
-        // 让 mock 生成走沙箱 fallback（脚本默认 /storage/emulated/0，已存在）
-        ENCV_MOCK_ROOT: '/storage/emulated/0',
-      },
-      // 内存超 1G 重启（air 跑久了 + go build 临时内存会涨）
-      max_memory_restart: '1G',
-      // 启动窗口 60s：mock 生成 + npm install + air 第一次 go build
-      listen_timeout: 60000,
-      // 8s 让 air 完成 go build 后再 SIGKILL
-      kill_timeout: 8000,
-      autorestart: true,
-      // 主预览预期常驻；超过 5 次重启说明代码坏了，别再循环
-      max_restarts: 5,
-      min_uptime: '60s',
-      out_file: '/tmp/pm2-start-preview.log',
-      error_file: '/tmp/pm2-start-preview.err.log',
-      // merge_logs: true 让多步输出不打乱
-      merge_logs: true,
-      time: true,
-    },
-
-    // ── ② encv-mobile Vite (主 app, :8100) ───────────────────────────
-    //   历史上由 start-preview.sh 内部 & 启动，但 pm2 重启 start-preview 时
-    //   会清理 8100 vite → 主 app 频繁短暂不可用。拆成独立 pm2 app 更稳。
-    {
-      name: 'encv-mobile-vite',
-      script: VITE_BIN_MAIN,
-      args: '--host 0.0.0.0 --port 8100 --strictPort',
-      interpreter: 'node',
-      cwd: MOBILE_DIR,
-      env: { PATH: process.env.PATH },
-      max_memory_restart: '512M',
-      listen_timeout: 15000,
-      kill_timeout: 3000,
-      autorestart: true,
-      max_restarts: 10,
-      out_file: '/tmp/pm2-encv-mobile-vite.log',
-      error_file: '/tmp/pm2-encv-mobile-vite.err.log',
-    },
-
-    // ── ② OpenList 真实 fork (Go) ───────────────────────────────────
-    {
-      name: 'openlist',
-      // dev-openlist.sh 会自动用本地 fork 的 dist，fallback 到 release tarball
-      script: 'bash',
-      args: `${MOBILE_DIR}/scripts/dev-openlist.sh --port 5244`,
-      cwd: MOBILE_DIR,
-      env: {
-        PATH: process.env.PATH,
-        OPENLIST_DATA: '/tmp/openlist-data',
-      },
-      // OpenList 内存占用较大（gorm + 加密 + sqlite）
-      max_memory_restart: '1G',
-      // go run 编译时间较长
-      listen_timeout: 90000,
-      kill_timeout: 5000,
-      autorestart: true,
-      max_restarts: 10,
-      out_file: '/tmp/pm2-openlist.log',
-      error_file: '/tmp/pm2-openlist.err.log',
-    },
-
-    // ── ④ plugin-openlist-vite (plugin 管理 UI, :5174) ────────────────
-    //   实际是 4 号上游（preview-gateway → :16666/openlist-ui/），
-    //   头部列表 ④ 与下方 apps 顺序保持一致。
-    {
-      name: 'plugin-openlist-vite',
-      script: VITE_BIN_PLUGIN,
-      args: '--host 0.0.0.0 --port 5174 --strictPort',
-      interpreter: 'node',
-      cwd: PLUGIN_DIR,
-      env: {
-        PATH: process.env.PATH,
-        // ⚠️ 沙箱 dev 必须设 VITE_BASE=/openlist-ui/ —— 让 Vite 在 dev 模式下
-        // 也用绝对 base 解析资源路径（HTML 内的 ./src/main.ts → /openlist-ui/src/main.ts）
-        // 这是 plugin-openlist web 在 preview-gateway :16666/openlist-ui/ 下
-        // 不再空白的核心修复（spec/unify-sandbox-preview-port §防御性 UI）
-        VITE_BASE: '/openlist-ui/',
-      },
-      max_memory_restart: '512M',
-      listen_timeout: 15000,
-      kill_timeout: 3000,
-      autorestart: true,
-      max_restarts: 10,
-      out_file: '/tmp/pm2-plugin-openlist-vite.log',
-      error_file: '/tmp/pm2-plugin-openlist-vite.err.log',
-    },
-
-    // ── ⑤ preview-helper (占位 HTTP server, :15001) ─────────────────
-    //   唯一作用：让 OpenPreview 工具有一个 web_server 类型 command 可注册
-    //   （它要求 command_id 来自 toolcall history 中的 web_server 命令）。
-    //   真实预览走 :16666 preview-gateway，本服务纯返回 200 OK。
-    //   不阻塞 sandbox 会话：pm2 fork 模式，daemon 化。
-    //   持久化：pm2 save → /root/.pm2/dump.pm2；会话重置后 pm2 resurrect 自动恢复。
-    {
-      name: 'preview-helper',
-      script: path.join(REPO_ROOT, '.preview-helper.js'),
-      interpreter: 'node',
-      cwd: REPO_ROOT,
-      env: { PATH: process.env.PATH, PORT: '15002' },
-      max_memory_restart: '64M',
-      listen_timeout: 5000,
-      kill_timeout: 2000,
-      autorestart: true,
-      max_restarts: 10,
-      out_file: '/tmp/pm2-preview-helper.log',
-      error_file: '/tmp/pm2-preview-helper.err.log',
-    },
-
-    // ── ⑥ openpreview-stub (OpenPreview 注册源, :15003) ─────────────
-    //   启动 /workspace/scripts/openpreview-stub.js (pm2 守护，daemon 化)。
-    //   与 preview-helper :15002 共存，端口不冲突。
-    //   真实预览仍走 :16666 preview-gateway。
-    //   完整规则：.trae/rules/preview-management.md §三
+    // ── ② openpreview-stub (:15003) ─────────────────────────────────
+    // OpenPreview 工具的"垫脚石"：仅用于让工具拿到 web_server 类型 command_id。
+    // 真实预览仍走 :16666 preview-gateway，本服务纯返 200 OK。
+    // ⚠️ 不能删除：agent-tool-host 要求 command_id 来自 web_server 命令（详见
+    //    .trae/rules/trae_web_sandbox_network.md §八）。
     {
       name: 'openpreview-stub',
       script: path.join(REPO_ROOT, 'scripts', 'openpreview-stub.js'),
@@ -249,8 +107,8 @@ module.exports = {
       cwd: path.join(REPO_ROOT, 'scripts'),
       env: { PATH: process.env.PATH, PORT: '15003' },
       max_memory_restart: '64M',
-      listen_timeout: 5000,
-      kill_timeout: 2000,
+      listen_timeout: 5_000,
+      kill_timeout: 2_000,
       autorestart: true,
       max_restarts: 10,
       out_file: '/tmp/pm2-openpreview-stub.log',

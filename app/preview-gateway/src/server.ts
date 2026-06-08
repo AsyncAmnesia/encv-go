@@ -34,6 +34,9 @@ import httpProxy from 'http-proxy'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { IncomingMessage, ClientRequest, ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
+import { ChildrenManager, type ChildSpec, type ChildStatus } from './children.js'
+import { resolvePaths } from './paths.js'
+import { ensureMockData } from './preflight.js'
 
 // =============================================================================
 // Config
@@ -54,6 +57,12 @@ interface Upstream {
   name: string
   /** Hint shown in 502 error */
   hint: string
+  /**
+   * 是否为 health 端点"必检"upstream。
+   * - true (default)：down → health 503
+   * - false：按需上游（plugin-openlist-web / openlist），SPAWN_* off 时 down 是预期
+   */
+  required?: boolean
   /**
    * Path rewrite function: transform req.url before forwarding to upstream.
    * Default = identity (path kept as-is). Use this to STRIP a path prefix
@@ -80,6 +89,7 @@ const UPSTREAMS: Upstream[] = [
     wsTarget: 'ws://127.0.0.1:5174',
     name: 'plugin-openlist-web',
     hint: 'Check pm2 status for plugin-openlist-vite',
+    required: false,  // SPAWN_PLUGIN_VITE=0 时按需
     // 故意不写 pathRewrite —— 默认 identity（详见上方注释）
   },
   {
@@ -95,6 +105,7 @@ const UPSTREAMS: Upstream[] = [
     wsTarget: 'ws://127.0.0.1:5244',
     name: 'openlist',
     hint: 'Check pm2 status for openlist (:5244)',
+    required: false,  // SPAWN_OPENLIST=0 时按需
     pathRewrite: (p) => p.replace(/^\/openlist(?=\/|$)/, '') || '/',
   },
   {
@@ -426,6 +437,9 @@ interface UpstreamHealth {
   error?: string
 }
 
+/** 全局子进程管理器（main() 启动时赋值；health 端点读取） */
+let childrenManager: ChildrenManager | null = null
+
 async function pingUpstream(up: Upstream): Promise<UpstreamHealth> {
   const start = Date.now()
   const url = new URL(up.target)
@@ -467,26 +481,163 @@ async function handleHealth(_req: IncomingMessage, res: ServerResponse): Promise
   // Deduplicate by name (encv-go appears 4 times)
   const unique = new Map<string, Upstream>()
   for (const up of all) unique.set(up.name, up)
+  const upstreamList = Array.from(unique.values())
+
+  // 必检 vs 按需：只有 `required !== false` 的 upstream 计入 ok 计算
+  // （plugin-openlist-web / openlist 默认 SPAWN_* off 时按需 down）
+  const requiredUpstreams = upstreamList.filter((u) => u.required !== false)
+  const optionalUpstreams = upstreamList.filter((u) => u.required === false)
+
   const checks = await Promise.all(
-    Array.from(unique.values()).map(async (up) => [up.name, await pingUpstream(up)] as const),
+    upstreamList.map(async (up) => [up.name, await pingUpstream(up)] as const),
   )
   const upstreams: Record<string, UpstreamHealth> = {}
   for (const [name, h] of checks) upstreams[name] = h
-  const ok = Object.values(upstreams).every((h) => h.alive)
+  const requiredAlive = requiredUpstreams.every((u) => upstreams[u.name]?.alive === true)
+
+  // 子进程状态：只有方案 C 启用了 ChildrenManager 时才有数据
+  const children = childrenManager?.getStatuses() ?? []
+  const childrenAlive = children.every((c) => c.ready)
+
+  // ok 定义：所有 required upstream alive + 所有 spawned children ready
+  // optional upstream 不参与（按需 down 是预期）
+  const ok = requiredAlive && childrenAlive
+
   res.writeHead(ok ? 200 : 503, { 'Content-Type': 'application/json; charset=utf-8' })
-  res.end(JSON.stringify({ ok, upstreams }, null, 2))
+  res.end(
+    JSON.stringify(
+      {
+        ok,
+        upstreams,
+        children,
+        // 冗余字段：方便用户快速看出"哪些是按需"
+        optionalDown: optionalUpstreams
+          .filter((u) => upstreams[u.name]?.alive !== true)
+          .map((u) => ({ name: u.name, url: u.target, hint: u.hint })),
+      },
+      null,
+      2,
+    ),
+  )
 }
 
 // =============================================================================
-// Startup
+// Child process orchestration (方案 C：网关合一)
 // =============================================================================
 
-server.listen(PORT, HOST, () => {
-  // ── 防御守卫：/ws 必须在 UPSTREAMS 中 ─────────────────────────────
-  // 历史踩坑（2026-06-07）：/ws 不在 UPSTREAMS 中 → 走 DEFAULT_UPSTREAM →
-  // vite :8100（无 /ws handler）→ WebSocket 永远卡在 CONNECTING →
-  // DevLogs 显示 "ws=connecting" 但 HTTP /api/config 正常 → 用户困惑。
-  // 此断言在启动时立即暴露遗漏，不等用户报告。
+/**
+ * 根据 env 决定要启哪些子进程。env 默认值遵循"沙箱 dev 必启 + 其它按需"原则。
+ *   SPAWN_GO=1          (default 1) — air → encv-go on :2025
+ *   SPAWN_VITE=1        (default 1) — encv-mobile Vite on :8100
+ *   SPAWN_PLUGIN_VITE=0 (default 0) — plugin-openlist-web Vite on :5174
+ *   SPAWN_OPENLIST=0    (default 0) — OpenList Go fork on :5244
+ *
+ * 任何 SPAWN_X 显式设 0 即关闭该子进程 — gateway 仅转发，不管理。
+ */
+function buildChildSpecs(paths: ReturnType<typeof resolvePaths>): ChildSpec[] {
+  const specs: ChildSpec[] = []
+
+  // 1) encv-go (air) — mobile overlay 触发的关键
+  if (process.env.SPAWN_GO !== '0') {
+    specs.push({
+      name: 'encv-go',
+      cmd: paths.airBin,
+      args: [],
+      // env 注入铁律：ENCV_DEV_PREVIEW=1 / ENCV_MOBILE=1 必须传递（方案 C 移除
+      // start-preview.sh 后，这是唯一注入点；.air-run.sh 的 `:-1` 兜底仍生效）
+      env: {
+        ...process.env,
+        ENCV_DEV_PREVIEW: process.env.ENCV_DEV_PREVIEW ?? '1',
+        ENCV_MOBILE: process.env.ENCV_MOBILE ?? '1',
+        ENCV_MOCK_ROOT: process.env.ENCV_MOCK_ROOT ?? '/storage/emulated/0',
+      },
+      cwd: paths.repoRoot,
+      readyUrl: 'http://127.0.0.1:2025/api/config',
+      // 首次 go build 可能 60-90s（start-preview.sh 实测），给 90s 留余量
+      readyTimeoutMs: 90_000,
+    })
+  }
+
+  // 2) encv-mobile Vite — 主 app
+  if (process.env.SPAWN_VITE !== '0') {
+    specs.push({
+      name: 'encv-mobile-vite',
+      cmd: paths.nodeBin,
+      args: [paths.viteJsMain, '--host', '0.0.0.0', '--port', '8100', '--strictPort'],
+      env: { ...process.env, PATH: process.env.PATH ?? '' },
+      cwd: paths.mobileDir,
+      readyUrl: 'http://127.0.0.1:8100/',
+      readyTimeoutMs: 30_000,
+    })
+  }
+
+  // 3) plugin-openlist-web Vite — 默认不启（按需）
+  if (process.env.SPAWN_PLUGIN_VITE === '1') {
+    specs.push({
+      name: 'plugin-openlist-vite',
+      cmd: paths.nodeBin,
+      args: [paths.viteJsPlugin, '--host', '0.0.0.0', '--port', '5174', '--strictPort'],
+      env: {
+        ...process.env,
+        PATH: process.env.PATH ?? '',
+        // 沙箱 dev 必须设 VITE_BASE=/openlist-ui/（D11 修复，详见 plugin README）
+        VITE_BASE: '/openlist-ui/',
+      },
+      cwd: paths.pluginWebDir,
+      readyUrl: 'http://127.0.0.1:5174/',
+      readyTimeoutMs: 30_000,
+    })
+  }
+
+  // 4) OpenList 真实 fork — 默认不启（重 + 慢 + 多数沙箱场景不需要）
+  if (process.env.SPAWN_OPENLIST === '1') {
+    specs.push({
+      name: 'openlist',
+      cmd: 'bash',
+      args: [paths.openlistScript, '--port', '5244'],
+      env: {
+        ...process.env,
+        PATH: process.env.PATH ?? '',
+        OPENLIST_DATA: '/tmp/openlist-data',
+      },
+      cwd: paths.mobileDir,
+      readyUrl: 'http://127.0.0.1:5244/',
+      readyTimeoutMs: 60_000,
+    })
+  }
+
+  return specs
+}
+
+// =============================================================================
+// Startup (async main)
+// =============================================================================
+
+/**
+ * 主启动流程。串行：解析路径 → preflight → 子进程就绪 → server.listen。
+ * 任何一步失败 throw，pm2 会看到 exit 1 → 整套重启。
+ */
+async function main(): Promise<void> {
+  // ── Step 1: 路径解析（fail-fast）──
+  const paths = resolvePaths()
+
+  // ── Step 2: preflight（mock 数据生成）──
+  if (process.env.SKIP_MOCK_GEN !== '1') {
+    await ensureMockData(paths.mobileDir)
+  } else {
+    log('SKIP_MOCK_GEN=1, skipping mock data generation')
+  }
+
+  // ── Step 3: 启动子进程 ──
+  childrenManager = new ChildrenManager()
+  const specs = buildChildSpecs(paths)
+  if (specs.length === 0) {
+    log('no children to spawn (all SPAWN_* off) — gateway serves as pure proxy')
+  } else {
+    await childrenManager.startAll(specs)
+  }
+
+  // ── Step 4: 防御守卫：/ws 必须在 UPSTREAMS 中（2026-06-07 历史踩坑）──
   const hasWsRoute = UPSTREAMS.some((u) => u.match === '/ws')
   if (!hasWsRoute) {
     log('FATAL: /ws route missing from UPSTREAMS! WebSocket will fall through to vite.')
@@ -494,20 +645,48 @@ server.listen(PORT, HOST, () => {
     process.exit(1)
   }
 
-  log(`listening on http://${HOST}:${PORT} (D1: 好记，16666)`)
-  log(`routes:`)
-  for (const up of [DEFAULT_UPSTREAM, ...UPSTREAMS]) {
-    log(`  ${up.match.padEnd(20)} → ${up.target}  (${up.name})`)
-  }
-  log(`health:  http://${HOST}:${PORT}/__gateway/health`)
-  log(`external: :16000 (OpenPreview) → :16666 (this gateway) after agent-browser navigate :16666 triggers auto-register`)
-})
-
-// Graceful shutdown (pm2 sends SIGINT)
-for (const sig of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(sig, () => {
-    log(`received ${sig}, closing...`)
-    server.close(() => process.exit(0))
-    setTimeout(() => process.exit(1), 5_000).unref()
+  // ── Step 5: 启动 HTTP server ──
+  server.listen(PORT, HOST, () => {
+    log(`listening on http://${HOST}:${PORT} (D1: 好记，16666)`)
+    log(`children spawned: ${specs.length} (${specs.map((s) => s.name).join(', ') || 'none'})`)
+    log(`routes:`)
+    for (const up of [DEFAULT_UPSTREAM, ...UPSTREAMS]) {
+      log(`  ${up.match.padEnd(20)} → ${up.target}  (${up.name})`)
+    }
+    log(`health:  http://${HOST}:${PORT}/__gateway/health`)
+    log(`external: :16000 (OpenPreview) → :${PORT} (this gateway) after agent-browser navigate triggers auto-register`)
   })
 }
+
+// Graceful shutdown (pm2 sends SIGINT)
+let shuttingDown = false
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return
+  shuttingDown = true
+  log(`received ${signal}, shutting down...`)
+  // 先停子进程（kill 顺序：SIGTERM → 5s → SIGKILL），再关 server
+  if (childrenManager) {
+    await childrenManager.stopAll()
+  }
+  server.close(() => {
+    log(`server closed, exit 0`)
+    process.exit(0)
+  })
+  setTimeout(() => {
+    log(`shutdown timeout, force exit`)
+    process.exit(1)
+  }, 8_000).unref()
+}
+
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(sig, () => {
+    void shutdown(sig)
+  })
+}
+
+// 启动入口（顶层 await 在 ESM 下可用）
+main().catch((err) => {
+  log(`FATAL: main() failed: ${(err as Error).message}`)
+  log((err as Error).stack ?? '')
+  process.exit(1)
+})
