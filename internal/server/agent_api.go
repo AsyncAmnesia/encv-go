@@ -11,8 +11,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +20,7 @@ import (
 	"golang.org/x/crypto/scrypt"
 
 	"github.com/Soltus/encv-go/internal/config"
+	"github.com/Soltus/encv-go/internal/tools"
 )
 
 // ─── API Key 加密/解密（防止 config.user.json 明文暴露） ──────
@@ -36,9 +37,9 @@ const (
 // 关键设计决策（2026-06 修复）：
 //   - **完全忽略 deviceId**。早期版本把 deviceId 拼到 salt 后面作为设备绑定，
 //     实际产生 2 个致命问题：
-//       1. 设备变化 / 浏览器沙箱切换 → deviceId 变 → 已存密文永远解不出
-//       2. 历史 Node.js agent-stub 用 scryptSync + 不同 salt 加密的密文，
-//          即便有正确 deviceId 也解不开（参数不兼容）
+//     1. 设备变化 / 浏览器沙箱切换 → deviceId 变 → 已存密文永远解不出
+//     2. 历史 Node.js agent-stub 用 scryptSync + 不同 salt 加密的密文，
+//     即便有正确 deviceId 也解不开（参数不兼容）
 //   - 现在统一只用固定 passphrase + salt 派生，跨设备稳定。
 //   - deviceId 仍然作为参数保留（API 兼容 + 给未来可选的"设备绑定"模式留口子），
 //     但实际不参与派生。
@@ -198,7 +199,8 @@ func pkcs7Unpad(data []byte) []byte {
 // 让 LLM 以**纯文本 JSON 数组**格式输出工具调用，后端用 extractToolCallsFromText() 解析执行。
 //
 // 调用循环：
-//   用户提问 → LLM 输出 [tool_call JSON] → 后端解析+执行 → 注入结果 → LLM 基于结果回答
+//
+//	用户提问 → LLM 输出 [tool_call JSON] → 后端解析+执行 → 注入结果 → LLM 基于结果回答
 //
 // ⚠️ 修改此常量时必须同步更新 agent_api_test.go 中的相关测试。
 const defaultAgentSystemPrompt = `你是 ENCV AI 助手，可以帮助用户浏览文件、管理加密容器和执行操作。
@@ -415,6 +417,34 @@ func lastUserTextFromLoopMessages(msgs []chatMsg) string {
 	return ""
 }
 
+// classifyAgentToolError 从 executeAgentTool 返回的 error 中提取 (code, message)。
+//
+//   - 如果是 *tools.ToolError → 用其 Code + Message
+//   - 否则用 errors.As 透传尝试提取
+//   - 兜底：code = "EXEC_FAILED"，message = err.Error()
+//
+// 给 SSE tool_result 事件的 errorCode / errorMessage 字段用。
+func classifyAgentToolError(err error) (code, message string) {
+	if err == nil {
+		return "", ""
+	}
+	if te := tools.AsToolError(err); te != nil {
+		if te.Code != "" {
+			code = te.Code
+		} else {
+			code = tools.CodeUnknown
+		}
+		if te.Message != "" {
+			message = te.Message
+		} else {
+			message = err.Error()
+		}
+		return code, message
+	}
+	// 兜底：非 ToolError 类型 → 给通用码
+	return tools.CodeExecFailed, err.Error()
+}
+
 // truncateForLog 把字符串截断到 max 字符，超出部分用 "..." 表示。
 // 用于日志中预览用户输入，避免长消息刷屏。
 func truncateForLog(s string, max int) string {
@@ -539,11 +569,12 @@ func (s *Server) handleAgentResetKey(c *gin.Context) {
 //   - 拼接标准 /v1/chat/completions
 //
 // 用例：
-//   "https://api.openai.com/v1"   → "https://api.openai.com/v1/chat/completions"
-//   "https://api.openai.com/v1/"  → "https://api.openai.com/v1/chat/completions"
-//   "https://api.openai.com"      → "https://api.openai.com/v1/chat/completions"
-//   "https://api.openai.com/V1"   → "https://api.openai.com/v1/chat/completions"
-//   "https://proxy.example.com/openai/v1" → "https://proxy.example.com/openai/v1/chat/completions"
+//
+//	"https://api.openai.com/v1"   → "https://api.openai.com/v1/chat/completions"
+//	"https://api.openai.com/v1/"  → "https://api.openai.com/v1/chat/completions"
+//	"https://api.openai.com"      → "https://api.openai.com/v1/chat/completions"
+//	"https://api.openai.com/V1"   → "https://api.openai.com/v1/chat/completions"
+//	"https://proxy.example.com/openai/v1" → "https://proxy.example.com/openai/v1/chat/completions"
 func buildChatCompletionsURL(baseURL string) string {
 	base := strings.TrimRight(baseURL, "/")
 	// 去掉已存在的 /v1 后缀（不区分大小写，避免 https://api.openai.com/V1 的边界情况）
@@ -570,10 +601,10 @@ func (s *Server) handleAgentModels(c *gin.Context) {
 			note = "未配置 OpenAI API Key 或 deviceId 不匹配当前设备"
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"models":      []interface{}{},
+			"models":       []interface{}{},
 			"defaultModel": cfg.OpenAIModel,
-			"error":       "no_api_key",
-			"note":        note,
+			"error":        "no_api_key",
+			"note":         note,
 		})
 		return
 	}
@@ -592,8 +623,8 @@ func (s *Server) handleAgentModels(c *gin.Context) {
 		slog.Warn("agent: models fetch failed", "error", err)
 		c.JSON(http.StatusOK, gin.H{
 			"models": []interface{}{}, "defaultModel": "",
-			"error":  err.Error(),
-			"note":   "无法连接到供应商 API",
+			"error": err.Error(),
+			"note":  "无法连接到供应商 API",
 		})
 		return
 	}
@@ -607,8 +638,8 @@ func (s *Server) handleAgentModels(c *gin.Context) {
 		slog.Warn("agent: models response non-JSON", "content_type", ct, "body_preview", string(bodyPreview))
 		c.JSON(http.StatusOK, gin.H{
 			"models": []interface{}{}, "defaultModel": "",
-			"error":  fmt.Sprintf("供应商返回非 JSON 响应 (%s)", ct),
-			"note":   "无法从供应商获取模型列表",
+			"error": fmt.Sprintf("供应商返回非 JSON 响应 (%s)", ct),
+			"note":  "无法从供应商获取模型列表",
 		})
 		return
 	}
@@ -623,8 +654,8 @@ func (s *Server) handleAgentModels(c *gin.Context) {
 		slog.Warn("agent: models json decode failed", "error", err)
 		c.JSON(http.StatusOK, gin.H{
 			"models": []interface{}{}, "defaultModel": "",
-			"error":  err.Error(),
-			"note":   "解析供应商响应失败",
+			"error": err.Error(),
+			"note":  "解析供应商响应失败",
 		})
 		return
 	}
@@ -638,7 +669,7 @@ func (s *Server) handleAgentModels(c *gin.Context) {
 	sortModels(sorted)
 
 	c.JSON(http.StatusOK, gin.H{
-		"models":      sorted,
+		"models":       sorted,
 		"defaultModel": cfg.OpenAIModel,
 	})
 	slog.Info("agent: models fetched", "count", len(sorted), "base_url", cfg.BaseURL)
@@ -648,8 +679,8 @@ func (s *Server) handleAgentModels(c *gin.Context) {
 
 func (s *Server) handleAgentEncryptKey(c *gin.Context) {
 	var body struct {
-		Key       string `json:"key"`
-		DeviceId  string `json:"deviceId"`
+		Key      string `json:"key"`
+		DeviceId string `json:"deviceId"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json"})
@@ -707,9 +738,9 @@ func (s *Server) handleAgentTest(c *gin.Context) {
 // 字段：
 //   - SessionId / Model / Temperature / Messages / DeviceId  v1 字段
 //   - Mode       "start" / "steer" / "queue" / "mock_resume"
-//                前端 useAgent.send() 第二个参数透传（Task 11）
+//     前端 useAgent.send() 第二个参数透传（Task 11）
 //   - Scenario   mock_resume 时携带的当前激活剧本 ID
-//                （MockEngineV2 据此找到正确的状态机继续推事件）
+//     （MockEngineV2 据此找到正确的状态机继续推事件）
 type chatRequest struct {
 	SessionId   string    `json:"sessionId"`
 	Model       string    `json:"model"`
@@ -935,12 +966,12 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	// ════════════════════════════════════════════════════════════
 	const maxAgentLoopRounds = 5
 	var (
-		loopMessages     = finalMessages // 循环内的 messages（包含 system + 历史对话）
-		pendingTools     []toolCallAccumulator
-		finalAssistantText string         // LLM 最终文本回复
-		autoToolExecuted bool           // 是否有工具被执行过
-		textSeq          int            // 全局 seq 计数器（跨 round 递增，供 text_delta 使用）
-		reasoningSeq     int            // 全局 seq 计数器（跨 round 递增，供 reasoning_delta 使用）
+		loopMessages       = finalMessages // 循环内的 messages（包含 system + 历史对话）
+		pendingTools       []toolCallAccumulator
+		finalAssistantText string // LLM 最终文本回复
+		autoToolExecuted   bool   // 是否有工具被执行过
+		textSeq            int    // 全局 seq 计数器（跨 round 递增，供 text_delta 使用）
+		reasoningSeq       int    // 全局 seq 计数器（跨 round 递增，供 reasoning_delta 使用）
 	)
 
 	for round := 0; round < maxAgentLoopRounds; round++ {
@@ -974,11 +1005,11 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 
 		// 读取流式事件：累积 tool_calls / 智能缓冲文本
 		var (
-			roundTextContent     string
-			roundToolCalls       []toolCallAccumulator
-			tcAccumulator        = make(map[int]*toolCallAccumulator)
-			finishReason         string
-			gotToolCalls         bool
+			roundTextContent string
+			roundToolCalls   []toolCallAccumulator
+			tcAccumulator    = make(map[int]*toolCallAccumulator)
+			finishReason     string
+			gotToolCalls     bool
 
 			// ═══ 平台级 Tool Use 智能缓冲 ═══
 			// 问题：如果 LLM 输出工具调用 JSON（如 [{"name":"list_mounts",...}]），
@@ -992,60 +1023,60 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 			//     → 解析成功 → 执行工具，JSON 永远不暴露给用户
 			//     → 解析失败 → 补发所有缓冲的文本（降级为普通文本）
 			//   - 不像工具调用 → 立即转发已缓冲的部分 + 切回实时模式
-			textBuf          []string           // 缓冲的 text_delta chunks
-			bufMode          = true             // 是否在缓冲模式（前 N 字符）
-			suspectedToolCall = false            // 是否检测到可能是工具调用
+			textBuf           []string // 缓冲的 text_delta chunks
+			bufMode           = true   // 是否在缓冲模式（前 N 字符）
+			suspectedToolCall = false  // 是否检测到可能是工具调用
 		)
 		const bufSizeLimit = 60 // 缓冲阈值（字符数）
 
-	// containsEmbeddedToolCallPattern 在任意位置扫描工具调用 JSON 特征。
-	//
-	// 参考 LobeChat 的协议级分离思路：LobeChat 通过 chunkType='text'/'tools_calling'
-	// 在协议层面分离文本和工具调用。由于 gptgod 代理不发送标准 tool_call_chunk 事件，
-	// 我们需要在文本层做更精确的启发式检测来模拟同样的效果。
-	//
-	// 此函数用于：
-	//   1) looksLikeToolCheck 策略 2 — 嵌入式检测（中文正文后接 JSON）
-	//   2) 实时模式的二次检测 — bufMode 已释放后发现后续 chunk 出现工具调用特征
-	containsEmbeddedToolCallPattern := func(s string) bool {
-		if len(s) < 20 {
-			return false
-		}
-		return strings.Contains(s, `[{"name"`) ||
-			strings.Contains(s, `{"name":"`) ||
-			strings.Contains(s, `"function":`) ||
-			strings.Contains(s, `"arguments":`)
-	}
-
-	// splitTextIntoChunks 将文本按字符数分割为等长大块。
-	// 用于 Branch B 成功解析工具调用后，将 remainingText 分块作为 text_delta 补发给前端，
-	// 模拟 LobeChat stream_chunk chunkType='text' 的增量推送效果。
-	splitTextIntoChunks := func(text string, chunkSize int) []string {
-		runes := []rune(text)
-		if len(runes) <= chunkSize {
-			return []string{text}
-		}
-		var chunks []string
-		for i := 0; i < len(runes); i += chunkSize {
-			end := i + chunkSize
-			if end > len(runes) {
-				end = len(runes)
+		// containsEmbeddedToolCallPattern 在任意位置扫描工具调用 JSON 特征。
+		//
+		// 参考 LobeChat 的协议级分离思路：LobeChat 通过 chunkType='text'/'tools_calling'
+		// 在协议层面分离文本和工具调用。由于 gptgod 代理不发送标准 tool_call_chunk 事件，
+		// 我们需要在文本层做更精确的启发式检测来模拟同样的效果。
+		//
+		// 此函数用于：
+		//   1) looksLikeToolCheck 策略 2 — 嵌入式检测（中文正文后接 JSON）
+		//   2) 实时模式的二次检测 — bufMode 已释放后发现后续 chunk 出现工具调用特征
+		containsEmbeddedToolCallPattern := func(s string) bool {
+			if len(s) < 20 {
+				return false
 			}
-			chunks = append(chunks, string(runes[i:end]))
+			return strings.Contains(s, `[{"name"`) ||
+				strings.Contains(s, `{"name":"`) ||
+				strings.Contains(s, `"function":`) ||
+				strings.Contains(s, `"arguments":`)
 		}
-		return chunks
-	}
 
-	// truncateStr 截断字符串到指定长度（用于日志预览）
-	truncateStr := func(s string, maxLen int) string {
-		if len(s) <= maxLen {
-			return s
+		// splitTextIntoChunks 将文本按字符数分割为等长大块。
+		// 用于 Branch B 成功解析工具调用后，将 remainingText 分块作为 text_delta 补发给前端，
+		// 模拟 LobeChat stream_chunk chunkType='text' 的增量推送效果。
+		splitTextIntoChunks := func(text string, chunkSize int) []string {
+			runes := []rune(text)
+			if len(runes) <= chunkSize {
+				return []string{text}
+			}
+			var chunks []string
+			for i := 0; i < len(runes); i += chunkSize {
+				end := i + chunkSize
+				if end > len(runes) {
+					end = len(runes)
+				}
+				chunks = append(chunks, string(runes[i:end]))
+			}
+			return chunks
 		}
-		return s[:maxLen] + "..."
-	}
 
-	// looksLikeToolCall 检查累积文本是否看起来像工具调用 JSON
-	looksLikeToolCall := func(s string) bool {
+		// truncateStr 截断字符串到指定长度（用于日志预览）
+		truncateStr := func(s string, maxLen int) string {
+			if len(s) <= maxLen {
+				return s
+			}
+			return s[:maxLen] + "..."
+		}
+
+		// looksLikeToolCall 检查累积文本是否看起来像工具调用 JSON
+		looksLikeToolCall := func(s string) bool {
 			trimmed := strings.TrimSpace(s)
 			if len(trimmed) < 3 {
 				return false
@@ -1132,12 +1163,18 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 					cur = &toolCallAccumulator{Index: tc.Index, Type: "function"}
 					tcAccumulator[tc.Index] = cur
 				}
-				if tc.ID != "" { cur.ID = tc.ID }
-				if tc.Type != "" { cur.Type = tc.Type }
+				if tc.ID != "" {
+					cur.ID = tc.ID
+				}
+				if tc.Type != "" {
+					cur.Type = tc.Type
+				}
 				cur.Function.Name += tc.Function.Name
 				cur.Function.Arguments += tc.Function.Arguments
 			case "finish_reason":
-				if s, ok := ev.Data.(string); ok { finishReason = s }
+				if s, ok := ev.Data.(string); ok {
+					finishReason = s
+				}
 			case "stream_end":
 				// 正常结束
 			}
@@ -1189,7 +1226,9 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 			for _, tc := range roundToolCalls {
 				needConfirm := true
 				if meta, ok := toolMeta[tc.Function.Name]; ok {
-					if v, ok := meta["needConfirm"].(bool); ok { needConfirm = v }
+					if v, ok := meta["needConfirm"].(bool); ok {
+						needConfirm = v
+					}
 				}
 
 				// ★ 无论是否需要确认，都向前端推送 tool_call 事件
@@ -1214,16 +1253,40 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 						"duration_ms": time.Since(start).Milliseconds(),
 					})
 					// 推送 tool_status 事件，让前端 GroupedOperationMessage 更新状态徽章
+					// 关键改动：异常时也推 tool_status { status: "error" } 而非 success
+					// （参考 .trae/specs/mobile-agent-polish-2026q2/spec.md §tool_status 同步）
 					statusVal := "success"
 					if execErr != nil {
-						statusVal = "failed"
+						statusVal = "error"
 					}
 					s.sendAndCache(sess, c.Writer, flusher, "tool_status", map[string]interface{}{
 						"id":     tc.ID,
 						"status": statusVal,
 					})
+					// 推 tool_result 事件（带 isError / errorCode / errorMessage），
+					// 让前端 useAgent 在收到此事件时把 tool_call.status 置为 error。
+					// （参考 spec §tool_result 事件带 isError 字段）
 					if execErr != nil {
-						result = fmt.Sprintf(`{"error":"tool_execution_failed","detail":%q}`, execErr.Error())
+						errCode, errMsg := classifyAgentToolError(execErr)
+						result = fmt.Sprintf(`{"error":"tool_execution_failed","code":%q,"message":%q,"detail":%q}`,
+							errCode, errMsg, execErr.Error())
+						s.sendAndCache(sess, c.Writer, flusher, "tool_result", map[string]interface{}{
+							"id":           tc.ID,
+							"name":         tc.Function.Name,
+							"result":       result,
+							"isError":      true,
+							"status":       "failed",
+							"errorCode":    errCode,
+							"errorMessage": errMsg,
+						})
+					} else {
+						s.sendAndCache(sess, c.Writer, flusher, "tool_result", map[string]interface{}{
+							"id":      tc.ID,
+							"name":    tc.Function.Name,
+							"result":  result,
+							"isError": false,
+							"status":  "success",
+						})
 					}
 					loopMessages = append(loopMessages, chatMsg{
 						Role: "tool", Content: result,
@@ -1240,7 +1303,7 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 			}
 
 			loopMessages = append(loopMessages, chatMsg{
-				Role: "user",
+				Role:    "user",
 				Content: "[工具执行结果已注入。请基于以上结果回答用户的原始问题。]",
 			})
 			continue
@@ -1284,7 +1347,9 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 				"remaining_len", len(remainingText),
 				"tool_names", func() (names []string) {
 					ns := make([]string, len(parsedCalls))
-					for i, c := range parsedCalls { ns[i] = c.Name }
+					for i, c := range parsedCalls {
+						ns[i] = c.Name
+					}
 					return ns
 				}())
 
@@ -1297,7 +1362,9 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 			for _, tc := range accums {
 				needConfirm := true
 				if meta, ok := toolMeta[tc.Function.Name]; ok {
-					if v, ok := meta["needConfirm"].(bool); ok { needConfirm = v }
+					if v, ok := meta["needConfirm"].(bool); ok {
+						needConfirm = v
+					}
 				}
 
 				// ★ 向前端推送 tool_call 事件（与 API 级 tool_calls 路径一致）
@@ -1321,16 +1388,40 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 						"duration_ms": time.Since(start).Milliseconds(),
 					})
 					// 推送 tool_status 事件（平台级 Tool Use 路径）
+					// 关键改动：异常时推 tool_status { status: "error" } 而非 success
+					// （参考 .trae/specs/mobile-agent-polish-2026q2/spec.md §tool_status 同步）
 					parsedStatusVal := "success"
 					if execErr != nil {
-						parsedStatusVal = "failed"
+						parsedStatusVal = "error"
 					}
 					s.sendAndCache(sess, c.Writer, flusher, "tool_status", map[string]interface{}{
 						"id":     tc.ID,
 						"status": parsedStatusVal,
 					})
+					// 推 tool_result 事件（带 isError / errorCode / errorMessage），
+					// 让前端 useAgent 在收到此事件时把 tool_call.status 置为 error。
+					// （参考 spec §tool_result 事件带 isError 字段）
 					if execErr != nil {
-						result = fmt.Sprintf(`{"error":"tool_execution_failed","detail":%q}`, execErr.Error())
+						errCode, errMsg := classifyAgentToolError(execErr)
+						result = fmt.Sprintf(`{"error":"tool_execution_failed","code":%q,"message":%q,"detail":%q}`,
+							errCode, errMsg, execErr.Error())
+						s.sendAndCache(sess, c.Writer, flusher, "tool_result", map[string]interface{}{
+							"id":           tc.ID,
+							"name":         tc.Function.Name,
+							"result":       result,
+							"isError":      true,
+							"status":       "failed",
+							"errorCode":    errCode,
+							"errorMessage": errMsg,
+						})
+					} else {
+						s.sendAndCache(sess, c.Writer, flusher, "tool_result", map[string]interface{}{
+							"id":      tc.ID,
+							"name":    tc.Function.Name,
+							"result":  result,
+							"isError": false,
+							"status":  "success",
+						})
 					}
 					loopMessages = append(loopMessages, chatMsg{
 						Role: "tool", Content: result,
@@ -1339,9 +1430,11 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 					autoToolExecuted = true
 				}
 			}
-			if !allAutoExecuted { break }
+			if !allAutoExecuted {
+				break
+			}
 			loopMessages = append(loopMessages, chatMsg{
-				Role: "user",
+				Role:    "user",
 				Content: "[工具执行结果已注入。请基于以上结果回答用户的原始问题。]",
 			})
 
@@ -1934,11 +2027,11 @@ func sortModels(models []modelEntry) {
 // ToolCalls 仅在 role=="assistant" 时使用（携带 LLM 决策的工具调用清单，
 // 供 confirm 后的下一轮 chat 引用，否则 LLM 不知道上轮调用了哪些 tool）。
 type chatMsg struct {
-	Role       string                 `json:"role"`
-	Content    string                 `json:"content"`
-	ToolCallID string                 `json:"tool_call_id,omitempty"`
-	Name       string                 `json:"name,omitempty"`
-	ToolCalls  []toolCallAccumulator  `json:"tool_calls,omitempty"`
+	Role       string                `json:"role"`
+	Content    string                `json:"content"`
+	ToolCallID string                `json:"tool_call_id,omitempty"`
+	Name       string                `json:"name,omitempty"`
+	ToolCalls  []toolCallAccumulator `json:"tool_calls,omitempty"`
 }
 
 // handleMockResume 处理前端 send() 第二个参数 {mode: "mock_resume", scenario: ...}。
@@ -2061,10 +2154,10 @@ func (s *Server) handleAgentMockPresets(c *gin.Context) {
 	// mock 模式关闭时返回空（前端 v-if 自然不渲染）
 	if mode == "off" || mode == "" {
 		c.JSON(http.StatusOK, gin.H{
-			"scenario":  "",
-			"phase":     "off",
-			"presets":   []scenarioPickerEntry{},
-			"mockMode":  mode,
+			"scenario": "",
+			"phase":    "off",
+			"presets":  []scenarioPickerEntry{},
+			"mockMode": mode,
 		})
 		return
 	}

@@ -27,15 +27,30 @@ import (
 // ─── 白名单 / 黑名单 ──────────────────────────────────────────
 
 // DefaultToolWhitelist 默认允许的命令（按二进制名）。
+//
+// 包含：
+//   - v2 工具使用的命令：ffprobe / ffmpeg / du / wc / find / stat / mediainfo / file
+//   - high_level 跨平台工具使用的 coreutils：cat / head / tail / grep / env / which / ls
+//   - Windows 平台 high_level 工具的统一入口：powershell
+//
+// （参考 .trae/specs/mobile-agent-polish-2026q2/spec.md §跨平台 bash 工具抽象）
 var DefaultToolWhitelist = map[string]bool{
-	"ffprobe":   true,
-	"ffmpeg":    true,
-	"du":        true,
-	"wc":        true,
-	"find":      true,
-	"stat":      true,
-	"mediainfo": true,
-	"file":      true,
+	"ffprobe":    true,
+	"ffmpeg":     true,
+	"du":         true,
+	"wc":         true,
+	"find":       true,
+	"stat":       true,
+	"mediainfo":  true,
+	"file":       true,
+	"cat":        true,
+	"head":       true,
+	"tail":       true,
+	"grep":       true,
+	"env":        true,
+	"which":      true,
+	"ls":         true,
+	"powershell": true,
 }
 
 // DeniedCommands 黑名单（任何配置下都拒绝）。
@@ -65,11 +80,11 @@ type CommandRunArgs struct {
 
 // CommandRunResult 工具结果。
 type CommandRunResult struct {
-	Stdout         string `json:"stdout"`
-	Stderr         string `json:"stderr"`
-	ExitCode       int    `json:"exit_code"`
-	OutputTruncated bool  `json:"output_truncated"`
-	DurationMs     int64  `json:"duration_ms"`
+	Stdout          string `json:"stdout"`
+	Stderr          string `json:"stderr"`
+	ExitCode        int    `json:"exit_code"`
+	OutputTruncated bool   `json:"output_truncated"`
+	DurationMs      int64  `json:"duration_ms"`
 }
 
 const (
@@ -179,14 +194,14 @@ func commandRunHandler(ctx context.Context, argsJSON string, deps *ToolDeps) (To
 	}
 	if err != nil {
 		b, _ := json.Marshal(map[string]any{
-			"error":           err.Error(),
-			"command":         cmdBin,
-			"args":            args.Args,
-			"exit_code":       res.ExitCode,
-			"stdout":          res.Stdout,
-			"stderr":          res.Stderr,
+			"error":            err.Error(),
+			"command":          cmdBin,
+			"args":             args.Args,
+			"exit_code":        res.ExitCode,
+			"stdout":           res.Stdout,
+			"stderr":           res.Stderr,
 			"output_truncated": res.OutputTruncated,
-			"duration_ms":     res.DurationMs,
+			"duration_ms":      res.DurationMs,
 		})
 		return ToolResult{Result: string(b), IsError: true, Status: "failed", DurationMs: dur}, nil
 	}
