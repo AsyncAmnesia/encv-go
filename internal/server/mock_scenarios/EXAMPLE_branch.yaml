@@ -40,7 +40,7 @@ steps:
         data:
           id: call_branch_1
           name: search_files
-          args: { ext: ".mp4", min_size: 104857600 }   # 100MB+
+          args: { ext: ".mp4", min_size: 10240 }   # 10KB+
           auto_run: true
           needsConfirm: false
           kind: readOnly

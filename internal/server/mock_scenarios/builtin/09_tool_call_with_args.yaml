@@ -43,7 +43,7 @@ steps:
               ext:
                 - ".mp4"
                 - ".mkv"
-              min_size: 1048576
+              min_size: 10240
           auto_run: true
           needsConfirm: false
           kind: readOnly

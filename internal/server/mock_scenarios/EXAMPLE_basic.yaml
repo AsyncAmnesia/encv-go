@@ -56,7 +56,7 @@ steps:
           id: call_example_1
           name: search_files
           # ✅ args 是用户输入的过滤条件（不是数据）
-          args: { ext: ".mp4", min_size: 1048576 }
+          args: { ext: ".mp4", min_size: 10240 }
           auto_run: true
           needsConfirm: false
           kind: readOnly

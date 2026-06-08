@@ -12,7 +12,7 @@ steps:
       - type: stream_start
         data: { scenario: search_recursive_mp4 }
       - type: text_delta
-        data: { text: "正在搜索符合条件的 MP4 文件…" }
+        data: { text: "正在搜索符合条件的 MP4 文件..." }
   - id: search
     round_idx: 0
     delay_ms: 30
@@ -27,7 +27,7 @@ steps:
                 - type: name_glob
                   value: "*.mp4"
                 - type: size_gt
-                  value: 104857600
+                  value: 10240
             recursive: true
             max_results: 20
           auto_run: true

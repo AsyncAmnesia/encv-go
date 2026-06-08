@@ -91,7 +91,7 @@ steps:
           name: list_files
           args:
             mount_id: serving
-            rel_path: "/video"
+            rel_path: "01-plain-media/video"
           auto_run: true
           needsConfirm: false
           kind: readOnly
@@ -105,7 +105,7 @@ steps:
           name: read_file
           args:
             mount_id: serving
-            rel_path: "/document/notes.txt"
+            rel_path: "01-plain-media/document/notes.txt"
             max_bytes: 500
           auto_run: true
           needsConfirm: false

@@ -41,7 +41,7 @@ steps:
           name: read_file
           args:
             mount_id: serving
-            rel_path: "docs/readme.md"
+            rel_path: "01-plain-media/document/notes.txt"
           auto_run: true
           needsConfirm: false
           kind: readOnly

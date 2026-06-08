@@ -81,7 +81,7 @@ steps:
           name: list_files
           args:
             mount_id: serving
-            rel_path: "/video"
+            rel_path: "01-plain-media/video"
           auto_run: true
           needsConfirm: false
           kind: readOnly

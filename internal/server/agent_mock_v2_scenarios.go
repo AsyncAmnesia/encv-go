@@ -15,7 +15,7 @@ package server
 //
 // 当前状态：保留作为 fallback。推荐迁移路径：
 //   1. 把下方 mockScenariosV2 列表的 8 个剧本转写为 YAML
-//   2. 放到 internal/server/mock_scenarios/v2/01_xxx.yaml
+//   2. 放到 internal/server/mock_scenarios/builtin/ 目录（v2 已合并入 builtin）
 //   3. 验证通过后即可禁用此 fallback
 //   4. 详见 internal/server/mock_scenarios/SCHEMA.md
 //
@@ -59,13 +59,13 @@ var mockScenariosV2 = []*MockScenario{
 				{Type: "tool_result", Data: map[string]any{
 					"id":         "call_srm_1",
 					"name":       "search_files",
-					"result":     `{"matches":[{"path":"Movies/2024/big.mp4","size":2147483648,"mtime":"2024-08-12T10:00:00Z"}],"count":1}`,
+					"result":     `{"matches":[{"path":"01-plain-media/video/sample.mp4","size":22261,"mtime":"2024-08-12T10:00:00Z"}],"count":1}`,
 					"isError":    false,
 					"status":     "success",
 					"durationMs": 120,
 				}},
 				{Type: "text_delta", Data: map[string]any{
-					"text": "找到 1 个文件：Movies/2024/big.mp4",
+					"text": "搜索完成，结果详见上方工具返回。",
 				}},
 				{Type: "stream_end", Data: map[string]any{
 					"finishReason": "stop",
@@ -93,7 +93,7 @@ var mockScenariosV2 = []*MockScenario{
 				{Type: "tool_call", Data: map[string]any{
 					"id":           "call_slq_1",
 					"name":         "search_files",
-					"args":         `{"expression":{"and":[{"type":"size_gt","value":1048576},{"type":"mtime_after","value":"2024-01-01T00:00:00Z"},{"type":"ext_eq","value":".log"}]}}`,
+					"args":         `{"expression":{"and":[{"type":"size_gt","value":1024},{"type":"mtime_after","value":"2024-01-01T00:00:00Z"},{"type":"ext_eq","value":".txt"}]}}`,
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "fileSearch",
@@ -104,13 +104,13 @@ var mockScenariosV2 = []*MockScenario{
 				{Type: "tool_result", Data: map[string]any{
 					"id":         "call_slq_1",
 					"name":       "search_files",
-					"result":     `{"matches":[{"path":"logs/app.log","size":5242880,"mtime":"2024-09-01T08:00:00Z"}],"count":1}`,
+					"result":     `{"matches":[{"path":"01-plain-media/document/notes.txt","size":1187,"mtime":"2024-09-01T08:00:00Z"}],"count":1}`,
 					"isError":    false,
 					"status":     "success",
 					"durationMs": 85,
 				}},
 				{Type: "text_delta", Data: map[string]any{
-					"text": "匹配 1 条：logs/app.log",
+					"text": "搜索完成，结果详见上方工具返回。",
 				}},
 				{Type: "stream_end", Data: map[string]any{
 					"finishReason": "stop",
@@ -131,14 +131,14 @@ var mockScenariosV2 = []*MockScenario{
 					"scenario": "search_content_regex",
 				}},
 				{Type: "text_delta", Data: map[string]any{
-					"text": "将扫描所有 .log 文件，匹配 ERROR.*timeout 模式…",
+					"text": "将扫描所有 .txt 文件，匹配指定内容模式…",
 				}},
 			}},
 			{RoundIdx: 0, DelayMs: 30, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]any{
 					"id":           "call_scr_1",
 					"name":         "search_files",
-					"args":         `{"expression":{"and":[{"type":"content_regex","value":"ERROR.*timeout"},{"type":"ext_eq","value":".log"}]},"max_results":50}`,
+					"args":         `{"expression":{"and":[{"type":"content_regex","value":"mock.*模式"},{"type":"ext_eq","value":".txt"}]},"max_results":50}`,
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "fileSearch",
@@ -149,13 +149,13 @@ var mockScenariosV2 = []*MockScenario{
 				{Type: "tool_result", Data: map[string]any{
 					"id":         "call_scr_1",
 					"name":       "search_files",
-					"result":     `{"matches":[{"path":"logs/err.log","size":2048,"matched_line":"ERROR: connection timeout after 30s"}],"count":1}`,
+					"result":     `{"matches":[{"path":"01-plain-media/document/notes.txt","size":1187,"matched_line":"这是 encv-go 沙箱 mock 模式测试用的文件。"}],"count":1}`,
 					"isError":    false,
 					"status":     "success",
 					"durationMs": 200,
 				}},
 				{Type: "text_delta", Data: map[string]any{
-					"text": "命中 1 处：logs/err.log: ERROR: connection timeout after 30s",
+					"text": "搜索完成，结果详见上方工具返回。",
 				}},
 				{Type: "stream_end", Data: map[string]any{
 					"finishReason": "stop",
@@ -186,18 +186,18 @@ var mockScenariosV2 = []*MockScenario{
 			}},
 			{RoundIdx: 0, DelayMs: 10, Events: []MockEvent{
 				{Type: "text_delta", Data: map[string]any{
-					"text": "1) Movies/a.mp4\n2) Movies/b.mp4",
+					"text": "1) 01-plain-media/video/sample.mp4\n2) 01-plain-media/video/comedy.mkv",
 				}},
 				{Type: "mock_presets", Data: map[string]any{
 					"scenario": "edit_metadata_wizard",
 					"phase":    "select_file",
 					"presets": []MockPreset{
-						{ID: "sel_a", Label: "Movies/a.mp4", UserText: "选 a"},
-						{ID: "sel_b", Label: "Movies/b.mp4", UserText: "选 b"},
+						{ID: "sel_a", Label: "sample.mp4", UserText: "选 a"},
+						{ID: "sel_b", Label: "comedy.mkv", UserText: "选 b"},
 					},
 				}},
 			}, PauseForUser: true, SetContext: map[string]any{
-				"selected_file": "Movies/a.mp4",
+				"selected_file": "01-plain-media/video/sample.mp4",
 			}},
 
 			// Round 1: 选字段
@@ -226,20 +226,20 @@ var mockScenariosV2 = []*MockScenario{
 					"text": "请输入新值：",
 				}},
 			}, PauseForUser: true, SetContext: map[string]any{
-				"new_value": "My New Title",
+				"new_value": "Sample Title",
 			}},
 
 			// Round 3: 确认 + 执行
 			{RoundIdx: 3, DelayMs: 10, Events: []MockEvent{
 				{Type: "text_delta", Data: map[string]any{
-					"text": "将编辑 Movies/a.mp4 的 title 字段，值为「My New Title」。确认执行？",
+					"text": "将编辑 01-plain-media/video/sample.mp4 的 title 字段，值为「Sample Title」。确认执行？",
 				}},
 			}},
 			{RoundIdx: 3, DelayMs: 30, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]any{
 					"id":           "call_emw_1",
 					"name":         "edit_metadata",
-					"args":         `{"path":"Movies/a.mp4","field":"title","value":"My New Title"}`,
+					"args":         `{"path":"01-plain-media/video/sample.mp4","field":"title","value":"Sample Title"}`,
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "metadataEdit",
@@ -250,7 +250,7 @@ var mockScenariosV2 = []*MockScenario{
 				{Type: "tool_result", Data: map[string]any{
 					"id":         "call_emw_1",
 					"name":       "edit_metadata",
-					"result":     `{"ok":true,"path":"Movies/a.mp4","field":"title","old":"Old Title","new":"My New Title"}`,
+					"result":     `{"ok":true,"path":"01-plain-media/video/sample.mp4","field":"title","old":"Original Title","new":"Sample Title"}`,
 					"isError":    false,
 					"status":     "success",
 					"durationMs": 30,
@@ -285,7 +285,7 @@ var mockScenariosV2 = []*MockScenario{
 				{Type: "tool_call", Data: map[string]any{
 					"id":           "call_br_1",
 					"name":         "batch_rename",
-					"args":         `{"pattern":"S01E{{n}}","source_glob":"*.mkv","dry_run":true}`,
+					"args":         `{"pattern":"S01E#","source_glob":"*.mkv","dry_run":true}`,
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "fileRename",
@@ -296,13 +296,13 @@ var mockScenariosV2 = []*MockScenario{
 				{Type: "tool_result", Data: map[string]any{
 					"id":         "call_br_1",
 					"name":       "batch_rename",
-					"result":     `{"dry_run":true,"preview":[{"from":"ep1.mkv","to":"S01E01.mkv"},{"from":"ep2.mkv","to":"S01E02.mkv"}],"count":2}`,
+					"result":     `{"dry_run":true,"preview":[{"from":"comedy.mkv","to":"S01E01.mkv"}],"count":1}`,
 					"isError":    false,
 					"status":     "success",
 					"durationMs": 45,
 				}},
 				{Type: "text_delta", Data: map[string]any{
-					"text": "预览：2 个文件将重命名（ep1.mkv → S01E01.mkv 等）",
+					"text": "预览完成，重命名结果详见上方工具返回。",
 				}},
 				{Type: "mock_presets", Data: map[string]any{
 					"scenario": "batch_rename_with_preview",
@@ -313,7 +313,7 @@ var mockScenariosV2 = []*MockScenario{
 					},
 				}},
 			}, PauseForUser: true, SetContext: map[string]any{
-				"preview_count": 2,
+				"preview_count": 1,
 			}},
 
 			// Round 1: 真实执行
@@ -326,7 +326,7 @@ var mockScenariosV2 = []*MockScenario{
 				{Type: "tool_call", Data: map[string]any{
 					"id":           "call_br_2",
 					"name":         "batch_rename",
-					"args":         `{"pattern":"S01E{{n}}","source_glob":"*.mkv","dry_run":false}`,
+					"args":         `{"pattern":"S01E#","source_glob":"*.mkv","dry_run":false}`,
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "fileRename",
@@ -337,13 +337,13 @@ var mockScenariosV2 = []*MockScenario{
 				{Type: "tool_result", Data: map[string]any{
 					"id":         "call_br_2",
 					"name":       "batch_rename",
-					"result":     `{"dry_run":false,"renamed":[{"from":"ep1.mkv","to":"S01E01.mkv"}],"count":2,"errors":0}`,
+					"result":     `{"dry_run":false,"renamed":[{"from":"comedy.mkv","to":"S01E01.mkv"}],"count":1,"errors":0}`,
 					"isError":    false,
 					"status":     "success",
 					"durationMs": 80,
 				}},
 				{Type: "text_delta", Data: map[string]any{
-					"text": "✓ 已重命名 2 个文件。",
+					"text": "重命名完成，结果详见上方工具返回。",
 				}},
 				{Type: "stream_end", Data: map[string]any{
 					"finishReason": "stop",
@@ -462,7 +462,7 @@ var mockScenariosV2 = []*MockScenario{
 				{Type: "tool_call", Data: map[string]any{
 					"id":           "call_crf_1",
 					"name":         "command_run",
-					"args":         `{"cmd":"ffprobe","args":["-v","quiet","-print_format","json","-show_format","-show_streams","Movies/a.mp4"]}`,
+					"args":         `{"cmd":"ffprobe","args":["-v","quiet","-print_format","json","-show_format","-show_streams","01-plain-media/video/sample.mp4"]}`,
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "shell",
@@ -479,7 +479,7 @@ var mockScenariosV2 = []*MockScenario{
 					"durationMs": 250,
 				}},
 				{Type: "text_delta", Data: map[string]any{
-					"text": "✓ ffprobe 完成：codec=h264, duration=120s, bitrate=5Mbps",
+					"text": "ffprobe 执行完成，结果详见上方工具返回。",
 				}},
 				{Type: "stream_end", Data: map[string]any{
 					"finishReason": "stop",

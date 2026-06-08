@@ -1,7 +1,7 @@
-id: search_content_regex
-description: "用正则搜索文件内容"
+id: search_logical_query
+description: "复合 AND 查询（size + mtime + ext）"
 keywords:
-  - "search_content_regex"
+  - "search_logical_query"
 rounds: 1
 
 steps:
@@ -10,25 +10,26 @@ steps:
     delay_ms: 10
     events:
       - type: stream_start
-        data: { scenario: search_content_regex }
+        data: { scenario: search_logical_query }
       - type: text_delta
-        data: { text: "将扫描日志文件，匹配目标模式…" }
+        data: { text: "正在执行复合 AND 查询…" }
   - id: search
     round_idx: 0
     delay_ms: 30
     events:
       - type: tool_call
         data:
-          id: call_scr_1
+          id: call_slq_1
           name: search_files
           args:
             expression:
               and:
-                - type: content_regex
-                  value: "ERROR.*timeout"
+                - type: size_gt
+                  value: 10240
+                - type: mtime_after
+                  value: "2020-01-01T00:00:00Z"
                 - type: ext_eq
-                  value: ".log"
-            max_results: 50
+                  value: ".txt"
           auto_run: true
           needsConfirm: false
           kind: fileSearch
@@ -38,6 +39,6 @@ steps:
     delay_ms: 50
     events:
       - type: text_delta
-        data: { text: "内容搜索完成。匹配结果见上方工具返回。" }
+        data: { text: "查询完成。匹配结果见上方工具返回。" }
       - type: stream_end
         data: { finishReason: stop }
