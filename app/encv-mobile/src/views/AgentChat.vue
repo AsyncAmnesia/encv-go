@@ -14,6 +14,14 @@
 <template>
   <div class="agentChat">
     <header class="agentChatHeader">
+      <!--
+        v3 修复：关闭按钮放在最左侧（time 历史按钮之前）
+        语义：返回上一级（关闭整个 AgentChat modal）
+        上一次的残留 + 按钮已迁移到全屏历史界面（v2 改动），此处不再需要。
+      -->
+      <button type="button" class="headerBtn" @click="handleCloseModal" :title="t('common.close') || '关闭'">
+        <ion-icon :icon="closeIcon" />
+      </button>
       <button type="button" class="headerBtn" @click="handleOpenHistory" :title="t('agent.history')">
         <ion-icon :icon="timeIcon" />
       </button>
@@ -77,9 +85,11 @@
         :loading="contextUsage.loading.value"
         class="headerContext"
       />
-      <button type="button" class="headerBtn" @click="handleNewSession" :title="t('agent.newSession')">
-        <ion-icon :icon="addIcon" />
-      </button>
+      <!--
+        v3 修复：右侧 + 加号按钮已彻底移除。
+        新会话入口已迁移到全屏历史界面（v2 改动的 .historyNewSessionFab）。
+        此处不再重复入口，避免用户认知混乱（"为什么两个加号？"）。
+      -->
     </header>
 
     <!--
@@ -152,19 +162,39 @@
 
     <!-- 消息区域：圆点导航（左）+ 滚动内容（右） -->
     <div class="agentChatBody">
-      <!-- 左侧圆点导航（≥3 条消息时显示）—— 在滚动容器外部，不随内容滚走 -->
+      <!--
+        左侧圆点导航（≥2 条 user 消息时显示）。
+        v3 修复：
+        1. 按 user 消息计数（不是 renderedItems 块数）
+           - 一个 user 消息 = 一次完整的"提问 + assistant 回复 + 工具调用"轮次
+           - 不再把每个 tool_call / tool_result / thinking 块都算成 1 个圆点
+        2. 垂直居中（top: 50% + transform: translateY(-50%)，避免长列表时挤顶部）
+        3. 长按 → 圆点变长条 → 上下滑动可快速跳转 → 松开恢复圆点
+           - 长按判定 ≥ LONG_PRESS_MS
+           - 拖动用 rAF 节流（防抖，避免高频 scrollIntoView 抖动）
+           - pointer capture 防止指针滑出元素丢失事件
+      -->
       <div
-        v-if="renderedItems.length >= 3"
+        v-if="userMessageItems.length >= 2"
         class="dotNavigation"
+        :class="{ 'dotNavigation--dragging': isDotDragging }"
+        ref="dotNavRef"
+        @pointerdown="onDotNavPointerDown"
+        @pointermove="onDotNavPointerMove"
+        @pointerup="onDotNavPointerUp"
+        @pointercancel="onDotNavPointerUp"
       >
         <button
-          v-for="(item, idx) in renderedItems"
-          :key="item.messageId"
+          v-for="(ui, dotIdx) in userMessageItems"
+          :key="ui.item.messageId"
           type="button"
           class="dotNavDot"
-          :class="{ dotNavDot_active: activeMessageIndex === idx }"
-          :title="`跳转到第 ${idx + 1} 条消息`"
-          @click="scrollToMessage(idx)"
+          :class="{
+            dotNavDot_active: !isDotDragging && dotIdx === activeUserMessageIdx,
+            dotNavDot_dragged: isDotDragging && dotIdx === draggedDotIdx,
+          }"
+          :title="`跳转到第 ${dotIdx + 1} 个提问`"
+          @click.stop="onDotClick(dotIdx)"
         />
       </div>
 
@@ -954,24 +984,6 @@ function handleStop() {
   stop()
 }
 
-async function handleNewSession() {
-  // 如果当前 session 已经有消息，弹确认
-  if (messages.value.length > 0) {
-    const alert = await alertController.create({
-      header: t('agent.newSession'),
-      message: t('agent.confirmNewSession'),
-      buttons: [
-        { text: t('common.cancel'), role: 'cancel' },
-        { text: t('common.confirm'), role: 'destructive' },
-      ],
-    })
-    await alert.present()
-    const { role } = await alert.onDidDismiss()
-    if (role !== 'destructive') return
-  }
-  newSession()
-}
-
 /**
  * v2 修复：从全屏历史界面直接新建会话
  * - 不需要关闭历史界面再操作 → 流畅体验
@@ -1002,6 +1014,21 @@ async function handleDeleteSession(sessionId: string, event: Event) {
   const { role } = await alert.onDidDismiss()
   if (role === 'destructive') {
     deleteSession(sessionId)
+  }
+}
+
+/**
+ * v3 修复：关闭整个 AgentChat modal
+ * - 上一次 modal 没有 dismiss 入口，用户只能点系统返回键，体验割裂
+ * - 拆弹点：从外部标签页 / App 内入口 / 系统返回键进来时都能从这里退
+ * - 与"返回上一级"语义对齐：modal pop → 回到原页面
+ * - 容错：重复 dismiss 静默吞错（避免 alert 弹窗干扰）
+ */
+async function handleCloseModal(): Promise<void> {
+  try {
+    await modalController.dismiss()
+  } catch {
+    // ignore — modal 可能已经被外部代码 dismiss
   }
 }
 
@@ -1077,18 +1104,234 @@ function cleanupDotObserver() {
 // 消息列表变化时重建 Observer
 watch(renderedItems, () => nextTick(setupDotObserver), { flush: 'post' })
 onMounted(() => nextTick(setupDotObserver))
-onUnmounted(cleanupDotObserver)
+onUnmounted(() => {
+  cleanupDotObserver()
+  // v3 新增：清理圆点导航的长按 timer / rAF
+  clearDotPressTimer()
+  clearDotDragRaf()
+})
 
 /**
- * 点导航：跳转到指定索引的消息项
+ * v3 修复：左侧圆点导航核心逻辑
+ *
+ * 三件事：
+ * 1) userMessageItems：过滤出所有 type === 'user' 的渲染项
+ *    - 每个 user 消息 = 1 个圆点（不是每个 tool_call 块）
+ * 2) activeUserMessageIdx：当前最接近视口中心的 user 消息索引
+ *    - 用于给"非拖动状态"下的当前圆点上色
+ * 3) 长按拖动：圆点 → 长条 → 拖动 → 松开恢复
+ *    - 250ms 长按后激活"拖动模式"
+ *    - 拖动用 rAF 节流，避免高频 scrollIntoView 抖动
+ *    - pointer capture 防止指针滑出元素丢失事件
+ *    - 组件卸载时清理 timer / rAF（防内存泄漏）
  */
-function scrollToMessage(idx: number) {
+
+/** user 消息条目（包含在 renderedItems 中的原始下标） */
+interface UserMessageItem {
+  item: { type: 'user'; messageId: string; text: string }
+  idx: number // 在 renderedItems 中的下标
+}
+
+/** 过滤出所有 user 类型的渲染项 */
+const userMessageItems = computed<UserMessageItem[]>(() => {
+  const out: UserMessageItem[] = []
+  const items = renderedItems.value
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i]
+    if (it.type === 'user') {
+      out.push({ item: it, idx: i })
+    }
+  }
+  return out
+})
+
+/**
+ * 当前激活的 user 消息索引（自然滚动时）
+ * 算法：在 userMessageItems 中找 idx <= activeMessageIndex 的最后一个
+ */
+const activeUserMessageIdx = computed(() => {
+  const ai = activeMessageIndex.value
+  const list = userMessageItems.value
+  if (list.length === 0) return -1
+  let result = 0
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].idx <= ai) {
+      result = i
+    } else {
+      break
+    }
+  }
+  return result
+})
+
+/** 跳转到指定 user 消息（点击圆点时调用） */
+function onDotClick(dotIdx: number) {
+  const ui = userMessageItems.value[dotIdx]
+  if (!ui) return
+  scrollToUserMessage(ui.idx)
+}
+
+/** 跳转到 user 消息在 renderedItems 中的下标 */
+function scrollToUserMessage(renderedIdx: number) {
   const el = mainRef.value
   if (!el) return
-  const itemWraps = el.querySelectorAll('.renderedItemWrap')
-  if (idx < 0 || idx >= itemWraps.length) return
-  const target = itemWraps[idx] as HTMLElement
+  const target = el.querySelector(`[data-msg-idx="${renderedIdx}"]`) as HTMLElement | null
+  if (!target) return
   target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+// ── 长按 → 长条 → 拖动 → 松开（瞬态） ──────────────────────
+const dotNavRef = ref<HTMLElement | null>(null)
+const isDotDragging = ref(false)
+const draggedDotIdx = ref<number | null>(null)
+
+/** 长按判定阈值（ms） */
+const DOT_LONG_PRESS_MS = 280
+/** 拖动前最大允许位移（px）—— 超过则判定为"快速滑动/误触"而取消长按 */
+const DOT_DRAG_THRESHOLD_PX = 5
+/** 单个圆点占用的总高度（8 圆点 + 5 gap） */
+const DOT_ITEM_HEIGHT = 13
+
+let dotPressTimer: ReturnType<typeof setTimeout> | null = null
+let dotDragRafId: number | null = null
+let dotPressStartY = 0
+let dotPressStartX = 0
+let dotPressActivePointerId: number | null = null
+let pendingDragY = 0
+
+function clearDotPressTimer() {
+  if (dotPressTimer !== null) {
+    clearTimeout(dotPressTimer)
+    dotPressTimer = null
+  }
+}
+
+function clearDotDragRaf() {
+  if (dotDragRafId !== null) {
+    cancelAnimationFrame(dotDragRafId)
+    dotDragRafId = null
+  }
+}
+
+/**
+ * 在拖动模式下，根据指针 clientY 找出对应的圆点索引
+ * - 圆点列中心 = dotNavRef.getBoundingClientRect() 的 top + height/2
+ * - 每个圆点占 13px，按偏移/13 估算索引
+ */
+function dotIdxFromClientY(clientY: number): number {
+  const navEl = dotNavRef.value
+  if (!navEl) return 0
+  const rect = navEl.getBoundingClientRect()
+  // 圆点 nav 的 padding-top 是 8px；按"第一个圆点中心位于 padding 后 4px"估算
+  const firstDotCenter = rect.top + 8 + 4
+  const offset = clientY - firstDotCenter
+  const idx = Math.round(offset / DOT_ITEM_HEIGHT)
+  return Math.max(0, Math.min(userMessageItems.value.length - 1, idx))
+}
+
+/**
+ * 处理 pointermove：长按未触发前如果移动过多则取消；触发后用 rAF 节流更新 draggedDotIdx
+ */
+function handleDotNavPointerMove(e: PointerEvent) {
+  if (dotPressTimer === null && !isDotDragging.value) return
+  if (dotPressActivePointerId !== null && e.pointerId !== dotPressActivePointerId) return
+
+  // 长按未触发：检查是否超过位移阈值
+  if (!isDotDragging.value) {
+    const dy = Math.abs(e.clientY - dotPressStartY)
+    const dx = Math.abs(e.clientX - dotPressStartX)
+    if (dy > DOT_DRAG_THRESHOLD_PX || dx > DOT_DRAG_THRESHOLD_PX) {
+      // 取消长按 → 视为轻触滚动（不做事）
+      clearDotPressTimer()
+      return
+    }
+    return
+  }
+
+  // 拖动模式：rAF 节流更新
+  pendingDragY = e.clientY
+  if (dotDragRafId === null) {
+    dotDragRafId = requestAnimationFrame(() => {
+      dotDragRafId = null
+      const idx = dotIdxFromClientY(pendingDragY)
+      if (idx !== draggedDotIdx.value) {
+        draggedDotIdx.value = idx
+        // 滚动主内容到对应的 user 消息
+        const ui = userMessageItems.value[idx]
+        if (ui) scrollToUserMessage(ui.idx)
+      }
+    })
+  }
+}
+
+function onDotNavPointerDown(e: PointerEvent) {
+  // 只响应主指针（左键 / 单点触摸）
+  if (e.pointerType === 'mouse' && e.button !== 0) return
+  // 防止在已经激活的拖动上叠加新的指针
+  if (dotPressActivePointerId !== null) return
+
+  const navEl = e.currentTarget as HTMLElement
+  dotPressActivePointerId = e.pointerId
+  dotPressStartY = e.clientY
+  dotPressStartX = e.clientX
+  pendingDragY = e.clientY
+  draggedDotIdx.value = null
+  isDotDragging.value = false
+
+  // 捕获指针：后续 move/up 仍由本元素接收（即使指针滑出元素）
+  try {
+    navEl.setPointerCapture(e.pointerId)
+  } catch {
+    // 部分平台不支持，静默继续
+  }
+
+  // 启动长按计时
+  clearDotPressTimer()
+  dotPressTimer = setTimeout(() => {
+    dotPressTimer = null
+    if (dotPressActivePointerId === null) return
+    isDotDragging.value = true
+    // 进入拖动模式：初始 idx 按当前指针位置计算
+    const idx = dotIdxFromClientY(dotPressStartY)
+    draggedDotIdx.value = idx
+    const ui = userMessageItems.value[idx]
+    if (ui) scrollToUserMessage(ui.idx)
+  }, DOT_LONG_PRESS_MS)
+}
+
+function onDotNavPointerMove(e: PointerEvent) {
+  handleDotNavPointerMove(e)
+}
+
+function onDotNavPointerUp(e: PointerEvent) {
+  handleDotNavPointerUp(e)
+}
+
+function handleDotNavPointerUp(e: PointerEvent) {
+  // 清理状态
+  clearDotPressTimer()
+  clearDotDragRaf()
+
+  // 释放指针捕获
+  const navEl = e.currentTarget as HTMLElement | null
+  if (navEl && dotPressActivePointerId !== null) {
+    try {
+      navEl.releasePointerCapture(dotPressActivePointerId)
+    } catch {
+      // ignore
+    }
+  }
+
+  const wasDragging = isDotDragging.value
+  isDotDragging.value = false
+  draggedDotIdx.value = null
+  dotPressActivePointerId = null
+
+  // 拖动模式松开 → 已经在拖动中跳转过了，无需再做
+  if (wasDragging) {
+    e.preventDefault()
+  }
+  // 否则走 @click（短按 = 跳转）→ 已绑定 onDotClick
 }
 
 // 监听 status 变化 → streaming 开始时滚动到底部
@@ -2269,27 +2512,52 @@ defineExpose({})
   position: relative; /* 为绝对定位的圆点导航提供定位上下文 */
 }
 
-/* 圆点导航：absolute 定位在 body 左侧，不受滚动影响 */
+/*
+  v3 修复：
+  1) 垂直居中：top: 50% + transform: translateY(-50%)
+     - 不再用 top: 8px / bottom: 8px 顶天立地式
+     - 圆点列高度由内容决定（max-height 80vh 兜底防溢出）
+  2) 不再 overflow-y: auto —— 我们已经过滤到 user 消息，圆点数天然不会爆炸
+     - 之前 block 模式 30+ 圆点能溢出滚动；现在 1 个 user 消息 = 1 圆点
+  3) min-width 加大（10px → 16px）提高长按时手指命中区
+*/
 .dotNavigation {
   position: absolute;
   left: 2px;
-  top: 8px;
-  bottom: 8px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 5px;
   z-index: 20;
-  padding: 8px 5px;
+  padding: 10px 8px;
+  min-width: 16px;
+  max-height: 80vh;
   background: rgba(var(--ion-background-color-rgb, 255, 255, 255), 0.9);
   border: 1px solid rgba(var(--ion-color-medium-rgb), 0.18);
   border-radius: 10px;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12);
-  overflow-y: auto;
-  align-self: flex-start;
+  touch-action: none; /* 防止 pointermove 时浏览器误判为页面滚动 */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
+/* 拖动模式：加阴影 + 放大 + 触觉反馈（vibrate if available） */
+.dotNavigation--dragging {
+  box-shadow: 0 4px 20px rgba(var(--ion-color-primary-rgb), 0.28);
+  border-color: rgba(var(--ion-color-primary-rgb), 0.4);
+}
+
+/*
+  v3 修复：单圆点样式
+  - 默认：8x8 圆形
+  - active：放大 1.35x + primary 色 + 光晕
+  - dragged（长按拖动中）：变 5x34 长条，圆角 2.5px（scrollbar thumb 风格）
+  - transition all：保证圆点↔长条过渡平滑
+*/
 .dotNavDot {
   display: block;
   width: 8px;
@@ -2299,8 +2567,16 @@ defineExpose({})
   background: rgba(var(--ion-color-medium-rgb), 0.45);
   cursor: pointer;
   padding: 0;
-  transition: all 0.18s ease;
+  flex-shrink: 0;
+  transition:
+    width 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+    height 0.18s cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 0.18s ease,
+    background 0.18s ease,
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
   outline: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .dotNavDot:hover {
@@ -2308,9 +2584,28 @@ defineExpose({})
   transform: scale(1.25);
 }
 
+/* 自然滚动时的当前 user 消息对应圆点 */
 .dotNavDot_active {
   background: var(--ion-color-primary);
   box-shadow: 0 0 0 2px rgba(var(--ion-color-primary-rgb), 0.28);
   transform: scale(1.35);
+}
+
+/*
+  长按拖动中的圆点 → 变成长条（scrollbar 拇指）
+  - width: 5px, height: 34px（≈ 4 个圆点高度之和 + gap）
+  - border-radius: 2.5px（半圆端点）
+  - 颜色与 active 保持一致（primary + 光晕）
+*/
+.dotNavDot_dragged {
+  width: 5px;
+  height: 34px;
+  border-radius: 2.5px;
+  background: var(--ion-color-primary);
+  box-shadow:
+    0 0 0 2px rgba(var(--ion-color-primary-rgb), 0.32),
+    0 0 8px rgba(var(--ion-color-primary-rgb), 0.55);
+  transform: scale(1);
+  cursor: grabbing;
 }
 </style>

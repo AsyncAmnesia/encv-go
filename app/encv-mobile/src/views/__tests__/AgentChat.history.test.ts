@@ -103,4 +103,82 @@ describe('AgentChat full-screen history v2', () => {
     // v2: 删除按钮使用 trashIcon（不再是 closeIcon 复用）
     expect(source).toContain('const trashIcon = trashOutline')
   })
+
+  // ── v3 修复：右上角加号移除 + 左上角关闭按钮 + 圆点导航改按 user 消息计数 ──
+
+  it('TestAgentChat_V3_TopRightPlusRemoved: 右上角不再有 + 加号按钮（已迁移到全屏历史）', async () => {
+    const source = agentChatSource
+    // v3: 不再出现 "headerBtn" 后面紧跟 addIcon 的残留 + 按钮
+    // 用负向匹配：模板内不存在 "@click="handleNewSession"" （v2 旧版绑在右侧）
+    expect(source).not.toMatch(/@click="handleNewSession"/)
+    // 另一个反证：handleNewSession 函数定义应该被删除
+    expect(source).not.toMatch(/async function handleNewSession\(\)/)
+  })
+
+  it('TestAgentChat_V3_CloseButtonOnLeft: 左上角新增 × 关闭按钮（返回上一级）', async () => {
+    const source = agentChatSource
+    // v3: 模板里有 handleCloseModal 调用
+    expect(source).toMatch(/@click="handleCloseModal"/)
+    // v3: 关闭按钮在 time 按钮之前（用出现顺序验证）
+    const closePos = source.indexOf('@click="handleCloseModal"')
+    const historyPos = source.indexOf('@click="handleOpenHistory"')
+    expect(closePos).toBeGreaterThan(-1)
+    expect(historyPos).toBeGreaterThan(-1)
+    expect(closePos).toBeLessThan(historyPos)
+    // v3: 实现 handleCloseModal → modalController.dismiss()
+    expect(source).toMatch(/async function handleCloseModal/)
+    expect(source).toMatch(/await modalController\.dismiss\(\)/)
+  })
+
+  it('TestAgentChat_V3_DotNavUsesUserMessages: 圆点导航按 user 消息计数（非 renderedItems 块）', async () => {
+    const source = agentChatSource
+    // v3: 模板用 userMessageItems 而不是 renderedItems
+    expect(source).toMatch(/v-for="\(ui, dotIdx\) in userMessageItems"/)
+    // v3: 不再 v-for over renderedItems
+    expect(source).not.toMatch(/v-for="\(item, idx\) in renderedItems"/)
+    // v3: 实现 userMessageItems computed（过滤 type === 'user'）
+    expect(source).toMatch(/const userMessageItems = computed/)
+    // 实现细节用 it.type 也行（for-loop 的循环变量名）
+    expect(source).toMatch(/type === ['"]user['"]/)
+    // v3: 显示阈值改为 user 消息数
+    expect(source).toMatch(/v-if="userMessageItems\.length >= 2"/)
+  })
+
+  it('TestAgentChat_V3_DotNavCenteredAndLongPress: 圆点导航垂直居中 + 长按变长条', async () => {
+    const source = agentChatSource
+    // v3: 垂直居中用 top: 50% + transform: translateY(-50%)
+    expect(source).toMatch(/top:\s*50%/)
+    expect(source).toMatch(/transform:\s*translateY\(-50%\)/)
+    // v3: 长按拖动样式类 dotNavDot_dragged
+    expect(source).toMatch(/\.dotNavDot_dragged/)
+    expect(source).toMatch(/dotNavDot_dragged:/)
+    // v3: 长条 width: 5px, height: 34px（scrollbar thumb 风格）
+    expect(source).toMatch(/width:\s*5px/)
+    expect(source).toMatch(/height:\s*34px/)
+    // v3: 长按阈值常量
+    expect(source).toMatch(/DOT_LONG_PRESS_MS = 280/)
+    // v3: 拖动模式容器类
+    expect(source).toMatch(/dotNavigation--dragging/)
+  })
+
+  it('TestAgentChat_V3_DotNavLongPressHandlers: 长按/拖动事件处理函数齐备', async () => {
+    const source = agentChatSource
+    // v3: pointer 事件绑定（down/move/up/cancel）
+    expect(source).toMatch(/@pointerdown="onDotNavPointerDown"/)
+    expect(source).toMatch(/@pointermove="onDotNavPointerMove"/)
+    expect(source).toMatch(/@pointerup="onDotNavPointerUp"/)
+    expect(source).toMatch(/@pointercancel="onDotNavPointerUp"/)
+    // v3: 实现 handler
+    expect(source).toMatch(/function onDotNavPointerDown/)
+    expect(source).toMatch(/function onDotNavPointerMove/)
+    expect(source).toMatch(/function onDotNavPointerUp/)
+    // v3: rAF 节流（防抖范式）
+    expect(source).toMatch(/requestAnimationFrame/)
+    expect(source).toMatch(/cancelAnimationFrame/)
+    // v3: pointer capture（防指针滑出元素丢失事件）
+    expect(source).toMatch(/setPointerCapture/)
+    // v3: 卸载时清理 timer / rAF
+    expect(source).toMatch(/clearDotPressTimer\(\)/)
+    expect(source).toMatch(/clearDotDragRaf\(\)/)
+  })
 })
