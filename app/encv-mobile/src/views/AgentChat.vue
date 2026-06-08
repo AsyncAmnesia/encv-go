@@ -224,14 +224,17 @@
         @pick="(preset) => { void pickMockPreset(preset) }"
       />
 
-      <!-- 调试面板：mock 模式自动开 / URL ?debug=agent 强制开 -->
+      <!--
+        调试面板：mock 模式可手动展开 / URL ?debug=agent 强制开
+        v2 修复：默认折叠，避免遮挡对话。需要时手动点开。
+      -->
       <AgentDebugPanel
         v-if="isMockMode || isDebugAgent"
         :messages="messages"
         :rendered-items="renderedItems"
         :agent-status="status"
         :raw-sse-events="rawSSEEvents"
-        :default-open="isMockMode"
+        :default-open="false"
       />
 
       <div class="footerInputRow" :class="{ 'footerInputRow-palette': slashMenu.isOpen.value }">
@@ -329,41 +332,82 @@
       <div class="footerHint">{{ t('agent.inputHint') }}</div>
     </footer>
 
-    <div v-if="historyOpen" class="historyOverlay" @click.self="historyOpen = false">
-      <div class="historyPanel">
-        <div class="historyHeader">
-          <h3>{{ t('agent.history') }}</h3>
-          <button type="button" class="headerBtn" @click="handleClose" :title="t('common.close')">
-            <ion-icon :icon="closeIcon" />
+    <!--
+      v2 修复：会话历史改为全屏显示
+      - 占用整个 .agentChat 容器（覆盖在主聊天之上）
+      - 顶部 header：关闭按钮 + 标题 + 新会话大加号按钮
+      - 列表：每条会话显示标题 + 元信息 + 删除按钮（始终可见，不再 hover 才显示）
+      - 全屏布局方便用户浏览历史 / 删除 / 切换
+    -->
+    <div v-if="historyOpen" class="historyOverlay">
+      <header class="historyHeader">
+        <button type="button" class="headerBtn" @click="handleClose" :title="t('common.close') || '关闭'">
+          <ion-icon :icon="closeIcon" />
+        </button>
+        <div class="historyHeaderTitle">
+          <ion-icon :icon="timeIcon" class="historyHeaderIcon" />
+          <h3>{{ t('agent.history') || '会话历史' }}</h3>
+          <span v-if="sessions.length > 0" class="historyHeaderCount">{{ sessions.length }}</span>
+        </div>
+        <div class="historyHeaderRight">
+          <span class="historyHeaderHint">长按删除</span>
+        </div>
+      </header>
+
+      <!--
+        大加号按钮：放在全屏历史界面的正中央下方，作为醒目入口
+        用户从全屏历史中可以直接"新建会话"而无需先关闭
+      -->
+      <button
+        v-if="sessions.length > 0"
+        type="button"
+        class="historyNewSessionFab"
+        @click="handleNewSessionFromHistory"
+        :title="t('agent.newSession') || '新会话'"
+      >
+        <ion-icon :icon="addIcon" class="historyNewSessionFabIcon" />
+        <span class="historyNewSessionFabLabel">{{ t('agent.newSession') || '新会话' }}</span>
+      </button>
+
+      <div class="historyList">
+        <div
+          v-for="s in sessions"
+          :key="s.id"
+          class="historyItem"
+          :class="{ historyItemActive: s.id === currentSessionId }"
+          @click="switchSession(s.id); historyOpen = false"
+        >
+          <ion-icon :icon="chatbubblesIcon" class="historyItemIcon" />
+          <div class="historyItemMain">
+            <p class="historyItemTitle">{{ s.title || '(空)' }}</p>
+            <p class="historyItemMeta">
+              {{ formatSessionMeta(s) }}
+            </p>
+          </div>
+          <!-- v2 修复：删除按钮始终可见（不依赖 hover），全屏下方便手指操作 -->
+          <button
+            type="button"
+            class="historyItemDelete"
+            @click.stop="handleDeleteSession(s.id, $event)"
+            :title="t('agent.deleteSession') || '删除会话'"
+            :aria-label="t('agent.deleteSession') || '删除会话'"
+          >
+            <ion-icon :icon="trashIcon" />
           </button>
         </div>
-        <div class="historyList">
-          <div
-            v-for="s in sessions"
-            :key="s.id"
-            class="historyItem"
-            :class="{ historyItemActive: s.id === currentSessionId }"
-            @click="switchSession(s.id); historyOpen = false"
+        <div v-if="sessions.length === 0" class="historyEmpty">
+          <ion-icon :icon="chatbubblesIcon" class="historyEmptyIcon" />
+          <p>{{ t('agent.noHistory') || '暂无历史会话' }}</p>
+          <!-- 空状态下大加号按钮 -->
+          <button
+            type="button"
+            class="historyNewSessionFab historyNewSessionFab--empty"
+            @click="handleNewSessionFromHistory"
+            :title="t('agent.newSession') || '新会话'"
           >
-            <ion-icon :icon="chatbubblesIcon" class="historyItemIcon" />
-            <div class="historyItemMain">
-              <p class="historyItemTitle">{{ s.title || '(空)' }}</p>
-              <p class="historyItemMeta">
-                {{ formatSessionMeta(s) }}
-              </p>
-            </div>
-            <button
-              type="button"
-              class="historyItemDelete"
-              @click.stop="handleDeleteSession(s.id, $event)"
-              :title="t('agent.deleteSession')"
-            >
-              <ion-icon :icon="closeIcon" />
-            </button>
-          </div>
-          <div v-if="sessions.length === 0" class="historyEmpty">
-            <p>{{ t('agent.noHistory') }}</p>
-          </div>
+            <ion-icon :icon="addIcon" class="historyNewSessionFabIcon" />
+            <span class="historyNewSessionFabLabel">{{ t('agent.newSession') || '新会话' }}</span>
+          </button>
         </div>
       </div>
     </div>
@@ -389,6 +433,7 @@ import {
   keyOutline,
   chevronDownOutline,
   flaskOutline,
+  trashOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { getDeviceIdSync } from '@/composables/useDeviceId'
@@ -556,6 +601,7 @@ const clipboardIcon = clipboardOutline
 const refreshCircleIcon = refreshCircleOutline
 const chevronDownIcon = chevronDownOutline
 const flaskIcon = flaskOutline
+const trashIcon = trashOutline
 // copyIconVar 已移至 DefaultMessagesView.vue（引擎渲染路径内的复制按钮）
 const historyOpen = ref(false)
 
@@ -926,6 +972,17 @@ async function handleNewSession() {
   newSession()
 }
 
+/**
+ * v2 修复：从全屏历史界面直接新建会话
+ * - 不需要关闭历史界面再操作 → 流畅体验
+ * - 自动关闭全屏历史 → 回到主聊天（新会话已就绪）
+ */
+async function handleNewSessionFromHistory(): Promise<void> {
+  // 来自全屏历史时直接创建（不弹确认，因为历史界面本身就是"切走"的语义）
+  newSession()
+  historyOpen.value = false
+}
+
 async function handleOpenHistory() {
   await Promise.resolve()
   historyOpen.value = true
@@ -949,8 +1006,9 @@ async function handleDeleteSession(sessionId: string, event: Event) {
 }
 
 function handleClose() {
+  // v2 修复：全屏历史界面上的"关闭"按钮只关闭历史面板，
+  // 不再 dismiss 整个 modal —— 用户希望回到主聊天继续对话
   historyOpen.value = false
-  modalController.dismiss()
 }
 
 function scrollToBottom(behavior: 'auto' | 'smooth' = 'smooth') {
@@ -1974,80 +2032,112 @@ defineExpose({})
   border-top-right-radius: 0;
 }
 
-/* ── History overlay / panel ─────────────────────────── */
+/* ── History full-screen layout（v2 重构） ────────────────────── */
+/* 关键：覆盖整个 .agentChat 容器（position: absolute + inset: 0） */
 .historyOverlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 100;
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--ion-background-color);
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
+  flex-direction: column;
   animation: historyFadeIn 0.18s ease-out;
 }
 
 @keyframes historyFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.historyPanel {
-  width: 100%;
-  max-width: 420px;
-  max-height: 60vh;
-  background: var(--ion-background-color);
-  border-radius: 16px 16px 0 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.2);
-}
-
+/* 全屏头部：左关闭 / 中标题 / 右 hint */
 .historyHeader {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  border-bottom: 1px solid rgba(var(--ion-color-medium-rgb), 0.15);
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--ion-toolbar-background, var(--ion-background-color));
+  border-bottom: 1px solid rgba(var(--ion-color-medium-rgb), 0.18);
   flex-shrink: 0;
 }
-
-.historyHeader h3 {
-  margin: 0;
-  font-size: 15px;
+.historyHeaderTitle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
   font-weight: 600;
 }
+.historyHeaderIcon {
+  font-size: 18px;
+  color: var(--ion-color-primary);
+}
+.historyHeaderTitle h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+.historyHeaderCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  background: rgba(var(--ion-color-primary-rgb), 0.18);
+  color: var(--ion-color-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+.historyHeaderRight {
+  display: flex;
+  align-items: center;
+}
+.historyHeaderHint {
+  font-size: 11px;
+  color: var(--ion-text-color-step-400, #999);
+  user-select: none;
+}
 
+/* 列表区：占据全屏剩余空间 */
 .historyList {
   overflow-y: auto;
   flex: 1;
-  padding: 4px 0;
+  padding: 8px 0 100px; /* 底部留 100px 给 FAB */
 }
 
+/* 列表项（卡片化） */
 .historyItem {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
+  gap: 12px;
+  padding: 14px 16px;
+  margin: 0 12px 8px;
+  background: var(--ion-toolbar-background, var(--ion-background-color));
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.12);
+  border-radius: 12px;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: all 0.15s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
-
 .historyItem:hover,
 .historyItem:active {
-  background: rgba(var(--ion-color-primary-rgb), 0.08);
+  border-color: rgba(var(--ion-color-primary-rgb), 0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(var(--ion-color-primary-rgb), 0.12);
 }
-
 .historyItemActive {
-  background: rgba(var(--ion-color-primary-rgb), 0.1);
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
+  border-color: var(--ion-color-primary);
 }
-
 .historyItemActive .historyItemTitle {
   font-weight: 600;
+  color: var(--ion-color-primary);
 }
 
 .historyItemIcon {
-  font-size: 22px;
+  font-size: 24px;
   color: var(--ion-color-primary);
   flex-shrink: 0;
 }
@@ -2056,47 +2146,118 @@ defineExpose({})
   flex: 1;
   min-width: 0;
 }
-
 .historyItemTitle {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ion-text-color);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
 .historyItemMeta {
-  margin: 2px 0 0;
+  margin: 3px 0 0;
   font-size: 11px;
   color: var(--ion-text-color-step-400);
 }
 
+/* 删除按钮：v2 始终可见（不依赖 hover），全屏下方便手指操作 */
 .historyItemDelete {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--ion-text-color-step-350);
+  border-radius: 10px;
+  background: rgba(var(--ion-color-danger-rgb), 0.1);
+  color: var(--ion-color-danger);
   cursor: pointer;
   flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.15s;
+  font-size: 18px;
+  padding: 0;
+  transition: background 0.12s, transform 0.1s;
+}
+.historyItemDelete:hover,
+.historyItemDelete:active {
+  background: rgba(var(--ion-color-danger-rgb), 0.22);
+  transform: scale(1.05);
+}
+.historyItemDelete ion-icon {
+  font-size: 18px;
 }
 
-.historyItem:hover .historyItemDelete {
-  opacity: 1;
-}
-
+/* 空状态：垂直居中 + 大加号按钮 */
 .historyEmpty {
-  text-align: center;
-  padding: 32px 16px;
-  color: var(--ion-text-color-step-350);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 60px 16px 0;
+  color: var(--ion-text-color-step-400);
+}
+.historyEmptyIcon {
+  font-size: 56px;
+  color: rgba(var(--ion-color-primary-rgb), 0.25);
+}
+.historyEmpty p {
+  margin: 0;
   font-size: 13px;
+}
+
+/* ── 大加号按钮（v2 关键 UI）── */
+/*
+  设计要点：
+  - 固定在底部右侧（不挡列表）
+  - 主色背景（高识别度）
+  - 圆角大（FAB 风格）
+  - 阴影立体
+  - 含图标 + 文字（不只是 FAB 圆点）
+*/
+.historyNewSessionFab {
+  position: fixed;
+  bottom: max(20px, env(safe-area-inset-bottom, 20px));
+  right: 16px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 24px;
+  background: var(--ion-color-primary);
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(var(--ion-color-primary-rgb), 0.4);
+  transition: all 0.15s;
+  user-select: none;
+}
+.historyNewSessionFab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(var(--ion-color-primary-rgb), 0.5);
+}
+.historyNewSessionFab:active {
+  transform: scale(0.97);
+}
+.historyNewSessionFabIcon {
+  font-size: 20px;
+}
+.historyNewSessionFabLabel {
+  letter-spacing: 0.02em;
+}
+
+/* 空状态时按钮变正中央 + 稍大（强调"开始第一次会话"） */
+.historyNewSessionFab--empty {
+  position: relative;
+  bottom: auto;
+  right: auto;
+  margin-top: 8px;
+  height: 52px;
+  padding: 0 24px;
+  font-size: 15px;
 }
 
 /* ── Dot Navigation（左侧圆点导航） ──────────────────────── */

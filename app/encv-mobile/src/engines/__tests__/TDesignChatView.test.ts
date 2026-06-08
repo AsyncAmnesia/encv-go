@@ -52,6 +52,20 @@ vi.mock('@tdesign-vue-next/chat', () => {
   }
 })
 
+// Mock ToolDetailContent（v4 新增）—— 用 stub 替代避免复杂模板渲染
+vi.mock('../ToolDetailContent.vue', () => ({
+  default: defineComponent({
+    name: 'ToolDetailContent',
+    props: ['raw', 'kind', 'toolName'],
+    setup(props) {
+      return () =>
+        h('div', { class: 'td-tool-detail-stub', 'data-kind': props.kind }, [
+          typeof props.raw === 'string' ? props.raw.slice(0, 80) : '[non-string]',
+        ])
+    },
+  }),
+}))
+
 import TDesignChatView from '../TDesignChatView.vue'
 
 // =============================================================================
@@ -258,12 +272,13 @@ describe('TDesignChatView v3 (useRenderTurnItems)', () => {
     ]
     const wrapper = mountChatView({ messages })
 
-    // 工具卡片应包含结果区
+    // v4: 工具卡片用 <details> 折叠容器
     const toolCard = wrapper.find('.td-tool-card')
     expect(toolCard.exists()).toBe(true)
-    const resultBody = toolCard.find('.td-tool-card-result-body')
-    expect(resultBody.exists()).toBe(true)
-    expect(resultBody.text()).toContain('找到3条')
+    // ToolDetailContent stub 用 data-kind="result" 标记
+    const detailStub = toolCard.find('[data-kind="result"]')
+    expect(detailStub.exists()).toBe(true)
+    expect(detailStub.text()).toContain('找到3条')
   })
 
   it('TestTDesign_NoResultEmbeddedWhenNoResult: 工具调用但无结果时不显示结果区', () => {
@@ -273,7 +288,75 @@ describe('TDesignChatView v3 (useRenderTurnItems)', () => {
 
     const toolCard = wrapper.find('.td-tool-card')
     expect(toolCard.exists()).toBe(true)
-    expect(toolCard.find('.td-tool-card-result').exists()).toBe(false)
+    // v4: 无 result 时不渲染 result stub
+    const detailStub = toolCard.find('[data-kind="result"]')
+    expect(detailStub.exists()).toBe(false)
+  })
+
+  // ★ v4 新增测试：工具卡片 <details> 折叠行为
+  it('TestTDesign_ToolCardUsesDetailsElement: v4 用 <details> + <summary> 替代 div', () => {
+    const tc = makeToolCall({ id: 'tc-1', name: 'search', status: 'success' })
+    const messages = [makeUserMessage('搜'), makeAssistantMessage('', [tc], [])]
+    const wrapper = mountChatView({ messages })
+
+    const toolCard = wrapper.find('.td-tool-card')
+    expect(toolCard.exists()).toBe(true)
+    // v4 必须是 <details> 元素
+    expect(toolCard.element.tagName).toBe('DETAILS')
+    // 必须有 <summary> 子元素
+    const summary = toolCard.find('summary')
+    expect(summary.exists()).toBe(true)
+    expect(summary.classes()).toContain('td-tool-card-head')
+  })
+
+  it('TestTDesign_ToolCardAutoExpandWhenRunning: 运行时自动展开', () => {
+    const tc = makeToolCall({ id: 'tc-1', name: 'search', status: 'running' })
+    const messages = [makeUserMessage('搜'), makeAssistantMessage('', [tc], [])]
+    const wrapper = mountChatView({ messages })
+
+    const toolCard = wrapper.find('.td-tool-card')
+    // running → 默认展开
+    expect(toolCard.attributes('open')).toBeDefined()
+  })
+
+  it('TestTDesign_ToolCardCollapsedByDefaultWhenSuccess: success 默认折叠', () => {
+    const tc = makeToolCall({ id: 'tc-1', name: 'search', status: 'success' })
+    const messages = [makeUserMessage('搜'), makeAssistantMessage('', [tc], [])]
+    const wrapper = mountChatView({ messages })
+
+    const toolCard = wrapper.find('.td-tool-card')
+    // success → 默认折叠
+    expect(toolCard.attributes('open')).toBeUndefined()
+  })
+
+  it('TestTDesign_ToolCardUsesToolDetailContent: 工具卡片用 ToolDetailContent 而非 raw pre', () => {
+    const tc = makeToolCall({
+      id: 'tc-1',
+      name: 'list_mounts',
+      args: '{"type":"serving"}',
+    })
+    const tr = makeToolResult({
+      id: 'tc-1',
+      name: 'list_mounts',
+      result: '{"mounts":[{"id":"x","type":"serving"}]}',
+    })
+    const messages = [makeUserMessage('列挂载'), makeAssistantMessage('', [tc], [tr])]
+    const wrapper = mountChatView({ messages })
+
+    // 必须用 ToolDetailContent 组件（stub 标记 data-kind）
+    const argStub = wrapper.find('[data-kind="args"]')
+    expect(argStub.exists()).toBe(true)
+    const resultStub = wrapper.find('[data-kind="result"]')
+    expect(resultStub.exists()).toBe(true)
+  })
+
+  it('TestTDesign_ToolCardHasChevronIcon: 工具卡片有 chevron 图标（v4 新增）', () => {
+    const tc = makeToolCall({ id: 'tc-1', name: 'search', status: 'success' })
+    const messages = [makeUserMessage('搜'), makeAssistantMessage('', [tc], [])]
+    const wrapper = mountChatView({ messages })
+
+    const chevron = wrapper.find('.td-tool-card-chevron')
+    expect(chevron.exists()).toBe(true)
   })
 
   it('TestTDesign_ToolStatusMappedToDataAttribute: tool_call status 映射到 data-status', () => {

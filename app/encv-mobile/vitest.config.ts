@@ -23,6 +23,7 @@ export default defineConfig({
       'src/__tests__/**/*.test.ts',
       'src/composables/**/*.test.ts',
       'src/engines/**/*.test.ts',
+      'src/views/**/*.test.ts',
     ],
   },
 })

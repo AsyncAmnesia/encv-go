@@ -82,13 +82,31 @@
           </div>
         </div>
 
-        <!-- 工具调用（按 eventLog 顺序单条） -->
+        <!--
+          工具调用（按 eventLog 顺序单条） — TDesign 风格 v4 适配：
+          - 默认折叠（<details>），head 显示图标+名称+状态（折叠态）→ 不打扰主流程
+          - streaming=true 时强制展开（用户需看到实时进度）
+          - 展开内容：
+            1. 参数：尝试解析 args 为对象 → 渲染为 kv 表；解析失败 → TDesign 配色 pre 块
+            2. 结果：尝试解析为 JSON：
+                 - mount list（mounts[]）→ 简洁卡片列表
+                 - file list（files[]/items[]）→ 简洁卡片列表
+                 - file content（content/text）→ 等宽字体块
+                 - 普通对象 → 格式化 JSON（带 TDesign 颜色 key/value）
+                 - 字符串 → 等宽字体块
+            3. 错误：红色 banner
+        -->
         <div
           v-else-if="item.type === 'operation' && findToolCallById(item.toolCallId)"
           class="td-msg-row td-msg-row--tool"
         >
-          <div class="td-tool-card">
-            <div class="td-tool-card-head">
+          <details
+            class="td-tool-card"
+            :class="{ 'td-tool-card--open': isOpen(item.toolCallId) }"
+            :open="isOpen(item.toolCallId)"
+            @toggle="onToolToggle(item.toolCallId, $event)"
+          >
+            <summary class="td-tool-card-head">
               <span class="td-tool-card-icon">🔧</span>
               <span class="td-tool-card-name">
                 {{ findToolCallById(item.toolCallId)!.name }}
@@ -99,20 +117,38 @@
               >
                 {{ statusText(findToolCallById(item.toolCallId)!.status) }}
               </span>
+              <span class="td-tool-card-chevron">▾</span>
+            </summary>
+            <div class="td-tool-card-body">
+              <!-- 参数 -->
+              <div v-if="findToolCallById(item.toolCallId)!.args" class="td-tool-card-section">
+                <div class="td-tool-card-section-label">参数</div>
+                <ToolDetailContent
+                  :raw="findToolCallById(item.toolCallId)!.args"
+                  kind="args"
+                />
+              </div>
+
+              <!-- 结果 / 错误 -->
+              <div
+                v-if="findToolResultById(item.toolCallId)"
+                class="td-tool-card-section"
+              >
+                <div class="td-tool-card-section-label">
+                  {{ findToolResultById(item.toolCallId)!.is_error ? '错误' : '结果' }}
+                </div>
+                <ToolDetailContent
+                  v-if="!findToolResultById(item.toolCallId)!.is_error"
+                  :raw="findToolResultById(item.toolCallId)!.result"
+                  kind="result"
+                  :tool-name="findToolCallById(item.toolCallId)!.name"
+                />
+                <div v-else class="td-tool-card-error">
+                  {{ findToolResultById(item.toolCallId)!.result }}
+                </div>
+              </div>
             </div>
-            <pre
-              v-if="findToolCallById(item.toolCallId)!.args"
-              class="td-tool-card-args"
-            >{{ findToolCallById(item.toolCallId)!.args }}</pre>
-            <!-- 工具结果（内嵌在 #result slot） -->
-            <div
-              v-if="findToolResultById(item.toolCallId)"
-              class="td-tool-card-result"
-            >
-              <span class="td-tool-card-result-label">结果</span>
-              <pre class="td-tool-card-result-body">{{ findToolResultById(item.toolCallId)!.result }}</pre>
-            </div>
-          </div>
+          </details>
         </div>
 
         <!-- 工具结果独立卡片（备用，目前 OperationCard #result slot 已覆盖） -->
@@ -254,11 +290,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, type ComputedRef } from 'vue'
+import { computed, ref, type ComputedRef } from 'vue'
 // TDesign Chat 自家组件：ChatThinking + ChatMarkdown（cherry-markdown 引擎）
 // 统一 TDesign 视觉风格
 import { ChatThinking, ChatMarkdown } from '@tdesign-vue-next/chat'
 import { useRenderTurnItems } from '@/composables/renderTurnItems'
+import ToolDetailContent from './ToolDetailContent.vue'
 import type { Message, ToolCall, ToolResult, AgentStatus } from '@/composables/useAgent'
 
 /**
@@ -352,6 +389,45 @@ function formatFooterTime(timestamp: number): string {
   const d = new Date(timestamp)
   const pad = (n: number) => n.toString().padStart(2, '0')
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+// ── 工具卡片展开状态管理 ─────────────────────────────────
+// 规则：
+//   - 用户手动点击 → 记住状态（即使切到其他 message）
+//   - 初始状态：running/pending → 自动展开；success/error → 默认折叠
+//   - 一个 set 存用户主动展开的 ids；一个 set 存用户主动折叠的 ids
+//     （避免被自动规则覆盖）
+const userExpandedIds = ref(new Set<string>())
+const userCollapsedIds = ref(new Set<string>())
+
+/** 当前 id 是否展开 */
+function isOpen(toolCallId: string): boolean {
+  if (userExpandedIds.value.has(toolCallId)) return true
+  if (userCollapsedIds.value.has(toolCallId)) return false
+  // 默认规则：running/pending → 展开
+  const tc = findToolCallById(toolCallId)
+  if (!tc) return false
+  return tc.status === 'running' || tc.status === 'pending'
+}
+
+/**
+ * <details> @toggle 事件 → 同步用户意图到 ref Set
+ * 注意：组件挂载时 <details :open="isOpen"> 会触发一次 toggle event，
+ * 此时要避免把"自动展开"误记为"用户主动展开"。
+ * 解决：检查 event.target.open 与 isOpen(id) 一致才记为用户操作。
+ */
+function onToolToggle(toolCallId: string, e: Event) {
+  const target = e.target as HTMLDetailsElement
+  if (!target) return
+  // 首次挂载导致的 toggle 不记
+  // （依靠 userExpandedIds/userCollapsedIds 初始为空来过滤）
+  if (target.open) {
+    userCollapsedIds.value.delete(toolCallId)
+    userExpandedIds.value.add(toolCallId)
+  } else {
+    userExpandedIds.value.delete(toolCallId)
+    userCollapsedIds.value.add(toolCallId)
+  }
 }
 </script>
 
@@ -452,25 +528,52 @@ function formatFooterTime(timestamp: number): string {
 }
 
 /* ── 工具调用卡片（按 eventLog 顺序单条渲染，不再堆在底部）── */
+/* v4: 改为 <details> 折叠态 + TDesign 风格 */
 .td-tool-card {
   width: 100%;
   background: var(--td-bg-color-container, #fff);
   border: 1px solid var(--td-component-stroke, #e7e7e7);
   border-radius: 8px;
-  padding: 10px 12px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.td-tool-card[open] {
+  border-color: rgba(var(--td-brand-color-rgb, 79, 140, 255), 0.4);
+  box-shadow: 0 2px 8px rgba(var(--td-brand-color-rgb, 79, 140, 255), 0.12);
 }
 .td-tool-card-head {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  list-style: none;
+  outline: none;
+}
+.td-tool-card-head::-webkit-details-marker {
+  display: none;
+}
+.td-tool-card-head::marker {
+  content: '';
+}
+.td-tool-card-head:hover {
+  background: rgba(var(--td-brand-color-rgb, 79, 140, 255), 0.04);
 }
 .td-tool-card-icon { font-size: 14px; }
 .td-tool-card-name {
   font-weight: 500;
   color: var(--td-text-color-primary, #333);
   font-size: 13px;
+  font-family: 'SF Mono', Monaco, monospace;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .td-tool-card-status {
   display: inline-block;
@@ -479,6 +582,7 @@ function formatFooterTime(timestamp: number): string {
   font-size: 11px;
   background: var(--td-bg-color-secondarycomponent, #f3f3f3);
   color: var(--td-text-color-secondary, #666);
+  flex-shrink: 0;
 }
 .td-tool-card-status[data-status='running'] {
   background: var(--td-brand-color, #4f8cff);
@@ -493,40 +597,48 @@ function formatFooterTime(timestamp: number): string {
   background: var(--td-error-color, #d54941);
   color: #fff;
 }
-.td-tool-card-args {
-  margin-top: 8px;
-  padding: 6px 8px;
-  background: var(--td-bg-color-secondarycomponent, #f3f3f3);
-  border-radius: 4px;
+.td-tool-card-chevron {
   font-size: 12px;
-  color: var(--td-text-color-secondary, #555);
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 120px;
-  overflow-y: auto;
-}
-.td-tool-card-result {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed var(--td-component-stroke, #e7e7e7);
-}
-.td-tool-card-result-label {
-  display: inline-block;
-  font-size: 11px;
   color: var(--td-text-color-secondary, #999);
-  margin-bottom: 4px;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+  display: inline-block;
+  margin-left: 2px;
 }
-.td-tool-card-result-body {
-  margin: 0;
+.td-tool-card[open] .td-tool-card-chevron {
+  transform: rotate(180deg);
+  color: var(--td-brand-color, #4f8cff);
+}
+.td-tool-card-body {
+  padding: 0 12px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px dashed var(--td-component-stroke, #e7e7e7);
+  padding-top: 10px;
+}
+.td-tool-card-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.td-tool-card-section-label {
+  font-size: 10px;
+  color: var(--td-text-color-secondary, #999);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+.td-tool-card-error {
   padding: 6px 8px;
-  background: var(--td-bg-color-secondarycomponent, #f3f3f3);
+  background: var(--td-error-color-light, #fff1f0);
+  border: 1px solid var(--td-error-color, #d54941);
+  color: var(--td-error-color, #d54941);
   border-radius: 4px;
   font-size: 12px;
-  color: var(--td-text-color-primary, #333);
+  font-family: 'SF Mono', Monaco, monospace;
   white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 200px;
-  overflow-y: auto;
+  word-break: break-word;
 }
 
 /* ── 工具结果独立卡片（备用）── */
