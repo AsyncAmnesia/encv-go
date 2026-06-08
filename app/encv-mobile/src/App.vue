@@ -23,16 +23,79 @@
         <ion-icon :icon="bugOutline" class="error-icon"></ion-icon>
         <h2>组件渲染错误</h2>
         <p class="error-message">某个子组件崩溃了。请截图上报给开发者。</p>
+
         <!--
-          上下两栏各显示一个信息片段，避免内容重复：
-            - error-detail (上) = 错误简述（err.message 的 summary 部分）
-            - error-hint (下)    = 错误细节（err.message 里的 "trace: ..." 后缀）
-          故意**不**显示 err.stack：stack 首行 = message，会与 error-detail 完全重合
-          （这也是之前 [1.5] trace 在两个块里出现的根因）。完整 stack 仍走 console.error
-          输出到 DevLogs（onErrorCaptured:71），agent 排查时能拿到。
+          🆕 错误 UI 拆两栏（2026-06-08 重构）：
+            - 上（红色）error-detail-panel：详细摘要 + 上下文（错误类型 / info / 时间戳 /
+              浏览器模式 / baseUrl 状态），一眼看出错误场景
+            - 下（灰色）error-stack-panel：原始堆栈 + 沙箱排错辅助信息链接
+          拆两栏但**不**显示 message 和 stack 的内容重叠：
+            - error-detail 显示 "summary + trace"（来自 splitErrorMessage）
+            - error-stack 显示 "raw stack + 沙箱文档链接"（独立信息）
         -->
-        <code class="error-detail">{{ rootErrorSummary }}</code>
-        <pre v-if="rootErrorDetails" class="error-hint">{{ rootErrorDetails }}</pre>
+
+        <!-- 上：红色 detail 区域（详细信息） -->
+        <section class="error-detail-panel">
+          <header class="error-detail-header">
+            <ion-icon :icon="alertCircleOutline" class="error-detail-icon"></ion-icon>
+            <span class="error-detail-title">错误摘要</span>
+            <button class="copy-btn" @click="copyErrorSummary" aria-label="复制摘要">
+              <ion-icon :icon="copyOutline"></ion-icon>
+            </button>
+          </header>
+          <div class="error-detail-body">
+            <div class="error-summary-line">
+              <span class="error-summary-label">类型</span>
+              <code class="error-summary-value">{{ rootErrorSummary }}</code>
+            </div>
+            <div class="error-summary-line">
+              <span class="error-summary-label">触发阶段</span>
+              <code class="error-summary-value">{{ rootErrorInfo }}</code>
+            </div>
+            <div class="error-summary-line" v-if="rootErrorTime">
+              <span class="error-summary-label">时间</span>
+              <code class="error-summary-value">{{ rootErrorTime }}</code>
+            </div>
+            <div class="error-summary-line">
+              <span class="error-summary-label">运行模式</span>
+              <code class="error-summary-value">{{ rootErrorContext.mode }}</code>
+            </div>
+            <div class="error-summary-line" v-if="rootErrorContext.location">
+              <span class="error-summary-label">当前 origin</span>
+              <code class="error-summary-value">{{ rootErrorContext.location }}</code>
+            </div>
+            <!-- 探测链 trace（来自 useApiBaseProbe " | trace: " 拆分） -->
+            <div v-if="rootErrorDetails" class="error-trace-block">
+              <div class="error-trace-label">探测链 trace</div>
+              <pre class="error-trace-body">{{ rootErrorDetails }}</pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- 下：灰色 stack 区域（原始堆栈 + 排错文档） -->
+        <section class="error-stack-panel">
+          <header class="error-stack-header">
+            <ion-icon :icon="codeSlashOutline" class="error-stack-icon"></ion-icon>
+            <span class="error-stack-title">原始堆栈</span>
+            <button class="copy-btn" @click="copyErrorStack" aria-label="复制堆栈">
+              <ion-icon :icon="copyOutline"></ion-icon>
+            </button>
+          </header>
+          <pre v-if="rootErrorStack" class="error-stack-body">{{ rootErrorStack }}</pre>
+          <p v-else class="error-stack-empty">（无堆栈）</p>
+
+          <footer class="error-stack-footer">
+            <div class="error-stack-hints">
+              <strong>排错指引</strong>
+              <ul>
+                <li>沙箱外网访问限制见 <code>trae_web_sandbox_network.md §9.1</code>（mock 浏览器无 Network 面板）</li>
+                <li>常见 401 = trae 网关层缺 session token（见 <code>§9.2.x</code>）</li>
+                <li>把以上"原始堆栈"和"错误摘要"完整截图给开发者</li>
+              </ul>
+            </div>
+          </footer>
+        </section>
+
         <ion-button @click="reloadPage" class="error-reload-btn">
           <ion-icon :icon="refreshOutline" slot="start"></ion-icon>
           重新加载
@@ -46,7 +109,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onErrorCaptured, onUnmounted } from 'vue'
 import { IonApp, IonRouterOutlet, IonIcon, IonButton } from '@ionic/vue'
-import { warningOutline, refreshOutline, bugOutline } from 'ionicons/icons'
+import { warningOutline, refreshOutline, bugOutline, alertCircleOutline, codeSlashOutline, copyOutline } from 'ionicons/icons'
 import { useTheme } from '@/composables/useTheme'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { isNative, requestNotificationPermission, requestStoragePermission } from '@/plugins/GoProcess'
@@ -71,6 +134,13 @@ const serviceGuardHint = ref('')
 const rootError = ref(false)
 const rootErrorSummary = ref('')
 const rootErrorDetails = ref('')
+const rootErrorInfo = ref('')           // 触发阶段：'mounted hook' / 'render function' / ...
+const rootErrorTime = ref('')           // ISO 时间戳，方便用户截图给 agent 时同步时间
+const rootErrorStack = ref('')          // 原始堆栈（独立显示在下方 stack panel）
+const rootErrorContext = ref<{ mode: string; location: string }>({
+  mode: 'unknown',
+  location: '',
+})
 
 /**
  * 把 `err.message` 拆成 "summary + details" 两部分，避免 UI 上下两栏内容重复。
@@ -92,6 +162,27 @@ function splitErrorMessage(msg: string): { summary: string; details: string } {
   }
 }
 
+/**
+ * 探测当前运行模式 + location，给错误 UI 提供上下文
+ * 模式：capacitor / browser-dev / browser-prod / mock-browser（trae 模拟）
+ */
+function detectErrorContext(): { mode: string; location: string } {
+  let mode = 'unknown'
+  if (typeof window !== 'undefined') {
+    const proto = window.location.protocol
+    const ua = navigator.userAgent || ''
+    if (proto === 'capacitor:' || proto === 'file:' || proto === 'cdvfile:') {
+      mode = 'capacitor'
+    } else if (ua.includes('Trae') || ua.includes('Volo') || proto === 'http:' && /agent-sandbox/.test(window.location.host)) {
+      mode = 'mock-browser'
+    } else if (proto === 'http:' || proto === 'https:') {
+      mode = 'browser-dev'
+    }
+  }
+  const location = (typeof window !== 'undefined') ? window.location.origin : ''
+  return { mode, location }
+}
+
 onErrorCaptured((err: any, _instance: unknown, info: string) => {
   // 防止无限递归：如果已经是 error 状态，不再捕获（fallback 自己崩了）
   if (rootError.value) return false
@@ -104,9 +195,58 @@ onErrorCaptured((err: any, _instance: unknown, info: string) => {
   const { summary, details } = splitErrorMessage(rawMsg)
   rootErrorSummary.value = summary
   rootErrorDetails.value = details
+  rootErrorInfo.value = info || 'unknown'
+  rootErrorTime.value = new Date().toISOString()
+  rootErrorStack.value = err?.stack || ''
+  rootErrorContext.value = detectErrorContext()
   // 不阻止冒泡：让 Vue 仍然 console.error（包含完整 stack），方便 DevTools 调试
   return false
 })
+
+/**
+ * 复制到剪贴板：让用户在 mock 浏览器里一键粘贴错误摘要 / 堆栈给 agent
+ * mock 浏览器无 Network 面板，截图+文本是唯一能贴出诊断信息的途径
+ */
+async function copyToClipboard(text: string): Promise<void> {
+  if (!text) return
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      // fallback：textarea + execCommand（兼容旧 mock 浏览器）
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+  } catch (e) {
+    console.warn('[App] copyToClipboard failed:', e)
+  }
+}
+
+function copyErrorSummary() {
+  const ctx = rootErrorContext.value
+  const lines = [
+    `类型: ${rootErrorSummary.value}`,
+    `触发阶段: ${rootErrorInfo.value}`,
+    `时间: ${rootErrorTime.value}`,
+    `模式: ${ctx.mode} @ ${ctx.location}`,
+    rootErrorDetails.value ? `trace: ${rootErrorDetails.value}` : '',
+  ].filter(Boolean)
+  copyToClipboard(lines.join('\n'))
+}
+
+function copyErrorStack() {
+  const lines = [
+    `STACK (${rootErrorSummary.value} @ ${rootErrorTime.value}):`,
+    rootErrorStack.value,
+  ]
+  copyToClipboard(lines.join('\n'))
+}
 
 function reloadPage() {
   if (typeof window !== 'undefined') {
@@ -293,11 +433,13 @@ onUnmounted(() => {
   width: 100%;
   background: var(--ion-background-color);
   padding: 24px;
+  overflow-y: auto;
 }
 
 .error-content {
   text-align: center;
-  max-width: 480px;
+  max-width: 560px;
+  width: 100%;
 }
 
 .error-icon {
@@ -316,41 +458,203 @@ onUnmounted(() => {
 .error-message {
   font-size: 14px;
   color: var(--encv-text-secondary);
-  margin: 0 0 16px;
+  margin: 0 0 20px;
   line-height: 1.5;
 }
 
-.error-detail {
-  display: block;
-  font-size: 12px;
-  color: var(--ion-color-danger);
+/* ===== 上：红色 detail 区域（详细信息） ===== */
+.error-detail-panel {
   background: rgba(var(--ion-color-danger-rgb), 0.08);
+  border-left: 3px solid var(--ion-color-danger);
   border-radius: 8px;
-  padding: 10px 14px;
+  padding: 12px 14px;
   margin: 0 0 12px;
   text-align: left;
-  word-break: break-all;
-  white-space: pre-wrap;
-  font-family: ui-monospace, Menlo, monospace;
 }
 
-.error-hint {
-  display: block;
+.error-detail-header,
+.error-stack-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(var(--ion-color-medium-rgb), 0.15);
+}
+
+.error-detail-icon {
+  font-size: 16px;
+  color: var(--ion-color-danger);
+}
+
+.error-detail-title,
+.error-stack-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ion-color-danger);
+  flex: 1;
+}
+
+.copy-btn {
+  background: transparent;
+  border: 1px solid rgba(var(--ion-color-medium-rgb), 0.3);
+  border-radius: 4px;
+  padding: 2px 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  color: var(--encv-text-secondary);
+  font-size: 11px;
+  transition: background 0.15s;
+}
+
+.copy-btn:hover {
+  background: rgba(var(--ion-color-medium-rgb), 0.1);
+}
+
+.copy-btn ion-icon {
+  font-size: 14px;
+}
+
+.error-detail-body {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+}
+
+.error-summary-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 4px 0;
+  line-height: 1.4;
+}
+
+.error-summary-label {
+  flex: 0 0 64px;
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding-top: 1px;
+}
+
+.error-summary-value {
+  flex: 1;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--ion-color-danger);
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.error-trace-block {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(var(--ion-color-danger-rgb), 0.2);
+}
+
+.error-trace-label {
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.error-trace-body {
+  font-family: ui-monospace, Menlo, monospace;
   font-size: 10.5px;
-  color: var(--ion-color-medium);
+  color: var(--ion-color-danger);
+  background: rgba(var(--ion-color-danger-rgb), 0.04);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin: 0;
+  word-break: break-all;
+  white-space: pre-wrap;
+  max-height: 25vh;
+  overflow-y: auto;
+}
+
+/* ===== 下：灰色 stack 区域（原始堆栈 + 排错文档） ===== */
+.error-stack-panel {
   background: rgba(var(--ion-color-medium-rgb), 0.06);
-  border-radius: 6px;
-  padding: 8px 12px;
-  margin: 0 0 20px;
+  border-left: 3px solid var(--ion-color-medium);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0 0 16px;
   text-align: left;
+}
+
+.error-stack-icon {
+  font-size: 16px;
+  color: var(--encv-text-secondary);
+}
+
+.error-stack-title {
+  color: var(--encv-text-secondary);
+}
+
+.error-stack-body {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--encv-text-secondary);
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 0 0 10px;
+  word-break: break-all;
   white-space: pre-wrap;
   max-height: 30vh;
   overflow-y: auto;
+  line-height: 1.45;
+}
+
+.error-stack-empty {
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+  font-style: italic;
+  margin: 0 0 10px;
+}
+
+.error-stack-footer {
+  border-top: 1px solid rgba(var(--ion-color-medium-rgb), 0.15);
+  padding-top: 8px;
+}
+
+.error-stack-hints {
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+  line-height: 1.5;
+}
+
+.error-stack-hints strong {
+  display: block;
+  font-size: 11px;
+  color: var(--encv-text-secondary);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.error-stack-hints ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.error-stack-hints li {
+  margin: 2px 0;
+}
+
+.error-stack-hints code {
+  background: rgba(var(--ion-color-medium-rgb), 0.12);
+  padding: 0 4px;
+  border-radius: 2px;
+  font-size: 10.5px;
   font-family: ui-monospace, Menlo, monospace;
 }
 
 .error-reload-btn {
   --border-radius: 8px;
+  margin-top: 4px;
 }
 </style>
 

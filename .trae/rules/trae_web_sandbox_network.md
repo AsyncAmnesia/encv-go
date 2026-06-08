@@ -475,6 +475,41 @@ start-preview.sh 是个普通 bash 脚本，没有 `OpenPreview` 工具的访问
   - **不可修复**——这是沙箱架构 + 业务 WS 协议组合决定的硬约束
 - 应对：`useWebSocket` 已有 scheduleReconnect / heartbeat 机制，前端**只显示离线状态**，不 throw 阻塞 UI
 
+#### 9.1.2 401 真实源头诊断（2026-06-08 收敛结论）
+
+> 401 不是 encv-go 也不是 preview-gateway 也不是 agent-tool-host 返的——是 trae 外网边缘网关（agent-tool-host 之前的那一层）返的。
+
+**证据链 1：encv-go 自身无 401 路径**
+
+- `internal/server/server_config_api.go:19-L50` 中 `handleGetConfigGin` 仅返 200/404/500，**没有 auth/401 路径**
+- 全局 `grep -rn "401\|Unauthorized" internal/` 在 encv-go 业务代码中无匹配
+
+**证据链 2：preview-gateway 无 auth 中间件**
+
+- `app/preview-gateway/src/server.ts` 仅 `http-proxy` 反代，**没有 auth/401 路径**
+- 沙箱内 `curl http://localhost:16666/api/config` 永远 200
+
+**证据链 3：agent-tool-host 日志无 401**
+
+- `grep "401\|Unauthorized" /var/log/tool/agent-tool-host.stdout.log` 无匹配
+- 沙箱内 `curl http://127.0.0.1:16000/api/config`（loopback）永远 200
+- 但**外网浏览器** trace 出现 401 → 401 一定在 agent-tool-host 之前生成
+
+**收敛结论：401 来自 trae 域名外网边缘网关**
+
+- trae 给每个 agent 沙箱分配 `https://run-agent-xxx.trae.cn/<端口路径>` 域名
+- 该域名经过 trae 自家边缘网关（带 session/cookie 鉴权 + rate limit）才到 agent-tool-host
+- 当浏览器缺 session cookie / 鉴权过期 / 触发 rate limit → 边缘网关直接 401
+- **沙箱内 loopback 永远复现不了**（不走外网网关）
+- 401 响应 body 通常是 trae 自家 HTML 登录页（`content-type: text/html`），不是 encv-go JSON
+
+**应对策略**：
+
+- ❌ 不要在 encv-go 加 auth 头绕过——401 来自网关，encv-go 拿不到这个请求
+- ❌ 不要在 preview-gateway 加 auth 头——401 在它之前
+- ✅ 前端要识别 401 响应的 content-type：`text/html` = trae 网关错（给用户"请重新登录 trae"提示）；`application/json` = 业务错（按业务逻辑处理）
+- ✅ `useApiBaseProbe` 已把 content-type + body preview 一起塞进 err，agent 在 mock 浏览器 console 就能区分是 trae 网关 401 还是 encv-go 业务 401
+
 ### 9.2 后果：useApiBaseProbe 全失败链路（2026-06-08 校正版）
 
 `useApiBaseProbe.ts` 的探测链：
@@ -572,9 +607,19 @@ throw new Error(`all-candidates-failed | trace: ${trace}`)
 | 场景 | 日志模板 | 等级 |
 |------|---------|------|
 | 关键 API 失败 | `[api] POST /api/chat failed: status=502 content-type=text/html body=<前 200 字符>` | `console.error` |
+| **trae 网关 401** | `[api] /api/config failed: status=401 content-type=text/html body="<html>...登录页..."` → 100% 是 trae 网关层，**不是 encv-go**（见 §9.1.2） | `console.warn` |
+| **encv-go 业务 401** | `[api] /api/auth failed: status=401 content-type=application/json body="{\"error\":\"missing session token\"}"` → 看 §9.1.2 收敛结论 | `console.error` |
 | WebSocket 断连 | `[ws] disconnect code=1006 reason= wsUrl=<url> readyState=3` | `console.warn` |
-| WebSocket 升级失败 | `[ws] upgrade failed: 沙箱 agent-tool-host (:16000) 不支持 WS 升级（见 §九.1）` | `console.warn` |
+| WebSocket 业务层拒绝 | `[ws] upgrade handshake OK but server-side close: code=1008 reason=<text>` | `console.warn` |
 | mock 浏览器无 network 警告 | `[browser] mock browser has no DevTools Network panel — see trae_web_sandbox_network.md §9.4` | `console.info`（首次启动时打一次） |
+
+**401 区分铁律**（agent 看到 401 第一时间做）：
+- 看 response `content-type`
+  - `text/html` = trae 外网网关错（用户"请重新登录 trae"）
+  - `application/json` = 业务端 401（业务 error code）
+- 看 response `body`
+  - 包含 `<html>` `<title>登录</title>` 之类 = trae 网关
+  - 包含 `{"error":"..."}` = 业务端
 
 #### 9.4.4 agent 必做
 
