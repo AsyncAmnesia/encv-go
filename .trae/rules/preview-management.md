@@ -232,6 +232,25 @@ curl -s http://localhost:16666/__gateway/health | jq '{ok, children: [.children[
 | `curl :16666/` 返回 502 | preview-gateway 子进程（encv-go / encv-mobile-vite）未就绪 | `curl :16666/__gateway/health | jq .children` 看哪个没 ready；`pm2 logs preview-gateway --lines 100` |
 | `curl :16666/` 200 但浏览器白屏 | encv-mobile-vite 子进程死了 | `pm2 restart preview-gateway`（整组重启） |
 
+### 3.4 mock 浏览器约束（**沙箱架构硬约束，2026-06-08 用户承认**）
+
+> **用户通过 OpenPreview 拿到的预览浏览器是 agent-tool-host 提供的"模拟浏览器"**——
+> 沙箱架构硬约束，**无法升级为完整 Chrome DevTools**。详见 [.trae/rules/trae_web_sandbox_network.md §9.4](file:///workspace/.trae/rules/trae_web_sandbox_network.md)。
+
+| 能/不能 | 详情 |
+|---------|------|
+| ✅ 能刷新页面 | Cmd+R / Ctrl+R / 浏览器自带刷新按钮 |
+| ✅ 能查看 console 日志 | DevLogs tab（Ionic Vue 内的日志面板）可见 |
+| ❌ **没有完整 DevTools** | 不能装 React DevTools / Vue Devtools 插件 |
+| ❌ **没有 Network 面板** | 看不到 fetch 请求/响应 / status / header / CORS 错（**这是最痛的**） |
+| ❌ 没有 Application / Sources / Performance | localStorage / Cookie / 源码断点都看不到 |
+
+**对 agent 的影响**：
+- 用户报"preview 不工作"时，**第一反应**应是让用户到 DevLogs tab 把 `[probe]` 开头的日志贴过来
+- **不要**让用户"开 DevTools 看 Network"——**没有 DevTools**
+- 排查链路详见 [trae_web_sandbox_network.md §九](file:///workspace/.trae/rules/trae_web_sandbox_network.md)（含可达性矩阵、probe 失败链路、备用方案 X/Y/Z）
+- 前端代码必须把所有诊断信息打到 console（已落进 [useApiBaseProbe.ts](file:///workspace/app/encv-mobile/src/composables/useApiBaseProbe.ts)）—— 每次 probe 输出 6-13 条 `[probe] ...` 日志，agent 凭这些日志能定位链路失败在哪一步
+
 ---
 
 ## 四、禁止命令清单（速查）

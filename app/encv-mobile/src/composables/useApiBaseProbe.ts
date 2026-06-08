@@ -33,6 +33,14 @@
 //   - 成功 → 写 localStorage + 调 setApiBaseUrl（同步所有依赖 baseUrl 的 composable）
 //   - 失败 → 不写 localStorage（保留旧值兜底，避免越改越坏）
 //
+// 🆕 沙箱 mock 浏览器日志规范（trae_web_sandbox_network.md §九.4）：
+//   沙箱 dev 模式下用户**只能在 mock 浏览器里**预览（OpenPreview 工具激活），
+//   该浏览器**无完整 DevTools / 无 Network 面板**，只能看 console 日志。
+//   诊断时只能靠 console 日志，所以 probe 每一步（try / result / skip / fail）
+//   **必须** console.info 一行（用 `[probe]` 前缀命名空间），让用户在 mock 浏览器
+//   报告问题时能直接看到探测链每一步的成败原因。
+//   全部走 console.info（不是 debug）—— debug 在 DevLogs 默认隐藏，mock 浏览器看不到。
+//
 // 探活 endpoint 选用 /api/config 而不是 /api/chat，是因为 /api/config 是 GET、轻量
 // 且不依赖任何 agent 状态。
 
@@ -167,18 +175,29 @@ function createProbe() {
     const log: string[] = []
     const t0 = performance.now()
 
+    // 🆕 沙箱 mock 浏览器日志（§九.4 规范）：入口先打一行，让用户在 mock 浏览器
+    // 看到「probe 启动了」+ 关键上下文（origin / cached / 节流状态）
+    // 必须用 console.info 而不是 console.debug —— DevLogs 默认隐藏 debug
+    const origin = (typeof window !== 'undefined' && window.location)
+      ? window.location.origin
+      : '(no window)'
+    const cached = localStorage.getItem(SERVER_URL_KEY)
+    console.info(`[probe] start origin=${origin} cached=${cached || '(empty)'} force=${!!opts?.force}`)
+
     try {
       // ─── [1] 缓存的 URL（最优先） ──────────────────────
-      const cached = localStorage.getItem(SERVER_URL_KEY)
       if (cached && cached !== DEFAULT_API_BASE_URL) {
-        log.push(`[1] try cached: ${cached}`)
+        const msg = `[1] try cached: ${cached}`
+        log.push(msg); console.info(`[probe] step ${msg}`)
         const r = await probeHealth(cached)
-        log.push(`[1] result: ok=${r.ok} latency=${r.latencyMs}ms err=${r.err || '-'}`)
+        const rmsg = `[1] result: ok=${r.ok} latency=${r.latencyMs}ms err=${r.err || '-'}`
+        log.push(rmsg); console.info(`[probe] step ${rmsg}`)
         if (r.ok) {
           return commit(cached, null, 'cached', log, t0)
         }
       } else {
-        log.push('[1] no cached URL, skip')
+        const msg = '[1] no cached URL, skip'
+        log.push(msg); console.info(`[probe] step ${msg}`)
       }
 
       // ─── [1.5] current origin（浏览器模式）──────────────
@@ -186,33 +205,40 @@ function createProbe() {
       // window.location.origin 就是 API 反代的根（agent-tool-host 代理 /api/*）。
       // APK 模式下 protocol = 'file:' / 'capacitor:' → 跳过，走 [2] loopback。
       if (typeof window !== 'undefined' && window.location) {
-        const origin = window.location.origin
         const proto = window.location.protocol
         const isHttp = proto === 'http:' || proto === 'https:'
         const isLoopbackUrl = /^https?:\/\/(127\.0\.0\.1|localhost|0\.0\.0\.0)(:\d+)?$/i.test(origin)
         if (isHttp && !isLoopbackUrl && origin !== DEFAULT_API_BASE_URL) {
-          log.push(`[1.5] try current origin: ${origin}`)
+          const msg = `[1.5] try current origin: ${origin}`
+          log.push(msg); console.info(`[probe] step ${msg}`)
           const r = await probeHealth(origin)
-          log.push(`[1.5] result: ok=${r.ok} latency=${r.latencyMs}ms err=${r.err || '-'}`)
+          const rmsg = `[1.5] result: ok=${r.ok} latency=${r.latencyMs}ms err=${r.err || '-'}`
+          log.push(rmsg); console.info(`[probe] step ${rmsg}`)
           if (r.ok) {
             // current origin 是反代目标，不是真正的后端地址 → lanAccess 显式置 null
             return commit(origin, null, 'current-origin', log, t0)
           }
         } else {
-          log.push(`[1.5] skip (proto=${proto} origin=${origin})`)
+          const msg = `[1.5] skip (proto=${proto} origin=${origin} isHttp=${isHttp} isLoopbackUrl=${isLoopbackUrl})`
+          log.push(msg); console.info(`[probe] step ${msg}`)
         }
       } else {
-        log.push('[1.5] no window.location, skip')
+        const msg = '[1.5] no window.location, skip'
+        log.push(msg); console.info(`[probe] step ${msg}`)
       }
 
       // ─── [2] loopback 探测 ─────────────────────────────
-      log.push(`[2] try loopback: ${DEFAULT_API_BASE_URL}`)
-      const lb = await probeHealth(DEFAULT_API_BASE_URL)
-      log.push(`[2] result: ok=${lb.ok} latency=${lb.latencyMs}ms err=${lb.err || '-'}`)
-      if (lb.ok) {
-        // 拿到 LAN 候选（用于本轮其它探测 + UI 展示）
-        const lanAccess = await fetchLanCandidates(DEFAULT_API_BASE_URL)
-        return await expandWithLanCandidates(DEFAULT_API_BASE_URL, lanAccess, 'loopback', log, t0)
+      {
+        const msg = `[2] try loopback: ${DEFAULT_API_BASE_URL}`
+        log.push(msg); console.info(`[probe] step ${msg}`)
+        const lb = await probeHealth(DEFAULT_API_BASE_URL)
+        const rmsg = `[2] result: ok=${lb.ok} latency=${lb.latencyMs}ms err=${lb.err || '-'}`
+        log.push(rmsg); console.info(`[probe] step ${rmsg}`)
+        if (lb.ok) {
+          // 拿到 LAN 候选（用于本轮其它探测 + UI 展示）
+          const lanAccess = await fetchLanCandidates(DEFAULT_API_BASE_URL)
+          return await expandWithLanCandidates(DEFAULT_API_BASE_URL, lanAccess, 'loopback', log, t0)
+        }
       }
 
       // ─── [3] loopback 不通 → 试拉 LAN 候选 ─────────────
@@ -220,14 +246,21 @@ function createProbe() {
       // 这里退回到：如果 lastResult 有 lanAccess，复用它再试
       const prev = lastResult.value?.lanAccess
       if (prev && prev.addresses.length > 0) {
-        log.push(`[3] reuse lastResult.lanAccess (${prev.addresses.length} candidates)`)
+        const msg = `[3] reuse lastResult.lanAccess (${prev.addresses.length} candidates)`
+        log.push(msg); console.info(`[probe] step ${msg}`)
         return await tryLanCandidates(DEFAULT_API_BASE_URL, prev.addresses, guessPort(DEFAULT_API_BASE_URL), 'lan-candidate', log, t0)
       }
 
       // ─── [4] 真的没招了 ─────────────────────────────────
-      log.push('[4] no candidates available, all-failed')
-      lastError.value = 'all-candidates-failed'
-      throw new Error('all-candidates-failed')
+      const failMsg = '[4] no candidates available, all-failed'
+      log.push(failMsg); console.info(`[probe] step ${failMsg}`)
+      // 🆕 沙箱 mock 浏览器诊断：把整条 log 串成单行 error message 抛出
+      // 用户的 mock 浏览器无 Network 面板，agent 拿不到 fetch 细节——必须把 trace 透出
+      const trace = log.join(' | ')
+      const wrapped = new Error(`all-candidates-failed | trace: ${trace}`)
+      console.info(`[probe] FAIL ${wrapped.message}`)
+      lastError.value = wrapped.message
+      throw wrapped
     } finally {
       isProbing.value = false
     }
@@ -246,7 +279,8 @@ function createProbe() {
   ): Promise<ProbeResult> {
     // 如果没有 LAN 候选，直接返回 primary
     if (!lanAccess || lanAccess.addresses.length === 0) {
-      log.push('[expand] no lan candidates, commit primary')
+      const msg = '[expand] no lan candidates, commit primary'
+      log.push(msg); console.info(`[probe] step ${msg}`)
       return commit(primaryBase, lanAccess, primarySource, log, t0)
     }
     const port = guessPort(primaryBase)
@@ -256,7 +290,8 @@ function createProbe() {
       if (a === '127.0.0.1' || a === '::1' || a === 'localhost') return false
       return true
     })
-    log.push(`[expand] try ${candidates.length} lan candidates (port ${port})`)
+    const msg = `[expand] try ${candidates.length} lan candidates (port ${port})`
+    log.push(msg); console.info(`[probe] step ${msg}`)
     return await tryLanCandidates(primaryBase, candidates, port, primarySource, log, t0)
   }
 
@@ -273,16 +308,19 @@ function createProbe() {
   ): Promise<ProbeResult> {
     for (const addr of candidates) {
       const url = buildCandidateUrl(addr, port)
-      log.push(`[lan] try ${url}`)
+      const msg = `[lan] try ${url}`
+      log.push(msg); console.info(`[probe] step ${msg}`)
       const r = await probeHealth(url)
-      log.push(`[lan] result: ok=${r.ok} latency=${r.latencyMs}ms err=${r.err || '-'}`)
+      const rmsg = `[lan] result: ok=${r.ok} latency=${r.latencyMs}ms err=${r.err || '-'}`
+      log.push(rmsg); console.info(`[probe] step ${rmsg}`)
       if (r.ok) {
         // 拿 LAN 列表用于本次 commit（如果是从 fallback 进入的，手动补一份）
         const lanAccess = await fetchLanCandidates(url)
         return commit(url, lanAccess, 'lan-candidate', log, t0)
       }
     }
-    log.push(`[lan] all ${candidates.length} candidates failed, fallback to ${fallback}`)
+    const msg = `[lan] all ${candidates.length} candidates failed, fallback to ${fallback}`
+    log.push(msg); console.info(`[probe] step ${msg}`)
     // 走到这里：所有 LAN 都死，但 loopback 是通的——保留 loopback 结果
     // 若连 loopback 都不通，caller 早已抛错，不会进入本函数
     const lanAccess = await fetchLanCandidates(fallback)
@@ -310,8 +348,10 @@ function createProbe() {
     lastResult.value = result
     // 同步到 encv.ts 的 localStorage（保持单一数据源）
     setApiBaseUrl(baseUrl)
-    // console.debug 而非 console.error —— 探测成功是预期路径，不应污染红色错误日志
-    console.debug('[useApiBaseProbe] commit', { baseUrl, source, latencyMs })
+    // 🆕 沙箱 mock 浏览器日志（§九.4 规范）：用 console.info 而不是 console.debug
+    // —— DevLogs 默认隐藏 debug，mock 浏览器看不到。
+    // commit 成功 = 探测链找到可用 baseUrl，这是用户报告"preview 不工作"时的关键信号。
+    console.info(`[probe] commit baseUrl=${baseUrl} source=${source} latency=${latencyMs}ms`)
     return result
   }
 

@@ -432,7 +432,150 @@ start-preview.sh 是个普通 bash 脚本，没有 `OpenPreview` 工具的访问
 
 ---
 
-## 九、跨文档引用
+## 九、Preview 链路实际可达性矩阵（2026-06-08 实战实测）
+
+> 沙箱 dev 链路：外网浏览器 → `:16000` (agent-tool-host) → `:16666` (preview-gateway) → `:8100` (vite) / `:2025` (encv-go)
+> 本节是 §八 "只能注册一个端口 / 路径" 的**实测补充**——明确告诉 agent "哪些能成 / 哪些必失败"。
+
+### 9.1 实测可达性矩阵
+
+| 调用方 | 目标路径 | `:16000` 是否转发到 `:16666` | 经 gateway 后真正落点 | 状态 |
+|--------|----------|----------------------------|---------------------|------|
+| 浏览器加载 SPA | `/` | ✅ | `:8100` index.html | ✅ 200 |
+| Vite 拉模块 | `/@vite/client` | ✅ | `:8100` /@vite/client | ✅ 200（hmr:false 也注入脚本） |
+| Vite 拉源码 | `/src/main.ts` | ✅ | `:8100` /src/main.ts | ✅ 200 |
+| 前端 fetch API | `/api/config` | ❌ **不转发** | — | ❌ CORS/404/网络错 |
+| 前端 fetch API | `/api/service-guard` | ❌ **不转发** | — | ❌ 同上 |
+| WebSocket | `/ws` | ❌ **不支持升级** | — | ❌ readyState=3 |
+| Vite HMR client | `@vite/client` 内的 WS URL | ❌ | — | ❌ `[vite] failed to connect to websocket` |
+
+**关键发现**：
+- **agent-tool-host (:16000) 只把注册时声明的根路径 `/` 转发到注册端口**，子路径 `/api/*` `/openlist-ui/*` 等都**不转发**——这是 §八 "OpenPreview 只能注册一个端口（默认 / 路径）" 的实操结果。
+- **WebSocket 升级不支持**——规则 §三 + [useFrontendLogs.ts:75-78](file:///workspace/app/encv-mobile/src/composables/useFrontendLogs.ts#L75-L78) 已记录。
+- **vite.config.ts 的 `server.hmr = false`** + htmlRewritePlugin 移除 `@vite/client` 脚本——Vite HMR client 的 WS 也连不上，但这是预期降级，**不影响应用运行**。
+
+### 9.2 后果：useApiBaseProbe 全失败
+
+`useApiBaseProbe.ts` 的探测链：
+1. `[1] cached` —— localStorage 缓存
+2. `[1.5] current origin` —— `window.location.origin`（`<public-url>/api/config`）
+3. `[2] loopback` —— `http://127.0.0.1:2025`
+4. `[3] LAN` —— 通过 baseUrl 拉 `/api/network/lan-access`
+
+在沙箱浏览器里：
+- `[1]` 如果用户上次缓存的 URL 是有效 trae 域名，**可能** 命中
+- `[1.5]` `<public-url>/api/config` → **不转发** → fetch 报 `TypeError: Failed to fetch` 或 CORS 错
+- `[2]` `127.0.0.1:2025` 在用户机器上根本不存在 → fetch 报 `net::ERR_CONNECTION_REFUSED`
+- `[3]` 同 [2]，LAN 候选为 null
+
+→ `all-candidates-failed` 抛出 → `App.vue:33 mounted hook` 捕获 → `[error] [App] Vue error captured: Error: all-candidates-failed`。
+
+### 9.3 备用方案（按改动量从小到大）
+
+#### 方案 X：把 :2025 单独注册成外网入口（**最简单**）
+
+让 OpenPreview 注册 `:2025` 而非 `:16666`。外网用户访问 trae 域名 → :16000 → :2025 (encv-go)。然后前端用绝对 URL `https://run-agent-...trae.cn/api/...`（这时代理自动适配到 :2025）。
+
+**代价**：encv-go 必须自带静态文件 serve（embed 前端 dist）—— 但**沙箱 dev 模式不 build**，所以 vite :8100 的 HMR 体验就没了。
+
+#### 方案 Y：方案 C 改造 —— 把 :2025 (encv-go) 注册，gateway (:16666) 只在沙箱内做反代（**不推荐**）
+
+让 preview-gateway 仅作"沙箱内部使用"的反向代理，外部通过注册的 :2025 走 API。浏览器 fetch `https://.../api/...` 实际代理到 :2025。但 SPA 静态资源要由 encv-go serve（Vite 不参与），失去 HMR。
+
+#### 方案 Z：accept & document 当前行为（**当前做法**）
+
+承认沙箱浏览器模式下 API + WS 不可用，**让前端在 probe 失败时优雅降级**：
+- 不要 throw 阻塞 `App.vue mounted`
+- 改用 `useUiErrorBanner` 显示 "API 连接失败，请到 Settings 手动设置服务器地址"
+- WS 失败时静默重试（已部分实现）
+
+**代价**：浏览器模式下 `Files` / `Tasks` / `Settings` 等所有依赖 API 的功能不可用。用户要么切到本地 dev (`pm2 start ...` + `vite --port 8100` + 自访问 `:8100`)，要么用 APK 真机调试。
+
+### 9.4 调试手段：mock 浏览器（**无 Network 面板**）
+
+> **沙箱架构硬约束（2026-06-08 用户承认）：**
+> 用户**只能在 agent-tool-host 提供的指定模拟浏览器里**预览（OpenPreview 工具激活）。
+> 该浏览器：
+> - ✅ **可以** 刷新页面（Cmd+R / Ctrl+R）
+> - ✅ **可以** 查看 console 日志（DevLogs tab 可见）
+> - ❌ **没有** 完整 DevTools
+> - ❌ **没有** Network 面板（看不到 fetch 请求/响应 / status / header / CORS 错）
+> - ❌ **没有** Application / Sources / Performance 面板
+>
+> → **诊断时只能靠 console 日志**，所有关键路径必须把 trace 打到 console。
+
+#### 9.4.1 前端必做的日志规范
+
+> 凡是 agent 排查时需要看到的链路，**必须** `console.info` 一行带 `[probe]` 前缀的日志。
+> 全部走 `console.info`（**不**用 debug——DevLogs 默认隐藏 debug）。
+
+`useApiBaseProbe` 每次探测的日志模板（已落到 `useApiBaseProbe.ts`）：
+
+| 时机 | console.info 模板 | 示例 |
+|------|------------------|------|
+| 入口 | `[probe] start origin=<o> cached=<c> force=<f>` | `[probe] start origin=https://run-agent-xxx.trae.cn cached=(empty) force=false` |
+| [1] 缓存 | `[probe] step [1] try cached: <url>` / `[probe] step [1] result: ok=false err=...` | `[probe] step [1] no cached URL, skip` |
+| [1.5] current origin | `[probe] step [1.5] try current origin: <o>` / `result: ok=false err=non-JSON response (content-type: "text/html")` | — |
+| [2] loopback | `[probe] step [2] try loopback: <url>` / `result: ok=false err=...` | `[probe] step [2] result: ok=false latency=12ms err=TypeError: Failed to fetch` |
+| [expand] | `[probe] step [expand] try N lan candidates (port P)` | — |
+| [lan] 每个候选 | `[probe] step [lan] try <url>` / `result: ok=false err=...` | — |
+| 命中 / 提交 | `[probe] commit baseUrl=<u> source=<s> latency=<L>ms` | `[probe] commit baseUrl=https://run-agent-xxx.trae.cn source=current-origin latency=143ms` |
+| 全部失败 | `[probe] step [4] no candidates available, all-failed` + `[probe] FAIL all-candidates-failed \| trace: ...` | — |
+
+**用户在 mock 浏览器看到 N 条 `[probe]` 日志（典型 6-13 条）= 一次完整探测链的 trace。**
+
+#### 9.4.2 错误抛出规范
+
+**❌ 错误**：只 throw 一个 `"all-candidates-failed"`——mock 浏览器没有 Network 面板，agent 拿不到 fetch 细节。
+
+**✅ 正确**：把整条 `log[]` 数组串成单行 error message 抛出：
+
+```ts
+const trace = log.join(' | ')
+throw new Error(`all-candidates-failed | trace: ${trace}`)
+```
+
+这样上游 `App.vue` 捕获后能直接看到 `[1] no cached URL, skip | [1.5] result: ok=false err=non-JSON... | [2] result: ok=false err=TypeError: Failed to fetch | [4] no candidates available, all-failed`。
+
+#### 9.4.3 其它 API 调用失败的日志规范
+
+| 场景 | 日志模板 | 等级 |
+|------|---------|------|
+| 关键 API 失败 | `[api] POST /api/chat failed: status=502 content-type=text/html body=<前 200 字符>` | `console.error` |
+| WebSocket 断连 | `[ws] disconnect code=1006 reason= wsUrl=<url> readyState=3` | `console.warn` |
+| WebSocket 升级失败 | `[ws] upgrade failed: 沙箱 agent-tool-host (:16000) 不支持 WS 升级（见 §九.1）` | `console.warn` |
+| mock 浏览器无 network 警告 | `[browser] mock browser has no DevTools Network panel — see trae_web_sandbox_network.md §9.4` | `console.info`（首次启动时打一次） |
+
+#### 9.4.4 agent 必做
+
+- 看到 `[error]` 开头的日志 → 在用户报告里贴完整堆栈 + 上下文 `[probe]` 日志
+- 不要假设 "看到 502 = 反代挂了"——可能是 CORS / 网络错 / Content-Type 不符 / 401 鉴权
+- 如果 `useApiBaseProbe` 没打 `[probe]` 日志 → 用户浏览器是**旧代码**，让用户硬刷新（Cmd+Shift+R / Ctrl+F5）
+- mock 浏览器报错时**不要**让用户"开 DevTools 看 Network"——**没有 DevTools**，只能让他把 console 日志贴过来
+- 用户报"preview 不工作"时第一反应应是"在 mock 浏览器 DevLogs tab 找到 [probe] 行，贴过来"
+
+### 9.5 沙箱外 / 本地 dev 的真链路
+
+| 环境 | 前端访问地址 | API 地址 | WS 地址 |
+|------|--------------|----------|---------|
+| **沙箱浏览器（OpenPreview）** | `https://run-agent-...trae.cn/` | ⚠️ 同源 `/api/*` 不可达（见 9.1） | ⚠️ `/ws` 不可达 |
+| **沙箱本地（PM2 启 :16666）** | `http://localhost:16666/` | `http://localhost:16666/api/*` ✅ | `ws://localhost:16666/ws` ✅ |
+| **沙箱 dev 直连 vite** | `http://localhost:8100/` | ❌ vite 不代理 /api（设计决策 D9） | ❌ vite HMR 关 |
+| **APK 真机 + adb reverse** | `capacitor://localhost` | `http://127.0.0.1:2025` ✅ | `ws://127.0.0.1:2025/ws` ✅ |
+
+→ **沙箱 dev 模式下唯一完整的端到端调试链路是「沙箱本地访问 :16666」**——agent 在沙箱内跑 `curl http://localhost:16666/__gateway/health` 等价于"完整功能可用"。**OpenPreview 仅用于给用户看 UI 截图 / 视觉验收，不能用于功能调试**。
+
+### 9.6 绝对禁止
+
+- ❌ 假设 OpenPreview 模式下能完整功能调试——见 9.5
+- ❌ 让前端 throw 阻塞 `mounted` hook 不带 console.info 兜底——见 9.4
+- ❌ 试图注册多个 OpenPreview——§八.4 已禁止，agent-tool-host 用最后一次的端口
+- ❌ 让 vite 加回 `/api` proxy——决策 D9 已固化
+- ❌ 在 mock 浏览器里让用户"开 DevTools 看 Network"——**没有 DevTools**
+
+---
+
+## 十、跨文档引用
 
 | 主题 | 文档 |
 |------|------|
