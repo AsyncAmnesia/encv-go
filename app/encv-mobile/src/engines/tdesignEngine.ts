@@ -1,49 +1,47 @@
 /**
- * tdesignEngine.ts - TDesign Chat 渲染引擎
+ * tdesignEngine.ts - 腾讯 TDesign 视觉风格渲染引擎
  *
- * 按官方文档集成：https://tdesign.tencent.com/chat/getting-started
- * 使用 Chatbot 组件 + chatServiceConfig({ protocol: 'agui', endpoint })，
- * 让 TDesign 自行通过 SSE 连接后端 AG-UI 端点，解析事件流并渲染消息。
+ * 数据源：通过 useAgent 共享的 AG-UI 解析后的 Message[]（不自行消费 SSE）
+ * 渲染层：本引擎用 TDesign 视觉组件渲染 Message[]
  *
- * 前置条件（在 main.ts 中完成）：
- *   1. import TDesignChat from '@tdesign-vue-next/chat'
- *   2. import '@tdesign-vue-next/chat/es/style/index.css'
- *   3. app.use(TDesignChat)
+ * 协议：AG-UI（与 Default / CopilotKit 风格引擎共享同一份数据）
  *
- * 输入框通过 CSS 隐藏（Chatbot 无 showInput prop），实际输入由宿主
- * AgentChat.vue 的 footer 统一控制。
+ * 重构说明：早期版本直接使用 @tdesign-vue-next/chat 的 <Chatbot> 组件，
+ * 但 <Chatbot> 内置独立的 ChatService 实例，会自己再消费一份 SSE 流，
+ * 与 useAgent 共享数据源的架构冲突。重构后改为纯渲染层——只展示
+ * useAgent 提供的 messages: readonly Message[]，所有 UI 元素（消息
+ * 列表 / thinking 指示器 / tool_call 卡片）由 TDesignChatView 用
+ * 通用 TDesign 组件（ChatList / ChatItem / ChatThinking）组合而成。
  *
- * 文档: https://tdesign.tencent.com/chat/agui
- * SPEC: /workspace/.trae/specs/multi-engine-chat-architecture/ Phase 4
+ * SPEC: /workspace/.trae/specs/agui-real-llm-path-completion/ Phase 4
  */
 
-import { h, type VNode } from 'vue'
+import { h } from 'vue'
+import type { VNode } from 'vue'
 import type { ChatEngine, EngineRenderProps } from '@/composables/chatEngine'
 import { registerEngine } from '@/composables/chatEngine'
 import TDesignChatView from './TDesignChatView.vue'
 
-/**
- * 创建 TDesign 引擎实例
- */
 export function createTDesignEngine(): ChatEngine {
   return {
     id: 'tdesign',
-    name: 'TDesign Chat',
-    description: '腾讯 TDesign Chat 组件库（AG-UI 协议）',
+    name: 'TDesign 风格',
+    description: '腾讯 TDesign 视觉风格的聊天渲染',
     supportsA2UI: false,
 
-    renderMessages(_props: EngineRenderProps): VNode {
-      // TDesign Chatbot 自行管理 SSE 连接和消息渲染，
-      // 不需要外部传入 messages。
-      return h(TDesignChatView)
+    /**
+     * 渲染消息列表区域 —— 纯 VNode 透传
+     * 把 EngineRenderProps 全部 props 传给 TDesignChatView
+     * （消息 / 状态 / 回调等所有上下文都从宿主来）
+     */
+    renderMessages(props: EngineRenderProps): VNode {
+      return h(TDesignChatView, { ...props })
     },
 
     destroy(): void {
-      const style = document.getElementById('tdesign-chat-hide-sender')
-      if (style) style.remove()
+      // 无需清理：TDesignChatView 是无状态纯组件
     },
   }
 }
 
-// ── 自动注册到 EngineRegistry ──
 registerEngine('tdesign', createTDesignEngine)

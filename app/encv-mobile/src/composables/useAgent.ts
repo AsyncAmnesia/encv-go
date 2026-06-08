@@ -21,13 +21,14 @@
 import { ref, computed } from 'vue'
 import { showToast } from '@/composables/useToast'
 import { getDeviceIdSync } from './useDeviceId'
-import { getAgentApiBase } from './useAgentApiBase'
+import { getAgentApiBase, shouldSendAGUIHeader } from './useAgentApiBase'
 import {
   serializeAttachments,
   type Attachment,
   type MessageContentPart,
 } from './useAttachments'
 import { useContextUsage } from './useContextUsage'
+import { processAGUISSE as processAGUISSEImpl } from './useAGUIParser'
 
 // =============================================================================
 // 类型定义（与 agent Go 服务契约对齐）
@@ -69,6 +70,16 @@ export type AgentEventType =
   // Mock 模式预设清空信号：后端在 stream_end 时推，前端 MockPresetBar 收到
   // 后清空 chip。reason 字段仅做调试。
   | 'mock_presets_clear'
+  // ── AG-UI 协议新增内部类型（useAGUIParser 归一化输出） ──
+  // tool_call_args：AG-UI TOOL_CALL_ARGS 事件归一化结果，携带 args 增量
+  // （arg 是 String，handleAgentEvent 把它追加到对应 tool_call.args 字段）
+  | 'tool_call_args'
+  // state_snapshot：AG-UI STATE_SNAPSHOT 事件归一化结果
+  // （会话级共享状态，前端暂不消费，仅做调试记录 + 持久化兜底）
+  | 'state_snapshot'
+  // messages_snapshot：AG-UI MESSAGES_SNAPSHOT 事件归一化结果
+  // （完整消息快照，用于断点续传对齐）
+  | 'messages_snapshot'
 
 /** 单个 mock 预设按钮契约（与后端 internal/server.MockPreset JSON 对应） */
 export interface MockPreset {
@@ -1171,7 +1182,47 @@ export function useAgent() {
    *   - morePending:   最后一个有意义事件是否为 stream_status.more_pending
    *                    （若 true 且 !streamEnded，runResumeChain 应继续下一轮）
    */
-  async function processSSE(stream: ReadableStream<Uint8Array> | null): Promise<{
+  /**
+   * SSE 协议分发器。
+   *
+   * 行为：
+   *   - protocol='agui'  → 走 AG-UI parser（composables/useAGUIParser.ts）
+   *   - protocol='legacy'→ 走原始自定义 SSE（保持原 processSSE 行为）
+   *
+   * 调用方（send / confirmTool / runResumeChain）从 response.headers 读
+   * `X-Agent-Protocol` 后再传入本函数：
+   *   - 'agui'  → useAGUIParser
+   *   - 缺失/其他值 → legacy
+   *
+   * 返回值结构 { received, streamEnded, morePending } 与原 processSSE 一致，
+   * 链式 resume / 错误处理路径不需要修改。
+   */
+  async function processSSE(
+    stream: ReadableStream<Uint8Array> | null,
+    protocol: 'agui' | 'legacy' = 'legacy',
+  ): Promise<{
+    received: boolean
+    streamEnded: boolean
+    morePending: boolean
+  }> {
+    if (protocol === 'agui') {
+      return processAGUISSEWithHandlers(stream)
+    }
+    return processLegacySSE(stream)
+  }
+
+  /**
+   * 原始自定义 SSE 事件流解析（AG-UI 未启用时的回退路径）。
+   *
+   * 行为与重构前完全一致：
+   *   - 逐行扫描 `data: ` 字段、尝试 JSON.parse
+   *   - sequence id 去重（rememberSequence）
+   *   - lastEventId 同步
+   *   - 原始事件日志（pushRawEvent + Task 27 DOM counter）
+   *   - 链式 resume 决策（lastStreamStatus = synced / more_pending）
+   *   - 流关闭后 finalize + 修正 status
+   */
+  async function processLegacySSE(stream: ReadableStream<Uint8Array> | null): Promise<{
     received: boolean
     streamEnded: boolean
     morePending: boolean
@@ -1295,6 +1346,58 @@ export function useAgent() {
       streamEnded,
       morePending: lastStreamStatus === 'more_pending',
     }
+  }
+
+  /**
+   * AG-UI 协议路径：包装 useAGUIParser.processAGUISSE 把
+   * 11 种 AG-UI 事件归一化为内部 AgentEvent，再走 handleAgentEvent。
+   *
+   * handlers 桥接：
+   *   - onEvent      → handleAgentEvent
+   *   - rememberSequence → useAgent 内部的去重闭包（与 legacy 共用）
+   *   - onRawEvent   → pushRawEvent (⑦ 区调试日志)
+   *   - onStreamEnd  → 复用 legacy 的 finalizeLastAssistant + status 修正
+   */
+  async function processAGUISSEWithHandlers(
+    stream: ReadableStream<Uint8Array> | null,
+  ): Promise<{ received: boolean; streamEnded: boolean; morePending: boolean }> {
+    return processAGUISSEImpl(stream, {
+      onEvent: (event) => {
+        // 与 processLegacySSE 一致：Task 27 调试 console.error
+        const dataSummary =
+          event.data == null
+            ? 'null'
+            : typeof event.data === 'string'
+              ? event.data.slice(0, 120)
+              : JSON.stringify(event.data).slice(0, 200)
+        console.error(
+          `[useAgent][AGUI] type=${event.type} data=${dataSummary}`,
+        )
+        handleAgentEvent(event)
+      },
+      rememberSequence: (id: number) => {
+        // 与 legacy 共用 rememberSequence 闭包（serverInstance 切换时会被清空）
+        return rememberSequence(id)
+      },
+      onRawEvent: (type: string, dataSummary: string, seq?: number | null) => {
+        pushRawEvent(type, dataSummary, seq ?? null)
+        // 同步 lastEventId（与 legacy 同形）
+        if (seq !== null && seq !== undefined && seq > lastEventId) {
+          lastEventId = seq
+        }
+      },
+      onStreamEnd: () => {
+        // 与 legacy onFinalize 行为一致
+        finalizeLastAssistant()
+        if (status.value === 'streaming') {
+          const hasPendingConfirm = messages.value.some((m) =>
+            m.tool_calls.some((tc) => tc.needsConfirm && tc.status === 'pending'),
+          )
+          status.value = hasPendingConfirm ? 'confirming' : 'idle'
+          saveState()
+        }
+      },
+    })
   }
 
   /**
@@ -1602,6 +1705,63 @@ export function useAgent() {
         }
         break
       }
+
+      // ====== AG-UI 协议新增事件类型（useAGUIParser 归一化输出） ======
+
+      case 'tool_call_args': {
+        // AG-UI TOOL_CALL_ARGS：把 args 增量追加到已存在的 tool_call.args 字段
+        // 找最后一条 assistant 消息里 id 匹配的 tool_call
+        try {
+          const payload = typeof event.data === 'string' ? JSON.parse(event.data) : (event.data as any)
+          if (!payload || typeof payload !== 'object' || !payload.id || typeof payload.argsDelta !== 'string') break
+          // 遍历所有 assistant 消息找到匹配的 tool_call（FIFO 顺序匹配，
+          // 保留 processSSE 阶段的 lastAssistant 选择语义）
+          for (let i = messages.value.length - 1; i >= 0; i--) {
+            const m = messages.value[i]
+            if (m.role !== 'assistant') continue
+            const tc = m.tool_calls.find((t) => t.id === payload.id)
+            if (tc) {
+              tc.args = (tc.args || '') + payload.argsDelta
+              break
+            }
+          }
+        } catch {
+          // 解析失败：忽略此增量 args（不破坏已存在的 tc.args）
+        }
+        break
+      }
+
+      case 'state_snapshot': {
+        // AG-UI STATE_SNAPSHOT：会话级共享状态，目前仅做调试记录 + 持久化兜底
+        try {
+          const payload = typeof event.data === 'string' ? JSON.parse(event.data) : (event.data as any)
+          if (typeof console.debug === 'function') {
+            const keys = payload && typeof payload === 'object' && payload.state && typeof payload.state === 'object'
+              ? Object.keys(payload.state)
+              : []
+            console.debug('[useAgent] agui state_snapshot keys:', keys)
+          }
+        } catch {
+          // 静默
+        }
+        break
+      }
+
+      case 'messages_snapshot': {
+        // AG-UI MESSAGES_SNAPSHOT：完整消息快照（断点续传对齐用）
+        // 当前实现：仅记录关键信息，不直接覆盖前端 messages（避免与本地编辑冲突）。
+        try {
+          const payload = typeof event.data === 'string' ? JSON.parse(event.data) : (event.data as any)
+          if (typeof console.debug === 'function') {
+            const count = payload && Array.isArray(payload.messages) ? payload.messages.length : 0
+            console.debug('[useAgent] agui messages_snapshot count:', count)
+          }
+        } catch {
+          // 静默
+        }
+        break
+      }
+
       default:
         // 未知 type 静默忽略
         break
@@ -1717,9 +1877,18 @@ export function useAgent() {
 
     try {
       console.debug('[useAgent] send() starting fetch to', `${AGENT_API_BASE}/api/chat`, 'mode=', mode)
+      // AG-UI 协议协商：根据 useAgentApiBase.shouldSendAGUIHeader() 决定
+      // 是否带 X-Agent-Protocol: agui header（默认 'auto' → 带）。
+      // 后端看到 header 后用 AG-UI parser 解析 LLM 响应；不带则按
+      // legacy 自定义 SSE 返回。
+      const sendAGUIHeader = shouldSendAGUIHeader()
+      const fetchHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(sendAGUIHeader ? { 'X-Agent-Protocol': 'agui' } : {}),
+      }
       const response = await fetch(`${AGENT_API_BASE}/api/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: fetchHeaders,
         body: JSON.stringify({
           sessionId: currentSessionId.value,
           model: activeModel.value,
@@ -1753,7 +1922,10 @@ export function useAgent() {
         mockScenario.value = response.headers.get('X-Mock-Scenario') ?? ''
       }
 
-      const result = await processSSE(response.body)
+      // 协议分发：根据后端响应 X-Agent-Protocol 决定走 AG-UI parser 还是 legacy
+      // response.headers 可能为 undefined（部分代理 / 测试 mock），用 ?. 兼容。
+      const responseProtocol = response.headers?.get('X-Agent-Protocol') === 'agui' ? 'agui' : 'legacy'
+      const result = await processSSE(response.body, responseProtocol)
 
       // 流结束但未收到任何事件 → 后端无响应
       if (!result.received) {
@@ -1926,9 +2098,14 @@ export function useAgent() {
 
     abortController = new AbortController()
     try {
+      // AG-UI 协议协商（与 send() 一致）
+      const sendAGUIHeader = shouldSendAGUIHeader()
       const response = await fetch(`${AGENT_API_BASE}/api/confirm`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(sendAGUIHeader ? { 'X-Agent-Protocol': 'agui' } : {}),
+        },
         body: JSON.stringify({
           sessionId: currentSessionId.value,
           toolCallId,
@@ -1947,7 +2124,9 @@ export function useAgent() {
         throw await buildHttpError(response, '/api/confirm')
       }
 
-      await processSSE(response.body)
+      // 协议分发
+      const responseProtocol = response.headers?.get('X-Agent-Protocol') === 'agui' ? 'agui' : 'legacy'
+      await processSSE(response.body, responseProtocol)
     } catch (e: any) {
       if (e?.name === 'AbortError') {
         console.debug('[useAgent] confirmTool aborted')
@@ -2017,12 +2196,15 @@ export function useAgent() {
       //   - status 切到非 streaming → 退出
       while (hopsLeft-- > 0) {
         const headerLastEventId = lastEventId > 0 ? String(lastEventId) : undefined
+        // AG-UI 协议协商（与 send() / confirmTool() 一致）
+        const sendAGUIHeader = shouldSendAGUIHeader()
         const response = await fetch(`${AGENT_API_BASE}/api/resume`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             // SSE 标准 Last-Event-ID：与 EventSource 协议一致
             ...(headerLastEventId ? { 'Last-Event-ID': headerLastEventId } : {}),
+            ...(sendAGUIHeader ? { 'X-Agent-Protocol': 'agui' } : {}),
           },
           body: JSON.stringify({
             sessionId: currentSessionId.value,
@@ -2037,7 +2219,10 @@ export function useAgent() {
           throw new Error(`HTTP ${response.status}`)
         }
 
-        const { received, streamEnded, morePending } = await processSSE(response.body)
+        // 协议分发：response.headers 可能为 undefined（部分代理 / 测试 mock），
+        // 用 ?. 兼容。后端正常响应总会带 X-Agent-Protocol header。
+        const responseProtocol = response.headers?.get('X-Agent-Protocol') === 'agui' ? 'agui' : 'legacy'
+        const { received, streamEnded, morePending } = await processSSE(response.body, responseProtocol)
 
         // 收尾判定
         if (streamEnded) break                  // 服务端显式收尾 → 退出

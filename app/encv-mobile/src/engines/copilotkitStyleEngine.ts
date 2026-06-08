@@ -1,13 +1,10 @@
 /**
- * copilotkitStyleEngine.ts - CopilotKit 风格聊天渲染引擎
+ * copilotkitStyleEngine.ts - CopilotKit 视觉风格渲染引擎
  *
- * 模仿 CopilotKit v1.50 的交互范式，用 Vue/Ionic 实现等效体验：
- * - 左侧固定 48px 头像区 + 右侧更宽内容区
- * - 工具调用卡片带渐变边框 + 左侧彩色竖条
- * - 底部水平滚动 Suggestions chip bar
- * - 消息出现 slide-up 过渡动画
+ * 数据源：通过 useAgent 共享的 AG-UI 解析后的 Message[]（不自行消费 SSE）
+ * 渲染层：本引擎用仿 CopilotKit 视觉组件渲染 Message[]
  *
- * SPEC: /workspace/.trae/specs/multi-engine-chat-architecture/ Phase 3 (Task 3.1-3.4)
+ * 协议：AG-UI（与 Default / TDesign 风格引擎共享同一份数据）
  */
 
 import { h } from 'vue'

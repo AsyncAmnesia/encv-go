@@ -897,7 +897,7 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 		// ═════════════════════════════════════════════════════
 		// 流式调用 LLM —— 文本实时转发给客户端，tool_calls 累积后处理
 		// ═════════════════════════════════════════════════════
-		streamCh, err := callOpenAIStream(c.Request.Context(), cfg, model, body.Temperature, loopMessages, openAITools)
+		streamCh, err := callOpenAIStream(c.Request.Context(), cfg, model, body.Temperature, loopMessages, openAITools, aguiMode)
 		if err != nil {
 			slog.Warn("agent: loop stream failed", "round", round+1, "error", err)
 			s.sendSSEEventSafe(c.Writer, flusher, "stream_error", map[string]interface{}{
@@ -1445,6 +1445,13 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 		return
 	}
 
+	// ════════════════════════════════════════════════════════════
+	// AG-UI 协议模式检测（Phase 2 真实 LLM 路径透传）
+	// ════════════════════════════════════════════════════════════
+	// 当请求携带 X-Agent-Protocol: agui header 或 ?protocol=agui query 时，
+	// 递归 streamChat 输出标准 AG-UI 格式。
+	aguiMode := c.GetHeader("X-Agent-Protocol") == "agui" || c.Request.URL.Query().Get("protocol") == "agui"
+
 	// ③ session 必须存在
 	sessID := body.SessionId
 	if sessID == "" {
@@ -1501,6 +1508,9 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 		Content:   "", // assistant 决策后 content 通常为空（被 tool_calls 替代）
 		ToolCalls: allToolCalls,
 	}
+	// 拷贝 tool 引用到本地（在 lock 内完成，避免 unlock 后 dangling）
+	toolCopy := *tool
+	sess.mu.Unlock()
 
 	// ⑧ accept / accept_for_session → 真实执行；decline → 注入 cancelled 假结果
 	var toolMsg chatMsg
@@ -1510,16 +1520,18 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 		if cfg.BaseURL == "" {
 			cfg.BaseURL = "https://api.openai.com"
 		}
-		toolMsg, _ = executeAndRecurse(c.Request.Context(), s, sess, cfg, *tool)
+		toolMsg, _ = executeAndRecurse(c.Request.Context(), s, sess, cfg, toolCopy)
 		// 推 tool_status: completed 给前端
 		statusMsg := "completed"
 		if body.Decision == "accept_for_session" {
 			// 同时记录到 session 授权表
-			sess.GrantedTools[tool.Function.Name] = true
+			sess.mu.Lock()
+			sess.GrantedTools[toolCopy.Function.Name] = true
+			sess.mu.Unlock()
 			statusMsg = "completed_granted" // 前端可显示不同文案
 		}
 		s.sendAndCache(sess, c.Writer, flusher, "tool_status", map[string]interface{}{
-			"id":     tool.ID,
+			"id":     toolCopy.ID,
 			"status": statusMsg,
 			"result": toolMsg.Content,
 		})
@@ -1528,17 +1540,18 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 		toolMsg = chatMsg{
 			Role:       "tool",
 			Content:    `{"cancelled": true, "reason": "user_declined"}`,
-			ToolCallID: tool.ID,
-			Name:       tool.Function.Name,
+			ToolCallID: toolCopy.ID,
+			Name:       toolCopy.Function.Name,
 		}
 		s.sendAndCache(sess, c.Writer, flusher, "tool_status", map[string]interface{}{
-			"id":     tool.ID,
+			"id":     toolCopy.ID,
 			"status": "cancelled",
 			"result": "user_declined",
 		})
 	}
 
 	// ⑨ 把 assistant + tool 消息追加到 session.messages
+	sess.mu.Lock()
 	sess.Messages = append(sess.Messages, assistantMsg, toolMsg)
 	// 清空 pending tools
 	sess.PendingTools = nil
@@ -1576,7 +1589,7 @@ func (s *Server) handleAgentConfirm(c *gin.Context) {
 			toolMeta[n] = t
 		}
 	}
-	s.streamChat(c.Request.Context(), c, cfg, sess.LastModel, sess.LastTemperature, finalMessages, sess, openAITools, toolMeta)
+	s.streamChat(c.Request.Context(), c, cfg, sess.LastModel, sess.LastTemperature, finalMessages, sess, openAITools, toolMeta, aguiMode)
 }
 
 // ─── POST /api/resume — SSE 断点续传（基于事件缓存重放） ──
@@ -1596,6 +1609,14 @@ func (s *Server) handleAgentResume(c *gin.Context) {
 			}
 		}
 	}
+
+	// ════════════════════════════════════════════════════════════
+	// AG-UI 协议模式检测（Phase 2 真实 LLM 路径透传）
+	// ════════════════════════════════════════════════════════════
+	// resume 路径目前只重放 EventCache，不直接调 streamChat。
+	// 但保留 aguiMode 检测以保持接口一致，并供未来重放逻辑参考。
+	_ = c.GetHeader("X-Agent-Protocol") == "agui" || c.Request.URL.Query().Get("protocol") == "agui"
+	// 注：resume 不走 streamChat，故暂不实际透传 aguiMode。
 
 	// ② session 必须存在
 	sessID := body.SessionId

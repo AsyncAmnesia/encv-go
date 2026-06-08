@@ -32,6 +32,57 @@
 import { getApiBaseUrl, DEFAULT_API_BASE_URL } from '@/api/encv'
 import { isNative } from '@/plugins/GoProcess'
 
+// =============================================================================
+// Agent Protocol Negotiation（useAgent.send() 据此决定是否带 X-Agent-Protocol 头）
+// =============================================================================
+//
+// AG-UI 协议协商：
+//   - 'agui'  → useAgent.send() 总是发 X-Agent-Protocol: agui header
+//   - 'legacy'→ 不发 header（用于回滚调试：后端按默认走 legacy 自定义 SSE）
+//   - 'auto'  → 同 'agui'（默认行为：始终带 header，未来加新协议时再扩）
+//
+// 持久化到 localStorage('encv-agent-protocol') 便于用户从 DevTools 切回 legacy 排查。
+
+export type AgentProtocol = 'agui' | 'legacy' | 'auto'
+
+const AGENT_PROTOCOL_STORAGE_KEY = 'encv-agent-protocol'
+
+function isAgentProtocol(v: string | null): v is AgentProtocol {
+  return v === 'agui' || v === 'legacy' || v === 'auto'
+}
+
+/** 获取当前协议选择（同步；带 localStorage 容错） */
+export function getAgentProtocol(): AgentProtocol {
+  try {
+    const v = localStorage.getItem(AGENT_PROTOCOL_STORAGE_KEY)
+    if (isAgentProtocol(v)) return v
+  } catch {
+    // SSR / 隐私模式 fallback
+  }
+  return 'auto'
+}
+
+/** 设置协议选择并持久化 */
+export function setAgentProtocol(protocol: AgentProtocol): void {
+  try {
+    if (protocol === 'auto') {
+      // 'auto' 视作默认值，不持久化（清掉旧值，恢复「总是 agui」默认行为）
+      localStorage.removeItem(AGENT_PROTOCOL_STORAGE_KEY)
+    } else {
+      localStorage.setItem(AGENT_PROTOCOL_STORAGE_KEY, protocol)
+    }
+  } catch {
+    // 静默失败
+  }
+}
+
+/** useAgent.send() 用：决定是否带 X-Agent-Protocol: agui header */
+export function shouldSendAGUIHeader(): boolean {
+  const p = getAgentProtocol()
+  // 'agui' 和 'auto' 都发 header；'legacy' 模式不发（用于回滚调试）
+  return p !== 'legacy'
+}
+
 /**
  * 解析 Agent API 基础 URL（同步）
  *
