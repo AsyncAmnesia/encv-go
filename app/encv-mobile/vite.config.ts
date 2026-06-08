@@ -264,12 +264,15 @@ export default defineConfig({
         // Vite 8 (rolldown) requires manualChunks to be a function, not an object.
         manualChunks(id: string) {
           if (id.includes('node_modules')) {
-            // Group major vendor libs into a single chunk
-            const vendorLibs = ['vue', 'vue-router', '@ionic/vue', '@ionic/vue-router']
-            for (const lib of vendorLibs) {
-              if (id.includes(lib)) return 'vendor'
+            if (id.includes('artplayer')) return 'vendor-artplayer'
+            if (id.includes('@tdesign') || id.includes('tdesign')) return 'vendor-tdesign'
+            if (id.includes('markstream') || id.includes('markdown-it')) return 'vendor-markdown'
+            if (id.includes('vue-virtual-scroller')) return 'vendor-virtual'
+            const coreLibs = ['vue', 'vue-router', '@ionic/vue', '@ionic/vue-router', 'ionicons']
+            for (const lib of coreLibs) {
+              if (id.includes(lib)) return 'vendor-core'
             }
-            return 'vendor' // fallback: all other node_modules
+            return 'vendor'
           }
         },
       },
