@@ -102,7 +102,19 @@ function createProbe() {
     try {
       const r = await fetchWithTimeout(url, PROBE_TIMEOUT_MS)
       const latencyMs = Math.round(performance.now() - t0)
-      if (!r.ok) return { ok: false, latencyMs, err: `status ${r.status}` }
+      if (!r.ok) {
+        // 🆕 沙箱 mock 浏览器诊断：401/403/5xx 都打响应头 + body 前 200 字符
+        // 用户浏览器无 Network 面板，agent 看不到 status 以外的细节
+        // —— 必须把 ct + body preview 一起塞 err 让用户能贴回报告
+        const ct = r.headers.get('content-type') || 'unknown'
+        const body = await r.text().catch(() => '')
+        const preview = body.slice(0, 200).replace(/\s+/g, ' ').trim()
+        return {
+          ok: false,
+          latencyMs,
+          err: `status ${r.status} ct=${ct} body="${preview}${body.length > 200 ? '...' : ''}"`,
+        }
+      }
       // ⚠️ 关键校验：响应必须 application/json
       //   - vite dev SPA fallback 对未匹配路径返回 <!DOCTYPE html>...，status 200
       //   - 若 current origin 是 http://localhost:8100（dev 直连 vite），

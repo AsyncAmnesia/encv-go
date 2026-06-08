@@ -437,24 +437,45 @@ start-preview.sh 是个普通 bash 脚本，没有 `OpenPreview` 工具的访问
 > 沙箱 dev 链路：外网浏览器 → `:16000` (agent-tool-host) → `:16666` (preview-gateway) → `:8100` (vite) / `:2025` (encv-go)
 > 本节是 §八 "只能注册一个端口 / 路径" 的**实测补充**——明确告诉 agent "哪些能成 / 哪些必失败"。
 
-### 9.1 实测可达性矩阵
+### 9.1 实测可达性矩阵（**2026-06-08 二次校正**）
+
+> 沙箱 dev 链路：外网浏览器 → `:16000` (agent-tool-host) → `:16666` (preview-gateway) → `:8100` (vite) / `:2025` (encv-go)
+> 本节是 §八 "只能注册一个端口 / 路径" 的**实测补充**——明确告诉 agent "哪些能成 / 哪些必失败"。
 
 | 调用方 | 目标路径 | `:16000` 是否转发到 `:16666` | 经 gateway 后真正落点 | 状态 |
 |--------|----------|----------------------------|---------------------|------|
 | 浏览器加载 SPA | `/` | ✅ | `:8100` index.html | ✅ 200 |
 | Vite 拉模块 | `/@vite/client` | ✅ | `:8100` /@vite/client | ✅ 200（hmr:false 也注入脚本） |
 | Vite 拉源码 | `/src/main.ts` | ✅ | `:8100` /src/main.ts | ✅ 200 |
-| 前端 fetch API | `/api/config` | ❌ **不转发** | — | ❌ CORS/404/网络错 |
-| 前端 fetch API | `/api/service-guard` | ❌ **不转发** | — | ❌ 同上 |
-| WebSocket | `/ws` | ❌ **不支持升级** | — | ❌ readyState=3 |
-| Vite HMR client | `@vite/client` 内的 WS URL | ❌ | — | ❌ `[vite] failed to connect to websocket` |
+| **前端 fetch API** | **`/api/config`** | ✅ **转发**（agent-tool-host 日志确认） | `:2025` encv-go | ✅ 200（沙箱内 curl 复测） |
+| **前端 fetch API** | **`/api/service-guard`** | ✅ **转发** | `:2025` encv-go | ✅ 200 |
+| **WebSocket** | **`/ws`** | ✅ **转发** | `:2025` encv-go | ⚠️ **转发但握手后 WS 协议可能不升级成功**——见 §九.1.1 |
+| Vite HMR client | `@vite/client` 内的 WS URL | ✅ | `:8100` WS 端 | ❌ `[vite] failed to connect to websocket`（预期降级，hmr:false） |
 
-**关键发现**：
-- **agent-tool-host (:16000) 只把注册时声明的根路径 `/` 转发到注册端口**，子路径 `/api/*` `/openlist-ui/*` 等都**不转发**——这是 §八 "OpenPreview 只能注册一个端口（默认 / 路径）" 的实操结果。
-- **WebSocket 升级不支持**——规则 §三 + [useFrontendLogs.ts:75-78](file:///workspace/app/encv-mobile/src/composables/useFrontendLogs.ts#L75-L78) 已记录。
-- **vite.config.ts 的 `server.hmr = false`** + htmlRewritePlugin 移除 `@vite/client` 脚本——Vite HMR client 的 WS 也连不上，但这是预期降级，**不影响应用运行**。
+**关键更正**（2026-06-08 实测推翻 §九 v1 假设）：
+- ❌ **错误假设**（§九 v1 表格曾写）："agent-tool-host (:16000) 只把 `/` 转发到注册端口，子路径 `/api/*` 不转发"
+- ✅ **实测结论**：agent-tool-host **转发所有请求**到 16666，由 preview-gateway 按路由表分发
+  - agent-tool-host 日志：`[preview-proxy] Proxying /api/config to port 16666` ✅
+  - agent-tool-host 日志：`[preview-proxy] Proxying /ws to port 16666` ✅
+  - 沙箱内 `curl :16000/api/config` / `curl :16666/api/config` / `curl :2025/api/config` **三段都 200**
+- **但 401 偶发**：用户浏览器 trace 出现 `[1.5] result: ok=false err=status 401`，latency=339ms（外网 RTT，非超时）
+  - 401 不是 encv-go 返的（`handleGetConfigGin` 只返 200/404/500，无 auth 路径，详见 [internal/server/server_config_api.go:19](file:///workspace/internal/server/server_config_api.go#L19-L50)）
+  - 401 不是 preview-gateway 返的（无 auth 中间件，详见 [app/preview-gateway/src/server.ts](file:///workspace/app/preview-gateway/src/server.ts)）
+  - agent-tool-host 日志**没有** 401 / Unauthorized 记录
+  - 推测：trae 域名外网调用路径上 agent-tool-host 偶发 session/cookie 缺失返回 401，loopback curl 不触发
+  - 改进：useApiBaseProbe 现在会把 401 响应的 `content-type` + `body preview` 一起塞进 err，让用户在 mock 浏览器能看到 401 响应到底是 trae auth 页还是 encv-go 错误
 
-### 9.2 后果：useApiBaseProbe 全失败
+#### 9.1.1 WebSocket 升级细节（2026-06-08 实测）
+
+- agent-tool-host **接受** WS upgrade 请求并转发到 16666（日志确认）
+- 16666 端 `server.on('upgrade', ...)` 用 `http-proxy.ws()` 转发到 2025
+- 但用户浏览器 trace 仍持续报 `[ENCV-WS] WebSocket error: readyState=3`——
+  - 可能是 trae 域 TLS termination + WS upgrade 时序问题
+  - 可能是 encv-go 端 WS handler 拒绝（业务层 close）
+  - **不可修复**——这是沙箱架构 + 业务 WS 协议组合决定的硬约束
+- 应对：`useWebSocket` 已有 scheduleReconnect / heartbeat 机制，前端**只显示离线状态**，不 throw 阻塞 UI
+
+### 9.2 后果：useApiBaseProbe 全失败链路（2026-06-08 校正版）
 
 `useApiBaseProbe.ts` 的探测链：
 1. `[1] cached` —— localStorage 缓存
@@ -462,13 +483,22 @@ start-preview.sh 是个普通 bash 脚本，没有 `OpenPreview` 工具的访问
 3. `[2] loopback` —— `http://127.0.0.1:2025`
 4. `[3] LAN` —— 通过 baseUrl 拉 `/api/network/lan-access`
 
-在沙箱浏览器里：
-- `[1]` 如果用户上次缓存的 URL 是有效 trae 域名，**可能** 命中
-- `[1.5]` `<public-url>/api/config` → **不转发** → fetch 报 `TypeError: Failed to fetch` 或 CORS 错
-- `[2]` `127.0.0.1:2025` 在用户机器上根本不存在 → fetch 报 `net::ERR_CONNECTION_REFUSED`
-- `[3]` 同 [2]，LAN 候选为 null
+**沙箱浏览器实际表现**（用户 2026-06-08 trace）：
 
-→ `all-candidates-failed` 抛出 → `App.vue:33 mounted hook` 捕获 → `[error] [App] Vue error captured: Error: all-candidates-failed`。
+| 步骤 | 用户看到 | 真实原因 |
+|------|---------|---------|
+| `[1] no cached URL, skip` | 第一次访问 localStorage 空 → skip | 正常 |
+| `[1.5] try current origin: https://run-agent-xxx.trae.cn` | 触发 | fetch 发出 |
+| **`[1.5] result: ok=false err=status 401`** | **外网 trae 域名偶发 401** | **agent-tool-host 转发后 trae 网关层 401（loopback curl 不复现）** |
+| `[2] try loopback: http://127.0.0.1:2025` | 触发 | 浏览器在用户机器上，127.0.0.1:2025 不存在 |
+| `[2] result: ok=false err=Failed to fetch` | 浏览器端网络错 | net::ERR_CONNECTION_REFUSED |
+| `[4] all-candidates-failed` | 抛出 | — |
+
+→ `App.vue:33 mounted hook` 捕获 → `[error] [App] Vue error captured: Error: all-candidates-failed | trace: ...`（**新版已把 trace 透出，agent 能看到失败在哪一步**）。
+
+**与之前假设的关键区别**：
+- ❌ **旧假设**（§九 v1）："`[1.5]` 因为 agent-tool-host 不转发 /api/* 而失败"
+- ✅ **新事实**：agent-tool-host **转发**了 /api/*；偶发 401 是 trae 网关层的问题（推测 session/cookie 缺失或 rate-limit）
 
 ### 9.3 备用方案（按改动量从小到大）
 
