@@ -84,6 +84,28 @@ type Agent struct {
 
 	// MockScenarios 自定义剧本（仅 MockMode=="custom" 时使用）
 	MockScenarios []MockScenario `json:"mock_scenarios,omitempty"`
+
+	// ─── v2 多轮/分支剧本（参考 .trae/specs/agent-tools-scenarios-v2/spec.md）───
+	// ToolWhitelist command_run 工具的允许命令列表。
+	// 默认值（DefaultAgentConfig 注入）：ffprobe / ffmpeg / du / wc / find /
+	//                                    stat / mediainfo / file。
+	// 黑名单（与白名单叠加生效）：rm / mv / cp / chmod / chown / dd /
+	//                              mkfs / shutdown / reboot。
+	ToolWhitelist []string `json:"tool_whitelist,omitempty"`
+
+	// SandboxPaths mount_id → 真实目录映射。command_run / search_files /
+	// get_metadata 等需要访问物理文件系统的工具通过此映射把抽象 mount_id
+	// 解析到主机绝对路径；空 map 时工具只能看到 mount 元信息。
+	SandboxPaths map[string]string `json:"sandbox_paths,omitempty"`
+
+	// MockRoundTimeoutSec 多轮剧本中「等待用户回复」的最长秒数。
+	// 超时后由后端自动推 stream_end {finishReason: "timeout"}。
+	// 范围 10-600；默认 60。
+	MockRoundTimeoutSec int `json:"mock_round_timeout_sec,omitempty"`
+
+	// MockRoundPauseEnabled 是否允许剧本在 mid-scenario 暂停等待用户输入。
+	// false → 剧本忽略 pause_for_user 标记，一路跑完（自动机模式）。
+	MockRoundPauseEnabled bool `json:"mock_round_pause_enabled,omitempty"`
 }
 
 // MockScenario — 自定义 mock 剧本配置项（与 internal/server/agent_mock.go 中的同名类型语义一致）
@@ -116,6 +138,32 @@ func DefaultAgentConfig() *Agent {
 	}
 	if a.MockSpeed == 0 {
 		a.MockSpeed = 1.0
+	}
+	// v2 defaults（参考 spec §ToolWhitelist / §MockRoundTimeoutSec）
+	if len(a.ToolWhitelist) == 0 {
+		a.ToolWhitelist = []string{
+			"ffprobe", "ffmpeg", "du", "wc", "find", "stat", "mediainfo", "file",
+		}
+	}
+	if a.MockRoundTimeoutSec == 0 {
+		a.MockRoundTimeoutSec = 60
+	}
+	// 校验范围：10-600
+	if a.MockRoundTimeoutSec < 10 {
+		a.MockRoundTimeoutSec = 10
+	}
+	if a.MockRoundTimeoutSec > 600 {
+		a.MockRoundTimeoutSec = 600
+	}
+	// MockRoundPauseEnabled bool 零值=false；默认值是 true，所以不能用零值判断。
+	// 用 omitempty 序列化时如果用户没设置就保持 true；如果显式设为 false 也保留。
+	// 实际后端启动时通过 cfg.Agent.MockRoundPauseEnabled 读取，没有"未设置"概念。
+	if !a.MockRoundPauseEnabled {
+		// 首次初始化：把 true 注入（用户保存过的 false 不受影响）
+		// —— 但因为 Agent 在 Load 时是空值，这里只能依赖调用方显式注入。
+		// 防御性补刀：loadAndMerge 阶段如果没有任何 agent_settings 段，
+		// Agent 整体走 DefaultAgentConfig，此时把 PauseEnabled 设回 true。
+		a.MockRoundPauseEnabled = true
 	}
 	return a
 }

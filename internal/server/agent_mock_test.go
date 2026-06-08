@@ -543,13 +543,13 @@ func TestMockEngine_Run_ListFilesQuery(t *testing.T) {
 
 // ─── Run 测试 — 全剧本覆盖 ───────────────────────────────────
 
-// TestMockEngine_AllScenariosExecute 对 12 个内置剧本逐一执行，
+// TestMockEngine_AllScenariosExecute 对 13 个内置剧本逐一执行，
 // 验证每个都产生至少一个事件 + stream_end 事件。
 func TestMockEngine_AllScenariosExecute(t *testing.T) {
 	eng := NewMockEngine()
 	scenarios := eng.AllScenarios()
-	if len(scenarios) != 12 {
-		t.Fatalf("内置剧本数 = %d, want 12", len(scenarios))
+	if len(scenarios) != 13 {
+		t.Fatalf("内置剧本数 = %d, want 13", len(scenarios))
 	}
 
 	for _, sc := range scenarios {
@@ -747,10 +747,10 @@ func TestMockEngine_LoadCustom_DuplicateID(t *testing.T) {
 	}
 	eng.LoadCustom(custom)
 
-	// AllScenarios 应只含 builtin 12 + custom 1 = 13
+	// AllScenarios 应只含 builtin 13 + custom 1 = 14
 	total := len(eng.AllScenarios())
-	if total != 13 {
-		t.Errorf("总剧本数 = %d, want 13 (12 builtin + 1 dedup'd custom)", total)
+	if total != 14 {
+		t.Errorf("总剧本数 = %d, want 14 (13 builtin + 1 dedup'd custom)", total)
 	}
 }
 
@@ -760,8 +760,8 @@ func TestMockEngine_LoadCustom_DuplicateID(t *testing.T) {
 func TestMockEngine_AllScenarios_Count(t *testing.T) {
 	eng := NewMockEngine()
 	all := eng.AllScenarios()
-	if len(all) != 12 {
-		t.Errorf("无 custom 时 AllScenarios 长度 = %d, want 12", len(all))
+	if len(all) != 13 {
+		t.Errorf("无 custom 时 AllScenarios 长度 = %d, want 13", len(all))
 	}
 
 	// 添加 custom 后数量应增加
@@ -769,8 +769,8 @@ func TestMockEngine_AllScenarios_Count(t *testing.T) {
 		{ID: "x1", Keywords: []string{"x1"}},
 		{ID: "x2", Keywords: []string{"x2"}},
 	})
-	if got := len(eng.AllScenarios()); got != 14 {
-		t.Errorf("加载 2 个 custom 后长度 = %d, want 14", got)
+	if got := len(eng.AllScenarios()); got != 15 {
+		t.Errorf("加载 2 个 custom 后长度 = %d, want 15", got)
 	}
 }
 

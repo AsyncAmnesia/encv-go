@@ -168,6 +168,10 @@ export default {
     'agent.lanAccessCopied': '已复制 {url}',
     'agent.lanAccessCopyFailed': '复制失败',
     'agent.lanAccessInterface': '接口：{name}',
+    'agent.lanAccessUse': '使用',
+    'agent.lanAccessUseTitle': '使用此地址作为后端 baseUrl',
+    'agent.lanAccessUseSuccess': '已切换到 {url}',
+    'agent.lanAccessUseFailed': '切换失败',
 
     // ── Task 25: Sync Doctor（脱敏诊断按钮） ─────────────
     // 后端 /api/sync/doctor 返回的 DoctorReport 报告由用户在
@@ -200,6 +204,73 @@ export default {
     'agent.mockPresetBarDefaultScenario': '剧本',
     'agent.mockPresetBarHint': '点击直接发送',
     'agent.mockPresetBarPickerScenario': '剧本库',
+    // ── v2 多轮/分支剧本（参考 .trae/specs/agent-tools-scenarios-v2/spec.md）───
+    // branchChoicePrompt：MockBranchChoiceBar 头部 prompt 行文案
+    'agent.branchChoicePrompt': '请选择操作：',
+    // roundProgress：MockBranchChoiceBar 头部 round 胶囊，"第 N/M 轮"
+    // round 是 1-based 显示（后端传 0-based，内部 +1）
+    'agent.roundProgress': '第 {round}/{total} 轮',
+    // roundPausedHint：MockBranchChoiceBar 底部小字提示
+    'agent.roundPausedHint': '点击 chip 继续或键入文本',
+    // toolDenied：工具被白名单/黑名单拒绝时的提示
+    'agent.toolDenied': '工具被拒绝',
+    // toolRequiresConfirm：工具需要用户确认（v2 8 个剧本里没有，但保留供未来扩展）
+    'agent.toolRequiresConfirm': '工具需要确认',
+    // batchRenamePreview：batch_rename_wizard 剧本预览阶段提示
+    'agent.batchRenamePreview': '改名预览（{count} 个文件）',
+    // batchRenameConfirm：batch_rename_wizard 剧本确认阶段按钮文案
+    'agent.batchRenameConfirm': '确认改名',
+    // editMetadataTitle：edit_metadata_wizard 剧本步骤标题
+    'agent.editMetadataTitle': '修改元数据',
+    // commandTimeout：command_run 工具执行超时提示
+    'agent.commandTimeout': '命令执行超时',
+    // commandDenied：command_run 工具命令不在白名单时提示
+    'agent.commandDenied': '命令不在白名单',
+    // ── v2 工具快捷动作 chip 行 ───────────────────────────
+    // 让用户一键触发 v2 工具演示（pre-fill 输入框）
+    'agent.v2Chip.search': '🔍 搜索',
+    'agent.v2Chip.searchTitle': 'search_files：递归 + glob + AND/OR/NOT',
+    'agent.v2Chip.searchPrompt': '帮我递归搜索所有大于 100MB 的 mp4 文件，按修改时间倒序排前 10 个',
+    'agent.v2Chip.read': '📖 读文件',
+    'agent.v2Chip.readTitle': 'read_file_v2：分页 + 二进制检测',
+    'agent.v2Chip.readPrompt': '用 read_file_v2 读取 clip.mp4 的前 200 行',
+    'agent.v2Chip.metadata': 'ℹ️ 元数据',
+    'agent.v2Chip.metadataTitle': 'get_metadata：基础字段 + ffprobe 媒体探测',
+    'agent.v2Chip.metadataPrompt': '用 get_metadata 探测 vacation_2024.mp4 的分辨率、时长、编码',
+    'agent.v2Chip.editMetadata': '🏷️ 改元数据',
+    'agent.v2Chip.editMetadataTitle': 'edit_metadata：4 轮向导式写入',
+    'agent.v2Chip.editMetadataPrompt': '帮我把 song.mp3 的 ID3 title 改成 "Vacation 2024"',
+    'agent.v2Chip.batchRename': '🔄 批量改名',
+    'agent.v2Chip.batchRenameTitle': 'batch_rename：dry_run 预览 → 确认 → 执行',
+    'agent.v2Chip.batchRenamePrompt': '把 /photos 下所有 .JPG 后缀改成 .jpg（先用 dry_run 预览）',
+    'agent.v2Chip.command': '⚙️ 跑命令',
+    'agent.v2Chip.commandTitle': 'command_run：受限 shell（白名单 + 超时 + 输出截断）',
+    'agent.v2Chip.commandPrompt': '用 ffprobe 查看 vacation_2024.mp4 的完整元数据 JSON',
+    // ── v2 剧本演示入口（弹窗列表） ────────────────────────
+    'agent.v2Scenarios.btn': 'v2 剧本',
+    'agent.v2Scenarios.btnTitle': '演示 8 个 v2 mock 剧本（branch + multi-round）',
+    'agent.v2Scenarios.title': 'v2 剧本演示',
+    'agent.v2Scenarios.hint': '点击剧本后会自动切到「内置剧本」mock 模式，并发送 trigger 关键词。所有剧本都通过真实 ToolRegistry 派发，会执行 search_files / command_run / batch_rename 等真实工具调用。',
+    'agent.v2Scenarios.busy': '当前正在请求中，请稍候',
+    'agent.v2Scenarios.mock': 'MOCK',
+    'agent.v2Scenarios.triggerKw': '关键词',
+    'agent.v2Scenarios.groupSearch': '搜索类',
+    'agent.v2Scenarios.groupRead': '读 / 元数据 / shell',
+    'agent.v2Scenarios.groupWrite': '写类',
+    'agent.v2Scenarios.groupBranch': '分支类',
+    'agent.v2Scenarios.s.recursiveMp4': '递归 + glob *.mp4 + size > 100MB',
+    'agent.v2Scenarios.s.logicalQuery': 'AND(size_gt + mtime_after + ext_eq) 复合查询',
+    'agent.v2Scenarios.s.contentRegex': 'content_regex "ERROR.*timeout" 全文搜索',
+    'agent.v2Scenarios.s.readFileV2': 'read_file_v2 分页读取（演示 start_line/end_line）',
+    'agent.v2Scenarios.s.getMetadata': 'get_metadata 探测视频/音频元数据（需 ffprobe）',
+    'agent.v2Scenarios.s.commandRun': 'command_run ffprobe 受限 shell（白名单+超时）',
+    'agent.v2Scenarios.s.editMetadata': '4 轮多轮：选文件→选字段→输入值→确认',
+    'agent.v2Scenarios.s.batchRename': 'dry_run 预览 → 确认 → 真实执行',
+    'agent.v2Scenarios.s.branchEncrypt': '3 选 1 分支：加密 / 解密 / 取消',
+    'agent.v2Scenarios.s.branchVideo': '视频 / 音频 / 其他 多分支 + 跨分支多轮',
+    // ── v2 工具调用 badge ──────────────────────────────────
+    'agent.v2Badge': 'v2',
+    'agent.v2BadgeTitle': 'v2 工具（递归搜索 / 元数据 / 受限 shell 等）',
   },
   en: {
     'agent.title': 'AI Assistant',
@@ -370,6 +441,10 @@ export default {
     'agent.lanAccessCopied': 'Copied {url}',
     'agent.lanAccessCopyFailed': 'Copy failed',
     'agent.lanAccessInterface': 'Interface: {name}',
+    'agent.lanAccessUse': 'Use',
+    'agent.lanAccessUseTitle': 'Use this address as backend baseUrl',
+    'agent.lanAccessUseSuccess': 'Switched to {url}',
+    'agent.lanAccessUseFailed': 'Switch failed',
 
     // ── Task 25: Sync Doctor (redacted diagnostic) ─────────────
     // Triggered from the Settings panel; the report is shown
@@ -398,5 +473,59 @@ export default {
     'agent.mockPresetBarDefaultScenario': 'Scenario',
     'agent.mockPresetBarHint': 'Click to send',
     'agent.mockPresetBarPickerScenario': 'Scenario Library',
+    // v2 multi-round / branch scenarios (see .trae/specs/agent-tools-scenarios-v2/spec.md)
+    'agent.branchChoicePrompt': 'Choose an action:',
+    'agent.roundProgress': 'Round {round}/{total}',
+    'agent.roundPausedHint': 'Click a chip or type to continue',
+    'agent.toolDenied': 'Tool denied',
+    'agent.toolRequiresConfirm': 'Tool requires confirmation',
+    'agent.batchRenamePreview': 'Rename preview ({count} files)',
+    'agent.batchRenameConfirm': 'Confirm rename',
+    'agent.editMetadataTitle': 'Edit metadata',
+    'agent.commandTimeout': 'Command timeout',
+    'agent.commandDenied': 'Command not in whitelist',
+    // ── v2 工具快捷动作 chip 行 ───────────────────────────
+    'agent.v2Chip.search': '🔍 Search',
+    'agent.v2Chip.searchTitle': 'search_files: recursive + glob + AND/OR/NOT',
+    'agent.v2Chip.searchPrompt': 'Recursively find all mp4 files larger than 100MB, sort by mtime desc, top 10',
+    'agent.v2Chip.read': '📖 Read',
+    'agent.v2Chip.readTitle': 'read_file_v2: pagination + binary detection',
+    'agent.v2Chip.readPrompt': 'Use read_file_v2 to read the first 200 lines of clip.mp4',
+    'agent.v2Chip.metadata': 'ℹ️ Metadata',
+    'agent.v2Chip.metadataTitle': 'get_metadata: basic fields + ffprobe media probe',
+    'agent.v2Chip.metadataPrompt': 'Use get_metadata to detect resolution/duration/codec of vacation_2024.mp4',
+    'agent.v2Chip.editMetadata': '🏷️ Edit meta',
+    'agent.v2Chip.editMetadataTitle': 'edit_metadata: 4-round wizard write',
+    'agent.v2Chip.editMetadataPrompt': 'Change the ID3 title of song.mp3 to "Vacation 2024"',
+    'agent.v2Chip.batchRename': '🔄 Rename',
+    'agent.v2Chip.batchRenameTitle': 'batch_rename: dry_run preview → confirm → execute',
+    'agent.v2Chip.batchRenamePrompt': 'Rename all .JPG files under /photos to .jpg (dry_run first)',
+    'agent.v2Chip.command': '⚙️ Shell',
+    'agent.v2Chip.commandTitle': 'command_run: restricted shell (whitelist + timeout + truncation)',
+    'agent.v2Chip.commandPrompt': 'Use ffprobe to dump full metadata JSON of vacation_2024.mp4',
+    // ── v2 剧本演示入口（弹窗列表） ────────────────────────
+    'agent.v2Scenarios.btn': 'v2 Scenarios',
+    'agent.v2Scenarios.btnTitle': 'Demo 8 v2 mock scenarios (branch + multi-round)',
+    'agent.v2Scenarios.title': 'v2 Scenarios',
+    'agent.v2Scenarios.hint': 'Clicking a scenario auto-switches to "built-in mock" mode and sends the trigger keyword. All scenarios go through the real ToolRegistry and execute real tools (search_files / command_run / batch_rename).',
+    'agent.v2Scenarios.mock': 'MOCK',
+    'agent.v2Scenarios.triggerKw': 'kw',
+    'agent.v2Scenarios.groupSearch': 'Search',
+    'agent.v2Scenarios.groupRead': 'Read / metadata / shell',
+    'agent.v2Scenarios.groupWrite': 'Write',
+    'agent.v2Scenarios.groupBranch': 'Branch',
+    'agent.v2Scenarios.s.recursiveMp4': 'Recursive + glob *.mp4 + size > 100MB',
+    'agent.v2Scenarios.s.logicalQuery': 'AND(size_gt + mtime_after + ext_eq) compound query',
+    'agent.v2Scenarios.s.contentRegex': 'content_regex "ERROR.*timeout" full-text search',
+    'agent.v2Scenarios.s.readFileV2': 'read_file_v2 paginated read (start_line/end_line)',
+    'agent.v2Scenarios.s.getMetadata': 'get_metadata video/audio probe (requires ffprobe)',
+    'agent.v2Scenarios.s.commandRun': 'command_run ffprobe restricted shell',
+    'agent.v2Scenarios.s.editMetadata': '4-round multi-turn: pick file → field → value → confirm',
+    'agent.v2Scenarios.s.batchRename': 'dry_run preview → confirm → real execution',
+    'agent.v2Scenarios.s.branchEncrypt': '3-way branch: encrypt / decrypt / cancel',
+    'agent.v2Scenarios.s.branchVideo': 'video / audio / other multi-branch + cross-branch multi-round',
+    // ── v2 工具调用 badge ──────────────────────────────────
+    'agent.v2Badge': 'v2',
+    'agent.v2BadgeTitle': 'v2 tool (recursive search / metadata / restricted shell)',
   },
 }

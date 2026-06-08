@@ -1,0 +1,45 @@
+# context_exhausted — 上下文耗尽
+#
+# 用途：验证前端在 stream_end{finishReason=length} 时显示截断提示。
+# 触发：关键词（"长对话" / "上下文耗尽"）
+#
+# 数据完整性：
+#   - 错误/截断原因由 MockEngine 真实执行后填入
+#   - text_delta 是通用 UI 文案
+id: context_exhausted
+description: "stream_end{finishReason=length} — 验证上下文截断提示"
+keywords:
+  - 长对话
+  - 上下文耗尽
+  - context exhausted
+  - token limit
+
+steps:
+  - id: s1_stream_start
+    delay_ms: 0
+    events:
+      - type: stream_start
+        data: { scenario: context_exhausted }
+      - type: text_delta
+        data: { text: "开始长对话测试...\n" }
+
+  - id: s2_long_text
+    delay_ms: 500
+    events:
+      - type: text_delta
+        data: { text: "正在输出超长内容以触发上下文截断。\n" }
+      - type: text_delta
+        data: { text: "（更多内容由 MockEngine 填充）\n" }
+
+  # stream_status 触发 stream_end(finishReason=length)
+  - id: s3_truncated
+    delay_ms: 800
+    events:
+      - type: stream_status
+        data: { type: warning, code: context_length_exceeded, message: "[WARN_PLACEHOLDER]" }
+
+  - id: s4_stream_end
+    delay_ms: 100
+    events:
+      - type: stream_end
+        data: { finishReason: length, usage: { totalTokens: 8192 } }

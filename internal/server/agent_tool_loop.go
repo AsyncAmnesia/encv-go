@@ -285,7 +285,10 @@ func callOpenAIChatOnce(ctx context.Context, cfg agentConfig, model string, temp
 // 用于在 confirm 后递归流式输出 LLM 继续生成的回复。
 //
 // 与 callOpenAIChatOnce 一样，把 agent 工具列表塞到 reqBody["tools"]。
-func callOpenAIStream(ctx context.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg, openAITools []map[string]interface{}) (<-chan openaiStreamEvent, error) {
+//
+// aguiMode 在 streamChat 入口处已被消费（用于构造 emitEvent 闭包分流）；
+// 本函数仍透传 aguiMode 给 streamChat，以支持嵌套调用链（executeAndRecurse → streamChat）。
+func callOpenAIStream(ctx context.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg, openAITools []map[string]interface{}, aguiMode bool) (<-chan openaiStreamEvent, error) {
 	// 故意不传 max_tokens —— 让我们根本不知道任何厂商的上限，避免硬编码瞎编。
 	// 上游 LLM API 会按自己的模型最大输出返回（gpt-4o 16k, claude 8k, deepseek 8k... 各厂商自己决定）。
 	// 这比维护一个会过时的查表更可靠。
@@ -391,18 +394,139 @@ type openaiStreamEvent struct {
 // openAITools 已经被 caller 包装成 OpenAI 协议格式（带 type:"function"），直接传即可。
 // toolMeta 保留为 agent 内部格式（name → {needConfirm, kind, ...}），
 // 用于在 SSE 推 tool_call 事件时给前端正确的 needsConfirm / kind。
-func (s *Server) streamChat(ctx context.Context, c *gin.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg, sess *agentSession, openAITools []map[string]interface{}, toolMeta map[string]map[string]interface{}) {
+//
+// aguiMode 为 true 时，本函数用 AGUIEventMapper 输出标准 AG-UI 事件；
+// 为 false 时走原 sendAndCache 通道（向后兼容旧客户端）。
+func (s *Server) streamChat(ctx context.Context, c *gin.Context, cfg agentConfig, model string, temperature float64, messages []chatMsg, sess *agentSession, openAITools []map[string]interface{}, toolMeta map[string]map[string]interface{}, aguiMode bool) {
 	flusher, ok := c.Writer.(http.Flusher)
 	if !ok {
 		return
 	}
 	s.setSSEHeaders(c.Writer)
 
-	ch, err := callOpenAIStream(ctx, cfg, model, temperature, messages, openAITools)
+	// ════════════════════════════════════════════════════════════
+	// emitEvent 闭包分流（Phase 2 真实 LLM 路径 AG-UI 透传）
+	// ════════════════════════════════════════════════════════════
+	// aguiMode=true  → 走 AGUIEventMapper（标准 AG-UI 11 种事件）
+	// aguiMode=false → 走 sendAndCache（legacy 自定义 SSE 格式 + EventCache 缓存）
+	//
+	// 注：AG-UI 路径**不**写 EventCache（保持 mock 路径一致性 — 见 agent_mock.go §emitEvent）。
+	// AG-UI 模式是给前端 TDesign 引擎用的，/api/resume 重放逻辑不涉及此路径。
+	//
+	// AG-UI 模式额外维护"text message triplet"状态机：
+	//   - 第一次 text_delta → 推 TEXT_MESSAGE_START + 首段 TEXT_MESSAGE_CONTENT
+	//   - 后续 text_delta   → 推 TEXT_MESSAGE_CONTENT（共用同 messageId）
+	//   - stream_end 或 finish_reason → 推 TEXT_MESSAGE_END（标记单条 assistant 消息结束）
+	//   - 有 tool_call → 推完最后一个 content 后先发 TEXT_MESSAGE_END（闭合消息），
+	//     再开始下一条 TOOL_CALL_START/ARGS/END triplet
+	//
+	// 注：streamChat 不推 RUN_STARTED / RUN_FINISHED（这两个由顶层 flow handler 推，
+	// 因为 streamChat 可能在 agent loop 内被多次调用 — 一次 run 一次 RUN_STARTED）。
+	var (
+		emitEvent       func(evType string, data interface{})
+		aguiMapper      *AGUIEventMapper
+		aguiTextMsgID   string // 当前 assistant 消息的稳定 messageId
+		aguiTextStarted bool   // 首个 TEXT_MESSAGE_START 是否已推
+	)
+	if aguiMode {
+		aguiMapper = NewAGUIMapper(c.Writer, flusher, sess.SessionID)
+		aguiMapper.NewRun() // 本次 chat/confirm 唯一 runId
+		emitEvent = func(evType string, data interface{}) {
+			// AG-UI 模式：把 data 标准化为 map[string]interface{}
+			var aguiData map[string]interface{}
+			if m, ok := data.(map[string]interface{}); ok {
+				aguiData = m
+			} else if s, ok := data.(string); ok {
+				aguiData = map[string]interface{}{"text": s}
+			} else {
+				aguiData = map[string]interface{}{"data": data}
+			}
+
+			// 特殊处理：text_delta → TEXT_MESSAGE_START/CONTENT triplet
+			if evType == "text_delta" {
+				if !aguiTextStarted {
+					aguiTextMsgID = aguiMapper.State().NextMessageID()
+					aguiMapper.EmitTextMessageStart(aguiTextMsgID)
+					aguiTextStarted = true
+				}
+				if text, ok := aguiData["text"].(string); ok {
+					aguiMapper.EmitTextMessageContent(aguiTextMsgID, text)
+				}
+				return
+			}
+
+			// 特殊处理：tool_call → TOOL_CALL_START/ARGS triplet
+			// 注意：闭合前一个 text 消息（如果有）
+			if evType == "tool_call" {
+				if aguiTextStarted {
+					aguiMapper.EmitTextMessageEnd(aguiTextMsgID)
+					aguiTextStarted = false
+					aguiTextMsgID = ""
+				}
+				id, _ := aguiData["id"].(string)
+				name, _ := aguiData["name"].(string)
+				args, _ := aguiData["args"].(string)
+				if id != "" && name != "" {
+					aguiMapper.EmitToolCallStart(id, name)
+				}
+				// EmitToolCallArgs 内部对空 args 直接 return（不推事件）
+				aguiMapper.EmitToolCallArgs(id, args)
+				return
+			}
+
+			// 特殊处理：tool_status → TOOL_CALL_END
+			if evType == "tool_status" {
+				id, _ := aguiData["id"].(string)
+				status, _ := aguiData["status"].(string)
+				// completed / success / cancelled / failed 都闭合 tool call
+				if status == "success" || status == "completed" || status == "cancelled" || status == "failed" {
+					if id != "" {
+						aguiMapper.EmitToolCallEnd(id)
+					}
+				}
+				return
+			}
+
+			// 特殊处理：tool_result → TOOL_CALL_RESULT
+			if evType == "tool_result" {
+				id, _ := aguiData["id"].(string)
+				result, _ := aguiData["result"].(string)
+				aguiMapper.EmitToolCallResult(id, result)
+				return
+			}
+
+			// 特殊处理：stream_end → 闭合 text 消息
+			if evType == "stream_end" {
+				if aguiTextStarted {
+					aguiMapper.EmitTextMessageEnd(aguiTextMsgID)
+					aguiTextStarted = false
+				}
+				return
+			}
+
+			// 特殊处理：stream_error → 闭合未结束的消息（不推 AG-UI event）
+			if evType == "stream_error" {
+				if aguiTextStarted {
+					aguiMapper.EmitTextMessageEnd(aguiTextMsgID)
+					aguiTextStarted = false
+				}
+				return
+			}
+
+			// 其他类型（reasoning_delta 等）走 AG-UI mapper 的兼容 MapEvent 路径
+			aguiMapper.MapEvent(MockEvent{Type: evType, Data: aguiData}, 0, 0)
+		}
+	} else {
+		emitEvent = func(evType string, data interface{}) {
+			s.sendAndCache(sess, c.Writer, flusher, evType, data)
+		}
+	}
+
+	ch, err := callOpenAIStream(ctx, cfg, model, temperature, messages, openAITools, aguiMode)
 	if err != nil {
 		slog.Warn("agent: stream error", "error", err)
-		s.sendSSEEventSafe(c.Writer, flusher, "stream_error", err.Error())
-		s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+		emitEvent("stream_error", err.Error())
+		emitEvent("stream_end", "")
 		return
 	}
 
@@ -413,9 +537,9 @@ func (s *Server) streamChat(ctx context.Context, c *gin.Context, cfg agentConfig
 	for ev := range ch {
 		switch ev.Type {
 		case "text_delta":
-			s.sendSSEEventSafe(c.Writer, flusher, "text_delta", ev.Data)
+			emitEvent("text_delta", ev.Data)
 		case "reasoning_delta":
-			s.sendSSEEventSafe(c.Writer, flusher, "reasoning_delta", ev.Data)
+			emitEvent("reasoning_delta", ev.Data)
 		case "tool_call_chunk":
 			tc := ev.Data.(toolCallAccumulator)
 			cur, ok := accumulator[tc.Index]
@@ -472,7 +596,7 @@ func (s *Server) streamChat(ctx context.Context, c *gin.Context, cfg agentConfig
 						"needsConfirm": needConfirm,
 						"kind":         kind,
 					}
-					s.sendSSEEventSafe(c.Writer, flusher, "tool_call", payload)
+					emitEvent("tool_call", payload)
 				}
 				// 缓存到 session
 				sess.mu.Lock()
@@ -480,7 +604,7 @@ func (s *Server) streamChat(ctx context.Context, c *gin.Context, cfg agentConfig
 				sess.mu.Unlock()
 			}
 		case "stream_end":
-			s.sendSSEEventSafe(c.Writer, flusher, "stream_end", "")
+			emitEvent("stream_end", "")
 		}
 	}
 }

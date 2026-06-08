@@ -21,13 +21,14 @@
 import { ref, computed } from 'vue'
 import { showToast } from '@/composables/useToast'
 import { getDeviceIdSync } from './useDeviceId'
-import { getAgentApiBase } from './useAgentApiBase'
+import { getAgentApiBase, getAgentApiBaseContext, shouldSendAGUIHeader } from './useAgentApiBase'
 import {
   serializeAttachments,
   type Attachment,
   type MessageContentPart,
 } from './useAttachments'
 import { useContextUsage } from './useContextUsage'
+import { processAGUISSE as processAGUISSEImpl } from './useAGUIParser'
 
 // =============================================================================
 // 类型定义（与 agent Go 服务契约对齐）
@@ -69,6 +70,26 @@ export type AgentEventType =
   // Mock 模式预设清空信号：后端在 stream_end 时推，前端 MockPresetBar 收到
   // 后清空 chip。reason 字段仅做调试。
   | 'mock_presets_clear'
+  // ── AG-UI 协议新增内部类型（useAGUIParser 归一化输出） ──
+  // tool_call_args：AG-UI TOOL_CALL_ARGS 事件归一化结果，携带 args 增量
+  // （arg 是 String，handleAgentEvent 把它追加到对应 tool_call.args 字段）
+  | 'tool_call_args'
+  // state_snapshot：AG-UI STATE_SNAPSHOT 事件归一化结果
+  // （会话级共享状态，前端暂不消费，仅做调试记录 + 持久化兜底）
+  | 'state_snapshot'
+  // messages_snapshot：AG-UI MESSAGES_SNAPSHOT 事件归一化结果
+  // （完整消息快照，用于断点续传对齐）
+  | 'messages_snapshot'
+  // ── v2 多轮/分支剧本（参考 .trae/specs/agent-tools-scenarios-v2/spec.md）───
+  // mock_branch_choice：剧本在 step.branch_choice=true 时推，由前端
+  // MockBranchChoiceBar 渲染为 chip 列表；用户点击 chip / 直接键入
+  // 文本都走 pickMockBranch / sendMockRoundResponse 把 userText
+  // 送回后端 Resume。
+  | 'mock_branch_choice'
+  // mock_round_state：剧本报告当前 round 进度（round_idx / total_rounds /
+  // phase / context）。前端由 mockRoundState 暴露；AgentChat 可选择
+  // 渲染 "Round 2/4 · awaiting_user_input" header。
+  | 'mock_round_state'
 
 /** 单个 mock 预设按钮契约（与后端 internal/server.MockPreset JSON 对应） */
 export interface MockPreset {
@@ -77,6 +98,34 @@ export interface MockPreset {
   userText: string
   icon?: string
   tooltip?: string
+}
+
+/**
+ * 单个 mock 分支选项契约（与后端 internal/server.MockBranch JSON 对应）。
+ * 用于剧本中 step.branch_choice=true 时的选项列表。
+ * - id：精确匹配 / 关键词匹配 / 正则匹配时使用
+ * - label：chip 上显示
+ * - icon / description：可选 UI 增强
+ */
+export interface MockBranch {
+  id: string
+  label: string
+  icon?: string
+  description?: string
+}
+
+/** mock_round_state 事件 payload 形状（后端 MockRoundState JSON 归一化结果） */
+export interface MockRoundState {
+  /** 当前 round 下标（0-based） */
+  roundIdx: number
+  /** 剧本总轮数（v2 8 个剧本里 edit_metadata_wizard=4 / batch_rename=2 / 其他=1） */
+  totalRounds: number
+  /** 当前阶段：`running` / `awaiting_user_input` / `awaiting_branch_choice` */
+  phase: string
+  /** 跨轮变量：set_context / use_context 写入/读取的任意结构 */
+  context: Record<string, unknown>
+  /** 归属 scenario ID（调试用） */
+  scenario?: string
 }
 
 /** Agent 推送到 SSE channel 的事件 */
@@ -183,8 +232,22 @@ export const CONTEXT_COMPACTION_MARKER = '上下文已自动压缩'
 /** 持久化到 localStorage 的 key 前缀 */
 const STORAGE_PREFIX = 'agent:session:'
 
-/** Agent 服务 API 路径（dev 走 preview-gateway :16666 → :2025；APK 直接 :2025） */
-const AGENT_API_BASE = getAgentApiBase()
+/**
+ * Agent 服务 API 基础 URL（动态解析，**不在模块加载时缓存**）。
+ *
+ * 为什么是函数而不是常量：
+ *   - 旧实现 `const AGENT_API_BASE = getAgentApiBase()` 在模块首次 import 时
+ *     求值一次 → 之后即使用户改了 baseUrl（probe 命中 LAN / 手动设置 / 切前后台），
+ *     永远用旧值 → 真实路由失败但 JS 还打旧 URL
+ *   - 新实现 getAgentBase() 每次调用都实时读 getApiBaseBase() →
+ *     baseUrl 变化立刻生效（与 WS 层 useWebSocket 行为一致）
+ *
+ * 性能：每次调用 ≈ 1 次 localStorage 读 + 1 个三元判断，可忽略
+ * （chat send 不是热路径，且 baseUrl 变化场景只在 probe/手动切换瞬间）
+ */
+function getAgentBase(): string {
+  return getAgentApiBase()
+}
 
 /**
  * 单实例最多追踪的 SSE sequence 编号数。超过此上限时按插入顺序
@@ -223,7 +286,7 @@ interface ParsedContentDelta {
   text: string
   seq?: number
 }
-function parseContentDelta(data: unknown): ParsedContentDelta {
+export function parseContentDelta(data: unknown): ParsedContentDelta {
   if (!data) return { text: '' }
   if (typeof data === 'string') {
     try {
@@ -233,6 +296,11 @@ function parseContentDelta(data: unknown): ParsedContentDelta {
         // 新格式 {seq, text}
         if ('text' in parsed && 'seq' in parsed) {
           return { text: String(parsed.text ?? ''), seq: Number(parsed.seq) }
+        }
+        // AG-UI 归一化格式：{text, messageId}（useAGUIParser 输出，**无 seq**）
+        // 修乱码 bug：之前这种情况会落到末尾 return {text: data}，把整段 JSON 字符串当文本渲染
+        if ('text' in parsed) {
+          return { text: String((parsed as { text: unknown }).text ?? '') }
         }
         // 旧格式兼容 {"content":"..."}
         if ('content' in parsed) {
@@ -248,6 +316,10 @@ function parseContentDelta(data: unknown): ParsedContentDelta {
   if (data && typeof data === 'object') {
     if ('text' in data && 'seq' in data) {
       return { text: String((data as { text: unknown }).text ?? ''), seq: Number((data as { seq: unknown }).seq) }
+    }
+    // AG-UI 归一化格式：{text, messageId}
+    if ('text' in data) {
+      return { text: String((data as { text: unknown }).text ?? '') }
     }
   }
   return { text: String(data ?? '') }
@@ -341,16 +413,23 @@ function parseToolStatus(data: unknown): { id: string; status: ToolStatus } | nu
 
 /**
  * 解析 `tool_result` 的 data 字段 —— ToolResultData
+ *
+ * 适配 AG-UI 协议：AG-UI `TOOL_CALL_RESULT` 事件归一化后只有
+ *   `{ id, result }`（**无 name** 字段——name 来自前面的 `TOOL_CALL_START`）
+ * legacy 格式有 `name` 字段（来自后端 sendAndCache 的 tool_result 事件）
+ * 本函数**不强制**要求 name，由调用方在拿到 result 后从已存在的
+ * tool_calls 里按 id 查找补齐 name。
  */
-function parseToolResultData(data: unknown): ToolResult | null {
+export function parseToolResultData(data: unknown): ToolResult | null {
   try {
     const parsed = typeof data === 'string' ? JSON.parse(data) : data
     if (!parsed || typeof parsed !== 'object') return null
     const p = parsed as Partial<ToolResult>
-    if (!p.id || !p.name) return null
+    if (!p.id) return null
     return {
       id: String(p.id),
-      name: String(p.name),
+      // name 可能为空（AG-UI 归一化格式）——调用方负责补齐
+      name: typeof p.name === 'string' ? p.name : '',
       result: typeof p.result === 'string' ? p.result : JSON.stringify(p.result ?? ''),
       is_error: p.is_error === true,
       status: String(p.status ?? 'success'),
@@ -496,7 +575,7 @@ export interface LanAddress {
 export async function getLanAccess(port: number = 0): Promise<LanAddress[]> {
   try {
     const qs = port > 0 ? `?port=${port}` : ''
-    const response = await fetch(`${AGENT_API_BASE}/api/network/lan-access${qs}`, {
+    const response = await fetch(`${getAgentBase()}/api/network/lan-access${qs}`, {
       method: 'GET',
     })
     if (!response.ok) {
@@ -591,7 +670,7 @@ export interface DoctorReport {
  * 一个长尾的 doctor 请求（实际后端超时是 2 秒，不会真等很久）。
  */
 export async function runSyncDoctor(signal?: AbortSignal): Promise<DoctorReport> {
-  const response = await fetch(`${AGENT_API_BASE}/api/sync/doctor`, {
+  const response = await fetch(`${getAgentBase()}/api/sync/doctor`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     // 没有 body 也合法：handler 接受 GET/POST 两种 method。
@@ -748,7 +827,84 @@ export function useAgent() {
   const mockPresetsPhase = ref<string>('')
   const mockPresetsScenario = ref<string>('')
 
-  // ─── Mock 模式控制（用户从 AgentChat 顶栏的"🧪 模拟"badge 切换） ──
+  // ─── v2 多轮/分支剧本（参考 .trae/specs/agent-tools-scenarios-v2/spec.md） ───
+  // 与上面 mockPresets 的区别：
+  //   - mockPresets：scenario 顶层覆盖在输入框上方的"快捷入口"，与剧本进度无强关联
+  //   - mockBranchChoices：剧本 mid-step 暂停时推的选项 chip，必须等待用户
+  //     点击 / 键入才能继续；AgentChat 据此把 v-if 打开并禁用 send 按钮
+  //   - mockBranchPrompt：当前 step 的提问文案（"请选择操作："/"你想改名哪些字段？"）
+  //   - mockRoundState：当前 round 进度 + 阶段（驱动 MockBranchChoiceBar header）
+  //   - mockScenarioPaused：派生 computed；phase 在 awaiting_user_input 或
+  //     awaiting_branch_choice 时为 true。AgentChat 用它控制 MockBranchChoiceBar
+  //     显隐 + send 按钮 disabled
+  //   - currentMockScenario：当前激活的 scenario ID（pickMockBranch /
+  //     sendMockRoundResponse 必须带上，供后端 MockEngineV2 知道是哪个剧本）
+  // 后端 stream_end 时（或者推 mock_branch_choice_clear / mock_round_state_clear
+  // 显式清空时）本 composable 把所有 ref 复位。
+  const mockBranchChoices = ref<MockBranch[]>([])
+  const mockBranchPrompt = ref<string>('')
+  const mockRoundState = ref<MockRoundState | null>(null)
+  const currentMockScenario = ref<string>('')
+
+  const mockScenarioPaused = computed(() => {
+    const phase = mockRoundState.value?.phase
+    return phase === 'awaiting_user_input' || phase === 'awaiting_branch_choice'
+  })
+
+  /**
+   * 多轮剧本中点 chip 继续：把 chip id 当作 userText 送回后端 Resume。
+   * 关键点：mode='mock_resume' —— 后端 MockEngineV2 据此区分"新 session 启动"
+   * 和"在暂停点恢复"，并用 currentMockScenario 找到正确的剧本状态机。
+   */
+  function pickMockBranch(branchId: string): void {
+    if (typeof branchId !== 'string' || branchId.length === 0) {
+      console.debug('[useAgent] pickMockBranch: invalid branchId', branchId)
+      return
+    }
+    if (!currentMockScenario.value) {
+      console.debug('[useAgent] pickMockBranch: no currentMockScenario — dropped')
+      return
+    }
+    if (status.value === 'streaming' || status.value === 'confirming') {
+      console.debug('[useAgent] pickMockBranch: ignored (busy)')
+      return
+    }
+    console.debug(
+      '[useAgent] pickMockBranch →',
+      branchId,
+      '| scenario =',
+      currentMockScenario.value,
+    )
+    void send(branchId, { mode: 'mock_resume', scenario: currentMockScenario.value })
+  }
+
+  /**
+   * 多轮剧本中键入文本继续：等价于 pickMockBranch，但 userText 是用户键入的。
+   * 用于：chip 列表里没覆盖到的细粒度控制（比如用正则编辑 metadata 字段）。
+   */
+  function sendMockRoundResponse(userText: string): void {
+    if (typeof userText !== 'string' || userText.trim().length === 0) {
+      console.debug('[useAgent] sendMockRoundResponse: empty text — dropped')
+      return
+    }
+    if (!currentMockScenario.value) {
+      console.debug('[useAgent] sendMockRoundResponse: no currentMockScenario — dropped')
+      return
+    }
+    if (status.value === 'streaming' || status.value === 'confirming') {
+      console.debug('[useAgent] sendMockRoundResponse: ignored (busy)')
+      return
+    }
+    console.debug(
+      '[useAgent] sendMockRoundResponse →',
+      userText.slice(0, 40),
+      '| scenario =',
+      currentMockScenario.value,
+    )
+    void send(userText.trim(), { mode: 'mock_resume', scenario: currentMockScenario.value })
+  }
+
+  // ─── Mock 模式控制（用户从 AgentChat 顶栏的"🧪 模拟"badge 切换） ─────
   // 字段语义与后端 cfg.Agent.MockMode 一一对应：
   //   - 'off'     → 真实 LLM 调用（默认）
   //   - 'builtin' → 内置 12 个剧本
@@ -788,7 +944,7 @@ export function useAgent() {
    */
   async function loadMockPresets(): Promise<void> {
     try {
-      const resp = await fetch(`${AGENT_API_BASE}/api/agent/mock/presets`)
+      const resp = await fetch(`${getAgentBase()}/api/agent/mock/presets`)
       if (!resp.ok) {
         console.debug('[useAgent] loadMockPresets: HTTP', resp.status)
         return
@@ -827,7 +983,7 @@ export function useAgent() {
 
   async function loadMockMode() {
     try {
-      const resp = await fetch(`${AGENT_API_BASE}/api/config`)
+      const resp = await fetch(`${getAgentBase()}/api/config`)
       if (!resp.ok) {
         console.debug('[MockMode] fetch /api/config failed: HTTP', resp.status)
         return
@@ -857,13 +1013,13 @@ export function useAgent() {
     if (mode === currentMockMode.value) return
     try {
       // 必须整张 config 一并 PUT（后端会保留非 agent_settings 字段）。
-      const getResp = await fetch(`${AGENT_API_BASE}/api/config`)
+      const getResp = await fetch(`${getAgentBase()}/api/config`)
       if (!getResp.ok) throw new Error(`fetch /api/config → HTTP ${getResp.status}`)
       const cfg = (await getResp.json()) as Record<string, unknown>
       const agentSettings = (cfg.agent_settings as Record<string, unknown> | undefined) ?? {}
       agentSettings.mock_mode = mode
       cfg.agent_settings = agentSettings
-      const putResp = await fetch(`${AGENT_API_BASE}/api/config`, {
+      const putResp = await fetch(`${getAgentBase()}/api/config`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cfg),
@@ -912,7 +1068,7 @@ export function useAgent() {
    */
   async function refreshServerInstance(): Promise<void> {
     try {
-      const response = await fetch(`${AGENT_API_BASE}/api/health`, { method: 'GET' })
+      const response = await fetch(`${getAgentBase()}/api/health`, { method: 'GET' })
       if (!response.ok) {
         console.warn('[useAgent] refreshServerInstance: /api/health returned', response.status)
         return
@@ -1171,7 +1327,47 @@ export function useAgent() {
    *   - morePending:   最后一个有意义事件是否为 stream_status.more_pending
    *                    （若 true 且 !streamEnded，runResumeChain 应继续下一轮）
    */
-  async function processSSE(stream: ReadableStream<Uint8Array> | null): Promise<{
+  /**
+   * SSE 协议分发器。
+   *
+   * 行为：
+   *   - protocol='agui'  → 走 AG-UI parser（composables/useAGUIParser.ts）
+   *   - protocol='legacy'→ 走原始自定义 SSE（保持原 processSSE 行为）
+   *
+   * 调用方（send / confirmTool / runResumeChain）从 response.headers 读
+   * `X-Agent-Protocol` 后再传入本函数：
+   *   - 'agui'  → useAGUIParser
+   *   - 缺失/其他值 → legacy
+   *
+   * 返回值结构 { received, streamEnded, morePending } 与原 processSSE 一致，
+   * 链式 resume / 错误处理路径不需要修改。
+   */
+  async function processSSE(
+    stream: ReadableStream<Uint8Array> | null,
+    protocol: 'agui' | 'legacy' = 'legacy',
+  ): Promise<{
+    received: boolean
+    streamEnded: boolean
+    morePending: boolean
+  }> {
+    if (protocol === 'agui') {
+      return processAGUISSEWithHandlers(stream)
+    }
+    return processLegacySSE(stream)
+  }
+
+  /**
+   * 原始自定义 SSE 事件流解析（AG-UI 未启用时的回退路径）。
+   *
+   * 行为与重构前完全一致：
+   *   - 逐行扫描 `data: ` 字段、尝试 JSON.parse
+   *   - sequence id 去重（rememberSequence）
+   *   - lastEventId 同步
+   *   - 原始事件日志（pushRawEvent + Task 27 DOM counter）
+   *   - 链式 resume 决策（lastStreamStatus = synced / more_pending）
+   *   - 流关闭后 finalize + 修正 status
+   */
+  async function processLegacySSE(stream: ReadableStream<Uint8Array> | null): Promise<{
     received: boolean
     streamEnded: boolean
     morePending: boolean
@@ -1298,30 +1494,61 @@ export function useAgent() {
   }
 
   /**
+   * AG-UI 协议路径：包装 useAGUIParser.processAGUISSE 把
+   * 11 种 AG-UI 事件归一化为内部 AgentEvent，再走 handleAgentEvent。
+   *
+   * handlers 桥接：
+   *   - onEvent      → handleAgentEvent
+   *   - rememberSequence → useAgent 内部的去重闭包（与 legacy 共用）
+   *   - onRawEvent   → pushRawEvent (⑦ 区调试日志)
+   *   - onStreamEnd  → 复用 legacy 的 finalizeLastAssistant + status 修正
+   */
+  async function processAGUISSEWithHandlers(
+    stream: ReadableStream<Uint8Array> | null,
+  ): Promise<{ received: boolean; streamEnded: boolean; morePending: boolean }> {
+    return processAGUISSEImpl(stream, {
+      onEvent: (event) => {
+        // 与 processLegacySSE 一致：Task 27 调试 console.error
+        const dataSummary =
+          event.data == null
+            ? 'null'
+            : typeof event.data === 'string'
+              ? event.data.slice(0, 120)
+              : JSON.stringify(event.data).slice(0, 200)
+        console.error(
+          `[useAgent][AGUI] type=${event.type} data=${dataSummary}`,
+        )
+        handleAgentEvent(event)
+      },
+      rememberSequence: (id: number) => {
+        // 与 legacy 共用 rememberSequence 闭包（serverInstance 切换时会被清空）
+        return rememberSequence(id)
+      },
+      onRawEvent: (type: string, dataSummary: string, seq?: number | null) => {
+        pushRawEvent(type, dataSummary, seq ?? null)
+        // 同步 lastEventId（与 legacy 同形）
+        if (seq !== null && seq !== undefined && seq > lastEventId) {
+          lastEventId = seq
+        }
+      },
+      onStreamEnd: () => {
+        // 与 legacy onFinalize 行为一致
+        finalizeLastAssistant()
+        if (status.value === 'streaming') {
+          const hasPendingConfirm = messages.value.some((m) =>
+            m.tool_calls.some((tc) => tc.needsConfirm && tc.status === 'pending'),
+          )
+          status.value = hasPendingConfirm ? 'confirming' : 'idle'
+          saveState()
+        }
+      },
+    })
+  }
+
+  /**
    * 单个 event type → reactive state dispatch
    */
   function handleAgentEvent(event: AgentEvent): void {
-    // ─── Task 27 终极调试：DOM 级标记（绕开 Vue 响应式，100% 可见） ──
-    // 每次调用都在 <body> 追加一个不可见 div 的 data 属性。
-    // DevTools → Elements → 搜 "sse-event-count" 即可看到总数。
-    // 不依赖 console（移动端不可读）不依赖 reactive（可能 HMR 丢失）。
-    try {
-      let el = document.getElementById('sse-debug-counter')
-      if (!el) {
-        el = document.createElement('div')
-        el.id = 'sse-debug-counter'
-        el.style.cssText = 'position:fixed;top:0;left:0;background:red;color:white;z-index:99999;font-size:10px;padding:2px 6px'
-        document.body.appendChild(el)
-      }
-      const count = (parseInt(el.dataset.count || '0', 10) + 1)
-      el.dataset.count = String(count)
-      el.textContent = `SSE events: ${count} (last: ${event.type})`
-      // 同时把最近 20 条 type 写到 dataset，DevTools 可查
-      const log = (el.dataset.log || '').split('|').filter(Boolean).slice(-19)
-      log.push(event.type)
-      el.dataset.log = log.join('|')
-    } catch {/* DOM 不可用（SSR）时静默 */}
-
     // 取最后一条 *正在 streaming* 的 assistant 消息作为流式追加目标。
     //
     // Task 7 之前：实现是"最后一条 assistant 消息"，因为 send() 每次
@@ -1410,6 +1637,19 @@ export function useAgent() {
       case 'tool_result': {
         const result = parseToolResultData(event.data)
         if (result) {
+          // AG-UI 协议适配：TOOL_CALL_RESULT 归一化结果只有 {id, result}（无 name），
+          // 从前面累积的 tool_calls 按 id 反查补齐 name
+          if (!result.name) {
+            for (let i = messages.value.length - 1; i >= 0; i--) {
+              const m = messages.value[i]
+              if (m.role !== 'assistant') continue
+              const tc = m.tool_calls.find((t) => t.id === result.id)
+              if (tc?.name) {
+                result.name = tc.name
+                break
+              }
+            }
+          }
           const m = lastAssistant()
           m.tool_results.push(result)
           // Task 27：记录工具结果事件到达顺序
@@ -1465,6 +1705,14 @@ export function useAgent() {
           const first = pendingMessages.value.shift()!
           first.pending = false
         }
+        // v2 多轮/分支剧本清理：stream_end 到达意味着整个 session 结束
+        // （不管是正常结束、超时、还是用户中断）。把 v2 state 复位，
+        // 否则用户开新会话时 MockBranchChoiceBar 会"残留显示"。
+        // mockPresets 不在此处清空（它走"chip 永远覆盖显示"语义）。
+        mockBranchChoices.value = []
+        mockBranchPrompt.value = ''
+        mockRoundState.value = null
+        currentMockScenario.value = ''
         break
       }
       case 'stream_error': {
@@ -1480,6 +1728,12 @@ export function useAgent() {
         lastError.value = errorMsg
         lastErrorCode.value = 'upstream_error'
         status.value = 'error'
+        // v2 多轮/分支剧本清理：异常路径下也要清掉 chip 状态，
+        // 否则用户关闭错误弹窗后 MockBranchChoiceBar 还会显示。
+        mockBranchChoices.value = []
+        mockBranchPrompt.value = ''
+        mockRoundState.value = null
+        currentMockScenario.value = ''
         console.error('[useAgent] stream_error:', errorMsg)
         break
       }
@@ -1550,6 +1804,114 @@ export function useAgent() {
         break
       }
 
+      case 'mock_branch_choice': {
+        // v2 多轮/分支剧本：剧本在 step.branch_choice=true 时推。
+        // data 形状：{ scenario, prompt, choices: MockBranch[], phase }
+        // 关键不变量：
+        //   1. mockBranchChoices 一旦被设置，AgentChat 必须显示 MockBranchChoiceBar
+        //      并禁用 send 按钮（用户必须点 chip 或键入文本才能继续）
+        //   2. currentMockScenario 同步更新，否则 pickMockBranch 不知道推回哪个剧本
+        //   3. phase 写入 mockRoundState，使 mockScenarioPaused = true
+        // 不会在此处清理 mockRoundState —— 它的"运行中"状态可能仍有用。
+        try {
+          const raw = JSON.parse(event.data) as
+            | {
+                scenario?: unknown
+                prompt?: unknown
+                choices?: unknown
+                phase?: unknown
+              }
+            | null
+          if (!raw) break
+          const list = Array.isArray(raw.choices) ? (raw.choices as MockBranch[]) : []
+          mockBranchChoices.value = list
+            .filter((b): b is MockBranch =>
+              !!b && typeof b === 'object' && typeof (b as MockBranch).id === 'string',
+            )
+            .map((b) => ({
+              id: b.id,
+              label: String(b.label ?? b.id),
+              icon: typeof b.icon === 'string' ? b.icon : undefined,
+              description: typeof b.description === 'string' ? b.description : undefined,
+            }))
+          mockBranchPrompt.value = String(raw.prompt ?? '')
+          if (typeof raw.scenario === 'string' && raw.scenario.length > 0) {
+            currentMockScenario.value = raw.scenario
+          }
+          // 强制 paused：即使后端没推 mock_round_state 事件，单凭 mock_branch_choice
+          // 到达也意味着剧本在等用户选 branch。
+          mockRoundState.value = {
+            roundIdx: mockRoundState.value?.roundIdx ?? 0,
+            totalRounds: mockRoundState.value?.totalRounds ?? 1,
+            phase: 'awaiting_branch_choice',
+            context: mockRoundState.value?.context ?? {},
+            scenario: currentMockScenario.value,
+          }
+          console.debug(
+            '[useAgent] mock_branch_choice:',
+            mockBranchChoices.value.length,
+            'branches, prompt="',
+            mockBranchPrompt.value.slice(0, 40),
+            '..., scenario=',
+            currentMockScenario.value,
+          )
+        } catch (e) {
+          console.debug('[useAgent] mock_branch_choice parse failed:', e)
+        }
+        break
+      }
+
+      case 'mock_round_state': {
+        // v2 多轮/分支剧本：剧本报告当前 round 进度。
+        // data 形状：{ roundIdx, totalRounds, phase, context, scenario }
+        // 与 mock_branch_choice 配合使用：round_state 永远先到（宣告"我现在到
+        // round N 了"），branch_choice 后到（"我在这一步等你"）。
+        // 也可在 phase='running' 时单独到达，告知前端 round 推进但不需要用户操作。
+        try {
+          const raw = JSON.parse(event.data) as
+            | {
+                roundIdx?: unknown
+                totalRounds?: unknown
+                phase?: unknown
+                context?: unknown
+                scenario?: unknown
+              }
+            | null
+          if (!raw) break
+          const next: MockRoundState = {
+            roundIdx: typeof raw.roundIdx === 'number' ? raw.roundIdx : 0,
+            totalRounds: typeof raw.totalRounds === 'number' ? raw.totalRounds : 1,
+            phase: typeof raw.phase === 'string' ? raw.phase : 'running',
+            context:
+              raw.context && typeof raw.context === 'object'
+                ? (raw.context as Record<string, unknown>)
+                : {},
+            scenario:
+              typeof raw.scenario === 'string' && raw.scenario.length > 0
+                ? raw.scenario
+                : mockRoundState.value?.scenario,
+          }
+          mockRoundState.value = next
+          // scenario 也要单独缓存（mock_branch_choice 也写一次）
+          if (typeof raw.scenario === 'string' && raw.scenario.length > 0) {
+            currentMockScenario.value = raw.scenario
+          }
+          console.debug(
+            '[useAgent] mock_round_state: round',
+            next.roundIdx,
+            '/',
+            next.totalRounds,
+            'phase=',
+            next.phase,
+            'scenario=',
+            currentMockScenario.value,
+          )
+        } catch (e) {
+          console.debug('[useAgent] mock_round_state parse failed:', e)
+        }
+        break
+      }
+
       case 'compaction': {
         // Task 7：上下文自动压缩事件。
         //
@@ -1602,6 +1964,63 @@ export function useAgent() {
         }
         break
       }
+
+      // ====== AG-UI 协议新增事件类型（useAGUIParser 归一化输出） ======
+
+      case 'tool_call_args': {
+        // AG-UI TOOL_CALL_ARGS：把 args 增量追加到已存在的 tool_call.args 字段
+        // 找最后一条 assistant 消息里 id 匹配的 tool_call
+        try {
+          const payload = typeof event.data === 'string' ? JSON.parse(event.data) : (event.data as any)
+          if (!payload || typeof payload !== 'object' || !payload.id || typeof payload.argsDelta !== 'string') break
+          // 遍历所有 assistant 消息找到匹配的 tool_call（FIFO 顺序匹配，
+          // 保留 processSSE 阶段的 lastAssistant 选择语义）
+          for (let i = messages.value.length - 1; i >= 0; i--) {
+            const m = messages.value[i]
+            if (m.role !== 'assistant') continue
+            const tc = m.tool_calls.find((t) => t.id === payload.id)
+            if (tc) {
+              tc.args = (tc.args || '') + payload.argsDelta
+              break
+            }
+          }
+        } catch {
+          // 解析失败：忽略此增量 args（不破坏已存在的 tc.args）
+        }
+        break
+      }
+
+      case 'state_snapshot': {
+        // AG-UI STATE_SNAPSHOT：会话级共享状态，目前仅做调试记录 + 持久化兜底
+        try {
+          const payload = typeof event.data === 'string' ? JSON.parse(event.data) : (event.data as any)
+          if (typeof console.debug === 'function') {
+            const keys = payload && typeof payload === 'object' && payload.state && typeof payload.state === 'object'
+              ? Object.keys(payload.state)
+              : []
+            console.debug('[useAgent] agui state_snapshot keys:', keys)
+          }
+        } catch {
+          // 静默
+        }
+        break
+      }
+
+      case 'messages_snapshot': {
+        // AG-UI MESSAGES_SNAPSHOT：完整消息快照（断点续传对齐用）
+        // 当前实现：仅记录关键信息，不直接覆盖前端 messages（避免与本地编辑冲突）。
+        try {
+          const payload = typeof event.data === 'string' ? JSON.parse(event.data) : (event.data as any)
+          if (typeof console.debug === 'function') {
+            const count = payload && Array.isArray(payload.messages) ? payload.messages.length : 0
+            console.debug('[useAgent] agui messages_snapshot count:', count)
+          }
+        } catch {
+          // 静默
+        }
+        break
+      }
+
       default:
         // 未知 type 静默忽略
         break
@@ -1632,7 +2051,7 @@ export function useAgent() {
    */
   async function send(
     text: string,
-    options?: { mode?: 'start' | 'steer' | 'queue'; attachments?: Attachment[] },
+    options?: { mode?: 'start' | 'steer' | 'queue' | 'mock_resume'; scenario?: string; attachments?: Attachment[] },
   ): Promise<void> {
     const mode = options?.mode ?? 'start'
     if (mode === 'queue') {
@@ -1686,6 +2105,25 @@ export function useAgent() {
     })
 
     status.value = 'streaming'
+
+    // T15 unblock：mock_resume 模式在 fetch 前清空 chip + 把 round state
+    // 切到 "running" —— UI 立即从 paused 切到 spinner，避免视觉残留
+    // （stale "awaiting_user_input" 与新事件流冲突）。
+    // 后续 mock_round_state{phase:resumed/in_progress} 事件会覆盖此处写入。
+    if (mode === 'mock_resume') {
+      mockBranchChoices.value = []
+      mockBranchPrompt.value = ''
+      const curRound = mockRoundState.value?.roundIdx ?? 0
+      const totalRounds = mockRoundState.value?.totalRounds ?? 0
+      mockRoundState.value = {
+        scenario: currentMockScenario.value,
+        roundIdx: curRound,
+        totalRounds,
+        phase: 'running',
+        context: { ...(mockRoundState.value?.context ?? {}) },
+      }
+    }
+
     saveState()
     refreshSessions()
 
@@ -1716,10 +2154,28 @@ export function useAgent() {
     }
 
     try {
-      console.debug('[useAgent] send() starting fetch to', `${AGENT_API_BASE}/api/chat`, 'mode=', mode)
-      const response = await fetch(`${AGENT_API_BASE}/api/chat`, {
+      console.debug('[useAgent] send() starting fetch to', `${getAgentBase()}/api/chat`, 'mode=', mode)
+      // AG-UI 协议协商：根据 useAgentApiBase.shouldSendAGUIHeader() 决定
+      // 是否带 X-Agent-Protocol: agui header（默认 'auto' → 带）。
+      // 后端看到 header 后用 AG-UI parser 解析 LLM 响应；不带则按
+      // legacy 自定义 SSE 返回。
+      const sendAGUIHeader = shouldSendAGUIHeader()
+      const fetchHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...(sendAGUIHeader ? { 'X-Agent-Protocol': 'agui' } : {}),
+      }
+      // T15 unblock：mode === 'mock_resume' 时把 scenario 透传给后端，
+      // 否则 MockEngineV2 找不到对应的 stateful 实例 → 400 错误。
+      // 后端 handleMockResume 据此：(1) 在 mockScenariosV2 中查找剧本；
+      // (2) 调 mockV2SessionEngines 取出 / 创建 stateful 引擎；
+      // (3) 调 engine.Resume(userText) 推下一轮事件。
+      const scenarioForBody =
+        mode === 'mock_resume'
+          ? options?.scenario ?? currentMockScenario.value ?? undefined
+          : undefined
+      const response = await fetch(`${getAgentBase()}/api/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: fetchHeaders,
         body: JSON.stringify({
           sessionId: currentSessionId.value,
           model: activeModel.value,
@@ -1729,6 +2185,10 @@ export function useAgent() {
           // Task 11：把 mode 字段透传给后端。后端 ChatMode 根据 mode
           // 走 start/steer/queue 三种分支（"" 视为 start）。
           mode,
+          // T15 unblock：mock_resume 时把 scenario 字段一并发出。
+          // 非 mock_resume 模式不发送（保持 backward-compat：后端
+          // struct 字段是 omitempty，未传则忽略）。
+          ...(scenarioForBody ? { scenario: scenarioForBody } : {}),
         }),
         signal: abortController.signal,
       })
@@ -1747,13 +2207,17 @@ export function useAgent() {
       // Mock 模式 header 检测（备份信号）：SSE stream_start 事件是主信号，
       // 但如果首条事件到达前 header 已被读取，这里先把状态置好，避免 UI
       // 看到一段无 badge 的"普通"回复再被刷成 mock。
-      const mockHeader = response.headers.get('X-Mock-Mode')
+      // response.headers 可能为 undefined（部分代理 / 测试 mock），用 ?. 兼容。
+      const mockHeader = response.headers?.get('X-Mock-Mode')
       if (mockHeader) {
         isMockMode.value = true
-        mockScenario.value = response.headers.get('X-Mock-Scenario') ?? ''
+        mockScenario.value = response.headers?.get('X-Mock-Scenario') ?? ''
       }
 
-      const result = await processSSE(response.body)
+      // 协议分发：根据后端响应 X-Agent-Protocol 决定走 AG-UI parser 还是 legacy
+      // response.headers 可能为 undefined（部分代理 / 测试 mock），用 ?. 兼容。
+      const responseProtocol = response.headers?.get('X-Agent-Protocol') === 'agui' ? 'agui' : 'legacy'
+      const result = await processSSE(response.body, responseProtocol)
 
       // 流结束但未收到任何事件 → 后端无响应
       if (!result.received) {
@@ -1783,8 +2247,26 @@ export function useAgent() {
         finalizeLastAssistant()
         if (status.value !== 'idle') status.value = 'idle'
       } else {
-        const detail = e?.message || String(e)
-      console.error('[useAgent] send failed:', detail)
+        let detail = e?.message || String(e)
+        // 区分 CORS 预检失败 / 网络断开 / 服务器返回：
+        //   TypeError: Failed to fetch（或 iOS Safari 的"Load failed"）通常是
+        //     CORS 预检失败 / mixed content blocked / 端口不通 — 浏览器拒绝跨域 POST
+        //   这里把诊断信息 dump 到 console.error，下次出问题时 DevLogs 一眼能定位
+        if (e?.name === 'TypeError' && /Failed to fetch|Load failed/i.test(detail)) {
+          const ctx = getAgentApiBaseContext()
+          console.error('[useAgent] send failed (likely CORS preflight / network / mixed content):', {
+            base: ctx.base,
+            source: ctx.source,
+            isNative: ctx.isNative,
+            env: ctx.env,
+            sampleUrl: ctx.sampleUrl,
+            pageOrigin: typeof location !== 'undefined' ? location.origin : '(no location)',
+            requestUrl: `${ctx.base}/api/chat`,
+            aguiHeaderSent: shouldSendAGUIHeader(),
+          })
+          detail = `无法连接 Agent API (${ctx.base}) — 检查 CORS 预检 / 网络 / 服务器可达性`
+        }
+        console.error('[useAgent] send failed:', detail)
         if (lastUserMsg) lastUserMsg.error = detail
         // 把后端 buildHttpError 挂的 .code 提取出来（'no_api_key' / 'upstream_error' / 等）。
         // chat UI 据此可以展示"去 AI 设置"快捷按钮，让用户从对话流直达修复点，
@@ -1861,7 +2343,7 @@ export function useAgent() {
 
     try {
       console.debug('[useAgent] sendQueued() POST /api/chat mode=queue')
-      const response = await fetch(`${AGENT_API_BASE}/api/chat`, {
+      const response = await fetch(`${getAgentBase()}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1926,9 +2408,14 @@ export function useAgent() {
 
     abortController = new AbortController()
     try {
-      const response = await fetch(`${AGENT_API_BASE}/api/confirm`, {
+      // AG-UI 协议协商（与 send() 一致）
+      const sendAGUIHeader = shouldSendAGUIHeader()
+      const response = await fetch(`${getAgentBase()}/api/confirm`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(sendAGUIHeader ? { 'X-Agent-Protocol': 'agui' } : {}),
+        },
         body: JSON.stringify({
           sessionId: currentSessionId.value,
           toolCallId,
@@ -1947,7 +2434,9 @@ export function useAgent() {
         throw await buildHttpError(response, '/api/confirm')
       }
 
-      await processSSE(response.body)
+      // 协议分发
+      const responseProtocol = response.headers?.get('X-Agent-Protocol') === 'agui' ? 'agui' : 'legacy'
+      await processSSE(response.body, responseProtocol)
     } catch (e: any) {
       if (e?.name === 'AbortError') {
         console.debug('[useAgent] confirmTool aborted')
@@ -2017,12 +2506,15 @@ export function useAgent() {
       //   - status 切到非 streaming → 退出
       while (hopsLeft-- > 0) {
         const headerLastEventId = lastEventId > 0 ? String(lastEventId) : undefined
-        const response = await fetch(`${AGENT_API_BASE}/api/resume`, {
+        // AG-UI 协议协商（与 send() / confirmTool() 一致）
+        const sendAGUIHeader = shouldSendAGUIHeader()
+        const response = await fetch(`${getAgentBase()}/api/resume`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             // SSE 标准 Last-Event-ID：与 EventSource 协议一致
             ...(headerLastEventId ? { 'Last-Event-ID': headerLastEventId } : {}),
+            ...(sendAGUIHeader ? { 'X-Agent-Protocol': 'agui' } : {}),
           },
           body: JSON.stringify({
             sessionId: currentSessionId.value,
@@ -2037,7 +2529,10 @@ export function useAgent() {
           throw new Error(`HTTP ${response.status}`)
         }
 
-        const { received, streamEnded, morePending } = await processSSE(response.body)
+        // 协议分发：response.headers 可能为 undefined（部分代理 / 测试 mock），
+        // 用 ?. 兼容。后端正常响应总会带 X-Agent-Protocol header。
+        const responseProtocol = response.headers?.get('X-Agent-Protocol') === 'agui' ? 'agui' : 'legacy'
+        const { received, streamEnded, morePending } = await processSSE(response.body, responseProtocol)
 
         // 收尾判定
         if (streamEnded) break                  // 服务端显式收尾 → 退出
@@ -2176,6 +2671,24 @@ export function useAgent() {
     mockPresetsScenario,
     pickMockPreset,
     loadMockPresets,
+    // v2 多轮/分支剧本（参考 .trae/specs/agent-tools-scenarios-v2/spec.md）。
+    // - mockBranchChoices：当前 step 的 chip 列表（mock_branch_choice 事件驱动）
+    // - mockBranchPrompt：当前 step 的 prompt 文案（供 MockBranchChoiceBar 渲染）
+    // - mockRoundState：当前 round 进度 + 阶段（mock_round_state 事件驱动）
+    // - mockScenarioPaused：派生 computed，phase 为 awaiting_user_input 或
+    //   awaiting_branch_choice 时为 true。AgentChat 用它控制 MockBranchChoiceBar
+    //   的 v-if 显隐。
+    // - currentMockScenario：当前激活的 scenario ID（pickMockBranch /
+    //   sendMockRoundResponse 必须带上，供后端 MockEngineV2 知道是哪个剧本）
+    // - pickMockBranch(branchId)：点击 chip → send(branchId, {mode: mock_resume})
+    // - sendMockRoundResponse(userText)：键入文本 → send(userText, {mode: mock_resume})
+    mockBranchChoices,
+    mockBranchPrompt,
+    mockRoundState,
+    mockScenarioPaused,
+    currentMockScenario,
+    pickMockBranch,
+    sendMockRoundResponse,
     // 调试开关：URL ?debug=agent 时强制显示 AgentDebugPanel（mock 模式时也自动开）。
     // 便于排查"SSE 事件 → messages → renderedItems → UI 组件"全链路断点。
     isDebugAgent,

@@ -1,0 +1,61 @@
+# chinese_greeting — 中文开场白
+#
+# 用途：验证 UTF-8 / 中文渲染 / 字间距 / emoji 兼容。
+# 触发：关键词（"你好" / "中文" / "早上好"）
+#
+# 数据完整性：
+#   - 纯文案剧本，无 tool_call，无硬编码数据
+id: chinese_greeting
+description: "中文开场白 — 验证 UTF-8 / emoji / 字间距渲染"
+keywords:
+  - 你好
+  - 中文
+  - 早上好
+  - 晚上好
+  - hello
+
+steps:
+  - id: s1_stream_start
+    delay_ms: 0
+    events:
+      - type: stream_start
+        data: { scenario: chinese_greeting }
+      - type: text_delta
+        data: { text: "你好呀！👋\n" }
+
+  - id: s2_text
+    delay_ms: 200
+    events:
+      - type: text_delta
+        data: { text: "我是 ENCV 助手，可以帮你：\n" }
+      - type: text_delta
+        data: { text: "- 🔍 搜索文件\n" }
+      - type: text_delta
+        data: { text: "- 🔒 加密视频\n" }
+      - type: text_delta
+        data: { text: "- 📄 总结文档\n" }
+      - type: text_delta
+        data: { text: "- 🎬 分析媒体\n" }
+
+  - id: s3_branch_choice
+    delay_ms: 300
+    events:
+      - type: mock_branch_choice
+        data:
+          branch_id: post_greeting
+          options:
+            - id: search
+              label: "🔍 搜索文件"
+              icon: "🔍"
+            - id: encrypt
+              label: "🔒 加密"
+              icon: "🔒"
+            - id: help
+              label: "❓ 看帮助"
+              icon: "❓"
+
+  - id: s4_stream_end
+    delay_ms: 100
+    events:
+      - type: stream_end
+        data: { finishReason: stop, usage: { totalTokens: 67 } }

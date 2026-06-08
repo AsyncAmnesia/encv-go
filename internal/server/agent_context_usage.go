@@ -353,11 +353,12 @@ func extractReferencedFiles(messages []chatMsg) []referencedFile {
 }
 
 // readPathFromToolArgs 从工具 args 抽取 (mountId, path) 二元组
-// 只对 fs 工具生效
+// 覆盖 v1 + v2 工具集。任何以 (mount_id, rel_path) 为参数的 fs 工具都会被记录。
 func readPathFromToolArgs(toolName, argsJSON string) *struct {
 	MountID string
 	Path    string
 } {
+	// v1 工具（保留兼容）
 	switch toolName {
 	case "read_file", "stat_file":
 		var args struct {
@@ -386,6 +387,48 @@ func readPathFromToolArgs(toolName, argsJSON string) *struct {
 			}{MountID: args.MountID, Path: p}
 		}
 	}
+	// v2 工具：6 个共享 (mount_id, rel_path) 契约的工具
+	switch toolName {
+	case "read_file_v2", "get_metadata", "edit_metadata", "delete_file":
+		var args struct {
+			MountID string `json:"mount_id"`
+			RelPath string `json:"rel_path"`
+		}
+		if err := json.Unmarshal([]byte(argsJSON), &args); err == nil && args.RelPath != "" {
+			return &struct {
+				MountID string
+				Path    string
+			}{MountID: args.MountID, Path: args.RelPath}
+		}
+	case "search_files":
+		var args struct {
+			MountID string `json:"mount_id"`
+			RelPath string `json:"rel_path"`
+		}
+		if err := json.Unmarshal([]byte(argsJSON), &args); err == nil {
+			p := args.RelPath
+			if p == "" {
+				p = "/"
+			}
+			return &struct {
+				MountID string
+				Path    string
+			}{MountID: args.MountID, Path: p}
+		}
+	case "batch_rename":
+		// batch_rename 的语义是对 mount 下 root 起作用，pattern 是模板；记录 root 即可
+		var args struct {
+			MountID string `json:"mount_id"`
+			RelPath string `json:"rel_path"`
+		}
+		if err := json.Unmarshal([]byte(argsJSON), &args); err == nil && args.RelPath != "" {
+			return &struct {
+				MountID string
+				Path    string
+			}{MountID: args.MountID, Path: args.RelPath}
+		}
+	}
+	// command_run / batch_rename_v2-without-relpath / 其他无法静态抽取的工具 → 跳过
 	return nil
 }
 

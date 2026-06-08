@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Soltus/encv-go/internal/tools"
 	"github.com/Soltus/encv-go/internal/v2/plugins"
 	pluginInterfaces "github.com/Soltus/encv-go/internal/v2/plugins/interfaces"
 	encvPlugins "github.com/Soltus/encv-go/pkg/encv/plugins"
@@ -245,16 +246,32 @@ func (s *Server) ListAgentTools() []map[string]interface{} {
 }
 
 // executeAgentTool 统一派发所有 agent 工具调用。
-// 优先查插件工具表（pluginOpsByName），未命中再走 fs 工具。
+//
+// 派发顺序（v2 spec）：
+//   1. 工具注册表（tools.GlobalRegistry）—— 新工具（search_files / get_metadata /
+//      read_file_v2 / command_run / edit_metadata / batch_rename）
+//   2. 旧插件工具表（pluginOpsByName）—— 兼容 encrypt_video 等插件
+//   3. fs 工具（list_mounts / list_files / read_file 等）—— 兼容 v1
+//
 // 不存在的工具名 → 报错。
 //
 // 这是把 fs 工具接入 agent 系统的入口。
 // executePluginTool 保留为旧入口（向后兼容 + 测试）；新代码应调 executeAgentTool。
 func (s *Server) executeAgentTool(ctx context.Context, toolName, argsJSON string) (string, error) {
+	// v2 工具注册表优先（search_files / get_metadata / command_run / edit_metadata）
+	if s.toolDeps != nil && tools.GlobalRegistry.Has(toolName) {
+		res, err := tools.GlobalRegistry.Dispatch(ctx, toolName, argsJSON, s.toolDeps)
+		if err != nil {
+			slog.Warn("tool dispatch error", "tool", toolName, "error", err)
+			return res.Result, err
+		}
+		return res.Result, nil
+	}
+	// 旧插件工具（encrypt_video / decrypt_video 等）
 	if _, ok := pluginOpsByName[toolName]; ok {
 		return executePluginTool(ctx, toolName, argsJSON)
 	}
-	// fs 工具
+	// fs 工具（兼容 v1）
 	return s.executeFSTool(ctx, toolName, argsJSON)
 }
 

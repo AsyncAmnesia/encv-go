@@ -1,10 +1,10 @@
 /**
  * useAgentApiBase 单元测试
  *
- * 关键不变量：
+ * 关键不变量（Phase X1 改造后）：
  * 1. dev 环境（import.meta.env.DEV=true）→ '/agent-api'（走 preview-gateway）
- * 2. 生产环境（import.meta.env.DEV=false）→ 走 getApiBaseUrl() 绝对 URL
- * 3. APK native 标识通过 isNative() 检测；不影响 base URL 解析（走 getApiBaseUrl）
+ * 2. 生产 native APK → ''（相对路径，由 window.fetch override 走 ApiProxy 插件）
+ * 3. 生产 web SPA → 走 getApiBaseUrl() 绝对 URL
  * 4. Context 含 source 字段，区分 dev-gateway/native-default/user-configured/web-fallback
  * 5. Context 包含 sampleUrl 字段，便于日志/UI 展示
  *
@@ -74,11 +74,11 @@ describe('getAgentApiBase - 生产环境', () => {
     vi.stubEnv('PROD', true)
   })
 
-  it('APK native → 使用 getApiBaseUrl() 默认值（127.0.0.1:2025）', async () => {
+  it('APK native → 返回空字符串（相对路径，走 ApiProxy 插件）', async () => {
     mockIsNative = true
     mockApiBase = 'http://127.0.0.1:2025'
     const { getAgentApiBase } = await import('@/composables/useAgentApiBase')
-    expect(getAgentApiBase()).toBe('http://127.0.0.1:2025')
+    expect(getAgentApiBase()).toBe('')
   })
 
   it('web SPA + 用户配置 encv-server-url → 使用用户配置', async () => {
@@ -113,7 +113,7 @@ describe('getAgentApiBaseContext', () => {
     expect(ctx.sampleUrl).toContain('/agent-api/api/encrypt-key')
   })
 
-  it('prod native: source=native-default, sampleUrl 绝对 URL', async () => {
+  it('prod native: source=native-default, sampleUrl 相对路径（ApiProxy 接管）', async () => {
     vi.stubEnv('DEV', false)
     vi.stubEnv('PROD', true)
     mockIsNative = true
@@ -121,12 +121,12 @@ describe('getAgentApiBaseContext', () => {
     const { getAgentApiBaseContext } = await import('@/composables/useAgentApiBase')
     const ctx = getAgentApiBaseContext()
     expect(ctx).toMatchObject({
-      base: 'http://127.0.0.1:2025',
+      base: '',
       source: 'native-default',
       env: 'prod',
       isNative: true,
     })
-    expect(ctx.sampleUrl).toBe('http://127.0.0.1:2025/api/encrypt-key')
+    expect(ctx.sampleUrl).toBe('/api/encrypt-key')
   })
 
   it('prod web + 用户配置 encv-server-url: source=user-configured', async () => {
@@ -163,13 +163,13 @@ describe('调用方拼接：${getAgentApiBase()}/api/encrypt-key', () => {
     expect(url).toBe('/agent-api/api/encrypt-key')
   })
 
-  it('prod native: 拼出 http://127.0.0.1:2025/api/encrypt-key', async () => {
+  it('prod native: 拼出 /api/encrypt-key（相对路径，ApiProxy 插件接管）', async () => {
     vi.stubEnv('DEV', false)
     vi.stubEnv('PROD', true)
     mockIsNative = true
     mockApiBase = 'http://127.0.0.1:2025'
     const { getAgentApiBase } = await import('@/composables/useAgentApiBase')
     const url = `${getAgentApiBase()}/api/encrypt-key`
-    expect(url).toBe('http://127.0.0.1:2025/api/encrypt-key')
+    expect(url).toBe('/api/encrypt-key')
   })
 })

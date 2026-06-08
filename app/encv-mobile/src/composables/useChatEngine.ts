@@ -31,6 +31,17 @@ const DEFAULT_ENGINE_ID = 'default'
 /**
  * 当前活跃引擎实例（shallowRef，切换时触发重新渲染）
  * 模块级单例——所有 useChatEngine() 调用共享同一个 ref
+ *
+ * **关键**：不在模块加载时初始化！
+ * - 模块级 init 会先于 AgentChat.vue 的 `import '@/engines/defaultEngine'`
+ *   等注册副作用执行（import 顺序由 vue-loader / vite 决定，模块副作用
+ *   与 import 解析顺序有关）
+ * - 旧版在模块顶层调用 `ensureEngine(activeEngineId.value)`，导致
+ *   registry 还没有任何工厂 → currentEngine = null → 用户看到
+ *   "引擎加载失败，请刷新页面"。
+ * - 新版改为**懒初始化**：在 useChatEngine() 首次调用时才创建实例，
+ *   此时 AgentChat.vue 的 setup() 上下文里所有 import 已完成，
+ *   引擎注册副作用已执行。
  */
 const currentEngine: ShallowRef<ChatEngine | null> = shallowRef(null)
 
@@ -39,6 +50,9 @@ const activeEngineId = ref(loadSavedEngineId())
 
 /** 所有已注册引擎的元信息列表（响应式） */
 const engineList = ref(getRegisteredEngines())
+
+/** 引擎初始化重试计数器（防止极端 import 顺序下注册延迟到后续调用） */
+let engineInitRetry = 0
 
 /**
  * 从 localStorage 加载保存的引擎 ID
@@ -81,13 +95,8 @@ function ensureEngine(id: string): ChatEngine | null {
   return instance
 }
 
-// 初始化：确保有活跃实例
-if (!currentEngine.value) {
-  currentEngine.value = ensureEngine(activeEngineId.value)
-  if (currentEngine.value) {
-    activeEngineId.value = currentEngine.value.id
-  }
-}
+// 初始化：移到 useChatEngine() 内部懒初始化（见下方函数体内的 lazy init 块）
+// 旧版这里在模块顶层调用 ensureEngine(...) 会因 import 顺序问题失败。
 
 // =============================================================================
 // useChatEngine Composable
@@ -115,6 +124,27 @@ export interface UseChatEngineReturn {
  * 切换引擎时所有使用方自动更新。
  */
 export function useChatEngine(): UseChatEngineReturn {
+  // ── 懒初始化：首次调用时创建引擎实例 ──────────────────────
+  // 此时 AgentChat.vue setup() 上下文里所有 import 已执行完毕，
+  // `import '@/engines/defaultEngine'` / `import '@/engines/tdesignEngine'`
+  // 这类带副作用的 import 都已 registerEngine(...) 完成，registry 不为空。
+  //
+  // 自愈机制：如果首次 init 时 registry 还为空（极端 import 顺序），
+  // 每次调用都重试直到成功（最多 3 次），避免"刷新页面看到加载失败"。
+  if (!currentEngine.value && engineInitRetry < 3) {
+    engineInitRetry += 1
+    const inst = ensureEngine(activeEngineId.value)
+    if (inst) {
+      currentEngine.value = inst
+      activeEngineId.value = inst.id
+    } else {
+      console.error(
+        '[useChatEngine] 懒初始化失败（第 ' + engineInitRetry + ' 次）：registry 仍为空。' +
+          '请确认 AgentChat.vue 或其父组件已 import @/engines/defaultEngine 和 @/engines/tdesignEngine。',
+      )
+    }
+  }
+
   // 引擎模块可能在 useChatEngine() 首次调用前已通过 import 注册，
   // 但 engineList 在模块初始化时可能为空（注册还没执行）。
   // 每次调用时刷新列表，确保 UI 能看到所有已注册引擎。

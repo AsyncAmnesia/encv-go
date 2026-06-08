@@ -65,7 +65,7 @@ export function getAlistActions(file: FileItem): FileAction[] {
   return [
     {
       id: 'alist-encrypt',
-      text: () => t('files.encrypt'),
+      text: () => t('alistEncrypt.encrypt'),
       icon: lockClosed,
       color: 'warning',
       handler: async (f: FileItem) => {

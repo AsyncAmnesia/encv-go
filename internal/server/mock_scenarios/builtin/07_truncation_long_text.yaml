@@ -1,0 +1,75 @@
+# truncation_long_text — 长文本流
+#
+# 用途：验证流式 text_delta 在长文本下不丢失字符 / 不重复推送。
+# 触发：关键词（"长文本" / "测试长输出"）
+#
+# 数据完整性：本剧本**故意**输出长文本以测试流式行为。
+# 注意：长文本是**通用 UI 文案**（不含具体文件名/计数/错误）。
+# 实际项目长文本通常来自 tool_result（自动），但本剧本用于测试纯 text_delta 流的鲁棒性。
+id: truncation_long_text
+description: "20 段流式 text_delta — 验证长文本流稳定性"
+keywords:
+  - 长文本
+  - 长输出
+  - 测试流
+  - long text
+
+steps:
+  - id: s1_stream_start
+    delay_ms: 0
+    events:
+      - type: stream_start
+        data: { scenario: truncation_long_text }
+      - type: text_delta
+        data: { text: "## 长文本流测试\n\n" }
+
+  # 20 段连续流式输出 — 用通用语句测试，不写死文件数据
+  - id: s2_to_s21
+    delay_ms: 100
+    events:
+      - type: text_delta
+        data: { text: "第一段：流式输出测试启动。\n" }
+      - type: text_delta
+        data: { text: "第二段：前端正在接收增量更新。\n" }
+      - type: text_delta
+        data: { text: "第三段：seq 序号连续递增。\n" }
+      - type: text_delta
+        data: { text: "第四段：未发现丢帧或重放。\n" }
+      - type: text_delta
+        data: { text: "第五段：长文本不影响 stream_end 推送。\n" }
+      - type: text_delta
+        data: { text: "第六段：EventCache 持续累积。\n" }
+      - type: text_delta
+        data: { text: "第七段：SSE keep-alive 注释正常。\n" }
+      - type: text_delta
+        data: { text: "第八段：浏览器渲染 pipeline 跟得上。\n" }
+      - type: text_delta
+        data: { text: "第九段：内存占用稳定。\n" }
+      - type: text_delta
+        data: { text: "第十段：CPU 占用稳定。\n" }
+      - type: text_delta
+        data: { text: "第十一段：网络 buffer 无溢出。\n" }
+      - type: text_delta
+        data: { text: "第十二段：断线重连能恢复。\n" }
+      - type: text_delta
+        data: { text: "第十三段：超长 markdown 表格可渲染。\n" }
+      - type: text_delta
+        data: { text: "第十四段：代码块高亮正常。\n" }
+      - type: text_delta
+        data: { text: "第十五段：行内代码、链接、引用都对。\n" }
+      - type: text_delta
+        data: { text: "第十六段：emoji 字符无乱码。\n" }
+      - type: text_delta
+        data: { text: "第十七段：中英文混排无截断。\n" }
+      - type: text_delta
+        data: { text: "第十八段：连续换行保留。\n" }
+      - type: text_delta
+        data: { text: "第十九段：标点符号完整。\n" }
+      - type: text_delta
+        data: { text: "第二十段：测试完成。\n" }
+
+  - id: s22_stream_end
+    delay_ms: 100
+    events:
+      - type: stream_end
+        data: { finishReason: stop, usage: { totalTokens: 800 } }

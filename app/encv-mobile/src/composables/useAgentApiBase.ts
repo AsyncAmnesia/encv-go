@@ -32,19 +32,78 @@
 import { getApiBaseUrl, DEFAULT_API_BASE_URL } from '@/api/encv'
 import { isNative } from '@/plugins/GoProcess'
 
+// =============================================================================
+// Agent Protocol Negotiation（useAgent.send() 据此决定是否带 X-Agent-Protocol 头）
+// =============================================================================
+//
+// AG-UI 协议协商：
+//   - 'agui'  → useAgent.send() 总是发 X-Agent-Protocol: agui header
+//   - 'legacy'→ 不发 header（用于回滚调试：后端按默认走 legacy 自定义 SSE）
+//   - 'auto'  → 同 'agui'（默认行为：始终带 header，未来加新协议时再扩）
+//
+// 持久化到 localStorage('encv-agent-protocol') 便于用户从 DevTools 切回 legacy 排查。
+
+export type AgentProtocol = 'agui' | 'legacy' | 'auto'
+
+const AGENT_PROTOCOL_STORAGE_KEY = 'encv-agent-protocol'
+
+function isAgentProtocol(v: string | null): v is AgentProtocol {
+  return v === 'agui' || v === 'legacy' || v === 'auto'
+}
+
+/** 获取当前协议选择（同步；带 localStorage 容错） */
+export function getAgentProtocol(): AgentProtocol {
+  try {
+    const v = localStorage.getItem(AGENT_PROTOCOL_STORAGE_KEY)
+    if (isAgentProtocol(v)) return v
+  } catch {
+    // SSR / 隐私模式 fallback
+  }
+  return 'auto'
+}
+
+/** 设置协议选择并持久化 */
+export function setAgentProtocol(protocol: AgentProtocol): void {
+  try {
+    if (protocol === 'auto') {
+      // 'auto' 视作默认值，不持久化（清掉旧值，恢复「总是 agui」默认行为）
+      localStorage.removeItem(AGENT_PROTOCOL_STORAGE_KEY)
+    } else {
+      localStorage.setItem(AGENT_PROTOCOL_STORAGE_KEY, protocol)
+    }
+  } catch {
+    // 静默失败
+  }
+}
+
+/** useAgent.send() 用：决定是否带 X-Agent-Protocol: agui header */
+export function shouldSendAGUIHeader(): boolean {
+  const p = getAgentProtocol()
+  // 'agui' 和 'auto' 都发 header；'legacy' 模式不发（用于回滚调试）
+  return p !== 'legacy'
+}
+
 /**
  * 解析 Agent API 基础 URL（同步）
  *
  * 注意：本函数只读 env + localStorage + isNative()，无副作用。
  * 任何需要根据后端状态动态调整的逻辑都不应放这里。
+ *
+ * Phase X1 改造：native APK 模式下返回空字符串（相对路径），
+ * 由 main.ts 安装的 window.fetch override 路由到 ApiProxy 插件，
+ * 绕开 WebView CORS preflight。dev 走 vite + preview-gateway 保持不变。
  */
 export function getAgentApiBase(): string {
   if (import.meta.env.DEV) {
     // dev: 走 preview-gateway 统一前缀
     return '/agent-api'
   }
-  // prod: APK 走 native bridge → 本地 :2025；web SPA 走 getApiBaseUrl() 配置
-  // 两者都用绝对 URL，因为没有 vite proxy / preview-gateway 中转
+  // prod
+  if (isNative()) {
+    // native: 相对路径，window.fetch 已被 override 走 ApiProxy 插件
+    return ''
+  }
+  // prod web SPA: 走用户配置 / 默认绝对 URL
   return getApiBaseUrl() || DEFAULT_API_BASE_URL
 }
 
@@ -76,6 +135,18 @@ export function getAgentApiBaseContext(): AgentApiBaseContext {
   }
 
   // prod
+  if (native) {
+    // native: 相对路径，sampleUrl 拼成 /api/encrypt-key 体现"由 ApiProxy 接管"
+    return {
+      base: '',
+      source: 'native-default',
+      isNative: true,
+      env,
+      sampleUrl: '/api/encrypt-key',
+    }
+  }
+
+  // prod web SPA
   const apiBaseUrl = getApiBaseUrl()
   const hasUserOverride = (() => {
     try {
@@ -84,16 +155,14 @@ export function getAgentApiBaseContext(): AgentApiBaseContext {
       return false
     }
   })()
-  const source: AgentApiBaseContext['source'] = native
-    ? 'native-default'
-    : hasUserOverride
-      ? 'user-configured'
-      : 'web-fallback'
+  const source: AgentApiBaseContext['source'] = hasUserOverride
+    ? 'user-configured'
+    : 'web-fallback'
 
   return {
     base: apiBaseUrl || DEFAULT_API_BASE_URL,
     source,
-    isNative: native,
+    isNative: false,
     env,
     sampleUrl: `${apiBaseUrl || DEFAULT_API_BASE_URL}/api/encrypt-key`,
   }

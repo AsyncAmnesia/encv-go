@@ -1129,11 +1129,14 @@ export async function listFilesByTag(tag: string, path?: string): Promise<FileIt
 }
 
 export function getAlistEncryptStreamUrl(params: { path: string; password: string }): string {
+  // 注意：path 用单次 encodeURIComponent（不是 proxySafeEncode）。
+  // 双重编码（proxySafeEncode）是为经过 WAF / 代理的场景，而 alist-encrypt
+  // stream 端点会自行解码一次，单编码才是正确的客户端编码层次。
   if (import.meta.env.DEV) {
-    return `/api/alist-encrypt/stream?path=${proxySafeEncode(params.path)}&password=${encodeURIComponent(params.password)}`
+    return `/api/alist-encrypt/stream?path=${encodeURIComponent(params.path)}&password=${encodeURIComponent(params.password)}`
   }
   const baseUrl = getApiBaseUrl()
-  return `${baseUrl}/api/alist-encrypt/stream?path=${proxySafeEncode(params.path)}&password=${encodeURIComponent(params.password)}`
+  return `${baseUrl}/api/alist-encrypt/stream?path=${encodeURIComponent(params.path)}&password=${encodeURIComponent(params.password)}`
 }
 
 export interface AlistDecodeResult {
