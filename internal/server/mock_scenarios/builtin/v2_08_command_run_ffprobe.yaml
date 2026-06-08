@@ -1,0 +1,44 @@
+id: command_run_ffprobe
+description: "通过受限 shell 执行 ffprobe 提取元数据"
+keywords:
+  - "command_run_ffprobe"
+rounds: 1
+
+steps:
+  - id: intro
+    round_idx: 0
+    delay_ms: 10
+    events:
+      - type: stream_start
+        data: { scenario: command_run_ffprobe }
+      - type: text_delta
+        data: { text: "执行 ffprobe 提取元数据…" }
+  - id: run_ffprobe
+    round_idx: 0
+    delay_ms: 30
+    events:
+      - type: tool_call
+        data:
+          id: call_crf_1
+          name: command_run
+          args:
+            cmd: ffprobe
+            args:
+              - "-v"
+              - "quiet"
+              - "-print_format"
+              - "json"
+              - "-show_format"
+              - "-show_streams"
+          auto_run: true
+          needsConfirm: false
+          kind: shell
+          execute_real: true
+  - id: done
+    round_idx: 0
+    delay_ms: 50
+    events:
+      - type: text_delta
+        data: { text: "ffprobe 执行完成。结果见上方工具返回。" }
+      - type: stream_end
+        data: { finishReason: stop }

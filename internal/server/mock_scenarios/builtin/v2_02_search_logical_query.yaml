@@ -1,0 +1,44 @@
+id: search_logical_query
+description: "复合 AND 查询（size + mtime + ext）"
+keywords:
+  - "search_logical_query"
+rounds: 1
+
+steps:
+  - id: intro
+    round_idx: 0
+    delay_ms: 10
+    events:
+      - type: stream_start
+        data: { scenario: search_logical_query }
+      - type: text_delta
+        data: { text: "正在执行复合 AND 查询…" }
+  - id: search
+    round_idx: 0
+    delay_ms: 30
+    events:
+      - type: tool_call
+        data:
+          id: call_slq_1
+          name: search_files
+          args:
+            expression:
+              and:
+                - type: size_gt
+                  value: 10240
+                - type: mtime_after
+                  value: "2020-01-01T00:00:00Z"
+                - type: ext_eq
+                  value: ".txt"
+          auto_run: true
+          needsConfirm: false
+          kind: fileSearch
+          execute_real: true
+  - id: done
+    round_idx: 0
+    delay_ms: 50
+    events:
+      - type: text_delta
+        data: { text: "查询完成。匹配结果见上方工具返回。" }
+      - type: stream_end
+        data: { finishReason: stop }

@@ -389,7 +389,7 @@ steps:
 }
 
 // ════════════════════════════════════════════════════════════════
-// CI 红线测试：扫所有内置 YAML（mock_scenarios/builtin/ + mock_scenarios/v2/）
+// CI 红线测试：扫所有内置 YAML（mock_scenarios/builtin/，v2 已合并入 builtin）
 // ════════════════════════════════════════════════════════════════
 
 func TestSchema_NoHardcodedData_AllBuiltinScenarios(t *testing.T) {
@@ -406,16 +406,12 @@ func TestSchema_NoHardcodedData_AllBuiltinScenarios(t *testing.T) {
 	}
 }
 
-// loadBuiltinScenariosFromYAML 从 mock_scenarios/builtin/ + mock_scenarios/v2/ 加载所有 YAML。
-// 此函数在 T2 (loader) 中实现，此处先声明接口。
+// loadBuiltinScenariosFromYAML 从 mock_scenarios/builtin/ 加载所有 YAML。
 func loadBuiltinScenariosFromYAML(t *testing.T) []LoadedScenario {
 	t.Helper()
-	// 同时扫 builtin/ 和 v2/ 子目录
 	dirs := []string{
 		"mock_scenarios/builtin",
-		"mock_scenarios/v2",
 		"internal/server/mock_scenarios/builtin",
-		"internal/server/mock_scenarios/v2",
 	}
 	var all []LoadedScenario
 	for _, d := range dirs {

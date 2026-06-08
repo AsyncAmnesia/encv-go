@@ -1,0 +1,80 @@
+id: batch_rename_with_preview
+description: "批量重命名（dry_run 预览 → 确认 → 真实执行）"
+keywords:
+  - "batch_rename_with_preview"
+rounds: 3
+
+steps:
+  - id: round0_intro
+    round_idx: 0
+    delay_ms: 10
+    events:
+      - type: stream_start
+        data: { scenario: batch_rename_with_preview }
+      - type: text_delta
+        data: { text: "正在预览批量重命名（dry_run）…" }
+  - id: round0_dryrun
+    round_idx: 0
+    delay_ms: 30
+    events:
+      - type: tool_call
+        data:
+          id: call_br_1
+          name: batch_rename
+          args:
+            pattern: "S01E#"
+            source_glob: "*.mkv"
+            dry_run: true
+          auto_run: true
+          needsConfirm: false
+          kind: fileRename
+          execute_real: true
+  - id: round0_preview
+    round_idx: 0
+    delay_ms: 50
+    events:
+      - type: text_delta
+        data: { text: "预览完成。重命名映射见上方工具返回。" }
+      - type: mock_presets
+        data:
+          scenario: batch_rename_with_preview
+          phase: confirm
+          presets:
+            - id: ok
+              label: "✓ 确认执行"
+              user_text: "确认"
+            - id: no
+              label: "✗ 取消"
+              user_text: "取消"
+    pause_for_user: true
+
+  - id: round1_intro
+    round_idx: 1
+    delay_ms: 10
+    events:
+      - type: text_delta
+        data: { text: "执行批量重命名…" }
+  - id: round1_execute
+    round_idx: 1
+    delay_ms: 30
+    events:
+      - type: tool_call
+        data:
+          id: call_br_2
+          name: batch_rename
+          args:
+            pattern: "S01E#"
+            source_glob: "*.mkv"
+            dry_run: false
+          auto_run: true
+          needsConfirm: false
+          kind: fileRename
+          execute_real: true
+  - id: round1_done
+    round_idx: 1
+    delay_ms: 50
+    events:
+      - type: text_delta
+        data: { text: "批量重命名完成。结果见上方工具返回。" }
+      - type: stream_end
+        data: { finishReason: stop }

@@ -106,6 +106,17 @@ type Agent struct {
 	// MockRoundPauseEnabled 是否允许剧本在 mid-scenario 暂停等待用户输入。
 	// false → 剧本忽略 pause_for_user 标记，一路跑完（自动机模式）。
 	MockRoundPauseEnabled bool `json:"mock_round_pause_enabled,omitempty"`
+
+	// MockScenariosDir 剧本外置 spec：YAML/JSON 剧本所在目录。
+	// 设置后，Server 启动时扫描该目录下的 *.yaml / *.json 文件，
+	// 校验 + 加载，注入到 MockEngine。空字符串 = 走 Go 字面量 fallback。
+	// 详见 internal/server/mock_scenarios/SCHEMA.md。
+	MockScenariosDir string `json:"mock_scenarios_dir,omitempty"`
+
+	// MockScenariosHotReload 是否启用 fsnotify 热重载。
+	// true → 检测到目录内 *.yaml / *.json 变更时自动 reload（500ms 防抖）。
+	// 仅在 MockScenariosDir 非空时生效。
+	MockScenariosHotReload bool `json:"mock_scenarios_hot_reload,omitempty"`
 }
 
 // MockScenario — 自定义 mock 剧本配置项（与 internal/server/agent_mock.go 中的同名类型语义一致）

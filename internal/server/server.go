@@ -57,6 +57,12 @@ type Server struct {
 	jwtManager     *auth.JWTManager
 	webdavFS       webdav.IndexProvider
 	mockEngine     *MockEngine
+	// scenarioLoader 是剧本外置 spec 引入的加载器。
+	// 若 agent_settings.mock_scenarios_dir 非空，
+	// NewServer 会创建 loader + 加载 YAML 覆盖 builtin 剧本。
+	// 热重载（-mock-scenarios-hot-reload）由 Start() 启动 goroutine。
+	scenarioLoader *ScenarioLoader
+	scenariosDir   string
 	// toolDeps 是 tools 包的依赖注入（v2 工具注册表使用）。
 	// Server 启动时构造一次，executeAgentTool 路径下注入到 tools.GlobalRegistry.Dispatch。
 	toolDeps *tools.ToolDeps
@@ -97,6 +103,11 @@ func NewServer(ctx context.Context, configPath string) *Server {
 		},
 		Config: cfg,
 	}
+
+	// 剧本外置 spec：若 agent_settings.mock_scenarios_dir 非空，
+	// 用 ScenarioLoader 加载 YAML/JSON 剧本，注入到 MockEngine。
+	// 详见 internal/server/mock_scenarios/SCHEMA.md。
+	s.loadScenariosFromAgentConfig()
 	return s
 }
 

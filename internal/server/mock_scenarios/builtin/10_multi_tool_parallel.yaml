@@ -1,38 +1,44 @@
-# multi_tool_parallel — 多工具并行
-#
-# 用途：验证多个独立 tool_call 顺序触发 + 各自真实执行。
-# 触发：关键词（"并行" / "parallel"）
-#
-# 数据完整性：
-#   - 3 个 tool_call 并行触发（list_files + list_mounts + stat_file）
-#   - args 各自是用户输入的查询参数
-#   - text_delta 是通用 UI 文案（不含具体文件）
 id: multi_tool_parallel
-description: "3 tool_call 并行触发 — 验证并行执行与 SSE 排序"
+description: "同 step 内 3 tool_call — 验证并行工具调用渲染"
 keywords:
-  - 并行
-  - parallel
-  - 同时执行
-  - 多个工具
+  - "批量"
+  - "并行"
+  - "同时"
+  - "parallel"
+  - "batch"
+
+presets:
+  - id: p_only_movies
+    label: "🎬 只看视频"
+    user_text: "只列视频目录"
+    tooltip: "缩减范围"
+  - id: p_count_files
+    label: "🔢 统计文件数"
+    user_text: "统计文件数"
+    tooltip: "批量统计"
+  - id: p_export
+    label: "📤 导出结果"
+    user_text: "把列表导出"
+    tooltip: "导出结构化结果"
 
 steps:
-  - id: s1_stream_start
+  - id: intro
     delay_ms: 0
     events:
       - type: stream_start
         data: { scenario: multi_tool_parallel }
       - type: text_delta
-        data: { text: "我将并行执行多个查询。\n" }
-
-  # 3 个 tool_call 在同一 step 触发（前端按 SSE 顺序渲染）
-  - id: s2_parallel_calls
+        data: { text: "并行查询多个目录：" }
+  - id: parallel_calls
     delay_ms: 400
     events:
       - type: tool_call
         data:
           id: call_par_1
-          name: list_mounts
-          args: {}
+          name: list_files
+          args:
+            mount_id: serving
+            rel_path: "01-plain-media/video"
           auto_run: true
           needsConfirm: false
           kind: readOnly
@@ -41,7 +47,9 @@ steps:
         data:
           id: call_par_2
           name: list_files
-          args: { mount_id: serving, rel_path: / }
+          args:
+            mount_id: serving
+            rel_path: "01-plain-media/audio"
           auto_run: true
           needsConfirm: false
           kind: readOnly
@@ -49,24 +57,18 @@ steps:
       - type: tool_call
         data:
           id: call_par_3
-          name: stat_file
-          args: { mount_id: serving, rel_path: /health.txt }
+          name: list_files
+          args:
+            mount_id: serving
+            rel_path: "01-plain-media/document"
           auto_run: true
           needsConfirm: false
           kind: readOnly
           execute_real: true
-
-  # 等待所有工具执行完成（具体延迟由 MockEngine 调度）
-  - id: s3_text_summary
-    delay_ms: 1500
-    events:
-      - type: text_delta
-        data: { text: "## 并行查询完成\n\n" }
-      - type: text_delta
-        data: { text: "所有 3 个工具已并行执行完毕，详见上方结果。\n" }
-
-  - id: s4_stream_end
+  - id: end
     delay_ms: 100
     events:
       - type: stream_end
-        data: { finishReason: stop, usage: { totalTokens: 312 } }
+        data:
+          finishReason: tool_calls
+          usage: { totalTokens: 145 }

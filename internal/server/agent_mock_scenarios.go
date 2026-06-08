@@ -1,14 +1,28 @@
 // internal/server/agent_mock_scenarios.go
 //
-// 12 个内置 MockScenario 定义。
+// 12 个内置 MockScenario 定义（v1 剧本，Go 字面量版本）。
 //
-// 设计原则：
+// ⚠️ DEPRECATED — 剧本外置 spec 已生效。
+//
+// 当前状态：保留作为 fallback。
+//   - 当 agent_settings.mock_scenarios_dir 为空时，loader 注入此 12 个剧本
+//   - 当 mock_scenarios_dir 有 YAML 时，YAML 优先，此文件内容被覆盖
+//   - 当 mock_scenarios_dir 解析失败时，loader 也注入此 fallback
+//
+// 推荐迁移路径：
+//   1. 把本文件中每个 scenarioDefaultFriendly() 等函数转写为 YAML
+//   2. 放到 internal/server/mock_scenarios/builtin/01_xxx.yaml
+//   3. 验证通过后（CI 红线测试 + 启动 log）即可禁用此文件
+//   4. 详见 internal/server/mock_scenarios/SCHEMA.md
+//
+// 设计原则（v1 设计，仍适用）：
 //   - 每个剧本是独立函数返回 *MockScenario，便于单测直接调用验证事件序列
 //   - 所有事件类型与真实 OpenAI 路径输出字节级一致（前端 0 改动）
 //   - 延迟/事件顺序严格按 spec.md 编排，覆盖 [真机问题] / [reasoning 排序] / [并行工具] 等代码分支
 //
 // 参考：
 //   - Spec: /workspace/.trae/specs/agent-mock-mode/spec.md §Requirement: 内置剧本清单
+//   - 迁移指南: /workspace/.trae/specs/externalize-mock-scenarios/spec.md
 package server
 
 import (
@@ -183,7 +197,7 @@ func scenarioListFilesQuery() *MockScenario {
 				{Type: "tool_result", Data: map[string]interface{}{
 					"id":         "call_files2",
 					"name":       "list_files",
-					"result":     `{"files":[{"name":"comedy.mkv","size":312000000,"is_dir":false},{"name":"sample.mp4","size":268000000,"is_dir":false}]}`,
+					"result":     `{"files":[{"name":"comedy.mkv","size":136,"is_dir":false},{"name":"sample.mp4","size":22261,"is_dir":false}]}`,
 					"isError":    false,
 					"status":     "success",
 					"durationMs": 6,
@@ -214,7 +228,7 @@ func scenarioListFilesQuery() *MockScenario {
 				{Type: "tool_result", Data: map[string]interface{}{
 					"id":         "call_read",
 					"name":       "read_file",
-					"result":     `{"content":"# Mock 媒体库说明\n\n这是 encv-go 沙箱 mock 模式测试用的真实文件。\n存放在 /storage/emulated/0/01-plain-media/，对应 Android 真机的 Movies/DCIM 目录。\n\n- video/  : sample.mp4, comedy.mkv\n- document/: notes.txt, report.pdf, data.csv\n- audio/  : podcast.mp3\n- image/   : screenshot.png\n","mimeType":"text/plain","size":312}`,
+					"result":     `{"content":"# Mock 媒体库说明\n\n这是 encv-go 沙箱 mock 模式测试用的文件。\n存放在 /storage/emulated/0/01-plain-media/ 目录下。\n\n- video/  : sample.mp4 (22KB), comedy.mkv (136B)\n- document/: notes.txt (1187B)\n- audio/  : music.mp3 (45KB)\n- image/   : screenshot.png\n","mimeType":"text/plain","size":1187}`,
 					"isError":    false,
 					"status":     "success",
 					"durationMs": 4,
@@ -285,7 +299,7 @@ func scenarioEncryptVideo() *MockScenario {
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_enc_1",
 					"name":         "video_encrypt",
-					"args":         `{"input_paths":["/Movies/sample.mp4"],"output_path":"/Movies/sample.enc"}`,
+					"args":         `{"input_paths":["/01-plain-media/video/sample.mp4"],"output_path":"/01-plain-media/video/sample.enc"}`,
 					"auto_run":     false,
 					"needsConfirm": true,
 					"kind":         "fileChange",
@@ -410,7 +424,7 @@ func scenarioMultiStepSearch() *MockScenario {
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_search_1",
 					"name":         "list_files",
-					"args":         `{"mount_id":"serving","rel_path":"Movies"}`,
+					"args":         `{"mount_id":"serving","rel_path":"01-plain-media"}`,
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "readOnly",
@@ -429,7 +443,7 @@ func scenarioMultiStepSearch() *MockScenario {
 				{Type: "tool_result", Data: map[string]interface{}{
 					"id":         "call_search_1",
 					"name":       "list_files",
-					"result":     `{"files":[{"name":"video1.mp4","is_dir":false},{"name":"sub","is_dir":true}]}`,
+					"result":     `{"files":[{"name":"audio","is_dir":true},{"name":"document","is_dir":true},{"name":"image","is_dir":true},{"name":"video","is_dir":true}]}`,
 					"isError":    false,
 					"status":     "success",
 					"durationMs": 15,
@@ -440,7 +454,7 @@ func scenarioMultiStepSearch() *MockScenario {
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_search_2",
 					"name":         "list_files",
-					"args":         `{"mount_id":"serving","rel_path":"Movies/sub"}`,
+					"args":         `{"mount_id":"serving","rel_path":"01-plain-media/video"}`,
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "readOnly",
@@ -459,7 +473,7 @@ func scenarioMultiStepSearch() *MockScenario {
 				{Type: "tool_result", Data: map[string]interface{}{
 					"id":         "call_search_2",
 					"name":       "list_files",
-					"result":     `{"files":[{"name":"target.mp4","size":1024000000,"is_dir":false}]}`,
+					"result":     `{"files":[{"name":"sample.mp4","size":22261,"is_dir":false},{"name":"comedy.mkv","size":136,"is_dir":false}]}`,
 					"isError":    false,
 					"status":     "success",
 					"durationMs": 12,
@@ -474,8 +488,8 @@ func scenarioMultiStepSearch() *MockScenario {
 					"scenario": "multi_step_search",
 					"phase":    "after_round_2",
 					"presets": []MockPreset{
-						{ID: "p_stat", Label: "📊 看文件大小", UserText: "Movies/sub/target.mp4 多大", Tooltip: "触发 stat_file 详细输出"},
-						{ID: "p_encrypt_found", Label: "🔒 加密这个文件", UserText: "加密 Movies/sub/target.mp4", Tooltip: "跳到 encrypt_video"},
+						{ID: "p_stat", Label: "📊 看文件大小", UserText: "01-plain-media/video/sample.mp4 多大", Tooltip: "触发 stat_file 详细输出"},
+						{ID: "p_encrypt_found", Label: "🔒 加密这个文件", UserText: "加密 01-plain-media/video/sample.mp4", Tooltip: "跳到 encrypt_video"},
 						{ID: "p_done", Label: "✅ 结束搜索", UserText: "好的，不用再找了", Tooltip: "结束本轮搜索"},
 					},
 				}},
@@ -485,7 +499,7 @@ func scenarioMultiStepSearch() *MockScenario {
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_search_3",
 					"name":         "stat_file",
-					"args":         `{"mount_id":"serving","rel_path":"Movies/sub/target.mp4"}`,
+					"args":         `{"mount_id":"serving","rel_path":"01-plain-media/video/sample.mp4"}`,
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "readOnly",
@@ -504,15 +518,15 @@ func scenarioMultiStepSearch() *MockScenario {
 				{Type: "tool_result", Data: map[string]interface{}{
 					"id":         "call_search_3",
 					"name":       "stat_file",
-					"result":     `{"name":"target.mp4","size":1024000000,"is_dir":false,"mtime":"2024-01-15T10:30:00Z"}`,
+					"result":     `{"name":"sample.mp4","size":22261,"is_dir":false,"mtime":"2024-01-15T10:30:00Z"}`,
 					"isError":    false,
 					"status":     "success",
 					"durationMs": 8,
 				}},
 			}},
 			{DelayMs: 200, Events: []MockEvent{
-				{Type: "text_delta", Data: map[string]interface{}{"text": "搜索完成：找到 1 个目标视频文件。\n"}},
-				{Type: "text_delta", Data: map[string]interface{}{"text": "路径：/Movies/sub/target.mp4（1GB）"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "搜索完成，结果详见上方工具返回。\n"}},
+				{Type: "text_delta", Data: map[string]interface{}{"text": "文件信息详见上方工具结果。"}},
 			}},
 			{DelayMs: 100, Events: []MockEvent{
 				{Type: "stream_end", Data: map[string]interface{}{
@@ -524,7 +538,7 @@ func scenarioMultiStepSearch() *MockScenario {
 		// 初始预设（剧本刚激活时显示）。mid-scenario 阶段另有 after_round_2 预设
 		// （见上方 step 5），前端会按"最新 mock_presets 事件"覆盖。
 		Presets: []MockPreset{
-			{ID: "p_init_listing", Label: "📂 先列 Movies", UserText: "列出 Movies 目录", Tooltip: "从入口开始"},
+			{ID: "p_init_listing", Label: "📂 先列目录", UserText: "列出 01-plain-media 目录", Tooltip: "从入口开始"},
 			{ID: "p_init_all_video", Label: "🎬 找所有视频", UserText: "找所有视频", Tooltip: "触发完整 3 轮搜索"},
 			{ID: "p_init_cancel", Label: "❌ 取消", UserText: "算了不找了", Tooltip: "退出搜索"},
 		},
@@ -559,7 +573,7 @@ func scenarioStreamingError() *MockScenario {
 		// 预设：用户看到错误状态后可能的恢复动作
 		Presets: []MockPreset{
 			{ID: "p_retry", Label: "🔁 重试", UserText: "重试一下", Tooltip: "重发相同问题"},
-			{ID: "p_simpler", Label: "📝 简化问题", UserText: "列出 /Movies", Tooltip: "换成简单 list_files_query"},
+			{ID: "p_simpler", Label: "📝 简化问题", UserText: "列出 01-plain-media", Tooltip: "换成简单 list_files_query"},
 			{ID: "p_view_logs", Label: "📋 查看错误日志", UserText: "显示错误日志", Tooltip: "切到 DevLogs tab"},
 		},
 	}
@@ -691,7 +705,7 @@ func scenarioToolCallWithArgs() *MockScenario {
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_args_1",
 					"name":         "list_files",
-					"args":         `{"mount_id":"serving","rel_path":"Movies/2024","max_entries":"50","filter":{"ext":[".mp4",".mkv"],"min_size":1048576}}`,
+					"args":         `{"mount_id":"serving","rel_path":"01-plain-media/video","max_entries":"50","filter":{"ext":[".mp4",".mkv"],"min_size":1024}}`,
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "readOnly",
@@ -714,9 +728,9 @@ func scenarioToolCallWithArgs() *MockScenario {
 		//   - p_smaller_size：把 min_size 改大（找大文件）
 		//   - p_different_ext：换文件类型
 		Presets: []MockPreset{
-			{ID: "p_no_filter", Label: "📂 不用 filter", UserText: "列出 Movies/2024 全部文件", Tooltip: "去掉 filter/max_entries"},
-			{ID: "p_smaller_size", Label: "💎 找大于 10GB 的", UserText: "Movies/2024 找大于 10GB 的视频", Tooltip: "min_size 调大"},
-			{ID: "p_different_ext", Label: "🎞️ 改成 mkv", UserText: "Movies/2024 找 mkv 视频", Tooltip: "改 ext 过滤"},
+			{ID: "p_no_filter", Label: "📂 不用 filter", UserText: "列出 01-plain-media/video 全部文件", Tooltip: "去掉 filter/max_entries"},
+			{ID: "p_smaller_size", Label: "💎 找大于 1MB 的", UserText: "01-plain-media/video 找大于 1MB 的视频", Tooltip: "min_size 调大"},
+			{ID: "p_different_ext", Label: "🎞️ 改成 mkv", UserText: "01-plain-media/video 找 mkv 视频", Tooltip: "改 ext 过滤"},
 		},
 	}
 }
@@ -742,7 +756,7 @@ func scenarioMultiToolParallel() *MockScenario {
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_par_1",
 					"name":         "list_files",
-					"args":         `{"mount_id":"serving","rel_path":"Movies"}`,
+					"args":         `{"mount_id":"serving","rel_path":"01-plain-media/video"}`,
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "readOnly",
@@ -751,7 +765,7 @@ func scenarioMultiToolParallel() *MockScenario {
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_par_2",
 					"name":         "list_files",
-					"args":         `{"mount_id":"serving","rel_path":"Music"}`,
+					"args":         `{"mount_id":"serving","rel_path":"01-plain-media/audio"}`,
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "readOnly",
@@ -760,7 +774,7 @@ func scenarioMultiToolParallel() *MockScenario {
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id":           "call_par_3",
 					"name":         "list_files",
-					"args":         `{"mount_id":"serving","rel_path":"Documents"}`,
+					"args":         `{"mount_id":"serving","rel_path":"01-plain-media/document"}`,
 					"auto_run":     true,
 					"needsConfirm": false,
 					"kind":         "readOnly",
@@ -788,7 +802,7 @@ func scenarioMultiToolParallel() *MockScenario {
 		},
 		// 预设：3 个并行工具调用后用户可能想筛选/汇总
 		Presets: []MockPreset{
-			{ID: "p_only_movies", Label: "🎬 只看 Movies", UserText: "只列 Movies 目录", Tooltip: "缩减范围"},
+			{ID: "p_only_movies", Label: "🎬 只看视频", UserText: "只列 video 目录", Tooltip: "缩减范围"},
 			{ID: "p_count_files", Label: "🔢 统计文件数", UserText: "统计每个目录有多少文件", Tooltip: "触发 stat_file 批量"},
 			{ID: "p_export", Label: "📤 导出结果", UserText: "把列表导出为 json", Tooltip: "导出结构化结果"},
 		},
@@ -947,7 +961,7 @@ func scenarioComplexWorkflow() *MockScenario {
 				{Type: "tool_status", Data: map[string]interface{}{"id": "cw_root", "status": "success"}},
 				{Type: "tool_result", Data: map[string]interface{}{
 					"id": "cw_root", "name": "list_files",
-					"result":     `{"count":5,"files":[{"name":"video","is_dir":true},{"name":"document","is_dir":true},{"name":"audio","is_dir":true},{"name":"image","is_dir":true},{"name":"config.json","size":2048,"is_dir":false}]}`,
+					"result":     `{"count":4,"files":[{"name":"video","is_dir":true},{"name":"document","is_dir":true},{"name":"audio","is_dir":true},{"name":"image","is_dir":true}]}`,
 					"isError":    false,
 					"status":     "success",
 					"durationMs": 12,
@@ -965,25 +979,25 @@ func scenarioComplexWorkflow() *MockScenario {
 				{Type: "tool_status", Data: map[string]interface{}{"id": "cw_video", "status": "success"}},
 				{Type: "tool_result", Data: map[string]interface{}{
 					"id": "cw_video", "name": "list_files",
-					"result": `{"files":[{"name":"sample.mp4","size":268435456,"is_dir":false},{"name":"comedy.mkv","size":312000000,"is_dir":false},{"name":"tutorial.avi","size":104857600,"is_dir":false},{"name":"concert.flac","size":52428800,"is_dir":false}]}`,
+					"result": `{"files":[{"name":"sample.mp4","size":22261,"is_dir":false},{"name":"comedy.mkv","size":136,"is_dir":false}]}`,
 					"isError": false, "status": "success", "durationMs": 15,
 				}},
 			}},
 
-			// ── Phase 3：读取配置文件 ──
+			// ── Phase 3：读取文档文件 ──
 			{DelayMs: 800, Events: []MockEvent{
 				{Type: "text_delta", Data: map[string]interface{}{"text": "### 文件系统详情\n\n"}},
 				{Type: "text_delta_templated", Data: map[string]interface{}{
 				"text":
-					"根目录下发现 **N** 个子目录和 **1** 个配置文件。\n\n"+
+					"根目录下发现 **4** 个子目录。\n\n"+
 					"**视频目录内容**：{%cw_video:files%}\n\n"+
-					"正在读取配置文件...\n\n",
+					"正在读取文档文件...\n\n",
 			}},
 			}},
 			{DelayMs: 1000, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id": "cw_read_cfg", "name": "read_file",
-					"args": `{"mount_id":"serving","rel_path":"/01-plain-media/config.json","max_bytes":2000}`,
+					"args": `{"mount_id":"serving","rel_path":"/01-plain-media/document/notes.txt","max_bytes":2000}`,
 					"auto_run": true, "needsConfirm": false, "kind": "readOnly", "execute_real": true,
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{"id": "cw_read_cfg", "status": "running"}},
@@ -992,7 +1006,7 @@ func scenarioComplexWorkflow() *MockScenario {
 				{Type: "tool_status", Data: map[string]interface{}{"id": "cw_read_cfg", "status": "success"}},
 				{Type: "tool_result", Data: map[string]interface{}{
 					"id": "cw_read_cfg", "name": "read_file",
-					"result": `{"content":"{\"version\":\"2.1\",\"encoding\":\"utf-8\",\"last_modified\":\"2025-06-07T10:30:00Z\",\"checksum\":\"sha256:a1b2c3d4\"}","mimeType":"application/json","size":128}`,
+					"result": `{"content":"# Mock 媒体库说明\n\n这是 encv-go 沙箱 mock 模式测试用的文件。\n- video/: sample.mp4, comedy.mkv\n- document/: notes.txt\n- audio/: music.mp3\n","mimeType":"text/plain","size":1187}`,
 					"isError": false, "status": "success", "durationMs": 5,
 				}},
 			}},
@@ -1028,7 +1042,7 @@ func scenarioComplexWorkflow() *MockScenario {
 			{DelayMs: 600, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
 					"id": "cw_backup", "name": "write_file",
-					"args": `{"mount_id":"serving","rel_path":"/01-plain-media/backup-config-20250607.json","content":"{\"scan_time\":\"2025-06-07T12:00:00Z\",\"files_found\":8,\"total_size\":737MB}"}`,
+					"args": `{"mount_id":"serving","rel_path":"/01-plain-media/backup-index-20250607.json","content":"{\"scan_time\":\"2025-06-07T12:00:00Z\",\"files_found\":4,\"total_size_bytes\":68781}"}`,
 					"auto_run": false, "needsConfirm": true, "kind": "fileChange", "execute_real": false,
 				}},
 				{Type: "tool_status", Data: map[string]interface{}{"id": "cw_backup", "status": "running"}},
@@ -1042,11 +1056,11 @@ func scenarioComplexWorkflow() *MockScenario {
 				{Type: "text_delta_templated", Data: map[string]interface{}{
 				"text":
 					"| 维度 | 结果 |\n|------|------|\n"+
-					"| 挂载点 | {%cw_root:count} 个目录 + 配置文件 |\n"+
+					"| 挂载点 | {%cw_root:count} 个子目录 |\n"+
 					"| 视频文件 | {%cw_video:files%} |\n"+
 					"| 磁盘使用 | 42G / 118G (36%%) |\n"+
 					"| 内存使用 | 3.5G / 8G (43%%) |\n"+
-					"| 待确认操作 | 备份配置文件（需用户批准）|\n\n"+
+					"| 待确认操作 | 备份索引文件（需用户批准）|\n\n"+
 					"**下一步建议**（点击 chip 直接执行）：\n\n"+
 					"1. 加密所有视频文件\n2. 清理临时缓存\n3. 生成完整文件索引\n4. 导出 PDF 报告\n",
 			}},

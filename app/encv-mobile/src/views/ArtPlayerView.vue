@@ -62,9 +62,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import Artplayer from 'artplayer'
-import { StatusBar, Style } from '@capacitor/status-bar'
-import { ScreenOrientation } from '@capacitor/screen-orientation'
+import type Artplayer from 'artplayer'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonButton,
   IonIcon, IonContent, IonChip, IonSpinner,
@@ -132,6 +130,8 @@ async function handleFullscreenEnter() {
   isFullscreen.value = true
   if (!isNative()) return
   try {
+    const { StatusBar } = await import('@capacitor/status-bar')
+    const { ScreenOrientation } = await import('@capacitor/screen-orientation')
     await StatusBar.hide()
     const video = art?.video
     if (video?.videoWidth && video?.videoHeight) {
@@ -155,6 +155,8 @@ async function handleFullscreenExit() {
   isFullscreen.value = false
   if (!isNative()) return
   try {
+    const { ScreenOrientation } = await import('@capacitor/screen-orientation')
+    const { StatusBar, Style } = await import('@capacitor/status-bar')
     await ScreenOrientation.lock({ orientation: 'portrait' })
     await StatusBar.show()
     await StatusBar.setStyle({ style: Style.Default })
@@ -163,8 +165,9 @@ async function handleFullscreenExit() {
   }
 }
 
-function initArtPlayer() {
+async function initArtPlayer() {
   console.info(TAG, 'initArtPlayer called')
+  const { default: Artplayer } = await import('artplayer')
   console.info(TAG, 'artContainer:', artContainer.value ? `exists (${artContainer.value.clientWidth}x${artContainer.value.clientHeight})` : 'null')
   console.info(TAG, 'streamUrl:', streamUrl.value || '(empty)')
   console.info(TAG, 'filePath:', filePath.value || '(empty)')
@@ -362,6 +365,8 @@ onBeforeUnmount(async () => {
   destroyArtPlayer()
   if (isNative()) {
     try {
+      const { ScreenOrientation } = await import('@capacitor/screen-orientation')
+      const { StatusBar, Style } = await import('@capacitor/status-bar')
       await ScreenOrientation.lock({ orientation: 'portrait' })
       await StatusBar.show()
       await StatusBar.setStyle({ style: Style.Default })
