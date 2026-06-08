@@ -23,8 +23,16 @@
         <ion-icon :icon="bugOutline" class="error-icon"></ion-icon>
         <h2>组件渲染错误</h2>
         <p class="error-message">某个子组件崩溃了。请截图上报给开发者。</p>
-        <code class="error-detail">{{ rootErrorMessage }}</code>
-        <pre v-if="rootErrorStack" class="error-hint">{{ rootErrorStack }}</pre>
+        <!--
+          上下两栏各显示一个信息片段，避免内容重复：
+            - error-detail (上) = 错误简述（err.message 的 summary 部分）
+            - error-hint (下)    = 错误细节（err.message 里的 "trace: ..." 后缀）
+          故意**不**显示 err.stack：stack 首行 = message，会与 error-detail 完全重合
+          （这也是之前 [1.5] trace 在两个块里出现的根因）。完整 stack 仍走 console.error
+          输出到 DevLogs（onErrorCaptured:71），agent 排查时能拿到。
+        -->
+        <code class="error-detail">{{ rootErrorSummary }}</code>
+        <pre v-if="rootErrorDetails" class="error-hint">{{ rootErrorDetails }}</pre>
         <ion-button @click="reloadPage" class="error-reload-btn">
           <ion-icon :icon="refreshOutline" slot="start"></ion-icon>
           重新加载
@@ -61,8 +69,28 @@ const serviceGuardHint = ref('')
 
 // ============ Vue 错误边界 ============
 const rootError = ref(false)
-const rootErrorMessage = ref('')
-const rootErrorStack = ref('')
+const rootErrorSummary = ref('')
+const rootErrorDetails = ref('')
+
+/**
+ * 把 `err.message` 拆成 "summary + details" 两部分，避免 UI 上下两栏内容重复。
+ *
+ * 拆分规则（匹配 useApiBaseProbe throw 的格式）：
+ *   "all-candidates-failed | trace: [1] skip | [1.5] result: ok=false err=... | [4] all-failed"
+ *     ↳ summary  = "all-candidates-failed"
+ *     ↳ details  = "[1] skip | [1.5] result: ok=false err=... | [4] all-failed"
+ *
+ * 没找到 " | trace: " 标记时，details 为空（普通错误只显示 summary）。
+ */
+function splitErrorMessage(msg: string): { summary: string; details: string } {
+  const MARKER = ' | trace: '
+  const idx = msg.indexOf(MARKER)
+  if (idx < 0) return { summary: msg, details: '' }
+  return {
+    summary: msg.slice(0, idx),
+    details: msg.slice(idx + MARKER.length),
+  }
+}
 
 onErrorCaptured((err: any, _instance: unknown, info: string) => {
   // 防止无限递归：如果已经是 error 状态，不再捕获（fallback 自己崩了）
@@ -70,9 +98,13 @@ onErrorCaptured((err: any, _instance: unknown, info: string) => {
 
   console.error('[App] Vue error captured:', err, '| info:', info)
   rootError.value = true
-  rootErrorMessage.value = err?.message || String(err) || 'Unknown render error'
-  rootErrorStack.value = err?.stack || ''
-  // 不阻止冒泡：让 Vue 仍然 console.error，方便 DevTools 调试
+  // 🆕 拆 message：summary 简短显示，details（trace）作为 hint 单独成行
+  // —— 避免 UI 上下两栏内容重复
+  const rawMsg = err?.message || String(err) || 'Unknown render error'
+  const { summary, details } = splitErrorMessage(rawMsg)
+  rootErrorSummary.value = summary
+  rootErrorDetails.value = details
+  // 不阻止冒泡：让 Vue 仍然 console.error（包含完整 stack），方便 DevTools 调试
   return false
 })
 
