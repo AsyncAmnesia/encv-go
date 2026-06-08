@@ -1,0 +1,44 @@
+id: branch_encrypt_or_decrypt
+description: "分支选择：加密 / 解密 / 取消"
+keywords:
+  - "branch_encrypt_or_decrypt"
+rounds: 1
+
+branches:
+  - id: encrypt
+    label: "🔒 加密"
+    description: "对所选文件执行加密"
+    icon: "🔒"
+    trigger_keywords:
+      - "加密"
+      - "encrypt"
+    trigger_regex: "(?i)^enc(rypt)?$"
+  - id: decrypt
+    label: "🔓 解密"
+    description: "解密已加密文件"
+    icon: "🔓"
+    trigger_keywords:
+      - "解密"
+      - "decrypt"
+    trigger_regex: "(?i)^dec(rypt)?$"
+  - id: cancel
+    label: "✗ 取消"
+    description: "什么也不做"
+    icon: "✗"
+    trigger_keywords:
+      - "取消"
+      - "cancel"
+      - "no"
+    trigger_regex: "(?i)^(cancel|no|quit)$"
+
+steps:
+  - id: choose
+    round_idx: 0
+    delay_ms: 10
+    events:
+      - type: stream_start
+        data: { scenario: branch_encrypt_or_decrypt }
+      - type: text_delta
+        data: { text: "请选择操作类型：" }
+    branch_choice: true
+    branch_id: choose_action

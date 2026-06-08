@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" android:minSdkVersion="33" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" android:minSdkVersion="33" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" android:minSdkVersion="33" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" android:minSdkVersion="33" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" android:minSdkVersion="33" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" android:minSdkVersion="30" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.READ_LOGS" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <application
+        android:name=".EncvApplication"
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="true">
+        <service
+            android:name=".EncvGoService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+        />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="encvgo" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="com.encvgo.action.START" />
+                <action android:name="com.encvgo.action.RESTART" />
+                <action android:name="com.encvgo.action.STOP" />
+                <action android:name="com.encvgo.action.STATUS" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".PlayerActivity"
+            android:exported="true"
+            android:launchMode="standard"
+            android:documentLaunchMode="always"
+            android:maxRecents="16"
+            android:taskAffinity="com.encvgo.app.player.task"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:label="ENCV Player">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:mimeType="video/*" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:mimeType="audio/*" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/x-encv" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".PlayerActivityCapacitor"
+            android:exported="false"
+            android:launchMode="standard"
+            android:documentLaunchMode="always"
+            android:taskAffinity="com.encvgo.app.player.task"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:label="ENCV Player"
+        />
+
+        <activity
+            android:name="com.hjq.logcat.LogcatActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:launchMode="singleInstance"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+            android:windowSoftInputMode="stateHidden"
+            tools:node="replace"
+        />
+
+        <meta-data
+            android:name="LogcatWindowEntrance"
+            android:value="true" />
+        <meta-data
+            android:name="LogcatNotifyEntrance"
+            android:value="true" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
+
+        <activity
+            android:name=".EncvHostActivity"
+            android:exported="false"
+            android:theme="@style/Theme.EncvHostTranslucent"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode" />
+
+        <activity
+            android:name=".InstallConfirmActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode" />
+
+        <!-- ============================================================ -->
+        <!-- Phase 25 A2：ComboLite host 代理组件（plugin-openlist 用） -->
+        <!-- ============================================================ -->
+
+        <!-- Service 池：16 个空壳 Service，每个对应一个 plugin service instance -->
+        <service android:name="com.encvgo.combolite.proxy.HostService1" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService2" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService3" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService4" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService5" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService6" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService7" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService8" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService9" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService10" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService11" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService12" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService13" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService14" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService15" android:exported="false" />
+        <service android:name="com.encvgo.combolite.proxy.HostService16" android:exported="false" />
+
+        <!-- Provider 代理：authority 必须与 EncvApplication.onFrameworkSetup 中 setHostProviderAuthority 一致 -->
+        <provider
+            android:name="com.encvgo.combolite.proxy.HostStatusProvider"
+            android:authorities="com.encvgo.app.provider"
+            android:exported="true" />
+
+        <!-- Receiver 代理：exported=true 接收系统/内部广播，转发给 plugin 静态 receiver -->
+        <receiver
+            android:name="com.encvgo.combolite.proxy.HostStaticReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.encvgo.plugin.openlist.BROADCAST_STATUS" />
+                <action android:name="com.encvgo.plugin.openlist.BROADCAST_LOG" />
+                <action android:name="com.encvgo.plugin.openlist.BROADCAST_PORT_CONFLICT" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

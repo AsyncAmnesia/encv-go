@@ -1,0 +1,83 @@
+id: truncation_long_text
+description: "单 text_delta > 2000 字符 — 验证超长 chunk 传输"
+keywords:
+  - "写一篇长文"
+  - "长文本"
+  - "写长"
+  - "long text"
+  - "详细解释"
+
+presets:
+  - id: p_summarize_long
+    label: "🔹 总结上面"
+    user_text: "总结上面这篇"
+    tooltip: "压缩为摘要"
+  - id: p_key_points
+    label: "🎯 关键点"
+    user_text: "提取关键点"
+    tooltip: "关键点提取"
+  - id: p_save_long
+    label: "💾 保存全文"
+    user_text: "保存全文"
+    tooltip: "保存到文件"
+
+steps:
+  - id: start
+    delay_ms: 0
+    events:
+      - type: stream_start
+        data: { scenario: truncation_long_text }
+  - id: long_text
+    delay_ms: 100
+    events:
+      - type: text_delta
+        data:
+          text: |
+            # 关于 ENCV 容器加密的完整技术报告
+
+            ## 概述
+
+            ENCV（Encrypted Container for Video）是一个端到端加密的容器格式，专为音视频等大文件设计。本报告将详细介绍其设计原理、实现细节、性能特征，以及与同类方案的对比分析。
+
+            ## 一、设计目标
+
+            ENCV 的设计目标可以归纳为以下几点：
+
+            1. **强加密**：使用 AES-256-GCM 提供认证加密
+            2. **流式处理**：支持边读边解密，无需加载整个文件
+            3. **可恢复**：单个分片损坏不影响其他分片
+            4. **跨平台**：桌面 / 移动 / 嵌入式均可运行
+            5. **元数据保护**：文件名、大小、修改时间均加密
+
+            ## 二、实现细节
+
+            本节讨论容器内部的字节对齐策略和块大小选择。经过多次实验，我们最终选择了固定块大小，这一大小在随机读取和顺序读取之间取得了良好的平衡。
+
+            加密层采用分层密钥架构：每个容器有一个主密钥（master key），每个分片有独立的分片密钥（chunk key），分片密钥由主密钥派生。这种设计使得密钥轮换只需更新主密钥，而不需要重新加密所有分片数据。
+
+            ## 三、性能基准
+
+            在标准硬件配置下，ENCV 的解密吞吐量接近原生 I/O 速度。加密操作因为需要计算认证标签（authentication tag），会有一定的 CPU 开销，但通过 SIMD 优化可以将开销控制在可接受范围内。
+
+            对于大文件（超过数 GB），ENCV 支持流式解密，即读取一个分片就解密一个分片，不需要将整个文件加载到内存中。这对于移动设备等内存受限环境尤为重要。
+
+            ## 四、安全分析
+
+            ENCV 使用的 AES-256-GCM 是经过广泛验证的认证加密算法。GCM 模式不仅提供数据机密性，还提供数据完整性验证，防止数据被篡改。
+
+            元数据加密是 ENCV 的一个重要特性。传统加密方案通常只加密文件内容，而文件名、大小等信息以明文形式存储。ENCV 将所有元数据也纳入加密范围，进一步保护用户隐私。
+
+            ## 五、与同类方案对比
+
+            与 VeraCrypt 等全盘加密方案相比，ENCV 是文件级加密，更加灵活。与 rclone crypt 等云存储加密方案相比，ENCV 支持更丰富的元数据保护和流式处理。
+
+            ## 六、未来方向
+
+            未来计划支持硬件安全模块（HSM）集成、密钥共享（Shamir's Secret Sharing）、以及增量备份优化等功能。同时也在探索后量子密码学算法的集成可能性。
+  - id: end
+    delay_ms: 100
+    events:
+      - type: stream_end
+        data:
+          finishReason: stop
+          usage: { totalTokens: 1500 }
