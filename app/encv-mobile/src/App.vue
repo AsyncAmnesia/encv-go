@@ -165,16 +165,27 @@ function splitErrorMessage(msg: string): { summary: string; details: string } {
 /**
  * 探测当前运行模式 + location，给错误 UI 提供上下文
  * 模式：capacitor / browser-dev / browser-prod / mock-browser（trae 模拟）
+ *
+ * 关键判定：
+ *   - mock-browser 的最可靠特征 = host 含 'agent-sandbox'（trae 给每个 agent
+ *     沙箱分配的预览域名唯一特征：run-agent-<id>-<hash>-preview.agent-sandbox-
+ *     <region>-<gw>.trae.cn）。UA 含 'Trae'/'Volo' 是辅助信号但不可靠
+ *     （mock 浏览器可能伪装 UA）
+ *   - 优先级：mock-browser > capacitor > browser-dev > browser-prod
  */
 function detectErrorContext(): { mode: string; location: string } {
   let mode = 'unknown'
   if (typeof window !== 'undefined') {
     const proto = window.location.protocol
+    const host = window.location.host || ''
     const ua = navigator.userAgent || ''
-    if (proto === 'capacitor:' || proto === 'file:' || proto === 'cdvfile:') {
-      mode = 'capacitor'
-    } else if (ua.includes('Trae') || ua.includes('Volo') || proto === 'http:' && /agent-sandbox/.test(window.location.host)) {
+    const isTraeMockHost = /agent-sandbox.*\.trae\.cn$/i.test(host) || /run-agent-.*\.trae\.cn$/i.test(host)
+    const isCapacitor = proto === 'capacitor:' || proto === 'file:' || proto === 'cdvfile:'
+    const uaHintsMock = ua.includes('Trae') || ua.includes('Volo')
+    if (isTraeMockHost || (uaHintsMock && proto === 'https:')) {
       mode = 'mock-browser'
+    } else if (isCapacitor) {
+      mode = 'capacitor'
     } else if (proto === 'http:' || proto === 'https:') {
       mode = 'browser-dev'
     }
