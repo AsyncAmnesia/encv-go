@@ -440,6 +440,7 @@ func (s *Server) registerAgentRoutes(r *gin.Engine) {
 	r.POST("/test", s.handleAgentTest)
 	r.POST("/api/chat", s.handleAgentChat)
 	r.POST("/api/confirm", s.handleAgentConfirm)
+	r.POST("/api/agent/branch-pick", s.handleAgentBranchPick) // 剧本外置 spec：预设选项 chip
 	r.POST("/api/resume", s.handleAgentResume)
 
 	slog.Info("Agent API routes registered (integrated into encv-go)")

@@ -54,6 +54,15 @@
 
 `internal/server/mock_scenario_schema.go` SHALL 定义 Go struct。
 
+**核心铁律（用户原话）**：
+- ❌ **剧本里不写死任何路径、文件名、文件内容、文件大小数字、错误信息文本**
+- ❌ **剧本里不出现 `tool_result` 事件**——它由 MockEngine 在工具执行后**自动生成**
+- ❌ **剧本里不出现任何"模拟"的 result 字段**（哪怕是 `"{}"` 占位）
+- ✅ 剧本只声明"调哪个工具 + 工具参数 + 调完后说什么"（UI 文案）
+- ✅ 工具参数（args）是用户输入的过滤条件（如 `ext: ".mp4"`），**不是数据**
+- ✅ 真实结果由 `ToolRegistry` 走 `execute_real` 路径产生
+- ✅ text_delta 是**通用 UI 文案**（"正在搜索..." / "搜索完成"），不含具体文件名/计数
+
 #### Scenario: 剧本结构（核心）
 
 ```yaml
@@ -64,72 +73,61 @@ keywords:                       # 触发关键词（与原 Keywords 字段一致
   - 找视频
 
 steps:                           # 必填，步骤序列（从头执行到尾）
-  - id: announce                 # 步骤 ID（仅用于日志/调试，不参与逻辑）
+  - id: search_and_branch        # 步骤 ID
     events:                      # 该步骤推流的事件序列
       - type: stream_start
-        data:
-          scenario: search_recursive_mp4
+        data: { scenario: search_recursive_mp4 }
       - type: text_delta
-        data:
-          text: "正在搜索 100MB 以上的 MP4..."
+        # ✅ 通用 UI 文案，不含具体文件名/计数
+        data: { text: "正在搜索符合条件的视频..." }
       - type: tool_call
+        # ✅ 调工具 + 工具参数（参数是过滤条件，不是数据）
         data:
           id: call_srm_1
           name: search_files
-          args: { path: "/mnt/sandbox", ext: ".mp4", min_size: 104857600 }
-      - type: tool_result
-        data:
-          id: call_srm_1
-          name: search_files
-          isError: false
-          result: '{"matches":[],"count":0}'    # 占位：execute_real 时由工具真实结果替换
+          args: { ext: ".mp4", min_size: 104857600 }
+        # ❌ 不写 tool_result！由 MockEngine 调真实工具后自动生成
       - type: text_delta
+        # ✅ 通用 UI 文案（结果在 tool_result event 里由前端渲染）
+        data: { text: "搜索完成。请选择操作：" }
+      - type: mock_branch_choice
         data:
-          text: "搜索完成，0 个匹配。请选择操作："
-      - type: mock_branch_choice # 推 mock_branch_choice 事件，前端渲染选项 chip
-        data:
-          branch_id: post_search  # 前端选完后 POST /api/agent/branch-pick
-          options:                # 预设选项（chip 列表），用户只能点这些
+          branch_id: post_search
+          options:                # 预设选项（chip 列表），用户只能点
             - id: relax
-              label: 放宽条件（不限大小）
-              keywords: [放宽]
+              label: 放宽条件
               icon: 🎚️
             - id: change_ext
               label: 改其他格式
-              keywords: [改格式]
               icon: 📁
             - id: cancel
               label: 取消
-              keywords: [取消]
               icon: ❌
       - type: stream_end
-        data:
-          scenario: search_recursive_mp4
+        data: { scenario: search_recursive_mp4 }
 
-  - id: relax                    # 用户选了 "relax" 之后跳到的步骤
+  - id: relax                    # 用户选了 "relax" 后跳到这
     events:
       - type: stream_start
-        data:
-          scenario: search_recursive_mp4
+        data: { scenario: search_recursive_mp4 }
       - type: text_delta
-        data:
-          text: "好的，已放宽到不限大小，正在重新搜索..."
+        data: { text: "好的，已放宽到不限大小，重新搜索中..." }
       - type: tool_call
         data:
-          ...
+          id: call_srm_2
+          name: search_files
+          args: { ext: ".mp4" }   # 不限大小
+        # 又是 tool_call，engine 自动产生 tool_result
+      - type: text_delta
+        data: { text: "搜索完成。请选择操作：" }
+      - type: mock_branch_choice
+        data: { ... }
       - type: stream_end
-        data:
-          scenario: search_recursive_mp4
 
   - id: change_ext
-    events: [...]
+    events: [...]  # 同上模式
   - id: cancel
-    events: [...]
-
-  # 错误分支：tool_result.isError=true 时走这条
-  - id: error_path
-    when_tool_error: true         # 触发条件（这是剧本游戏，不是 if-else 语言）
-    events: [...]
+    events: [...]  # 同上模式
 ```
 
 #### Scenario: 字段约束
@@ -139,28 +137,171 @@ steps:                           # 必填，步骤序列（从头执行到尾）
 - `steps` 为空 → 拒绝加载
 - `events` 为空 → 拒绝加载
 - `mock_branch_choice` 的 `options` 至少 2 个、不能为空
+- **禁止** `tool_result` 事件出现在 events 中（由 engine 生成）
+- **禁止** `text_delta.text` 含 `{{`（严禁模板）
 
 #### Scenario: 关键事件类型
 
-| 事件 | 用途 |
-|------|------|
-| `stream_start` / `stream_end` | 标记一轮流的开头/结尾 |
-| `text_delta` | 推一段固定文本（**不允许模板**——只允许纯字符串） |
-| `tool_call` | 声明一个工具调用，args 是真实工具入参 |
-| `tool_result` | 工具返回结果（**execute_real 时由真实结果替换 result 字段**） |
-| `mock_branch_choice` | 推分支选项，前端渲染为 chip |
+| 事件 | 出现位置 | 用途 |
+|------|---------|------|
+| `stream_start` / `stream_end` | YAML | 标记一轮流的开头/结尾 |
+| `text_delta` | YAML | 推**通用 UI 文案**（"正在搜索..."） |
+| `tool_call` | YAML | 声明要调的工具 + 参数（args 是过滤条件） |
+| `tool_result` | **engine 自动生成** | 工具真实执行结果（YAML 里**禁止**写） |
+| `mock_branch_choice` | YAML | 推分支选项（chip 列表） |
 
-#### Scenario: tool_result 真实化（不靠模板，靠"替换"）
+#### Scenario: tool_result 的产生流程（核心）
 
-- YAML 里 `tool_result.result` 是个**占位字符串**（多数情况是 `"{}"` 或示例 JSON）
-- 当 MockEngine 检测到对应 `tool_call.name` 走 `execute_real` 路径时：
-  - **用真实工具结果替换 `result` 字段**
-  - `text_delta.text` 仍是 YAML 里写死的固定字符串（**不需要模板去引用工具结果**）
-- 当 MockEngine 走 `mock_only` 路径时：
-  - `result` 保持 YAML 里的占位字符串
-  - 前端可能 fallback 显示一些默认 UI
+```
+YAML 里有 tool_call（name=search_files, args={ext:".mp4"}）
+   ↓
+MockEngine 推 tool_call event 到前端
+   ↓
+MockEngine 调 ToolRegistry.Execute("search_files", args)
+   ↓
+工具扫描真实文件系统（不是 YAML 里的假数据）
+   ↓
+返回真实结果 [{path:"/real/path/电影A.mp4", size:524288000}, ...]
+   ↓
+MockEngine 推 tool_result event（result=真实结果）
+   ↓
+前端渲染 tool_result（显示真实文件名/大小）
+```
 
-**这才是"数据真实化"的正确做法**：不靠模板字符串拼接，而是靠 schema 层面的"占位 → 真实结果"映射。文本永远是预设的（"搜索完成"），数据永远是真实的（tool_result 来自工具）。
+**关键点**：
+- 路径、文件名、文件大小、文件计数**全部由工具真实产生**
+- YAML 不写任何具体文件名（`Movies/2024/big.mp4` ❌）
+- YAML 不写任何具体计数（`"0 个匹配"` ❌ —— 因为这个数字是真实结果决定的）
+- YAML 不写任何具体错误文本（`"ERROR: connection timeout after 30s"` ❌）
+- 这些值**只能**由 `ToolRegistry` 走真实执行产生
+
+#### Scenario: text_delta 文案规范
+
+✅ **允许的文案**（通用、过程性、不含具体数据）：
+- "正在搜索..."
+- "搜索完成"
+- "处理中..."
+- "请选择操作"
+- "好的，已放宽条件"
+
+❌ **禁止的文案**（含具体数据 / 模拟结果）：
+- "找到 0 个文件" ← 计数是真实结果决定的
+- "Movies/2024/big.mp4 是 500MB" ← 文件名/大小是真实数据
+- "ERROR: timeout after 30s" ← 错误信息是真实工具产生的
+- "成功重命名为 My New Title" ← 新名字是工具返回的
+- 任何含具体路径、文件名、文件大小数字、计数的字符串
+
+#### Scenario: tool_call 参数 vs 数据
+
+✅ **允许的 args**（用户输入的过滤条件、不是数据本身）：
+- `args: { ext: ".mp4" }` — 文件扩展名过滤
+- `args: { min_size: 104857600 }` — 大小阈值（100MB 数值）
+- `args: { pattern: "S01E*" }` — 名字 pattern
+- `args: { max_count: 5 }` — 限制数量
+
+❌ **禁止的 args**（不应在剧本里指定具体文件）：
+- `args: { path: "/Movies/2024/big.mp4" }` ← 不指定具体文件
+- `args: { file: "MyVideo.mp4" }` ← 不指定具体文件
+- `args: { files: [...] }` ← 不列举文件列表
+
+**`path` 参数说明**：工具的 `path` 参数是 mount 根或子目录，**不是**具体文件：
+- ✅ `args: { path: "/mnt/sandbox/Movies" }` ← 搜索 Movies 目录（通用）
+- ❌ `args: { path: "/mnt/sandbox/Movies/2024/big.mp4" }` ← 指定具体文件
+- 工具对每个 path 会扫描整个子树，不是单文件查询
+
+---
+
+### Requirement: 数据真实性校验（CI 强约束）
+
+`internal/server/mock_scenario_validator.go` SHALL 在加载时 + CI 测试中双重校验。
+
+#### Scenario: 加载时校验
+
+加载 YAML 时正则匹配以下模式，匹配到 → 拒绝加载 + log error：
+
+| 模式 | 含义 | 反例 |
+|------|------|------|
+| 路径匹配 `/\w+/\w+/\w+\.\w{2,4}` | 类似 `Movies/2024/big.mp4` | `text: "找到 Movies/2024/big.mp4"` |
+| 路径匹配 `\.(mp4\|mkv\|json\|log\|txt\|bin)$` | 具体文件后缀 | `path: "/old/file.mp4"` |
+| 数字 + 字节单位 `\d+\s*(MB\|KB\|GB\|bytes?)` | 模拟文件大小 | `text: "文件大小 524MB"` |
+| `\d+ 个(文件\|匹配\|结果)` | 模拟计数 | `text: "找到 0 个文件"` |
+| `"ERROR\|失败: .+"` | 模拟错误文本 | `text: "ERROR: connection timeout"` |
+| `tool_result` 事件关键字 | 整事件禁止 | `type: tool_result` 出现在 events |
+| 含 `{{` | 模板 | `text: "找到 {{ .count }} 个"` |
+
+#### Scenario: CI 测试
+
+`TestScenario_NoHardcodedData` 单元测试：扫描所有内置 YAML，匹配以上正则，**任何一个匹配 → 测试失败**。
+
+- 这条测试是**红线**：YAML 里出现任何硬编码数据 → 整个项目 CI 挂
+- 强制演示团队写真正调工具的剧本
+
+#### Scenario: 静态分析脚本
+
+`scripts/check-scenarios-no-hardcoded-data.sh` 单独跑：
+```bash
+# 扫所有 internal/server/mock_scenarios/**/*.yaml
+# 匹配上述正则，发现即报错
+# 在 pre-commit hook + CI 流水线跑
+```
+
+#### Scenario: 允许的"数字"
+
+部分数字是**用户输入的过滤条件**（在 tool_call.args 里），不是数据：
+- `min_size: 104857600` ← 100MB 阈值
+- `max_count: 5` ← 限制 5 个
+- `ext: ".mp4"` ← 扩展名
+
+这些不算硬编码数据。校验脚本区分：
+- `tool_call.args` 里的数字 ✅
+- `text_delta.text` / `tool_result.data.result` ❌
+- YAML 里其他地方的数字 ❌（除非是 schema 字段如 `rounds: 1`）
+
+---
+
+### Requirement: MockEngine 自动生成 tool_result（核心执行模型）
+
+**用户原话**："必须完全调用工具获取！比如必须不依赖任何路径或文件名预期获取真正视频"
+
+`MockEngine` SHALL **自动**在 `tool_call` 事件之后**调用真实工具**并**自动生成** `tool_result` 事件。
+
+#### Scenario: 执行流程（核心）
+
+```
+1. MockEngine 读取 YAML 当前 step 的 events
+2. 顺序处理：
+   - stream_start → 推送
+   - text_delta → 推送（文本是 YAML 写死的通用 UI 文案）
+   - tool_call → 推送 + 调 ToolRegistry.Execute(name, args)
+   - **engine 自动**生成 tool_result 事件（result = 真实工具结果）→ 推送
+   - text_delta → 推送
+   - mock_branch_choice → 推送
+   - stream_end → 推送
+3. 等用户点 chip / keyword 触发下一步
+```
+
+**关键点**：
+- YAML 里的 `events` 列表**不允许**出现 `tool_result` 事件
+- `tool_result` 由 engine 在执行 `tool_call` 时**自动产生**
+- tool_result 的 `result` 字段是**工具真实返回**（不是 YAML 占位）
+- tool_result 的 `id` / `name` / `args` / `isError` 都来自对应 `tool_call` 事件
+
+#### Scenario: execute_real vs fallback 路径
+
+- `tool_call.name` 必须在 `ToolRegistry` 注册
+- 走真实执行（`ToolRegistry.Execute`）→ `tool_result.result` 是**真实工具结果**
+- 若工具执行异常 → `tool_result.isError: true` + `result` 是错误信息
+- 没有任何"模拟"的 result（哪怕是 `"{}"` 占位）
+
+#### Scenario: 与 v1/v2 的对比
+
+| | v1/v2 (现状) | 新设计 (本 spec) |
+|---|------------|--------------|
+| 路径/文件名/计数 | 写在 Go 字面量里（如 `Movies/2024/big.mp4`） | 走真实工具 |
+| 错误信息 | 写死（`"ERROR: connection timeout after 30s"`） | 工具真实返回 |
+| tool_result 事件 | 出现在 Go 数组里（mock data） | **YAML 禁止**出现，engine 生成 |
+| text_delta | 含具体数字（`"找到 0 个"`） | 通用 UI 文案（`"搜索完成"`） |
+| 多轮 | `SetContext` 假装用户选 | `mock_branch_choice` + 预设 chip |
 
 ---
 
@@ -311,23 +452,26 @@ NewServer(opts):
 
 **保留**：
 - ✅ YAML 外置（核心价值）
-- ✅ loader 加载 + 校验
+- ✅ loader 加载 + 校验（含硬编码数据正则）
 - ✅ 预设选项 chip（mock_branch_choice）
 - ✅ 关键词触发
-- ✅ tool_result 真实化（通过 schema 替换，不通过模板）
+- ✅ tool_result **自动**由真实工具产生（YAML 禁写）
 - ✅ Go 字面量 fallback
 - ✅ 热重载（可选）
 
 ---
 
-## 约束与限制（更严了）
+## 约束与限制（再次加强）
 
 1. **完全向后兼容** — Go 字面量剧本 + `execute_real` + MockPreset + ToolRegistry 必须继续工作
 2. **加载失败不启动** — YAML 解析错误 → log.Fatal（不静默回退）
 3. **剧本不接 free-form text** — 后端 API `branch-pick` 只接受 `option` ID，不接受 text
 4. **文本永远是预设字符串** — text_delta.text 字段不允许模板语法（拒绝 `{{` 字符）
-5. **YAML 字段命名** — snake_case
-6. **演示团队可独立操作** — 加新剧本 = 写 YAML + 重启（或开热重载）
+5. **YAML 不出现 tool_result 事件** — 全部由 engine 自动生成
+6. **YAML 不硬编码任何数据** — 路径、文件名、文件大小、计数、错误信息文本
+7. **CI 强校验** — `TestScenario_NoHardcodedData` 扫所有 YAML，匹配即测试失败
+8. **YAML 字段命名** — snake_case
+9. **演示团队可独立操作** — 加新剧本 = 写 YAML + 重启（或开热重载）
 
 ---
 

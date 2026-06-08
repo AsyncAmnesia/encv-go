@@ -137,9 +137,16 @@ type MockEvent struct {
 //
 // 线程安全说明：本类型主要在 handleAgentChat 单请求上下文中使用，
 // LoadCustom 在配置变更时调用，调用方需自行加锁（典型用法是 Server 启动时一次）。
+//
+// 关键变更（剧本外置 spec）：scenarios 改为 map[id]*MockScenario，O(1) 查询。
+// 保留 builtinScenarios / customScenarios 两个 slice 用于 AllScenarios() 兼容性输出。
 type MockEngine struct {
 	builtinScenarios []*MockScenario
 	customScenarios  []*MockScenario
+
+	// scenariosByID 是 builtin + custom 合并的 O(1) 查询 map。
+	// 构造时（NewMockEngine）一次性建好，运行时只读。
+	scenariosByID map[string]*MockScenario
 
 	// realExecutor 是 tool_call 事件 data 中 execute_real=true 时
 	// 实际调用以拿真实结果的回调。典型为 (*Server).executeAgentTool。
@@ -179,7 +186,39 @@ func NewMockEngine() *MockEngine {
 		scenarioChineseGreeting(),
 		scenarioComplexWorkflow(),
 	}
+	e.rebuildIndex()
 	return e
+}
+
+// NewMockEngineWithScenarios 用外部剧本集合构造引擎。
+//
+// 用于剧本外置 spec：Server 启动时从 YAML 加载，传入此构造函数。
+// 外部剧本会覆盖 builtin 集合（若 id 冲突）。
+func NewMockEngineWithScenarios(scenarios []*MockScenario) *MockEngine {
+	e := &MockEngine{}
+	for _, sc := range scenarios {
+		if sc == nil {
+			continue
+		}
+		e.builtinScenarios = append(e.builtinScenarios, sc)
+	}
+	e.rebuildIndex()
+	return e
+}
+
+// rebuildIndex 重建 scenariosByID 查询表。
+func (e *MockEngine) rebuildIndex() {
+	e.scenariosByID = make(map[string]*MockScenario, len(e.builtinScenarios)+len(e.customScenarios))
+	for _, sc := range e.builtinScenarios {
+		if sc != nil && sc.ID != "" {
+			e.scenariosByID[sc.ID] = sc
+		}
+	}
+	for _, sc := range e.customScenarios {
+		if sc != nil && sc.ID != "" {
+			e.scenariosByID[sc.ID] = sc
+		}
+	}
 }
 
 // LoadCustom 替换 custom 剧本集合，并对每个剧本做轻量验证。
@@ -213,6 +252,7 @@ func (e *MockEngine) LoadCustom(custom []MockScenario) {
 		validated = append(validated, &sc)
 	}
 	e.customScenarios = validated
+	e.rebuildIndex()
 	slog.Info("mock: custom scenarios loaded", "count", len(validated))
 }
 
@@ -222,6 +262,16 @@ func (e *MockEngine) AllScenarios() []*MockScenario {
 	out = append(out, e.builtinScenarios...)
 	out = append(out, e.customScenarios...)
 	return out
+}
+
+// GetScenarioByID 按 ID O(1) 查询剧本。找不到返回 nil。
+//
+// 用于 branch-pick 端点 / v2 resume 路径。
+func (e *MockEngine) GetScenarioByID(id string) *MockScenario {
+	if e.scenariosByID == nil {
+		return nil
+	}
+	return e.scenariosByID[id]
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -539,6 +589,15 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 			}
 
 		case "tool_result":
+			// 铁律检查：YAML auto-injected tool_result（__yaml_auto_generated=true）
+			// 必须由真实工具执行覆盖。Run 阶段直接调 executor 调真实工具。
+			if autoGen, _ := ev.Data["__yaml_auto_generated"].(bool); autoGen {
+				id, _ := ev.Data["id"].(string)
+				if err := e.executeAutoToolResult(ctx, s, sess, w, flusher, ev, pendingRealCalls, id, writeDebug, emitEvent, stepIdx, evIdx); err != nil {
+					return err
+				}
+				continue
+			}
 			// 若对应的 tool_call 标记了 execute_real=true 且 realExecutor 已注入，
 			// 实际调用以拿真实结果，覆盖剧本的硬编码 result。
 			// 否则按剧本硬编码 data 原样推送。
@@ -699,6 +758,74 @@ func (e *MockEngine) executeRealAndEmit(
 	}}, stepIdx, evIdx)
 	writeDebug(-1, -1, "tool_result(ok)", fmt.Sprintf("id=%s name=%s dur=%dms", id, name, dur))
 	return out // 返回结果供 collectedResults 收集
+}
+
+// executeAutoToolResult 处理 YAML auto-injected tool_result（剧本外置 spec）。
+//
+// 在 Run() 阶段遇到 __yaml_auto_generated=true 的 tool_result 时调用：
+//   1. 从 tool_call event (在 pendingRealCalls 中) 取 name + args
+//   2. 调 realExecutor（或 s.executeAgentToolAsExecutor）拿真实结果
+//   3. 推送真实 tool_status(success/failed) + tool_result
+//   4. 写入 collectedResults
+//
+// 与原 executeRealAndEmit 的区别：
+//   - executeRealAndEmit 要求 tool_call event 显式标 execute_real=true
+//   - executeAutoToolResult 是 YAML 模式的"无条件"路径（schema 保证 tool_call 必配 auto tool_result）
+func (e *MockEngine) executeAutoToolResult(
+	ctx context.Context,
+	s *Server,
+	sess *agentSession,
+	w http.ResponseWriter,
+	flusher http.Flusher,
+	ev MockEvent,
+	pendingRealCalls map[string]pendingRealCall,
+	callID string,
+	writeDebug func(step, ev int, evType, dataSummary string),
+	emitEvent func(ev MockEvent, stepIdx, evIdx int),
+	stepIdx int,
+	evIdx int,
+) error {
+	id, _ := ev.Data["id"].(string)
+	if id == "" {
+		slog.Warn("mock: auto tool_result has empty id, skipping",
+			"scenario", "?", "step", stepIdx, "ev", evIdx)
+		return nil
+	}
+
+	pending, ok := pendingRealCalls[id]
+	if !ok {
+		// 找不到对应的 tool_call：auto tool_result 是个孤儿（剧本写错了）
+		// 推一个失败 tool_result 让前端能看到错误
+		slog.Error("mock: auto tool_result without matching tool_call",
+			"id", id, "step", stepIdx, "ev", evIdx)
+		emitEvent(MockEvent{Type: "tool_result", Data: map[string]interface{}{
+			"id":         id,
+			"isError":    true,
+			"status":     "failed",
+			"durationMs": 0,
+			"result":     `{"error":"orphan tool_result: no matching tool_call"}`,
+		}}, stepIdx, evIdx)
+		return nil
+	}
+	delete(pendingRealCalls, id)
+
+	// 调真实执行器（与 executeRealAndEmit 共享逻辑）
+	if e.realExecutor != nil {
+		e.executeRealAndEmit(ctx, s, sess, w, flusher, pending, id, pending.name, writeDebug, emitEvent, stepIdx, evIdx)
+	} else {
+		// 真实执行器未注入（单测 / 容灾）：推失败 tool_result
+		slog.Warn("mock: realExecutor not injected, auto tool_result fails",
+			"id", id, "name", pending.name)
+		emitEvent(MockEvent{Type: "tool_result", Data: map[string]interface{}{
+			"id":         id,
+			"name":       pending.name,
+			"isError":    true,
+			"status":     "failed",
+			"durationMs": 0,
+			"result":     `{"error":"realExecutor not configured"}`,
+		}}, stepIdx, evIdx)
+	}
+	return nil
 }
 
 // renderTextTemplate 将模板中的 {%id%} 和 {%id:field%} 占位符替换为 tool_result 真实数据。

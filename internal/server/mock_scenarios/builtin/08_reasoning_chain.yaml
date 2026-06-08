@@ -1,0 +1,62 @@
+# reasoning_chain — reasoning 推理链
+#
+# 用途：验证 reasoning_delta 与 text_delta 交替推送时前端排序正确。
+# 触发：关键词（"推理" / "reasoning"）
+#
+# 数据完整性：
+#   - reasoning_delta 和 text_delta 都是通用思考过程描述
+#   - 不写死任何文件名/数据值
+id: reasoning_chain
+description: "5 步推理链 — 验证 reasoning_delta + text_delta 排序"
+keywords:
+  - 推理
+  - reasoning
+  - 思考
+  - think
+
+steps:
+  - id: s1_stream_start
+    delay_ms: 0
+    events:
+      - type: stream_start
+        data: { scenario: reasoning_chain }
+      - type: reasoning_delta
+        data: { text: "用户问了一个需要推理的问题。" }
+      - type: text_delta
+        data: { text: "## 推理过程\n\n" }
+
+  - id: s2_reasoning_1
+    delay_ms: 200
+    events:
+      - type: reasoning_delta
+        data: { text: "步骤 1：拆解问题。" }
+      - type: text_delta
+        data: { text: "首先，拆解问题为子任务。\n" }
+
+  - id: s3_reasoning_2
+    delay_ms: 200
+    events:
+      - type: reasoning_delta
+        data: { text: "步骤 2：选择工具。" }
+      - type: text_delta
+        data: { text: "然后，选择合适的工具。\n" }
+
+  - id: s4_reasoning_3
+    delay_ms: 200
+    events:
+      - type: reasoning_delta
+        data: { text: "步骤 3：执行并验证。" }
+      - type: text_delta
+        data: { text: "最后，执行并验证结果。\n" }
+
+  - id: s5_conclusion
+    delay_ms: 300
+    events:
+      - type: text_delta
+        data: { text: "## 结论\n\n推理完成。\n" }
+
+  - id: s6_stream_end
+    delay_ms: 100
+    events:
+      - type: stream_end
+        data: { finishReason: stop, usage: { totalTokens: 178 } }

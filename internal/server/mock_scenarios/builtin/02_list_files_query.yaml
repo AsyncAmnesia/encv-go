@@ -1,0 +1,141 @@
+# list_files_query — 5 步真实流程
+#
+# 用途：触发 list_mounts → list_files → list_files → read_file → markdown 总结
+# 触发：关键词命中（"有哪些文件" / "video" / "list files" 等）
+#
+# 关键：所有 tool_call 都是 execute_real=true 模式。
+# MockEngine 在每个 tool_call 后自动调真实工具，覆盖 tool_result 事件。
+# 剧本中**不**出现 tool_result 事件 — 由 schema auto-injected + executor 真实执行填充。
+#
+# 数据完整性：
+#   - args 内的 mount_id/rel_path 是"过滤条件"（用户输入的查询参数），不是数据
+#   - text_delta 是通用 UI 文案（不含具体文件名/计数）
+#   - 不写任何 file size / count / error 硬编码
+id: list_files_query
+description: 5 步真实流程：mounts → files → files → read_file → markdown 总结
+keywords:
+  - 有哪些文件
+  - 有什么文件
+  - 视频
+  - 目录
+  - 列一下
+  - 01-plain-media
+  - 看看文件
+  - 看下文件
+  - video
+  - movie
+  - files
+  - list files
+  - list
+
+steps:
+  - id: s1_stream_start
+    delay_ms: 0
+    events:
+      - type: stream_start
+        data: { scenario: list_files_query }
+      - type: text_delta
+        data: { text: "## 查看你的媒体库\n\n" }
+      - type: text_delta
+        data: { text: "先列出**挂载点**，再递归到指定子目录看视频文件。\n\n" }
+
+  - id: s2_list_mounts
+    delay_ms: 1200
+    events:
+      - type: tool_call
+        data:
+          id: call_mount
+          name: list_mounts
+          args: {}
+          auto_run: true
+          needsConfirm: false
+          kind: readOnly
+          execute_real: true
+
+  - id: s3_text_continue
+    delay_ms: 800
+    events:
+      - type: text_delta
+        data: { text: "已找到挂载点。继续递归到媒体子目录...\n\n" }
+
+  - id: s4_list_files_top
+    delay_ms: 1000
+    events:
+      - type: tool_call
+        data:
+          id: call_files1
+          name: list_files
+          args: { mount_id: serving, rel_path: /01-plain-media }
+          auto_run: true
+          needsConfirm: false
+          kind: readOnly
+          execute_real: true
+
+  - id: s5_text_continue
+    delay_ms: 800
+    events:
+      - type: text_delta
+        data: { text: "下有若干子目录（audio / document / image / video 等）。点开 video 目录看一下...\n\n" }
+
+  - id: s6_list_files_video
+    delay_ms: 1000
+    events:
+      - type: tool_call
+        data:
+          id: call_files2
+          name: list_files
+          args: { mount_id: serving, rel_path: /01-plain-media/video }
+          auto_run: true
+          needsConfirm: false
+          kind: readOnly
+          execute_real: true
+
+  - id: s7_text_continue
+    delay_ms: 800
+    events:
+      - type: text_delta
+        data: { text: "已列出 video 子目录内容。读取一个文档以总结...\n\n" }
+
+  - id: s8_read_file
+    delay_ms: 1000
+    events:
+      - type: tool_call
+        data:
+          id: call_read
+          name: read_file
+          args: { mount_id: serving, rel_path: /01-plain-media/document/notes.txt, max_bytes: 500 }
+          auto_run: true
+          needsConfirm: false
+          kind: readOnly
+          execute_real: true
+
+  - id: s9_text_summary
+    delay_ms: 1000
+    events:
+      - type: text_delta
+        data: { text: "## 总结\n\n" }
+      - type: text_delta
+        data: { text: "已扫描你的媒体库结构并读取文档。详见上方真实工具结果。\n" }
+
+  - id: s10_branch_choice
+    delay_ms: 600
+    events:
+      - type: mock_branch_choice
+        data:
+          branch_id: post_list
+          options:
+            - id: encrypt_one
+              label: "🔒 加密选中的文件"
+              icon: "🔒"
+            - id: search_recursive
+              label: "🔍 递归搜索"
+              icon: "🔍"
+            - id: done
+              label: "✅ 完成"
+              icon: "✅"
+
+  - id: s11_stream_end
+    delay_ms: 100
+    events:
+      - type: stream_end
+        data: { finishReason: stop, usage: { totalTokens: 256 } }

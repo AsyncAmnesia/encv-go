@@ -1,0 +1,52 @@
+# default_friendly — fallback 默认剧本
+#
+# 用途：覆盖纯文本闲聊路径，验证 text_delta + stream_end 基本流程。
+# 触发：无匹配时的兜底。
+#
+# 数据完整性：本剧本无 tool_call，无任何硬编码数据。
+# 所有文案都是通用 UI 文案。
+id: default_friendly
+description: fallback 默认剧本：3 段流式文本 + 正常结束
+presets:
+  - id: ask_files
+    label: "📁 查看文件"
+    user_text: "有哪些视频文件"
+    icon: "📁"
+    tooltip: "触发 list_files_query 剧本"
+  - id: ask_summarize
+    label: "📄 总结文档"
+    user_text: "总结 docs/readme.md"
+    icon: "📄"
+    tooltip: "触发 read_and_summarize 剧本"
+  - id: ask_encrypt
+    label: "🔒 加密视频"
+    user_text: "加密这个视频"
+    icon: "🔒"
+    tooltip: "触发 encrypt_video 剧本"
+
+steps:
+  - id: s1
+    delay_ms: 0
+    events:
+      - type: stream_start
+        data: { scenario: default_friendly }
+      - type: text_delta
+        data: { text: "你好！" }
+
+  - id: s2
+    delay_ms: 200
+    events:
+      - type: text_delta
+        data: { text: "我是 ENCV 助手。" }
+
+  - id: s3
+    delay_ms: 300
+    events:
+      - type: text_delta
+        data: { text: "有什么可以帮你的吗？" }
+
+  - id: s4
+    delay_ms: 100
+    events:
+      - type: stream_end
+        data: { finishReason: stop, usage: { totalTokens: 42 } }

@@ -79,47 +79,56 @@
 
 ---
 
-## T3. MockEngine 集成 + 预设分支推进
+## T3. MockEngine 集成 + 预设分支推进 + 真实工具调用
 
-**目标**: MockEngine 接收已加载剧本；branch-pick API 走预设选项
+**目标**: MockEngine 接收已加载剧本；YAML 不出现 tool_result，**全部由真实工具执行自动产生**；branch-pick API 走预设选项
 
 - [ ] **T3.1** 修改 `internal/server/agent_mock.go`
   - `MockEngine.scenarios` 改为 `map[string]*MockScenario`
   - 删除 `var mockScenarios = []*MockScenario{...}` 直接引用
   - `NewMockEngine(scenarios []*MockScenario)` 构造 map
-  - 推流仍按 `Steps` 顺序（**不引入模板渲染**）
-- [ ] **T3.2** 修改 `internal/server/agent_mock_v2.go`（或新增 branch handler）
+  - 推流仍按 `Steps` 顺序
+- [ ] **T3.2** 新增 `internal/server/agent_mock_executor.go`（**核心执行模型**）
+  - 处理 step 的 events 列表时
+  - 遇到 `tool_call` event：调 `ToolRegistry.Execute(name, args)`
+  - **自动**生成 `tool_result` event（id / name / isError / result 全部来自真实执行）
+  - 把 `tool_result` 推入流（**不**依赖 YAML 里的声明）
+  - YAML 里的 `events` 列表**不**包含 `tool_result`（loader 校验时拒绝）
+- [ ] **T3.3** 修改 `internal/server/agent_mock_v2.go`（或新增 branch handler）
   - 新增 `POST /api/agent/branch-pick` 端点
   - 入参：`{scenario_id, branch_id, option_id}`
   - **拒绝**任何 free-form text 字段（`user_text` / `option_text`）
   - 验证 `option_id` ∈ `mock_branch_choice.options` 列表
   - 跳到对应 step（按 `option_id` 匹配同名 step）
-- [ ] **T3.3** tool_result 真实化（不靠模板）
-  - 当 MockEngine 检测到 `tool_call.name` 走 `execute_real` 路径时
-  - **用真实工具结果替换** `tool_result.data.result` 字段
-  - `text_delta.text` 仍是 YAML 写死的字符串
 - [ ] **T3.4** 单元测试
   - `TestMockEngine_UsesLoadedScenarios`
-  - `TestMockEngine_DoesNotRenderTemplate` — 验证 text_delta 文本是原样
+  - `TestMockEngine_RejectsToolResultInYAML` — YAML 里有 tool_result event → 加载失败
   - `TestMockEngine_BranchPick_AdvancesToCorrectStep`
   - `TestMockEngine_BranchPick_RejectsUnknownOption` — 选不在 options 列表里的 option → 404
   - `TestMockEngine_BranchPick_RejectsFreeFormText` — POST 带 user_text 字段 → 400
-  - `TestMockEngine_ToolResult_RealToolReplacesPlaceholder`
+  - `TestMockEngine_ToolCall_AutoGeneratesToolResult` — 调真实工具，result 来自工具
+  - `TestMockEngine_ToolCall_FailureProducesIsErrorTrue` — 工具失败时 tool_result.isError=true
+  - `TestMockEngine_NoHardcodedData_AllBuiltinScenarios` — 扫所有 YAML，匹配硬编码模式即失败
 
-✅ **验收**: 现有 `TestMockEngine*` 测试 0 修改仍通过 + 新增 6 个测试通过
+✅ **验收**: 现有 `TestMockEngine*` 测试 0 修改仍通过 + 新增 8 个测试通过
 
 ---
 
-## T4. 内置剧本迁移
+## T4. 内置剧本迁移（v1 + v2 → YAML，**删 tool_result**）
 
-**目标**: 20 个剧本全部迁移到 YAML
+**目标**: 20 个剧本全部迁移到 YAML；Go 字面量里的 `tool_result` 事件**全部删除**（由真实工具执行产生）
 
 - [ ] **T4.1** 新建 `internal/server/mock_scenarios/builtin/` 目录
   - 12 个 v1 剧本迁移到 YAML
   - 文件名：`01_default_friendly.yaml` ... `12_*.yaml`
+  - **删除** Go 字面量里所有 `tool_result` 事件
+  - **删除** Go 字面量里所有"模拟"数据（具体路径、文件名、错误信息、计数）
+  - 保留：`stream_start` / `stream_end` / `text_delta`（改通用文案）/ `tool_call` / `mock_branch_choice`
 - [ ] **T4.2** 新建 `internal/server/mock_scenarios/v2/` 目录
   - 8 个 v2 剧本迁移到 YAML
-  - tool_result 字段保留为占位字符串（"{}" 或示例 JSON）
+  - **删除** Go 字面量里所有 `tool_result` 事件（含 `isError: true` 模拟错误）
+  - 真实工具执行失败时 engine 自动产生 `isError: true` 的 tool_result
+  - v2 多轮 SetContext 全部移除（走 `mock_branch_choice` 选项 + option_id 推进）
 - [ ] **T4.3** Go 字面量剧本降级
   - `agent_mock_scenarios.go` 加 deprecation 注释
   - `agent_mock_v2_scenarios.go` 加 deprecation 注释
@@ -128,6 +137,7 @@
   - `TestMigration_AllBuiltinScenarios_Loadable` — 12 个 YAML 全部解析通过
   - `TestMigration_AllV2Scenarios_Loadable` — 8 个 v2 YAML 全部解析通过
   - `TestMigration_BehaviorEquivalentToGoLiteral` — 同一 id 行为等价
+  - `TestMigration_AllYAML_NoHardcodedData` — 扫所有 YAML，匹配硬编码模式即失败
 
 ✅ **验收**: 启动 log 显示 `Loaded 20 scenarios from YAML (overriding 0 Go-literal fallbacks)`
 
