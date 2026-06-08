@@ -66,7 +66,14 @@ export interface ProbeResult {
 
 const SERVER_URL_KEY = 'encv-server-url'
 const PROBE_TIMEOUT_MS = 1500
-const PROBE_HEALTH_PATH = '/api/config'
+// 🆕 改用 /health 而不是 /api/config 作为探活端点（2026-06-08）：
+//   - /health 是 encv-go 现有的无 auth 端点（[server.go:282](file:///workspace/internal/server/server.go#L282)），
+//     在 UnprotectedEndpoints 白名单里（[server.go:164](file:///workspace/internal/server/server.go#L164)）
+//   - /health 语义清晰（服务在线），/api/config 是业务端点（可能因业务状态影响）
+//   - /health 不触发任何业务逻辑（只是返回 `{"status":"ok"}`），probe 失败 = 真的后端死
+//   - 注意：trae 网关层（沙箱外）会对 /health 同样 401（沙箱内不可改，详见
+//     trae_web_sandbox_network.md §9.1.2），这是 mock 浏览器架构限制，不是端点选错
+const PROBE_HEALTH_PATH = '/health'
 const PROBE_LAN_PATH = '/api/network/lan-access'
 
 /** 模块级单例：避免多个调用方各自维护 probe 状态 */

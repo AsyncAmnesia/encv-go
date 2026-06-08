@@ -88,8 +88,14 @@
             <div class="error-stack-hints">
               <strong>排错指引</strong>
               <ul>
+                <li v-if="rootErrorContext.mode === 'mock-browser'">
+                  <span class="hint-tag">preview-only</span>
+                  你正在 <code>mock 浏览器</code>（trae 网关层 mock）里查看，<strong>API 调用不通是预期</strong>。
+                  trae 网关层（沙箱外）拦截 <code>/api/*</code> 和 <code>/health</code> 返回 <code>401 missing session token</code>，沙箱内不可绕过。
+                  完整功能请在 <strong>Android 真机</strong> 或 <strong>本地 dev</strong>（<code>localhost:16666</code>）测试。
+                </li>
                 <li>沙箱外网访问限制见 <code>trae_web_sandbox_network.md §9.1</code>（mock 浏览器无 Network 面板）</li>
-                <li>常见 401 = trae 网关层缺 session token（见 <code>§9.2.x</code>）</li>
+                <li>401 区分铁律：<code>text/html</code> = trae 网关，<code>application/json</code> = 业务端（见 <code>§9.1.2</code>）</li>
                 <li>把以上"原始堆栈"和"错误摘要"完整截图给开发者</li>
               </ul>
             </div>
@@ -661,6 +667,20 @@ onUnmounted(() => {
   border-radius: 2px;
   font-size: 10.5px;
   font-family: ui-monospace, Menlo, monospace;
+}
+
+.hint-tag {
+  display: inline-block;
+  background: var(--ion-color-warning);
+  color: #000;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-right: 4px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  vertical-align: 1px;
 }
 
 .error-reload-btn {
