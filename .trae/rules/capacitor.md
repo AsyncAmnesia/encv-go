@@ -2,6 +2,7 @@
 
 > **核心原则：modalController.create() 是全局 overlay，不依赖任何组件生命周期。**
 > **任何跨 tab 的 eventBus 依赖都是定时炸弹。**
+> **native 模式下 SSE 请求必须显式声明 `Accept: text/event-stream`，否则 useProxiedFetch 走 fetchOnce → 流式输出消失。**
 
 ---
 
@@ -623,7 +624,113 @@ import {
 </ion-item>
 ```
 
-## 九、跨层参考
+## 九、useProxiedFetch 流式 Header 铁律（⚠️ Android 真机实战踩坑！）
+
+> **核心原则：native 模式下所有走 SSE 的 fetch 必须显式声明 `Accept: text/event-stream`，否则 useProxiedFetch 走 fetchOnce() 一次性读完所有 chunk，processLegacySSE reader 同步消费 → 没有逐字流式效果。**
+
+### 9.1 症状
+
+```
+dev 模式（vite）：        agent 流式输出正常（原生 fetch 走 WebView SSE 拆分）
+Android 真机（WebView）：agent 整体工作正常，但**没有流式效果**
+                          — 用户看到的是一次性完整回复，不是逐字打字机效果
+```
+
+User 报告原文：「实测安卓真机是正常的，但是安卓真机 agent 流式输出没有生效！」
+
+### 9.2 根因链路
+
+```
+useAgent.send() / confirmTool() / runResumeChain() 三处的 fetch headers
+  → 没传 Accept: text/event-stream
+  → useProxiedFetch.proxiedFetch() 的 isStream 判断：
+       isStream = init.isStream === true
+         || headers['Accept']?.includes('text/event-stream')
+         || headers['accept']?.includes('text/event-stream')
+  → 三个条件全 false → isStream=false
+  → 走 ApiProxy.fetchOnce() 分支：
+       new Response(body, ...)  ← body 是完整字符串，不是 ReadableStream
+  → processLegacySSE reader.read() 一次读完所有 chunk
+  → 没有「逐字 enqueue」的流式效果
+```
+
+### 9.3 修复模式
+
+**❌ 错误（fetch headers 缺 Accept）**：
+```typescript
+const response = await fetch(`${getAgentBase()}/api/chat`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    ...(sendAGUIHeader ? { 'X-Agent-Protocol': 'agui' } : {}),
+  },
+  body: JSON.stringify({...}),
+})
+```
+
+**✅ 正确（加 Accept: text/event-stream）**：
+```typescript
+const response = await fetch(`${getAgentBase()}/api/chat`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'text/event-stream',  // ← 必传！触发 ApiProxy.streamStart
+    ...(sendAGUIHeader ? { 'X-Agent-Protocol': 'agui' } : {}),
+  },
+  body: JSON.stringify({...}),
+})
+```
+
+### 9.4 当前已修复的 SSE 端点
+
+| 端点 | 文件位置 | 状态 |
+|------|---------|------|
+| `/api/chat` | useAgent.send() L2162-2175 | ✅ 已加 Accept |
+| `/api/confirm` | useAgent.confirmTool() L2421-2431 | ✅ 已加 Accept |
+| `/api/resume` | useAgent.runResumeChain() L2521-2531 | ✅ 已加 Accept |
+
+### 9.5 新增 SSE 端点时的 checklist
+
+任何新增的 SSE/streaming 端点必须检查：
+
+- [ ] fetch headers 是否带 `Accept: text/event-stream`？
+- [ ] 后端是否返回 `Content-Type: text/event-stream; charset=utf-8`？
+- [ ] dev 模式下原生 fetch 能处理（WebView 自带 SSE 拆分）？
+- [ ] Android 真机走 `useProxiedFetch` 触发 `streamStart` 路径？
+
+**判断流式分发的代码位置**：[useProxiedFetch.ts#L166-181](file:///workspace/app/encv-mobile/src/composables/useProxiedFetch.ts)
+
+```typescript
+const isStream = init.isStream === true
+  || (headers['Accept']?.includes('text/event-stream') ?? false)
+  || (headers['accept']?.includes('text/event-stream') ?? false)
+```
+
+### 9.6 dev 模式 vs native 模式对比
+
+| 模式 | fetch 实现 | isStream 缺失影响 | 现象 |
+|------|----------|------------------|------|
+| dev（vite） | 原生 fetch（useProxiedFetch 不安装） | 无影响（WebView 自带 SSE 拆分） | 流式正常 |
+| Android 真机 | useProxiedFetch → ApiProxy.streamStart/fetchOnce | **致命**（走 fetchOnce 一次性读完） | 无流式 |
+| Web 生产 | 原生 fetch | 无影响 | 流式正常 |
+
+### 9.7 单元测试覆盖
+
+- [src/composables/__tests__/useProxiedFetch.test.ts](file:///workspace/app/encv-mobile/src/composables/__tests__/useProxiedFetch.test.ts) L"SSE 请求（Accept: text/event-stream）走 ApiProxy.streamStart" 用例覆盖了此判断逻辑
+
+### 9.8 调试技巧
+
+流式失效时在 Android 真机 logcat 查：
+
+```bash
+adb logcat | grep -E "useProxiedFetch|ApiProxy"
+# 应看到 installProxiedFetch 启动信息 + stream:data 事件流
+# 若只有 streamStart 一次、立即 stream:end → 走的是 fetchOnce 路径
+```
+
+---
+
+## 十、跨层参考
 
 | 主题 | 文档位置 |
 |------|---------|
@@ -634,7 +741,7 @@ import {
 
 ---
 
-## 十、主题色系统
+## 十一、主题色系统
 
 > **核心原则：通过 JS 动态设置 `--ion-color-primary-*` CSS 变量实现运行时切换 primary 色。**
 > **不依赖 Ionic 的 CSS 自定义属性文件生成，完全运行时驱动。**

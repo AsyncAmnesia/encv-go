@@ -2159,9 +2159,18 @@ export function useAgent() {
       // 是否带 X-Agent-Protocol: agui header（默认 'auto' → 带）。
       // 后端看到 header 后用 AG-UI parser 解析 LLM 响应；不带则按
       // legacy 自定义 SSE 返回。
+      //
+      // Accept: text/event-stream —— 必传。Android 真机上 useProxiedFetch
+      // 已替换 window.fetch，见 isStream 判断（useProxiedFetch.ts#L166-169）：
+      //   命中此 header 才走 ApiProxy.streamStart()，否则走 fetchOnce()，
+      //   会把整个 SSE body 一次性塞进 new Response(body)，processLegacySSE
+      //   reader.read() 同步读完所有 chunk，**没有逐字流式效果**。
+      // dev 模式 useProxiedFetch 不安装，原生 fetch 走 WebView 自带 SSE 拆分，
+      // 加此 header 无副作用（CORS 不拦 Accept）。
       const sendAGUIHeader = shouldSendAGUIHeader()
       const fetchHeaders: Record<string, string> = {
         'Content-Type': 'application/json',
+        'Accept': 'text/event-stream',
         ...(sendAGUIHeader ? { 'X-Agent-Protocol': 'agui' } : {}),
       }
       // T15 unblock：mode === 'mock_resume' 时把 scenario 透传给后端，
@@ -2409,11 +2418,15 @@ export function useAgent() {
     abortController = new AbortController()
     try {
       // AG-UI 协议协商（与 send() 一致）
+      // Accept: text/event-stream —— 必传，触发 useProxiedFetch 走 streamStart，
+      // 否则 native 端走 fetchOnce 一次性读完所有 chunk，无流式效果。
+      // 详见 useAgent.send() 注释。
       const sendAGUIHeader = shouldSendAGUIHeader()
       const response = await fetch(`${getAgentBase()}/api/confirm`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
           ...(sendAGUIHeader ? { 'X-Agent-Protocol': 'agui' } : {}),
         },
         body: JSON.stringify({
@@ -2507,11 +2520,15 @@ export function useAgent() {
       while (hopsLeft-- > 0) {
         const headerLastEventId = lastEventId > 0 ? String(lastEventId) : undefined
         // AG-UI 协议协商（与 send() / confirmTool() 一致）
+        // Accept: text/event-stream —— 必传，触发 useProxiedFetch 走 streamStart，
+        // 否则 native 端走 fetchOnce 一次性读完所有 chunk，无流式效果。
+        // 详见 useAgent.send() 注释。
         const sendAGUIHeader = shouldSendAGUIHeader()
         const response = await fetch(`${getAgentBase()}/api/resume`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Accept': 'text/event-stream',
             // SSE 标准 Last-Event-ID：与 EventSource 协议一致
             ...(headerLastEventId ? { 'Last-Event-ID': headerLastEventId } : {}),
             ...(sendAGUIHeader ? { 'X-Agent-Protocol': 'agui' } : {}),
