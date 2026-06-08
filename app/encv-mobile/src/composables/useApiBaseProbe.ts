@@ -7,10 +7,25 @@
 //   - ServerSettings.vue "立即探测" 按钮
 //
 // 探测优先级：
-//   [1] localStorage.encv-server-url（用户上次手动设的，最优先）
-//   [2] http://127.0.0.1:2025  loopback（APK 模式 + adb reverse 通）
-//   [3] /api/network/lan-access（拿到 dev 机器 LAN 候选 IP 列表）
-//   [4] 每个 LAN 候选逐一探活，第一个通的晋升
+//   [1]   localStorage.encv-server-url（用户上次手动设的，最优先）
+//   [1.5] window.location.origin  ← 🆕 浏览器模式（沙箱 dev + OpenPreview 远程）
+//   [2]   http://127.0.0.1:2025   loopback（APK 模式 + adb reverse 通）
+//   [3]   /api/network/lan-access（拿到 dev 机器 LAN 候选 IP 列表）
+//   [4]   每个 LAN 候选逐一探活，第一个通的晋升
+//
+// 🆕 [1.5] 为何必要：
+//   旧 4 级探测链对"浏览器通过 OpenPreview 访问"会全失败：
+//     [1] cached 空 → skip
+//     [2] http://127.0.0.1:2025 → 浏览器在用户机器上，不是沙箱 → CORS/网络错
+//     [3] LAN：步骤 2 死路，无 baseUrl 拿 LAN 列表 → 空
+//     [4] all-candidates-failed
+//   但浏览器实际访问的是 https://run-agent-...trae.cn/，
+//   agent-tool-host 会把同一 origin 的 /api/* 代理到沙箱 :16666/api/* → :2025/api/*。
+//   加 [1.5] 后，[1.5] 直接命中（同一 origin = agent-tool-host 代理目标），
+//   写 localStorage + setApiBaseUrl，浏览器模式链路打通。
+//
+//   APK 模式不受影响：
+//     window.location.protocol = 'file:' 或 'capacitor:' → 跳过 [1.5]，走 [2] loopback。
 //
 // 关键约束：
 //   - 串行探测，命中即停（避免并行噪声）
@@ -34,7 +49,7 @@ export interface ProbeResult {
     preferred: string
   } | null
   /** 探测命中的源头 */
-  source: 'cached' | 'loopback' | 'lan-candidate'
+  source: 'cached' | 'current-origin' | 'loopback' | 'lan-candidate'
   /** 探测耗时（ms） */
   latencyMs: number
   /** 完整探测日志（调试用） */
@@ -70,8 +85,8 @@ function createProbe() {
   }
 
   /**
-   * 探活单个 baseUrl（拉 /api/config，200 即视为通）
-   * 失败 / 超时 / 网络错均返回 false
+   * 探活单个 baseUrl（拉 /api/config，200 + JSON 即视为通）
+   * 失败 / 超时 / 网络错 / 非 JSON 响应均返回 false
    */
   async function probeHealth(baseUrl: string): Promise<{ ok: boolean; latencyMs: number; err?: string }> {
     const url = baseUrl.replace(/\/+$/, '') + PROBE_HEALTH_PATH
@@ -79,8 +94,18 @@ function createProbe() {
     try {
       const r = await fetchWithTimeout(url, PROBE_TIMEOUT_MS)
       const latencyMs = Math.round(performance.now() - t0)
-      if (r.ok) return { ok: true, latencyMs }
-      return { ok: false, latencyMs, err: `status ${r.status}` }
+      if (!r.ok) return { ok: false, latencyMs, err: `status ${r.status}` }
+      // ⚠️ 关键校验：响应必须 application/json
+      //   - vite dev SPA fallback 对未匹配路径返回 <!DOCTYPE html>...，status 200
+      //   - 若 current origin 是 http://localhost:8100（dev 直连 vite），
+      //     fetch <origin>/api/config 会拿到 index.html，r.ok=true → 误判通
+      //   - 这里检查 content-type 把 vite dev 模式与真正的 API 反代区分开
+      //   - 真正 API（:2025 / agent-tool-host 代理）始终返 application/json
+      const contentType = r.headers.get('content-type') || ''
+      if (!contentType.toLowerCase().includes('application/json')) {
+        return { ok: false, latencyMs, err: `non-JSON response (content-type: "${contentType || 'unknown'}")` }
+      }
+      return { ok: true, latencyMs }
     } catch (e) {
       const latencyMs = Math.round(performance.now() - t0)
       return { ok: false, latencyMs, err: e instanceof Error ? e.message : String(e) }
@@ -154,6 +179,30 @@ function createProbe() {
         }
       } else {
         log.push('[1] no cached URL, skip')
+      }
+
+      // ─── [1.5] current origin（浏览器模式）──────────────
+      // 浏览器通过 OpenPreview / 沙箱 dev 直接访问时，
+      // window.location.origin 就是 API 反代的根（agent-tool-host 代理 /api/*）。
+      // APK 模式下 protocol = 'file:' / 'capacitor:' → 跳过，走 [2] loopback。
+      if (typeof window !== 'undefined' && window.location) {
+        const origin = window.location.origin
+        const proto = window.location.protocol
+        const isHttp = proto === 'http:' || proto === 'https:'
+        const isLoopbackUrl = /^https?:\/\/(127\.0\.0\.1|localhost|0\.0\.0\.0)(:\d+)?$/i.test(origin)
+        if (isHttp && !isLoopbackUrl && origin !== DEFAULT_API_BASE_URL) {
+          log.push(`[1.5] try current origin: ${origin}`)
+          const r = await probeHealth(origin)
+          log.push(`[1.5] result: ok=${r.ok} latency=${r.latencyMs}ms err=${r.err || '-'}`)
+          if (r.ok) {
+            // current origin 是反代目标，不是真正的后端地址 → lanAccess 显式置 null
+            return commit(origin, null, 'current-origin', log, t0)
+          }
+        } else {
+          log.push(`[1.5] skip (proto=${proto} origin=${origin})`)
+        }
+      } else {
+        log.push('[1.5] no window.location, skip')
       }
 
       // ─── [2] loopback 探测 ─────────────────────────────

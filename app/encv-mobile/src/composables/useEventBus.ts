@@ -26,7 +26,7 @@ export interface EncvEvents {
    * api-base:connected — useApiBaseProbe 探测成功 + WS 已重建后 emit。
    * 其它 composable / view 可监听此事件做后续动作（如刷新 agent list、re-mount 工具等）。
    */
-  'api-base:connected': { baseUrl: string; source: 'cached' | 'loopback' | 'lan-candidate' }
+  'api-base:connected': { baseUrl: string; source: 'cached' | 'current-origin' | 'loopback' | 'lan-candidate' }
   /**
    * api-base:disconnected — 探测失败（all-candidates-failed）后 emit。
    * UI 监听后显示错误 banner。
