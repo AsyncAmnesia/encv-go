@@ -168,6 +168,10 @@ export default {
     'agent.lanAccessCopied': '已复制 {url}',
     'agent.lanAccessCopyFailed': '复制失败',
     'agent.lanAccessInterface': '接口：{name}',
+    'agent.lanAccessUse': '使用',
+    'agent.lanAccessUseTitle': '使用此地址作为后端 baseUrl',
+    'agent.lanAccessUseSuccess': '已切换到 {url}',
+    'agent.lanAccessUseFailed': '切换失败',
 
     // ── Task 25: Sync Doctor（脱敏诊断按钮） ─────────────
     // 后端 /api/sync/doctor 返回的 DoctorReport 报告由用户在
@@ -437,6 +441,10 @@ export default {
     'agent.lanAccessCopied': 'Copied {url}',
     'agent.lanAccessCopyFailed': 'Copy failed',
     'agent.lanAccessInterface': 'Interface: {name}',
+    'agent.lanAccessUse': 'Use',
+    'agent.lanAccessUseTitle': 'Use this address as backend baseUrl',
+    'agent.lanAccessUseSuccess': 'Switched to {url}',
+    'agent.lanAccessUseFailed': 'Switch failed',
 
     // ── Task 25: Sync Doctor (redacted diagnostic) ─────────────
     // Triggered from the Settings panel; the report is shown

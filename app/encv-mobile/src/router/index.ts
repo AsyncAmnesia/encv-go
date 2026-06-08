@@ -87,6 +87,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/AgentSettingsDetail.vue'),
       },
       {
+        // 服务器地址管理页（手动配置 baseUrl 兜底）
+        path: 'settings/server',
+        component: () => import('@/views/ServerSettings.vue'),
+      },
+      {
         path: 'settings/devtools',
         component: () => import('@/views/DevToolsDetail.vue'),
       },

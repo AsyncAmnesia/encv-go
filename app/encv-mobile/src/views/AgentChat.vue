@@ -147,15 +147,27 @@
               <code class="lanAccessUrl">{{ addr.url }}</code>
               <span class="lanAccessInterface">{{ t('agent.lanAccessInterface', { name: addr.interface }) }}</span>
             </div>
-            <button
-              type="button"
-              class="lanAccessCopyBtn"
-              :title="t('agent.lanAccessCopy')"
-              :aria-label="t('agent.lanAccessCopy')"
-              @click="handleCopyLanAccess(addr.url)"
-            >
-              <ion-icon :icon="clipboardIcon" />
-            </button>
+            <div class="lanAccessItemActions">
+              <button
+                type="button"
+                class="lanAccessUseBtn"
+                :title="t('agent.lanAccessUseTitle') || '使用此地址'"
+                :aria-label="t('agent.lanAccessUseTitle') || '使用此地址'"
+                @click="handleUseLanAddress(addr.url)"
+              >
+                <ion-icon :icon="checkmarkIcon" />
+                <span>{{ t('agent.lanAccessUse') || '使用' }}</span>
+              </button>
+              <button
+                type="button"
+                class="lanAccessCopyBtn"
+                :title="t('agent.lanAccessCopy')"
+                :aria-label="t('agent.lanAccessCopy')"
+                @click="handleCopyLanAccess(addr.url)"
+              >
+                <ion-icon :icon="clipboardIcon" />
+              </button>
+            </div>
           </li>
         </ul>
         <button
@@ -506,11 +518,14 @@ import {
   chevronDownOutline,
   flaskOutline,
   trashOutline,
+  checkmarkOutline,
 } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import { getDeviceIdSync } from '@/composables/useDeviceId'
 import { getAgentApiBase } from '@/composables/useAgentApiBase'
 import { useAgent, type Decision, getLanAccess, type LanAddress } from '@/composables/useAgent'
+import { useApiBaseProbe } from '@/composables/useApiBaseProbe'
+import { useServerStatus } from '@/composables/useServerStatus'
 import { useRenderTurnItems } from '@/composables/renderTurnItems'
 import { useAttachments } from '@/composables/useAttachments'
 import { useSlashMenu } from '@/composables/useSlashMenu'
@@ -678,6 +693,7 @@ const refreshCircleIcon = refreshCircleOutline
 const chevronDownIcon = chevronDownOutline
 const flaskIcon = flaskOutline
 const trashIcon = trashOutline
+const checkmarkIcon = checkmarkOutline
 // copyIconVar 已移至 DefaultMessagesView.vue（引擎渲染路径内的复制按钮）
 const historyOpen = ref(false)
 
@@ -696,6 +712,43 @@ async function handleRefreshLanAccess(): Promise<void> {
     lanAccessLoaded.value = true
   } finally {
     lanAccessLoading.value = false
+  }
+}
+
+/**
+ * LAN 候选「使用此地址」按钮：把 URL 设为当前 baseUrl + 重建连接。
+ *
+ * 行为：
+ *  1. useApiBaseProbe.setManual(url) 写 localStorage + 内存
+ *  2. useServerStatus.manualReconnect() 重新探测 + 重建 WS
+ *  3. 失败 → toast 红色；成功 → toast 绿色 + 1.6s 后自动隐藏
+ *
+ * 与 ServerSettings.vue "使用" 按钮的区别：本处是"立即生效"，不进入配置页
+ * （适合用户已经看到 LAN 列表想直接切换的场景）
+ */
+async function handleUseLanAddress(url: string): Promise<void> {
+  try {
+    useApiBaseProbe().setManual(url)
+    const result = await useServerStatus().manualReconnect()
+    if (result.ok) {
+      showToast({
+        message: t('agent.lanAccessUseSuccess', { url }) || `已切换到 ${url}`,
+        duration: 1600,
+        color: 'success',
+      })
+    } else {
+      showToast({
+        message: `${t('agent.lanAccessUseFailed') || '切换失败'}：${result.error || 'unknown'}`,
+        duration: 2000,
+        color: 'danger',
+      })
+    }
+  } catch (e) {
+    showToast({
+      message: t('agent.lanAccessUseFailed') || '切换失败' + ': ' + (e instanceof Error ? e.message : String(e)),
+      duration: 2000,
+      color: 'danger',
+    })
   }
 }
 
@@ -2220,6 +2273,40 @@ defineExpose({})
 .lanAccessCopyBtn:hover,
 .lanAccessCopyBtn:active {
   background: rgba(var(--ion-color-primary-rgb), 0.14);
+}
+
+/* Task 26 扩展：LAN 列表项右侧动作组（使用 + 复制） */
+.lanAccessItemActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.lanAccessUseBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(var(--ion-color-primary-rgb), 0.4);
+  border-radius: 8px;
+  background: rgba(var(--ion-color-primary-rgb), 0.08);
+  color: var(--ion-color-primary);
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 500;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.lanAccessUseBtn ion-icon {
+  font-size: 14px;
+}
+
+.lanAccessUseBtn:hover,
+.lanAccessUseBtn:active {
+  background: rgba(var(--ion-color-primary-rgb), 0.18);
+  border-color: rgba(var(--ion-color-primary-rgb), 0.6);
 }
 
 .lanAccessRefresh {

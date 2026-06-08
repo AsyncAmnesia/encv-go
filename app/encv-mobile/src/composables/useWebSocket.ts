@@ -159,6 +159,31 @@ function forceReconnect() {
   connect()
 }
 
+// ─── baseUrl 变更监听 ────────────────────────────────────────
+//
+// 监听两个信号：
+//  1. eventBus 'api-base:connected'（同进程内 probe 成功 → 强制重连 WS）
+//  2. window 'storage' 事件 'encv-server-url' 键变化（跨 tab / 跨进程）
+//
+// 触发后等 800ms 让 setApiBaseUrl 写完 localStorage 稳定，再 forceReconnect。
+let _apiBaseListenersAdded = false
+function ensureApiBaseListeners() {
+  if (_apiBaseListenersAdded) return
+  if (typeof window === 'undefined') return
+  _apiBaseListenersAdded = true
+  eventBus.on('api-base:connected', (data: { baseUrl: string; source: string }) => {
+    console.info(`[ENCV-WS] api-base:connected (${data.source}) → forceReconnect`)
+    // 给 setApiBaseUrl 写 localStorage 留 100ms 余量
+    setTimeout(() => forceReconnect(), 100)
+  })
+  window.addEventListener('storage', (e: StorageEvent) => {
+    if (e.key !== 'encv-server-url') return
+    if (!e.newValue) return
+    console.info(`[ENCV-WS] storage event: encv-server-url changed → forceReconnect`)
+    setTimeout(() => forceReconnect(), 100)
+  })
+}
+
 function send(type: string, data: any) {
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type, data }))
@@ -168,6 +193,7 @@ function send(type: string, data: any) {
 }
 
 export function useWebSocket() {
+  ensureApiBaseListeners()
   return {
     connectionState,
     connect,
