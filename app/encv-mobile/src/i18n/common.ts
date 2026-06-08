@@ -30,6 +30,8 @@ export default {
     'alistEncrypt.encryptedFile': '加密文件',
     'alistEncrypt.realFilename': '原始名称',
     'alistEncrypt.pluginNotAvailable': 'Alist-Encrypt 解密插件未安装',
+    'alistEncrypt.encrypt': '加密',
+    'alistEncrypt.decrypt': '解密',
 
     'webdav.title': 'WebDAV',
     'webdav.noServers': '暂无 WebDAV 服务器',
@@ -263,6 +265,8 @@ export default {
     'alistEncrypt.encryptedFile': 'Encrypted File',
     'alistEncrypt.realFilename': 'Original Name',
     'alistEncrypt.pluginNotAvailable': 'Alist-Encrypt plugin not available',
+    'alistEncrypt.encrypt': 'Encrypt',
+    'alistEncrypt.decrypt': 'Decrypt',
 
     'webdav.title': 'WebDAV',
     'webdav.noServers': 'No WebDAV Servers',

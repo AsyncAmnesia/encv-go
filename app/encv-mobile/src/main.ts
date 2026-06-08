@@ -2,6 +2,7 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
 import { IonicVue } from '@ionic/vue'
+import { installProxiedFetch } from './composables/useProxiedFetch'
 
 // TDesign Chat 组件库不再做全局注册：
 //   早期版本用 <Chatbot> + ChatService 自行消费 SSE 流，与 useAgent
@@ -21,6 +22,10 @@ import '@ionic/vue/css/display.css'
 import './theme/variables.css'
 
 const app = createApp(App).use(IonicVue).use(router)
+
+// Phase X1: 在 native 模式下把 window.fetch 路由到 ApiProxy 插件，
+// 绕开 WebView CORS preflight。dev / web 平台 no-op。
+installProxiedFetch()
 
 router.isReady().then(() => {
   app.mount('#app')

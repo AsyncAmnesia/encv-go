@@ -38,7 +38,7 @@ afterEach(() => {
 })
 
 describe('devlogApiError', () => {
-  it('通过 console.error 输出一行格式化字符串（包含 kind/endpoint/base/status）', async () => {
+  it('通过 console.error 输出一行格式化字符串（包含 kind/endpoint/base/source/status）', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { devlogApiError } = await import('@/composables/devlogApiError')
 
@@ -56,7 +56,10 @@ describe('devlogApiError', () => {
     expect(msg).toContain('encrypt')
     expect(msg).toContain('/api/encrypt-key')
     expect(msg).toContain('status=500')
-    expect(msg).toContain('base=http://127.0.0.1:2025')
+    // Phase X1: native 模式下 base 是空字符串（相对路径），由 ApiProxy 接管
+    // 实际目标 base URL 通过 baseSource='native-default' + native=true 体现
+    expect(msg).toMatch(/base=\s*\(native-default\)/)
+    expect(msg).toContain('native=true')
     expect(msg).toContain('boom')
   })
 

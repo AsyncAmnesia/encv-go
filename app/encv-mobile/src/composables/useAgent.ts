@@ -2207,10 +2207,11 @@ export function useAgent() {
       // Mock 模式 header 检测（备份信号）：SSE stream_start 事件是主信号，
       // 但如果首条事件到达前 header 已被读取，这里先把状态置好，避免 UI
       // 看到一段无 badge 的"普通"回复再被刷成 mock。
-      const mockHeader = response.headers.get('X-Mock-Mode')
+      // response.headers 可能为 undefined（部分代理 / 测试 mock），用 ?. 兼容。
+      const mockHeader = response.headers?.get('X-Mock-Mode')
       if (mockHeader) {
         isMockMode.value = true
-        mockScenario.value = response.headers.get('X-Mock-Scenario') ?? ''
+        mockScenario.value = response.headers?.get('X-Mock-Scenario') ?? ''
       }
 
       // 协议分发：根据后端响应 X-Agent-Protocol 决定走 AG-UI parser 还是 legacy

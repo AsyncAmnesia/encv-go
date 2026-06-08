@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 import com.encvgo.app.GoProcessPlugin
+import com.encvgo.app.ApiProxyPlugin
 import com.masterpedidos.highrefreshrate.HighRefreshRatePlugin
 
 class MainActivity : BridgeActivity() {
@@ -46,6 +47,7 @@ class MainActivity : BridgeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         try {
             registerPlugin(GoProcessPlugin::class.java)
+            registerPlugin(ApiProxyPlugin::class.java)
             registerPlugin(HighRefreshRatePlugin::class.java)
         } catch (e: Exception) {
             Log.e(TAG, "registerPlugin failed", e)
