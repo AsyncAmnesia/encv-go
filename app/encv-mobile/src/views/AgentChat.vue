@@ -52,6 +52,16 @@
           <span class="mockBadgeText">{{ mockBadgeText }}</span>
           <ion-icon :icon="chevronDownIcon" class="mockBadgeChevron" />
         </button>
+        <!--
+          v2 剧本演示入口：常驻在 header 上（mock 徽章旁）。
+          点击 → 弹 modal 列出 8 个 v2 剧本（搜索/读/写/分支 4 组）。
+          点选某剧本 → 自动切到 builtin mock 模式 + 发送 trigger keyword。
+        -->
+        <V2ScenariosMenu
+          :disabled="status === 'streaming' || status === 'confirming'"
+          @pick="onPickV2Scenario"
+        />
+
         <!-- 多渲染引擎切换器（同款模型选择器样式） -->
         <div class="enginePicker" ref="enginePickerRef">
           <button
@@ -232,11 +242,23 @@
         :on-selected-index-change="(n) => (slashMenu.selectedIndex.value = n)"
       />
 
-      <!-- Task 12: 附件展示行（textarea 上方） -->
+      <!--
+        Task 12: 附件展示行（textarea 上方）
+      -->
       <AttachmentTray
         v-if="attachments.length > 0"
         :attachments="attachments"
         :on-remove="removeAttachment"
+      />
+
+      <!--
+        v2 工具快捷动作 chip 行：让用户一键 pre-fill v2 工具调用 prompt。
+        6 个 chip（搜索/读/元数据/改元数据/批量改名/跑命令）覆盖 v2 主力能力。
+        点击 chip → inputText 填入示例 prompt，焦点回输入框，用户按 Enter 发送。
+      -->
+      <V2QuickActions
+        :disabled="status === 'streaming' || status === 'confirming'"
+        @pick="onPickV2QuickAction"
       />
 
       <!--
@@ -506,6 +528,9 @@ import AttachmentTray from '@/components/agent/AttachmentTray.vue'
 import MockPresetBar from '@/components/agent/MockPresetBar.vue'
 import MockBranchChoiceBar from '@/components/agent/MockBranchChoiceBar.vue'
 import AgentDebugPanel from '@/components/agent/AgentDebugPanel.vue'
+import V2QuickActions from '@/components/agent/V2QuickActions.vue'
+import V2ScenariosMenu from '@/components/agent/V2ScenariosMenu.vue'
+import type { V2ScenarioEntry } from '@/components/agent/V2ScenariosMenu.vue'
 import SlashMenu from '@/components/agent/SlashMenu.vue'
 import ContextIcon from '@/components/agent/ContextIcon.vue'
 
@@ -1012,6 +1037,55 @@ function handleSend() {
 
 function handleStop() {
   stop()
+}
+
+/**
+ * v2 工具快捷动作 chip 点击：把示例 prompt 注入输入框 + 聚焦
+ *
+ * 不直接 send —— 让用户能修改/补充上下文，避免"我都不知道它发了什么"的失控感。
+ * 若用户已经在 mock 模式里被 v2 剧本暂停，则走 sendMockRoundResponse 路径。
+ */
+function onPickV2QuickAction(action: { prompt: string }): void {
+  inputText.value = action.prompt
+  nextTick(() => {
+    inputRef.value?.focus()
+    autoResize()
+  })
+}
+
+/**
+ * v2 剧本演示入口点击：自动切到 builtin mock + 发送 trigger keyword
+ *
+ * 流程：
+ * 1. 若 mock 模式为 off，切到 builtin（持久化），toast 提示
+ * 2. 调用 send(triggerKeyword) —— 后端按 keyword 匹配到对应 v2 剧本并启动
+ * 3. 多轮剧本的 mid-step 暂停由 mock_branch_choice / mock_round_state 事件驱动
+ */
+async function onPickV2Scenario(scenario: V2ScenarioEntry): Promise<void> {
+  if (status.value === 'streaming' || status.value === 'confirming') {
+    showToast({
+      message: t('agent.v2Scenarios.busy') || '当前正在请求中，请稍候',
+      duration: 1500,
+      color: 'warning',
+    })
+    return
+  }
+  if (currentMockMode.value === 'off') {
+    try {
+      await setMockMode('builtin')
+    } catch (e) {
+      showToast({
+        message: (t('agent.mockModeSetFailed') || '切换 mock 模式失败') + ': ' + (e instanceof Error ? e.message : String(e)),
+        duration: 2000,
+        color: 'danger',
+      })
+      return
+    }
+  }
+  // 短暂延迟让 mock 模式切换 toast 显示 + UI 更新
+  await new Promise((resolve) => setTimeout(resolve, 80))
+  void send(scenario.triggerKeyword)
+  nextTick(() => scrollToBottom())
 }
 
 /**

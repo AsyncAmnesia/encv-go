@@ -317,6 +317,85 @@ func TestReadPathFromToolArgs_MissingRelPath(t *testing.T) {
 	}
 }
 
+// ─── v2 工具抽取 ──────────────────────────────────────────
+
+func TestReadPathFromToolArgs_V2_ReadFileV2(t *testing.T) {
+	got := readPathFromToolArgs("read_file_v2", `{"mount_id":"serving","rel_path":"/videos/clip.mp4","start_line":10,"end_line":50}`)
+	if got == nil || got.Path != "/videos/clip.mp4" || got.MountID != "serving" {
+		t.Errorf("read_file_v2 应抽取到 serving+/videos/clip.mp4, got %+v", got)
+	}
+}
+
+func TestReadPathFromToolArgs_V2_GetMetadata(t *testing.T) {
+	got := readPathFromToolArgs("get_metadata", `{"mount_id":"serving","rel_path":"/photos/img.jpg","include_hash":true}`)
+	if got == nil || got.Path != "/photos/img.jpg" {
+		t.Errorf("get_metadata 应抽取到 /photos/img.jpg, got %+v", got)
+	}
+}
+
+func TestReadPathFromToolArgs_V2_SearchFiles_DefaultRoot(t *testing.T) {
+	// search_files 不传 rel_path 时默认 "/"（与 list_files 行为一致）
+	got := readPathFromToolArgs("search_files", `{"mount_id":"serving","recursive":true,"expression":{"op":"name_glob","value":"*.mp4"}}`)
+	if got == nil || got.Path != "/" {
+		t.Errorf("search_files 缺省 rel_path 应退化为 /, got %+v", got)
+	}
+}
+
+func TestReadPathFromToolArgs_V2_EditMetadata(t *testing.T) {
+	got := readPathFromToolArgs("edit_metadata", `{"mount_id":"serving","rel_path":"/songs/a.mp3","metadata":{"title":"x"}}`)
+	if got == nil || got.Path != "/songs/a.mp3" {
+		t.Errorf("edit_metadata 应抽取到 /songs/a.mp3, got %+v", got)
+	}
+}
+
+func TestReadPathFromToolArgs_V2_DeleteFile(t *testing.T) {
+	got := readPathFromToolArgs("delete_file", `{"mount_id":"serving","rel_path":"/old/file.txt","mode":"trash"}`)
+	if got == nil || got.Path != "/old/file.txt" {
+		t.Errorf("delete_file 应抽取到 /old/file.txt, got %+v", got)
+	}
+}
+
+func TestReadPathFromToolArgs_V2_BatchRename(t *testing.T) {
+	got := readPathFromToolArgs("batch_rename", `{"mount_id":"serving","rel_path":"/photos","pattern":"(.*)\\.JPG","replacement":"$1.jpg","dry_run":true}`)
+	if got == nil || got.Path != "/photos" {
+		t.Errorf("batch_rename 应抽取到 /photos, got %+v", got)
+	}
+}
+
+func TestReadPathFromToolArgs_V2_CommandRun_Skipped(t *testing.T) {
+	// command_run 的 path 散布在 args[] 数组中，无法静态抽取 → 应返回 nil
+	if got := readPathFromToolArgs("command_run", `{"mount_id":"serving","command":"ffprobe","args":["-v","error","/videos/x.mp4"]}`); got != nil {
+		t.Errorf("command_run 应跳过（无法静态抽 path）, got %+v", got)
+	}
+}
+
+func TestExtractReferencedFiles_V2Mixed(t *testing.T) {
+	// 真实 v2 混合场景：search_files → read_file_v2 → get_metadata
+	msgs := []chatMsg{
+		{Role: "assistant", ToolCalls: []toolCallAccumulator{
+			makeToolCall("search_files", `{"mount_id":"serving","rel_path":"/videos","recursive":true,"expression":{"op":"name_glob","value":"*.mp4"}}`),
+		}},
+		{Role: "assistant", ToolCalls: []toolCallAccumulator{
+			makeToolCall("read_file_v2", `{"mount_id":"serving","rel_path":"/videos/clip.mp4"}`),
+		}},
+		{Role: "assistant", ToolCalls: []toolCallAccumulator{
+			makeToolCall("get_metadata", `{"mount_id":"serving","rel_path":"/videos/clip.mp4"}`),
+		}},
+	}
+	refs := extractReferencedFiles(msgs)
+	if len(refs) != 2 {
+		// search_files /videos + read_file_v2 & get_metadata 都指向 /videos/clip.mp4 → 去重后 2 条
+		t.Fatalf("refs 数 = %d, want 2 (search root + file), got %+v", len(refs), refs)
+	}
+	// 最近一次引用是 /videos/clip.mp4（via get_metadata），应排第一
+	if refs[0].Path != "/videos/clip.mp4" {
+		t.Errorf("最近引用应是 /videos/clip.mp4, got %+v", refs[0])
+	}
+	if refs[0].ViaTool != "get_metadata" {
+		t.Errorf("viaTool 应是 get_metadata, got %+v", refs[0])
+	}
+}
+
 // ─── containsAny ────────────────────────────────────────────
 
 func TestContainsAny(t *testing.T) {

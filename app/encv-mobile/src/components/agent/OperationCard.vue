@@ -16,6 +16,11 @@
     <div class="operationCardHead" @click="toggleCollapse">
       <ion-icon :icon="toolIcon" class="operationCardIcon" />
       <span class="operationCardName">{{ toolCall.name || t('agent.tool.unknown') }}</span>
+      <span
+        v-if="isV2Tool"
+        class="operationCardV2Tag"
+        :title="t('agent.v2BadgeTitle')"
+      >{{ t('agent.v2Badge') }}</span>
       <StatusBadge
         :label="toolCall.status"
         :tone="statusTone"
@@ -105,6 +110,20 @@ function truncateArgs(args: string): string {
   if (!args || args.length <= 120) return args || ''
   return args.slice(0, 120) + '…'
 }
+
+/** v2 工具名集合：7 个 v2 工具 + 它们的 v1 名称（向后兼容） */
+const V2_TOOL_NAMES = new Set<string>([
+  'search_files',
+  'read_file_v2',
+  'get_metadata',
+  'edit_metadata',
+  'batch_rename',
+  'delete_file',
+  'command_run',
+])
+
+/** 当前 toolCall 是否是 v2 工具（用于显示 v2 badge） */
+const isV2Tool = computed(() => V2_TOOL_NAMES.has(props.toolCall.name))
 </script>
 
 <style scoped>
@@ -157,6 +176,21 @@ function truncateArgs(args: string): string {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* v2 工具标签：在工具名右侧展示一个小 pill，让用户一眼看出这次是 v2 调用 */
+.operationCardV2Tag {
+  display: inline-block;
+  font-size: 9px;
+  padding: 1px 5px;
+  background: rgba(var(--ion-color-primary-rgb), 0.18);
+  color: var(--ion-color-primary);
+  border-radius: 4px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  line-height: 1.3;
+  flex-shrink: 0;
+  cursor: help;
 }
 
 .operationCardBadge {
