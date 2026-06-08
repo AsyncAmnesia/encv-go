@@ -1,0 +1,44 @@
+id: branch_video_or_audio
+description: "按文件类型分支：视频 / 音频 / 其他"
+keywords:
+  - "branch_video_or_audio"
+rounds: 1
+
+branches:
+  - id: video
+    label: "🎬 视频"
+    description: "用 ffprobe 提取元数据"
+    icon: "🎬"
+    trigger_keywords:
+      - "视频"
+      - "video"
+      - "movie"
+    trigger_regex: "(?i)\\.(mp4|mkv|avi|mov)$"
+  - id: audio
+    label: "🎵 音频"
+    description: "用 ffprobe 提取元数据"
+    icon: "🎵"
+    trigger_keywords:
+      - "音频"
+      - "audio"
+      - "mp3"
+    trigger_regex: "(?i)\\.(mp3|flac|wav|aac)$"
+  - id: other
+    label: "📄 其他"
+    description: "读元数据"
+    icon: "📄"
+    trigger_keywords:
+      - "其他"
+      - "other"
+
+steps:
+  - id: choose
+    round_idx: 0
+    delay_ms: 10
+    events:
+      - type: stream_start
+        data: { scenario: branch_video_or_audio }
+      - type: text_delta
+        data: { text: "请选择文件类型：" }
+    branch_choice: true
+    branch_id: choose_type

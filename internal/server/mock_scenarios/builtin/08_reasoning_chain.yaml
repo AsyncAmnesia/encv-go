@@ -1,62 +1,66 @@
-# reasoning_chain — reasoning 推理链
-#
-# 用途：验证 reasoning_delta 与 text_delta 交替推送时前端排序正确。
-# 触发：关键词（"推理" / "reasoning"）
-#
-# 数据完整性：
-#   - reasoning_delta 和 text_delta 都是通用思考过程描述
-#   - 不写死任何文件名/数据值
 id: reasoning_chain
-description: "5 步推理链 — 验证 reasoning_delta + text_delta 排序"
+description: "reasoning_delta + text_delta 交替 — 验证 reasoning 字段排序"
 keywords:
-  - 推理
-  - reasoning
-  - 思考
-  - think
+  - "推理"
+  - "思考"
+  - "分析"
+  - "reasoning"
+  - "step by step"
+
+presets:
+  - id: p_why
+    label: "❓ 追问"
+    user_text: "为什么"
+    tooltip: "追问决策依据"
+  - id: p_alternative
+    label: "🔄 换思路"
+    user_text: "换个思路分析"
+    tooltip: "重新推理"
+  - id: p_save_reasoning
+    label: "💾 保存推理过程"
+    user_text: "保存推理过程"
+    tooltip: "保存到文件"
 
 steps:
-  - id: s1_stream_start
+  - id: start
     delay_ms: 0
     events:
       - type: stream_start
         data: { scenario: reasoning_chain }
-      - type: reasoning_delta
-        data: { text: "用户问了一个需要推理的问题。" }
-      - type: text_delta
-        data: { text: "## 推理过程\n\n" }
-
-  - id: s2_reasoning_1
+  - id: think1
     delay_ms: 200
     events:
       - type: reasoning_delta
-        data: { text: "步骤 1：拆解问题。" }
-      - type: text_delta
-        data: { text: "首先，拆解问题为子任务。\n" }
-
-  - id: s3_reasoning_2
-    delay_ms: 200
-    events:
-      - type: reasoning_delta
-        data: { text: "步骤 2：选择工具。" }
-      - type: text_delta
-        data: { text: "然后，选择合适的工具。\n" }
-
-  - id: s4_reasoning_3
-    delay_ms: 200
-    events:
-      - type: reasoning_delta
-        data: { text: "步骤 3：执行并验证。" }
-      - type: text_delta
-        data: { text: "最后，执行并验证结果。\n" }
-
-  - id: s5_conclusion
+        data: { text: "让我先分析问题..." }
+  - id: think2
     delay_ms: 300
     events:
+      - type: reasoning_delta
+        data: { text: "需要考虑多个因素。" }
+  - id: think3
+    delay_ms: 300
+    events:
+      - type: reasoning_delta
+        data: { text: "综合各因素的优劣..." }
+  - id: answer1
+    delay_ms: 200
+    events:
       - type: text_delta
-        data: { text: "## 结论\n\n推理完成。\n" }
-
-  - id: s6_stream_end
+        data: { text: "根据以上分析，" }
+  - id: answer2
+    delay_ms: 200
+    events:
+      - type: text_delta
+        data: { text: "我的答案是..." }
+  - id: answer3
+    delay_ms: 200
+    events:
+      - type: text_delta
+        data: { text: "综合各因素，已给出最佳方案。" }
+  - id: end
     delay_ms: 100
     events:
       - type: stream_end
-        data: { finishReason: stop, usage: { totalTokens: 178 } }
+        data:
+          finishReason: stop
+          usage: { totalTokens: 234 }

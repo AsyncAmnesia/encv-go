@@ -1,18 +1,11 @@
-# search_logical_query — 复合 AND 查询（v2 单轮线性）
-#
-# 用途：演示 search_files 工具的复合谓词（size + mtime + ext 三个 AND）。
-# 关键：tool_result 由真实工具执行产生。
-# 数据完整性：text_delta 是通用 UI 文案。
 id: search_logical_query
-description: 复合 AND 查询（size + mtime + ext）
-
+description: "复合 AND 查询（size + mtime + ext）"
 keywords:
-  - search_logical_query
-
+  - "search_logical_query"
 rounds: 1
 
 steps:
-  - id: s1_start
+  - id: intro
     round_idx: 0
     delay_ms: 10
     events:
@@ -20,8 +13,7 @@ steps:
         data: { scenario: search_logical_query }
       - type: text_delta
         data: { text: "将查询条件组合为 AND 谓词…" }
-
-  - id: s2_search
+  - id: search
     round_idx: 0
     delay_ms: 30
     events:
@@ -32,19 +24,21 @@ steps:
           args:
             expression:
               and:
-                - { type: size_gt,    value: 1048576 }
-                - { type: mtime_after, value: "2024-01-01T00:00:00Z" }
-                - { type: ext_eq,     value: ".log" }
+                - type: size_gt
+                  value: 1048576
+                - type: mtime_after
+                  value: "2024-01-01T00:00:00Z"
+                - type: ext_eq
+                  value: ".log"
           auto_run: true
           needsConfirm: false
           kind: fileSearch
           execute_real: true
-
-  - id: s3_end
+  - id: done
     round_idx: 0
     delay_ms: 50
     events:
       - type: text_delta
-        data: { text: "匹配完成。详见上方工具结果。" }
+        data: { text: "查询完成。匹配结果见上方工具返回。" }
       - type: stream_end
         data: { finishReason: stop }

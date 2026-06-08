@@ -1,0 +1,44 @@
+id: search_recursive_mp4
+description: "搜索大文件 mp4（递归 + glob）"
+keywords:
+  - "search_recursive_mp4"
+rounds: 1
+
+steps:
+  - id: intro
+    round_idx: 0
+    delay_ms: 10
+    events:
+      - type: stream_start
+        data: { scenario: search_recursive_mp4 }
+      - type: text_delta
+        data: { text: "正在搜索符合条件的 MP4 文件…" }
+  - id: search
+    round_idx: 0
+    delay_ms: 30
+    events:
+      - type: tool_call
+        data:
+          id: call_srm_1
+          name: search_files
+          args:
+            expression:
+              and:
+                - type: name_glob
+                  value: "*.mp4"
+                - type: size_gt
+                  value: 104857600
+            recursive: true
+            max_results: 20
+          auto_run: true
+          needsConfirm: false
+          kind: fileSearch
+          execute_real: true
+  - id: done
+    round_idx: 0
+    delay_ms: 50
+    events:
+      - type: text_delta
+        data: { text: "搜索完成。结果见上方工具返回。" }
+      - type: stream_end
+        data: { finishReason: stop }

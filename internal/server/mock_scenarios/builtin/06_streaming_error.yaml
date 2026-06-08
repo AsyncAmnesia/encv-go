@@ -1,45 +1,38 @@
-# streaming_error — 错误分支覆盖
-#
-# 用途：验证前端 stream_status 错误处理（toast / status=error）。
-# 触发：关键词（"触发错误" / "测试错误"）
-#
-# 数据完整性：
-#   - 错误信息由 MockEngine 在 stream_status 事件触发，**不**在 YAML 写死
-#   - text_delta 是通用 UI 文案（"出错了" / 不含具体错误文本）
 id: streaming_error
-description: "stream_status=error — 验证前端错误流处理"
+description: "stream_status(error) + auto stream_end — 验证错误处理路径"
 keywords:
-  - 触发错误
-  - 测试错误
-  - 异常
-  - error
+  - "触发错误"
+  - "测试错误"
+  - "出错"
+  - "上游超时"
+  - "error"
+
+presets:
+  - id: p_retry
+    label: "🔁 重试"
+    user_text: "重试一下"
+    tooltip: "重发相同问题"
+  - id: p_simpler
+    label: "📝 简化问题"
+    user_text: "列出文件"
+    tooltip: "换成简单查询"
+  - id: p_view_logs
+    label: "📋 查看错误日志"
+    user_text: "显示错误日志"
+    tooltip: "查看日志"
 
 steps:
-  - id: s1_stream_start
+  - id: intro
     delay_ms: 0
     events:
       - type: stream_start
         data: { scenario: streaming_error }
       - type: text_delta
-        data: { text: "正在处理您的请求...\n" }
-
-  - id: s2_partial_text
-    delay_ms: 500
-    events:
-      - type: text_delta
-        data: { text: "已生成部分结果，" }
-
-  # stream_status 触发自动 stream_end
-  - id: s3_error_status
+        data: { text: "正在处理..." }
+  - id: error
     delay_ms: 800
     events:
       - type: stream_status
-        data: { type: error, code: upstream_timeout, message: "[ERROR_PLACEHOLDER]" }
-      # 注意：具体错误信息（"upstream timeout after 30s" 等）由 MockEngine 真实执行时填入
-      # YAML 里只放触发标记，不放具体错误文本
-
-  - id: s4_stream_end_auto
-    delay_ms: 100
-    events:
-      - type: stream_end
-        data: { finishReason: error, usage: { totalTokens: 12 } }
+        data:
+          type: error
+          code: upstream_timeout
