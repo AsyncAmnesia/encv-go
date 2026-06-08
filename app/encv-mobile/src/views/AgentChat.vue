@@ -255,6 +255,26 @@
       />
 
       <!--
+        v2 多轮/分支剧本：剧本 mid-step 暂停时由 useAgent 推 mock_branch_choice
+        事件 → 渲染此 chip 列表；用户点 chip → 走 pickMockBranch(branch.id)
+        → send(branchId, { mode: 'mock_resume' }) 通知后端 Resume。
+        显隐由 mockScenarioPaused（派生 computed）控制 —— phase 在
+        awaiting_user_input / awaiting_branch_choice 时显示。
+        优先级高于 MockPresetBar（"剧本等待用户选"必须盖在快捷入口之上）。
+      -->
+      <MockBranchChoiceBar
+        v-if="isMockMode && mockScenarioPaused && mockBranchChoices.length > 0"
+        :paused="mockScenarioPaused"
+        :scenario="currentMockScenario"
+        :round="mockRoundState?.roundIdx"
+        :total="mockRoundState?.totalRounds"
+        :prompt="mockBranchPrompt"
+        :branches="mockBranchChoices"
+        :phase="mockRoundState?.phase ?? ''"
+        @pick="(branch) => pickMockBranch(branch.id)"
+      />
+
+      <!--
         调试面板：mock 模式可手动展开 / URL ?debug=agent 强制开
         v2 修复：默认折叠，避免遮挡对话。需要时手动点开。
       -->
@@ -484,6 +504,7 @@ import EngineRenderer from '@/components/agent/EngineRenderer.vue'
 // AgentChat.vue 作为宿主容器不再直接引用这些组件
 import AttachmentTray from '@/components/agent/AttachmentTray.vue'
 import MockPresetBar from '@/components/agent/MockPresetBar.vue'
+import MockBranchChoiceBar from '@/components/agent/MockBranchChoiceBar.vue'
 import AgentDebugPanel from '@/components/agent/AgentDebugPanel.vue'
 import SlashMenu from '@/components/agent/SlashMenu.vue'
 import ContextIcon from '@/components/agent/ContextIcon.vue'
@@ -554,7 +575,7 @@ const mockPresetBarPhase = computed(() => {
 // Agent API 基础 URL（动态解析：dev 走网关 / prod 直连后端）
 const AGENT_API_BASE = getAgentApiBase()
 
-const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel, setApiDefaultModel, isMockMode, isDebugAgent, mockScenario, currentMockMode, loadMockMode, setMockMode, mockPresets, mockPresetsPhase, mockPresetsScenario, pickMockPreset, loadMockPresets, rawSSEEvents } = useAgent()
+const { messages, status, send, confirmTool, resume, stop, newSession, switchSession, deleteSession, sessions, currentSessionId, contextUsage, lastErrorCode, dismissError, activeModel, setApiDefaultModel, isMockMode, isDebugAgent, mockScenario, currentMockMode, loadMockMode, setMockMode, mockPresets, mockPresetsPhase, mockPresetsScenario, pickMockPreset, loadMockPresets, rawSSEEvents, mockBranchChoices, mockBranchPrompt, mockRoundState, mockScenarioPaused, currentMockScenario, pickMockBranch, sendMockRoundResponse } = useAgent()
 const router = useRouter()
 
 /**
@@ -974,6 +995,15 @@ function handleSend() {
   const atts = attachments.value.slice() // 拍快照：避免 send 异步期间被清空后引用空数组
   inputText.value = ''
   autoResize()
+  // v2 多轮/分支剧本暂停时：把文本走 sendMockRoundResponse → 后端
+  // MockEngineV2 走"恢复"分支（带 scenario ID），而非开新 session。
+  // 原因：send() 默认 mode='start' 会让后端重新匹配 scenario，
+  //       而 v2 的"恢复"必须显式 mode='mock_resume' + scenario。
+  if (mockScenarioPaused.value) {
+    sendMockRoundResponse(text)
+    nextTick(() => scrollToBottom())
+    return
+  }
   send(text, { attachments: atts })
   // 发送后清空 tray（避免下次发送重复附带）
   clearAttachments()

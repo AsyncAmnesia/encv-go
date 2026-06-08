@@ -200,6 +200,28 @@ export default {
     'agent.mockPresetBarDefaultScenario': '剧本',
     'agent.mockPresetBarHint': '点击直接发送',
     'agent.mockPresetBarPickerScenario': '剧本库',
+    // ── v2 多轮/分支剧本（参考 .trae/specs/agent-tools-scenarios-v2/spec.md）───
+    // branchChoicePrompt：MockBranchChoiceBar 头部 prompt 行文案
+    'agent.branchChoicePrompt': '请选择操作：',
+    // roundProgress：MockBranchChoiceBar 头部 round 胶囊，"第 N/M 轮"
+    // round 是 1-based 显示（后端传 0-based，内部 +1）
+    'agent.roundProgress': '第 {round}/{total} 轮',
+    // roundPausedHint：MockBranchChoiceBar 底部小字提示
+    'agent.roundPausedHint': '点击 chip 继续或键入文本',
+    // toolDenied：工具被白名单/黑名单拒绝时的提示
+    'agent.toolDenied': '工具被拒绝',
+    // toolRequiresConfirm：工具需要用户确认（v2 8 个剧本里没有，但保留供未来扩展）
+    'agent.toolRequiresConfirm': '工具需要确认',
+    // batchRenamePreview：batch_rename_wizard 剧本预览阶段提示
+    'agent.batchRenamePreview': '改名预览（{count} 个文件）',
+    // batchRenameConfirm：batch_rename_wizard 剧本确认阶段按钮文案
+    'agent.batchRenameConfirm': '确认改名',
+    // editMetadataTitle：edit_metadata_wizard 剧本步骤标题
+    'agent.editMetadataTitle': '修改元数据',
+    // commandTimeout：command_run 工具执行超时提示
+    'agent.commandTimeout': '命令执行超时',
+    // commandDenied：command_run 工具命令不在白名单时提示
+    'agent.commandDenied': '命令不在白名单',
   },
   en: {
     'agent.title': 'AI Assistant',
@@ -398,5 +420,16 @@ export default {
     'agent.mockPresetBarDefaultScenario': 'Scenario',
     'agent.mockPresetBarHint': 'Click to send',
     'agent.mockPresetBarPickerScenario': 'Scenario Library',
+    // v2 multi-round / branch scenarios (see .trae/specs/agent-tools-scenarios-v2/spec.md)
+    'agent.branchChoicePrompt': 'Choose an action:',
+    'agent.roundProgress': 'Round {round}/{total}',
+    'agent.roundPausedHint': 'Click a chip or type to continue',
+    'agent.toolDenied': 'Tool denied',
+    'agent.toolRequiresConfirm': 'Tool requires confirmation',
+    'agent.batchRenamePreview': 'Rename preview ({count} files)',
+    'agent.batchRenameConfirm': 'Confirm rename',
+    'agent.editMetadataTitle': 'Edit metadata',
+    'agent.commandTimeout': 'Command timeout',
+    'agent.commandDenied': 'Command not in whitelist',
   },
 }

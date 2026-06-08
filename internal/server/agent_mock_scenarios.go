@@ -12,7 +12,6 @@
 package server
 
 import (
-	"fmt"
 	"strings"
 )
 
@@ -226,19 +225,18 @@ func scenarioListFilesQuery() *MockScenario {
 			// 使用 text_delta_templated 事件类型，{%id:field%} 占位符在 Run 时替换为真实数据
 			{DelayMs: 1500, Events: []MockEvent{
 				{Type: "text_delta_templated", Data: map[string]interface{}{"text": "### 你的媒体库概览\n\n"}},
-				{Type: "text_delta_templated", Data: map[string]interface{}{"text": fmt.Sprintf(
-					"已完成对 `01-plain-media` 的递归扫描。\n\n"+
-					"**视频文件**：{%call_files2:files%}\n\n"+
-					"**子目录**：{%call_files1:items%}\n\n"+
-					"**挂载点**：{%call_mount:mounts%}\n\n",
-				)}},
+			{Type: "text_delta_templated", Data: map[string]interface{}{"text":
+				"已完成对 `01-plain-media` 的递归扫描。\n\n"+
+				"**视频文件**：{%call_files2:files%}\n\n"+
+				"**子目录**：{%call_files1:items%}\n\n"+
+				"**挂载点**：{%call_mount:mounts%}\n\n",
+			}},
 			{Type: "text_delta_templated", Data: map[string]interface{}{
-					"text": fmt.Sprintf(
-						"**读取文件**：{%call_read:error%}\n\n"+
-						"**下一步建议**（点击 chip 直接执行）：\n\n"+
-						"1. 加密视频文件\n2. 查看文档完整内容\n3. 切换到搜索剧本\n",
-					),
-				}},
+				"text":
+					"**读取文件**：{%call_read:error%}\n\n"+
+					"**下一步建议**（点击 chip 直接执行）：\n\n"+
+					"1. 加密视频文件\n2. 查看文档完整内容\n3. 切换到搜索剧本\n",
+			}},
 			}},
 
 			// Step 8: 结束
@@ -976,12 +974,11 @@ func scenarioComplexWorkflow() *MockScenario {
 			{DelayMs: 800, Events: []MockEvent{
 				{Type: "text_delta", Data: map[string]interface{}{"text": "### 文件系统详情\n\n"}},
 				{Type: "text_delta_templated", Data: map[string]interface{}{
-					"text": fmt.Sprintf(
-						"根目录下发现 **%d** 个子目录和 **1** 个配置文件。\n\n"+
-						"**视频目录内容**：{%cw_video:files%}\n\n"+
-						"正在读取配置文件...\n\n",
-					),
-				}},
+				"text":
+					"根目录下发现 **N** 个子目录和 **1** 个配置文件。\n\n"+
+					"**视频目录内容**：{%cw_video:files%}\n\n"+
+					"正在读取配置文件...\n\n",
+			}},
 			}},
 			{DelayMs: 1000, Events: []MockEvent{
 				{Type: "tool_call", Data: map[string]interface{}{
@@ -1043,17 +1040,16 @@ func scenarioComplexWorkflow() *MockScenario {
 					"text": "## 诊断总结\n\n",
 				}},
 				{Type: "text_delta_templated", Data: map[string]interface{}{
-					"text": fmt.Sprintf(
-						"| 维度 | 结果 |\n|------|------|\n"+
-						"| 挂载点 | {%cw_root:count} 个目录 + 配置文件 |\n"+
-						"| 视频文件 | {%cw_video:files%} |\n"+
-						"| 磁盘使用 | 42G / 118G (36%%) |\n"+
-						"| 内存使用 | 3.5G / 8G (43%%) |\n"+
-						"| 待确认操作 | 备份配置文件（需用户批准）|\n\n"+
-						"**下一步建议**（点击 chip 直接执行）：\n\n"+
-						"1. 加密所有视频文件\n2. 清理临时缓存\n3. 生成完整文件索引\n4. 导出 PDF 报告\n",
-					),
-				}},
+				"text":
+					"| 维度 | 结果 |\n|------|------|\n"+
+					"| 挂载点 | {%cw_root:count} 个目录 + 配置文件 |\n"+
+					"| 视频文件 | {%cw_video:files%} |\n"+
+					"| 磁盘使用 | 42G / 118G (36%%) |\n"+
+					"| 内存使用 | 3.5G / 8G (43%%) |\n"+
+					"| 待确认操作 | 备份配置文件（需用户批准）|\n\n"+
+					"**下一步建议**（点击 chip 直接执行）：\n\n"+
+					"1. 加密所有视频文件\n2. 清理临时缓存\n3. 生成完整文件索引\n4. 导出 PDF 报告\n",
+			}},
 			}},
 			{DelayMs: 500, Events: []MockEvent{
 				{Type: "stream_end", Data: map[string]interface{}{
@@ -1069,4 +1065,41 @@ func scenarioComplexWorkflow() *MockScenario {
 			{ID: "p_cw_pdf", Label: "📄 导出PDF", UserText: "导出诊断报告为PDF", Tooltip: "将本次结果格式化为 PDF 文档"},
 		},
 	}
+}
+
+// ════════════════════════════════════════════════════════════════
+//  v2 场景（agent-tools-scenarios-v2 spec §三.5）
+// ════════════════════════════════════════════════════════════════
+//
+// 与 v1 区别：
+//   - 8 个场景全部使用新工具名（search_files / get_metadata / command_run / edit_metadata / batch_rename）
+//   - 部分场景声明 Rounds > 1，触发 v2 多轮状态机
+//   - 2 个场景声明 Branches，触发 v2 分支选择
+//   - 全部 tool_call 标记 execute_real=true，调用真实工具实现
+// ────────────────────────────────────────────────────────────────
+
+// allMockScenarios 合并 v1 + v2 场景，供 MockEngine.Match 使用。
+// v1 场景通过 scenarioXxx() 函数构造（不存为变量，因为 v1 场景按需懒初始化）。
+// v2 场景是预先构造的 *MockScenario 列表。
+func allMockScenarios() []*MockScenario {
+	out := make([]*MockScenario, 0, 20)
+	// v1
+	out = append(out,
+		scenarioDefaultFriendly(),
+		scenarioListFilesQuery(),
+		scenarioEncryptVideo(),
+		scenarioReadAndSummarize(),
+		scenarioMultiStepSearch(),
+		scenarioStreamingError(),
+		scenarioTruncationLongText(),
+		scenarioReasoningChain(),
+		scenarioToolCallWithArgs(),
+		scenarioMultiToolParallel(),
+		scenarioContextExhausted(),
+		scenarioChineseGreeting(),
+		scenarioComplexWorkflow(),
+	)
+	// v2
+	out = append(out, mockScenariosV2...)
+	return out
 }

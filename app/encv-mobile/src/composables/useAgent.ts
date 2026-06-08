@@ -80,6 +80,16 @@ export type AgentEventType =
   // messages_snapshot：AG-UI MESSAGES_SNAPSHOT 事件归一化结果
   // （完整消息快照，用于断点续传对齐）
   | 'messages_snapshot'
+  // ── v2 多轮/分支剧本（参考 .trae/specs/agent-tools-scenarios-v2/spec.md）───
+  // mock_branch_choice：剧本在 step.branch_choice=true 时推，由前端
+  // MockBranchChoiceBar 渲染为 chip 列表；用户点击 chip / 直接键入
+  // 文本都走 pickMockBranch / sendMockRoundResponse 把 userText
+  // 送回后端 Resume。
+  | 'mock_branch_choice'
+  // mock_round_state：剧本报告当前 round 进度（round_idx / total_rounds /
+  // phase / context）。前端由 mockRoundState 暴露；AgentChat 可选择
+  // 渲染 "Round 2/4 · awaiting_user_input" header。
+  | 'mock_round_state'
 
 /** 单个 mock 预设按钮契约（与后端 internal/server.MockPreset JSON 对应） */
 export interface MockPreset {
@@ -88,6 +98,34 @@ export interface MockPreset {
   userText: string
   icon?: string
   tooltip?: string
+}
+
+/**
+ * 单个 mock 分支选项契约（与后端 internal/server.MockBranch JSON 对应）。
+ * 用于剧本中 step.branch_choice=true 时的选项列表。
+ * - id：精确匹配 / 关键词匹配 / 正则匹配时使用
+ * - label：chip 上显示
+ * - icon / description：可选 UI 增强
+ */
+export interface MockBranch {
+  id: string
+  label: string
+  icon?: string
+  description?: string
+}
+
+/** mock_round_state 事件 payload 形状（后端 MockRoundState JSON 归一化结果） */
+export interface MockRoundState {
+  /** 当前 round 下标（0-based） */
+  roundIdx: number
+  /** 剧本总轮数（v2 8 个剧本里 edit_metadata_wizard=4 / batch_rename=2 / 其他=1） */
+  totalRounds: number
+  /** 当前阶段：`running` / `awaiting_user_input` / `awaiting_branch_choice` */
+  phase: string
+  /** 跨轮变量：set_context / use_context 写入/读取的任意结构 */
+  context: Record<string, unknown>
+  /** 归属 scenario ID（调试用） */
+  scenario?: string
 }
 
 /** Agent 推送到 SSE channel 的事件 */
@@ -775,7 +813,84 @@ export function useAgent() {
   const mockPresetsPhase = ref<string>('')
   const mockPresetsScenario = ref<string>('')
 
-  // ─── Mock 模式控制（用户从 AgentChat 顶栏的"🧪 模拟"badge 切换） ──
+  // ─── v2 多轮/分支剧本（参考 .trae/specs/agent-tools-scenarios-v2/spec.md） ───
+  // 与上面 mockPresets 的区别：
+  //   - mockPresets：scenario 顶层覆盖在输入框上方的"快捷入口"，与剧本进度无强关联
+  //   - mockBranchChoices：剧本 mid-step 暂停时推的选项 chip，必须等待用户
+  //     点击 / 键入才能继续；AgentChat 据此把 v-if 打开并禁用 send 按钮
+  //   - mockBranchPrompt：当前 step 的提问文案（"请选择操作："/"你想改名哪些字段？"）
+  //   - mockRoundState：当前 round 进度 + 阶段（驱动 MockBranchChoiceBar header）
+  //   - mockScenarioPaused：派生 computed；phase 在 awaiting_user_input 或
+  //     awaiting_branch_choice 时为 true。AgentChat 用它控制 MockBranchChoiceBar
+  //     显隐 + send 按钮 disabled
+  //   - currentMockScenario：当前激活的 scenario ID（pickMockBranch /
+  //     sendMockRoundResponse 必须带上，供后端 MockEngineV2 知道是哪个剧本）
+  // 后端 stream_end 时（或者推 mock_branch_choice_clear / mock_round_state_clear
+  // 显式清空时）本 composable 把所有 ref 复位。
+  const mockBranchChoices = ref<MockBranch[]>([])
+  const mockBranchPrompt = ref<string>('')
+  const mockRoundState = ref<MockRoundState | null>(null)
+  const currentMockScenario = ref<string>('')
+
+  const mockScenarioPaused = computed(() => {
+    const phase = mockRoundState.value?.phase
+    return phase === 'awaiting_user_input' || phase === 'awaiting_branch_choice'
+  })
+
+  /**
+   * 多轮剧本中点 chip 继续：把 chip id 当作 userText 送回后端 Resume。
+   * 关键点：mode='mock_resume' —— 后端 MockEngineV2 据此区分"新 session 启动"
+   * 和"在暂停点恢复"，并用 currentMockScenario 找到正确的剧本状态机。
+   */
+  function pickMockBranch(branchId: string): void {
+    if (typeof branchId !== 'string' || branchId.length === 0) {
+      console.debug('[useAgent] pickMockBranch: invalid branchId', branchId)
+      return
+    }
+    if (!currentMockScenario.value) {
+      console.debug('[useAgent] pickMockBranch: no currentMockScenario — dropped')
+      return
+    }
+    if (status.value === 'streaming' || status.value === 'confirming') {
+      console.debug('[useAgent] pickMockBranch: ignored (busy)')
+      return
+    }
+    console.debug(
+      '[useAgent] pickMockBranch →',
+      branchId,
+      '| scenario =',
+      currentMockScenario.value,
+    )
+    void send(branchId, { mode: 'mock_resume', scenario: currentMockScenario.value })
+  }
+
+  /**
+   * 多轮剧本中键入文本继续：等价于 pickMockBranch，但 userText 是用户键入的。
+   * 用于：chip 列表里没覆盖到的细粒度控制（比如用正则编辑 metadata 字段）。
+   */
+  function sendMockRoundResponse(userText: string): void {
+    if (typeof userText !== 'string' || userText.trim().length === 0) {
+      console.debug('[useAgent] sendMockRoundResponse: empty text — dropped')
+      return
+    }
+    if (!currentMockScenario.value) {
+      console.debug('[useAgent] sendMockRoundResponse: no currentMockScenario — dropped')
+      return
+    }
+    if (status.value === 'streaming' || status.value === 'confirming') {
+      console.debug('[useAgent] sendMockRoundResponse: ignored (busy)')
+      return
+    }
+    console.debug(
+      '[useAgent] sendMockRoundResponse →',
+      userText.slice(0, 40),
+      '| scenario =',
+      currentMockScenario.value,
+    )
+    void send(userText.trim(), { mode: 'mock_resume', scenario: currentMockScenario.value })
+  }
+
+  // ─── Mock 模式控制（用户从 AgentChat 顶栏的"🧪 模拟"badge 切换） ─────
   // 字段语义与后端 cfg.Agent.MockMode 一一对应：
   //   - 'off'     → 真实 LLM 调用（默认）
   //   - 'builtin' → 内置 12 个剧本
@@ -1597,6 +1712,14 @@ export function useAgent() {
           const first = pendingMessages.value.shift()!
           first.pending = false
         }
+        // v2 多轮/分支剧本清理：stream_end 到达意味着整个 session 结束
+        // （不管是正常结束、超时、还是用户中断）。把 v2 state 复位，
+        // 否则用户开新会话时 MockBranchChoiceBar 会"残留显示"。
+        // mockPresets 不在此处清空（它走"chip 永远覆盖显示"语义）。
+        mockBranchChoices.value = []
+        mockBranchPrompt.value = ''
+        mockRoundState.value = null
+        currentMockScenario.value = ''
         break
       }
       case 'stream_error': {
@@ -1612,6 +1735,12 @@ export function useAgent() {
         lastError.value = errorMsg
         lastErrorCode.value = 'upstream_error'
         status.value = 'error'
+        // v2 多轮/分支剧本清理：异常路径下也要清掉 chip 状态，
+        // 否则用户关闭错误弹窗后 MockBranchChoiceBar 还会显示。
+        mockBranchChoices.value = []
+        mockBranchPrompt.value = ''
+        mockRoundState.value = null
+        currentMockScenario.value = ''
         console.error('[useAgent] stream_error:', errorMsg)
         break
       }
@@ -1679,6 +1808,114 @@ export function useAgent() {
         // AgentChat 的 v-if 自然不再渲染 MockPresetBar。
         // 后端未来若需要主动清 chip（极少见），可以走一个新的 `mock_presets_reset` 事件。
         console.debug('[useAgent] mock_presets_clear (ignored, chip 永远覆盖显示)')
+        break
+      }
+
+      case 'mock_branch_choice': {
+        // v2 多轮/分支剧本：剧本在 step.branch_choice=true 时推。
+        // data 形状：{ scenario, prompt, choices: MockBranch[], phase }
+        // 关键不变量：
+        //   1. mockBranchChoices 一旦被设置，AgentChat 必须显示 MockBranchChoiceBar
+        //      并禁用 send 按钮（用户必须点 chip 或键入文本才能继续）
+        //   2. currentMockScenario 同步更新，否则 pickMockBranch 不知道推回哪个剧本
+        //   3. phase 写入 mockRoundState，使 mockScenarioPaused = true
+        // 不会在此处清理 mockRoundState —— 它的"运行中"状态可能仍有用。
+        try {
+          const raw = JSON.parse(event.data) as
+            | {
+                scenario?: unknown
+                prompt?: unknown
+                choices?: unknown
+                phase?: unknown
+              }
+            | null
+          if (!raw) break
+          const list = Array.isArray(raw.choices) ? (raw.choices as MockBranch[]) : []
+          mockBranchChoices.value = list
+            .filter((b): b is MockBranch =>
+              !!b && typeof b === 'object' && typeof (b as MockBranch).id === 'string',
+            )
+            .map((b) => ({
+              id: b.id,
+              label: String(b.label ?? b.id),
+              icon: typeof b.icon === 'string' ? b.icon : undefined,
+              description: typeof b.description === 'string' ? b.description : undefined,
+            }))
+          mockBranchPrompt.value = String(raw.prompt ?? '')
+          if (typeof raw.scenario === 'string' && raw.scenario.length > 0) {
+            currentMockScenario.value = raw.scenario
+          }
+          // 强制 paused：即使后端没推 mock_round_state 事件，单凭 mock_branch_choice
+          // 到达也意味着剧本在等用户选 branch。
+          mockRoundState.value = {
+            roundIdx: mockRoundState.value?.roundIdx ?? 0,
+            totalRounds: mockRoundState.value?.totalRounds ?? 1,
+            phase: 'awaiting_branch_choice',
+            context: mockRoundState.value?.context ?? {},
+            scenario: currentMockScenario.value,
+          }
+          console.debug(
+            '[useAgent] mock_branch_choice:',
+            mockBranchChoices.value.length,
+            'branches, prompt="',
+            mockBranchPrompt.value.slice(0, 40),
+            '..., scenario=',
+            currentMockScenario.value,
+          )
+        } catch (e) {
+          console.debug('[useAgent] mock_branch_choice parse failed:', e)
+        }
+        break
+      }
+
+      case 'mock_round_state': {
+        // v2 多轮/分支剧本：剧本报告当前 round 进度。
+        // data 形状：{ roundIdx, totalRounds, phase, context, scenario }
+        // 与 mock_branch_choice 配合使用：round_state 永远先到（宣告"我现在到
+        // round N 了"），branch_choice 后到（"我在这一步等你"）。
+        // 也可在 phase='running' 时单独到达，告知前端 round 推进但不需要用户操作。
+        try {
+          const raw = JSON.parse(event.data) as
+            | {
+                roundIdx?: unknown
+                totalRounds?: unknown
+                phase?: unknown
+                context?: unknown
+                scenario?: unknown
+              }
+            | null
+          if (!raw) break
+          const next: MockRoundState = {
+            roundIdx: typeof raw.roundIdx === 'number' ? raw.roundIdx : 0,
+            totalRounds: typeof raw.totalRounds === 'number' ? raw.totalRounds : 1,
+            phase: typeof raw.phase === 'string' ? raw.phase : 'running',
+            context:
+              raw.context && typeof raw.context === 'object'
+                ? (raw.context as Record<string, unknown>)
+                : {},
+            scenario:
+              typeof raw.scenario === 'string' && raw.scenario.length > 0
+                ? raw.scenario
+                : mockRoundState.value?.scenario,
+          }
+          mockRoundState.value = next
+          // scenario 也要单独缓存（mock_branch_choice 也写一次）
+          if (typeof raw.scenario === 'string' && raw.scenario.length > 0) {
+            currentMockScenario.value = raw.scenario
+          }
+          console.debug(
+            '[useAgent] mock_round_state: round',
+            next.roundIdx,
+            '/',
+            next.totalRounds,
+            'phase=',
+            next.phase,
+            'scenario=',
+            currentMockScenario.value,
+          )
+        } catch (e) {
+          console.debug('[useAgent] mock_round_state parse failed:', e)
+        }
         break
       }
 
@@ -1821,7 +2058,7 @@ export function useAgent() {
    */
   async function send(
     text: string,
-    options?: { mode?: 'start' | 'steer' | 'queue'; attachments?: Attachment[] },
+    options?: { mode?: 'start' | 'steer' | 'queue' | 'mock_resume'; scenario?: string; attachments?: Attachment[] },
   ): Promise<void> {
     const mode = options?.mode ?? 'start'
     if (mode === 'queue') {
@@ -1875,6 +2112,25 @@ export function useAgent() {
     })
 
     status.value = 'streaming'
+
+    // T15 unblock：mock_resume 模式在 fetch 前清空 chip + 把 round state
+    // 切到 "running" —— UI 立即从 paused 切到 spinner，避免视觉残留
+    // （stale "awaiting_user_input" 与新事件流冲突）。
+    // 后续 mock_round_state{phase:resumed/in_progress} 事件会覆盖此处写入。
+    if (mode === 'mock_resume') {
+      mockBranchChoices.value = []
+      mockBranchPrompt.value = ''
+      const curRound = mockRoundState.value?.roundIdx ?? 0
+      const totalRounds = mockRoundState.value?.totalRounds ?? 0
+      mockRoundState.value = {
+        scenario: currentMockScenario.value,
+        roundIdx: curRound,
+        totalRounds,
+        phase: 'running',
+        context: { ...(mockRoundState.value?.context ?? {}) },
+      }
+    }
+
     saveState()
     refreshSessions()
 
@@ -1915,6 +2171,15 @@ export function useAgent() {
         'Content-Type': 'application/json',
         ...(sendAGUIHeader ? { 'X-Agent-Protocol': 'agui' } : {}),
       }
+      // T15 unblock：mode === 'mock_resume' 时把 scenario 透传给后端，
+      // 否则 MockEngineV2 找不到对应的 stateful 实例 → 400 错误。
+      // 后端 handleMockResume 据此：(1) 在 mockScenariosV2 中查找剧本；
+      // (2) 调 mockV2SessionEngines 取出 / 创建 stateful 引擎；
+      // (3) 调 engine.Resume(userText) 推下一轮事件。
+      const scenarioForBody =
+        mode === 'mock_resume'
+          ? options?.scenario ?? currentMockScenario.value ?? undefined
+          : undefined
       const response = await fetch(`${AGENT_API_BASE}/api/chat`, {
         method: 'POST',
         headers: fetchHeaders,
@@ -1927,6 +2192,10 @@ export function useAgent() {
           // Task 11：把 mode 字段透传给后端。后端 ChatMode 根据 mode
           // 走 start/steer/queue 三种分支（"" 视为 start）。
           mode,
+          // T15 unblock：mock_resume 时把 scenario 字段一并发出。
+          // 非 mock_resume 模式不发送（保持 backward-compat：后端
+          // struct 字段是 omitempty，未传则忽略）。
+          ...(scenarioForBody ? { scenario: scenarioForBody } : {}),
         }),
         signal: abortController.signal,
       })
@@ -2390,6 +2659,24 @@ export function useAgent() {
     mockPresetsScenario,
     pickMockPreset,
     loadMockPresets,
+    // v2 多轮/分支剧本（参考 .trae/specs/agent-tools-scenarios-v2/spec.md）。
+    // - mockBranchChoices：当前 step 的 chip 列表（mock_branch_choice 事件驱动）
+    // - mockBranchPrompt：当前 step 的 prompt 文案（供 MockBranchChoiceBar 渲染）
+    // - mockRoundState：当前 round 进度 + 阶段（mock_round_state 事件驱动）
+    // - mockScenarioPaused：派生 computed，phase 为 awaiting_user_input 或
+    //   awaiting_branch_choice 时为 true。AgentChat 用它控制 MockBranchChoiceBar
+    //   的 v-if 显隐。
+    // - currentMockScenario：当前激活的 scenario ID（pickMockBranch /
+    //   sendMockRoundResponse 必须带上，供后端 MockEngineV2 知道是哪个剧本）
+    // - pickMockBranch(branchId)：点击 chip → send(branchId, {mode: mock_resume})
+    // - sendMockRoundResponse(userText)：键入文本 → send(userText, {mode: mock_resume})
+    mockBranchChoices,
+    mockBranchPrompt,
+    mockRoundState,
+    mockScenarioPaused,
+    currentMockScenario,
+    pickMockBranch,
+    sendMockRoundResponse,
     // 调试开关：URL ?debug=agent 时强制显示 AgentDebugPanel（mock 模式时也自动开）。
     // 便于排查"SSE 事件 → messages → renderedItems → UI 组件"全链路断点。
     isDebugAgent,

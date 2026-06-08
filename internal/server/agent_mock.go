@@ -39,6 +39,12 @@ import (
 //   2. Keywords（任一关键词命中，不区分大小写）
 //   3. Regex（正则编译后匹配）
 //   4. fallback：ID == "default_friendly"
+//
+// v2 字段（agent-tools-scenarios-v2 spec）：
+//   - Branches       分支选择列表（v2 mock_branch_choice 事件数据源）
+//   - Rounds         总轮数（v2 多轮状态机，0 = 走 v1 线性路径）
+//   - RoundContext   跨轮共享变量（round K+1 可读 K 写入的 key）
+//   - TotalRounds    别名：与 Rounds 等价（兼容 spec 不同写法）
 type MockScenario struct {
 	ID          string
 	Description string
@@ -51,6 +57,32 @@ type MockScenario struct {
 	// 高级剧本可同时利用 mid-scenario 的 mock_presets 事件覆盖/扩展
 	// 此初始列表（实现「随剧本进度更新」的多轮会话交互）。
 	Presets []MockPreset
+	// ── v2 多轮 / 分支字段 ──
+	Branches     []Branch          // 可选的分支列表（mock_branch_choice 推送）
+	Rounds       int               // 剧本总轮数（0 = v1 线性行为）
+	RoundContext map[string]any    // 跨轮共享变量（user 文本写入 → 后续 step 读取）
+	TotalRounds  int               // 同 Rounds（spec 兼容字段）
+}
+
+// Branch 表示剧本内的一个分支选项。
+//
+// 触发匹配（PickBranch 时按此优先级）：
+//   1. 精确匹配：branch.ID == userText
+//   2. 关键词匹配：任一 TriggerKeyword 出现在 userText
+//   3. 正则匹配：TriggerRegex 编译后 MatchString
+//   4. 都不匹配 → 引擎重新推送 mock_branch_choice 提示
+//
+// 匹配后跳到 OnMatch 子剧本（独立 stream + EventCache）。
+// InitialStepID 可选：在新 stream 中从哪个 step 开始。
+type Branch struct {
+	ID              string
+	Label           string
+	Description     string
+	Icon            string
+	TriggerKeywords []string
+	TriggerRegex    string
+	OnMatch         *MockScenario
+	InitialStepID   string
 }
 
 // MockPreset 是单个预设输入按钮。
@@ -72,9 +104,23 @@ type MockPreset struct {
 //   - 先按 step 顺序遍历 Steps
 //   - 每个 step 内：先 sleep(DelayMs / speed) → 再依次推 Events
 //   - 推事件过程中检测 ctx.Done() 立即退出
+//
+// v2 字段（agent-tools-scenarios-v2 spec）：
+//   - BranchID       此 step 关联的分支 ID（v2 推 mock_branch_choice 用）
+//   - RoundIdx       此 step 属于第几轮（0-based，v2 状态机）
+//   - PauseForUser   推完后暂停剧本等待 user_text（推 mock_round_state）
+//   - SetContext     推完后写入 RoundContext 的 key/value
+//   - UseContext     推完前从 RoundContext 读这些 key 做模板插值
+//   - BranchChoice   标记此 step 为分支选择（推 mock_branch_choice 事件）
 type MockStep struct {
-	DelayMs int
-	Events  []MockEvent
+	DelayMs      int
+	Events       []MockEvent
+	BranchID     string         // v2：所属分支 ID
+	RoundIdx     int            // v2：轮次索引
+	PauseForUser bool           // v2：推完此 step 后暂停
+	SetContext   map[string]any // v2：推完后写入 RoundContext
+	UseContext   []string       // v2：使用 RoundContext 的 key 做模板插值
+	BranchChoice bool           // v2：标记此 step 为分支选择点
 }
 
 // MockEvent 是单个 SSE 事件。
@@ -113,6 +159,8 @@ func (e *MockEngine) SetRealExecutor(fn func(ctx context.Context, toolName, args
 // ════════════════════════════════════════════════════════════════
 
 // NewMockEngine 返回预加载 12 个内置剧本的引擎。
+// v2 场景（mockScenariosV2）由 MockEngineV2 路径消费，**不**追加到 builtinScenarios
+// （保持 v1 场景数 = 12 不变，避免破坏现有 v1 测试）。
 func NewMockEngine() *MockEngine {
 	e := &MockEngine{}
 	e.builtinScenarios = []*MockScenario{

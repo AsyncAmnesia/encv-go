@@ -26,6 +26,7 @@ import (
 	"github.com/Soltus/encv-go/internal/register"
 	"github.com/Soltus/encv-go/internal/routes"
 	mobileservice "github.com/Soltus/encv-go/internal/service"
+	"github.com/Soltus/encv-go/internal/tools"
 	"github.com/Soltus/encv-go/internal/utils"
 	"github.com/Soltus/encv-go/internal/v2/container/detector"
 	"github.com/Soltus/encv-go/internal/v2/handler"
@@ -56,6 +57,9 @@ type Server struct {
 	jwtManager     *auth.JWTManager
 	webdavFS       webdav.IndexProvider
 	mockEngine     *MockEngine
+	// toolDeps 是 tools 包的依赖注入（v2 工具注册表使用）。
+	// Server 启动时构造一次，executeAgentTool 路径下注入到 tools.GlobalRegistry.Dispatch。
+	toolDeps *tools.ToolDeps
 }
 
 func NewServer(ctx context.Context, configPath string) *Server {
@@ -77,7 +81,59 @@ func NewServer(ctx context.Context, configPath string) *Server {
 	// ——剧本里声明 execute_real=true 的工具调用会被实际执行（覆盖硬编码 result）。
 	// 见 internal/server/agent_mock.go §executeRealAndEmit
 	s.mockEngine.SetRealExecutor(s.executeAgentTool)
+
+	// 注册 v2 工具（search_files / get_metadata / command_run / edit_metadata / batch_rename / read_file_v2）
+	// 见 internal/tools/register.go §RegisterAll
+	tools.RegisterAll()
+
+	// 构造工具依赖注入：把所有需要 Server 状态的回调（mount 解析 / 沙箱检查）绑进来
+	s.toolDeps = &tools.ToolDeps{
+		ResolveMount: func(mountID string) (string, bool) {
+			return s.resolveMount(mountID)
+		},
+		SandboxCheck: func(absPath string) bool {
+			// 沙箱校验：检查 absPath 是否在任意一个已配置的 mount 根目录内
+			return s.isInAnyMount(absPath)
+		},
+		Config: cfg,
+	}
 	return s
+}
+
+// isInAnyMount 检查 absPath 是否落在任一挂载点根目录下。
+// 用于 tools.ToolDeps.SandboxCheck（command_run 等需白名单的工具）。
+func (s *Server) isInAnyMount(absPath string) bool {
+	if absPath == "" {
+		return false
+	}
+	mounts := s.ListFSMounts()
+	for _, m := range mounts {
+		if !m.Available {
+			continue
+		}
+		var root string
+		if m.Type == "serving" {
+			root = s.servingDir
+		} else if m.Type == "webdav" {
+			root = s.webdavDir
+		}
+		if root == "" {
+			continue
+		}
+		rel, err := filepath.Rel(root, absPath)
+		if err != nil {
+			continue
+		}
+		// rel 必须以 "." 或 "/" 开头（或等于 absPath），且不含 ".."
+		if rel == "." || (len(rel) > 0 && rel[0] != '.' && rel[0] != '/') {
+			// 简化：直接比对前缀
+			_ = rel
+			if strings.HasPrefix(absPath, root) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *Server) GetInstanceID() string {

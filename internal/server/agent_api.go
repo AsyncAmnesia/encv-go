@@ -701,15 +701,27 @@ func (s *Server) handleAgentTest(c *gin.Context) {
 
 // ─── POST /api/chat — SSE 对话（代理到 OpenAI 兼容 API） ──────
 
+// chatRequest 是 /api/chat 的请求体（named struct 以便跨函数复用 + 测试 mock）。
+//
+// 字段：
+//   - SessionId / Model / Temperature / Messages / DeviceId  v1 字段
+//   - Mode       "start" / "steer" / "queue" / "mock_resume"
+//                前端 useAgent.send() 第二个参数透传（Task 11）
+//   - Scenario   mock_resume 时携带的当前激活剧本 ID
+//                （MockEngineV2 据此找到正确的状态机继续推事件）
+type chatRequest struct {
+	SessionId   string    `json:"sessionId"`
+	Model       string    `json:"model"`
+	Temperature float64   `json:"temperature"`
+	Messages    []chatMsg `json:"messages"`
+	DeviceId    string    `json:"deviceId"`
+	Mode        string    `json:"mode,omitempty"`     // start / steer / queue / mock_resume
+	Scenario    string    `json:"scenario,omitempty"` // mock_resume 时携带的剧本 ID
+}
+
 func (s *Server) handleAgentChat(c *gin.Context) {
 	// ① 解析请求体（必须在 WriteHeader 之前）
-	var body struct {
-		SessionId   string    `json:"sessionId"`
-		Model       string    `json:"model"`
-		Temperature float64   `json:"temperature"`
-		Messages    []chatMsg `json:"messages"`
-		DeviceId    string    `json:"deviceId"`
-	}
+	var body chatRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid_json", "detail": err.Error()})
 		return
@@ -797,9 +809,50 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 	// 前端 TDesignEngine 通过此协议与后端通信。
 	aguiMode := c.GetHeader("X-Agent-Protocol") == "agui" || c.Request.URL.Query().Get("protocol") == "agui"
 
+	// ════════════════════════════════════════════════════════════
+	// ③⁴ ⅰ mock_resume 路径（Task 11 / T15 unblock）
+	// ════════════════════════════════════════════════════════════
+	//
+	// 当 body.Mode == "mock_resume" 且 body.Scenario 非空时，前端要求在已
+	// 暂停的多轮 / 分支剧本上继续推事件。
+	//   - 这里跳过 Match 关键词匹配（避免"开始"等 userText 重新匹配到首轮剧本）
+	//   - 用 body.Scenario 在 mockScenariosV2 中查找剧本定义
+	//   - 用 per-session v2 engine map 取出 / 创建一个 stateful 引擎
+	//   - 调 engine.Resume 让 userText 进入 roundCtx 并推下一轮
+	//
+	// mock_resume 模式在 mock_mode = "off" 时也允许走（保留路径给未来扩展），
+	// 但实际只有 mock_mode != "off" 才有可恢复的 v2 引擎。
+	if strings.EqualFold(body.Mode, "mock_resume") && body.Scenario != "" {
+		if handled, err := s.handleMockResume(c, body, mockMode, aguiMode); handled {
+			if err != nil {
+				slog.Warn("agent: mock_resume failed", "scenario", body.Scenario, "error", err)
+			}
+			return
+		}
+		// handled=false 表示找不到 v2 剧本 → 落到下方 default 流程（让前端知道是 404）
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":    "mock_resume_scenario_not_found",
+			"scenario": body.Scenario,
+			"hint":     "v2 剧本必须存在于 mockScenariosV2 且 mode 为 builtin/custom",
+		})
+		return
+	}
+
 	if mockMode != "" && mockMode != "off" {
 		userText := lastUserTextFromLoopMessages(body.Messages)
 		scenario := s.mockEngine.Match(userText, mockMode)
+		// v2 场景在 mockEngine.builtinScenarios 之外（保持 v1 builtin=12 不变），
+		// 这里手动检查并补充
+		if scenario == nil {
+			for _, sc := range mockScenariosV2 {
+				if sc.Rounds > 0 || len(sc.Branches) > 0 {
+					if matchScenarioSimple(userText, sc) {
+						scenario = sc
+						break
+					}
+				}
+			}
+		}
 		if scenario != nil {
 			c.Header("X-Mock-Scenario", scenario.ID)
 			c.Header("X-Mock-Mode", mockMode)
@@ -815,9 +868,18 @@ func (s *Server) handleAgentChat(c *gin.Context) {
 				"user_text", truncateForLog(userText, 100),
 				"speed", agentCfg.MockSpeed,
 				"agui_mode", aguiMode)
-			if err := s.mockEngine.Run(c.Request.Context(), s, sess, c.Writer, flusher, scenario,
-				agentCfg.MockSpeed, true /* mockFlag */, aguiMode); err != nil {
-				slog.Warn("agent: mock engine run failed", "scenario", scenario.ID, "error", err)
+			// v2 场景（带 Rounds/Branches）走 MockEngineV2 路径
+			if scenario.Rounds > 0 || scenario.TotalRounds > 0 || len(scenario.Branches) > 0 {
+				v2 := NewMockEngineV2()
+				if err := v2.Run(c.Request.Context(), s, sess, c.Writer, flusher, scenario,
+					agentCfg.MockSpeed, aguiMode); err != nil {
+					slog.Warn("agent: mock v2 engine run failed", "scenario", scenario.ID, "error", err)
+				}
+			} else {
+				if err := s.mockEngine.Run(c.Request.Context(), s, sess, c.Writer, flusher, scenario,
+					agentCfg.MockSpeed, true /* mockFlag */, aguiMode); err != nil {
+					slog.Warn("agent: mock engine run failed", "scenario", scenario.ID, "error", err)
+				}
 			}
 			sess.mu.Lock()
 			sess.InProgress = false
@@ -1876,6 +1938,95 @@ type chatMsg struct {
 	ToolCallID string                 `json:"tool_call_id,omitempty"`
 	Name       string                 `json:"name,omitempty"`
 	ToolCalls  []toolCallAccumulator  `json:"tool_calls,omitempty"`
+}
+
+// handleMockResume 处理前端 send() 第二个参数 {mode: "mock_resume", scenario: ...}。
+//
+// 流程：
+//  1. 用 body.Scenario 在 mockScenariosV2 中查找剧本
+//     - 找不到 → 返回 (false, nil) → 调用方回 404
+//  2. mock 模式必须启用（mockMode != "off"），否则剧本无法恢复
+//     - 关闭时仍允许走（向后兼容日志），但会发警告
+//  3. 取出 userText（最后一条 user 消息）
+//  4. 准备 SSE writer / flusher / session
+//  5. 通过 mockV2SessionEngines 取出 / 创建 stateful MockEngineV2
+//  6. 调 Resume(userText) 推下一轮事件
+//
+// 返回 (handled, err)：
+//   - handled=true  → 调方无需进一步处理（已发 SSE / 已回 404）
+//   - err != nil     → Resume 内部错误（slog 已记）
+func (s *Server) handleMockResume(
+	c *gin.Context,
+	body chatRequest,
+	mockMode string,
+	aguiMode bool,
+) (bool, error) {
+	scenario := lookupMockScenarioV2(body.Scenario)
+	if scenario == nil {
+		return false, nil
+	}
+	if mockMode == "off" || mockMode == "" {
+		slog.Warn("agent: mock_resume called with mock_mode=off — round state may be lost",
+			"scenario", body.Scenario, "session", body.SessionId)
+	}
+
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "sse_not_supported"})
+		return true, fmt.Errorf("sse not supported")
+	}
+
+	// 取出 / 创建 session（沿用现有 session 体系，断点续传 EventCache）
+	sessID := body.SessionId
+	if sessID == "" {
+		sessID = "default"
+	}
+	sess := getOrCreateSession(sessID)
+	sess.mu.Lock()
+	sess.InProgress = true
+	sess.mu.Unlock()
+
+	// 取出 userText（从最后一条 user 消息）
+	userText := lastUserTextFromLoopMessages(body.Messages)
+
+	// 设 SSE header
+	c.Header("X-Mock-Scenario", scenario.ID)
+	c.Header("X-Mock-Mode", mockMode)
+	if aguiMode {
+		c.Header("X-Agent-Protocol", "agui")
+	}
+	s.setSSEHeaders(c.Writer)
+	flusher.Flush()
+
+	// 取出 / 创建 stateful v2 引擎
+	eng := getOrCreateV2Engine(sessID, scenario)
+
+	slog.Info("agent: mock_resume dispatch",
+		"mode", body.Mode,
+		"scenario", scenario.ID,
+		"session", sessID,
+		"user_text", truncateForLog(userText, 100),
+		"current_round", eng.CurrentRound(),
+		"branch_id", eng.CurrentBranchID())
+
+	// Resume 推进下一轮。Resume 内部：
+	//   - 把 userText 写进 roundCtx["user_text"] 和 roundCtx["round_N_user_text"]
+	//   - 推 mock_round_state{phase:resumed}
+	//   - 推进 round 计数
+	//   - 推下一轮 steps
+	//   - 若该 step 是 BranchChoice → 推 mock_branch_choice 并等待 PickBranch
+	//   - 若该 step 是 PauseForUser → 推 mock_round_state{awaiting_user_input} 并等待 Resume
+	//   - 若是最后一轮 → 推 stream_end
+	if err := eng.Resume(c.Request.Context(), s, sess, c.Writer, flusher, userText); err != nil {
+		sess.mu.Lock()
+		sess.InProgress = false
+		sess.mu.Unlock()
+		return true, fmt.Errorf("Resume: %w", err)
+	}
+	sess.mu.Lock()
+	sess.InProgress = false
+	sess.mu.Unlock()
+	return true, nil
 }
 
 // ─── GET /api/agent/mock/presets — 全局剧本选择器预设 ─────────────

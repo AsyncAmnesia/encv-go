@@ -35,6 +35,26 @@ type AgentSettings struct {
 	// top-level "password" field, which the loader maps onto
 	// GlobalPassword for backwards compatibility).
 	GlobalPassword string `json:"global_password"`
+
+	// ─── v2 多轮/分支剧本（参考 .trae/specs/agent-tools-scenarios-v2/spec.md）───
+	// ToolWhitelist command_run 工具的允许命令列表。
+	// 默认值：ffprobe / ffmpeg / du / wc / find / stat / mediainfo / file。
+	// 黑名单（与白名单叠加生效）：rm / mv / cp / chmod / chown / dd /
+	//                              mkfs / shutdown / reboot。
+	ToolWhitelist []string `json:"tool_whitelist,omitempty"`
+
+	// SandboxPaths mount_id → 真实目录映射。command_run / search_files /
+	// get_metadata 等需要访问物理文件系统的工具通过此映射把抽象 mount_id
+	// 解析到主机绝对路径。
+	SandboxPaths map[string]string `json:"sandbox_paths,omitempty"`
+
+	// MockRoundTimeoutSec 多轮剧本中「等待用户回复」的最长秒数。
+	// 范围 10-600；默认 60。
+	MockRoundTimeoutSec int `json:"mock_round_timeout_sec,omitempty"`
+
+	// MockRoundPauseEnabled 是否允许剧本在 mid-scenario 暂停等待用户输入。
+	// false → 剧本忽略 pause_for_user 标记，一路跑完（自动机模式）。
+	MockRoundPauseEnabled bool `json:"mock_round_pause_enabled,omitempty"`
 }
 
 // DefaultConfigPaths returns the ordered list of candidate

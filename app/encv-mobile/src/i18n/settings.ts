@@ -280,6 +280,15 @@ export default {
     'bg.auroraNightDesc': '极夜深蓝，深邃渐变',
     'inputHistory.recent': '最近使用',
     'inputHistory.clear': '清空',
+    // ── v2 多轮/分支剧本设置（参考 .trae/specs/agent-tools-scenarios-v2/spec.md）───
+    // toolWhitelist：受限 shell 工具（command_run）允许的命令列表
+    'settings.toolWhitelist': '工具白名单',
+    'settings.toolWhitelistHelp': '受限 shell 工具允许的命令',
+    // sandboxPaths：mount_id → 真实目录映射（多 mount 用户配）
+    'settings.sandboxPaths': '沙箱路径映射',
+    'settings.sandboxPathsHelp': 'mount_id → 真实目录',
+    // mockRoundTimeout：多轮剧本中等待用户回复的最长秒数
+    'settings.mockRoundTimeout': '多轮暂停超时',
   },
   en: {
     'settings.title': 'Settings',
@@ -559,5 +568,11 @@ export default {
     'bg.auroraNightDesc': 'Aurora night, deep blue',
 
     'inputHistory.clear': 'Clear',
+    // v2 multi-round / branch scenarios (see .trae/specs/agent-tools-scenarios-v2/spec.md)
+    'settings.toolWhitelist': 'Tool whitelist',
+    'settings.toolWhitelistHelp': 'Allowed shell commands',
+    'settings.sandboxPaths': 'Sandbox path mapping',
+    'settings.sandboxPathsHelp': 'mount_id → real directory',
+    'settings.mockRoundTimeout': 'Round pause timeout',
   },
 }
