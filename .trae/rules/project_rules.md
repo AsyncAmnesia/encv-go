@@ -408,6 +408,59 @@ curl -s http://localhost:5173/src/views/Tasks.vue | grep "predictPlugin"
 3. **computed 派生** — 中优先级（显示错误但可排查）
 4. **样式/CSS** — 低优先级（视觉问题不影响功能）
 
+## 编译产物铁律（避免污染仓库体积）
+
+> **Go 编译产物是「build output」而非源码。** 一旦误入 git，会让 `.git` 膨胀 200MB+ 且 clone 变慢。
+
+### 强制规则
+
+- **SHALL NOT** 提交 `go build` 产物到仓库根目录或子目录
+- **SHALL NOT** 在 `bin/`、`app/*/server-go`、根目录散落 `encv-server`、`server`、`agent-demo` 等可执行文件
+- 编译产物使用 `-o bin/encv-server` 等输出路径，**必须**确保目标路径在 `.gitignore` 排除列表中
+- 历史已清理（2026-06-08 git-filter-repo：`.git` 145MB → 5.1MB，节省 96%），未来如再误入立即 `git rm` + 检查 `.gitignore`
+
+### 误入场景与后果
+
+| 场景 | 后果 |
+|------|------|
+| 7 个 ELF 误入（2026 之前） | `.git` 145MB（100MB+ 是 DWARF 调试符号） |
+| 50M bin 测试夹具误入 | cloners 浪费带宽；`/storage/emulated/0/` 才是真机 mock 路径 |
+| `/bin/` 目录散乱 | 排查编译问题时无主次 |
+
+### Mock-data 流向（防混淆）
+
+> **仓库内不存在 mock-data 真身**。所有 mock 都在设备运行时路径 `/storage/emulated/0/`，由 `app/encv-mobile/scripts/generate-mock-files.ts`（TypeScript）动态生成。
+
+| 真实路径 | 生成器 | 用途 |
+|---------|--------|------|
+| `/storage/emulated/0/01-plain-media/*` | `generate-mock-files.ts` | 视频/图片/音频/文档 |
+| `/storage/emulated/0/02-alist-encrypt/*` | `generate-mock-files.ts` | 小型加密夹具 |
+| `/storage/emulated/0/03-encv-containers/*` | `generate-mock-files.ts` | ENCV v4 容器 |
+| `/storage/emulated/0/04-boundary-test/*` | `generate-mock-files.ts` | 边界用例 |
+
+**禁止**重新引入 `cmd/encv-mobile/mock-data/` 目录或类似仓库内 fixture（运行时生成即可）。
+
+### 当前 `.gitignore` 编译产物清单
+
+```gitignore
+/encv
+/bin/
+/encv-go-server
+/encv-mobile
+/encv-proxy
+/app/encv-mobile/server-go
+/agent/agent-demo
+/agent/cmd/agent-demo/agent-demo
+*.exe
+```
+
+### 验证
+
+```bash
+# 任何 commit 包含 ELF/Mach-O/PE 二进制 → 预提交钩子拒绝
+ls .git/hooks/pre-commit   # 见 scripts/git-hooks/check-no-binary.sh
+```
+
 ## Skill 目录归属铁律（避免污染语言统计）
 
 > **`.agents/skills/`（含 `.trae/skills/` 与 `app/encv-mobile/.agents/skills/`）与 `plugin-openlist/src/main/assets/` 已被 `.github/linguist.yml` 与 `.gitattributes` 标记为 `linguist-vendored`/`linguist-generated`，提交到这两处的代码不会出现在仓库 Languages 栏。**
