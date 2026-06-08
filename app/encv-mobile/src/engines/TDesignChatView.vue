@@ -7,9 +7,12 @@
   - v2: 改用 useRenderTurnItems(messages, status, compactionText) 拿 RenderedItem[]
        按 eventLog 时间轴逐项渲染（与 Default 引擎同源数据，差异化视觉）
        → 文本段和工具调用交错显示，符合 agent 流式预期
+  - v3: 文本段改用 TDesign 自家的 ChatMarkdown 组件（@tdesign-vue-next/chat 内置，
+       基于 cherry-markdown 引擎），保持 TDesign 一致的 markdown 视觉。
+       外层 .tdesign-chat-view 背景改为 transparent，融入宿主页面（Ionic ion-content）。
 
   渲染策略：
-  1. 文本段：复用 MarkdownStream（与 Default 一致） + 套 TDesign 风格气泡
+  1. 文本段：TDesign ChatMarkdown + 套 TDesign 风格气泡
   2. 工具调用：复用 OperationCard（项目内已存在，跨引擎共享） + TDesign 配色
   3. 工具结果：内嵌在对应 OperationCard 的 #result slot
   4. 审批卡片：复用 ApprovalCard + TDesign 风格
@@ -63,9 +66,17 @@
           <div class="td-msg-bubble td-msg-bubble--assistant">
             <span v-if="item.firstInGroup" class="td-msg-avatar">🤖</span>
             <div class="td-msg-body">
-              <MarkdownStream
+              <!--
+                TDesign 自家的 ChatMarkdown 组件（cherry-markdown 引擎）。
+                相比项目内 MarkdownStream：
+                - 样式与 TDesign 主题色系一致
+                - 支持 cherry-markdown 的代码高亮、表格、LaTeX 等扩展
+                - 通过 :content prop 接收 markdown 字符串
+              -->
+              <ChatMarkdown
+                v-if="item.text"
                 :content="item.text"
-                :streaming="item.streaming"
+                class="td-msg-md"
               />
             </div>
           </div>
@@ -244,9 +255,10 @@
 
 <script setup lang="ts">
 import { computed, type ComputedRef } from 'vue'
-import { ChatThinking } from '@tdesign-vue-next/chat'
+// TDesign Chat 自家组件：ChatThinking + ChatMarkdown（cherry-markdown 引擎）
+// 统一 TDesign 视觉风格
+import { ChatThinking, ChatMarkdown } from '@tdesign-vue-next/chat'
 import { useRenderTurnItems } from '@/composables/renderTurnItems'
-import MarkdownStream from '@/components/agent/MarkdownStream.vue'
 import type { Message, ToolCall, ToolResult, AgentStatus } from '@/composables/useAgent'
 
 /**
@@ -351,7 +363,9 @@ function formatFooterTime(timestamp: number): string {
   padding: 16px;
   height: 100%;
   overflow-y: auto;
-  background: var(--td-bg-color-page, #f7f7f7);
+  /* v3 fix: 背景透明，融入宿主页面（Ionic ion-content 默认有主题背景色）。
+     之前用 --td-bg-color-page (#f7f7f7) 在暗黑模式下会盖住整个聊天区。 */
+  background: transparent;
 }
 
 .empty-state {
@@ -426,9 +440,9 @@ function formatFooterTime(timestamp: number): string {
   flex: 1;
   min-width: 0;
 }
-.td-msg-body :deep(.markdownStream) {
+/* TDesign ChatMarkdown 容器：背景透明，无内边距（由气泡承担） */
+.td-msg-body :deep(.td-msg-md) {
   background: transparent;
-  padding: 0;
 }
 .td-msg-body :deep(p) {
   margin: 0 0 6px 0;

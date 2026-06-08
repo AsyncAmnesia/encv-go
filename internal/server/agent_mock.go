@@ -507,7 +507,10 @@ func (e *MockEngine) Run(ctx context.Context, s *Server, sess *agentSession, w h
 						return ctx.Err()
 					default:
 					}
-					realResult := e.executeRealAndEmit(ctx, s, sess, w, flusher, pending, id, name, writeDebug)
+					// 关键：把 emitEvent 闭包传进去，让真实工具结果也走 AG-UI mapper
+					// 否则 useAGUI=true 时 executeRealAndEmit 走 sendAndCache
+					// 推 legacy tool_result 格式 → 前端 AG-UI parser 无法解析
+					realResult := e.executeRealAndEmit(ctx, s, sess, w, flusher, pending, id, name, writeDebug, emitEvent, stepIdx, evIdx)
 					collectedResults[id] = toolResultInfo{id: id, name: name, result: realResult}
 					continue
 				}
@@ -590,6 +593,11 @@ type toolResultInfo struct {
 //
 // realExecutor 内部会自行处理 ctx 取消（executeFSTool/executePluginTool 都用 ctx 传下去）。
 // 本函数不返回错误，slog 记录所有失败路径。
+//
+// emitEvent 闭包：传入 Run 上下文的统一事件出口，
+//   - useAGUI=false → sendAndCache（legacy SSE 格式 + EventCache 缓存）
+//   - useAGUI=true  → aguiMapper.MapEvent（AG-UI 标准格式）
+// 这样真实工具路径与剧本路径走完全相同的 emit 通道，AG-UI mapper 不会被旁路。
 func (e *MockEngine) executeRealAndEmit(
 	ctx context.Context,
 	s *Server,
@@ -600,6 +608,9 @@ func (e *MockEngine) executeRealAndEmit(
 	id string,
 	name string,
 	writeDebug func(step, ev int, evType, dataSummary string),
+	emitEvent func(ev MockEvent, stepIdx, evIdx int),
+	stepIdx int,
+	evIdx int,
 ) string {
 	t0 := time.Now()
 	out, err := e.realExecutor(ctx, pending.name, pending.args)
@@ -613,28 +624,31 @@ func (e *MockEngine) executeRealAndEmit(
 		}
 		slog.Warn("mock: real tool exec failed, emit tool_result with isError=true",
 			"id", id, "name", pending.name, "args", pending.args, "dur_ms", dur, "error", err)
-		s.sendAndCache(sess, w, flusher, "tool_result", map[string]interface{}{
+		// 走 emitEvent 闭包（统一通道），而不是直接 s.sendAndCache
+		// 这是 AG-UI 模式下 tool_result 仍能正确推送的修复点
+		emitEvent(MockEvent{Type: "tool_result", Data: map[string]interface{}{
 			"id":         id,
 			"name":       name,
 			"result":     resultStr,
 			"isError":    true,
 			"status":     "failed",
 			"durationMs": dur,
-		})
+		}}, stepIdx, evIdx)
 		writeDebug(-1, -1, "tool_result(err)", fmt.Sprintf("id=%s name=%s err=%s", id, name, err.Error()))
 		return resultStr // 返回结果供 collectedResults 收集
 	}
 
 	slog.Info("mock: real tool exec succeeded",
 		"id", id, "name", pending.name, "args", pending.args, "dur_ms", dur)
-	s.sendAndCache(sess, w, flusher, "tool_result", map[string]interface{}{
+	// 走 emitEvent 闭包（统一通道）
+	emitEvent(MockEvent{Type: "tool_result", Data: map[string]interface{}{
 		"id":         id,
 		"name":       name,
 		"result":     out,
 		"isError":    false,
 		"status":     "success",
 		"durationMs": dur,
-	})
+	}}, stepIdx, evIdx)
 	writeDebug(-1, -1, "tool_result(ok)", fmt.Sprintf("id=%s name=%s dur=%dms", id, name, dur))
 	return out // 返回结果供 collectedResults 收集
 }
