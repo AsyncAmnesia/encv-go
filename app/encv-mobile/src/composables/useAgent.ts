@@ -21,7 +21,7 @@
 import { ref, computed } from 'vue'
 import { showToast } from '@/composables/useToast'
 import { getDeviceIdSync } from './useDeviceId'
-import { getAgentApiBase, shouldSendAGUIHeader } from './useAgentApiBase'
+import { getAgentApiBase, getAgentApiBaseContext, shouldSendAGUIHeader } from './useAgentApiBase'
 import {
   serializeAttachments,
   type Attachment,
@@ -232,8 +232,22 @@ export const CONTEXT_COMPACTION_MARKER = '上下文已自动压缩'
 /** 持久化到 localStorage 的 key 前缀 */
 const STORAGE_PREFIX = 'agent:session:'
 
-/** Agent 服务 API 路径（dev 走 preview-gateway :16666 → :2025；APK 直接 :2025） */
-const AGENT_API_BASE = getAgentApiBase()
+/**
+ * Agent 服务 API 基础 URL（动态解析，**不在模块加载时缓存**）。
+ *
+ * 为什么是函数而不是常量：
+ *   - 旧实现 `const AGENT_API_BASE = getAgentApiBase()` 在模块首次 import 时
+ *     求值一次 → 之后即使用户改了 baseUrl（probe 命中 LAN / 手动设置 / 切前后台），
+ *     永远用旧值 → 真实路由失败但 JS 还打旧 URL
+ *   - 新实现 getAgentBase() 每次调用都实时读 getApiBaseBase() →
+ *     baseUrl 变化立刻生效（与 WS 层 useWebSocket 行为一致）
+ *
+ * 性能：每次调用 ≈ 1 次 localStorage 读 + 1 个三元判断，可忽略
+ * （chat send 不是热路径，且 baseUrl 变化场景只在 probe/手动切换瞬间）
+ */
+function getAgentBase(): string {
+  return getAgentApiBase()
+}
 
 /**
  * 单实例最多追踪的 SSE sequence 编号数。超过此上限时按插入顺序
@@ -561,7 +575,7 @@ export interface LanAddress {
 export async function getLanAccess(port: number = 0): Promise<LanAddress[]> {
   try {
     const qs = port > 0 ? `?port=${port}` : ''
-    const response = await fetch(`${AGENT_API_BASE}/api/network/lan-access${qs}`, {
+    const response = await fetch(`${getAgentBase()}/api/network/lan-access${qs}`, {
       method: 'GET',
     })
     if (!response.ok) {
@@ -656,7 +670,7 @@ export interface DoctorReport {
  * 一个长尾的 doctor 请求（实际后端超时是 2 秒，不会真等很久）。
  */
 export async function runSyncDoctor(signal?: AbortSignal): Promise<DoctorReport> {
-  const response = await fetch(`${AGENT_API_BASE}/api/sync/doctor`, {
+  const response = await fetch(`${getAgentBase()}/api/sync/doctor`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     // 没有 body 也合法：handler 接受 GET/POST 两种 method。
@@ -930,7 +944,7 @@ export function useAgent() {
    */
   async function loadMockPresets(): Promise<void> {
     try {
-      const resp = await fetch(`${AGENT_API_BASE}/api/agent/mock/presets`)
+      const resp = await fetch(`${getAgentBase()}/api/agent/mock/presets`)
       if (!resp.ok) {
         console.debug('[useAgent] loadMockPresets: HTTP', resp.status)
         return
@@ -969,7 +983,7 @@ export function useAgent() {
 
   async function loadMockMode() {
     try {
-      const resp = await fetch(`${AGENT_API_BASE}/api/config`)
+      const resp = await fetch(`${getAgentBase()}/api/config`)
       if (!resp.ok) {
         console.debug('[MockMode] fetch /api/config failed: HTTP', resp.status)
         return
@@ -999,13 +1013,13 @@ export function useAgent() {
     if (mode === currentMockMode.value) return
     try {
       // 必须整张 config 一并 PUT（后端会保留非 agent_settings 字段）。
-      const getResp = await fetch(`${AGENT_API_BASE}/api/config`)
+      const getResp = await fetch(`${getAgentBase()}/api/config`)
       if (!getResp.ok) throw new Error(`fetch /api/config → HTTP ${getResp.status}`)
       const cfg = (await getResp.json()) as Record<string, unknown>
       const agentSettings = (cfg.agent_settings as Record<string, unknown> | undefined) ?? {}
       agentSettings.mock_mode = mode
       cfg.agent_settings = agentSettings
-      const putResp = await fetch(`${AGENT_API_BASE}/api/config`, {
+      const putResp = await fetch(`${getAgentBase()}/api/config`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cfg),
@@ -1054,7 +1068,7 @@ export function useAgent() {
    */
   async function refreshServerInstance(): Promise<void> {
     try {
-      const response = await fetch(`${AGENT_API_BASE}/api/health`, { method: 'GET' })
+      const response = await fetch(`${getAgentBase()}/api/health`, { method: 'GET' })
       if (!response.ok) {
         console.warn('[useAgent] refreshServerInstance: /api/health returned', response.status)
         return
@@ -2140,7 +2154,7 @@ export function useAgent() {
     }
 
     try {
-      console.debug('[useAgent] send() starting fetch to', `${AGENT_API_BASE}/api/chat`, 'mode=', mode)
+      console.debug('[useAgent] send() starting fetch to', `${getAgentBase()}/api/chat`, 'mode=', mode)
       // AG-UI 协议协商：根据 useAgentApiBase.shouldSendAGUIHeader() 决定
       // 是否带 X-Agent-Protocol: agui header（默认 'auto' → 带）。
       // 后端看到 header 后用 AG-UI parser 解析 LLM 响应；不带则按
@@ -2159,7 +2173,7 @@ export function useAgent() {
         mode === 'mock_resume'
           ? options?.scenario ?? currentMockScenario.value ?? undefined
           : undefined
-      const response = await fetch(`${AGENT_API_BASE}/api/chat`, {
+      const response = await fetch(`${getAgentBase()}/api/chat`, {
         method: 'POST',
         headers: fetchHeaders,
         body: JSON.stringify({
@@ -2232,8 +2246,26 @@ export function useAgent() {
         finalizeLastAssistant()
         if (status.value !== 'idle') status.value = 'idle'
       } else {
-        const detail = e?.message || String(e)
-      console.error('[useAgent] send failed:', detail)
+        let detail = e?.message || String(e)
+        // 区分 CORS 预检失败 / 网络断开 / 服务器返回：
+        //   TypeError: Failed to fetch（或 iOS Safari 的"Load failed"）通常是
+        //     CORS 预检失败 / mixed content blocked / 端口不通 — 浏览器拒绝跨域 POST
+        //   这里把诊断信息 dump 到 console.error，下次出问题时 DevLogs 一眼能定位
+        if (e?.name === 'TypeError' && /Failed to fetch|Load failed/i.test(detail)) {
+          const ctx = getAgentApiBaseContext()
+          console.error('[useAgent] send failed (likely CORS preflight / network / mixed content):', {
+            base: ctx.base,
+            source: ctx.source,
+            isNative: ctx.isNative,
+            env: ctx.env,
+            sampleUrl: ctx.sampleUrl,
+            pageOrigin: typeof location !== 'undefined' ? location.origin : '(no location)',
+            requestUrl: `${ctx.base}/api/chat`,
+            aguiHeaderSent: shouldSendAGUIHeader(),
+          })
+          detail = `无法连接 Agent API (${ctx.base}) — 检查 CORS 预检 / 网络 / 服务器可达性`
+        }
+        console.error('[useAgent] send failed:', detail)
         if (lastUserMsg) lastUserMsg.error = detail
         // 把后端 buildHttpError 挂的 .code 提取出来（'no_api_key' / 'upstream_error' / 等）。
         // chat UI 据此可以展示"去 AI 设置"快捷按钮，让用户从对话流直达修复点，
@@ -2310,7 +2342,7 @@ export function useAgent() {
 
     try {
       console.debug('[useAgent] sendQueued() POST /api/chat mode=queue')
-      const response = await fetch(`${AGENT_API_BASE}/api/chat`, {
+      const response = await fetch(`${getAgentBase()}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2377,7 +2409,7 @@ export function useAgent() {
     try {
       // AG-UI 协议协商（与 send() 一致）
       const sendAGUIHeader = shouldSendAGUIHeader()
-      const response = await fetch(`${AGENT_API_BASE}/api/confirm`, {
+      const response = await fetch(`${getAgentBase()}/api/confirm`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2475,7 +2507,7 @@ export function useAgent() {
         const headerLastEventId = lastEventId > 0 ? String(lastEventId) : undefined
         // AG-UI 协议协商（与 send() / confirmTool() 一致）
         const sendAGUIHeader = shouldSendAGUIHeader()
-        const response = await fetch(`${AGENT_API_BASE}/api/resume`, {
+        const response = await fetch(`${getAgentBase()}/api/resume`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
