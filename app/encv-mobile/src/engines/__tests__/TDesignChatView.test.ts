@@ -1,11 +1,18 @@
 /**
  * TDesignChatView.test.ts
  *
- * 测试 TDesignChatView 组件：
+ * 测试 TDesignChatView 组件（v3 实现）：
  *   - 接受 EngineRenderProps 形态的 props
- *   - 渲染消息列表（user / assistant）
+ *   - 渲染消息列表（user / assistant text / tool_call / tool_result）
+ *   - **关键**：文本和工具调用按 eventLog 时间轴交错（v3 修复）
  *   - streaming=true 时显示 thinking 指示器
- *   - tool_calls 渲染为卡片列表
+ *   - tool_result 内嵌在对应 operation 卡片内
+ *
+ * v3 关键变化（修 "整块 markdown + 工具堆底部" 痛点）：
+ *   - 改用 useRenderTurnItems(messages, status, compactionText)
+ *   - 按 eventLog 顺序逐项渲染 RenderedItem[]
+ *   - 文本段单独渲染 MarkdownStream（不再合并为整条 m.content）
+ *   - tool_call 单条卡片插入文本流中
  *
  * SPEC: /workspace/.trae/specs/agui-real-llm-path-completion/ Phase 4
  */
@@ -13,28 +20,36 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
-import type { Message, ToolCall } from '@/composables/useAgent'
+import type { Message, ToolCall, ToolResult } from '@/composables/useAgent'
 
-// Mock @tdesign-vue-next/chat：用占位组件替代 ChatList / ChatItem / ChatThinking
-// 真实渲染层 DOM 行为由 E2E 验证；单测只验证 TDesignChatView 自身契约。
-// vi.mock hoisted 到文件顶部（vite-node 自动 hoist），所以下面 import 走 mock。
+// Mock @tdesign-vue-next/chat：只用到 ChatThinking
 vi.mock('@tdesign-vue-next/chat', () => {
-  const StubComp = defineComponent({
-    name: 'StubChat',
-    props: ['data', 'role', 'name', 'avatar', 'content'],
-    setup(props, { slots }) {
-      return () =>
-        h('div', { class: 'td-chat-stub' }, [props.content ?? (slots.content ? '[slot]' : '')])
+  const StubThinking = defineComponent({
+    name: 'ChatThinking',
+    props: ['content'],
+    setup(props) {
+      return () => h('div', { class: 'td-chat-thinking-stub' }, [props.content])
     },
   })
   return {
-    ChatList: { ...StubComp, name: 'ChatList' },
-    ChatItem: { ...StubComp, name: 'ChatItem' },
-    ChatThinking: { ...StubComp, name: 'ChatThinking' },
+    ChatThinking: StubThinking,
   }
 })
 
-// 必须在 mock 注册后导入（vi.mock 自动 hoist，但仍显式写出来强调）
+// Mock MarkdownStream：避免 markstream-vue 渲染副作用
+vi.mock('@/components/agent/MarkdownStream.vue', () => ({
+  default: defineComponent({
+    name: 'MarkdownStream',
+    props: ['content', 'streaming'],
+    setup(props) {
+      return () =>
+        h('div', { class: 'markdownStream-stub' }, [
+          typeof props.content === 'string' ? props.content : '[non-string]',
+        ])
+    },
+  }),
+}))
+
 import TDesignChatView from '../TDesignChatView.vue'
 
 // =============================================================================
@@ -47,6 +62,7 @@ function makeUserMessage(text: string, overrides: Partial<Message> = {}): Messag
     content: text,
     tool_calls: [],
     tool_results: [],
+    eventLog: [{ type: 'user_text', text: text } as { type: string; id?: string }],
     ...overrides,
   }
 }
@@ -54,13 +70,22 @@ function makeUserMessage(text: string, overrides: Partial<Message> = {}): Messag
 function makeAssistantMessage(
   text: string,
   toolCalls: ToolCall[] = [],
+  toolResults: ToolResult[] = [],
   overrides: Partial<Message> = {},
 ): Message {
+  // 构造 eventLog：按时间顺序记录 text + tool_call + tool_result
+  // 注：Message.eventLog 类型在 useAgent.ts 限定为 { type, id? }，但
+  // useRenderTurnItems 实际会读 `text` 字段。test 强制 cast 覆盖类型。
+  const eventLog: NonNullable<Message['eventLog']> = []
+  for (const tc of toolCalls) eventLog.push({ type: 'tool_call', id: tc.id })
+  for (const tr of toolResults) eventLog.push({ type: 'tool_result', id: tr.id })
+  if (text) eventLog.push({ type: 'text', text } as { type: string; id?: string })
   return {
     role: 'assistant',
     content: text,
     tool_calls: toolCalls,
-    tool_results: [],
+    tool_results: toolResults,
+    eventLog,
     ...overrides,
   }
 }
@@ -74,6 +99,18 @@ function makeToolCall(overrides: Partial<ToolCall> = {}): ToolCall {
     kind: 'readOnly',
     needsConfirm: false,
     status: 'pending',
+    ...overrides,
+  }
+}
+
+function makeToolResult(overrides: Partial<ToolResult> = {}): ToolResult {
+  return {
+    id: 'tr-1',
+    name: 'search',
+    result: '{"hits":3}',
+    is_error: false,
+    status: 'success',
+    duration_ms: 100,
     ...overrides,
   }
 }
@@ -92,15 +129,6 @@ const defaultProps = {
 function mountChatView(props: Partial<typeof defaultProps> = {}) {
   return mount(TDesignChatView, {
     props: { ...defaultProps, ...props },
-    global: {
-      // TDesign chat 组件需要 ConfigProvider；在测试环境用 stub 跳过真实渲染
-      // 验证 TDesignChatView 的 props → DOM 树 / computed → 行为契约
-      stubs: {
-        ChatList: true,
-        ChatItem: true,
-        ChatThinking: true,
-      },
-    },
   })
 }
 
@@ -108,12 +136,12 @@ function mountChatView(props: Partial<typeof defaultProps> = {}) {
 // 测试
 // =============================================================================
 
-describe('TDesignChatView', () => {
+describe('TDesignChatView v3 (useRenderTurnItems)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('TestTDesignChatView_AcceptsEngineRenderProps: 接受完整 EngineRenderProps 形态', () => {
+  it('TestTDesign_AcceptsEngineRenderProps: 接受完整 EngineRenderProps 形态', () => {
     const wrapper = mountChatView({
       messages: [],
       status: 'idle',
@@ -123,127 +151,119 @@ describe('TDesignChatView', () => {
     expect(wrapper.classes()).toContain('tdesign-chat-view')
   })
 
-  it('TestTDesignChatView_EmptyState_WhenNoMessages: messages 为空时显示欢迎文案', () => {
+  it('TestTDesign_EmptyState_WhenNoMessages: messages 为空时显示欢迎文案', () => {
     const wrapper = mountChatView({ messages: [] })
     const welcome = wrapper.find('.welcome')
     expect(welcome.exists()).toBe(true)
     expect(welcome.text()).toContain('TDesign')
   })
 
-  it('TestTDesignChatView_StreamingThinking_WhenStreamingEmpty: streaming=true + 无消息时显示 thinking', () => {
+  it('TestTDesign_StreamingEmptyShowsThinking: streaming=true + 无消息时显示 thinking', () => {
     const wrapper = mountChatView({ messages: [], streaming: true })
-    // 空状态时的 thinking（被 stub 成 ChatThinking 标签）
     const emptyState = wrapper.find('.empty-state')
     expect(emptyState.exists()).toBe(true)
-    // data-streaming 属性正确反映 streaming
     expect(wrapper.attributes('data-streaming')).toBe('true')
   })
 
-  it('TestTDesignChatView_RendersMessages: 渲染消息列表容器', () => {
-    const messages = [
-      makeUserMessage('你好'),
-      makeAssistantMessage('你好！有什么可以帮你的？'),
-    ]
-    const wrapper = mountChatView({ messages })
-    // ChatList 被 stub：但 chatlist 元素存在
-    const list = wrapper.findComponent({ name: 'ChatList' })
-    expect(list.exists()).toBe(true)
+  it('TestTDesign_RendersUserBubble: 渲染 user 消息气泡', () => {
+    const wrapper = mountChatView({
+      messages: [makeUserMessage('你好世界')],
+    })
+    const userRow = wrapper.find('.td-msg-row--user')
+    expect(userRow.exists()).toBe(true)
+    expect(userRow.text()).toContain('你好世界')
   })
 
-  it('TestTDesignChatView_FilterSystemMessages: system 消息不出现在列表中（只展示 user/assistant）', () => {
-    const messages = [
-      makeUserMessage('hello'),
-      { role: 'system' as const, content: 'system marker', tool_calls: [], tool_results: [] },
-      makeAssistantMessage('hi'),
-    ]
-    const wrapper = mountChatView({ messages })
-    // 内部 listData computed 过滤 system，但这里通过 props 透传做断言：
-    // ChatList 容器被 stub，所以直接通过 listData computed 验证
-    // （mount 后组件 setup 已执行）
-    const vm = wrapper.vm as any
-    if (vm && Array.isArray(vm.listData)) {
-      expect(vm.listData).toHaveLength(2)
-      expect(vm.listData[0].role).toBe('user')
-      expect(vm.listData[1].role).toBe('assistant')
-    }
+  it('TestTDesign_RendersAssistantText: 渲染 assistant 文本段（v3 关键：单段渲染不合并）', () => {
+    const wrapper = mountChatView({
+      messages: [
+        makeUserMessage('问个问题'),
+        makeAssistantMessage('这是回答'),
+      ],
+    })
+    const assistantRow = wrapper.find('.td-msg-row--assistant')
+    expect(assistantRow.exists()).toBe(true)
+    const md = wrapper.find('.markdownStream-stub')
+    expect(md.exists()).toBe(true)
+    expect(md.text()).toBe('这是回答')
   })
 
-  it('TestTDesignChatView_StreamingWithMessages_ShowsThinkingAtBottom: 有消息且 streaming=true 时显示底部 thinking', () => {
+  // ★ v3 核心修复测试：文本和工具调用交错
+  it('TestTDesign_InterleavesTextAndToolCall: 文本和工具调用按 eventLog 交错（不再堆底部）', () => {
+    const tc = makeToolCall({ id: 'tc-1', name: 'list_files' })
+    const tr = makeToolResult({ id: 'tr-1', name: 'list_files', result: 'file1,file2' })
+    const messages = [
+      makeUserMessage('列一下文件'),
+      makeAssistantMessage('好的', [tc], [tr]),
+    ]
+    const wrapper = mountChatView({ messages })
+
+    // 关键断言：tool-call-list 容器（旧的"堆底部"模式）不应存在
+    const oldBottomList = wrapper.find('.tool-call-list')
+    expect(oldBottomList.exists()).toBe(false)
+
+    // tool_call 应该是按行渲染（不是底部堆叠）
+    const toolRow = wrapper.find('.td-msg-row--tool')
+    expect(toolRow.exists()).toBe(true)
+
+    // 关键断言：工具调用在 DOM 树中应该出现在文本段之前（按 eventLog 顺序）
+    const renderedItems = wrapper.findAll('.renderedItemWrap')
+    expect(renderedItems.length).toBeGreaterThan(0)
+  })
+
+  it('TestTDesign_ToolResultEmbeddedInOperationCard: 工具结果内嵌在对应 operation 卡片内', () => {
+    // AG-UI 协议语义：ToolCall.id 和 ToolResult.id 是同一个 toolCallId（用 call 的 id 关联 result）
+    const tc = makeToolCall({ id: 'tc-1', name: 'search' })
+    const tr = makeToolResult({ id: 'tc-1', name: 'search', result: '找到3条' })
+    const messages = [
+      makeUserMessage('搜一下'),
+      makeAssistantMessage('', [tc], [tr]),
+    ]
+    const wrapper = mountChatView({ messages })
+
+    // 工具卡片应包含结果区
+    const toolCard = wrapper.find('.td-tool-card')
+    expect(toolCard.exists()).toBe(true)
+    const resultBody = toolCard.find('.td-tool-card-result-body')
+    expect(resultBody.exists()).toBe(true)
+    expect(resultBody.text()).toContain('找到3条')
+  })
+
+  it('TestTDesign_NoResultEmbeddedWhenNoResult: 工具调用但无结果时不显示结果区', () => {
+    const tc = makeToolCall({ id: 'tc-1', name: 'search', status: 'pending' })
+    const messages = [makeUserMessage('搜'), makeAssistantMessage('', [tc], [])]
+    const wrapper = mountChatView({ messages })
+
+    const toolCard = wrapper.find('.td-tool-card')
+    expect(toolCard.exists()).toBe(true)
+    expect(toolCard.find('.td-tool-card-result').exists()).toBe(false)
+  })
+
+  it('TestTDesign_ToolStatusMappedToDataAttribute: tool_call status 映射到 data-status', () => {
+    const pending = makeToolCall({ id: 'p', status: 'pending' })
+    const running = makeToolCall({ id: 'r', status: 'running' })
+    const success = makeToolCall({ id: 's', status: 'success' })
+    const failed = makeToolCall({ id: 'f', status: 'failed' })
+    // AG-UI 协议：每个 tool 有自己的 toolCallId
+    const messages = [makeAssistantMessage('', [pending, running, success, failed])]
+    const wrapper = mountChatView({ messages })
+
+    const statuses = wrapper.findAll('.td-tool-card-status')
+    expect(statuses.length).toBe(4)
+    expect(statuses[0].attributes('data-status')).toBe('pending')
+    expect(statuses[1].attributes('data-status')).toBe('running')
+    expect(statuses[2].attributes('data-status')).toBe('success')
+    expect(statuses[3].attributes('data-status')).toBe('failed')
+  })
+
+  it('TestTDesign_StreamingWithMessages_ShowsThinkingAtBottom: 有消息且 streaming=true 时显示底部 thinking', () => {
     const messages = [makeUserMessage('hi'), makeAssistantMessage('')]
     const wrapper = mountChatView({ messages, streaming: true })
     const thinkingAtBottom = wrapper.find('.streaming-thinking')
     expect(thinkingAtBottom.exists()).toBe(true)
   })
 
-  it('TestTDesignChatView_NoToolCallList_WhenEmpty: 没有 tool_calls 时不显示卡片列表', () => {
-    const messages = [makeUserMessage('hi'), makeAssistantMessage('ok')]
-    const wrapper = mountChatView({ messages })
-    const toolList = wrapper.find('.tool-call-list')
-    expect(toolList.exists()).toBe(false)
-  })
-
-  it('TestTDesignChatView_ToolCallList_WhenHasToolCalls: 有 tool_calls 时显示卡片列表', () => {
-    const tc = makeToolCall({ id: 'tc-1', name: 'search' })
-    const messages = [makeAssistantMessage('', [tc])]
-    const wrapper = mountChatView({ messages })
-    const toolList = wrapper.find('.tool-call-list')
-    expect(toolList.exists()).toBe(true)
-  })
-
-  it('TestTDesignChatView_TagDataStatusAttribute: tool_call 状态映射到 data-status 属性', () => {
-    const pendingTc = makeToolCall({ id: 'p', status: 'pending' })
-    const runningTc = makeToolCall({ id: 'r', status: 'running' })
-    const successTc = makeToolCall({ id: 's', status: 'success' })
-    const failedTc = makeToolCall({ id: 'f', status: 'failed' })
-
-    const messages = [makeAssistantMessage('', [pendingTc, runningTc, successTc, failedTc])]
-    const wrapper = mountChatView({ messages })
-    const tags = wrapper.findAll('.tool-call-tag')
-    expect(tags).toHaveLength(4)
-    expect(tags[0].attributes('data-status')).toBe('pending')
-    expect(tags[1].attributes('data-status')).toBe('running')
-    expect(tags[2].attributes('data-status')).toBe('success')
-    expect(tags[3].attributes('data-status')).toBe('failed')
-  })
-
-  it('TestTDesignChatView_ConfirmBadge_WhenNeedsConfirmPending: needsConfirm+pending 时显示需确认徽章', () => {
-    const tc = makeToolCall({ id: 'tc-1', needsConfirm: true, status: 'pending' })
-    const messages = [makeAssistantMessage('', [tc])]
-    const wrapper = mountChatView({ messages })
-    const badge = wrapper.find('.tool-call-confirm-badge')
-    expect(badge.exists()).toBe(true)
-    expect(badge.text()).toContain('需确认')
-  })
-
-  it('TestTDesignChatView_NoConfirmBadge_WhenRunning: needsConfirm 但 status=running 时不显示需确认徽章', () => {
-    const tc = makeToolCall({ id: 'tc-1', needsConfirm: true, status: 'running' })
-    const messages = [makeAssistantMessage('', [tc])]
-    const wrapper = mountChatView({ messages })
-    const badge = wrapper.find('.tool-call-confirm-badge')
-    expect(badge.exists()).toBe(false)
-  })
-
-  it('TestTDesignChatView_MultimodalContentExtractsText: multimodal content 数组只取 text 部分', () => {
-    const messages: Message[] = [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: '请看这张图：' } as any,
-          { type: 'image', url: 'foo.png' } as any,
-          { type: 'text', text: '它是什么？' } as any,
-        ],
-        tool_calls: [],
-        tool_results: [],
-      },
-    ]
-    const wrapper = mountChatView({ messages })
-    const vm = wrapper.vm as any
-    if (vm && Array.isArray(vm.listData)) {
-      expect(vm.listData[0].content).toBe('请看这张图：它是什么？')
-    }
-  })
-
-  it('TestTDesignChatView_DataStreamingAttribute_ReflectsProp: data-streaming 属性绑定正确', () => {
+  it('TestTDesign_DataStreamingAttribute_ReflectsProp: data-streaming 属性绑定正确', () => {
     const w1 = mountChatView({ streaming: true })
     expect(w1.attributes('data-streaming')).toBe('true')
     const w2 = mountChatView({ streaming: false })

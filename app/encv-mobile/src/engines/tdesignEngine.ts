@@ -6,12 +6,15 @@
  *
  * 协议：AG-UI（与 Default 引擎共享同一份数据）
  *
- * 重构说明：早期版本直接使用 @tdesign-vue-next/chat 的 <Chatbot> 组件，
- * 但 <Chatbot> 内置独立的 ChatService 实例，会自己再消费一份 SSE 流，
- * 与 useAgent 共享数据源的架构冲突。重构后改为纯渲染层——只展示
- * useAgent 提供的 messages: readonly Message[]，所有 UI 元素（消息
- * 列表 / thinking 指示器 / tool_call 卡片）由 TDesignChatView 用
- * 通用 TDesign 组件（ChatList / ChatItem / ChatThinking）组合而成。
+ * 演化历史：
+ *  - v1：直接使用 @tdesign-vue-next/chat 的 <Chatbot> 组件 + chatServiceConfig，
+ *        <Chatbot> 内置独立 ChatService 实例再消费一份 SSE → 与 useAgent 数据源冲突
+ *  - v2：改为纯渲染层，用 <ChatList :data="Message[]"> 展示——但 ChatList
+ *        把整条 m.content 当一个 ChatItem 渲染 → 文本累积成单块 markdown；
+ *        tool_calls 排在底部 → 用户痛点（"渲染排版不对"）
+ *  - v3：改用 useRenderTurnItems(messages, status, compactionText) 拿
+ *        RenderedItem[]，按 eventLog 时间轴逐项渲染（与 Default 引擎
+ *        同源数据，TDesign 仅提供差异化视觉）→ 文本段和工具调用交错
  *
  * SPEC: /workspace/.trae/specs/agui-real-llm-path-completion/ Phase 4
  */

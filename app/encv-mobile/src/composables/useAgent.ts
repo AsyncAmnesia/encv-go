@@ -361,16 +361,23 @@ function parseToolStatus(data: unknown): { id: string; status: ToolStatus } | nu
 
 /**
  * 解析 `tool_result` 的 data 字段 —— ToolResultData
+ *
+ * 适配 AG-UI 协议：AG-UI `TOOL_CALL_RESULT` 事件归一化后只有
+ *   `{ id, result }`（**无 name** 字段——name 来自前面的 `TOOL_CALL_START`）
+ * legacy 格式有 `name` 字段（来自后端 sendAndCache 的 tool_result 事件）
+ * 本函数**不强制**要求 name，由调用方在拿到 result 后从已存在的
+ * tool_calls 里按 id 查找补齐 name。
  */
-function parseToolResultData(data: unknown): ToolResult | null {
+export function parseToolResultData(data: unknown): ToolResult | null {
   try {
     const parsed = typeof data === 'string' ? JSON.parse(data) : data
     if (!parsed || typeof parsed !== 'object') return null
     const p = parsed as Partial<ToolResult>
-    if (!p.id || !p.name) return null
+    if (!p.id) return null
     return {
       id: String(p.id),
-      name: String(p.name),
+      // name 可能为空（AG-UI 归一化格式）——调用方负责补齐
+      name: typeof p.name === 'string' ? p.name : '',
       result: typeof p.result === 'string' ? p.result : JSON.stringify(p.result ?? ''),
       is_error: p.is_error === true,
       status: String(p.status ?? 'success'),
@@ -1522,6 +1529,19 @@ export function useAgent() {
       case 'tool_result': {
         const result = parseToolResultData(event.data)
         if (result) {
+          // AG-UI 协议适配：TOOL_CALL_RESULT 归一化结果只有 {id, result}（无 name），
+          // 从前面累积的 tool_calls 按 id 反查补齐 name
+          if (!result.name) {
+            for (let i = messages.value.length - 1; i >= 0; i--) {
+              const m = messages.value[i]
+              if (m.role !== 'assistant') continue
+              const tc = m.tool_calls.find((t) => t.id === result.id)
+              if (tc?.name) {
+                result.name = tc.name
+                break
+              }
+            }
+          }
           const m = lastAssistant()
           m.tool_results.push(result)
           // Task 27：记录工具结果事件到达顺序
