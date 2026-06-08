@@ -402,7 +402,6 @@ import { showToast } from '@/composables/useToast'
 import { useChatEngine } from '@/composables/useChatEngine'
 // 触发引擎注册（模块副作用自动注册到 EngineRegistry）
 import '@/engines/defaultEngine'
-import '@/engines/copilotkitStyleEngine'
 import '@/engines/tdesignEngine'
 // 引擎渲染包装组件（解决 <component :is="vnode"> 不稳定的问题）
 import EngineRenderer from '@/components/agent/EngineRenderer.vue'

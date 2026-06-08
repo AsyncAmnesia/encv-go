@@ -234,7 +234,7 @@ interface ParsedContentDelta {
   text: string
   seq?: number
 }
-function parseContentDelta(data: unknown): ParsedContentDelta {
+export function parseContentDelta(data: unknown): ParsedContentDelta {
   if (!data) return { text: '' }
   if (typeof data === 'string') {
     try {
@@ -244,6 +244,11 @@ function parseContentDelta(data: unknown): ParsedContentDelta {
         // 新格式 {seq, text}
         if ('text' in parsed && 'seq' in parsed) {
           return { text: String(parsed.text ?? ''), seq: Number(parsed.seq) }
+        }
+        // AG-UI 归一化格式：{text, messageId}（useAGUIParser 输出，**无 seq**）
+        // 修乱码 bug：之前这种情况会落到末尾 return {text: data}，把整段 JSON 字符串当文本渲染
+        if ('text' in parsed) {
+          return { text: String((parsed as { text: unknown }).text ?? '') }
         }
         // 旧格式兼容 {"content":"..."}
         if ('content' in parsed) {
@@ -259,6 +264,10 @@ function parseContentDelta(data: unknown): ParsedContentDelta {
   if (data && typeof data === 'object') {
     if ('text' in data && 'seq' in data) {
       return { text: String((data as { text: unknown }).text ?? ''), seq: Number((data as { seq: unknown }).seq) }
+    }
+    // AG-UI 归一化格式：{text, messageId}
+    if ('text' in data) {
+      return { text: String((data as { text: unknown }).text ?? '') }
     }
   }
   return { text: String(data ?? '') }

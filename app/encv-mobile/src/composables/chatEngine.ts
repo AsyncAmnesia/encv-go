@@ -2,7 +2,7 @@
  * chatEngine.ts - 多渲染引擎架构：统一接口定义
  *
  * 定义 ChatEngine 抽象接口、EngineContext 共享状态、EngineRegistry 注册表。
- * 所有聊天渲染引擎（Default / CopilotKit 风格 / TDesign）都实现此接口，
+ * 所有聊天渲染引擎（Default / TDesign）都实现此接口，
  * AgentChat.vue 作为宿主容器通过 useChatEngine() 动态切换引擎实例。
  *
  * SPEC: /workspace/.trae/specs/multi-engine-chat-architecture/spec.md
@@ -66,11 +66,11 @@ export interface EngineInputProps {
 /**
  * 聊天渲染引擎 —— 统一抽象接口
  *
- * 每种 UI 实现（Ionic 默认 / CopilotKit 风格 / TDesign Chat）都实现此接口。
+ * 每种 UI 实现（Ionic 默认 / TDesign Chat）都实现此接口。
  * AgentChat.vue 通过 <component :is="engine.renderMessages(props)" /> 动态渲染。
  */
 export interface ChatEngine {
-  /** 引擎唯一标识（如 'default' / 'copilotkit-style' / 'tdesign'） */
+  /** 引擎唯一标识（如 'default' / 'tdesign'） */
   readonly id: string
   /** 显示名称（用于切换器 UI） */
   readonly name: string

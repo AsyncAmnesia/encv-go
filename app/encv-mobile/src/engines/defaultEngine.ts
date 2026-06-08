@@ -5,7 +5,7 @@
  *        解析后端 AG-UI SSE 事件流，归一化为 messages: readonly Message[]。
  * 渲染层：本引擎用 Ionic 组件渲染 Message[]。
  *
- * 协议：AG-UI（与 CopilotKit 风格 / TDesign 引擎共享同一份数据）
+ * 协议：AG-UI（与 TDesign 引擎共享同一份数据）
  */
 
 import { h, type VNode } from 'vue'

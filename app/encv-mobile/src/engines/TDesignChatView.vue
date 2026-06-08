@@ -4,7 +4,7 @@
   数据源：从 useAgent 通过 EngineRenderProps 拿到的 messages: readonly Message[]
   渲染层：用 TDesign 通用组件（ChatList / ChatItem / ChatThinking）拼装
   
-  协议：AG-UI（与 Default / CopilotKit 风格引擎共享同一份数据）
+  协议：AG-UI（与 Default 引擎共享同一份数据）
   
   关键设计：
   1. 不再使用 <Chatbot>（早期版本）—— 避免 ChatService 双消费 SSE 流

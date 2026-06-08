@@ -4,7 +4,7 @@
  * 数据源：通过 useAgent 共享的 AG-UI 解析后的 Message[]（不自行消费 SSE）
  * 渲染层：本引擎用 TDesign 视觉组件渲染 Message[]
  *
- * 协议：AG-UI（与 Default / CopilotKit 风格引擎共享同一份数据）
+ * 协议：AG-UI（与 Default 引擎共享同一份数据）
  *
  * 重构说明：早期版本直接使用 @tdesign-vue-next/chat 的 <Chatbot> 组件，
  * 但 <Chatbot> 内置独立的 ChatService 实例，会自己再消费一份 SSE 流，
