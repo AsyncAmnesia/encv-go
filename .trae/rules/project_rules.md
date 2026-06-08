@@ -410,13 +410,13 @@ curl -s http://localhost:5173/src/views/Tasks.vue | grep "predictPlugin"
 
 ## Skill 目录归属铁律（避免污染语言统计）
 
-> **`.agents/skills/` 与 `plugin-openlist/src/main/assets/` 已被 `.github/linguist.yml` 与 `.gitattributes` 标记为 `linguist-vendored`/`linguist-generated`，提交到这两处的代码不会出现在仓库 Languages 栏。**
+> **`.agents/skills/`（含 `.trae/skills/` 与 `app/encv-mobile/.agents/skills/`）与 `plugin-openlist/src/main/assets/` 已被 `.github/linguist.yml` 与 `.gitattributes` 标记为 `linguist-vendored`/`linguist-generated`，提交到这两处的代码不会出现在仓库 Languages 栏。**
 
 ### 强制规则
 
-- **SHALL NOT** 向 `.agents/skills/**` 提交 first-party 技能定义 — 该目录是 Trae IDE / Capacitor / Ionic / Lynx 等第三方技能的存储位置（语言统计排除 + 搜索不索引）
+- **SHALL NOT** 向 `.agents/skills/**` 提交 first-party 技能定义 — 该目录是 Trae IDE / Capacitor / Ionic 等第三方技能的存储位置（语言统计排除 + 搜索不索引）
 - **SHALL NOT** 直接编辑 `app/encv-mobile/plugin-openlist/src/main/assets/openlist/assets/**` 下的 dist 产物（`index-*.js`、`p-*.js`、`index-*.css`）— 这些是上游 OpenList 仓库 Vite 构建产物，由 `app/encv-mobile/scripts/build-plugin-openlist-web.sh` 自动重新生成
-- **SHALL NOT** 向 `app/encv-mobile/.agents/skills/**` 提交 first-party 脚本 — 该目录是 Lynx 工具链的第三方 skill 副本，含 5MB+ bundle 文件
+- **SHALL NOT** 向 `app/encv-mobile/.agents/skills/**` 提交 first-party 脚本 — 该目录是 Capacitor / Lynx 工具链等第三方 skill 副本目录，体积庞大（3MB+ bundle）
 - first-party skill 应放置到 `.trae/skills/` 或新建 `app/encv-mobile/scripts/agents-skills/` 目录
 
 ### 例外

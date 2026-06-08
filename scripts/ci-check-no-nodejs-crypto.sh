@@ -72,7 +72,7 @@ EXCLUDE_DIRS=(
   --exclude-dir=.venv
   --exclude-dir=__pycache__
   --exclude-dir=vendor
-  # AI agent skill 打包产物（含 lynx-devtool / lynx-trace-* 的 bundle），
+  # AI agent skill 打包产物（.agents/skills/ 与 .trae/skills/ 下的 .mjs/.cjs bundle），
   # 内部引用 node:crypto 用于生成 trace ID、createHash 做 URL hash 等，
   # 属于 dev tool 自身能力，与 API Key 加密无关 → 排除。
   --exclude-dir=.agents
