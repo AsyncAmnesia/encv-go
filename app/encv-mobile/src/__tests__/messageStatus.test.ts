@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { type MessageStatus, type ToolCallStatus, migrateMessageStatus, isMessageActive, isToolCallActive, MessageStatusColor, MessageStatusText } from '../types/messageStatus'
+import { type MessageStatus, migrateMessageStatus, isMessageActive, isToolCallActive, MessageStatusColor, MessageStatusText } from '../types/messageStatus'
 
 describe('migrateMessageStatus', () => {
   it('migrates legacy "pending" to "sending"', () => {

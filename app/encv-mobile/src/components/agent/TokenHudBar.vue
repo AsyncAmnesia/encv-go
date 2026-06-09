@@ -19,7 +19,7 @@
  *   - > 95%  红色
  */
 import { computed } from 'vue'
-import type { TokenSnapshot } from '../types/tokenSnapshot'
+import type { TokenSnapshot } from '../../types/tokenSnapshot'
 
 const props = withDefaults(
   defineProps<{

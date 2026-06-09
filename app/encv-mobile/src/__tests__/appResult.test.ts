@@ -11,7 +11,8 @@ import {
   runCatching,
   runCatchingAsync,
 } from '../types/appResult'
-import type { AppError, AppResult } from '../types/appResult'
+import type { AppResult } from '../types/appResult'
+import type { AppError } from '../types/appError'
 
 // 测试用 helper：构造 AppError
 function mkAppError(type: AppError['type'], message = 'x'): AppError {

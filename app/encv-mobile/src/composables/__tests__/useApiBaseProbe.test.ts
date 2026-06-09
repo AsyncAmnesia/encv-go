@@ -64,7 +64,7 @@ function setupFetchMockWithRejects(handlers: Array<{
 }
 
 function okResponse(body: unknown = { ok: true }): Response {
-  return new Response(JSON.stringify(body), { status: 200 })
+  return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
 }
 
 beforeEach(() => {
