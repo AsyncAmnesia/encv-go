@@ -1,6 +1,7 @@
 package webdav
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -19,13 +20,14 @@ func createV4ContainerForWebDAV(t testing.TB) string {
 
 	salt, _ := crypto.GenerateSalt_v2(types.SaltSize_v2)
 	key := crypto.GenerateKey("test-password", salt, types.KeySize_v2)
+	macKey := crypto.DeriveMACKey("test-password", bytes.Repeat([]byte{0xAB}, crypto.MACSaltLength))
 
 	origData := make([]byte, 2048)
 	for i := range origData {
 		origData[i] = byte(i)
 	}
 
-	encResult, _ := crypto.EncryptSegment(origData, key, 0)
+	encResult, _ := crypto.EncryptSegment(origData, key, macKey, 0, crypto.CompressionModeNone)
 	encResult.SegmentID = 0
 
 	kviRaw := map[string]string{

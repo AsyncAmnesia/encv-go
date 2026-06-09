@@ -57,6 +57,65 @@
       />
     </div>
 
+    <!-- 加密强度选择（AES-128 / AES-256） -->
+    <div class="form-section">
+      <div class="section-label">{{ t('tasks.cipherMode') }}</div>
+      <ion-radio-group
+        :value="state.cipherMode"
+        @ionChange="(e: any) => props.onUpdateCipherMode?.(e.detail.value)"
+        class="cipher-radio-group"
+      >
+        <ion-item lines="none" class="extra-field-item cipher-item">
+          <ion-radio :value="0" slot="start" :disabled="state.cipherMode === 0"></ion-radio>
+          <ion-label class="ion-text-wrap">
+            <div class="cipher-title">
+              <span>{{ t('tasks.cipherMode128') }}</span>
+              <ion-badge color="primary" class="recommended-badge">{{ t('tasks.cipherModeRecommended') }}</ion-badge>
+            </div>
+            <ion-note class="cipher-desc">{{ t('tasks.cipherMode128Help') }}</ion-note>
+          </ion-label>
+        </ion-item>
+        <ion-item lines="none" class="extra-field-item cipher-item">
+          <ion-radio :value="1" slot="start" :disabled="state.cipherMode === 1"></ion-radio>
+          <ion-label class="ion-text-wrap">
+            <div class="cipher-title">
+              <span>{{ t('tasks.cipherMode256') }}</span>
+            </div>
+            <ion-note class="cipher-desc">{{ t('tasks.cipherMode256Help') }}</ion-note>
+          </ion-label>
+        </ion-item>
+      </ion-radio-group>
+    </div>
+
+    <!-- 压缩选择（无 / zstd） -->
+    <div class="form-section">
+      <div class="section-label">{{ t('tasks.compressionMode') }}</div>
+      <ion-radio-group
+        :value="state.compressionMode"
+        @ionChange="(e: any) => props.onUpdateCompressionMode?.(e.detail.value)"
+        class="cipher-radio-group"
+      >
+        <ion-item lines="none" class="extra-field-item cipher-item">
+          <ion-radio value="none" slot="start" :disabled="state.compressionMode === 'none'"></ion-radio>
+          <ion-label class="ion-text-wrap">
+            <div class="cipher-title">
+              <span>{{ t('tasks.compressionNone') }}</span>
+            </div>
+            <ion-note class="cipher-desc">{{ t('tasks.compressionNoneHelp') }}</ion-note>
+          </ion-label>
+        </ion-item>
+        <ion-item lines="none" class="extra-field-item cipher-item">
+          <ion-radio value="zstd" slot="start" :disabled="state.compressionMode === 'zstd'"></ion-radio>
+          <ion-label class="ion-text-wrap">
+            <div class="cipher-title">
+              <span>{{ t('tasks.compressionZstd') }}</span>
+            </div>
+            <ion-note class="cipher-desc">{{ t('tasks.compressionZstdHelp') }}</ion-note>
+          </ion-label>
+        </ion-item>
+      </ion-radio-group>
+    </div>
+
     <!-- 加密模式专属 extraFields（condition === 'encrypt' 或无 condition） -->
     <template v-for="field in encryptExtraFields" :key="field.key">
       <ion-item
@@ -121,6 +180,9 @@ import {
   IonSelectOption,
   IonToggle,
   IonNote,
+  IonRadio,
+  IonRadioGroup,
+  IonBadge,
   modalController,
 } from '@ionic/vue'
 import { folderOpen, documentText, lockClosed } from 'ionicons/icons'
@@ -138,6 +200,8 @@ const props = withDefaults(defineProps<{
   onUpdateVersion?: (v: number) => void
   onUpdatePrimaryOverride?: (v: string) => void
   onUpdateSecondaryPassword?: (v: string) => void
+  onUpdateCipherMode?: (v: number) => void
+  onUpdateCompressionMode?: (v: 'none' | 'zstd') => void
   onUpdateExtraValue?: (payload: { key: string; value: string }) => void
 }>(), {
   onUpdateSourcePath: undefined,
@@ -145,6 +209,8 @@ const props = withDefaults(defineProps<{
   onUpdateVersion: undefined,
   onUpdatePrimaryOverride: undefined,
   onUpdateSecondaryPassword: undefined,
+  onUpdateCipherMode: undefined,
+  onUpdateCompressionMode: undefined,
   onUpdateExtraValue: undefined,
 })
 
@@ -225,5 +291,45 @@ async function handleBrowseTarget() {
 .extra-field-select {
   width: 100%;
   --padding-start: 0;
+}
+
+.section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ion-color-medium-shade);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 6px 0 4px;
+}
+
+.cipher-radio-group {
+  width: 100%;
+}
+
+.cipher-item {
+  --padding-start: 4px;
+  --inner-padding-end: 4px;
+}
+
+.cipher-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.cipher-desc {
+  display: block;
+  color: var(--ion-color-medium);
+  font-size: 0.8rem;
+  margin-top: 2px;
+}
+
+.recommended-badge {
+  font-size: 10px;
+  --padding-start: 6px;
+  --padding-end: 6px;
+  --padding-top: 2px;
+  --padding-bottom: 2px;
 }
 </style>

@@ -89,6 +89,8 @@
         :on-update-version="props.onUpdateVersion"
         :on-update-primary-override="props.onUpdatePrimaryOverride"
         :on-update-secondary-password="props.onUpdateSecondaryPassword"
+        :on-update-cipher-mode="props.onUpdateCipherMode"
+        :on-update-compression-mode="props.onUpdateCompressionMode"
         :on-update-extra-value="props.onUpdateExtraValue"
       />
       <DecryptBody
@@ -156,12 +158,16 @@ const props = withDefaults(defineProps<{
   extraValues: Record<string, string>
   filteredExtraFields: TaskField[]
   selectedPluginIndex: number
+  cipherMode: number
+  compressionMode: 'none' | 'zstd'
   onUpdateTaskType?: (v: string) => void
   onUpdateSourcePath?: (v: string) => void
   onUpdateTargetPath?: (v: string) => void
   onUpdateVersion?: (v: number) => void
   onUpdatePrimaryOverride?: (v: string) => void
   onUpdateSecondaryPassword?: (v: string) => void
+  onUpdateCipherMode?: (v: number) => void
+  onUpdateCompressionMode?: (v: 'none' | 'zstd') => void
   onUpdateExtraValue?: (payload: { key: string; value: string }) => void
   onSelectPlugin?: (index: number) => void
   onSubmit?: () => void
@@ -173,6 +179,8 @@ const props = withDefaults(defineProps<{
   onUpdateVersion: undefined,
   onUpdatePrimaryOverride: undefined,
   onUpdateSecondaryPassword: undefined,
+  onUpdateCipherMode: undefined,
+  onUpdateCompressionMode: undefined,
   onUpdateExtraValue: undefined,
   onSelectPlugin: undefined,
   onSubmit: undefined,
@@ -192,6 +200,8 @@ const fallbackState = reactive<NewTaskState>({
   extraValues: {},
   filteredExtraFields: [],
   selectedPluginIndex: 0,
+  cipherMode: 0,
+  compressionMode: 'none',
 })
 
 const effectiveState = computed<NewTaskState>(() => {

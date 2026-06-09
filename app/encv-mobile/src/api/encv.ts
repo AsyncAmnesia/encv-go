@@ -424,12 +424,16 @@ export async function createTask(
   pluginName?: string,
   extraFields?: Record<string, string>,
   secondaryPassword?: string,
+  cipherMode?: number,
+  compressionMode?: 'none' | 'zstd',
 ): Promise<EncvTask> {
   console.info('[API] createTask:', type, sourcePath, targetPath || '',
     'hasPassword:', !!password, 'version:', version ?? 'default',
     'pluginName:', pluginName ?? 'auto',
     'hasExtraFields:', extraFields && Object.keys(extraFields).length > 0,
-    'hasSecondaryPassword:', !!secondaryPassword)
+    'hasSecondaryPassword:', !!secondaryPassword,
+    'cipherMode:', cipherMode ?? 0,
+    'compressionMode:', compressionMode ?? 'none')
   const baseUrl = getApiBaseUrl()
   const body: Record<string, unknown> = { type, sourcePath }
   if (targetPath) body.targetPath = targetPath
@@ -438,6 +442,8 @@ export async function createTask(
   if (pluginName) body.pluginName = pluginName
   if (extraFields && Object.keys(extraFields).length > 0) body.extraFields = extraFields
   if (secondaryPassword) body.secondaryPassword = secondaryPassword
+  if (cipherMode !== undefined) body.cipherMode = cipherMode
+  if (compressionMode !== undefined) body.compressionMode = compressionMode
   const response = await fetch(`${baseUrl}/api/tasks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

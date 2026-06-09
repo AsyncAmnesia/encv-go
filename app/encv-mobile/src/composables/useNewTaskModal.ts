@@ -28,6 +28,8 @@ interface NewTaskState {
   extraValues: Record<string, string>
   filteredExtraFields: TaskField[]
   selectedPluginIndex: number
+  cipherMode: number
+  compressionMode: 'none' | 'zstd'
 }
 
 export function useNewTaskModal() {
@@ -58,6 +60,8 @@ export function useNewTaskModal() {
       extraValues: {},
       filteredExtraFields: [],
       selectedPluginIndex: 0,
+      cipherMode: 0,
+      compressionMode: 'none',
     })
 
     resetTaskForm()
@@ -113,6 +117,8 @@ export function useNewTaskModal() {
         onUpdateVersion: (v: number) => { state.version = v },
         onUpdatePrimaryOverride: (v: string) => { state.primaryOverride = v },
         onUpdateSecondaryPassword: (v: string) => { state.secondaryPassword = v },
+        onUpdateCipherMode: (v: number) => { state.cipherMode = v },
+        onUpdateCompressionMode: (v: 'none' | 'zstd') => { state.compressionMode = v },
         onUpdateExtraValue: ({ key, value }: { key: string; value: string }) => { state.extraValues[key] = value },
         onSelectPlugin: (idx: number) => {
           state.selectedPluginIndex = idx
@@ -153,6 +159,8 @@ export function useNewTaskModal() {
               pluginName,
               extraPayload,
               shouldSendPassword ? (state.secondaryPassword || undefined) : undefined,
+              state.taskType === 'encrypt' ? state.cipherMode : undefined,
+              state.taskType === 'encrypt' ? state.compressionMode : undefined,
             )
             await modal.dismiss()
             showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })
