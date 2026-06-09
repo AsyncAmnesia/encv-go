@@ -57,10 +57,14 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
+// 容器格式版本：
+//   - ECv3 = 旧版本（deprecated，但仍可创建/读取）
+//   - ECv4 = 当前推荐版本
+// 命名规则：ECv = ENCV Container，大写 EC，小写 v，避免与项目内 v2 架构命名混淆。
+// 注：ECv2 已在 SupportedVersions 中移除，不再可选。
 const defaultVersions: ContainerVersionInfo[] = [
-  { version: 2, status: 'deprecated', label: 'V2' },
-  { version: 3, status: 'stable', label: 'V3' },
-  { version: 4, status: 'recommended', label: 'V4' },
+  { version: 3, status: 'deprecated', label: 'ECv3' },
+  { version: 4, status: 'recommended', label: 'ECv4' },
 ]
 
 const versions = computed(() => props.versions || defaultVersions)

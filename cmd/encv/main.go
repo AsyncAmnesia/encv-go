@@ -33,10 +33,28 @@ var (
 // --- init 函数：添加所有命令到根命令，并定义标志 ---
 func init() {
 	// 添加子命令
-	// v2 CLI 命令已移除：v2 容器文件仍可被探测/分析（兼容性保留），
-	// 但不再支持通过 CLI 创建/解密/播放 v2 容器。
+	rootCmd.AddCommand(analyzeV2Cmd)
+	rootCmd.AddCommand(manifestV2Cmd)
+	rootCmd.AddCommand(kviV2Cmd)
+	rootCmd.AddCommand(decryptV2Cmd)
+	rootCmd.AddCommand(encryptV2Cmd)
+	rootCmd.AddCommand(playV2Cmd)
 	addServersCommands(rootCmd)
 	addPlatformSpecificCommands(rootCmd)
+
+	// 为命令添加标志
+	manifestV2Cmd.Flags().StringP("save", "s", "", "Save Manifest content to a specified JSON file.")
+	kviV2Cmd.Flags().StringP("save", "s", "", "Save KVI content to a specified JSON file.")
+	decryptV2Cmd.Flags().StringP("password", "p", "", "Password for decryption (overrides config)")
+	decryptV2Cmd.Flags().StringP("output", "o", "", "Output directory for decrypted files")
+	encryptV2Cmd.Flags().StringP("password", "p", "", "Password for encryption (overrides config)")
+	encryptV2Cmd.Flags().StringP("output", "o", "", "Output directory for encrypted files (overrides config)")
+	// play-v2 的标志，包含 OS 相关的默认值
+	defaultPlayer := "mpv"
+	if runtime.GOOS == "windows" {
+		defaultPlayer = "mpv.exe"
+	}
+	playV2Cmd.Flags().StringP("player", "r", defaultPlayer, "Media player to use (e.g., mpv, vlc)")
 }
 
 // --- main 函数：入口点，变得非常简洁 ---
