@@ -22,7 +22,11 @@ import (
 
 var detectorLogger = logger.WithComponent("detector")
 
-func AnalyzeContainerV2(ctx context.Context, containerPath string, printToStdout bool) (string, error) {
+// AnalyzeContainer 可视化分析 v3 / v4 容器文件的结构。
+// v2 容器分析已从项目中移除（v2 不再是 SupportedVersions 成员）。
+// 对于存量 v2 容器文件，仍可通过 detector 的纯字节魔数识别路径读取（DetectContainerFromReader），
+// 但不再提供专门的 HTML 报告输出——直接打开会被 handle.Open 检测为 v2 拒绝。
+func AnalyzeContainer(ctx context.Context, containerPath string, printToStdout bool) (string, error) {
 	absPath, err := filepath.Abs(containerPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to get absolute path: %w", err)
@@ -39,6 +43,11 @@ func AnalyzeContainerV2(ctx context.Context, containerPath string, printToStdout
 		return "", fmt.Errorf("failed to open container: %w", err)
 	}
 	defer h.Close()
+
+	// v2 容器已不在 SupportedVersions 中：若 detect 出来是 v2，直接报错
+	if h.Version() < 3 {
+		return "", fmt.Errorf("v2 containers are no longer supported for analysis (file '%s', version=%d). Use v3 or v4 containers.", absPath, h.Version())
+	}
 
 	var buf bytes.Buffer
 	w := tabwriter.NewWriter(&buf, 0, 0, 2, ' ', 0)

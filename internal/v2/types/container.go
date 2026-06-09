@@ -28,7 +28,6 @@ const (
 )
 
 const (
-	ContainerV2             = 2
 	ContainerV3             = 3
 	ContainerV4             = 4
 	DefaultContainerVersion = ContainerV4
@@ -73,14 +72,20 @@ var (
 	}
 )
 
-var SupportedVersions = []int{ContainerV2, ContainerV3, ContainerV4}
+// SupportedVersions 是当前**支持创建新容器**的版本列表。
+// v2 (2024 旧版) 已从项目中移除（仅保留底层读路径供存量 v2 容器在野外被读取）。
+// v3 标记为 deprecated（仍可创建/读取，但强烈建议迁 v4），v4 是当前推荐版本。
+var SupportedVersions = []int{ContainerV3, ContainerV4}
 
+// GetVersionStatus 返回版本在「支持列表」中的状态：
+//   - supported version（3/4）：返回对应状态（deprecated/stable/recommended）
+//   - unsupported version（含 v2、其他未知）：返回空字符串
+//
+// 注意：v2 已从 SupportedVersions 移除，但保留 ContainerV2 常量供 detector 识别存量文件。
 func GetVersionStatus(version int) VersionStatus {
 	switch version {
-	case ContainerV2:
-		return VersionStatusDeprecated
 	case ContainerV3:
-		return VersionStatusStable
+		return VersionStatusDeprecated
 	case ContainerV4:
 		return VersionStatusRecommended
 	default:
