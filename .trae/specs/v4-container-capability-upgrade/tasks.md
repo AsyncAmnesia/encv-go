@@ -10,7 +10,7 @@
   - [ ] SubTask 1.5: 新增单元测试 `TestGenerateKey_VariableLength` 覆盖 16/32 字节
 
 - [ ] Task 2: v4 Header 增加 CipherMode 字段
-  - [ ] SubTask 2.1: 在 `internal/v2/types/header_v4.go` 的 `EnvelopeHeaderV4` 结构体增加 `CipherMode uint16`（偏移 4-6 字节后预留）
+  - [ ] SubTask 2.1: 在 `internal/v2/types/header_v4.go` 的 `EnvelopeHeaderV4` 结构体增加 `CipherMode uint16`（Version 字段之后预留 2 字节）
   - [ ] SubTask 2.2: 修改 `WriteHeaderV4` / `ReadHeaderV4` 序列化/反序列化 `CipherMode`
   - [ ] SubTask 2.3: 旧 v4 容器（无 CipherMode 字段）按 0 解析，保证向后兼容
   - [ ] SubTask 2.4: 与 `plugin-version-selection-and-password-detection` 的 `PasswordHint`（偏移 20-36）共存不冲突
@@ -53,7 +53,7 @@
         SegmentID           uint32
         DataLength          uint64
         NonceSize           uint16
-        ModeFlags           uint16  // 新增：bit0=Encrypted, bit1-2=Compression
+        ModeFlags           uint16  // 新增：bit0=Encrypted, bit1=Compression
         MACSize             uint16  // 新增：默认 10
         DataCRC32           uint32
         CompressedBlockSize uint16  // 新增：zstd seekable 块大小
@@ -91,59 +91,54 @@
   - [ ] SubTask 9.5: 单元测试 `TestEncryptDecryptSegment_ZstdCompressed`
   - [ ] SubTask 9.6: 单元测试 `TestEncryptDecryptSegment_MixedModes`（一个 Segment 压缩、一个不压缩）
 
-## Phase 5: 加密容器去后缀字节流识别
+## Phase 5: detector 边界测试套件（验证现有能力，不改 detector 行为）
 
-- [ ] Task 10: 扩展 detector 支持 `io.Reader` 检测
-  - [ ] SubTask 10.1: 在 `internal/v2/container/detector/detector.go` 新增 `DetectContainerFromReader(r io.Reader) (DetectResult, error)`
-  - [ ] SubTask 10.2: 读取前 4 字节判断 "ENVC" 魔数
-  - [ ] SubTask 10.3: 读取 Header 完整 2048 字节（PeekReader 风格）
-  - [ ] SubTask 10.4: 返回 `IsENCVContainer / Version / ContainerType / IsSeekable / CipherMode`
-  - [ ] SubTask 10.5: 旧 `DetectContainerType(path string)` 包装为 `os.Open` + `DetectContainerFromReader`
+> **澄清**：detector 当前已基于魔数识别（`IsEncvContainerFromBytes`），**不依赖 `.encv` 后缀**。本任务仅为现有能力补齐测试。
 
-- [ ] Task 11: 边界测试套件（**核心验证**）
-  - [ ] SubTask 11.1: 在 `internal/v2/container/detector/` 创建 `stripped_suffix_test.go`
-  - [ ] SubTask 11.2: `TestDetect_StrippedSuffix_Plain`（`mydocument` 无扩展名）
-  - [ ] SubTask 11.3: `TestDetect_StrippedSuffix_Dotfile`（`.encv` 隐藏文件）
-  - [ ] SubTask 11.4: `TestDetect_StrippedSuffix_WrongExtension`（`mydocument.zip` 应识别为非 ENCV）
-  - [ ] SubTask 11.5: `TestDetect_StrippedSuffix_Boundary_Magic`（恰好 4 字节 "ENVC"）
-  - [ ] SubTask 11.6: `TestDetect_StrippedSuffix_Boundary_HeaderMinus1`（2047 字节，差 1 字节完整 Header）
-  - [ ] SubTask 11.7: `TestDetect_StrippedSuffix_TruncatedAt5Bytes`（5 字节，"ENVC" + 1 字节）
-  - [ ] SubTask 11.8: `TestDetect_StrippedSuffix_NonENCVMagic`（"ZIP\x03\x04" 应返回 `IsENCVContainer=false`）
-  - [ ] SubTask 11.9: `TestDetect_StrippedSuffix_EmptyFile`（0 字节返回明确错误）
-  - [ ] SubTask 11.10: `TestDetect_StrippedSuffix_CipherMode_0` 与 `TestDetect_StrippedSuffix_CipherMode_1`
+- [ ] Task 10: 在 `internal/v2/container/detector/detector_test.go` 补充边界测试
+  - [ ] SubTask 10.1: `TestDetect_StrippedSuffix_Plain`（`mydocument` 无扩展名，验证 `IsEncvContainerFromBytes` 仍能识别）
+  - [ ] SubTask 10.2: `TestDetect_StrippedSuffix_Dotfile`（`.encv` 隐藏文件）
+  - [ ] SubTask 10.3: `TestDetect_StrippedSuffix_WrongExtension`（`mydocument.zip` 应识别为非 ENCV）
+  - [ ] SubTask 10.4: `TestDetect_StrippedSuffix_Boundary_Magic`（恰好 6 字节 "ENVC"+2 字节 version）
+  - [ ] SubTask 10.5: `TestDetect_StrippedSuffix_Boundary_HeaderMinus1`（2047 字节，差 1 字节完整 Header）
+  - [ ] SubTask 10.6: `TestDetect_StrippedSuffix_TruncatedAt5Bytes`（5 字节，"ENVC" + 1 字节，< 6 字节最小要求）
+  - [ ] SubTask 10.7: `TestDetect_StrippedSuffix_NonENCVMagic`（"PK\x03\x04" ZIP 头应返回 `IsEncvContainer=false`）
+  - [ ] SubTask 10.8: `TestDetect_StrippedSuffix_EmptyFile`（0 字节返回明确错误）
+  - [ ] SubTask 10.9: `TestDetect_StrippedSuffix_ValidV4_HeaderRead`（完整 v4 容器无后缀可读）
+  - [ ] SubTask 10.10: `TestDetect_StrippedSuffix_CipherMode_0` 与 `TestDetect_StrippedSuffix_CipherMode_1`（待 Phase 1 完成后追加）
 
 ## Phase 6: writer/reader 集成新能力
 
-- [ ] Task 12: container_writer_v4 集成新能力
-  - [ ] SubTask 12.1: 在 `internal/v2/writer/container_writer_v4.go` 改写写入流程：
+- [ ] Task 11: container_writer_v4 集成新能力
+  - [ ] SubTask 11.1: 在 `internal/v2/writer/container_writer_v4.go` 改写写入流程：
     - 接受 `CipherMode` / `CompressionMode` / `EnableHMAC` 参数
     - 按 Phase 1+2+4 写入 Header → Segments（每 Segment 独立 nonce+mac_key+可选压缩）→ Manifest → Footer
-  - [ ] SubTask 12.2: 写入空 Segment 时不写 MAC（ModeFlags.Encrypted=0 跳过 mac_key 派生）
-  - [ ] SubTask 12.3: 集成测试 `TestWriterV4_AES128_WithMAC_WithZstd`
-  - [ ] SubTask 12.4: 集成测试 `TestWriterV4_AES256_WithMAC_NoCompression`
-  - [ ] SubTask 12.5: 集成测试 `TestWriterV4_MixedSegments_EncryptedAndPlain`
+  - [ ] SubTask 11.2: 写入不加密 Segment（ModeFlags.Encrypted=0）时跳过 mac_key 派生
+  - [ ] SubTask 11.3: 集成测试 `TestWriterV4_AES128_WithMAC_WithZstd`
+  - [ ] SubTask 11.4: 集成测试 `TestWriterV4_AES256_WithMAC_NoCompression`
+  - [ ] SubTask 11.5: 集成测试 `TestWriterV4_MixedSegments_EncryptedAndPlain`
 
-- [ ] Task 13: segment_reader 集成 MAC 校验前置
-  - [ ] SubTask 13.1: 在 `internal/v2/reader/segment_reader.go` 改写解密流程：
+- [ ] Task 12: segment_reader 集成 MAC 校验前置
+  - [ ] SubTask 12.1: 在 `internal/v2/reader/segment_reader.go` 改写解密流程：
     - 接受 `macKey` 参数
     - **强制先验 MAC**，验失败立即 `ErrMACMismatch`
-  - [ ] SubTask 13.2: 处理 `ModeFlags.Encrypted=0` 的明文 Segment（不验 MAC）
-  - [ ] SubTask 13.3: 处理 `ModeFlags.Compression=zstd` 的解压路径
-  - [ ] SubTask 13.4: 集成测试 `TestReaderV4_DetectTamperedMAC_ReturnsErrMACMismatch`
-  - [ ] SubTask 13.5: 集成测试 `TestReaderV4_DecompressZstd_OnTheFly`
+  - [ ] SubTask 12.2: 处理 `ModeFlags.Encrypted=0` 的明文 Segment（不验 MAC）
+  - [ ] SubTask 12.3: 处理 `ModeFlags.Compression=zstd` 的解压路径
+  - [ ] SubTask 12.4: 集成测试 `TestReaderV4_DetectTamperedMAC_ReturnsErrMACMismatch`
+  - [ ] SubTask 12.5: 集成测试 `TestReaderV4_DecompressZstd_OnTheFly`
 
-- [ ] Task 14: 配置文件 schema 更新
-  - [ ] SubTask 14.1: 在 `config.schema.json` 增加 `v4_cipher_mode` (integer enum [0,1], default 0)
-  - [ ] SubTask 14.2: 增加 `v4_compression_mode` (string enum ["none", "zstd"], default "none")
-  - [ ] SubTask 14.3: 增加 `v4_enable_hmac` (bool, default true)
-  - [ ] SubTask 14.4: 增加 `v4_zstd_block_size` (integer, default 65536)
+- [ ] Task 13: 配置文件 schema 更新
+  - [ ] SubTask 13.1: 在 `config.schema.json` 增加 `v4_cipher_mode` (integer enum [0,1], default 0)
+  - [ ] SubTask 13.2: 增加 `v4_compression_mode` (string enum ["none", "zstd"], default "none")
+  - [ ] SubTask 13.3: 增加 `v4_enable_hmac` (bool, default true)
+  - [ ] SubTask 13.4: 增加 `v4_zstd_block_size` (integer, default 65536)
 
-- [ ] Task 15: 前端 UI 适配
-  - [ ] SubTask 15.1: 在 `app/encv-mobile/src/components/EncryptDialog.vue` 新增 "加密强度" 选择（128/256）
-  - [ ] SubTask 15.2: 新增 "压缩" 选择（无 / zstd）
-  - [ ] SubTask 15.3: 默认值：128 + 无压缩
-  - [ ] SubTask 15.4: 选 256 时显示提示 "更慢，强度更高"
-  - [ ] SubTask 15.5: 选 zstd 时显示提示 "纯文本/重复二进制可节省 30-70% 空间"
+- [ ] Task 14: 前端 UI 适配
+  - [ ] SubTask 14.1: 在 `app/encv-mobile/src/components/EncryptDialog.vue` 新增 "加密强度" 选择（128/256）
+  - [ ] SubTask 14.2: 新增 "压缩" 选择（无 / zstd）
+  - [ ] SubTask 14.3: 默认值：128 + 无压缩
+  - [ ] SubTask 14.4: 选 256 时显示提示 "更慢，强度更高"
+  - [ ] SubTask 14.5: 选 zstd 时显示提示 "纯文本/重复二进制可节省 30-70% 空间"
 
 ## Task Dependencies
 
@@ -152,12 +147,12 @@
 - [Task 6] depends on [Task 4] (SegmentHeader 扩展需 MAC 设计落地)
 - [Task 8] depends on [Task 7] (压缩模块需 zstd 依赖)
 - [Task 9] depends on [Task 6, 8] (Segment 集成需 Header 扩展 + 压缩模块)
-- [Task 12] depends on [Task 1, 4, 6, 9] (writer 集成全部前置)
-- [Task 13] depends on [Task 12] (reader 镜像 writer)
-- [Task 15] depends on [Task 14] (前端需 schema 落地)
+- [Task 11] depends on [Task 1, 4, 6, 9] (writer 集成全部前置)
+- [Task 12] depends on [Task 11] (reader 镜像 writer)
+- [Task 14] depends on [Task 13] (前端需 schema 落地)
 
 ## Parallelization
 
 - Task 1, 3, 7 可并行启动（独立模块）
-- Task 11（detector 边界测试）可与 Task 2/5 并行（独立子系统）
-- Task 15（前端 UI）可与 Task 12/13 并行（独立代码库）
+- Task 10（detector 边界测试）可与 Task 2/5 并行（独立子系统）
+- Task 14（前端 UI）可与 Task 11/12 并行（独立代码库）

@@ -2,20 +2,21 @@
 
 ## Why
 
-在 v4 容器基础架构（`encv-v4-container-architecture`）之上，存在四个独立但相互关联的能力缺口：
+在 v4 容器基础架构（`encv-v4-container-architecture`）之上，存在三个独立但相互关联的能力缺口：
 
-1. **加密算法单一**：v4 默认强制 AES-256-CTR（32 字节密钥），对绝大多数单机文件加密场景来说强度过剩且 2 倍于 128 位的吞吐开销。WinZip/RAR/7-Zip 等行业惯例都将 AES-128-CTR 列为默认，AES-256 仅作为可选加强档。
-2. **文件后缀被剥除后容器失明**：v4 当前依赖 `.encv` 文件后缀做容器识别。当用户改名/上传丢失后缀/通过 API 下载流式分片时，detector 无法从纯字节流识别这是 ENCV 容器，必须由"魔数+Header 解析"承担 100% 识别职责。
-3. **缺少 zstd 压缩支持**：v4 容器内 Segment 数据是密文，密文通常不可压缩。当原始文件高度可压缩时（如日志/纯文本文档/重复二进制），密文前的预压缩能节省 30-70% 空间。`zstd-seekable-format-go` 提供 seekable zstd frame 索引，正好契合 v4 Segment 模型。
-4. **缺少 HMAC 完整性保护**：v4 现有 `DataCRC32` 是**未加密 CRC**，攻击者篡改密文后重算 CRC 可绕过校验。WinZip 早在 2009 年就在 AES 加密中引入 HMAC-SHA1-80（Encrypt-then-MAC 顺序），专门防御 CTR 模式比特翻转攻击。v4 必须补齐这一安全缺口。
+1. **加密算法单一**：v4 当前默认强制 AES-256-CTR（32 字节密钥），对绝大多数单机文件加密场景来说强度过剩且 2 倍于 128 位的吞吐开销。WinZip/RAR/7-Zip 等行业惯例都将 AES-128-CTR 列为默认，AES-256 仅作为可选加强档。
+2. **缺少 zstd 压缩支持**：v4 容器内 Segment 数据是密文，密文通常不可压缩。当原始文件高度可压缩时（如日志/纯文本文档/重复二进制），**加密前预压缩**能节省 30-70% 空间。`zstd-seekable-format-go` 提供 seekable zstd frame 索引，正好契合 v4 Segment 模型。
+3. **缺少 HMAC 完整性保护**：v4 现有 `DataCRC32` 是**未加密 CRC**，攻击者篡改密文后重算 CRC 可绕过校验。WinZip 早在 2009 年就在 AES 加密中引入 HMAC-SHA1-80（Encrypt-then-MAC 顺序），专门防御 CTR 模式比特翻转攻击。v4 必须补齐这一安全缺口。
+
+**附带事项（澄清）**：
+
+- 用户曾提到"加密容器被去掉后缀名边界测试"。经核查，`internal/v2/container/detector/detector.go:13-42` 的 `IsEncvContainerFromBytes` 已基于魔数 `ENVC` 识别，**不依赖 `.encv` 后缀**（`.encv` 仅是文件命名约定，不参与检测）。但当前**缺少系统的边界测试套件**——没有覆盖"恰好 4 字节魔数"、"Header 差 1 字节"、"非 ENCV 魔数"、"0 字节空文件"、"0 KB、2047 字节"等边界场景。spec 的"边界测试"任务是为现有能力补齐测试，不引入新依赖。
 
 ## What Changes
 
-- **BREAKING（可选）**：v4 Header 增加 `CipherMode` 字段（0=AES-128-CTR, 1=AES-256-CTR），旧 v4 容器按 0 解析（向后兼容）
+- **BREAKING（可选，向后兼容）**：v4 Header 增加 `CipherMode` 字段（0=AES-128-CTR, 1=AES-256-CTR），旧 v4 容器按 0 解析
 - v4 默认 `CipherMode = 0`（AES-128-CTR），通过配置项 `v4_cipher_mode` 可切到 1（AES-256-CTR）
 - v4 KDF 支持变长密钥派生（PBKDF2-SHA256 输出 16 或 32 字节）
-- 新增 `container_detect.go`：纯字节流检测容器类型，不再依赖 `.encv` 后缀
-- 新增 `TestDetect_StrippedSuffix_Boundary` 边界测试套件
 - v4 容器引入 `CompressionMode`（none / zstd），用户级可配，默认 none
 - 集成 `github.com/saracen/go-zstdseekable`（zstd-seekable-format-go 的 Go 绑定）
 - Segment 内部布局从 `[Header][Nonce][EncryptedData]` 升级为 `[Header][Nonce][EncryptedData][HMAC-SHA1-80(10B)]`
@@ -23,6 +24,7 @@
 - 解密时强制 MAC 校验：**先验 MAC → 验失败立即 `ErrMACMismatch` → 验通过才解 CTR**
 - v4 Segment Header 增加 `ModeFlags` 位字段，支持每 Segment 独立声明：是否压缩 / 是否加密 / 压缩算法（仿 WinZip "mixed" 模式）
 - 配置文件 schema 增加 `v4_cipher_mode` 和 `v4_compression_mode` 两个配置项
+- 新增 detector 边界测试套件（不修改 detector 行为，仅补齐测试）
 
 ## Impact
 
@@ -33,11 +35,10 @@
   - `internal/v2/crypto/aes_v2.go` — 增加变长 KDF
   - `internal/v2/crypto/segment_crypto.go` — 改用 `KeySize` 参数化；集成 MAC
   - `internal/v2/crypto/mac.go`（新增）— HMAC-SHA1-80 实现
-  - `internal/v2/crypto/compression/`（新增目录）— zstd 压缩/解压 + seekable 帧
+  - `internal/v2/crypto/compression/zstd.go`（新增）— zstd 压缩/解压 + seekable 帧
   - `internal/v2/types/segment_v4.go` — `ModeFlags` 字段
-  - `internal/v2/types/header_v4.go` — `CipherMode` 字段
-  - `internal/v2/container/detector/detector.go` — 纯字节流识别
-  - `internal/v2/container/detector/stripped_suffix_test.go`（新增）— 边界测试
+  - `internal/v2/types/header_v4.go` — `CipherMode` 字段、`MacSalt` 字段
+  - `internal/v2/container/detector/detector_test.go`（补充）— 边界测试
   - `internal/v2/writer/container_writer_v4.go` — 写入 MAC + 可选压缩
   - `internal/v2/reader/segment_reader.go` — MAC 校验前置
   - `internal/v2/physical/file_chunker.go` — 物理切分时处理 zstd frame
@@ -75,30 +76,32 @@
 - **THEN** 读取器根据 Header 的 `CipherMode` 字段自动选择密钥长度
 - **AND** 用户无需手动选择算法
 
-### Requirement: 加密容器去后缀字节流识别
+### Requirement: detector 边界测试套件
 
-系统 SHALL 支持在文件**没有任何扩展名**的情况下，仅通过魔数（"ENVC"）识别 v4 容器。
+`internal/v2/container/detector/` 包 SHALL 提供覆盖魔数识别边界场景的完整测试用例。**注意：detector 当前已基于魔数识别（`IsEncvContainerFromBytes`），不依赖 `.encv` 后缀**。本任务仅为现有能力补齐测试，不修改 detector 行为。
 
-#### Scenario: 完全去后缀识别
+#### Scenario: 完全去后缀识别（验证现有能力）
 - **WHEN** 一个 v4 容器文件被改名为 `mydocument`（无任何扩展名）
-- **THEN** `DetectContainerType` 仍能返回 `ContainerTypeUnknown/Video/Audio/...` 中的正确类型
-- **AND** 调用方收到 `IsENCVContainer = true` 的标识
+- **THEN** `IsEncvContainerFromBytes` 仍能识别为 ENCV 容器
+- **AND** 表明 detector 不依赖文件后缀
 
 #### Scenario: 魔数误判防护
 - **WHEN** 一个非 ENCV 文件（如普通 ZIP 头 `PK\x03\x04`）被传入 detector
-- **THEN** detector 返回 `IsENCVContainer = false`
+- **THEN** detector 返回 `IsEncvContainer = false`
 - **AND** 不抛异常，返回明确的 "not an ENCV container" 错误
 
 #### Scenario: 截断 Header 识别
-- **WHEN** 传入的文件长度 < Header 完整大小（2048 字节）但 ≥ 魔数长度（4 字节）
+- **WHEN** 传入的字节长度 < Header 完整大小（2048 字节）但 ≥ 魔数长度（6 字节，DetectHeaderVersion 要求）
 - **THEN** detector 返回 "header truncated" 错误
 - **AND** 不尝试后续字段解析
 
 #### Scenario: 边界值测试
-- **WHEN** 文件长度 = 4 字节（恰好 "ENVC"）
-- **THEN** detector 返回 v4 容器标识但 `IsSeekable/ContainerType` 标记为 `unknown`
-- **WHEN** 文件长度 = 2047 字节（差 1 字节完整 Header）
-- **THEN** detector 返回 "header truncated" 错误
+- **WHEN** 文件长度 = 6 字节（恰好能 DetectHeaderVersion）
+- **THEN** detector 返回 v4 容器标识但 `ContainerType`/`IsSeekable` 等 Header 派生字段为 `unknown`/零值
+- **WHEN** 文件长度 = 5 字节（差 1 字节 DetectHeaderVersion 最小要求）
+- **THEN** detector 返回 `IsEncvContainer = false`（不抛异常）
+- **WHEN** 文件长度 = 0 字节（空文件）
+- **THEN** detector 返回明确错误 "empty input"
 
 ### Requirement: zstd 压缩支持（用户可配）
 
@@ -205,16 +208,17 @@
 - **AND** `mac_salt` 存储在 v4 Header 偏移 36-52（复用 Reserved 区域）
 - **AND** 读取器根据 `mac_salt` 重新派生 mac_key
 
-### Requirement: v4 Header CipherMode 字段
+### Requirement: v4 Header CipherMode + MacSalt 字段
 
-v4 Header SHALL 在固定偏移位置嵌入 `CipherMode` 字段，标识加密算法。
+v4 Header SHALL 在固定偏移位置嵌入 `CipherMode` 和 `MacSalt` 字段，标识加密算法和 MAC 密钥派生 salt。
 
 #### Scenario: Header 布局更新
 - **WHEN** 写入 v4 Header
 - **THEN** 在偏移 4 字节（Version 字段之后）保留 2 字节的 `CipherMode` 字段
 - **AND** `CipherMode = 0` 表示 AES-128-CTR，`CipherMode = 1` 表示 AES-256-CTR
+- **AND** 在偏移 36-52 字节存储 `MacSalt [16]byte`（复用 Reserved 区域）
 - **AND** 与 `plugin-version-selection-and-password-detection` 的 `PasswordHint`（偏移 20-36）共存不冲突
-- **AND** 旧 v4 容器的 CipherMode 默认按 0 解析
+- **AND** 旧 v4 容器的 CipherMode 默认按 0 解析，MacSalt 缺失时回退到与 encrypt salt 共享
 
 ### Requirement: SegmentHeader 扩展字段
 
@@ -225,7 +229,7 @@ Offset  Size  Field               Description
 0       4     SegmentID           Segment 唯一标识
 4       8     DataLength          密文长度（不含 MAC）
 12      2     NonceSize           16
-14      2     ModeFlags           位字段（bit0=Encrypted, bit1-2=Compression）
+14      2     ModeFlags           位字段（bit0=Encrypted, bit1=Compression）
 16      2     MACSize             10（HMAC-SHA1-80 截断长度）
 18      4     DataCRC32           密文 CRC32（可选）
 22      2     CompressedBlockSize seekable zstd 块大小（0=无压缩）
@@ -264,17 +268,6 @@ v4 Segment 独立加密模型扩展为：**独立 nonce + 独立 mac_key + 可�
 - **THEN** `key = PBKDF2-SHA256(password, salt, 100000, 32 bytes)`
 - **AND** 对应 `CipherMode = 1`（AES-256-CTR）
 
-### Requirement: 容器检测 API
-
-`DetectContainerType` SHALL 接受 `io.Reader` 而非仅文件路径。
-
-#### Scenario: 流式检测
-- **WHEN** 传入 `io.Reader`（如 HTTP response body）
-- **THEN** 读取前 4 字节判断魔数
-- **AND** 读取前 34 字节判断 Header 版本
-- **AND** 返回 `(IsENCVContainer bool, Version uint16, ContainerType uint16, Err error)`
-- **AND** 旧文件路径 API 保持兼容（包装为 `os.Open` + 流式检测）
-
 ### Requirement: 配置 schema 扩展
 
 `config.schema.json` SHALL 增加：
@@ -289,10 +282,6 @@ v4 Segment 独立加密模型扩展为：**独立 nonce + 独立 mac_key + 可�
 ### Requirement: v3 默认 AES-256-CTR 强制
 **Reason**: v4 改用 AES-128-CTR 默认 + AES-256 可选，与 WinZip/RAR/7-Zip 行业惯例对齐
 **Migration**: v3 仍按 AES-256-CTR 处理（旧版本兼容），所有 v4 新容器按新 spec 创建
-
-### Requirement: 仅依赖 `.encv` 后缀做容器识别
-**Reason**: 文件改名/上传丢失后缀的场景下无法识别
-**Migration**: detector 同时支持文件路径 API 和 `io.Reader` API，纯魔数识别成为默认路径
 
 ### Requirement: DataCRC32 单独作为完整性保证
 **Reason**: 未加密 CRC 可被攻击者重算绕过，对 CTR 模式的比特翻转攻击无效
