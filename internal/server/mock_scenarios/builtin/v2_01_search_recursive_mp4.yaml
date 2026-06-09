@@ -1,21 +1,110 @@
 id: search_recursive_mp4
-description: "搜索大文件 mp4（递归 + glob）"
+description: "搜索大文件 mp4（递归 + glob）— 拟人化 ≥30s：6 段思考 + 5 段过渡 + 1 工具 + 12 段处理 + 8 段总结"
 keywords:
   - "search_recursive_mp4"
+  - "大文件"
+  - "大视频"
+  - "找mp4"
+  - "大mp4"
 rounds: 1
 
+presets:
+  - id: encrypt_largest
+    label: "🔒 加密最大的"
+    user_text: "加密最大的视频"
+    tooltip: "跳到 encrypt_video 剧本"
+  - id: show_details
+    label: "📊 看详细元数据"
+    user_text: "查看元数据"
+    tooltip: "跳到 v2_04 元数据编辑"
+  - id: find_more
+    label: "🔍 找更复杂的"
+    user_text: "再找找其他大文件"
+    tooltip: "触发 search_content_regex 剧本"
+
 steps:
-  - id: intro
+  # ════════════════════════════════════════════════════════
+  # 阶段 1：思考链（6 段 reasoning × 700ms ≈ 4200ms）
+  # ════════════════════════════════════════════════════════
+  - id: think_1
     round_idx: 0
-    delay_ms: 10
+    delay_ms: 600
+    events:
+      - type: reasoning_delta
+        data: { text: "用户要求：搜索 100MB 以上的 MP4 文件。" }
+  - id: think_2
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: reasoning_delta
+        data: { text: "需要用 search_files 工具，配置复合查询条件。" }
+  - id: think_3
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: reasoning_delta
+        data: { text: "name_glob 匹配 *.mp4，size_gt 设为 102400 KB（即 100MB）。" }
+  - id: think_4
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: reasoning_delta
+        data: { text: "递归扫描所有挂载点，max_results 设 20 防爆。" }
+  - id: think_5
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: reasoning_delta
+        data: { text: "auto_run=true，用户没要求确认；execute_real=true，结果从真实文件系统拿。" }
+  - id: think_6
+    round_idx: 0
+    delay_ms: 800
+    events:
+      - type: reasoning_delta
+        data: { text: "准备好调用 search_files。" }
+
+  # ════════════════════════════════════════════════════════
+  # 阶段 2：过渡文本（5 段 × 500-600ms ≈ 2900ms）
+  # ════════════════════════════════════════════════════════
+  - id: intro_1
+    round_idx: 0
+    delay_ms: 400
     events:
       - type: stream_start
         data: { scenario: search_recursive_mp4 }
       - type: text_delta
-        data: { text: "正在搜索符合条件的 MP4 文件..." }
-  - id: search
+        data: { text: "好的，我来搜索。" }
+  - id: intro_2
     round_idx: 0
-    delay_ms: 30
+    delay_ms: 500
+    events:
+      - type: text_delta
+        data: { text: "目标：100MB 以上的 MP4 文件，递归所有挂载点。" }
+  - id: intro_3
+    round_idx: 0
+    delay_ms: 600
+    events:
+      - type: text_delta
+        data: { text: "用复合查询：glob 模式 + size 阈值。" }
+  - id: intro_4
+    round_idx: 0
+    delay_ms: 600
+    events:
+      - type: text_delta
+        data: { text: "挂载点比较多，可能要扫几秒钟。" }
+  - id: intro_5
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: text_delta
+        data: { text: "开始调用 search_files..." }
+
+  # ════════════════════════════════════════════════════════
+  # 阶段 3：工具调用（3000ms）
+  # ════════════════════════════════════════════════════════
+  - id: tool_call
+    round_idx: 0
+    delay_ms: 3000
     events:
       - type: tool_call
         data:
@@ -27,18 +116,168 @@ steps:
                 - type: name_glob
                   value: "*.mp4"
                 - type: size_gt
-                  value: 10240
+                  value: 102400
             recursive: true
             max_results: 20
           auto_run: true
           needsConfirm: false
           kind: fileSearch
           execute_real: true
-  - id: done
+
+  # ════════════════════════════════════════════════════════
+  # 阶段 4：处理结果（12 段 × 600-800ms ≈ 8400ms）
+  # ════════════════════════════════════════════════════════
+  - id: process_1
     round_idx: 0
-    delay_ms: 50
+    delay_ms: 600
     events:
       - type: text_delta
-        data: { text: "搜索完成。结果见上方工具返回。" }
+        data: { text: "搜索完成。" }
+  - id: process_2
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: text_delta
+        data: { text: "让我仔细看结果..." }
+  - id: process_3
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: text_delta
+        data: { text: "扫描了所有挂载点，递归深度最深到第 4 层。" }
+  - id: process_4
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: text_delta
+        data: { text: "命中匹配的文件分布如下：" }
+  - id: process_5
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: text_delta
+        data: { text: "Movie 子目录命中最多，主要是 4K 高码率电影。" }
+  - id: process_6
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: text_delta
+        data: { text: "Drama 子目录也有几个，应该是 1080p 电视剧。" }
+  - id: process_7
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: text_delta
+        data: { text: "Documentary 子目录里也命中了一些。" }
+  - id: process_8
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: text_delta
+        data: { text: "其他子目录没有匹配，可能都是小于 100MB 的短视频。" }
+  - id: process_9
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: text_delta
+        data: { text: "所有文件路径和大小，详见上方工具返回结果。" }
+  - id: process_10
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: text_delta
+        data: { text: "总大小加起来相当可观，主要是 4K 电影占大头。" }
+  - id: process_11
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: text_delta
+        data: { text: "我整理一下推荐的下一步操作..." }
+  - id: process_12
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: text_delta
+        data: { text: "根据命中情况，建议如下：" }
+
+  # ════════════════════════════════════════════════════════
+  # 阶段 5：总结建议（8 段 × 500-700ms ≈ 4900ms）
+  # ════════════════════════════════════════════════════════
+  - id: summary_1
+    round_idx: 0
+    delay_ms: 500
+    events:
+      - type: text_delta
+        data: { text: "## 搜索结果总结\n\n" }
+  - id: summary_2
+    round_idx: 0
+    delay_ms: 600
+    events:
+      - type: text_delta
+        data: { text: "命中多个 MP4 文件，总大小显著（详见工具结果）。\n\n" }
+  - id: summary_3
+    round_idx: 0
+    delay_ms: 600
+    events:
+      - type: text_delta
+        data: { text: "**建议**（点击 chip 直接执行）：\n\n" }
+  - id: summary_4
+    round_idx: 0
+    delay_ms: 600
+    events:
+      - type: text_delta
+        data: { text: "1. 加密最大的文件，节省备份空间\n" }
+  - id: summary_5
+    round_idx: 0
+    delay_ms: 600
+    events:
+      - type: text_delta
+        data: { text: "2. 查看元数据，准备批量整理\n" }
+  - id: summary_6
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: text_delta
+        data: { text: "3. 用更复杂条件继续搜索（如 size+mtime+ext）\n" }
+  - id: summary_7
+    round_idx: 0
+    delay_ms: 600
+    events:
+      - type: text_delta
+        data: { text: "4. 直接处理最大的几个（按需）\n" }
+  - id: summary_8
+    round_idx: 0
+    delay_ms: 700
+    events:
+      - type: text_delta
+        data: { text: "选择你想做的，剩下交给我。" }
+
+  # ════════════════════════════════════════════════════════
+  # 阶段 6：chip 推送 + 收尾（400ms）
+  # ════════════════════════════════════════════════════════
+  - id: push_chips
+    round_idx: 0
+    delay_ms: 200
+    events:
+      - type: mock_presets
+        data:
+          scenario: search_recursive_mp4
+          phase: after_search
+          presets:
+            - id: encrypt_largest
+              label: "🔒 加密最大的"
+              user_text: "加密最大的视频"
+            - id: show_details
+              label: "📊 查看元数据"
+              user_text: "查看元数据"
+            - id: find_more
+              label: "🔍 找更复杂的"
+              user_text: "再找找其他大文件"
+  - id: end
+    round_idx: 0
+    delay_ms: 200
+    events:
       - type: stream_end
-        data: { finishReason: stop }
+        data:
+          finishReason: stop
+          usage: { totalTokens: 1280 }
