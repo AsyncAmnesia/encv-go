@@ -12,9 +12,9 @@
 | 版本检测 | 读前 6 字节 → `DetectHeaderVersion` → v2/v3/v4 | `internal/v2/container/handle/handle.go:55-67` |
 | **检测与扩展名关系** | **完全无关**，仅基于魔数 | `IsEncvContainerFromBytes` |
 | 插件输出扩展名 | video=`.sccgv`、audio=`.sccga`、image=`.sccgi`、pdf=`.sccgpdf`、text=`.sccgt`、wps=`.sccgwps`、alistencrypt=`.bin` | `internal/v2/plugins/*/plugin.go: GetContainerExtension()` |
-| v2 legacy 保留扩展名 | `.sccgv`、`.encv` 等 v2 历史扩展名被 `errors.go:9` 列为保留字，**禁止用户/插件使用**（避免与 v2 legacy 冲突） | `internal/v2/plugins/alistencrypt/errors.go:9` |
+| v2 legacy 保留扩展名 | `.sccgv` 等 v2 历史扩展名被 `errors.go:9` 列为保留字，**禁止用户/插件使用**（避免与 v2 legacy 冲突） | `internal/v2/plugins/alistencrypt/errors.go:9` |
 
-**澄清**：本项目从来**不存在** `.encv` 容器输出扩展名。"去掉后缀名边界测试"实际指"无扩展名/任意扩展名时，detector 仍能基于魔数识别容器"——即 detector 必须对 `mydocument`（无扩展名）和 `mydocument.zip`（任意扩展名）返回相同结果。
+**澄清**：本项目 detector 100% 基于魔数 `ENCV` 识别容器，与文件扩展名（包括 `.sccgv`、`.sccga`、`.bin`、`.zip`、空扩展名等）完全解耦。"去掉后缀名边界测试"实际指"无扩展名/任意扩展名时，detector 必须返回相同结果"。
 
 ### 三项能力缺口
 

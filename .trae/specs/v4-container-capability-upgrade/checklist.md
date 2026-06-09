@@ -60,7 +60,7 @@
 ## Phase 5: 去后缀字节流识别
 
 - [ ] `DetectContainerFromReader(io.Reader) (DetectResult, error)` 函数实现
-- [ ] 前 4 字节魔数检查 "ENVC"
+- [ ] 前 4 字节魔数检查 `ENCV`（`[4]byte{'E','N','C','V'}`）
 - [ ] 完整 2048 字节 Header 解析
 - [ ] 返回字段含 `IsENCVContainer / Version / ContainerType / IsSeekable / CipherMode`
 - [ ] 旧 `DetectContainerType(path string)` API 保留并复用新函数

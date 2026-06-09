@@ -97,11 +97,11 @@
 
 - [ ] Task 10: 在 `internal/v2/container/detector/detector_test.go` 补充边界测试
   - [ ] SubTask 10.1: `TestDetect_StrippedSuffix_Plain`（`mydocument` 无扩展名，验证 `IsEncvContainerFromBytes` 仍能识别）
-  - [ ] SubTask 10.2: `TestDetect_StrippedSuffix_Dotfile`（`.encv` 隐藏文件）
+  - [ ] SubTask 10.2: `TestDetect_StrippedSuffix_Dotfile`（`.sccgv` 隐藏文件——隐藏文件也算 dotfile）
   - [ ] SubTask 10.3: `TestDetect_StrippedSuffix_WrongExtension`（`mydocument.zip` 应识别为非 ENCV）
-  - [ ] SubTask 10.4: `TestDetect_StrippedSuffix_Boundary_Magic`（恰好 6 字节 "ENVC"+2 字节 version）
+  - [ ] SubTask 10.4: `TestDetect_StrippedSuffix_Boundary_Magic`（恰好 6 字节 "ENCV"+2 字节 version）
   - [ ] SubTask 10.5: `TestDetect_StrippedSuffix_Boundary_HeaderMinus1`（2047 字节，差 1 字节完整 Header）
-  - [ ] SubTask 10.6: `TestDetect_StrippedSuffix_TruncatedAt5Bytes`（5 字节，"ENVC" + 1 字节，< 6 字节最小要求）
+  - [ ] SubTask 10.6: `TestDetect_StrippedSuffix_TruncatedAt5Bytes`（5 字节，"ENCV" + 1 字节，< 6 字节最小要求）
   - [ ] SubTask 10.7: `TestDetect_StrippedSuffix_NonENCVMagic`（"PK\x03\x04" ZIP 头应返回 `IsEncvContainer=false`）
   - [ ] SubTask 10.8: `TestDetect_StrippedSuffix_EmptyFile`（0 字节返回明确错误）
   - [ ] SubTask 10.9: `TestDetect_StrippedSuffix_ValidV4_HeaderRead`（完整 v4 容器无后缀可读）
