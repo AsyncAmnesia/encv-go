@@ -29,23 +29,9 @@
         </div>
       </div>
 
-      <!-- 顶部文件浏览入口：点击后弹出 FilePickerModal，回写 sourcePath。
-           实际表单字段（源/目标）由 EncryptBody/DecryptBody 渲染；这里只暴露一个
-           显式的"浏览"按钮，避免 P0-2 回归（NewTaskModal 失去独立浏览入口）。 -->
-      <div class="browse-row">
-        <ion-button
-          fill="outline"
-          size="default"
-          class="browse-btn"
-          @click="handleBrowse"
-        >
-          <ion-icon :icon="folderOpen" slot="start"></ion-icon>
-          {{ t('tasks.browse') }}
-        </ion-button>
-        <span class="browse-hint">{{ src || t('tasks.browse') }}</span>
-      </div>
-
-      <!-- 插件信息区域 -->
+      <!-- 模式分支: EncryptBody / DecryptBody
+           源/目标文件输入（含浏览按钮）由 EncryptBody/DecryptBody 内部 InputWithHistory 渲染。
+           原顶部"浏览"行已删除，避免出现两个源文件输入导致重复。 -->
       <div v-if="isPredicting" class="plugin-section predicting">
         <ion-spinner name="crescent" class="predict-spinner"></ion-spinner>
         <span class="predict-text">{{ t('tasks.phaseAnalyzing') }}</span>
@@ -133,11 +119,10 @@ import {
   IonSpinner,
   modalController,
 } from '@ionic/vue'
-import { lockClosed, checkmarkCircle, folderOpen } from 'ionicons/icons'
+import { lockClosed, checkmarkCircle } from 'ionicons/icons'
 import { useI18n } from '@/composables/useI18n'
 import EncryptBody from '@/components/EncryptBody.vue'
 import DecryptBody from '@/components/DecryptBody.vue'
-import FilePickerModal from '@/components/FilePickerModal.vue'
 import type { PluginCandidate, ContainerVersionInfo, TaskField, TaskOptions } from '@/api/encv'
 import type { NewTaskState } from '@/components/NewTaskState'
 
@@ -240,20 +225,6 @@ function getMatchTypeLabel(matchType: string): string {
 async function handleClose() {
   await modalController.dismiss()
 }
-
-async function handleBrowse() {
-  // 顶部"浏览"按钮：弹出文件选择器，用户选中后回写 sourcePath。
-  // 实际任务创建流程仍由父组件 useNewTaskModal.onSubmit 接管。
-  const modal = await modalController.create({
-    component: FilePickerModal,
-    componentProps: { mode: 'file' as const },
-  })
-  await modal.present()
-  const { data } = await modal.onDidDismiss()
-  if (typeof data === 'string' && data) {
-    props.onUpdateSourcePath?.(data)
-  }
-}
 </script>
 
 <style scoped>
@@ -269,29 +240,6 @@ async function handleBrowse() {
 .field-group {
   position: relative;
   margin-bottom: 8px;
-}
-
-/* 顶部文件浏览入口 */
-.browse-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 4px 0 12px;
-}
-
-.browse-btn {
-  --border-radius: 8px;
-  flex-shrink: 0;
-}
-
-.browse-hint {
-  font-size: 12px;
-  color: var(--ion-color-medium);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-  flex: 1;
 }
 
 /* 插件区域 */

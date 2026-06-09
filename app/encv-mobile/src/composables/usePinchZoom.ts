@@ -1,18 +1,25 @@
 /**
  * usePinchZoom.ts — AI 会话区域双指缩放 composable
  *
- * 用途：接管安卓 webview 默认的"双指缩放"手势，让业务控制缩放比例。
- * 关键认知：安卓 webview 默认启用 `user-scalable=yes` 时会拦截双指捏合
- * 并整体缩放页面 → 破坏 UI 布局。AgentChat 区域显式接管手势：
- *   - 双指捏合 → 计算 distance ratio → 更新 zoomScale → 应用 transform
- *   - 双击 → 重置 zoomScale = initialScale
- *   - 程序化 zoomIn / zoomOut / resetZoom（右上角按钮）
+ * 用途：接管安卓 webview 的"双指缩放"手势，让业务控制缩放比例。
+ *
+ * 关键认知：viewport meta 已默认 user-scalable=no + maximum-scale=1.0
+ *   - WebView 不再拦截双指捏合做整页缩放（避免破坏 UI 布局）
+ *   - AgentChat 区域显式接管手势：双指距离变化 → 更新 zoomScale → 应用 CSS zoom
+ *
+ * 为什么用 CSS `zoom` 而不是 `transform: scale()`：
+ *   - `transform: scale()` 是视觉变换：元素看起来变大但 layout box 不变
+ *     → 父容器 overflow 区域不扩展 → 大内容"被裁切"，无法滚动浏览
+ *     → 元素的 hit-test 区域仍是原大小（点击/滚动行为错位）
+ *   - `zoom` 是真布局缩放：元素 layout box 真的变大
+ *     → 大内容**溢出**父容器，可被父容器滚动浏览
+ *     → hit-test 区域随缩放调整
+ *     → 这是用户期望的"直接缩放比例溢出屏幕"行为
  *
  * 设计原则：
  * - bind / unbind 用 addEventListener / removeEventListener（不用 onMounted 内部绑定）
  *   调用方在 onMounted 调 bind(targetRef.value)，onUnmounted 调 unbind()
- * - transform 只应用到调用方传入的 target 元素（不污染父级 / 兄弟节点）
- * - 缩放范围严格 clamp 到 [minScale, maxScale]，超出范围不抛错
+ * - 缩放严格 clamp 到 [minScale, maxScale]，超出范围不抛错
  *
  * SPEC: /workspace/.trae/specs/mobile-agent-polish-2026q2/spec.md "usePinchZoom composable"
  */
@@ -100,8 +107,9 @@ export function usePinchZoom(options: UsePinchZoomOptions = {}): UsePinchZoomRet
 
   function applyZoom(): void {
     if (!target) return
-    target.style.transform = `scale(${zoomScale.value})`
-    target.style.transformOrigin = 'top left'
+    // CSS zoom：真布局缩放，元素 layout box 变大 → 大内容溢出父容器 → 父容器可滚动浏览
+    // 浏览器支持：Chrome / Edge / Safari / Firefox（Firefox 126+ 已默认启用）
+    target.style.zoom = String(zoomScale.value)
   }
 
   function onTouchStart(e: TouchEvent): void {

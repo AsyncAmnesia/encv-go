@@ -57,8 +57,10 @@
       />
     </div>
 
-    <!-- 加密强度选择（AES-128 / AES-256） -->
-    <div class="form-section">
+    <!-- 加密强度选择（AES-128 / AES-256）—— 仅 v4 容器支持
+         v2/v3 容器的 Header 没有 CipherMode 字段（v4 才有，offset 2040-2042），
+         故 cipher mode 控件只在 version === 4 时显示。 -->
+    <div v-if="isV4Container" class="form-section">
       <div class="section-label">{{ t('tasks.cipherMode') }}</div>
       <ion-radio-group
         :value="state.cipherMode"
@@ -66,7 +68,7 @@
         class="cipher-radio-group"
       >
         <ion-item lines="none" class="extra-field-item cipher-item">
-          <ion-radio :value="0" slot="start" :disabled="state.cipherMode === 0"></ion-radio>
+          <ion-radio :value="0" slot="start" />
           <ion-label class="ion-text-wrap">
             <div class="cipher-title">
               <span>{{ t('tasks.cipherMode128') }}</span>
@@ -76,7 +78,7 @@
           </ion-label>
         </ion-item>
         <ion-item lines="none" class="extra-field-item cipher-item">
-          <ion-radio :value="1" slot="start" :disabled="state.cipherMode === 1"></ion-radio>
+          <ion-radio :value="1" slot="start" />
           <ion-label class="ion-text-wrap">
             <div class="cipher-title">
               <span>{{ t('tasks.cipherMode256') }}</span>
@@ -87,8 +89,9 @@
       </ion-radio-group>
     </div>
 
-    <!-- 压缩选择（无 / zstd） -->
-    <div class="form-section">
+    <!-- 压缩选择（无 / zstd）—— 仅 v4 容器支持
+         v2/v3 容器没有 zstd seekable 支持，compression 控件只在 version === 4 时显示。 -->
+    <div v-if="isV4Container" class="form-section">
       <div class="section-label">{{ t('tasks.compressionMode') }}</div>
       <ion-radio-group
         :value="state.compressionMode"
@@ -96,7 +99,7 @@
         class="cipher-radio-group"
       >
         <ion-item lines="none" class="extra-field-item cipher-item">
-          <ion-radio value="none" slot="start" :disabled="state.compressionMode === 'none'"></ion-radio>
+          <ion-radio value="none" slot="start" />
           <ion-label class="ion-text-wrap">
             <div class="cipher-title">
               <span>{{ t('tasks.compressionNone') }}</span>
@@ -105,7 +108,7 @@
           </ion-label>
         </ion-item>
         <ion-item lines="none" class="extra-field-item cipher-item">
-          <ion-radio value="zstd" slot="start" :disabled="state.compressionMode === 'zstd'"></ion-radio>
+          <ion-radio value="zstd" slot="start" />
           <ion-label class="ion-text-wrap">
             <div class="cipher-title">
               <span>{{ t('tasks.compressionZstd') }}</span>
@@ -219,6 +222,10 @@ const { t } = useI18n()
 const versionOpts = computed<ContainerVersionInfo[]>(() =>
   Array.isArray(props.state.versionOptions) ? props.state.versionOptions : []
 )
+
+// v4 容器：Header 含 CipherMode 字段（offset 2040-2042），且支持 zstd seekable 压缩
+// v2/v3 容器：不显示 cipher mode / compression 控件（这两个特性 v4 独有）
+const isV4Container = computed(() => Number(props.state.version) === 4)
 
 const encryptExtraFields = computed<TaskField[]>(() => {
   const arr = Array.isArray(props.state.filteredExtraFields) ? props.state.filteredExtraFields : []

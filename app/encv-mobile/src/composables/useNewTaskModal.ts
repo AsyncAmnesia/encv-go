@@ -159,8 +159,10 @@ export function useNewTaskModal() {
               pluginName,
               extraPayload,
               shouldSendPassword ? (state.secondaryPassword || undefined) : undefined,
-              state.taskType === 'encrypt' ? state.cipherMode : undefined,
-              state.taskType === 'encrypt' ? state.compressionMode : undefined,
+              // v4 独有：cipher mode / compression 字段不在 v2/v3 Header 中存在
+              // 后端 v2/v3 容器会忽略这些字段，但发送额外字段会污染 v2/v3 的 .sccg* 容器元数据
+              state.taskType === 'encrypt' && Number(state.version) === 4 ? state.cipherMode : undefined,
+              state.taskType === 'encrypt' && Number(state.version) === 4 ? state.compressionMode : undefined,
             )
             await modal.dismiss()
             showToast({ message: t('tasks.taskCreated'), duration: 1500, color: 'success' })

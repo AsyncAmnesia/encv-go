@@ -6,7 +6,7 @@
  * 2. zoomIn / zoomOut 步进
  * 3. clamp 到 [minScale, maxScale]
  * 4. resetZoom 回 initialScale
- * 5. applyZoom 写入 transform style
+ * 5. applyZoom 写入 CSS zoom style（真布局缩放，不是 transform: scale 视觉变换）
  * 6. bind / unbind 生命周期
  * 7. 双指距离变化 → zoomScale 更新
  * 8. 双击重置（300ms 窗口）
@@ -131,7 +131,7 @@ describe('usePinchZoom - resetZoom 重置', () => {
   })
 })
 
-describe('usePinchZoom - applyZoom 写 transform', () => {
+describe('usePinchZoom - applyZoom 写 CSS zoom', () => {
   let el: HTMLElement
 
   beforeEach(() => {
@@ -143,12 +143,11 @@ describe('usePinchZoom - applyZoom 写 transform', () => {
     document.body.removeChild(el)
   })
 
-  it('TestPinch_ApplyZoom_WritesTransform: applyZoom 把 scale 写到 style', () => {
+  it('TestPinch_ApplyZoom_WritesZoom: applyZoom 把 scale 写到 style.zoom', () => {
     const pz = usePinchZoom()
     pz.bind(el)
     pz.zoomIn() // 1.1
-    expect(el.style.transform).toBe('scale(1.1)')
-    expect(el.style.transformOrigin).toBe('top left')
+    expect(el.style.zoom).toBe('1.1')
   })
 
   it('TestPinch_ApplyZoom_NoOpWhenNotBound: 未 bind 时 applyZoom 是 no-op（不抛错）', () => {
@@ -160,12 +159,12 @@ describe('usePinchZoom - applyZoom 写 transform', () => {
     expect(pz.zoomScale.value).toBe(1.1)
   })
 
-  it('TestPinch_ApplyZoom_ResetWritesTransform: resetZoom 把 transform 重置', () => {
+  it('TestPinch_ApplyZoom_ResetWritesZoom: resetZoom 把 zoom 重置', () => {
     const pz = usePinchZoom({ initialScale: 1.0 })
     pz.bind(el)
     pz.zoomIn()
     pz.resetZoom()
-    expect(el.style.transform).toBe('scale(1)')
+    expect(el.style.zoom).toBe('1')
   })
 })
 

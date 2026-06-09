@@ -113,7 +113,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onErrorCaptured, onUnmounted } from 'vue'
+import { ref, onMounted, onErrorCaptured, onUnmounted } from 'vue'
 import { IonApp, IonRouterOutlet, IonIcon, IonButton } from '@ionic/vue'
 import { warningOutline, refreshOutline, bugOutline, alertCircleOutline, codeSlashOutline, copyOutline } from 'ionicons/icons'
 import { useTheme } from '@/composables/useTheme'
@@ -221,35 +221,15 @@ onErrorCaptured((err: any, _instance: unknown, info: string) => {
 })
 
 /**
- * Task 9: 错误状态页 viewport meta 动态切换
+ * Task 9: 错误状态页 viewport meta 锁死
  *
  * 关键认知：android webview 默认 user-scalable=yes 时
  *   - 双指捏合 → 整页缩放（破坏错误页布局）
  *   - 双击 → 放大（阻碍用户复制错误详情）
  *
- * 解决：根据 rootError 状态动态修改 viewport meta content
- *   - 错误页：user-scalable=no + maximum-scale=1.0
- *   - 正常页：user-scalable=yes（让 AgentChat 的 usePinchZoom 接管缩放）
- *
- * 实现：使用 querySelector 找 meta 标签（index.html 静态写入），
- *       onErrorCaptured 触发后 rootError 变 true → watch 触发 → 改 content
+ * 解决：index.html 已默认锁死 user-scalable=no + maximum-scale=1.0，
+ *       正常页 / 错误页都保持此设置（不再做动态切换——避免与默认行为冲突）。
  */
-function updateViewportMeta(isError: boolean): void {
-  if (typeof document === 'undefined') return
-  const meta = document.querySelector('meta[name="viewport"]')
-  if (!meta) return
-  meta.setAttribute(
-    'content',
-    isError
-      ? 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no'
-      : 'width=device-width, initial-scale=1.0, user-scalable=yes',
-  )
-}
-
-// 监听 rootError 变化 → 切换 viewport meta
-watch(rootError, (isError) => {
-  updateViewportMeta(isError)
-})
 
 /**
  * 复制到剪贴板：让用户在 mock 浏览器里一键粘贴错误摘要 / 堆栈给 agent
@@ -490,7 +470,7 @@ onUnmounted(() => {
      - 双击 → 放大（阻碍用户复制错误详情）
    修复：touch-action: manipulation 禁用双击缩放 + 允许 pan/tap
         user-select: text 允许选择错误堆栈文本（用户复制给 agent 看）
-   同步：viewport meta 也会切到 user-scalable=no（见 setup 中的 watch 逻辑） */
+   同步：viewport meta 在 index.html 已默认锁死 user-scalable=no + maximum-scale=1.0 */
 .error-state {
   touch-action: manipulation;
   user-select: text;
