@@ -1,307 +1,306 @@
-# Tasks (Borrow Nuclear-Boy 2026Q2 — 多阶段借鉴)
+# Tasks (Borrow Nuclear-Boy 2026Q2 — 多阶段借鉴 V2)
 
-> **总览**：12 个独立可交付 Stage，每个 Stage 都有「借鉴模式 + 实施步骤 + 单测 + 验证」闭环。
+> **v2 变更**：删除 v1 的 Stage 11+12，新增 9 个高价值借鉴点到 Stage 1-10。
+> **总览**：10 个独立可交付 Stage，每个 Stage 都有「借鉴模式 + 实施步骤 + 单测 + 验证」闭环。
 > **Stage 0 必须最先做**（无它，后续 Stage 借鉴什么模糊）。
 
 ---
 
 ## Stage 0: 仓库深读 + 借鉴点设计文档
 
-> **目标**：把 nuclear-boy 仓库 12 模块 + HANDOVER 全部吃透，输出一份 ≥300 行设计文档，作为后续 Stage 的"借鉴什么"参考。
+> **目标**：把 nuclear-boy 仓库 14 个核心 .kt + 2 份 HANDOVER + 1 份 android-bridge-report 吃透，输出 ≥400 行设计文档。
 
 - [ ] Task 0.1: 仓库已克隆到 `/tmp/nuclear-boy`（已完成）
-- [ ] Task 0.2: 读 HANDOVER.md + HANDOVER2.0.md 完整内容（含工具速查 / 提示词设计 / 关键 Bug 修复）
-- [ ] Task 0.3: 深读 agent-core 8 个核心 .kt 文件（AgentEngine / SystemPromptBuilder / ToolRegistry / AgentEvent / ToolCallAccumulator / DeepSeekApiClient / TokenTracker / AppModule）
-- [ ] Task 0.4: 深读 memory 3 个文件（MemoryDao / MemoryDatabase / MemoryStore）
-- [ ] Task 0.5: 深读 skills 4 个文件（SkillManager / SkillManifest / SkillMarketPlace + SkillManagerTest）
-- [ ] Task 0.6: 深读 python-bridge 3 个文件（ChaquopyPythonExecutor / PythonSandbox / PolicyEnforcer）
-- [ ] Task 0.7: 深读 tools-docgen 2 个文件（FileOperations / DocumentGenerator）
-- [ ] Task 0.8: 深读 ui-chat 4 个文件（ChatScreen / ChatViewModel / TokenHudBar / 状态机）
-- [ ] Task 0.9: 读 CLAUDE.md / INFO.md（哲学 + 设计原则）
-- [ ] Task 0.10: 输出 `/workspace/.trae/documents/nuclear-boy-borrowing-design.md`（≥300 行）
+- [ ] Task 0.2: 读 HANDOVER.md + HANDOVER2.0.md 完整内容（含 §十未来优化）
+- [ ] Task 0.3: 深读 agent-core 3 个文件（AgentEngine.kt 877 行 / SystemPromptBuilder.kt 194 行 / ToolRegistry.kt 478 行）
+- [ ] Task 0.4: 深读 api-deepseek 4 个文件（DeepSeekApiClient / ContextWindowManager / TokenTracker / ModelRouter）
+- [ ] Task 0.5: 深读 common 3 个文件（AppConstants / AppError / Models / Extensions）
+- [ ] Task 0.6: 深读 memory 3 个文件（MemoryDao / MemoryDatabase / MemoryStore）
+- [ ] Task 0.7: 深读 skills 3 个文件（SkillManager / SkillManifest / SkillMarketPlace）
+- [ ] Task 0.8: 深读 python-bridge 2 个文件（PythonSandbox / SandboxPolicy）
+- [ ] Task 0.9: 深读 tools-docgen 2 个文件（FileOperations / DocumentGenerator）
+- [ ] Task 0.10: 深读 ui-chat 4 个文件（ChatScreen / ChatViewModel / TokenHudBar / MessageBubble 800+ 行）
+- [ ] Task 0.11: 读 android-bridge-v1.0 报告（20 个系统服务 + 工具调用黄金法则）
+- [ ] Task 0.12: 输出 `/workspace/.trae/documents/nuclear-boy-borrowing-design.md`（≥400 行）
   - 每个借鉴点列出 3 列映射表（N-B 实现 / encv 现状 / 借鉴方法论）
-  - 8 大模块 + 工具调用链 + 错误处理哲学 + 性能调优
-- [ ] Task 0.11: 输出 `/workspace/.trae/specs/borrow-nuclear-boy-2026q2/borrowing-points.md`（借鉴点索引，供后续 Stage 引用）
+  - 14 个文件 + 9 个 v2 新增借鉴点（见 spec §v1→v2 变更清单）
+- [ ] Task 0.13: 输出 `/workspace/.trae/specs/borrow-nuclear-boy-2026q2/borrowing-points.md`（借鉴点索引，≥20 项）
 
 **Stage 0 验收**：
-- [ ] 文档 ≥300 行
-- [ ] 8 大模块代码深读全部完成
-- [ ] 借鉴点索引 ≥ 12 个（与 Stage 1-12 一一对应）
+- [ ] 文档 ≥400 行
+- [ ] 14 个 .kt 文件深读全部完成
+- [ ] 借鉴点索引 ≥20 个
 
 ---
 
-## Stage 1: System Prompt 工程化
+## Stage 1: System Prompt 工程化 + PROACTIVE 主动智能
 
-> **目标**：把 nuclear-boy 800 字精简哲学（正面示例 > 规则 / 避免否定 / 工具描述即文档）落到 encv-go。
+> **目标**：800 字精简哲学（正面示例 > 规则 / 避免否定 / 工具描述即文档）+ PROACTIVE 主动智能哲学 落到 encv-go。
 
 - [ ] Task 1.1: 创建 `/workspace/internal/agent/prompt.go`（SystemPromptBuilder）
 - [ ] Task 1.2: 实现 Build() 方法遵循 5 大原则（来自 HANDOVER2.0.md §五）
-- [ ] Task 1.3: 实现动态内容后置（用户偏好 / 项目上下文 / Skills 列表）
-- [ ] Task 1.4: 创建 `/workspace/internal/agent/prompt_test.go` 单测：
-  - ❌ 包含 "不要" / "不能" / "禁止" / "不可用" 报错
-  - ❌ 提到不存在的工具报错
-  - ❌ 单行工具描述无正面示例警告
-  - ❌ 总长 > 1500 字警告
-  - ✅ 每个工具 1 行格式正确
-- [ ] Task 1.5: 验证 `go build ./cmd/encv` 0 错误
+  - 工具描述 > prompt
+  - 避免否定表述
+  - 正面示例 > 规则
+  - 精简至上（≤1500 字）
+  - DeepSeek thinking 显式 disabled
+- [ ] Task 1.3: **PROACTIVE 主动智能段**（v2 新增，参考 SystemPromptBuilder.kt L142-148）
+  - 触发条件：用户连续发 3+ 消息 / 完成 1 个工具 / 收到工具失败
+  - 行为：自动追加 2-3 条 `建议:`
+- [ ] Task 1.4: 动态内容后置（用户偏好 / 项目上下文 / Skills 列表 / PROACTIVE）
+- [ ] Task 1.5: 显式传 `{"thinking": {"type": "disabled"}}`（DeepSeek 默认 enabled 是坑）
+- [ ] Task 1.6: 创建 `/workspace/internal/agent/prompt_test.go` 单测
+- [ ] Task 1.7: 验证 `go build ./cmd/encv` 0 错误
 
 **Stage 1 验收**：
-- [ ] 5 大原则单测全部通过
-- [ ] 实际生成的 prompt 长度 < 1500 字
+- [ ] 5 大原则单测全过
+- [ ] PROACTIVE 段已注入（手动 grep "## 主动智能" 命中）
+- [ ] 实际生成 prompt 长度 < 1500 字
 
 ---
 
-## Stage 2: ToolCallAccumulator 流式累积模式
+## Stage 2: ToolCallAccumulator + scopeJob 重建 + maxToolIterations
 
-> **目标**：前端 useAgent 加 ToolCallAccumulator，处理 LLM 流式 tool_call_start / tool_call_delta / tool_call_end 事件。
+> **目标**：前端流式累积 + 取消后协程不死亡 + 显式 ReAct 上限。
 
 - [ ] Task 2.1: 创建 `/workspace/app/encv-mobile/src/composables/useToolCallAccumulator.ts`
   - 状态：`pending` / `accumulating` / `complete` / `executed`
-  - `clear()` 在 ReAct 循环开始时调用（不在 tool_call_start 时清）
-- [ ] Task 2.2: 处理 tool_call_start → 初始化 entry
-- [ ] Task 2.3: 处理 tool_call_delta → 累加 args JSON 字符串
-- [ ] Task 2.4: 处理 tool_call_end → 标记 complete + 入栈到执行队列
-- [ ] Task 2.5: 集成到 useAgent.ts send() / confirmTool() 流程
-- [ ] Task 2.6: 单测覆盖：
-  - ✅ 单一 tool call 完整累积
-  - ✅ 同一轮 2-3 个 tool call 不互相覆盖
-  - ✅ 中断累积（abort）不破坏下一个 tool call
-  - ✅ args JSON 解析失败容错（→ Stage 4 兜底）
-- [ ] Task 2.7: 验证 `npx vue-tsc --noEmit` 0 错误
+  - `clear()` 在 ReAct 循环开始时调用（不在 tool_call_start 时清 — nuclear-boy 实战踩坑）
+- [ ] Task 2.2: 处理 tool_call_start / delta / end 三种事件
+- [ ] Task 2.3: 集成到 useAgent.ts send() / confirmTool() 流程
+- [ ] Task 2.4: **scopeJob 重建模式**（v2 新增，参考 AgentEngine.kt L850-854）
+  - 后端 `internal/agent/agent_api.go` cancel() 关闭旧 ctx + 创建新 ctx
+  - 验证：cancel() 后 100ms 内发新请求能起协程
+- [ ] Task 2.5: **maxToolIterations = 20**（v2 新增）
+  - ReAct 主循环里 `if iteration >= 20 { break; warnUser() }`
+- [ ] Task 2.6: 单测覆盖（6 场景）
+- [ ] Task 2.7: 验证 `npx vue-tsc --noEmit` + `go build` 双 0 错误
 
 **Stage 2 验收**：
-- [ ] 4 个单测场景通过
+- [ ] 6 个单测场景通过
 - [ ] 与 useAgent.send() 集成无破坏
 
 ---
 
-## Stage 3: buildHistoryMessages tool_call 去重 + completedCalls 过滤
+## Stage 3: buildHistoryMessages 防 400 + reasoningContent + 8 状态机
 
-> **目标**：解决 400 insufficient tool messages（nuclear-boy 实战踩坑）。
+> **目标**：解决 400 insufficient tool messages + 剥离 reasoningContent + 升级 message status。
 
-- [ ] Task 3.1: 后端 `/workspace/internal/server/agent_api.go` buildHistoryMessages 实现：
-  - 跳过 MessageRole.SYSTEM
-  - 预算控制 100,000 tokens
+- [ ] Task 3.1: 后端 `/workspace/internal/server/agent_api.go` buildHistoryMessages
   - 按 toolCallId 去重
   - completedCalls 过滤（output != null && toolCallId != null）
-  - completedCalls 为空 → toolCalls=null
-- [ ] Task 3.2: 前端 useAgent.ts 处理 tool_result 按 toolCallId 去重
-- [ ] Task 3.3: 单测：
-  - ✅ 中断对话后残留未完成 tool_call → 下一轮过滤掉
-  - ✅ 同一 toolCallId 推 2 次（running + completed）→ 历史只保留 1 条
-  - ✅ 全部 tool_call 完成的轮次 → 完整保留
-- [ ] Task 3.4: 验证 `go build` + `vue-tsc` 双 0 错误
+  - completedCalls 为空 → toolCalls=null（防 400）
+- [ ] Task 3.2: **reasoningContent 处理**（v2 新增）
+  - 旧消息的 reasoning_content **不入 history**（防 token 浪费 + 400）
+  - 最新一条 assistant 的 reasoning_content 可保留（让前端折叠展示）
+- [ ] Task 3.3: 前端 useAgent.ts 处理 tool_result 按 toolCallId 去重
+- [ ] Task 3.4: **MessageStatus 8 状态机**（v2 新增，参考 Models.kt L57-66）
+  - SENDING / SENT / THINKING / STREAMING / EXECUTING / COMPLETE / ERROR / CANCELLED
+  - 改 TypeScript 联合类型 / Go iota
+- [ ] Task 3.5: 单测（5 场景）+ 验证 `go build` + `vue-tsc` 双 0 错误
 
 **Stage 3 验收**：
-- [ ] 3 个单测场景通过
+- [ ] 5 个单测场景通过
 - [ ] 集成测试：中断对话后 LLM 不再 400
 
 ---
 
-## Stage 4: 参数别名容错层
+## Stage 4: 参数别名 + Tool priority + executeSafe paramHint
 
-> **目标**：ToolDef 加 ArgAliases 字段，handler 内自动 fallback。
+> **目标**：path/filePath 互通 + 防 LLM 截断 + 错误时附示例帮 LLM 自纠。
 
-- [ ] Task 4.1: `/workspace/internal/tools/registry.go` ToolDef 加 `ArgAliases map[string][]string`
-- [ ] Task 4.2: 实现 `resolveArg(args, primaryKey, aliases []string) any` helper
-- [ ] Task 4.3: 现有 10 个工具 description 标注别名（如 read_file 注明 `path | filePath | filename`）
-- [ ] Task 4.4: 错误信息自动附加"required: path（可写作 filePath/filename）"
-- [ ] Task 4.5: 单测：
-  - ✅ read_file 收到 filePath → 成功
-  - ✅ read_file 收到 filename → 成功
-  - ✅ read_file 三个全有 → 优先级 path > filePath > filename
-  - ✅ read_file 三个全无 → 错误消息含别名提示
-- [ ] Task 4.6: 验证 `go build` 0 错误
+- [ ] Task 4.1: 后端 tool registry 加 `ParamAliases map[string][]string` 字段
+- [ ] Task 4.2: 执行前 normalize（别名 → 主参数）
+- [ ] Task 4.3: 保留 nuclear-boy `parseToolParams` 容错（JSON 解析失败 fallback emptyMap）
+- [ ] Task 4.4: **Tool priority 排序**（v2 新增，参考 ToolRegistry.kt L168-196）
+  - priorityTools 集合（run_python / read_file / write_file / list_directory）置顶 0
+  - requiresConfirmation 工具放最后 2
+  - 其他 1
+- [ ] Task 4.5: **executeSafe paramHint**（v2 新增，参考 ToolRegistry.kt L236-258）
+  - 工具执行失败时错误信息含：工具名 + 缺失参数名 + 类型 + 完整参数示例
+- [ ] Task 4.6: 单测覆盖（参数别名 / priority 排序 / paramHint）
+- [ ] Task 4.7: 验证 `go test` + `vue-tsc` 通过
 
 **Stage 4 验收**：
-- [ ] 4 个单测通过
-- [ ] 现有 10 工具无破坏
+- [ ] 5 工具参数别名互通
+- [ ] priority 工具在 token 预算紧张时仍在前 N
+- [ ] LLM 漏传参数时错误信息含示例
 
 ---
 
-## Stage 5: 工具 JSON Schema description 优化
+## Stage 5: AppResult + AppError + classifyException + fromHttpCode
 
-> **目标**：每个工具 description 包含 4 要素（场景/示例/格式/关联）。
+> **目标**：错误四件套（Result 类型 + 本地化消息 + 异常分类 + HTTP 状态码映射）。
 
-- [ ] Task 5.1: 创建 `internal/tools/description_lint.go` 校验工具
-- [ ] Task 5.2: 现有 10 个工具 description 按 4 要素重写
-- [ ] Task 5.3: 单测：
-  - ✅ description 包含"使用场景" / "参数示例" / "关联工具" 关键词
-  - ❌ 缺要素 → 警告
-- [ ] Task 5.4: 验证 `go build` 0 错误
+- [ ] Task 5.1: 扩 `/workspace/internal/tools/errors.go` `ToolError` 加 `HumanMessage string`
+- [ ] Task 5.2: 扩 `AppErrorType` 枚举（NetworkUnavailable / NetworkTimeout / UserCancelled / ApiKeyInvalid / InsufficientBalance / RateLimited / ServerError / Unknown）
+- [ ] Task 5.3: **classifyException** 函数（v2 新增，参考 AgentEngine.kt L803-821）
+  - 新 `/workspace/internal/agent/classify.go`
+  - 用 errors.As 区分 url.Error / net.OpError / context.DeadlineExceeded / context.Canceled
+- [ ] Task 5.4: **fromHttpCode 静态方法**（v2 新增）
+  - 401 → ApiKeyInvalid / 402 → InsufficientBalance / 429 → RateLimited / 5xx → ServerError
+- [ ] Task 5.5: **humanMessage 文案表**（8 个 AppErrorType × 中英文）
+- [ ] Task 5.6: AppResult helper（Go tuple 模式 `Result[T]` + TypeScript 联合类型 + RunCatching 自动捕获 panic）
+- [ ] Task 5.7: 注入到 ReAct 循环的 catch 块
+- [ ] Task 5.8: 单测覆盖（7 场景）+ 验证 `go test` 通过
 
 **Stage 5 验收**：
-- [ ] 10 工具全部按 4 要素重写
-- [ ] lint pass
+- [ ] 7 个单测场景通过
+- [ ] 401/402/429/5xx 正确映射
+- [ ] i18n 切换正常
 
 ---
 
-## Stage 6: AppResult<T> + AppError.humanMessage 错误模型
+## Stage 6: ContextWindowManager 自动压缩 + TokenHudBar UI
 
-> **目标**：Go 版 Result + AppError 类型，前端友好化错误。
+> **目标**：3 级预警（YELLOW/RED/FORCE）+ 6 段 token 分配 + 7 行 HUD 指标。
 
-- [ ] Task 6.1: 创建 `/workspace/internal/common/result.go`
-  - `Result[T any] struct { Value T; Err *AppError }`
-  - `AppError struct { Code, HumanMessage, Technical string; Cause error; Recoverable bool }`
-- [ ] Task 6.2: 工具 handler 返回值扩展（与 mobile-agent-polish-2026q2 Task 1 兼容）
-- [ ] Task 6.3: 前端 i18n 加 error.humanMessage 映射（ENOENT → "找不到这个文件" 等）
-- [ ] Task 6.4: 单测：Result 包装 / AppError.HumanMessage 字段 / i18n 映射
-- [ ] Task 6.5: 验证 `go build` + `vue-tsc` 双 0 错误
+- [ ] Task 6.1: 新 `/workspace/internal/agent/context_window.go` 实现 ContextWindowManager
+  - EstimateTokens(text string) int64 = int64(len(text) / 3.5)
+  - updateAllocation(parts) → AllocationResult
+  - emergencyCompress / compressConversation / 截断
+- [ ] Task 6.2: 改 agent_api.go ReAct 循环，每轮调用 updateAllocation + 必要时压缩
+  - 阈值常量：WARNING_YELLOW ≈ 133K / WARNING_RED ≈ 158K / WARNING_FORCE ≈ 163K
+- [ ] Task 6.3: 新 `/workspace/internal/agent/token_tracker.go` 实现 TokenTracker
+  - per-request cache hit rate（不是累计）
+  - 平均延迟 `((cur.avg * count) + latency) / (count + 1)`
+- [ ] Task 6.4: SSE 协议加 `token_stats` 事件类型（每 5 秒一次）
+- [ ] Task 6.5: 前端 `/workspace/app/encv-mobile/src/composables/useChatStats.ts`
+- [ ] Task 6.6: 新组件 `<TokenHudBar />` 7 行指标（输入/输出/缓存/思考/上下文/速度/延迟）
+  - 复用 mobile-agent-polish-2026q2 usePinchZoom UI 风格
+  - 颜色：GREEN < 80% / YELLOW 80-95% / RED > 95%
+- [ ] Task 6.7: 单测（6 场景）+ 验证 `go build` + `vue-tsc` + `vitest`
 
 **Stage 6 验收**：
-- [ ] 4 个单测场景通过
-- [ ] 前端至少 5 个常见 error code 有中文本地化
+- [ ] EstimateTokens 精度 ±5%
+- [ ] 6 段总和触发对应颜色
+- [ ] HUD 5 秒聚合一次（性能 OK）
 
 ---
 
-## Stage 7: Skills 生态（skill.yaml + main.py → 自动注册）
+## Stage 7: Skills 生态 + executeViaExternalModule + ZIP-slip
 
-> **目标**：写一个 skill.yaml + main.py 就成为 AI 工具的能力。
+> **目标**：skill.yaml 注册为工具 + 本地查不到回退到 Skills + 解压防越界。
 
-- [ ] Task 7.1: 定义 skill.yaml schema（id / name / version / scope / description / parameters / runtime / entry）
-- [ ] Task 7.2: 创建 `/workspace/internal/skills/manager.go`（加载 + 解析 + 注册到 ToolRegistry）
-- [ ] Task 7.3: 创建 `/workspace/internal/skills/manifest.go`（YAML 解析）
-- [ ] Task 7.4: 创建 3 个预置 skill（移植 nuclear-bot）：
-  - `skill-creator` — 创建新 skill
-  - `file-organizer` — 文件整理
-  - `code-formatter` — 代码格式化
-- [ ] Task 7.5: 实现 `runtime: python`（调 encv-go 的 python-bridge，注入 __main__ 模式）
-- [ ] Task 7.6: 单测：
-  - ✅ YAML 解析正确
-  - ✅ 3 个预置 skill 自动注册为 ToolRegistry 项
-  - ✅ 全局 vs 项目级 skill 加载优先级
-- [ ] Task 7.7: 验证 `go build` 0 错误
+- [ ] Task 7.1: 加载逻辑（启动扫描 `~/.config/encv-go/skills/`，解析 skill.yaml）
+- [ ] Task 7.2: SkillManifest YAML 解析（4 维权限：filesystem/network/packages/shell）
+  - 用 gopkg.in/yaml.v3
+  - isSandboxed 计算属性
+  - 参数验证（int/float/bool/choice/string）
+- [ ] Task 7.3: **executeViaExternalModule 回退机制**（v2 新增，参考 ToolRegistry.kt L447-467）
+  - ToolRegistry.Execute 加回退链：本地 → Skills 插件 → 错误
+  - 错误信息告诉 LLM 用了哪个回退路径
+- [ ] Task 7.4: **ZIP-slip 防护**（v2 新增，参考 SkillManager.kt L867-873）
+  - safeUnzip：filepath.Clean + 前缀检查
+  - 任何 os.Create 前必须做
+- [ ] Task 7.5: MarketPlace API（HTTP GET 列可用 Skills）
+- [ ] Task 7.6: 工具名 = `skill_<name>` 避免冲突
+- [ ] Task 7.7: 单测 + 验证 `go test`
 
 **Stage 7 验收**：
-- [ ] 3 个预置 skill 实际可被 LLM 调用
-- [ ] 写一个新 skill.yaml → 重启后自动注册
+- [ ] Skill 加载流程 e2e 通
+- [ ] 本地工具和 Skills 工具都能用
+- [ ] ZIP-slip 攻击被拒
 
 ---
 
-## Stage 8: 三层记忆系统
+## Stage 8: 三层记忆 + autoExtract
 
-> **目标**：短期（内存 20 轮）+ 中期（SQLite 项目事件）+ 长期（LLM 摘要）。
+> **目标**：项目级 / 用户 / 语义 三层记忆 + 自动从对话学习。
 
-- [ ] Task 8.1: `/workspace/internal/memory/short.go` 内存 20 轮 FIFO
-- [ ] Task 8.2: `/workspace/internal/memory/medium.go` SQLite `events` 表
-- [ ] Task 8.3: `/workspace/internal/memory/long.go` SQLite `preferences` + `project_meta` 表
-- [ ] Task 8.4: 触发条件：每完成一轮 ReAct → 写中期；每 10 轮 / 退出 session → 调 LLM 摘要 → 写长期
-- [ ] Task 8.5: 单测：
-  - ✅ 短期 21 轮后第 1 轮被淘汰
-  - ✅ 中期 SQLite 持久化（重启可读）
-  - ✅ 长期 LLM 摘要正确（基于 5 轮对话）
-- [ ] Task 8.6: 验证 `go build` 0 错误
+- [ ] Task 8.1: 新 `/workspace/internal/memory/store.go` 三层记忆（SQLite + WAL 模式）
+  - ProjectMemoryEntity / UserProfileEntity / SemanticMemoryEntity
+  - `PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;`
+- [ ] Task 8.2: 新 `/workspace/internal/memory/auto_extract.go` autoExtract
+  - 三个 pattern regex：
+    - `我(喜欢|习惯|常用|偏好)\s*([^\s,.，。]{1,20})`
+    - `我(用|的|写)\s*([a-zA-Z]+\s*[,，]?\s*){1,5}`
+    - `我(常用|总是|通常)\s*(npm|pnpm|yarn|gradle|maven)`
+  - confidence: 显式 1.0 / 推断 0.7
+- [ ] Task 8.3: 改 `/workspace/internal/agent/prompt.go` 注入用户偏好
+  - LoadHighConfidence(0.5) → 最多 20 条 → 放在 prompt 末尾
+- [ ] Task 8.4: 前端 `/workspace/app/encv-mobile/src/views/Settings/MemoryManager.vue`
+  - 查看 / 编辑 / 清除 记忆
+- [ ] Task 8.5: 单测（5 场景）+ 验证
 
 **Stage 8 验收**：
-- [ ] 3 层记忆功能可用
-- [ ] 重启后中期/长期数据可恢复
+- [ ] 三表 CRUD OK
+- [ ] WAL 模式生效
+- [ ] "我习惯用 TypeScript" → UserProfile(preferred_language=TypeScript, 0.7)
 
 ---
 
-## Stage 9: 文档生成（docx/xlsx/pptx）
+## Stage 9: Python 沙箱 4 策略 + isStdlibModule + 危险黑名单 + 文档生成
 
-> **目标**：通过 Python 沙箱生成 office 文档。
+> **目标**：4 沙箱模式 + 170+ stdlib 白名单 + 危险命令黑名单 + docx/xlsx/pptx 生成。
 
-- [ ] Task 9.1: `/workspace/internal/tools/docgen.go` 定义 `generate_docx` / `generate_xlsx` / `generate_pptx` 三个工具
-- [ ] Task 9.2: 与 Stage 7 共用 python-bridge
-- [ ] Task 9.3: Python 脚本 import `python-docx` / `openpyxl` / `python-pptx`（借鉴 nuclear-bot 预装列表）
-- [ ] Task 9.4: 沙箱安全：脚本注入 `__name__ = '__main__'` + 工作目录限制
-- [ ] Task 9.5: 单测：3 个工具端到端（生成文件 → 读回 → 验证内容）
-- [ ] Task 9.6: 验证 `go build` 0 错误
+- [ ] Task 9.1: 新 `/workspace/internal/tools/python_sandbox.go` 沙箱实现
+  - 4 模式：STRICT / STANDARD / RELAXED / DOCUMENT_GENERATION
+  - buildPolicyPreamble 注入 Python 前置代码（重写 builtins.open + 拦截 subprocess）
+- [ ] Task 9.2: **isStdlibModule 170+ 白名单**（v2 新增，参考 SandboxPolicy.kt L520-555）
+  - 维护 STDLIB_MODULES map
+  - STRICT 模式：非 stdlib 一律 reject
+- [ ] Task 9.3: **DANGEROUS_COMMANDS 黑名单**（v2 新增，参考 SandboxPolicy.kt L429-435）
+  - rm -rf /, mkfs., dd if=, > /dev/sda, fork bomb, chmod 777 /, curl | sh
+  - subprocess.run 调用前检查
+- [ ] Task 9.4: 工具 `run_python` 接受 `sandbox` 参数（默认 STANDARD）
+- [ ] Task 9.5: 文档生成工具（generate_docx / generate_xlsx / generate_pptx）
+  - subprocess 跑 Python
+  - 预装 python-docx / openpyxl / python-pptx
+- [ ] Task 9.6: 预热 Python 解释器（cold start 500ms → warm 50ms）
+- [ ] Task 9.7: 单测（8 场景）+ 验证
 
 **Stage 9 验收**：
-- [ ] generate_docx 生成的 .docx 可用 Word 打开
-- [ ] generate_xlsx 生成的 .xlsx 可用 Excel 打开
+- [ ] 4 沙箱模式切换正常
+- [ ] 危险命令被拦截
+- [ ] docx/xlsx/pptx 能生成
 
 ---
 
-## Stage 10: HUD 栏（模型/缓存命中/费用/Token 进度）
+## Stage 10: MessageBubble 增强 + FileOperations 安全 + 项目脚手架
 
-> **目标**：实时可观测 HUD 组件。
+> **目标**：6 个 UI 模式 + 路径安全 + 隐藏目录跳过 + 项目模板生成。
 
-- [ ] Task 10.1: 创建 `/workspace/app/encv-mobile/src/components/agent/TokenHudBar.vue`
-- [ ] Task 10.2: 6 元素（模型 / Token 速度 / 缓存命中 / 费用 / 上下文占用 / 预警色）
-- [ ] Task 10.3: 数据从 AG-UI 协议的 `usage` / `cost` 事件读
-- [ ] Task 10.4: 黄/红预警（>70% 黄 / >90% 红）
-- [ ] Task 10.5: 集成到 AgentChat.vue
-- [ ] Task 10.6: 单测：
-  - ✅ 6 元素全部显示
-  - ✅ 占用 > 70% 变黄
-  - ✅ 占用 > 90% 变红
-- [ ] Task 10.7: 验证 `vue-tsc` 0 错误
+### 后端
+- [ ] Task 10.1: 改 `/workspace/internal/tools/file_ops.go` 加 ResolvePath
+  - filepath.Clean + canonical + 前缀检查
+  - 任何 read/write/list 前必须 ResolvePath
+- [ ] Task 10.2: 加 SkipDirs 常量（.git / .agent / node_modules / __pycache__ / build / .gradle）
+- [ ] Task 10.3: 改 `/workspace/internal/tools/high_level.go` create_project 支持 techStack
+- [ ] Task 10.4: 新 `/workspace/internal/tools/file_scaffold.go`
+  - buildProjectDirectories（Python/Kotlin/JS/Go 4 模板）
+  - buildReadme / buildGitignore
+
+### 前端
+- [ ] Task 10.5: 改 useAgent.ts 接收 tool_result 时记录 ToolCallRecord
+  - 字段：toolName / input / output / status / startedAt / completedAt
+- [ ] Task 10.6: 改 MessageBubble.vue 加 6 个 UI 模式
+  - ToolExecutionCard（5 状态颜色 + 展开/折叠 + 黑底输出）
+  - ReasoningSection（折叠 + expandVertically 动画）
+  - FileChangeCard（绿/蓝/红颜色编码）
+  - CodeBlock（shiki/prismjs + 复制按钮 + toast）
+  - ThinkingIndicator（3 点错位 200ms 动画）
+  - CombinedClickable onClick + onLongClick
+- [ ] Task 10.7: 升级 MessageStatus 到 8 状态（与 Stage 3 联动）
+- [ ] Task 10.8: 单测（10 场景）+ 验证 `go build` + `vue-tsc` + `vitest`
 
 **Stage 10 验收**：
-- [ ] HUD 6 元素实时数据
-- [ ] 视觉预警工作
+- [ ] ResolvePath 防越界
+- [ ] searchFiles 跳过隐藏目录
+- [ ] create_project 4 techStack 模板正确
+- [ ] 6 个 MessageBubble UI 模式可用
 
 ---
 
-## Stage 11: 凌晨 22:00-06:00 自动轻声模式
+## 整体验收
 
-> **目标**：夜间自动切换文案风格 + 通知静音。
+所有 Stage 完成后：
 
-- [ ] Task 11.1: 创建 `/workspace/app/encv-mobile/src/composables/useNotificationTone.ts`
-- [ ] Task 11.2: 检测 `new Date().getHours()` → tone 配置
-- [ ] Task 11.3: i18n 加 `agent.tone.night.greeting` / `agent.tone.day.greeting` 等 key
-- [ ] Task 11.4: 通知音量：夜间仅振动
-- [ ] Task 11.5: 单测：
-  - ✅ 06:00 / 22:00 边界值正确
-  - ✅ tone 配置切换
-- [ ] Task 11.6: 验证 `vue-tsc` 0 错误
-
-**Stage 11 验收**：
-- [ ] 22:00 后所有成功文案走"已就绪 🌙"风格
-- [ ] 通知音量切换工作
-
----
-
-## Stage 12: 错误处理哲学（"搞定了 ✨" + 先共情后方案）
-
-> **目标**：错误文案风格 nuclear-boy 化。
-
-- [ ] Task 12.1: Stage 6 的 `AppError.HumanMessage` 字段应用模板：
-  - 成功 → "搞定 ✨"
-  - 文件不存在 → "找不到这个文件，要先列目录吗？"
-  - 权限不足 → "没权限，需要更高权限吗？"
-  - 网络错 → "网络不太通畅，要不要稍后再试？"
-- [ ] Task 12.2: i18n 中英双语齐全
-- [ ] Task 12.3: Settings 切换"技术化错误"模式（高级用户）
-- [ ] Task 12.4: 单测：
-  - ✅ 5 个常见错误码有友好文案
-  - ✅ Settings 切换工作
-- [ ] Task 12.5: 验证 `vue-tsc` 0 错误
-
-**Stage 12 验收**：
-- [ ] 至少 5 个错误码有友好文案
-- [ ] Settings 切换生效
-
----
-
-# Task Dependencies
-
-- [Stage 0] 必须在所有 Stage 之前
-- [Stage 5] 必须在 [Stage 1] 之前（工具描述比 prompt 更重要）
-- [Stage 6] 必须在 [Stage 7] 之前（Skills 失败要返 Result）
-- [Stage 2] → [Stage 3]（累积模式是 buildHistoryMessages 输入的前提）
-- [Stage 4] 独立（与 Stage 2/3 并行）
-- [Stage 7] → [Stage 9]（文档生成用 python-bridge，与 Skills 共用）
-- [Stage 8] 独立（与 Stage 7 并行）
-- [Stage 10] 独立
-- [Stage 11] 独立
-- [Stage 12] 依赖 [Stage 6]（AppError 字段）
-
-# Priority Order (按 ROI)
-
-1. Stage 0（前置，无 ROI 估算）
-2. **Stage 1** ⭐⭐⭐（高 ROI：直接提升 LLM 成功率）
-3. **Stage 2** ⭐⭐⭐（高 ROI：解决 400 insufficient tool messages）
-4. **Stage 3** ⭐⭐⭐（高 ROI：同 Stage 2）
-5. **Stage 4** ⭐⭐（中 ROI：容错）
-6. **Stage 5** ⭐⭐（中 ROI：同 Stage 1 但偏描述层）
-7. **Stage 6** ⭐⭐（中 ROI：错误模型基础）
-8. **Stage 7** ⭐（高复杂度，建议做）
-9. **Stage 8** ⭐（高复杂度，可后置）
-10. **Stage 9** ⭐（高复杂度，可后置）
-11. **Stage 10** ⭐（UI 层）
-12. **Stage 11** ⭐（小优化）
-13. **Stage 12** ⭐（文案层）
+- [ ] **后端**：`cd /workspace && go build ./...` 0 错误
+- [ ] **后端**：`cd /workspace && go test ./...` 100% 通过（v2 期望 100+ 测试）
+- [ ] **后端**：`cd /workspace && go vet ./...` 0 警告
+- [ ] **前端**：`cd /workspace/app/encv-mobile && pnpm run type-check` 0 错误
+- [ ] **前端**：`cd /workspace/app/encv-mobile && pnpm run test:unit` 全部通过
+- [ ] **前端**：`cd /workspace/app/encv-mobile && pnpm run build` 成功
+- [ ] **集成**：`cd /workspace && ./scripts/test-e2e.sh` 全绿
+- [ ] **手动**（安卓真机）：见每个 Stage 的 "Scenario: 手动验证"
