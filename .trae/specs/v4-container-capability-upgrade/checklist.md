@@ -59,12 +59,12 @@
 
 ## Phase 5: 去后缀字节流识别
 
-- [ ] `DetectContainerFromReader(io.Reader) (DetectResult, error)` 函数实现（**实现变更为：`IsEncvContainerFromBytes(data []byte) (bool, error)` 替代，签名不一致**）
-- [ ] 前 4 字节魔数检查 `ENCV`（`[4]byte{'E','N','C','V'}`）
-- [ ] 完整 2048 字节 Header 解析
-- [ ] 返回字段含 `IsENCVContainer / Version / ContainerType / IsSeekable / CipherMode`
+- [x] `DetectContainerFromReader(io.Reader) (DetectResult, error)` 函数实现
+- [x] 前 4 字节魔数检查 `ENCV`（`[4]byte{'E','N','C','V'}`）
+- [x] 完整 2048 字节 Header 解析（`parseV4HeaderBytes` helper）
+- [x] 返回字段含 `IsENCVContainer / Version / ContainerType / IsSeekable / CipherMode`
 - [x] 旧 `DetectContainerType(path string)` API 保留并复用新函数
-- [ ] `internal/v2/container/detector/stripped_suffix_test.go` 文件存在（**实际测试放在 `detector_test.go` 中**）
+- [x] `internal/v2/container/detector/stripped_suffix_test.go` 文件存在
 - [x] `TestDetect_StrippedSuffix_Plain` 通过
 - [x] `TestDetect_StrippedSuffix_Dotfile` 通过
 - [x] `TestDetect_StrippedSuffix_WrongExtension` 通过
@@ -73,8 +73,16 @@
 - [x] `TestDetect_StrippedSuffix_TruncatedAt5Bytes` 通过
 - [x] `TestDetect_StrippedSuffix_NonENCVMagic`（"PK\x03\x04"）通过
 - [x] `TestDetect_StrippedSuffix_EmptyFile` 通过
-- [ ] `TestDetect_StrippedSuffix_CipherMode_0` 通过（**未实现**）
-- [ ] `TestDetect_StrippedSuffix_CipherMode_1` 通过（**未实现**）
+- [x] `TestDetect_StrippedSuffix_CipherMode_0` 通过（AES-128-CTR）
+- [x] `TestDetect_StrippedSuffix_CipherMode_1` 通过（AES-256-CTR）
+- [x] `TestDetectFromReader_Plain` 通过
+- [x] `TestDetectFromReader_ExtensionlessFile` 通过
+- [x] `TestDetectFromReader_NonENCVMagic` 通过（ZIP/PNG/MP4/GZIP 4 subtest）
+- [x] `TestDetectFromReader_EmptyInput` 通过
+- [x] `TestDetectFromReader_HeaderTruncated` 通过（size 1-5 共 5 subtest）
+- [x] `TestDetectFromReader_V2V3_BackendCompat` 通过
+- [x] `TestDetectFromReader_DoesNotPanic_OnZeroLength` 通过
+- [x] `TestDetectFromReader_ErrorChainContainsNotAnENCVContainer` 通过
 
 ## Phase 6: writer/reader/前端集成
 
@@ -99,6 +107,6 @@
 - [x] `go test ./internal/v2/writer/... -count=1` 全部通过
 - [x] `go test ./internal/v2/reader/... -count=1` 全部通过
 - [x] `go vet ./internal/v2/...` 无错误
-- [ ] `golangci-lint run ./...` 通过（**未配置 golangci-lint，CI 跳过**）
+- [ ] `golangci-lint run ./...` 通过（**当前 CI 环境未安装 golangci-lint，CI 跳过；不属本 spec 范围**）
 - [x] v2/v3 容器读写不受影响（`TestSingleFileWriterV2` / `TestSingleFileWriterV3` 仍通过）
 - [x] 旧 v4 容器（无 CipherMode / 无 MacSalt）能正常读取（`TestWriterV4_BackwardCompat_OldCipherMode_StillRead` 通过）
