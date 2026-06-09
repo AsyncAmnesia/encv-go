@@ -8,14 +8,13 @@
 
 | 维度 | 实际状态 | 来源 |
 |------|---------|------|
-| 容器魔数 | `ENVC`（4 字节），详见 `internal/v2/types/header_v4.go` | 类型定义 |
+| 容器魔数 | `ENCV`（4 字节，bytes `0x45 0x4E 0x43 0x56`） | `internal/v2/types/container.go:66-67` `MagicHeader_v2`/`MagicFooter_v2` |
 | 版本检测 | 读前 6 字节 → `DetectHeaderVersion` → v2/v3/v4 | `internal/v2/container/handle/handle.go:55-67` |
 | **检测与扩展名关系** | **完全无关**，仅基于魔数 | `IsEncvContainerFromBytes` |
 | 插件输出扩展名 | video=`.sccgv`、audio=`.sccga`、image=`.sccgi`、pdf=`.sccgpdf`、text=`.sccgt`、wps=`.sccgwps`、alistencrypt=`.bin` | `internal/v2/plugins/*/plugin.go: GetContainerExtension()` |
-| `.encv` 扩展名 | **不存在**；仅在 `errors.go:9` 列为"v2 legacy 保留字"，禁止用户/插件使用 | `internal/v2/plugins/alistencrypt/errors.go:9` |
-| 旧版 `.sccgv` 保留 | 同上，作为 legacy 保留字 | 同上 |
+| v2 legacy 保留扩展名 | `.sccgv`、`.encv` 等 v2 历史扩展名被 `errors.go:9` 列为保留字，**禁止用户/插件使用**（避免与 v2 legacy 冲突） | `internal/v2/plugins/alistencrypt/errors.go:9` |
 
-**澄清**：本项目从来**不存在** `.encv` 扩展名。"去掉后缀名边界测试"实际指"无扩展名/任意扩展名时，detector 仍能基于魔数识别容器"。
+**澄清**：本项目从来**不存在** `.encv` 容器输出扩展名。"去掉后缀名边界测试"实际指"无扩展名/任意扩展名时，detector 仍能基于魔数识别容器"——即 detector 必须对 `mydocument`（无扩展名）和 `mydocument.zip`（任意扩展名）返回相同结果。
 
 ### 三项能力缺口
 
@@ -89,7 +88,7 @@
 
 ### Requirement: detector 魔数识别边界测试套件
 
-`internal/v2/container/detector/` 包 SHALL 提供覆盖**魔数识别**（不依赖任何文件扩展名）边界场景的完整测试用例。**注意：detector 当前已基于魔数 `ENVC` 识别，扩展名（包括 `.sccg*`、`.encv`、`.bin` 等）从不参与检测**。本任务仅为现有能力补齐测试，不修改 detector 行为。
+`internal/v2/container/detector/` 包 SHALL 提供覆盖**魔数识别**（不依赖任何文件扩展名）边界场景的完整测试用例。**注意：detector 当前已基于魔数 `ENCV` 识别，文件扩展名（包括 `.sccgv`、`.sccga`、`.bin`、`.zip`、空扩展名等）从不参与检测**。本任务仅为现有能力补齐测试，不修改 detector 行为。
 
 #### Scenario: 任意扩展名均能识别
 - **WHEN** 一个 v4 容器文件被命名为 `mydocument`（无扩展名）/ `mydocument.bin` / `mydocument.sccgv` / `mydocument.zip` / `mydocument.exe`

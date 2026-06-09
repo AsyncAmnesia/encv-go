@@ -93,7 +93,7 @@
 
 ## Phase 5: detector 边界测试套件（验证现有能力，不改 detector 行为）
 
-> **澄清**：detector 当前已基于魔数识别（`IsEncvContainerFromBytes`），**不依赖 `.encv` 后缀**。本任务仅为现有能力补齐测试。
+> **澄清**：detector 当前已基于魔数 `ENCV` 识别（`IsEncvContainerFromBytes`），不依赖任何文件扩展名（`.sccg*`、`.bin`、空扩展名等均不参与检测）。本任务仅为现有能力补齐测试。
 
 - [ ] Task 10: 在 `internal/v2/container/detector/detector_test.go` 补充边界测试
   - [ ] SubTask 10.1: `TestDetect_StrippedSuffix_Plain`（`mydocument` 无扩展名，验证 `IsEncvContainerFromBytes` 仍能识别）
