@@ -100,8 +100,18 @@ function createProbe() {
   }
 
   /**
-   * 探活单个 baseUrl（拉 /api/config，200 + JSON 即视为通）
+   * 探活单个 baseUrl（拉 /health，200 + JSON 即视为通）
    * 失败 / 超时 / 网络错 / 非 JSON 响应均返回 false
+   *
+   * 🆕 2026-06-09 沙箱 mock 浏览器友好：401 也算"可达"
+   *   trae 网关层（沙箱外，:16000）对 /health 必返 401 missing session token，
+   *   这是 mock 浏览器架构限制（沙箱内不可改）。原版把 401 当失败 → probe 抛
+   *   all-candidates-failed → 整个 SPA 渲染崩溃（[App] Vue error captured）。
+   *   现版：401 = 网关可达（只是没 auth 透到后端），继续走后续探测；
+   *   这样 [1.5] 命中后，UI 至少能进；后续 /api/* 真业务调用 401 由调用方各自
+   *   处理（DevLogs / Settings 显示"trae 网关拦截，请用真机测试"）。
+   *   注意：仅在「isHttp + 非 loopback」的浏览器模式触发，真机 protocol=file/capacitor
+   *   走 [2] loopback → 不会受影响。
    */
   async function probeHealth(baseUrl: string): Promise<{ ok: boolean; latencyMs: number; err?: string }> {
     const url = baseUrl.replace(/\/+$/, '') + PROBE_HEALTH_PATH
@@ -137,6 +147,22 @@ function createProbe() {
       const latencyMs = Math.round(performance.now() - t0)
       return { ok: false, latencyMs, err: e instanceof Error ? e.message : String(e) }
     }
+  }
+
+  /**
+   * 判断一个 baseUrl 是否是「浏览器模式下的 trae 网关拦截层」
+   * 命中条件：origin 在 401/403/HTML 状态时属于 trae 沙箱域名
+   * 用于：
+   *   - 把 trae 401 当"可达"处理（probeHealthProbeHealth 别 throw）
+   *   - 标记 isInSandboxBrowser 让 UI 显示"预览模式，/api/* 被网关拦截"
+   */
+  function isSandboxBrowserOrigin(origin: string): boolean {
+    if (typeof window === 'undefined') return false
+    return (
+      /trae\.cn$/i.test(origin) ||
+      /agent-sandbox/i.test(origin) ||
+      /^run-agent-/i.test(origin)
+    )
   }
 
   /**
@@ -223,18 +249,33 @@ function createProbe() {
       // 浏览器通过 OpenPreview / 沙箱 dev 直接访问时，
       // window.location.origin 就是 API 反代的根（agent-tool-host 代理 /api/*）。
       // APK 模式下 protocol = 'file:' / 'capacitor:' → 跳过，走 [2] loopback。
+      //
+      // 🆕 2026-06-09 沙箱 mock 浏览器：401 也算"可达"
+      //   trae 网关层（:16000）对 /health 必返 401 missing session token。
+      //   但网关本身是可达的（不是 CORS / 网络断），只是没透 auth 到后端。
+      //   把 401 当成"命中"→ commit current origin → 后续业务调用由调用方
+      //   各自捕获 401 处理（DevLogs / Settings 提示"trae 网关拦截，请用真机"）。
+      //   真机 protocol=file/capacitor → 这步跳过，不影响。
       if (typeof window !== 'undefined' && window.location) {
         const proto = window.location.protocol
         const isHttp = proto === 'http:' || proto === 'https:'
         const isLoopbackUrl = /^https?:\/\/(127\.0\.0\.1|localhost|0\.0\.0\.0)(:\d+)?$/i.test(origin)
         if (isHttp && !isLoopbackUrl && origin !== DEFAULT_API_BASE_URL) {
-          const msg = `[1.5] try current origin: ${origin}`
+          const isSandbox = isSandboxBrowserOrigin(origin)
+          const msg = `[1.5] try current origin: ${origin}${isSandbox ? ' (trae sandbox, 401/HTML 也算通)' : ''}`
           log.push(msg); console.info(`[probe] step ${msg}`)
           const r = await probeHealth(origin)
           const rmsg = `[1.5] result: ok=${r.ok} latency=${r.latencyMs}ms err=${r.err || '-'}`
           log.push(rmsg); console.info(`[probe] step ${rmsg}`)
           if (r.ok) {
             // current origin 是反代目标，不是真正的后端地址 → lanAccess 显式置 null
+            return commit(origin, null, 'current-origin', log, t0)
+          }
+          if (isSandbox && r.err && (/status\s+401/i.test(r.err) || /status\s+403/i.test(r.err) || /non-JSON/i.test(r.err))) {
+            // 🆕 trae 网关可达但拦了 /health：视为"网关命中"，继续走 commit
+            // 让 UI 至少能渲染，调用方自己捕获 401。
+            const note = `[1.5] trae sandbox gateway reachable, accepting despite ${r.err ? r.err.split(' ')[1] : 'non-ok'}`
+            log.push(note); console.info(`[probe] step ${note}`)
             return commit(origin, null, 'current-origin', log, t0)
           }
         } else {
@@ -279,6 +320,14 @@ function createProbe() {
       const wrapped = new Error(`all-candidates-failed | trace: ${trace}`)
       console.info(`[probe] FAIL ${wrapped.message}`)
       lastError.value = wrapped.message
+      // 🆕 2026-06-09 沙箱 mock 浏览器：trae sandbox origin 必须 fallback 到 default
+      //   否则 probe throw → [App] onErrorCaptured 触发 → 整个 SPA 渲染错误边界
+      //   fallback 策略：sandbox 浏览器走 current origin，APK/真机保留 throw（让 UI 报错提示）
+      if (isSandboxBrowserOrigin(origin)) {
+        const note = `[4] trae sandbox fallback: using current origin ${origin} despite probe failure (UI will see 401 from gateway)`
+        log.push(note); console.info(`[probe] step ${note}`)
+        return commit(origin, null, 'current-origin', log, t0)
+      }
       throw wrapped
     } finally {
       isProbing.value = false

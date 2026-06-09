@@ -4,13 +4,18 @@
       <ion-item
         v-for="ver in versions"
         :key="ver.version"
-        :class="['version-item', `version-status-${ver.status}`]"
+        :class="['version-item', `version-status-${ver.status}`, { 'item-disabled': ver.status === 'deprecated' }]"
         :disabled="ver.status === 'deprecated'"
+        button
+        :detail="false"
+        lines="full"
+        @click="ver.status !== 'deprecated' && selectVersion(ver.version)"
       >
         <ion-radio
           :value="ver.version"
           :disabled="ver.status === 'deprecated'"
           slot="start"
+          :aria-label="ver.label"
         ></ion-radio>
         <ion-label>
           <span class="version-label">{{ ver.label }}</span>
@@ -72,6 +77,18 @@ const versions = computed(() => props.versions || defaultVersions)
 function handleChange(event: CustomEvent) {
   emit('update:modelValue', event.detail.value as number)
 }
+
+/**
+ * 点击整行时主动同步选择（修复"只能点 radio 圆点才能切换"的 UX 问题）：
+ *   - 在 Ionic 8 里，ion-radio-group 的 ionChange 事件只在 radio 本身被点击时触发；
+ *     点击 ion-label / 空白区域不会冒泡到 radio。
+ *   - 解决方案：ion-item 加 button 属性让整行可点击 + 显式 @click 触发 update:modelValue。
+ *   - deprecated 状态直接禁用 item（不可点击），保留原视觉。
+ */
+function selectVersion(version: number) {
+  if (version === props.modelValue) return
+  emit('update:modelValue', version)
+}
 </script>
 
 <style scoped>
@@ -82,6 +99,13 @@ function handleChange(event: CustomEvent) {
 .version-item {
   --padding-start: 8px;
   --inner-padding-end: 12px;
+  cursor: pointer;
+}
+
+.version-item.item-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  pointer-events: auto;
 }
 
 .version-item.version-status-deprecated {

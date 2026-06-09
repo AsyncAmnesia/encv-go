@@ -238,21 +238,35 @@ export function useServerStatus() {
         // Web/dev 模式：跑探测链（cached → loopback → LAN 候选）
         // 探测成功 → 写 localStorage + setApiBaseUrl + connect
         // 探测失败 → 保留旧值兜底，不弹死错误
-        const result = await useApiBaseProbe().probe()
-        if (result.baseUrl) {
-          const check = await checkStatus()
-          if (check.online) {
-            connect()
-            eventBus.emit('api-base:connected', { baseUrl: result.baseUrl, source: result.source })
+        // 🆕 2026-06-09 沙箱 mock 浏览器：probe 在 trae 沙箱下也可能 throw（fallback 路径
+        //   已 graceful，但保险起见这里也包 try-catch —— 任何未预期 throw 都不能让
+        //   [App] onErrorCaptured 抓到，导致整个 SPA 渲染错误边界）
+        try {
+          const result = await useApiBaseProbe().probe()
+          if (result.baseUrl) {
+            const check = await checkStatus()
+            if (check.online) {
+              connect()
+              eventBus.emit('api-base:connected', { baseUrl: result.baseUrl, source: result.source })
+            } else {
+              // 罕见：探测到 URL 但 health check 失败
+              lastError.value = check.error || 'post-probe health check failed'
+              isOnline.value = false
+            }
           } else {
-            // 罕见：探测到 URL 但 health check 失败
-            lastError.value = check.error || 'post-probe health check failed'
-            isOnline.value = false
+            // 全失败，尝试 legacy checkStatus 兜底
+            const fallback = await checkStatus()
+            if (fallback.online) connect()
           }
-        } else {
-          // 全失败，尝试 legacy checkStatus 兜底
-          const fallback = await checkStatus()
-          if (fallback.online) connect()
+        } catch (probeErr) {
+          // 🆕 任何意外 throw → 兜底 legacy checkStatus，不让 [App] 错误边界捕获
+          console.warn('[useServerStatus] probe threw unexpectedly, falling back:', probeErr instanceof Error ? probeErr.message : String(probeErr))
+          try {
+            const fallback = await checkStatus()
+            if (fallback.online) connect()
+          } catch (fallbackErr) {
+            console.debug('[useServerStatus] legacy fallback also failed (expected in trae sandbox):', fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr))
+          }
         }
       }
       eventBus.on('server:status', onServerStatus)
