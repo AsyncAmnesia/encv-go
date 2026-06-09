@@ -31,14 +31,49 @@ func TestAgentDemoDump_V2_SearchRecursiveMp4(t *testing.T) {
 	dumpScenario(t, "search_recursive_mp4")
 }
 
-// TestAgentDemoDump_V2_BranchEncrypt 跑 v2_06 branch_encrypt_or_decrypt。
-func TestAgentDemoDump_V2_BranchEncrypt(t *testing.T) {
-	dumpScenario(t, "branch_encrypt_or_decrypt")
+// TestAgentDemoDump_V2_SearchLogicalQuery 跑 v2_02。
+func TestAgentDemoDump_V2_SearchLogicalQuery(t *testing.T) {
+	dumpScenario(t, "search_logical_query")
+}
+
+// TestAgentDemoDump_V2_SearchContentRegex 跑 v2_03。
+func TestAgentDemoDump_V2_SearchContentRegex(t *testing.T) {
+	dumpScenario(t, "search_content_regex")
 }
 
 // TestAgentDemoDump_V2_EditMetadataWizard 跑 v2_04 edit_metadata_wizard（4 轮）。
 func TestAgentDemoDump_V2_EditMetadataWizard(t *testing.T) {
 	dumpScenario(t, "edit_metadata_wizard")
+}
+
+// TestAgentDemoDump_V2_BatchRename 跑 v2_05。
+func TestAgentDemoDump_V2_BatchRename(t *testing.T) {
+	dumpScenario(t, "batch_rename_with_preview")
+}
+
+// TestAgentDemoDump_V2_BranchEncrypt 跑 v2_06 branch_encrypt_or_decrypt。
+func TestAgentDemoDump_V2_BranchEncrypt(t *testing.T) {
+	dumpScenario(t, "branch_encrypt_or_decrypt")
+}
+
+// TestAgentDemoDump_V2_BranchVideo 跑 v2_07。
+func TestAgentDemoDump_V2_BranchVideo(t *testing.T) {
+	dumpScenario(t, "branch_video_or_audio")
+}
+
+// TestAgentDemoDump_V2_CommandRunFfprobe 跑 v2_08。
+func TestAgentDemoDump_V2_CommandRunFfprobe(t *testing.T) {
+	dumpScenario(t, "command_run_ffprobe")
+}
+
+// TestAgentDemoDump_V1_TruncationLongText 跑 v1 边角 truncation。
+func TestAgentDemoDump_V1_TruncationLongText(t *testing.T) {
+	dumpScenario(t, "truncation_long_text")
+}
+
+// TestAgentDemoDump_V1_ContextExhausted 跑 v1 边角 context_exhausted。
+func TestAgentDemoDump_V1_ContextExhausted(t *testing.T) {
+	dumpScenario(t, "context_exhausted")
 }
 
 // TestAgentDemoDump_AllBuiltin 一口气跑全部 21 个 builtin 剧本，每个只打印事件计数 + 总耗时。
