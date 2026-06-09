@@ -2,15 +2,26 @@
 
 ## Why
 
-在 v4 容器基础架构（`encv-v4-container-architecture`）之上，存在三个独立但相互关联的能力缺口：
+在 v4 容器基础架构（`encv-v4-container-architecture`）之上，存在三个独立但相互关联的能力缺口。
+
+### 项目实际结构（事实核查结果）
+
+| 维度 | 实际状态 | 来源 |
+|------|---------|------|
+| 容器魔数 | `ENVC`（4 字节），详见 `internal/v2/types/header_v4.go` | 类型定义 |
+| 版本检测 | 读前 6 字节 → `DetectHeaderVersion` → v2/v3/v4 | `internal/v2/container/handle/handle.go:55-67` |
+| **检测与扩展名关系** | **完全无关**，仅基于魔数 | `IsEncvContainerFromBytes` |
+| 插件输出扩展名 | video=`.sccgv`、audio=`.sccga`、image=`.sccgi`、pdf=`.sccgpdf`、text=`.sccgt`、wps=`.sccgwps`、alistencrypt=`.bin` | `internal/v2/plugins/*/plugin.go: GetContainerExtension()` |
+| `.encv` 扩展名 | **不存在**；仅在 `errors.go:9` 列为"v2 legacy 保留字"，禁止用户/插件使用 | `internal/v2/plugins/alistencrypt/errors.go:9` |
+| 旧版 `.sccgv` 保留 | 同上，作为 legacy 保留字 | 同上 |
+
+**澄清**：本项目从来**不存在** `.encv` 扩展名。"去掉后缀名边界测试"实际指"无扩展名/任意扩展名时，detector 仍能基于魔数识别容器"。
+
+### 三项能力缺口
 
 1. **加密算法单一**：v4 当前默认强制 AES-256-CTR（32 字节密钥），对绝大多数单机文件加密场景来说强度过剩且 2 倍于 128 位的吞吐开销。WinZip/RAR/7-Zip 等行业惯例都将 AES-128-CTR 列为默认，AES-256 仅作为可选加强档。
 2. **缺少 zstd 压缩支持**：v4 容器内 Segment 数据是密文，密文通常不可压缩。当原始文件高度可压缩时（如日志/纯文本文档/重复二进制），**加密前预压缩**能节省 30-70% 空间。`zstd-seekable-format-go` 提供 seekable zstd frame 索引，正好契合 v4 Segment 模型。
 3. **缺少 HMAC 完整性保护**：v4 现有 `DataCRC32` 是**未加密 CRC**，攻击者篡改密文后重算 CRC 可绕过校验。WinZip 早在 2009 年就在 AES 加密中引入 HMAC-SHA1-80（Encrypt-then-MAC 顺序），专门防御 CTR 模式比特翻转攻击。v4 必须补齐这一安全缺口。
-
-**附带事项（澄清）**：
-
-- 用户曾提到"加密容器被去掉后缀名边界测试"。经核查，`internal/v2/container/detector/detector.go:13-42` 的 `IsEncvContainerFromBytes` 已基于魔数 `ENVC` 识别，**不依赖 `.encv` 后缀**（`.encv` 仅是文件命名约定，不参与检测）。但当前**缺少系统的边界测试套件**——没有覆盖"恰好 4 字节魔数"、"Header 差 1 字节"、"非 ENCV 魔数"、"0 字节空文件"、"0 KB、2047 字节"等边界场景。spec 的"边界测试"任务是为现有能力补齐测试，不引入新依赖。
 
 ## What Changes
 
@@ -24,7 +35,7 @@
 - 解密时强制 MAC 校验：**先验 MAC → 验失败立即 `ErrMACMismatch` → 验通过才解 CTR**
 - v4 Segment Header 增加 `ModeFlags` 位字段，支持每 Segment 独立声明：是否压缩 / 是否加密 / 压缩算法（仿 WinZip "mixed" 模式）
 - 配置文件 schema 增加 `v4_cipher_mode` 和 `v4_compression_mode` 两个配置项
-- 新增 detector 边界测试套件（不修改 detector 行为，仅补齐测试）
+- 新增魔数 detector 边界测试套件（不修改 detector 行为，仅补齐测试）
 
 ## Impact
 
@@ -38,7 +49,7 @@
   - `internal/v2/crypto/compression/zstd.go`（新增）— zstd 压缩/解压 + seekable 帧
   - `internal/v2/types/segment_v4.go` — `ModeFlags` 字段
   - `internal/v2/types/header_v4.go` — `CipherMode` 字段、`MacSalt` 字段
-  - `internal/v2/container/detector/detector_test.go`（补充）— 边界测试
+  - `internal/v2/container/detector/detector_test.go`（补充）— 魔数识别边界测试
   - `internal/v2/writer/container_writer_v4.go` — 写入 MAC + 可选压缩
   - `internal/v2/reader/segment_reader.go` — MAC 校验前置
   - `internal/v2/physical/file_chunker.go` — 物理切分时处理 zstd frame
@@ -76,29 +87,29 @@
 - **THEN** 读取器根据 Header 的 `CipherMode` 字段自动选择密钥长度
 - **AND** 用户无需手动选择算法
 
-### Requirement: detector 边界测试套件
+### Requirement: detector 魔数识别边界测试套件
 
-`internal/v2/container/detector/` 包 SHALL 提供覆盖魔数识别边界场景的完整测试用例。**注意：detector 当前已基于魔数识别（`IsEncvContainerFromBytes`），不依赖 `.encv` 后缀**。本任务仅为现有能力补齐测试，不修改 detector 行为。
+`internal/v2/container/detector/` 包 SHALL 提供覆盖**魔数识别**（不依赖任何文件扩展名）边界场景的完整测试用例。**注意：detector 当前已基于魔数 `ENVC` 识别，扩展名（包括 `.sccg*`、`.encv`、`.bin` 等）从不参与检测**。本任务仅为现有能力补齐测试，不修改 detector 行为。
 
-#### Scenario: 完全去后缀识别（验证现有能力）
-- **WHEN** 一个 v4 容器文件被改名为 `mydocument`（无任何扩展名）
-- **THEN** `IsEncvContainerFromBytes` 仍能识别为 ENCV 容器
-- **AND** 表明 detector 不依赖文件后缀
+#### Scenario: 任意扩展名均能识别
+- **WHEN** 一个 v4 容器文件被命名为 `mydocument`（无扩展名）/ `mydocument.bin` / `mydocument.sccgv` / `mydocument.zip` / `mydocument.exe`
+- **THEN** `IsEncvContainerFromBytes` 仅根据文件内容判断，对所有上述命名都返回一致的 `IsEncvContainer` 结果
+- **AND** 表明 detector 与文件扩展名完全解耦
 
 #### Scenario: 魔数误判防护
-- **WHEN** 一个非 ENCV 文件（如普通 ZIP 头 `PK\x03\x04`）被传入 detector
+- **WHEN** 一个非 ENCV 文件（如普通 ZIP 头 `PK\x03\x04`、PNG 头 `\x89PNG`、MP4 头 `ftyp`）被传入 detector
 - **THEN** detector 返回 `IsEncvContainer = false`
 - **AND** 不抛异常，返回明确的 "not an ENCV container" 错误
 
 #### Scenario: 截断 Header 识别
-- **WHEN** 传入的字节长度 < Header 完整大小（2048 字节）但 ≥ 魔数长度（6 字节，DetectHeaderVersion 要求）
+- **WHEN** 传入的字节长度 < Header 完整大小（2048 字节）但 ≥ 魔数长度（6 字节，`DetectHeaderVersion` 最小要求）
 - **THEN** detector 返回 "header truncated" 错误
 - **AND** 不尝试后续字段解析
 
 #### Scenario: 边界值测试
 - **WHEN** 文件长度 = 6 字节（恰好能 DetectHeaderVersion）
 - **THEN** detector 返回 v4 容器标识但 `ContainerType`/`IsSeekable` 等 Header 派生字段为 `unknown`/零值
-- **WHEN** 文件长度 = 5 字节（差 1 字节 DetectHeaderVersion 最小要求）
+- **WHEN** 文件长度 = 5 字节（差 1 字节 `DetectHeaderVersion` 最小要求）
 - **THEN** detector 返回 `IsEncvContainer = false`（不抛异常）
 - **WHEN** 文件长度 = 0 字节（空文件）
 - **THEN** detector 返回明确错误 "empty input"
@@ -138,7 +149,7 @@
 
 ### Requirement: 加密容器的 "Mixed" 模式（仿 WinZip）
 
-系统 SHALL 允许 v4 容器内不同 Segment 独立选择是否加密、是否压缩，使用 SegmentHeader 的 `ModeFlags` 位字段标识。
+系统 SHALL 允许 v4 容器内不同 Segment 独立选择是否加密、是否压缩，使用 SegmentHeader 的 `ModeFlags` 位字段标识。WinZip AES 规范明确说明："not all files in a Zip file need to be encrypted, nor is it required that all encrypted files use the same encryption method or password"。
 
 #### Scenario: Segment 级 ModeFlags
 - **WHEN** 写入 v4 Segment
@@ -162,21 +173,21 @@
 
 ### Requirement: HMAC-SHA1-80 完整性保护（Encrypt-then-MAC）
 
-系统 SHALL 在 v4 Segment 中嵌入 HMAC-SHA1-80 截断值，用于检测密文被篡改/比特翻转。
+系统 SHALL 在 v4 Segment 中嵌入 HMAC-SHA1-80 截断值，用于检测密文被篡改/比特翻转。WinZip 规范明确指出："HMAC-SHA1-80 is used because it is a mature and widely respected authentication algorithm"，并规定 MAC 在 "压缩/加密后" 计算（Encrypt-then-MAC 顺序），在 "解密/解压前" 校验。
 
-#### Scenario: MAC 计算顺序
+#### Scenario: MAC 计算顺序（Encrypt-then-MAC）
 - **WHEN** 加密 v4 Segment
-- **THEN** 计算顺序固定为 `Encrypt-then-MAC`：
+- **THEN** 计算顺序固定为：
   1. 压缩（如启用）plaintext → compressed
   2. AES-CTR 加密 compressed → ciphertext
   3. 计算 `MAC = HMAC-SHA1(mac_key, nonce || ciphertext)[:10]`
   4. 写入 `[SegmentHeader][Nonce(16B)][Ciphertext][MAC(10B)]`
-- **AND** `mac_key` 由主密钥 PBKDF2 派生（独立 salt，可与加密 salt 相同或不同）
+- **AND** `mac_key` 由主密钥 PBKDF2 派生（独立 salt）
 
 #### Scenario: MAC 校验前置（解密前）
 - **WHEN** 解密 v4 Segment
-- **THEN** 严格顺序：
-  1. 读取 `SegmentHeader` 取 `ModeFlags` / `DataLength` / `MAC_offset`
+- **THEN** 严格顺序（WinZip 规范："MAC is checked before decryption/decompression"）：
+  1. 读取 `SegmentHeader` 取 `ModeFlags` / `DataLength`
   2. 读取 `Nonce(16B)` 和 `Ciphertext`
   3. 计算 `expected_mac = HMAC-SHA1(mac_key, nonce || ciphertext)[:10]`
   4. **与存储的 MAC 常量时间比较**（防侧信道）
