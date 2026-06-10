@@ -1,5 +1,5 @@
 import { ref, onMounted, onUnmounted } from 'vue'
-import { checkServerStatus, setApiBaseUrl, DEFAULT_API_BASE_URL } from '@/api/encv'
+import { checkServerStatus, setApiBaseUrl, DEFAULT_API_BASE_URL, isOpenPreviewBrowser } from '@/api/encv'
 import { eventBus } from './useEventBus'
 import { useWebSocket } from './useWebSocket'
 import { isNative, restartBackend, stopBackend, getBackendStatus } from '@/plugins/GoProcess'
@@ -10,8 +10,23 @@ const lastError = ref('')
 const backendPort = ref(0)
 const isRestarting = ref(false)
 const isStopping = ref(false)
+// 🆕 2026-06-10 详情页状态展示增强
+const latencyMs = ref(0)              // 上次 checkStatus HTTP 响应延迟
+const transportMode = ref<'http-poll' | 'ws' | 'native-bridge' | 'unknown'>('unknown')
+const lastCheckedAt = ref<Date | null>(null)  // 上次探测时间
+const isSandboxBrowser = ref(false)   // OpenPreview 浏览器标记（只读）
 let initialized = false
 let nativeBridgeListenerAdded = false
+
+// 探测一次 HTTP + 测延迟
+async function probeHttp() {
+  const t0 = performance.now()
+  const result = await checkServerStatus()
+  const dt = Math.round(performance.now() - t0)
+  latencyMs.value = dt
+  lastCheckedAt.value = new Date()
+  return { ...result, latency: dt }
+}
 
 function onServerStatus(data: { online: boolean }) {
   if (isRestarting.value && !data.online) return
@@ -23,11 +38,14 @@ function onServerStatus(data: { online: boolean }) {
 
 function onConnectionError(data: { error: string }) {
   if (isRestarting.value) return
+  // 🆕 2026-06-10 sandbox 浏览器下不显示 "Connection closed (code: 1006)"
+  //  （trae 反代 :16000 不支持 WS 是已知架构限制，不是用户后端故障）
+  if (isSandboxBrowser.value) return
   lastError.value = data.error
 }
 
 async function checkStatus() {
-  const result = await checkServerStatus()
+  const result = await probeHttp()
   isOnline.value = result.online
   lastError.value = result.error || ''
   if (result.online) {
@@ -221,6 +239,16 @@ export function useServerStatus() {
   addNativeBridgeListener()
   setupVisibilityProbe()
 
+  // 🆕 2026-06-10 初始化 transport 模式 + sandbox 标记
+  if (isNative()) {
+    transportMode.value = 'native-bridge'
+  } else if (isOpenPreviewBrowser()) {
+    transportMode.value = 'http-poll'
+    isSandboxBrowser.value = true
+  } else {
+    transportMode.value = 'ws'
+  }
+
   onMounted(async () => {
     if (!initialized) {
       initialized = true
@@ -285,6 +313,11 @@ export function useServerStatus() {
     isStopping,
     checkStatus,
     connectionState,
+    // 🆕 2026-06-10 详情页状态展示
+    latencyMs,
+    transportMode,
+    lastCheckedAt,
+    isSandboxBrowser,
     restartBackend: handleRestart,
     stopBackend: handleStop,
     // 手动重连：跑探测链 + 重建 WS（用于 Settings "立即探测" / 错误 banner "重试"）

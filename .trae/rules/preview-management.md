@@ -17,11 +17,18 @@
 - ❌ `sleep 86400`、`sleep 999999`、`sleep infinity` —— **任何大于 60s 的 sleep 都不允许出现在 blocking 命令中**
 - ❌ `tail -f /var/log/xxx` 阻塞等待
 - ❌ `node server.js` 阻塞运行（无 daemon 化）
+- ❌ **`python3 -c "..."` / `node -e "..."` 跑交互式协议测试**（如 WS upgrade）—— 看起来 1-3s 很快，但 blocking + 副作用不可控
 
 **正确做法**：
 - ✅ 用 `pm2 start xxx.js --name xxx` 守护（fork 模式，立刻 daemon 化返回）
 - ✅ 如需长跑日志观察，用 `pm2 logs <name>` 短时查看（30s 内 kill）
 - ✅ 如需让某个 web 端口"保持在线"以供 OpenPreview，**先 pm2 守护** → 再让工具调用 `curl` 健康检查
+- ✅ **协议探测走持久化脚本**：把 `python3 -c` / `node -e` 的内容写成文件到 `scripts/`，下次直接 `bash scripts/probe-ws.sh`（仍要 < 5s）
+
+**反模式 A 变种（2026-06-10 实战踩坑）**：
+> 在测试 trae 反代 :16000 是否支持 WebSocket 时，我用了 `python3 -c "..."` 跑 WS handshake
+> 脚本。表面上 < 3s 结束，但**没有**记到「禁止」清单，导致下次再测又踩。
+> **正确**：写一个 `scripts/probe-ws-upgrade.sh` 持久化，3 行内可读；或 `curl --include --upgrade` + `-m 2` 直接测。
 
 ---
 
@@ -238,7 +245,33 @@ curl -sI http://127.0.0.1:16000/      # 期望 200（不再 400）
 - 工具调用完后立即返回，session/TTL 由 agent-tool-host 自己管理
 - 详见 [trae_web_sandbox_network.md §八](file:///workspace/.trae/rules/trae_web_sandbox_network.md) - "Preview Proxy 路由必须由 OpenPreview 工具注册"
 
-### 3.3 错误模式
+### 3.3 OpenPreview 浏览器下的服务器状态检测（2026-06-10 新增）
+
+> **根因**：trae 反代 `:16000` **不支持 WebSocket upgrade**（实测：WS handshake → 502 "WebSocket upgrade failed"）。
+> OpenPreview 浏览器（agent-tool-host 上的 mock 浏览器）下用 `new WebSocket('wss://trae.cn/ws')` → 1006 异常关闭 →
+> 误显"离线"+"Connection closed (code: 1006)"。
+
+**已修复**（提交 `a8c4e7d`）：
+
+1. **[useWebSocket.ts](file:///workspace/app/encv-mobile/src/composables/useWebSocket.ts) `connect()`** — OpenPreview 浏览器下不连 WS，直接 emit `server:status {online: true}`，不发 `connection-error`。
+2. **[useServerStatus.ts](file:///workspace/app/encv-mobile/src/composables/useServerStatus.ts)** — 新增 `transportMode` / `latencyMs` / `lastCheckedAt` / `isSandboxBrowser` 4 个 ref + `probeHttp()` 测延迟。
+3. **[useServerStatus.ts `onConnectionError`](file:///workspace/app/encv-mobile/src/composables/useServerStatus.ts)** — sandbox 浏览器下不显示 "Connection closed (code: 1006)" 误报。
+4. **[ServerDetail.vue](file:///workspace/app/encv-mobile/src/views/ServerDetail.vue)** — 状态 ion-item 美化：徽章 + 端口 + 延迟(ms) + 传输模式 + 上次检测时间 + sandbox 降级提示。
+
+**架构事实**：
+
+| 传输层 | OpenPreview 浏览器 | 沙箱本地 | APK 真机 |
+|--------|---------------------|----------|----------|
+| HTTP `/api/*` | ✅ trae 反代 | ✅ :16666 直连 | ✅ loopback |
+| WebSocket `/ws` | ❌ trae 不支持 | ✅ :16666 WS upgrade | ✅ loopback |
+| Native bridge | N/A | N/A | ✅ Capacitor |
+
+**3 档调试链路**（从弱到强）：
+1. **OpenPreview 浏览器** —— 仅 fetch /api/*，实时功能不可用
+2. **沙箱本地 `:16666`** —— 完整 API + WS
+3. **APK 真机 + adb reverse** —— 完整 + 真实性能
+
+### 3.4 错误模式
 
 | 错误 | 原因 | 修复 |
 |------|------|------|
@@ -507,3 +540,62 @@ $ bash scripts/kill-orphan-children.sh --report
 | [/workspace/.trae/specs/unify-sandbox-preview-port/spec.md](file:///workspace/.trae/specs/unify-sandbox-preview-port/spec.md) | 端口决策 D1-D9 原始 spec |
 | [/workspace/.trae/documents/plan-fix-sandbox-preview-env-injection.md](file:///workspace/.trae/documents/plan-fix-sandbox-preview-env-injection.md) | 本次 env 注入修复 plan（2026-06-05） |
 | [/workspace/internal/config/config.go](file:///workspace/internal/config/config.go) | `ApplyMobileOverlay` 触发条件：`ENCV_MOBILE=1 \|\| ENCV_DEV_PREVIEW=1`（L292-294） |
+
+---
+
+## 十、DOM 锚定教训（2026-06-10 用户痛批后写入）
+
+> **核心原则：用户发的 DOM 节点自带完整属性（class / slot / 子元素 / 文本），先全字段匹配再下手；不要只看 class 名推断。**
+
+### 10.1 反模式：靠"语义猜"找文件
+
+**症状**：用户发了 `ion-item` 包含 `<h3>状态</h3>` + `<ion-badge color="danger">离线</ion-badge>` + `<p class="connection-error">Connection closed (code: 1006)</p>`，**直觉**以为是 `Settings.vue`（顶层 Settings tab），结果：
+- `Settings.vue` 顶层只有一个 ion-card 状态摘要（"后端服务" 标题）
+- 真正的"状态"ion-item 在 **`ServerDetail.vue`**（详情二级页面）
+
+**根因**：
+- 用户发的 DOM 节点是**正在显示的**视图，需要找的是**当前**路由匹配的组件
+- 我**没**问 / **没**用 `route.path` 推断
+- 只看 "settings.xxx" 翻译键字符串（`'settings.status'`）→ 误以为是 Settings.vue 顶层
+
+**正确做法（按优先级）**：
+
+1. **路由推断**：DOM 在 tab "/tabs/settings/server" → ServerDetail.vue，不是 Settings.vue
+2. **完整文本匹配**："状态" h3 标题在多个文件都有，但 `<p class="connection-error">` + `class="server-controls"` 两个独有 class 唯一锁定 `ServerDetail.vue`
+3. **不要只靠翻译键**：`t('settings.status')` 字符串重复使用是设计意图（i18n 复用），不等于"只在 Settings.vue"
+
+### 10.2 DOM 锚定 checklist
+
+用户发 DOM 时：
+
+- [ ] **路由推断**：当前页 URL path → 对应 vue 组件
+- [ ] **唯一 class / slot 锚定**：`class="server-controls"` / `slot="end"` / `role="..."` 等独有属性
+- [ ] **完整文本锚定**：`<h3>状态</h3>` + 兄弟节点（不能只看 h3）
+- [ ] **不要靠** `t('settings.xxx')` 推断组件位置
+
+### 10.3 历史踩坑案例
+
+| 日期 | 错误 | 后果 |
+|------|------|------|
+| 2026-06-10 | 看到 "状态" + "离线" → 猜 Settings.vue | 找不到 `.server-controls` 样式、找不到 `connection-error` p 元素 → 改错地方 |
+| 2026-06-10 | 看到 "settings.status" 翻译键 → 猜 Settings.vue | i18n 复用不等于组件复用，**翻译键 ≠ 组件位置** |
+| 2026-06-10 | `python3 -c "..."` 测 WS upgrade | 阻塞命令 + 探到 502 才知道 trae 反代 :16000 不支持 WS（应该用持久化脚本） |
+
+### 10.4 修复本案例用的查找手法
+
+```bash
+# 1. 锚定独有 class / slot
+grep -rln "server-controls" /workspace/app/encv-mobile/src/views/   # ServerDetail.vue
+grep -rln "connection-error" /workspace/app/encv-mobile/src/      # ServerDetail.vue + useServerStatus.ts
+
+# 2. 锚定完整文本
+grep -rln "状态.*h3\|<h3>.*状态" /workspace/app/encv-mobile/src/views/  # ServerDetail.vue L30
+
+# 3. 路由路径推断
+grep -rln "tabs/settings/server\b" /workspace/app/encv-mobile/src/router/  # ServerDetail 路由
+```
+
+**绝对不能做的**：
+- ❌ `grep -rln "settings.status" src/` 找翻译键（多个文件都有）
+- ❌ "Settings 是 i18n namespace → 一定是 Settings.vue" 语义猜
+- ❌ 改完不 reload DOM 比对（用户反馈之前不发前后截图）

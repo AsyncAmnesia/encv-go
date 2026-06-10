@@ -26,16 +26,24 @@
         </ion-item>
         <ion-item>
           <ion-icon :icon="serverIcon" slot="start"></ion-icon>
-          <ion-label>
+          <ion-label class="ion-text-wrap">
             <h3>{{ t('settings.status') }}</h3>
-            <p>
+            <p class="status-line">
               <ion-badge :color="serverOnline ? 'success' : 'danger'">
                 {{ serverOnline ? t('settings.online') : t('settings.offline') }}
               </ion-badge>
               <span v-if="serverOnline && backendPort" class="port-info">:{{ backendPort }}</span>
+              <span v-if="serverOnline && latencyMs > 0" class="latency-info">· {{ latencyMs }}ms</span>
+              <span v-if="serverOnline" class="transport-info" :class="`transport-${transportMode}`">· {{ transportLabel }}</span>
             </p>
             <p v-if="!serverOnline && connectionError" class="connection-error">
               {{ connectionError }}
+            </p>
+            <p v-if="serverOnline && lastCheckedAt" class="status-meta">
+              {{ t('settings.lastChecked') }} {{ lastCheckedAtFormatted }}
+            </p>
+            <p v-if="serverOnline && isSandboxBrowser" class="status-warning">
+              {{ t('settings.sandboxWsWarning') }}
             </p>
           </ion-label>
           <div slot="end" class="server-controls">
@@ -130,7 +138,7 @@ import { useRouter } from 'vue-router'
 import {
   IonPage, IonHeader, IonToolbar, IonTitle, IonButtons, IonBackButton,
   IonContent, IonList, IonListHeader, IonItem, IonIcon, IonLabel,
-  IonBadge, IonButton, alertController, IonSpinner,
+  IonBadge, IonButton, alertController, IonSpinner, IonNote,
 } from '@ionic/vue'
 import {
   server as serverIcon, refresh as refreshIcon,
@@ -156,6 +164,11 @@ const {
   backendPort,
   isRestarting,
   isStopping,
+  // 🆕 2026-06-10 状态展示增强
+  latencyMs,
+  transportMode,
+  lastCheckedAt,
+  isSandboxBrowser,
 } = useServerStatus()
 const { t } = useI18n()
 
@@ -167,6 +180,24 @@ const permBatteryOpt = ref(false)
 let permissionCheckTimer: number | null = null
 
 const router = useRouter()
+
+// 传输模式的人类可读标签
+const transportLabel = computed(() => {
+  switch (transportMode.value) {
+    case 'ws': return 'WebSocket'
+    case 'http-poll': return 'HTTP polling'
+    case 'native-bridge': return 'Native bridge'
+    default: return 'unknown'
+  }
+})
+
+// 上次探测时间的 HH:MM:SS 格式
+const lastCheckedAtFormatted = computed(() => {
+  if (!lastCheckedAt.value) return ''
+  const d = lastCheckedAt.value
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+})
 
 const httpPort = computed(() => (configData.value?.server as Record<string, unknown>)?.port ?? '-')
 const rootDir = computed(() => (configData.value?.server as Record<string, unknown>)?.dir ?? '/')
@@ -282,7 +313,47 @@ onMounted(async () => {
 .port-info {
   font-size: 12px;
   opacity: 0.7;
-  margin-left: 4px;
+  margin-left: 6px;
+}
+.latency-info {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-left: 2px;
+  color: var(--ion-color-primary-shade);
+}
+.transport-info {
+  font-size: 12px;
+  margin-left: 2px;
+  font-weight: 500;
+}
+.transport-ws {
+  color: var(--ion-color-success-shade);
+}
+.transport-http-poll {
+  color: var(--ion-color-warning-shade);
+}
+.transport-native-bridge {
+  color: var(--ion-color-tertiary-shade);
+}
+.status-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.status-meta {
+  font-size: 11px;
+  color: var(--ion-color-medium);
+  margin-top: 4px;
+}
+.status-warning {
+  font-size: 11px;
+  color: var(--ion-color-warning-shade);
+  background: var(--ion-color-warning-tint);
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-top: 6px;
+  line-height: 1.4;
 }
 .server-controls {
   display: flex;
